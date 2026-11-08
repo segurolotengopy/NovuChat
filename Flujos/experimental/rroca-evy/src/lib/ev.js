@@ -620,8 +620,12 @@ function evQuitarEnlacesYTelefonos(texto) {
 // El monto permitido se cambia por una marca neutra para que el filtro común no lo vea como un precio; se repone al final (`evRestituirValor`).
 const EV_CONTEXTO_GRATIS = /\b(bonific\w*|gratuit\w*|gratis|sin costo|sin pagar|no pagas|no tiene (?:ningun )?costo|ahorras|ahorro)\b/;
 // Observaciones de Rubén (Andres, 28/10/2026): la cifra se menciona SOLO en la bienvenida, el PRIMER turno de la ficha (sin historial vigente). En cualquier otro turno toda oración con «250» se quita entera.
-function evProtegerValor(texto, primerTurno) {
-  return evQuitarOraciones(texto, (n) => /\b250\b/.test(n) && (primerTurno !== true || !EV_CONTEXTO_GRATIS.test(n)));
+// DECISIÓN DE ANDRES (07/11/2026): «250 Bs como el MD». El MD manda mencionarlo en la bienvenida Y cuando preguntan por precios o costos,
+// siempre junto con la gratuidad. `permitido` = primer turno O el cliente pregunta por precio/costo (`evPreguntaPrecio`); fuera de eso la oración se quita.
+const EV_PREGUNTA_PRECIO = /\b(cuest\w*|precio\w*|costo\w*|cuanto (?:vale|valen|sale|salen|es|cobran|cobra|pagar|pago|hay que pagar)|tarifa\w*|inversion|cobr\w*|pagar|pago|gratis|gratuit\w*)\b/;
+function evPreguntaPrecio(textoCliente) { return EV_PREGUNTA_PRECIO.test(evNorm(textoCliente || '')); }
+function evProtegerValor(texto, permitido) {
+  return evQuitarOraciones(texto, (n) => /\b250\b/.test(n) && (permitido !== true || !EV_CONTEXTO_GRATIS.test(n)));
 }
 function evMarcarValor(texto) {
   return evTexto(texto).replace(/\b250\s*(?:bs\.?|bolivianos)?/gi, EV_MARCA_VALOR);
@@ -779,7 +783,7 @@ function evPulirSalida(crudo, ctx) {
   t = evSinInmediato(t);
   // «¿Qué zona te llama más la atención?» no promete una llamada (batería real del 29/10/2026: el filtro común solo exime «llama la atención» y tumbaba la bienvenida): se dice «te interesa más».
   t = t.replace(/\b(te|le) llama (m[aá]s|mucho|tanto) la atenci[oó]n\b/gi, '$1 interesa $2');
-  t = evProtegerValor(evSinBonificado(t), c.primerTurno === true);
+  t = evProtegerValor(evSinBonificado(t), c.primerTurno === true || evPreguntaPrecio(c.textoCliente));
   // «¡Que tengas un excelente día!» no cierra ninguna respuesta (observación de Rubén, 28/10/2026): esa oración se quita.
   t = evQuitarOraciones(t, (n) => EV_DESPEDIDA_DE_DIA.test(n));
   // «Recepción te llama / te contactará…»: sale SOLO si el aviso de «pidió que la llamen» salió de verdad (`llamadaAvisada`, lo calcula quien llama con `avisoSalio`); si no, la oración se quita.
@@ -996,7 +1000,7 @@ function evDioNombre(historial, textoCliente) {
 // Observaciones de Rubén (28/10/2026): sin «bonificado»; el valor habitual (250 Bs) solo en el PRIMER turno de la ficha, como en la bienvenida.
 function evTextoGratis(cfg, dioNombre, primerTurno) {
   const negocio = evLinea(cfg && cfg.nombreNegocio, 60) || 'Dra. Evy';
-  const cuerpo = 'Sí, la valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar.' + (primerTurno === true ? ' (Su valor habitual es de 250 Bs).' : '');
+  const cuerpo = 'Sí, la valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar. (Su valor habitual es de 250 Bs).';
   return dioNombre ? cuerpo : cuerpo + '\n\n¿Cómo te llamas y qué te gustaría mejorar en tu rostro?';
 }
 const EV_TEXTO_DERIVAR_DE_NUEVO_2 = 'Con gusto, el botón sigue disponible para escribirle a recepción.';

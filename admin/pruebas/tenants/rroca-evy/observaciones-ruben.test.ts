@@ -351,7 +351,7 @@ describe('(3) «no gracias» / «lo voy a pensar»: la oferta fija de llamada', 
   });
 });
 
-describe('(4) sin «bonificado»; los 250 Bs solo en la bienvenida', () => {
+describe('(4) sin «bonificado»; los 250 Bs en la bienvenida y al preguntar el precio', () => {
   const BIENVENIDA = 'Hoy tu valoración es 100% gratuita y sin compromiso (su costo habitual es de 250 Bs, hoy bonificado). ¿Cómo te llamas?';
   const BONIFICADA = ES_EVY ? BIENVENIDA : 'Hoy tu valoración es 100% gratuita y sin compromiso, hoy bonificado. ¿Cómo te llamas?';
   it('NEGADA: «hoy bonificado» / «100% bonificada» nunca salen (se reescriben a «gratuita» o se quitan)', () => {
@@ -372,18 +372,28 @@ describe('(4) sin «bonificado»; los 250 Bs solo en la bienvenida', () => {
       const t = textos(hablar(crear({ modeloDice: dice(BIENVENIDA) }), ANA, mTexto('hola')))[0]!;
       expect(t).toContain('250 Bs');
     });
-    it('NEGADA: en cualquier otro turno la cifra no sale (la oración se quita), tampoco en el texto fijo de gratuidad', () => {
+    it('NEGADA: en un turno que NO pregunta por precio la cifra no sale (la oración se quita)', () => {
       const m = crear({ modeloDice: dice('La valoración es gratuita, te ahorras los 250 Bs. ¿Te gustaría agendar?') });
       hablar(m, ANA, mTexto('hola'));
-      expect(todo(hablar(m, ANA, mTexto('¿cuánto cuesta la valoración?')))).not.toMatch(/250/);
+      expect(todo(hablar(m, ANA, mTexto('me interesa la zona de la mandíbula')))).not.toMatch(/250/);
+    });
+    it('POSITIVA (Andres 07/11, «250 Bs como el MD»): cuando preguntan por precio o costo, la cifra sale junto con la gratuidad', () => {
+      const m = crear({ modeloDice: dice('La valoración es gratuita, te ahorras los 250 Bs. ¿Te gustaría agendar?') });
+      hablar(m, ANA, mTexto('hola'));
+      for (const q of ['¿cuánto cuesta la valoración?', '¿cuánto cuesta el tratamiento?', '¿hay algún costo escondido?']) {
+        expect(todo(hablar(m, ANA, mTexto(q))), q).toContain('250 Bs');
+      }
+    });
+    it('NEGADA: aun preguntando el precio, una cifra SIN la gratuidad no sale ni se inventa otra', () => {
+      const m = crear({ modeloDice: dice('Cuesta 250 Bs por consulta. La Dra. Evy es aplicadora certificada. ¿Cómo te llamas?') });
+      hablar(m, ANA, mTexto('hola'));
+      expect(todo(hablar(m, ANA, mTexto('¿cuánto cuesta?')))).not.toMatch(/250/);
+    });
+    it('POSITIVA: el texto fijo de gratuidad conserva el valor habitual (también fuera del primer turno), sin «bonificado»', () => {
       const f = crear({ modeloDice: 'cae' });
       hablar(f, ANA, mTexto('hola'));
       const g = todo(hablar(f, ANA, mTexto('¿de verdad es gratis?')));
       expect(g).toContain('100% gratuita');
-      expect(g).not.toMatch(/250|bonific/);
-    });
-    it('POSITIVA: el texto fijo de gratuidad en el primer turno conserva el valor habitual, sin «bonificado»', () => {
-      const g = todo(hablar(crear({ modeloDice: 'cae' }), ANA, mTexto('¿de verdad es gratis?')));
       expect(g).toContain('(Su valor habitual es de 250 Bs).');
       expect(g).not.toMatch(/bonific/);
     });
