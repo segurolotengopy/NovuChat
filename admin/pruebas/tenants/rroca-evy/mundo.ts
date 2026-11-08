@@ -8,6 +8,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Flujo, J } from '../../lib/flujo';
 import { horarioAtencion } from '../../../functions/src/core/prompt/prompt';
+// @ts-expect-error el armador es un .mjs sin tipos
+import { ES_RELE } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { doblesDelGuardado } from '../../lib/doble-guardado';
 
@@ -92,7 +94,7 @@ export function crear(o: Opciones = {}): Mundo {
   const enviar = (nodo: 'Enviar a WhatsApp' | 'Enviar respaldo'): Doble => (ll: LlamadaDoble) => {
     const modo = envio[nodo] ?? 'acepta';
     if (modo === 'lanza') throw new Error('fetch failed: red caída');
-    if (modo === 'error') return { error: { codigo: 'WM-3032', reintentable: false } };   // canal rele: un rechazo conocido y no reintentable (sale el respaldo en texto); un error sin código conocido es «incierto» y termina la ejecución (I4)
+    if (modo === 'error') return ES_RELE ? { error: { codigo: 'WM-3032', reintentable: false } } : { error: { message: '(#131053) Media upload error', code: 131053 } };   // canal rele: un rechazo conocido y no reintentable (sale el respaldo en texto); un error sin código conocido es «incierto» y termina la ejecución (I4)
     return { messaging_product: 'whatsapp', messages: [{ id: `wamid.OUT${nodo.replace(/\W+/g, '')}${++nEnvios}${ll.n}` }] };
   };
   const gemini = (t: string): J => ({ content: { parts: [{ text: t }] } });

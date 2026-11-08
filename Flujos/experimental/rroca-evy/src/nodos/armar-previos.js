@@ -166,6 +166,6 @@ if (avisoDe) {
 }
 
 if (!items.length) return [{ json: Object.assign({ kind: 'ninguno', res: res }, comun) }];
-// El relé B9 exige el número de cada envío (Idempotency-Key, rol aviso): n = 1, 2, … en el orden de salida.
+// Número de cada envío (n = 1, 2, …) en el orden de salida: lo usa la clave de idempotencia de un canal de envío con reintentos; con envío directo es inocuo.
 items.forEach((it, i) => { it.json.n = i + 1; });
 return items;

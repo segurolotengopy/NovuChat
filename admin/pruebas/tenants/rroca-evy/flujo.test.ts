@@ -7,13 +7,13 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { NODOS_DE_CRM } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
+import { ES_RELE, NODOS_DE_CRM } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
 import { ANA, BETO, CARPETA, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, conPreferencia, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
 
 describe('topología y tamaño', () => {
-  it('producción 56 nodos y prueba 51 (36 y 31 más los 9 del guardado, los 8 del miniCRM y los 3 del relé B9), con el tope de 56', () => {
-    expect(PRODUCCION.nodes.length).toBe(56);
-    expect(PRUEBA.nodes.length).toBe(51);
+  it('envío directo: producción 53 nodos y prueba 48 (36 y 31 más los 9 del guardado y los 8 del miniCRM), con el tope de 53; con el canal rele, 56 y 51', () => {
+    expect(PRODUCCION.nodes.length).toBe(ES_RELE ? 56 : 53);
+    expect(PRUEBA.nodes.length).toBe(ES_RELE ? 51 : 48);
   });
   it('sin agente, memoria ni modelo de chat de n8n, y sin WhatsApp Trigger', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
