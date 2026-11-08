@@ -13,8 +13,8 @@ código, y el modelo solo redacta lo que el código verifica. Sacado de `Flujos/
 
 ## Estado y límites (leer antes de adoptarlo)
 
-- **Experimental y SIN adoptar.** Ningún flujo lo usa todavía. Seguridad lo revisó dos veces (02/10): aprobó con
-  observaciones, ningún CRITICAL ni HIGH. Antes de que un flujo en producción adopte `filtro-redaccion.js`, pasa por una
+- **Experimental.** El filtro de redacción ya no vive aquí: está en `Flujos/src/core/texto/filtro-redaccion.js` y los constructores lo piden desde el core. Seguridad lo revisó dos veces (02/10): aprobó con
+  observaciones, ningún CRITICAL ni HIGH. Antes de que un flujo en producción adopte el filtro de redacción del core, pasa por una
   tercera revisión con su caso real.
 - **El filtro es una red de listas, no una garantía.** Un filtro de frases no cubre todas las formas de decir «tu cita
   quedó agendada» o «soy una persona»: cada revisión encontró variantes nuevas y se cerraron una por una. Rechaza de más a

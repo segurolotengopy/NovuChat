@@ -33,7 +33,7 @@ pareo con la respuesta del modelo es POR POSICIÓN entre los de historial sufici
 | `flujo.plantilla.json` | Los 7 nodos propios de la plantilla (más `¿Meta aceptó?`), con marcas `@@` (código, credenciales por nombre, URL). La cadena de envío se injerta desde `../comun-sin-agente/src/envio.mjs`. |
 | `src/rescate.js` | Librería (prefijo `rs`): corte, lista de teléfonos, prompt, revisión del cuerpo, texto fijo y saludo válidos, elección del texto. |
 | `src/nodos/preparar-rescates.js`, `armar-rescate.js` | Los dos nodos Code. |
-| `../comun-sin-agente/` | **Se incluye, no se copia ni se modifica**: `leerProyecto`, `armarVariante`, `injertar` y `filtro-redaccion.js`. Una copia declarada: `rsTextoDeGemini` (no hay fuente común de `cnTextoDeGemini`). |
+| `../comun-sin-agente/` | **Se incluye, no se copia ni se modifica**: `leerProyecto`, `armarVariante`, y `injertar`; el filtro de redacción se pide al core (`Flujos/src/core/texto/filtro-redaccion.js`). Una copia declarada: `rsTextoDeGemini` (no hay fuente común de `cnTextoDeGemini`). |
 
 ## Datos por tenant (`admin/scripts/datos/<id>/rescate-22h.json`)
 
