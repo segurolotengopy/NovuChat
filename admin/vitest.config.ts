@@ -151,6 +151,7 @@ export const SUITES_PURAS = [
   'pruebas/plataforma/resetear-telefono-prueba.test.ts',
   'pruebas/plataforma/aplicar-consola-conversaciones.test.ts',
   'pruebas/plataforma/rellenar-conversaciones.test.ts',
+  'pruebas/plataforma/planilla-u-a-x-bellido.test.ts',
   // Conversaciones (H1-7, 16/10/2026): comprobadas una por una con FIRESTORE_EMULATOR_HOST=127.0.0.1:1
   // (sin emulador y sin red). Las de H1 que SÍ abren Firestore (`buscar-conversaciones`,
   // `ingesta-conversaciones`, `conversaciones-ids-reglas`, los scripts con emulador) quedan en `emulador`.
