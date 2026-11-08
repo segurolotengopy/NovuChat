@@ -524,7 +524,7 @@
               "id": "cb_plantillaPedidoMapaEstado",
               "name": "plantillaPedidoMapaEstado",
               "type": "string",
-              "value": "APPROVED"
+              "value": "DESACTIVADA"
             },
             {
               "id": "cb_plantillaPedidoLista",
@@ -536,7 +536,7 @@
               "id": "cb_plantillaPedidoListaEstado",
               "name": "plantillaPedidoListaEstado",
               "type": "string",
-              "value": "APPROVED"
+              "value": "DESACTIVADA"
             },
             {
               "id": "cb_plantillaReservaLista",
@@ -548,7 +548,7 @@
               "id": "cb_plantillaReservaListaEstado",
               "name": "plantillaReservaListaEstado",
               "type": "string",
-              "value": "APPROVED"
+              "value": "DESACTIVADA"
             },
             {
               "id": "cb_plantillaConsultaAtencion",

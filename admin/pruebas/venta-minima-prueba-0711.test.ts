@@ -502,7 +502,9 @@ describe('El sandbox de EXPRESIONES de n8n no deja leer prototype/__proto__/cons
 describe('G. Avisos en viñetas de punta a punta (plantillas nuevas por tipo, 07/11/2026): la nueva sale; si Meta la rechaza, cae a la de hoy en el mismo turno', () => {
   // Las claves EXACTAS que trae el 3727 (la fuente de verdad es su archivo de datos, armado en el JSON versionado).
   const D3727 = configBase(JSON.parse(readFileSync(join(CARPETA_VM, 'venta-minima.qtaco-3727.json'), 'utf8')) as Flujo);
-  const VINETAS: J = Object.fromEntries(Object.entries(D3727).filter(([k]) => /^plantilla(PedidoMapa|PedidoLista|ReservaLista|ConsultaAtencion)|^idiomaPlantillasVinetas$/.test(k)));
+  const DE_3727: J = Object.fromEntries(Object.entries(D3727).filter(([k]) => /^plantilla(PedidoMapa|PedidoLista|ReservaLista|ConsultaAtencion)|^idiomaPlantillasVinetas$/.test(k)));
+  // 07/11 20:47: Q'Taco volvió al formato por líneas y el 3727 trae las tres plantillas en viñetas DESACTIVADAS. Estas pruebas cubren el código de viñetas con SU PROPIA config de prueba (las tres en APPROVED).
+  const VINETAS: J = { ...DE_3727, plantillaPedidoMapaEstado: 'APPROVED', plantillaPedidoListaEstado: 'APPROVED', plantillaReservaListaEstado: 'APPROVED' };
   const COBRO = { cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: 63, pedido: 'ped1' } };
   const PED: J = { pedidoId: 'ped1', from: CLIENTE, codigo: 'OXJL', total: 63, lineas: [{ id: 'taco', nombre: 'Taco de Birria (unidad)', cantidad: 3, precio: 21 }], modalidad: 'recojo', resultado: 'qr_enviado' };
   const PASE = /ya lo pas[eé]|lo pas[eé] a nuestro equipo/i;
@@ -519,7 +521,12 @@ describe('G. Avisos en viñetas de punta a punta (plantillas nuevas por tipo, 07
     return { messaging_product: 'whatsapp', messages: [{ id: `wamid.EA${ll.n}` }] };
   };
 
-  it('el 3727 trae las tres aprobadas y consulta_atencion apagada', () => {
+  it('el 3727 trae las tres en viñetas DESACTIVADAS (formato por líneas vigente) y consulta_atencion en PENDING; la config de prueba las trae APPROVED', () => {
+    expect(DE_3727).toEqual({
+      plantillaPedidoMapa: 'pedido_lista_mapa', plantillaPedidoMapaEstado: 'DESACTIVADA', plantillaPedidoLista: 'pedido_lista', plantillaPedidoListaEstado: 'DESACTIVADA',
+      plantillaReservaLista: 'reserva_lista', plantillaReservaListaEstado: 'DESACTIVADA', plantillaConsultaAtencion: 'consulta_atencion', plantillaConsultaAtencionEstado: 'PENDING',
+      idiomaPlantillasVinetas: 'es',
+    });
     expect(VINETAS).toEqual({
       plantillaPedidoMapa: 'pedido_lista_mapa', plantillaPedidoMapaEstado: 'APPROVED', plantillaPedidoLista: 'pedido_lista', plantillaPedidoListaEstado: 'APPROVED',
       plantillaReservaLista: 'reserva_lista', plantillaReservaListaEstado: 'APPROVED', plantillaConsultaAtencion: 'consulta_atencion', plantillaConsultaAtencionEstado: 'PENDING',
