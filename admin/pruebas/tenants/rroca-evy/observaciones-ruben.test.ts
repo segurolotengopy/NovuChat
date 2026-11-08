@@ -402,7 +402,9 @@ describe('(4) sin «bonificado»; los 250 Bs en la bienvenida y al preguntar el 
       expect(todo(hablar(m, ANA, mTexto('¿cuánto cuesta?')))).not.toMatch(/250/);
     });
     it('NEGADA (revisión de seguridad del PR 866): la cifra de la VALORACIÓN no se usa de precio del tratamiento, ni al preguntar el precio ni en la bienvenida', () => {
-      for (const x of ['El tratamiento cuesta 250 Bs, pero la valoración es gratis. ¿Cómo te llamas?', 'Una sesión de Radiesse sale 250 Bs y la valoración es gratis. ¿Cómo te llamas?']) {
+      for (const x of ['El tratamiento cuesta 250 Bs, pero la valoración es gratis. ¿Cómo te llamas?', 'Una sesión de Radiesse sale 250 Bs y la valoración es gratis. ¿Cómo te llamas?',
+        'Radiesse: 250 Bs; la valoración es gratuita. ¿Cómo te llamas?', 'La valoración es gratis (el tratamiento, 250 Bs). ¿Cómo te llamas?', 'La valoración es gratuita y el lifting cuesta 250 Bs. ¿Cómo te llamas?',
+        'La valoración es gratis y luego pagas 250 Bs. ¿Cómo te llamas?', 'Solo 250 Bs la sesión, y la valoración es gratis. ¿Cómo te llamas?', 'La valoración es gratis; cada ml cuesta 250 Bs. ¿Cómo te llamas?']) {
         const m = crear({ modeloDice: dice(x) });
         expect(todo(hablar(m, ANA, mTexto('hola'))), x).not.toMatch(/250/);
         const n = crear({ modeloDice: dice(x) });
