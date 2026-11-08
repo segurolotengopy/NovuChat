@@ -96,7 +96,7 @@ function pdNombreCorto(i){ return String(i.nombre).replace(/\s*\([^)]*(orden|uni
 function pdEjemploDePedido(c){ const v = []; const n = []; (Array.isArray(c) ? c : []).forEach(function(i){ const k = i.clave || pdNombreCorto(i); if (n.length < 2 && v.indexOf(k) < 0) { v.push(k); n.push('1 ' + pdNombreCorto(i)); } }); return n.join(' y '); }
 function pdTextoExcluido(n){ return 'Lo siento, «' + n + '» no está disponible para pedir por WhatsApp. ¿Te muestro la carta?'; }
 function pdBotonAgregar(i, c){ return { id: 'g|agregar|' + i.id + '|' + c, title: 'Agregar ' + pdNombreCorto(i) }; }
-function pdTextoFaltanEntrega(f){ const d = f.indexOf('direccion') >= 0; const u = f.indexOf('ubicacion') >= 0; if (d && u) return 'Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación'; if (u) return 'Para el delivery necesito que compartas tu ubicación'; return 'Para el delivery necesito tu dirección exacta, escrita, con una referencia (por ejemplo, el color del portón o un negocio cercano).'; }
+function pdTextoFaltanEntrega(f){ const d = f.indexOf('direccion') >= 0; const u = f.indexOf('ubicacion') >= 0; if (d && u) return 'Para el delivery necesito dos cosas: escribe tu dirección exacta y comparte tu ubicación'; if (u) return 'Para el delivery necesito que compartas tu ubicación'; return 'Para el delivery necesito tu dirección exacta, escrita.'; }
 
 function rsCuerpoExtraccion(texto, o){ if (!isFinite(Number(o.ahoraMs))) throw new Error('ahoraMs'); return { marcador: 'reserva', texto: texto, zonas: o.zonas }; }
 function rsValidarExtraccion(o){ o = o || {}; return { personas: Number(o.personas) || 0, fecha: o.fecha || '', hora: o.hora || '', zona: o.zona || '', nombre: o.nombre || '', celebracion: o.celebracion || '', requerimiento: o.requerimiento || '' }; }
@@ -711,7 +711,7 @@ describe('Plan del turno: el pedido', () => {
     turno(m, { texto: 'quiero 1 queso fundido', extraccion: extPedido({ lineas: [linea('queso fundido', 1)] }) });
     expect(estadoDe(m)['paso']).toBe('pedido_entrega');
     const datos = registrar(turno(m, { boton: 'e|delivery' }));
-    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación con el botón.');
+    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito dos cosas: escribe tu dirección exacta y comparte tu ubicación con el botón.');
     expect(estadoDe(m)['paso']).toBe('pedido_datos');
     // La dirección sola ya NO sigue al resumen (07/11): se pide solo la ubicación; con el pin sí (ni referencia ni nombre se exigen).
     const dir = registrar(turno(m, { texto: 'Calle 5', extraccion: extPedido({ direccion: 'Calle 5' }) }));

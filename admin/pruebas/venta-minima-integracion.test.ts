@@ -830,7 +830,7 @@ describe('PR-A (05/10): la dirección se pide escrita O con la ubicación; el av
     expect(c).toHaveLength(1); // 0 mensajes agregados: es el mismo mensaje que ya salía en texto
     expect(c[0]!['payload'].interactive).toEqual({
       type: 'location_request_message',
-      body: { text: 'Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».' },
+      body: { text: 'Para el delivery necesito dos cosas: escribe tu dirección exacta y comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».' },
       action: { name: 'send_location' },
     });
     expect(c[0]!['tipoReporte']).toBe('interactive');

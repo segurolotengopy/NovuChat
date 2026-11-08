@@ -2124,14 +2124,14 @@ describe('pedido', () => {
   });
 
   it('delivery sin dirección ni ubicación → pide las DOS en un solo mensaje; con la dirección sola pide la ubicación; con las dos, resumen (07/11: ambas obligatorias)', () => {
-    const DOS = 'Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».';
+    const DOS = 'Para el delivery necesito dos cosas: escribe tu dirección exacta y comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».';
     const r = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
     // (el helper ya mandó el pin: la dirección sigue faltando)
     expect(cuerpos(r.primero)).toEqual([DOS]);
     expect(r.primero.mensajes).toHaveLength(1);
     expect(cuerpos(r.primero)[0]).not.toContain('QR');
     expect(r.primero.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
-    expect(cuerpos(r.resumen)[0]).toBe('Para el delivery necesito tu dirección exacta, escrita, con una referencia (por ejemplo, el color del portón o un negocio cercano).');
+    expect(cuerpos(r.resumen)[0]).toBe('Para el delivery necesito tu dirección exacta, escrita.');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
     expect(r.resumen.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
     // Pin y luego la dirección escrita (sin referencia ni nombre): directo al resumen, y queda como DIRECCIÓN, no como referencia.
@@ -2150,7 +2150,7 @@ describe('pedido', () => {
     const mala = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
     mala.w.estado.extraccion = EX([], { entrega: '', direccion: 'calle', referencia: '', nombre: '' });
     const t = mala.c.escribe('calle');
-    expect(cuerpos(t)[0]).toBe('Para el delivery necesito tu dirección exacta, escrita, con una referencia (por ejemplo, el color del portón o un negocio cercano).');
+    expect(cuerpos(t)[0]).toBe('Para el delivery necesito tu dirección exacta, escrita.');
     expect(estadoDe(mala.w.mundo)['paso']).toBe('pedido_datos');
   });
 
@@ -7119,7 +7119,7 @@ describe('ubicación obligatoria en delivery (07/11): dirección escrita Y pin; 
   it('delivery sin datos: UN solo mensaje, con el botón de ubicación y el texto nuevo (0 mensajes extra en el camino normal)', () => {
     const { w, t } = sinDatos();
     expect(t.mensajes).toHaveLength(1);
-    expect(cuerpos(t)[0]).toBe('Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».');
+    expect(cuerpos(t)[0]).toBe('Para el delivery necesito dos cosas: escribe tu dirección exacta y comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».');
     expect(t.mensajes[0]!.payload['interactive']?.type).toBe('location_request_message');
     expect(estadoDe(w.mundo)['paso']).toBe('pedido_datos');
     sinPedido(w, t);

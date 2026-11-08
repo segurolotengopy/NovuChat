@@ -436,12 +436,12 @@ describe('el carrito que vuelve de la página', () => {
     // Y sin dirección, la pide (la única exigencia).
     const m2 = crear();
     const sin = carrito(m2, { entrega: 'envio', direccion: '' });
-    expect(sin.textos[0]).toBe('Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación con el botón.');
+    expect(sin.textos[0]).toBe('Para el delivery necesito dos cosas: escribe tu dirección exacta y comparte tu ubicación con el botón.');
     expect(estadoDe(m2)['paso']).toBe('pedido_datos');
     // Una dirección inválida («calle») sigue pidiéndose.
     const m3 = crear();
     const mala = carrito(m3, { entrega: 'envio', direccion: 'calle', ubicacion: { lat: -16.5, lng: -68.15 } });
-    expect(mala.textos[0]).toBe('Para el delivery necesito tu dirección exacta, escrita, con una referencia (por ejemplo, el color del portón o un negocio cercano).'); // la ubicación ya está: solo falta la dirección
+    expect(mala.textos[0]).toBe('Para el delivery necesito tu dirección exacta, escrita.'); // la ubicación ya está: solo falta la dirección
   });
 
   it('un carrito NUEVO con dirección no hereda la referencia del anterior (la referencia viaja con su dirección)', () => {

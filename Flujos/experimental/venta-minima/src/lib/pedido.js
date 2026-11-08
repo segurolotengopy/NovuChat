@@ -1092,14 +1092,14 @@ function pdEjemploDePedido(carta) {
 }
 
 // ADITIVO. «Para el delivery necesito…» (texto fijo del diseno) para lo que devuelve pdFaltanEntrega. SIN punto final en los casos que piden la ubicacion: quien
-// lo arma le agrega «con el botón.» o la via del clip, segun si el mensaje sale con el boton nativo. La referencia se ofrece como opcional (sin la frase del QR).
+// lo arma le agrega «con el botón.» o la via del clip, segun si el mensaje sale con el boton nativo. La referencia es opcional y NUNCA se pide en el chat (regla de Silvana, decisión de Andres 07/11); sin la frase del QR.
 function pdTextoFaltanEntrega(faltan) {
   const f = Array.isArray(faltan) ? faltan : [];
   const dir = f.indexOf('direccion') >= 0;
   const ubi = f.indexOf('ubicacion') >= 0;
-  if (dir && ubi) return 'Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación';
+  if (dir && ubi) return 'Para el delivery necesito dos cosas: escribe tu dirección exacta y comparte tu ubicación';
   if (ubi) return 'Para el delivery necesito que compartas tu ubicación';
-  return 'Para el delivery necesito tu dirección exacta, escrita, con una referencia (por ejemplo, el color del portón o un negocio cercano).';
+  return 'Para el delivery necesito tu dirección exacta, escrita.';
 }
 
 // ---------------------------------------------------------------------------

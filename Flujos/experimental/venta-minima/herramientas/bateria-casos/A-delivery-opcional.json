@@ -797,7 +797,7 @@
     },
     {
       "id": "A14",
-      "titulo": "Cliente con nombre de perfil y carrito de delivery SIN dirección (con la ubicación de la página): pide SOLO la dirección escrita, con una referencia opcional y sin frase del QR",
+      "titulo": "Cliente con nombre de perfil y carrito de delivery SIN dirección (con la ubicación de la página): pide SOLO la dirección escrita (sin referencia ni frase del QR)",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -830,6 +830,7 @@
               "direcci[oó]n exacta, escrita"
             ],
             "textosNo": [
+              "referencia",
               "nombre de quien",
               "no va en el QR",
               "Confirmar pedido"

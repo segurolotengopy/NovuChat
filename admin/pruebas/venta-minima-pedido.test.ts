@@ -883,13 +883,13 @@ describe('pdResumen y pdLineaCompacta', () => {
 describe('textos fijos del pedido', () => {
   it('los textos de lo que falta del delivery (07/11): dos cosas, solo la ubicación o solo la dirección; sin la frase del QR, sin pedir el nombre y sin palabras de cobro', () => {
     const ambas = L.pdTextoFaltanEntrega(['direccion', 'ubicacion']);
-    expect(ambas).toBe('Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación');
+    expect(ambas).toBe('Para el delivery necesito dos cosas: escribe tu dirección exacta y comparte tu ubicación');
     const soloUbicacion = L.pdTextoFaltanEntrega(['ubicacion']);
     expect(soloUbicacion).toBe('Para el delivery necesito que compartas tu ubicación');
     const soloDireccion = L.pdTextoFaltanEntrega(['direccion']);
-    expect(soloDireccion).toContain('tu dirección exacta, escrita');
+    expect(soloDireccion).toBe('Para el delivery necesito tu dirección exacta, escrita.');
     for (const t of [ambas, soloUbicacion, soloDireccion]) {
-      expect(t).not.toMatch(/QR|nombre de quien|repartidor|pagado|acreditad|recibimos tu pago/i);
+      expect(t).not.toMatch(/QR|nombre de quien|repartidor|referencia|pagado|acreditad|recibimos tu pago/i); // la referencia NUNCA se pide en el chat (regla de Silvana, 05/10)
     }
   });
   it('«No encontré …»: con 1, 2 o 3 sugerencias (sin repetir, con su precio) y sin ellas', () => {

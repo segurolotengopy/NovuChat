@@ -26,7 +26,7 @@ import {
 
 const CARRITO = 'Carrito del catálogo';
 // El pedido de los datos (07/11: dirección escrita Y ubicación, ambas obligatorias): sale con el botón de ubicación, sin mensajes de más.
-const PIDE_DIRECCION = 'Para el delivery necesito tu dirección exacta, escrita, con una referencia (por ejemplo, el color del portón o un negocio cercano).';
+const PIDE_DIRECCION = 'Para el delivery necesito tu dirección exacta, escrita.';
 
 const cabeceras = (extra: J = {}): J => ({
   'x-novuchat-numero': PHONE_ID, 'x-novuchat-timestamp': String(AHORA), 'x-novuchat-signature': `sha256=${'0'.repeat(64)}`, ...extra,
