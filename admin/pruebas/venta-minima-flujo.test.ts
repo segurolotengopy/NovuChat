@@ -7245,11 +7245,18 @@ describe('ubicación obligatoria: qué es (y qué no es) una negativa explícita
     'no puedo esperar mucho, ya te envío la ubicación',
     'no quiero que se demore, ya te comparto mi ubicación',
     'no tengo problema, ahí va la ubicación',
+    'no se preocupe, le mando la ubicación',
+    'no se demoren, ahí va mi ubicación',
+    'no sé cómo, ahí va la ubicación',
   ])('NEGADO: «%s» promete enviarla y NO deriva', (dicho) => {
     const { c } = pendiente();
     const t = c.escribe(dicho);
     expect(tieneEnlace(t), dicho).toBe(false);
     expect(t.avisos, dicho).toHaveLength(0);
+  });
+  it('NEGADO: «no, tengo problemas con el pago» sigue siendo un pedido de ayuda (deriva), no una cortesía', () => {
+    const { c } = pendiente();
+    expect(tieneEnlace(c.escribe('no, tengo problemas con el pago'))).toBe(true);
   });
   it.each([
     'no puedo compartir mi ubicación',
@@ -7257,6 +7264,9 @@ describe('ubicación obligatoria: qué es (y qué no es) una negativa explícita
     'no tengo gps',
     'no sé cómo mandar la ubicación',
     'no encuentro el botón de ubicación',
+    'no tengo datos para mandar la ubicación',
+    'no tengo internet para enviar la ubicación',
+    'no me sale el botón de ubicación',
     'sin gps',
   ])('«%s» es una negativa explícita: deriva a la primera', (dicho) => {
     const { c } = pendiente();
