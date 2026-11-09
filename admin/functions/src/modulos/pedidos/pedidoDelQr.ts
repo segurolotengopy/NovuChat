@@ -71,7 +71,7 @@ export interface PedidoWa {
 }
 
 /**
- * CATÁLOGO EXTERNO (Casa Bermejo / NovuTienda, B5a, 09/11/2026).
+ * CATÁLOGO EXTERNO (NovuTienda, B5a, 09/11/2026).
  *
  * Lo decide el DATO `tenants/{t}/config/pedidos.catalogoExterno = { activo: true, monedas: ['BOB'|'ARS', …] }`
  * (solo lo escribe el servidor: las reglas no abren `config/pedidos` al cliente). Sin ese dato, `armarPedidoWa`
@@ -149,6 +149,7 @@ export function armarPedidoWa(
   telefono: unknown,
   montoQr: unknown,
   externo?: ConfigCatalogoExterno | null,
+  sinCobro = false,
 ): ResultadoArmado {
   const crudas = Array.isArray(lineas) ? lineas.slice(0, MAX_LINEAS_WA) : [];
   const items: Array<Record<string, unknown>> = [];
@@ -249,8 +250,8 @@ export function armarPedidoWa(
       totalServidorCentavos: totalCent,
       montoQrCentavos: montoQrCent,
       // Sin monto del QR no hay con qué comparar: queda marcado para revisar.
-      // En catálogo externo sin QR (Argentina) no hay monto con qué comparar y no es una diferencia.
-      totalDistinto: esExterno ? montoQrCent !== null && montoQrCent !== totalCent : montoQrCent === null || montoQrCent !== totalCent,
+      // Solo en `pedido_sin_cobro` (Argentina) no hay monto con qué comparar y no es una diferencia.
+      totalDistinto: esExterno && sinCobro ? montoQrCent !== null && montoQrCent !== totalCent : montoQrCent === null || montoQrCent !== totalCent,
       ...(esExterno ? { catalogo: 'externo' as const } : {}),
       ...(factura ? { facturacion: factura } : {}),
       estado: 'recibido',
@@ -272,6 +273,8 @@ export interface EntradaPedidoWa {
   referencia: unknown;
   telefono: unknown;
   montoQr: unknown;
+  /** `pedido_sin_cobro`: pedido sin QR; exige catálogo externo habilitado. */
+  sinCobro?: boolean;
   lineas: unknown;
   entrega: unknown;
   facturacion?: unknown;
@@ -362,6 +365,8 @@ export async function crearPedidoWa(e: EntradaPedidoWa): Promise<ResultadoEscrit
     const externo = hayLineasExternas(e.lineas)
       ? configExternaDe((await db().doc(`tenants/${e.tenantId}/config/pedidos`).get()).data())
       : null;
+    // Sin QR no hay cobro que respalde el pedido: sin catálogo externo habilitado no se crea nada.
+    if (e.sinCobro === true && !externo) return { resultado: 'sin_pedido', motivo: 'sin_lineas' };
     const ids = externo ? [] : idsDeLineas(e.lineas);
     const docs: DocsCatalogo = {};
     if (ids.length > 0) {
@@ -369,7 +374,7 @@ export async function crearPedidoWa(e: EntradaPedidoWa): Promise<ResultadoEscrit
       leidos.forEach((d, i) => { docs[ids[i] as string] = d.exists ? (d.data() as Record<string, unknown>) : undefined; });
     }
     const { pedido, motivo } = armarPedidoWa(
-      e.lineas, e.entrega, e.facturacion, docs, ref, e.telefono, e.montoQr, externo,
+      e.lineas, e.entrega, e.facturacion, docs, ref, e.telefono, e.montoQr, externo, e.sinCobro === true,
     );
     if (!pedido) return { resultado: 'sin_pedido', motivo: motivo as MotivoSinPedido };
     try {

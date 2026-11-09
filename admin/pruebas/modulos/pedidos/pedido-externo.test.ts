@@ -120,8 +120,10 @@ describe('línea externa: lo que SÍ entra', () => {
     const x = armar([ln()], CFG_BOB_ARS, 1);
     expect(x.pedido?.total).toBe(301); expect(x.pedido?.totalDistinto).toBe(true);
   });
-  it('ARS sin QR: moneda ARS, sin monto no es «total distinto»', () => {
-    const r = armar([ln({ moneda: 'ARS', precioCentavos: 1250000, cantidad: 3 })], CFG_ARS);
+  it('ARS sin QR (sinCobro): moneda ARS, sin monto no es «total distinto»; con QR sin monto sí', () => {
+    const l = [ln({ moneda: 'ARS', precioCentavos: 1250000, cantidad: 3 })];
+    expect(armarPedidoWa(l, 'retiro', undefined, {}, 'BM1', '5917', undefined, CFG_ARS).pedido?.totalDistinto).toBe(true);
+    const r = armarPedidoWa(l, 'retiro', undefined, {}, 'BM1', '59170000009', undefined, CFG_ARS, true);
     expect(r.pedido).toMatchObject({ moneda: 'ARS', total: 37500, totalDistinto: false, montoQrCentavos: null });
   });
   it('facturación: solo la que ya se guardaba (documento limpio); el teléfono solo enmascarado', () => {
@@ -177,6 +179,16 @@ describe('crearPedidoWa / gancho contra el emulador', () => {
     await despuesDelTurnoPedidos(d({}));
     const p = (await db.doc(`tenants/${T}/pedidos/wa_BMAR1`).get()).data()!;
     expect(p).toMatchObject({ moneda: 'ARS', total: 10000, totalDistinto: false, catalogo: 'externo', estado: 'recibido' });
+  });
+  it('pedido_sin_cobro sin config + id del catálogo propio (aunque diga externa:true) = 0 pedidos', async () => {
+    await db.doc(`tenants/${T}/catalogo/taco`).set({ nombre: 'Taco', precio: 10, moneda: 'BOB', activo: true });
+    await despuesDelTurnoPedidos({ tenantId: T, ficha: FICHA, evento: 'pedido_sin_cobro', efectoDeCobro: undefined, referencia: 'BMX1', referenciaAnterior: undefined, telefono: TEL, monto: undefined, lineas: [{ externa: true, id: 'taco', cantidad: 1 }], entrega: 'retiro', facturacion: undefined });
+    expect((await db.collection(`tenants/${T}/pedidos`).get()).size).toBe(0);
+  });
+  it('qr_enviado externo sin monto de QR: totalDistinto queda true (a revisar)', async () => {
+    await prender(T);
+    await crearPedidoWa(ENTRADA({ montoQr: undefined }));
+    expect((await db.doc(`tenants/${T}/pedidos/wa_BM1`).get()).get('totalDistinto')).toBe(true);
   });
   it('`qr_enviado` con efecto distinto de abierto no crea, aunque haya config', async () => {
     await prender(T);
