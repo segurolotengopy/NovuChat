@@ -189,7 +189,7 @@ describe('argumentos hostiles', () => {
 describe('el proceso (sin red: los argumentos malos salen antes de tocar nada)', () => {
   const corrida = (args: string[]) => spawnSync(process.execPath, [SCRIPT, ...args], { env: entornoDelEmulador(HOST_EMU), encoding: 'utf8' });
   it('un comercio excluido por NOVUCHAT_TENANTS_EXCLUIDOS: salida 2 y sin id de proyecto', () => {
-    const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROY_DEMO, '--alias', ALIAS, '--tenant', 'tienda-excluida'], { env: { ...entornoDelEmulador(HOST_EMU), NOVUCHAT_TENANTS_EXCLUIDOS: 'tienda-excluida' }, encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROY_DEMO, '--alias', ALIAS, '--tenant', 'tienda-excluida'], { env: entornoDelEmulador(HOST_EMU, { NOVUCHAT_TENANTS_EXCLUIDOS: 'tienda-excluida' }), encoding: 'utf8' });
     expect(r.status).toBe(2);
     expect(r.stderr).toContain('EXCLUIDO');
     sinSecretos(r.stdout + r.stderr);
@@ -572,7 +572,7 @@ describe('envoltorio .sh', () => {
     expect(r.status).toBe(2);
   });
   it('un comercio excluido por el envoltorio: salida 2', () => {
-    const r = spawnSync('bash', [ENVOLTORIO, '--proyecto', PROY_DEMO, '--alias', ALIAS, '--tenant', 'tienda-excluida'], { encoding: 'utf8', env: { ...entornoDelEmulador(HOST_EMU), NOVUCHAT_TENANTS_EXCLUIDOS: 'tienda-excluida' } });
+    const r = spawnSync('bash', [ENVOLTORIO, '--proyecto', PROY_DEMO, '--alias', ALIAS, '--tenant', 'tienda-excluida'], { encoding: 'utf8', env: entornoDelEmulador(HOST_EMU, { NOVUCHAT_TENANTS_EXCLUIDOS: 'tienda-excluida' }) });
     expect(r.status).toBe(2);
     sinSecretos(r.stdout + r.stderr);
   });
