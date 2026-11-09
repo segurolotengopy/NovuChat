@@ -212,6 +212,9 @@ async function principal() {
 function seEjecutaDirecto() {
   try { return Boolean(process.argv[1]) && fileURLToPath(import.meta.url) === realpathSync(process.argv[1]); } catch { return false; }
 }
+export const AVISO_UNICO = '\n  ! Hay UN solo reseteo de un teléfono de prueba (Andres, 07/11/2026): `node scripts/plataforma/resetear-telefono-prueba.mjs --proyecto <id> --tenant <tenant> --tel <dígitos>` limpia ficha de n8n, sesiones, cupos, cobro/QR pendiente, atención y pausa Tomar, y dice ESTADO LIMPIO. Este script ya no se usa para eso.\n';
 if (seEjecutaDirecto()) {
+  console.error(AVISO_UNICO);
+  process.exit(2);
   try { await principal(); } catch (e) { console.error(`\n  ✗ error de ejecución: ${e?.code ?? e?.name ?? 'desconocido'}\n`); process.exit(3); }
 }

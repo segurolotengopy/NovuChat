@@ -23,6 +23,8 @@
  *
  * Sin `--aplicar` informa y no escribe. Queda en la auditoría del comercio.
  */
+console.error('\n  ! Hay UN solo reseteo de un teléfono de prueba (Andres, 07/11/2026): `node scripts/plataforma/resetear-telefono-prueba.mjs --proyecto <id> --tenant <tenant> --tel <dígitos>` limpia ficha de n8n, sesiones, cupos, cobro/QR pendiente, atención y pausa Tomar, y dice ESTADO LIMPIO. Este script ya no se usa para eso.\n' + '  (Si la seña tiene una cita retenida en el calendario, esa NO se borra con ningún script: se borra desde el calendario del negocio.)\n');
+process.exit(2);
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
 const APLICAR = args.includes('--aplicar');
