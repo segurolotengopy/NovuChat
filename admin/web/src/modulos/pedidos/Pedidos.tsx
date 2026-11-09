@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { useParams } from 'react-router-dom';
-import { db } from '../../core/lib/firebase';
+import { db, funciones } from '../../core/lib/firebase';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { descargarCsv } from '../../central/lib/exportar';
 import { enlaceDelPedido } from './ubicacion';
+import { leerErrorDeConfirmar, puedeConfirmarse, type ResultadoDeError } from './confirmar';
 
 /**
  * =============================================================================
@@ -53,6 +55,8 @@ interface Pedido {
   nota?: unknown;
   estado?: unknown;
   origen?: unknown;
+  /** `'externo'`: las líneas vienen de NovuTienda (B5). */
+  catalogo?: unknown;
 }
 
 const ENTREGA: Record<string, string> = {
@@ -68,6 +72,49 @@ function detalleDelItem(i: ItemPedido): string {
     if (typeof campo === 'string' && campo.trim() !== '') return campo;
   }
   return '';
+}
+
+/**
+ * «Confirmar» de un pedido de catálogo externo: el servidor llama firmado a NovuTienda y, solo si acepta,
+ * pasa el pedido a `confirmado` (la lista se actualiza sola por el `onSnapshot`). Si NovuTienda no tiene
+ * stock, el pedido NO cambia y acá se listan los faltantes.
+ */
+function BotonConfirmar({ pedidoId }: { pedidoId: string }) {
+  const [enviando, setEnviando] = useState(false);
+  const [fallo, setFallo] = useState<ResultadoDeError | null>(null);
+  const confirmar = async () => {
+    setEnviando(true); setFallo(null);
+    try {
+      await httpsCallable(funciones, 'confirmarPedidoExterno')({ pedidoId });
+    } catch (e) {
+      setFallo(leerErrorDeConfirmar(e));
+    } finally {
+      setEnviando(false);
+    }
+  };
+  return (
+    <div className="acciones">
+      <button type="button" className="btn btn-primary" disabled={enviando} onClick={() => { void confirmar(); }}>
+        {enviando ? 'Confirmando…' : 'Confirmar'}
+      </button>
+      {fallo && (
+        <div role="alert" className="pedido-nota">
+          <p><TextoSeguro valor={fallo.mensaje} maxLargo={200} /></p>
+          {fallo.faltantes.length > 0 && (
+            <ul>
+              {fallo.faltantes.map((f) => (
+                <li key={f.productoId}>
+                  <TextoSeguro valor={f.nombre} maxLargo={80} />
+                  {f.solicitado !== undefined && <> · pedido: {f.solicitado}</>}
+                  {f.disponible !== undefined && <> · disponible: {f.disponible}</>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function Pedidos() {
@@ -191,6 +238,8 @@ export function Pedidos() {
                   {typeof p.nota === 'string' && p.nota !== '' && (
                     <p className="pedido-nota"><TextoSeguro valor={p.nota} maxLargo={300} /></p>
                   )}
+                  {p.catalogo === 'externo' && p.estado === 'confirmado' && <p className="pedido-entrega">Confirmado</p>}
+                  {puedeConfirmarse(p) && <BotonConfirmar pedidoId={p.id} />}
                 </li>
               );
             })}

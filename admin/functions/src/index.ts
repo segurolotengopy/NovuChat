@@ -42,6 +42,8 @@ export { ubicacionDeEnlace } from './central/negocio/mapa.js';
 export { seguimientosPendientes, seguimientoEnviado } from './modulos/agenda/seguimientos.js';
 // Rescate de 22 h (Pedidos): decide y marca; el envío es de un flujo de n8n por comercio.
 export { reclamarRescates } from './modulos/pedidos/rescates.js';
+// Confirmar un pedido de catálogo externo (NovuTienda): llamada firmada desde el servidor (B5b).
+export { confirmarPedidoExterno } from './modulos/pedidos/confirmarExterno.js';
 // CATÁLOGO WEB PROPIO. Tres endpoints públicos y una función de configuración;
 // el porqué de cada uno está en `catalogoWeb.ts`. Se exportan desde acá, como
 // todo lo demás, para que exista un solo inventario de lo que se despliega.
