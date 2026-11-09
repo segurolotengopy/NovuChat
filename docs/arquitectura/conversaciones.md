@@ -65,7 +65,7 @@ sobre la decisión de `contadoresDelMensaje`, sin reglas nuevas).
   bloqueado, corte aplicado, saliente que no abre bloque).
 - `conversacionNueva`: `true` solo si el mensaje abrió la ventana o un bloque nuevo (respuesta 26, 51…, con el
   desde fijo de la ventana).
-- En la apertura, `conversacionDesde` sale de `ahoraMs` y el ancla guardada (`atencionDesde`, `serverTimestamp()`) puede diferir en menos de 1 s: el CRM debe tolerarlo y decidir por `conversacionNueva`, no por igualdad de instantes.
+- En la apertura, `conversacionDesde` sale de `ahoraMs` y el ancla guardada (`atencionDesde`, `serverTimestamp()`) puede diferir en menos de 1 s: el CRM debe tolerarlo: crea la fila cuando `conversacionNueva` es `true` y reconoce la fila de la conversación comparando el ancla con tolerancia de 5 minutos (nunca por igualdad de instantes); una ráfaga con espera acepta además la fila mínima hasta 2 minutos después de la apertura (ver `docs/arquitectura/modulos/crm.md`).
 - `ventanaVenceEn` no cambia, ni el cobro ni los conteos. Pruebas: `pruebas/conversacion-desde.test.ts` (puras),
   y las aserciones de bloqueado y corte en `bloquear-contacto-ingesta.test.ts` y `prepago-ingesta.test.ts` (emulador).
 
