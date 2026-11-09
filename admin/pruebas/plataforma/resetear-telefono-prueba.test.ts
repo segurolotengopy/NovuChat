@@ -786,3 +786,43 @@ describe('E6. el texto del script', () => {
     expect(src).not.toMatch(/\b591\d{8}\b/);
   });
 });
+
+describe('E9. UN solo reseteo para todos los flujos (09/11/2026)', () => {
+  const TENANTS = ['qtaco', 'rroca-ruben', 'rroca-evy', 'rroca-antonio', 'rroca-emma', 'bellido'];
+  it('admite los seis tenants y rechaza los demás', () => {
+    expect([...m.TENANTS_PERMITIDOS].sort()).toEqual([...TENANTS].sort());
+    for (const t of TENANTS) expect(m.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--tel', TEL], ENV).ok, t).toBe(true);
+    for (const t of ['walisuma', 'platinum', 'novuchat', 'ensayo', 'RROCA-RUBEN']) {
+      expect(problemas(m.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--tel', TEL], ENV))).toContain('--tenant');
+    }
+  });
+  it('cada tenant tiene el nombre exacto de su flujo y ninguno se repite', () => {
+    const nombres = TENANTS.map((t) => m.FLUJO_DE_TENANT[t]);
+    expect(nombres.every((n: unknown) => typeof n === 'string' && (n as string).length > 10)).toBe(true);
+    expect(new Set(nombres).size).toBe(TENANTS.length);
+  });
+  it('en un tenant de Rubén, cualquier espacio y clave de SU teléfono se borra; el de otro teléfono nunca', () => {
+    expect(m.clasificar('sesionesDeTurno', `${PN}~agenda-minima~wa_${TEL}`, PN, TEL, 'rroca-ruben')).toBe('borrar');
+    expect(m.clasificar('cuposDeTurno', `${PN}~cobros~wa_${TEL}~2026-11`, PN, TEL, 'rroca-ruben')).toBe('borrar');
+    expect(m.clasificar('sesionesDeTurno', `${PN}~agenda-minima~wa_${OTRO}`, PN, TEL, 'rroca-ruben')).toBe('ajeno');
+    expect(m.clasificar('sesionesDeTurno', `${PN}~agenda-minima~wa_${VECINO}`, PN, TEL, 'rroca-ruben')).toBe('ajeno');
+    expect(m.clasificar('sesionesDeTurno', `otro~agenda-minima~wa_${TEL}`, PN, TEL, 'rroca-ruben')).toBe('resto');
+  });
+  it('NEGADO: Q\'Taco conserva su criterio estricto (otro espacio no se toca)', () => {
+    expect(m.clasificar('sesionesDeTurno', `${PN}~chat~wa_${TEL}`, PN, TEL, 'qtaco')).toBe('otro');
+    expect(m.clasificar('sesionesDeTurno', `${PN}~chat~wa_${TEL}`, PN, TEL)).toBe('otro');
+  });
+  it('NEGADO: los scripts parciales no resetean: avisan «use el único» y salen con 2', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const corre = (script: string, ...args: string[]) => {
+      try { execFileSync('node', [join(aqui, '../../scripts/plataforma', script), ...args], { stdio: 'pipe', env: { PATH: process.env.PATH } }); return { code: 0, err: '' }; }
+      catch (e: any) { return { code: e.status, err: String(e.stderr) + String(e.stdout) }; }
+    };
+    for (const [s, a] of [['resetear-ficha-flujo.mjs', []], ['soltar-sena-pendiente.mjs', []], ['vaciar-memoria-flujo.mjs', ['--sufijos', '12345678']]] as const) {
+      const r = corre(s, ...a);
+      expect(r.code, s).toBe(2);
+      expect(r.err, s).toContain('UN solo reseteo');
+      expect(r.err, s).toContain('resetear-telefono-prueba.mjs');
+    }
+  });
+});
