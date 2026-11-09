@@ -6,7 +6,9 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { chmodSync, closeSync, fstatSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
 type Cfg = Record<string, any>;
 const m = await import('../../scripts/plataforma/resetear-telefono-prueba.mjs') as any;
@@ -813,10 +815,10 @@ describe('E9. UN solo reseteo para todos los flujos (09/11/2026)', () => {
     expect(m.clasificar('sesionesDeTurno', `${PN}~chat~wa_${TEL}`, PN, TEL)).toBe('otro');
   });
   it('NEGADO: los scripts parciales no resetean: avisan «use el único» y salen con 2', async () => {
-    const { execFileSync } = await import('node:child_process');
+    const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
     const corre = (script: string, ...args: string[]) => {
-      try { execFileSync('node', [join(aqui, '../../scripts/plataforma', script), ...args], { stdio: 'pipe', env: { PATH: process.env.PATH } }); return { code: 0, err: '' }; }
-      catch (e: any) { return { code: e.status, err: String(e.stderr) + String(e.stdout) }; }
+      const r = spawnSync(process.execPath, [join(aqui, '../../scripts/plataforma', script), ...args], { encoding: 'utf8', env: entornoDelEmulador(HOST), timeout: 60_000 });
+      return { code: r.status, err: `${r.stderr ?? ''}${r.stdout ?? ''}` };
     };
     for (const [s, a] of [['resetear-ficha-flujo.mjs', []], ['soltar-sena-pendiente.mjs', []], ['vaciar-memoria-flujo.mjs', ['--sufijos', '12345678']]] as const) {
       const r = corre(s, ...a);
