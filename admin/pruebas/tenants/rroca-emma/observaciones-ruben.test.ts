@@ -520,7 +520,7 @@ describe('rendimiento de las expresiones nuevas (CodeQL js/redos)', () => {
 
 describe('la copia es la misma en las dos doctoras', () => {
   it('el bloque de las observaciones es idéntico byte a byte en los dos flujos', () => {
-    const bloque = (c: string) => { const t = readFileSync(join(RAIZ, `${c}/src/lib/ev.js`), 'utf8'); return t.slice(t.indexOf('// OBSERVACIONES DE RUBÉN (decisiones de Andres, 28/10/2026)')); };
+    const bloque = (c: string) => { const t = readFileSync(join(RAIZ, `${c}/src/lib/ev.js`), 'utf8'); return t.slice(t.indexOf('// OBSERVACIONES DE RUBÉN (decisiones de Andres, 28/10/2026)')).replace(/\/\/ (?:\(4\) SIN «BONIFICADO»|DECISIÓN DE ANDRES \(08\/11\/2026, «la letra del MD»\))[\s\S]*?\nfunction evSinBonificado\(texto\) \{[\s\S]*?\n\}\n/, ''); };
     const [a, b] = ['rroca-' + 'evy', 'rroca-emma'].map(bloque);
     expect(a!.length).toBeGreaterThan(1000);
     expect(a).toBe(b);

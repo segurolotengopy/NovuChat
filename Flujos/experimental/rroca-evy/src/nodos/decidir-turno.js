@@ -72,11 +72,12 @@ if (t.tipo === 'audio' && !deAudio) {
 }
 if ((t.tipo === 'audio' || t.tipo === 'image') && t.mediaId === '') return salir({ tipo: 'fijo', clave: 'archivo_no_abierto' });
 
-// 5a. TEXTO LITERAL DEL ANUNCIO (Andres, 07/11/2026): SOLO la frase exacta del anuncio (`campanaFrase`, igualdad de palabras), escrita (no un audio, ni una imagen con ese pie), recibe el texto fijo `campanaTexto` por código, sin modelo
+// 5a. TEXTO LITERAL DEL ANUNCIO (Andres, 07/11/2026): El TEXTO INICIAL que incluye la frase del anuncio (`campanaFrase`, palabras completas, sin mayúsculas ni tildes; Andres 08/11/2026: antes solo la frase exacta), escrita (no un audio, ni una imagen con ese pie), recibe el texto fijo `campanaTexto` por código, sin modelo
 // y sin preguntas de perfilamiento. Cualquier otro inicio sigue el flujo de siempre. Si lo último que dijo el asistente ya fue ese texto, NO se repite: la frase vuelve al flujo normal (si la pregunta de nombre y día
 // estaba pendiente, la respuesta cierra como siempre). Va después de violencia, baja y salud: esas ya no son esta frase.
 const ultimoDelAsistenteCampana = (evHistorialVigente(fichaBruta, ahora).filter((h) => h.r === 'a').slice(-1)[0] || {}).t || '';
 if (!deAudio && !lec && t.categoria === 'conversacion' && t.tipo === 'text' && typeof cfg.campanaTexto === 'string' && cfg.campanaTexto !== '' && evEsEntradaCampana(textoCliente, cfg.campanaFrase)
+  && evHistorialVigente(fichaBruta, ahora).length === 0   // SOLO el texto inicial de la conversación (Andres, 08/11/2026): después, el flujo normal
   && !evYaDijoElTextoDeCampana(ultimoDelAsistenteCampana, cfg.campanaTexto)) {
   return salir({ tipo: 'campana_literal' }, { entradaHistorial: evEntradaCliente(t) });
 }

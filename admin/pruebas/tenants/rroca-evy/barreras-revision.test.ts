@@ -167,23 +167,23 @@ describe('enlaces y teléfonos: se borra la oración entera', () => {
   });
 });
 
-describe('cuidados posteriores: el modelo no los inventa', () => {
-  it('«evita el ejercicio por 2 días. Sin embargo, puedes retomar tu rutina normal»: ambas se borran', () => {
+describe('cuidados (letra del MD, Andres 08/11/2026): el código ya NO borra cuidados ni agrega la frase fija; sigue la barrera MÉDICA', () => {
+  it('«evita el ejercicio por 2 días. Sin embargo, puedes retomar tu rutina normal» PASA (decisión de Andres: el MD manda)', () => {
     const t = sale('Buena pregunta. Evita el ejercicio por 2 días. Sin embargo, puedes retomar tu rutina normal. Tu valoración es gratuita. ¿Cómo te llamas?');
     expect(fallo(t)).toBe(false);
-    expect(sin(t, 'ejercicio', 'rutina')).toBe(true);
-    expect(t).toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
+    expect(t).toContain('ejercicio');
+    expect(t).not.toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
   });
   it('«Así, …» tras una oración borrada pierde su conector', () => {
     const t = sale('Nunca podemos garantizar un resultado idéntico. Así, la Dra. evalúa tu caso en persona. ¿Cómo te llamas?');
     expect(t).toContain('La Dra. evalúa tu caso en persona.');
     expect(t).not.toMatch(/Así,/);
   });
-  it('NEGADA: «evitar ciertas actividades físicas intensas los primeros días» se borra y el código deja la remisión a la Dra.', () => {
+  it('«evitar ciertas actividades físicas intensas los primeros días» PASA y no se agrega la remisión', () => {
     const t = sale('Es una excelente pregunta. La Dra. Evy te dará recomendaciones sencillas (como evitar ciertas actividades físicas intensas los primeros días) en tu consulta. Tu valoración es 100% gratuita. ¿Cómo te llamas?', '¿cuánto tiempo de recuperación? trabajo todos los días');
     expect(fallo(t)).toBe(false);
-    expect(sin(t, 'evitar', 'actividades f')).toBe(true);
-    expect(t).toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
+    expect(t).toContain('actividades f');
+    expect(t).not.toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
     expect(t.endsWith('¿Cómo te llamas?')).toBe(true);
   });
   it('POSITIVA: «puedes reincorporarte rápido; la Dra. te explica los cuidados» pasa sin cambios', () => {
@@ -192,6 +192,14 @@ describe('cuidados posteriores: el modelo no los inventa', () => {
     expect(t).toContain('Puedes reincorporarte rápido');
     expect(t).not.toMatch(/cuidados posteriores/);
   });
+});
+
+describe('NEGADAS que siguen vigentes tras levantar la barrera de cuidados: la barrera MÉDICA (medicamentos, dosis, suspender tratamiento, diagnóstico)', () => {
+  for (const x of ['Toma ibuprofeno después del tratamiento.', 'Puedes tomar 400 mg de paracetamol si duele.', 'Suspende tu medicamento antes de la cita.', 'Tienes una infección en la piel.',
+    'Si tomas anticoagulantes no hay problema, igual puedes aplicártelo.', 'Si estás embarazada también puedes hacerte el tratamiento.', 'Si aparece un bulto, masajéalo tú misma.', 'Si sientes dolor intenso o la piel se pone blanca, espera unos días, se pasa solo.',
+    'Si das de lactar, se aplica igual.', 'Con anticoagulantes no es impedimento para el tratamiento.', 'Ser diabética no impide el tratamiento.', 'Si la piel se pone blanca, aplica compresas tibias y espera.', 'Un bultito suele desaparecer, dale unos días.', 'El tratamiento sale el doble de eso.']) {
+    it(`NEGADA: «${x}»`, () => { expect(fallo(sale(`${x} ¿Cómo te llamas?`, '¿qué cuidados tengo que tener después?')), x).toBe(true); });
+  }
 });
 
 describe('conectores huérfanos: al borrar una oración, la siguiente pierde su «En cambio»', () => {
@@ -299,7 +307,7 @@ describe('la pregunta por la gratuidad se contesta con un texto fijo cuando el m
     expect(avisosARecepcion(t).length).toBe(0);
   });
   // AJUSTE (28/10/2026): sin «hoy está bonificado»; el valor habitual, solo en el primer turno de la ficha (estas pruebas son el primer turno; el turno siguiente se prueba en observaciones-ruben.test.ts).
-  const FIJO = 'Sí, la valoración con la Dra. Evy Karina Rojas es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar. (Su valor habitual es de 250 Bs).';
+  const FIJO = 'Sí, la valoración con la Dra. Evy Karina Rojas es 100% gratuita por la campaña. No pagas los 250 Bs de consulta ni tienes que dejar ningún anticipo para reservar.\n\nSolo si después de la evaluación decides hacerte el tratamiento, la Dra. te da el presupuesto.';
   const PREGUNTAS = ['¿De verdad es gratis?', '¿Hay algún costo escondido o pago de reserva?', '¿tengo que dejar un anticipo?'];
   for (const q of PREGUNTAS) {
     it(`POSITIVA: «${q}» con el modelo rechazado o caído: texto fijo, sin botón ni aviso`, () => {
@@ -389,11 +397,11 @@ describe('Evy NO agenda: ninguna oración del modelo afirma una cita, un cupo o 
 
 describe('más cuidados y promesas (huecos de la seguridad final)', () => {
   for (const c of ['Duerme boca arriba esa noche.', 'Bebe mucha agua después.', 'No vayas al sauna una semana.']) {
-    it(`NEGADA con pregunta de cuidados: «${c}»`, () => {
+    it(`PASA con pregunta de cuidados (letra del MD): «${c}»`, () => {
       const t = sale(`La Dra. te atiende en persona. ${c} Tu valoración es gratuita. ¿Cómo te llamas?`, '¿qué cuidados tengo que tener después?');
       expect(fallo(t)).toBe(false);
-      expect(sin(t, 'duerme', 'bebe mucha', 'sauna')).toBe(true);
-      expect(t).toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
+      expect(t.toLowerCase()).toMatch(/duerme|bebe mucha|sauna/);
+      expect(t).not.toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
     });
   }
   it('POSITIVAS: «rejuvenecer» descriptivo y «regia» suelta pasan', () => {
@@ -426,11 +434,11 @@ describe('cuidados y promesas con otras redacciones', () => {
     'Usa protector solar.', 'Masajea la zona suavemente.', 'Puedes retomar tu rutina al día siguiente.', 'No es necesario reposo absoluto.',
   ];
   for (const c of CUIDADOS) {
-    it(`NEGADA: «${c}» se borra y queda la remisión`, () => {
+    it(`PASA (letra del MD): «${c}» no se borra ni lleva la remisión`, () => {
       const t = sale(`La Dra. Evy te atiende en persona. ${c} Tu valoración es gratuita. ¿Cómo te llamas?`, '¿qué cuidados hay después?');
       expect(fallo(t)).toBe(false);
-      expect(sin(t, 'maquill', 'hielo', 'recuest', 'ejercicio', 'protector', 'masajea', 'rutina', 'reposo')).toBe(true);
-      expect(t).toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
+      expect(t.toLowerCase()).toMatch(/maquill|hielo|recuest|ejercicio|protector|masajea|rutina|reposo/);
+      expect(t).not.toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
     });
   }
   it('POSITIVA: «la Dra. te explica los cuidados» pasa sin la remisión extra', () => {

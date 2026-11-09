@@ -3661,9 +3661,10 @@ describe('Agenda mínima v0: el miniCRM', () => {
     m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
     const t = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
     expect(m.calendario.eventos).toHaveLength(1);
-    expect(t.prospecto).toMatchObject({ quePidio: 'Agendar cita (Control del niño sano)', diaPreferido: 'Jueves', horarioPreferido: 'Tarde', senales: { aceptoAgendar: true } });
-    // El nombre del niño de la cita NO viaja al prospecto.
-    expect(JSON.stringify(t.prospecto)).not.toMatch(/P[eé]rez|G[oó]mez|Ana P/);
+    expect(t.prospecto).toMatchObject({ quePidio: expect.stringMatching(/^Agendar cita \(Control del niño sano\)( — .+)?$/), diaPreferido: 'Jueves', horarioPreferido: 'Tarde', senales: { aceptoAgendar: true } });
+    // El nombre del niño de la cita viaja SOLO dentro de «Qué pidió» (ver abajo).
+    // El nombre del niño llega SOLO en «Qué pidió» (Andres, 08/11/2026); en ningún otro campo del prospecto.
+    expect(JSON.stringify({ ...t.prospecto, quePidio: '' })).not.toMatch(/P[eé]rez|G[oó]mez|Ana P/);
   });
   it('de punta a punta: cita creada y VERIFICADA por el candado = «Agendó: Sí» con la fecha de la cita; el texto del modelo no cuenta', () => {
     const m = mundo({ eventos: [], configBase: CON });
@@ -3716,7 +3717,7 @@ describe('Agenda mínima v0: el miniCRM', () => {
     m.turno(texto(MAMA, 'quiero mover mi cita'));
     const t = m.turno(boton(MAMA, idHueco(VIERNES, '11:00')));
     expect(t.bitacora).toEqual(['crear:ev-1', 'borrar:vieja']);
-    expect(t.prospecto).toMatchObject({ quePidio: 'Reprogramar cita', diaPreferido: 'Viernes', horarioPreferido: 'Mañana' });
+    expect(t.prospecto).toMatchObject({ quePidio: expect.stringMatching(/^Reprogramar cita( — .+)?$/), diaPreferido: 'Viernes', horarioPreferido: 'Mañana' });
   });
   it('NIEGA: si el borrado de la cita anterior falla al mover, NO se marca «Reprogramar cita» (la nueva sí quedó creada)', () => {
     const m = mundo({ eventos: [citaDe(MAMA, 'vieja', JUEVES, '14:00', '14:30', 'Pérez Gómez, Ana (CNS)')], configBase: CON });
