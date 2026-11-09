@@ -54,7 +54,7 @@ export interface PedidoWa {
   telefonoEnmascarado: string;
   items: Array<Record<string, unknown>>;
   total: number;
-  moneda: 'BOB' | 'USD';
+  moneda: 'BOB' | 'USD' | 'ARS';
   costoEnvio: 0;
   entrega: 'envio' | 'retiro';
   direccion?: string;
@@ -65,7 +65,36 @@ export interface PedidoWa {
   montoQrCentavos: number | null;
   totalDistinto: boolean;
   facturacion?: { nombre: string; documento: string };
+  /** Solo en un pedido de catálogo externo (B5a): de dónde salieron las líneas. Ausente en el resto. */
+  catalogo?: 'externo';
   estado: 'recibido';
+}
+
+/**
+ * CATÁLOGO EXTERNO (Casa Bermejo / NovuTienda, B5a, 09/11/2026).
+ *
+ * Lo decide el DATO `tenants/{t}/config/pedidos.catalogoExterno = { activo: true, monedas: ['BOB'|'ARS', …] }`
+ * (solo lo escribe el servidor: las reglas no abren `config/pedidos` al cliente). Sin ese dato, `armarPedidoWa`
+ * se comporta byte a byte como antes. Con él, una línea con la forma cerrada `LineaExterna` congela id, nombre,
+ * precio y moneda tal como el flujo los declaró (vienen de la respuesta de NovuTienda, que no está en Firestore);
+ * el servidor NO puede recalcularlos, pero sí acota, valida y recalcula subtotales y total.
+ */
+export interface ConfigCatalogoExterno { monedas: ReadonlyArray<'BOB' | 'ARS'> }
+export const MAX_PRECIO_CENTAVOS_EXTERNO = 100_000_000; // 1.000.000 en unidades mayores
+export const MAX_CANTIDAD_EXTERNA_CONTRATO = 1_000_000; // el contrato; MAX_UNIDADES_WA manda en el servidor
+const ID_EXTERNO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const CLAVES_EXTERNAS = new Set(['externa', 'id', 'nombre', 'cantidad', 'precioCentavos', 'moneda', 'subtotalCentavos', 'detalle']);
+export const idExternoValido = (id: unknown): id is string =>
+  typeof id === 'string' && ID_EXTERNO.test(id) && !id.includes('__');
+/** ¿Alguna línea declara la forma externa? Solo entonces vale la pena leer `config/pedidos`. */
+export const hayLineasExternas = (lineas: unknown): boolean =>
+  Array.isArray(lineas) && lineas.slice(0, MAX_LINEAS_WA).some((l) => typeof l === 'object' && l !== null && (l as Record<string, unknown>)['externa'] === true);
+/** Lee el dato del tenant y lo valida; cualquier otra forma = no hay catálogo externo. */
+export function configExternaDe(doc: unknown): ConfigCatalogoExterno | null {
+  const ce = (typeof doc === 'object' && doc !== null ? (doc as Record<string, unknown>)['catalogoExterno'] : undefined) as Record<string, unknown> | undefined;
+  if (typeof ce !== 'object' || ce === null || ce['activo'] !== true || !Array.isArray(ce['monedas'])) return null;
+  const monedas = ce['monedas'].filter((m): m is 'BOB' | 'ARS' => m === 'BOB' || m === 'ARS');
+  return monedas.length > 0 ? { monedas } : null;
 }
 
 export interface ResultadoArmado {
@@ -119,15 +148,17 @@ export function armarPedidoWa(
   referencia: unknown,
   telefono: unknown,
   montoQr: unknown,
+  externo?: ConfigCatalogoExterno | null,
 ): ResultadoArmado {
   const crudas = Array.isArray(lineas) ? lineas.slice(0, MAX_LINEAS_WA) : [];
   const items: Array<Record<string, unknown>> = [];
   const descartados: string[] = [];
   const vistas = new Set<string>();
-  let moneda: 'BOB' | 'USD' | '' = '';
+  let moneda: 'BOB' | 'USD' | 'ARS' | '' = '';
   let totalCent = 0;
+  const esExterno = externo != null && crudas.some((x) => typeof x === 'object' && x !== null && (x as Record<string, unknown>)['externa'] === true);
 
-  for (const cruda of crudas) {
+  for (const cruda of esExterno ? [] : crudas) {
     if (typeof cruda !== 'object' || cruda === null) continue;
     const c = cruda as Record<string, unknown>;
     const id = c['id'];
@@ -160,6 +191,37 @@ export function armarPedidoWa(
     });
   }
 
+  if (esExterno) {
+    for (const cruda of crudas) {
+      const c = cruda as Record<string, unknown>;
+      const idCrudo = typeof c?.['id'] === 'string' ? (c['id'] as string).slice(0, 100) : '';
+      const etiqueta = idCrudo === '' ? '(sin id)' : idCrudo;
+      if (typeof cruda !== 'object' || cruda === null || Array.isArray(cruda) || c['externa'] !== true) { descartados.push(etiqueta); continue; }
+      if (Object.keys(c).some((k) => !CLAVES_EXTERNAS.has(k))) { descartados.push(etiqueta); continue; }
+      const id = c['id'];
+      if (!idExternoValido(id)) { descartados.push(etiqueta); continue; }
+      if (vistas.has(id)) { descartados.push(id); continue; }
+      vistas.add(id);
+      const cant = c['cantidad'];
+      if (typeof cant !== 'number' || !Number.isInteger(cant) || cant < 1 || cant > MAX_CANTIDAD_EXTERNA_CONTRATO || cant > MAX_UNIDADES_WA) { descartados.push(id); continue; }
+      const pc = c['precioCentavos'];
+      if (typeof pc !== 'number' || !Number.isSafeInteger(pc) || pc <= 0 || pc > MAX_PRECIO_CENTAVOS_EXTERNO) { descartados.push(id); continue; }
+      const m = c['moneda'];
+      if ((m !== 'BOB' && m !== 'ARS') || !externo.monedas.includes(m)) { descartados.push(id); continue; }
+      if (m === 'ARS' && pc % 100 !== 0) { descartados.push(id); continue; }
+      const nombre = lineaLimpia(c['nombre'], MAX_NOMBRE);
+      if (nombre === '') { descartados.push(id); continue; }
+      const sub = pc * cant;
+      // Un subtotal declarado que no coincide con el cálculo del servidor: la línea no entra.
+      if ('subtotalCentavos' in c && c['subtotalCentavos'] !== sub) { descartados.push(id); continue; }
+      if (moneda === '') moneda = m;
+      else if (moneda !== m) return { pedido: null, descartados, motivo: 'monedas_mezcladas' };
+      totalCent += sub;
+      const detalle = lineaLimpia(c['detalle'], MAX_DETALLE_WA);
+      items.push({ id, nombre, cantidad: cant, precio: pc / 100, precioCentavos: pc, moneda: m, subtotal: sub / 100, externa: true, ...(detalle ? { detalle } : {}) });
+    }
+  }
+
   if (items.length === 0) return { pedido: null, descartados, motivo: 'sin_lineas' };
 
   const e = (typeof entrega === 'object' && entrega !== null ? entrega : { tipo: entrega }) as EntregaWa;
@@ -177,7 +239,7 @@ export function armarPedidoWa(
       telefonoEnmascarado: enmascarar(telefono),
       items,
       total: totalCent / 100,
-      moneda: moneda as 'BOB' | 'USD',
+      moneda: moneda as 'BOB' | 'USD' | 'ARS',
       costoEnvio: 0,
       entrega: tipo,
       ...(direccion ? { direccion } : {}),
@@ -187,7 +249,9 @@ export function armarPedidoWa(
       totalServidorCentavos: totalCent,
       montoQrCentavos: montoQrCent,
       // Sin monto del QR no hay con qué comparar: queda marcado para revisar.
-      totalDistinto: montoQrCent === null || montoQrCent !== totalCent,
+      // En catálogo externo sin QR (Argentina) no hay monto con qué comparar y no es una diferencia.
+      totalDistinto: esExterno ? montoQrCent !== null && montoQrCent !== totalCent : montoQrCent === null || montoQrCent !== totalCent,
+      ...(esExterno ? { catalogo: 'externo' as const } : {}),
       ...(factura ? { facturacion: factura } : {}),
       estado: 'recibido',
     },
@@ -294,14 +358,18 @@ export async function crearPedidoWa(e: EntradaPedidoWa): Promise<ResultadoEscrit
   const id = idDePedidoWa(ref);
   if (!id) return { resultado: 'sin_pedido', motivo: 'referencia_invalida' };
   try {
-    const ids = idsDeLineas(e.lineas);
+    // Catálogo externo: solo si hay líneas con la forma externa Y el dato del tenant lo habilita. Sin lo uno o lo otro, el camino de siempre.
+    const externo = hayLineasExternas(e.lineas)
+      ? configExternaDe((await db().doc(`tenants/${e.tenantId}/config/pedidos`).get()).data())
+      : null;
+    const ids = externo ? [] : idsDeLineas(e.lineas);
     const docs: DocsCatalogo = {};
     if (ids.length > 0) {
       const leidos = await db().getAll(...ids.map((i) => db().doc(`tenants/${e.tenantId}/catalogo/${i}`)));
       leidos.forEach((d, i) => { docs[ids[i] as string] = d.exists ? (d.data() as Record<string, unknown>) : undefined; });
     }
     const { pedido, motivo } = armarPedidoWa(
-      e.lineas, e.entrega, e.facturacion, docs, ref, e.telefono, e.montoQr,
+      e.lineas, e.entrega, e.facturacion, docs, ref, e.telefono, e.montoQr, externo,
     );
     if (!pedido) return { resultado: 'sin_pedido', motivo: motivo as MotivoSinPedido };
     try {

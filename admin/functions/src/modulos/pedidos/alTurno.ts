@@ -13,7 +13,7 @@
  */
 import { registrar } from '../../core/turno/bitacora.js';
 import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
-import { cerrarPedidoWa, crearPedidoWa } from './pedidoDelQr.js';
+import { cerrarPedidoWa, crearPedidoWa, hayLineasExternas } from './pedidoDelQr.js';
 
 export interface DatosDelTurnoPedidos {
   tenantId: string;
@@ -36,8 +36,11 @@ export interface DatosDelTurnoPedidos {
 
 export async function despuesDelTurnoPedidos(d: DatosDelTurnoPedidos): Promise<void> {
   try {
-    if (d.evento === 'qr_enviado') {
-      if (d.efectoDeCobro !== 'abierto') return;
+    // `pedido_sin_cobro` (B5a): pedido de catálogo externo sin QR (Argentina). No hay cobro cuyo efecto confirmar; el
+    // servidor igual exige módulo, dato `config/pedidos` y forma externa. La ingesta aún no lo reenvía (ver el PR).
+    if (d.evento === 'qr_enviado' || d.evento === 'pedido_sin_cobro') {
+      if (d.evento === 'qr_enviado' && d.efectoDeCobro !== 'abierto') return;
+      if (d.evento === 'pedido_sin_cobro' && !hayLineasExternas(d.lineas)) return;
       if (!Array.isArray(d.lineas) || d.lineas.length === 0) return;
       const r = await crearPedidoWa({
         tenantId: d.tenantId, ficha: d.ficha, referencia: d.referencia, telefono: d.telefono,
