@@ -892,6 +892,23 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
       expect(w.turnos.flatMap((t) => t.llamadas.ingesta).filter((x) => x['direccion'] === 'saliente')).toHaveLength(6);
       expect(w.turnos.flatMap((t) => t.llamadas.ingesta).filter((x) => x['direccion'] === 'entrante')).toHaveLength(6);
     });
+    it('FILA MÍNIMA de punta a punta: este mensaje abre la conversación y «Armar» no arma prospecto (la ficha no cambió): 1 fila neutra, con el teléfono del turno y sin texto ni nombre', () => {
+      const w = crear(); const j = jugar(w);
+      j.texto('Hola');
+      w.hoja.filas.length = 0;                      // la hoja queda vacía: la conversación que abre ahora no tiene fila
+      const desde = w.mundo.ahora();
+      w.ingesta = { atencion: { estado: 'normal', ...atencionDeConversacion({ desdeMs: desde, nueva: true }) } };
+      j.texto('Hola');                              // la misma ficha: sin cambio, sin prospecto
+      const t = w.turnos[w.turnos.length - 1]!;
+      const pros = t.porNodo['Prospecto para la planilla'] ?? [];
+      expect(pros).toHaveLength(1);
+      expect(pros[0]).toMatchObject({ minima: true });
+      expect(Object.keys(pros[0]!).sort()).toEqual(['conversacionDesdeMs', 'minima', 'senales', 'telefono', 'ultimaInteraccionMs']);
+      expect(w.hoja.filas).toHaveLength(1);
+      const f = w.hoja.filas[0]!.map(String);
+      expect(f[4]).toMatch(/^\d{8,15}$/);
+      expect(f.filter((_, c) => ![0, 1, 4].includes(c) && f[c] !== '')).toEqual(['Sin seguimiento']);   // solo ID, fecha, teléfono y el estado del equipo
+    });
     it('UNA FILA POR CONVERSACIÓN (08/11, contrato de la ingesta): la apertura crea 1 fila con la fecha CON hora; el resto de la conversación no crea otra; la hoja se lee solo en A3:J (nunca K a N)', () => {
       const w = crear(); const j = jugar(w);
       const desde = w.mundo.ahora();

@@ -11,7 +11,7 @@ import { compileFunction } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error módulo .mjs sin tipos
 import { inyectarMapa } from '../../../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
-import { isoSinFracciones, respuestaDeIngesta } from './ingesta-conversacion';
+import { ingestaReal, isoSinFracciones, respuestaDeIngesta } from './ingesta-conversacion';
 // @ts-expect-error oráculo en JavaScript plano
 import { decidirAccion } from './oraculo/decidir-fila-conversacion.js';
 
@@ -89,12 +89,29 @@ describe('una fila por conversación: la ventana fija de 24 h', () => {
     expect(r['accionPlanilla']).toBe('agregar');
     expect(r[T.ventana]).toBe("'" + lp(nueva + 24 * H));
   });
-  it('se compara al minuto: la fila escrita en el mismo minuto del ancla es de esa conversación', () => {
-    expect(decidir(p({ conversacionDesdeMs: ANCLA + 45_000, quePidio: 'x' }), [deConversacion(ANCLA)])['accionPlanilla']).toBe('actualizar');
+  it('NIEGA (ingesta real): la apertura devuelve ahoraMs y los siguientes la hora de confirmación, a ambos lados de un límite de minuto: la fila es la MISMA (tolerancia de 5 min, no truncado al minuto)', () => {
+    const justoAntes = Date.UTC(2026, 10, 8, 12, 0, 59, 800);          // 12:00:59.8 -> 12:01:00.1
+    for (const [ahora, latencia] of [[justoAntes, 300], [justoAntes, 1000], [justoAntes, 0], [Date.UTC(2026, 10, 8, 12, 0, 0, 0), 120_000]] as Array<[number, number]>) {
+      const ing = ingestaReal(ahora, latencia);
+      const apertura = decidir(p({ conversacionDesdeMs: ing.desdeApertura }), []);
+      expect(apertura['accionPlanilla']).toBe('agregar');
+      const escrita = fila(8, { [T.ventana]: String(apertura[T.ventana]).replace(/^'/, ''), [T.ultima]: lp(ahora) });
+      const siguiente = decidir(p({ conversacionDesdeMs: ing.desdeGuardado, quePidio: 'x' }), [escrita]);
+      expect(siguiente['accionPlanilla'], `latencia ${latencia}`).toBe('actualizar');
+    }
   });
-  it('NIEGA: una cortesía con la ventana vencida (el ancla sigue siendo la de la conversación vencida) no crea fila', () => {
-    const vencida = ANCLA - 30 * H;
-    expect(decidir(p({ conversacionDesdeMs: vencida, ultimaInteraccionMs: ANCLA, quePidio: 'x' }), [deConversacion(vencida)])['accionPlanilla']).toBe('actualizar');
+  it('la tolerancia no mezcla conversaciones: una fila de 24 h antes (más 5 min) NO es de esta', () => {
+    const anterior = decidir(p({ conversacionDesdeMs: ANCLA - 24 * H + 5 * 60_000 }), []);
+    const f = fila(8, { [T.ventana]: String(anterior[T.ventana]).replace(/^'/, '') });
+    expect(decidir(p({ conversacionDesdeMs: ANCLA }), [f])['accionPlanilla']).toBe('agregar');
+  });
+  it('NIEGA: una cortesía con la ventana vencida (la ingesta devuelve conversacionDesde null) no crea fila', () => {
+    expect(decidir(p({ conversacionDesdeMs: null, ultimaInteraccionMs: ANCLA + 30 * H, quePidio: 'x' }), [deConversacion(ANCLA - 30 * H)])['accionPlanilla']).toBe('actualizar');
+  });
+  it('NIEGA: al actualizar sin ancla NO se reescribe «Se cierra la ventana de 24 h»', () => {
+    const r = decidir(p({ conversacionDesdeMs: null, ultimaInteraccionMs: ANCLA + 30 * H, quePidio: 'x' }), [deConversacion(ANCLA - 30 * H)]);
+    expect(r['accionPlanilla']).toBe('actualizar');
+    expect(Object.keys(r)).not.toContain(T.ventana);
   });
   it('NIEGA: con la ingesta caída (sin ancla) se actualiza la más reciente y no se crea', () => {
     for (const sin of [null, undefined, 'x', Number.NaN]) {
@@ -234,6 +251,11 @@ describe('una fila por conversación: el nodo «Prospecto para la planilla» y e
     expect(() => correrNodo([{ guardarPlanilla: false, prospectoPlanilla: null }], apertura, ANCLA)).toThrow(/telefono verificado/);
     expect(() => correrNodo([{ ...filtrado, from: 'abc' }], apertura, ANCLA)).toThrow(/telefono verificado/);
     expect(() => correrNodo([filtrado], apertura, ANCLA, { normalizar: TEL.slice(0, -1) + '9' })).toThrow(/no coincide/);
+  });
+  it('RÁFAGA: la ejecución que responde puede ser la del 2.º mensaje (`conversacionNueva` falso): igual sale la fila mínima si la conversación abrió hace menos de 2 min; pasado ese tiempo, no', () => {
+    const filtrado = { guardarPlanilla: false, prospectoPlanilla: null, from: TEL };
+    expect(correrNodo([filtrado], despues, ANCLA + 20_000)).toHaveLength(1);
+    expect(correrNodo([filtrado], despues, ANCLA + 3 * 60_000)).toHaveLength(0);
   });
   it('NIEGA: con un prospecto armado no sale además una fila mínima', () => {
     expect(correrNodo([base, { guardarPlanilla: false, prospectoPlanilla: null, from: TEL }], apertura, ANCLA + H)).toHaveLength(1);

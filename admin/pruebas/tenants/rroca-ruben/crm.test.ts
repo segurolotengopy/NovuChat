@@ -447,6 +447,7 @@ describe('flujo: la fila MÍNIMA NEUTRA cuando el contenido se filtra (protecci�
     const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: apertura() });
     const t1 = hablar(m, ANA, mTexto('ya no quiero vivir'), { toleraFallo: true });
     armoSinGuardar(t1);
+    m.avanzar(10);   // pasan 10 min: ya no es la ráfaga de la apertura
     m.dobles['Reportar mensaje (entrante)'] = () => despues();
     const t2 = hablar(m, ANA, mTexto('hola otra vez'), { toleraFallo: true });
     armoSinGuardar(t2);
@@ -457,6 +458,7 @@ describe('flujo: la fila MÍNIMA NEUTRA cuando el contenido se filtra (protecci�
     const pl = planilla();
     const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, panel: panelConQr(), medio: { clasificacion: { ...COMPROBANTE } }, ingesta: apertura() });
     const t1 = hablar(m, ANA, mTexto('ya no quiero vivir'), { toleraFallo: true });
+    m.avanzar(10);   // pasan 10 min: ya no es la ráfaga de la apertura
     m.dobles['Reportar mensaje (entrante)'] = () => despues();
     const t2 = hablar(m, ANA, mImagen({ caption: 'ya no quiero vivir' }), { toleraFallo: true });
     armoSinGuardar(t2);
@@ -477,7 +479,7 @@ describe('flujo: la fila MÍNIMA NEUTRA cuando el contenido se filtra (protecci�
     expect(pl.escrituras).toEqual([]);
   });
   it('NIEGA: sin que este mensaje abra la conversación (`conversacionNueva` falso) o sin ancla, la protección no escribe nada', () => {
-    for (const ingesta of [despues(), { ok: true }, respuestaDeIngesta({ desdeMs: null, nueva: true })]) {
+    for (const ingesta of [respuestaDeIngesta({ desdeMs: AHORA - 10 * 60_000, nueva: false }), { ok: true }, respuestaDeIngesta({ desdeMs: null, nueva: true })]) {
       const pl = planilla();
       const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta });
       armoSinGuardar(hablar(m, ANA, mTexto('ya no quiero vivir'), { toleraFallo: true }));

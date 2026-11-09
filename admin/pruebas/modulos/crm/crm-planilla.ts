@@ -289,7 +289,9 @@ describe('decisiones del 31/10: clasificación, textos, derivación y fechas', (
   it('al actualizar las fechas van SIN apóstrofo (RAW) y no se reescriben si no cambian; al crear sí lo llevan', () => {
     const u = decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: AHORA }, [fila(8, TEL)]);
     expect(u[T.ultima]).toBe('2026-10-31 11:00');
-    expect(u[T.ventana]).toBe('2026-11-01 11:00');
+    expect(u).not.toHaveProperty(T.ventana);   // sin ancla (ingesta caída) la ventana NO se reescribe
+    const conAncla = decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: AHORA, conversacionDesdeMs: AHORA }, [fila(8, TEL, { [T.ventana]: '2026-11-01 11:03' })]);
+    expect(conAncla[T.ventana]).toBe('2026-11-01 11:00');
     const igual = decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: AHORA }, [fila(8, TEL, { [T.ultima]: '2026-10-31 11:00', [T.ventana]: '2026-11-01 11:00' })]);
     expect(igual).not.toHaveProperty(T.ultima);
   });

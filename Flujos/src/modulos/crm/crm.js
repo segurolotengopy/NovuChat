@@ -168,13 +168,15 @@ function crmValidarMapa(m) {
 const CRM_ESTADO_MINIMA = 'Sin seguimiento'; // el estado de una fila minima: nadie la sigue hasta que una persona la tome
 // UNA FILA POR CONVERSACION. `desdeMs` = el instante en que abrio la conversacion (`atencion.conversacionDesde` de la ingesta). La fila es de ESTA conversacion si su celda
 // «Se cierra la ventana de 24 h» (= desde + 24 h; se escribe al crear y no cambia) es >= `desdeMs` + 24 h, ambos truncados al minuto. Una conversacion anterior termina su
-// ventana antes de que abra la siguiente, asi que nunca la alcanza. Si el mapa no tiene esa columna, vale la fecha de registro CON hora (`alCrear.fechaConHora`, que se
+// ventana antes de que abra la siguiente, asi que nunca la alcanza. LA COMPARACION TIENE TOLERANCIA DE 5 MINUTOS (no truncado al minuto): el ancla que devuelve la ingesta en
+// la apertura (la hora de la peticion) y la que devuelve despues (la hora de confirmacion guardada) difieren por la latencia, y una frontera de minuto entre las dos duplicaria
+// la fila. Es segura: dos conversaciones distan al menos 24 h. Si el mapa no tiene esa columna, vale la fecha de registro CON hora (`alCrear.fechaConHora`, que se
 // escribe con el `desdeMs`): es de esta conversacion si es >= `desdeMs` truncado al minuto. Dato ilegible = no. Sin ninguna de las dos no se puede decidir (no se escribe).
 function crmMsDeCelda(texto) {
   const m = /^\s*(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(texto ?? ''));
   return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] + 4, +m[5]) : null;
 }
-const crmMinuto = (ms) => Math.floor(ms / 60000) * 60000;
+const CRM_TOLERANCIA_MS = 5 * 60 * 1000;
 function crmIdentificadorDeConversacion(mapa) {
   if (mapa.columnas.ventana24h) return 'ventana24h';
   if (mapa.columnas.fecha && mapa.alCrear && mapa.alCrear.fechaConHora === true) return 'fecha';
@@ -184,7 +186,7 @@ function crmMismaConversacion(fila, mapa, desdeMs) {
   const id = crmIdentificadorDeConversacion(mapa);
   if (id === null || typeof desdeMs !== 'number') return false;
   const celda = crmMsDeCelda(fila[mapa.columnas[id].titulo]);
-  return celda !== null && celda >= crmMinuto(id === 'ventana24h' ? desdeMs + 24 * 3600 * 1000 : desdeMs);
+  return celda !== null && celda >= (id === 'ventana24h' ? desdeMs + 24 * 3600 * 1000 : desdeMs) - CRM_TOLERANCIA_MS;
 }
 // El inicio de la conversacion que dice la ingesta (`atencion.conversacionDesde`, ISO UTC). Se acota a [ahora - 24 h - 5 min, ahora + 5 min]: fuera de ahi, o ilegible, es
 // null (la ingesta no respondio bien: se actualiza la fila mas reciente SIN crear).
@@ -364,7 +366,8 @@ function crmDecidirFila(a) {
       ['horarioPreferido', crmTextoCorto(p.horarioPreferido, 60)],
       ['derivacion', crmDerivacion(p.derivacion)],
       ['ultimaInteraccion', crmFechaHoraLaPaz(ultimaMs)],
-      ['ventana24h', crmFechaHoraLaPaz(ventanaMs)],
+      // Al ACTUALIZAR sin ancla (la ingesta no respondio) no se reescribe la ventana: seria un dato inventado.
+      ...(desdeMs !== null || !actual ? [['ventana24h', crmFechaHoraLaPaz(ventanaMs)]] : []),
       ['servicioElegido', crmServicioElegido(p.servicioElegido)],
     ];
     // «Agendó» y «Fecha y hora de la cita» (opcionales). «Sí» viaja siempre, con su fecha (ms). «No» solo en fila NUEVA (por defecto) o por cancelacion

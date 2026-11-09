@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import { ejecutar, type Flujo, type J, type Nodo, type Referencias } from './lib/flujo';
+import { atencionDeConversacion } from './modulos/crm/ingesta-conversacion';
 
 const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/agenda-minima');
 const leerJson = (archivo: string): Flujo => JSON.parse(readFileSync(join(CARPETA, archivo), 'utf8')) as Flujo;
@@ -3754,6 +3755,18 @@ describe('Agenda mínima v0: el miniCRM', () => {
     expect(t.prospecto?.['servicioElegido']).toBe('Emergencia');
     const vista = JSON.stringify([t.armado['prospectoPlanilla'], t.prospecto]);
     for (const x of ['bebé', 'respira', 'emergencia,']) expect(vista, x).not.toContain(x);
+  });
+  it('FILA MÍNIMA de punta a punta: el mensaje abre la conversación y «Armar mensajes» no arma prospecto (uso extendido: la puerta cierra): sale SOLO el teléfono, sin texto ni nombre', () => {
+    const ingesta = { atencion: { estado: 'operador', mensajeFijo: 'Te atiende una persona del equipo.', avisarRecepcion: 'operador', respuestasEnVentana: 50, ...atencionDeConversacion({ desdeMs: AHORA, nueva: true }) } };
+    const t = mundo({ eventos: [], configBase: CON, ingesta }).turno(texto(MAMA, 'hola, tengo fiebre'));
+    expect(t.armado['guardarPlanilla']).toBe(false);
+    expect(t.prospecto).toMatchObject({ minima: true, telefono: MAMA });
+    expect(Object.keys(t.prospecto ?? {}).sort()).toEqual(['conversacionDesdeMs', 'minima', 'senales', 'telefono', 'ultimaInteraccionMs']);
+    expect(JSON.stringify(t.prospecto)).not.toMatch(/fiebre|hola/);
+    // NIEGA: sin que este mensaje abra la conversación, ni sin ancla, no hay fila mínima
+    for (const atencion of [{ ...ingesta.atencion, ...atencionDeConversacion({ desdeMs: AHORA - 10 * 60_000, nueva: false }) }, { ...ingesta.atencion, ...atencionDeConversacion({ desdeMs: null, nueva: true }) }]) {
+      expect(mundo({ eventos: [], configBase: CON, ingesta: { atencion } }).turno(texto(MAMA, 'hola')).prospecto).toBeNull();
+    }
   });
   it('NIEGA: un mensaje con síntomas, el nombre del niño y montos NO llega a la planilla', () => {
     const m = mundo({ eventos: [], configBase: CON });

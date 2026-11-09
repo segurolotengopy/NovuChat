@@ -49,7 +49,9 @@ $input.all().forEach((it, i) => {
 // escribe telefono, fecha y «Ultima interaccion», con Etapa, Origen y clasificacion vacios y Estado «Sin seguimiento»; sin nombre, texto ni motivo. La planilla tiene que
 // estar configurada (id y hoja en `Config del negocio`). Solo en la apertura: los demas turnos no consultan la hoja. Una carrera de dos mensajes simultaneos puede dar dos filas.
 // El telefono sale de «Normalizar entrada» si existe; si no, del `from` del item (solo digitos, 8 a 15). Sin telefono verificado FALLA a la vista (no se inventa uno).
-if (!out.length && desdeMs !== null && conversacionNueva === true) {
+// RAFAGA: cada mensaje arranca su ejecucion y todas reportan; solo la primera recibe `conversacionNueva` true, pero la que RESPONDE tras la espera puede ser la del 2.o mensaje
+// (con false). Por eso tambien vale una conversacion que abrio hace menos de 2 minutos; el modulo no duplica: ve la fila de esta conversacion y solo refresca.
+if (!out.length && desdeMs !== null && (conversacionNueva === true || (Date.now() - desdeMs >= 0 && Date.now() - desdeMs <= 120000))) {
   let lista = false;
   try {
     const c = $('Config del negocio').first().json || {};

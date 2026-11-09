@@ -15,3 +15,15 @@ export function atencionDeConversacion(o: { desdeMs: number | null; nueva: boole
 export function respuestaDeIngesta(o: { desdeMs: number | null; nueva: boolean }): Record<string, unknown> {
   return { ok: true, atencion: atencionDeConversacion(o) };
 }
+
+/**
+ * LA INGESTA REAL: en la apertura devuelve `conversacionDesde = ahoraMs` (tomado antes de la transacción); lo guardado es la hora de confirmación (unos ms después) y los mensajes
+ * siguientes devuelven ESE valor. Así que apertura y siguientes difieren por la latencia, y pueden caer a ambos lados de un límite de minuto. Las pruebas usan este par.
+ */
+export function ingestaReal(ahoraMs: number, latenciaMs = 300): { apertura: Record<string, unknown>; siguiente: Record<string, unknown>; desdeApertura: number; desdeGuardado: number } {
+  return {
+    apertura: respuestaDeIngesta({ desdeMs: ahoraMs, nueva: true }),
+    siguiente: respuestaDeIngesta({ desdeMs: ahoraMs + latenciaMs, nueva: false }),
+    desdeApertura: ahoraMs, desdeGuardado: ahoraMs + latenciaMs,
+  };
+}

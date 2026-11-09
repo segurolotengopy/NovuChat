@@ -425,6 +425,72 @@ describe('flujo: una fila por conversación (24 h fijas) y la fila más reciente
   });
 });
 
+describe('flujo: la fila MÍNIMA NEUTRA cuando el contenido se filtra (protección, comprobante, modo prueba, otro país)', () => {
+  const LP = (ms: number): string => new Date(ms - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
+  const PERMITIDAS = ['accionPlanilla', 'veredictoPlanilla', 'ID Lead', 'Fecha Registro', 'Teléfono WhatsApp', 'Última interacción', 'Se cierra la ventana de 24 h', 'Estado Comercial'];
+  const apertura = (): J => respuestaDeIngesta({ desdeMs: AHORA, nueva: true });
+  const despues = (): J => respuestaDeIngesta({ desdeMs: AHORA, nueva: false });
+  /** Exactamente 1 fila, solo las claves permitidas, Etapa/Origen/clasificación vacíos, Estado «Sin seguimiento», y NADA del contenido ni del nombre de perfil ni del plan. */
+  const unaFilaNeutra = (pl: Planilla, ts: ResultadoTurno[], contenido: RegExp, telefono: string): void => {
+    expect(pl.escrituras).toHaveLength(1);
+    const f = pl.escrituras[0]!;
+    expect(Object.keys(f).filter((k) => !PERMITIDAS.includes(k) && f[k] !== '' && f[k] !== undefined)).toEqual([]);
+    for (const k of ['Etapa Funnel', 'Origen / Canal', 'Clasificación', 'Nombre y Apellido', 'Calificación IA', 'Resumen Chatbot IA']) expect([undefined, ''], k).toContain(f[k]);
+    expect(f['Estado Comercial']).toBe('Sin seguimiento');
+    expect(String(f['Teléfono WhatsApp'])).toBe("'" + telefono);
+    const todo = JSON.stringify([f, ...ts.flatMap((t) => [t.porNodo['Prospecto para la planilla'] ?? [], t.porNodo['Decidir fila de la planilla'] ?? []])]);
+    expect(todo).not.toMatch(contenido);
+    expect(todo).not.toMatch(/Cliente Ejemplo|nombrePerfil|"plan"|riesgo/);
+  };
+  it('protección: la apertura crea exactamente 1 fila neutra y los turnos siguientes no crean otra', () => {
+    const pl = planilla();
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: apertura() });
+    const t1 = hablar(m, ANA, mTexto('mi pareja me golpea y tengo miedo'), { toleraFallo: true });
+    armoSinGuardar(t1);
+    m.avanzar(10);   // pasan 10 min: ya no es la ráfaga de la apertura
+    m.dobles['Reportar mensaje (entrante)'] = () => despues();
+    const t2 = hablar(m, ANA, mTexto('hola otra vez'), { toleraFallo: true });
+    armoSinGuardar(t2);
+    unaFilaNeutra(pl, [t1, t2], /golpea|miedo|hola otra vez/, ANA);
+    expect(pl.actualizaciones).toEqual([]);
+  });
+  it('protección con comprobante: la imagen y su pie de foto no agregan fila ni texto', () => {
+    const pl = planilla();
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, panel: panelConQr(), medio: { clasificacion: { ...COMPROBANTE } }, ingesta: apertura() });
+    const t1 = hablar(m, ANA, mTexto('mi pareja me golpea y tengo miedo'), { toleraFallo: true });
+    m.avanzar(10);   // pasan 10 min: ya no es la ráfaga de la apertura
+    m.dobles['Reportar mensaje (entrante)'] = () => despues();
+    const t2 = hablar(m, ANA, mImagen({ caption: 'mi pareja me golpea y tengo miedo' }), { toleraFallo: true });
+    armoSinGuardar(t2);
+    unaFilaNeutra(pl, [t1, t2], /golpea|miedo|Comprobante/, ANA);
+  });
+  it('otro país: el número fuera del país crea 1 fila neutra en la apertura y nada más', () => {
+    const pl = planilla();
+    const otro = ['54', '9', '11', '55500001'].join('');
+    const t = hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: apertura() }), otro, mTexto('hola'), { toleraFallo: true });
+    armoSinGuardar(t);
+    unaFilaNeutra(pl, [t], /hola/, otro);
+  });
+  it('modo prueba: la entrada de prueba no reporta a la ingesta (no hay ancla de conversación), así que no escribe ni la fila mínima', () => {
+    const pl = planilla();
+    const t = m_prueba(crear({ flujo: PRUEBA, base: { ...BASE_CON_PLANILLA }, dobles: pl.dobles, ingesta: apertura() }));
+    armoSinGuardar(t);
+    expect(t.ejecutados.has('Reportar mensaje (entrante)')).toBe(false);
+    expect(pl.escrituras).toEqual([]);
+  });
+  it('NIEGA: sin que este mensaje abra la conversación (`conversacionNueva` falso) o sin ancla, la protección no escribe nada', () => {
+    for (const ingesta of [respuestaDeIngesta({ desdeMs: AHORA - 10 * 60_000, nueva: false }), { ok: true }, respuestaDeIngesta({ desdeMs: null, nueva: true })]) {
+      const pl = planilla();
+      const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta });
+      armoSinGuardar(hablar(m, ANA, mTexto('mi pareja me golpea y tengo miedo'), { toleraFallo: true }));
+      expect(pl.escrituras).toEqual([]);
+      expect(pl.lecturas).toEqual([]);
+    }
+  });
+  void LP;
+});
+const m_prueba = (m: Mundo): ResultadoTurno => m.turno({ headers: {}, body: { modoPrueba: true, telefonoDePrueba: ANA, enviarDeVerdad: false, ...valorMeta(mTexto('hola'), ANA) } }, { tolerarFallo: true });
+
 describe('flujo: lo que se lee mal NO escribe', () => {
   it('encabezados distintos (la fila 3 de la hoja viva no coincide) -> no agrega', () => {
     const pl = planilla({ enc: [{ json: { values: [['ID Lead', 'Otra cosa']] } as J }] });
