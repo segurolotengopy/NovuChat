@@ -106,7 +106,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
   // fijaba (valía el de la instancia). Cambiar una fila obliga a cambiar esta prueba y decirlo en el PR.
   const NADA: [string, string, boolean] = ['none', 'none', false];
   const RETENCION: Record<string, [string | undefined, string | undefined, boolean | undefined]> = Object.fromEntries([
-    'experimental/rroca-evy/rroca-evy.json', 'experimental/rroca-evy/rroca-evy.prueba.json',
+    'experimental/rroca-evy/rroca-evy.json', 'experimental/rroca-evy/rroca-evy.prueba.json', 'experimental/rroca-evy/rroca-evy.ensayo-demo-a.json',
     'experimental/rroca-emma/rroca-emma.json', 'experimental/rroca-emma/rroca-emma.prueba.json',
     'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-evy.prueba.json',
     'experimental/doctoras/doctoras.rroca-emma.json', 'experimental/doctoras/doctoras.rroca-emma.prueba.json',
