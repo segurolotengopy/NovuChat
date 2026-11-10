@@ -19,6 +19,10 @@ Código de Bellido **descongelado por orden expresa de Andres el 04/11/2026 solo
 - **Ajuste de `settings`:** la plantilla fija `saveManualExecutions: false` (lo exige `hallazgosCrm`; el guardado ya fijaba el resto).
 - **Pruebas:** `admin/pruebas/tenants/bellido/crm.test.ts` (rama, mapa, rangos, credencial) y el bloque «miniCRM» de `admin/pruebas/agenda-minima-flujo.test.ts`.
 
+## Phone id para la atadura del timbre (10/11/2026)
+
+- «Config base» lleva `phoneNumberIdAtadura` (marcador `REEMPLAZAR_PHONE_NUMBER_ID_BELLIDO`) solo para que `scripts/cargar-timbre-n8n.sh` lea el phone id de Bellido (el flujo lo obtiene dinámicamente); ningún nodo lo lee. No se llama `phoneNumberId` porque «Config base» deja pasar los demás campos y lo pisaría. Lo siembra `flujo-de-prueba.mjs --sobre-bellido` desde `WA_PHONE_ID`; 0 nodos, 0 mensajes.
+
 ## Hermanos: dos citas seguidas (07/11/2026)
 
 - **Decisión de Andres:** con dos pacientes se crean DOS eventos seguidos (uno por hermano, con su propio título) y solo se ofrecen horarios con el doble de `duracionPorDefectoMin` libre y contiguo. Cada cita es independiente: cancelar o mover una no toca la otra.

@@ -141,6 +141,12 @@
               "value": ""
             },
             {
+              "id": "b_phoneNumberIdAtadura",
+              "name": "phoneNumberIdAtadura",
+              "type": "string",
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID_BELLIDO"
+            },
+            {
               "id": "b_planillaProspectosHoja",
               "name": "planillaProspectosHoja",
               "type": "string",
