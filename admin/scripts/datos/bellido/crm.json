@@ -16,7 +16,7 @@
       "calificacion": { "letra": "H", "titulo": "Calificación IA" },
       "resumen": { "letra": "I", "titulo": "Resumen Chatbot IA" },
       "clasificacion": { "letra": "N", "titulo": "Clasificación" },
-      "quePidio": { "letra": "O", "titulo": "Qué pidió" },
+      "quePidio": { "letra": "O", "titulo": "Qué pidió (Nombre Niño)" },
       "diaPreferido": { "letra": "P", "titulo": "Día preferido" },
       "horarioPreferido": { "letra": "Q", "titulo": "Horario preferido" },
       "derivacion": { "letra": "R", "titulo": "Derivación a recepción" },

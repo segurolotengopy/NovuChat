@@ -8,11 +8,34 @@ eso el error se hace visible con un workflow de errores de n8n.
 ## Qué es
 
 `Flujos/error-envio-incierto.json`: `Error del flujo` (Error Trigger) →
-`Registrar flujo y hora` (Code). La salida es solo `{ flujo, hora }`, la hora en
-`America/La_Paz` (UTC-4). Todo lo demás de la entrada (ids de ejecución, url,
-mensaje, nodo, datos) se descarta en el Code. No envía mensajes ni llama a nada:
-**0 mensajes por conversación**. Prueba negando:
-`admin/pruebas/core/error-envio-incierto.test.ts`.
+`Registrar flujo y hora` (Code, salida `{ flujo, hora }` con el nombre saneado) →
+`Armar alerta` (Code) → `Firmar alerta (HMAC)` (Crypto, credencial «NovuChat alertas
+(HMAC)») → `Enviar alerta operativa` (HTTP Request). Todo lo demás de la entrada del
+Error Trigger (ids, url, mensaje, datos) se descarta: «Armar alerta» usa textos
+constantes y solo compara el nombre del último nodo ejecutado para el nivel:
+«Detener por envío incierto» = `urgente` (`envio_incierto`); cualquier otro error =
+`aviso` (`error_de_flujo`). El cuerpo sale en ASCII puro (`\uXXXX`) y se firma con
+HMAC SHA256 sobre `marca.cuerpo`; el POST va a la Function `alertaOperativa` con las
+cabeceras `X-NovuChat-Alerta-Timestamp` y `X-NovuChat-Alerta-Signature`. Si la Function
+responde 401/422/5xx o hay timeout tras 2 intentos, la ejecución queda en ERROR
+(sin `onError`). **0 mensajes de WhatsApp por conversación.** Ajustes: `saveDataSuccessExecution`
+`none` y `saveDataErrorExecution` `all` (decisión de Andres).
+Pruebas: `admin/pruebas/core/error-envio-incierto.test.ts` y
+`admin/pruebas/plataforma/alerta-errorworkflow.test.ts`.
+
+**Límite del `id_unico`:** es `<tipo>-<fecha hasta el segundo>-<6 letras del flujo>`. Dos
+fallas del mismo flujo y tipo en el mismo segundo comparten id (la Function las trata como
+una) y el tope de la Function es de 1 por hora por tipo.
+
+## Cómo se carga (ya NO se importa con `publicar-flujo.sh`)
+
+El JSON lleva un marcador de URL (dentro del código de «Armar alerta») y una credencial por
+nombre, y `publicar-flujo.sh` aborta ante cualquier `REEMPLAZAR_`. Se carga con
+`scripts/cargar-alerta-n8n.sh`, siempre seco primero y con `--aplicar --confirmo produccion`:
+1. `--credencial`: crea o actualiza «NovuChat alertas (HMAC)» con `ALERTAS_HMAC` por tubería.
+2. `--flujo` (con la Function ya desplegada): resuelve la URL con gcloud, la repone en memoria
+   y crea el flujo INACTIVO con la credencial asignada por nombre y tipo.
+Lo vivo difiere del JSON en esos dos valores (fila en `docs/versiones-por-cliente.md`).
 
 ## Decisión pendiente: `saveDataSuccessExecution` none o all
 
@@ -33,8 +56,7 @@ versionado queda con `all` hasta que Andres decida.
 
 ## Cómo se crea y asigna (lo hace Claude, con el botón de Andres)
 
-1. Importar `Flujos/error-envio-incierto.json` en n8n (`publicar-flujo.sh`,
-   desde `origin/main`). Un flujo con solo Error Trigger normalmente **no se
+1. Cargar el flujo con `scripts/cargar-alerta-n8n.sh` (ver arriba; no `publicar-flujo.sh`). Un flujo con solo Error Trigger normalmente **no se
    activa**: basta asignarlo en `settings.errorWorkflow` de los otros flujos.
    No verificado en n8n 2.36.5: si lo dispara estando inactivo, y que la
    ejecución del errorWorkflow se guarde con las opciones de arriba; se

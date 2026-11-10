@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import { ejecutar, type Flujo, type J, type Nodo, type Referencias } from './lib/flujo';
+import { atencionDeConversacion } from './modulos/crm/ingesta-conversacion';
 
 const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/agenda-minima');
 const leerJson = (archivo: string): Flujo => JSON.parse(readFileSync(join(CARPETA, archivo), 'utf8')) as Flujo;
@@ -3751,10 +3752,22 @@ describe('Agenda mínima v0: el miniCRM', () => {
   it('la emergencia deja fila (Andres, 07/11/2026) con SOLO teléfono, nombre de perfil y «Emergencia»: el texto del mensaje no pasa', () => {
     const t = mundo({ eventos: [], configBase: CON }).turno(texto(MAMA, 'emergencia, mi bebé no respira'));
     expect(t.armado['guardarPlanilla']).toBe(true);
-    expect(Object.keys(t.prospecto ?? {}).sort()).toEqual(['nombre', 'nombreDePerfil', 'nuevoContacto', 'servicioElegido', 'telefono', 'ultimaInteraccionMs']);
+    expect(Object.keys(t.prospecto ?? {}).sort()).toEqual(['conversacionDesdeMs', 'nombre', 'nombreDePerfil', 'nuevoContacto', 'servicioElegido', 'telefono', 'ultimaInteraccionMs']);
     expect(t.prospecto?.['servicioElegido']).toBe('Emergencia');
     const vista = JSON.stringify([t.armado['prospectoPlanilla'], t.prospecto]);
     for (const x of ['bebé', 'respira', 'emergencia,']) expect(vista, x).not.toContain(x);
+  });
+  it('FILA MÍNIMA de punta a punta: el mensaje abre la conversación y «Armar mensajes» no arma prospecto (uso extendido: la puerta cierra): sale SOLO el teléfono, sin texto ni nombre', () => {
+    const ingesta = { atencion: { estado: 'operador', mensajeFijo: 'Te atiende una persona del equipo.', avisarRecepcion: 'operador', respuestasEnVentana: 50, ...atencionDeConversacion({ desdeMs: AHORA, nueva: true }) } };
+    const t = mundo({ eventos: [], configBase: CON, ingesta }).turno(texto(MAMA, 'hola, tengo fiebre'));
+    expect(t.armado['guardarPlanilla']).toBe(false);
+    expect(t.prospecto).toMatchObject({ minima: true, telefono: MAMA });
+    expect(Object.keys(t.prospecto ?? {}).sort()).toEqual(['conversacionDesdeMs', 'minima', 'senales', 'telefono', 'ultimaInteraccionMs']);
+    expect(JSON.stringify(t.prospecto)).not.toMatch(/fiebre|hola/);
+    // NIEGA: sin que este mensaje abra la conversación, ni sin ancla, no hay fila mínima
+    for (const atencion of [{ ...ingesta.atencion, ...atencionDeConversacion({ desdeMs: AHORA - 10 * 60_000, nueva: false }) }, { ...ingesta.atencion, ...atencionDeConversacion({ desdeMs: null, nueva: true }) }]) {
+      expect(mundo({ eventos: [], configBase: CON, ingesta: { atencion } }).turno(texto(MAMA, 'hola')).prospecto).toBeNull();
+    }
   });
   it('NIEGA: un mensaje con síntomas, el nombre del niño y montos NO llega a la planilla', () => {
     const m = mundo({ eventos: [], configBase: CON });
@@ -3782,20 +3795,20 @@ describe('Agenda mínima v0: el miniCRM', () => {
     expect(t.armado['prospectoPlanilla']).toBeNull();
     expect(t.prospecto).toBeNull();
   });
-  it('48 horas: el segundo mensaje seguido no es contacto nuevo; con 48 h vencidas sí (el estado de agenda vence a los 30 minutos, el mapa del miniCRM no)', () => {
+  it('24 horas: el segundo mensaje seguido no es contacto nuevo; con 24 h vencidas sí (el estado de agenda vence a los 30 minutos, el mapa del miniCRM no)', () => {
     const m = mundo({ eventos: [], configBase: CON });
     expect(m.turno(texto(MAMA, 'hola')).prospecto).toMatchObject({ nuevoContacto: true });
     expect(m.turno(texto(MAMA, 'hola otra vez'), { avanzarMin: 60 }).prospecto).toMatchObject({ nuevoContacto: false });
-    expect(m.turno(texto(MAMA, 'volví'), { avanzarMin: 49 * 60 }).prospecto).toMatchObject({ nuevoContacto: true });
+    expect(m.turno(texto(MAMA, 'volví'), { avanzarMin: 25 * 60 }).prospecto).toMatchObject({ nuevoContacto: true });
   });
-  it('el mapa de contactos del miniCRM guarda solo teléfono y hora, y se poda a las 48 h', () => {
+  it('el mapa de contactos del miniCRM guarda solo teléfono y hora, y se poda a las 24 h', () => {
     const m = mundo({ eventos: [], configBase: CON });
     m.turno(texto(MAMA, 'hola'));
     m.turno(texto(OTRA, 'hola'));
     const mapa = m.sd['agendaMinimaCrm'] as Record<string, number>;
     expect(Object.keys(mapa).sort()).toEqual([MAMA, OTRA].sort());
     expect(Object.values(mapa).every((v) => typeof v === 'number')).toBe(true);
-    m.turno(texto(OTRA, 'volví'), { avanzarMin: 49 * 60 });
+    m.turno(texto(OTRA, 'volví'), { avanzarMin: 25 * 60 });
     expect(Object.keys(m.sd['agendaMinimaCrm'] as J)).toEqual([OTRA]);
   });
 });

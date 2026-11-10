@@ -1,7 +1,7 @@
 /**
  * `scripts/nube-alertas.sh`: los pasos de nube de PRODUCCIÓN de la alerta operativa (condición de IAM con el
- * prefijo `ALERTAS_`, los dos secretos, el acceso de sa-functions, la carga de la clave de Resend, la entrega de
- * la clave HMAC y el invocador), seco por omisión. Calcado de `nube-salida-persona.test.ts`.
+ * prefijo `ALERTAS_`, los dos secretos, el acceso de sa-functions, la carga de la clave de Resend, el retiro de
+ * la entrega de la clave HMAC a un archivo (D2) y el invocador), seco por omisión. Calcado de `nube-salida-persona.test.ts`.
  *
  * Con un `gcloud` FALSO delante en el PATH que guarda el estado en archivos y anota cada llamada SIN los datos que
  * recibe por la entrada estándar. Sin red, sin nube, sin credenciales reales. NO se ejecuta nada contra la nube.
@@ -150,14 +150,15 @@ describe('nube-alertas.sh: uso y salvaguardas (ni una llamada a gcloud)', () => 
   it('--help explica los modos y sale 0', () => {
     const r = correr(['--help']);
     expect(r.codigo).toBe(0);
-    for (const t of ['--aplicar', '--confirmo', '--cargar-resend', '--entregar-hmac', '--invocador', '--revertir-iam', 'ALERTAS_']) expect(r.salida).toContain(t);
+    for (const t of ['--aplicar', '--confirmo', '--cargar-resend', '--invocador', '--revertir-iam', 'ALERTAS_', 'cargar-alerta-n8n.sh']) expect(r.salida).toContain(t);
+    expect(r.salida).not.toContain('--entregar-hmac');
     expect(llamadas()).toEqual([]);
   });
   it.each([
     ['--aplicar sin --confirmo', ['--aplicar']],
     ['--confirmo de otro entorno', ['--aplicar', '--confirmo', 'staging']],
     ['una opción desconocida', ['--todo']],
-    ['dos modos a la vez', ['--entregar-hmac', '--revertir-iam']],
+    ['dos modos a la vez', ['--invocador', '--revertir-iam']],
     ['--cargar-resend sin ruta', ['--cargar-resend']],
     ['--revertir-iam --aplicar sin --confirmo', ['--revertir-iam', '--aplicar']],
   ])('%s: sale 2 sin tocar gcloud', (_n, args) => {
@@ -176,14 +177,13 @@ describe('nube-alertas.sh: uso y salvaguardas (ni una llamada a gcloud)', () => 
     expect(correr([]).codigo).toBe(2);
     expect(llamadas()).toEqual([]);
   });
-  it('--cargar-resend y --entregar-hmac sin un XDG_RUNTIME_DIR válido (vacío, inexistente, modo 755): 2', () => {
+  it('--cargar-resend sin un XDG_RUNTIME_DIR válido (vacío, inexistente, modo 755): 2', () => {
     const clave = archivoClave();
     for (const xdg of ['', join(dir, 'no-existe')]) {
       expect(correr(['--cargar-resend', clave], { XDG_RUNTIME_DIR: xdg }).codigo).toBe(2);
-      expect(correr(['--entregar-hmac'], { XDG_RUNTIME_DIR: xdg }).codigo).toBe(2);
     }
     chmodSync(runtime, 0o755);
-    expect(correr(['--entregar-hmac']).codigo).toBe(2);
+    expect(correr(['--cargar-resend', clave]).codigo).toBe(2);
     expect(llamadas()).toEqual([]);
   });
   it('--cargar-resend: un archivo fuera del directorio de ejecución, con .., enlazado, de otro modo, sin la forma re_… o enorme: 2', () => {
@@ -295,17 +295,15 @@ describe('nube-alertas.sh: la clave de Resend, la clave HMAC y el invocador', ()
     expect(existe(ruta)).toBe(true);
     expect(leer(`secreto-${RESEND}`)).toBe('PENDIENTE-DE-CARGAR');
   });
-  it('--entregar-hmac --aplicar está BLOQUEADO EN CÓDIGO (2): no llama a gcloud ni crea el archivo; el seco sigue disponible', () => {
+  it('--entregar-hmac fue RETIRADO (D2): es una opción desconocida (2), con o sin --aplicar; no llama a gcloud ni crea archivo', () => {
     aplicarPasos();
     const antes = llamadas().length;
-    const r = correr(['--entregar-hmac', ...APLICAR]);
-    expect(r.codigo).toBe(2);
-    expect(r.salida).toContain('bloqueado hasta que exista el cargador de n8n');
+    for (const args of [['--entregar-hmac'], ['--entregar-hmac', ...APLICAR]]) {
+      const r = correr(args);
+      expect(r.codigo, args.join(' ')).toBe(2);
+      expect(r.salida).toContain('Opción desconocida');
+    }
     expect(llamadas().length).toBe(antes);
-    expect(existe(join(runtime, 'novuchat-alertas-hmac'))).toBe(false);
-    const seco = correr(['--entregar-hmac']);
-    expect(seco.codigo).toBe(1);
-    expect(seco.salida).toContain('(haría)');
     expect(existe(join(runtime, 'novuchat-alertas-hmac'))).toBe(false);
   });
   it('--invocador delega en nube-visor.sh con el servicio y el entorno fijos; solo con --aplicar le pasa --aplicar', () => {
@@ -371,13 +369,5 @@ describe('nube-alertas.sh: xtrace, respaldo y entrega ajena (cuarta ronda)', () 
   it('si set-iam-policy falla NO se deja respaldo', () => {
     writeFileSync(join(dir, 'falla-set'), '');
     expect(/respaldo de la política anterior/.test(correr(APLICAR).salida)).toBe(false);
-  });
-
-  it('--entregar-hmac --aplicar sobre un archivo ajeno: sigue bloqueado y no lo toca', () => {
-    aplicarPasos();
-    const destino = join(runtime, 'novuchat-alertas-hmac');
-    writeFileSync(destino, 'contenido-ajeno', { mode: 0o600 });
-    expect(correr(['--entregar-hmac', ...APLICAR]).codigo).toBe(2);
-    expect(readFileSync(destino, 'utf8')).toBe('contenido-ajeno');
   });
 });

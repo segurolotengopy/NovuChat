@@ -35,12 +35,12 @@ describe('datos: el mapa de columnas de Bellido', () => {
   it('es válido para el MISMO validador que corre en n8n', () => {
     expect(validarMapaCrm(MAPA)).toEqual([]);
   });
-  it('es la plantilla de Evy MÁS las tres columnas nuevas (U, V, W) con el diagnóstico del equipo movido a la X, y con su propia nota', () => {
+  it('es la plantilla de Evy MÁS las tres columnas nuevas (U, V, W) con el diagnóstico del equipo movido a la X, y con su propia nota y el título de O que usa el equipo de Bellido', () => {
     const evy = leerJson<{ crm: J }>('admin/scripts/datos/rroca-evy/rroca-evy.json').crm;
     const sin = (m: J): J => { const c = copia(m); delete c['_nota']; return c; };
     const esperado = sin(evy);
     Object.assign(esperado['columnas'] as J, {
-      servicioElegido: { letra: 'U', titulo: 'Servicio elegido' }, agendo: { letra: 'V', titulo: 'Agendó' }, fechaCita: { letra: 'W', titulo: 'Fecha y hora de la cita' },
+      quePidio: { letra: 'O', titulo: 'Qué pidió (Nombre Niño)' }, servicioElegido: { letra: 'U', titulo: 'Servicio elegido' }, agendo: { letra: 'V', titulo: 'Agendó' }, fechaCita: { letra: 'W', titulo: 'Fecha y hora de la cita' },
     });
     (esperado['equipo'] as J)['diagnostico'] = { letra: 'X', titulo: 'Diagnóstico del equipo' };
     expect(sin(MAPA)).toEqual(esperado);

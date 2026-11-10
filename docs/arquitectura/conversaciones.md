@@ -52,6 +52,23 @@ calculado por `camposDeConversacionPorMensaje`
 | `ultimoEntranteEn`, `ventanaVenceEn` | **solo un entrante** | el instante y ese instante más 24 h (`VENTANA_HORAS`); los dos nacen del mismo `ahoraMs` |
 | `noLeidos`, `sinLeer` | **solo un entrante** | `increment(1)` y `true` |
 
+### `atencion.conversacionDesde` y `conversacionNueva` en la respuesta de la ingesta
+
+Campos **aditivos** del objeto `atencion` de la respuesta 200 de `ingesta`. Los lee el miniCRM
+(`Flujos/src/modulos/crm/`) para crear su fila cuando la conversación empieza. `estadoDeAtencion` mira lo
+guardado ANTES del mensaje, así que en el que abre la conversación `ventanaVenceEn` sale `null`; estos
+dos campos describen la conversación YA aplicado el mensaje (`conversacionDelMensaje`, `core/conteo/atencion.ts`,
+sobre la decisión de `contadoresDelMensaje`, sin reglas nuevas).
+
+- `conversacionDesde`: ISO UTC con `Z` y sin fracciones; el ancla de la ventana de 24 h después de contar el
+  mensaje. `null` si no abre ni pertenece a una conversación cobrada (cortesía con ventana vencida, contacto
+  bloqueado, corte aplicado, saliente que no abre bloque).
+- `conversacionNueva`: `true` solo si el mensaje abrió la ventana o un bloque nuevo (respuesta 26, 51…, con el
+  desde fijo de la ventana).
+- En la apertura, `conversacionDesde` sale de `ahoraMs` y el ancla guardada (`atencionDesde`, `serverTimestamp()`) puede diferir en menos de 1 s: el CRM debe tolerarlo: crea la fila cuando `conversacionNueva` es `true` y reconoce la fila de la conversación comparando el ancla con tolerancia de 5 minutos (nunca por igualdad de instantes); una ráfaga con espera acepta además la fila mínima hasta 2 minutos después de la apertura (ver `docs/arquitectura/modulos/crm.md`).
+- `ventanaVenceEn` no cambia, ni el cobro ni los conteos. Pruebas: `pruebas/conversacion-desde.test.ts` (puras),
+  y las aserciones de bloqueado y corte en `bloquear-contacto-ingesta.test.ts` y `prepago-ingesta.test.ts` (emulador).
+
 Reglas que hay detrás, cada una con prueba que la niega
 (`admin/pruebas/core/conversacion-derivados.test.ts`,
 `admin/pruebas/core/ingesta-conversaciones.test.ts`):

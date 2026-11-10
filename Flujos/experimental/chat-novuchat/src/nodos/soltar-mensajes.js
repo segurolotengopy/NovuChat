@@ -44,6 +44,7 @@ if (bien && !mejor && a.guardarPlanilla === true && a.despues) {
     return sd.chatNovuchatCrm && typeof sd.chatNovuchatCrm === 'object' && !Array.isArray(sd.chatNovuchatCrm) ? sd.chatNovuchatCrm : (sd.chatNovuchatCrm = {});
   })();
   const nuevoContacto = a.primeraVez === true && !(crm && Number.isFinite(crm[a.from]) && ahora - crm[a.from] < CH_OLVIDO_MS);
+  // nuevoContacto NO tiene efecto en el miniCRM desde el 08/11/2026 (una fila por conversacion de 24 h: la decide el modulo crm con atencion.conversacionDesde); se conserva solo por compatibilidad.
   prospectoSalida = Object.assign({}, a.despues, { nuevoContacto: nuevoContacto });
 }
 // La marca de «último mensaje» se escribe aunque no se guarde la planilla, como siempre (una conversación en curso no es un contacto nuevo).
