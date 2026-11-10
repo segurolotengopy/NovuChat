@@ -71,6 +71,7 @@ function bmFichaBase() {
   return {
     v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, fueraDePaisMs: 0,
     carrito: [], entrega: bmEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0,
+    aliasPedidoId: '', aliasEstado: '', aliasVenceMs: 0, aliasMontoCent: 0, aliasAr: '',
   };
 }
 function bmNumero(v, tope) {
@@ -115,6 +116,12 @@ function bmFichaVigente(e, ahoraMs) {
     mostrados: (Array.isArray(e.mostrados) ? e.mostrados : []).filter((x) => typeof x === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(x)).slice(-15),
     hist: (Array.isArray(e.hist) ? e.hist : []).filter((x) => x && (x.r === 'u' || x.r === 'm') && typeof x.t === 'string' && x.t !== '').map((x) => ({ r: x.r, t: bmParaMemoria(x.t).slice(0, BM_LARGO_RECUERDO) })).slice(-BM_RECUERDOS),
     avisoConsultaMs: bmNumero(e.avisoConsultaMs),
+    // Argentina, cobro por alias (B9): el pedido anotado (`wa_<referencia>`), en qué paso está ('' | 'pedido' | 'abierto' | 'fin'), cuándo vence el alias y el monto y el alias que el servidor dio. El alias es un dato del comercio, no un secreto.
+    aliasPedidoId: typeof e.aliasPedidoId === 'string' && /^wa_[A-Za-z0-9_-]{1,60}$/.test(e.aliasPedidoId) ? e.aliasPedidoId : '',
+    aliasEstado: e.aliasEstado === 'pedido' || e.aliasEstado === 'abierto' || e.aliasEstado === 'fin' ? e.aliasEstado : '',
+    aliasVenceMs: bmNumero(e.aliasVenceMs),
+    aliasMontoCent: bmNumero(e.aliasMontoCent, 100000000),
+    aliasAr: typeof e.aliasAr === 'string' && /^[A-Za-z0-9._-]{6,30}$/.test(e.aliasAr) ? e.aliasAr : '',
   };
 }
 function bmYaVisto(ficha, id) {
@@ -209,12 +216,37 @@ const BM_INTROS = {
   monto_invalido: 'No pude calcular el monto de tu pedido.',
   pedido_sin_cobro: 'Anoté tu pedido, pero el pago por QR no está disponible por ahora.',
   pedido_ar: 'Anoté tu pedido en pesos argentinos. El pago por transferencia lo coordina recepción: no hagas ninguna transferencia todavía.',
+  // Argentina con el cobro por alias: solo sale si el pedido se reportó al servidor. «pagar» lo atiende el CÓDIGO (pide el alias; si el cobro está apagado, el texto de `alias_cerrado`).
+  pedido_ar_alias: 'Anoté tu pedido en pesos argentinos. Cuando quieras pagar por transferencia, escríbeme «pagar» y te indico cómo; no transfieras antes.',
+  alias_cerrado: 'Anoté tu pedido en pesos argentinos. El pago por transferencia lo coordina recepción: no hagas ninguna transferencia todavía. Escríbele a recepción con el botón para coordinar el pago.',
+  alias_vencido: 'El plazo para pagar por alias de este pedido ya venció.',
+  alias_en_revision: 'Tu pago por alias quedó en revisión de recepción.',
+  alias_problema: 'No pude abrir el pago por alias de tu pedido.',
+  comprobante_sin_alias: 'Recibí una imagen que parece un comprobante, pero no tengo un pago por alias abierto a tu nombre.',
   atencion_humana: 'Gracias por tu paciencia: una persona del equipo continúa esta conversación.',
   no_cancelo: 'Cambiaste tu pedido, pero desde aquí no puedo cerrar el cobro anterior: no pagues con ese QR.',
 };
 // La derivación: la introducción del motivo + (aviso salió) «Ya avisé a recepción; también puedes escribirle directo con el botón» / (no salió) «No pude avisar a recepción; escríbele directo con el botón».
 // `salio`: true (hay un `wamid` real), false (no salió) o 'repetido' (ya se avisó hace menos de 30 minutos por el mismo motivo).
+// El comprobante de Argentina, tal como lo lee el modelo (B9): se suman `alias` y `operacion` a los seis campos de `cbLectura`, que NO se toca (la leen otros clientes y Bolivia manda esos seis). Mismo patrón: solo claves propias, texto corto, sin controles.
+// Sin `alias`, se usa `cuentaDestino` (el destino que figura en el comprobante); el servidor compara el alias EXACTO, así que un destino que no es el alias da `alias_distinto`, nunca un `ok` falso.
+function bmLecturaAlias(respGemini) {
+  const objeto = cbObjetoUnico(cbTextoDeGemini(respGemini)) || {};
+  const base = cbLectura(respGemini);
+  const alias = cbCampoLeido(objeto, 'alias', 60);
+  return {
+    legible: base.legible,
+    leido: {
+      monto: base.leido.monto,
+      alias: String(alias) !== '' ? alias : base.leido.cuentaDestino,
+      fecha: base.leido.fecha,
+      hora: base.leido.hora,
+      operacion: cbCampoLeido(objeto, 'operacion', 60),
+    },
+  };
+}
 function bmTextoDerivacion(motivo, salio) {
+  if (motivo === 'alias_cerrado') return BM_INTROS.alias_cerrado;
   // Argentina: si el aviso no salió, recepción no sabe del pedido; el cliente no queda esperando una coordinación que no se activó.
   if (motivo === 'pedido_ar' && salio !== true && salio !== 'repetido') return 'Anoté tu pedido en pesos argentinos, pero no pude avisar a recepción. Escríbele directo con el botón para coordinar el pago; no transfieras todavía.';
   const intro = Object.prototype.hasOwnProperty.call(BM_INTROS, motivo) ? BM_INTROS[motivo] : BM_INTROS.quiere_hablar;
