@@ -11,8 +11,12 @@
  *   POST {baseUrl}/api/novuchat/v1/pedidos/confirmar
  *   cuerpo EXACTO  {"pedidoId":…, "items":[{"productoId":…, "cantidad":…}], "confirmadoEn":…}
  *   X-Marca-Tiempo (ms) y X-Firma = HMAC-SHA256 hex de "{marca}.{cuerpo exacto enviado}" (ventana de 5 min)
- *   Authorization: Bearer del tenant. Idempotente por `pedidoId`.
- *   200 ok · 400, 401, 405 (no se reintentan) · 409 faltantes (no se reintenta) · 429, 503 (se reintentan).
+ *   SIN Bearer: NovuTienda no lo usa (si llega, lo ignora). Esta función lo envía solo si el mapa del secreto lo
+ *   trae (`bearer` opcional). Idempotente por `pedidoId`. `confirmadoEn` es ISO 8601 UTC con Z.
+ *   200 ok · 400, 401 (firma o credencial), 405 (no se reintentan) · 429, 503 (se reintentan; 503 = sin secreto allá).
+ *   409: {ok:false, error:'stock-insuficiente', faltantes:[{productoId, pedido, disponible}]} es SIN stock (no se
+ *   reintenta; se puede reintentar al reponer). Otros 409 de inventario traen {error, mensaje} SIN faltantes: es un
+ *   rechazo distinto (`inventario_rechazo`), definitivo y sin inventar stock.
  *
  * LO QUE ESTA FUNCIÓN GARANTIZA, y cada línea tiene una prueba que la niega
  * (`pruebas/modulos/pedidos/confirmar-externo.test.ts`):
@@ -33,10 +37,11 @@
  *    retomar pasados 2 min; NovuTienda es idempotente por `pedidoId`, así que repetir no descuenta dos veces.
  *  - App Check por ambiente (producción sí, staging y emulador no) y concurrencia explícita baja (10).
  *  - SECRETO: un solo secreto de Secret Manager (`NOVUTIENDA_CONFIRMAR`) con el mapa
- *      { "<tenantId>": { "baseUrl": "https://…", "bearer": "…", "firmaSecreto": "…" } }
+ *      { "<tenantId>": { "baseUrl": "https://…", "firmaSecreto": "…", "bearer"?: "…" } }
+ *    (el secreto de firma es único de la plataforma hoy; el `bearer` es opcional y compatible hacia atrás).
  *    Nunca en el repositorio, en Firestore ni en un log. Ausente, ilegible o sin la entrada del comercio:
  *    falla CERRADO (nada sale). La URL debe ser https, sin usuario ni parámetros; no se siguen redirecciones
- *    (llevarían el Bearer a otro destino).
+ *    (llevarían el Bearer, si lo hay, a otro destino).
  *  - Reintento acotado: hasta `MAX_INTENTOS` en 429/503, con espera creciente; cada intento lleva su propia marca
  *    de tiempo y su firma (el cuerpo es el mismo, byte a byte). Cada intento tiene un tope de tiempo.
  *  - Los logs llevan solo el código y el estado HTTP: ni cuerpo, ni URL, ni secreto, ni teléfono.
@@ -86,6 +91,7 @@ export const MENSAJES = {
   noConfigurado: 'La confirmación con NovuTienda no está configurada para este negocio.',
   noDisponible: 'No se pudo completar la confirmación. Intente de nuevo en unos minutos.',
   rechazado: 'NovuTienda rechazó la confirmación. Avise a NovuChat.',
+  inventarioRechazo: 'NovuTienda no pudo descontar el inventario de este pedido. Avise a NovuChat.',
   faltantes: 'NovuTienda no tiene stock suficiente para este pedido.',
   enCurso: 'Este pedido ya se está confirmando. Espere unos segundos.',
 } as const;
@@ -107,8 +113,7 @@ export interface CuerpoDeConfirmacion { pedidoId: string; items: ItemParaNovuTie
  * El cuerpo EXACTO del contrato, armado desde el pedido guardado. Devuelve `null` si algo no cumple el
  * contrato (id, cantidad, ítems repetidos o vacíos, ítem que no es externo). Solo `productoId` y `cantidad`
  * salen por línea: se copian a mano, jamás se esparce el ítem guardado.
- * SUPUESTO (contrato v1 no lo fija): `confirmadoEn` es el instante ISO 8601 en UTC (`toISOString()`). El contrato
- * solo dice que existe la clave; si NovuTienda espera ms u otro formato, se cambia SOLO esta línea.
+ * `confirmadoEn` es ISO 8601 en UTC con Z (`toISOString()`), como fija el contrato de NovuTienda.
  */
 export function armarCuerpo(pedidoId: string, items: unknown, ahoraMs: number): CuerpoDeConfirmacion | null {
   if (!idDePedidoParaNovuTienda(pedidoId)) return null;
@@ -131,11 +136,12 @@ export function armarCuerpo(pedidoId: string, items: unknown, ahoraMs: number): 
 export const firmaDeConfirmacion = (secreto: string, marcaMs: number | string, cuerpoExacto: string): string =>
   createHmac('sha256', secreto).update(`${marcaMs}.`).update(cuerpoExacto).digest('hex');
 
-export interface DestinoNovuTienda { url: string; bearer: string; firmaSecreto: string }
+export interface DestinoNovuTienda { url: string; bearer?: string; firmaSecreto: string }
 
 /**
  * El destino de un comercio, o `null`. No se fía de la forma del secreto: JSON roto, comercio ausente, URL que
- * no sea https (o con usuario, contraseña, parámetros o ancla) o claves cortas dan `null`.
+ * no sea https (o con usuario, contraseña, parámetros o ancla) o claves cortas dan `null`. El `bearer` es OPCIONAL:
+ * ausente es válido (no se enviará Authorization); presente, debe ser texto de 8 o más caracteres.
  */
 export function destinoDeNovuTienda(secretoCrudo: unknown, tenantId: string): DestinoNovuTienda | null {
   if (typeof secretoCrudo !== 'string' || secretoCrudo === '') return null;
@@ -144,13 +150,15 @@ export function destinoDeNovuTienda(secretoCrudo: unknown, tenantId: string): De
   if (!esObjeto(mapa) || !Object.hasOwn(mapa, tenantId)) return null;
   const d = mapa[tenantId];
   if (!esObjeto(d)) return null;
+  if (Object.keys(d).some((k) => k !== 'baseUrl' && k !== 'firmaSecreto' && k !== 'bearer')) return null; // una clave mal escrita (p. ej. «Bearer») no se acepta en silencio
   const { baseUrl, bearer, firmaSecreto } = d;
   if (typeof baseUrl !== 'string' || baseUrl.length > 2048) return null;
-  if (typeof bearer !== 'string' || bearer.length < 8 || typeof firmaSecreto !== 'string' || firmaSecreto.length < 8) return null;
+  if (typeof firmaSecreto !== 'string' || firmaSecreto.length < 8) return null;
+  if (bearer !== undefined && (typeof bearer !== 'string' || bearer.length < 8)) return null;
   let u: URL;
   try { u = new URL(baseUrl); } catch { return null; }
   if (u.protocol !== 'https:' || u.username !== '' || u.password !== '' || u.hostname === '' || u.search !== '' || u.hash !== '') return null;
-  return { url: `${u.origin}${u.pathname.replace(/\/+$/, '')}${RUTA_DE_CONFIRMACION}`, bearer, firmaSecreto };
+  return { url: `${u.origin}${u.pathname.replace(/\/+$/, '')}${RUTA_DE_CONFIRMACION}`, firmaSecreto, ...(bearer !== undefined ? { bearer } : {}) };
 }
 
 export interface Faltante { productoId: string; nombre?: string; solicitado?: number; disponible?: number }
@@ -158,37 +166,43 @@ export interface Faltante { productoId: string; nombre?: string; solicitado?: nu
 const entero = (v: unknown): number | undefined =>
   typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 && v <= MAX_CANTIDAD_CONTRATO * 10 ? v : undefined;
 
+/** Qué significa un 409 de NovuTienda. */
+export type Conflicto409 =
+  | { tipo: 'stock'; faltantes: Faltante[] }
+  | { tipo: 'inventario' };
+
 /**
- * Los faltantes de un 409, legibles: solo ids que ESTE pedido tiene (el nombre sale del pedido, no de la
- * respuesta), y números acotados.
- * SUPUESTO (contrato v1 no lo fija): el cuerpo del 409 es `{"faltantes":[{"productoId","solicitado","disponible"}]}`.
- * No se aceptan alias. Cualquier otra forma da una lista vacía (el mensaje general igual sale).
+ * Clasifica el cuerpo de un 409. Es SIN STOCK solo si trae `error === 'stock-insuficiente'` Y una lista
+ * `faltantes` (contrato NovuTienda: `{ok:false, error:'stock-insuficiente', faltantes:[{productoId, pedido, disponible}]}`).
+ * Todo lo demás (cuerpo ilegible, `{error, mensaje}` sin faltantes, otro `error` aunque traiga `faltantes`) es un
+ * rechazo de inventario distinto: no se inventan faltantes.
+ * De cada faltante se leen solo ids que ESTE pedido tiene (el nombre sale del pedido, no de la respuesta) y números
+ * acotados; la cantidad pedida es `pedido` (se acepta `solicitado` como alias) y sale como `solicitado` hacia la consola.
  */
-export function faltantesLegibles(crudo: string, items: unknown): Faltante[] {
+export function clasificar409(crudo: string, items: unknown): Conflicto409 {
   let r: unknown;
-  try { r = JSON.parse(crudo.slice(0, MAX_RESPUESTA_409)); } catch { return []; }
-  const lista = esObjeto(r) ? r['faltantes'] : undefined;
-  if (!Array.isArray(lista)) return [];
+  try { r = JSON.parse(crudo.slice(0, MAX_RESPUESTA_409)); } catch { return { tipo: 'inventario' }; }
+  if (!esObjeto(r) || r['error'] !== 'stock-insuficiente' || !Array.isArray(r['faltantes'])) return { tipo: 'inventario' };
   const nombres = new Map<string, string>();
   for (const i of Array.isArray(items) ? items : []) {
     if (esObjeto(i) && typeof i['id'] === 'string') nombres.set(i['id'], typeof i['nombre'] === 'string' ? i['nombre'] : '');
   }
-  const salida: Faltante[] = [];
-  for (const f of lista.slice(0, MAX_FALTANTES)) {
+  const faltantes: Faltante[] = [];
+  for (const f of r['faltantes'].slice(0, MAX_FALTANTES)) {
     if (!esObjeto(f)) continue;
     const id = f['productoId'];
     if (typeof id !== 'string' || !nombres.has(id)) continue;
     const nombre = nombres.get(id);
-    const solicitado = entero(f['solicitado']);
+    const solicitado = entero(f['pedido']) ?? entero(f['solicitado']);
     const disponible = entero(f['disponible']);
-    salida.push({
+    faltantes.push({
       productoId: id,
       ...(nombre ? { nombre } : {}),
       ...(solicitado !== undefined ? { solicitado } : {}),
       ...(disponible !== undefined ? { disponible } : {}),
     });
   }
-  return salida;
+  return { tipo: 'stock', faltantes };
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +211,7 @@ export function faltantesLegibles(crudo: string, items: unknown): Faltante[] {
 
 export type ResultadoDeLlamada =
   | { tipo: 'ok' }
-  | { tipo: 'faltantes'; crudo: string }
+  | { tipo: 'conflicto'; crudo: string }
   | { tipo: 'rechazado'; estado: number }
   | { tipo: 'agotado'; estado: number }
   | { tipo: 'red' };
@@ -225,12 +239,12 @@ export async function llamarANovuTienda(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${destino.bearer}`,
+          ...(destino.bearer !== undefined ? { 'Authorization': `Bearer ${destino.bearer}` } : {}),
           'X-Marca-Tiempo': marca,
           'X-Firma': firmaDeConfirmacion(destino.firmaSecreto, marca, cuerpoExacto),
         },
         body: cuerpoExacto,
-        redirect: 'error', // un redirect llevaría el Bearer a otro destino
+        redirect: 'error', // un redirect llevaría la firma (y el Bearer, si lo hay) a otro destino
         signal: AbortSignal.timeout(ESPERA_POR_INTENTO_MS),
       });
     } catch {
@@ -241,7 +255,7 @@ export async function llamarANovuTienda(
     if (estado === 409) {
       let crudo = '';
       try { crudo = (await r.text()).slice(0, MAX_RESPUESTA_409); } catch { /* sin detalle */ }
-      return { tipo: 'faltantes', crudo };
+      return { tipo: 'conflicto', crudo };
     }
     vaciar(r);
     if (estado === 429 || estado === 503) { ultimo = estado; continue; }
@@ -387,9 +401,16 @@ export async function atenderConfirmacion(p: CallableRequest, d: DependenciasDeC
   let fallo: HttpsError | null = null;
   try {
     const r = await llamarANovuTienda(destino, JSON.stringify(cuerpo), d);
-    if (r.tipo === 'faltantes') {
-      registrar('stock_insuficiente', { estado: 409 });
-      fallo = new HttpsError('failed-precondition', MENSAJES.faltantes, { motivo: 'stock_insuficiente', faltantes: faltantesLegibles(r.crudo, items) });
+    if (r.tipo === 'conflicto') {
+      const c = clasificar409(r.crudo, items);
+      if (c.tipo === 'stock') {
+        registrar('stock_insuficiente', { estado: 409 });
+        fallo = new HttpsError('failed-precondition', MENSAJES.faltantes, { motivo: 'stock_insuficiente', faltantes: c.faltantes });
+      } else {
+        // Otro 409 de inventario: definitivo, sin faltantes inventados y sin copiar el texto ajeno.
+        registrar('inventario_rechazo', { estado: 409 });
+        fallo = new HttpsError('failed-precondition', MENSAJES.inventarioRechazo, { motivo: 'inventario_rechazo' });
+      }
     } else if (r.tipo === 'rechazado') fallo = rechazo('internal', MENSAJES.rechazado, 'novutienda_rechazo', { estado: r.estado });
     else if (r.tipo === 'agotado') fallo = rechazo('unavailable', MENSAJES.noDisponible, 'novutienda_no_disponible', { estado: r.estado });
     else if (r.tipo === 'red') fallo = rechazo('unavailable', MENSAJES.noDisponible, 'novutienda_sin_respuesta');
