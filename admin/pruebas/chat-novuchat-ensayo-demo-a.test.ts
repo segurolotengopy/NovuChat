@@ -264,7 +264,11 @@ beforeAll(async () => {
   });
   await new Promise<void>((ok) => servidor.listen(0, '127.0.0.1', ok));
   const puerto = (servidor.address() as { port: number }).port;
-  writeFileSync(join(carpeta, '.env.falso'), `N8N_BASE_URL=http://127.0.0.1:${puerto}\nN8N_API_KEY=clave-falsa-de-prueba\nN8N_WORKFLOW_ID=wf1\nWA_PHONE_ID=${PHONE_ID}\n`);
+  const base = `N8N_BASE_URL=http://127.0.0.1:${puerto}\nN8N_API_KEY=clave-falsa-de-prueba\nN8N_WORKFLOW_ID=wf1\nWA_PHONE_ID=${PHONE_ID}\n`;
+  // el normal trae un id de producción DISTINTO del de la hoja de prueba; el de «sin-produccion» no trae ninguno
+  writeFileSync(join(carpeta, '.env.falso'), `${base}PLANILLA_PROSPECTOS_ID_NOVUCHAT=OtraPlanillaSinteticaDeProduccion0123456789\n`);
+  writeFileSync(join(carpeta, '.env.sin-produccion'), base);
+  chmodSync(join(carpeta, '.env.sin-produccion'), 0o600);
   chmodSync(join(carpeta, '.env.falso'), 0o600);
   // un .env que SÍ trae el id de la hoja real de producción (sintético) para la comparación
   writeFileSync(join(carpeta, '.env.con-produccion'), `N8N_BASE_URL=http://127.0.0.1:${puerto}\nN8N_API_KEY=clave-falsa-de-prueba\nN8N_WORKFLOW_ID=wf1\nWA_PHONE_ID=${PHONE_ID}\nPLANILLA_PROSPECTOS_ID_NOVUCHAT=${PLANILLA}\n`);
@@ -385,11 +389,18 @@ describe('la herramienta con --conservar-crm: la hoja y el número de PRODUCCIÓ
       expect(puts).toHaveLength(0);
     } finally { archivoEnv = '.env.falso'; }
   });
-  it('si el entorno no trae el id de producción, avisa que no pudo comparar (y no escribe en seco)', async () => {
-    nuevo();
-    const r = await sobreDemoA();
-    expect(r.codigo, r.salida).toBe(0);
-    expect(r.salida).toMatch(/no se pudo comparar la hoja de prueba con la de producción/);
+  it('FALLA CERRADO: sin PLANILLA_PROSPECTOS_ID_NOVUCHAT en el .env ni en el entorno se niega, incluso en seco, y dice cómo reponerla', async () => {
+    nuevo(); archivoEnv = '.env.sin-produccion';
+    try {
+      for (const extra of [[], ['--aplicar']]) {
+        const r = await sobreDemoA(extra);
+        expect(r.codigo, r.salida).toBe(1);
+        expect(r.salida).toMatch(/falta PLANILLA_PROSPECTOS_ID_NOVUCHAT/);
+        expect(r.salida).toMatch(/sin mostrar el valor/);
+        expect(r.salida).not.toContain(PLANILLA);
+      }
+      expect(puts).toHaveLength(0);
+    } finally { archivoEnv = '.env.falso'; }
   });
   it('se NIEGA si la credencial del ensayo comparte id con la de los prospectos reales', async () => {
     nuevo([...CREDENCIALES, { id: 'c-hoja', name: 'Google Sheets NovuChat (cuenta de servicio)', type: 'googleApi' }]);

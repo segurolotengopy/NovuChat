@@ -695,7 +695,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
     // La hoja de PRUEBA no puede ser la de producción: se compara el id resuelto con el de producción, si el entorno lo trae (sin imprimir ninguno de los dos).
     const idProduccion = env.PLANILLA_PROSPECTOS_ID_NOVUCHAT ?? process.env.PLANILLA_PROSPECTOS_ID_NOVUCHAT;
     if (idProduccion && idProduccion === idPlanillaDemo.value) morir('--conservar-crm: el id de la planilla es IGUAL al de la hoja real de prospectos de producción: el ensayo escribiría en producción');
-    if (!idProduccion) console.log('AVISO --conservar-crm: no hay PLANILLA_PROSPECTOS_ID_NOVUCHAT en el entorno: no se pudo comparar la hoja de prueba con la de producción. Confírmelo a mano antes de --aplicar.');
+    if (!idProduccion) morir('--conservar-crm: falta PLANILLA_PROSPECTOS_ID_NOVUCHAT (el id de la hoja real de prospectos) en el .env o en el entorno: sin él no se puede comprobar que la hoja del ensayo no es la de producción. Agréguelo al .env del ensayo sin mostrar el valor (lo repone Claude con el «sí» de Andres, desde la tabla local) y repita.');
   } else if (idPlanillaDemo) idPlanillaDemo.value = '';
   // El doctor del ENSAYO es quien prueba (PREPARACION.md §3). `configuracionFlujo` no entrega `numeroDoctor`, así que sin esto el respaldo
   // queda en marcador, el flujo no tiene a quién apuntar y retira la frase del botón («Vacunas y otros» salía como texto, humo del 08/11).

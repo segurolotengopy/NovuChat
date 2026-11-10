@@ -788,8 +788,8 @@ nombres de credencial. Los JSON de producción y de prueba **no cambian** (se co
   exactamente una en n8n); el id y la hoja tienen que llegar ya resueltos (si no, se niega); no queda
   ningún marcador; y `--aplicar` exige además `--autorizo-hoja-de-prueba` (escribe filas en una hoja de
   Google: autorización por ensayo). Además se niega si el id de la hoja es igual al de producción (lo compara
-  con `PLANILLA_PROSPECTOS_ID_NOVUCHAT` del `.env` o del entorno; sin esa variable solo avisa que no pudo
-  comparar, así que conviene definirla), si `phoneNumberIdEsperado` no es el `WA_PHONE_ID` del Demo A y si la
+  con `PLANILLA_PROSPECTOS_ID_NOVUCHAT` del `.env` o del entorno; **sin esa variable se niega siempre**, en
+  seco y con `--aplicar`: la repone Claude en el `.env` del ensayo sin mostrar el valor), si `phoneNumberIdEsperado` no es el `WA_PHONE_ID` del Demo A y si la
   credencial «(ensayo)» comparte id con «Google Sheets NovuChat (cuenta de servicio)». La ingesta ya se mapea a «Cierres NovuChat A (auto)» y los envíos por
   Graph a la predefinida `whatsAppApi`, igual que en el §6.
 - Pruebas: `admin/pruebas/chat-novuchat-ensayo-demo-a.test.ts` (armador, guardas y la herramienta real
