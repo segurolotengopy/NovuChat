@@ -1217,8 +1217,13 @@ service cloud.firestore {
       // escribe el servidor (Admin SDK, `scripts/plataforma/crm-enlace.mjs`).
       // Es una URL de Google Sheets, nunca un secreto.
       // -----------------------------------------------------------------------
+      //
+      // Manuales de uso (10/11/2026): `manual-operador` lo lee cualquier persona del
+      // comercio (admin u operador); `manual-admin` SOLO el admin. Mismas garantías.
       match /enlaces/{documento} {
         allow get: if documento == 'minicrm' && esAdmin(tenantId);
+        allow get: if documento == 'manual-operador' && esPersonaDelNegocio(tenantId);
+        allow get: if documento == 'manual-admin' && esAdmin(tenantId);
         allow create, update, delete: if false;
       }
 

@@ -507,6 +507,9 @@ export const COLECCIONES_CERRADAS_DEL_CORE = {
  */
 export const DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR = {
   minicrm: { modulo: 'crm', campos: ['enlaceHoja'], lectura: 'admin' },
+  // Manuales de uso (10/11/2026): el del operador lo lee toda persona del comercio; el del admin, solo el admin.
+  'manual-operador': { modulo: 'crm', campos: ['enlace'], lectura: 'persona' },
+  'manual-admin': { modulo: 'crm', campos: ['enlace'], lectura: 'admin' },
 } as const;
 
 export const esModulo = (v: unknown): v is IdModulo =>
