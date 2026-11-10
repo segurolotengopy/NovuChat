@@ -27,6 +27,7 @@ export { registrarQrDeCobro, imagenDeCobro } from './modulos/cobros/cobro.js';
 // cotejo por plazo e intentos, la imagen guardada en Storage y la purga diaria.
 // Desplegar esto no cambia ningún flujo vivo: la regla 2 la elige el flujo.
 export { cotejarComprobanteVenta } from './modulos/cobros/cotejoVenta.js';
+export { pedirAliasArs, cotejarAliasArs } from './modulos/cobros/cobroAliasArs.js';
 export { guardarComprobante, purgarComprobantes } from './modulos/cobros/comprobantes.js';
 export { verComprobante } from './modulos/cobros/verComprobante.js';
 // SEÑA POR QR EN LAS RESERVAS (bloque 2). El cotejo del comprobante lo hace el
