@@ -38,7 +38,7 @@ import { decidirPausa, persistirVencimientoDeIngesta, conPausa, estaBloqueada } 
 import { camposDeConversacionPorMensaje, camposDeMensajeIndexado } from './core/conversacion/derivados.js';
 import {
   HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
-  estadoDeAtencion, umbralesDeAtencion, ventanaVencida,
+  estadoDeAtencion, umbralesDeAtencion, ventanaVencida, conversacionDelMensaje, isoSinFracciones,
 } from './core/conteo/atencion.js';
 // Los valores comerciales viven en `atencion.ts` (puro, compartido con la
 // consola). Se reexportan para que quien ya los importaba de acá no cambie.
@@ -1112,7 +1112,8 @@ export const ingesta = onRequest(
           personaNueva: false, interaccion: false,
         };
         return { atencion, aviso: null, avisoConsumo: null, conteo: sinConteo, servicio, corte, cortado: false, conModalidad,
-          pausadaPorPersona, bloqueadoPorContacto: true };
+          pausadaPorPersona, bloqueadoPorContacto: true,
+          conversacion: { desdeMs: null, nueva: false } };
       }
 
       if (cortado) {
@@ -1132,7 +1133,8 @@ export const ingesta = onRequest(
           ...derivadosDeConversacion(),
         }, { merge: true });
         escribirMensaje();
-        return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad, pausadaPorPersona, pedidos: null, bloqueadoPorContacto: false };
+        return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad, pausadaPorPersona, pedidos: null, bloqueadoPorContacto: false,
+          conversacion: { desdeMs: null, nueva: false } };
       }
 
       // LA BOLSA (§4undecies.3, punto 6): abrir una conversación con las
@@ -1348,7 +1350,8 @@ export const ingesta = onRequest(
       const refAnterior = previaEvento?.etapa === 'qr_enviado' && typeof previaEvento.evento?.id === 'string'
         ? previaEvento.evento.id : undefined;
       const pedidos = { efecto: cobro?.efecto as string | undefined, refAnterior };
-      return { atencion, aviso, avisoConsumo, conteo, servicio, corte, cortado: false, conModalidad, pausadaPorPersona, bloqueadoPorContacto: false, pedidos };
+      return { atencion, aviso, avisoConsumo, conteo, servicio, corte, cortado: false, conModalidad, pausadaPorPersona, bloqueadoPorContacto: false, pedidos,
+        conversacion: conversacionDelMensaje(marcas, conteo, ahoraMs, mensaje.direccion) };
     });
 
     // Lo que viaja a n8n y al registro sobre el prepago: el estado del
@@ -1467,6 +1470,12 @@ export const ingesta = onRequest(
         ...conPausa(veredicto.atencion, veredicto.pausadaPorPersona || veredicto.bloqueadoPorContacto),
         ventanaVenceEn: veredicto.atencion.ventanaVenceEn === null
           ? null : new Date(veredicto.atencion.ventanaVenceEn).toISOString(),
+        // Conversación a la que pertenece ESTE mensaje, ya aplicado (aditivo; el CRM crea su fila
+        // cuando `conversacionNueva` es true). Ver `conversacionDelMensaje`. Solo un ENTRANTE abre
+        // ventana; el saliente solo es `true` en la respuesta 26/51/76 (bloque nuevo).
+        conversacionDesde: veredicto.conversacion.desdeMs === null
+          ? null : isoSinFracciones(veredicto.conversacion.desdeMs),
+        conversacionNueva: veredicto.conversacion.nueva,
       },
       // Con la pausa de una persona (H2-2) el aviso va vacío y se agrega `pausadoPorPersona`;
       // sin pausa, las claves son las de siempre.

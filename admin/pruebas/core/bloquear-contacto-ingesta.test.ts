@@ -109,6 +109,9 @@ describe('un contacto bloqueado: silencio total en las dos respuestas', () => {
     expect(atencionDe(r)['estado']).toBe('bloqueado');
     expect(r.cuerpo['avisarRecepcion']).toBe('');
     expect(r.cuerpo['bloqueadoPorContacto']).toBe(true);
+    // CRM por conversación: un contacto bloqueado no abre ni pertenece a una conversación cobrada.
+    expect(atencionDe(r)['conversacionDesde']).toBeNull();
+    expect(atencionDe(r)['conversacionNueva']).toBe(false);
     expect(r.cuerpo['pausadoPorPersona']).toBeUndefined();
     expect(Object.keys(r.cuerpo).sort()).toEqual(['atencion', 'avisarRecepcion', 'bloqueadoPorContacto']);
   });
