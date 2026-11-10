@@ -97,12 +97,12 @@ describe('del pedido al QR', () => {
     expect(fichas(m)[ANA].qrHastaMs).toBeGreaterThan(m.ahora());
     expect(fichas(m)[ANA].pedidos).toBe(1);
   });
-  it('el reporte del QR lleva ids, cantidades y entrega para el pedido de la Consola; nunca precio, nombre ni total del modelo', () => {
-    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 2, precio: 1 }], { entrega: ENTREGA, total: 1 }) });
+  it('el reporte del QR lleva las líneas con la forma cerrada del catálogo externo, con el precio y el nombre del CATÁLOGO; lo del modelo no entra (detalle en pedido-lineas.test.ts)', () => {
+    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 2, precio: 1, precioCentavos: 1, nombre: 'Gratis' }], { entrega: ENTREGA, total: 1 }) });
     const rep = confirmar(m).llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado') as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-    expect(rep['lineas']).toEqual([expect.objectContaining({ id: BIL, cantidad: 2 })]);
+    expect(rep['lineas']).toEqual([{ externa: true, id: BIL, nombre: 'Billetera de cuero', cantidad: 2, precioCentavos: 45000, moneda: 'BOB', subtotalCentavos: 90000 }]);
     expect(rep['entrega']).toBeTruthy();
-    expect(JSON.stringify(rep['lineas'])).not.toMatch(/precio|total|nombre/i);
+    expect(JSON.stringify(rep['lineas'])).not.toMatch(/Gratis/);
     expect(JSON.stringify(rep)).not.toMatch(/factur/i);
   });
   it('sin la confirmación o sin la entrega completa NO hay QR', () => {
