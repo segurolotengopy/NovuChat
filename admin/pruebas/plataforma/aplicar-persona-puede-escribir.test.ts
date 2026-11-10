@@ -80,10 +80,11 @@ describe('argumentos (puros)', () => {
     expect(mod.validarValor(true).ok).toBe(false);
   });
 
-  it('NEGATIVAS: Bellido (id exacto, contenido, tildes y mayúsculas) se rechaza sin abrir Firebase; un solo comercio por corrida', () => {
+  it('NEGATIVAS: un comercio de NOVUCHAT_TENANTS_EXCLUIDOS (id exacto, contenido, tildes y mayúsculas) se rechaza sin abrir Firebase; Bellido ya NO está excluido (Andres, 08/11/2026); un solo comercio por corrida', () => {
     for (const t of ['bellido', 'consultorio-bellido', 'bellido2', 'xx-bellido-yy']) {
-      expect(problemas(args(t, 'true')), t).toContain('EXCLUIDO');
-      expect(problemas(args(t, 'false')), t).toContain('EXCLUIDO');
+      expect(mod.analizarArgumentos(args(t, 'true'), ENV_EMU).ok, t).toBe(true);   // orden de Andres: el Doctor de Bellido toma y escribe
+      expect(problemas(args(t, 'true'), { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' }), t).toContain('EXCLUIDO');   // el mecanismo sigue
+      expect(problemas(args(t, 'false'), { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' }), t).toContain('EXCLUIDO');
     }
     expect(problemas(args('tienda-a,tienda-b', 'true'))).toContain('UN solo comercio');
     expect(problemas(args('../x', 'true'))).toContain('inválido');
@@ -169,11 +170,11 @@ describe('contra el emulador, como proceso', () => {
     expect((await hoy(t)).data()).toMatchObject({ personaPuedeEscribir: false, editadoDespues: 'intacto' });
   });
 
-  it('NEGATIVA: Bellido por id (proceso) y por el NOMBRE de la ficha, encendiendo y apagando: nada escrito', async () => {
+  it('NEGATIVA: un comercio excluido por NOVUCHAT_TENANTS_EXCLUIDOS (id y NOMBRE de la ficha), encendiendo y apagando: nada escrito', async () => {
     await db.doc('tenants/bellido').set({ ...FICHA });
     const antes = await hora('bellido');
     for (const v of ['true', 'false']) {
-      const r = hijo(args('bellido', v, ['--aplicar', '--respaldo', rutaRespaldo()]));
+      const r = hijo(args('bellido', v, ['--aplicar', '--respaldo', rutaRespaldo()]), { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' });
       expect(r.status, v).toBe(2);
       expect(r.stderr).toContain('EXCLUIDO');
     }
@@ -182,7 +183,7 @@ describe('contra el emulador, como proceso', () => {
 
     const t = nuevoTenant();
     await ficha(t, { nombre: 'Consultorio del Dr. Béllido' });
-    const r = hijo(args(t, 'true', ['--aplicar', '--respaldo', rutaRespaldo()]));
+    const r = hijo(args(t, 'true', ['--aplicar', '--respaldo', rutaRespaldo()]), { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' });
     expect(r.status).toBe(2);
     expect(r.stdout).toContain('EXCLUIDO');
     expect((await hoy(t)).data()).not.toHaveProperty('personaPuedeEscribir');

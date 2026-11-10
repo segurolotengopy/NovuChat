@@ -42,7 +42,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { esTenantExcluido, nombreExcluido, ID_TENANT } from './aplicar-consola-conversaciones.mjs';
+import { esTenantExcluidoDeBandera as esTenantExcluido, nombreExcluidoDeBandera as nombreExcluido, ID_TENANT } from './aplicar-consola-conversaciones.mjs';   // 08/11/2026: Bellido ya no está excluido
 import { comprobarProyecto } from './aplicar-consola-oculta.mjs';
 
 export const OK = 'OK';
@@ -108,7 +108,7 @@ export function analizarArgumentos(argv, env = process.env) {
   if (tenant === undefined) problemas.push('falta --tenant');
   else if (tenant.includes(',')) problemas.push('--tenant admite UN solo comercio por corrida (sin comas)');
   else if (!ID_TENANT.test(tenant)) problemas.push('--tenant inválido (minúsculas, dígitos y guiones, de 3 a 60)');
-  else if (esTenantExcluido(tenant, env)) problemas.push('este comercio está EXCLUIDO (Bellido no se toca)');
+  else if (esTenantExcluido(tenant, env)) problemas.push('este comercio está EXCLUIDO (NOVUCHAT_TENANTS_EXCLUIDOS)');
 
   if (aplicar && !encender) problemas.push('--aplicar solo acompaña a --encender');
   if (!encender && (respaldo !== undefined || confirmo !== undefined)) problemas.push('--respaldo y --confirmo-produccion solo acompañan a --encender --aplicar');
@@ -203,7 +203,7 @@ export async function chequeoFirestore(cfg, db, env = process.env) {
   const fallas = [];
   if (f.estado !== 'activo') fallas.push('el comercio no está activo');
   if (f.consolaConversaciones !== 'nueva') fallas.push('consolaConversaciones no es "nueva"');
-  if (esTenantExcluido(cfg.tenant, env) || nombreExcluido(f.nombre, env)) fallas.push('comercio EXCLUIDO (Bellido)');
+  if (esTenantExcluido(cfg.tenant, env) || nombreExcluido(f.nombre, env)) fallas.push('comercio EXCLUIDO (NOVUCHAT_TENANTS_EXCLUIDOS)');
   const actual = hay(f, 'personaPuedeEscribir') ? (typeof f.personaPuedeEscribir === 'boolean' ? String(f.personaPuedeEscribir) : 'no booleano') : 'ausente';
   if (fallas.length) salida.resultados.push(res('1b', 'Ficha del comercio', FALLA, fallas.join('; ')));
   else salida.resultados.push(res('1b', 'Ficha del comercio', OK, `activo, consola nueva, no excluido; personaPuedeEscribir hoy: ${actual}`));
@@ -453,7 +453,7 @@ export async function chequeoTimbre(rutaDelSecreto, post) {
 export async function verificar(cfg, deps) {
   const log = deps.log ?? ((t) => console.log(t));
   const env = deps.env ?? process.env;
-  if (esTenantExcluido(cfg.tenant, env)) { log('\n  ✗ Este comercio está EXCLUIDO (Bellido no se toca).\n'); return 2; }
+  if (esTenantExcluido(cfg.tenant, env)) { log('\n  ✗ Este comercio está EXCLUIDO (NOVUCHAT_TENANTS_EXCLUIDOS).\n'); return 2; }
   log(`\n  VERIFICAR SALIDA DE PERSONA (solo lectura) · ${cfg.entorno} · alias ${cfg.alias} · tenant ${cfg.tenant}\n`);
 
   const R = [];
