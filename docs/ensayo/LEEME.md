@@ -755,3 +755,117 @@ debe leer el panel de `ensayo` (ver el informe de la sesión que lo construyó).
 | **El panel de la Consola de Evy** (dirección, horario, mapa) | Falla cerrado: se ignora el panel de `ensayo` (ver «La Consola») |
 | **Los nombres de credencial en la instancia, la credencial del Trigger vivo y la ruta de Meta** | No se pueden probar sin n8n ni Meta reales: el seco real y los pasos 0 y 3 |
 | **Que la herramienta vigile el nombre de la credencial de Gemini/WhatsApp** | La herramienta las resuelve por tipo; el nombre lo vigila `construir.mjs` |
+
+## 11 · Ensayar el chat de NovuChat (Kenji) en el Demo A, con el miniCRM de fila por conversación de 24 h
+
+> **Un solo teléfono, el de la persona de prueba, hace de prospecto.** Escribe a la línea del Demo A y el
+> chat de NovuChat (Kenji) le contesta desde el n8n del Demo A. A diferencia de los §6, §9 y §10, **el
+> miniCRM queda conectado**, pero escribe en una **HOJA DE PRUEBA** con su propia credencial; la hoja real
+> de prospectos de NovuChat nunca se toca. Diseño: `Flujos/experimental/chat-novuchat/DISENO.md`.
+
+**Costo y alcance.** El ensayo agrega **0 mensajes por conversación** y **0 nodos**: la salida
+`chat-novuchat.ensayo-demo-a.json` tiene los mismos 73 nodos y las mismas conexiones que
+`chat-novuchat.novuchat.json`; solo cambian los valores de «Config base» (marcadores del ensayo) y los
+nombres de credencial. Los JSON de producción y de prueba **no cambian** (se comprueba byte a byte con
+`node Flujos/experimental/chat-novuchat/construir.mjs --verificar`).
+
+**Las piezas.**
+
+- Datos: `admin/scripts/datos/chat-novuchat/ensayo-demo-a.json` (hereda de `novuchat.json`). Solo
+  marcadores: `REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A), `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono de
+  quien prueba), `REEMPLAZAR_PLANILLA_ENSAYO_ID` y `REEMPLAZAR_PLANILLA_ENSAYO_HOJA` (la hoja de prueba), y la
+  credencial de hoja «Google Sheets miniCRM (ensayo)». El valor real de cada marcador vive solo en la tabla
+  local; no aparece en el repositorio.
+- Guardas de `construir.mjs`: el ensayo **falla** si trae un marcador de producción
+  (`REEMPLAZAR_PLANILLA_PROSPECTOS_*`, `REEMPLAZAR_PHONE_NUMBER_ID_*`, `REEMPLAZAR_NUMERO_RECEPCION_*`), un id
+  literal o la credencial de hoja de producción; y a la inversa, ningún otro archivo de datos (ni lo
+  heredado) ni ninguna otra salida puede llevar los marcadores o la credencial del ensayo. Lo mismo vale
+  para el JSON versionado en `--verificar`.
+- Herramienta: `flujo-de-prueba.mjs --sobre-demo-a` con la bandera nueva **`--conservar-crm`**. Sin la
+  bandera el comportamiento de siempre **no cambia** (Bellido, Agenda mínima, Venta mínima, Rubén, Evy:
+  se quita la rama del CRM y la planilla queda vacía). Con ella: los nodos de Google Sheets se quedan; su
+  única credencial posible es «Google Sheets miniCRM (ensayo)» (por nombre exacto, tipo `googleApi` y
+  exactamente una en n8n); el id y la hoja tienen que llegar ya resueltos (si no, se niega); no queda
+  ningún marcador; y `--aplicar` exige además `--autorizo-hoja-de-prueba` (escribe filas en una hoja de
+  Google: autorización por ensayo). Además se niega si el id de la hoja es igual al de producción (lo compara
+  con `PLANILLA_PROSPECTOS_ID_NOVUCHAT` del `.env` o del entorno; **sin esa variable se niega siempre**, en
+  seco y con `--aplicar`: la repone Claude en el `.env` del ensayo sin mostrar el valor), si `phoneNumberIdEsperado` no es el `WA_PHONE_ID` del Demo A y si la
+  credencial «(ensayo)» comparte id con «Google Sheets NovuChat (cuenta de servicio)». La ingesta ya se mapea a «Cierres NovuChat A (auto)» y los envíos por
+  Graph a la predefinida `whatsAppApi`, igual que en el §6.
+- Pruebas: `admin/pruebas/chat-novuchat-ensayo-demo-a.test.ts` (armador, guardas y la herramienta real
+  contra un n8n de mentira) y las suites de `chat-novuchat-*` y `crm-*`.
+
+### Autorizaciones de Andres, en el chat, para ESTE ensayo
+
+1. **La credencial de Gemini de producción en el Demo A**, por ensayo (`--autorizo-gemini-produccion`;
+   unos 0,0005 USD por llamada; un audio, un documento o una imagen suman otra).
+2. **Escribir filas en la hoja de PRUEBA** (`--autorizo-hoja-de-prueba`).
+3. **Que el Demo A deje de servir para una demo comercial** mientras dure, y la ventana. Un ensayo a la
+   vez (regla de coordinación del §7).
+4. **Las dos cosas que Andres tiene que tener hechas antes** (las crea Claude con su «sí»; no existen hoy
+   en este repositorio): una hoja de cálculo de PRUEBA con el mismo mapa de columnas que la de prospectos
+   (`datos.crm` de `novuchat.json`), y la credencial `Google Sheets miniCRM (ensayo)` (cuenta de servicio con
+   acceso **solo** a esa hoja, jamás a la de prospectos reales).
+5. Cada `--aplicar` de abajo, uno por uno, después de leer entero su seco.
+
+### Orden (cada paso en seco primero; `--aplicar` con el «sí» de Andres)
+
+0. **Antes de empezar:** el §6 «Antes de empezar» A a D (anotar el ensayo en `ESTADO.md` y una fila para el
+   Demo A en `docs/versiones-por-cliente.md`: «corre el chat de NovuChat en ensayo», con su porqué y su
+   cierre; árbol al día en un worktree; línea de base de la suscripción de Meta). Más:
+   `node Flujos/experimental/chat-novuchat/construir.mjs --verificar` en 0; el teléfono de quien prueba
+   registrado en la app del Demo A; y la tabla local con los cuatro marcadores del ensayo, sin mostrar sus
+   valores (`./scripts/marcador-local.sh --verificar REEMPLAZAR_PLANILLA_ENSAYO_ID`, y lo mismo con
+   `REEMPLAZAR_PLANILLA_ENSAYO_HOJA`, `REEMPLAZAR_NUMERO_AVISO_ENSAYO` y `REEMPLAZAR_PHONE_NUMBER_ID`).
+1. **Preparar el import** (reemplaza los cuatro marcadores; ninguno puede quedar sin resolver):
+
+       CONFIG_LOCAL_MD=~/NovuChat/CONFIGURACION.local.md ./scripts/preparar-import.sh \
+         <worktree>/Flujos/experimental/chat-novuchat/chat-novuchat.ensayo-demo-a.json .env
+
+   Deja `chat-novuchat.ensayo-demo-a.local.json` (ignorado por git y no huérfano para `construir.mjs`): se
+   borra al terminar. **Aviso:** mientras ese `.local.json` exista en la carpeta del flujo, la prueba
+   `chat-novuchat-lib.test.ts` («los tres JSON son los únicos de la carpeta…», hoy cerca de la línea 1731)
+   **falla** a propósito: no corra la suite completa con él presente y bórrelo apenas termine.
+   `publicar-flujo.sh` **rechaza** (exit 2) este archivo y su `.local.json`: el ensayo solo lo pone la
+   herramienta del paso 3.
+2. **La plataforma.** `node admin/scripts/plataforma/ensayo.mjs --proyecto <proyecto> --numero <phone id del
+   Demo A> --estado` (solo lectura) para ver a qué comercio apunta hoy la ruta. **Queda por confirmar con
+   la sesión de Plataforma** el `--preparar` para este flujo (no hay un archivo de negocio de NovuChat como
+   los de los clientes y `--flujo` solo admite `venta` o `agendamiento`): no se decide aquí.
+3. **El flujo, en seco** (guarda el respaldo del vivo y no escribe en n8n):
+
+       node Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env \
+         --estado <scratchpad>/estado-ensayo.json --sobre-demo-a --conservar-crm \
+         --respaldo <scratchpad>/respaldo-demo-a.json \
+         --flujo <worktree>/Flujos/experimental/chat-novuchat/chat-novuchat.ensayo-demo-a.local.json
+
+   El seco tiene que decir: «Demo A vivo» con `activo=True`; `WhatsApp Trigger: el del Demo A, tal cual
+   («…»)` (si no, **detenerse**); «miniCRM CONSERVADO»; los cuatro nodos de Google (`Buscar teléfono en
+   planilla`, `Leer IDs de la planilla`, `Agregar fila`, `Actualizar fila`) con
+   `googleApi → «Google Sheets miniCRM (ensayo)»`; los nodos de Graph con «PARÁMETROS CAMBIADOS … →
+   predefinedCredentialType/whatsAppApi»; Gemini con «Google Gemini(PaLM) Api account»; y «Marcadores que
+   quedan … —». Con el «sí» de Andres, el mismo comando más
+   `--aplicar --autorizo-gemini-produccion --autorizo-hoja-de-prueba`. Repetir las dos lecturas de Meta
+   después del primer `--aplicar` (§6 paso 4).
+4. **Las pruebas, con UN solo teléfono**, mirando la hoja de prueba: un saludo (fila nueva), otro mensaje en
+   la misma conversación (la fila se actualiza, no se duplica), y, **pasadas 24 horas de la última fila de
+   ese teléfono**, un mensaje nuevo (tiene que crear una **fila nueva**: contacto nuevo a las 24 h). Para no
+   esperar un día se puede retroceder a mano la fecha de la fila de prueba en la hoja de prueba. El flujo no
+   guarda ejecuciones (retención `none`): vale lo que el teléfono recibió y lo que quedó en la hoja.
+5. **La restauración completa, siempre, salga bien o mal, en este orden** (§6 paso 6 y §7, «Doble
+   restauración»): (1) el flujo, `flujo-de-prueba.mjs --restaurar-respaldo` (la restauración no usa
+   `--conservar-crm`); (2) el estado por teléfono, `publicar-flujo.sh --reiniciar-estado`; (3) la ruta, `ensayo.mjs
+   --restaurar`; (4) `ensayo.mjs --estado` tiene que decir `Desviada  : no`. Después, la limpieza
+   obligatoria del §6 paso 6.4 (respaldos, estado, el `.local.json`) y retirar las filas de `ESTADO.md` y de
+   `docs/versiones-por-cliente.md`. La hoja de prueba se vacía o se archiva; nunca se mezcla con la real.
+
+### Lo que este ensayo NO prueba ni garantiza
+
+| Qué | Por qué |
+|---|---|
+| **La entrada verificada del receptor** | Aquí la entrada es el Trigger del Demo A; se prueba con la suite y en el número de NovuChat |
+| **La plantilla de aviso (`solicitud_contacto`) fuera de la ventana** | Es de la WABA de NovuChat; el Demo A no la tiene. Con un solo teléfono la ventana siempre está abierta |
+| **Que el aviso a recepción salga al mismo teléfono** | Este flujo no tiene el interruptor `avisarAlPropioNumero` (es de otros flujos) y el aviso al propio número puede descartarse: a confirmar en el seco y en la primera prueba |
+| **La hoja real de prospectos** | A propósito: es otra hoja y otra credencial; el ensayo nunca la ve |
+| **Que la credencial y la hoja de prueba existan, y que la hoja tenga el mapa de columnas** | No se pueden comprobar sin n8n ni Google reales: el seco real y la primera conversación |
+| **Los nombres de credencial en la instancia, la credencial del Trigger vivo y la ruta de Meta** | El seco real y los pasos 0 y 3 |
