@@ -127,6 +127,18 @@ if (!(esVisual && categoriaMedio === 'comprobante') && (ficha.riesgo || senalDel
 //     El `no_contactar` ya viaja con el reporte del entrante. El QR abierto queda como está (no se cancela solo). Va justo después de la protección y ANTES de la configuración, los medios, los botones y el cobro con el QR abierto: quien pidió la baja no recibe nada más.
 if (rrPideBaja(textoCliente)) return salir({ tipo: 'baja', cat: cat });
 
+// 1a-gmail. EL GMAIL TRAS UNA VENTA CONFIRMADA: si el flujo ya se lo pidió a este teléfono (`gmailPedidoMs`) y aún no lo tiene (`gmail`), un TEXTO ESCRITO con una «@» es su respuesta. Lo lee el CÓDIGO sobre el texto literal del cliente
+//     (`vgExtraerGmail`); el modelo no interviene, no ve el correo y el turno no entra en la memoria de la charla. Solo `@gmail.com`: otro dominio, varios correos o un correo mal escrito reciben un texto fijo que lo pide de nuevo. Un audio, una imagen o un botón
+//     nunca se capturan (el correo no se acepta dictado ni leído de una imagen). Va antes de la identidad y de las derivaciones para que un correo escrito no se tome por otra intención. Con un correo válido hay UN aviso a Rubén (enlace de Drive por el chat).
+if (t.tipo === 'text' && ficha.gmailPedidoMs > 0 && ficha.gmail === '' && String(t.texto || '').indexOf('@') >= 0) {
+  const g = vgExtraerGmail(String(t.texto || ''));
+  textoDelTurno = '';
+  return salir({
+    tipo: 'gmail', resultado: g.resultado, correo: g.resultado === 'recibido' ? g.correo : '', cat: cat,
+    aviso: g.resultado === 'recibido' ? { tipo: 'consulta', clave: 'gmail', motivo: 'venta con comprobante: enviar el enlace de Drive por el chat', mensaje: '', correo: g.correo, producto: nombreProducto } : null,
+  });
+}
+
 // 1a'. IDENTIDAD POR CÓDIGO (prohibición 4): «¿eres un bot?», «¿quién eres?», «¿hablo con Rubén?»… reciben una frase fija que reconoce ser un asistente virtual con IA; el modelo no interviene. Va antes de la configuración, la compuerta de
 //      las opciones, el precio y el modelo, y también con un QR abierto (esa respuesta no abre otro QR, no deriva y no avisa a Rubén). Solo texto escrito o transcrito: un toque de botón o una imagen no son esta pregunta.
 //      SOLO si el mensaje no trae OTRA intención reconocida (cancelar, pedir un producto, hablar del pago o del comprobante, pedir una persona): «cancela mi pedido, eres un robot» o «quiero el pack, ¿eres un bot?» siguen su camino
