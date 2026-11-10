@@ -91,6 +91,8 @@ if (plan.tipo === 'modelo') {
       if (k === 'comparativo' && !(cfg.usarMarcas === true && evPideComparativo(plan.textoCliente))) continue;
       artesPlan.push(k);
     }
+    // «Quiero ver cómo queda»: el Antes y Después sale por el CÓDIGO, una sola vez por ficha, aunque el modelo no emita la etiqueta (humo de Evy del 09/11/2026, paso 12: llegó un turno tarde). Mismo tope, mismo id resuelto, misma lista cerrada.
+    if (evPideVerResultado(plan.textoCliente) && evMediaIdValido(ids.antes_despues) && ficha.artes.indexOf('antes_despues') < 0 && artesPlan.indexOf('antes_despues') < 0 && ficha.artes.length + artesPlan.length < EV_TOPE_ARTES) artesPlan.push('antes_despues');
     // Si el texto no va a pasar la revisión (con las imágenes ya contadas), no se envía ninguna imagen: cae al texto fijo del fallo.
     const rev = evPulirSalida(et.texto, { artesEnviados: artesPlan, textoCliente: plan.textoCliente, nombreNegocio: cfg.nombreNegocio, primerTurno: primerTurno, llamadaAvisada: llamadaAvisada });
     if (rev.motivo === 'salud_sin_remision') { efectivo = 'remision'; artesPlan = []; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
