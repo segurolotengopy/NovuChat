@@ -125,7 +125,7 @@ function wlNombraSinPrecio(n, sinPrecio) {
 // Revisión de lo que redacta el modelo
 // -----------------------------------------------------------------------------
 // Voz de la marca y presión de tiempo / existencias: nada de esto sale del modelo. Se prueba contra el texto NORMALIZADO (minúsculas, sin tildes).
-const WL_PROHIBIDOS_VOZ = /billeteras? (digital|digitales|movil|moviles|electronica|electronicas|virtual|virtuales)|oferta por tiempo limitado|por tiempo limitado|tiempo limitado|ultimas? (unidades|piezas)|ultima (unidad|pieza)|solo quedan|nos quedan|quedan \d|stock|ultimo dia|no te lo pierdas|aprovecha|lujo unico|experiencia incomparable|hecho con amor/;
+const WL_PROHIBIDOS_VOZ = /billeteras? (digital|digitales|movil|moviles|electronica|electronicas|virtual|virtuales)|oferta por tiempo limitado|por tiempo limitado|tiempo limitado|ultimas? (unidades|piezas)|ultima (unidad|pieza)|solo quedan|nos quedan|quedan \d|stock|ultimo dia|no te lo pierdas|aprovecha|lujo unico|experiencia incomparable|hecho con amor|galerias?|te (envio|enviamos|mando|mandamos|comparto|compartimos|paso|pasamos) (mas |otras )?(fotos|imagenes)/;
 // Un importe escrito («Bs 1.234,50», «450 Bs», «12.5 bolivianos») a centavos, o null si no se entiende.
 function wlCentavos(s) {
   const x = String(s).replace(/\s/g, '');
@@ -337,4 +337,40 @@ function wlResolver(c) {
   if (p.tipo === 'comprobante') return wlResolverComprobante(c);
   if (p.tipo === 'modelo') return wlResolverModelo(c);
   return Object.assign({ aviso: null }, p);
+}
+
+// =============================================================================
+// miniCRM (módulo `crm`): del turno ya resuelto al PROSPECTO de la planilla. Función pura, vocabulario CERRADO: el texto libre del cliente, las líneas, los montos, la dirección, el NIT y la CI no pasan.
+// El nombre es solo el del perfil de WhatsApp (letras, espacios, apóstrofo y guion). Las señales son HECHOS del flujo:
+//   inicioCompra     el flujo emitió un QR de cobro REAL en este turno, llegó un comprobante resuelto (no ilegible, por reintentar ni ya cotejado) o la ficha vigente ya tenía un pedido o un comprobante;
+//   pidioLlamada     pidió hablar con una persona (derivación `quiere_hablar`);
+//   llegoPorAnuncio  el mensaje trae la referencia de un anuncio.
+// Mensajes: ninguno (0 por conversación).
+// d = { from, tipo (el tipo de plan resuelto), plan (la decisión de `wlResolver`), fichaAntes, anuncio (bool), avisoSalio (bool), nombrePerfil, ahoraMs }
+// =============================================================================
+function wlProspectoCrm(d) {
+  const x = d && typeof d === 'object' ? d : {};
+  const plan = x.plan && typeof x.plan === 'object' ? x.plan : {};
+  const antes = x.fichaAntes && typeof x.fichaAntes === 'object' ? x.fichaAntes : {};
+  const tipo = String(x.tipo || '');
+  const motivo = String(plan.motivo || '');
+  const resultado = String(plan.resultado || '');
+  const comprobanteResuelto = tipo === 'comprobante' && resultado !== 'ilegible' && resultado !== 'reintentar' && resultado !== 'ya_cotejado';
+  const previo = antes.pedidos > 0 || antes.comprobanteMs > 0;
+  const inicioCompra = tipo === 'qr' || comprobanteResuelto || previo;
+  const pidioLlamada = tipo === 'derivar' && motivo === 'quiere_hablar';
+  const senales = { inicioCompra: inicioCompra === true, pidioLlamada: pidioLlamada === true, llegoPorAnuncio: x.anuncio === true };
+  let quePidio = '';
+  if (tipo === 'qr' || tipo === 'pedido_sin_cobro') quePidio = 'Compra';
+  else if (comprobanteResuelto || (tipo === 'derivar' && (motivo === 'comprobante_sin_cotejo' || motivo === 'comprobante_ya_visto'))) quePidio = 'Comprobante de pago';
+  else if (pidioLlamada) quePidio = 'Hablar con una persona';
+  else if (tipo === 'derivar' && motivo === 'corporativo') quePidio = 'Pedido corporativo o por volumen';
+  else if (tipo === 'derivar' && motivo === 'factura') quePidio = 'Factura';
+  else if (tipo === 'derivar') quePidio = 'Consulta para recepción';
+  else if (tipo === 'modelo' || tipo === 'anuncio') quePidio = 'Consulta de catálogo';
+  const perfil = String(x.nombrePerfil === undefined || x.nombrePerfil === null ? '' : x.nombrePerfil).slice(0, 60).replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim().replace(/^[-'’ ]+/, '');
+  const p = { telefono: String(x.from === undefined || x.from === null ? '' : x.from).replace(/\D/g, ''), nombre: perfil, nombreDePerfil: true, anuncio: x.anuncio === true, senales: senales, ultimaInteraccionMs: Number(x.ahoraMs) };
+  if (quePidio !== '') p.quePidio = quePidio;
+  if (x.avisoSalio === true && tipo === 'derivar') p.derivacion = pidioLlamada ? 'Pidió hablar con una persona' : 'Consulta para recepción';
+  return p;
 }

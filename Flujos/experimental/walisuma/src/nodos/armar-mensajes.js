@@ -20,7 +20,7 @@ const { cfg, base, t, puerta, from, ahora, ficha: fichaAntes } = c;
 const prueba = cfg.modoPrueba === true;
 const telPrueba = String(cfg.telefonoDePrueba || '');
 const negocio = wlNombreNegocio(cfg);
-const sinSalida = (resumen) => [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen } }];
+const sinSalida = (resumen) => [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen, guardarPlanilla: false, prospectoPlanilla: null } }];
 if (!cnClaveValida(from)) return sinSalida({ plan: 'nada', mensajes: 0, categoria: '', llamadasModelo: 0 });
 
 const entregado = (j) => { const m = j && j.messages; return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== ''; };
@@ -159,6 +159,19 @@ if (fichas.sd) {
   wlBarrer(fichas.mapa, ahora);
 }
 
+// LA PLANILLA DEL miniCRM (módulo `crm`): `guardarPlanilla` solo si hay id y hoja, no es el modo prueba, la puerta dejó seguir, la clave es válida, hay un mensaje y el plan es de CONVERSACIÓN (nunca «nada», un número de otro país, el comercio suspendido, el uso extendido ni un cliente bloqueado por Tomar).
+// El prospecto se arma con `wlProspectoCrm` (vocabulario cerrado: el texto libre del cliente no pasa). Sin id (vacío), el flujo ni consulta Google. 0 mensajes por conversación.
+const planillaOk = String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';
+const guardarPlanilla = planillaOk && !prueba && puerta.ruta === 'sigue' && cnClaveValida(from) && msgs.length > 0
+  && ['nada', 'fuera_de_pais', 'suspendido', 'uso_extendido', 'bloqueado'].indexOf(tipoDePlan) < 0;
+let prospectoPlanilla = null;
+if (guardarPlanilla) {
+  // LA PLANILLA NUNCA TUMBA LA ATENCIÓN: si calcular el prospecto lanzara por un dato inesperado, este turno igual responde y simplemente no se escribe en la hoja.
+  try {
+    prospectoPlanilla = wlProspectoCrm({ from: from, tipo: tipoDePlan, plan: d, fichaAntes: fichaAntes, anuncio: t.anuncio === true, avisoSalio: salio === true, nombrePerfil: t.nombrePerfil, ahoraMs: ahora });
+  } catch (e) { prospectoPlanilla = null; }
+}
+
 const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, aviso: avisoPlaneado ? (salio === true ? 'salio' : 'no_salio') : 'ninguno' };
 let numero = from;
 if (prueba) numero = telPrueba;
@@ -175,6 +188,8 @@ const salida = msgs.map((m, i) => {
     reportar: !prueba,
     phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion || 'v26.0', from: from, sinMensajes: false,
     plan: resumen.plan, resumen: resumen,
+    // Solo el ítem 0 lleva el prospecto: un turno con dos mensajes (el resumen y el QR) guarda UN solo prospecto.
+    guardarPlanilla: i === 0 && prospectoPlanilla !== null, prospectoPlanilla: i === 0 ? prospectoPlanilla : null,
   };
   if (m.reglaCobro === 2) item.reglaCobro = 2;
   if (m.referencia) item.referencia = m.referencia;

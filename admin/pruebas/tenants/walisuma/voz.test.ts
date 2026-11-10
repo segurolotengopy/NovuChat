@@ -3,7 +3,7 @@
  * Se prueba NEGANDO sobre una batería de turnos donde el modelo (doble) intenta romper cada regla.
  */
 import { describe, expect, it } from 'vitest';
-import { ANA, crear, hablar, mTexto, modelo, textos } from './mundo';
+import { ANA, COMPROBANTE, ENTREGA, crear, hablar, mImagen, mTexto, modelo, panelConQr, textos } from './mundo';
 
 const EMOJI = /\p{Extended_Pictographic}/gu;
 const PRESION = /oferta por tiempo limitado|tiempo limitado|[uú]ltimas? (unidades|piezas)|solo quedan|quedan \d|stock|aprovecha|no te lo pierdas|lujo [uú]nico|experiencia incomparable|hecho con amor/i;
@@ -22,6 +22,8 @@ const SALIDAS_DEL_MODELO = [
   'Hecho con amor, cada pieza. ¿Qué buscas?',
   'La billetera de cuero cuesta Bs 450. ¿Te interesa?',
   'Trabajamos cada pieza con paciencia: nada es casual. ¿Qué buscas?',
+  'Te envío más fotos de la campaña. ¿Cuál te gusta?',
+  'Mira nuestra galería de piezas, ¿qué te parece?',
 ];
 
 describe('batería de turnos: la voz se cumple en código', () => {
@@ -68,5 +70,34 @@ describe('batería de turnos: la voz se cumple en código', () => {
     const m = crear({ modeloDice: modelo('Con gusto, cuéntame qué buscas.') });
     expect(textos(hablar(m, ANA, mTexto('hola')))[0]).toMatch(/^Hola, soy el asistente virtual de Tienda de prueba\./);
     expect(textos(hablar(m, ANA, mTexto('busco una billetera')))[0]).not.toMatch(/soy el asistente virtual/);
+  });
+});
+
+describe('sin promesa de galería: por este chat solo sale texto y, al confirmar, el QR', () => {
+  const FOTOS = /galer[ií]a|te (env[ií]o|enviamos|mando|mandamos|comparto|compartimos|paso|pasamos) (m[aá]s |otras )?(fotos|im[aá]genes)/i;
+  it('NEGADO: el modelo ofrece fotos o una galería y el cliente recibe el texto fijo, sin esa promesa', () => {
+    for (const salida of ['Te envío más fotos de la campaña. ¿Cuál te gusta?', 'Mira nuestra galería de piezas.', 'Te mandamos otras imágenes de las bufandas.', 'Te comparto más fotos si quieres.']) {
+      const t = hablar(crear({ modeloDice: modelo(salida) }), ANA, mTexto('¿me muestras las campañas?'));
+      expect(t.mensajes.length).toBeGreaterThan(0);
+      expect(textos(t).join('\n'), salida).not.toMatch(FOTOS);
+      expect(textos(t).join('\n'), salida).toMatch(/no pude|reformular|de nuevo|intent|cuéntame/i);
+    }
+  });
+  it('control: una respuesta sin esa promesa («foto» o «imagen» en otro sentido) SÍ sale', () => {
+    const t = hablar(crear({ modeloDice: modelo('Cada pieza tiene su propia historia. ¿Qué buscas?') }), ANA, mTexto('hola'));
+    expect(textos(t).join(' ')).toMatch(/cada pieza tiene su propia historia/i);
+  });
+  it('el prompt dice que no se ofrecen fotos, galerías ni imágenes', () => {
+    let prompt = '';
+    hablar(crear({ modeloDice: (ll) => { prompt = JSON.stringify(ll.cuerpo); return modelo('Con gusto.'); } }), ANA, mTexto('hola'));
+    expect(prompt).toMatch(/No ofreces enviar fotos, galerías ni imágenes de las campañas o de las piezas: por este chat solo envías texto y, al confirmar, el QR/);
+  });
+  it('NEGANDO el efecto colateral: el texto fijo del comprobante ilegible («¿Me envías una foto…?») sigue igual', () => {
+    const m = crear({ medio: { clasificacion: COMPROBANTE }, cotejo: { statusCode: 200, body: { estado: 'reintentar', motivo: 'ilegible', importe: 450 } }, modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) });
+    hablar(m, ANA, mTexto('una billetera'));
+    hablar(m, ANA, mTexto('quiero pagar'));
+    m.dobles['Traer configuración'] = () => panelConQr(450);
+    const t = hablar(m, ANA, mImagen({ caption: '' }));
+    expect(textos(t).join(' ')).toContain('No pude leer bien tu comprobante.\n\n¿Me envías una foto más nítida, con el monto, la fecha y la cuenta de destino a la vista?'.replace('\n\n', '\n\n'));
   });
 });
