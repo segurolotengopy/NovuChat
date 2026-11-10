@@ -415,11 +415,11 @@ describe('qué pasa con cada respuesta de NovuTienda', () => {
   });
   it('409: el pedido NO cambia, no se reintenta y el operador recibe los faltantes legibles (con el nombre del PEDIDO, no el de la respuesta)', async () => {
     await sembrar();
-    h.respuestas = [respuesta(409, JSON.stringify({ faltantes: [
-      { productoId: 'sku-1', nombre: 'NOMBRE-DE-LA-RESPUESTA', solicitado: 2, disponible: 1 },
-      { productoId: 'inventado', solicitado: 9, disponible: 0 },
-      { productoId: 'mesa.2_a-3', solicitado: 5, disponible: 0, tokenFiltrado: 'x' },
-      { id: 'sku-1', solicitado: 2, disponible: 0 }, // alias no contratado: no cuenta
+    h.respuestas = [respuesta(409, JSON.stringify({ ok: false, error: 'stock-insuficiente', faltantes: [
+      { productoId: 'sku-1', nombre: 'NOMBRE-DE-LA-RESPUESTA', pedido: 2, disponible: 1 },
+      { productoId: 'inventado', pedido: 9, disponible: 0 },
+      { productoId: 'mesa.2_a-3', pedido: 5, disponible: 0, tokenFiltrado: 'x' },
+      { id: 'sku-1', pedido: 2, disponible: 0 }, // sin productoId: no cuenta
     ] }))];
     const e = await rechazo(llamar(P(), admin(T)));
     expect(e.code).toBe('failed-precondition');
@@ -431,11 +431,46 @@ describe('qué pasa con cada respuesta de NovuTienda', () => {
     expect(h.llamadas).toHaveLength(1); expect(h.dormidas).toEqual([]);
     await recibidoLimpio();
   });
-  it('409 con cuerpo ilegible o sin lista: sigue sin cambiar el estado y devuelve faltantes vacío', async () => {
-    for (const cuerpo of ['', 'no es json', '{"faltantes":"x"}', '[]']) {
-      await sembrar(); h.respuestas = [respuesta(409, cuerpo)];
+  it('409 con el alias `solicitado` en lugar de `pedido`: se lee igual, y `pedido` manda si vienen los dos', async () => {
+    await sembrar();
+    h.respuestas = [respuesta(409, JSON.stringify({ ok: false, error: 'stock-insuficiente', faltantes: [
+      { productoId: 'sku-1', solicitado: 2, disponible: 1 }, { productoId: 'mesa.2_a-3', pedido: 4, solicitado: 9, disponible: 0 },
+    ] }))];
+    const e = await rechazo(llamar(P(), admin(T)));
+    expect((e.details as { faltantes: unknown[] }).faltantes).toEqual([
+      { productoId: 'sku-1', nombre: 'Producto sku-1', solicitado: 2, disponible: 1 },
+      { productoId: 'mesa.2_a-3', nombre: 'Producto mesa.2_a-3', solicitado: 4, disponible: 0 },
+    ]);
+    await recibidoLimpio();
+  });
+  it('409 que NO es stock-insuficiente con faltantes (el error es otro, o no hay lista, o el cuerpo es ilegible): no se toma por stock, no se inventan faltantes y el pedido vuelve a `recibido`', async () => {
+    const faltantes = [{ productoId: 'sku-1', pedido: 2, disponible: 0 }];
+    const casos = [
+      JSON.stringify({ ok: false, error: 'inventario-bloqueado', mensaje: 'MENSAJE-AJENO', faltantes }),
+      JSON.stringify({ ok: false, error: 'conflicto-de-inventario', mensaje: 'MENSAJE-AJENO' }),
+      JSON.stringify({ ok: false, faltantes }), // sin `error`
+      JSON.stringify({ ok: false, error: 'stock-insuficiente' }), // sin lista
+      JSON.stringify({ ok: false, error: 'stock-insuficiente', faltantes: 'x' }),
+      JSON.stringify({ faltantes }), '', 'no es json', '[]',
+    ];
+    for (const cuerpo of casos) {
+      await sembrar(); h.respuestas = [respuesta(409, cuerpo)]; const antes = h.llamadas.length;
       const e = await rechazo(llamar(P(), admin(T)));
-      expect(e.code).toBe('failed-precondition'); expect((e.details as { faltantes: unknown[] }).faltantes).toEqual([]);
+      expect(e.code).toBe('failed-precondition');
+      expect(e.details).toEqual({ motivo: 'inventario_rechazo' });
+      expect(e.details).not.toHaveProperty('faltantes');
+      expect(e.message).toBe(M.MENSAJES.inventarioRechazo);
+      expect(JSON.stringify(e)).not.toContain('MENSAJE-AJENO');
+      expect(h.llamadas.length - antes).toBe(1); // no se reintenta
+      await recibidoLimpio();
+    }
+    expect(h.dormidas).toEqual([]);
+  });
+  it('409 stock-insuficiente con lista vacía o solo de ítems ajenos: sigue siendo stock, sin faltantes inventados', async () => {
+    for (const faltantes of [[], [{ productoId: 'inventado', pedido: 9, disponible: 0 }]]) {
+      await sembrar(); h.respuestas = [respuesta(409, JSON.stringify({ ok: false, error: 'stock-insuficiente', faltantes }))];
+      const e = await rechazo(llamar(P(), admin(T)));
+      expect(e.details).toEqual({ motivo: 'stock_insuficiente', faltantes: [] });
       await recibidoLimpio();
     }
   });
@@ -480,7 +515,9 @@ describe('el secreto: falla cerrado y nunca se muestra', () => {
     ['JSON roto', '{no es json'],
     ['no es un mapa', '[]'],
     ['sin la entrada del comercio', JSON.stringify({ [OTRO]: { baseUrl: 'https://x.example.org', bearer: BEARER, firmaSecreto: FIRMA } })],
-    ['entrada sin bearer', JSON.stringify({ [T]: { baseUrl: 'https://x.example.org', firmaSecreto: FIRMA } })],
+    ['bearer presente pero no es texto', JSON.stringify({ [T]: { baseUrl: 'https://x.example.org', bearer: 12345678, firmaSecreto: FIRMA } })],
+    ['bearer presente pero corto (menos de 8)', JSON.stringify({ [T]: { baseUrl: 'https://x.example.org', bearer: 'abc', firmaSecreto: FIRMA } })],
+    ['firmaSecreto corta sin bearer', JSON.stringify({ [T]: { baseUrl: 'https://x.example.org', firmaSecreto: 'abc' } })],
     ['entrada sin firmaSecreto', JSON.stringify({ [T]: { baseUrl: 'https://x.example.org', bearer: BEARER } })],
     ['claves cortas', JSON.stringify({ [T]: { baseUrl: 'https://x.example.org', bearer: 'abc', firmaSecreto: 'abc' } })],
     ['baseUrl http', JSON.stringify({ [T]: { baseUrl: 'http://x.example.org', bearer: BEARER, firmaSecreto: FIRMA } })],
@@ -497,6 +534,13 @@ describe('el secreto: falla cerrado y nunca se muestra', () => {
       expect(h.llamadas).toHaveLength(0); await recibidoLimpio();
     });
   }
+  it('el bearer es opcional: un mapa sin bearer es válido y no lo inventa; con bearer, se conserva', () => {
+    const sin = M.destinoDeNovuTienda(JSON.stringify({ [T]: { baseUrl: 'https://x.example.org', firmaSecreto: FIRMA } }), T)!;
+    expect(sin).not.toBeNull();
+    expect(sin).not.toHaveProperty('bearer');
+    expect(sin.firmaSecreto).toBe(FIRMA);
+    expect(M.destinoDeNovuTienda(mapaDe(), T)!.bearer).toBe(BEARER);
+  });
   it('un tenant con nombre de propiedad heredada no resuelve por la cadena de prototipos', () => {
     expect(M.destinoDeNovuTienda('{}', 'constructor')).toBeNull();
     expect(M.destinoDeNovuTienda('{}', 'toString')).toBeNull();
@@ -585,8 +629,21 @@ describe('estado intermedio `confirmando`', () => {
     expect(e.code).toBe('unavailable');
     await recibidoLimpio(); // la excepción de la llamada devuelve el reclamo propio
   });
+  it('SIN bearer en el mapa: la llamada firmada sale sin cabecera Authorization (ni ninguna variante) y confirma', async () => {
+    await sembrar(); h.secreto = JSON.stringify({ [T]: { baseUrl: 'https://tienda.example.org/', firmaSecreto: FIRMA } });
+    expect(await llamar(P(), admin(T))).toMatchObject({ estado: 'confirmado' });
+    const l = h.llamadas[0]!;
+    expect(Object.keys(l.cab).map((k) => k.toLowerCase())).not.toContain('authorization');
+    expect(JSON.stringify(l.cab)).not.toMatch(/bearer/i);
+    expect(l.cab['X-Firma']).toBe(createHmac('sha256', FIRMA).update(`${l.cab['X-Marca-Tiempo']}.${l.cuerpo}`).digest('hex'));
+  });
+  it('CON bearer válido en el mapa: se sigue enviando Authorization con ese valor', async () => {
+    await sembrar();
+    await llamar(P(), admin(T));
+    expect(h.llamadas[0]!.cab['Authorization']).toBe(`Bearer ${BEARER}`);
+  });
   it('409, 429/503 agotados, red, 400/401 y tiempo agotado: el pedido VUELVE a `recibido` y se puede intentar de nuevo', async () => {
-    for (const r of [respuesta(409, '{"faltantes":[]}'), respuesta(503), respuesta(429), respuesta(400), respuesta(401), new TypeError('x')]) {
+    for (const r of [respuesta(409, '{"ok":false,"error":"stock-insuficiente","faltantes":[]}'), respuesta(409, '{"error":"x","mensaje":"y"}'), respuesta(503), respuesta(429), respuesta(400), respuesta(401), new TypeError('x')]) {
       await sembrar(); h.respuestas = [r];
       await rechazo(llamar(P(), admin(T)));
       await recibidoLimpio();

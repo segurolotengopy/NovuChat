@@ -39,6 +39,8 @@ const archivo = (contenido: string, modo = 0o600) => {
 };
 const MAPA_OK = JSON.stringify({ 'casa-bermejo': { baseUrl: 'https://tienda.example.org', bearer: 'abcdefgh1234', firmaSecreto: 'ijklmnop5678' } });
 
+const MAPA_SIN_BEARER = JSON.stringify({ 'casa-bermejo': { baseUrl: 'https://tienda.example.org', firmaSecreto: 'ijklmnop5678' } });
+
 describe('nube-novutienda.sh: salvaguardas (nada llega a gcloud)', () => {
   it('el script es ejecutable, con el prefijo y el secreto exactos, y sin comodines', () => {
     expect(FUENTE).toContain('readonly PREFIJO="NOVUTIENDA_"');
@@ -79,6 +81,18 @@ describe('nube-novutienda.sh: salvaguardas (nada llega a gcloud)', () => {
       expect(r.salida).not.toContain('abcdefgh1234');
     }
     expect(llamadas()).toBe('');
+  });
+  it('--cargar: el bearer es opcional (sin él pasa), pero si viene corto o sin firmaSecreto largo sigue siendo inválido', () => {
+    const r = correr(['--cargar', archivo(MAPA_SIN_BEARER)]);
+    expect(r.codigo).not.toBe(0);
+    expect(r.salida).toContain('No encuentro el proyecto'); // pasó la validación de forma y se detuvo después
+    expect(r.salida).not.toContain('ijklmnop5678');
+    for (const m of [
+      JSON.stringify({ 'casa-bermejo': { baseUrl: 'https://x.example.org', firmaSecreto: 'corta' } }),
+      JSON.stringify({ 'casa-bermejo': { baseUrl: 'https://x.example.org', bearer: 'corto', firmaSecreto: 'ijklmnop5678' } }),
+      JSON.stringify({ 'casa-bermejo': { baseUrl: 'https://x.example.org', bearer: 12345678, firmaSecreto: 'ijklmnop5678' } }),
+      JSON.stringify({ 'casa-bermejo': { baseUrl: 'https://x.example.org', bearer: 'abcdefgh1234' } }),
+    ]) expect(correr(['--cargar', archivo(m)]).codigo, m).toBe(2);
   });
   it('--cargar con un mapa válido pasa las salvaguardas del archivo (se detiene después, sin credenciales de gcloud) y no imprime el contenido', () => {
     const r = correr(['--cargar', archivo(MAPA_OK)]);

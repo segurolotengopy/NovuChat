@@ -4,7 +4,8 @@
 # el historial, un archivo del repositorio ni el modelo. Calcado de `nube-alertas.sh`.
 #
 # POR QUÉ EXISTE. `confirmarExterno.ts` declara `defineSecret('NOVUTIENDA_CONFIRMAR')`: UN solo secreto con el mapa
-#   { "<tenantId>": { "baseUrl": "https://…", "bearer": "…", "firmaSecreto": "…" } }
+#   { "<tenantId>": { "baseUrl": "https://…", "firmaSecreto": "…" } }
+# (`bearer` es OPCIONAL: NovuTienda no lo usa y lo ignora si llega; con él, la Function lo envía en Authorization)
 # `firebase deploy` lee los metadatos de cada secreto que una Function declara; la condición del rol
 # `desplegadorSecretos` de la cuenta de despliegue es por PREFIJO y el secreto debe caer en uno: `NOVUTIENDA_`
 # (`admin/pruebas/plataforma/secretos-iam-prefijos.test.ts` lo exige). El mismo arreglo para staging:
@@ -21,7 +22,7 @@
 #   ./scripts/nube-novutienda.sh --cargar <archivo> [--aplicar --confirmo produccion]
 #       Carga el mapa real como versión nueva SIN mostrarlo. El archivo tiene que estar dentro de $XDG_RUNTIME_DIR
 #       (tmpfs del usuario, modo 700), ser un archivo regular del usuario de modo 600 y traer un JSON con la forma
-#       {tenant:{baseUrl (https, sin usuario ni parámetros), bearer, firmaSecreto}}. La forma se valida sin imprimir
+#       {tenant:{baseUrl (https, sin usuario ni parámetros), firmaSecreto, bearer?}}. La forma se valida sin imprimir
 #       nada del contenido. Con éxito, el script BORRA el archivo.
 #   ./scripts/nube-novutienda.sh --revertir-iam [--aplicar --confirmo produccion]
 #       La vuelta atrás del paso 1: quita la cláusula NOVUTIENDA_ de la condición.
@@ -85,7 +86,7 @@ if [[ "$MODO" == cargar ]]; then
   [[ -f "$ARCHIVO" && ! -L "$ARCHIVO" && -O "$ARCHIVO" && "$(stat -c '%a' "$ARCHIVO" 2>/dev/null)" == "600" ]] \
     || { echo "✗ el archivo tiene que ser regular (no un enlace), del usuario y de modo 600" >&2; exit 2; }
   [[ "$(stat -c '%s' "$ARCHIVO")" -le 16384 ]] || { echo "✗ el archivo es demasiado grande para ser el mapa" >&2; exit 2; }
-  # La forma, validada por python SIN imprimir nada del contenido: {tenant:{baseUrl https sin usuario/parámetros, bearer, firmaSecreto}}.
+  # La forma, validada por python SIN imprimir nada del contenido: {tenant:{baseUrl https sin usuario/parámetros, firmaSecreto, bearer opcional}}.
   python3 -I -c '
 import json, re, sys
 from urllib.parse import urlsplit
@@ -96,14 +97,14 @@ except Exception:
 if not isinstance(m, dict) or not m:
     sys.exit(1)
 for t, d in m.items():
-    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,59}", t) or not isinstance(d, dict) or set(d) != {"baseUrl", "bearer", "firmaSecreto"}:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,59}", t) or not isinstance(d, dict) or set(d) not in ({"baseUrl", "firmaSecreto"}, {"baseUrl", "firmaSecreto", "bearer"}):
         sys.exit(1)
-    if not all(isinstance(d[k], str) for k in d) or len(d["bearer"]) < 8 or len(d["firmaSecreto"]) < 8:
+    if not all(isinstance(d[k], str) for k in d) or len(d["firmaSecreto"]) < 8 or ("bearer" in d and len(d["bearer"]) < 8):
         sys.exit(1)
     u = urlsplit(d["baseUrl"])
     if u.scheme != "https" or not u.hostname or u.username or u.password or u.query or u.fragment:
         sys.exit(1)
-' "$ARCHIVO" || { echo "✗ el contenido del archivo no tiene la forma del mapa {tenant:{baseUrl,bearer,firmaSecreto}}; no se muestra" >&2; exit 2; }
+' "$ARCHIVO" || { echo "✗ el contenido del archivo no tiene la forma del mapa {tenant:{baseUrl,firmaSecreto,bearer?}}; no se muestra" >&2; exit 2; }
 fi
 
 # --- El proyecto, sin imprimirlo ----------------------------------------------
