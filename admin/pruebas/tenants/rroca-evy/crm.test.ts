@@ -16,6 +16,7 @@ import { hallazgosCrm, inyectarMapa, urlEncabezados } from '../../../../Flujos/e
 // @ts-expect-error el armador es un .mjs sin tipos
 import { CREDENCIAL_CRM, ES_RELE, NODOS_DE_CRM, anfitrionPermitido, guardias } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
 import { ANA, BETO, CARPETA, PRODUCCION, PRUEBA, crear, datos, hablar, mTexto } from './mundo';
+import { respuestaDeIngesta } from '../../modulos/crm/ingesta-conversacion';
 
 const RAIZ = join(CARPETA, '..', '..', '..');
 const leerMod = (r: string): string => readFileSync(join(RAIZ, 'Flujos', 'src', 'modulos', r), 'utf8');
@@ -314,37 +315,94 @@ describe('flujo: quién guarda y quién no', () => {
   });
 });
 
-describe('flujo: 48 horas y la fila más reciente', () => {
+describe('flujo: una fila por conversación (24 h fijas) y la fila más reciente', () => {
   const previa = (n: number, extra: J = {}): { json: J } => fila(n, { 'Teléfono WhatsApp': ANA, 'Nombre y Apellido': 'Ana', ...extra });
-  it('con la ficha VIGENTE (menos de 48 h) el contacto no es nuevo y se ACTUALIZA la fila más reciente', () => {
-    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio' }), previa(9, { 'Clasificación': 'Tibio' })] });
-    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles });
+  const lp = (ms: number): string => new Date(ms - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
+  // El contrato de la ingesta (helper único): `atencion.conversacionDesde` y `conversacionNueva`. Una fila es de la conversación si su ventana cierra 24 h después del ancla.
+  const conAncla = (anclaMs: number, nueva = false): J => respuestaDeIngesta({ desdeMs: anclaMs, nueva });
+  const deConv = (desdeMs: number): J => ({ 'Se cierra la ventana de 24 h': lp(desdeMs + 24 * 3600_000) });
+  it('NIEGA: un segundo mensaje DENTRO de la ventana no crea fila: se ACTUALIZA la más reciente', () => {
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', ...deConv(AHORA - 3600_000) }), previa(9, { 'Clasificación': 'Tibio', ...deConv(AHORA - 1800_000) })] });
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(AHORA - 3600_000) });
     hablar(m, ANA, mTexto('hola'));
     pl.escrituras.length = 0; pl.actualizaciones.length = 0;
     m.avanzar(60);
     const t = hablar(m, ANA, mTexto('cual es la ubicación?'));
-    expect(prospectoDe(t)?.['nuevoContacto']).toBe(false);
+    expect(prospectoDe(t)?.['conversacionDesdeMs']).toBe(AHORA - 3600_000);
     expect(pl.escrituras).toHaveLength(0);
     expect(pl.actualizaciones).toHaveLength(1);
     expect(pl.actualizaciones[0]!['row_number']).toBe(9 + 2);   // la más reciente (fila 9 de la lectura -> fila 11 en la hoja: el desfase de los encabezados)
     expect(pl.actualizaciones[0]!['Clasificación']).toBe('Caliente');
   });
-  it('con 48 h vencidas el contacto es nuevo y se AGREGA una fila (con el ID siguiente)', () => {
-    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio' })] });
-    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles });
+  it('NIEGA: a las 23 h 59 del ancla NO crea fila', () => {
+    const ancla = AHORA - (24 * 60 - 1) * 60_000;
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', ...deConv(ancla) })] });
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(ancla) });
     hablar(m, ANA, mTexto('hola'));
-    pl.escrituras.length = 0; pl.actualizaciones.length = 0;
-    m.avanzar(49 * 60);
+    expect(pl.escrituras).toHaveLength(0);
+  });
+  it('a las 24 h exactas del ancla anterior la conversación es otra y se AGREGA una fila (con el ID siguiente)', () => {
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', ...deConv(AHORA - 24 * 3600_000) })] });
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(AHORA) });
     const t = hablar(m, ANA, mTexto('hola de nuevo'));
-    expect(prospectoDe(t)?.['nuevoContacto']).toBe(true);
+    expect(prospectoDe(t)?.['conversacionDesdeMs']).toBe(AHORA);
     expect(pl.escrituras).toHaveLength(1);
     expect(pl.actualizaciones).toHaveLength(0);
     expect(pl.escrituras[0]!['ID Lead']).toBe('LEAD-1011');
   });
-  it('el primer contacto de un teléfono también es nuevo', () => {
-    const pl = planilla();
-    const t = hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles }), ANA, mTexto('hola'));
+  it('NIEGA: con la ingesta caída (sin ancla) se actualiza la más reciente y NO se crea', () => {
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', ...deConv(AHORA - 72 * 3600_000) })] });
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles });
+    const t = hablar(m, ANA, mTexto('cual es la ubicación?'));
+    expect(prospectoDe(t)?.['conversacionDesdeMs']).toBeNull();
+    expect(pl.escrituras).toHaveLength(0);
+  });
+  it('NIEGA: `nuevoContacto` verdadero con la ventana vigente NO crea fila (regresión de la regla de 48 h)', () => {
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', ...deConv(AHORA - 1800_000) })] });
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(AHORA - 3600_000) });
+    const t = hablar(m, ANA, mTexto('hola'));
     expect(prospectoDe(t)?.['nuevoContacto']).toBe(true);
+    expect(pl.escrituras).toHaveLength(0);
+  });
+  it('el primer contacto de un teléfono también crea la fila', () => {
+    const pl = planilla();
+    hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(AHORA) }), ANA, mTexto('hola'));
+    expect(pl.escrituras).toHaveLength(1);
+  });
+});
+
+describe('flujo: la fila MÍNIMA NEUTRA cuando el contenido se filtra (protección, etapa de prueba)', () => {
+  const PERMITIDAS = ['accionPlanilla', 'veredictoPlanilla', 'ID Lead', 'Fecha Registro', 'Teléfono WhatsApp', 'Última interacción', 'Se cierra la ventana de 24 h', 'Estado Comercial'];
+  const apertura = (): J => respuestaDeIngesta({ desdeMs: AHORA, nueva: true });
+  const neutra = (pl: Planilla, ts: Array<{ porNodo: Record<string, J[]> }>, contenido: RegExp): void => {
+    expect(pl.escrituras).toHaveLength(1);
+    const f = pl.escrituras[0]!;
+    expect(Object.keys(f).filter((k) => !PERMITIDAS.includes(k) && f[k] !== '' && f[k] !== undefined)).toEqual([]);
+    for (const k of ['Etapa Funnel', 'Origen / Canal', 'Clasificación', 'Nombre y Apellido', 'Calificación IA', 'Resumen Chatbot IA']) expect([undefined, ''], k).toContain(f[k]);
+    expect(f['Estado Comercial']).toBe('Sin seguimiento');
+    const todo = JSON.stringify([f, ...ts.flatMap((t) => [t.porNodo['Prospecto para la planilla'] ?? [], t.porNodo['Decidir fila de la planilla'] ?? []])]);
+    expect(todo).not.toMatch(contenido);
+    expect(todo).not.toMatch(/Cliente Ejemplo|nombrePerfil|"plan"|riesgo/);
+  };
+  it('protección (riesgo): la apertura crea exactamente 1 fila neutra, sin el texto ni el nombre de perfil, y el turno siguiente no crea otra', () => {
+    const pl = planilla();
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: apertura() });
+    const t = hablar(m, ANA, mTexto('mi pareja me golpea'));
+    expect(planDe(t)).toBe('riesgo');
+    m.avanzar(10);   // pasan 10 min: ya no es la ráfaga de la apertura
+    m.dobles['Reportar mensaje (entrante)'] = () => respuestaDeIngesta({ desdeMs: AHORA, nueva: false });
+    const t2 = hablar(m, ANA, mTexto('hola otra vez'));
+    neutra(pl, [t, t2], /golpea|hola otra vez/);
+    expect(pl.actualizaciones).toEqual([]);
+  });
+  it('etapa de prueba: la apertura crea 1 fila neutra (la planilla está configurada); sin apertura, nada', () => {
+    const pl = planilla();
+    const base = { ...BASE_CON_PLANILLA, etapaPrueba: 'si', telefonosDePrueba: `${ANA},${BETO}` };
+    const t = hablar(crear({ base, dobles: pl.dobles, ingesta: apertura() }), ANA, mTexto('hola'));
+    neutra(pl, [t], /hola/);
+    const pl2 = planilla();
+    hablar(crear({ base, dobles: pl2.dobles, ingesta: respuestaDeIngesta({ desdeMs: AHORA - 10 * 60_000, nueva: false }) }), ANA, mTexto('hola'));
+    expect(pl2.escrituras).toEqual([]);
   });
 });
 

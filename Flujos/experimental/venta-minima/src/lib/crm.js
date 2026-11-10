@@ -137,6 +137,7 @@ function vmProspectoCrm(d) {
     nombre: nombrePerfil || nombreEntrega,
     nombreDePerfil: nombrePerfil !== '',
     // 48 h sin mensajes: fila NUEVA (el módulo la agrega en vez de actualizar la más reciente). Sin registro previo no se puede saber: se actualiza la más reciente.
+    // nuevoContacto NO tiene efecto en el miniCRM desde el 08/11/2026 (una fila por conversacion de 24 h: la decide el modulo crm con atencion.conversacionDesde); se conserva solo por compatibilidad.
     nuevoContacto: anterior !== null && ahora - anterior > VM_CRM_NUEVO_MS,
     // Frío = lo primero que hizo fue ver la carta y no avanzó (solo en el primer contacto); Caliente = compra (pedido, reserva o comprobante); Tibio = escribió.
     senales: { inicioCompra: compra, preguntoPrecioYCerro: (evento === 'contacto' || evento === 'eleccion') && primerContacto && ruta === 'carta' },
