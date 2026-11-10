@@ -15,6 +15,7 @@ import type { Doble, Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { hallazgosCrm, inyectarMapa } from '../../../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 // @ts-expect-error el armador es un .mjs sin tipos
 import { CREDENCIAL_CRM, NODOS_DE_CRM, guardias } from '../../../../Flujos/experimental/walisuma/construir.mjs';
+import { respuestaDeIngesta } from '../../modulos/crm/ingesta-conversacion';
 import { ANA, CARPETA, ENTREGA, EXTRANJERO, PRODUCCION, PRUEBA, SUSPENDIDO, COMPROBANTE, crear as crearBase, hablar, mImagen, mSticker, mTexto, modelo, panelConQr, panelOk, valorMeta, type Opciones } from './mundo';
 
 const RAIZ = join(CARPETA, '..', '..', '..');
@@ -306,6 +307,20 @@ describe('flujo: quién guarda', () => {
     expect(corrioLaRama(t)).toBe(true);
     expect(pl.escrituras).toEqual([]);
     expect(t.mensajes.length).toBeGreaterThan(0);
+  });
+});
+
+describe('flujo: la fila MÍNIMA NEUTRA cuando el contenido se filtra (otro país)', () => {
+  it('un número de otro país que ABRE la conversación crea 1 fila neutra: sin nombre, sin texto, sin clasificación', () => {
+    const pl = planilla();
+    const otro = ['54', '9', '11', '55500001'].join('');
+    const t = hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: respuestaDeIngesta({ desdeMs: AHORA, nueva: true }) }), otro, mTexto('hola, soy Carlos'), { toleraFallo: true });
+    armoSinGuardar(t);
+    expect(pl.escrituras).toHaveLength(1);
+    const f = pl.escrituras[0]!;
+    for (const k of ['Etapa Funnel', 'Origen / Canal', 'Clasificación', 'Nombre y Apellido', 'Calificación IA', 'Resumen Chatbot IA']) expect([undefined, ''], k).toContain(f[k]);
+    expect(f['Estado Comercial']).toBe('Sin seguimiento');
+    expect(JSON.stringify(f)).not.toMatch(/Carlos|hola|Ana/);
   });
 });
 
