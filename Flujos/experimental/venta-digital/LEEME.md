@@ -4,6 +4,8 @@ Módulos que comparten los flujos de venta digital de productos por WhatsApp. Aq
 
 **`src/diferencias.js`**: todas las diferencias de un comprobante (prefijo `cd`): arma, desde el `motivos[]` del cotejo del servidor, las frases fijas para el cliente con el destinatario primero. Va después de `cobro.js`.
 
+**`src/gmail.js`**: el Gmail del cliente tras una venta confirmada (prefijo `vg`): `vgExtraerGmail(texto)` devuelve `{resultado, correo}` (`recibido`, `no_gmail`, `mal_formado`, `varios`; solo `@gmail.com`, sin `+`) y `vgEsGmail(correo)` revalida uno ya guardado. Lo usa solo el código sobre el texto literal del cliente; el modelo nunca produce el correo. Sin dependencias; va antes de la librería del tenant. Prueba: `admin/pruebas/venta-digital-gmail.test.ts`.
+
 Los archivos se pegan delante del código de un nodo Code de n8n (`librerias` del armador): sin `import`/`export`, `require`, `URL`, `Buffer` ni `crypto`. Los nombres globales llevan prefijo (`cb`, `av`, `vd`). Orden: `cobro.js`, `avisos.js`, `conversacion.js`; `carrito.js` no depende de ninguno y va donde haga falta.
 
 ## `src/cobro.js` y `src/avisos.js`

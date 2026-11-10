@@ -105,7 +105,7 @@ function raSeguro(texto) {
 function raFichaBase() {
   return {
     v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, usados: [], pedidos: 0, qrHastaMs: 0, comprobanteMs: 0, avisosConsulta: {}, producto: '', hist: [], modeloN: 0, riesgo: false, fueraDePaisMs: 0,
-    charlaN: 0, pidioOpciones: false, opcionesVistas: false, pendientes: [], ultimoHash: '', ultimaFirma: '',
+    charlaN: 0, pidioOpciones: false, opcionesVistas: false, pendientes: [], ultimoHash: '', ultimaFirma: '', gmailPedidoMs: 0, gmail: '',
   };
 }
 // La ficha vigente de un teléfono: si pasó el olvido, es una ficha nueva.
@@ -141,6 +141,8 @@ function raFichaVigente(e, ahoraMs) {
     pendientes: ctFichaPendientes(e, ahoraMs, RA_VENTANA_PREGUNTA_MS),
     ultimoHash: fnr.ultimoHash,
     ultimaFirma: fnr.ultimaFirma,
+    gmailPedidoMs: nums(e.gmailPedidoMs),
+    gmail: typeof e.gmail === 'string' && vgEsGmail(e.gmail) ? e.gmail : '',
   };
 }
 // Cuándo salió el último aviso de consulta a Antonio, POR MOTIVO (clave de `RA_CLAVES_AVISO`): { <clave>: ms }. Solo claves conocidas y números finitos; lo demás se descarta.
@@ -253,7 +255,7 @@ const RA_PRODUCTO_DE_BOTON = { b_pack: 'pack', b_libro: 'libro', b_workbook: 'wo
 const RA_PRODUCTOS_DE_COMPONENTES = ['libro', 'workbook', 'guia', 'calendario', 'preguntas'];
 const RA_BOTON_ANTONIO = 'Escribirle a Antonio';
 // Los motivos de los avisos de consulta (la clave limita el aviso: uno cada 30 minutos por teléfono y clave).
-const RA_CLAVES_AVISO = ['factura', 'otro_medio_pago', 'garantia', 'reclamo', 'hablar_con_antonio', 'acceso_material', 'descuento', 'qr_no_disponible', 'no_entrega', 'no_supo', 'atencion_humana', 'comprobante_sin_cotejo', 'comprobante_sin_cobro', 'producto_agotado', 'cancelacion', 'sin_configuracion', 'pago_con_problema', 'ubicacion'];
+const RA_CLAVES_AVISO = ['factura', 'otro_medio_pago', 'garantia', 'reclamo', 'hablar_con_antonio', 'acceso_material', 'descuento', 'qr_no_disponible', 'no_entrega', 'no_supo', 'atencion_humana', 'comprobante_sin_cotejo', 'comprobante_sin_cobro', 'producto_agotado', 'cancelacion', 'sin_configuracion', 'pago_con_problema', 'ubicacion', 'gmail'];
 
 function raProductoDeBoton(id) {
   return Object.prototype.hasOwnProperty.call(RA_PRODUCTO_DE_BOTON, id) ? RA_PRODUCTO_DE_BOTON[id] : '';
@@ -941,7 +943,7 @@ function raTextoDerivacion(motivo, salio, clave, base) {
 }
 // El texto al cliente según el cotejo. `resultado`: cuadra | aproximado | reintentar | ilegible | sin_cotejo | ya_cotejado. Devuelve { cuerpo, boton }.
 // Nunca «acreditado», «verificado», «validado» ni «ya te lo enviamos»: el comprobante llegó y los datos coinciden; quien confirma que entró la plata es el banco, y Antonio.
-function raTextoComprobante(resultado, causa, salio, diferencia, base) {
+function raTextoComprobante(resultado, causa, salio, diferencia, base, pedirGmail) {
   const sinAviso = 'Recibí tu comprobante pero no pude avisarle a Antonio. Escríbele directo con el botón.';
   if (resultado === 'aproximado') {
     const detalle = causa === 'monto_distinto' ? 'el monto del comprobante no coincide del todo con tu pedido' : 'hay un dato del comprobante que Antonio tiene que mirar con cuidado';
@@ -951,7 +953,7 @@ function raTextoComprobante(resultado, causa, salio, diferencia, base) {
   }
   if (resultado === 'cuadra') {
     return salio === true
-      ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Antonio: en cuanto lo revise, él te enviará el material por este chat.', boton: false }
+      ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Antonio: en cuanto lo revise, él te enviará el material por este chat.' + (pedirGmail === true ? '\n\nPara enviarte el material, escríbeme tu correo de Gmail (el que termina en @gmail.com).' : ''), boton: false }
       : { cuerpo: sinAviso, boton: true };
   }
   if (resultado === 'reintentar') {
@@ -1097,7 +1099,9 @@ function raExtraBase(texto, norm, ctx) {
   if ((String(texto).match(/\?/g) || []).length > 1) return 'varias_preguntas';
   if (String(texto).split(/(?<=[.!?…])\s+/).filter((x) => x.trim()).length > 5) return 'largo_en_oraciones';
   // Una promesa en primera persona («te llamo», «te escribo», «te aviso», «te confirmo»): el flujo solo ofrece lo que cumple (pasar con Antonio: aviso + botón), y el filtro común no cubre estas formas.
-  if (/\b(te|le|les) (llamo|llamare|escribo|escribire|contacto|contactare|mando|enviare|aviso|avisare|confirmo|confirmare|paso|pasare|consulto|consultare|busco|buscare)\b|\bluego te\b|\bmas tarde te\b|\bte (escribe|llama|contacta|avisa|responde) (antonio|el equipo)\b/.test(norm)) return 'promesa_sin_respaldo';
+  if (/\b(te|le|les) (llamo|llamare|escribo|escribire|contacto|contactare|mando|mandamos|envio|enviamos|enviare|comparto|compartimos|compartire|hago llegar|aviso|avisare|confirmo|confirmare|paso|pasare|consulto|consultare|busco|buscare)\b|\bluego te\b|\bmas tarde te\b|\bte (escribe|llama|contacta|avisa|responde) (antonio|el equipo)\b/.test(norm)) return 'promesa_sin_respaldo';
+  // Una entrega ya hecha («ya te lo compartí», «te envié el enlace», «ya lo mandé»): con las palabras «correo» y «gmail» abiertas (10/11/2026), lo dice solo Antonio; el flujo no afirma entregas.
+  if (/\b(te|le|les) (lo |la |los |las )?(comparti|envie|mande|enviamos|compartimos|mandamos|deje|hice llegar)\b|\bya (lo |la |los |las )?(comparti|envie|mande|enviamos|compartimos|mandamos)\b/.test(norm)) return 'promesa_sin_respaldo';
   // PR-D · [F]: el flujo NO envía imágenes (solo existe el QR como imagen saliente): «te muestro / envío / comparto fotos, imágenes, capturas, la portada» es una promesa sin respaldo.
   if (/\b(te (muestro|envio|mando|comparto|paso|adjunto|enviare|mandare|mostrare|compartire)|(puedo|podria|podemos|voy a|vamos a) (mostrar|enviar|mandar|compartir|pasar|adjuntar)(te|les|le)?|aqui (tienes|te dejo)|te dejo|adjunto|enviare|mandare|mostrare|compartire)\b[^.?!]{0,40}\b(imagen|imagenes|foto|fotos|fotografia|fotografias|captura|capturas|pantallazo|pantallazos|screenshot|screenshots|portada|detalles visuales|ejemplos visuales|vista previa)\b/.test(norm)) return 'promete_imagenes';
   if (/\b(qr|banco|titular|mercantil|cuenta bancaria)\b/.test(norm)) return 'datos_de_cobro';
@@ -1122,11 +1126,12 @@ function raExtraBase(texto, norm, ctx) {
   if (/\b(visita|visitar|visite|nuestra pagina|nuestro sitio|sitio web|pagina web|en la web|en internet)\b/.test(norm)) return 'remite_a_web';
   if (/\bderivar\b|\briesgo\b/.test(norm)) return 'palabra_interna';
   if (/descuent|gratis|gratuito|promoci|oferta|garant|devoluc|reembols/.test(norm)) return 'afirmacion_comercial';
-  // El estado de un PAGO o de una ENTREGA lo dice solo el código (y Antonio): el modelo no habla de pagos, comprobantes ni compras, ni de si el material salió, llega, se procesa o va a un correo.
+  // El estado de un PAGO o de una ENTREGA lo dice solo el código (y Antonio): el modelo no habla de pagos, comprobantes ni compras, ni de si el material salió, llega o se procesa.
+  // (Decisión de Andres, 10/11/2026: «correo», «email», «mail» y «gmail» YA no se rechazan por sí solas; el Gmail que se guarda y se avisa lo produce solo el código, `vgExtraerGmail`, sobre el texto del cliente. Una promesa de envío a un correo sigue rechazada por las reglas de entrega.)
   // Cierres de pago con otras palabras («ya recibí todo», «todo listo con tu pago», «coinciden… todo listo»): también son el estado de un pago, y lo dice solo el código.
   if (/\bya recibi todo\b|\btodo listo\b|\bcoinciden?\b[^.?!]{0,60}\btodo (listo|bien|ok)\b/.test(norm)) return 'estado_de_pago';
   if (/\b(pago|pagos|pague|pagas|pagado|pagada|pagaste|pagamos|transferencia|transferencias|deposito|depositos|comprobante|comprobantes|abono|abonos|abonar|cobro|cobros|tu compra|su compra|tu pedido|su pedido|procesand\w*|procesad\w*|todo en orden|en orden)\b/.test(norm)) return 'estado_de_pago';
-  if (/\b(material|libro|pdf|pdfs|archivo|archivos|bonos?|guia|enlaces?|link)\b[^.?!]{0,40}\b(llega\w*|llego|enviad\w*|envia\w*|enviar\w*|mand\w*|salio|salieron|sali\w*|listo|lista|listos|recibir\w*|recibid\w*|entreg\w*|descarg\w*|correo|email|mail)\b|\b(llega\w*|enviad\w*|envia\w*|enviar\w*|mand\w*|recibir\w*|entreg\w*)\b[^.?!]{0,40}\b(material|libro|pdf|pdfs|archivo|archivos|bonos?|guia|enlaces?|link)\b|\b(correo|email|mail|gmail)\b/.test(norm)) return 'estado_de_entrega';
+  if (/\b(material|libro|pdf|pdfs|archivo|archivos|bonos?|guia|enlaces?|link)\b[^.?!]{0,40}\b(llega\w*|llego|enviad\w*|envia\w*|enviar\w*|mand\w*|salio|salieron|sali\w*|listo|lista|listos|recibir\w*|recibid\w*|entreg\w*|descarg\w*)\b|\b(llega\w*|enviad\w*|envia\w*|enviar\w*|mand\w*|recibir\w*|entreg\w*)\b[^.?!]{0,40}\b(material|libro|pdf|pdfs|archivo|archivos|bonos?|guia|enlaces?|link)\b/.test(norm)) return 'estado_de_entrega';
   // Plazos: ningún «en unos minutos», «en pocas horas», «en un par de días», «pronto», «enseguida»… (con dígitos o sin ellos): el plazo es un dato del código.
   if (/\ben (unos|unas|pocos|pocas|breve|un par de|algunos|algunas|\d+|una|un|dos|tres|cuatro|cinco|seis|diez|veinte|treinta)\b[^.?!]{0,12}\b(minutos?|horas?|dias?|segundos?|momentos?|instantes?|ratos?|semanas?)\b|\b(pronto|prontito|enseguida|en seguida|ahora mismo|de inmediato|inmediatamente|en breve|muy pronto|dentro de poco|cuanto antes)\b/.test(norm)) return 'plazo';
   return '';
