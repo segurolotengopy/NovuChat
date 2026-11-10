@@ -150,6 +150,7 @@ export function destinoDeNovuTienda(secretoCrudo: unknown, tenantId: string): De
   if (!esObjeto(mapa) || !Object.hasOwn(mapa, tenantId)) return null;
   const d = mapa[tenantId];
   if (!esObjeto(d)) return null;
+  if (Object.keys(d).some((k) => k !== 'baseUrl' && k !== 'firmaSecreto' && k !== 'bearer')) return null; // una clave mal escrita (p. ej. «Bearer») no se acepta en silencio
   const { baseUrl, bearer, firmaSecreto } = d;
   if (typeof baseUrl !== 'string' || baseUrl.length > 2048) return null;
   if (typeof firmaSecreto !== 'string' || firmaSecreto.length < 8) return null;
