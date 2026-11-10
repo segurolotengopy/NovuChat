@@ -20,7 +20,7 @@ process.env['INGESTA_CLIENTE13'] = TOKEN_B;
 
 const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
-const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
+const { getFirestore, Timestamp, FieldValue } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { pedirAliasArs, cotejarAliasArs } = await import('../../../functions/src/modulos/cobros/cobroAliasArs.ts');
 const A = await import('../../../functions/src/modulos/cobros/aliasArs.ts');
@@ -31,6 +31,7 @@ const NUMERO = '1000000071';
 const NUMERO2 = '1000000072';
 const ALIAS = 'casa.bermejo.mp';
 const ALIAS2 = 'otro.comercio.mp';
+const TEL = '5491100000000';
 const AFIRMA_PAGO = /acreditad|verificad|recibimos|pago confirmado/i;
 const MIN = 60_000;
 
@@ -57,9 +58,9 @@ async function llamar(
 }
 
 const pedir = (pedidoId: string, extra: Record<string, unknown> = {}, o = {}) =>
-  llamar(pedirAliasArs, { v: 1, pedidoId, ...extra }, o);
+  llamar(pedirAliasArs, { v: 1, pedidoId, telefono: TEL, ...extra }, o);
 const cotejar = (pedidoId: string, idMeta: string, leido: Record<string, unknown> | undefined, extra: Record<string, unknown> = {}, o = {}) =>
-  llamar(cotejarAliasArs, { v: 1, pedidoId, idMeta, legible: true, ...(leido ? { leido } : {}), ...extra }, o);
+  llamar(cotejarAliasArs, { v: 1, pedidoId, telefono: TEL, idMeta, legible: true, ...(leido ? { leido } : {}), ...extra }, o);
 
 function enArgentina(ms: number): { fecha: string; hora: string } {
   const d = new Date(ms - 3 * 3_600_000);
@@ -67,13 +68,17 @@ function enArgentina(ms: number): { fecha: string; hora: string } {
   return { fecha: `${dos(d.getUTCDate())}/${dos(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`, hora: `${dos(d.getUTCHours())}:${dos(d.getUTCMinutes())}` };
 }
 let contadorOperacion = 0;
+// Cada captura cae en un MINUTO distinto (la huella monto + alias + minuto es a propósito): los cobros de prueba se
+// abren con `creadoEn` 100 min atrás (`antiguar`) para que haya sitio para ~95 minutos distintos.
 const leidoBueno = (monto: string | number, extra: Record<string, unknown> = {}) => ({
-  monto, alias: ALIAS, ...enArgentina(Date.now()), operacion: `OP${Date.now()}${++contadorOperacion}`, ...extra,
+  monto, alias: ALIAS, ...enArgentina(Date.now() - ((contadorOperacion + 1) % 95) * MIN), operacion: `OP${Date.now()}${++contadorOperacion}`, ...extra,
 });
 
+const antiguar = (pedidoId: string) =>
+  db.doc(`tenants/${T}/cobrosAlias/${pedidoId}`).update({ creadoEn: Timestamp.fromMillis(Date.now() - 100 * MIN) });
 const cobroDe = async (pedidoId: string, tenant = T) => (await db.doc(`tenants/${tenant}/cobrosAlias/${pedidoId}`).get()).data();
 const pedidoPrueba = (centavos: number, extra: Record<string, unknown> = {}) => ({
-  origen: 'whatsapp', conversacionId: 'wa_5491100000000', moneda: 'ARS', estado: 'recibido',
+  origen: 'whatsapp', conversacionId: `wa_${TEL}`, moneda: 'ARS', estado: 'recibido', creadoEn: Timestamp.now(),
   totalServidorCentavos: centavos, total: centavos / 100, ...extra,
 });
 const sembrarPedido = (id: string, centavos = 150_000, extra: Record<string, unknown> = {}, tenant = T) =>
@@ -133,31 +138,48 @@ describe('parte pura', () => {
     }
   });
   it('el pedido: ARS, de WhatsApp, recibido, entero, positivo, múltiplo de 100 y dentro del techo', () => {
-    expect(A.pedidoCobrable(pedidoPrueba(150_000))).toEqual({ ok: true, montoCentavos: 150_000 });
+    expect(A.pedidoCobrable(pedidoPrueba(150_000), Date.now())).toEqual({ ok: true, montoCentavos: 150_000 });
     for (const p of [undefined, pedidoPrueba(150_050), pedidoPrueba(0), pedidoPrueba(-100), pedidoPrueba(1500.5 * 100 + 0.5),
       pedidoPrueba(100_000_100), pedidoPrueba(150_000, { moneda: 'BOB' }), pedidoPrueba(150_000, { estado: 'cancelado' }),
-      pedidoPrueba(150_000, { origen: 'catalogo-web' }), pedidoPrueba('150000' as unknown as number)]) {
-      expect(A.pedidoCobrable(p).ok).toBe(false);
+      pedidoPrueba(150_000, { origen: 'catalogo-web' }), pedidoPrueba('150000' as unknown as number),
+      pedidoPrueba(150_000, { creadoEn: Timestamp.fromMillis(Date.now() - 24 * 3_600_000 - 1000) }), pedidoPrueba(150_000, { creadoEn: undefined }),
+      pedidoPrueba(150_000, { creadoEn: 'ayer' })]) {
+      expect(A.pedidoCobrable(p, Date.now()).ok).toBe(false);
     }
   });
-  it('la huella: con operación depende solo de ella; sin operación, de monto, alias y minuto; es un hash', () => {
-    const h1 = A.huellaDeComprobante(l({ operacion: 'AB-12 34' }), 150_000);
-    expect(h1).toBe(A.huellaDeComprobante(l({ operacion: 'ab1234', monto: '5' }), 999));
-    expect(h1).toMatch(/^[0-9a-f]{64}$/);
-    const h2 = A.huellaDeComprobante(l(), 150_000);
-    expect(h2).not.toBe(A.huellaDeComprobante(l({ hora: '10:06' }), 150_000));
-    expect(h2).not.toBe(A.huellaDeComprobante(l(), 150_100));
+  it('un pedido de justo menos de 24 h todavía se cobra', () => {
+    expect(A.pedidoCobrable(pedidoPrueba(150_000, { creadoEn: Timestamp.fromMillis(Date.now() - 23 * 3_600_000) }), Date.now()).ok).toBe(true);
+  });
+  it('las dos huellas: hOp con operación (≥4 caracteres normalizados) depende de operación, monto y alias; hMf, de monto, alias y minuto', () => {
+    const a = A.huellasDeComprobante(l({ operacion: 'AB-12 34' }), 150_000);
+    expect(a.hOp).toMatch(/^[0-9a-f]{64}$/);
+    expect(a.hMf).toMatch(/^[0-9a-f]{64}$/);
+    expect(a.hOp).toBe(A.huellasDeComprobante(l({ operacion: 'ab1234', alias: ' CASA.bermejo.MP ' }), 150_000).hOp);
+    expect(a.hOp).not.toBe(A.huellasDeComprobante(l({ operacion: 'ab1234' }), 150_100).hOp);
+    expect(a.hOp).not.toBe(A.huellasDeComprobante(l({ operacion: 'ab1235' }), 150_000).hOp);
+    expect(a.hOp).not.toBe(a.hMf);
+    // sin operación (o con una de menos de 4 caracteres): solo hMf, y es la MISMA que con operación
+    const sin = A.huellasDeComprobante(l({ operacion: '' }), 150_000);
+    expect(sin.hOp).toBeNull();
+    expect(A.huellasDeComprobante(l({ operacion: 'a-1' }), 150_000).hOp).toBeNull();
+    expect(sin.hMf).toBe(a.hMf);
+    expect(a.hMf).not.toBe(A.huellasDeComprobante(l({ hora: '10:06' }), 150_000).hMf);
+    expect(a.hMf).not.toBe(A.huellasDeComprobante(l(), 150_100).hMf);
+    // sin instante no hay hMf
+    expect(A.huellasDeComprobante(l({ hora: '' }), 150_000).hMf).toBeNull();
   });
   it('los cuerpos: una clave de más, la versión y los tipos', () => {
-    expect(A.validarCuerpoPedir({ v: 1, pedidoId: 'wa_x1' }).ok).toBe(true);
-    for (const c of [null, [], 'x', { v: 1 }, { v: 2, pedidoId: 'wa_x1' }, { v: 1, pedidoId: 'x1' }, { v: 1, pedidoId: 'wa_x/1' },
-      { v: 1, pedidoId: 'wa_x1', tenantId: 'otro' }, { v: 1, pedidoId: 'wa_x1', montoCentavos: 1 }]) {
+    expect(A.validarCuerpoPedir({ v: 1, pedidoId: 'wa_x1', telefono: TEL }).ok).toBe(true);
+    const p = { v: 1, pedidoId: 'wa_x1', telefono: TEL };
+    for (const c of [null, [], 'x', { v: 1 }, { ...p, v: 2 }, { ...p, pedidoId: 'x1' }, { ...p, pedidoId: 'wa_x/1' }, { v: 1, pedidoId: 'wa_x1' },
+      { ...p, telefono: 'abc' }, { ...p, telefono: '123' }, { ...p, telefono: 5491100000000 },
+      { ...p, tenantId: 'otro' }, { ...p, montoCentavos: 1 }]) {
       expect(A.validarCuerpoPedir(c).ok).toBe(false);
     }
-    const base = { v: 1, pedidoId: 'wa_x1', idMeta: 'wamid.1', legible: true, leido: {} };
+    const base = { v: 1, pedidoId: 'wa_x1', telefono: TEL, idMeta: 'wamid.1', legible: true, leido: {} };
     expect(A.validarCuerpoCotejo(base).ok).toBe(true);
     for (const c of [{ ...base, extra: 1 }, { ...base, leido: { banco: 'x' } }, { ...base, leido: [] }, { ...base, legible: 'si' },
-      { ...base, idMeta: '' }, { ...base, idMeta: 'a b' }, { ...base, tenantId: 'otro' }]) {
+      { ...base, telefono: undefined }, { ...base, telefono: '12' }, { ...base, idMeta: '' }, { ...base, idMeta: 'a b' }, { ...base, tenantId: 'otro' }]) {
       expect(A.validarCuerpoCotejo(c).ok).toBe(false);
     }
   });
@@ -297,6 +319,7 @@ describe('cotejarAliasArs', () => {
   async function abrir(id: string, centavos = 150_000): Promise<void> {
     await sembrarPedido(id, centavos);
     expect((await pedir(id)).codigo).toBe(200);
+    await antiguar(id);
   }
 
   it('sin cobro abierto para ese pedido: 409 sin_cobro', async () => {
@@ -313,10 +336,11 @@ describe('cotejarAliasArs', () => {
     expect(c).toMatchObject({ estado: 'coincide', intentosInvalidos: 0 });
     expect(c?.['comprobantes']).toEqual([{ idMeta: 'wamid.c1', codigo: 'ok', montoLeidoCentavos: null }]);
     const huellas = (await db.collection(`tenants/${T}/comprobantesAlias`).get()).docs.filter((d) => d.get('pedidoId') === 'wa_c1');
-    expect(huellas).toHaveLength(1);
-    expect(huellas[0]!.id).toBe(A.huellaDeComprobante({ ...leido, monto: leido.monto, operacion: leido.operacion } as never, 150_000));
+    // Las DOS huellas (con operación y sin ella), cada una un documento.
+    const esperadas = A.huellasDeComprobante(leido as never, 150_000);
+    expect(huellas.map((d) => d.id).sort()).toEqual([esperadas.hOp, esperadas.hMf].sort());
     // En la base no queda el alias leído ni el número de operación.
-    expect(JSON.stringify([huellas[0]!.data(), c])).not.toContain(leido.operacion);
+    expect(JSON.stringify([...huellas.map((d) => d.data()), c])).not.toContain(leido.operacion);
   });
   it('un reintento del mismo mensaje (mismo idMeta) repite la respuesta y no cuenta ni escribe', async () => {
     const r = await cotejar('wa_c1', 'wamid.c1', leidoBueno('1.500,00'));
@@ -359,18 +383,29 @@ describe('cotejarAliasArs', () => {
     expect(r.cuerpo).toEqual({ codigo: 'vencido', intentosRestantes: 2, reintento: false });
     expect((await cobroDe('wa_c5'))?.['intentosInvalidos']).toBe(1);
   });
-  it('vencido por 1 segundo: vencido, sin contar como inválido y sin cobrar; 1 segundo antes todavía vale', async () => {
+  it('plazo vencido por 1 segundo: se califica igual; lo que habría sido ok pasa a una persona, lo demás es vencido (sin contar)', async () => {
     await abrir('wa_c6');
     await db.doc(`tenants/${T}/cobrosAlias/wa_c6`).update({ venceEn: Timestamp.fromMillis(Date.now() - 1000) });
-    const r = await cotejar('wa_c6', 'w1', leidoBueno(1500));
-    expect(r.cuerpo).toMatchObject({ codigo: 'vencido', intentosRestantes: 3 });
+    const mal = await cotejar('wa_c6', 'w0', leidoBueno(1400));
+    expect(mal.cuerpo).toMatchObject({ codigo: 'vencido', intentosRestantes: 3 });
     expect(await cobroDe('wa_c6')).toMatchObject({ estado: 'vencido', intentosInvalidos: 0 });
+    const bien = await cotejar('wa_c6', 'w1', leidoBueno(1500));
+    expect(bien.cuerpo).toMatchObject({ codigo: 'en_revision', intentosRestantes: 3 });
+    expect(await cobroDe('wa_c6')).toMatchObject({ estado: 'en_revision', intentosInvalidos: 0 });
+    // Nada se cobró: no hay huella de ese comprobante.
     expect((await db.collection(`tenants/${T}/comprobantesAlias`).get()).docs.some((d) => d.get('pedidoId') === 'wa_c6')).toBe(false);
-    // Una vez vencido, ni el comprobante perfecto lo revive.
-    expect((await cotejar('wa_c6', 'w2', leidoBueno(1500))).cuerpo.codigo).toBe('vencido');
+    // El reintento del mismo mensaje repite.
+    expect((await cotejar('wa_c6', 'w1', leidoBueno(1500))).cuerpo).toMatchObject({ codigo: 'en_revision', reintento: true });
+    // Un segundo antes del plazo todavía vale.
     await abrir('wa_c6b');
     await db.doc(`tenants/${T}/cobrosAlias/wa_c6b`).update({ venceEn: Timestamp.fromMillis(Date.now() + 20_000) });
     expect((await cotejar('wa_c6b', 'w1', leidoBueno(1500))).cuerpo.codigo).toBe('ok');
+  });
+  it('plazo vencido y cobro ya marcado vencido (por pedir): el comprobante que cuadra también va a una persona', async () => {
+    await abrir('wa_c6c');
+    await db.doc(`tenants/${T}/cobrosAlias/wa_c6c`).update({ venceEn: Timestamp.fromMillis(Date.now() - 1000) });
+    expect((await pedir('wa_c6c')).cuerpo.estado).toBe('vencido');
+    expect((await cotejar('wa_c6c', 'w1', leidoBueno(1500))).cuerpo.codigo).toBe('en_revision');
   });
   it('el MISMO comprobante a DOS pedidos: el segundo es repetido (y cuenta como inválido), el primero conserva su cobro', async () => {
     await abrir('wa_c7a');
@@ -433,5 +468,129 @@ describe('cotejarAliasArs', () => {
     // Los códigos fijos son los únicos textos que salen de los endpoints.
     for (const c of A.CODIGOS_ALIAS) expect(c).not.toMatch(AFIRMA_PAGO);
     expect([...A.CODIGOS_ALIAS].sort()).toEqual(['alias_distinto', 'en_revision', 'ilegible', 'monto_distinto', 'ok', 'repetido', 'vencido']);
+  });
+});
+
+// =============================================================================
+describe('segunda tanda: huellas, pedido vivo, dueño del pedido, antigüedad', () => {
+  async function abrir(id: string, centavos = 150_000, extra: Record<string, unknown> = {}): Promise<void> {
+    await sembrarPedido(id, centavos, extra);
+    expect((await pedir(id)).codigo).toBe(200);
+    await antiguar(id);
+  }
+
+  it('la misma captura CON número de operación en un pedido y SIN él en otro del mismo monto: el segundo es repetido', async () => {
+    await abrir('wa_h1a'); await abrir('wa_h1b');
+    const captura = leidoBueno(1500);
+    expect((await cotejar('wa_h1a', 'h-a', captura)).cuerpo.codigo).toBe('ok');
+    expect((await cotejar('wa_h1b', 'h-b', { ...captura, operacion: '' })).cuerpo.codigo).toBe('repetido');
+    expect(await cobroDe('wa_h1b')).toMatchObject({ estado: 'abierto', intentosInvalidos: 1 });
+  });
+  it('al revés: primero SIN número de operación, después CON él: repetido (se registran las dos huellas siempre que se pueda)', async () => {
+    await abrir('wa_h2a'); await abrir('wa_h2b');
+    const captura = leidoBueno(1500);
+    expect((await cotejar('wa_h2a', 'h-a', { ...captura, operacion: '' })).cuerpo.codigo).toBe('ok');
+    expect((await cotejar('wa_h2b', 'h-b', captura)).cuerpo.codigo).toBe('repetido');
+  });
+  it('con número de operación distinto pero misma captura (monto, alias y minuto): repetido por hMf', async () => {
+    await abrir('wa_h3a'); await abrir('wa_h3b');
+    const captura = leidoBueno(1500);
+    expect((await cotejar('wa_h3a', 'h-a', captura)).cuerpo.codigo).toBe('ok');
+    expect((await cotejar('wa_h3b', 'h-b', { ...captura, operacion: 'OTRO-NUMERO-999' })).cuerpo.codigo).toBe('repetido');
+  });
+  it('carrera: dos pedidos con la misma huella a la vez: uno ok, el otro repetido (nunca un 500 ni dos ok)', async () => {
+    await abrir('wa_h4a'); await abrir('wa_h4b');
+    const captura = leidoBueno(1500);
+    const [a, b] = await Promise.all([cotejar('wa_h4a', 'h-a', captura), cotejar('wa_h4b', 'h-b', captura)]);
+    expect([a.codigo, b.codigo]).toEqual([200, 200]);
+    expect([a.cuerpo.codigo, b.cuerpo.codigo].sort()).toEqual(['ok', 'repetido']);
+    const coinciden = [await cobroDe('wa_h4a'), await cobroDe('wa_h4b')].filter((c) => c?.['estado'] === 'coincide');
+    expect(coinciden).toHaveLength(1);
+  });
+  it('carrera sin número de operación en uno y con él en el otro: tampoco cobra dos veces', async () => {
+    await abrir('wa_h5a'); await abrir('wa_h5b');
+    const captura = leidoBueno(1500);
+    const [a, b] = await Promise.all([cotejar('wa_h5a', 'h-a', { ...captura, operacion: '' }), cotejar('wa_h5b', 'h-b', captura)]);
+    expect([a.cuerpo.codigo, b.cuerpo.codigo].sort()).toEqual(['ok', 'repetido']);
+  });
+
+  it('el pedido se relee dentro del cotejo: si ya no está recibido, vencido sin contar como inválido', async () => {
+    await abrir('wa_v1');
+    await db.doc(`tenants/${T}/pedidos/wa_v1`).update({ estado: 'cancelado' });
+    const r = await cotejar('wa_v1', 'w1', leidoBueno(1500));
+    expect(r.cuerpo).toMatchObject({ codigo: 'vencido', intentosRestantes: 3 });
+    expect(await cobroDe('wa_v1')).toMatchObject({ estado: 'vencido', intentosInvalidos: 0 });
+    expect((await cotejar('wa_v1', 'w2', leidoBueno(1500))).cuerpo.codigo).toBe('vencido');
+    expect((await db.collection(`tenants/${T}/comprobantesAlias`).get()).docs.some((d) => d.get('pedidoId') === 'wa_v1')).toBe(false);
+  });
+  it('si el total del pedido cambió después de abrir el cobro: vencido, aunque el comprobante cuadre con el monto viejo', async () => {
+    await abrir('wa_v2');
+    await db.doc(`tenants/${T}/pedidos/wa_v2`).update({ totalServidorCentavos: 160_000 });
+    expect((await cotejar('wa_v2', 'w1', leidoBueno(1500))).cuerpo).toMatchObject({ codigo: 'vencido' });
+    expect((await cobroDe('wa_v2'))?.['intentosInvalidos']).toBe(0);
+  });
+  it('pedir otra vez con el pedido cambiado: vencido, sin alias', async () => {
+    await abrir('wa_v3');
+    await db.doc(`tenants/${T}/pedidos/wa_v3`).update({ estado: 'reemplazado' });
+    const r = await pedir('wa_v3');
+    expect(r.cuerpo).toMatchObject({ estado: 'vencido' });
+    expect(r.cuerpo.alias).toBeUndefined();
+    expect((await cobroDe('wa_v3'))?.['estado']).toBe('vencido');
+  });
+  it('un pedido cambiado no revive con el plazo vigente: el comprobante perfecto sigue siendo vencido, no en_revision', async () => {
+    await abrir('wa_v4');
+    await db.doc(`tenants/${T}/pedidos/wa_v4`).update({ estado: 'cancelado' });
+    await pedir('wa_v4');
+    expect((await cotejar('wa_v4', 'w1', leidoBueno(1500))).cuerpo.codigo).toBe('vencido');
+  });
+
+  it('teléfono: obligatorio (400) y con la forma de un número', async () => {
+    await abrir('wa_t0');
+    expect((await llamar(pedirAliasArs, { v: 1, pedidoId: 'wa_t0' })).codigo).toBe(400);
+    expect((await pedir('wa_t0', { telefono: 'abc' })).codigo).toBe(400);
+    expect((await llamar(cotejarAliasArs, { v: 1, pedidoId: 'wa_t0', idMeta: 'w1', legible: true })).codigo).toBe(400);
+  });
+  it('el pedido es de otra conversación: sin_pedido, igual que un pedido ajeno, en pedir y en cotejar, con cobro nuevo o abierto', async () => {
+    await sembrarPedido('wa_t1');
+    const otro = '5491199999999';
+    expect(await pedir('wa_t1', { telefono: otro })).toEqual({ codigo: 409, cuerpo: { error: 'sin_pedido' } });
+    expect(await cobroDe('wa_t1')).toBeUndefined();
+    expect((await pedir('wa_t1')).codigo).toBe(200);
+    expect(await pedir('wa_t1', { telefono: otro })).toEqual({ codigo: 409, cuerpo: { error: 'sin_pedido' } });
+    expect(await cotejar('wa_t1', 'w1', leidoBueno(1500), { telefono: otro })).toEqual({ codigo: 409, cuerpo: { error: 'sin_pedido' } });
+    expect(await cobroDe('wa_t1')).toMatchObject({ estado: 'abierto', intentosInvalidos: 0, comprobantes: [] });
+    // y es la misma respuesta que un pedido que no existe
+    expect((await pedir('wa_t_no_existe', { telefono: otro })).cuerpo).toEqual({ error: 'sin_pedido' });
+  });
+  it('el cobro guarda el teléfono enmascarado, nunca el completo', async () => {
+    const c = await cobroDe('wa_t1');
+    expect(c?.['telefonoEnmascarado']).toBe('5491****999'.replace('999', TEL.slice(-3)));
+    expect(JSON.stringify(c)).not.toContain(TEL);
+    await cotejar('wa_t1', 'w9', leidoBueno(1500));
+    expect(JSON.stringify(await cobroDe('wa_t1'))).not.toContain(TEL);
+    for (const d of (await db.collection(`tenants/${T}/comprobantesAlias`).get()).docs) expect(JSON.stringify(d.data())).not.toContain(TEL);
+    for (const d of (await db.collection(`tenants/${T}/bitacora`).get()).docs) expect(JSON.stringify(d.data())).not.toContain(TEL);
+  });
+  it('claves extra siguen dando 400 aun con teléfono', async () => {
+    expect((await pedir('wa_t1', { extra: 1 })).codigo).toBe(400);
+    expect((await cotejar('wa_t1', 'w1', {}, { extra: 1 })).codigo).toBe(400);
+  });
+
+  it('un pedido de más de 24 h no abre cobro; uno sin creadoEn tampoco', async () => {
+    await sembrarPedido('wa_o1', 150_000, { creadoEn: Timestamp.fromMillis(Date.now() - 24 * 3_600_000 - 1000) });
+    expect((await pedir('wa_o1')).cuerpo).toEqual({ error: 'pedido_no_cobrable' });
+    await sembrarPedido('wa_o2');
+    await db.doc(`tenants/${T}/pedidos/wa_o2`).update({ creadoEn: FieldValue.delete() });
+    expect((await pedir('wa_o2')).cuerpo).toEqual({ error: 'pedido_no_cobrable' });
+    expect(await cobroDe('wa_o1')).toBeUndefined();
+    expect(await cobroDe('wa_o2')).toBeUndefined();
+  });
+  it('si el cobro vencido o en revisión ya no existe (TTL), la regla de las 24 h impide abrir otro del mismo pedido', async () => {
+    await abrir('wa_o3');
+    await db.doc(`tenants/${T}/cobrosAlias/wa_o3`).delete();
+    // El pedido envejece más allá de las 24 h: no se reabre.
+    await db.doc(`tenants/${T}/pedidos/wa_o3`).update({ creadoEn: Timestamp.fromMillis(Date.now() - 25 * 3_600_000) });
+    expect((await pedir('wa_o3')).cuerpo).toEqual({ error: 'pedido_no_cobrable' });
+    expect(await cobroDe('wa_o3')).toBeUndefined();
   });
 });

@@ -51,6 +51,7 @@ export const CODIGOS_ALIAS: readonly CodigoAlias[] = [
 
 export type EstadoDelCobro = 'abierto' | 'coincide' | 'en_revision' | 'vencido';
 
+const TELEFONO = /^[0-9]{8,15}$/;
 const ID_PEDIDO = /^wa_[A-Za-z0-9_-]{1,60}$/;
 const ID_META = /^[A-Za-z0-9._=:+-]{1,120}$/;
 const ALIAS_DE_CONFIG = /^[A-Za-z0-9._-]{6,30}$/;
@@ -86,13 +87,18 @@ function sinClavesExtra(o: Record<string, unknown>, permitidas: readonly string[
 const esObjeto = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** Cuerpo de `pedirAliasArs`: `{ v: 1, pedidoId }`. Cualquier otra clave es 400. */
-export function validarCuerpoPedir(crudo: unknown): Validado<{ pedidoId: string }> {
-  if (!esObjeto(crudo) || !sinClavesExtra(crudo, ['v', 'pedidoId'])) return { ok: false, error: 'cuerpo_invalido' };
+/**
+ * Cuerpo de `pedirAliasArs`: `{ v: 1, pedidoId, telefono }`. El `telefono` lo toma el flujo de `messages[0].from`, nunca del
+ * modelo: es la llave de acceso por recurso (el pedido tiene que ser de esa conversación). Cualquier otra clave es 400.
+ */
+export function validarCuerpoPedir(crudo: unknown): Validado<{ pedidoId: string; telefono: string }> {
+  if (!esObjeto(crudo) || !sinClavesExtra(crudo, ['v', 'pedidoId', 'telefono'])) return { ok: false, error: 'cuerpo_invalido' };
   if (crudo['v'] !== 1) return { ok: false, error: 'version_invalida' };
   const pedidoId = crudo['pedidoId'];
   if (typeof pedidoId !== 'string' || !ID_PEDIDO.test(pedidoId)) return { ok: false, error: 'pedido_invalido' };
-  return { ok: true, valor: { pedidoId } };
+  const telefono = crudo['telefono'];
+  if (typeof telefono !== 'string' || !TELEFONO.test(telefono)) return { ok: false, error: 'telefono_invalido' };
+  return { ok: true, valor: { pedidoId, telefono } };
 }
 
 export interface LeidoAlias {
@@ -105,6 +111,7 @@ export interface LeidoAlias {
 
 export interface CuerpoCotejoAlias {
   pedidoId: string;
+  telefono: string;
   idMeta: string;
   legible: boolean;
   leido: LeidoAlias;
@@ -114,16 +121,18 @@ const CLAVES_LEIDO = ['monto', 'alias', 'fecha', 'hora', 'operacion'] as const;
 const recortar = (v: unknown, max: number): string => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
 /**
- * Cuerpo de `cotejarAliasArs`: `{ v: 1, pedidoId, idMeta, legible, leido? }`, con `leido` limitado a
+ * Cuerpo de `cotejarAliasArs`: `{ v: 1, pedidoId, telefono, idMeta, legible, leido? }`, con `leido` limitado a
  * `monto, alias, fecha, hora, operacion`. Una clave de más en cualquiera de los dos niveles es 400.
  */
 export function validarCuerpoCotejo(crudo: unknown): Validado<CuerpoCotejoAlias> {
-  if (!esObjeto(crudo) || !sinClavesExtra(crudo, ['v', 'pedidoId', 'idMeta', 'legible', 'leido'])) {
+  if (!esObjeto(crudo) || !sinClavesExtra(crudo, ['v', 'pedidoId', 'telefono', 'idMeta', 'legible', 'leido'])) {
     return { ok: false, error: 'cuerpo_invalido' };
   }
   if (crudo['v'] !== 1) return { ok: false, error: 'version_invalida' };
   const pedidoId = crudo['pedidoId'];
   if (typeof pedidoId !== 'string' || !ID_PEDIDO.test(pedidoId)) return { ok: false, error: 'pedido_invalido' };
+  const telefono = crudo['telefono'];
+  if (typeof telefono !== 'string' || !TELEFONO.test(telefono)) return { ok: false, error: 'telefono_invalido' };
   const idMeta = crudo['idMeta'];
   if (typeof idMeta !== 'string' || !ID_META.test(idMeta)) return { ok: false, error: 'idmeta_invalido' };
   if (typeof crudo['legible'] !== 'boolean') return { ok: false, error: 'legible_invalido' };
@@ -133,7 +142,7 @@ export function validarCuerpoCotejo(crudo: unknown): Validado<CuerpoCotejoAlias>
   return {
     ok: true,
     valor: {
-      pedidoId, idMeta, legible: crudo['legible'],
+      pedidoId, telefono, idMeta, legible: crudo['legible'],
       leido: {
         monto, alias: recortar(l['alias'], 60), fecha: recortar(l['fecha'], 40),
         hora: recortar(l['hora'], 20), operacion: recortar(l['operacion'], 60),
@@ -152,14 +161,30 @@ export type PedidoCobrable =
   | { ok: true; montoCentavos: number }
   | { ok: false; motivo: 'sin_pedido' | 'pedido_no_cobrable' };
 
-export function pedidoCobrable(pedido: Record<string, unknown> | undefined): PedidoCobrable {
+/** Un pedido más viejo que esto no abre un cobro nuevo (cubre también al cobro vencido que el TTL ya borró). */
+export const EDAD_MAXIMA_PEDIDO_MS = 24 * 3_600_000;
+
+export function pedidoCobrable(pedido: Record<string, unknown> | undefined, ahoraMs: number): PedidoCobrable {
   if (!pedido) return { ok: false, motivo: 'sin_pedido' };
   const m = pedido['totalServidorCentavos'];
+  const creado = pedido['creadoEn'] as { toMillis?: unknown } | undefined;
+  const creadoMs = typeof creado?.toMillis === 'function' ? (creado.toMillis as () => number)() : NaN;
   if (pedido['origen'] !== 'whatsapp' || pedido['moneda'] !== MONEDA_ALIAS || pedido['estado'] !== 'recibido'
-    || typeof m !== 'number' || !Number.isInteger(m) || m <= 0 || m > MONTO_MAXIMO_CENTAVOS || m % 100 !== 0) {
+    || typeof m !== 'number' || !Number.isInteger(m) || m <= 0 || m > MONTO_MAXIMO_CENTAVOS || m % 100 !== 0
+    || !Number.isFinite(creadoMs) || ahoraMs - creadoMs > EDAD_MAXIMA_PEDIDO_MS) {
     return { ok: false, motivo: 'pedido_no_cobrable' };
   }
   return { ok: true, montoCentavos: m };
+}
+
+/** Control de acceso por recurso: el pedido es de la conversación de ESE teléfono (el del mensaje, no el del modelo). */
+export function pedidoEsDe(pedido: Record<string, unknown> | undefined, telefono: string): boolean {
+  return !!pedido && pedido['conversacionId'] === `wa_${telefono}`;
+}
+
+/** ¿El pedido sigue siendo aquel por el que se abrió el cobro? Recibido y con el mismo total. */
+export function pedidoSigueVivo(pedido: Record<string, unknown> | undefined, montoCentavos: number): boolean {
+  return !!pedido && pedido['estado'] === 'recibido' && pedido['totalServidorCentavos'] === montoCentavos;
 }
 
 // ------------------------------------------------------------------ la calificación
@@ -210,18 +235,22 @@ export function calificarAlias(
   return { codigo: 'ok', montoLeidoCentavos: null };
 }
 
-// ------------------------------------------------------------------ la huella
+// ------------------------------------------------------------------ las huellas
 
 /**
- * Con qué se reconoce un comprobante entre dos pedidos. Con número de operación, ése (normalizado); sin él,
- * monto + alias + minuto del comprobante. Es un hash: en la base no queda ningún dato leído de la imagen.
- * `null` si no hay con qué (no se llega a `ok` sin fecha, así que en la práctica no ocurre).
+ * Con qué se reconoce un comprobante entre dos pedidos. SIEMPRE las dos que se puedan calcular:
+ *  - `hOp`: número de operación (normalizado, 4 caracteres o más) + monto + alias;
+ *  - `hMf`: monto + alias + minuto del comprobante, siempre que haya instante.
+ * Así la misma captura con número de operación y sin él cae en la misma `hMf`. Son hashes: en la base no queda
+ * ningún dato leído de la imagen.
  */
-export function huellaDeComprobante(l: LeidoAlias, montoCentavos: number): string | null {
+export function huellasDeComprobante(l: LeidoAlias, montoCentavos: number): { hOp: string | null; hMf: string | null } {
+  const alias = normalizarAlias(l.alias);
   const operacion = l.operacion.toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (operacion.length >= 4) return createHash('sha256').update(`op:${operacion}`).digest('hex');
+  const hash = (t: string) => createHash('sha256').update(t).digest('hex');
   const instante = instanteDelComprobante(l);
-  if (instante === null) return null;
-  return createHash('sha256')
-    .update(`mf:${montoCentavos}|${normalizarAlias(l.alias)}|${Math.floor(instante / 60_000)}`).digest('hex');
+  return {
+    hOp: operacion.length >= 4 ? hash(`op:${operacion}|${montoCentavos}|${alias}`) : null,
+    hMf: instante === null ? null : hash(`mf:${montoCentavos}|${alias}|${Math.floor(instante / 60_000)}`),
+  };
 }
