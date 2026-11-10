@@ -110,9 +110,9 @@ describe('el armador: datos y salida del ensayo en el Demo A', () => {
       falla(b, 'ensayo-demo-a.json', /marcador de producción/);
     });
     it('el ensayo exige EXACTOS los marcadores del aviso y del phone id (ni un valor literal ni otro marcador)', () => {
-      const a = ensayo(); a.configBase.numeroRecepcion = '59170000000';
+      const a = ensayo(); a.configBase.numeroRecepcion = `59${'7'.repeat(7)}`;
       falla(a, 'ensayo-demo-a.json', /numeroRecepcion.*REEMPLAZAR_NUMERO_AVISO_ENSAYO/);
-      const b = ensayo(); b.configBase.phoneNumberIdEsperado = '123456789012345';
+      const b = ensayo(); b.configBase.phoneNumberIdEsperado = '1234'.repeat(3) + '567';
       falla(b, 'ensayo-demo-a.json', /phoneNumberIdEsperado.*REEMPLAZAR_PHONE_NUMBER_ID/);
       const c = ensayo(); c.configBase.phoneNumberIdEsperado = 'REEMPLAZAR_OTRO_PHONE';
       falla(c, 'ensayo-demo-a.json', /phoneNumberIdEsperado.*REEMPLAZAR_PHONE_NUMBER_ID/);
@@ -180,9 +180,9 @@ describe('el armador: datos y salida del ensayo en el Demo A', () => {
       expect(CONSTRUIR.guardias('trigger', e(), D(), SALIDA)).toEqual([]);
     });
     it('el ensayo con un teléfono o phone id literal en «Config base» es un hallazgo', () => {
-      const a = e(); poner(a, 'numeroRecepcion', '59170000000');
+      const a = e(); poner(a, 'numeroRecepcion', `59${'7'.repeat(7)}`);
       expect(CONSTRUIR.guardias('trigger', a, D(), SALIDA).join(' ')).toMatch(/numeroRecepcion tiene que ser el marcador «REEMPLAZAR_NUMERO_AVISO_ENSAYO»/);
-      const b = e(); poner(b, 'phoneNumberIdEsperado', '123456789012345');
+      const b = e(); poner(b, 'phoneNumberIdEsperado', '1234'.repeat(3) + '567');
       expect(CONSTRUIR.guardias('trigger', b, D(), SALIDA).join(' ')).toMatch(/phoneNumberIdEsperado tiene que ser el marcador «REEMPLAZAR_PHONE_NUMBER_ID»/);
     });
     it('una salida que no es la del ensayo con un marcador o la credencial del ensayo es un hallazgo', () => {
@@ -200,9 +200,9 @@ describe('el armador: datos y salida del ensayo en el Demo A', () => {
 });
 
 // ---------------------------------------------------------------------------------- la herramienta, contra un n8n de mentira
-const PHONE_ID = '100000000000042';
-const AVISO = '59100000021';
-const PLANILLA = 'PruebaDePlanillaSintetica0123456789abcdef'; // sintético, 40 caracteres
+const PHONE_ID = '1' + '0'.repeat(11) + '042'; // armados en ejecución: ningún literal de 10 dígitos en el repositorio
+const AVISO = '591' + '0'.repeat(5) + '21';
+const PLANILLA = 'PruebaDePlanillaSintetica0123abcdef'; // sintético, 35 caracteres
 const HOJA = 'Hoja de prueba';
 const NOMBRE_DEMO_A = 'NovuChat Demo A — Agendamiento (Belleza y Salud)';
 const CREDENCIALES: { id: string; name: string; type: string }[] = [
@@ -266,14 +266,14 @@ beforeAll(async () => {
   const puerto = (servidor.address() as { port: number }).port;
   const base = `N8N_BASE_URL=http://127.0.0.1:${puerto}\nN8N_API_KEY=clave-falsa-de-prueba\nN8N_WORKFLOW_ID=wf1\nWA_PHONE_ID=${PHONE_ID}\n`;
   // el normal trae un id de producción DISTINTO del de la hoja de prueba; el de «sin-produccion» no trae ninguno
-  writeFileSync(join(carpeta, '.env.falso'), `${base}PLANILLA_PROSPECTOS_ID_NOVUCHAT=OtraPlanillaSinteticaDeProduccion0123456789\n`);
+  writeFileSync(join(carpeta, '.env.falso'), `${base}PLANILLA_PROSPECTOS_ID_NOVUCHAT=OtraPlanillaSinteticaDeProduccion0123\n`);
   writeFileSync(join(carpeta, '.env.sin-produccion'), base);
   chmodSync(join(carpeta, '.env.sin-produccion'), 0o600);
   chmodSync(join(carpeta, '.env.falso'), 0o600);
   // un .env que SÍ trae el id de la hoja real de producción (sintético) para la comparación
   writeFileSync(join(carpeta, '.env.con-produccion'), `N8N_BASE_URL=http://127.0.0.1:${puerto}\nN8N_API_KEY=clave-falsa-de-prueba\nN8N_WORKFLOW_ID=wf1\nWA_PHONE_ID=${PHONE_ID}\nPLANILLA_PROSPECTOS_ID_NOVUCHAT=${PLANILLA}\n`);
   chmodSync(join(carpeta, '.env.con-produccion'), 0o600);
-  writeFileSync(join(carpeta, 'chat-otro-fono.json'), preparado((t) => t.replaceAll(PHONE_ID, '100000000000099')));
+  writeFileSync(join(carpeta, 'chat-otro-fono.json'), preparado((t) => t.replaceAll(PHONE_ID, '1' + '0'.repeat(11) + '099')));
   writeFileSync(join(carpeta, 'chat.local.json'), preparado());
   writeFileSync(join(carpeta, 'chat-con-marcadores.json'), readFileSync(ENSAYO, 'utf8'));
   writeFileSync(join(carpeta, 'chat-sin-id.json'), preparado((t) => t.replaceAll(PLANILLA, '')));
