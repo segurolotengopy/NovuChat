@@ -30,12 +30,17 @@ if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: P
 const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { ingesta } = await import('../functions/src/ingesta.ts');
+const { limitesDe } = await import('../functions/src/central/cuenta/planes.ts');
 
 
 const T = 'pedido-sin-cobro-ing';
 const TB = 'pedido-sin-cobro-otro';
 const NUMERO = '1000000089';
 const NUMERO_B = '1000000090';
+const TC = 'pedido-sin-cobro-apagado';
+const NUMERO_C = '1000000091';
+const TD = 'pedido-sin-cobro-cortado';
+const NUMERO_D = '1000000092';
 
 interface Respuesta { codigo: number; cuerpo: unknown }
 
@@ -68,14 +73,18 @@ let n = 0;
 const tel = () => `5491100${String(1000 + ++n).padStart(4, '0')}`;
 
 beforeAll(async () => {
-  for (const [t, num, ext_] of [[T, NUMERO, true], [TB, NUMERO_B, false]] as const) {
+  for (const [t, num, ext_] of [[T, NUMERO, true], [TB, NUMERO_B, false], [TC, NUMERO_C, true], [TD, NUMERO_D, true]] as const) {
     await db.recursiveDelete(db.doc(`tenants/${t}`));
     await db.doc(`rutasWhatsApp/${num}`).set({ tenantId: t, flujo: 'venta', aliasSecreto: 'cliente20', estado: 'activo' });
-    await db.doc(`tenants/${t}`).set({ nombre: t, estado: 'activo', plan: 'basico', flujos: ['venta'], vertical: 'venta', modulos: ['productos', 'pedidos'] });
-    await db.doc(`tenants/${t}/cuenta/estado`).set({ plan: 'impulso', estadoPago: 'al_dia' });
+    await db.doc(`tenants/${t}`).set({ nombre: t, estado: 'activo', plan: 'basico', flujos: ['venta'], vertical: 'venta', modulos: t === TC ? ['productos'] : ['productos', 'pedidos'] });
+    await db.doc(`tenants/${t}/cuenta/estado`).set(t === TD
+      ? { modalidad: 'prepago', plan: 'crecimiento', limites: limitesDe('crecimiento'), periodoPagado: '2020-01', corteActivo: true }
+      : { plan: 'impulso', estadoPago: 'al_dia' });
     if (ext_) await db.doc(`tenants/${t}/config/pedidos`).set({ catalogoExterno: { activo: true, monedas: ['ARS'] } });
   }
+  await db.doc('plataforma/prepago').set({ corteActivo: false });
 }, 120_000);
+beforeEach(() => { roto.activo = false; });
 
 describe('la ingesta reenvía pedido_sin_cobro al gancho de Pedidos', () => {
   it('con líneas externas crea wa_<ref> sinCobro con sus campos exactos y responde 200', async () => {
@@ -146,5 +155,80 @@ describe('la ingesta reenvía pedido_sin_cobro al gancho de Pedidos', () => {
     expect(c['solicitud']).toMatchObject({ etapa: 'qr_enviado', evento: { id: 'ps-9' } });
     const m = (await db.collection(`tenants/${T}/metricas`).get()).docs[0]?.data() ?? {};
     expect(m['senasEnviadas']).toBe(1);
+  });
+});
+
+describe('barreras del gancho (negando)', () => {
+  const mismo = async (numero: string, t: string, ref: string, extra: Record<string, unknown> = {}) =>
+    llamar(ingesta, { ...base, telefono: t, evento: 'pedido_sin_cobro', referencia: ref, lineas: [ext()], entrega: 'retiro', ...extra }, numero);
+
+  it('un pedido sin cobro no cierra el wa_ de un QR anterior de la misma conversación', async () => {
+    const t = tel();
+    await db.doc(`tenants/${TB}/config/pedidos`).set({ catalogoExterno: { activo: true, monedas: ['ARS'] } });
+    await db.doc(`tenants/${T}/catalogo/taco`).set({ nombre: 'Taco', precio: 10, moneda: 'BOB', activo: true });
+    await llamar(ingesta, { ...base, tipo: 'image', telefono: t, evento: 'qr_enviado', referencia: 'R1', idMeta: 'wamid.R1', monto: 10, reglaCobro: 2, lineas: [{ id: 'taco', cantidad: 1 }], entrega: 'retiro' });
+    expect((await db.doc(`tenants/${T}/pedidos/wa_R1`).get()).get('estado')).toBe('recibido');
+    await mismo(NUMERO, t, 'R2');
+    expect((await db.doc(`tenants/${T}/pedidos/wa_R2`).get()).exists).toBe(true);
+    expect((await db.doc(`tenants/${T}/pedidos/wa_R1`).get()).get('estado')).toBe('recibido');
+  });
+
+  it('con sinCobro solo entra ARS: una línea en BOB no crea pedido aunque BOB esté habilitada', async () => {
+    const t = tel();
+    await db.doc(`tenants/${T}/config/pedidos`).set({ catalogoExterno: { activo: true, monedas: ['BOB', 'ARS'] } });
+    const r = await mismo(NUMERO, t, 'ps-bob', { lineas: [ext({ moneda: 'BOB' })] });
+    expect(r.codigo).toBe(200);
+    expect((await db.doc(`tenants/${T}/pedidos/wa_ps-bob`).get()).exists).toBe(false);
+    const r2 = await mismo(NUMERO, tel(), 'ps-ars');
+    expect(r2.codigo).toBe(200);
+    expect((await db.doc(`tenants/${T}/pedidos/wa_ps-ars`).get()).exists).toBe(true);
+    await db.doc(`tenants/${T}/config/pedidos`).set({ catalogoExterno: { activo: true, monedas: ['ARS'] } });
+  });
+
+  it('un reenvío idempotente de pedido_sin_cobro no registra error_flujo; el de qr_enviado sí', async () => {
+    const errores = async () => (await db.collection(`tenants/${T}/bitacora`).get()).docs
+      .filter((d) => d.get('codigo') === 'pedido_wa_referencia_repetida').length;
+    const t = tel();
+    const antes = await errores();
+    await mismo(NUMERO, t, 'ps-rep');
+    await mismo(NUMERO, t, 'ps-rep');
+    expect(await errores()).toBe(antes);
+    expect((await pedidos()).filter((d) => d.id === 'wa_ps-rep')).toHaveLength(1);
+  });
+
+  it('el gancho roto: 200, mismas claves de respuesta y nada creado', async () => {
+    const okR = await mismo(NUMERO, tel(), 'ps-ok2');
+    roto.activo = true;
+    const r = await mismo(NUMERO, tel(), 'ps-roto');
+    expect(r.codigo).toBe(200);
+    expect(Object.keys(r.cuerpo as object).sort()).toEqual(Object.keys(okR.cuerpo as object).sort());
+    expect((await db.doc(`tenants/${T}/pedidos/wa_ps-roto`).get()).exists).toBe(false);
+  });
+
+  it('módulo pedidos apagado: no crea pedido', async () => {
+    const r = await mismo(NUMERO_C, tel(), 'ps-off');
+    expect(r.codigo).toBe(200);
+    expect((await pedidos(TC)).length).toBe(0);
+  });
+
+  it('tenant cortado por falta de pago: no crea pedido', async () => {
+    await db.doc('plataforma/prepago').set({ corteActivo: false });
+    const r = await mismo(NUMERO_D, tel(), 'ps-corte');
+    expect(r.codigo).toBe(200);
+    expect((r.cuerpo as Record<string, any>)['servicio']).toMatchObject({ estado: 'cortado' });
+    expect((await pedidos(TD)).length).toBe(0);
+  });
+
+  it('contacto bloqueado: el bloqueo solo rige para ENTRANTES (silencio total); un entrante con el evento no crea pedido', async () => {
+    const t = tel();
+    await llamar(ingesta, { ...base, telefono: t });
+    await db.doc(`tenants/${T}/conversaciones/wa_${t}`).update({ bloqueada: true, bloqueadaPor: 'u-admin', bloqueadaEn: new Date() });
+    const r = await mismo(NUMERO, t, 'ps-bloq', { direccion: 'entrante' });
+    expect(r.codigo).toBe(200);
+    expect((r.cuerpo as Record<string, any>)['bloqueadoPorContacto']).toBe(true);
+    expect((await db.doc(`tenants/${T}/pedidos/wa_ps-bloq`).get()).exists).toBe(false);
+    // Un saliente ya en curso sigue su camino normal (igual que qr_enviado): el flujo lo emite solo tras atender.
+    const r2 = await mismo(NUMERO, t, 'ps-bloq-sal');
+    expect(r2.codigo).toBe(200);
   });
 });

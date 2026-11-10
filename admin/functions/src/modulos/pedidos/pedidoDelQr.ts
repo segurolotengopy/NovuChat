@@ -209,6 +209,8 @@ export function armarPedidoWa(
       if (typeof pc !== 'number' || !Number.isSafeInteger(pc) || pc <= 0 || pc > MAX_PRECIO_CENTAVOS_EXTERNO) { descartados.push(id); continue; }
       const m = c['moneda'];
       if ((m !== 'BOB' && m !== 'ARS') || !externo.monedas.includes(m)) { descartados.push(id); continue; }
+      // Sin cobro (pedido_sin_cobro) solo existe la Argentina: otra moneda no es de este camino.
+      if (sinCobro && m !== 'ARS') { descartados.push(id); continue; }
       if (m === 'ARS' && pc % 100 !== 0) { descartados.push(id); continue; }
       const nombre = lineaLimpia(c['nombre'], MAX_NOMBRE);
       if (nombre === '') { descartados.push(id); continue; }

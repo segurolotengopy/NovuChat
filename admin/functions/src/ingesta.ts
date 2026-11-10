@@ -1451,7 +1451,8 @@ export const ingesta = onRequest(
       || mensaje.evento === 'pedido_sin_cobro')) {
       await despuesDelTurnoPedidos({
         tenantId, ficha, evento: mensaje.evento, efectoDeCobro: veredicto.pedidos.efecto,
-        referencia: mensaje.referencia, referenciaAnterior: veredicto.pedidos.refAnterior,
+        referencia: mensaje.referencia, // Un pedido sin cobro no cierra el pedido de un QR anterior; qr_enviado y cobro_cancelado sí lo usan.
+        referenciaAnterior: mensaje.evento === 'pedido_sin_cobro' ? undefined : veredicto.pedidos.refAnterior,
         telefono: mensaje.telefono, monto: mensaje.monto,
         lineas: mensaje.lineas, entrega: mensaje.entrega, facturacion: mensaje.facturacion,
         reemplaza: mensaje.reemplaza,

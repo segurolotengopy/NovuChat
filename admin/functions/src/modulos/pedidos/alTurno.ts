@@ -49,7 +49,8 @@ export async function despuesDelTurnoPedidos(d: DatosDelTurnoPedidos): Promise<v
       });
       // Efecto `abierto` con un pedido que ya existía: el flujo reusó la referencia con otro carrito.
       // El pedido conserva lo viejo; se deja constancia, sin datos del pedido, para revisar a mano.
-      if (r.resultado === 'repetido') {
+      // En `pedido_sin_cobro` un reenvío idempotente no es un error: no hay referencia de QR que se haya reusado.
+      if (r.resultado === 'repetido' && d.evento === 'qr_enviado') {
         await registrar(d.tenantId, {
           tipo: 'error_flujo', resultado: 'fallo', codigo: 'pedido_wa_referencia_repetida',
           detalle: 'el cobro se abrio con una referencia que ya tenia pedido de WhatsApp',
