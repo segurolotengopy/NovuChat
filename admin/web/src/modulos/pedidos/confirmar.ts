@@ -8,9 +8,16 @@ export interface ResultadoDeError { mensaje: string; faltantes: FaltanteVista[] 
 
 const esObjeto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** Solo un pedido de catálogo externo que sigue `recibido` tiene botón. */
-export const puedeConfirmarse = (p: { catalogo?: unknown; estado?: unknown }): boolean =>
-  p.catalogo === 'externo' && p.estado === 'recibido';
+/** El rol de la sesión en ESTE comercio (`rolEn`): solo `admin` y `oper` pueden confirmar. */
+export const rolPuedeConfirmar = (rol: string | null | undefined): boolean => rol === 'admin' || rol === 'oper';
+
+/** Solo un pedido de catálogo externo que sigue `recibido`, y solo para admin u oper de ese comercio, tiene botón. */
+export const puedeConfirmarse = (p: { catalogo?: unknown; estado?: unknown }, rol: string | null | undefined): boolean =>
+  p.catalogo === 'externo' && p.estado === 'recibido' && rolPuedeConfirmar(rol);
+
+/** Un pedido externo `confirmando` se muestra como «Confirmando…», sin botón (otra persona, o esta, ya lo está confirmando). */
+export const estaConfirmando = (p: { catalogo?: unknown; estado?: unknown }): boolean =>
+  p.catalogo === 'externo' && p.estado === 'confirmando';
 
 /** El error de la callable como lo muestra la pantalla: el 409 (stock) trae la lista; el resto, el mensaje del servidor. */
 export function leerErrorDeConfirmar(e: unknown): ResultadoDeError {

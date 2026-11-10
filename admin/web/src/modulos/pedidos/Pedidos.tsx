@@ -6,7 +6,9 @@ import { db, funciones } from '../../core/lib/firebase';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { descargarCsv } from '../../central/lib/exportar';
 import { enlaceDelPedido } from './ubicacion';
-import { leerErrorDeConfirmar, puedeConfirmarse, type ResultadoDeError } from './confirmar';
+import { useSesion } from '../../core/lib/contexto';
+import { rolEn } from '../../core/lib/sesion';
+import { estaConfirmando, leerErrorDeConfirmar, puedeConfirmarse, type ResultadoDeError } from './confirmar';
 
 /**
  * =============================================================================
@@ -79,13 +81,13 @@ function detalleDelItem(i: ItemPedido): string {
  * pasa el pedido a `confirmado` (la lista se actualiza sola por el `onSnapshot`). Si NovuTienda no tiene
  * stock, el pedido NO cambia y acá se listan los faltantes.
  */
-function BotonConfirmar({ pedidoId }: { pedidoId: string }) {
+function BotonConfirmar({ tenantId, pedidoId }: { tenantId: string; pedidoId: string }) {
   const [enviando, setEnviando] = useState(false);
   const [fallo, setFallo] = useState<ResultadoDeError | null>(null);
   const confirmar = async () => {
     setEnviando(true); setFallo(null);
     try {
-      await httpsCallable(funciones, 'confirmarPedidoExterno')({ pedidoId });
+      await httpsCallable(funciones, 'confirmarPedidoExterno')({ tenantId, pedidoId });
     } catch (e) {
       setFallo(leerErrorDeConfirmar(e));
     } finally {
@@ -119,6 +121,8 @@ function BotonConfirmar({ pedidoId }: { pedidoId: string }) {
 
 export function Pedidos() {
   const { tenantId = '' } = useParams();
+  const { permisos } = useSesion();
+  const rol = rolEn(permisos, tenantId);
   const [pedidos, setPedidos] = useState<Pedido[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -239,7 +243,8 @@ export function Pedidos() {
                     <p className="pedido-nota"><TextoSeguro valor={p.nota} maxLargo={300} /></p>
                   )}
                   {p.catalogo === 'externo' && p.estado === 'confirmado' && <p className="pedido-entrega">Confirmado</p>}
-                  {puedeConfirmarse(p) && <BotonConfirmar pedidoId={p.id} />}
+                  {estaConfirmando(p) && <p className="pedido-entrega">Confirmando…</p>}
+                  {puedeConfirmarse(p, rol) && <BotonConfirmar tenantId={tenantId} pedidoId={p.id} />}
                 </li>
               );
             })}

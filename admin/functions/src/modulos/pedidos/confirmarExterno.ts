@@ -16,17 +16,22 @@
  *
  * LO QUE ESTA FUNCIÓN GARANTIZA, y cada línea tiene una prueba que la niega
  * (`pruebas/modulos/pedidos/confirmar-externo.test.ts`):
- *  - El comercio sale del TOKEN (el único comercio en que la sesión es admin u oper), nunca del cuerpo: un
- *    cuerpo con cualquier clave que no sea `pedidoId` se rechaza. Además la cuenta se vuelve a leer
- *    (`cuentaVigenteDe`), el comercio debe estar activo, con el módulo Pedidos y con el catálogo externo
- *    habilitado.
+ *  - Entrada `{tenantId, pedidoId}` (ninguna otra clave). Se exige `esAdminDe` / `esOperDe` de ESE `tenantId`
+ *    (contraseña y correo verificado; el soporte no cuenta): un comercio ajeno es `permission-denied`. Además la
+ *    cuenta se vuelve a leer (`cuentaVigenteDe`), el comercio debe estar activo, con el módulo Pedidos y con el
+ *    catálogo externo habilitado. No se exige sesión reciente: esa barrera es para mover dinero a mano.
  *  - Lo que sale a NovuTienda se arma desde el pedido guardado y SOLO lleva `productoId` y `cantidad` por línea:
  *    nunca precios, nombres, teléfono ni nada del cliente. Una clave extra no puede salir.
- *  - Estado: solo `recibido` se confirma. `confirmado` devuelve OK SIN llamar de nuevo (idempotente); cualquier
- *    otro estado, y todo pedido que no sea de catálogo externo, se rechaza. El pedido cambia a `confirmado`
- *    SOLO tras un 200. 409, 429/503 agotados, errores de red o de contrato dejan el pedido SIN cambiar.
- *  - Si NovuTienda dijo 200 y la escritura local falla, el operador ve «no disponible» y puede volver a pulsar:
- *    NovuTienda es idempotente por `pedidoId`, así que repetir no descuenta dos veces.
+ *  - Estados: `recibido` -> `confirmando` (transacción, ANTES de llamar) -> `confirmado` (solo tras un 200).
+ *    Mientras está `confirmando`, `cerrarPedidoWa` (solo actúa sobre `recibido`) no puede reemplazarlo ni cancelarlo,
+ *    y una segunda confirmación simultánea no llama (hace UNA sola llamada). 409, 429/503 agotados, red, tiempo o
+ *    contrato devuelven el pedido a `recibido` en transacción. Un `confirmando` de más de 2 min (la Function murió a
+ *    medias) se puede retomar. `confirmado` devuelve OK SIN llamar de nuevo; cualquier otro estado, y todo pedido
+ *    que no sea de catálogo externo, se rechaza.
+ *  - `confirmadoEn` guardado es EXACTAMENTE el instante enviado (se parsea del cuerpo). Si el pedido se borró
+ *    durante la llamada, `not-found`. Si la escritura final falla tras el 200, queda `confirmando` y se puede
+ *    retomar pasados 2 min; NovuTienda es idempotente por `pedidoId`, así que repetir no descuenta dos veces.
+ *  - App Check por ambiente (producción sí, staging y emulador no) y concurrencia explícita baja (10).
  *  - SECRETO: un solo secreto de Secret Manager (`NOVUTIENDA_CONFIRMAR`) con el mapa
  *      { "<tenantId>": { "baseUrl": "https://…", "bearer": "…", "firmaSecreto": "…" } }
  *    Nunca en el repositorio, en Firestore ni en un log. Ausente, ilegible o sin la entrada del comercio:
@@ -41,17 +46,23 @@
 import { createHmac } from 'node:crypto';
 import { logger } from 'firebase-functions';
 import { defineSecret } from 'firebase-functions/params';
-import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
-import { Timestamp, getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { HttpsError, onCall, type CallableOptions, type CallableRequest } from 'firebase-functions/v2/https';
+import { FieldValue, Timestamp, getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { REGION } from '../../core/region.js';
 import { ID_COMERCIO } from '../../core/conversacion/acceso.js';
-import { claimsDe, esAdminDe, esOperDe, exigirAutenticado } from '../../core/seguridad/autorizacion.js';
+import { esAdminDe, esOperDe, exigirAutenticado } from '../../core/seguridad/autorizacion.js';
 import { cuentaVigenteDe, type RolVerificado } from '../../core/seguridad/vigencia.js';
 import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
 import { configExternaDe, idExternoValido } from './pedidoDelQr.js';
 
 /** Los estados que un pedido de Pedidos puede tener. `confirmado` lo escribe esta callable (B5b). */
-export const ESTADOS_DE_PEDIDO = ['recibido', 'confirmado', 'reemplazado', 'cancelado'] as const;
+export const ESTADOS_DE_PEDIDO = ['recibido', 'confirmando', 'confirmado', 'reemplazado', 'cancelado'] as const;
+export type EstadoDePedido = typeof ESTADOS_DE_PEDIDO[number];
+/** El estado guardado, o `null` si no es uno conocido (un valor ajeno nunca se confirma). */
+export const estadoDelPedido = (v: unknown): EstadoDePedido | null =>
+  ESTADOS_DE_PEDIDO.find((e) => e === v) ?? null;
+/** Un `confirmando` más viejo que esto se da por abandonado (la Function murió a medias) y se puede retomar. */
+export const CONFIRMANDO_MAXIMO_MS = 2 * 60_000;
 
 export const SECRETO_NOVUTIENDA = defineSecret('NOVUTIENDA_CONFIRMAR');
 
@@ -76,6 +87,7 @@ export const MENSAJES = {
   noDisponible: 'No se pudo completar la confirmación. Intente de nuevo en unos minutos.',
   rechazado: 'NovuTienda rechazó la confirmación. Avise a NovuChat.',
   faltantes: 'NovuTienda no tiene stock suficiente para este pedido.',
+  enCurso: 'Este pedido ya se está confirmando. Espere unos segundos.',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -84,6 +96,10 @@ export const MENSAJES = {
 
 const esObjeto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** Milisegundos de un Timestamp de Firestore (o `null` si no lo es). */
+const milisegundosDe = (v: unknown): number | null =>
+  typeof v === 'object' && v !== null && typeof (v as { toMillis?: unknown }).toMillis === 'function' ? (v as { toMillis(): number }).toMillis() : null;
+
 export interface ItemParaNovuTienda { productoId: string; cantidad: number }
 export interface CuerpoDeConfirmacion { pedidoId: string; items: ItemParaNovuTienda[]; confirmadoEn: string }
 
@@ -91,7 +107,8 @@ export interface CuerpoDeConfirmacion { pedidoId: string; items: ItemParaNovuTie
  * El cuerpo EXACTO del contrato, armado desde el pedido guardado. Devuelve `null` si algo no cumple el
  * contrato (id, cantidad, ítems repetidos o vacíos, ítem que no es externo). Solo `productoId` y `cantidad`
  * salen por línea: se copian a mano, jamás se esparce el ítem guardado.
- * `confirmadoEn`: instante ISO 8601 en UTC (el contrato no fija otra forma; ver el informe del bloque).
+ * SUPUESTO (contrato v1 no lo fija): `confirmadoEn` es el instante ISO 8601 en UTC (`toISOString()`). El contrato
+ * solo dice que existe la clave; si NovuTienda espera ms u otro formato, se cambia SOLO esta línea.
  */
 export function armarCuerpo(pedidoId: string, items: unknown, ahoraMs: number): CuerpoDeConfirmacion | null {
   if (!idDePedidoParaNovuTienda(pedidoId)) return null;
@@ -143,8 +160,9 @@ const entero = (v: unknown): number | undefined =>
 
 /**
  * Los faltantes de un 409, legibles: solo ids que ESTE pedido tiene (el nombre sale del pedido, no de la
- * respuesta), y números acotados. Acepta `faltantes: [{productoId|id, solicitado|cantidad, disponible}]`;
- * cualquier otra forma da una lista vacía (el mensaje general igual sale).
+ * respuesta), y números acotados.
+ * SUPUESTO (contrato v1 no lo fija): el cuerpo del 409 es `{"faltantes":[{"productoId","solicitado","disponible"}]}`.
+ * No se aceptan alias. Cualquier otra forma da una lista vacía (el mensaje general igual sale).
  */
 export function faltantesLegibles(crudo: string, items: unknown): Faltante[] {
   let r: unknown;
@@ -158,10 +176,10 @@ export function faltantesLegibles(crudo: string, items: unknown): Faltante[] {
   const salida: Faltante[] = [];
   for (const f of lista.slice(0, MAX_FALTANTES)) {
     if (!esObjeto(f)) continue;
-    const id = typeof f['productoId'] === 'string' ? f['productoId'] : f['id'];
+    const id = f['productoId'];
     if (typeof id !== 'string' || !nombres.has(id)) continue;
     const nombre = nombres.get(id);
-    const solicitado = entero(f['solicitado'] ?? f['cantidad']);
+    const solicitado = entero(f['solicitado']);
     const disponible = entero(f['disponible']);
     salida.push({
       productoId: id,
@@ -256,14 +274,6 @@ const dependenciasReales = (): DependenciasDeConfirmacion => ({
   ahora: () => Date.now(),
 });
 
-/** El único comercio en que la sesión es administrador u operador. Ninguno, o más de uno: no hay comercio. */
-export function comercioDelToken(p: CallableRequest): { tenantId: string; rol: 'admin' | 'oper' } | null {
-  const candidatos = Object.keys(claimsDe(p).t).filter((t) => ID_COMERCIO.test(t) && (esAdminDe(p, t) || esOperDe(p, t)));
-  if (candidatos.length !== 1) return null;
-  const tenantId = candidatos[0]!;
-  return { tenantId, rol: esAdminDe(p, tenantId) ? 'admin' : 'oper' };
-}
-
 function registrar(codigo: string, extra: { estado?: number } = {}): void {
   // Solo códigos y estados HTTP: jamás cuerpo, URL, secreto, comercio ni teléfono.
   logger.warn('confirmarPedidoExterno', { codigo, ...(extra.estado !== undefined ? { estado: extra.estado } : {}) });
@@ -276,102 +286,173 @@ const rechazo = (codigo: ConstructorParameters<typeof HttpsError>[0], mensaje: s
 
 export interface RespuestaDeConfirmacion { pedidoId: string; estado: 'confirmado'; yaConfirmado: boolean }
 
-export async function atenderConfirmacion(p: CallableRequest, d: DependenciasDeConfirmacion): Promise<RespuestaDeConfirmacion> {
-  // 1. Quién: sesión, comercio del token, rol.
-  const uid = exigirAutenticado(p);
-  const quien = comercioDelToken(p);
-  if (!quien) throw rechazo('permission-denied', MENSAJES.noAutorizado, 'sin_comercio_en_el_token');
-  const { tenantId } = quien;
+/** Lo que la transacción de reclamo entrega: el cuerpo ya armado y el instante (ms) que lo ata al reclamo. */
+interface Reclamo { cuerpo: CuerpoDeConfirmacion; instanteMs: number; items: unknown; destino: DestinoNovuTienda }
+type ResultadoDeReclamo = { ya: true } | ({ ya: false } & Reclamo);
 
-  // 2. La entrada: SOLO `pedidoId`. Un `tenantId` (o cualquier otra clave) en el cuerpo se rechaza.
+export async function atenderConfirmacion(p: CallableRequest, d: DependenciasDeConfirmacion): Promise<RespuestaDeConfirmacion> {
+  // 1. Quién: sesión, forma de la entrada y rol DE ESE comercio (esAdminDe / esOperDe; el soporte no cuenta).
+  const uid = exigirAutenticado(p);
   const datos = p.data;
-  if (!esObjeto(datos) || Object.keys(datos).some((k) => k !== 'pedidoId') || !idDePedidoParaNovuTienda(datos['pedidoId'])) {
+  if (!esObjeto(datos) || Object.keys(datos).some((k) => k !== 'tenantId' && k !== 'pedidoId')
+    || typeof datos['tenantId'] !== 'string' || !ID_COMERCIO.test(datos['tenantId']) || !idDePedidoParaNovuTienda(datos['pedidoId'])) {
     throw rechazo('invalid-argument', MENSAJES.invalido, 'entrada_invalida');
   }
+  const tenantId = datos['tenantId'];
   const pedidoId = datos['pedidoId'];
+  const rol: 'admin' | 'oper' | null = esAdminDe(p, tenantId) ? 'admin' : esOperDe(p, tenantId) ? 'oper' : null;
+  if (rol === null) throw rechazo('permission-denied', MENSAJES.noAutorizado, 'sin_rol_en_el_comercio');
 
-  // 3. El token no basta: la cuenta sigue habilitada, con el rol, y la sesión es posterior a la última revocación.
+  // 2. El token no basta: la cuenta sigue habilitada, con el rol, y la sesión es posterior a la última revocación.
+  // No se exige SESIÓN RECIENTE (`exigirSesionReciente`): esa barrera es para mover dinero a mano; acá el operador
+  // confirma el pedido de su propio comercio y NovuTienda es idempotente por `pedidoId`, así que repetir no daña.
   const authTime = p.auth?.token?.['auth_time'];
   let vigente: boolean;
   try {
-    vigente = await d.cuentaVigente(uid, typeof authTime === 'number' ? authTime : Number.NaN, quien.rol as RolVerificado, tenantId);
+    vigente = await d.cuentaVigente(uid, typeof authTime === 'number' ? authTime : Number.NaN, rol as RolVerificado, tenantId);
   } catch {
     throw rechazo('unavailable', MENSAJES.noDisponible, 'cuenta_no_verificable');
   }
   if (!vigente) throw rechazo('permission-denied', MENSAJES.noAutorizado, 'cuenta_no_vigente');
 
-  // 4. El comercio, el pedido y el estado.
+  // 3. El destino se resuelve DENTRO del reclamo, después de las comprobaciones de estado y ANTES de escribir: sin
+  // destino válido no sale nada ni cambia nada (falla cerrado), y un pedido ya confirmado responde sin necesitarlo.
+  const destinoDeEsteComercio = (): DestinoNovuTienda => {
+    let secreto: string;
+    try { secreto = d.leerSecreto(); } catch { throw rechazo('failed-precondition', MENSAJES.noConfigurado, 'secreto_ausente'); }
+    const destino = destinoDeNovuTienda(secreto, tenantId);
+    if (!destino) throw rechazo('failed-precondition', MENSAJES.noConfigurado, 'destino_invalido');
+    return destino;
+  };
+
+  // 4. El reclamo: en UNA transacción se relee todo y el pedido pasa de `recibido` a `confirmando`. Mientras está
+  // `confirmando`, `cerrarPedidoWa` (solo actúa sobre `recibido`) no puede reemplazarlo ni cancelarlo, y una segunda
+  // confirmación simultánea no pasa. Un `confirmando` de más de `CONFIRMANDO_MAXIMO_MS` se puede retomar.
   const db = d.db();
   const refPedido = db.doc(`tenants/${tenantId}/pedidos/${pedidoId}`);
-  let pedido: Record<string, unknown> | undefined;
+  let reclamo: ResultadoDeReclamo;
   try {
-    const [ficha, config, snap] = await Promise.all([
-      db.doc(`tenants/${tenantId}`).get(), db.doc(`tenants/${tenantId}/config/pedidos`).get(), refPedido.get(),
-    ]);
-    if (!ficha.exists || ficha.get('estado') !== 'activo' || !tieneModulo(ficha.data() as FichaConCapacidades, 'pedidos')) {
-      throw rechazo('permission-denied', MENSAJES.noAutorizado, 'comercio_no_habilitado');
-    }
-    if (configExternaDe(config.exists ? config.data() : undefined) === null) {
-      throw rechazo('failed-precondition', MENSAJES.noElegible, 'sin_catalogo_externo');
-    }
-    if (!snap.exists) throw rechazo('not-found', MENSAJES.noExiste, 'pedido_inexistente');
-    pedido = snap.data();
+    reclamo = await db.runTransaction(async (tx): Promise<ResultadoDeReclamo> => {
+      const [ficha, config, snap] = await Promise.all([
+        tx.get(db.doc(`tenants/${tenantId}`)), tx.get(db.doc(`tenants/${tenantId}/config/pedidos`)), tx.get(refPedido),
+      ]);
+      if (!ficha.exists || ficha.get('estado') !== 'activo' || !tieneModulo(ficha.data() as FichaConCapacidades, 'pedidos')) {
+        throw rechazo('permission-denied', MENSAJES.noAutorizado, 'comercio_no_habilitado');
+      }
+      if (configExternaDe(config.exists ? config.data() : undefined) === null) {
+        throw rechazo('failed-precondition', MENSAJES.noElegible, 'sin_catalogo_externo');
+      }
+      if (!snap.exists) throw rechazo('not-found', MENSAJES.noExiste, 'pedido_inexistente');
+      const pedido = snap.data() as Record<string, unknown>;
+      if (pedido['catalogo'] !== 'externo') throw rechazo('failed-precondition', MENSAJES.noElegible, 'pedido_no_externo');
+      const ahora = d.ahora();
+      const estado = estadoDelPedido(pedido['estado']);
+      if (estado === 'confirmado') return { ya: true };
+      if (estado === 'confirmando') {
+        const desde = milisegundosDe(pedido['confirmandoEn']);
+        if (desde !== null && ahora - desde <= CONFIRMANDO_MAXIMO_MS) throw rechazo('failed-precondition', MENSAJES.enCurso, 'ya_se_esta_confirmando');
+      } else if (estado !== 'recibido') {
+        throw rechazo('failed-precondition', MENSAJES.noElegible, 'estado_no_confirmable');
+      }
+      const cuerpo = armarCuerpo(pedidoId, pedido['items'], ahora);
+      if (!cuerpo) throw rechazo('failed-precondition', MENSAJES.noElegible, 'pedido_fuera_de_contrato');
+      const destino = destinoDeEsteComercio();
+      // El instante que se ENVÍA es el que se guarda: se toma del propio cuerpo.
+      const instanteMs = Date.parse(cuerpo.confirmadoEn);
+      tx.update(refPedido, { estado: 'confirmando', confirmandoEn: Timestamp.fromMillis(instanteMs), confirmandoPor: uid });
+      return { ya: false, cuerpo, instanteMs, items: pedido['items'], destino };
+    });
   } catch (e) {
     if (e instanceof HttpsError) throw e;
     throw rechazo('unavailable', MENSAJES.noDisponible, 'lectura_fallida');
   }
-  if (!pedido || pedido['catalogo'] !== 'externo') throw rechazo('failed-precondition', MENSAJES.noElegible, 'pedido_no_externo');
-  if (pedido['estado'] === 'confirmado') return { pedidoId, estado: 'confirmado', yaConfirmado: true };
-  if (pedido['estado'] !== 'recibido') throw rechazo('failed-precondition', MENSAJES.noElegible, 'estado_no_confirmable');
+  if (reclamo.ya) return { pedidoId, estado: 'confirmado', yaConfirmado: true };
+  const { cuerpo, instanteMs, items, destino } = reclamo;
 
-  // 5. El cuerpo del contrato y el destino. Sin destino válido no sale nada (falla cerrado).
-  const cuerpo = armarCuerpo(pedidoId, pedido['items'], d.ahora());
-  if (!cuerpo) throw rechazo('failed-precondition', MENSAJES.noElegible, 'pedido_fuera_de_contrato');
-  let secreto: string;
-  try { secreto = d.leerSecreto(); } catch { throw rechazo('failed-precondition', MENSAJES.noConfigurado, 'secreto_ausente'); }
-  const destino = destinoDeNovuTienda(secreto, tenantId);
-  if (!destino) throw rechazo('failed-precondition', MENSAJES.noConfigurado, 'destino_invalido');
+  // 5. Desde acá el pedido está `confirmando`: TODO camino que no termine en 200 lo devuelve a `recibido`.
+  const devolver = async (): Promise<void> => {
+    try {
+      await db.runTransaction(async (tx) => {
+        const s = await tx.get(refPedido);
+        // Solo el reclamo propio: si otro lo retomó (pasados 2 min) o ya está confirmado, no se toca.
+        if (!s.exists || s.get('estado') !== 'confirmando' || s.get('confirmandoPor') !== uid || milisegundosDe(s.get('confirmandoEn')) !== instanteMs) return;
+        tx.update(refPedido, { estado: 'recibido', confirmandoEn: FieldValue.delete(), confirmandoPor: FieldValue.delete() });
+      });
+    } catch {
+      // Si ni esto se pudo, el pedido queda `confirmando` y se puede retomar pasados CONFIRMANDO_MAXIMO_MS.
+      registrar('no_se_pudo_devolver_a_recibido');
+    }
+  };
 
-  // 6. La llamada firmada.
-  const r = await llamarANovuTienda(destino, JSON.stringify(cuerpo), d);
-  if (r.tipo === 'faltantes') {
-    registrar('stock_insuficiente', { estado: 409 });
-    throw new HttpsError('failed-precondition', MENSAJES.faltantes, {
-      motivo: 'stock_insuficiente', faltantes: faltantesLegibles(r.crudo, pedido['items']),
-    });
+  let fallo: HttpsError | null = null;
+  try {
+    const r = await llamarANovuTienda(destino, JSON.stringify(cuerpo), d);
+    if (r.tipo === 'faltantes') {
+      registrar('stock_insuficiente', { estado: 409 });
+      fallo = new HttpsError('failed-precondition', MENSAJES.faltantes, { motivo: 'stock_insuficiente', faltantes: faltantesLegibles(r.crudo, items) });
+    } else if (r.tipo === 'rechazado') fallo = rechazo('internal', MENSAJES.rechazado, 'novutienda_rechazo', { estado: r.estado });
+    else if (r.tipo === 'agotado') fallo = rechazo('unavailable', MENSAJES.noDisponible, 'novutienda_no_disponible', { estado: r.estado });
+    else if (r.tipo === 'red') fallo = rechazo('unavailable', MENSAJES.noDisponible, 'novutienda_sin_respuesta');
+  } catch {
+    fallo = rechazo('unavailable', MENSAJES.noDisponible, 'error_no_previsto_en_la_llamada');
   }
-  if (r.tipo === 'rechazado') throw rechazo('internal', MENSAJES.rechazado, 'novutienda_rechazo', { estado: r.estado });
-  if (r.tipo === 'agotado') throw rechazo('unavailable', MENSAJES.noDisponible, 'novutienda_no_disponible', { estado: r.estado });
-  if (r.tipo === 'red') throw rechazo('unavailable', MENSAJES.noDisponible, 'novutienda_sin_respuesta');
+  if (fallo) {
+    await devolver();
+    throw fallo;
+  }
 
-  // 7. NovuTienda aceptó (200): recién ahora cambia el estado, solo si sigue en `recibido`.
+  // 6. NovuTienda aceptó (200): `confirmando` pasa a `confirmado` con EXACTAMENTE el instante enviado.
+  // Si el pedido ya no existe (borrado durante la llamada), not-found: no se inventa un documento.
   try {
     await db.runTransaction(async (tx) => {
       const s = await tx.get(refPedido);
-      if (!s.exists || s.get('estado') === 'confirmado') return;
-      if (s.get('estado') !== 'recibido') throw new HttpsError('failed-precondition', MENSAJES.noElegible);
-      tx.update(refPedido, { estado: 'confirmado', confirmadoEn: Timestamp.fromMillis(d.ahora()), confirmadoPor: uid });
+      if (!s.exists) throw rechazo('not-found', MENSAJES.noExiste, 'pedido_borrado_tras_el_200');
+      const estado = estadoDelPedido(s.get('estado'));
+      if (estado === 'confirmado') return;
+      if (estado !== 'confirmando' && estado !== 'recibido') throw rechazo('failed-precondition', MENSAJES.noElegible, 'estado_cambio_durante_la_llamada');
+      tx.update(refPedido, {
+        estado: 'confirmado', confirmadoEn: Timestamp.fromMillis(Date.parse(cuerpo.confirmadoEn)), confirmadoPor: uid,
+        confirmandoEn: FieldValue.delete(), confirmandoPor: FieldValue.delete(),
+      });
     });
   } catch (e) {
-    if (e instanceof HttpsError) throw rechazo(e.code, e.message, 'estado_cambio_durante_la_llamada');
+    // Con la escritura caída el pedido queda `confirmando`: se puede volver a pulsar pasados 2 min (o antes no:
+    // otro intento ve «se está confirmando»). NovuTienda es idempotente por `pedidoId`.
+    if (e instanceof HttpsError) throw e;
     throw rechazo('unavailable', MENSAJES.noDisponible, 'escritura_fallida');
   }
   return { pedidoId, estado: 'confirmado', yaConfirmado: false };
 }
 
+/** ¿Se exige App Check? Producción sí; staging no (el build de staging no lleva la clave del sitio); emulador tampoco. */
+export const APP_CHECK_DE_CONFIRMAR = { produccion: true, staging: false } as const;
+/** Concurrencia explícita y baja; en staging (CPU fraccionaria) no se fija. */
+export const CONCURRENCIA_DE_CONFIRMAR = 10;
+
+export function opcionesDeConfirmar(env: Record<string, string | undefined>): CallableOptions {
+  const staging = env['CPU_FRACCIONARIA'] === 'si';
+  const emulador = env['FUNCTIONS_EMULATOR'] === 'true';
+  return {
+    region: REGION,
+    memory: '256MiB',
+    maxInstances: 3,
+    ...(staging ? {} : { concurrency: CONCURRENCIA_DE_CONFIRMAR }),
+    timeoutSeconds: 60,
+    enforceAppCheck: emulador ? false : staging ? APP_CHECK_DE_CONFIRMAR.staging : APP_CHECK_DE_CONFIRMAR.produccion,
+    secrets: [SECRETO_NOVUTIENDA],
+  };
+}
+
 export function crearConfirmarPedidoExterno(d: DependenciasDeConfirmacion) {
-  return onCall(
-    { region: REGION, memory: '256MiB', maxInstances: 3, timeoutSeconds: 60, secrets: [SECRETO_NOVUTIENDA] },
-    async (p: CallableRequest) => {
-      try {
-        return await atenderConfirmacion(p, d);
-      } catch (e) {
-        if (e instanceof HttpsError) throw e;
-        registrar('error_no_previsto');
-        throw new HttpsError('unavailable', MENSAJES.noDisponible);
-      }
-    },
-  );
+  return onCall(opcionesDeConfirmar(process.env), async (p: CallableRequest) => {
+    try {
+      return await atenderConfirmacion(p, d);
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      registrar('error_no_previsto');
+      throw new HttpsError('unavailable', MENSAJES.noDisponible);
+    }
+  });
 }
 
 export const confirmarPedidoExterno = crearConfirmarPedidoExterno({

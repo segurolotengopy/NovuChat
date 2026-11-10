@@ -26,7 +26,7 @@ for (const nivel of ['warn', 'info', 'error', 'log', 'debug', 'write'] as const)
 
 const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
-const { getFirestore } = await import('firebase-admin/firestore');
+const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const M = await import('../../../functions/src/modulos/pedidos/confirmarExterno.ts');
 
@@ -72,12 +72,15 @@ const h = {
   dormidas: [] as number[],
   vigente: true as boolean | Error,
   reloj: AHORA,
+  /** Se ejecuta DENTRO de la llamada de red (el pedido está `confirmando`). */
+  durante: null as null | (() => Promise<void>),
 };
 const respuesta = (estado: number, cuerpo = '') => ({ estado, cuerpo });
 
 const http = (async (url: string | URL | Request, init?: RequestInit) => {
   const cab = Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>));
   h.llamadas.push({ url: String(url), init: init ?? {}, cuerpo: String(init?.body ?? ''), cab });
+  if (h.durante) await h.durante();
   const r = h.respuestas.length > 1 ? h.respuestas.shift()! : h.respuestas[0] ?? respuesta(200);
   if (r instanceof Error) throw r;
   return new Response(r.cuerpo === '' ? null : r.cuerpo, { status: r.estado });
@@ -91,6 +94,8 @@ const callable = M.crearConfirmarPedidoExterno({
   dormir: async (ms) => { h.dormidas.push(ms); },
   ahora: () => h.reloj,
 });
+/** La entrada del contrato: `{tenantId, pedidoId}`. */
+const P = (o: Record<string, unknown> = {}) => ({ tenantId: T, pedidoId: 'wa_BM1', ...o });
 const llamar = (data: unknown, a?: Actor) =>
   (callable as unknown as { run: (r: unknown) => Promise<unknown> })
     .run({ data, auth: a ? { uid: a.uid, token: a.token } : undefined, rawRequest: {} });
@@ -130,10 +135,17 @@ async function sembrar(o: {
   return { t, id };
 }
 const estadoDe = async (t = T, id = 'wa_BM1') => (await db.doc(`tenants/${t}/pedidos/${id}`).get()).get('estado');
+/** El pedido sigue `recibido` y SIN rastro de reclamo (`confirmando*`): volvió al estado de antes, o nunca salió de él. */
+const recibidoLimpio = async (t = T, id = 'wa_BM1') => {
+  const p = await pedidoCrudo(t, id);
+  expect(p['estado']).toBe('recibido');
+  expect(p).not.toHaveProperty('confirmandoEn'); expect(p).not.toHaveProperty('confirmandoPor');
+  expect(p).not.toHaveProperty('confirmadoEn'); expect(p).not.toHaveProperty('confirmadoPor');
+};
 const pedidoCrudo = async (t = T, id = 'wa_BM1') => (await db.doc(`tenants/${t}/pedidos/${id}`).get()).data()!;
 
 beforeEach(() => {
-  h.llamadas = []; h.respuestas = [respuesta(200)]; h.secreto = mapaDe(); h.dormidas = []; h.vigente = true; h.reloj = AHORA;
+  h.llamadas = []; h.respuestas = [respuesta(200)]; h.secreto = mapaDe(); h.dormidas = []; h.vigente = true; h.reloj = AHORA; h.durante = null;
   registros.length = 0;
 });
 
@@ -141,54 +153,74 @@ beforeEach(() => {
 describe('quién puede confirmar (se niega antes de leer o llamar)', () => {
   it('sin sesión: unauthenticated y NovuTienda no recibe nada', async () => {
     await sembrar();
-    expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }))).code).toBe('unauthenticated');
-    expect(h.llamadas).toHaveLength(0); expect(await estadoDe()).toBe('recibido');
+    expect((await rechazo(llamar(P()))).code).toBe('unauthenticated');
+    expect(h.llamadas).toHaveLength(0); await recibidoLimpio();
   });
-  it('sesión de otro comercio: rechaza y no llama', async () => {
-    await sembrar();
-    expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(OTRO)))).code).toBe('permission-denied');
-    expect(h.llamadas).toHaveLength(0); expect(await estadoDe()).toBe('recibido');
+  it('tenantId AJENO: la sesión es de otro comercio (admin u oper) y rechaza sin leer ni llamar, en las dos direcciones', async () => {
+    await sembrar(); await sembrar({ t: OTRO });
+    for (const a of [admin(OTRO), oper(OTRO)]) {
+      expect((await rechazo(llamar(P(), a))).code).toBe('permission-denied'); // pide T con sesión de OTRO
+    }
+    for (const a of [admin(T), oper(T)]) {
+      expect((await rechazo(llamar(P({ tenantId: OTRO }), a))).code).toBe('permission-denied'); // pide OTRO con sesión de T
+    }
+    expect(h.llamadas).toHaveLength(0);
+    await recibidoLimpio(); expect(await estadoDe(OTRO)).toBe('recibido');
   });
   it('propietario de NovuChat (sin rol en el comercio), ingesta y sin claims: rechaza', async () => {
     await sembrar();
     const propietario = actor('u-p', { t: {}, p: true }, { proveedor: 'google.com' });
     const ingesta = actor('u-i', { t: { [T]: 'ingesta' } });
     const vacio = actor('u-v', {});
-    for (const a of [propietario, ingesta, vacio]) expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, a))).code).toBe('permission-denied');
+    for (const a of [propietario, ingesta, vacio]) expect((await rechazo(llamar(P(), a))).code).toBe('permission-denied');
     expect(h.llamadas).toHaveLength(0);
   });
   it('rol correcto pero con Google, o sin correo verificado: rechaza', async () => {
     await sembrar();
     const google = actor('u-g', { t: { [T]: 'admin' } }, { proveedor: 'google.com' });
     const sinVerificar = actor('u-s', { t: { [T]: 'oper' } }, { verificado: false });
-    for (const a of [google, sinVerificar]) expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, a))).code).toBe('permission-denied');
+    for (const a of [google, sinVerificar]) expect((await rechazo(llamar(P(), a))).code).toBe('permission-denied');
     expect(h.llamadas).toHaveLength(0);
   });
-  it('sesión con dos comercios: no hay "el" comercio del token y se rechaza', async () => {
+  it('sesión con dos comercios: manda el rol DE ESE tenantId; en un tercero (o donde solo es ingesta) no puede', async () => {
     await sembrar();
-    const dos = actor('u-dos', { t: { [T]: 'admin', [OTRO]: 'oper' } });
-    expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, dos))).code).toBe('permission-denied');
+    const dos = actor('u-dos', { t: { [T]: 'admin', [OTRO]: 'ingesta' } });
+    expect(await llamar(P(), dos)).toMatchObject({ estado: 'confirmado' });
+    await sembrar({ t: OTRO });
+    expect((await rechazo(llamar(P({ tenantId: OTRO }), dos))).code).toBe('permission-denied');
+    expect((await rechazo(llamar(P({ tenantId: 'tercer-comercio' }), dos))).code).toBe('permission-denied');
+    expect(h.llamadas).toHaveLength(1);
+  });
+  it('la entrada es SOLO {tenantId, pedidoId}: falta el tenantId, forma inválida o cualquier clave extra se rechaza', async () => {
+    await sembrar();
+    for (const malo of [
+      { pedidoId: 'wa_BM1' }, P({ tenantId: undefined }), P({ tenantId: 7 }), P({ tenantId: '' }), P({ tenantId: 'A/B' }),
+      P({ tenantId: '../x' }), P({ tenantId: 'X' }), P({ items: [] }), P({ confirmadoEn: 1 }), P({ rol: 'admin' }),
+    ]) {
+      expect((await rechazo(llamar(malo, admin(T)))).code, JSON.stringify(malo)).toBe('invalid-argument');
+    }
     expect(h.llamadas).toHaveLength(0);
   });
-  it('el comercio NUNCA sale del cuerpo: un tenantId (propio o ajeno) o cualquier clave extra se rechaza', async () => {
-    await sembrar(); await sembrar({ t: OTRO });
-    for (const extra of [{ tenantId: OTRO }, { tenantId: T }, { items: [] }, { confirmadoEn: 1 }]) {
-      expect((await rechazo(llamar({ pedidoId: 'wa_BM1', ...extra }, admin(T)))).code).toBe('invalid-argument');
+  it('un tenantId con nombre de propiedad heredada (__proto__, constructor) no resuelve por la cadena de prototipos', async () => {
+    await sembrar();
+    for (const t of ['__proto__', 'constructor', 'toString']) {
+      const e = await rechazo(llamar(P({ tenantId: t }), admin(T)));
+      expect(['invalid-argument', 'permission-denied']).toContain(e.code);
     }
     expect(h.llamadas).toHaveLength(0);
   });
   it('la cuenta ya no es vigente (revocada, deshabilitada): rechaza; si Auth cae, unavailable (no un permiso)', async () => {
     await sembrar();
     h.vigente = false;
-    expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)))).code).toBe('permission-denied');
+    expect((await rechazo(llamar(P(), admin(T)))).code).toBe('permission-denied');
     h.vigente = new Error('auth caído');
-    expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)))).code).toBe('unavailable');
-    expect(h.llamadas).toHaveLength(0); expect(await estadoDe()).toBe('recibido');
+    expect((await rechazo(llamar(P(), admin(T)))).code).toBe('unavailable');
+    expect(h.llamadas).toHaveLength(0); await recibidoLimpio();
   });
   it('el administrador y el operador del comercio sí pueden', async () => {
     for (const a of [admin(T), oper(T)]) {
       await sembrar(); h.llamadas = [];
-      expect(await llamar({ pedidoId: 'wa_BM1' }, a)).toMatchObject({ estado: 'confirmado', yaConfirmado: false });
+      expect(await llamar(P(), a)).toMatchObject({ estado: 'confirmado', yaConfirmado: false });
       expect(h.llamadas).toHaveLength(1);
     }
   });
@@ -198,7 +230,7 @@ describe('entrada, comercio y pedido', () => {
   it('pedidoId inválido (vacío, tipo, "__", caracteres, largo) no llega a leer ni llamar', async () => {
     await sembrar();
     for (const malo of [undefined, null, 7, '', 'a/b', '../x', '_x', 'wa__x', 'a b', 'x'.repeat(101), { $ne: 1 }]) {
-      expect((await rechazo(llamar({ pedidoId: malo }, admin(T)))).code).toBe('invalid-argument');
+      expect((await rechazo(llamar(P({ pedidoId: malo }), admin(T)))).code).toBe('invalid-argument');
     }
     expect((await rechazo(llamar(undefined, admin(T)))).code).toBe('invalid-argument');
     expect((await rechazo(llamar('wa_BM1', admin(T)))).code).toBe('invalid-argument');
@@ -206,18 +238,18 @@ describe('entrada, comercio y pedido', () => {
   });
   it('pedido inexistente: not-found y no llama', async () => {
     await sembrar({ pedido: null });
-    expect((await rechazo(llamar({ pedidoId: 'wa_NOEXISTE' }, admin(T)))).code).toBe('not-found');
+    expect((await rechazo(llamar(P({ pedidoId: 'wa_NOEXISTE' }), admin(T)))).code).toBe('not-found');
     expect(h.llamadas).toHaveLength(0);
   });
   it('el pedido de OTRO comercio con ese id no se ve (se busca solo bajo el comercio del token)', async () => {
     await sembrar({ pedido: null }); await sembrar({ t: OTRO });
-    expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)))).code).toBe('not-found');
+    expect((await rechazo(llamar(P(), admin(T)))).code).toBe('not-found');
     expect(h.llamadas).toHaveLength(0); expect(await estadoDe(OTRO)).toBe('recibido');
   });
   it('un pedido que NO es de catálogo externo (propio o del checkout web) no se confirma', async () => {
     for (const pedido of [{ catalogo: undefined }, { catalogo: 'propio' }, { catalogo: 'externo', estado: 'recibido', items: [{ id: 'taco', nombre: 'Taco', cantidad: 1 }] }]) {
       await sembrar({ pedido: pedido as never });
-      const e = await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)));
+      const e = await rechazo(llamar(P(), admin(T)));
       expect(e.code).toBe('failed-precondition');
       expect(h.llamadas).toHaveLength(0);
     }
@@ -225,7 +257,7 @@ describe('entrada, comercio y pedido', () => {
   it('estados que no son `recibido` ni `confirmado` (reemplazado, cancelado, otro): no se confirma', async () => {
     for (const estado of ['reemplazado', 'cancelado', 'preparando', undefined]) {
       await sembrar({ pedido: { estado } });
-      expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)))).code).toBe('failed-precondition');
+      expect((await rechazo(llamar(P(), admin(T)))).code).toBe('failed-precondition');
     }
     expect(h.llamadas).toHaveLength(0);
   });
@@ -234,14 +266,14 @@ describe('entrada, comercio y pedido', () => {
       { ficha: { estado: 'suspendido' } }, { ficha: { estado: 'baja' } }, { ficha: { modulos: ['productos'] } },
     ]) {
       await sembrar(o);
-      expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)))).code).toBe('permission-denied');
+      expect((await rechazo(llamar(P(), admin(T)))).code).toBe('permission-denied');
     }
     for (const config of [null, { catalogoExterno: { activo: false, monedas: ['BOB'] } }, {}] as const) {
       await sembrar({ config });
-      expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)))).code).toBe('failed-precondition');
+      expect((await rechazo(llamar(P(), admin(T)))).code).toBe('failed-precondition');
     }
     await sembrar({ ficha: null });
-    expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)))).code).toBe('permission-denied');
+    expect((await rechazo(llamar(P(), admin(T)))).code).toBe('permission-denied');
     expect(h.llamadas).toHaveLength(0);
   });
   it('un pedido con datos fuera del contrato (id con "__", cantidad 0 / fraccionaria / enorme, repetidos, vacío) no sale', async () => {
@@ -251,10 +283,10 @@ describe('entrada, comercio y pedido', () => {
     ];
     for (const items of casos) {
       await sembrar({ pedido: { items } });
-      expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)))).code).toBe('failed-precondition');
+      expect((await rechazo(llamar(P(), admin(T)))).code).toBe('failed-precondition');
     }
     await sembrar({ id: 'a__b' });
-    expect((await rechazo(llamar({ pedidoId: 'a__b' }, admin(T)))).code).toBe('invalid-argument');
+    expect((await rechazo(llamar(P({ pedidoId: 'a__b' }), admin(T)))).code).toBe('invalid-argument');
     expect(h.llamadas).toHaveLength(0);
   });
 });
@@ -262,7 +294,7 @@ describe('entrada, comercio y pedido', () => {
 describe('lo que sale a NovuTienda', () => {
   it('el cuerpo es EXACTAMENTE {pedidoId, items[{productoId,cantidad}], confirmadoEn}: ninguna clave extra, nada del cliente', async () => {
     await sembrar();
-    await llamar({ pedidoId: 'wa_BM1' }, admin(T));
+    await llamar(P(), admin(T));
     expect(h.llamadas).toHaveLength(1);
     const l = h.llamadas[0]!;
     const cuerpo = JSON.parse(l.cuerpo) as Record<string, unknown>;
@@ -282,7 +314,7 @@ describe('lo que sale a NovuTienda', () => {
   });
   it('POST a {baseUrl}/api/novuchat/v1/pedidos/confirmar, con Bearer del comercio, sin seguir redirecciones', async () => {
     await sembrar();
-    await llamar({ pedidoId: 'wa_BM1' }, admin(T));
+    await llamar(P(), admin(T));
     const l = h.llamadas[0]!;
     expect(l.url).toBe('https://tienda.example.org/api/novuchat/v1/pedidos/confirmar');
     expect(l.init.method).toBe('POST');
@@ -292,7 +324,7 @@ describe('lo que sale a NovuTienda', () => {
   });
   it('la firma es verificable con el secreto: HMAC-SHA256 hex de "{marca}.{cuerpo exacto enviado}"', async () => {
     await sembrar();
-    await llamar({ pedidoId: 'wa_BM1' }, admin(T));
+    await llamar(P(), admin(T));
     const l = h.llamadas[0]!;
     const marca = l.cab['X-Marca-Tiempo']!;
     expect(marca).toBe(String(AHORA));
@@ -312,20 +344,28 @@ describe('lo que sale a NovuTienda', () => {
       leerSecreto: () => mapaDe(), cuentaVigente: (async () => true) as never, db: () => db, http,
       dormir: async () => undefined, ahora: () => AHORA + (n++) * 1000,
     });
-    await (c2 as unknown as { run: (r: unknown) => Promise<unknown> }).run({ data: { pedidoId: 'wa_BM1' }, auth: admin(T), rawRequest: {} });
-    const marcas = h.llamadas.map((l) => Number(l.cab['X-Marca-Tiempo']));
-    expect(new Set(marcas).size).toBe(3);
+    await (c2 as unknown as { run: (r: unknown) => Promise<unknown> }).run({ data: P(), auth: admin(T), rawRequest: {} });
+    // El reloj se consulta una vez al reclamar (AHORA) y una por intento para su marca: marcas EXACTAS, una por intento.
+    expect(h.llamadas.map((l) => l.cab['X-Marca-Tiempo'])).toEqual([String(AHORA + 1000), String(AHORA + 2000), String(AHORA + 3000)]);
     for (const l of h.llamadas) {
-      expect(Math.abs(Date.now() - Number(l.cab['X-Marca-Tiempo']))).toBeGreaterThanOrEqual(0);
+      // Dentro de la ventana de 5 min del contrato respecto de la hora de ESTE intento, y firmada con ESA marca.
       expect(l.cab['X-Firma']).toBe(createHmac('sha256', FIRMA).update(`${l.cab['X-Marca-Tiempo']}.${l.cuerpo}`).digest('hex'));
     }
+    expect(JSON.parse(h.llamadas[0]!.cuerpo).confirmadoEn).toBe(new Date(AHORA).toISOString());
     // El cuerpo es el MISMO en todos los intentos (la idempotencia es por pedidoId, no por instante).
     expect(new Set(h.llamadas.map((l) => l.cuerpo)).size).toBe(1);
+  });
+  it('NIEGA: una marca fuera de la ventana de 5 min no es la de este intento (la marca nunca es la del cliente ni la de la semilla)', async () => {
+    await sembrar();
+    await llamar(P(), admin(T));
+    const marca = Number(h.llamadas[0]!.cab['X-Marca-Tiempo']);
+    expect(Math.abs(marca - AHORA)).toBeLessThan(5 * 60_000);
+    expect(Math.abs(marca - (AHORA + 5 * 60_000 + 1))).toBeGreaterThan(5 * 60_000 - 2);
   });
   it('la marca de tiempo del intento sale del reloj del servidor, nunca del cliente', async () => {
     await sembrar();
     h.reloj = AHORA + 123_456;
-    await llamar({ pedidoId: 'wa_BM1' }, admin(T));
+    await llamar(P(), admin(T));
     expect(h.llamadas[0]!.cab['X-Marca-Tiempo']).toBe(String(AHORA + 123_456));
   });
 });
@@ -333,7 +373,7 @@ describe('lo que sale a NovuTienda', () => {
 describe('qué pasa con cada respuesta de NovuTienda', () => {
   it('200: el pedido pasa a `confirmado`, con quién y cuándo, y la respuesta lo dice', async () => {
     await sembrar();
-    const r = await llamar({ pedidoId: 'wa_BM1' }, oper(T));
+    const r = await llamar(P(), oper(T));
     expect(r).toEqual({ pedidoId: 'wa_BM1', estado: 'confirmado', yaConfirmado: false });
     const p = await pedidoCrudo();
     expect(p['estado']).toBe('confirmado'); expect(p['confirmadoPor']).toBe(`u-oper-${T}`);
@@ -341,18 +381,36 @@ describe('qué pasa con cada respuesta de NovuTienda', () => {
     // Lo demás del pedido queda intacto.
     expect(p['total']).toBe(301); expect(p['items']).toHaveLength(2);
   });
+  it('`confirmadoEn` guardado es EXACTAMENTE el instante enviado, con un reloj que avanza entre el reclamo y el 200', async () => {
+    await sembrar();
+    h.respuestas = [respuesta(503), respuesta(200)];
+    let n = 0;
+    const c2 = M.crearConfirmarPedidoExterno({
+      leerSecreto: () => mapaDe(), cuentaVigente: (async () => true) as never, db: () => db, http,
+      dormir: async () => undefined, ahora: () => AHORA + (n++) * 7000,
+    });
+    await (c2 as unknown as { run: (r: unknown) => Promise<unknown> }).run({ data: P(), auth: admin(T), rawRequest: {} });
+    const enviado = JSON.parse(h.llamadas[0]!.cuerpo).confirmadoEn as string;
+    expect(enviado).toBe(new Date(AHORA).toISOString());
+    const p = await pedidoCrudo();
+    expect((p['confirmadoEn'] as { toMillis(): number }).toMillis()).toBe(Date.parse(enviado));
+    // No es la hora de la última marca ni la del momento de escribir.
+    expect((p['confirmadoEn'] as { toMillis(): number }).toMillis()).not.toBe(Number(h.llamadas[1]!.cab['X-Marca-Tiempo']));
+    for (const l of h.llamadas) expect(JSON.parse(l.cuerpo).confirmadoEn).toBe(enviado);
+    expect(p).not.toHaveProperty('confirmandoEn'); expect(p).not.toHaveProperty('confirmandoPor');
+  });
   it('idempotente: confirmar un pedido ya confirmado devuelve OK y NO llama a NovuTienda otra vez', async () => {
     await sembrar();
-    await llamar({ pedidoId: 'wa_BM1' }, admin(T));
+    await llamar(P(), admin(T));
     expect(h.llamadas).toHaveLength(1);
-    const otra = await llamar({ pedidoId: 'wa_BM1' }, admin(T));
+    const otra = await llamar(P(), admin(T));
     expect(otra).toEqual({ pedidoId: 'wa_BM1', estado: 'confirmado', yaConfirmado: true });
     expect(h.llamadas).toHaveLength(1);
   });
   it('un pedido sembrado ya `confirmado` tampoco llama, aunque el secreto esté ausente', async () => {
     await sembrar({ pedido: { estado: 'confirmado' } });
     h.secreto = () => { throw new Error('no existe'); };
-    expect(await llamar({ pedidoId: 'wa_BM1' }, admin(T))).toMatchObject({ yaConfirmado: true });
+    expect(await llamar(P(), admin(T))).toMatchObject({ yaConfirmado: true });
     expect(h.llamadas).toHaveLength(0);
   });
   it('409: el pedido NO cambia, no se reintenta y el operador recibe los faltantes legibles (con el nombre del PEDIDO, no el de la respuesta)', async () => {
@@ -360,9 +418,10 @@ describe('qué pasa con cada respuesta de NovuTienda', () => {
     h.respuestas = [respuesta(409, JSON.stringify({ faltantes: [
       { productoId: 'sku-1', nombre: 'NOMBRE-DE-LA-RESPUESTA', solicitado: 2, disponible: 1 },
       { productoId: 'inventado', solicitado: 9, disponible: 0 },
-      { productoId: 'mesa.2_a-3', cantidad: 5, disponible: 0, tokenFiltrado: 'x' },
+      { productoId: 'mesa.2_a-3', solicitado: 5, disponible: 0, tokenFiltrado: 'x' },
+      { id: 'sku-1', solicitado: 2, disponible: 0 }, // alias no contratado: no cuenta
     ] }))];
-    const e = await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)));
+    const e = await rechazo(llamar(P(), admin(T)));
     expect(e.code).toBe('failed-precondition');
     expect(e.details).toEqual({ motivo: 'stock_insuficiente', faltantes: [
       { productoId: 'sku-1', nombre: 'Producto sku-1', solicitado: 2, disponible: 1 },
@@ -370,46 +429,46 @@ describe('qué pasa con cada respuesta de NovuTienda', () => {
     ] });
     expect(JSON.stringify(e)).not.toContain('NOMBRE-DE-LA-RESPUESTA');
     expect(h.llamadas).toHaveLength(1); expect(h.dormidas).toEqual([]);
-    expect(await estadoDe()).toBe('recibido');
+    await recibidoLimpio();
   });
   it('409 con cuerpo ilegible o sin lista: sigue sin cambiar el estado y devuelve faltantes vacío', async () => {
     for (const cuerpo of ['', 'no es json', '{"faltantes":"x"}', '[]']) {
       await sembrar(); h.respuestas = [respuesta(409, cuerpo)];
-      const e = await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)));
+      const e = await rechazo(llamar(P(), admin(T)));
       expect(e.code).toBe('failed-precondition'); expect((e.details as { faltantes: unknown[] }).faltantes).toEqual([]);
-      expect(await estadoDe()).toBe('recibido');
+      await recibidoLimpio();
     }
   });
   it('429 y 503 se reintentan (acotado) y, si luego dan 200, confirma', async () => {
     await sembrar();
     h.respuestas = [respuesta(429), respuesta(503), respuesta(200)];
-    expect(await llamar({ pedidoId: 'wa_BM1' }, admin(T))).toMatchObject({ estado: 'confirmado' });
+    expect(await llamar(P(), admin(T))).toMatchObject({ estado: 'confirmado' });
     expect(h.llamadas).toHaveLength(3); expect(h.dormidas).toEqual([500, 1500]);
   });
   it('429/503 que no se arreglan: tras MAX_INTENTOS falla con unavailable y el pedido NO cambia', async () => {
     for (const estado of [429, 503]) {
       await sembrar(); h.llamadas = []; h.dormidas = []; h.respuestas = [respuesta(estado)];
-      expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)))).code).toBe('unavailable');
+      expect((await rechazo(llamar(P(), admin(T)))).code).toBe('unavailable');
       expect(h.llamadas).toHaveLength(M.MAX_INTENTOS); expect(h.dormidas).toHaveLength(M.MAX_INTENTOS - 1);
-      expect(await estadoDe()).toBe('recibido');
+      await recibidoLimpio();
     }
   });
   it('400, 401, 405 y cualquier otro código: no se reintenta, el pedido no cambia y se avisa que NovuTienda rechazó', async () => {
     for (const estado of [400, 401, 403, 404, 405, 500, 502, 204, 201, 302]) {
       await sembrar(); h.llamadas = []; h.respuestas = [respuesta(estado)];
-      const e = await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)));
+      const e = await rechazo(llamar(P(), admin(T)));
       expect(e.code, `estado ${estado}`).toBe('internal');
-      expect(h.llamadas).toHaveLength(1); expect(await estadoDe()).toBe('recibido');
+      expect(h.llamadas).toHaveLength(1); await recibidoLimpio();
     }
   });
   it('error de red o tiempo agotado: unavailable y el pedido no cambia', async () => {
     await sembrar(); h.respuestas = [new TypeError('fetch failed')];
-    expect((await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)))).code).toBe('unavailable');
-    expect(await estadoDe()).toBe('recibido');
+    expect((await rechazo(llamar(P(), admin(T)))).code).toBe('unavailable');
+    await recibidoLimpio();
   });
   it('la respuesta de NovuTienda no se copia al pedido ni al error del operador', async () => {
     await sembrar(); h.respuestas = [respuesta(400, 'DETALLE-INTERNO-DE-NOVUTIENDA')];
-    const e = await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)));
+    const e = await rechazo(llamar(P(), admin(T)));
     expect(JSON.stringify(e)).not.toContain('DETALLE-INTERNO');
   });
 });
@@ -433,9 +492,9 @@ describe('el secreto: falla cerrado y nunca se muestra', () => {
   for (const [nombre, valor] of peores) {
     it(`${nombre}: no sale nada, failed-precondition y el pedido no cambia`, async () => {
       await sembrar(); h.secreto = valor;
-      const e = await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T)));
+      const e = await rechazo(llamar(P(), admin(T)));
       expect(e.code).toBe('failed-precondition');
-      expect(h.llamadas).toHaveLength(0); expect(await estadoDe()).toBe('recibido');
+      expect(h.llamadas).toHaveLength(0); await recibidoLimpio();
     });
   }
   it('un tenant con nombre de propiedad heredada no resuelve por la cadena de prototipos', () => {
@@ -449,12 +508,12 @@ describe('el secreto: falla cerrado y nunca se muestra', () => {
   it('NO se loguea el secreto, el Bearer, la URL, el teléfono ni el cuerpo, en ningún camino', async () => {
     const prohibidos = [BEARER, FIRMA, 'tienda.example.org', TELEFONO, 'sku-1', 'DETALLE-INTERNO'];
     const escenarios: Array<() => Promise<unknown>> = [
-      async () => { await sembrar(); await llamar({ pedidoId: 'wa_BM1' }, admin(T)); },
-      async () => { await sembrar(); h.respuestas = [respuesta(503, 'DETALLE-INTERNO')]; await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T))); },
-      async () => { await sembrar(); h.respuestas = [respuesta(409, 'DETALLE-INTERNO {"faltantes":[]}')]; await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T))); },
-      async () => { await sembrar(); h.respuestas = [respuesta(401, 'DETALLE-INTERNO')]; await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T))); },
-      async () => { await sembrar(); h.secreto = () => { throw new Error(`falla con ${BEARER}`); }; await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T))); },
-      async () => { await sembrar(); h.respuestas = [new TypeError(`fetch failed ${BEARER}`)]; await rechazo(llamar({ pedidoId: 'wa_BM1' }, admin(T))); },
+      async () => { await sembrar(); await llamar(P(), admin(T)); },
+      async () => { await sembrar(); h.respuestas = [respuesta(503, 'DETALLE-INTERNO')]; await rechazo(llamar(P(), admin(T))); },
+      async () => { await sembrar(); h.respuestas = [respuesta(409, 'DETALLE-INTERNO {"faltantes":[]}')]; await rechazo(llamar(P(), admin(T))); },
+      async () => { await sembrar(); h.respuestas = [respuesta(401, 'DETALLE-INTERNO')]; await rechazo(llamar(P(), admin(T))); },
+      async () => { await sembrar(); h.secreto = () => { throw new Error(`falla con ${BEARER}`); }; await rechazo(llamar(P(), admin(T))); },
+      async () => { await sembrar(); h.respuestas = [new TypeError(`fetch failed ${BEARER}`)]; await rechazo(llamar(P(), admin(T))); },
     ];
     for (const e of escenarios) { h.secreto = mapaDe(); h.respuestas = [respuesta(200)]; await e(); }
     expect(registros.length).toBeGreaterThan(0);
@@ -470,40 +529,126 @@ describe('el secreto: falla cerrado y nunca se muestra', () => {
   });
 });
 
-describe('concurrencia y reglas', () => {
-  it('dos confirmaciones a la vez: ambas terminan OK y el pedido queda confirmado una vez (NovuTienda es idempotente por pedidoId)', async () => {
+const { cerrarPedidoWa } = await import('../../../functions/src/modulos/pedidos/pedidoDelQr.ts');
+const correrCon = (c: unknown, data: unknown, a: Actor) =>
+  (c as { run: (r: unknown) => Promise<unknown> }).run({ data, auth: { uid: a.uid, token: a.token }, rawRequest: {} });
+
+describe('estado intermedio `confirmando`', () => {
+  it('durante la llamada el pedido está `confirmando` (con quién y desde cuándo) y el cliente NO puede reemplazarlo ni cancelarlo', async () => {
     await sembrar();
-    const [a, b] = await Promise.all([llamar({ pedidoId: 'wa_BM1' }, admin(T)), llamar({ pedidoId: 'wa_BM1' }, oper(T))]);
-    expect([a, b].every((r) => (r as { estado: string }).estado === 'confirmado')).toBe(true);
+    let durante: Record<string, unknown> | null = null;
+    let reemplazo: boolean | null = null; let cancelacion: boolean | null = null;
+    h.durante = async () => {
+      durante = await pedidoCrudo();
+      reemplazo = await cerrarPedidoWa(T, 'BM1', 'reemplazado');
+      cancelacion = await cerrarPedidoWa(T, 'BM1', 'cancelado');
+    };
+    expect(await llamar(P(), oper(T))).toMatchObject({ estado: 'confirmado', yaConfirmado: false });
+    expect(durante).toMatchObject({ estado: 'confirmando', confirmandoPor: `u-oper-${T}` });
+    expect((durante!['confirmandoEn'] as { toMillis(): number }).toMillis()).toBe(AHORA);
+    expect(reemplazo).toBe(false); expect(cancelacion).toBe(false);
+    expect(await estadoDe()).toBe('confirmado'); // ni el reemplazo ni la cancelación lo pisaron
+  });
+  it('dos confirmaciones simultáneas hacen UNA sola llamada; la otra espera o ve «ya confirmado», nunca llama', async () => {
+    await sembrar();
+    h.durante = async () => { await new Promise((ok) => setTimeout(ok, 150)); };
+    const resultados = await Promise.allSettled([llamar(P(), admin(T)), llamar(P(), oper(T))]);
+    expect(h.llamadas).toHaveLength(1);
+    const buenos = resultados.filter((r) => r.status === 'fulfilled') as Array<PromiseFulfilledResult<{ yaConfirmado: boolean }>>;
+    const malos = resultados.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+    expect(buenos.filter((r) => !r.value.yaConfirmado)).toHaveLength(1); // exactamente una confirmó de verdad
+    for (const m of malos) expect((m.reason as { code: string }).code).toBe('failed-precondition');
     expect(await estadoDe()).toBe('confirmado');
-    expect(h.llamadas.length).toBeLessThanOrEqual(2);
-    expect(new Set(h.llamadas.map((l) => JSON.parse(l.cuerpo).pedidoId))).toEqual(new Set(['wa_BM1']));
   });
-  it('si el pedido se cierra (reemplazado) mientras NovuTienda respondía, no se pisa su estado', async () => {
-    await sembrar();
-    const c2 = M.crearConfirmarPedidoExterno({
-      leerSecreto: () => mapaDe(), cuentaVigente: (async () => true) as never, db: () => db,
-      http: (async () => { await db.doc(`tenants/${T}/pedidos/wa_BM1`).update({ estado: 'reemplazado' }); return new Response(null, { status: 200 }); }) as never,
-      dormir: async () => undefined, ahora: () => AHORA,
-    });
-    const e = await rechazo((c2 as unknown as { run: (r: unknown) => Promise<unknown> }).run({ data: { pedidoId: 'wa_BM1' }, auth: admin(T), rawRequest: {} }));
-    expect(e.code).toBe('failed-precondition');
-    expect(await estadoDe()).toBe('reemplazado');
+  it('un `confirmando` reciente (de otra persona) se rechaza sin llamar; uno de más de 2 min se puede retomar', async () => {
+    await sembrar({ pedido: { estado: 'confirmando', confirmandoPor: 'u-otro', confirmandoEn: Timestamp.fromMillis(AHORA - 60_000) } });
+    const e = await rechazo(llamar(P(), admin(T)));
+    expect(e.code).toBe('failed-precondition'); expect(e.message).toContain('se está confirmando');
+    expect(h.llamadas).toHaveLength(0);
+    expect((await pedidoCrudo())['confirmandoPor']).toBe('u-otro'); // no lo tocó
+    h.reloj = AHORA + 61_000 + 60_000; // ahora el reclamo tiene 121 s
+    expect(await llamar(P(), admin(T))).toMatchObject({ estado: 'confirmado', yaConfirmado: false });
+    expect(h.llamadas).toHaveLength(1);
+    const p = await pedidoCrudo();
+    expect(p['confirmadoPor']).toBe(`u-admin-${T}`); expect(p).not.toHaveProperty('confirmandoPor');
   });
-  it('si la escritura local falla tras el 200: unavailable (se puede volver a pulsar sin descontar dos veces)', async () => {
+  it('el borde: justo a 2 min sigue vigente; un reclamo sin fecha legible se considera abandonado', async () => {
+    await sembrar({ pedido: { estado: 'confirmando', confirmandoPor: 'u-otro', confirmandoEn: Timestamp.fromMillis(AHORA - M.CONFIRMANDO_MAXIMO_MS) } });
+    expect((await rechazo(llamar(P(), admin(T)))).code).toBe('failed-precondition');
+    await sembrar({ pedido: { estado: 'confirmando', confirmandoPor: 'u-otro' } });
+    expect(await llamar(P(), admin(T))).toMatchObject({ yaConfirmado: false });
+  });
+  it('si la función muere después del reclamo, el pedido queda `confirmando` y NO `confirmado` (nadie lo da por hecho)', async () => {
     await sembrar();
-    const roto = { doc: db.doc.bind(db), runTransaction: async () => { throw new Error('firestore caído'); } };
-    const c2 = M.crearConfirmarPedidoExterno({
-      leerSecreto: () => mapaDe(), cuentaVigente: (async () => true) as never, db: () => roto as never, http,
-      dormir: async () => undefined, ahora: () => AHORA,
-    });
-    const e = await rechazo((c2 as unknown as { run: (r: unknown) => Promise<unknown> }).run({ data: { pedidoId: 'wa_BM1' }, auth: admin(T), rawRequest: {} }));
+    h.durante = async () => { throw new Error('la instancia murió'); };
+    const e = await rechazo(llamar(P(), admin(T)));
     expect(e.code).toBe('unavailable');
-    expect(await estadoDe()).toBe('recibido');
+    await recibidoLimpio(); // la excepción de la llamada devuelve el reclamo propio
   });
-  it('registro: la callable está declarada en el módulo Pedidos y `confirmado` es un estado conocido', async () => {
+  it('409, 429/503 agotados, red, 400/401 y tiempo agotado: el pedido VUELVE a `recibido` y se puede intentar de nuevo', async () => {
+    for (const r of [respuesta(409, '{"faltantes":[]}'), respuesta(503), respuesta(429), respuesta(400), respuesta(401), new TypeError('x')]) {
+      await sembrar(); h.respuestas = [r];
+      await rechazo(llamar(P(), admin(T)));
+      await recibidoLimpio();
+    }
+    h.respuestas = [respuesta(200)];
+    expect(await llamar(P(), admin(T))).toMatchObject({ estado: 'confirmado' }); // se reintenta sin esperar 2 min
+  });
+  it('lo devuelto a `recibido` no pisa un reclamo ajeno: si otra persona lo retomó, no se toca', async () => {
+    await sembrar();
+    h.respuestas = [respuesta(503)];
+    h.durante = async () => {
+      await db.doc(`tenants/${T}/pedidos/wa_BM1`).update({ confirmandoPor: 'u-otro' }); // otro lo retomó mientras tanto
+    };
+    await rechazo(llamar(P(), admin(T)));
+    expect(await estadoDe()).toBe('confirmando');
+    expect((await pedidoCrudo())['confirmandoPor']).toBe('u-otro');
+  });
+  it('NovuTienda respondió 200 y el pedido se BORRÓ durante la llamada: not-found, y no se crea ningún documento', async () => {
+    await sembrar();
+    h.durante = async () => { await db.doc(`tenants/${T}/pedidos/wa_BM1`).delete(); };
+    expect((await rechazo(llamar(P(), admin(T)))).code).toBe('not-found');
+    expect((await db.doc(`tenants/${T}/pedidos/wa_BM1`).get()).exists).toBe(false);
+  });
+  it('el 200 llega pero la escritura final falla: queda `confirmando` (no `recibido`), unavailable; pasados 2 min se retoma y confirma', async () => {
+    await sembrar();
+    let transacciones = 0;
+    const parcial = { doc: db.doc.bind(db), runTransaction: (f: never) => { transacciones++; if (transacciones === 2) throw new Error('firestore caído'); return db.runTransaction(f); } };
+    const c2 = M.crearConfirmarPedidoExterno({
+      leerSecreto: () => mapaDe(), cuentaVigente: (async () => true) as never, db: () => parcial as never, http,
+      dormir: async () => undefined, ahora: () => h.reloj,
+    });
+    expect((await rechazo(correrCon(c2, P(), admin(T)))).code).toBe('unavailable');
+    expect(await estadoDe()).toBe('confirmando');
+    expect((await rechazo(llamar(P(), admin(T)))).code).toBe('failed-precondition'); // antes de 2 min: nadie más llama
+    expect(h.llamadas).toHaveLength(1);
+    h.reloj = AHORA + 121_000;
+    expect(await llamar(P(), admin(T))).toMatchObject({ estado: 'confirmado' });
+    expect(h.llamadas).toHaveLength(2); // NovuTienda es idempotente por pedidoId
+  });
+});
+
+describe('opciones de despliegue y registro', () => {
+  it('App Check por ambiente (producción sí; staging y emulador no) y concurrencia explícita baja (10), no en staging', () => {
+    expect(M.APP_CHECK_DE_CONFIRMAR).toEqual({ produccion: true, staging: false });
+    expect(M.opcionesDeConfirmar({})).toMatchObject({ enforceAppCheck: true, concurrency: 10, maxInstances: 3, timeoutSeconds: 60 });
+    expect(M.opcionesDeConfirmar({ CPU_FRACCIONARIA: '' }).enforceAppCheck).toBe(true);
+    expect(M.opcionesDeConfirmar({ CPU_FRACCIONARIA: 'no' })).toMatchObject({ enforceAppCheck: true, concurrency: 10 });
+    const staging = M.opcionesDeConfirmar({ CPU_FRACCIONARIA: 'si' });
+    expect(staging.enforceAppCheck).toBe(false); expect(staging).not.toHaveProperty('concurrency');
+    expect(M.opcionesDeConfirmar({ FUNCTIONS_EMULATOR: 'true' }).enforceAppCheck).toBe(false);
+    expect(M.opcionesDeConfirmar({ FUNCTIONS_EMULATOR: 'false' }).enforceAppCheck).toBe(true);
+    expect(CODIGO).toContain('onCall(opcionesDeConfirmar(process.env)');
+  });
+  it('registro: la callable está declarada en el módulo Pedidos', async () => {
     const { REGISTRO } = await import('../../../functions/src/registro.ts') as unknown as { REGISTRO: Array<{ modulo: string; functions: string[] }> };
     expect(REGISTRO.find((m) => m.modulo === 'pedidos')!.functions).toContain('confirmarPedidoExterno');
-    expect(M.ESTADOS_DE_PEDIDO).toContain('confirmado');
+  });
+  it('un estado ajeno al conjunto nunca se confirma (y `confirmando` es parte del conjunto)', async () => {
+    expect(M.estadoDelPedido('confirmando')).toBe('confirmando');
+    for (const raro of ['preparando', 'CONFIRMADO', '', null, undefined, 7]) expect(M.estadoDelPedido(raro)).toBeNull();
+    await sembrar({ pedido: { estado: 'preparando' } });
+    expect((await rechazo(llamar(P(), admin(T)))).code).toBe('failed-precondition');
+    expect(h.llamadas).toHaveLength(0);
   });
 });

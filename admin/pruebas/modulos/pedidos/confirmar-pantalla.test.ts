@@ -6,25 +6,35 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { leerErrorDeConfirmar, puedeConfirmarse } from '../../../web/src/modulos/pedidos/confirmar.ts';
+import { estaConfirmando, leerErrorDeConfirmar, puedeConfirmarse } from '../../../web/src/modulos/pedidos/confirmar.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const PANTALLA = readFileSync(join(aqui, '..', '..', '..', 'web', 'src', 'modulos', 'pedidos', 'Pedidos.tsx'), 'utf8');
 
 describe('el botón «Confirmar»', () => {
-  it('NIEGA: no aparece para un pedido propio, ya confirmado, cancelado, reemplazado o sin datos', () => {
+  it('NIEGA: no aparece para un pedido propio, ya confirmado, confirmando, cancelado, reemplazado o sin datos', () => {
     for (const p of [
       { catalogo: undefined, estado: 'recibido' }, { catalogo: 'propio', estado: 'recibido' },
-      { catalogo: 'externo', estado: 'confirmado' }, { catalogo: 'externo', estado: 'cancelado' },
-      { catalogo: 'externo', estado: 'reemplazado' }, { catalogo: 'externo' }, {},
-    ]) expect(puedeConfirmarse(p)).toBe(false);
+      { catalogo: 'externo', estado: 'confirmado' }, { catalogo: 'externo', estado: 'confirmando' },
+      { catalogo: 'externo', estado: 'cancelado' }, { catalogo: 'externo', estado: 'reemplazado' }, { catalogo: 'externo' }, {},
+    ]) expect(puedeConfirmarse(p, 'admin')).toBe(false);
   });
-  it('aparece solo para un pedido externo `recibido`', () => {
-    expect(puedeConfirmarse({ catalogo: 'externo', estado: 'recibido' })).toBe(true);
+  it('NIEGA: tampoco para quien no es admin u oper de ESE comercio (ingesta, sin rol, rol inventado)', () => {
+    for (const rol of ['ingesta', null, undefined, '', 'propietario', 'ADMIN']) expect(puedeConfirmarse({ catalogo: 'externo', estado: 'recibido' }, rol)).toBe(false);
   });
-  it('la pantalla llama a la callable con SOLO el pedidoId (el comercio sale del token)', () => {
-    expect(PANTALLA).toContain("httpsCallable(funciones, 'confirmarPedidoExterno')({ pedidoId })");
-    expect(PANTALLA).not.toMatch(/confirmarPedidoExterno'\)\(\{[^}]*tenant/);
+  it('aparece solo para un pedido externo `recibido` y un admin u oper', () => {
+    expect(puedeConfirmarse({ catalogo: 'externo', estado: 'recibido' }, 'admin')).toBe(true);
+    expect(puedeConfirmarse({ catalogo: 'externo', estado: 'recibido' }, 'oper')).toBe(true);
+  });
+  it('un pedido externo `confirmando` se rotula «Confirmando…» y no tiene botón; ningún otro lo muestra', () => {
+    expect(estaConfirmando({ catalogo: 'externo', estado: 'confirmando' })).toBe(true);
+    for (const p of [{ catalogo: 'propio', estado: 'confirmando' }, { catalogo: 'externo', estado: 'recibido' }, {}]) expect(estaConfirmando(p)).toBe(false);
+    expect(PANTALLA).toContain('Confirmando…');
+  });
+  it('la pantalla envía {tenantId, pedidoId} y el rol sale de la sesión (rolEn), no de un dato del pedido', () => {
+    expect(PANTALLA).toContain("httpsCallable(funciones, 'confirmarPedidoExterno')({ tenantId, pedidoId })");
+    expect(PANTALLA).toContain('rolEn(permisos, tenantId)');
+    expect(PANTALLA).toContain('puedeConfirmarse(p, rol)');
   });
 });
 
