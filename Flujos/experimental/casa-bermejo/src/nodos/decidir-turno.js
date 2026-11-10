@@ -25,6 +25,7 @@ const catalogo = bmCatalogo(cnPrimero('Traer catálogo'), ahora, base, ceMercado
 const vendibles = catalogo.ok === true ? catalogo.vendibles : [];
 const cobro = bmCobro(panel);
 const ficha = CN_TENANT.fichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora);
+const esAr = ceMercadoDePrefijo(from) === 'AR';
 const salir = (plan, extra) => [{ json: Object.assign({ plan: plan, from: from, textoCliente: textoDelTurno, llamarModelo: false, cuerpoModelo: null, modelo: BM_MODELO }, extra || {}) }];
 
 // 0. La puerta cerrada: nada de modelo, de medios ni de cobro. Quien responde (suspendido, operador) lo arma «Armar mensajes» desde la puerta.
@@ -44,10 +45,12 @@ const sinConfig = () => salir({ tipo: 'derivar', motivo: 'sin_configuracion' }, 
 if (esVisual) {
   if (cnNodo('Medio no aceptado')) {
     // Demasiado pesado o ilegible: con un cobro real abierto probablemente sea el comprobante y va a recepción sin cotejar; si no, se pide uno más liviano.
-    if (cobro.modo === 'real' && (cobro.pendiente || cobro.enRevision || cobro.vencidoHaceMin !== null)) return salir({ tipo: 'derivar', motivo: 'comprobante_sin_cotejo' });
+    if (esAr ? ficha.aliasEstado === 'abierto' : (cobro.modo === 'real' && (cobro.pendiente || cobro.enRevision || cobro.vencidoHaceMin !== null))) return salir({ tipo: 'derivar', motivo: 'comprobante_sin_cotejo' });
     return salir({ tipo: 'archivo', pesado: /demasiado pesado/.test(entradaMedio) });
   }
   if (categoriaMedio === 'comprobante') {
+    // Argentina: el comprobante se coteja contra el pago por alias abierto de ESTE teléfono (`cotejarAliasArs`); sin alias abierto no se coteja nada y lo ve recepción.
+    if (esAr) return cnNodo('Cotejar en el servidor') && ficha.aliasEstado === 'abierto' ? salir({ tipo: 'comprobante_alias' }) : salir({ tipo: 'derivar', motivo: 'comprobante_sin_alias' });
     if (cnNodo('Cotejar en el servidor')) return salir({ tipo: 'comprobante' });
     // Un comprobante sin un cobro abierto: no se coteja nada; lo ve recepción.
     return salir({ tipo: 'derivar', motivo: 'comprobante_sin_cobro' });
@@ -83,6 +86,8 @@ textoDelTurno = texto;
 const n = bmNorm(texto);
 if (n === '') return salir({ tipo: 'otro' });
 
+// 3a. Argentina, con un pedido anotado y sin un pedido nuevo a medias: «pagar» pide el alias al servidor (`pedirAliasArs`). No necesita el catálogo.
+if (esAr && (ficha.aliasEstado === 'pedido' || ficha.aliasEstado === 'abierto') && ficha.carrito.length === 0 && bmQuierePagar(n)) return salir({ tipo: 'alias_pedir' });
 // 3. Sin catálogo no se improvisa: recepción.
 if (!configLista) return sinConfig();
 // 4. Lo que decide el código sobre el texto, ANTES de cualquier modelo.
