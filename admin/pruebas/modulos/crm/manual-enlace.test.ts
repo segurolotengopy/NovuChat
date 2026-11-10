@@ -32,7 +32,7 @@ describe('M1. la forma del enlace', () => {
       `https://usuario:clave${String.fromCharCode(64)}docs.google.com/document/d/${ID}`, `https://docs.google.com:8443/document/d/${ID}`,
       `https://drive.google.com/drive/folders/${ID}`, `https://docs.google.com/forms/d/${ID}`,
       'javascript:alert(1)', 'data:text/html,x', `https://docs.google.com/document/d/corto`,
-      `https://docs.google.com/document/d/${ID}/../x`, ` ${DOC}`, `${DOC}\n`, `${DOC}"x`, '',
+      `https://docs.google.com/document/d/${ID}/../x`, `https://docs.google.com/document/d/${ID}/%2e%2e/x`, `https://docs.google.com/document/d/${ID}/%2E%2e/x`, `https://docs.google.com/document/d/${ID}/a%2Fb`, ` ${DOC}`, `${DOC}\n`, `${DOC}"x`, '',
       `https://docs.google.com/document/d/${ID}/${'a'.repeat(300)}`,
     ];
     for (const u of malos) expect(esEnlaceDeManual(u), JSON.stringify(u).slice(0, 60)).toBe(false);

@@ -49,7 +49,7 @@ const FORMA_MANUAL = /^https:\/\/(?:docs\.google\.com\/(?:document|presentation|
 export function esEnlaceDeManual(v: unknown): v is string {
   if (typeof v !== 'string' || v.length === 0 || v.length > LARGO_MAXIMO_ENLACE_MANUAL) return false;
   if (!FORMA_MANUAL.test(v)) return false;
-  if (v.includes('..') || v.includes('//', 8)) return false;
+  if (v.includes('..') || v.includes('//', 8) || /%(?:2e|2f|5c)/i.test(v)) return false;
   try {
     const u = new URL(v);
     return u.protocol === 'https:' && (u.hostname === 'docs.google.com' || u.hostname === 'drive.google.com')
