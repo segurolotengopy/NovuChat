@@ -46,6 +46,7 @@ import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import type { Flujo, J } from './lib/flujo';
 import { crearMundo, type Doble, type Enviado, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
 import { copiarModulosComunesAlTemporal, doblesDelGuardado } from './lib/doble-guardado';
+import { atencionDeConversacion } from './modulos/crm/ingesta-conversacion';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../Flujos/experimental/captacion-minima');
@@ -890,6 +891,37 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
       // Cada saliente aceptado se reportó, y el aviso a recepción no (no es una respuesta al prospecto).
       expect(w.turnos.flatMap((t) => t.llamadas.ingesta).filter((x) => x['direccion'] === 'saliente')).toHaveLength(6);
       expect(w.turnos.flatMap((t) => t.llamadas.ingesta).filter((x) => x['direccion'] === 'entrante')).toHaveLength(6);
+    });
+    it('FILA MÍNIMA de punta a punta: este mensaje abre la conversación y «Armar» no arma prospecto (la ficha no cambió): 1 fila neutra, con el teléfono del turno y sin texto ni nombre', () => {
+      const w = crear(); const j = jugar(w);
+      j.texto('Hola');
+      w.hoja.filas.length = 0;                      // la hoja queda vacía: la conversación que abre ahora no tiene fila
+      const desde = w.mundo.ahora();
+      w.ingesta = { atencion: { estado: 'normal', ...atencionDeConversacion({ desdeMs: desde, nueva: true }) } };
+      j.texto('Hola');                              // la misma ficha: sin cambio, sin prospecto
+      const t = w.turnos[w.turnos.length - 1]!;
+      const pros = t.porNodo['Prospecto para la planilla'] ?? [];
+      expect(pros).toHaveLength(1);
+      expect(pros[0]).toMatchObject({ minima: true });
+      expect(Object.keys(pros[0]!).sort()).toEqual(['conversacionDesdeMs', 'minima', 'senales', 'telefono', 'ultimaInteraccionMs']);
+      expect(w.hoja.filas).toHaveLength(1);
+      const f = w.hoja.filas[0]!.map(String);
+      expect(f[4]).toMatch(/^\d{8,15}$/);
+      expect(f.filter((_, c) => ![0, 1, 4].includes(c) && f[c] !== '')).toEqual(['Sin seguimiento']);   // solo ID, fecha, teléfono y el estado del equipo
+    });
+    it('UNA FILA POR CONVERSACIÓN (08/11, contrato de la ingesta): la apertura crea 1 fila con la fecha CON hora; el resto de la conversación no crea otra; la hoja se lee solo en A3:J (nunca K a N)', () => {
+      const w = crear(); const j = jugar(w);
+      const desde = w.mundo.ahora();
+      const ing = (nueva: boolean): J => ({ atencion: { estado: 'normal', ...atencionDeConversacion({ desdeMs: desde, nueva }) } });
+      w.ingesta = ing(true);
+      j.texto('Hola');
+      expect(w.hoja.filas).toHaveLength(1);
+      w.ingesta = ing(false);
+      j.rubro('salud-y-belleza');
+      j.texto('Gracias');
+      expect(w.hoja.filas).toHaveLength(1);
+      expect(String(w.hoja.filas[0]![1])).toBe(new Date(desde - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' '));
+      expect(w.hoja.llamadas.every((l) => l.rango === '' || /^A3:(J|A)$/.test(l.rango))).toBe(true);
     });
     it('C1: la planilla se lee y se escribe en la hoja y los rangos del contrato (con la planilla de la configuración)', () => {
       const w = crear(); const j = jugar(w);

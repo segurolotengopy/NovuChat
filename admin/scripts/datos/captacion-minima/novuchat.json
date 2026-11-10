@@ -93,6 +93,7 @@
       "etapaInicial": "1. Nuevo Lead",
       "origen": "Chatbot WhatsApp IA",
       "origenAnuncio": "Campaña Meta Ads",
+      "fechaConHora": true,
       "estado": "Activo"
     }
   },

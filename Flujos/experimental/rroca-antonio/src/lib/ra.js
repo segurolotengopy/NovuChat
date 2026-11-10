@@ -229,6 +229,7 @@ function raProspectoCrm(d) {
   else if (tipo === 'info') quePidio = 'Información';
   else if (tipo === 'derivar') quePidio = 'Consulta para Antonio';
   const perfil = raTexto(x.nombrePerfil).slice(0, 60).replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim();
+  // nuevoContacto NO tiene efecto en el miniCRM desde el 08/11/2026 (una fila por conversacion de 24 h: la decide el modulo crm con atencion.conversacionDesde); se conserva solo por compatibilidad.
   const p = { telefono: raTexto(x.from).replace(/\D/g, ''), nombre: perfil, nombreDePerfil: true, anuncio: x.anuncio === true, nuevoContacto: x.nuevoContacto === true, senales: senales, ultimaInteraccionMs: Number(x.ahoraMs) };
   if (quePidio !== '') p.quePidio = quePidio;
   if (x.avisoSalio === true && tipo === 'derivar') p.derivacion = pidioLlamada ? 'Pidió hablar con Antonio' : 'Consulta para Antonio';

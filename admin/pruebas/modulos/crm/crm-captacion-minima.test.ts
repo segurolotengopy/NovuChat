@@ -59,7 +59,11 @@ afterEach(() => { vi.useRealTimers(); });
 function nuevo(prospectos: J[], busqueda: Item[], ids: Item[]) {
   const pros = prospectos.map((json) => ({ json }));
   const nodos = { 'Prospecto para la planilla': pros, 'Buscar teléfono en planilla': busqueda };
-  return { oraculo: correr(ORACULO, ids, nodos), nodo: correr(CODIGO_NODO, ids, nodos) };
+  // DELTA DECLARADO (08/11/2026): el oráculo es la foto con la regla de 48 h; `nuevoContacto` ya no decide, así que el oráculo lo recibe en falso.
+  const sin48h = { ...nodos, 'Prospecto para la planilla': pros.map(({ json }) => ({ json: { ...json, nuevoContacto: false } })) };
+  // Y la fecha de registro de NovuChat ahora lleva la hora (`alCrear.fechaConHora`, identifica la conversación sin columna nueva): se compara el día.
+  const soloDia = (r: unknown): unknown => JSON.parse(JSON.stringify(r), (k, v) => (k === 'Fecha Registro' && typeof v === 'string' ? v.replace(/^'?(\d{4}-\d{2}-\d{2}).*$/, '$1') : v));
+  return { oraculo: correr(ORACULO, ids, sin48h), nodo: soloDia(correr(CODIGO_NODO, ids, nodos)) };
 }
 const fila = (n: number, tel: string, extra: J = {}): Item => ({ json: { row_number: n, ...Object.fromEntries(TITULOS.map((t) => [t, ''])), 'Teléfono WhatsApp': tel, ...extra } });
 const TEL = ['59', '17', '000', '001'].join('');

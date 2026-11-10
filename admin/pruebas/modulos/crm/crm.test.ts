@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 // Las pruebas de la planilla de las subcuentas (PR-E) viven en crm-planilla.ts, sin sufijo .test para no pedir otra entrada en SUITES_PURAS: corren aquí.
 import './crm-planilla.ts';
+// Una fila por conversación (08/11/2026): mismo criterio, sin sufijo .test.
+import './crm-conversacion.ts';
 import { crmActivo, crmParaElFlujo, recordatoriosActivos } from '../../../functions/src/modulos/crm/crm.js';
 import {
   CAMPOS_DEL_BOT, CAMPOS_DEL_EQUIPO, COLUMNAS_V1, columnasEscribibles, neutralizarTexto,
