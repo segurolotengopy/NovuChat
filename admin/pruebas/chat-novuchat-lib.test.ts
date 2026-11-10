@@ -1658,12 +1658,12 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     expect(r.salida).toMatch(/argumento desconocido/);
     expect(mtimes()).toEqual(antes);
   });
-  it('arma los dos JSON a partir de la plantilla y los datos: coinciden byte a byte con lo versionado y son EL MISMO con y sin ensayo salvo el disparador', () => {
+  it('arma los tres JSON (ensayo en el Demo A, prueba y producción) a partir de la plantilla y los datos: coinciden byte a byte con lo versionado y son EL MISMO con y sin ensayo salvo el disparador', () => {
     const r = CONSTRUIR.construir({ verificar: true });
-    expect(r.resultado.map((x) => [x.archivo, x.alDia, x.versionado])).toEqual([['chat-novuchat.prueba.json', true, []], ['chat-novuchat.novuchat.json', true, []]]);
+    expect(r.resultado.map((x) => [x.archivo, x.alDia, x.versionado])).toEqual([['chat-novuchat.ensayo-demo-a.json', true, []], ['chat-novuchat.prueba.json', true, []], ['chat-novuchat.novuchat.json', true, []]]);
     expect(r.huerfanos).toEqual([]);
     // 53 de antes (44 + los 9 de la rama común del guardado de medios) y los 20 del estado de la conversación en el servidor (PR-4c2).
-    expect(r.resultado.map((x) => x.nodos)).toEqual([73, 73]);
+    expect(r.resultado.map((x) => x.nodos)).toEqual([73, 73, 73]);
   });
   it('un dato cambiado, un archivo borrado a mano o una guardia violada a mano hacen fallar `--verificar` en una copia temporal; un JSON sin datos es un huérfano', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chat-novuchat-'));
@@ -1725,9 +1725,9 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     // el nombre del modelo solo se lee de los datos: ningún nodo lo escribe a mano
     for (const n of base['nodes'].filter((x: J) => x.type === 'n8n-nodes-base.code' && x.name !== 'Config del negocio')) expect(String(n.parameters.jsCode)).not.toMatch(/gemini-3\.5-flash-lite/);
   });
-  it('los dos JSON son los únicos de la carpeta del flujo (más la plantilla y los de herramientas): ninguno sin archivo de datos', () => {
+  it('los tres JSON son los únicos de la carpeta del flujo (más la plantilla y los de herramientas): ninguno sin archivo de datos', () => {
     const jsons = readdirSync(CARPETA).filter((n) => n.endsWith('.json')).sort();
-    expect(jsons).toEqual(['chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json', 'flujo.plantilla.json']);
+    expect(jsons).toEqual(['chat-novuchat.ensayo-demo-a.json', 'chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json', 'flujo.plantilla.json']);
     expect(readdirSync(CARPETA).filter((n) => /\.local\.json$/.test(n))).toEqual([]);
   });
 });

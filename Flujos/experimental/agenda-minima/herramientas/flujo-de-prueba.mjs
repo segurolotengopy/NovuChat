@@ -216,8 +216,26 @@ async function idDeCredencialCrm() {
   if (m.length !== 1) morir(`la credencial «${CRED_CRM_BELLIDO}» (googleApi) tiene que existir en n8n exactamente una vez; hay ${m.length}. Cree la credencial antes de publicar`);
   return String(m[0].id);
 }
+async function idDeCredencialDeHojaDeEnsayo() {
+  if (listaDeCredenciales === null) {
+    const r = await llamar('GET', '/credentials?limit=250');
+    if (r.cod !== 200) morir(`no pude leer la lista de credenciales de n8n (GET /credentials → ${r.cod})`);
+    listaDeCredenciales = Array.isArray(r.datos.data) ? r.datos.data : (Array.isArray(r.datos) ? r.datos : []);
+  }
+  const m = listaDeCredenciales.filter((c) => c && c.name === CRED_HOJA_DE_ENSAYO && c.type === 'googleApi' && c.id);
+  if (m.length !== 1) morir(`la credencial «${CRED_HOJA_DE_ENSAYO}» (googleApi) tiene que existir en n8n exactamente una vez; hay ${m.length}. Cree la credencial (una cuenta de servicio con acceso SOLO a la hoja de prueba) antes del ensayo`);
+  return m[0].id;
+}
 const ID_PLANILLA_VALIDO = (v) => typeof v === 'string' && !v.startsWith('REEMPLAZAR_') && /^[A-Za-z0-9_-]{25,100}$/.test(v);
 const NODOS_CRM_DE_BELLIDO = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
+// EL ENSAYO DEL CHAT DE NOVUCHAT EN EL DEMO A (`--conservar-crm`, SOLO con `--sobre-demo-a`): a diferencia del resto de los ensayos, el miniCRM QUEDA conectado, pero escribe en una HOJA DE PRUEBA.
+// Sin la bandera nada de esto corre y el comportamiento de siempre (quitar la rama del CRM y vaciar la planilla) no cambia. Con ella:
+//   - los nodos de Google Sheets se quedan, y su ÚNICA credencial posible es esta (por nombre exacto, tipo googleApi y exactamente UNA en n8n; el Demo A vivo no la usa todavía, así que no se exige que ya la use);
+//   - el id y la hoja de la planilla tienen que llegar YA resueltos (`preparar-import.sh` con los marcadores REEMPLAZAR_PLANILLA_ENSAYO_*): con un marcador o vacío, se niega;
+//   - `--aplicar` exige además `--autorizo-hoja-de-prueba` (escribe filas en una hoja de Google: es una escritura externa por ensayo).
+const CRED_HOJA_DE_ENSAYO = 'Google Sheets miniCRM (ensayo)';
+const CONSERVAR_CRM = bandera('conservar-crm');
+if (CONSERVAR_CRM && !bandera('sobre-demo-a')) morir('--conservar-crm solo se usa con --sobre-demo-a');
 const AJENOS_A_BELLIDO = /platinum|q'?taco|captaci|segurolo|otp|aab1|whatsapp-?modular|receptor|demo ?a\b|NovuChat A|pruebas/i;
 if (bandera('sobre-bellido')) {
   const RESPALDO = resolve(opcion('respaldo') ?? morir('falta --respaldo <archivo fuera del repositorio>'));
@@ -527,6 +545,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
     // Un flujo apagado no es el Demo A que se vigila: se escribiría sobre algo que hoy no recibe mensajes y el PUT lo activaría.
     if (APLICAR && vivo.datos.active !== true) morir('el Demo A vivo NO está activo: no se pisa (actívelo y compruebe la suscripción de Meta antes)');
     if (APLICAR && !bandera('autorizo-gemini-produccion')) morir('--sobre-demo-a --aplicar usa la credencial de Gemini de PRODUCCIÓN: exige --autorizo-gemini-produccion (la autorización de Andres es por ensayo y se pide de nuevo cada vez)');
+    if (CONSERVAR_CRM && APLICAR && !bandera('autorizo-hoja-de-prueba')) morir('--conservar-crm --aplicar deja el miniCRM escribiendo en una hoja de Google de PRUEBA: exige --autorizo-hoja-de-prueba (la autorización de Andres es por ensayo y se pide de nuevo cada vez)');
   }
   // M2: después de un PUT el flujo tiene que quedar ACTIVO (con su webhook); si no, se activa y se verifica.
   const asegurarActivo = async () => {
@@ -602,7 +621,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   // 2b. El ENSAYO en el Demo A no escribe en ninguna planilla: la rama del miniCRM (8 nodos de Google) SALE del candidato, con todas sus
   // conexiones. n8n 2.x no publica un nodo con credencial requerida vacía, y ninguna credencial de Bellido puede llegar al Demo A.
   // La rama cuelga de «Armar mensajes» en paralelo: al quitar solo esa conexión, el resto del flujo no cambia. Un candidato sin esos nodos (Q'Taco) no pierde nada.
-  const quitadosCrm = b.nodes.filter((n) => NODOS_CRM_DE_BELLIDO.includes(n.name)).length;
+  const quitadosCrm = CONSERVAR_CRM ? 0 : b.nodes.filter((n) => NODOS_CRM_DE_BELLIDO.includes(n.name)).length;
   if (quitadosCrm) {
     b.nodes = b.nodes.filter((n) => !NODOS_CRM_DE_BELLIDO.includes(n.name));
     for (const k of NODOS_CRM_DE_BELLIDO) delete b.connections[k];
@@ -634,6 +653,13 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
       tabla.push(`  ${n.name}: PARÁMETROS CAMBIADOS ${antes} → predefinedCredentialType/whatsAppApi`);
     }
     for (const tipo of Object.keys(n.credentials ?? {})) {
+      if (CONSERVAR_CRM && tipo === 'googleApi') {
+        const origen = (n.credentials[tipo] && n.credentials[tipo].name) || '';
+        if (origen !== CRED_HOJA_DE_ENSAYO) morir(`«${n.name}» usa googleApi «${origen}»: con --conservar-crm la única credencial de hoja permitida es «${CRED_HOJA_DE_ENSAYO}»`);
+        n.credentials[tipo] = { id: await idDeCredencialDeHojaDeEnsayo(), name: CRED_HOJA_DE_ENSAYO };
+        tabla.push(`  ${n.name}: ${tipo} → «${CRED_HOJA_DE_ENSAYO}» (de la lista de n8n; hoja de PRUEBA)`);
+        continue;
+      }
       const regla = CRED_DEMO_A[tipo];
       const origen = (n.credentials[tipo] && n.credentials[tipo].name) || '';
       const nombre = (typeof regla === 'string' ? regla : regla && regla[origen])
@@ -651,8 +677,15 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
     || (n.type === 'n8n-nodes-base.httpRequest' && (n.parameters?.authentication ?? 'none') !== 'none' && !Object.keys(n.credentials ?? {}).length)));
   if (sinCred.length) morir(`nodos sin credencial resuelta: ${sinCred.map((n) => n.name).join(', ')}`);
   // El id de la planilla del miniCRM va VACIO en el ensayo (aunque el JSON trajera otro): sin planilla no se escribe nada.
-  const idPlanillaDemo = b.nodes.find((n) => n.name === 'Config base')?.parameters?.assignments?.assignments?.find((a) => a.name === 'planillaProspectosId');
-  if (idPlanillaDemo) idPlanillaDemo.value = '';
+  const camposBase = b.nodes.find((n) => n.name === 'Config base')?.parameters?.assignments?.assignments ?? [];
+  const idPlanillaDemo = camposBase.find((a) => a.name === 'planillaProspectosId');
+  if (CONSERVAR_CRM) {
+    // Con el CRM conectado, la hoja de prueba tiene que estar resuelta (nunca un marcador, nunca vacía) y el flujo tiene que traer sus nodos de Google.
+    const hojaDemo = camposBase.find((a) => a.name === 'planillaProspectosHoja');
+    if (!idPlanillaDemo || !ID_PLANILLA_VALIDO(idPlanillaDemo.value)) morir('--conservar-crm: «Config base».planillaProspectosId no es un id de planilla resuelto (corra preparar-import.sh con REEMPLAZAR_PLANILLA_ENSAYO_ID en la tabla local)');
+    if (!hojaDemo || typeof hojaDemo.value !== 'string' || !hojaDemo.value.trim() || /^REEMPLAZAR_|^=/.test(hojaDemo.value)) morir('--conservar-crm: «Config base».planillaProspectosHoja no está resuelta (corra preparar-import.sh con REEMPLAZAR_PLANILLA_ENSAYO_HOJA en la tabla local)');
+    if (!b.nodes.some((n) => n.type === 'n8n-nodes-base.googleSheets')) morir('--conservar-crm: el flujo no trae nodos de Google Sheets: no hay miniCRM que ensayar');
+  } else if (idPlanillaDemo) idPlanillaDemo.value = '';
   // El doctor del ENSAYO es quien prueba (PREPARACION.md §3). `configuracionFlujo` no entrega `numeroDoctor`, así que sin esto el respaldo
   // queda en marcador, el flujo no tiene a quién apuntar y retira la frase del botón («Vacunas y otros» salía como texto, humo del 08/11).
   // El número llega por la variable de entorno NUMERO_DOCTOR_ENSAYO (nunca por argumento ni impreso).
@@ -674,6 +707,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   // calendarios válidos, así que nunca llegan al doctor ni a la agenda reales.
   const RESPALDO_OK = /^REEMPLAZAR_(NUMERO_(RECEPCION|DOCTOR)|CALENDARIO|HORARIO_ATENCION|PLANILLA_PROSPECTOS_ID|PHONE_NUMBER_ID)_[A-Z0-9_]+$/;
   const marcasMal = marcas.filter((m) => !RESPALDO_OK.test(m));
+  if (CONSERVAR_CRM && marcas.length) morir(`--conservar-crm: quedan marcadores sin reponer (${marcas.join(', ')}): corra preparar-import.sh con la tabla local`);
   const fueraDeConfigBase = b.nodes.filter((n) => n.name !== 'Config base' && /REEMPLAZAR_[A-Z]/.test(JSON.stringify(n.parameters ?? {}))).map((n) => n.name);
   if (fueraDeConfigBase.length) morir(`hay marcadores fuera de «Config base»: ${fueraDeConfigBase.join(', ')}`);
   if (marcasMal.length) morir(`marcadores que el flujo necesitaría y nadie repone: ${marcasMal.join(', ')}`);
@@ -685,6 +719,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   console.log(`Trigger vivo: webhookId …${String(t.webhookId ?? '').slice(-4) || '(sin webhookId)'}; flujo vivo activo=${vivo.datos.active}`);
   console.log(`Candidato (${ARCHIVO.split(sep).slice(-2).join('/')}): ${b.nodes.length} nodos (con el disparador del Demo A). El nombre del flujo queda «${vivo.datos.name}».`);
   console.log(`Phone id del cliente en el JSON: ${MARCA_PHONE.test(readFileSync(ARCHIVO, 'utf8')) ? 'reemplazado en memoria por el del Demo A (no se muestra)' : 'no trae'}`);
+  if (CONSERVAR_CRM) console.log('miniCRM CONSERVADO (--conservar-crm): escribe en la hoja de PRUEBA con «'+CRED_HOJA_DE_ENSAYO+'»; el id de la hoja no se muestra.');
   if (quitadosCrm) console.log(`Nodos quitados del candidato: ${quitadosCrm} (la rama del miniCRM de Bellido): el ensayo en el Demo A no escribe en ninguna planilla y n8n 2.x no publica nodos de Google sin credencial.`);
   console.log(`Nodos que se van: ${[...nv].filter((x) => !nb.has(x)).length} · que llegan: ${[...nb].filter((x) => !nv.has(x)).length} · en los dos: ${[...nb].filter((x) => nv.has(x)).length}`);
   console.log('Credenciales, nodo por nodo:'); tabla.forEach((l) => console.log(l));

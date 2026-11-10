@@ -168,6 +168,17 @@ const CLAVES_TEXTOS = ['saludo', 'listaBoton', 'listaTitulo', 'planesIntro', 'pl
   'traspasoRepite', 'traspasoSinRecepcion', 'recepcion', 'botonTraspaso', 'saludoWa', 'estadoAviso', 'falla', 'medioIlegible', 'invitaOtroRubro', 'planesAgotado'];
 const DESCARTES = ['numero_equivocado', 'vende_o_busca_trabajo', 'sin_negocio', 'spam_o_prueba'];
 
+// EL ENSAYO EN EL DEMO A (`ensayo-demo-a.json` → `chat-novuchat.ensayo-demo-a.json`): el mismo flujo, con el miniCRM CONECTADO, pero contra una HOJA DE PRUEBA y con los marcadores PROPIOS del ensayo.
+// Es un archivo de ensayo y nunca producción: los marcadores y la credencial de hoja de abajo solo pueden estar ahí, y ahí no puede quedar ninguno de producción (ni heredado).
+export const DATOS_ENSAYO_DEMO_A = 'ensayo-demo-a.json';
+export const SALIDA_ENSAYO_DEMO_A = 'chat-novuchat.ensayo-demo-a.json';
+export const CRED_PLANILLA_ENSAYO = 'Google Sheets miniCRM (ensayo)';
+const MARCADOR_PLANILLA_ENSAYO = { planillaProspectosId: 'REEMPLAZAR_PLANILLA_ENSAYO_ID', planillaProspectosHoja: 'REEMPLAZAR_PLANILLA_ENSAYO_HOJA' };
+// Marcadores del ensayo (el aviso al teléfono de quien prueba, la hoja de prueba y el phone id del Demo A, sin sufijo de cliente).
+const ES_MARCADOR_DE_ENSAYO = /REEMPLAZAR_(?:PLANILLA_ENSAYO_[A-Z0-9_]+|NUMERO_AVISO_ENSAYO|PHONE_NUMBER_ID(?![A-Z0-9_]))/;
+// Marcadores de PRODUCCIÓN de la hoja de prospectos de NovuChat y de su número: nunca en el ensayo.
+const ES_MARCADOR_DE_PRODUCCION = /REEMPLAZAR_(?:PLANILLA_PROSPECTOS_[A-Z0-9_]+|PHONE_NUMBER_ID_[A-Z0-9_]+|NUMERO_RECEPCION_[A-Z0-9_]+)/;
+
 /** Lo que un texto que VE EL CLIENTE no puede tener. Devuelve el motivo o ''. `libre`: textos que sí pueden tener cifras o una pregunta (los valida el llamador). */
 function errorDeTextoDelCliente(v, opc = {}) {
   if (typeof v !== 'string' || v.trim() === '') return 'tiene que ser un texto no vacío';
@@ -243,6 +254,19 @@ export function validarDatos(datos, archivo) {
     if (typeof cb.nombreNegocio === 'string' && (cb.nombreNegocio.trim() === '' || cb.nombreNegocio.length > 60)) e('configBase.nombreNegocio', 'tiene que tener de 1 a 60 caracteres');
     if (typeof cb.planillaProspectosHoja === 'string' && (cb.planillaProspectosHoja.trim() === '' || cb.planillaProspectosHoja.length > 100)) e('configBase.planillaProspectosHoja', 'tiene que tener de 1 a 100 caracteres (o el marcador)');
     if (typeof cb.mensajeComercioSuspendido === 'string' && (cb.mensajeComercioSuspendido.trim() === '' || cb.mensajeComercioSuspendido.length > 300)) e('configBase.mensajeComercioSuspendido', 'tiene que tener de 1 a 300 caracteres');
+  }
+
+  // --- el ensayo en el Demo A: marcadores y credencial de hoja PROPIOS, y ninguno de producción; y a la inversa en los demás archivos
+  if (cb) {
+    const textoCb = JSON.stringify(cb) + JSON.stringify(cred.planilla || '');
+    if (archivo === DATOS_ENSAYO_DEMO_A) {
+      for (const [c, m] of Object.entries(MARCADOR_PLANILLA_ENSAYO)) if (cb[c] !== m) e(`configBase.${c}`, `en ${DATOS_ENSAYO_DEMO_A} tiene que ser el marcador de ensayo «${m}» (la hoja de prueba; nunca la hoja real de prospectos)`);
+      if (ES_MARCADOR_DE_PRODUCCION.test(textoCb)) e('configBase', 'el ensayo en el Demo A trae un marcador de producción (REEMPLAZAR_PLANILLA_PROSPECTOS_*, REEMPLAZAR_PHONE_NUMBER_ID_* o REEMPLAZAR_NUMERO_RECEPCION_*): usa solo los del ensayo');
+      if (cred.planilla !== CRED_PLANILLA_ENSAYO) e('credenciales.planilla', `en ${DATOS_ENSAYO_DEMO_A} tiene que ser «${CRED_PLANILLA_ENSAYO}» (la de la hoja de prueba)`);
+      if (d.entrada !== 'trigger') e('entrada', `en ${DATOS_ENSAYO_DEMO_A} tiene que ser «trigger» (la herramienta lo cambia por el del Demo A)`);
+    } else if (ES_MARCADOR_DE_ENSAYO.test(textoCb) || cred.planilla === CRED_PLANILLA_ENSAYO) {
+      e('configBase', `trae un marcador o la credencial de hoja del ensayo en el Demo A (REEMPLAZAR_PLANILLA_ENSAYO_*, REEMPLAZAR_NUMERO_AVISO_ENSAYO, REEMPLAZAR_PHONE_NUMBER_ID o «${CRED_PLANILLA_ENSAYO}»): solo ${DATOS_ENSAYO_DEMO_A} puede llevarlos`);
+    }
   }
 
   // --- el mapa de columnas de la hoja de prospectos (módulo crm): lo valida el MISMO validador que corre en n8n
@@ -594,7 +618,7 @@ function sinComentariosSinMemo(texto, modo) {
   return salida;
 }
 
-export function guardias(entrada, flujo, datos = {}) {
+export function guardias(entrada, flujo, datos = {}, destino = '') {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   const nombres = new Set(nodos.map((n) => n.name));
@@ -770,6 +794,21 @@ export function guardias(entrada, flujo, datos = {}) {
   }
   if (sheet('Agregar fila') && formato(sheet('Agregar fila')) !== 'USER_ENTERED') h.push('«Agregar fila» tiene que escribir en USER_ENTERED (la fecha queda como fecha)');
   if (sheet('Actualizar fila') && formato(sheet('Actualizar fila')) !== 'RAW') h.push('«Actualizar fila» tiene que escribir en RAW (nada se interpreta)');
+  // EL ENSAYO EN EL DEMO A, en lo ARMADO (y en el versionado, aunque alguien lo haya tocado a mano): solo `chat-novuchat.ensayo-demo-a.json` puede llevar los marcadores y la credencial de hoja del ensayo, y ahí no puede quedar ninguno de producción.
+  {
+    const base = nodos.find((n) => n.name === 'Config base');
+    const valoresBase = ((((base || {}).parameters || {}).assignments || {}).assignments || []).map((a) => String((a && a.value) ?? ''));
+    const hojas = nodos.filter((n) => n.type === 'n8n-nodes-base.googleSheets');
+    const credDeHojas = hojas.map((n) => String((((n.credentials || {}).googleApi) || {}).name || ''));
+    if (destino === SALIDA_ENSAYO_DEMO_A) {
+      const porNombre = Object.fromEntries((((base || {}).parameters || {}).assignments || {}).assignments?.map((a) => [a.name, a.value]) || []);
+      for (const [c, m] of Object.entries(MARCADOR_PLANILLA_ENSAYO)) if (porNombre[c] !== m) h.push(`el ensayo en el Demo A: «Config base».${c} tiene que ser el marcador «${m}» (la hoja de prueba)`);
+      if (valoresBase.some((v) => ES_MARCADOR_DE_PRODUCCION.test(v))) h.push('el ensayo en el Demo A: «Config base» trae un marcador de producción');
+      if (!hojas.length || credDeHojas.some((c) => c !== CRED_PLANILLA_ENSAYO)) h.push(`el ensayo en el Demo A: los nodos de la planilla tienen que usar «${CRED_PLANILLA_ENSAYO}» (la hoja de prueba) y el miniCRM tiene que estar conectado`);
+    } else if (valoresBase.some((v) => ES_MARCADOR_DE_ENSAYO.test(v)) || credDeHojas.includes(CRED_PLANILLA_ENSAYO)) {
+      h.push(`trae un marcador o la credencial de hoja del ensayo en el Demo A: solo ${SALIDA_ENSAYO_DEMO_A} puede llevarlos`);
+    }
+  }
   // `REEMPLAZAR_` solo en «Config base» (y en la ruta de «Entrada de prueba»).
   for (const n of nodos) {
     if (n.name === 'Config base') continue;
@@ -843,14 +882,14 @@ export function construir({ carpeta = AQUI, datos: dirDatos = DATOS, verificar =
     const texto = armarTenant(proyecto, datos, archivo);
     const salida = salidaDe(archivo);
     // Lo que se arma nunca viola las guardias (si la plantilla lo hiciera, falla la construcción)…
-    const propios = guardias(datos.entrada, JSON.parse(texto), datos);
+    const propios = guardias(datos.entrada, JSON.parse(texto), datos, salida);
     if (propios.length) throw new Error(`${salida}: ${propios.join('; ')}`);
     const ruta = join(carpeta, salida);
     const actual = leerSiExiste(ruta, salida);
     // …y el archivo VERSIONADO tampoco las viola (aunque alguien lo haya tocado a mano).
     let versionado = [];
     if (actual !== null) {
-      try { versionado = guardias(datos.entrada, JSON.parse(actual), datos); } catch (x) { versionado = ['no es un JSON válido']; }
+      try { versionado = guardias(datos.entrada, JSON.parse(actual), datos, salida); } catch (x) { versionado = ['no es un JSON válido']; }
     }
     if (!verificar) escribirSinSeguirEnlaces(ruta, texto, salida);
     return { archivo: salida, datos: archivo, nodos: JSON.parse(texto).nodes.length, existia: actual !== null, alDia: actual === texto, versionado };
