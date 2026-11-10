@@ -704,10 +704,23 @@ const EV_DA_LUZ_VERDE = /\b(no hay (ningun )?(problema|inconveniente)|tambien se
 // La REMISIÓN a la valoración: lo único que el guion manda decir sobre la salud del cliente. Una salida que habla de su condición (o afirma que algo es «seguro») SIN remitir a la valoración de la Dra. no sale.
 const EV_REMISION = /\b(valoracion|la dra|la doctora|doctora evy|dra evy|en persona|evalu\w+)\b/;
 const EV_AFIRMA_SEGURO = /\b(?:es|son|era|resulta|resultan|muy|bastante|super|totalmente|completamente|100 ?%?)\s+(?:muy |bastante |super |totalmente |completamente )?segur[oa]s?\b(?!\s+(?:de |que\b))|\bsegur[oa]s?\s+para\b/;   // «es seguro que te va a gustar» y «estoy seguro de» no afirman seguridad médica
+// AFIRMAR O NEGAR sobre la condición («no se realizan durante el embarazo», «está contraindicado», «se puede»): el modelo nunca lo dice, ni a favor ni en contra; lo ve la Dra. en persona (Andres, 10/11/2026, humo de Evy, paso 11).
+const EV_AFIRMA_NIEGA = /\b(?:no se (?:puede|debe|realiz\w*|hace\w*|aplic\w*|recomiend\w*|indica\w*)|se puede|se realiza\w*|se hace\w*|estan? contraindicad\w*|contraindicad\w*|no es recomendable|no recomendamos|no (?:esta|estan) indicad\w*|esta indicad\w*)\b/;
 function evSaludSinRemision(norm) {
   const n = String(norm);
-  const condicion = EV_CONDICION.exec(n) || EV_AFIRMA_SEGURO.exec(n);
-  return condicion && !EV_REMISION.test(n) ? condicion[0] : '';
+  // POR ORACIÓN: toda oración que nombra una condición (embarazo, lactancia, medicamentos…) tiene que remitir ELLA MISMA a la Dra. y no afirmar ni negar nada. Antes bastaba una mención de «valoración» en cualquier parte del texto,
+  // y «los bioestimuladores no se realizan durante el embarazo… te recibimos en tu valoración» pasaba (humo del 09/11/2026).
+  for (const o of n.split(/[.!?\n]+/)) {
+    const c = EV_CONDICION.exec(o);
+    if (c && (!EV_REMISION.test(o) || EV_AFIRMA_NIEGA.test(o))) return c[0];
+  }
+  const seguro = EV_AFIRMA_SEGURO.exec(n);
+  return seguro && !EV_REMISION.test(n) ? seguro[0] : '';
+}
+// El cliente pide VER cómo queda («quiero ver cómo queda», «cómo quedan los tratamientos», «quiero ver resultados», «antes y después»): el Antes y Después lo manda el CÓDIGO (una vez por ficha), no la etiqueta del modelo, que a veces no la emite.
+const EV_PIDE_VER_RESULTADO = /\b(?:ver|mostrar\w*|muestr\w*|enviar\w*|mand\w*|pasar\w*)\b[^.?!]{0,40}\b(?:como (?:queda\w*|se ve\w*|luce\w*)|resultados?|antes y despues|fotos? de (?:pacientes|resultados|casos)|casos?)\b|\bcomo quedan?\b|\bantes y despues\b/;
+function evPideVerResultado(textoCliente) {
+  return EV_PIDE_VER_RESULTADO.test(evNorm(textoCliente));
 }
 function evConsejoDeSalud(norm) {
   for (const o of String(norm).split(/[.!?]+/)) if (EV_CONDICION.test(o) && EV_DA_LUZ_VERDE.test(o)) return o.trim().slice(0, 80);
