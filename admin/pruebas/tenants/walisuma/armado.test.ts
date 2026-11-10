@@ -27,19 +27,19 @@ const nombres = (f: Flujo): string[] => (f.nodes as J[]).map((x) => String(x['na
 const corrida = (...args: string[]) => spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador({}) });
 
 describe('tamaño y composición', () => {
-  it('como máximo 56 nodos (47 + los 9 del guardado de medios, excepción de Andres del 29/10/2026, contrato v2 del 30/10): producción 56 exactos, prueba 51', () => {
-    expect(PRODUCCION.nodes.length).toBe(56);
-    expect(PRUEBA.nodes.length).toBe(51);
-    expect(C.TOPE_DE_NODOS).toBe(56);
+  it('como máximo 64 nodos (47 + los 9 del guardado de medios, excepción del 29/10/2026, + los 8 del miniCRM, D2 de Andres del 10/11/2026): producción 64 exactos, prueba 59', () => {
+    expect(PRODUCCION.nodes.length).toBe(64);
+    expect(PRUEBA.nodes.length).toBe(59);
+    expect(C.TOPE_DE_NODOS).toBe(64);
   });
   it('los 11 nodos del PR-3 están (el esqueleto de 36 más 11), sin repetirse', () => {
     for (const n of C.NODOS_DEL_PR3 as string[]) { expect(nombres(PRODUCCION)).toContain(n); expect(nombres(PRUEBA)).toContain(n); }
     expect(new Set(C.NODOS_DEL_PR3).size).toBe(11);
   });
-  it('NEGADO: un flujo con más de 56 nodos viola la guardia', () => {
+  it('NEGADO: un flujo con más de 64 nodos viola la guardia', () => {
     const f = clonar(PRODUCCION);
     for (let i = 0; i < 1; i++) f.nodes.push({ id: `extra-${i}`, name: `Extra ${i}`, type: 'n8n-nodes-base.noOp', typeVersion: 1, position: [0, 0], parameters: {} } as never);
-    expect(C.guardias('produccion', f).join(' ')).toMatch(/tiene 57 nodos y el tope es 56/);
+    expect(C.guardias('produccion', f).join(' ')).toMatch(/tiene 65 nodos y el tope es 64/);
   });
   it('los id de nodo son nombres cortos (nunca UUID) y los nombres y los id no se repiten', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
@@ -54,12 +54,12 @@ describe('tamaño y composición', () => {
     expect(nombres(PRUEBA)).toContain('Entrada de prueba');
     for (const n of C.NODOS_DEL_RECEPTOR as string[]) { expect(nombres(PRODUCCION)).toContain(n); expect(nombres(PRUEBA)).not.toContain(n); }
   });
-  it('las medidas: 6 del receptor, 7 de entrada, 1 de puerta, 13 de medios, 9 de salida, 11 de la venta y 9 del guardado', () => {
+  it('las medidas: 6 del receptor, 7 de entrada, 1 de puerta, 13 de medios, 9 de salida, 11 de la venta, 9 del guardado y 8 del miniCRM', () => {
     const MEDIOS = ['¿Bajar medio?', 'Obtener URL del medio (general)', '¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', 'Transcribir audio', 'Preparar transcripción', 'Guardar comprobante', '¿Es un documento?', 'Describir documento', 'Describir imagen', 'Preparar imagen', 'Medio no aceptado'];
     const ENTRADA = ['Config base', 'Carga de entrada', 'Traer configuración', 'Config del negocio', 'Normalizar entrada', '¿Reportar? (entrante)', 'Reportar mensaje (entrante)'];
     const SALIDA = ['Armar mensajes', '¿Meta aceptó?', '¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)', 'Reportar mensaje (saliente)', 'Resumen del turno'];
-    const todos = [...C.NODOS_DEL_RECEPTOR, ...ENTRADA, 'Puerta del turno', ...MEDIOS, ...SALIDA, ...C.NODOS_DEL_PR3, ...GUARDADO];
-    expect(new Set(todos).size).toBe(56);
+    const todos = [...C.NODOS_DEL_RECEPTOR, ...ENTRADA, 'Puerta del turno', ...MEDIOS, ...SALIDA, ...C.NODOS_DEL_PR3, ...GUARDADO, ...C.NODOS_DE_CRM];
+    expect(new Set(todos).size).toBe(64);
     expect([...nombres(PRODUCCION)].sort()).toEqual([...todos].sort());
   });
 });
@@ -149,7 +149,7 @@ describe('el flujo completo: conexiones y guardias de la venta', () => {
       crecio = false;
       for (const [de, s] of Object.entries(c)) if (!alcanzan.has(de) && ((s as J).main as J[][]).some((o) => (o ?? []).some((x: J) => alcanzan.has(String(x['node']))))) { alcanzan.add(de); crecio = true; }
     }
-    const sueltos = nombres(PRODUCCION).filter((n) => !alcanzan.has(n) && !(GUARDADO as string[]).includes(n) && !['Rechazar (401)', 'Guardar comprobante', 'Resumen del turno', 'Reportar mensaje (saliente)', '¿Meta aceptó?', 'Armar mensajes', '¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)'].includes(n));
+    const sueltos = nombres(PRODUCCION).filter((n) => !alcanzan.has(n) && !(GUARDADO as string[]).includes(n) && !(C.NODOS_DE_CRM as string[]).includes(n) && !['Rechazar (401)', 'Guardar comprobante', 'Resumen del turno', 'Reportar mensaje (saliente)', '¿Meta aceptó?', 'Armar mensajes', '¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)'].includes(n));
     expect(sueltos).toEqual([]);
   });
   it('el único nodo sin entradas es el receptor (producción) o «Entrada de prueba» (prueba); NEGADO: un disparador o un nodo huérfano', () => {
@@ -261,8 +261,8 @@ describe('versionado, no publicable y datos', () => {
   it('`--verificar` sale 0: los dos JSON versionados son lo que arma la plantilla', () => {
     const r = corrida('--verificar');
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toMatch(/walisuma\.json al día \(56 nodos\)/);
-    expect(r.stdout).toMatch(/walisuma\.prueba\.json al día \(51 nodos\)/);
+    expect(r.stdout).toMatch(/walisuma\.json al día \(64 nodos\)/);
+    expect(r.stdout).toMatch(/walisuma\.prueba\.json al día \(59 nodos\)/);
   });
   it('`--publicable` FALLA hoy, con un mensaje claro: quedan marcadores REEMPLAZAR_*, la plantilla sin aprobar y el costo de entrega sin declarar', () => {
     const r = corrida('--publicable');
@@ -284,12 +284,16 @@ describe('versionado, no publicable y datos', () => {
     };
     ponerBase(flujoListo, 'avisoPedidoEstado', 'APPROVED');
     ponerBase(flujoListo, 'costoDeEntrega', '10');
+    ponerBase(flujoListo, 'planillaProspectosId', '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789');
     expect(C.guardiaDePublicacion({ flujo: flujoListo, datos: DATOS })).toEqual([]);
     const conMarcador = clonar(flujoListo); (nodo(conMarcador, 'Traer configuración')['parameters'] as J)['x'] = 'REEMPLAZAR_ALGO';
     expect(C.guardiaDePublicacion({ flujo: conMarcador, datos: DATOS }).join(' ')).toMatch(/REEMPLAZAR_ALGO/);
     const sinAprobar = clonar(flujoListo);
     ponerBase(sinAprobar, 'avisoPedidoEstado', 'PENDING');
     expect(C.guardiaDePublicacion({ flujo: sinAprobar, datos: DATOS }).join(' ')).toMatch(/APPROVED/);
+    const sinPlanilla = clonar(flujoListo);
+    ponerBase(sinPlanilla, 'planillaProspectosId', '');
+    expect(C.guardiaDePublicacion({ flujo: sinPlanilla, datos: DATOS }).join(' ')).toMatch(/planillaProspectosId/);
     const sinCosto = clonar(flujoListo);
     ponerBase(sinCosto, 'costoDeEntrega', '');
     expect(C.guardiaDePublicacion({ flujo: sinCosto, datos: DATOS }).join(' ')).toMatch(/costoDeEntrega/);
@@ -328,5 +332,36 @@ describe('versionado, no publicable y datos', () => {
     expect(probar((x) => { (x['configBase'] as J)['modelo'] = 'gemini-2.0-flash'; })).toMatch(/configBase\.modelo/);
     expect(probar((x) => { delete (x['configBase'] as J)['costoDeEntrega']; })).toMatch(/costoDeEntrega/);
     expect(probar(() => {})).toBe('');
+  });
+});
+
+describe('la rama del miniCRM (módulo `crm`): 8 nodos entre «Armar mensajes» y «Resumen del turno»', () => {
+  it('los 8 nodos están en las dos variantes y «Armar mensajes» cuelga de «Prospecto para la planilla»', () => {
+    for (const f of [PRODUCCION, PRUEBA]) {
+      for (const n of C.NODOS_DE_CRM as string[]) expect(nombres(f), n).toContain(n);
+      expect(((f.connections as J)['Armar mensajes'].main[0] as J[]).map((x) => x['node'])).toContain('Prospecto para la planilla');
+    }
+    expect(C.NODOS_DE_CRM.length).toBe(8);
+  });
+  it('la rama va debajo de «Armar mensajes» y encima de «Resumen del turno» (el resumen sigue siendo la última rama)', () => {
+    const y = (n: string): number => (nodo(PRODUCCION, n)['position'] as number[])[1] as number;
+    expect(y('Prospecto para la planilla')).toBeGreaterThan(y('Armar mensajes'));
+    expect(y('Prospecto para la planilla')).toBeLessThan(y('Resumen del turno'));
+  });
+  it('NEGADO: la guardia exige cada nodo, la conexión, el orden del lienzo y la credencial del tenant', () => {
+    const sin = clonar(PRODUCCION); sin.nodes = (sin.nodes as J[]).filter((x) => x['name'] !== 'Agregar fila') as never;
+    expect(C.guardias('produccion', sin).join(' ')).toMatch(/miniCRM: falta el nodo «Agregar fila»/);
+    const desconectado = clonar(PRODUCCION);
+    (desconectado.connections as J)['Armar mensajes'].main[0] = ((desconectado.connections as J)['Armar mensajes'].main[0] as J[]).filter((x) => x['node'] !== 'Prospecto para la planilla');
+    expect(C.guardias('produccion', desconectado).join(' ')).toMatch(/«Armar mensajes» no está conectado a «Prospecto para la planilla»/);
+    const alto = clonar(PRODUCCION); (nodo(alto, 'Prospecto para la planilla')['position'] as number[])[1] = 9999;
+    expect(C.guardias('produccion', alto).join(' ')).toMatch(/tiene que ir debajo de «Armar mensajes»/);
+    const ajena = clonar(PRODUCCION); ((nodo(ajena, 'Agregar fila')['credentials'] as J)['googleApi'] as J)['name'] = 'Google Sheets miniCRM (crm-otro)';
+    expect(C.guardias('produccion', ajena).join(' ')).toMatch(/credencial de Google que no es la de este negocio/);
+  });
+  it('la prueba no escribe en ninguna planilla: el id de la hoja va vacío, y producción lleva el marcador', () => {
+    const id = (f: Flujo): unknown => (((nodo(f, 'Config base')['parameters'] as J)['assignments'] as J)['assignments'] as J[]).find((a) => a['name'] === 'planillaProspectosId')?.['value'];
+    expect(id(PRUEBA)).toBe('');
+    expect(id(PRODUCCION)).toBe('REEMPLAZAR_PLANILLA_PROSPECTOS_ID_WALISUMA');
   });
 });
