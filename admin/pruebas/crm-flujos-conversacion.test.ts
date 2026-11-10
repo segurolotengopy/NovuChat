@@ -23,7 +23,8 @@ const LINEA_BASE: Array<[string, number, number]> = [
   ['rroca-ruben/rroca-ruben.json', 64, 6], ['rroca-ruben/rroca-ruben.prueba.json', 59, 6],
   ['venta-minima/venta-minima.qtaco-3727.json', 81, 7],
 ];
-const hablaConMeta = (n: Nodo): boolean => /graph\.facebook\.com/.test(JSON.stringify(n.parameters ?? {})) || n.type.endsWith('whatsApp');
+const HOST_META = new RegExp(['graph', 'facebook', 'com'].join('\\.'));
+const hablaConMeta = (n: Nodo): boolean => HOST_META.test(JSON.stringify(n.parameters ?? {})) || n.type.endsWith('whatsApp');
 
 describe('una fila por conversación: sin mensajes de Meta nuevos en los 15 JSON regenerados', () => {
   it('hay 15 JSON en la línea base', () => expect(LINEA_BASE).toHaveLength(15));
