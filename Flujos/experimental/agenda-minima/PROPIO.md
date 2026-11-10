@@ -13,7 +13,7 @@ Código de Bellido **descongelado por orden expresa de Andres el 04/11/2026 solo
   - Nunca deja prospecto la emergencia, los medios que el canal no lee, los errores, el uso extendido, la suspensión ni un turno sin respuesta; tampoco en modo prueba ni sin id y hoja válidos.
   - El resumen nunca dice que alguien pagó; la columna U (diagnóstico del equipo) no se lee ni se escribe.
   - El cálculo va en `try/catch`: si falla, `prospectoPlanilla = null` y el turno sigue; la planilla nunca tumba la atención.
-  - «Contacto nuevo» = sin mensajes en 48 h: el estado de agenda vence a los 30 minutos, así que se lleva un mapa propio `agendaMinimaCrm` (teléfono a último mensaje) en los datos estáticos del flujo, podado a las 48 h.
+  - «Contacto nuevo» = sin mensajes en 24 h (una fila por ventana de conversación de 24 h): el estado de agenda vence a los 30 minutos, así que se lleva un mapa propio `agendaMinimaCrm` (teléfono a último mensaje) en los datos estáticos del flujo, podado a las 24 h.
 - **Mensajes por conversación: 0.** La rama no envía nada; no se agrega ni se quita ningún mensaje al paciente.
 - **Nodos:** 62 -> 70 (producción y prueba); 71 con «Expandir citas» (hermanos, 07/11/2026). Bellido no tiene tope en su constructor; la declaración está en `docs/versiones-por-cliente.md`.
 - **Ajuste de `settings`:** la plantilla fija `saveManualExecutions: false` (lo exige `hallazgosCrm`; el guardado ya fijaba el resto).

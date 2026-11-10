@@ -667,7 +667,7 @@ if (estado && cnClaveValida(t.from) && plan !== 'nada') {
 // El prospecto lo arma `agmProspectoCrm` (agenda.js): vocabulario cerrado, el texto del cliente no pasa, los hechos son los que el CODIGO verifico (la cita que creo el
 // calendario, la que se borro), no lo que dijo el modelo. LA PLANILLA NUNCA TUMBA LA ATENCION: si el calculo lanza, el turno responde igual y no se escribe en la hoja.
 // MENSAJES: ninguno (no se agrega ni se quita ninguno).
-const CRM_OLVIDO_MS = 48 * 3600 * 1000; // «contacto nuevo» = sin mensajes en las ultimas 48 h (el estado de agenda vence a los 30 min: no sirve).
+const CRM_OLVIDO_MS = 24 * 3600 * 1000; // «contacto nuevo» = sin mensajes en las ultimas 24 h (una fila por ventana de conversacion de 24 h; Andres 08/11/2026) (el estado de agenda vence a los 30 min: no sirve).
 let guardarPlanilla = false;
 let prospectoPlanilla = null;
 const planillaOk = String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';

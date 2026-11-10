@@ -3795,20 +3795,20 @@ describe('Agenda mínima v0: el miniCRM', () => {
     expect(t.armado['prospectoPlanilla']).toBeNull();
     expect(t.prospecto).toBeNull();
   });
-  it('48 horas: el segundo mensaje seguido no es contacto nuevo; con 48 h vencidas sí (el estado de agenda vence a los 30 minutos, el mapa del miniCRM no)', () => {
+  it('24 horas: el segundo mensaje seguido no es contacto nuevo; con 24 h vencidas sí (el estado de agenda vence a los 30 minutos, el mapa del miniCRM no)', () => {
     const m = mundo({ eventos: [], configBase: CON });
     expect(m.turno(texto(MAMA, 'hola')).prospecto).toMatchObject({ nuevoContacto: true });
     expect(m.turno(texto(MAMA, 'hola otra vez'), { avanzarMin: 60 }).prospecto).toMatchObject({ nuevoContacto: false });
-    expect(m.turno(texto(MAMA, 'volví'), { avanzarMin: 49 * 60 }).prospecto).toMatchObject({ nuevoContacto: true });
+    expect(m.turno(texto(MAMA, 'volví'), { avanzarMin: 25 * 60 }).prospecto).toMatchObject({ nuevoContacto: true });
   });
-  it('el mapa de contactos del miniCRM guarda solo teléfono y hora, y se poda a las 48 h', () => {
+  it('el mapa de contactos del miniCRM guarda solo teléfono y hora, y se poda a las 24 h', () => {
     const m = mundo({ eventos: [], configBase: CON });
     m.turno(texto(MAMA, 'hola'));
     m.turno(texto(OTRA, 'hola'));
     const mapa = m.sd['agendaMinimaCrm'] as Record<string, number>;
     expect(Object.keys(mapa).sort()).toEqual([MAMA, OTRA].sort());
     expect(Object.values(mapa).every((v) => typeof v === 'number')).toBe(true);
-    m.turno(texto(OTRA, 'volví'), { avanzarMin: 49 * 60 });
+    m.turno(texto(OTRA, 'volví'), { avanzarMin: 25 * 60 });
     expect(Object.keys(m.sd['agendaMinimaCrm'] as J)).toEqual([OTRA]);
   });
 });
