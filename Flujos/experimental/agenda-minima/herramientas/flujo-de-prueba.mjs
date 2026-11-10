@@ -292,7 +292,7 @@ if (bandera('sobre-bellido')) {
     // Con `--desde-b` el vivo ya es B: su «Config base» tiene los MISMOS campos (los llena la publicación anterior);
     // el flujo viejo de 96 nodos los tenía con otro nombre (`numeroRecepcion`, `numeroDoctor`).
     const origen = bandera('desde-b')
-      ? (['respaldoNumeroRecepcion', 'respaldoNumeroDoctor', 'horarioAtencion', 'planillaProspectosId'].includes(a.name) ? a.name : undefined)
+      ? (['respaldoNumeroRecepcion', 'respaldoNumeroDoctor', 'horarioAtencion', 'planillaProspectosId', 'phoneNumberIdAtadura'].includes(a.name) ? a.name : undefined)
       : { respaldoNumeroRecepcion: 'numeroRecepcion', respaldoNumeroDoctor: 'numeroDoctor', horarioAtencion: 'horarioAtencion' }[a.name];
     if (!origen || !/^REEMPLAZAR_/.test(String(a.value))) continue;
     const v = String(valorVivo(origen) ?? '');
@@ -306,6 +306,17 @@ if (bandera('sobre-bellido')) {
     campoPlanilla.value = env.PLANILLA_PROSPECTOS_ID_BELLIDO;
     sembradoDelEntorno = true;
   }
+  // El phone id de Bellido en «Config base» (`phoneNumberIdAtadura`, sin lectores en el flujo): lo lee solo la atadura del timbre de la salida
+  // de persona (scripts/cargar-timbre-n8n.sh). Si el vivo ya trae un valor legible (dígitos) se conserva; si no, se siembra de WA_PHONE_ID del
+  // archivo de entorno pasado, solo si son dígitos (6 a 20). Nunca se imprime ni se guarda en el respaldo. Se llama «...Atadura» y no
+  // «phoneNumberId» porque «Config base» deja pasar los demás campos y un `phoneNumberId` propio pisaría el de la entrada (lo lee «Traer configuración»).
+  let sembradoPhone = false;
+  const campoPhone = baseB.parameters.assignments.assignments.find((a) => a.name === 'phoneNumberIdAtadura');
+  if (campoPhone && /^REEMPLAZAR_/.test(String(campoPhone.value)) && env.WA_PHONE_ID !== undefined) {
+    if (!/^\d{6,20}$/.test(String(env.WA_PHONE_ID))) morir('WA_PHONE_ID del entorno no tiene la forma de un phone id (6 a 20 dígitos)');
+    campoPhone.value = String(env.WA_PHONE_ID);
+    sembradoPhone = true;
+  }
   const marcas = [...new Set(JSON.stringify(b).match(/REEMPLAZAR_[A-Z][A-Z0-9_]*/g) ?? [])];
   const nv = new Set(vivo.datos.nodes.map((n) => n.name)); const nb = new Set(b.nodes.map((n) => n.name));
   console.log(`Bellido vivo: «${vivo.datos.name}», ${vivo.datos.nodes.length} nodos, activo=${vivo.datos.active}`);
@@ -317,6 +328,7 @@ if (bandera('sobre-bellido')) {
   console.log(`Nodos en los dos con PARÁMETROS que cambian (${cambiadosCompartidos.length}; se sobrescriben con los del candidato, sin mostrar valores): ${cambiadosCompartidos.join(', ') || '—'}`);
   console.log(`Respaldo de «Config base» llenado desde el vivo (sin mostrar valores): ${llenados.join(', ') || '—'}`);
   if (sembradoDelEntorno) console.log('Id de la planilla del miniCRM: llenado desde el entorno (no se muestra)');
+  if (sembradoPhone) console.log('Phone id de la atadura del timbre: llenado desde el entorno (no se muestra)');
   console.log(`Marcadores que quedan: ${marcas.join(', ') || 'ninguno'}`);
   console.log(`Respaldo del vivo: ${RESPALDO}`);
   guardarRespaldo(RESPALDO, vivo.datos);
@@ -660,7 +672,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   // Solo se admiten marcadores de RESPALDO del cliente en «Config base» (recepción, doctor, calendario,
   // horario): con la ruta del Demo A en «ensayo», los manda el panel; sin reemplazar no son números ni
   // calendarios válidos, así que nunca llegan al doctor ni a la agenda reales.
-  const RESPALDO_OK = /^REEMPLAZAR_(NUMERO_(RECEPCION|DOCTOR)|CALENDARIO|HORARIO_ATENCION|PLANILLA_PROSPECTOS_ID)_[A-Z0-9_]+$/;
+  const RESPALDO_OK = /^REEMPLAZAR_(NUMERO_(RECEPCION|DOCTOR)|CALENDARIO|HORARIO_ATENCION|PLANILLA_PROSPECTOS_ID|PHONE_NUMBER_ID)_[A-Z0-9_]+$/;
   const marcasMal = marcas.filter((m) => !RESPALDO_OK.test(m));
   const fueraDeConfigBase = b.nodes.filter((n) => n.name !== 'Config base' && /REEMPLAZAR_[A-Z]/.test(JSON.stringify(n.parameters ?? {}))).map((n) => n.name);
   if (fueraDeConfigBase.length) morir(`hay marcadores fuera de «Config base»: ${fueraDeConfigBase.join(', ')}`);
