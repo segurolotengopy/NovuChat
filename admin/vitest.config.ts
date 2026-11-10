@@ -66,6 +66,7 @@ export const SUITES_PURAS = [
   'pruebas/venta-digital-base.test.ts',
   'pruebas/venta-digital-carrito-moneda.test.ts',
   'pruebas/venta-digital-catalogo-externo.test.ts',
+  'pruebas/venta-digital-gmail.test.ts',
   'pruebas/venta-casa-bermejo-lib.test.ts',
   'pruebas/venta-minima-bateria.test.ts',
   'pruebas/venta-minima-comun.test.ts',
