@@ -32,6 +32,10 @@
 #                 desplegadorSecretos con ALERTAS_ (alerta operativa «envío incierto»:
 #                 ALERTAS_HMAC y ALERTAS_RESEND_API_KEY), crea los dos secretos con valor
 #                 aleatorio y su secretAccessor para sa-functions. Idempotente
+#     novutienda  SOLO sobre un staging que ya existe: amplía la condición de
+#                 desplegadorSecretos con NOVUTIENDA_ (confirmar pedidos de catálogo
+#                 externo), crea NOVUTIENDA_CONFIRMAR con valor aleatorio (la Function
+#                 falla cerrado hasta cargar el mapa real) y su secretAccessor. Idempotente
 #     sitio       el SEGUNDO sitio de Hosting de staging (T-37: la página pública del
 #                 catálogo, otro origen que la consola). Va ANTES de `github`
 #     storage     el rol del agente de Storage (DESPUÉS de crear el bucket a mano)
@@ -55,7 +59,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 FASE="${1:-}"; shift || true
 if [[ "$FASE" == "-h" || "$FASE" == "--help" || -z "$FASE" ]]; then
-  sed -n '2,51p' "$0" | sed 's/^# \{0,1\}//'; exit 0
+  sed -n '2,56p' "$0" | sed 's/^# \{0,1\}//'; exit 0
 fi
 P=""; APLICAR=0; SIN_STORAGE=0; SITIO_CAT=""
 while [[ $# -gt 0 ]]; do
@@ -66,13 +70,13 @@ while [[ $# -gt 0 ]]; do
     --sin-storage) SIN_STORAGE=1; shift ;;
     --sitio-catalogo)   SITIO_CAT="${2:?--sitio-catalogo necesita el id}"; shift 2 ;;
     --sitio-catalogo=*) SITIO_CAT="${1#*=}"; shift ;;
-    -h|--help)     sed -n '2,51p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)     sed -n '2,56p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opción desconocida: $1" >&2; exit 2 ;;
   esac
 done
 case "$FASE" in
-  apis|firestore|app|wif|cuentas|secretos|salida-persona|alertas|sitio|storage|invocadores|github|verificar) ;;
-  *) echo "Uso: $0 <apis|firestore|app|wif|cuentas|secretos|salida-persona|alertas|sitio|storage|invocadores|github|verificar> --proyecto <id> [--aplicar] [--sitio-catalogo <id>]" >&2; exit 2 ;;
+  apis|firestore|app|wif|cuentas|secretos|salida-persona|alertas|novutienda|sitio|storage|invocadores|github|verificar) ;;
+  *) echo "Uso: $0 <apis|firestore|app|wif|cuentas|secretos|salida-persona|alertas|novutienda|sitio|storage|invocadores|github|verificar> --proyecto <id> [--aplicar] [--sitio-catalogo <id>]" >&2; exit 2 ;;
 esac
 [[ "$P" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo "✗ --proyecto: ID de proyecto de Google Cloud inválido" >&2; exit 2; }
 # T-37: la página pública del catálogo vive en un segundo sitio de Hosting. Su id
@@ -227,6 +231,9 @@ PREFIJO_SALIDA_PERSONA="SALIDA_PERSONA_"
 # Alerta operativa «envío incierto»: UN prefijo común para sus secretos (la condición de IAM cubre secretos por prefijo).
 PREFIJO_ALERTAS="ALERTAS_"
 SECRETOS_ALERTAS=(ALERTAS_HMAC ALERTAS_RESEND_API_KEY)
+# Confirmar pedidos de catálogo externo (NovuTienda): UN secreto con el mapa por comercio, prefijo EXACTO NOVUTIENDA_.
+PREFIJO_NOVUTIENDA="NOVUTIENDA_"
+SECRETOS_NOVUTIENDA=(NOVUTIENDA_CONFIRMAR)
 
 # Solo lectura. 0 = sa-deploy-staging ya tiene el binding de desplegadorSecretos con la
 # condición «secretos-de-las-functions» · 1 = NO está (la política se leyó bien) ·
@@ -342,6 +349,7 @@ fase_cuentas() {
   done
   # Secretos: rol a medida que NO lee valores ni cambia accesos, con condición
   # por prefijo (INGESTA_, GEMINI_API_KEY, COBRADOR_, SALIDA_PERSONA_, ALERTAS_).
+  # También NOVUTIENDA_ (confirmar pedidos de catálogo externo; fase `novutienda`).
   if existe gc iam roles describe desplegadorSecretos; then nota "el rol desplegadorSecretos ya existe"
   else correr "crear el rol desplegadorSecretos" -- gc iam roles create desplegadorSecretos --title="Desplegador de secretos" \
       --permissions=secretmanager.secrets.get,secretmanager.versions.get,secretmanager.versions.list,secretmanager.secrets.getIamPolicy --stage=GA; fi
@@ -352,7 +360,7 @@ fase_cuentas() {
   if (( rc_b == 0 )); then
     nota "el binding con condición «secretos-de-las-functions» ya existe: no se toca (para ampliarlo, fases salida-persona y alertas)"
   else
-    local cond="expression=resource.name.startsWith(\"projects/${num}/secrets/INGESTA_\") || resource.name.startsWith(\"projects/${num}/secrets/GEMINI_API_KEY\") || resource.name.startsWith(\"projects/${num}/secrets/COBRADOR_\") || resource.name.startsWith(\"projects/${num}/secrets/SALIDA_PERSONA_\") || resource.name.startsWith(\"projects/${num}/secrets/ALERTAS_\"),title=secretos-de-las-functions"
+    local cond="expression=resource.name.startsWith(\"projects/${num}/secrets/INGESTA_\") || resource.name.startsWith(\"projects/${num}/secrets/GEMINI_API_KEY\") || resource.name.startsWith(\"projects/${num}/secrets/COBRADOR_\") || resource.name.startsWith(\"projects/${num}/secrets/SALIDA_PERSONA_\") || resource.name.startsWith(\"projects/${num}/secrets/ALERTAS_\") || resource.name.startsWith(\"projects/${num}/secrets/NOVUTIENDA_\"),title=secretos-de-las-functions"
     correr "sa-deploy-staging: desplegadorSecretos con condición" -- gc_mudo projects add-iam-policy-binding "$P" \
       --member="serviceAccount:$SA_DEPLOY" --role="projects/${P}/roles/desplegadorSecretos" --condition="$cond"
   fi
@@ -469,6 +477,43 @@ fase_alertas() {
   esac
   if (( ! APLICAR )) || [[ "$rc" == 0 ]]; then rm -rf "$DIR_TRABAJO"; trap - EXIT; fi
   for s in "${SECRETOS_ALERTAS[@]}"; do asegurar_secreto "$s"; done
+  nota "después de esta fase, el despliegue a staging ya encuentra los secretos y puede leer sus metadatos"
+}
+
+fase_novutienda() {
+  titulo "Confirmar pedidos externos: NOVUTIENDA_CONFIRMAR en $P, sobre un staging ya creado"
+  # Mismo problema que `alertas`: sin el prefijo NOVUTIENDA_ en la condición de desplegadorSecretos y sin el secreto,
+  # el despliegue de `confirmarPedidoExterno` falla con 403 en secretmanager.secrets.get. Idempotente; seco por omisión.
+  # El valor nace ALEATORIO (no mostrado) y NO es un mapa válido: la Function falla cerrado hasta que se cargue el mapa
+  # real por tenant (scripts/nube-novutienda.sh --cargar, sin mostrarlo).
+  local num tmp rc base s
+  num="$(numero_proyecto)"
+  base="${TMPDIR:-/tmp}"
+  if [[ -n "${XDG_RUNTIME_DIR:-}" && -d "$XDG_RUNTIME_DIR" && -O "$XDG_RUNTIME_DIR" && "$(stat -c '%a' "$XDG_RUNTIME_DIR" 2>/dev/null)" == "700" ]]; then base="$XDG_RUNTIME_DIR"; fi
+  DIR_TRABAJO="$(mktemp -d "$base/preparar-staging.XXXXXX")"; chmod 700 "$DIR_TRABAJO"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$DIR_TRABAJO'" EXIT
+  tmp="$DIR_TRABAJO/politica.json"
+  gc projects get-iam-policy "$P" --format=json > "$tmp"
+  if ampliar_condicion_secretos "$tmp" "$num" "$PREFIJO_NOVUTIENDA"; then rc=0; else rc=$?; fi
+  case "$rc" in
+    0) ;;
+    10)
+      if (( APLICAR )); then
+        gc projects get-iam-policy "$P" --format=json > "$DIR_TRABAJO/respaldo-politica.json"
+        chmod 600 "$DIR_TRABAJO/respaldo-politica.json"
+      fi
+      correr "ampliar la condición de desplegadorSecretos con $PREFIJO_NOVUTIENDA" -- gc_mudo projects set-iam-policy "$P" "$tmp"
+      if (( APLICAR )); then
+        rm -f "$tmp"
+        trap - EXIT
+        nota "respaldo de la política anterior (identidades y roles, sin secretos; modo 600): $DIR_TRABAJO/respaldo-politica.json"
+        nota "bórrelo (rm -rf de ese directorio) cuando 'verificar' salga en ✓"
+      fi ;;
+    *) falla "no se pudo preparar el cambio de la condición (código $rc): no se escribió nada"; exit 1 ;;
+  esac
+  if (( ! APLICAR )) || [[ "$rc" == 0 ]]; then rm -rf "$DIR_TRABAJO"; trap - EXIT; fi
+  for s in "${SECRETOS_NOVUTIENDA[@]}"; do asegurar_secreto "$s"; done
   nota "después de esta fase, el despliegue a staging ya encuentra los secretos y puede leer sus metadatos"
 }
 

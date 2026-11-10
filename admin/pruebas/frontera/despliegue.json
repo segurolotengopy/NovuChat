@@ -483,6 +483,27 @@
     "labels": {},
     "callableTrigger": {}
   },
+  "confirmarPedidoExterno": {
+    "availableMemoryMb": 256,
+    "timeoutSeconds": 60,
+    "minInstances": null,
+    "maxInstances": 3,
+    "ingressSettings": null,
+    "concurrency": 10,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "NOVUTIENDA_CONFIRMAR"
+      }
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
   "confirmarSalidaPersona": {
     "availableMemoryMb": null,
     "timeoutSeconds": null,

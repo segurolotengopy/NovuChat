@@ -325,7 +325,8 @@ export const REGISTRO = [
     // (i) resuelto: `checkoutCatalogo` es la única Function que escribe
     // `pedidos` desde el carrito; hoy vive en `catalogoWeb.ts`, que F2 parte.
     // `reclamarRescates`: rescate de 22 h (decide y marca; el envío es de un flujo de n8n).
-    functions: ['checkoutCatalogo', 'reclamarRescates'],
+    // `confirmarPedidoExterno`: «Confirmar» de un pedido de catálogo externo (llamada firmada a NovuTienda, B5b).
+    functions: ['checkoutCatalogo', 'reclamarRescates', 'confirmarPedidoExterno'],
     flujosProgramados: [],
     ganchos: ['despuesDelTurno', 'alCierre'],
     mensajes: 0,
