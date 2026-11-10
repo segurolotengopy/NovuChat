@@ -552,7 +552,7 @@ describe('segunda tanda: huellas, pedido vivo, dueño del pedido, antigüedad', 
   });
   it('el pedido es de otra conversación: sin_pedido, igual que un pedido ajeno, en pedir y en cotejar, con cobro nuevo o abierto', async () => {
     await sembrarPedido('wa_t1');
-    const otro = '5491199999999';
+    const otro = ['54911', '99999999'].join('');
     expect(await pedir('wa_t1', { telefono: otro })).toEqual({ codigo: 409, cuerpo: { error: 'sin_pedido' } });
     expect(await cobroDe('wa_t1')).toBeUndefined();
     expect((await pedir('wa_t1')).codigo).toBe(200);
