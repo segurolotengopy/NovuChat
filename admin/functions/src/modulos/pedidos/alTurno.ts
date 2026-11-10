@@ -37,7 +37,7 @@ export interface DatosDelTurnoPedidos {
 export async function despuesDelTurnoPedidos(d: DatosDelTurnoPedidos): Promise<void> {
   try {
     // `pedido_sin_cobro` (B5a): pedido de catálogo externo sin QR (Argentina). No hay cobro cuyo efecto confirmar; el
-    // servidor exige módulo, dato `config/pedidos` con catálogo externo habilitado y forma externa; sin ese dato no crea nada. La ingesta aún no lo reenvía (ver el PR).
+    // servidor exige módulo, dato `config/pedidos` con catálogo externo habilitado y forma externa; sin ese dato no crea nada. La ingesta lo reenvía igual que `qr_enviado`.
     if (d.evento === 'qr_enviado' || d.evento === 'pedido_sin_cobro') {
       if (d.evento === 'qr_enviado' && d.efectoDeCobro !== 'abierto') return;
       if (d.evento === 'pedido_sin_cobro' && !hayLineasExternas(d.lineas)) return;

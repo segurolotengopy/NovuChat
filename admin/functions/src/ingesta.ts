@@ -157,7 +157,7 @@ interface Entrante {
    *    con dos orígenes; la dirección del mensaje que lo trae no importa.
    */
   evento?: 'qr_enviado' | 'horarios_ofrecidos' | 'no_contactar' | 'cita_cancelada' | 'adelanto_aplicado' | 'reprogramada'
-    | 'cobro_cancelado' | 'anulacion_avisada';
+    | 'cobro_cancelado' | 'anulacion_avisada' | 'pedido_sin_cobro';
   /**
    * LA REGLA DEL COBRO QUE ELIGE EL FLUJO (D1, `cobros.md` §4duodecies.6). Solo
    * `2` con `qr_enviado`: plazo de 15 min, prórroga única y 3 intentos. Cualquier
@@ -249,7 +249,7 @@ const ORIGENES = new Set(['anuncio', 'directo']);
 /** Los hechos del flujo que la ingesta entiende. Uno desconocido se ignora:
  *  el mensaje se cuenta igual y el campo no se guarda. */
 const EVENTOS = new Set(['qr_enviado', 'horarios_ofrecidos', 'no_contactar', 'cita_cancelada', 'adelanto_aplicado', 'reprogramada',
-  'cobro_cancelado', 'anulacion_avisada']);
+  'cobro_cancelado', 'anulacion_avisada', 'pedido_sin_cobro']);
 
 /**
  * Normaliza el mensaje entrante. TODO lo de acá es DATO NO CONFIABLE: lo escribió
@@ -294,14 +294,16 @@ function normalizar(cuerpo: unknown): Entrante | null {
 
   // El pedido de WhatsApp (PR-4): solo con `qr_enviado`, hasta 30 líneas, y solo objetos planos.
   // El saneo fino (ids, cantidades, tope de unidades) lo hace `armarPedidoWa`.
-  const esQr = evento === 'qr_enviado';
+  // `pedido_sin_cobro` (Argentina, catálogo externo sin QR) trae el mismo carrito pero no abre cobro:
+  // `solicitudDelTurno` no lo conoce, así que no escribe solicitud ni cuenta seña (conteo intacto).
+  const esQr = evento === 'qr_enviado' || evento === 'pedido_sin_cobro';
   const lineas = esQr && Array.isArray(c['lineas']) && c['lineas'].length > 0
     ? (c['lineas'] as unknown[]).slice(0, 30) : undefined;
   const objetoPlano = (v: unknown) => typeof v === 'object' && v !== null && !Array.isArray(v);
   const entrega = esQr && lineas && (objetoPlano(c['entrega']) || typeof c['entrega'] === 'string')
     ? c['entrega'] : undefined;
   const facturacion = esQr && lineas && objetoPlano(c['facturacion']) ? c['facturacion'] : undefined;
-  const reemplaza = esQr && lineas && typeof c['reemplaza'] === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(c['reemplaza'])
+  const reemplaza = evento === 'qr_enviado' && lineas && typeof c['reemplaza'] === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(c['reemplaza'])
     ? c['reemplaza'] : undefined;
 
   return { telefono, direccion, tipo, texto, origen, ...(idMeta ? { idMeta } : {}),
@@ -1445,7 +1447,8 @@ export const ingesta = onRequest(
 
     // EL PEDIDO DE WHATSAPP (PR-4): DESPUÉS de la transacción, solo si el turno se atendió. El gancho
     // nunca lanza ni cambia la respuesta de abajo.
-    if (veredicto.pedidos && (mensaje.evento === 'qr_enviado' || mensaje.evento === 'cobro_cancelado')) {
+    if (veredicto.pedidos && (mensaje.evento === 'qr_enviado' || mensaje.evento === 'cobro_cancelado'
+      || mensaje.evento === 'pedido_sin_cobro')) {
       await despuesDelTurnoPedidos({
         tenantId, ficha, evento: mensaje.evento, efectoDeCobro: veredicto.pedidos.efecto,
         referencia: mensaje.referencia, referenciaAnterior: veredicto.pedidos.refAnterior,
