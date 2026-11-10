@@ -79,7 +79,7 @@ function leerEnv(ruta, claves, opcionales = []) {
   for (const c of claves) if (!out[c]) morir(`el .env no tiene ${c}`);
   return out;
 }
-const env = leerEnv(ENV, ['N8N_BASE_URL', 'N8N_API_KEY', 'N8N_WORKFLOW_ID'], ['WA_PHONE_ID', 'PLANILLA_PROSPECTOS_ID_BELLIDO']);
+const env = leerEnv(ENV, ['N8N_BASE_URL', 'N8N_API_KEY', 'N8N_WORKFLOW_ID'], ['WA_PHONE_ID', 'PLANILLA_PROSPECTOS_ID_BELLIDO', 'PLANILLA_PROSPECTOS_ID_NOVUCHAT']);
 const API = `${env.N8N_BASE_URL.replace(/\/$/, '')}/api/v1`;
 
 async function llamar(metodo, ruta, cuerpo) {
@@ -224,6 +224,9 @@ async function idDeCredencialDeHojaDeEnsayo() {
   }
   const m = listaDeCredenciales.filter((c) => c && c.name === CRED_HOJA_DE_ENSAYO && c.type === 'googleApi' && c.id);
   if (m.length !== 1) morir(`la credencial «${CRED_HOJA_DE_ENSAYO}» (googleApi) tiene que existir en n8n exactamente una vez; hay ${m.length}. Cree la credencial (una cuenta de servicio con acceso SOLO a la hoja de prueba) antes del ensayo`);
+  // La credencial del ensayo NUNCA es la de los prospectos reales: ni el mismo nombre ni el mismo id (una cuenta de servicio con acceso a la hoja real no es «de prueba»).
+  const real = listaDeCredenciales.filter((c) => c && c.id && c.id === m[0].id && c !== m[0]);
+  if (real.length) morir(`la credencial «${CRED_HOJA_DE_ENSAYO}» comparte id con otra credencial de hoja (${CRED_HOJA_REAL}): el ensayo no puede usar la credencial de los prospectos reales`);
   return m[0].id;
 }
 const ID_PLANILLA_VALIDO = (v) => typeof v === 'string' && !v.startsWith('REEMPLAZAR_') && /^[A-Za-z0-9_-]{25,100}$/.test(v);
@@ -234,6 +237,7 @@ const NODOS_CRM_DE_BELLIDO = ['Prospecto para la planilla', 'Buscar teléfono en
 //   - el id y la hoja de la planilla tienen que llegar YA resueltos (`preparar-import.sh` con los marcadores REEMPLAZAR_PLANILLA_ENSAYO_*): con un marcador o vacío, se niega;
 //   - `--aplicar` exige además `--autorizo-hoja-de-prueba` (escribe filas en una hoja de Google: es una escritura externa por ensayo).
 const CRED_HOJA_DE_ENSAYO = 'Google Sheets miniCRM (ensayo)';
+const CRED_HOJA_REAL = 'Google Sheets NovuChat (cuenta de servicio)';
 const CONSERVAR_CRM = bandera('conservar-crm');
 if (CONSERVAR_CRM && !bandera('sobre-demo-a')) morir('--conservar-crm solo se usa con --sobre-demo-a');
 const AJENOS_A_BELLIDO = /platinum|q'?taco|captaci|segurolo|otp|aab1|whatsapp-?modular|receptor|demo ?a\b|NovuChat A|pruebas/i;
@@ -685,6 +689,13 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
     if (!idPlanillaDemo || !ID_PLANILLA_VALIDO(idPlanillaDemo.value)) morir('--conservar-crm: «Config base».planillaProspectosId no es un id de planilla resuelto (corra preparar-import.sh con REEMPLAZAR_PLANILLA_ENSAYO_ID en la tabla local)');
     if (!hojaDemo || typeof hojaDemo.value !== 'string' || !hojaDemo.value.trim() || /^REEMPLAZAR_|^=/.test(hojaDemo.value)) morir('--conservar-crm: «Config base».planillaProspectosHoja no está resuelta (corra preparar-import.sh con REEMPLAZAR_PLANILLA_ENSAYO_HOJA en la tabla local)');
     if (!b.nodes.some((n) => n.type === 'n8n-nodes-base.googleSheets')) morir('--conservar-crm: el flujo no trae nodos de Google Sheets: no hay miniCRM que ensayar');
+    // El phone id del flujo tiene que ser el del Demo A (el del .env): nunca el de un cliente.
+    const fonoDemo = camposBase.find((a) => a.name === 'phoneNumberIdEsperado');
+    if (!fonoDemo || fonoDemo.value !== env.WA_PHONE_ID) morir('--conservar-crm: «Config base».phoneNumberIdEsperado no es el phone id del Demo A (WA_PHONE_ID del .env): no se pone un flujo de ensayo con el número de otro');
+    // La hoja de PRUEBA no puede ser la de producción: se compara el id resuelto con el de producción, si el entorno lo trae (sin imprimir ninguno de los dos).
+    const idProduccion = env.PLANILLA_PROSPECTOS_ID_NOVUCHAT ?? process.env.PLANILLA_PROSPECTOS_ID_NOVUCHAT;
+    if (idProduccion && idProduccion === idPlanillaDemo.value) morir('--conservar-crm: el id de la planilla es IGUAL al de la hoja real de prospectos de producción: el ensayo escribiría en producción');
+    if (!idProduccion) console.log('AVISO --conservar-crm: no hay PLANILLA_PROSPECTOS_ID_NOVUCHAT en el entorno: no se pudo comparar la hoja de prueba con la de producción. Confírmelo a mano antes de --aplicar.');
   } else if (idPlanillaDemo) idPlanillaDemo.value = '';
   // El doctor del ENSAYO es quien prueba (PREPARACION.md §3). `configuracionFlujo` no entrega `numeroDoctor`, así que sin esto el respaldo
   // queda en marcador, el flujo no tiene a quién apuntar y retira la frase del botón («Vacunas y otros» salía como texto, humo del 08/11).

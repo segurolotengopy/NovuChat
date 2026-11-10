@@ -4,7 +4,7 @@
  * construir.mjs — arma los JSON de «Chat NovuChat v2 (Kenji)» desde la plantilla y los datos propios
  * =============================================================================
  *
- *   node construir.mjs               escribe chat-novuchat.novuchat.json y chat-novuchat.prueba.json
+ *   node construir.mjs               escribe chat-novuchat.novuchat.json, chat-novuchat.prueba.json y chat-novuchat.ensayo-demo-a.json
  *   node construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma, si viola una guardia o si hay un JSON sin archivo de datos (huérfano)
  *   (NUNCA con --help ni --ayuda: cualquier argumento que no sea --verificar escribe los JSON)
  *
@@ -20,7 +20,7 @@
  *
  * LOS DATOS son `admin/scripts/datos/chat-novuchat/<archivo>.json` (zona Tenants: solo marcadores `REEMPLAZAR_*` para los identificadores, nunca un token, un teléfono, una ruta de webhook ni
  * un id de planilla reales). UNA SALIDA POR ARCHIVO: `novuchat.json` → `chat-novuchat.novuchat.json` (con «WhatsApp Trigger»); `ensayo.json` → `chat-novuchat.prueba.json` (con «Entrada de
- * prueba», sin «WhatsApp Trigger»: activar un disparador de WhatsApp en n8n registra el webhook en Meta y se lo quita al flujo vivo).
+ * prueba», sin «WhatsApp Trigger»: activar un disparador de WhatsApp en n8n registra el webhook en Meta y se lo quita al flujo vivo); `ensayo-demo-a.json` → `chat-novuchat.ensayo-demo-a.json` (con «WhatsApp Trigger», que la herramienta cambia por el del Demo A; miniCRM contra una hoja de prueba; nunca se publica como flujo de un cliente).
  *
  * Node sin dependencias. No lee ningún .env ni llama a la red.
  */
@@ -87,7 +87,7 @@ function escribirSinSeguirEnlaces(ruta, texto, nombre) {
 
 // ----------------------------------------------------------------- los datos
 const esEnsayo = (archivo) => /^ensayo[\w-]*\.json$/.test(archivo);
-/** `novuchat.json` → `chat-novuchat.novuchat.json`; `ensayo.json` → `chat-novuchat.prueba.json`. */
+/** `novuchat.json` → `chat-novuchat.novuchat.json`; `ensayo.json` → `chat-novuchat.prueba.json`; `ensayo-demo-a.json` → `chat-novuchat.ensayo-demo-a.json`. */
 export const salidaDe = (archivo) => (archivo === 'ensayo.json' ? 'chat-novuchat.prueba.json' : `chat-novuchat.${archivo.replace(/\.json$/, '')}.json`);
 export const archivosDeDatos = (dir = DATOS) => readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
 
@@ -174,6 +174,10 @@ export const DATOS_ENSAYO_DEMO_A = 'ensayo-demo-a.json';
 export const SALIDA_ENSAYO_DEMO_A = 'chat-novuchat.ensayo-demo-a.json';
 export const CRED_PLANILLA_ENSAYO = 'Google Sheets miniCRM (ensayo)';
 const MARCADOR_PLANILLA_ENSAYO = { planillaProspectosId: 'REEMPLAZAR_PLANILLA_ENSAYO_ID', planillaProspectosHoja: 'REEMPLAZAR_PLANILLA_ENSAYO_HOJA' };
+// Los cuatro marcadores EXACTOS del ensayo (la hoja de prueba, el teléfono de quien prueba y el phone id del Demo A): ni otro marcador ni un valor literal.
+const MARCADORES_EXACTOS_ENSAYO = { ...MARCADOR_PLANILLA_ENSAYO, numeroRecepcion: 'REEMPLAZAR_NUMERO_AVISO_ENSAYO', phoneNumberIdEsperado: 'REEMPLAZAR_PHONE_NUMBER_ID' };
+// Credenciales del Demo A: solo el ensayo en el Demo A puede nombrarlas; en cualquier otra salida son un hallazgo.
+const CREDENCIALES_DEL_DEMO_A = ['WhatsApp OAuth account', 'Cierres NovuChat A (auto)', 'Graph WhatsApp Demo A (Bearer)'];
 // Marcadores del ensayo (el aviso al teléfono de quien prueba, la hoja de prueba y el phone id del Demo A, sin sufijo de cliente).
 const ES_MARCADOR_DE_ENSAYO = /REEMPLAZAR_(?:PLANILLA_ENSAYO_[A-Z0-9_]+|NUMERO_AVISO_ENSAYO|PHONE_NUMBER_ID(?![A-Z0-9_]))/;
 // Marcadores de PRODUCCIÓN de la hoja de prospectos de NovuChat y de su número: nunca en el ensayo.
@@ -260,7 +264,7 @@ export function validarDatos(datos, archivo) {
   if (cb) {
     const textoCb = JSON.stringify(cb) + JSON.stringify(cred.planilla || '');
     if (archivo === DATOS_ENSAYO_DEMO_A) {
-      for (const [c, m] of Object.entries(MARCADOR_PLANILLA_ENSAYO)) if (cb[c] !== m) e(`configBase.${c}`, `en ${DATOS_ENSAYO_DEMO_A} tiene que ser el marcador de ensayo «${m}» (la hoja de prueba; nunca la hoja real de prospectos)`);
+      for (const [c, m] of Object.entries(MARCADORES_EXACTOS_ENSAYO)) if (cb[c] !== m) e(`configBase.${c}`, `en ${DATOS_ENSAYO_DEMO_A} tiene que ser el marcador de ensayo «${m}» (la hoja de prueba; nunca la hoja real de prospectos)`);
       if (ES_MARCADOR_DE_PRODUCCION.test(textoCb)) e('configBase', 'el ensayo en el Demo A trae un marcador de producción (REEMPLAZAR_PLANILLA_PROSPECTOS_*, REEMPLAZAR_PHONE_NUMBER_ID_* o REEMPLAZAR_NUMERO_RECEPCION_*): usa solo los del ensayo');
       if (cred.planilla !== CRED_PLANILLA_ENSAYO) e('credenciales.planilla', `en ${DATOS_ENSAYO_DEMO_A} tiene que ser «${CRED_PLANILLA_ENSAYO}» (la de la hoja de prueba)`);
       if (d.entrada !== 'trigger') e('entrada', `en ${DATOS_ENSAYO_DEMO_A} tiene que ser «trigger» (la herramienta lo cambia por el del Demo A)`);
@@ -802,11 +806,13 @@ export function guardias(entrada, flujo, datos = {}, destino = '') {
     const credDeHojas = hojas.map((n) => String((((n.credentials || {}).googleApi) || {}).name || ''));
     if (destino === SALIDA_ENSAYO_DEMO_A) {
       const porNombre = Object.fromEntries((((base || {}).parameters || {}).assignments || {}).assignments?.map((a) => [a.name, a.value]) || []);
-      for (const [c, m] of Object.entries(MARCADOR_PLANILLA_ENSAYO)) if (porNombre[c] !== m) h.push(`el ensayo en el Demo A: «Config base».${c} tiene que ser el marcador «${m}» (la hoja de prueba)`);
+      for (const [c, m] of Object.entries(MARCADORES_EXACTOS_ENSAYO)) if (porNombre[c] !== m) h.push(`el ensayo en el Demo A: «Config base».${c} tiene que ser el marcador «${m}»`);
       if (valoresBase.some((v) => ES_MARCADOR_DE_PRODUCCION.test(v))) h.push('el ensayo en el Demo A: «Config base» trae un marcador de producción');
       if (!hojas.length || credDeHojas.some((c) => c !== CRED_PLANILLA_ENSAYO)) h.push(`el ensayo en el Demo A: los nodos de la planilla tienen que usar «${CRED_PLANILLA_ENSAYO}» (la hoja de prueba) y el miniCRM tiene que estar conectado`);
-    } else if (valoresBase.some((v) => ES_MARCADOR_DE_ENSAYO.test(v)) || credDeHojas.includes(CRED_PLANILLA_ENSAYO)) {
-      h.push(`trae un marcador o la credencial de hoja del ensayo en el Demo A: solo ${SALIDA_ENSAYO_DEMO_A} puede llevarlos`);
+    } else {
+      if (valoresBase.some((v) => ES_MARCADOR_DE_ENSAYO.test(v)) || credDeHojas.includes(CRED_PLANILLA_ENSAYO)) h.push(`trae un marcador o la credencial de hoja del ensayo en el Demo A: solo ${SALIDA_ENSAYO_DEMO_A} puede llevarlos`);
+      const delDemoA = new Set(nodos.flatMap((n) => Object.values(n.credentials || {}).map((c) => String((c && c.name) || ''))).filter((c) => CREDENCIALES_DEL_DEMO_A.includes(c)));
+      if (delDemoA.size) h.push(`usa credenciales del Demo A (${[...delDemoA].join(', ')}): solo ${SALIDA_ENSAYO_DEMO_A} puede llevarlas`);
     }
   }
   // `REEMPLAZAR_` solo en «Config base» (y en la ruta de «Entrada de prueba»).

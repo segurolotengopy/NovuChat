@@ -787,7 +787,10 @@ nombres de credencial. Los JSON de producción y de prueba **no cambian** (se co
   única credencial posible es «Google Sheets miniCRM (ensayo)» (por nombre exacto, tipo `googleApi` y
   exactamente una en n8n); el id y la hoja tienen que llegar ya resueltos (si no, se niega); no queda
   ningún marcador; y `--aplicar` exige además `--autorizo-hoja-de-prueba` (escribe filas en una hoja de
-  Google: autorización por ensayo). La ingesta ya se mapea a «Cierres NovuChat A (auto)» y los envíos por
+  Google: autorización por ensayo). Además se niega si el id de la hoja es igual al de producción (lo compara
+  con `PLANILLA_PROSPECTOS_ID_NOVUCHAT` del `.env` o del entorno; sin esa variable solo avisa que no pudo
+  comparar, así que conviene definirla), si `phoneNumberIdEsperado` no es el `WA_PHONE_ID` del Demo A y si la
+  credencial «(ensayo)» comparte id con «Google Sheets NovuChat (cuenta de servicio)». La ingesta ya se mapea a «Cierres NovuChat A (auto)» y los envíos por
   Graph a la predefinida `whatsAppApi`, igual que en el §6.
 - Pruebas: `admin/pruebas/chat-novuchat-ensayo-demo-a.test.ts` (armador, guardas y la herramienta real
   contra un n8n de mentira) y las suites de `chat-novuchat-*` y `crm-*`.
@@ -820,7 +823,11 @@ nombres de credencial. Los JSON de producción y de prueba **no cambian** (se co
          <worktree>/Flujos/experimental/chat-novuchat/chat-novuchat.ensayo-demo-a.json .env
 
    Deja `chat-novuchat.ensayo-demo-a.local.json` (ignorado por git y no huérfano para `construir.mjs`): se
-   borra al terminar.
+   borra al terminar. **Aviso:** mientras ese `.local.json` exista en la carpeta del flujo, la prueba
+   `chat-novuchat-lib.test.ts` («los tres JSON son los únicos de la carpeta…», hoy cerca de la línea 1731)
+   **falla** a propósito: no corra la suite completa con él presente y bórrelo apenas termine.
+   `publicar-flujo.sh` **rechaza** (exit 2) este archivo y su `.local.json`: el ensayo solo lo pone la
+   herramienta del paso 3.
 2. **La plataforma.** `node admin/scripts/plataforma/ensayo.mjs --proyecto <proyecto> --numero <phone id del
    Demo A> --estado` (solo lectura) para ver a qué comercio apunta hoy la ruta. **Queda por confirmar con
    la sesión de Plataforma** el `--preparar` para este flujo (no hay un archivo de negocio de NovuChat como

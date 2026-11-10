@@ -10,7 +10,7 @@
  * LO QUE NO SE PUEDE PROBAR ACÁ: que la credencial «Google Sheets miniCRM (ensayo)» exista en la instancia real y tenga acceso SOLO a la hoja de prueba, ni que la hoja tenga las
  * columnas del mapa `crm` (eso lo mira el seco real y la primera conversación del ensayo).
  */
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -109,6 +109,14 @@ describe('el armador: datos y salida del ensayo en el Demo A', () => {
       const b = ensayo(); b.configBase.phoneNumberIdEsperado = 'REEMPLAZAR_PHONE_NUMBER_ID_NOVUCHAT';
       falla(b, 'ensayo-demo-a.json', /marcador de producción/);
     });
+    it('el ensayo exige EXACTOS los marcadores del aviso y del phone id (ni un valor literal ni otro marcador)', () => {
+      const a = ensayo(); a.configBase.numeroRecepcion = '59170000000';
+      falla(a, 'ensayo-demo-a.json', /numeroRecepcion.*REEMPLAZAR_NUMERO_AVISO_ENSAYO/);
+      const b = ensayo(); b.configBase.phoneNumberIdEsperado = '123456789012345';
+      falla(b, 'ensayo-demo-a.json', /phoneNumberIdEsperado.*REEMPLAZAR_PHONE_NUMBER_ID/);
+      const c = ensayo(); c.configBase.phoneNumberIdEsperado = 'REEMPLAZAR_OTRO_PHONE';
+      falla(c, 'ensayo-demo-a.json', /phoneNumberIdEsperado.*REEMPLAZAR_PHONE_NUMBER_ID/);
+    });
     it('el ensayo con la credencial de hoja de producción (o cualquier otra) falla', () => {
       const d = ensayo(); d.credenciales.planilla = 'Google Sheets NovuChat (cuenta de servicio)';
       falla(d, 'ensayo-demo-a.json', /credenciales\.planilla.*Google Sheets miniCRM \(ensayo\)/);
@@ -161,6 +169,22 @@ describe('el armador: datos y salida del ensayo en el Demo A', () => {
       const b = e(); b.nodes = (b.nodes as J[]).filter((n) => n.type !== 'n8n-nodes-base.googleSheets');
       expect(CONSTRUIR.guardias('trigger', b, D(), SALIDA).join(' ')).toMatch(/miniCRM tiene que estar conectado/);
     });
+    it('fuera del ensayo, las credenciales del Demo A son un hallazgo', () => {
+      const prod = leerJson(join(CARPETA, 'chat-novuchat.novuchat.json'));
+      const Dp = { crm: D().crm };
+      for (const [nodoNombre, tipo, nombre] of [['WhatsApp Trigger', 'whatsAppTriggerApi', 'WhatsApp OAuth account'], ['Traer configuración', 'httpHeaderAuth', 'Cierres NovuChat A (auto)'], ['Enviar a WhatsApp', 'httpHeaderAuth', 'Graph WhatsApp Demo A (Bearer)']] as const) {
+        const a = clonar(prod); nodo(a, nodoNombre).credentials[tipo].name = nombre;
+        expect(CONSTRUIR.guardias('trigger', a, Dp, 'chat-novuchat.novuchat.json').join(' '), nombre).toMatch(/usa credenciales del Demo A .*solo chat-novuchat\.ensayo-demo-a\.json puede llevarlas/);
+      }
+      // y el ensayo con ellas no es hallazgo
+      expect(CONSTRUIR.guardias('trigger', e(), D(), SALIDA)).toEqual([]);
+    });
+    it('el ensayo con un teléfono o phone id literal en «Config base» es un hallazgo', () => {
+      const a = e(); poner(a, 'numeroRecepcion', '59170000000');
+      expect(CONSTRUIR.guardias('trigger', a, D(), SALIDA).join(' ')).toMatch(/numeroRecepcion tiene que ser el marcador «REEMPLAZAR_NUMERO_AVISO_ENSAYO»/);
+      const b = e(); poner(b, 'phoneNumberIdEsperado', '123456789012345');
+      expect(CONSTRUIR.guardias('trigger', b, D(), SALIDA).join(' ')).toMatch(/phoneNumberIdEsperado tiene que ser el marcador «REEMPLAZAR_PHONE_NUMBER_ID»/);
+    });
     it('una salida que no es la del ensayo con un marcador o la credencial del ensayo es un hallazgo', () => {
       const prod = leerJson(join(CARPETA, 'chat-novuchat.novuchat.json'));
       const Dp = { crm: D().crm };
@@ -212,7 +236,7 @@ function demoAVivo(): J {
 }
 
 let flujoVivo: J; let puts: J[]; let credenciales = CREDENCIALES;
-let servidor: Server; let carpeta = ''; let secuencia = 0;
+let servidor: Server; let carpeta = ''; let secuencia = 0; let archivoEnv = '.env.falso';
 const leerCuerpo = (r: IncomingMessage): Promise<string> => new Promise((ok) => { const t: Buffer[] = []; r.on('data', (c: Buffer) => { t.push(c); }); r.on('end', () => ok(Buffer.concat(t).toString('utf8'))); });
 const nuevo = (cr = CREDENCIALES): void => { flujoVivo = demoAVivo(); puts = []; credenciales = cr; };
 const respaldoNuevo = (): string => join(carpeta, `respaldo-${++secuencia}.json`);
@@ -242,6 +266,10 @@ beforeAll(async () => {
   const puerto = (servidor.address() as { port: number }).port;
   writeFileSync(join(carpeta, '.env.falso'), `N8N_BASE_URL=http://127.0.0.1:${puerto}\nN8N_API_KEY=clave-falsa-de-prueba\nN8N_WORKFLOW_ID=wf1\nWA_PHONE_ID=${PHONE_ID}\n`);
   chmodSync(join(carpeta, '.env.falso'), 0o600);
+  // un .env que SÍ trae el id de la hoja real de producción (sintético) para la comparación
+  writeFileSync(join(carpeta, '.env.con-produccion'), `N8N_BASE_URL=http://127.0.0.1:${puerto}\nN8N_API_KEY=clave-falsa-de-prueba\nN8N_WORKFLOW_ID=wf1\nWA_PHONE_ID=${PHONE_ID}\nPLANILLA_PROSPECTOS_ID_NOVUCHAT=${PLANILLA}\n`);
+  chmodSync(join(carpeta, '.env.con-produccion'), 0o600);
+  writeFileSync(join(carpeta, 'chat-otro-fono.json'), preparado((t) => t.replaceAll(PHONE_ID, '100000000000099')));
   writeFileSync(join(carpeta, 'chat.local.json'), preparado());
   writeFileSync(join(carpeta, 'chat-con-marcadores.json'), readFileSync(ENSAYO, 'utf8'));
   writeFileSync(join(carpeta, 'chat-sin-id.json'), preparado((t) => t.replaceAll(PLANILLA, '')));
@@ -252,7 +280,7 @@ afterAll(async () => { await new Promise<void>((ok) => servidor.close(() => ok()
 
 async function correr(args: string[]): Promise<{ codigo: number; salida: string }> {
   try {
-    const r = await ejecutar(process.execPath, [HERRAMIENTA, '--env', join(carpeta, '.env.falso'), '--estado', join(carpeta, 'estado.json'), ...args], { env: entornoDelEmulador(undefined), encoding: 'utf8' });
+    const r = await ejecutar(process.execPath, [HERRAMIENTA, '--env', join(carpeta, archivoEnv), '--estado', join(carpeta, 'estado.json'), ...args], { env: entornoDelEmulador(undefined), encoding: 'utf8' });
     return { codigo: 0, salida: r.stdout + r.stderr };
   } catch (e) {
     const x = e as { code: number; stdout: string; stderr: string };
@@ -343,6 +371,55 @@ describe('la herramienta con --conservar-crm (n8n de mentira)', () => {
     expect(doble.codigo).toBe(1);
     expect(doble.salida).toMatch(/hay 2/);
     expect(puts).toHaveLength(0);
+  });
+});
+
+describe('la herramienta con --conservar-crm: la hoja y el número de PRODUCCIÓN no se tocan', () => {
+  it('se NIEGA si el id de la planilla es igual al de producción (sin imprimir ninguno de los dos)', async () => {
+    nuevo(); archivoEnv = '.env.con-produccion';
+    try {
+      const r = await sobreDemoA(['--aplicar']);
+      expect(r.codigo).toBe(1);
+      expect(r.salida).toMatch(/IGUAL al de la hoja real de prospectos de producción/);
+      expect(r.salida).not.toContain(PLANILLA);
+      expect(puts).toHaveLength(0);
+    } finally { archivoEnv = '.env.falso'; }
+  });
+  it('si el entorno no trae el id de producción, avisa que no pudo comparar (y no escribe en seco)', async () => {
+    nuevo();
+    const r = await sobreDemoA();
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/no se pudo comparar la hoja de prueba con la de producción/);
+  });
+  it('se NIEGA si la credencial del ensayo comparte id con la de los prospectos reales', async () => {
+    nuevo([...CREDENCIALES, { id: 'c-hoja', name: 'Google Sheets NovuChat (cuenta de servicio)', type: 'googleApi' }]);
+    const r = await sobreDemoA(['--aplicar']);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/comparte id con otra credencial de hoja/);
+    expect(puts).toHaveLength(0);
+    // la misma lista con ids distintos sí pasa
+    nuevo([...CREDENCIALES, { id: 'c-hoja-real', name: 'Google Sheets NovuChat (cuenta de servicio)', type: 'googleApi' }]);
+    expect((await sobreDemoA(['--aplicar'])).codigo).toBe(0);
+  });
+  it('se NIEGA si phoneNumberIdEsperado no es el phone id del Demo A (WA_PHONE_ID)', async () => {
+    nuevo();
+    const r = await sobreDemoA(['--aplicar'], 'chat-otro-fono.json');
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/phoneNumberIdEsperado no es el phone id del Demo A/);
+    expect(puts).toHaveLength(0);
+  });
+});
+
+describe('publicar-flujo.sh no publica el ensayo del chat', () => {
+  it('rechaza chat-novuchat.ensayo-demo-a.json y su .local.json (exit 2) y no rechaza por ese motivo otro archivo', () => {
+    const raiz = join(aqui, '../..');
+    for (const f of ['chat-novuchat.ensayo-demo-a.json', 'chat-novuchat.ensayo-demo-a.local.json']) {
+      const r = spawnSync('bash', [join(raiz, 'scripts/publicar-flujo.sh'), '--flujo', join(raiz, 'Flujos/experimental/chat-novuchat', f)], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+      expect(r.status, f).toBe(2);
+      expect(r.stderr, f).toMatch(/es el ensayo del chat en el Demo A y no se publica/);
+    }
+    const otro = spawnSync('bash', [join(raiz, 'scripts/publicar-flujo.sh'), '--flujo', join(raiz, 'Flujos/experimental/chat-novuchat/chat-novuchat.prueba.json')], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+    expect(otro.stderr).not.toMatch(/es el ensayo del chat en el Demo A/);
   });
 });
 
