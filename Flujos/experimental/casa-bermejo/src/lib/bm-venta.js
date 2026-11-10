@@ -274,6 +274,53 @@ function bmConNombres(lineas, vendibles) {
   const porId = new Map((Array.isArray(vendibles) ? vendibles : []).map((v) => [v.id, v.nombre]));
   return (Array.isArray(lineas) ? lineas : []).map((l) => Object.assign({}, l, { nombre: porId.has(l.id) ? porId.get(l.id) : l.id }));
 }
+// LAS LÍNEAS DEL PEDIDO PARA EL SERVIDOR (catálogo externo, `pedidos.md` «Pedido de catálogo externo»). Forma CERRADA, sin una clave más:
+// `{externa: true, id, nombre, cantidad, precioCentavos, moneda, detalle?, subtotalCentavos}`. Todo sale del CARRITO que armó el código (`vcLineas` sobre el catálogo de NovuTienda):
+// ni el id, ni el precio, ni la moneda, ni el nombre vienen del modelo. La moneda es la del MERCADO del remitente (prefijo: 591 BOB, 54 ARS) y una línea de otra moneda anula todo el envío.
+// Un id repetido (el mismo producto con dos detalles) se FUSIONA sumando cantidades, porque el servidor se queda con la primera línea de cada id. `null` si algo no cuadra
+// (id con forma inválida, precio no entero, mercado desconocido, más de 30 líneas, una cantidad que pasa de 50): sin líneas no se crea un pedido a medias, y el aviso al comercio sale igual.
+const BM_ID_PEDIDO_LINEA = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+function bmTextoDeLinea(v, max) {
+  if (typeof v !== 'string') return '';
+  let t = v.slice(0, 1000).replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}<>&]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+  if (/[\ud800-\udbff]$/.test(t)) t = t.slice(0, -1);
+  return t.trim();
+}
+function bmLineasPedido(lineas, from) {
+  const mercado = ceMercadoDePrefijo(from);
+  const moneda = mercado === 'AR' ? 'ARS' : (mercado === 'BO' ? 'BOB' : '');
+  if (moneda === '' || !Array.isArray(lineas) || lineas.length === 0 || lineas.length > 30) return null;
+  const porId = new Map();
+  const orden = [];
+  for (const l of lineas) {
+    if (!l || typeof l !== 'object') return null;
+    const id = l.id;
+    if (typeof id !== 'string' || !BM_ID_PEDIDO_LINEA.test(id) || id.includes('__')) return null;
+    if (l.moneda !== undefined && l.moneda !== moneda) return null;
+    if (!Number.isSafeInteger(l.cantidad) || l.cantidad < 1 || !Number.isSafeInteger(l.precioCentavos) || l.precioCentavos < 1 || l.precioCentavos > 100000000) return null;
+    if (moneda === 'ARS' && l.precioCentavos % 100 !== 0) return null;
+    const nombre = bmTextoDeLinea(l.nombre, 80);
+    if (nombre === '') return null;
+    const detalle = bmTextoDeLinea(l.detalle, 120);
+    let p = porId.get(id);
+    if (!p) { p = { id: id, nombre: nombre, precioCentavos: l.precioCentavos, cantidad: 0, variantes: new Map() }; porId.set(id, p); orden.push(p); }
+    else if (p.precioCentavos !== l.precioCentavos) return null; // el mismo producto con dos precios en un pedido: no hay un precio honesto
+    p.cantidad += l.cantidad;
+    p.variantes.set(detalle, (p.variantes.get(detalle) || 0) + l.cantidad);
+  }
+  const salida = [];
+  for (const p of orden) {
+    if (p.cantidad > 50) return null;
+    const o = { externa: true, id: p.id, nombre: p.nombre, cantidad: p.cantidad, precioCentavos: p.precioCentavos, moneda: moneda };
+    let detalle = '';
+    if (p.variantes.size === 1) detalle = Array.from(p.variantes.keys())[0];
+    else detalle = bmTextoDeLinea(Array.from(p.variantes.entries()).map((e) => e[1] + ' ' + (e[0] || 'sin indicación')).join(' · '), 120);
+    if (detalle !== '') o.detalle = detalle;
+    o.subtotalCentavos = p.cantidad * p.precioCentavos;
+    salida.push(o);
+  }
+  return salida;
+}
 // El id del pedido lleva un hash corto del teléfono (4 caracteres, no el número): dos teléfonos con su primer pedido en el mismo milisegundo no comparten id.
 function bmIdPedido(ahoraMs, n, from) {
   let h = 0x811c9dc5;
@@ -324,7 +371,7 @@ function bmResolverModelo(c) {
     // Argentina: el cobro por alias lo hace un servidor que aún no existe (B4b). Hasta entonces el pedido queda anotado y el pago lo coordina recepción (aviso + botón); nunca se emite un QR de Bolivia a un cliente de Argentina.
     if (c.mercado !== 'BO' || c.cobro.modo !== 'real') {
       // Sin QR de cobro real: el pedido queda anotado y lo coordina recepción (aviso + botón). El aviso lo manda «Armar avisos» con «sin comprobante aún».
-      return Object.assign(base, { tipo: 'pedido_sin_cobro', mercado: c.mercado === 'BO' ? 'BO' : 'AR', total: total, resumen: vcResumen(lineas), cierre: false, aviso: { tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: entrega, cotejo: 'sin comprobante aún', repetido: false }, patch: { carrito: [], entrega: bmEntregaBase(), cierre: false, qrCarrito: [], mostrados: [] } });
+      return Object.assign(base, { tipo: 'pedido_sin_cobro', mercado: c.mercado === 'BO' ? 'BO' : 'AR', pedidoId: bmIdPedido(c.ahora, f.pedidos + 1, c.from), total: total, resumen: vcResumen(lineas), cierre: false, aviso: { tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: entrega, cotejo: 'sin comprobante aún', repetido: false }, patch: { carrito: [], entrega: bmEntregaBase(), cierre: false, qrCarrito: [], mostrados: [] } });
     }
     if (abierto && !cambioConQr) return Object.assign(base, { tipo: 'qr_pendiente', total: total });
     return Object.assign(base, {
