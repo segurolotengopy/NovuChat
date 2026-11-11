@@ -591,4 +591,35 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
       await assertFails(subir(adminB(), rm(B), 1024, 'audio/ogg'));
     });
   });
+
+  // ===========================================================================
+  // ADJUNTOS QUE ENVÍA UNA PERSONA (storage.rules, /tenants/{t}/mediosEnviados/**; Core, B2).
+  // Los escribe `enviarAdjuntoComoPersona`, los lee `leerAdjuntoPersona`/`verMedio` y los borra
+  // `purgarMedios`, todos con el SDK Admin: ninguna persona desde el navegador.
+  // ===========================================================================
+  describe('Adjuntos enviados por una persona (Core)', () => {
+    const re = (t: string, dia = '2026-11-11', nombre = 'objetoY.jpg') => `tenants/${t}/mediosEnviados/${dia}/${nombre}`;
+    beforeEach(async () => { await sembrarArchivo(re(A), 'image/jpeg'); });
+
+    it('nadie lo lee: ni administrador, ni operador, ni propietario, ni ingesta, ni anónimo', async () => {
+      for (const quien of [adminA(), operA(), propietario(), ingestaA(), anonimo()]) {
+        await assertFails(getMetadata(ref(quien, re(A))));
+        await assertFails(getDownloadURL(ref(quien, re(A))));
+      }
+    });
+
+    it('nadie lo escribe, lo reemplaza, lo borra ni lo lista', async () => {
+      for (const quien of [adminA(), operA(), propietario(), ingestaA(), anonimo()]) {
+        await assertFails(subir(quien, re(A, '2026-11-12', 'nuevo.jpg'), 1024, 'image/jpeg'));
+        await assertFails(subir(quien, re(A), 1024, 'image/jpeg'));
+        await assertFails(deleteObject(ref(quien, re(A))));
+        await assertFails(listAll(ref(quien, `tenants/${A}/mediosEnviados`)));
+      }
+    });
+
+    it('el administrador de otro comercio tampoco lo lee ni escribe en el suyo', async () => {
+      await assertFails(getMetadata(ref(adminB(), re(A))));
+      await assertFails(subir(adminB(), re(B), 1024, 'image/jpeg'));
+    });
+  });
 });

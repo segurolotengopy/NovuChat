@@ -8,7 +8,14 @@
  * (`titularidadDe`, de `ejes.ts`). Las cifras viven en `planes.ts`; ni este archivo ni el envío las escriben.
  */
 import { crearEnviarComoPersona } from '../../core/conversacion/enviarComoPersona.js';
+import { crearEnviarAdjuntoComoPersona } from '../../core/conversacion/enviarAdjuntoComoPersona.js';
 import { titularidadDe } from '../ejes.js';
 import { limitesDePersona, tarifaDe } from './planes.js';
 
 export const enviarComoPersona = crearEnviarComoPersona({ limitesDePersona, titularidadDe, tarifaDe });
+
+/**
+ * El adjunto (B2 de «Envío de medios por consola»): la MISMA inyección, así los topes del plan son los del texto
+ * (cada archivo cuenta como un mensaje de persona) y Core sigue sin importar Central.
+ */
+export const enviarAdjuntoComoPersona = crearEnviarAdjuntoComoPersona({ limitesDePersona, titularidadDe, tarifaDe });

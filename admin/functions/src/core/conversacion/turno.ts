@@ -257,6 +257,17 @@ export function personaPuedeEscribirDeFicha(ficha: { readonly personaPuedeEscrib
   return !!ficha && ficha.personaPuedeEscribir === true;
 }
 
+/**
+ * ¿Puede una persona del comercio enviar ARCHIVOS (imagen, documento, audio)? SOLO si la ficha tiene
+ * `personaPuedeEnviarMedios === true` (booleano exacto; ausente, `false`, `'true'`, `1` o ficha ilegible = no).
+ * Es una bandera APARTE de `personaPuedeEscribir`: se exigen las DOS (decisión de Andres, 11/11/2026). La
+ * escribe solo Plataforma; la salida de adjuntos exige que el flujo «Salida de persona» de ese número
+ * sepa leer y subir el archivo. Pura y sin `import`, como `personaPuedeEscribirDeFicha`.
+ */
+export function personaPuedeEnviarMediosDeFicha(ficha: { readonly personaPuedeEnviarMedios?: unknown } | null | undefined): boolean {
+  return !!ficha && ficha.personaPuedeEnviarMedios === true;
+}
+
 // ---------------------------------------------------------------------------
 // ERRORES: códigos y mensajes fijos, sin detalle
 // ---------------------------------------------------------------------------

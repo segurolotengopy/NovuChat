@@ -11,6 +11,10 @@
 #   reclamarrescates        → `reclamarRescates` (HTTP; la llama el flujo n8n de rescate de 22 h con la
 #                              credencial de la ingesta del número, módulo Pedidos)
 #   guardarmedio            → `guardarMedio` (HTTP; la llama el flujo n8n con el token del número, Core, H3)
+#   enviaradjuntocomopersona → `enviarAdjuntoComoPersona` (callable; la persona envía un archivo desde la consola, Core,
+#                              «Envío de medios por consola» B2)
+#   leeradjuntopersona      → `leerAdjuntoPersona` (HTTP; la llama el flujo n8n «Salida de persona» con la credencial de
+#                              la ingesta del número, para recibir los bytes del archivo, Core, B2)
 #   vermedio                → `verMedio` (callable; el visor de medios en Conversaciones, Core, M3)
 #   bloquearcontacto        → `bloquearContacto` (callable; el asistente deja de responderle a un contacto, Core)
 #   desbloquearcontacto     → `desbloquearContacto` (callable; revierte el bloqueo, Core)
@@ -33,7 +37,7 @@
 # `NOT_FOUND` o `RESOURCE_EXHAUSTED`, sin sesión, quiere decir que el código
 # atendió a un anónimo («abierto»).
 #
-# LAS CUATRO HTTP (`reclamarsalidapersona`, `confirmarsalidapersona`, `reclamarrescates`, `guardarmedio`) NO son
+# LAS HTTP DEL FLUJO N8N (`reclamarsalidapersona`, `confirmarsalidapersona`, `leeradjuntopersona`, `reclamarrescates`, `guardarmedio`) NO son
 # callables: no hay sesión de Firebase ni App Check; la barrera es la credencial
 # de la ingesta del número (`rutaAutenticada`, secreto por alias), que el código
 # exige ANTES de mirar la entrada. Sin ella contestan `401` con el texto «no
@@ -99,6 +103,10 @@ readonly SERVICIO_RESCATES="reclamarrescates"
 readonly FUNCION_RESCATES="reclamarRescates"
 readonly SERVICIO_GUARDAR="guardarmedio"
 readonly FUNCION_GUARDAR="guardarMedio"
+readonly SERVICIO_ADJUNTO="enviaradjuntocomopersona"
+readonly FUNCION_ADJUNTO="enviarAdjuntoComoPersona"
+readonly SERVICIO_LEER_ADJUNTO="leeradjuntopersona"
+readonly FUNCION_LEER_ADJUNTO="leerAdjuntoPersona"
 readonly SERVICIO_MEDIO="vermedio"
 readonly FUNCION_MEDIO="verMedio"
 readonly SERVICIO_BLOQUEAR="bloquearcontacto"
@@ -107,7 +115,7 @@ readonly SERVICIO_DESBLOQUEAR="desbloquearcontacto"
 readonly FUNCION_DESBLOQUEAR="desbloquearContacto"
 readonly SERVICIO_ALERTAS="alertaoperativa"
 readonly FUNCION_ALERTAS="alertaOperativa"
-readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_TOMAR}|${SERVICIO_DEVOLVER}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}|${SERVICIO_GUARDAR}|${SERVICIO_MEDIO}|${SERVICIO_BLOQUEAR}|${SERVICIO_DESBLOQUEAR}|${SERVICIO_RESCATES}|${SERVICIO_ALERTAS}"
+readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_ADJUNTO}|${SERVICIO_TOMAR}|${SERVICIO_DEVOLVER}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}|${SERVICIO_GUARDAR}|${SERVICIO_LEER_ADJUNTO}|${SERVICIO_MEDIO}|${SERVICIO_BLOQUEAR}|${SERVICIO_DESBLOQUEAR}|${SERVICIO_RESCATES}|${SERVICIO_ALERTAS}"
 readonly ROL="roles/run.invoker"
 readonly MIEMBRO="allUsers"
 readonly REPO="segurolotengopy/NovuChat"
@@ -140,12 +148,14 @@ case "$PEDIDO" in
   "$SERVICIO_VISOR")     SERVICIO="$SERVICIO_VISOR";     FUNCION="$FUNCION_VISOR";     TIPO="callable" ;;
   "$SERVICIO_BUSCADOR")  SERVICIO="$SERVICIO_BUSCADOR";  FUNCION="$FUNCION_BUSCADOR";  TIPO="callable" ;;
   "$SERVICIO_ENVIAR")    SERVICIO="$SERVICIO_ENVIAR";    FUNCION="$FUNCION_ENVIAR";    TIPO="callable" ;;
+  "$SERVICIO_ADJUNTO")   SERVICIO="$SERVICIO_ADJUNTO";   FUNCION="$FUNCION_ADJUNTO";   TIPO="callable" ;;
   "$SERVICIO_TOMAR")     SERVICIO="$SERVICIO_TOMAR";     FUNCION="$FUNCION_TOMAR";     TIPO="callable" ;;
   "$SERVICIO_DEVOLVER")  SERVICIO="$SERVICIO_DEVOLVER";  FUNCION="$FUNCION_DEVOLVER";  TIPO="callable" ;;
   "$SERVICIO_RECLAMAR")  SERVICIO="$SERVICIO_RECLAMAR";  FUNCION="$FUNCION_RECLAMAR";  TIPO="http" ;;
   "$SERVICIO_CONFIRMAR") SERVICIO="$SERVICIO_CONFIRMAR"; FUNCION="$FUNCION_CONFIRMAR"; TIPO="http" ;;
   "$SERVICIO_RESCATES")  SERVICIO="$SERVICIO_RESCATES";  FUNCION="$FUNCION_RESCATES";  TIPO="http" ;;
   "$SERVICIO_GUARDAR")   SERVICIO="$SERVICIO_GUARDAR";   FUNCION="$FUNCION_GUARDAR";   TIPO="http" ;;
+  "$SERVICIO_LEER_ADJUNTO") SERVICIO="$SERVICIO_LEER_ADJUNTO"; FUNCION="$FUNCION_LEER_ADJUNTO"; TIPO="http" ;;
   "$SERVICIO_MEDIO")     SERVICIO="$SERVICIO_MEDIO";     FUNCION="$FUNCION_MEDIO";     TIPO="callable" ;;
   "$SERVICIO_BLOQUEAR")  SERVICIO="$SERVICIO_BLOQUEAR";  FUNCION="$FUNCION_BLOQUEAR";  TIPO="callable" ;;
   "$SERVICIO_DESBLOQUEAR") SERVICIO="$SERVICIO_DESBLOQUEAR"; FUNCION="$FUNCION_DESBLOQUEAR"; TIPO="callable" ;;

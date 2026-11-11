@@ -932,3 +932,142 @@ describe('si Firestore falla en el tope o en el metadato, con rol válido: asien
     expect(almacen.llamadas).toBe(0);
   });
 });
+
+// ===========================================================================
+// MEDIOS ENVIADOS (B2 de «Envío de medios por consola», 11/11/2026): `mensajeId` en lugar de `idMeta`
+// ===========================================================================
+const MENSAJE = 'clave-de-envio-0001';
+interface Enviada { t: string; conversacionId: string; mensajeId: string; objeto: string; ruta: string; bytes: Buffer }
+/** Un adjunto enviado: el metadato como lo deja `enviarAdjuntoComoPersona` y el objeto en el almacén. */
+async function enviada(t = T, o: {
+  mensajeId?: string; conversacionId?: string; bytes?: Buffer; ext?: string; tipo?: string; mime?: string;
+  meta?: Record<string, unknown>; ruta?: string; sinObjeto?: boolean;
+} = {}): Promise<Enviada> {
+  const mensajeId = o.mensajeId ?? MENSAJE;
+  const conversacionId = o.conversacionId ?? CONV;
+  const bytes = o.bytes ?? JPG();
+  const firma = TI.tipoPorFirma(bytes);
+  const ext = o.ext ?? firma?.ext ?? 'jpg';
+  const tipo = o.tipo ?? (firma?.tipo ?? 'image');
+  await ficha(t);
+  const objeto = AL.objetoDeEnviado(conversacionId, mensajeId);
+  const ruta = o.ruta ?? AL.rutaDeEnviado(t, AL.diaDeLaPaz(Date.now()), objeto, ext);
+  await db.doc(`tenants/${t}/mediosEnviados/${objeto}`).set({
+    conversacionId, mensajeId, autorUid: 'u-oper', tipo, categoria: tipo, mime: o.mime ?? firma?.mime ?? 'image/jpeg', ext,
+    tamano: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), ruta, voz: false, estado: 'guardado',
+    en: Timestamp.now(), vence: Timestamp.fromMillis(Date.now() + 30 * DIA_MS), ...o.meta,
+  });
+  if (!o.sinObjeto) almacen.objetos.set(ruta, bytes);
+  return { t, conversacionId, mensajeId, objeto, ruta, bytes };
+}
+const pedirEnviada = (e: Enviada, accion: 'ver' | 'descargar' = 'ver') => ({ tenantId: e.t, conversacionId: e.conversacionId, mensajeId: e.mensajeId, accion });
+
+describe('medios enviados: el camino feliz con `mensajeId`', () => {
+  it('admin, operador y soporte con ventana ven lo que una persona envió; la auditoría lleva `origen: enviado` y solo el objeto', async () => {
+    const e = await enviada();
+    await db.doc(`tenants/${T}/accesosSoporte/u-soporte`).set({ expira: Timestamp.fromMillis(Date.now() + 3_600_000) });
+    for (const a of [admin(T), oper(T), soporte()]) {
+      expect(await llamar(pedirEnviada(e), a)).toEqual({ tipo: 'image', categoria: 'image', mime: 'image/jpeg', extension: 'jpg', tamano: e.bytes.length, base64: e.bytes.toString('base64') });
+    }
+    const a = await auditoria(T);
+    expect(a).toHaveLength(3);
+    for (const x of a) expect(x).toMatchObject({ accion: 'medio_visto', objeto: e.objeto, resultado: 'ok', origen: 'enviado' });
+    const plano = JSON.stringify(a, (_k, v) => (v instanceof Timestamp ? 'ts' : v));
+    for (const prohibido of [TEL, MENSAJE, CONV]) expect(plano, prohibido).not.toContain(prohibido);
+  });
+  it('`descargar` se audita como `medio_descargado`', async () => {
+    const e = await enviada();
+    await llamar(pedirEnviada(e, 'descargar'), admin(T));
+    expect((await auditoria(T))[0]).toMatchObject({ accion: 'medio_descargado', origen: 'enviado' });
+  });
+  it('imagen, audio y documento enviados salen con el mime seguro: documento siempre octet-stream', async () => {
+    const casos: Array<[Buffer, string, string, string, string]> = [
+      [JPG(), 'jpg', 'image', 'image/jpeg', 'image'], [OGG(), 'ogg', 'audio', 'audio/ogg', 'audio'],
+      [PDF(), 'pdf', 'document', 'application/pdf', 'document'],
+    ];
+    for (const [i, [bytes, ext, tipo, mime, esperado]] of casos.entries()) {
+      const e = await enviada(T, { mensajeId: `clave-de-envio-${String(i + 10).padStart(4, '0')}`, bytes, ext, tipo, mime });
+      const r = await llamar(pedirEnviada(e), admin(T)) as V.MedioVisto;
+      expect([r.tipo, r.extension]).toEqual([esperado, ext]);
+      expect(r.mime).toBe(tipo === 'document' ? V.MIME_DE_DESCARGA : mime);
+      expect(Buffer.from(r.base64, 'base64').equals(bytes)).toBe(true);
+    }
+  });
+  it('el tope por usuario es el mismo (`topesDeMedios`), compartido con los recibidos', async () => {
+    const e = await enviada();
+    await llamar(pedirEnviada(e), admin(T));
+    expect(await topes()).toEqual([`u-admin-${T}`]);
+  });
+});
+
+describe('medios enviados: lo que se NIEGA', () => {
+  const rechaza = async (data: unknown, a: Actor | undefined, code: string, message: string) => {
+    let err: { code?: string; message?: string } = {};
+    try { await llamar(data, a); } catch (e) { err = e as typeof err; }
+    expect({ code: err.code, message: err.message }).toEqual(falla(code, message));
+  };
+  it('EXACTAMENTE uno de `idMeta` y `mensajeId`: ambos, ninguno, una forma mala o un tipo malo son `invalid-argument`', async () => {
+    const e = await enviada();
+    const ok = pedirEnviada(e);
+    for (const malo of [
+      { ...ok, idMeta: 'wamid.x' }, { tenantId: e.t, conversacionId: e.conversacionId, accion: 'ver' },
+      { ...ok, mensajeId: 'corta' }, { ...ok, mensajeId: 5 }, { ...ok, mensajeId: 'con espacios en la clave' }, { ...ok, mensajeId: null },
+      { ...ok, ruta: `tenants/${T}/mediosEnviados/x` },
+    ]) await rechaza(malo, admin(T), 'invalid-argument', FIJOS.invalido);
+    expect(almacen.llamadas).toBe(0);
+  });
+  it('sin sesión, otro comercio, otro rol: sin permiso y sin tocar Storage', async () => {
+    const e = await enviada();
+    await rechaza(pedirEnviada(e), undefined, 'unauthenticated', FIJOS.sinSesion);
+    await rechaza(pedirEnviada(e), admin(OTRO), 'permission-denied', FIJOS.sinPermiso);
+    await rechaza(pedirEnviada(e), soporte(), 'permission-denied', FIJOS.sinPermiso); // sin ventana
+    expect(almacen.llamadas).toBe(0);
+  });
+  it('un mensaje de OTRA conversación, uno que no existe, otro comercio o un metadato vencido: «no se encontró»', async () => {
+    const e = await enviada();
+    await rechaza({ ...pedirEnviada(e), conversacionId: OTRA_CONV }, admin(T), 'not-found', FIJOS.noHay);
+    await rechaza({ ...pedirEnviada(e), mensajeId: 'clave-de-envio-0099' }, admin(T), 'not-found', FIJOS.noHay);
+    await rechaza(pedirEnviada({ ...e, t: OTRO }), admin(OTRO), 'not-found', FIJOS.noHay);
+    await db.doc(`tenants/${T}/mediosEnviados/${e.objeto}`).update({ vence: Timestamp.fromMillis(Date.now() - 1000) });
+    await rechaza(pedirEnviada(e), admin(T), 'not-found', FIJOS.noHay);
+    expect(almacen.llamadas).toBe(0);
+  });
+  it('el metadato que apunta a otro mensaje no se entrega', async () => {
+    const e = await enviada(T, { meta: { mensajeId: 'clave-de-envio-0002' } });
+    await rechaza(pedirEnviada(e), admin(T), 'not-found', FIJOS.noHay);
+  });
+  it('una ruta fuera de `mediosEnviados` del comercio no llega al almacén', async () => {
+    for (const [i, ruta] of [
+      `tenants/${OTRO}/mediosEnviados/2026-11-11/x.jpg`, `tenants/${T}/medios/2026-11-11/x.jpg`, `tenants/${T}/mediosEnviados/../x.jpg`,
+      `tenants/${T}/mediosEnviados/2026-11-11/otro-objeto.jpg`, 'cualquier-cosa',
+    ].entries()) {
+      const e = await enviada(T, { mensajeId: `clave-de-envio-${String(i + 20).padStart(4, '0')}`, ruta, sinObjeto: true });
+      await rechaza(pedirEnviada(e), admin(T), 'not-found', FIJOS.noHay);
+    }
+    expect(almacen.llamadas).toBe(0);
+  });
+  it('bytes alterados (otro sha256), un .jpg con HTML o un objeto ausente: no sale nada', async () => {
+    const e = await enviada();
+    almacen.objetos.set(e.ruta, JPG(65)); // otro contenido
+    await rechaza(pedirEnviada(e), admin(T), 'failed-precondition', FIJOS.noElegible);
+    const h = await enviada(T, { mensajeId: 'clave-de-envio-0003', bytes: Buffer.from('<html>no soy jpg</html>'), ext: 'jpg', tipo: 'image' });
+    await rechaza(pedirEnviada(h), admin(T), 'failed-precondition', FIJOS.noElegible);
+    const f = await enviada(T, { mensajeId: 'clave-de-envio-0004', sinObjeto: true });
+    await rechaza(pedirEnviada(f), admin(T), 'not-found', FIJOS.noHay);
+  });
+  it('el rechazo de un enviado también deja su asiento, con `origen`, y nunca el mensaje ni la conversación', async () => {
+    const e = await enviada();
+    await db.doc(`tenants/${T}/mediosEnviados/${e.objeto}`).delete();
+    await rechaza(pedirEnviada(e), admin(T), 'not-found', FIJOS.noHay);
+    expect((await auditoria(T))[0]).toMatchObject({ resultado: 'rechazado', motivo: 'sin_medio', origen: 'enviado', objeto: e.objeto });
+    expect(JSON.stringify(await auditoria(T), (_k, v) => (v instanceof Timestamp ? 'ts' : v))).not.toContain(MENSAJE);
+    expect(salida.join('\n')).not.toContain(MENSAJE);
+    expect(salida.join('\n')).not.toContain(TEL);
+  });
+  it('un recibido sigue pidiéndose con `idMeta` y no se confunde con un enviado', async () => {
+    const r = await escena();
+    expect(await llamar(pedir(r), admin(T))).toMatchObject({ tipo: 'image' });
+    // el mismo texto como `mensajeId` (con forma de clave) no encuentra el recibido: otra colección, otro hash
+    await rechaza({ tenantId: T, conversacionId: CONV, mensajeId: 'wamid.medio-tienda.1', accion: 'ver' }, admin(T), 'not-found', FIJOS.noHay);
+  });
+});
