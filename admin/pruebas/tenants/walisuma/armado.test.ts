@@ -264,26 +264,26 @@ describe('versionado, no publicable y datos', () => {
     expect(r.stdout).toMatch(/walisuma\.json al día \(64 nodos\)/);
     expect(r.stdout).toMatch(/walisuma\.prueba\.json al día \(59 nodos\)/);
   });
-  it('`--publicable` FALLA hoy, con un mensaje claro: quedan marcadores REEMPLAZAR_*, la plantilla sin aprobar y el costo de entrega sin declarar', () => {
+  it('`--publicable` FALLA hoy, con un mensaje claro: quedan marcadores REEMPLAZAR_*, la plantilla sin aprobar y el umbral de envío gratis sin declarar', () => {
     const r = corrida('--publicable');
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/NO se puede publicar todavía/);
     expect(r.stderr).toMatch(/marcador sin sustituir: REEMPLAZAR_/);
     expect(r.stderr).toMatch(/avisoPedidoEstado tiene que ser APPROVED/);
-    expect(r.stderr).toMatch(/costoDeEntrega sin declarar/);
+    expect(r.stderr).not.toMatch(/envioGratisDesdeBs sin declarar/); // el dato ya trae 500
     expect(r.stderr).not.toMatch(/ESQUELETO/);
     // Los mensajes nombran marcadores, nunca valores de los datos.
     expect(r.stdout).toBe('');
   });
   it('ningún `REEMPLAZAR_` en la variante publicable: las dos variantes los traen hoy, y la guardia los detecta uno por uno (NEGADO)', () => {
     for (const f of [PRODUCCION, PRUEBA]) expect(C.guardiaDePublicacion({ flujo: f, datos: DATOS }).filter((x: string) => /marcador sin sustituir/.test(x)).length).toBeGreaterThan(5);
-    // Un flujo completo y sin marcadores pasa; basta UN marcador, una plantilla sin aprobar, un costo vacío o un nodo menos para que falle.
+    // Un flujo completo y sin marcadores pasa; basta UN marcador, una plantilla sin aprobar, un umbral de envío en cero o un nodo menos para que falle.
     const flujoListo = JSON.parse(JSON.stringify(PRODUCCION).replace(/REEMPLAZAR_[A-Z0-9_]+/g, 'valor')) as Flujo;
     const ponerBase = (f: Flujo, nombre: string, valor: string): void => {
       for (const a of (((nodo(f, 'Config base')['parameters'] as J)['assignments'] as J)['assignments']) as J[]) if (a['name'] === nombre) a['value'] = valor;
     };
     ponerBase(flujoListo, 'avisoPedidoEstado', 'APPROVED');
-    ponerBase(flujoListo, 'costoDeEntrega', '10');
+    ponerBase(flujoListo, 'envioGratisDesdeBs', '500');
     ponerBase(flujoListo, 'planillaProspectosId', ['1AbCdEfGhIjKlMnOpQrStUvWxYz', '01234', '56789'].join(''));
     expect(C.guardiaDePublicacion({ flujo: flujoListo, datos: DATOS })).toEqual([]);
     const conMarcador = clonar(flujoListo); (nodo(conMarcador, 'Traer configuración')['parameters'] as J)['x'] = 'REEMPLAZAR_ALGO';
@@ -294,9 +294,12 @@ describe('versionado, no publicable y datos', () => {
     const sinPlanilla = clonar(flujoListo);
     ponerBase(sinPlanilla, 'planillaProspectosId', '');
     expect(C.guardiaDePublicacion({ flujo: sinPlanilla, datos: DATOS }).join(' ')).toMatch(/planillaProspectosId/);
-    const sinCosto = clonar(flujoListo);
-    ponerBase(sinCosto, 'costoDeEntrega', '');
-    expect(C.guardiaDePublicacion({ flujo: sinCosto, datos: DATOS }).join(' ')).toMatch(/costoDeEntrega/);
+    // NEGADO: sin umbral de envío gratis (vacío o en cero) no se publica.
+    for (const v of ['', '0']) {
+      const sinUmbral = clonar(flujoListo);
+      ponerBase(sinUmbral, 'envioGratisDesdeBs', v);
+      expect(C.guardiaDePublicacion({ flujo: sinUmbral, datos: DATOS }).join(' ')).toMatch(/envioGratisDesdeBs/);
+    }
     const sinNodo = clonar(flujoListo); sinNodo.nodes = (sinNodo.nodes as J[]).filter((x) => x['name'] !== 'Armar avisos') as never;
     expect(C.guardiaDePublicacion({ flujo: sinNodo, datos: DATOS }).join(' ')).toMatch(/faltan 1 nodos/);
   });
@@ -304,7 +307,7 @@ describe('versionado, no publicable y datos', () => {
     expect(corrida('--publicable', '--otro').status).toBe(2);
     expect(corrida('--escribe-todo').status).toBe(2);
   });
-  it('los datos del tenant: solo marcadores, sin secretos, UUID, IPv4, rutas de usuario ni números largos; el costo de entrega va VACÍO', () => {
+  it('los datos del tenant: solo marcadores, sin secretos, UUID, IPv4, rutas de usuario ni números largos; el envío gratis va desde 500 Bs y las cuatro formas de entrega', () => {
     const texto = leer(join(RAIZ, 'admin/scripts/datos/walisuma/walisuma.json'));
     expect(texto).not.toMatch(/\d{10,}/);
     expect(texto).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
@@ -313,11 +316,14 @@ describe('versionado, no publicable y datos', () => {
     const d = JSON.parse(texto) as J;
     for (const v of Object.values(d['credenciales'] as J)) expect(String(v)).toMatch(/^REEMPLAZAR_/);
     for (const v of Object.values(d['receptor'] as J)) expect(String(v)).toMatch(/^REEMPLAZAR_/);
-    expect((d['configBase'] as J)['costoDeEntrega']).toBe('');
+    expect((d['configBase'] as J)['envioGratisDesdeBs']).toBe(500);
+    expect((d['configBase'] as J)['costoDeEntrega']).toBeUndefined();
+    expect((d['configBase'] as J)['modosDeEntrega']).toBe('Envío en La Paz, Envío en Santa Cruz, Envío nacional, Recojo en tienda');
+    expect((d['configBase'] as J)['prefijosPermitidos']).toBe('1,2,3,4,5,6,7,8,9');
     expect((d['configBase'] as J)['avisoPedidoPlantilla']).toBe('pedido_registrado');
     expect((d['configBase'] as J)['avisoPlantillaIdioma']).toBe('es');
   });
-  it('NEGADO: un dato con forma inválida (credencial real, ruta real, modelo ajeno, costo ausente) no se carga', () => {
+  it('NEGADO: un dato con forma inválida (credencial real, ruta real, modelo ajeno, umbral de envío ausente o con forma inválida) no se carga', () => {
     const tmp = (mod: (x: J) => void): string => {
       const x = clonar(DATOS); mod(x);
       return JSON.stringify(x);
@@ -330,7 +336,8 @@ describe('versionado, no publicable y datos', () => {
     expect(probar((x) => { (x['credenciales'] as J)['graph'] = 'Graph real'; })).toMatch(/credenciales\.graph/);
     expect(probar((x) => { (x['receptor'] as J)['ruta'] = 'ruta-real-abc'; })).toMatch(/receptor\.ruta/);
     expect(probar((x) => { (x['configBase'] as J)['modelo'] = 'gemini-2.0-flash'; })).toMatch(/configBase\.modelo/);
-    expect(probar((x) => { delete (x['configBase'] as J)['costoDeEntrega']; })).toMatch(/costoDeEntrega/);
+    expect(probar((x) => { delete (x['configBase'] as J)['envioGratisDesdeBs']; })).toMatch(/envioGratisDesdeBs/);
+    expect(probar((x) => { (x['configBase'] as J)['envioGratisDesdeBs'] = 'gratis'; })).toMatch(/envioGratisDesdeBs/);
     expect(probar(() => {})).toBe('');
   });
 });

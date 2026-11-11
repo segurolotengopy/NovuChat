@@ -123,7 +123,7 @@ describe('el aviso del pedido al comercio', () => {
     const pl = t.avisos[0]?.payload['template'] as any; // eslint-disable-line @typescript-eslint/no-explicit-any
     expect(pl.name).toBe('pedido_registrado');
     const vars = pl.components[0].parameters.map((p: { text: string }) => p.text);
-    expect(vars).toEqual(['1 × Billetera de cuero', 'Bs 450', 'La Paz · Retiro en tienda', 'llegó y los datos coinciden']);
+    expect(vars).toEqual(['1 × Billetera de cuero', 'Bs 450', 'Recojo en tienda · La Paz · a nombre de Ana Pérez · tel. 71234567 · envío: recojo', 'llegó y los datos coinciden']);
     expect(t.mensajes[0]?.cuerpo).toMatch(/Ya avisé a recepción/);
     expect(JSON.stringify(t.avisos[0]?.payload)).not.toMatch(PROHIBIDO);
   });
