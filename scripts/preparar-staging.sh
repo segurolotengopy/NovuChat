@@ -630,23 +630,37 @@ sys.exit(0 if any((b.get("condition") or {}).get("title") == "secretos-de-las-fu
                   and "secrets/" + sys.argv[1] + "\"" in (b["condition"].get("expression") or "")
                   for b in d.get("bindings", [])) else 1)' "$PREFIJO_ALERTAS" "$SA_DEPLOY"; then hecho "la condición de desplegadorSecretos cubre ${PREFIJO_ALERTAS}"
   else falla "la condición de desplegadorSecretos NO cubre ${PREFIJO_ALERTAS} (fase alertas)"; fi
-  # Binding COMPLETO (misma corrida): título, rol, miembro y los seis prefijos de la fase cuentas. Solo con
-  # esto un UNKNOWN_CONDITIONAL del Troubleshooter se tolera más abajo.
+  # Binding COMPLETO (misma corrida): título, rol EXACTO del proyecto de staging, miembro y los seis prefijos de
+  # la fase cuentas, cada uno como `projects/<número>/secrets/<prefijo>` con el número real de este proyecto.
+  # La expresión debe ser SOLO una unión (||) de cláusulas startsWith(...) de ese proyecto: un `&&`, un `!` o
+  # cualquier otro operador que pueda restringir o negar la deja fuera. Solo con esto un UNKNOWN_CONDITIONAL
+  # del Troubleshooter se tolera más abajo.
+  local num; num="$(numero_proyecto)"
   if printf '%s' "$politica_proyecto" | python3 -I -c '
-import json, sys
+import json, re, sys
 d = json.load(sys.stdin)
-pref = sys.argv[2:]
+miembro, rol, num = "serviceAccount:" + sys.argv[1], sys.argv[2], sys.argv[3]
+pref = sys.argv[4:]
+clausula = re.compile(r"resource\.name\.startsWith\(\"projects/" + re.escape(num) + r"/secrets/([A-Za-z0-9_-]+)\"\)")
+def cubre(expr):
+    partes = (expr or "").split(" || ")
+    hallados = set()
+    for c in partes:
+        m = clausula.fullmatch(c)
+        if not m:
+            return False
+        hallados.add(m.group(1))
+    return all(p in hallados for p in pref)
 sys.exit(0 if any((b.get("condition") or {}).get("title") == "secretos-de-las-functions"
-                  and b.get("role", "").endswith("/desplegadorSecretos")
-                  and "serviceAccount:" + sys.argv[1] in b.get("members", [])
-                  and all("secrets/" + p in (b["condition"].get("expression") or "") for p in pref)
-                  for b in d.get("bindings", [])) else 1)' "$SA_DEPLOY" INGESTA_ GEMINI_API_KEY COBRADOR_ ALERTAS_ SALIDA_PERSONA_ NOVUTIENDA_ 2>/dev/null; then binding_completo=1; fi
+                  and b.get("role") == rol
+                  and miembro in b.get("members", [])
+                  and cubre(b["condition"].get("expression"))
+                  for b in d.get("bindings", [])) else 1)' "$SA_DEPLOY" "projects/${P}/roles/desplegadorSecretos" "$num" INGESTA_ GEMINI_API_KEY COBRADOR_ ALERTAS_ SALIDA_PERSONA_ NOVUTIENDA_ 2>/dev/null; then binding_completo=1; fi
   for sa_al in "${SECRETOS_ALERTAS[@]}"; do
     if existe gc secrets describe "$sa_al"; then hecho "$sa_al existe"; else falla "$sa_al no existe (fase alertas)"; fi
   done
   # Los permisos que más veces hundieron un despliegue de producción, antes
   # de gastar una corrida (memoria «despliegues: verificar antes de aprobar»).
-  local num; num="$(numero_proyecto)"
   for perm in firebasehosting.sites.update firebaserules.releases.update iam.serviceAccounts.actAs \
               secretmanager.versions.list cloudfunctions.functions.create run.services.update eventarc.triggers.create; do
     local recurso="//cloudresourcemanager.googleapis.com/projects/${P}"

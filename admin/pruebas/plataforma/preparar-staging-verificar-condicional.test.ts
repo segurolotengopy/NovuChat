@@ -99,6 +99,34 @@ describe('preparar-staging.sh verificar: permisos con condición', () => {
     politica([{ ...b, condition: { ...b.condition, title: 'otra' } }]);
     expect(esFallo(linea(verificar('UNKNOWN_CONDITIONAL'), PERM))).toBe(true);
   });
+  it('otro número de proyecto en la condición: ✗', () => {
+    const otro = expr(TODOS).replaceAll(`projects/${NUMERO}/`, 'projects/111222333/');
+    politica([{ ...bindingCon(TODOS), condition: { title: 'secretos-de-las-functions', expression: otro } }]);
+    expect(esFallo(linea(verificar('UNKNOWN_CONDITIONAL'), PERM))).toBe(true);
+    // Uno solo de los seis con otro número también basta para rechazar.
+    const uno = expr(TODOS).replace(`projects/${NUMERO}/secrets/INGESTA_`, 'projects/111222333/secrets/INGESTA_');
+    politica([{ ...bindingCon(TODOS), condition: { title: 'secretos-de-las-functions', expression: uno } }]);
+    expect(esFallo(linea(verificar('UNKNOWN_CONDITIONAL'), PERM))).toBe(true);
+  });
+  it('condición envuelta en `&& false`, o con `!` u otro operador que restrinja: ✗', () => {
+    const cond = (expression: string) => ({ ...bindingCon(TODOS), condition: { title: 'secretos-de-las-functions', expression } });
+    for (const e of [
+      `(${expr(TODOS)}) && false`,
+      `${expr(TODOS)} && resource.name.endsWith("/nada")`,
+      `${expr(TODOS)} || !resource.name.startsWith("projects/${NUMERO}/secrets/INGESTA_")`,
+      expr(TODOS).replace('resource.name.startsWith("projects/' + NUMERO + '/secrets/INGESTA_")', '!resource.name.startsWith("projects/' + NUMERO + '/secrets/INGESTA_")'),
+    ]) {
+      politica([cond(e)]);
+      expect(esFallo(linea(verificar('UNKNOWN_CONDITIONAL'), PERM)), e).toBe(true);
+    }
+  });
+  it('rol de otro proyecto, de una organización o con otro sufijo: ✗', () => {
+    const b = bindingCon(TODOS);
+    for (const rol of [`projects/otro-proyecto-xx/roles/desplegadorSecretos`, 'organizations/123/roles/desplegadorSecretos', `projects/${STAGING}/roles/desplegadorSecretos2`, `x/projects/${STAGING}/roles/desplegadorSecretos`]) {
+      politica([{ ...b, role: rol }]);
+      expect(esFallo(linea(verificar('UNKNOWN_CONDITIONAL'), PERM)), rol).toBe(true);
+    }
+  });
   for (const valor of ['DENIED', 'NOT_GRANTED', 'UNKNOWN_INFO_DENIED']) {
     it(`${valor}: ✗ (aun con el binding completo)`, () => {
       const l = linea(verificar(valor), PERM);
