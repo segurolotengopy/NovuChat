@@ -78,7 +78,7 @@ if (esAudio) {
 const textoCliente = t.tipo === 'interactive' ? '' : (esAudio ? transcrito : String(t.texto || ''));
 const norm = rrNorm(textoCliente);
 // Ningún correo llega al modelo ni a la memoria de la charla: todo lo que parece un correo se cambia por «[correo]» antes de armar lo que ve el modelo (el Gmail válido lo lee el paso «1a-gmail» del texto original).
-const sinCorreos = (x) => String(x === undefined || x === null ? '' : x).normalize('NFKC').replace(/[^\s@<>()\[\],;:"'«»¡¿]+@[^\s@<>()\[\],;:"'«»¡¿]+/g, '[correo]');
+const sinCorreos = (x) => String(x === undefined || x === null ? '' : x).normalize('NFKC').replace(/[^\s@<>()\[\],;:"'«»¡¿]+\s*(?:@|\barroba\b)\s*[^\s@<>()\[\],;:"'«»¡¿]+(?:\s+punto\s+[^\s@<>()\[\],;:"'«»¡¿]+)*/giu, '[correo]');
 textoDelTurno = rrLineaCliente(sinCorreos(textoCliente), 300).replace(/\s+/g, ' ').trim();
 // Un «Sí» o un «No» suelto con una pregunta nuestra vigente (30 min) se resuelve con la pregunta pendiente que guardó la ficha (`ctInterpretarSiNo`, core): si es una pregunta que el código hizo con su intención (`ver_opciones`), el código
 // responde; si no, el modelo recibe la pregunta como dato y qué hacer con ella. Sin pregunta vigente, nada. Nunca abre un QR por sí solo.
