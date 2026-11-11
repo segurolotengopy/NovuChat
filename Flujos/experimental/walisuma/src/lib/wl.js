@@ -206,7 +206,7 @@ const WL_INTROS = {
   modelo_caido: 'Tuve un inconveniente para atender tu consulta en este momento.',
   sin_configuracion: 'En este momento no puedo consultar el catálogo.',
   quiere_hablar: 'Con gusto: esto lo ve directamente una persona del equipo.',
-  envio_a_cotizar: 'Recepción cotiza el envío de tu pedido por su cuenta.',
+  envio_a_cotizar: 'Recepción te cotiza el envío aparte.',
   sin_precio: 'Esa pieza la cotizamos de forma personalizada, así que no tengo un precio que darte desde aquí.',
   corporativo: 'Los pedidos por volumen y los regalos corporativos los coordina directamente una persona del equipo.',
   factura: 'La factura la gestiona directamente recepción.',

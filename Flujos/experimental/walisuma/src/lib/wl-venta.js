@@ -91,18 +91,24 @@ function wlMezclarEntrega(antes, nueva, modos, from) {
   }
   const ciudad = campo(n.ciudad, 40);
   if (ciudad !== '') salida.ciudad = ciudad;
-  const direccion = campo(n.direccion, 120);
+  // La dirección NO pasa por `wlParaMemoria` (mutilaría «2do piso»): solo se enmascaran las secuencias de 7 o más dígitos (un NIT, un CI).
+  const direccion = typeof n.direccion === 'string' ? cbLinea(n.direccion, 120).replace(/\d(?:[\s.-]?\d){6,}/g, '[nº]').slice(0, 120) : '';
   if (direccion !== '') salida.direccion = direccion;
   const nombre = campo(n.nombre, 60);
   if (nombre !== '') salida.nombre = nombre;
   const telefono = wlTelefono(n.telefono, from);
   if (telefono !== '') salida.telefono = telefono;
+  // Si el modo es recojo (no un envío), la dirección vieja se limpia: el recojo no lleva dirección de entrega.
+  if (wlEsRecojo(salida.modo) && !wlEsEnvio(salida.modo)) salida.direccion = '';
   return salida;
 }
-// Una dirección EXACTA: 12 caracteres o más, 3 palabras o más y un número (o «s/n»). «Zona sur» no lo es.
+// Una dirección EXACTA: 8 caracteres o más, 2 palabras o más y un NÚMERO de puerta (una cifra suelta como «2631», «12-B» o «#45»; no un ordinal como «4to» o «3er») o «s/n» / «sin número». «Zona sur», «Zona Sur 4to anillo» y «Santa Cruz 3er anillo» no lo son.
 function wlDireccionExacta(d) {
   const t = String(d === undefined || d === null ? '' : d).trim();
-  return t.length >= 12 && t.split(/\s+/).filter((x) => x !== '').length >= 3 && (/\d/.test(t) || /(^|[\s,;])s\/n(?=[\s,;.]|$)/i.test(t));
+  const palabras = t.split(/[\s,;]+/).filter((x) => x !== '');
+  if (t.length < 8 || palabras.length < 2) return false;
+  const sinNumero = /(^|[\s,;])s\/n(?=[\s,;.]|$)/i.test(t) || /\bsin numero\b/.test(wlNorm(t));
+  return sinNumero || palabras.some((x) => /^#?\d{1,6}[a-z]?$/i.test(x) || /^\d{1,6}-[a-z0-9]{1,3}$/i.test(x));
 }
 // Lo que FALTA para cerrar el pedido. Siempre: modo, ciudad (en el recojo, la tienda de La Paz o de Santa Cruz), nombre completo (2 palabras o más) y teléfono de contacto. Un envío pide además la dirección exacta; el recojo no pide dirección.
 function wlFaltaEntrega(e) {
@@ -147,9 +153,10 @@ function wlDireccionTienda(base, ciudad) {
   return /^REEMPLAZAR_/.test(t) ? '' : t;
 }
 // La frase del costo del envío que va en el resumen del pedido: gratis, a cotizar (con la política de que el QR es solo por los productos) o, en el recojo, la dirección de la tienda.
-function wlFraseEnvio(envio, umbralBs, direccionTienda) {
+function wlFraseEnvio(envio, umbralBs, direccionTienda, sinQr) {
   if (envio === 'gratis') return 'El envío no tiene costo' + (umbralBs > 0 ? ' (compras desde ' + vcMonto(umbralBs * 100) + ')' : '') + '.';
-  if (envio === 'cotizar') return 'El QR es solo por los productos; el envío se cotiza y se paga aparte, directo a quien lo lleva.';
+  // Sin QR de cobro no se habla del QR: solo del envío.
+  if (envio === 'cotizar') return sinQr === true ? 'El envío se cotiza y se paga aparte, directo a quien lo lleva.' : 'El QR es solo por los productos; el envío se cotiza y se paga aparte, directo a quien lo lleva.';
   return direccionTienda !== '' ? 'Recoges tu pedido en: ' + direccionTienda + '.' : '';
 }
 // La política fija de envíos (se agrega cuando el cliente pregunta por el envío; el modelo no la dice).
@@ -158,9 +165,10 @@ function wlTextoPoliticaEnvio(umbralBs) {
     ? 'Sobre el envío: desde ' + vcMonto(umbralBs * 100) + ' de compra no tiene costo, en cualquier envío, también al resto del país. En compras menores, recepción cotiza el envío y se paga aparte, directo a quien lo lleva; el QR es solo por los productos.'
     : 'Sobre el envío: lo cotiza recepción y se paga aparte, directo a quien lo lleva; el QR es solo por los productos.';
 }
-// ¿El cliente pregunta por el envío? (palabras de envío, no de «enviar» el comprobante).
+// ¿El cliente pregunta por el envío del pedido? Se descartan antes los usos del verbo («te envío el comprobante», «envío mis datos», «envío la foto»).
 function wlPreguntaEnvio(n) {
-  return /\b(envio|envios|delivery|flete|courier|encomienda|a domicilio)\b/.test(String(n || ''));
+  const t = String(n || '').replace(/\b(te|le|les|se|lo|la|los|las|me)\s+(envio|envios)\b/g, ' ').replace(/\b(envio|envios)\s+(el|la|los|las|mis|mi|un|una|tu|tus|ahora|abajo|ya)\b/g, ' ');
+  return /\b(envio|envios|delivery|flete|courier|encomienda|a domicilio|envian|despachan|mandan)\b/.test(t);
 }
 // El aviso a recepción: modo · ciudad · a nombre de X · tel. N · dirección · envío: sin costo / a cotizar / recojo.
 function wlEntregaAviso(e, totalCentavos, umbralBs) {
@@ -227,7 +235,19 @@ function wlMontosValidos(texto, vendibles) {
   return true;
 }
 // El modelo NO promete ni niega el costo del envío (lo dice el código): «envío gratis», «sin costo», «incluido», «el envío cuesta…», «costo del envío», «delivery sin costo», «corre por nuestra cuenta». Se prueba contra el texto NORMALIZADO.
-const WL_PROHIBIDOS_ENVIO = /\b(envio|envios|delivery|despacho|flete)( \w+){0,4} (gratis|gratuito|gratuitos|sin costo|sin cargo|incluido|incluidos|incluye|cuesta|cuestan|vale|valen|cobramos|cobra|cobran|tiene costo|tiene un costo)\b|\b(gratis|gratuito|gratuitos|sin costo|sin cargo)( \w+){0,4} (envio|envios|delivery|despacho|flete)\b|\b(costo|precio|tarifa|valor|cargo)( \w+){0,2} (envio|envios|delivery|despacho|flete)\b|\bcorre(?:n)? por nuestra cuenta\b|\bpor cuenta nuestra\b|\b(cubrimos|cubre|pagamos|asumimos|regalamos) (el|los|su) (envio|envios|flete|delivery)\b/;
+const WL_ENVI = String.raw`(?:envi\w*|mand\w*|despach\w*|entreg\w*|llev\w*|delivery|flete|courier)`;
+const WL_NOMBRE_ENVIO = String.raw`(?:envio|envios|delivery|despacho|despachos|flete|courier)`;
+const WL_ENVIO_GRATIS = String.raw`(?:gratis|gratuit\w*|sin costo|sin cargo|ningun costo|ningun cargo|de regalo|cortesia|por nuestra cuenta|por cuenta nuestra)`;
+const WL_PROHIBIDOS_ENVIO = new RegExp([
+  // cualquier forma de enviar / mandar / despachar / entregar / llevar cerca (6 palabras) de «gratis», «sin costo», «ningún costo», «de regalo», «cortesía», «por nuestra cuenta», en cualquier orden
+  String.raw`\b` + WL_ENVI + String.raw`(?: \w+){0,6} ` + WL_ENVIO_GRATIS + String.raw`\b`,
+  String.raw`\b` + WL_ENVIO_GRATIS + String.raw`(?: \w+){0,6} ` + WL_ENVI + String.raw`\b`,
+  // el sustantivo «envío» seguido de costo, cobro o pago: «el envío incluye…», «cuesta», «no tiene costo», «se cobra», «lo pagas tú»
+  String.raw`\b` + WL_NOMBRE_ENVIO + String.raw`(?: \w+){0,5} (?:incluid\w*|incluye\w*|cuesta\w*|vale|valen|tiene (?:un )?costo|cobr\w*|pag\w*|cubr\w*|asum\w*|regal\w*|costo|precio|tarifa|valor|cargo)\b`,
+  // «costo / precio / tarifa del envío» y «no cobramos el envío», «pagas el envío», «lo pagas tú al courier»
+  String.raw`\b(?:costo|precio|tarifa|valor|cargo)(?: \w+){0,2} ` + WL_NOMBRE_ENVIO + String.raw`\b`,
+  String.raw`\b(?:cobr\w*|pag\w*|cubr\w*|asum\w*|regal\w*)(?: \w+){0,2} (?:el|la|los|las|tu|su|del|al|de) ` + WL_NOMBRE_ENVIO + String.raw`\b`,
+].join('|'));
 // A lo más 2 emojis por mensaje: los demás se quitan.
 function wlLimitarEmojis(texto) {
   let n = 0;
@@ -400,7 +420,7 @@ function wlResolverModelo(c) {
     const umbral = wlUmbralBs(c.base);
     const envio = wlEnvioDe(entrega, total, umbral);
     const avisoEnvio = envio === 'cotizar' && wlEsEnvio(entrega.modo) && !cambioConQr
-      ? { tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: entrega, cotejo: 'QR enviado, sin comprobante aún; COTIZAR ENVÍO por fuera', repetido: false } : null;
+      ? { tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: entrega, cotejo: 'QR emitido o por emitir, sin comprobante aún; COTIZAR ENVÍO por fuera', repetido: false } : null;
     return Object.assign(base, {
       tipo: 'qr', envio: envio, umbralBs: umbral, aviso: avisoEnvio, total: total, monto: monto, pedidoId: wlIdPedido(c.ahora, f.pedidos + 1), mediaId: c.cobro.mediaId, resumen: vcResumen(lineas), cambioDePedido: cambioConQr,
       cancelarCobro: cambioConQr, cierre: false,

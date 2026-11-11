@@ -50,6 +50,7 @@ describe('el envío es gratis desde 500 Bs (incluido) y bajo el umbral va a rece
     expect(t.avisos).toHaveLength(1);
     const aviso = JSON.stringify(t.avisos[0]?.payload);
     expect(aviso).toMatch(/COTIZAR ENVÍO/);
+    expect(aviso).toMatch(/QR emitido o por emitir/);
     expect(aviso).toMatch(/envío: a cotizar/);
     expect(aviso).toMatch(/tel\. 71234567/);
     expect(aviso).toMatch(/Av\. Arce 2345/);
@@ -126,6 +127,32 @@ describe('el envío es gratis desde 500 Bs (incluido) y bajo el umbral va a rece
   });
 });
 
+describe('bajo el umbral el resumen cabe en el botón (1.024) sin perder la política ni el pie', () => {
+  it('un resumen largo (6 líneas con detalle de 120 caracteres) recorta la LISTA, no la cola', () => {
+    const piezas = [1, 2, 3, 4, 5, 6].map((n) => ({ id: `larga-${n}`, nombre: `Pieza larga ${n}`, descripcion: 'x', area: 'x', precio: 10, moneda: 'BOB', activo: true }));
+    const detalle = 'color azul con borde rojo y nombre bordado en hilo dorado '.repeat(3).slice(0, 120);
+    const m = crear({ panel: panelOk({ catalogo: [...CATALOGO, ...piezas].map((c) => ({ ...c })) }), modeloDice: modelo('Con gusto.', { lineas: piezas.map((p) => ({ id: p.id, cantidad: 1, detalle })), entrega: ENVIO }) });
+    hablar(m, ANA, mTexto('quiero seis piezas'));
+    const t = hablar(m, ANA, mTexto('quiero pagar'));
+    expect(hayQr(t)).toBe(true);
+    const cuerpo = String(((t.mensajes[0]?.payload['interactive'] as any).body.text)); // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect(cuerpo.length).toBeLessThanOrEqual(1024);
+    expect(cuerpo).toMatch(/… y \d+ más/);
+    expect(cuerpo).toMatch(/Total: Bs 60/);
+    expect(cuerpo).toMatch(/El QR es solo por los productos; el envío se cotiza y se paga aparte/);
+    expect(cuerpo).toMatch(/Ya avisé a recepción; también puedes escribirle directo con el botón/);
+    expect(cuerpo).toMatch(/Abajo va el QR para pagar\./);
+  });
+  it('sin QR de cobro real el texto no habla del QR junto a «el pago por QR no está disponible»', () => {
+    const p = panelBorde(); const { cobroReal: _c, cobro: _o, ...resto } = p.body as Record<string, unknown>;
+    const { t } = pedir([{ id: 'pieza-100', cantidad: 1 }], ENVIO, { panel: { statusCode: 200, body: resto as never } });
+    const cuerpo = t.mensajes[0]?.cuerpo ?? '';
+    expect(cuerpo).toMatch(/el pago por QR no está disponible/);
+    expect(cuerpo).toMatch(/El envío se cotiza y se paga aparte/);
+    expect(cuerpo).not.toMatch(/El QR es solo por los productos/);
+  });
+});
+
 describe('la entrega pide nombre completo, teléfono y dirección exacta (o la tienda en el recojo)', () => {
   const sinQr = (entrega: Record<string, unknown>, falta: RegExp): void => {
     const prompts: string[] = [];
@@ -142,6 +169,29 @@ describe('la entrega pide nombre completo, teléfono y dirección exacta (o la t
   it('NEGADO: sin dirección, no sale QR', () => sinQr({ ...ENVIO, direccion: '' }, /dirección exacta/));
   it('NEGADO: «zona sur» no es una dirección exacta', () => sinQr({ ...ENVIO, direccion: 'zona sur' }, /dirección exacta/));
   it('NEGADO: una dirección sin número ni «s/n» no es exacta', () => sinQr({ ...ENVIO, direccion: 'Avenida Arce frente a la plaza' }, /dirección exacta/));
+  it('NEGADO: «Zona Sur 4to anillo» y «Santa Cruz 3er anillo» no son direcciones exactas', () => {
+    sinQr({ ...ENVIO, direccion: 'Zona Sur 4to anillo' }, /dirección exacta/);
+    sinQr({ ...ENVIO, direccion: 'Santa Cruz 3er anillo' }, /dirección exacta/);
+  });
+  it('«Arce 2631» y «sin número» sí valen como direcciones exactas', () => {
+    for (const direccion of ['Arce 2631', 'Calle Los Pinos sin número, Achumani']) expect(hayQr(pedir([{ id: 'pieza-501', cantidad: 1 }], { ...ENVIO, direccion }).t), direccion).toBe(true);
+  });
+  it('la dirección conserva «2do piso» y solo enmascara secuencias de 7 o más dígitos', () => {
+    const { m } = pedir([{ id: 'pieza-501', cantidad: 1 }], { ...ENVIO, direccion: 'Av. Arce 2345, 2do piso, CI 4455667' });
+    expect(fichas(m)[ANA].entrega.direccion).toBe('Av. Arce 2345, 2do piso, CI [nº]');
+  });
+  it('al pasar de envío a recojo se limpia la dirección vieja (ficha y pedido del servidor)', () => {
+    let entrega: Record<string, unknown> = ENVIO;
+    const m = crear({ panel: panelBorde(), modeloDice: () => modelo('Con gusto.', { lineas: [{ id: 'pieza-501', cantidad: 1 }], entrega }) });
+    hablar(m, ANA, mTexto('quiero una pieza'));
+    expect(fichas(m)[ANA].entrega.direccion).toMatch(/Arce/);
+    entrega = { modo: 'Recojo en tienda', ciudad: 'La Paz' };
+    const t = hablar(m, ANA, mTexto('mejor lo recojo, quiero pagar'));
+    expect(hayQr(t)).toBe(true);
+    expect(fichas(m)[ANA].entrega.direccion).toBe('');
+    const qr = t.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado');
+    expect(JSON.stringify(qr)).not.toMatch(/Arce/);
+  });
   it('NEGADO: un nombre de una sola palabra no basta', () => sinQr({ ...ENVIO, nombre: 'Ana' }, /nombre completo/));
   it('NEGADO: el recojo sin tienda (o en otra ciudad) no emite QR', () => {
     sinQr({ ...ENTREGA, ciudad: '' }, /tienda \(La Paz o Santa Cruz\)/);
@@ -169,19 +219,36 @@ describe('la entrega pide nombre completo, teléfono y dirección exacta (o la t
 });
 
 describe('el modelo no dice el costo del envío: lo dice el código', () => {
-  for (const falso of ['El envío es gratis para ti.', 'El envío cuesta 20 Bs.', 'Tenemos delivery sin costo en La Paz.', 'El costo del envío corre por nuestra cuenta.', 'Envío incluido en tu pedido.']) {
+  const FALSOS = [
+    'El envío es gratis para ti.', 'El envío cuesta 20 Bs.', 'Tenemos delivery sin costo en La Paz.', 'El costo del envío corre por nuestra cuenta.', 'Envío incluido en tu pedido.',
+    'El envío es por nuestra cuenta.', 'Te lo enviamos gratis.', 'No cobramos el envío.', 'Te lo mandamos sin costo a tu casa.', 'Lo enviamos sin cargo.',
+    'Tu envío no tiene ningún costo.', 'El envío va de regalo.', 'El envío es cortesía de la casa.', 'El envío lo pagas tú al courier.', 'Lo despachamos gratis a Tarija.',
+  ];
+  for (const falso of FALSOS) {
     it(`NEGADO con 300 Bs: «${falso}» no sale; sale el texto fijo`, () => {
       const m = crear({ panel: panelBorde(), modeloDice: modelo(falso, { lineas: [{ id: 'pieza-100', cantidad: 3 }], entrega: ENVIO }) });
       const t = hablar(m, ANA, mTexto('quiero tres piezas'));
-      const cuerpo = textos(t).join(' ');
-      expect(cuerpo).not.toMatch(/gratis|cuesta|sin costo|incluido|por nuestra cuenta/i);
-      expect(cuerpo).toMatch(/Cuéntame un poco más de lo que buscas/);
+      expect(textos(t).join(' ')).toMatch(/Cuéntame un poco más de lo que buscas/);
+      expect(textos(t).join(' ')).not.toContain(falso);
+    });
+  }
+  for (const bien of ['Te envío un abrazo.', 'Te mando el detalle de la pieza.', 'La Pieza 100 cuesta Bs 100 y es de alpaca.', 'Envíame tu nombre completo, por favor.']) {
+    it(`«${bien}» sigue pasando`, () => {
+      const m = crear({ panel: panelBorde(), modeloDice: modelo(bien) });
+      const t = hablar(m, ANA, mTexto('hola'));
+      expect(textos(t).join(' ')).toContain(bien);
     });
   }
   it('si el cliente pregunta por el envío, el código agrega la política fija con el umbral', () => {
     const m = crear({ panel: panelBorde(), modeloDice: modelo('Con gusto, te cuento.') });
     const t = hablar(m, ANA, mTexto('¿hacen envíos a Tarija? ¿cuánto cuesta el envío?'));
     expect(textos(t).join(' ')).toMatch(/Sobre el envío: desde Bs 500 de compra no tiene costo, en cualquier envío, también al resto del país\. En compras menores, recepción cotiza el envío y se paga aparte/);
+  });
+  it('NEGADO: «te envío el comprobante» o «envío mis datos» no activan la política de envío', () => {
+    for (const frase of ['te envío el comprobante ahora', 'envío mis datos: Ana Pérez', 'ya te envié la foto, me envías el QR']) {
+      const m = crear({ panel: panelBorde(), modeloDice: modelo('Con gusto.') });
+      expect(textos(hablar(m, ANA, mTexto(frase))).join(' ')).not.toMatch(/Sobre el envío/);
+    }
   });
   it('el prompt ya no deriva por «envíos» y prohíbe decir el costo', () => {
     const prompts: string[] = [];
