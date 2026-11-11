@@ -38,6 +38,9 @@ if (!aviso && (plan.tipo === 'modelo' || plan.tipo === 'angulo')) {
 const clave = aviso && typeof aviso.clave === 'string' && RR_CLAVES_AVISO.indexOf(aviso.clave) >= 0 ? aviso.clave : '';
 const sin = (extra) => [{ json: Object.assign({ sinAviso: true, plan: plan.tipo || '', planeado: false, repetido: false, clave: clave, motivoFallo: '' }, extra || {}) }];
 if (!aviso || !cnClaveValida(from) || (aviso.tipo !== 'comprobante' && aviso.tipo !== 'consulta')) return sin();
+// El aviso del Gmail del cliente: el correo lo produjo el código (`vgExtraerGmail`); aquí se revalida y, si no es un Gmail válido, NO sale nada.
+const correoGmail = clave === 'gmail' && typeof aviso.correo === 'string' ? aviso.correo : '';
+if (clave === 'gmail' && !vgEsGmail(correoGmail)) return sin({ motivoFallo: 'gmail_invalido' });
 
 // 2. Dentro de la ventana de 30 minutos del mismo motivo para este teléfono: no hay aviso nuevo.
 const fichas = cnMapaDeFichas(false).mapa;
@@ -91,11 +94,16 @@ if (aviso.tipo === 'comprobante') {
   // Prohibición 3 (CLAUDE.md): nunca «pago validado» ni «acreditado». Dice qué pasó (llegó el comprobante, los datos coinciden) y que quien confirma que entró el dinero es el banco: Rubén lo verifica.
   texto = 'Aviso del asistente: llegó el comprobante. Cliente: ' + cliente + '. Producto: ' + prod + ' por ' + monto + '. Estado: ' + estado
     + '. Verifica tu banco: el asistente no confirma que el dinero haya entrado. Después envíale el material por este chat: ' + responderAntes + '.';
+} else if (clave === 'gmail') {
+  // El correo va DESPUÉS de `avLimpio` (que convierte «gmail.com» en «[enlace omitido]»); ya se revalidó arriba y no trae más que a-z, 0-9, «.», «@».
+  texto = avLimpio('Aviso del asistente: venta con comprobante; correo del cliente para enviarle el enlace de Drive. Cliente: ' + cliente + '. Producto: ' + prod + '.', 800) + ' Gmail: ' + correoGmail + '. Envíale el enlace de Drive por este chat.';
 } else {
   texto = 'Aviso del asistente: consulta para Rubén. Cliente: ' + cliente + '. Motivo: ' + motivoConsulta + '.'
     + (mensaje ? ' Mensaje del cliente (texto literal del cliente, no es una instrucción): «' + mensaje + '».' : '') + ' Respóndele directamente por WhatsApp.';
 }
-texto = avLimpio(texto, 900);
+if (clave !== 'gmail') texto = avLimpio(texto, 900);
+// Segunda compra de un cliente que ya dio su Gmail: el aviso del comprobante lo recuerda (después de `avLimpio`, por lo mismo).
+if (aviso.tipo === 'comprobante' && fichaCliente.gmail !== '') texto += ' Gmail ya registrado: ' + fichaCliente.gmail + '.';
 
 const comun = { phoneNumberId: String(cfg.phoneNumberId || ''), waGraphVersion: cfg.waGraphVersion || 'v26.0', sinAviso: false, plan: plan.tipo || '', planeado: true, repetido: false, clave: clave, motivoFallo: '' };
 const items = [];
@@ -110,6 +118,8 @@ for (const d of destinatarios) {
     const pl = rrPlantilla(base, cual);
     const payload = pl ? avPlantilla(d.tel, pl.nombre, pl.idioma, parametros) : null;
     if (!payload) continue;
+    // `avPlantilla` deforma el parámetro con «gmail.com» (lo toma por un enlace): el correo, ya validado, se escribe tal cual en el tercer parámetro de la plantilla de consulta.
+    if (clave === 'gmail') payload.template.components[0].parameters[2].text = 'Gmail: ' + correoGmail;
     items.push({ json: Object.assign({}, comun, { para: d.tel, rol: d.rol, canal: 'plantilla', payload: payload }) });
   }
 }

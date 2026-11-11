@@ -36,6 +36,8 @@ if (cnNodo('Enviar a WhatsApp')) {
     const rrF3 = cnFichaDe(rrFichas3.mapa, String((items[0] || {}).from || ''));
     if (rrF3) {
       ctRestaurarEnviado(rrF3, { h: rrHp.h, f: rrHp.f });
+      // El pedido del Gmail solo cuenta si Meta entregó el mensaje que lo pide.
+      rrF3.gmailPedidoMs = Number(rrHp.gp) || 0;
       // Las preguntas pendientes vuelven a las de antes del turno; la conversación (el contador y las dos marcas de las opciones) solo cuenta lo que Meta aceptó.
       ctRestaurarPreguntas(rrF3, rrHp.preg);
       rrF3.charlaN = Number(rrHp.c) || 0; rrF3.pidioOpciones = rrHp.po === true; rrF3.opcionesVistas = rrHp.ov === true; rrF3.upgrade = Number(rrHp.u) || 0; rrF3.qrInvitadoMs = Number(rrHp.qi) || 0;
