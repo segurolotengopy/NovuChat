@@ -154,6 +154,17 @@ describe('la captura del Gmail', () => {
     expect(JSON.stringify(fichaDe(w2, ANA)['hist'] ?? [])).not.toContain('juanito@hotmail.com');
   });
 
+  it('un correo con espacios alrededor de la arroba o dictado («arroba … punto com») tampoco llega al modelo', () => {
+    const w = nuevo();
+    hablar(w, ANA, mTexto('hola'));
+    for (const texto of ['quiero contarte algo, mi correo es juanito @ hotmail.com y estamos pasando un momento difícil', 'quiero contarte algo, mi correo es juanito arroba hotmail punto com y estamos pasando un momento difícil']) {
+      const t = hablar(w, ANA, mTexto(texto));
+      expect(llamadasAlModelo(t)).toBeGreaterThan(0);
+      const alModelo = JSON.stringify(t.registro.filter((x) => x.nodo === 'Conversar con el modelo'));
+      expect(alModelo).not.toMatch(/hotmail/);
+    }
+  });
+
   it('el Gmail capturado no se reporta a la consola (el reporte entrante dice «[correo]»); Antonio lo recibe en el aviso', () => {
     const w = conComprobante();
     hechos(w);
@@ -248,6 +259,8 @@ describe('la barrera del modelo tras abrir «correo» y «gmail» (D2)', () => {
       'Quedas con acceso por Gmail', 'Ya está en tu correo', 'Lo tienes en tu correo', 'Lo tendrás en tu Gmail', 'Lo vas a tener en tu correo', 'Te doy acceso por Gmail', 'Te habilito el acceso con tu Gmail',
       'Tendrás acceso desde tu Gmail', 'Mira tu correo', 'Busca en tu Gmail', 'Chequea tu Gmail', 'El enlace va a tu Gmail', 'Gracias, ya tengo tu correo', 'Anotado tu Gmail', 'Listo, registré tu correo',
       'Gracias, tu correo quedó guardado',
+      'Te agregué a la carpeta', 'Ya te agregué al Drive', 'Ya se envió la invitación', 'Ya salió la invitación', 'Vas a tener acceso a la carpeta', 'Ya cuentas con acceso al material', 'El enlace ya está en camino',
+      'Aquí está el enlace', 'Ahí tienes la carpeta', 'Ya está compartida la carpeta', 'Ya puedes entrar a la carpeta', 'Ya puedes descargar el material', 'Tu acceso está activo', 'Lo recibirás hoy mismo', 'Lo tendrás mañana', 'Mañana lo tienes',
       'Lo tendrás en tu correo.', 'Te va a aparecer en tu Gmail.', 'Quedará disponible en tu Gmail.', 'El material va directo a tu correo de Gmail.', 'Podrás descargarlo desde tu Gmail.', 'El enlace estará en tu Gmail.',
       'Ya puedes entrar al Drive con tu Gmail.', 'Tu acceso está activo en tu Gmail.', 'Mira tu Gmail.', 'Abre tu correo.', 'Busca en tu Gmail el mensaje de Antonio.', 'Tu correo ya está en la lista de Antonio.', 'Déjame tu correo.', 'Aquí tienes el enlace', 'Te dejo el enlace', 'Te invito a la carpeta de Drive', 'Te daremos acceso a la carpeta',
     ];
@@ -257,6 +270,13 @@ describe('la barrera del modelo tras abrir «correo» y «gmail» (D2)', () => {
       expect(enviado, dicho).not.toMatch(PROMESAS);
       expect(enviado, dicho).not.toMatch(PROHIBIDAS);
     }
+  });
+  it('frases normales de la charla NO se rechazan (regresión de calidad)', () => {
+    const normales = [
+      'Te comparto lo que incluye el libro: 14 capítulos en 4 partes.', 'Te comparto un dato: son 10 a 20 minutos al día.', 'Te envío un abrazo y ánimo con tu proceso.',
+      'Esto le llega a mucha gente que vive con ansiedad.', 'A muchos les llega sin avisar y se quedan sin saber qué hacer.', 'Con el libro tendrás acceso a una ruta de 30 días.', 'Si tienes acceso a internet, puedes leerlo desde el celular.',
+    ];
+    for (const dicho of normales) expect(dichoPorElModelo(dicho).replace(/\s+/g, ' '), dicho).toBe(dicho);
   });
   it('el modelo no PIDE el correo: solo el texto fijo del comprobante lo pide', () => {
     for (const dicho of ['¿Me pasas tu correo de Gmail?', 'Escríbeme tu correo, por favor.', 'Dime tu gmail.', 'Compárteme tu email.', 'Necesito tu correo para continuar.', 'Mándame tu correo.', '¿Podrías darme tu correo?', 'Déjame tu correo', '¿Me facilitas tu correo?', 'Facilítame tu email', 'Proporcióname tu correo', 'Tu correo, por favor', '¿Qué correo usas?', 'Apunta tu correo aquí', '¿Tienes Gmail?', 'Con tu Gmail basta']) {
