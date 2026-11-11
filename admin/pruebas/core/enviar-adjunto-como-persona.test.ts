@@ -99,15 +99,18 @@ const b64 = (b: Buffer) => b.toString('base64');
 // --- El almacén doble ------------------------------------------------------------------------------------------------
 const objetos = new Map<string, { bytes: Buffer; contentType: string }>();
 let subidas = 0;
+/** Se ejecuta DENTRO de `guardar`, o sea entre el ensayo y la transacción real (para probar sus barreras). */
+let dentroDeGuardar: (() => Promise<void>) | null = null;
 const almacenDoble = {
   async guardar(ruta: string, bytes: Buffer, contentType: string) {
     subidas++;
+    if (dentroDeGuardar) await dentroDeGuardar();
     if (objetos.has(ruta)) return 'existe' as const;
     objetos.set(ruta, { bytes, contentType }); return 'creado' as const;
   },
   async existe(ruta: string) { return objetos.has(ruta); },
   async subcarpetas() { return []; },
-  async borrarPrefijo() { return 0; },
+  async borrarPrefijo(prefijo: string) { let n = 0; for (const k of [...objetos.keys()]) if (k.startsWith(prefijo)) { objetos.delete(k); n++; } return n; },
   async metadatos(ruta: string) { const o = objetos.get(ruta); return o ? { tamano: o.bytes.length } : null; },
   async leer(ruta: string) { return objetos.get(ruta)?.bytes ?? null; },
 };
@@ -216,7 +219,8 @@ beforeEach(async () => {
   await conversacion(A, CONV1);
   await ruta();
   await cuenta();
-  objetos.clear(); subidas = 0;
+  objetos.clear(); subidas = 0; dentroDeGuardar = null;
+  for (const d of await db.collection('topesDeMedios').listDocuments()) await d.delete();
   timbres = []; registros = [];
   auth.vigente = true; usuarios.clear();
   process.env['SALIDA_PERSONA_RUTAS'] = JSON.stringify({ cliente09: { ruta: URL_TIMBRE, clave: 'clave-de-prueba-del-timbre' } });
@@ -645,6 +649,130 @@ describe('la clave repetida', () => {
     expect(await metadatos()).toHaveLength(0);
     expect(await topes()).toEqual({});
     expect(timbres).toHaveLength(0);
+  });
+});
+
+// ===========================================================================
+describe('un objeto que ya existe y los huérfanos (correcciones de la revisión)', () => {
+  /** Hace fallar la transacción real: la baja la bandera entre el ensayo y la escritura. */
+  const fallarLaReal = () => { dentroDeGuardar = async () => { await db.doc(`tenants/${A}`).update({ personaPuedeEnviarMedios: false }); }; };
+
+  it('clave K con bytes A cuya transacción real falla; K con bytes B se rechaza sin escribir; K con A sale bien', async () => {
+    const A_ = adjunto(pdf('%A\n'), { mime: 'application/pdf', nombre: 'a.pdf' });
+    const B_ = adjunto(pdf('%B\n'), { mime: 'application/pdf', nombre: 'a.pdf' });
+    // 1. falla la real; el objeto debe BORRARSE (sin huérfano)...
+    fallarLaReal();
+    expect((await rechazo(enviar(base({ adjunto: A_ })))).code).toBe('permission-denied');
+    expect(objetos.size).toBe(0);
+    // ...pero para fabricar el sobrante de un intento que no pudo borrar, se siembra el objeto de A a mano.
+    dentroDeGuardar = null;
+    await db.doc(`tenants/${A}`).update({ personaPuedeEnviarMedios: true });
+    const ruta = `tenants/${A}/mediosEnviados/${diaDeLaPaz(AHORA)}/${objetoDeEnviado(CONV1, CLAVE)}.pdf`;
+    objetos.set(ruta, { bytes: Buffer.from(A_.base64, 'base64'), contentType: 'application/octet-stream' });
+    // 2. K con bytes B: rechazo `claveUsada` ANTES de la transacción real
+    subidas = 0;
+    const e = await rechazo(enviar(base({ adjunto: B_ })));
+    expect(e).toMatchObject({ code: 'failed-precondition', message: 'Esa clave de envío ya se usó con otro mensaje.' });
+    expect(await mensajes()).toHaveLength(0);
+    expect(await metadatos()).toHaveLength(0);
+    expect(await topes()).toEqual({});
+    expect(timbres).toHaveLength(0);
+    expect(objetos.get(ruta)!.bytes.equals(Buffer.from(A_.base64, 'base64'))).toBe(true); // el sobrante no se tocó ni se borró
+    // 3. K otra vez con A: sale bien
+    expect(await enviar(base({ adjunto: A_ }))).toMatchObject({ estado: 'pendiente' });
+    expect(await mensajes()).toHaveLength(1);
+    expect(await metadatos()).toHaveLength(1);
+  });
+
+  it('si la transacción real rechaza tras crear el objeto, el objeto se borra (0 objetos)', async () => {
+    fallarLaReal();
+    expect((await rechazo(enviar(base()))).code).toBe('permission-denied');
+    expect(subidas).toBe(1);
+    expect(objetos.size).toBe(0);
+  });
+
+  it('un fallo del borrado no tapa el error original ni registra la ruta', async () => {
+    fallarLaReal();
+    const real = almacenDoble.borrarPrefijo;
+    almacenDoble.borrarPrefijo = async () => { throw new Error('zanahoria con ruta tenants/'); };
+    try {
+      expect((await rechazo(enviar(base()))).code).toBe('permission-denied');
+    } finally { almacenDoble.borrarPrefijo = real; }
+    expect(registros.join('\n')).not.toMatch(/zanahoria|tenants\//);
+  });
+
+  it('el objeto que NO creó esta llamada (repetido) no se borra aunque algo falle después', async () => {
+    await enviar(base());
+    expect(objetos.size).toBe(1);
+    await db.doc(`tenants/${A}`).update({ personaPuedeEnviarMedios: false });
+    expect((await rechazo(enviar(base()))).code).toBe('permission-denied');
+    expect(objetos.size).toBe(1);
+  });
+
+  it('las barreras de la transacción REAL, cambiadas entre el ensayo y la escritura: rechazo, sin mensaje, metadato ni contador, sin objeto', async () => {
+    const casos: Array<[string, () => Promise<void>, Record<string, unknown>]> = [
+      ['bandera de medios apagada', async () => { await db.doc(`tenants/${A}`).update({ personaPuedeEnviarMedios: false }); }, { code: 'permission-denied' }],
+      ['tope de seguridad en 50', async () => { await db.doc(`topesDeEnvio/a_${A}`).set({ dia: '2026-10-16', n: TOPE_DIARIO_DE_ADJUNTOS, bytes: 0 }); },
+        { code: 'resource-exhausted', details: { tope: 'adjuntosDia' } }],
+      ['tope del plan consumido', async () => { await db.doc(`topesDeEnvio/t_${A}`).set({ min: 'x', nMin: 0, dia: '2026-10-16', nDia: 300 }); },
+        { code: 'resource-exhausted', details: { tope: 'dia' } }],
+    ];
+    for (const [nombre, cambio, esperado] of casos) {
+      dentroDeGuardar = cambio;
+      const e = await rechazo(enviar(base()));
+      expect(e, nombre).toMatchObject(esperado);
+      expect(await mensajes(), nombre).toHaveLength(0);
+      expect(await metadatos(), nombre).toHaveLength(0);
+      expect(objetos.size, nombre).toBe(0);
+      const t = await topes();
+      expect(t[`a_${A}`]?.['n'] ?? 0, nombre).toBe(nombre.startsWith('tope de seg') ? TOPE_DIARIO_DE_ADJUNTOS : 0);
+      expect(t['u_u-ana'], nombre).toBeUndefined();
+      expect(timbres, nombre).toHaveLength(0);
+      expect(await auditorias(), nombre).toHaveLength(0);
+      // restaurar
+      dentroDeGuardar = null;
+      await db.doc(`tenants/${A}`).update({ personaPuedeEnviarMedios: true });
+      for (const d of await db.collection('topesDeEnvio').listDocuments()) await d.delete();
+      subidas = 0;
+    }
+  });
+});
+
+// ===========================================================================
+describe('verMedio de una nota de voz enviada (Ogg/Opus mono) y de una que entró como WebM', () => {
+  const ebml = (id: number[], dato: Buffer, desconocido = false) => {
+    const n = dato.length;
+    const sz = desconocido ? Buffer.from([0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]) : n < 127 ? Buffer.from([0x80 | n]) : Buffer.from([0x40 | (n >> 8), n & 0xff]);
+    return Buffer.concat([Buffer.from(id), sz, dato]);
+  };
+  const u = (...x: number[]) => Buffer.from(x);
+  const WEBM = (() => {
+    const pista = ebml([0xae], Buffer.concat([ebml([0xd7], u(1)), ebml([0x86], Buffer.from('A_OPUS')), ebml([0x63, 0xa2], opusHead()), ebml([0xe1], ebml([0x9f], u(1)))]));
+    const bloques = Array.from({ length: 60 }, (_, i) => ebml([0xa3], Buffer.concat([u(0x81, 0, i), u(0x80), Buffer.from([0xfc, i, i, i])])));
+    return Buffer.concat([
+      ebml([0x1a, 0x45, 0xdf, 0xa3], ebml([0x42, 0x82], Buffer.from('webm'))),
+      ebml([0x18, 0x53, 0x80, 0x67], Buffer.concat([ebml([0x16, 0x54, 0xae, 0x6b], pista), ebml([0x1f, 0x43, 0xb6, 0x75], Buffer.concat([ebml([0xe7], u(0)), ...bloques]), true)]), true),
+    ]);
+  })();
+  const verMedio = INDICE.verMedio as unknown as { run: (r: unknown) => Promise<Record<string, unknown>> };
+  const administrador = actor('u-admin-a', { t: { [A]: 'admin' } });
+  const ver = (mensajeId: string) => {
+    usuarios.set(administrador.uid, administrador.token['nc'] as Record<string, unknown>);
+    return verMedio.run({ data: { tenantId: A, conversacionId: CONV1, mensajeId, accion: 'ver' }, auth: { uid: administrador.uid, token: { ...administrador.token, auth_time: Math.floor(AHORA / 1000) } }, rawRequest: {} });
+  };
+
+  it.each([
+    ['Ogg/Opus mono', () => adjunto(OGG, { mime: 'audio/ogg', nombre: 'nota.ogg' })],
+    ['WebM/Opus reempaquetado a Ogg', () => adjunto(WEBM, { mime: 'audio/webm', nombre: 'nota.webm' })],
+  ])('%s: lo enviado se ve en la consola con el mime de su firma', async (_n, armar) => {
+    await enviar(base({ adjunto: armar() }));
+    const guardado = [...objetos.values()][0]!.bytes;
+    expect(guardado.subarray(0, 4).toString('latin1')).toBe('OggS');
+    expect((await mensajes())[0]!.get('medio.voz')).toBe(true);
+    const r = await ver(CLAVE);
+    expect(r).toMatchObject({ tipo: 'audio', categoria: 'audio', mime: 'audio/ogg', extension: 'ogg', tamano: guardado.length });
+    expect(Buffer.from(r['base64'] as string, 'base64').equals(guardado)).toBe(true);
+    expect((await metadatos())[0]!.get('mime')).toBe('audio/ogg');
   });
 });
 

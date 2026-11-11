@@ -109,6 +109,7 @@ export async function reclamarSalida(
   let inciertos = 0;
   let caducados = 0;
   let adjuntosEnLote = 0;
+  const cortadas = new Set<string>();
   // El adjunto reclamado en la transacción en curso (sus datos salen del metadato, que se lee ahí mismo).
   let adjuntoDeLaVuelta: MensajeDeAdjuntoReclamado['adjunto'] | null = null;
   for (const candidato of candidatos.docs) {
@@ -118,7 +119,9 @@ export async function reclamarSalida(
     const [, , conversacionId, clave] = m as unknown as [string, string, string, string];
 
     adjuntoDeLaVuelta = null;
-    const r = await db.runTransaction(async (tx): Promise<'reclamado' | 'incierto' | 'caducado' | 'nada'> => {
+    // Orden dentro de una conversación: si un adjunto anterior de ella no salió en este lote, nada posterior sale tampoco.
+    if (cortadas.has(conversacionId)) continue;
+    const r = await db.runTransaction(async (tx): Promise<'reclamado' | 'incierto' | 'caducado' | 'nada' | 'retenido'> => {
       adjuntoDeLaVuelta = null;
       // Lecturas primero (Firestore exige las lecturas antes de las escrituras): el mensaje y su conversación.
       const [s, conv] = await Promise.all([tx.get(candidato.ref), tx.get(candidato.ref.parent.parent!)]);
@@ -150,7 +153,8 @@ export async function reclamarSalida(
         if (esAdjunto) {
           // Sin la cabecera del flujo nuevo, o con un adjunto ya en este lote, NO se entrega: queda `pendiente` y caduca
           // como cualquier pendiente (rechazado, `caducado`, reintentable) si nadie lo reclama a tiempo.
-          if (!conAdjuntos || adjuntosEnLote >= MAXIMO_DE_ADJUNTOS_POR_RECLAMO) return 'nada';
+          // Un número que sale por el relé tampoco lo lleva (D-A13): la ruta pudo cambiar tras crear el mensaje.
+          if (!conAdjuntos || adjuntosEnLote >= MAXIMO_DE_ADJUNTOS_POR_RECLAMO || canal === 'rele') return 'retenido';
           // El metadato tiene que ser de ESTE mensaje, estar guardado y vigente: si no, no sale (caduca).
           const vence = meta?.exists ? milisegundosDeMomento(meta.get('vence')) : null;
           const sha256: unknown = meta?.get('sha256');
@@ -183,6 +187,7 @@ export async function reclamarSalida(
     });
     if (r === 'incierto') { inciertos += 1; continue; }
     if (r === 'caducado') { caducados += 1; continue; }
+    if (r === 'retenido') { cortadas.add(conversacionId); continue; }
     if (r !== 'reclamado') continue;
     const datos = candidato.data();
     const base = { mensajeId: clave, conversacionId, claveRele: claveReleDe(tenantId, conversacionId, clave), to: conversacionId.slice(3), canal };

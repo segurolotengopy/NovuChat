@@ -526,7 +526,7 @@ const pedido = (n = 1, conv = CONV1) => ({ mensajeId: CLAVE(n), conversacionId: 
 describe('reclamar con adjuntos: solo con la cabecera del flujo nuevo, uno por lote, texto vacío', () => {
   it('SIN la cabecera `X-NovuChat-Adjuntos: 1` el adjunto NO se entrega y queda `pendiente`; el texto sí sale', async () => {
     await sembrarAdjunto(CLAVE(1));
-    await sembrar(CLAVE(2), { texto: 'un texto' });
+    await sembrar(CLAVE(2), { texto: 'un texto' }, A, CONV2); // de OTRA conversación: no queda detrás del adjunto
     const r = await reclamar();
     expect(entregados(r).map((m) => m.mensajeId)).toEqual([CLAVE(2)]);
     expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
@@ -552,7 +552,7 @@ describe('reclamar con adjuntos: solo con la cabecera del flujo nuevo, uno por l
   it('máximo UN adjunto por respuesta (D-A3), mientras los textos siguen hasta 10; el segundo sale en el reclamo siguiente', async () => {
     await sembrarAdjunto(CLAVE(1), { ts: Timestamp.fromMillis(Date.now() - 40_000) });
     await sembrarAdjunto(CLAVE(2), { ts: Timestamp.fromMillis(Date.now() - 30_000) });
-    for (let i = 3; i <= 12; i++) await sembrar(CLAVE(i), { ts: Timestamp.fromMillis(Date.now() - 20_000 + i) });
+    for (let i = 3; i <= 12; i++) await sembrar(CLAVE(i), { ts: Timestamp.fromMillis(Date.now() - 20_000 + i) }, A, CONV2);
     const primero = entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS));
     expect(primero.filter((m) => m.tipo !== 'text').map((m) => m.mensajeId)).toEqual([CLAVE(1)]);
     expect(primero).toHaveLength(10); // 1 adjunto + 9 textos: hasta 10 por reclamo
@@ -682,5 +682,71 @@ describe('adjuntos: confirmar y contar igual que un texto', () => {
       SALIDA.huellaDeEnvio(CONV1, 'u-ana', 'hola'),
     ]) expect(otra).not.toBe(h);
     expect(h).not.toContain('hola');
+  });
+});
+
+// ===========================================================================
+// Correcciones de la revisión de B2
+// ===========================================================================
+describe('reclamar: el relé no lleva adjuntos, y el orden dentro de una conversación se respeta', () => {
+  it('un adjunto cuya ruta pasó a `rele` NO se entrega (queda pendiente y caduca); los textos de esa línea siguen saliendo (de otra conversación)', async () => {
+    await sembrarAdjunto(CLAVE(1), { ts: Timestamp.fromMillis(Date.now() - 30_000) });
+    await sembrar(CLAVE(2), { ts: Timestamp.fromMillis(Date.now() - 20_000) }, A, CONV2);
+    await db.doc(`rutasWhatsApp/${NUM_A}`).update({ canalSalida: 'rele' });
+    const r = entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS));
+    expect(r.map((m) => m.mensajeId)).toEqual([CLAVE(2)]);
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
+    await refMsg(CLAVE(1)).update({ ts: Timestamp.fromMillis(Date.now() - 10 * MIN) });
+    await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS);
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: true });
+  });
+
+  it('A1, A2, T3 en una conversación: el lote 1 entrega A1 (y no A2 ni T3); el 2, A2 y T3 EN ORDEN; los textos de OTRA conversación salen en el lote 1', async () => {
+    await sembrarAdjunto(CLAVE(1), { ts: Timestamp.fromMillis(Date.now() - 50_000) });
+    await sembrarAdjunto(CLAVE(2), { ts: Timestamp.fromMillis(Date.now() - 40_000) });
+    await sembrar(CLAVE(3), { ts: Timestamp.fromMillis(Date.now() - 30_000) });
+    await sembrar(CLAVE(4), { ts: Timestamp.fromMillis(Date.now() - 20_000) }, A, CONV2);
+    const lote1 = entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS)).map((m) => m.mensajeId);
+    expect(lote1).toEqual([CLAVE(1), CLAVE(4)]);
+    expect((await msg(CLAVE(3)))['estadoEnvio']).toBe('pendiente');
+    const lote2 = entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS)).map((m) => m.mensajeId);
+    expect(lote2).toEqual([CLAVE(2), CLAVE(3)]); // A2 y T3, en ese orden
+  });
+
+  it('SIN la cabecera: los textos detrás de un adjunto de ESA conversación esperan; sin adjuntos pendientes el texto sale como siempre', async () => {
+    await sembrarAdjunto(CLAVE(1), { ts: Timestamp.fromMillis(Date.now() - 50_000) });
+    await sembrar(CLAVE(2), { ts: Timestamp.fromMillis(Date.now() - 40_000) });
+    await sembrar(CLAVE(3), { ts: Timestamp.fromMillis(Date.now() - 30_000) }, A, CONV2);
+    expect(entregados(await reclamar()).map((m) => m.mensajeId)).toEqual([CLAVE(3)]);
+    expect((await msg(CLAVE(2)))['estadoEnvio']).toBe('pendiente');
+    // sin ningún adjunto pendiente nada se retiene
+    await refMsg(CLAVE(1)).delete();
+    expect(entregados(await reclamar()).map((m) => m.mensajeId)).toEqual([CLAVE(2)]);
+  });
+});
+
+describe('leerAdjuntoPersona con firma HMAC', () => {
+  const firmado = (cuerpo: unknown, secreto: string, marcaMs: number, numero = NUM_A) => {
+    const marca = String(marcaMs);
+    const firma = createHmac('sha256', secreto).update(`${marca}.`).update(Buffer.from(JSON.stringify(cuerpo))).digest('hex');
+    return llamar((INDICE as Record<string, unknown>)['leerAdjuntoPersona'], numero, null, cuerpo, 'POST',
+      { 'x-novuchat-timestamp': marca, 'x-novuchat-signature': `sha256=${firma}` });
+  };
+  it('firma válida: 200 con los bytes', async () => {
+    await sembrarAdjunto(CLAVE(1), { estadoEnvio: 'enviando' });
+    const r = await firmado(pedido(), TOKEN_A, Date.now());
+    expect(r.codigo).toBe(200);
+    expect(Buffer.isBuffer(r.cuerpo) && r.cuerpo.equals(BYTES)).toBe(true);
+  });
+  it('firma de OTRO número, vencida, de cuerpo alterado o sin marca: 401', async () => {
+    await sembrarAdjunto(CLAVE(1), { estadoEnvio: 'enviando' });
+    expect((await firmado(pedido(), TOKEN_B, Date.now())).codigo).toBe(401);
+    expect((await firmado(pedido(), TOKEN_A, Date.now() - 10 * MIN)).codigo).toBe(401);
+    expect((await firmado(pedido(), TOKEN_A, Date.now() + 10 * MIN)).codigo).toBe(401);
+    const marca = String(Date.now());
+    const firmaOtroCuerpo = createHmac('sha256', TOKEN_A).update(`${marca}.`).update(Buffer.from(JSON.stringify(pedido(2)))).digest('hex');
+    const r = await llamar((INDICE as Record<string, unknown>)['leerAdjuntoPersona'], NUM_A, null, pedido(), 'POST',
+      { 'x-novuchat-timestamp': marca, 'x-novuchat-signature': `sha256=${firmaOtroCuerpo}` });
+    expect(r.codigo).toBe(401);
   });
 });

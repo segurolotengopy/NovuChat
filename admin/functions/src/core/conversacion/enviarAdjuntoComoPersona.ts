@@ -33,12 +33,16 @@
  *  - NO TOCA nada de cobros: ni las solicitudes, ni los cierres, ni los comprobantes (no hay lectura del archivo por OCR).
  *
  * Costo por envío efectivo: 0 mensajes del asistente por conversación; el mensaje es de la persona (cuenta en los
- * topes y en la base comercial como un texto). 1 lectura de Auth, 3 lecturas de comercio/cuenta/rutas, 2 transacciones
- * (la de ensayo solo lee), 1 subida a Storage y 4 escrituras (mensaje, metadato, conversación, 3 contadores, auditoría).
+ * topes y en la base comercial como un texto). Cifras reales por adjunto nuevo: 1 lectura de Auth; unas 5 lecturas previas
+ * (conversación, rutas del comercio, cuenta, ficha para la habilitación y ficha para la bandera de medios); 2 transacciones
+ * de 6 lecturas cada una (la de ensayo no escribe) = 12; en total unas 17 lecturas de Firestore. Escrituras: 7 en la
+ * transacción real (mensaje, metadato, conversación, los 3 contadores y la auditoría) y 1 subida a Storage. Si el objeto ya
+ * existe, +1 lectura de Storage para compararlo. Un rechazo en el ensayo no escribe nada ni sube nada.
  */
 import { createHash } from 'node:crypto';
 import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import { DIAS_DE_RETENCION_ENVIADOS, DIA_MS, almacenDeMedios, diaDeLaPaz, objetoDeEnviado, rutaDeEnviado, type Almacen } from '../medios/almacen.js';
+import { ID_COMERCIO } from './acceso.js';
 import { TOPE_DE_ADJUNTO, validarAdjunto } from '../medios/salientes.js';
 import { MB, contentTypeDeObjeto } from '../medios/tipos.js';
 import {
@@ -153,11 +157,25 @@ export async function atenderAdjunto(
       throw e;
     }
 
-    // 7. Storage, solo si el mensaje es nuevo.
+    // 7. Storage, solo si el mensaje es nuevo (si `repetido`, el objeto ya se subió en el primer envío: no se vuelve a subir).
+    const almacen = entorno.almacen ?? almacenDeMedios();
+    let creoElObjeto = false;
     if (!ensayo.repetido) {
       try {
-        await (entorno.almacen ?? almacenDeMedios()).guardar(adjunto.ruta, v.bytes, contentTypeDeObjeto({ tipo: v.tipo, mime: v.mime }));
+        const r = await almacen.guardar(adjunto.ruta, v.bytes, contentTypeDeObjeto({ tipo: v.tipo, mime: v.mime }));
+        creoElObjeto = r === 'creado';
+        if (r === 'existe') {
+          // Sobrante de un intento anterior de esta misma clave (su transacción falló tras subir). Solo vale si es
+          // EXACTAMENTE lo mismo: si no, la clave ya se usó con otro contenido y no se escribe nada.
+          const previo = await almacen.leer(adjunto.ruta);
+          if (previo === null) throw errorDeTurno('noDisponible');
+          if (previo.length !== adjunto.tamano || createHash('sha256').update(previo).digest('hex') !== sha256) {
+            registrarRechazo('failed-precondition', 'clave_usada_otro_contenido');
+            throw errorDeEnvio('claveUsada');
+          }
+        }
       } catch (e) {
+        if (e instanceof HttpsError) throw e;
         registrar(funcion, 'unavailable', { tenantId, uid, rol, motivo: `almacen_${codigoDe(e)}` });
         throw errorDeTurno('noDisponible');
       }
@@ -169,6 +187,9 @@ export async function atenderAdjunto(
       creado = await crearMensajeDePersona(e0.ctx, datosDeEnvio, e0.encontrado.canal, e0.limites, seguridad);
     } catch (e) {
       registrarRechazoDeEnvio(funcion, e, e0, false);
+      // Si ESTA llamada creó el objeto y el mensaje no quedó, se borra (mejor esfuerzo): un fallo del borrado no tapa el error
+      // original ni se registra con la ruta. Lo que no se alcance a borrar lo limpia la purga a los 30 días.
+      if (creoElObjeto) { try { await almacen.borrarPrefijo(adjunto.ruta); } catch { /* mejor esfuerzo */ } }
       throw e;
     }
 
@@ -182,7 +203,7 @@ export async function atenderAdjunto(
     };
   } catch (e) {
     if (e instanceof HttpsError) throw e;
-    registrar(funcion, 'unavailable', { tenantId: datos['tenantId'], uid: quien.uid, rol: quien.rol, motivo: `error_${codigoDe(e)}` });
+    registrar(funcion, 'unavailable', { tenantId: typeof datos['tenantId'] === 'string' && ID_COMERCIO.test(datos['tenantId']) ? datos['tenantId'] : 'invalido', uid: quien.uid, rol: quien.rol, motivo: `error_${codigoDe(e)}` });
     throw errorDeTurno('noDisponible');
   }
 }
