@@ -212,6 +212,36 @@ if MARCADOR_RELE in texto:
         texto = re.sub(re.escape(MARCADOR_RELE) + r'(?![A-Za-z0-9_])', lambda _m: crudo, texto)
         print(f"  {VERDE}+{FIN} {MARCADOR_RELE} {GRIS}(de RELE_URL_INTERNA; no se muestra){FIN}")
 
+# --- 2c. settings.errorWorkflow: el id del flujo de alertas, resuelto POR NOMBRE ------------
+# El marcador REEMPLAZAR_ID_ERROR_WORKFLOW no tiene fila en la tabla: el id lo asigna n8n. Se busca
+# «NovuChat — Error de envío incierto» en el n8n del entorno (N8N_BASE_URL y N8N_API_KEY del
+# `.env`; la clave viaja por la entrada estándar de curl, nunca en argv) y se escribe su id. Solo
+# LEE. Si el flujo no existe, hay más de uno o n8n no contesta, el script FALLA sin escribir la
+# salida: nunca deja el marcador ni produce un archivo publicable a medias.
+MARCADOR_EW = "REEMPLAZAR_ID_ERROR_WORKFLOW"
+if MARCADOR_EW in texto:
+    import subprocess, tempfile
+    base_n8n, clave_n8n = (env.get("N8N_BASE_URL") or "").rstrip("/"), env.get("N8N_API_KEY") or ""
+    if not base_n8n or not clave_n8n:
+        print(f"{ROJO}✗ ABORTADO: {MARCADOR_EW} se resuelve contra n8n y {env_file} no trae N8N_BASE_URL y N8N_API_KEY.{FIN}")
+        sys.exit(1)
+    with tempfile.TemporaryDirectory() as tdir:
+        entrada, lista, resuelto = (os.path.join(tdir, n) for n in ("flujo.json", "lista.json", "resuelto.json"))
+        open(entrada, "w", encoding="utf-8").write(texto)
+        r = subprocess.run(["curl", "-s", "--max-time", "30", "-o", lista, "-w", "%{http_code}", "-H", "@-",
+                            f"{base_n8n}/api/v1/workflows?limit=250"],
+                           input=f"X-N8N-API-KEY: {clave_n8n}\n", capture_output=True, text=True)
+        if r.stdout.strip() != "200":
+            print(f"{ROJO}✗ ABORTADO: n8n no entregó la lista de flujos (HTTP {r.stdout.strip() or '000'}); sin ella no se resuelve {MARCADOR_EW}.{FIN}")
+            sys.exit(1)
+        h = subprocess.run([sys.executable, os.path.join("scripts", "lib", "resolver-error-workflow.py"), entrada, lista, resuelto],
+                           capture_output=True, text=True)
+        if h.returncode != 0:
+            print(f"{ROJO}{(h.stderr or h.stdout).strip()}{FIN}")
+            sys.exit(1)
+        print(h.stdout.rstrip())
+        texto = open(resuelto, encoding="utf-8").read()
+
 presentes = sorted(set(re.findall(r'REEMPLAZAR_[A-Z][^"\\\s]*', texto)))
 puestos, sin_valor = [], []
 # COINCIDENCIA EXACTA, nunca por prefijo. Antes se aceptaba una fila cuyo

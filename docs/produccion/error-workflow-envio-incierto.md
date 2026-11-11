@@ -37,22 +37,25 @@ nombre, y `publicar-flujo.sh` aborta ante cualquier `REEMPLAZAR_`. Se carga con
    y crea el flujo INACTIVO con la credencial asignada por nombre y tipo.
 Lo vivo difiere del JSON en esos dos valores (fila en `docs/versiones-por-cliente.md`).
 
-## Decisión pendiente: `saveDataSuccessExecution` none o all
+## Decisión (Andres, 10/11/2026): `saveDataSuccessExecution: none`, cero residuo
 
-El errorWorkflow se dispara con **cualquier** error de un flujo con relé, no
-solo con el «Detener». Con `all`, n8n guarda en la ejecución del errorWorkflow
-la entrada completa del Error Trigger: `execution.error` (de un NodeApiError,
-su descripción y el cuerpo HTTP de la respuesta), el stack, el nodo que falló
-con sus parámetros y la URL de la ejecución. Con el «Detener» de #757 el mensaje
-es fijo y no hay datos del paciente; el riesgo depende de los demás nodos que
-puedan fallar (bajo, no cero).
+El errorWorkflow se dispara con **cualquier** error de un flujo con relé, no solo
+con el «Detener». Con `all`, n8n guardaría en la ejecución del errorWorkflow la
+entrada completa del Error Trigger: `execution.error` (de un NodeApiError, su
+descripción y el cuerpo HTTP de la respuesta), el stack, el nodo que falló con sus
+parámetros y la URL de la ejecución. Con el «Detener» de #757 el mensaje es fijo y
+no hay datos del paciente, pero el riesgo depende de los demás nodos que puedan
+fallar (bajo, no cero) y nadie auditó esos nodos.
 
-- `all`: se ve la fila en Ejecuciones (flujo y hora), con ese riesgo.
-- `none`: cero residuo, pero no queda nada visible en la lista.
-
-Recomendación provisional: `all` solo si antes se audita qué nodos de los flujos
-con relé pueden lanzar un error con datos; si no se audita, `none`. El JSON
-versionado queda con `all` hasta que Andres decida.
+**Decidido: `none`.** La ejecución exitosa del flujo de alertas no se guarda: cero
+residuo de datos del paciente. El costo es que no queda una fila en Ejecuciones con
+flujo y hora; la evidencia de que la alerta salió es la propia alerta (la Function
+`alertaOperativa` y el aviso que recibe Andres). `Flujos/error-envio-incierto.json`
+ya lleva `saveDataSuccessExecution: none` (verificado el 10/11/2026; la nota anterior
+que lo daba por `all` estaba desactualizada). `saveDataErrorExecution` sigue en `all`
+a propósito: si la alerta misma falla (401/422/5xx), esa ejecución tiene que ser
+visible. Fila en `docs/versiones-por-cliente.md`: el flujo no cambia de versión, solo
+se aclara que el ajuste vivo debe ser `none`.
 
 ## Cómo se crea y asigna (lo hace Claude, con el botón de Andres)
 
@@ -61,17 +64,27 @@ versionado queda con `all` hasta que Andres decida.
    No verificado en n8n 2.36.5: si lo dispara estando inactivo, y que la
    ejecución del errorWorkflow se guarde con las opciones de arriba; se
    comprueba en el ensayo.
-2. Anotar su id (lo asigna n8n; nunca se versiona).
-3. Asignarlo a cada flujo con relé: `settings.errorWorkflow = <id>`.
+2. El id lo asigna n8n y nunca se versiona; no hay que anotarlo ni asignarlo a mano: el publicador lo resuelve por nombre (sección siguiente).
 
-## Mecanismo propuesto para el id (no implementado)
+## Cómo llega el id a cada flujo con relé (implementado)
 
 En el JSON de cada flujo con relé: `"settings": { "errorWorkflow": "REEMPLAZAR_ID_ERROR_WORKFLOW" }`.
-`publicar-flujo.sh` / `preparar-import.sh` lo reemplazan al publicar, como ya
-hacen con los demás marcadores `REEMPLAZAR_*`: buscan por nombre el flujo
-«NovuChat — Error de envío incierto» en el n8n destino y escriben su id; si no
-existe, **fallan** (nunca dejan el marcador). El resto de `settings` no cambia,
-y `saveDataErrorExecution` de los flujos de cliente sigue en `none`. Falta
-también enseñar al comparador de `settings` de `publicar-flujo.sh` (solo nombres de
-clave, nunca valores) que `errorWorkflow` puede diferir en el valor. Se implementa
-en el PR que active el relé en un cliente, no aquí.
+Hoy lo llevan `rroca-emma` (producción y prueba) y `rroca-evy` cuando su canal de envío es
+`rele` (con `graph` no lleva nada: no hay relé ni «Detener»). Los armadores
+(`construir.mjs`) lo escriben y su guardia exige el marcador o un id ya resuelto.
+
+`scripts/preparar-import.sh` y `scripts/publicar-flujo.sh` lo resuelven por NOMBRE con
+`scripts/lib/resolver-error-workflow.py`: buscan «NovuChat — Error de envío incierto» en
+el n8n destino (solo `GET /workflows`) y escriben su id. **Fallan** (código 1, sin escribir
+la salida ni publicar) si el flujo no existe, si hay más de uno con ese nombre, si la lista
+llegó partida o no llegó, o si el marcador aparece fuera de `settings.errorWorkflow`. El
+id no se imprime ni se versiona. El resto de `settings` no cambia, y
+`saveDataErrorExecution` de los flujos de cliente sigue en `none`.
+
+El comparador de `settings` de `publicar-flujo.sh` (solo nombres de clave, nunca valores)
+sabe que `errorWorkflow` puede diferir en el valor entre el origen y el vivo: si los dos lo
+tienen, no cuenta; si solo lo tiene uno, sí.
+
+Costo: 0 mensajes por conversación, 0 nodos. Falta, fuera de este cambio: cargar el flujo
+de alertas en cada n8n destino antes de publicar un flujo con relé, o el publicador falla
+(es lo buscado).

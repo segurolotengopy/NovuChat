@@ -683,6 +683,24 @@ if [[ $ENCENDER -eq 1 || $APAGAR -eq 1 ]]; then
   exit 0
 fi
 
+# --- 1a. settings.errorWorkflow: el id del flujo de alertas se resuelve POR NOMBRE ------
+# El JSON versionado de un flujo con relé lleva el marcador REEMPLAZAR_ID_ERROR_WORKFLOW
+# (el id lo asigna n8n y nunca se versiona; docs/produccion/error-workflow-envio-incierto.md).
+# Se busca «NovuChat — Error de envío incierto» en el n8n DESTINO y se escribe su id en una
+# copia temporal. Si no existe, si hay más de uno o la lista no llegó completa, FALLA: ni se
+# deja el marcador ni se publica. Solo LEE (GET /workflows).
+FLUJO_ORIGINAL="$FLUJO"
+if [[ $REINICIAR -eq 0 && -f "$FLUJO" ]] && grep -q 'REEMPLAZAR_ID_ERROR_WORKFLOW' "$FLUJO"; then
+  EW_COD=$(curl -s --max-time 30 -o "$TMP/lista-errorworkflow.json" -w '%{http_code}' \
+       -H @- "${API}/workflows?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
+  if [[ "$EW_COD" != "200" ]]; then
+    printf '\033[1;31m✗ ABORTADO: n8n no entregó la lista de flujos (HTTP %s); sin ella no se resuelve el flujo de alertas.\033[0m\n' "$EW_COD" >&2
+    exit 1
+  fi
+  python3 scripts/lib/resolver-error-workflow.py "$FLUJO" "$TMP/lista-errorworkflow.json" "$TMP/flujo-errorworkflow.json" || exit 1
+  FLUJO="$TMP/flujo-errorworkflow.json"
+fi
+
 # --- 1b. las credenciales de la instancia: nombre, tipo e id, nunca valores ----
 # Sirven para asignar a cada nodo la credencial que el JSON versionado NOMBRA.
 # Si la API no las lista, se sigue como antes (heredando del flujo vivo).
@@ -870,7 +888,7 @@ PY
         echo "N8N_WORKFLOW_ID=$NUEVO_ID"; } > "$ENV_NUEVO" )
     chmod 600 "$ENV_NUEVO"
     echo "  ✓ $ENV_NUEVO escrito con el id nuevo (sin ruta de webhook: el flujo es programado)."
-    echo "    De ahora en mas: ./scripts/publicar-flujo.sh --env $ENV_NUEVO --flujo $FLUJO"
+    echo "    De ahora en mas: ./scripts/publicar-flujo.sh --env $ENV_NUEVO --flujo $FLUJO_ORIGINAL"
   fi
   exit 0
 fi
@@ -1298,7 +1316,10 @@ for nodo_, prop in props_dif:
 for nodo_, clave in solo_vivo:
     estructura.append((nodo_, f"parametro presente solo en el vivo, --aplicar lo borraria: {clave}"))
 sv_, sn_ = vivo.get("settings") or {}, nuevo.get("settings") or {}
-claves_set = sorted(k for k in sn_ if sv_.get(k) != sn_.get(k))
+# errorWorkflow lleva el id del flujo de alertas en ESE n8n (se resuelve por nombre al publicar):
+# puede diferir en el valor entre el origen y el vivo, asi que si los dos lo tienen no cuenta.
+# Si solo lo tiene uno de los dos, si cuenta. Solo nombres de clave, nunca valores.
+claves_set = sorted(k for k in sn_ if sv_.get(k) != sn_.get(k) and not (k == "errorWorkflow" and k in sv_))
 if claves_set:
     estructura.append(("(settings del flujo)", "claves distintas: " + ", ".join(claves_set)))
 # Claves de settings que solo tiene el vivo: --aplicar las borraria. Se ignora
