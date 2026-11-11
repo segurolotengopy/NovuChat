@@ -180,6 +180,10 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     // Excepción declarada en capacidades-comunes.test.ts y docs/versiones-por-cliente.md (22/10/2026): Bellido
     // conserva el «Preparar imagen» anterior a la descripción de imágenes, por orden de Andres de no tocarlo.
     'Preparar imagen',
+    // Excepción declarada en docs/versiones-por-cliente.md (PR de la agenda con seña, 07/11/2026): el módulo común
+    // `respuesta-de-la-sena.js` ahora nombra TODAS las diferencias del comprobante; el texto de Bellido vive en su propio JSON
+    // (no sale de un manifiesto) y lo adopta su sesión. Cierra: esa adopción.
+    'Respuesta de la seña',
   ];
   /** Los nodos que llevan credencial propia del cliente, con id vacío. */
   const CREDENCIALES_PROPIAS = [
