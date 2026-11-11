@@ -641,7 +641,13 @@ sys.exit(0 if any((b.get("condition") or {}).get("title") == "secretos-de-las-fu
     [[ "$perm" == secretmanager.versions.list ]] && recurso="//secretmanager.googleapis.com/projects/${num}/secrets/INGESTA_DEMOA"
     local acceso
     acceso="$(gc policy-troubleshoot iam "$recurso" --principal-email="$SA_DEPLOY" --permission="$perm" --format='value(access)' 2>/dev/null || echo "?")"
-    if [[ "$acceso" == "GRANTED" ]]; then hecho "sa-deploy-staging: $perm"; else falla "sa-deploy-staging: $perm → ${acceso:-desconocido}"; fi
+    if [[ "$acceso" == "GRANTED" ]]; then hecho "sa-deploy-staging: $perm"
+    elif [[ "$acceso" == "UNKNOWN_CONDITIONAL" && "$perm" == secretmanager.versions.list ]]; then
+      # El binding de desplegadorSecretos lleva condición IAM sobre resource.name; el Troubleshooter no la
+      # evalúa sin contexto de recurso. La cubre la comprobación del binding de más arriba (título, rol,
+      # miembro y prefijos dentro de la expresión). No es un fallo. Cualquier otro valor sigue siendo ✗.
+      echo "  ${A}⚠${F} sa-deploy-staging: $perm → condición no evaluable por Policy Troubleshooter; la cubre la comprobación del binding de arriba"
+    else falla "sa-deploy-staging: $perm → ${acceso:-desconocido}"; fi
   done
 }
 
