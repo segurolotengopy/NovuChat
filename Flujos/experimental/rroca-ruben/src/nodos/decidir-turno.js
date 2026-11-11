@@ -130,12 +130,17 @@ if (rrPideBaja(textoCliente)) return salir({ tipo: 'baja', cat: cat });
 // 1a-gmail. EL GMAIL TRAS UNA VENTA CONFIRMADA: si el flujo ya se lo pidió a este teléfono (`gmailPedidoMs`) y aún no lo tiene (`gmail`), un TEXTO ESCRITO con una «@» es su respuesta. Lo lee el CÓDIGO sobre el texto literal del cliente
 //     (`vgExtraerGmail`); el modelo no interviene, no ve el correo y el turno no entra en la memoria de la charla. Solo `@gmail.com`: otro dominio, varios correos o un correo mal escrito reciben un texto fijo que lo pide de nuevo. Un audio, una imagen o un botón
 //     nunca se capturan (el correo no se acepta dictado ni leído de una imagen). Va antes de la identidad y de las derivaciones para que un correo escrito no se tome por otra intención. Con un correo válido hay UN aviso a Rubén (enlace de Drive por el chat).
-if (t.tipo === 'text' && ficha.gmailPedidoMs > 0 && ficha.gmail === '' && String(t.texto || '').indexOf('@') >= 0) {
+//     Solo si el mensaje ES básicamente el correo: al quitar el candidato quedan 6 palabras o menos y ninguna señal de reclamo o de derivación («no me llegó», «quiero hablar con…», «cancelar»…); si no, sigue su camino normal.
+const gCandidato = /[^\s@<>()\[\],;:"'«»]+@[^\s@<>()\[\],;:"'«»]+/g;
+const gResto = rrNorm(String(t.texto || '').replace(gCandidato, ' '));
+const gEsElCorreo = gResto.split(' ').filter((x) => x !== '').length <= 6
+  && !/\b(no (me )?(llego|lleg\w*|ha llegado|recibi|funciona)|todavia no|aun no|nunca|reclam\w*|queja|estafa|devol\w*|reembols\w*|cancel\w*|anul\w*|factura|garantia|problema|ayuda|hablar|persona|humano|ruben|pago|pague|plata|dinero|cobro|transferencia|comprobante|precio|cuanto)\b/.test(gResto);
+if (t.tipo === 'text' && ficha.gmailPedidoMs > 0 && ficha.gmail === '' && String(t.texto || '').indexOf('@') >= 0 && gEsElCorreo) {
   const g = vgExtraerGmail(String(t.texto || ''));
   textoDelTurno = '';
   return salir({
     tipo: 'gmail', resultado: g.resultado, correo: g.resultado === 'recibido' ? g.correo : '', cat: cat,
-    aviso: g.resultado === 'recibido' ? { tipo: 'consulta', clave: 'gmail', motivo: 'venta con comprobante: enviar el enlace de Drive por el chat', mensaje: '', correo: g.correo, producto: nombreProducto } : null,
+    aviso: g.resultado === 'recibido' ? { tipo: 'consulta', clave: 'gmail', motivo: 'venta con comprobante' + (nombreProducto !== 'sin producto' ? ' de ' + nombreProducto : '') + ': enviar el enlace de Drive por el chat', mensaje: '', correo: g.correo, producto: nombreProducto } : null,
   });
 }
 
