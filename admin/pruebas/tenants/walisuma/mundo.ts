@@ -95,7 +95,10 @@ export const COTEJO_VALIDO = { statusCode: 200, body: { estado: 'valido', import
 export const COMPROBANTE = { categoria: 'comprobante', texto: 'Transferencia', monto: '450.00', cuentaDestino: '1*****9', nombreCuenta: 'WALISUMA', fecha: '05/10/2026', hora: '10:00', banco: 'Banco' };
 /** Lo que contesta el modelo (JSON de salida): texto, líneas, entrega y quiereHablar. */
 export const modelo = (texto: string, extra: J = {}): J => ({ texto, lineas: [], entrega: {}, facturacion: {}, quiereHablar: false, ...extra });
-export const ENTREGA = { modo: 'Retiro en tienda', ciudad: 'La Paz', direccion: '', nombre: 'Ana Pérez' };
+/** Recojo en tienda (La Paz): nombre completo y teléfono, sin dirección de entrega. */
+export const ENTREGA = { modo: 'Recojo en tienda', ciudad: 'La Paz', direccion: '', nombre: 'Ana Pérez', telefono: '71234567' };
+/** Envío a domicilio en La Paz: nombre completo, teléfono y dirección exacta. */
+export const ENVIO = { modo: 'Envío en La Paz', ciudad: 'La Paz', direccion: 'Av. Arce 2345, Sopocachi', nombre: 'Ana Pérez', telefono: '71234567' };
 export function crear(o: Opciones = {}): Mundo {
   const envio = o.envio ?? {};
   const m = o.medio ?? {};
@@ -145,7 +148,8 @@ export function crear(o: Opciones = {}): Mundo {
     ahoraMs: AHORA,
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`, nombreNegocio: 'Tienda de prueba',
-      contactoAviso: REC, avisoPedidoPlantilla: 'pedido_registrado', avisoPedidoEstado: 'APPROVED', avisoPlantillaIdioma: 'es', modosDeEntrega: 'Retiro en tienda, Envío', costoDeEntrega: '',
+      contactoAviso: REC, avisoPedidoPlantilla: 'pedido_registrado', avisoPedidoEstado: 'APPROVED', avisoPlantillaIdioma: 'es', modosDeEntrega: 'Envío en La Paz, Envío en Santa Cruz, Envío nacional, Recojo en tienda', envioGratisDesdeBs: 500,
+      tiendaLaPaz: 'Calle Claudio Aliaga 1231, San Miguel', tiendaSantaCruz: 'Av. Marcelo Terceros (3er anillo externo) esq. Flamboyanos',
       ...(o.base ?? {}),
     },
   });

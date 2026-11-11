@@ -5,7 +5,7 @@
  * perder los valores propios de Bellido («Config base» y el disparador), o dar por publicado lo que no se leyó de vuelta.
  */
 import { execFile } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -344,5 +344,77 @@ describe('miniCRM de Bellido: el id de la planilla desde el entorno', () => {
     expect(r.codigo).not.toBe(0);
     expect(mundo.puts).toHaveLength(0);
     expect(r.salida).toMatch(/quedan marcadores sin reponer: REEMPLAZAR_PLANILLA_PROSPECTOS_ID_BELLIDO/);
+  });
+});
+
+// =================================================================================================
+// El phone id de Bellido para la ATADURA del timbre (scripts/cargar-timbre-n8n.sh): campo de «Config base» SIN lectores en el flujo.
+describe('phone id de la atadura del timbre', () => {
+  const ID_TELEFONO = '7'.repeat(16);
+  const ID_DEL_VIVO = '8'.repeat(13);
+  const campo = (p: J): J | undefined => (nodo(p, 'Config base').parameters.assignments.assignments as J[]).find((a) => a.name === 'phoneNumberIdAtadura');
+  /** El vivo sin el campo de la atadura (es lo que hay publicado hoy) y con el id de planilla ya puesto. */
+  function vivoSinPhone(): J {
+    const w = vivoSinCrm();
+    const base = nodo(w, 'Config base');
+    base.parameters.assignments.assignments = (base.parameters.assignments.assignments as J[]).filter((a) => a.name !== 'phoneNumberIdAtadura');
+    (base.parameters.assignments.assignments as J[]).push({ id: 'x', name: 'planillaProspectosId', type: 'string', value: 'VivoYaTieneUnIdDePlanillaValido123456' });
+    return w;
+  }
+  const prepara = (vivo: J): void => { nuevo(vivo); mundo.credenciales = [cred('id-secreto-crm', CRED_CRM)]; };
+
+  it('(a) la plantilla y los dos JSON traen el campo en «Config base» con marcador, y ningún nodo lo lee', () => {
+    for (const archivo of ['flujo.plantilla.json', 'agenda-minima.v0.json', 'agenda-minima.prueba.json']) {
+      const f = JSON.parse(readFileSync(join(CARPETA, archivo), 'utf8')) as J;
+      const c = campo(f);
+      expect(c, archivo).toBeDefined();
+      expect(c!.value, archivo).toBe('REEMPLAZAR_PHONE_NUMBER_ID_BELLIDO');
+      // sin lectores: nadie lo nombra fuera de «Config base» (ni expresiones ni código)
+      const otros = (f.nodes as J[]).filter((x) => x.name !== 'Config base' && JSON.stringify(x).includes('phoneNumberIdAtadura'));
+      expect(otros.map((x) => x.name), archivo).toEqual([]);
+      // y no pisa el `phoneNumberId` que trae la entrada (el que lee «Traer configuración»)
+      expect((nodo(f, 'Config base').parameters.assignments.assignments as J[]).filter((a) => a.name === 'phoneNumberId')).toEqual([]);
+    }
+  });
+  it('(a) el código fuente del flujo no cita el campo', () => {
+    const grep = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? grep(join(d, e.name)) : readFileSync(join(d, e.name), 'utf8').includes('phoneNumberIdAtadura') ? [e.name] : []));
+    expect(grep(join(CARPETA, 'src'))).toEqual([]);
+  });
+  it('(b) el vivo no lo trae y el entorno trae dígitos: se siembra', async () => {
+    prepara(vivoSinPhone());
+    const r = await correr(['--desde-b', '--aplicar'], respaldoNuevo(), envCon(`WA_PHONE_ID=${ID_TELEFONO}`));
+    expect(r.codigo, r.salida).toBe(0);
+    expect(campo(mundo.puts[0]!)!.value).toBe(ID_TELEFONO);
+  });
+  it('(b) si el vivo ya trae un valor legible, manda el vivo', async () => {
+    const vivo = vivoSinPhone();
+    (nodo(vivo, 'Config base').parameters.assignments.assignments as J[]).push({ id: 'y', name: 'phoneNumberIdAtadura', type: 'string', value: ID_DEL_VIVO });
+    prepara(vivo);
+    const r = await correr(['--desde-b', '--aplicar'], respaldoNuevo(), envCon(`WA_PHONE_ID=${ID_TELEFONO}`));
+    expect(r.codigo, r.salida).toBe(0);
+    expect(campo(mundo.puts[0]!)!.value).toBe(ID_DEL_VIVO);
+  });
+  it.each([['letras', 'abc123def456'], ['muy corto', '12345'], ['con marcador', 'REEMPLAZAR_PHONE_NUMBER_ID_X'], ['demasiado largo', '1'.repeat(21)]])('(b) NIEGA: %s en WA_PHONE_ID no se siembra y no se publica', async (_t, valor) => {
+    prepara(vivoSinPhone());
+    const r = await correr(['--desde-b', '--aplicar'], respaldoNuevo(), envCon(`WA_PHONE_ID=${valor}`));
+    expect(r.codigo).not.toBe(0);
+    expect(mundo.puts).toHaveLength(0);
+    expect(r.salida).toMatch(/WA_PHONE_ID del entorno no tiene la forma/);
+    expect(r.salida).not.toContain(valor);
+  });
+  it('(b) NIEGA: sin WA_PHONE_ID en el entorno queda el marcador y --aplicar se niega', async () => {
+    prepara(vivoSinPhone());
+    const r = await correr(['--desde-b', '--aplicar']);
+    expect(r.codigo).not.toBe(0);
+    expect(mundo.puts).toHaveLength(0);
+    expect(r.salida).toMatch(/quedan marcadores sin reponer: REEMPLAZAR_PHONE_NUMBER_ID_BELLIDO/);
+  });
+  it('(c) el valor nunca aparece en la salida impresa ni en el respaldo', async () => {
+    prepara(vivoSinPhone());
+    const r = await correr(['--desde-b', '--aplicar'], respaldoNuevo(), envCon(`WA_PHONE_ID=${ID_TELEFONO}`));
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toContain('Phone id de la atadura del timbre: llenado desde el entorno');
+    expect(r.salida).not.toContain(ID_TELEFONO);
+    expect(readFileSync(r.respaldo, 'utf8')).not.toContain(ID_TELEFONO);
   });
 });

@@ -1217,8 +1217,13 @@ service cloud.firestore {
       // escribe el servidor (Admin SDK, `scripts/plataforma/crm-enlace.mjs`).
       // Es una URL de Google Sheets, nunca un secreto.
       // -----------------------------------------------------------------------
+      //
+      // Manuales de uso (10/11/2026): `manual-operador` lo lee cualquier persona del
+      // comercio (admin u operador); `manual-admin` SOLO el admin. Mismas garantías.
       match /enlaces/{documento} {
         allow get: if documento == 'minicrm' && esAdmin(tenantId);
+        allow get: if documento == 'manual-operador' && esPersonaDelNegocio(tenantId);
+        allow get: if documento == 'manual-admin' && esAdmin(tenantId);
         allow create, update, delete: if false;
       }
 
@@ -2024,6 +2029,25 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // /cobrosAlias/{pedidoId} y /comprobantesAlias/{huella} — el cobro por ALIAS en pesos
+      // argentinos (Casa Bermejo, B4b). Los escribe SOLO el servidor (`pedirAliasArs` y
+      // `cotejarAliasArs`, con el SDK Admin y en transacción); nadie los crea, corrige ni
+      // borra desde el navegador (el TTL `vence` los retira). `cobrosAlias` es un cobro por
+      // pedido (`wa_<ref>`): monto en centavos, el alias del comercio, vigencia y el estado
+      // (`abierto`, `coincide`, `en_revision`, `vencido`); no lleva teléfono ni nada leído de
+      // la imagen. `comprobantesAlias` guarda solo el HASH de cada comprobante aceptado, para
+      // que no cobre dos veces ni a dos pedidos. Los lee quien puede leer conversaciones.
+      // -----------------------------------------------------------------------
+      match /cobrosAlias/{pedidoId} {
+        allow get, list: if puedeLeerConversaciones(tenantId);
+        allow create, update, delete: if false;
+      }
+      match /comprobantesAlias/{huella} {
+        allow get, list: if puedeLeerConversaciones(tenantId);
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
       // /mediosRecibidos/{objeto} — los medios ENTRANTES (imagen, audio, video y documentos) que
       // `guardarMedio` guardó 90 días (Core; Andres, 20 a 23/10/2026). Los escribe
       // SOLO el servidor, en la misma transacción que marca el mensaje. Lo lee
@@ -2044,6 +2068,15 @@ service cloud.firestore {
       // lo escribe SOLO `guardarMedio`, con el SDK Admin; si el comercio pudiera
       // borrarlo, el cupo no sería un cupo. Caduca por TTL a los 2 días.
       match /cuposDeMedios/{dia} {
+        allow read, write: if false;
+      }
+
+      // /mediosEnviados/{objeto} — el metadato de los ADJUNTOS que una persona envió desde la consola (Core, «Envío de
+      // medios por consola», B2; Andres 10/11/2026: 30 días). Lo escribe SOLO `enviarAdjuntoComoPersona` (SDK Admin), en la
+      // misma transacción que el mensaje; lo leen SOLO `verMedio` y `leerAdjuntoPersona`, también con el SDK Admin. Nadie del
+      // navegador lo lee ni lo escribe: lleva la conversación (`wa_<teléfono>`), la ruta de Storage y el sha256. El bit
+      // que el hilo muestra del adjunto está en el mensaje (`medio`). Caduca por TTL sobre `vence` (30 días).
+      match /mediosEnviados/{objeto} {
         allow read, write: if false;
       }
 

@@ -14,7 +14,12 @@ const d = bmResolver(c);
 const cfg = c.cfg;
 const clave = d.aviso && typeof d.aviso.clave === 'string' ? d.aviso.clave : '';
 const cancelarCobro = d.cancelarCobro === true;
-const sin = (extra) => [{ json: Object.assign({ sinAviso: true, plan: d.tipo || '', planeado: false, repetido: false, clave: clave, motivoFallo: '', cancelarCobro: cancelarCobro }, extra || {}) }];
+// La llamada al servidor de este turno (la hace «Avisar al servidor»): cerrar el cobro abierto (`cobro_cancelado`, Bolivia) o pedir el alias (`pedirAliasArs`, Argentina). `servidor` solo lo arma el CÓDIGO.
+const servidor = d.servidor && typeof d.servidor === 'object' && d.servidor.ruta === 'pedirAliasArs' && d.servidor.cuerpo && typeof d.servidor.cuerpo === 'object' ? d.servidor : null;
+const llamarServidor = cancelarCobro || servidor !== null;
+// `avisoSi`: el aviso de este turno solo sale si la respuesta del servidor transfiere (lo decide «¿Hay avisos?» con la misma regla que `bmAliasPedirResultado`).
+const avisoSi = d.avisoSi === 'pedir_fallo' ? 'pedir_fallo' : '';
+const sin = (extra) => [{ json: Object.assign({ sinAviso: true, plan: d.tipo || '', planeado: false, repetido: false, clave: clave, motivoFallo: '', cancelarCobro: cancelarCobro, llamarServidor: llamarServidor, servidor: servidor, avisoSi: avisoSi }, extra || {}) }];
 let aviso = d.aviso && typeof d.aviso === 'object' ? d.aviso : null;
 // El estado «operador»: el texto fijo de la puerta promete que una persona continúa, así que se avisa (y «Armar mensajes» pone el botón).
 if (!aviso && c.puerta.ruta === 'uso_extendido' && c.puerta.responder === true && String(c.puerta.texto || '').trim() !== '') aviso = bmAvisoConsulta(c, 'atencion_humana');
@@ -55,7 +60,7 @@ if (esPedido) {
 texto = avLimpio(texto, 900);
 
 const fichas = cnMapaDeFichas(false).mapa;
-const comun = { phoneNumberId: String(cfg.phoneNumberId || ''), waGraphVersion: cfg.waGraphVersion || 'v26.0', sinAviso: false, plan: d.tipo || '', planeado: true, repetido: false, clave: clave, motivoFallo: '', cancelarCobro: cancelarCobro };
+const comun = { phoneNumberId: String(cfg.phoneNumberId || ''), waGraphVersion: cfg.waGraphVersion || 'v26.0', sinAviso: false, plan: d.tipo || '', planeado: true, repetido: false, clave: clave, motivoFallo: '', cancelarCobro: cancelarCobro, llamarServidor: llamarServidor, servidor: servidor, avisoSi: avisoSi };
 const pl = bmPlantilla(c.base);
 const items = [];
 for (const dest of destinatarios) {

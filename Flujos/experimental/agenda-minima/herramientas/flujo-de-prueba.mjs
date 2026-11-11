@@ -51,9 +51,12 @@ const morir = (m) => { console.error(`✗ ${m}`); process.exit(1); };
 
 // `--actualizar-codigo` corre SOLO: antes, con `--borrar` al lado, corría `--borrar` (revisión de seguridad del #364).
 if (bandera('desde-b') && !bandera('sobre-bellido')) morir('--desde-b solo se usa con --sobre-bellido');
-if (bandera('sobre-bellido') && ['borrar', 'restaurar-respaldo', 'sobre-demo-a', 'turno', 'actualizar-codigo'].some((m) => args.includes(`--${m}`))) morir('--sobre-bellido no se combina con otro modo');
+if (bandera('sobre-bellido') && ['borrar', 'restaurar-respaldo', 'sobre-demo-a', 'sobre-demo-b', 'turno', 'actualizar-codigo'].some((m) => args.includes(`--${m}`))) morir('--sobre-bellido no se combina con otro modo');
 if (bandera('actualizar-codigo') && ['desde-b'].some((m) => args.includes(`--${m}`))) morir('--actualizar-codigo no se combina con --desde-b');
-if (bandera('actualizar-codigo') && ['borrar', 'sobre-bellido', 'sobre-demo-a', 'restaurar-respaldo', 'turno'].some((m) => args.includes(`--${m}`))) morir('--actualizar-codigo no se combina con otro modo');
+if (bandera('actualizar-codigo') && ['borrar', 'sobre-bellido', 'sobre-demo-a', 'sobre-demo-b', 'restaurar-respaldo', 'turno'].some((m) => args.includes(`--${m}`))) morir('--actualizar-codigo no se combina con otro modo');
+// EL DEMO DE DESTINO DEL ENSAYO (10/11/2026): `--sobre-demo-a` (el de siempre) o `--sobre-demo-b` (el segundo número de ensayo). Nunca los dos.
+if (bandera('sobre-demo-a') && bandera('sobre-demo-b')) morir('--sobre-demo-a y --sobre-demo-b no van juntos: un ensayo va sobre UN demo');
+const SOBRE_DEMO = bandera('sobre-demo-a') || bandera('sobre-demo-b');
 const ENV = opcion('env') ?? morir('falta --env <archivo .env del Demo A>');
 // `--actualizar-codigo` no guarda ningún estado: no necesita (ni lee) `--estado`.
 const ESTADO = bandera('actualizar-codigo') ? null : resolve(opcion('estado') ?? morir('falta --estado <archivo fuera del repositorio>'));
@@ -79,7 +82,7 @@ function leerEnv(ruta, claves, opcionales = []) {
   for (const c of claves) if (!out[c]) morir(`el .env no tiene ${c}`);
   return out;
 }
-const env = leerEnv(ENV, ['N8N_BASE_URL', 'N8N_API_KEY', 'N8N_WORKFLOW_ID'], ['WA_PHONE_ID', 'PLANILLA_PROSPECTOS_ID_BELLIDO']);
+const env = leerEnv(ENV, ['N8N_BASE_URL', 'N8N_API_KEY', 'N8N_WORKFLOW_ID'], ['WA_PHONE_ID', 'PLANILLA_PROSPECTOS_ID_BELLIDO', 'PLANILLA_PROSPECTOS_ID_NOVUCHAT']);
 const API = `${env.N8N_BASE_URL.replace(/\/$/, '')}/api/v1`;
 
 async function llamar(metodo, ruta, cuerpo) {
@@ -187,6 +190,26 @@ const CRED_POR_TIPO_DE_NODO = {
 };
 // El phone id del cliente en «Config base» (candidato A) se reemplaza, en memoria, por el del Demo A.
 const MARCA_PHONE = /REEMPLAZAR_PHONE_NUMBER_ID_[A-Z0-9_]+/g;
+// EL DEMO B COMO SEGUNDO NÚMERO DE ENSAYO (decisión de Andres, 10/11/2026): `--sobre-demo-b`. Sus credenciales son las que el
+// Demo B vivo usa (leídas por nombre con `credenciales-flujo.sh --env .env.demo-b`, 10/11/2026). No tiene Google Calendar: un
+// candidato con agenda no se puede poner en el Demo B y la herramienta se niega («no está en la tabla»).
+const CRED_DEMO_B = {
+  googlePalmApi: 'Google Gemini(PaLM) Api account',     // la de producción, la misma que usa el Demo A: misma autorización por ensayo
+  // Las variantes de ensayo versionadas (`*.ensayo-demo-a.json`) nombran la del Demo A: acá esa ETIQUETA se traduce a la del
+  // Demo B. Lo que queda en el flujo es siempre la del Demo B (configuración, ingesta y cierres cuentan en el comercio del ensayo del Demo B).
+  httpHeaderAuth: { 'Cierres NovuChat A (auto)': 'Cierres NovuChat B (auto)', 'Cierres NovuChat B (auto)': 'Cierres NovuChat B (auto)' },
+  whatsAppApi: 'WhatsApp account 2',
+};
+// Por demo: cómo se reconoce su flujo vivo (PALABRAS del nombre), su tabla y las credenciales que son SOLO del otro demo
+// (`ajenas`: nunca pueden quedar en el flujo, ni en el Trigger copiado del vivo). `trigger`: la credencial que el Trigger vivo
+// tiene que traer; en el Demo A no se exigía y sigue sin exigirse (nada cambia para `--sobre-demo-a`).
+const DEMOS = {
+  a: { letra: 'a', etiqueta: 'Demo A', palabra: ' demo a ', otra: ' demo b ', cred: CRED_DEMO_A, trigger: null,
+    ajenas: ['Cierres NovuChat B (auto)', 'WhatsApp account 2', 'WhatsApp OAuth account 2'] },
+  b: { letra: 'b', etiqueta: 'Demo B', palabra: ' demo b ', otra: ' demo a ', cred: CRED_DEMO_B, trigger: 'WhatsApp OAuth account 2',
+    ajenas: ['Cierres NovuChat A (auto)', 'WhatsApp account', 'WhatsApp OAuth account', 'Google Calendar account'] },
+};
+const D = DEMOS[bandera('sobre-demo-b') ? 'b' : 'a'];
 
 // ---------------------------------------------------------------- sobre Bellido (publicación definitiva)
 /*
@@ -216,8 +239,30 @@ async function idDeCredencialCrm() {
   if (m.length !== 1) morir(`la credencial «${CRED_CRM_BELLIDO}» (googleApi) tiene que existir en n8n exactamente una vez; hay ${m.length}. Cree la credencial antes de publicar`);
   return String(m[0].id);
 }
+async function idDeCredencialDeHojaDeEnsayo() {
+  if (listaDeCredenciales === null) {
+    const r = await llamar('GET', '/credentials?limit=250');
+    if (r.cod !== 200) morir(`no pude leer la lista de credenciales de n8n (GET /credentials → ${r.cod})`);
+    listaDeCredenciales = Array.isArray(r.datos.data) ? r.datos.data : (Array.isArray(r.datos) ? r.datos : []);
+  }
+  const m = listaDeCredenciales.filter((c) => c && c.name === CRED_HOJA_DE_ENSAYO && c.type === 'googleApi' && c.id);
+  if (m.length !== 1) morir(`la credencial «${CRED_HOJA_DE_ENSAYO}» (googleApi) tiene que existir en n8n exactamente una vez; hay ${m.length}. Cree la credencial (una cuenta de servicio con acceso SOLO a la hoja de prueba) antes del ensayo`);
+  // La credencial del ensayo NUNCA es la de los prospectos reales: ni el mismo nombre ni el mismo id (una cuenta de servicio con acceso a la hoja real no es «de prueba»).
+  const real = listaDeCredenciales.filter((c) => c && c.id && c.id === m[0].id && c !== m[0]);
+  if (real.length) morir(`la credencial «${CRED_HOJA_DE_ENSAYO}» comparte id con otra credencial de hoja (${CRED_HOJA_REAL}): el ensayo no puede usar la credencial de los prospectos reales`);
+  return m[0].id;
+}
 const ID_PLANILLA_VALIDO = (v) => typeof v === 'string' && !v.startsWith('REEMPLAZAR_') && /^[A-Za-z0-9_-]{25,100}$/.test(v);
 const NODOS_CRM_DE_BELLIDO = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
+// EL ENSAYO DEL CHAT DE NOVUCHAT EN EL DEMO A (`--conservar-crm`, SOLO con `--sobre-demo-a`): a diferencia del resto de los ensayos, el miniCRM QUEDA conectado, pero escribe en una HOJA DE PRUEBA.
+// Sin la bandera nada de esto corre y el comportamiento de siempre (quitar la rama del CRM y vaciar la planilla) no cambia. Con ella:
+//   - los nodos de Google Sheets se quedan, y su ÚNICA credencial posible es esta (por nombre exacto, tipo googleApi y exactamente UNA en n8n; el Demo A vivo no la usa todavía, así que no se exige que ya la use);
+//   - el id y la hoja de la planilla tienen que llegar YA resueltos (`preparar-import.sh` con los marcadores REEMPLAZAR_PLANILLA_ENSAYO_*): con un marcador o vacío, se niega;
+//   - `--aplicar` exige además `--autorizo-hoja-de-prueba` (escribe filas en una hoja de Google: es una escritura externa por ensayo).
+const CRED_HOJA_DE_ENSAYO = 'Google Sheets miniCRM (crm-ensayo-chat)';
+const CRED_HOJA_REAL = 'Google Sheets NovuChat (cuenta de servicio)';
+const CONSERVAR_CRM = bandera('conservar-crm');
+if (CONSERVAR_CRM && !SOBRE_DEMO) morir('--conservar-crm solo se usa con --sobre-demo-a (o --sobre-demo-b)');
 const AJENOS_A_BELLIDO = /platinum|q'?taco|captaci|segurolo|otp|aab1|whatsapp-?modular|receptor|demo ?a\b|NovuChat A|pruebas/i;
 if (bandera('sobre-bellido')) {
   const RESPALDO = resolve(opcion('respaldo') ?? morir('falta --respaldo <archivo fuera del repositorio>'));
@@ -292,7 +337,7 @@ if (bandera('sobre-bellido')) {
     // Con `--desde-b` el vivo ya es B: su «Config base» tiene los MISMOS campos (los llena la publicación anterior);
     // el flujo viejo de 96 nodos los tenía con otro nombre (`numeroRecepcion`, `numeroDoctor`).
     const origen = bandera('desde-b')
-      ? (['respaldoNumeroRecepcion', 'respaldoNumeroDoctor', 'horarioAtencion', 'planillaProspectosId'].includes(a.name) ? a.name : undefined)
+      ? (['respaldoNumeroRecepcion', 'respaldoNumeroDoctor', 'horarioAtencion', 'planillaProspectosId', 'phoneNumberIdAtadura'].includes(a.name) ? a.name : undefined)
       : { respaldoNumeroRecepcion: 'numeroRecepcion', respaldoNumeroDoctor: 'numeroDoctor', horarioAtencion: 'horarioAtencion' }[a.name];
     if (!origen || !/^REEMPLAZAR_/.test(String(a.value))) continue;
     const v = String(valorVivo(origen) ?? '');
@@ -306,6 +351,17 @@ if (bandera('sobre-bellido')) {
     campoPlanilla.value = env.PLANILLA_PROSPECTOS_ID_BELLIDO;
     sembradoDelEntorno = true;
   }
+  // El phone id de Bellido en «Config base» (`phoneNumberIdAtadura`, sin lectores en el flujo): lo lee solo la atadura del timbre de la salida
+  // de persona (scripts/cargar-timbre-n8n.sh). Si el vivo ya trae un valor legible (dígitos) se conserva; si no, se siembra de WA_PHONE_ID del
+  // archivo de entorno pasado, solo si son dígitos (6 a 20). Nunca se imprime ni se guarda en el respaldo. Se llama «...Atadura» y no
+  // «phoneNumberId» porque «Config base» deja pasar los demás campos y un `phoneNumberId` propio pisaría el de la entrada (lo lee «Traer configuración»).
+  let sembradoPhone = false;
+  const campoPhone = baseB.parameters.assignments.assignments.find((a) => a.name === 'phoneNumberIdAtadura');
+  if (campoPhone && /^REEMPLAZAR_/.test(String(campoPhone.value)) && env.WA_PHONE_ID !== undefined) {
+    if (!/^\d{6,20}$/.test(String(env.WA_PHONE_ID))) morir('WA_PHONE_ID del entorno no tiene la forma de un phone id (6 a 20 dígitos)');
+    campoPhone.value = String(env.WA_PHONE_ID);
+    sembradoPhone = true;
+  }
   const marcas = [...new Set(JSON.stringify(b).match(/REEMPLAZAR_[A-Z][A-Z0-9_]*/g) ?? [])];
   const nv = new Set(vivo.datos.nodes.map((n) => n.name)); const nb = new Set(b.nodes.map((n) => n.name));
   console.log(`Bellido vivo: «${vivo.datos.name}», ${vivo.datos.nodes.length} nodos, activo=${vivo.datos.active}`);
@@ -317,6 +373,7 @@ if (bandera('sobre-bellido')) {
   console.log(`Nodos en los dos con PARÁMETROS que cambian (${cambiadosCompartidos.length}; se sobrescriben con los del candidato, sin mostrar valores): ${cambiadosCompartidos.join(', ') || '—'}`);
   console.log(`Respaldo de «Config base» llenado desde el vivo (sin mostrar valores): ${llenados.join(', ') || '—'}`);
   if (sembradoDelEntorno) console.log('Id de la planilla del miniCRM: llenado desde el entorno (no se muestra)');
+  if (sembradoPhone) console.log('Phone id de la atadura del timbre: llenado desde el entorno (no se muestra)');
   console.log(`Marcadores que quedan: ${marcas.join(', ') || 'ninguno'}`);
   console.log(`Respaldo del vivo: ${RESPALDO}`);
   guardarRespaldo(RESPALDO, vivo.datos);
@@ -499,22 +556,23 @@ function llamaAGraph(url) {
   return esExpresion && texto.includes('{{') && texto.includes(HOST_META);
 }
 
-if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
+if (SOBRE_DEMO || bandera('restaurar-respaldo')) {
   const RESPALDO = resolve(opcion('respaldo') ?? morir('falta --respaldo <archivo fuera del repositorio>'));
   if (dentroDelRepo(RESPALDO)) morir('--respaldo tiene que estar FUERA del repositorio (lleva ids)');
   const vivo = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`);
   if (vivo.cod !== 200) morir(`GET del flujo vivo del Demo A → ${vivo.cod}`);
   // `--sobre-demo-a` pisa el flujo del `.env` con otro: se niega si ese flujo no es el Demo A (el id sale de un .env, el nombre del flujo, no).
   // Es la misma regla de `--actualizar-codigo`: «Demo A» tiene que ser PALABRAS del nombre y ningún nombre de cliente ni de sistema ajeno.
-  if (bandera('sobre-demo-a')) {
+  if (SOBRE_DEMO) {
     const normal = (t) => String(t).normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
     const nombreVivo = normal(vivo.datos.name);
     const palabrasVivo = ` ${nombreVivo.replace(/[^a-z0-9]+/g, ' ').trim()} `;
     // «bellido» también se rechaza acá (a diferencia de `--actualizar-codigo`, que sí puede actualizar a Bellido): «Bellido — Demo A» no es el Demo A.
-    if (NO_ACTUALIZAR_COMPACTO.test(nombreVivo.replace(/[^a-z0-9]/g, '')) || /bellido/.test(nombreVivo) || !palabrasVivo.includes(' demo a ')) morir(`el flujo del .env no es el del Demo A («${vivo.datos.name}»): no se pisa`);
+    if (NO_ACTUALIZAR_COMPACTO.test(nombreVivo.replace(/[^a-z0-9]/g, '')) || /bellido/.test(nombreVivo) || !palabrasVivo.includes(D.palabra) || palabrasVivo.includes(D.otra)) morir(`el flujo del .env no es el del ${D.etiqueta} («${vivo.datos.name}»): no se pisa`);
     // Un flujo apagado no es el Demo A que se vigila: se escribiría sobre algo que hoy no recibe mensajes y el PUT lo activaría.
-    if (APLICAR && vivo.datos.active !== true) morir('el Demo A vivo NO está activo: no se pisa (actívelo y compruebe la suscripción de Meta antes)');
-    if (APLICAR && !bandera('autorizo-gemini-produccion')) morir('--sobre-demo-a --aplicar usa la credencial de Gemini de PRODUCCIÓN: exige --autorizo-gemini-produccion (la autorización de Andres es por ensayo y se pide de nuevo cada vez)');
+    if (APLICAR && vivo.datos.active !== true) morir(`el ${D.etiqueta} vivo NO está activo: no se pisa (actívelo y compruebe la suscripción de Meta antes)`);
+    if (APLICAR && !bandera('autorizo-gemini-produccion')) morir(`--sobre-demo-${D.letra} --aplicar usa la credencial de Gemini de PRODUCCIÓN: exige --autorizo-gemini-produccion (la autorización de Andres es por ensayo y se pide de nuevo cada vez)`);
+    if (CONSERVAR_CRM && APLICAR && !bandera('autorizo-hoja-de-prueba')) morir('--conservar-crm --aplicar deja el miniCRM escribiendo en una hoja de Google de PRUEBA: exige --autorizo-hoja-de-prueba (la autorización de Andres es por ensayo y se pide de nuevo cada vez)');
   }
   // M2: después de un PUT el flujo tiene que quedar ACTIVO (con su webhook); si no, se activa y se verifica.
   const asegurarActivo = async () => {
@@ -564,33 +622,38 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   const PROPIOS_DE_CANDIDATOS = ['Plan del turno', 'Resolver con agenda', 'Candado', 'Resumen del turno',
     'Estado de la conversación', 'Menú inicial', 'Enviar interactivo', 'Avisar al doctor (plantilla)'];
   if (!existsSync(RESPALDO) && vivo.datos.nodes.some((n) => PROPIOS_DE_CANDIDATOS.includes(n.name))) {
-    morir('el vivo ya es un candidato y no hay respaldo del Demo A original en esa ruta: no se sigue (use el respaldo existente)');
+    morir(`el vivo ya es un candidato y no hay respaldo del ${D.etiqueta} original en esa ruta: no se sigue (use el respaldo existente)`);
   }
   if (existsSync(RESPALDO)) {
     const previo = JSON.parse(readFileSync(RESPALDO, 'utf8'));
     const esOriginal = JSON.stringify(cuerpoPut(previo)) === JSON.stringify(cuerpoPut(vivo.datos));
     const ultimo = existsSync(APLICADO) ? JSON.parse(readFileSync(APLICADO, 'utf8')) : null;
     if (!esOriginal && !(ultimo && ultimo.huella === huella(vivo.datos) && (!ultimo.contenido || ultimo.contenido === contenido(vivo.datos)))) {
-      morir('el vivo no es ni el Demo A del respaldo ni lo último aplicado por esta herramienta: no se sigue');
+      morir(`el vivo no es ni el ${D.etiqueta} del respaldo ni lo último aplicado por esta herramienta: no se sigue`);
     }
     if (!esOriginal) console.log(`El vivo es el candidato aplicado antes (${ultimo.flujo}, ${ultimo.aplicado}): se cambia directo, sin pasar por el original.`);
   }
   // 1. el candidato B
-  if (!env.WA_PHONE_ID) morir('el .env no tiene WA_PHONE_ID (el phone id del Demo A)');
+  if (!env.WA_PHONE_ID) morir(`el .env no tiene WA_PHONE_ID (el phone id del ${D.etiqueta})`);
   const ARCHIVO = resolve(opcion('flujo') ?? join(AQUI, '..', 'agenda-minima.v0.json'));
   const b = JSON.parse(readFileSync(ARCHIVO, 'utf8').replace(MARCA_PHONE, env.WA_PHONE_ID));
   const trigB = b.nodes.filter((n) => /whatsAppTrigger/i.test(n.type));
   const trigVivo = vivo.datos.nodes.filter((n) => /whatsAppTrigger/i.test(n.type));
-  if (trigB.length !== 1 || trigVivo.length !== 1) morir(`disparadores: candidato ${trigB.length}, Demo A ${trigVivo.length}; hace falta exactamente uno en cada uno`);
+  if (trigB.length !== 1 || trigVivo.length !== 1) morir(`disparadores: candidato ${trigB.length}, ${D.etiqueta} ${trigVivo.length}; hace falta exactamente uno en cada uno`);
   if (b.nodes.some((n) => n.type === 'n8n-nodes-base.webhook')) morir('el candidato de producción no puede traer un Webhook de prueba');
   // 2. el disparador del Demo A, tal cual; las conexiones se renombran si el nombre difiere
   const nombreB = trigB[0].name; const t = structuredClone(trigVivo[0]);
   b.nodes = b.nodes.map((n) => (n === trigB[0] ? t : n));
   if (t.name !== nombreB) { b.connections[t.name] = b.connections[nombreB]; delete b.connections[nombreB]; }
+  // 2a. El Trigger copiado del vivo nunca trae una credencial del OTRO demo, y en el Demo B tiene que ser la suya por nombre
+  // (prohibición 7: activar un Trigger con la credencial de otra app reescribe el webhook de esa app).
+  const credsTrigger = Object.values(t.credentials ?? {}).map((c) => String((c && c.name) || ''));
+  if (credsTrigger.some((x) => D.ajenas.includes(x))) morir(`el Trigger vivo trae una credencial que no es del ${D.etiqueta} («${credsTrigger.join(', ')}»): no se sigue`);
+  if (D.trigger && !(credsTrigger.length === 1 && credsTrigger[0] === D.trigger)) morir(`el Trigger vivo del ${D.etiqueta} tiene que traer «${D.trigger}» y trae «${credsTrigger.join(', ') || 'ninguna'}»: no se sigue`);
   // 2b. El ENSAYO en el Demo A no escribe en ninguna planilla: la rama del miniCRM (8 nodos de Google) SALE del candidato, con todas sus
   // conexiones. n8n 2.x no publica un nodo con credencial requerida vacía, y ninguna credencial de Bellido puede llegar al Demo A.
   // La rama cuelga de «Armar mensajes» en paralelo: al quitar solo esa conexión, el resto del flujo no cambia. Un candidato sin esos nodos (Q'Taco) no pierde nada.
-  const quitadosCrm = b.nodes.filter((n) => NODOS_CRM_DE_BELLIDO.includes(n.name)).length;
+  const quitadosCrm = CONSERVAR_CRM ? 0 : b.nodes.filter((n) => NODOS_CRM_DE_BELLIDO.includes(n.name)).length;
   if (quitadosCrm) {
     b.nodes = b.nodes.filter((n) => !NODOS_CRM_DE_BELLIDO.includes(n.name));
     for (const k of NODOS_CRM_DE_BELLIDO) delete b.connections[k];
@@ -611,7 +674,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
       n.credentials = Object.assign({}, n.credentials, { [requerida]: {} });
       tabla.push(`  ${n.name}: venía SIN credencial ${requerida} en el JSON; se pone por tipo`);
     }
-    if (n === t) { tabla.push(`  ${n.name}: el del Demo A, tal cual («${Object.values(n.credentials ?? {}).map((c) => c.name).join(', ')}»)`); continue; }
+    if (n === t) { tabla.push(`  ${n.name}: el del ${D.etiqueta}, tal cual («${Object.values(n.credentials ?? {}).map((c) => c.name).join(', ')}»)`); continue; }
     const hh = n.credentials && n.credentials.httpHeaderAuth;
     if (hh && GRAPH_BEARER.test(String(hh.name || ''))) {
       const antes = `${n.parameters.authentication}/${n.parameters.genericAuthType ?? n.parameters.nodeCredentialType}`;
@@ -622,14 +685,21 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
       tabla.push(`  ${n.name}: PARÁMETROS CAMBIADOS ${antes} → predefinedCredentialType/whatsAppApi`);
     }
     for (const tipo of Object.keys(n.credentials ?? {})) {
-      const regla = CRED_DEMO_A[tipo];
+      if (CONSERVAR_CRM && tipo === 'googleApi') {
+        const origen = (n.credentials[tipo] && n.credentials[tipo].name) || '';
+        if (origen !== CRED_HOJA_DE_ENSAYO) morir(`«${n.name}» usa googleApi «${origen}»: con --conservar-crm la única credencial de hoja permitida es «${CRED_HOJA_DE_ENSAYO}»`);
+        n.credentials[tipo] = { id: await idDeCredencialDeHojaDeEnsayo(), name: CRED_HOJA_DE_ENSAYO };
+        tabla.push(`  ${n.name}: ${tipo} → «${CRED_HOJA_DE_ENSAYO}» (de la lista de n8n; hoja de PRUEBA)`);
+        continue;
+      }
+      const regla = D.cred[tipo];
       const origen = (n.credentials[tipo] && n.credentials[tipo].name) || '';
       const nombre = (typeof regla === 'string' ? regla : regla && regla[origen])
-        ?? morir(`«${n.name}» usa ${tipo} «${origen}», que no está en la tabla de credenciales del Demo A`);
+        ?? morir(`«${n.name}» usa ${tipo} «${origen}», que no está en la tabla de credenciales del ${D.etiqueta}`);
       if (repetidos.includes(nombre)) morir(`hay más de una credencial llamada «${nombre}» en n8n: no se elige por nombre`);
       const c = porNombre.get(nombre) ?? morir(`no existe en n8n la credencial «${nombre}»`);
       if (c.type !== tipo) morir(`«${nombre}» es de tipo ${c.type}, no ${tipo}`);
-      if (!delDemoA.has(c.id)) morir(`«${nombre}» no es una credencial que el Demo A vivo ya use`);
+      if (!delDemoA.has(c.id)) morir(`«${nombre}» no es una credencial que el ${D.etiqueta} vivo ya use`);
       n.credentials[tipo] = { id: c.id, name: c.name };
       tabla.push(`  ${n.name}: ${tipo} → «${c.name}»`);
     }
@@ -639,36 +709,69 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
     || (n.type === 'n8n-nodes-base.httpRequest' && (n.parameters?.authentication ?? 'none') !== 'none' && !Object.keys(n.credentials ?? {}).length)));
   if (sinCred.length) morir(`nodos sin credencial resuelta: ${sinCred.map((n) => n.name).join(', ')}`);
   // El id de la planilla del miniCRM va VACIO en el ensayo (aunque el JSON trajera otro): sin planilla no se escribe nada.
-  const idPlanillaDemo = b.nodes.find((n) => n.name === 'Config base')?.parameters?.assignments?.assignments?.find((a) => a.name === 'planillaProspectosId');
-  if (idPlanillaDemo) idPlanillaDemo.value = '';
+  const camposBase = b.nodes.find((n) => n.name === 'Config base')?.parameters?.assignments?.assignments ?? [];
+  const idPlanillaDemo = camposBase.find((a) => a.name === 'planillaProspectosId');
+  // Sobre el Demo B, el phone id del candidato tiene que ser el del Demo B (`WA_PHONE_ID` de su .env). Las variantes de ensayo versionadas
+  // traen `REEMPLAZAR_PHONE_NUMBER_ID`, que en la tabla local es el del Demo A: preparada así, el flujo descartaría todo mensaje del Demo B.
+  const fonoCandidato = camposBase.find((a) => a.name === 'phoneNumberIdEsperado');
+  if (D.letra === 'b' && fonoCandidato && fonoCandidato.value !== env.WA_PHONE_ID) morir('«Config base».phoneNumberIdEsperado no es el phone id del Demo B (WA_PHONE_ID del .env): prepare el import con el marcador REEMPLAZAR_PHONE_NUMBER_ID_B (docs/ensayo/LEEME.md §12)');
+  if (CONSERVAR_CRM) {
+    // Con el CRM conectado, la hoja de prueba tiene que estar resuelta (nunca un marcador, nunca vacía) y el flujo tiene que traer sus nodos de Google.
+    const hojaDemo = camposBase.find((a) => a.name === 'planillaProspectosHoja');
+    if (!idPlanillaDemo || !ID_PLANILLA_VALIDO(idPlanillaDemo.value)) morir('--conservar-crm: «Config base».planillaProspectosId no es un id de planilla resuelto (corra preparar-import.sh con REEMPLAZAR_PLANILLA_ENSAYO_ID en la tabla local)');
+    if (!hojaDemo || typeof hojaDemo.value !== 'string' || !hojaDemo.value.trim() || /^REEMPLAZAR_|^=/.test(hojaDemo.value)) morir('--conservar-crm: «Config base».planillaProspectosHoja no está resuelta (corra preparar-import.sh con REEMPLAZAR_PLANILLA_ENSAYO_HOJA en la tabla local)');
+    if (!b.nodes.some((n) => n.type === 'n8n-nodes-base.googleSheets')) morir('--conservar-crm: el flujo no trae nodos de Google Sheets: no hay miniCRM que ensayar');
+    // El phone id del flujo tiene que ser el del Demo A (el del .env): nunca el de un cliente.
+    const fonoDemo = camposBase.find((a) => a.name === 'phoneNumberIdEsperado');
+    if (!fonoDemo || fonoDemo.value !== env.WA_PHONE_ID) morir(`--conservar-crm: «Config base».phoneNumberIdEsperado no es el phone id del ${D.etiqueta} (WA_PHONE_ID del .env): no se pone un flujo de ensayo con el número de otro`);
+    // La hoja de PRUEBA no puede ser la de producción: se compara el id resuelto con el de producción, si el entorno lo trae (sin imprimir ninguno de los dos).
+    const idProduccion = env.PLANILLA_PROSPECTOS_ID_NOVUCHAT ?? process.env.PLANILLA_PROSPECTOS_ID_NOVUCHAT;
+    if (idProduccion && idProduccion === idPlanillaDemo.value) morir('--conservar-crm: el id de la planilla es IGUAL al de la hoja real de prospectos de producción: el ensayo escribiría en producción');
+    if (!idProduccion) morir('--conservar-crm: falta PLANILLA_PROSPECTOS_ID_NOVUCHAT (el id de la hoja real de prospectos) en el .env o en el entorno: sin él no se puede comprobar que la hoja del ensayo no es la de producción. Agréguelo al .env del ensayo sin mostrar el valor (lo repone Claude con el «sí» de Andres, desde la tabla local) y repita.');
+  } else if (idPlanillaDemo) idPlanillaDemo.value = '';
+  // El doctor del ENSAYO es quien prueba (PREPARACION.md §3). `configuracionFlujo` no entrega `numeroDoctor`, así que sin esto el respaldo
+  // queda en marcador, el flujo no tiene a quién apuntar y retira la frase del botón («Vacunas y otros» salía como texto, humo del 08/11).
+  // El número llega por la variable de entorno NUMERO_DOCTOR_ENSAYO (nunca por argumento ni impreso).
+  const doctorEnsayo = String(process.env.NUMERO_DOCTOR_ENSAYO ?? '').replace(/\D/g, '');
+  if (process.env.NUMERO_DOCTOR_ENSAYO !== undefined && !/^\d{8,15}$/.test(doctorEnsayo)) morir('NUMERO_DOCTOR_ENSAYO no tiene la forma de un teléfono (8 a 15 dígitos)');
+  const campoDoctorDemo = b.nodes.find((n) => n.name === 'Config base')?.parameters?.assignments?.assignments?.find((a) => a.name === 'respaldoNumeroDoctor');
+  if (campoDoctorDemo && doctorEnsayo) campoDoctorDemo.value = doctorEnsayo;
   // La trampa del 15/09: un nodo que habla con Graph (Meta) con una credencial de cabecera genérica (la de la ingesta) le manda el token
   // de la consola a Meta. Tras resolver, ningún nodo con URL al anfitrión de Graph (Meta) puede conservar `httpHeaderAuth`: va con `whatsAppApi`.
   const graphConCabecera = b.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && llamaAGraph(n.parameters?.url)
     && (n.credentials?.httpHeaderAuth || n.parameters?.genericAuthType === 'httpHeaderAuth'));
   if (graphConCabecera.length) morir(`nodos que llaman al anfitrión de Graph (Meta) y conservan una credencial de cabecera (httpHeaderAuth): ${graphConCabecera.map((n) => n.name).join(', ')}. Tienen que usar la credencial predefinida whatsAppApi`);
   const credsUsadas = b.nodes.flatMap((n) => Object.values(n.credentials ?? {}).map((c) => c.name));
+  // Ninguna credencial que sea SOLO del otro demo puede quedar en el flujo (ni por la tabla, ni por el Trigger, ni por un JSON que la traiga con id).
+  const delOtroDemo = credsUsadas.filter((x) => D.ajenas.includes(x));
+  if (delOtroDemo.length) morir(`credenciales que no son del ${D.etiqueta}: ${[...new Set(delOtroDemo)].join(', ')}`);
   const prohibidas = credsUsadas.filter((x) => NO_PERMITIDOS.test(x));
   if (prohibidas.length) morir(`credenciales con nombre de cliente o sistema ajeno: ${[...new Set(prohibidas)].join(', ')}`);
   const marcas = [...new Set(JSON.stringify(b).match(/REEMPLAZAR_[A-Z][A-Z0-9_]*/g) ?? [])];
   // Solo se admiten marcadores de RESPALDO del cliente en «Config base» (recepción, doctor, calendario,
   // horario): con la ruta del Demo A en «ensayo», los manda el panel; sin reemplazar no son números ni
   // calendarios válidos, así que nunca llegan al doctor ni a la agenda reales.
-  const RESPALDO_OK = /^REEMPLAZAR_(NUMERO_(RECEPCION|DOCTOR)|CALENDARIO|HORARIO_ATENCION|PLANILLA_PROSPECTOS_ID)_[A-Z0-9_]+$/;
+  const RESPALDO_OK = /^REEMPLAZAR_(NUMERO_(RECEPCION|DOCTOR)|CALENDARIO|HORARIO_ATENCION|PLANILLA_PROSPECTOS_ID|PHONE_NUMBER_ID)_[A-Z0-9_]+$/;
   const marcasMal = marcas.filter((m) => !RESPALDO_OK.test(m));
+  if (CONSERVAR_CRM && marcas.length) morir(`--conservar-crm: quedan marcadores sin reponer (${marcas.join(', ')}): corra preparar-import.sh con la tabla local`);
   const fueraDeConfigBase = b.nodes.filter((n) => n.name !== 'Config base' && /REEMPLAZAR_[A-Z]/.test(JSON.stringify(n.parameters ?? {}))).map((n) => n.name);
   if (fueraDeConfigBase.length) morir(`hay marcadores fuera de «Config base»: ${fueraDeConfigBase.join(', ')}`);
   if (marcasMal.length) morir(`marcadores que el flujo necesitaría y nadie repone: ${marcasMal.join(', ')}`);
   // 4. la diferencia con el vivo
   const nv = new Set(vivo.datos.nodes.map((n) => n.name)); const nb = new Set(b.nodes.map((n) => n.name));
-  console.log(`Demo A vivo: «${vivo.datos.name}», ${vivo.datos.nodes.length} nodos, activo=${vivo.datos.active}`);
+  console.log(`${D.etiqueta} vivo: «${vivo.datos.name}», ${vivo.datos.nodes.length} nodos, activo=${vivo.datos.active}`);
   // Los últimos 4 del `webhookId` del Trigger vivo, para cotejarlos a ojo con el `callback_url` de `webhook-meta.sh --ver-meta` (termina en
   // `/webhook/<webhookId>/webhook`). Solo 4 caracteres: la ruta completa es una URL de capacidad y no se imprime.
   console.log(`Trigger vivo: webhookId …${String(t.webhookId ?? '').slice(-4) || '(sin webhookId)'}; flujo vivo activo=${vivo.datos.active}`);
-  console.log(`Candidato (${ARCHIVO.split(sep).slice(-2).join('/')}): ${b.nodes.length} nodos (con el disparador del Demo A). El nombre del flujo queda «${vivo.datos.name}».`);
-  console.log(`Phone id del cliente en el JSON: ${MARCA_PHONE.test(readFileSync(ARCHIVO, 'utf8')) ? 'reemplazado en memoria por el del Demo A (no se muestra)' : 'no trae'}`);
+  console.log(`Candidato (${ARCHIVO.split(sep).slice(-2).join('/')}): ${b.nodes.length} nodos (con el disparador del ${D.etiqueta}). El nombre del flujo queda «${vivo.datos.name}».`);
+  console.log(`Phone id del cliente en el JSON: ${MARCA_PHONE.test(readFileSync(ARCHIVO, 'utf8')) ? `reemplazado en memoria por el del ${D.etiqueta} (no se muestra)` : 'no trae'}`);
+  if (CONSERVAR_CRM) console.log('miniCRM CONSERVADO (--conservar-crm): escribe en la hoja de PRUEBA con «'+CRED_HOJA_DE_ENSAYO+'»; el id de la hoja no se muestra.');
   if (quitadosCrm) console.log(`Nodos quitados del candidato: ${quitadosCrm} (la rama del miniCRM de Bellido): el ensayo en el Demo A no escribe en ninguna planilla y n8n 2.x no publica nodos de Google sin credencial.`);
   console.log(`Nodos que se van: ${[...nv].filter((x) => !nb.has(x)).length} · que llegan: ${[...nb].filter((x) => !nv.has(x)).length} · en los dos: ${[...nb].filter((x) => nv.has(x)).length}`);
   console.log('Credenciales, nodo por nodo:'); tabla.forEach((l) => console.log(l));
+  // Los Webhook propios del vivo (el «Carrito del catálogo» del Demo B) salen con el flujo: no responden mientras dura el ensayo.
+  const webhooksVivos = vivo.datos.nodes.filter((n) => n.type === 'n8n-nodes-base.webhook' && !nb.has(n.name)).map((n) => n.name);
+  if (webhooksVivos.length) console.log(`Webhook(s) del ${D.etiqueta} que dejan de responder mientras dura el ensayo (vuelven con --restaurar-respaldo): ${webhooksVivos.join(', ')}`);
   console.log(`Marcadores que quedan (solo respaldo de «Config base»; el panel de «ensayo» manda): ${marcas.join(', ') || '—'}`);
   console.log(`Respaldo del vivo: ${RESPALDO}`);
   guardarRespaldo(RESPALDO, vivo.datos);
@@ -679,7 +782,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   const tras = await asegurarActivo();
   writeFileSync(APLICADO, JSON.stringify({ flujo: ARCHIVO.split(sep).slice(-3).join('/'), aplicado: new Date().toISOString(), huella: huella(tras), contenido: contenido(tras) }), { mode: 0o600 });
   chmodSync(APLICADO, 0o600);
-  console.log(`✓ candidato sobre el Demo A: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
+  console.log(`✓ candidato sobre el ${D.etiqueta}: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
   process.exit(0);
 }
 

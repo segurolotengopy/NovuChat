@@ -35,12 +35,12 @@ describe('datos: el mapa de columnas de Bellido', () => {
   it('es válido para el MISMO validador que corre en n8n', () => {
     expect(validarMapaCrm(MAPA)).toEqual([]);
   });
-  it('es la plantilla de Evy MÁS las tres columnas nuevas (U, V, W) con el diagnóstico del equipo movido a la X, y con su propia nota', () => {
+  it('es la plantilla de Evy MÁS las tres columnas nuevas (U, V, W) con el diagnóstico del equipo movido a la X, y con su propia nota y el título de O que usa el equipo de Bellido', () => {
     const evy = leerJson<{ crm: J }>('admin/scripts/datos/rroca-evy/rroca-evy.json').crm;
     const sin = (m: J): J => { const c = copia(m); delete c['_nota']; return c; };
     const esperado = sin(evy);
     Object.assign(esperado['columnas'] as J, {
-      servicioElegido: { letra: 'U', titulo: 'Servicio elegido' }, agendo: { letra: 'V', titulo: 'Agendó' }, fechaCita: { letra: 'W', titulo: 'Fecha y hora de la cita' },
+      quePidio: { letra: 'O', titulo: 'Qué pidió (Nombre Niño)' }, servicioElegido: { letra: 'U', titulo: 'Servicio elegido' }, agendo: { letra: 'V', titulo: 'Agendó' }, fechaCita: { letra: 'W', titulo: 'Fecha y hora de la cita' },
     });
     (esperado['equipo'] as J)['diagnostico'] = { letra: 'X', titulo: 'Diagnóstico del equipo' };
     expect(sin(MAPA)).toEqual(esperado);
@@ -209,16 +209,28 @@ describe('unidades: agmProspectoCrm (vocabulario cerrado)', () => {
     expect(celda(decidir(dr), 'derivacion')).toBeUndefined();
     expect(String(celda(decidir(prospecto({ plan: 'transferir', derivo: 'recepcion' })!), 'resumen'))).toContain('Derivado a recepción.');
   });
-  it('NIEGA: el texto libre del cliente, el nombre del niño, los síntomas y los montos NO llegan al prospecto ni a la fila', () => {
+  it('NIEGA: el texto libre del cliente, los síntomas y los montos NO llegan al prospecto ni a la fila (el nombre del niño SÍ, solo en «Qué pidió» de una cita creada: ver la prueba siguiente)', () => {
     const sucio = {
-      textoCliente: 'mi hijo Mateo Quispe tiene fiebre y tos desde ayer, le doy paracetamol, la consulta cuesta 250 Bs', texto: 'tiene fiebre', pacientes: ['Mateo Quispe'],
+      textoCliente: 'mi hijo Mateo Quispe tiene fiebre y tos desde ayer, le doy paracetamol, la consulta cuesta 250 Bs', texto: 'tiene fiebre', pacientes: [{ nombres: 'Mateo', apellidos: 'Quispe' }],
       motivo: 'diagnóstico de bronquitis', historial: [{ r: 'u', t: 'convulsiones' }], pregunta: 'cuánto sale la vacuna 150 Bs',
     };
     const p = prospecto({ plan: 'crear', creada: true, servicio: 'control_recien_nacido', inicioCita: '2026-10-08T15:00:00-04:00', ...sucio })!;
     const salida = JSON.stringify([p, decidir(p)]);
-    for (const x of ['Mateo', 'Quispe', 'fiebre', 'tos', 'paracetamol', '250', '150', 'bronquitis', 'convulsiones', 'vacuna', 'diagn']) expect(salida, x).not.toContain(x);
+    for (const x of ['fiebre', 'tos', 'paracetamol', '250', '150', 'bronquitis', 'convulsiones', 'vacuna', 'diagn']) expect(salida, x).not.toContain(x);
     expect(salida).not.toMatch(/pag[oó]|acreditad/i);
     expect(Object.keys(p).sort()).toEqual(['agendo', 'anuncio', 'diaPreferido', 'fechaCita', 'horarioPreferido', 'nombre', 'nombreDePerfil', 'nuevoContacto', 'quePidio', 'senales', 'servicioElegido', 'telefono', 'ultimaInteraccionMs'].sort());
+  });
+  it('el pediatra ve el nombre del niño: «Qué pidió» de una cita CREADA lleva «Apellidos, Nombres»; sin cita creada, nunca (Andres, 08/11/2026)', () => {
+    const base = { plan: 'crear', servicio: 'control_recien_nacido', inicioCita: '2026-10-08T15:00:00-04:00', pacientes: [{ nombres: 'Mateo', apellidos: 'Quispe' }] };
+    const ok = prospecto({ ...base, creada: true })!;
+    expect(String(ok['quePidio'])).toBe('Agendar cita (Control del recién nacido) — Quispe, Mateo');
+    expect(String(celda(decidir(ok), 'quePidio'))).toContain('Quispe, Mateo');
+    const hermanos = prospecto({ ...base, creada: true, pacientes: [{ nombres: 'Ana', apellidos: 'Perez' }, { nombres: 'Luis', apellidos: 'Perez' }] })!;
+    expect(String(hermanos['quePidio'])).toContain('Perez, Ana / Perez, Luis');
+    const no = prospecto({ ...base, creada: false })!;
+    expect(JSON.stringify([no, decidir(no)])).not.toContain('Quispe');
+    const sucio = prospecto({ ...base, creada: true, pacientes: [{ nombres: '=HYPERLINK("x") Mateo 250', apellidos: '<b>Quispe</b>' }] })!;
+    expect(String(sucio['quePidio']).split(' — ')[1]).not.toMatch(/[=<>"()0-9]/);
   });
   it('el nombre del perfil se sanea: solo letras, espacios, apóstrofo y guion; nada de dígitos ni fórmulas', () => {
     const p = prospecto({ nombrePerfil: '=HYPERLINK("x") Ana 250 Bs <b>Perez</b> 😀' })!;

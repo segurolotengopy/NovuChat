@@ -145,6 +145,46 @@ export const DIA_MS = 86_400_000;
 /** Cuántos días se conserva una carpeta de medios. */
 export const DIAS_DE_RETENCION = 90;
 
+/** Cuántos días se conserva una carpeta de medios ENVIADOS por una persona (decisión D2 de Andres, 10/11/2026). */
+export const DIAS_DE_RETENCION_ENVIADOS = 30;
+
+/**
+ * El objeto de un medio ENVIADO: sha256('enviado\n'+conversación+'\n'+mensaje) en base64url. Un hash, para que ni el
+ * teléfono (va en la conversación) ni la clave aparezcan en Storage. Es también el id del metadato
+ * `tenants/{t}/mediosEnviados/{objeto}`.
+ */
+export function objetoDeEnviado(conversacionId: string, mensajeId: string): string {
+  return createHash('sha256').update(`enviado\n${conversacionId}\n${mensajeId}`).digest('base64url');
+}
+
+/** `tenants/{t}/mediosEnviados/{díaLaPaz}/{objeto}.{ext}`: sin teléfono, sin nombre, sin leyenda. */
+export function rutaDeEnviado(tenantId: string, dia: string, objeto: string, ext: string): string {
+  return `tenants/${tenantId}/mediosEnviados/${dia}/${objeto}.${ext}`;
+}
+
+/** Las extensiones que puede llevar un medio ENVIADO (la lista cerrada de `validarAdjunto`). */
+export const EXTENSIONES_DE_ENVIADO: ReadonlySet<string> = new Set(
+  ['jpg', 'png', 'ogg', 'mp3', 'm4a', 'aac', 'pdf', 'docx', 'xlsx', 'pptx', 'txt'],
+);
+
+/**
+ * La ruta guardada de un medio enviado, si es EXACTAMENTE `tenants/{t}/mediosEnviados/{aaaa-mm-dd}/{objeto}.{ext}` de ESTE
+ * comercio y ESTE objeto, con extensión de la lista; si no, `null`. Cinco tramos, cada uno por igualdad: sin `..`, sin
+ * otra carpeta, sin otro comercio. Devuelve la extensión.
+ */
+export function rutaValidaDeEnviado(ruta: unknown, tenantId: string, objeto: string): { ruta: string; ext: string } | null {
+  if (typeof ruta !== 'string' || ruta.includes('..') || ruta.includes('\\')) return null;
+  const partes = ruta.split('/');
+  if (partes.length !== 5) return null;
+  const [raiz, t, carpeta, dia, archivo] = partes as [string, string, string, string, string];
+  if (raiz !== 'tenants' || t !== tenantId || carpeta !== 'mediosEnviados' || !CARPETA_DE_DIA.test(dia)) return null;
+  const punto = archivo.lastIndexOf('.');
+  if (punto <= 0) return null;
+  const ext = archivo.slice(punto + 1);
+  if (archivo.slice(0, punto) !== objeto || !EXTENSIONES_DE_ENVIADO.has(ext)) return null;
+  return { ruta, ext };
+}
+
 /** Días enteros entre dos días `aaaa-mm-dd`. */
 export function diasEntre(hoy: string, otro: string): number {
   return Math.round((Date.parse(`${hoy}T00:00:00Z`) - Date.parse(`${otro}T00:00:00Z`)) / DIA_MS);

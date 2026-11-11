@@ -33,6 +33,7 @@
  * prueba en verde mientras el flujo se rompe.
  */
 import { describe, expect, it } from 'vitest';
+import { NODOS_DEL_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 import {
   type J, codigoDe, configBase, destinos, ejecutar, entradas, expresion, leerFlujo, nodo, plantilla,
 } from './lib/flujo.ts';
@@ -536,6 +537,19 @@ describe('(6) Lo que se le dice al cliente según el cotejo: ninguno afirma un p
     expect(pasa('¿Avisar del cobro?', { ...s, numeroDueno: '59170000009' })).toBe(false);
   });
 
+  it('NO CUADRA con VARIAS diferencias: las nombra TODAS (destinatario primero) con frases fijas, sin copiar lo leído; una frase desconocida sale genérica (07/11/2026)', () => {
+    const s = responder({ statusCode: 200, body: { resultado: 'no_cuadra', importe: 597, diferencias: [
+      'El comprobante dice 350 y el pedido es de 597.',
+      'El depósito fue a la cuenta 987654321, que no es la del QR.',
+      'El depósito figura a «PERSONA AJENA SA» y la cuenta es de «UN NEGOCIO».',
+      'Algo nuevo que dice PERSONA AJENA y la cuenta 987654321.',
+    ] } }, previo());
+    const r = String(s['respuesta']);
+    expect(r).toMatch(/Hay varios datos que no me coinciden \(la cuenta de destino no es la del QR, el nombre del destinatario no coincide con el de la cuenta, el comprobante dice 350 y tu pedido es de 597 y otro dato del comprobante\)/);
+    expect(r).not.toMatch(/987654321|PERSONA AJENA|UN NEGOCIO/);
+    expect(r).not.toMatch(AFIRMA_PAGO);
+    expect(String(s['motivoTransferencia'])).toContain('PERSONA AJENA');
+  });
   it('NO CUADRA e ILEGIBLE: lo revisa una persona, y el aviso SALE de verdad', () => {
     for (const [resultado, marca] of [['no_cuadra', /no me coincide/i], ['ilegible', /no pude leerlo/i]] as const) {
       const s = responder({ statusCode: 200, body: { resultado,
@@ -756,7 +770,9 @@ describe('(9) El orden del lienzo y el costo en mensajes', () => {
       const host = /^=?https:\/\/([^/?#{]+)/i.exec(url)?.[1]?.toLowerCase() ?? '';
       return host === HOST_META || host.endsWith(`.${HOST_META}`);
     };
-    const porGraph = f.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest'
+    // La rama común del GUARDADO de medios (11/11/2026) habla con Graph para BAJAR el medio del cliente («Pedir el medio a Meta», «Descargar medio») y para su
+    // aviso de falla, que solo sale si el medio no se pudo guardar: no es un mensaje por conversación (0 agregados), por eso se la deja fuera de este conteo.
+    const porGraph = f.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && !(NODOS_DEL_GUARDADO as string[]).includes(n.name)
       && vaAMeta(String(n.parameters['url'] ?? ''))).map((n) => n.name);
     // F3a (02/10/2026): el segundo HTTP a Graph es el botón de «pasar con una
     // persona», que lleva el MISMO texto en un interactivo: reemplaza al texto

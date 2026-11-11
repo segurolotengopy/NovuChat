@@ -385,6 +385,17 @@ service firebase.storage {
     }
 
     // =========================================================================
+    // /tenants/{tenantId}/mediosEnviados/** — LOS ADJUNTOS QUE ENVÍA UNA PERSONA (Core,
+    // «Envío de medios por consola», B2; 30 días). NADIE LEE NI ESCRIBE AQUÍ desde un
+    // cliente: escribe `enviarAdjuntoComoPersona` (SDK Admin), lee `leerAdjuntoPersona`
+    // y `verMedio`, y borra `purgarMedios`. Bloque explícito y no solo la negación
+    // final: si un día se afloja el comodín, este sigue cerrado.
+    // =========================================================================
+    match /tenants/{tenantId}/mediosEnviados/{resto=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
     // NEGACIÓN FINAL. Todo lo que no coincidió arriba queda prohibido: otros
     // caminos, otros nombres, carpetas ajenas del mismo comercio, rutas con
     // `..`. Es la red de seguridad del archivo. No borrarla.

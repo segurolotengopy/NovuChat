@@ -12,7 +12,7 @@
  *
  * ESTADO: flujo completo (PR-3), 47 nodos: la entrada verificada del receptor, la entrada y la configuración, la puerta del turno (comercio no operativo, uso extendido y pausa por Tomar), los medios, la conversación
  * (una llamada al modelo que conversa y propone el pedido; el código valida contra el catálogo y calcula el total), el cobro REAL con el QR del comercio y su cotejo, los avisos al comercio y la salida.
- * `--publicable` sigue fallando mientras queden marcadores `REEMPLAZAR_*`, la plantilla `pedido_registrado` sin aprobar o el costo de entrega sin declarar.
+ * `--publicable` sigue fallando mientras queden marcadores `REEMPLAZAR_*`, la plantilla `pedido_registrado` sin aprobar o el umbral de envío gratis (`envioGratisDesdeBs`) sin declarar.
  *
  * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código, sin los datos y sin la entrada del receptor. El código de los nodos lo arma el armador genérico `../comun-sin-agente/construir.mjs` (importado, no copiado):
  *   - `@@dato:a.b.c@@` por ese dato; `@@cred:ingesta|graph|entradaPrueba|gemini` por el nombre de credencial del archivo de datos;
@@ -25,10 +25,11 @@
  * LOS DATOS son `admin/scripts/datos/walisuma/walisuma.json` (zona Tenants: solo marcadores `REEMPLAZAR_*`, nunca un token, una ruta de webhook real, un teléfono ni un identificador de Meta).
  */
 import { closeSync, constants, openSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
+import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
 import { problemasDeReferencias } from '../rroca-ruben/construir.mjs';
@@ -38,7 +39,12 @@ export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/walisum
 export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../venta-minima/flujo.plantilla.json');
 // 47 + los 9 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026 y v2 del 30/10):
 // excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
-export const TOPE_DE_NODOS = 56;
+// 56 + los 8 de la rama del miniCRM (`ramaCrm`, generada por el módulo `crm`): 56 → 64, excepción de tope aprobada por Andres (D2, 10/11/2026) y declarada en docs/versiones-por-cliente.md.
+export const TOPE_DE_NODOS = 64;
+/** Los 8 nodos de la rama del miniCRM (el módulo `crm` los genera). */
+export const NODOS_DE_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
+export const CREDENCIAL_CRM = (tenant) => `Google Sheets miniCRM (crm-${tenant})`;
+const TENANT = 'walisuma';
 export const FLUJO_PRODUCCION = 'walisuma.json';
 export const FLUJO_PRUEBA = 'walisuma.prueba.json';
 
@@ -88,6 +94,8 @@ export const CONFIG = {
     'vd-normalizar-entrada': ['../venta-digital/src/nodos/normalizar-entrada.js'],
     'vd-puerta-del-turno': ['../venta-digital/src/nodos/puerta-del-turno.js'],
     'vd-resumen-del-turno': ['../venta-digital/src/nodos/resumen-del-turno.js'],
+    // El miniCRM es un módulo (nunca se copia): los paquetes de código del adaptador general de señales.
+    ...Object.fromEntries(Object.entries(rutasPaqueteCrmSenales()).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
   },
   variantes: [
     { archivo: FLUJO_PRODUCCION, quitar: 'Entrada de prueba', nombre: 'se toma de los datos' },
@@ -135,6 +143,8 @@ const FORMAS_CONFIG = {
   numeroRecepcion: /^(\d{6,20}|REEMPLAZAR_[A-Z0-9_]+)$/,
   contactoAviso: /^(\d{6,20}|REEMPLAZAR_[A-Z0-9_]+)$/,
   prefijosPermitidos: /^\d{1,4}(,\d{1,4})*$/,
+  // El envío es gratis desde este monto en Bs (entero, incluido el umbral); lo declara el comercio.
+  envioGratisDesdeBs: /^\d{1,6}$/,
   telefonosDePrueba: /^(\d{6,20}(,\d{6,20})*|REEMPLAZAR_[A-Z0-9_]+)$/,
   // El ÚNICO modelo de este flujo: gemini-3.5-flash-lite.
   modelo: /^gemini-3\.5-flash-lite$/,
@@ -142,6 +152,9 @@ const FORMAS_CONFIG = {
   avisoPedidoPlantilla: /^([a-z0-9_]{1,100}|REEMPLAZAR_[A-Z0-9_]+)$/,
   avisoPedidoEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL|REEMPLAZAR_[A-Z0-9_]+)$/,
   avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
+  // La planilla del miniCRM: el id de la hoja de Google (un marcador en el repositorio) y el nombre de su pestaña.
+  planillaProspectosId: /^(REEMPLAZAR_[A-Z0-9_]+|[A-Za-z0-9_-]{25,100})$/,
+  planillaProspectosHoja: /^[\p{L}\p{N}_ .-]{1,100}$/u,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
 
@@ -175,10 +188,13 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
       if (!['string', 'number', 'boolean'].includes(typeof v)) errores.push(`configBase.${c}: solo texto, número o booleano`);
       if (FORMAS_CONFIG[c] && !FORMAS_CONFIG[c].test(String(v))) errores.push(`configBase.${c}: forma no válida`);
     }
-    for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
-    // El costo de entrega NO se inventa: viaja vacío hasta que el comercio lo declare.
-    if (cb.costoDeEntrega === undefined) errores.push('configBase.costoDeEntrega: falta la clave (vacía hasta que el comercio declare el costo)');
+    for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio', 'planillaProspectosId', 'planillaProspectosHoja']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
+    // El umbral de envío gratis NO se inventa: lo declara el comercio (entero en Bs, mayor que cero).
+    if (cb.envioGratisDesdeBs === undefined) errores.push('configBase.envioGratisDesdeBs: falta la clave (el monto desde el cual el envío es gratis)');
   }
+  // El mapa de columnas del miniCRM: lo valida el MISMO validador que corre en n8n.
+  if (d.crm === undefined) errores.push('crm: falta (el mapa de columnas de la planilla)');
+  else for (const m of validarMapaCrm(d.crm)) errores.push(`crm: ${m}`);
   if (errores.length) throw new Error(`walisuma.json: datos no válidos: ${errores.join('; ')}`);
   return d;
 }
@@ -244,6 +260,11 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
   if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
   // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
   if (nombreDelNodo === 'Descargar medio (guardado)' && url === URL_DESCARGA_GUARDADO) return true;
+  // La consulta de SOLO la fila de encabezados del miniCRM (Google Sheets API, `values.get`): la URL exacta del módulo común, con un rango A<fila>:<letra><fila>.
+  if (nombreDelNodo === 'Leer encabezados de la planilla') {
+    const [antes, despues] = urlEncabezados('@@').split('@@');
+    if (url.startsWith(antes) && url.endsWith(despues) && /^[A-Z]+\d+:[A-Z]+\d+$/.test(url.slice(antes.length, url.length - despues.length))) return true;
+  }
   const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
   if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
   return ANFITRIONES.includes(m[1].toLowerCase());
@@ -258,6 +279,20 @@ export function guardias(variante, flujo, opciones = {}) {
   const p = (n) => (n && n.parameters) || {};
   const tope = opciones.tope ?? TOPE_DE_NODOS;
   if (nodos.length > tope) h.push(`tiene ${nodos.length} nodos y el tope es ${tope}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md)`);
+  // EL miniCRM (módulo `crm`): la rama completa, la credencial del tenant y las barreras del módulo (rangos que no llegan a la letra del diagnóstico del equipo, retención de ejecuciones en `none`).
+  for (const n of NODOS_DE_CRM) if (!nombres.has(n)) h.push(`miniCRM: falta el nodo «${n}»`);
+  const conexCrm = (flujo && flujo.connections) || {};
+  if (nombres.has('Prospecto para la planilla') && !((((conexCrm['Armar mensajes'] || {}).main || [])[0] || []).map((x) => x.node).includes('Prospecto para la planilla'))) h.push('miniCRM: «Armar mensajes» no está conectado a «Prospecto para la planilla»');
+  const prosCrm = por('Prospecto para la planilla'); const resumenCrm = por('Resumen del turno'); const armadoCrm = por('Armar mensajes');
+  if (prosCrm && resumenCrm && armadoCrm && !(prosCrm.position[1] < resumenCrm.position[1] && prosCrm.position[1] > armadoCrm.position[1])) h.push('miniCRM: «Prospecto para la planilla» tiene que ir debajo de «Armar mensajes» y encima de «Resumen del turno» en el lienzo (el resumen es la última rama)');
+  for (const n of nodos) {
+    const g = (n.credentials || {}).googleApi;
+    if (g && g.name !== CREDENCIAL_CRM(TENANT)) h.push(`miniCRM: «${n.name}» usa una credencial de Google que no es la de este negocio (${CREDENCIAL_CRM(TENANT)})`);
+  }
+  let mapaDeCrm = opciones.mapaCrm;
+  if (mapaDeCrm === undefined) { try { mapaDeCrm = JSON.parse(leerSiExiste(ARCHIVO_DE_DATOS, 'walisuma.json')).crm; } catch (e) { mapaDeCrm = undefined; } }
+  if (!mapaDeCrm || !mapaDeCrm.columnas) h.push('miniCRM: faltan los datos `crm` (el mapa de columnas): sin él no se pueden comprobar los rangos de lectura');
+  else h.push(...hallazgosCrm(flujo || {}, mapaDeCrm).map((x) => `miniCRM: ${x}`));
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
   // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
@@ -409,7 +444,7 @@ const sinComentarios = (t) => String(t).normalize('NFKC').replace(/\/\^?REEMPLAZ
 const marcasEn = (v) => (sinComentarios(JSON.stringify(v) || '').match(/reemplazar_[a-z0-9_-]*/gi) || []);
 
 /**
- * Este flujo es un ESQUELETO (PR-2): no se publica hasta que el PR-3 lo complete. Además, como los demás: sin marcadores `REEMPLAZAR_*`, con la plantilla del aviso aprobada por Meta y con el costo de entrega declarado.
+ * Este flujo es un ESQUELETO (PR-2): no se publica hasta que el PR-3 lo complete. Además, como los demás: sin marcadores `REEMPLAZAR_*`, con la plantilla del aviso aprobada por Meta y con el umbral de envío gratis declarado.
  * Los mensajes nombran claves, marcadores y nodos, NUNCA valores de los datos ni fragmentos del flujo. Devuelve la lista de hallazgos (vacía si se puede publicar).
  */
 export function guardiaDePublicacion({ flujo, datos }) {
@@ -426,9 +461,11 @@ export function guardiaDePublicacion({ flujo, datos }) {
   if (!cb || typeof cb !== 'object') h.push('no se puede leer la configuración base');
   else {
     if (cb.avisoPedidoEstado !== 'APPROVED') h.push('avisoPedidoEstado tiene que ser APPROVED (Meta aún no aprobó la plantilla del aviso de pedido)');
-    if (String(cb.costoDeEntrega === undefined ? '' : cb.costoDeEntrega).trim() === '') h.push('costoDeEntrega sin declarar: el comercio todavía no dijo cuánto cuesta cada modo de entrega');
+    if (!(Number(cb.envioGratisDesdeBs) > 0)) h.push('envioGratisDesdeBs sin declarar: el comercio todavía no dijo desde qué monto el envío es gratis');
   }
   for (const n of ['Guardar comprobante']) if (!nombres.has(n)) h.push(`falta el nodo «${n}»`);
+  // La planilla del miniCRM: sin id real de la hoja el flujo no guarda prospectos (el marcador ya se reporta arriba; aquí se nombra la causa).
+  if (cb && typeof cb === 'object' && !/^[A-Za-z0-9_-]{25,100}$/.test(String(cb.planillaProspectosId || ''))) h.push('planillaProspectosId sin un id real de la hoja del miniCRM (marcador o vacío): sin la planilla de Walisuma el flujo no guarda prospectos');
   return h;
 }
 
@@ -447,6 +484,12 @@ export function armarWalisuma(proyecto, datos, v, origenReceptor = leerReceptorD
   const plantilla = JSON.parse(JSON.stringify(proyecto.plantilla));
   const quitar = new Set(Array.isArray(v.quitar) ? v.quitar : (v.quitar ? [v.quitar] : []));
   plantilla.nodes = plantilla.nodes.filter((n) => !quitar.has(n.name));
+  // LA RAMA DEL miniCRM se GENERA (módulo `crm`), no se copia: 8 nodos debajo de «Armar mensajes» y encima de «Resumen del turno», que sigue siendo el último. La credencial la calcula el tenant, no sale de los datos.
+  const rama = ramaCrm({ credencial: '@@cred:crm', desde: 'Armar mensajes', paquete: 'crm-decidir-senales', x: 6200, y: 600 });
+  plantilla.nodes.push(...rama.nodes);
+  Object.assign(plantilla.connections, rama.connections);
+  const previoDeArmar = (plantilla.connections['Armar mensajes'] && plantilla.connections['Armar mensajes'].main && plantilla.connections['Armar mensajes'].main[0]) || [];
+  plantilla.connections['Armar mensajes'] = { main: [[...previoDeArmar, { node: rama.entrada, type: 'main', index: 0 }]] };
   // La entrada verificada del receptor se INCLUYE (solo en producción), leída por nombre de su origen; «Descartar repetidos» sigue a «Config base».
   if (!prueba) {
     plantilla.nodes.unshift(...JSON.parse(JSON.stringify(origenReceptor.nodes)));
@@ -456,12 +499,18 @@ export function armarWalisuma(proyecto, datos, v, origenReceptor = leerReceptorD
   for (const n of plantilla.nodes) {
     n.parameters = reemplazarTextos(n.parameters, datos, `${donde} · ${n.name}`);
     for (const c of Object.values(n.credentials || {})) {
-      const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini)$/.exec(String(c.name));
+      const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini|crm)$/.exec(String(c.name));
+      // EXCEPCIÓN DECLARADA a «la prueba nunca usa credenciales de producción» (la misma de Antonio, Evy, Emma y Rubén): la variante de prueba lleva el NOMBRE de la credencial del miniCRM del tenant (el id va vacío: no resuelve nada); sin id de planilla la rama no escribe.
+      if (m && m[1] === 'crm') { c.name = CREDENCIAL_CRM(TENANT); continue; }
       // La variante de PRUEBA nunca usa las credenciales de producción de Meta ni de Gemini.
       const clave = prueba && m && m[1] === 'graph' ? 'graphPrueba' : (prueba && m && m[1] === 'gemini' ? 'geminiPrueba' : (m ? m[1] : ''));
       if (m) c.name = dato(datos, `credenciales.${clave}`, `${donde} · ${n.name}`);
     }
-    if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
+    if (n.name === 'Config base') {
+      n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
+      // La variante de PRUEBA no escribe en ninguna planilla: el id va vacío (nunca la hoja de un cliente real).
+      if (prueba) for (const a of n.parameters.assignments.assignments) if (a.name === 'planillaProspectosId') a.value = '';
+    }
     const js = n.parameters && n.parameters.jsCode;
     // Los módulos comunes de medios se INCLUYEN desde su fuente: el código queda tal cual, sin una sola edición.
     const medio = typeof js === 'string' ? /^@@medio:([a-z0-9-]+)$/.exec(js) : null;
@@ -498,6 +547,8 @@ export function armarWalisuma(proyecto, datos, v, origenReceptor = leerReceptorD
   injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
+  // El mapa de columnas del tenant (dato, no código) dentro de los nodos del módulo y los rangos de lectura de los nodos de Google.
+  injertarCrm(flujo, datos.crm);
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);
   return JSON.stringify(flujo, null, 2) + '\n';
 }
@@ -514,7 +565,7 @@ export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS,
     const texto = armarWalisuma(proyecto, datos, v, origen);
     const variante = v.archivo === FLUJO_PRUEBA ? 'prueba' : 'produccion';
     const armado = JSON.parse(texto);
-    const propios = [...guardias(variante, armado), ...(variante === 'produccion' ? hallazgosDelReceptor(armado, datos, origen) : [])];
+    const propios = [...guardias(variante, armado, { mapaCrm: datos.crm }), ...(variante === 'produccion' ? hallazgosDelReceptor(armado, datos, origen) : [])];
     if (propios.length) throw new Error(`${v.archivo}: ${propios.join('; ')}`);
     const ruta = join(carpeta, v.archivo);
     const actual = leerSiExiste(ruta, v.archivo);
@@ -523,7 +574,7 @@ export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS,
     if (actual !== null) {
       try {
         const j = JSON.parse(actual);
-        versionado = [...guardias(variante, j), ...(variante === 'produccion' ? hallazgosDelReceptor(j, datos, origen) : [])];
+        versionado = [...guardias(variante, j, { mapaCrm: datos.crm }), ...(variante === 'produccion' ? hallazgosDelReceptor(j, datos, origen) : [])];
       } catch (x) { versionado = ['no es un JSON válido']; }
     }
     if (!verificar) escribirSinSeguirEnlaces(ruta, texto, v.archivo);
@@ -556,7 +607,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         for (const x of hallazgos) console.error(`  - ${x}`);
         process.exit(1);
       }
-      console.log('✓ Completo, sin marcadores REEMPLAZAR_*, con la plantilla del aviso APPROVED y el costo de entrega declarado: se puede publicar (con el «sí» de Andres por acción).');
+      console.log('✓ Completo, sin marcadores REEMPLAZAR_*, con la plantilla del aviso APPROVED y el umbral de envío gratis declarado: se puede publicar (con el «sí» de Andres por acción).');
       process.exit(0);
     } catch (e) {
       console.error(e instanceof SyntaxError ? '✗ JSON inválido' : `✗ ${e instanceof Error ? e.message : String(e)}`);

@@ -55,3 +55,7 @@ La red de crisis tiene **DOS capas** (el código `rrEsCrisis` y la marca RIESGO 
 ## Mensajes por conversación
 
 **0 agregados al cliente.** Un mensaje por turno del cliente, o ninguno (la prueba lo niega recorriendo todos los tipos de entrada). Llamadas al modelo: 0 o 1 por turno de conversación libre; las de Gemini en los medios son 1 por audio, imagen o PDF.
+
+## Gmail tras venta confirmada (10/11/2026)
+
+Lo propio de Rubén: los textos fijos del pedido y de las respuestas, la clave de aviso `gmail`, los campos de la ficha (`gmailPedidoMs`, `gmail`), el pedido dentro del mensaje del Libro al Pack y la barrera del modelo (`rrExtraRedaccion`). La extracción y validación del correo es común (`vg*`, `Flujos/experimental/venta-digital/src/gmail.js`, incluida desde su fuente en `CONFIG.librerias`). Prueba: `admin/pruebas/tenants/rroca-ruben/gmail.test.ts`. Detalle en `DISENO.md`. 64 -> 64 nodos; +2 mensajes por venta confirmada; sin publicar.

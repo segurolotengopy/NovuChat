@@ -72,3 +72,33 @@ P. **Promesa de llamada:** «recepción te llama / te contactará…» se quita 
 - **Propio de Evy (dato del tenant):** `campanaFrase` y `campanaTexto` en `Config base` (archivo de datos `admin/scripts/datos/rroca-evy/rroca-evy.json`); el texto no vive en el prompt ni en el código de los nodos. `construir.mjs` los valida (juntos o ninguno; frase de 5 palabras o más; el único enlace permitido es uno corto de Google Maps).
 - **Código:** `evEsEntradaCampana` (`src/lib/ev.js`, igualdad de palabras como `rrEsEntradaLanding` de Rubén) en «Decidir turno»; plan `campana_literal` en «Armar mensajes». Mensajes por conversación: 0 agregados (reemplaza la respuesta del modelo).
 - **Pruebas:** `admin/pruebas/tenants/rroca-evy/campana-literal.test.ts`.
+
+## Decisiones de Andres del 08/11/2026: la letra del MD (sin aprobación previa de la doctora)
+
+Andres ordenó seguir el MD de la doctora (23/10/2026) en estos puntos, que hasta entonces el flujo cambiaba por reglas anteriores. Cada uno revierte una decisión previa suya, a sabiendas:
+
+| Punto | Antes | Ahora (MD) | Revierte |
+|---|---|---|---|
+| Los 250 Bs | solo en la bienvenida | también al preguntar por precio o costo, siempre con la gratuidad y solo pegados a la valoración (lista blanca en `evProtegerValor`) | observación 4 de Rubén (28/10) |
+| «Efecto lifting inmediato» | se quitaba «inmediato» | sale tal cual; cualquier otra promesa de inmediatez se sigue quitando | criterio de la clínica |
+| «Bonificada / bonificamos / por la campaña» | prohibido y reescrito | sale como en el MD | observación 4 de Rubén (28/10) y «saludo neutro» (24/10) |
+| Cuidados y recuperación | el código borraba cuidados concretos y agregaba «Los cuidados posteriores te los explica la Dra.» | el modelo dice el texto del MD; la barrera MÉDICA (medicamentos, dosis, diagnóstico) sigue | política de cuidados del 29/10 |
+| Cierre | variante propia con «Ya pasé tus datos…» | texto del MD (bonificada, enlace wa.me a recepción, «te asignarán tu espacio de inmediato»); la última línea sigue diciendo la verdad del aviso | «solo se ofrece lo que se cumple» en este punto |
+| Bienvenida | corta, tope de 600 (700 por mensaje) | la del MD (837 caracteres) completa; tope por mensaje 1000 | decisión de brevedad del 24/10 |
+| «Lo voy a pensar» | oferta de llamada (28/10) | SIN cambio: Andres eligió mantener la observación del 28/10 | — |
+
+El texto literal de campaña (#860, Caso A del MD del 07/11) NO pasa por ninguna de estas barreras: sale por código tal cual (prueba en `campana-literal.test.ts`, antes y después de levantarlas).
+
+**Literal de campaña (Andres, 08/11/2026, su botón sobre mayúsculas):** el literal del Caso A del MD del 07/11 sale cuando el TEXTO INICIAL de la conversación INCLUYE «Quiero agendar mi valoración gratuita» (dentro de un texto más largo, sin importar mayúsculas ni tildes; palabras completas). Antes, solo la frase exacta. Solo el texto inicial: un mensaje posterior que la contenga sigue el flujo normal. Cualquier otro inicio sigue el protocolo del MD del 23/10. El mensaje prellenado del anuncio («Hola Dra. Evy, vi su anuncio… quiero agendar mi valoración gratuita 🙌») ahora ACTIVA el literal. El texto que rodea a la frase nunca llega al modelo.
+
+## Variante de ensayo en el Demo A (08/11/2026)
+`rroca-evy.ensayo-demo-a.json` (40 nodos; datos en `admin/scripts/datos/rroca-evy/ensayo-demo-a.json`) es una tercera variante del MISMO flujo, no un flujo aparte: la producción menos el receptor y el miniCRM, más un `WhatsApp Trigger` del Demo A, con credenciales del Demo A y el interruptor `avisarAlPropioNumero` (tres reemplazos exactos en «Armar previos» y «Armar mensajes», solo en esta variante). Todo lo demás se incluye desde la misma fuente; no hay código copiado. Nunca se publica sobre el número de Evy. Detalle en `DISENO.md` y procedimiento en `docs/ensayo/LEEME.md` §10.
+
+## Correcciones del humo del Demo A (10/11/2026, pasos 11 y 12; botón de Andres)
+Silvana corrió el humo corto el 09/11 en el Demo A (ensayo). Dos fallas reales, corregidas en código (0 mensajes de texto por conversación agregados o quitados):
+- **Paso 11, salud («Estoy embarazada, ¿puedo hacérmelo?»):** el modelo contestó que los bioestimuladores «no se realizan durante el embarazo ni en la lactancia» y nombraba la valoración en otra oración, así que `evSaludSinRemision` lo dejó pasar (le bastaba UNA mención de la valoración en todo el texto). Ahora se mira POR ORACIÓN: toda oración que nombra una condición (embarazo, lactancia, medicamentos…) tiene que remitir ella misma a la Dra. y no afirmar ni negar nada (`EV_AFIRMA_NIEGA`: «no se realizan», «no se puede», «contraindicado», «se puede»…); si no, sale el texto fijo de remisión con el botón (reemplaza la respuesta del modelo: 0 mensajes agregados). Pruebas: `barreras-modelo.test.ts`, «NIEGA: afirmar o negar sobre la condición…».
+- **Paso 12 («Quiero ver cómo queda»):** el Antes y Después dependía de que el modelo emitiera la etiqueta; ese día no la emitió y la imagen llegó un turno tarde. Ahora el CÓDIGO la planea cuando el cliente pide ver resultados (`evPideVerResultado`), una sola vez por ficha, con el mismo tope y la misma lista cerrada. Es la imagen que el prompt ya manda; no es un mensaje nuevo por conversación (como máximo una imagen por ficha, ya prevista). Pruebas: `artes.test.ts`. **Límite conocido:** la variante del Demo A no lleva los ids de las tres imágenes (son de la WABA de Evy), así que en el Demo A la imagen NO puede salir y el paso 12 solo se verifica por prueba y en producción. Dos mensajes del cliente en el mismo segundo corren en paralelo y pueden repetir una imagen: no se corrigió (carrera del staticData, común a todos los flujos).
+
+## El nombre dado tras pedírselo (11/11/2026, reclamo 59)
+
+La bienvenida termina pidiendo el nombre. Si el cliente contestaba solo «Rosa» (o «Rosa, quiero mejorar la mandíbula»), `evNombreDelMensaje` lo descartaba (solo valía tras aceptar o pedir agendar) y los avisos, el cierre y el miniCRM salían con el nombre del PERFIL de WhatsApp. Ahora también cuenta cuando el ÚLTIMO mensaje del asistente pide el nombre (`evNombreTrasPedirNombre`, mismo código en Emma). 0 mensajes agregados. Prueba: `nombre-tras-pedirlo.test.ts`.

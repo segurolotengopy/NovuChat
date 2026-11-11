@@ -17,6 +17,7 @@ import { avisoConsumoVigente, type AvisoConsumoVista as Aviso } from '../lib/pla
 import { AvisoConsumo } from '../componentes/AvisoConsumo';
 import { SelectorDeCuenta } from '../componentes/SelectorDeCuenta';
 import { BotonMiniCrm } from '../componentes/BotonMiniCrm';
+import { BotonesManual } from '../componentes/BotonesManual';
 import { EdicionMiniCrm } from '../componentes/EdicionMiniCrm';
 import { cuentasDe } from '../../core/lib/cuentaActiva';
 
@@ -388,6 +389,7 @@ export function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdm
         descubrirlo en la factura. */}
     {esAdmin && datos.avisoConsumo && <AvisoConsumo aviso={datos.avisoConsumo} cuenta={datos.cuentaCruda} />}
     <BotonMiniCrm tenantId={tenantId} esAdmin={esAdmin} />
+    <BotonesManual tenantId={tenantId} esAdmin={esAdmin} />
     <EdicionMiniCrm tenantId={tenantId} esAdmin={esAdmin} />
     {esAdmin && (
       <>

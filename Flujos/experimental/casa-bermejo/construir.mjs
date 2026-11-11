@@ -105,6 +105,9 @@ const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
 export const ANFITRIONES_TIENDA = ['novutienda-sitio-stg.web.app'];
 /** El mercado del catálogo (BO o AR) según el prefijo del remitente: la MISMA regla que `ceMercadoDePrefijo`; una prueba compara las dos. */
 export const EXPRESION_MERCADO = "{{ ((d) => d.length < 10 || d.length > 15 ? 'X' : (d.indexOf('591') === 0 ? 'BO' : (d.indexOf('54') === 0 ? 'AR' : 'X')))(String(((($('Normalizar entrada').first().json) || {}).from) || '').replace(/\\D/g, '').replace(/^0+/, '')) }}";
+/** Las dos llamadas síncronas a la Function del servidor que hacen DOS nodos con destino fijo (B9, Argentina): la expresión EXACTA de cada URL (dos destinos cada una, ninguna ruta sale de datos). Una prueba las ejecuta. */
+export const URL_COTEJAR_EXPR = `={{ $json.cuerpoAlias ? 'https://${ANFITRION_CONSOLA}/cotejarAliasArs' : 'https://${ANFITRION_CONSOLA}/cotejarComprobanteVenta' }}`;
+export const URL_AVISAR_EXPR = `={{ ($('Armar avisos').first().json.servidor || {}).ruta === 'pedirAliasArs' ? 'https://${ANFITRION_CONSOLA}/pedirAliasArs' : 'https://${ANFITRION_CONSOLA}/ingesta' }}`;
 const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', ANFITRION_CONSOLA];
 
 // ----------------------------------------------------------------- lectura y escritura sin seguir enlaces simbólicos
@@ -255,6 +258,8 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
     const m = /^=(?:(REEMPLAZAR_URL_CATALOGO)|https:\/\/([a-z0-9.-]+))\/api\/novuchat\/v1\/catalogo\?mercado=(.*)$/is.exec(url);
     return m !== null && m[3] === EXPRESION_MERCADO && (m[1] !== undefined || ANFITRIONES_TIENDA.includes(String(m[2]).toLowerCase()));
   }
+  if (nombreDelNodo === 'Cotejar en el servidor' && url === URL_COTEJAR_EXPR) return true;
+  if (nombreDelNodo === 'Avisar al servidor' && url === URL_AVISAR_EXPR) return true;
   const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
   if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
   return ANFITRIONES.includes(m[1].toLowerCase());
@@ -372,13 +377,13 @@ export function guardias(variante, flujo, opciones = {}) {
   const codigoAvisos = String(p(por('Armar avisos')).jsCode || '');
   if (hay('Armar avisos') && !(/bmResolver\(/.test(codigoAvisos) && /bmPlantilla\(/.test(codigoAvisos) && /avPlantilla\(/.test(codigoAvisos))) h.push('«Armar avisos» no lleva la decisión ni la plantilla: el aviso fuera de la ventana no saldría');
   const cotejar = por('Cotejar en el servidor');
-  if (cotejar && !/cotejarComprobanteVenta$/.test(String(p(cotejar).url || ''))) h.push('«Cotejar en el servidor» no llama a cotejarComprobanteVenta');
+  if (cotejar && !/cotejarComprobanteVenta$/.test(String(p(cotejar).url || '')) && String(p(cotejar).url || '') !== URL_COTEJAR_EXPR) h.push('«Cotejar en el servidor» no llama a cotejarComprobanteVenta');
   const modelo = por('Conversar con el modelo');
   if (modelo && !/^=?https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\//.test(String(p(modelo).url || ''))) h.push('«Conversar con el modelo» no llama a Gemini');
   const avisar = por('Avisar al servidor');
   if (avisar) {
     const cuerpo = String(p(avisar).jsonBody || '');
-    if (!/ingesta$/.test(String(p(avisar).url || '')) || p(avisar).method !== 'POST') h.push('«Avisar al servidor» no hace POST a la ingesta');
+    if ((!/ingesta$/.test(String(p(avisar).url || '')) && String(p(avisar).url || '') !== URL_AVISAR_EXPR) || p(avisar).method !== 'POST') h.push('«Avisar al servidor» no hace POST a la ingesta');
     if (!/evento: 'cobro_cancelado'/.test(cuerpo) || /evento: (?!'cobro_cancelado')/.test(cuerpo)) h.push('«Avisar al servidor»: el único evento permitido es `cobro_cancelado`');
     const opc = p(avisar).options || {};
     if (opc.timeout !== 8000 || !((opc.response || {}).response || {}).fullResponse || !((opc.response || {}).response || {}).neverError) h.push('«Avisar al servidor» tiene que llevar timeout 8000, fullResponse y neverError (la respuesta decide si se emite otro QR)');
@@ -508,11 +513,11 @@ export function armarCasaBermejo(proyecto, datos, v, origenReceptor = leerRecept
   const reporta = plantilla.connections['¿Reportar? (saliente)'];
   if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);
   reporta.main[0] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
-  // El reporte saliente de ESTE flujo (propio): igual al común, más el EVENTO. `qr_enviado` lleva `reglaCobro: 2` (QR REAL: abre el cobro de 15 minutos, 3 intentos), `referencia` (el pedido) y `monto` (el del carrito):
+  // El reporte saliente de ESTE flujo (propio): igual al común, más el EVENTO. `qr_enviado` y `pedido_sin_cobro` (Argentina, sin QR ni monto) llevan `lineas` y `entrega`; `qr_enviado` lleva `reglaCobro: 2` (QR REAL: abre el cobro de 15 minutos, 3 intentos), `referencia` (el pedido) y `monto` (el del carrito):
   // contra ese número coteja el servidor, y solo viaja si el envío de la imagen fue aceptado. `no_contactar` viaja SIEMPRE.
   const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
   if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes('evento: m.evento')) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
-  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; if (m.evento === 'qr_enviado' && Array.isArray(m.lineas) && m.lineas.length) { r.lineas = m.lineas; if (m.entrega) r.entrega = m.entrega; } } return JSON.stringify(r); })() }}";
+  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; if ((m.evento === 'qr_enviado' || m.evento === 'pedido_sin_cobro') && Array.isArray(m.lineas) && m.lineas.length) { r.lineas = m.lineas; if (m.entrega) r.entrega = m.entrega; } } return JSON.stringify(r); })() }}";
   // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
   injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });

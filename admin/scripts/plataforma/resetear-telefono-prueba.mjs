@@ -1,5 +1,6 @@
 /**
- * RESETEAR UN TELÉFONO DE PRUEBA DE UN TENANT — EL ÚNICO RESETEO, en una sola pasada (flujo venta-minima, Q'Taco). Seco por omisión.
+ * RESETEAR UN TELÉFONO DE PRUEBA DE UN TENANT — EL ÚNICO RESETEO, en una sola pasada, para todos los flujos (`FLUJO_DE_TENANT`: Q'Taco, Rubén, Evy,
+ * Antonio, Emma, Bellido). Seco por omisión.
  * (Antes `resetear-estado-turno.mjs`, que queda como envoltorio que avisa. Andres, 07/11/2026: «debería ser UN solo reseteo».)
  *
  * PARA QUÉ. Para volver a probar «como cliente nuevo» con un teléfono de prueba hay que limpiar TODO lo que el sistema recuerda de ESE teléfono.
@@ -27,7 +28,7 @@
  *        (sin `tomadoPor` válido, fechas rotas), vencido o ya devuelto NO pausa al asistente y no se toca.
  *   4. La ficha y la memoria del teléfono en el `staticData` del flujo de n8n (con `--workflow <id>` y N8N_BASE_URL/N8N_API_KEY en el ENTORNO):
  *      reutiliza `sinFicha`/`quedan` de `resetear-ficha-flujo.mjs` (no se duplica la lógica). Sin n8n configurado el paso se informa «omitido» y el
- *      resultado dice ⚠, no ✓. (`vaciar-memoria-flujo.mjs` es de otra familia —las fichas de Rubén— y no aplica a venta-minima.)
+ *      resultado dice ⚠, no ✓. (`vaciar-memoria-flujo.mjs --todas-las-fichas` es el borrado MASIVO de un flujo, no un reseteo de teléfono; `resetear-ficha-flujo`, `soltar-sena-pendiente` y `--sufijos` ya solo avisan «use el único».)
  *
  * QUÉ SOLO SE INFORMA, SIN BORRAR (lo dudoso o lo que no es estado de prueba reproducible):
  *   · `bloqueada` (contacto bloqueado en la Consola por un administrador): el asistente calla del todo. NO se toca; si está, el resultado dice
@@ -74,7 +75,22 @@ import { comprobarProyecto } from './aplicar-consola-oculta.mjs';
 import { comprobarRespaldo, guardarRespaldo, leerRespaldoGenerico, rutaDelRespaldoSigueIgual } from './aplicar-consola-conversaciones.mjs';
 import { sinFicha, quedan, validarBaseUrl, canon, ESPERA_FINAL_MS } from './resetear-ficha-flujo.mjs';
 
-export const TENANTS_PERMITIDOS = Object.freeze(['qtaco']);
+/**
+ * EL ÚNICO RESETEO PARA TODOS LOS FLUJOS (Andres, 07/11/2026: «UN solo reseteo»; reclamo del 09/11 porque Rubén y Evy se resetearon con pasos
+ * parciales). Cada tenant lleva el NOMBRE EXACTO de su flujo vivo de n8n: sin `--workflow`, el script lo resuelve por ese nombre (tiene que haber
+ * exactamente uno y estar en `N8N_WORKFLOWS_PERMITIDOS`). Los ids no van en el repositorio.
+ */
+export const FLUJO_DE_TENANT = Object.freeze({
+  qtaco: "NovuChat — Venta mínima (v0) — Q'Taco",
+  'rroca-ruben': 'NovuChat — Venta digital de Rubén (rroca-ruben)',
+  'rroca-evy': 'NovuChat — Dra. Evy Karina (rroca-evy)',
+  'rroca-antonio': 'NovuChat — El Puente de Antonio (rroca-antonio)',
+  'rroca-emma': 'NovuChat — Dra. Emma (rroca-emma)',
+  bellido: 'NovuChat Bellido — Agendamiento (Pediatría)',
+});
+export const TENANTS_PERMITIDOS = Object.freeze(Object.keys(FLUJO_DE_TENANT));
+/** Q'Taco conserva sus espacios y claves de cupo; en los demás tenants cualquier espacio o clave de ESE teléfono de la lista cerrada es estado de prueba. */
+const soloVentaMinima = (tenant) => tenant === 'qtaco';
 export const ESPACIOS_SESION = Object.freeze(['venta-minima', 'venta-minima-prueba']);
 export const CLAVES_CUPO = Object.freeze(['transferencias', 'pedidos']);
 export const COLECCIONES = Object.freeze(['sesionesDeTurno', 'cuposDeTurno']);
@@ -93,10 +109,10 @@ const CAMPO = 'resetear-telefono-prueba';
 const CON_VALOR = ['proyecto', 'tenant', 'tel', 'workflow', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'revertir'];
 
-export const USO = '  node scripts/plataforma/resetear-telefono-prueba.mjs --proyecto <id> --tenant qtaco --tel <dígitos> [--workflow <id>] '
-  + '[--aplicar --respaldo <ruta> --confirmo-produccion qtaco]\n'
+export const USO = '  node scripts/plataforma/resetear-telefono-prueba.mjs --proyecto <id> --tenant <tenant> --tel <dígitos> [--workflow <id>] '
+  + '[--aplicar --respaldo <ruta> --confirmo-produccion <tenant>]\n'
   + '  node scripts/plataforma/resetear-telefono-prueba.mjs --revertir --respaldo <ruta> --proyecto <id> --tenant qtaco --tel <dígitos> '
-  + '[--aplicar --confirmo-produccion qtaco]\n'
+  + '[--aplicar --confirmo-produccion <tenant>]\n'
   + `  (con TELEFONOS_PRUEBA, GCP_PROJECT_ID_STAGING y GCP_PROJECT_ID_PROD en el entorno; tenants permitidos: ${TENANTS_PERMITIDOS.join(', ')})`;
 
 export function analizarArgumentos(argv, env = process.env, opciones = {}) {
@@ -170,12 +186,13 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
  * Devuelve 'borrar' (forma exacta, de este teléfono y de venta-minima), 'otro' (de este teléfono pero de otro espacio o clave: no se toca),
  * 'resto' (posible resto: otra forma de clave del mismo teléfono, o su `phoneNumberId` no coincide: no se toca) o 'ajeno'.
  */
-export function clasificar(coleccion, id, phoneNumberId, tel) {
+export function clasificar(coleccion, id, phoneNumberId, tel, tenant = 'qtaco') {
   const partes = String(id).split('~');
   const exacto = `wa_${tel}`;
     const esperadas = coleccion === 'sesionesDeTurno' ? 3 : 4;
   if (partes.length === esperadas && partes[2] === exacto) {
     if (typeof phoneNumberId !== 'string' || phoneNumberId !== partes[0]) return 'resto';
+    if (!soloVentaMinima(tenant)) return partes[1] ? 'borrar' : 'otro';
     if (coleccion === 'sesionesDeTurno') return ESPACIOS_SESION.includes(partes[1]) ? 'borrar' : 'otro';
     return CLAVES_CUPO.includes(partes[1]) ? 'borrar' : 'otro';
   }
@@ -201,7 +218,7 @@ export async function escanear(db, tenant, tel) {
     if (s.docs.length > MAX_ESCANEO) throw Object.assign(new Error('escaneo'), { code: 'escaneo-demasiado-grande' });
     r.porColeccion[c] = 0;
     for (const d of s.docs) {
-      const k = clasificar(c, d.id, d.get ? d.get('phoneNumberId') : d.data?.()?.phoneNumberId, tel);
+      const k = clasificar(c, d.id, d.get ? d.get('phoneNumberId') : d.data?.()?.phoneNumberId, tel, tenant);
       if (k === 'borrar') { r.borrar.push({ coleccion: c, id: d.id, ref: d.ref, sello: sello(d.updateTime), updateTime: d.updateTime }); r.porColeccion[c] += 1; }
       else if (k === 'otro') r.otro += 1;
       else if (k === 'resto') r.resto += 1;
@@ -311,7 +328,7 @@ export function leerRespaldo(ruta, { entorno, tenant, tel }) {
   const vistos = new Set();
   for (const d of r.docs) {
     const ok = esObjeto(d) && COLECCIONES.includes(d.coleccion) && typeof d.id === 'string' && esObjeto(d.data)
-      && clasificar(d.coleccion, d.id, d.data.phoneNumberId, tel) === 'borrar' && !vistos.has(`${d.coleccion}/${d.id}`);
+      && clasificar(d.coleccion, d.id, d.data.phoneNumberId, tel, tenant) === 'borrar' && !vistos.has(`${d.coleccion}/${d.id}`);
     if (!ok) return { ok: false, motivo: 'el respaldo trae un documento que no es de ese teléfono y de venta-minima (o está repetido)' };
     vistos.add(`${d.coleccion}/${d.id}`);
   }
@@ -613,6 +630,16 @@ export async function principal(argv = process.argv.slice(2)) {
   const db = getFirestore();
   // n8n: la dirección y la clave vienen del ENTORNO del proceso (nunca de un archivo). Sin ellas o sin --workflow, el paso se omite (⚠).
   let n8n = null;
+  if (!cfg.workflow && process.env.N8N_BASE_URL && process.env.N8N_API_KEY) {
+    const v0 = validarBaseUrl(process.env.N8N_BASE_URL);
+    if (!v0.ok) throw Object.assign(new Error('url'), { code: v0.codigo });
+    const lista = await fetch(`${v0.origen}/api/v1/workflows?limit=250`, { headers: { [['X', 'N8N', 'API', 'KEY'].join('-')]: process.env.N8N_API_KEY }, redirect: 'error', signal: AbortSignal.timeout(60000) });
+    if (!lista.ok) throw Object.assign(new Error('n8n'), { code: `n8n-lista-${lista.status}` });
+    const permitidos = String(process.env.N8N_WORKFLOWS_PERMITIDOS ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+    const hallados = ((await lista.json()).data ?? []).filter((w) => w.name === FLUJO_DE_TENANT[cfg.tenant]);
+    if (hallados.length === 1 && permitidos.includes(hallados[0].id)) cfg.workflow = hallados[0].id;
+    else console.error(`\n  ⚠ No se resolvió el flujo de n8n del tenant (hallados: ${hallados.length}; en N8N_WORKFLOWS_PERMITIDOS: ${hallados.length === 1 && permitidos.includes(hallados[0].id) ? 'sí' : 'no'}). El paso de n8n se omite.\n`);
+  }
   if (cfg.workflow && process.env.N8N_BASE_URL && process.env.N8N_API_KEY) {
     const v = validarBaseUrl(process.env.N8N_BASE_URL);
     if (!v.ok) throw Object.assign(new Error('url'), { code: v.codigo });

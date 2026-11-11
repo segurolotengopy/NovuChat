@@ -27,6 +27,7 @@ export { registrarQrDeCobro, imagenDeCobro } from './modulos/cobros/cobro.js';
 // cotejo por plazo e intentos, la imagen guardada en Storage y la purga diaria.
 // Desplegar esto no cambia ningún flujo vivo: la regla 2 la elige el flujo.
 export { cotejarComprobanteVenta } from './modulos/cobros/cotejoVenta.js';
+export { pedirAliasArs, cotejarAliasArs } from './modulos/cobros/cobroAliasArs.js';
 export { guardarComprobante, purgarComprobantes } from './modulos/cobros/comprobantes.js';
 export { verComprobante } from './modulos/cobros/verComprobante.js';
 // SEÑA POR QR EN LAS RESERVAS (bloque 2). El cotejo del comprobante lo hace el
@@ -42,6 +43,8 @@ export { ubicacionDeEnlace } from './central/negocio/mapa.js';
 export { seguimientosPendientes, seguimientoEnviado } from './modulos/agenda/seguimientos.js';
 // Rescate de 22 h (Pedidos): decide y marca; el envío es de un flujo de n8n por comercio.
 export { reclamarRescates } from './modulos/pedidos/rescates.js';
+// Confirmar un pedido de catálogo externo (NovuTienda): llamada firmada desde el servidor (B5b).
+export { confirmarPedidoExterno } from './modulos/pedidos/confirmarExterno.js';
 // CATÁLOGO WEB PROPIO. Tres endpoints públicos y una función de configuración;
 // el porqué de cada uno está en `catalogoWeb.ts`. Se exportan desde acá, como
 // todo lo demás, para que exista un solo inventario de lo que se despliega.
@@ -120,8 +123,14 @@ export { bloquearContacto, desbloquearContacto } from './core/conversacion/bloqu
 // `SALIDA_PERSONA_RUTAS` con `secretAccessor` para sa-functions y la rama de reversión hacia adelante;
 // el invocador público de las tres va tras el despliegue de la etiqueta (`scripts/nube-visor.sh` exige
 // que las Functions ya existan) (detalle en el PR).
-export { enviarComoPersona } from './central/cuenta/enviarComoPersona.js';
+export { enviarComoPersona, enviarAdjuntoComoPersona } from './central/cuenta/enviarComoPersona.js';
 export { reclamarSalidaPersona } from './core/conversacion/reclamarSalidaPersona.js';
+// ADJUNTOS DE PERSONA (B2 de «Envío de medios por consola», 11/11/2026). `enviarAdjuntoComoPersona` (callable, 1 GiB, App Check
+// en producción) guarda UN archivo en `tenants/{t}/mediosEnviados/**` y deja el mensaje `pendiente`; `leerAdjuntoPersona` (HTTP)
+// entrega sus bytes al flujo «Salida de persona» con la credencial del número. Agregan DOS Functions que nacen sin invocador
+// (`scripts/nube-visor.sh --servicio enviaradjuntocomopersona` y `leeradjuntopersona`, tras el despliegue de la etiqueta);
+// con las banderas `personaPuedeEnviarMedios` apagadas no hay efecto. Además: colección cerrada `mediosEnviados` y su TTL.
+export { leerAdjuntoPersona } from './core/medios/leerAdjuntoPersona.js';
 export { confirmarSalidaPersona } from './core/conversacion/confirmarSalidaPersona.js';
 // MEDIOS ENTRANTES GUARDADOS (H3, PR-1; Andres 20 a 23/10/2026). `guardarMedio` (HTTP, solo token, exige un
 // mensaje entrante reciente) y `purgarMedios` (03:45 La Paz, 90 días y baja). Con la bandera `guardarMedios`

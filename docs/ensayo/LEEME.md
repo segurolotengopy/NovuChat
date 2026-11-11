@@ -29,6 +29,11 @@ número de ensayo), `--cliente` y `--flujo`; **no** recibe `--numero`. Hoy
 `ensayo-flujo.sh --restaurar` repone el JSON del Demo A. Para un flujo de venta
 mínima no sirve `ensayo-flujo.sh` (ver §6).
 
+**Desde el 10/11/2026 el Demo B es el segundo número de ensayo** (decisión de
+Andres, para probar dos cosas a la vez): los tres scripts reciben el demo de
+destino y, sin esa opción, todo lo de este documento sigue igual sobre el Demo A.
+El camino del Demo B, con lo que cambia y lo que **no** cubre, está en el §12.
+
 **Mientras dura el ensayo, el Demo A no sirve para una demo comercial.** Se
 anota en `ESTADO.md` y se restaura apenas termina.
 
@@ -409,7 +414,8 @@ tiene modalidad no se desvía; sin `--aplicar` no se escribe nada; no se imprime
 ### Regla de coordinación: el Demo A es UN solo recurso, con turnos
 
 Mientras un ensayo desvía su ruta o cambia su flujo, **ningún otro ensayo ni demo comercial lo
-usa**. Turnos acordados: el **domingo 18/10, de 09:40 a 11:30**, el ensayo de H2-F; el ensayo de
+usa**. Un segundo ensayo simultáneo va en el **Demo B** (§12), con su propio comercio de ensayo; nunca
+dos sobre el mismo demo. Turnos acordados: el **domingo 18/10, de 09:40 a 11:30**, el ensayo de H2-F; el ensayo de
 venta va **después**, solo cuando el anterior terminó su doble restauración y `--estado` lo
 confirma. Dos ensayos a la vez dejarían la ruta con el `ensayoDe` del primero.
 
@@ -653,3 +659,344 @@ el flujo deriva («QR no disponible») y esa rama es lo que se prueba.
 | **El cobro simulado rotulado** | No existe en este flujo (ver arriba) |
 | **Los nombres de credencial en la instancia, la credencial del Trigger vivo y la ruta de Meta** | No se pueden probar sin n8n ni Meta reales: el seco real y los pasos D y 3 |
 | **Que la herramienta vigile el nombre de la credencial de Gemini/WhatsApp** | La herramienta las resuelve por tipo; el nombre lo vigila `construir.mjs` |
+
+## 10 · Ensayar el flujo de Evy (Dra. Evy Karina, valoración gratuita) en el Demo A
+
+> **Un solo teléfono, el de la persona de prueba, hace de cliente y de recepción.** Escribe a la línea del
+> Demo A y el flujo de Evy le contesta desde el n8n del Demo A; el aviso a recepción y el botón «Escribir a
+> recepción» le llegan **al mismo chat**. Nada de esto toca el número, el flujo ni la configuración de
+> Evy. Diseño de la variante: `Flujos/experimental/rroca-evy/DISENO.md`, «La variante de ensayo en el
+> Demo A». Es el mismo mecanismo del §9 (Rubén) con otro JSON; la herramienta `flujo-de-prueba.mjs`
+> **no se modifica**.
+
+**Las piezas.** `Flujos/experimental/rroca-evy/rroca-evy.ensayo-demo-a.json` (40 nodos), que sale de
+`construir.mjs` con los datos `admin/scripts/datos/rroca-evy/ensayo-demo-a.json` (hereda de
+`rroca-evy.json`). Pruebas: `admin/pruebas/tenants/rroca-evy/ensayo-demo-a.test.ts` y
+`ensayo-demo-a-herramienta.test.ts` (la herramienta real contra un n8n de mentira).
+
+**Qué cambia respecto del flujo de Evy en producción** (todo lo demás es idéntico, byte a byte, y
+agrega **0 mensajes** por conversación):
+
+| Qué | En el ensayo | Por qué |
+|---|---|---|
+| Entrada | Un `WhatsApp Trigger` (la herramienta lo reemplaza por el del Demo A vivo); sin la entrada verificada del receptor (-6, +1 nodos) | El Demo A no recibe por el receptor; nunca un Trigger con credenciales de AAB1-WA-Prod (prohibición 7) |
+| miniCRM | **Sin la rama** (-8 nodos) y `planillaProspectosId` vacío | El Demo A no tiene la credencial `Google Sheets miniCRM (crm-rroca-evy)` y el ensayo no debe escribir en la planilla de Evy |
+| Credenciales | Solo las del Demo A, por nombre; nodos de Graph con «Graph WhatsApp Demo A (Bearer)» (la herramienta los pasa a la predefinida `whatsAppApi`) | La herramienta se niega con cualquier otra, y `construir.mjs` también |
+| Aviso y botón a recepción | **Interruptor `avisarAlPropioNumero`** (abajo) | Con un solo teléfono el aviso nunca saldría: «un empleado no se avisa a sí mismo» |
+| Plantilla de aviso | `avisoSolicitudEstado` = `PENDING` en «Config base» | Es de la WABA de Evy; el Demo A no la tiene. El aviso sale por **texto libre** |
+| Modo y etapa de prueba | Sin `telefonosDePrueba` y `etapaPrueba` vacía | La etapa de prueba ignoraría el número de aviso del ensayo y cerraría la puerta a quien no esté en la lista |
+| Imágenes de apoyo | Los tres ids de medio (`arte…MediaId`) vacíos: esas imágenes **no se envían** | Son medios subidos a la WABA de Evy; no se pueden enviar desde el Demo A. El texto no las promete (barrera por hecho) |
+
+**El interruptor `avisarAlPropioNumero`.** Vale solo `true` (el booleano; «true», «false», 0, vacío u
+otro valor se rechazan en los datos y, en el JSON, solo cuenta `true` o el texto «true»), solo en
+«Config base» y solo en `ensayo-demo-a.json`. `construir.mjs` **falla** si la clave aparece en cualquier otro
+archivo de datos de `admin/scripts/datos/rroca-evy/` (se mira el texto crudo, aun heredada), y
+`--verificar` falla si `rroca-evy.json` o `rroca-evy.prueba.json` la traen en «Config base» o su
+código la lee. Con ella, el destinatario del aviso igual a quien escribe **no** se descarta («Armar
+previos») y el botón a recepción se arma con el chat del propio teléfono («Armar mensajes»). Son tres
+reemplazos exactos hechos solo al armar esta variante; si el código de esos nodos cambia y un
+reemplazo ya no encuentra su sitio, el armado falla.
+
+**La Consola.** «Config del negocio» de Evy solo acepta el panel de **su** tenant (`rroca-evy`): el
+panel del comercio `ensayo` se ignora (falla cerrado) y rige el respaldo de «Config base» (nombre,
+clínica, dirección de respaldo y el número de aviso del ensayo; sin horario ni enlace de mapa). Es
+distinto del flujo de Rubén, que acepta el panel de `ensayo`. Está pendiente de decisión si el ensayo
+debe leer el panel de `ensayo` (ver el informe de la sesión que lo construyó).
+
+### Autorizaciones de Andres, en el chat, para ESTE ensayo
+
+1. **La credencial de Gemini de producción en el Demo A**, por ensayo (se pide de nuevo cada vez):
+   `--aplicar` exige `--autorizo-gemini-produccion`. Costo: unos 0,0005 USD **por llamada**; un turno
+   de texto llama una vez (`Conversar con el modelo`); un audio (`Transcribir audio`) o una imagen
+   (`Ver imagen`) suman otra.
+2. **Que el Demo A deje de servir para una demo comercial** mientras dure, y la ventana. Un ensayo a
+   la vez (regla de coordinación del §7).
+3. Cada `--aplicar` de abajo, uno por uno, después de leer entero su seco.
+
+### Orden (cada paso en seco primero; `--aplicar` con el «sí» de Andres)
+
+0. **Antes de empezar:** el §6 «Antes de empezar» A a D (autorizaciones, anotar el ensayo en `ESTADO.md` y
+   **una fila para el Demo A en `docs/versiones-por-cliente.md`** —«corre Evy en ensayo», con su porqué y
+   su cierre; se retira al restaurar—, árbol al día en un worktree, línea de base de la suscripción de
+   Meta). Más: `node Flujos/experimental/rroca-evy/construir.mjs --verificar` en 0 (cubre las tres
+   variantes), el teléfono de quien prueba **registrado en la app del Demo A** (prohibición 6) y la tabla
+   local con los dos marcadores: `REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A) y
+   `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono de quien prueba, con prefijo 591; sin mostrar el valor,
+   **nunca en un archivo del repositorio**).
+1. **Preparar el import:** `CONFIG_LOCAL_MD=~/NovuChat/CONFIGURACION.local.md ./scripts/preparar-import.sh
+   <worktree>/Flujos/experimental/rroca-evy/rroca-evy.ensayo-demo-a.json .env` (los dos marcadores
+   resueltos y ninguno sin resolver; deja `rroca-evy.ensayo-demo-a.local.json`, ignorado por git: se
+   borra al terminar).
+2. **La plataforma:** `ensayo.mjs --preparar --cliente evy --archivo <copia de negocio-rroca-evy.json en
+   el scratchpad> --local <tabla local>` (seco leído entero y luego `--aplicar`). **Queda por
+   confirmar** con la sesión de Plataforma el valor de `--flujo` (`venta` o `agendamiento`): el flujo de
+   Evy es de captación con derivación a recepción, no de venta ni de agenda, y no se decide aquí.
+3. **El flujo:** `flujo-de-prueba.mjs --sobre-demo-a --flujo <…ensayo-demo-a.local.json>` con el respaldo y
+   el estado en el scratchpad, exactamente como el §6 paso 4. El seco tiene que decir: «Demo A vivo» con
+   `activo=True`, `WhatsApp Trigger: el del Demo A, tal cual («…»)` (si no, **detenerse**), los **ocho**
+   nodos de Graph con «PARÁMETROS CAMBIADOS … → predefinedCredentialType/whatsAppApi», Gemini con
+   «Google Gemini(PaLM) Api account», y «Marcadores que quedan … —». Repetir las dos lecturas de
+   Meta después del primer `--aplicar` (§6 paso 4).
+4. **Las pruebas, con UN solo teléfono:** saludo, la frase del anuncio de la campaña, una pregunta de
+   precio, «quiero agendar el martes en la tarde» (**aviso + botón a recepción en el mismo chat**: el
+   primer turno solo abre la ventana de la recepción, que con un solo teléfono es la del propio chat; el
+   aviso sale a partir del segundo turno), un audio, una imagen y una consulta médica. El flujo no
+   guarda ejecuciones (retención `none`): vale lo que el teléfono recibió.
+5. **La restauración completa, siempre, salga bien o mal, en este orden** (§7, «Doble restauración»): (1) el flujo,
+   `flujo-de-prueba.mjs --restaurar-respaldo`; (2) el estado por teléfono, `publicar-flujo.sh
+   --reiniciar-estado`; (3) la ruta, `ensayo.mjs --restaurar`; (4) `ensayo.mjs --estado` tiene que decir
+   `Desviada  : no`. Después, la **limpieza obligatoria** del §6 paso 6.4 (respaldos, estado, el `.local.json`, la copia
+   del borrador) y retirar las filas de `ESTADO.md` y de `docs/versiones-por-cliente.md`.
+
+### Lo que este ensayo NO prueba ni garantiza
+
+| Qué | Por qué |
+|---|---|
+| **La entrada verificada del receptor** (firma, `wabaIdEsperado`, repetidos) | Aquí la entrada es el Trigger del Demo A; se prueba con la suite y en el número de Evy |
+| **El miniCRM** (la planilla) | Sin esa rama a propósito; se prueba con `crm.test.ts` y en producción |
+| **La plantilla de aviso fuera de la ventana** | Es de la WABA de Evy (`PENDING` aquí): con un solo teléfono la ventana siempre está abierta |
+| **El primer aviso de una conversación nueva** | La ficha de quien prueba todavía no tiene ventana: sale a partir del segundo turno |
+| **Que el aviso llegue a OTRA persona** | Con un solo teléfono llega al mismo chat; el caso normal (destinatario distinto) lo cubre la suite |
+| **Las tres imágenes de apoyo** (comparativo, antes y después, autoridad) | Sus ids son de la WABA de Evy: en el Demo A no se envían (ids vacíos) |
+| **El panel de la Consola de Evy** (dirección, horario, mapa) | Falla cerrado: se ignora el panel de `ensayo` (ver «La Consola») |
+| **Los nombres de credencial en la instancia, la credencial del Trigger vivo y la ruta de Meta** | No se pueden probar sin n8n ni Meta reales: el seco real y los pasos 0 y 3 |
+| **Que la herramienta vigile el nombre de la credencial de Gemini/WhatsApp** | La herramienta las resuelve por tipo; el nombre lo vigila `construir.mjs` |
+
+## 11 · Ensayar el chat de NovuChat (Kenji) en el Demo A, con el miniCRM de fila por conversación de 24 h
+
+> **Un solo teléfono, el de la persona de prueba, hace de prospecto.** Escribe a la línea del Demo A y el
+> chat de NovuChat (Kenji) le contesta desde el n8n del Demo A. A diferencia de los §6, §9 y §10, **el
+> miniCRM queda conectado**, pero escribe en una **HOJA DE PRUEBA** con su propia credencial; la hoja real
+> de prospectos de NovuChat nunca se toca. Diseño: `Flujos/experimental/chat-novuchat/DISENO.md`.
+
+**Costo y alcance.** El ensayo agrega **0 mensajes por conversación** y **0 nodos**: la salida
+`chat-novuchat.ensayo-demo-a.json` tiene los mismos 73 nodos y las mismas conexiones que
+`chat-novuchat.novuchat.json`; solo cambian los valores de «Config base» (marcadores del ensayo) y los
+nombres de credencial. Los JSON de producción y de prueba **no cambian** (se comprueba byte a byte con
+`node Flujos/experimental/chat-novuchat/construir.mjs --verificar`).
+
+**Las piezas.**
+
+- Datos: `admin/scripts/datos/chat-novuchat/ensayo-demo-a.json` (hereda de `novuchat.json`). Solo
+  marcadores: `REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A), `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono de
+  quien prueba), `REEMPLAZAR_PLANILLA_ENSAYO_ID` y `REEMPLAZAR_PLANILLA_ENSAYO_HOJA` (la hoja de prueba), y la
+  credencial de hoja «Google Sheets miniCRM (crm-ensayo-chat)». El valor real de cada marcador vive solo en la tabla
+  local; no aparece en el repositorio.
+- Guardas de `construir.mjs`: el ensayo **falla** si trae un marcador de producción
+  (`REEMPLAZAR_PLANILLA_PROSPECTOS_*`, `REEMPLAZAR_PHONE_NUMBER_ID_*`, `REEMPLAZAR_NUMERO_RECEPCION_*`), un id
+  literal o la credencial de hoja de producción; y a la inversa, ningún otro archivo de datos (ni lo
+  heredado) ni ninguna otra salida puede llevar los marcadores o la credencial del ensayo. Lo mismo vale
+  para el JSON versionado en `--verificar`.
+- Herramienta: `flujo-de-prueba.mjs --sobre-demo-a` con la bandera nueva **`--conservar-crm`**. Sin la
+  bandera el comportamiento de siempre **no cambia** (Bellido, Agenda mínima, Venta mínima, Rubén, Evy:
+  se quita la rama del CRM y la planilla queda vacía). Con ella: los nodos de Google Sheets se quedan; su
+  única credencial posible es «Google Sheets miniCRM (crm-ensayo-chat)» (por nombre exacto, tipo `googleApi` y
+  exactamente una en n8n); el id y la hoja tienen que llegar ya resueltos (si no, se niega); no queda
+  ningún marcador; y `--aplicar` exige además `--autorizo-hoja-de-prueba` (escribe filas en una hoja de
+  Google: autorización por ensayo). Además se niega si el id de la hoja es igual al de producción (lo compara
+  con `PLANILLA_PROSPECTOS_ID_NOVUCHAT` del `.env` o del entorno; **sin esa variable se niega siempre**, en
+  seco y con `--aplicar`: la repone Claude en el `.env` del ensayo sin mostrar el valor), si `phoneNumberIdEsperado` no es el `WA_PHONE_ID` del Demo A y si la
+  credencial «(crm-ensayo-chat)» comparte id con «Google Sheets NovuChat (cuenta de servicio)». La ingesta ya se mapea a «Cierres NovuChat A (auto)» y los envíos por
+  Graph a la predefinida `whatsAppApi`, igual que en el §6.
+- Pruebas: `admin/pruebas/chat-novuchat-ensayo-demo-a.test.ts` (armador, guardas y la herramienta real
+  contra un n8n de mentira) y las suites de `chat-novuchat-*` y `crm-*`.
+
+### Autorizaciones de Andres, en el chat, para ESTE ensayo
+
+1. **La credencial de Gemini de producción en el Demo A**, por ensayo (`--autorizo-gemini-produccion`;
+   unos 0,0005 USD por llamada; un audio, un documento o una imagen suman otra).
+2. **Escribir filas en la hoja de PRUEBA** (`--autorizo-hoja-de-prueba`).
+3. **Que el Demo A deje de servir para una demo comercial** mientras dure, y la ventana. Un ensayo a la
+   vez (regla de coordinación del §7).
+4. **Las dos cosas que Andres tiene que tener hechas antes** (las crea Claude con su «sí»; no existen hoy
+   en este repositorio): una hoja de cálculo de PRUEBA con el mismo mapa de columnas que la de prospectos
+   (`datos.crm` de `novuchat.json`), y la credencial `Google Sheets miniCRM (crm-ensayo-chat)` (cuenta de servicio con
+   acceso **solo** a esa hoja, jamás a la de prospectos reales).
+5. Cada `--aplicar` de abajo, uno por uno, después de leer entero su seco.
+
+### Orden (cada paso en seco primero; `--aplicar` con el «sí» de Andres)
+
+0. **Antes de empezar:** el §6 «Antes de empezar» A a D (anotar el ensayo en `ESTADO.md` y una fila para el
+   Demo A en `docs/versiones-por-cliente.md`: «corre el chat de NovuChat en ensayo», con su porqué y su
+   cierre; árbol al día en un worktree; línea de base de la suscripción de Meta). Más:
+   `node Flujos/experimental/chat-novuchat/construir.mjs --verificar` en 0; el teléfono de quien prueba
+   registrado en la app del Demo A; y la tabla local con los cuatro marcadores del ensayo, sin mostrar sus
+   valores (`./scripts/marcador-local.sh --verificar REEMPLAZAR_PLANILLA_ENSAYO_ID`, y lo mismo con
+   `REEMPLAZAR_PLANILLA_ENSAYO_HOJA`, `REEMPLAZAR_NUMERO_AVISO_ENSAYO` y `REEMPLAZAR_PHONE_NUMBER_ID`).
+1. **Preparar el import** (reemplaza los cuatro marcadores; ninguno puede quedar sin resolver):
+
+       CONFIG_LOCAL_MD=~/NovuChat/CONFIGURACION.local.md ./scripts/preparar-import.sh \
+         <worktree>/Flujos/experimental/chat-novuchat/chat-novuchat.ensayo-demo-a.json .env
+
+   Deja `chat-novuchat.ensayo-demo-a.local.json` (ignorado por git y no huérfano para `construir.mjs`): se
+   borra al terminar. **Aviso:** mientras ese `.local.json` exista en la carpeta del flujo, la prueba
+   `chat-novuchat-lib.test.ts` («los tres JSON son los únicos de la carpeta…», hoy cerca de la línea 1731)
+   **falla** a propósito: no corra la suite completa con él presente y bórrelo apenas termine.
+   `publicar-flujo.sh` **rechaza** (exit 2) este archivo y su `.local.json`: el ensayo solo lo pone la
+   herramienta del paso 3.
+2. **La plataforma.** `node admin/scripts/plataforma/ensayo.mjs --proyecto <proyecto> --numero <phone id del
+   Demo A> --estado` (solo lectura) para ver a qué comercio apunta hoy la ruta. Luego `--preparar`, en seco y después con
+   `--aplicar` y el «sí» de Andres:
+
+       node admin/scripts/plataforma/ensayo.mjs --proyecto <proyecto> --numero <phone id del Demo A> --preparar \
+         --cliente novuchat --flujo onboarding --archivo admin/scripts/datos/captacion-novuchat.json [--aplicar]
+
+   Con `--flujo onboarding` el archivo es el de **captación** (no un archivo de negocio): lo carga
+   `cargar-captacion.mjs` en `tenants/ensayo`; la ruta del Demo A lleva `flujo: 'onboarding'` mientras dura y
+   `--restaurar` lo devuelve (`ensayoFlujoDe`); el vaciado suma `config/onboarding`, solo bajo `tenants/ensayo`.
+   Pruebas negando: `admin/pruebas/ensayo.test.ts`, «--flujo onboarding».
+3. **El flujo, en seco** (guarda el respaldo del vivo y no escribe en n8n):
+
+       node Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env \
+         --estado <scratchpad>/estado-ensayo.json --sobre-demo-a --conservar-crm \
+         --respaldo <scratchpad>/respaldo-demo-a.json \
+         --flujo <worktree>/Flujos/experimental/chat-novuchat/chat-novuchat.ensayo-demo-a.local.json
+
+   El seco tiene que decir: «Demo A vivo» con `activo=True`; `WhatsApp Trigger: el del Demo A, tal cual
+   («…»)` (si no, **detenerse**); «miniCRM CONSERVADO»; los cuatro nodos de Google (`Buscar teléfono en
+   planilla`, `Leer IDs de la planilla`, `Agregar fila`, `Actualizar fila`) con
+   `googleApi → «Google Sheets miniCRM (crm-ensayo-chat)»`; los nodos de Graph con «PARÁMETROS CAMBIADOS … →
+   predefinedCredentialType/whatsAppApi»; Gemini con «Google Gemini(PaLM) Api account»; y «Marcadores que
+   quedan … —». Con el «sí» de Andres, el mismo comando más
+   `--aplicar --autorizo-gemini-produccion --autorizo-hoja-de-prueba`. Repetir las dos lecturas de Meta
+   después del primer `--aplicar` (§6 paso 4).
+4. **Las pruebas, con UN solo teléfono**, mirando la hoja de prueba: un saludo (fila nueva), otro mensaje en
+   la misma conversación (la fila se actualiza, no se duplica), y, **pasadas 24 horas de la última fila de
+   ese teléfono**, un mensaje nuevo (tiene que crear una **fila nueva**: contacto nuevo a las 24 h). Para no
+   esperar un día se puede retroceder a mano la fecha de la fila de prueba en la hoja de prueba. El flujo no
+   guarda ejecuciones (retención `none`): vale lo que el teléfono recibió y lo que quedó en la hoja.
+5. **La restauración completa, siempre, salga bien o mal, en este orden** (§6 paso 6 y §7, «Doble
+   restauración»): (1) el flujo, `flujo-de-prueba.mjs --restaurar-respaldo` (la restauración no usa
+   `--conservar-crm`); (2) el estado por teléfono, `publicar-flujo.sh --reiniciar-estado`; (3) la ruta, `ensayo.mjs
+   --restaurar`; (4) `ensayo.mjs --estado` tiene que decir `Desviada  : no`. Después, la limpieza
+   obligatoria del §6 paso 6.4 (respaldos, estado, el `.local.json`) y retirar las filas de `ESTADO.md` y de
+   `docs/versiones-por-cliente.md`. La hoja de prueba se vacía o se archiva; nunca se mezcla con la real.
+
+### Lo que este ensayo NO prueba ni garantiza
+
+| Qué | Por qué |
+|---|---|
+| **La entrada verificada del receptor** | Aquí la entrada es el Trigger del Demo A; se prueba con la suite y en el número de NovuChat |
+| **La plantilla de aviso (`solicitud_contacto`) fuera de la ventana** | Es de la WABA de NovuChat; el Demo A no la tiene. Con un solo teléfono la ventana siempre está abierta |
+| **Que el aviso a recepción salga al mismo teléfono** | Este flujo no tiene el interruptor `avisarAlPropioNumero` (es de otros flujos) y el aviso al propio número puede descartarse: a confirmar en el seco y en la primera prueba |
+| **La hoja real de prospectos** | A propósito: es otra hoja y otra credencial; el ensayo nunca la ve |
+| **Que la credencial y la hoja de prueba existan, y que la hoja tenga el mapa de columnas** | No se pueden comprobar sin n8n ni Google reales: el seco real y la primera conversación |
+| **Los nombres de credencial en la instancia, la credencial del Trigger vivo y la ruta de Meta** | El seco real y los pasos 0 y 3 |
+
+## 12 · El Demo B como segundo número de ensayo (dos ensayos a la vez)
+
+> Decisión de Andres, 10/11/2026: con el Demo A ocupado por un ensayo, un segundo ensayo va
+> sobre el **Demo B**. Es el mismo procedimiento de los §3 a §11, con el demo de destino dicho
+> en cada script. **Sin la opción nada cambia**: todo lo anterior sigue siendo el Demo A.
+> Cada `--aplicar` lo corre Claude con el «sí» de Andres, después de leer entero su seco.
+
+### Qué cambia con el Demo B
+
+| Pieza | Demo A (por defecto) | Demo B |
+|---|---|---|
+| Entorno de n8n | `.env` | `.env.demo-b` |
+| Flujo vivo que se pisa y se restaura | `Flujos/demo-a-agendamiento.json` | `Flujos/demo-b-venta-cobro.json` |
+| `flujo-de-prueba.mjs` | `--sobre-demo-a` | `--sobre-demo-b` |
+| `ensayo-flujo.sh` | (sin opción) o `--demo a` | `--demo b` |
+| `ensayo.mjs` | (sin opción) o `--demo a` → comercio `ensayo` | `--demo b` → comercio **`ensayo-b`** |
+| Trigger | el del Demo A vivo, tal cual | el del Demo B vivo, tal cual (`WhatsApp OAuth account 2`) |
+| Ingesta, configuración y cierres | `Cierres NovuChat A (auto)` | `Cierres NovuChat B (auto)` |
+| Envíos y medios | `WhatsApp account` | `WhatsApp account 2` |
+| Gemini | `Google Gemini(PaLM) Api account` | la misma (una sola en la instancia; misma autorización por ensayo) |
+| Google Calendar | `Google Calendar account` | **no tiene** |
+| Marcador del phone id | `REEMPLAZAR_PHONE_NUMBER_ID` | `REEMPLAZAR_PHONE_NUMBER_ID_B` |
+
+Los nombres de credencial del Demo B se leyeron del flujo vivo el 10/11/2026 con
+`credenciales-flujo.sh --env .env.demo-b` (solo lectura).
+
+**Por qué un segundo comercio (`ensayo-b`) y no el mismo `ensayo` con dos rutas.** La
+configuración que lee el flujo (`config/negocio`, `config/venta`, catálogo) es **una por
+comercio**, y cada `--preparar` **vacía** el comercio antes de cargar. Con las dos rutas en
+`ensayo`, el segundo `--preparar` borraría la configuración bajo el flujo del primero, los dos
+números responderían con el mismo negocio y las conversaciones y los conteos de los dos ensayos
+quedarían mezclados. `ensayo-b` es de modalidad demostración, sin cargo, igual que `ensayo`, y
+**se crea recién con el primer `--preparar --demo b --aplicar`** (escritura en producción: con
+el «sí» de Andres). Costo: un comercio más en Plataforma → Negocios y en los barridos comunes.
+
+### Los cerrojos nuevos (probados negando)
+
+- **`ensayo.mjs`** (`admin/pruebas/ensayo-demo-b.test.ts`): `--demo` solo admite `a` o `b`; una
+  ruta que está en el ensayo de un demo no se prepara ni se restaura con el `--demo` del otro; y
+  `--preparar` **se niega si otro número ya está desviado al mismo comercio de ensayo**. Este
+  último vale también sin `--demo` y es el único cambio de conducta sobre el Demo A: antes,
+  olvidar `--demo b` con el Demo A en ensayo habría vaciado `ensayo` bajo el ensayo en curso.
+- **`ensayo-flujo.sh`** (`admin/pruebas/ensayo-flujo-demo.test.ts`): `--demo b` con el entorno
+  del Demo A (o al revés) se niega antes de leer nada; el flujo vivo del entorno tiene que
+  llamarse como el JSON de ese demo; ninguna credencial que sea solo del otro demo puede quedar;
+  `--restaurar --demo b` republica `demo-b-venta-cobro.json`, nunca el del Demo A.
+- **`flujo-de-prueba.mjs`** (`admin/pruebas/herramienta-sobre-demo-b.test.ts`):
+  `--sobre-demo-b` exige que «Demo B» sean palabras del nombre del flujo vivo (y que no diga
+  «Demo A»), que el Trigger vivo traiga `WhatsApp OAuth account 2` y que toda credencial
+  asignada sea una que el Demo B vivo ya usa; las etiquetas del Demo A que traen las variantes
+  `*.ensayo-demo-a.json` se traducen a las del Demo B y ninguna del Demo A puede quedar.
+  `--sobre-demo-a` contra el Demo B vivo se niega igual que antes (por nombre).
+
+### Orden (cada paso en seco primero; `--aplicar` con el «sí» de Andres)
+
+0. **Antes de empezar**, lo del §6 (A a D) con el Demo B: autorización de Gemini de producción
+   para este ensayo; que el Demo B deje de servir para una demo comercial (y su catálogo web
+   deja de recibir carritos, ver abajo); la fila del Demo B en `ESTADO.md` y en
+   `docs/versiones-por-cliente.md`; un worktree al día con `.env.demo-b` enlazado
+   (`ln -s ~/NovuChat/.env.demo-b <worktree>/.env.demo-b`); y la línea de base, solo lectura:
+
+       ./scripts/verificar-meta.sh --env .env.demo-b
+       ./scripts/credenciales-flujo.sh --env .env.demo-b
+       ./scripts/webhook-meta.sh --ver-meta --env-cliente .env.demo-b
+
+   El teléfono de quien prueba tiene que estar **registrado en la app del Demo B** (hasta 5
+   destinatarios; `CLAUDE.md` prohibición 6): la lista del Demo A no vale para el Demo B.
+1. **Preparar el import** con el entorno del Demo B, desde una **copia de la variante en el
+   scratchpad** que cambia una sola cosa: el marcador `REEMPLAZAR_PHONE_NUMBER_ID` (que en la
+   tabla local es el del Demo A) pasa a `REEMPLAZAR_PHONE_NUMBER_ID_B` (el del Demo B, ya está
+   en la tabla). Si no, `--sobre-demo-b` se niega: el phone id del candidato no sería el del
+   `.env.demo-b`.
+
+       CONFIG_LOCAL_MD=~/NovuChat/CONFIGURACION.local.md ./scripts/preparar-import.sh <copia de la variante>.json .env.demo-b
+
+2. **La plataforma:**
+
+       node scripts/plataforma/ensayo.mjs --proyecto <proyecto> --numero <phone id del Demo B> --demo b --preparar \
+         --cliente <cliente> --archivo <archivo> --local ~/NovuChat/CONFIGURACION.local.md [--flujo venta|agendamiento]   # seco
+       ... --aplicar
+
+   La ruta del Demo B es de `venta`: sin `--flujo`, el ensayo es de venta; con otro flujo, la
+   ruta lo lleva mientras dura y `--restaurar` lo devuelve (§7).
+3. **El flujo:**
+
+       node Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env.demo-b \
+         --estado <scratchpad>/estado-ensayo-b.json --sobre-demo-b --respaldo <scratchpad>/respaldo-demo-b.json \
+         --flujo <variante>.local.json   # seco
+       ... --aplicar --autorizo-gemini-produccion
+
+   El seco tiene que decir «Demo B vivo» con `activo=True`, `WhatsApp Trigger: el del Demo B, tal
+   cual («WhatsApp OAuth account 2»)`, cada credencial con su nombre del Demo B, **ninguna del
+   Demo A**, y la línea del Webhook del carrito que deja de responder. Después del `--aplicar`,
+   repetir las lecturas del paso 0 y el cotejo de los 4 caracteres del `webhookId` (§6, D).
+4. **Las pruebas**, con el teléfono registrado en la app del Demo B.
+5. **Restauración, siempre**, en este orden: `flujo-de-prueba.mjs --restaurar-respaldo` con
+   `--env .env.demo-b` y el respaldo del Demo B; `publicar-flujo.sh --env .env.demo-b
+   --reiniciar-estado`; `ensayo.mjs --demo b --restaurar`; `ensayo.mjs --demo b --estado` (tiene
+   que decir `Desviada  : no`). Limpieza y filas como en el §6, paso 6.4.
+
+Para un cliente **de venta y cobro derivado del Demo B** (mismos nodos) vale el camino corto
+del §3 con `ensayo-flujo.sh --demo b --cliente <C> --flujo <json>` y, para volver,
+`ensayo-flujo.sh --restaurar --demo b`.
+
+### Lo que el camino del Demo B NO cubre
+
+| Qué | Por qué | Qué hacer |
+|---|---|---|
+| **Flujos con agenda** (Bellido, Agenda mínima, Demo A) | El Demo B no tiene credencial de Google Calendar; los dos scripts se niegan | Se ensayan en el Demo A |
+| **El carrito del catálogo web del Demo B** | `flujo-de-prueba.mjs` reemplaza el flujo entero y el Webhook «Carrito del catálogo» sale con él | Vuelve con `--restaurar-respaldo`; mientras tanto el Demo B no sirve para mostrar el catálogo web |
+| **Variantes de ensayo propias del Demo B** | Las versionadas (`*.ensayo-demo-a.json`) se hicieron para el Demo A: traen su marcador de phone id y sus etiquetas de credencial. La herramienta traduce las etiquetas y se niega si el phone id no es el del `.env.demo-b`, pero **no genera** una variante `ensayo-demo-b` | La copia del paso 1. Una variante versionada por `construir.mjs` de cada flujo queda pendiente |
+| **`--conservar-crm` (§11) sobre el Demo B** | La bandera se admite con `--sobre-demo-b`, pero la hoja y la credencial de prueba son **una sola**: dos ensayos con miniCRM a la vez escribirían en la misma hoja | Un solo ensayo con miniCRM por vez |
+| **Los otros scripts que nombran `ensayo`** (`cobro-ensayo-ruben.mjs`, el reseteo de teléfono de prueba, `activar-cobro-real.mjs` sobre el ensayo) | Tienen `ensayo` escrito y no conocen `ensayo-b` | El QR de cobro y el reseteo de un ensayo en el Demo B quedan fuera hasta parametrizarlos |
+| **`ensayo-flujo.sh --restaurar`** en cualquiera de los dos demos | Sigue con el defecto del §6: completa credenciales por tipo | Volver siempre con `--restaurar-respaldo` cuando se entró con `flujo-de-prueba.mjs` |
+| **Plantillas, receptor verificado, flujos programados, latencia real** | Igual que en el Demo A (§4, §6) | En el cliente |
+| **Que las credenciales, el Trigger y la ruta de Meta del Demo B estén como dice la tabla** | Las suites corren contra un n8n de mentira; nada de esto se probó contra n8n ni un teléfono | El seco real y las lecturas de los pasos 0 y 3 |
+

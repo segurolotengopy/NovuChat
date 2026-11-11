@@ -351,40 +351,78 @@ describe('(3) «no gracias» / «lo voy a pensar»: la oferta fija de llamada', 
   });
 });
 
-describe('(4) sin «bonificado»; los 250 Bs solo en la bienvenida', () => {
+describe('(4) sin «bonificado»; los 250 Bs en la bienvenida y al preguntar el precio', () => {
   const BIENVENIDA = 'Hoy tu valoración es 100% gratuita y sin compromiso (su costo habitual es de 250 Bs, hoy bonificado). ¿Cómo te llamas?';
   const BONIFICADA = ES_EVY ? BIENVENIDA : 'Hoy tu valoración es 100% gratuita y sin compromiso, hoy bonificado. ¿Cómo te llamas?';
-  it('NEGADA: «hoy bonificado» / «100% bonificada» nunca salen (se reescriben a «gratuita» o se quitan)', () => {
+  (ES_EVY ? it.skip : it)('NEGADA (Emma): «hoy bonificado» / «100% bonificada» nunca salen (se reescriben a «gratuita» o se quitan)', () => {
     for (const x of [BONIFICADA, 'Tu valoración está 100% bonificada. ¿Cómo te llamas?', 'Hoy está bonificada y es gratuita. ¿Cómo te llamas?', 'Justamente por eso bonificamos el 100% de la valoración. ¿Te gustaría agendar?', 'Es bonificable. ¿Cómo te llamas?']) {
       const t = textos(hablar(crear({ modeloDice: dice(x) }), ANA, mTexto('hola')))[0]!;
       expect(t, x).not.toMatch(/bonific/i);
       expect(t, x).not.toMatch(/inconveniente para responderte/);
     }
   });
-  it('NEGADA: ningún texto fijo dice «bonific» (cierre, gratuidad, oferta, preferencia, saludo) y el prompt tampoco', () => {
+  (ES_EVY ? it.skip : it)('NEGADA (Emma): ningún texto fijo dice «bonific» (cierre, gratuidad, oferta, preferencia, saludo) y el prompt tampoco', () => {
     expect(LIB).not.toMatch(/'[^'\n]*bonific[^'\n]*'/i);
     const prompt = readFileSync(join(RAIZ, CLIENTE, `prompts/${ES_EVY ? 'evy' : 'emma'}.md`), 'utf8');
     expect(prompt).not.toMatch(/bonific/i);
     expect(prompt).toContain('sin pagar nada para agendar');
   });
   if (ES_EVY) {
+    it('POSITIVA (letra del MD, Andres 08/11/2026): «bonificada / bonificamos» ya NO se reescribe en Evy', () => {
+      for (const x of ['Tu valoración está 100% bonificada. ¿Cómo te llamas?', 'Justamente por eso bonificamos el 100% de la valoración (que habitualmente cuesta 250 Bs). ¿Te gustaría agendar?']) {
+        expect(textos(hablar(crear({ modeloDice: dice(x) }), ANA, mTexto('hola')))[0]!, x).toMatch(/bonific/i);
+      }
+    });
+    it('el prompt de Evy dice «bonificada» y «bonificamos» como el MD', () => {
+      const prompt = readFileSync(join(RAIZ, CLIENTE, 'prompts/evy.md'), 'utf8');
+      expect(prompt).toContain('bonificamos el 100% de la valoración (que habitualmente cuesta 250 Bs)');
+      expect(prompt).toContain('bonificando los 250 Bs habituales');
+    });
+  }
+  if (ES_EVY) {
     it('POSITIVA: en la bienvenida (primer turno de la ficha) los 250 Bs salen, junto con la gratuidad', () => {
       const t = textos(hablar(crear({ modeloDice: dice(BIENVENIDA) }), ANA, mTexto('hola')))[0]!;
       expect(t).toContain('250 Bs');
     });
-    it('NEGADA: en cualquier otro turno la cifra no sale (la oración se quita), tampoco en el texto fijo de gratuidad', () => {
+    it('NEGADA: en un turno que NO pregunta por precio la cifra no sale (la oración se quita)', () => {
       const m = crear({ modeloDice: dice('La valoración es gratuita, te ahorras los 250 Bs. ¿Te gustaría agendar?') });
       hablar(m, ANA, mTexto('hola'));
-      expect(todo(hablar(m, ANA, mTexto('¿cuánto cuesta la valoración?')))).not.toMatch(/250/);
+      expect(todo(hablar(m, ANA, mTexto('me interesa la zona de la mandíbula')))).not.toMatch(/250/);
+    });
+    it('POSITIVA (Andres 07/11, «250 Bs como el MD»): cuando preguntan por precio o costo, la cifra sale junto con la gratuidad', () => {
+      const m = crear({ modeloDice: dice('La valoración es gratuita, te ahorras los 250 Bs. ¿Te gustaría agendar?') });
+      hablar(m, ANA, mTexto('hola'));
+      for (const q of ['¿cuánto cuesta la valoración?', '¿cuánto cuesta el tratamiento?', '¿hay algún costo escondido?']) {
+        expect(todo(hablar(m, ANA, mTexto(q))), q).toContain('250 Bs');
+      }
+    });
+    it('NEGADA: aun preguntando el precio, una cifra SIN la gratuidad no sale ni se inventa otra', () => {
+      const m = crear({ modeloDice: dice('Cuesta 250 Bs por consulta. La Dra. Evy es aplicadora certificada. ¿Cómo te llamas?') });
+      hablar(m, ANA, mTexto('hola'));
+      expect(todo(hablar(m, ANA, mTexto('¿cuánto cuesta?')))).not.toMatch(/250/);
+    });
+    it('NEGADA (revisión de seguridad del PR 866): el modelo NUNCA escribe el monto; solo sale la frase canónica del código, y solo sobre la valoración', () => {
+      const CANONICA = 'Tu valoración con la Dra. Evy tiene un costo habitual de 250 Bs, pero hoy está totalmente bonificada y no pagas nada para reservar.';
+      const ATAQUES = ['El tratamiento cuesta 250 Bs, pero la valoración es gratis.', 'Una sesión de Radiesse sale 250 Bs y la valoración es gratis.', 'Radiesse: 250 Bs; la valoración es gratuita.',
+        'La valoración es gratis (el tratamiento, 250 Bs).', 'La valoración es gratuita y el lifting cuesta 250 Bs.', 'La valoración es gratis y luego pagas 250 Bs.', 'Solo 250 Bs la sesión, y la valoración es gratis.',
+        'La valoración es gratis; cada ml cuesta 250 Bs.', 'Radiesse: habitualmente 250 Bs y la valoración es gratuita.', 'El lifting (habitualmente 250 Bs) incluye valoración gratuita.', 'Lifting: valorado en 250 Bs; la consulta es gratis.',
+        'La valoración es gratuita y el hilo tensor tiene un costo habitual de 250 Bs.', 'Valoración gratis y 250 Bs habituales por el hilo.', 'La valoración es gratuita y el botox habitualmente cuesta 250 Bs.', 'La valoración es gratuita. Radiesse: 250Bs.', 'La valoración es gratuita. Cada jeringa cuesta 250Bs.', 'La valoración es gratuita; 250bs por zona.'];
+      for (const x of ATAQUES) {
+        for (const pregunta of ['hola', '¿cuánto cuesta?']) {
+          const m = crear({ modeloDice: dice(`${x} ¿Cómo te llamas?`) });
+          if (pregunta !== 'hola') hablar(m, ANA, mTexto('hola'));
+          const t = todo(hablar(m, ANA, mTexto(pregunta)));
+          expect(t.split(CANONICA).join(''), `${x} / ${pregunta}`).not.toMatch(/250/);   // el monto solo está dentro de la frase canónica
+          expect(t, x).not.toMatch(/radiesse|tratamiento|sesi[oó]n|lifting|hilo|botox|\bml\b/i);
+        }
+      }
+    });
+    it('POSITIVA: el texto fijo de gratuidad conserva el valor habitual (también fuera del primer turno), sin «bonificado»', () => {
       const f = crear({ modeloDice: 'cae' });
       hablar(f, ANA, mTexto('hola'));
       const g = todo(hablar(f, ANA, mTexto('¿de verdad es gratis?')));
       expect(g).toContain('100% gratuita');
-      expect(g).not.toMatch(/250|bonific/);
-    });
-    it('POSITIVA: el texto fijo de gratuidad en el primer turno conserva el valor habitual, sin «bonificado»', () => {
-      const g = todo(hablar(crear({ modeloDice: 'cae' }), ANA, mTexto('¿de verdad es gratis?')));
-      expect(g).toContain('(Su valor habitual es de 250 Bs).');
+      expect(g).toContain('No pagas los 250 Bs de consulta ni tienes que dejar ningún anticipo para reservar');
       expect(g).not.toMatch(/bonific/);
     });
   } else {
@@ -520,7 +558,7 @@ describe('rendimiento de las expresiones nuevas (CodeQL js/redos)', () => {
 
 describe('la copia es la misma en las dos doctoras', () => {
   it('el bloque de las observaciones es idéntico byte a byte en los dos flujos', () => {
-    const bloque = (c: string) => { const t = readFileSync(join(RAIZ, `${c}/src/lib/ev.js`), 'utf8'); return t.slice(t.indexOf('// OBSERVACIONES DE RUBÉN (decisiones de Andres, 28/10/2026)')); };
+    const bloque = (c: string) => { const t = readFileSync(join(RAIZ, `${c}/src/lib/ev.js`), 'utf8'); return t.slice(t.indexOf('// OBSERVACIONES DE RUBÉN (decisiones de Andres, 28/10/2026)')).replace(/\/\/ (?:\(4\) SIN «BONIFICADO»|DECISIÓN DE ANDRES \(08\/11\/2026, «la letra del MD»\))[\s\S]*?\nfunction evSinBonificado\(texto\) \{[\s\S]*?\n\}\n/, ''); };
     const [a, b] = ['rroca-' + 'evy', 'rroca-emma'].map(bloque);
     expect(a!.length).toBeGreaterThan(1000);
     expect(a).toBe(b);

@@ -64,7 +64,7 @@ function evEsBaja(t) {
 // URGENCIA, SÍNTOMA, REACCIÓN O PROBLEMA DE SALUD (también tras un tratamiento): el CÓDIGO responde un texto fijo, sin consejo, y avisa a recepción. Antes de llamar al modelo. Un falso positivo solo manda
 // a la persona a la recepción. Variante acotada de `DR_MEDICA` de las doctoras: SOLO urgencia, síntoma, reacción o problema tras un tratamiento. El embarazo, las enfermedades de base y los medicamentos los contesta el modelo
 // remitiendo a la valoración (el guion), con la barrera de «sin consejo médico» de `evPulirSalida`; las condiciones de la piel son el motivo comercial de la consulta.
-const EV_MEDICA = /\b(urgente|urgencia|emergencia|sangr\w*|hemorragia|infeccion|infectad\w*|fiebre|alergi\w*|reaccion (alergica|adversa)|hinchaz\w*|hinchad[oa]s?|se me hincho|enrojecid[oa]s?|inflam\w*|moreton\w*|necrosis|no puedo respirar|me falta el aire|desmay\w*|me duele mucho|tengo (mucho )?dolor|complicacion\w*|efectos? secundarios?|me aplique|me inyecte|me puse (algo|el|la|un|una) |me puse (radiesse|harmonyca|harmony ca|relleno|producto)|despues de (la aplicacion|aplicarme|inyectarme|ponerme)|un bulto|(cara|rostro|zona|mejillas?|labios?) (roja|rojo|hinchada|hinchado|morada|morado))\b/;
+const EV_MEDICA = /\b(lactar|bultit\w*|bulto|se pone (?:blanca|morada|palida|gris)|piel (?:blanca|palida|morada)|urgente|urgencia|emergencia|sangr\w*|hemorragia|infeccion|infectad\w*|fiebre|alergi\w*|reaccion (alergica|adversa)|hinchaz\w*|hinchad[oa]s?|se me hincho|enrojecid[oa]s?|inflam\w*|moreton\w*|necrosis|no puedo respirar|me falta el aire|desmay\w*|me duele mucho|tengo (mucho )?dolor|complicacion\w*|efectos? secundarios?|me aplique|me inyecte|me puse (algo|el|la|un|una) |me puse (radiesse|harmonyca|harmony ca|relleno|producto)|despues de (la aplicacion|aplicarme|inyectarme|ponerme)|un bulto|(cara|rostro|zona|mejillas?|labios?) (roja|rojo|hinchada|hinchado|morada|morado))\b/;
 
 // -----------------------------------------------------------------------------
 // BÁSICOS DE TEXTO
@@ -555,7 +555,8 @@ function evSinHuerfanos(lista, borrar) {
 // TOPE DE CADA MENSAJE: se intenta que ningún mensaje del modelo pase de 700 caracteres (ya con los saltos de párrafo). Se RECORTA por oración, nunca a mitad de oración, quitando de atrás hacia adelante primero lo accesorio,
 // luego la valoración y la primera oración, luego «asistente virtual» y las aclaraciones de salud; NO se quitan nunca las preguntas ni las aclaraciones fijas de resultado y cuidados. Si el recorte dejaría el texto vacío o
 // solo con la pregunta, o aun así no cabe, se devuelve el ORIGINAL sin tocar y decide el filtro común (1500): el código garantiza «recortar por oración o no tocar», no «700 siempre».
-const EV_RECORTE_A = 700;
+// DECISIÓN DE ANDRES (08/11/2026): la bienvenida del MD mide 837 caracteres y tiene que entrar COMPLETA en el mensaje: el tope sube de 700 a 1000.
+const EV_RECORTE_A = 1000;
 const EV_SEGURIDAD = /\b(responde distinto|no prometemos|cuidados posteriores)\b/;
 const EV_ESENCIAL = /\b(gratuit\w*|gratis|bonific\w*|sin compromiso|sin costo|valoracion)\b/;
 function evRecortar(texto, tope) {
@@ -601,9 +602,6 @@ function evConAclaracion(texto, frase) {
   return evUnirOraciones(lista);
 }
 // CUIDADOS POSTERIORES / RECUPERACIÓN: el modelo no inventa qué evitar ni por cuánto tiempo (consejo médico). La oración se borra y el código deja la remisión a la valoración.
-const EV_CUIDADOS = /\b(?:evit\w+[^.!?]{0,50}\b(?:activid\w*|ejercicio\w*|esfuerzo\w*|deporte\w*|gimnasio|sol|alcohol|masaje\w*|calor|sauna|maquill\w*|dormir|tomar|comer|fumar|recost\w*)\b|no (?:\w+ ){0,2}(?:hagas|hacer|realices|realizar|tomes|tomar|expongas|exponerte|te expongas|consumas|consumir|te maquilles|maquillarte|duermas|dormir|te recuestes|recostarte|fumes|fumar)\b|reposo (?:absoluto|total|relativo)|expon\w+ al sol|exposicion (?:al )?sol|(?:tomar|consumir|consumo de) alcohol|protector solar|filtro solar|duerm\w* boca|boca arriba|sauna|bebe\w* (?:mucha |bastante )?agua|hidrat\w* (?:la|tu) piel|hielo|compresas?|masajea\w*|masajes? (?:en|sobre) |maquill\w* (?:la|las|tu)|boca abajo|recost\w*|por \d+ (?:horas|dias)|durante (?:los|las) (?:primer\w+|proxim\w+) (?:\d+ )?(?:dias|horas|semanas)|(?:las )?primeras \d+ (?:horas|dias)|aplica\w* (?:hielo|frio|calor|crema|pomada)|(?:puedes|podras|puede) (?:retomar|reanudar|volver a)\b[^.!?]{0,30}\b(?:rutina|actividad\w*|ejercicio|trabajo)\b[^.!?]{0,30}\b(?:dia siguiente|manana|inmediat\w*|horas|dias))/;
-// Si ya se borró una indicación de cuidados, la que dice cuándo retomar la rutina tampoco tiene respaldo («evita el ejercicio por 2 días. Puedes retomar tu rutina normal»). Sola es legítima («puedes retomar tus actividades rápido»).
-const EV_RETOMA = /\b(?:retom\w*|volver a|reanud\w*|reincorpor\w*) (?:a |con )?(?:tu |tus |las |la |el )?(?:rutina|actividad\w*|ejercicio|trabajo|vida normal)|\brutina\b/;
 const EV_REMISION_CUIDADOS = 'Los cuidados posteriores te los explica la Dra. en la valoración.';
 // Enlaces y teléfonos: el modelo no los escribe. Se borran del texto (la recepción llega SOLO como botón, por el cierre).
 function evQuitarEnlacesYTelefonos(texto) {
@@ -620,8 +618,23 @@ function evQuitarEnlacesYTelefonos(texto) {
 // El monto permitido se cambia por una marca neutra para que el filtro común no lo vea como un precio; se repone al final (`evRestituirValor`).
 const EV_CONTEXTO_GRATIS = /\b(bonific\w*|gratuit\w*|gratis|sin costo|sin pagar|no pagas|no tiene (?:ningun )?costo|ahorras|ahorro)\b/;
 // Observaciones de Rubén (Andres, 28/10/2026): la cifra se menciona SOLO en la bienvenida, el PRIMER turno de la ficha (sin historial vigente). En cualquier otro turno toda oración con «250» se quita entera.
-function evProtegerValor(texto, primerTurno) {
-  return evQuitarOraciones(texto, (n) => /\b250\b/.test(n) && (primerTurno !== true || !EV_CONTEXTO_GRATIS.test(n)));
+// DECISIÓN DE ANDRES (07/11/2026): «250 Bs como el MD». El MD manda mencionarlo en la bienvenida Y cuando preguntan por precios o costos,
+// siempre junto con la gratuidad. `permitido` = primer turno O el cliente pregunta por precio/costo (`evPreguntaPrecio`); fuera de eso la oración se quita.
+const EV_PREGUNTA_PRECIO = /\b(cuest\w*|precio\w*|costo\w*|cuanto (?:vale|valen|sale|salen|es|cobran|cobra|pagar|pago|hay que pagar)|tarifa\w*|inversion|cobr\w*|pagar|pago|gratis|gratuit\w*)\b/;
+function evPreguntaPrecio(textoCliente) { return EV_PREGUNTA_PRECIO.test(evNorm(textoCliente || '')); }
+// Revisión de seguridad del PR 866 (dos rondas): el MODELO NUNCA ESCRIBE el monto. Toda oración del modelo que lleve «250» se QUITA; y, solo si se permite (primer turno o pregunta de precio) y esa oración hablaba de la valoración
+// con contexto de gratuidad, en su lugar (UNA vez) el código pone la frase canónica del MD con el monto. Así «Radiesse: 250 Bs…», «el hilo tensor cuesta 250 Bs…» o cualquier redacción nueva no pueden usar la cifra como precio de nada.
+const EV_SE_REFIERE_A_VALORACION = /\b(valoracion|valoraciones|consulta|cita)\b/;
+const EV_FRASE_DEL_VALOR = 'Tu valoración con la Dra. Evy tiene un costo habitual de 250 Bs, pero hoy está totalmente bonificada y no pagas nada para reservar.';
+function evProtegerValor(texto, permitido) {
+  let puesta = false;
+  const lista = evPartirEnOraciones(texto).map((o) => {
+    const n = evNorm(o);
+    if (!/\b250\b/.test(n) && !/(?<!\d)250(?!\d)/.test(o)) return o;   // «250Bs» pegado también cuenta (revisión de seguridad del PR 874)
+    if (permitido === true && !puesta && EV_CONTEXTO_GRATIS.test(n) && EV_SE_REFIERE_A_VALORACION.test(n)) { puesta = true; return EV_FRASE_DEL_VALOR; }
+    return '\u0002';
+  });
+  return evUnirOraciones(evSinHuerfanos(lista, (o) => o === '\u0002'));
 }
 function evMarcarValor(texto) {
   return evTexto(texto).replace(/\b250\s*(?:bs\.?|bolivianos)?/gi, EV_MARCA_VALOR);
@@ -642,6 +655,10 @@ const EV_PROHIBIDO_MEDICO = [
   ['medicamento_o_dosis', /\b(ibuprofeno|paracetamol|aspirina|antibiotic\w*|antiinflamatori\w*|corticoid\w*|antihistaminic\w*|analgesic\w*|pomada|dosis|miligramos|\d+ ?mg)\b/],
   ['indica_suspender_o_ajustar', /\b(suspende|suspenda|suspender|suspendas|deja de tomar|dejes de tomar|ajusta|ajustar|cambia|cambiar)\b[^.!?]{0,30}\b(medicamento\w*|anticoagulante\w*|insulina|pastilla\w*|medicacion|tratamiento)\b/],
   ['diagnostico', /\b(tienes|tiene|padeces|sufres|presentas|parece (una?|que tienes)) (una? )?(infeccion|alergia|inflamacion|reaccion|rosacea|acne|dermatitis|cancer|enfermedad|lesion)\b/],
+  // Revisión de seguridad del PR 873 (08/11/2026): al dejar de borrar cuidados (orden de Andres), el modelo no puede AUTORIZAR tratarse con una contraindicación ni mandar esperar ante una señal de alarma.
+  ['autoriza_contraindicacion', /\b(embaraz\w*|lactancia|lactar|amamant\w*|anticoagulante\w*|diabet\w*)\b[^.!?]{0,90}\b(puedes|puede|no hay problema|sin problema|no pasa nada|igual|tambien|tranquila|no impide|no es impedimento|se aplica|no afecta)\b|\b(puedes|puede|no hay problema|sin problema|no pasa nada|igual|tranquila|no impide|no es impedimento|se aplica)\b[^.!?]{0,90}\b(embaraz\w*|lactancia|lactar|amamant\w*|anticoagulante\w*|diabet\w*)\b/],
+  ['espera_ante_alarma', /\b(piel (?:se pone )?(?:blanca|palida|morada|negra|gris)|se pone (?:blanca|morada|palida|gris)|dolor intenso|bulto|bultito|necrosis|ampolla\w*|pus|sangrado)\b[^.!?]{0,120}\b(espera|esperar|se pasa solo|se quita solo|desaparece|suele desaparecer|dale unos dias|es normal|no te preocupes|masaje\w*|masajea\w*|compresas?|solo|sola)\b/],
+  ['precio_relativo', /\b(el doble|el triple|(?:dos|tres|cuatro|cinco|\d+) veces (?:mas|el|lo)|bastante mas caro|mucho mas caro)\b[^.!?]{0,60}\b(tratamiento|sesion|aplicacion|radiesse|harmonyca)\b|\b(tratamiento|sesion|aplicacion|radiesse|harmonyca)\b[^.!?]{0,60}\b(el doble|el triple|(?:dos|tres|cuatro|cinco|\d+) veces (?:mas|el|lo))\b/],
   ['minimiza_sintoma', /\b(es normal|no es grave|no te preocupes|no pasa nada|es comun)\b[^.!?]{0,40}\b(hinchaz\w*|moret\w*|dolor|enrojec\w*|inflam\w*|sangr\w*|fiebre)\b/],
   ['indica_hacer_algo', /\b(deberias|debes|tienes que|te recomiendo|te aconsejo) (tomar|aplicar|usar|ponerte|suspender|dejar de|ir a urgencias|acudir)\b/],
   // Precios y rangos: una cifra junto a una palabra de precio, o un «desde / entre / alrededor de» con cifra. La única cifra permitida (250) ya viene como marca.
@@ -687,10 +704,23 @@ const EV_DA_LUZ_VERDE = /\b(no hay (ningun )?(problema|inconveniente)|tambien se
 // La REMISIÓN a la valoración: lo único que el guion manda decir sobre la salud del cliente. Una salida que habla de su condición (o afirma que algo es «seguro») SIN remitir a la valoración de la Dra. no sale.
 const EV_REMISION = /\b(valoracion|la dra|la doctora|doctora evy|dra evy|en persona|evalu\w+)\b/;
 const EV_AFIRMA_SEGURO = /\b(?:es|son|era|resulta|resultan|muy|bastante|super|totalmente|completamente|100 ?%?)\s+(?:muy |bastante |super |totalmente |completamente )?segur[oa]s?\b(?!\s+(?:de |que\b))|\bsegur[oa]s?\s+para\b/;   // «es seguro que te va a gustar» y «estoy seguro de» no afirman seguridad médica
+// AFIRMAR O NEGAR sobre la condición («no se realizan durante el embarazo», «está contraindicado», «se puede»): el modelo nunca lo dice, ni a favor ni en contra; lo ve la Dra. en persona (Andres, 10/11/2026, humo de Evy, paso 11).
+const EV_AFIRMA_NIEGA = /\b(?:no se (?:puede|debe|realiz\w*|hace\w*|aplic\w*|recomiend\w*|indica\w*)|se puede|se realiza\w*|se hace\w*|estan? contraindicad\w*|contraindicad\w*|no es recomendable|no recomendamos|no (?:esta|estan) indicad\w*|esta indicad\w*)\b/;
 function evSaludSinRemision(norm) {
   const n = String(norm);
-  const condicion = EV_CONDICION.exec(n) || EV_AFIRMA_SEGURO.exec(n);
-  return condicion && !EV_REMISION.test(n) ? condicion[0] : '';
+  // POR ORACIÓN: toda oración que nombra una condición (embarazo, lactancia, medicamentos…) tiene que remitir ELLA MISMA a la Dra. y no afirmar ni negar nada. Antes bastaba una mención de «valoración» en cualquier parte del texto,
+  // y «los bioestimuladores no se realizan durante el embarazo… te recibimos en tu valoración» pasaba (humo del 09/11/2026).
+  for (const o of n.split(/[.!?\n]+/)) {
+    const c = EV_CONDICION.exec(o);
+    if (c && (!EV_REMISION.test(o) || EV_AFIRMA_NIEGA.test(o))) return c[0];
+  }
+  const seguro = EV_AFIRMA_SEGURO.exec(n);
+  return seguro && !EV_REMISION.test(n) ? seguro[0] : '';
+}
+// El cliente pide VER cómo queda («quiero ver cómo queda», «cómo quedan los tratamientos», «quiero ver resultados», «antes y después»): el Antes y Después lo manda el CÓDIGO (una vez por ficha), no la etiqueta del modelo, que a veces no la emite.
+const EV_PIDE_VER_RESULTADO = /\b(?:ver|mostrar\w*|muestr\w*|enviar\w*|mand\w*|pasar\w*)\b[^.?!]{0,40}\b(?:como (?:queda\w*|se ve\w*|luce\w*)|resultados?|antes y despues|fotos? de (?:pacientes|resultados|casos)|casos?)\b|\bcomo quedan?\b|\bantes y despues\b/;
+function evPideVerResultado(textoCliente) {
+  return EV_PIDE_VER_RESULTADO.test(evNorm(textoCliente));
 }
 function evConsejoDeSalud(norm) {
   for (const o of String(norm).split(/[.!?]+/)) if (EV_CONDICION.test(o) && EV_DA_LUZ_VERDE.test(o)) return o.trim().slice(0, 80);
@@ -752,9 +782,12 @@ function evRepararIdentidad(texto, nombreNegocio) {
 // GARANTÍAS Y PROMESAS DE RESULTADO, REPARADAS POR ORACIÓN: una oración con «garantiz…», «asegur…», «prometer…», «resultado idéntico/exacto/igual/perfecto» se BORRA (negada o afirmativa: la forma negada que manda el guion
 // la sustituye el CÓDIGO por la aclaración fija «cada rostro responde distinto y no prometemos un resultado idéntico», una sola vez). Nunca deja pasar un «te garantizo / garantizamos». Si no queda texto, cae al fallo.
 const EV_TOCA_GARANTIA = /\bgarant\w*|\basegur\w*|\bpromet\w*|\bprometid\w*|resultados? (?:identic\w*|exact\w*|igual\w*|perfect\w*|asegurad\w*|garantizad\w*)|\b(?:mismo|identico|exacto) resultado/;
-// Promete efecto inmediato (el arte comparativo trae «efecto lifting inmediato»; la clínica no lo promete).
+// DECISIÓN DE ANDRES (08/11/2026, «la letra del MD»): «efecto lifting inmediato» SALE, como dice el MD y el arte comparativo. Cualquier OTRA promesa
+// de inmediatez («resultado inmediato», «de inmediato te asignan…») se sigue quitando: no es del MD y no tiene respaldo.
+const EV_LIFTING_INMEDIATO = /\blifting\s+inmediat[oa]s?\b|\binmediat[oa]s?\s+lifting\b/g;
 function evSinInmediato(texto) {
-  return evQuitarOraciones(evTexto(texto).replace(/(lifting)\s+inmediat[oa]s?/gi, '$1').replace(/\binmediat[oa]s?\s+(lifting)/gi, '$1'), (n) => /\binmediat\w*/.test(n));
+  // Se descuenta «lifting inmediato» y lo que quede con «inmediat…» (p. ej. «de inmediato») se quita con su oración.
+  return evQuitarOraciones(evTexto(texto), (n) => /\binmediat\w*/.test(String(n).replace(EV_LIFTING_INMEDIATO, ' ')));
 }
 // COPIA de la de Emma (batería real de Evy del 29/10/2026, caso B4: «¿esto es real?» sobre la foto del antes y después caía al fallo por la barrera común «identidad»).
 // «¿esto es real?» sobre una FOTO no es la pregunta «¿eres real?» sobre la identidad: al filtro común (que no se toca) se le pasa «es verdad». «¿Eres real?», «¿eres un bot?» siguen intactas.
@@ -779,7 +812,7 @@ function evPulirSalida(crudo, ctx) {
   t = evSinInmediato(t);
   // «¿Qué zona te llama más la atención?» no promete una llamada (batería real del 29/10/2026: el filtro común solo exime «llama la atención» y tumbaba la bienvenida): se dice «te interesa más».
   t = t.replace(/\b(te|le) llama (m[aá]s|mucho|tanto) la atenci[oó]n\b/gi, '$1 interesa $2');
-  t = evProtegerValor(evSinBonificado(t), c.primerTurno === true);
+  t = evProtegerValor(evSinBonificado(t), c.primerTurno === true || evPreguntaPrecio(c.textoCliente));
   // «¡Que tengas un excelente día!» no cierra ninguna respuesta (observación de Rubén, 28/10/2026): esa oración se quita.
   t = evQuitarOraciones(t, (n) => EV_DESPEDIDA_DE_DIA.test(n));
   // «Recepción te llama / te contactará…»: sale SOLO si el aviso de «pidió que la llamen» salió de verdad (`llamadaAvisada`, lo calcula quien llama con `avisoSalio`); si no, la oración se quita.
@@ -787,14 +820,8 @@ function evPulirSalida(crudo, ctx) {
   if (enviados.length === 0) t = evQuitarOraciones(t, (n) => EV_PROMETE_IMAGEN.test(n));
   if (enviados.indexOf('antes_despues') < 0) t = evQuitarOraciones(t, (n) => EV_PACIENTE_REAL.test(n));
   t = evQuitarOraciones(t, (n) => EV_PROMETE_RECEPCION.test(n) || EV_PROMETE_DESPUES.test(n));
-  let cuidados = false;
-  t = evQuitarOraciones(t, (n) => { if (EV_CUIDADOS.test(n)) { cuidados = true; return true; } return false; });
-  // Si el cliente PREGUNTA por cuidados o recuperación, toda oración imperativa («Duerme…», «Bebe…», «No vayas…») es una indicación sin respaldo.
-  if (/\b(cuidados?|recuperacion|recuperar|despues del tratamiento|post ?tratamiento|reposo|que debo evitar|que hago despues)\b/.test(evNorm(c.textoCliente || ''))) {
-    t = evQuitarOraciones(t, (n) => { if (/^(?:no )?(?:duerme|duerma|bebe|toma|usa|aplica|evita|descansa|mantente|cuida|lava|limpia|haz|realiza|consume|come|vayas|vayan|hagas|uses|tomes)\b/.test(n)) { cuidados = true; return true; } return false; });
-  }
-  if (cuidados) t = evQuitarOraciones(t, (n) => EV_RETOMA.test(n));
-  if (cuidados && t !== '' && !/cuidados posteriores/.test(evNorm(t))) t = evConAclaracion(t, EV_REMISION_CUIDADOS);
+  // DECISIÓN DE ANDRES (08/11/2026, «la letra del MD», sin aprobación de la doctora): el MD manda «Los cuidados específicos dependen de la zona y la Dra. Evy te los detalla en la consulta gratuita».
+  // Ya NO se borran las oraciones de cuidados ni se agrega la frase fija «Los cuidados posteriores te los explica la Dra. en la valoración.»: el modelo dice el texto del MD. Lo que sigue vigente es la barrera MÉDICA (medicamentos, dosis, diagnóstico, «suspende tu tratamiento»…).
   const idt = evRepararIdentidad(t, c.nombreNegocio);
   // Una afirmación directa no se repara: sale el texto fijo de admisión (la respuesta del modelo se descarta entera).
   if (idt.afirma) return { texto: evParrafos(EV_TEXTO_ADMISION_FIJA), motivo: '', detalle: 'identidad afirmada («' + idt.afirma + '…»): se cambió por el texto fijo de admisión' };
@@ -951,7 +978,7 @@ function evEsNombre(textoCliente) {
 // Ante la duda se devuelve '' y el cierre usa el nombre del perfil.
 function evNombreDelMensaje(textoCliente, historial) {
   const raw = evTexto(textoCliente);
-  if (evEsNombre(raw) && (evNombreTrasAceptar(historial) || evNombreTrasPedirAgendar(historial))) {
+  if (evEsNombre(raw) && (evNombreTrasAceptar(historial) || evNombreTrasPedirAgendar(historial) || evNombreTrasPedirNombre(historial))) {
     return evPrimerNombre(raw.split(/[,;:]|\s(?:mejor|pero|para)\s/i)[0].trim().replace(/^(?:soy|me llamo|mi nombre es)\s+/i, '').split(/\s+/)[0]);
   }
   const m = /(?:[Ss]oy|[Mm]e llamo|[Mm]i nombre es)\s+(\p{Lu}\p{L}{1,19})/u.exec(raw);
@@ -971,6 +998,14 @@ function evNombreTrasPedirAgendar(historial) {
   const a = evUltimoDe(h, 'a');
   if (a !== h.length - 1 || a < 0) return false;
   return EV_PIDE_NOMBRE.test(evNorm(evUltimaOracion(h[a].t))) && h.some((x) => x && x.r === 'u' && (evQuiereAgendar(x.t) || evPideAgendar(x.t)));
+}
+// El último mensaje del asistente PIDE el nombre («¿cuál es tu nombre y qué te gustaría mejorar?», la bienvenida) y el cliente contesta con un nombre, aunque aún no haya pedido agendar (reclamo 59, 11/11/2026: sin esto el nombre dado se
+// descartaba y los avisos, el cierre y el miniCRM salían con el nombre del PERFIL de WhatsApp).
+function evNombreTrasPedirNombre(historial) {
+  const h = Array.isArray(historial) ? historial : [];
+  const a = evUltimoDe(h, 'a');
+  if (a !== h.length - 1 || a < 0) return false;
+  return EV_PIDE_NOMBRE.test(evNorm(evUltimaOracion(h[a].t)));
 }
 // El cliente dice que NO quiere agendar (ahora): no se deriva.
 function evNegaAgendar(textoCliente) {
@@ -994,9 +1029,10 @@ function evDioNombre(historial, textoCliente) {
   return re.test(evTexto(textoCliente)) || (Array.isArray(historial) && historial.some((h) => h && h.r === 'u' && re.test(evTexto(h.t))));
 }
 // Observaciones de Rubén (28/10/2026): sin «bonificado»; el valor habitual (250 Bs) solo en el PRIMER turno de la ficha, como en la bienvenida.
-function evTextoGratis(cfg, dioNombre, primerTurno) {
+function evTextoGratis(cfg, dioNombre) {
   const negocio = evLinea(cfg && cfg.nombreNegocio, 60) || 'Dra. Evy';
-  const cuerpo = 'Sí, la valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar.' + (primerTurno === true ? ' (Su valor habitual es de 250 Bs).' : '');
+  // Letra del MD (línea «¿De verdad es gratis?»): «Sí, es 100% gratuita por la campaña. No pagas los 250 Bs de consulta ni tienes que dejar ningún anticipo para reservar. Solo si después de la evaluación decides hacerte el tratamiento, la Dra. te da el presupuesto.»
+  const cuerpo = 'Sí, la valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' es 100% gratuita por la campaña. No pagas los 250 Bs de consulta ni tienes que dejar ningún anticipo para reservar. Solo si después de la evaluación decides hacerte el tratamiento, la Dra. te da el presupuesto.';
   return dioNombre ? cuerpo : cuerpo + '\n\n¿Cómo te llamas y qué te gustaría mejorar en tu rostro?';
 }
 const EV_TEXTO_DERIVAR_DE_NUEVO_2 = 'Con gusto, el botón sigue disponible para escribirle a recepción.';
@@ -1016,9 +1052,18 @@ function evTextoCierre(cfg, nombre, conMaps, avisado) {
   const clinica = evLinea(c.clinica, 60);
   const dir = evLinea(c.direccion, 160);
   const donde = clinica && dir ? 'La consulta es en la ' + clinica + ' (' + dir + ').' : (clinica ? 'La consulta es en la ' + clinica + '.' : (dir ? 'La consulta es en ' + dir + '.' : ''));
-  return ['¡Excelente decisión' + (n ? ', ' + n : '') + '! Recuerda que tu valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' es 100% gratuita y sin compromiso (sin pago de reserva).',
+  // DECISIÓN DE ANDRES (08/11/2026, «CIERRE: vamos con lo que dice el MD»): el cierre es la letra del MD (REGLA DE CIERRE, paso 2): «está 100% bonificada», el enlace wa.me a recepción en el texto y «te asignarán tu espacio de inmediato».
+  // Sin número de recepción (no debería pasar) queda la invitación a usar el botón. El botón «Escribir a recepción» y el aviso a recepción no cambian.
+  const nac = evTelefonoNacional(c.numeroRecepcion);   // 8 dígitos nacionales -> 591…; de 7 a 15 dígitos o vacío (revisión de seguridad del PR 873)
+  const d0 = evTexto(c.numeroRecepcion).replace(/\D/g, '');
+  const digitos = nac === '' ? '' : (/^591\d{8}$/.test(d0) ? d0 : (/^\d{8}$/.test(d0) ? '591' + d0 : (d0.length >= 10 ? d0 : '')));
+  return ['¡Excelente decisión' + (n ? ', ' + n : '') + '! Recuerda que tu valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' está 100% bonificada (sin costo ni pago de reserva).',
     donde,
     conMaps === true && evEnlaceDeMapa(c.direccionMaps) !== '' ? '📍 Ubicación: ' + evEnlaceDeMapa(c.direccionMaps) : '',
+    digitos !== ''
+      ? 'Para elegir el día y horario que mejor te queden y recibir la ubicación exacta en Google Maps, haz clic en este enlace para hablar directo con nuestra recepción:\n👉 wa.me/' + digitos + '\n¡Haz clic ahí y te asignarán tu espacio de inmediato!'
+      : '',
+    // La última línea sigue siendo la verdad del aviso (observación 1 de Rubén): «Ya pasé tus datos…» SOLO si el aviso salió; si no, la invitación al botón.
     avisado === true ? EV_TEXTO_CIERRE_AVISADO : EV_TEXTO_CIERRE_SIN_AVISO].filter((x) => x !== '').join('\n\n');
 }
 // EL ENLACE DE GOOGLE MAPS del negocio (`direccionMaps`, de la Consola): LA MISMA regla que `enlaceDeMapaValido` del servidor (https, uno de los dominios de mapas, hasta 200 caracteres, sin espacios). Se comprueba en
@@ -1075,9 +1120,12 @@ function evTextoComparacion(nombre) {
 // TEXTO LITERAL DEL ANUNCIO (Andres, 07/11/2026): quien entra con la frase EXACTA del anuncio (dato del tenant: `campanaFrase`) recibe el texto fijo `campanaTexto` por código, sin modelo. Se compara por igualdad de palabras
 // (patrón de `rrEsEntradaLanding` de Rubén), nunca por inclusión: sin tildes, mayúsculas ni puntuación y sin «hola»; una palabra de más (una instrucción, otro pedido) ya no es la frase. La frase tiene que tener 5 palabras o más.
 function evClaveCampana(t) { return evNorm(t).split(' ').filter((w) => w !== '' && w !== 'hola').join(' '); }
+// CAMBIO DE ANDRES (08/11/2026, su botón sobre mayúsculas): el texto INICIAL que INCLUYE la frase (sin importar mayúsculas, tildes ni lo que la rodee) recibe el literal; antes solo la frase exacta. Se compara por PALABRAS
+// completas normalizadas (nunca por subcadena de una palabra) y solo el texto de la conversación nueva (lo decide `Decidir turno`). El literal sale por código, sin modelo: lo que rodee a la frase no llega a ninguna parte.
 function evEsEntradaCampana(textoCliente, frase) {
   const f = evClaveCampana(frase);
-  return f.split(' ').length >= 5 && evClaveCampana(textoCliente) === f;
+  const t = evNorm(textoCliente).split(' ').filter((w) => w !== '').join(' ');
+  return f.split(' ').length >= 5 && t.length <= 4000 && (' ' + t + ' ').indexOf(' ' + f + ' ') >= 0;
 }
 // ¿Lo último que dijo el asistente ya fue ese texto? (la memoria guarda el principio y el final de lo largo: se compara el principio normalizado)
 function evYaDijoElTextoDeCampana(ultimoAsistente, texto) {
@@ -1214,6 +1262,7 @@ function evProspectoCrm(d) {
   // Seguridad: a la columna C solo van letras (con tildes), espacios, apóstrofo y guion; cualquier otro carácter se descarta.
   const perfil = evLinea(x.nombrePerfil, 60).replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim();
   const dadoEnElPerfil = dado !== '' && evNorm(perfil.split(' ')[0]) === evNorm(dado);
+  // nuevoContacto NO tiene efecto en el miniCRM desde el 08/11/2026 (una fila por conversacion de 24 h: la decide el modulo crm con atencion.conversacionDesde); se conserva solo por compatibilidad.
   const p = { telefono: evTexto(x.from).replace(/\D/g, ''), nombre: dadoEnElPerfil ? perfil : (dado || perfil), nombreDePerfil: dado === '', anuncio: x.anuncio === true, nuevoContacto: x.nuevoContacto === true, senales: senales, ultimaInteraccionMs: Number(x.ahoraMs) };
   if (quePidio !== '') p.quePidio = quePidio;
   if (tok.dia !== '') p.diaPreferido = tok.dia;
@@ -1227,15 +1276,10 @@ function evProspectoCrm(d) {
 // =============================================================================
 
 // (4) SIN «BONIFICADO»: ningún texto que sale dice «hoy bonificado» ni «100% bonificada». Se reescriben las formas conocidas y, si queda una oración con «bonific…», se quita entera.
+// DECISIÓN DE ANDRES (08/11/2026, «la letra del MD»): el MD usa «bonificada / bonificamos / por la campaña», así que el filtro de la observación 4 de Rubén (28/10) YA NO reescribe ni quita nada.
+// Se conserva la función (misma firma) para no tocar a quien la llama; solo normaliza el texto.
 function evSinBonificado(texto) {
-  const t = evTexto(texto)
-    .replace(/(?:\s*,\s*|\s+)hoy (?:est[aá] )?bonificad[oa]s?\b/gi, '')
-    .replace(/\b(?:est[aá]|es) (?:100 ?% )?bonificad[oa]s? y (?:es )?(gratuit[oa]s?)\b/gi, 'es $1')
-    .replace(/\bbonificamos (?:el )?(?:100 ?%|cien por ciento) de (la valoraci[oó]n)/gi, '$1 es 100% gratuita')
-    .replace(/\bbonificando (?:los )?(250 Bs) habituales\b/gi, 'sin pagar los $1 habituales')
-    .replace(/\b(?:100 ?% )?bonificad([oa])(s?) al (?:100 ?%|cien por ciento)/gi, '100% gratuit$1$2')
-    .replace(/\b(?:100 ?% |totalmente )?bonificad([oa])(s?)\b/gi, '100% gratuit$1$2');
-  return /bonific/i.test(t) ? evQuitarOraciones(t, (n) => /\bbonific\w*/.test(n)) : t;
+  return evTexto(texto);
 }
 
 // (3) LA DESPEDIDA DE DÍA («¡Que tengas un excelente día!»): ninguna respuesta del modelo cierra con ella.

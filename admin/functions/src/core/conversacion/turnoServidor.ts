@@ -124,7 +124,8 @@ export async function consumirCupoDeTurno(
 // ---------------------------------------------------------------------------
 
 export type NombreDeCallableDeTurno =
-  | 'tomarConversacion' | 'devolverConversacion' | 'enviarComoPersona' | 'bloquearContacto' | 'desbloquearContacto';
+  | 'tomarConversacion' | 'devolverConversacion' | 'enviarComoPersona' | 'bloquearContacto' | 'desbloquearContacto'
+  | 'enviarAdjuntoComoPersona';
 
 interface DatosDeRegistro {
   tenantId?: unknown; uid?: string; rol?: RolDePersona; conversacionId?: unknown; motivo?: string;
@@ -180,7 +181,8 @@ export interface SalidaDeTurno {
 
 /** La acción de auditoría de cada callable (lista cerrada). */
 export type AccionDeTurno =
-  | 'conversacion_tomada' | 'conversacion_devuelta' | 'mensaje_persona_creado' | 'bloquear_contacto' | 'desbloquear_contacto';
+  | 'conversacion_tomada' | 'conversacion_devuelta' | 'mensaje_persona_creado' | 'bloquear_contacto' | 'desbloquear_contacto'
+  | 'adjunto_persona_creado';
 
 export interface ContextoDeTurno {
   db: Firestore;
@@ -201,11 +203,13 @@ export interface ContextoDeTurno {
  */
 export function auditarEnTransaccion(
   tx: Transaction, c: ContextoDeTurno, accion: AccionDeTurno, detalle: Record<string, string | number | null> = {},
+  opciones: { sinTelefono?: boolean } = {},
 ): void {
   const ref = c.db.collection(`tenants/${c.tenantId}/auditoria`).doc();
   tx.create(ref, {
     accion, uid: c.uid, en: Timestamp.fromMillis(c.ahoraMs),
-    rol: c.rol, telefono4: ultimos4(c.conversacionId) ?? null, resultado: 'ok', ...detalle,
+    // `sinTelefono` (adjuntos, 11/11/2026): ni los 4 últimos dígitos. El campo no se escribe.
+    rol: c.rol, ...(opciones.sinTelefono === true ? {} : { telefono4: ultimos4(c.conversacionId) ?? null }), resultado: 'ok', ...detalle,
   });
 }
 

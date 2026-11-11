@@ -645,7 +645,7 @@ describe('lo que NO cambia: respuesta a n8n, facturación y operaciones', () => 
 const pick = (o: Datos, campos: readonly string[]): Datos =>
   Object.fromEntries(campos.filter((k) => k in o).map((k) => [k, o[k]]));
 
-const CLAVES_ATENCION = ['bloque', 'estado', 'mensajeFijo', 'respuestasEnVentana', 'restanDelBloque', 'umbrales', 'ventanaVenceEn'];
+const CLAVES_ATENCION = ['bloque', 'conversacionDesde', 'conversacionNueva', 'estado', 'mensajeFijo', 'respuestasEnVentana', 'restanDelBloque', 'umbrales', 'ventanaVenceEn'];
 const CLAVES_SERVICIO = ['estado', 'fase', 'graciaHasta', 'motivo'];
 const CLAVES_RESPUESTA = {
   demostracion: ['atencion', 'avisarRecepcion'],

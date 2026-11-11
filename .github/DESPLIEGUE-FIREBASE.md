@@ -19,9 +19,20 @@ dos proyectos nuevos, `novuchat-admin-dev` y `novuchat-admin-prod`. **La
 consola no vive en ninguno de los dos**, y ninguno aparece en la cuenta dueña
 del proyecto de producción. Lo que hay:
 
-- **Producción** es el proyecto `${GCP_PROJECT_ID}` de `CONFIGURACION.local.md`,
-  el mismo de `admin/.firebaserc`, con la consola en `consola.novuchat.site`.
-  Donde abajo diga `novuchat-admin-prod`, léase ese.
+- **Producción** es el proyecto `novuchat-demo` (corrección del 2026-11-11):
+  es el valor de `vars.GCP_PROJECT_ID_PROD` (`docs/produccion/acta-v0.5.0.md`,
+  fila 17), el `PROYECTO` por omisión de `scripts/rotar-ingesta.sh` y el de las
+  URL de las Functions (`us-east1-novuchat-demo.cloudfunctions.net`), con la
+  consola en `consola.novuchat.site`. Es el mismo proyecto de la clave `prod`
+  de `admin/.firebaserc` (archivo ignorado por git; la plantilla es
+  `admin/.firebaserc.ejemplo`). **No es `${GCP_PROJECT_ID}`**: ese marcador de
+  `CONFIGURACION.local.md` es el proyecto de los demos (Calendar y Gemini), sin
+  Firestore (`bitacora/2026-09.md`, hallazgo del 15/09). Los scripts de
+  `scripts/nube-*.sh` toman el proyecto del `quota_project_id` de las
+  credenciales, no de ese marcador. Donde abajo diga `novuchat-admin-prod`,
+  léase `novuchat-demo`; y `novuchat-admin-dev` no existe: **staging** es
+  `${GCP_PROJECT_ID_STAGING}` (`docs/staging/DISENO.md`) y `dev` no tiene
+  proyecto.
 - **Storage de las Functions (2026-10-09):** `scripts/nube-prepago.sh` da a `sa-functions` solo `roles/storage.objectViewer` y `objectCreator` sobre el bucket de la consola. La purga de comprobantes (`purgarComprobantes`) necesita además borrar objetos; según el informe de la sesión Principal del 09/10/2026, esa sesión dio `roles/storage.objectUser` a `sa-functions` en staging (paso 5) y en producción (paso 7), con autorización de Andres. **No hay rastro versionado de eso**: se comprueba con `gcloud storage buckets get-iam-policy` sobre cada bucket. El visor de comprobantes (`verComprobante`) solo lee y no necesita IAM nuevo **de Storage** (sí el invocador, abajo).
 - **Invocador de `verComprobante`, `buscarConversaciones`, las cinco de H2-1 y H2-3, `guardarMedio` (H3; HTTP, la llama n8n con el token del número) y `reclamarRescates` (`scripts/nube-visor.sh`):** una callable nueva puede quedar sin `roles/run.invoker` para `allUsers` y responder un 403 de Google, en HTML, antes de correr su código. Es el mismo paso que `scripts/nube-catalogo.sh` hace para el catálogo. `allUsers` solo deja que la petición llegue: la barrera es el token, dentro del código (App Check en producción, sesión, rol en ese comercio, tope y lo demás de cada callable).
   - **Servicios:** el script atiende una lista cerrada, y `--servicio` es obligatorio: `vercomprobante`, `buscarconversaciones`, `enviarcomopersona` (callable `enviarComoPersona`), `tomarconversacion` y `devolverconversacion` (callables `tomarConversacion` y `devolverConversacion`, H2-1), `bloquearcontacto` y `desbloquearcontacto` (callables `bloquearContacto` y `desbloquearContacto`, Bloquear contacto, 31/10/2026; misma sonda que tomar y devolver), `reclamarsalidapersona` y `confirmarsalidapersona` y `reclamarrescates` (Functions HTTP que llama el flujo n8n con la credencial de la ingesta; la última es el rescate de 22 h del módulo Pedidos). Las HTTP no tienen sesión ni App Check: su barrera es esa credencial, dentro del código; sin ella contestan `401` con el texto «no autorizado», y el script lo toma como «nuestro código» (un 2xx, 400 o 404 sin credencial es «abierto» y se revierte). Cualquier otro nombre, incluido el de la Function en camelCase, sale con 2.
@@ -198,13 +209,12 @@ del proyecto de producción. Lo que hay:
     con el marcador `PENDIENTE-DE-CARGAR`, ambos por tubería, sin imprimir; 3: `secretAccessor`
     para `sa-functions`, secreto por secreto). Después, `--cargar-resend <archivo>` carga la clave
     real (que Andres crea en el panel de Resend y deja en un archivo de modo 600 dentro de
-    `$XDG_RUNTIME_DIR`; el script no la muestra y borra el archivo) y `--entregar-hmac` deja la
-    clave HMAC en otro archivo de modo 600 para el cargador de credenciales de n8n (nadie lo lee). **`--entregar-hmac --aplicar` está BLOQUEADO hasta que exista ese cargador** (hoy no existe; no se construye en el PR de la alerta): solo se corre en seco.
+    `$XDG_RUNTIME_DIR`; el script no la muestra y borra el archivo). La clave HMAC no se entrega a ningún archivo: la credencial de n8n la carga `scripts/cargar-alerta-n8n.sh --credencial` llevando `ALERTAS_HMAC` por tubería a la API de n8n (`--entregar-hmac` se retiró).
     **Una versión agregada después de desplegar no la ve ninguna instancia hasta el próximo
-    despliegue.** Orden: pasos 1 a 3 → `--cargar-resend` → `--entregar-hmac` → desplegar la
+    despliegue.** Orden: pasos 1 a 3 → `--cargar-resend` → desplegar la
     etiqueta → **`--invocador`** (paso aparte: delega en `nube-visor.sh --servicio alertaoperativa`,
     que da `run.invoker` a `allUsers` solo sobre ese servicio y comprueba que sin firma contesta
-    401 «no autorizado»). La vuelta atrás de la condición es `--revertir-iam`. Staging:
+    401 «no autorizado»). Después de `--invocador`: `scripts/cargar-alerta-n8n.sh --credencial` y luego `--flujo` (seco primero; con `--aplicar --confirmo produccion`). La vuelta atrás de la condición es `--revertir-iam`. Staging:
     **Staging, ANTES de fusionar** (fusionar a `main` despliega a staging la Function y la tarea programada, y sin la condición de IAM ni los secretos el despliegue falla con 403): `scripts/preparar-staging.sh alertas` en seco y luego con `--aplicar`, y `verificar`. La configuración del correo (`dominioAvisos`,
     `destinatario`, `enlaceHosts`, `enlaceRepos`, `avisosDenegar`, `topeDiario`) vive en el documento
     `plataforma/alertas` de Firestore, no en el `.env` (el de producción es de dos nombres); se escribe con
@@ -666,7 +676,7 @@ conviene cargarlos en el Environment `production`, no a nivel repositorio.
 | `GCP_WIF_PROVIDER` | `projects/<NUM>/locations/global/workloadIdentityPools/github/providers/novuchat` | `<NUM>` es el número de proyecto del punto 1.1 |
 | `GCP_SA_DEPLOY_DEV` | `sa-deploy-dev@novuchat-admin-dev.iam.gserviceaccount.com` | punto 2.2 |
 | `GCP_SA_DEPLOY_STAGING` | igual que el de dev si comparten proyecto | punto 2.2 |
-| `GCP_SA_DEPLOY_PROD` | `sa-deploy-prod@novuchat-admin-prod.iam.gserviceaccount.com` | punto 2.2, en el Environment `production` |
+| `GCP_SA_DEPLOY_PROD` | (verificar en la consola de IAM) | punto 2.2, en el Environment `production` |
 | `GITLEAKS_LICENSE` | opcional; vacío en cuentas personales | gitleaks.io |
 | `RELEASE_TOKEN` | opcional; PAT fine-grained con `contents:write` | solo si quiere que el tag de `release.yml` dispare los `ci-*` |
 
@@ -689,10 +699,10 @@ conviene cargarlos en el Environment `production`, no a nivel repositorio.
 | `TAG_FIRMADO_REQUERIDO` | `false` | |
 | `GCP_PROJECT_ID_DEV` | `novuchat-admin-dev` | |
 | `GCP_PROJECT_ID_STAGING` | `novuchat-admin-dev` | mismo proyecto que dev |
-| `GCP_PROJECT_ID_PROD` | `novuchat-admin-prod` | |
+| `GCP_PROJECT_ID_PROD` | `novuchat-demo` | valor real; ver «Estado real» |
 | `DEV_URL` | `https://novuchat-admin-dev.web.app` | |
 | `STAGING_URL` | igual que `DEV_URL` | |
-| `PROD_URL` | `https://novuchat-admin-prod.web.app` | |
+| `PROD_URL` | `https://consola.novuchat.site` | valor real |
 | `FIREBASE_DEPLOY_ONLY_DEV` | `hosting,firestore:rules,firestore:indexes` | agregar `,functions` **solo con Blaze** |
 | `FIREBASE_DEPLOY_ONLY` | `hosting,firestore:rules,firestore:indexes,functions,storage` | staging y producción. `storage` **solo después** de crear el bucket por defecto y conceder el rol del agente de Storage: ver `docs/seguridad/reglas-storage.md` §Despliegue |
 | `FIREBASE_SITE_ID` | no crear salvo sitio de Hosting con nombre propio | por omisión usa `GCP_PROJECT_ID_PROD` |

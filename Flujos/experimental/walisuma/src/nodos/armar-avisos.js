@@ -38,7 +38,8 @@ const esPedido = aviso.tipo === 'pedido';
 const lineas = esPedido ? wlConNombres(aviso.lineas, c.vendibles) : [];
 const itemsTexto = esPedido ? vcLineaAviso(lineas) : avLimpio(aviso.motivo, 100) || 'consulta';
 const totalTexto = esPedido && Number.isSafeInteger(aviso.total) && aviso.total > 0 ? vcMonto(aviso.total) : '—';
-const entregaTexto = esPedido ? wlEntregaTexto(aviso.entrega) : 'sin pedido';
+// La entrega del aviso: modo · ciudad · a nombre de · teléfono · dirección · envío (sin costo / a cotizar / recojo). Va a recepción, que lo coordina por fuera de NovuChat.
+const entregaTexto = esPedido ? wlEntregaAviso(aviso.entrega, aviso.total, wlUmbralBs(c.base)) : 'sin pedido';
 const cotejoTexto = esPedido ? avLimpio(aviso.cotejo, 80) || 'sin comprobante aún' : 'sin comprobante aún';
 const parametros = esPedido ? [itemsTexto, totalTexto, entregaTexto, cotejoTexto] : ['Consulta: ' + itemsTexto, '—', 'sin pedido', 'sin comprobante aún'];
 

@@ -55,7 +55,6 @@ const leer = (archivo: string): Flujo => JSON.parse(readFileSync(join(FLUJOS, ar
  */
 export const EXCEPCIONES: Record<string, string> = {
   'demo-a-agendamiento.json': 'Demo A: número de ensayo sin pacientes, armado por el ensamblador; lo cierra pasarlo a la base común',
-  'demo-b-venta-cobro.json': 'Demo B: demo sin clientes, armado por el ensamblador; lo cierra pasarlo a la base común',
   'novuchat-onboarding.json': 'histórico: el chat de NovuChat corre chat-novuchat (que sí lo trae); queda sin fila en versiones-por-cliente',
   'platinum-agendamiento.json': 'histórico del ensamblador, sin cliente; lo cierra retirarlo',
   'bellido-agendamiento.json': 'flujo A de Bellido, descartado desde el 01/10 (corre agenda-minima); Andres ordenó no tocarlo',
@@ -67,12 +66,15 @@ export const EXCEPCIONES: Record<string, string> = {
  */
 export const exigeGuardado = (f: Flujo): boolean => manejaMedios(f) || f.nodes.some((n) => n.name === 'Reportar mensaje (entrante)');
 
+/** Los únicos flujos cuya ancla es una hoja HERMANA de la rama que responde (Demo B: «Normalizar entrada» alimenta a las dos). Lista cerrada. */
+export const ANCLA_HERMANA = ['demo-b-venta-cobro.json'];
+
 /** Revisa una lista de flujos y devuelve, por archivo, lo que falla. La usa la prueba sobre el repositorio y la prueba negada. */
 export function revisar(lista: { archivo: string; flujo: Flujo }[], excepciones: Record<string, string>): Record<string, string[]> {
   const fallas: Record<string, string[]> = {};
   for (const { archivo, flujo } of lista) {
     if (!exigeGuardado(flujo) || excepciones[archivo] !== undefined) continue;
-    const h = hallazgosDelGuardado(flujo, { exigir: true }) as string[];
+    const h = hallazgosDelGuardado(flujo, { exigir: true, hermana: ANCLA_HERMANA.includes(archivo) }) as string[];
     if (h.length) fallas[archivo] = h;
   }
   return fallas;
@@ -97,7 +99,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
   });
 
   it.each(CUBIERTOS)('%s lleva el guardado completo, en su lugar y con las credenciales correctas', (archivo) => {
-    expect(hallazgosDelGuardado(leer(archivo), { exigir: true })).toEqual([]);
+    expect(hallazgosDelGuardado(leer(archivo), { exigir: true, hermana: ANCLA_HERMANA.includes(archivo) })).toEqual([]);
   });
 
   // EL BINARIO DEL MEDIO queda en los datos de la ejecución de n8n si la ejecución se guarda. Tabla CERRADA de la retención de cada flujo cubierto:
@@ -106,7 +108,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
   // fijaba (valía el de la instancia). Cambiar una fila obliga a cambiar esta prueba y decirlo en el PR.
   const NADA: [string, string, boolean] = ['none', 'none', false];
   const RETENCION: Record<string, [string | undefined, string | undefined, boolean | undefined]> = Object.fromEntries([
-    'experimental/rroca-evy/rroca-evy.json', 'experimental/rroca-evy/rroca-evy.prueba.json',
+    'experimental/rroca-evy/rroca-evy.json', 'experimental/rroca-evy/rroca-evy.prueba.json', 'experimental/rroca-evy/rroca-evy.ensayo-demo-a.json',
     'experimental/rroca-emma/rroca-emma.json', 'experimental/rroca-emma/rroca-emma.prueba.json',
     'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-evy.prueba.json',
     'experimental/doctoras/doctoras.rroca-emma.json', 'experimental/doctoras/doctoras.rroca-emma.prueba.json',
@@ -114,12 +116,14 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
     'experimental/rroca-antonio/rroca-antonio.json', 'experimental/rroca-antonio/rroca-antonio.prueba.json',
     'experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.qtaco-3727.json', 'experimental/venta-minima/venta-minima.prueba.json',
     'experimental/venta-minima/venta-minima.ensayo-demo-a.json',
-    'experimental/chat-novuchat/chat-novuchat.novuchat.json', 'experimental/chat-novuchat/chat-novuchat.prueba.json',
+    'experimental/chat-novuchat/chat-novuchat.novuchat.json', 'experimental/chat-novuchat/chat-novuchat.prueba.json', 'experimental/chat-novuchat/chat-novuchat.ensayo-demo-a.json',
     'experimental/captacion-minima/captacion-minima.novuchat.json', 'experimental/captacion-minima/captacion-minima.prueba.json',
     'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/agenda-minima/agenda-minima.prueba.json',
     // Walisuma (#713, 30/10): main la traía con «none»/«all»; pasa a «none» como todos.
     'experimental/walisuma/walisuma.json', 'experimental/walisuma/walisuma.prueba.json',
     'experimental/casa-bermejo/casa-bermejo.json', 'experimental/casa-bermejo/casa-bermejo.prueba.json',
+    // Demo B (11/11/2026): la rama común injertada en el JSON versionado; deja de ser excepción.
+    'demo-b-venta-cobro.json',
   ].map((a) => [a, NADA]));
   it('la retención de ejecuciones de cada flujo cubierto es la de la tabla cerrada: nada guardado (el binario del medio quedaría en la ejecución)', () => {
     expect(Object.keys(RETENCION).sort()).toEqual([...CUBIERTOS].sort());
@@ -302,5 +306,26 @@ describe('guardado obligatorio, NEGANDO: cada regla tiene la mutación que la ro
   });
   it('la descarga hacia otro anfitrión que el CDN de Meta', () => {
     expect(conBase((f) => { (nodoDe(f, 'Descargar medio (guardado)').parameters as J)['url'] = '={{ $json.url }}'; })).toMatch(/llama a otro anfitrión/);
+  });
+});
+
+describe('guardado obligatorio, forma HERMANA (Demo B): la ancla es una hoja y la rama que responde cuelga del mismo padre', () => {
+  const DEMO_B = 'demo-b-venta-cobro.json';
+  it('el Demo B trae la rama y pasa la revisión', () => {
+    const f = leer(DEMO_B);
+    expect(f.nodes.some((n) => n.name === 'Preparar guardado')).toBe(true);
+    expect(hallazgosDelGuardado(f, { exigir: true, hermana: true })).toEqual([]);
+    // Sin declararla como hermana, el Demo B NO pasa: la forma común exige que la ancla siga hacia la rama que responde.
+    expect((hallazgosDelGuardado(f, { exigir: true }) as string[]).join(' | ')).toMatch(/no sigue hacia la rama que responde/);
+  });
+  it('NEGANDO: si la ancla es hoja y NO hay rama que responda al lado, falla', () => {
+    const f = copia(leer(DEMO_B));
+    f.connections['Normalizar entrada']!['main'] = (f.connections['Normalizar entrada']!['main'] ?? []).map((s) => (s ?? []).filter((c) => c.node === 'Reportar mensaje (entrante)'));
+    expect((hallazgosDelGuardado(f, { exigir: true, hermana: true }) as string[]).join(' | ')).toMatch(/no sigue hacia la rama que responde/);
+  });
+  it('NEGANDO: la rama del guardado va debajo de la rama que responde (si sube, falla)', () => {
+    const f = copia(leer(DEMO_B));
+    nodoDe(f, 'Preparar guardado').position = [0, 0];
+    expect((hallazgosDelGuardado(f, { exigir: true, hermana: true }) as string[]).join(' | ')).toMatch(/DEBAJO de/);
   });
 });

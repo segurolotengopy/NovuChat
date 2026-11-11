@@ -2214,6 +2214,26 @@ describe('pedido', () => {
     expect(cuerpos(con(mundo({ horarioAtencionManda: 'si' })).escribe('a qué hora abren'))[0]).toBe('Atendemos ' + PARTIDO + '.');
   });
 
+  it("Q'Taco 3727 (08/11/2026): el cliente oye «10:00 a 22:00 (de 10:00 a 12:00 solo delivery)» y nunca el 12:00-22:00 de la consola; el horario de pedidos no cambia", () => {
+    const TEXTO = 'todos los días de 10:00 a 22:00 (de 10:00 a 12:00 solo delivery)';
+    const datos = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'datos', 'venta-minima', 'qtaco-3727.json'), 'utf8'));
+    expect(datos.configBase.horarioAtencion).toBe(TEXTO);
+    expect(datos.configBase.horarioAtencionManda).toBe('si');
+    // El horario de aceptar pedidos y reservas NO se toca: el 3727 no lo define (hereda el de qtaco).
+    expect(datos.configBase.horario).toBeUndefined();
+    const mundo = () => crear({
+      panel: panel({ operacion: { horarioAtencion: 'todos los días de 12:00 a 22:00', moneda: 'BOB', numeroRecepcion: REC, prefijosPermitidos: ['591'] } }),
+      config: { horario: HORARIO_SIN_LUNES, horarioAtencion: datos.configBase.horarioAtencion, horarioAtencionManda: datos.configBase.horarioAtencionManda },
+    });
+    const fuera = cuerpos(con(mundo()).escribe('quiero pedir unos tacos'))[0]!;
+    expect(fuera).toContain(' Atendemos ' + TEXTO + '.');
+    expect(fuera).toContain('fuera de nuestro horario de pedidos');
+    expect(fuera).not.toMatch(/12:00 a 22:00/);
+    const consulta = cuerpos(con(mundo()).escribe('a qué hora abren'))[0]!;
+    expect(consulta).toBe('Atendemos ' + TEXTO + '.');
+    expect(consulta).not.toMatch(/12:00 a 22:00/);
+  });
+
   it('«Cambiar algo» reinicia el carrito', () => {
     const r = armarPedido();
     expect(((estadoDe(r.w.mundo)['carrito'] ?? []) as unknown[]).length).toBeGreaterThan(0);

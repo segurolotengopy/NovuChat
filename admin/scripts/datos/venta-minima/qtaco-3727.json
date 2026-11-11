@@ -15,6 +15,8 @@
   "_notaAvisos": "07/11 20:47: Q'Taco pidio volver al formato por lineas (una vineta por producto); las plantillas en vinetas inline quedan apagadas (plantillaPedidoMapaEstado, plantillaPedidoListaEstado y plantillaReservaListaEstado en DESACTIVADA; el codigo solo las usa con el estado exactamente APPROVED).",
   "configBase": {
     "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_QTACO_3727",
+    "horarioAtencion": "todos los días de 10:00 a 22:00 (de 10:00 a 12:00 solo delivery)",
+    "horarioAtencionManda": "si",
     "plantillasPedidoLineas": "2:pedido_registrado_l2,4:pedido_registrado_l4,6:pedido_registrado_l6",
     "idiomaPlantillaPedidoLineas": "es",
     "plantillaPedidoMapa": "pedido_lista_mapa",

@@ -65,6 +65,13 @@ const documento = () => ({
   en: Timestamp.now(), vence: Timestamp.fromMillis(Date.now() + 90 * 86_400_000),
 });
 
+/** El metadato de un adjunto que una persona envió (B2 de «Envío de medios por consola»). */
+const enviado = (t: string) => ({
+  conversacionId: 'wa_59170000001', mensajeId: 'clave-de-envio-0001', autorUid: 'u-oper-a', tipo: 'image', categoria: 'image',
+  mime: 'image/jpeg', ext: 'jpg', tamano: 2048, sha256: 'b'.repeat(64), ruta: `tenants/${t}/mediosEnviados/2026-11-11/${OBJETO}.jpg`,
+  voz: false, estado: 'guardado', en: Timestamp.now(), vence: Timestamp.fromMillis(Date.now() + 30 * 86_400_000),
+});
+
 beforeAll(async () => {
   entorno = await initializeTestEnvironment({
     projectId: PROYECTO,
@@ -88,6 +95,8 @@ beforeEach(async () => {
     for (const t of [A, B, BAJA]) await setDoc(doc(db, `tenants/${t}/mediosRecibidos/${OBJETO}`), documento());
     await setDoc(doc(db, `tenants/${A}/cuposDeMedios/2026-10-23`), { n: 1, bytes: 1024, vence: Timestamp.now() });
     await setDoc(doc(db, 'topesDeMedios/u-admin-a'), { hora: '2026-10-23T10', n: 1 });
+    for (const t of [A, B]) await setDoc(doc(db, `tenants/${t}/mediosEnviados/${OBJETO}`), enviado(t));
+    await setDoc(doc(db, `topesDeEnvio/a_${A}`), { dia: '2026-11-11', n: 1, bytes: 1024, actualizadoEn: Timestamp.now() });
   });
 });
 
@@ -101,6 +110,8 @@ describe('control: los documentos existen', () => {
       expect((await getDocs(collection(ctx.firestore(), `tenants/${A}/mediosRecibidos`))).size).toBe(1);
       expect((await getDoc(doc(ctx.firestore(), `tenants/${A}/cuposDeMedios/2026-10-23`))).get('n')).toBe(1);
       expect((await getDoc(doc(ctx.firestore(), 'topesDeMedios/u-admin-a'))).get('n')).toBe(1);
+      expect((await getDoc(doc(ctx.firestore(), `tenants/${A}/mediosEnviados/${OBJETO}`))).get('tipo')).toBe('image');
+      expect((await getDoc(doc(ctx.firestore(), `topesDeEnvio/a_${A}`))).get('n')).toBe(1);
     });
   });
 });
@@ -167,6 +178,45 @@ describe('cuposDeMedios y topesDeMedios: cerrados a todos', () => {
   }
 });
 
+describe('mediosEnviados y el contador de adjuntos: cerrados a todos, sin módulo ni plan que valga', () => {
+  for (const quien of TODOS) {
+    it(`${quien}: ni lee, ni escribe, ni borra, ni lista el metadato de un adjunto enviado ni su contador`, async () => {
+      const db = contexto[quien]().firestore();
+      for (const t of [A, B]) {
+        for (const ruta of [`tenants/${t}/mediosEnviados/${OBJETO}`, `tenants/${t}/mediosEnviados/otro-objeto`]) {
+          await assertFails(getDoc(doc(db, ruta)));
+          await assertFails(setDoc(doc(db, ruta), { estado: 'guardado' }));
+          await assertFails(updateDoc(doc(db, ruta), { estado: 'guardado' }));
+          await assertFails(deleteDoc(doc(db, ruta)));
+        }
+        await assertFails(getDocs(collection(db, `tenants/${t}/mediosEnviados`)));
+      }
+      for (const ruta of [`topesDeEnvio/a_${A}`, 'topesDeEnvio/a_nuevo-comercio']) {
+        await assertFails(getDoc(doc(db, ruta)));
+        await assertFails(setDoc(doc(db, ruta), { dia: '2026-11-11', n: 0, bytes: 0 }));
+        await assertFails(deleteDoc(doc(db, ruta)));
+      }
+    });
+  }
+  it('y nada de eso modificó lo sembrado (se comprueba con las reglas apagadas)', async () => {
+    await assertFails(setDoc(doc(contexto.adminA().firestore(), `tenants/${A}/mediosEnviados/${OBJETO}`), { estado: 'otro' }));
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      expect((await getDoc(doc(ctx.firestore(), `tenants/${A}/mediosEnviados/${OBJETO}`))).get('estado')).toBe('guardado');
+      expect((await getDoc(doc(ctx.firestore(), `topesDeEnvio/a_${A}`))).get('n')).toBe(1);
+    });
+  });
+});
+
+describe('la bandera personaPuedeEnviarMedios: el comercio no la enciende', () => {
+  for (const quien of TODOS) {
+    it(`${quien}: no escribe personaPuedeEnviarMedios en la ficha`, async () => {
+      const db = contexto[quien]().firestore();
+      await assertFails(updateDoc(doc(db, 'tenants', A), { personaPuedeEnviarMedios: true }));
+      await assertFails(setDoc(doc(db, 'tenants', A), { nombre: A, estado: 'activo', personaPuedeEnviarMedios: true }));
+    });
+  }
+});
+
 describe('la bandera guardarMedios: el comercio no la enciende', () => {
   for (const quien of TODOS) {
     it(`${quien}: no escribe guardarMedios en la ficha`, async () => {
@@ -193,6 +243,13 @@ describe('las reglas están donde deben', () => {
   it('storage.rules niega /tenants/{t}/medios/** a todos', () => {
     const storage = readFileSync(join(aqui, '..', '..', '..', 'storage.rules'), 'utf8');
     expect(/match \/tenants\/\{tenantId\}\/medios\/\{resto=\*\*\} \{\s*allow read, write: if false;\s*\}/.test(storage)).toBe(true);
+  });
+  it('mediosEnviados: match explícito dentro de /tenants, cerrado a lectura y escritura; storage.rules también', () => {
+    const bloque = /match \/mediosEnviados\/\{objeto\} \{\s*allow read, write: if false;\s*\}/.exec(fuente);
+    expect(bloque, 'bloque mediosEnviados').not.toBeNull();
+    expect(bloque!.index).toBeGreaterThan(fuente.indexOf('match /tenants/{tenantId}'));
+    const storage = readFileSync(join(aqui, '..', '..', '..', 'storage.rules'), 'utf8');
+    expect(/match \/tenants\/\{tenantId\}\/mediosEnviados\/\{resto=\*\*\} \{\s*allow read, write: if false;\s*\}/.test(storage)).toBe(true);
   });
   it('la ficha del comercio no se escribe desde el navegador (única puerta de la bandera)', () => {
     const i = fuente.indexOf('match /tenants/{tenantId} {');

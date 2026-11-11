@@ -126,9 +126,9 @@ describe('el prompt versionado', () => {
     expect((hallazgosDelPrompt(md.replace('{{RECEPCION_LINK}}', 'x')) as string[]).join(' ')).toMatch(/RECEPCION_LINK/);
     expect((hallazgosDelPrompt(md.replace('{{/MARCAS}}', '')) as string[]).join(' ')).toMatch(/MARCAS/);
   });
-  it('las correcciones obligatorias sobre el guion: sin «inmediato», sin las dos frases sin mecanismo, sin la frase de baja', () => {
+  it('las correcciones obligatorias sobre el guion: «lifting inmediato» como el MD y ninguna otra promesa de inmediatez, sin las dos frases sin mecanismo, sin la frase de baja', () => {
     const plano = md.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-    expect(plano).not.toContain('inmediato');
+    expect(plano.replace(/lifting inmediato/g, '')).not.toContain('inmediato');
     expect(plano).not.toContain('de inmediato');
     expect(plano).not.toContain('ubicacion exacta en google maps');
     expect(plano).not.toContain('te asignaran');

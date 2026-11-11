@@ -20,7 +20,7 @@ const { cfg, base, t, puerta, from, ahora, ficha: fichaAntes } = c;
 const prueba = cfg.modoPrueba === true;
 const telPrueba = String(cfg.telefonoDePrueba || '');
 const negocio = wlNombreNegocio(cfg);
-const sinSalida = (resumen) => [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen } }];
+const sinSalida = (resumen) => [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen, guardarPlanilla: false, prospectoPlanilla: null } }];
 if (!cnClaveValida(from)) return sinSalida({ plan: 'nada', mensajes: 0, categoria: '', llamadasModelo: 0 });
 
 const entregado = (j) => { const m = j && j.messages; return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== ''; };
@@ -84,7 +84,7 @@ if (puerta.ruta === 'sigue') {
     }
   } else if (tipoDePlan === 'modelo') {
     llamadasModelo = 1;
-    msgs = [texto(conSaludo(d.texto + (d.resumen ? '\n\n' + d.resumen : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : '')))];
+    msgs = [texto(conSaludo(d.texto + (d.politicaEnvio ? '\n\n' + d.politicaEnvio : '') + (d.resumen ? '\n\n' + d.resumen : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : '')))];
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
     nuevos.entrega = d.entrega;
     nuevos.cierre = d.cierre === true;
@@ -101,16 +101,30 @@ if (puerta.ruta === 'sigue') {
       tipoDePlan = 'derivar';
       msgs = [conRecepcion(conSaludo(WL_INTROS.monto_invalido + ' Escríbele a recepción con el botón.'))];
     } else {
-      const resumen = (d.cambioDePedido ? 'Actualicé tu pedido.\n\n' : '') + 'Este es el resumen de tu pedido:\n\n' + vcResumen(lineas)
-        + '\n\nEntrega: ' + wlEntregaTexto(d.entrega) + '. El total no incluye el costo de entrega.\n\nAbajo va el QR para pagar.';
+      // El QR cobra SOLO los productos. Envío gratis desde el umbral (dato); bajo el umbral se cotiza por fuera: el aviso a recepción (si salió) MÁS el botón; recojo: sin costo de envío.
+      const frase = wlFraseEnvio(d.envio, d.umbralBs, d.envio === 'recojo' ? wlDireccionTienda(base, d.entrega.ciudad) : '');
+      const aCotizar = d.envio === 'cotizar';
+      // Un pedido que cambió con un QR abierto no avisa a recepción (el aviso se arma antes de saber si el cobro anterior se cerró): el texto manda al botón.
+      const pieEnvio = !aCotizar ? '' : '\n\n' + (d.cambioDePedido ? 'El envío de este pedido lo cotiza recepción: escríbele a recepción con el botón para cotizar el envío.' : wlTextoDerivacion('envio_a_cotizar', salio));
+      const cabeza = (d.cambioDePedido ? 'Actualicé tu pedido.\n\n' : '') + 'Este es el resumen de tu pedido:\n\n';
+      const cola = '\n\nEntrega: ' + wlEntregaTexto(d.entrega) + (frase ? '. ' + frase : '.') + pieEnvio + '\n\nAbajo va el QR para pagar.';
+      // Bajo el umbral el resumen sale con el botón (cuerpo de a lo más 1.024 caracteres, y el recorte corta el FINAL): se acorta la LISTA de líneas («… y N más»), nunca la cola con la política y el pie. El total siempre queda.
+      const filas = vcResumen(lineas).split('\n');
+      const filaTotal = filas.length > 0 && /^Total:/.test(filas[filas.length - 1]) ? filas.pop() : '';
+      let omitidas = 0;
+      if (aCotizar) {
+        const reserva = 1000 - (fichaAntes.saludado ? 0 : saludo.length + 2) - cabeza.length - cola.length - (filaTotal ? filaTotal.length + 1 : 0) - 20;
+        while (filas.length > 0 && filas.join('\n').length > reserva) { filas.pop(); omitidas++; }
+      }
+      const resumen = cabeza + filas.concat(omitidas > 0 ? ['… y ' + omitidas + ' más'] : [], filaTotal ? [filaTotal] : []).join('\n') + cola;
       const pie = wlSeguro('QR para pagar ' + vcMonto(d.total) + ' (pedido ' + d.pedidoId + '). Cuando pagues, envíame la foto del comprobante por este chat.');
       const respaldo = 'No pude mostrarte el QR en este momento. Escríbeme de nuevo en unos minutos para intentarlo otra vez.';
       const imagen = cmMensaje('cliente', Object.assign(cmBase('image'), { image: { id: d.mediaId, caption: pie } }), pie, respaldo, { tipoReporte: 'image' });
       // El evento que ABRE el cobro: `qr_enviado`, con `referencia` (el pedido) y `monto` (el del carrito, en bolivianos). Cobro real: regla 2 (15 minutos, 3 intentos).
       imagen.evento = 'qr_enviado'; imagen.reglaCobro = 2; imagen.referencia = String(d.pedidoId); imagen.monto = d.monto;
       // Para que el servidor cree el pedido `wa_<referencia>`: solo ids, cantidades y entrega (el servidor recalcula precios y total desde el catálogo).
-      { const pqr = pqrCampos(imagen.referencia, d.lineas, { entrega: d.entrega.modo, direccion: d.entrega.direccion, ciudad: d.entrega.ciudad }, false); if (pqr.lineas) { imagen.lineas = pqr.lineas; imagen.entrega = pqr.entrega; } }
-      msgs = [texto(conSaludo(resumen)), imagen];
+      { const pqr = pqrCampos(imagen.referencia, d.lineas, { entrega: d.entrega.modo, direccion: d.envio === 'recojo' ? '' : d.entrega.direccion, ciudad: d.entrega.ciudad }, false); if (pqr.lineas) { imagen.lineas = pqr.lineas; imagen.entrega = pqr.entrega; } }
+      msgs = [aCotizar ? conRecepcion(conSaludo(resumen)) : texto(conSaludo(resumen)), imagen];
       nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
       nuevos.entrega = d.entrega; nuevos.cierre = false;
       nuevos.pedidos = fichaAntes.pedidos + 1;
@@ -123,7 +137,8 @@ if (puerta.ruta === 'sigue') {
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega;
   } else if (tipoDePlan === 'pedido_sin_cobro') {
     const lineas = wlConNombres(d.lineas, c.vendibles);
-    msgs = [conRecepcion(conSaludo('Anoté tu pedido:\n\n' + vcResumen(lineas) + '\n\n' + wlTextoDerivacion('pedido_sin_cobro', salio)))];
+    const fraseSc = wlFraseEnvio(d.envio, d.umbralBs, d.envio === 'recojo' ? wlDireccionTienda(base, d.entrega.ciudad) : '', true);
+    msgs = [conRecepcion(conSaludo('Anoté tu pedido:\n\n' + vcResumen(lineas) + (fraseSc ? '\n\n' + fraseSc : '') + '\n\n' + wlTextoDerivacion('pedido_sin_cobro', salio)))];
     Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
   } else if (tipoDePlan === 'comprobante') {
     msgs = [conRecepcion(wlTextoComprobante(d.resultado, d.diferencia, d.totalTexto, salio))];
@@ -159,6 +174,19 @@ if (fichas.sd) {
   wlBarrer(fichas.mapa, ahora);
 }
 
+// LA PLANILLA DEL miniCRM (módulo `crm`): `guardarPlanilla` solo si hay id y hoja, no es el modo prueba, la puerta dejó seguir, la clave es válida, hay un mensaje y el plan es de CONVERSACIÓN (nunca «nada», un número de otro país, el comercio suspendido, el uso extendido ni un cliente bloqueado por Tomar).
+// El prospecto se arma con `wlProspectoCrm` (vocabulario cerrado: el texto libre del cliente no pasa). Sin id (vacío), el flujo ni consulta Google. 0 mensajes por conversación.
+const planillaOk = String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';
+const guardarPlanilla = planillaOk && !prueba && puerta.ruta === 'sigue' && cnClaveValida(from) && msgs.length > 0
+  && ['nada', 'fuera_de_pais', 'suspendido', 'uso_extendido', 'bloqueado'].indexOf(tipoDePlan) < 0;
+let prospectoPlanilla = null;
+if (guardarPlanilla) {
+  // LA PLANILLA NUNCA TUMBA LA ATENCIÓN: si calcular el prospecto lanzara por un dato inesperado, este turno igual responde y simplemente no se escribe en la hoja.
+  try {
+    prospectoPlanilla = wlProspectoCrm({ from: from, tipo: tipoDePlan, plan: d, fichaAntes: fichaAntes, anuncio: t.anuncio === true, avisoSalio: salio === true, nombrePerfil: t.nombrePerfil, ahoraMs: ahora });
+  } catch (e) { prospectoPlanilla = null; }
+}
+
 const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, aviso: avisoPlaneado ? (salio === true ? 'salio' : 'no_salio') : 'ninguno' };
 let numero = from;
 if (prueba) numero = telPrueba;
@@ -175,6 +203,8 @@ const salida = msgs.map((m, i) => {
     reportar: !prueba,
     phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion || 'v26.0', from: from, sinMensajes: false,
     plan: resumen.plan, resumen: resumen,
+    // Solo el ítem 0 lleva el prospecto: un turno con dos mensajes (el resumen y el QR) guarda UN solo prospecto.
+    guardarPlanilla: i === 0 && prospectoPlanilla !== null, prospectoPlanilla: i === 0 ? prospectoPlanilla : null,
   };
   if (m.reglaCobro === 2) item.reglaCobro = 2;
   if (m.referencia) item.referencia = m.referencia;

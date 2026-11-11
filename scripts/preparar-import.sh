@@ -212,6 +212,31 @@ if MARCADOR_RELE in texto:
         texto = re.sub(re.escape(MARCADOR_RELE) + r'(?![A-Za-z0-9_])', lambda _m: crudo, texto)
         print(f"  {VERDE}+{FIN} {MARCADOR_RELE} {GRIS}(de RELE_URL_INTERNA; no se muestra){FIN}")
 
+# --- 2c. settings.errorWorkflow: el id del flujo de alertas, resuelto POR NOMBRE ------------
+# El marcador REEMPLAZAR_ID_ERROR_WORKFLOW no tiene fila en la tabla: el id lo asigna n8n. Se busca
+# «NovuChat — Error de envío incierto» en el n8n del entorno (N8N_BASE_URL y N8N_API_KEY del
+# `.env`; la clave viaja por la entrada estándar de curl, nunca en argv) y se escribe su id. Solo
+# LEE. Si el flujo no existe, hay más de uno o n8n no contesta, el script FALLA sin escribir la
+# salida: nunca deja el marcador ni produce un archivo publicable a medias.
+MARCADOR_EW = "REEMPLAZAR_ID_ERROR_WORKFLOW"
+if MARCADOR_EW in texto:
+    import subprocess, tempfile
+    if not (env.get("N8N_BASE_URL") or "").strip() or not (env.get("N8N_API_KEY") or "").strip():
+        print(f"{ROJO}✗ ABORTADO: {MARCADOR_EW} se resuelve contra n8n y {env_file} no trae N8N_BASE_URL y N8N_API_KEY.{FIN}")
+        sys.exit(1)
+    with tempfile.TemporaryDirectory() as tdir:
+        entrada, resuelto = os.path.join(tdir, "flujo.json"), os.path.join(tdir, "resuelto.json")
+        open(entrada, "w", encoding="utf-8").write(texto)
+        # La consulta la hace el helper (la clave viaja por la entrada estándar de curl, nunca en argv).
+        h = subprocess.run([sys.executable, os.path.join("scripts", "lib", "resolver-error-workflow.py"), "--n8n", entrada, resuelto],
+                           capture_output=True, text=True,
+                           env=dict(os.environ, N8N_BASE_URL=env["N8N_BASE_URL"].strip(), N8N_API_KEY=env["N8N_API_KEY"].strip()))
+        if h.returncode != 0:
+            print(f"{ROJO}{(h.stderr or h.stdout).strip()}{FIN}")
+            sys.exit(1)
+        print(h.stdout.rstrip())
+        texto = open(resuelto, encoding="utf-8").read()
+
 presentes = sorted(set(re.findall(r'REEMPLAZAR_[A-Z][^"\\\s]*', texto)))
 puestos, sin_valor = [], []
 # COINCIDENCIA EXACTA, nunca por prefijo. Antes se aceptaba una fila cuyo
@@ -230,7 +255,11 @@ for marcador in sorted(presentes, key=len, reverse=True):
         sin_valor.append(marcador)
 
 json.loads(texto)                      # no escribir un JSON roto
-open(salida, "w", encoding="utf-8").write(texto)
+# Modo 600: el archivo lleva valores reales (y, si hubo, el id del flujo de alertas); aunque ya existiera con otro modo.
+_fd = os.open(salida, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+os.fchmod(_fd, 0o600)
+with os.fdopen(_fd, "w", encoding="utf-8") as _f:
+    _f.write(texto)
 
 print(f"Origen : {flujo}")
 print(f"Salida : {salida}\n")

@@ -68,14 +68,16 @@ const leido = esVisual && typeof jsonImagen.texto === 'string' ? raLineaCliente(
 let transcrito = '';
 let falloAudio = '';
 if (esAudio) {
-  if (/^\(audio transcripto\) /.test(entradaMedio)) transcrito = entradaMedio.slice('(audio transcripto) '.length).split('\n')[0].trim();
+  if (/^\(audio transcripto\) /.test(entradaMedio)) transcrito = raLineaCliente(entradaMedio.slice('(audio transcripto) '.length).split('\n')[0].trim(), 1500);
   else if (/más de cinco minutos/.test(entradaMedio)) falloAudio = 'largo';
   else if (/no se pudo entender/.test(entradaMedio)) falloAudio = 'no_entendido';
   else falloAudio = 'no_abierto';
 }
 const textoCliente = t.tipo === 'interactive' ? '' : (esAudio ? transcrito : String(t.texto || ''));
 const norm = raNorm(textoCliente);
-textoDelTurno = raLineaCliente(textoCliente, 300).replace(/\s+/g, ' ').trim();
+// Ningún correo llega al modelo ni a la memoria de la charla: todo lo que parece un correo se cambia por «[correo]» antes de armar lo que ve el modelo (el Gmail válido lo lee el paso «1a-gmail» del texto original).
+const sinCorreos = raSinCorreos;
+textoDelTurno = raLineaCliente(sinCorreos(textoCliente), 300).replace(/\s+/g, ' ').trim();
 // Un «Sí» o un «No» suelto con una pregunta nuestra vigente (30 min) se resuelve con la pregunta pendiente que guardó la ficha (`ctInterpretarSiNo`, core): si es una pregunta que el código hizo con su intención (`ver_opciones`), el código
 // responde; si no, el modelo recibe la pregunta como dato y qué hacer con ella. Sin pregunta vigente, nada. Nunca abre un QR por sí solo.
 const siNo = !esVisual && t.tipo !== 'interactive' ? ctInterpretarSiNo(textoCliente, ficha, ahora, { usados: ficha.usados, intenciones: RA_INTENCIONES, vigenciaMs: RA_VENTANA_PREGUNTA_MS }) : null;
@@ -119,6 +121,23 @@ if (!(esVisual && categoriaMedio === 'comprobante') && (ficha.riesgo || raEsRies
 // 1a. UN PEDIDO DE BAJA («no me escribas más», «ya no me escriban», «no me escribás»), con o sin QR abierto: un texto fijo corto de confirmación y NADA más —ni el modelo, ni la invitación a pagar, ni botones de producto, ni aviso a Antonio—.
 //     El `no_contactar` ya viaja con el reporte del entrante. El QR abierto queda como está (no se cancela solo). Va justo después de la protección y ANTES de la configuración, los medios, los botones y el cobro con el QR abierto: quien pidió la baja no recibe nada más.
 if (raPideBaja(textoCliente)) return salir({ tipo: 'baja', cat: cat });
+
+// 1a-gmail. EL GMAIL TRAS UNA VENTA CONFIRMADA: si el flujo ya se lo pidió a este teléfono (`gmailPedidoMs`) y aún no lo tiene (`gmail`), un TEXTO ESCRITO con una «@» es su respuesta. Lo lee el CÓDIGO sobre el texto literal del cliente
+//     (`vgExtraerGmail`); el modelo no interviene, no ve el correo y el turno no entra en la memoria de la charla. Solo `@gmail.com`: otro dominio, varios correos o un correo mal escrito reciben un texto fijo que lo pide de nuevo. Un audio, una imagen o un botón
+//     nunca se capturan (el correo no se acepta dictado ni leído de una imagen). Va antes de la identidad y de las derivaciones para que un correo escrito no se tome por otra intención. Con un correo válido hay UN aviso a Antonio (enlace de Drive por el chat).
+// Solo si el mensaje es básicamente el correo: quitando lo que parece un correo quedan a lo más 6 palabras y no hay señal de reclamo ni de derivación. Si no, sigue el flujo normal (un reclamo con un correo dentro no se pierde).
+const gmailSolo = t.tipo === 'text' && ficha.gmailPedidoMs > 0 && ficha.gmail === '' && String(t.texto || '').indexOf('@') >= 0
+  && String(t.texto || '').normalize('NFKC').replace(/[^\s@<>()\[\],;:"'«»¡¿]+@[^\s@<>()\[\],;:"'«»¡¿]+/g, ' ').split(/\s+/).filter((x) => /[\p{L}\p{N}]/u.test(x)).length <= 6
+  && !/\b(no me (llego|llegaron|respond|contest|enviaron|mandaron)|no llego|no contest|no respond|reclam|queja|estaf|devol|reembols|cancel|factura|garantia|descuento|plata|dinero|denunci)/.test(norm)
+  && !raDerivacion(norm, { comprobante: true, qrAbierto: hayQrAbierto }) && !raHablaDelCobro(norm) && !raCancelaPedido(norm);
+if (gmailSolo) {
+  const g = vgExtraerGmail(String(t.texto || ''));
+  textoDelTurno = '';
+  return salir({
+    tipo: 'gmail', resultado: g.resultado, correo: g.resultado === 'recibido' ? g.correo : '', cat: cat,
+    aviso: g.resultado === 'recibido' ? { tipo: 'consulta', clave: 'gmail', motivo: 'venta con comprobante: enviar el enlace de Drive por el chat', mensaje: '', correo: g.correo, producto: nombreProducto } : null,
+  });
+}
 
 // 1a'. IDENTIDAD POR CÓDIGO (prohibición 4): «¿eres un bot?», «¿quién eres?», «¿hablo con Antonio?»… reciben una frase fija que reconoce ser un asistente virtual con IA; el modelo no interviene. Va antes de la configuración, la compuerta de
 //      las opciones, el precio y el modelo, y también con un QR abierto (esa respuesta no abre otro QR, no deriva y no avisa a Antonio). Solo texto escrito o transcrito: un toque de botón o una imagen no son esta pregunta.
@@ -210,7 +229,7 @@ const saludo = (boton, extra) => Object.assign({ tipo: 'saludo', cat: cat, boton
 // El plan del modelo para el turno: el cuerpo lleva el `modo` (línea del sistema fuera de <<< >>>). `extra`: campos del plan (`pideOpciones`, `angulo`…). `tema`: el ángulo del anuncio. `paraElModelo`: lo que el modelo lee como mensaje del cliente.
 // Con un QR abierto el plan lleva `qrAbierto` (sin botones de producto, con la invitación a pagar).
 const modeloDelTurno = (modo, extra, tema, paraElModelo) => {
-  const para = paraElModelo === undefined ? textoCliente : paraElModelo;
+  const para = sinCorreos(paraElModelo === undefined ? textoCliente : paraElModelo);
   return salir(Object.assign({ tipo: 'modelo', cat: cat, modo: modo, textoCliente: String(para).slice(0, 500) }, abierto(), extra || {}), {
     llamarModelo: true, cuerpoModelo: raCuerpoModelo(para, ficha.hist, tema || '', base.temperatura, respuestaAPregunta, modo, cfg.nombreNegocio),
   });
@@ -294,7 +313,7 @@ const angulo = raAngulo(norm) || (esVisual ? raAngulo(raNorm(leido)) : '');
 // sin QR nuevo, sin botones de producto y sin derivar. Un comprobante real o un pago con problema no llegan aquí (se resolvieron arriba).
 if (angulo) {
   return salir(Object.assign({ tipo: 'angulo', angulo: angulo, conPresentacion: !ficha.saludado, cat: cat, textoCliente: String(textoCliente || leido).slice(0, 500) }, abierto()), {
-    llamarModelo: true, cuerpoModelo: raCuerpoModelo(textoCliente || leido, ficha.hist, RA_ANGULOS[angulo].tema, base.temperatura, respuestaAPregunta, 'charla', cfg.nombreNegocio),
+    llamarModelo: true, cuerpoModelo: raCuerpoModelo(sinCorreos(textoCliente || leido), ficha.hist, RA_ANGULOS[angulo].tema, base.temperatura, respuestaAPregunta, 'charla', cfg.nombreNegocio),
   });
 }
 // EL PRECIO DE UN PRODUCTO NOMBRADO («¿cuánto cuesta el libro?»): lo dice el CÓDIGO desde el catálogo, ya, aunque la charla no llegara a dos mensajes (si es el primer mensaje, con la presentación). Antes de las opciones, el cierre es el del puente.

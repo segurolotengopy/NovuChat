@@ -25,11 +25,13 @@ const HUELLAS: [string, string, string][] = [
   ['_comun.js', '304e6d15ac80e270', 'b861766c1285d559'],
   ['carga-de-entrada.js', '2562bb2b56c2ea23', '2562bb2b56c2ea23'],
   // Antonio ganó la ubicación (02/11/2026: `direccion` y `direccionMaps` de la Consola); el neutro queda como estaba. Su diferencia se declara abajo.
-  // Y el miniCRM (02/11/2026, F4): el id y la pestaña de la planilla de Antonio (`planillaProspectosId` y `planillaProspectosHoja`); tampoco están en el neutro.
-  ['config-del-negocio.js', 'd33d652bfb4994d4', '4f36336734d741cb'],
-  ['normalizar-entrada.js', 'ad54b5d57c48e022', '03a6bdc856c0e0ff'],
+  // El miniCRM (la planilla del negocio) sí está en el neutro desde Walisuma: lo usan los dos tenants.
+  ['config-del-negocio.js', 'd33d652bfb4994d4', '9f9be358f746ec42'],
+  // El Gmail tras una venta confirmada (10/11/2026) es SOLO de Antonio y de Rubén: cambió el origen de `normalizar-entrada` (el reporte a la consola no lleva correos) y de `resumen-del-turno` (restaura `gmailPedidoMs`). Los neutros NO lo adoptan:
+  // Walisuma no pide Gmail y no cambia ningún nodo suyo; las huellas de los neutros no se movieron.
+  ['normalizar-entrada.js', '347ab52d1c655be7', '03a6bdc856c0e0ff'],
   ['puerta-del-turno.js', '3f8a837a3912eb78', '3f8a837a3912eb78'],
-  ['resumen-del-turno.js', '56e4bdf011a18b83', '08eea9fd84116169'],
+  ['resumen-del-turno.js', '9ae08c2c8e443766', '08eea9fd84116169'],
 ];
 
 describe('huellas: lo que se subió y de dónde', () => {
@@ -42,13 +44,10 @@ describe('huellas: lo que se subió y de dónde', () => {
   it('los tres idénticos lo son byte a byte', () => {
     for (const a of ['carga-de-entrada.js', 'puerta-del-turno.js']) expect(leer(join(NEUTROS, a))).toBe(leer(join(ANTONIO, a)));
   });
-  it('config-del-negocio.js: idéntico salvo la ubicación propia de Antonio (el enlace de Maps y la dirección de la Consola)', () => {
+  it('config-del-negocio.js: idéntico salvo la ubicación propia de Antonio (el enlace de Maps y la dirección de la Consola); la planilla del miniCRM es común', () => {
     const antonio = leer(join(ANTONIO, 'config-del-negocio.js'))
       .replace(/\/\/ El enlace de Google Maps de la Consola[^\n]*\nconst ENLACE_DE_MAPA[^\n]*\nconst enlaceDeMapa[^\n]*\n\n/, '')
       .replace(/    \/\/ La ubicación \(02\/11\/2026\)[^\n]*\n    direccion:[^\n]*\n    direccionMaps:[^\n]*\n/, '')
-      // El miniCRM (02/11/2026, F4): el id y la pestaña de la planilla de Antonio; propios, declarados en su PROPIO.md.
-      .replace(/\/\/ LA PLANILLA DEL miniCRM[^\n]*\n\/\/ Sin id válido[^\n]*\nconst idDeLaPlanilla[^\n]*\nconst hojaDeLaPlanilla[^\n]*\n\n/, '')
-      .replace('  planillaProspectosId: idDeLaPlanilla,\n  planillaProspectosHoja: hojaDeLaPlanilla,\n', '');
     expect(leer(join(NEUTROS, 'config-del-negocio.js'))).toBe(antonio);
   });
 });

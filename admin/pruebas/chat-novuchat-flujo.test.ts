@@ -23,6 +23,7 @@ import { crearMundo, type Doble, type Enviado, type LlamadaDoble, type Mundo, ty
 import { doblesDelGuardado } from './lib/doble-guardado';
 import { crearServidorDeSesion, type ServidorDeSesion } from '../../Flujos/experimental/comun-sin-agente/herramientas/servidor-de-sesion.mjs';
 import { URL_DESCARGA_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
+import { atencionDeConversacion } from './modulos/crm/ingesta-conversacion';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../Flujos/experimental/chat-novuchat');
@@ -1160,7 +1161,7 @@ describe('nombre y empresa: «Nombre, Empresa» en un mensaje, solo nombre, solo
 });
 
 describe('la hoja Leads_CRM: fila, nombre, empresa, rubro, necesidad y calificación por hechos', () => {
-  it('FILA NUEVA tras 48 h (29/10): quien vuelve es un registro nuevo, y la conversación nueva actualiza SU fila, no la vieja', () => {
+  it('NIEGA (08/11, una fila por conversación): pasadas 49 h SIN ancla de la ingesta (ventanaVenceEn) no se crea fila: la regla de 48 h ya no decide; se actualiza la misma', () => {
     const w = crear();
     const j = jugar(w, MAMA, { perfil: 'Ana Pérez' });
     j.texto('Hola');
@@ -1168,14 +1169,10 @@ describe('la hoja Leads_CRM: fila, nombre, empresa, rubro, necesidad y calificac
     j.lista('rubro:salud');
     expect(w.hoja.filas).toHaveLength(1);
     expect(filaDe(w, MAMA)![COL.id]).toBe('LEAD-1001');
-    j.texto('Hola de nuevo', 49 * 60); // pasan 49 h: la ficha se olvida
-    expect(w.hoja.filas).toHaveLength(2);
-    expect(w.hoja.filas.map((f) => f[0])).toEqual(['LEAD-1001', 'LEAD-1002']);
-    const vieja = [...w.hoja.filas[0]!];
+    j.texto('Hola de nuevo', 49 * 60); // pasan 49 h: la ficha se olvida y `nuevoContacto` sale verdadero, pero la ingesta no dio otro ancla
+    expect(w.hoja.filas).toHaveLength(1);
     j.lista('rubro:belleza');
-    expect(w.hoja.filas).toHaveLength(2);
-    expect(w.hoja.filas[0]).toEqual(vieja); // la fila vieja no se toca
-    expect(w.hoja.filas[1]![5]).toBe('Belleza');
+    expect(w.hoja.filas).toHaveLength(1);
   });
   it('NIEGA (revisión de #701): si Meta rechaza el primer mensaje (la ficha se restaura vacía) o se resetea la ficha dentro de las 48 h, NO se crea una segunda fila', () => {
     const w = crear();
@@ -1190,6 +1187,40 @@ describe('la hoja Leads_CRM: fila, nombre, empresa, rubro, necesidad y calificac
     jugar(w, MAMA).texto('Hola');
     expect(w.hoja.filas).toHaveLength(1);
   });
+  it('FILA MÍNIMA de punta a punta: este mensaje abre la conversación y «Armar» no arma prospecto (la ficha no cambió): 1 fila neutra, con el teléfono del turno y sin texto ni nombre', () => {
+    const w = crear(); const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.hoja.filas.length = 0;                      // la hoja queda vacía: la conversación que abre ahora no tiene fila
+    const desde = w.mundo.ahora();
+    w.ingesta = { atencion: { estado: 'normal', ...atencionDeConversacion({ desdeMs: desde, nueva: true }) } };
+    j.texto('Hola');                              // la misma ficha: sin cambio, sin prospecto
+    const t = w.turnos[w.turnos.length - 1]!;
+    const pros = t.porNodo['Prospecto para la planilla'] ?? [];
+    expect(pros).toHaveLength(1);
+    expect(pros[0]).toMatchObject({ minima: true });
+    expect(Object.keys(pros[0]!).sort()).toEqual(['conversacionDesdeMs', 'minima', 'senales', 'telefono', 'ultimaInteraccionMs']);
+    expect(w.hoja.filas).toHaveLength(1);
+    const f = w.hoja.filas[0]!.map(String);
+    expect(f[4]).toMatch(/^\d{8,15}$/);
+    expect(f.filter((_, c) => ![0, 1, 4].includes(c) && f[c] !== '')).toEqual(['Sin seguimiento']);   // solo ID, fecha, teléfono y el estado del equipo
+  });
+  it('UNA FILA POR CONVERSACIÓN (08/11, contrato de la ingesta): la apertura crea 1 fila con la fecha CON hora; los demás turnos de la conversación no crean otra; #701: si Meta rechaza el primer mensaje, el reintento tampoco', () => {
+    const w = crear();
+    const desde = w.mundo.ahora();
+    const ing = (nueva: boolean): J => ({ atencion: { estado: 'normal', ...atencionDeConversacion({ desdeMs: desde, nueva }) } });
+    w.ingesta = ing(true);
+    w.graph.falla = () => true;
+    const r = w.mundo.turno(valorMeta(mTexto('Hola'), MAMA), { tolerarFallo: true });
+    expect(r.fallo?.nodo).toBe('Cerrar turno');
+    expect(w.hoja.filas).toHaveLength(1);
+    w.graph.falla = () => false;
+    w.ingesta = ing(false);
+    jugar(w, MAMA).texto('Hola otra vez');
+    expect(w.hoja.filas).toHaveLength(1);
+    const fecha = String(w.hoja.filas[0]![1]);
+    expect(fecha).toBe(`'${new Date(desde - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' ')}`.replace(/^'/, ''));
+    expect(w.hoja.llamadas.every((l) => l.rango === '' || /^A3:(J|A)$/.test(l.rango))).toBe(true);   // #237: nunca K a N
+  });
   it('NIEGA: antes de 48 h NO hay fila nueva (actualiza la misma), y varias filas viejas del mismo teléfono: se actualiza la MÁS RECIENTE', () => {
     const w = crear();
     const j = jugar(w, MAMA, { perfil: 'Ana Pérez' });
@@ -1199,21 +1230,19 @@ describe('la hoja Leads_CRM: fila, nombre, empresa, rubro, necesidad y calificac
     j.texto('Hola otra vez', 47 * 60);
     j.lista('rubro:belleza');
     expect(w.hoja.filas).toHaveLength(1);
-    // una hoja con dos filas viejas del mismo teléfono (de antes de este cambio): la ficha es de una conversación nueva → fila nueva; y después actualiza la última
+    // una hoja con dos filas viejas del mismo teléfono: sin ancla de la ingesta no se crea una tercera; se actualiza la MÁS RECIENTE
     const w2 = crear();
     const tel = digitos(MAMA);
     const vieja = (id: string, rubro: string): string[] => ENC.map((h, c) => (c === 0 ? id : c === 4 ? tel : c === 5 ? rubro : ''));
     w2.hoja.filas.push(vieja('LEAD-1001', 'Salud'), vieja('LEAD-1002', 'Comercio'));
     const j2 = jugar(w2, MAMA, { perfil: 'Ana Pérez' });
     j2.texto('Hola');
-    expect(w2.hoja.filas).toHaveLength(3);
-    expect(w2.hoja.filas[2]![0]).toBe('LEAD-1003');
+    expect(w2.hoja.filas).toHaveLength(2);
     w2.modelo.con = 'ERROR';
     j2.lista('rubro:salud');
-    expect(w2.hoja.filas).toHaveLength(3);
+    expect(w2.hoja.filas).toHaveLength(2);
     expect(w2.hoja.filas[0]![5]).toBe('Salud');
-    expect(w2.hoja.filas[1]![5]).toBe('Comercio');
-    expect(w2.hoja.filas[2]![5]).toBe('Salud');
+    expect(w2.hoja.filas[1]![5]).toBe('Salud'); // la más reciente (era «Comercio»)
   });
   it('Baja → Media → Alta, en UNA fila (no se duplica): elige rubro; interactúa con algo sustantivo; pide los planes; habla con el equipo', () => {
     const w = crear();

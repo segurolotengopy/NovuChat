@@ -294,13 +294,13 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
   });
 });
 
-describe('tope de 700 caracteres por mensaje: recorte por oración, la pregunta final al final', () => {
+describe('tope de 1000 caracteres por mensaje (Andres 08/11/2026: la bienvenida del MD, 837 caracteres, entra completa; antes 700): recorte por oración, la pregunta final al final', () => {
   const RELLENO = Array.from({ length: 12 }, (_, i) => `Esta es la oración de relleno número ${i + 1} sobre el efecto lifting natural y el contorno del rostro.`).join(' ');
   const SALUDO = `¡Hola! Soy el asistente virtual de la Dra. Evy. ${RELLENO} Tu valoración con la Dra. Evy es 100% gratuita y sin compromiso. ¿Cómo te llamas y qué te gustaría mejorar en tu rostro?`;
-  it('un saludo de ~1000+ caracteres sale en 700 o menos, termina en oración completa y conserva la pregunta', () => {
+  it('un saludo de ~1000+ caracteres sale en 1000 o menos, termina en oración completa y conserva la pregunta', () => {
     expect(SALUDO.length).toBeGreaterThan(1000);
     const t = textos(hablar(crear({ modeloDice: dice(SALUDO) }), ANA, mTexto('hola')))[0]!;
-    expect(t.length).toBeLessThanOrEqual(700);
+    expect(t.length).toBeLessThanOrEqual(1000);
     expect(t.endsWith('¿Cómo te llamas y qué te gustaría mejorar en tu rostro?')).toBe(true);
     expect(t).toContain('Soy el asistente virtual de la Dra. Evy.');
     expect(t).toContain('100% gratuita y sin compromiso');
@@ -324,7 +324,7 @@ describe('tope de 700 caracteres por mensaje: recorte por oración, la pregunta 
     const t = textos(hablar(crear({ modeloDice: dice(`${relleno} ¿Quieres saber más? No podemos garantizar un resultado idéntico. Tu valoración es gratuita.`) }), ANA, mTexto('hola')))[0]!;
     expect(t).toContain('Cada rostro responde distinto y no prometemos un resultado idéntico.');
     expect(t).toContain('¿Quieres saber más?');
-    expect(t.length).toBeLessThanOrEqual(700);
+    expect(t.length).toBeLessThanOrEqual(1000);
   });
   it('(C) «Hola. <1200 caracteres>. ¿Cómo te llamas?» sale ENTERO (el recorte lo dejaría casi vacío)', () => {
     const larga = 'Esta es una oración larga ' + 'sobre el tratamiento de armonización facial '.repeat(25) + 'del rostro.';
@@ -340,7 +340,7 @@ describe('tope de 700 caracteres por mensaje: recorte por oración, la pregunta 
     const corto = 'Con gusto. Tu valoración es gratuita y sin compromiso. ¿Cómo te llamas?';
     expect(textos(hablar(crear({ modeloDice: dice(corto) }), ANA, mTexto('hola')))[0]).toBe('Con gusto. Tu valoración es gratuita y sin compromiso.\n\n¿Cómo te llamas?');
   });
-  it('los textos fijos (cierre, gratuidad, cuidados) no se recortan: ninguno pasa de 700', () => {
+  it('los textos fijos (cierre, gratuidad, cuidados) no se recortan: ninguno pasa de 1000', () => {
     const cierre = textos(hablar(crear({ modeloDice: dice('[DERIVAR_RECEPCION: Paola]') }), ANA, mTexto('quiero agendar')))[0]!;
     expect(cierre.length).toBeLessThanOrEqual(700);
     const gratis = textos(hablar(crear({ modeloDice: 'cae' }), ANA, mTexto('¿es gratis?')))[0]!;
@@ -351,7 +351,8 @@ describe('tope de 700 caracteres por mensaje: recorte por oración, la pregunta 
 
 describe('PRIMER CONTACTO: la etiqueta del modelo se ignora sin historial y sin nombre dado', () => {
   const SIN_GRATUITA = 'Hola, vi su anuncio y quiero agendar mi valoración';
-  const PRELLENADO = 'Hola Dra. Evy, vi su anuncio y quiero agendar mi valoración gratuita 🙌';
+  // Andres 08/11/2026: el prellenado con «quiero agendar mi valoración gratuita» ahora recibe el literal por código (campana-literal.test.ts); estas pruebas siguen el flujo del MODELO con un inicio SIN esa frase.
+const PRELLENADO = 'Hola Dra. Evy, vi su anuncio y quiero información de la valoración 🙌';
   const SALUDO = '¡Hola! 👋 Soy el asistente virtual de la Dra. Evy. Tu valoración es 100% gratuita y sin compromiso. ¿Cómo te llamas y qué te gustaría mejorar?';
   it('NEGADA: con el texto prellenado, ni la etiqueta con texto, ni la etiqueta sola, ni la etiqueta con nombre cierran: sin botón ni aviso', () => {
     for (const modelo of [SALUDO + ' [DERIVAR_RECEPCION]', SALUDO + ' [DERIVAR_RECEPCION: Ana]']) {

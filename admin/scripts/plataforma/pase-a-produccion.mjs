@@ -118,7 +118,7 @@ function textosDe(valor, fuera = []) {
 const MARCADOR = /REEMPLAZAR_[A-Z0-9_]+/;
 const SUPUESTO = /\bsupuest[oa]s?\b/i;
 
-const NUNCA_PASAN = new Set(['novuchat', 'ensayo']);
+const NUNCA_PASAN = new Set(['novuchat', 'ensayo', 'ensayo-b']);
 
 // --- lecturas (todas get(), ninguna escritura) --------------------------------
 const refTenant = db.doc(`tenants/${TENANT}`);
@@ -154,7 +154,7 @@ const esDemo = cuenta.modalidad === 'demostracion'
 if (esDemo) {
   const porque = TENANT === 'novuchat'
     ? 'es el número de captación de la propia NovuChat: no es un comercio que paga y queda en demostración'
-    : TENANT === 'ensayo'
+    : TENANT === 'ensayo' || TENANT === 'ensayo-b'
       ? 'es el comercio del ensayo (docs/ensayo/LEEME.md): vive en un número de demostración'
       : 'es un demo (modalidad demostracion): los demos no pasan a producción';
   console.log(`  · «${TENANT}» NO pasa a producción: ${porque}.`);
