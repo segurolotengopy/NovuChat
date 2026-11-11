@@ -829,9 +829,16 @@ nombres de credencial. Los JSON de producción y de prueba **no cambian** (se co
    `publicar-flujo.sh` **rechaza** (exit 2) este archivo y su `.local.json`: el ensayo solo lo pone la
    herramienta del paso 3.
 2. **La plataforma.** `node admin/scripts/plataforma/ensayo.mjs --proyecto <proyecto> --numero <phone id del
-   Demo A> --estado` (solo lectura) para ver a qué comercio apunta hoy la ruta. **Queda por confirmar con
-   la sesión de Plataforma** el `--preparar` para este flujo (no hay un archivo de negocio de NovuChat como
-   los de los clientes y `--flujo` solo admite `venta` o `agendamiento`): no se decide aquí.
+   Demo A> --estado` (solo lectura) para ver a qué comercio apunta hoy la ruta. Luego `--preparar`, en seco y después con
+   `--aplicar` y el «sí» de Andres:
+
+       node admin/scripts/plataforma/ensayo.mjs --proyecto <proyecto> --numero <phone id del Demo A> --preparar \
+         --cliente novuchat --flujo onboarding --archivo admin/scripts/datos/captacion-novuchat.json [--aplicar]
+
+   Con `--flujo onboarding` el archivo es el de **captación** (no un archivo de negocio): lo carga
+   `cargar-captacion.mjs` en `tenants/ensayo`; la ruta del Demo A lleva `flujo: 'onboarding'` mientras dura y
+   `--restaurar` lo devuelve (`ensayoFlujoDe`); el vaciado suma `config/onboarding`, solo bajo `tenants/ensayo`.
+   Pruebas negando: `admin/pruebas/ensayo.test.ts`, «--flujo onboarding».
 3. **El flujo, en seco** (guarda el respaldo del vivo y no escribe en n8n):
 
        node Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env \
