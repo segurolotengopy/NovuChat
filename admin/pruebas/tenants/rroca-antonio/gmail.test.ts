@@ -165,6 +165,17 @@ describe('la captura del Gmail', () => {
     }
   });
 
+  it('un correo que NO es Gmail válido tampoco viaja en texto plano al reporte de la consola', () => {
+    const w = conComprobante();
+    hechos(w);
+    for (const texto of ['juanito@hotmail.com', 'juanito @ gmail.com y anabel@gmail.com']) {
+      const t = hablar(w, ANA, mTexto(texto));
+      const reportes = JSON.stringify(t.llamadas.ingesta);
+      expect(reportes).not.toMatch(/hotmail|juanito|anabel/);
+      expect(reportes).toContain('[correo]');
+    }
+  });
+
   it('el Gmail capturado no se reporta a la consola (el reporte entrante dice «[correo]»); Antonio lo recibe en el aviso', () => {
     const w = conComprobante();
     hechos(w);
@@ -261,6 +272,8 @@ describe('la barrera del modelo tras abrir «correo» y «gmail» (D2)', () => {
       'Gracias, tu correo quedó guardado',
       'Te agregué a la carpeta', 'Ya te agregué al Drive', 'Ya se envió la invitación', 'Ya salió la invitación', 'Vas a tener acceso a la carpeta', 'Ya cuentas con acceso al material', 'El enlace ya está en camino',
       'Aquí está el enlace', 'Ahí tienes la carpeta', 'Ya está compartida la carpeta', 'Ya puedes entrar a la carpeta', 'Ya puedes descargar el material', 'Tu acceso está activo', 'Lo recibirás hoy mismo', 'Lo tendrás mañana', 'Mañana lo tienes',
+      'Le envío el libro.', 'Te comparto el PDF.', 'Te envío los archivos.', 'Te comparto el curso.', 'Te envío el libro por aquí.', 'Te compartimos el libro.', 'Le comparto los audios del curso.',
+      'Lo encontrarás en Google Drive', 'Revisa el spam', 'El acceso es inmediato',
       'Lo tendrás en tu correo.', 'Te va a aparecer en tu Gmail.', 'Quedará disponible en tu Gmail.', 'El material va directo a tu correo de Gmail.', 'Podrás descargarlo desde tu Gmail.', 'El enlace estará en tu Gmail.',
       'Ya puedes entrar al Drive con tu Gmail.', 'Tu acceso está activo en tu Gmail.', 'Mira tu Gmail.', 'Abre tu correo.', 'Busca en tu Gmail el mensaje de Antonio.', 'Tu correo ya está en la lista de Antonio.', 'Déjame tu correo.', 'Aquí tienes el enlace', 'Te dejo el enlace', 'Te invito a la carpeta de Drive', 'Te daremos acceso a la carpeta',
     ];
@@ -273,7 +286,7 @@ describe('la barrera del modelo tras abrir «correo» y «gmail» (D2)', () => {
   });
   it('frases normales de la charla NO se rechazan (regresión de calidad)', () => {
     const normales = [
-      'Te comparto lo que incluye el libro: 14 capítulos en 4 partes.', 'Te comparto un dato: son 10 a 20 minutos al día.', 'Te envío un abrazo y ánimo con tu proceso.',
+      'Te comparto lo que incluye el libro: 14 capítulos en 4 partes.', 'Te comparto un dato: son 10 a 20 minutos al día.', 'Te envío un abrazo y ánimo con tu proceso.', 'Te envío un abrazo.',
       'Esto le llega a mucha gente que vive con ansiedad.', 'A muchos les llega sin avisar y se quedan sin saber qué hacer.', 'Con el libro tendrás acceso a una ruta de 30 días.', 'Si tienes acceso a internet, puedes leerlo desde el celular.',
     ];
     for (const dicho of normales) expect(dichoPorElModelo(dicho).replace(/\s+/g, ' '), dicho).toBe(dicho);
