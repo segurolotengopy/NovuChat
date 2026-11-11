@@ -70,7 +70,7 @@ const leido = esVisual && typeof jsonImagen.texto === 'string' ? rrLineaCliente(
 let transcrito = '';
 let falloAudio = '';
 if (esAudio) {
-  if (/^\(audio transcripto\) /.test(entradaMedio)) transcrito = entradaMedio.slice('(audio transcripto) '.length).split('\n')[0].trim();
+  if (/^\(audio transcripto\) /.test(entradaMedio)) transcrito = rrLineaCliente(entradaMedio.slice('(audio transcripto) '.length).split('\n')[0].trim(), 1500);
   else if (/más de cinco minutos/.test(entradaMedio)) falloAudio = 'largo';
   else if (/no se pudo entender/.test(entradaMedio)) falloAudio = 'no_entendido';
   else falloAudio = 'no_abierto';
@@ -78,7 +78,7 @@ if (esAudio) {
 const textoCliente = t.tipo === 'interactive' ? '' : (esAudio ? transcrito : String(t.texto || ''));
 const norm = rrNorm(textoCliente);
 // Ningún correo llega al modelo ni a la memoria de la charla: todo lo que parece un correo se cambia por «[correo]» antes de armar lo que ve el modelo (el Gmail válido lo lee el paso «1a-gmail» del texto original).
-const sinCorreos = (x) => String(x === undefined || x === null ? '' : x).normalize('NFKC').replace(/[^\s@<>()\[\],;:"'«»¡¿]+\s*(?:@|\barroba\b)\s*[^\s@<>()\[\],;:"'«»¡¿]+(?:\s+punto\s+[^\s@<>()\[\],;:"'«»¡¿]+)*/giu, '[correo]');
+const sinCorreos = rrSinCorreos;
 textoDelTurno = rrLineaCliente(sinCorreos(textoCliente), 300).replace(/\s+/g, ' ').trim();
 // Un «Sí» o un «No» suelto con una pregunta nuestra vigente (30 min) se resuelve con la pregunta pendiente que guardó la ficha (`ctInterpretarSiNo`, core): si es una pregunta que el código hizo con su intención (`ver_opciones`), el código
 // responde; si no, el modelo recibe la pregunta como dato y qué hacer con ella. Sin pregunta vigente, nada. Nunca abre un QR por sí solo.
@@ -133,12 +133,13 @@ if (rrPideBaja(textoCliente)) return salir({ tipo: 'baja', cat: cat });
 //     (`vgExtraerGmail`); el modelo no interviene, no ve el correo y el turno no entra en la memoria de la charla. Solo `@gmail.com`: otro dominio, varios correos o un correo mal escrito reciben un texto fijo que lo pide de nuevo. Un audio, una imagen o un botón
 //     nunca se capturan (el correo no se acepta dictado ni leído de una imagen). Va antes de la identidad y de las derivaciones para que un correo escrito no se tome por otra intención. Con un correo válido hay UN aviso a Rubén (enlace de Drive por el chat).
 //     Solo si el mensaje ES básicamente el correo: al quitar el candidato quedan 6 palabras o menos y ninguna señal de reclamo o de derivación («no me llegó», «quiero hablar con…», «cancelar»…); si no, sigue su camino normal.
-const gCandidato = /[^\s@<>()\[\],;:"'«»]+@[^\s@<>()\[\],;:"'«»]+/g;
-const gResto = rrNorm(String(t.texto || '').replace(gCandidato, ' '));
-const gEsElCorreo = gResto.split(' ').filter((x) => x !== '').length <= 6
-  && !/\b(no (me )?(llego|lleg\w*|ha llegado|recibi|funciona)|todavia no|aun no|nunca|reclam\w*|queja|estafa|devol\w*|reembols\w*|cancel\w*|anul\w*|factura|garantia|problema|ayuda|hablar|persona|humano|ruben|pago|pague|plata|dinero|cobro|transferencia|comprobante|precio|cuanto|denunci\w*)\b/.test(gResto)
+const gTexto = String(t.texto || '').normalize('NFKC');
+const gCandidato = /[^\s@<>()\[\],;:"'«»¡¿]+@[^\s@<>()\[\],;:"'«»¡¿]+/g;
+const gResto = rrNorm(gTexto.replace(gCandidato, ' '));
+const gEsElCorreo = gTexto.replace(gCandidato, ' ').split(/\s+/).filter((x) => /[\p{L}\p{N}]/u.test(x)).length <= 6
+  && !/\b(no (me )?(llego|lleg\w*|ha llegado|recibi|funciona)|todavia no|aun no|nunca|reclam\w*|queja|estafa|devol\w*|reembols\w*|cancel\w*|anul\w*|factura|garantia|problema|pago|pague|plata|dinero|cobro|transferencia|comprobante|precio|cuanto|denunci\w*)\b/.test(gResto)
   && !rrDerivacion(gResto, { comprobante: true, qrAbierto: hayQrAbierto }) && !rrHablaDelCobro(gResto) && !rrCancelaPedido(gResto);
-if (t.tipo === 'text' && ficha.gmailPedidoMs > 0 && ficha.gmail === '' && String(t.texto || '').indexOf('@') >= 0 && gEsElCorreo) {
+if (t.tipo === 'text' && ficha.gmailPedidoMs > 0 && ficha.gmail === '' && gTexto.indexOf('@') >= 0 && gEsElCorreo) {
   const g = vgExtraerGmail(String(t.texto || ''));
   textoDelTurno = '';
   return salir({
