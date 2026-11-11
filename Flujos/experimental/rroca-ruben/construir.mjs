@@ -123,7 +123,7 @@ export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   // La base común de las ventas digitales (cobro, avisos y el motor de la conversación: prefijos `cb`, `av` y `vd`), los módulos del core de texto (no repetir y pregunta pendiente: prefijo `ct`) y, al final, lo PROPIO de Rubén (`rr.js`: solo datos y textos).
-  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/diferencias.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/rr.js'],
+  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/diferencias.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../venta-digital/src/gmail.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/rr.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
