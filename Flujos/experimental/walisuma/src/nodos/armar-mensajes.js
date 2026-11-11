@@ -84,7 +84,7 @@ if (puerta.ruta === 'sigue') {
     }
   } else if (tipoDePlan === 'modelo') {
     llamadasModelo = 1;
-    msgs = [texto(conSaludo(d.texto + (d.resumen ? '\n\n' + d.resumen : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : '')))];
+    msgs = [texto(conSaludo(d.texto + (d.politicaEnvio ? '\n\n' + d.politicaEnvio : '') + (d.resumen ? '\n\n' + d.resumen : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : '')))];
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
     nuevos.entrega = d.entrega;
     nuevos.cierre = d.cierre === true;
@@ -101,8 +101,13 @@ if (puerta.ruta === 'sigue') {
       tipoDePlan = 'derivar';
       msgs = [conRecepcion(conSaludo(WL_INTROS.monto_invalido + ' Escríbele a recepción con el botón.'))];
     } else {
+      // El QR cobra SOLO los productos. Envío gratis desde el umbral (dato); bajo el umbral se cotiza por fuera: el aviso a recepción (si salió) MÁS el botón; recojo: sin costo de envío.
+      const frase = wlFraseEnvio(d.envio, d.umbralBs, d.envio === 'recojo' ? wlDireccionTienda(base, d.entrega.ciudad) : '');
+      const aCotizar = d.envio === 'cotizar';
+      // Un pedido que cambió con un QR abierto no avisa a recepción (el aviso se arma antes de saber si el cobro anterior se cerró): el texto manda al botón.
+      const pieEnvio = !aCotizar ? '' : '\n\n' + (d.cambioDePedido ? 'El envío de este pedido lo cotiza recepción: escríbele a recepción con el botón para cotizar el envío.' : wlTextoDerivacion('envio_a_cotizar', salio));
       const resumen = (d.cambioDePedido ? 'Actualicé tu pedido.\n\n' : '') + 'Este es el resumen de tu pedido:\n\n' + vcResumen(lineas)
-        + '\n\nEntrega: ' + wlEntregaTexto(d.entrega) + '. El total no incluye el costo de entrega.\n\nAbajo va el QR para pagar.';
+        + '\n\nEntrega: ' + wlEntregaTexto(d.entrega) + (frase ? '. ' + frase : '.') + pieEnvio + '\n\nAbajo va el QR para pagar.';
       const pie = wlSeguro('QR para pagar ' + vcMonto(d.total) + ' (pedido ' + d.pedidoId + '). Cuando pagues, envíame la foto del comprobante por este chat.');
       const respaldo = 'No pude mostrarte el QR en este momento. Escríbeme de nuevo en unos minutos para intentarlo otra vez.';
       const imagen = cmMensaje('cliente', Object.assign(cmBase('image'), { image: { id: d.mediaId, caption: pie } }), pie, respaldo, { tipoReporte: 'image' });
@@ -110,7 +115,7 @@ if (puerta.ruta === 'sigue') {
       imagen.evento = 'qr_enviado'; imagen.reglaCobro = 2; imagen.referencia = String(d.pedidoId); imagen.monto = d.monto;
       // Para que el servidor cree el pedido `wa_<referencia>`: solo ids, cantidades y entrega (el servidor recalcula precios y total desde el catálogo).
       { const pqr = pqrCampos(imagen.referencia, d.lineas, { entrega: d.entrega.modo, direccion: d.entrega.direccion, ciudad: d.entrega.ciudad }, false); if (pqr.lineas) { imagen.lineas = pqr.lineas; imagen.entrega = pqr.entrega; } }
-      msgs = [texto(conSaludo(resumen)), imagen];
+      msgs = [aCotizar ? conRecepcion(conSaludo(resumen)) : texto(conSaludo(resumen)), imagen];
       nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
       nuevos.entrega = d.entrega; nuevos.cierre = false;
       nuevos.pedidos = fichaAntes.pedidos + 1;
@@ -123,7 +128,8 @@ if (puerta.ruta === 'sigue') {
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega;
   } else if (tipoDePlan === 'pedido_sin_cobro') {
     const lineas = wlConNombres(d.lineas, c.vendibles);
-    msgs = [conRecepcion(conSaludo('Anoté tu pedido:\n\n' + vcResumen(lineas) + '\n\n' + wlTextoDerivacion('pedido_sin_cobro', salio)))];
+    const fraseSc = wlFraseEnvio(d.envio, d.umbralBs, d.envio === 'recojo' ? wlDireccionTienda(base, d.entrega.ciudad) : '');
+    msgs = [conRecepcion(conSaludo('Anoté tu pedido:\n\n' + vcResumen(lineas) + (fraseSc ? '\n\n' + fraseSc : '') + '\n\n' + wlTextoDerivacion('pedido_sin_cobro', salio)))];
     Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
   } else if (tipoDePlan === 'comprobante') {
     msgs = [conRecepcion(wlTextoComprobante(d.resultado, d.diferencia, d.totalTexto, salio))];

@@ -88,7 +88,9 @@ describe('del pedido al QR', () => {
     expect(t.mensajes).toHaveLength(2);
     expect(t.mensajes[0]?.cuerpo).toMatch(/2 × Billetera de cuero — Bs 900/);
     expect(t.mensajes[0]?.cuerpo).toMatch(/Total: Bs 900/);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/no incluye el costo de entrega/);
+    // Recojo en tienda: sin frase de costo de envío; sale la dirección de la tienda (dato del comercio).
+    expect(t.mensajes[0]?.cuerpo).toMatch(/Recoges tu pedido en: Calle Claudio Aliaga 1231/);
+    expect(t.mensajes[0]?.cuerpo).not.toMatch(/envío/i);
     expect(t.mensajes[1]?.tipo).toBe('image');
     expect((t.mensajes[1]?.payload['image'] as any).id).toBe(MEDIA_QR); // eslint-disable-line @typescript-eslint/no-explicit-any
     expect(JSON.stringify(t.mensajes[1]?.payload)).not.toMatch(/"link"/);
