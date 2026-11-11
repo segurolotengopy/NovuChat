@@ -681,10 +681,23 @@ const EV_DA_LUZ_VERDE = /\b(no hay (ningun )?(problema|inconveniente)|tambien se
 // La REMISIÓN a la valoración: lo único que el guion manda decir sobre la salud del cliente. Una salida que habla de su condición (o afirma que algo es «seguro») SIN remitir a la valoración de la Dra. no sale.
 const EV_REMISION = /\b(valoracion|la dra|la doctora|doctora emma|dra emma|en persona|evalu\w+)\b/;
 const EV_AFIRMA_SEGURO = /\b(?:es|son|era|resulta|resultan|muy|bastante|super|totalmente|completamente|100 ?%?)\s+(?:muy |bastante |super |totalmente |completamente )?segur[oa]s?\b(?!\s+(?:de |que\b))|\bsegur[oa]s?\s+para\b/;   // «es seguro que te va a gustar» y «estoy seguro de» no afirman seguridad médica
+// AFIRMAR O NEGAR sobre la condición («no se realizan durante el embarazo», «no realizamos», «está contraindicado», «se puede»): el modelo nunca lo dice, ni a favor ni en contra; lo ve la Dra. en persona (Andres, 10 y 11/11/2026, humo de la otra doctora, paso 11).
+const EV_AFIRMA_NIEGA = /\b(?:no se (?:puede|debe|realiz\w*|hace\w*|aplic\w*|recomiend\w*|indica\w*)|no (?:realizamos|hacemos|aplicamos|tratamos|trabajamos|ofrecemos)|no podemos (?:hacer\w*|realizar\w*|aplicar\w*|tratar\w*)|se puede|se realiza\w*|se hace\w*|estan? contraindicad\w*|contraindicad\w*|no es recomendable|no recomendamos|no (?:esta|estan) indicad\w*|esta indicad\w*)\b/;
+// Con una condición de salud en el mensaje del CLIENTE la barrera es MÁS ESTRICTA: cualquier forma de negar, afirmar, «esperar» o «contraindicado» rechaza la salida, aunque nombre la valoración.
+const EV_NIEGA_O_AFIRMA_AL_CLIENTE = /\b(?:(?:no|ni|nunca|tampoco)\s+(?:\w+\s+){0,3}(?:realiz\w*|hac\w*|aplic\w*|pued\w*|recomend\w*|indic\w*|trat\w*|ofrec\w*|trabaj\w*|permit\w*|aconsej\w*)|esperar|esperes|contraindic\w*|se puede|puedes|si es seguro|es seguro|riesgo\w*|precaucion)\b/;
+function evCondicionDelCliente(textoCliente) {
+  const c = EV_CONDICION.exec(evNorm(textoCliente));
+  return c ? c[0] : '';
+}
 function evSaludSinRemision(norm) {
   const n = String(norm);
-  const condicion = EV_CONDICION.exec(n) || EV_AFIRMA_SEGURO.exec(n);
-  return condicion && !EV_REMISION.test(n) ? condicion[0] : '';
+  // POR ORACIÓN: toda oración que nombra una condición tiene que remitir ELLA MISMA a la Dra. y no afirmar ni negar nada (antes bastaba una mención de «valoración» en cualquier parte del texto).
+  for (const o of n.split(/[.!?\n]+/)) {
+    const c = EV_CONDICION.exec(o);
+    if (c && (!EV_REMISION.test(o) || EV_AFIRMA_NIEGA.test(o))) return c[0];
+  }
+  const seguro = EV_AFIRMA_SEGURO.exec(n);
+  return seguro && !EV_REMISION.test(n) ? seguro[0] : '';
 }
 function evConsejoDeSalud(norm) {
   for (const o of String(norm).split(/[.!?]+/)) if (EV_CONDICION.test(o) && EV_DA_LUZ_VERDE.test(o)) return o.trim().slice(0, 80);
@@ -930,8 +943,12 @@ function evPulirSalida(crudo, ctx) {
   if (garantia) return { texto: '', motivo: 'prohibido', detalle: 'garantía afirmativa («' + garantia + '»)' };
   const silencio = EV_PROMETE_SILENCIO.exec(norm);
   if (silencio) return { texto: '', motivo: 'promete_silencio', detalle: '«' + silencio[0] + '»: el silencio lo promete solo el código (la baja)' };
-  const sinRemision = evSaludSinRemision(norm);
+  // evNorm quita la puntuación: sin partir ANTES por oración, todo el texto era UNA oración y bastaba una mención de «valoración» (paso 11, 11/11/2026).
+  const sinRemision = evSaludSinRemision(evPartirEnOraciones(marcado).filter((o) => o !== '' && o !== '\n').map((o) => evNorm(o)).join('. '));
   if (sinRemision) return { texto: '', motivo: 'salud_sin_remision', detalle: 'habla de salud o afirma seguridad («' + sinRemision.slice(0, 40) + '») sin remitir a la valoración de la Dra.' };
+  const condCliente = evCondicionDelCliente(c.textoCliente);
+  const niegaAlCliente = condCliente ? EV_NIEGA_O_AFIRMA_AL_CLIENTE.exec(norm) : null;
+  if (niegaAlCliente) return { texto: '', motivo: 'salud_sin_remision', detalle: 'el cliente nombra una condición de salud («' + condCliente.slice(0, 40) + '») y la salida afirma o niega («' + niegaAlCliente[0].slice(0, 40) + '»): lo decide la Dra. en persona' };
   const salud = evConsejoDeSalud(norm);
   if (salud) return { texto: '', motivo: 'prohibido', detalle: 'consejo de salud sobre la condición del cliente («' + salud + '…»)' };
   // Una DURACIÓN («entre 20 y 30 minutos», «unos 40 minutos») no es un precio (batería real del 29/10/2026: «¿cuánto dura?» caía al fallo): solo para las reglas de precio se quita antes de mirar.
