@@ -110,8 +110,8 @@ WhatsApp (Meta Cloud API)
   (en los flujos de agenda lo decide `Mensaje a enviar`); y una respuesta que es
   solo una marca nunca se toma por vacía. El 21/09 el prompt decía «ofrece
   consultarlo con recepción», el paciente aceptó dos veces y recibió «tuve un
-  problema técnico». Pruebas: `platinum-flujo.test.ts`, «solo se ofrece lo que
-  se cumple».
+  problema técnico». Pruebas: `reservas-flujo.test.ts`, «solo se ofrece lo que
+  se cumple» (Demo A y Bellido).
 - **Memoria con clave de sesión explícita** = número de origen
   (`messages[0].from`). Sin esto, dos clientes comparten memoria. Es el
   defecto más grave que puede tener uno de estos flujos.
