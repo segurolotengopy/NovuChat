@@ -41,6 +41,7 @@ case "$metodo $ruta" in
   "PUT /workflows/"*)             cuerpo="${RESPUESTA_FLUJO:-$FLUJO_POR_DEFECTO}" ;;
   "GET /workflows/"*)             cuerpo="${RESPUESTA_FLUJO:-$FLUJO_POR_DEFECTO}" ;;
   "GET /credentials")             cuerpo="${RESPUESTA_CREDENCIALES:-$LISTA_VACIA}"; codigo="${CODIGO_CREDENCIALES:-200}" ;;
+  "GET /workflows")               cuerpo="${RESPUESTA_LISTA_FLUJOS-$LISTA_VACIA}"; codigo="${CODIGO_LISTA_FLUJOS:-200}" ;;
   "GET /executions")              cuerpo="${RESPUESTA_EJECUCIONES:-$LISTA_VACIA}" ;;
   "GET /executions/"*)            cuerpo='{"id":"1","status":"error","data":{"resultData":{"runData":{}}}}' ;;
   *)                              cuerpo="$LISTA_VACIA" ;;

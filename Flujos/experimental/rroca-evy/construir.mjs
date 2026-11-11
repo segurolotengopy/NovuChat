@@ -607,7 +607,10 @@ export function guardias(variante, flujo, mapaCrm) {
   // Retención de ejecuciones (datos de salud: no se guardan ni los turnos fallidos), orden y zona horaria.
   const st = (flujo && flujo.settings) || {};
   if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» (datos de salud: no se guardan ni los turnos fallidos) y saveExecutionProgress false');
-  if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow`');
+  if (ES_RELE) {
+    // Canal rele (decisión I4): el versionado lleva el marcador y el publicador lo reemplaza por el id del flujo de alertas, resuelto por NOMBRE en el n8n destino. Con graph no hay relé ni «Detener por envío incierto»: no lleva `errorWorkflow`.
+    if (!(st.errorWorkflow === 'REEMPLAZAR_ID_ERROR_WORKFLOW' || (typeof st.errorWorkflow === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(st.errorWorkflow) && !/^REEMPLAZAR_/.test(st.errorWorkflow)))) h.push('relé: `errorWorkflow` tiene que ser el marcador REEMPLAZAR_ID_ERROR_WORKFLOW (lo resuelve por nombre el publicador) o un id ya resuelto');
+  } else if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow`');
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
   // `REEMPLAZAR_` solo en «Config base», en el receptor y en la ruta de la entrada de prueba.
@@ -904,7 +907,7 @@ export function armarEvy(proyecto, datos, v) {
   // CANAL «rele» (relé B9 de AAB1): TODO lo que habla con Meta sale por el relé, con la credencial «AAB1 envío · <alias>» de este WABA y la URL interna como marcador (la sustituye el publicador). Ningún nodo llama a Graph.
   // CANAL «graph» (tanda 1 de Evy, 07/11/2026): nada de lo anterior se toca; el envío, la descarga y el guardado salen directo por Graph con las credenciales por NOMBRE de los datos.
   const relePorNombre = (nombre) => { const nodo = plantilla.nodes.find((x) => x.name === nombre); if (!nodo) throw new Error(`${donde}: falta el nodo «${nombre}»`); return nodo; };
-  if (ES_RELE) plantilla.settings = Object.assign({}, plantilla.settings, { executionTimeout: 300 });
+  if (ES_RELE) plantilla.settings = Object.assign({}, plantilla.settings, { executionTimeout: 300, errorWorkflow: 'REEMPLAZAR_ID_ERROR_WORKFLOW' });
   const credRele = { httpHeaderAuth: { id: '', name: CREDENCIAL_RELE } };
   if (ES_RELE) {
     const idMedio = "String($('Normalizar entrada').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '')";
@@ -995,6 +998,8 @@ export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS,
     let versionado = [];
     if (actual !== null) {
       try { versionado = guardias(variante, JSON.parse(actual)); } catch (x) { versionado = ['no es un JSON válido']; }
+      // El JSON VERSIONADO lleva el marcador exacto, nunca un id resuelto (el id es de un n8n y no se versiona).
+      if (ES_RELE && versionado.length === 0) { try { if ((JSON.parse(actual).settings || {}).errorWorkflow !== 'REEMPLAZAR_ID_ERROR_WORKFLOW') versionado = ['versionado: `errorWorkflow` tiene que ser exactamente REEMPLAZAR_ID_ERROR_WORKFLOW (un id resuelto no se versiona)']; } catch (x) { /* ya informado */ } }
     }
     if (!verificar) escribirSinSeguirEnlaces(ruta, texto, v.archivo);
     return { archivo: v.archivo, nodos: JSON.parse(texto).nodes.length, existia: actual !== null, alDia: actual === texto, versionado };

@@ -109,6 +109,7 @@ export const SUITES_PURAS = [
   'pruebas/core/autorizacion-oper.test.ts',
   'pruebas/core/clave-n8n-fuera-de-argumentos.test.ts',
   'pruebas/core/publicar-flujo-credencial-ambigua.test.ts',
+  'pruebas/core/error-workflow-por-nombre.test.ts',
   'pruebas/core/credenciales-venta.test.ts',
   'pruebas/core/preparar-import-respond.test.ts',
   'pruebas/core/env-nace-cerrado.test.ts',
