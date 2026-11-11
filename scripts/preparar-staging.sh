@@ -619,7 +619,9 @@ fase_verificar() {
   # Alerta operativa: la condición de desplegadorSecretos cubre ALERTAS_ y los dos secretos existen (fase alertas).
   local sa_al
   # La condición tiene que estar DENTRO del binding «secretos-de-las-functions» (rol desplegadorSecretos) de sa-deploy-staging.
-  if gc projects get-iam-policy "$P" --format=json 2>/dev/null | python3 -I -c '
+  local politica_proyecto binding_completo=0
+  politica_proyecto="$(gc projects get-iam-policy "$P" --format=json 2>/dev/null || true)"
+  if printf '%s' "$politica_proyecto" | python3 -I -c '
 import json, sys
 d = json.load(sys.stdin)
 sys.exit(0 if any((b.get("condition") or {}).get("title") == "secretos-de-las-functions"
@@ -628,6 +630,17 @@ sys.exit(0 if any((b.get("condition") or {}).get("title") == "secretos-de-las-fu
                   and "secrets/" + sys.argv[1] + "\"" in (b["condition"].get("expression") or "")
                   for b in d.get("bindings", [])) else 1)' "$PREFIJO_ALERTAS" "$SA_DEPLOY"; then hecho "la condición de desplegadorSecretos cubre ${PREFIJO_ALERTAS}"
   else falla "la condición de desplegadorSecretos NO cubre ${PREFIJO_ALERTAS} (fase alertas)"; fi
+  # Binding COMPLETO (misma corrida): título, rol, miembro y los seis prefijos de la fase cuentas. Solo con
+  # esto un UNKNOWN_CONDITIONAL del Troubleshooter se tolera más abajo.
+  if printf '%s' "$politica_proyecto" | python3 -I -c '
+import json, sys
+d = json.load(sys.stdin)
+pref = sys.argv[2:]
+sys.exit(0 if any((b.get("condition") or {}).get("title") == "secretos-de-las-functions"
+                  and b.get("role", "").endswith("/desplegadorSecretos")
+                  and "serviceAccount:" + sys.argv[1] in b.get("members", [])
+                  and all("secrets/" + p in (b["condition"].get("expression") or "") for p in pref)
+                  for b in d.get("bindings", [])) else 1)' "$SA_DEPLOY" INGESTA_ GEMINI_API_KEY COBRADOR_ ALERTAS_ SALIDA_PERSONA_ NOVUTIENDA_ 2>/dev/null; then binding_completo=1; fi
   for sa_al in "${SECRETOS_ALERTAS[@]}"; do
     if existe gc secrets describe "$sa_al"; then hecho "$sa_al existe"; else falla "$sa_al no existe (fase alertas)"; fi
   done
@@ -642,10 +655,12 @@ sys.exit(0 if any((b.get("condition") or {}).get("title") == "secretos-de-las-fu
     local acceso
     acceso="$(gc policy-troubleshoot iam "$recurso" --principal-email="$SA_DEPLOY" --permission="$perm" --format='value(access)' 2>/dev/null || echo "?")"
     if [[ "$acceso" == "GRANTED" ]]; then hecho "sa-deploy-staging: $perm"
-    elif [[ "$acceso" == "UNKNOWN_CONDITIONAL" && "$perm" == secretmanager.versions.list ]]; then
+    elif [[ "$acceso" == "UNKNOWN_CONDITIONAL" && "$perm" == secretmanager.versions.list ]] && (( binding_completo )); then
       # El binding de desplegadorSecretos lleva condición IAM sobre resource.name; el Troubleshooter no la
-      # evalúa sin contexto de recurso. La cubre la comprobación del binding de más arriba (título, rol,
-      # miembro y prefijos dentro de la expresión). No es un fallo. Cualquier otro valor sigue siendo ✗.
+      # evalúa sin contexto de recurso. Solo se tolera si, EN ESTA corrida, el binding existe con título
+      # «secretos-de-las-functions», rol desplegadorSecretos, miembro sa-deploy-staging y los seis prefijos
+      # (INGESTA_, GEMINI_API_KEY, COBRADOR_, ALERTAS_, SALIDA_PERSONA_, NOVUTIENDA_) en su expresión.
+      # Sin eso, o con cualquier otro valor distinto de GRANTED, es ✗.
       echo "  ${A}⚠${F} sa-deploy-staging: $perm → condición no evaluable por Policy Troubleshooter; la cubre la comprobación del binding de arriba"
     else falla "sa-deploy-staging: $perm → ${acceso:-desconocido}"; fi
   done
