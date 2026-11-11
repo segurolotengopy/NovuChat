@@ -105,6 +105,9 @@ const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
 export const ANFITRIONES_TIENDA = ['novutienda-sitio-stg.web.app'];
 /** El mercado del catálogo (BO o AR) según el prefijo del remitente: la MISMA regla que `ceMercadoDePrefijo`; una prueba compara las dos. */
 export const EXPRESION_MERCADO = "{{ ((d) => d.length < 10 || d.length > 15 ? 'X' : (d.indexOf('591') === 0 ? 'BO' : (d.indexOf('54') === 0 ? 'AR' : 'X')))(String(((($('Normalizar entrada').first().json) || {}).from) || '').replace(/\\D/g, '').replace(/^0+/, '')) }}";
+/** Las dos llamadas síncronas a la Function del servidor que hacen DOS nodos con destino fijo (B9, Argentina): la expresión EXACTA de cada URL (dos destinos cada una, ninguna ruta sale de datos). Una prueba las ejecuta. */
+export const URL_COTEJAR_EXPR = `={{ $json.cuerpoAlias ? 'https://${ANFITRION_CONSOLA}/cotejarAliasArs' : 'https://${ANFITRION_CONSOLA}/cotejarComprobanteVenta' }}`;
+export const URL_AVISAR_EXPR = `={{ ($('Armar avisos').first().json.servidor || {}).ruta === 'pedirAliasArs' ? 'https://${ANFITRION_CONSOLA}/pedirAliasArs' : 'https://${ANFITRION_CONSOLA}/ingesta' }}`;
 const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', ANFITRION_CONSOLA];
 
 // ----------------------------------------------------------------- lectura y escritura sin seguir enlaces simbólicos
@@ -255,6 +258,8 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
     const m = /^=(?:(REEMPLAZAR_URL_CATALOGO)|https:\/\/([a-z0-9.-]+))\/api\/novuchat\/v1\/catalogo\?mercado=(.*)$/is.exec(url);
     return m !== null && m[3] === EXPRESION_MERCADO && (m[1] !== undefined || ANFITRIONES_TIENDA.includes(String(m[2]).toLowerCase()));
   }
+  if (nombreDelNodo === 'Cotejar en el servidor' && url === URL_COTEJAR_EXPR) return true;
+  if (nombreDelNodo === 'Avisar al servidor' && url === URL_AVISAR_EXPR) return true;
   const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
   if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
   return ANFITRIONES.includes(m[1].toLowerCase());
@@ -372,13 +377,13 @@ export function guardias(variante, flujo, opciones = {}) {
   const codigoAvisos = String(p(por('Armar avisos')).jsCode || '');
   if (hay('Armar avisos') && !(/bmResolver\(/.test(codigoAvisos) && /bmPlantilla\(/.test(codigoAvisos) && /avPlantilla\(/.test(codigoAvisos))) h.push('«Armar avisos» no lleva la decisión ni la plantilla: el aviso fuera de la ventana no saldría');
   const cotejar = por('Cotejar en el servidor');
-  if (cotejar && !/cotejarComprobanteVenta$/.test(String(p(cotejar).url || ''))) h.push('«Cotejar en el servidor» no llama a cotejarComprobanteVenta');
+  if (cotejar && !/cotejarComprobanteVenta$/.test(String(p(cotejar).url || '')) && String(p(cotejar).url || '') !== URL_COTEJAR_EXPR) h.push('«Cotejar en el servidor» no llama a cotejarComprobanteVenta');
   const modelo = por('Conversar con el modelo');
   if (modelo && !/^=?https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\//.test(String(p(modelo).url || ''))) h.push('«Conversar con el modelo» no llama a Gemini');
   const avisar = por('Avisar al servidor');
   if (avisar) {
     const cuerpo = String(p(avisar).jsonBody || '');
-    if (!/ingesta$/.test(String(p(avisar).url || '')) || p(avisar).method !== 'POST') h.push('«Avisar al servidor» no hace POST a la ingesta');
+    if ((!/ingesta$/.test(String(p(avisar).url || '')) && String(p(avisar).url || '') !== URL_AVISAR_EXPR) || p(avisar).method !== 'POST') h.push('«Avisar al servidor» no hace POST a la ingesta');
     if (!/evento: 'cobro_cancelado'/.test(cuerpo) || /evento: (?!'cobro_cancelado')/.test(cuerpo)) h.push('«Avisar al servidor»: el único evento permitido es `cobro_cancelado`');
     const opc = p(avisar).options || {};
     if (opc.timeout !== 8000 || !((opc.response || {}).response || {}).fullResponse || !((opc.response || {}).response || {}).neverError) h.push('«Avisar al servidor» tiene que llevar timeout 8000, fullResponse y neverError (la respuesta decide si se emite otro QR)');

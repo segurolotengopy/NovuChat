@@ -260,6 +260,11 @@ const BM_MOTIVOS_AVISO = {
   comprobante_ya_visto: 'el cliente envió otra vez un comprobante que ya estaba registrado',
   monto_invalido: 'el monto del pedido no se pudo calcular',
   atencion_humana: 'uso extendido: se le dijo que una persona continúa la conversación',
+  alias_vencido: 'el plazo del pago por alias venció (o el comprobante es de antes del pedido)',
+  alias_en_revision: 'el pago por alias quedó en revisión: revisa el comprobante a mano',
+  alias_problema: 'no se pudo abrir o comparar el pago por alias del pedido',
+  comprobante_sin_alias: 'envió un comprobante sin un pago por alias abierto',
+  alias_ok: 'pago por alias: el comprobante llegó y los datos coinciden con el pedido; revisa tu cuenta antes de entregar',
 };
 function bmAvisoConsulta(c, clave) {
   const f = c.ficha;
@@ -346,6 +351,104 @@ function bmResolverComprobante(c) {
   return d;
 }
 
+// -----------------------------------------------------------------------------
+// ARGENTINA: EL COBRO POR ALIAS (B9). Contratos del módulo Cobros (`pedirAliasArs`, `cotejarAliasArs`), códigos FIJOS; cada código tiene su frase fija.
+// Todo lo que vuelve del servidor es DATO NO CONFIABLE: se valida con listas cerradas y formas estrictas, y ante cualquier otra cosa el turno pasa con recepción.
+// `ok` significa que el comprobante llegó y que sus datos coinciden con el pedido: NUNCA «pago acreditado» ni «verificado» (prohibición 3): que la plata entró lo confirma el banco, y el negocio.
+// El `telefono` de los cuerpos sale de `messages[0].from` (`from`), jamás del modelo ni del texto del cliente.
+// -----------------------------------------------------------------------------
+const BM_ALIAS_RE = /^[A-Za-z0-9._-]{6,30}$/;
+const BM_TELEFONO_RE = /^[0-9]{8,15}$/;
+const BM_ID_META_RE = /^[A-Za-z0-9._=:+-]{1,120}$/;
+const BM_PEDIDO_ALIAS_RE = /^wa_[A-Za-z0-9_-]{1,60}$/;
+const BM_CODIGOS_COTEJO_ALIAS = ['ok', 'monto_distinto', 'alias_distinto', 'vencido', 'repetido', 'ilegible', 'en_revision'];
+function bmCuerpoPedirAlias(pedidoId, from) {
+  if (!BM_PEDIDO_ALIAS_RE.test(String(pedidoId || '')) || !BM_TELEFONO_RE.test(String(from || ''))) return null;
+  return { v: 1, pedidoId: String(pedidoId), telefono: String(from) };
+}
+function bmCuerpoCotejarAlias(pedidoId, from, idMeta, legible, leido) {
+  if (!BM_PEDIDO_ALIAS_RE.test(String(pedidoId || '')) || !BM_TELEFONO_RE.test(String(from || '')) || !BM_ID_META_RE.test(String(idMeta || ''))) return null;
+  const l = cbEsObjeto(leido) ? leido : {};
+  const monto = typeof l.monto === 'number' && Number.isFinite(l.monto) ? l.monto : String(l.monto === undefined || l.monto === null ? '' : l.monto);
+  return { v: 1, pedidoId: String(pedidoId), telefono: String(from), idMeta: String(idMeta), legible: legible === true,
+    leido: { monto: monto, alias: String(l.alias || ''), fecha: String(l.fecha || ''), hora: String(l.hora || ''), operacion: String(l.operacion || '') } };
+}
+// La respuesta de `pedirAliasArs` a un tipo cerrado: abierto (con alias, monto y vencimiento válidos), ok (ya coincide), vencido, en_revision, cerrado (409: el cobro por alias está apagado) o problema (todo lo demás).
+// La expresión de «¿Hay avisos?» (construir.mjs, EXPRESION_AVISO_ALIAS) repite esta decisión para saber si hay que avisar; una prueba las compara.
+function bmAliasPedirResultado(resp) {
+  const c = cbCuerpoDe(resp);
+  const b = c.cuerpo;
+  if (c.codigo === 200) {
+    if (b.estado === 'ok') return { tipo: 'ok' };
+    if (b.estado === 'vencido') return { tipo: 'vencido' };
+    if (b.estado === 'en_revision') return { tipo: 'en_revision' };
+    if (b.estado === 'abierto') {
+      const vence = typeof b.venceEn === 'string' ? Date.parse(b.venceEn) : NaN;
+      if (typeof b.alias === 'string' && BM_ALIAS_RE.test(b.alias) && Number.isSafeInteger(b.montoCentavos) && b.montoCentavos > 0 && b.montoCentavos % 100 === 0 && Number.isFinite(vence)) {
+        return { tipo: 'abierto', alias: b.alias, montoCentavos: b.montoCentavos, venceMs: vence };
+      }
+    }
+    return { tipo: 'problema' };
+  }
+  if (c.codigo === 409 && b.error === 'cerrado') return { tipo: 'cerrado' };
+  return { tipo: 'problema' };
+}
+// La respuesta de `cotejarAliasArs`: { codigo, montoLeidoCentavos }. Solo un 200 con un código de la lista; lo demás (409, 400, caída, cuerpo ilegible) es `sin_cotejo`.
+function bmAliasCotejoResultado(resp) {
+  const c = cbCuerpoDe(resp);
+  const cod = c.cuerpo.codigo;
+  if (c.codigo !== 200 || typeof cod !== 'string' || BM_CODIGOS_COTEJO_ALIAS.indexOf(cod) < 0) return { codigo: 'sin_cotejo', montoLeidoCentavos: null };
+  const m = c.cuerpo.montoLeidoCentavos;
+  return { codigo: cod, montoLeidoCentavos: cod === 'monto_distinto' && Number.isSafeInteger(m) && m > 0 ? m : null };
+}
+// «pagar» en Argentina con un pedido anotado: se pide el alias al servidor. El mensaje es de ESTE turno; la llamada la hace «Avisar al servidor» con `servidor` de «Armar avisos».
+function bmResolverAliasPedir(c) {
+  const f = c.ficha;
+  const cuerpo = bmCuerpoPedirAlias(f.aliasPedidoId, c.from);
+  if (!cuerpo) return Object.assign(bmDerivar(c, 'alias_problema'), { patch: { aliasEstado: 'fin' } });
+  // Antes de la llamada (así lo ve «Armar avisos»): se pide, y el aviso queda planeado SOLO para las salidas que transfieren (`avisoSi`).
+  if (c.aliasPedir === undefined) {
+    return { tipo: 'alias_pedir', aviso: bmAvisoConsulta(c, 'alias_problema'), avisoSi: 'pedir_fallo', servidor: { ruta: 'pedirAliasArs', cuerpo: cuerpo }, cancelarCobro: false };
+  }
+  const r = bmAliasPedirResultado(c.aliasPedir);
+  const fin = { aliasEstado: 'fin' };
+  if (r.tipo === 'abierto') {
+    const minutos = Math.max(1, Math.min(30, Math.ceil((r.venceMs - c.ahora) / 60000)));
+    const texto = 'Para pagar tu pedido de ' + vcMonto(r.montoCentavos, 'ARS') + ', transfiere a este alias:\n\n' + r.alias + '\n\nEl monto es exacto y tienes ' + minutos + ' minutos para transferir. Cuando lo hagas, envíame la foto del comprobante por este chat.';
+    return { tipo: 'alias_texto', texto: texto, aviso: null, avisoSi: 'pedir_fallo', patch: { aliasEstado: 'abierto', aliasVenceMs: r.venceMs, aliasMontoCent: r.montoCentavos, aliasAr: r.alias } };
+  }
+  if (r.tipo === 'ok') return { tipo: 'alias_texto', texto: 'Tu comprobante ya llegó y los datos coinciden con tu pedido. Recepción lo revisa en su cuenta.', aviso: null, avisoSi: 'pedir_fallo', patch: fin };
+  if (r.tipo === 'cerrado') return { tipo: 'alias_cerrado', aviso: null, avisoSi: 'pedir_fallo' };
+  if (r.tipo === 'vencido') return Object.assign(bmDerivar(c, 'alias_vencido'), { avisoSi: 'pedir_fallo', patch: fin });
+  if (r.tipo === 'en_revision') return Object.assign(bmDerivar(c, 'alias_en_revision'), { avisoSi: 'pedir_fallo', patch: fin });
+  return Object.assign(bmDerivar(c, 'alias_problema'), { avisoSi: 'pedir_fallo', patch: fin });
+}
+// El comprobante de Argentina, ya cotejado por el servidor (`cotejarAliasArs`) en el nodo «Cotejar en el servidor».
+function bmResolverComprobanteAlias(c) {
+  const f = c.ficha;
+  const r = cnNodo('Cotejar en el servidor') ? bmAliasCotejoResultado(cnPrimero('Cotejar en el servidor')) : { codigo: 'sin_cotejo', montoLeidoCentavos: null };
+  const fin = { aliasEstado: 'fin', comprobanteMs: c.ahora };
+  const pedido = f.aliasMontoCent > 0 ? vcMonto(f.aliasMontoCent, 'ARS') : '';
+  if (r.codigo === 'ok') {
+    const aviso = bmAvisoConsulta(c, 'alias_ok');
+    aviso.repetido = false; // el aviso del pago NO se calla por la ventana de las consultas: el servidor ya garantiza que llega una sola vez por cobro
+    aviso.motivo = 'pago por alias: el comprobante llegó y los datos coinciden con el pedido' + (pedido ? ' (' + pedido + ')' : '') + '; revisa tu cuenta';
+    return { tipo: 'comprobante', resultado: 'cuadra', diferencia: '', totalTexto: pedido, aviso: aviso, patch: fin };
+  }
+  if (r.codigo === 'monto_distinto') {
+    const dif = r.montoLeidoCentavos !== null ? 'el comprobante dice ' + vcMonto(r.montoLeidoCentavos, 'ARS') + (pedido ? ' y tu pedido es de ' + pedido : '') : 'el monto no coincide con el de tu pedido' + (pedido ? ' (' + pedido + ')' : '');
+    return { tipo: 'comprobante_pedir', resultado: 'reintentar', diferencia: dif, totalTexto: pedido, aviso: null, patch: {} };
+  }
+  if (r.codigo === 'alias_distinto') {
+    return { tipo: 'comprobante_pedir', resultado: 'reintentar', diferencia: 'el comprobante no muestra el alias al que debías transferir' + (f.aliasAr ? ' (' + f.aliasAr + ')' : ''), totalTexto: pedido, aviso: null, patch: {} };
+  }
+  if (r.codigo === 'ilegible') return { tipo: 'comprobante_pedir', resultado: 'ilegible', diferencia: '', totalTexto: pedido, aviso: null, patch: {} };
+  if (r.codigo === 'repetido') return Object.assign(bmDerivar(c, 'comprobante_ya_visto'), { patch: {} });
+  if (r.codigo === 'vencido') return Object.assign(bmDerivar(c, 'alias_vencido'), { patch: fin });
+  if (r.codigo === 'en_revision') return Object.assign(bmDerivar(c, 'alias_en_revision'), { patch: fin });
+  return Object.assign(bmDerivar(c, 'comprobante_sin_cotejo'), { patch: fin });
+}
+
 function bmResolverModelo(c) {
   const f = c.ficha;
   const p = c.plan;
@@ -400,6 +503,8 @@ function bmResolver(c) {
   if (p.tipo === 'modelo' && c.catalogo && c.catalogo.ok === false) { const d = bmDerivar(c, 'sin_configuracion'); d.alertaCatalogo = c.catalogo.alerta === true; d.motivoCatalogo = c.catalogo.motivo; return d; }
   if (p.tipo === 'derivar') return bmDerivar(c, p.motivo);
   if (p.tipo === 'comprobante') return bmResolverComprobante(c);
+  if (p.tipo === 'comprobante_alias') return bmResolverComprobanteAlias(c);
+  if (p.tipo === 'alias_pedir') return bmResolverAliasPedir(c);
   if (p.tipo === 'modelo') return bmResolverModelo(c);
   return Object.assign({ aviso: null }, p);
 }

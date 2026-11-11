@@ -116,6 +116,17 @@ if [[ $ETAPA_PRUEBA -eq 1 && ( $CREAR -eq 1 || $ACTIVAR -eq 1 || $APAGAR -eq 1 )
   echo "✗ --etapa-prueba va con --encender o con la actualización en su lugar (--aplicar), nunca con --crear, --activar ni --apagar." >&2; exit 2
 fi
 
+# --- EL ENSAYO DEL CHAT DE NOVUCHAT NUNCA SE PUBLICA AQUI ---------------------
+# `chat-novuchat.ensayo-demo-a[.local].json` lleva credenciales y marcadores del
+# ensayo en el Demo A (hoja de PRUEBA): solo lo pone `flujo-de-prueba.mjs
+# --sobre-demo-a --conservar-crm`, con respaldo y vuelta atras. Publicarlo como
+# flujo de un cliente dejaria un flujo vivo apuntando a la hoja de prueba.
+case "$(basename "$FLUJO")" in
+  chat-novuchat.ensayo-demo-a*.json)
+    echo "✗ NEGADO: $(basename "$FLUJO") es el ensayo del chat en el Demo A y no se publica con publicar-flujo.sh (usa flujo-de-prueba.mjs --sobre-demo-a --conservar-crm; docs/ensayo/LEEME.md §11)." >&2
+    exit 2 ;;
+esac
+
 # Si existe el archivo preparado (con los valores reales ya puestos por
 # preparar-import.sh), se usa ESE y no el versionado. Empujar el versionado
 # escribiria los marcadores REEMPLAZAR_* encima de la configuracion real.

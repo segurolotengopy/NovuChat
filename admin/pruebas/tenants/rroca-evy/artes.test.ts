@@ -63,6 +63,23 @@ describe('solo las tres permitidas envían imagen, una vez por imagen y por conv
     // otro teléfono tiene su propia ficha
     expect(imagenes(hablar(m, BETO, mTexto(PIDE_VER))).length).toBe(1);
   });
+  // Humo del 09/11/2026, paso 12: «Quiero ver cómo queda» sin etiqueta del modelo no mandó la imagen; llegó un turno tarde. La decide el CÓDIGO por el texto del cliente, una sola vez por ficha.
+  it('«quiero ver cómo queda» envía el Antes y Después aunque el modelo NO emita la etiqueta, y solo una vez', () => {
+    for (const pide of ['Quiero ver cómo queda', 'quiero ver como queda?', 'Quiero ver resultados', 'Me muestras el antes y después']) {
+      const m = crear({ modeloDice: dice('¡Claro que sí! Cada rostro responde distinto y no prometemos un resultado idéntico. ¿Cómo te llamas?') });
+      const t = hablar(m, ANA, mTexto(pide));
+      expect(imagenes(t)).toEqual([IDS.antes_despues]);
+      expect(t.mensajes.length).toBe(1);             // la imagen es un envío aparte (como con la etiqueta); 0 mensajes de texto agregados
+      expect(imagenes(hablar(m, ANA, mTexto('Quiero ver cómo queda'))).length).toBe(0);
+      expect(imagenes(hablar(m, ANA, mTexto('mándame el antes y después otra vez'))).length).toBe(0);
+    }
+  });
+  it('NIEGA: lo que no pide ver resultados no dispara la imagen', () => {
+    for (const no of ['Hola', '¿Cuánto cuesta?', 'Estoy embarazada, ¿puedo?', '¿Dónde están ubicados?', 'Quiero agendar']) {
+      const m = crear({ modeloDice: dice('Cuéntame, ¿cómo te llamas?') });
+      expect(imagenes(hablar(m, ANA, mTexto(no)))).toEqual([]);
+    }
+  });
   it('a las 48 h la ficha se olvida y la imagen puede volver a enviarse', () => {
     const m = crear({ modeloDice: dice('[ENVIAR_ARTE_AUTORIDAD] La Dra. Evy es aplicadora certificada.') });
     expect(imagenes(hablar(m, ANA, mTexto(PIDE_QUIEN))).length).toBe(1);
