@@ -57,6 +57,11 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = resolve(AQUI, '..', '..', '..');
 // `TENANTS` (solo los rroca-*) lo importan también `vaciar-hoja-crm` y `vaciar-chats-tenant` como salvaguarda: vaciar la hoja de Q'Taco NO debe aceptarse. Q'Taco entra únicamente al relleno.
 export const TENANTS = Object.freeze(['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio']);
+/**
+ * Los comercios cuya hoja se puede rellenar. Q'Taco (`qtaco`, restaurante con `venta-minima`) usa la MISMA hoja `Leads_CRM` que los rroca (A..U, encabezados en
+ * la fila 3). `TENANTS` NO cambia: lo importan `vaciar-chats-tenant` y `vaciar-hoja-crm`, y agregar un comercio ahí le daría a esas herramientas permiso para
+ * borrar sus chats y su hoja. Rellenar es solo agregar filas nuevas; vaciar es destruir: dos listas, dos decisiones.
+ */
 export const TENANTS_RELLENO = Object.freeze([...TENANTS, 'qtaco']);
 // Los rroca-* leen su mapa de `admin/scripts/datos/<t>/<t>.json`; Q'Taco lo trae en el JSON de datos de su flujo (`venta-minima/qtaco-3727.json`, clave `crm`).
 const MAPA_PROPIO = Object.freeze({ qtaco: ['admin', 'scripts', 'datos', 'venta-minima', 'qtaco-3727.json'] });

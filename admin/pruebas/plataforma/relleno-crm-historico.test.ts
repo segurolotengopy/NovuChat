@@ -17,6 +17,7 @@ type Cfg = Record<string, unknown>;
 type Fila = string[];
 const mod = await import('../../scripts/plataforma/relleno-crm-historico.mjs') as unknown as {
   TENANTS: readonly string[];
+  TENANTS_RELLENO: readonly string[];
   analizarArgumentos: (argv: string[], env?: Record<string, string>, op?: Record<string, unknown>) => { ok: boolean; problemas?: string[]; cfg?: Cfg };
   leerMapa: (t: string) => Record<string, any>;
   construirFilas: (a: { conversaciones: any[]; hoja: { telefonos: string[]; ids: string[]; ultimaFila: number }; mapa: Record<string, any> }) =>
@@ -54,12 +55,12 @@ const ENCABEZADOS = (m: Record<string, any>): string[] => {
 describe('B1. argumentos y salvaguarda', () => {
   const base = ['--proyecto', PROY, '--tenant', 'rroca-ruben'];
   const problemas = (argv: string[], env: Record<string, string> = ENV) => { const r = mod.analizarArgumentos(argv, env); expect(r.ok, JSON.stringify(r)).toBe(false); return (r.problemas ?? []).join(' | '); };
-  it('la invocación completa es válida y queda en seco; los cuatro comercios valen', () => {
+  it('la invocación completa es válida y queda en seco; los cinco comercios valen (cuatro rroca y qtaco)', () => {
     for (const t of ['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio', 'qtaco']) expect(mod.analizarArgumentos(['--proyecto', PROY, '--tenant', t], ENV).ok, t).toBe(true);
     expect(mod.analizarArgumentos(base, ENV).cfg).toMatchObject({ aplicar: false, revertir: false, entorno: 'emulador' });
   });
   it('NEGADO: otro comercio (Bellido, el chat), varios a la vez o sin tenant', () => {
-    for (const t of ['bellido', 'novuchat', 'rroca-evy,qtaco', 'rroca-evy,rroca-emma', 'todos', '__proto__']) expect(problemas(['--proyecto', PROY, '--tenant', t]), t).toContain('tiene que ser uno de');
+    for (const t of ['bellido', 'qtaco2', 'novuchat', 'rroca-evy,qtaco', 'rroca-evy,rroca-emma', 'todos', '__proto__']) expect(problemas(['--proyecto', PROY, '--tenant', t]), t).toContain('tiene que ser uno de');
     expect(problemas(['--proyecto', PROY])).toContain('falta --tenant');
   });
   it('NEGADO: sin SHEET_ID o con uno malformado, sin ENV_FILE', () => {
@@ -85,8 +86,16 @@ describe('B1. argumentos y salvaguarda', () => {
   });
 });
 
+describe('B1b. Q\'Taco se rellena, pero NO se vacía', () => {
+  it('TENANTS (la lista de las herramientas que BORRAN chats y hoja) no incluye a qtaco; TENANTS_RELLENO sí', () => {
+    expect(mod.TENANTS).not.toContain('qtaco');
+    expect(mod.TENANTS_RELLENO).toContain('qtaco');
+    expect(mod.TENANTS_RELLENO.filter((t) => !mod.TENANTS.includes(t))).toEqual(['qtaco']);
+  });
+});
+
 describe('B2. las filas (vocabulario cerrado, sin duplicar)', () => {
-  for (const t of ['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio']) {
+  for (const t of ['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio', 'qtaco']) {
     it(`${t}: una fila por contacto, solo los campos que existen; J..M y U vacías; ningún texto libre`, () => {
       const mapa = mapaDe(t);
       const r = mod.construirFilas({ conversaciones: [conv(1, { origen: 'anuncio' }), conv(2)], hoja: { telefonos: [], ids: [], ultimaFila: 3 }, mapa });
@@ -268,7 +277,7 @@ describe('B3c. NEGADO: la hoja no es la esperada o cambió durante la escritura 
 
 describe('B3d. formato y filas de las hojas rellenadas (04/11: fondo oscuro, fechas como número, filas desplazadas)', () => {
   const fuente = readFileSync(new URL('../../scripts/plataforma/relleno-crm-historico.mjs', import.meta.url), 'utf8');
-  for (const t of ['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio']) {
+  for (const t of ['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio', 'qtaco']) {
     it(`${t}: el formato sale de la primera fila de datos, solo A..T (jamás la U), sobre las filas nuevas y con listas y formatos condicionales`, () => {
       const mapa = mapaDe(t);
       const p = mod.pedidoDeFormato({ mapa, filaDesde: 10, cantidad: 3 });
