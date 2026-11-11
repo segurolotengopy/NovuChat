@@ -434,7 +434,14 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
   // Cuelga de «Reportar mensaje (entrante)», junto a la rama que responde, y va DEBAJO de ella (corre después).
   const hijos = destinosDe(flujo, ANCLA_DEL_GUARDADO, 0);
   if (!hijos.includes('Preparar guardado')) h.push('guardado: «Preparar guardado» no cuelga de «Reportar mensaje (entrante)»');
-  const otros = hijos.filter((x) => x !== 'Preparar guardado');
+  // Dos formas válidas: la ancla SIGUE hacia la rama que responde (la común), o es una hoja HERMANA de ella (Demo B: «Normalizar entrada» alimenta a la vez a la
+  // ancla y a la rama que responde, y la ancla solo tiene la rama del guardado). En la forma hermana la rama que responde se busca entre los destinos de quienes
+  // alimentan a la ancla; el guardado sigue colgando de la ancla (el servidor exige el entrante YA registrado) y debajo de todo.
+  const otrosDirectos = hijos.filter((x) => x !== 'Preparar guardado');
+  const padres = nodos.filter((n) => [0, 1].some((i) => destinosDe(flujo, n.name, i).includes(ANCLA_DEL_GUARDADO))).map((n) => n.name);
+  const hermanas = [...new Set(padres.flatMap((p) => [0, 1].flatMap((i) => destinosDe(flujo, p, i))))].filter((x) => x !== ANCLA_DEL_GUARDADO && !NODOS_DEL_GUARDADO.includes(x));
+  // La forma hermana solo vale si el llamador la declara (`opciones.hermana`): por defecto la ancla TIENE que seguir hacia la rama que responde.
+  const otros = otrosDirectos.length ? otrosDirectos : (opciones && opciones.hermana ? hermanas : []);
   if (!otros.length) h.push('guardado: «Reportar mensaje (entrante)» no sigue hacia la rama que responde');
   const prep = por('Preparar guardado');
   for (const otro of otros) {
