@@ -16,24 +16,28 @@ const esGmail = VG.vgEsGmail as F;
 describe('vgExtraerGmail', () => {
   it('acepta un Gmail, con mayúsculas y punto final, o dentro de una frase', () => {
     expect(extraer('Juan.Perez@Gmail.com.')).toEqual({ resultado: 'recibido', correo: 'juan.perez@gmail.com' });
-    expect(extraer('mi correo es juan@gmail.com')).toEqual({ resultado: 'recibido', correo: 'juan@gmail.com' });
-    expect(extraer('<juan@gmail.com>, gracias!')).toEqual({ resultado: 'recibido', correo: 'juan@gmail.com' });
+    expect(extraer('mi correo es juanito@gmail.com')).toEqual({ resultado: 'recibido', correo: 'juanito@gmail.com' });
+    expect(extraer('*juan.perez@gmail.com*')).toEqual({ resultado: 'recibido', correo: 'juan.perez@gmail.com' });
+    expect(extraer('~_juan.perez@gmail.com_~')).toEqual({ resultado: 'recibido', correo: 'juan.perez@gmail.com' });
+    expect(extraer('¡juan.perez@gmail.com¡')).toEqual({ resultado: 'recibido', correo: 'juan.perez@gmail.com' });
+    expect(extraer('¿juan.perez@gmail.com?')).toEqual({ resultado: 'recibido', correo: 'juan.perez@gmail.com' });
+    expect(extraer('<juanito@gmail.com>, gracias!')).toEqual({ resultado: 'recibido', correo: 'juanito@gmail.com' });
   });
   it('el mismo correo repetido cuenta uno; la arroba de ancho completo se normaliza', () => {
-    expect(extraer('juan@gmail.com o JUAN@gmail.com')).toEqual({ resultado: 'recibido', correo: 'juan@gmail.com' });
-    expect(extraer('juan＠gmail.com')).toEqual({ resultado: 'recibido', correo: 'juan@gmail.com' });
+    expect(extraer('juanito@gmail.com o JUANITO@gmail.com')).toEqual({ resultado: 'recibido', correo: 'juanito@gmail.com' });
+    expect(extraer('juanito＠gmail.com')).toEqual({ resultado: 'recibido', correo: 'juanito@gmail.com' });
   });
   it('otro dominio (incluidos los parecidos) es no_gmail y no devuelve correo', () => {
     for (const c of ['a@hotmail.com', 'a@googlemail.com', 'a@gmail.co', 'a@gmial.com', 'a@gmail.com.bo', 'a@mail.gmail.com']) expect(extraer(c)).toEqual({ resultado: 'no_gmail', correo: '' });
   });
   it('una parte local inválida o sin correo es mal_formado', () => {
-    for (const c of ['a..b@gmail.com', '.a@gmail.com', 'a.@gmail.com', 'ñandu@gmail.com', 'a+b@gmail.com', '@gmail.com', 'juan@', 'sin arroba', '', 'a@gmail.com'.replace('a', 'x'.repeat(31))]) {
+    for (const c of ['a..b@gmail.com', '.a@gmail.com', 'a.@gmail.com', 'ñandu@gmail.com', 'a+b@gmail.com', '@gmail.com', 'juanito@', 'juanito@gmail .com', 'abc@gmail.com', 'a_b_cde@gmail.com', 'sin arroba', '', 'x'.repeat(31) + '@gmail.com']) {
       expect(extraer(c)).toEqual({ resultado: 'mal_formado', correo: '' });
     }
   });
   it('más de un correo distinto es varios', () => {
-    expect(extraer('juan@gmail.com y ana@gmail.com')).toEqual({ resultado: 'varios', correo: '' });
-    expect(extraer('juan@gmail.com y ana@hotmail.com')).toEqual({ resultado: 'varios', correo: '' });
+    expect(extraer('juanito@gmail.com y anabel@gmail.com')).toEqual({ resultado: 'varios', correo: '' });
+    expect(extraer('juanito@gmail.com y anabel@hotmail.com')).toEqual({ resultado: 'varios', correo: '' });
   });
   it('un valor que no es texto no lanza', () => {
     expect(extraer(undefined)).toEqual({ resultado: 'mal_formado', correo: '' });
@@ -43,7 +47,7 @@ describe('vgExtraerGmail', () => {
 
 describe('vgEsGmail', () => {
   it('solo un Gmail ya normalizado y bien formado', () => {
-    expect(esGmail('juan@gmail.com')).toBe(true);
-    for (const c of ['JUAN@gmail.com', 'juan@hotmail.com', 'a..b@gmail.com', 'a+b@gmail.com', '', 'a@b@gmail.com', 42, null, undefined]) expect(esGmail(c)).toBe(false);
+    expect(esGmail('juanito@gmail.com')).toBe(true);
+    for (const c of ['JUANITO@gmail.com', 'juanito@hotmail.com', 'a..bcdef@gmail.com', 'abcdef+b@gmail.com', 'abc@gmail.com', '', 'a@b@gmail.com', 42, null, undefined]) expect(esGmail(c)).toBe(false);
   });
 });
