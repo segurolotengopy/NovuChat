@@ -676,7 +676,7 @@ conviene cargarlos en el Environment `production`, no a nivel repositorio.
 | `GCP_WIF_PROVIDER` | `projects/<NUM>/locations/global/workloadIdentityPools/github/providers/novuchat` | `<NUM>` es el número de proyecto del punto 1.1 |
 | `GCP_SA_DEPLOY_DEV` | `sa-deploy-dev@novuchat-admin-dev.iam.gserviceaccount.com` | punto 2.2 |
 | `GCP_SA_DEPLOY_STAGING` | igual que el de dev si comparten proyecto | punto 2.2 |
-| `GCP_SA_DEPLOY_PROD` | `sa-deploy-prod@novuchat-demo.iam.gserviceaccount.com` | punto 2.2, en el Environment `production` |
+| `GCP_SA_DEPLOY_PROD` | (verificar en la consola de IAM) | punto 2.2, en el Environment `production` |
 | `GITLEAKS_LICENSE` | opcional; vacío en cuentas personales | gitleaks.io |
 | `RELEASE_TOKEN` | opcional; PAT fine-grained con `contents:write` | solo si quiere que el tag de `release.yml` dispare los `ci-*` |
 
