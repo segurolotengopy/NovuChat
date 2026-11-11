@@ -117,6 +117,26 @@ describe('MEDIUM de seguridad: embarazo, lactancia, medicamentos y «seguro» si
       expect(t).toMatch(/valoración/);
     });
   }
+  // Humo del 11/11/2026, paso 11 (de la otra doctora; mismo código en Emma): «durante el embarazo o la lactancia no realizamos este tipo de tratamientos… la Dra. podrá evaluar tu rostro en una valoración» salía tal cual porque evNorm quita la puntuación (la barrera veía UNA oración) y «no realizamos» no estaba en la lista.
+  const NO_REALIZAMOS = 'Te cuento con total franqueza: durante el embarazo o la lactancia no realizamos este tipo de tratamientos como medida de precaución.\n\nLo más responsable es esperar. Cuando llegue el momento, la Dra. Emma podrá evaluar tu rostro en una valoración gratuita.';
+  it('NIEGA (humo 11/11): «no realizamos este tipo de tratamientos» cae al texto fijo con el botón', () => {
+    const t = hablar(crear({ modeloDice: dice(NO_REALIZAMOS) }), ANA, mTexto('Estoy embarazada. Puedo hacerme el tratamiento?'));
+    expect(textos(t)[0]).toMatch(/Eso lo evalúa la Dra\. Emma en persona/);
+    expect(textos(t)[0]).not.toMatch(/no realizamos|esperar/i);
+    expect(t.mensajes.length).toBe(1);
+    expect(t.mensajes[0]!.tipo).toBe('interactive');
+  });
+  for (const [q, modelo] of [
+    ['Estoy embarazada, ¿puedo hacérmelo?', 'Lo mejor es esperar a que termine el embarazo; luego la Dra. Emma te recibe en una valoración gratuita.'],
+    ['Estoy amamantando, ¿se puede?', 'En lactancia no hacemos este tratamiento. La Dra. Emma te explica en la valoración.'],
+    ['Soy diabética, ¿puedo?', 'Sí puedes, la Dra. Emma te recibe en la valoración gratuita.'],
+  ] as [string, string][]) {
+    it(`EN CÓDIGO, con la condición en el mensaje del cliente: «${q}» no sale si el modelo afirma o niega, aunque nombre la valoración`, () => {
+      const t = hablar(crear({ modeloDice: dice(modelo) }), ANA, mTexto(q));
+      expect(textos(t)[0]).toMatch(/Eso lo evalúa la Dra\. Emma en persona/);
+      expect(t.mensajes[0]!.tipo).toBe('interactive');
+    });
+  }
   it('con remisión pero dando luz verde sigue rechazada', () => {
     expect(fallo(sale('Con diabetes no hay problema, puedes hacértelo. La valoración es gratuita.'))).toBe(true);
   });
