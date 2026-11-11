@@ -33,28 +33,52 @@
 #   ./scripts/ensayo-flujo.sh --restaurar [--aplicar]      # el Demo A vuelve a ser el Demo A
 #
 # --env: el entorno del número de ensayo (por defecto .env, el del Demo A).
+#
+# --demo a|b (por defecto a; 10/11/2026): el DEMO DE DESTINO. Sin la opción todo
+# es como siempre. Con `--demo b` el ensayo va sobre el Demo B, el segundo
+# número de ensayo: entorno `.env.demo-b`, nombre y credenciales del Demo B
+# VIVO, el phone id del cliente pasa a `REEMPLAZAR_PHONE_NUMBER_ID_B`, y
+# `--restaurar` republica `Flujos/demo-b-venta-cobro.json`. Cerrojos propios:
+#   - `--demo b` con el entorno del Demo A (o al revés) se niega antes de leer nada;
+#   - el flujo vivo del entorno tiene que llamarse como el JSON de ESE demo;
+#   - ninguna credencial que sea solo del otro demo puede quedar en el flujo.
+# El Demo B no tiene Google Calendar: un cliente de agenda no pasa el cerrojo
+# de credenciales y no se ensaya ahí con este script.
 # Se corre desde la carpeta que tiene los .env y CONFIGURACION.local.md.
 # =============================================================================
 set -euo pipefail
 
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$AQUI/.." && pwd)"
-CLIENTE=""; FLUJO=""; ENV_FILE=".env"; APLICAR=""; RESTAURAR=0
-DEMO="$REPO/Flujos/demo-a-agendamiento.json"
+CLIENTE=""; FLUJO=""; ENV_FILE=""; APLICAR=""; RESTAURAR=0; LETRA="a"
 while [ $# -gt 0 ]; do
   case "$1" in
     --cliente)   CLIENTE="$2"; shift 2 ;;
     --flujo)     FLUJO="$2"; shift 2 ;;
     --env)       ENV_FILE="$2"; shift 2 ;;
+    --demo)      LETRA="$2"; shift 2 ;;
     --aplicar)   APLICAR="--aplicar"; shift ;;
     --restaurar) RESTAURAR=1; shift ;;
     *) echo "Argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
+# El demo de destino: su JSON versionado, su entorno por defecto, el marcador de
+# su phone id y las credenciales que son SOLO del otro demo (separadas por «|»).
+case "$LETRA" in
+  a) ETIQUETA="Demo A"; DEMO="$REPO/Flujos/demo-a-agendamiento.json"; ENV_DEFECTO=".env"
+     MARCA_PHONE="REEMPLAZAR_PHONE_NUMBER_ID"; ENV_AJENO=".env.demo-b"
+     AJENAS="Cierres NovuChat B (auto)|WhatsApp account 2|WhatsApp OAuth account 2" ;;
+  b) ETIQUETA="Demo B"; DEMO="$REPO/Flujos/demo-b-venta-cobro.json"; ENV_DEFECTO=".env.demo-b"
+     MARCA_PHONE="REEMPLAZAR_PHONE_NUMBER_ID_B"; ENV_AJENO=".env"
+     AJENAS="Cierres NovuChat A (auto)|WhatsApp account|WhatsApp OAuth account|Google Calendar account" ;;
+  *) echo "✗ --demo es a o b" >&2; exit 2 ;;
+esac
+ENV_FILE="${ENV_FILE:-$ENV_DEFECTO}"
+[ "$(basename "$ENV_FILE")" != "$ENV_AJENO" ] || { echo "✗ $ENV_FILE es el entorno del otro demo: con --demo $LETRA no se usa. No se hizo nada." >&2; exit 2; }
 [ -f "$ENV_FILE" ] || { echo "✗ Falta $ENV_FILE (corra desde la carpeta de los .env)" >&2; exit 2; }
 
 if [ "$RESTAURAR" = 1 ]; then
-  echo "Restaurar el Demo A desde el JSON versionado (${DEMO#"$REPO"/})."
+  echo "Restaurar el $ETIQUETA desde el JSON versionado (${DEMO#"$REPO"/})."
   "$AQUI/preparar-import.sh" "$DEMO" "$ENV_FILE"
   exec "$AQUI/publicar-flujo.sh" --env "$ENV_FILE" --flujo "${DEMO%.json}.local.json" $APLICAR
 fi
@@ -67,11 +91,13 @@ SALIDA="$REPO/Flujos/ensayo-${minus}.json"
 # Del entorno del número de ensayo solo se leen estas tres claves, por nombre.
 valor() { grep -E "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' || true; }
 N8N_BASE_URL=$(valor N8N_BASE_URL) N8N_API_KEY=$(valor N8N_API_KEY) N8N_WORKFLOW_ID=$(valor N8N_WORKFLOW_ID) \
-CLIENTE="$CLIENTE" FLUJO="$FLUJO" DEMO="$DEMO" SALIDA="$SALIDA" python3 - <<'PY'
+CLIENTE="$CLIENTE" FLUJO="$FLUJO" DEMO="$DEMO" SALIDA="$SALIDA" ETIQUETA="$ETIQUETA" MARCA_PHONE="$MARCA_PHONE" AJENAS="$AJENAS" python3 - <<'PY'
 import json, os, re, sys, urllib.request
 c = os.environ["CLIENTE"]
 flujo = json.load(open(os.environ["FLUJO"], encoding="utf-8"))
 demo = json.load(open(os.environ["DEMO"], encoding="utf-8"))
+# El demo de destino (--demo): «Demo A» o «Demo B», el marcador de su phone id y las credenciales que son solo del otro demo.
+E, MARCA_PHONE, AJENAS = os.environ["ETIQUETA"], os.environ["MARCA_PHONE"], set(os.environ["AJENAS"].split("|"))
 R, V, FIN = "\033[1;31m", "\033[1;32m", "\033[0m"
 
 # Credenciales: cada nodo con credencial tiene que existir en el Demo A VIVO
@@ -82,14 +108,18 @@ req = urllib.request.Request(os.environ["N8N_BASE_URL"].rstrip("/") + "/api/v1/w
 try:
     vivo = json.load(urllib.request.urlopen(req, timeout=30))
 except Exception as e:
-    print(f"{R}✗ No se pudo leer el Demo A vivo en n8n: {e}{FIN}"); sys.exit(1)
+    print(f"{R}✗ No se pudo leer el {E} vivo en n8n: {e}{FIN}"); sys.exit(1)
 if vivo.get("name") != demo["name"]:
-    print(f"{R}✗ El flujo vivo de este entorno no es el Demo A («{vivo.get('name')}»). No se generó nada.{FIN}"); sys.exit(1)
+    print(f"{R}✗ El flujo vivo de este entorno no es el {E} («{vivo.get('name')}»). No se generó nada.{FIN}"); sys.exit(1)
+# Ninguna credencial del flujo vivo puede ser del OTRO demo: de ahí salen todas las del ensayo, la del disparador incluida.
+ajenas_vivas = sorted({cr.get("name", "") for n in vivo["nodes"] for cr in (n.get("credentials") or {}).values()} & AJENAS)
+if ajenas_vivas:
+    print(f"{R}✗ El flujo vivo usa credenciales que no son del {E}: {', '.join(ajenas_vivas)}. No se generó nada.{FIN}"); sys.exit(1)
 cred_demo = {n["name"]: (n.get("credentials") or {}) for n in vivo["nodes"]}
 malos = [f"{n['name']} ({', '.join(n['credentials'])})" for n in flujo["nodes"]
          if n.get("credentials") and not set(n["credentials"]) <= set(cred_demo.get(n["name"], {}))]
 if malos:
-    print(f"{R}✗ Estos nodos del cliente usan credenciales que el Demo A no tiene en ese nodo:{FIN}")
+    print(f"{R}✗ Estos nodos del cliente usan credenciales que el {E} no tiene en ese nodo:{FIN}")
     for m in malos: print(f"    {m}")
     print("  publicar-flujo.sh los completaría POR TIPO, y un envío a Meta podría quedar con la")
     print("  credencial de ingesta. Para ensayar este cliente hace falta darle a esos nodos una")
@@ -112,7 +142,7 @@ for n in flujo["nodes"]:
     for t, cr in (n.get("credentials") or {}).items():
         propias.add(cr.get("name", ""))
 texto = json.dumps(flujo, ensure_ascii=False)
-texto = texto.replace(f"REEMPLAZAR_PHONE_NUMBER_ID_{c}", "REEMPLAZAR_PHONE_NUMBER_ID")
+texto = texto.replace(f"REEMPLAZAR_PHONE_NUMBER_ID_{c}", MARCA_PHONE)
 texto = re.sub(rf"REEMPLAZAR_NUMERO_[A-Z_]*?_{c}\b", "REEMPLAZAR_NUMERO_RECEPCION_ENSAYO", texto)
 texto = re.sub(rf"REEMPLAZAR_CALENDARIO_{c}_([0-9]+)", r"REEMPLAZAR_CALENDARIO_ENSAYO_\1", texto)
 restos = sorted(set(m for m in re.findall(rf"REEMPLAZAR_[A-Z0-9_]*{c}[A-Z0-9_]*", texto)
@@ -125,9 +155,9 @@ salida["name"] = demo["name"]
 json.dump(salida, open(os.environ["SALIDA"], "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 usados = sorted(set(re.findall(r"REEMPLAZAR_[A-Z0-9_]+", texto)))
 print(f"{V}✓{FIN} Flujo de ensayo generado desde {os.environ['FLUJO']} ({len(salida['nodes'])} nodos), "
-      f"con el nombre del Demo A.")
+      f"con el nombre del {E}.")
 print(f"  Marcadores: {', '.join(usados)}")
-print(f"  Credenciales: las del Demo A vivo en {cambiadas} nodos: {', '.join(sorted(x for x in propias if x))}")
+print(f"  Credenciales: las del {E} vivo en {cambiadas} nodos: {', '.join(sorted(x for x in propias if x))}")
 PY
 
 "$AQUI/preparar-import.sh" "$SALIDA" "$ENV_FILE"
