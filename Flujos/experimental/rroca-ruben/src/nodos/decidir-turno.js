@@ -134,7 +134,8 @@ if (rrPideBaja(textoCliente)) return salir({ tipo: 'baja', cat: cat });
 const gCandidato = /[^\s@<>()\[\],;:"'«»]+@[^\s@<>()\[\],;:"'«»]+/g;
 const gResto = rrNorm(String(t.texto || '').replace(gCandidato, ' '));
 const gEsElCorreo = gResto.split(' ').filter((x) => x !== '').length <= 6
-  && !/\b(no (me )?(llego|lleg\w*|ha llegado|recibi|funciona)|todavia no|aun no|nunca|reclam\w*|queja|estafa|devol\w*|reembols\w*|cancel\w*|anul\w*|factura|garantia|problema|ayuda|hablar|persona|humano|ruben|pago|pague|plata|dinero|cobro|transferencia|comprobante|precio|cuanto)\b/.test(gResto);
+  && !/\b(no (me )?(llego|lleg\w*|ha llegado|recibi|funciona)|todavia no|aun no|nunca|reclam\w*|queja|estafa|devol\w*|reembols\w*|cancel\w*|anul\w*|factura|garantia|problema|ayuda|hablar|persona|humano|ruben|pago|pague|plata|dinero|cobro|transferencia|comprobante|precio|cuanto|denunci\w*)\b/.test(gResto)
+  && !rrDerivacion(gResto, { comprobante: true, qrAbierto: hayQrAbierto }) && !rrHablaDelCobro(gResto) && !rrCancelaPedido(gResto);
 if (t.tipo === 'text' && ficha.gmailPedidoMs > 0 && ficha.gmail === '' && String(t.texto || '').indexOf('@') >= 0 && gEsElCorreo) {
   const g = vgExtraerGmail(String(t.texto || ''));
   textoDelTurno = '';

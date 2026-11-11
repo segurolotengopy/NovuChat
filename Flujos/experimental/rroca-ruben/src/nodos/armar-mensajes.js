@@ -274,9 +274,9 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     if (plan.resultado === 'recibido') {
       if (avisoSalio === true) { m = texto('Gracias. Le pasé tu correo a Rubén para que te envíe el enlace.'); gmailGuardado = String(plan.correo || ''); }
       else m = conRuben('Recibí tu correo, pero no pude pasárselo a Rubén. Escríbele directo con el botón.');
-    } else if (plan.resultado === 'no_gmail') m = texto('Ese correo no es de Gmail. Necesito un correo que termine en @gmail.com. ¿Me lo escribes?');
-    else if (plan.resultado === 'varios') m = texto('Veo más de un correo. Escríbeme solo uno, el de Gmail (termina en @gmail.com).');
-    else m = texto('No pude leer bien ese correo. Escríbemelo de nuevo: tiene que terminar en @gmail.com.');
+    } else if (plan.resultado === 'no_gmail') m = conRuben('Ese correo no es de Gmail. Necesito un correo que termine en @gmail.com. ¿Me lo escribes? Si prefieres, escríbele a Rubén con el botón.');
+    else if (plan.resultado === 'varios') m = conRuben('Veo más de un correo. Escríbeme solo uno, el de Gmail (termina en @gmail.com). Si prefieres, escríbele a Rubén con el botón.');
+    else m = conRuben('No pude leer bien ese correo. Escríbemelo de nuevo: tiene que terminar en @gmail.com. Si prefieres, escríbele a Rubén con el botón.');
   } else if (tipoDePlan === 'derivar') {
     // CASO (b): si el cliente también preguntó el precio, el precio (por código, del catálogo) va DELANTE de la derivación, en el MISMO mensaje; si es el primer mensaje, con la presentación.
     const precioDeriva = plan.precio && typeof plan.precio === 'object' ? rrTextoPrecioSolo(cat, plan.precio.producto, nom) : '';
