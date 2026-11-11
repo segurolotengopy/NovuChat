@@ -30,8 +30,9 @@ const MIMES = {
   },
 };
 const TOPES = { image: 5 * 1024 * 1024, audio: 16 * 1024 * 1024, document: 16 * 1024 * 1024 };
-// Controles, marcas bidireccionales, separadores de linea y barras en el nombre del archivo.
-const NOMBRE_MALO = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff/\\]/;
+// Lo MISMO que el servidor quita del nombre al guardarlo (`sanearNombre`): controles y marcas
+// invisibles o bidireccionales, mas las barras. Un nombre que el servidor acepto nunca se rechaza aqui.
+const NOMBRE_MALO = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb/\\]/;
 let adjuntosEnLote = 0;
 
 function planAdjunto(p, tipo, mensajeId, conversacionId, to, canal, claveRele, texto) {
@@ -39,7 +40,7 @@ function planAdjunto(p, tipo, mensajeId, conversacionId, to, canal, claveRele, t
   let sinEnvio = '';
   let reintentable = false;
   if (!mensajeId || !conversacionId) sinEnvio = 'NV-RECLAMO';
-  else if (!MIMES[tipo]) sinEnvio = 'NV-TIPO';
+  else if (!Object.prototype.hasOwnProperty.call(MIMES, tipo)) sinEnvio = 'NV-TIPO';
   else if (canal !== 'graph') sinEnvio = 'NV-ADJUNTO-CANAL';
   else if (!/^[0-9]{8,15}$/.test(to)) sinEnvio = 'NV-DESTINO';
   else {
@@ -51,7 +52,7 @@ function planAdjunto(p, tipo, mensajeId, conversacionId, to, canal, claveRele, t
     else if (typeof a.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(a.sha256)) forma = true;
     else if (typeof a.voz !== 'boolean' || (a.voz === true && a.mime !== 'audio/ogg')) forma = true;
     else if (a.leyenda !== undefined && (typeof a.leyenda !== 'string' || tipo === 'audio' || a.leyenda.trim() === '' || a.leyenda.length > 1000)) forma = true;
-    else if (a.nombre !== undefined && (typeof a.nombre !== 'string' || tipo !== 'document' || a.nombre.length < 1 || a.nombre.length > 240 || NOMBRE_MALO.test(a.nombre))) forma = true;
+    else if (a.nombre !== undefined && (typeof a.nombre !== 'string' || tipo !== 'document' || a.nombre.length < 1 || [...a.nombre].length > 240 || NOMBRE_MALO.test(a.nombre))) forma = true;
     if (forma) sinEnvio = 'NV-ADJUNTO-FORMA';
     else if (adjuntosEnLote >= 1) { sinEnvio = 'NV-ADJUNTO-LOTE'; reintentable = true; }
     else adjuntosEnLote += 1;

@@ -21,7 +21,8 @@ if (r.statusCode === undefined) return falla('NV-ADJUNTO-LECTURA');
 const estado = Number(r.statusCode);
 if (estado === 404) return falla('NV-ADJUNTO-NO-EXISTE');
 if (estado === 409) return falla('NV-ADJUNTO-ESTADO');
-if (estado !== 200) return falla('NV-ADJUNTO-LECTURA');
+// El estado va en el codigo: una credencial rota (401) no se confunde con una falla pasajera (503).
+if (estado !== 200) return falla(Number.isInteger(estado) && estado >= 100 && estado <= 599 ? 'NV-ADJUNTO-LECTURA-' + estado : 'NV-ADJUNTO-LECTURA');
 
 const h = (r.headers && typeof r.headers === 'object') ? r.headers : {};
 const largo = h['content-length'];

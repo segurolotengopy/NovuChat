@@ -64,7 +64,7 @@
 # carga con ellas en lugar de las de ensayo (cargar, --activar y --quitar; el timbre sigue siendo
 # `Salida de persona (timbre <alias>)`, que crea este script):
 #     --cred-ingesta <nombre>  rol ingesta, httpHeaderAuth (Reclamar, Leer adjunto y Confirmar)
-#     --cred-envio   <nombre>  rol envío por Graph, whatsAppApi o httpHeaderAuth (Enviar por Graph; el script ajusta el nodo al tipo hallado)
+#     --cred-envio   <nombre>  rol envío por Graph, whatsAppApi o httpHeaderAuth (Enviar por Graph, Subir a Meta y Enviar adjunto por Graph; el script ajusta el nodo al tipo hallado)
 #     --cred-rele    <nombre>  rol relé, httpHeaderAuth (Enviar por el relé)
 # Van LAS TRES o ninguna. El nombre se busca por nombre Y tipo exactos y tiene que haber exactamente una;
 # si falta o está repetida se aborta sin escribir. No se crea ni se modifica ninguna de las tres (no hay
@@ -467,6 +467,10 @@ URL_GRAPH = "=https://graph.facebook.com/"
 URL_RELE = "={{ $('Config base').first().json.releBaseUrl }}"
 # Nodos que hablan con Graph (mensaje de texto, subida del adjunto y envío del adjunto): mismo rol, misma credencial.
 NODOS_GRAPH = ("Enviar por Graph", "Subir a Meta", "Enviar adjunto por Graph")
+# La URL EXACTA de cada uno (revisión de `seguridad` de B3): con el prefijo solo, el token de negocio podía ir a otro
+# extremo de Graph (`/settings`, `/phone_numbers`). Solo `/messages` y `/media` del número de `Config base`.
+_BASE_GRAPH = "=https://graph.facebook.com/{{ $('Config base').first().json.waGraphVersion }}/{{ $('Config base').first().json.phoneNumberId }}"
+URL_EXACTA_GRAPH = {"Enviar por Graph": _BASE_GRAPH + "/messages", "Subir a Meta": _BASE_GRAPH + "/media", "Enviar adjunto por Graph": _BASE_GRAPH + "/messages"}
 
 
 def sin_tildes(s):
@@ -531,10 +535,10 @@ def revisar_roles(nodos, alias):
                 continue
         if set(c) != {tipo} or (c[tipo] or {}).get("name") != cred:
             errores.append("%s debe llevar exactamente la credencial %s «%s»" % (nom, tipo, cred))
-    for nom, previo in ((g, URL_GRAPH) for g in NODOS_GRAPH):
+    for nom in NODOS_GRAPH:
         x = por_nombre.get(nom)
-        if x is not None and not str((x.get("parameters") or {}).get("url", "")).startswith(previo):
-            errores.append("%s tiene una URL que no es la de la plantilla: el Bearer podría ir a otro host" % nom)
+        if x is not None and str((x.get("parameters") or {}).get("url", "")) != URL_EXACTA_GRAPH[nom]:
+            errores.append("%s tiene una URL que no es la de la plantilla: el Bearer podría ir a otro host o a otro extremo de Graph" % nom)
     for nom, previo in (("Enviar por el relé", URL_RELE),):
         x = por_nombre.get(nom)
         if x is not None and not str((x.get("parameters") or {}).get("url", "")).startswith(previo):

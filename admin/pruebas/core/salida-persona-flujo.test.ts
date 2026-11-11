@@ -597,19 +597,28 @@ describe('Salida de persona: adjuntos (B3)', () => {
     for (const t of textos) expect(t).not.toMatch(/["']?link["']?\s*:/);
   });
 
+  it('5b. sin `Content-Length` en la respuesta (supuesto S6) el adjunto sale igual: mime y sha256 siguen exigidos', () => {
+    const sinLargo = lecturaBuena('image/jpeg');
+    delete (sinLargo.json['headers'] as J)['content-length'];
+    const { s, r } = correrAdj(adj(60, 'image', 'image/jpeg'), { leer: () => sinLargo });
+    expect(r.traza.subidas).toHaveLength(1);
+    expect(s.docs[0]).toMatchObject({ estado: 'aceptado' });
+  });
+
   it('5. una lectura fallida NO envia ni sube: rechazado con su codigo y reintentable', () => {
     const MIME = 'image/jpeg';
     const casos: [string, Lectura, string][] = [
       ['404', { json: { statusCode: 404, headers: {} } }, 'NV-ADJUNTO-NO-EXISTE'],
       ['409', { json: { statusCode: 409, headers: {} } }, 'NV-ADJUNTO-ESTADO'],
-      ['503', { json: { statusCode: 503, headers: {} } }, 'NV-ADJUNTO-LECTURA'],
-      ['401', { json: { statusCode: 401, headers: {} } }, 'NV-ADJUNTO-LECTURA'],
-      ['400', { json: { statusCode: 400, headers: {} } }, 'NV-ADJUNTO-LECTURA'],
+      ['503', { json: { statusCode: 503, headers: {} } }, 'NV-ADJUNTO-LECTURA-503'],
+      ['401', { json: { statusCode: 401, headers: {} } }, 'NV-ADJUNTO-LECTURA-401'],
+      ['400', { json: { statusCode: 400, headers: {} } }, 'NV-ADJUNTO-LECTURA-400'],
       ['red', { json: { error: { message: 'timeout' } } }, 'NV-ADJUNTO-LECTURA'],
       ['sin binario', lecturaBuena(MIME, { sinBinario: true }), 'NV-ADJUNTO-INTEGRIDAD'],
       ['mime distinto', lecturaBuena(MIME, { headers: { 'x-novuchat-mime': 'image/png' } }), 'NV-ADJUNTO-INTEGRIDAD'],
       ['sha distinto', lecturaBuena(MIME, { headers: { 'x-novuchat-sha256': 'cd'.repeat(32) } }), 'NV-ADJUNTO-INTEGRIDAD'],
       ['largo distinto', lecturaBuena(MIME, { headers: { 'content-length': '999' } }), 'NV-ADJUNTO-INTEGRIDAD'],
+      ['largo ilegible', lecturaBuena(MIME, { headers: { 'content-length': 'abc' } }), 'NV-ADJUNTO-INTEGRIDAD'],
     ];
     for (const [nombre, lectura, codigo] of casos) {
       const { s, r } = correrAdj(adj(20, 'image', MIME, { leyenda: 'privada' }), { leer: () => lectura, subir: () => { throw new Error('no debia subir'); }, enviar: sinEnviar });
@@ -709,7 +718,8 @@ describe('Salida de persona: adjuntos (B3)', () => {
       ['leyenda vacia', 'image', 'image/png', { leyenda: '   ' }], ['leyenda no texto', 'image', 'image/png', { leyenda: 7 }],
       ['nombre en imagen', 'image', 'image/png', { nombre: 'a.png' }], ['nombre con barra', 'document', MIME_DOC, { nombre: 'a/b.pdf' }],
       ['nombre con barra invertida', 'document', MIME_DOC, { nombre: 'a\\b.pdf' }],
-      ['nombre con RLO', 'document', MIME_DOC, { nombre: 'a‮fdp.exe' }], ['nombre de 241', 'document', MIME_DOC, { nombre: 'a'.repeat(241) }],
+      ['nombre con RLO', 'document', MIME_DOC, { nombre: 'a‮fdp.exe' }], ['nombre de 241', 'document', MIME_DOC, { nombre: 'a'.repeat(241) }], ['nombre de 241 emojis', 'document', MIME_DOC, { nombre: '\u{1F600}'.repeat(241) }],
+      ['nombre con marca invisible', 'document', MIME_DOC, { nombre: 'a\u2066b.pdf' }],
       ['nombre vacio', 'document', MIME_DOC, { nombre: '' }],
       ['texto no vacio', 'image', 'image/png', {}, 'hola'],
     ];
@@ -723,6 +733,19 @@ describe('Salida de persona: adjuntos (B3)', () => {
     expect(sinAdjunto.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-ADJUNTO-FORMA' });
     const v = correrAdj(adj(72, 'video', 'video/mp4'), { enviar: sinEnviar });
     expect(v.s.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-TIPO', reintentable: false });
+    // Lo que el servidor guarda SÍ sale (revisión de código): el largo se cuenta en caracteres reales, como `sanearNombre`
+    // (236 emojis + `.pdf` = 240 caracteres y 476 unidades UTF-16), y un separador de línea U+2028 no lo quita el servidor.
+    for (const [i, nombre] of ['\u{1F600}'.repeat(236) + '.pdf', 'informe\u2028final.pdf'].entries()) {
+      const bien = correrAdj(adj(80 + i, 'document', MIME_DOC, { nombre }));
+      expect(bien.s.docs[0], String(i)).toMatchObject({ estado: 'aceptado' });
+      expect((bien.r.llamadas[0]!.cuerpo['document'] as { filename: string }).filename).toBe(nombre);
+    }
+    // Una clave del prototipo no es un tipo (revisión de `seguridad`): `MIMES['constructor']` existe, pero no es propia.
+    for (const [i, raro] of ['constructor', '__proto__', 'toString', 'hasOwnProperty'].entries()) {
+      const x = correrAdj(adj(73 + i, raro, 'name'), { leer: () => { throw new Error('no debia leer'); }, enviar: sinEnviar });
+      expect(x.r.traza.lecturas, raro).toHaveLength(0);
+      expect(x.s.docs[0], raro).toMatchObject({ estado: 'rechazado', codigo: 'NV-TIPO', reintentable: false });
+    }
   });
 
   it('13. estructura y orden del lienzo: 6 entradas, cabecera, x creciente y ramas por y', () => {

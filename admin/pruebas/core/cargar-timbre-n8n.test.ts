@@ -734,6 +734,16 @@ describe('cargar-timbre-n8n.sh: endurecimiento (ronda de revisión)', () => {
     const b = variante((f) => { f.nodes.find((n) => n.name === 'Subir a Meta')!.parameters.url = '=https://otro-host.example/v26.0/1/media'; }, 'h.json');
     expect(b.codigo).toBe(2);
     expect(b.salida).toMatch(/otro host|URL/);
+    // Mismo host, otro extremo de Graph: el token de negocio solo va a `/messages` y a `/media` (revisión de `seguridad`).
+    const base = "=https://graph.facebook.com/{{ $('Config base').first().json.waGraphVersion }}/{{ $('Config base').first().json.phoneNumberId }}";
+    for (const [nodo, url] of [
+      ['Subir a Meta', `${base}/settings`], ['Subir a Meta', `${base}/messages`], ['Subir a Meta', '=https://graph.facebook.com/{{ $json.ruta }}/media'],
+      ['Enviar adjunto por Graph', `${base}/media`], ['Enviar adjunto por Graph', `${base}/phone_numbers`], ['Enviar por Graph', `${base}/media`],
+    ] as const) {
+      const c = variante((f) => { f.nodes.find((n) => n.name === nodo)!.parameters.url = url; }, 'e.json');
+      expect(c.codigo, `${nodo} -> ${url}`).toBe(2);
+      expect(c.salida, `${nodo} -> ${url}`).toMatch(/otro extremo de Graph/);
+    }
   });
 
   it.each(['subscribed_apps', 'subscriptions', 'register', 'message_templates'])('un nodo HTTP que llama a %s: aborta', (ruta) => {
