@@ -641,6 +641,64 @@ describe('la purga diaria', () => {
   });
 });
 
+describe('la purga diaria de los medios ENVIADOS por una persona: 30 días, no 90 (B2, decisión D2)', () => {
+  const ahora = Date.UTC(2026, 10, 11, 16, 0);
+  const diaHace = (n: number) => al.diaDeLaPaz(ahora - n * DIA_MS);
+  const ponerE = (t: string, dia: string, nombre = 'a.jpg') =>
+    almacen.objetos.set(`tenants/${t}/mediosEnviados/${dia}/${nombre}`, { bytes: JPG(), contentType: 'image/jpeg' });
+  const hayE = (t: string, dia: string) => almacen.objetos.has(`tenants/${t}/mediosEnviados/${dia}/a.jpg`);
+  const ponerR = (t: string, dia: string) =>
+    almacen.objetos.set(`tenants/${t}/medios/${dia}/a.ogg`, { bytes: OGG(), contentType: 'audio/ogg' });
+  const hayR = (t: string, dia: string) => almacen.objetos.has(`tenants/${t}/medios/${dia}/a.ogg`);
+
+  beforeAll(async () => {
+    await db.doc(`tenants/${T_BAJA}`).set({ nombre: 'Baja', estado: 'dado_de_baja' });
+  });
+
+  it('borra la carpeta de 31 días; conserva la de 30 y la de 29', async () => {
+    ponerE(T, diaHace(31)); ponerE(T, diaHace(30)); ponerE(T, diaHace(29)); ponerE(T, diaHace(0));
+    const r = await pm.purgarMediosDe({ almacen, ahoraMs: ahora });
+    expect(hayE(T, diaHace(31))).toBe(false);
+    expect(hayE(T, diaHace(30))).toBe(true);
+    expect(hayE(T, diaHace(29))).toBe(true);
+    expect(hayE(T, diaHace(0))).toBe(true);
+    expect(r.carpetasBorradas).toBe(1);
+    expect(r.errores).toBe(0);
+  });
+
+  it('cada carpeta con SU retención: un recibido de 60 días se conserva (90) y un enviado de 60 se borra (30)', async () => {
+    ponerR(T, diaHace(60)); ponerE(T, diaHace(60)); ponerR(T, diaHace(91)); ponerE(T, diaHace(91));
+    const r = await pm.purgarMediosDe({ almacen, ahoraMs: ahora });
+    expect(hayR(T, diaHace(60))).toBe(true);
+    expect(hayE(T, diaHace(60))).toBe(false);
+    expect(hayR(T, diaHace(91))).toBe(false);
+    expect(hayE(T, diaHace(91))).toBe(false);
+    expect(r.carpetasBorradas).toBe(3);
+  });
+
+  it('la baja del comercio borra también los enviados, su colección de metadatos y su contador de adjuntos', async () => {
+    ponerE(T_BAJA, diaHace(1)); ponerE(T_BAJA, diaHace(20)); ponerE(T, diaHace(1));
+    await db.doc(`tenants/${T_BAJA}/mediosEnviados/x`).set({ estado: 'guardado' });
+    await db.doc(`topesDeEnvio/a_${T_BAJA}`).set({ dia: '2026-11-11', n: 1, bytes: 10 });
+    await db.doc(`topesDeEnvio/a_${T}`).set({ dia: '2026-11-11', n: 1, bytes: 10 });
+    const r = await pm.purgarMediosDe({ almacen, ahoraMs: ahora });
+    expect(hayE(T_BAJA, diaHace(1))).toBe(false);
+    expect(hayE(T_BAJA, diaHace(20))).toBe(false);
+    expect(r.tenantsDeBajaBorrados).toBe(1);
+    expect((await db.collection(`tenants/${T_BAJA}/mediosEnviados`).get()).size).toBe(0);
+    expect((await db.doc(`topesDeEnvio/a_${T_BAJA}`).get()).exists).toBe(false);
+    // Un comercio activo no pierde nada por la baja de otro.
+    expect(hayE(T, diaHace(1))).toBe(true);
+    expect((await db.doc(`topesDeEnvio/a_${T}`).get()).exists).toBe(true);
+    await db.doc(`topesDeEnvio/a_${T}`).delete();
+  });
+
+  it('`ResultadoDePurga` conserva su forma', async () => {
+    const r = await pm.purgarMediosDe({ almacen, ahoraMs: ahora });
+    expect(Object.keys(r).sort()).toEqual(['carpetasBorradas', 'errores', 'objetosBorrados', 'tenantsDeBajaBorrados', 'tenantsRevisados']);
+  });
+});
+
 describe('fallas de Firestore y pendientes retomados (revisión del #617)', () => {
   type Db = typeof db;
   /** El mismo Firestore con algunos métodos reemplazados. */

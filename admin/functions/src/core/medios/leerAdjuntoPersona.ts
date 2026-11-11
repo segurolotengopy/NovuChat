@@ -121,7 +121,7 @@ export const leerAdjuntoPersona = onRequest(
     if (!ruta) { respuesta.status(401).send('no autorizado'); return; }
     if (!ID_COMERCIO.test(ruta.tenantId)) { respuesta.status(404).send('numero no asignado'); return; }
     const pedido = leerPedido(peticion.body);
-    if (!pedido) { respuesta.status(400).send('solicitud invalida'); return; }
+    if (!pedido) { respuesta.status(400).send('forma invalida'); return; }
     try {
       const r = await leerAdjunto(ruta, pedido);
       logger.info('leerAdjuntoPersona', {

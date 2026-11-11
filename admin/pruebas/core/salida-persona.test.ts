@@ -13,12 +13,16 @@
  *  6. `mensajesPersona` cuenta aceptado e incierto una sola vez, no el rechazado; sin tocar `salientes`.
  *  7. El timbre: sin datos, con Bearer, número, marca de tiempo y firma; la ruta solo vive en el secreto.
  */
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
+process.env['MEDIOS_DOBLE'] = '1';
 // Alias de esta suite: 08 y 09 (las suites corren una por una). Valores de prueba, no secretos.
 const TOKEN_A = 'valor-de-prueba-salida-a';
 const TOKEN_B = 'valor-de-prueba-salida-b';
@@ -28,6 +32,7 @@ process.env['INGESTA_CLIENTE09'] = TOKEN_B;
 const INDICE = await import('../../functions/src/index.ts');
 const SALIDA = await import('../../functions/src/core/conversacion/salidaPersona.ts');
 const CONF = await import('../../functions/src/core/conversacion/confirmarSalidaPersona.ts');
+const { fijarAlmacenDeMediosDePrueba, objetoDeEnviado, rutaDeEnviado } = await import('../../functions/src/core/medios/almacen.ts');
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 
@@ -42,9 +47,9 @@ const MIN = 60_000;
 const periodo = () => new Date().toISOString().slice(0, 7);
 const CLAVE = (n: number) => `clave-de-envio-${String(n).padStart(4, '0')}`;
 
-interface Respuesta { codigo: number; cuerpo: unknown }
-async function llamar(funcion: unknown, numero: string | null, token: string | null, cuerpo: unknown, metodo = 'POST'): Promise<Respuesta> {
-  const cab: Record<string, string> = { 'content-type': 'application/json' };
+interface Respuesta { codigo: number; cuerpo: unknown; cabeceras?: Record<string, string> }
+async function llamar(funcion: unknown, numero: string | null, token: string | null, cuerpo: unknown, metodo = 'POST', extra: Record<string, string> = {}): Promise<Respuesta> {
+  const cab: Record<string, string> = { 'content-type': 'application/json', ...extra };
   if (numero) cab['x-novuchat-numero'] = numero;
   if (token) cab['authorization'] = `Bearer ${token}`;
   const leer = (n: string) => cab[n.toLowerCase()];
@@ -54,14 +59,16 @@ async function llamar(funcion: unknown, numero: string | null, token: string | n
     status(c: number) { r.codigo = c; return respuesta; },
     send(b: unknown) { r.cuerpo = b; return respuesta; },
     json(b: unknown) { r.cuerpo = b; return respuesta; },
-    setHeader() { return respuesta; }, getHeader() { return undefined; }, set() { return respuesta; }, on() { return respuesta; }, end() { return respuesta; },
+    setHeader() { return respuesta; }, getHeader() { return undefined; },
+    set(h: Record<string, string>) { r.cabeceras = { ...(r.cabeceras ?? {}), ...h }; return respuesta; }, on() { return respuesta; },
+    end(b: unknown) { if (b !== undefined) r.cuerpo = b; return respuesta; },
   };
   await (funcion as (q: unknown, s: unknown) => Promise<void>)(peticion, respuesta);
   return r;
 }
 interface Entregado { mensajeId: string; conversacionId: string; claveRele: string; to: string; texto: string; tipo: string; canal: string }
-const reclamar = (numero = NUM_A, token: string | null = TOKEN_A, cuerpo: unknown = {}) =>
-  llamar((INDICE as Record<string, unknown>)['reclamarSalidaPersona'], numero, token, cuerpo);
+const reclamar = (numero = NUM_A, token: string | null = TOKEN_A, cuerpo: unknown = {}, extra: Record<string, string> = {}) =>
+  llamar((INDICE as Record<string, unknown>)['reclamarSalidaPersona'], numero, token, cuerpo, 'POST', extra);
 const confirmar = (cuerpo: unknown, numero = NUM_A, token: string | null = TOKEN_A) =>
   llamar((INDICE as Record<string, unknown>)['confirmarSalidaPersona'], numero, token, cuerpo);
 const entregados = (r: Respuesta) => (r.cuerpo as { mensajes: Entregado[] }).mensajes;
@@ -472,5 +479,207 @@ describe('claves y huellas', () => {
   it('`leerConfirmacion` es pura y rechaza lo que no es exactamente del contrato', () => {
     expect(CONF.leerConfirmacion({ mensajeId: CLAVE(1), conversacionId: CONV1, resultado: 'incierto' })).toEqual({ mensajeId: CLAVE(1), conversacionId: CONV1, resultado: 'incierto' });
     expect(CONF.leerConfirmacion({ mensajeId: CLAVE(1), conversacionId: CONV1, resultado: 'aceptado' })).toBeNull();
+  });
+});
+
+// ===========================================================================
+// ADJUNTOS DE PERSONA (B2 de «Envío de medios por consola», 11/11/2026)
+// ===========================================================================
+const aqui = dirname(fileURLToPath(import.meta.url));
+const CON_ADJUNTOS = { 'x-novuchat-adjuntos': '1' };
+const BYTES = Buffer.from('bytes-de-un-adjunto-de-prueba-0123456789');
+const SHA = createHash('sha256').update(BYTES).digest('hex');
+const objetos = new Map<string, Buffer>();
+const almacenDoble = {
+  async guardar(ruta: string, bytes: Buffer) { objetos.set(ruta, bytes); return 'creado' as const; },
+  async existe(ruta: string) { return objetos.has(ruta); },
+  async subcarpetas() { return []; },
+  async borrarPrefijo() { return 0; },
+  async metadatos(ruta: string) { const o = objetos.get(ruta); return o ? { tamano: o.length } : null; },
+  async leer(ruta: string) { return objetos.get(ruta) ?? null; },
+};
+fijarAlmacenDeMediosDePrueba(almacenDoble);
+beforeEach(() => { objetos.clear(); });
+
+/** Un mensaje de adjunto en el estado pedido, con su metadato y su objeto en el almacén doble. */
+async function sembrarAdjunto(clave: string, o: Datos = {}, t = A, conv = CONV1, meta: Datos = {}, bytes: Buffer = BYTES) {
+  const objeto = objetoDeEnviado(conv, clave);
+  const ruta = rutaDeEnviado(t, '2026-11-11', objeto, 'jpg');
+  objetos.set(ruta, bytes);
+  await db.doc(`tenants/${t}/mediosEnviados/${objeto}`).set({
+    conversacionId: conv, mensajeId: clave, autorUid: 'u-ana', tipo: 'image', categoria: 'image', mime: 'image/jpeg', ext: 'jpg',
+    tamano: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), ruta, voz: false, estado: 'guardado',
+    en: Timestamp.now(), vence: Timestamp.fromMillis(Date.now() + 30 * 86_400_000), ...meta,
+  });
+  await sembrar(clave, {
+    tipo: 'image', texto: 'LEYENDA-DE-PRUEBA',
+    medio: { estado: 'guardado', origen: 'enviado', mime: 'image/jpeg', tamano: bytes.length, vence: Timestamp.fromMillis(Date.now() + 30 * 86_400_000), voz: false, objeto },
+    ...o,
+  }, t, conv);
+  return { objeto, ruta };
+}
+const leerAdj = (cuerpo: unknown, numero: string | null = NUM_A, token: string | null = TOKEN_A, metodo = 'POST') =>
+  llamar((INDICE as Record<string, unknown>)['leerAdjuntoPersona'], numero, token, cuerpo, metodo);
+const pedido = (n = 1, conv = CONV1) => ({ mensajeId: CLAVE(n), conversacionId: conv });
+
+describe('reclamar con adjuntos: solo con la cabecera del flujo nuevo, uno por lote, texto vacío', () => {
+  it('SIN la cabecera `X-NovuChat-Adjuntos: 1` el adjunto NO se entrega y queda `pendiente`; el texto sí sale', async () => {
+    await sembrarAdjunto(CLAVE(1));
+    await sembrar(CLAVE(2), { texto: 'un texto' });
+    const r = await reclamar();
+    expect(entregados(r).map((m) => m.mensajeId)).toEqual([CLAVE(2)]);
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
+    // y si nadie lo reclama a tiempo caduca como cualquier pendiente (rechazado, reintentable)
+    await refMsg(CLAVE(1)).update({ ts: Timestamp.fromMillis(Date.now() - 10 * MIN) });
+    await reclamar();
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: true });
+  });
+  it('con una cabecera distinta de «1» tampoco', async () => {
+    await sembrarAdjunto(CLAVE(1));
+    for (const v of ['0', 'true', '', '2']) expect(entregados(await reclamar(NUM_A, TOKEN_A, {}, { 'x-novuchat-adjuntos': v }))).toEqual([]);
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
+  });
+  it('CON la cabecera: sale `texto:\'\'`, el tipo, el canal y `adjunto` sin bytes, y pasa a `enviando`', async () => {
+    await sembrarAdjunto(CLAVE(1));
+    const [m] = entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS)) as unknown as Array<Record<string, unknown>>;
+    expect(m).toEqual({
+      mensajeId: CLAVE(1), conversacionId: CONV1, claveRele: SALIDA.claveReleDe(A, CONV1, CLAVE(1)), to: CONV1.slice(3), texto: '',
+      tipo: 'image', canal: 'graph', adjunto: { mime: 'image/jpeg', tamano: BYTES.length, sha256: SHA, voz: false, leyenda: 'LEYENDA-DE-PRUEBA' },
+    });
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('enviando');
+  });
+  it('máximo UN adjunto por respuesta (D-A3), mientras los textos siguen hasta 10; el segundo sale en el reclamo siguiente', async () => {
+    await sembrarAdjunto(CLAVE(1), { ts: Timestamp.fromMillis(Date.now() - 40_000) });
+    await sembrarAdjunto(CLAVE(2), { ts: Timestamp.fromMillis(Date.now() - 30_000) });
+    for (let i = 3; i <= 12; i++) await sembrar(CLAVE(i), { ts: Timestamp.fromMillis(Date.now() - 20_000 + i) });
+    const primero = entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS));
+    expect(primero.filter((m) => m.tipo !== 'text').map((m) => m.mensajeId)).toEqual([CLAVE(1)]);
+    expect(primero).toHaveLength(10); // 1 adjunto + 9 textos: hasta 10 por reclamo
+    expect((await msg(CLAVE(2)))['estadoEnvio']).toBe('pendiente');
+    const segundo = entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS));
+    expect(segundo.filter((m) => m.tipo !== 'text').map((m) => m.mensajeId)).toEqual([CLAVE(2)]);
+  });
+  it('NEGATIVA: sin metadato guardado y vigente el adjunto no se entrega (queda pendiente y caduca)', async () => {
+    const { objeto } = await sembrarAdjunto(CLAVE(1));
+    await db.doc(`tenants/${A}/mediosEnviados/${objeto}`).update({ estado: 'pendiente' });
+    expect(entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS))).toEqual([]);
+    await db.doc(`tenants/${A}/mediosEnviados/${objeto}`).update({ estado: 'guardado', vence: Timestamp.fromMillis(Date.now() - 1000) });
+    expect(entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS))).toEqual([]);
+    await db.doc(`tenants/${A}/mediosEnviados/${objeto}`).delete();
+    expect(entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS))).toEqual([]);
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
+  });
+  it('un adjunto de OTRA línea no sale por esta', async () => {
+    await sembrarAdjunto(CLAVE(1), { phoneNumberId: NUM_A2 });
+    expect(entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS))).toEqual([]);
+  });
+  it('el flujo VIEJO (planificar-lote.js) rechaza un adjunto con `NV-TEXTO`: nunca lo manda como texto suelto', async () => {
+    await sembrarAdjunto(CLAVE(1));
+    const [m] = entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS));
+    const codigo = readFileSync(join(aqui, '..', '..', '..', 'Flujos', 'src', 'core', 'salida-persona', 'planificar-lote.js'), 'utf8');
+    const ejecutar = new Function('$', '$input', codigo) as (a: unknown, b: unknown) => Array<{ json: Record<string, unknown> }>;
+    const [item] = ejecutar(() => ({ first: () => ({ json: {} }) }), { all: () => [{ json: { mensajes: [m] } }] });
+    expect(item!.json['sinEnvio']).toBe('NV-TEXTO');
+    expect(item!.json['ruta']).toBe('ninguna');
+  });
+});
+
+describe('leerAdjuntoPersona: los bytes al flujo, con la credencial del número', () => {
+  it('405, 401 (sin credencial, token ajeno, número sin ruta) y 400 (forma)', async () => {
+    await sembrarAdjunto(CLAVE(1), { estadoEnvio: 'enviando' });
+    expect((await leerAdj(pedido(), NUM_A, TOKEN_A, 'GET')).codigo).toBe(405);
+    expect((await leerAdj(pedido(), NUM_A, null)).codigo).toBe(401);
+    expect((await leerAdj(pedido(), NUM_A, 'otro-valor')).codigo).toBe(401);
+    expect((await leerAdj(pedido(), NUM_A, TOKEN_B)).codigo).toBe(401); // la credencial de OTRO número
+    expect((await leerAdj(pedido(), '1000000899', TOKEN_A)).codigo).toBe(401);
+    for (const malo of [null, [], {}, { mensajeId: CLAVE(1) }, { ...pedido(), extra: 1 }, { mensajeId: 'corta', conversacionId: CONV1 }, { mensajeId: CLAVE(1), conversacionId: 'wa_1' }]) {
+      expect((await leerAdj(malo)).codigo, JSON.stringify(malo)).toBe(400);
+    }
+  });
+  it('200: bytes crudos, con mime y sha256 en cabeceras', async () => {
+    await sembrarAdjunto(CLAVE(1), { estadoEnvio: 'enviando' });
+    const r = await leerAdj(pedido());
+    expect(r.codigo).toBe(200);
+    expect(Buffer.isBuffer(r.cuerpo) && r.cuerpo.equals(BYTES)).toBe(true);
+    expect(r.cabeceras).toMatchObject({
+      'Content-Type': 'application/octet-stream', 'Content-Length': String(BYTES.length), 'X-NovuChat-Mime': 'image/jpeg', 'X-NovuChat-Sha256': SHA,
+    });
+  });
+  it('409 si el mensaje no está `enviando` (pendiente, aceptado, rechazado, incierto)', async () => {
+    for (const [i, estado] of (['pendiente', 'aceptado', 'rechazado', 'incierto'] as const).entries()) {
+      await sembrarAdjunto(CLAVE(i + 1), { estadoEnvio: estado });
+      expect((await leerAdj(pedido(i + 1))).codigo, estado).toBe(409);
+    }
+  });
+  it('404: otro comercio, otra línea, un mensaje de texto, de asistente, inexistente, metadato vencido o ausente', async () => {
+    await sembrarAdjunto(CLAVE(1), { estadoEnvio: 'enviando' }, B);
+    expect((await leerAdj(pedido())).codigo).toBe(404); // el mensaje es de B
+    await sembrarAdjunto(CLAVE(7), { estadoEnvio: 'enviando' });
+    expect((await leerAdj(pedido(7), NUM_B, TOKEN_B)).codigo).toBe(404); // y B no pide el de A con su propia credencial
+    await sembrarAdjunto(CLAVE(2), { estadoEnvio: 'enviando', phoneNumberId: NUM_A2 });
+    expect((await leerAdj(pedido(2))).codigo).toBe(404);
+    await sembrar(CLAVE(3), { estadoEnvio: 'enviando' });
+    expect((await leerAdj(pedido(3))).codigo).toBe(404);
+    await sembrarAdjunto(CLAVE(4), { estadoEnvio: 'enviando', autor: 'asistente' });
+    expect((await leerAdj(pedido(4))).codigo).toBe(404);
+    expect((await leerAdj(pedido(9))).codigo).toBe(404);
+    const v = await sembrarAdjunto(CLAVE(5), { estadoEnvio: 'enviando' }, A, CONV1, { vence: Timestamp.fromMillis(Date.now() - 1000) });
+    expect((await leerAdj(pedido(5))).codigo).toBe(404);
+    await db.doc(`tenants/${A}/mediosEnviados/${v.objeto}`).delete();
+    expect((await leerAdj(pedido(5))).codigo).toBe(404);
+    await sembrarAdjunto(CLAVE(6), { estadoEnvio: 'enviando' });
+    objetos.clear();
+    expect((await leerAdj(pedido(6))).codigo).toBe(404); // el objeto ya no está
+  });
+  it('un comercio suspendido o una ruta inactiva no entregan bytes', async () => {
+    await sembrarAdjunto(CLAVE(1), { estadoEnvio: 'enviando' });
+    await db.doc(`tenants/${A}`).update({ estado: 'suspendido' });
+    expect((await leerAdj(pedido())).codigo).toBe(404);
+    await db.doc(`tenants/${A}`).update({ estado: 'activo' });
+    await db.doc(`rutasWhatsApp/${NUM_A}`).update({ estado: 'inactivo' });
+    expect((await leerAdj(pedido())).codigo).toBe(404);
+  });
+  it('INTEGRIDAD: bytes alterados en Storage (otro sha256 u otro tamaño) no salen: 503', async () => {
+    const v = await sembrarAdjunto(CLAVE(1), { estadoEnvio: 'enviando' });
+    objetos.set(v.ruta, Buffer.from('bytes-de-un-adjunto-de-prueba-9876543210')); // mismo largo, otro contenido
+    expect((await leerAdj(pedido())).codigo).toBe(503);
+    objetos.set(v.ruta, Buffer.concat([BYTES, Buffer.from('+')]));
+    expect((await leerAdj(pedido())).codigo).toBe(503);
+  });
+  it('una ruta del metadato fuera de `mediosEnviados` (o de otro comercio) no se lee', async () => {
+    for (const [i, ruta] of ['tenants/salida-b/mediosEnviados/2026-11-11/x.jpg', `tenants/${A}/medios/2026-11-11/x.jpg`, `tenants/${A}/mediosEnviados/../x.jpg`].entries()) {
+      await sembrarAdjunto(CLAVE(i + 1), { estadoEnvio: 'enviando' }, A, CONV1, { ruta });
+      expect((await leerAdj(pedido(i + 1))).codigo, ruta).toBe(404);
+    }
+  });
+  it('el registro lleva solo {tenantId, codigo, tamano}: nada del mensaje, la conversación, la ruta ni la leyenda', async () => {
+    const lineas: string[] = [];
+    for (const n of ['log', 'info', 'warn', 'error'] as const) vi.spyOn(console, n).mockImplementation((...a: unknown[]) => { lineas.push(a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')); });
+    const { default: logger } = await import('../../functions/node_modules/firebase-functions/lib/logger/index.js') as unknown as { default: Record<string, (...a: unknown[]) => void> };
+    for (const n of ['log', 'info', 'warn', 'error']) vi.spyOn(logger, n).mockImplementation((...a: unknown[]) => { lineas.push(a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')); });
+    const v = await sembrarAdjunto(CLAVE(1), { estadoEnvio: 'enviando' });
+    await leerAdj(pedido());
+    const todo = lineas.join('\n');
+    expect(todo).toContain('leerAdjuntoPersona');
+    for (const prohibido of [CLAVE(1), CONV1, CONV1.slice(3), CONV1.slice(-4), v.objeto, 'mediosEnviados', 'LEYENDA-DE-PRUEBA', NUM_A]) expect(todo, prohibido).not.toContain(prohibido);
+  });
+});
+
+describe('adjuntos: confirmar y contar igual que un texto', () => {
+  it('un adjunto `aceptado` suma UN mensaje de persona al mes, como un texto', async () => {
+    await sembrarAdjunto(CLAVE(1), { estadoEnvio: 'enviando' });
+    expect((await confirmar({ mensajeId: CLAVE(1), conversacionId: CONV1, resultado: 'aceptado', idMeta: 'wamid.ADJ' })).codigo).toBe(200);
+    expect((await metricas())['mensajesPersona']).toBe(1);
+  });
+  it('la huella de un adjunto ata (conversación, persona, bytes, tipo, leyenda, nombre) y no coincide con la de un texto', () => {
+    const h = SALIDA.huellaDeAdjunto(CONV1, 'u-ana', SHA, 'image', 'hola', '');
+    expect(SALIDA.huellaDeAdjunto(CONV1, 'u-ana', SHA, 'image', 'hola', '')).toBe(h);
+    for (const otra of [
+      SALIDA.huellaDeAdjunto(CONV2, 'u-ana', SHA, 'image', 'hola', ''), SALIDA.huellaDeAdjunto(CONV1, 'u-bruno', SHA, 'image', 'hola', ''),
+      SALIDA.huellaDeAdjunto(CONV1, 'u-ana', 'f'.repeat(64), 'image', 'hola', ''), SALIDA.huellaDeAdjunto(CONV1, 'u-ana', SHA, 'document', 'hola', ''),
+      SALIDA.huellaDeAdjunto(CONV1, 'u-ana', SHA, 'image', 'hola!', ''), SALIDA.huellaDeAdjunto(CONV1, 'u-ana', SHA, 'image', 'hola', 'a.pdf'),
+      SALIDA.huellaDeEnvio(CONV1, 'u-ana', 'hola'),
+    ]) expect(otra).not.toBe(h);
+    expect(h).not.toContain('hola');
   });
 });
