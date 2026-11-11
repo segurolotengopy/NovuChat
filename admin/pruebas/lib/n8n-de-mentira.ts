@@ -34,7 +34,9 @@
  *   error del flujo, y `onError` no lo esconde). Un doble tiene prioridad sobre
  *   el tipo del nodo: también sirve para reemplazar un Code o un Set.
  *
- * EXPRESIONES. Cada `={{ … }}` se evalúa con `$json`, `$('Nodo')` (`first`,
+ * EXPRESIONES. Como en n8n 2.36.5, una expresión que lee `prototype`, `__proto__`, `constructor` o `getPrototypeOf`, o usa `eval`,
+ * `Function`, `process`, `require`, `globalThis` o `this`, revienta («Cannot access "prototype" due to security concerns»; 07/11/2026;
+ * la regla es la de `comun-sin-agente/src/expresiones.mjs`). Cada `={{ … }}` se evalúa con `$json`, `$('Nodo')` (`first`,
  * `all`, `item`, `isExecuted`), `$input`, `$getWorkflowStaticData`, `$workflow`
  * y `$execution`, y con el reloj congelado. El cierre `}}` se busca probando
  * candidatos hasta que lo de adentro compila, así que las llaves y las
@@ -63,6 +65,7 @@
  *
  * ERRORES. Un error de nodo (un Code que lanza, una expresión que revienta, un
  * doble que lanza, un IF estricto con el tipo equivocado) sigue `onError`:
+ * (un IF con `continueRegularOutput` manda el ítem que falló, tal cual, por su salida FALSA, como IfV2 de n8n)
  * `continueRegularOutput` (o `continueOnFail: true`) emite `{ error }` por la
  * salida 0; `continueErrorOutput` lo emite por la salida 1; sin `onError`, el
  * turno lanza `FalloDeNodo` (o, con `tolerarFallo: true`, queda en
@@ -97,6 +100,8 @@
  */
 import vm from 'node:vm';
 import { ejecutar, GLOBALES_FUERA_DEL_SANDBOX, type Flujo, type J, type Nodo, type Referencias } from './flujo';
+
+import { rechazoDeExpresion } from '../../../Flujos/experimental/comun-sin-agente/src/expresiones.mjs';
 
 // ----------------------------------------------------------------------------- tipos públicos
 
@@ -472,12 +477,22 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   }
 
   function evaluarUna(expresion: string, it: Item | null): unknown {
+    // Como el sandbox de EXPRESIONES de n8n 2.36.5 (distinto del de los nodos Code): leer `prototype`, `__proto__` o `constructor` revienta la expresión
+    // («Cannot access "prototype" due to security concerns»). El 07/11/2026 una expresión con `Object.prototype.hasOwnProperty` mató ejecuciones sin dejar registro.
     const codigo = expresion.replace(RE_ITEM, '$__item($1$2$1)');
     return ejecutar(`return [{ json: { v: (${codigo}\n) } }];`, it ? [it.json] : [], refs, globalesDe(it))[0]?.['v'];
   }
 
   function evaluar(valor: unknown, it: Item | null): unknown {
-    if (typeof valor === 'string') return valor.startsWith('=') ? plantilla(valor.slice(1), (e) => evaluarUna(e, it)) : valor;
+    if (typeof valor === 'string') {
+      if (!valor.startsWith('=')) return valor;
+      // La MISMA función y el MISMO alcance que la guardia de los armadores (`comun-sin-agente/src/expresiones.mjs`, el código de cada bloque `{{ … }}`):
+      // lo que el sandbox de expresiones de n8n rechaza, aquí también revienta.
+      const rechazo = rechazoDeExpresion(valor);
+      if (rechazo && rechazo.regla === 'prototype') throw new Error(`Cannot access "${rechazo.palabra}" due to security concerns`);
+      if (rechazo) throw new Error(`expresión rechazada por el sandbox de n8n: ${rechazo.texto}`);
+      return plantilla(valor.slice(1), (e) => evaluarUna(e, it));
+    }
     if (Array.isArray(valor)) return valor.map((v) => evaluar(v, it));
     if (valor !== null && typeof valor === 'object') return Object.fromEntries(Object.entries(valor as J).map(([k, v]) => [k, evaluar(v, it)]));
     return valor;
@@ -615,10 +630,18 @@ export function crearMundo(op: OpcionesMundo): Mundo {
     try {
       for (const it of items) {
         let resultado = !o;
-        for (const cond of c['conditions'] as J[]) {
-          const v = evaluarCondicion(cond, it, estricto, sensible);
-          if (o && v) { resultado = true; break; }
-          if (!o && !v) { resultado = false; break; }
+        try {
+          for (const cond of c['conditions'] as J[]) {
+            const v = evaluarCondicion(cond, it, estricto, sensible);
+            if (o && v) { resultado = true; break; }
+            if (!o && !v) { resultado = false; break; }
+          }
+        } catch (e) {
+          // Como IfV2 de n8n 2.36.5 (`IfV2.node.js`): con `continueOnFail` el ítem que falló sale TAL CUAL por la salida FALSA; sin él, el nodo falla.
+          if (modoDeError(n) !== 'regular') throw e;
+          sinTolerar(n, e);
+          no.push(hijoDe(n, it, it.json));
+          continue;
         }
         (resultado ? si : no).push(hijoDe(n, it, it.json));
       }

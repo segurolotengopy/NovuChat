@@ -4,7 +4,7 @@
  * construir.mjs — arma los JSON de «Chat NovuChat v2 (Kenji)» desde la plantilla y los datos propios
  * =============================================================================
  *
- *   node construir.mjs               escribe chat-novuchat.novuchat.json y chat-novuchat.prueba.json
+ *   node construir.mjs               escribe chat-novuchat.novuchat.json, chat-novuchat.prueba.json y chat-novuchat.ensayo-demo-a.json
  *   node construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma, si viola una guardia o si hay un JSON sin archivo de datos (huérfano)
  *   (NUNCA con --help ni --ayuda: cualquier argumento que no sea --verificar escribe los JSON)
  *
@@ -20,7 +20,7 @@
  *
  * LOS DATOS son `admin/scripts/datos/chat-novuchat/<archivo>.json` (zona Tenants: solo marcadores `REEMPLAZAR_*` para los identificadores, nunca un token, un teléfono, una ruta de webhook ni
  * un id de planilla reales). UNA SALIDA POR ARCHIVO: `novuchat.json` → `chat-novuchat.novuchat.json` (con «WhatsApp Trigger»); `ensayo.json` → `chat-novuchat.prueba.json` (con «Entrada de
- * prueba», sin «WhatsApp Trigger»: activar un disparador de WhatsApp en n8n registra el webhook en Meta y se lo quita al flujo vivo).
+ * prueba», sin «WhatsApp Trigger»: activar un disparador de WhatsApp en n8n registra el webhook en Meta y se lo quita al flujo vivo); `ensayo-demo-a.json` → `chat-novuchat.ensayo-demo-a.json` (con «WhatsApp Trigger», que la herramienta cambia por el del Demo A; miniCRM contra una hoja de prueba; nunca se publica como flujo de un cliente).
  *
  * Node sin dependencias. No lee ningún .env ni llama a la red.
  */
@@ -28,8 +28,11 @@ import { closeSync, constants, openSync, readdirSync, readFileSync, writeFileSyn
 import { runInNewContext } from 'node:vm';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { contarDeclaraciones, hallazgosDelCodigo, TEXTOS as TEXTOS_GUARDA } from './guarda-ast.mjs';
+const TEXTO_NO_ANALIZABLE = TEXTOS_GUARDA.noAnalizable;
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
 // LA CADENA DE ENVÍO ES COMÚN (no se copia): se injerta desde `comun-sin-agente/src/envio.mjs` (enviar, respaldo en texto, reporte saliente).
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
 // EL miniCRM ES UN MÓDULO (no se copia): los paquetes `crm-prospecto` y `crm-decidir`, y el injerto del mapa de columnas del tenant (dato `crm`).
@@ -84,7 +87,7 @@ function escribirSinSeguirEnlaces(ruta, texto, nombre) {
 
 // ----------------------------------------------------------------- los datos
 const esEnsayo = (archivo) => /^ensayo[\w-]*\.json$/.test(archivo);
-/** `novuchat.json` → `chat-novuchat.novuchat.json`; `ensayo.json` → `chat-novuchat.prueba.json`. */
+/** `novuchat.json` → `chat-novuchat.novuchat.json`; `ensayo.json` → `chat-novuchat.prueba.json`; `ensayo-demo-a.json` → `chat-novuchat.ensayo-demo-a.json`. */
 export const salidaDe = (archivo) => (archivo === 'ensayo.json' ? 'chat-novuchat.prueba.json' : `chat-novuchat.${archivo.replace(/\.json$/, '')}.json`);
 export const archivosDeDatos = (dir = DATOS) => readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
 
@@ -165,6 +168,21 @@ const CLAVES_TEXTOS = ['saludo', 'listaBoton', 'listaTitulo', 'planesIntro', 'pl
   'traspasoRepite', 'traspasoSinRecepcion', 'recepcion', 'botonTraspaso', 'saludoWa', 'estadoAviso', 'falla', 'medioIlegible', 'invitaOtroRubro', 'planesAgotado'];
 const DESCARTES = ['numero_equivocado', 'vende_o_busca_trabajo', 'sin_negocio', 'spam_o_prueba'];
 
+// EL ENSAYO EN EL DEMO A (`ensayo-demo-a.json` → `chat-novuchat.ensayo-demo-a.json`): el mismo flujo, con el miniCRM CONECTADO, pero contra una HOJA DE PRUEBA y con los marcadores PROPIOS del ensayo.
+// Es un archivo de ensayo y nunca producción: los marcadores y la credencial de hoja de abajo solo pueden estar ahí, y ahí no puede quedar ninguno de producción (ni heredado).
+export const DATOS_ENSAYO_DEMO_A = 'ensayo-demo-a.json';
+export const SALIDA_ENSAYO_DEMO_A = 'chat-novuchat.ensayo-demo-a.json';
+export const CRED_PLANILLA_ENSAYO = 'Google Sheets miniCRM (ensayo)';
+const MARCADOR_PLANILLA_ENSAYO = { planillaProspectosId: 'REEMPLAZAR_PLANILLA_ENSAYO_ID', planillaProspectosHoja: 'REEMPLAZAR_PLANILLA_ENSAYO_HOJA' };
+// Los cuatro marcadores EXACTOS del ensayo (la hoja de prueba, el teléfono de quien prueba y el phone id del Demo A): ni otro marcador ni un valor literal.
+const MARCADORES_EXACTOS_ENSAYO = { ...MARCADOR_PLANILLA_ENSAYO, numeroRecepcion: 'REEMPLAZAR_NUMERO_AVISO_ENSAYO', phoneNumberIdEsperado: 'REEMPLAZAR_PHONE_NUMBER_ID' };
+// Credenciales del Demo A: solo el ensayo en el Demo A puede nombrarlas; en cualquier otra salida son un hallazgo.
+const CREDENCIALES_DEL_DEMO_A = ['WhatsApp OAuth account', 'Cierres NovuChat A (auto)', 'Graph WhatsApp Demo A (Bearer)'];
+// Marcadores del ensayo (el aviso al teléfono de quien prueba, la hoja de prueba y el phone id del Demo A, sin sufijo de cliente).
+const ES_MARCADOR_DE_ENSAYO = /REEMPLAZAR_(?:PLANILLA_ENSAYO_[A-Z0-9_]+|NUMERO_AVISO_ENSAYO|PHONE_NUMBER_ID(?![A-Z0-9_]))/;
+// Marcadores de PRODUCCIÓN de la hoja de prospectos de NovuChat y de su número: nunca en el ensayo.
+const ES_MARCADOR_DE_PRODUCCION = /REEMPLAZAR_(?:PLANILLA_PROSPECTOS_[A-Z0-9_]+|PHONE_NUMBER_ID_[A-Z0-9_]+|NUMERO_RECEPCION_[A-Z0-9_]+)/;
+
 /** Lo que un texto que VE EL CLIENTE no puede tener. Devuelve el motivo o ''. `libre`: textos que sí pueden tener cifras o una pregunta (los valida el llamador). */
 function errorDeTextoDelCliente(v, opc = {}) {
   if (typeof v !== 'string' || v.trim() === '') return 'tiene que ser un texto no vacío';
@@ -240,6 +258,19 @@ export function validarDatos(datos, archivo) {
     if (typeof cb.nombreNegocio === 'string' && (cb.nombreNegocio.trim() === '' || cb.nombreNegocio.length > 60)) e('configBase.nombreNegocio', 'tiene que tener de 1 a 60 caracteres');
     if (typeof cb.planillaProspectosHoja === 'string' && (cb.planillaProspectosHoja.trim() === '' || cb.planillaProspectosHoja.length > 100)) e('configBase.planillaProspectosHoja', 'tiene que tener de 1 a 100 caracteres (o el marcador)');
     if (typeof cb.mensajeComercioSuspendido === 'string' && (cb.mensajeComercioSuspendido.trim() === '' || cb.mensajeComercioSuspendido.length > 300)) e('configBase.mensajeComercioSuspendido', 'tiene que tener de 1 a 300 caracteres');
+  }
+
+  // --- el ensayo en el Demo A: marcadores y credencial de hoja PROPIOS, y ninguno de producción; y a la inversa en los demás archivos
+  if (cb) {
+    const textoCb = JSON.stringify(cb) + JSON.stringify(cred.planilla || '');
+    if (archivo === DATOS_ENSAYO_DEMO_A) {
+      for (const [c, m] of Object.entries(MARCADORES_EXACTOS_ENSAYO)) if (cb[c] !== m) e(`configBase.${c}`, `en ${DATOS_ENSAYO_DEMO_A} tiene que ser el marcador de ensayo «${m}» (la hoja de prueba; nunca la hoja real de prospectos)`);
+      if (ES_MARCADOR_DE_PRODUCCION.test(textoCb)) e('configBase', 'el ensayo en el Demo A trae un marcador de producción (REEMPLAZAR_PLANILLA_PROSPECTOS_*, REEMPLAZAR_PHONE_NUMBER_ID_* o REEMPLAZAR_NUMERO_RECEPCION_*): usa solo los del ensayo');
+      if (cred.planilla !== CRED_PLANILLA_ENSAYO) e('credenciales.planilla', `en ${DATOS_ENSAYO_DEMO_A} tiene que ser «${CRED_PLANILLA_ENSAYO}» (la de la hoja de prueba)`);
+      if (d.entrada !== 'trigger') e('entrada', `en ${DATOS_ENSAYO_DEMO_A} tiene que ser «trigger» (la herramienta lo cambia por el del Demo A)`);
+    } else if (ES_MARCADOR_DE_ENSAYO.test(textoCb) || cred.planilla === CRED_PLANILLA_ENSAYO) {
+      e('configBase', `trae un marcador o la credencial de hoja del ensayo en el Demo A (REEMPLAZAR_PLANILLA_ENSAYO_*, REEMPLAZAR_NUMERO_AVISO_ENSAYO, REEMPLAZAR_PHONE_NUMBER_ID o «${CRED_PLANILLA_ENSAYO}»): solo ${DATOS_ENSAYO_DEMO_A} puede llevarlos`);
+    }
   }
 
   // --- el mapa de columnas de la hoja de prospectos (módulo crm): lo valida el MISMO validador que corre en n8n
@@ -524,13 +555,82 @@ export function anfitrionPermitido(nombreDelNodo, url) {
  * Lo que un JSON de este flujo no puede tener, aunque alguien lo haya agregado a mano al archivo versionado. Devuelve la lista de hallazgos (vacía si está limpio).
  * `entrada`: 'trigger' | 'prueba'.
  */
-export function guardias(entrada, flujo, datos = {}) {
+// Quita los comentarios de un código JS respetando cadenas, plantillas (con su pila de `${ }`) y literales de regex (un «/*» dentro de una cadena NO abre un comentario: borrar código real ocultaría una mutación).
+// Solo se BORRAN comentarios: cadenas y regex se conservan, así que un error de lectura de una regex nunca oculta código; en la duda un «/» se toma como regex solo tras las palabras clave y los signos que la admiten sin ambigüedad.
+const ANTES_DE_REGEX = new Set(['return', 'typeof', 'case', 'do', 'else', 'in', 'of', 'new', 'delete', 'void', 'throw', 'instanceof', 'yield', 'await']);
+// `modo`: 'auto' decide por el contexto; 'regex' lee TODO «/» ambiguo como inicio de regex; 'division' lo lee siempre como división. La guardia aplica las reglas a las TRES lecturas y reporta la unión: ninguna lectura equivocada puede esconder código a las otras.
+const MEMO_SC = new Map();  // memo por modo + texto: la guardia relee los mismos nodos muchas veces
+export function sinComentarios(texto, modo = 'auto') {
+  const clave = modo + '\u0000' + texto;
+  let r = MEMO_SC.get(clave);
+  if (r === undefined) { r = sinComentariosSinMemo(texto, modo); if (MEMO_SC.size > 400) MEMO_SC.clear(); MEMO_SC.set(clave, r); }
+  return r;
+}
+function sinComentariosSinMemo(texto, modo) {
+  const t = String(texto);
+  let salida = '';
+  let i = 0;
+  let ultimo = '';     // último carácter significativo fuera de cadenas y comentarios
+  let palabra = '';    // la palabra completa que termina en `ultimo` (si es de identificador)
+  const plantillas = [];   // por cada `${` abierto: la profundidad de llaves dentro
+  const parens = [];       // por cada «(»: si la abre if/while/for/with
+  let ultimaPalabra = '';
+  const leerPlantilla = () => {  // desde el acento grave de apertura o desde el «}» que cierra un `${`: copia el texto hasta el cierre o hasta el próximo `${`
+    let j = i + 1;
+    while (j < t.length && t[j] !== '`') {
+      if (t[j] === '\\') { j += 2; continue; }
+      if (t[j] === '$' && t[j + 1] === '{') { salida += t.slice(i, j + 2); i = j + 2; plantillas.push(0); ultimo = '{'; palabra = ''; return; }
+      j++;
+    }
+    salida += t.slice(i, j + 1); i = j + 1; ultimo = '`'; palabra = '';
+  };
+  while (i < t.length) {
+    const c = t[i];
+    const d = t[i + 1];
+    if (c === '/' && d === '/') { while (i < t.length && t[i] !== '\n') i++; continue; }
+    if (c === '/' && d === '*') { const fin = t.indexOf('*/', i + 2); i = fin < 0 ? t.length : fin + 2; salida += ' '; continue; }
+    if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < t.length && t[j] !== c && t[j] !== '\n') j += t[j] === '\\' ? 2 : 1;
+      salida += t.slice(i, j + 1); i = j + 1; ultimo = c; palabra = ''; continue;
+    }
+    if (c === '`') { leerPlantilla(); continue; }
+    if (c === '{' && plantillas.length) { plantillas[plantillas.length - 1]++; }
+    if (c === '}' && plantillas.length) {
+      if (plantillas[plantillas.length - 1] === 0) { plantillas.pop(); leerPlantilla(); continue; }
+      plantillas[plantillas.length - 1]--;
+    }
+    if (c === '(') parens.push(/^(?:if|while|for|with)$/.test(palabra));
+    let condicion = false;
+    if (c === ')') condicion = parens.pop() === true;
+    if (c === '/') {
+      const admite = modo === 'regex' || (modo === 'auto' && (ultimo === '' || '(,=:[!&|?{};+-*%<>~^}'.includes(ultimo) || ANTES_DE_REGEX.has(palabra) || (ultimo === ')' && ultimaPalabra === 'cond')));
+      if (admite) {
+        let j = i + 1; let clase = false;
+        while (j < t.length && (clase || t[j] !== '/') && t[j] !== '\n') { if (t[j] === '\\') j++; else if (t[j] === '[') clase = true; else if (t[j] === ']') clase = false; j++; }
+        salida += t.slice(i, j + 1); i = j + 1; ultimo = '/'; palabra = ''; ultimaPalabra = ''; continue;
+      }
+    }
+    salida += c;
+    if (!/\s/.test(c)) {
+      ultimo = c;
+      if (/[\w$]/.test(c)) { palabra = /[\w$]/.test(t[i - 1] || '') ? palabra + c : c; } else palabra = '';
+      ultimaPalabra = c === ')' && condicion ? 'cond' : '';
+    }
+    i++;
+  }
+  return salida;
+}
+
+export function guardias(entrada, flujo, datos = {}, destino = '') {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   const nombres = new Set(nodos.map((n) => n.name));
   const parametros = (n) => (n && n.parameters) || {};
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   if (nodos.length) h.push(...hallazgosDelGuardado(flujo));
+  // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
+  h.push(...hallazgosDeExpresionesN8n(flujo || {}));
   // «Entrada de prueba» nunca en producción: es el único nodo que activa el modo prueba. «WhatsApp Trigger» nunca en la prueba.
   if (entrada !== 'prueba' && nombres.has(NODO_PRUEBA)) h.push(`contiene el nodo «${NODO_PRUEBA}» (activa el modo prueba): solo va en el JSON de prueba`);
   if (entrada === 'prueba' && nombres.has(NODO_TRIGGER)) h.push(`contiene el nodo «${NODO_TRIGGER}» en la prueba: activarlo registra el webhook en Meta y se lo quita al flujo vivo`);
@@ -582,35 +682,83 @@ export function guardias(entrada, flujo, datos = {}) {
       const js = String(parametros(n).jsCode || '');
       const sinRegistro = FUENTE_REGISTRO ? js.split(FUENTE_REGISTRO.trimEnd()).join('') : js;
       // (sin los comentarios: el módulo trae un ejemplo de `const SS_CONFIG = …` en su cabecera)
-      const codigo = js.replace(/^\s*\/\/.*$/gm, '');
+      const codigo = sinComentarios(js);
       // `cnRegistro(` fuera de `_registro.js` también es usar el módulo: llama a `ssResultadoDeCompromiso`.
       const usa = /\bss(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig|NumeroHeader)\(/.test(sinRegistro) || /\bcnRegistro\(/.test(sinRegistro);
-      const define = /function ss[A-Z]\w*\(/.test(js);
+      const define = /function\s*\*?\s*ss[A-Z]\w*\s*\(/.test(js);
       if ((usa || define) && !js.includes(FUENTE_SESION.trimEnd())) h.push(`el nodo «${n.name}» usa o define funciones de sesión (ss*) sin traer \`comun-sin-agente/src/sesion.js\` tal cual: se INCLUYE el módulo común, no se copia ni se edita`);
       if (/function (cn|ch)(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig)\(/.test(js)) h.push(`el nodo «${n.name}» trae una copia propia de los ayudantes de sesión`);
       if (usa || define) {
         // En JS gana la ÚLTIMA declaración: traer el módulo y luego REDEFINIR una función (`function ssDesdeAutorizado() { return true; }`) anularía el aislamiento. Cada `ss*` y SS_CONFIG, UNA vez por nodo.
+        // Las declaraciones del módulo común y del registro, tal cual (leídos solos, sin ambigüedad), más el MÁXIMO por nombre del resto del nodo entre las tres lecturas del tokenizador (auto, todo «/» regex, todo «/» división): una lectura equivocada no puede esconder una redeclaración.
+        const contar = (lec) => { const una = new Map(); for (const m of lec.matchAll(/\b(?:(?:async\s+)?function\s*\*?|const|let|var)\s*(ss[A-Z]\w*|SS_CONFIG)\b/g)) una.set(m[1], (una.get(m[1]) || 0) + 1); return una; };
         const cuenta = new Map();
-        for (const m of codigo.matchAll(/\b(?:function|const|let|var)\s+(ss[A-Z]\w*|SS_CONFIG)\b/g)) cuenta.set(m[1], (cuenta.get(m[1]) || 0) + 1);
+        let resto = js;
+        for (const fuente of [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean)) {
+          const f = fuente.trimEnd();
+          if (!resto.includes(f)) continue;
+          resto = resto.split(f).join('');
+          for (const [nombre, veces] of contar(sinComentarios(f))) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
+        }
+        const maximo = new Map();
+        for (const modo of ['auto', 'regex', 'division']) for (const [nombre, veces] of contar(sinComentarios(resto, modo))) maximo.set(nombre, Math.max(maximo.get(nombre) || 0, veces));
+        for (const [nombre, veces] of maximo) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
+        const configPorTexto = cuenta.has('SS_CONFIG');   // lo que ve la lectura por texto ANTES de la unión: el hallazgo de main se emite siempre que main lo emitiría
+        // LA GUARDIA ES LA UNIÓN: a la lectura por texto (arriba) se suma la del árbol (acorn) y se toma el MÁXIMO por nombre. El árbol se lee sobre el código COMPLETO (nunca con el módulo quitado) y sobre las piezas por separado (el módulo, el registro y lo de fuera de ellos). Así el parser solo suma: no puede dejar pasar lo que la lectura por texto cuenta.
+        const porArbol = new Map();
+        const maxArbol = (m) => { for (const [nombre, veces] of m || []) porArbol.set(nombre, Math.max(porArbol.get(nombre) || 0, veces)); };
+        maxArbol(contarDeclaraciones(js));
+        {
+          const piezas = new Map(); let fuera = js;
+          for (const fuente of [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean)) {
+            const f = fuente.trimEnd();
+            if (!fuera.includes(f)) continue;
+            fuera = fuera.split(f).join('');
+            for (const [nombre, veces] of contarDeclaraciones(f) || []) piezas.set(nombre, (piezas.get(nombre) || 0) + veces);
+          }
+          for (const [nombre, veces] of contarDeclaraciones(fuera) || []) piezas.set(nombre, (piezas.get(nombre) || 0) + veces);
+          maxArbol(piezas);
+        }
+        for (const [nombre, veces] of porArbol) if (veces > (cuenta.get(nombre) || 0)) cuenta.set(nombre, veces);
         for (const [nombre, veces] of cuenta) if (veces !== 1) h.push(`el nodo «${n.name}» declara ${nombre} ${veces} veces: cada ayudante de sesión y SS_CONFIG se declaran UNA sola vez por nodo (la última declaración gana y anularía el módulo)`);
-        if (!cuenta.has('SS_CONFIG')) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
+        if (!configPorTexto || !cuenta.has('SS_CONFIG')) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
       }
     }
+    // LA GUARDIA ES LA UNIÓN de dos lecturas: las reglas por texto (con el tokenizador, abajo) Y el análisis del árbol (acorn). El parser es una red ADITIVA: solo suma hallazgos, nunca quita los de las reglas por texto.
     // Nadie reasigna ni muta los parámetros de sesión: ni `ss*` ni `SS_CONFIG` (con `=`, por índice o con `Object.assign/defineProperty`), sobre el código de cada nodo SIN el módulo común ni el registro (que los declaran) y sin comentarios.
     {
-      const sinCom = (t) => String(t).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-      const propios = [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean).map((t) => sinCom(t).trim());
+      const propios = [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean).map((t) => t.trimEnd());
+      const OP = '(?:\\*\\*|<<|>>>?|&&|\\|\\||\\?\\?|[-+*\\/%&|^])?';
+      const IDX = '\\[(?:[^\\[\\]]|\\[[^\\]]*\\])*\\]';   // un índice, con un nivel de corchetes anidados: ssFoo[a[0]] = 1
+      const MIEMBROS = '(?:\\s*(?:\\.\\s*\\w+|' + IDX + '))*';
       const REGLAS = [
-        [/\b(ss[A-Z]\w*|SS_CONFIG)\s*(\.\s*\w+\s*)?[-+*\/%&|^]?=(?!=)/, 'reasigna o muta un ayudante de sesión (ss*) o SS_CONFIG con «=»'],
+        [new RegExp('\\b(?:ss[A-Z]\\w*|SS_CONFIG)' + MIEMBROS + '\\s*' + OP + '=(?![=>])'), 'reasigna o muta un ayudante de sesión (ss*) o SS_CONFIG con «=» (o con un operador de asignación)'],
         [/(\+\+|--)\s*ss[A-Z]|ss[A-Z]\w*\s*(\+\+|--)/, 'incrementa o decrementa un ayudante de sesión (ss*)'],
-        [/[\[{,:]\s*ss[A-Z]\w*\s*[\]},]\s*=/, 'reasigna un ayudante de sesión (ss*) por desestructuración'],
+        [/\bss[A-Z]\w*[^\[\]{}();]*[\]}](?:\s*[\]}])*\s*=(?![=>])/, 'reasigna un ayudante de sesión (ss*) por desestructuración'],
+        [/\bfor\s*(?:await\s*)?\([^;)]*?\b(?:ss[A-Z]|SS_CONFIG)[^;)]*?\b(?:of|in)\b/, 'usa un ayudante de sesión (ss*) o SS_CONFIG como variable de un for…of / for…in'],
+        [/(?<![\p{L}\p{N}_$])eval(?![\p{L}\p{N}_$])|\.\s*constructor(?![\p{L}\p{N}_$])/u, 'usa eval o .constructor en cualquier posición (cubre eval(…), (eval)(…), alias de eval y X.constructor)'],
+        [/(?<![\p{L}\p{N}_$])Function(?![\p{L}\p{N}_$])/u, 'usa Function en cualquier posición (cubre Function(…) y new Function; no ve otros caminos hacia Function)', 'soloCodigo'],
+        [/\.\s*prototype(?:\s*\.\s*\w+)*\s*(?:\*\*|<<|>>>?|&&|\|\||\?\?|[-+*\/%&|^])?=(?![=>])|=\s*[\w$.]*\.prototype\b(?!\s*\.)|__proto__|\bdefinePropert(?:y|ies)\s*\(\s*[\w$.]*prototype|\bReflect\s*\.\s*(?:set|defineProperty)\s*\(\s*[\w$.]*prototype|\bObject\s*\.\s*assign\s*\(\s*[\w$.]*prototype/, 'contamina un prototipo (asigna a .prototype, asigna un .prototype a una variable, __proto__, o defineProperty/Reflect/Object.assign sobre un prototype)'],
+        [/\b(?:set|get)PrototypeOf\b/, 'usa setPrototypeOf o getPrototypeOf'],
+        [/\bdelete\s+(?:ss[A-Z]|SS_CONFIG)/, 'borra un ayudante de sesión (ss*) o SS_CONFIG con delete'],
         [/SS_CONFIG\s*\[/, 'accede a SS_CONFIG por índice'],
-        [/Object\.(assign|defineProperty)\(\s*SS_CONFIG/, 'muta SS_CONFIG con Object.assign o Object.defineProperty'],
+        [/(?:Object\.(?:assign|defineProperty|defineProperties)|Reflect\.(?:set|defineProperty|deleteProperty))\(\s*SS_CONFIG/, 'muta SS_CONFIG con Object.assign/defineProperty/defineProperties o con Reflect'],
       ];
       for (const n of nodos) {
-        let resto = sinCom(parametros(n).jsCode || '');
-        for (const p of propios) resto = resto.split(p).join('');
-        for (const [re, que] of REGLAS) if (re.test(resto)) h.push(`el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
+        let js = String(parametros(n).jsCode || '');
+        for (const p of propios) js = js.split(p).join('');
+        // Cuatro lecturas del MISMO texto y la UNIÓN de sus hallazgos: con los comentarios quitados según el contexto, con todo «/» ambiguo leído como regex, leído como división, y el texto crudo (red adicional, solo para las reglas de mutación de ss*/SS_CONFIG: un comentario que nombre «ssX = » sería un falso positivo aceptable). Ninguna lectura equivocada del tokenizador puede esconder código a las otras.
+        const hallazgos = new Set();
+        for (const [k, lectura] of [sinComentarios(js, 'auto'), sinComentarios(js, 'regex'), sinComentarios(js, 'division'), js].entries()) {
+          let resto = lectura.replace(/\\u(?:\{([0-9a-fA-F]+)\}|([0-9a-fA-F]{4}))/g, (_, x, y) => { const cp = parseInt(x || y, 16); return cp <= 0x10ffff ? String.fromCodePoint(cp) : ''; });  // \u en TODO el texto: `e\u{76}al`, `ssA`
+          // «(ssX) = f», «((ssX))», «[(ssX)] = …»: se quitan los paréntesis (y espacios) que envuelven al nombre antes de aplicar las reglas
+          for (let vuelta = 0; vuelta < 8; vuelta++) resto = resto.replace(new RegExp('\\(\\s*((?:ss[A-Z]\\w*|SS_CONFIG)' + MIEMBROS + ')\\s*\\)', 'g'), ' $1 ');
+          for (const [re, que, ambito] of REGLAS) if (!(k === 3 && ambito === 'soloCodigo') && re.test(resto)) hallazgos.add(`el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
+        }
+        // La unión con el ÁRBOL (acorn, `guarda-ast.mjs`): sobre el código completo del nodo y sobre el que queda sin el módulo común ni el registro. Falla cerrada: lo que no se puede analizar es un hallazgo.
+        const completo = String(parametros(n).jsCode || '');
+        for (const que of [...hallazgosDelCodigo(completo), ...hallazgosDelCodigo(js)]) hallazgos.add(que === TEXTO_NO_ANALIZABLE ? `el nodo «${n.name}» ${que}: se rechaza por precaución (la guardia de los parámetros de sesión no puede leerlo)` : `el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
+        for (const x of hallazgos) h.push(x);
       }
     }
     // En la variante de PRUEBA, «Carga de entrada» DESCARTA lo que llegue a «Entrada de prueba» sin `modoPrueba: true` (si no, se comportaría como producción); producción no tiene «Entrada de prueba».
@@ -650,6 +798,23 @@ export function guardias(entrada, flujo, datos = {}) {
   }
   if (sheet('Agregar fila') && formato(sheet('Agregar fila')) !== 'USER_ENTERED') h.push('«Agregar fila» tiene que escribir en USER_ENTERED (la fecha queda como fecha)');
   if (sheet('Actualizar fila') && formato(sheet('Actualizar fila')) !== 'RAW') h.push('«Actualizar fila» tiene que escribir en RAW (nada se interpreta)');
+  // EL ENSAYO EN EL DEMO A, en lo ARMADO (y en el versionado, aunque alguien lo haya tocado a mano): solo `chat-novuchat.ensayo-demo-a.json` puede llevar los marcadores y la credencial de hoja del ensayo, y ahí no puede quedar ninguno de producción.
+  {
+    const base = nodos.find((n) => n.name === 'Config base');
+    const valoresBase = ((((base || {}).parameters || {}).assignments || {}).assignments || []).map((a) => String((a && a.value) ?? ''));
+    const hojas = nodos.filter((n) => n.type === 'n8n-nodes-base.googleSheets');
+    const credDeHojas = hojas.map((n) => String((((n.credentials || {}).googleApi) || {}).name || ''));
+    if (destino === SALIDA_ENSAYO_DEMO_A) {
+      const porNombre = Object.fromEntries((((base || {}).parameters || {}).assignments || {}).assignments?.map((a) => [a.name, a.value]) || []);
+      for (const [c, m] of Object.entries(MARCADORES_EXACTOS_ENSAYO)) if (porNombre[c] !== m) h.push(`el ensayo en el Demo A: «Config base».${c} tiene que ser el marcador «${m}»`);
+      if (valoresBase.some((v) => ES_MARCADOR_DE_PRODUCCION.test(v))) h.push('el ensayo en el Demo A: «Config base» trae un marcador de producción');
+      if (!hojas.length || credDeHojas.some((c) => c !== CRED_PLANILLA_ENSAYO)) h.push(`el ensayo en el Demo A: los nodos de la planilla tienen que usar «${CRED_PLANILLA_ENSAYO}» (la hoja de prueba) y el miniCRM tiene que estar conectado`);
+    } else {
+      if (valoresBase.some((v) => ES_MARCADOR_DE_ENSAYO.test(v)) || credDeHojas.includes(CRED_PLANILLA_ENSAYO)) h.push(`trae un marcador o la credencial de hoja del ensayo en el Demo A: solo ${SALIDA_ENSAYO_DEMO_A} puede llevarlos`);
+      const delDemoA = new Set(nodos.flatMap((n) => Object.values(n.credentials || {}).map((c) => String((c && c.name) || ''))).filter((c) => CREDENCIALES_DEL_DEMO_A.includes(c)));
+      if (delDemoA.size) h.push(`usa credenciales del Demo A (${[...delDemoA].join(', ')}): solo ${SALIDA_ENSAYO_DEMO_A} puede llevarlas`);
+    }
+  }
   // `REEMPLAZAR_` solo en «Config base» (y en la ruta de «Entrada de prueba»).
   for (const n of nodos) {
     if (n.name === 'Config base') continue;
@@ -723,14 +888,14 @@ export function construir({ carpeta = AQUI, datos: dirDatos = DATOS, verificar =
     const texto = armarTenant(proyecto, datos, archivo);
     const salida = salidaDe(archivo);
     // Lo que se arma nunca viola las guardias (si la plantilla lo hiciera, falla la construcción)…
-    const propios = guardias(datos.entrada, JSON.parse(texto), datos);
+    const propios = guardias(datos.entrada, JSON.parse(texto), datos, salida);
     if (propios.length) throw new Error(`${salida}: ${propios.join('; ')}`);
     const ruta = join(carpeta, salida);
     const actual = leerSiExiste(ruta, salida);
     // …y el archivo VERSIONADO tampoco las viola (aunque alguien lo haya tocado a mano).
     let versionado = [];
     if (actual !== null) {
-      try { versionado = guardias(datos.entrada, JSON.parse(actual), datos); } catch (x) { versionado = ['no es un JSON válido']; }
+      try { versionado = guardias(datos.entrada, JSON.parse(actual), datos, salida); } catch (x) { versionado = ['no es un JSON válido']; }
     }
     if (!verificar) escribirSinSeguirEnlaces(ruta, texto, salida);
     return { archivo: salida, datos: archivo, nodos: JSON.parse(texto).nodes.length, existia: actual !== null, alDia: actual === texto, versionado };

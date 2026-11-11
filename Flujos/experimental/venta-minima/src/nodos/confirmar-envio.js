@@ -1,4 +1,4 @@
-// CONFIRMAR ENVÍO (PR-4a): lo único que se da por hecho es lo que Meta ACEPTÓ. Si el mensaje al cliente no salió (ni por el envío ni por su respaldo en texto), ARMA el compromiso
+// CONFIRMAR ENVÍO (PR-4a, PR-4b): lo único que se da por hecho es lo que Meta ACEPTÓ. Si el mensaje al cliente no salió (ni por el envío ni por su respaldo en texto), ARMA el compromiso
 // compensatorio del estado; `Comprometer compensación` lo manda y `Resumen del turno` corta la ejecución en ERROR. No envía, no reporta y no escribe en ningún lado.
 //
 // CORRE AL FINAL: es el hijo más bajo de «Soltar mensajes» (`executionOrder: v1`), debajo de los envíos y del cierre, y lee lo que contestaron. devuelve un ítem SOLO si hay que compensar
@@ -11,6 +11,10 @@
 //   - CON hecho externo (el restaurante ya recibió el aviso o el cierre quedó registrado): el bloque comprometido queda, con el paso `menu` (un botón viejo solo muestra el menú), salvo que el
 //     paso sea `esperando_comprobante`: reconfirmar armaría un segundo pedido con otro código, otro aviso y otro cierre.
 // Si nada cambia (no hubo compromiso en este turno), no hay nada que compensar.
+//
+// PR-4b, `asentar` SIN nodo nuevo: si el servidor concedió el cupo de aviso y NINGÚN aviso fue aceptado por Meta (con wamid), `Armar mensajes` dejó el cuerpo de `asentar` en el primer ítem de
+// «Soltar mensajes» (`asentar`) y este nodo lo emite como un SEGUNDO ítem (`tipo: 'asentar'`) hacia «Comprometer compensación», que ya postea `$json.compromiso`. «Resumen del turno» localiza el ítem de
+// la compensación entre los dos por `compensar === true`. Se emite aunque no haya mensajes al cliente ni compensación. Un 5xx del `asentar` deja el cupo consumido (conservador).
 const rtId = (j) => {
   const m = j && j.messages;
   return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== '';
@@ -18,6 +22,7 @@ const rtId = (j) => {
 // Sin compensación no se devuelve ningún ítem: «Comprometer compensación» no corre y «Resumen del turno» (hijo directo de «Soltar mensajes», debajo de todo) cierra el turno.
 const sale = (extra) => (extra && extra.compensar === true ? [{ json: Object.assign({ compensar: true, compromiso: null, numero: '' }, extra) }] : []);
 const items = vmTodos('Soltar mensajes');
+const compensacion = () => {
 const enviables = items.filter((i) => i && i.sinMensajes !== true);
 if (!enviables.length || !vmNodo('Enviar a WhatsApp')) return sale();
 // Solo cuentan los mensajes AL CLIENTE (el aviso de transferencia del genérico, destino `recepcion`, va al final y no dispara compensación).
@@ -46,5 +51,10 @@ if (!hecho) {
 }
 const compromiso = ssCuerpoComprometer(from, $execution.id, 'comp', Number(primero.versionComprometida) || 0, bloque);
 if (compromiso === null) return sale({ numero: primero.numero || ssNumeroHeader() });
-compromiso.sesion.venceEnMin = vmVenceEnMin(bloque);
+compromiso.sesion.venceEnMin = vmVenceEnMin(bloque, Number(primero.ahoraMs) || Date.now());
 return sale({ compensar: true, compromiso: compromiso, numero: primero.numero || ssNumeroHeader() });
+};
+const salidaComp = compensacion();
+const cuerpoAsentar = items[0] && items[0].asentar && typeof items[0].asentar === 'object' ? items[0].asentar : null;
+const salidaAsentar = cuerpoAsentar ? [{ json: { tipo: 'asentar', compensar: false, compromiso: cuerpoAsentar, numero: String(items[0].numero || ssNumeroHeader()) } }] : [];
+return salidaComp.concat(salidaAsentar);

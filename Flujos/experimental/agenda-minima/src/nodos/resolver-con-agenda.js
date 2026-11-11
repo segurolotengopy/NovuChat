@@ -42,6 +42,8 @@ if (falloAgenda) {
   return salir('error', { errores: ['no se pudo leer la agenda del calendario'], params: { motivo: 'no se pudo leer la agenda del calendario' } });
 }
 
+// Dos hermanos = dos citas seguidas de la duracion por defecto: solo se ofrece lo que tiene ese tiempo libre CONTIGUO.
+const dur = (Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30) * ((en.pacientes || []).length === 2 ? 2 : 1);
 const esMover = !!en.moverId;
 const ignorar = esMover ? [en.moverId] : [];
 const leerLista = () => citasDelTelefono({ eventos: eventos, telefono: t.from, ahoraMs: ahora });
@@ -92,7 +94,7 @@ function armarOferta(o) {
   const excluir = (o.excluir || []).filter(Boolean);
   const llamar = (fechaPref, pidioHoy) => ofertaDeHuecos({
     eventos: eventos, cfg: cfgAg, ahoraMs: ahora, fechaPreferida: fechaPref, horaPreferida: o.horaPreferida,
-    franja: o.franja || 'cualquiera', pidioHoy: pidioHoy === true, ignorarIds: ignorar, maximo: 3 + excluir.length + (en.moverInicio ? 1 : 0),
+    franja: o.franja || 'cualquiera', pidioHoy: pidioHoy === true, ignorarIds: ignorar, duracionMin: dur, maximo: 3 + excluir.length + (en.moverInicio ? 1 : 0),
   });
   const propia = en.moverInicio ? msDe(en.moverInicio) : null;
   const filtrar = (r) => r.huecos.filter((h) => excluir.indexOf(h.inicio) < 0 && !(propia !== null && msDe(h.inicio) === propia));
@@ -136,7 +138,7 @@ function terminarOferta(oferta, pregunta, extraAviso) {
 function huecoValido(inicio) {
   const fecha = fechaLocal(msDe(inicio));
   const libres = huecosDelDia({
-    eventos: eventos, fecha: fecha, horario: cfg.horario, duracionMin: cfg.duracionPorDefectoMin, ahoraMs: ahora,
+    eventos: eventos, fecha: fecha, horario: cfg.horario, duracionMin: dur, ahoraMs: ahora,
     anticipacionMin: cfg.anticipacionMinimaMin, franja: 'cualquiera', ignorarIds: ignorar,
   });
   const h = libres.filter((x) => x.inicio === inicio)[0];
@@ -151,6 +153,65 @@ function servicioDeCita(titulo, defecto) {
 }
 
 // =============================================================================
+// Cual de las citas del telefono nombra el paciente, escrito o dicho. -> la cita, o null si no hay UNA sola.
+function citaPorEscrito(dicho, citas) {
+  const n = cnNorm(String(dicho || '').slice(0, 300)).replace(/[^a-z0-9:.\s]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!n) return null;
+  let h = null; let mi = 0;
+  let m = /(?:^|[^\d])([01]?\d|2[0-3])[:.]([0-5]\d)(?!\d)/.exec(n);
+  if (m) { h = Number(m[1]); mi = Number(m[2]); }
+  if (h === null) {
+    m = /\b(?:a\s+)?(?:la|las|de\s+las)\s+(\d{1,2})(?:\s+y\s+(media|cuarto))?(?!\d|:)/.exec(n);
+    if (m && Number(m[1]) >= 1 && Number(m[1]) <= 23) { h = Number(m[1]); mi = m[2] === 'media' ? 30 : (m[2] === 'cuarto' ? 15 : 0); }
+  }
+  if (h === null) { m = /\b(\d{1,2})\s*(?:am|pm)\b/.exec(n); if (m && Number(m[1]) >= 1 && Number(m[1]) <= 12) h = Number(m[1]); }
+  const pm = /\b(pm|tarde|noche)\b/.test(n);
+  const am = /\bam\b|\b(de|en|por) la manana\b/.test(n);
+  const dia = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/.exec(n);
+  const nDia = /\bel\s+(\d{1,2})(?![\d:.])/.exec(n);
+  const hoy = fechaLocal(ahora);
+  const manana = /\bmanana\b/.test(n.replace(/\b(de|en|por) la manana\b/g, ' '));
+  const mo = /\b(primer[oa]?|segund[oa]|tercer[oa]?|ultim[oa])\b/.exec(n);
+  const ord = mo ? (mo[1].charAt(0) === 'p' ? 0 : (mo[1].charAt(0) === 's' ? 1 : (mo[1].charAt(0) === 't' ? 2 : citas.length - 1))) : null;
+  // Nombre: una palabra del texto (3+ letras) que esta en el titulo de la cita; sin contar las palabras de siempre.
+  const COMUN = ['cita', 'control', 'nino', 'sano', 'recien', 'nacido', 'cns', 'las', 'los', 'del', 'que', 'una', 'por', 'favor', 'cancelar', 'cancela', 'cancelarla', 'mover', 'mi', 'la', 'el', 'de', 'hoy', 'manana', 'tarde', 'noche'];
+  const pal = n.split(' ').filter((w) => w.length >= 3 && COMUN.indexOf(w) < 0 && !/^\d/.test(w));
+  const porNombre = pal.length ? citas.filter((c) => { const tt = ' ' + cnNorm(c.titulo).replace(/[^a-z0-9\s]+/g, ' ') + ' '; return pal.some((w) => tt.indexOf(' ' + w + ' ') >= 0); }) : [];
+  if (h === null && !dia && !nDia && !manana && ord === null && !/\bhoy\b/.test(n) && !porNombre.length) return null;
+  const cand = citas.filter((c, i) => {
+    const ms = msDe(c.inicio);
+    const H = Number(horaLocal(ms).slice(0, 2)); const M = Number(horaLocal(ms).slice(3, 5)); const f = fechaLocal(ms);
+    if (h !== null) {
+      if (M !== mi) return false;
+      if (h >= 13 || h === 0 ? H !== h : (H % 12) !== (h % 12)) return false;
+      if (pm && H < 12) return false;
+      if (am && H >= 12) return false;
+    }
+    if (ord !== null && i !== ord) return false;
+    if (dia && cnNorm(diaDeLaSemana(f)) !== dia[1]) return false;
+    if (nDia && Number(f.slice(8, 10)) !== Number(nDia[1])) return false;
+    if (/\bhoy\b/.test(n) && f !== hoy) return false;
+    if (manana && f !== sumarDias(hoy, 1)) return false;
+    if (porNombre.length && porNombre.indexOf(c) < 0) return false;
+    return true;
+  });
+  return cand.length === 1 ? cand[0] : null;
+}
+
+function cancelarCita(c) {
+  en.paso = 'inicio'; en.moverId = null; en.moverInicio = null; en.moverTitulo = ''; en.fallosCita = 0;
+  // `restantes`: los inicios de las OTRAS citas del telefono (solo dato para la planilla; no genera ningun mensaje).
+  return salir('cancelar', { borrarId: c.id, cancelada: c, restantes: leerLista().filter((x) => x.id !== c.id).map((x) => x.inicio), params: prm });
+}
+function moverCita(c) {
+  en.moverId = c.id; en.moverInicio = c.inicio; en.moverTitulo = c.titulo; en.paso = 'moviendo'; en.fallosCita = 0;
+  en.servicio = servicioDeCita(c.titulo, en.servicio);
+  en.pacientes = [c.titulo.replace(/\s*\((?:CNS|RN)[^)]*\)\s*$/i, '').replace(/^Cita\s+/i, '').trim()];
+  en.hermanos = false;
+  const oferta = armarOferta({ servicio: en.servicio, franja: 'cualquiera' });
+  return terminarOferta(oferta, null);
+}
+
 switch (p.plan) {
   case 'ofrecer': {
     const oferta = armarOferta(prm);
@@ -167,21 +228,29 @@ switch (p.plan) {
       const diaDelBoton = fechaLocal(msDe(inicio));
       const oferta = armarOferta({ servicio: srv, fechaPreferida: diaDelBoton > fechaLocal(ahora) ? diaDelBoton : null, pidioHoy: diaDelBoton === fechaLocal(ahora), franja: 'cualquiera' });
       en.huecoElegido = null;
-      return terminarOferta(oferta, null, oferta.huecos.length ? 'hueco_perdido' : null);
+      // Si el hueco tenia 30 minutos y ahora son dos hermanos, se dice que faltan dos seguidos.
+      return terminarOferta(oferta, null, oferta.huecos.length ? (dur > (Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30) ? 'sin_dos_seguidos' : 'hueco_perdido') : null);
     }
     const pac = (en.pacientes || []).map((n) => partirNombre(String(n))).filter((n) => n && n.apellidos && n.nombres);
     const titulo = tituloDeLaCita({ pacientes: pac, servicio: srv });
-    if (!titulo) {
+    // Nunca crear una sola cita omitiendo a un hermano: si algun nombre no se pudo partir, se pide el nombre.
+    if (!titulo || pac.length !== (en.pacientes || []).length) {
       en.paso = 'esperando_nombre';
       en.huecoElegido = inicio;
       en.servicio = srv;
       return salir('pedir_nombre', { params: { inicio: inicio, servicio: srv } });
     }
     en.servicio = srv;
+    // Una cita por paciente (hermanos: dos seguidas); `inicio` es el de la primera y `fin` el de la ultima.
+    const citas = citasDeHermanos({
+      inicio: h.inicio, duracionMin: Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30,
+      pacientes: pac, servicio: srv, telefono: t.from, nombrePerfil: t.nombrePerfil,
+    });
     return salir('crear', {
       crear: {
-        inicio: h.inicio, fin: h.fin, titulo: titulo, servicio: srv, pacientes: pac,
+        inicio: citas[0].inicio, fin: citas[citas.length - 1].fin, titulo: titulo, servicio: srv, pacientes: pac,
         descripcion: descripcionDeLaCita({ telefono: t.from, servicio: srv, pacientes: pac, nombrePerfil: t.nombrePerfil }),
+        citas: citas,
       },
       borrarId: en.moverId || '',
       params: Object.assign({}, prm, { servicio: srv }),
@@ -189,6 +258,7 @@ switch (p.plan) {
   }
 
   case 'listar': {
+    en.fallosCita = 0;
     const citas = leerLista();
     if (!citas.length) return salir('sin_citas', { params: { motivo: 'el paciente pidió ' + (prm.modo === 'm' ? 'mover' : 'cancelar') + ' una cita y no hay ninguna a su nombre' } });
     if (prm.modo === 'm' && citas.length === 1) {
@@ -206,19 +276,28 @@ switch (p.plan) {
   case 'cancelar': {
     const c = leerLista().filter((x) => x.id === prm.id)[0];
     if (!c) return salir('sin_citas', { params: { motivo: 'tocó cancelar una cita que no figura a su nombre' } });
-    en.paso = 'inicio'; en.moverId = null; en.moverInicio = null; en.moverTitulo = '';
-    return salir('cancelar', { borrarId: c.id, cancelada: c, params: prm });
+    return cancelarCita(c);
   }
 
   case 'mover_elegido': {
     const c = leerLista().filter((x) => x.id === prm.id)[0];
     if (!c) return salir('sin_citas', { params: { motivo: 'tocó mover una cita que no figura a su nombre' } });
-    en.moverId = c.id; en.moverInicio = c.inicio; en.moverTitulo = c.titulo; en.paso = 'moviendo';
-    en.servicio = servicioDeCita(c.titulo, en.servicio);
-    en.pacientes = [c.titulo.replace(/\s*\((?:CNS|RN)[^)]*\)\s*$/i, '').replace(/^Cita\s+/i, '').trim()];
-    en.hermanos = false;
-    const oferta = armarOferta({ servicio: en.servicio, franja: 'cualquiera' });
-    return terminarOferta(oferta, null);
+    return moverCita(c);
+  }
+
+  case 'elegir_cita_escrita': {
+    const modo = prm.modo === 'm' ? 'm' : 'c';
+    const citas = leerLista();
+    if (!citas.length) return salir('sin_citas', { params: { motivo: 'el paciente pidió ' + (modo === 'm' ? 'mover' : 'cancelar') + ' una cita y no hay ninguna a su nombre' } });
+    const c = citaPorEscrito(prm.dicho, citas);
+    if (c) return modo === 'm' ? moverCita(c) : cancelarCita(c);
+    // No se entendió cuál: se vuelve a mostrar la lista con otro texto; al tercer intento seguido, a una persona.
+    const fallos = (Number(est.fallosCita) || 0) + 1;
+    if (fallos >= 3) {
+      return salir('transferir', { params: { motivo: 'no se pudo identificar cuál cita quería ' + (modo === 'm' ? 'mover' : 'cancelar') + ' tras varios intentos' } });
+    }
+    en.fallosCita = fallos;
+    return salir('listar', { citas: citas.slice(0, 10), params: { modo: modo, noEntendi: true } });
   }
 
   case 'responder': {

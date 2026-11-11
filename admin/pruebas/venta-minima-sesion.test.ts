@@ -220,6 +220,17 @@ describe('vmGuardarPedido, vmVenceEnMin y el tope en BYTES', () => {
     expect(v({ estado: { paso: 'menu' } })).toBe(60);
   });
 
+  it('vmVenceEnMin con reservas de HOY (La Paz, UTC-4): no vence antes de la medianoche local (máx. 4320); reservas de otro día o sin ahoraMs, no cambian nada', () => {
+    const ve = lib().vmVenceEnMin;
+    const ahora = Date.UTC(2026, 9, 5, 18, 0, 0); // 14:00 en La Paz
+    const hoy = { estado: { paso: 'menu' }, pedidos: {}, reservas: { dia: '2026-10-05', n: 2 } };
+    expect(ve(hoy, ahora)).toBe(600); // 10 h hasta la medianoche local
+    expect(ve({ ...hoy, reservas: { dia: '2026-10-04', n: 2 } }, ahora)).toBe(60);
+    expect(ve(hoy)).toBe(60);
+    expect(ve({ ...hoy, pedidos: { a: {} } }, ahora)).toBe(4320);
+    expect(ve(hoy, Date.UTC(2026, 9, 6, 3, 59, 30))).toBe(60); // 23:59:30 local: queda menos que el mínimo, gana el valor actual
+  });
+
   it('ssBytes mide UTF-8 sin lanzar con un surrogate suelto (cuenta U+FFFD = 3 bytes), con tildes (2), emojis (4) y sin Buffer', () => {
     const b = (t: string): number => lib().ssBytes(t);
     expect(b('abc')).toBe(3);
@@ -302,15 +313,15 @@ describe('las guardias de `construir.mjs --verificar` sobre el estado de la conv
   };
   const codigo = (f: ReturnType<typeof leer>, n: string): string => String(nodoDe(f, n).parameters['jsCode']);
 
-  it('contraprueba: sin tocar nada, `--verificar` sale con 0 y los cuatro JSON traen el módulo `sesion` TAL CUAL en los cinco nodos que lo usan', () => {
+  it('contraprueba: sin tocar nada, `--verificar` sale con 0 y los cuatro JSON traen el módulo `sesion` TAL CUAL en los seis nodos que lo usan (PR-4b: también «Armar avisos»)', () => {
     const r = verificarEnCopia(() => undefined);
     expect(r.status, r.stderr).toBe(0);
     for (const archivo of ['venta-minima.qtaco.json', 'venta-minima.qtaco-3727.json', 'venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json']) {
       const f = leer(archivo);
-      for (const n of ['Config del negocio', 'Armar mensajes', 'Soltar mensajes', 'Confirmar envío', 'Resumen del turno']) {
+      for (const n of ['Config del negocio', 'Armar avisos', 'Armar mensajes', 'Soltar mensajes', 'Confirmar envío', 'Resumen del turno']) {
         expect(codigo(f, n), `${archivo} · ${n}`).toContain(SESION.trimEnd());
       }
-      for (const n of ['Interpretar entrada', 'Decidir turno', 'Plan del turno', 'Armar avisos', 'Sin estado']) expect(codigo(f, n), `${archivo} · ${n}`).not.toContain(SESION.trimEnd());
+      for (const n of ['Interpretar entrada', 'Decidir turno', 'Plan del turno', 'Sin estado']) expect(codigo(f, n), `${archivo} · ${n}`).not.toContain(SESION.trimEnd());
     }
   });
 
@@ -353,6 +364,19 @@ describe('las guardias de `construir.mjs --verificar` sobre el estado de la conv
     n.parameters['jsCode'] = String(n.parameters['jsCode']).replace('modoPrueba: true,', 'modoPrueba: b.modoPrueba === true,');
   }, /tiene que dejar `modoPrueba: true` siempre que corra «Entrada de prueba»/, 'venta-minima.prueba.json');
   rompe('falta «Soltar mensajes»', (f) => { f.nodes = f.nodes.filter((n) => n.name !== 'Soltar mensajes'); }, /falta el nodo «Soltar mensajes»/);
+  // PR-4b: los cupos de aviso (`Consumir cupos` + `¿Cupo concedido?`)
+  rompe('falta «Consumir cupos»', (f) => { f.nodes = f.nodes.filter((n) => n.name !== 'Consumir cupos'); }, /falta el nodo «Consumir cupos»/);
+  rompe('falta «¿Cupo concedido?»', (f) => { f.nodes = f.nodes.filter((n) => n.name !== '¿Cupo concedido?'); }, /falta el nodo «¿Cupo concedido\?»/);
+  rompe('«Consumir cupos» ya no es executeOnce (una llamada por aviso)', (f) => { delete nodoDe(f, 'Consumir cupos').executeOnce; }, /«Consumir cupos» tiene que ser executeOnce/);
+  rompe('«Consumir cupos» sin reintento', (f) => { nodoDe(f, 'Consumir cupos').maxTries = 1; }, /«Consumir cupos» tiene que reintentar/);
+  rompe('«Consumir cupos» con `neverError` (un 5xx no se reintentaría)', (f) => { (nodoDe(f, 'Consumir cupos').parameters['options'] as Record<string, unknown>)['response'] = { response: { neverError: true } }; }, /«Consumir cupos» tiene que reintentar/);
+  rompe('«Consumir cupos» llama a otra URL', (f) => { nodoDe(f, 'Consumir cupos').parameters['url'] = 'https://otro.example.invalid/x'; }, /«Consumir cupos» tiene que llamar a configuracionFlujo/);
+  rompe('«Consumir cupos» debajo de «¿Cupo concedido?» en el lienzo (correría después)', (f) => { nodoDe(f, 'Consumir cupos').position = [6200, 900]; }, /«Consumir cupos» tiene que estar por ENCIMA de «¿Cupo concedido\?»/);
+  rompe('«¿Hay avisos?» manda los avisos al envío sin pasar por «¿Cupo concedido?»', (f) => { f.connections['¿Hay avisos?']!['main']![0]!.push({ node: 'Enviar aviso', type: 'main', index: 0 }); }, /«¿Hay avisos\?» conecta con los avisos al local: solo «¿Cupo concedido\?» puede/);
+  rompe('«¿Cupo concedido?» ya no cuelga de «¿Hay avisos?»', (f) => { f.connections['¿Hay avisos?']!['main']![0] = f.connections['¿Hay avisos?']!['main']![0]!.filter((c) => c.node !== '¿Cupo concedido?'); }, /tienen que colgar de la salida verdadera de «¿Hay avisos\?»/);
+  rompe('«¿Cupo concedido?» manda el no a otro lado que «Armar mensajes»', (f) => { f.connections['¿Cupo concedido?']!['main']![1] = []; }, /«¿Cupo concedido\?» tiene que ir a los avisos por el sí y a «Armar mensajes» por el no/);
+  rompe('«Consumir cupos» tiene un hijo (lo lee «¿Cupo concedido?» por nombre)', (f) => { f.connections['Consumir cupos'] = { main: [[{ node: 'Armar mensajes', type: 'main', index: 0 }]] }; }, /«Consumir cupos» no tiene hijos/);
+  rompe('«Armar avisos» usa los ayudantes de sesión sin traer el módulo común', (f) => { const n = nodoDe(f, 'Armar avisos'); n.parameters['jsCode'] = String(n.parameters['jsCode']).replace(SESION.trimEnd(), ''); }, /el nodo «Armar avisos» usa o define funciones de sesión \(ss\*\) sin traer/);
 });
 
 // =================================================================================================

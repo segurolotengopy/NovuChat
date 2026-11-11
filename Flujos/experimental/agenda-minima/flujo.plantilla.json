@@ -154,6 +154,12 @@
               "value": "REEMPLAZAR_PLANILLA_PROSPECTOS_ID_BELLIDO"
             },
             {
+              "id": "b_phoneNumberIdAtadura",
+              "name": "phoneNumberIdAtadura",
+              "type": "string",
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID_BELLIDO"
+            },
+            {
               "id": "b_planillaProspectosHoja",
               "name": "planillaProspectosHoja",
               "type": "string",
@@ -899,6 +905,22 @@
       }
     },
     {
+      "id": "expandir-citas",
+      "name": "Expandir citas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6080,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@comun:nodos/expandir-citas.js"
+      },
+      "notes": "Un item por cita: uno con un paciente, dos seguidos (uno por hermano) con dos. «Crear evento» corre una vez por item."
+    },
+    {
       "id": "crear-evento",
       "name": "Crear evento",
       "type": "n8n-nodes-base.googleCalendar",
@@ -914,11 +936,11 @@
           "mode": "id",
           "value": "={{ $('Config del negocio').first().json.calendarioId }}"
         },
-        "start": "={{ $('Resolver con agenda').first().json.crear.inicio }}",
-        "end": "={{ $('Resolver con agenda').first().json.crear.fin }}",
+        "start": "={{ $json.inicio }}",
+        "end": "={{ $json.fin }}",
         "additionalFields": {
-          "summary": "={{ $('Resolver con agenda').first().json.crear.titulo }}",
-          "description": "={{ $('Resolver con agenda').first().json.crear.descripcion }}"
+          "summary": "={{ $json.titulo }}",
+          "description": "={{ $json.descripcion }}"
         }
       },
       "credentials": {
@@ -929,7 +951,7 @@
       },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
-      "notes": "Sin reintentos: un reintento podria duplicar la cita. El titulo lo arma el codigo: «Apellidos, Nombres (CNS)» o «(RN)»."
+      "notes": "Sin reintentos: un reintento podria duplicar la cita. Corre una vez por item de «Expandir citas» (una por hermano). El titulo lo arma el codigo: «Apellidos, Nombres (CNS)» o «(RN)»."
     },
     {
       "id": "releer-hueco",
@@ -968,7 +990,8 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 1500,
-      "notes": "CANDADO, segunda mitad: se vuelve a leer DESPUES de crear. No se omite nunca."
+      "notes": "CANDADO, segunda mitad: se vuelve a leer DESPUES de crear. No se omite nunca.",
+      "executeOnce": true
     },
     {
       "id": "candado",
@@ -1006,7 +1029,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ !!$('Candado').first().json.deshacerId }}",
+              "leftValue": "={{ !!$json.deshacerId }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -1036,7 +1059,7 @@
           "mode": "id",
           "value": "={{ $('Config del negocio').first().json.calendarioId }}"
         },
-        "eventId": "={{ $('Candado').first().json.deshacerId }}",
+        "eventId": "={{ $json.deshacerId }}",
         "options": {}
       },
       "credentials": {
@@ -1084,7 +1107,8 @@
         },
         "options": {}
       },
-      "notes": "En modo prueba no se llama a registrarCierre."
+      "notes": "En modo prueba no se llama a registrarCierre.",
+      "executeOnce": true
     },
     {
       "id": "registrar-cierre",
@@ -1546,7 +1570,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ $('Normalizar entrada').first().json.esMedioAudio === true || $('Normalizar entrada').first().json.esMedioVisual === true }}",
+              "leftValue": "={{ $('Normalizar entrada').first().json.esMedioAudio === true || ($('Normalizar entrada').first().json.esMedioVisual === true && String($('Normalizar entrada').first().json.texto || '').trim() === '') }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -1559,7 +1583,7 @@
         },
         "options": {}
       },
-      "notes": "Solo se baja un medio si es una nota de voz (para transcribirla) o una imagen o PDF (para clasificarlo)."
+      "notes": "Solo se baja un medio si es una nota de voz (para transcribirla) o una imagen o PDF SIN pie de foto (para clasificarlo): con pie, ese texto ya decide el turno y no se paga la llamada a Gemini."
     },
     {
       "id": "obtener-url-general",
@@ -2091,7 +2115,7 @@
       "main": [
         [
           {
-            "node": "Crear evento",
+            "node": "Expandir citas",
             "type": "main",
             "index": 0
           }
@@ -2477,6 +2501,17 @@
         [
           {
             "node": "Decidir turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expandir citas": {
+      "main": [
+        [
+          {
+            "node": "Crear evento",
             "type": "main",
             "index": 0
           }

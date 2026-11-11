@@ -25,7 +25,8 @@
 // comprobante (solo rol `completo`, si `datos.mediaId` viene) también va solo con
 // ventana abierta. Derivación: ventana abierta → solo texto libre; cerrada → plantilla.
 // Con ventana abierta el texto de detalle hace de respaldo de la plantilla, así que
-// `respaldo` es siempre `null` y T7b salta «Aviso de respaldo» cuando es null.
+// `respaldo` es `null` y T7b salta «Aviso de respaldo» cuando es null. La única excepción son las
+// PLANTILLAS EN VIÑETAS (ver abajo): su `respaldo` es la plantilla de siempre, que sale solo si la nueva no salió.
 //
 // PLANTILLAS POR EVENTO, configurables (claves de `cfg`, que salen de `configBase`). NO HAY NOMBRE
 // POR OMISIÓN: ninguna plantilla se inventa en el código. Sin plantilla configurada para el evento, ningún
@@ -85,6 +86,27 @@
 //   antes de despachar») la da la plantilla y no el código: por eso la variable 1 se rotula siempre «SOLICITUD DE
 //   RESERVA» o «CONSULTA», y nunca dice «confirmada».
 //   Sin forma configurada, o con un valor desconocido (se anota `forma_invalida_<evento>`), rige `cita`.
+//   PLANTILLAS EN VIÑETAS (aditivo, 07/11/2026, decisión de Andres «plantillas nuevas por tipo»). Claves OPCIONALES, por plantilla,
+//   el nombre y su estado en Meta: `plantillaPedidoMapa` + `plantillaPedidoMapaEstado`, `plantillaPedidoLista` + `plantillaPedidoListaEstado`,
+//   `plantillaReservaLista` + `plantillaReservaListaEstado`, `plantillaConsultaAtencion` + `plantillaConsultaAtencionEstado`, e idioma común
+//   `idiomaPlantillasVinetas` (def. `es`). Una plantilla rige SOLO con nombre válido y estado exactamente `APPROVED`; con cualquier otro estado
+//   (o sin la clave) el aviso sale como hoy. Sin ninguna de estas claves, NADA cambia. Cuando rige, reemplaza al ítem de plantilla de ese
+//   destinatario y lleva como `respaldo` el payload de HOY (el que habría salido sin ella): si Meta no devuelve `messages[0].id`, `Reunir
+//   avisos` lo manda por `Aviso de respaldo` en el mismo turno; si la nueva salió, el respaldo no se envía (0 mensajes agregados).
+//   LÍMITE CONOCIDO (aceptado en la revisión del PR #850): «salió» se decide SOLO por un `messages[0].id` real. Si Meta ACEPTA la nueva
+//   pero su respuesta no llega (vence el timeout de 15 s de `Enviar aviso` o se corta la red después del envío), el flujo la da por caída
+//   y manda también el respaldo: el local recibe el MISMO aviso dos veces (nueva + la de siempre). Pasa solo con esa condición (Meta
+//   responde en general en menos de 1 s) y se prefiere a la alternativa: dar por salido un aviso sin id y perderlo. No se cambia la regla.
+//     · pedido/comprobante → `pedido_lista_mapa` (botón URL «Ver en Google Maps») SOLO en delivery, rol `completo` y con ubicación válida
+//       (latitud y longitud numéricas); si no, `pedido_lista` (sin botón; si la de mapa no rige y la ubicación es válida, el rol `completo`
+//       conserva el segmento «mapa: <enlace>» en {{3}}, como hoy). Cuerpo: «Se registró un pedido en <negocio>.⏎• Pedido: {{1}}⏎• Total
+//       de la comida: {{2}}⏎• Modalidad: {{3}}⏎• Cliente: {{4}}⏎• Detalle: {{5}}⏎• Comprobante: {{6}}⏎Revise el pedido en la consola antes de
+//       despachar.» (6 variables de cuerpo + 1 del botón, que va al final de la URL: `lat%2Clon`). {{5}} = los ítems en UNA línea separados
+//       por « · », cortados por ítem con « … y K más». CUERPO ≤ 1024 (Meta, error 132005): {{5}} usa a lo sumo 500 y lo que dejan
+//       1024 − texto fijo − margen − las otras variables; si ni así hay lugar, se recortan nota, referencia y dirección de {{3}} (nunca ítems ni total).
+//     · reserva → `reserva_lista` (5 variables, las de la forma `solicitud`: código · cliente, personas, cuándo, teléfono, notas; sin botón).
+//     · derivación → `consulta_atencion` (3 variables: cliente, motivo, consulta), con ventana cerrada, igual que hoy.
+//   Teléfono del cliente y ubicación: SOLO el rol `completo`; `cocina` recibe el primer nombre, sin teléfono ni botón de mapa.
 //   Otras claves: `prefijosPermitidos` (def. «591»), `topeAvisosDia` (def. 150, en MENSAJES de aviso; 0 = ninguno).
 //   Una variable de plantilla no admite saltos de línea, 5+ espacios seguidos ni vacío:
 //   `avParametro` las sanea siempre (vacío → «—»).
@@ -308,7 +330,16 @@ function avLimpio(t, max, opc) {
   // decimales y las horas («4.50», «12.30», «1.25L») no se tocan.
   s = s.replace(/(?<=[\p{L}\p{M}])(?<![ºª])\.(?=[\p{L}\p{M}\p{N}])(?![ºª])|(?<=\p{N})\.(?=\p{L}{2})/gu, '. ');
   if (opc && opc.cocina) {
-    s = s.replace(/\+?\d[\d\s.-]{5,}\d/g, (m) => (m.replace(/\D/g, '').length >= 7 ? '…' : m));
+    // Un número de teléfono partido con separadores («0000/0000», «(591) 0000-0000», «+591·0000 0000», «0000–0000», «0000|0000», «0000,0000») también se quita
+    // para cocina (revisión de seguridad, 07/11/2026; revisión de #848). Se quita solo si junta 7 dígitos o más Y tiene al menos DOS grupos de 3 o más dígitos (o uno de
+    // 7): una fecha («08/11/2026»), una lista numerada («2) 3) 4) 5) 6) 7) 8)») o unas horas («20:00, 21:30») no son un teléfono y quedan.
+    s = s.replace(/\+?\(?\d[\d\s.\-\u2010-\u2015/()·|,:]{5,}\d\)?/g, (m) => {
+      if (m.replace(/\D/g, '').length < 7) return m;
+      if (/^\(?\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}\)?$/.test(m.trim())) return m; // una fecha
+      const grupos = m.match(/\d+/g) || [];
+      const largos = grupos.filter((g) => g.length >= 3).length;
+      return largos >= 2 || grupos.some((g) => g.length >= 7) ? '…' : m;
+    });
     s = s.replace(/\d{7,}/g, '…');
   }
   // Se colapsan espacios y « · » ANTES de comparar con la red: quitar `*_~` deja huecos que juntan frases («te *avisamos»).
@@ -449,17 +480,21 @@ function avPlantilla(tel, nombre, idioma, params4) {
 // puede venir del código. Se sustituye por una marca durante el saneo y se repone entero; si la marca no queda exactamente una
 // vez, el enlace se descarta (nunca se devuelve un enlace partido).
 const AV_MARCA_MAPA = 'ENLACEMAPAOK';
+// Sin la marca (o con el enlace descartado): quita «mapa:» colgando, separadores « · » repetidos y los de los bordes.
+function avSinMapa(t) {
+  return avSinBordes(t.split(AV_MARCA_MAPA).join('').replace(/mapa:\s*(?=$| · )/g, '').replace(/(?:\s*·){2,}/g, ' ·').replace(/\s{2,}/g, ' ')) || '—';
+}
 function avParametroConMapa(t) {
   const s = String(t === undefined || t === null ? '' : t);
   const re = new RegExp('(^| · )mapa: (' + AV_FORMA_ENLACE_MAPA.source.slice(1, -1) + ')(?= · |$)');
   const m = re.exec(s);
   if (!m) return avParametro(s);
   const sin = s.slice(0, m.index) + m[1] + 'mapa: ' + AV_MARCA_MAPA + s.slice(m.index + m[0].length);
-  const limpio = avParametro(sin);
+  const limpio = avSinBordes(avParametro(sin));
   const partes = limpio.split(AV_MARCA_MAPA);
-  if (partes.length !== 2 || limpio.indexOf('mapa: ' + AV_MARCA_MAPA) < 0) return limpio.split(AV_MARCA_MAPA).join('').replace(/mapa:\s*(?=$| · )/g, '').trim() || '—';
+  if (partes.length !== 2 || limpio.indexOf('mapa: ' + AV_MARCA_MAPA) < 0) return avSinMapa(limpio);
   const salida = partes.join(m[2]);
-  return salida.length <= 500 ? salida : limpio.split(AV_MARCA_MAPA).join('').trim() || '—';
+  return salida.length <= 500 ? salida : avSinMapa(limpio);
 }
 
 /** Mensaje de texto libre (solo con ventana abierta). */
@@ -576,6 +611,7 @@ function avCotejoTexto(resultado) {
   if (resultado === 'ilegible') return 'comprobante ilegible';
   if (resultado === 'sin_qr') return 'sin QR: se cobra al entregar o al recoger';
   if (resultado === 'qr_vencido') return 'QR vencido: coordinar el pago';
+  if (resultado === 'sin_guardar') return 'comprobante sin guardar ni cotejar';
   return 'comprobante sin cotejar';
 }
 
@@ -585,16 +621,16 @@ function avCotejoVariable(resultado) {
   return avCotejoTexto(resultado).replace(/^comprobante:?\s+/i, '');
 }
 
-// Teléfono legible, calculado SOLO con los dígitos: «+591 7066 1250» (11 dígitos con prefijo 591); otros largos de 8 a 15,
-// «+» y grupos de 4 de izquierda a derecha. Devuelve '' (y quien llama conserva lo que hacía) si el valor trae letras o no
-// tiene entre 8 y 15 dígitos.
+// Teléfono legible, calculado SOLO con los dígitos: «+591 0000 0000» solo si empieza por 591 y tiene 11 dígitos. Con 12 a 15
+// dígitos (otro país) «+» y los dígitos sin agrupar (no se conoce el largo del código de país); con 8 a 11 sin prefijo 591 solo
+// los dígitos, sin «+» (no se puede saber el país). Devuelve '' si el valor trae letras o no tiene entre 8 y 15 dígitos.
 function avTelefonoLegible(v) {
   const crudo = String(v === undefined || v === null ? '' : v);
   if (/\p{L}/u.test(crudo)) return '';
   const d = avDigitos(crudo);
   if (d.length < 8 || d.length > 15) return '';
   if (d.length === 11 && d.slice(0, 3) === '591') return '+591 ' + d.slice(3, 7) + ' ' + d.slice(7);
-  return '+' + d.replace(/(\d{4})(?=\d)/g, '$1 ');
+  return d.length >= 12 ? '+' + d : d;
 }
 
 function avModalidadTexto(m) {
@@ -605,7 +641,7 @@ function avModalidadTexto(m) {
 
 function avResultado(tipo, r) {
   const v = String(r === undefined || r === null ? '' : r);
-  if (['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_qr', 'qr_vencido', 'ya_cotejado', 'simulado'].indexOf(v) >= 0) return v;
+  if (['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_guardar', 'sin_qr', 'qr_vencido', 'ya_cotejado', 'simulado'].indexOf(v) >= 0) return v;
   return tipo === 'pedido' ? 'sin_qr' : 'sin_cotejo';
 }
 
@@ -711,6 +747,7 @@ function avItemsCompactos(lineas, opc, presupuesto) {
 //  - `cocina`: modalidad + los ítems compactos con sus notas; SIN teléfono, dirección, nombre completo ni coordenadas.
 // Sigue siendo UNA variable: sin saltos de línea, saneada como las demás y con el tope de la variable (500). Los segmentos
 // del cliente van primero y los ítems ocupan lo que sobra (cortados por ítem, con «… y N más»).
+// Nota: depende de que quien la llama termine en `avPlantilla`, que vuelve a sanear la variable (aquí no se garantiza el saneo final).
 function avModalidadVariable(d, dest, opc, sinItems) {
   const tope = 500;
   const base = avModalidadTexto(d.modalidad);
@@ -768,6 +805,10 @@ function avMarcasReserva(r) {
   const m = [];
   if (r && r.grupoGrande === true) m.push('GRUPO GRANDE');
   if (r && r.diaLleno === true) m.push('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+  // Reserva de mañana (antes de `reservaDesde`, dato del negocio): una nota DENTRO del mismo aviso, 0 mensajes extra.
+  if (r && typeof r.reservaManana === 'string' && /^\d{2}:\d{2}$/.test(r.reservaManana)) m.push('Reserva de mañana (antes de las ' + r.reservaManana + '): contactar para confirmar o cambiar la hora');
+  // C-13 (06/11/2026): una marca de origen ya redactada por quien arma la reserva (`marcaOrigen`) va en el MISMO aviso, en la variable de notas; 0 mensajes extra.
+  if (r && typeof r.marcaOrigen === 'string' && avLimpio(r.marcaOrigen, 80)) m.push(avLimpio(r.marcaOrigen, 80));
   return m;
 }
 function avVariablesDeForma(tipo, d, dest, ahoraMs) {
@@ -780,24 +821,52 @@ function avVariablesDeForma(tipo, d, dest, ahoraMs) {
       Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : 'personas sin indicar',
       avFechaLegible(r.fecha, r.hora) || 'fecha sin indicar',
       avLimpio(r.zona, 40, opc),
-    ].concat(avMarcasReserva(r)).filter(Boolean);
+    ].filter(Boolean);
+    // Las marcas (grupo grande, día lleno, reserva de mañana y origen del anuncio) van en `modalidad` (tope 500) y no en `items` (tope 200): juntas se cortaban a mitad de la nota.
+    const marcas = avMarcasReserva(r);
     return {
       items: avParametro('SOLICITUD DE RESERVA' + (cod ? ' ' + cod : '') + ': ' + partes.join(', '), 200),
       total: avParametro('sin cobro', 30),
-      modalidad: avParametro('reserva de mesa por confirmar con el cliente', 500),
+      modalidad: avParametro('reserva de mesa por confirmar con el cliente' + (marcas.length ? ' — ' + marcas.join(', ') : ''), 500),
       cotejo: avParametro('no aplica', 80),
     };
   }
   const cod = avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs);
   const motivo = avLimpio(d.motivo, 120, opc);
+  // A QUIÉN RESPONDER (Andres, 07/11/2026: el aviso llegaba sin ningún dato de la persona). Mismas reglas que la forma `solicitud` de la reserva: el teléfono
+  // solo para el rol `completo`; `cocina` ve el primer nombre y nunca el teléfono.
+  const quien = avClienteDeConsulta(d, dest);
+  const aQuien = quien.nombre + (quien.telefono ? ' · ' + quien.telefono : '');
   // `comprobante: true`: no es una consulta, es la foto de un comprobante que el flujo no pudo revisar porque cambio el modo de cobro.
   const esComprobante = d.comprobante === true;
+  if (esComprobante) {
+    return {
+      items: avParametro('COMPROBANTE ' + cod + (motivo ? ': ' + motivo : ''), 200),
+      total: avParametro('sin cobro', 30),
+      modalidad: avParametro('el cliente envió un comprobante que no se pudo revisar (cambió el modo de cobro); responder a ' + aQuien + ' por WhatsApp', 500),
+      cotejo: avParametro('no aplica', 80),
+    };
+  }
+  // UNA CONSULTA (07/11/2026, decisión de Andres: mientras WAM no apruebe una plantilla propia, se reescriben las VARIABLES): con el texto fijo de la plantilla de
+  // pedido («Se registró un pedido… Pedido: {{1}}…») el local debe leer de entrada que NO es un pedido, a quién y qué tiene que hacer: responderle por WhatsApp.
   return {
-    items: avParametro((esComprobante ? 'COMPROBANTE ' : 'CONSULTA ') + cod + (motivo ? ': ' + motivo : ''), 200),
+    items: avParametro('NO ES UN PEDIDO — consulta ' + cod + ': ' + (motivo || 'el cliente pide hablar con una persona'), 200),
     total: avParametro('sin cobro', 30),
-    modalidad: avParametro(esComprobante ? 'el cliente envió un comprobante que no se pudo revisar (cambió el modo de cobro)' : 'el cliente pide hablar con una persona', 500),
+    modalidad: avParametro('responder a ' + aQuien + ' por WhatsApp', 500),
     cotejo: avParametro('no aplica', 80),
   };
+}
+
+// El cliente de una consulta, ya saneado por rol: `{nombre, telefono, motivo}`. `nombre` es el de perfil (o el que dio) con `avLimpio`; vacío = «cliente». `telefono`
+// es el legible (`avTelefonoLegible`) SOLO para el rol `completo`; para `cocina`, el primer nombre y '' (sin teléfono). Queda listo para mapear, más adelante, a la
+// plantilla propia de consultas (en revisión de Meta: {{1}} cliente, {{2}} motivo, {{3}} consulta); hoy NO se usa con ella.
+function avClienteDeConsulta(d, dest) {
+  const x = d && typeof d === 'object' ? d : {};
+  const opc = { cocina: !dest || dest.rol === 'cocina' };
+  const crudo = x.nombre || x.nombrePerfil || '';
+  const nombre = (dest && dest.rol === 'completo' ? avLimpio(crudo, 60) : avPrimerNombre(crudo, opc)) || 'cliente';
+  const tel = dest && dest.rol === 'completo' ? (avTelefonoLegible(x.telefono || x.from) || '') : '';
+  return { nombre: nombre, telefono: tel, motivo: avLimpio(x.motivo, 120, opc) };
 }
 
 // Reserva con la FORMA `solicitud` (plantilla `solicitud_reserva`, 5 variables). Cada una se recorta por campo para que Meta nunca la
@@ -820,7 +889,7 @@ function avVariablesSolicitud(d, dest) {
     cliente: avParametro((cod ? cod + ' · ' : '') + nombre, 90),
     personas: avParametro(Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : 'personas sin indicar', 30),
     cuando: avParametro(cuando + (zona ? ', ' + zona : ''), 100),
-    telefono: avParametro(tel && tel.length >= 8 && tel.length <= 15 ? (avTelefonoLegible(d.telefono) || '+' + tel) : '', 20),
+    telefono: avParametro(tel && tel.length >= 8 && tel.length <= 15 ? (avTelefonoLegible(d.telefono) || tel) : '', 20),
     nota: avParametro(extras.length ? extras.join(' · ') : 'sin datos adicionales', 300),
   };
 }
@@ -1007,6 +1076,127 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
   return avSinProhibidas(lineas.filter(Boolean).join('\n')).trim();
 }
 
+// --- Plantillas en viñetas (07/11/2026) -------------------------------------------------------
+
+// Las plantillas en viñetas que RIGEN para este negocio: el nombre, solo si es válido y su estado es exactamente `APPROVED`; si no, ''.
+function avVinetas(c) {
+  const texto = (v) => String(v === undefined || v === null ? '' : v).trim();
+  const activa = (clave) => {
+    const n = texto(c[clave]);
+    // El estado vale EXACTAMENTE `APPROVED` (el valor de Meta): «approved», « APPROVED» o cualquier otro texto no la activan.
+    return /^[a-z0-9_]{1,512}$/.test(n) && c[clave + 'Estado'] === 'APPROVED' ? n : '';
+  };
+  return {
+    pedidoMapa: activa('plantillaPedidoMapa'),
+    pedidoLista: activa('plantillaPedidoLista'),
+    reserva: activa('plantillaReservaLista'),
+    consulta: activa('plantillaConsultaAtencion'),
+    idioma: texto(c.idiomaPlantillasVinetas) || 'es',
+  };
+}
+
+// El parámetro del botón «Ver en Google Maps» (va al final de `…&query=`): «lat%2Clon» con 6 decimales. Sale SOLO de dos números
+// (`avEnlaceDeUbicacion`, nunca de texto del cliente) y se valida con su forma exacta; '' ante cualquier duda.
+const AV_FORMA_PARAMETRO_MAPA = /^-?\d{1,2}\.\d{6}%2C-?\d{1,3}\.\d{6}$/;
+function avParametroDeUbicacion(u) {
+  const url = avEnlaceDeUbicacion(u);
+  const i = url.indexOf('query=');
+  const p = i >= 0 ? url.slice(i + 6) : '';
+  return AV_FORMA_PARAMETRO_MAPA.test(p) ? p : '';
+}
+
+// Los ítems del pedido en UNA línea, separados por « · », con tope de 500 caracteres: se corta POR ÍTEM y la lista termina en
+// « … y K más» (K = productos que no entraron); nunca a mitad de un producto.
+function avItemsEnLinea(lineas, opc, max) {
+  const tope = Number.isFinite(max) ? Math.max(0, Math.min(500, Math.floor(max))) : 500;
+  const piezas = lineas.map((l) => avPiezaItem(l, opc));
+  if (!piezas.length) return 'sin ítems';
+  for (let k = piezas.length; k >= 0; k--) {
+    const resto = piezas.length - k;
+    const t = piezas.slice(0, k).join(' · ') + (resto > 0 ? (k > 0 ? ' ' : '') + '… y ' + resto + ' más' : '');
+    if (Array.from(t).length <= tope) return t;
+  }
+  return '… y ' + piezas.length + ' más';
+}
+
+// EL CUERPO ENTERO DE UNA PLANTILLA NO PASA DE 1024 CARACTERES (Meta, error 132005); el tope de 500 es por variable. El texto fijo del cuerpo de
+// `pedido_lista` / `pedido_lista_mapa` mide 171 (medido sobre el aprobado, sin las `{{n}}`); con el margen, lo que queda para las 6 variables:
+const AV_CUERPO_MAX = 1024;
+const AV_FIJO_PEDIDO_VINETAS = 171;
+const AV_MARGEN_CUERPO = 40;
+// Lo mínimo que se quiere para los ítems antes de empezar a recortar {{3}}: todos si caben en esto, o al menos esto.
+const AV_ITEMS_MINIMO = 150;
+const avLargo = (s) => Array.from(String(s)).length;
+
+// {{3}} de la plantilla en viñetas por NIVEL de recorte (0 = entero): 1 sin la nota, 2 sin la referencia, 3 con la dirección corta (60), 4 solo la
+// modalidad. El enlace del mapa («mapa: <enlace>», solo rol `completo` cuando no va en el botón) va entero o no va y nunca pasa por `avLimpio`
+// (volvería «[enlace omitido]»): `avPlantilla` lo conserva con `avParametroConMapa`.
+function avModalidadVineta(d, dest, opc, enlaceMapa, nivel, conBoton) {
+  const segmentos = [avModalidadTexto(d.modalidad)];
+  if (dest.rol === 'completo' && d.modalidad === 'delivery') {
+    const dir = nivel >= 4 ? '' : avLimpio(d.direccion, nivel >= 3 ? 60 : 160);
+    const ref = nivel >= 2 ? '' : avLimpio(d.referencia, 100);
+    segmentos[0] += (dir ? ' a ' + dir : '') + (ref ? ' (' + ref + ')' : '');
+    const coord = enlaceMapa || conBoton ? '' : avLimpio(d.coordenadas, 60);
+    if (coord) segmentos.push(coord);
+  }
+  const nota = nivel >= 1 || typeof d.notaPedido !== 'string' ? '' : avLimpio(d.notaPedido, 100, opc);
+  if (nota) segmentos.push('nota: ' + nota);
+  const texto = avParametro(segmentos.join(' · '), 500 - (enlaceMapa ? avLargo(' · mapa: ' + enlaceMapa) : 0), opc);
+  return enlaceMapa ? texto + ' · mapa: ' + enlaceMapa : texto;
+}
+
+// Las 6 variables del cuerpo de `pedido_lista_mapa` / `pedido_lista`, en su orden. `enlaceMapa`: el enlace al mapa que va en {{3}} (solo cuando
+// la ubicación es válida y NO hay botón); '' si la ubicación va en el botón (`conBoton`: tampoco van las coordenadas) o no hay. {{5}} se ajusta al presupuesto del cuerpo (≤ 1024).
+function avVariablesVinetaPedido(d, dest, resultado, ahoraMs, enlaceMapa, conBoton) {
+  const opc = { cocina: dest.rol === 'cocina' };
+  const base = avVariables('pedido', d, dest, resultado, ahoraMs, 'cita');
+  const quien = avClienteDeConsulta(d, dest);
+  const cliente = avParametro(quien.nombre + (quien.telefono ? ' · ' + quien.telefono : ''), 100);
+  const lineas = avLineas(d.lineas);
+  const itemsEnteros = avLargo(avItemsEnLinea(lineas, opc));
+  const libre = AV_CUERPO_MAX - AV_FIJO_PEDIDO_VINETAS - AV_MARGEN_CUERPO - avLargo(base.items) - avLargo(base.total) - avLargo(cliente) - avLargo(base.cotejo);
+  let modalidad = '';
+  for (let nivel = 0; nivel <= 4; nivel++) {
+    modalidad = avModalidadVineta(d, dest, opc, enlaceMapa, nivel, conBoton);
+    if (libre - avLargo(modalidad) >= Math.min(itemsEnteros, AV_ITEMS_MINIMO)) break;
+  }
+  const items = avParametro(avItemsEnLinea(lineas, opc, libre - avLargo(modalidad)), 500, opc);
+  return [base.items, base.total, modalidad, cliente, items, base.cotejo];
+}
+
+// La plantilla en viñetas de este evento y destinatario, o `null` si no rige (sin clave, sin `APPROVED` o datos que no sirven).
+function avPlantillaVineta(tipo, d, dest, resultado, ahoraMs, c) {
+  const v = avVinetas(c);
+  if (tipo === 'pedido' || tipo === 'comprobante') {
+    const coord = dest.rol === 'completo' && d.modalidad === 'delivery' ? avParametroDeUbicacion(d.ubicacion) : '';
+    const conMapa = !!(coord && v.pedidoMapa);
+    const nombre = conMapa ? v.pedidoMapa : v.pedidoLista;
+    if (!nombre) return null;
+    // Sin botón (la de mapa no rige) y con ubicación válida del rol `completo`: el enlace va en {{3}}, como hoy.
+    const enlace = !conMapa && coord ? avEnlaceDeUbicacion(d.ubicacion) : '';
+    const p = avPlantilla(dest.tel, nombre, v.idioma, avVariablesVinetaPedido(d, dest, resultado, ahoraMs, enlace, conMapa));
+    if (p && conMapa) p.template.components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: coord }] });
+    return p;
+  }
+  if (tipo === 'reserva') {
+    if (!v.reserva) return null;
+    const x = avVariablesSolicitud(d, dest);
+    return avPlantilla(dest.tel, v.reserva, v.idioma, AV_ORDEN_SOLICITUD.map((k) => x[k]));
+  }
+  if (tipo === 'transferencia') {
+    if (!v.consulta) return null;
+    const quien = avClienteDeConsulta(d, dest);
+    const motivo = d.comprobante === true ? 'envió un comprobante que no se pudo revisar (cambió el modo de cobro)' : (quien.motivo || 'pide hablar con una persona');
+    return avPlantilla(dest.tel, v.consulta, v.idioma, [
+      avParametro(quien.nombre + (quien.telefono ? ' · ' + quien.telefono : ''), 100),
+      avParametro(motivo, 200),
+      avParametro(avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs), 20),
+    ]);
+  }
+  return null;
+}
+
 // --- Armado -----------------------------------------------------------------------------------
 
 function avNormalizarDestinatarios(destinatarios, d, c) {
@@ -1025,7 +1215,8 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
   const errores = [];
   if (AV_TIPOS.indexOf(tipo) < 0) return { items: [], errores: ['tipo_desconocido'] };
   const esPedido = tipo === 'pedido' || tipo === 'comprobante';
-  const resultado = esPedido ? avResultado(tipo, d.resultado) : '';
+  // `sinGuardar` (07/11/2026): la imagen que el filtro tomó por un anuncio y el código no confirmó; no se guardó ni se cotejó y el aviso lo dice tal cual.
+  const resultado = esPedido ? avResultado(tipo, tipo === 'comprobante' && d.sinGuardar === true ? 'sin_guardar' : d.resultado) : '';
   if (resultado === 'ya_cotejado') return { items: [], errores: ['sin_aviso_ya_cotejado'] };
   if (tipo === 'reserva' && !(d.reserva && typeof d.reserva === 'object')) return { items: [], errores: ['sin_datos_reserva'] };
   const dests = avNormalizarDestinatarios(destinatarios, d, c);
@@ -1041,7 +1232,8 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
       const cuerpo = avDetalle(tipo, d, dest.rol, resultado, ahoraMs);
       items.push({ para: dest.tel, rol: dest.rol, payload: avTexto(dest.tel, cuerpo), respaldo: null, esPlantilla: false, clase: 'detalle' });
     };
-    const conPlantilla = () => {
+    // La plantilla de SIEMPRE (la de hoy): su payload o `null`, con los mismos errores de siempre.
+    const plantillaActual = () => {
       // La reserva del rol `completo` puede tener su propia plantilla (`*ReservaCompleto`); el resto, la del evento.
       let pl = plEvento;
       if (tipo === 'reserva') {
@@ -1052,7 +1244,7 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
       if (!pl.nombre) {
         // Sin plantilla configurada no se inventa un nombre: el evento falla cerrado (con ventana abierta cae al texto).
         if (!pl.configurada && errores.indexOf('plantilla_no_configurada_' + pl.evento) < 0) errores.push('plantilla_no_configurada_' + pl.evento);
-        return false;
+        return null;
       }
       // Pedido con la plantilla por líneas (solo si `plantillasPedidoLineas` trae algo): el menor tamaño que cabe; si ese tamaño
       // no tiene plantilla, cae a la de siempre y lo anota.
@@ -1072,9 +1264,18 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
         const vars = avVariables(tipo, d, dest, resultado, ahoraMs, pl.forma);
         params = pl.orden.map((k) => vars[k]);
       }
-      const payload = avPlantilla(dest.tel, nombreFinal, idiomaFinal, params);
-      if (!payload) return false;
-      items.push({ para: dest.tel, rol: dest.rol, payload, respaldo: null, esPlantilla: true, clase: 'plantilla' });
+      return avPlantilla(dest.tel, nombreFinal, idiomaFinal, params);
+    };
+    const conPlantilla = () => {
+      const actual = plantillaActual();
+      // PLANTILLA EN VIÑETAS (solo si rige, ver `avVinetas`): sale ella y la de siempre queda de RESPALDO (se manda solo si la nueva no salió).
+      const vineta = avPlantillaVineta(tipo, d, dest, resultado, ahoraMs, c);
+      if (vineta) {
+        items.push({ para: dest.tel, rol: dest.rol, payload: vineta, respaldo: actual || null, esPlantilla: true, clase: 'plantilla' });
+        return true;
+      }
+      if (!actual) return false;
+      items.push({ para: dest.tel, rol: dest.rol, payload: actual, respaldo: null, esPlantilla: true, clase: 'plantilla' });
       return true;
     };
     if (tipo === 'transferencia') {

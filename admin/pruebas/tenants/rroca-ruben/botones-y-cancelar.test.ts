@@ -42,13 +42,13 @@ describe('PARTE 1. el botón de Rubén va SOLO al derivar', () => {
     }
   });
   it('lo que DERIVA sí lleva el botón: garantía, reclamo, fuera de país y «no supo» del modelo (y la repetición NO)', () => {
-    const w = nuevo();
-    hablar(w, ANA, mTexto('hola'));
+    // Garantía y reclamo usan hoy el MISMO texto (Silvana, 07/11/2026): en una misma charla el segundo saldría como repetición, así que cada frase va en su propia charla.
     for (const x of ['quiero la devolución de mi dinero', 'tengo un reclamo']) {
+      const w = nuevo();
+      hablar(w, ANA, mTexto('hola'));
       const t = hablar(w, ANA, mTexto(x));
       expect(planDe(t), x).toBe('derivar');
       expect(conBoton(t), x).toBe(true);
-      w.avanzar(31);
     }
     const v = nuevo({ modeloDice: 'DERIVAR' });
     hablar(v, ANA, mTexto('hola'));

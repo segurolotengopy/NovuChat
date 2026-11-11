@@ -57,9 +57,12 @@ function vmJsonDeGemini(j){ const t = vmTextoDeGemini(j).trim(); if (!t) return 
 function vmSd(){ try { const g = $getWorkflowStaticData('global'); if (!g.ventaMinima) g.ventaMinima = {}; return g.ventaMinima; } catch (e) { return null; } }
 // PR-4a: el estado y los pedidos de un teléfono vienen de la sesión del servidor (vmSes); esta suite los guarda donde siempre (los mapas de ventaMinima), que es lo que hace Armar mensajes al comprometer.
 function vmSes(from, ahora){ const sd = vmSd(); sd.estados = sd.estados || {}; sd.pedidos = sd.pedidos || {}; return sd; }
+// PR-4b: las reservas del día viajan en el bloque del servidor; aquí siguen en el mapa de ventaMinima (la vista de la sesión ES sd).
+function vmReservasSd(ses, from){ return ses; }
 function vmEstadoBase(){ return { paso: 'inicio', ultimoMensajeMs: 0 }; }
 function vmLeerEstado(sd, from, ahora){ const e = sd && sd.estados && sd.estados[from]; if (!e) return vmEstadoBase(); const vida = e.paso === 'esperando_comprobante' ? 86400000 : 3600000; return ahora - e.ultimoMensajeMs < vida ? JSON.parse(JSON.stringify(e)) : vmEstadoBase(); }
 function vmIdDeBoton(){ return Array.prototype.slice.call(arguments).join('|'); }
+function vmHuella(t){ t = String(t); let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; }
 function vmLeerBoton(id){ const p = String(id).split('|'); return p.length >= 2 && /^[a-z]$/.test(p[0]) ? { tipo: p[0], partes: p.slice(1) } : null; }
 function vmCodigoCorto(ms){ return ms.toString(36).slice(-4).toUpperCase(); }
 function vmSinProhibidas(t){ return String(t == null ? '' : t).replace(new RegExp(${JSON.stringify(PROHIBIDAS.source)}, 'gi'), '…'); }
@@ -79,7 +82,7 @@ function pdQuitarSinDelivery(carrito, carta, areas){ const ex = areas.map(vmNorm
 function pdTotal(carrito){ return carrito.reduce(function(s, l){ return s + Math.round(l.precio * 100) * l.cantidad; }, 0) / 100; }
 function _pdUbicacion(u){ return !!u && typeof u === 'object' && Number.isFinite(u.lat) && Number.isFinite(u.lng) && Math.abs(u.lat) <= 90 && Math.abs(u.lng) <= 180 && !(Math.round(u.lat * 1e5) === 0 && Math.round(u.lng * 1e5) === 0); }
 function _pdCopiaUbicacion(u){ return { lat: Math.round(u.lat * 1e5) / 1e5, lng: Math.round(u.lng * 1e5) / 1e5 }; }
-function pdFaltanEntrega(e, perfil){ const f = []; if (!e.direccion && !e.ubicacion) f.push('direccion'); return f; }
+function pdFaltanEntrega(e, perfil){ const f = []; if (e.entrega !== 'delivery') return f; if (!e.direccion || String(e.direccion).length < 5) f.push('direccion'); if (!_pdUbicacion(e.ubicacion)) f.push('ubicacion'); return f; }
 function pdResumen(carrito, e, o){ return 'Tu pedido:\n' + carrito.map(function(l){ return '• ' + l.cantidad + ' × ' + l.nombre + (l.detalle ? ' (' + l.detalle + ')' : '') + ': ' + (l.precio * l.cantidad) + ' ' + o.moneda; }).join('\n') + '\nEntrega: ' + (e.entrega === 'delivery' ? 'delivery a ' + e.direccion + (e.referencia ? ' (' + e.referencia + ')' : '') + ', recibe ' + e.nombre : 'recojo en el local') + '.\nTotal de la comida: ' + pdTotal(carrito) + ' ' + o.moneda + '.' + (e.entrega === 'delivery' ? '\nEl delivery no está incluido: se lo pagas al repartidor al recibir.' : ''); }
 function pdLineaCompacta(carrito, max){ return carrito.map(function(l){ return l.cantidad + ' ' + l.nombre; }).join(', ').slice(0, max); }
 function vmIdEstable(pre, from, cont, ancla, resp){ const a = ancla > 0 ? ancla : resp; const t = JSON.stringify([pre, a, from, cont]); let h = 7; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) % 0x100000000; return { id: pre + '-2026-10-05-' + String(from).slice(-4) + '-' + h.toString(36), codigo: vmCodigoCorto(h), huella: h }; }
@@ -93,7 +96,7 @@ function pdNombreCorto(i){ return String(i.nombre).replace(/\s*\([^)]*(orden|uni
 function pdEjemploDePedido(c){ const v = []; const n = []; (Array.isArray(c) ? c : []).forEach(function(i){ const k = i.clave || pdNombreCorto(i); if (n.length < 2 && v.indexOf(k) < 0) { v.push(k); n.push('1 ' + pdNombreCorto(i)); } }); return n.join(' y '); }
 function pdTextoExcluido(n){ return 'Lo siento, «' + n + '» no está disponible para pedir por WhatsApp. ¿Te muestro la carta?'; }
 function pdBotonAgregar(i, c){ return { id: 'g|agregar|' + i.id + '|' + c, title: 'Agregar ' + pdNombreCorto(i) }; }
-function pdTextoFaltanEntrega(f){ return 'Para el delivery necesito la dirección exacta.'; }
+function pdTextoFaltanEntrega(f){ const d = f.indexOf('direccion') >= 0; const u = f.indexOf('ubicacion') >= 0; if (d && u) return 'Para el delivery necesito dos cosas: escribe tu dirección exacta y comparte tu ubicación'; if (u) return 'Para el delivery necesito que compartas tu ubicación'; return 'Para el delivery necesito tu dirección exacta, escrita.'; }
 
 function rsCuerpoExtraccion(texto, o){ if (!isFinite(Number(o.ahoraMs))) throw new Error('ahoraMs'); return { marcador: 'reserva', texto: texto, zonas: o.zonas }; }
 function rsValidarExtraccion(o){ o = o || {}; return { personas: Number(o.personas) || 0, fecha: o.fecha || '', hora: o.hora || '', zona: o.zona || '', nombre: o.nombre || '', celebracion: o.celebracion || '', requerimiento: o.requerimiento || '' }; }
@@ -102,14 +105,26 @@ function rsValidar(r, c, perfil, ahora){ const x = rsValidarExtraccion(r); const
 function rsPreguntaFaltantes(f, o){ if (f.indexOf('personas') >= 0 && f.indexOf('fecha') >= 0 && f.indexOf('hora') >= 0) return 'Para tu solicitud de reserva dime, en un solo mensaje: cuántas personas, qué día y a qué hora, si prefieres ' + (o.zonas || []).join(' o ') + ' y a nombre de quién.'; return f.length ? 'Para tu solicitud de reserva me falta saber ' + f.join(', ') + '.' : ''; }
 function rsResumen(r){ return 'Tu reserva:\n• ' + r.fecha + ' ' + r.hora + '\n• ' + r.personas + ' personas' + (r.zona ? ', ' + r.zona : '') + '\n• A nombre de ' + r.nombre; }
 function rsFraseDeConfirmacion(r){ return 'el ' + r.fecha + ' a las ' + r.hora + ', ' + r.personas + ' personas' + (r.zona ? ', ' + r.zona : ''); }
+function rsEsDeManana(r, desde){ const m = function(h){ const x = /^(\d{1,2}):(\d{2})$/.exec(String(h === undefined || h === null ? '' : h).trim()); return x && Number(x[1]) <= 23 && Number(x[2]) <= 59 ? Number(x[1]) * 60 + Number(x[2]) : -1; }; const d = m(desde); const h = m(r && r.hora); if (d < 0 || h < 0) return ''; const dd = String(desde).trim().split(':'); return h < d ? ('0' + Number(dd[0])).slice(-2) + ':' + dd[1] : ''; }
 function rsLineaCompacta(r, rol){ return (rol === 'completo' ? r.nombre : r.nombre.split(' ')[0]) + ' · ' + r.fecha + ' ' + r.hora + ' · ' + r.personas + ' personas'; }
 function rsReclamo(t){ return false; }
 function rsHoraSuelta(t, r, c, a){ return ''; }
+function rsHorarioDeReservas(propio, pedidos){ return propio || pedidos; }
+function rsHorarioDeReservasInvalido(){ return false; }
 function rsDentroDelTope(sd, from, ahora, tope){ const max = Number(tope); if (!sd || !isFinite(max)) return false; const hoy = new Date(ahora - 4 * 3600000).toISOString().slice(0, 10); const t = sd.reservasDelDia && sd.reservasDelDia[from]; return (t && t.dia === hoy ? t.n : 0) < max; }
 function rsAnotar(sd, from, ahora){ const hoy = new Date(ahora - 4 * 3600000).toISOString().slice(0, 10); sd.reservasDelDia = sd.reservasDelDia || {}; const t = sd.reservasDelDia[from]; const n = (t && t.dia === hoy ? t.n : 0) + 1; sd.reservasDelDia[from] = { dia: hoy, n: n }; return n; }
 
 function _vig(c, ahora){ const i = Date.parse(c.inicio); const f = Date.parse(c.fin); return isFinite(i) && isFinite(f) && i <= ahora && ahora < f; }
 function prCampanaDelTexto(campanas, texto, ahora){ const n = vmNorm(texto); return campanas.find(function(c){ return vmNorm(c.texto) === n && _vig(c, ahora); }) || null; }
+function prSoloReserva(){ return null; }
+function prPedidoConMensaje(){ return null; }
+function prVariacion(){ return null; }
+function prCampanaDelReferral(){ return null; }
+function prCampanaDeLaImagen(){ return null; }
+function prTipoDeCampana(){ return ''; }
+function prAreaDelPedido(){ return ''; }
+function prRespuestaDeVariante(){ return null; }
+function anuncioPorTitular(){ return null; }
 function prFicha(c, carta, ahora){ if (!c || !_vig(c, ahora)) return null; const t = ' ' + vmNorm(c.texto) + ' '; const m = carta.filter(function(i){ return t.indexOf(' ' + vmNorm(i.nombre) + ' ') >= 0; }); return m.length ? { id: String(m[0].id), nombre: m[0].nombre, precio: m[0].precio } : null; }
 function prTexto(f, cfg){ if (!f) return null; const b = []; if (cfg.pedidosActivo === true) b.push({ id: 'g|pedir|' + f.id, title: 'Pedir la promo' }); if (cfg.reservasActivo === true) b.push({ id: 'm|reserva', title: 'Reservar mesa' }); if (cfg.pedidosActivo === true) b.push({ id: 'm|pedido', title: 'Ver la carta' }); return { cuerpo: '¡Hola! Qué bueno que viste nuestra promo. ' + f.nombre + '. Precio: ' + f.precio + ' Bs.', botones: b }; }
 
@@ -213,7 +228,9 @@ function hastaResumen(m: Mundo, mod: 'recojo' | 'delivery' = 'recojo'): Salida {
   const s = turno(m, { texto: 'quiero 1 orden de tacos de birria', extraccion: extPedido({ lineas: [linea('tacos de birria', 1, 'orden')], entrega: mod === 'recojo' ? 'recojo' : '' }) });
   if (mod === 'recojo') return s;
   turno(m, { boton: 'e|delivery' });
-  return turno(m, { texto: 'Calle Falsa 123, casa azul', extraccion: extPedido({ direccion: 'Calle Falsa 123', referencia: 'casa azul' }) });
+  turno(m, { texto: 'Calle Falsa 123, casa azul', extraccion: extPedido({ direccion: 'Calle Falsa 123', referencia: 'casa azul' }) });
+  // 07/11: el delivery exige también la ubicación compartida; con el pin llega el resumen.
+  return turno(m, { tipo: 'location', ubicacion: { latitud: -16.5, longitud: -68.15 } });
 }
 
 // =================================================================================================
@@ -314,6 +331,18 @@ describe('Decidir turno: el orden de §4.5, sin modelo', () => {
     const mesa = turno(crearMundo(), { texto: 'una mesa para 1 persona' });
     expect(mesa.d['accion']).toBe('extraer_reserva');
     expect(turno(crearMundo(), { texto: 'somos 3 personas' }).d['accion']).toBe('menu');
+  });
+
+  it('5c. «escribir al local» ESCRITO (06/11, Q\'Taco) deriva igual que el botón: `transferir`; frases cercanas («escribir mi nombre», «voy a escribir mi dirección») NO derivan', () => {
+    for (const x of ['escribir al local', 'Escribir al local', 'quiero escribir al local', 'quiero escribirle al local', 'escríbanme', 'escribanme por favor', 'quiero hablar con el local',
+      'hablar con una persona del local', 'quiero escribirle al restaurante', 'necesito escribir a la tienda', 'quiero comunicarme con el local']) {
+      const r = turno(crearMundo(), { texto: x });
+      expect(r.d['accion'], x).toBe('transferir');
+      expect(r.d['motivo'], x).toBe('pidió hablar con una persona');
+    }
+    for (const x of ['escribir mi nombre', 'voy a escribir mi dirección', 'te escribo mi dirección', 'escríbanme cuando esté listo', 'escríbame el precio del combo', 'calle 5 número 10, escríbame al llegar', 'escribo el nombre del local donde trabajo', 'el local de la esquina', 'quiero escribir una nota para el pedido']) {
+      expect(turno(crearMundo(), { texto: x }).d['accion'], x).not.toBe('transferir');
+    }
   });
 
   it('6. «menu», «empezar de nuevo» y «cancelar» vuelven al menú', () => {
@@ -544,11 +573,11 @@ describe('Plan del turno: menú, carta, consultas y promoción', () => {
 
   it('un medio que no se entiende pide escribirlo; una imagen sin pedido pendiente no es un pago', () => {
     const s = registrar(turno(crearMundo(), { tipo: 'audio', esAudio: true }));
-    expect(s.p!['mensajes'][0]['cuerpo']).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes?');
+    expect(s.p!['mensajes'][0]['cuerpo']).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
     expect(ids(s.p!['mensajes'][0])).toEqual(['m|pedido']);
     expect(titulos(s.p!['mensajes'][0])).toEqual(['Ver la carta']);
     const otro = turno(crearMundo(), { tipo: 'sticker' });
-    expect(otro.p!['mensajes'][0]['cuerpo']).toBe('No pude entender bien ese mensaje 😅. ¿Me lo escribes?');
+    expect(otro.p!['mensajes'][0]['cuerpo']).toBe('No pude entender bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
     const img = registrar(turno(crearMundo(), { tipo: 'image' }));
     expect(img.p!['mensajes'][0]['cuerpo']).toBe('¡Gracias por la imagen! Por aquí solo leo comprobantes de un pedido con QR, y ahora no tienes ninguno pendiente. ¿Qué te gustaría hacer?');
     expect(ids(img.p!['mensajes'][0])).toEqual(['m|pedido', 'm|reserva']);
@@ -682,10 +711,13 @@ describe('Plan del turno: el pedido', () => {
     turno(m, { texto: 'quiero 1 queso fundido', extraccion: extPedido({ lineas: [linea('queso fundido', 1)] }) });
     expect(estadoDe(m)['paso']).toBe('pedido_entrega');
     const datos = registrar(turno(m, { boton: 'e|delivery' }));
-    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón.');
+    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito dos cosas: escribe tu dirección exacta y comparte tu ubicación con el botón.');
     expect(estadoDe(m)['paso']).toBe('pedido_datos');
-    // Con la dirección sola ya sigue al resumen (ni referencia ni nombre se exigen).
-    const fin = registrar(turno(m, { texto: 'Calle 5', extraccion: extPedido({ direccion: 'Calle 5' }) }));
+    // La dirección sola ya NO sigue al resumen (07/11): se pide solo la ubicación; con el pin sí (ni referencia ni nombre se exigen).
+    const dir = registrar(turno(m, { texto: 'Calle 5', extraccion: extPedido({ direccion: 'Calle 5' }) }));
+    expect(dir.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito que compartas tu ubicación con el botón.');
+    expect(estadoDe(m)['paso']).toBe('pedido_datos');
+    const fin = registrar(turno(m, { tipo: 'location', ubicacion: { latitud: -16.5, longitud: -68.15 } }));
     expect(fin.p!['mensajes'][0]['cuerpo']).toContain('Entrega: delivery a Calle 5, recibe Ana Pérez.');
     expect(fin.p!['mensajes'][0]['cuerpo']).toContain('El delivery no está incluido');
     expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
@@ -855,7 +887,7 @@ describe('Plan del turno: derivar a una persona (solo se ofrece lo que se cumple
     const s = registrar(turno(m, { texto: 'tengo un problema con mi pedido de ayer, necesito ayuda de una persona', extraccion: extPedido({ quiereHablar: true }) }));
     expect(s.d['accion']).toBe('extraer_pedido');
     const msg = s.p!['mensajes'][0];
-    expect(msg).toMatchObject({ tipo: 'enlace', cuerpo: '¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo. Para volver al inicio, escribe «menú».', url: 'https://wa.me/59100000099' });
+    expect(msg).toMatchObject({ tipo: 'enlace', cuerpo: '¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo. Para volver al inicio, escribe «inicio».', url: 'https://wa.me/59100000099' });
     expect(s.p!['aviso']['tipo']).toBe('transferencia');
     expect(s.p!['aviso']['datos']).toMatchObject({ from: FROM, nombrePerfil: 'Ana Pérez', telefono: FROM, motivo: 'tengo un problema con mi pedido de ayer, necesito ayuda de una persona' });
     expect(s.p!['aviso']['datos']['codigo']).toMatch(/^[0-9A-Z]{4}$/);
@@ -885,6 +917,7 @@ describe('Plan del turno: derivar a una persona (solo se ofrece lo que se cumple
     turno(m, { texto: 'quiero pedir queso', extraccion: extPedido({ lineas: [linea('queso fundido', 1)] }) });
     turno(m, { boton: 'e|delivery' });
     turno(m, { texto: 'Calle 5', extraccion: extPedido({ direccion: 'Calle 5' }) });
+    turno(m, { tipo: 'location', ubicacion: { latitud: -16.5, longitud: -68.15 } });
     const s = turno(m, { texto: 'casa azul', extraccion: extPedido({ referencia: 'casa azul' }) });
     expect(s.p!['aviso']).toBeNull();
     expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
@@ -1262,6 +1295,83 @@ describe('Plan del turno: la reserva', () => {
     expect(s.p!['aviso']).toBeNull();
     expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^No pude hacer llegar tu reserva/);
     expect(s.p!['mensajes'][0]['tipo']).toBe('enlace');
+  });
+});
+
+describe('Plan del turno: reserva de mañana (decisión de Andres 06/11/2026: pedidos 10:00–22:00, reservas desde las 12:00)', () => {
+  const HORARIO_PEDIDOS = 'lun=10:00-22:00,mar=10:00-22:00,mie=10:00-22:00,jue=10:00-22:00,vie=10:00-22:00,sab=10:00-22:00,dom=10:00-22:00';
+  const ATENCION = 'todos los días de 12:00 a 22:00 (de 10 a 12 AM solo delivery o recojo en local)';
+  const TEXTO = 'Como pediste una hora de la mañana, nos contactaremos contigo para confirmar o cambiar la hora.';
+  const NOTA = 'Reserva de mañana (antes de las 12:00): contactar para confirmar o cambiar la hora';
+  const dato = (o: J = {}): J => ({ horario: HORARIO_PEDIDOS, horarioAtencion: ATENCION, reservaDesde: '12:00', reservaMananaTexto: TEXTO, ...o });
+  const enviarA = (hora: string, cfg: J = dato()): Salida => {
+    const m = crearMundo(cfg);
+    turno(m, { boton: 'm|reserva' });
+    const r = turno(m, { texto: 'mesa', extraccion: extReserva({ personas: 4, fecha: '2026-10-09', hora, zona: 'salón', nombre: 'Ana Pérez' }) });
+    if (r.p!['aviso']) return r;
+    return turno(m, { boton: 'r|enviar' });
+  };
+
+  it('11:00 (y las 10:00) se ACEPTAN: la confirmación agrega la frase aprobada y el aviso lleva la marca; el mismo único mensaje (0 extra)', () => {
+    for (const hora of ['10:00', '11:00', '11:59']) {
+      const s = registrar(enviarA(hora));
+      expect(s.p!['aviso']['tipo'], hora).toBe('reserva');
+      expect(s.p!['aviso']['datos']['reserva']['reservaManana'], hora).toBe('12:00');
+      const siSalio = s.p!['condicionados']['siSalio'];
+      expect(siSalio.length, hora).toBe(1);
+      expect(siSalio[0]['cuerpo'], hora).toMatch(/^¡Listo, Ana! Anotamos tu reserva para .*\. Te esperamos en Av\. Ejemplo 123\. Como pediste una hora de la mañana, nos contactaremos contigo para confirmar o cambiar la hora\.$/);
+      expect(s.p!['condicionados']['siNoSalio'][0]['cuerpo'], hora).not.toContain('Samuel');
+      expect(s.p!['anotarReserva']).toBe(true);
+    }
+  });
+
+  it('12:00, 19:00 y 21:30: sin frase y sin marca (como hoy)', () => {
+    for (const hora of ['12:00', '19:00', '21:30']) {
+      const s = registrar(enviarA(hora));
+      expect(s.p!['aviso']['datos']['reserva']['reservaManana'], hora).toBeUndefined();
+      expect(s.p!['condicionados']['siSalio'][0]['cuerpo'], hora).not.toContain('Samuel');
+      expect(s.p!['condicionados']['siSalio'][0]['cuerpo'], hora).toMatch(/^¡Listo, Ana! Anotamos tu reserva para .*Te esperamos en Av\. Ejemplo 123\.$/);
+    }
+  });
+
+  it('`reservaDesde` vacío o inválido = comportamiento de hoy (se acepta la hora, sin frase ni marca)', () => {
+    for (const reservaDesde of ['', 'mediodía', undefined]) {
+      const s = registrar(enviarA('11:00', dato({ reservaDesde })));
+      expect(s.p!['aviso']['datos']['reserva']['reservaManana']).toBeUndefined();
+      expect(JSON.stringify(s.p!['condicionados'])).not.toContain('Samuel');
+    }
+    // Sin el texto del negocio, la marca del aviso sigue (respalda al local) y la confirmación no inventa nada.
+    const sinTexto = registrar(enviarA('11:00', dato({ reservaMananaTexto: '' })));
+    expect(sinTexto.p!['aviso']['datos']['reserva']['reservaManana']).toBe('12:00');
+    expect(JSON.stringify(sinTexto.p!['condicionados'])).not.toContain('Samuel');
+  });
+
+  it('el texto de la frase y de la marca no tropieza con las redes de «prometer lo que no se cumple»', () => {
+    const s = registrar(enviarA('11:00'));
+    expect(s.p!['condicionados']['siSalio'][0]['cuerpo']).toContain(TEXTO);
+    expect(NOTA).toBe('Reserva de mañana (antes de las ' + s.p!['aviso']['datos']['reserva']['reservaManana'] + '): contactar para confirmar o cambiar la hora');
+  });
+
+  it('pedidos y recojo con horario 10:00–22:00 (La Paz = UTC-4): 09:59 fuera, 10:00 atiende, 21:59 atiende, 22:00 y 22:01 fuera', () => {
+    const accion = (h: number, mi: number): unknown => turno(crearMundo(dato(), Date.UTC(2026, 9, 5, h + 4, mi)), { texto: 'quiero 3 tacos de birria' }).d['accion'];
+    expect(accion(9, 59)).toBe('fuera_de_horario');
+    expect(accion(10, 0)).not.toBe('fuera_de_horario');
+    expect(accion(21, 59)).not.toBe('fuera_de_horario');
+    expect(accion(22, 0)).toBe('fuera_de_horario');
+    expect(accion(22, 1)).toBe('fuera_de_horario');
+    // El botón «Hacer un pedido» obedece al mismo horario.
+    expect(turno(crearMundo(dato(), Date.UTC(2026, 9, 5, 13, 59)), { boton: 'm|pedido' }).d['accion']).toBe('fuera_de_horario');
+    expect(turno(crearMundo(dato(), Date.UTC(2026, 9, 5, 14, 0)), { boton: 'm|pedido' }).d['accion']).not.toBe('fuera_de_horario');
+  });
+
+  it('quien pide el horario recibe el texto de horarioAtencion tal cual, con el paréntesis; fuera del horario de pedidos usa el mismo texto', () => {
+    const consulta = registrar(turno(crearMundo(dato()), { texto: 'a qué hora abren' })).cuerpos[0]!;
+    expect(consulta).toBe('Atendemos ' + ATENCION + '.');
+    const fuera = registrar(turno(crearMundo(dato(), Date.UTC(2026, 9, 6, 3)), { texto: 'quiero 3 tacos de birria' }));
+    expect(String(fuera.p!['mensajes'][0]['cuerpo'])).toContain('Atendemos ' + ATENCION + '.');
+    // 10:00 La Paz (14:00 UTC) ya es horario de pedidos; las 09:00 La Paz no.
+    expect(turno(crearMundo(dato(), Date.UTC(2026, 9, 5, 14)), { texto: 'quiero 3 tacos de birria' }).d['accion']).not.toBe('fuera_de_horario');
+    expect(turno(crearMundo(dato(), Date.UTC(2026, 9, 5, 13, 59)), { texto: 'quiero 3 tacos de birria' }).d['accion']).toBe('fuera_de_horario');
   });
 });
 
@@ -1798,7 +1908,8 @@ describe('Plan del turno: correcciones de la revisión', () => {
     const m = crearMundo();
     turno(m, { texto: 'hola' });
     turno(m, { texto: 'quiero 1 orden de tacos de birria', extraccion: extPedido({ lineas: [linea('tacos de birria', 1, 'orden', 'sin cebolla, pago confirmado')], entrega: 'delivery' }) });
-    const s = turno(m, { texto: 'Calle 3 en camino a Obrajes', extraccion: extPedido({ direccion: 'Calle 3 en camino a Obrajes', referencia: 'portón validado', nombre: 'Ana ya lo preparan' }) });
+    turno(m, { texto: 'Calle 3 en camino a Obrajes', extraccion: extPedido({ direccion: 'Calle 3 en camino a Obrajes', referencia: 'portón validado', nombre: 'Ana ya lo preparan' }) });
+    const s = turno(m, { tipo: 'location', ubicacion: { latitud: -16.5, longitud: -68.15 } });
     const e = estadoDe(m);
     expect(e['paso']).toBe('pedido_confirmar');
     expect(e['entrega']['direccion']).toBe('Calle 3 … a Obrajes');
@@ -1834,7 +1945,8 @@ describe('Plan del turno: correcciones de la revisión', () => {
     const m = crearMundo();
     turno(m, { texto: 'hola' });
     const doce = Array.from({ length: 12 }, (_, i) => linea('queso fundido con chorizo', i + 1, '', `nota de la línea ${i} con bastante texto para que ocupe lugar en el resumen`));
-    const s = turno(m, { texto: 'pedido grande', extraccion: extPedido({ lineas: doce, entrega: 'delivery', direccion: 'Calle Falsa 123', referencia: 'casa azul', nombre: 'Ana Pérez' }) });
+    turno(m, { texto: 'pedido grande', extraccion: extPedido({ lineas: doce, entrega: 'delivery', direccion: 'Calle Falsa 123', referencia: 'casa azul', nombre: 'Ana Pérez' }) });
+    const s = turno(m, { tipo: 'location', ubicacion: { latitud: -16.5, longitud: -68.15 } });
     const ms = s.p!['mensajes'] as J[];
     expect(ms.length).toBeGreaterThanOrEqual(2);
     const ultimo = ms[ms.length - 1]!;

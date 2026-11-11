@@ -120,7 +120,8 @@ describe('la ubicación en el cierre', () => {
     expect(c).toContain(`📍 Ubicación: ${MAPS}`);
     const partes = c.split('\n\n');
     expect(partes[partes.length - 1]).toBe('Ya pasé tus datos a recepción; te contactarán para confirmar tu hora.');
-    expect(partes[partes.length - 2]).toBe(`📍 Ubicación: ${MAPS}`);
+    expect(partes[partes.length - 2]).toMatch(/^Para elegir el día y horario.*\n👉 wa\.me\/\d+\n¡Haz clic ahí y te asignarán tu espacio de inmediato!$/s);
+    expect(partes[partes.length - 3]).toBe(`📍 Ubicación: ${MAPS}`);
     expect(c.length).toBeLessThanOrEqual(1024);
     expect(avisosARecepcion(t).length).toBe(1);
   });
@@ -168,7 +169,8 @@ describe('la ubicación en el cierre', () => {
   it('D5: ni los datos versionados, ni el prompt, ni los dos JSON, ni el código llevan un enlace de Maps', () => {
     for (const ruta of [join(CARPETA_DE_DATOS, 'rroca-evy.json'), join(CARPETA_DE_DATOS, 'negocio-rroca-evy.json'), join(CARPETA, 'prompts/evy.md'), join(CARPETA, 'rroca-evy.json'), join(CARPETA, 'rroca-evy.prueba.json')]) {
       const t = readFileSync(ruta, 'utf8');
-      expect(t, ruta).not.toMatch(/maps\.app\.goo\.gl\/[A-Za-z0-9]|"direccionMaps"\s*:\s*"https/i);
+      // 07/11/2026: el ÚNICO enlace permitido es el corto del texto literal del anuncio (dato de la doctora, en «Config base»): se quita antes de buscar.
+      expect(t.split('https://maps.app.goo.gl/5E6xfGydC3PRnnRSA').join(''), ruta).not.toMatch(/maps\.app\.goo\.gl\/[A-Za-z0-9]|"direccionMaps"\s*:\s*"https/i);
     }
   });
 });

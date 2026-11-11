@@ -203,3 +203,48 @@ describe('el dato de Q\'Taco: las plantillas por líneas, vacías hasta que Meta
     expect(JSON.stringify(plan)).not.toContain('pedido_registrado_l');
   });
 });
+
+describe('el dato de Q\'Taco 3727 (06/11/2026): las tres plantillas por líneas, APROBADAS en su WABA', () => {
+  const ruta = (r: string) => join(dirname(fileURLToPath(import.meta.url)), r);
+  const d3727 = JSON.parse(readFileSync(ruta('../scripts/datos/venta-minima/qtaco-3727.json'), 'utf8')) as J;
+  const cfg = { ...BASE, ...(d3727['configBase'] as J) };
+  // Estado vigente del 3727 (07/11 20:47): las plantillas EN VIÑETAS están DESACTIVADAS (Q'Taco volvió al formato por líneas), así que la plantilla por líneas es el `payload`
+  // principal y `respaldo` es null. `cfgEnc` es una config propia de prueba con las tres en APPROVED: ahí la plantilla por líneas pasa a ser el RESPALDO de la de viñetas
+  // (sale solo si Meta rechaza la nueva), que es el caso que sigue cubierto. `cfgHoy` es el mismo dato sin las claves de viñetas.
+  const cfgEnc = { ...cfg, plantillaPedidoMapaEstado: 'APPROVED', plantillaPedidoListaEstado: 'APPROVED', plantillaReservaListaEstado: 'APPROVED' } as J;
+  const cfgHoy = Object.fromEntries(Object.entries(cfg).filter(([k]) => !/^plantilla(PedidoMapa|PedidoLista|ReservaLista|ConsultaAtencion)|^idiomaPlantillasVinetas$/.test(k))) as J;
+  it('el dato trae «2:l2,4:l4,6:l6» en español y la base (qtaco.json) sigue vacía', () => {
+    expect(cfg['plantillasPedidoLineas']).toBe('2:pedido_registrado_l2,4:pedido_registrado_l4,6:pedido_registrado_l6');
+    expect(cfg['idiomaPlantillaPedidoLineas']).toBe('es');
+    const base = JSON.parse(readFileSync(ruta('../scripts/datos/venta-minima/qtaco.json'), 'utf8')) as J;
+    expect((base['configBase'] as J)['plantillasPedidoLineas']).toBe('');
+  });
+  it('con 1–2, 3–4, 5–6 y 7+ productos usa l2/l4/l6 con 5/7/9 variables y «… y K más»', () => {
+    const esperado: Array<[number, string, number]> = [[1, 'l2', 5], [2, 'l2', 5], [3, 'l4', 7], [4, 'l4', 7], [5, 'l6', 9], [6, 'l6', 9], [7, 'l6', 9], [10, 'l6', 9]];
+    for (const [n, tam, vars] of esperado) {
+      const it = de(arm(pedido(n), cfgHoy), COMPLETO);
+      expect(it.payload.template.name, `n=${n}`).toBe(`pedido_registrado_${tam}`);
+      // Con el dato vigente del 3727 (viñetas apagadas) la de líneas es el payload principal y no hay respaldo.
+      expect(de(arm(pedido(n), cfg), COMPLETO).payload, `n=${n}`).toEqual(it.payload);
+      expect(de(arm(pedido(n), cfg), COMPLETO).respaldo, `n=${n}`).toBeNull();
+      // Con viñetas encendidas (config propia, tres en APPROVED), esa misma plantilla por líneas va EXACTA como respaldo de la de viñetas.
+      expect(de(arm(pedido(n), cfgEnc), COMPLETO).respaldo, `n=${n}`).toEqual(it.payload);
+      expect(it.payload.template.language.code, `n=${n}`).toBe('es');
+      const p = params(it);
+      expect(p.length, `n=${n}`).toBe(vars);
+      expect(p.slice(2, -1).join('|'), `n=${n}`).toContain(n > 6 ? `… y ${n - 5} más` : `${n} × Producto ${n}`);
+      if (n <= 6) expect(p.join('|')).not.toContain(' más');
+    }
+  });
+  it('NEGADA: con la clave vacía todo sale como antes; la reserva y la derivación no usan las plantillas por líneas', () => {
+    const vacia = { ...cfg, plantillasPedidoLineas: '' };
+    expect(JSON.stringify(arm(pedido(3), vacia))).not.toContain('pedido_registrado_l');
+    expect(de(arm(pedido(3), { ...cfgHoy, plantillasPedidoLineas: '' }), COMPLETO).payload.template.name).toBe('pedido_registrado');
+    expect(de(arm(pedido(3), vacia), COMPLETO).respaldo).toBeNull();
+    expect(de(arm(pedido(3), { ...cfgEnc, plantillasPedidoLineas: '' }), COMPLETO).respaldo.template.name).toBe('pedido_registrado');
+    for (const tipo of ['reserva', 'derivacion']) {
+      const items = L.avArmar(tipo, pedido(3), CSV, cfg, sd(), AHORA) as J[];
+      expect(JSON.stringify(items), tipo).not.toContain('pedido_registrado_l');
+    }
+  });
+});

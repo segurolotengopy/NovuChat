@@ -17,7 +17,7 @@
  * `--aplicar`: exige `--confirmo-produccion <id del flujo>` (igual a `--workflow`) y `--respaldo` (ruta absoluta, 0600, fuera de todo repositorio, nunca se pisa: guarda el
  * staticData COMPLETO, por si hay que reponerlo). Relee justo antes de escribir y, si el flujo cambió, no escribe. Solo cambia `staticData`:
  * nodos, conexiones y ajustes se reescriben TAL CUAL. Relee al final y verifica que no se perdió nada más. El PUT sobre un flujo activo puede
- * reiniciar sus webhooks: aplicarlo con poco tráfico. Lista cerrada de claves: `rroca`.
+ * reiniciar sus webhooks: aplicarlo con poco tráfico. Lista cerrada de claves: `rroca` (el flujo del libro anterior de Rubén) y `ruben` (el flujo nuevo «Noches Sin Insomnio»: `staticData.global.ruben`, mapa teléfono → ficha, con `riesgo` y `riesgoMs` de la protección de crisis de 48 h).
  *
  * SALIDA. 0 hecho o nada que borrar; 1 el seco encontró fichas; 2 uso o salvaguarda; 3 error de ejecución.
  */
@@ -25,7 +25,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { comprobarRespaldo, guardarRespaldo } from './aplicar-consola-conversaciones.mjs';
 
-export const CLAVES = Object.freeze(['rroca']);
+export const CLAVES = Object.freeze(['rroca', 'ruben']);
 export const ESPERA_FINAL_MS = 150_000;
 /** Claves hermanas que solo se borran con --con-topes (por clave). */
 const TOPES = Object.freeze({ rroca: ['rrTopes', 'rrExtranjeros'] });
@@ -176,6 +176,9 @@ async function principal() {
 function seEjecutaDirecto() {
   try { return Boolean(process.argv[1]) && fileURLToPath(import.meta.url) === realpathSync(process.argv[1]); } catch { return false; }
 }
+export const AVISO_UNICO = '\n  ! Hay UN solo reseteo de un teléfono de prueba (Andres, 07/11/2026): `node scripts/plataforma/resetear-telefono-prueba.mjs --proyecto <id> --tenant <tenant> --tel <dígitos>` limpia ficha de n8n, sesiones, cupos, cobro/QR pendiente, atención y pausa Tomar, y dice ESTADO LIMPIO. Este script ya no se usa para eso.\n';
 if (seEjecutaDirecto()) {
+  // El modo masivo (--todas-las-fichas) no es el reseteo de un teléfono y sigue; solo --sufijos (por teléfono) pasa al único.
+  if (process.argv.includes('--sufijos')) { console.error(AVISO_UNICO); process.exit(2); }
   try { await principal(); } catch (e) { console.error(`\n  ✗ error de ejecución: ${e?.code ?? e?.name ?? 'desconocido'}\n`); process.exit(3); }
 }

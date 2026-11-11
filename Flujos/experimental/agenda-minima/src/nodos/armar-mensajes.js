@@ -255,6 +255,7 @@ function textoFijoDeOferta(o, srvTxt) {
     hora_ocupada: 'A esa hora no está disponible. Las más cercanas son:',
     hora_propia: 'Esa hora ya es la de tu cita actual. Estas son otras opciones:',
     hueco_perdido: 'Ese horario ya no está disponible. Estos son los más cercanos:',
+    sin_dos_seguidos: 'Para los dos hermanos necesito dos horarios seguidos de ' + (Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30) + ' minutos, y ese ya no los tiene. Estos sí:',
     cruce: 'Ese horario se ocupó justo ahora y no pude dejar tu cita. Estos son los más cercanos:',
   }[o.aviso] || ('Estos son los horarios más cercanos para ' + srvTxt + ':');
   return intro + '\n' + o.huecos.map((h) => '• ' + textoDeFecha(h.inicio)).join('\n') + '\n\nToca el horario que prefieras.';
@@ -322,8 +323,13 @@ switch (plan) {
     // repite ningún detalle (puede ser clínico); solo se dice qué tipo de cosa se recibió y que por este chat no se valora.
     // La frase de lo que se ve solo se usa en una captura de pantalla. No se ofrece nada que el flujo no cumpla.
     const cat = String(base.categoriaMedio || '');
-    const ve = cat === 'captura_de_pantalla' ? String(base.descripcionMedio || '').trim() : '';
-    if (cat === 'foto') menu('Recibí tu foto. Por este chat no puedo valorarla. ¿Qué necesitas?');
+    // La frase del modelo de visión ya trae su punto: se le quita para no decir «..» (humo del 07/11).
+    const ve = cat === 'captura_de_pantalla' ? String(base.descripcionMedio || '').trim().replace(/[\s.]+$/, '') : '';
+    // Una captura de MAPA o de ubicación: no se valora, se responde con lo que el negocio configuró (dirección y mapa). No se afirma
+    // que sea SU consultorio (la descripción no lleva nombres): se dice «si buscas nuestro consultorio, estamos en…».
+    const esMapa = /\b(mapa|ubicacion|direccion)\b/.test(cnNorm(ve));
+    if (esMapa && cfg.direccion) menu('Recibí tu captura del mapa. Si buscas nuestro consultorio, estamos en ' + cfg.direccion + '.' + (MAPA ? '\nMapa: ' + MAPA : '') + '\n¿Quieres agendar una cita o necesitas otra cosa?');
+    else if (cat === 'foto') menu('Recibí tu foto. Por este chat no puedo valorarla. ¿Qué necesitas?');
     else if (cat === 'captura_de_pantalla') menu('Recibí tu captura' + (ve ? ': ' + ve : '') + '. Por este chat no puedo valorarla. ¿Qué necesitas?');
     else menu('Recibí tu imagen. ¿Qué necesitas?');
     break;
@@ -377,6 +383,29 @@ switch (plan) {
     transferir('el paciente envió un mensaje que este canal no lee (foto, archivo u otro)',
       (t.tipo === 'document' ? 'Recibí tu archivo. ' : '')
       + 'Por este chat solo puedo ayudarte a agendar, cancelar o mover citas. Para otra cosa, escríbele directo a recepción tocando el botón.');
+    break;
+
+  case 'consulta_clinica':
+    // Pregunta de salud: no se orienta. Lo único que se ofrece es pasar con recepción, que es aviso + botón (política «solo se ofrece lo que se cumple»).
+    // Un aviso de salud a recepción por teléfono cada 24 h (decisión de Andres, 06/11/2026): los siguientes mensajes con síntoma solo reciben el botón.
+    // El estado por teléfono vence a los 30 min, así que la hora del último aviso vive aparte, en `avisosSalud` (se poda a las 24 h).
+    {
+      const cuerpoClinico = 'Esa consulta la debe ver el doctor y yo no puedo orientarte sobre salud. Para hacérsela, escríbele a recepción tocando el botón.';
+      let sdAviso = null;
+      try { sdAviso = $getWorkflowStaticData('global'); } catch (err) { sdAviso = null; }
+      const claveAviso = String(t.from || '');
+      const prevAviso = sdAviso && sdAviso.avisosSalud && typeof sdAviso.avisosSalud === 'object' ? Number(sdAviso.avisosSalud[claveAviso] || 0) : 0;
+      if (prevAviso > 0 && ahora - prevAviso < 24 * 3600 * 1000) {
+        mensajeConBoton(rec, cuerpoClinico, 'Escribir a recepción', 'Hola, escribo desde el asistente de ' + nombreNegocio + '.', 'no_contactar');
+      } else {
+        transferir('el paciente hizo una consulta de salud que el asistente no responde', cuerpoClinico);
+        if (sdAviso && cfg.modoPrueba !== true && cnClaveValida(claveAviso) && rec && rec !== desdeDigitos) {
+          if (!sdAviso.avisosSalud || typeof sdAviso.avisosSalud !== 'object') sdAviso.avisosSalud = {};
+          for (const k of Object.keys(sdAviso.avisosSalud)) { if (!(ahora - Number(sdAviso.avisosSalud[k] || 0) < 24 * 3600 * 1000)) delete sdAviso.avisosSalud[k]; }
+          sdAviso.avisosSalud[claveAviso] = ahora;
+        }
+      }
+    }
     break;
 
   case 'audio_ilegible': {
@@ -475,7 +504,9 @@ switch (plan) {
     const filas = (base.citas || []).map((c) => ({ c: c, id: idDeBoton(modo, { id: c.id }) })).filter((x) => x.id);
     if (!filas.length) { transferir('no se pudo listar sus citas', 'No pude mostrarte tus citas. Escríbele directo a recepción tocando el botón.'); break; }
     const detalle = filas.map((x) => '• ' + textoDeFecha(x.c.inicio)).join('\n');
-    const cuerpo = (modo === 'm' ? '¿Cuál de tus citas quieres mover?' : (filas.length === 1 ? 'Esta es tu cita. Para cancelarla, toca el botón:' : '¿Cuál de tus citas quieres cancelar?'))
+    const cuerpo = (params.noEntendi
+      ? 'No te entendí bien cuál de tus citas. ' + (filas.length === 1 ? 'Toca el botón, o dime el día y la hora:' : 'Toca una, o dime el día y la hora de la que quieres ' + (modo === 'm' ? 'mover' : 'cancelar') + ':')
+      : (modo === 'm' ? '¿Cuál de tus citas quieres mover?' : (filas.length === 1 ? 'Esta es tu cita. Para cancelarla, toca el botón:' : '¿Cuál de tus citas quieres cancelar?')))
       + '\n' + detalle;
     if (filas.length <= 3) {
       const botones = filas.map((x) => ({ id: x.id, title: verbo + ' ' + x.c.etiqueta }));
@@ -512,8 +543,14 @@ switch (plan) {
     }
     const c = base.crear;
     const nombres = c.titulo.replace(/\s*\((?:CNS|RN)\)\s*$/, '');
+    const dosCitas = Array.isArray(c.citas) && c.citas.length === 2;
+    const sinMarca = (x) => String(x.titulo).replace(/\s*\((?:CNS|RN)\)\s*$/, '');
     const partes = [
-      conEmoji('✅') + 'Listo, quedó agendada la cita de ' + nombres + ' (' + (CN_NOMBRE_SERVICIO[c.servicio] || 'consulta') + '): ' + textoDeFecha(c.inicio) + '.',
+      // Dos hermanos: dos citas seguidas, UN solo mensaje de confirmacion.
+      dosCitas
+        ? conEmoji('✅') + 'Listo, quedaron agendadas las citas de ' + sinMarca(c.citas[0]) + ' (' + textoDeFecha(c.citas[0].inicio) + ') y '
+          + sinMarca(c.citas[1]) + ' (' + horaLocal(msDe(c.citas[1].inicio)) + ') (' + (CN_NOMBRE_SERVICIO[c.servicio] || 'consulta') + ').'
+        : conEmoji('✅') + 'Listo, quedó agendada la cita de ' + nombres + ' (' + (CN_NOMBRE_SERVICIO[c.servicio] || 'consulta') + '): ' + textoDeFecha(c.inicio) + '.',
       cfg.direccion ? 'Te esperamos en ' + cfg.direccion + '.' + (MAPA ? '\nMapa: ' + MAPA : '') : '',
       // P10: la tolerancia va dentro del mismo mensaje y sale de la configuracion; sin frase, no se agrega.
       String(cfg.toleranciaTexto || ''),
@@ -546,7 +583,9 @@ switch (plan) {
 
   case 'error':
   default: {
-    const motivo = params.motivo || errores.join('; ') || 'error del flujo';
+    let motivo = params.motivo || errores.join('; ') || 'error del flujo';
+    // Creación parcial: un evento con error pudo haberse creado igual y no quedar registrado.
+    if (params.revisarCalendarioInicio) motivo += '. Pudo quedar un evento sin registrar: REVISAR el calendario el ' + textoDeFecha(params.revisarCalendarioInicio);
     const cuerpo = String(cfg.mensajeErrorTemporal || '').trim() + ' Si prefieres, escríbele directo a recepción.';
     transferir(motivo, cuerpo);
   }
@@ -554,13 +593,16 @@ switch (plan) {
 
 // La cita cruzada no se pudo deshacer: dos eventos quedaron en el calendario.
 if (base.deshacerId) {
-  const d = cnPrimero('Deshacer cita');
+  // Dos hermanos: un evento por hermano. Si CUALQUIERA no se pudo deshacer, queda una cita suelta: se avisa con todos los ids.
+  const ids = Array.isArray(base.deshacerIds) && base.deshacerIds.length ? base.deshacerIds : [base.deshacerId];
+  const ds = cnTodos('Deshacer cita');
   // Un 404 o 410 de Google es que el evento ya no está: el deshacer cumplió.
-  const yaNoEsta = !!(d && d.error) && /\b(404|410)\b|not found|has been deleted|resource has been deleted/i.test(JSON.stringify(d.error));
-  if ((!d || d.error) && !yaNoEsta) {
+  const yaNoEsta = (d) => !!(d && d.error) && /\b(404|410)\b|not found|has been deleted|resource has been deleted/i.test(JSON.stringify(d.error));
+  const fallo = ids.length > ds.length || ds.some((d) => (!d || d.error) && !yaNoEsta(d));
+  if (fallo) {
     deshacerFallo = true;
     errores.push('no se pudo deshacer la cita cruzada');
-    const motivo = 'la cita cruzada no se pudo borrar del calendario (evento ' + base.deshacerId + '): revisar la agenda de ese horario';
+    const motivo = 'la cita cruzada no se pudo borrar del calendario (' + (ids.length > 1 ? 'eventos ' : 'evento ') + ids.join(', ') + '): revisar la agenda de ese horario';
     if (rec && rec !== desdeDigitos) avisarARecepcion(motivo);
     else if (doc && doc !== desdeDigitos) {
       const aviso = '🔔 NovuChat (' + nombreNegocio + '): ' + motivo + '.';
@@ -625,7 +667,7 @@ if (estado && cnClaveValida(t.from) && plan !== 'nada') {
 // El prospecto lo arma `agmProspectoCrm` (agenda.js): vocabulario cerrado, el texto del cliente no pasa, los hechos son los que el CODIGO verifico (la cita que creo el
 // calendario, la que se borro), no lo que dijo el modelo. LA PLANILLA NUNCA TUMBA LA ATENCION: si el calculo lanza, el turno responde igual y no se escribe en la hoja.
 // MENSAJES: ninguno (no se agrega ni se quita ninguno).
-const CRM_OLVIDO_MS = 48 * 3600 * 1000; // «contacto nuevo» = sin mensajes en las ultimas 48 h (el estado de agenda vence a los 30 min: no sirve).
+const CRM_OLVIDO_MS = 24 * 3600 * 1000; // «contacto nuevo» = sin mensajes en las ultimas 24 h (una fila por ventana de conversacion de 24 h; Andres 08/11/2026) (el estado de agenda vence a los 30 min: no sirve).
 let guardarPlanilla = false;
 let prospectoPlanilla = null;
 const planillaOk = String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';
@@ -641,6 +683,8 @@ if (planillaOk && !prueba && salida.length > 0 && cnClaveValida(t.from)) {
       from: t.from, plan: plan, servicio: srv, clave: params.clave,
       creada: base.creada === true, reprogramo: !!base.borrarId && !!bBorrar && !bBorrar.error, cancelada: !!bBorrar && !bBorrar.error,
       inicioCita: base.crear && base.crear.inicio ? base.crear.inicio : '',
+      pacientes: base.crear && Array.isArray(base.crear.pacientes) ? base.crear.pacientes : [],
+      canceladaInicio: base.cancelada && base.cancelada.inicio ? base.cancelada.inicio : '', restantes: Array.isArray(base.restantes) ? base.restantes : [],
       huecos: base.oferta && Array.isArray(base.oferta.huecos) ? base.oferta.huecos.map((h) => h.inicio) : [],
       derivo: plan === 'contacto_doctor' ? 'doctor' : (conBoton ? 'recepcion' : ''),
       nombrePerfil: t.nombrePerfil, anuncio: t.origen === 'anuncio', nuevoContacto: nuevoContacto, ahoraMs: ahora,

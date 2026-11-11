@@ -50,7 +50,7 @@ const constanteDeComun = (nombre: string): string => {
 };
 const DE_COMUN = [
   ...['VM_PEDIDOS_MS', 'VM_MAX_PEDIDOS', 'VM_RESPALDO_HASTA_MS', 'VM_VENCE_MS', 'VM_VENCE_COMPROBANTE_MS', 'SS_CONFIG'].map(constanteDeComun),
-  ...['_vmObjeto', '_vmCadena', '_vmClaveValida', '_vmIdValido', '_vmHay', '_vmVence', 'vmSes', 'vmGuardarPedido', 'vmVenceEnMin', 'vmRetirarRespaldo', 'vmClaveAviso'].map(deComun),
+  ...['_vmObjeto', '_vmCadena', '_vmClaveValida', '_vmIdValido', '_vmHay', '_vmVence', 'vmSes', 'vmGuardarPedido', 'vmVenceEnMin', 'vmMinHastaMedianoche', 'vmRetirarRespaldo', 'vmClaveAviso', 'vmReservasSd', 'vmResultadoCupos'].map(deComun),
 ].join('\n');
 // El módulo común de Pedidos (qr-del-pedido.js) es REAL, no un doble: lo que arma el QR lo incluye construir.mjs en cada nodo.
 const PQR = readFileSync(join(CARPETA, '../../../../src/modulos/pedidos/qr-del-pedido.js'), 'utf8') + '\n';
@@ -118,7 +118,8 @@ function cnPrimero(n) { return vmPrimero(n); }
 function avDentroDelTopeDiario(sd, ms, tope) { return Number(sd.avisosDia || 0) < tope; }
 function avFechaLocal(ms) { return new Date(ms - 4 * 3600000).toISOString().slice(0, 10); }
 function avContar(sd, ms, n) { __bit.push(['avContar', n]); sd.avisosDia = Number(sd.avisosDia || 0) + n; }
-function rsAnotar(sd, from, ms) { __bit.push(['rsAnotar', from]); sd.reservasDia = Number(sd.reservasDia || 0) + 1; }
+function _rsFechaLocal(ms) { return new Date(ms - 4 * 3600000).toISOString().slice(0, 10); }
+function rsAnotar(sd, from, ms) { __bit.push(['rsAnotar', from]); sd.reservasDia = Number(sd.reservasDia || 0) + 1; const k = String(from).replace(/\\D/g, ''); const p = sd.reservasDelDia && sd.reservasDelDia[k]; const hoy = _rsFechaLocal(ms); const n = (p && p.dia === hoy ? p.n : 0) + 1; sd.reservasDelDia = Object.assign({}, sd.reservasDelDia, { [k]: { dia: hoy, n: n } }); return n; }
 function avArmar(tipo, datos, dest, cfg, sd, ms) {
   __bit.push(['avArmar', tipo, JSON.parse(JSON.stringify(datos))]);
   if (datos.lanzar) throw new Error('falla de prueba');
@@ -155,6 +156,8 @@ const FALLA: J = { error: { message: 'Graph rechazó el envío', code: 131030 } 
 
 interface Entrada {
   plan?: J; nombrePlan?: string; cfg?: J; t?: J; armados?: J[]; enviados?: J[]; respaldos?: J[]; g?: J;
+  /** Más nodos que corrieron (p. ej. «Carga de entrada» y «Config base» para la variante de prueba, o «Consumir cupos»). */
+  refs?: Referencias;
   /** Código que se agrega después de los dobles (una función repetida pisa a la anterior). */
   extra?: string;
 }
@@ -166,13 +169,14 @@ interface Salida { items: J[]; g: J; sd: J; bit: unknown[][]; armado?: J }
 function nodo(fuente: string, e: Entrada = {}): Salida {
   const g: J = e.g ?? {};
   const bit: unknown[][] = [];
-  const esMensajes = fuente === MENSAJES;
+  const esMensajes = fuente === MENSAJES || fuente.startsWith('// ARMAR MENSAJES'); // (una fuente mutada por una prueba sigue siendo ese nodo)
   const refs: Referencias = { 'Config del negocio': { sesion: SESION_VACIA, ...CFG, ...e.cfg }, 'Interpretar entrada': { ...ENTRADA, ...e.t } };
+  if (e.refs) Object.assign(refs, e.refs);
   if (e.plan) refs[e.nombrePlan ?? 'Plan del turno'] = e.plan;
   if (e.armados) refs['Armar avisos'] = e.armados;
   if (e.enviados) refs['Enviar aviso'] = e.enviados;
   if (e.respaldos) refs['Aviso de respaldo'] = e.respaldos;
-  const items = ejecutar(`${DOBLES}\n${DE_COMUN}\n${esMensajes ? `${SESION}\n` : ''}${e.extra ?? ''}\n${fuente}`, [{}], refs, { $getWorkflowStaticData: () => g, __bit: bit, $execution: { id: 'e1' } });
+  const items = ejecutar(`${DOBLES}\n${DE_COMUN}\n${esMensajes || fuente === AVISOS || fuente.startsWith('// ARMAR AVISOS') ? `${SESION}\n` : ''}${e.extra ?? ''}\n${fuente}`, [{}], refs, { $getWorkflowStaticData: () => g, __bit: bit, $execution: { id: 'e1' } });
   if (!esMensajes) return { items, g, sd: (g['ventaMinima'] ?? {}) as J, bit };
   // «Armar mensajes» ya no envía ni escribe: arma TODO en un ítem (`salida`) y el bloque a comprometer (`bloque`). Esta vista conserva la lectura de siempre: `items` = lo que sale y `sd` = los
   // datos estáticos que SIGUEN en n8n (residuo de PR-4b) más `estados` y `pedidos` tal como quedarían en el servidor tras el compromiso.
@@ -214,7 +218,7 @@ function textosDe(j: J): string[] {
   if (typeof j['texto'] === 'string') out.push(j['texto']);
   return out;
 }
-const GENERICO = 'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Para volver al inicio, escribe «menú».';
+const GENERICO = 'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Para volver al inicio, escribe «inicio».';
 const cuerpoDe = (j: J): string => String(j['payload'].text?.body ?? j['payload'].interactive?.body.text ?? j['payload'].image?.caption);
 
 // =================================================================================================
@@ -495,7 +499,7 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
     expect(bs[2].reply.title.length).toBeLessThanOrEqual(20);
     expect(r.items[0]).toMatchObject({ tipoReporte: 'interactive' });
     expect(r.items[0]!['respaldo']).toContain('¿Qué te gustaría hacer?');
-    expect(r.items[0]!['respaldo']).toContain('escribe «menu»');
+    expect(r.items[0]!['respaldo']).toContain('escribe «inicio»');
   });
 
   it('botones sin ids válidos caen a texto; un id de más de 256 caracteres se descarta', () => {
@@ -538,15 +542,15 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
       const i = r.items[0]!;
       expect(i['payload'].type).toBe('text');
       // Sin botón no se nombra el botón («Escribir al local»): queda lo demás, con el camino de vuelta al menú.
-      expect(i['payload'].text.body).toBe('Disculpa, eso no lo puedo resolver por aquí 🙏. Para volver al inicio, escribe «menú».');
+      expect(i['payload'].text.body).toBe('Disculpa, eso no lo puedo resolver por aquí 🙏. Para volver al inicio, escribe «inicio».');
       expect(i['tipoReporte']).toBe('text');
       expect(JSON.stringify(i)).not.toMatch(/bot[oó]n/i);
     }
     // el texto con «:» conserva lo que viene antes del «:»
     const r = mensajes({ mensajes: [enlace('No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.')] }, { cfg: { numeroRecepcion: '' } });
-    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido a nuestro equipo en este momento. Para volver al inicio, escribe «menú».');
+    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido a nuestro equipo en este momento. Para volver al inicio, escribe «inicio».');
     const dos = mensajes({ mensajes: [enlace('Ya tengo el comprobante de tu pedido #K7Q2. Si necesitas algo más, toca el botón.')] }, { cfg: { numeroRecepcion: '' } });
-    expect(dos.items[0]!['payload'].text.body).toBe('Ya tengo el comprobante de tu pedido #K7Q2. Para volver al inicio, escribe «menú».');
+    expect(dos.items[0]!['payload'].text.body).toBe('Ya tengo el comprobante de tu pedido #K7Q2. Para volver al inicio, escribe «inicio».');
   });
 
   it('modo prueba: a telefonoDePrueba, sin prefijo y sin reportar; fuera de prueba, reportable', () => {
@@ -721,7 +725,7 @@ describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', ()
   const PASE = 'Listo: pasé tu pedido #K7Q2 al restaurante. El pago lo coordinas con ellos al recoger.';
   const NO_PASE_PLAN = 'No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.';
   // Lo que sale: el mensaje con botón de enlace lleva al final el camino de vuelta al menú (03/10).
-  const NO_PASE = NO_PASE_PLAN + ' Para volver al inicio, escribe «menú».';
+  const NO_PASE = NO_PASE_PLAN + ' Para volver al inicio, escribe «inicio».';
   const plan = (): J => ({
     ruta: 'confirmar', pedido: PEDIDO, aviso: { tipo: 'pedido', datos: {} }, mensajes: [],
     condicionados: { siSalio: [texto(PASE)], siNoSalio: [enlace(NO_PASE_PLAN)] },
@@ -882,9 +886,13 @@ describe('Armar mensajes — marcas de derivación y de reservas (solo si el avi
   it('rsAnotar corre cuando el aviso de reserva salió, y solo entonces', () => {
     const salio = mensajes(plan('reserva'), { armados: [armado('reserva')], enviados: [OK()] });
     expect(salio.bit.filter((b) => b[0] === 'rsAnotar')).toEqual([['rsAnotar', CLIENTE]]);
-    expect(salio.sd['reservasDia']).toBe(1);
+    // PR-4b: la reserva anotada viaja en el BLOQUE del teléfono que se compromete (no en la memoria de n8n)
+    expect((salio.armado!['bloque'] as J)['reservas']).toEqual({ dia: '2026-10-05', n: 1 });
+    expect(salio.armado).toMatchObject({ comprometer: true });
+    expect(salio.sd['reservasDia']).toBeUndefined();
     const cayo = mensajes(plan('reserva'), { armados: [armado('reserva')], enviados: [FALLA] });
     expect(cayo.bit.some((b) => b[0] === 'rsAnotar')).toBe(false);
+    expect((cayo.armado!['bloque'] as J | null)?.['reservas']).toBeUndefined();
     const sinAviso = mensajes(plan('reserva'), { armados: [SIN_AVISO] });
     expect(sinAviso.bit.some((b) => b[0] === 'rsAnotar')).toBe(false);
     const otroTipo = mensajes(plan('pedido'), { armados: [armado('pedido')], enviados: [OK()] });
@@ -1351,26 +1359,30 @@ describe('Armar avisos — R3: el tope de derivaciones respeta el 0 y lee solo l
 describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (03/10)', () => {
   const titulos = (j: J): string[] => (j['payload'].interactive?.action?.buttons ?? []).map((b: J) => String(b.reply.title));
   const ids = (j: J): string[] => (j['payload'].interactive?.action?.buttons ?? []).map((b: J) => String(b.reply.id));
-  const SEGUIR = 'Para volver al inicio, escribe «menú».';
+  const SEGUIR = 'Para volver al inicio, escribe «inicio».';
 
   it('todo mensaje con botones y lugar (menos de tres) sale con «Menú» (`m|menu`) al final; con tres, no se agrega nada', () => {
     const uno = mensajes({ mensajes: [botones('Elige', 'A')] }).items[0]!;
-    expect(titulos(uno)).toEqual(['A', 'Menú']);
+    expect(titulos(uno)).toEqual(['A', 'Volver a inicio']);
     expect(ids(uno)).toEqual(['b|0', 'm|menu']);
     const dos = mensajes({ mensajes: [botones('Elige', 'A', 'B')] }).items[0]!;
-    expect(titulos(dos)).toEqual(['A', 'B', 'Menú']);
+    expect(titulos(dos)).toEqual(['A', 'B', 'Volver a inicio']);
+    expect([...titulos(uno), ...titulos(dos)].every((t) => t.length <= 20), 'títulos de botón de WhatsApp ≤ 20').toBe(true);
+    // 06/11: también junto a botones de paso de pedido (la palabra «menú» se confunde con la carta en un restaurante).
+    const paso = mensajes({ mensajes: [{ tipo: 'botones', cuerpo: 'Elige', botones: [{ id: 'p|confirmar', title: 'Confirmar pedido' }, { id: 'p|cambiar', title: 'Cambiar algo' }] }] }).items[0]!;
+    expect(titulos(paso)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Volver a inicio']);
     // Negado: con tres no hay lugar; con el propio menú (`sinMenu`) no se repite; sin botones sigue siendo un texto.
     expect(titulos(mensajes({ mensajes: [botones('Elige', 'A', 'B', 'C')] }).items[0]!)).toEqual(['A', 'B', 'C']);
     expect(titulos(mensajes({ mensajes: [{ ...botones('Elige', 'A', 'B'), sinMenu: true }] }).items[0]!)).toEqual(['A', 'B']);
     expect(mensajes({ mensajes: [texto('Hola')] }).items[0]!['payload'].type).toBe('text');
     // Un botón «m|menu» que el plan ya trae no se duplica.
-    const ya = mensajes({ mensajes: [{ tipo: 'botones', cuerpo: 'Elige', botones: [{ id: 'm|menu', title: 'Menú' }] }] }).items[0]!;
+    const ya = mensajes({ mensajes: [{ tipo: 'botones', cuerpo: 'Elige', botones: [{ id: 'm|menu', title: 'Volver a inicio' }] }] }).items[0]!;
     expect(ids(ya)).toEqual(['m|menu']);
     // Agregar el botón no agrega mensajes.
     expect(mensajes({ mensajes: [botones('Elige', 'A', 'B')] }).items).toHaveLength(1);
   });
 
-  it('el mensaje con botón de enlace lleva al final «escribe «menú»», sin repetirlo si ya lo trae', () => {
+  it('el mensaje con botón de enlace lleva al final «escribe «inicio»», sin repetirlo si ya lo trae', () => {
     const e = mensajes({ mensajes: [enlace('Texto del plan.')] }).items[0]!;
     expect(e['texto']).toBe(`Texto del plan. ${SEGUIR}`);
     expect(e['payload'].interactive.body.text).toBe(`Texto del plan. ${SEGUIR}`);
@@ -1378,13 +1390,13 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
     expect(ya['texto']).toBe(`Texto del plan. ${SEGUIR}`);
   });
 
-  it('la frase de «menú» es «Para volver al inicio, escribe «menú».»: la vieja («seguir con tu pedido o tu reserva») no sale en ningún mensaje', () => {
-    expect(SEGUIR).toBe('Para volver al inicio, escribe «menú».');
+  it('la frase de «menú» es «Para volver al inicio, escribe «inicio».»: la vieja («seguir con tu pedido o tu reserva») no sale en ningún mensaje', () => {
+    expect(SEGUIR).toBe('Para volver al inicio, escribe «inicio».');
     const e = mensajes({ mensajes: [enlace('Texto del plan.')] }).items[0]!;
-    expect(e['texto']).toBe('Texto del plan. Para volver al inicio, escribe «menú».');
+    expect(e['texto']).toBe('Texto del plan. Para volver al inicio, escribe «inicio».');
     expect(JSON.stringify(e)).not.toContain('seguir con tu pedido');
     // La comparación por texto reconoce la frase NUEVA (no la repite) y ya no reconoce la vieja (se agrega la nueva).
-    const vieja = 'Texto del plan. Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
+    const vieja = 'Texto del plan. Si quieres seguir con tu pedido o tu reserva, escribe «inicio».';
     expect(mensajes({ mensajes: [enlace(vieja)] }).items[0]!['texto']).toBe(`${vieja} ${SEGUIR}`);
     // El mensaje genérico de derivación lleva la frase nueva.
     expect(String(mensajes({ mensajes: [texto('x')] }, { armados: [], enviados: [] }).items[0]!['texto'])).not.toContain('seguir con tu pedido');
@@ -1402,7 +1414,7 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
   it('el texto sin botón (recepción igual al cliente) nombra «menú» y NO el botón «Escribir al local»', () => {
     const r = mensajes({ mensajes: [enlace(GENERICO)] }, { cfg: { numeroRecepcion: CLIENTE } }).items[0]!;
     expect(r['payload'].type).toBe('text');
-    expect(r['texto']).toContain('escribe «menú»');
+    expect(r['texto']).toContain('escribe «inicio»');
     expect(r['texto']).not.toMatch(/escribir al local|bot[oó]n/i);
   });
 
@@ -1610,8 +1622,8 @@ describe('Voz y tono (05/10): sin número de recepción el texto no nombra el bo
   });
 });
 
-describe('Voz y tono (05/10): la cola «Para volver al inicio, escribe «menú».» (`amConSeguir`)', () => {
-  const COLA = 'Para volver al inicio, escribe «menú».';
+describe('Voz y tono (05/10): la cola «Para volver al inicio, escribe «inicio».» (`amConSeguir`)', () => {
+  const COLA = 'Para volver al inicio, escribe «inicio».';
   const veces = (t: string): number => t.split(COLA).length - 1;
   it('se agrega UNA vez al mensaje con botón de enlace, y no se duplica si el texto ya la trae (fila 5 y la derivación genérica)', () => {
     const sin = String(mensajes({ mensajes: [enlace('Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo.')] }).items[0]!['texto']);
@@ -1646,5 +1658,147 @@ describe('Voz y tono (05/10): el pie del QR con el resumen del pedido (`amQr`)',
       expect(r.items[0]!['payload'].type, nombre).toBe('interactive');
       expect(String(r.items[0]!['texto']), nombre).toContain('Disculpa, eso no lo puedo resolver por aquí');
     }
+  });
+});
+
+// =================================================================================================
+describe('PR-4b: «Armar avisos» pide los cupos al servidor (`Consumir cupos` manda el cuerpo del primer ítem)', () => {
+  const cuposDe = (r: Salida): J => (r.items[0]!['cupos'] ?? null) as J;
+  const clavesDe = (r: Salida): string[] => (((cuposDe(r)['cuerpo'] as J)['sesion'] as J)['cupos'] as J[]).map((c) => String(c['clave']));
+  const cupo = (r: Salida, clave: string): J => (((cuposDe(r)['cuerpo'] as J)['sesion'] as J)['cupos'] as J[]).find((c) => c['clave'] === clave)!;
+
+  it('la derivación pide `avisos` (comercio, día, un cupo por mensaje armado) y `transferencias` (contacto, hora, 1); el pedido, `pedidos`; la reserva, solo `avisos`', () => {
+    const d = avisos({ aviso: { tipo: 'transferencia', datos: { motivo: 'no sabe' } } });
+    expect(clavesDe(d)).toEqual(['avisos', 'transferencias']);
+    expect(cupo(d, 'avisos')).toEqual({ clave: 'avisos', alcance: 'comercio', periodo: 'dia', cantidad: d.items.length, tope: 150 });
+    expect(cupo(d, 'transferencias')).toEqual({ clave: 'transferencias', alcance: 'contacto', periodo: 'hora', cantidad: 1, tope: 1 });
+    const p = avisos({ aviso: { tipo: 'pedido', datos: { detalle: 'Detalle del pedido.' } } });
+    expect(clavesDe(p)).toEqual(['avisos', 'pedidos']);
+    expect(cupo(p, 'avisos')['cantidad']).toBe(3); // 2 plantillas + 1 detalle
+    expect(cupo(p, 'pedidos')).toMatchObject({ alcance: 'contacto', periodo: 'hora', cantidad: 1, tope: 6 });
+    expect(clavesDe(avisos({ aviso: { tipo: 'comprobante', datos: {} } }))).toEqual(['avisos', 'pedidos']);
+    expect(clavesDe(avisos({ aviso: { tipo: 'reserva', datos: {} } }))).toEqual(['avisos']);
+  });
+
+  it('la cantidad de `avisos` cuenta solo plantillas y detalle: la imagen del comprobante que los acompaña no es otro aviso', () => {
+    const r = avisos({ pedido: PEDIDO, aviso: { tipo: 'comprobante', datos: { resultado: 'cuadra', detalle: 'Detalle.', imagen: true, mediaId: 'media-1' } } });
+    expect(r.items.map((i) => i['clase'])).toContain('imagen');
+    expect(cupo(r, 'avisos')['cantidad']).toBe(r.items.filter((i) => i['clase'] !== 'imagen').length);
+    expect(cupo(r, 'avisos')['cantidad']).toBe(r.items.length - 1);
+  });
+  it('MUTACIÓN: sin el filtro de la imagen en «Armar avisos», la cantidad pedida incluye la imagen y la prueba de arriba lo detecta', () => {
+    const de = "AA_items.filter((j) => j.clase !== 'imagen').length";
+    expect(AVISOS).toContain(de);
+    const r = nodo(AVISOS.replace(de, 'AA_items.length'), { plan: { pedido: PEDIDO, aviso: { tipo: 'comprobante', datos: { resultado: 'cuadra', detalle: 'Detalle.', imagen: true, mediaId: 'media-1' } } } }) as Salida;
+    expect(cupo(r, 'avisos')['cantidad']).toBe(r.items.length); // con la imagen contada
+    expect(cupo(r, 'avisos')['cantidad']).not.toBe(r.items.length - 1);
+  });
+
+  it('el comprobante exento (derivación `comprobante: true`) NO consume `transferencias`; la derivación normal sí', () => {
+    const exento = avisos({ aviso: { tipo: 'transferencia', datos: { comprobante: true, motivo: 'comprobante enviado' } } });
+    expect(clavesDe(exento)).toEqual(['avisos']);
+    // el opuesto: sin la marca de exento, la misma derivación pide el cupo por hora
+    expect(clavesDe(avisos({ aviso: { tipo: 'transferencia', datos: { motivo: 'x' } } }))).toContain('transferencias');
+  });
+
+  it('el tope sale de la configuración con techo de 1000 (ningún cupo es límite comercial); un 0 no llega al servidor (no se arma el aviso)', () => {
+    const grande = avisos({ aviso: { tipo: 'pedido', datos: {} } }, { cfg: { topeAvisosDia: 5000, topePedidosHora: 99999 } });
+    expect(cupo(grande, 'avisos')['tope']).toBe(1000);
+    expect(cupo(grande, 'pedidos')['tope']).toBe(1000);
+    const cero = avisos({ aviso: { tipo: 'pedido', datos: {} } }, { cfg: { topePedidosHora: 0 } });
+    expect(cero.items[0]).toMatchObject({ sinAviso: true });
+    expect(cero.items[0]!['cupos']).toBeUndefined();
+  });
+
+  it('el cuerpo: espacio nuevo por turno (`vmc-…`), versionLeida 0, estado null, venceEnMin 1, sin tenant; el `asentar` lleva el mismo idCompromiso', () => {
+    const r = avisos({ aviso: { tipo: 'pedido', datos: {} } });
+    const c = cuposDe(r);
+    const q = (c['cuerpo'] as J)['sesion'] as J;
+    expect(Object.keys(c['cuerpo'] as J).sort()).toEqual(['sesion', 'telefono']);
+    expect(q).toMatchObject({ v: 1, accion: 'comprometer', canal: 'wa', ejecucion: 'e1', versionLeida: 0, estado: null, venceEnMin: 1, idCompromiso: 'vm-cup-e1' });
+    expect(q['espacio']).toBe('vmc-e1');
+    expect(c['asentar']).toEqual({ telefono: CLIENTE, sesion: { v: 1, espacio: 'vmc-e1', canal: 'wa', ejecucion: 'e1', accion: 'asentar', idCompromiso: 'vm-cup-e1' } });
+    expect(JSON.stringify(c)).not.toMatch(/tenant|token|secret/i);
+  });
+
+  it('la variante de PRUEBA usa `vmcp-…` y solo para `telefonosDePrueba`: otro teléfono manda cuerpo vacío (nunca consume el cupo de un número ajeno a la prueba)', () => {
+    const refs = (lista: string): Referencias => ({ 'Carga de entrada': { prueba: { modoPrueba: true } }, 'Config base': { telefonosDePrueba: lista, phoneNumberIdEsperado: 'PNID_PRUEBA' } });
+    const cfg = { modoPrueba: true, telefonoDePrueba: PRUEBA };
+    const ok = avisos({ aviso: { tipo: 'pedido', datos: {} } }, { cfg, refs: refs(CLIENTE) });
+    expect(((cuposDe(ok)['cuerpo'] as J)['sesion'] as J)['espacio']).toBe('vmcp-e1');
+    const ajeno = avisos({ aviso: { tipo: 'pedido', datos: {} } }, { cfg, refs: refs('59100000099') });
+    expect(ajeno.items[0]!['cupos']).toBeNull();
+    const vacia = avisos({ aviso: { tipo: 'pedido', datos: {} } }, { cfg, refs: refs('') });
+    expect(vacia.items[0]!['cupos']).toBeNull();
+  });
+
+  it('si el teléfono no vale para el servidor, o no hay nada que avisar, no hay cuerpo de cupos', () => {
+    expect(avisos({ aviso: { tipo: 'pedido', datos: {} } }, { t: { from: '123' } }).items[0]!['cupos']).toBeNull();
+    expect(avisos({ aviso: null }).items[0]!['cupos']).toBeUndefined();
+  });
+
+  it('`avisosHuerfanos` se consulta por `teléfono|clave`: la marca de otro teléfono NO suprime el aviso; la de antes (sin prefijo) sí, durante las 72 h de compatibilidad', () => {
+    const clave = `pedido:${PEDIDO['pedidoId']}`;
+    const con = (marcas: J) => avisos({ pedido: PEDIDO, aviso: { tipo: 'pedido', datos: {} } }, { g: { ventaMinima: { avisosHuerfanos: marcas } } });
+    expect(con({ [`${CLIENTE}|${clave}`]: AHORA - 1000 }).items[0]).toMatchObject({ sinAviso: true });
+    expect(con({ [`59100000099|${clave}`]: AHORA - 1000 }).items[0]).toMatchObject({ sinAviso: false });
+    expect(con({ [clave]: AHORA - 1000 }).items[0]).toMatchObject({ sinAviso: true }); // compatibilidad: marca anotada antes de PR-4a
+    expect(con({ [clave]: AHORA - 73 * 3600 * 1000 }).items[0]).toMatchObject({ sinAviso: false }); // vencida
+  });
+});
+
+describe('PR-4b: «Armar mensajes» con los cupos', () => {
+  const plan = (tipo: string): J => ({ ruta: 'confirmar', estadoNuevo: { paso: 'menu' }, mensajes: [texto('Hola')], aviso: { tipo, datos: {} } });
+  const concedido: J = { statusCode: 200, body: { resultado: 'comprometido', conversacion: { version: 1, estado: null, desde: 1, vence: 2, vencido: false } } };
+  const CUPOS = { cuerpo: { telefono: CLIENTE, sesion: {} }, asentar: { telefono: CLIENTE, sesion: { accion: 'asentar', idCompromiso: 'vm-cup-e1' } } };
+  const conCupos = (tipo: string, enviados: J[], consumo: J | null) => mensajes(plan(tipo), {
+    armados: [armado(tipo, { cupos: CUPOS })], enviados, refs: consumo ? { 'Consumir cupos': consumo } : {},
+  });
+
+  it('con el servidor contando (`Consumir cupos` ok) NO se escribe nada local: ni marcas por hora ni contador diario', () => {
+    const r = conCupos('transferencia', [OK()], concedido);
+    expect(r.sd['transferencias']).toBeUndefined();
+    expect(r.bit.some((b) => b[0] === 'avContar')).toBe(false);
+    // el opuesto (fail-open): sin respuesta del servidor las marcas y el contador locales SÍ se anotan
+    const falla = conCupos('transferencia', [OK()], { statusCode: 503, body: { error: 'ocupada' } });
+    expect(falla.sd['transferencias'][CLIENTE]).toHaveLength(1);
+    expect(falla.bit.some((b) => b[0] === 'avContar')).toBe(true);
+    expect((falla.items[0]!['errores'] as string[]).some((e) => e.startsWith('cupos_sin_servidor'))).toBe(true);
+    const sin = conCupos('transferencia', [OK()], null); // el nodo no corrió
+    expect(sin.sd['transferencias'][CLIENTE]).toHaveLength(1);
+  });
+
+  it('el `asentar` solo se arma si el servidor concedió Y ningún aviso fue aceptado (con wamid)', () => {
+    expect(conCupos('pedido', [FALLA], concedido).armado!['asentar']).toEqual(CUPOS.asentar);
+    expect(conCupos('pedido', [OK()], concedido).armado!['asentar']).toBeNull();
+    expect(conCupos('pedido', [FALLA, OK(2)], concedido).armado!['asentar']).toBeNull();
+    expect(conCupos('pedido', [FALLA], { statusCode: 503, body: {} }).armado!['asentar']).toBeNull(); // sin concesión no hay nada que devolver
+    expect(conCupos('pedido', [FALLA], null).armado!['asentar']).toBeNull();
+  });
+
+  it('con `cupo_negado` no hay aviso salido: el cliente lee la frase honesta, el error queda anotado y no hay nada que devolver', () => {
+    const negado: J = { statusCode: 200, body: { resultado: 'cupo_negado', motivo: 'agotado', clave: 'avisos', conversacion: { version: 0, estado: null, desde: null, vence: null, vencido: false } } };
+    const r = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'menu' }, mensajes: [texto('Ya pasé tu pedido al restaurante.')], condicionados: null, aviso: { tipo: 'pedido', datos: {} } }, { armados: [armado('pedido', { cupos: CUPOS })], refs: { 'Consumir cupos': negado } });
+    expect(r.items).toHaveLength(1);
+    expect(cuerpoDe(r.items[0]!)).toBe(GENERICO);
+    expect((r.items[0]!['errores'] as string[]).some((e) => e.startsWith('cupo_negado: avisos: agotado'))).toBe(true);
+    expect(r.armado!['asentar']).toBeNull();
+    expect(r.armado!['cupos']).toBe('negado');
+  });
+
+  it('las marcas de aviso ya enviado llevan el teléfono (`teléfono|clave`) también cuando vienen de `clavesYa`', () => {
+    const r = mensajes({ ...plan('pedido'), pedido: PEDIDO }, { armados: [armado('pedido', { cupos: CUPOS, claveAviso: `pedido:${PEDIDO['pedidoId']}`, yaAvisado: ['pedido'], clavesYa: ['pedido:otro-pedido'] })], enviados: [OK()], refs: { 'Consumir cupos': concedido } });
+    expect(r.armado!['avisoMarcas']).toEqual([`${CLIENTE}|pedido:${PEDIDO['pedidoId']}`, `${CLIENTE}|pedido:otro-pedido`]);
+  });
+
+  it('el aviso a recepción del genérico (falla del compromiso sin hecho externo) pasa por la limpieza de palabras prohibidas; sin ella la palabra llegaría', () => {
+    const falla = (fuente: string) => nodo(fuente, { plan: { ruta: 'menu', estadoNuevo: { paso: 'menu' }, mensajes: [texto('Hola')] }, armados: [SIN_AVISO], t: { nombrePerfil: 'Ana pagado validado' } }).armado!['salidaFalla'] as J[];
+    const textosRecepcion = (items: J[]): string => items.filter((i) => i['destino'] === 'recepcion').map((i) => JSON.stringify(i['payload'])).join('\n');
+    const limpio = falla(MENSAJES);
+    expect(limpio.filter((i) => i['destino'] === 'recepcion').length).toBeGreaterThan(0);
+    expect(textosRecepcion(limpio)).not.toMatch(/pagado|validado/i);
+    // MUTACIÓN: sin `amLimpiarAviso` la palabra prohibida SÍ llega al aviso (la prueba de arriba muerde)
+    expect(MENSAJES).toContain('amLimpiarAviso(it.payload);');
+    expect(textosRecepcion(falla(MENSAJES.replace('amLimpiarAviso(it.payload);', '')))).toMatch(/pagado|validado/i);
   });
 });

@@ -30,6 +30,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
 import { problemasDeReferencias } from '../rroca-ruben/construir.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -102,6 +103,11 @@ export const NODOS_DEL_RECEPTOR = [NODO_RECEPTOR, 'Verificar firma con el recept
 const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
 /** Los anfitriones de la plataforma de la tienda a los que «Traer catálogo» puede llevar el Bearer del tenant: dominio EXACTO, sin puerto ni comodín. Ampliarlo (la producción de NovuTienda) es un cambio revisado, no un dato que ponga quien publica. */
 export const ANFITRIONES_TIENDA = ['novutienda-sitio-stg.web.app'];
+/** El mercado del catálogo (BO o AR) según el prefijo del remitente: la MISMA regla que `ceMercadoDePrefijo`; una prueba compara las dos. */
+export const EXPRESION_MERCADO = "{{ ((d) => d.length < 10 || d.length > 15 ? 'X' : (d.indexOf('591') === 0 ? 'BO' : (d.indexOf('54') === 0 ? 'AR' : 'X')))(String(((($('Normalizar entrada').first().json) || {}).from) || '').replace(/\\D/g, '').replace(/^0+/, '')) }}";
+/** Las dos llamadas síncronas a la Function del servidor que hacen DOS nodos con destino fijo (B9, Argentina): la expresión EXACTA de cada URL (dos destinos cada una, ninguna ruta sale de datos). Una prueba las ejecuta. */
+export const URL_COTEJAR_EXPR = `={{ $json.cuerpoAlias ? 'https://${ANFITRION_CONSOLA}/cotejarAliasArs' : 'https://${ANFITRION_CONSOLA}/cotejarComprobanteVenta' }}`;
+export const URL_AVISAR_EXPR = `={{ ($('Armar avisos').first().json.servidor || {}).ruta === 'pedirAliasArs' ? 'https://${ANFITRION_CONSOLA}/pedirAliasArs' : 'https://${ANFITRION_CONSOLA}/ingesta' }}`;
 const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', ANFITRION_CONSOLA];
 
 // ----------------------------------------------------------------- lectura y escritura sin seguir enlaces simbólicos
@@ -248,9 +254,12 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
   if (nombreDelNodo === 'Descargar medio (guardado)' && url === URL_DESCARGA_GUARDADO) return true;
   // El catálogo de la plataforma de la tienda: UNA dirección fija (la base que pone quien publica) y la ruta del contrato v1, solo del mercado de Bolivia, sin nada más.
   if (nombreDelNodo === 'Traer catálogo') {
-    const c = /^=(?:(REEMPLAZAR_URL_CATALOGO)|https:\/\/([a-z0-9.-]+))\/api\/novuchat\/v1\/catalogo\?mercado=BO$/i.exec(url);
-    return c !== null && (c[1] !== undefined || ANFITRIONES_TIENDA.includes(String(c[2]).toLowerCase()));
+    // La dirección base (marcador o un host de la lista cerrada) + la ruta del contrato v1 + el mercado calculado por UNA expresión fija (EXPRESION_MERCADO): nada más.
+    const m = /^=(?:(REEMPLAZAR_URL_CATALOGO)|https:\/\/([a-z0-9.-]+))\/api\/novuchat\/v1\/catalogo\?mercado=(.*)$/is.exec(url);
+    return m !== null && m[3] === EXPRESION_MERCADO && (m[1] !== undefined || ANFITRIONES_TIENDA.includes(String(m[2]).toLowerCase()));
   }
+  if (nombreDelNodo === 'Cotejar en el servidor' && url === URL_COTEJAR_EXPR) return true;
+  if (nombreDelNodo === 'Avisar al servidor' && url === URL_AVISAR_EXPR) return true;
   const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
   if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
   return ANFITRIONES.includes(m[1].toLowerCase());
@@ -267,6 +276,8 @@ export function guardias(variante, flujo, opciones = {}) {
   if (nodos.length > tope) h.push(`tiene ${nodos.length} nodos y el tope es ${tope}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md)`);
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
+  // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
+  h.push(...hallazgosDeExpresionesN8n(flujo || {}));
   if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
   if (/subscriptions|subscribed_apps/i.test(JSON.stringify(flujo))) h.push('menciona «subscriptions» o «subscribed_apps» (prohibición 7)');
   if (/langchain\.(agent|memory\w*|lmChat\w*|chain\w*)$/i.test(nodos.map((n) => n.type).join('\n'))) h.push('lleva un agente, memoria o modelo de chat de n8n: este flujo no los lleva');
@@ -366,13 +377,13 @@ export function guardias(variante, flujo, opciones = {}) {
   const codigoAvisos = String(p(por('Armar avisos')).jsCode || '');
   if (hay('Armar avisos') && !(/bmResolver\(/.test(codigoAvisos) && /bmPlantilla\(/.test(codigoAvisos) && /avPlantilla\(/.test(codigoAvisos))) h.push('«Armar avisos» no lleva la decisión ni la plantilla: el aviso fuera de la ventana no saldría');
   const cotejar = por('Cotejar en el servidor');
-  if (cotejar && !/cotejarComprobanteVenta$/.test(String(p(cotejar).url || ''))) h.push('«Cotejar en el servidor» no llama a cotejarComprobanteVenta');
+  if (cotejar && !/cotejarComprobanteVenta$/.test(String(p(cotejar).url || '')) && String(p(cotejar).url || '') !== URL_COTEJAR_EXPR) h.push('«Cotejar en el servidor» no llama a cotejarComprobanteVenta');
   const modelo = por('Conversar con el modelo');
   if (modelo && !/^=?https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\//.test(String(p(modelo).url || ''))) h.push('«Conversar con el modelo» no llama a Gemini');
   const avisar = por('Avisar al servidor');
   if (avisar) {
     const cuerpo = String(p(avisar).jsonBody || '');
-    if (!/ingesta$/.test(String(p(avisar).url || '')) || p(avisar).method !== 'POST') h.push('«Avisar al servidor» no hace POST a la ingesta');
+    if ((!/ingesta$/.test(String(p(avisar).url || '')) && String(p(avisar).url || '') !== URL_AVISAR_EXPR) || p(avisar).method !== 'POST') h.push('«Avisar al servidor» no hace POST a la ingesta');
     if (!/evento: 'cobro_cancelado'/.test(cuerpo) || /evento: (?!'cobro_cancelado')/.test(cuerpo)) h.push('«Avisar al servidor»: el único evento permitido es `cobro_cancelado`');
     const opc = p(avisar).options || {};
     if (opc.timeout !== 8000 || !((opc.response || {}).response || {}).fullResponse || !((opc.response || {}).response || {}).neverError) h.push('«Avisar al servidor» tiene que llevar timeout 8000, fullResponse y neverError (la respuesta decide si se emite otro QR)');
@@ -426,6 +437,12 @@ export function guardiaDePublicacion({ flujo, datos }) {
   if (faltan.length) h.push(`es un ESQUELETO (PR-2) y no se puede publicar: faltan ${faltan.length} nodos de la conversación, el cotejo y los avisos (PR-3): ${faltan.map((n) => `«${n}»`).join(', ')}`);
   for (const m of new Set(marcasEn(flujo).map((x) => x.toUpperCase()))) h.push(`marcador sin sustituir: ${m}`);
   // Con los datos ya sustituidos, el host del catálogo tiene que ser uno de la lista cerrada (el Bearer del tenant no sale a otro dominio).
+  // El nodo que lleva el Bearer no puede llevar nada que lo desvíe: ni query ni cabeceras propias, ni proxy, ni certificados sin validar, ni redirecciones seguidas.
+  for (const n of nodos.filter((x) => x.name === 'Traer catálogo')) {
+    const q = n.parameters || {};
+    const o = q.options || {};
+    if (q.sendQuery || q.sendHeaders || o.proxy || o.allowUnauthorizedCerts || (o.redirect && (o.redirect.redirect || {}).followRedirects !== false)) h.push('«Traer catálogo» no puede llevar query, cabeceras propias, proxy, certificados sin validar ni redirecciones: el Bearer solo va a la URL fija');
+  }
   for (const n of nodos.filter((x) => x.name === 'Traer catálogo')) if (!anfitrionPermitido(String((n.parameters || {}).url || ''), 'Traer catálogo')) h.push('«Traer catálogo» apunta a un host que no está en ANFITRIONES_TIENDA');
   const base = nodos.find((n) => n.name === 'Config base');
   const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
@@ -496,11 +513,11 @@ export function armarCasaBermejo(proyecto, datos, v, origenReceptor = leerRecept
   const reporta = plantilla.connections['¿Reportar? (saliente)'];
   if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);
   reporta.main[0] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
-  // El reporte saliente de ESTE flujo (propio): igual al común, más el EVENTO. `qr_enviado` lleva `reglaCobro: 2` (QR REAL: abre el cobro de 15 minutos, 3 intentos), `referencia` (el pedido) y `monto` (el del carrito):
+  // El reporte saliente de ESTE flujo (propio): igual al común, más el EVENTO. `qr_enviado` y `pedido_sin_cobro` (Argentina, sin QR ni monto) llevan `lineas` y `entrega`; `qr_enviado` lleva `reglaCobro: 2` (QR REAL: abre el cobro de 15 minutos, 3 intentos), `referencia` (el pedido) y `monto` (el del carrito):
   // contra ese número coteja el servidor, y solo viaja si el envío de la imagen fue aceptado. `no_contactar` viaja SIEMPRE.
   const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
   if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes('evento: m.evento')) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
-  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; if (m.evento === 'qr_enviado' && Array.isArray(m.lineas) && m.lineas.length) { r.lineas = m.lineas; if (m.entrega) r.entrega = m.entrega; } } return JSON.stringify(r); })() }}";
+  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; if ((m.evento === 'qr_enviado' || m.evento === 'pedido_sin_cobro') && Array.isArray(m.lineas) && m.lineas.length) { r.lineas = m.lineas; if (m.entrega) r.entrega = m.entrega; } } return JSON.stringify(r); })() }}";
   // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
   injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });

@@ -13,7 +13,7 @@
  */
 import { registrar } from '../../core/turno/bitacora.js';
 import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
-import { cerrarPedidoWa, crearPedidoWa } from './pedidoDelQr.js';
+import { cerrarPedidoWa, crearPedidoWa, hayLineasExternas } from './pedidoDelQr.js';
 
 export interface DatosDelTurnoPedidos {
   tenantId: string;
@@ -36,17 +36,21 @@ export interface DatosDelTurnoPedidos {
 
 export async function despuesDelTurnoPedidos(d: DatosDelTurnoPedidos): Promise<void> {
   try {
-    if (d.evento === 'qr_enviado') {
-      if (d.efectoDeCobro !== 'abierto') return;
+    // `pedido_sin_cobro` (B5a): pedido de catálogo externo sin QR (Argentina). No hay cobro cuyo efecto confirmar; el
+    // servidor exige módulo, dato `config/pedidos` con catálogo externo habilitado y forma externa; sin ese dato no crea nada. La ingesta lo reenvía igual que `qr_enviado`.
+    if (d.evento === 'qr_enviado' || d.evento === 'pedido_sin_cobro') {
+      if (d.evento === 'qr_enviado' && d.efectoDeCobro !== 'abierto') return;
+      if (d.evento === 'pedido_sin_cobro' && !hayLineasExternas(d.lineas)) return;
       if (!Array.isArray(d.lineas) || d.lineas.length === 0) return;
       const r = await crearPedidoWa({
         tenantId: d.tenantId, ficha: d.ficha, referencia: d.referencia, telefono: d.telefono,
-        montoQr: d.monto, lineas: d.lineas, entrega: d.entrega, facturacion: d.facturacion,
+        montoQr: d.monto, sinCobro: d.evento === 'pedido_sin_cobro', lineas: d.lineas, entrega: d.entrega, facturacion: d.facturacion,
         referenciaAnterior: d.referenciaAnterior, reemplaza: d.reemplaza,
       });
       // Efecto `abierto` con un pedido que ya existía: el flujo reusó la referencia con otro carrito.
       // El pedido conserva lo viejo; se deja constancia, sin datos del pedido, para revisar a mano.
-      if (r.resultado === 'repetido') {
+      // En `pedido_sin_cobro` un reenvío idempotente no es un error: no hay referencia de QR que se haya reusado.
+      if (r.resultado === 'repetido' && d.evento === 'qr_enviado') {
         await registrar(d.tenantId, {
           tipo: 'error_flujo', resultado: 'fallo', codigo: 'pedido_wa_referencia_repetida',
           detalle: 'el cobro se abrio con una referencia que ya tenia pedido de WhatsApp',

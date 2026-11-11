@@ -12,7 +12,6 @@
  */
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
-import { defineString } from 'firebase-functions/params';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { REGION } from '../../core/region.js';
@@ -334,15 +333,24 @@ export const manejarConsultar = () => async (p: CallableRequest) => {
 // ---------------------------------------------------------------------------
 // Armado real
 // ---------------------------------------------------------------------------
-/** El cliente OAuth web del proyecto. Vacío = la verificación falla cerrada. No es un secreto. */
-const AUDIENCIA_GOOGLE = defineString('GOOGLE_OAUTH_CLIENT_ID', { default: '' });
+/*
+ * POR QUÉ SE LEEN DEL ENTORNO Y NO COMO PARÁMETRO DE firebase-functions (06/11/2026). Con `--non-interactive`,
+ * firebase-tools exige que TODO parámetro declarado tenga su valor en `functions/.env`: el `default` no cuenta
+ * (`lib/deploy/functions/params.js`, `resolveParams`, 15.28.1). Declarados con `default: ''`, los dos de abajo
+ * tumbaron el despliegue a staging en cada fusión desde #776, y en producción no pueden agregarse al `.env`, que el
+ * workflow exige de exactamente dos líneas. Leídos de `process.env` (como `CPU_FRACCIONARIA` en
+ * `core/opcionesGlobales.ts`), firebase-tools no los ve y el comportamiento es el mismo: ausente o vacía = apagado.
+ * La prueba `pruebas/parametros-del-despliegue.test.ts` impide volver a declararlos como parámetro.
+ */
+/** El cliente OAuth web del proyecto. Ausente o vacío = la verificación falla cerrada. No es un secreto. */
+const audienciaGoogle = (): string => process.env['GOOGLE_OAUTH_CLIENT_ID'] ?? '';
 /** El proyecto de GCP que aloja las cuentas `crm-<tenant>`; si falta, el de la propia Function. */
-const PROYECTO_CRM = defineString('CRM_PROYECTO_GCP', { default: '' });
+const proyectoCrm = (): string => process.env['CRM_PROYECTO_GCP'] ?? '';
 
 export const DEPS_REALES: DepsEditores = {
-  verificar: crearVerificadorGoogle(() => AUDIENCIA_GOOGLE.value()),
+  verificar: crearVerificadorGoogle(audienciaGoogle),
   drive: (tenantId) => {
-    const proyecto = PROYECTO_CRM.value() || process.env['GCLOUD_PROJECT'] || '';
+    const proyecto = proyectoCrm() || process.env['GCLOUD_PROJECT'] || '';
     const cuenta = correoCuentaCrm(tenantId, proyecto);
     return cuenta ? crearClienteDrive({ cuentaServicio: cuenta }) : null;
   },

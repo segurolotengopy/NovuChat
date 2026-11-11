@@ -26,8 +26,14 @@ const G = 'Guardar comprobante';
 describe('Guardar comprobante: el cableado', () => {
   for (const [nombre, f] of Object.entries({ QTACO, PRUEBA, DEMO_A, PLANTILLA })) {
     it(`${nombre}: cuelga de «¿Es audio?» (salida no-audio), primero que «¿Es PDF?», y es terminal`, () => {
-      expect(destinos(f, '¿Es audio?', 1)).toEqual([G, '¿Es PDF?']);
-      expect(entradas(f, G)).toEqual(['¿Es audio?']);
+      // 07/11/2026 («Reconocer anuncio antes»): la salida no-audio va también a «Clasificar imagen», rama TERMINAL y ARRIBA de «¿Es comprobante?» (corre
+      // primero); «¿Es comprobante?» lee su resultado y, si no es el arte de una campaña vigente, sigue al guardado como siempre.
+      expect(destinos(f, '¿Es audio?', 1)).toEqual(['Clasificar imagen', '¿Es comprobante?']);
+      expect(f.connections['Clasificar imagen']).toBeUndefined();
+      expect(nodoDe(f, 'Clasificar imagen').position![1]!).toBeLessThan(nodoDe(f, '¿Es comprobante?').position![1]!);
+      expect(destinos(f, '¿Es comprobante?', 1)).toEqual(['Decidir turno']);
+      expect(destinos(f, '¿Es comprobante?', 0)).toEqual([G, '¿Es PDF?']);
+      expect(entradas(f, G)).toEqual(['¿Es comprobante?']);
       expect(destinos(f, G)).toEqual([]);
       expect(f.connections[G]).toBeUndefined();
       // ARRIBA de «¿Es PDF?» (la misma columna, menor y): n8n corre primero la rama de arriba.

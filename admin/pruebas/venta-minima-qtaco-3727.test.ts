@@ -1,7 +1,7 @@
 /**
  * Flujo de Q'Taco para el numero 3727 (envio directo por Graph), workflow NUEVO y SEPARADO del vivo.
  * Lee el JSON versionado y comprueba lo que no puede fallar: nada compartido con el vivo (ruta de entrada y del carrito),
- * credenciales propias, sin ids reales, plantillas por lineas vacias y el constructor al dia.
+ * credenciales propias, sin ids reales, plantillas por lineas ACTIVAS (06/11/2026) y el constructor al dia.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -27,7 +27,8 @@ describe("Q'Taco 3727: workflow nuevo, separado del vivo", () => {
   });
   it('nombre distinto del vivo y mismos nodos', () => {
     expect(NUEVO.name).not.toBe(VIVO.name);
-    expect(NUEVO.nodes.length).toBe(VIVO.nodes.length);
+    // el 3727 lleva los 8 nodos del miniCRM (módulo `crm`, 06/11/2026; ver venta-minima-crm.test.ts); el resto es el mismo flujo
+    expect(NUEVO.nodes.length).toBe(VIVO.nodes.length + 8);
     expect(NUEVO.settings.executionTimeout).toBe(120);
   });
   it('rutas propias: la de entrada y la del carrito no se comparten con el vivo', () => {
@@ -56,10 +57,23 @@ describe("Q'Taco 3727: workflow nuevo, separado del vivo", () => {
     for (const n of ['Obtener URL del medio', 'Descargar medio']) expect(nodo(NUEVO, n).credentials.whatsAppApi.name, n).toBe('WhatsApp QTaco 3727 (envio)');
     expect(nodo(NUEVO, 'Carrito del catálogo').credentials.httpHeaderAuth.name).toBe('NovuChat ingesta (cliente11)');
   });
-  it('plantillasPedidoLineas vacia: todo sale por pedido_registrado', () => {
+  it('plantillasPedidoLineas activas (06/11/2026): l2/l4/l6 aprobadas en la WABA del 3727; la plantilla antigua sigue como respaldo', () => {
     const cb = nodo(NUEVO, 'Config base').parameters.assignments.assignments as J[];
-    expect(cb.find((a) => a.name === 'plantillasPedidoLineas')?.value).toBe('');
+    expect(cb.find((a) => a.name === 'plantillasPedidoLineas')?.value).toBe('2:pedido_registrado_l2,4:pedido_registrado_l4,6:pedido_registrado_l6');
+    expect(cb.find((a) => a.name === 'idiomaPlantillaPedidoLineas')?.value).toBe('es');
     expect(cb.find((a) => a.name === 'plantillaPedido')?.value).toBe('pedido_registrado');
+    // El flujo VIVO de Q'Taco (qtaco.json) NO cambia: sigue con la clave vacia.
+    const vivo = nodo(VIVO, 'Config base').parameters.assignments.assignments as J[];
+    expect(vivo.find((a) => a.name === 'plantillasPedidoLineas')?.value).toBe('');
+  });
+  it('horario dicho (08/11/2026): «Config base» lleva el texto de Andres con `horarioAtencionManda: si`; el vivo no lo lleva', () => {
+    const cb = nodo(NUEVO, 'Config base').parameters.assignments.assignments as J[];
+    expect(cb.find((a) => a.name === 'horarioAtencion')?.value).toBe('todos los días de 10:00 a 22:00 (de 10:00 a 12:00 solo delivery)');
+    expect(cb.find((a) => a.name === 'horarioAtencionManda')?.value).toBe('si');
+    const vivo = nodo(VIVO, 'Config base').parameters.assignments.assignments as J[];
+    expect(vivo.find((a) => a.name === 'horarioAtencion')?.value).toBe('REEMPLAZAR_HORARIO_ATENCION_QTACO');
+    // El horario de pedidos y reservas es el mismo que el del vivo: solo cambia lo que el bot DICE.
+    expect(cb.find((a) => a.name === 'horario')?.value).toBe(vivo.find((a) => a.name === 'horario')?.value);
   });
   it('sin disparador de WhatsApp ni suscripciones (prohibicion 7)', () => {
     expect(texto).not.toMatch(/whatsAppTrigger|subscribed_apps|subscriptions/);

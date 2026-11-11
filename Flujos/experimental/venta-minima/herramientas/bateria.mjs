@@ -78,7 +78,7 @@
 //   { "tipo": "audio", "transcripcion": "…" }         una nota de voz; `transcripcion` es lo que «Transcribir audio» devolveria
 //   { "tipo": "ubicacion", "latitud": -16.5, "longitud": -68.15 }   el cliente comparte una ubicacion (mensaje `location` de Meta; `nombre` y `direccion` opcionales; las coordenadas pueden ser invalidas a proposito)
 //   { "tipo": "imagen", "pie": "…" } / { "tipo": "documento", "pie": "…" }   foto o PDF (el comprobante, si hay un QR esperandolo)
-//   { "tipo": "carrito", "items": [{ "id": "cat_x", "cantidad": 2 }], "entrega": "envio"|"retiro", "direccion": "…", "nota": "…" }
+//   { "tipo": "carrito", "items": [{ "id": "cat_x", "cantidad": 2 }], "entrega": "envio"|"retiro", "direccion": "…", "nota": "…", "ubicacion": {lat,lng}|null }
 //                                                       el carrito de la pagina de la carta: entra por «Carrito del catálogo»; el
 //                                                       nombre y el subtotal los pone la bateria con la carta del panel
 //   `lectura` (comprobante): { "monto": "21.00", … } los datos que «Leer comprobante» devolveria, o "ilegible" (vacio). Por omision,
@@ -447,6 +447,8 @@ function entregaDelCarrito(c, panel, reloj, n) {
       tipo: 'carrito', tenantId: 'qtaco', telefono: CLIENTE, accion: 'responder', pedidoId: c.pedidoId ?? `p-bat-${n}`, conversacionId: `c-bat-${n}`,
       ventanaAbierta: true, items, total: suma(items.map((x) => x.subtotal)), moneda: 'Bs',
       entrega: envio ? 'envio' : 'retiro', costoEnvio: 0, direccion: envio ? String(c.direccion ?? '') : '', nota: String(c.nota ?? ''),
+      // 07/11/2026: en delivery la ubicacion compartida es obligatoria. El carrito de envio lleva la de la pagina (`ubicacion`, o la de siempre por omision); `"ubicacion": null` la quita.
+      ...(envio && c.ubicacion !== null ? { ubicacion: c.ubicacion ?? { lat: -16.5, lng: -68.15 } } : {}),
     },
   };
 }
@@ -566,8 +568,11 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
       if (sesion && sesion.statusCode !== 200) return { statusCode: sesion.statusCode, body: sesion.body };
       return { statusCode: 200, body: sesion ? { ...clonar(panel), conversacion: sesion.body.conversacion, visto: sesion.body.visto } : clonar(panel) };
     },
+    // PR-4b: la batería NO mide cupos (eso lo hace `venta-minima-cupos.test.ts` con el núcleo real): «Consumir cupos» concede siempre y el `asentar` no tiene nada que devolver.
+    'Consumir cupos': () => ({ statusCode: 200, body: { resultado: 'comprometido', conversacion: { version: 1, estado: null, desde: null, vence: null, vencido: false } } }),
     ...Object.fromEntries(['Comprometer turno', 'Comprometer turno (2.º intento)', 'Comprometer compensación'].map((nodo) => [nodo, (ll) => {
       const q = ll.cuerpo.sesion;
+      if (q && q.accion === 'asentar') return { statusCode: 200, body: { resultado: 'nada_que_asentar', conversacion: { version: 0, estado: null, desde: null, vence: null, vencido: false } } };
       return servidor.atender(PID, { ...ll.cuerpo, sesion: { ...q, idCompromiso: `${q.idCompromiso}-x${ejec}` } });
     }])),
     'Reportar mensaje (entrante)': (ll) => { captura.ingesta.push(ll.cuerpo ?? {}); return { ok: true }; },
@@ -579,6 +584,12 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
     // La rama común del GUARDADO de medios: sin red, el servidor responde «guardado_apagado» (la bandera por defecto).
     ...doblesDeBateriaDelGuardado(),
     'Transcribir audio': () => ({ content: { parts: [{ text: String(turnoActual.t?.cliente?.transcripcion ?? '') }] } }),
+    // «Clasificar imagen» (07/11/2026 cuelga también de la salida no-audio): como n8n, sin el campo binario `data` falla ANTES de llamar a Gemini; con él, la batería no
+    // clasifica (sin lectura = el comportamiento de siempre: la imagen con QR pendiente es comprobante).
+    'Clasificar imagen': (ll) => {
+      if (ll.parametros?.binaryPropertyName !== 'data') throw new Error('no binary field ' + String(ll.parametros?.binaryPropertyName));
+      return { error: { message: 'la batería no clasifica imágenes' } };
+    },
     'Leer comprobante (imagen)': () => lecturaDe(turnoActual.t, captura),
     'Leer comprobante (PDF)': () => lecturaDe(turnoActual.t, captura),
     'Cotejar en el servidor': () => cotejoDe(turnoActual.t),

@@ -62,8 +62,11 @@ Del proyecto (`CLAUDE.md`):
    mensaje interactivo. No se manda un texto aparte.
 
 Del doctor (PR #286 y lo publicado el 30/09):
-- **P11.** Dos hermanos van en **una** cita de `duracionPorDefectoMin`
-  minutos, con los dos nombres en el título.
+- **P11.** Dos hermanos van en **dos citas seguidas**, una por hermano, de
+  `duracionPorDefectoMin` minutos cada una y con el título de cada uno; solo se
+  ofrecen horarios con ambas libres y contiguas. Cada cita es independiente:
+  cancelar o mover una no toca la otra. (Fue un pedido del doctor, «una cita»;
+  Andres lo cambió el 07/11/2026.)
 - **P12.** Recién nacido y niño sano tienen la misma prioridad. Se ofrece
   **desde mañana**; **hoy solo si el paciente lo pide** y hay hueco que
   respete la anticipación mínima.
@@ -254,9 +257,16 @@ texto); 3. vacunas; 4. «quiero cita el jueves en la tarde»; 5. tocar un
 botón; 6. nombre faltante; 7. día lleno; 8. sábado cerrado; 9. «ya» con una
 oferta pendiente no agenda; 10. reagendar no pierde la cita; 11. audio;
 12. foto deriva; 13. el cruce después de crear deshace la propia;
-14. calendario caído no confirma y avisa a recepción; 15. hermanos en una
-cita; 16. el título «Apellidos, Nombres (CNS)» y «(RN)»; 17. desde mañana, y
+14. calendario caído no confirma y avisa a recepción; 15. hermanos en dos
+citas seguidas; 16. el título «Apellidos, Nombres (CNS)» y «(RN)»; 17. desde mañana, y
 hoy solo si lo pide; 18. nada clínico; 19. el JSON no tiene identificadores
 ni secuencias de 10 dígitos o más; 20. el reporte del entrante está antes de
 la rama del modelo, por posición y por conexiones; 21. dos teléfonos no
 comparten estado; 22. un mensaje por saliente reportado.
+
+## miniCRM: servicio elegido, agendó y fecha de la cita (Andres, 07/11/2026)
+
+El prospecto (`agmProspectoCrm`) suma `servicioElegido` (lista cerrada: Emergencia, Recién nacido, Control niño sano, Vacunas y/o otros), `agendo`
+(«Sí» SOLO si el plan es `crear` y el candado verificó la cita creada; nunca por lo que dijo el modelo; si no, «No») y `fechaCita` (primera cita, solo con
+«Sí»), más `citaCancelada` cuando el borrado se verificó. La emergencia deja fila con solo teléfono, nombre de perfil y «Emergencia» (sin texto del mensaje).
+Los tres campos son opcionales en el core: solo escribe quien los mapea. 0 mensajes por conversación.

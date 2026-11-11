@@ -22,12 +22,14 @@ const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [
   'prNorm', 'prLinea', 'prVigente', 'prCampanaDelTexto', 'prFicha', 'prDescripcion', 'prMoneda',
-  'prPrecioLegible', 'prBotones', 'prTexto',
+  'prPrecioLegible', 'prBotones', 'prTexto', 'prSoloReserva', 'prPedidoConMensaje',
+  'prVariacion', 'prCampanaDelReferral', 'prCampanaDeLaImagen', 'prPreguntaSinResponder', 'prEsJueves', 'prTipoDeCampana', 'prRespuestaDeVariante', 'prBotonHacerPedido',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Fn = (...a: any[]) => any;
-const L = ejecutar(`${FUENTE}\nreturn [{ json: { ${NOMBRES.join(', ')} } }];`, [{}])[0] as Record<(typeof NOMBRES)[number], Fn>;
+const APT = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/src/core/medios/anuncio-por-titular.js'), 'utf8');
+const L = ejecutar(`${FUENTE}\n${APT}\nreturn [{ json: { ${NOMBRES.join(', ')}, anuncioPorTitular } }];`, [{}])[0] as Record<(typeof NOMBRES)[number] | 'anuncioPorTitular', Fn>;
 
 // --- El mundo de las pruebas ------------------------------------------------------------------
 const LUN_10 = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026 10:00 La Paz
@@ -483,5 +485,108 @@ describe('autocontención y contrato de la librería', () => {
     const t = L.prTexto(L.prFicha(c, CARTA, LUN_10), CFG);
     expect(t.cuerpo).toBe(TEXTO_FICHA);
     expect(t.botones.map((b: { id: string }) => b.id)).toEqual(['g|pedir|it-duo', 'm|reserva', 'm|pedido']);
+  });
+});
+
+describe('prSoloReserva: campaña de solo reserva (dato del negocio)', () => {
+  const T = 'Hola, vi la promoción Jueves de +2 y quiero hacer una reserva.';
+  const cfg = { reservasActivo: true, pedidosActivo: true, campanaReservaTexto: T, campanaReservaMensaje: 'Mensaje del negocio.' };
+  it('NEGANDO: sin dato, con otro texto, sin reservas activas, con reservas no estrictas o sin mensaje: null', () => {
+    const c = { id: 'j', texto: T };
+    expect(L.prSoloReserva(c, { ...cfg, campanaReservaTexto: '' })).toBeNull();
+    expect(L.prSoloReserva({ id: 'j', texto: 'Jueves de +3' }, cfg)).toBeNull();
+    expect(L.prSoloReserva(c, { ...cfg, reservasActivo: false })).toBeNull();
+    expect(L.prSoloReserva(c, { ...cfg, reservasActivo: 'true' })).toBeNull();
+    expect(L.prSoloReserva(c, { ...cfg, campanaReservaMensaje: '  ' })).toBeNull();
+    expect(L.prSoloReserva(null, cfg)).toBeNull();
+    expect(L.prSoloReserva({ id: 'j' }, cfg)).toBeNull();
+  });
+  it('con el texto igual (normalizado): el mensaje del negocio y SOLO «Reservar mesa», aunque haya pedidos activos', () => {
+    const r = L.prSoloReserva({ id: 'j', texto: T.toUpperCase() }, cfg);
+    expect(r.cuerpo).toBe('Mensaje del negocio.');
+    expect(r.botones).toEqual([{ id: 'm|reserva', title: 'Reservar mesa' }]);
+  });
+});
+
+describe('prPedidoConMensaje: campaña de pedido con mensaje del negocio (dato del negocio)', () => {
+  const T = 'Hola, vi el anuncio de las tortas mexicanas y quiero hacer un pedido.';
+  const cfg = { pedidosActivo: true, reservasActivo: false, campanaPedidoTexto: T, campanaPedidoMensaje: 'Mensaje del negocio.' };
+  it('NEGANDO: sin dato, otro texto, sin pedidos activos (o no estricto), sin mensaje o sin campaña: null', () => {
+    const c = { id: 't', texto: T };
+    expect(L.prPedidoConMensaje(c, { ...cfg, campanaPedidoTexto: '' })).toBeNull();
+    expect(L.prPedidoConMensaje({ id: 't', texto: 'Hola, vi el anuncio de las tortas mexicanas' }, cfg)).toBeNull();
+    expect(L.prPedidoConMensaje(c, { ...cfg, pedidosActivo: false })).toBeNull();
+    expect(L.prPedidoConMensaje(c, { ...cfg, pedidosActivo: 'true' })).toBeNull();
+    expect(L.prPedidoConMensaje(c, { ...cfg, campanaPedidoMensaje: '  ' })).toBeNull();
+    expect(L.prPedidoConMensaje(null, cfg)).toBeNull();
+    expect(L.prPedidoConMensaje({ id: 't' }, cfg)).toBeNull();
+    expect(L.prPedidoConMensaje(c, { ...cfg, campanaPedidoTexto: undefined })).toBeNull();
+  });
+  it('con el texto igual (normalizado): el mensaje del negocio y SOLO «Hacer un pedido» (m|pedido); no depende de reservasActivo', () => {
+    const r = L.prPedidoConMensaje({ id: 't', texto: T.toUpperCase() }, cfg);
+    expect(r.cuerpo).toBe('Mensaje del negocio.');
+    expect(r.botones).toEqual([{ id: 'm|pedido', title: 'Hacer un pedido' }]);
+    expect(L.prPedidoConMensaje({ id: 't', texto: T }, { ...cfg, reservasActivo: true }).botones).toHaveLength(1);
+  });
+});
+
+// =====================================================================================================
+// Adenda de campañas (06/11/2026): variaciones, referral, imagen, día jueves
+// =====================================================================================================
+describe('adenda de campañas: funciones puras', () => {
+  const TA = 'Hola, vi el anuncio de las tortas mexicanas y quiero hacer un pedido.';
+  const TB = 'Hola, vi la promoción Jueves de +2 y quiero hacer una reserva.';
+  const camps = [campana('a', TA), campana('b', TB)];
+  const cfg = { pedidosActivo: true, reservasActivo: true, campanaPedidoTexto: TA, campanaPedidoMensaje: 'M A', campanaReservaTexto: TB, campanaReservaMensaje: 'M B', campanaReservaDetalle: 'Detalle', campanaPedidoEntrega: 'Entrega' };
+  const anuncios = [{ id: 'a', titulares: ['Tortas Mexicanas'] }, { id: 'b', titulares: ['Jueves de +2'] }];
+  it('prVariacion: positivos y NEGATIVOS (falsos positivos conocidos: una pregunta con la campaña nombrada se atiende como promo)', () => {
+    expect(L.prVariacion('info de la promo de las tortas mexicanas', camps, cfg, LUN_10)?.campana.id).toBe('a');
+    expect(L.prVariacion('JUEVES DE +2 ?', camps, cfg, LUN_10)?.campana.id).toBe('b');
+    for (const n of ['hola quiero pedir', 'quiero tortas', 'quiero 2 tortas mexicanas con queso', 'jueves de 2 a 4', 'hola', '', 'jueves', 'promo de las tortas mexicanas y jueves de +2']) expect(L.prVariacion(n, camps, cfg, LUN_10), n).toBeNull();
+    expect(L.prVariacion('promo de las tortas mexicanas', [], cfg, LUN_10)).toBeNull();
+    expect(L.prVariacion('promo de las tortas mexicanas', camps, { ...cfg, pedidosActivo: false }, LUN_10)).toBeNull();
+    expect(L.prVariacion('qué incluye', camps, cfg, LUN_10, 'B')?.variante).toBe('detalle');
+    expect(L.prVariacion('qué incluye', camps, cfg, LUN_10, '')).toBeNull();
+    expect(L.prVariacion('hola', camps, cfg, LUN_10, 'B')).toBeNull();
+  });
+  it('prPreguntaSinResponder', () => {
+    expect(L.prPreguntaSinResponder('¿hacen envíos a Sopocachi?')).toBe(true);
+    expect(L.prPreguntaSinResponder('¿cuánto cuesta la promo de las tortas mexicanas?')).toBe(false);
+    expect(L.prPreguntaSinResponder('vi el anuncio de las tortas mexicanas')).toBe(false);
+    expect(L.prPreguntaSinResponder(null)).toBe(false);
+  });
+  it('prCampanaDelReferral: solo por titulares de anuncios del servidor y campaña vigente', () => {
+    const r = (ref: unknown, anun = anuncios, c = camps) => L.prCampanaDelReferral(c, anun, ref, LUN_10, L.anuncioPorTitular);
+    expect(r({ headline: 'Q Taco Tortas Mexicanas' , body: '' })).toBeNull();
+    expect(r({ headline: 'Tortas Mexicanas' })?.id).toBe('a');
+    expect(r({ headline: 'Zapatos' })).toBeNull();
+    expect(r({ headline: 'Tortas Mexicanas', body: 'Jueves de +2' })).toBeNull();
+    expect(r({ headline: 'Tortas Mexicanas' }, [])).toBeNull();
+    expect(r({ headline: 'Tortas Mexicanas' }, anuncios, [])).toBeNull();
+    expect(r(null)).toBeNull();
+  });
+  it('prCampanaDeLaImagen: titular y/o letra, categoría publicidad, contradicciones y precios', () => {
+    const im = (o: unknown) => L.prCampanaDeLaImagen(camps, anuncios, typeof o === 'string' ? o : JSON.stringify(o), LUN_10, L.anuncioPorTitular, cfg);
+    expect(im({ categoria: 'publicidad', titular_principal: 'Tortas Mexicanas' })?.id).toBe('a');
+    expect(im('```json\n{"categoria":"publicidad","titular_principal":"","campana":"B"}\n```')?.id).toBe('b');
+    expect(im({ categoria: 'otro', campana: 'A' })).toBeNull();
+    expect(im({ categoria: 'publicidad', titular_principal: 'Tortas Mexicanas', campana: 'B' })).toBeNull();
+    expect(im({ categoria: 'publicidad', titular_principal: 'Bs 15', campana: 'ninguna' })).toBeNull();
+    expect(im('no es json')).toBeNull();
+    expect(im({ categoria: 'publicidad', campana: 'A' })?.id).toBe('a');
+  });
+  it('prEsJueves: jueves en La Paz, con los bordes de medianoche', () => {
+    expect(L.prEsJueves(Date.UTC(2026, 10, 5, 14))).toBe(true);
+    expect(L.prEsJueves(Date.UTC(2026, 10, 6, 3, 59))).toBe(true);
+    expect(L.prEsJueves(Date.UTC(2026, 10, 6, 4, 0))).toBe(false);
+    expect(L.prEsJueves(Date.UTC(2026, 10, 5, 3, 59))).toBe(false);
+    expect(L.prEsJueves(Date.UTC(2026, 10, 5, 4, 0))).toBe(true);
+    expect(L.prEsJueves(NaN)).toBe(false);
+  });
+  it('prBotonHacerPedido: con área es `m|pedido|promos`, sin área o con un área rara es `m|pedido`', () => {
+    expect(L.prBotonHacerPedido({ campanaPedidoArea: 'promociones', catalogoWebEnlace: 'https://catalogo.ejemplo.com/c/x' }).id).toBe('m|pedido|promos');
+    expect(L.prBotonHacerPedido({ campanaPedidoArea: 'promociones' }).id).toBe('m|pedido'); // sin enlace del catálogo no hay a dónde llevar
+    expect(L.prBotonHacerPedido({}).id).toBe('m|pedido');
+    expect(L.prBotonHacerPedido({ campanaPedidoArea: 'a&b=c#', catalogoWebEnlace: 'https://catalogo.ejemplo.com/c/x' }).id).toBe('m|pedido');
   });
 });

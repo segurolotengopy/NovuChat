@@ -331,29 +331,32 @@ describe('los errores fijos', () => {
 });
 
 // ===========================================================================
-describe('comercios excluidos de la intervención (Bellido)', () => {
-  it('la lista fija es la de Bellido', () => {
-    expect([...TENANTS_EXCLUIDOS]).toEqual(['bellido']);
+describe('comercios excluidos de la intervención (mecanismo; hoy la lista está VACÍA por orden de Andres, 08/11/2026)', () => {
+  const BELLIDO = Object.freeze(['bellido']);   // el mecanismo se prueba con una lista explícita; el valor por omisión ya no excluye a nadie
+
+  it('la lista fija de Core está VACÍA (Bellido deja de estar excluido); el mecanismo sigue', () => {
+    expect([...TENANTS_EXCLUIDOS]).toEqual([]);
+    for (const id of ['bellido', 'consultorio-bellido', 'tienda-a']) expect(esTenantExcluido(id), id).toBe(false);
   });
 
-  it('coincide si el id ES el excluido o LO CONTIENE, sin mayúsculas ni tildes', () => {
+  it('con una lista explícita coincide si el id ES el excluido o LO CONTIENE, sin mayúsculas ni tildes', () => {
     for (const id of ['bellido', 'consultorio-bellido', 'bellido2', 'bellido-sur', 'xbellidox', 'BELLIDO', 'Béllido']) {
-      expect(esTenantExcluido(id), id).toBe(true);
+      expect(esTenantExcluido(id, BELLIDO), id).toBe(true);
     }
     for (const id of ['tienda-a', 'qtaco', 'bello', 'belido', 'dhermacore', '', 'platinum']) {
-      expect(esTenantExcluido(id), id).toBe(false);
+      expect(esTenantExcluido(id, BELLIDO), id).toBe(false);
     }
-    for (const v of [undefined, null, 7, {}, ['bellido']]) expect(esTenantExcluido(v), String(v)).toBe(false);
+    for (const v of [undefined, null, 7, {}, ['bellido']]) expect(esTenantExcluido(v, BELLIDO), String(v)).toBe(false);
   });
 
-  it('el NOMBRE de la ficha es la segunda barrera', () => {
-    expect(nombreExcluido('Consultorio Bellido')).toBe(true);
-    expect(nombreExcluido('CONSULTORIO BÉLLIDO')).toBe(true);
-    expect(nombreExcluido('Tienda A')).toBe(false);
-    for (const v of [undefined, null, 7, {}]) expect(nombreExcluido(v), String(v)).toBe(false);
+  it('con una lista explícita, el NOMBRE de la ficha es la segunda barrera', () => {
+    expect(nombreExcluido('Consultorio Bellido', BELLIDO)).toBe(true);
+    expect(nombreExcluido('CONSULTORIO BÉLLIDO', BELLIDO)).toBe(true);
+    expect(nombreExcluido('Tienda A', BELLIDO)).toBe(false);
+    for (const v of [undefined, null, 7, {}]) expect(nombreExcluido(v, BELLIDO), String(v)).toBe(false);
   });
 
-  it('habilitado SOLO con `consolaConversaciones === "nueva"` y sin ser excluido (ni por id ni por nombre)', () => {
+  it('habilitado SOLO con `consolaConversaciones === "nueva"`; Bellido ya no queda fuera por su id ni su nombre', () => {
     const ok = { consolaConversaciones: 'nueva', nombre: 'Tienda A', estado: 'activo' };
     expect(habilitadoParaPersona('tienda-a', ok)).toBe(true);
     for (const bandera of ['clasica', 'Nueva', 'NUEVA', 'nueva ', '', true, 1, null, undefined, {}]) {
@@ -362,19 +365,19 @@ describe('comercios excluidos de la intervención (Bellido)', () => {
     expect(habilitadoParaPersona('tienda-a', { nombre: 'Tienda A' })).toBe(false); // bandera ausente
     expect(habilitadoParaPersona('tienda-a', null)).toBe(false);
     expect(habilitadoParaPersona('tienda-a', undefined)).toBe(false);
-    expect(habilitadoParaPersona('consultorio-bellido', ok)).toBe(false); // el id
-    expect(habilitadoParaPersona('tienda-a', { ...ok, nombre: 'Consultorio Bellido' })).toBe(false); // el nombre
+    expect(habilitadoParaPersona('bellido', { ...ok, nombre: 'Consultorio Bellido' })).toBe(true);   // orden de Andres, 08/11/2026
+    expect(habilitadoParaPersona('bellido', { nombre: 'Consultorio Bellido' })).toBe(false);          // sin la bandera `nueva`, no
   });
 
-  it('la lista es la MISMA que usa el script de plataforma que enciende la bandera (se lee su texto: Core no lo importa)', () => {
+  it('el script de plataforma que enciende la bandera de PRESENTACIÓN ya no excluye a nadie por omisión (misma lista vacía)', () => {
     const script = readFileSync(join(aqui, '..', '..', 'scripts', 'plataforma', 'aplicar-consola-conversaciones.mjs'), 'utf8');
-    const lista = /export const TENANTS_EXCLUIDOS = Object\.freeze\(\[([^\]]*)\]\)/.exec(script);
-    expect(lista, 'el script ya no declara TENANTS_EXCLUIDOS como antes').not.toBeNull();
+    const lista = /export const TENANTS_EXCLUIDOS_BANDERA = Object\.freeze\(\[([^\]]*)\]\)/.exec(script);
+    expect(lista, 'el script ya no declara TENANTS_EXCLUIDOS_BANDERA como antes').not.toBeNull();
     const delScript = (lista?.[1] ?? '').split(',').map((x) => x.trim().replace(/^'|'$/g, '')).filter(Boolean);
     expect([...TENANTS_EXCLUIDOS]).toEqual(delScript);
     // Y la misma regla de coincidencia: el id ES uno de la lista o LO CONTIENE; el nombre solo lo contiene.
-    expect(script).toContain('excluidos(env).some((x) => t === x || t.includes(x))');
-    expect(script).toContain('excluidos(env).some((x) => n.includes(x))');
+    expect(script).toContain('excluidos(env, TENANTS_EXCLUIDOS_BANDERA).some((x) => t === x || t.includes(x))');
+    expect(script).toContain('excluidos(env, TENANTS_EXCLUIDOS_BANDERA).some((x) => n.includes(x))');
   });
 });
 

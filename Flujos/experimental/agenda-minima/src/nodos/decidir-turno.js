@@ -73,6 +73,15 @@ if (!boton) {
   // Vacunas y cremas van al DOCTOR, no a recepcion (P5, 23/09): es la cuarta opcion del
   // menu y tambien las palabras que la configuracion nombra.
   if (t.eleccion === 'vacunas_otros' || (reDoc && reDoc.test(norm))) return salir('contacto_doctor');
+  // Una pregunta de SALUD no la responde el asistente: se ofrece pasar con recepción (aviso + botón). Cada palabra de la lista
+  // se busca ENTERA (límite de palabra a los dos lados: «tos» no es «tostadas» ni «dolor» es «Dolores»), en cualquier paso salvo
+  // cuando se espera un nombre, y solo si el mensaje no pide una cita.
+  const reClin = (() => {
+    const partes = String(cfg.palabrasClaveClinicas || '').split('|').map((p) => cnNorm(p)).filter(Boolean).map((p) => p.replace(/[.*+?^${}()[\]\\]/g, '\\$&'));
+    return partes.length ? new RegExp('(?<![\\p{L}\\p{N}])(?:' + partes.join('|') + ')(?![\\p{L}\\p{N}])', 'iu') : null;
+  })();
+  const pideCita = /(?<![\p{L}\p{N}])(cita|citas|ficha|fichas|turno|turnos|agendar|agendame|agendarme|reservar|reserva|cancelar|cancelo|cancelame|anular|anulo|reagendar|reprogramar|mover)(?![\p{L}\p{N}])/iu;
+  if (reClin && reClin.test(norm) && !pideCita.test(norm) && String(est.paso || 'inicio').indexOf('esperando') !== 0 && est.paso !== 'cancelando' && est.paso !== 'moviendo') return salir('consulta_clinica');
 }
 
 if (boton && boton.tipo === 'h') return salir('elegir_hueco', { boton: boton });
@@ -92,6 +101,13 @@ if (CN_SERVICIOS.indexOf(t.eleccion) >= 0) {
     return salir('extraer', { textoExtraer: previo, cuerpoExtraccion: cuerpoDeExtraccion(previo) });
   }
   return salir('ofrecer');
+}
+// --- Elegir QUE cita cancelar o mover, dicho o escrito (incidente del humo, 07/11) -------------
+// Con la lista de citas ya mostrada (paso `cancelando`, o `moviendo` sin cita elegida), un texto o un audio
+// transcripto se compara por CODIGO con las citas del telefono (dia, hora, fecha, ordinal, nombre). No pasa por el
+// modelo: antes volvia a listar lo mismo una y otra vez. Un «si» suelto no cancela nada (hay que tocar el boton).
+if (tipoEf === 'text' && !boton && (est.paso === 'cancelando' || (est.paso === 'moviendo' && !est.moverId))) {
+  return salir('elegir_cita_escrita', { modo: est.paso === 'cancelando' ? 'c' : 'm' });
 }
 // Cancelar o mover una cita no necesita el menu: se va directo a entender el mensaje. Y gana sobre
 // CUALQUIER paso (HB3): con una oferta pendiente, «quiero reagendar mi cita» no es otra oferta. El

@@ -3,7 +3,7 @@
 // con codigo, y un campo raro del modelo se descarta, no se obedece.
 //
 // Tipos de plan (`plan`): nada, menu, emergencia, contacto_doctor, contacto_recepcion,
-// derivar_medio, audio_ilegible, imagen_sin_texto, respuesta_fija (params.clave, params.conMenu), pedir_boton, pedir_nombre, transferir, error, responder,
+// derivar_medio, consulta_clinica, audio_ilegible, imagen_sin_texto, respuesta_fija (params.clave, params.conMenu), pedir_boton, pedir_nombre, transferir, error, responder,
 // ofrecer, elegir_hueco, crear (con nombre), listar (cancelar o mover), cancelar,
 // mover_elegido.
 const d = cnPrimero('Decidir turno') || {};
@@ -71,7 +71,7 @@ function nombresValidos(lista) {
 const accion = d.accion;
 
 // --- Planes que no necesitan modelo ni calendario ---------------------------------------
-if (['nada', 'menu', 'emergencia', 'contacto_doctor', 'contacto_recepcion', 'derivar_medio', 'audio_ilegible', 'imagen_sin_texto', 'respuesta_fija'].indexOf(accion) >= 0) {
+if (['nada', 'menu', 'emergencia', 'contacto_doctor', 'contacto_recepcion', 'derivar_medio', 'audio_ilegible', 'imagen_sin_texto', 'respuesta_fija', 'consulta_clinica'].indexOf(accion) >= 0) {
   if (accion !== 'nada' && est.paso === 'inicio') en.paso = 'menu';
   // Una pregunta sencilla contestada por codigo: `clave` dice cual y `conMenu` si es el primer mensaje de la
   // conversacion (la respuesta va en el cuerpo del menu) o si el menu ya paso (va sola). Los textos los pone
@@ -104,6 +104,7 @@ function comoBoton(inicio, servicio, nombreEscrito) {
 }
 if (accion === 'elegir_hueco') return comoBoton(d.boton.inicio, d.boton.servicio, d.nombreEscrito);
 if (accion === 'cancelar_boton') return salir('cancelar', { leer: leer90(), params: { id: d.boton.id } });
+if (accion === 'elegir_cita_escrita') return salir('elegir_cita_escrita', { leer: leer90(), params: { modo: d.modo === 'm' ? 'm' : 'c', dicho: String(texto).slice(0, 300) } });
 if (accion === 'mover_boton') return salir('mover_elegido', { leer: leer90(), params: { id: d.boton.id } });
 
 // --- El servicio recien elegido en el menu: se ofrece de una (sin preguntar el dia) -------
@@ -270,7 +271,10 @@ if (est.paso === 'ofreciendo_huecos' && (est.ultimaOferta || []).length > 0 && !
 // ultima fecha pedida). Solo cambia de dia si el paciente lo dice con palabras; aunque el modelo devuelva una
 // fecha, sin un dia en el texto no se le cree (era el jueves 1 cuando se hablaba del viernes 2).
 const ofertaPrevia = est.paso === 'ofreciendo_huecos' ? (est.ultimaOferta || []) : [];
-const diaHeredado = ofertaPrevia.length ? fechaDe(ofertaPrevia[0]) : (est.paso === 'ofreciendo_huecos' && est.ultimaFechaPedida ? est.ultimaFechaPedida : null);
+// Manda el día que el paciente PIDIÓ por última vez (aunque ese día no tuviera espacio y la oferta traiga otros días: «martes a las 12?»
+// y luego «¿no tienes a las 12?» siguen siendo el martes, no el lunes de la primera hora ofrecida; humo del 07/11). Sin día pedido, el de la oferta.
+const diaHeredado = est.paso === 'ofreciendo_huecos' && est.ultimaFechaPedida && est.ultimaFechaPedida >= fechaLocal(ahora)
+  ? est.ultimaFechaPedida : (ofertaPrevia.length ? fechaDe(ofertaPrevia[0]) : null);
 const sinFranjaManana = cnNorm(texto).replace(/\b(de|en|por|a) la manana\b/g, ' ');
 const dijoDia = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|hoy|manana|pasado manana|semana|proxim[oa])\b|\b\d{1,2}\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b|\bel \d{1,2}\b|\b\d{1,2}\/\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b/.test(sinFranjaManana);
 // Una fecha CONCRETA escrita por el paciente manda sobre la del modelo (el modelo la deja en null fuera de su tabla).

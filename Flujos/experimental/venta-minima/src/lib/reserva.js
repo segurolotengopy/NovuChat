@@ -590,6 +590,52 @@ function rsResumen(r) {
   return lineas.join('\n');
 }
 
+// EL HORARIO DE LAS RESERVAS (07/11/2026, Andres: «las reservas no dependen del horario de atención»). `propio` es el dato OPCIONAL `horarioReservas`
+// del negocio y `pedidos` el horario de pedidos (`cfg.horario`):
+//   - sin `propio` (vacío, o un marcador que `Config del negocio` ya dejó vacío): el horario de pedidos, como hasta hoy;
+//   - un solo rango «HH:MM-HH:MM» (Q'Taco: «10:00-22:00»): ese rango, los días que abre el horario de pedidos (el día que el local cierra no se reserva);
+//     las horas de reserva ya no salen del horario de pedidos. Sin un horario de pedidos válido no hay días: el dato no sirve;
+//   - un horario completo (texto por día u objeto, las formas de `rsValidar`): ese, con sus propios días.
+// Un dato que no sirve (arreglo, rango imposible, texto ilegible, sin días) cae al horario de pedidos, como hasta hoy (`rsHorarioDeReservasInvalido` lo dice). Devuelve lo que `rsValidar` recibe en `horario`. La última hora sigue siendo el cierre menos 30 minutos («10:00-22:00» = de 10:00 a 21:30).
+// Nunca mira si el local está abierto AHORA: eso es solo de los pedidos.
+function rsHorarioDeReservas(propio, pedidos) {
+  const r = _rsHorarioPropio(propio, pedidos);
+  return r === null ? pedidos : r;
+}
+// ¿El dato `horarioReservas` vino pero no sirve (un arreglo, «25:00-22:00», un texto ilegible, un rango sin días abiertos en el horario de pedidos)? Entonces
+// `rsHorarioDeReservas` usa el horario de pedidos, como hasta hoy, y quien lo llama anota el problema (nunca se rechazan todas las reservas en silencio).
+function rsHorarioDeReservasInvalido(propio, pedidos) {
+  if (propio === undefined || propio === null || (typeof propio === 'string' && !propio.trim())) return false;
+  return _rsHorarioPropio(propio, pedidos) === null;
+}
+// El horario propio ya armado, `pedidos` si no hay dato, o null si el dato no sirve.
+function _rsHorarioPropio(propio, pedidos) {
+  if (propio === undefined || propio === null) return pedidos;
+  if (Array.isArray(propio)) return null;
+  if (typeof propio === 'object') return _rsHorario(propio) ? propio : null;
+  if (typeof propio !== 'string') return null;
+  const p = propio.trim();
+  if (!p) return pedidos;
+  const m = /^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/.exec(p);
+  if (!m) return _rsHorario(p) ? p : null;
+  if (!_rsTramo(m[1], m[2])) return null;
+  const dias = _rsHorario(pedidos);
+  if (!dias) return null;
+  const salida = {};
+  RS_CLAVES_DIA.forEach(function (k) { salida[k] = dias[k].length ? m[1] + '-' + m[2] : 'cerrado'; });
+  return salida;
+}
+
+// Reserva de MAÑANA (06/11/2026, decision de Andres): la hora pedida es anterior a `desde` («HH:MM», dato `reservaDesde` del negocio).
+// Se ACEPTA (el horario valido es el de las reservas, `rsHorarioDeReservas`); solo marca que el local debe contactar al cliente. Devuelve `desde` normalizado
+// («12:00») o '' (sin `desde` valido, sin hora valida, o la hora no es anterior: no aplica). No valida el horario: eso es de `rsValidar`.
+function rsEsDeManana(r, desde) {
+  const d = _rsHora(desde);
+  const h = _rsHora(r && r.hora);
+  if (!d || !h) return '';
+  return _rsMin(h) < _rsMin(d) ? d : '';
+}
+
 // La frase de la confirmacion al cliente: «el lunes 6 de octubre a las 19:00, 4 personas, terraza» (sin nombre ni notas).
 function rsFraseDeConfirmacion(r) {
   const x = rsValidarExtraccion(r);

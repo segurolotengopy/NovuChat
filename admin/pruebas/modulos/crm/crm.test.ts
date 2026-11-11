@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 // Las pruebas de la planilla de las subcuentas (PR-E) viven en crm-planilla.ts, sin sufijo .test para no pedir otra entrada en SUITES_PURAS: corren aquí.
 import './crm-planilla.ts';
+// Una fila por conversación (08/11/2026): mismo criterio, sin sufijo .test.
+import './crm-conversacion.ts';
 import { crmActivo, crmParaElFlujo, recordatoriosActivos } from '../../../functions/src/modulos/crm/crm.js';
 import {
   CAMPOS_DEL_BOT, CAMPOS_DEL_EQUIPO, COLUMNAS_V1, columnasEscribibles, neutralizarTexto,
@@ -51,12 +53,12 @@ describe('crm: el bot nunca escribe lo del equipo', () => {
     expect(e.sort()).toEqual([...CAMPOS_DEL_BOT].sort());
     for (const c of CAMPOS_DEL_EQUIPO) expect(e).not.toContain(c);
   });
-  it('el contrato: 5 del equipo (con el diagnóstico); de las 14 nuevas, 13 son del bot y solo el diagnóstico es del equipo', () => {
+  it('el contrato: 5 del equipo (con el diagnóstico); de las 17 nuevas, 16 son del bot y solo el diagnóstico es del equipo', () => {
     expect(CAMPOS_DEL_EQUIPO).toEqual(['valor', 'responsable', 'estado', 'proximaAccion', 'diagnostico']);
     const nuevas = COLUMNAS_V1.filter((c) => c.nueva);
-    expect(nuevas.filter((c) => c.dueno === 'bot')).toHaveLength(13);
+    expect(nuevas.filter((c) => c.dueno === 'bot')).toHaveLength(16);
     expect(nuevas.filter((c) => c.dueno === 'equipo').map((c) => c.campo)).toEqual(['diagnostico']);
-    for (const c of ['clasificacion', 'quePidio', 'diaPreferido', 'horarioPreferido', 'derivacion', 'ultimaInteraccion', 'ventana24h']) expect(CAMPOS_DEL_BOT).toContain(c);
+    for (const c of ['clasificacion', 'quePidio', 'diaPreferido', 'horarioPreferido', 'derivacion', 'ultimaInteraccion', 'ventana24h', 'servicioElegido', 'agendo', 'fechaCita']) expect(CAMPOS_DEL_BOT).toContain(c);
     expect(CAMPOS_DEL_BOT).not.toContain('diagnostico');
     expect(columnasEscribibles({ diagnostico: 'U', clasificacion: 'N' })).toEqual({ clasificacion: 'N' });
     expect(CAMPOS_DEL_BOT).toContain('interes');

@@ -41,10 +41,15 @@ describe('ningún precio, rango ni garantía sale (mutaciones de producción)', 
   for (const g of GARANTIAS) {
     it(`se descarta: ${g}`, () => { expect(fallo(sale(g))).toBe(true); });
   }
-  it('«efecto lifting inmediato» pierde el «inmediato»', () => {
+  it('«efecto lifting inmediato» SALE como dice el MD (decisión de Andres, 08/11/2026)', () => {
     const t = sale('HArmonyCa da un efecto lifting inmediato y estimula tu colágeno. ¿Cuál es tu nombre?');
-    expect(t).not.toMatch(/inmediat/i);
-    expect(t).toMatch(/lifting/);
+    expect(t).toMatch(/lifting inmediato/);
+  });
+  it('NEGADA: cualquier OTRA promesa de inmediatez se sigue quitando (no es del MD y no tiene respaldo)', () => {
+    for (const x of ['Verás un resultado inmediato en tu rostro. ¿Cuál es tu nombre?', 'Te asignarán tu espacio de inmediato. ¿Cuál es tu nombre?', 'HArmonyCa da un efecto lifting inmediato y te atendemos de inmediato. ¿Cuál es tu nombre?']) {
+      const t = sale(x);
+      expect(t, x).not.toMatch(/resultado inmediato|de inmediato/i);
+    }
   });
 });
 

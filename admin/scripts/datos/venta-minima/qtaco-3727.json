@@ -5,15 +5,132 @@
   "credenciales": {
     "ingesta": "NovuChat ingesta (cliente11)",
     "graph": "Graph WhatsApp QTaco 3727 (Bearer)",
-    "medios": "WhatsApp QTaco 3727 (envio)"
+    "medios": "WhatsApp QTaco 3727 (envio)",
+    "crm": "Google Sheets miniCRM (crm-qtaco)"
   },
   "receptor": {
     "ruta": "REEMPLAZAR_RUTA_RECEPTOR_QTACO_3727",
     "wabaIdEsperado": "REEMPLAZAR_WABA_ID_QTACO_3727"
   },
+  "_notaAvisos": "07/11 20:47: Q'Taco pidio volver al formato por lineas (una vineta por producto); las plantillas en vinetas inline quedan apagadas (plantillaPedidoMapaEstado, plantillaPedidoListaEstado y plantillaReservaListaEstado en DESACTIVADA; el codigo solo las usa con el estado exactamente APPROVED).",
   "configBase": {
     "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_QTACO_3727",
-    "plantillasPedidoLineas": "",
-    "destinatariosAviso": "completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO"
+    "horarioAtencion": "todos los días de 10:00 a 22:00 (de 10:00 a 12:00 solo delivery)",
+    "horarioAtencionManda": "si",
+    "plantillasPedidoLineas": "2:pedido_registrado_l2,4:pedido_registrado_l4,6:pedido_registrado_l6",
+    "idiomaPlantillaPedidoLineas": "es",
+    "plantillaPedidoMapa": "pedido_lista_mapa",
+    "plantillaPedidoMapaEstado": "DESACTIVADA",
+    "plantillaPedidoLista": "pedido_lista",
+    "plantillaPedidoListaEstado": "DESACTIVADA",
+    "plantillaReservaLista": "reserva_lista",
+    "plantillaReservaListaEstado": "DESACTIVADA",
+    "plantillaConsultaAtencion": "consulta_atencion",
+    "plantillaConsultaAtencionEstado": "PENDING",
+    "idiomaPlantillasVinetas": "es",
+    "destinatariosAviso": "completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO",
+    "planillaProspectosId": "REEMPLAZAR_PLANILLA_PROSPECTOS_ID_QTACO_3727",
+    "planillaProspectosHoja": "Leads_CRM"
+  },
+  "crm": {
+    "_nota": "Mapa de columnas de la planilla miniCRM de Q'Taco (hoja Leads_CRM, encabezados en la fila 3), opcion (b) del 06/11/2026: SIN ampliar el contrato de columnas del core; las columnas son las de la plantilla actual. A..I y N..T las escribe el bot; J..M y U son del equipo (el bot no las toca ni lee la U). O «Eligio» (campo quePidio) dice si la persona escogio Pedido o Reserva; P «Reserva» (campo diaPreferido) y Q «Pedido» (campo horarioPreferido) llevan «Enviada»/«Registrado» con fecha y hora, y quedan en blanco si no se concreto; los campos conservan el nombre del contrato. Los titulos tienen que coincidir letra por letra con la copia viva de la planilla.",
+    "filaEncabezados": 3,
+    "prefijoId": "LEAD-",
+    "primerId": 1001,
+    "columnas": {
+      "id": {
+        "letra": "A",
+        "titulo": "ID Lead"
+      },
+      "fecha": {
+        "letra": "B",
+        "titulo": "Fecha Registro"
+      },
+      "nombre": {
+        "letra": "C",
+        "titulo": "Nombre y Apellido"
+      },
+      "empresa": {
+        "letra": "D",
+        "titulo": "Empresa / Cliente"
+      },
+      "telefono": {
+        "letra": "E",
+        "titulo": "Teléfono WhatsApp"
+      },
+      "etapaInicial": {
+        "letra": "F",
+        "titulo": "Etapa Funnel"
+      },
+      "origen": {
+        "letra": "G",
+        "titulo": "Origen / Canal"
+      },
+      "calificacion": {
+        "letra": "H",
+        "titulo": "Calificación IA"
+      },
+      "resumen": {
+        "letra": "I",
+        "titulo": "Resumen Chatbot IA"
+      },
+      "clasificacion": {
+        "letra": "N",
+        "titulo": "Clasificación"
+      },
+      "quePidio": {
+        "letra": "O",
+        "titulo": "Eligió"
+      },
+      "diaPreferido": {
+        "letra": "P",
+        "titulo": "Reserva"
+      },
+      "horarioPreferido": {
+        "letra": "Q",
+        "titulo": "Pedido"
+      },
+      "derivacion": {
+        "letra": "R",
+        "titulo": "Derivación a recepción"
+      },
+      "ultimaInteraccion": {
+        "letra": "S",
+        "titulo": "Última interacción"
+      },
+      "ventana24h": {
+        "letra": "T",
+        "titulo": "Se cierra la ventana de 24 h"
+      }
+    },
+    "equipo": {
+      "valor": {
+        "letra": "J",
+        "titulo": "Valor Estimado ($)"
+      },
+      "responsable": {
+        "letra": "K",
+        "titulo": "Responsable Comercial"
+      },
+      "estado": {
+        "letra": "L",
+        "titulo": "Estado Comercial"
+      },
+      "proximaAccion": {
+        "letra": "M",
+        "titulo": "Próxima Acción / Fecha"
+      },
+      "diagnostico": {
+        "letra": "U",
+        "titulo": "Diagnóstico del equipo"
+      }
+    },
+    "extrasDelEquipo": {},
+    "alCrear": {
+      "etapaInicial": "1. Nuevo Lead",
+      "origen": "Chatbot WhatsApp IA",
+      "origenAnuncio": "Campaña Meta Ads",
+      "estado": "Activo"
+    }
   }
 }

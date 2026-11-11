@@ -30,6 +30,8 @@
     "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA",
     "etapaPrueba": "REEMPLAZAR_ETAPA_PRUEBA",
     "usarMarcas": "si",
+    "campanaFrase": "Quiero agendar mi valoración gratuita",
+    "campanaTexto": "¡Hola! Gracias por tu interés ✨\nTe cuento cómo es la valoración gratuita con la Dra. Evy Karina Rojas:\n✔️ Es personalizada\n✔️ La doctora evalúa tu piel y tu rostro\n✔️ Te explica qué tratamiento te conviene (por ejemplo, bioestimuladores como Radiesse o Harmonyca), cuánto cuesta y qué puedes esperar\n✔️ No tiene costo, no pagas anticipo y no te compromete a nada\n📍 Clínica DentalCor – https://maps.app.goo.gl/5E6xfGydC3PRnnRSA\n🕐 Lunes a viernes 8:30 a 18:00 · Sábados 9:00 a 11:00\n\n¿Me compartes tu nombre y el día que te queda mejor? Nuestra recepción te confirma la hora 😊",
     "modelo": "gemini-3.5-flash-lite",
     "temperatura": 0.4,
     "avisoSolicitudPlantilla": "aviso_solicitud_valoracion",

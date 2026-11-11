@@ -742,38 +742,43 @@ describe('pdFaltanEntrega y pdFusionarEntrega', () => {
     expect(L.pdFaltanEntrega(undefined, 'Juan')).toEqual([]);
     expect(L.pdFaltanEntrega(null, '')).toEqual([]);
   });
-  it('delivery sin datos pide SOLO la direccion: la referencia y el nombre ya no se exigen (decision del 04/10: delivery opcional)', () => {
-    expect(L.pdFaltanEntrega(deliv(), 'Juan')).toEqual(['direccion']);
-    expect(L.pdFaltanEntrega(deliv(), '')).toEqual(['direccion']);
+  it('delivery sin datos pide la direccion Y la ubicacion (07/11): la referencia y el nombre siguen sin exigirse', () => {
+    expect(L.pdFaltanEntrega(deliv(), 'Juan')).toEqual(['direccion', 'ubicacion']);
+    expect(L.pdFaltanEntrega(deliv(), '')).toEqual(['direccion', 'ubicacion']);
   });
   it('el nombre (de perfil o dado) ya no cuenta para lo que falta: nunca aparece «nombre» ni «referencia»', () => {
     for (const perfil of ['Juan Pérez', 'Juan', '']) {
       for (const extra of [{}, { nombre: 'Ana' }, { nombre: 'x' }, { referencia: 'ab' }, { referencia: 'casa verde' }]) {
         const falta = L.pdFaltanEntrega(deliv(extra), perfil);
-        expect(falta, `${perfil} ${JSON.stringify(extra)}`).toEqual(['direccion']);
+        expect(falta, `${perfil} ${JSON.stringify(extra)}`).toEqual(['direccion', 'ubicacion']);
       }
     }
   });
-  it('una direccion de verdad (5 o mas caracteres, con letras y al menos dos palabras o numeros) completa los datos, con o sin referencia ni nombre; una mala sigue pidiendose', () => {
-    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345' }), '')).toEqual([]);
-    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', referencia: 'casa verde', nombre: 'Ana' }), '')).toEqual([]);
-    expect(L.pdFaltanEntrega(deliv({ direccion: 'calle 21 de Calacoto' }), '')).toEqual([]);
-    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', referencia: 'ab' }), '')).toEqual([]);
+  it('una direccion de verdad (5 o mas caracteres, con letras y al menos dos palabras o numeros) completa la direccion, con o sin referencia ni nombre; sola NO completa el delivery: falta la ubicacion', () => {
+    const U = { ubicacion: { lat: -16.5, lng: -68.15 } };
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', ...U }), '')).toEqual([]);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', referencia: 'casa verde', nombre: 'Ana', ...U }), '')).toEqual([]);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'calle 21 de Calacoto', ...U }), '')).toEqual([]);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', referencia: 'ab', ...U }), '')).toEqual([]);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345' }), '')).toEqual(['ubicacion']);
     for (const mala of ['', 'x', 'calle', 'Calacoto', 'a 1', '12345', '#### 123']) {
-      expect(L.pdFaltanEntrega(deliv({ direccion: mala, referencia: 'casa', nombre: 'Ana' }), '')).toEqual(['direccion']);
+      expect(L.pdFaltanEntrega(deliv({ direccion: mala, referencia: 'casa', nombre: 'Ana', ...U }), '')).toEqual(['direccion']);
+      expect(L.pdFaltanEntrega(deliv({ direccion: mala, referencia: 'casa', nombre: 'Ana' }), '')).toEqual(['direccion', 'ubicacion']);
     }
   });
-  it('una ubicacion compartida valida vale como direccion; una invalida no', () => {
+  it('una ubicacion compartida valida YA NO vale como direccion (07/11): sola, falta la direccion escrita; una invalida tampoco cuenta', () => {
     const ok = deliv({ ubicacion: { lat: -16.5, lng: -68.15 }, referencia: 'frente al parque', nombre: 'Ana' });
-    expect(L.pdFaltanEntrega(ok, '')).toEqual([]);
+    expect(L.pdFaltanEntrega(ok, '')).toEqual(['direccion']);
+    expect(L.pdFaltanEntrega({ ...ok, direccion: 'Av. Arce 2345' }, '')).toEqual([]);
     for (const mala of [{ lat: 200, lng: 0 }, { lat: 'a', lng: 1 }, { lat: 1 }, null, 'x']) {
-      expect(L.pdFaltanEntrega({ ...ok, ubicacion: mala }, '')).toEqual(['direccion']);
+      expect(L.pdFaltanEntrega({ ...ok, ubicacion: mala }, '')).toEqual(['direccion', 'ubicacion']);
+      expect(L.pdFaltanEntrega({ ...ok, direccion: 'Av. Arce 2345', ubicacion: mala }, '')).toEqual(['ubicacion']);
     }
   });
   it('la forma principal es {entrega, modalidad, ...}; `tipo` solo se acepta por compatibilidad, y manda `entrega` > `modalidad` > `tipo`', () => {
-    expect(L.pdFaltanEntrega({ entrega: 'delivery' }, 'Juan')).toEqual(['direccion']);
-    expect(L.pdFaltanEntrega({ modalidad: 'delivery' }, 'Juan')).toEqual(['direccion']);
-    expect(L.pdFaltanEntrega({ tipo: 'delivery' }, 'Juan')).toEqual(['direccion']); // estado guardado antes del cambio
+    expect(L.pdFaltanEntrega({ entrega: 'delivery' }, 'Juan')).toEqual(['direccion', 'ubicacion']);
+    expect(L.pdFaltanEntrega({ modalidad: 'delivery' }, 'Juan')).toEqual(['direccion', 'ubicacion']);
+    expect(L.pdFaltanEntrega({ tipo: 'delivery' }, 'Juan')).toEqual(['direccion', 'ubicacion']); // estado guardado antes del cambio
     // negando: con recojo en la forma principal, un `tipo` viejo no lo vuelve delivery
     expect(L.pdFaltanEntrega({ entrega: 'recojo', modalidad: 'recojo', tipo: 'delivery' }, 'Juan')).toEqual([]);
     expect(L.pdFaltanEntrega({ modalidad: 'recojo', tipo: 'delivery' }, 'Juan')).toEqual([]);
@@ -876,10 +881,16 @@ describe('pdResumen y pdLineaCompacta', () => {
 });
 
 describe('textos fijos del pedido', () => {
-  it('«Para el delivery necesito la dirección exacta.»: sin la frase del QR y sin pedir el nombre', () => {
-    const txt = 'Para el delivery necesito la dirección exacta.';
-    for (const f of [['direccion'], ['direccion', 'referencia', 'nombre'], [], undefined]) expect(L.pdTextoFaltanEntrega(f as string[])).toBe(txt);
-    expect(txt).not.toMatch(/QR|nombre de quien|repartidor|referencia/); // la referencia NUNCA se pide en el chat (la ofrece el catálogo; regla de Silvana, 05/10)
+  it('los textos de lo que falta del delivery (07/11): dos cosas, solo la ubicación o solo la dirección; sin la frase del QR, sin pedir el nombre y sin palabras de cobro', () => {
+    const ambas = L.pdTextoFaltanEntrega(['direccion', 'ubicacion']);
+    expect(ambas).toBe('Para el delivery necesito dos cosas: escribe tu dirección exacta y comparte tu ubicación');
+    const soloUbicacion = L.pdTextoFaltanEntrega(['ubicacion']);
+    expect(soloUbicacion).toBe('Para el delivery necesito que compartas tu ubicación');
+    const soloDireccion = L.pdTextoFaltanEntrega(['direccion']);
+    expect(soloDireccion).toBe('Para el delivery necesito tu dirección exacta, escrita.');
+    for (const t of [ambas, soloUbicacion, soloDireccion]) {
+      expect(t).not.toMatch(/QR|nombre de quien|repartidor|referencia|pagado|acreditad|recibimos tu pago/i); // la referencia NUNCA se pide en el chat (regla de Silvana, 05/10)
+    }
   });
   it('«No encontré …»: con 1, 2 o 3 sugerencias (sin repetir, con su precio) y sin ellas', () => {
     const s = (k: string) => porId(k);
@@ -1461,7 +1472,30 @@ describe('textos amables del 03/10 (pedido)', () => {
 describe('palabras excluidas: lo que el negocio NO vende por WhatsApp, aunque la carta no traiga el item', () => {
   // La lista REAL de Q'Taco, leída de su archivo de datos (así la prueba no se desincroniza).
   const RUTA_QTACO = join(CARPETA, '../../../../../admin/scripts/datos/venta-minima/qtaco.json');
-  const PALABRAS = (JSON.parse(readFileSync(RUTA_QTACO, 'utf8')) as { configBase: { palabrasExcluidas: string } }).configBase.palabrasExcluidas;
+  // Lista fija de antes del 05/11 para cubrir la barrera; la lista REAL de Q'Taco (06/11, sin alcohol) se prueba en el caso siguiente.
+  const PALABRAS = 'helado,paleta,postre,cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri,heladito';
+  it('Q\'Taco (06/11, sin alcohol): «una cerveza» se excluye, y «un postre» sin alcohol no', () => {
+    const datos = JSON.parse(readFileSync(RUTA_QTACO, 'utf8')) as { configBase: { palabrasExcluidas?: string } };
+    const lista = datos.configBase.palabrasExcluidas ?? '';
+    // Cadena EXACTA (06/11, review de #823): un cambio de la lista debe ser deliberado.
+    expect(lista).toBe('cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri,rompope,mezcal,carajillo,baileys,kahlua,amaretto,licor de');
+    const motivos = (dicho: string) => L.pdAgregarLineas([], SOLO_VENDIBLE, [ln(dicho, 1)], [], lista).noEncontrados.map((n: { motivo: string }) => n.motivo);
+    expect(motivos('una cerveza')).toContain('excluido');
+    expect(motivos('un postre')).not.toContain('excluido');
+    // La palabra mira lo que se DICE, no un ítem activo que la lleva en su propio nombre: los helados con alcohol se excluyen si no hay ítem...
+    for (const n of ['Helado de Rompope', 'Helado de Tequila']) expect(L.pdPalabraExcluida(n, lista, true), n).not.toBe('');
+    for (const n of ['Helado de Fruta de Temporada', 'Paleta Mango - Chamoy']) expect(L.pdPalabraExcluida(n, lista, true), n).toBe('');
+    // ...pero con el ítem ACTIVO en la carta entran (la barrera por palabra ignora la palabra que está en el nombre del ítem). Por eso la CONDICIÓN
+    // OPERATIVA: «Helado de Tequila» y «Helado de Rompope» deben permanecer INACTIVOS en el catálogo (docs/versiones-por-cliente.md).
+    const conAlcohol = L.pdCarta([
+      { id: 'h-rompope', nombre: 'Helado de Rompope', precio: 23, area: 'postres' },
+      { id: 'h-tequila', nombre: 'Helado de Tequila', precio: 23, area: 'postres' },
+    ]);
+    for (const dicho of ['helado de rompope', 'helado de tequila']) {
+      const r = L.pdAgregarLineas([], conAlcohol, [ln(dicho, 1)], [], lista);
+      expect(r.carrito.length, `${dicho}: con el ítem activo, entra`).toBe(1);
+    }
+  });
   // Una carta SIN ningún item de esas áreas, y ninguna lista de excluidos por área: solo la lista de palabras.
   const SOLO_VENDIBLE = L.pdCarta(CATALOGO.filter((i: { area: string }) => !['cervezas', 'cocteleria', 'postres'].includes(i.area)));
   const agregarPal = (producto: string, palabras: unknown = PALABRAS, carta = SOLO_VENDIBLE) => L.pdAgregarLineas([], carta, [ln(producto, 1)], [], palabras);
@@ -1543,7 +1577,7 @@ describe('palabras excluidas: lo que el negocio NO vende por WhatsApp, aunque la
 // REVISIÓN DEL PR #382 (punto 3 y L-3): la palabra excluida no se esquiva como NOTA o DETALLE de un producto que sí se vende.
 describe('palabras excluidas como nota o detalle de un producto activo: la línea se descarta como excluida (sin aviso)', () => {
   // La lista REAL por omisión de Q'Taco (el archivo de datos del repositorio): lo que se prueba es lo que se despliega.
-  const PALABRAS_QTACO = ((JSON.parse(readFileSync(join(CARPETA, '../../../../../admin/scripts/datos/venta-minima/qtaco.json'), 'utf8')) as { configBase: { palabrasExcluidas: string } }).configBase.palabrasExcluidas);
+  const PALABRAS_QTACO = 'helado,paleta,postre,cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri,heladito';
   const agregar = (lineas: ReturnType<typeof ln>[], palabras: unknown = PALABRAS_QTACO) => L.pdAgregarLineas([], CARTA, lineas, [], palabras);
 
   it('los cuatro esquives del 03/10: «jamaica shot», «limonada con tequila», «gaseosa con ron» (en el detalle) y «paleta mango chamoy»', () => {
@@ -1674,18 +1708,18 @@ describe('PR-A (05/10): la ubicación compartida, con la misma regla que el serv
   const deliv = (extra: Record<string, unknown> = {}) => ({ entrega: 'delivery', modalidad: 'delivery', direccion: '', referencia: '', nombre: '', ...extra });
   const carrito = () => agregar([ln('tacos de birria', 1, 'orden')]).carrito;
   it('negado: (0, 0), el punto nulo de un GPS sin fijar, no vale como dirección ni se guarda', () => {
-    expect(L.pdFaltanEntrega(deliv({ ubicacion: { lat: 0, lng: 0 } }), '')).toEqual(['direccion']);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', ubicacion: { lat: 0, lng: 0 } }), '')).toEqual(['ubicacion']);
     expect(L.pdFusionarEntrega({ entrega: 'delivery', modalidad: 'delivery' }, { ubicacion: { lat: 0, lng: 0 } }).ubicacion).toBeUndefined();
     expect(L.pdNuevoPedido(TEL, 'x', [], deliv({ ubicacion: { lat: 0, lng: 0 } }), 0, 'BOB', AHORA).entrega.ubicacion).toBeUndefined();
     // Una sola coordenada en 0 sí es un lugar (el ecuador o el meridiano de Greenwich).
-    expect(L.pdFaltanEntrega(deliv({ ubicacion: { lat: 0, lng: -68.15 } }), '')).toEqual([]);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', ubicacion: { lat: 0, lng: -68.15 } }), '')).toEqual([]);
   });
   it('negado: lo que redondea a (0, 0) a 5 decimales tampoco vale (el (0, 0) se juzga DESPUÉS de redondear)', () => {
     const casi = { lat: 0.000004, lng: -0.000003 };
-    expect(L.pdFaltanEntrega(deliv({ ubicacion: casi }), '')).toEqual(['direccion']);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', ubicacion: casi }), '')).toEqual(['ubicacion']);
     expect(L.pdFusionarEntrega({ entrega: 'delivery', modalidad: 'delivery' }, { ubicacion: casi }).ubicacion).toBeUndefined();
     expect(L.pdNuevoPedido(TEL, 'x', [], deliv({ ubicacion: casi }), 0, 'BOB', AHORA).entrega.ubicacion).toBeUndefined();
-    expect(L.pdFaltanEntrega(deliv({ ubicacion: { lat: 0.000006, lng: 0 } }), '')).toEqual([]); // 0,00001: sí es un punto
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', ubicacion: { lat: 0.000006, lng: 0 } }), '')).toEqual([]); // 0,00001: sí es un punto
   });
   it('minimización: el pedido guardado de un RECOJO no copia dirección, referencia ni ubicación del estado', () => {
     const p = L.pdNuevoPedido(TEL, 'x', carrito(), { entrega: 'recojo', modalidad: 'recojo', direccion: 'Av. Arce 2345', referencia: 'casa verde', nombre: 'Ana Soria', ubicacion: { lat: -16.5, lng: -68.15 } }, 118, 'BOB', AHORA);

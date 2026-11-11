@@ -1,0 +1,15 @@
+{
+  "hereda": "rroca-evy",
+  "nombreFlujo": "NovuChat — Dra. Evy Karina (rroca-evy, ensayo en el Demo A)",
+  "credenciales": {
+    "trigger": "WhatsApp OAuth account",
+    "ingesta": "Cierres NovuChat A (auto)",
+    "graph": "Graph WhatsApp Demo A (Bearer)",
+    "gemini": "Google Gemini(PaLM) Api account"
+  },
+  "configBase": {
+    "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID",
+    "numeroRecepcion": "REEMPLAZAR_NUMERO_AVISO_ENSAYO",
+    "avisarAlPropioNumero": true
+  }
+}

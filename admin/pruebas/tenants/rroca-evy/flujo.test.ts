@@ -7,13 +7,13 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { NODOS_DE_CRM } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
+import { ES_RELE, NODOS_DE_CRM } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
 import { ANA, BETO, CARPETA, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, conPreferencia, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
 
 describe('topología y tamaño', () => {
-  it('producción 56 nodos y prueba 51 (36 y 31 más los 9 del guardado, los 8 del miniCRM y los 3 del relé B9), con el tope de 56', () => {
-    expect(PRODUCCION.nodes.length).toBe(56);
-    expect(PRUEBA.nodes.length).toBe(51);
+  it('envío directo: producción 53 nodos y prueba 48 (36 y 31 más los 9 del guardado y los 8 del miniCRM), con el tope de 53; con el canal rele, 56 y 51', () => {
+    expect(PRODUCCION.nodes.length).toBe(ES_RELE ? 56 : 53);
+    expect(PRUEBA.nodes.length).toBe(ES_RELE ? 51 : 48);
   });
   it('sin agente, memoria ni modelo de chat de n8n, y sin WhatsApp Trigger', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
@@ -144,27 +144,25 @@ describe('el núcleo común', () => {
   });
 });
 
-describe('saludo neutro (decisión de Andres, 24/10/2026): la campaña no se menciona hasta que el flujo reconozca su texto de entrada', () => {
-  it('ni el prompt, ni el código, ni los textos fijos, ni los dos JSON dicen «campaña»; el saludo dice «Hoy tu valoración…»', () => {
-    const archivos = ['prompts/evy.md', 'src/lib/ev.js', 'flujo.plantilla.json', 'rroca-evy.json', 'rroca-evy.prueba.json', ...readdirSync(join(CARPETA, 'src/nodos')).map((f) => `src/nodos/${f}`)];
-    // El origen «Campaña Meta Ads» es un valor del mapa de la planilla del equipo (dato del miniCRM, F1): jamás sale al cliente; `idCampana` es un identificador del código del módulo `crm` (no un texto).
-    // La excepción vale SOLO para los nodos de la rama del miniCRM (`NODOS_DE_CRM`): en cualquier otro nodo o archivo la palabra sigue prohibida.
-    const textoRevisado = (a: string): string => {
-      const t = readFileSync(join(CARPETA, a), 'utf8');
-      if (!a.endsWith('.json')) return t;
-      const f = JSON.parse(t) as { nodes?: Array<{ name: string }> };
-      return JSON.stringify({ ...f, nodes: (f.nodes ?? []).filter((n) => !(NODOS_DE_CRM as string[]).includes(n.name)) });
-    };
-    for (const a of archivos) expect(textoRevisado(a), a).not.toMatch(/campa[ñn]a/i);
-    // AJUSTE (observaciones de Rubén, 28/10/2026): sin «hoy bonificado» y con «sin pagar nada para agendar».
-    expect(readFileSync(join(CARPETA, 'prompts/evy.md'), 'utf8')).toContain('Hoy tu valoración con la Dra. Evy es **100% gratuita y sin compromiso**, sin pagar nada para agendar (su costo habitual es de 250 Bs)');
+describe('la letra del MD sobre la campaña (orden de Andres, 08/11/2026; reemplaza el «saludo neutro» del 24/10/2026)', () => {
+  it('el prompt dice la bienvenida del MD («Por escribirnos desde nuestra campaña… bonificada…») y el texto fijo de gratuidad dice «por la campaña»', () => {
+    const prompt = readFileSync(join(CARPETA, 'prompts/evy.md'), 'utf8');
+    expect(prompt).toContain('Por escribirnos desde nuestra campaña, tu valoración con la Dra. Evy es **100% gratuita y sin compromiso** (su costo habitual es de 250 Bs, pero hoy está totalmente bonificada y no pagas nada para reservar)');
+    expect(readFileSync(join(CARPETA, 'src/lib/ev.js'), 'utf8')).toContain('es 100% gratuita por la campaña. No pagas los 250 Bs de consulta');
+  });
+  it('NEGADA: los nodos de la rama del miniCRM siguen sin texto de «campaña» al cliente (el origen es un dato de la planilla)', () => {
+    for (const a of ['rroca-evy.json', 'rroca-evy.prueba.json']) {
+      const f = JSON.parse(readFileSync(join(CARPETA, a), 'utf8')) as { nodes?: Array<{ name: string }> };
+      const crm = JSON.stringify((f.nodes ?? []).filter((n) => (NODOS_DE_CRM as string[]).includes(n.name)));
+      expect(crm.replace(/[A-Za-z_]*[Cc]ampana[A-Za-z_]*/g, '').replace(/Campaña Meta Ads/g, ''), a).not.toMatch(/por la campa[ñn]a|desde nuestra campa[ñn]a/i);
+    }
   });
 });
 
 describe('el texto prellenado del anuncio en el primer contacto', () => {
   const saludo = '¡Hola! 👋 Soy el asistente virtual de la Dra. Evy. Tu valoración es 100% gratuita y sin compromiso. ¿Cómo te llamas y qué te gustaría mejorar?';
   it('NO cierra de golpe (ni botón ni aviso a recepción): el saludo pide nombre y deseo', () => {
-    const t = hablar(crear({ modeloDice: saludo }), ANA, mTexto('Hola Dra. Evy, vi su anuncio de armonización facial y quiero agendar mi valoración gratuita 🙌'));
+    const t = hablar(crear({ modeloDice: saludo }), ANA, mTexto('Hola Dra. Evy, vi su anuncio de armonización facial y quiero información de la valoración 🙌'));
     expect(t.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
     expect(t.avisos.length).toBe(0);
     expect(textos(t).join(' ')).toContain('¿Cómo te llamas');

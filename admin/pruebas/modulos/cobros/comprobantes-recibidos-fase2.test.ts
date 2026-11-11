@@ -282,14 +282,15 @@ describe('UNA SOLA TRANSACCIÓN: si la escritura nueva falla, el cotejo entero s
 });
 
 describe('la respuesta y el camino del cobro no cambian', () => {
-  it('RespuestaDelCotejo conserva exactamente sus campos', async () => {
+  it('RespuestaDelCotejo conserva sus campos y solo suma `motivos` (aditivo, 07/11/2026)', async () => {
     const t = tel(40);
     await sembrar(t, 2);
     const r = await comp(t, leidoDe('100'), 'wamid.f2-forma');
     expect(Object.keys(r.cuerpo).sort()).toEqual([
       'avisarComercio', 'cierreId', 'estado', 'evento', 'importe', 'intentos', 'intentosRestantes', 'moneda',
-      'montoDistinto', 'montoLeido', 'motivo', 'repetido',
+      'montoDistinto', 'montoLeido', 'motivo', 'motivos', 'repetido',
     ]);
+    expect(r.cuerpo.motivos).toEqual(['ok']);
     expect(JSON.stringify(r.cuerpo)).not.toMatch(/comprobantesRecibidos|nombreContacto|vence/);
   });
   it('`solicitud.comprobantes` conserva su tope y su forma (el séptimo no entra)', async () => {

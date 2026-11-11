@@ -8,15 +8,20 @@
 // LO QUE NUNCA HACE:
 //   - dejar salir un texto o un parámetro de plantilla con una palabra de `VM_PROHIBIDAS`
 //     («validado», «pagado», «ya lo preparan»…): se reemplaza por uno genérico y se anota;
-//   - armar un aviso si ya se alcanzó el tope diario, o una derivación (`topeTransferenciasHora`, def. 1) o un
-//     aviso de pedido o de comprobante (`topePedidosHora`, def. 6) del mismo teléfono dentro de la hora. Las marcas
-//     las escribe `Armar mensajes`, y solo si el aviso salió (por hecho): un aviso que falló NO cuenta, así que el
-//     siguiente intento sí se hace. Un tope en 0 significa «ninguno»: no se arma ese aviso;
+//   - armar un aviso si ya se alcanzó el tope LOCAL DE CAÍDA (PR-4b): el tope diario, una derivación (`topeTransferenciasHora`, def. 1) o un
+//     aviso de pedido o de comprobante (`topePedidosHora`, def. 6) del mismo teléfono dentro de la hora. Con el servidor sano esos topes son CUPOS del
+//     servidor (`Consumir cupos`, que cuelga de `¿Hay avisos?` y decide si salen); las marcas locales solo crecen cuando el servidor falló y el aviso
+//     salió igual (fail-open). Un tope en 0 significa «ninguno»: no se arma ese aviso;
 //   - mandar un aviso al propio número de quien escribe (lo excluye `avDestinatarios`), salvo con el interruptor SOLO DE ENSAYO
 //     `avisarAlPropioNumero` (true exacto, solo en `ensayo-demo-a.json`; ver `construir.mjs`).
 //
 // Cada ítem lleva su `clase` (`plantilla`, `detalle` o `imagen`, la que pone `avPlan`): `Armar mensajes`
 // cuenta «el aviso salió» solo con el `wamid` de una plantilla o de un detalle, nunca con la imagen.
+//
+// LOS CUPOS PEDIDOS AL SERVIDOR (PR-4b): el PRIMER ítem lleva `cupos` = { numero, cuerpo, asentar }: el cuerpo de `comprometer` que manda `Consumir cupos` (un espacio NUEVO por turno,
+// `vmc-<ejecución>` o `vmcp-<ejecución>` en la prueba, versionLeida 0, estado null, venceEnMin 1: no toca el estado de la conversación) y el de `asentar` que `Confirmar envío` manda si
+// NINGÚN aviso fue aceptado por Meta. Cupos: `avisos` (comercio, día, cantidad = mensajes armados), más `transferencias` (contacto, hora, 1; el comprobante exento no) o
+// `pedidos` (contacto, hora, 1). Todo o nada: un aviso de varios mensajes que no cabe en el día se niega completo. Tope = min(configurado, 1000) (ningún cupo es límite comercial).
 //
 // SIEMPRE emite al menos un ítem: con `sinAviso: true` cuando no hay nada que avisar, para que
 // el flujo siga hasta `Armar mensajes`. El PRIMER ítem lleva `errores`.
@@ -42,9 +47,13 @@ const AA_sd = vmSd();
 // pedido no se manda dos veces. `Soltar mensajes` anota `tipo:pedidoId` (el comprobante, `comprobante:pedidoId:medio:resultado`) en `sd.avisosHuerfanos` (residuo de PR-4b) SOLO cuando el compromiso falló; con el estado avanzado no hace falta.
 const AA_YA = [];
 const AA_CLAVES_YA = [];
+// La marca lleva el TELÉFONO (`teléfono|clave`): `pedidoId` es corto y el mapa es del comercio; un cliente no puede tapar el aviso de otro.
 function aaYaAvisado(clave) {
   const m = AA_sd && AA_sd.avisosHuerfanos && typeof AA_sd.avisosHuerfanos === 'object' ? AA_sd.avisosHuerfanos : null;
-  const ms = m && clave && Object.prototype.hasOwnProperty.call(m, clave) ? Number(m[clave]) : NaN;
+  const llave = AA_FROM + '|' + clave;
+  // Compatibilidad (72 h): las marcas anotadas antes de PR-4a llevan la clave SIN el teléfono; se aceptan hasta que venzan por sí solas.
+  const k = m && clave ? (Object.prototype.hasOwnProperty.call(m, llave) ? llave : (Object.prototype.hasOwnProperty.call(m, clave) ? clave : null)) : null;
+  const ms = k !== null ? Number(m[k]) : NaN;
   return Number.isFinite(ms) && AA_AHORA - ms < 72 * AA_HORA_MS && AA_AHORA - ms >= 0;
 }
 
@@ -105,6 +114,7 @@ function aaDatos(a) {
 
 // ------------------------------------------------------------------ armar
 const AA_items = [];
+const AA_cupoTipos = []; // 'transferencias' | 'pedidos': los cupos por hora que este turno pide (una vez cada uno)
 let AA_destinatarios = [];
 let AA_armar = aaPedidos.length > 0;
 if (AA_armar && AA_sd && !avDentroDelTopeDiario(AA_sd, AA_AHORA, aaTope(AA_CFG.topeAvisosDia, 150))) {
@@ -140,7 +150,9 @@ function aaLimpiar(payload, etiqueta) {
     if (!aaSeguro(payload.image.caption)) { payload.image.caption = AA_GENERICO_PIE; limpio = false; AA_errores.push('pie_de_imagen_reemplazado: ' + etiqueta); }
   } else if (payload.type === 'template' && payload.template && Array.isArray(payload.template.components)) {
     for (const c of payload.template.components) {
-      if (!c || !Array.isArray(c.parameters)) continue;
+      // El parámetro de un BOTÓN (la ubicación «lat%2Clon» de `pedido_lista_mapa`) lo arma `avisos.js` solo con números y lo valida con su forma
+      // exacta: no es texto del cliente ni se lee como frase, y cambiarlo por «—» rompería el enlace. Solo se revisan los del cuerpo.
+      if (!c || !Array.isArray(c.parameters) || c.type === 'button') continue;
       c.parameters.forEach((p, i) => {
         if (p && typeof p.text === 'string' && !aaSeguro(p.text)) {
           p.text = i === 0 ? 'consulta de cliente' : '—';
@@ -187,6 +199,15 @@ if (AA_armar) {
     }
     // Un comprobante ya cotejado no se vuelve a avisar (el cliente solo lee «Ya tengo el comprobante»).
     if (tipo === 'comprobante' && datos.resultado === 'ya_cotejado') { AA_errores.push('sin_aviso_ya_cotejado'); continue; }
+    // UN AVISO POR PEDIDO, SALVO QUE CAMBIE EL RESULTADO (decisiones de Andres, 07/11/2026). Lo decide `Plan del turno`, que no pide el aviso de un comprobante cuyo
+    // resultado ya se avisó (`comprobanteAvisadoResultado`, escrito solo con un `wamid` real). Esta es la segunda barrera: si igual llegara, no se arma y NO cuenta como
+    // aviso salido (el cliente nunca lee «ya lo pasé» sin un aviso de este turno).
+    const pedPlan = AA_PLAN.pedido && typeof AA_PLAN.pedido === 'object' ? AA_PLAN.pedido : {};
+    if (tipo === 'comprobante' && Number(pedPlan.comprobanteAvisadoMs) > 0 && String(pedPlan.pedidoId || '') === String(datos.pedidoId || '')
+      && String(pedPlan.comprobanteAvisadoResultado || '') !== '' && String(pedPlan.comprobanteAvisadoResultado) === String(datos.resultado || '')) {
+      AA_errores.push('aviso_de_comprobante_mismo_resultado: ' + String(datos.pedidoId).slice(0, 60));
+      continue;
+    }
     let crudo = null;
     try {
       // `avPlan` trae también los errores (p. ej. `plantilla_no_configurada_<evento>`) y respeta el cupo del día.
@@ -201,6 +222,9 @@ if (AA_armar) {
       crudo = crudo.items;
     }
     if (!Array.isArray(crudo) || !crudo.length) { AA_errores.push('aviso_sin_contenido: ' + tipo); continue; }
+    // Qué cupo por hora cuenta este aviso: la derivación (salvo la del comprobante, exenta como en el tope local) o el pedido/comprobante; la reserva no tiene (su tope es el del día, en el bloque del teléfono).
+    const cupoHora = (tipo === 'transferencia' && !(a.datos && a.datos.comprobante === true)) ? 'transferencias' : ((tipo === 'pedido' || tipo === 'comprobante') ? 'pedidos' : '');
+    let aporto = false;
     for (const it of crudo) {
       if (!it || !it.payload || typeof it.payload !== 'object') { AA_errores.push('aviso_sin_payload: ' + tipo); continue; }
       const numero = AA_PRUEBA ? AA_TEL_PRUEBA : vmDigitos(it.para);
@@ -218,8 +242,28 @@ if (AA_armar) {
         clase: clase, sinAviso: false, tipoAviso: tipo, claveAviso: clave, phoneNumberId: AA_NUMERO_ID,
         waGraphVersion: AA_CFG.waGraphVersion || 'v26.0', from: AA_FROM,
       });
+      aporto = true;
     }
+    if (aporto && cupoHora && AA_cupoTipos.indexOf(cupoHora) < 0) AA_cupoTipos.push(cupoHora);
   }
+}
+
+// El cuerpo de los cupos. Sin teléfono válido, sin autorización de la prueba (`telefonosDePrueba`) o sin nada que avisar: null (`Consumir cupos` manda un cuerpo vacío que el servidor rechaza: falla y se aplica el tope local).
+function aaCuposDelTurno(cantidadAvisos) {
+  if (!cantidadAvisos || !ssTelefonoDeSesion(AA_FROM) || !ssDesdeAutorizado(AA_FROM)) return null;
+  const ejec = ssEjecucion($execution.id);
+  const espacio = ((ssEsPrueba() ? 'vmcp-' : 'vmc-') + ejec.toLowerCase().replace(/[^a-z0-9-]/g, '-')).slice(0, 32);
+  const tope = (v, def) => Math.min(aaTope(v, def), 1000);
+  const cupos = [{ clave: 'avisos', alcance: 'comercio', periodo: 'dia', cantidad: Math.min(Math.max(cantidadAvisos, 1), 20), tope: tope(AA_CFG.topeAvisosDia, 150) }];
+  if (AA_cupoTipos.indexOf('transferencias') >= 0) cupos.push({ clave: 'transferencias', alcance: 'contacto', periodo: 'hora', cantidad: 1, tope: tope(AA_CFG.topeTransferenciasHora, 1) });
+  if (AA_cupoTipos.indexOf('pedidos') >= 0) cupos.push({ clave: 'pedidos', alcance: 'contacto', periodo: 'hora', cantidad: 1, tope: tope(AA_CFG.topePedidosHora, 6) });
+  const idCompromiso = ssIdCompromiso($execution.id, 'cup');
+  const base = { v: 1, espacio: espacio, canal: 'wa', ejecucion: ejec };
+  return {
+    numero: ssNumeroHeader(),
+    cuerpo: { telefono: AA_FROM, sesion: Object.assign({}, base, { accion: 'comprometer', idCompromiso: idCompromiso, versionLeida: 0, estado: null, venceEnMin: 1, cupos: cupos }) },
+    asentar: { telefono: AA_FROM, sesion: Object.assign({}, base, { accion: 'asentar', idCompromiso: idCompromiso }) },
+  };
 }
 
 if (!AA_items.length) {
@@ -229,6 +273,8 @@ if (!AA_items.length) {
     waGraphVersion: AA_CFG.waGraphVersion || 'v26.0', from: AA_FROM, errores: AA_errores, yaAvisado: AA_YA, clavesYa: AA_CLAVES_YA,
   } }];
 }
+// La cantidad del cupo `avisos` cuenta los mensajes de aviso al local (plantilla y detalle); la imagen del comprobante acompaña al aviso y no es otro aviso.
+AA_items[0].cupos = aaCuposDelTurno(AA_items.filter((j) => j.clase !== 'imagen').length);
 AA_items[0].errores = AA_errores;
 AA_items[0].yaAvisado = AA_YA;
 AA_items[0].clavesYa = AA_CLAVES_YA;

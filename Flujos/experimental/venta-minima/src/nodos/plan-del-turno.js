@@ -14,13 +14,13 @@
 // detalle, referencia} | null; `ruta`; `errores`. Además, `anotarReserva` (ver el supuesto 4) y `accion`.
 //
 // LIBRERÍAS QUE LLAMA (contrato §4.2; en la suite van dobles mínimos):
-//   comun: vmCfg, vmPrimero, vmNodo, vmSd, vmSes, vmIdDeBoton, vmLinea, vmRecorte, vmCodigoCorto, vmIdEstable, vmJsonDeGemini, vmSinProhibidas, vmHorarioLegible.
+//   comun: vmCfg, vmPrimero, vmNodo, vmSes, vmReservasSd, vmIdDeBoton, vmLinea, vmRecorte, vmCodigoCorto, vmIdEstable, vmJsonDeGemini, vmSinProhibidas, vmHorarioLegible.
 //   pedido: pdCarta, pdExcluidos, pdNombreCorto, pdBotonAgregar, pdTextoExcluido, pdTextoDeLaCarta, pdValidarExtraccion, pdAgregarLineas, pdResolverForma,
 //     pdQuitarSinDelivery, pdTotal, pdFaltanEntrega, pdResumen, pdLineaCompacta, pdNuevoPedido y
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
 //     pdTextoFaltanEntrega, pdLineasAviso, pdMonto (así los textos del pedido tienen un solo dueño).
 //   reserva: rsValidarExtraccion, rsFusionar, rsValidar, rsPreguntaFaltantes, rsResumen,
-//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto.
+//     rsLineaCompacta, rsFraseDeConfirmacion, rsEsDeManana, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto, prSoloReserva, prPedidoConMensaje, prAreaDelPedido, prTipoDeCampana, prRespuestaDeVariante, prEsJueves, prCuerpoSinBoton.   (C-09) con `d.sinResponder` la bienvenida de la promo sale como UN mensaje con «Escribir al local» y un aviso a recepción (`derivar`).
 //   cobro: cbCaption, cbResumenCorto, cbResultado, cbEstadoParaAviso, cbTextoAlCliente.
 //
 // SUPUESTOS DECLARADOS (los de la tarea T7a, aprobados por la coordinadora):
@@ -37,9 +37,9 @@
 //     {from, nombrePerfil, telefono, nombre, codigo, motivo}, donde `motivo` es lo que escribió
 //     el cliente (lo pide `avisos.js`) y la razón interna va en `ruta`. `resultado` ∈ cuadra |
 //     no_cuadra | ilegible | sin_cotejo | sin_qr | ya_cotejado.
-//  4. `rsAnotar` escribe en `sd`, y este nodo no escribe en `sd`: el plan pide `anotarReserva:
-//     true` y T7b llama `rsAnotar(sd, from, ahoraMs)` cuando `aviso.tipo === 'reserva'`. SIN
-//     ESE LLAMADO EL TOPE DE RESERVAS POR DÍA NO FUNCIONA.
+//  4. `rsAnotar` escribe en el contador de reservas, y este nodo no escribe: `Armar mensajes` llama
+//     `rsAnotar` (sobre la copia del bloque del telefono, PR-4b) cuando el aviso de la reserva SALIO. SIN
+//     ESE LLAMADO EL TOPE DE RESERVAS POR DÍA NO FUNCIONA. Aqui `sd` es la vista `vmReservasSd(ses, from)` del bloque, solo para leer.
 //  5. `botones` = {id, title}. Botón con enlace = {tipo: 'enlace', cuerpo, botones: [{id: '',
 //     title: 'Escribir al local'}], url} (url = enlace al número de recepción).
 //  6. `accion: 'boton'` con `boton: null` = mostrar el paso actual (botón viejo, «sí» suelto,
@@ -119,8 +119,8 @@ const ahora = Number(t.ahoraMs) || Date.now();
 // El ancla de las claves estables (B0): el `ultimoMensajeMs` del estado LEIDO que fija `Decidir turno`. Sin ancla (un
 // doble de prueba, o sin estado previo) se usa `ahora` y la clave deja de ser estable.
 const ancla = Number(d.anclaMs) > 0 ? Number(d.anclaMs) : ahora;
-const sd = vmSd(); // el RESIDUO de PR-4b (tope de reservas por dia); el estado y los pedidos vienen del servidor
 const ses = vmSes(t.from, ahora);
+const sd = vmReservasSd(ses, t.from); // las reservas del dia de ESTE telefono: vienen del bloque del servidor (PR-4b), no de la memoria de n8n
 const en = estadoDe(d.estado);
 const errores = Array.isArray(d.errores) ? d.errores.slice() : [];
 const monedaTxt = /^(bob|bs\.?)?$/i.test(String(cfg.moneda || '').trim()) ? 'Bs' : String(cfg.moneda).trim();
@@ -133,12 +133,15 @@ const perfil = String(t.nombrePerfil || '').trim() ? t.nombrePerfil : (typeof en
 let mensajes = [];
 let condicionados = null;
 let aviso = null;
+let turnoConDatos = false; // este turno trajo líneas o datos de entrega (los fija `aExtraerPedido`; otros turnos lo dejan en false): `niegaLaUbicacion` no se evalúa; el «sin progreso» lo da la clave de `pidioDatos`
 let pedidoGuardar = null;
 let cierre = null;
 let anotarReserva = false;
 let ruta = String(d.accion || '');
 
 despachar();
+// La campaña que se acaba de mostrar (`campanaVista`) vale solo para la pregunta que sigue: cualquier otra acción la borra.
+if (d.accion !== 'promo') delete en.campanaVista;
 // Se guarda el último nombre de perfil visto (solo de un turno de WhatsApp) para el turno del carrito web, que no lo trae.
 if (String(t.nombrePerfil || '').trim()) en.nombrePerfil = delCliente(t.nombrePerfil, 60);
 if (d.accion === 'carta') notaDelPedidoGuardado();
@@ -257,6 +260,8 @@ function estadoDe(e) {
   s.preguntoDejar = s.preguntoDejar === true;
   s.aclaro = s.aclaro === true;
   s.excepDelivery = s.excepDelivery === true;
+  // Lo último que se le pidió al cliente en el delivery a medias (07/11/2026, ubicación obligatoria): la misma petición NO se repite, se pasa con el local.
+  s.pidioDatos = typeof s.pidioDatos === 'string' ? s.pidioDatos.slice(0, 80) : '';
   return s;
 }
 
@@ -270,12 +275,13 @@ function limpiarCarrito() {
   en.catOriginal = null;
   en.carritoAnterior = null;
   en.preguntoDejar = false;
+  en.pidioDatos = '';
 }
 function limpiarConfirmado() {
   en.pedido = null;
   en.ilegibles = 0;
 }
-function limpiarReserva() { en.reserva = null; }
+function limpiarReserva() { en.reserva = null; en.campanaOrigen = ''; }
 // `que` = lo que pide `Decidir turno` al cancelar: 'pedido' (carrito y pedido en espera), 'reserva' o 'todo'.
 function limpiarSegun(que) {
   if (que === 'pedido' || que === 'todo') { limpiarCarrito(); limpiarConfirmado(); }
@@ -386,7 +392,7 @@ function derivar(razon, conservarPaso, extra, sinFraseMenu, textoPropio) {
   const TEXTO_DERIVACION = typeof textoPropio === 'string' && textoPropio ? textoPropio : CUERPO_DERIVACION
     + (conservarPaso ? ' Tu pedido sigue esperando el comprobante.'
       // `sinFraseMenu` (costo del delivery, con el pedido en curso): el carrito se conserva, así que el texto no sugiere que se borra nada.
-      : (sinFraseMenu === true ? (en.carrito.length ? ' Tu pedido sigue guardado.' : '') : ' Para volver al inicio, escribe «menú».'))
+      : (sinFraseMenu === true ? (en.carrito.length ? ' Tu pedido sigue guardado.' : '') : ' Para volver al inicio, escribe «inicio».'))
     // Un pedido guardado por «Cambiar algo» sigue ahí aunque se derive: se dice cómo recuperarlo (se cumple por código en `Decidir turno`).
     + (!conservarPaso && en.carritoAnterior ? ' Tu pedido anterior sigue guardado: escribe «dejarlo como estaba» para recuperarlo.' : '');
   ruta = 'transferir:' + razon;
@@ -515,16 +521,20 @@ function cartaDelNegocio() {
 // la carta sale como UN mensaje con el boton «Ver la carta» que abre la pagina (el servidor recalcula los precios y escribe el
 // pedido; el carrito vuelve por `aCarrito`). Sin enlace —la consola no lo dio, el catalogo esta apagado, un 409, un timeout o una
 // URL que no pasa la validacion— sale la carta en texto de siempre: solo se ofrece lo que se cumple. Un solo mensaje en los dos casos.
-function mensajesDeCarta(enlace) {
+function mensajesDeCarta(enlace, area) {
   const carta = cartaDelNegocio();
   if (!carta.length) return derivar('carta sin cargar');
   const crudo = enlace === undefined ? cfg.catalogoWebEnlace : enlace;
   const url = urlDelCatalogo(crudo);
   if (url) {
+    // «Hacer un pedido» de la campaña de pedido (`m|pedido|promos`): el MISMO enlace de la carta con `?area=<área del negocio>` (la web ya filtra por área; si el área no
+    // existe abre «Todo»). Un enlace que ya trae `?` o `#` se deja como está (no se inventa una URL). El área sale del dato del negocio, nunca del botón.
+    const conArea = area && !/[?#]/.test(url) && urlDelCatalogo(url + '?area=' + encodeURIComponent(area)) ? url + '?area=' + encodeURIComponent(area) : url;
+    const titulo = conArea !== url ? 'Ver las promos' : 'Ver la carta';
     return [{
       tipo: 'enlace', catalogo: true,
-      cuerpo: '¡Con gusto! Toca «Ver la carta», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «menú».',
-      botones: [{ id: '', title: 'Ver la carta' }], url: url,
+      cuerpo: '¡Con gusto! Toca «' + titulo + '», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «inicio».',
+      botones: [{ id: '', title: titulo }], url: conArea,
     }];
   }
   if (typeof crudo === 'string' && crudo.trim() !== '') errores.push('catalogo_url_invalida');
@@ -542,7 +552,8 @@ function mensajesDeCarta(enlace) {
 }
 
 function aCarta() {
-  const m = mensajesDeCarta();
+  const b = d.boton && typeof d.boton === 'object' && Array.isArray(d.boton.partes) ? d.boton : null;
+  const m = mensajesDeCarta(undefined, b && b.tipo === 'm' && b.partes[0] === 'pedido' && b.partes[1] === 'promos' ? prAreaDelPedido(cfg) : '');
   if (!m) return;
   // Después de la carta, cualquier texto es un pedido (aunque no diga «quiero»).
   en.paso = 'pedido';
@@ -609,7 +620,58 @@ function aConsulta(clave) {
 
 function aPromo() {
   // Con un comprobante en espera, el texto de una campaña NO saca del cobro: se recuerda el comprobante (el paso y el pedido se conservan).
-  if (en.paso === 'esperando_comprobante' && en.pedido) return aRecordatorio();
+  // El ARTE de una campaña mandado con el QR pendiente (07/11/2026): UN solo mensaje, la promoción SIN sus botones (no valen con un QR pendiente: solo se ofrece lo
+  // que se cumple) y, debajo, el recordatorio del comprobante con «Reenviar QR» y «Cancelar pedido». El paso, el pedido y el cobro no se tocan.
+  if (en.paso === 'esperando_comprobante' && en.pedido) return d.via === 'imagen_con_qr_pendiente' ? promoConRecordatorio() : aRecordatorio();
+  // Campaña de solo reserva: su respuesta REEMPLAZA al saludo, con «Reservar mesa» como único botón; acepta la reserva cualquier día.
+  const tipoCampana = prTipoDeCampana(d.campana, cfg);
+  // C-12 (06/11): el «Jueves de +2» un día que NO es jueves (La Paz, calculado aquí) se evalúa ANTES que cualquier variante: solo se dice que vale los jueves en el local,
+  // con los botones de inicio de siempre (sin «Reservar mesa» propio de la campaña ni fecha) y SIN marcar el origen de campaña. Con «¿qué incluye?» se da el detalle del
+  // combo sin la invitación a reservar. La pregunta específica del pie de foto se pierde fuera del jueves (declarado). Sin el dato del negocio rige lo de siempre.
+  const noJueves = tipoCampana === 'B' ? vmLinea(cfg.campanaReservaNoJueves, 600) : '';
+  if (noJueves && !prEsJueves(ahora) && prSoloReserva(d.campana, cfg)) {
+    const detalle = d.variante === 'detalle' ? prCuerpoSinBoton(cfg.campanaReservaDetalle) : '';
+    if (en.paso === 'inicio' || en.paso === 'menu' || d.variante !== 'detalle') irA('menu');
+    mensajes = [conMenu(detalle || noJueves)];
+    return;
+  }
+  // Una pregunta específica (adenda de campañas, 06/11): «¿qué incluye?» (B) o «¿por qué dice solo delivery?» (A) se contesta con el dato del negocio y el botón de la
+  // campaña, SIN cambiar el paso ni el pedido en curso. Sin ese dato, rige el mensaje de la promoción. Cuenta como el mensaje que reemplaza al saludo: 0 agregados.
+  if (d.variante === 'detalle' || d.variante === 'solo_delivery') {
+    const r = prRespuestaDeVariante(d.campana, cfg, d.variante);
+    if (r) {
+      if (en.paso === 'inicio') en.paso = 'menu';
+      en.campanaVista = tipoCampana;
+      if (tipoCampana === 'B') en.campanaOrigen = 'B';
+      mensajes = [{ tipo: 'botones', cuerpo: r.cuerpo, botones: r.botones, sinMenu: true }];
+      return;
+    }
+  }
+  // C-09 (06/11/2026): la pregunta del cliente que el mensaje de la promo no contesta se pasa con el local: la bienvenida de la promo + «Escribir al local» en UN solo
+  // mensaje (0 agregados) y el aviso de transferencia de siempre. El cuerpo va SIN la frase que apunta al botón de la campaña (aquí el único botón es «Escribir al local»).
+  // Sin promesas («te avisamos…»): el cliente escribe él al local.
+  const conPregunta = (cuerpo) => {
+    derivar('pregunta sobre una promoción que el mensaje no contesta', false, undefined, false, prCuerpoSinBoton(cuerpo) + ' Tu pregunta la ve mejor nuestro equipo: toca «Escribir al local».');
+    en.campanaVista = tipoCampana;
+  };
+  if (tipoCampana === 'B') en.campanaOrigen = 'B';
+  const soloReserva = prSoloReserva(d.campana, cfg);
+  if (soloReserva && d.sinResponder === true) return conPregunta(soloReserva.cuerpo);
+  if (soloReserva) {
+    irA('menu');
+    en.campanaVista = tipoCampana;
+    mensajes = [{ tipo: 'botones', cuerpo: soloReserva.cuerpo, botones: soloReserva.botones, sinMenu: true }];
+    return;
+  }
+  // Campaña de pedido con mensaje del negocio (Tortas mexicanas): reemplaza al saludo, con «Hacer un pedido» como único botón.
+  const pedidoMsg = prPedidoConMensaje(d.campana, cfg);
+  if (pedidoMsg && d.sinResponder === true) return conPregunta(pedidoMsg.cuerpo);
+  if (pedidoMsg) {
+    irA('menu');
+    en.campanaVista = tipoCampana;
+    mensajes = [{ tipo: 'botones', cuerpo: pedidoMsg.cuerpo, botones: pedidoMsg.botones, sinMenu: true }];
+    return;
+  }
   const carta = cartaDelNegocio();
   const ficha = prFicha(d.campana, carta, ahora);
   const tx = ficha ? prTexto(ficha, cfg) : null;
@@ -622,6 +684,25 @@ function aPromo() {
   mensajes = [{ tipo: 'botones', cuerpo: tx.cuerpo, botones: tx.botones }];
 }
 
+// La promoción reconocida en la imagen, en texto y sin lo que apunta a sus botones, delante del recordatorio del comprobante (un mensaje, 0 agregados). Si no cabe
+// en un mensaje con botones o no hay texto de la promoción, sale solo el recordatorio de siempre.
+function promoConRecordatorio() {
+  aRecordatorio();
+  ruta = 'promo:imagen_con_qr_pendiente';
+  const tipoCampana = prTipoDeCampana(d.campana, cfg);
+  const soloReserva = prSoloReserva(d.campana, cfg);
+  const noJueves = tipoCampana === 'B' && soloReserva && !prEsJueves(ahora) ? vmLinea(cfg.campanaReservaNoJueves, 600) : '';
+  const base = soloReserva || prPedidoConMensaje(d.campana, cfg);
+  let promo = noJueves ? prCuerpoSinBoton(noJueves) : (base ? prCuerpoSinBoton(base.cuerpo) : '');
+  if (!promo) {
+    const ficha = prFicha(d.campana, cartaDelNegocio(), ahora);
+    const tx = ficha ? prTexto(ficha, cfg) : null;
+    promo = tx ? tx.cuerpo : '';
+  }
+  const m = mensajes.length === 1 ? mensajes[0] : null;
+  if (promo && m && m.tipo === 'botones' && (promo + '\n\n' + m.cuerpo).length <= 1000) mensajes = [Object.assign({}, m, { cuerpo: promo + '\n\n' + m.cuerpo })];
+}
+
 function aImagenSinPendiente() {
   const cuerpo = '¡Gracias por la imagen! Por aquí solo leo comprobantes de un pedido con QR, y ahora no tienes ninguno pendiente. ¿Qué te gustaría hacer?';
   if (en.paso === 'inicio') en.paso = 'menu';
@@ -631,8 +712,8 @@ function aImagenSinPendiente() {
 // Un audio que no se entendió, un sticker, un contacto…: se pide que lo escriba, con la carta a un toque.
 function aMedioNoLeido() {
   const cuerpo = d.motivo === 'audio'
-    ? 'No pude escuchar bien ese mensaje 😅. ¿Me lo escribes?'
-    : 'No pude entender bien ese mensaje 😅. ¿Me lo escribes?';
+    ? 'No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?'
+    : 'No pude entender bien ese mensaje 😅. ¿Me lo escribes o lo repites?';
   mensajes = [conBotones(cuerpo, pedidosOn ? [{ id: vmIdDeBoton('m', 'pedido'), title: 'Ver la carta' }] : [])];
 }
 
@@ -763,11 +844,14 @@ function tomarUbicacion() {
   const u = t.ubicacion;
   if (!u || typeof u !== 'object' || typeof u.latitud !== 'number' || typeof u.longitud !== 'number') return;
   if (!isFinite(u.latitud) || !isFinite(u.longitud) || Math.abs(u.latitud) > 90 || Math.abs(u.longitud) > 180) return;
-  if (en.paso.indexOf('pedido') !== 0 || en.entrega.entrega !== 'delivery') return;
+  // Tras derivar por falta de ubicación el paso queda en `menu` con el carrito de delivery guardado: el pin tardío se acepta y retoma el resumen.
+  const retoma = en.paso === 'menu' && en.carrito.length > 0 && !en.pendiente.length && en.entrega.entrega === 'delivery' && !_pdUbicacion(en.entrega.ubicacion);
+  if ((en.paso.indexOf('pedido') !== 0 && !retoma) || en.entrega.entrega !== 'delivery') return;
   // La misma regla que el servidor, sobre el valor redondeado: el punto nulo (0, 0) de un GPS sin fijar no es una ubicación.
   const r = { lat: Math.round(u.latitud * 1e5) / 1e5, lng: Math.round(u.longitud * 1e5) / 1e5 };
   if (!_pdUbicacion(r)) return;
   en.entrega.ubicacion = r;
+  return retoma;
 }
 
 // Vuelve a mostrar el paso actual (botón viejo, «sí» suelto, ubicación, pregunta pendiente).
@@ -775,7 +859,9 @@ function mostrarPaso() {
   ruta = 'boton:' + (d.motivo || 'paso_actual');
   if (d.motivo === 'dejar_o_elegir') return preguntarDejarOElegir();
   if (d.motivo === 'ver_pedido') return verPedido();
-  if (d.motivo === 'ubicacion') tomarUbicacion();
+  if (d.motivo === 'ubicacion' && tomarUbicacion() === true) return mostrarPedido(); // +1 mensaje solo aquí: el resumen tras la derivación
+  // «Confirmar pedido» (un botón del resumen) sin la ubicación compartida NUNCA confirma: con el delivery a medias se pasa con el local (07/11/2026).
+  if (d.motivo === 'boton_viejo' && esConfirmarSinUbicacion()) return derivarSinUbicacion();
   const p = en.paso;
   if (p === 'inicio' || p === 'menu') return aMenu();
   if (p === 'esperando_comprobante') return aRecordatorio();
@@ -901,15 +987,31 @@ function siguientePasoPedido() {
     const faltan = pdFaltanEntrega(en.entrega, perfil);
     if (faltan.length) {
       en.paso = 'pedido_datos';
-      // PR-A 05/10: la dirección se pide escrita O con la ubicación (botón nativo de WhatsApp); es el MISMO mensaje que ya salía (0 agregados) y solo
-      // aquí, donde `tomarUbicacion` acepta la ubicación. `Armar mensajes` lo manda con el botón y, si no cabe o falla, en texto sin nombrarlo.
+      // 07/11/2026 (Andres): en delivery son obligatorias la dirección ESCRITA y la ubicación compartida (pin nativo de WhatsApp). Sin ubicación no se confirma.
+      // El mensaje de pedir los datos sale UNA vez; si el cliente escribe algo que no aporta nada, sale UN recordatorio distinto y más corto; a la tercera, o si dice que no
+      // puede compartirla, se pasa con el local (aviso + «Escribir al local», el mecanismo de siempre). Así la misma petición nunca se repite y no hay bucle.
+      // `en.pidioDatos` guarda «lo que faltaba#veces»; cualquier progreso (otro dato) cambia la clave y reinicia la cuenta. Es un mensaje por turno: 0 agregados.
+      // La huella del carrito entra en la clave: agregar o quitar productos es progreso y no cuenta como insistir sin el pin.
+      const clave = faltan.join('+') + (en.entrega.referencia ? '+ref' : '') + '+c' + String(vmHuella(en.carrito.map((l) => String(l.id) + 'x' + String(l.cantidad)).join(';')));
+      const sinUbicacion = faltan.indexOf('ubicacion') >= 0;
+      const previo = String(en.pidioDatos || '').split('#');
+      const veces = previo[0] === clave ? (Number(previo[1]) || 1) + 1 : 1;
+      if (sinUbicacion && previo[0] && ((previo[0] === clave && veces >= 3) || (!turnoConDatos && niegaLaUbicacion(vmNorm(d.texto))))) return derivarSinUbicacion();
+      en.pidioDatos = clave + '#' + veces;
+      if (!sinUbicacion) return [texto(pdTextoFaltanEntrega(faltan))];
+      // `Armar mensajes` lo manda con el botón nativo y, si no cabe o falla, en texto sin nombrarlo.
+      if (veces >= 2) {
+        const falta = faltan.length > 1 ? 'Todavía necesito tu dirección escrita y tu ubicación.' : 'Todavía necesito tu ubicación.';
+        return [{ tipo: 'ubicacion', cuerpo: falta + ' Compártela con el botón.', cuerpoSinBoton: falta + ' Compártela desde el clip de WhatsApp, opción «Ubicación».' }];
+      }
       const base = pdTextoFaltanEntrega(faltan);
-      return [{ tipo: 'ubicacion', cuerpo: base + ' Escríbela aquí o comparte tu ubicación con el botón.',
-        cuerpoSinBoton: base + ' Escríbela aquí o comparte tu ubicación.' }];
+      return [{ tipo: 'ubicacion', cuerpo: base + ' con el botón.',
+        cuerpoSinBoton: base + ' desde el clip de WhatsApp, opción «Ubicación».' }];
     }
   }
   if (!en.entrega.nombre) en.entrega.nombre = vmLinea(perfil, 60);
   en.paso = 'pedido_confirmar';
+  en.pidioDatos = '';
   en.carritoAnterior = null; // ya hay un pedido nuevo: el de antes de «Cambiar algo» quedó reemplazado
   en.preguntoDejar = false;
   return [{ tipo: 'botones', cuerpo: pdResumen(en.carrito, en.entrega, { moneda: monedaTxt, nombrePerfil: perfil, maxDetalle: 3000 })
@@ -919,6 +1021,36 @@ function siguientePasoPedido() {
     { id: vmIdDeBoton('p', 'confirmar'), title: 'Confirmar pedido' },
     { id: vmIdDeBoton('p', 'cambiar'), title: 'Cambiar algo' },
   ] }];
+}
+
+// El botón tocado es «Confirmar pedido» y el delivery sigue sin la ubicación compartida (el botón es de un resumen anterior: ya no hay resumen que confirmar).
+function esConfirmarSinUbicacion() {
+  if (en.paso !== 'pedido_datos' || en.entrega.entrega !== 'delivery' || !en.carrito.length || en.pendiente.length) return false;
+  if (pdFaltanEntrega(en.entrega, perfil).indexOf('ubicacion') < 0) return false;
+  const id = t.boton;
+  const b = id && typeof id === 'object' ? id : vmLeerBoton(String(id || ''));
+  return !!b && b.tipo === 'p' && String(b.partes && b.partes[0]) === 'confirmar';
+}
+// El cliente dice que no puede o no quiere compartir la ubicación («no puedo compartir la ubicación», «no tengo gps»): solo si el texto habla de la ubicación.
+function niegaLaUbicacion(n) {
+  if (pareceDireccion(n)) return false; // un texto con rasgos de dirección es un dato, no una negativa
+  // Acotado a pocas palabras entre el verbo y la ubicación: «ahorita no puedo, en un rato te mando la ubicación» promete enviarla, no la niega.
+  return /\bno (puedo|quiero|logro|me deja|me sale) (\w+ ){0,2}(compart|envi|mand|activ)\w* (\w+ ){0,3}(ubicacion|gps|pin|mapa)\b/.test(n)
+    || /\bno (puedo|quiero|me deja|me sale|me funciona|funciona) (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
+    // «no tengo» solo si falta con qué mandarla (datos, internet, saldo, señal, megas) «para/como» + verbo de envío; «no tengo saldo, te la mando después» NO la niega.
+    || /\bno tengo (datos|internet|saldo|senal|megas) (para|como) (\w+ ){0,1}(compart|envi|mand)\w* (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
+    || /\bno tengo (\w+ )?(gps|ubicacion)\b/.test(n)
+    // «no sé» solo con el INFINITIVO de envío o de uso («no sé cómo mandar la ubicación», «no sé usar el gps») o «dónde está/queda»; el «se» reflexivo de «no se preocupe, le mando…» no es una negativa.
+    || /\bno se (como |donde )?(\w+ ){0,2}(compartir|enviar|mandar|usar|activar)\b (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
+    || /\bno se donde (esta|queda) (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
+    || /\bno encuentro (\w+ ){0,4}(ubicacion|gps)\b/.test(n)
+    || /\bsin (gps|ubicacion)\b/.test(n);
+}
+// Sin ubicación el delivery no se confirma: lo único que se ofrece es pasar con el local (aviso + «Escribir al local»). El carrito no se toca.
+function derivarSinUbicacion() {
+  en.pidioDatos = '';
+  return derivar('delivery sin ubicación compartida', false, undefined, false,
+    'Para enviarte el pedido por delivery necesito tu ubicación y por aquí no puedo continuar sin ella 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo.');
 }
 
 function mostrarPedido() {
@@ -999,6 +1131,7 @@ function aExtraerPedido() {
     x.direccion = '';
   }
   const datosEntrega = ['entrega', 'direccion', 'referencia', 'nombre'].some((k) => x[k]);
+  turnoConDatos = lineas.length > 0 || datosEntrega;
   // Una marca `quiereHablar` del modelo sobre un texto que NO parece un dato de entrega («necesito ayuda», «tengo un problema con mi pedido») deriva SIEMPRE:
   // el texto libre no se adopta como dirección o referencia (revisión de seguridad del PR #435, M1).
   // (La primera vez, sin una petición explícita, sale UNA aclaración con «Escribir al local» —o la pregunta de entrega—; con una petición explícita o al insistir, deriva.)
@@ -1103,6 +1236,8 @@ function hablaDeDelivery(n) { return /\b(delivery|envio|envios|enviar\w*|envien\
 // «que lo reciba alguien», «cualquier persona lo recibe») ni «es para una persona». Sí: «ayúdenme», «auxilio».
 function sinCortesias(n) {
   let t = String(n).replace(/\b(no hay|sin|ningun|ninguna)\s+(problema|problemas|queja|quejas)\b/g, ' ');
+  // «no tengo problema» es cortesía solo si sigue gracias/ahí/ya o termina el texto; «no, tengo problemas con el pago» es un pedido de ayuda.
+  t = t.replace(/\bno tengo (problema|problemas)(?= (gracias|ahi|ya|dale|perfecto|esta bien|con esperar)\b|$)/g, ' ');
   if (/\b(recib\w*|recog\w*|recoj\w*|retir\w*)\b/.test(t)) t = t.replace(/\b(alguien|persona|personas)\b/g, ' ');
   t = t.replace(/\bpara (una|un|1|dos|tres|cuatro) (persona|personas)\b/g, ' ');
   return t;
@@ -1171,14 +1306,16 @@ function puedeSerDatoDeEntrega(crudo, n) {
 // La dirección que falta, tomada del texto: solo si el texto puede ser un dato, tiene rasgos de DIRECCIÓN (un dígito o una vía fuerte: no «portero», «cuadra», «frente»)
 // y, saneado, es una dirección válida (≥5 caracteres, letras y dos palabras). Si no alcanza, NO se guarda nada: se vuelve a pedir (y a la segunda vez seguida se pasa con el
 // local). Una referencia igual a la dirección se quita (sin duplicar).
+// Con la ubicación obligatoria, «falta algo» ya no significa «falta la dirección»: aquí solo importa la dirección escrita.
+function faltaLaDireccion() { return pdFaltanEntrega(en.entrega, perfil).indexOf('direccion') >= 0; }
 function adoptarDireccionDelTexto() {
-  if (en.entrega.entrega !== 'delivery' || !en.carrito.length || en.pendiente.length || !pdFaltanEntrega(en.entrega, perfil).length) return false;
+  if (en.entrega.entrega !== 'delivery' || !en.carrito.length || en.pendiente.length || !faltaLaDireccion()) return false;
   const crudo = String(d.texto || '');
   const n = vmNorm(crudo);
   if (!puedeSerDatoDeEntrega(crudo, n) || !pareceDireccion(n) || crudo.trim().length < 5) return false;
   const antes = en.entrega.direccion;
   en.entrega.direccion = textoDeDato(crudo, 160);
-  if (pdFaltanEntrega(en.entrega, perfil).length) { en.entrega.direccion = antes; return false; }
+  if (faltaLaDireccion()) { en.entrega.direccion = antes; return false; }
   if (vmNorm(en.entrega.referencia) === vmNorm(en.entrega.direccion)) en.entrega.referencia = '';
   return true;
 }
@@ -1192,7 +1329,7 @@ function adoptarTextoLibre() {
   const crudo = String(d.texto || '');
   const n = vmNorm(crudo);
   if (!puedeSerDatoDeEntrega(crudo, n)) return false;
-  if (pdFaltanEntrega(en.entrega, perfil).length) {
+  if (faltaLaDireccion()) {
     if (adoptarDireccionDelTexto()) {
       ruta = 'boton:direccion_del_texto';
       mostrarPedido();
@@ -1278,6 +1415,8 @@ function confirmarPedido() {
   if (cambio) return mostrarPedido();
   const completo = en.pendiente.length === 0 && en.carrito.length > 0 && en.entrega.entrega
     && !(en.entrega.entrega === 'delivery' && pdFaltanEntrega(en.entrega, perfil).length);
+  // «Confirmar pedido» sin la ubicación compartida NUNCA confirma: se pasa con el local (ya se la pidió el mensaje de los datos).
+  if (!completo && en.entrega.entrega === 'delivery' && en.carrito.length && !en.pendiente.length && pdFaltanEntrega(en.entrega, perfil).indexOf('ubicacion') >= 0) return derivarSinUbicacion();
   if (!completo) return mostrarPedido();
   const ped = armarPedido();
   if (!ped) {
@@ -1470,11 +1609,24 @@ function aComprobante() {
     }
     return;
   }
+  // UN AVISO POR PEDIDO, SALVO QUE CAMBIE EL RESULTADO (decisiones de Andres, 07/11/2026): si el aviso de un comprobante de ESTE pedido ya salió con este MISMO
+  // resultado (`comprobanteAvisadoResultado`, que `Armar mensajes` escribe solo con un `wamid` real), no se avisa de nuevo. El comprobante se guardó y se cotejó igual;
+  // el cliente recibe UN mensaje que NO dice que se pasó (en este turno no salió ningún aviso), con el botón para escribir al local. Con otro resultado, aviso de actualización.
+  if (Number(ped.comprobanteAvisadoMs) > 0 && String(ped.comprobanteAvisadoResultado || '') === resultado) {
+    pedidoGuardar = Object.assign({}, ped, { resultado: resultado, estado: cbEstadoParaAviso(resultado), diferencias: diferencias, mediaId: String(t.mediaId || ''), cierreId: cierreId });
+    mensajes = [enlace('Gracias por enviarlo. Da el mismo resultado que el comprobante anterior de tu pedido #' + ped.codigo
+      + ', que nuestro equipo ya tiene; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.')];
+    limpiarConfirmado();
+    irA('menu');
+    return;
+  }
   const sinAviso = cbTextoAlCliente(resultado, Object.assign({ avisoSalio: false }, base));
   pedidoGuardar = Object.assign({}, ped, {
     resultado: resultado, estado: cbEstadoParaAviso(resultado), diferencias: diferencias, mediaId: String(t.mediaId || ''), cierreId: cierreId,
   });
-  aviso = { tipo: 'comprobante', datos: Object.assign(datosDePedido(pedidoGuardar, resultado, diferencias), { mediaId: String(t.mediaId || '') }) };
+  // La imagen que el filtro tomó por un anuncio y `Decidir turno` no confirmó (07/11/2026): ni se guardó ni se cotejó, y el aviso lo dice así (`sinGuardar`).
+  const sinGuardar = d.motivo === 'anuncio_no_confirmado' && !vmNodo('Cotejar en el servidor');
+  aviso = { tipo: 'comprobante', datos: Object.assign(datosDePedido(pedidoGuardar, resultado, diferencias), { mediaId: String(t.mediaId || '') }, sinGuardar ? { sinGuardar: true } : {}) };
   condicionados = { siSalio: [mensajeDeCb(conAviso)], siNoSalio: [mensajeDeCb(sinAviso)] };
   mensajes = [];
   limpiarConfirmado();
@@ -1485,8 +1637,11 @@ function aComprobante() {
 // RESERVA
 // =============================================================================================
 function limitesReserva() {
+  // El horario de las RESERVAS (07/11/2026): el propio del negocio si lo tiene (`horarioReservas`), nunca el «abierto/cerrado» de los pedidos. Un dato que no sirve
+  // cae al horario de pedidos y queda anotado en `errores` (una vez por turno), para que se vea en el resumen del turno.
+  if (rsHorarioDeReservasInvalido(cfg.horarioReservas, cfg.horario) && errores.indexOf('horario_reservas_invalido') < 0) errores.push('horario_reservas_invalido');
   return {
-    horario: cfg.horario, zonas: lista(cfg.zonasReserva), maxPersonas: cfg.maxPersonasReserva,
+    horario: rsHorarioDeReservas(cfg.horarioReservas, cfg.horario), zonas: lista(cfg.zonasReserva), maxPersonas: cfg.maxPersonasReserva,
     anticipacionMin: cfg.anticipacionReservaMin, maxDias: cfg.maxDiasReserva,
   };
 }
@@ -1576,7 +1731,11 @@ function enviarReserva() {
     return (mensajes = [enlace('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.')]);
   }
   const diaLleno = !rsDentroDelTope(sd, t.from, ahora, Number(cfg.topeReservasDia));
-  const reserva = diaLleno ? Object.assign({}, v.reserva, { diaLleno: true }) : v.reserva;
+  // C-13: la reserva que viene de la campaña «B» lleva el nombre de la campaña (dato del negocio) en su aviso; sale del estado, nunca de lo que escribe el cliente.
+  const nombreCampana = en.campanaOrigen === 'B' ? vmLinea(cfg.campanaReservaNombre, 60) : '';
+  // Reserva de mañana (antes de `reservaDesde`): se acepta; el aviso lleva la nota y la confirmación, el texto del negocio (solo si el aviso salió).
+  const manana = cfg.reservaDesde ? rsEsDeManana(v.reserva, cfg.reservaDesde) : '';
+  const reserva = Object.assign({}, v.reserva, diaLleno ? { diaLleno: true } : {}, nombreCampana ? { marcaOrigen: 'Campaña: ' + nombreCampana } : {}, manana ? { reservaManana: manana } : {});
   // La referencia y el codigo salen del ancla y de los datos de la reserva (no del reloj): un doble toque en «Reservar»
   // da el mismo codigo y la misma referencia de cierre, y el servidor cuenta UN cierre.
   const clave = vmIdEstable('res', t.from, v.reserva, ancla, ahora); // con la reserva SIN la marca `diaLleno`: el código no cambia entre reintentos
@@ -1588,7 +1747,8 @@ function enviarReserva() {
   // Aviso al local SALIÓ: «Anotamos tu reserva» (nunca «reservamos tu…»: las tres redes lo rechazan; y `AM_PASE` lo atrapa si el aviso NO
   // salió). Sin promesa de contacto. Aviso NO salió: texto honesto con «Escribir al local» (empieza con «No pude»: `AM_NEGADO`).
   const dir = vmLinea(cfg.direccion, 200).replace(/[.\s]+$/, '');
-  const confirmacion = '¡Listo, ' + nombre + '! Anotamos tu reserva para ' + rsFraseDeConfirmacion(reserva) + '.' + (dir ? ' Te esperamos en ' + dir + '.' : ' Te esperamos.');
+  const confirmacion = '¡Listo, ' + nombre + '! Anotamos tu reserva para ' + rsFraseDeConfirmacion(reserva) + '.' + (dir ? ' Te esperamos en ' + dir + '.' : ' Te esperamos.')
+    + (manana && cfg.reservaMananaTexto ? ' ' + cfg.reservaMananaTexto : '');
   // «Ver ubicación» (Google Maps) solo con un enlace VÁLIDO (`vmEnlaceDeMapa`, la regla del servidor); sin él, la misma confirmación en texto, sin botón.
   const mapa = vmEnlaceDeMapa(cfg.direccionMaps);
   condicionados = {

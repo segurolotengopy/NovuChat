@@ -19,7 +19,7 @@ export const PRUEBA = leerFlujo('casa-bermejo.prueba.json');
 export const PID = '59100000042'; // phone_number_id del número del negocio
 export const ANA = '59100000011';
 export const BETO = '59100000022';
-export const EXTRANJERO = '5491100000033'; // prefijo 54: fuera de los prefijos permitidos
+export const EXTRANJERO = '5511900000033'; // prefijo 55 (Brasil): fuera de los prefijos permitidos (591 y 54)
 export const REC = '59100000031'; // recepción
 export const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
 export const SUSPENDIDO = 'En este momento no podemos atenderte por este medio. Gracias por escribirnos.';
@@ -89,7 +89,7 @@ export const catalogoOk = (extra: J = {}, items?: J[]): { statusCode: number; bo
 export const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({
   statusCode: 200,
   body: {
-    tenantId: 'casa-bermejo', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Tienda de prueba' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, atencion: { estado: 'normal' },
+    tenantId: 'casa-bermejo', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Tienda de prueba' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591', '54'] }, atencion: { estado: 'normal' },
     catalogo: CATALOGO.map((c) => ({ ...c })),
     venta: { mediaIdQr: MEDIA_QR },
     cobroReal: { nombreCuenta: 'Cuenta del comercio', banco: 'Banco' },

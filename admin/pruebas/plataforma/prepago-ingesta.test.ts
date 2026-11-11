@@ -197,6 +197,9 @@ describe('Modo observación: la bandera apagada no corta a nadie aunque deba', (
     const r = await entrante('591000000201');
     expect(r.codigo).toBe(200);
     expect(r.cuerpo['servicio']).toMatchObject({ estado: 'observado', motivo: 'sin_pago', fase: 'cortado' });
+    // En observación SÍ se cuenta, así que la conversación es nueva y trae su ancla.
+    expect(r.cuerpo['atencion']).toMatchObject({ conversacionNueva: true });
+    expect(typeof (r.cuerpo['atencion'] as Record<string, unknown>)['conversacionDesde']).toBe('string');
     expect(await metricas()).toMatchObject({ conversaciones: 1, mensajes: 1, entrantes: 1 });
     const c = await cuenta();
     expect(c['corte']).toMatchObject({ motivo: 'sin_pago', aplicado: false, perdidas: 1, mensajesPerdidos: 1 });
@@ -260,6 +263,8 @@ describe('Corte aplicado: la bandera del tenant encendida', () => {
     const r = await entrante('591000000301');
     expect(r.codigo).toBe(200);
     expect(r.cuerpo['servicio']).toMatchObject({ estado: 'cortado', motivo: 'sin_pago', fase: 'cortado' });
+    // CRM por conversación: un corte aplicado no abre conversación cobrada.
+    expect(r.cuerpo['atencion']).toMatchObject({ conversacionDesde: null, conversacionNueva: false });
     expect(await metricas()).toEqual(antes);
     expect(await mensajesDe('591000000301')).toBe(1);
     const conv = await conversacion('591000000301');

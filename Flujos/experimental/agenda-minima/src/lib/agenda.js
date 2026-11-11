@@ -295,7 +295,9 @@ function huecosDelDia(p) {
 function ofertaDeHuecos(p) {
   const cfg = p.cfg || {};
   const maximo = Number(p.maximo) > 0 ? Math.floor(Number(p.maximo)) : 3;
-  const duracion = Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30;
+  // `p.duracionMin` (dos hermanos: dos citas seguidas = 60 min libres contiguos) reemplaza la duracion por defecto.
+  const duracion = Number(p.duracionMin) > 0 ? Number(p.duracionMin)
+    : (Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30);
   const hoy = fechaLocal(p.ahoraMs);
   const limite = Number(cfg.anticipacionMaximaDias) > 0 ? sumarDias(hoy, Math.floor(Number(cfg.anticipacionMaximaDias))) : null;
   const preferida = _agmEsFecha(p.fechaPreferida) ? p.fechaPreferida : null;
@@ -379,7 +381,9 @@ function hayCruce(p) {
   const inicioMs = msDe(p.inicio);
   const finMs = msDe(p.fin);
   if (Number.isNaN(inicioMs) || Number.isNaN(finMs) || !(finMs > inicioMs)) return { cruce: true, con: [] };
-  const con = ocupados(p.eventos, { ignorarIds: p.exceptoId ? [p.exceptoId] : [] })
+  // `exceptoIds` (lista): varios eventos propios, como las dos citas de dos hermanos.
+  const excepto = (Array.isArray(p.exceptoIds) ? p.exceptoIds : []).concat(p.exceptoId ? [p.exceptoId] : []).filter(Boolean).map(String);
+  const con = ocupados(p.eventos, { ignorarIds: excepto })
     .filter((o) => _agmSeCruza(o, inicioMs, finMs)).map((o) => o.id);
   return { cruce: con.length > 0, con: con };
 }
@@ -450,6 +454,28 @@ function descripcionDeLaCita(p) {
   if (nombres.length) lineas.push((nombres.length > 1 ? 'Pacientes: ' : 'Paciente: ') + nombres.join(' / '));
   lineas.push('Agendado por NovuChat.');
   return lineas.join('\n');
+}
+
+// Dos hermanos = DOS citas seguidas, una por hermano (Andres, 07/11/2026): cada una con su titulo y su
+// descripcion de UN paciente, de modo que cancelar o mover una no toca la otra. La 2a empieza donde termina
+// la 1a. Con un paciente sale una sola cita. `inicio` es ISO local; `duracionMin` es la de CADA cita.
+function citasDeHermanos(p) {
+  const pacientes = _agmLista(p.pacientes).filter((x) => x && _agmNombreCompleto(x));
+  const dur = Number(p.duracionMin) > 0 ? Number(p.duracionMin) : 30;
+  const out = [];
+  let desdeMs = msDe(p.inicio);
+  if (Number.isNaN(desdeMs)) return out;
+  for (const uno of pacientes) {
+    const finMs = desdeMs + dur * 60000;
+    out.push({
+      inicio: isoLocal(fechaLocal(desdeMs), horaLocal(desdeMs)),
+      fin: isoLocal(fechaLocal(finMs), horaLocal(finMs)),
+      titulo: tituloDeLaCita({ pacientes: [uno], servicio: p.servicio }),
+      descripcion: descripcionDeLaCita({ telefono: p.telefono, servicio: p.servicio, pacientes: [uno], nombrePerfil: p.nombrePerfil }),
+    });
+    desdeMs = finMs;
+  }
+  return out;
 }
 
 // Las citas FUTURAS (inicio desde `ahoraMs`) cuya descripcion trae una linea de telefono
@@ -587,9 +613,11 @@ function partirNombre(texto) {
 //   * No dice jamas que alguien pago. MENSAJES: ninguno. La columna del diagnostico del equipo no se toca desde aqui.
 // Entrada `d` (todo opcional): { from, plan, servicio, clave, creada, reprogramo, cancelada, inicioCita, huecos, derivo, nombrePerfil,
 //   anuncio, nuevoContacto, ahoraMs }. Devuelve null si el turno no es de conversacion de agenda o no hay telefono valido.
-// Los planes que NUNCA dejan prospecto: la emergencia, los medios que el canal no lee, los errores, el uso extendido, la suspension y los turnos sin respuesta.
+// La EMERGENCIA si deja fila (Andres, 07/11/2026), pero SOLO con telefono, nombre de perfil y servicioElegido «Emergencia»: sin texto, sin resumen, sin senales.
+// Los planes que NUNCA dejan prospecto: los medios que el canal no lee, los errores, el uso extendido, la suspension y los turnos sin respuesta.
 const AGM_PLANES_CRM = ['menu', 'respuesta_fija', 'pedir_boton', 'pedir_nombre', 'ofrecer', 'responder', 'cruce', 'listar', 'sin_citas',
-  'cancelar', 'crear', 'transferir', 'contacto_doctor', 'contacto_recepcion'];
+  'cancelar', 'crear', 'transferir', 'contacto_doctor', 'contacto_recepcion', 'emergencia'];
+const AGM_SERVICIO_ELEGIDO_CRM = { control_recien_nacido: 'Recién nacido', control_nino_sano: 'Control niño sano', vacunas_otros: 'Vacunas y/o otros' };
 const AGM_SERVICIO_CRM = { control_recien_nacido: 'Control del recién nacido', control_nino_sano: 'Control del niño sano' };
 const AGM_CLAVE_CRM = { servicios: 'Servicios', costo: 'Precio', direccion: 'Ubicación', horario: 'Horario de atención' };
 function agmProspectoCrm(d) {
@@ -598,6 +626,13 @@ function agmProspectoCrm(d) {
   if (AGM_PLANES_CRM.indexOf(plan) < 0) return null;
   const telefono = String(x.from === undefined || x.from === null ? '' : x.from).replace(/\D/g, '');
   if (!/^\d{6,20}$/.test(telefono)) return null;
+  const nombrePerfil = String(x.nombrePerfil === undefined || x.nombrePerfil === null ? '' : x.nombrePerfil)
+    .replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim().slice(0, 60);
+  if (plan === 'emergencia') {
+    // nuevoContacto NO tiene efecto en el miniCRM desde el 08/11/2026 (una fila por conversacion de 24 h: la decide el modulo crm con atencion.conversacionDesde); se conserva solo por compatibilidad.
+    return { telefono: telefono, nombre: nombrePerfil, nombreDePerfil: true, nuevoContacto: x.nuevoContacto === true, servicioElegido: 'Emergencia',
+      ultimaInteraccionMs: Number(x.ahoraMs) };
+  }
   const servicio = Object.prototype.hasOwnProperty.call(AGM_SERVICIO_CRM, x.servicio) ? AGM_SERVICIO_CRM[x.servicio] : '';
   const agendo = plan === 'crear' && x.creada === true;
   const reprogramo = agendo && x.reprogramo === true;
@@ -606,6 +641,12 @@ function agmProspectoCrm(d) {
   if (reprogramo) quePidio = 'Reprogramar cita';
   else if (agendo) quePidio = 'Agendar cita' + (servicio ? ' (' + servicio + ')' : '');
   else if (canceloCita) quePidio = 'Cancelar cita';
+  // El pediatra ve a QUE paciente es la cita (Andres, 08/11/2026): el nombre del niño, tal como lo dio el papá y el candado lo guardó en el evento («Apellidos, Nombres»),
+  // solo cuando la cita QUEDO creada. Nunca el texto libre ni síntomas: solo letras, espacios, apóstrofo y guion.
+  if (agendo && Array.isArray(x.pacientes)) {
+    const ns = x.pacientes.map((q) => _agmNombreCompleto(q)).map((n) => String(n || '').replace(/[^\p{L} ,'’-]/gu, '').replace(/\s{2,}/g, ' ').trim().slice(0, 60)).filter(Boolean).slice(0, 4);
+    if (ns.length) quePidio += ' — ' + ns.join(' / ');
+  }
   else if (plan === 'respuesta_fija') quePidio = Object.prototype.hasOwnProperty.call(AGM_CLAVE_CRM, x.clave) ? AGM_CLAVE_CRM[x.clave] : '';
   // Lo que PIDIO (intencion) se distingue de lo que se HIZO (arriba): ofrecer horarios o listar citas no es agendar ni cancelar.
   else if (plan === 'listar' || plan === 'sin_citas') quePidio = 'Consulta por su cita';
@@ -627,10 +668,9 @@ function agmProspectoCrm(d) {
   let derivacion = '';
   // Solo la derivacion a recepcion va a la columna R: el adaptador comun resume «Derivado a recepción.» y con el doctor se contradiria. Al doctor basta `quePidio`.
   if (x.derivo === 'recepcion') derivacion = 'Consulta para recepción';
-  const nombre = String(x.nombrePerfil === undefined || x.nombrePerfil === null ? '' : x.nombrePerfil)
-    .replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim().slice(0, 60);
   const p = {
-    telefono: telefono, nombre: nombre, nombreDePerfil: true, anuncio: x.anuncio === true, nuevoContacto: x.nuevoContacto === true,
+    // nuevoContacto NO tiene efecto en el miniCRM desde el 08/11/2026 (una fila por conversacion de 24 h: la decide el modulo crm con atencion.conversacionDesde); se conserva solo por compatibilidad.
+    telefono: telefono, nombre: nombrePerfil, nombreDePerfil: true, anuncio: x.anuncio === true, nuevoContacto: x.nuevoContacto === true,
     senales: { aceptoAgendar: agendo, pidioUbicacion: plan === 'respuesta_fija' && x.clave === 'direccion', llegoPorAnuncio: x.anuncio === true },
     ultimaInteraccionMs: Number(x.ahoraMs),
   };
@@ -638,5 +678,24 @@ function agmProspectoCrm(d) {
   if (diaPreferido !== '') p.diaPreferido = diaPreferido;
   if (horarioPreferido !== '') p.horarioPreferido = horarioPreferido;
   if (derivacion !== '') p.derivacion = derivacion;
+  // Servicio elegido (lista cerrada): el de la eleccion o el plan «contacto_doctor» (vacunas y otros). «Agendó» = HECHO verificado por el candado (cita creada), no lo dicho.
+  const elegido = plan === 'contacto_doctor' ? 'Vacunas y/o otros'
+    : (Object.prototype.hasOwnProperty.call(AGM_SERVICIO_ELEGIDO_CRM, x.servicio) ? AGM_SERVICIO_ELEGIDO_CRM[x.servicio] : '');
+  if (elegido !== '') p.servicioElegido = elegido;
+  if (agendo) {
+    p.agendo = 'Sí';
+    const msCita = x.inicioCita ? msDe(x.inicioCita) : NaN;
+    if (!Number.isNaN(msCita)) p.fechaCita = msCita;
+    if (reprogramo) p.citaReprogramada = true;
+  } else if (canceloCita) {
+    // Cancelar UNA de varias citas no es «No»: la planilla decide con cuantas quedan, la cancelada y la proxima.
+    p.agendo = 'No'; p.citaCancelada = true;
+    const rest = (Array.isArray(x.restantes) ? x.restantes : []).map(msDe).filter((m) => !Number.isNaN(m)).sort((a, b) => a - b);
+    p.citasRestantes = rest.length;
+    if (rest.length) p.proximaCitaMs = rest[0];
+    const mc = x.canceladaInicio ? msDe(x.canceladaInicio) : NaN;
+    if (!Number.isNaN(mc)) p.citaCanceladaMs = mc;
+  }
+  else p.agendo = 'No';
   return p;
 }

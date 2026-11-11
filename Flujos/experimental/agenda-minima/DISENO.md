@@ -10,7 +10,7 @@ normal, y no se activa contra el número de ningún cliente (contrato: `CONTRATO
 
 ## Estado al 30/09/2026, 19:00 (candidato B del concurso para Bellido, sha 7d49dec)
 
-- **Qué hace:** menú de 4 filas; cita por botón con candado antes y después de crear; hermanos en una cita;
+- **Qué hace:** menú de 4 filas; cita por botón con candado antes y después de crear; hermanos en dos citas seguidas (una por hermano);
   título «Apellidos, Nombres (CNS)» o «(RN)»; desde mañana, hoy solo si lo piden; día lleno ofrece el siguiente;
   una hora escrita que coincide con la oferta cuenta como el botón (una PREGUNTA no); reagendar y cancelar por
   botón, sin perder la cita; emergencia con botón a recepción y aviso al doctor (plantilla, texto de respaldo);
@@ -313,7 +313,7 @@ texto: el menú sale una vez por ventana; el «Redes del doctor» sale **solo** 
 P3 (emergencia: botón y «ya le avisé al doctor», sin 168), P5 (vacunas y cremas al doctor), P8 (huecos cada 30
 minutos; manda la hora de fin del evento), P9 (el costo solo si preguntan; una pregunta que no está en la
 configuración se transfiere), P10 (tolerancia de 10 minutos dentro de la confirmación, con la frase de la
-configuración), P11 (dos hermanos en una cita), P12 (desde mañana; hoy solo si lo pide), P13 («Apellidos,
+configuración), P11 (dos hermanos en dos citas seguidas, una por hermano; cambiado por Andres el 07/11/2026), P12 (desde mañana; hoy solo si lo pide), P13 («Apellidos,
 Nombres (CNS)» / «(RN)»), R2 (otra hora no repite las mismas tres), R4 (una pregunta por una hora nunca agenda),
 R7 (sin citas: texto fijo y recepción con botón), R9 (la hora de su propia cita no se vuelve a ofrecer), R12 (un
 botón viejo se vuelve a validar) y R13 (ningún texto sale con un hueco). **R14 (la palabra «urgencia») no entra**:
@@ -399,3 +399,11 @@ cuesta 250 Bs. Si quieres, te ayudo a agendarla.») es un dato del cliente en «
 - Humo del 23/10 leído en la Consola, sin errores; observación pendiente: tras agendar, la primera pregunta de golpe en la cabeza vuelve al menú de bienvenida (la transferencia con botón llega en el segundo intento).
 - Vuelta atrás: `--restaurar-respaldo` (con «sí» de Andres) o republicar `9d3bc4c2`.
 - Pendientes no-código a producción: ver el asiento de `bitacora/2026-10.md` del 24/10.
+
+## miniCRM: tres columnas del bot (07/11/2026)
+
+Columnas U «Servicio elegido», V «Agendó» y W «Fecha y hora de la cita» (opcionales en el contrato común); «Diagnóstico del equipo» pasa de la U a la X (decisión
+de Andres), así el rango de lectura es A:W y nunca cruza el diagnóstico. Un «No» posterior nunca pisa un «Sí»: solo la cancelación verificada lo vuelve «No» y
+limpia la fecha. Procedimiento de la hoja viva: **insertar 3 columnas antes de la U** (el Diagnóstico pasa a la X con su contenido) y escribir los encabezados nuevos en U, V y W. Antes de publicar se
+comprueba que U, V y W estén vacías en las filas existentes. Cancelar o reprogramar pasadas las 48 h actualiza la fila más reciente solo en «Agendó» y la fecha; cancelar una de varias
+citas no pone «No»: la fila conserva «Sí» y, si la cancelada era la de la fila, la fecha pasa a la próxima cita que queda (sin mensajes nuevos).

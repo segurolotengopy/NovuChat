@@ -39,7 +39,11 @@ if (vmNodo('Enviar a WhatsApp')) {
     if (rtId(final)) RT_entregados++;
   });
   if (RT_entregados < RT_esperados) {
-    const RT_comp = vmNodo('Comprometer compensación') ? ssResultadoDeCompromiso(vmPrimero('Comprometer compensación')) : null;
+    // PR-4b: «Comprometer compensación» recibe hasta DOS ítems de «Confirmar envío» (la compensación y, aparte, el `asentar` del cupo): la respuesta de la compensación es la del ítem que lleva `compensar === true`.
+    const RT_confirmados = vmTodos('Confirmar envío');
+    const RT_respuestas = vmTodos('Comprometer compensación');
+    const RT_k = RT_confirmados.findIndex((x) => x && x.compensar === true);
+    const RT_comp = RT_k >= 0 && RT_respuestas[RT_k] ? ssResultadoDeCompromiso(RT_respuestas[RT_k]) : null;
     throw new Error('Entrega fallida: Meta rechazó el envío y su respaldo en texto; ' + (RT_esperados - RT_entregados) + ' de ' + RT_esperados + ' mensaje(s) al cliente sin entregar. El cliente no recibió respuesta.'
       + (RT_comp ? (RT_comp.resultado === 'ok' ? ' [estado restaurado]' : ' [el estado NO se pudo restaurar: ' + RT_comp.resultado + ']') : ''));
   }
@@ -66,6 +70,6 @@ return [{ json: {
   resumen: {
     ruta: RT_r.ruta, estadoDespues: RT_r.estadoDespues, errores: RT_r.errores, avisoSalio: RT_r.avisoSalio === true,
     avisosArmados: RT_avisos.length, avisosConWamid: RT_r.avisosConWamid || 0, qrRechazado: RT_r.qrRechazado === true,
-    cierre: RT_primero.cierre || null, mensajesSalientes: RT_mensajes.length,
+    cierre: RT_primero.cierre || null, mensajesSalientes: RT_mensajes.length, cupos: String(RT_primero.cupos || 'sin_consumo'),
   },
 } }];

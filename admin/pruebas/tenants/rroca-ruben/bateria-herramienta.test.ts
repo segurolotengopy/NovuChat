@@ -2,7 +2,7 @@
  * LA BATERÍA DE LA CONVERSACIÓN DE RUBÉN (`Flujos/experimental/rroca-ruben/herramientas/bateria.mjs` y `bateria-casos.json`), (NOCHES SIN INSOMNIO).
  *
  * Aquí se prueba SIN modelo ni red (`--seco`: una respuesta fija por turno) y se comprueba:
- *   1. que los 19 turnos corren por el flujo de prueba versionado y dan CERO violaciones (invariantes y reglas duras), con 6 llamadas al modelo por corrida;
+ *   1. que los 24 turnos corren por el flujo de prueba versionado y dan CERO violaciones (invariantes y reglas duras), con 7 llamadas al modelo por corrida;
  *   2. que la corrida real EXIGE `--confirmo-gasto` (es gasto) y que en `--seco` no se toca la red, ni un archivo de entorno, ni gcloud;
  *   3. que no imprime un secreto;
  *   4. que cada detector detecta (una batería que acepta todo no mediría nada) y que `medir` aplica el umbral del 85 %;
@@ -37,14 +37,14 @@ const sinRed: J = {
   gcloudToken: () => { throw new Error('el modo seco NO pide un token'); },
 };
 
-describe('la batería de Rubén en seco: los 19 turnos corren por el flujo versionado con cero violaciones', () => {
-  it('una corrida por caso: 19 turnos, 6 llamadas al modelo, ningún respaldo y cero violaciones', async () => {
+describe('la batería de Rubén en seco: los 24 turnos corren por el flujo versionado con cero violaciones', () => {
+  it('una corrida por caso: 24 turnos, 7 llamadas al modelo, ningún respaldo y cero violaciones', async () => {
     const r = await correr(['--seco', '--n', '1', '--json'], sinRed);
     expect(r.codigo, r.error).toBe(0);
     const m = (JSON.parse(r.salida) as J)['medidas'] as J;
-    expect(m['turnosTotales']).toBe(19);
-    // Los turnos que llegan al modelo: A2, A3 y A5, B3, C2 y D2 (el saludo, el precio de un producto, el «sí», los botones y la devolución —que se deriva— no).
-    expect(m['turnosDelModelo']).toBe(6);
+    expect(m['turnosTotales']).toBe(24);
+    // Los turnos que llegan al modelo: A2, A3 y A5, B3, C2, D2 y G2 (el saludo, el precio de un producto, el «sí», los botones y la devolución —que se deriva— no).
+    expect(m['turnosDelModelo']).toBe(7);
     expect(m['violaciones'], JSON.stringify(m['violaciones'].slice(0, 5))).toEqual([]);
     expect(m['conRespaldo'].n, JSON.stringify(m['conRespaldo'])).toBe(0);
     expect(m['umbral'].cumple).toBe(true);
@@ -54,7 +54,7 @@ describe('la batería de Rubén en seco: los 19 turnos corren por el flujo versi
     const r = await correr(['--seco', '--n', '3', '--json'], sinRed);
     expect(r.codigo, r.error).toBe(0);
     const m = (JSON.parse(r.salida) as J)['medidas'] as J;
-    expect(m['turnosTotales']).toBe(57);
+    expect(m['turnosTotales']).toBe(72);
     expect(m['violaciones']).toEqual([]);
   }, 120_000);
 
@@ -88,11 +88,11 @@ describe('la batería de Rubén en seco: los 19 turnos corren por el flujo versi
 });
 
 describe('la batería de Rubén: validación de casos, detectores y umbral', () => {
-  it('los casos versionados son válidos: A, B, C, D, E y F con 5, 4, 4, 2, 2 y 2 turnos y 6 con respuesta fija del modo seco', () => {
+  it('los casos versionados son válidos: A, B, C, D, E, F y G con 5, 4, 4, 2, 2, 2 y 5 turnos y 7 con respuesta fija del modo seco', () => {
     const casos = B.validarCasos(clonar(CASOS));
-    expect(casos.map((c) => c['id'])).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
-    expect(casos.map((c) => c['turnos'].length)).toEqual([5, 4, 4, 2, 2, 2]);
-    expect(casos.flatMap((c) => c['turnos']).filter((t: J) => typeof t['seco'] === 'string')).toHaveLength(6);
+    expect(casos.map((c) => c['id'])).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
+    expect(casos.map((c) => c['turnos'].length)).toEqual([5, 4, 4, 2, 2, 2, 5]);
+    expect(casos.flatMap((c) => c['turnos']).filter((t: J) => typeof t['seco'] === 'string')).toHaveLength(7);
   });
   it('NEGADA: rechaza casos mal formados (sin turnos, ids repetidos, turno sin `dice` ni `boton` o con los dos, botón inválido)', () => {
     const base = (): J => clonar(CASOS);

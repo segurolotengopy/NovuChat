@@ -272,7 +272,7 @@ describe('comun.js: red de palabras prohibidas', () => {
       'Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.',
       'No pude incluir tu nota: «tequila» no está disponible para pedir por WhatsApp.',
       'Atendemos lunes a domingo de 12:00 a 22:00.',
-      'Para volver al inicio, escribe «menú».',
+      'Para volver al inicio, escribe «inicio».',
       'Revisen el pago en su banco antes de despachar.',
       'Eso lo ve directamente nuestro equipo. Toca el botón para escribirnos.',
       'Confirmar pedido', 'Cambiar algo', 'Enviar solicitud',
@@ -310,21 +310,21 @@ describe('comun.js: nodos de n8n por nombre', () => {
 
 // ================================================================================================
 describe('comun.js: datos estáticos, estado por teléfono y repetidos', () => {
-  it('vmSd crea solo `reservasDelDia` (el residuo de PR-4b) y devuelve siempre el mismo objeto; los mapas viejos YA NO se crean (el estado vive en el servidor)', () => {
+  it('vmSd no crea ningún mapa (PR-4b: las reservas del día viajan en el bloque del servidor, ya no hay `reservasDelDia`) y devuelve siempre el mismo objeto', () => {
     const raiz: J = {};
     const A = lib(raiz);
     const sd = A.vmSd();
-    expect(sd).toEqual({ reservasDelDia: {} }); // es de reserva.js (T3)
+    expect(sd).toEqual({});
     expect(raiz['ventaMinima']).toBe(sd);
-    sd.reservasDelDia['59100000021'] = { dia: '2026-10-05', n: 1 };
-    expect(A.vmSd().reservasDelDia['59100000021']).toEqual({ dia: '2026-10-05', n: 1 });
+    sd['avisosHuerfanos'] = { x: 1 };
+    expect(A.vmSd()['avisosHuerfanos']).toEqual({ x: 1 });
   });
   it('vmSd completa lo que falte sin pisar lo que hay (los mapas viejos que queden hasta el retiro del respaldo se dejan como están), y repara una clave que no es objeto', () => {
     const raiz: J = { ventaMinima: { estados: { x: 1 }, vistos: [], reservasDelDia: [] } };
     const sd = lib(raiz).vmSd();
     expect(sd.estados).toEqual({ x: 1 });
     expect(sd.vistos).toEqual([]); // no se toca: lo retira `vmRetirarRespaldo`
-    expect(sd.reservasDelDia).toEqual({});
+    expect(sd.reservasDelDia).toEqual([]); // PR-4b: tampoco se repara ni se usa; lo borra el retiro del respaldo (30/11/2026)
   });
   it('vmSd da null sin datos estáticos', () => {
     const sinSd = ejecutar(`${COMUN}\nreturn [{ json: { sd: vmSd() } }];`, [{}])[0]!;
@@ -377,7 +377,7 @@ describe('comun.js: datos estáticos, estado por teléfono y repetidos', () => {
 
   it('vmBarrer: quita estados vencidos y repetidos de más de 24 h, y NO barre los pedidos', () => {
     const A = lib();
-    const sd = Object.assign(A.vmSd(), { estados: {}, vistos: {}, pedidos: {} }); // los mapas viejos: `vmBarrer` los poda por su vencimiento
+    const sd = Object.assign(A.vmSd(), { estados: {}, vistos: {}, pedidos: {}, reservasDelDia: {} }); // los mapas viejos: `vmBarrer` los poda por su vencimiento
     sd.estados['59100000021'] = { ...A.vmEstadoBase(), paso: 'pedido', ultimoMensajeMs: AHORA - 2 * HORA };
     sd.estados['59100000022'] = { ...A.vmEstadoBase(), paso: 'esperando_comprobante', ultimoMensajeMs: AHORA - 2 * HORA };
     sd.estados['59100000023'] = { ...A.vmEstadoBase(), paso: 'pedido', ultimoMensajeMs: AHORA - 5 * MIN };
@@ -862,8 +862,9 @@ describe('Interpretar entrada', () => {
       ubicacion: null, ahoraMs: AHORA, prueba: null,
     });
     expect(Object.keys(t).sort()).toEqual([
-      'ahoraMs', 'boton', 'comprobanteCruzado', 'comprobanteSimulado', 'esAudio', 'esComprobante', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
-      'phoneNumberId', 'prueba', 'texto', 'textoReporte', 'tipo', 'ubicacion',
+      // 07/11/2026: `clasificarAntes` y `anuncioImagen` (el arte de una campaña con un QR pendiente, punto B).
+      'ahoraMs', 'anuncioImagen', 'boton', 'clasificarAntes', 'comprobanteCruzado', 'comprobanteSimulado', 'esAudio', 'esComprobante', 'esPosibleAnuncio', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
+      'phoneNumberId', 'prueba', 'referral', 'texto', 'textoReporte', 'tipo', 'ubicacion',
     ]);
   });
   it('recorta el texto a 1.500 caracteres y el nombre de perfil a 60, sin < > & ni saltos', () => {

@@ -27,6 +27,7 @@ export { registrarQrDeCobro, imagenDeCobro } from './modulos/cobros/cobro.js';
 // cotejo por plazo e intentos, la imagen guardada en Storage y la purga diaria.
 // Desplegar esto no cambia ningún flujo vivo: la regla 2 la elige el flujo.
 export { cotejarComprobanteVenta } from './modulos/cobros/cotejoVenta.js';
+export { pedirAliasArs, cotejarAliasArs } from './modulos/cobros/cobroAliasArs.js';
 export { guardarComprobante, purgarComprobantes } from './modulos/cobros/comprobantes.js';
 export { verComprobante } from './modulos/cobros/verComprobante.js';
 // SEÑA POR QR EN LAS RESERVAS (bloque 2). El cotejo del comprobante lo hace el
@@ -42,6 +43,8 @@ export { ubicacionDeEnlace } from './central/negocio/mapa.js';
 export { seguimientosPendientes, seguimientoEnviado } from './modulos/agenda/seguimientos.js';
 // Rescate de 22 h (Pedidos): decide y marca; el envío es de un flujo de n8n por comercio.
 export { reclamarRescates } from './modulos/pedidos/rescates.js';
+// Confirmar un pedido de catálogo externo (NovuTienda): llamada firmada desde el servidor (B5b).
+export { confirmarPedidoExterno } from './modulos/pedidos/confirmarExterno.js';
 // CATÁLOGO WEB PROPIO. Tres endpoints públicos y una función de configuración;
 // el porqué de cada uno está en `catalogoWeb.ts`. Se exportan desde acá, como
 // todo lo demás, para que exista un solo inventario de lo que se despliega.
@@ -130,6 +133,9 @@ export { confirmarSalidaPersona } from './core/conversacion/confirmarSalidaPerso
 // tiene por `purgarComprobantes`.
 export { guardarMedio } from './core/medios/guardarMedio.js';
 export { purgarMedios } from './core/medios/purgarMedios.js';
+// Alerta operativa «envío incierto» del errorWorkflow de n8n (Plataforma): HTTP con firma HMAC propia + resumen diario 08:00 La Paz.
+// Una Function HTTP nueva no nace invocable: tras el primer despliegue necesita `run.invoker` a mano (lo hace Claude con el «sí» de Andres).
+export { alertaOperativa, resumenAlertasOperativas } from './plataforma/alertaOperativa.js';
 // EL VISOR DE MEDIOS (M3a, 30/10/2026). `verMedio` (callable, 1 GiB, concurrencia 4 fuera de staging, App
 // Check en producción) devuelve los bytes de un medio guardado a admin, operador y soporte con ventana, con
 // auditoría fail-closed y tope por usuario en `topesDeMedios`. Una callable nueva no nace invocable: tras el

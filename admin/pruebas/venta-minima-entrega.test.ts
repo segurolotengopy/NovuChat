@@ -317,19 +317,19 @@ describe('las guardias de entrega de `construir.mjs --verificar` (sobre los JSON
 // =====================================================================================================
 // 5. El presupuesto de nodos: la regla de entrega NO sumó ningún nodo
 // =====================================================================================================
-describe('presupuesto de nodos de producción (Andres, 03/10/2026: 50; 30/10/2026: 59 con el guardado de medios; 26/10/2026: +1 «Guardar comprobante» = 60; 04/11/2026: 69 con el estado en el servidor)', () => {
-  it('el JSON de Q\'Taco tiene como máximo 69 nodos y NO tiene un nodo «Entrega fallida» (R3 va dentro de «Resumen del turno»)', () => {
+describe('presupuesto de nodos de producción (Andres, 03/10/2026: 50; 30/10/2026: 59 con el guardado de medios; 26/10/2026: +1 «Guardar comprobante» = 60; 04/11/2026: 69 con el estado en el servidor; PR-4b: 71 con los cupos, aprobado por Andres (06/11/2026, en conversación))', () => {
+  it('el JSON de Q\'Taco tiene como máximo 73 nodos y NO tiene un nodo «Entrega fallida» (R3 va dentro de «Resumen del turno»)', () => {
     // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61, y desde el contrato v2 del 30/10, 59: los 9 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md). Más «Guardar comprobante» (pedido del 26/10/2026): 60.
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(69); // tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026)
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(73); // tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026) → 71 (PR-4b: aprobado por Andres (06/11/2026, en conversación))
     expect(QTACO.nodes.map((n) => n.name)).not.toContain('Entrega fallida');
   });
 
-  it('`--verificar` FALLA si un JSON de producción crece por encima de 69 nodos (50 más los 9 del guardado de medios, «Guardar comprobante» y los 9 del estado en el servidor)', () => {
+  it('`--verificar` FALLA si un JSON de producción crece por encima de 81 nodos (73 de ahora en `venta-minima.qtaco.json`: 50 más los 9 del guardado de medios, «Guardar comprobante», los 9 del estado en el servidor y los 2 de los cupos; tope 71 → 81 por los 2 de la imagen y los 8 del miniCRM, D2 de Andres, 06/11/2026)', () => {
     const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => {
-      f.nodes.push({ id: 'uno-de-mas', name: 'Uno de más', type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
+      for (let i = 0; i < 9; i++) f.nodes.push({ id: `uno-de-mas-${i}`, name: `Uno de más ${i}`, type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
     }));
     expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(/tiene 70 nodos y el tope de producción es 69/);
+    expect(r.stderr).toMatch(/tiene 82 nodos y el tope de producción es 81/);
   });
 
   it('el error de entrega es de verdad un error de n8n: `FalloDeNodo` (y no un `success` con un aviso adentro)', () => {

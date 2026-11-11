@@ -1292,7 +1292,7 @@ describe('aplicar el turno a la ficha y armar el prospecto de la hoja', () => {
 const CONSTRUIR = (await import(/* @vite-ignore */ join(CARPETA, 'construir.mjs'))) as {
   CONFIG_BASE: J; cargarDatos: (a: string, dir?: string) => J; validarDatos: (d: J, a: string) => void; armarTenant: (p: unknown, d: J, a: string) => string; inyectar: (f: J, marca: string, nombre: string, valor: unknown) => void;
   guardias: (entrada: string, flujo: J, datos?: J) => string[]; construir: (o?: J) => { resultado: J[]; huerfanos: string[] }; salidaDe: (a: string) => string; huerfanos: (d: string, dd: string) => string[];
-  anfitrionPermitido: (n: string, u: string) => boolean; MARCA_DATOS: string;
+  anfitrionPermitido: (n: string, u: string) => boolean; MARCA_DATOS: string; sinComentarios: (t: string, modo?: string) => string;
 };
 
 describe('los datos de NovuChat (admin/scripts/datos/chat-novuchat/)', () => {
@@ -1391,7 +1391,7 @@ describe('inyectar: la línea marcadora se reemplaza exactamente una vez', () =>
   });
 });
 
-describe('guardias de --verificar', () => {
+describe('guardias de --verificar', { timeout: 120000 }, () => {
   const real = (n: string): J => JSON.parse(readFileSync(join(CARPETA, n), 'utf8')) as J;
   const DATOS_CRM = { crm: (JSON.parse(readFileSync(join(CARPETA, '../../../admin/scripts/datos/chat-novuchat/novuchat.json'), 'utf8')) as J)['crm'] };
   const prod = (): J => real('chat-novuchat.novuchat.json');
@@ -1431,6 +1431,13 @@ describe('guardias de --verificar', () => {
     const d = prod();
     d['nodes'].find((n: J) => n.name === 'Soltar mensajes').parameters.jsCode += "\nconst SS_CONFIG = { espacio: 'otro' };";
     expect(CONSTRUIR.guardias('trigger', d, DATOS_CRM).join(' ')).toMatch(/«Soltar mensajes» declara SS_CONFIG 2 veces/);
+    // (d2) SS_CONFIG dentro de un declarador múltiple: la lectura por texto no lo cuenta y el árbol sí; el hallazgo de texto («tiene que declarar SS_CONFIG exactamente una vez») se emite igual
+    const d2 = prod();
+    const nd2 = d2['nodes'].find((n: J) => n.name === 'Soltar mensajes');
+    const antesD2 = String(nd2.parameters.jsCode);
+    nd2.parameters.jsCode = antesD2.replace('const SS_CONFIG = ', 'var a0Ast = 1, SS_CONFIG = ');
+    expect(nd2.parameters.jsCode, 'la mutación no se aplicó').not.toBe(antesD2);
+    expect(CONSTRUIR.guardias('trigger', d2, DATOS_CRM).join(' ')).toMatch(/«Soltar mensajes» tiene que declarar SS_CONFIG exactamente una vez/);
     // (e) el módulo TAL CUAL y luego una REDEFINICIÓN (en JS gana la última declaración: anularía el aislamiento de la prueba)
     for (const redefine of ['function ssDesdeAutorizado() { return true; }', 'function ssEspacio() { return "chat-novuchat"; }', 'const ssBytes = () => 0;']) {
       const e = prod();
@@ -1475,15 +1482,99 @@ describe('guardias de --verificar', () => {
     // (b) sin congelar
     expect(CONSTRUIR.guardias('trigger', edita(prod(), 'Soltar mensajes', 'Object.freeze({', '({'), DATOS_CRM).join(' ')).toMatch(/SS_CONFIG tiene que declararse con Object\.freeze/);
     // (c) reasignaciones y mutaciones en el código de CUALQUIER nodo (el módulo y el registro, tal cual, no cuentan)
-    for (const mut of ["SS_CONFIG = {};", "SS_CONFIG.espacio = 'x';", "ssEspacio = () => 'x';", "ssFoo.bar = 1;", "SS_CONFIG['espacio'] = 'x';", "Object.assign(SS_CONFIG, { espacio: 'x' });", "Object.defineProperty(SS_CONFIG, 'espacio', { value: 'x' });", "const y = SS_CONFIG[k];", "ssFoo++;", "--ssFoo;", "[ssFoo] = [1];", "({ a: ssFoo } = x);"]) {
+    for (const mut of ["SS_CONFIG = {};", "SS_CONFIG.espacio = 'x';", "ssEspacio = () => 'x';", "ssFoo.bar = 1;", "SS_CONFIG['espacio'] = 'x';", "Object.assign(SS_CONFIG, { espacio: 'x' });", "Object.defineProperty(SS_CONFIG, 'espacio', { value: 'x' });", "const y = SS_CONFIG[k];", "ssFoo++;", "--ssFoo;", "[ssFoo] = [1];", "({ a: ssFoo } = x);", "[ssFoo, b] = [f, 1];", "[a, ssFoo] = [1, f];", "({ ssFoo, b } = x);", "[a, [ssFoo]] = [1, [f]];", "ssFoo &&= f;", "ssFoo ||= f;", "ssFoo ??= f;", "ssFoo **= 2;", "ssFoo <<= 1;", "ssFoo >>= 1;", "ssFoo >>>= 1;", "SS_CONFIG.espacio ??= 'x';", "for (ssFoo of xs) {}", "for (const ssFoo in o) {}", "for (SS_CONFIG of xs) {}", "const s = '/*'; ssFoo = f; const u = '*/';", "const s = `/*`; ssFoo = f; const u = `*/`;", "Object.defineProperties(SS_CONFIG, {});", "Reflect.set(SS_CONFIG, 'espacio', 'x');", "Reflect.defineProperty(SS_CONFIG, 'espacio', {});", "delete SS_CONFIG.espacio;", "ssFoo.a.b = 1;", "ssFoo[a[0]] = 1;", "const o = {a:1}\n/ 2 + \"/\"; const s = \"/*\"; ssFoo = f; const z = \"*/\";", "x++ / 2 + \"/\"; const s = \"/*\"; ssFoo = f; const z = \"*/\";", "x-- / 2 + \"/\"; const s = \"/*\"; ssFoo = f; const z = \"*/\";", "o.in / 2 + '/'; const s = '/*'; ssFoo = f; const z = '*/';", "x = a++ / 2; const s = \"x\"; /* */ const t = '/'; const v = '/*'; ssFoo = f; const w = '*/';", "const a = `${`/*`}`; ssFoo = () => true; const b = `${`*/`}`;", "function g(s){ return /'/.test(s); } const a = '/*'; ssFoo = () => true; const b = '*/';", "const t = typeof /\"/; const a = '/*'; ssFoo = () => true; const b = '*/';", "function g(s){ return /a\\/*/.test(s); } ssFoo = () => true; /* */", "if (x) /'/.test(s); const a = '/*'; ssFoo = () => true; const b = '*/';", "(ssFoo) = () => true;", "((ssFoo)) = f;", "[(ssFoo)] = [f];", "(ssFoo) ||= f;", "(SS_CONFIG).espacio = 'x';", "for ([a, ssFoo] of xs) {}", "for ({ x: ssFoo } of xs) {}", "\\u0073sFoo = f;", "ssFo\\u006f = f;"]) {
       const f = prod();
       f['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += '\n' + mut;
-      expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(/«Cerrar turno» (reasigna o muta|reasigna un ayudante|incrementa o decrementa|accede a SS_CONFIG|muta SS_CONFIG)/);
+      expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(/«Cerrar turno» (reasigna o muta|reasigna un ayudante|incrementa o decrementa|accede a SS_CONFIG|muta SS_CONFIG|usa un ayudante|borra un ayudante)/);
     }
-    // un comentario o una comparación no son una mutación
+    // eval, Function, .constructor y prototipos: cada uno con SU texto de regla (no basta cualquier hallazgo)
+    for (const [mut, texto] of [["eval('x');", /usa eval/], ["const o = {a:1}\n/ 2; const r = /\\/*/; eval(atob(\"x\")); const s = \"*/\";", /usa eval/], ["(eval)(String.fromCharCode(120));", /usa eval/], ["eval (x);", /usa eval/], ["const e = eval; e('x');", /usa eval/], ["e\\u{76}al('x');", /usa eval/], ["const F = Function('return 1');", /usa Function/], ["new Fun" + "ction('a', 'return a');", /usa Function/], ["const cCtor = ({}).constructor.constructor;", /usa eval/],
+      ["RegExp.prototype.test = () => true;", /contamina un prototipo/], ["String.prototype.trim ||= f;", /contamina un prototipo/], ["x.__proto__ = {};", /contamina un prototipo/], ["Object.defineProperty(RegExp.prototype, 'test', { value: f });", /contamina un prototipo/], ["Object.setPrototypeOf(SS_CONFIG, null);", /usa setPrototypeOf/], ["Object.getPrototypeOf(x);", /getPrototypeOf/], ["Object.assign(RegExp.prototype, { test: f });", /contamina un prototipo/], ["Reflect.set(RegExp.prototype, 'test', f);", /contamina un prototipo/], ["Reflect.defineProperty(String.prototype, 'trim', {});", /contamina un prototipo/], ["const P = RegExp.prototype; P.test = f;", /contamina un prototipo/]]) {
+      const f = prod();
+      f['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += '\n' + mut;
+      expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(texto);
+    }
+    // el tokenizador: en estos casos la lectura «todo / ambiguo es división» deja ver la reasignación que la lectura por contexto esconde
+    for (const x of ['const o = {a:1}\n/ 2 + "/"; const s = "/*"; ssFoo = f; const z = "*/";', 'x++ / 2 + "/"; const s = "/*"; ssFoo = f; const z = "*/";', 'x-- / 2 + "/"; const s = "/*"; ssFoo = f; const z = "*/";', "o.in / 2 + '/'; const s = '/*'; ssFoo = f; const z = '*/';", "x = a++ / 2; const s = \"x\"; /* */ const t = '/'; const v = '/*'; ssFoo = f; const w = '*/';"]) {
+      expect(CONSTRUIR.sinComentarios(x, 'division'), x).toContain('ssFoo = f');
+    }
+    // declarar de nuevo un ss* con una forma de código que engaña a un tokenizador (división, regex, cadenas que abren comentarios): el parser la cuenta
+    for (const x of ['x++ / 2 + "/"; const s = "/*"; function ssEspacio(){return true} const z = "*/";', 'const o = {a:1}\n/ 2 + "/"; const s = "/*"; function ssEspacio(){return true} const z = "*/";']) {
+      const g = prod();
+      g['nodes'].find((n: J) => n.name === 'Soltar mensajes').parameters.jsCode += '\n' + x;
+      expect(CONSTRUIR.guardias('trigger', g, DATOS_CRM).join(' '), x).toMatch(/«Soltar mensajes» declara ssEspacio 2 veces/);
+    }
+    // un comentario o una comparación no son una mutación (la lectura cruda, red adicional, SÍ marcaría un comentario que escriba «ssX = »: falso positivo aceptado, el código real da 0)
     const limpio = prod();
-    limpio['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += "\n// SS_CONFIG = {} (ejemplo)\n/* ssX = 1 */\nconst ok = SS_CONFIG.espacio === 'chat-novuchat' && ssEspacio() !== 'z';";
+    limpio['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += "\n// un comentario cualquiera\n/* otro comentario */\nconst ok = SS_CONFIG.espacio === 'chat-novuchat' && ssEspacio() !== 'z';\nconst t1 = 'a /* b'; const q = ssEspacio() >= 1 && ssEspacio() <= 2; const r = /\\/\\*/.test(t1); const pl = `${'x'} /* ${`y`}`; if (q) /'/.test(t1); const dv = (1 + 2) / 3 / 4; // */";
     expect(CONSTRUIR.guardias('trigger', limpio, DATOS_CRM)).toEqual([]);
+    // el PARSER (acorn) ve lo que el motor ve: claves computadas resueltas por plegado de constantes, y formas de código que engañan a un tokenizador
+    const conCodigo = (codigo: string, nodo = 'Cerrar turno'): string[] => { const f = prod(); f['nodes'].find((x: J) => x.name === nodo).parameters.jsCode += '\n' + codigo; return CONSTRUIR.guardias('trigger', f, DATOS_CRM); };
+    for (const [codigo, texto] of [
+      ["globalThis['ev' + 'al']('x');", /usa eval/], ["const kAst1 = 'ev'; globalThis[kAst1 + 'al']('x');", /usa eval/], ["globalThis[['ev', 'al'].join('')]('x');", /usa eval/], ["globalThis[`ev${'al'}`]('x');", /usa eval/],
+      ["[].filter['constr' + 'uctor']('return 1')();", /usa eval o \.constructor/], ["globalThis['Fun' + 'ction']('return 1');", /usa Function/], ["const kAst2 = 'Fun'; globalThis[kAst2.concat('ction')]('x');", /usa Function/],
+      ["Object['assign'](SS_CONFIG, {});", /muta SS_CONFIG/], ["Reflect['de' + 'fineProperty'](SS_CONFIG, 'espacio', {});", /muta SS_CONFIG/], ["Object.assign(ssFoo, {});", /muta un ayudante de sesión/],
+      ["ssFoo['x' + 'y'] = 1;", /reasigna o muta/], ["globalThis['ssFoo'] = f;", /reasigna o muta/], ["(0, ssFoo).x = 1;", /reasigna o muta/], ["(cAst || SS_CONFIG).espacio = 'x';", /reasigna o muta/],
+      ["Object['set' + 'PrototypeOf'](xAst, null);", /setPrototypeOf/], ["xAst['__pro' + 'to__'] = {};", /contamina un prototipo/], ["const oAst = { ['__proto__']: {} };", /contamina un prototipo/], ["RegExp['proto' + 'type'].test = f;", /contamina un prototipo/],
+      // evasiones que dependen de dónde está la cadena: se marca toda expresión (fuera de una clave) cuyo valor es EXACTAMENTE eval, Function, constructor o __proto__
+      ["Reflect.get(globalThis, 'eval');", /usa eval/], ["Reflect.get(globalThis, 'Function')('return 1')();", /usa Function/], ["Object.getOwnPropertyDescriptor(globalThis, 'eval').value;", /usa eval/], ["globalThis[['eval'][0]];", /usa eval/],
+      ["globalThis['eval'.toString()];", /usa eval/], ["let kAst3 = 'eval'; globalThis[kAst3];", /usa eval/], ["var kAst4 = 'Function'; globalThis[kAst4];", /usa Function/], ["const kAst5 = 'eval'; { let kAst5 = 0; } globalThis[kAst5];", /usa eval/],
+      ["const fAst = (nAst) => globalThis[nAst]; fAst('eval');", /usa eval/], ["Reflect.get(fAst, 'constructor');", /usa eval o \.constructor/], ["const { constructor: CAst } = () => {};", /usa eval o \.constructor/], ["const oAst = { ['constr' + 'uctor']: 1 };", /usa eval o \.constructor/],
+      ["globalThis.Object.assign(SS_CONFIG, { espacio: 'x' });", /muta SS_CONFIG/], ["this.Reflect.set(SS_CONFIG, 'espacio', 'x');", /muta SS_CONFIG/], ["globalThis.Object.defineProperty(Array.prototype, 'x', {});", /contamina un prototipo/],
+      ["function fpAst(p = Array.prototype) { return p; }", /contamina un prototipo/], ["class AAst { p = Array.prototype; }", /contamina un prototipo/], ["const rAst = 'ev' + 'al'; globalThis[rAst];", /usa eval/],
+      // la guarda es la UNIÓN con la lectura por texto: una cadena con eval/Function en cualquier posición sigue marcada
+      ["globalThis[' eval'.trim()]('x');", /usa eval/], ["'eval,x'.split(',')[0];", /usa eval/], ["'Function x'.split(' ')[0];", /usa Function/],
+      ["globalThis[JSON.parse('\"eval\"')];", /usa eval/], ["globalThis[/eval/.source];", /usa eval/], ["globalThis['Function '.trim()];", /usa Function/], ["globalThis[/Function/.source];", /usa Function/], ["x2Ast = `a __proto__ b`;", /contamina un prototipo/],
+      ["with (SS_CONFIG) { espacio = 'x'; }", /usa with/],
+      ["let kAst6 = 'ev'; globalThis[kAst6 + 'al']('x');", /accede al objeto global/], ["const kAst7 = 'ev'; { let kAst7 = 'q'; } globalThis[kAst7 + 'al'];", /usa eval|accede al objeto global/],
+      // comentarios HTML (Annex B): para el motor son comentarios, para un tokenizador no
+      ["x0Ast = 1;\n<!-- nada", /comentario HTML/], ["x1Ast = 1;\n--> nada", /comentario HTML/],
+      // división o regex, comentarios y cadenas que abren o cierran comentarios: la mutación real se ve
+      ["const dAst = 8 / 2 / 1; const rAst = /a+b/g; ssFoo = f;", /reasigna o muta/], ["const sAst = '//'; ssFoo = f; // fin", /reasigna o muta/], ["const sAst = \"/*\"; /* c */ ssFoo = f; const uAst = \"*/\";", /reasigna o muta/],
+      ["const tAst = `${xAst} ${`y`} /*`; ssFoo = f; const vAst = `*/`;", /reasigna o muta/], ["const rAst = /[/*]/.test(xAst); ssFoo = f; /* */", /reasigna o muta/], ["const hAst = { a: 1 } / 2; ssFoo = f;", /reasigna o muta/],
+      // falla cerrada: código que no se puede analizar es un hallazgo
+      ["ssFoo = ;", /no se puede analizar/], ["const cAst = {", /no se puede analizar/], ["const sAst = 'sin cerrar; ssFoo = f;", /no se puede analizar/], ["function (", /no se puede analizar/], ["const dup = 1; const dup = 2;", /no se puede analizar/],
+    ] as const) expect(conCodigo(codigo).join(' '), codigo).toMatch(texto);
+    // plegado exponencial: 28 niveles de `k(n+1) = kn + kn` no cuelgan la guardia ni lanzan una excepción: se corta, no se pliega y la clave computada sobre el objeto global se marca
+    {
+      const niveles = ["const kq0 = 'ab';", ...Array.from({ length: 28 }, (_, i) => `const kq${i + 1} = kq${i} + kq${i};`), 'globalThis[kq28];'].join('\n');
+      const t0 = Date.now();
+      expect(conCodigo(niveles).join(' ')).toMatch(/accede al objeto global/);
+      expect(Date.now() - t0, 'el plegado no puede ser exponencial').toBeLessThan(5000);
+    }
+    // pasar el tope de profundidad del plegado es un hallazgo, en los dos órdenes de lectura (la función antes o después de la cadena de `const`)
+    {
+      const cadenaKd = ["const kd0 = 'ev';", ...Array.from({ length: 260 }, (_, i) => `const kd${i + 1} = kd${i};`), "const zzPoc = kd260 + 'al';"].join('\n');
+      const usoKd = "function fPoc() { return Reflect.get(globalThis, zzPoc)('1'); }";
+      expect(conCodigo(usoKd + '\n' + cadenaKd).join(' ')).toMatch(/no se puede analizar/);
+      // (con la cadena primero, el memo pliega de abajo arriba sin pasar el tope y el uso se ve como lo que es: eval)
+      expect(conCodigo(cadenaKd + '\n' + usoKd).join(' ')).toMatch(/no se puede analizar|usa eval/);
+    }
+    // lo que PARECE código pero no lo es (divisiones, sumas, la clase con `constructor`) no es un hallazgo; las cadenas y comentarios que nombran eval/ssX = son falsos positivos aceptados de la lectura por texto
+    expect(conCodigo([
+      "const q4Ast = /abc|d+/.test('x');",
+      "const q5Ast = (10 / 2) / 5 + 4 / 2;",
+      'const wAst = { constructor() {} }; wAst.v = 1;',
+      'const nAst = 100 + 1; const zAst = [1, 2][nAst]; class KAst { constructor() { this.v = nAst; } };',
+    ].join('\n'))).toEqual([]);
+    // el módulo común NO se quita antes de analizar: un `//` abierto antes de él no puede esconder código que SÍ se ejecuta (revisión de seguridad de #835)
+    {
+      const modulo = readFileSync(join(CARPETA, '../comun-sin-agente/src/sesion.js'), 'utf8').trimEnd();
+      const conModulo = (envoltura: (m: string) => string): string[] => { const f = prod(); const nd = f['nodes'].find((x: J) => x.name === 'Soltar mensajes'); expect(String(nd.parameters.jsCode)).toContain(modulo); nd.parameters.jsCode = String(nd.parameters.jsCode).replace(modulo, () => envoltura(modulo)); return CONSTRUIR.guardias('trigger', f, DATOS_CRM); };
+      expect(conModulo((m) => "void 0; //" + m + "; ssDesdeAutorizado = () => true;\n").join(' ')).toMatch(/«Soltar mensajes» reasigna o muta/);
+      expect(conModulo((m) => m + "\nssDesdeAutorizado = () => true;\n").join(' ')).toMatch(/reasigna o muta/);
+      expect(conModulo((m) => m + "\nfunction ssDesdeAutorizado() { return true; }\n").join(' ')).toMatch(/declara ssDesdeAutorizado 2 veces/);
+      // el módulo dentro de un comentario y a continuación una copia EDITADA: el chequeo textual del módulo se cumple, pero lo que corre es la copia
+      expect(conModulo((m) => '/*' + m + '*/\n' + m.replace(/function ssDesdeAutorizado\([^)]*\) \{/, 'function ssDesdeAutorizado() { return true; ')).join(' ')).toMatch(/declara ssDesdeAutorizado 2 veces/);
+      // negado: un comentario o una línea inofensiva antes y después del módulo no es hallazgo
+      expect(conModulo((m) => "// nada\nvoid 0;\n" + m + "\nvoid 0; // fin\n")).toEqual([]);
+    }
+    // declarar una ssX como generador o async tampoco escapa a la declaración única
+    for (const redefine of ['function*ssEspacio() {}', 'function * ssEspacio() {}', 'async function*ssEspacio() {}']) {
+      const g = prod();
+      g['nodes'].find((x: J) => x.name === 'Soltar mensajes').parameters.jsCode += '\n' + redefine;
+      expect(CONSTRUIR.guardias('trigger', g, DATOS_CRM).join(' '), redefine).toMatch(/«Soltar mensajes» declara ssEspacio 2 veces/);
+    }
   });
   it('el ESTADO SE COMPROMETE ANTES DE ENVIAR: «Armar mensajes» conectado al envío, un nodo de compromiso ausente o apuntando a otra Function, y un envío colgado de otro nodo se detectan (PR-4c2)', () => {
     const a = prod();
@@ -1544,7 +1635,7 @@ describe('guardias de --verificar', () => {
   });
 });
 
-describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe con --verificar', () => {
+describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe con --verificar', { timeout: 120000 }, () => {
   const tmp: string[] = [];
   afterAll(() => { for (const d of tmp) rmSync(d, { recursive: true, force: true }); });
   const correr = (args: string[]): { status: number | null; salida: string } => {
@@ -1567,12 +1658,12 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     expect(r.salida).toMatch(/argumento desconocido/);
     expect(mtimes()).toEqual(antes);
   });
-  it('arma los dos JSON a partir de la plantilla y los datos: coinciden byte a byte con lo versionado y son EL MISMO con y sin ensayo salvo el disparador', () => {
+  it('arma los tres JSON (ensayo en el Demo A, prueba y producción) a partir de la plantilla y los datos: coinciden byte a byte con lo versionado y son EL MISMO con y sin ensayo salvo el disparador', () => {
     const r = CONSTRUIR.construir({ verificar: true });
-    expect(r.resultado.map((x) => [x.archivo, x.alDia, x.versionado])).toEqual([['chat-novuchat.prueba.json', true, []], ['chat-novuchat.novuchat.json', true, []]]);
+    expect(r.resultado.map((x) => [x.archivo, x.alDia, x.versionado])).toEqual([['chat-novuchat.ensayo-demo-a.json', true, []], ['chat-novuchat.prueba.json', true, []], ['chat-novuchat.novuchat.json', true, []]]);
     expect(r.huerfanos).toEqual([]);
     // 53 de antes (44 + los 9 de la rama común del guardado de medios) y los 20 del estado de la conversación en el servidor (PR-4c2).
-    expect(r.resultado.map((x) => x.nodos)).toEqual([73, 73]);
+    expect(r.resultado.map((x) => x.nodos)).toEqual([73, 73, 73]);
   });
   it('un dato cambiado, un archivo borrado a mano o una guardia violada a mano hacen fallar `--verificar` en una copia temporal; un JSON sin datos es un huérfano', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chat-novuchat-'));
@@ -1634,9 +1725,9 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     // el nombre del modelo solo se lee de los datos: ningún nodo lo escribe a mano
     for (const n of base['nodes'].filter((x: J) => x.type === 'n8n-nodes-base.code' && x.name !== 'Config del negocio')) expect(String(n.parameters.jsCode)).not.toMatch(/gemini-3\.5-flash-lite/);
   });
-  it('los dos JSON son los únicos de la carpeta del flujo (más la plantilla y los de herramientas): ninguno sin archivo de datos', () => {
+  it('los tres JSON son los únicos de la carpeta del flujo (más la plantilla y los de herramientas): ninguno sin archivo de datos', () => {
     const jsons = readdirSync(CARPETA).filter((n) => n.endsWith('.json')).sort();
-    expect(jsons).toEqual(['chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json', 'flujo.plantilla.json']);
+    expect(jsons).toEqual(['chat-novuchat.ensayo-demo-a.json', 'chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json', 'flujo.plantilla.json']);
     expect(readdirSync(CARPETA).filter((n) => /\.local\.json$/.test(n))).toEqual([]);
   });
 });

@@ -25,6 +25,9 @@ const ENLACES = /https?:\/\/|www\.|\b[a-z0-9-]+\.(?:com|net|org|bo|app|me)\b/i;
 const BANCO = /\b((?<!\b(?:tu|un) )banco(?! de (?:100 )?preguntas)|titular|mercantil|cuenta bancaria|n[uú]mero de cuenta)\b/i;
 const PROMESAS = /(?:^|\W)(?:te llamo|te llamar|te escribir|te avisar|lo consulto|te avisamos|te contactar)/i;
 
+// El texto EXACTO de Silvana (garantía o devolución, 07/11/2026) trae «personalmente» (el chat de Rubén): es una constante del código que `rrSeguro` aparta; el resto de la salida sí se vigila.
+const TEXTO_FIJO_SILVANA = 'Déjame confirmarte las condiciones de garantía o devolución directamente con Rubén. Puedes tocar el botón de aquí abajo para conversar con él personalmente 🌙';
+
 /** Todo lo que sale en una batería: los textos al cliente (y al respaldo) y los avisos a Rubén. */
 function bateria(): Array<{ rotulo: string; t: ResultadoTurno }> {
   const salida: Array<{ rotulo: string; t: ResultadoTurno }> = [];
@@ -73,7 +76,7 @@ describe('la batería: las negaciones globales valen para TODO lo que sale', () 
   });
   it('8. ninguna salida niega ser una IA, dice psicólogo o terapeuta, narra banco, titular o cuenta, ni envía un enlace', () => {
     for (const x of textos) {
-      const n = LIB.rrNorm(x.cuerpo);
+      const n = LIB.rrNorm(x.cuerpo.split(TEXTO_FIJO_SILVANA).join(' '));
       expect(LIB.RR_NIEGA_IA.test(n), x.rotulo + ': ' + x.cuerpo).toBe(false);
       expect(x.cuerpo, x.rotulo).not.toMatch(/psic[oó]logo|terapeuta/i);
       expect(x.cuerpo, x.rotulo).not.toMatch(BANCO);
@@ -120,7 +123,7 @@ describe('1. la redacción del modelo no puede afirmar un pago, ni con homoglifo
       const w = nuevo({ modeloDice: crudo });
       hablar(w, ANA, mTexto('hola'));
       const t = hablar(w, ANA, mTexto('¿eres un bot?'));
-      expect(LIB.RR_NIEGA_IA.test(LIB.rrNorm(t.mensajes[0]!.cuerpo)), crudo).toBe(false);
+      expect(LIB.RR_NIEGA_IA.test(LIB.rrNorm(t.mensajes[0]!.cuerpo.split(TEXTO_FIJO_SILVANA).join(' '))), crudo).toBe(false);
       expect(t.mensajes[0]!.cuerpo, crudo).not.toContain(crudo);
     }
   });

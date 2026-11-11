@@ -6,7 +6,7 @@
   "casos": [
     {
       "id": "U1",
-      "titulo": "Delivery pendiente de dirección: el cliente COMPARTE SU UBICACIÓN y vale como dirección (pasa al resumen, sin modelo, sin pedirla por escrito)",
+      "titulo": "Delivery pendiente de dirección: el cliente COMPARTE SU UBICACIÓN y ya NO alcanza (07/11): se pide la dirección escrita, sin resumen y sin modelo",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -29,7 +29,8 @@
               }
             ],
             "entrega": "envio",
-            "direccion": ""
+            "direccion": "",
+            "ubicacion": null
           },
           "esperado": {
             "mensajes": 1,
@@ -53,17 +54,14 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "Entrega: delivery a ubicaci[oó]n compartida"
+              "tu direcci[oó]n exacta, escrita"
             ],
             "textosNo": [
-              "direcci[oó]n exacta",
-              "necesito"
-            ],
-            "titulos": [
-              "Confirmar pedido"
+              "Entrega: delivery a",
+              "necesito dos cosas"
             ],
             "estado": {
-              "paso": "pedido_confirmar",
+              "paso": "pedido_datos",
               "entrega.entrega": "delivery",
               "entrega.ubicacion.lat": -16.5,
               "entrega.ubicacion.lng": -68.15
@@ -72,7 +70,10 @@
               "modelo": false,
               "derivacion": false,
               "aviso": false
-            }
+            },
+            "titulosNo": [
+              "Confirmar pedido"
+            ]
           }
         }
       ]
@@ -188,7 +189,7 @@
     },
     {
       "id": "U3",
-      "titulo": "Ubicación + texto (1): comparte la ubicación y después escribe una referencia; las dos quedan (ubicación como dirección, el texto como referencia)",
+      "titulo": "Ubicación + texto: con la dirección escrita del carrito, comparte la ubicación y después escribe una referencia; las tres quedan (dirección, ubicación y referencia)",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -211,12 +212,13 @@
               }
             ],
             "entrega": "envio",
-            "direccion": ""
+            "direccion": "Av. Banzer 1234",
+            "ubicacion": null
           },
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "direcci[oó]n exacta"
+              "necesito que compartas tu ubicaci[oó]n"
             ],
             "estado": {
               "paso": "pedido_datos",
@@ -254,8 +256,9 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "Entrega: delivery a ubicaci[oó]n compartida",
-              "panader[ií]a"
+              "Entrega: delivery a Av\\. Banzer 1234",
+              "panader[ií]a",
+              "con la ubicaci[oó]n que compartiste"
             ],
             "titulos": [
               "Confirmar pedido"
@@ -348,7 +351,7 @@
     },
     {
       "id": "U4",
-      "titulo": "Ubicación INVÁLIDA (latitud fuera de rango, longitud fuera de rango, coordenada que no es número): no se toma como dirección y el asistente vuelve a pedir la dirección",
+      "titulo": "Ubicación INVÁLIDA (latitud fuera de rango): no se toma, el pedido sigue sin ubicación y el asistente la vuelve a pedir (un recordatorio, no el mismo mensaje)",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -371,7 +374,8 @@
               }
             ],
             "entrega": "envio",
-            "direccion": ""
+            "direccion": "",
+            "ubicacion": null
           },
           "esperado": {
             "mensajes": 1,
@@ -395,7 +399,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "direcci[oó]n exacta"
+              "Todav[ií]a necesito tu direcci[oó]n escrita y tu ubicaci[oó]n"
             ],
             "textosNo": [
               "ubicaci[oó]n compartida"
@@ -415,7 +419,50 @@
               "aviso": false
             }
           }
+        }
+      ]
+    },
+    {
+      "id": "U4b",
+      "titulo": "Ubicación INVÁLIDA (longitud fuera de rango): no se toma, el pedido sigue sin ubicación y el asistente la vuelve a pedir (un recordatorio, no el mismo mensaje)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
         },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "",
+            "ubicacion": null
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
         {
           "cliente": {
             "tipo": "ubicacion",
@@ -425,7 +472,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "direcci[oó]n exacta"
+              "Todav[ií]a necesito tu direcci[oó]n escrita y tu ubicaci[oó]n"
             ],
             "titulosNo": [
               "Confirmar pedido"
@@ -442,7 +489,50 @@
               "aviso": false
             }
           }
+        }
+      ]
+    },
+    {
+      "id": "U4c",
+      "titulo": "Ubicación INVÁLIDA (coordenada que no es número): no se toma, el pedido sigue sin ubicación y el asistente la vuelve a pedir (un recordatorio, no el mismo mensaje)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
         },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "",
+            "ubicacion": null
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
         {
           "cliente": {
             "tipo": "ubicacion",
@@ -452,7 +542,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "direcci[oó]n exacta"
+              "Todav[ií]a necesito tu direcci[oó]n escrita y tu ubicaci[oó]n"
             ],
             "titulosNo": [
               "Confirmar pedido"
@@ -497,12 +587,13 @@
               }
             ],
             "entrega": "envio",
-            "direccion": ""
+            "direccion": "Av. Banzer 1234",
+            "ubicacion": null
           },
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "direcci[oó]n exacta"
+              "necesito que compartas tu ubicaci[oó]n"
             ],
             "estado": {
               "paso": "pedido_datos",
@@ -584,12 +675,13 @@
               }
             ],
             "entrega": "envio",
-            "direccion": ""
+            "direccion": "Av. Banzer 1234",
+            "ubicacion": null
           },
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "direcci[oó]n exacta"
+              "necesito que compartas tu ubicaci[oó]n"
             ],
             "estado": {
               "paso": "pedido_datos",
@@ -653,7 +745,7 @@
     },
     {
       "id": "U6",
-      "titulo": "Delivery pendiente de dirección: el mensaje ofrece escribirla O compartir la ubicación, y es UN solo mensaje (el mismo de siempre; el botón nativo de ubicación lo dibuja WhatsApp)",
+      "titulo": "Delivery sin dirección ni ubicación: UN solo mensaje que pide las DOS (con el botón de ubicación); un texto sin dato recibe UN recordatorio distinto, no el mismo mensaje",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -676,13 +768,15 @@
               }
             ],
             "entrega": "envio",
-            "direccion": ""
+            "direccion": "",
+            "ubicacion": null
           },
           "esperado": {
             "mensajes": 1,
             "textos": [
+              "dos cosas",
               "direcci[oó]n exacta",
-              "Escr[ií]bela aqu[ií] o comparte tu ubicaci[oó]n con el bot[oó]n"
+              "comparte tu ubicaci[oó]n con el bot[oó]n"
             ],
             "estado": {
               "paso": "pedido_datos",
@@ -703,15 +797,17 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "direcci[oó]n exacta",
-              "comparte tu ubicaci[oó]n"
+              "Todav[ií]a necesito tu direcci[oó]n escrita y tu ubicaci[oó]n"
             ],
             "estado": {
               "paso": "pedido_datos"
             },
             "efectos": {
               "derivacion": false
-            }
+            },
+            "textosNo": [
+              "dos cosas"
+            ]
           }
         }
       ]

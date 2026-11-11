@@ -93,9 +93,13 @@ function rrParrafos(texto) {
 const RR_SALUD_PROHIBIDA = /\b(?:sin (?:pastillas?|farmacos?|medicamentos?|medicacion)|cur(?:a|o|as|an|ar|aras?|are|arte|arse|ado|ada|acion)|desde la primera noche|garantiz\w*)\b/;
 const RR_SIMULADO = /\bsimulad[oa]s?\b/;
 function rrSeguro(texto) {
-  if (RR_NIEGA_IA.test(rrNorm(texto))) return rrParrafos(RR_SALUDO_MINIMO);
-  if (CB_PROHIBIDAS.test(cbCanon(texto))) return rrParrafos(RR_SALUDO_MINIMO);
-  if (RR_SALUD_PROHIBIDA.test(rrNorm(texto)) || RR_SIMULADO.test(rrNorm(texto))) return rrParrafos(RR_SALUDO_MINIMO);
+  // EL TEXTO FIJO DE SILVANA para garantía o devolución («confirmarte… personalmente») es una constante del código, no una frase del modelo; contiene «confirmar» y «personalmente», que la barrera toma por promesa o por negar ser una IA (aquí
+  // «personalmente» es el chat de Rubén). Se aparta SOLO esa constante exacta y el resto del texto pasa por la barrera completa (un texto del modelo que la copie y agregue algo no pasa).
+  const t = String(texto);
+  const resto = t.indexOf(RR_TEXTO_DEVOLUCION) >= 0 ? t.split(RR_TEXTO_DEVOLUCION).join(' ') : t;
+  if (RR_NIEGA_IA.test(rrNorm(resto))) return rrParrafos(RR_SALUDO_MINIMO);
+  if (CB_PROHIBIDAS.test(cbCanon(resto))) return rrParrafos(RR_SALUDO_MINIMO);
+  if (RR_SALUD_PROHIBIDA.test(rrNorm(resto)) || RR_SIMULADO.test(rrNorm(resto))) return rrParrafos(RR_SALUDO_MINIMO);
   return rrParrafos(texto);
 }
 
@@ -110,7 +114,7 @@ function rrSeguro(texto) {
 function rrFichaBase() {
   return {
     v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, usados: [], pedidos: 0, qrHastaMs: 0, comprobanteMs: 0, avisosConsulta: {}, producto: '', hist: [], modeloN: 0, riesgo: false, riesgoMs: 0, fueraDePaisMs: 0,
-    charlaN: 0, pidioOpciones: false, opcionesVistas: false, pendientes: [], ultimoHash: '', ultimaFirma: '', upgrade: 0,
+    charlaN: 0, pidioOpciones: false, opcionesVistas: false, pendientes: [], ultimoHash: '', ultimaFirma: '', upgrade: 0, qrInvitadoMs: 0,
   };
 }
 // La ficha vigente de un teléfono: si pasó el olvido, es una ficha nueva.
@@ -144,6 +148,8 @@ function rrFichaVigente(e, ahoraMs) {
     riesgoMs: e.riesgo === true && !((nums(e.riesgoMs) || ultimo) > 0 && ahoraMs - Math.min(nums(e.riesgoMs) || ultimo, ahoraMs) > RR_OLVIDO_MS) ? Math.min(nums(e.riesgoMs) || ultimo, ahoraMs) : 0,
     upgrade: e.upgrade === 1 || e.upgrade === 2 ? e.upgrade : 0,
     fueraDePaisMs: nums(e.fueraDePaisMs),
+    // La invitación a pagar el QR abierto se agrega UNA vez por QR (cuándo se hizo: `RR_VENTANA_INVITACION_MS`; un QR nuevo la reinicia): repetirla en cada mensaje es repetirse como loro.
+    qrInvitadoMs: nums(e.qrInvitadoMs),
     charlaN: charla.charlaN,
     pidioOpciones: charla.pidioOpciones,
     opcionesVistas: charla.opcionesVistas,
@@ -240,6 +246,7 @@ function rrProspectoCrm(d) {
   else if (tipo === 'info') quePidio = 'Información';
   else if (tipo === 'derivar') quePidio = 'Consulta para Rubén';
   const perfil = rrTexto(x.nombrePerfil).slice(0, 60).replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim();
+  // nuevoContacto NO tiene efecto en el miniCRM desde el 08/11/2026 (una fila por conversacion de 24 h: la decide el modulo crm con atencion.conversacionDesde); se conserva solo por compatibilidad.
   const p = { telefono: rrTexto(x.from).replace(/\D/g, ''), nombre: perfil, nombreDePerfil: true, anuncio: x.anuncio === true, nuevoContacto: x.nuevoContacto === true, senales: senales, ultimaInteraccionMs: Number(x.ahoraMs) };
   if (quePidio !== '') p.quePidio = quePidio;
   if (x.avisoSalio === true && tipo === 'derivar') p.derivacion = pidioLlamada ? 'Pidió hablar con Rubén' : 'Consulta para Rubén';
@@ -366,7 +373,8 @@ function rrPlazoHoras(base) {
 }
 // Devolución, garantía o reembolso (decisión de Andres, 05/11/2026): NO HAY GARANTÍA. Es un producto digital de pago único; el asistente no la ofrece ni promete nada, y quien quiera ver su caso (reclamo, problema con su pago
 // o con su material) pasa con Rubén (aviso más botón). Texto fijo en código: no es dato de la consola. Redacción comercial pendiente de revisión de Silvana (ver DISENO.md).
-const RR_TEXTO_DEVOLUCION = 'Es un producto digital de pago único y no tiene garantía de devolución. Si tienes un problema con tu pago o con tu material, Rubén te atiende directamente.';
+// CAMBIO (Andres, 07/11/2026, a pedido de Silvana en la ronda 2 del humo): el asistente ya NO afirma si hay o no garantía; la condición la confirma Rubén en persona. Texto de Silvana, exacto; con el botón; sin «No pude avisarle» (ver `rrTextoDerivacion`).
+const RR_TEXTO_DEVOLUCION = 'Déjame confirmarte las condiciones de garantía o devolución directamente con Rubén. Puedes tocar el botón de aquí abajo para conversar con él personalmente 🌙';
 
 // -----------------------------------------------------------------------------
 // Crisis o riesgo emocional (decisión de Andres, 04/11/2026; MD de Rubén, regla 6): se DETECTA por código (raíces sobre texto, transcripción o texto leído de una imagen) Y por la marca `RIESGO` del modelo.
@@ -675,6 +683,40 @@ function rrPideImagenes(n) {
   const pide = /\b(tienes|tiene|tienen|hay|manda|mandas|mandame|mandarme|envia|envias|enviame|enviarme|pasa|pasas|pasame|pasarme|muestra|muestras|muestrame|mostrarme|compartes|compartirme|puedo ver|quiero ver|dejas ver|puedes ver)\b/.test(n);
   return objeto && pide;
 }
+// «¿Qué incluye el pack?», «¿qué contiene el libro?», «¿qué trae?»: el CONTENIDO de un producto lo dice el CÓDIGO (el modelo no puede nombrar el pack: el filtro de `oferta_fuera_del_codigo` tira su texto y la persona se quedaba sin respuesta).
+// Devuelve la clave del producto nombrado; sin producto nombrado, `fallback` (el del QR abierto) y, si no hay, '' (lo contesta el modelo). Corta: a lo más 10 palabras y SIN texto sobrante.
+function rrPideContenido(n, fallback) {
+  const palabras = n === '' ? 0 : n.split(' ').length;
+  if (palabras > 10) return '';
+  // «¿Cuánto tiempo dura el plan?» (ronda 2, #7): la respuesta del modelo se descartaba por las barreras y salía el texto de respaldo. Pregunta SOLA, por código.
+  if (/^(hola )?(y )?(cuanto (tiempo )?(dura|tarda|demora|toma|lleva)|cuantos dias (dura|tiene|son|lleva)|de cuantos dias es) (el |este |ese |la |en )?(plan|programa|metodo)( guiado)?( de 21 dias)?$/.test(n)) return 'plan';
+  const pregunta = /\b(que|cual|cuales) (incluye|incluyen|contiene|contienen|trae|traen|viene|vienen|lleva|llevan)\b|\b(que hay|de que consta|en que consiste)\b[^.?!]{0,20}\b(pack|paquete|libro|audiolibro|meditaciones)\b|\b(incluye|contiene|trae|incluyen|contienen) (el |la |los |las )?(pack|paquete|libro|audiolibro|meditaciones)\b/.test(n);
+  if (!pregunta) return '';
+  // SOLO LA PREGUNTA SOLA (revisión de seguridad del #847): si sobra algo más que muletillas («hola», «por favor», «no me explicaste nada»), la frase puede traer otra cosa (una crisis que las raíces no reconocen: «¿qué trae el pack para dejar de existir?»)
+  // y va al modelo, que puede marcar RIESGO. Se quitan la pregunta, el producto, los artículos y las muletillas; si queda una palabra, no es una pregunta de contenido.
+  const resto = n
+    .replace(/\b(que|cual|cuales|de que|en que) (incluye|incluyen|contiene|contienen|trae|traen|viene|vienen|lleva|llevan|hay|consta|consiste)\b/g, ' ')
+    .replace(/\b(incluye|incluyen|contiene|contienen|trae|traen)\b/g, ' ')
+    .replace(/\b(el|la|los|las|del|de|en|con|dentro|pack|paquete|completo|libro|audiolibro|audio|meditaciones|meditacion)\b/g, ' ')
+    .replace(/\b(hola|buenas|buenos|dias|tardes|noches|buen|dia|por favor|porfa|favor|me puedes decir|me podrias decir|me dices|me puedes contar|dime|cuentame|y|entonces|pero|es|que|nada|no me (explicaste|dijiste|has explicado|has dicho)|aun|todavia|ya|mas|primero|antes)\b/g, ' ')
+    .replace(/[^a-z]+/g, ' ').trim();
+  if (resto !== '') return '';
+  if (/\b(pack|paquete)\b/.test(n)) return 'pack';
+  if (/\baudiolibro|\baudio libro\b/.test(n)) return 'audiolibro';
+  if (/\bmeditaciones?\b/.test(n)) return 'meditaciones';
+  if (/\blibro\b/.test(n)) return 'libro';
+  if (/\bcompleto\b/.test(n)) return 'pack';
+  return typeof fallback === 'string' && ['pack', 'libro', 'audiolibro', 'meditaciones'].indexOf(fallback) >= 0 ? fallback : '';
+}
+// El contenido de cada producto, de la planilla y la guía de Rubén (sin precios, sin bono: no se vende ni se regala). El nombre del Pack sale del catálogo de la Consola.
+function rrTextoContenido(producto, nom) {
+  if (producto === 'plan') return 'El plan guiado es de 21 días y se practica a tu propio ritmo: cada eslabón del libro cierra con un ejercicio, y el diario del sueño te ayuda a ver qué cambia. Es material educativo; cada persona avanza distinto.';
+  if (producto === 'pack') return capitalizarRr(rrNombreEnTexto(nom, 'pack')) + ' trae el libro (208 páginas y 14 eslabones, cada uno con un ejercicio práctico; incluye el plan guiado de 21 días y el diario del sueño), el audiolibro con los 14 capítulos y las 3 meditaciones guiadas. El audiolibro y las meditaciones usan una voz sintética, generada por computadora.';
+  if (producto === 'audiolibro') return 'El audiolibro son los mismos 14 capítulos del libro, en audio, con una voz sintética, generada por computadora. Los ejercicios y el diario del sueño se hacen mejor con el libro.';
+  if (producto === 'meditaciones') return 'Son tres meditaciones guiadas, con voz sintética y música suave de fondo: «Cierra el día» (7 minutos), «Suelta el cuerpo» (7 minutos) y «Si despiertas de madrugada» (5 minutos).';
+  return 'El libro tiene 208 páginas y 14 eslabones; cada uno cierra con un ejercicio práctico. Incluye el plan guiado de 21 días, el diario del sueño, el registro semanal y el anexo «Cuándo pedir ayuda». Es material educativo: no es consejo médico.';
+}
+function capitalizarRr(t) { return String(t || '').charAt(0).toUpperCase() + String(t || '').slice(1); }
 // La intención «catálogo»: «dame tu catálogo», «qué vendes», «qué productos tienes», «lista», «opciones», «qué ofreces». Corta (a lo más 8 palabras).
 function rrPideCatalogo(n) {
   const palabras = n === '' ? 0 : n.split(' ').length;
@@ -822,11 +864,18 @@ function rrTextoOpciones(cat, usados, nom) {
 const RR_PROMETE_DEBILES = ['pack', 'bono', 'bonos', 'audios', 'audiolibro', 'meditaciones'];
 
 // Las alternativas PROPIAS de Rubén cuando el texto que sigue sería IDÉNTICO al último enviado: SIN el botón de Rubén ni una invitación a usarlo (el botón va solo cuando se deriva, con aviso). Se pasan a `ctAlternaDeRepetido` como `alternas`.
+// Cuánto dura «ya se le invitó a pagar este QR»: el QR vive 15 minutos; pasado este tiempo, un QR nuevo (de este flujo o abierto por el servidor) vuelve a invitar.
+const RR_VENTANA_INVITACION_MS = 30 * 60 * 1000;
 const RR_ALTERNAS = {
   contenido: [
     'Eso ya te lo conté en mi mensaje anterior. Si te quedó alguna duda, cuéntame cuál con otras palabras.',
     'Prefiero no repetirte lo mismo. Dime con otras palabras qué necesitas saber.',
     'Esa información ya está más arriba en este chat. Si algo no quedó claro, pregúntamelo de otra forma.',
+  ],
+  // Lo repetido fue un TEXTO DE RESPALDO (el modelo cayó): no se dijo nada que «ya se contó», y se dice la verdad.
+  respaldo: [
+    'Perdona, no logré responderte bien eso. ¿Me lo escribes de otra forma?',
+    'No pude darte una buena respuesta a eso. Cuéntame con otras palabras qué quieres saber.',
   ],
   medio: [
     'Sigo sin poder usar ese archivo por aquí. Cuéntame por escrito qué necesitas.',
@@ -838,7 +887,8 @@ const RR_ALTERNAS = {
 const RR_TEXTO_MODELO_CAIDO_CON = 'Gracias por escribir. Cuéntame un poco más de cómo están tus noches, o si prefieres, mira las opciones.';
 const RR_TEXTO_MODELO_CAIDO_SIN = 'Gracias por escribir. Cuéntame un poco más de cómo están tus noches y te ayudo.';
 function rrTextoModeloCaido(conOpciones) { return conOpciones === false ? RR_TEXTO_MODELO_CAIDO_SIN : RR_TEXTO_MODELO_CAIDO_CON; }
-const RR_TEXTO_RESULTADO = 'No puedo prometerte que vayas a dormir de una forma o desde una fecha: es un método práctico de 14 eslabones y un plan de 21 días, y el resultado depende de cada persona y de su constancia. No es un consejo médico ni reemplaza a un profesional de la salud.';
+// Texto EXACTO de Silvana (ronda 2 del humo, 07/11/2026, CASO 2): garantía de dormir o de resultados; NO deriva a Rubén ni lleva su botón. Va solo: sin frase de cierre agregada.
+const RR_TEXTO_RESULTADO = 'No, y desconfía de quien lo prometa: cada persona es distinta. El libro te da un método educativo para identificar qué afecta tus noches y un plan de 21 días para practicar. Los resultados dependen de tu constancia y de tu situación personal 🌙';
 // «Lo voy a pensar» (base de conocimiento, objeciones): se responde SIN presión y recordando los dos precios principales; el texto y los precios los pone el CÓDIGO (el modelo no menciona precios). Sin pregunta de cierre.
 function rrDiceLoVoyAPensar(n) {
   return /\b(?:lo|la) (?:voy a |vamos a |quiero |tengo que )?pensar(?:lo|la)?\b|\bvoy a pensar(?:lo|la)?\b|\bdejame pensar(?:lo|la)?\b|\bdeja(?:me)? que (?:lo|la) piense\b|\b(?:lo|la) pienso\b|\bluego (?:te )?(?:escribo|aviso)\b|\bmas tarde (?:te )?(?:escribo|aviso)\b/.test(String(n || ''));
@@ -858,7 +908,7 @@ function rrTextoMuestra(base) {
   const dir = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(d) ? 'https://' + d + '/' : '';
   return 'Claro. La muestra de unos 50 segundos de la meditación «Cierra el día» está en su página' + (dir !== '' ? ': ' + dir : '') + '. Es una voz sintética, no una persona grabando 🌙';
 }
-function rrTextoResultado(conOpciones) { return RR_TEXTO_RESULTADO + (conOpciones === false ? '' : '\n\n¿Quieres ver las opciones?'); }
+function rrTextoResultado() { return RR_TEXTO_RESULTADO; }
 const RR_TEXTO_DOCUMENTO = 'Recibí tu archivo, pero por este chat solo puedo leer texto y los comprobantes de un pago en imagen o PDF. Cuéntame por escrito en qué te puedo ayudar.';
 const RR_TEXTO_IMAGEN = 'Recibí tu imagen, pero por este chat solo puedo leer texto y los comprobantes de un pago. Cuéntame por escrito en qué te puedo ayudar.';
 // ADOPCIÓN DE VISIÓN POR CATEGORÍAS (23/10/2026): ante una foto, una captura, una publicidad sin ángulo reconocido o «otro», el asistente dice lo que ve y ofrece lo que SÍ hace (el libro y los precios).
@@ -869,7 +919,7 @@ function rrTextoImagenDescrita(descripcion, documento, hashUltimo) {
   const ofrece = 'Cuéntame qué necesitas sobre esto, o pregúntame por el libro y los precios.';
   const lista = [
     (d ? 'Veo ' + d + '.' : (documento === true ? 'Recibí tu archivo.' : 'Recibí tu imagen.')) + ' ' + ofrece,
-    (documento === true ? 'Ese archivo ya lo recibí.' : 'Esa imagen ya la recibí.') + ' Dime con palabras qué quieres saber, o pregúntame por el libro y los precios.',
+    'Gracias por enviarlo. Dime con palabras qué quieres saber, o pregúntame por el libro y los precios.',
     'Aún no sé qué necesitas con eso. Escríbeme tu pregunta, o consulta por el libro y los precios.',
   ];
   return lista.find((x) => ctHashTexto(x) !== hashUltimo) || lista[0];
@@ -917,14 +967,16 @@ const RR_TEXTO_COBRO_CERRADO = 'Listo, cerré tu pedido.\n\nNo pagues con ese QR
 const RR_TEXTO_COBRO_YA_CERRADO = 'Tu pedido ya quedó cerrado.\n\nNo pagues con ese QR: si ya lo hiciste, envíame el comprobante o escríbele a Rubén con el botón; el pago lo revisa él.';
 // Derivación a Rubén. `salio` = el aviso devolvió un `wamid` real (true), no salió (false) o se suprimió por el límite de 30 minutos ('repetido'): SOLO con true se dice «le avisé».
 function rrTextoDerivacion(motivo, salio, clave, base) {
-  if (salio === 'repetido' && motivo === 'consulta') return 'Eso lo ve Rubén directamente. Rubén ya recibió el aviso de tu consulta anterior; si quieres, escríbele directo con el botón.';
+  if (salio === 'repetido' && motivo === 'consulta' && clave !== 'devolucion' && clave !== 'reclamo') return 'Eso lo ve Rubén directamente. Rubén ya recibió el aviso de tu consulta anterior; si quieres, escríbele directo con el botón.';
   // Devolución (no hay garantía), otros medios de pago, reclamos, volumen y pagos que no aparecen se conversan DIRECTAMENTE con Rubén: aviso + botón, y NUNCA una promesa de garantía, devolución ni resultado.
   if (motivo === 'consulta' && (clave === 'devolucion' || clave === 'otro_medio_pago' || clave === 'reclamo' || clave === 'no_entrega' || clave === 'volumen' || clave === 'medica')) {
     const intro = clave === 'no_entrega' ? 'Lamento la espera. Rubén revisa los comprobantes y envía el material por este chat en cuanto los revisa; desde aquí no puedo confirmarte si ya salió.'
-      : (clave === 'devolucion' ? RR_TEXTO_DEVOLUCION
+      : (clave === 'devolucion' || clave === 'reclamo' ? RR_TEXTO_DEVOLUCION
         : (clave === 'otro_medio_pago' ? 'El pago de este material se hace con el QR que te muestro por este chat; cualquier otra forma de pago la ve Rubén directamente.'
           : (clave === 'volumen' ? 'Las compras en cantidad o para reventa las conversa Rubén directamente contigo.'
             : (clave === 'medica' ? 'Esa es una pregunta de salud específica y por aquí no puedo darte consejo médico: lo mejor es consultarla con un profesional de la salud.' : 'Eso lo ve directamente Rubén y puedes conversarlo con él.'))));
+    // Garantía o devolución: el texto de Silvana va SOLO, con el botón, haya salido el aviso o no (si falla por la ventana de 24 h, el cliente no ve ningún error).
+    if (clave === 'devolucion' || clave === 'reclamo') return intro;
     return salio === true ? intro + ' Le avisé; también puedes escribirle directo con el botón.' : intro + ' No pude avisarle; escríbele directo con el botón.';
   }
   // «cancela mi pedido» / «no quiero comprar» que NO se pudo cerrar por código (el servidor no respondió 200, o hay un comprobante previo): NUNCA dice que el pedido quedó cancelado, dice que Rubén lo atiende.
@@ -970,7 +1022,9 @@ function rrTextoComprobante(resultado, causa, salio, diferencia, base) {
       : { cuerpo: sinAviso, boton: true };
   }
   if (resultado === 'reintentar') {
-    return { cuerpo: 'Recibí tu comprobante, pero veo una diferencia con tu compra' + (diferencia ? ': ' + diferencia : '') + '. Si te equivocaste, envíame de nuevo el comprobante correcto (en foto o en PDF desde la app de tu banco). Si prefieres, escríbele a Rubén con el botón.', boton: true };
+    // UNA diferencia (texto) o VARIAS (lista, destinatario primero): la base común arma el tramo («una diferencia con tu compra: X» / «varias diferencias con tu compra: a, b y c»).
+    const cuales = cdFraseDeDiferencias(diferencia);
+    return { cuerpo: 'Recibí tu comprobante, pero veo ' + cuales + '. Si te equivocaste, envíame de nuevo el comprobante correcto (en foto o en PDF desde la app de tu banco). Si prefieres, escríbele a Rubén con el botón.', boton: true };
   }
   if (resultado === 'ilegible') {
     return { cuerpo: 'Recibí tu archivo, pero no pude leer bien el comprobante. ¿Me lo envías de nuevo, más nítido o en PDF desde la app de tu banco?', boton: false };

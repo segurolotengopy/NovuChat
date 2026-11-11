@@ -54,6 +54,10 @@ export const COLUMNAS_V1: readonly ColumnaCrm[] = [
   { campo: 'horarioPreferido', titulo: 'Horario preferido', dueno: 'bot', nueva: true },
   { campo: 'derivacion', titulo: 'Derivación a recepción', dueno: 'bot', nueva: true },
   { campo: 'ventana24h', titulo: 'Se cierra la ventana de 24 h', dueno: 'bot', nueva: true },
+  // Bellido (07/11/2026): servicio elegido, si agendó y cuándo. Opcionales en el mapa: solo escriben los clientes que las mapean.
+  { campo: 'servicioElegido', titulo: 'Servicio elegido', dueno: 'bot', nueva: true },
+  { campo: 'agendo', titulo: 'Agendó', dueno: 'bot', nueva: true },
+  { campo: 'fechaCita', titulo: 'Fecha y hora de la cita', dueno: 'bot', nueva: true },
   // Notas del equipo sobre el caso: el bot NUNCA la escribe ni la lee para decidir (no es un dato de salud del bot).
   { campo: 'diagnostico', titulo: 'Diagnóstico del equipo', dueno: 'equipo', nueva: true },
 ];
