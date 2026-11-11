@@ -27,8 +27,8 @@ interno de NovuChat pasa al portafolio de Silvana»), y después:
   §8 Tech Provider para después.
 - `~/NovuChat/CLIENTES/NOVUCHAT/estado.md` — la tabla del traspaso, con lo
   hecho y lo pendiente.
-- `~/NovuChat/CLIENTES/PLATINUM/pase-a-produccion-waba-propia.md` — el
-  precedente (camino B, 21/09); acá es más simple porque el número cambia.
+- `~/NovuChat/CLIENTES/PLATINUM (PERDIDO)/pase-a-produccion-waba-propia.md` — el
+  precedente (camino B, 21/09; Platinum ya no es cliente, baja del 11/11/2026); acá es más simple porque el número cambia.
 - `docs/pase-a-produccion/RUNBOOK.md` §2 — la fila del caso.
 - Memorias `traspaso-chat-interno-a-tech-provider`,
   `meta-alta-de-numero-tropiezos`, `webhook-de-meta-no-se-da-de-alta-solo`,

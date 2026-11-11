@@ -26,6 +26,9 @@ está en `bitacora/2026-11.md`.
   «Venta mínima v0»; PR-4a y PR-4b (#814, con el Auxiliar 3) están versionados y
   sin publicar. El Demo A sigue con el flujo de Q'Taco del ensayo hasta que el
   Auxiliar 1 lo restaure (sin verificar).
+- **Clínica Platinum:** dada de baja el 11/11/2026 (reclamo 58). No es cliente ni
+  demo; sus tres flujos de n8n quedaron apagados (lo informó la sesión Principal,
+  sin verificar desde acá). Quitar su nombre del código va en un PR aparte.
 - **Copia base `~/NovuChat`:** atrasada 2.694 commits; da falsos atrasos en
   `estado-de-versiones.sh`. Desde un worktree al día, el Demo A solo difiere
   en «Preparar imagen» y los settings del flujo, y así lo declara

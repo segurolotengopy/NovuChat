@@ -323,10 +323,11 @@ jobs:
           # admin/: los JSON y el codigo de Flujos/ (flujos-*.test.ts,
           # ensamblador, fronteras), los scripts de la raiz
           # (estado-de-versiones.test.ts) y docs/base-comercial.md
-          # (planes.test.ts). Hasta el 27/09 un PR que solo tocaba Flujos/
+          # (planes.test.ts) y docs/versiones-por-cliente.md (el registro real,
+          # estado-de-versiones.test.ts: baja de un cliente). Hasta el 27/09 un PR que solo tocaba Flujos/
           # salteaba `calidad` y entraba sin correr sus propias pruebas. Una
           # suite que empiece a leer otra ruta fuera de admin/ la agrega aca.
-          if grep -qE "^(${RUTA}/|\.github/workflows/|Flujos/|scripts/|docs/base-comercial\.md$)" <<< "$archivos"; then
+          if grep -qE "^(${RUTA}/|\.github/workflows/|Flujos/|scripts/|docs/base-comercial\.md$|docs/versiones-por-cliente\.md$)" <<< "$archivos"; then
             echo "pruebas_cambio=true" >> "$GITHUB_OUTPUT"
             echo "Algo que leen las pruebas cambio: corre calidad."
           else
