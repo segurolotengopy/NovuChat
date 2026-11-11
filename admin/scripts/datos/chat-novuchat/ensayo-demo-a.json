@@ -6,7 +6,7 @@
     "trigger": "WhatsApp OAuth account",
     "ingesta": "Cierres NovuChat A (auto)",
     "graph": "Graph WhatsApp Demo A (Bearer)",
-    "planilla": "Google Sheets miniCRM (ensayo)"
+    "planilla": "Google Sheets miniCRM (crm-ensayo-chat)"
   },
   "configBase": {
     "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID",

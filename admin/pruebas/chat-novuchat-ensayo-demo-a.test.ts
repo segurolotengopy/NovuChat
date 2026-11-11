@@ -7,7 +7,7 @@
  *   2. La HERRAMIENTA, contra un n8n de MENTIRA (un servidor HTTP local): con `--conservar-crm` el miniCRM queda conectado a la hoja de PRUEBA; sin la bandera, el comportamiento de
  *      siempre (se quita la rama del CRM y se vacía la planilla) no cambia. Nada toca n8n ni ninguna hoja reales.
  *
- * LO QUE NO SE PUEDE PROBAR ACÁ: que la credencial «Google Sheets miniCRM (ensayo)» exista en la instancia real y tenga acceso SOLO a la hoja de prueba, ni que la hoja tenga las
+ * LO QUE NO SE PUEDE PROBAR ACÁ: que la credencial «Google Sheets miniCRM (crm-ensayo-chat)» exista en la instancia real y tenga acceso SOLO a la hoja de prueba, ni que la hoja tenga las
  * columnas del mapa `crm` (eso lo mira el seco real y la primera conversación del ensayo).
  */
 import { execFile, spawnSync } from 'node:child_process';
@@ -35,7 +35,7 @@ const clonar = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const nodo = (w: J, n: string): J => (w.nodes as J[]).find((x) => x.name === n)!;
 const baseDe = (w: J): J => Object.fromEntries((nodo(w, 'Config base').parameters.assignments.assignments as J[]).map((a) => [a.name, a.value]));
 const HOJAS = ['Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Agregar fila', 'Actualizar fila'];
-const CRED_ENSAYO = 'Google Sheets miniCRM (ensayo)';
+const CRED_ENSAYO = 'Google Sheets miniCRM (crm-ensayo-chat)';
 
 const CONSTRUIR = (await import(/* @vite-ignore */ join(CARPETA, 'construir.mjs'))) as {
   cargarDatos: (a: string, dir?: string) => J; validarDatos: (d: J, a: string) => void; guardias: (entrada: string, flujo: J, datos?: J, destino?: string) => string[];
@@ -83,7 +83,7 @@ describe('el armador: datos y salida del ensayo en el Demo A', () => {
   it('producción y prueba NO llevan nada del ensayo (ni marcadores ni la credencial de hoja): 0 cambios en lo vivo', () => {
     for (const f of ['chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json']) {
       const t = readFileSync(join(CARPETA, f), 'utf8');
-      expect(t, f).not.toMatch(/REEMPLAZAR_(PLANILLA_ENSAYO|NUMERO_AVISO_ENSAYO)|REEMPLAZAR_PHONE_NUMBER_ID"|miniCRM \(ensayo\)/);
+      expect(t, f).not.toMatch(/REEMPLAZAR_(PLANILLA_ENSAYO|NUMERO_AVISO_ENSAYO)|REEMPLAZAR_PHONE_NUMBER_ID"|miniCRM \(crm-ensayo-chat\)/);
     }
     expect(nodo(leerJson(join(CARPETA, 'chat-novuchat.novuchat.json')), 'Agregar fila').credentials.googleApi.name).toBe('Google Sheets NovuChat (cuenta de servicio)');
   });
@@ -119,7 +119,7 @@ describe('el armador: datos y salida del ensayo en el Demo A', () => {
     });
     it('el ensayo con la credencial de hoja de producción (o cualquier otra) falla', () => {
       const d = ensayo(); d.credenciales.planilla = 'Google Sheets NovuChat (cuenta de servicio)';
-      falla(d, 'ensayo-demo-a.json', /credenciales\.planilla.*Google Sheets miniCRM \(ensayo\)/);
+      falla(d, 'ensayo-demo-a.json', /credenciales\.planilla.*Google Sheets miniCRM \(crm-ensayo-chat\)/);
     });
     it('el ensayo con entrada «prueba» falla (la herramienta pone el Trigger del Demo A)', () => {
       const d = ensayo(); d.entrada = 'prueba';
@@ -165,7 +165,7 @@ describe('el armador: datos y salida del ensayo en el Demo A', () => {
     });
     it('el ensayo con una hoja con la credencial de producción, o sin el miniCRM, es un hallazgo', () => {
       const a = e(); nodo(a, 'Agregar fila').credentials.googleApi.name = 'Google Sheets NovuChat (cuenta de servicio)';
-      expect(CONSTRUIR.guardias('trigger', a, D(), SALIDA).join(' ')).toMatch(/tienen que usar «Google Sheets miniCRM \(ensayo\)»/);
+      expect(CONSTRUIR.guardias('trigger', a, D(), SALIDA).join(' ')).toMatch(/tienen que usar «Google Sheets miniCRM \(crm-ensayo-chat\)»/);
       const b = e(); b.nodes = (b.nodes as J[]).filter((n) => n.type !== 'n8n-nodes-base.googleSheets');
       expect(CONSTRUIR.guardias('trigger', b, D(), SALIDA).join(' ')).toMatch(/miniCRM tiene que estar conectado/);
     });
@@ -362,7 +362,7 @@ describe('la herramienta con --conservar-crm (n8n de mentira)', () => {
     nuevo();
     const r = await sobreDemoA(['--aplicar'], 'chat-cred-real.json');
     expect(r.codigo).toBe(1);
-    expect(r.salida).toMatch(/la única credencial de hoja permitida es «Google Sheets miniCRM \(ensayo\)»/);
+    expect(r.salida).toMatch(/la única credencial de hoja permitida es «Google Sheets miniCRM \(crm-ensayo-chat\)»/);
     expect(puts).toHaveLength(0);
   });
   it('se NIEGA: si la credencial del ensayo no existe en n8n, o existe dos veces', async () => {
@@ -457,7 +457,7 @@ describe('sin la bandera el comportamiento de siempre NO cambia', () => {
     writeFileSync(join(carpeta, 'chat-otro-nodo.json'), JSON.stringify(j));
     const r = await sobreDemoA(['--aplicar'], 'chat-otro-nodo.json', false);
     expect(r.codigo).toBe(1);
-    expect(r.salida).toMatch(/googleApi «Google Sheets miniCRM \(ensayo\)», que no está en la tabla de credenciales del Demo A/);
+    expect(r.salida).toMatch(/googleApi «Google Sheets miniCRM \(crm-ensayo-chat\)», que no está en la tabla de credenciales del Demo A/);
     expect(puts).toHaveLength(0);
   });
 });

@@ -236,7 +236,7 @@ const NODOS_CRM_DE_BELLIDO = ['Prospecto para la planilla', 'Buscar teléfono en
 //   - los nodos de Google Sheets se quedan, y su ÚNICA credencial posible es esta (por nombre exacto, tipo googleApi y exactamente UNA en n8n; el Demo A vivo no la usa todavía, así que no se exige que ya la use);
 //   - el id y la hoja de la planilla tienen que llegar YA resueltos (`preparar-import.sh` con los marcadores REEMPLAZAR_PLANILLA_ENSAYO_*): con un marcador o vacío, se niega;
 //   - `--aplicar` exige además `--autorizo-hoja-de-prueba` (escribe filas en una hoja de Google: es una escritura externa por ensayo).
-const CRED_HOJA_DE_ENSAYO = 'Google Sheets miniCRM (ensayo)';
+const CRED_HOJA_DE_ENSAYO = 'Google Sheets miniCRM (crm-ensayo-chat)';
 const CRED_HOJA_REAL = 'Google Sheets NovuChat (cuenta de servicio)';
 const CONSERVAR_CRM = bandera('conservar-crm');
 if (CONSERVAR_CRM && !bandera('sobre-demo-a')) morir('--conservar-crm solo se usa con --sobre-demo-a');

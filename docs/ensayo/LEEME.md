@@ -774,7 +774,7 @@ nombres de credencial. Los JSON de producción y de prueba **no cambian** (se co
 - Datos: `admin/scripts/datos/chat-novuchat/ensayo-demo-a.json` (hereda de `novuchat.json`). Solo
   marcadores: `REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A), `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono de
   quien prueba), `REEMPLAZAR_PLANILLA_ENSAYO_ID` y `REEMPLAZAR_PLANILLA_ENSAYO_HOJA` (la hoja de prueba), y la
-  credencial de hoja «Google Sheets miniCRM (ensayo)». El valor real de cada marcador vive solo en la tabla
+  credencial de hoja «Google Sheets miniCRM (crm-ensayo-chat)». El valor real de cada marcador vive solo en la tabla
   local; no aparece en el repositorio.
 - Guardas de `construir.mjs`: el ensayo **falla** si trae un marcador de producción
   (`REEMPLAZAR_PLANILLA_PROSPECTOS_*`, `REEMPLAZAR_PHONE_NUMBER_ID_*`, `REEMPLAZAR_NUMERO_RECEPCION_*`), un id
@@ -784,13 +784,13 @@ nombres de credencial. Los JSON de producción y de prueba **no cambian** (se co
 - Herramienta: `flujo-de-prueba.mjs --sobre-demo-a` con la bandera nueva **`--conservar-crm`**. Sin la
   bandera el comportamiento de siempre **no cambia** (Bellido, Agenda mínima, Venta mínima, Rubén, Evy:
   se quita la rama del CRM y la planilla queda vacía). Con ella: los nodos de Google Sheets se quedan; su
-  única credencial posible es «Google Sheets miniCRM (ensayo)» (por nombre exacto, tipo `googleApi` y
+  única credencial posible es «Google Sheets miniCRM (crm-ensayo-chat)» (por nombre exacto, tipo `googleApi` y
   exactamente una en n8n); el id y la hoja tienen que llegar ya resueltos (si no, se niega); no queda
   ningún marcador; y `--aplicar` exige además `--autorizo-hoja-de-prueba` (escribe filas en una hoja de
   Google: autorización por ensayo). Además se niega si el id de la hoja es igual al de producción (lo compara
   con `PLANILLA_PROSPECTOS_ID_NOVUCHAT` del `.env` o del entorno; **sin esa variable se niega siempre**, en
   seco y con `--aplicar`: la repone Claude en el `.env` del ensayo sin mostrar el valor), si `phoneNumberIdEsperado` no es el `WA_PHONE_ID` del Demo A y si la
-  credencial «(ensayo)» comparte id con «Google Sheets NovuChat (cuenta de servicio)». La ingesta ya se mapea a «Cierres NovuChat A (auto)» y los envíos por
+  credencial «(crm-ensayo-chat)» comparte id con «Google Sheets NovuChat (cuenta de servicio)». La ingesta ya se mapea a «Cierres NovuChat A (auto)» y los envíos por
   Graph a la predefinida `whatsAppApi`, igual que en el §6.
 - Pruebas: `admin/pruebas/chat-novuchat-ensayo-demo-a.test.ts` (armador, guardas y la herramienta real
   contra un n8n de mentira) y las suites de `chat-novuchat-*` y `crm-*`.
@@ -804,7 +804,7 @@ nombres de credencial. Los JSON de producción y de prueba **no cambian** (se co
    vez (regla de coordinación del §7).
 4. **Las dos cosas que Andres tiene que tener hechas antes** (las crea Claude con su «sí»; no existen hoy
    en este repositorio): una hoja de cálculo de PRUEBA con el mismo mapa de columnas que la de prospectos
-   (`datos.crm` de `novuchat.json`), y la credencial `Google Sheets miniCRM (ensayo)` (cuenta de servicio con
+   (`datos.crm` de `novuchat.json`), y la credencial `Google Sheets miniCRM (crm-ensayo-chat)` (cuenta de servicio con
    acceso **solo** a esa hoja, jamás a la de prospectos reales).
 5. Cada `--aplicar` de abajo, uno por uno, después de leer entero su seco.
 
@@ -842,7 +842,7 @@ nombres de credencial. Los JSON de producción y de prueba **no cambian** (se co
    El seco tiene que decir: «Demo A vivo» con `activo=True`; `WhatsApp Trigger: el del Demo A, tal cual
    («…»)` (si no, **detenerse**); «miniCRM CONSERVADO»; los cuatro nodos de Google (`Buscar teléfono en
    planilla`, `Leer IDs de la planilla`, `Agregar fila`, `Actualizar fila`) con
-   `googleApi → «Google Sheets miniCRM (ensayo)»`; los nodos de Graph con «PARÁMETROS CAMBIADOS … →
+   `googleApi → «Google Sheets miniCRM (crm-ensayo-chat)»`; los nodos de Graph con «PARÁMETROS CAMBIADOS … →
    predefinedCredentialType/whatsAppApi»; Gemini con «Google Gemini(PaLM) Api account»; y «Marcadores que
    quedan … —». Con el «sí» de Andres, el mismo comando más
    `--aplicar --autorizo-gemini-produccion --autorizo-hoja-de-prueba`. Repetir las dos lecturas de Meta

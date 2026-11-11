@@ -172,7 +172,7 @@ const DESCARTES = ['numero_equivocado', 'vende_o_busca_trabajo', 'sin_negocio', 
 // Es un archivo de ensayo y nunca producción: los marcadores y la credencial de hoja de abajo solo pueden estar ahí, y ahí no puede quedar ninguno de producción (ni heredado).
 export const DATOS_ENSAYO_DEMO_A = 'ensayo-demo-a.json';
 export const SALIDA_ENSAYO_DEMO_A = 'chat-novuchat.ensayo-demo-a.json';
-export const CRED_PLANILLA_ENSAYO = 'Google Sheets miniCRM (ensayo)';
+export const CRED_PLANILLA_ENSAYO = 'Google Sheets miniCRM (crm-ensayo-chat)';
 const MARCADOR_PLANILLA_ENSAYO = { planillaProspectosId: 'REEMPLAZAR_PLANILLA_ENSAYO_ID', planillaProspectosHoja: 'REEMPLAZAR_PLANILLA_ENSAYO_HOJA' };
 // Los cuatro marcadores EXACTOS del ensayo (la hoja de prueba, el teléfono de quien prueba y el phone id del Demo A): ni otro marcador ni un valor literal.
 const MARCADORES_EXACTOS_ENSAYO = { ...MARCADOR_PLANILLA_ENSAYO, numeroRecepcion: 'REEMPLAZAR_NUMERO_AVISO_ENSAYO', phoneNumberIdEsperado: 'REEMPLAZAR_PHONE_NUMBER_ID' };
