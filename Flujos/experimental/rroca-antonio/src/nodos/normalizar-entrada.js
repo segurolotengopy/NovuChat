@@ -43,8 +43,8 @@ let categoria = 'otro';
 if (tipo === 'text') {
   // El texto del cliente se recorta en el borde (1.500): una regex de costo cuadrático sobre miles de espacios tardaba segundos.
   texto = raLineaCliente(msg.text && msg.text.body, 1500);
-  // Un Gmail válido NO viaja a la consola: lo guarda la ficha y lo recibe Antonio en el aviso. Cualquier otro texto se reporta tal cual.
-  textoReporte = vgExtraerGmail(texto).resultado === 'recibido' ? texto.normalize('NFKC').replace(/[^\s@<>()\[\],;:"'«»¡¿]+@[^\s@<>()\[\],;:"'«»¡¿]+/g, '[correo]') : texto;
+  // Ningún correo viaja a la consola: todo lo que parece un correo se reporta como «[correo]» (Gmail válido o no); Antonio recibe el Gmail válido en el aviso.
+  textoReporte = raSinCorreos(texto);
   categoria = texto.trim() === '' ? '' : 'conversacion';
 } else if (tipo === 'interactive') {
   // Un toque no es texto: lo que cuenta es su id, y solo si tiene la forma esperada.
