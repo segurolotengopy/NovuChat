@@ -14,7 +14,8 @@
  * Cero mensajes por conversacion: el flujo solo entrega lo que la persona ya escribio.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
@@ -22,6 +23,7 @@ import {
 } from '../lib/flujo.ts';
 
 const ARCHIVO = 'salida-de-persona.json';
+const MODULOS = ['validar-toque', 'planificar-lote', 'resultado-del-envio', 'verificar-y-seguir', 'preparar-subida', 'preparar-envio-del-adjunto'];
 const flujo = leerFlujo(ARCHIVO);
 /** Lo que entrega un reclamo como maximo (MAXIMO_POR_RECLAMO de H2-3); el servidor simulado lo usa igual. */
 const MAXIMO_POR_RECLAMO = 10;
@@ -33,7 +35,7 @@ const CONFIG: J = { phoneNumberId: NUMERO, waGraphVersion: 'v26.0', releBaseUrl:
 // El servidor simulado (mismas transiciones que las Functions de H2-3)
 // ---------------------------------------------------------------------------
 type Estado = 'pendiente' | 'enviando' | 'aceptado' | 'rechazado' | 'incierto';
-interface Doc { mensajeId: string; conversacionId: string; texto: string; estado: Estado; idMeta?: string; codigo?: string; reintentable?: boolean }
+interface Doc { mensajeId: string; conversacionId: string; texto: string; estado: Estado; idMeta?: string; codigo?: string; reintentable?: boolean; tipo?: string; adjunto?: J }
 
 function servidor(canal: string, docs: Doc[]) {
   const reclamos: number[] = [];
@@ -48,7 +50,8 @@ function servidor(canal: string, docs: Doc[]) {
         d.estado = 'enviando';
         entregados.push({
           mensajeId: d.mensajeId, conversacionId: d.conversacionId, claveRele: ('c'.repeat(16) + d.mensajeId).replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, 48),
-          to: d.conversacionId.slice(3), texto: d.texto, tipo: 'text', canal,
+          to: d.conversacionId.slice(3), texto: d.texto, tipo: d.tipo ?? 'text', canal,
+          ...(d.adjunto !== undefined ? { adjunto: d.adjunto } : {}),
         });
       }
       reclamos.push(entregados.length);
@@ -73,13 +76,28 @@ const doc = (n: number, texto = `Hola ${n}`): Doc => ({
 });
 
 interface Llamada { nodo: string; url: string; idempotencia?: string; cuerpo: J }
-type Enviar = (nodoDeEnvio: 'Enviar por el relé' | 'Enviar por Graph', l: Llamada, i: number) => J;
+type NodoDeEnvio = 'Enviar por el relé' | 'Enviar por Graph' | 'Enviar adjunto por Graph';
+type Enviar = (nodoDeEnvio: NodoDeEnvio, l: Llamada, i: number) => J;
+/** Respuesta de `Leer adjunto` (response `file` + fullResponse): estado y cabeceras en el json, bytes en `binary.adjunto`. */
+interface Lectura { json: J; binary?: J }
+
+/** Corre un Code "cada item" con binario (el evaluador compartido no lo modela; los globales vacios son los mismos). */
+function correrConBinario(codigo: string, entrada: Lectura, referencias: Record<string, J>): { json: J; binary?: J } {
+  const $ = (n: string) => ({ item: { json: referencias[n] ?? {} }, first: () => ({ json: referencias[n] ?? {} }) });
+  const vacios = GLOBALES_FUERA_DEL_SANDBOX;
+  const fn = vm.compileFunction(codigo, ['$input', '$', ...vacios]) as (...a: unknown[]) => { json: J; binary?: J };
+  return fn({ item: entrada }, $, ...vacios.map(() => undefined));
+}
+/** Los traza cada paso del adjunto para que las pruebas midan lo que SALE de cada nodo. */
+interface Traza { lecturas: Llamada[]; subidas: (Llamada & { binario?: J })[]; preparados: J[] }
 
 /** Una ejecucion completa: lo que hace n8n desde el toque hasta que el reclamo llega vacio (o falla). */
 function ejecutarFlujo(opciones: {
   servidor: ReturnType<typeof servidor>; enviar: Enviar; config?: J; timbre?: J;
   confirmarFalla?: (c: J, intento: number) => { statusCode: number; body: J } | null;
+  leer?: (l: Llamada) => Lectura; subir?: (l: Llamada & { binario?: J }) => J;
 }) {
+  const traza: Traza = { lecturas: [], subidas: [], preparados: [] };
   const cfg = opciones.config ?? CONFIG;
   const refs: Record<string, J | J[]> = { 'Config base': cfg };
   if (opciones.timbre) refs['Timbre'] = opciones.timbre;
@@ -89,7 +107,7 @@ function ejecutarFlujo(opciones: {
   const intentosDeConfirmar: number[] = [];
 
   const valido = correr(codigoDe(flujo, 'Validar toque'), [{}], refs);
-  if (valido.length === 0) return { llamadas, confirmadas, vueltas, descartado: true, intentosDeConfirmar };
+  if (valido.length === 0) return { llamadas, confirmadas, vueltas, descartado: true, intentosDeConfirmar, traza };
 
   const reglas = (nodo(flujo, 'Por canal').parameters['rules'] as { values: { conditions: { conditions: { rightValue: string }[] } }[] }).values
     .map((r) => r.conditions.conditions[0]!.rightValue);
@@ -103,12 +121,42 @@ function ejecutarFlujo(opciones: {
     const resultados: J[] = [];
     const respuestasConfirmar: J[] = [];
     // El Switch separa por canal; cada rama corre entera antes de la siguiente (executionOrder v1).
-    const porRama = [0, 1, 2].map((rama) => planeados.filter((p) => (reglas.indexOf(String(p['ruta'])) === -1 ? 2 : reglas.indexOf(String(p['ruta']))) === rama));
+    const porRama = [0, 1, 2, 3].map((rama) => planeados.filter((p) => (reglas.indexOf(String(p['ruta'])) === -1 ? 3 : reglas.indexOf(String(p['ruta']))) === rama));
     porRama.forEach((items, rama) => {
       items.forEach((p, i) => {
         let r: J;
-        if (rama === 2) r = p; // «sin envío»: entra tal cual a Resultado
-        else {
+        if (rama === 3) r = p; // «sin envío»: entra tal cual a Resultado
+        else if (rama === 2) {
+          // Cadena del adjunto: Leer -> Preparar subida -> ¿Se sube? -> Subir -> Preparar envío -> ¿Se envía? -> Enviar adjunto.
+          const L = nodo(flujo, 'Leer adjunto').parameters as J;
+          const lec: Llamada = { nodo: 'Leer adjunto', url: String(L['url']), cuerpo: JSON.parse(String(expresion(L['jsonBody'], p, refs))) as J };
+          traza.lecturas.push(lec);
+          const lectura = opciones.leer ? opciones.leer(lec) : { json: { statusCode: 0 } };
+          const ref1 = { ...refs, 'Planificar lote': p };
+          const prep = correrConBinario(codigoDe(flujo, 'Preparar subida'), lectura, { ...(ref1 as Record<string, J>) });
+          traza.preparados.push(prep.json);
+          const sube = nodo(flujo, '¿Se sube?').parameters as { rules: { values: { conditions: { conditions: { rightValue: string }[] } }[] } };
+          if (String(prep.json['ruta']) !== sube.rules.values[0]!.conditions.conditions[0]!.rightValue) {
+            r = prep.json;
+          } else {
+            const S = nodo(flujo, 'Subir a Meta').parameters as { bodyParameters: { parameters: { name: string; value?: string; inputDataFieldName?: string }[] } };
+            const campos: J = {};
+            for (const c of S.bodyParameters.parameters) campos[c.name] = c.value !== undefined ? (c.value.startsWith('=') ? expresion(c.value, prep.json, refs) : c.value) : { desdeBinario: c.inputDataFieldName };
+            const sub = { nodo: 'Subir a Meta', url: plantilla((S as J)['url'], prep.json, refs), cuerpo: campos, binario: prep.binary?.['adjunto'] as J | undefined };
+            traza.subidas.push(sub);
+            const resp = opciones.subir ? opciones.subir(sub) : { statusCode: 0 };
+            const prep2 = correrConBinario(codigoDe(flujo, 'Preparar envío del adjunto'), { json: resp }, { 'Planificar lote': p });
+            traza.preparados.push(prep2.json);
+            const envia = nodo(flujo, '¿Se envía el adjunto?').parameters as { rules: { values: { conditions: { conditions: { rightValue: string }[] } }[] } };
+            if (String(prep2.json['ruta']) !== envia.rules.values[0]!.conditions.conditions[0]!.rightValue) r = prep2.json;
+            else {
+              const E = nodo(flujo, 'Enviar adjunto por Graph').parameters as J;
+              const llamada: Llamada = { nodo: 'Enviar adjunto por Graph', url: plantilla(E['url'], prep2.json, refs), cuerpo: JSON.parse(String(expresion(E['jsonBody'], prep2.json, refs))) as J };
+              llamadas.push(llamada);
+              r = opciones.enviar('Enviar adjunto por Graph', llamada, llamadas.length - 1);
+            }
+          }
+        } else {
           const n = rama === 0 ? 'Enviar por el relé' : 'Enviar por Graph';
           const params = nodo(flujo, n).parameters as J;
           const url = plantilla(params['url'], p, refs);
@@ -117,7 +165,7 @@ function ejecutarFlujo(opciones: {
           const cuerpo = JSON.parse(String(expresion(params['jsonBody'], p, refs))) as J;
           const llamada: Llamada = { nodo: n, url, cuerpo, ...(idem ? { idempotencia: plantilla(idem.value, p, refs) } : {}) };
           llamadas.push(llamada);
-          r = opciones.enviar(n as 'Enviar por el relé' | 'Enviar por Graph', llamada, llamadas.length - 1);
+          r = opciones.enviar(n as NodoDeEnvio, llamada, llamadas.length - 1);
         }
         const res = (correr(codigoDe(flujo, 'Resultado del envío'), [r], { ...refs, 'Planificar lote': p }) as unknown as { json: J }).json;
         resultados.push(res);
@@ -145,7 +193,7 @@ function ejecutarFlujo(opciones: {
     const sigue = correr(codigoDe(flujo, 'Verificar y seguir'), respuestasConfirmar, { ...refs, 'Resultado del envío': resultados }, { $runIndex: vuelta });
     if (sigue.length === 0) break;
   }
-  return { llamadas, confirmadas, vueltas, descartado: false, intentosDeConfirmar };
+  return { llamadas, confirmadas, vueltas, descartado: false, intentosDeConfirmar, traza };
 }
 
 const ok = (id: string) => ({ statusCode: 200, body: { messages: [{ id }], contacts: [{ wa_id: '59170000001' }] } });
@@ -379,7 +427,8 @@ describe('Salida de persona: la estructura del flujo', () => {
     expect(entradas(flujo, 'Reclamar').sort()).toEqual(['Validar toque', 'Verificar y seguir']);
     expect(destinos(flujo, 'Por canal', 0)).toEqual(['Enviar por el relé']);
     expect(destinos(flujo, 'Por canal', 1)).toEqual(['Enviar por Graph']);
-    expect(destinos(flujo, 'Por canal', 2)).toEqual(['Juntar salidas']);
+    expect(destinos(flujo, 'Por canal', 2)).toEqual(['Leer adjunto']);
+    expect(destinos(flujo, 'Por canal', 3)).toEqual(['Juntar salidas']);
   });
 
   it('sin «Continue on Fail» silencioso en Reclamar, Confirmar ni Verificar; los envios no reintentan', () => {
@@ -399,16 +448,17 @@ describe('Salida de persona: la estructura del flujo', () => {
     for (const n of flujo.nodes) for (const c of Object.values(n.credentials ?? {})) expect(c.id, n.name).toBe('');
   });
 
-  it('las tres salidas de «Por canal» pasan por «Juntar salidas» (UN camino por vuelta) antes de Resultado', () => {
+  it('las salidas de «Por canal» pasan por «Juntar salidas» (UN camino por vuelta) antes de Resultado', () => {
     for (let i = 0; i < 3; i++) {
-      const hasta = i === 2 ? destinos(flujo, 'Por canal', 2) : destinos(flujo, i === 0 ? 'Enviar por el relé' : 'Enviar por Graph');
+      const hasta = i === 2 ? destinos(flujo, 'Por canal', 3) : destinos(flujo, i === 0 ? 'Enviar por el relé' : 'Enviar por Graph');
       expect(hasta).toEqual(['Juntar salidas']);
     }
+    expect(destinos(flujo, 'Enviar adjunto por Graph')).toEqual(['Juntar salidas']);
     expect(entradas(flujo, 'Resultado del envío')).toEqual(['Juntar salidas']);
     expect(entradas(flujo, 'Confirmar')).toEqual(['Resultado del envío']);
     const m = nodo(flujo, 'Juntar salidas');
     expect(m.type).toBe('n8n-nodes-base.merge');
-    expect(m.parameters).toEqual({ numberInputs: 3 });
+    expect(m.parameters).toEqual({ numberInputs: 6 });
   });
 
   it('las ejecuciones exitosas y manuales no se guardan; la credencial del timbre es POR ALIAS; los envios esperan 10 s', () => {
@@ -453,7 +503,7 @@ describe('Salida de persona: la estructura del flujo', () => {
     const aqui = dirname(fileURLToPath(import.meta.url));
     const textos = [
       readFileSync(join(aqui, '../../../Flujos', ARCHIVO), 'utf8'),
-      ...['validar-toque', 'planificar-lote', 'resultado-del-envio', 'verificar-y-seguir']
+      ...MODULOS
         .map((m) => readFileSync(join(aqui, '../../../Flujos/src/core/salida-persona', `${m}.js`), 'utf8')),
     ].join('\n');
     expect(textos).not.toMatch(/EAA[A-Za-z0-9]{20,}|Bearer [A-Za-z0-9]|\/home\/|webhook\/[0-9a-f]{8}-/);
@@ -462,9 +512,310 @@ describe('Salida de persona: la estructura del flujo', () => {
 
   it('no hay texto ni nombre de cliente en el modulo comun', () => {
     const aqui = dirname(fileURLToPath(import.meta.url));
-    for (const m of ['validar-toque', 'planificar-lote', 'resultado-del-envio', 'verificar-y-seguir']) {
+    for (const m of MODULOS) {
       const js = readFileSync(join(aqui, '../../../Flujos/src/core/salida-persona', `${m}.js`), 'utf8');
       expect(js, m).not.toMatch(/Bellido|Platinum|Q'?Taco|Dhermacore/i);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Adjuntos (B3): leer, subir a Meta y enviar por id. Nunca `link`.
+// ---------------------------------------------------------------------------
+describe('Salida de persona: adjuntos (B3)', () => {
+  const SHA = 'ab'.repeat(32);
+  const TAMANO = 1234;
+  const MIME_DOC = 'application/pdf';
+  const adj = (n: number, tipo: string, mime: string, extra: J = {}, canal = 'graph', texto = ''): [Doc, string] => [
+    { ...doc(n, texto), tipo, adjunto: { mime, tamano: TAMANO, sha256: SHA, voz: false, ...extra } }, canal,
+  ];
+  const lecturaBuena = (mime: string, cambios: { json?: J; headers?: J; sinBinario?: boolean } = {}): Lectura => ({
+    json: { statusCode: 200, headers: { 'x-novuchat-mime': mime, 'x-novuchat-sha256': SHA, 'content-length': String(TAMANO), ...cambios.headers }, ...cambios.json },
+    ...(cambios.sinBinario ? {} : { binary: { adjunto: { mimeType: 'application/octet-stream', fileName: 'bytes', data: 'filesystem-v2', id: 'ref-1' } } }),
+  });
+  const subidaBuena = (id = 'MEDIA.1_a-b') => ({ statusCode: 200, body: { id } });
+  /** Todas las claves de un valor, a cualquier profundidad. */
+  const claves = (v: unknown): string[] => (v && typeof v === 'object' ? Object.entries(v as J).flatMap(([k, x]) => [k, ...claves(x)]) : []);
+
+  function correrAdj(par: [Doc, string], opciones: { leer?: (l: Llamada) => Lectura; subir?: (l: Llamada) => J; enviar?: Enviar; otros?: Doc[] } = {}) {
+    const [d, canal] = par;
+    const s = servidor(canal, [d, ...(opciones.otros ?? [])]);
+    const mime = String((d.adjunto as J)['mime']);
+    const r = ejecutarFlujo({
+      servidor: s,
+      enviar: opciones.enviar ?? (() => ok('wamid.ADJ1')),
+      leer: opciones.leer ?? (() => lecturaBuena(mime)),
+      subir: opciones.subir ?? (() => subidaBuena()),
+    });
+    return { s, r, d };
+  }
+
+  it('1. imagen con leyenda de punta a punta: lectura, subida a /media y envio por id', () => {
+    const { s, r, d } = correrAdj(adj(1, 'image', 'image/jpeg', { leyenda: 'Mira esto' }));
+    const lec = r.traza.lecturas[0]!;
+    expect(lec.url).toBe('https://us-east1-novuchat-demo.cloudfunctions.net/leerAdjuntoPersona');
+    expect(lec.cuerpo).toEqual({ mensajeId: d.mensajeId, conversacionId: d.conversacionId });
+    expect(Object.keys(lec.cuerpo)).toHaveLength(2);
+    const sub = r.traza.subidas[0]!;
+    expect(sub.url).toBe(`https://graph.facebook.com/v26.0/${NUMERO}/media`);
+    expect(sub.cuerpo).toEqual({ messaging_product: 'whatsapp', type: 'image/jpeg', file: { desdeBinario: 'adjunto' } });
+    expect(sub.binario).toMatchObject({ mimeType: 'image/jpeg', fileName: 'adjunto.jpg', fileExtension: 'jpg' });
+    expect(r.llamadas).toHaveLength(1);
+    expect(r.llamadas[0]!.nodo).toBe('Enviar adjunto por Graph');
+    expect(r.llamadas[0]!.url).toBe(`https://graph.facebook.com/v26.0/${NUMERO}/messages`);
+    expect(r.llamadas[0]!.cuerpo).toEqual({ messaging_product: 'whatsapp', to: '59170000001', type: 'image', image: { id: 'MEDIA.1_a-b', caption: 'Mira esto' } });
+    expect(s.docs[0]).toMatchObject({ estado: 'aceptado', idMeta: 'wamid.ADJ1' });
+    expect(r.confirmadas).toEqual([{ mensajeId: d.mensajeId, conversacionId: d.conversacionId, resultado: 'aceptado', idMeta: 'wamid.ADJ1' }]);
+  });
+
+  it('2. documento: {id, caption, filename}; sin nombre no va `filename`', () => {
+    const a = correrAdj(adj(2, 'document', MIME_DOC, { leyenda: 'Lista', nombre: 'precios.pdf' }));
+    expect(a.r.llamadas[0]!.cuerpo['document']).toEqual({ id: 'MEDIA.1_a-b', caption: 'Lista', filename: 'precios.pdf' });
+    expect(a.r.traza.subidas[0]!.binario).toMatchObject({ mimeType: MIME_DOC, fileName: 'adjunto.pdf' });
+    const b = correrAdj(adj(3, 'document', MIME_DOC));
+    expect(b.r.llamadas[0]!.cuerpo['document']).toEqual({ id: 'MEDIA.1_a-b' });
+    expect(Object.keys(b.r.llamadas[0]!.cuerpo['document'])).not.toContain('filename');
+  });
+
+  it('3. audio con voz: {id, voice:true}; sin voz no existe la clave `voice`', () => {
+    const a = correrAdj(adj(4, 'audio', 'audio/ogg', { voz: true }));
+    expect(a.r.llamadas[0]!.cuerpo).toEqual({ messaging_product: 'whatsapp', to: '59170000004', type: 'audio', audio: { id: 'MEDIA.1_a-b', voice: true } });
+    const b = correrAdj(adj(5, 'audio', 'audio/mpeg', { voz: false }));
+    expect(b.r.llamadas[0]!.cuerpo['audio']).toEqual({ id: 'MEDIA.1_a-b' });
+    expect('voice' in b.r.llamadas[0]!.cuerpo['audio']).toBe(false);
+  });
+
+  it('4. NUNCA `link`: ni en un cuerpo enviado ni en el JSON ni en los modulos', () => {
+    const casos: [string, string, J][] = [['image', 'image/png', { leyenda: 'a' }], ['document', MIME_DOC, { nombre: 'a.pdf' }], ['audio', 'audio/ogg', { voz: true }]];
+    casos.forEach(([tipo, mime, extra], i) => {
+      const { r } = correrAdj(adj(10 + i, tipo, mime, extra));
+      for (const c of [...r.llamadas, ...r.traza.subidas, ...r.traza.lecturas]) expect(claves(c.cuerpo), tipo).not.toContain('link');
+    });
+    const aqui = dirname(fileURLToPath(import.meta.url));
+    const carpeta = join(aqui, '../../../Flujos/src/core/salida-persona');
+    const textos = [readFileSync(join(aqui, '../../../Flujos', ARCHIVO), 'utf8'), ...readdirSync(carpeta).filter((f) => f.endsWith('.js')).map((f) => readFileSync(join(carpeta, f), 'utf8'))];
+    for (const t of textos) expect(t).not.toMatch(/["']?link["']?\s*:/);
+  });
+
+  it('5. una lectura fallida NO envia ni sube: rechazado con su codigo y reintentable', () => {
+    const MIME = 'image/jpeg';
+    const casos: [string, Lectura, string][] = [
+      ['404', { json: { statusCode: 404, headers: {} } }, 'NV-ADJUNTO-NO-EXISTE'],
+      ['409', { json: { statusCode: 409, headers: {} } }, 'NV-ADJUNTO-ESTADO'],
+      ['503', { json: { statusCode: 503, headers: {} } }, 'NV-ADJUNTO-LECTURA'],
+      ['401', { json: { statusCode: 401, headers: {} } }, 'NV-ADJUNTO-LECTURA'],
+      ['400', { json: { statusCode: 400, headers: {} } }, 'NV-ADJUNTO-LECTURA'],
+      ['red', { json: { error: { message: 'timeout' } } }, 'NV-ADJUNTO-LECTURA'],
+      ['sin binario', lecturaBuena(MIME, { sinBinario: true }), 'NV-ADJUNTO-INTEGRIDAD'],
+      ['mime distinto', lecturaBuena(MIME, { headers: { 'x-novuchat-mime': 'image/png' } }), 'NV-ADJUNTO-INTEGRIDAD'],
+      ['sha distinto', lecturaBuena(MIME, { headers: { 'x-novuchat-sha256': 'cd'.repeat(32) } }), 'NV-ADJUNTO-INTEGRIDAD'],
+      ['largo distinto', lecturaBuena(MIME, { headers: { 'content-length': '999' } }), 'NV-ADJUNTO-INTEGRIDAD'],
+    ];
+    for (const [nombre, lectura, codigo] of casos) {
+      const { s, r } = correrAdj(adj(20, 'image', MIME, { leyenda: 'privada' }), { leer: () => lectura, subir: () => { throw new Error('no debia subir'); }, enviar: sinEnviar });
+      expect(r.llamadas, nombre).toHaveLength(0);
+      expect(r.traza.subidas, nombre).toHaveLength(0);
+      expect(s.docs[0], nombre).toMatchObject({ estado: 'rechazado', codigo, reintentable: true });
+    }
+  });
+
+  it('6. una subida fallida NO envia el mensaje', () => {
+    const casos: [string, J, string][] = [
+      ['400 con code', { statusCode: 400, body: { error: { code: 131053 } } }, 'NV-ADJUNTO-SUBIDA-131053'],
+      ['500', { statusCode: 500, body: {} }, 'NV-ADJUNTO-SUBIDA'],
+      ['red', { error: { message: 'ECONNRESET' } }, 'NV-ADJUNTO-SUBIDA'],
+      ['200 sin id', { statusCode: 200, body: {} }, 'NV-ADJUNTO-SUBIDA'],
+      ['id raro', { statusCode: 200, body: { id: 'a b!/..' } }, 'NV-ADJUNTO-SUBIDA'],
+      ['code raro', { statusCode: 400, body: { error: { code: 'x y' } } }, 'NV-ADJUNTO-SUBIDA'],
+    ];
+    for (const [nombre, resp, codigo] of casos) {
+      const { s, r } = correrAdj(adj(21, 'image', 'image/jpeg'), { subir: () => resp, enviar: sinEnviar });
+      expect(r.llamadas, nombre).toHaveLength(0);
+      expect(s.docs[0], nombre).toMatchObject({ estado: 'rechazado', codigo, reintentable: true });
+    }
+  });
+
+  it('7. envio final: red o 5xx incierto; 4xx con code rechazado; 2xx sin id incierto; UNA sola llamada', () => {
+    const casos: [string, J, Partial<Doc>][] = [
+      ['red', { error: { message: 'timeout' } }, { estado: 'incierto' }],
+      ['5xx', { statusCode: 503, body: { error: { code: 2 } } }, { estado: 'incierto' }],
+      ['2xx sin id', { statusCode: 200, body: {} }, { estado: 'incierto' }],
+      ['4xx', { statusCode: 400, body: { error: { code: 131047 } } }, { estado: 'rechazado', codigo: '131047' }],
+    ];
+    for (const [nombre, resp, esperado] of casos) {
+      const { s, r } = correrAdj(adj(22, 'document', MIME_DOC), { enviar: () => resp });
+      expect(r.llamadas, nombre).toHaveLength(1);
+      expect(s.docs[0], nombre).toMatchObject(esperado);
+    }
+  });
+
+  it('8. el texto no cambia: mismo item de siempre, sin `tipo`; un lote de textos nunca lee ni sube', () => {
+    const m = { mensajeId: 'clave-de-envio-0001', conversacionId: 'wa_59170000001', claveRele: 'c'.repeat(16) + 'xx', to: '59170000001', texto: 'Hola', tipo: 'text', canal: 'graph' };
+    const salida = correr(codigoDe(flujo, 'Planificar lote'), [{ mensajes: [m] }], { 'Config base': CONFIG });
+    const literal = '{"json":{"mensajeId":"clave-de-envio-0001","conversacionId":"wa_59170000001","canal":"graph","claveRele":"ccccccccccccccccxx","sinEnvio":"","reintentable":false,"ruta":"graph","cuerpoEnvio":{"messaging_product":"whatsapp","to":"59170000001","type":"text","text":{"body":"Hola"}}}}';
+    expect(JSON.stringify(salida[0])).toBe(literal);
+    const sinTipo = correr(codigoDe(flujo, 'Planificar lote'), [{ mensajes: [{ ...m, tipo: undefined }] }], { 'Config base': CONFIG });
+    expect(JSON.stringify(sinTipo[0])).toBe(literal);
+    const s = servidor('graph', [doc(30), doc(31)]);
+    const r = ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.T'), leer: () => { throw new Error('no debia leer'); }, subir: () => { throw new Error('no debia subir'); } });
+    expect(r.traza.lecturas).toHaveLength(0);
+    expect(r.llamadas.map((l) => l.nodo)).toEqual(['Enviar por Graph', 'Enviar por Graph']);
+  });
+
+  it('9. lote mixto (2 textos y 1 adjunto): cada mensaje se confirma una vez y hay un solo reclamo siguiente', () => {
+    const [a] = adj(41, 'image', 'image/png', { leyenda: 'x' });
+    const docs = [doc(40), a, doc(42)];
+    const s = servidor('graph', docs);
+    const r = ejecutarFlujo({ servidor: s, enviar: (_n, _l, i) => ok(`wamid.M${i}`), leer: () => lecturaBuena('image/png'), subir: () => subidaBuena() });
+    expect(docs.map((d) => d.estado)).toEqual(['aceptado', 'aceptado', 'aceptado']);
+    expect(s.confirmaciones).toHaveLength(3);
+    expect(new Set(s.confirmaciones.map((c) => c['mensajeId'])).size).toBe(3);
+    expect(s.reclamos).toEqual([3, 0]);
+    expect(r.vueltas).toBe(2);
+    expect(entradas(flujo, 'Verificar y seguir')).toEqual(['Confirmar']);
+  });
+
+  it('10. dos adjuntos en el lote: sale el primero; el segundo es NV-ADJUNTO-LOTE reintentable sin leerse', () => {
+    const [a] = adj(50, 'image', 'image/png');
+    const [b] = adj(51, 'image', 'image/png');
+    const s = servidor('graph', [a, b]);
+    const r = ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.L'), leer: () => lecturaBuena('image/png'), subir: () => subidaBuena() });
+    expect(r.traza.lecturas).toHaveLength(1);
+    expect(r.llamadas).toHaveLength(1);
+    expect(a.estado).toBe('aceptado');
+    expect(b).toMatchObject({ estado: 'rechazado', codigo: 'NV-ADJUNTO-LOTE', reintentable: true });
+  });
+
+  it('11. adjunto con canal rele o desconocido: NV-ADJUNTO-CANAL, sin relé ni lectura', () => {
+    for (const canal of ['rele', 'satelite']) {
+      const { s, r } = correrAdj(adj(60, 'image', 'image/png', {}, canal), { leer: () => { throw new Error('no debia leer'); }, enviar: sinEnviar });
+      expect(r.llamadas, canal).toHaveLength(0);
+      expect(r.traza.lecturas, canal).toHaveLength(0);
+      expect(s.docs[0], canal).toMatchObject({ estado: 'rechazado', codigo: 'NV-ADJUNTO-CANAL', reintentable: false });
+    }
+  });
+
+  it('12. forma invalida: NV-ADJUNTO-FORMA sin leer; `video` es NV-TIPO', () => {
+    const grande = 5 * 1024 * 1024 + 1;
+    const casos: [string, string, string, J, string?][] = [
+      ['webp', 'image', 'image/webp', {}], ['svg', 'image', 'image/svg+xml', {}], ['html', 'document', 'text/html', {}],
+      ['mime de otro tipo', 'image', MIME_DOC, {}],
+      ['tamano 0', 'image', 'image/png', { tamano: 0 }], ['tamano negativo', 'image', 'image/png', { tamano: -5 }],
+      ['tamano decimal', 'image', 'image/png', { tamano: 10.5 }], ['tamano tope+1', 'image', 'image/png', { tamano: grande }],
+      ['documento tope+1', 'document', MIME_DOC, { tamano: 16 * 1024 * 1024 + 1 }],
+      ['sha corto', 'image', 'image/png', { sha256: 'ab'.repeat(31) }], ['sha en mayusculas', 'image', 'image/png', { sha256: 'AB'.repeat(32) }],
+      ['voz en mp3', 'audio', 'audio/mpeg', { voz: true }], ['voz no booleana', 'audio', 'audio/ogg', { voz: 'si' }],
+      ['leyenda en audio', 'audio', 'audio/ogg', { leyenda: 'hola' }], ['leyenda de 1001', 'image', 'image/png', { leyenda: 'a'.repeat(1001) }],
+      ['leyenda vacia', 'image', 'image/png', { leyenda: '   ' }], ['leyenda no texto', 'image', 'image/png', { leyenda: 7 }],
+      ['nombre en imagen', 'image', 'image/png', { nombre: 'a.png' }], ['nombre con barra', 'document', MIME_DOC, { nombre: 'a/b.pdf' }],
+      ['nombre con barra invertida', 'document', MIME_DOC, { nombre: 'a\\b.pdf' }],
+      ['nombre con RLO', 'document', MIME_DOC, { nombre: 'a‮fdp.exe' }], ['nombre de 241', 'document', MIME_DOC, { nombre: 'a'.repeat(241) }],
+      ['nombre vacio', 'document', MIME_DOC, { nombre: '' }],
+      ['texto no vacio', 'image', 'image/png', {}, 'hola'],
+    ];
+    for (const [nombre, tipo, mime, extra, texto] of casos) {
+      const { s, r } = correrAdj(adj(70, tipo, mime, extra, 'graph', texto ?? ''), { leer: () => { throw new Error('no debia leer'); }, enviar: sinEnviar });
+      expect(r.traza.lecturas, nombre).toHaveLength(0);
+      expect(s.docs[0], nombre).toMatchObject({ estado: 'rechazado', codigo: 'NV-ADJUNTO-FORMA', reintentable: false });
+    }
+    const sinAdjunto = servidor('graph', [{ ...doc(71, ''), tipo: 'image' }]);
+    ejecutarFlujo({ servidor: sinAdjunto, enviar: sinEnviar });
+    expect(sinAdjunto.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-ADJUNTO-FORMA' });
+    const v = correrAdj(adj(72, 'video', 'video/mp4'), { enviar: sinEnviar });
+    expect(v.s.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-TIPO', reintentable: false });
+  });
+
+  it('13. estructura y orden del lienzo: 6 entradas, cabecera, x creciente y ramas por y', () => {
+    const pos = (n: string) => nodo(flujo, n).position as unknown as [number, number];
+    expect(nodo(flujo, 'Juntar salidas').parameters).toEqual({ numberInputs: 6 });
+    const padres = ['Enviar por el relé', 'Enviar por Graph', '¿Se sube?', '¿Se envía el adjunto?', 'Enviar adjunto por Graph'];
+    for (const n of padres) expect(pos('Juntar salidas')[0], n).toBeGreaterThan(pos(n)[0]);
+    expect(pos('Resultado del envío')[0]).toBeGreaterThan(pos('Juntar salidas')[0]);
+    expect(pos('Confirmar')[0]).toBeGreaterThan(pos('Resultado del envío')[0]);
+    expect(pos('Verificar y seguir')[0]).toBeGreaterThan(pos('Confirmar')[0]);
+    const hijos = [0, 1, 2].map((i) => destinos(flujo, 'Por canal', i)[0]!);
+    expect(hijos).toEqual(['Enviar por el relé', 'Enviar por Graph', 'Leer adjunto']);
+    const ys = hijos.map((n) => pos(n)[1]);
+    expect(ys).toEqual([...ys].sort((a, b) => a - b));
+    const cadena = ['Leer adjunto', 'Preparar subida', '¿Se sube?', 'Subir a Meta', 'Preparar envío del adjunto', '¿Se envía el adjunto?', 'Enviar adjunto por Graph'];
+    cadena.forEach((n, i) => { if (i > 0) { expect(pos(n)[0], n).toBeGreaterThan(pos(cadena[i - 1]!)[0]); expect(destinos(flujo, cadena[i - 1]!)[0], n).toBe(n); } });
+    expect(destinos(flujo, '¿Se sube?', 1)).toEqual(['Juntar salidas']);
+    expect(destinos(flujo, '¿Se envía el adjunto?', 1)).toEqual(['Juntar salidas']);
+    const idx = (desde: string, salida = 0) => ((flujo.connections[desde]!['main'] as J[][])[salida] ?? []).map((c) => Number(c['index']));
+    expect([idx('Por canal', 3), idx('Enviar adjunto por Graph'), idx('¿Se sube?', 1), idx('¿Se envía el adjunto?', 1), idx('Enviar por el relé'), idx('Enviar por Graph')]).toEqual([[2], [3], [4], [5], [0], [1]]);
+    const cab = (nodo(flujo, 'Reclamar').parameters['headerParameters'] as { parameters: { name: string; value: string }[] }).parameters;
+    expect(cab.find((c) => c.name === 'X-NovuChat-Adjuntos')?.value).toBe('1');
+  });
+
+  it('14. credenciales: whatsAppApi solo en los tres nodos de Graph; cloudfunctions solo con ingesta; sin /subscriptions', () => {
+    const graph = ['Enviar por Graph', 'Subir a Meta', 'Enviar adjunto por Graph'];
+    for (const n of flujo.nodes) {
+      const cred = Object.keys(n.credentials ?? {});
+      if (graph.includes(n.name)) expect(cred, n.name).toEqual(['whatsAppApi']);
+      else expect(cred.includes('whatsAppApi'), n.name).toBe(false);
+      const txt = JSON.stringify(n.parameters);
+      if (n.type === 'n8n-nodes-base.httpRequest' && txt.includes('graph.facebook.com')) {
+        expect(n.parameters['authentication'], n.name).toBe('predefinedCredentialType');
+        expect(n.parameters['nodeCredentialType'], n.name).toBe('whatsAppApi');
+      }
+      if (txt.includes('cloudfunctions')) {
+        expect(['Reclamar', 'Leer adjunto', 'Confirmar'], n.name).toContain(n.name);
+        expect(n.credentials?.['httpHeaderAuth']?.name, n.name).toMatch(/NovuChat ingesta/);
+      }
+      expect(txt, n.name).not.toMatch(/subscriptions|subscribed_apps/);
+    }
+  });
+
+  it('15. continueRegularOutput exactamente en los 5 HTTP de envio, lectura y subida; ninguno reintenta', () => {
+    const con = ['Enviar por el relé', 'Enviar por Graph', 'Leer adjunto', 'Subir a Meta', 'Enviar adjunto por Graph'];
+    for (const n of flujo.nodes) {
+      if (con.includes(n.name)) expect(n.onError, n.name).toBe('continueRegularOutput');
+      else expect(n.onError, n.name).toBeUndefined();
+    }
+    for (const n of ['Leer adjunto', 'Subir a Meta', 'Enviar adjunto por Graph']) expect(nodo(flujo, n).retryOnFail, n).toBeUndefined();
+  });
+
+  it('16. la rama del adjunto cabe en 80 s con lotes en serie de 1', () => {
+    const ramas = ['Leer adjunto', 'Subir a Meta', 'Enviar adjunto por Graph'].map((n) => nodo(flujo, n).parameters['options'] as { timeout: number; batching: { batch: { batchSize: number } } });
+    for (const o of ramas) expect(o.batching.batch.batchSize).toBe(1);
+    expect(ramas.reduce((t, o) => t + o.timeout, 0)).toBeLessThanOrEqual(80_000);
+    expect(ramas.map((o) => o.timeout)).toEqual([30000, 40000, 10000]);
+  });
+
+  it('17. privacidad: ni la leyenda ni el nombre llegan al resultado, a Confirmar ni a los items fallidos', () => {
+    const { s, r, d } = correrAdj(adj(80, 'document', MIME_DOC, { leyenda: 'LEYENDA-SECRETA', nombre: 'NOMBRE-SECRETO.pdf' }), { subir: () => ({ statusCode: 400, body: { error: { code: 131053 } } }) });
+    expect(JSON.stringify([r.confirmadas, s.confirmaciones])).not.toMatch(/SECRETA|SECRETO/);
+    for (const j of r.traza.preparados) expect(JSON.stringify(j)).not.toMatch(/SECRETA|SECRETO/);
+    const planificado = { mensajeId: d.mensajeId, conversacionId: d.conversacionId, adjunto: { mime: MIME_DOC, ext: 'pdf', tamano: TAMANO, sha256: SHA }, cuerpoAdjunto: { messaging_product: 'whatsapp', to: '59170000001', type: 'document', document: { caption: 'LEYENDA-SECRETA', filename: 'NOMBRE-SECRETO.pdf' } } };
+    const clavesFalla = ['mensajeId', 'conversacionId', 'ruta', 'adjuntoSinEnvio'];
+    for (const lectura of [{ json: { statusCode: 404, headers: {} } }, { json: { error: {} } }, lecturaBuena(MIME_DOC, { sinBinario: true })] as Lectura[]) {
+      const o = correrConBinario(codigoDe(flujo, 'Preparar subida'), lectura, { 'Planificar lote': planificado });
+      expect(Object.keys(o.json)).toEqual(clavesFalla);
+      expect(o.binary).toBeUndefined();
+    }
+    for (const resp of [{ statusCode: 400, body: { error: { code: 1 } } }, { error: {} }, { statusCode: 200, body: {} }]) {
+      const o = correrConBinario(codigoDe(flujo, 'Preparar envío del adjunto'), { json: resp }, { 'Planificar lote': planificado });
+      expect(Object.keys(o.json)).toEqual(clavesFalla);
+      expect(o.binary).toBeUndefined();
+    }
+    const bueno = correrConBinario(codigoDe(flujo, 'Preparar subida'), lecturaBuena(MIME_DOC), { 'Planificar lote': planificado });
+    expect(Object.keys(bueno.json)).toEqual(['mensajeId', 'conversacionId', 'ruta', 'mime']);
+    expect(bueno.json['ruta']).toBe('subir');
+  });
+
+  it('18. ningun modulo de salida-persona lleva secretos, rutas ni nombres de cliente', () => {
+    const aqui = dirname(fileURLToPath(import.meta.url));
+    const carpeta = join(aqui, '../../../Flujos/src/core/salida-persona');
+    const archivos = readdirSync(carpeta).filter((f) => f.endsWith('.js'));
+    expect(archivos.length).toBeGreaterThanOrEqual(6);
+    for (const f of archivos) {
+      const js = readFileSync(join(carpeta, f), 'utf8');
+      expect(js, f).not.toMatch(/EAA[A-Za-z0-9]{20,}|Bearer [A-Za-z0-9]|\/home\/|webhook\/[0-9a-f]{8}-/);
+      expect(js, f).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
+      expect(js, f).not.toMatch(/Bellido|Platinum|Q'?Taco|Dhermacore/i);
+      // sin caracteres invisibles ni bidi literales
+      expect(js, f).not.toMatch(/[​-‏‪-‮⁠-⁩﻿]/);
+      for (const g of GLOBALES_FUERA_DEL_SANDBOX) expect(new RegExp(`(?<![\\w$.])${g.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[.(]`).test(js), `${f} usa ${g}`).toBe(false);
     }
   });
 });

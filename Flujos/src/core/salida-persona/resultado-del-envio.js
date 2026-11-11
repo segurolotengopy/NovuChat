@@ -9,9 +9,11 @@
 //   rele: cualquier otra cosa ..................... incierto
 //   Graph 4xx con error.code ...................... rechazado + codigo (+ reintentable)
 //   sin envio por defecto propio ................. rechazado + codigo NV-*
+//   adjunto: lectura o subida fallida (NV-ADJUNTO-*) .. rechazado reintentable, no entrego nada
 // El texto del mensaje nunca sale de este nodo.
 //
-// Este nodo es el verificador de los envios 'Enviar por el relé' y 'Enviar por Graph'
+// Este nodo es el verificador de los envios 'Enviar por el relé', 'Enviar por Graph'
+// y 'Enviar adjunto por Graph'
 // (ambos con continueRegularOutput, unidos por 'Juntar salidas'): lee el estado HTTP y el
 // id de la respuesta de cada uno y decide aceptado / rechazado / incierto.
 const p = $('Planificar lote').item.json;
@@ -23,6 +25,8 @@ const rechazo = (codigo, reintentable) => ({ json: { ...base, resultado: 'rechaz
 const incierto = () => ({ json: { ...base, resultado: 'incierto' } });
 
 if (p.sinEnvio) return rechazo(p.sinEnvio, p.reintentable === true);
+// Falla del adjunto antes del envio (lectura o subida): rechazado reintentable, nunca incierto.
+if (typeof r.adjuntoSinEnvio === 'string' && r.adjuntoSinEnvio !== '') return rechazo(r.adjuntoSinEnvio, true);
 
 // Un error del nodo HTTP (red, tiempo agotado): el mensaje pudo salir.
 if (r.error !== undefined && r.statusCode === undefined) return incierto();
@@ -30,7 +34,7 @@ if (r.error !== undefined && r.statusCode === undefined) return incierto();
 // Ni error ni respuesta: el nodo de envio no devolvio nada. El mensaje pudo salir, asi que es
 // `incierto` (nunca se reenvia) con una marca para el registro, sin texto ni telefono. Un item
 // raro NO tumba la confirmacion de los demas del lote.
-const origen = p.canal === 'rele' ? 'Enviar por el relé' : 'Enviar por Graph';
+const origen = p.canal === 'rele' ? 'Enviar por el relé' : p.ruta === 'adjunto' ? 'Enviar adjunto por Graph' : 'Enviar por Graph';
 if (r.statusCode === undefined) return { json: { ...incierto().json, aviso: 'sin-respuesta', origen } };
 
 const estado = Number(r.statusCode);
