@@ -17,6 +17,7 @@ import { createHash, createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { compileFunction } from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PROYECTO = 'demo-novuchat-pruebas';
@@ -577,7 +578,7 @@ describe('reclamar con adjuntos: solo con la cabecera del flujo nuevo, uno por l
     await sembrarAdjunto(CLAVE(1));
     const [m] = entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS));
     const codigo = readFileSync(join(aqui, '..', '..', '..', 'Flujos', 'src', 'core', 'salida-persona', 'planificar-lote.js'), 'utf8');
-    const ejecutar = new Function('$', '$input', codigo) as (a: unknown, b: unknown) => Array<{ json: Record<string, unknown> }>;
+    const ejecutar = compileFunction(codigo, ['$', '$input']) as (a: unknown, b: unknown) => Array<{ json: Record<string, unknown> }>;
     const [item] = ejecutar(() => ({ first: () => ({ json: {} }) }), { all: () => [{ json: { mensajes: [m] } }] });
     expect(item!.json['sinEnvio']).toBe('NV-TEXTO');
     expect(item!.json['ruta']).toBe('ninguna');

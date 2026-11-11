@@ -32,8 +32,6 @@ const { confirmarSalida } = await import('../../functions/src/core/conversacion/
 const { leerAdjunto } = await import('../../functions/src/core/medios/leerAdjuntoPersona.ts');
 const { LARGO_MAXIMO_DE_BASE64, TOPE_DIARIO_DE_ADJUNTOS, TOPE_DIARIO_DE_BYTES_ENVIADOS } =
   await import('../../functions/src/core/conversacion/enviarAdjuntoComoPersona.ts');
-const { limitesDePersona, tarifaDe } = await import('../../functions/src/central/cuenta/planes.ts');
-const { titularidadDe } = await import('../../functions/src/central/ejes.ts');
 const db = getFirestore();
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -187,7 +185,12 @@ const mensajes = async (t = A, id = CONV1) => (await db.collection(`tenants/${t}
 const auditorias = async (t = A) => (await db.collection(`tenants/${t}/auditoria`).get()).docs.map((d) => d.data());
 const topes = async () => Object.fromEntries((await db.collection('topesDeEnvio').get()).docs.map((d) => [d.id, d.data()]));
 const metadatos = async (t = A) => (await db.collection(`tenants/${t}/mediosEnviados`).get()).docs;
-const limites = () => limitesDePersona('pro', tarifaDe({}), titularidadDe({}));
+/**
+ * Las cifras del plan con la cuenta de estas pruebas (plan `pro`, tarifa por omisión, titularidad de NovuChat): las MISMAS que
+ * fija `enviar-como-persona.test.ts` (10 por conversación y por minuto, 300 por día). Se escriben acá y no se importan de
+ * Central porque una prueba de Core no puede importar hacia arriba (`fronteras.test.ts`); si el plan cambia, falla la del texto.
+ */
+const limites = () => ({ porConversacion: 10, porDia: 300, porMinuto: 10 });
 /** Nada se escribió: ni un objeto, ni un mensaje, ni un metadato, ni un contador, ni un timbre. */
 async function nadaEscrito() {
   expect(objetos.size, 'objetos en Storage').toBe(0);
