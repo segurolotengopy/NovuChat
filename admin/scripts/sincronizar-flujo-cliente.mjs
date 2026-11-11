@@ -7,7 +7,7 @@
  * datos (`Config base`), su prompt y sus credenciales. «Un cambio se aplica a
  * todos o a ninguno» (CLAUDE.md): cuando el vertical gana un nodo, una
  * conexión o una línea de código, el cliente tiene que ganarla igual, y su
- * suite (`bellido-flujo.test.ts`, `platinum-flujo.test.ts`) lo exige nodo por
+ * suite (`bellido-flujo.test.ts`, `reservas-flujo.test.ts`) lo exige nodo por
  * nodo. Hasta el 18/09/2026 eso se hacía a mano, cliente por cliente, y el
  * alta del Dr. Bellido dejó a la vista lo que pasa cuando no: un nodo que en
  * el vertical no fusionaba `instruccionesExtra` (#110).

@@ -276,9 +276,9 @@ node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --operado
   carga de una vez desde un JSON versionado**, después de `alta-comercio.mjs` y
   antes de entrar a la consola (la consola no tiene pantalla para el horario, y
   cargar tres pestañas a mano no se puede repetir). El archivo es
-  `admin/scripts/datos/negocio-<id>.json` (el ejemplo
-  `negocio-platinum.json` sale de un `conocimiento-asistente.md`
-  §2 y §4) y **no lleva el número de recepción ni los calendarios**: lleva
+  `admin/scripts/datos/negocio-<id>.json` (sale del
+  `conocimiento-asistente.md` del cliente, §2 y §4; un ejemplo con la forma
+  completa es `admin/pruebas/fixtures/negocio-agenda-dos-agendas.json`) y **no lleva el número de recepción ni los calendarios**: lleva
   marcadores (`numeroRecepcionMarcador`, `calendarioMarcador`) que el script
   resuelve desde la tabla de `CONFIGURACION.local.md`. Esa tabla la completa
   **una persona, a mano** —`configurar-cliente.sh` escribe los marcadores

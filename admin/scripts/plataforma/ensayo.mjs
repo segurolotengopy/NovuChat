@@ -5,7 +5,7 @@
  *
  * POR QUÉ EXISTE. Hasta hoy un cambio pedido por un cliente se probaba en su
  * propio número: con sus pacientes escribiendo, con su agenda real y con su
- * recepción recibiendo los avisos de las pruebas. Con Platinum en producción en
+ * recepción recibiendo los avisos de las pruebas. Con un cliente en producción en
  * su propia WABA eso deja de ser aceptable.
  *
  * CÓMO. Un comercio aparte, `ensayo`, que existe solo para esto. Mientras dura
@@ -54,7 +54,7 @@
  *
  *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --estado
  *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --preparar \
- *     --cliente platinum --archivo scripts/datos/negocio-platinum.json \
+ *     --cliente <cliente> --archivo <ruta al JSON del negocio> \
  *     --local <ruta a CONFIGURACION.local.md> [--flujo venta|agendamiento] [--aplicar]
  *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --restaurar [--aplicar]
  *

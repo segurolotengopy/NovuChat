@@ -7,7 +7,7 @@
  * memoria por teléfono, umbrales del servidor, candado contra la doble reserva,
  * orden v1 del lienzo—, y esta suite existe para que no cambie sin que se note.
  *
- * COMO EN `platinum-flujo.test.ts` y `flujos-umbrales.test.ts`, el código y las
+ * COMO EN `reservas-flujo.test.ts` y `flujos-umbrales.test.ts`, el código y las
  * expresiones se extraen del JSON VERSIONADO y se ejecutan: si alguien edita un
  * nodo en n8n y exporta, la prueba corre el código nuevo. Copiar la lógica acá
  * dejaría la suite en verde mientras el flujo se rompe.
@@ -94,7 +94,7 @@ const x = (nombre: string) => nodo(flujo, nombre).position[0];
 /**
  * Ejecuta un nodo Code; `$(nombre)` devuelve los items de `referencias[nombre]`.
  * `isExecuted` es como en n8n: un nodo que no está en el contexto no corrió
- * (mismo simulador que `platinum-flujo.test.ts` y `onboarding-flujo.test.ts`).
+ * (mismo simulador que `reservas-flujo.test.ts` y `onboarding-flujo.test.ts`).
  */
 function ejecutar(codigoJs: string, items: J[], referencias: Record<string, J[]> = {}): J[] {
   const entrada = { all: () => items.map((json) => ({ json })), first: () => ({ json: items[0] }) };

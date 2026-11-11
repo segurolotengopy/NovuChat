@@ -19,7 +19,7 @@
  *      prefijo; sin teléfono en la descripción no se toca.
  *   4. Primero se reporta y recién con la respuesta del servidor se borra:
  *      con `ya_agendada` (el comprobante cuadró) la cita no se toca.
- *   5. Ningún valor real: solo el marcador del número de Platinum.
+ *   5. Ningún valor real: solo el marcador del número del comercio.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -70,7 +70,7 @@ const CAL_2 = 'agenda-dos@group.calendar.google.com';
 const panel = (sena: unknown, extra: J = {}) => ({
   statusCode: 200,
   body: {
-    tenantId: 'platinum', flujo: 'agendamiento', estadoComercio: 'activo', phoneNumberId: '1000000001',
+    tenantId: 'clinica-ejemplo', flujo: 'agendamiento', estadoComercio: 'activo', phoneNumberId: '1000000001',
     operacion: { moneda: 'BOB', calendarioId: CAL_1 },
     funcionarios: [{ nombre: 'Dra. Uno', calendario: CAL_1 }, { nombre: 'Dr. Dos', calendario: CAL_2 }],
     ...(sena === undefined ? {} : { sena }), ...extra,
@@ -89,7 +89,7 @@ const vencidas = (eventos: J[], minutos = 45): J[] => ejecutar(codigo('Vencidas'
 
 describe('El flujo: forma, ids y ningún valor real', () => {
   it('tiene el nombre del cliente, orden v1, zona de Bolivia y diez nodos con ids cortos sv-*', () => {
-    expect(f.name).toBe('NovuChat — Clínica Platinum (Señas vencidas)');
+    expect(f.name).toBe('NovuChat — Agenda (Señas vencidas)');
     expect(f.settings).toMatchObject({ executionOrder: 'v1', timezone: 'America/La_Paz' });
     expect(f.nodes).toHaveLength(10);
     const ids = f.nodes.map((n) => n.id);
@@ -127,17 +127,17 @@ describe('El flujo: forma, ids y ningún valor real', () => {
     }
   });
 
-  it('el único marcador es el del número de Platinum, y no hay ningún valor real', () => {
-    expect([...new Set(TEXTO.match(/REEMPLAZAR_[A-Z0-9_]*/g) ?? [])]).toEqual(['REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM']);
-    expect(configBase()).toEqual({ phoneNumberId: 'REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM', waGraphVersion: 'v26.0', senaMinutosRetencion: '30' });
+  it('el único marcador es el del número del comercio, y no hay ningún valor real', () => {
+    expect([...new Set(TEXTO.match(/REEMPLAZAR_[A-Z0-9_]*/g) ?? [])]).toEqual(['REEMPLAZAR_PHONE_NUMBER_ID_COMERCIO']);
+    expect(configBase()).toEqual({ phoneNumberId: 'REEMPLAZAR_PHONE_NUMBER_ID_COMERCIO', waGraphVersion: 'v26.0', senaMinutosRetencion: '30' });
     expect(TEXTO).not.toMatch(/(^|[^0-9])[0-9]{10,}([^0-9]|$)/);
     expect(TEXTO).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
     expect(TEXTO).not.toMatch(/EAA[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|Bearer /);
   });
 
-  it('las credenciales: ingesta de Platinum por nombre con id vacío; Calendar por tipo; nunca la ingesta en un nodo de Calendar', () => {
+  it('las credenciales: ingesta del comercio por nombre con id vacío; Calendar por tipo; nunca la ingesta en un nodo de Calendar', () => {
     for (const n of ['Traer configuración', 'Reportar seña vencida']) {
-      expect(nodo(n).credentials).toEqual({ httpHeaderAuth: { id: '', name: 'NovuChat ingesta (Clínica Platinum)' } });
+      expect(nodo(n).credentials).toEqual({ httpHeaderAuth: { id: '', name: 'NovuChat ingesta (comercio)' } });
     }
     for (const n of ['Citas pendientes de seña', 'Borrar cita vencida']) {
       expect(nodo(n).credentials).toEqual({ googleCalendarOAuth2Api: { id: '', name: '' } });

@@ -5,7 +5,7 @@
 # la credencial de otro cliente (memoria del 15/09/2026: la de ingesta quedó
 # en los nodos que envían a Meta) y para comparar dos flujos entre sí.
 #
-#   ./scripts/credenciales-flujo.sh --env .env.platinum
+#   ./scripts/credenciales-flujo.sh --env .env.<cliente>
 #   ./scripts/credenciales-flujo.sh --env .env --flujo-id d78q7JmKIYVn4YkL
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1

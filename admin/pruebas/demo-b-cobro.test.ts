@@ -238,7 +238,7 @@ describe('(2) La red de la prohibición 3 cambia con el modo', () => {
     // Si las dos se separan, un vertical corrige y el otro no, y nadie lo nota
     // hasta que un cliente lee «pago acreditado» sobre un QR de verdad.
     const b = codigoDe(f, 'Procesar respuesta');
-    const a = codigoDe(leerFlujo('platinum-agendamiento.json'), 'Procesar respuesta');
+    const a = codigoDe(leerFlujo('demo-a-agendamiento.json'), 'Procesar respuesta');
     const regex = /const AFIRMA_COBRO = (\/.+\/i);/;
     expect(regex.exec(b)?.[1]).toBe(regex.exec(a)?.[1]);
     expect(b).toContain('y ellos confirman el pago.');

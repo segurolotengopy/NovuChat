@@ -57,7 +57,6 @@ export const EXCEPCIONES: Record<string, string> = {
   'demo-a-agendamiento.json': 'Demo A: número de ensayo sin pacientes, armado por el ensamblador; lo cierra pasarlo a la base común',
   'demo-b-venta-cobro.json': 'Demo B: demo sin clientes, armado por el ensamblador; lo cierra pasarlo a la base común',
   'novuchat-onboarding.json': 'histórico: el chat de NovuChat corre chat-novuchat (que sí lo trae); queda sin fila en versiones-por-cliente',
-  'platinum-agendamiento.json': 'histórico del ensamblador, sin cliente; lo cierra retirarlo',
   'bellido-agendamiento.json': 'flujo A de Bellido, descartado desde el 01/10 (corre agenda-minima); Andres ordenó no tocarlo',
 };
 

@@ -29,7 +29,7 @@
 #   - Si queda algún marcador del cliente que no sea el horario, se aborta: el
 #     ensayo apuntaría a su recepción o a su agenda.
 #
-#   ./scripts/ensayo-flujo.sh --cliente PLATINUM --flujo Flujos/platinum-agendamiento.json [--aplicar]
+#   ./scripts/ensayo-flujo.sh --cliente <CLIENTE> --flujo Flujos/<cliente>-agendamiento.json [--aplicar]
 #   ./scripts/ensayo-flujo.sh --restaurar [--aplicar]      # el Demo A vuelve a ser el Demo A
 #
 # --env: el entorno del número de ensayo (por defecto .env, el del Demo A).

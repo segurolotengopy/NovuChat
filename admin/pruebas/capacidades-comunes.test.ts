@@ -61,8 +61,8 @@ const PREPARAR = ['Preparar transcripción', 'Preparar imagen'] as const;
  */
 const EXCEPCIONES: Record<string, string[]> = {
   // 22/10/2026 («el asistente entiende las imágenes»): Bellido conserva el «Preparar imagen» anterior
-  // (sin descripción de lo que se ve) por orden de Andres de no tocarlo ni publicarlo. Platinum SE REGENERÓ
-  // (Andres levantó el veto el 22/10 y autorizó regenerarlo sin publicar), por eso ya no figura aquí.
+  // (sin descripción de lo que se ve) por orden de Andres de no tocarlo ni publicarlo. Platinum, que se regeneró,
+  // ya no existe (baja del 11/11/2026).
   'bellido-agendamiento.json': ['Preparar imagen'],
 };
 /** Por qué cada excepción (por nodo, no por flujo entero: el resto de la rama de medios sí se comprueba). */
@@ -204,12 +204,12 @@ export function faltantesDeMedios(f: Flujo): string[] {
 const conversacionales = archivos.filter((a) => esConversacional(leerFlujo(a)));
 
 describe('Capacidades comunes: todo flujo conversacional tiene audio, imagen y documento', () => {
-  it('se descubren del disco, y son los cinco de hoy (ninguno se escribe a mano para que no falte el de mañana)', () => {
+  it('se descubren del disco, y son los cuatro de hoy (ninguno se escribe a mano para que no falte el de mañana)', () => {
     // Un piso, no una lista cerrada: si mañana nace un sexto flujo con
     // disparador de WhatsApp y agente, entra solo a la prueba de abajo.
     expect(conversacionales).toEqual(expect.arrayContaining([
       'bellido-agendamiento.json', 'demo-a-agendamiento.json', 'demo-b-venta-cobro.json',
-      'novuchat-onboarding.json', 'platinum-agendamiento.json',
+      'novuchat-onboarding.json',
     ]));
     // Los programados quedan fuera por lo que son, no por su nombre.
     for (const a of ['agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'demo-a-recordatorios.json']) {

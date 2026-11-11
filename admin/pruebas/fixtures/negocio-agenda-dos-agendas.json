@@ -1,0 +1,103 @@
+{
+  "_fuente": "Fixture sintético para cargar-negocio.test.ts y ensayo.test.ts: negocio de agenda con dos agendas, todos los datos son inventados. Las claves que empiezan con `_` son notas y no se escriben. El número de recepción y los calendarios van como marcadores, nunca como valores reales.",
+  "_supuestos": "Horario, política de cancelación y nombres de los funcionarios son inventados y no corresponden a ningún comercio real.",
+  "negocio": {
+    "nombreNegocio": "Clínica Ejemplo",
+    "descripcion": "Clínica dental de ejemplo. Campaña vigente: limpieza dental profesional, hasta el 31 de diciembre de 2026. Se atiende con cita previa y se agenda por este mismo WhatsApp; la primera visita incluye una valoración clínica con el odontólogo.",
+    "direccion": "Calle Ejemplo N.º 100, Ciudad de Ejemplo",
+    "_notaDireccionMaps": "Fixture: el enlace de Google Maps del local es inventado o vacío. Vacío = el asistente da la dirección sin mapa.",
+    "direccionMaps": "",
+    "numeroRecepcionMarcador": "REEMPLAZAR_NUMERO_RECEPCION_CLINICA_EJEMPLO",
+    "calendarioMarcador": "REEMPLAZAR_CALENDARIO_CLINICA_EJEMPLO_1",
+    "zonaHoraria": "America/La_Paz",
+    "moneda": "BOB",
+    "tratamiento": "usted",
+    "estiloEmojis": "muchos",
+    "nombreAsistente": "",
+    "politicaCancelacion": "Para cancelar o reprogramar, escríbanos por este mismo chat con al menos 2 horas de anticipación y lo resolvemos sin costo.",
+    "prefijosPermitidos": [
+      "591"
+    ],
+    "datosQueNoTenemos": [
+      "formas de pago",
+      "promociones distintas a la publicada",
+      "seguros y convenios",
+      "estacionamiento",
+      "precios de otros tratamientos",
+      "garantías por escrito",
+      "cantidad de sesiones"
+    ],
+    "instruccionesExtra": "CAMPAÑA VIGENTE (puede haber varias): Limpieza Dental Profesional de consultorio. Ahora solo 500 Bs (precio estándar 600 Bs), hasta el 31 de diciembre de 2026. La valoración clínica es parte de la limpieza y de la campaña. Las piezas no traen fecha: se reconoce por servicio y precio; otra, con otro precio o servicio, es pasada: dilo con amabilidad y ofrece la vigente.\nLO HACEN todos los odontólogos. La cita dura generalmente entre 45 min y 1 hora.\nEN QUÉ CONSISTE: remoción de sarro y placa con instrumental profesional. Sin dolor.\nBENEFICIOS: seguro y rápido; mejora la salud de las encías y la apariencia de la sonrisa.\nOBJECIONES (responde la duda y ofrece agendar la valoración):\n- Dolor o sensibilidad: el odontólogo protege las encías y controla los tiempos.\n- Cuánto dura: depende de hábitos e higiene; luego, controles periódicos.",
+    "mensajeCierre": "Gracias por escribirnos. Si necesita algo más, escríbame por acá.",
+    "mensajeErrorTemporal": "Disculpe, tuve un problema técnico momentáneo. ¿Me repite lo último?",
+    "mensajeReservaNoConfirmada": "Disculpe, ese horario ya estaba tomado y no pude dejar su cita registrada. Le paso con una persona de recepción para que lo resuelva con usted ahora mismo.",
+    "mensajeComercioSuspendido": "En este momento no podemos atenderle por este medio. Por favor comuníquese directamente con la clínica. Gracias por escribirnos.",
+    "horarios": {
+      "_nota": "Fixture: horario inventado.",
+      "lun": "09:00-19:00",
+      "mar": "09:00-19:00",
+      "mie": "09:00-19:00",
+      "jue": "09:00-19:00",
+      "vie": "09:00-19:00",
+      "sab": "09:00-13:00",
+      "dom": "cerrado"
+    }
+  },
+  "agendamiento": {
+    "duracionPorDefectoMin": 60,
+    "anticipacionMinimaMin": 120,
+    "anticipacionMaximaDias": 60,
+    "permitirCancelacion": true,
+    "horasRecordatorio": 24,
+    "mensajeRecordatorio": "Le recordamos su cita de mañana en Clínica Ejemplo. Si necesita cancelar o reprogramar, escríbanos por este mismo chat."
+  },
+  "catalogo": [
+    {
+      "nombre": "Limpieza dental profesional",
+      "area": "odontologia",
+      "precio": 500,
+      "moneda": "BOB",
+      "descripcion": "Precio de campaña hasta el 31/12/2026; precio regular 600 Bs",
+      "duracionMin": 60,
+      "activo": true
+    },
+    {
+      "nombre": "Valoración clínica",
+      "area": "odontologia",
+      "descripcion": "Parte de la limpieza y de su campaña; primera visita con el odontólogo",
+      "duracionMin": 30,
+      "activo": true
+    },
+    {
+      "nombre": "Estética facial",
+      "area": "estetica",
+      "descripcion": "Retirado: servicio de ejemplo inactivo",
+      "duracionMin": 30,
+      "activo": false
+    }
+  ],
+  "funcionarios": [
+    {
+      "id": "dra-ejemplo-uno",
+      "nombre": "Dra. Ejemplo Uno",
+      "especialidad": "Estética dental",
+      "calendarioMarcador": "REEMPLAZAR_CALENDARIO_CLINICA_EJEMPLO_1",
+      "servicios": [
+        "limpieza-dental-profesional",
+        "valoracion-clinica"
+      ],
+      "activo": true
+    },
+    {
+      "id": "dr-ejemplo-dos",
+      "nombre": "Dr. Ejemplo Dos",
+      "especialidad": "Odontología general",
+      "calendarioMarcador": "REEMPLAZAR_CALENDARIO_CLINICA_EJEMPLO_2",
+      "servicios": [
+        "limpieza-dental-profesional",
+        "valoracion-clinica"
+      ],
+      "activo": true
+    }
+  ]
+}

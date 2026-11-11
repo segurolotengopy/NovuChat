@@ -32,7 +32,7 @@
 import { describe, expect, it } from 'vitest';
 import { codigoDe, destinos, ejecutar, leerFlujo, nodo, plantilla, type J } from './lib/flujo';
 
-const FLUJOS = ['demo-a-agendamiento.json', 'platinum-agendamiento.json', 'bellido-agendamiento.json'] as const;
+const FLUJOS = ['demo-a-agendamiento.json', 'bellido-agendamiento.json'] as const;
 
 // --- Fechas calculadas desde hoy, en La Paz ----------------------------------
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];

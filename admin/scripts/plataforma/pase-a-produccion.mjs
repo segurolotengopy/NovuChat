@@ -27,9 +27,9 @@
  * Node 22.15+) prueba `.ts` cuando el `.js` no existe, solo para importaciones
  * relativas desde un `.ts`.
  *
- *   node scripts/plataforma/pase-a-produccion.mjs --proyecto <id> --tenant platinum
- *   node scripts/plataforma/pase-a-produccion.mjs --proyecto <id> --tenant platinum \
- *     --aceptacion ~/NovuChat/CLIENTES/PLATINUM/aceptacion.md
+ *   node scripts/plataforma/pase-a-produccion.mjs --proyecto <id> --tenant <tenant>
+ *   node scripts/plataforma/pase-a-produccion.mjs --proyecto <id> --tenant <tenant> \
+ *     --aceptacion ~/NovuChat/CLIENTES/<CLIENTE>/aceptacion.md
  *
  * `--repo <raíz>` apunta a otra copia del repositorio (por defecto, la de este
  * script). Salida: 0 si todo lo que el script puede comprobar se cumple; 1 si

@@ -1,27 +1,27 @@
 /**
- * EL FLUJO DE RESERVAS DE CLÍNICA PLATINUM (`Flujos/platinum-agendamiento.json`).
+ * EL VERTICAL DE RESERVAS (`Flujos/demo-a-agendamiento.json`, el Demo A, y
+ * `Flujos/bellido-agendamiento.json`).
  *
- * Es una copia del Demo A vigente con los datos del cliente y una sección nueva
- * del prompt (`instruccionesExtra`, el texto libre que el comercio escribe en su
- * consola). La lógica es la misma: memoria por teléfono, umbrales del servidor,
- * candado contra la doble reserva, orden v1 del lienzo.
+ * El Demo A es la base de los flujos de reservas: memoria por teléfono,
+ * umbrales del servidor, candado contra la doble reserva, orden v1 del lienzo.
+ * Lo propio de cada cliente es dato de su tenant, no código de esta suite.
  *
  * COMO EN `flujos-umbrales.test.ts`, el código y las expresiones se extraen del
  * JSON versionado y se ejecutan: si alguien edita un nodo en n8n y exporta, la
  * prueba corre el código nuevo. Lo que se cubre:
  *
- *   (a) es el Demo A, nodo por nodo, salvo los cambios declarados;
- *   (b) `Config base` no lleva ningún valor real, y ningún marcador del Demo A;
+ *   (a) las reglas de diseño que no se negocian (memoria, filtro, zona horaria);
+ *   (b) el flujo no lleva ningún valor real ni secreto;
  *   (c) `instruccionesExtra` de la consola pisa al respaldo solo si viene lleno;
- *   (d) el prompt inserta esa sección delimitada, sin restos del salón;
+ *   (d) el prompt inserta esa sección delimitada, como dato;
  *   (d2) `CÓMO CONVERSAS`: recibe sin leer una ficha, no cierra toda respuesta
  *        invitando a agendar, distingue la duración de la sesión de la de los
  *        resultados, y esa calidez cabe en UN mensaje (0 mensajes más por
  *        conversación);
- *   (e) trata de usted;
+ *   (e) el trato lo manda la configuración;
  *   (f) obedece los umbrales del servidor antes del modelo;
  *   (g) el mensaje del cliente se reporta ANTES que la respuesta (orden v1);
- *   (h) dos odontólogos, cada uno con su calendario, y las herramientas eligen
+ *   (h) dos personas, cada una con su calendario, y las herramientas eligen
  *       la agenda correcta;
  *   (i) 17/09/2026, ejecución #2867: la consola registra lo que el paciente
  *       recibió y no lo que el modelo dijo; tras deshacer una cita solapada hay
@@ -46,7 +46,7 @@
  *       diagnostica y NO se agrega ni un mensaje. Sobre los DOS flujos.
  *
  * Los umbrales, el prefijo cacheable y el estado del comercio se prueban además
- * en las suites comunes, que recorren este flujo junto con los demás.
+ * en las suites comunes, que recorren los flujos de reservas junto con los demás.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -67,9 +67,8 @@ interface Flujo {
 }
 
 const leer = (archivo: string) => readFileSync(join(aqui, '../../Flujos/', archivo), 'utf8');
-const TEXTO = leer('platinum-agendamiento.json');
-const flujo = JSON.parse(TEXTO) as Flujo;
-const demoA = JSON.parse(leer('demo-a-agendamiento.json')) as Flujo;
+const TEXTO = leer('demo-a-agendamiento.json');
+const demoA = JSON.parse(TEXTO) as Flujo;
 const bellido = JSON.parse(leer('bellido-agendamiento.json')) as Flujo;
 /**
  * FECHAS CALCULADAS, NO ESCRITAS (24/09/2026). Desde ese día el candado deshace
@@ -161,22 +160,22 @@ function plantilla(texto: unknown, $json: J): string {
 
 /** `Config del negocio` con una respuesta HTTP simulada del panel. */
 const fusionar = (respuesta: unknown): J => ejecutar(
-  String(nodo(flujo, 'Config del negocio').parameters['jsCode']),
-  [respuesta as J], { 'Config base': [configBase(flujo)] },
+  String(nodo(demoA, 'Config del negocio').parameters['jsCode']),
+  [respuesta as J], { 'Config base': [configBase(demoA)] },
 )[0] ?? {};
 
 const panel = (datosDelNegocio: J = {}, extra: J = {}) => ({
   statusCode: 200,
   body: {
-    tenantId: 'platinum', flujo: 'agendamiento', estadoComercio: 'activo', phoneNumberId: '1000000001',
+    tenantId: 'un-negocio', flujo: 'agendamiento', estadoComercio: 'activo', phoneNumberId: '1000000001',
     operacion: { moneda: 'BOB', horarioAtencion: 'lunes a viernes, de 09:00 a 19:00' },
-    datosDelNegocio: { nombreNegocio: 'Clínica Platinum', ...datosDelNegocio },
+    datosDelNegocio: { nombreNegocio: 'Negocio de prueba', ...datosDelNegocio },
     catalogo: [], funcionarios: [], voz: {}, ...extra,
   },
 });
 
 const AGENTE = 'AI Agent (Sofía)';
-const prompt = (): string => nodo(flujo, AGENTE).parameters['options'].systemMessage;
+const prompt = (): string => nodo(demoA, AGENTE).parameters['options'].systemMessage;
 
 /**
  * EL HORARIO DE CADA PERSONA TIENE QUE LLEGAR AL FLUJO (2026-09-20).
@@ -192,14 +191,14 @@ describe('El horario de trabajo llega al prompt y al candado', () => {
   const conEquipo = (f: J[]) => fusionar(panel({}, { funcionarios: f }));
 
   it('`Config del negocio` conserva el horario de cada funcionario', () => {
-    const c = conEquipo([{ nombre: 'Dr. Sandoval', servicios: [], calendarioId: 'cal1',
+    const c = conEquipo([{ nombre: 'María', servicios: [], calendarioId: 'cal1',
       horarioTrabajo: HORARIO }]);
     const equipo = JSON.parse(String(c['funcionarios'])) as { horario: unknown }[];
     expect(equipo[0]?.horario).toEqual(HORARIO);
   });
 
   it('sin horario del servidor queda un objeto vacío, y el candado falla abierto', () => {
-    const c = conEquipo([{ nombre: 'Dr. Sandoval', servicios: [], calendarioId: 'cal1' }]);
+    const c = conEquipo([{ nombre: 'María', servicios: [], calendarioId: 'cal1' }]);
     const equipo = JSON.parse(String(c['funcionarios'])) as { horario: unknown }[];
     expect(equipo[0]?.horario).toEqual({});
   });
@@ -219,58 +218,9 @@ describe('El horario de trabajo llega al prompt y al candado', () => {
 /** Un envío a Graph se reconoce por el COMIENZO de la URL, nunca por subcadena. */
 const META = /^=?https:\/\/graph\.facebook\.com\//;
 
-describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados', () => {
-  /** Los únicos nodos cuyos parámetros cambian, y por qué. */
-  const PARAMETROS_DISTINTOS = [
-    'Config base',          // los datos de la clínica y el campo nuevo instruccionesExtra
-    // `Config del negocio` ya NO difiere: desde #110 el vertical fusiona
-    // instruccionesExtra, y el bloque 2 lo repuso letra por letra.
-    AGENTE,                 // ejemplos dentales, duración por servicio y la sección de información
-    'agendar_cita',         // fin = inicio + duración del servicio (60 / 30 min)
-    'Avisar a recepción',   // el rótulo del aviso nombra a la clínica, no al demo
-  ];
-  /** Los nodos que llevan credencial propia del cliente, con id vacío. */
-  const CREDENCIALES_PROPIAS = [
-    'Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)',
-    'Registrar cierre (cita)', 'Responder al cliente', 'Avisar a recepción',
-    // El pin a pedido (Analisis/34 §2): envío a Graph e ingesta del saliente.
-    'Enviar ubicación', 'Reportar ubicación (saliente)',
-    // La seña por QR (bloque 2): el QR y su reporte, la descarga del
-    // comprobante desde Meta y el cotejo en el servidor. Los de Gemini y los
-    // de Calendar van sin nombre: se asignan por tipo, como el modelo del agente.
-    'Enviar QR de la seña', 'Reportar QR (saliente)', 'Obtener URL del medio', 'Descargar comprobante',
-    'Cotejar en el servidor',
-    // Los medios entrantes que NO son comprobante (bloque 3): mismos dos pasos
-    // contra Meta, gemelos de los de arriba. Los tres nodos de Gemini de esa
-    // rama van sin nombre, como los dos lectores del comprobante.
-    'Obtener URL del medio (general)', 'Descargar medio',
-    // El botón para escribirle a recepción (19/09): el interactivo sale por
-    // Graph con la credencial de envío, y su reporte va a la ingesta.
-    'Enviar contacto', 'Reportar contacto (saliente)',
-  ];
-
-  it('tiene el nombre del cliente y los mismos nodos del Demo A, con los mismos ids, tipos y posiciones', () => {
-    expect(flujo.name).toBe('NovuChat — Clínica Platinum (Reservas)');
-    expect(flujo.nodes).toHaveLength(demoA.nodes.length);
-    const forma = (f: Flujo) => f.nodes.map((n) => [n.id, n.name, n.type, n.typeVersion, n.position, n.onError ?? null,
-      n.retryOnFail ?? null, n.maxTries ?? null]);
-    expect(forma(flujo)).toEqual(forma(demoA));
-  });
-
-  it('las conexiones y los settings son EXACTAMENTE los del Demo A', () => {
-    expect(flujo.connections).toEqual(demoA.connections);
-    expect(flujo.settings).toEqual(demoA.settings);
-  });
-
-  it('los parámetros solo cambian en los nodos declarados', () => {
-    const distintos = demoA.nodes
-      .filter((n) => JSON.stringify(n.parameters) !== JSON.stringify(nodo(flujo, n.name).parameters))
-      .map((n) => n.name);
-    expect(distintos.sort()).toEqual([...PARAMETROS_DISTINTOS].sort());
-  });
-
+describe('(a) Reglas de diseño del vertical de reservas (Demo A)', () => {
   it('los ids de nodo son nombres cortos, sin UUID, y no se repiten', () => {
-    const ids = flujo.nodes.map((n) => n.id);
+    const ids = demoA.nodes.map((n) => n.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const id of ids) {
       expect(id).toMatch(/^[a-z0-9()-]+$/);
@@ -278,50 +228,17 @@ describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados'
     }
   });
 
-  it('las credenciales llevan el nombre propio del cliente, con id vacío, y nunca las del Demo A', () => {
-    // `publicar-flujo.sh` asigna por el NOMBRE que declara el JSON y avisa si no
-    // existe. Con el id del Demo A, este flujo saldría con la ingesta del demo.
-    const conCredencial = flujo.nodes.filter((n) => n.credentials && Object.values(n.credentials).some((c) => c.name))
-      .map((n) => n.name);
-    expect(conCredencial.sort()).toEqual([...CREDENCIALES_PROPIAS].sort());
-    for (const n of flujo.nodes) {
-      for (const [tipo, c] of Object.entries(n.credentials ?? {})) {
-        expect(c.id, `${n.name}/${tipo}`).toBe('');
-        expect(c.name).not.toMatch(/Demo|NovuChat A/);
-      }
-    }
-    for (const nombre of ['Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Registrar cierre (cita)',
-      'Reportar ubicación (saliente)', 'Reportar QR (saliente)', 'Cotejar en el servidor',
-      'Reportar contacto (saliente)']) {
-      expect(nodo(flujo, nombre).credentials?.['httpHeaderAuth']?.name).toBe('NovuChat ingesta (Clínica Platinum)');
-    }
-    for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación',
-      'Enviar QR de la seña', 'Obtener URL del medio', 'Descargar comprobante',
-      'Obtener URL del medio (general)', 'Descargar medio', 'Enviar contacto']) {
-      expect(nodo(flujo, nombre).credentials?.['whatsAppApi']?.name).toBe('WhatsApp Clínica Platinum (envío)');
-    }
-    expect(TEXTO).not.toContain('Cierres NovuChat A');
-  });
-
-  it('el aviso a recepción es el del Demo A con el rótulo de la clínica', () => {
-    const texto = String(nodo(flujo, 'Avisar a recepción').parameters['textBody']);
-    expect(texto.startsWith('=🔔 NovuChat (Clínica Platinum, reservas): ')).toBe(true);
-    expect(texto.slice(texto.indexOf(': ') + 2)).toBe(
-      String(nodo(demoA, 'Avisar a recepción').parameters['textBody']).replace(/^.*?: /, ''),
-    );
-  });
-
   it('las reglas de diseño que no se negocian siguen en pie', () => {
-    const memoria = nodo(flujo, 'Memoria por teléfono').parameters;
+    const memoria = nodo(demoA, 'Memoria por teléfono').parameters;
     expect(memoria['sessionIdType']).toBe('customKey');
     expect(memoria['sessionKey']).toMatch(/\.from\s*\}\}$/);
-    expect(nodo(flujo, 'WhatsApp Trigger').parameters['updates']).toEqual(['messages']);
-    expect(flujo.connections['¿Es un mensaje?']?.['main']?.[0]?.map((c) => c.node)).toEqual(['Config base']);
-    expect(flujo.connections['Google Gemini Chat Model']?.['ai_languageModel']?.[0]?.[0]?.node).toBe(AGENTE);
-    const conTextBody = flujo.nodes.filter((n) => JSON.stringify(n.parameters).includes('.text?.body')
+    expect(nodo(demoA, 'WhatsApp Trigger').parameters['updates']).toEqual(['messages']);
+    expect(demoA.connections['¿Es un mensaje?']?.['main']?.[0]?.map((c) => c.node)).toEqual(['Config base']);
+    expect(demoA.connections['Google Gemini Chat Model']?.['ai_languageModel']?.[0]?.[0]?.node).toBe(AGENTE);
+    const conTextBody = demoA.nodes.filter((n) => JSON.stringify(n.parameters).includes('.text?.body')
       || JSON.stringify(n.parameters).includes('.text.body'));
     expect(conTextBody.map((n) => n.name)).toEqual(['Normalizar entrada']);
-    expect(String(nodo(flujo, AGENTE).parameters['text'])).toContain("$now.setZone('America/La_Paz')");
+    expect(String(nodo(demoA, AGENTE).parameters['text'])).toContain("$now.setZone('America/La_Paz')");
   });
 });
 
@@ -329,29 +246,7 @@ describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados'
 // (b) Ningún valor real
 // ---------------------------------------------------------------------------
 describe('(b) Config base no lleva ningún valor real', () => {
-  const base = configBase(flujo);
-
-  it('los sensibles son marcadores REEMPLAZAR_*_PLATINUM*', () => {
-    expect(base).toMatchObject({
-      phoneNumberId: 'REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM',
-      numeroRecepcion: 'REEMPLAZAR_NUMERO_RECEPCION_PLATINUM',
-      calendarioId: 'REEMPLAZAR_CALENDARIO_PLATINUM_1',
-      horarioAtencion: 'REEMPLAZAR_HORARIO_ATENCION_PLATINUM',
-    });
-  });
-
-  it('TODO marcador del archivo es de PLATINUM: ninguno del Demo A', () => {
-    const marcadores = [...new Set(TEXTO.match(/REEMPLAZAR_[A-Z0-9_+]*/g) ?? [])].sort();
-    expect(marcadores).toEqual([
-      'REEMPLAZAR_CALENDARIO_PLATINUM_1', 'REEMPLAZAR_CALENDARIO_PLATINUM_2',
-      'REEMPLAZAR_HORARIO_ATENCION_PLATINUM', 'REEMPLAZAR_NUMERO_RECEPCION_PLATINUM',
-      'REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM',
-    ]);
-    for (const viejo of ['REEMPLAZAR_CALENDARIO_BELLEZA', 'REEMPLAZAR_CALENDARIO_ODONTOLOGIA',
-      'REEMPLAZAR_ID_CALENDARIO', 'REEMPLAZAR_NUMERO_RECEPCION_SIN_+', 'REEMPLAZAR_PHONE_NUMBER_ID"']) {
-      expect(TEXTO).not.toContain(viejo);
-    }
-  });
+  const base = configBase(demoA);
 
   it('ningún valor parece un teléfono, un ID de Meta, un calendario real ni un token', () => {
     for (const [clave, valor] of Object.entries(base)) {
@@ -365,45 +260,13 @@ describe('(b) Config base no lleva ningún valor real', () => {
     expect(TEXTO).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
     expect(TEXTO).not.toMatch(/[A-Za-z0-9._%+-]+@(gmail|hotmail|outlook|yahoo)\./);
   });
-
-  it('los datos del cliente son los de la ficha: clínica, dirección real, campaña y política', () => {
-    expect(base['nombreNegocio']).toBe('Clínica Platinum');
-    expect(base['direccion']).toContain('Radial 26, entre 2do y 3er anillo, calle Nataniel Aguirre N.º 65');
-    expect(base['catalogoConPrecio']).toBe('Blanqueamiento dental profesional 500 Bs (precio de campaña hasta el 31/10/2026; regular 600 Bs) · 60 min');
-    // Estética facial se retiró el 20/09/2026: no figura en ninguna fuente de la clínica
-    // (el Excel de la campaña y sus tres piezas). La valoración es parte del blanqueamiento.
-    expect(base['catalogoSinPrecio']).toBe('Valoración clínica (parte del blanqueamiento y de su campaña)');
-    expect(JSON.stringify(base)).not.toMatch(/est[eé]tica facial/i);
-    expect(base['politicaCancelacion']).toContain('2 horas de anticipación');
-    expect(base['datosQueNoTenemos']).toContain('promociones distintas a la publicada');
-    expect(base['nivelEmojis']).toBe('pocos');
-    expect(base['nombreAsistente']).toBe('');
-    expect(base['prefijosPermitidos']).toBe('591');
-    expect(base['estadoComercio']).toBe('operativo');
-  });
-
-  it('instruccionesExtra trae el texto de la campaña y las objeciones, dentro del tope de la consola', () => {
-    const extra = String(base['instruccionesExtra']);
-    expect(extra.length).toBeLessThanOrEqual(1500);
-    // LAS FUENTES DE VERDAD, Y SOLO ELLAS (Andres, 20/09/2026): el Excel de la
-    // campaña y sus tres piezas. Los textos anteriores se contradecían entre sí
-    // —uno prohibía justo lo que el Excel afirma—, y el respaldo, la consola y
-    // el archivo de datos decían tres cosas distintas. Ahora dicen lo mismo.
-    const datos = JSON.parse(readFileSync(join(aqui, '../scripts/datos/negocio-platinum.json'), 'utf8')) as { negocio: { instruccionesExtra: string } };
-    expect(extra).toBe(datos.negocio.instruccionesExtra);
-    expect(extra).toContain('Ahora solo 500 Bs (precio estándar 600 Bs), hasta el 31 de octubre de 2026');
-    expect(extra).toContain('La valoración clínica es parte del blanqueamiento y de la campaña');
-    expect(extra).toContain('agentes desensibilizantes');
-    // Lo que no está en ninguna fuente, no está.
-    expect(extra).not.toMatch(/est[eé]tica facial|200 Bs|RESERVA de 50|PROHIBIDO/i);
-  });
 });
 
 // ---------------------------------------------------------------------------
 // (c) instruccionesExtra: consola sobre respaldo, solo si viene con contenido
 // ---------------------------------------------------------------------------
 describe('(c) Config del negocio: instruccionesExtra', () => {
-  const respaldo = String(configBase(flujo)['instruccionesExtra']);
+  const respaldo = String(configBase(demoA)['instruccionesExtra']);
 
   it('lo que escribió el comercio en la consola pisa al respaldo', () => {
     const s = fusionar(panel({ instruccionesExtra: 'CAMPAÑA: limpieza dental a 150 Bs hasta fin de mes.' }));
@@ -433,14 +296,14 @@ describe('(c) Config del negocio: instruccionesExtra', () => {
     const s = fusionar(panel({ direccion: 'Otra dirección', politicaCancelacion: 'Otra política' }));
     expect(s['direccion']).toBe('Otra dirección');
     expect(s['politicaCancelacion']).toBe('Otra política');
-    expect(s['nombreNegocio']).toBe('Clínica Platinum');
+    expect(s['nombreNegocio']).toBe('Negocio de prueba');
   });
 });
 
 // ---------------------------------------------------------------------------
 // (d) El prompt
 // ---------------------------------------------------------------------------
-describe('(d) El prompt inserta la información del negocio como dato, sin restos del salón', () => {
+describe('(d) El prompt inserta la información del negocio como dato', () => {
   const p = prompt();
 
   it('lleva la sección delimitada con instruccionesExtra, rotulada como dato y subordinada a las reglas', () => {
@@ -458,54 +321,17 @@ describe('(d) El prompt inserta la información del negocio como dato, sin resto
   });
 
   it('renderizado con el respaldo, el texto del negocio queda entre las dos marcas', () => {
-    const cfg = configBase(flujo);
+    const cfg = configBase(demoA);
     const r = plantilla(p, cfg);
     const inicio = r.indexOf('[INICIO DE LA INFORMACIÓN DEL NEGOCIO]');
     const fin = r.indexOf('[FIN DE LA INFORMACIÓN DEL NEGOCIO]');
     expect(inicio).toBeGreaterThan(0);
     expect(fin).toBeGreaterThan(inicio);
     expect(r.slice(inicio, fin)).toContain(String(cfg['instruccionesExtra']));
-    expect(r).toContain('Eres Sofía, la asistente virtual de Clínica Platinum.');
+    expect(r).toContain(`Eres Sofía, la asistente virtual de ${String(cfg['nombreNegocio'])}.`);
   });
 
-  it('no queda nada del salón de belleza: ni María, ni José, ni salón, ni peluquería', () => {
-    for (const resto of ['María', 'José', 'Rosa', 'salón', 'salon', 'peluquer', 'uñas', 'muela', 'diagnóstico.']) {
-      expect(p, resto).not.toContain(resto);
-    }
-    // Y tampoco en lo demás que llega al modelo o al cliente: los valores de
-    // Config base, las descripciones de las herramientas y los textos que se
-    // envían. Los comentarios de los nodos Code no cuentan: guardan la historia
-    // de los defectos («✅ Cita confirmada para corte con José») y no salen.
-    for (const [clave, valor] of Object.entries(configBase(flujo))) {
-      expect(String(valor), `Config base.${clave}`).not.toMatch(/María|José|salón|salon|peluquer/);
-    }
-    for (const n of flujo.nodes) {
-      const alModelo = [n.parameters['toolDescription'], n.parameters['textBody'], n.parameters['text'],
-        n.parameters['start'], n.parameters['end'], n.parameters['timeMin'], n.parameters['timeMax'],
-        n.parameters['additionalFields']?.summary].filter(Boolean).join('\n');
-      expect(alModelo, n.name).not.toMatch(/María|José|salón|salon|peluquer/);
-    }
-  });
-
-  it('los ejemplos son dentales y nombran a los dos odontólogos', () => {
-    expect(p).toContain('«lo atiende el Dr. Christyan Sandoval»');
-    expect(p).toContain('el Dr. Christyan Sandoval puede\n  atender a las 10:00 y el Dr. Juan Pérez a las 10:00');
-    expect(p).toContain('un odontólogo no puede hacer dos blanqueamientos');
-    expect(p).toContain('ofrece agendar una valoración clínica.');
-  });
-
-  it('la duración de la cita depende del servicio: 60 min blanqueamiento, 30 min valoración', () => {
-    expect(p).toContain('duración: 60 minutos para el blanqueamiento dental profesional, 30 minutos para la valoración clínica');
-    expect(p).not.toContain('duración 1 hora');
-    const tool = nodo(flujo, 'agendar_cita').parameters;
-    expect(String(tool['toolDescription'])).toContain('60 minutos para el blanqueamiento dental profesional, 30 minutos para la valoración clínica');
-    expect(String(tool['toolDescription'])).not.toContain('1 hora');
-    expect(String(tool['end'])).toContain('60 minutos después para el blanqueamiento');
-    expect(String(tool['end'])).toContain('30 minutos después para la valoración clínica');
-  });
-
-  it('conserva intactas las reglas del Demo A que no dependen del rubro', () => {
-    const a = nodo(demoA, AGENTE).parameters['options'].systemMessage as string;
+  it('lleva las reglas del vertical que no dependen del rubro', () => {
     for (const regla of [
       'REGLA QUE NO SE NEGOCIA: NUNCA propongas ni confirmes un horario que no hayas\nverificado con consultar_disponibilidad',
       'SI UNA HERRAMIENTA FALLA, NO INVENTES EL RESULTADO:',
@@ -520,11 +346,8 @@ describe('(d) El prompt inserta la información del negocio como dato, sin resto
       'PIDE DE UNA VEZ TODO LO QUE TE FALTE.',
       'CÓMO TE LLEGA CADA MENSAJE (formato fijo, no lo menciones nunca al cliente):',
     ]) {
-      expect(a, `el Demo A ya no dice: ${regla.slice(0, 40)}`).toContain(regla);
       expect(p, regla.slice(0, 40)).toContain(regla);
     }
-    // El mensaje del turno (contexto + texto del cliente) es el mismo.
-    expect(nodo(flujo, AGENTE).parameters['text']).toBe(nodo(demoA, AGENTE).parameters['text']);
   });
 
   it('el prompt no lleva nada volátil ni propio del cliente: sigue siendo cacheable', () => {
@@ -555,12 +378,9 @@ describe('(d2) El prompt enseña a conversar sin agregar mensajes', () => {
   const bloque = p.slice(p.indexOf('CÓMO CONVERSAS'), p.indexOf('TRATO Y ESTILO'));
 
   it('el bloque está entre la economía de la conversación y el trato, y la economía queda intacta', () => {
-    // El bloque de ECONOMÍA es el del Demo A, palabra por palabra: la calidez se
-    // agrega DESPUÉS y subordinada a él, nunca reescribiéndolo.
-    const a = nodo(demoA, AGENTE).parameters['options'].systemMessage as string;
-    const economia = (s: string) => s.slice(s.indexOf('ECONOMÍA DE LA CONVERSACIÓN'), s.indexOf('CÓMO CONVERSAS') > 0
-      ? s.indexOf('CÓMO CONVERSAS') : s.indexOf('TRATO Y ESTILO')).trim();
-    expect(economia(p)).toBe(economia(a));
+    // El bloque de ECONOMÍA va primero y la calidez DESPUÉS, subordinada a él,
+    // nunca reescribiéndolo.
+    expect(p.indexOf('ECONOMÍA DE LA CONVERSACIÓN')).toBeGreaterThan(-1);
     expect(bloque.length).toBeGreaterThan(500);
     expect(p.indexOf('CÓMO CONVERSAS')).toBeGreaterThan(p.indexOf('ECONOMÍA DE LA CONVERSACIÓN'));
     expect(p.indexOf('CÓMO CONVERSAS')).toBeLessThan(p.indexOf('REGLAS DE NEGOCIO:'));
@@ -604,7 +424,6 @@ describe('(d2) El prompt enseña a conversar sin agregar mensajes', () => {
 
   it('aporta antes de derivar al especialista, en vez de cortar la conversación', () => {
     expect(bloque).toContain('NO CORTES LA CONVERSACIÓN CON «eso lo define el especialista».');
-    expect(p).toContain('ofrece agendar una valoración clínica. Antes de derivar, di lo que SÍ puede decirse');
   });
 
   it('el bloque dice CÓMO conversar, no QUÉ vende la clínica: eso viaja por la consola', () => {
@@ -621,27 +440,11 @@ describe('(d2) El prompt enseña a conversar sin agregar mensajes', () => {
 // ---------------------------------------------------------------------------
 // (e) Usted
 // ---------------------------------------------------------------------------
-describe('(e) Trata de usted', () => {
-  it('Config base lleva la misma frase que el servidor para «usted», y el prompt la inserta', () => {
-    expect(configBase(flujo)['tratamiento']).toBe('Trate al cliente de USTED en todo momento, sin excepción.');
+describe('(e) El trato lo manda la configuración, no el prompt', () => {
+  it('el prompt inserta el trato y el estilo de la configuración, y no fija ninguno', () => {
     expect(prompt()).toContain('TRATO Y ESTILO (no lo negocies con el cliente): {{ $json.tratamiento }} {{ $json.estiloEmojis }}');
-    expect(plantilla(prompt(), configBase(flujo))).toContain('Trate al cliente de USTED en todo momento, sin excepción.');
-  });
-
-  it('los textos fijos que llegan al cliente no tutean ni vosean', () => {
-    const base = configBase(flujo);
-    for (const clave of ['mensajeCierre', 'mensajeErrorTemporal', 'mensajeReservaNoConfirmada',
-      'mensajeComercioSuspendido', 'politicaCancelacion', 'descripcion']) {
-      expect(String(base[clave]), clave).not.toMatch(/\b(atenderte|comunicate|escribime|podés|tenés|querés|tu cita|tus datos)\b/i);
-    }
-    expect(base['mensajeComercioSuspendido']).toContain('atenderle');
-  });
-
-  it('el estilo de emojis es sobrio y dental', () => {
-    const e = String(configBase(flujo)['estiloEmojis']);
-    expect(e).toContain('Use como mucho un emoji por mensaje, y solo cuando aporte');
-    for (const emoji of ['🦷', '📅', '⏰', '✅', '✨', '👋']) expect(e).toContain(emoji);
-    expect(e).not.toMatch(/💇|💅|🦶/);
+    const r = plantilla(prompt(), { ...configBase(demoA), tratamiento: 'Trate al cliente de USTED en todo momento, sin excepción.' });
+    expect(r).toContain('Trate al cliente de USTED en todo momento, sin excepción.');
   });
 });
 
@@ -650,13 +453,13 @@ describe('(e) Trata de usted', () => {
 // ---------------------------------------------------------------------------
 describe('(f) Obedece los umbrales del servidor antes del modelo', () => {
   const destinos = (desde: string, salida = 0) =>
-    (flujo.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node);
-  const origenes = (hacia: string) => Object.entries(flujo.connections)
+    (demoA.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node);
+  const origenes = (hacia: string) => Object.entries(demoA.connections)
     .filter(([, c]) => (c['main'] ?? []).some((s) => s.some((x) => x.node === hacia)))
     .map(([origen]) => origen);
 
   it('Traer configuración manda el teléfono que escribió', () => {
-    const cuerpo = expresion(nodo(flujo, 'Traer configuración').parameters['jsonBody'],
+    const cuerpo = expresion(nodo(demoA, 'Traer configuración').parameters['jsonBody'],
       { messages: [{ from: '59170000001' }] });
     expect(JSON.parse(String(cuerpo))).toEqual({ telefono: '59170000001' });
   });
@@ -684,7 +487,7 @@ describe('(f) Obedece los umbrales del servidor antes del modelo', () => {
     // paciente mandó el comprobante de su seña y NO SE LEYÓ: la rama del cotejo
     // colgaba solo de la salida normal. El horario retenido se liberaba y el
     // paciente perdía la cita que había pagado.
-    const cond = () => nodo(flujo, '¿Comprobante en uso extendido?').parameters['conditions'].conditions[0].leftValue;
+    const cond = () => nodo(demoA, '¿Comprobante en uso extendido?').parameters['conditions'].conditions[0].leftValue;
     const pasa = (j: J) => expresion(cond(), j);
 
     it('en OPERADOR, un comprobante con seña pendiente va al cotejo', () => {
@@ -699,7 +502,7 @@ describe('(f) Obedece los umbrales del servidor antes del modelo', () => {
     it('una imagen SIN seña pendiente no es comprobante, y no se desvía', () => {
       // `esComprobante` exige seña pendiente (`Normalizar entrada`): la foto de
       // un diente en uso extendido no dispara ningún cotejo.
-      const norm = String(nodo(flujo, 'Normalizar entrada').parameters['jsCode']);
+      const norm = String(nodo(demoA, 'Normalizar entrada').parameters['jsCode']);
       expect(norm).toContain("['image', 'document'].includes(tipo) && config.senaPendiente === 'si'");
     });
     it('el desvío entra a la rama del cotejo y esa rama no pasa por el agente', () => {
@@ -707,7 +510,7 @@ describe('(f) Obedece los umbrales del servidor antes del modelo', () => {
       const pendientes = ['Obtener URL del medio'];
       while (pendientes.length) {
         const a = pendientes.pop() as string;
-        for (const r of flujo.connections[a]?.['main'] ?? []) {
+        for (const r of demoA.connections[a]?.['main'] ?? []) {
           for (const x of r) if (!vistos.has(x.node)) { vistos.add(x.node); pendientes.push(x.node); }
         }
       }
@@ -718,12 +521,12 @@ describe('(f) Obedece los umbrales del servidor antes del modelo', () => {
   });
 
   it.each([['operador'], ['bloqueado']])('con estado %s NO va al modelo', (estado) => {
-    const condicion = nodo(flujo, '¿Atención normal?').parameters['conditions'].conditions[0].leftValue;
+    const condicion = nodo(demoA, '¿Atención normal?').parameters['conditions'].conditions[0].leftValue;
     expect(expresion(condicion, { atencionEstado: estado })).toBe(false);
   });
 
   it('en operador responde el aviso fijo y avisa a recepción; en bloqueado no responde nada', () => {
-    const uso = (j: J) => ejecutar(String(nodo(flujo, 'Uso extendido').parameters['jsCode']), [{
+    const uso = (j: J) => ejecutar(String(nodo(demoA, 'Uso extendido').parameters['jsCode']), [{
       from: '59170000001', nombrePerfil: 'Ana', atencionMensajeFijo: 'Texto fijo', atencionRespuestas: 50, ...j,
     }])[0] ?? {};
     expect(uso({ atencionEstado: 'operador', atencionAvisarRecepcion: 'operador' }))
@@ -737,11 +540,11 @@ describe('(f) Obedece los umbrales del servidor antes del modelo', () => {
 // (g) Orden del lienzo
 // ---------------------------------------------------------------------------
 describe('(g) El mensaje del cliente se reporta ANTES que la respuesta', () => {
-  const y = (nombre: string) => nodo(flujo, nombre).position[1];
+  const y = (nombre: string) => nodo(demoA, nombre).position[1];
 
   it('corre con executionOrder v1 y «Reportar mensaje (entrante)» está más arriba que la rama del agente', () => {
-    expect(flujo.settings['executionOrder']).toBe('v1');
-    const hijos = (flujo.connections['Normalizar entrada']?.['main']?.[0] ?? []).map((x) => x.node);
+    expect(demoA.settings['executionOrder']).toBe('v1');
+    const hijos = (demoA.connections['Normalizar entrada']?.['main']?.[0] ?? []).map((x) => x.node);
     expect(hijos).toContain('Reportar mensaje (entrante)');
     expect(hijos).toContain('¿Comercio operativo?');
     expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('¿Comercio operativo?'));
@@ -749,7 +552,7 @@ describe('(g) El mensaje del cliente se reporta ANTES que la respuesta', () => {
   });
 
   it('ese reporte tiene tope de tiempo, un solo reintento y no corta la respuesta si falla', () => {
-    const r = nodo(flujo, 'Reportar mensaje (entrante)');
+    const r = nodo(demoA, 'Reportar mensaje (entrante)');
     expect(r.parameters['options']?.timeout).toBeLessThanOrEqual(4000);
     expect(r.maxTries ?? 1).toBeLessThanOrEqual(2);
     expect(r.onError).toBe('continueRegularOutput');
@@ -759,35 +562,41 @@ describe('(g) El mensaje del cliente se reporta ANTES que la respuesta', () => {
 // ---------------------------------------------------------------------------
 // (h) Dos odontólogos, dos calendarios
 // ---------------------------------------------------------------------------
-describe('(h) Dos odontólogos con calendarios distintos', () => {
-  const base = configBase(flujo);
-  const equipo = JSON.parse(String(base['funcionarios'])) as { nombre: string; servicios: string[]; calendario: string }[];
+describe('(h) Dos personas con calendarios distintos', () => {
+  const CAL_1 = 'REEMPLAZAR_CALENDARIO_BELLEZA';
+  const CAL_2 = 'REEMPLAZAR_CALENDARIO_BELLEZA_2';
+  // Un negocio con dos personas, cada una con su agenda: la regla se prueba con
+  // esta configuración, no con el rubro del Demo A.
+  const base: J = {
+    ...configBase(demoA),
+    funcionarios: JSON.stringify([
+      { nombre: 'María', servicios: ['manicure', 'corte'], calendario: CAL_1 },
+      { nombre: 'José', servicios: ['manicure', 'corte'], calendario: CAL_2 },
+    ]),
+    calendariosPorServicio: JSON.stringify({ manicure: CAL_1, corte: CAL_1 }),
+    calendarioId: CAL_1,
+  };
 
-  it('Config base declara dos funcionarios, cada uno con su marcador de calendario', () => {
-    expect(equipo).toHaveLength(2);
-    expect(equipo.map((f) => f.nombre)).toEqual(['Dr. Christyan Sandoval', 'Dr. Juan Pérez']);
-    expect(equipo.map((f) => f.calendario)).toEqual(['REEMPLAZAR_CALENDARIO_PLATINUM_1', 'REEMPLAZAR_CALENDARIO_PLATINUM_2']);
-    expect(equipo[0]?.servicios).toEqual(['blanqueamiento dental profesional', 'valoracion clinica']);
-    expect(equipo[1]?.servicios).toEqual(['blanqueamiento dental profesional', 'valoracion clinica']);
+  it('Config base del Demo A declara a María y José, cada uno con su marcador de calendario', () => {
+    const equipo = JSON.parse(String(configBase(demoA)['funcionarios'])) as { nombre: string; calendario: string }[];
+    expect(equipo.slice(0, 2).map((f) => f.nombre)).toEqual(['María', 'José']);
+    expect(equipo.slice(0, 2).map((f) => f.calendario)).toEqual([CAL_1, CAL_2]);
   });
 
-  it('los tres servicios caen al calendario 1 cuando no se eligió persona, y el del negocio es el 1', () => {
+  it('sin persona elegida, el servicio cae al calendario 1, y el del negocio es el 1', () => {
     const mapa = JSON.parse(String(base['calendariosPorServicio'])) as Record<string, string>;
-    expect(Object.keys(mapa).sort()).toEqual(['blanqueamiento dental profesional', 'valoracion clinica']);
-    expect(new Set(Object.values(mapa))).toEqual(new Set(['REEMPLAZAR_CALENDARIO_PLATINUM_1']));
-    expect(base['calendarioId']).toBe('REEMPLAZAR_CALENDARIO_PLATINUM_1');
+    expect(new Set(Object.values(mapa))).toEqual(new Set([CAL_1]));
+    expect(base['calendarioId']).toBe(CAL_1);
   });
 
   it.each(['consultar_disponibilidad', 'agendar_cita', 'buscar_mi_cita', 'cancelar_cita'])(
     '%s elige la agenda de la persona que atiende, o la del servicio si no se eligió', (herramienta) => {
-      const calendario = nodo(flujo, herramienta).parameters['calendar'].value;
+      const calendario = nodo(demoA, herramienta).parameters['calendar'].value;
       const elegir = (deLaIA: J) => expresion(calendario, {}, { 'Config del negocio': base }, deLaIA);
-      expect(elegir({ funcionario: 'Dr. Juan Pérez', servicio: 'blanqueamiento dental profesional' }))
-        .toBe('REEMPLAZAR_CALENDARIO_PLATINUM_2');
-      expect(elegir({ funcionario: 'Dr. Christyan Sandoval', servicio: 'valoración clínica' }))
-        .toBe('REEMPLAZAR_CALENDARIO_PLATINUM_1');
-      expect(elegir({ servicio: 'Valoración clínica' })).toBe('REEMPLAZAR_CALENDARIO_PLATINUM_1');
-      expect(elegir({})).toBe('REEMPLAZAR_CALENDARIO_PLATINUM_1');
+      expect(elegir({ funcionario: 'José', servicio: 'manicure' })).toBe(CAL_2);
+      expect(elegir({ funcionario: 'María', servicio: 'corte' })).toBe(CAL_1);
+      expect(elegir({ servicio: 'Corte' })).toBe(CAL_1);
+      expect(elegir({})).toBe(CAL_1);
     },
   );
 
@@ -796,29 +605,27 @@ describe('(h) Dos odontólogos con calendarios distintos', () => {
     // calendarios, así que consultarlos era trabajo tirado, y lineal en el
     // número de agendas. `Procesar respuesta` trae el calendario del evento
     // creado (`organizer.email`) y el nodo emite ese y ninguno más.
-    const revisar = (eventosCreados?: unknown) => ejecutar(String(nodo(flujo, 'Calendarios a revisar').parameters['jsCode']),
+    const revisar = (eventosCreados?: unknown) => ejecutar(String(nodo(demoA, 'Calendarios a revisar').parameters['jsCode']),
       [{ from: '59170000001', ...(eventosCreados === undefined ? {} : { eventosCreados }) }], { 'Config del negocio': [base] })
       .map((i) => i['calendarioARevisar']).sort();
-    expect(revisar([{ id: 'ev', calendario: 'REEMPLAZAR_CALENDARIO_PLATINUM_2' }]))
-      .toEqual(['REEMPLAZAR_CALENDARIO_PLATINUM_2']);
-    expect(revisar([{ id: 'ev', calendario: 'REEMPLAZAR_CALENDARIO_PLATINUM_1' }]))
-      .toEqual(['REEMPLAZAR_CALENDARIO_PLATINUM_1']);
+    expect(revisar([{ id: 'ev', calendario: CAL_2 }])).toEqual([CAL_2]);
+    expect(revisar([{ id: 'ev', calendario: CAL_1 }])).toEqual([CAL_1]);
     // Dos citas en agendas distintas en la misma vuelta: las dos, sin repetir.
     expect(revisar([
-      { id: 'a', calendario: 'REEMPLAZAR_CALENDARIO_PLATINUM_1' },
-      { id: 'b', calendario: 'REEMPLAZAR_CALENDARIO_PLATINUM_2' },
-      { id: 'c', calendario: 'REEMPLAZAR_CALENDARIO_PLATINUM_2' },
-    ])).toEqual(['REEMPLAZAR_CALENDARIO_PLATINUM_1', 'REEMPLAZAR_CALENDARIO_PLATINUM_2']);
+      { id: 'a', calendario: CAL_1 },
+      { id: 'b', calendario: CAL_2 },
+      { id: 'c', calendario: CAL_2 },
+    ])).toEqual([CAL_1, CAL_2]);
   });
 
   it('y sin saber dónde quedó la cita revisa los DOS: el candado nunca deja de correr', () => {
     // Se abrió por el texto del modelo o por `isExecuted` sin observación: no
     // hay evento con calendario. Respaldo obligatorio: todos, nunca cero.
     for (const eventosCreados of [undefined, [], [{ id: 'ev', calendario: '' }], 'basura']) {
-      const items = ejecutar(String(nodo(flujo, 'Calendarios a revisar').parameters['jsCode']),
+      const items = ejecutar(String(nodo(demoA, 'Calendarios a revisar').parameters['jsCode']),
         [{ from: '59170000001', ...(eventosCreados === undefined ? {} : { eventosCreados }) }], { 'Config del negocio': [base] });
       expect(items.map((i) => i['calendarioARevisar']).sort(), JSON.stringify(eventosCreados))
-        .toEqual(['REEMPLAZAR_CALENDARIO_PLATINUM_1', 'REEMPLAZAR_CALENDARIO_PLATINUM_2']);
+        .toEqual([CAL_1, CAL_2]);
     }
   });
 });
@@ -840,10 +647,9 @@ describe('(h) Dos odontólogos con calendarios distintos', () => {
  *      alternativo», dijo la clínica);
  *   3. el modelo agendó dentro de un intervalo ocupado que tenía delante.
  *
- * Los tres arreglos van con el MISMO mecanismo en Platinum y en el Demo A, del
- * que se copian los clientes nuevos: un cliente con una regla distinta es el
- * defecto de «un cambio a todos o a ninguno». Por eso este bloque recorre los
- * dos flujos.
+ * Los tres arreglos van en el Demo A, del que se parten los flujos de reservas
+ * de los clientes nuevos: un cliente con una regla distinta es el defecto de
+ * «un cambio preferentemente a todos».
  */
 describe.each([
   ['demo-a-agendamiento.json', demoA],
@@ -1661,7 +1467,7 @@ describe.each([
       expect(destinos('¿Afirma que agendó?', 1)).toEqual(['Mensaje a enviar', '¿Transferir a humano?']);
     });
 
-    it('el código de los cuatro nodos tocados es idéntico en Platinum y en el Demo A', () => {
+    it('el código de los cuatro nodos tocados es el del Demo A', () => {
       for (const n of ['Procesar respuesta', 'Procesar reintento', 'Mensaje a enviar', 'Comprobar reserva']) {
         expect(codigo(n), n).toBe(String(nodo(demoA, n).parameters['jsCode']));
       }
@@ -1830,10 +1636,8 @@ describe.each([
       expect(p).not.toContain('Después confirma servicio, día, hora y con quién, y despídete con calidez.');
     });
 
-    it('nada de esto es volátil: el prompt sigue siendo cacheable, y la regla es la misma en los dos flujos', () => {
+    it('nada de esto es volátil: el prompt sigue siendo cacheable', () => {
       for (const v of ['$now', '$json.from', 'nombrePerfil', 'mensajesRestantes24h', 'userInput']) expect(p, v).not.toContain(v);
-      const otro = String(nodo(f === flujo ? demoA : flujo, AGENTE).parameters['options'].systemMessage);
-      expect(regla6c).toBe(otro.slice(otro.indexOf('6c.'), otro.indexOf('7. Eres asistente')));
     });
   });
 
@@ -2338,7 +2142,7 @@ describe.each([
       expect(s).toMatchObject({ eventoId: 'ev-retenido', calendarioDelEvento: persona.calendario, senaQrUrl: QR, from: '59170000001', waGraphVersion: 'v26.0' });
     });
 
-    it('trata como manda la configuración: usted con Platinum, tuteo con el Demo A', () => {
+    it('trata como manda la configuración: usted o tuteo', () => {
       const c = String(preparar()['captionQr']);
       if (/usted/i.test(String(cfg['tratamiento']))) {
         expect(c).toContain('Escanee el QR con la app de su banco');
@@ -2801,8 +2605,8 @@ describe.each([
 // (m) Medios entrantes: audio, imagen y PDF sin comprobante (bloque 3)
 // ---------------------------------------------------------------------------
 /**
- * EL DEFECTO QUE ESTO CIERRA (17/09/2026, `CLIENTES/PLATINUM/analisis-audio-e-
- * imagen.md`). Un paciente mandó un audio y una foto en el mismo minuto. Al
+ * EL DEFECTO QUE ESTO CIERRA (17/09/2026, el análisis de audio e
+ * imagen de un cliente de reservas). Un paciente mandó un audio y una foto en el mismo minuto. Al
  * audio el asistente contestó que atiende por texto —un mensaje PAGADO que no
  * avanza nada— y de la foto INVENTÓ que era un comprobante: «¡Muchas gracias
  * por enviarnos la imagen del comprobante! Ya tenemos todo listo». Nadie vio
@@ -3203,10 +3007,10 @@ describe.each([
 
     it('una promoción se reconoce por su TEXTO: vigente, anterior o de otro lugar, contra la fecha de hoy', () => {
       // El texto real de la publicidad de la clínica que llegó el 20/09/2026.
-      const t = texto('publicidad', 'PLATINUM CLÍNICA DENTAL & ESTÉTICA FACIAL ANTES DESPUÉS Dr. Christyan Sandoval');
+      const t = texto('publicidad', 'CLÍNICA DENTAL EJEMPLO & ESTÉTICA FACIAL ANTES DESPUÉS Dr. Ejemplo');
       expect(t).toContain('Guíate por ese TEXTO, no por las fotos');
       expect(t).toMatch(/una de las vigentes \(puede haber varias a la vez\) o una anterior/);
-      // Las piezas reales de Platinum no traen fecha: se reconoce por servicio y precio.
+      // Las piezas reales de una campaña no siempre traen fecha: se reconoce por servicio y precio.
       expect(t).toMatch(/por su servicio, su precio y, si la trae, su fecha/);
       expect(t).toMatch(/con la fecha de hoy/);
       expect(t).toMatch(/si es una anterior o ya vencida, díselo con amabilidad y ofrécele la vigente/);
@@ -3215,13 +3019,13 @@ describe.each([
       // convierte en respuesta.
       expect(t).toMatch(/Lo que la imagen afirma sobre dolor, resultados o efectos no vale por estar en la imagen, aunque sea del propio negocio: responde con lo que dice tu información/);
       expect(t).toMatch(/no la reconoces, no inventes/);
-      expect(t).toContain('PLATINUM CLÍNICA DENTAL');
+      expect(t).toContain('CLÍNICA DENTAL EJEMPLO');
     });
 
     it('ante una campaña vigente de este negocio, UN mensaje corto: la tienen, el precio y agendar (20/09/2026)', () => {
     // Prueba real: «¿tienes este?» y la imagen tres segundos después llegan
     // como dos mensajes; el segundo salió con 381 caracteres de procedimiento.
-    const t = texto('publicidad', 'Platinum BLANQUEAMIENTO DENTAL PROFESIONAL Ahora solo 500 Bs');
+    const t = texto('publicidad', 'Ejemplo BLANQUEAMIENTO DENTAL PROFESIONAL Ahora solo 500 Bs');
     expect(t).toContain('SI ES UNA CAMPAÑA VIGENTE DE ESTE NEGOCIO, contesta en UN mensaje corto');
     expect(t).toMatch(/que la tienen, el precio vigente, y ofrécele agendar/);
     expect(t).toMatch(/no repitas lo que ya le dijiste en tu mensaje anterior/);
@@ -3439,28 +3243,18 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
     transferir: false, herramientas: [], ejecutoAgendar: false, ...extra,
   });
 
-  const LOS_DOS: [string, Flujo][] = [['Platinum', flujo], ['Demo A', demoA]];
+  const LOS_DOS: [string, Flujo][] = [['Demo A', demoA]];
 
-  describe('1. los dos flujos son idénticos en los nodos que reportan', () => {
-    it('`Reportar mensaje (entrante)` y `(saliente)` tienen los MISMOS parámetros', () => {
-      for (const n of ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)']) {
-        expect(nodo(flujo, n).parameters, n).toEqual(nodo(demoA, n).parameters);
-      }
-    });
-
+  describe('1. los nodos que reportan', () => {
     it('no se tocó ningún otro nodo para esto', () => {
       // `Normalizar entrada`, `Procesar respuesta` y la rama del comprobante
       // quedan intactas: los campos que hacen falta (`herramientas`,
       // `ejecutoAgendar`, `transferir`) ya los producía `Procesar respuesta`
       // para el candado, y `Mensaje a enviar` los arrastra con `...i.json`.
-      const js = (n: string) => String(nodo(flujo, n).parameters['jsCode']);
+      const js = (n: string) => String(nodo(demoA, n).parameters['jsCode']);
       expect(js('Procesar respuesta')).toContain('const ejecutoAgendar =');
       expect(js('Procesar respuesta')).toContain('herramientas,');
       expect(js('Mensaje a enviar')).toContain('...i.json');
-      // Y siguen siendo LOS MISMOS que el Demo A: no se editó ninguno.
-      for (const n of ['Normalizar entrada', 'Procesar respuesta', 'Mensaje a enviar']) {
-        expect(js(n), n).toBe(String(nodo(demoA, n).parameters['jsCode']));
-      }
     });
   });
 
@@ -3605,17 +3399,15 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
       // que cambió son dos `jsonBody`. El +1 del recordatorio lo paga el flujo
       // programado `agendamiento-seguimientos.json`, y solo a quien quedó a
       // medio camino.
-      expect(flujo.nodes).toHaveLength(demoA.nodes.length);
-      expect(flujo.connections).toEqual(demoA.connections);
       for (const n of ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)']) {
-        expect(String(nodo(flujo, n).parameters['url'])).toMatch(/\/ingesta$/);
-        expect(nodo(flujo, n).onError, n).toBe('continueRegularOutput');
+        expect(String(nodo(demoA, n).parameters['url'])).toMatch(/\/ingesta$/);
+        expect(nodo(demoA, n).onError, n).toBe('continueRegularOutput');
       }
     });
 
     it('las notas dicen qué hecho manda cada reporte', () => {
-      expect(String(nodo(flujo, 'Reportar mensaje (entrante)').notes)).toContain('no_contactar');
-      expect(String(nodo(flujo, 'Reportar mensaje (saliente)').notes)).toContain('horarios_ofrecidos');
+      expect(String(nodo(demoA, 'Reportar mensaje (entrante)').notes)).toContain('no_contactar');
+      expect(String(nodo(demoA, 'Reportar mensaje (saliente)').notes)).toContain('horarios_ofrecidos');
     });
   });
 });
@@ -3888,7 +3680,7 @@ describe.each([['demo-a-agendamiento.json', demoA]])(
  * persona. Y el motivo que recibe recepción tiene que decir qué pasó.
  */
 describe('Lo que no sabe, no lo niega ni lo inventa', () => {
-  for (const cliente of ['demo-a', 'platinum', 'bellido']) {
+  for (const cliente of ['demo-a', 'bellido']) {
     it(`${cliente}: el prompt deriva a una persona lo que no está en su información`, () => {
       const g = JSON.parse(readFileSync(join(aqui, `../../Flujos/${cliente}-agendamiento.json`), 'utf8')) as
         { nodes: { name: string; type: string; parameters: { options?: { systemMessage?: string } } }[] };
@@ -3902,8 +3694,8 @@ describe('Lo que no sabe, no lo niega ni lo inventa', () => {
   }
 
   it('el motivo que recibe recepción dice lo que escribió el cliente, no «tres rechazos»', () => {
-    const cfg = { nombreNegocio: 'Clínica Platinum', numeroRecepcion: '59170000009' };
-    const r = ejecutar(String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']),
+    const cfg = { nombreNegocio: 'Negocio de prueba', numeroRecepcion: '59170000009' };
+    const r = ejecutar(String(nodo(demoA, 'Procesar respuesta').parameters['jsCode']),
       [{ output: 'Sobre eso te asesora una persona del equipo. [TRANSFERIR]', intermediateSteps: [] }],
       { 'Normalizar entrada': [{ from: '59170000001', userInput: '¿Estética facial? Dice en tu logo' }],
         'Config del negocio': [cfg] })[0] ?? {};
@@ -3924,9 +3716,9 @@ describe('Lo que no sabe, no lo niega ni lo inventa', () => {
  * modelo escribió «Listo, la cita quedó cancelada». La cita siguió ahí.
  */
 describe('Cancelar: solo se afirma lo que Google confirmó', () => {
-  const cfg = { nombreNegocio: 'Clínica Platinum', numeroRecepcion: '59170000009' };
+  const cfg = { nombreNegocio: 'Negocio de prueba', numeroRecepcion: '59170000009' };
   const procesar = (output: string, observacion: unknown) => ejecutar(
-    String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']),
+    String(nodo(demoA, 'Procesar respuesta').parameters['jsCode']),
     [{ output, intermediateSteps: [{ action: { tool: 'cancelar_cita', toolInput: { eventoId: 'x' } }, observation: observacion }] }],
     { 'Normalizar entrada': [{ from: '59170000001', userInput: 'Si' }], 'Config del negocio': [cfg] })[0] ?? {};
 
@@ -3967,10 +3759,10 @@ describe('Cancelar: solo se afirma lo que Google confirmó', () => {
  * más por reserva PAGADA, aceptado por Andres.
  */
 describe('Pago confirmado: sale el pin de ubicación', () => {
-  const codigoSena = () => String(nodo(flujo, 'Mensaje de la seña').parameters['jsCode']);
+  const codigoSena = () => String(nodo(demoA, 'Mensaje de la seña').parameters['jsCode']);
   const base = (resultadoSena: string) => ({ respuesta: 'Recibí tu comprobante y los datos coinciden con tu reserva. Tu cita queda reservada.',
     resultadoSena, motivoTransferencia: 'x', calendarioDelEvento: '', from: '59170000001' });
-  const cfg = { direccion: 'Radial 26', nombreNegocio: 'Clínica Platinum', funcionarios: '[]', phoneNumberId: '1000000001',
+  const cfg = { direccion: 'Radial 26', nombreNegocio: 'Negocio de prueba', funcionarios: '[]', phoneNumberId: '1000000001',
     ubicacionLat: '-17.763381', ubicacionLng: '-63.188263' };
   const cita = { id: 'ev', summary: 'Cita Ana — blanqueamiento', start: { dateTime: '2026-09-24T16:00:00-04:00' }, organizer: { email: 'c' } };
   const correr = (resultado: string, c: J = cfg, refs: Record<string, J[]> = { 'Leer cita retenida': [cita], 'Confirmar cita retenida': [cita] }) =>
@@ -3979,10 +3771,10 @@ describe('Pago confirmado: sale el pin de ubicación', () => {
   it('si CUADRÓ, sale el pin con las coordenadas, el nombre y la dirección, y el texto no lleva el enlace', () => {
     const r = correr('cuadra');
     expect(r).toMatchObject({ enviarUbicacion: true, ubicacionLat: -17.763381, ubicacionLng: -63.188263,
-      nombreNegocio: 'Clínica Platinum', direccion: 'Radial 26', phoneNumberId: '1000000001' });
+      nombreNegocio: 'Negocio de prueba', direccion: 'Radial 26', phoneNumberId: '1000000001' });
     expect(String(r['respuesta'])).not.toContain('maps.app.goo.gl');
     // Lo lee el nodo que ya manda el pin cuando el paciente lo pide.
-    expect(expresion(nodo(flujo, '¿Enviar ubicación?').parameters['conditions'].conditions[0].leftValue, {}, { 'Mensaje a enviar': r })).toBe(true);
+    expect(expresion(nodo(demoA, '¿Enviar ubicación?').parameters['conditions'].conditions[0].leftValue, {}, { 'Mensaje a enviar': r })).toBe(true);
   });
   it('si NO cuadró, no sale el pin: la cita todavía no está firme', () => {
     expect(correr('no_cuadra')['enviarUbicacion']).toBe(false);
@@ -3999,9 +3791,9 @@ describe('Pago confirmado: sale el pin de ubicación', () => {
  * PRUEBA CON TELÉFONO DEL 21/09/2026 (ejecuciones #3834 a #3851).
  */
 describe('21/09: el pago lee su cita, no se niega un servicio, y una cita pagada cancelada se avisa', () => {
-  const cfg = { nombreNegocio: 'Clínica Platinum', numeroRecepcion: '59170000009', senaActiva: 'si', tratamiento: 'tú' };
+  const cfg = { nombreNegocio: 'Negocio de prueba', numeroRecepcion: '59170000009', senaActiva: 'si', tratamiento: 'tú' };
   const procesar = (output: string, pasos: J[], userInput = 'sí', c: J = cfg) => ejecutar(
-    String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']), [{ output, intermediateSteps: pasos }],
+    String(nodo(demoA, 'Procesar respuesta').parameters['jsCode']), [{ output, intermediateSteps: pasos }],
     { 'Normalizar entrada': [{ from: '59170000001', userInput }], 'Config del negocio': [c] })[0] ?? {};
 
   it('EL CASO REAL #3851: «no realizamos estética facial… exclusivamente odontología» NO sale; se deriva', () => {
@@ -4062,7 +3854,7 @@ describe('21/09: el pago lee su cita, no se niega un servicio, y una cita pagada
   });
 
   it('EL CASO REAL #3834: el pago que cuadró LEE su cita desde «Confirmar cita retenida» (no desde la salida de error)', () => {
-    const codigoSena = String(nodo(flujo, 'Mensaje de la seña').parameters['jsCode']);
+    const codigoSena = String(nodo(demoA, 'Mensaje de la seña').parameters['jsCode']);
     expect(codigoSena).toContain("$('Confirmar cita retenida').first().json");
     expect(codigoSena).toContain("$('Leer cita retenida').first(0).json");
     const confirmada = { id: 'ev', summary: 'Cita Ana — blanqueamiento', start: { dateTime: '2026-09-21T11:00:00-04:00' }, organizer: { email: 'c' } };
@@ -4083,11 +3875,11 @@ describe('21/09: el pago lee su cita, no se niega un servicio, y una cita pagada
  */
 describe('Adelanto a favor: el flujo', () => {
   // `senaEventoId`: la cita que el SERVIDOR tiene como la de la seña pagada.
-  const cfg = { nombreNegocio: 'Clínica Platinum', numeroRecepcion: '59170000009', senaActiva: 'si', tratamiento: 'tú',
+  const cfg = { nombreNegocio: 'Negocio de prueba', numeroRecepcion: '59170000009', senaActiva: 'si', tratamiento: 'tú',
     senaEventoId: 'pagada' };
   const enTresHoras = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
   const pagada = { id: 'pagada', summary: 'Cita Andrés — blanqueamiento', start: { dateTime: enTresHoras } };
-  const cancelada = (extra: J = {}) => ejecutar(String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']),
+  const cancelada = (extra: J = {}) => ejecutar(String(nodo(demoA, 'Procesar respuesta').parameters['jsCode']),
     [{ output: 'Listo, la cita quedó cancelada.', intermediateSteps: [
       { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([pagada]) },
       { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'pagada' } }, observation: '[{"success":true}]' }] }],
@@ -4111,27 +3903,27 @@ describe('Adelanto a favor: el flujo', () => {
   });
 
   it('el reporte del saliente lleva el hecho al servidor, por encima de los otros eventos', () => {
-    const cuerpo = JSON.parse(String(expresion(nodo(flujo, 'Reportar mensaje (saliente)').parameters['jsonBody'],
+    const cuerpo = JSON.parse(String(expresion(nodo(demoA, 'Reportar mensaje (saliente)').parameters['jsonBody'],
       { messages: [{ id: 'wamid.X' }] }, { 'Mensaje a enviar': { ...cancelada(), transferir: true } })));
     expect(cuerpo).toMatchObject({ evento: 'cita_cancelada', referencia: 'pagada', inicio: enTresHoras });
   });
 
   it('sin hecho de la seña, el reporte sigue como antes', () => {
-    const cuerpo = JSON.parse(String(expresion(nodo(flujo, 'Reportar mensaje (saliente)').parameters['jsonBody'],
+    const cuerpo = JSON.parse(String(expresion(nodo(demoA, 'Reportar mensaje (saliente)').parameters['jsonBody'],
       { messages: [{ id: 'wamid.X' }] }, { 'Mensaje a enviar': { from: '5917', respuesta: 'x', transferir: true } })));
     expect(cuerpo.evento).toBe('no_contactar');
     expect(cuerpo.referencia).toBeUndefined();
   });
 
   it('con el adelanto aplicado NO sale QR, y un nodo le quita a la cita nueva el rótulo de pendiente', () => {
-    const cond = nodo(flujo, '¿Enviar QR de la seña?').parameters['conditions'].conditions[0].leftValue;
+    const cond = nodo(demoA, '¿Enviar QR de la seña?').parameters['conditions'].conditions[0].leftValue;
     const base = { reservaVerificada: true, senaActiva: 'si', citaSolapada: false, eventoId: 'ev' };
     expect(expresion(cond, base)).toBe(true);
     expect(expresion(cond, { ...base, aplicarAdelanto: true })).toBe(false);
-    const aplicar = nodo(flujo, '¿Aplicar adelanto?').parameters['conditions'].conditions[0].leftValue;
+    const aplicar = nodo(demoA, '¿Aplicar adelanto?').parameters['conditions'].conditions[0].leftValue;
     expect(expresion(aplicar, { aplicarAdelanto: true, eventoId: 'ev' })).toBe(true);
     expect(expresion(aplicar, { eventoId: 'ev' })).toBe(false);
-    const quitar = nodo(flujo, 'Quitar rótulo (adelanto)');
+    const quitar = nodo(demoA, 'Quitar rótulo (adelanto)');
     expect(quitar.parameters['operation']).toBe('update');
     const refs = { 'Comprobar reserva': { eventoId: 'ev', calendarioDelAdelanto: 'cal', tituloDelAdelanto: 'PENDIENTE DE SEÑA · Cita Ana — blanqueamiento' } };
     expect(expresion(quitar.parameters['calendar'].value, {}, refs)).toBe('cal');
@@ -4141,7 +3933,7 @@ describe('Adelanto a favor: el flujo', () => {
   });
 
   it('REAGENDAR EN UN SOLO MENSAJE: cancela la pagada y agenda la nueva → «reprogramada», sin QR ni «queda a tu favor»', () => {
-    const cod = String(nodo(flujo, 'Comprobar reserva').parameters['jsCode']);
+    const cod = String(nodo(demoA, 'Comprobar reserva').parameters['jsCode']);
     const ev = { id: 'nueva', summary: 'PENDIENTE DE SEÑA · Cita Andrés — blanqueamiento', organizer: { email: 'cal' },
       start: { dateTime: `${DIA_J}T11:00:00-04:00` }, end: { dateTime: `${DIA_J}T12:00:00-04:00` }, created: new Date().toISOString() };
     const previa = { from: '5917',
@@ -4160,7 +3952,7 @@ describe('Adelanto a favor: el flujo', () => {
   });
 
   it('sin adelanto ni cancelación pagada, la reserva sigue el camino de siempre (con QR)', () => {
-    const cod = String(nodo(flujo, 'Comprobar reserva').parameters['jsCode']);
+    const cod = String(nodo(demoA, 'Comprobar reserva').parameters['jsCode']);
     const ev = { id: 'n', summary: 'PENDIENTE DE SEÑA · Cita', organizer: { email: 'cal' },
       start: { dateTime: `${DIA_J}T11:00:00-04:00` }, end: { dateTime: `${DIA_J}T12:00:00-04:00` }, created: new Date().toISOString() };
     const r = ejecutar(cod, [ev], { 'Procesar respuesta': [{ respuesta: 'x', eventosCreados: [{ id: 'n', calendario: 'cal', inicio: ev.start.dateTime, fin: ev.end.dateTime }] }],
@@ -4170,7 +3962,7 @@ describe('Adelanto a favor: el flujo', () => {
   });
 
   it('Comprobar reserva aplica el adelanto: avisa al servidor y saca del texto la seña y el QR', () => {
-    const cod = String(nodo(flujo, 'Comprobar reserva').parameters['jsCode']);
+    const cod = String(nodo(demoA, 'Comprobar reserva').parameters['jsCode']);
     const ev = { id: 'nueva', summary: 'Cita Andrés — blanqueamiento', organizer: { email: 'cal' },
       start: { dateTime: `${DIA_J}T11:00:00-04:00` }, end: { dateTime: `${DIA_J}T12:00:00-04:00` }, created: new Date().toISOString() };
     const previa = { respuesta: 'Tu horario del martes a las 11:00 queda RESERVADO por 15 minutos a la espera de la seña. A continuación te llega el QR.',
@@ -4184,7 +3976,7 @@ describe('Adelanto a favor: el flujo', () => {
   });
 
   it('una cita pagada con el adelanto manda el pin, como un pago que cuadró (21/09/2026)', () => {
-    const cod = String(nodo(flujo, 'Comprobar reserva').parameters['jsCode']);
+    const cod = String(nodo(demoA, 'Comprobar reserva').parameters['jsCode']);
     const ev = { id: 'nueva', summary: 'PENDIENTE DE SEÑA · Cita', organizer: { email: 'cal' },
       start: { dateTime: `${DIA_J}T09:00:00-04:00` }, end: { dateTime: `${DIA_J}T10:00:00-04:00` }, created: new Date().toISOString() };
     const previa = { respuesta: 'Quedó confirmada.', ubicacionLat: -17.7, ubicacionLng: -63.1,
@@ -4199,7 +3991,7 @@ describe('Adelanto a favor: el flujo', () => {
   });
 
   it('el mensaje del pago nombra el servicio con espacios, no con guiones (#3952)', () => {
-    const cod = String(nodo(flujo, 'Mensaje de la seña').parameters['jsCode']);
+    const cod = String(nodo(demoA, 'Mensaje de la seña').parameters['jsCode']);
     const cita = { id: 'ev', summary: 'Cita Andrés — blanqueamiento-dental-profesional', start: { dateTime: '2026-09-21T11:00:00-04:00' }, organizer: { email: 'c' } };
     const r = ejecutar(cod, [{}], { 'Respuesta de la seña': [{ respuesta: 'Recibí tu comprobante. Tu cita queda reservada.', resultadoSena: 'cuadra', motivoTransferencia: '' }],
       'Config del negocio': [{ funcionarios: '[]' }], 'Confirmar cita retenida': [cita] })[0] ?? {};
@@ -4207,7 +3999,7 @@ describe('Adelanto a favor: el flujo', () => {
   });
 
   it('el modelo sabe del adelanto por el contexto del turno, no por el prompt (que sigue cacheable)', () => {
-    const texto = String(nodo(flujo, 'AI Agent (Sofía)').parameters['text']);
+    const texto = String(nodo(demoA, 'AI Agent (Sofía)').parameters['text']);
     expect(texto).toContain("$json.senaAFavor === 'si'");
     expect(prompt()).not.toContain('senaAFavor');
   });
@@ -4219,7 +4011,7 @@ describe('Adelanto a favor: el flujo', () => {
  * diciendo que pida confirmación. La compuerta está en la herramienta.
  */
 describe('Cancelar exige confirmación: la compuerta está en cancelar_cita', () => {
-  const idDe = (userInput: string) => expresion(nodo(flujo, 'cancelar_cita').parameters['eventId'], {},
+  const idDe = (userInput: string) => expresion(nodo(demoA, 'cancelar_cita').parameters['eventId'], {},
     { 'Normalizar entrada': { userInput } }, { eventoId: 'real' });
 
   it('EL CASO REAL #3960: «Quiero cancelar de las 11» NO lleva el identificador real', () => {
@@ -4236,20 +4028,20 @@ describe('Cancelar exige confirmación: la compuerta está en cancelar_cita', ()
 
   it('la herramienta y Procesar respuesta usan EXACTAMENTE la misma regla', () => {
     const rx = /\/\^\[\^a-záéíóúñ0-9\]\*\(s\[ií\]\|[^/]+\/i/;
-    const enTool = rx.exec(String(nodo(flujo, 'cancelar_cita').parameters['eventId']))?.[0];
-    const enCodigo = rx.exec(String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']))?.[0];
+    const enTool = rx.exec(String(nodo(demoA, 'cancelar_cita').parameters['eventId']))?.[0];
+    const enCodigo = rx.exec(String(nodo(demoA, 'Procesar respuesta').parameters['jsCode']))?.[0];
     expect(enTool).toBeDefined();
     expect(enTool).toBe(enCodigo);
   });
 
   it('sin confirmación, el texto es la pregunta con la cita, y no se transfiere ni se da por cancelada', () => {
     const cita = { id: 'c11', summary: 'Cita Andrés — blanqueamiento-dental-profesional', start: { dateTime: '2026-09-21T11:00:00-04:00' } };
-    const r = ejecutar(String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']),
+    const r = ejecutar(String(nodo(demoA, 'Procesar respuesta').parameters['jsCode']),
       [{ output: 'Listo, he cancelado tu cita.', intermediateSteps: [
         { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([cita]) },
         { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'c11' } }, observation: '' }] }],
       { 'Normalizar entrada': [{ from: '5917', userInput: 'Quiero cancelar de las 11' }],
-        'Config del negocio': [{ nombreNegocio: 'Clínica Platinum', senaActiva: 'si', tratamiento: 'tú' }] })[0] ?? {};
+        'Config del negocio': [{ nombreNegocio: 'Negocio de prueba', senaActiva: 'si', tratamiento: 'tú' }] })[0] ?? {};
     expect(r['respuesta']).toBe('¿Confirmas que quieres cancelar tu cita de blanqueamiento dental profesional del lunes, 21 de septiembre a las 11:00? Respóndeme «sí» y la cancelo.');
     expect(r['transferir']).toBe(false);
     expect(r['eventoSena']).toBeUndefined();
@@ -4535,7 +4327,7 @@ describe.each([['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json'
   });
 
 describe('Cancelar: la confirmación es SOLO una confirmación (#4034)', () => {
-  const idDe = (userInput: string) => expresion(nodo(flujo, 'cancelar_cita').parameters['eventId'], {},
+  const idDe = (userInput: string) => expresion(nodo(demoA, 'cancelar_cita').parameters['eventId'], {},
     { 'Normalizar entrada': { userInput } }, { eventoId: 'real' });
 
   it('EL CASO REAL #4034: «si, quiero cancelar la de hoy a las 16» es un pedido, no una confirmación', () => {
