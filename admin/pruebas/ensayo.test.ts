@@ -20,6 +20,7 @@ const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'plataforma', 'ensayo.mjs');
 const VENTA = join(aqui, '..', 'scripts', 'datos', 'negocio-demo-venta-resto.json');
 const PLATINUM = join(aqui, '..', 'scripts', 'datos', 'negocio-platinum.json');
+const CAPTACION = join(aqui, '..', 'scripts', 'datos', 'captacion-novuchat.json');
 const PROYECTO = 'demo-novuchat-pruebas';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['FIRESTORE_EMULATOR_HOST'] = HOST;
@@ -174,7 +175,7 @@ describe('ensayo.mjs --flujo venta', () => {
     for (const malo of ['otro', 'VENTA', '']) {
       const r = prepararVenta(NUM_VENTA, ['--flujo', malo, '--aplicar']);
       expect(r.codigo).toBe(2);
-      expect(r.salida).toMatch(/--flujo debe ser venta o agendamiento/);
+      expect(r.salida).toMatch(/--flujo debe ser venta, agendamiento u onboarding/);
     }
     expect((await ruta(NUM_VENTA))['tenantId']).toBe(DEMO);
     expect((await db.doc('tenants/ensayo').get()).exists).toBe(false);
@@ -244,7 +245,7 @@ describe('ensayo.mjs --flujo venta', () => {
     await db.doc('tenants/ensayo/conversaciones/s1/mensajes/m1').set({ t: 'a' });
     await db.doc('tenants/ensayo/conversaciones/s1/mensajes/m2').set({ t: 'b' });
     const antes = (await db.collection('tenants/ensayo/catalogo').get()).size
-      + (await db.collection('tenants/ensayo/funcionarios').get()).size + 5 /* config/contador: 5 refs (con contadores/agendas, H2b-9) */;
+      + (await db.collection('tenants/ensayo/funcionarios').get()).size + 6 /* config/contador: 6 refs (con contadores/agendas, H2b-9, y config/onboarding del ensayo del chat de NovuChat) */;
     const r = prepararVenta(NUM_VENTA, ['--flujo', 'venta']);
     expect(r.codigo, r.salida).toBe(0);
     const m = /se vacían (\d+) documento\(s\).*\((\d+) de venta/.exec(r.salida);
@@ -344,5 +345,99 @@ describe('ensayo.mjs --flujo venta', () => {
     expect(despues['tenantId']).toBe(DEMO);
     expect('flujo' in despues).toBe(false);
     expect('ensayoFlujoDe' in despues).toBe(false);
+  });
+});
+
+// ENSAYO DEL CHAT DE NOVUCHAT (Kenji, flujo `onboarding`): el archivo es el de CAPTACIÓN y lo carga `cargar-captacion.mjs`.
+describe('ensayo.mjs --flujo onboarding (el chat de NovuChat)', () => {
+  const NUM_ONB = '485173091';
+  const NUM_PAGA_ONB = '485173092';
+  const AJENO_ONB = 'ens-ajeno-onb';
+  const prepararChat = (numero: string, extra: string[] = []) => correr('--numero', numero, '--preparar',
+    '--cliente', 'novuchat', '--archivo', CAPTACION, '--flujo', 'onboarding', ...extra);
+  const ruta = async (n: string) => (await db.doc(`rutasWhatsApp/${n}`).get()).data() ?? {};
+
+  beforeAll(async () => {
+    await db.recursiveDelete(db.doc('tenants/ensayo'));
+    await db.doc(`rutasWhatsApp/${NUM_ONB}`).set({ tenantId: DEMO, flujo: 'agendamiento', aliasSecreto: 'demoA', estado: 'activo' });
+    await db.doc(`rutasWhatsApp/${NUM_PAGA_ONB}`).set({ tenantId: CLIENTE_REAL, flujo: 'agendamiento', aliasSecreto: 'cliente09', estado: 'activo' });
+    await db.doc(`tenants/${AJENO_ONB}`).set({ nombre: 'Ajeno', estado: 'activo', vertical: 'onboarding', modulos: modulosDeFlujos(['onboarding'] as never[]), plan: 'pro' });
+    await db.doc(`tenants/${AJENO_ONB}/config/onboarding`).set({ nombreAsistente: 'Intacto', rubros: [{ id: 'x' }] });
+  });
+
+  it('en seco no escribe nada (ni ficha, ni ruta)', async () => {
+    const r = prepararChat(NUM_ONB);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(await ruta(NUM_ONB)).toMatchObject({ tenantId: DEMO, flujo: 'agendamiento' });
+    expect((await db.doc('tenants/ensayo').get()).exists).toBe(false);
+  });
+
+  it('el número de un comercio que paga NO se desvía con --flujo onboarding', async () => {
+    const r = prepararChat(NUM_PAGA_ONB, ['--aplicar']);
+    expect(r.codigo).not.toBe(0);
+    expect(r.salida).toMatch(/no es un comercio de demostración/);
+    expect(await ruta(NUM_PAGA_ONB)).toMatchObject({ tenantId: CLIENTE_REAL, flujo: 'agendamiento' });
+    expect((await db.doc('tenants/ensayo').get()).exists).toBe(false);
+  });
+
+  it('con --aplicar: ficha de captación, `config/onboarding` cargada, ruta con flujo onboarding; vacía lo de un ensayo anterior y no toca a otros', async () => {
+    await db.doc('tenants/ensayo').set({ nombre: 'Ensayo', estado: 'activo', vertical: 'venta', modulos: ['productos', 'pedidos'], plan: 'pro' });
+    await db.doc('tenants/ensayo/cuenta/estado').set({ plan: 'pro', modalidad: 'demostracion' });
+    await db.doc('tenants/ensayo/config/onboarding').set({ campoViejo: 'de un ensayo anterior', rubros: [{ id: 'viejo' }] });
+    await db.doc('tenants/ensayo/pedidos/viejo').set({ total: 1 });
+    const r = prepararChat(NUM_ONB, ['--aplicar']);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).not.toContain(NUM_ONB);
+    expect(await ruta(NUM_ONB)).toMatchObject({ tenantId: 'ensayo', ensayoDe: DEMO, ensayoCliente: 'novuchat', flujo: 'onboarding', ensayoFlujoDe: 'agendamiento' });
+    const ficha = (await db.doc('tenants/ensayo').get()).data() ?? {};
+    expect(ficha['vertical']).toBe('onboarding');
+    expect(ficha['modulos']).toEqual(modulosDeFlujos(['onboarding'] as never[]));
+    expect(ficha['modulos']).toContain('captacion');
+    expect(ficha['modulos']).not.toContain('pedidos');
+    const onb = (await db.doc('tenants/ensayo/config/onboarding').get()).data() ?? {};
+    expect(onb['campoViejo']).toBeUndefined();
+    expect(Array.isArray(onb['rubros']) && onb['rubros'].length).toBeGreaterThan(1);
+    expect((onb['rubros'] as { id: string }[]).some((x) => x.id === 'viejo')).toBe(false);
+    expect((await db.doc('tenants/ensayo/pedidos/viejo').get()).exists).toBe(false);
+    // Otro comercio con captación y el demo de origen, intactos.
+    expect((await db.doc(`tenants/${AJENO_ONB}/config/onboarding`).get()).get('nombreAsistente')).toBe('Intacto');
+    expect((await db.doc(`tenants/${DEMO}/config/negocio`).get()).get('nombreNegocio')).toBe('Demo de siempre');
+    expect((await db.doc(`tenants/${DEMO}/config/onboarding`).get()).exists).toBe(false);
+  });
+
+  it('un archivo que no es de captación se rechaza con la ruta ya en ensayo: lo dice y no inventa nada', async () => {
+    const malo = join(tmp, 'no-es-captacion.json');
+    writeFileSync(malo, JSON.stringify({ negocio: { campoQueNoExiste: 1 } }));
+    const r = correr('--numero', NUM_ONB, '--preparar', '--cliente', 'novuchat', '--archivo', malo, '--flujo', 'onboarding', '--aplicar');
+    expect(r.codigo, r.salida).toBe(1);
+    expect(r.salida).toMatch(/la ruta sigue en ensayo y el comercio quedó vacío/);
+    expect(await ruta(NUM_ONB)).toMatchObject({ tenantId: 'ensayo', flujo: 'onboarding', ensayoFlujoDe: 'agendamiento' });
+  });
+
+  it('con la ruta ya en ensayo, otro flujo exige --restaurar y no vacía nada', async () => {
+    // Se recarga el ensayo bueno (el anterior lo dejó vacío a propósito).
+    expect(prepararChat(NUM_ONB, ['--aplicar']).codigo).toBe(0);
+    for (const extra of [['--flujo', 'venta'], ['--flujo', 'agendamiento']]) {
+      const r = correr('--numero', NUM_ONB, '--preparar', '--cliente', 'novuchat', '--archivo', CAPTACION, '--local', LOCAL, '--aplicar', ...extra);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/primero --restaurar/);
+    }
+    expect((await db.doc('tenants/ensayo/config/onboarding').get()).exists).toBe(true);
+    expect(await ruta(NUM_ONB)).toMatchObject({ tenantId: 'ensayo', flujo: 'onboarding', ensayoFlujoDe: 'agendamiento' });
+  });
+
+  it('--restaurar devuelve ruta Y flujo; un ensayo siguiente de venta ya no deja `config/onboarding`', async () => {
+    expect(correr('--numero', NUM_ONB, '--restaurar').codigo).toBe(0);
+    expect(await ruta(NUM_ONB)).toMatchObject({ tenantId: 'ensayo', flujo: 'onboarding' });
+    const r = correr('--numero', NUM_ONB, '--restaurar', '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    const despues = await ruta(NUM_ONB);
+    expect(despues['tenantId']).toBe(DEMO);
+    expect(despues['flujo']).toBe('agendamiento');
+    for (const k of ['ensayoDe', 'ensayoCliente', 'ensayoDesde', 'ensayoFlujoDe']) expect(despues[k], k).toBeUndefined();
+    const v = correr('--numero', NUM_ONB, '--preparar', '--cliente', 'qtaco', '--archivo', VENTA, '--local', LOCAL, '--flujo', 'venta', '--aplicar');
+    expect(v.codigo, v.salida).toBe(0);
+    expect((await db.doc('tenants/ensayo/config/onboarding').get()).exists).toBe(false);
+    expect(correr('--numero', NUM_ONB, '--restaurar', '--aplicar').codigo).toBe(0);
   });
 });

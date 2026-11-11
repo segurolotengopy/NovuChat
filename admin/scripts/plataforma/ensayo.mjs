@@ -45,6 +45,12 @@
  *     `tenants/ensayo`, lo que un ensayo de venta deja (pedidos, cierres,
  *     conversaciones, contactos…). Valores: `venta` o `agendamiento`; sin la
  *     opción nada cambia (el flujo sale de la ruta, como siempre).
+ *   - `--flujo onboarding` (ensayo del chat de NovuChat, Kenji): igual que `venta` en la
+ *     ruta (`flujo: 'onboarding'` mientras dura, `ensayoFlujoDe` para volver) y en la ficha
+ *     de `ensayo` (`modulos` de ese flujo); la diferencia es lo que se carga: `--archivo` es
+ *     el JSON de captación (`datos/captacion-novuchat.json`) y lo carga
+ *     `cargar-captacion.mjs` en `tenants/ensayo`; el vaciado suma `config/onboarding`, solo
+ *     bajo `tenants/ensayo`.
  *
  *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --estado
  *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --preparar \
@@ -76,13 +82,13 @@ const CLIENTE = (opcion('cliente') ?? '').trim().toLowerCase();
 const ARCHIVO = opcion('archivo');
 const LOCAL = opcion('local');
 const FLUJO = opcion('flujo');
-const FLUJOS_VALIDOS = ['venta', 'agendamiento'];
+const FLUJOS_VALIDOS = ['venta', 'agendamiento', 'onboarding'];
 
 const cola = (v) => (v ? `…${String(v).slice(-4)}` : '—');
 const problemas = [];
 if (!PROYECTO) problemas.push('falta --proyecto');
 if (!/^[0-9]{6,25}$/.test(NUMERO)) problemas.push('--numero no es un phone_number_id');
-if (FLUJO !== null && !FLUJOS_VALIDOS.includes(FLUJO)) problemas.push('--flujo debe ser venta o agendamiento');
+if (FLUJO !== null && !FLUJOS_VALIDOS.includes(FLUJO)) problemas.push('--flujo debe ser venta, agendamiento u onboarding');
 if (MODO.length !== 1) problemas.push('elija UNO: --preparar, --restaurar o --estado');
 if (MODO[0] === '--preparar') {
   if (!/^[a-z0-9][a-z0-9-]{2,59}$/.test(CLIENTE)) problemas.push('--cliente inválido');
@@ -249,7 +255,7 @@ let deVenta = 0;
 if (fichaEnsayo.exists) {
   for (const c of colecciones) aBorrar.push(...(await db.collection(`tenants/${ENSAYO}/${c}`).select().get()).docs.map((d) => d.ref));
   if (vaciarVenta) for (const c of COLECCIONES_DE_VENTA) deVenta += await contar(db.collection(`tenants/${ENSAYO}/${c}`));
-  for (const d of ['config/negocio', 'config/agendamiento', 'config/venta', 'contadores/catalogo', 'contadores/agendas']) aBorrar.push(db.doc(`tenants/${ENSAYO}/${d}`));
+  for (const d of ['config/negocio', 'config/agendamiento', 'config/venta', 'contadores/catalogo', 'contadores/agendas', 'config/onboarding']) aBorrar.push(db.doc(`tenants/${ENSAYO}/${d}`));
 }
 console.log(`  Ensayo    : ${fichaEnsayo.exists ? `existe; se vacían ${aBorrar.length + deVenta} documento(s) antes de cargar${vaciarVenta ? ` (${deVenta} de venta, con sus mensajes)` : ''}` : 'se crea'}`);
 console.log(`  Ruta      : ${actual} -> ${ENSAYO}${FLUJO && FLUJO !== flujoOriginalRuta ? ` · flujo ${flujoOriginalRuta} -> ${FLUJO} (se devuelve al restaurar)` : ''}`);
@@ -324,8 +330,12 @@ if (!APLICAR && !fichaEnsayo.exists) {
 const tmp = mkdtempSync(join(tmpdir(), 'ensayo-'));
 const archivoTmp = join(tmp, `negocio-ensayo-${CLIENTE}.json`);
 writeFileSync(archivoTmp, JSON.stringify(ensayado, null, 2));
-const carga = spawnSync(process.execPath, [join(aqui, '..', 'datos', 'cargar-negocio.mjs'), '--proyecto', PROYECTO,
-  '--tenant', ENSAYO, '--archivo', archivoTmp, ...(LOCAL ? ['--local', LOCAL] : []), ...(APLICAR ? ['--aplicar'] : [])],
+// `--flujo onboarding` (el chat de NovuChat, Kenji): el archivo es el de CAPTACIÓN (rubros, planes, cargos,
+// aclaraciones) y lo carga `cargar-captacion.mjs`, que valida con el contrato de las reglas; no hay archivo de
+// negocio ni `--local`. Con los otros flujos, `cargar-negocio.mjs` de siempre.
+const cargador = flujoCliente === 'onboarding' ? 'cargar-captacion.mjs' : 'cargar-negocio.mjs';
+const carga = spawnSync(process.execPath, [join(aqui, '..', 'datos', cargador), '--proyecto', PROYECTO,
+  '--tenant', ENSAYO, '--archivo', archivoTmp, ...(LOCAL && flujoCliente !== 'onboarding' ? ['--local', LOCAL] : []), ...(APLICAR ? ['--aplicar'] : [])],
   { env: process.env, encoding: 'utf8' });
 rmSync(tmp, { recursive: true, force: true });
 process.stdout.write((carga.stdout ?? '').split('\n').map((l) => `    ${l}`).join('\n'));
