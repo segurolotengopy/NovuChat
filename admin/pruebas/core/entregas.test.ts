@@ -1235,7 +1235,7 @@ describe('Entregas: contrapruebas (cada una falla nombrando el nodo)', () => {
     expect(reglasDe(raro)).toEqual(['7:Herramienta']);
     // Una subida de medio (POST multipart a `/media`) no es un envío ni una puerta lateral; lo que se le parece, sí.
     const MEDIA = "=https://graph.facebook.com/{{ $('Config base').first().json.waGraphVersion }}/{{ $('Config base').first().json.phoneNumberId }}/media";
-    expect(esSubidaDeMedio(tool('n8n-nodes-base.httpRequest', { method: 'POST', url: 'https://graph.facebook.com/v26.0/123456789012345/media', contentType: 'multipart-form-data' }))).toBe(true);
+    expect(esSubidaDeMedio(tool('n8n-nodes-base.httpRequest', { method: 'POST', url: `https://graph.facebook.com/v26.0/${'1'.repeat(15)}/media`, contentType: 'multipart-form-data' }))).toBe(true);
     const subida = { method: 'POST', url: MEDIA, contentType: 'multipart-form-data' };
     expect(esSubidaDeMedio(tool('n8n-nodes-base.httpRequest', subida))).toBe(true);
     expect(esEnvio(tool('n8n-nodes-base.httpRequest', subida))).toBe(false);
