@@ -14,7 +14,7 @@ const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/e
 type Turno = { r: 'u' | 'a'; t: string };
 const cargar = (cliente: string): ((texto: string, historial: Turno[]) => string) => {
   const codigo = readFileSync(join(RAIZ, `${cliente}/src/lib/ev.js`), 'utf8');
-  const lib = runInNewContext(`const EV_PROMPT='';\n${readFileSync(join(RAIZ, 'comun-sin-agente/src/filtro-redaccion.js'), 'utf8')}\n${codigo}\n({ f: evNombreDelMensaje })`, {}) as { f: (t: string, h: Turno[]) => string };
+  const lib = runInNewContext(`const EV_PROMPT='';\n${readFileSync(join(RAIZ, '../src/core/texto/filtro-redaccion.js'), 'utf8')}\n${codigo}\n({ f: evNombreDelMensaje })`, {}) as { f: (t: string, h: Turno[]) => string };
   return lib.f;
 };
 const BIENVENIDA = '¡Hola! 👋 Soy el asistente virtual de la Dra. Cuéntame, ¿cuál es tu nombre y qué te gustaría mejorar?';
