@@ -51,8 +51,14 @@ type Datos = { tenant: string; campanas: Camp[] };
 const base = JSON.parse(readFileSync(ARCHIVO, 'utf8')) as Datos;
 const bueno = (mod2: (d: Datos) => void = () => undefined, tenant = T): Datos => { const d = JSON.parse(JSON.stringify(base)) as Datos; d.tenant = tenant; mod2(d); return d; };
 const archivo = (nombre: string, datos: unknown): string => { const ruta = join(tmp, `${nombre}.json`); writeFileSync(ruta, JSON.stringify(datos)); return ruta; };
-function correr(args: string[], proyecto = PROYECTO): { codigo: number | null; salida: string } {
-  const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', proyecto, ...args], { env: entornoDelEmulador(HOST), encoding: 'utf8' });
+/**
+ * El script corre como proceso aparte y lee el reloj real: cerca de la medianoche de La Paz su guarda (23:50–24:00) lo
+ * frenaba y tumbaba el CI. Se le precarga un reloj que, SIN tocar la guarda del script, saca la hora de esa franja
+ * (resta 15 min solo si cae dentro), o la fuerza a 23:55 cuando una prueba quiere ejercer la guarda a propósito.
+ */
+const hora = (forzarMs?: number): string => `data:text/javascript,${encodeURIComponent(`const r=Date.now;Date.now=()=>{const t=${forzarMs ?? 'r()'};const d=new Date(t-4*3600000);return ${forzarMs !== undefined ? 't' : 'd.getUTCHours()===23&&d.getUTCMinutes()>=50?t-900000:t'}};`)}`;
+function correr(args: string[], proyecto = PROYECTO, forzarMs?: number): { codigo: number | null; salida: string } {
+  const r = spawnSync(process.execPath, ['--import', hora(forzarMs), SCRIPT, '--proyecto', proyecto, ...args], { env: entornoDelEmulador(HOST), encoding: 'utf8' });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
 }
 const lista = async (): Promise<Array<Record<string, unknown>>> => ((await db.doc(`tenants/${T}/config/campanas`).get()).get('lista') ?? []) as Array<Record<string, unknown>>;
@@ -330,6 +336,13 @@ describe('cargar-campanas.mjs de Q\'Taco — lo que SÍ hace', () => {
     const parar = servidor();
     expect((await aplicar({}, bueno(), laPaz(23, 49))).codigo).toBe(0);
     parar();
+  });
+  it('el script como proceso: a las 23:55 de La Paz (reloj forzado) NO aplica y no escribe', async () => {
+    await sembrar(null);
+    const noche = correr(['--respaldo', respaldo(), '--aplicar'], PROYECTO, Date.UTC(2026, 10, 11, 3, 55));
+    expect(noche.codigo).toBe(2);
+    expect(noche.salida).toMatch(/No se aplica entre las 23:50 y las 24:00/);
+    expect((await db.doc(`tenants/${T}/config/campanas`).get()).exists).toBe(false);
   });
   it('el archivo tiene que traer EXACTAMENTE las campañas de Q\'Taco: una sola, o sin una de ellas, se rechaza', async () => {
     await sembrar(null);

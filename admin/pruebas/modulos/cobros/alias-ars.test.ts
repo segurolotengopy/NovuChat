@@ -70,8 +70,12 @@ function enArgentina(ms: number): { fecha: string; hora: string } {
 let contadorOperacion = 0;
 // Cada captura cae en un MINUTO distinto (la huella monto + alias + minuto es a propósito): los cobros de prueba se
 // abren con `creadoEn` 100 min atrás (`antiguar`) para que haya sitio para ~95 minutos distintos.
+// El minuto se cuenta desde un ANCLA fija (no desde Date.now() de cada llamada): con el reloj vivo, si el minuto del
+// reloj cambiaba entre dos capturas, el desplazamiento (+1) y el reloj (+1) se cancelaban, la captura nueva caía en
+// el mismo minuto que la anterior y el servidor, con razón, la rechazaba como «repetido» (fallaba 1 de cada ~40).
+const ANCLA_MS = Date.now();
 const leidoBueno = (monto: string | number, extra: Record<string, unknown> = {}) => ({
-  monto, alias: ALIAS, ...enArgentina(Date.now() - ((contadorOperacion + 1) % 95) * MIN), operacion: `OP${Date.now()}${++contadorOperacion}`, ...extra,
+  monto, alias: ALIAS, ...enArgentina(ANCLA_MS - ((contadorOperacion + 1) % 95) * MIN), operacion: `OP${Date.now()}${++contadorOperacion}`, ...extra,
 });
 
 const antiguar = (pedidoId: string) =>
