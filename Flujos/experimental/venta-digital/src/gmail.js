@@ -4,8 +4,8 @@
 // Lo usa solo el CÓDIGO sobre el texto literal que escribió el cliente: el modelo nunca ve ni produce el correo. Solo `@gmail.com` (ni googlemail ni alias con «+»).
 // Sin `import`/`export`, `require`, `URL`, `Buffer` ni `crypto`. Sin textos ni nombres de un negocio.
 
-/** Una parte local válida: de 1 a 30 caracteres de a-z, 0-9 y «.», sin punto al inicio ni al final y sin dos puntos seguidos. */
-const VG_LOCAL = /^(?!.*\.\.)[a-z0-9](?:[a-z0-9.]{0,28}[a-z0-9])?$/;
+/** Una parte local válida: de 6 a 30 caracteres (Gmail exige al menos 6) de a-z, 0-9 y «.», sin punto al inicio ni al final y sin dos puntos seguidos. */
+const VG_LOCAL = /^(?!.*\.\.)[a-z0-9][a-z0-9.]{4,28}[a-z0-9]$/;
 
 /** ¿Es un Gmail válido, ya normalizado (minúsculas, sin espacios)? */
 function vgEsGmail(c) {
@@ -24,17 +24,19 @@ function vgEsGmail(c) {
  */
 function vgExtraerGmail(crudo) {
   const texto = String(crudo === undefined || crudo === null ? '' : crudo).normalize('NFKC');
-  const hallados = texto.match(/[^\s@<>()\[\],;:"'«»]+@[^\s@<>()\[\],;:"'«»]+/g) || [];
+  const hallados = texto.match(/[^\s@<>()\[\],;:"'«»¡¿]+@[^\s@<>()\[\],;:"'«»¡¿]+/g) || [];
   const unicos = [];
   for (const h of hallados) {
-    const c = h.replace(/[.,;:!?)]+$/, '').toLowerCase();
+    // Se quitan los bordes que no son del correo: la negrita, cursiva o tachado de WhatsApp (* _ ~) y la puntuación de cierre.
+    const c = h.replace(/^[*_~!?]+/, '').replace(/[.,;:!?)*_~]+$/, '').toLowerCase();
     if (c !== '' && unicos.indexOf(c) < 0) unicos.push(c);
   }
   if (unicos.length === 0) return { resultado: 'mal_formado', correo: '' };
   if (unicos.length > 1) return { resultado: 'varios', correo: '' };
   const correo = unicos[0];
   const partes = correo.split('@');
-  if (partes.length !== 2 || partes[0] === '' || partes[1] === '') return { resultado: 'mal_formado', correo: '' };
+  // Un dominio sin punto («juan@gmail .com» partido por un espacio) no es de otro proveedor: es un correo mal escrito.
+  if (partes.length !== 2 || partes[0] === '' || partes[1] === '' || partes[1].indexOf('.') < 0) return { resultado: 'mal_formado', correo: '' };
   if (partes[1] !== 'gmail.com') return { resultado: 'no_gmail', correo: '' };
   if (!vgEsGmail(correo)) return { resultado: 'mal_formado', correo: '' };
   // Guarda final: el correo guardado es, letra por letra, lo que escribió el cliente (nunca algo armado por otra vía).

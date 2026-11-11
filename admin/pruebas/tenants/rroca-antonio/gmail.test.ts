@@ -59,18 +59,18 @@ describe('el pedido del Gmail', () => {
 });
 
 describe('la captura del Gmail', () => {
-  it('con el Gmail pedido: «juan@gmail.com» da UN mensaje, UN aviso a Antonio con el correo literal, queda en la ficha y el modelo no corre', () => {
+  it('con el Gmail pedido: «juanito@gmail.com» da UN mensaje, UN aviso a Antonio con el correo literal, queda en la ficha y el modelo no corre', () => {
     const w = conComprobante();
     hechos(w);
-    const t = hablar(w, ANA, mTexto('Mi correo es Juan@Gmail.com'));
+    const t = hablar(w, ANA, mTexto('Mi correo es Juanito@Gmail.com'));
     expect(t.fallo).toBeNull();
     expect(t.mensajes).toHaveLength(1);
     expect(t.mensajes[0]!.cuerpo).toBe('Gracias. Le pasé tu correo a Antonio para que te envíe el enlace.');
     expect(t.mensajes[0]!.cuerpo).not.toMatch(PROMESAS);
     expect(t.avisos).toHaveLength(1);
     expect(t.avisos[0]!.a).toBe(REC);
-    expect(JSON.stringify(t.avisos[0]!.payload)).toContain('juan@gmail.com');
-    expect(fichaDe(w, ANA)['gmail']).toBe('juan@gmail.com');
+    expect(JSON.stringify(t.avisos[0]!.payload)).toContain('juanito@gmail.com');
+    expect(fichaDe(w, ANA)['gmail']).toBe('juanito@gmail.com');
     expect(llamadasAlModelo(t)).toBe(0);
     expect(JSON.stringify(fichaDe(w, ANA)['hist'] ?? [])).not.toContain('gmail.com');
   });
@@ -78,24 +78,24 @@ describe('la captura del Gmail', () => {
   it('el aviso fuera de la ventana de Antonio usa la plantilla de consulta y el tercer parámetro trae «Gmail: <correo>» exacto', () => {
     const w = conComprobante();
     hechos(w);
-    const t = hablar(w, ANA, mTexto('juan@gmail.com'));
+    const t = hablar(w, ANA, mTexto('juanito@gmail.com'));
     const a = t.avisos[0]!;
     expect(a.tipo).toBe('template');
     const params = a.payload['template'].components[0].parameters.map((p: J) => String(p['text']));
     expect(params).toHaveLength(3);
-    expect(params[0]).toBe('venta con comprobante: enviar el enlace de Drive por el chat');
+    expect(params[0]).toMatch(/^venta con comprobante de .+: enviar el enlace de Drive por el chat$/);
     expect(params[1]).toBe(`+${ANA}`);
-    expect(params[2]).toBe('Gmail: juan@gmail.com');
+    expect(params[2]).toBe('Gmail: juanito@gmail.com');
   });
 
   it('el aviso dentro de la ventana de Antonio es texto libre: pide enviar el enlace de Drive por el chat (no «comparte desde tu Drive») y trae el correo', () => {
     const w = conComprobante();
     hablar(w, REC, mTexto('hola'));
     hechos(w);
-    const t = hablar(w, ANA, mTexto('juan@gmail.com'));
+    const t = hablar(w, ANA, mTexto('juanito@gmail.com'));
     const a = t.avisos[0]!;
     expect(a.tipo).toBe('text');
-    expect(a.cuerpo).toMatch(/Gmail: juan@gmail\.com\. Envíale el enlace de Drive por este chat\./);
+    expect(a.cuerpo).toMatch(/Gmail: juanito@gmail\.com\. Envíale el enlace de Drive por este chat\./);
     expect(a.cuerpo).not.toMatch(/comparte/i);
     expect(a.cuerpo).not.toMatch(PROHIBIDAS);
   });
@@ -105,7 +105,7 @@ describe('la captura del Gmail', () => {
       ['x@hotmail.com', /no es de Gmail/],
       ['x@googlemail.com', /no es de Gmail/],
       ['a..b@gmail.com', /No pude leer bien ese correo/],
-      ['juan@gmail.com y ana@gmail.com', /más de un correo/],
+      ['juanito@gmail.com y anabel@gmail.com', /más de un correo/],
     ];
     for (const [texto, esperado] of casos) {
       const w = conComprobante();
@@ -127,17 +127,29 @@ describe('la captura del Gmail', () => {
     expect(fichaDe(w, ANA)['gmail']).toBe('');
   });
 
+  it('un reclamo con un correo dentro NO se captura: sigue el flujo normal y no se pierde el reclamo', () => {
+    const w = conComprobante();
+    hechos(w);
+    const t = hablar(w, ANA, mTexto('No me llegó nada y Antonio no contesta, mi correo es juanito@hotmail.com'));
+    expect(t.avisos.filter((a) => /enlace de Drive/.test(JSON.stringify(a.payload)))).toHaveLength(0);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/no es de Gmail|Le pasé tu correo/);
+    expect(fichaDe(w, ANA)['gmail']).toBe('');
+    const u = hablar(w, ANA, mTexto('No me llegó nada, mi correo es juanito@gmail.com y quiero mi plata, ya pasaron horas desde el pago'));
+    expect(fichaDe(w, ANA)['gmail']).toBe('');
+    expect(u.mensajes[0]!.cuerpo).not.toBe('Gracias. Le pasé tu correo a Antonio para que te envíe el enlace.');
+  });
+
   it('un audio o una imagen que «dicen» un correo no lo capturan', () => {
     const w = conComprobante({ medio: { clasificacion: COMPROBANTE, transcripcion: 'mi correo es juan arroba gmail punto com' } });
     hechos(w);
     const t = hablar(w, ANA, mAudio());
     expect(t.avisos).toHaveLength(0);
     expect(fichaDe(w, ANA)['gmail']).toBe('');
-    const w2 = conComprobante({ medio: { clasificacion: { ...COMPROBANTE, categoria: 'otro', texto: 'juan@gmail.com' } } });
+    const w2 = conComprobante({ medio: { clasificacion: { ...COMPROBANTE, categoria: 'otro', texto: 'juanito@gmail.com' } } });
     hechos(w2);
     // la segunda imagen ya no es un comprobante: se clasifica como otra cosa y tampoco captura
     const t2 = hablar(w2, ANA, mImagen());
-    expect(t2.avisos.filter((a) => /juan@gmail\.com/.test(JSON.stringify(a.payload)))).toHaveLength(0);
+    expect(t2.avisos.filter((a) => /juanito@gmail\.com/.test(JSON.stringify(a.payload)))).toHaveLength(0);
     expect(fichaDe(w2, ANA)['gmail']).toBe('');
   });
 
@@ -155,39 +167,58 @@ describe('la captura del Gmail', () => {
     const w = nuevo(o);
     hechos(w);
     o.aviso = 'error'; // el doble de «Enviar aviso» lee la opción en cada llamada: desde aquí el aviso a Antonio falla
-    const t = hablar(w, ANA, mTexto('juan@gmail.com'));
+    const t = hablar(w, ANA, mTexto('juanito@gmail.com'));
     expect(t.mensajes[0]!.cuerpo).toMatch(/no pude pasárselo a Antonio/);
     expect(t.mensajes[0]!.payload['interactive']?.type).toBe('cta_url');
     expect(t.mensajes[0]!.cuerpo).not.toMatch(PROMESAS);
     expect(fichaDe(w, ANA)['gmail']).toBe('');
     o.aviso = 'acepta';
-    const r = hablar(w, ANA, mTexto('juan@gmail.com'));
+    const r = hablar(w, ANA, mTexto('juanito@gmail.com'));
     expect(r.mensajes[0]!.cuerpo).toBe('Gracias. Le pasé tu correo a Antonio para que te envíe el enlace.');
-    expect(fichaDe(w, ANA)['gmail']).toBe('juan@gmail.com');
+    expect(fichaDe(w, ANA)['gmail']).toBe('juanito@gmail.com');
   });
 
   it('segunda compra con el Gmail ya guardado: no se vuelve a pedir y el aviso del comprobante lo recuerda', () => {
     const w = conComprobante();
     hablar(w, REC, mTexto('hola'));
     hechos(w);
-    hablar(w, ANA, mTexto('juan@gmail.com'));
+    hablar(w, ANA, mTexto('juanito@gmail.com'));
     const t = hablar(w, ANA, mImagen());
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/Gmail|correo/i);
-    expect(JSON.stringify(t.avisos)).toContain('Gmail ya registrado: juan@gmail.com.');
+    expect(JSON.stringify(t.avisos)).toContain('Gmail ya registrado: juanito@gmail.com.');
   });
 });
 
 describe('la barrera del modelo tras abrir «correo» y «gmail» (D2)', () => {
-  it('lo que sigue rechazado: promesas de entrega, plazos, «ya te lo envié/compartí» y el estado del pago', () => {
-    const textos = ['Te envío el material mañana a tu correo.', 'Ya te lo compartí a tu Gmail.', 'Te lo mando en unos minutos a tu correo.', 'Ya te envié el libro por correo.', 'Tu pago fue acreditado y te llega al correo.'];
+  const dichoPorElModelo = (dicho: string): string => {
+    const w = nuevo({ modeloDice: dicho });
+    hablar(w, ANA, mTexto('hola'));
+    const t = hablar(w, ANA, mTexto('estamos pasando un momento difícil'));
+    return t.mensajes.map((m) => m.cuerpo).join(' ');
+  };
+  it('lo que sigue rechazado: promesas de entrega en cualquier forma, plazos, «ya te lo envié/compartí» y el estado del pago', () => {
+    const textos = [
+      'Te envío el material mañana a tu correo.', 'Ya te lo compartí a tu Gmail.', 'Te lo mando en unos minutos a tu correo.', 'Ya te envié el libro por correo.', 'Tu pago fue acreditado y te llega al correo.',
+      'Te lo mando al mail', 'Te la mando al correo', 'Te lo envío al Gmail', 'Dime tu correo y te lo envío', 'Te mandaremos todo a tu correo hoy', 'Te llega la invitación a tu Gmail',
+      'Vas a recibir una invitación a tu Gmail', 'El acceso te llega por Gmail', 'Revisa tu correo, ahí está todo', 'Revisa tu bandeja de entrada.',
+    ];
     for (const dicho of textos) {
-      const w = nuevo({ modeloDice: dicho });
-      hablar(w, ANA, mTexto('hola'));
-      const t = hablar(w, ANA, mTexto('estamos pasando un momento difícil'));
-      const enviado = t.mensajes.map((m) => m.cuerpo).join(' ');
+      const enviado = dichoPorElModelo(dicho);
       expect(enviado, dicho).not.toBe(dicho);
       expect(enviado, dicho).not.toMatch(PROMESAS);
       expect(enviado, dicho).not.toMatch(PROHIBIDAS);
     }
+  });
+  it('el modelo no PIDE el correo: solo el texto fijo del comprobante lo pide', () => {
+    for (const dicho of ['¿Me pasas tu correo de Gmail?', 'Escríbeme tu correo, por favor.', 'Dime tu gmail.', 'Compárteme tu email.', 'Necesito tu correo para continuar.', 'Mándame tu correo.']) {
+      const enviado = dichoPorElModelo(dicho);
+      expect(enviado, dicho).not.toBe(dicho);
+    }
+  });
+  it('«correo» y «gmail» como TEMA ya no se rechazan por sí solas', () => {
+    const dicho = 'Entiendo, es un tema que te importa. ¿Desde cuándo lo sienten?';
+    expect(dichoPorElModelo(dicho).replace(/\s+/g, ' ')).toBe(dicho);
+    const conGmail = 'Cada pareja es distinta; mi Gmail no es relevante aquí, cuéntame más de lo que sienten.';
+    expect(dichoPorElModelo(conGmail).replace(/\s+/g, ' '), 'el tema «gmail» pasa si no hay verbo de entrega ni pedido').toBe(conGmail);
   });
 });

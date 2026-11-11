@@ -123,7 +123,12 @@ if (raPideBaja(textoCliente)) return salir({ tipo: 'baja', cat: cat });
 // 1a-gmail. EL GMAIL TRAS UNA VENTA CONFIRMADA: si el flujo ya se lo pidió a este teléfono (`gmailPedidoMs`) y aún no lo tiene (`gmail`), un TEXTO ESCRITO con una «@» es su respuesta. Lo lee el CÓDIGO sobre el texto literal del cliente
 //     (`vgExtraerGmail`); el modelo no interviene, no ve el correo y el turno no entra en la memoria de la charla. Solo `@gmail.com`: otro dominio, varios correos o un correo mal escrito reciben un texto fijo que lo pide de nuevo. Un audio, una imagen o un botón
 //     nunca se capturan (el correo no se acepta dictado ni leído de una imagen). Va antes de la identidad y de las derivaciones para que un correo escrito no se tome por otra intención. Con un correo válido hay UN aviso a Antonio (enlace de Drive por el chat).
-if (t.tipo === 'text' && ficha.gmailPedidoMs > 0 && ficha.gmail === '' && String(t.texto || '').indexOf('@') >= 0) {
+// Solo si el mensaje es básicamente el correo: quitando lo que parece un correo quedan a lo más 6 palabras y no hay señal de reclamo ni de derivación. Si no, sigue el flujo normal (un reclamo con un correo dentro no se pierde).
+const gmailSolo = t.tipo === 'text' && ficha.gmailPedidoMs > 0 && ficha.gmail === '' && String(t.texto || '').indexOf('@') >= 0
+  && String(t.texto || '').normalize('NFKC').replace(/[^\s@<>()\[\],;:"'«»¡¿]+@[^\s@<>()\[\],;:"'«»¡¿]+/g, ' ').split(/\s+/).filter((x) => /[\p{L}\p{N}]/u.test(x)).length <= 6
+  && !/\b(no me (llego|llegaron|respond|contest|enviaron|mandaron)|no llego|no contest|no respond|reclam|queja|estaf|devol|reembols|cancel|factura|garantia|descuento|plata|dinero|denunci)/.test(norm)
+  && !raDerivacion(norm, { comprobante: true, qrAbierto: hayQrAbierto }) && !raHablaDelCobro(norm) && !raCancelaPedido(norm);
+if (gmailSolo) {
   const g = vgExtraerGmail(String(t.texto || ''));
   textoDelTurno = '';
   return salir({
