@@ -82,7 +82,7 @@ const responderAntes = aviso.tipo === 'comprobante' ? 'responder antes de ' + ho
 const cual = aviso.tipo === 'comprobante' && motivoComprobante === '' ? 'comprobante' : 'consulta';
 const parametros = cual === 'comprobante'
   ? [nombre, prod, montoNum || '—', '+' + from]
-  : [aviso.tipo === 'comprobante' ? motivoComprobante : motivoConsulta, '+' + from,
+  : [aviso.tipo === 'comprobante' ? motivoComprobante : (clave === 'gmail' ? 'venta con comprobante de ' + prod + ': enviar el enlace de Drive por el chat' : motivoConsulta), '+' + from,
     aviso.tipo === 'comprobante' ? prod + ' por ' + monto : (mensaje ? 'texto literal del cliente: «' + mensaje + '»' : 'sin mensaje del cliente')];
 
 // 5. El texto libre (dentro de la ventana de Antonio).
