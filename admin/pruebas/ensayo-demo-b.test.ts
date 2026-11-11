@@ -125,6 +125,8 @@ describe('ensayo.mjs --demo', () => {
         expect((await ruta(numero))['tenantId']).toBe(mio);
       }
     }
+    // `--estado` con el --demo cambiado no dice «no»: dice dónde está.
+    expect(correr('--numero', NUM_B, '--estado').salida).toMatch(/Desviada {2}: sí, pero en el ensayo del otro demo \(ensayo-b\)/);
     // Sin --demo, la del Demo B tampoco se restaura (el defecto es a).
     expect(correr('--numero', NUM_B, '--restaurar', '--aplicar').codigo).toBe(1);
     expect((await ruta(NUM_B))['tenantId']).toBe('ensayo-b');

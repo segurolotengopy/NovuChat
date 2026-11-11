@@ -160,7 +160,7 @@ if (MODO[0] !== '--estado' && OTROS_ENSAYOS.includes(actual)) {
 if (MODO[0] === '--estado') {
   const fe = await db.doc(`tenants/${ENSAYO}`).get();
   console.log(`  Ensayo    : ${fe.exists ? `vertical ${fe.get('vertical') ?? '?'} · modulos ${Array.isArray(fe.get('modulos')) ? fe.get('modulos').length : 0}` : `el comercio \`${ENSAYO}\` no existe`}`);
-  console.log(`  Desviada  : ${actual === ENSAYO ? 'sí' : 'no'}${ruta.get('ensayoFlujoDe') ? ` · flujo de la ruta restaurable a ${ruta.get('ensayoFlujoDe')}` : ''}`);
+  console.log(`  Desviada  : ${actual === ENSAYO ? 'sí' : OTROS_ENSAYOS.includes(actual) ? `sí, pero en el ensayo del otro demo (${actual})` : 'no'}${ruta.get('ensayoFlujoDe') ? ` · flujo de la ruta restaurable a ${ruta.get('ensayoFlujoDe')}` : ''}`);
   await salir(0);
 }
 
