@@ -88,3 +88,7 @@ Un QR abierto cuyo pedido cambia (diga o no «pagar») cierra el cobro (`cobro_c
 ## Mensajes por conversación
 
 **1 al cliente por turno** (o ninguno), **más el QR cuando se emite**: el resumen del pedido y la imagen del QR (2 mensajes en ese turno). **1 al comercio por pedido** (el aviso del pedido, cuando llega el comprobante) y **+1 por derivación** (a lo más una consulta cada 30 minutos por teléfono). Sin mensaje de bienvenida extra: la presentación del asistente va en el mismo mensaje de la primera vez. Llamadas al modelo: 0 o 1 por turno de conversación libre (la puerta cerrada, la pausa por Tomar, los comprobantes, los anuncios y las derivaciones por código no llaman al modelo); las de Gemini en los medios son 1 por audio, imagen o PDF.
+
+## El Gmail de Antonio (10/11/2026): Walisuma NO lo adopta
+
+El pedido del Gmail tras una venta confirmada es propio de Antonio (y de Rubén). Cambió en Antonio los nodos `normalizar-entrada` y `resumen-del-turno`, de los que `neutros.test.ts` guarda la huella del origen; solo se actualizó esa huella del origen. Los nodos neutros de `venta-digital/src/nodos/` y todos los nodos de Walisuma quedan como estaban.

@@ -27,9 +27,11 @@ const HUELLAS: [string, string, string][] = [
   // Antonio ganó la ubicación (02/11/2026: `direccion` y `direccionMaps` de la Consola); el neutro queda como estaba. Su diferencia se declara abajo.
   // Y el miniCRM (02/11/2026, F4): el id y la pestaña de la planilla de Antonio (`planillaProspectosId` y `planillaProspectosHoja`); tampoco están en el neutro.
   ['config-del-negocio.js', 'd33d652bfb4994d4', '4f36336734d741cb'],
-  ['normalizar-entrada.js', 'ad54b5d57c48e022', '03a6bdc856c0e0ff'],
+  // El Gmail tras una venta confirmada (10/11/2026) es SOLO de Antonio: cambió el origen de `normalizar-entrada` (el reporte a la consola no lleva correos) y de `resumen-del-turno` (restaura `gmailPedidoMs`). Los neutros NO lo adoptan:
+  // Walisuma no pide Gmail y no cambia ningún nodo suyo; las huellas de los neutros no se movieron.
+  ['normalizar-entrada.js', '347ab52d1c655be7', '03a6bdc856c0e0ff'],
   ['puerta-del-turno.js', '3f8a837a3912eb78', '3f8a837a3912eb78'],
-  ['resumen-del-turno.js', '56e4bdf011a18b83', '08eea9fd84116169'],
+  ['resumen-del-turno.js', '9ae08c2c8e443766', '08eea9fd84116169'],
 ];
 
 describe('huellas: lo que se subió y de dónde', () => {
