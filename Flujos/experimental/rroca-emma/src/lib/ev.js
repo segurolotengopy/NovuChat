@@ -1053,7 +1053,7 @@ function evEsNombre(textoCliente) {
 // Ante la duda se devuelve '' y el cierre usa el nombre del perfil.
 function evNombreDelMensaje(textoCliente, historial) {
   const raw = evTexto(textoCliente);
-  if (evEsNombre(raw) && (evNombreTrasAceptar(historial) || evNombreTrasPedirAgendar(historial))) {
+  if (evEsNombre(raw) && (evNombreTrasAceptar(historial) || evNombreTrasPedirAgendar(historial) || evNombreTrasPedirNombre(historial))) {
     return evPrimerNombre(raw.split(/[,;:]|\s(?:mejor|pero|para)\s/i)[0].trim().replace(/^(?:soy|me llamo|mi nombre es)\s+/i, '').split(/\s+/)[0]);
   }
   const m = /(?:[Ss]oy|[Mm]e llamo|[Mm]i nombre es)\s+(\p{Lu}\p{L}{1,19})/u.exec(raw);
@@ -1073,6 +1073,14 @@ function evNombreTrasPedirAgendar(historial) {
   const a = evUltimoDe(h, 'a');
   if (a !== h.length - 1 || a < 0) return false;
   return EV_PIDE_NOMBRE.test(evNorm(evUltimaOracion(h[a].t))) && h.some((x) => x && x.r === 'u' && (evQuiereAgendar(x.t) || evPideAgendar(x.t)));
+}
+// El último mensaje del asistente PIDE el nombre («¿cuál es tu nombre y qué te gustaría mejorar?», la bienvenida) y el cliente contesta con un nombre, aunque aún no haya pedido agendar (reclamo 59, 11/11/2026: sin esto el nombre dado se
+// descartaba y los avisos, el cierre y el miniCRM salían con el nombre del PERFIL de WhatsApp).
+function evNombreTrasPedirNombre(historial) {
+  const h = Array.isArray(historial) ? historial : [];
+  const a = evUltimoDe(h, 'a');
+  if (a !== h.length - 1 || a < 0) return false;
+  return EV_PIDE_NOMBRE.test(evNorm(evUltimaOracion(h[a].t)));
 }
 // El cliente dice que NO quiere agendar (ahora): no se deriva.
 function evNegaAgendar(textoCliente) {

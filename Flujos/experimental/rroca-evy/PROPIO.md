@@ -103,3 +103,7 @@ Silvana corrió el humo corto el 09/11 en el Demo A (ensayo). Dos fallas reales,
 
 Con #907 cargado en el Demo A, a «Estoy embarazada. ¿Puedo hacerme el tratamiento?» el modelo contestó «durante el embarazo o la lactancia no realizamos este tipo de tratamientos» y salió. Dos causas: (1) `evPulirSalida` llamaba a `evSaludSinRemision` con el texto ya pasado por `evNorm`, que quita la puntuación: la barrera «por oración» veía UNA sola oración y bastaba «valoración» en cualquier parte; (2) «no realizamos» (primera persona) no estaba en `EV_AFIRMA_NIEGA`. Ahora se parte por oración ANTES de normalizar, la lista incluye la primera persona y, cuando el CLIENTE nombra una condición, cualquier forma de negar, afirmar, «esperar» o «contraindicado» rechaza la salida (`EV_NIEGA_O_AFIRMA_AL_CLIENTE`) y sale el texto fijo con el botón. 0 mensajes agregados. Pruebas: `barreras-modelo.test.ts`.
 
+
+## El nombre dado tras pedírselo (11/11/2026, reclamo 59)
+
+La bienvenida termina pidiendo el nombre. Si el cliente contestaba solo «Rosa» (o «Rosa, quiero mejorar la mandíbula»), `evNombreDelMensaje` lo descartaba (solo valía tras aceptar o pedir agendar) y los avisos, el cierre y el miniCRM salían con el nombre del PERFIL de WhatsApp. Ahora también cuenta cuando el ÚLTIMO mensaje del asistente pide el nombre (`evNombreTrasPedirNombre`, mismo código en Emma). 0 mensajes agregados. Prueba: `nombre-tras-pedirlo.test.ts`.
