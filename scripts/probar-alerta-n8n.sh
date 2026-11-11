@@ -75,7 +75,7 @@ valor_env() { grep -E "^$1=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- | tr -d '"' 
 N8N_BASE_URL="$(valor_env N8N_BASE_URL)"; N8N_API_KEY="$(valor_env N8N_API_KEY)"
 [[ -n "$N8N_BASE_URL" ]] || { echo "✗ Falta N8N_BASE_URL en --env" >&2; exit 2; }
 [[ "$N8N_BASE_URL" =~ ^https://[^/[:space:]@]+(/.*)?$ ]] || { echo "✗ N8N_BASE_URL tiene que ser https://" >&2; exit 2; }
-[[ "$N8N_API_KEY" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "✗ Falta N8N_API_KEY en --env, o tiene caracteres no esperados" >&2; exit 2; }
+N8N_API_KEY="$N8N_API_KEY" python3 -I -c 'import os, re, sys; sys.exit(0 if re.fullmatch(r"[A-Za-z0-9._-]+", os.environ.get("N8N_API_KEY", "")) else 1)' || { echo "✗ Falta N8N_API_KEY en --env, o tiene caracteres no esperados" >&2; exit 2; }
 BASE="${N8N_BASE_URL%/}"; API="${BASE}/api/v1"
 
 # El trap se arma ANTES de crear el directorio de trabajo: cualquier salida posterior pasa por la limpieza. Un segundo Ctrl-C
