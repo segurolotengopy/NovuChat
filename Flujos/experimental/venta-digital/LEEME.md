@@ -2,6 +2,8 @@
 
 Módulos que comparten los flujos de venta digital de productos por WhatsApp. Aquí no hay textos, nombres, productos ni montos de ningún negocio: todo eso entra por parámetro. Origen: `rr.js`, `cobro.js` y `avisos.js` de la primera venta digital, en el commit `fb3b8994` (Entrega 2: la conversación antes de las opciones). Esa primera venta digital migra a esta base en un PR propio, después de #618.
 
+**`src/diferencias.js`**: todas las diferencias de un comprobante (prefijo `cd`): arma, desde el `motivos[]` del cotejo del servidor, las frases fijas para el cliente con el destinatario primero. Va después de `cobro.js`.
+
 Los archivos se pegan delante del código de un nodo Code de n8n (`librerias` del armador): sin `import`/`export`, `require`, `URL`, `Buffer` ni `crypto`. Los nombres globales llevan prefijo (`cb`, `av`, `vd`). Orden: `cobro.js`, `avisos.js`, `conversacion.js`; `carrito.js` no depende de ninguno y va donde haga falta.
 
 ## `src/cobro.js` y `src/avisos.js`

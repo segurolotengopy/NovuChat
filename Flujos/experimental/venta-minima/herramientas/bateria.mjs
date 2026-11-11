@@ -78,7 +78,7 @@
 //   { "tipo": "audio", "transcripcion": "…" }         una nota de voz; `transcripcion` es lo que «Transcribir audio» devolveria
 //   { "tipo": "ubicacion", "latitud": -16.5, "longitud": -68.15 }   el cliente comparte una ubicacion (mensaje `location` de Meta; `nombre` y `direccion` opcionales; las coordenadas pueden ser invalidas a proposito)
 //   { "tipo": "imagen", "pie": "…" } / { "tipo": "documento", "pie": "…" }   foto o PDF (el comprobante, si hay un QR esperandolo)
-//   { "tipo": "carrito", "items": [{ "id": "cat_x", "cantidad": 2 }], "entrega": "envio"|"retiro", "direccion": "…", "nota": "…" }
+//   { "tipo": "carrito", "items": [{ "id": "cat_x", "cantidad": 2 }], "entrega": "envio"|"retiro", "direccion": "…", "nota": "…", "ubicacion": {lat,lng}|null }
 //                                                       el carrito de la pagina de la carta: entra por «Carrito del catálogo»; el
 //                                                       nombre y el subtotal los pone la bateria con la carta del panel
 //   `lectura` (comprobante): { "monto": "21.00", … } los datos que «Leer comprobante» devolveria, o "ilegible" (vacio). Por omision,
@@ -447,6 +447,8 @@ function entregaDelCarrito(c, panel, reloj, n) {
       tipo: 'carrito', tenantId: 'qtaco', telefono: CLIENTE, accion: 'responder', pedidoId: c.pedidoId ?? `p-bat-${n}`, conversacionId: `c-bat-${n}`,
       ventanaAbierta: true, items, total: suma(items.map((x) => x.subtotal)), moneda: 'Bs',
       entrega: envio ? 'envio' : 'retiro', costoEnvio: 0, direccion: envio ? String(c.direccion ?? '') : '', nota: String(c.nota ?? ''),
+      // 07/11/2026: en delivery la ubicacion compartida es obligatoria. El carrito de envio lleva la de la pagina (`ubicacion`, o la de siempre por omision); `"ubicacion": null` la quita.
+      ...(envio && c.ubicacion !== null ? { ubicacion: c.ubicacion ?? { lat: -16.5, lng: -68.15 } } : {}),
     },
   };
 }

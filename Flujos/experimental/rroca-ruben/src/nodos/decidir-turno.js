@@ -11,7 +11,7 @@
 //   qr             el QR con el monto del CATÁLOGO (prellenados de Pack y Libro, o un botón o una fila de producto);
 //   qr_pendiente   ya hay un QR abierto Y el cliente habla de pagar o pide un producto: el recordatorio (un solo QR a la vez, un pedido = un producto). Ya no se escala a Rubén por insistir: el recordatorio tiene dos formas y nunca sale idéntico dos veces seguidas.
 //                  Cualquier otra pregunta con un QR abierto se RESPONDE (precio, catálogo, imágenes, resultado o el modelo) SIN botones de producto y SIN abrir otro QR (`qrAbierto: true`, con `qrProducto` y `qrMonto` para la invitación a pagar que «Armar mensajes» agrega al final);
-//   catalogo       «qué vendes», «catálogo», «lista», «opciones»: los productos con precio leídos del catálogo de la consola, por código;   imagenes   «¿tienes imágenes?»: texto fijo, el flujo no envía imágenes;
+//   catalogo       «qué vendes», «catálogo», «lista», «opciones»: los productos con precio leídos del catálogo de la consola, por código;   imagenes   «¿tienes imágenes?»: texto fijo, el flujo no envía imágenes;   contenido   «¿qué incluye el pack/libro/audiolibro/meditaciones?»: el contenido del producto, por código;
 //   cancelar_cobro «cancela ese qr» con un QR abierto y sin comprobante: el servidor cierra el cobro (llamada síncrona) y sale `cobro_cerrado`; si el servidor no responde 200, sale la derivación `cancelacion`;   cobro_ya_cerrado   la segunda cancelación seguida;
 //   comprobante    el resultado del cotejo traducido por `cbResultadoVenta`;
 //   derivar        pasa a Rubén (lista cerrada de `rrDerivacion`: devolución (no hay garantía), reclamo, volumen o reventa, otro medio de pago, el material que no abre, pregunta médica, una persona; producto agotado; sin QR utilizable; «cancela mi pedido» con un QR abierto: `cancelacion`; SIN CONFIGURACIÓN del negocio: `sin_configuracion`): aviso + botón;
@@ -108,7 +108,7 @@ const planComprobante = () => {
   const motivoSrv = cbCuerpoDe(resp).cuerpo.motivo;
   const motivoAviso = r.resultado === 'aproximado' ? rrMotivoComprobante('aproximado', motivoSrv) : (r.resultado === 'sin_cotejo' ? rrMotivoComprobante(r.causa, motivoSrv) : '');
   return {
-    tipo: 'comprobante', resultado: r.resultado, causa: r.resultado === 'aproximado' && motivoSrv === 'monto_distinto' ? 'monto_distinto' : r.causa, diferencia: r.resultado === 'reintentar' ? cbDiferencia(r.diferencias, 'Bs') : '', cat: cat, producto: producto,
+    tipo: 'comprobante', resultado: r.resultado, causa: r.resultado === 'aproximado' && motivoSrv === 'monto_distinto' ? 'monto_distinto' : r.causa, diferencia: r.resultado === 'reintentar' ? cdDiferenciaParaElTexto(cbCuerpoDe(resp).cuerpo, r, 'Bs') : '', cat: cat, producto: producto,
     aviso: avisa ? { tipo: 'comprobante', resultado: r.resultado, producto: nombreProducto, monto: cobro.monto, motivo: motivoAviso, clave: r.resultado === 'sin_cotejo' && !r.causa ? 'comprobante_sin_cotejo' : '' } : null,
   };
 };
@@ -199,7 +199,8 @@ if (esVisual) {
       const n = rrNorm(x);
       return /reembols|devol|devuelt|reintegr|anulad|rechazad|gratis|gratuit|descuent|promet|promoci|oferta|garant|regal|dinero|plata/.test(n) || CB_PROHIBIDAS.test(cbCanon(x)) || RR_NIEGA_IA.test(n);
     });
-    const descripcion = categoriaMedio === 'publicidad' ? 'una imagen publicitaria' : (mutilada || prometedora ? '' : String(prep.descripcionMedio || ''));
+    // Una publicidad que NO es de los anuncios de la Consola no se nombra «imagen publicitaria» (ronda 2: una foto, una captura de la web y un PDF salían así): sin descripción, el texto neutro «Recibí tu imagen/archivo».
+    const descripcion = categoriaMedio === 'publicidad' ? '' : (mutilada || prometedora ? '' : String(prep.descripcionMedio || ''));
     return salir({ tipo: 'imagen_descrita', documento: t.esDocumento === true, descripcion: descripcion, cat: cat });
   }
   // Una captura de anuncio: se reconoce el ángulo por el texto leído; sin ángulo, se sigue como una charla.
@@ -300,6 +301,9 @@ if (rrPreguntaPorResultado(norm)) return salir(Object.assign({ tipo: 'resultado'
 // CON UN QR ABIERTO: el recordatorio SOLO sale si el cliente habla de pagar («ya pagué», «cómo pago», «comprobante», «QR», «monto») o pide un producto (más abajo). Todo lo demás se responde (resultado, imágenes, catálogo, precio, o el modelo
 // para una pregunta) sin botones de producto y SIN abrir otro QR (`qrAbierto: true`), y «Armar mensajes» agrega la invitación a pagar.
 if (hayQrAbierto && rrHablaDelCobro(norm)) return salir(recordatorio(''));
+// «¿Qué incluye el pack?»: el contenido del producto lo dice el CÓDIGO (con QR abierto, sin botones y con la invitación a pagar una sola vez). Como PRIMER mensaje, con la presentación.
+const contenidoDe = rrPideContenido(norm, hayQrAbierto ? producto : '');
+if (contenidoDe !== '') return salir(Object.assign({ tipo: 'contenido', producto: contenidoDe, conPresentacion: !ficha.saludado, cat: cat }, abierto()));
 // El ángulo del anuncio: por el texto escrito o por el texto leído de una captura (publicidad). El modelo redacta la apertura con el ángulo como dato; si falla, sale el texto fijo del ángulo.
 const angulo = rrAngulo(norm) || (esVisual ? rrAngulo(rrNorm(leido)) : '');
 // Con un QR abierto (24/10/2026): la captura de un anuncio o el texto de un anuncio TAMBIÉN se responde con la apertura de su ángulo, y «Armar mensajes» le suma la invitación a pagar el QR pendiente (monto del pedido, nunca el del sello de la imagen):

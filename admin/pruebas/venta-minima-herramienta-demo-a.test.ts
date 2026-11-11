@@ -420,34 +420,52 @@ describe('endurecimientos de la revisión de seguridad (todos niegan sin escribi
 });
 
 // ---------------------------------------------------------------------------------- Agenda mínima v0 con el miniCRM (04/11/2026)
-// El ensayo en el Demo A no escribe en ninguna planilla: los 8 nodos del miniCRM quedan SIN credencial y el id de planilla va vacío; ninguna credencial de Bellido llega al Demo A.
-describe('Agenda mínima v0 (71 nodos, con miniCRM) sobre el Demo A', () => {
+// El ensayo en el Demo A no escribe en ninguna planilla: los 8 nodos del miniCRM SALEN del candidato (71 → 63), con sus conexiones; ninguna credencial de Bellido llega al Demo A.
+// Motivo (07/11/2026): n8n 2.36.5 no publica nodos con credencial requerida vacía («Missing required credential: googleApi»).
+describe('Agenda mínima v0 (71 nodos, con miniCRM) sobre el Demo A: el ensayo quita la rama del miniCRM', () => {
   const V0 = join(aqui, '../../Flujos/experimental/agenda-minima/agenda-minima.v0.json');
+  // Se repite a propósito (construir.mjs corre al importarse); la prueba compara con el candidato real.
   const NODOS_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
-  const idDePlanilla = (w: J): unknown => (nodo(w, 'Config base').parameters.assignments.assignments as J[]).find((a) => a.name === 'planillaProspectosId')!.value;
-  it('el candidato tiene 71 nodos y trae la credencial de Bellido en los nodos de Google', () => {
+  it('el candidato (para Bellido) tiene 71 nodos, los 8 del miniCRM y su credencial', () => {
     const w = leerJson(V0);
     expect(w.nodes).toHaveLength(71);
+    for (const n of NODOS_CRM) expect((w.nodes as J[]).some((x) => x.name === n), n).toBe(true);
     expect(JSON.stringify(w)).toContain('Google Sheets miniCRM (crm-bellido)');
   });
-  it('en seco: pasa, avisa que los nodos del miniCRM quedan sin credencial y no escribe en n8n', async () => {
+  it('en seco: pasa, dice cuántos nodos quita y por qué, y no escribe en n8n', async () => {
     nuevo();
     const r = await correr(['--sobre-demo-a', '--respaldo', respaldoNuevo(), '--flujo', V0]);
     expect(r.codigo, r.salida).toBe(0);
     expect(mundo.puts).toHaveLength(0);
-    expect(r.salida).toContain('Buscar teléfono en planilla: googleApi → SIN credencial');
+    expect(r.salida).toContain('Nodos quitados del candidato: 8');
+    expect(r.salida).toMatch(/no escribe en ninguna planilla/);
+    expect(r.salida).toMatch(/63 nodos/);
     expect(r.salida).toMatch(/En seco: no se escribió nada en n8n/);
   });
-  it('con --aplicar simulado: los 8 nodos del miniCRM quedan sin credencial, el id de planilla vacío y ninguna credencial de Bellido en el Demo A', async () => {
+  it('con --aplicar simulado: 63 nodos, sin los 8 del miniCRM, sin credencial de Bellido, ninguna credencial vacía y conexiones sin nodos ausentes', async () => {
     nuevo();
     const r = await correr(['--sobre-demo-a', '--respaldo', respaldoNuevo(), '--flujo', V0, '--aplicar', '--autorizo-gemini-produccion']);
     expect(r.codigo, r.salida).toBe(0);
     const p = mundo.puts[0]!;
-    expect(p.nodes).toHaveLength(71);
-    for (const n of NODOS_CRM) expect(Object.keys(nodo(p, n).credentials ?? {}), n).toEqual([]);
-    expect(idDePlanilla(p)).toBe('');
-    const nombres = (p.nodes as J[]).flatMap((n) => Object.values(n.credentials ?? {}).map((c) => String((c as J).name)));
-    expect(nombres.join('|')).not.toMatch(/bellido|miniCRM/i);
+    expect(p.nodes).toHaveLength(63);
+    const nombresDeNodos = new Set((p.nodes as J[]).map((n) => String(n.name)));
+    for (const n of NODOS_CRM) expect(nombresDeNodos.has(n), n).toBe(false);
+    const creds = (p.nodes as J[]).flatMap((n) => Object.values(n.credentials ?? {}) as J[]);
+    expect(creds.every((c) => c && c.id), 'credencial vacía').toBe(true);
+    expect(creds.map((c) => String(c.name)).join('|')).not.toMatch(/bellido|miniCRM/i);
+    expect(JSON.stringify(p)).not.toMatch(/crm-bellido/);
+    // conexiones: ni origen ni destino ausentes
+    for (const [origen, salidas] of Object.entries(p.connections as J)) {
+      expect(nombresDeNodos.has(origen), `origen ${origen}`).toBe(true);
+      for (const grupos of Object.values(salidas as J)) for (const g of grupos as J[][]) for (const c of g) expect(nombresDeNodos.has(String(c.node)), `destino ${c.node}`).toBe(true);
+    }
+    // «Armar mensajes» conserva su salida al envío y ya no apunta a la planilla
+    expect(JSON.stringify(p.connections['Armar mensajes'])).toContain('¿Enviar de verdad?');
+    expect(JSON.stringify(p.connections['Armar mensajes'])).not.toContain('planilla');
+  });
+  it('--sobre-bellido sigue con 71 nodos y los 8 del miniCRM (la herramienta no los quita allí)', () => {
+    const w = leerJson(V0);
+    expect((w.nodes as J[]).filter((n) => NODOS_CRM.includes(String(n.name)))).toHaveLength(8);
   });
   it('NIEGA: un nodo FUERA del miniCRM con la credencial de Bellido sigue sin pasar', async () => {
     nuevo();

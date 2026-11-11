@@ -132,8 +132,18 @@ describe('Entrantes por tipo en la ingesta', () => {
     const sticker = await entrante('5910000000112', 'sticker');
     for (const r of [imagen, video, sticker]) expect(r.codigo).toBe(200);
     // Misma respuesta a n8n que una imagen: mismo estado de atención, ningún aviso, 0 mensajes agregados.
-    expect(video.cuerpo).toEqual(imagen.cuerpo);
-    expect(sticker.cuerpo).toEqual(imagen.cuerpo);
+    // `conversacionDesde` es el instante de cada llamada (teléfonos distintos): se excluye, y se exige que la
+    // conversación sea nueva en las tres. Comparar el instante cruzaría un segundo de forma intermitente.
+    const sinInstante = (cuerpo: unknown) => {
+      const c = cuerpo as Record<string, unknown>;
+      const { conversacionDesde: _d, ...atencion } = c['atencion'] as Record<string, unknown>;
+      return { ...c, atencion };
+    };
+    for (const r of [imagen, video, sticker]) {
+      expect(((r.cuerpo as Record<string, unknown>)['atencion'] as Record<string, unknown>)['conversacionNueva']).toBe(true);
+    }
+    expect(sinInstante(video.cuerpo)).toEqual(sinInstante(imagen.cuerpo));
+    expect(sinInstante(sticker.cuerpo)).toEqual(sinInstante(imagen.cuerpo));
     const m = await metricas();
     expect(m['entrantes']).toBe(Number(antes['entrantes']) + 3);
     expect(m['mensajes']).toBe(Number(antes['mensajes']) + 3);

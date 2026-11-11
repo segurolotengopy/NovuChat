@@ -113,6 +113,11 @@ const idArte = (v) => (/^\d{6,25}$/.test(valor(v)) ? valor(v) : '');
 // D6 (Andres, 23/10/2026): `usarMarcas = si` enciende el texto con las marcas (Radiesse®, HArmonyCa™) y el comparativo. Cualquier otro valor lo deja apagado.
 const usarMarcas = valor(base.usarMarcas).toLowerCase() === 'si';
 
+// TEXTO LITERAL DEL ANUNCIO: `campanaFrase` (la frase exacta del anuncio) y `campanaTexto` (lo que recibe) son datos del tenant en `Config base`; el texto no se limpia con `linea` (conserva sus saltos).
+const campanaFrase = valor(base.campanaFrase);
+const campanaTexto = typeof base.campanaTexto === 'string' && !/^REEMPLAZAR_/.test(base.campanaTexto.trim()) ? base.campanaTexto.trim().slice(0, 1500) : '';
+const campanaOk = campanaTexto !== '' && campanaFrase !== '';   // las 5 palabras o más las exige `evEsEntradaCampana` en «Decidir turno»
+
 // LA PLANILLA DEL miniCRM (módulo `crm`): el id de la hoja de Google de ESTE negocio (25 a 100 caracteres de id) y el nombre de la pestaña. Un marcador `REEMPLAZAR_*`, vacío o con otra forma vale '' y el flujo no consulta Google.
 // Sin id válido no hay hoja: la pestaña también queda vacía. Con id y sin pestaña, 'Leads_CRM'.
 const idDeLaPlanilla = /^[A-Za-z0-9_-]{25,100}$/.test(valor(base.planillaProspectosId)) ? valor(base.planillaProspectosId) : '';
@@ -124,6 +129,8 @@ return [{ json: {
   telefonosEtapaPrueba: etapaPrueba ? permitidos : [],
   fueraDePrueba,
   usarMarcas,
+  // Texto literal del anuncio (07/11/2026): ambos o ninguno. El texto conserva sus saltos de línea (es del tenant y sale exacto). Sin frase o sin texto no hay texto del anuncio (la frase de 5 palabras o más la exige «Decidir turno»).
+  ...(campanaOk ? { campanaFrase: campanaFrase, campanaTexto: campanaTexto } : { campanaFrase: '', campanaTexto: '' }),
   planillaProspectosId: idDeLaPlanilla,
   planillaProspectosHoja: hojaDeLaPlanilla,
   artesMedia: { comparativo: idArte(base.arteComparativoMediaId), antes_despues: idArte(base.arteAntesDespuesMediaId), autoridad: idArte(base.arteAutoridadMediaId) },

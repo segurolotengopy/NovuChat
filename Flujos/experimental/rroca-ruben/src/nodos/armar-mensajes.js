@@ -69,7 +69,10 @@ const conBotones = (cuerpo, botones, extra, respaldoPropio) => {
   return cmMensaje('cliente', cmBotones(c, botones), c, respaldo, Object.assign({ tipoReporte: 'interactive' }, extra || {}));
 };
 const conRuben = (cuerpo, extra) => {
-  const c = rrSeguro(cuerpo);
+  // Sin el número de Rubén no hay botón: el texto de Silvana («Déjame confirmarte… con Rubén») quedaría como una promesa sin respaldo (revisión de seguridad, LOW). Sin número, no promete: dice la verdad.
+  const sinBotonRubenNum = String(cfg['numeroRecepcion'] || '').replace(/\D/g, '') === '';
+  const cuerpoOk = sinBotonRubenNum && String(cuerpo).indexOf(RR_TEXTO_DEVOLUCION) >= 0 ? String(cuerpo).split(RR_TEXTO_DEVOLUCION).join('Por este chat no puedo confirmarte las condiciones de garantía o devolución: eso lo ve Rubén directamente.') : cuerpo;
+  const c = rrSeguro(cuerpoOk);
   return cmContactoConBoton(Object.assign({ numero: cnDigitos(cfg.numeroRecepcion), desde: from, cuerpo: c, botonTexto: RR_BOTON_RUBEN, saludo: 'Hola Rubén, vengo del asistente virtual.', textoDelRespaldo: 'Escríbele aquí:', sinNumero: 'Eso lo ve Rubén directamente.', esRepetido: (x) => fichaAntes.ultimoHash !== '' && ctHashTexto(x) === fichaAntes.ultimoHash }, extra || {}));
 };
 const usadosHoy = () => fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
@@ -81,7 +84,13 @@ const presentacion = !fichaAntes.saludado;
 const textoPresentacion = rrPresentacion(negocio);
 const conPresentacion = (cuerpo) => (presentacion ? textoPresentacion + '\n\n' + cuerpo : cuerpo);
 // La invitación a pagar el QR pendiente: se agrega al final de toda respuesta que se da con un QR abierto (el producto y el monto son del código, nunca del modelo).
-const invitar = (cuerpo) => (qrAbierto ? cuerpo + '\n\n' + rrInvitacionQr(plan.qrProducto, plan.qrMonto, nom) : cuerpo);
+// Una sola invitación por QR: `ficha.qrInvitadoMs` guarda cuándo se hizo; dentro de `RR_VENTANA_INVITACION_MS` no se repite (repetirla en cada mensaje es repetirse como loro; el QR sigue abierto y el cliente lo ve más arriba). Un QR nuevo reinicia la marca.
+let invitoAhora = false;
+const invitar = (cuerpo) => {
+  if (!qrAbierto || (fichaAntes.qrInvitadoMs > 0 && ahora - fichaAntes.qrInvitadoMs < RR_VENTANA_INVITACION_MS)) return cuerpo;
+  invitoAhora = true;
+  return cuerpo + '\n\n' + rrInvitacionQr(plan.qrProducto, plan.qrMonto, nom);
+};
 const botonOpciones = () => [rrBoton(RR_BOTON_OPCIONES, RR_ETIQUETA_OPCIONES)];
 
 // La protección ante violencia o miedo se arma aunque la puerta no «siga» (comercio suspendido, estado «operador») o el número no sea boliviano.
@@ -183,6 +192,16 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     // «¿Tienes imágenes?»: respuesta fija (no se envían imágenes del libro) y lo que sí hay, con los botones del menú vigente (con un QR abierto, texto plano con la invitación a pagar).
     const op = qrAbierto ? [] : menuAbierto();
     m = qrAbierto ? texto(invitar(rrTextoImagenes(true, false))) : conBotones(rrTextoImagenes(false, op.length > 0), op);
+  } else if (tipoDePlan === 'contenido') {
+    // El contenido de un producto, por código. Con un QR abierto, texto plano (más la invitación a pagar si todavía no se hizo); si no, con los botones del menú vigente.
+    const op = qrAbierto ? [] : menuAbierto();
+    const cuerpoContenido = rrTextoContenido(plan.producto, nom);
+    m = qrAbierto ? texto(invitar(conPresentacion(cuerpoContenido))) : conBotones(conPresentacion(cuerpoContenido) + (op.length > 0 ? '\n\n¿Qué opción prefieres?' : ''), op);
+    // La MISMA pregunta de contenido otra vez (ronda 2 de Silvana, 07/11/2026): quien la hace de nuevo quiere la respuesta, no «ya te lo conté». Se vuelve a dar, con una frase que la distingue del mensaje anterior (nunca el mismo texto dos veces seguidas).
+    if (m && fichaAntes.ultimoHash !== '' && ctHashTexto(m.texto) === fichaAntes.ultimoHash) {
+      const otra = 'Claro, te lo cuento de nuevo:\n\n' + cuerpoContenido;
+      m = qrAbierto ? texto(otra) : conBotones(otra + (op.length > 0 ? '\n\n¿Qué opción prefieres?' : ''), op);
+    }
   } else if (tipoDePlan === 'menu') {
     const op = menu1();
     if (op.length) m = conBotones(RR_TEXTO_OPCIONES, op);
@@ -205,7 +224,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     if (precioR !== '') antes.push(precioR);
     if (plan.duracion === true) antes.push(RR_TEXTO_DURACION);
     const delante = antes.length ? antes.join('\n\n') + '\n\n' : '';
-    m = qrAbierto ? texto(invitar(conPresentacion(delante + rrTextoResultado(false)))) : conBotones(conPresentacion(delante + rrTextoResultado(op.length > 0)), op);
+    m = qrAbierto ? texto(invitar(conPresentacion(delante + rrTextoResultado()))) : conBotones(conPresentacion(delante + rrTextoResultado()), op);
   } else if (tipoDePlan === 'qr') {
     const monto = rrPrecio(cat, plan.producto);
     const mediaId = rrMediaId(plan.mediaId);
@@ -286,7 +305,9 @@ if (m && puerta.ruta === 'sigue' && m.tipoReporte !== 'image' && ['comprobante',
     tipoDePlan = 'repetido';
     // El botón de Rubén va SOLO cuando el plan deriva: una repetición no deriva nada, así que sale en texto plano; si lo que se repite era una derivación (ya traía el botón), la alternativa lo conserva.
     const eraDerivacion = !!m.payload && !!m.payload.interactive && m.payload.interactive.type === 'cta_url';
-    const alterna = ctAlternaDeRepetido({ medio: medio, hashUltimo: fichaAntes.ultimoHash, titular: 'Rubén', tratamiento: 'tu', alternas: RR_ALTERNAS });
+    // Si lo repetido era un texto de respaldo (el modelo cayó), no se dijo nada que «ya se contó»: alternas de respaldo, que no lo afirman.
+    const eraRespaldo = ['modelo_caido', 'charla_fija', 'puente_fijo', 'opciones_fijo'].indexOf(String(fichaAntes.ultimaFirma || '')) >= 0;
+    const alterna = ctAlternaDeRepetido({ medio: medio, hashUltimo: fichaAntes.ultimoHash, titular: 'Rubén', tratamiento: 'tu', alternas: eraRespaldo && !medio ? { contenido: RR_ALTERNAS.respaldo } : RR_ALTERNAS });
     m = eraDerivacion ? conRuben(alterna) : texto(alterna);
   }
 }
@@ -315,7 +336,7 @@ if (claveOk) {
   if (usadoNuevo && ficha.usados.indexOf(usadoNuevo) < 0) ficha.usados = ficha.usados.concat([usadoNuevo]).slice(-10);
   if (respuestaDelModelo) ficha.modeloN += 1;
   // Lo anterior de la conversación: «Resumen del turno» lo restaura si Meta no aceptó el envío (la conversación solo cuenta lo que se entregó).
-  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma, c: ficha.charlaN, po: ficha.pidioOpciones, ov: ficha.opcionesVistas, u: ficha.upgrade, preg: { pendientes: ficha.pendientes.map((x) => ({ p: x.p, ms: x.ms, i: x.i, c: x.c, b: x.b })) } };
+  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma, c: ficha.charlaN, po: ficha.pidioOpciones, ov: ficha.opcionesVistas, u: ficha.upgrade, qi: ficha.qrInvitadoMs, preg: { pendientes: ficha.pendientes.map((x) => ({ p: x.p, ms: x.ms, i: x.i, c: x.c, b: x.b })) } };
   if (m && puerta.ruta === 'sigue') {
     // LA CONVERSACIÓN ANTES DE LAS OPCIONES: cuenta el mensaje que salió si es conversación (`vdCuentaComoCharla`: el saludo solo si lleva presentación; el ángulo cuenta como respuesta del modelo; el precio de un producto antes de la charla,
     // si es el primer mensaje, lleva la presentación y cuenta como saludo). NO cuentan los textos fijos que no son conversación (modelo caído, repetido, información, derivaciones).
@@ -326,6 +347,7 @@ if (claveOk) {
     if (['opciones', 'opciones_fijo', 'catalogo', 'menu', 'audios'].indexOf(tipoDePlan) >= 0 || (tipoDePlan === 'precio' && plan.temprano !== true)) { ficha.opcionesVistas = true; ficha.pidioOpciones = false; }
     // Lo último que se le dijo (hash del texto y tipo de plan): el recordatorio del QR no se repite dos veces seguidas y ningún texto sale idéntico dos veces seguidas. Solo cuenta el turno que contesta de verdad.
     ctRecordarEnviado(ficha, m.texto, tipoDePlan, m.tipoReporte === 'image');
+    if (invitoAhora && tipoDePlan !== 'repetido') ficha.qrInvitadoMs = ahora;
     // Las preguntas pendientes (para entender un «Sí» o un «No» suelto): salen del texto que de verdad se envía, con la intención `ver_opciones` si lo que se preguntó es «¿Te muestro las opciones?» (puente o precio antes de la charla). Un botón pulsado contesta su pregunta.
     if (t.tipo === 'interactive') ctConsumirPorBoton(ficha, String(t.seleccionId || ''));
     const preguntaDelPuente = tipoDePlan === 'puente' || tipoDePlan === 'puente_fijo' || (tipoDePlan === 'precio' && plan.temprano === true && !qrAbierto);
@@ -338,13 +360,13 @@ if (claveOk) {
   if (ficha.riesgo === true && puerta.ruta === 'uso_extendido' && puerta.responder !== true && (rrEsCrisis(rrNorm([t.texto, t.pie].join(' '))) || (t.tipo !== 'interactive' && String(t.texto || '').trim() !== '' && !rrEsNeutro(rrNorm(t.texto), t.texto)))) ficha.riesgoMs = ahora;
   if (upgradeOfrecido && m && puerta.ruta === 'sigue') ficha.upgrade = 1;
   // La memoria de la charla (15 mensajes): lo que dijo el cliente y lo que se le respondió, solo en la conversación (no en el cobro) y NUNCA en la protección por violencia o miedo.
-  if (m && ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo', 'precio', 'resultado', 'info'].indexOf(tipoDePlan) >= 0) {
+  if (m && ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo', 'precio', 'resultado', 'info', 'contenido'].indexOf(tipoDePlan) >= 0) {
     rrRecordarMensaje(ficha, 'u', decision.textoCliente);
     rrRecordarMensaje(ficha, 'm', m.texto);
   }
   // MARCA PROVISIONAL del QR: se fija aquí (el id del pedido y la guarda de 15 minutos necesitan existir ya) pero `Resumen del turno` la DESCARTA con `qrPrevio` si Meta no devolvió el `wamid` del QR
   // (sale el respaldo en texto): un QR que no salió no deja al cliente 15 minutos con «Ya tienes un QR abierto».
-  if (pedidoNuevo) { qrPrevio = { pedidos: ficha.pedidos, producto: ficha.producto, qrHastaMs: ficha.qrHastaMs, upgrade: ficha.upgrade }; ficha.pedidos += 1; ficha.producto = pedidoNuevo.producto; ficha.qrHastaMs = ahora + RR_MINUTOS_QR * 60 * 1000; if (pedidoNuevo.producto === 'upgrade') ficha.upgrade = 2; }
+  if (pedidoNuevo) { qrPrevio = { pedidos: ficha.pedidos, producto: ficha.producto, qrHastaMs: ficha.qrHastaMs, upgrade: ficha.upgrade }; ficha.pedidos += 1; ficha.qrInvitadoMs = 0; ficha.producto = pedidoNuevo.producto; ficha.qrHastaMs = ahora + RR_MINUTOS_QR * 60 * 1000; if (pedidoNuevo.producto === 'upgrade') ficha.upgrade = 2; }
   // El comprobante resuelto (todo menos «reintentar» e «ilegible», que siguen con el cobro abierto) cierra el cobro o lo pasa a Rubén: la guarda de 15 minutos del QR ya no tiene sentido.
   // Se guarda el valor previo para restaurarlo si la respuesta no sale (`Resumen del turno`).
   const huboComprobante = tipoDePlan === 'comprobante';

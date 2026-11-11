@@ -5,7 +5,7 @@ import { SECRETOS_POR_ALIAS, enmascarar, rutaAutenticada } from '../../core/segu
 import { registrar } from '../../core/turno/bitacora.js';
 import { periodoDe } from '../../central/cuenta/planes.js';
 import {
-  calificarComprobante, parsearMonto, type Calificacion, type Leido,
+  calificarComprobante, motivosParaElCliente, parsearMonto, type Calificacion, type Leido,
 } from './cotejo.js';
 import {
   MAX_INTENTOS_INVALIDOS, detalleDeLaVentaCalificada, esperadoDeLaVenta, esReglaDos, idDeCierreDeVenta,
@@ -70,6 +70,11 @@ export type Rechazo = 'sin_cobro_pendiente' | 'cobro_cancelado' | 'sin_total' | 
 export interface RespuestaDelCotejo {
   estado: EstadoDeRespuesta;
   motivo: string;
+  /**
+   * TODOS los motivos que aplican, con el destinatario primero (`motivosParaElCliente`). ADITIVO: `motivo` sigue siendo el primario de siempre, así que un flujo que no lo lea
+   * no cambia. Solo viene en la respuesta de un cotejo nuevo (no en la de un comprobante repetido, que repite lo que se contestó entonces).
+   */
+  motivos?: string[];
   intentos: number;
   intentosRestantes: number;
   importe: number | null;
@@ -293,6 +298,7 @@ export const cotejarComprobanteVenta = onRequest(
         codigo: 200,
         cuerpo: {
           estado, motivo,
+          ...(cal && (estado === 'valido' || estado === 'aproximado' || estado === 'reintentar') ? { motivos: motivosParaElCliente(cal.motivos) } : {}),
           intentos: transicion.intentosInvalidos, intentosRestantes: transicion.intentosRestantes,
           importe, moneda,
           montoLeido: cal?.montoLeido ?? montoDeLoLeido,

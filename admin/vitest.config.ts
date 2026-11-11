@@ -88,6 +88,9 @@ export const SUITES_PURAS = [
   'pruebas/venta-minima-qtaco-3727.test.ts',
   'pruebas/venta-minima-catalogo-punta-a-punta.test.ts',
   'pruebas/venta-minima-sesion.test.ts', 'pruebas/venta-minima-cupos.test.ts', 'pruebas/venta-minima-prueba-0711.test.ts',
+  'pruebas/venta-minima-avisos-vinetas.test.ts',
+  // La guardia del sandbox de expresiones de n8n y el chequeo de ejecuciones (07/11/2026): sin red ni emulador.
+  'pruebas/core/expresiones-n8n.test.ts', 'pruebas/plataforma/auditar-ejecuciones-n8n.test.ts',
   'pruebas/n8n-de-mentira.test.ts',
   'pruebas/comun-sin-agente-construir.test.ts',
   'pruebas/comun-sin-agente-envio.test.ts',
@@ -130,6 +133,7 @@ export const SUITES_PURAS = [
   'pruebas/modulos/crm/crm.test.ts',
   'pruebas/modulos/crm/editores-crm.test.ts',
   'pruebas/modulos/crm/crm-flujo.test.ts',
+  'pruebas/modulos/crm/crm-servicio-agendo.test.ts',
   'pruebas/modulos/catalogo-web/carrito-podado.test.ts',
   'pruebas/modulos/catalogo-web/retencion-fichas.test.ts',
   'pruebas/modulos/catalogo-web/sitio-publico.test.ts',
@@ -144,8 +148,10 @@ export const SUITES_PURAS = [
   'pruebas/plataforma/aplicar-consola-oculta.test.ts',
   'pruebas/plataforma/habilitar-productos.test.ts',
   'pruebas/plataforma/resetear-ficha-flujo.test.ts',
+  'pruebas/plataforma/resetear-telefono-prueba.test.ts',
   'pruebas/plataforma/aplicar-consola-conversaciones.test.ts',
   'pruebas/plataforma/rellenar-conversaciones.test.ts',
+  'pruebas/plataforma/planilla-u-a-x-bellido.test.ts',
   // Conversaciones (H1-7, 16/10/2026): comprobadas una por una con FIRESTORE_EMULATOR_HOST=127.0.0.1:1
   // (sin emulador y sin red). Las de H1 que SÍ abren Firestore (`buscar-conversaciones`,
   // `ingesta-conversaciones`, `conversaciones-ids-reglas`, los scripts con emulador) quedan en `emulador`.
@@ -168,6 +174,7 @@ export const SUITES_PURAS = [
   'pruebas/resetear-fichas-chat-novuchat.test.ts',
   'pruebas/core/marcador-desde-archivo.test.ts',
   'pruebas/conteo-bloques.test.ts',
+  'pruebas/conversacion-desde.test.ts',
   'pruebas/central/contrasena-minimo.test.ts',
   'pruebas/frontera/despliegue.test.ts',
   'pruebas/frontera/fronteras.test.ts',

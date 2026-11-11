@@ -176,6 +176,8 @@ beforeEach(async () => {
 });
 
 const CLAVES_ATENCION = ['bloque', 'estado', 'mensajeFijo', 'respuestasEnVentana', 'restanDelBloque', 'umbrales', 'ventanaVenceEn'];
+// La ingesta suma `conversacionDesde` y `conversacionNueva` (CRM por conversación); configuracionFlujo no.
+const CLAVES_ATENCION_INGESTA = [...CLAVES_ATENCION, 'conversacionDesde', 'conversacionNueva'].sort();
 const CLAVES_CONFIG_ATENCION = [...CLAVES_ATENCION, 'avisarRecepcion'].sort();
 
 // =============================================================================
@@ -189,7 +191,7 @@ describe('con el turno de una persona vigente, las DOS respuestas callan al asis
     const r = await entrante(A, tel);
     expect(r.codigo).toBe(200);
     expect(atencionDe(r)['estado']).toBe('bloqueado');
-    expect(Object.keys(atencionDe(r)).sort()).toEqual(CLAVES_ATENCION);
+    expect(Object.keys(atencionDe(r)).sort()).toEqual(CLAVES_ATENCION_INGESTA);
     expect(r.cuerpo['avisarRecepcion']).toBe('');
     expect(r.cuerpo['pausadoPorPersona']).toBe(true);
     expect(Object.keys(r.cuerpo).sort()).toEqual(['atencion', 'avisarRecepcion', 'pausadoPorPersona']);

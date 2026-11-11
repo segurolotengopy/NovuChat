@@ -12,16 +12,28 @@
     "ruta": "REEMPLAZAR_RUTA_RECEPTOR_QTACO_3727",
     "wabaIdEsperado": "REEMPLAZAR_WABA_ID_QTACO_3727"
   },
+  "_notaAvisos": "07/11 20:47: Q'Taco pidio volver al formato por lineas (una vineta por producto); las plantillas en vinetas inline quedan apagadas (plantillaPedidoMapaEstado, plantillaPedidoListaEstado y plantillaReservaListaEstado en DESACTIVADA; el codigo solo las usa con el estado exactamente APPROVED).",
   "configBase": {
     "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_QTACO_3727",
+    "horarioAtencion": "todos los días de 10:00 a 22:00 (de 10:00 a 12:00 solo delivery)",
+    "horarioAtencionManda": "si",
     "plantillasPedidoLineas": "2:pedido_registrado_l2,4:pedido_registrado_l4,6:pedido_registrado_l6",
     "idiomaPlantillaPedidoLineas": "es",
+    "plantillaPedidoMapa": "pedido_lista_mapa",
+    "plantillaPedidoMapaEstado": "DESACTIVADA",
+    "plantillaPedidoLista": "pedido_lista",
+    "plantillaPedidoListaEstado": "DESACTIVADA",
+    "plantillaReservaLista": "reserva_lista",
+    "plantillaReservaListaEstado": "DESACTIVADA",
+    "plantillaConsultaAtencion": "consulta_atencion",
+    "plantillaConsultaAtencionEstado": "PENDING",
+    "idiomaPlantillasVinetas": "es",
     "destinatariosAviso": "completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO",
     "planillaProspectosId": "REEMPLAZAR_PLANILLA_PROSPECTOS_ID_QTACO_3727",
     "planillaProspectosHoja": "Leads_CRM"
   },
   "crm": {
-    "_nota": "Mapa de columnas de la planilla miniCRM de Q'Taco (hoja Leads_CRM, encabezados en la fila 3), opcion (b) del 06/11/2026: SIN ampliar el contrato de columnas del core; las columnas son las de la plantilla actual. A..I y N..T las escribe el bot; J..M y U son del equipo (el bot no las toca ni lee la U). Q'Taco no usa Dia ni Horario preferido (quedan vacios). Los titulos tienen que coincidir letra por letra con la copia viva de la planilla.",
+    "_nota": "Mapa de columnas de la planilla miniCRM de Q'Taco (hoja Leads_CRM, encabezados en la fila 3), opcion (b) del 06/11/2026: SIN ampliar el contrato de columnas del core; las columnas son las de la plantilla actual. A..I y N..T las escribe el bot; J..M y U son del equipo (el bot no las toca ni lee la U). O «Eligio» (campo quePidio) dice si la persona escogio Pedido o Reserva; P «Reserva» (campo diaPreferido) y Q «Pedido» (campo horarioPreferido) llevan «Enviada»/«Registrado» con fecha y hora, y quedan en blanco si no se concreto; los campos conservan el nombre del contrato. Los titulos tienen que coincidir letra por letra con la copia viva de la planilla.",
     "filaEncabezados": 3,
     "prefijoId": "LEAD-",
     "primerId": 1001,
@@ -68,15 +80,15 @@
       },
       "quePidio": {
         "letra": "O",
-        "titulo": "Qué pidió"
+        "titulo": "Eligió"
       },
       "diaPreferido": {
         "letra": "P",
-        "titulo": "Día preferido"
+        "titulo": "Reserva"
       },
       "horarioPreferido": {
         "letra": "Q",
-        "titulo": "Horario preferido"
+        "titulo": "Pedido"
       },
       "derivacion": {
         "letra": "R",

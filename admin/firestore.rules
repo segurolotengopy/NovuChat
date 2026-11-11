@@ -1217,8 +1217,13 @@ service cloud.firestore {
       // escribe el servidor (Admin SDK, `scripts/plataforma/crm-enlace.mjs`).
       // Es una URL de Google Sheets, nunca un secreto.
       // -----------------------------------------------------------------------
+      //
+      // Manuales de uso (10/11/2026): `manual-operador` lo lee cualquier persona del
+      // comercio (admin u operador); `manual-admin` SOLO el admin. Mismas garantías.
       match /enlaces/{documento} {
         allow get: if documento == 'minicrm' && esAdmin(tenantId);
+        allow get: if documento == 'manual-operador' && esPersonaDelNegocio(tenantId);
+        allow get: if documento == 'manual-admin' && esAdmin(tenantId);
         allow create, update, delete: if false;
       }
 
@@ -2024,6 +2029,25 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // /cobrosAlias/{pedidoId} y /comprobantesAlias/{huella} — el cobro por ALIAS en pesos
+      // argentinos (Casa Bermejo, B4b). Los escribe SOLO el servidor (`pedirAliasArs` y
+      // `cotejarAliasArs`, con el SDK Admin y en transacción); nadie los crea, corrige ni
+      // borra desde el navegador (el TTL `vence` los retira). `cobrosAlias` es un cobro por
+      // pedido (`wa_<ref>`): monto en centavos, el alias del comercio, vigencia y el estado
+      // (`abierto`, `coincide`, `en_revision`, `vencido`); no lleva teléfono ni nada leído de
+      // la imagen. `comprobantesAlias` guarda solo el HASH de cada comprobante aceptado, para
+      // que no cobre dos veces ni a dos pedidos. Los lee quien puede leer conversaciones.
+      // -----------------------------------------------------------------------
+      match /cobrosAlias/{pedidoId} {
+        allow get, list: if puedeLeerConversaciones(tenantId);
+        allow create, update, delete: if false;
+      }
+      match /comprobantesAlias/{huella} {
+        allow get, list: if puedeLeerConversaciones(tenantId);
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
       // /mediosRecibidos/{objeto} — los medios ENTRANTES (imagen, audio, video y documentos) que
       // `guardarMedio` guardó 90 días (Core; Andres, 20 a 23/10/2026). Los escribe
       // SOLO el servidor, en la misma transacción que marca el mensaje. Lo lee
@@ -2792,6 +2816,19 @@ service cloud.firestore {
     match /plataforma/tipoCambio {
       allow get: if request.auth != null;
       allow list, create, update, delete: if false;
+    }
+
+    // /plataforma/alertas/eventos/{id} — LAS ALERTAS OPERATIVAS (envío incierto del
+    // errorWorkflow de n8n): flujo, nodo, tipo de error y hora, SIN datos personales.
+    // Las escribe solo `alertaOperativa` (SDK Admin); las lee el propietario.
+    // `/plataforma/alertas/control/{id}` guarda los contadores del tope de correos:
+    // negado entero para el navegador (solo el servidor).
+    match /plataforma/alertas/eventos/{id} {
+      allow get, list: if esPropietario();
+      allow create, update, delete: if false;
+    }
+    match /plataforma/alertas/control/{id} {
+      allow read, write: if false;
     }
 
     // /plataforma/prepago/historial/{id} — cada cambio de la bandera del modo

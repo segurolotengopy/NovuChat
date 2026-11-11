@@ -52,6 +52,7 @@ const FUNCIONES = 'return { crmClasificar, crmPrioridad, crmVentana24h, crmValid
 const M: any = compileFunction(`${inyectarMapa(leer('crm/crm.js'), MAPA)}\n${leer('captacion/crm-captacion.js')}\n${FUNCIONES}`, [])();
 const adaptador = { calificar: M.capCalificar, resumir: M.capResumir, prioridad: M.CAP_PRIORIDAD };
 const AHORA = Date.UTC(2026, 9, 31, 15, 0, 0);
+const DESDE_NUEVA = Date.UTC(2026, 10, 8, 12, 0, 0);
 const TEL = ['59', '17', '000', '010'].join('');
 
 const fila = (n: number, tel: string, extra: J = {}): { json: J } => ({ json: { row_number: n, ...Object.fromEntries(TITULOS_LEIDOS.map((t) => [t, ''])), [T.telefono]: tel, ...extra } });
@@ -229,8 +230,8 @@ describe('reglas de la fila con los campos nuevos', () => {
     const r = decidir({ telefono: TEL, nombre: 'Nueva' }, [fila(4, TEL), fila(30, TEL)]);
     expect(r.row_number).toBe(32);
   });
-  it('contacto tras 48 h (nuevoContacto) = fila nueva', () => {
-    expect(decidir({ telefono: TEL, nombre: 'Ana', nuevoContacto: true }, [fila(8, TEL)]).accionPlanilla).toBe('agregar');
+  it('otra conversación (la fila es anterior a su inicio) = fila nueva', () => {
+    expect(decidir({ telefono: TEL, nombre: 'Ana', conversacionDesdeMs: DESDE_NUEVA }, [fila(8, TEL, { [T.ultima]: '2020-01-01 00:00' })]).accionPlanilla).toBe('agregar');
   });
 });
 
@@ -288,7 +289,9 @@ describe('decisiones del 31/10: clasificación, textos, derivación y fechas', (
   it('al actualizar las fechas van SIN apóstrofo (RAW) y no se reescriben si no cambian; al crear sí lo llevan', () => {
     const u = decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: AHORA }, [fila(8, TEL)]);
     expect(u[T.ultima]).toBe('2026-10-31 11:00');
-    expect(u[T.ventana]).toBe('2026-11-01 11:00');
+    expect(u).not.toHaveProperty(T.ventana);   // sin ancla (ingesta caída) la ventana NO se reescribe
+    const conAncla = decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: AHORA, conversacionDesdeMs: AHORA }, [fila(8, TEL, { [T.ventana]: '2026-11-01 11:03' })]);
+    expect(conAncla[T.ventana]).toBe('2026-11-01 11:00');
     const igual = decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: AHORA }, [fila(8, TEL, { [T.ultima]: '2026-10-31 11:00', [T.ventana]: '2026-11-01 11:00' })]);
     expect(igual).not.toHaveProperty(T.ultima);
   });

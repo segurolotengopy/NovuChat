@@ -90,11 +90,12 @@ describe('A. la lectura de la bandera', () => {
     const sinBandera = { nombre: 'Tienda A', estado: 'activo' };
     expect(pantallaConversacionesDeFicha(sinBandera)).toBe('nueva');
     expect(habilitadoParaPersona('tienda-a', sinBandera)).toBe(false);
-    // Bellido con bandera «nueva»: pantalla nueva, y Tomar sigue denegado (por id y por nombre).
+    // Bellido con bandera «nueva»: desde el 08/11/2026 YA NO está excluido (orden de Andres): queda habilitado como cualquiera.
     const bellido = { nombre: 'Consultorio Bellido', estado: 'activo', consolaConversaciones: 'nueva' };
     expect(pantallaConversacionesDeFicha(bellido)).toBe('nueva');
-    expect(habilitadoParaPersona('bellido', bellido)).toBe(false);
-    expect(habilitadoParaPersona('tienda-a', bellido)).toBe(false);
+    expect(habilitadoParaPersona('bellido', bellido)).toBe(true);
+    // Bellido SIN «nueva» sigue denegado, como cualquiera.
+    expect(habilitadoParaPersona('bellido', { nombre: 'Consultorio Bellido', estado: 'activo' })).toBe(false);
     // Un comercio común con «nueva» explícito sí queda habilitado (control positivo).
     expect(habilitadoParaPersona('tienda-a', { ...sinBandera, consolaConversaciones: 'nueva' })).toBe(true);
     // «clasica» explícito: pantalla clásica y sin intervención.

@@ -201,7 +201,7 @@ export const REGISTRO = [
       { documento: 'config/agendamiento', campos: [], camposDelServidor: ['cobroReal'], compartidoCon: ['agenda'] },
     ],
     camposEnNegocio: [],
-    colecciones: ['comprobantesRecibidos'],
+    colecciones: ['comprobantesRecibidos', 'cobrosAlias', 'comprobantesAlias'],
     coleccionesRaiz: ['topesDelVisor'],  // contador por uid del visor de comprobantes (solo el servidor)
     // Las imágenes de comprobantes de venta (regla 2); las reglas niegan todo acceso.
     almacenamiento: ['comprobantes'],
@@ -212,7 +212,7 @@ export const REGISTRO = [
     ],
     tablero: [],
     herramientas: [],
-    functions: ['registrarQrDeCobro', 'imagenDeCobro', 'cotejarComprobanteVenta', 'guardarComprobante', 'purgarComprobantes', 'verComprobante'],
+    functions: ['registrarQrDeCobro', 'imagenDeCobro', 'cotejarComprobanteVenta', 'pedirAliasArs', 'cotejarAliasArs', 'guardarComprobante', 'purgarComprobantes', 'verComprobante'],
     flujosProgramados: [],
     // Corregido respecto del diseño (que decía solo `despuesDelTurno`):
     // `configuracionFlujo` arma el cobro con `cobroParaElFlujo` (antes del
@@ -325,7 +325,8 @@ export const REGISTRO = [
     // (i) resuelto: `checkoutCatalogo` es la única Function que escribe
     // `pedidos` desde el carrito; hoy vive en `catalogoWeb.ts`, que F2 parte.
     // `reclamarRescates`: rescate de 22 h (decide y marca; el envío es de un flujo de n8n).
-    functions: ['checkoutCatalogo', 'reclamarRescates'],
+    // `confirmarPedidoExterno`: «Confirmar» de un pedido de catálogo externo (llamada firmada a NovuTienda, B5b).
+    functions: ['checkoutCatalogo', 'reclamarRescates', 'confirmarPedidoExterno'],
     flujosProgramados: [],
     ganchos: ['despuesDelTurno', 'alCierre'],
     mensajes: 0,
@@ -506,6 +507,9 @@ export const COLECCIONES_CERRADAS_DEL_CORE = {
  */
 export const DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR = {
   minicrm: { modulo: 'crm', campos: ['enlaceHoja'], lectura: 'admin' },
+  // Manuales de uso (10/11/2026): el del operador lo lee toda persona del comercio; el del admin, solo el admin.
+  'manual-operador': { modulo: 'crm', campos: ['enlace'], lectura: 'persona' },
+  'manual-admin': { modulo: 'crm', campos: ['enlace'], lectura: 'admin' },
 } as const;
 
 export const esModulo = (v: unknown): v is IdModulo =>

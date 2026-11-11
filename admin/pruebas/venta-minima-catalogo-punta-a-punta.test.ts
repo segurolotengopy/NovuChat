@@ -25,8 +25,8 @@ import {
 } from './lib/venta-minima-mundo';
 
 const CARRITO = 'Carrito del catálogo';
-// El pedido de dirección (PR-A 05/10): sale con el botón de ubicación; es el mismo mensaje de siempre, sin mensajes de más.
-const PIDE_DIRECCION = 'Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».';
+// El pedido de los datos (07/11: dirección escrita Y ubicación, ambas obligatorias): sale con el botón de ubicación, sin mensajes de más.
+const PIDE_DIRECCION = 'Para el delivery necesito tu dirección exacta, escrita.';
 
 const cabeceras = (extra: J = {}): J => ({
   'x-novuchat-numero': PHONE_ID, 'x-novuchat-timestamp': String(AHORA), 'x-novuchat-signature': `sha256=${'0'.repeat(64)}`, ...extra,
@@ -412,13 +412,15 @@ describe('el pedido que llega de la página conserva su `cat_…` como pedidoId 
       carrito(w, web());
       expect((estadoDe(w)['pedidoWeb'] as J)['id']).toBe(CAT);
       w.estado.extraccion = EX({ entrega: 'delivery', direccion: 'Av. Banzer 1234', referencia: 'puerta azul', nombre: 'Carlos Pérez' });
-      const t = turno(w, texto('mejor para delivery, Av. Banzer 1234, puerta azul'));
+      const dir = turno(w, texto('mejor para delivery, Av. Banzer 1234, puerta azul'));
       expect(String((estadoDe(w)['entrega'] as J)['entrega'])).toBe('delivery');
+      expect(dir.mensajes[0]!.cuerpo).toContain('compartas tu ubicación'); // 07/11: sin la ubicación no hay resumen
+      const t = turno(w, { type: 'location', location: { latitude: -16.5, longitude: -68.15 } });
       expect(idConfirmado(w, t)).toMatch(/^ped-/);
     });
     it('delivery en la página y retiro por chat: también conserva el `ped-…`', () => {
       const w = crear();
-      const entrada = carrito(w, web({ entrega: 'envio', direccion: 'Av. Banzer 1234', costoEnvio: 0 }));
+      const entrada = carrito(w, web({ entrega: 'envio', direccion: 'Av. Banzer 1234', ubicacion: { lat: -16.5, lng: -68.15 }, costoEnvio: 0 }));
       expect(entrada.mensajes.length).toBeGreaterThan(0);
       w.estado.extraccion = EX({ entrega: 'delivery', referencia: 'puerta azul', nombre: 'Carlos Pérez' });
       turno(w, texto('puerta azul, a nombre de Carlos Pérez'));
@@ -432,7 +434,7 @@ describe('el pedido que llega de la página conserva su `cat_…` como pedidoId 
       const w = crear();
       expect(idConfirmado(w, carrito(w, web()))).toBe(CAT);
       const v = crear();
-      carrito(v, web({ entrega: 'envio', direccion: 'Av. Banzer 1234', costoEnvio: 0 }));
+      carrito(v, web({ entrega: 'envio', direccion: 'Av. Banzer 1234', ubicacion: { lat: -16.5, lng: -68.15 }, costoEnvio: 0 }));
       v.estado.extraccion = EX({ entrega: 'delivery', referencia: 'puerta azul', nombre: 'Carlos Pérez' });
       const t = turno(v, texto('puerta azul, a nombre de Carlos Pérez'));
       expect(idConfirmado(v, t)).toBe(CAT);
@@ -458,7 +460,7 @@ describe('el pedido que llega de la página conserva su `cat_…` como pedidoId 
     });
     it('con costo de envío (el servidor coteja contra el total CON envío y el QR es solo la comida)', () => {
       const w = crear();
-      const t = carrito(w, web({ entrega: 'envio', direccion: 'Av. Banzer 1234', costoEnvio: 10, total: 120 }));
+      const t = carrito(w, web({ entrega: 'envio', direccion: 'Av. Banzer 1234', ubicacion: { lat: -16.5, lng: -68.15 }, costoEnvio: 10, total: 120 }));
       expect(t.mensajes.length).toBeGreaterThan(0);
       expect(estadoDe(w)['pedidoWeb'] ?? null).toBeNull();
     });
@@ -577,7 +579,7 @@ describe('el recordatorio SIMULADO sale de punta a punta con el enlace del QR (H
 // =====================================================================================================
 describe('delivery opcional: la secuencia real del 05/10 (dirección ya puesta en el catálogo; «Ok», «Déjale al portero», «A media cuadra del gas»)', () => {
   const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
-  const conDireccion = (extra: J = {}): J => cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_seq_0001', ...extra });
+  const conDireccion = (extra: J = {}): J => cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: 'cat_seq_0001', ...extra });
 
   it('el carrito con dirección y SIN referencia (página vieja) va directo al resumen: UN mensaje, 0 de `pedido_datos`, 0 llamadas al modelo', () => {
     const w = crear();
@@ -623,7 +625,7 @@ describe('delivery opcional: la secuencia real del 05/10 (dirección ya puesta e
 
   it('si FALTA la dirección, cualquier texto con letras o dígitos es la dirección (sin depender del modelo) y sigue al resumen; algo sin letras ni dígitos se vuelve a pedir', () => {
     const w = crear();
-    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_seq_0003' }) });
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: 'cat_seq_0003' }) });
     expect(estadoDe(w)['paso']).toBe('pedido_datos');
     w.estado.extraccion = NADA;
     const raro = turno(w, texto('...'));
@@ -638,7 +640,7 @@ describe('delivery opcional: la secuencia real del 05/10 (dirección ya puesta e
   it('dirección en un mensaje y referencia en otro: sin bucle («a media cuadra de la calle foton» queda como referencia); una pregunta, un enlace o «no gracias» NO se toman', () => {
     const nuevo = (id: string) => {
       const x = crear();
-      carrito(x, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: id }) });
+      carrito(x, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: id }) });
       x.estado.extraccion = NADA;
       turno(x, texto('calle 1 numerro 2 Irpavi'));
       return x;
@@ -674,13 +676,13 @@ describe('#435 M1/M2: una intención no se vuelve dirección ni referencia', () 
   /** Mundo con la dirección ya dada (falta, a lo sumo, la referencia opcional). */
   function conDireccion(id: string) {
     const w = crear();
-    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: id }) });
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: id }) });
     return w;
   }
   /** Mundo con la dirección PENDIENTE (`pedido_datos`). */
   function sinDireccion(id: string) {
     const w = crear();
-    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: id }) });
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: id }) });
     expect(estadoDe(w)['paso']).toBe('pedido_datos');
     return w;
   }
@@ -756,7 +758,7 @@ describe('#435 M1/M2: una intención no se vuelve dirección ni referencia', () 
     turno(w, texto('*portón* _verde_'));
     expect(ent(w)['referencia']).toBe('portón verde');
     const v = crear();
-    carrito(v, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Arce 12', referencia: 'ver malo.com/x `portón`', pedidoId: 'cat_l2_b' }) });
+    carrito(v, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Arce 12', ubicacion: { lat: -16.5, lng: -68.15 }, referencia: 'ver malo.com/x `portón`', pedidoId: 'cat_l2_b' }) });
     expect(ent(v)['referencia']).toBe('ver portón');
   });
 
@@ -807,13 +809,13 @@ describe('#435 ronda 2: rasgos de dirección y de referencia, ayuda por código,
   const id = (): string => 'cat_r2_' + String(++k).padStart(4, '0');
   const conDireccion = () => {
     const w = crear();
-    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: id() }) });
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: id() }) });
     w.estado.extraccion = NADA;
     return w;
   };
   const sinDireccion = () => {
     const w = crear();
-    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: id() }) });
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: id() }) });
     expect(estadoDe(w)['paso']).toBe('pedido_datos');
     w.estado.extraccion = NADA;
     return w;
@@ -940,12 +942,12 @@ describe('#435 LOW-A2: la «dirección» o la «referencia» que pone el modelo 
   const id = (): string => 'cat_a2_' + String(++k).padStart(4, '0');
   const sinDireccion = () => {
     const w = crear();
-    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: id() }) });
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: id() }) });
     return w;
   };
   const conDireccion = () => {
     const w = crear();
-    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: id() }) });
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: id() }) });
     return w;
   };
   const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
@@ -986,7 +988,7 @@ describe('#435 LOW-A1: cortesías y datos de entrega no son «ayuda»; «ayúden
   let k = 0;
   const conDireccion = () => {
     const w = crear();
-    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_a1_' + String(++k).padStart(4, '0') }) });
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: 'cat_a1_' + String(++k).padStart(4, '0') }) });
     w.estado.extraccion = NADA;
     return w;
   };
@@ -1012,7 +1014,7 @@ describe('#435 LOW-A1: cortesías y datos de entrega no son «ayuda»; «ayúden
     expect(ta.avisos.length, dicho + ' (resumen dado)').toBeGreaterThan(0);
     expect(ta.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
     const b = crear();
-    carrito(b, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_a1_p_' + String(++k).padStart(4, '0') }) });
+    carrito(b, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: 'cat_a1_p_' + String(++k).padStart(4, '0') }) });
     b.estado.extraccion = { ...NADA, quiereHablar: true };
     const tb = turno(b, texto(dicho));
     expect(tb.avisos.length, dicho + ' (dirección pendiente)').toBeGreaterThan(0);
@@ -1022,7 +1024,7 @@ describe('#435 LOW-A1: cortesías y datos de entrega no son «ayuda»; «ayúden
     const a = conDireccion();
     expect(turno(a, texto(dicho)).avisos, dicho).toHaveLength(0);
     const b = crear();
-    carrito(b, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_a1_q_' + String(++k).padStart(4, '0') }) });
+    carrito(b, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: 'cat_a1_q_' + String(++k).padStart(4, '0') }) });
     b.estado.extraccion = NADA;
     expect(turno(b, texto(dicho)).avisos, dicho).toHaveLength(0);
   });
@@ -1037,12 +1039,12 @@ describe('referencia sin cierres: «eso es todo» y «cámbiame el pedido» no s
   let k = 0;
   const conDireccion = () => {
     const w = crear();
-    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_cierre_' + String(++k).padStart(4, '0') }) });
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: 'cat_cierre_' + String(++k).padStart(4, '0') }) });
     return w;
   };
   const sinDireccion = () => {
     const w = crear();
-    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_cierre_' + String(++k).padStart(4, '0') }) });
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: 'cat_cierre_' + String(++k).padStart(4, '0') }) });
     return w;
   };
   const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
@@ -1145,7 +1147,7 @@ describe('BO1: con el resumen dado, «cámbiame el pedido» abre el cambio como 
   let k = 0;
   const conResumen = () => {
     const w = crear();
-    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_bo1_' + String(++k).padStart(4, '0') }) });
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: 'cat_bo1_' + String(++k).padStart(4, '0') }) });
     w.estado.extraccion = NADA;
     return { w, t };
   };
@@ -1237,13 +1239,13 @@ describe('LOW #440: con `quiereHablar`, la entrega con «alguien» y las cortes�
   let k = 0;
   const conResumen = () => {
     const w = crear();
-    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_low_' + String(++k).padStart(4, '0') }) });
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: 'cat_low_' + String(++k).padStart(4, '0') }) });
     w.estado.extraccion = { ...NADA, quiereHablar: true };
     return w;
   };
   const conDireccionPendiente = () => {
     const w = crear();
-    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_low_' + String(++k).padStart(4, '0') }) });
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: 'cat_low_' + String(++k).padStart(4, '0') }) });
     w.estado.extraccion = { ...NADA, quiereHablar: true };
     return w;
   };
@@ -1270,14 +1272,14 @@ describe('LOW #440: con `quiereHablar`, la entrega con «alguien» y las cortes�
 
 describe('PR-A (05/10): la ubicación del carrito de la página llega por `Carga de entrada` solo si es válida', () => {
   const entregaDe = (w: ReturnType<typeof crear>): J => (estadoDe(w) as J)['entrega'] as J;
-  it('una ubicación válida entra (5 decimales) y vale como dirección: el pedido va directo al resumen, sin pedir la dirección', () => {
+  it('una ubicación válida entra (5 decimales) pero ya NO basta como dirección (07/11): se pide la dirección escrita y no hay resumen', () => {
     const w = crear();
     const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.500004, lng: -68.15 } }) });
     expect(t.fallo).toBeNull();
     expect(entregaDe(w)['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
-    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
-    expect(titulos(t)).toContain('Confirmar pedido');
-    expect(JSON.stringify(t.mensajes)).toContain('ubicación compartida');
+    expect(estadoDe(w)['paso']).toBe('pedido_datos');
+    expect(titulos(t)).not.toContain('Confirmar pedido');
+    expect(t.mensajes[0]!.cuerpo).toBe(PIDE_DIRECCION);
   });
   it('negado: una ubicación inválida (texto, fuera de rango, NaN, (0, 0), incompleta) no entra y se pide la dirección con el botón de ubicación', () => {
     for (const mala of [{ lat: '-16.5', lng: '-68.15' }, { lat: 95, lng: 0 }, { lat: -16.5, lng: 181 }, { lat: null, lng: null }, { lat: 0, lng: 0 }, { lat: -16.5 }, 'x', [], 7]) {
@@ -1293,5 +1295,37 @@ describe('PR-A (05/10): la ubicación del carrito de la página llega por `Carga
     const w = crear();
     carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.5, lng: -68.15 } }) });
     expect(JSON.stringify(w.mundo.llamadas.ingesta)).not.toMatch(/-16[.,]5|68[.,]15/);
+  });
+});
+
+describe('ubicación obligatoria en delivery (07/11): el carrito de la página', () => {
+  it('con dirección Y ubicación: directo al resumen, sin mensaje de más (sin cambios)', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', ubicacion: { lat: -16.5, lng: -68.15 }, pedidoId: 'cat_ub_0001' }) });
+    expect(t.mensajes).toHaveLength(1);
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+    expect(titulos(t)).toContain('Confirmar pedido');
+  });
+  it('solo con dirección: pide la ubicación (un mensaje) y no hay resumen ni confirmación', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_ub_0002' }) });
+    expect(t.mensajes).toHaveLength(1);
+    expect(estadoDe(w)['paso']).toBe('pedido_datos');
+    expect(titulos(t)).not.toContain('Confirmar pedido');
+    expect(t.mensajes[0]!.cuerpo).toBe('Para el delivery necesito que compartas tu ubicación con el botón. Para volver al inicio, escribe «inicio».');
+    expect(t.mensajes[0]!['payload'].interactive.type).toBe('location_request_message');
+  });
+  it('sin dirección ni ubicación: pide las dos', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: null, pedidoId: 'cat_ub_0003' }) });
+    expect(t.mensajes).toHaveLength(1);
+    expect(estadoDe(w)['paso']).toBe('pedido_datos');
+    expect(t.mensajes[0]!.cuerpo).toContain('necesito dos cosas');
+  });
+  it('retiro: sin cambios (no se pide ubicación)', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'retiro', pedidoId: 'cat_ub_0004' }) });
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+    expect(JSON.stringify(t.mensajes)).not.toMatch(/ubicaci/i);
   });
 });

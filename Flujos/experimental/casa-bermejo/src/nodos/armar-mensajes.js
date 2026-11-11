@@ -15,6 +15,8 @@
 const c = bmContexto();
 c.modeloResp = cnPrimero('Conversar con el modelo');
 c.cancelo = cnNodo('Avisar al servidor') ? bmCobroCerrado(cnPrimero('Avisar al servidor')) : undefined;
+// La respuesta de `pedirAliasArs` (Argentina) sale del mismo nodo; si no corrió, es `{}` y el turno pasa con recepción (nunca queda sin definir).
+c.aliasPedir = cnNodo('Avisar al servidor') ? (cnPrimero('Avisar al servidor') || {}) : {};
 const d = bmResolver(c);
 const { cfg, base, t, puerta, from, ahora, ficha: fichaAntes } = c;
 const prueba = cfg.modoPrueba === true;
@@ -108,8 +110,9 @@ if (puerta.ruta === 'sigue') {
       const imagen = cmMensaje('cliente', Object.assign(cmBase('image'), { image: { id: d.mediaId, caption: pie } }), pie, respaldo, { tipoReporte: 'image' });
       // El evento que ABRE el cobro: `qr_enviado`, con `referencia` (el pedido) y `monto` (el del carrito, en bolivianos). Cobro real: regla 2 (15 minutos, 3 intentos).
       imagen.evento = 'qr_enviado'; imagen.reglaCobro = 2; imagen.referencia = String(d.pedidoId); imagen.monto = d.monto;
-      // Para que el servidor cree el pedido `wa_<referencia>`: solo ids, cantidades y entrega (el servidor recalcula precios y total desde el catálogo).
-      { const pqr = pqrCampos(imagen.referencia, d.lineas, { entrega: d.entrega.modo, direccion: d.entrega.direccion, ciudad: d.entrega.ciudad }, false); if (pqr.lineas) { imagen.lineas = pqr.lineas; imagen.entrega = pqr.entrega; } }
+      // Para que el servidor cree el pedido `wa_<referencia>`: el catálogo es externo (NovuTienda) y el servidor no puede recalcularlo, así que viajan el precio y el nombre del CATÁLOGO, calculados aquí.
+      // Líneas con la forma CERRADA del catálogo externo (`bmLineasPedido`): id, nombre, cantidad, precio y moneda salen del carrito del código, nunca del modelo.
+      { const ls = bmLineasPedido(d.lineas, from); if (ls) { imagen.lineas = ls; imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: d.entrega.direccion, ciudad: d.entrega.ciudad }); } }
       msgs = [texto(conSaludo(resumen)), imagen];
       nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
       nuevos.entrega = d.entrega; nuevos.cierre = false;
@@ -123,8 +126,31 @@ if (puerta.ruta === 'sigue') {
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega;
   } else if (tipoDePlan === 'pedido_sin_cobro') {
     const lineas = bmConNombres(d.lineas, c.vendibles);
-    msgs = [conRecepcion(conSaludo('Anoté tu pedido:\n\n' + vcResumen(lineas) + '\n\n' + bmTextoDerivacion(d.mercado === 'AR' ? 'pedido_ar' : 'pedido_sin_cobro', salio)))];
     Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
+    // Argentina: el pedido se crea en el servidor con `pedido_sin_cobro` (sin QR, sin monto): mismas líneas de forma cerrada y la entrega. Solo viaja si el envío fue aceptado (lo decide el reporte saliente).
+    // Bolivia sin QR configurado no lo emite (el evento es de Argentina). El contador sube para que dos pedidos seguidos no repitan la referencia.
+    const ls = d.mercado === 'AR' && /^[A-Za-z0-9]{3,40}$/.test(String(d.pedidoId || '')) ? bmLineasPedido(d.lineas, from) : null;
+    // El texto que ofrece «pagar» (el alias llega en el turno siguiente) solo sale si el pedido se reportó Y el aviso a recepción salió; si no, sigue el de siempre (el pago lo coordina recepción) sin prometer nada.
+    const ofreceAlias = ls !== null && (salio === true || salio === 'repetido');
+    msgs = [conRecepcion(conSaludo('Anoté tu pedido:\n\n' + vcResumen(lineas) + '\n\n' + bmTextoDerivacion(d.mercado === 'AR' ? (ofreceAlias ? 'pedido_ar_alias' : 'pedido_ar') : 'pedido_sin_cobro', salio)))];
+    if (ls !== null) {
+      msgs[0].evento = 'pedido_sin_cobro'; msgs[0].referencia = String(d.pedidoId); msgs[0].lineas = ls;
+      msgs[0].entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: d.entrega.direccion, ciudad: d.entrega.ciudad });
+      nuevos.pedidos = fichaAntes.pedidos + 1; ev.pedidos = fichaAntes.pedidos;
+      // «pagar» en el turno siguiente pide el alias de ESTE pedido (`wa_<referencia>`, el id que el servidor le da).
+      Object.assign(nuevos, { aliasPedidoId: 'wa_' + String(d.pedidoId), aliasEstado: 'pedido', aliasVenceMs: 0, aliasMontoCent: Number.isSafeInteger(d.total) ? d.total : 0, aliasAr: '' });
+      for (const k of ['aliasPedidoId', 'aliasEstado', 'aliasVenceMs', 'aliasMontoCent', 'aliasAr']) ev[k] = fichaAntes[k];
+    }
+  } else if (tipoDePlan === 'alias_texto') {
+    // El alias, el monto exacto y los minutos que quedan los pone el CÓDIGO con lo que devolvió el servidor; sin saludo ni botón: es la respuesta a «pagar».
+    msgs = [texto(d.texto)];
+    Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
+  } else if (tipoDePlan === 'alias_cerrado') {
+    // El cobro por alias está apagado (409 `cerrado`): vuelve el comportamiento de antes. El pedido ya está anotado y el pago lo coordina recepción; no se promete nada ni se dice que se avisó.
+    msgs = [conRecepcion(conSaludo(bmTextoDerivacion('alias_cerrado', false)))];
+  } else if (tipoDePlan === 'alias_pedir') {
+    // Sin respuesta del servidor (no debería pasar: el nodo corrió): pasa con recepción, sin prometer.
+    msgs = [conRecepcion(conSaludo(bmTextoDerivacion('alias_problema', salio)))];
   } else if (tipoDePlan === 'comprobante') {
     msgs = [conRecepcion(bmTextoComprobante(d.resultado, d.diferencia, d.totalTexto, salio))];
     Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
@@ -179,7 +205,7 @@ const salida = msgs.map((m, i) => {
   if (m.reglaCobro === 2) item.reglaCobro = 2;
   if (m.referencia) item.referencia = m.referencia;
   if (m.monto !== undefined) item.monto = m.monto;
-  if (m.evento === 'qr_enviado' && Array.isArray(m.lineas) && m.lineas.length) { item.lineas = m.lineas; if (m.entrega) item.entrega = m.entrega; }
+  if ((m.evento === 'qr_enviado' || m.evento === 'pedido_sin_cobro') && Array.isArray(m.lineas) && m.lineas.length) { item.lineas = m.lineas; if (m.entrega) item.entrega = m.entrega; }
   // «Resumen del turno» lee esto del primer ítem: lo que no salió vuelve a su valor anterior.
   if (i === 0 && Object.keys(ev).length) item.revertirFicha = ev;
   // Solo el ítem del QR (`qr_enviado`) devuelve el cobro a como estaba si SU envío falla: el texto del resumen puede fallar y el QR salir (el servidor ya abrió el cobro).

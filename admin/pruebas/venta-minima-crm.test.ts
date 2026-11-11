@@ -17,6 +17,7 @@ import type { Doble, ResultadoTurno } from './lib/n8n-de-mentira';
 // @ts-expect-error módulo .mjs sin tipos
 import { hallazgosCrm, inyectarMapa } from '../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 import { AHORA, CLIENTE, estadoDe, boton, crear, editarJson, idDeBoton, leer, nodoDe, panel, texto, turno, verificarEnCopia, type Mundial } from './lib/venta-minima-mundo';
+import { respuestaDeIngesta } from './modulos/crm/ingesta-conversacion';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VM = join(RAIZ, 'Flujos', 'experimental', 'venta-minima');
@@ -72,7 +73,7 @@ describe('vmProspectoCrm: qué es un evento y qué dice el prospecto (hechos del
     expect(celda(r, 'origen')).toBe('Chatbot WhatsApp IA');
   });
   it('un ítem va en singular, el total con centavos lleva coma y el delivery se dice', () => {
-    expect(prospecto({ plan: { ruta: 'pedido:sin_qr', pedido: { ...PEDIDO, nItems: 1, total: 21.5, modalidad: 'delivery' } } })!['resumenVenta']).toBe('N.º K7P2, 1 ítem, Bs 21,50, delivery');
+    expect(prospecto({ plan: { ruta: 'pedido:sin_qr', pedido: { ...PEDIDO, nItems: 1, total: 21.5, modalidad: 'delivery' } }, pasoSalio: true })!['resumenVenta']).toBe('N.º K7P2, 1 ítem, Bs 21,50, delivery');
   });
   it('comprobante: «comprobante recibido, datos coinciden | no coinciden | ilegible»; sin cotejo solo «comprobante recibido»', () => {
     const dice = (resultado: string): unknown => prospecto({ plan: { ruta: `comprobante:${resultado}`, pedido: PEDIDO } })!['resumenVenta'];
@@ -80,7 +81,7 @@ describe('vmProspectoCrm: qué es un evento y qué dice el prospecto (hechos del
     expect(dice('no_cuadra')).toBe('N.º K7P2, 4 ítems, Bs 84, recojo, comprobante recibido, datos no coinciden');
     expect(dice('ilegible')).toBe('N.º K7P2, 4 ítems, Bs 84, recojo, comprobante recibido, ilegible');
     expect(dice('sin_cotejo')).toBe('N.º K7P2, 4 ítems, Bs 84, recojo, comprobante recibido');
-    expect(prospecto({ plan: { ruta: 'comprobante:cuadra', pedido: PEDIDO } })!['quePidio']).toBe('Comprobante');
+    expect(prospecto({ plan: { ruta: 'comprobante:cuadra', pedido: PEDIDO } })!['quePidio']).toBe('');   // «Eligió» no dice «Comprobante»
   });
   it('un comprobante simulado o ya cotejado NO es un evento (ni se escribe nada)', () => {
     for (const r of ['simulado', 'ya_cotejado', 'otra_cosa']) expect(prospecto({ plan: { ruta: `comprobante:${r}`, pedido: PEDIDO }, anteriorMs: AHORA - 1000 }), r).toBeNull();
@@ -90,14 +91,14 @@ describe('vmProspectoCrm: qué es un evento y qué dice el prospecto (hechos del
     expect(p['resumenVenta']).toContain('N.º K7P2');
   });
   it('reserva solicitada: Caliente, «Reserva», con el código', () => {
-    const p = prospecto({ plan: { ruta: 'reserva:enviada', aviso: { tipo: 'reserva', datos: { codigo: 'R5X9' } } } })!;
+    const p = prospecto({ plan: { ruta: 'reserva:enviada', aviso: { tipo: 'reserva', datos: { codigo: 'R5X9' } } }, pasoSalio: true })!;
     expect(p['quePidio']).toBe('Reserva');
     expect(p['senales']).toMatchObject({ inicioCompra: true });
     expect(p['resumenVenta']).toBe('Reserva N.º R5X9');
   });
-  it('primer contacto de la ventana: Tibio, «Consulta»; dentro de las 24 h sin evento no hay prospecto', () => {
+  it('primer contacto de la ventana: Tibio, sin «Eligió»; dentro de las 24 h sin evento no hay prospecto', () => {
     const p = prospecto({ plan: { ruta: 'menu' } })!;
-    expect(p['quePidio']).toBe('Consulta');
+    expect(p['quePidio']).toBe('');
     expect(celda(decidir(p), 'clasificacion')).toBe('Tibio');
     expect(prospecto({ plan: { ruta: 'menu' }, anteriorMs: AHORA - 3600_000 })).toBeNull();
     expect(prospecto({ plan: { ruta: 'menu' }, anteriorMs: AHORA - 25 * 3600_000 })).not.toBeNull();
@@ -154,13 +155,116 @@ describe('vmProspectoCrm: qué es un evento y qué dice el prospecto (hechos del
   });
 });
 
+// ================================================================================================ «Eligió», «Reserva» y «Pedido» (07/11/2026)
+describe('vmProspectoCrm: Eligió (O), Reserva (P) y Pedido (Q); celda en blanco si no concretó, nunca «No»', () => {
+  const RES = { ruta: 'reserva:enviada', aviso: { tipo: 'reserva', datos: { codigo: 'R5X9' } } };
+  it('el botón de pedido o de reserva escribe UNA vez «Eligió»; los turnos siguientes dentro del mismo paso no escriben', () => {
+    const ped = prospecto({ plan: { ruta: 'pedido_pide' }, pasoAntes: 'menu', pasoDespues: 'pedido', anteriorMs: AHORA - 1000 })!;
+    expect(ped['quePidio']).toBe('Pedido');
+    expect(ped['diaPreferido']).toBeUndefined();
+    expect(ped['horarioPreferido']).toBeUndefined();
+    expect(celda(decidir(ped), 'quePidio')).toBe("'Pedido");
+    const res = prospecto({ plan: { ruta: 'reserva_pide' }, pasoAntes: undefined, pasoDespues: 'reserva', anteriorMs: AHORA - 1000 })!;
+    expect(res['quePidio']).toBe('Reserva');
+    // los pasos reales de la familia: `pedido`, `pedido_datos`, `pedido_entrega`, `pedido_confirmar`, `reserva`, `reserva_confirmar`; pasar de uno a otro de la MISMA familia no es elección
+    const pares: Array<[string, string]> = [['pedido', 'pedido_datos'], ['pedido_datos', 'pedido_entrega'], ['pedido_entrega', 'pedido_confirmar'], ['pedido_confirmar', 'pedido'], ['reserva', 'reserva_confirmar'], ['reserva_confirmar', 'reserva']];
+    for (const [antes, despues] of pares) expect(prospecto({ plan: { ruta: 'x' }, pasoAntes: antes, pasoDespues: despues, anteriorMs: AHORA - 1000 }), `${antes} -> ${despues}`).toBeNull();
+    // de otra familia a la exacta `pedido` o `reserva` sí es elección
+    expect(prospecto({ plan: { ruta: 'x' }, pasoAntes: 'menu', pasoDespues: 'pedido', anteriorMs: AHORA - 1000 })!['quePidio']).toBe('Pedido');
+    expect(prospecto({ plan: { ruta: 'x' }, pasoAntes: 'pedido_confirmar', pasoDespues: 'reserva', anteriorMs: AHORA - 1000 })!['quePidio']).toBe('Reserva');
+    expect(prospecto({ plan: { ruta: 'pedido_pide' }, pasoAntes: 'pedido_datos', pasoDespues: 'pedido_entrega', anteriorMs: AHORA - 1000 })).toBeNull();
+    expect(prospecto({ plan: { ruta: 'reserva_pide' }, pasoAntes: 'reserva', pasoDespues: 'reserva_confirmar', anteriorMs: AHORA - 1000 })).toBeNull();
+    // un paso que no es de pedido ni de reserva no es elección
+    expect(prospecto({ plan: { ruta: 'menu' }, pasoAntes: 'menu', pasoDespues: 'esperando_comprobante', anteriorMs: AHORA - 1000 })).toBeNull();
+  });
+  it('un primer contacto de la ventana que ya está en pedido o reserva cuenta como elección; la carta conserva el Frío', () => {
+    const p = prospecto({ plan: { ruta: 'pedido_datos' }, pasoAntes: 'pedido', pasoDespues: 'pedido', anteriorMs: AHORA - 30 * 3600_000 })!;
+    expect(p['quePidio']).toBe('Pedido');
+    const frio = prospecto({ plan: { ruta: 'carta' }, pasoAntes: 'menu', pasoDespues: 'pedido' })!;
+    expect(frio['senales']).toMatchObject({ preguntoPrecioYCerro: true, inicioCompra: false });
+  });
+  it('reserva con aviso salido: P dice «Enviada <fecha-hora>»; con el aviso caído se rebaja a elección: O «Reserva», sin P, sin Caliente ni resumen', () => {
+    const ok = prospecto({ plan: RES, pasoSalio: true, pasoAntes: 'reserva_confirmar', pasoDespues: 'menu' })!;
+    expect(ok['quePidio']).toBe('Reserva');
+    expect(ok['diaPreferido']).toBe('Enviada ' + new Date(AHORA - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' '));
+    const r = decidir(ok);
+    expect(celda(r, 'diaPreferido')).toMatch(/^'Enviada \d{4}-\d\d-\d\d \d\d:\d\d$/);
+    const caido = prospecto({ plan: RES, pasoSalio: false, pasoAntes: 'reserva_confirmar', pasoDespues: 'menu' })!;
+    expect(caido['quePidio']).toBe('Reserva');
+    expect(caido['diaPreferido']).toBeUndefined();
+    expect(caido['resumenVenta']).toBeUndefined();
+    expect(caido['senales']).toMatchObject({ inicioCompra: false });
+    const rc = decidir(caido);
+    expect(celda(rc, 'diaPreferido')).toBeUndefined();
+    expect(celda(rc, 'quePidio')).toBe("'Reserva");
+    expect(String(celda(rc, 'clasificacion'))).toMatch(/Tibio|Frío/);   // la celda lleva apóstrofo: se compara con toMatch
+    expect(String(celda(rc, 'clasificacion'))).not.toMatch(/Caliente/);
+    expect(JSON.stringify(rc)).not.toMatch(/No\b/);
+  });
+  it('pedido: con QR (o QR simulado) Q dice «Registrado»; sin QR o QR vencido sin aviso salido se rebaja a elección (simétrico a la reserva)', () => {
+    const q = (ruta: string, pasoSalio: boolean): J => prospecto({ plan: { ruta, pedido: PEDIDO }, pasoSalio })!;
+    expect(q('pedido:qr', false)['horarioPreferido']).toMatch(/^Registrado \d{4}-\d\d-\d\d \d\d:\d\d$/);
+    expect(q('pedido:qr_simulado', false)['horarioPreferido']).toMatch(/^Registrado /);
+    for (const ruta of ['pedido:sin_qr', 'pedido:qr_vencido']) {
+      expect(q(ruta, true)['horarioPreferido'], ruta).toMatch(/^Registrado /);
+      expect(q(ruta, false)['horarioPreferido'], ruta).toBeUndefined();
+      expect(q(ruta, false)['quePidio'], ruta).toBe('Pedido');
+      expect(q(ruta, false)['resumenVenta'], ruta).toBeUndefined();
+      expect(q(ruta, false)['senales'], ruta).toMatchObject({ inicioCompra: false });
+      expect(celda(decidir(q(ruta, false)), 'horarioPreferido'), ruta).toBeUndefined();
+    }
+    expect(q('pedido:qr', true)['diaPreferido']).toBeUndefined();
+    expect(celda(decidir(q('pedido:qr', true)), 'horarioPreferido')).toMatch(/^'Registrado /);
+  });
+  it('pedido seguido de elegir reserva no pisa P ni Q; un contacto a 24-48 h no borra «Eligió»', () => {
+    // O es la ÚLTIMA elección (aquí pasa de «Pedido» a «Reserva»); lo concretado queda en P y Q, que no se pisan entre sí.
+    const previa = fila(9, { 'Teléfono WhatsApp': TEL, 'Nombre y Apellido': 'Carlos', 'Clasificación': 'Caliente', 'Eligió': 'Pedido', 'Pedido': 'Registrado 2026-10-05 10:00' });
+    const eleccion = decidir(prospecto({ plan: { ruta: 'reserva_pide' }, pasoAntes: 'menu', pasoDespues: 'reserva', anteriorMs: AHORA - 1000 })!, [previa]);
+    expect(eleccion['Pedido']).toBeUndefined();
+    expect(eleccion['Reserva']).toBeUndefined();
+    expect(eleccion['Eligió']).toBe('Reserva');
+    const contacto = decidir(prospecto({ plan: { ruta: 'menu' }, anteriorMs: AHORA - 30 * 3600_000 })!, [previa]);
+    expect(contacto['Eligió']).toBeUndefined();
+    expect(contacto['Pedido']).toBeUndefined();
+  });
+  it('la fecha va en hora de La Paz (UTC-4) también cerca de la medianoche UTC', () => {
+    const casos: Array<[string, string]> = [['2026-10-06T02:30:00Z', '2026-10-05 22:30'], ['2026-10-06T03:59:00Z', '2026-10-05 23:59'], ['2026-10-06T04:00:00Z', '2026-10-06 00:00']];
+    for (const [utc, paz] of casos) expect(prospecto({ plan: RES, pasoSalio: true, ahoraMs: Date.parse(utc) })!['diaPreferido']).toBe('Enviada ' + paz);
+  });
+  it('nunca dice pagado, acreditado, simulado ni verificado, en ningún evento', () => {
+    const todos = [prospecto({ plan: { ruta: 'pedido:qr_simulado', pedido: PEDIDO }, pasoSalio: true })!, prospecto({ plan: { ruta: 'pedido:sin_qr', pedido: PEDIDO }, pasoSalio: true })!, prospecto({ plan: RES, pasoSalio: true })!,
+      prospecto({ plan: { ruta: 'x' }, pasoAntes: 'menu', pasoDespues: 'pedido_datos' })!];
+    expect(JSON.stringify(todos)).not.toMatch(/pagad|acreditad|simulad|verificad/i);
+  });
+  it('negación: sin `pasoSalio` verdadero no se anota «Reserva» ni «Pedido sin QR» (si se mutara el código, esta prueba falla)', () => {
+    const src = lib('crm.js');
+    expect(src).toContain('x.pasoSalio === true');
+    const mutado = src.split('x.pasoSalio === true').join('true');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const Lm: any = compileFunction(`${lib('comun.js')}\n${lib('pedido.js')}\n${mutado}\nreturn { vmProspectoCrm };`, [])();
+    const mut = Lm.vmProspectoCrm(turnoCrm({ plan: RES, pasoSalio: false })) as J;
+    // con la mutación el aviso caído SÍ escribiría: la prueba real lo detecta
+    expect(mut['diaPreferido']).toBeDefined();
+    expect(prospecto({ plan: RES, pasoSalio: false })!['diaPreferido']).toBeUndefined();
+  });
+  it('un mapa con un campo desconocido sigue rechazado (no se amplió el contrato)', () => {
+    const mapa = copia(MAPA) as J;
+    (mapa['columnas'] as J)['campoNuevo'] = { letra: 'V', titulo: 'Otro' };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const V: any = compileFunction(`${inyectarMapa(mod('crm/crm.js'), MAPA)}\nreturn { crmValidarMapa };`, [])();
+    expect(V.crmValidarMapa(copia(MAPA))).toEqual([]);
+    expect((V.crmValidarMapa(mapa) as string[]).join('|')).toContain('no es una columna del bot');
+  });
+});
+
+
 // ================================================================================================ A5, A6, A7, A8, A9 sobre el módulo
 describe('aceptación (unidades)', () => {
   it('A5 cobro real: ningún texto escrito dice «pagado», «acreditado» ni «simulado» (todos los eventos)', () => {
     const todos: J[] = [
       prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO } })!, prospecto({ plan: { ruta: 'pedido:qr_simulado', pedido: { ...PEDIDO, simulado: true } } })!,
       ...['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo'].map((r) => prospecto({ plan: { ruta: `comprobante:${r}`, pedido: PEDIDO } })!),
-      prospecto({ plan: { ruta: 'reserva:enviada' } })!, prospecto({ plan: { ruta: 'menu' } })!, prospecto({ plan: { ruta: 'carta' } })!,
+      prospecto({ plan: { ruta: 'reserva:enviada' }, pasoSalio: true })!, prospecto({ plan: { ruta: 'menu' }, pasoAntes: 'menu', pasoDespues: 'pedido_datos' })!, prospecto({ plan: { ruta: 'menu' } })!, prospecto({ plan: { ruta: 'carta' } })!,
     ];
     for (const p of todos) {
       const escrito = [decidir(p), decidir(p, [fila(7, { 'Teléfono WhatsApp': TEL })])].map((x) => JSON.stringify(x)).join(' ');
@@ -184,17 +288,23 @@ describe('aceptación (unidades)', () => {
     expect(JSON.stringify(r)).not.toMatch(/Marta|Negociando|nota interna|Llamar el viernes/);
     expect(r['Clasificación']).toBe('Caliente');
   });
-  it('A8 teléfono con otro formato encuentra la misma fila; 48 h: misma fila dentro, fila nueva fuera', () => {
+  it('A8 teléfono con otro formato encuentra la misma fila; una fila por conversación (24 h fijas): misma fila dentro, fila nueva fuera', () => {
+    const ULT = 'Se cierra la ventana de 24 h'; // «AAAA-MM-DD HH:MM» en La Paz: desde + 24 h
+    const lp = (ms: number) => new Date(ms + 24 * 3600_000 - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' '); // ventana de una conversación que abrió en `ms`
     for (const formato of [`+${TEL}`, `'${TEL}`, `${TEL.slice(0, 3)} ${TEL.slice(3)}`]) {
-      const r = decidir(prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 3600_000 })!, [fila(5, { 'Teléfono WhatsApp': formato })]);
+      const r = decidir({ ...prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 3600_000 })!, conversacionDesdeMs: AHORA - 3600_000 }, [fila(5, { 'Teléfono WhatsApp': formato, [ULT]: lp(AHORA - 1800_000) })]);
       expect(r['accionPlanilla'], formato).toBe('actualizar');
     }
-    const dentro = prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 47 * 3600_000 })!;
-    expect(dentro['nuevoContacto']).toBe(false);
-    expect(decidir(dentro, [fila(5, { 'Teléfono WhatsApp': TEL })])['accionPlanilla']).toBe('actualizar');
-    const fuera = prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 49 * 3600_000 })!;
-    expect(fuera['nuevoContacto']).toBe(true);
-    expect(decidir(fuera, [fila(5, { 'Teléfono WhatsApp': TEL })])['accionPlanilla']).toBe('agregar');
+    const base = prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 3600_000 })!;
+    const previa = (ms: number) => [fila(5, { 'Teléfono WhatsApp': TEL, [ULT]: lp(ms) })];
+    // NIEGA: dentro de la ventana de 24 h, ni 23 h 59 después del ancla crea una fila.
+    expect(decidir({ ...base, conversacionDesdeMs: AHORA - (24 * 60 - 1) * 60_000 }, previa(AHORA - (24 * 60 - 1) * 60_000))['accionPlanilla']).toBe('actualizar');
+    // A las 24 h exactas del ancla anterior la conversación es otra: la fila previa (del ancla anterior) es anterior al inicio y se agrega.
+    expect(decidir({ ...base, conversacionDesdeMs: AHORA }, previa(AHORA - 24 * 3600_000))['accionPlanilla']).toBe('agregar');
+    // `nuevoContacto` (la regla de 48 h) ya no decide: con la ventana vigente NO crea.
+    expect(decidir({ ...base, nuevoContacto: true, conversacionDesdeMs: AHORA - 3600_000 }, previa(AHORA - 1800_000))['accionPlanilla']).toBe('actualizar');
+    // Ingesta caída (sin ancla): se actualiza la más reciente, no se crea.
+    expect(decidir({ ...base, nuevoContacto: true, conversacionDesdeMs: null }, previa(AHORA - 48 * 3600_000))['accionPlanilla']).toBe('actualizar');
   });
   it('A8 de las varias filas del mismo teléfono se actualiza la más reciente', () => {
     const r = decidir(prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 1000 })!, [fila(5, { 'Teléfono WhatsApp': TEL }), fila(9, { 'Teléfono WhatsApp': TEL }), fila(7, { 'Teléfono WhatsApp': TEL })]);
@@ -210,7 +320,7 @@ describe('aceptación (unidades)', () => {
     expect(emoji['nombre']).toBe('Ana María');
     expect(celda(decidir(emoji), 'nombre')).toBe("'Ana María");
     expect(() => prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, nombrePerfil: '😀😀😀' })).not.toThrow();
-    // los textos libres no se interpretan como fórmula: el resumen y «Qué pidió» van con apóstrofo al agregar
+    // los textos libres no se interpretan como fórmula: el resumen y «Eligió» van con apóstrofo al agregar
     expect(String(celda(decidir(prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO } })!), 'resumen'))).toMatch(/^'/);
   });
 });
@@ -289,6 +399,73 @@ const CIERRE_TRY = '} catch (e) { AM_prospectoCrm = null; }';
 const FORZADO = "\nfunction vmProspectoCrm() { throw new Error('prospecto inesperado'); }";
 const corrioLaRama = (t: ResultadoTurno): boolean => t.ejecutados.has('Prospecto para la planilla') && t.ejecutados.has('Decidir fila de la planilla');
 
+describe('flujo: «Reserva» (P) y «Pedido» (Q) solo con lo que de verdad salió', () => {
+  const SIN_AVISO = { error: { message: 'rechazado' } };
+  type Hoja = ReturnType<typeof planilla>;
+  /** Lo que el turno escribió en la hoja (los dobles de Google guardan el ítem que recibieron). */
+  const escritas = (pl: Hoja, antes: number): J[] => [...pl.escrituras, ...pl.actualizaciones].slice(antes);
+  const total = (pl: Hoja): number => pl.escrituras.length + pl.actualizaciones.length;
+  const caerAvisos = (w: Mundial): void => { w.mundo.dobles['Enviar aviso'] = () => SIN_AVISO; w.mundo.dobles['Aviso de respaldo'] = () => SIN_AVISO; };
+  const enviaReserva = (o: { flujo?: Flujo; cae?: boolean } = {}): J[] => {
+    const pl = planilla();
+    const w = mundo({ pl, flujo: o.flujo });
+    if (o.cae) caerAvisos(w);
+    turno(w, texto('hola'));
+    w.estado.extraccion = EXT_RESERVA;
+    turno(w, boton('m|reserva', 'Reservar mesa'));
+    turno(w, texto('quiero reservar una mesa'));
+    const antes = total(pl);
+    turno(w, boton('r|enviar', 'Reservar'));
+    return escritas(pl, antes);
+  };
+  const pedidoSinQr = (cae: boolean): J[] => {
+    const pl = planilla();
+    const w = mundo({ pl });
+    w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 200, body: { ...panel(), cobro: { activo: false } } });
+    if (cae) caerAvisos(w);
+    turno(w, texto('hola'));
+    w.estado.extraccion = EXT_PEDIDO();
+    const resumen = turno(w, texto('quiero 4 tacos de birria'));
+    const antes = total(pl);
+    turno(w, boton(idDeBoton(resumen, 'Confirmar pedido'), 'Confirmar pedido'));
+    return escritas(pl, antes);
+  };
+  it('el turno que envía la reserva escribe P «\'Enviada …»; con «Enviar aviso» caído no escribe P y O dice «Reserva»', () => {
+    const ok = enviaReserva();
+    expect(ok).toHaveLength(1);
+    expect(String(ok[0]!['Reserva'])).toMatch(/^'Enviada \d{4}-\d\d-\d\d \d\d:\d\d$/);
+    const caido = enviaReserva({ cae: true });
+    expect(caido).toHaveLength(1);
+    expect(caido[0]!['Reserva']).toBeUndefined();
+    expect(caido[0]!['Eligió']).toBe("'Reserva");
+  });
+  it('pedido con QR escribe Q «\'Registrado …»; sin QR con el aviso salido también; sin QR y sin aviso no escribe Q', () => {
+    const pl = planilla();
+    const w = mundo({ pl });
+    turno(w, texto('hola'));
+    w.estado.extraccion = EXT_PEDIDO();
+    const resumen = turno(w, texto('quiero 4 tacos de birria'));
+    const antes = total(pl);
+    turno(w, boton(idDeBoton(resumen, 'Confirmar pedido'), 'Confirmar pedido'));
+    const delQr = escritas(pl, antes);   // solo lo que escribió el turno del QR
+    expect(delQr).toHaveLength(1);
+    expect(String(delQr[0]!['Pedido'])).toMatch(/^'Registrado \d{4}-\d\d-\d\d \d\d:\d\d$/);
+    const conAviso = pedidoSinQr(false);
+    expect(conAviso).toHaveLength(1);
+    expect(String(conAviso[0]!['Pedido'])).toMatch(/^'Registrado /);
+    const sinAviso = pedidoSinQr(true);
+    expect(sinAviso).toHaveLength(1);
+    expect(sinAviso[0]!['Pedido']).toBeUndefined();
+    expect(sinAviso[0]!['Eligió']).toBe("'Pedido");
+  });
+  it('negación: si `pasoSalio` llegara undefined, la prueba del aviso salido FALLA (la mutación se detecta)', () => {
+    const mutado = conPrueba(CRM, (js) => { expect(js).toContain('pasoSalio: AM_PASO'); return js.replace('pasoSalio: AM_PASO', 'pasoSalio: undefined'); });
+    const mut = enviaReserva({ flujo: mutado });
+    expect(mut).toHaveLength(1);
+    expect(mut[0]!['Reserva']).toBeUndefined();   // el código bueno escribe P aquí (prueba de arriba): con la mutación no, así que esa prueba se pone roja
+  });
+});
+
 describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
   it('saludo -> UNA fila (Tibio); pedido -> actualiza (Caliente, «N.º …»); comprobante -> actualiza «comprobante recibido, datos coinciden»', () => {
     const pl = planilla();
@@ -297,7 +474,7 @@ describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
     expect(turnos.every((x) => x.t.fallo === null)).toBe(true);
     // 1. el saludo agregó la fila (la hoja de prueba no guarda: cada evento posterior vuelve a «agregar»; lo que importa es qué dice cada escritura y que sea UNA por turno)
     const porTurno = turnos.map((x) => (x.t.porNodo['Agregar fila'] ?? []).length + (x.t.porNodo['Actualizar fila'] ?? []).length);
-    expect(porTurno).toEqual([1, 0, 1, 1, 0, 0, 1, 1]);   // saludo, resumen, QR, comprobante, (reserva: pide, datos), envía, derivación
+    expect(porTurno).toEqual([1, 1, 1, 1, 1, 0, 1, 1]);   // saludo, elige pedido (resumen), QR, comprobante, elige reserva, (datos: nada), envía, derivación
     expect(pl.escrituras[0]!['Clasificación']).toBe('Tibio');
     expect(pl.escrituras[0]!['ID Lead']).toBe('LEAD-1011');
     expect(String(pl.escrituras[0]!['Teléfono WhatsApp'])).toBe(`'${CLIENTE}`);
@@ -306,7 +483,8 @@ describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
     const resumenes = escrito.map((e) => String(e['Resumen Chatbot IA'] ?? ''));
     expect(resumenes.some((r) => /^'N\.º \S+, 4 ítems, Bs 84, recojo$/.test(r))).toBe(true);
     expect(resumenes.some((r) => /^'N\.º \S+, 4 ítems, Bs 84, recojo, comprobante recibido, datos coinciden$/.test(r))).toBe(true);
-    expect(escrito.some((e) => e['Qué pidió'] === "'Reserva")).toBe(true);
+    expect(escrito.some((e) => e['Eligió'] === "'Reserva")).toBe(true);
+    expect(escrito.some((e) => String(e['Reserva'] ?? '').startsWith("'Enviada "))).toBe(true);
     expect(escrito.some((e) => e['Derivación a recepción'] === "'Sí")).toBe(true);
   });
   it('un turno sin evento (el cliente sigue conversando dentro de la ventana) no toca Google', () => {
@@ -328,7 +506,7 @@ describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
     expect((comp.porNodo['Agregar fila'] ?? []).length + (comp.porNodo['Actualizar fila'] ?? []).length).toBe(1);
     const p = (comp.porNodo['Prospecto para la planilla'] ?? [])[0]!;
     expect(String(p['resumenVenta'])).toMatch(/N\.º \S+, 4 ítems, Bs 84, recojo, comprobante recibido, datos coinciden/);
-    expect(p['quePidio']).toBe('Comprobante');
+    expect(p['quePidio']).toBe('');
   });
   it('A4 (módulo) pedido + comprobante en el MISMO turno: un prospecto, una acción, una escritura', () => {
     const p = prospecto({ plan: { ruta: 'comprobante:cuadra', pedido: PEDIDO, aviso: { tipo: 'comprobante', datos: PEDIDO } } })!;
@@ -354,25 +532,59 @@ describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
     expect(todo.length).toBeGreaterThan(100);
     expect(todo).not.toMatch(/pagad|acreditad|simulad|\bpago\b/i);
   });
-  it('A8 (flujo) la memoria de n8n: dentro de 48 h se actualiza la fila más reciente; pasadas 48 h se AGREGA una fila nueva', () => {
-    const previa = (n: number): { json: J } => fila(n, { 'Teléfono WhatsApp': `+${CLIENTE}`, 'Nombre y Apellido': 'Carlos', 'Clasificación': 'Tibio' });
+  it('A8 (flujo) una fila por conversación: dentro de la ventana de 24 h se actualiza la fila más reciente; una conversación nueva AGREGA una fila', () => {
+    const lp = (ms: number): string => new Date(ms - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
+    let ancla: number | null = null;   // el inicio de la conversación que dice la ingesta (null = ingesta caída)
+    let nueva = false;
+    const w0 = mundo({ pl: planilla() });
+    const t0 = w0.mundo.ahora();
+    const deConv = (desdeMs: number): J => ({ 'Se cierra la ventana de 24 h': lp(desdeMs + 24 * 3600_000) });
+    const previa = (n: number): { json: J } => fila(n, { 'Teléfono WhatsApp': `+${CLIENTE}`, 'Nombre y Apellido': 'Carlos', 'Clasificación': 'Tibio', ...deConv(t0 - 3600_000) });
     const pl = planilla({ filas: [previa(5), previa(9)] });
     const w = mundo({ pl });
-    turno(w, texto('hola'));                       // primer contacto: sin registro previo, actualiza la más reciente
-    expect(pl.actualizaciones.length + pl.escrituras.length).toBeLessThanOrEqual(1);
+    w.mundo.dobles['Reportar mensaje (entrante)'] = () => respuestaDeIngesta({ desdeMs: ancla, nueva });
+    ancla = t0 - 3600_000;
+    turno(w, texto('hola'));                       // primer mensaje que vemos de la conversación abierta una hora antes: actualiza la más reciente
+    expect(pl.escrituras).toHaveLength(0);
     pl.escrituras.length = 0; pl.actualizaciones.length = 0;
-    w.mundo.avanzar(26 * 60);                      // 26 h: ventana nueva, dentro de las 48 h
+    w.mundo.avanzar(26 * 60);                      // 26 h después con el MISMO ancla (ya fuera de la cota de la ventana: cuenta como ingesta sin ancla): no es otra conversación
     turno(w, texto('hola de nuevo'));
-    expect(pl.escrituras).toHaveLength(0);         // dentro de las 48 h NO se agrega una fila: se actualiza la más reciente
+    expect(pl.escrituras).toHaveLength(0);         // NIEGA: sin ancla nuevo no se agrega una fila (aunque pasen 48 h de la regla vieja): se actualiza la más reciente
     expect(pl.actualizaciones).toHaveLength(1);
     expect(pl.actualizaciones[0]!['row_number']).toBe(9 + 2);
     const sd = (w.mundo.sd['ventaMinima'] as J)['crmVisto'] as J;
     expect(Object.keys(sd)).toEqual([L.vmCrmClave(CLIENTE)]);
     expect(JSON.stringify(w.mundo.sd)).not.toContain(CLIENTE);
-    w.mundo.avanzar(50 * 60);                      // 50 h sin mensajes
+    pl.escrituras.length = 0; pl.actualizaciones.length = 0;
+    ancla = null;                                  // NIEGA: con la ingesta caída tampoco se crea fila
+    w.mundo.avanzar(30 * 60);
+    turno(w, texto('seguimos'));
+    expect(pl.escrituras).toHaveLength(0);
+    w.mundo.avanzar(26 * 60);                      // conversación nueva: la ingesta da otro ancla (este mensaje abre) y la fila previa es de la anterior
+    ancla = w.mundo.ahora(); nueva = true;
     turno(w, texto('buenas'));
     expect(pl.escrituras).toHaveLength(1);
     expect(pl.escrituras[0]!['ID Lead']).toBe('LEAD-1011');
+  });
+  it('fila MÍNIMA de punta a punta: este mensaje abre la conversación y «Armar mensajes» no arma prospecto (turno sin novedad): 1 fila neutra con el teléfono del turno, sin texto ni nombre', () => {
+    const pl = planilla();
+    const w = mundo({ pl });
+    const t0 = w.mundo.ahora();
+    let nueva = true;
+    w.mundo.dobles['Reportar mensaje (entrante)'] = () => respuestaDeIngesta({ desdeMs: t0, nueva });
+    turno(w, texto('hola'));                       // el primer contacto arma su prospecto normal
+    pl.escrituras.length = 0; pl.actualizaciones.length = 0;
+    w.mundo.avanzar(30);                           // dentro de la memoria del productor: sin evento, sin prospecto
+    nueva = true;                                  // pero la ingesta dice que este mensaje abre un bloque/conversación nuevo
+    const t = turno(w, texto('hola de nuevo'));
+    const prospectos = (t.porNodo['Prospecto para la planilla'] ?? []);
+    expect(prospectos).toHaveLength(1);
+    expect(prospectos[0]).toMatchObject({ minima: true, telefono: CLIENTE });
+    expect(Object.keys(prospectos[0]!).sort()).toEqual(['conversacionDesdeMs', 'minima', 'senales', 'telefono', 'ultimaInteraccionMs']);
+    expect(pl.escrituras).toHaveLength(1);
+    const f = pl.escrituras[0]!;
+    expect(f['Estado Comercial'] ?? f['Estado']).toBe('Sin seguimiento');
+    expect(JSON.stringify(f)).not.toMatch(/Pedido|Reserva|hola de nuevo|Carlos/);
   });
   it('sin id de planilla (marcador / vacío / variante de prueba) NO calcula el prospecto, ni consulta Google', () => {
     const pl = planilla();

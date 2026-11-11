@@ -1,0 +1,17 @@
+{
+  "hereda": "novuchat",
+  "nombreFlujo": "NovuChat Demo A — Agendamiento (Belleza y Salud)",
+  "entrada": "trigger",
+  "credenciales": {
+    "trigger": "WhatsApp OAuth account",
+    "ingesta": "Cierres NovuChat A (auto)",
+    "graph": "Graph WhatsApp Demo A (Bearer)",
+    "planilla": "Google Sheets miniCRM (ensayo)"
+  },
+  "configBase": {
+    "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID",
+    "numeroRecepcion": "REEMPLAZAR_NUMERO_AVISO_ENSAYO",
+    "planillaProspectosId": "REEMPLAZAR_PLANILLA_ENSAYO_ID",
+    "planillaProspectosHoja": "REEMPLAZAR_PLANILLA_ENSAYO_HOJA"
+  }
+}

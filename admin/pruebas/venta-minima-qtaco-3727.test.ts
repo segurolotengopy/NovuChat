@@ -66,6 +66,15 @@ describe("Q'Taco 3727: workflow nuevo, separado del vivo", () => {
     const vivo = nodo(VIVO, 'Config base').parameters.assignments.assignments as J[];
     expect(vivo.find((a) => a.name === 'plantillasPedidoLineas')?.value).toBe('');
   });
+  it('horario dicho (08/11/2026): «Config base» lleva el texto de Andres con `horarioAtencionManda: si`; el vivo no lo lleva', () => {
+    const cb = nodo(NUEVO, 'Config base').parameters.assignments.assignments as J[];
+    expect(cb.find((a) => a.name === 'horarioAtencion')?.value).toBe('todos los días de 10:00 a 22:00 (de 10:00 a 12:00 solo delivery)');
+    expect(cb.find((a) => a.name === 'horarioAtencionManda')?.value).toBe('si');
+    const vivo = nodo(VIVO, 'Config base').parameters.assignments.assignments as J[];
+    expect(vivo.find((a) => a.name === 'horarioAtencion')?.value).toBe('REEMPLAZAR_HORARIO_ATENCION_QTACO');
+    // El horario de pedidos y reservas es el mismo que el del vivo: solo cambia lo que el bot DICE.
+    expect(cb.find((a) => a.name === 'horario')?.value).toBe(vivo.find((a) => a.name === 'horario')?.value);
+  });
   it('sin disparador de WhatsApp ni suscripciones (prohibicion 7)', () => {
     expect(texto).not.toMatch(/whatsAppTrigger|subscribed_apps|subscriptions/);
   });

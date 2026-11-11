@@ -4,11 +4,17 @@
  * construir.mjs — arma los JSON del flujo NUEVO de la Dra. Evy Karina (tenant rroca-evy) desde la plantilla, el prompt versionado y los datos
  * =============================================================================
  *
- *   node Flujos/experimental/rroca-evy/construir.mjs               escribe rroca-evy.json y rroca-evy.prueba.json
- *   node Flujos/experimental/rroca-evy/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
+ *   node Flujos/experimental/rroca-evy/construir.mjs               escribe rroca-evy.json, rroca-evy.prueba.json y rroca-evy.ensayo-demo-a.json
+ *   node Flujos/experimental/rroca-evy/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado (las tres variantes) difiere de lo que se arma o viola una guardia
  *   node Flujos/experimental/rroca-evy/construir.mjs --publicable [--flujo <json>] [--datos <json>] [--negocio <json>] [--etapa crear|prueba|encender]
  *                                                                  GUARDIA DE PUBLICACIÓN: no escribe; sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal
  *   (cualquier otro argumento se rechaza: la ayuda no existe como opción, para que nada escriba por error)
+ *
+ * LA VARIANTE DE ENSAYO EN EL DEMO A (`rroca-evy.ensayo-demo-a.json`, datos en `admin/scripts/datos/rroca-evy/ensayo-demo-a.json`; procedimiento en `docs/ensayo/LEEME.md` §10), copia del patrón de Rubén. Se escribe y se verifica
+ * junto con las otras dos, pero NUNCA se publica sobre el número de Evy: `--publicable` la rechaza. Cambia SOLO la entrada y lo que el Demo A no tiene: (1) en vez de la entrada verificada del receptor lleva un «WhatsApp Trigger»
+ * (que `flujo-de-prueba.mjs --sobre-demo-a` reemplaza por el del Demo A vivo); (2) NO lleva la rama del miniCRM (el Demo A no tiene la credencial de la planilla de Evy): 53 - 8 - 6 + 1 = 40 nodos; (3) credenciales por nombre,
+ * solo las del Demo A; (4) el interruptor `avisarAlPropioNumero` (solo `true`, solo en «Config base», solo en ese archivo de datos), que deja que el aviso y el botón a la recepción lleguen al MISMO teléfono de quien prueba;
+ * (5) sin plantilla de aviso aprobada (PENDING: el aviso sale por texto libre), sin modo prueba, sin etapa de prueba y sin los ids de las tres imágenes (son de la WABA de Evy: esas imágenes no se envían en el Demo A).
  *
  * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código y sin los datos. El código de los nodos lo arma el armador genérico `../comun-sin-agente/construir.mjs` (importado, no copiado) con el `CONFIG` de
  * este archivo. Lo propio de este archivo:
@@ -28,13 +34,14 @@
  *   - un nodo HTTP solo habla con Meta, Gemini y las Functions de la consola; `REEMPLAZAR_*` solo donde se declara; ajustes de retención, orden y zona;
  *   - «Reportar mensaje (entrante)» va ARRIBA de la rama que responde; «Enviar aviso» (imágenes y aviso) corre ANTES de «Armar mensajes»; la prueba nunca usa credenciales de producción.
  */
-import { closeSync, constants, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 import { hallazgosDelEnvioRele, injertar, MARCADOR_URL_DEL_RELE, parametrosDeMensajeRele, PREFIJO_CREDENCIAL_RELE } from '../comun-sin-agente/src/envio.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO, urlDescargaRele } from '../comun-sin-agente/src/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-evy/rroca-evy.json');
@@ -44,7 +51,11 @@ export const ARCHIVO_DEL_PROMPT = join(AQUI, 'prompts/evy.md');
 // excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 // 45 + los 8 de la rama del miniCRM (`ramaCrm`, generada por el módulo `crm`; F1 del 31/10/2026): excepción de tope declarada por Andres (DP1, 31/10/2026) en docs/versiones-por-cliente.md.
 // 53 + 3 del canal `rele` (relé B9, PR 2, 03/11/2026: «Leer respuesta del relé», «¿Qué hacer con el envío?», «Esperar reintento» y el nodo «Detener por envío incierto» (I4) menos lo que la cadena de Graph ya tenía): tope 56 APROBADO por Andres el 03/11/2026 (docs/versiones-por-cliente.md).
-export const TOPE_DE_NODOS = 56;
+// «Tanda 1» de Evy (Andres, 07/11/2026): el canal de envío es `graph` (53 nodos) hasta que exista el relé de cliente08; con `rele` el tope es 56.
+/** Canal de envío del flujo: 'graph' (envío directo por Graph, como el flujo vivo) o 'rele' (relé B9 de AAB1). Poner 'rele' cuando el relé B9 de cliente08 esté listo (credencial en n8n y URL interna): ver docs/versiones-por-cliente.md. */
+export const CANAL_DE_ENVIO = 'graph';
+export const ES_RELE = CANAL_DE_ENVIO === 'rele';
+export const TOPE_DE_NODOS = ES_RELE ? 56 : 53;
 /** El relé B9 de AAB1 (canal `rele`): el prefijo de la Idempotency-Key y la credencial Header Auth de ESTE WABA, por NOMBRE (el valor lo tiene n8n). La URL interna del relé es un marcador que sustituye el publicador. */
 export const CLIENTE_RELE = 'rroca-evy';
 export const CREDENCIAL_RELE = 'AAB1 envío · cliente08';
@@ -55,6 +66,32 @@ export const NODOS_DE_CRM = ['Prospecto para la planilla', 'Buscar teléfono en 
 export const CREDENCIAL_CRM = (tenant) => `Google Sheets miniCRM (crm-${tenant})`;
 export const ARCHIVO_PRODUCCION = 'rroca-evy.json';
 export const ARCHIVO_PRUEBA = 'rroca-evy.prueba.json';
+// La variante de ENSAYO en el Demo A: sus datos, su salida y el interruptor que solo ella puede llevar.
+export const ARCHIVO_DE_DATOS_ENSAYO = join(AQUI, '../../../admin/scripts/datos/rroca-evy/ensayo-demo-a.json');
+export const SALIDA_ENSAYO = 'rroca-evy.ensayo-demo-a.json';
+export const CLAVE_SOLO_ENSAYO = 'avisarAlPropioNumero';
+const DATOS_CON_LA_CLAVE = 'ensayo-demo-a.json';
+/** Las credenciales del Demo A, por nombre (la herramienta `flujo-de-prueba.mjs --sobre-demo-a` las resuelve por id y se niega con cualquier otra). */
+export const CREDENCIALES_DEL_DEMO_A = {
+  httpHeaderAuth: ['Cierres NovuChat A (auto)', 'Graph WhatsApp Demo A (Bearer)'],
+  googlePalmApi: ['Google Gemini(PaLM) Api account'],
+  whatsAppTriggerApi: ['WhatsApp OAuth account'],
+  whatsAppApi: ['WhatsApp account'],
+};
+const LECTURA_DE_LA_CLAVE = new RegExp(`base\\.${CLAVE_SOLO_ENSAYO}`);
+const NOMBRE_GRAPH_DEL_DEMO_A = 'Graph WhatsApp Demo A (Bearer)';
+const NOMBRE_INGESTA_DEL_DEMO_A = 'Cierres NovuChat A (auto)';
+const NODO_TRIGGER = 'WhatsApp Trigger';
+/** Los dos marcadores del ensayo: el phone id del Demo A y el teléfono de quien prueba (los repone `preparar-import.sh` desde la tabla local, nunca el repositorio). */
+export const MARCADORES_DEL_ENSAYO = ['REEMPLAZAR_PHONE_NUMBER_ID', 'REEMPLAZAR_NUMERO_AVISO_ENSAYO'];
+/** Lo que el ensayo no tiene: el receptor y la «Entrada de prueba» (su entrada es el Trigger del Demo A). */
+const QUITAR_EN_EL_ENSAYO = ['Entrada de prueba', 'Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos'];
+// Los dos nodos que bajan un medio con una URL que Meta devuelve en su respuesta: lista CERRADA, con su expresión EXACTA y la credencial de Graph. Cualquier otro nodo con la URL dinámica es un hallazgo.
+const URL_DE_META_POR_NODO = {
+  'Descargar medio': '={{ $json.url }}',
+  'Descargar medio (guardado)': URL_DESCARGA_GUARDADO,
+};
+const NODOS_CON_URL_DE_META = Object.keys(URL_DE_META_POR_NODO);
 
 /** El config del armador genérico. Vive aquí y no en un `construir.config.json`: el saneo del repo público trata todo JSON bajo `Flujos/` como un export de n8n. `raiz` es `Flujos/`. */
 export const CONFIG = {
@@ -90,6 +127,31 @@ const NODO_RECEPTOR = 'Entrega del receptor';
 const NODOS_DEL_RECEPTOR = [NODO_RECEPTOR, 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos'];
 const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
 const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', ANFITRION_CONSOLA];
+
+/** El HOST de la parte FIJA de la URL de un nodo (lo que hay antes de cualquier `{{ }}`), en minúsculas, o null si no se puede leer con certeza (espacio inicial, http, `//host`, usuario@host, host partido en una expresión, URL toda dinámica). Una lista de permitidos por destino, no una expresión sobre el host. */
+export function hostDeUrl(url) {
+  const t = String(url ?? '').replace(/^=/, '');
+  const fija = t.split('{{')[0];
+  // Con una expresión en la URL, la parte fija tiene que cerrar el host con `/`, `?` o `#`: si no, la expresión podría seguir armando el host (`graph.facebook.com{{ ".evil.com" }}/`).
+  const m = (t.includes('{{') ? /^https:\/\/([a-z0-9.-]+)(?::\d+)?(?=[\/?#])/i : /^https:\/\/([a-z0-9.-]+)(?::\d+)?(?=[\/?#]|$)/i).exec(fija);
+  return m ? m[1].toLowerCase() : null;
+}
+/** Hallazgos de destino de un nodo httpRequest de la variante de ensayo. */
+export function hallazgosDeDestino(n) {
+  const h = [];
+  if (n.type !== 'n8n-nodes-base.httpRequest') return h;
+  const cred = ((n.credentials || {}).httpHeaderAuth || {}).name;
+  const host = hostDeUrl(((n.parameters || {}).url));
+  if (host === null) {
+    if (!(NODOS_CON_URL_DE_META.includes(n.name) && cred === NOMBRE_GRAPH_DEL_DEMO_A && ((n.parameters || {}).url) === URL_DE_META_POR_NODO[n.name])) h.push(`ensayo: «${n.name}» tiene una URL cuyo destino no es fijo ni verificable (solo ${NODOS_CON_URL_DE_META.join(' y ')} bajan la URL que devuelve Meta, con su expresión EXACTA y la credencial de Graph)`);
+    return h;
+  }
+  if (!ANFITRIONES.includes(host)) h.push(`ensayo: «${n.name}» llama a un destino que no es de la lista permitida (${host})`);
+  if (host === 'graph.facebook.com' && cred !== NOMBRE_GRAPH_DEL_DEMO_A) h.push(`ensayo: «${n.name}» llama a graph.facebook.com sin la credencial de Graph del Demo A (con la de la ingesta le mandaría su token a Meta: la trampa del 15/09)`);
+  if (cred === NOMBRE_INGESTA_DEL_DEMO_A && host !== ANFITRION_CONSOLA) h.push(`ensayo: «${n.name}» lleva la credencial de la ingesta fuera de su host (${host})`);
+  if (cred === NOMBRE_GRAPH_DEL_DEMO_A && host !== 'graph.facebook.com') h.push(`ensayo: «${n.name}» lleva la credencial de Graph fuera de graph.facebook.com (${host}): el token de Meta se iría a otro destino`);
+  return h;
+}
 
 // ----------------------------------------------------------------- lectura y escritura sin seguir enlaces simbólicos
 const noExiste = (e) => e && (e.code === 'ENOENT' || e.code === 'ENOTDIR');
@@ -206,6 +268,9 @@ const FORMAS_CONFIG = {
   etapaPrueba: /^(si|REEMPLAZAR_[A-Z0-9_]+)?$/,
   // D6 (Andres, 23/10/2026): `si` enciende el texto con marcas (Radiesse®, HArmonyCa™) y el comparativo; vacío lo apaga.
   usarMarcas: /^(si)?$/,
+  // Texto literal de campaña (Andres, 07/11/2026): la frase exacta de entrada (20 a 200 caracteres, sin comillas dobles, llaves, corchetes ni saltos) y el texto fijo que recibe (50 a 1500; sin comillas dobles, barra invertida, llaves, corchetes ni signos < >).
+  campanaFrase: /^[^"{}\r\n<>\\\[\]]{20,200}$/,
+  campanaTexto: /^[^"{}<>\\\[\]=][^"{}<>\\\[\]]{49,1499}$/,
   // El ÚNICO modelo de este flujo (decisión de Andres): gemini-3.5-flash-lite.
   modelo: /^gemini-3\.5-flash-lite$/,
   temperatura: /^(0|1|0\.\d{1,2})$/,
@@ -236,7 +301,59 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
   let d;
   try { d = JSON.parse(texto); } catch (e) { throw new Error('rroca-evy.json: no es un JSON válido'); }
   if (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error('rroca-evy.json: tiene que ser un objeto');
+  return validarDatos(d, 'rroca-evy.json', false);
+}
+
+/** El interruptor de ensayo NO se hereda ni se cuela: ningún archivo de datos de la carpeta salvo `ensayo-demo-a.json` puede nombrarlo (se mira el TEXTO crudo, antes de mezclar nada). */
+export function vigilarInterruptor(carpetaDeDatos = dirname(ARCHIVO_DE_DATOS)) {
+  for (const archivo of readdirSync(carpetaDeDatos).filter((f) => f.endsWith('.json')).sort()) {
+    if (archivo === DATOS_CON_LA_CLAVE) continue;
+    const t = leerSiExiste(join(carpetaDeDatos, archivo), archivo);
+    if (t !== null && t.includes(CLAVE_SOLO_ENSAYO)) throw new Error(`${archivo}: «${CLAVE_SOLO_ENSAYO}» es un interruptor solo de ensayo y solo puede estar en ${DATOS_CON_LA_CLAVE} (ni heredada de otro archivo de datos)`);
+  }
+}
+
+/**
+ * Los datos de la variante de ENSAYO: heredan de `rroca-evy.json` (`hereda`) y cambian lo que dicen (`credenciales` y `configBase` se mezclan campo a campo). Se valida el resultado con las
+ * mismas reglas y, además, las propias del ensayo: el interruptor vale `true` EXACTO y solo está en «configBase» de este archivo; las credenciales son las del Demo A.
+ */
+export function cargarDatosEnsayo(ruta = ARCHIVO_DE_DATOS_ENSAYO, rutaBase = ARCHIVO_DE_DATOS) {
+  vigilarInterruptor(dirname(rutaBase));
+  const base = cargarDatos(rutaBase);
+  const texto = leerSiExiste(ruta, DATOS_CON_LA_CLAVE);
+  if (texto === null) throw new Error(`no existe el archivo de datos del ensayo ${ruta}`);
+  let e;
+  try { e = JSON.parse(texto); } catch (x) { throw new Error(`${DATOS_CON_LA_CLAVE}: no es un JSON válido`); }
+  if (!e || typeof e !== 'object' || Array.isArray(e)) throw new Error(`${DATOS_CON_LA_CLAVE}: tiene que ser un objeto`);
+  if (e.hereda !== 'rroca-evy') throw new Error(`${DATOS_CON_LA_CLAVE}: hereda tiene que ser «rroca-evy»`);
+  const { hereda: _h, ...propios } = e;
+  const mezcla = {
+    ...base, ...propios,
+    credenciales: { ...base.credenciales, ...(propios.credenciales || {}) },
+    configBase: { ...base.configBase, ...(propios.configBase || {}) },
+  };
+  return validarDatos(mezcla, DATOS_CON_LA_CLAVE, true);
+}
+
+/** Valida los datos ya leídos (el de producción y el de ensayo, mezclado). `ensayo`: reglas propias de la variante de ensayo. */
+function validarDatos(d, nombreDelArchivo, ensayo) {
   const errores = [];
+  const cb0 = d.configBase && typeof d.configBase === 'object' && !Array.isArray(d.configBase) ? d.configBase : null;
+  if (cb0 && Object.prototype.hasOwnProperty.call(cb0, CLAVE_SOLO_ENSAYO)) {
+    if (!ensayo) errores.push(`configBase.${CLAVE_SOLO_ENSAYO}: interruptor solo de ensayo; solo puede estar en ${DATOS_CON_LA_CLAVE}`);
+    else if (cb0[CLAVE_SOLO_ENSAYO] !== true) errores.push(`configBase.${CLAVE_SOLO_ENSAYO}: solo vale el booleano true`);
+  } else if (ensayo) errores.push(`configBase.${CLAVE_SOLO_ENSAYO}: falta (el ensayo con un solo teléfono lo necesita)`);
+  // La clave, fuera de «configBase» (como propiedad de la raíz o dentro de otro bloque), no vale en ningún archivo.
+  const fueraDeConfig = Object.keys(d).filter((k) => k !== 'configBase' && (k === CLAVE_SOLO_ENSAYO || JSON.stringify(d[k]).includes(CLAVE_SOLO_ENSAYO)));
+  for (const k of fueraDeConfig) errores.push(`${k}: nombra ${CLAVE_SOLO_ENSAYO}, que solo vale en configBase de ${DATOS_CON_LA_CLAVE}`);
+  if (ensayo) {
+    const cr = d.credenciales || {};
+    const permitidas = Object.values(CREDENCIALES_DEL_DEMO_A).flat();
+    for (const c of ['ingesta', 'graph', 'gemini', 'trigger']) {
+      if (typeof cr[c] !== 'string' || !permitidas.includes(cr[c])) errores.push(`credenciales.${c}: tiene que ser una credencial del Demo A (${permitidas.join(', ')})`);
+    }
+    if (cr.graph !== NOMBRE_GRAPH_DEL_DEMO_A) errores.push(`credenciales.graph: tiene que ser «${NOMBRE_GRAPH_DEL_DEMO_A}» (la herramienta la cambia a la credencial predefinida de WhatsApp)`);
+  }
   const cadena = (ruta2, v) => { if (typeof v !== 'string' || v.trim() === '') errores.push(`${ruta2}: falta`); };
   cadena('tenant', d.tenant);
   if (d.tenant !== 'rroca-evy') errores.push('tenant: tiene que ser rroca-evy');
@@ -260,13 +377,24 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
     for (const c of ['planillaProspectosId', 'planillaProspectosHoja']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
     for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio', 'tenantId', 'clinica', 'arteComparativoMediaId', 'arteAntesDespuesMediaId', 'arteAutoridadMediaId']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
     if (cb.tenantId !== undefined && cb.tenantId !== d.tenant) errores.push('configBase.tenantId: tiene que ser el tenant de este archivo');
+    // La campaña: frase y texto van juntos o ninguno; la frase tiene al menos 5 palabras (sin «hola» ni puntuación: se compara por igualdad, nunca por inclusión); el texto solo enlaza a Google Maps.
+    if ((cb.campanaFrase === undefined) !== (cb.campanaTexto === undefined)) errores.push('configBase.campanaFrase y campanaTexto: van juntos o ninguno');
+    if (typeof cb.campanaFrase === 'string' && cb.campanaFrase.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z0-9ñ]+/).filter((w) => w !== '' && w !== 'hola').length < 5) errores.push('configBase.campanaFrase: tiene que tener al menos 5 palabras (sin contar «hola»)');
+    if (typeof cb.campanaTexto === 'string') for (const u of cb.campanaTexto.match(/https?:\/\/\S+|www\.\S+|wa\.me\S*/gi) || []) if (!/^https:\/\/maps\.app\.goo\.gl\/[A-Za-z0-9_-]{6,40}$/.test(u)) errores.push('configBase.campanaTexto: el único enlace permitido es uno corto de Google Maps (https://maps.app.goo.gl/…)');
+    // Revisión de seguridad (07/11/2026, LOW): sin el enlace de Maps permitido, el texto de campaña no puede llevar un dominio suelto (bit.ly/x, evil.com/pago), un número largo ni palabras que el negocio no puede decir.
+    if (typeof cb.campanaTexto === 'string') {
+      const resto = cb.campanaTexto.normalize('NFKC').replace(/https:\/\/maps\.app\.goo\.gl\/[A-Za-z0-9_-]{6,40}/g, ' ');
+      if (/[a-z0-9-]+\.[a-z]{2,}(?:\/|\b)/i.test(resto.replace(/\b(?:Dra|Dr|Sra|Sr)\./gi, ' '))) errores.push('configBase.campanaTexto: no puede llevar un dominio o enlace suelto (solo el enlace de Maps permitido)');
+      if (/\d{7,}/.test(resto.replace(/\s/g, ''))) errores.push('configBase.campanaTexto: no puede llevar un número largo (teléfono)');
+      if (/acreditad|verificad|garant|descuent|promoci|reembols|devoluc|soy una persona|no soy un (?:bot|asistente)/i.test(resto)) errores.push('configBase.campanaTexto: lleva una palabra que el negocio no puede decir (acreditado, verificado, garantía, descuento…)');
+    }
     for (const c of TEXTOS_LIBRES) if (typeof cb[c] === 'string' && (/https?:|www\.|wa\.me|[<>{}\[\]]/i.test(cb[c]))) errores.push(`configBase.${c}: no puede llevar enlaces, llaves ni corchetes`);
     if (typeof cb.direccionRespaldo === 'string' && /\d{7,}/.test(cb.direccionRespaldo.replace(/\s/g, ''))) errores.push('configBase.direccionRespaldo: no puede llevar un número largo');
   }
   // El mapa de columnas del miniCRM: lo valida el MISMO validador que corre en n8n.
   if (d.crm === undefined) errores.push('crm: falta (el mapa de columnas de la planilla)');
   else for (const m of validarMapaCrm(d.crm)) errores.push(`crm: ${m}`);
-  if (errores.length) throw new Error(`rroca-evy.json: datos no válidos: ${errores.join('; ')}`);
+  if (errores.length) throw new Error(`${nombreDelArchivo}: datos no válidos: ${errores.join('; ')}`);
   return d;
 }
 
@@ -289,10 +417,11 @@ const asignaciones = (datos) => Object.entries(datos.configBase).map(([nombre, v
 export function anfitrionPermitido(url, nombreDelNodo = '') {
   if (MARCADOR.test(url)) return true;
   // El relé B9: la URL interna es el marcador pegado a una ruta /v1/envio/ (nunca un host real). Las demás guardias de marcador siguen iguales.
-  if (new RegExp(`^=?${MARCADOR_URL_DEL_RELE}/v1/envio/`).test(url)) return true;
-  // La única excepción: «Descargar medio» baja el medio de la URL que le devuelve Meta (la anterior, «¿Tamaño aceptable?», exige https://lookaside.fbsbx.com/ y un tamaño).
+  if (ES_RELE && new RegExp(`^=?${MARCADOR_URL_DEL_RELE}/v1/envio/`).test(url)) return true;
+  // Canal graph: «Descargar medio» baja el medio de la URL que le devuelve Meta (la anterior, «¿Tamaño aceptable?», exige https://lookaside.fbsbx.com/ y un tamaño).
+  if (!ES_RELE && nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
   // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
-  if (nombreDelNodo === 'Descargar medio (guardado)' && (url === URL_DESCARGA_GUARDADO || url === urlDescargaRele())) return true;
+  if (nombreDelNodo === 'Descargar medio (guardado)' && (url === URL_DESCARGA_GUARDADO || (ES_RELE && url === urlDescargaRele()))) return true;
   // La consulta de SOLO la fila de encabezados del miniCRM (Google Sheets API, `values.get`): la URL exacta del módulo común, con un rango A<fila>:<letra><fila>.
   if (nombreDelNodo === 'Leer encabezados de la planilla') {
     const [antes, despues] = urlEncabezados('@@').split('@@');
@@ -303,7 +432,7 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
   return ANFITRIONES.includes(m[1].toLowerCase());
 }
 
-/** Lo que un JSON de este flujo no puede tener. `variante`: 'produccion' | 'prueba'. Devuelve la lista de hallazgos (vacía si está limpio). */
+/** Lo que un JSON de este flujo no puede tener. `variante`: 'produccion' | 'prueba' | 'ensayo-demo-a'. Devuelve la lista de hallazgos (vacía si está limpio). */
 export function guardias(variante, flujo, mapaCrm) {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
@@ -312,27 +441,47 @@ export function guardias(variante, flujo, mapaCrm) {
   const p = (n) => (n && n.parameters) || {};
   const conex = (flujo && flujo.connections) || {};
   const destinosDe = (nombre, salida) => (((conex[nombre] || {}).main || [])[salida] || []).map((x) => x.node);
+  const ensayo = variante === 'ensayo-demo-a';
   if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11), y los 8 de la rama del miniCRM, DP1 del 31/10/2026: docs/versiones-por-cliente.md)`);
-  if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
+  // Un WhatsApp Trigger reescribe el webhook de toda la app (prohibición 7). Solo la variante de ENSAYO lleva uno —exactamente uno, con la credencial de la app del Demo A por nombre— y
+  // `flujo-de-prueba.mjs --sobre-demo-a` lo reemplaza por el Trigger VIVO del Demo A; nunca con la credencial de AAB1-WA-Prod ni la del receptor.
+  const disparadores = nodos.filter((n) => n.type === 'n8n-nodes-base.whatsAppTrigger');
+  if (!ensayo && disparadores.length) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
+  if (ensayo) {
+    if (disparadores.length !== 1) h.push(`ensayo: tiene que llevar exactamente un «${NODO_TRIGGER}» (lleva ${disparadores.length})`);
+    for (const d of disparadores) {
+      const c = (d.credentials || {}).whatsAppTriggerApi;
+      if (!c || !CREDENCIALES_DEL_DEMO_A.whatsAppTriggerApi.includes(String(c.name))) h.push(`ensayo: «${d.name}» tiene que llevar la credencial «${CREDENCIALES_DEL_DEMO_A.whatsAppTriggerApi[0]}» (la de la app del Demo A; nunca la de AAB1-WA-Prod)`);
+    }
+    if (ES_RELE) h.push('ensayo: el Demo A no tiene el relé B9: el ensayo solo se arma con el canal de envío graph');
+  }
   if (/subscriptions|subscribed_apps/i.test(JSON.stringify(flujo))) h.push('menciona «subscriptions» o «subscribed_apps» (prohibición 7)');
   if (/langchain\.(agent|memory\w*|lmChat\w*|chain\w*)$/i.test(nodos.map((n) => n.type).join('\n'))) h.push('lleva un agente, memoria o modelo de chat de n8n: este flujo no los lleva (el modelo es una llamada HTTP intercambiable)');
   for (const n of [...NODOS_DE_LA_CONVERSACION, ...NODOS_DE_MEDIOS]) if (!nombres.has(n)) h.push(`falta el nodo «${n}»`);
   h.push(...problemasDeReferencias(flujo || {}));
   // EL miniCRM (módulo `crm`): la rama completa, la credencial del tenant y las barreras del módulo (rangos que no llegan a la letra del diagnóstico del equipo, retención de ejecuciones en `none`).
-  for (const n of NODOS_DE_CRM) if (!nombres.has(n)) h.push(`miniCRM: falta el nodo «${n}»`);
-  if (nombres.has('Prospecto para la planilla') && !destinosDe('Armar mensajes', 0).includes('Prospecto para la planilla')) h.push('miniCRM: «Armar mensajes» no está conectado a «Prospecto para la planilla»');
-  const pros = por('Prospecto para la planilla'); const resumenDelTurno = por('Resumen del turno'); const armado = por('Armar mensajes');
-  if (pros && resumenDelTurno && armado && !(pros.position[1] < resumenDelTurno.position[1] && pros.position[1] > armado.position[1])) h.push('miniCRM: «Prospecto para la planilla» tiene que ir debajo de «Armar mensajes» y encima de «Resumen del turno» en el lienzo (el resumen es la última rama)');
-  for (const n of nodos) {
-    const g = (n.credentials || {}).googleApi;
-    if (g && g.name !== CREDENCIAL_CRM('rroca-evy')) h.push(`miniCRM: «${n.name}» usa una credencial de Google que no es la de este negocio (${CREDENCIAL_CRM('rroca-evy')})`);
+  if (ensayo) {
+    // El ensayo en el Demo A NO lleva la rama del miniCRM: el Demo A no tiene la credencial de la planilla de Evy ni debe escribir en ella.
+    for (const n of NODOS_DE_CRM) if (nombres.has(n)) h.push(`ensayo: lleva el nodo «${n}» del miniCRM (el Demo A no tiene la credencial de la planilla de Evy)`);
+    for (const n of nodos) if ((n.credentials || {}).googleApi) h.push(`ensayo: «${n.name}» lleva una credencial de Google (el ensayo no escribe en ninguna planilla)`);
+  } else {
+    for (const n of NODOS_DE_CRM) if (!nombres.has(n)) h.push(`miniCRM: falta el nodo «${n}»`);
+    if (nombres.has('Prospecto para la planilla') && !destinosDe('Armar mensajes', 0).includes('Prospecto para la planilla')) h.push('miniCRM: «Armar mensajes» no está conectado a «Prospecto para la planilla»');
+    const pros = por('Prospecto para la planilla'); const resumenDelTurno = por('Resumen del turno'); const armado = por('Armar mensajes');
+    if (pros && resumenDelTurno && armado && !(pros.position[1] < resumenDelTurno.position[1] && pros.position[1] > armado.position[1])) h.push('miniCRM: «Prospecto para la planilla» tiene que ir debajo de «Armar mensajes» y encima de «Resumen del turno» en el lienzo (el resumen es la última rama)');
+    for (const n of nodos) {
+      const g = (n.credentials || {}).googleApi;
+      if (g && g.name !== CREDENCIAL_CRM('rroca-evy')) h.push(`miniCRM: «${n.name}» usa una credencial de Google que no es la de este negocio (${CREDENCIAL_CRM('rroca-evy')})`);
+    }
+    let mapa = mapaCrm;
+    if (mapa === undefined) { try { mapa = JSON.parse(leerSiExiste(ARCHIVO_DE_DATOS, 'rroca-evy.json')).crm; } catch (e) { mapa = undefined; } }
+    if (!mapa || !mapa.columnas) h.push('miniCRM: faltan los datos `crm` (el mapa de columnas): sin él no se pueden comprobar los rangos de lectura');
+    else h.push(...hallazgosCrm(flujo || {}, mapa).map((x) => `miniCRM: ${x}`));
   }
-  let mapa = mapaCrm;
-  if (mapa === undefined) { try { mapa = JSON.parse(leerSiExiste(ARCHIVO_DE_DATOS, 'rroca-evy.json')).crm; } catch (e) { mapa = undefined; } }
-  if (!mapa || !mapa.columnas) h.push('miniCRM: faltan los datos `crm` (el mapa de columnas): sin él no se pueden comprobar los rangos de lectura');
-  else h.push(...hallazgosCrm(flujo || {}, mapa).map((x) => `miniCRM: ${x}`));
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
+  // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
+  h.push(...hallazgosDeExpresionesN8n(flujo || {}));
   // Las imágenes y el aviso SALEN antes de armar el texto: «Armar previos» → «¿Hay previos?» → «Enviar aviso» → «Armar mensajes»; la rama sin previos también llega a «Armar mensajes».
   if (nombres.has('Armar previos') && !destinosDe('Armar previos', 0).includes('¿Hay previos?')) h.push('«Armar previos» no está conectado a «¿Hay previos?»');
   if (nombres.has('¿Hay previos?') && !destinosDe('¿Hay previos?', 0).includes('Enviar aviso')) h.push('«¿Hay previos?» no envía por «Enviar aviso»');
@@ -370,18 +519,58 @@ export function guardias(variante, flujo, mapaCrm) {
   }
   const repSal = por('Reportar mensaje (saliente)');
   if (repSal && !/no_contactar/.test(String(p(repSal).jsonBody || ''))) h.push('«Reportar mensaje (saliente)» no reporta el evento `no_contactar` (condición dura de la baja y de la protección)');
+  // EL INTERRUPTOR SOLO DE ENSAYO (`avisarAlPropioNumero`): ningún otro JSON lo lleva (ni en «Config base» ni en el código de un nodo); el de ensayo lo lleva como el booleano true.
+  const asignadas = (p(por('Config base')).assignments || {}).assignments || [];
+  const delInterruptor = asignadas.find((a) => a && a.name === CLAVE_SOLO_ENSAYO);
+  if (!ensayo) {
+    if (delInterruptor) h.push(`«Config base» trae «${CLAVE_SOLO_ENSAYO}» (interruptor solo de ensayo): solo ${SALIDA_ENSAYO} puede llevarla`);
+    // (La librería común nombra la clave en un comentario de `avDestinatarios`: lo que se mira es la LECTURA `base.<clave>`, que solo pone el reemplazo de `interruptorDeEnsayo`.)
+    for (const n of nodos) if (LECTURA_DE_LA_CLAVE.test(String(p(n).jsCode || ''))) h.push(`el código de «${n.name}» lee «${CLAVE_SOLO_ENSAYO}» (interruptor solo de ensayo): solo ${SALIDA_ENSAYO} puede leerla`);
+  } else {
+    if (!delInterruptor || delInterruptor.value !== true || delInterruptor.type !== 'boolean') h.push(`ensayo: «Config base» tiene que traer «${CLAVE_SOLO_ENSAYO}» como el booleano true`);
+    for (const n of nodos) {
+      if (n.name !== 'Armar previos' && n.name !== 'Armar mensajes' && LECTURA_DE_LA_CLAVE.test(String(p(n).jsCode || ''))) h.push(`ensayo: solo «Armar previos» y «Armar mensajes» leen «${CLAVE_SOLO_ENSAYO}» (lo lee «${n.name}»)`);
+    }
+    for (const n of ['Armar previos', 'Armar mensajes']) {
+      const c = String(p(por(n)).jsCode || '');
+      if (por(n) && !c.includes("cnPrimero('Config base')")) h.push(`ensayo: «${n}» no lee «Config base»`);
+      if (por(n) && !c.includes(`base.${CLAVE_SOLO_ENSAYO} === true`)) h.push(`ensayo: «${n}» no lee el interruptor de «Config base»`);
+    }
+    // Los marcadores: solo los dos del ensayo, y solo en «Config base» (los repone `preparar-import.sh` desde la tabla local).
+    const vistos = new Set(asignadas.flatMap((a) => (String(a && a.value).match(/REEMPLAZAR_[A-Z0-9_]+/g) || [])));
+    for (const m of vistos) if (!MARCADORES_DEL_ENSAYO.includes(m)) h.push(`ensayo: «Config base» trae el marcador ${m}, que la tabla del ensayo no repone`);
+    // Sin planilla, sin la plantilla de aviso de la WABA de Evy (el Demo A no la tiene: el aviso sale por la ventana, como texto libre), sin modo ni etapa de prueba y sin los ids de las imágenes de la WABA de Evy.
+    const valorDe = (k) => (asignadas.find((a) => a && a.name === k) || {}).value;
+    if (valorDe('planillaProspectosId') !== '') h.push('ensayo: «planillaProspectosId» tiene que ir vacío (el ensayo no escribe en la planilla de Evy)');
+    if (valorDe('avisoSolicitudEstado') === 'APPROVED') h.push('ensayo: «avisoSolicitudEstado» no puede ser APPROVED (la plantilla es de la WABA de Evy; el Demo A no la tiene)');
+    if (valorDe('telefonosDePrueba') !== undefined) h.push('ensayo: no lleva «telefonosDePrueba» (el ensayo no tiene modo prueba)');
+    if (valorDe('etapaPrueba') !== '') h.push('ensayo: «etapaPrueba» tiene que ir vacía (la etapa de prueba ignoraría el número de aviso del ensayo y cerraría la puerta a quien no esté en la lista)');
+    for (const k of CLAVES_DE_ARTES) if (valorDe(k) !== '') h.push(`ensayo: «${k}» tiene que ir vacío (el medio es de la WABA de Evy: en el Demo A esa imagen no se envía)`);
+    // Las credenciales: solo las del Demo A, por nombre; un nodo que habla con Graph no puede llevar la de la ingesta (la trampa del 15/09).
+    for (const n of nodos) {
+      for (const [tipo, c] of Object.entries(n.credentials || {})) {
+        const nombreCred = String((c || {}).name || '');
+        if (!(CREDENCIALES_DEL_DEMO_A[tipo] || []).includes(nombreCred)) h.push(`ensayo: «${n.name}» usa ${tipo} «${nombreCred}», que no es una credencial del Demo A`);
+        if (/bellido|platinum|q'?taco|captaci|segurolo|otp|aab1|whatsapp-?modular|receptor|antonio|evy|emma|ruben|rubén/i.test(nombreCred)) h.push(`ensayo: la credencial de «${n.name}» nombra a un cliente o a un sistema ajeno`);
+      }
+      h.push(...hallazgosDeDestino(n));
+    }
+  }
   // La variante de PRUEBA nunca usa credenciales de producción: ni la de Graph ni la de Gemini.
   if (variante === 'prueba') {
     for (const n of nodos) {
       for (const [tipo, c] of Object.entries(n.credentials || {})) {
         const nombreCred = String((c || {}).name || '');
-        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (String(((c || {}).name) || '') === CREDENCIAL_RELE ? false : (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && !NODOS_DE_INGESTA_DEL_GUARDADO.includes(n.name) && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred)))) {
+        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (ES_RELE && String(((c || {}).name) || '') === CREDENCIAL_RELE ? false : (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && !NODOS_DE_INGESTA_DEL_GUARDADO.includes(n.name) && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred)))) {
           h.push(`la prueba usa una credencial de producción en «${n.name}» (${tipo})`);
         }
       }
     }
   }
-  if (variante === 'produccion') {
+  if (ensayo) {
+    if (nombres.has(NODO_PRUEBA)) h.push(`ensayo: contiene «${NODO_PRUEBA}» (activa el modo prueba): el ensayo no lo lleva`);
+    for (const n of NODOS_DEL_RECEPTOR) if (nombres.has(n)) h.push(`ensayo: contiene «${n}» (entrada del receptor): el ensayo entra por el Trigger del Demo A`);
+  } else if (variante === 'produccion') {
     if (nombres.has(NODO_PRUEBA)) h.push(`contiene «${NODO_PRUEBA}» (activa el modo prueba): solo va en el JSON de prueba`);
     for (const n of NODOS_DEL_RECEPTOR) if (!nombres.has(n)) h.push(`falta el nodo «${n}» de la entrada verificada del receptor`);
   } else {
@@ -392,7 +581,7 @@ export function guardias(variante, flujo, mapaCrm) {
   }
   // Webhooks: en producción solo el del receptor; en la prueba solo la entrada de prueba.
   for (const n of nodos.filter((x) => x.type === 'n8n-nodes-base.webhook')) {
-    if (n.name !== (variante === 'produccion' ? NODO_RECEPTOR : NODO_PRUEBA)) h.push(`el webhook «${n.name}» no corresponde a esta variante`);
+    if (ensayo || n.name !== (variante === 'produccion' ? NODO_RECEPTOR : NODO_PRUEBA)) h.push(`el webhook «${n.name}» no corresponde a esta variante`);
   }
   // La entrada verificada del receptor.
   if (variante === 'produccion') {
@@ -413,6 +602,49 @@ export function guardias(variante, flujo, mapaCrm) {
     const url = String(p(n).url || '');
     if (!anfitrionPermitido(url, n.name)) h.push(`el nodo «${n.name}» llama a un anfitrión fuera de la lista (graph.facebook.com, generativelanguage.googleapis.com, las Functions de la consola)`);
   }
+  if (ES_RELE) h.push(...guardiasDelRele(nodos, flujo, por, p));
+  else h.push(...guardiasDelEnvioDirecto(nodos));
+  // Retención de ejecuciones (datos de salud: no se guardan ni los turnos fallidos), orden y zona horaria.
+  const st = (flujo && flujo.settings) || {};
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» (datos de salud: no se guardan ni los turnos fallidos) y saveExecutionProgress false');
+  if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow`');
+  if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
+  if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
+  // `REEMPLAZAR_` solo en «Config base», en el receptor y en la ruta de la entrada de prueba.
+  const conMarcador = ensayo ? new Set(['Config base']) : new Set(['Config base', NODO_RECEPTOR, 'Verificar firma con el receptor', NODO_PRUEBA]);
+  for (const n of nodos) {
+    if (conMarcador.has(n.name)) continue;
+    // Canal rele (D5, Andres, 03/11/2026): SOLO el marcador de la URL interna del relé se tolera, y solo pegado a /v1/envio/ (lo sustituye el publicador). Con graph no se tolera ninguno. Cualquier otro REEMPLAZAR_ sigue prohibido.
+    const sinComentario = JSON.stringify(n).replace(/\/\^?REEMPLAZAR_\/i?/gi, '');
+    const sinRele = ES_RELE ? sinComentario.split(`${MARCADOR_URL_DEL_RELE}/v1/envio/`).join('') : sinComentario;
+    if (/REEMPLAZAR_[A-Z0-9]/.test(sinRele)) h.push(`el nodo «${n.name}» trae un marcador REEMPLAZAR_: solo va en «Config base», el receptor y la ruta de prueba`);
+  }
+  return h;
+}
+
+/** Canal graph: ningún nodo habla con el relé; toda llamada a Graph lleva su credencial POR NOMBRE y ningún nodo HTTP escribe un header Authorization a mano. */
+function guardiasDelEnvioDirecto(nodos) {
+  const h = [];
+  const normal = (x) => String(x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  for (const n of nodos) {
+    if (/REEMPLAZAR_URL_INTERNA_DEL_RELE|\/v1\/envio\//.test(JSON.stringify(n.parameters || {}))) h.push(`envío directo: «${n.name}» habla con el relé (el canal es graph)`);
+    for (const [tipo, c] of Object.entries(n.credentials || {})) {
+      const nombreCred = String((c || {}).name || '');
+      if (normal(nombreCred).startsWith('aab1 envio') || nombreCred.startsWith(PREFIJO_CREDENCIAL_RELE)) h.push(`envío directo: «${n.name}» (${tipo}) lleva una credencial del relé (el canal es graph)`);
+    }
+    if (n.type === 'n8n-nodes-base.httpRequest') {
+      const cab = ((((n.parameters || {}).headerParameters || {}).parameters) || []);
+      if (cab.some((x) => normal((x && x.name) || '').replace(/[^a-z]/g, '') === 'authorization')) h.push(`envío directo: «${n.name}» escribe un header Authorization en headerParameters (la llave va solo por la credencial)`);
+      if (String((n.parameters || {}).url || '').includes(['graph', 'facebook', 'com'].join('.')) && !((n.credentials || {}).httpHeaderAuth || {}).name) h.push(`envío directo: «${n.name}» habla con Graph sin credencial por nombre`);
+    }
+  }
+  for (const n of ['Detener por envío incierto', 'Leer respuesta del relé', '¿Qué hacer con el envío?', 'Esperar reintento']) if (nodos.some((x) => x.name === n)) h.push(`envío directo: no puede existir «${n}» (es del canal rele)`);
+  return h;
+}
+
+/** Canal rele: las guardias del RELÉ B9. */
+function guardiasDelRele(nodos, flujo, por, p) {
+  const h = [];
   // RELÉ B9: ni un nodo habla con Meta (Graph ni su CDN), la cadena de envío y el guardado son los del módulo común, y la ejecución dura 300 s (los reintentos del relé esperan hasta 64 s).
   for (const n of nodos) if (/graph\.facebook\.com|lookaside|fbsbx|whatsAppApi/i.test(JSON.stringify({ p: n.parameters, t: n.type }))) h.push(`relé: «${n.name}» llama a Meta directo (Graph o su CDN) en un flujo que va por el relé`);
   for (const n of ['Obtener URL del medio (general)', 'Descargar medio', 'Enviar aviso']) {
@@ -437,19 +669,6 @@ export function guardias(variante, flujo, mapaCrm) {
   }
   h.push(...hallazgosDelEnvioRele(flujo || {}));
   if (nodos.length && (flujo.settings || {}).executionTimeout !== 300) h.push('relé: executionTimeout tiene que ser 300');
-  // Retención de ejecuciones (datos de salud: no se guardan ni los turnos fallidos), orden y zona horaria.
-  const st = (flujo && flujo.settings) || {};
-  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» (datos de salud: no se guardan ni los turnos fallidos) y saveExecutionProgress false');
-  if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow`');
-  if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
-  if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
-  // `REEMPLAZAR_` solo en «Config base», en el receptor y en la ruta de la entrada de prueba.
-  const conMarcador = new Set(['Config base', NODO_RECEPTOR, 'Verificar firma con el receptor', NODO_PRUEBA]);
-  for (const n of nodos) {
-    if (conMarcador.has(n.name)) continue;
-    // D5 (Andres, 03/11/2026): SOLO el marcador de la URL interna del relé se tolera, y solo pegado a /v1/envio/ (lo sustituye el publicador). Cualquier otro REEMPLAZAR_ sigue prohibido.
-    if (/REEMPLAZAR_[A-Z0-9]/.test(JSON.stringify(n).replace(/\/\^?REEMPLAZAR_\/i?/gi, '').split(`${MARCADOR_URL_DEL_RELE}/v1/envio/`).join(''))) h.push(`el nodo «${n.name}» trae un marcador REEMPLAZAR_: solo va en «Config base», el receptor y la ruta de prueba`);
-  }
   return h;
 }
 
@@ -555,11 +774,24 @@ function hallazgosDeIdentidad(flujo, enFlujo, datos) {
   return h;
 }
 
+/** ¿Este JSON o estos datos son los del ENSAYO en el Demo A? Lleva el interruptor de ensayo, un WhatsApp Trigger o «ensayo» en su nombre. */
+export function esDelEnsayo(flujo, datos) {
+  const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
+  const base = nodos.find((n) => n.name === 'Config base');
+  const lista = (base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments) || [];
+  return (Array.isArray(lista) && lista.some((a) => a && a.name === CLAVE_SOLO_ENSAYO))
+    || nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')
+    || /ensayo/i.test(String((flujo && flujo.name) || ''))
+    || !!(datos && datos.configBase && Object.prototype.hasOwnProperty.call(datos.configBase, CLAVE_SOLO_ENSAYO));
+}
+
 export function guardiaDePublicacion({ flujo, datos, negocio, etapa = 'encender' }) {
   if (!ETAPAS.includes(etapa)) return [`etapa desconocida (${ETAPAS.join(' | ')})`];
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   if (!nodos.length) h.push('el flujo no trae nodos');
+  // La variante de ENSAYO en el Demo A (interruptor de un solo teléfono, Trigger, sin miniCRM) NUNCA se publica sobre el número de Evy: se pone en el Demo A con `flujo-de-prueba.mjs --sobre-demo-a`.
+  if (esDelEnsayo(flujo, datos)) h.push(`ensayo: este es el flujo de ENSAYO en el Demo A (${SALIDA_ENSAYO}) y nunca se publica sobre el número de Evy: se ensaya con flujo-de-prueba.mjs --sobre-demo-a (docs/ensayo/LEEME.md §10)`);
   const base = nodos.find((n) => n.name === 'Config base');
   const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
   const enFlujo = Array.isArray(lista) ? Object.fromEntries(lista.map((a) => [a.name, a.value])) : {};
@@ -597,24 +829,54 @@ export function proyectoConPrompt(carpeta = AQUI, tope) {
   return proyecto;
 }
 
+/**
+ * EL INTERRUPTOR SOLO DE ENSAYO en el CÓDIGO (solo de la variante de ensayo; los JSON de producción y de prueba quedan idénticos, byte a byte): hace que el aviso a la recepción y el botón «Escribir a recepción» salgan
+ * aunque el destinatario sea quien escribe (un solo teléfono de ensayo). Tres reemplazos exactos; si el código cambia y el texto ya no está, FALLA (nunca un reemplazo silencioso).
+ *   «Armar previos»  `avDestinatarios(…, false)` (nunca incluye al propio número) pasa a leer `base.avisarAlPropioNumero` de «Config base» (true exacto, o el texto «true»; ese nodo ya lee «Config base»);
+ *   «Armar mensajes» lee «Config base» (una línea nueva tras `const from`) y el botón a la recepción se arma con `desde` vacío (si no, a su propio chat «no sirve» y sale el texto de «mismo número»).
+ */
+const LECTURA_DEL_INTERRUPTOR = "(base.avisarAlPropioNumero === true || base.avisarAlPropioNumero === 'true')";
+export function interruptorDeEnsayo(flujo, donde = SALIDA_ENSAYO) {
+  const reemplazos = [
+    ['Armar previos', "avDestinatarios('completo:' + cnDigitos(cfg.numeroRecepcion), from, cfg.prefijosPermitidos, false)", `avDestinatarios('completo:' + cnDigitos(cfg.numeroRecepcion), from, cfg.prefijosPermitidos, ${LECTURA_DEL_INTERRUPTOR})`],
+    ['Armar mensajes', "const from = String(t.from || '');\n", "const from = String(t.from || '');\nconst base = cnPrimero('Config base') || {};\n"],
+    ['Armar mensajes', 'numero: cnDigitos(cfg.numeroRecepcion), desde: from, cuerpo: c, botonTexto: EV_BOTON_RECEPCION', `numero: cnDigitos(cfg.numeroRecepcion), desde: ${LECTURA_DEL_INTERRUPTOR} ? '' : from, cuerpo: c, botonTexto: EV_BOTON_RECEPCION`],
+  ];
+  for (const [nodo, antes, despues] of reemplazos) {
+    const n = flujo.nodes.find((x) => x.name === nodo);
+    const codigo = n && n.parameters && n.parameters.jsCode;
+    if (typeof codigo !== 'string' || codigo.split(antes).length !== 2) throw new Error(`${donde}: «${nodo}» cambió y el interruptor de ensayo ya no encuentra dónde ponerse (tiene que aparecer exactamente una vez): rehaga el reemplazo`);
+    n.parameters.jsCode = codigo.replace(antes, () => despues);
+  }
+}
+
 /** Arma UNA variante con los datos ya validados. Devuelve el texto del JSON. */
 export function armarEvy(proyecto, datos, v) {
   const prueba = v.archivo === ARCHIVO_PRUEBA;
+  const ensayo = v.archivo === SALIDA_ENSAYO;
   const donde = v.archivo;
   const plantilla = JSON.parse(JSON.stringify(proyecto.plantilla));
   // Primero se quita lo que no corresponde: sus credenciales y rutas no tienen por qué estar resueltas.
   const quitar = new Set(Array.isArray(v.quitar) ? v.quitar : (v.quitar ? [v.quitar] : []));
   plantilla.nodes = plantilla.nodes.filter((n) => !quitar.has(n.name));
   // LA RAMA DEL miniCRM se GENERA (módulo `crm`), no se copia: 8 nodos debajo de «Armar mensajes» y encima de «Resumen del turno», que sigue siendo el último. La credencial la calcula el tenant, no sale de los datos.
-  const rama = ramaCrm({ credencial: '@@cred:crm', desde: 'Armar mensajes', paquete: 'crm-decidir-senales', x: 5480, y: 640 });
-  plantilla.nodes.push(...rama.nodes);
-  Object.assign(plantilla.connections, rama.connections);
-  const previoDeArmar = (plantilla.connections['Armar mensajes'] && plantilla.connections['Armar mensajes'].main && plantilla.connections['Armar mensajes'].main[0]) || [];
-  plantilla.connections['Armar mensajes'] = { main: [[...previoDeArmar, { node: rama.entrada, type: 'main', index: 0 }]] };
+  // El ENSAYO en el Demo A no la lleva (el Demo A no tiene la credencial de la planilla de Evy) y entra por un WhatsApp Trigger en vez de la entrada del receptor: el Trigger cuelga de «Config base», como las otras entradas.
+  if (ensayo) {
+    plantilla.nodes.push({ id: 'trigger-whatsapp', name: NODO_TRIGGER, type: 'n8n-nodes-base.whatsAppTrigger', typeVersion: 1, position: [-300, 300], parameters: { updates: ['messages'] },
+      notes: 'SOLO en la variante de ENSAYO en el Demo A (`rroca-evy.ensayo-demo-a.json`). `flujo-de-prueba.mjs --sobre-demo-a` lo reemplaza por el Trigger VIVO del Demo A (id, webhookId, parámetros y credencial tal cual). Nunca la credencial de AAB1-WA-Prod (prohibición 7). Este archivo nunca se publica sobre el número de Evy.',
+      credentials: { whatsAppTriggerApi: { id: '', name: '@@cred:trigger' } } });
+    plantilla.connections[NODO_TRIGGER] = { main: [[{ node: 'Config base', type: 'main', index: 0 }]] };
+  } else {
+    const rama = ramaCrm({ credencial: '@@cred:crm', desde: 'Armar mensajes', paquete: 'crm-decidir-senales', x: 5480, y: 640 });
+    plantilla.nodes.push(...rama.nodes);
+    Object.assign(plantilla.connections, rama.connections);
+    const previoDeArmar = (plantilla.connections['Armar mensajes'] && plantilla.connections['Armar mensajes'].main && plantilla.connections['Armar mensajes'].main[0]) || [];
+    plantilla.connections['Armar mensajes'] = { main: [[...previoDeArmar, { node: rama.entrada, type: 'main', index: 0 }]] };
+  }
   for (const n of plantilla.nodes) {
     n.parameters = reemplazarTextos(n.parameters, datos, `${donde} · ${n.name}`);
     for (const c of Object.values(n.credentials || {})) {
-      const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini|crm)$/.exec(String(c.name));
+      const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini|crm|trigger)$/.exec(String(c.name));
       // EXCEPCIÓN DECLARADA a «la prueba nunca usa credenciales de producción» (revisión del PR #741): la variante de prueba lleva el NOMBRE de la credencial del miniCRM del tenant (el id va vacío: no resuelve nada) porque la guardia `miniCRM` exige el mismo nombre en ambas variantes y la prueba no tiene planilla propia; sin id de planilla la rama no escribe (ver crm.test.ts, «id vacío»).
       if (m && m[1] === 'crm') { c.name = CREDENCIAL_CRM(dato(datos, 'tenant', `${donde} · ${n.name}`)); continue; }
       // La variante de PRUEBA nunca usa las credenciales de producción de Meta ni de Gemini.
@@ -622,9 +884,12 @@ export function armarEvy(proyecto, datos, v) {
       if (m) c.name = dato(datos, `credenciales.${clave}`, `${donde} · ${n.name}`);
     }
     if (n.name === 'Config base') {
-      n.parameters.assignments.assignments = asignaciones(datos);
-      // La variante de PRUEBA no escribe en ninguna planilla: el id va vacío (nunca la hoja de un cliente real).
-      if (prueba) for (const a of n.parameters.assignments.assignments) if (a.name === 'planillaProspectosId') a.value = '';
+      // El ENSAYO no tiene modo ni etapa de prueba (sin `telefonosDePrueba` y con `etapaPrueba` vacía), deja la plantilla del aviso como NO aprobada (nunca se intenta una plantilla que el Demo A no tiene: el aviso sale por texto libre)
+      // y no lleva los ids de las tres imágenes (son medios de la WABA de Evy: en el Demo A esa imagen no se envía).
+      const datosBase = ensayo ? { ...datos, configBase: Object.fromEntries(Object.entries(datos.configBase).filter(([c]) => c !== 'telefonosDePrueba').map(([c, x]) => [c, c === 'etapaPrueba' || CLAVES_DE_ARTES.includes(c) ? '' : (c === 'avisoSolicitudEstado' ? 'PENDING' : x)])) } : datos;
+      n.parameters.assignments.assignments = asignaciones(datosBase);
+      // La variante de PRUEBA y la de ENSAYO no escriben en ninguna planilla: el id va vacío (nunca la hoja de un cliente real).
+      if (prueba || ensayo) for (const a of n.parameters.assignments.assignments) if (a.name === 'planillaProspectosId') a.value = '';
     }
     // El módulo común de medios se INCLUYE desde su fuente (ya leída por el armador genérico, dentro de la raíz): el código queda tal cual, sin una sola edición.
     const js = n.parameters && n.parameters.jsCode;
@@ -637,57 +902,75 @@ export function armarEvy(proyecto, datos, v) {
   }
   // La cadena de envío común (no se copia), con las credenciales por NOMBRE. Cuelga de «Armar mensajes»; el resumen cuelga aparte y corre al final.
   // CANAL «rele» (relé B9 de AAB1): TODO lo que habla con Meta sale por el relé, con la credencial «AAB1 envío · <alias>» de este WABA y la URL interna como marcador (la sustituye el publicador). Ningún nodo llama a Graph.
-  plantilla.settings = Object.assign({}, plantilla.settings, { executionTimeout: 300 });
+  // CANAL «graph» (tanda 1 de Evy, 07/11/2026): nada de lo anterior se toca; el envío, la descarga y el guardado salen directo por Graph con las credenciales por NOMBRE de los datos.
   const relePorNombre = (nombre) => { const nodo = plantilla.nodes.find((x) => x.name === nombre); if (!nodo) throw new Error(`${donde}: falta el nodo «${nombre}»`); return nodo; };
+  if (ES_RELE) plantilla.settings = Object.assign({}, plantilla.settings, { executionTimeout: 300 });
   const credRele = { httpHeaderAuth: { id: '', name: CREDENCIAL_RELE } };
-  const idMedio = "String($('Normalizar entrada').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '')";
-  const info = relePorNombre('Obtener URL del medio (general)');
-  info.parameters.url = `=${MARCADOR_URL_DEL_RELE}/v1/envio/medios/{{ ${idMedio} }}`;
-  info.credentials = credRele; info.waitBetweenTries = 3000;
-  info.notes = 'Información del medio por el relé (GET medios/<id>): devuelve id, mime_type y file_size, no el archivo (ni url). Cada GET gasta una de las 500 descargas diarias por WABA (relé B9).';
-  const bajar = relePorNombre('Descargar medio');
-  bajar.parameters.url = `=${MARCADOR_URL_DEL_RELE}/v1/envio/medios/{{ ${idMedio} }}/contenido`;
-  bajar.credentials = credRele; bajar.waitBetweenTries = 3000;
-  bajar.notes = 'Contenido del medio por el relé (GET medios/<id>/contenido): el archivo como binario `data`, sin seguir redirecciones; solo llega aquí si «¿Tamaño aceptable?» confirmó el tamaño. No se guarda en ningún lado.';
-  const tam = relePorNombre('¿Tamaño aceptable?').parameters.conditions.conditions[0];
-  if (!tam.leftValue.includes("String($json.url || '').startsWith('https://lookaside.fbsbx.com/')")) throw new Error(`${donde}: «¿Tamaño aceptable?» cambió: ya no pide la url de Meta`);
-  tam.leftValue = tam.leftValue.replace("String($json.url || '').startsWith('https://lookaside.fbsbx.com/')", "String($json.id || '') !== ''");
-  const aviso = relePorNombre('Enviar aviso');
-  aviso.parameters = parametrosDeMensajeRele({ cliente: CLIENTE_RELE, credenciales: { rele: CREDENCIAL_RELE }, rol: 'aviso', pnidExpresion: '$json.phoneNumberId', payloadExpresion: '$json.payload', destinoExpresion: '$json.para', nExpresion: '$json.n', lote: { tamano: 1, intervaloMs: 1500 } });
-  aviso.credentials = credRele;
-  aviso.notes = 'Envía de a uno, con 1,5 s entre mensajes y en el orden de «Armar previos», POR EL RELÉ (Idempotency-Key rol aviso + n). Sin reintentos: un aviso repetido llegaría dos veces. El resultado (un `wamid` real o el error del relé) lo lee «Armar mensajes»: si la imagen no salió, el texto no la promete.';
-  // `injertar` exige que «Armar mensajes» LLAME a cmNumerar en su return final: en la plantilla el código es todavía una marca `@@…:nodos/armar-mensajes.js`, así que se le muestra la fuente de ese archivo (la que se pega en el nodo) y se restaura la marca.
-  const armadoNodo = relePorNombre('Armar mensajes');
-  const marcaDelArmado = armadoNodo.parameters.jsCode;
-  const fuenteDelArmado = /^@@[a-z+]*:(.+)$/.exec(String(marcaDelArmado));
-  if (!fuenteDelArmado) throw new Error(`${donde}: «Armar mensajes» ya no se arma desde un archivo de nodos/`);
-  armadoNodo.parameters.jsCode = leerSiExiste(join(AQUI, 'src', fuenteDelArmado[1]), 'armar-mensajes.js') || '';
+  if (ES_RELE) {
+    const idMedio = "String($('Normalizar entrada').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '')";
+    const info = relePorNombre('Obtener URL del medio (general)');
+    info.parameters.url = `=${MARCADOR_URL_DEL_RELE}/v1/envio/medios/{{ ${idMedio} }}`;
+    info.credentials = credRele; info.waitBetweenTries = 3000;
+    info.notes = 'Información del medio por el relé (GET medios/<id>): devuelve id, mime_type y file_size, no el archivo (ni url). Cada GET gasta una de las 500 descargas diarias por WABA (relé B9).';
+    const bajar = relePorNombre('Descargar medio');
+    bajar.parameters.url = `=${MARCADOR_URL_DEL_RELE}/v1/envio/medios/{{ ${idMedio} }}/contenido`;
+    bajar.credentials = credRele; bajar.waitBetweenTries = 3000;
+    bajar.notes = 'Contenido del medio por el relé (GET medios/<id>/contenido): el archivo como binario `data`, sin seguir redirecciones; solo llega aquí si «¿Tamaño aceptable?» confirmó el tamaño. No se guarda en ningún lado.';
+    const tam = relePorNombre('¿Tamaño aceptable?').parameters.conditions.conditions[0];
+    if (!tam.leftValue.includes("String($json.url || '').startsWith('https://lookaside.fbsbx.com/')")) throw new Error(`${donde}: «¿Tamaño aceptable?» cambió: ya no pide la url de Meta`);
+    tam.leftValue = tam.leftValue.replace("String($json.url || '').startsWith('https://lookaside.fbsbx.com/')", "String($json.id || '') !== ''");
+    const aviso = relePorNombre('Enviar aviso');
+    aviso.parameters = parametrosDeMensajeRele({ cliente: CLIENTE_RELE, credenciales: { rele: CREDENCIAL_RELE }, rol: 'aviso', pnidExpresion: '$json.phoneNumberId', payloadExpresion: '$json.payload', destinoExpresion: '$json.para', nExpresion: '$json.n', lote: { tamano: 1, intervaloMs: 1500 } });
+    aviso.credentials = credRele;
+    aviso.notes = 'Envía de a uno, con 1,5 s entre mensajes y en el orden de «Armar previos», POR EL RELÉ (Idempotency-Key rol aviso + n). Sin reintentos: un aviso repetido llegaría dos veces. El resultado (un `wamid` real o el error del relé) lo lee «Armar mensajes»: si la imagen no salió, el texto no la promete.';
+  }
+  let armadoNodo = null;
+  let marcaDelArmado = null;
+  if (ES_RELE) {
+    // `injertar` exige que «Armar mensajes» LLAME a cmNumerar en su return final: en la plantilla el código es todavía una marca `@@…:nodos/armar-mensajes.js`, así que se le muestra la fuente de ese archivo (la que se pega en el nodo) y se restaura la marca.
+    armadoNodo = relePorNombre('Armar mensajes');
+    marcaDelArmado = armadoNodo.parameters.jsCode;
+    const fuenteDelArmado = /^@@[a-z+]*:(.+)$/.exec(String(marcaDelArmado));
+    if (!fuenteDelArmado) throw new Error(`${donde}: «Armar mensajes» ya no se arma desde un archivo de nodos/`);
+    armadoNodo.parameters.jsCode = leerSiExiste(join(AQUI, 'src', fuenteDelArmado[1]), 'armar-mensajes.js') || '';
+  }
   injertar(plantilla, {
-    canal: 'rele', cliente: CLIENTE_RELE,
-    credenciales: { rele: CREDENCIAL_RELE, ingesta: dato(datos, 'credenciales.ingesta', donde) },
+    ...(ES_RELE ? { canal: 'rele', cliente: CLIENTE_RELE, credenciales: { rele: CREDENCIAL_RELE, ingesta: dato(datos, 'credenciales.ingesta', donde) } }
+      : { credenciales: { graph: dato(datos, prueba ? 'credenciales.graphPrueba' : 'credenciales.graph', donde), ingesta: dato(datos, 'credenciales.ingesta', donde) } }),
     ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`,
     entrada: 'Normalizar entrada',
     desde: [5480, 300],
   });
-  armadoNodo.parameters.jsCode = marcaDelArmado;
+  if (ES_RELE) armadoNodo.parameters.jsCode = marcaDelArmado;
   // La PUERTA DE LA ENTREGA (I-ENTREGA, regla 3): lo que se reporta como enviado SOLO es lo que Meta aceptó con un `messages[0].id` (el envío principal o su respaldo). En el canal rele el id llega como `idMeta` (envío principal, lo escribe
   // «Leer respuesta del relé») o como `messages[0].id` (el respaldo). Se agrega a la condición de «¿Reportar? (saliente)» que arma el módulo común (sin un nodo nuevo).
   const puerta = plantilla.nodes.find((n) => n.name === '¿Reportar? (saliente)');
   const condicion = puerta && puerta.parameters && puerta.parameters.conditions && puerta.parameters.conditions.conditions && puerta.parameters.conditions.conditions[0];
-  const FIN_COMUN = " && j.accion !== 'agotado' && !j.error; })() }}";
-  if (!condicion || typeof condicion.leftValue !== 'string' || !condicion.leftValue.endsWith(FIN_COMUN)) throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no tiene la condición esperada`);
-  condicion.leftValue = condicion.leftValue.slice(0, -FIN_COMUN.length) + " && j.accion !== 'agotado' && !j.error && !!(j.idMeta || (Array.isArray(j.messages) && j.messages[0] && j.messages[0].id)); })() }}";
+  if (ES_RELE) {
+    const FIN_COMUN = " && j.accion !== 'agotado' && !j.error; })() }}";
+    if (!condicion || typeof condicion.leftValue !== 'string' || !condicion.leftValue.endsWith(FIN_COMUN)) throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no tiene la condición esperada`);
+    condicion.leftValue = condicion.leftValue.slice(0, -FIN_COMUN.length) + " && j.accion !== 'agotado' && !j.error && !!(j.idMeta || (Array.isArray(j.messages) && j.messages[0] && j.messages[0].id)); })() }}";
+  } else {
+    if (!condicion || condicion.leftValue !== "={{ $('Armar mensajes').item.json.reportar === true && !($json && $json.error) }}") throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no tiene la condición esperada`);
+    condicion.leftValue = "={{ $('Armar mensajes').item.json.reportar === true && !!($json && !$json.error && Array.isArray($json.messages) && $json.messages[0] && $json.messages[0].id) }}";
+  }
   // El reporte saliente de ESTE flujo: igual al común, más el EVENTO `no_contactar` (la baja y la protección), que viaja SIEMPRE, aunque salga el respaldo; y SOLO ese evento (el común manda `evento` siempre, aunque vacío).
   const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
-  const cuerpoComun = rep && rep.parameters && rep.parameters.jsonBody;
-  if (typeof cuerpoComun !== 'string' || !cuerpoComun.includes('return JSON.stringify({ telefono:') || !cuerpoComun.endsWith(", evento: m.evento }); })() }}")) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
-  rep.parameters.jsonBody = cuerpoComun.replace('return JSON.stringify({ telefono:', 'const r = { telefono:').replace(", evento: m.evento }); })() }}", " }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } return JSON.stringify(r); })() }}");
+  if (ES_RELE) {
+    const cuerpoComun = rep && rep.parameters && rep.parameters.jsonBody;
+    if (typeof cuerpoComun !== 'string' || !cuerpoComun.includes('return JSON.stringify({ telefono:') || !cuerpoComun.endsWith(", evento: m.evento }); })() }}")) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
+    rep.parameters.jsonBody = cuerpoComun.replace('return JSON.stringify({ telefono:', 'const r = { telefono:').replace(", evento: m.evento }); })() }}", " }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } return JSON.stringify(r); })() }}");
+  } else {
+    if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes('evento: m.evento')) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
+    rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } return JSON.stringify(r); })() }}";
+  }
   // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
-  injertarGuardado(plantilla, { canal: 'rele', cliente: CLIENTE_RELE, guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
+  injertarGuardado(plantilla, ES_RELE ? { canal: 'rele', cliente: CLIENTE_RELE, guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` } : { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
-  // El mapa de columnas del tenant (dato, no código) dentro de los nodos del módulo y los rangos de lectura de los nodos de Google.
-  injertarCrm(flujo, datos.crm);
+  // El mapa de columnas del tenant (dato, no código) dentro de los nodos del módulo y los rangos de lectura de los nodos de Google. El ENSAYO no tiene esa rama.
+  if (!ensayo) injertarCrm(flujo, datos.crm);
+  else interruptorDeEnsayo(flujo, donde);
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);
   return JSON.stringify(flujo, null, 2) + '\n';
 }
@@ -697,6 +980,7 @@ export function armarEvy(proyecto, datos, v) {
  *   opciones: { carpeta, datos (ruta), verificar, tope }   (`tope` es para las pruebas)
  */
 export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS, verificar = false, tope } = {}) {
+  vigilarInterruptor(dirname(rutaDatos));
   const datos = cargarDatos(rutaDatos);
   const proyecto = proyectoConPrompt(carpeta, tope);
   return proyecto.variantes.map((v) => {
@@ -715,6 +999,27 @@ export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS,
     if (!verificar) escribirSinSeguirEnlaces(ruta, texto, v.archivo);
     return { archivo: v.archivo, nodos: JSON.parse(texto).nodes.length, existia: actual !== null, alDia: actual === texto, versionado };
   });
+}
+
+/**
+ * Arma (o verifica) la variante de ENSAYO en el Demo A. Aparte de `construir()` a propósito: las otras dos variantes y sus pruebas no cambian. Mismo resultado por archivo.
+ *   opciones: { carpeta, datos (ruta del archivo de ensayo), base (ruta de rroca-evy.json), verificar, tope }
+ */
+export function construirEnsayo({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS_ENSAYO, base: rutaBase = ARCHIVO_DE_DATOS, verificar = false, tope } = {}) {
+  const datos = cargarDatosEnsayo(rutaDatos, rutaBase);
+  const proyecto = proyectoConPrompt(carpeta, tope);
+  const v = { archivo: SALIDA_ENSAYO, quitar: QUITAR_EN_EL_ENSAYO, nombre: 'se toma de los datos' };
+  const texto = armarEvy(proyecto, datos, v);
+  const propios = guardias('ensayo-demo-a', JSON.parse(texto));
+  if (propios.length) throw new Error(`${v.archivo}: ${propios.join('; ')}`);
+  const ruta = join(carpeta, v.archivo);
+  const actual = leerSiExiste(ruta, v.archivo);
+  let versionado = [];
+  if (actual !== null) {
+    try { versionado = guardias('ensayo-demo-a', JSON.parse(actual)); } catch (x) { versionado = ['no es un JSON válido']; }
+  }
+  if (!verificar) escribirSinSeguirEnlaces(ruta, texto, v.archivo);
+  return { archivo: v.archivo, nodos: JSON.parse(texto).nodes.length, existia: actual !== null, alDia: actual === texto, versionado };
 }
 
 // ----------------------------------------------------------------- línea de comandos
@@ -754,11 +1059,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     }
   }
   const desconocidos = args.filter((a) => a !== '--verificar');
-  if (desconocidos.length) { console.error(`✗ argumento desconocido: ${desconocidos.join(' ').slice(0, 60)}. Solo existen --verificar y --publicable; sin argumentos escribe los JSON.`); process.exit(2); }
+  if (desconocidos.length) { console.error(`✗ argumento desconocido: ${desconocidos.join(' ').slice(0, 60)}. Solo existen --verificar y --publicable; sin argumentos escribe los JSON (producción, prueba y ensayo).`); process.exit(2); }
   const verificar = args.includes('--verificar');
   try {
     let difiere = false;
-    for (const r of construir({ verificar })) {
+    for (const r of [...construir({ verificar }), construirEnsayo({ verificar })]) {
       if (!verificar) { console.log(`✓ ${r.archivo} escrito (${r.nodos} nodos)`); continue; }
       if (r.versionado.length) { difiere = true; console.error(`✗ ${r.archivo} ${r.versionado.join('; ')}`); }
       else if (!r.alDia) { difiere = true; console.error(`✗ ${r.archivo} ${r.existia ? 'difiere de lo que arma la plantilla' : 'no existe'}: corra «node construir.mjs»`); }

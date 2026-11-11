@@ -56,7 +56,8 @@ import { ErroresDeTurno, personaPuedeEscribirDeFicha } from './turno.js';
 export type RolDePersona = 'admin' | 'oper';
 
 /** Los comercios a los que NUNCA se les habilita esto (espejo de `TENANTS_EXCLUIDOS` del script de plataforma). */
-export const TENANTS_EXCLUIDOS: readonly string[] = Object.freeze(['bellido']);
+// ORDEN DE ANDRES (08/11/2026, prioridad 1): el Doctor de Bellido tiene que poder TOMAR conversaciones y escribir como persona; se levanta la exclusión del 09/10/2026. La lista queda VACÍA, no se borra el mecanismo: un comercio se vuelve a excluir agregándolo aquí.
+export const TENANTS_EXCLUIDOS: readonly string[] = Object.freeze([]);
 
 const sinTildes = (s: string): string => s.normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase();
 

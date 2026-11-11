@@ -110,6 +110,11 @@ if (puerta.ruta === 'fuera_de_prueba') {
   const c = evTextoComparacion(evNombreDeLaFicha(evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora), plan.textoCliente));
   ms = [cmMensaje('cliente', cmTexto(c), c, c, { tipoReporte: 'text' })];
   hist = { a: ms[0].texto, b: ms[0].texto };
+} else if (efectivo === 'campana_literal') {
+  // Texto literal del anuncio (07/11/2026): el texto del tenant, EXACTO (sin `evParrafos`, sin el recorte de 700, sin filtro de enlaces ni de valores), sin botón ni aviso. Sin el dato (no debería pasar) sale el mínimo con el botón.
+  const c = typeof cfg.campanaTexto === 'string' ? cfg.campanaTexto : '';
+  ms = c === '' ? [fallo()] : [cmMensaje('cliente', cmTexto(c), c, c, { tipoReporte: 'text' })];
+  hist = { a: ms[0].texto, b: ms[0].respaldo };
 } else if (efectivo === 'gratis') {
   ms = [texto(evTextoGratis(cfg, evDioNombre(historiaAntes, plan.textoCliente), primerTurno))];
   hist = { a: ms[0].texto, b: ms[0].texto };
@@ -173,7 +178,7 @@ if (!sinFicha) {
   ficha.turnos += 1;
   ficha.ultimoMs = ahora;
   // La memoria: la entrada del cliente se guarda cuando el turno es una conversación; lo que contó de su salud, su protección o su baja NO se guarda.
-  if ((efectivo === 'modelo' || efectivo === 'fallo' || efectivo === 'derivar' || efectivo === 'derivar_corto' || efectivo === 'gratis' || efectivo === 'preferencia' || efectivo === 'ofrece_llamada' || efectivo === 'cierre_amable' || efectivo === 'saludo' || efectivo === 'comparacion' || efectivo === 'fijo') && typeof decision.entradaHistorial === 'string' && decision.entradaHistorial.trim() !== '') {
+  if ((efectivo === 'modelo' || efectivo === 'fallo' || efectivo === 'derivar' || efectivo === 'derivar_corto' || efectivo === 'gratis' || efectivo === 'preferencia' || efectivo === 'ofrece_llamada' || efectivo === 'cierre_amable' || efectivo === 'saludo' || efectivo === 'comparacion' || efectivo === 'campana_literal' || efectivo === 'fijo') && typeof decision.entradaHistorial === 'string' && decision.entradaHistorial.trim() !== '') {
     ficha.historial = evHistorialSaneado(ficha.historial.concat([{ r: 'u', t: decision.entradaHistorial }]));
   }
   if (decision.oyoAudio === true) ficha.audios = evContarMedio(ficha.audios, ahora);
@@ -216,7 +221,7 @@ resumen.mensajes = sale ? ms.length : 0;
 if (!sale) {
   return cmNumerar([{ sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen, guardarPlanilla: false, prospectoPlanilla: null }]).map((json) => ({ json }));
 }
-// El relé B9 exige el número del mensaje (Idempotency-Key): cmNumerar lo agrega (n = 1, 2, …) en el orden en que salen.
+// Número del mensaje (n = 1, 2, …) en el orden en que salen: cmNumerar lo agrega; lo usa la clave de idempotencia de un canal de envío con reintentos; con envío directo es inocuo.
 return cmNumerar(ms.map((m, i) => {
   m.payload.to = numero;
   return {

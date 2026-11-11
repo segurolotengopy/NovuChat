@@ -46,6 +46,7 @@ import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-ruben/rroca-ruben.json');
@@ -122,7 +123,7 @@ export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   // La base común de las ventas digitales (cobro, avisos y el motor de la conversación: prefijos `cb`, `av` y `vd`), los módulos del core de texto (no repetir y pregunta pendiente: prefijo `ct`) y, al final, lo PROPIO de Rubén (`rr.js`: solo datos y textos).
-  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/rr.js'],
+  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/diferencias.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/rr.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
@@ -421,6 +422,8 @@ export function guardias(variante, flujo, mapaCrm) {
   }
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
+  // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
+  h.push(...hallazgosDeExpresionesN8n(flujo || {}));
   // Un WhatsApp Trigger reescribe el webhook de toda la app (prohibición 7). Solo la variante de ENSAYO lleva uno —exactamente uno, con la credencial de la app del Demo A por nombre— y
   // `flujo-de-prueba.mjs --sobre-demo-a` lo reemplaza por el Trigger VIVO del Demo A; nunca con la credencial de AAB1-WA-Prod ni la del receptor.
   const disparadores = nodos.filter((n) => n.type === 'n8n-nodes-base.whatsAppTrigger');

@@ -9,7 +9,14 @@
 // `cotejar` es verdadero SOLO si la imagen es un comprobante Y el servidor dice que hay un cobro REAL de este teléfono (QR pendiente, en revisión o vencido hace poco). Sin cobro no se coteja nada.
 const t = cnPrimero('Normalizar entrada') || {};
 const previo = ($input.first() || {}).json || {};
-const lectura = cbLectura(cnPrimero('Describir documento') || cnPrimero('Describir imagen'));
+const from = String(t.from || '');
+const esAr = ceMercadoDePrefijo(from) === 'AR';
+const resp = cnPrimero('Describir documento') || cnPrimero('Describir imagen');
+// Argentina lee además `alias` y `operacion` (`bmLecturaAlias`); Bolivia sigue con los seis campos de siempre (su cuerpo al servidor no cambia).
+const lectura = esAr ? bmLecturaAlias(resp) : cbLectura(resp);
+const ficha = CN_TENANT.fichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), Number(t.ahoraMs) || Date.now());
+// El cotejo de Argentina: el cuerpo de `cotejarAliasArs`. El teléfono es el del mensaje; el pedido, el que anotó el código en la ficha. Sin alias abierto o con un dato mal formado, no se coteja.
+const cuerpoAlias = esAr && ficha.aliasEstado === 'abierto' ? bmCuerpoCotejarAlias(ficha.aliasPedidoId, from, String(t.mensajeId || ''), lectura.legible, lectura.leido) : null;
 const ruta = cbRutaGuardada(cnPrimero('Guardar comprobante'));
 const cobro = bmCobro(bmPanelDe(cnPrimero('Traer configuración')));
 const hayCobro = cobro.modo === 'real' && (cobro.pendiente || cobro.enRevision || cobro.vencidoHaceMin !== null);
@@ -19,6 +26,7 @@ return [{ json: {
   leido: lectura.leido,
   idMeta: String(t.mensajeId || ''),
   ruta: ruta,
-  cotejar: previo.categoriaMedio === 'comprobante' && hayCobro && !!t.from,
+  cotejar: previo.categoriaMedio === 'comprobante' && !!t.from && (esAr ? cuerpoAlias !== null : hayCobro),
+  cuerpoAlias: esAr ? cuerpoAlias : null,
   categoriaMedio: String(previo.categoriaMedio || ''),
 } }];

@@ -75,7 +75,9 @@ afterEach(() => { vi.useRealTimers(); });
 function nuevo(prospectos: J[], busqueda: Item[], ids: Item[]) {
   const pros = prospectos.map((json) => ({ json }));
   return {
-    oraculo: correr(ORACULO, ids, { 'Prospecto para la planilla': pros, 'Buscar teléfono en planilla': busqueda }),
+    // DELTA DECLARADO (08/11/2026, una fila por conversación): el oráculo es la FOTO del comportamiento previo, con la regla de 48 h. Aquí `nuevoContacto` ya no decide, así que
+    // al oráculo se le da `nuevoContacto: false`; la regla nueva la prueba `oraculo/decidir-fila-conversacion.js` (abajo) y `crm-conversacion.ts`.
+    oraculo: correr(ORACULO, ids, { 'Prospecto para la planilla': pros.map(({ json }) => ({ json: { ...json, nuevoContacto: false } })), 'Buscar teléfono en planilla': busqueda }),
     modulo: M.crmDecidirFila({ prospectos: pros, busqueda, lecturaIds: ids, mapa: clonar(MAPA), adaptador, ahoraMs: Date.now() }),
     nodo: correr([conMapa(CRM), ADAPTADOR, NODO_DECIDIR].join('\n'), ids, { 'Prospecto para la planilla': pros, 'Buscar teléfono en planilla': busqueda }),
   };
@@ -337,3 +339,4 @@ describe('el código que corre en n8n', () => {
     expect(() => injertarCrm({ nodes: [] }, MAPA)).toThrow();
   });
 });
+

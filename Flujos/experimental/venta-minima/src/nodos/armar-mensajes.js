@@ -622,6 +622,7 @@ try {
     AM_prospectoCrm = vmProspectoCrm({
       from: AM_FROM, plan: AM_PLAN, pedidoEstado: AM_estadoDespues && AM_estadoDespues.pedido, nombrePerfil: AM_T.nombrePerfil, ahoraMs: AM_AHORA,
       avisoSalio: AM_AVISO_SALIO && AM_tiposSalidos.indexOf('transferencia') >= 0, anteriorMs: vmCrmMarcarVisto(AM_sd, AM_FROM, AM_AHORA),
+      pasoAntes: AM_ses.previo && AM_ses.previo.estado && AM_ses.previo.estado.paso, pasoDespues: AM_estadoDespues && AM_estadoDespues.paso, pasoSalio: AM_PASO,
     });
   }
 } catch (e) { AM_prospectoCrm = null; }

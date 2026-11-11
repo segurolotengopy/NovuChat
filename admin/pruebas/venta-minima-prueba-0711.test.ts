@@ -474,14 +474,180 @@ describe('El sandbox de EXPRESIONES de n8n no deja leer prototype/__proto__/cons
     const COBRO = { cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: 63, pedido: 'ped1' } };
     const PED = { pedidoId: 'ped1', from: CLIENTE, codigo: 'OXJL', total: 63, lineas: [], modalidad: 'recojo' };
     const lectura = { categoria: 'publicidad', titular_principal: 'Jueves de +2', campana: 'B' };
-    const conQr = (flujo?: Flujo) => {
-      const w = crear({ panel: panel(JUEVES_10, COBRO), flujo, clasifica: lectura });
+    const conQr = (flujo?: Flujo, clasifica: J = lectura) => {
+      const w = crear({ panel: panel(JUEVES_10, COBRO), flujo, clasifica });
       w.sesion.sembrar(CLIENTE, { paso: 'esperando_comprobante', pedido: PED, carrito: [], ultimoMensajeMs: JUEVES_10 - 60_000 }, { ped1: { ...PED, guardadoMs: JUEVES_10 } });
       return w;
     };
-    expect(() => conversacion(conQr(viejo)).imagen()).toThrow(/Cannot access "prototype" due to security concerns/);
+    // Sin `onError` (como estaba el 07/11) la ejecución muere; con `onError` (desde la segunda ronda) el IF manda el ítem por su salida falsa y el turno sigue.
+    const sinOnError = JSON.parse(JSON.stringify(viejo)) as Flujo;
+    delete (sinOnError.nodes.find((x) => x.name === '¿Es comprobante?') as J)['onError'];
+    expect(() => conversacion(conQr(sinOnError)).imagen()).toThrow(/Cannot access "prototype" due to security concerns/);
+    expect(conversacion(conQr(viejo)).imagen().mensajes).toHaveLength(1);
+    // El escenario del 07/11 con la expresión vieja y `onError` (revisión de #848): un COMPROBANTE real (el clasificador dice «otro») con el QR pendiente y
+    // campañas vigentes llega al local como comprobante (aviso con el código del pedido), y el cliente nunca lee que el pago entró.
+    const comp = conversacion(conQr(viejo, { categoria: 'otro', titular_principal: '', campana: 'ninguna' })).imagen();
+    expect(comp.mensajes).toHaveLength(1);
+    expect(comp.avisos.some((a) => a.ok)).toBe(true);
+    expect(JSON.stringify(comp.avisos)).toContain('OXJL');
+    expect(cuerpos(comp).join(' ')).not.toMatch(/pago (acreditado|verificado|confirmado)|recibimos tu pago|tu pago (ya )?(entr|lleg|ingres)|ya pagaste/i);
+    expect(cuerpos(comp).join(' ')).toMatch(/comprobante/i);
     const hoy = conversacion(conQr()).imagen();
     expect(hoy.mensajes).toHaveLength(1);
     expect(cuerpos(hoy)[0]).toContain('agrandar');
+  });
+});
+
+// -------------------------------------------------------------------------------------------------------------------------------- G
+describe('G. Avisos en viñetas de punta a punta (plantillas nuevas por tipo, 07/11/2026): la nueva sale; si Meta la rechaza, cae a la de hoy en el mismo turno', () => {
+  // Las claves EXACTAS que trae el 3727 (la fuente de verdad es su archivo de datos, armado en el JSON versionado).
+  const D3727 = configBase(JSON.parse(readFileSync(join(CARPETA_VM, 'venta-minima.qtaco-3727.json'), 'utf8')) as Flujo);
+  const DE_3727: J = Object.fromEntries(Object.entries(D3727).filter(([k]) => /^plantilla(PedidoMapa|PedidoLista|ReservaLista|ConsultaAtencion)|^idiomaPlantillasVinetas$/.test(k)));
+  // 07/11 20:47: Q'Taco volvió al formato por líneas y el 3727 trae las tres plantillas en viñetas DESACTIVADAS. Estas pruebas cubren el código de viñetas con SU PROPIA config de prueba (las tres en APPROVED).
+  const VINETAS: J = { ...DE_3727, plantillaPedidoMapaEstado: 'APPROVED', plantillaPedidoListaEstado: 'APPROVED', plantillaReservaListaEstado: 'APPROVED' };
+  const COBRO = { cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: 63, pedido: 'ped1' } };
+  const PED: J = { pedidoId: 'ped1', from: CLIENTE, codigo: 'OXJL', total: 63, lineas: [{ id: 'taco', nombre: 'Taco de Birria (unidad)', cantidad: 3, precio: 21 }], modalidad: 'recojo', resultado: 'qr_enviado' };
+  const PASE = /ya lo pas[eé]|lo pas[eé] a nuestro equipo/i;
+  const conQr = (config: J = VINETAS) => {
+    const w = crear({ panel: panel(JUEVES_10, COBRO), config });
+    w.sesion.sembrar(CLIENTE, { paso: 'esperando_comprobante', pedido: PED, carrito: [], ultimoMensajeMs: JUEVES_10 - 60_000 }, { ped1: { ...PED, guardadoMs: JUEVES_10 - 60_000 } });
+    w.mundo.dobles['Cotejar en el servidor'] = () => ({ statusCode: 200, body: { resultado: 'cuadra', diferencias: [], cierreId: 'venta_prueba' } });
+    return w;
+  };
+  const nombre = (a: { payload: J }): string => String(a.payload['template']?.name ?? '');
+  const rechaza = (prefijo: string, soloA?: string): Doble => (ll) => {
+    const p = (ll.cuerpo ?? {}) as J;
+    if (String(p['template']?.name ?? '').startsWith(prefijo) && (soloA === undefined || p['to'] === soloA)) return { error: { message: '(#132001) Template name does not exist in the translation' } };
+    return { messaging_product: 'whatsapp', messages: [{ id: `wamid.EA${ll.n}` }] };
+  };
+
+  it('el 3727 trae las tres en viñetas DESACTIVADAS (formato por líneas vigente) y consulta_atencion en PENDING; la config de prueba las trae APPROVED', () => {
+    expect(DE_3727).toEqual({
+      plantillaPedidoMapa: 'pedido_lista_mapa', plantillaPedidoMapaEstado: 'DESACTIVADA', plantillaPedidoLista: 'pedido_lista', plantillaPedidoListaEstado: 'DESACTIVADA',
+      plantillaReservaLista: 'reserva_lista', plantillaReservaListaEstado: 'DESACTIVADA', plantillaConsultaAtencion: 'consulta_atencion', plantillaConsultaAtencionEstado: 'PENDING',
+      idiomaPlantillasVinetas: 'es',
+    });
+    expect(VINETAS).toEqual({
+      plantillaPedidoMapa: 'pedido_lista_mapa', plantillaPedidoMapaEstado: 'APPROVED', plantillaPedidoLista: 'pedido_lista', plantillaPedidoListaEstado: 'APPROVED',
+      plantillaReservaLista: 'reserva_lista', plantillaReservaListaEstado: 'APPROVED', plantillaConsultaAtencion: 'consulta_atencion', plantillaConsultaAtencionEstado: 'PENDING',
+      idiomaPlantillasVinetas: 'es',
+    });
+  });
+  it('comprobante en recojo: sale `pedido_lista` (6 variables) a cada destinatario, UNA vez, sin respaldo; la marca del aviso queda puesta', () => {
+    const w = conQr();
+    const t = conversacion(w).imagen('media-1');
+    const p = plantillas(t);
+    expect(p.map((a) => [a.a, nombre(a)]).sort()).toEqual([['59100000021', 'pedido_lista'], ['59100000022', 'pedido_lista']]);
+    for (const a of p) expect(variables(a)).toHaveLength(6);
+    expect(t.avisos.filter((a) => a.respaldo)).toHaveLength(0);
+    expect(w.sesion.pedidos(CLIENTE)['ped1']['comprobanteAvisadoResultado']).toBe('cuadra');
+    expect(t.mensajes).toHaveLength(1);
+    expect(cuerpos(t).join(' ')).toMatch(PASE);
+  });
+  it('Meta RECHAZA la nueva: en el mismo turno sale la de hoy (`pedido_registrado`) por «Aviso de respaldo», una por destinatario; el cliente lee el pase y la marca queda', () => {
+    const w = conQr();
+    w.mundo.dobles['Enviar aviso'] = rechaza('pedido_lista');
+    const c = conversacion(w);
+    const t = c.imagen('media-1');
+    expect(t.avisos.filter((a) => !a.respaldo).map(nombre)).toEqual(['pedido_lista', 'pedido_lista']);
+    expect(t.avisos.filter((a) => !a.respaldo).every((a) => !a.ok)).toBe(true);
+    const resp = t.avisos.filter((a) => a.respaldo);
+    expect(resp.map((a) => [a.a, nombre(a), a.ok]).sort()).toEqual([['59100000021', 'pedido_registrado', true], ['59100000022', 'pedido_registrado', true]]);
+    for (const a of resp) expect(variables(a)).toHaveLength(4);
+    expect(cuerpos(t).join(' ')).toMatch(PASE);
+    expect(w.sesion.pedidos(CLIENTE)['ped1']['comprobanteAvisadoResultado']).toBe('cuadra');
+    // La marca de #842 se respeta: el mismo resultado otra vez no avisa, ni por la nueva ni por la de hoy.
+    const t2 = c.imagen('media-2');
+    expect(t2.avisos).toHaveLength(0);
+  });
+  it('delivery con ubicación: el rol completo recibe `pedido_lista_mapa` y «Armar avisos» deja INTACTO el parámetro del botón (no lo trata como texto)', () => {
+    const conUbicacion: J = { ...PED, modalidad: 'delivery', direccion: 'Calle Ejemplo 123', ubicacion: { lat: -16.5, lng: -68.15 } };
+    const w = crear({ panel: panel(JUEVES_10, COBRO), config: VINETAS });
+    w.sesion.sembrar(CLIENTE, { paso: 'esperando_comprobante', pedido: conUbicacion, carrito: [], ultimoMensajeMs: JUEVES_10 - 60_000 }, { ped1: { ...conUbicacion, guardadoMs: JUEVES_10 - 60_000 } });
+    w.mundo.dobles['Cotejar en el servidor'] = () => ({ statusCode: 200, body: { resultado: 'cuadra', diferencias: [], cierreId: 'venta_prueba' } });
+    const t = conversacion(w).imagen('media-1');
+    const completo = plantillas(t).find((a) => a.a === '59100000021')!;
+    expect(nombre(completo)).toBe('pedido_lista_mapa');
+    const comp = (completo.payload['template']?.components ?? []) as J[];
+    expect(comp.map((c) => c['type'])).toEqual(['body', 'button']);
+    expect(comp[1]).toEqual({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: '-16.500000%2C-68.150000' }] });
+    expect(nombre(plantillas(t).find((a) => a.a === '59100000022')!)).toBe('pedido_lista');
+  });
+  it('NEGANDO un envío de más: si la nueva sale para uno y falla para el otro, el respaldo va SOLO al que falló', () => {
+    const w = conQr();
+    w.mundo.dobles['Enviar aviso'] = rechaza('pedido_lista', '59100000022');
+    const t = conversacion(w).imagen('media-1');
+    const resp = t.avisos.filter((a) => a.respaldo);
+    expect(resp.map((a) => [a.a, nombre(a)])).toEqual([['59100000022', 'pedido_registrado']]);
+    expect(t.avisos.filter((a) => a.ok)).toHaveLength(2);
+  });
+  it('NEGANDO: con la plantilla en PENDING (o sin las claves) sale directo la de hoy, sin intento ni respaldo', () => {
+    for (const config of [{ ...VINETAS, plantillaPedidoListaEstado: 'PENDING' }, {}]) {
+      const t = conversacion(conQr(config)).imagen('media-1');
+      expect(t.avisos.map(nombre)).toEqual(['pedido_registrado', 'pedido_registrado']);
+      expect(t.avisos.every((a) => a.ok && !a.respaldo)).toBe(true);
+    }
+  });
+  it('la derivación sigue con la plantilla de hoy mientras consulta_atencion esté PENDING (mismas 4 variables del caso F)', () => {
+    const t = conversacion(crear({ config: VINETAS })).escribe('quiero hablar con una persona');
+    const p = plantillas(t);
+    expect(p.length).toBeGreaterThan(0);
+    for (const a of p) {
+      expect(nombre(a)).toBe('pedido_registrado');
+      expect(variables(a)[0]).toMatch(/^NO ES UN PEDIDO — consulta [A-Z0-9]+: /);
+    }
+  });
+  it('reserva: sale `reserva_lista` (5 variables); si Meta la rechaza, cae a la de hoy y el cliente igual lee «Anotamos tu reserva»', () => {
+    for (const falla of [false, true]) {
+      const w = crear({ ahoraMs: JUEVES_23, extraccion: RESERVA('20:00'), config: VINETAS });
+      if (falla) w.mundo.dobles['Enviar aviso'] = rechaza('reserva_lista');
+      const c = conversacion(w);
+      const r = c.escribe('quiero reservar una mesa para 4 mañana a las 20:00 a nombre de Carlos Pérez');
+      const fin = c.toca(idDe(r, 'Reservar'), 'Reservar');
+      expect(cuerpos(fin).join(' '), String(falla)).toContain('Anotamos tu reserva');
+      const principales = fin.avisos.filter((a) => !a.respaldo && a.tipo === 'template');
+      expect(principales.map(nombre)).toEqual(['reserva_lista', 'reserva_lista']);
+      for (const a of principales) expect(variables(a)).toHaveLength(5);
+      expect(variables(principales.find((a) => a.a === '59100000021')!)[3]).toBe('+591 0000 0011');
+      expect(variables(principales.find((a) => a.a === '59100000022')!)[3]).toBe('—');
+      const resp = fin.avisos.filter((a) => a.respaldo);
+      if (!falla) expect(resp).toHaveLength(0);
+      else expect(resp.map((a) => [a.a, nombre(a)]).sort()).toEqual([['59100000021', 'solicitud_reserva'], ['59100000022', 'pedido_registrado']]);
+    }
+  });
+});
+
+// -------------------------------------------------------------------------------------------------------------------------------- ONERROR
+describe('Una excepción en los IF del camino de los medios NO mata la ejecución sin rastro (revisión del PR #842): ante la duda, comprobante', () => {
+  const COBRO = { cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: 63, pedido: 'ped1' } };
+  const PED = { pedidoId: 'ped1', from: CLIENTE, codigo: 'OXJL', total: 63, lineas: [], modalidad: 'recojo' };
+  const conFalla = (onError: boolean): Flujo => {
+    const f = JSON.parse(JSON.stringify(QTACO)) as Flujo;
+    const n = f.nodes.find((x) => x.name === '¿Es comprobante?')!;
+    ((n.parameters as J)['conditions']['conditions'][0] as J)['leftValue'] = "={{ (() => { throw new Error('falla de prueba'); })() }}";
+    if (!onError) delete (n as J)['onError'];
+    return f;
+  };
+  const turno = (flujo: Flujo) => {
+    const w = crear({ panel: panel(JUEVES_10, { ...COBRO, campanas: [] }), flujo });
+    w.sesion.sembrar(CLIENTE, { paso: 'esperando_comprobante', pedido: PED, carrito: [], ultimoMensajeMs: JUEVES_10 - 60_000 }, { ped1: { ...PED, guardadoMs: JUEVES_10 } });
+    return conversacion(w).imagen();
+  };
+  it('los cinco IF del camino de los medios llevan `onError: continueRegularOutput`, y la expresión de «¿Es comprobante?» cae en «comprobante» si lanza', () => {
+    for (const nombre of ['¿Bajar medio?', '¿Tamaño aceptable?', '¿Es audio?', '¿Es PDF?', '¿Es comprobante?']) {
+      expect((QTACO.nodes.find((x) => x.name === nombre) as J)['onError'], nombre).toBe('continueRegularOutput');
+    }
+    const v = String(((QTACO.nodes.find((x) => x.name === '¿Es comprobante?')!.parameters as J)['conditions']['conditions'][0] as J)['leftValue']);
+    expect(v.startsWith('={{ (() => { try { ')).toBe(true);
+    expect(v.endsWith(' } catch (e) { return true; } })() }}')).toBe(true);
+  });
+  it('si «¿Es comprobante?» lanza, el turno sigue: la foto llega al local como comprobante (aviso) y el cliente recibe UN mensaje', () => {
+    const t = turno(conFalla(true));
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.avisos.some((a) => a.ok)).toBe(true);
+    expect(JSON.stringify(t.avisos)).toContain('OXJL');
+  });
+  it('NEGANDO: sin `onError`, la misma falla mata la ejecución (lo que pasaba antes)', () => {
+    expect(() => turno(conFalla(false))).toThrow(/falla de prueba/);
   });
 });

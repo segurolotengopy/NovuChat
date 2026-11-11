@@ -216,6 +216,36 @@ export function estadoDeAtencion(
 }
 
 /**
+ * La conversación a la que pertenece UN mensaje, ya aplicado. Es lo que necesita
+ * el miniCRM para crear su fila cuando la conversación empieza: `estadoDeAtencion`
+ * mira lo guardado ANTES del mensaje y por eso responde `ventanaVenceEn: null`
+ * justo en el que abre.
+ *
+ * `desdeMs` es el ancla de la ventana DESPUÉS de contar este mensaje (el propio
+ * `ahoraMs` si abre una; el ancla guardada si ya había una vigente); `null` si
+ * el mensaje no abre ni pertenece a una conversación cobrada (cortesía con
+ * ventana vencida, o saliente que no abre bloque; un saliente solo devuelve desde en la respuesta que abre un bloque). `nueva` es `true` solo si el
+ * mensaje abrió la ventana o un bloque nuevo. No recalcula la regla: recibe la
+ * decisión de `contadoresDelMensaje` (`atencion`, `bloqueNuevo`).
+ * Contacto bloqueado y corte aplicado se resuelven fuera: allí siempre es null/false.
+ */
+export function conversacionDelMensaje(
+  marcas: MarcasDeAtencion,
+  conteo: { atencion: boolean; bloqueNuevo: boolean },
+  ahoraMs: number,
+  direccion: 'entrante' | 'saliente' = 'entrante',
+): { desdeMs: number | null; nueva: boolean } {
+  if (conteo.atencion) return { desdeMs: ahoraMs, nueva: true };
+  if (conteo.bloqueNuevo) return { desdeMs: anclaMs(marcas), nueva: true };
+  if (direccion === 'saliente' || ventanaVencida(marcas, ahoraMs)) return { desdeMs: null, nueva: false };
+  return { desdeMs: anclaMs(marcas), nueva: false };
+}
+
+/** ISO UTC con Z y sin fracciones (contrato del campo `conversacionDesde`). */
+export const isoSinFracciones = (ms: number): string =>
+  new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+/**
  * ¿Este estado es una TRANSICIÓN que hay que avisar a recepción?
  *
  * Se avisa una vez por ventana y por umbral: al pasar a `operador` y al pasar

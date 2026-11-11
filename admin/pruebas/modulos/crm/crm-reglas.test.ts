@@ -25,6 +25,7 @@ const claims = (tenants: Record<string, string>) => ({
 const adminA = () => entorno.authenticatedContext('u-admin-a', claims({ [A]: 'admin' })).firestore();
 const operA = () => entorno.authenticatedContext('u-oper-a', claims({ [A]: 'oper' })).firestore();
 const adminB = () => entorno.authenticatedContext('u-admin-b', claims({ [B]: 'admin' })).firestore();
+const operB = () => entorno.authenticatedContext('u-oper-b', claims({ [B]: 'oper' })).firestore();
 const adminS = () => entorno.authenticatedContext('u-admin-s', claims({ [S]: 'admin' })).firestore();
 const adminSin = () => entorno.authenticatedContext('u-admin-sin', claims({ [SIN]: 'admin' })).firestore();
 const sello = (uid = 'u-admin-a') => ({ actualizadoPor: uid, actualizadoEn: serverTimestamp() });
@@ -183,3 +184,48 @@ describe('enlaces/minicrm: quién lee y nadie escribe', () => {
   });
 });
 
+
+// -----------------------------------------------------------------------------
+// enlaces/manual-operador y enlaces/manual-admin — manuales de uso (10/11/2026).
+// El operador lee SOLO el suyo; el admin lee los dos; nadie escribe desde un cliente.
+// -----------------------------------------------------------------------------
+describe('enlaces/manual-operador y enlaces/manual-admin: el operador NO ve el manual del admin', () => {
+  const op = (t: string) => `tenants/${t}/enlaces/manual-operador`;
+  const ad = (t: string) => `tenants/${t}/enlaces/manual-admin`;
+  const URL_DOC = 'https://docs.google.com/document/d/AbCdEfGhIjKlMnOpQrSt/edit';
+  beforeEach(async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      for (const t of [A, B]) {
+        await setDoc(doc(ctx.firestore(), op(t)), { enlace: URL_DOC });
+        await setDoc(doc(ctx.firestore(), ad(t)), { enlace: URL_DOC });
+      }
+    });
+  });
+  it('el admin lee los dos; el operador lee el suyo', async () => {
+    await assertSucceeds(getDoc(doc(adminA(), op(A))));
+    await assertSucceeds(getDoc(doc(adminA(), ad(A))));
+    await assertSucceeds(getDoc(doc(operA(), op(A))));
+  });
+  it('NIEGA: el operador no lee el manual del administrador', async () => {
+    await assertFails(getDoc(doc(operA(), ad(A))));
+  });
+  it('NIEGA: otro comercio, sin sesión y el propietario de NovuChat no leen ninguno de los dos', async () => {
+    const propietario = entorno.authenticatedContext('u-novuchat', {
+      nc: { t: {}, v: 1, owner: true }, firebase: { sign_in_provider: 'google.com', identities: {} }, email_verified: true,
+    }).firestore();
+    for (const db of [adminB(), operB(), entorno.unauthenticatedContext().firestore(), propietario]) {
+      await assertFails(getDoc(doc(db, op(A))));
+      await assertFails(getDoc(doc(db, ad(A))));
+    }
+  });
+  it('NIEGA: nadie escribe ninguno desde un cliente (ni su admin) y nadie lista la colección', async () => {
+    for (const db of [adminA(), operA(), adminB()]) {
+      for (const r of [op(A), ad(A)]) {
+        await assertFails(setDoc(doc(db, r), { enlace: URL_DOC }));
+        await assertFails(updateDoc(doc(db, r), { enlace: 'https://docs.google.com/document/d/OtroOtroOtroOtro1' }));
+        await assertFails(deleteDoc(doc(db, r)));
+      }
+    }
+    await assertFails(getDocs(collection(operA(), `tenants/${A}/enlaces`)));
+  });
+});

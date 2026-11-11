@@ -150,7 +150,9 @@ function aaLimpiar(payload, etiqueta) {
     if (!aaSeguro(payload.image.caption)) { payload.image.caption = AA_GENERICO_PIE; limpio = false; AA_errores.push('pie_de_imagen_reemplazado: ' + etiqueta); }
   } else if (payload.type === 'template' && payload.template && Array.isArray(payload.template.components)) {
     for (const c of payload.template.components) {
-      if (!c || !Array.isArray(c.parameters)) continue;
+      // El parámetro de un BOTÓN (la ubicación «lat%2Clon» de `pedido_lista_mapa`) lo arma `avisos.js` solo con números y lo valida con su forma
+      // exacta: no es texto del cliente ni se lee como frase, y cambiarlo por «—» rompería el enlace. Solo se revisan los del cuerpo.
+      if (!c || !Array.isArray(c.parameters) || c.type === 'button') continue;
       c.parameters.forEach((p, i) => {
         if (p && typeof p.text === 'string' && !aaSeguro(p.text)) {
           p.text = i === 0 ? 'consulta de cliente' : '—';

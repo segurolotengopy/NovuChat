@@ -4,7 +4,7 @@
  * construir.mjs — arma los JSON de «Chat NovuChat v2 (Kenji)» desde la plantilla y los datos propios
  * =============================================================================
  *
- *   node construir.mjs               escribe chat-novuchat.novuchat.json y chat-novuchat.prueba.json
+ *   node construir.mjs               escribe chat-novuchat.novuchat.json, chat-novuchat.prueba.json y chat-novuchat.ensayo-demo-a.json
  *   node construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma, si viola una guardia o si hay un JSON sin archivo de datos (huérfano)
  *   (NUNCA con --help ni --ayuda: cualquier argumento que no sea --verificar escribe los JSON)
  *
@@ -20,7 +20,7 @@
  *
  * LOS DATOS son `admin/scripts/datos/chat-novuchat/<archivo>.json` (zona Tenants: solo marcadores `REEMPLAZAR_*` para los identificadores, nunca un token, un teléfono, una ruta de webhook ni
  * un id de planilla reales). UNA SALIDA POR ARCHIVO: `novuchat.json` → `chat-novuchat.novuchat.json` (con «WhatsApp Trigger»); `ensayo.json` → `chat-novuchat.prueba.json` (con «Entrada de
- * prueba», sin «WhatsApp Trigger»: activar un disparador de WhatsApp en n8n registra el webhook en Meta y se lo quita al flujo vivo).
+ * prueba», sin «WhatsApp Trigger»: activar un disparador de WhatsApp en n8n registra el webhook en Meta y se lo quita al flujo vivo); `ensayo-demo-a.json` → `chat-novuchat.ensayo-demo-a.json` (con «WhatsApp Trigger», que la herramienta cambia por el del Demo A; miniCRM contra una hoja de prueba; nunca se publica como flujo de un cliente).
  *
  * Node sin dependencias. No lee ningún .env ni llama a la red.
  */
@@ -32,6 +32,7 @@ import { contarDeclaraciones, hallazgosDelCodigo, TEXTOS as TEXTOS_GUARDA } from
 const TEXTO_NO_ANALIZABLE = TEXTOS_GUARDA.noAnalizable;
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
 // LA CADENA DE ENVÍO ES COMÚN (no se copia): se injerta desde `comun-sin-agente/src/envio.mjs` (enviar, respaldo en texto, reporte saliente).
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
 // EL miniCRM ES UN MÓDULO (no se copia): los paquetes `crm-prospecto` y `crm-decidir`, y el injerto del mapa de columnas del tenant (dato `crm`).
@@ -86,7 +87,7 @@ function escribirSinSeguirEnlaces(ruta, texto, nombre) {
 
 // ----------------------------------------------------------------- los datos
 const esEnsayo = (archivo) => /^ensayo[\w-]*\.json$/.test(archivo);
-/** `novuchat.json` → `chat-novuchat.novuchat.json`; `ensayo.json` → `chat-novuchat.prueba.json`. */
+/** `novuchat.json` → `chat-novuchat.novuchat.json`; `ensayo.json` → `chat-novuchat.prueba.json`; `ensayo-demo-a.json` → `chat-novuchat.ensayo-demo-a.json`. */
 export const salidaDe = (archivo) => (archivo === 'ensayo.json' ? 'chat-novuchat.prueba.json' : `chat-novuchat.${archivo.replace(/\.json$/, '')}.json`);
 export const archivosDeDatos = (dir = DATOS) => readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
 
@@ -167,6 +168,21 @@ const CLAVES_TEXTOS = ['saludo', 'listaBoton', 'listaTitulo', 'planesIntro', 'pl
   'traspasoRepite', 'traspasoSinRecepcion', 'recepcion', 'botonTraspaso', 'saludoWa', 'estadoAviso', 'falla', 'medioIlegible', 'invitaOtroRubro', 'planesAgotado'];
 const DESCARTES = ['numero_equivocado', 'vende_o_busca_trabajo', 'sin_negocio', 'spam_o_prueba'];
 
+// EL ENSAYO EN EL DEMO A (`ensayo-demo-a.json` → `chat-novuchat.ensayo-demo-a.json`): el mismo flujo, con el miniCRM CONECTADO, pero contra una HOJA DE PRUEBA y con los marcadores PROPIOS del ensayo.
+// Es un archivo de ensayo y nunca producción: los marcadores y la credencial de hoja de abajo solo pueden estar ahí, y ahí no puede quedar ninguno de producción (ni heredado).
+export const DATOS_ENSAYO_DEMO_A = 'ensayo-demo-a.json';
+export const SALIDA_ENSAYO_DEMO_A = 'chat-novuchat.ensayo-demo-a.json';
+export const CRED_PLANILLA_ENSAYO = 'Google Sheets miniCRM (ensayo)';
+const MARCADOR_PLANILLA_ENSAYO = { planillaProspectosId: 'REEMPLAZAR_PLANILLA_ENSAYO_ID', planillaProspectosHoja: 'REEMPLAZAR_PLANILLA_ENSAYO_HOJA' };
+// Los cuatro marcadores EXACTOS del ensayo (la hoja de prueba, el teléfono de quien prueba y el phone id del Demo A): ni otro marcador ni un valor literal.
+const MARCADORES_EXACTOS_ENSAYO = { ...MARCADOR_PLANILLA_ENSAYO, numeroRecepcion: 'REEMPLAZAR_NUMERO_AVISO_ENSAYO', phoneNumberIdEsperado: 'REEMPLAZAR_PHONE_NUMBER_ID' };
+// Credenciales del Demo A: solo el ensayo en el Demo A puede nombrarlas; en cualquier otra salida son un hallazgo.
+const CREDENCIALES_DEL_DEMO_A = ['WhatsApp OAuth account', 'Cierres NovuChat A (auto)', 'Graph WhatsApp Demo A (Bearer)'];
+// Marcadores del ensayo (el aviso al teléfono de quien prueba, la hoja de prueba y el phone id del Demo A, sin sufijo de cliente).
+const ES_MARCADOR_DE_ENSAYO = /REEMPLAZAR_(?:PLANILLA_ENSAYO_[A-Z0-9_]+|NUMERO_AVISO_ENSAYO|PHONE_NUMBER_ID(?![A-Z0-9_]))/;
+// Marcadores de PRODUCCIÓN de la hoja de prospectos de NovuChat y de su número: nunca en el ensayo.
+const ES_MARCADOR_DE_PRODUCCION = /REEMPLAZAR_(?:PLANILLA_PROSPECTOS_[A-Z0-9_]+|PHONE_NUMBER_ID_[A-Z0-9_]+|NUMERO_RECEPCION_[A-Z0-9_]+)/;
+
 /** Lo que un texto que VE EL CLIENTE no puede tener. Devuelve el motivo o ''. `libre`: textos que sí pueden tener cifras o una pregunta (los valida el llamador). */
 function errorDeTextoDelCliente(v, opc = {}) {
   if (typeof v !== 'string' || v.trim() === '') return 'tiene que ser un texto no vacío';
@@ -242,6 +258,19 @@ export function validarDatos(datos, archivo) {
     if (typeof cb.nombreNegocio === 'string' && (cb.nombreNegocio.trim() === '' || cb.nombreNegocio.length > 60)) e('configBase.nombreNegocio', 'tiene que tener de 1 a 60 caracteres');
     if (typeof cb.planillaProspectosHoja === 'string' && (cb.planillaProspectosHoja.trim() === '' || cb.planillaProspectosHoja.length > 100)) e('configBase.planillaProspectosHoja', 'tiene que tener de 1 a 100 caracteres (o el marcador)');
     if (typeof cb.mensajeComercioSuspendido === 'string' && (cb.mensajeComercioSuspendido.trim() === '' || cb.mensajeComercioSuspendido.length > 300)) e('configBase.mensajeComercioSuspendido', 'tiene que tener de 1 a 300 caracteres');
+  }
+
+  // --- el ensayo en el Demo A: marcadores y credencial de hoja PROPIOS, y ninguno de producción; y a la inversa en los demás archivos
+  if (cb) {
+    const textoCb = JSON.stringify(cb) + JSON.stringify(cred.planilla || '');
+    if (archivo === DATOS_ENSAYO_DEMO_A) {
+      for (const [c, m] of Object.entries(MARCADORES_EXACTOS_ENSAYO)) if (cb[c] !== m) e(`configBase.${c}`, `en ${DATOS_ENSAYO_DEMO_A} tiene que ser el marcador de ensayo «${m}» (la hoja de prueba; nunca la hoja real de prospectos)`);
+      if (ES_MARCADOR_DE_PRODUCCION.test(textoCb)) e('configBase', 'el ensayo en el Demo A trae un marcador de producción (REEMPLAZAR_PLANILLA_PROSPECTOS_*, REEMPLAZAR_PHONE_NUMBER_ID_* o REEMPLAZAR_NUMERO_RECEPCION_*): usa solo los del ensayo');
+      if (cred.planilla !== CRED_PLANILLA_ENSAYO) e('credenciales.planilla', `en ${DATOS_ENSAYO_DEMO_A} tiene que ser «${CRED_PLANILLA_ENSAYO}» (la de la hoja de prueba)`);
+      if (d.entrada !== 'trigger') e('entrada', `en ${DATOS_ENSAYO_DEMO_A} tiene que ser «trigger» (la herramienta lo cambia por el del Demo A)`);
+    } else if (ES_MARCADOR_DE_ENSAYO.test(textoCb) || cred.planilla === CRED_PLANILLA_ENSAYO) {
+      e('configBase', `trae un marcador o la credencial de hoja del ensayo en el Demo A (REEMPLAZAR_PLANILLA_ENSAYO_*, REEMPLAZAR_NUMERO_AVISO_ENSAYO, REEMPLAZAR_PHONE_NUMBER_ID o «${CRED_PLANILLA_ENSAYO}»): solo ${DATOS_ENSAYO_DEMO_A} puede llevarlos`);
+    }
   }
 
   // --- el mapa de columnas de la hoja de prospectos (módulo crm): lo valida el MISMO validador que corre en n8n
@@ -593,13 +622,15 @@ function sinComentariosSinMemo(texto, modo) {
   return salida;
 }
 
-export function guardias(entrada, flujo, datos = {}) {
+export function guardias(entrada, flujo, datos = {}, destino = '') {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   const nombres = new Set(nodos.map((n) => n.name));
   const parametros = (n) => (n && n.parameters) || {};
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   if (nodos.length) h.push(...hallazgosDelGuardado(flujo));
+  // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
+  h.push(...hallazgosDeExpresionesN8n(flujo || {}));
   // «Entrada de prueba» nunca en producción: es el único nodo que activa el modo prueba. «WhatsApp Trigger» nunca en la prueba.
   if (entrada !== 'prueba' && nombres.has(NODO_PRUEBA)) h.push(`contiene el nodo «${NODO_PRUEBA}» (activa el modo prueba): solo va en el JSON de prueba`);
   if (entrada === 'prueba' && nombres.has(NODO_TRIGGER)) h.push(`contiene el nodo «${NODO_TRIGGER}» en la prueba: activarlo registra el webhook en Meta y se lo quita al flujo vivo`);
@@ -767,6 +798,23 @@ export function guardias(entrada, flujo, datos = {}) {
   }
   if (sheet('Agregar fila') && formato(sheet('Agregar fila')) !== 'USER_ENTERED') h.push('«Agregar fila» tiene que escribir en USER_ENTERED (la fecha queda como fecha)');
   if (sheet('Actualizar fila') && formato(sheet('Actualizar fila')) !== 'RAW') h.push('«Actualizar fila» tiene que escribir en RAW (nada se interpreta)');
+  // EL ENSAYO EN EL DEMO A, en lo ARMADO (y en el versionado, aunque alguien lo haya tocado a mano): solo `chat-novuchat.ensayo-demo-a.json` puede llevar los marcadores y la credencial de hoja del ensayo, y ahí no puede quedar ninguno de producción.
+  {
+    const base = nodos.find((n) => n.name === 'Config base');
+    const valoresBase = ((((base || {}).parameters || {}).assignments || {}).assignments || []).map((a) => String((a && a.value) ?? ''));
+    const hojas = nodos.filter((n) => n.type === 'n8n-nodes-base.googleSheets');
+    const credDeHojas = hojas.map((n) => String((((n.credentials || {}).googleApi) || {}).name || ''));
+    if (destino === SALIDA_ENSAYO_DEMO_A) {
+      const porNombre = Object.fromEntries((((base || {}).parameters || {}).assignments || {}).assignments?.map((a) => [a.name, a.value]) || []);
+      for (const [c, m] of Object.entries(MARCADORES_EXACTOS_ENSAYO)) if (porNombre[c] !== m) h.push(`el ensayo en el Demo A: «Config base».${c} tiene que ser el marcador «${m}»`);
+      if (valoresBase.some((v) => ES_MARCADOR_DE_PRODUCCION.test(v))) h.push('el ensayo en el Demo A: «Config base» trae un marcador de producción');
+      if (!hojas.length || credDeHojas.some((c) => c !== CRED_PLANILLA_ENSAYO)) h.push(`el ensayo en el Demo A: los nodos de la planilla tienen que usar «${CRED_PLANILLA_ENSAYO}» (la hoja de prueba) y el miniCRM tiene que estar conectado`);
+    } else {
+      if (valoresBase.some((v) => ES_MARCADOR_DE_ENSAYO.test(v)) || credDeHojas.includes(CRED_PLANILLA_ENSAYO)) h.push(`trae un marcador o la credencial de hoja del ensayo en el Demo A: solo ${SALIDA_ENSAYO_DEMO_A} puede llevarlos`);
+      const delDemoA = new Set(nodos.flatMap((n) => Object.values(n.credentials || {}).map((c) => String((c && c.name) || ''))).filter((c) => CREDENCIALES_DEL_DEMO_A.includes(c)));
+      if (delDemoA.size) h.push(`usa credenciales del Demo A (${[...delDemoA].join(', ')}): solo ${SALIDA_ENSAYO_DEMO_A} puede llevarlas`);
+    }
+  }
   // `REEMPLAZAR_` solo en «Config base» (y en la ruta de «Entrada de prueba»).
   for (const n of nodos) {
     if (n.name === 'Config base') continue;
@@ -840,14 +888,14 @@ export function construir({ carpeta = AQUI, datos: dirDatos = DATOS, verificar =
     const texto = armarTenant(proyecto, datos, archivo);
     const salida = salidaDe(archivo);
     // Lo que se arma nunca viola las guardias (si la plantilla lo hiciera, falla la construcción)…
-    const propios = guardias(datos.entrada, JSON.parse(texto), datos);
+    const propios = guardias(datos.entrada, JSON.parse(texto), datos, salida);
     if (propios.length) throw new Error(`${salida}: ${propios.join('; ')}`);
     const ruta = join(carpeta, salida);
     const actual = leerSiExiste(ruta, salida);
     // …y el archivo VERSIONADO tampoco las viola (aunque alguien lo haya tocado a mano).
     let versionado = [];
     if (actual !== null) {
-      try { versionado = guardias(datos.entrada, JSON.parse(actual), datos); } catch (x) { versionado = ['no es un JSON válido']; }
+      try { versionado = guardias(datos.entrada, JSON.parse(actual), datos, salida); } catch (x) { versionado = ['no es un JSON válido']; }
     }
     if (!verificar) escribirSinSeguirEnlaces(ruta, texto, salida);
     return { archivo: salida, datos: archivo, nodos: JSON.parse(texto).nodes.length, existia: actual !== null, alDia: actual === texto, versionado };

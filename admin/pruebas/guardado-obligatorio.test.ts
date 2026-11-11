@@ -106,7 +106,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
   // fijaba (valía el de la instancia). Cambiar una fila obliga a cambiar esta prueba y decirlo en el PR.
   const NADA: [string, string, boolean] = ['none', 'none', false];
   const RETENCION: Record<string, [string | undefined, string | undefined, boolean | undefined]> = Object.fromEntries([
-    'experimental/rroca-evy/rroca-evy.json', 'experimental/rroca-evy/rroca-evy.prueba.json',
+    'experimental/rroca-evy/rroca-evy.json', 'experimental/rroca-evy/rroca-evy.prueba.json', 'experimental/rroca-evy/rroca-evy.ensayo-demo-a.json',
     'experimental/rroca-emma/rroca-emma.json', 'experimental/rroca-emma/rroca-emma.prueba.json',
     'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-evy.prueba.json',
     'experimental/doctoras/doctoras.rroca-emma.json', 'experimental/doctoras/doctoras.rroca-emma.prueba.json',
@@ -114,7 +114,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
     'experimental/rroca-antonio/rroca-antonio.json', 'experimental/rroca-antonio/rroca-antonio.prueba.json',
     'experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.qtaco-3727.json', 'experimental/venta-minima/venta-minima.prueba.json',
     'experimental/venta-minima/venta-minima.ensayo-demo-a.json',
-    'experimental/chat-novuchat/chat-novuchat.novuchat.json', 'experimental/chat-novuchat/chat-novuchat.prueba.json',
+    'experimental/chat-novuchat/chat-novuchat.novuchat.json', 'experimental/chat-novuchat/chat-novuchat.prueba.json', 'experimental/chat-novuchat/chat-novuchat.ensayo-demo-a.json',
     'experimental/captacion-minima/captacion-minima.novuchat.json', 'experimental/captacion-minima/captacion-minima.prueba.json',
     'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/agenda-minima/agenda-minima.prueba.json',
     // Walisuma (#713, 30/10): main la traía con «none»/«all»; pasa a «none» como todos.

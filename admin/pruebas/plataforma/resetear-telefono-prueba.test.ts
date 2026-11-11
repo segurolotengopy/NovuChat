@@ -1,0 +1,830 @@
+/**
+ * `resetear-telefono-prueba.mjs` — borra el estado de conversación del SERVIDOR de un teléfono de prueba (venta-minima, Q'Taco).
+ * Sin Firestore ni red: una base en memoria con datos sintéticos (el repositorio es público: teléfonos inventados). Se NIEGA primero.
+ */
+import { afterAll, describe, expect, it } from 'vitest';
+import { chmodSync, closeSync, fstatSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { basename, dirname, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
+
+type Cfg = Record<string, any>;
+const m = await import('../../scripts/plataforma/resetear-telefono-prueba.mjs') as any;
+const aqui = dirname(fileURLToPath(import.meta.url));
+
+const TEL = '59100000001';
+const OTRO = '59100000002';
+const VECINO = '591000000011'; // comparte el prefijo con TEL
+const SUFIJO = '99900000001'; // otro país, mismos 8 últimos dígitos
+const PN = 'pn0001';
+const PROY = 'proyecto-ficticio-staging';
+const ENV = { GCP_PROJECT_ID_STAGING: PROY, GCP_PROJECT_ID_PROD: 'proyecto-ficticio-prod', TELEFONOS_PRUEBA: `${TEL},${OTRO}`, N8N_WORKFLOWS_PERMITIDOS: 'abc123XYZ,otro999' };
+const BASE = ['--proyecto', PROY, '--tenant', 'qtaco', '--tel', TEL];
+const dirs: string[] = [];
+const rutaRespaldo = () => { const d = mkdtempSync(join(tmpdir(), 'est-turno-')); chmodSync(d, 0o700); dirs.push(d); return join(d, 'respaldo.json'); };
+afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
+const problemas = (r: any) => { expect(r.ok, JSON.stringify(r)).toBe(false); return (r.problemas ?? []).join(' | '); };
+const leido = (ruta: string) => { const fd = openSync(ruta, 'r'); try { return { modo: fstatSync(fd).mode & 0o777, json: JSON.parse(readFileSync(fd, 'utf8')) }; } finally { closeSync(fd); } };
+
+describe('E1. argumentos y salvaguardas', () => {
+  it('NEGADO: teléfono fuera de la lista, vecino, mal formado o sin TELEFONOS_PRUEBA', () => {
+    for (const t of ['59100000003', VECINO, '5910000000', '+59100000001']) {
+      expect(problemas(m.analizarArgumentos(['--proyecto', PROY, '--tenant', 'qtaco', '--tel', t], ENV))).toContain('--tel');
+    }
+    const { TELEFONOS_PRUEBA: _x, ...sin } = ENV;
+    expect(problemas(m.analizarArgumentos(BASE, sin))).toContain('TELEFONOS_PRUEBA');
+    expect(problemas(m.analizarArgumentos(BASE, { ...ENV, TELEFONOS_PRUEBA: `${TEL},abc` }))).toContain('TELEFONOS_PRUEBA');
+  });
+  it('NEGADO: el error no imprime teléfonos', () => {
+    const t = problemas(m.analizarArgumentos(['--proyecto', PROY, '--tenant', 'qtaco', '--tel', '59100000003'], ENV));
+    for (const x of [TEL, OTRO, '59100000003']) expect(t).not.toContain(x);
+  });
+  it('NEGADO: otro tenant, sin tenant, proyecto fuera de la lista blanca', () => {
+    expect(problemas(m.analizarArgumentos(['--proyecto', PROY, '--tenant', 'otro-comercio', '--tel', TEL], ENV))).toContain('lista cerrada');
+    expect(problemas(m.analizarArgumentos(['--proyecto', PROY, '--tel', TEL], ENV))).toContain('--tenant');
+    expect(problemas(m.analizarArgumentos(['--proyecto', 'otro-proyecto', '--tenant', 'qtaco', '--tel', TEL], ENV))).toContain('lista blanca');
+  });
+  it('NEGADO: --aplicar sin --respaldo; respaldo relativo; respaldo existente (no se pisa)', () => {
+    expect(problemas(m.analizarArgumentos([...BASE, '--aplicar'], ENV))).toContain('--respaldo');
+    expect(problemas(m.analizarArgumentos([...BASE, '--respaldo', 'r.json'], ENV))).toContain('absoluta');
+    const r = rutaRespaldo(); writeFileSync(r, '{}', { mode: 0o600 });
+    expect(problemas(m.analizarArgumentos([...BASE, '--aplicar', '--respaldo', r], ENV))).toContain('nunca se pisa');
+  });
+  it('NEGADO: contra producción, --aplicar sin --confirmo-produccion o con otro valor; la confirmación fuera de producción', () => {
+    const prod = ['--proyecto', 'proyecto-ficticio-prod', '--tenant', 'qtaco', '--tel', TEL, '--aplicar', '--respaldo', rutaRespaldo()];
+    expect(problemas(m.analizarArgumentos(prod, ENV))).toContain('--confirmo-produccion');
+    expect(problemas(m.analizarArgumentos([...prod, '--confirmo-produccion', 'otro'], ENV))).toContain('no coincide');
+    expect(m.analizarArgumentos([...prod, '--confirmo-produccion', 'qtaco'], ENV).ok).toBe(true);
+    expect(problemas(m.analizarArgumentos([...BASE, '--confirmo-produccion', 'qtaco'], ENV))).toContain('solo se usa contra producción');
+  });
+  it('NEGADO: --revertir sin respaldo; opciones repetidas o desconocidas', () => {
+    expect(problemas(m.analizarArgumentos([...BASE, '--revertir'], ENV))).toContain('--revertir exige');
+    expect(problemas(m.analizarArgumentos([...BASE, '--tel', OTRO], ENV))).toContain('repetida');
+    expect(problemas(m.analizarArgumentos([...BASE, '--todos'], ENV))).toContain('desconocida');
+  });
+  it('la invocación completa es válida y queda en seco por omisión', () => {
+    expect(m.analizarArgumentos(BASE, ENV).cfg).toMatchObject({ aplicar: false, revertir: false, tel: TEL, tenant: 'qtaco', entorno: 'staging' });
+  });
+});
+
+describe('E2. clasificación de ids', () => {
+  const c = m.clasificar;
+  it('borra solo la forma exacta, de venta-minima y con phoneNumberId coincidente', () => {
+    expect(c('sesionesDeTurno', `${PN}~venta-minima~wa_${TEL}`, PN, TEL)).toBe('borrar');
+    expect(c('sesionesDeTurno', `${PN}~venta-minima-prueba~wa_${TEL}`, PN, TEL)).toBe('borrar');
+    expect(c('cuposDeTurno', `${PN}~transferencias~wa_${TEL}~2026-11-07T10`, PN, TEL)).toBe('borrar');
+    expect(c('cuposDeTurno', `${PN}~pedidos~wa_${TEL}~2026-11-07T10`, PN, TEL)).toBe('borrar');
+  });
+  it('NEGADO: otro espacio, otra clave, cupo del comercio, vecino y phoneNumberId distinto no se borran', () => {
+    expect(c('sesionesDeTurno', `${PN}~chat~wa_${TEL}`, PN, TEL)).toBe('otro');
+    expect(c('sesionesDeTurno', `${PN}~vmc-abc12345~wa_${TEL}`, PN, TEL)).toBe('otro');
+    expect(c('cuposDeTurno', `${PN}~avisos~_~2026-11-07`, PN, TEL)).toBe('ajeno');
+    expect(c('cuposDeTurno', `${PN}~otra~wa_${TEL}~2026-11-07`, PN, TEL)).toBe('otro');
+    expect(c('sesionesDeTurno', `${PN}~venta-minima~wa_${VECINO}`, PN, TEL)).toBe('ajeno');
+    expect(c('sesionesDeTurno', `${PN}~venta-minima~wa_${OTRO}`, PN, TEL)).toBe('ajeno');
+    expect(c('sesionesDeTurno', `${PN}~venta-minima~wa_${TEL}`, 'pn9999', TEL)).toBe('resto');
+    expect(c('sesionesDeTurno', `${PN}~venta-minima~wa_${TEL}`, undefined, TEL)).toBe('resto');
+  });
+  it('otras formas de clave del mismo teléfono son posibles restos, no se borran', () => {
+    expect(c('sesionesDeTurno', `${PN}~venta-minima~wa_${TEL.slice(-8)}`, PN, TEL)).toBe('resto');
+    expect(c('sesionesDeTurno', `${PN}~venta-minima~wa_${SUFIJO}`, PN, TEL)).toBe('ajeno'); // otro número completo
+    expect(c('sesionesDeTurno', `${PN}~venta-minima~wa_${TEL}~x`, PN, TEL)).toBe('resto');
+    expect(c('sesionesDeTurno', `${PN}~venta-minima~wa_+${TEL}`, PN, TEL)).toBe('resto');
+    expect(c('cuposDeTurno', `${PN}~transferencias~wa_${TEL}`, PN, TEL)).toBe('resto'); // sin período: otra forma
+  });
+});
+
+// ---- base en memoria
+let reloj = 0;
+const BORRAR = Symbol('borrar');
+const FieldValue = { delete: () => BORRAR };
+const tsDe = (n: number) => ({ n, toDate: () => new Date(1_700_000_000_000 + n * 1000), toMillis: () => 1_700_000_000_000 + n * 1000 });
+const haceHoras = (h: number) => ({ toMillis: () => Date.now() - h * 3_600_000, toDate: () => new Date(Date.now() - h * 3_600_000) });
+const clon = (v: any): any => (v && typeof v.toDate === 'function' ? v : v instanceof Date ? v : Array.isArray(v) ? v.map(clon) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, clon(x)])) : v);
+function mundoDe(docsIniciales: Record<string, Record<string, any>>) {
+  const datos = new Map<string, any>(); const hora = new Map<string, any>();
+  const llamadas: string[] = [];
+  const gancho: { alBorrar: ((ruta: string) => void) | null; alEscanear: ((col: string, n: number) => void) | null; ignorarUpdate: boolean } = { alBorrar: null, alEscanear: null, ignorarUpdate: false };
+  const escaneos: Record<string, number> = {};
+  for (const [ruta, d] of Object.entries(docsIniciales)) { datos.set(ruta, clon(d)); hora.set(ruta, tsDe(++reloj)); }
+  const snap = (ruta: string): any => ({
+    id: ruta.split('/').pop(), exists: datos.has(ruta), ref: refDe(ruta), updateTime: hora.get(ruta),
+    get: (c: string) => datos.get(ruta)?.[c], data: () => clon(datos.get(ruta)),
+  });
+  const refDe = (ruta: string): any => ({
+    path: ruta,
+    update: async (campos: Record<string, any>, pre?: any) => {
+      llamadas.push(`update:${ruta}`);
+      gancho.alBorrar?.(ruta);
+      if (!datos.has(ruta)) throw Object.assign(new Error('x'), { code: 5 });
+      if (pre?.lastUpdateTime && pre.lastUpdateTime.n !== hora.get(ruta).n) throw Object.assign(new Error('x'), { code: 9 });
+      const d = datos.get(ruta);
+      if (gancho.ignorarUpdate) return;
+      for (const [k, v] of Object.entries(campos)) {
+        const partes = k.split('.'); let o = d;
+        for (const p of partes.slice(0, -1)) o = o[p];
+        const ult = partes[partes.length - 1];
+        if (v === BORRAR) delete o[ult]; else o[ult] = clon(v);
+      }
+      hora.set(ruta, tsDe(++reloj));
+    },
+    delete: async (pre?: any) => {
+      llamadas.push(`delete:${ruta}`);
+      gancho.alBorrar?.(ruta);
+      if (!datos.has(ruta)) throw Object.assign(new Error('x'), { code: 5 });
+      if (pre?.lastUpdateTime && pre.lastUpdateTime.n !== hora.get(ruta).n) throw Object.assign(new Error('x'), { code: 9 });
+      datos.delete(ruta); hora.delete(ruta);
+    },
+    create: async (d: any) => {
+      llamadas.push(`create:${ruta}`);
+      if (datos.has(ruta)) throw Object.assign(new Error('x'), { code: 6 });
+      datos.set(ruta, clon(d)); hora.set(ruta, tsDe(++reloj));
+    },
+  });
+  const db = {
+    collection: (col: string) => ({
+      select: () => ({
+        limit: () => ({
+          get: async () => {
+            escaneos[col] = (escaneos[col] ?? 0) + 1; gancho.alEscanear?.(col, escaneos[col]);
+            return { docs: [...datos.keys()].filter((r) => r.startsWith(`${col}/`) && r.split('/').length === col.split('/').length + 1).map(snap) };
+          },
+        }),
+      }),
+    }),
+    doc: (ruta: string) => refDe(ruta),
+    getAll: async (...args: any[]) => args.filter((r) => r && typeof r.path === 'string').map((r) => snap(r.path)),
+  };
+  return { db, datos, llamadas, hora, gancho };
+}
+
+const T = 'tenants/qtaco';
+const doc = (extra: Record<string, any> = {}) => ({ version: 3, estadoJson: '{"paso":"menu","tel":"dato"}', vence: tsDe(1), actualizadoEn: tsDe(2), flujo: 'venta-minima', phoneNumberId: PN, compromisos: [{ id: 'c1', en: tsDe(3) }], ...extra });
+const cupo = (extra: Record<string, any> = {}) => ({ usados: 1, tope: 3, por: { c1: { cantidad: 1, en: 5, tel: TEL } }, vence: tsDe(4), phoneNumberId: PN, ...extra });
+const conv = (extra: Record<string, any> = {}) => ({ solicitud: { etapa: 'qr_enviado', monto: 50, vence: tsDe(7) }, estado: 'abierta', etiquetas: ['a'], nombre: 'Prueba', ...extra });
+const inicial = () => ({
+  [`${T}/sesionesDeTurno/${PN}~venta-minima~wa_${TEL}`]: doc(),
+  [`${T}/sesionesDeTurno/${PN}~venta-minima-prueba~wa_${TEL}`]: doc(),
+  [`${T}/sesionesDeTurno/${PN}~chat~wa_${TEL}`]: doc(),
+  [`${T}/sesionesDeTurno/${PN}~vmc-abc12345~wa_${TEL}`]: doc({ estadoJson: null }),
+  [`${T}/sesionesDeTurno/${PN}~venta-minima~wa_${OTRO}`]: doc(),
+  [`${T}/sesionesDeTurno/${PN}~venta-minima~wa_${VECINO}`]: doc(),
+  [`${T}/sesionesDeTurno/${PN}~venta-minima~wa_${SUFIJO}`]: doc(),
+  [`${T}/sesionesDeTurno/${PN}~venta-minima~wa_+${TEL}`]: doc(), // otra forma de clave: posible resto
+  [`${T}/cuposDeTurno/${PN}~transferencias~wa_${TEL}~2026-11-07T10`]: cupo(),
+  [`${T}/cuposDeTurno/${PN}~pedidos~wa_${TEL}~2026-11-07T10`]: cupo(),
+  [`${T}/cuposDeTurno/${PN}~avisos~_~2026-11-07`]: cupo(),
+  [`${T}/cuposDeTurno/${PN}~transferencias~wa_${OTRO}~2026-11-07T10`]: cupo(),
+  [`${T}/conversaciones/wa_${TEL}`]: conv(),
+  [`${T}/conversaciones/wa_${OTRO}`]: conv(),
+  [`${T}/conversaciones/wa_${VECINO}`]: conv(),
+  [`tenants/otro-comercio/conversaciones/wa_${TEL}`]: conv(),
+  [`${T}/vistosDeTurno/abcdef0123`]: { ejecucion: 'e1', phoneNumberId: PN, vence: tsDe(9) },
+  [`tenants/otro-comercio/sesionesDeTurno/${PN}~venta-minima~wa_${TEL}`]: doc(),
+});
+const cfgDe = (extra: Cfg = {}): Cfg => {
+  const c: Cfg = { proyecto: PROY, entorno: 'staging', tenant: 'qtaco', tel: TEL, aplicar: false, revertir: false, respaldo: null, ...extra };
+  // Lo que deja `analizarArgumentos`: la ruta ya resuelta y validada (la prueba de «sigue igual» la sobrescribe).
+  if (c.respaldo && !('respaldoResuelto' in extra)) c.respaldoResuelto = join(realpathSync(dirname(c.respaldo)), basename(c.respaldo));
+  return c;
+};
+const salida = () => { const l: string[] = []; return { l, log: (t: string) => l.push(t), texto: () => l.join('\n') }; };
+const MIOS = 4; // sesiones venta-minima (2) + cupos del teléfono (2)
+
+describe('E3. seco', () => {
+  it('cuenta, no escribe y no imprime teléfonos ni ids', async () => {
+    const w = mundoDe(inicial()); const s = salida(); const antes = JSON.stringify([...w.datos]);
+    const r = await m.ejecutar(cfgDe(), { db: w.db, FieldValue, log: s.log });
+    expect(r).toBe(1);
+    expect(w.llamadas).toEqual([]);
+    expect(JSON.stringify([...w.datos])).toBe(antes);
+    expect(s.texto()).toContain('solicitud de cobro pendiente: sí');
+    expect(s.texto()).toContain('sesionesDeTurno: 2'); expect(s.texto()).toContain('cuposDeTurno: 2');
+    expect(s.texto()).toContain('otros espacios o claves del mismo teléfono (no se tocan): 2');
+    expect(s.texto()).toContain('posibles restos (otra forma de clave, no se borran): 1');
+    for (const x of [TEL, OTRO, VECINO, SUFIJO, PN, 'dato']) expect(s.texto()).not.toContain(x);
+  });
+  it('sin documentos: 0 y nada que borrar', async () => {
+    const w = mundoDe({}); const s = salida();
+    expect(await m.ejecutar(cfgDe(), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    expect(s.texto()).toContain('Nada que borrar');
+  });
+});
+
+describe('E4. --aplicar', () => {
+  it('borra SOLO lo del teléfono y del tenant; respaldo 0600 con los documentos completos; deja intactos vecino, otro teléfono, otro tenant, vistos y restos', async () => {
+    const w = mundoDe(inicial()); const s = salida(); const ruta = rutaRespaldo();
+    const r = await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: s.log });
+    expect(r, s.texto()).toBe(0);
+    const borrados = w.llamadas.filter((x) => x.startsWith('delete:'));
+    expect(borrados).toHaveLength(MIOS);
+    for (const b of borrados) { expect(b).toContain('tenants/qtaco/'); expect(b).toContain(`wa_${TEL}`); expect(b).not.toContain('~chat~'); expect(b).not.toContain('~vmc-'); }
+    expect(w.datos.size).toBe(Object.keys(inicial()).length - MIOS);
+    for (const k of [`${PN}~venta-minima~wa_${OTRO}`, `${PN}~venta-minima~wa_${VECINO}`, `${PN}~venta-minima~wa_${SUFIJO}`, `${PN}~venta-minima~wa_+${TEL}`, `${PN}~chat~wa_${TEL}`]) expect(w.datos.has(`${T}/sesionesDeTurno/${k}`)).toBe(true);
+    expect(w.datos.has(`${T}/cuposDeTurno/${PN}~avisos~_~2026-11-07`)).toBe(true);
+    expect(w.datos.has(`${T}/cuposDeTurno/${PN}~transferencias~wa_${OTRO}~2026-11-07T10`)).toBe(true);
+    expect(w.datos.has(`${T}/vistosDeTurno/abcdef0123`)).toBe(true);
+    expect(w.datos.has(`tenants/otro-comercio/sesionesDeTurno/${PN}~venta-minima~wa_${TEL}`)).toBe(true);
+    const b = leido(ruta); expect(b.modo).toBe(0o600);
+    expect(b.json.docs).toHaveLength(MIOS); expect(JSON.stringify(b.json.docs)).toContain('menu');
+    expect(s.texto()).toContain('posibles restos'); expect(s.texto()).toContain('⚠');
+    for (const x of [TEL, OTRO, VECINO, SUFIJO]) expect(s.texto()).not.toContain(x);
+  });
+  it('NEGADO: si un documento cambia entre las dos lecturas, no escribe ni respalda', async () => {
+    const w = mundoDe(inicial()); const ruta = rutaRespaldo();
+    w.gancho.alEscanear = (col, n) => { if (col.endsWith('sesionesDeTurno') && n === 2) w.hora.set(`${T}/sesionesDeTurno/${PN}~venta-minima~wa_${TEL}`, tsDe(++reloj)); };
+    const s = salida();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: s.log })).toBe(3);
+    expect(w.llamadas).toEqual([]);
+    expect(() => leido(ruta)).toThrow();
+  });
+  it('NEGADO: la precondición de hora impide borrar un documento que cambió justo antes del borrado', async () => {
+    const w = mundoDe(inicial()); const s = salida();
+    w.gancho.alBorrar = (ruta) => { if (ruta.endsWith(`~venta-minima~wa_${TEL}`)) w.hora.set(ruta, tsDe(++reloj)); };
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(3);
+    expect(w.datos.has(`${T}/sesionesDeTurno/${PN}~venta-minima~wa_${TEL}`)).toBe(true);
+    expect(s.texto()).toContain('cambió');
+  });
+  it('NEGADO: un respaldo que ya existe nunca se pisa y no se borra nada', async () => {
+    const w = mundoDe(inicial()); const ruta = rutaRespaldo(); writeFileSync(ruta, 'previo', { mode: 0o600 });
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} })).toBe(2);
+    expect(w.llamadas).toEqual([]);
+    expect(readFileSync(ruta, 'utf8')).toBe('previo');
+  });
+  it('es idempotente: sin documentos del teléfono no crea respaldo ni escribe', async () => {
+    const w = mundoDe(inicial());
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: () => {} });
+    const ruta2 = rutaRespaldo(); const antes = w.llamadas.length;
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta2 }), { db: w.db, FieldValue, log: () => {} })).toBe(0);
+    expect(w.llamadas.length).toBe(antes);
+    expect(() => leido(ruta2)).toThrow();
+  });
+});
+
+describe('E5. reversa', () => {
+  it('repone los documentos tal como estaban (fechas incluidas) y no pisa lo que ya existe', async () => {
+    const w = mundoDe(inicial()); const ruta = rutaRespaldo();
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} });
+    const s = salida();
+    expect(await m.ejecutar(cfgDe({ revertir: true, respaldo: ruta }), { db: w.db, FieldValue, log: s.log })).toBe(1); // seco
+    expect(w.llamadas.filter((x) => x.startsWith('create:'))).toHaveLength(0);
+    expect(await m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    expect(w.datos.size).toBe(Object.keys(inicial()).length);
+    const rep = w.datos.get(`${T}/sesionesDeTurno/${PN}~venta-minima~wa_${TEL}`);
+    expect(rep.version).toBe(3); expect(rep.vence).toBeInstanceOf(Date); expect(rep.compromisos[0].en).toBeInstanceOf(Date);
+    expect(rep.estadoJson).toContain('menu');
+    expect(await m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: s.log })).toBe(0); // nada que reponer
+  });
+  it('NEGADO: respaldo de otro tenant, de otro entorno, de otro teléfono o con un documento ajeno o repetido se rechaza entero', async () => {
+    const w = mundoDe(inicial()); const ruta = rutaRespaldo();
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} });
+    const base = leido(ruta).json;
+    const con = (cambio: (j: any) => void) => { const j = structuredClone(base); cambio(j); const r = rutaRespaldo(); writeFileSync(r, JSON.stringify(j), { mode: 0o600 }); return r; };
+    const intento = async (r: string, extra: Cfg = {}) => m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: r, ...extra }), { db: w.db, FieldValue, log: () => {} });
+    expect(await intento(con((j) => { j.tenant = 'otro'; }))).toBe(2);
+    expect(await intento(con((j) => { j.entorno = 'produccion'; }))).toBe(2);
+    expect(await intento(ruta, { tel: OTRO })).toBe(2);
+    expect(await intento(con((j) => { j.docs.push({ coleccion: 'sesionesDeTurno', id: `${PN}~venta-minima~wa_${OTRO}`, data: { phoneNumberId: PN } }); }))).toBe(2);
+    expect(await intento(con((j) => { j.docs.push({ coleccion: 'conversaciones', id: 'x', data: {} }); }))).toBe(2);
+    expect(await intento(con((j) => { j.docs.push(j.docs[0]); }))).toBe(2);
+    expect(w.llamadas.filter((x) => x.startsWith('create:'))).toHaveLength(0);
+  });
+  it('NEGADO: un respaldo con permisos abiertos se rechaza', async () => {
+    const w = mundoDe(inicial()); const ruta = rutaRespaldo();
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} });
+    chmodSync(ruta, 0o644);
+    expect(await m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} })).toBe(2);
+  });
+});
+
+describe('E5b. la solicitud de cobro pendiente', () => {
+  const rutaConv = (t: string, tel: string) => `${t}/conversaciones/wa_${tel}`;
+  it('quita SOLO `solicitud` de la conversación del teléfono; el resto del documento y los demás quedan intactos', async () => {
+    const w = mundoDe(inicial()); const antes = clon(w.datos.get(rutaConv(T, TEL)));
+    const ajenos = [rutaConv(T, OTRO), rutaConv(T, VECINO), rutaConv('tenants/otro-comercio', TEL)].map((r) => JSON.stringify(w.datos.get(r)));
+    const s = salida();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    const d = w.datos.get(rutaConv(T, TEL));
+    expect(d.solicitud).toBeUndefined();
+    const { solicitud: _s, ...restoAntes } = antes;
+    expect(d).toEqual(restoAntes);
+    expect([rutaConv(T, OTRO), rutaConv(T, VECINO), rutaConv('tenants/otro-comercio', TEL)].map((r) => JSON.stringify(w.datos.get(r)))).toEqual(ajenos);
+    expect(w.llamadas.filter((x) => x.startsWith('update:'))).toEqual([`update:${rutaConv(T, TEL)}`]);
+    expect(w.llamadas.some((x) => x === `delete:${rutaConv(T, TEL)}`)).toBe(false);
+    expect(s.texto()).toContain('ESTADO: cobro pendiente=no');
+  });
+  it('sin solicitud y sin estado: nada que hacer, no escribe', async () => {
+    const d = inicial(); delete (d as any)[`${T}/conversaciones/wa_${TEL}`].solicitud;
+    for (const k of Object.keys(d)) if (k.includes('Turno/') && k.includes(`wa_${TEL}`)) delete (d as any)[k];
+    const w = mundoDe(d); const s = salida();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    expect(s.texto()).toContain('solicitud de cobro pendiente: no');
+    expect(w.llamadas).toEqual([]);
+  });
+  it('solo con solicitud (sin sesiones) también se quita', async () => {
+    const d = inicial();
+    for (const k of Object.keys(d)) if (k.includes('Turno/') && k.includes(`wa_${TEL}`)) delete (d as any)[k];
+    const w = mundoDe(d);
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: () => {} })).toBe(0);
+    expect(w.datos.get(rutaConv(T, TEL)).solicitud).toBeUndefined();
+  });
+  it('NEGADO: si llega un mensaje (cambia la conversación) entre lecturas o justo antes de escribir, no se escribe nada', async () => {
+    const w = mundoDe(inicial()); const ruta = rutaRespaldo();
+    w.gancho.alBorrar = (r) => { if (r === rutaConv(T, TEL)) w.hora.set(r, tsDe(++reloj)); };
+    const s = salida();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: s.log })).toBe(3);
+    expect(w.datos.get(rutaConv(T, TEL)).solicitud).toBeDefined();
+    expect(w.datos.size).toBe(Object.keys(inicial()).length); // ni un documento de sesión se borró
+  });
+  it('seco: informa sí/no sin imprimir contenido y no escribe', async () => {
+    const w = mundoDe(inicial()); const s = salida();
+    await m.ejecutar(cfgDe(), { db: w.db, FieldValue, log: s.log });
+    expect(s.texto()).not.toContain('qr_enviado'); expect(w.llamadas).toEqual([]);
+  });
+  it('reversa: restituye `solicitud` (fechas incluidas) sin tocar el resto, y no pisa una que ya exista', async () => {
+    const w = mundoDe(inicial()); const ruta = rutaRespaldo();
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} });
+    const sinSol = clon(w.datos.get(rutaConv(T, TEL)));
+    expect(await m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} })).toBe(0);
+    const d = w.datos.get(rutaConv(T, TEL));
+    expect(d.solicitud.etapa).toBe('qr_enviado'); expect(d.solicitud.vence).toBeInstanceOf(Date);
+    expect({ ...d, solicitud: undefined }).toEqual({ ...sinSol, solicitud: undefined });
+    // ya existe: no se pisa
+    w.datos.get(rutaConv(T, TEL)).solicitud = { etapa: 'otra' };
+    const s = salida();
+    expect(await m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    expect(w.datos.get(rutaConv(T, TEL)).solicitud.etapa).toBe('otra');
+    expect(s.texto()).toContain('no se pisa');
+  });
+  it('reversa: si la conversación ya no existe, no la crea', async () => {
+    const w = mundoDe(inicial()); const ruta = rutaRespaldo();
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} });
+    w.datos.delete(rutaConv(T, TEL));
+    await m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} });
+    expect(w.datos.has(rutaConv(T, TEL))).toBe(false);
+  });
+  it('NEGADO: un respaldo con `solicitud` que no es un objeto se rechaza', async () => {
+    const w = mundoDe(inicial()); const ruta = rutaRespaldo();
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} });
+    const j = leido(ruta).json; j.solicitud = 'x'; const r = rutaRespaldo(); writeFileSync(r, JSON.stringify(j), { mode: 0o600 });
+    expect(await m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: r }), { db: w.db, FieldValue, log: () => {} })).toBe(2);
+  });
+});
+
+// ---- n8n en memoria (el módulo reutiliza sinFicha de resetear-ficha-flujo.mjs)
+function n8nDe(staticData: any, opciones: { ignorarPut?: boolean; reponerTrasPut?: boolean; nodes?: any[]; sinSettings?: boolean } = {}) {
+  let vivo: any = { name: 'Flujo', active: true, nodes: opciones.nodes ?? [{ id: 'n1' }], connections: { n1: {} }, settings: opciones.sinSettings ? undefined : { executionOrder: 'v1' }, staticData: clon(staticData) };
+  const puts: any[] = []; let esperas = 0;
+  return {
+    puts, get vivo() { return vivo; }, get esperas() { return esperas; },
+    deps: {
+      leer: async () => JSON.parse(JSON.stringify(vivo)),
+      escribir: async (_v: any, sd: any) => { puts.push(sd); if (!opciones.ignorarPut) vivo = { ...vivo, settings: vivo.settings ?? {}, staticData: clon(sd) }; return 200; },
+      esperar: async () => { esperas += 1; if (opciones.reponerTrasPut) vivo = { ...vivo, staticData: { global: { [TEL]: { historial: ['volvió'] } } } }; },
+    } as Record<string, any>,
+  };
+}
+const sdN8n = () => ({ global: { [TEL]: { historial: ['x'] }, [OTRO]: { historial: ['y'] }, ['59100000009']: { historial: ['z'] }, memoria: [{ from: TEL }, { from: OTRO }], ajuste: { a: 1 } } });
+
+describe('E5c. UN solo reseteo: también la ficha de n8n y la verificación de «estado limpio»', () => {
+  const cfgN = (extra: Cfg = {}) => cfgDe({ workflow: 'abc123XYZ', ...extra });
+  it('limpia Firestore, la solicitud y n8n en una pasada, con UN respaldo, y dice ESTADO LIMPIO', async () => {
+    const n = n8nDe(sdN8n()); const s = salida(); const ruta = rutaRespaldo();
+    const d = inicial(); delete (d as any)[`${T}/sesionesDeTurno/${PN}~venta-minima~wa_+${TEL}`]; // sin posibles restos de Firestore
+    const w2 = mundoDe(d);
+    expect(await m.ejecutar(cfgN({ aplicar: true, respaldo: ruta }), { db: w2.db, FieldValue, n8n: n.deps, log: s.log })).toBe(0);
+    expect(s.texto()).toContain('ESTADO: cobro pendiente=no · sesiones=0 · cupos=0 · entradas en n8n=0 · solicitud=no');
+    expect(s.texto()).toContain('ESTADO LIMPIO');
+    expect(n.puts).toHaveLength(1);
+    expect(n.vivo.staticData.global[TEL]).toBeUndefined();
+    expect(n.vivo.staticData.global[OTRO]).toBeDefined(); expect(n.vivo.staticData.global['59100000009']).toBeDefined();
+    expect(n.vivo.nodes).toEqual([{ id: 'n1' }]); expect(n.vivo.active).toBe(true);
+    expect(n.esperas).toBe(1);
+    const b = leido(ruta).json; expect(b.n8n.workflow).toBe('abc123XYZ'); expect(b.n8n.staticData.global[TEL]).toBeDefined(); expect(b.solicitud.etapa).toBe('qr_enviado'); expect(b.docs).toHaveLength(MIOS);
+  });
+  it('seco con n8n: cuenta las entradas y no escribe', async () => {
+    const w = mundoDe(inicial()); const n = n8nDe(sdN8n()); const s = salida();
+    expect(await m.ejecutar(cfgN(), { db: w.db, FieldValue, n8n: n.deps, log: s.log })).toBe(1);
+    expect(s.texto()).toMatch(/n8n \(staticData del flujo\): 2 entrada/);
+    expect(n.puts).toEqual([]); expect(w.llamadas).toEqual([]);
+    for (const x of [TEL, 'historial']) expect(s.texto()).not.toContain(x);
+  });
+  it('sin n8n configurado el paso se OMITE y el resultado dice ⚠, no ✓', async () => {
+    const w = mundoDe(inicial()); const s = salida();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    expect(s.texto()).toContain('entradas en n8n=omitido'); expect(s.texto()).toContain('OMITIÓ'); expect(s.texto()).toContain('⚠'); expect(s.texto()).not.toContain('✓');
+    expect(s.texto()).not.toContain('ESTADO LIMPIO');
+  });
+  it('NEGADO: si un paso queda sucio, el resultado NO dice limpio y sale con error (n8n ignora el PUT)', async () => {
+    const w = mundoDe(inicial()); const n = n8nDe(sdN8n(), { ignorarPut: true }); const s = salida();
+    expect(await m.ejecutar(cfgN({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, n8n: n.deps, log: s.log })).toBe(3);
+    expect(s.texto()).not.toContain('ESTADO LIMPIO'); expect(s.texto()).not.toContain('✓');
+    expect(s.texto()).toMatch(/✗/);
+    expect(w.datos.get(`${T}/conversaciones/wa_${TEL}`).solicitud).toBeDefined(); // n8n va primero: Firestore no se tocó
+  });
+  it('NEGADO: una ejecución en curso repone la ficha de n8n tras la espera ⇒ no queda limpio, sale con error', async () => {
+    const w = mundoDe(inicial()); const n = n8nDe(sdN8n(), { reponerTrasPut: true }); const s = salida();
+    expect(await m.ejecutar(cfgN({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, n8n: n.deps, log: s.log })).toBe(3);
+    expect(s.texto()).toContain('entradas en n8n=1'); expect(s.texto()).toContain('NO QUEDÓ LIMPIO'); expect(s.texto()).not.toContain('ESTADO LIMPIO');
+  });
+  it('NEGADO: la conversación cambia justo antes de quitar la solicitud ⇒ sale con error y no dice limpio', async () => {
+    const w = mundoDe(inicial()); const n = n8nDe(sdN8n()); const s = salida();
+    w.gancho.alBorrar = (r) => { if (r === `${T}/conversaciones/wa_${TEL}`) w.hora.set(r, tsDe(++reloj)); };
+    expect(await m.ejecutar(cfgN({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, n8n: n.deps, log: s.log })).toBe(3);
+    expect(s.texto()).not.toContain('ESTADO LIMPIO');
+    expect(w.datos.get(`${T}/conversaciones/wa_${TEL}`).solicitud).toBeDefined();
+  });
+  it('NEGADO: si n8n cambia entre las dos lecturas, no escribe nada', async () => {
+    const w = mundoDe(inicial()); const n = n8nDe(sdN8n()); const s = salida();
+    let lecturas = 0; const leer = n.deps.leer;
+    n.deps.leer = async () => { lecturas += 1; const v = await leer(); if (lecturas === 2) v.staticData.global.ajuste = { a: 2 }; return v; };
+    expect(await m.ejecutar(cfgN({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, n8n: n.deps, log: s.log })).toBe(3);
+    expect(n.puts).toEqual([]); expect(w.llamadas).toEqual([]);
+  });
+  it('ya limpio con n8n y sin restos: ESTADO LIMPIO (✓) y nada que hacer', async () => {
+    const d = inicial();
+    for (const k of Object.keys(d)) {
+      if (k.startsWith('tenants/otro') || !k.includes(`wa_${TEL}`)) continue;
+      if (k.includes('/conversaciones/')) delete (d as any)[k].solicitud; else delete (d as any)[k];
+    }
+    delete (d as any)[`${T}/sesionesDeTurno/${PN}~venta-minima~wa_+${TEL}`];
+    const w = mundoDe(d); const n = n8nDe({ global: { [OTRO]: { historial: ['y'] } } }); const s = salida();
+    expect(await m.ejecutar(cfgN(), { db: w.db, FieldValue, n8n: n.deps, log: s.log })).toBe(0);
+    expect(s.texto()).toContain('ESTADO LIMPIO'); expect(s.texto()).toContain('✓');
+  });
+  it('reversa: repone n8n solo si sigue como lo dejó el reseteo; si cambió, no lo pisa y avisa ⚠', async () => {
+    const w = mundoDe(inicial()); const n = n8nDe(sdN8n()); const ruta = rutaRespaldo();
+    await m.ejecutar(cfgN({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, n8n: n.deps, log: () => {} });
+    const cambiado = n8nDe({ global: { otraCosa: 1 } });
+    const s = salida();
+    expect(await m.ejecutar(cfgN({ revertir: true, aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, n8n: cambiado.deps, log: s.log })).toBe(0);
+    expect(cambiado.puts).toEqual([]); expect(s.texto()).toContain('NO se repone'); expect(s.texto()).toContain('⚠');
+    expect(await m.ejecutar(cfgN({ revertir: true, aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, n8n: n.deps, log: () => {} })).toBe(0);
+    expect(n.vivo.staticData.global[TEL]).toBeDefined();
+    expect(w.datos.get(`${T}/conversaciones/wa_${TEL}`).solicitud.etapa).toBe('qr_enviado');
+  });
+  it('NEGADO: la reversa de un respaldo con n8n exige el mismo --workflow', async () => {
+    const w = mundoDe(inicial()); const n = n8nDe(sdN8n()); const ruta = rutaRespaldo();
+    await m.ejecutar(cfgN({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, n8n: n.deps, log: () => {} });
+    expect(await m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: ruta, workflow: 'otro999' }), { db: w.db, FieldValue, n8n: n.deps, log: () => {} })).toBe(2);
+  });
+  it('--workflow mal formado se rechaza', () => {
+    expect(problemas(m.analizarArgumentos([...BASE, '--workflow', 'a/b'], ENV))).toContain('--workflow');
+    expect(m.analizarArgumentos([...BASE, '--workflow', 'abc123XYZ'], ENV).cfg.workflow).toBe('abc123XYZ');
+    const { N8N_WORKFLOWS_PERMITIDOS: _w, ...sinLista } = ENV;
+    expect(problemas(m.analizarArgumentos([...BASE, '--workflow', 'abc123XYZ'], sinLista))).toContain('N8N_WORKFLOWS_PERMITIDOS');
+    expect(problemas(m.analizarArgumentos([...BASE, '--workflow', 'zzz999ZZZ'], ENV))).toContain('lista cerrada');
+  });
+  it('contacto bloqueado en la Consola: no se toca y el resultado NO dice limpio (sale con 3)', async () => {
+    const d = inicial(); (d as any)[`${T}/conversaciones/wa_${TEL}`] = conv({ bloqueada: true, bloqueadaPor: 'uid1' });
+    const w = mundoDe(d); const s = salida();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(3);
+    expect(s.texto()).toContain('BLOQUEADO'); expect(s.texto()).not.toContain('ESTADO LIMPIO'); expect(s.texto()).not.toContain('✓');
+    const c = w.datos.get(`${T}/conversaciones/wa_${TEL}`); expect(c.bloqueada).toBe(true); expect(c.bloqueadaPor).toBe('uid1'); expect(c.solicitud).toBeUndefined();
+  });
+});
+
+const haceMin = (min: number) => haceHoras(min / 60);
+const turnoDe = (extra: Record<string, any> = {}) => ({ responde: 'persona', tomadoPor: 'uid1', tomadoEn: haceMin(10), actividadPersonaEn: haceMin(5), ...extra });
+const convAt = (n: number, estado: string, horas = 2, extra: Record<string, any> = {}) => conv({
+  solicitud: undefined, atencionDesde: haceHoras(horas), mensajesVentana: n, atencionEstado: estado,
+  mensajesTotal: 400, periodoContado: '2026-11', respuestasDelPeriodo: 77, ultimoMensaje: 'hola', ultimoEntranteEn: haceHoras(1), ...extra,
+});
+const sinSesiones = () => { const d: any = inicial(); for (const k of Object.keys(d)) if (k.includes('Turno/') && k.includes(`wa_${TEL}`)) delete d[k]; delete d[`${T}/conversaciones/wa_${TEL}`]; return d; };
+const rutaC = `${T}/conversaciones/wa_${TEL}`;
+
+describe('E5e. la atención (operador/bloqueado) y la pausa por persona', () => {
+  it.each([[50, 'operador'], [100, 'bloqueado']])('%i respuestas = %s: el seco lo informa; --aplicar lo deja normal con 0, sin tocar contadores acumulados ni otros campos', async (n, est) => {
+    const d = sinSesiones(); d[rutaC] = convAt(n, est as string); d[`${T}/conversaciones/wa_${OTRO}`] = convAt(n, est as string);
+    const w = mundoDe(d); const seco = salida();
+    expect(await m.ejecutar(cfgDe(), { db: w.db, FieldValue, log: seco.log })).toBe(1);
+    expect(seco.texto()).toContain(`atención: ${est} (${n} respuestas en la ventana)`);
+    expect(w.llamadas).toEqual([]);
+    const antes = clon(w.datos.get(rutaC)); const ajena = JSON.stringify(w.datos.get(`${T}/conversaciones/wa_${OTRO}`));
+    const s = salida(); const ruta = rutaRespaldo();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    const c = w.datos.get(rutaC);
+    expect(c.atencionEstado).toBe('normal'); expect(c.mensajesVentana).toBe(0); expect(c.atencionDesde).toBeUndefined();
+    for (const k of ['mensajesTotal', 'periodoContado', 'respuestasDelPeriodo', 'ultimoMensaje', 'etiquetas', 'estado', 'nombre']) expect(c[k]).toEqual(antes[k]);
+    expect(JSON.stringify(w.datos.get(`${T}/conversaciones/wa_${OTRO}`))).toBe(ajena); // otro teléfono intacto
+    expect(s.texto()).toContain('atención=normal (0 respuestas)'); expect(s.texto()).toContain('ESTADO: cobro pendiente=no');
+    expect(w.llamadas.filter((x) => x.startsWith('update:'))).toEqual([`update:${rutaC}`]); // UNA sola escritura
+    expect(leido(ruta).json.atencion.mensajesVentana).toBe(n);
+  });
+  it('ventana vencida con un estado viejo en «operador»: se normaliza el estado y se conserva el ancla vencida', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(60, 'operador', 30);
+    const w = mundoDe(d); const s = salida();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    const c = w.datos.get(rutaC); expect(c.atencionEstado).toBe('normal'); expect(c.mensajesVentana).toBe(0); expect(c.atencionDesde).toBeDefined();
+  });
+  it('una ventana vigente con pocas respuestas (3) tampoco es «como nuevo»: se pone en 0', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(3, 'normal');
+    const w = mundoDe(d); const s = salida();
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log });
+    expect(w.datos.get(rutaC).mensajesVentana).toBe(0); expect(s.texto()).toContain('atención=normal (0 respuestas)');
+  });
+  it('ya normal con 0 respuestas y sin pausa: no escribe nada', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(0, 'normal');
+    const w = mundoDe(d); const s = salida();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    expect(w.llamadas).toEqual([]); expect(s.texto()).toContain('atención: normal (0 respuestas)');
+  });
+  it('pausa por persona vigente (Tomar): se devuelve al asistente como devolución manual; un turno ya devuelto o ilegible no se toca', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(0, 'normal', 2, { turno: turnoDe() });
+    const w = mundoDe(d); const seco = salida();
+    await m.ejecutar(cfgDe(), { db: w.db, FieldValue, log: seco.log });
+    expect(seco.texto()).toContain('pausa por persona (Tomar) que hace callar al asistente: sí');
+    const ruta = rutaRespaldo();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} })).toBe(0);
+    const t = w.datos.get(rutaC).turno;
+    expect(t.responde).toBe('asistente'); expect(t.motivoDevolucion).toBe('manual'); expect(t.devueltoEn).toBeInstanceOf(Date); expect(t.tomadoPor).toBe('uid1');
+    expect(leido(ruta).json.turno.responde).toBe('persona');
+    for (const turno of [turnoDe({ responde: 'asistente', devueltoEn: tsDe(13), motivoDevolucion: 'manual' }), { de: 'persona' }]) {
+      const d2 = sinSesiones(); d2[rutaC] = convAt(0, 'normal', 2, { turno });
+      const w2 = mundoDe(d2);
+      expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w2.db, FieldValue, log: () => {} })).toBe(0);
+      expect(w2.llamadas).toEqual([]);
+    }
+  });
+  it('NEGADO: si llega un mensaje (la conversación cambia) entre las lecturas, no se escribe nada', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador');
+    const w = mundoDe(d); const s = salida();
+    let n = 0; const original = w.db.getAll;
+    w.db.getAll = async (...a: any[]) => { if (a[0]?.path === rutaC && ++n === 2) w.hora.set(rutaC, tsDe(++reloj)); return original(...a); };
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(3);
+    expect(w.llamadas).toEqual([]); expect(w.datos.get(rutaC).mensajesVentana).toBe(50);
+  });
+  it('NEGADO: si la escritura no surte efecto, el resultado NO dice limpio y la atención sale en la línea de estado', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador');
+    const w = mundoDe(d); w.gancho.ignorarUpdate = true; const s = salida();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(3);
+    expect(s.texto()).toContain('NO QUEDÓ LIMPIO'); expect(s.texto()).toContain('atención=operador (50 respuestas en la ventana)'); expect(s.texto()).not.toContain('ESTADO LIMPIO');
+  });
+  it('NEGADO: la conversación de otro tenant o de un teléfono vecino con 50 respuestas no se toca', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador'); d[`tenants/otro-comercio/conversaciones/wa_${TEL}`] = convAt(50, 'operador'); d[`${T}/conversaciones/wa_${VECINO}`] = convAt(50, 'operador');
+    const w = mundoDe(d);
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: () => {} });
+    expect(w.datos.get(`tenants/otro-comercio/conversaciones/wa_${TEL}`).mensajesVentana).toBe(50);
+    expect(w.datos.get(`${T}/conversaciones/wa_${VECINO}`).mensajesVentana).toBe(50);
+  });
+  it('reversa: repone atención, turno y solicitud si nada cambió desde el reseteo', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador', 2, { turno: turnoDe(), solicitud: { etapa: 'qr_enviado' } });
+    const w = mundoDe(d); const ruta = rutaRespaldo();
+    const original = clon(w.datos.get(rutaC));
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} });
+    expect(await m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} })).toBe(0);
+    const c = w.datos.get(rutaC);
+    expect(c.mensajesVentana).toBe(50); expect(c.atencionEstado).toBe('operador'); expect(Math.abs((c.atencionDesde as Date).getTime() - original.atencionDesde.toMillis())).toBeLessThan(5000);
+    expect(c.turno.responde).toBe('persona'); expect(c.turno.motivoDevolucion).toBeUndefined(); expect(c.solicitud.etapa).toBe('qr_enviado');
+    expect(c.mensajesTotal).toBe(400);
+  });
+  it('NEGADO: la reversa no pisa una atención o un turno que cambiaron desde el reseteo', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador', 2, { turno: turnoDe() });
+    const w = mundoDe(d); const ruta = rutaRespaldo();
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} });
+    const c = w.datos.get(rutaC); c.mensajesVentana = 4; c.atencionDesde = haceHoras(1); c.turno = turnoDe({ responde: 'asistente', tomadoPor: 'otro', motivoDevolucion: 'inactividad', devueltoEn: tsDe(14) });
+    const s = salida();
+    expect(await m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    expect(c.mensajesVentana).toBe(4); expect(c.turno.responde).toBe('asistente'); expect(s.texto()).toContain('no se pisa');
+  });
+});
+
+describe('E5f. revisión de seguridad (M1, M2, M3, redirect, aviso de facturación)', () => {
+  const cfgN = (extra: Cfg = {}) => cfgDe({ workflow: 'abc123XYZ', ...extra });
+  const conRespaldo = async (d: any, n: any, cambio: (j: any) => void = () => {}) => {
+    const w = mundoDe(d); const ruta = rutaRespaldo();
+    await m.ejecutar(cfgN({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, n8n: n?.deps, log: () => {} });
+    const j = leido(ruta).json; cambio(j); const r = rutaRespaldo(); writeFileSync(r, JSON.stringify(j), { mode: 0o600 });
+    return { w, r, j };
+  };
+  const revertir = (w: any, r: string, n: any, extra: Cfg = {}) => { const s = salida(); return m.ejecutar(cfgN({ revertir: true, aplicar: true, respaldo: r, ...extra }), { db: w.db, FieldValue, n8n: n?.deps, log: s.log }).then((c: number) => ({ c, t: s.texto() })); };
+
+  it('M1: un respaldo de otro teléfono se rechaza, también con docs vacío, y uno sin telHash también', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(0, 'normal', 2, { solicitud: { etapa: 'qr_enviado' } }); d[`${T}/conversaciones/wa_${OTRO}`] = conv({ solicitud: undefined });
+    const { w, r, j } = await conRespaldo(d, null);
+    expect(j.docs).toEqual([]); expect(j.telHash).toMatch(/^[0-9a-f]{64}$/); expect(JSON.stringify(j)).not.toContain(TEL);
+    expect((await revertir(w, r, null, { tel: OTRO })).c).toBe(2);
+    expect(w.datos.get(`${T}/conversaciones/wa_${OTRO}`).solicitud).toBeUndefined();
+    const w2 = mundoDe(d); const ruta = rutaRespaldo(); await m.ejecutar(cfgN({ aplicar: true, respaldo: ruta }), { db: w2.db, FieldValue, log: () => {} });
+    const j2 = leido(ruta).json; delete j2.telHash; const r2 = rutaRespaldo(); writeFileSync(r2, JSON.stringify(j2), { mode: 0o600 });
+    expect((await revertir(w2, r2, null)).c).toBe(2);
+  });
+  it('M2: la reversa solo repone los tres campos de atención con tipos válidos; un campo ajeno del archivo no se escribe', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador');
+    const { w, r } = await conRespaldo(d, null, (j) => { j.atencion.mensajesTotal = 1; j.atencion.periodoContado = 'x'; });
+    expect((await revertir(w, r, null)).c).toBe(0);
+    const c = w.datos.get(rutaC); expect(c.mensajesVentana).toBe(50); expect(c.mensajesTotal).toBe(400); expect(c.periodoContado).toBe('2026-11');
+  });
+  it.each([
+    ['conteo negativo', (j: any) => { j.atencion.mensajesVentana = -1; }],
+    ['conteo no numérico', (j: any) => { j.atencion.mensajesVentana = '50'; }],
+    ['estado fuera de la lista', (j: any) => { j.atencion.atencionEstado = 'zzz'; }],
+    ['fecha inválida', (j: any) => { j.atencion.atencionDesde = 'ayer'; }],
+    ['turno que no es una toma de persona', (j: any) => { j.turno = { responde: 'asistente', tomadoPor: 'uid1' }; }],
+    ['turno con uid inválido', (j: any) => { j.turno = { responde: 'persona', tomadoPor: '../x' }; }],
+  ])('NEGADO M2: %s ⇒ respaldo rechazado, no escribe', async (_n, cambio) => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador', 2, { turno: turnoDe() });
+    const { w, r } = await conRespaldo(d, null, cambio);
+    const antes = w.llamadas.length;
+    expect((await revertir(w, r, null)).c).toBe(2); expect(w.llamadas.length).toBe(antes);
+  });
+  it('M2: n8n solo se repone si el respaldo difiere de lo dejado únicamente en lo del teléfono; si no, avisa y no escribe', async () => {
+    const n = n8nDe(sdN8n());
+    const { w, r } = await conRespaldo(inicial(), n, (j) => { j.n8n.staticData.global.ajuste = { a: 99 }; });
+    const s = await revertir(w, r, n);
+    expect(s.c).toBe(0); expect(s.t).toContain('NO es coherente'); expect(n.puts).toHaveLength(1); // solo el PUT del reseteo; la reversa no escribió
+  });
+  it('M3: sin lista cerrada de flujos o con un flujo fuera de ella no se corre', () => {
+    const { N8N_WORKFLOWS_PERMITIDOS: _w, ...sin } = ENV;
+    expect(problemas(m.analizarArgumentos([...BASE, '--workflow', 'abc123XYZ'], sin))).toContain('N8N_WORKFLOWS_PERMITIDOS');
+    expect(problemas(m.analizarArgumentos([...BASE, '--workflow', 'abc123XYZ'], { ...sin, N8N_WORKFLOWS_PERMITIDOS: 'otro999' }))).toContain('lista cerrada');
+  });
+  it.each([
+    ['un WhatsApp Trigger', [{ id: 'n1', type: 'n8n-nodes-base.whatsAppTrigger' }]],
+    ['una llamada a /subscriptions', [{ id: 'n1', type: 'n8n-nodes-base.httpRequest', parameters: { url: 'https://x.test/v1/123/subscriptions' } }]],
+    ['subscribed_apps', [{ id: 'n1', parameters: { url: 'https://x.test/subscribed_apps' } }]],
+    ['nodos ilegibles', 'no-es-lista'],
+  ])('NEGADO M3: un flujo con %s no se reescribe (ni en seco ni al aplicar)', async (_n, nodes) => {
+    const w = mundoDe(inicial()); const n = n8nDe(sdN8n(), { nodes: nodes as any[] });
+    for (const aplicar of [false, true]) {
+      const s = salida();
+      expect(await m.ejecutar(cfgN({ aplicar, respaldo: aplicar ? rutaRespaldo() : null }), { db: w.db, FieldValue, n8n: n.deps, log: s.log })).toBe(3);
+      expect(s.texto()).toContain('prohibiciones 5 y 7');
+    }
+    expect(n.puts).toEqual([]); expect(w.llamadas).toEqual([]);
+  });
+  it('NEGADO M3: la reversa tampoco repone n8n si el flujo vivo ahora tiene un trigger prohibido', async () => {
+    const n = n8nDe(sdN8n());
+    const { w, r } = await conRespaldo(inicial(), n);
+    const malo = n8nDe(n.vivo.staticData, { nodes: [{ id: 'n1', type: 'n8n-nodes-base.whatsAppTrigger' }] });
+    const s = await revertir(w, r, malo);
+    expect(malo.puts).toEqual([]); expect(s.t).toContain('prohibiciones 5 y 7');
+  });
+  it('aviso de facturación: se imprime al aplicar contra producción y no contra staging', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador');
+    const prod = salida(); const w = mundoDe(d);
+    await m.ejecutar(cfgDe({ entorno: 'produccion', aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: prod.log });
+    expect(prod.texto()).toContain('AVISO DE FACTURACIÓN'); expect(prod.texto()).toContain('UNA conversación más');
+    const d2 = sinSesiones(); d2[rutaC] = convAt(50, 'operador'); const stg = salida(); const w2 = mundoDe(d2);
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w2.db, FieldValue, log: stg.log });
+    expect(stg.texto()).not.toContain('AVISO DE FACTURACIÓN');
+  });
+  it('los fetch a n8n no siguen redirecciones (LOW)', () => {
+    for (const f of ['resetear-telefono-prueba.mjs', 'resetear-ficha-flujo.mjs']) {
+      const src = readFileSync(join(aqui, '..', '..', 'scripts', 'plataforma', f), 'utf8');
+      expect(src).toContain("redirect: 'error'");
+    }
+  });
+});
+
+describe('E5g. revisión de código (respaldo estricto, PUT ambiguo, turno, bloqueada, reversa, settings, intactos)', () => {
+  const cfgN = (extra: Cfg = {}) => cfgDe({ workflow: 'abc123XYZ', ...extra });
+
+  it('1. NEGADO: un respaldo bajo $HOME (o en una carpeta personal) se rechaza, al aplicar y al revertir', () => {
+    const bajoHome = join(homedir(), 'respaldos-prueba-novuchat', 'r.json');
+    expect(problemas(m.analizarArgumentos([...BASE, '--aplicar', '--respaldo', bajoHome], ENV))).toMatch(/respaldo/);
+    expect(problemas(m.analizarArgumentos([...BASE, '--respaldo', join(homedir(), 'r.json')], ENV))).toMatch(/respaldo/);
+    expect(problemas(m.analizarArgumentos([...BASE, '--revertir', '--respaldo', join(homedir(), 'r.json')], ENV))).toMatch(/respaldo/);
+  });
+  it('1. el cfg guarda la ruta ya resuelta y valida que siga igual antes de escribir; si cambió, no escribe', async () => {
+    const ruta = rutaRespaldo();
+    const a = m.analizarArgumentos([...BASE, '--aplicar', '--respaldo', ruta], ENV);
+    expect(a.ok, JSON.stringify(a)).toBe(true); expect(a.cfg.respaldoResuelto).toContain('respaldo.json');
+    const w = mundoDe(inicial()); const s = salida();
+    expect(await m.ejecutar({ ...a.cfg, respaldoResuelto: join(dirname(ruta), 'otro.json') }, { db: w.db, FieldValue, log: s.log })).toBe(2);
+    expect(w.llamadas).toEqual([]); expect(() => leido(ruta)).toThrow();
+  });
+  it('2. NEGADO: un fallo DESPUÉS de enviar el PUT es ambiguo: dice «PUEDE haberse aplicado» y no «no se escribió nada»', async () => {
+    for (const modo of ['relectura', 'put']) {
+      const w = mundoDe(inicial()); const n = n8nDe(sdN8n()); const s = salida();
+      let lecturas = 0; const leer = n.deps.leer; const escribir = n.deps.escribir;
+      if (modo === 'relectura') n.deps.leer = async () => { lecturas += 1; if (lecturas === 4) throw Object.assign(new Error('x'), { code: 'n8n-GET-504' }); return leer(); };
+      else n.deps.escribir = async (v: any, sd: any) => { await escribir(v, sd); throw Object.assign(new Error('x'), { code: 'DEADLINE_EXCEEDED' }); };
+      expect(await m.ejecutar(cfgN({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, n8n: n.deps, log: s.log })).toBe(3);
+      expect(s.texto()).toContain('PUEDE haberse aplicado'); expect(s.texto()).not.toContain('no se escribió nada');
+      expect(w.llamadas).toEqual([]); // Firestore no se tocó
+    }
+  });
+  it('3. NEGADO: si pasan más de ~500 ms entre la última lectura de n8n y el PUT, se aborta sin enviar', async () => {
+    const w = mundoDe(inicial()); const n = n8nDe(sdN8n()); const s = salida();
+    let t = 0;
+    expect(await m.ejecutar(cfgN({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, n8n: n.deps, ahora: () => (t += 1000), log: s.log })).toBe(3);
+    expect(n.puts).toEqual([]); expect(s.texto()).toContain('500 ms'); expect(w.llamadas).toEqual([]);
+  });
+  it('3. el riesgo del PUT está declarado en la cabecera del script', () => {
+    const src = readFileSync(join(aqui, '..', '..', 'scripts', 'plataforma', 'resetear-telefono-prueba.mjs'), 'utf8');
+    expect(src).toContain('REEMPLAZA TODO el `staticData`'); expect(src).toContain('BAJA ACTIVIDAD'); expect(src).toContain('no son atómicos');
+  });
+  it('5. NEGADO: un turno sin `tomadoPor` válido, vencido o ilegible NO se reescribe; uno vigente sí', async () => {
+    for (const turno of [
+      { responde: 'persona' }, turnoDe({ tomadoPor: '../x' }), turnoDe({ actividadPersonaEn: haceMin(90) }), turnoDe({ tomadoEn: 'ayer' }),
+    ]) {
+      const d = sinSesiones(); d[rutaC] = convAt(0, 'normal', 2, { turno });
+      const w = mundoDe(d); const s = salida();
+      expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+      expect(w.llamadas).toEqual([]); expect(s.texto()).toContain('que hace callar al asistente: no');
+    }
+    const d = sinSesiones(); d[rutaC] = convAt(0, 'normal', 2, { turno: turnoDe() }); const w = mundoDe(d);
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: () => {} });
+    expect(w.datos.get(rutaC).turno.responde).toBe('asistente');
+    const d2 = sinSesiones(); d2[rutaC] = convAt(0, 'normal', 2, { turno: turnoDe(), ultimoEntranteEn: haceHoras(30) }); const w2 = mundoDe(d2); // ventana de 24 h vencida
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w2.db, FieldValue, log: () => {} });
+    expect(w2.llamadas).toEqual([]);
+  });
+  it('6. NEGADO: `bloqueada` solo bloquea con `true` exacto; un valor raro se informa aparte y no dice «no es limpio»', async () => {
+    for (const raro of ['si', 1, 'true', { a: 1 }]) {
+      const d = sinSesiones(); d[rutaC] = convAt(0, 'normal', 2, { bloqueada: raro });
+      const w = mundoDe(d); const s = salida();
+      expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+      expect(s.texto()).toContain('valor inesperado'); expect(s.texto()).not.toContain('NO ES UN TELÉFONO LIMPIO');
+      expect(w.datos.get(rutaC).bloqueada).toEqual(raro);
+    }
+  });
+  it('7. la reversa QUITA los campos de atención que no existían antes del reseteo', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador'); delete d[rutaC].atencionEstado; // sin atencionEstado guardado
+    const w = mundoDe(d); const ruta = rutaRespaldo();
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} });
+    expect(w.datos.get(rutaC).atencionEstado).toBe('normal');
+    expect(await m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} })).toBe(0);
+    const c = w.datos.get(rutaC); expect('atencionEstado' in c).toBe(false); expect(c.mensajesVentana).toBe(50);
+  });
+  it('8. un flujo sin `settings`: el PUT manda `{}` y la verificación compara con el mismo valor (no falla)', async () => {
+    const w = mundoDe(inicial()); const n = n8nDe(sdN8n(), { sinSettings: true }); const s = salida();
+    expect(await m.ejecutar(cfgN({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, n8n: n.deps, log: s.log })).toBe(0);
+    expect(n.vivo.settings).toEqual({}); expect(s.texto()).toContain('ajustes iguales=true');
+  });
+  it('9. las sesiones de otros espacios o efímeras que aparecen durante la corrida no cuentan como «resto cambiado»', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador');
+    const w = mundoDe(d); const s = salida();
+    w.gancho.alEscanear = (col, n) => { if (col.endsWith('sesionesDeTurno') && n === 3) w.datos.set(`${T}/sesionesDeTurno/${PN}~vmc-nuevo1234~wa_${TEL}`, { phoneNumberId: PN }); };
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    expect(s.texto()).not.toContain('NO QUEDÓ LIMPIO'); expect(s.texto()).not.toContain('no coincide'); expect(s.texto()).toContain('atención=normal (0 respuestas)');
+  });
+});
+
+describe('E5d. el nombre viejo es un envoltorio', () => {
+  it('avisa y delega en resetear-telefono-prueba.mjs', () => {
+    const src = readFileSync(join(aqui, '..', '..', 'scripts', 'plataforma', 'resetear-estado-turno.mjs'), 'utf8');
+    expect(src).toContain("from './resetear-telefono-prueba.mjs'"); expect(src).toContain('AVISO'); expect(src.split('\n').length).toBeLessThan(25);
+  });
+});
+
+describe('E6. el texto del script', () => {
+  const src = readFileSync(join(aqui, '..', '..', 'scripts', 'plataforma', 'resetear-telefono-prueba.mjs'), 'utf8');
+  const codigo = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  it('borra documentos de turno y crea los del respaldo; de la conversación solo toca solicitud, atención y turno; nunca contadores de facturación', () => {
+    expect(codigo).not.toMatch(/\.set\(/);
+    expect(codigo).not.toMatch(/metricas|\/mensajes|mensajesTotal|respuestasDelPeriodo|periodoContado|cuenta\/estado/); // contadores de facturación: jamás
+    expect(codigo.match(/\.update\(/g)).toHaveLength(3); // quitar y reponer en la conversación (2) y el hash del teléfono (1)
+    expect(codigo.match(/\.update\(campos, /g)).toHaveLength(2);
+    expect(codigo.match(/\.delete\(/g)).toHaveLength(6); // el documento de turno y 5 FieldValue.delete()
+    expect(codigo.match(/FieldValue\.delete\(\)/g)).toHaveLength(5);
+    expect(codigo.match(/\bb\.ref\.delete\(/g)).toHaveLength(1);
+    expect(codigo.match(/\.create\(/g)).toHaveLength(1);
+  });
+  it('no trae teléfonos ni ids reales', () => {
+    expect(src).not.toMatch(/\b591\d{8}\b/);
+  });
+});
+
+describe('E9. UN solo reseteo para todos los flujos (09/11/2026)', () => {
+  const TENANTS = ['qtaco', 'rroca-ruben', 'rroca-evy', 'rroca-antonio', 'rroca-emma', 'bellido'];
+  it('admite los seis tenants y rechaza los demás', () => {
+    expect([...m.TENANTS_PERMITIDOS].sort()).toEqual([...TENANTS].sort());
+    for (const t of TENANTS) expect(m.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--tel', TEL], ENV).ok, t).toBe(true);
+    for (const t of ['walisuma', 'platinum', 'novuchat', 'ensayo', 'RROCA-RUBEN']) {
+      expect(problemas(m.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--tel', TEL], ENV))).toContain('--tenant');
+    }
+  });
+  it('cada tenant tiene el nombre exacto de su flujo y ninguno se repite', () => {
+    const nombres = TENANTS.map((t) => m.FLUJO_DE_TENANT[t]);
+    expect(nombres.every((n: unknown) => typeof n === 'string' && (n as string).length > 10)).toBe(true);
+    expect(new Set(nombres).size).toBe(TENANTS.length);
+  });
+  it('en un tenant de Rubén, cualquier espacio y clave de SU teléfono se borra; el de otro teléfono nunca', () => {
+    expect(m.clasificar('sesionesDeTurno', `${PN}~agenda-minima~wa_${TEL}`, PN, TEL, 'rroca-ruben')).toBe('borrar');
+    expect(m.clasificar('cuposDeTurno', `${PN}~cobros~wa_${TEL}~2026-11`, PN, TEL, 'rroca-ruben')).toBe('borrar');
+    expect(m.clasificar('sesionesDeTurno', `${PN}~agenda-minima~wa_${OTRO}`, PN, TEL, 'rroca-ruben')).toBe('ajeno');
+    expect(m.clasificar('sesionesDeTurno', `${PN}~agenda-minima~wa_${VECINO}`, PN, TEL, 'rroca-ruben')).toBe('ajeno');
+    expect(m.clasificar('sesionesDeTurno', `otro~agenda-minima~wa_${TEL}`, PN, TEL, 'rroca-ruben')).toBe('resto');
+  });
+  it('NEGADO: Q\'Taco conserva su criterio estricto (otro espacio no se toca)', () => {
+    expect(m.clasificar('sesionesDeTurno', `${PN}~chat~wa_${TEL}`, PN, TEL, 'qtaco')).toBe('otro');
+    expect(m.clasificar('sesionesDeTurno', `${PN}~chat~wa_${TEL}`, PN, TEL)).toBe('otro');
+  });
+  it('NEGADO: los scripts parciales no resetean: avisan «use el único» y salen con 2', async () => {
+    const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
+    const corre = (script: string, ...args: string[]) => {
+      const r = spawnSync(process.execPath, [join(aqui, '../../scripts/plataforma', script), ...args], { encoding: 'utf8', env: entornoDelEmulador(HOST), timeout: 60_000 });
+      return { code: r.status, err: `${r.stderr ?? ''}${r.stdout ?? ''}` };
+    };
+    for (const [s, a] of [['resetear-ficha-flujo.mjs', []], ['soltar-sena-pendiente.mjs', []], ['vaciar-memoria-flujo.mjs', ['--sufijos', '12345678']]] as const) {
+      const r = corre(s, ...a);
+      expect(r.code, s).toBe(2);
+      expect(r.err, s).toContain('UN solo reseteo');
+      expect(r.err, s).toContain('resetear-telefono-prueba.mjs');
+    }
+  });
+});

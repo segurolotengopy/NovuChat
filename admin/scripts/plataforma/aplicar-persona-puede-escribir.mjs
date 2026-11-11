@@ -47,8 +47,8 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  ID_TENANT, comprobarProyecto, comprobarRespaldo, esTenantExcluido, guardarRespaldo,
-  leerRespaldoGenerico, mensajeDeInterrupcion, nombreExcluido, rutaDelRespaldoSigueIgual,
+  ID_TENANT, comprobarProyecto, comprobarRespaldo, esTenantExcluidoDeBandera as esTenantExcluido, guardarRespaldo,
+  leerRespaldoGenerico, mensajeDeInterrupcion, nombreExcluidoDeBandera as nombreExcluido, rutaDelRespaldoSigueIgual,
 } from './aplicar-consola-conversaciones.mjs';
 
 export { comprobarProyecto, guardarRespaldo, mensajeDeInterrupcion };
@@ -105,7 +105,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   if (tenant === undefined) problemas.push('falta --tenant');
   else if (tenant.includes(',')) problemas.push('--tenant admite UN solo comercio por corrida (sin comas)');
   else if (!ID_TENANT.test(tenant)) problemas.push('--tenant inválido (minúsculas, dígitos y guiones, de 3 a 60)');
-  else if (esTenantExcluido(tenant, env)) problemas.push('este comercio está EXCLUIDO (Bellido no se toca): no se escribe esta bandera');
+  else if (esTenantExcluido(tenant, env)) problemas.push('este comercio está EXCLUIDO (NOVUCHAT_TENANTS_EXCLUIDOS): no se escribe esta bandera');
 
   if (confirmo !== undefined) {
     if (proy.ok && proy.entorno !== 'produccion') problemas.push('--confirmo-produccion solo se usa contra producción');
@@ -193,7 +193,7 @@ export async function ejecutar(cfg, deps) {
   const rotulo = `${cfg.entorno} · tenant ${cfg.tenant}`;
 
   // Segunda barrera de Bellido, antes de leer: el id también se comprueba aquí.
-  if (esTenantExcluido(cfg.tenant, deps.env)) { log('\n  ✗ Este comercio está EXCLUIDO (Bellido no se toca). No se escribió nada.\n'); return 2; }
+  if (esTenantExcluido(cfg.tenant, deps.env)) { log('\n  ✗ Este comercio está EXCLUIDO (NOVUCHAT_TENANTS_EXCLUIDOS). No se escribió nada.\n'); return 2; }
 
   const { ref, snap } = await leerFicha(db, cfg.tenant);
   // Un tenant desconocido NO se crea ni se toca.
