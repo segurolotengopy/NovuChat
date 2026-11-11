@@ -333,8 +333,10 @@ writeFileSync(archivoTmp, JSON.stringify(ensayado, null, 2));
 // `--flujo onboarding` (el chat de NovuChat, Kenji): el archivo es el de CAPTACIÓN (rubros, planes, cargos,
 // aclaraciones) y lo carga `cargar-captacion.mjs`, que valida con el contrato de las reglas; no hay archivo de
 // negocio ni `--local`. Con los otros flujos, `cargar-negocio.mjs` de siempre.
-const cargador = flujoCliente === 'onboarding' ? 'cargar-captacion.mjs' : 'cargar-negocio.mjs';
-const carga = spawnSync(process.execPath, [join(aqui, '..', 'datos', cargador), '--proyecto', PROYECTO,
+// Dos rutas LITERALES (la prueba `rutas-escritas` calcula cada `join` y comprueba que lleva a un archivo).
+const CARGAR_CAPTACION = join(aqui, '..', 'datos', 'cargar-captacion.mjs');
+const CARGAR_NEGOCIO = join(aqui, '..', 'datos', 'cargar-negocio.mjs');
+const carga = spawnSync(process.execPath, [flujoCliente === 'onboarding' ? CARGAR_CAPTACION : CARGAR_NEGOCIO, '--proyecto', PROYECTO,
   '--tenant', ENSAYO, '--archivo', archivoTmp, ...(LOCAL && flujoCliente !== 'onboarding' ? ['--local', LOCAL] : []), ...(APLICAR ? ['--aplicar'] : [])],
   { env: process.env, encoding: 'utf8' });
 rmSync(tmp, { recursive: true, force: true });
