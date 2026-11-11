@@ -74,14 +74,26 @@ describe('batería de turnos: la voz se cumple en código', () => {
 });
 
 describe('sin promesa de galería: por este chat solo sale texto y, al confirmar, el QR', () => {
-  const FOTOS = /galer[ií]a|te (env[ií]o|enviamos|mando|mandamos|comparto|compartimos|paso|pasamos) (m[aá]s |otras )?(fotos|im[aá]genes)/i;
+  const FOTOS = /galer[ií]a|fotos?\b|im[aá]genes|[aá]lbum/i;
   it('NEGADO: el modelo ofrece fotos o una galería y el cliente recibe el texto fijo, sin esa promesa', () => {
-    for (const salida of ['Te envío más fotos de la campaña. ¿Cuál te gusta?', 'Mira nuestra galería de piezas.', 'Te mandamos otras imágenes de las bufandas.', 'Te comparto más fotos si quieres.']) {
+    for (const salida of ['Te envío más fotos de la campaña. ¿Cuál te gusta?', 'Mira nuestra galería de fotos.', 'Mira la galería de la campaña.', 'Te mostramos la galería.', 'Te mandamos otras imágenes de las bufandas.', 'Te comparto más fotos si quieres.']) {
       const t = hablar(crear({ modeloDice: modelo(salida) }), ANA, mTexto('¿me muestras las campañas?'));
       expect(t.mensajes.length).toBeGreaterThan(0);
       expect(textos(t).join('\n'), salida).not.toMatch(FOTOS);
       expect(textos(t).join('\n'), salida).toMatch(/no pude|reformular|de nuevo|intent|cuéntame/i);
     }
+  });
+  it('NEGADO: cualquier verbo de envío o muestra en primera persona seguido de fotos, imágenes, álbum o galería', () => {
+    for (const salida of ['Te envío las fotos', 'Te mando una foto', 'Puedo enviarte fotos de la bufanda', 'Te paso unas imágenes', 'Te muestro más fotos', 'Te comparto el catálogo con fotos']) {
+      const t = hablar(crear({ modeloDice: modelo(salida) }), ANA, mTexto('¿me muestras las campañas?'));
+      expect(t.mensajes.length, salida).toBeGreaterThan(0);
+      expect(textos(t).join('\n'), salida).not.toMatch(FOTOS);
+      expect(textos(t).join('\n'), salida).toMatch(/no pude|reformular|de nuevo|intent|cuéntame/i);
+    }
+  });
+  it('control: «galería» en otro sentido («una galería de arte») NO se rechaza', () => {
+    const t = hablar(crear({ modeloDice: modelo('Nuestras piezas se inspiran en una galería de arte andino.') }), ANA, mTexto('hola'));
+    expect(textos(t).join(' ')).toMatch(/galería de arte andino/);
   });
   it('control: una respuesta sin esa promesa («foto» o «imagen» en otro sentido) SÍ sale', () => {
     const t = hablar(crear({ modeloDice: modelo('Cada pieza tiene su propia historia. ¿Qué buscas?') }), ANA, mTexto('hola'));

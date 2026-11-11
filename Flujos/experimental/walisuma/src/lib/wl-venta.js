@@ -125,7 +125,7 @@ function wlNombraSinPrecio(n, sinPrecio) {
 // Revisión de lo que redacta el modelo
 // -----------------------------------------------------------------------------
 // Voz de la marca y presión de tiempo / existencias: nada de esto sale del modelo. Se prueba contra el texto NORMALIZADO (minúsculas, sin tildes).
-const WL_PROHIBIDOS_VOZ = /billeteras? (digital|digitales|movil|moviles|electronica|electronicas|virtual|virtuales)|oferta por tiempo limitado|por tiempo limitado|tiempo limitado|ultimas? (unidades|piezas)|ultima (unidad|pieza)|solo quedan|nos quedan|quedan \d|stock|ultimo dia|no te lo pierdas|aprovecha|lujo unico|experiencia incomparable|hecho con amor|galerias?|te (envio|enviamos|mando|mandamos|comparto|compartimos|paso|pasamos) (mas |otras )?(fotos|imagenes)/;
+const WL_PROHIBIDOS_VOZ = /billeteras? (digital|digitales|movil|moviles|electronica|electronicas|virtual|virtuales)|oferta por tiempo limitado|por tiempo limitado|tiempo limitado|ultimas? (unidades|piezas)|ultima (unidad|pieza)|solo quedan|nos quedan|quedan \d|stock|ultimo dia|no te lo pierdas|aprovecha|lujo unico|experiencia incomparable|hecho con amor|(nuestra|la) galerias? (de fotos|de la campana)|(envi|mand|compart|pas|muestr|mostr|adjunt)\w*( \w+){0,4} galerias?|\b(envi|mand|compart|pas|muestr|mostr|adjunt)\w*( \w+){0,5} (fotos?|imagenes|imagen|album|albumes|galerias?)\b/;
 // Un importe escrito («Bs 1.234,50», «450 Bs», «12.5 bolivianos») a centavos, o null si no se entiende.
 function wlCentavos(s) {
   const x = String(s).replace(/\s/g, '');

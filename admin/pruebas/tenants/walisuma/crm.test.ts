@@ -322,6 +322,57 @@ describe('flujo: la fila MÍNIMA NEUTRA cuando el contenido se filtra (otro paí
     expect(f['Estado Comercial']).toBe('Sin seguimiento');
     expect(JSON.stringify(f)).not.toMatch(/Carlos|hola|Ana/);
   });
+  // En los estados cerrados (pausa por persona, suspendido, uso extendido) se filtra el CONTENIDO, no la fila: si el mensaje abre la conversación queda la fila con solo el teléfono.
+  const apertura = (): J => respuestaDeIngesta({ desdeMs: AHORA, nueva: true });
+  const conEstado = (atencion: J): J => ({ ok: true, atencion: { ...((apertura()['atencion'] as J) ?? {}), ...atencion } });
+  const PERMITIDAS = ['accionPlanilla', 'veredictoPlanilla', 'ID Lead', 'Fecha Registro', 'Teléfono WhatsApp', 'Última interacción', 'Se cierra la ventana de 24 h', 'Estado Comercial'];
+  const soloTelefono = (pl: Planilla, t: ResultadoTurno, contenido: RegExp): void => {
+    armoSinGuardar(t);
+    expect(pl.escrituras).toHaveLength(1);
+    const f = pl.escrituras[0]!;
+    expect(Object.keys(f).filter((k) => !PERMITIDAS.includes(k) && f[k] !== '' && f[k] !== undefined)).toEqual([]);
+    for (const k of ['Etapa Funnel', 'Origen / Canal', 'Clasificación', 'Nombre y Apellido', 'Calificación IA', 'Resumen Chatbot IA']) expect([undefined, ''], k).toContain(f[k]);
+    expect(f['Estado Comercial']).toBe('Sin seguimiento');
+    expect(String(f['Teléfono WhatsApp'])).toBe("'" + ANA);
+    expect(JSON.stringify([f, t.porNodo['Prospecto para la planilla'] ?? []])).not.toMatch(contenido);
+    expect(JSON.stringify([f, t.porNodo['Prospecto para la planilla'] ?? []])).not.toMatch(/Cliente Ejemplo|nombrePerfil/);
+  };
+  it('pausa por persona (bloqueado) que abre la conversación: fila con solo el teléfono', () => {
+    const pl = planilla();
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conEstado({ estado: 'bloqueado', respuestasEnVentana: 30 }) });
+    soloTelefono(pl, hablar(m, ANA, mTexto('quiero una bufanda roja'), { toleraFallo: true }), /bufanda|roja/);
+  });
+  it('comercio suspendido que abre la conversación: fila con solo el teléfono', () => {
+    const pl = planilla();
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, panel: { statusCode: 409, body: { mensajeCortesia: SUSPENDIDO } }, ingesta: apertura() });
+    soloTelefono(pl, hablar(m, ANA, mTexto('quiero una bufanda roja'), { toleraFallo: true }), /bufanda|roja/);
+  });
+  it('uso extendido (operador) que abre la conversación: fila con solo el teléfono', () => {
+    const pl = planilla();
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conEstado({ estado: 'operador', respuestasEnVentana: 55 }) });
+    soloTelefono(pl, hablar(m, ANA, mTexto('quiero una bufanda roja'), { toleraFallo: true }), /bufanda|roja/);
+  });
+  it('NIEGA: un mensaje que NO abre la conversación (nueva falso, apertura vieja o sin ancla) no crea fila ni lee la hoja, en cada estado cerrado', () => {
+    const vieja = { desdeMs: AHORA - 10 * 60_000, nueva: false };
+    const casos: Array<[string, J]> = [
+      ['bloqueado, apertura vieja', { ok: true, atencion: { ...((respuestaDeIngesta(vieja)['atencion'] as J) ?? {}), estado: 'bloqueado' } }],
+      ['operador, apertura vieja', { ok: true, atencion: { ...((respuestaDeIngesta(vieja)['atencion'] as J) ?? {}), estado: 'operador' } }],
+      ['bloqueado, sin ancla', { ok: true, atencion: { estado: 'bloqueado' } }],
+      ['operador, sin ancla', { ok: true, atencion: { estado: 'operador' } }],
+    ];
+    for (const [nombre, ingesta] of casos) {
+      const pl = planilla();
+      armoSinGuardar(hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta }), ANA, mTexto('quiero una bufanda roja'), { toleraFallo: true }));
+      expect(pl.escrituras, nombre).toEqual([]);
+      expect(pl.lecturas, nombre).toEqual([]);
+    }
+  });
+  it('NIEGA: suspendido sin apertura (ingesta vieja) no crea fila', () => {
+    const pl = planilla();
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, panel: { statusCode: 409, body: { mensajeCortesia: SUSPENDIDO } }, ingesta: respuestaDeIngesta({ desdeMs: AHORA - 10 * 60_000, nueva: false }) });
+    armoSinGuardar(hablar(m, ANA, mTexto('quiero una bufanda roja'), { toleraFallo: true }));
+    expect(pl.escrituras).toEqual([]);
+  });
 });
 
 describe('la planilla NUNCA tumba la atención: si calcular el prospecto lanza, el turno responde y no se escribe en la hoja', () => {
