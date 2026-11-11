@@ -770,6 +770,11 @@ describe('Salida de persona: adjuntos (B3)', () => {
     expect(cab.find((c) => c.name === 'X-NovuChat-Adjuntos')?.value).toBe('1');
   });
 
+  /** El host de una URL de nodo (con o sin el `=` de las expresiones de n8n); '' si no es una URL absoluta. */
+  const hostDe = (url: unknown): string => {
+    try { return new URL(String(url ?? '').replace(/^=/, '')).hostname; } catch { return ''; }
+  };
+
   it('14. credenciales: whatsAppApi solo en los tres nodos de Graph; cloudfunctions solo con ingesta; sin /subscriptions', () => {
     const graph = ['Enviar por Graph', 'Subir a Meta', 'Enviar adjunto por Graph'];
     for (const n of flujo.nodes) {
@@ -777,9 +782,16 @@ describe('Salida de persona: adjuntos (B3)', () => {
       if (graph.includes(n.name)) expect(cred, n.name).toEqual(['whatsAppApi']);
       else expect(cred.includes('whatsAppApi'), n.name).toBe(false);
       const txt = JSON.stringify(n.parameters);
-      if (n.type === 'n8n-nodes-base.httpRequest' && txt.includes('graph.facebook.com')) {
+      // El host se compara PARSEADO, nunca por subcadena (`graph.facebook.com.otro.example` no es Graph).
+      const host = hostDe(n.parameters['url']);
+      if (graph.includes(n.name)) {
+        expect(host, n.name).toBe('graph.facebook.com');
         expect(n.parameters['authentication'], n.name).toBe('predefinedCredentialType');
         expect(n.parameters['nodeCredentialType'], n.name).toBe('whatsAppApi');
+      } else {
+        // Fuera de esos tres, ningún nodo va a Meta ni lo nombra en sus parámetros.
+        expect(host, n.name).not.toBe('graph.facebook.com');
+        expect(txt, n.name).not.toMatch(/facebook/i);
       }
       if (txt.includes('cloudfunctions')) {
         expect(['Reclamar', 'Leer adjunto', 'Confirmar'], n.name).toContain(n.name);
