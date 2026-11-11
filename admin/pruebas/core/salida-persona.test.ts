@@ -488,7 +488,7 @@ describe('claves y huellas', () => {
 // ===========================================================================
 const aqui = dirname(fileURLToPath(import.meta.url));
 const CON_ADJUNTOS = { 'x-novuchat-adjuntos': '1' };
-const BYTES = Buffer.from('bytes-de-un-adjunto-de-prueba-0123456789');
+const BYTES = Buffer.from('bytes-de-un-adjunto-de-prueba-abcdefghij');
 const SHA = createHash('sha256').update(BYTES).digest('hex');
 const objetos = new Map<string, Buffer>();
 const almacenDoble = {
@@ -642,7 +642,7 @@ describe('leerAdjuntoPersona: los bytes al flujo, con la credencial del número'
   });
   it('INTEGRIDAD: bytes alterados en Storage (otro sha256 u otro tamaño) no salen: 503', async () => {
     const v = await sembrarAdjunto(CLAVE(1), { estadoEnvio: 'enviando' });
-    objetos.set(v.ruta, Buffer.from('bytes-de-un-adjunto-de-prueba-9876543210')); // mismo largo, otro contenido
+    objetos.set(v.ruta, Buffer.from('bytes-de-un-adjunto-de-prueba-jihgfedcba')); // mismo largo, otro contenido
     expect((await leerAdj(pedido())).codigo).toBe(503);
     objetos.set(v.ruta, Buffer.concat([BYTES, Buffer.from('+')]));
     expect((await leerAdj(pedido())).codigo).toBe(503);
