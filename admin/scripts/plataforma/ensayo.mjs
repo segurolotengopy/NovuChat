@@ -52,6 +52,18 @@
  *     --local <ruta a CONFIGURACION.local.md> [--flujo venta|agendamiento] [--aplicar]
  *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --restaurar [--aplicar]
  *
+ * DOS NÚMEROS DE ENSAYO A LA VEZ: `--demo a|b` (10/11/2026; por defecto `a`, y sin la
+ * opción todo es como siempre). Con `--demo b` el comercio del ensayo es `ensayo-b`,
+ * no `ensayo`: la configuración que lee el flujo es UNA por comercio y cada
+ * `--preparar` vacía el suyo, así que dos ensayos simultáneos sobre el mismo
+ * comercio se pisarían (el segundo vaciaría la configuración bajo el flujo del
+ * primero y mezclaría conversaciones y conteos). Los dos ids están escritos acá
+ * abajo y son los únicos que este script vacía. Cerrojos (`pruebas/ensayo-demo-b.test.ts`):
+ *   - una ruta que está en el comercio de ensayo del OTRO demo no se prepara ni
+ *     se restaura con este: hay que pasar el `--demo` con que se preparó;
+ *   - `--preparar` se niega si OTRO número ya está desviado al mismo comercio de
+ *     ensayo (es el caso de olvidar `--demo b` con el Demo A en ensayo).
+ *
  * Nunca imprime identificadores completos ni valores de la tabla local.
  */
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
@@ -63,7 +75,12 @@ import { registerHooks } from 'node:module';
 // `registro.ts` no tiene `import`: Node lo carga quitando los tipos.
 import { modulosDeFlujos } from '../../functions/src/registro.ts';
 
-const ENSAYO = 'ensayo';
+// El comercio del ensayo, por demo de destino. Constantes: son los ÚNICOS comercios que este script vacía.
+const ENSAYOS = { a: 'ensayo', b: 'ensayo-b' };
+const DEMO = (process.argv.includes('--demo') ? String(process.argv[process.argv.indexOf('--demo') + 1] ?? '') : 'a').trim().toLowerCase();
+if (!Object.hasOwn(ENSAYOS, DEMO)) { console.error('\n  ✗ --demo es a o b\n'); process.exit(2); }
+const ENSAYO = ENSAYOS[DEMO];
+const OTROS_ENSAYOS = Object.values(ENSAYOS).filter((e) => e !== ENSAYO);
 const aqui = dirname(fileURLToPath(import.meta.url));
 
 const args = process.argv.slice(2);
@@ -86,7 +103,7 @@ if (FLUJO !== null && !FLUJOS_VALIDOS.includes(FLUJO)) problemas.push('--flujo d
 if (MODO.length !== 1) problemas.push('elija UNO: --preparar, --restaurar o --estado');
 if (MODO[0] === '--preparar') {
   if (!/^[a-z0-9][a-z0-9-]{2,59}$/.test(CLIENTE)) problemas.push('--cliente inválido');
-  if (CLIENTE === ENSAYO) problemas.push('--cliente no puede ser el propio ensayo');
+  if (Object.values(ENSAYOS).includes(CLIENTE)) problemas.push('--cliente no puede ser el propio ensayo');
   if (!ARCHIVO) problemas.push('falta --archivo (el JSON del cliente, con los cambios a probar)');
 }
 if (problemas.length) {
@@ -134,9 +151,15 @@ const origen = String(ruta.get('ensayoDe') ?? '');
 console.log(`\n  Número    : ${cola(NUMERO)} · alias ${cola(ruta.get('aliasSecreto'))} · flujo ${ruta.get('flujo') ?? '?'}`);
 console.log(`  Apunta a  : ${actual}${origen ? ` (en ensayo; su comercio es ${origen}, cliente ${ruta.get('ensayoCliente') ?? '?'})` : ''}`);
 
+// Una ruta en el comercio de ensayo del OTRO demo no es de este: ni se prepara encima ni se restaura desde acá.
+if (MODO[0] !== '--estado' && OTROS_ENSAYOS.includes(actual)) {
+  console.error(`\n  ✗ La ruta está en el ensayo del otro demo (${actual}): use el --demo con que se preparó.\n`);
+  await salir(1);
+}
+
 if (MODO[0] === '--estado') {
   const fe = await db.doc(`tenants/${ENSAYO}`).get();
-  console.log(`  Ensayo    : ${fe.exists ? `vertical ${fe.get('vertical') ?? '?'} · modulos ${Array.isArray(fe.get('modulos')) ? fe.get('modulos').length : 0}` : 'el comercio `ensayo` no existe'}`);
+  console.log(`  Ensayo    : ${fe.exists ? `vertical ${fe.get('vertical') ?? '?'} · modulos ${Array.isArray(fe.get('modulos')) ? fe.get('modulos').length : 0}` : `el comercio \`${ENSAYO}\` no existe`}`);
   console.log(`  Desviada  : ${actual === ENSAYO ? 'sí' : 'no'}${ruta.get('ensayoFlujoDe') ? ` · flujo de la ruta restaurable a ${ruta.get('ensayoFlujoDe')}` : ''}`);
   await salir(0);
 }
@@ -174,6 +197,13 @@ if (MODO[0] === '--restaurar') {
 // 1. Solo un número de DEMOSTRACIÓN. Si ya está en ensayo, su origen se conserva.
 const comercioDeOrigen = actual === ENSAYO ? origen : actual;
 if (!comercioDeOrigen) { console.error('\n  ✗ La ruta está en ensayo sin origen anotado: revisar a mano.\n'); await salir(1); }
+// Un comercio de ensayo es de UN número por vez: si otro número ya está desviado acá, `--preparar` vaciaría
+// la configuración bajo ese ensayo en curso (es lo que pasa al olvidar `--demo b` con el Demo A en ensayo).
+const otrosNumeros = (await db.collection('rutasWhatsApp').where('tenantId', '==', ENSAYO).get()).docs.filter((d) => d.id !== NUMERO);
+if (otrosNumeros.length) {
+  console.error(`\n  ✗ Otro número (${otrosNumeros.map((d) => cola(d.id)).join(', ')}) ya está en el ensayo \`${ENSAYO}\`: dos ensayos no comparten comercio. Para el otro demo, --demo ${DEMO === 'a' ? 'b' : 'a'}; si no, primero --restaurar el otro.\n`);
+  await salir(1);
+}
 // Con la ruta YA en ensayo solo se repite el MISMO ensayo (mismo cliente y mismo
 // flujo): otro distinto vaciaría `ensayo` bajo el flujo en curso y, si la carga
 // fallara, dejaría el número respondiendo con un comercio vacío.
@@ -283,7 +313,7 @@ if (APLICAR) {
     });
     const { MODELO_POR_DEFECTO } = await import('../../functions/src/central/ejes.ts');
     await refEnsayo.set({
-      nombre: 'Ensayo de NovuChat', estado: 'activo', vertical: flujoCliente,
+      nombre: DEMO === 'b' ? 'Ensayo de NovuChat (Demo B)' : 'Ensayo de NovuChat', estado: 'activo', vertical: flujoCliente,
       // H2b-cierre: `modulos` (la unica fuente) coherente con el flujo del ensayo; sin `flujos`.
       modulos: modulosDeFlujos([flujoCliente]),
       plan: 'pro', modelo: MODELO_POR_DEFECTO, creadoPor: 'ensayo', creadoEn: Timestamp.now(),
@@ -314,7 +344,7 @@ if (APLICAR) {
 }
 
 if (!APLICAR && !fichaEnsayo.exists) {
-  console.log('  (el comercio `ensayo` todavía no existe: la carga en seco se ve después de crearlo con --aplicar)\n');
+  console.log(`  (el comercio \`${ENSAYO}\` todavía no existe: la carga en seco se ve después de crearlo con --aplicar)\n`);
   await salir(0);
 }
 
