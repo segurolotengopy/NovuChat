@@ -66,6 +66,21 @@ se aclara que el ajuste vivo debe ser `none`.
    comprueba en el ensayo.
 2. El id lo asigna n8n y nunca se versiona; no hay que anotarlo ni asignarlo a mano: el publicador lo resuelve por nombre (sección siguiente).
 
+## Prueba de error forzado (`scripts/probar-alerta-n8n.sh`)
+
+Comprueba de punta a punta que la alerta real llega a Andres sin tocar ningún flujo de cliente: crea un flujo
+temporal INACTIVO «NovuChat — PRUEBA alerta (temporal)» (Webhook de ruta aleatoria → nodo «Detener por envío
+incierto», el nombre exacto que «Armar alerta» exige para marcar `urgente`), con `settings.errorWorkflow` = la
+alerta; lo activa, lo dispara una vez, informa las ejecuciones nuevas de la alerta y SIEMPRE lo desactiva y lo
+borra (lo desactiva en el acto tras el disparo y comprueba `active=false`). Seco por omisión; `--aplicar --confirmo
+produccion` para correrlo. Ningún flujo de cliente se escribe ni se ejecuta (el listado de flujos de n8n los incluye,
+pero solo se guardan id, nombre y archivado). Costo: 1 aviso de prueba a Andres (tope de 5 al día) y **consume el único
+aviso inmediato por hora del tipo `envio_incierto`** (`alertaOperativa.ts`): un envío incierto real en esa hora quedaría
+diferido. Córrase sin tráfico; con `--aplicar` el script aborta (salida 2) si la alerta corrió en la última hora, salvo
+`--acepto-sin-aviso-inmediato`. Con `saveDataSuccessExecution: none` un éxito no deja ejecución: la prueba de que salió es el
+aviso recibido. Sigue sin verificarse en n8n 2.36.5 que el Error Trigger dispare con el flujo de alertas inactivo;
+esta prueba lo resuelve (si no llega aviso, ese es el motivo probable).
+
 ## Cómo llega el id a cada flujo con relé (implementado)
 
 En el JSON de cada flujo con relé: `"settings": { "errorWorkflow": "REEMPLAZAR_ID_ERROR_WORKFLOW" }`.
