@@ -536,6 +536,19 @@ describe('(6) Lo que se le dice al cliente según el cotejo: ninguno afirma un p
     expect(pasa('¿Avisar del cobro?', { ...s, numeroDueno: '59170000009' })).toBe(false);
   });
 
+  it('NO CUADRA con VARIAS diferencias: las nombra TODAS (destinatario primero) con frases fijas, sin copiar lo leído; una frase desconocida sale genérica (07/11/2026)', () => {
+    const s = responder({ statusCode: 200, body: { resultado: 'no_cuadra', importe: 597, diferencias: [
+      'El comprobante dice 350 y el pedido es de 597.',
+      'El depósito fue a la cuenta 987654321, que no es la del QR.',
+      'El depósito figura a «PERSONA AJENA SA» y la cuenta es de «UN NEGOCIO».',
+      'Algo nuevo que dice PERSONA AJENA y la cuenta 987654321.',
+    ] } }, previo());
+    const r = String(s['respuesta']);
+    expect(r).toMatch(/Hay varios datos que no me coinciden \(la cuenta de destino no es la del QR, el nombre del destinatario no coincide con el de la cuenta, el comprobante dice 350 y tu pedido es de 597 y otro dato del comprobante\)/);
+    expect(r).not.toMatch(/987654321|PERSONA AJENA|UN NEGOCIO/);
+    expect(r).not.toMatch(AFIRMA_PAGO);
+    expect(String(s['motivoTransferencia'])).toContain('PERSONA AJENA');
+  });
   it('NO CUADRA e ILEGIBLE: lo revisa una persona, y el aviso SALE de verdad', () => {
     for (const [resultado, marca] of [['no_cuadra', /no me coincide/i], ['ilegible', /no pude leerlo/i]] as const) {
       const s = responder({ statusCode: 200, body: { resultado,

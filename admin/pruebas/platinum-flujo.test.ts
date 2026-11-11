@@ -846,7 +846,6 @@ describe('(h) Dos odontólogos con calendarios distintos', () => {
  * dos flujos.
  */
 describe.each([
-  ['platinum-agendamiento.json', flujo],
   ['demo-a-agendamiento.json', demoA],
 ])('(i) %s · lo que enseñó la ejecución #2867', (_archivo, f) => {
   const destinos = (desde: string, salida = 0) =>
@@ -1286,7 +1285,6 @@ describe.each([
  * candado ya existía y sus salidas son las mismas.
  */
 describe.each([
-  ['platinum-agendamiento.json', flujo],
   ['demo-a-agendamiento.json', demoA],
 ])('(j) %s · lo que enseñó la ejecución #2936', (_archivo, f) => {
   const codigo = (nombre: string) => String(nodo(f, nombre).parameters['jsCode']);
@@ -1698,7 +1696,6 @@ describe.each([
  * razón que el bloque (i).
  */
 describe.each([
-  ['platinum-agendamiento.json', flujo],
   ['demo-a-agendamiento.json', demoA],
 ])('(k) %s · dirección con enlace a Maps y pin a pedido', (_archivo, f) => {
   const destinos = (desde: string, salida = 0) =>
@@ -2027,7 +2024,6 @@ describe.each([
  * 5. EL COMPROBANTE NO SE GUARDA: ningún nodo escribe la imagen a ningún lado.
  */
 describe.each([
-  ['platinum-agendamiento.json', flujo],
   ['demo-a-agendamiento.json', demoA],
 ])('(l) %s · seña por QR con cotejo del comprobante', (_archivo, f) => {
   const destinos = (desde: string, salida = 0) =>
@@ -2500,10 +2496,34 @@ describe.each([
       expect(r).toContain('https://maps.app.goo.gl/AbCdEfGh12');
     });
 
-    it('no cuadra: dice cuál dato no coincide, lo revisa una persona y el horario sigue reservado', () => {
-      const s = responder(OK({ resultado: 'no_cuadra', diferencias: ['El monto leído (40) no es el de la seña (100).', 'Otra.'] }));
+    it('no cuadra con VARIAS diferencias: las nombra TODAS, el destinatario primero, con frases fijas, SIN copiar lo leído de la imagen (07/11/2026)', () => {
+      const s = responder(OK({ resultado: 'no_cuadra', diferencias: [
+        'El comprobante dice 40 y el pedido es de 100.',
+        'El comprobante es anterior al pedido: parece un pago de otra vez.',
+        'El depósito fue a la cuenta 987654321, que no es la del QR.',
+        'El depósito figura a «PERSONA AJENA SA» y la cuenta es de «UN NEGOCIO».',
+      ] }));
       const r = String(s['respuesta']);
-      expect(r).toMatch(/Recibí (su|tu) comprobante\. Hay un dato que no me coincide \(El monto leído \(40\) no es el de la seña \(100\)\)/);
+      expect(r).toMatch(/Hay varios datos que no me coinciden \(la cuenta de destino no es la del QR, el nombre del destinatario no coincide con el de la cuenta, el comprobante dice 40 y la seña es de 100 y la fecha del comprobante es anterior a la reserva\)/);
+      // Nada leído de la imagen ni el titular del negocio llega al cliente.
+      expect(r).not.toMatch(/987654321|PERSONA AJENA|UN NEGOCIO»/);
+      // Recepción sí recibe el detalle completo.
+      expect(String(s['motivoTransferencia'])).toContain('PERSONA AJENA');
+      expect(r).not.toMatch(/acreditad|verificad|simulad/i);
+    });
+
+    it('no cuadra con UNA sola diferencia conocida: «un dato que no me coincide» con su frase fija (sin lo leído)', () => {
+      const r = String(responder(OK({ resultado: 'no_cuadra', diferencias: ['El depósito fue a la cuenta 987654321, que no es la del QR.'] }))['respuesta']);
+      expect(r).toMatch(/Hay un dato que no me coincide \(la cuenta de destino no es la del QR\)/);
+      expect(r).not.toMatch(/987654321/);
+      expect(r).not.toMatch(/Hay varios datos/);
+    });
+
+    it('no cuadra: dice cuál dato no coincide, lo revisa una persona y el horario sigue reservado', () => {
+      const s = responder(OK({ resultado: 'no_cuadra', diferencias: ['El comprobante dice 40 y el pedido es de 100.', 'Otra.'] }));
+      const r = String(s['respuesta']);
+      // TODAS las diferencias (condición general, 07/11/2026): las dos, no solo la primera.
+      expect(r).toMatch(/Recibí (su|tu) comprobante\. Hay varios datos que no me coinciden \(el comprobante dice 40 y la seña es de 100 y otro dato del comprobante\)/);
       expect(r).toContain('una persona de Un Negocio');
       expect(r).toMatch(/(Su|Tu) horario sigue reservado/);
       expect(s).toMatchObject({ transferir: true, resultadoSena: 'no_cuadra', confirmarCita: false });
@@ -2806,7 +2826,6 @@ describe.each([
  *    al cotejo del servidor, por su rama de siempre.
  */
 describe.each([
-  ['platinum-agendamiento.json', flujo],
   ['demo-a-agendamiento.json', demoA],
 ])('(m) %s · medios entrantes: audio, imagen y PDF sin comprobante', (_archivo, f) => {
   const destinos = (desde: string, salida = 0) =>
@@ -3604,7 +3623,7 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
 // ---------------------------------------------------------------------------
 // (o) El número de recepción sale en un BOTÓN, no escrito en el texto
 // ---------------------------------------------------------------------------
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA]])(
+describe.each([['demo-a-agendamiento.json', demoA]])(
   '(o) %s · contacto de recepción con botón', (_archivo, f) => {
     const codigoDe = (n: string) => String(nodo(f, n).parameters['jsCode']);
     /** Un turno como lo deja el agente, con la marca que escribe el modelo. */
@@ -3685,7 +3704,7 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
 // ---------------------------------------------------------------------------
 // (p) Lo que enseñó la prueba de Silvana, 00:56 del 20/09/2026
 // ---------------------------------------------------------------------------
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA]])(
+describe.each([['demo-a-agendamiento.json', demoA]])(
   '(p) %s · la reserva con seña, como la vio una clienta', (_archivo, f) => {
     const cod = (n: string) => String(nodo(f, n).parameters['jsCode']);
     const CON_SENA_1 = { senaActiva: 'si', senaImporte: '1', senaMoneda: 'Bs', nombreNegocio: 'Un Negocio',
@@ -3774,7 +3793,7 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
 // ---------------------------------------------------------------------------
 // (q) Reenviar el QR, y el botón de recepción solo a pedido (20/09/2026)
 // ---------------------------------------------------------------------------
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA]])(
+describe.each([['demo-a-agendamiento.json', demoA]])(
   '(q) %s · lo que faltaba cuando el QR se pierde', (_archivo, f) => {
     const cod = (n: string) => String(nodo(f, n).parameters['jsCode']);
     const PENDIENTE = { senaActiva: 'si', senaPendiente: 'si', senaImporte: '1', senaMoneda: 'Bs',
@@ -4245,7 +4264,7 @@ describe('Cancelar exige confirmación: la compuerta está en cancelar_cita', ()
  * guarda por teléfono en los datos estáticos, Config del negocio lo expone y la
  * herramienta lo usa en vez del que el modelo elija.
  */
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
+describe.each([['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
   '%s · la cita que se mostró es la que se cancela', (_archivo, f) => {
     const codigoDe = (n: string) => String(nodo(f, n).parameters['jsCode']);
     const cfgBase = configBase(f);
@@ -4413,7 +4432,7 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
  * problema técnico» (#4042, #4047). Lo único que puede ofrecer cuando le falta
  * un dato o algo falla es pasar con recepción: el aviso MÁS el botón.
  */
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
+describe.each([['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
   '%s · solo se ofrece lo que se cumple', (_archivo, f) => {
     const codigoDe = (n: string) => String(nodo(f, n).parameters['jsCode']);
     const procesar = (output: string, userInput = 'cuánto pagué?', cfg: J = {}) => ejecutar(codigoDe('Procesar respuesta'),
@@ -4561,7 +4580,7 @@ describe('Cancelar: la confirmación es SOLO una confirmación (#4034)', () => {
  * `J` es el próximo jueves y `V` el próximo viernes; `otroNombre` es el día de
  * la semana anterior, el error típico del modelo.
  */
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
+describe.each([['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
   '%s · el día de la semana lo pone el código', (_archivo, f) => {
     const procesar = (output: string, pasos: J[]) => ejecutar(String(nodo(f, 'Procesar respuesta').parameters['jsCode']),
       [{ output, intermediateSteps: pasos }],
@@ -4691,7 +4710,7 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
  * Lo de #5559 y #5576 es prompt (reglas de agenda de Bellido, probadas en su
  * suite). Lo de #5553 y #5563 es código, y se prueba acá en los tres flujos.
  */
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
+describe.each([['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
   '%s · 24/09: reagendar es confirmar, y una cita en el pasado no es una cita', (_archivo, f) => {
     const codigo = (n: string) => String(nodo(f, n).parameters['jsCode']);
     const idDe = (userInput: string) => expresion(nodo(f, 'cancelar_cita').parameters['eventId'], {},

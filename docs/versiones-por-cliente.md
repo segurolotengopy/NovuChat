@@ -352,12 +352,20 @@ Cambio en `Decidir turno`, `Armar mensajes` y `Soltar mensajes` de «Venta míni
 - **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos. Código común a todas las salidas de `venta-minima` (regeneradas); solo Q'Taco trae `reservaDesde`, así que el resto no cambia de comportamiento.
 - **No se publica con este PR.**
 
+## Todas las diferencias del comprobante en la agenda con seña y en el cobro de venta de demo (Andres, 07/11/2026)
+
+Mismo criterio que la sección anterior (base común de venta): los módulos comunes `respuesta-de-la-sena.js` y `respuesta-del-cobro.js` nombran ahora TODAS las diferencias que lista el servidor (destinatario primero), con frases fijas y SIN copiar lo leído de la imagen (antes mostraban solo la primera y, si era el depósito, copiaban la cuenta o el nombre leídos). Recepción sigue recibiendo el detalle completo.
+
+- **Flujos regenerados (sin publicar):** `demo-a-agendamiento` y `demo-b-venta-cobro` (más `platinum-agendamiento.json`, que se regenera solo porque comparte el módulo y la prueba de identidad del ensamblador lo exige; no es un cliente). **Excepción declarada:** los vivos de los demos siguen con el texto anterior hasta su próxima publicación; **cierra:** esa publicación, con su ensayo previo.
+- **No cubierto por este PR:** `bellido-agendamiento` (no sale de un manifiesto: su texto del comprobante vive en su propio JSON, que es de su sesión) y Q'Taco/`venta-minima` (sesión de Q'Taco).
+- **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos; el texto del mensaje que ya sale pasa de una frase a varias.
+
 ## Todas las diferencias de un comprobante: primero Rubén (Andres, 07/11/2026)
 
 **Decisión de Andres:** un comprobante que no cuadra le dice al cliente TODAS sus diferencias, el destinatario primero (condición general del sistema). El servidor ya devuelve `motivos[]` (PR de Functions #849, aditivo) y la base común (`venta-digital/src/diferencias.js`, nueva; `cobro.js` no se toca) arma el texto.
 
 - **Adopta en este PR:** Rubén (fuente y JSON regenerados, sin publicar). **Excepción declarada:** el flujo vivo de Rubén sigue diciendo UNA diferencia hasta su publicación; **cierra:** esa publicación, tras la prueba conjunta. Con el servidor sin desplegar el texto cae al motivo primario de siempre.
-- **Pendiente de adopción (no es de este PR; prioridad: salir con Rubén):** Antonio/Emma/Evy, Casa Bermejo y Walisuma (trabajo ya hecho en la rama `plataforma-casos/todas-las-diferencias-otros-flujos`, sin PR), Q'Taco/`venta-minima` (su sesión) y la agenda con seña.
+- **Pendiente de adopción (no es de este PR; prioridad: salir con Rubén):** Antonio/Emma/Evy, Casa Bermejo y Walisuma (trabajo ya hecho en la rama `plataforma-casos/todas-las-diferencias-otros-flujos`, sin PR), Q'Taco/`venta-minima` (su sesión) y la agenda con seña (esta última la adopta la sección anterior, PR de la agenda con seña y el cobro de demo).
 - **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos.
 
 - **Bellido, miniCRM: «Servicio elegido» (U), «Agendó» (V) y «Fecha y hora de la cita» (W) (Andres, 07/11/2026; sin publicar).** Contrato y módulo `crm` con tres campos opcionales del bot (solo escribe quien los mapea; los demás clientes escriben lo mismo que antes) y prospecto de Agenda mínima con emergencia en fila (solo «Emergencia»). Los JSON de Evy, Rubén, Antonio, Emma, Q'Taco 3727, chat y captación se regeneraron solo por el código embebido de `crm.js`. «Diagnóstico del equipo» pasa de la U a la X. **Antes de publicar (procedimiento de la hoja viva):** insertar 3 columnas antes de la U (el Diagnóstico pasa a la X con su contenido), poner los encabezados U, V y W, y comprobar que U, V y W estén vacías en las filas existentes. **Excepción declarada:** el vivo sigue atrasado frente al JSON versionado hasta publicar. 0 mensajes por conversación; Bellido pasa de 71 nodos a 71.
