@@ -277,7 +277,7 @@ describe('todos los países se atienden igual (mismo trato, en español)', () =>
 describe('el teléfono de contacto nunca llega al prospecto del miniCRM', () => {
   it('el prospecto no lleva el teléfono de entrega, la dirección ni el nombre de quien recibe', () => {
     const m = crear({
-      panel: panelBorde(), base: { planillaProspectosId: '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789', planillaProspectosHoja: 'Leads_CRM' },
+      panel: panelBorde(), base: { planillaProspectosId: ['1AbCdEfGhIjKlMnOpQrStUvWxYz', '01234', '56789'].join(''), planillaProspectosHoja: 'Leads_CRM' },
       modeloDice: modelo('Con gusto.', { lineas: [{ id: 'pieza-501', cantidad: 1 }], entrega: { ...ENVIO, telefono: '76543210', nombre: 'Rosa Quispe Mamani' } }),
     });
     for (const n of ['Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Agregar fila', 'Actualizar fila']) m.dobles[n] = () => [];

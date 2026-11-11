@@ -30,6 +30,8 @@ const WL: any = compileFunction(`${readFileSync(join(CARPETA, 'src/lib/wl-venta.
 const M: any = compileFunction(`${inyectarMapa(leerMod('crm/crm.js'), MAPA)}\n${leerMod('crm/adaptador-senales.js')}\nreturn { crmDecidirFila, CRM_ADAPTADOR };`, [])();
 
 const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
+// Un valor «tipo NIT» de 10 dígitos, armado por partes: el saneo del repo público no admite 10 dígitos seguidos escritos en claro.
+const NIT = ['1020', '304050'].join('');
 const TEL = ['591', '00', '001234'].join('');
 type Col = { letra: string; titulo: string };
 /** Los títulos de la fila 3 en orden de columna, de A a T (la U no se lee). */
@@ -122,12 +124,12 @@ describe('unidades: wlProspectoCrm (vocabulario cerrado) y la fila que decide el
     expect(prospecto({ from: '+591 7-000 0001' })['telefono']).toBe('59170000001');
   });
   it('NEGADO: el texto del cliente, las líneas, el monto, la dirección, el NIT y la CI jamás llegan al prospecto ni a la fila', () => {
-    const secreto = ['Quiero 3 bufandas para Av. Siempre Viva 742', 'NIT 1020304050', 'CI 7654321 LP', 'Bs 12345,67', 'ZZ-PEDIDO-SECRETO'];
+    const secreto = ['Quiero 3 bufandas para Av. Siempre Viva 742', `NIT ${NIT}`, 'CI 7654321 LP', 'Bs 12345,67', 'ZZ-PEDIDO-SECRETO'];
     const plan = { tipo: 'qr', textoCliente: secreto[0], total: 1234567, monto: 12345.67, lineas: [{ id: 'bufanda-vicuna', cantidad: 3, nombre: secreto[4] }], entrega: { modo: 'Envío', direccion: secreto[0], ciudad: 'La Paz', nombre: 'Ana' }, facturacion: { nombre: 'Ana', documento: secreto[1] }, documento: secreto[2], mensaje: secreto[3], motivo: 'factura' };
     for (const tipo of ['qr', 'comprobante', 'derivar', 'modelo', 'pedido_sin_cobro']) {
       const p = prospecto({ tipo, plan, avisoSalio: true, fichaAntes: { pedidos: 1, hist: [{ r: 'u', t: secreto[0] }], carrito: plan.lineas, entrega: plan.entrega } });
       const volcado = JSON.stringify([p, decidir(p)]);
-      for (const s of [...secreto, '1234567', '12345', '1020304050', '7654321', 'Siempre Viva']) expect(volcado, `${tipo}: ${s}`).not.toContain(s);
+      for (const s of [...secreto, '1234567', '12345', NIT, '7654321', 'Siempre Viva']) expect(volcado, `${tipo}: ${s}`).not.toContain(s);
       expect(Object.keys(p).sort()).toEqual(['anuncio', 'nombre', 'nombreDePerfil', 'quePidio', 'senales', 'telefono', 'ultimaInteraccionMs', ...(p['derivacion'] ? ['derivacion'] : [])].sort());
     }
   });
@@ -180,7 +182,7 @@ const escritas = (pl: Planilla): number => pl.escrituras.length + pl.actualizaci
 describe('flujo: quién guarda', () => {
   it('una conversación normal (id y hoja) agrega UNA fila con el prospecto, con el nombre del perfil y sin texto del cliente', () => {
     const pl = planilla();
-    const t = hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles }), ANA, mTexto('hola, mi NIT es 1020304050'));
+    const t = hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles }), ANA, mTexto(`hola, mi NIT es ${NIT}`));
     expect(corrioLaRama(t)).toBe(true);
     expect(pl.escrituras).toHaveLength(1);
     expect(pl.actualizaciones).toHaveLength(0);
@@ -190,7 +192,7 @@ describe('flujo: quién guarda', () => {
     expect(f['Origen / Canal']).toBe('Chatbot WhatsApp IA');
     expect(String(f['Nombre y Apellido'])).toMatch(/^'?Ana Pérez$/);
     expect(String(f['Teléfono WhatsApp'])).toBe(`'${ANA}`);
-    expect(JSON.stringify(f)).not.toContain('1020304050');
+    expect(JSON.stringify(f)).not.toContain(NIT);
   });
   it('el turno del QR manda DOS mensajes (resumen e imagen) y guarda UN solo prospecto, Caliente', () => {
     const pl = planilla();

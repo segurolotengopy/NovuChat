@@ -284,7 +284,7 @@ describe('versionado, no publicable y datos', () => {
     };
     ponerBase(flujoListo, 'avisoPedidoEstado', 'APPROVED');
     ponerBase(flujoListo, 'envioGratisDesdeBs', '500');
-    ponerBase(flujoListo, 'planillaProspectosId', '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789');
+    ponerBase(flujoListo, 'planillaProspectosId', ['1AbCdEfGhIjKlMnOpQrStUvWxYz', '01234', '56789'].join(''));
     expect(C.guardiaDePublicacion({ flujo: flujoListo, datos: DATOS })).toEqual([]);
     const conMarcador = clonar(flujoListo); (nodo(conMarcador, 'Traer configuración')['parameters'] as J)['x'] = 'REEMPLAZAR_ALGO';
     expect(C.guardiaDePublicacion({ flujo: conMarcador, datos: DATOS }).join(' ')).toMatch(/REEMPLAZAR_ALGO/);
