@@ -59,6 +59,8 @@ let senalDeRiesgo = false;  // este turno trae una SEÑAL de crisis (el texto, o
 let upgradeOfrecido = false;   // este turno ofreció el paso del Libro al Pack (se escribe en la ficha, una sola vez)
 let qrPrevio = null;        // la ficha antes de la marca provisional del QR
 let hashPrevio = null;      // lo último dicho al teléfono antes de este turno (hash y plan): vuelve si Meta no aceptó el envío
+let pedirGmail = false;     // este turno pide el Gmail del cliente (el comprobante cuadró y el aviso a Rubén salió)
+let gmailGuardado = '';     // el Gmail que este turno recibió y pasó a Rubén (lo produjo el código)
 let qrLiberado = null;      // la guarda de QR abierto que este turno de comprobante libera (se restaura si el aviso al cliente no sale)
 
 const texto = (cuerpo, extra) => { const c = rrSeguro(cuerpo); return cmMensaje('cliente', cmTexto(c), c, c, Object.assign({ tipoReporte: 'text' }, extra || {})); };
@@ -256,7 +258,9 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
   } else if (tipoDePlan === 'cobro_ya_cerrado') {
     m = conRuben(RR_TEXTO_COBRO_YA_CERRADO);
   } else if (tipoDePlan === 'comprobante') {
-    const r = rrTextoComprobante(plan.resultado, plan.causa, estadoAviso, plan.diferencia, base);
+    // La venta confirmada: el comprobante cuadró, el aviso a Rubén SALIÓ y aún no hay Gmail guardado. Solo ahí se pide, en el MISMO mensaje (+0 mensajes); con el paso del Libro al Pack, el pedido va en el cuerpo y el párrafo del cambio va al final, con su botón.
+    pedirGmail = plan.resultado === 'cuadra' && estadoAviso === true && fichaAntes.gmail === '';
+    const r = rrTextoComprobante(plan.resultado, plan.causa, estadoAviso, plan.diferencia, base, pedirGmail);
     // EL PASO DEL LIBRO AL PACK (por código, UNA vez por ficha): solo cuando el comprobante de un LIBRO cuadra y el aviso a Rubén salió, y solo si el catálogo trae los dos precios. Es el MISMO mensaje del comprobante, con el botón de la diferencia;
     // si Meta no entrega el botón, sale el respaldo SIN la oferta (nunca se ofrece lo que el texto no puede cumplir).
     const botonUpgrade = plan.resultado === 'cuadra' && estadoAviso === true && plan.producto === 'libro' && fichaAntes.upgrade === 0 ? rrBotonUpgrade(cat) : null;
@@ -265,6 +269,14 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
       m = cmMensaje('cliente', cmBotones(c, [botonUpgrade]), c, rrSeguro(r.cuerpo), { tipoReporte: 'interactive' });
       upgradeOfrecido = true;
     } else m = r.boton === true ? conRuben(r.cuerpo) : texto(r.cuerpo);
+  } else if (tipoDePlan === 'gmail') {
+    // La respuesta al Gmail del cliente (lo leyó el código): textos fijos, sin plazo y sin «ya se compartió». El correo solo se guarda si el aviso a Rubén salió.
+    if (plan.resultado === 'recibido') {
+      if (avisoSalio === true) { m = texto('Gracias. Le pasé tu correo a Rubén para que te envíe el enlace.'); gmailGuardado = String(plan.correo || ''); }
+      else m = conRuben('Recibí tu correo, pero no pude pasárselo a Rubén. Escríbele directo con el botón.');
+    } else if (plan.resultado === 'no_gmail') m = conRuben('Ese correo no es de Gmail. Necesito un correo que termine en @gmail.com. ¿Me lo escribes? Si no tienes uno, escríbele a Rubén con el botón.');
+    else if (plan.resultado === 'varios') m = conRuben('Veo más de un correo. Escríbeme solo uno, el de Gmail (termina en @gmail.com). Si prefieres, escríbele a Rubén con el botón.');
+    else m = conRuben('No pude leer bien ese correo. Escríbemelo de nuevo: tiene que terminar en @gmail.com. Si prefieres, escríbele a Rubén con el botón.');
   } else if (tipoDePlan === 'derivar') {
     // CASO (b): si el cliente también preguntó el precio, el precio (por código, del catálogo) va DELANTE de la derivación, en el MISMO mensaje; si es el primer mensaje, con la presentación.
     const precioDeriva = plan.precio && typeof plan.precio === 'object' ? rrTextoPrecioSolo(cat, plan.precio.producto, nom) : '';
@@ -295,7 +307,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
 // NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS (PR-D, [D]; core `no-repetir`): si lo que sale es idéntico (por hash) a lo último que se le envió a este teléfono, sale una alternativa fija (con el botón de Rubén). Una derivación por cancelación o sin configuración repetida NO usa la alterna de contenido (no tiene sentido ahí): sale el texto de «Rubén ya recibió tu aviso anterior» y solo si también fuera idéntico, la alterna. Quedan EXENTOS el QR (su pie
 // lleva el pedido), el resultado de un comprobante (cada comprobante es un hecho distinto), la protección ante violencia o miedo (su texto fijo y breve nunca se sustituye), el texto a un número extranjero y lo que
 // contiene la presentación del asistente (qué ES: nunca se sustituye). Es el MISMO mensaje: no agrega ni quita ninguno.
-if (m && puerta.ruta === 'sigue' && m.tipoReporte !== 'image' && ['comprobante', 'riesgo', 'fuera_pais', 'imagen_descrita', 'baja'].indexOf(tipoDePlan) < 0 && !/asistente virtual/i.test(String(m.texto || '')) && fichaAntes.ultimoHash !== '' && ctHashTexto(m.texto) === fichaAntes.ultimoHash) {
+if (m && puerta.ruta === 'sigue' && m.tipoReporte !== 'image' && ['comprobante', 'riesgo', 'fuera_pais', 'imagen_descrita', 'baja', 'gmail'].indexOf(tipoDePlan) < 0 && !/asistente virtual/i.test(String(m.texto || '')) && fichaAntes.ultimoHash !== '' && ctHashTexto(m.texto) === fichaAntes.ultimoHash) {
   const medio = /^(audio|imagen|otro|archivo)/.test(tipoDePlan);
   const motivoDeriva = tipoDePlan === 'derivar' ? String(plan.motivo || '') : '';
   const repetidoDeriva = motivoDeriva === 'cancelacion' || motivoDeriva === 'sin_configuracion' ? rrTextoDerivacion(motivoDeriva, 'repetido', plan.clave, base) : '';
@@ -336,7 +348,7 @@ if (claveOk) {
   if (usadoNuevo && ficha.usados.indexOf(usadoNuevo) < 0) ficha.usados = ficha.usados.concat([usadoNuevo]).slice(-10);
   if (respuestaDelModelo) ficha.modeloN += 1;
   // Lo anterior de la conversación: «Resumen del turno» lo restaura si Meta no aceptó el envío (la conversación solo cuenta lo que se entregó).
-  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma, c: ficha.charlaN, po: ficha.pidioOpciones, ov: ficha.opcionesVistas, u: ficha.upgrade, qi: ficha.qrInvitadoMs, preg: { pendientes: ficha.pendientes.map((x) => ({ p: x.p, ms: x.ms, i: x.i, c: x.c, b: x.b })) } };
+  hashPrevio = { gp: ficha.gmailPedidoMs, h: ficha.ultimoHash, f: ficha.ultimaFirma, c: ficha.charlaN, po: ficha.pidioOpciones, ov: ficha.opcionesVistas, u: ficha.upgrade, qi: ficha.qrInvitadoMs, preg: { pendientes: ficha.pendientes.map((x) => ({ p: x.p, ms: x.ms, i: x.i, c: x.c, b: x.b })) } };
   if (m && puerta.ruta === 'sigue') {
     // LA CONVERSACIÓN ANTES DE LAS OPCIONES: cuenta el mensaje que salió si es conversación (`vdCuentaComoCharla`: el saludo solo si lleva presentación; el ángulo cuenta como respuesta del modelo; el precio de un producto antes de la charla,
     // si es el primer mensaje, lleva la presentación y cuenta como saludo). NO cuentan los textos fijos que no son conversación (modelo caído, repetido, información, derivaciones).
@@ -373,6 +385,10 @@ if (claveOk) {
   if (huboComprobante && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible' && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
   // Un comprobante recibido (todo menos «reintentar» e «ilegible») habilita la queja de no entrega: antes de pagar no hay nada que entregar.
   if (huboComprobante && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible') ficha.comprobanteMs = ahora;
+  // El Gmail: la marca de «ya se lo pedí» se fija con el mensaje que lo pide (`Resumen del turno` la restaura si Meta no lo entregó); el correo recibido se guarda solo con el aviso salido.
+  // Es intencional que, si Meta no entrega la respuesta «Gracias. Le pasé tu correo…», el correo quede guardado: el aviso a Rubén ya salió y el correo ya se avisó (no se revierte).
+  if (pedirGmail && m) ficha.gmailPedidoMs = ahora;
+  if (gmailGuardado !== '' && vgEsGmail(gmailGuardado)) ficha.gmail = gmailGuardado;
   fichas.mapa[from] = ficha;
   rrBarrer(fichas.mapa, ahora);
   if (guardarPlanilla) {

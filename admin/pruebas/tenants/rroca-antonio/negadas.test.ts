@@ -77,7 +77,8 @@ describe('la batería: las negaciones globales valen para TODO lo que sale', () 
       expect(LIB.RA_NIEGA_IA.test(n), x.rotulo + ': ' + x.cuerpo).toBe(false);
       expect(x.cuerpo, x.rotulo).not.toMatch(/psic[oó]logo|terapeuta/i);
       expect(x.cuerpo, x.rotulo).not.toMatch(BANCO);
-      expect(x.cuerpo, x.rotulo).not.toMatch(ENLACES);
+      // La única excepción: «@gmail.com» (la terminación del correo que el pedido del Gmail le pide escribir al cliente, 10/11/2026); cualquier otro enlace o dominio sigue rechazado.
+      expect(x.cuerpo.replace(/\(el que termina en @gmail\.com\)/g, ''), x.rotulo).not.toMatch(ENLACES);
       expect(x.cuerpo, x.rotulo).not.toMatch(/enlaces? de descarga|los enlaces/i);
     }
   });

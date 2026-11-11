@@ -12,6 +12,7 @@ Armado: `node Flujos/experimental/rroca-antonio/construir.mjs` escribe `rroca-an
 | Mensajes de WhatsApp: texto, botones, lista, `cta_url`, `cmContactoConBoton` | `Flujos/experimental/comun-sin-agente/src/mensajes.js` (paquete `mensajes`, solo en «Armar mensajes») |
 | Cadena de envío: ¿Enviar de verdad?, Enviar a WhatsApp (lote de 1, 1,5 s), respaldo en texto, reporte saliente | `comun-sin-agente/src/envio.mjs`, `injertar()` desde `construir.mjs` |
 | Armador (plantilla + código → JSON, `--verificar`) | `comun-sin-agente/construir.mjs` (`leerProyecto`, `armarVariante`) |
+| El Gmail del cliente tras una venta confirmada (`vg*`: `vgExtraerGmail`, `vgEsGmail`; solo `@gmail.com`) | `Flujos/experimental/venta-digital/src/gmail.js` (base común, incluida desde su fuente en `CONFIG.librerias`; prueba `admin/pruebas/venta-digital-gmail.test.ts`) |
 | Cobro (`cb*`), avisos (`av*`) y el motor de la conversación antes de las opciones (`vd*`) | `Flujos/experimental/venta-digital/src/{cobro,avisos,conversacion}.js` (base común de las ventas digitales; contrato en su `LEEME.md`), librerías de «Decidir turno», «Armar mensajes», «Resumen del turno» y los demás nodos `todo` |
 | No repetir el mismo texto (`ct*`: hash, alternas, `ctRecordarEnviado`) y la pregunta pendiente con su «Sí»/«No» suelto (`ctInterpretarSiNo`, `ctRecordarPreguntas`, `ctNotaRespuesta`…) | `Flujos/src/core/texto/no-repetir.js` y `pregunta-pendiente.js`, librerías, **byte a byte** |
 | Reglas del task runner de n8n sobre las referencias `$('…')` (`problemasDeReferencias`) | `rroca-ruben/construir.mjs`, **importada** (no copiada) en las guardias; sin excepciones desde la fase 2 (cero hallazgos) |
@@ -124,3 +125,7 @@ Números: nodos **48/43 → 46/41** (fase 2); `RA_PROMPT` 3.128 → 3.619 caract
 Este flujo NO adopta el estado de la conversación en el servidor (`sesion`) en PR-4c2: su núcleo copiado del chat queda como estaba en el commit `1fff3d59` y adoptará `sesion` en su propio PR. Por eso sus pruebas
 comparan con el ORIGEN CONGELADO (`admin/pruebas/lib/origen-chat-pre-4c2/`, con su LEEME y sus huellas verificadas por `core/origen-chat-congelado.test.ts`) y no con la fuente viva del chat. El JSON vivo no cambia:
 0 mensajes por conversación agregados o quitados.
+
+## Gmail tras venta confirmada (10/11/2026)
+
+Lo propio de Antonio: los textos fijos del pedido y de las respuestas, la clave de aviso `gmail`, los campos de la ficha (`gmailPedidoMs`, `gmail`) y el cierre de las promesas de entrega en la barrera del modelo. La extracción y validación del correo es común (`vg*`). Detalle en `DISENO.md`. 64 -> 64 nodos; +2 mensajes por venta confirmada; sin publicar.
