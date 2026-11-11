@@ -62,7 +62,7 @@ describe('«Resumen del turno» devuelve a la ficha lo que no salió (reversión
 describe('el carrito, la ficha y el QR no se comparten entre teléfonos', () => {
   const ultimo = (ll: { cuerpo?: Record<string, any> }): string => { const c = (ll.cuerpo?.['contents'] ?? []) as { parts: { text: string }[] }[]; return c[c.length - 1]?.parts[0]?.text ?? ''; }; // eslint-disable-line @typescript-eslint/no-explicit-any
   it('dos teléfonos intercalados: cada uno con su carrito, su entrega y su QR; el QR de uno no abre ni cierra el del otro', () => {
-    const m = crear({ modeloDice: (ll) => modelo('Con gusto.', { lineas: [{ id: /ana/.test(ultimo(ll)) ? 'billetera-cuero' : 'bufanda-vicuna', cantidad: 1 }], entrega: { ...ENTREGA, nombre: /ana/.test(ultimo(ll)) ? 'Ana' : 'Beto' } }) });
+    const m = crear({ modeloDice: (ll) => modelo('Con gusto.', { lineas: [{ id: /ana/.test(ultimo(ll)) ? 'billetera-cuero' : 'bufanda-vicuna', cantidad: 1 }], entrega: { ...ENTREGA, nombre: /ana/.test(ultimo(ll)) ? 'Ana Pérez' : 'Beto Rojas' } }) });
     hablar(m, ANA, mTexto('soy ana, una pieza'));
     hablar(m, BETO, mTexto('soy beto, una pieza'));
     const tAna = hablar(m, ANA, mTexto('ana quiere pagar'));
@@ -73,8 +73,8 @@ describe('el carrito, la ficha y el QR no se comparten entre teléfonos', () => 
     expect(f[BETO].pedidos).toBe(0);
     expect(f[ANA].carrito).toEqual([{ id: 'billetera-cuero', cantidad: 1, detalle: '' }]);
     expect(f[BETO].carrito).toEqual([{ id: 'bufanda-vicuna', cantidad: 1, detalle: '' }]);
-    expect(f[ANA].entrega.nombre).toBe('Ana');
-    expect(f[BETO].entrega.nombre).toBe('Beto');
+    expect(f[ANA].entrega.nombre).toBe('Ana Pérez');
+    expect(f[BETO].entrega.nombre).toBe('Beto Rojas');
     // Beto confirma después: su QR es por SU pedido (7.795), no por el de Ana.
     const tBeto = hablar(m, BETO, mTexto('beto quiere pagar'));
     expect(tBeto.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado')).toMatchObject({ monto: 7795, telefono: BETO });

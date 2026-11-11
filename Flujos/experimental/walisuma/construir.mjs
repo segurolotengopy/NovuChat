@@ -12,7 +12,7 @@
  *
  * ESTADO: flujo completo (PR-3), 47 nodos: la entrada verificada del receptor, la entrada y la configuración, la puerta del turno (comercio no operativo, uso extendido y pausa por Tomar), los medios, la conversación
  * (una llamada al modelo que conversa y propone el pedido; el código valida contra el catálogo y calcula el total), el cobro REAL con el QR del comercio y su cotejo, los avisos al comercio y la salida.
- * `--publicable` sigue fallando mientras queden marcadores `REEMPLAZAR_*`, la plantilla `pedido_registrado` sin aprobar o el costo de entrega sin declarar.
+ * `--publicable` sigue fallando mientras queden marcadores `REEMPLAZAR_*`, la plantilla `pedido_registrado` sin aprobar o el umbral de envío gratis (`envioGratisDesdeBs`) sin declarar.
  *
  * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código, sin los datos y sin la entrada del receptor. El código de los nodos lo arma el armador genérico `../comun-sin-agente/construir.mjs` (importado, no copiado):
  *   - `@@dato:a.b.c@@` por ese dato; `@@cred:ingesta|graph|entradaPrueba|gemini` por el nombre de credencial del archivo de datos;
@@ -143,6 +143,8 @@ const FORMAS_CONFIG = {
   numeroRecepcion: /^(\d{6,20}|REEMPLAZAR_[A-Z0-9_]+)$/,
   contactoAviso: /^(\d{6,20}|REEMPLAZAR_[A-Z0-9_]+)$/,
   prefijosPermitidos: /^\d{1,4}(,\d{1,4})*$/,
+  // El envío es gratis desde este monto en Bs (entero, incluido el umbral); lo declara el comercio.
+  envioGratisDesdeBs: /^\d{1,6}$/,
   telefonosDePrueba: /^(\d{6,20}(,\d{6,20})*|REEMPLAZAR_[A-Z0-9_]+)$/,
   // El ÚNICO modelo de este flujo: gemini-3.5-flash-lite.
   modelo: /^gemini-3\.5-flash-lite$/,
@@ -187,8 +189,8 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
       if (FORMAS_CONFIG[c] && !FORMAS_CONFIG[c].test(String(v))) errores.push(`configBase.${c}: forma no válida`);
     }
     for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio', 'planillaProspectosId', 'planillaProspectosHoja']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
-    // El costo de entrega NO se inventa: viaja vacío hasta que el comercio lo declare.
-    if (cb.costoDeEntrega === undefined) errores.push('configBase.costoDeEntrega: falta la clave (vacía hasta que el comercio declare el costo)');
+    // El umbral de envío gratis NO se inventa: lo declara el comercio (entero en Bs, mayor que cero).
+    if (cb.envioGratisDesdeBs === undefined) errores.push('configBase.envioGratisDesdeBs: falta la clave (el monto desde el cual el envío es gratis)');
   }
   // El mapa de columnas del miniCRM: lo valida el MISMO validador que corre en n8n.
   if (d.crm === undefined) errores.push('crm: falta (el mapa de columnas de la planilla)');
@@ -442,7 +444,7 @@ const sinComentarios = (t) => String(t).normalize('NFKC').replace(/\/\^?REEMPLAZ
 const marcasEn = (v) => (sinComentarios(JSON.stringify(v) || '').match(/reemplazar_[a-z0-9_-]*/gi) || []);
 
 /**
- * Este flujo es un ESQUELETO (PR-2): no se publica hasta que el PR-3 lo complete. Además, como los demás: sin marcadores `REEMPLAZAR_*`, con la plantilla del aviso aprobada por Meta y con el costo de entrega declarado.
+ * Este flujo es un ESQUELETO (PR-2): no se publica hasta que el PR-3 lo complete. Además, como los demás: sin marcadores `REEMPLAZAR_*`, con la plantilla del aviso aprobada por Meta y con el umbral de envío gratis declarado.
  * Los mensajes nombran claves, marcadores y nodos, NUNCA valores de los datos ni fragmentos del flujo. Devuelve la lista de hallazgos (vacía si se puede publicar).
  */
 export function guardiaDePublicacion({ flujo, datos }) {
@@ -459,7 +461,7 @@ export function guardiaDePublicacion({ flujo, datos }) {
   if (!cb || typeof cb !== 'object') h.push('no se puede leer la configuración base');
   else {
     if (cb.avisoPedidoEstado !== 'APPROVED') h.push('avisoPedidoEstado tiene que ser APPROVED (Meta aún no aprobó la plantilla del aviso de pedido)');
-    if (String(cb.costoDeEntrega === undefined ? '' : cb.costoDeEntrega).trim() === '') h.push('costoDeEntrega sin declarar: el comercio todavía no dijo cuánto cuesta cada modo de entrega');
+    if (!(Number(cb.envioGratisDesdeBs) > 0)) h.push('envioGratisDesdeBs sin declarar: el comercio todavía no dijo desde qué monto el envío es gratis');
   }
   for (const n of ['Guardar comprobante']) if (!nombres.has(n)) h.push(`falta el nodo «${n}»`);
   // La planilla del miniCRM: sin id real de la hoja el flujo no guarda prospectos (el marcador ya se reporta arriba; aquí se nombra la causa).
@@ -605,7 +607,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         for (const x of hallazgos) console.error(`  - ${x}`);
         process.exit(1);
       }
-      console.log('✓ Completo, sin marcadores REEMPLAZAR_*, con la plantilla del aviso APPROVED y el costo de entrega declarado: se puede publicar (con el «sí» de Andres por acción).');
+      console.log('✓ Completo, sin marcadores REEMPLAZAR_*, con la plantilla del aviso APPROVED y el umbral de envío gratis declarado: se puede publicar (con el «sí» de Andres por acción).');
       process.exit(0);
     } catch (e) {
       console.error(e instanceof SyntaxError ? '✗ JSON inválido' : `✗ ${e instanceof Error ? e.message : String(e)}`);
