@@ -2071,6 +2071,15 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // /mediosEnviados/{objeto} — el metadato de los ADJUNTOS que una persona envió desde la consola (Core, «Envío de
+      // medios por consola», B2; Andres 10/11/2026: 30 días). Lo escribe SOLO `enviarAdjuntoComoPersona` (SDK Admin), en la
+      // misma transacción que el mensaje; lo leen SOLO `verMedio` y `leerAdjuntoPersona`, también con el SDK Admin. Nadie del
+      // navegador lo lee ni lo escribe: lleva la conversación (`wa_<teléfono>`), la ruta de Storage y el sha256. El bit
+      // que el hilo muestra del adjunto está en el mensaje (`medio`). Caduca por TTL sobre `vence` (30 días).
+      match /mediosEnviados/{objeto} {
+        allow read, write: if false;
+      }
+
       // -----------------------------------------------------------------------
       // /conversaciones/{conversacionId} — visor de conversaciones.
       // Es el dato más sensible del sistema: mensajes de clientes finales.

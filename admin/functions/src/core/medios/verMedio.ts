@@ -23,8 +23,12 @@
  * LO QUE ESTA FUNCIÓN GARANTIZA, y cada línea tiene una prueba que la niega
  * (`pruebas/core/medios/ver-medio.test.ts`):
  *
+ *  - **MEDIOS ENVIADOS (B2 de «Envío de medios por consola», 11/11/2026).** En lugar de `idMeta` el cliente puede
+ *    mandar `mensajeId` (EXACTAMENTE UNO de los dos; ambos o ninguno es `invalid-argument`): el adjunto que una persona
+ *    envió, guardado 30 días en `mediosEnviados`. Mismos roles, misma firma y sha256, mismo tope por usuario y misma
+ *    auditoría, con `origen: 'enviado'` en el detalle.
  *  - **El cliente nunca manda una ruta.** Manda EXACTAMENTE
- *    `{tenantId, conversacionId, idMeta, accion}` (`accion`: `'ver'` o `'descargar'`,
+ *    `{tenantId, conversacionId, idMeta | mensajeId, accion}` (`accion`: `'ver'` o `'descargar'`,
  *    adenda de seguridad §7.7; se audita como `medio_visto` o `medio_descargado`); cualquier otra clave es
  *    `invalid-argument`. La ruta sale de `tenants/{t}/mediosRecibidos/{sha256(idMeta)}`
  *    y pasa por `rutaValidaDeMedio` (ESTE comercio, ESTE medio, día con forma de
@@ -89,7 +93,7 @@ import { Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { REGION } from '../region.js';
 import { esAdminDe, esOperDe, esPropietario, exigirAutenticado } from '../seguridad/autorizacion.js';
 import { cuentaVigenteDe, soporteVigenteDe, type RolVerificado } from '../seguridad/vigencia.js';
-import { CARPETA_DE_DIA, almacenDeMedios, nombreDeObjeto } from './almacen.js';
+import { CARPETA_DE_DIA, almacenDeMedios, nombreDeObjeto, objetoDeEnviado, rutaValidaDeEnviado } from './almacen.js';
 import { MB, documentoPorFirma, tipoPorFirma } from './tipos.js';
 
 // ---------------------------------------------------------------------------
@@ -135,7 +139,9 @@ const ID_CONVERSACION = /^wa_[0-9]{8,15}$/;
 /** La forma de un wamid de Meta: sin espacios, saltos de línea ni caracteres de control. */
 const ID_META = /^[A-Za-z0-9._=:+/-]{1,120}$/;
 const UID_SEGURO = /^[A-Za-z0-9_-]{1,128}$/;
-const CLAVES_DE_ENTRADA = new Set(['tenantId', 'conversacionId', 'idMeta', 'accion']);
+const CLAVES_DE_ENTRADA = new Set(['tenantId', 'conversacionId', 'idMeta', 'mensajeId', 'accion']);
+/** La clave de un mensaje de persona (la de idempotencia de la consola): 16 a 128 caracteres. */
+const ID_MENSAJE_DE_PERSONA = /^[A-Za-z0-9_.:-]{16,128}$/;
 /** Lo que la persona hace con el medio (adenda §7.7): mirarlo u oírlo en la consola, o bajarlo. */
 export type AccionSobreMedio = 'ver' | 'descargar';
 /** Cómo queda cada una en la auditoría. */
@@ -324,16 +330,23 @@ async function atender(p: CallableRequest): Promise<MedioVisto> {
   const datos = esObjeto(p.data) ? p.data : null;
   const tenantId = datos?.['tenantId'];
   const conversacionId = datos?.['conversacionId'];
-  const idMeta = datos?.['idMeta'];
+  const idMetaPedido = datos?.['idMeta'];
+  const mensajeIdPedido = datos?.['mensajeId'];
   const accion = datos?.['accion'];
+  // Exactamente UNO de `idMeta` (recibido) o `mensajeId` (enviado), cada uno con su forma.
+  const esEnviado = mensajeIdPedido !== undefined;
   if (datos === null || !esAccion(accion) || Object.keys(datos).some((k) => !CLAVES_DE_ENTRADA.has(k))
     || typeof tenantId !== 'string' || !ID_TENANT.test(tenantId)
     || typeof conversacionId !== 'string' || !ID_CONVERSACION.test(conversacionId)
-    || typeof idMeta !== 'string' || !ID_META.test(idMeta)) {
+    || (esEnviado === (idMetaPedido !== undefined))
+    || (esEnviado ? typeof mensajeIdPedido !== 'string' || !ID_MENSAJE_DE_PERSONA.test(mensajeIdPedido)
+      : typeof idMetaPedido !== 'string' || !ID_META.test(idMetaPedido))) {
     registrarRechazo('invalid-argument', uid);
     throw new HttpsError('invalid-argument', MENSAJES.invalido);
   }
-  const objeto = nombreDeObjeto(idMeta);
+  const idMeta = (esEnviado ? '' : idMetaPedido) as string;
+  const mensajeId = (esEnviado ? mensajeIdPedido : '') as string;
+  const objeto = esEnviado ? objetoDeEnviado(conversacionId, mensajeId) : nombreDeObjeto(idMeta);
 
   // 3. Rol del token PARA ESTE comercio.
   const rol: RolVerificado | null = esAdminDe(p, tenantId) ? 'admin'
@@ -380,7 +393,7 @@ async function atender(p: CallableRequest): Promise<MedioVisto> {
     mensaje: string, detalle?: 'anotado' | 'pendiente',
   ): Promise<never> => {
     try {
-      await auditarVista(tenantId, uid, ACCION_AUDITADA[accion], { rol, objeto, resultado: 'rechazado', motivo });
+      await auditarVista(tenantId, uid, ACCION_AUDITADA[accion], { rol, objeto, resultado: 'rechazado', motivo, ...(esEnviado ? { origen: 'enviado' } : {}) });
     } catch (e) {
       registrarRechazo('unavailable', uid, `auditoria_${codigoDe(e)}`);
       throw new HttpsError('unavailable', MENSAJES.noDisponible);
@@ -410,12 +423,12 @@ async function atender(p: CallableRequest): Promise<MedioVisto> {
   // 8. El metadato: de ESTE medio y ESTA conversación, guardado y sin vencer.
   let meta: FirebaseFirestore.DocumentSnapshot;
   try {
-    meta = await db.doc(`tenants/${tenantId}/mediosRecibidos/${objeto}`).get();
+    meta = await db.doc(`tenants/${tenantId}/${esEnviado ? 'mediosEnviados' : 'mediosRecibidos'}/${objeto}`).get();
   } catch (e) {
     registrarRechazo('unavailable', uid, `metadato_${codigoDe(e)}`);
     return rechazar('error_firestore', 'unavailable', MENSAJES.noDisponible);
   }
-  if (!meta.exists || meta.get('idMeta') !== idMeta || meta.get('conversacionId') !== conversacionId) {
+  if (!meta.exists || meta.get(esEnviado ? 'mensajeId' : 'idMeta') !== (esEnviado ? mensajeId : idMeta) || meta.get('conversacionId') !== conversacionId) {
     return rechazar('sin_medio', 'not-found', MENSAJES.noHay);
   }
   const estadoMedio = meta.get('estado');
@@ -427,7 +440,9 @@ async function atender(p: CallableRequest): Promise<MedioVisto> {
 
   // 9. La ruta, validada contra ESTE comercio y ESTE medio. La extensión y la categoría salen de la
   // ruta; si el metadato trae `ext`, `categoria` o `tipo` (M1b los escribe), tienen que coincidir.
-  const ruta = rutaValidaDeMedio(meta.get('ruta'), tenantId, idMeta);
+  const ruta = esEnviado
+    ? (rutaValidaDeEnviado(meta.get('ruta'), tenantId, objeto)?.ruta ?? null)
+    : rutaValidaDeMedio(meta.get('ruta'), tenantId, idMeta);
   const extMeta = meta.get('ext');
   if (ruta === null || (extMeta !== undefined && extMeta !== null && extMeta !== extensionDe(ruta))) {
     return rechazar('ruta_invalida', 'not-found', MENSAJES.noHay);
@@ -491,7 +506,7 @@ async function atender(p: CallableRequest): Promise<MedioVisto> {
 
   // 13. FAIL-CLOSED: si la vista no quedó anotada, no sale ningún byte.
   try {
-    await auditarVista(tenantId, uid, ACCION_AUDITADA[accion], { rol, objeto, resultado: 'ok' });
+    await auditarVista(tenantId, uid, ACCION_AUDITADA[accion], { rol, objeto, resultado: 'ok', ...(esEnviado ? { origen: 'enviado' } : {}) });
   } catch (e) {
     registrarRechazo('unavailable', uid, `auditoria_${codigoDe(e)}`);
     throw new HttpsError('unavailable', MENSAJES.noDisponible);

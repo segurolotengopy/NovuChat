@@ -113,6 +113,16 @@ export const huellaDeEnvio = (conversacionId: string, uid: string, texto: string
   sha256('huella', conversacionId, uid, texto);
 
 /**
+ * La huella de un ADJUNTO: ata la clave a (conversación, persona, sha256 de los bytes que se GUARDAN, tipo,
+ * leyenda, nombre saneado). Reusar la clave con otros bytes, otra leyenda u otro nombre es `failed-precondition`;
+ * con lo mismo devuelve lo guardado, sin volver a subir. Distinta por construcción de la del texto (prefijo propio).
+ * Se guarda el hash, no la leyenda ni el nombre.
+ */
+export const huellaDeAdjunto = (
+  conversacionId: string, uid: string, sha256Bytes: string, tipo: string, leyenda: string, nombre: string,
+): string => sha256('huella-adjunto', conversacionId, uid, sha256Bytes, tipo, leyenda, nombre);
+
+/**
  * La Idempotency-Key del relé: 48 hex del hash de (comercio, conversación, clave). Estable para el mismo
  * mensaje —un reintento del flujo no duplica— y distinta entre comercios aunque dos consolas generen la
  * misma clave. No revela la clave de la consola.

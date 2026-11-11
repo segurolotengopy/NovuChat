@@ -54,15 +54,18 @@ const DEVOLVER = 'devolverconversacion';
 const RECLAMAR = 'reclamarsalidapersona';
 const CONFIRMAR = 'confirmarsalidapersona';
 const RESCATES = 'reclamarrescates';
+const ADJUNTO = 'enviaradjuntocomopersona';
+const LEER_ADJUNTO = 'leeradjuntopersona';
 const MEDIO = 'vermedio';
 const BLOQUEAR = 'bloquearcontacto';
 const DESBLOQUEAR = 'desbloquearcontacto';
-const HTTP = [RECLAMAR, CONFIRMAR, RESCATES] as const;
+const HTTP = [RECLAMAR, CONFIRMAR, RESCATES, LEER_ADJUNTO] as const;
 const SERVICIOS = [
   [VISOR, 'verComprobante'], [BUSCADOR, 'buscarConversaciones'], [ENVIAR, 'enviarComoPersona'],
   [TOMAR, 'tomarConversacion'], [DEVOLVER, 'devolverConversacion'],
   [RECLAMAR, 'reclamarSalidaPersona'], [CONFIRMAR, 'confirmarSalidaPersona'], [RESCATES, 'reclamarRescates'], [MEDIO, 'verMedio'],
   [BLOQUEAR, 'bloquearContacto'], [DESBLOQUEAR, 'desbloquearContacto'],
+  [ADJUNTO, 'enviarAdjuntoComoPersona'], [LEER_ADJUNTO, 'leerAdjuntoPersona'],
 ] as const;
 const urlDe = (s: string) => `https://${s}-${NUMERO_FALSO}.us-east1.run.app`;
 
@@ -126,7 +129,7 @@ printf '%s\\n' "$*" >> "$E/curl"
 out=""; a=("$@")
 for ((i = 0; i < \${#a[@]}; i++)); do [[ "\${a[i]}" == -o ]] && out="\${a[i+1]}"; done
 # Las tres Functions HTTP (ingesta) contestan TEXTO, no el JSON de Firebase.
-http=0; [[ "\${a[\${#a[@]}-1]}" == *reclamarsalidapersona* || "\${a[\${#a[@]}-1]}" == *confirmarsalidapersona* || "\${a[\${#a[@]}-1]}" == *reclamarrescates* ]] && http=1
+http=0; [[ "\${a[\${#a[@]}-1]}" == *reclamarsalidapersona* || "\${a[\${#a[@]}-1]}" == *confirmarsalidapersona* || "\${a[\${#a[@]}-1]}" == *reclamarrescates* || "\${a[\${#a[@]}-1]}" == *leeradjuntopersona* ]] && http=1
 modo="auto"; [[ -f "$E/curl-modo" ]] && modo="$(cat "$E/curl-modo")"
 if [[ "$modo" == auto ]]; then
   if grep -q '"allUsers"' "$E/politica.json"; then modo=propio; else modo=403; fi
@@ -235,7 +238,7 @@ describe('nube-visor.sh: uso y salvaguardas (nada se llama a gcloud)', () => {
   it('--help explica los modos y la lista cerrada, y sale 0', () => {
     const r = correr(['--help'], {}, null);
     expect(r.codigo).toBe(0);
-    for (const t of ['--servicio', '--entorno', '--aplicar', '--confirmo', '--revertir', VISOR, BUSCADOR, ENVIAR, TOMAR, DEVOLVER, RECLAMAR, CONFIRMAR, RESCATES, MEDIO, BLOQUEAR, DESBLOQUEAR]) expect(r.salida).toContain(t);
+    for (const t of ['--servicio', '--entorno', '--aplicar', '--confirmo', '--revertir', VISOR, BUSCADOR, ENVIAR, ADJUNTO, LEER_ADJUNTO, TOMAR, DEVOLVER, RECLAMAR, CONFIRMAR, RESCATES, MEDIO, BLOQUEAR, DESBLOQUEAR]) expect(r.salida).toContain(t);
     expect(llamadas()).toEqual([]);
   });
 
@@ -287,6 +290,9 @@ describe('nube-visor.sh: --servicio, lista cerrada', () => {
     ['el nombre de la Function en camelCase (tomarConversacion)', 'tomarConversacion', []],
     ['el nombre de la Function en camelCase (devolverConversacion)', 'devolverConversacion', []],
     ['el nombre de la Function en camelCase (verMedio)', 'verMedio', []],
+    ['el nombre de la Function en camelCase (enviarAdjuntoComoPersona)', 'enviarAdjuntoComoPersona', []],
+    ['el nombre de la Function en camelCase (leerAdjuntoPersona)', 'leerAdjuntoPersona', []],
+    ['enviaradjuntocomopersonas (con una s de más)', 'enviaradjuntocomopersonas', []],
     ['vermedios (con una s de más)', 'vermedios', []],
     ['un prefijo (tomar)', 'tomarconversac', []],
     ['un prefijo (devolver)', 'devolver', []],
@@ -774,7 +780,7 @@ describe('nube-visor.sh: la fuente', () => {
     expect(codigo).not.toMatch(/python3(?! -I )/);
   });
 
-  it('la lista cerrada: trece servicios con sus constantes, sin variable que agregue otro', () => {
+  it('la lista cerrada: quince servicios con sus constantes, sin variable que agregue otro', () => {
     for (const [c, v] of [
       ['SERVICIO_ENVIAR', 'enviarcomopersona'], ['FUNCION_ENVIAR', 'enviarComoPersona'],
       ['SERVICIO_TOMAR', 'tomarconversacion'], ['FUNCION_TOMAR', 'tomarConversacion'],
@@ -783,6 +789,8 @@ describe('nube-visor.sh: la fuente', () => {
       ['SERVICIO_CONFIRMAR', 'confirmarsalidapersona'], ['FUNCION_CONFIRMAR', 'confirmarSalidaPersona'],
       ['SERVICIO_RESCATES', 'reclamarrescates'], ['FUNCION_RESCATES', 'reclamarRescates'],
       ['SERVICIO_GUARDAR', 'guardarmedio'], ['FUNCION_GUARDAR', 'guardarMedio'],
+      ['SERVICIO_ADJUNTO', 'enviaradjuntocomopersona'], ['FUNCION_ADJUNTO', 'enviarAdjuntoComoPersona'],
+      ['SERVICIO_LEER_ADJUNTO', 'leeradjuntopersona'], ['FUNCION_LEER_ADJUNTO', 'leerAdjuntoPersona'],
       ['SERVICIO_MEDIO', 'vermedio'], ['FUNCION_MEDIO', 'verMedio'],
       ['SERVICIO_BLOQUEAR', 'bloquearcontacto'], ['FUNCION_BLOQUEAR', 'bloquearContacto'],
       ['SERVICIO_DESBLOQUEAR', 'desbloquearcontacto'], ['FUNCION_DESBLOQUEAR', 'desbloquearContacto'],
@@ -793,11 +801,11 @@ describe('nube-visor.sh: la fuente', () => {
     expect(codigo).toContain('readonly SERVICIO_BUSCADOR="buscarconversaciones"');
     expect(codigo).toContain('readonly FUNCION_BUSCADOR="buscarConversaciones"');
     expect(codigo).toContain('readonly SERVICIO FUNCION');
-    // Solo trece asignaciones de SERVICIO, y desde las constantes.
+    // Solo quince asignaciones de SERVICIO, y desde las constantes.
     expect([...codigo.matchAll(/\bSERVICIO="([^"]*)"/g)].map((m) => m[1])).toEqual([
-      '$SERVICIO_VISOR', '$SERVICIO_BUSCADOR', '$SERVICIO_ENVIAR', '$SERVICIO_TOMAR', '$SERVICIO_DEVOLVER', '$SERVICIO_RECLAMAR', '$SERVICIO_CONFIRMAR', '$SERVICIO_RESCATES', '$SERVICIO_GUARDAR', '$SERVICIO_MEDIO', '$SERVICIO_BLOQUEAR', '$SERVICIO_DESBLOQUEAR', '$SERVICIO_ALERTAS']);
-    // Solo las cinco HTTP (cuatro del flujo n8n con credencial de número y la alerta operativa) son de tipo http.
-    expect([...codigo.matchAll(/TIPO="http"/g)]).toHaveLength(5);
+      '$SERVICIO_VISOR', '$SERVICIO_BUSCADOR', '$SERVICIO_ENVIAR', '$SERVICIO_ADJUNTO', '$SERVICIO_TOMAR', '$SERVICIO_DEVOLVER', '$SERVICIO_RECLAMAR', '$SERVICIO_CONFIRMAR', '$SERVICIO_RESCATES', '$SERVICIO_GUARDAR', '$SERVICIO_LEER_ADJUNTO', '$SERVICIO_MEDIO', '$SERVICIO_BLOQUEAR', '$SERVICIO_DESBLOQUEAR', '$SERVICIO_ALERTAS']);
+    // Solo las seis HTTP (cinco del flujo n8n con credencial de número y la alerta operativa) son de tipo http.
+    expect([...codigo.matchAll(/TIPO="http"/g)]).toHaveLength(6);
     expect(codigo).not.toMatch(/NUBE_VISOR_(SERVICIO|ADC)/);
   });
 

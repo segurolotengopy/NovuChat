@@ -53,22 +53,41 @@ import {
 } from './salidaPersona.js';
 import { milisegundosDeMomento, ventanaDeMetaAbierta } from './turno.js';
 
-export interface MensajeReclamado {
+interface BaseReclamada {
   mensajeId: string;
   conversacionId: string;
   claveRele: string;
   to: string;
-  texto: string;
-  tipo: 'text';
   canal: CanalDeSalida;
 }
+export interface MensajeDeTextoReclamado extends BaseReclamada {
+  texto: string;
+  tipo: 'text';
+}
+/**
+ * Un ADJUNTO de persona (B2 de «Envío de medios por consola»). `texto` va SIEMPRE vacío: el flujo viejo (sin la cabecera
+ * de adjuntos) no puede mandar la leyenda como un texto suelto; la leyenda viaja dentro de `adjunto`. Los bytes NO van
+ * acá: el flujo los pide a `leerAdjuntoPersona`. `nombre` solo en documentos.
+ */
+export interface MensajeDeAdjuntoReclamado extends BaseReclamada {
+  texto: '';
+  tipo: 'image' | 'audio' | 'document';
+  adjunto: { mime: string; tamano: number; sha256: string; voz: boolean; nombre?: string; leyenda?: string };
+}
+export type MensajeReclamado = MensajeDeTextoReclamado | MensajeDeAdjuntoReclamado;
+
+/** La cabecera con la que el flujo nuevo declara que sabe enviar adjuntos. Sin ella no se entrega ninguno. */
+export const CABECERA_DE_ADJUNTOS = 'x-novuchat-adjuntos';
+/** Cuántos adjuntos entrega un reclamo, como máximo (decisión D-A3: uno por lote; los textos siguen hasta 10). */
+export const MAXIMO_DE_ADJUNTOS_POR_RECLAMO = 1;
+const TIPOS_DE_ADJUNTO: readonly string[] = ['image', 'audio', 'document'];
 
 /** `tenants/{t}/conversaciones/{wa_…}/mensajes/{clave}`: el único camino válido de un mensaje de persona. */
 const CAMINO = /^tenants\/([^/]+)\/conversaciones\/(wa_[0-9]{8,15})\/mensajes\/([^/]+)$/;
 
 /** El reclamo (exportado para las pruebas). */
 export async function reclamarSalida(
-  ruta: Ruta, db: Firestore = getFirestore(), ahoraMs: number = Date.now(),
+  ruta: Ruta, db: Firestore = getFirestore(), ahoraMs: number = Date.now(), conAdjuntos = false,
 ): Promise<{ mensajes: MensajeReclamado[]; inciertos: number; caducados: number }> {
   const vacio = { mensajes: [] as MensajeReclamado[], inciertos: 0, caducados: 0 };
   const { tenantId, phoneNumberId } = ruta;
@@ -89,15 +108,26 @@ export async function reclamarSalida(
   const mensajes: MensajeReclamado[] = [];
   let inciertos = 0;
   let caducados = 0;
+  let adjuntosEnLote = 0;
+  // El adjunto reclamado en la transacción en curso (sus datos salen del metadato, que se lee ahí mismo).
+  let adjuntoDeLaVuelta: MensajeDeAdjuntoReclamado['adjunto'] | null = null;
   for (const candidato of candidatos.docs) {
     if (mensajes.length >= MAXIMO_POR_RECLAMO) break;
     const m = CAMINO.exec(candidato.ref.path);
     if (!m || m[1] !== tenantId) continue; // otro camino: no es de este comercio
     const [, , conversacionId, clave] = m as unknown as [string, string, string, string];
 
+    adjuntoDeLaVuelta = null;
     const r = await db.runTransaction(async (tx): Promise<'reclamado' | 'incierto' | 'caducado' | 'nada'> => {
+      adjuntoDeLaVuelta = null;
       // Lecturas primero (Firestore exige las lecturas antes de las escrituras): el mensaje y su conversación.
       const [s, conv] = await Promise.all([tx.get(candidato.ref), tx.get(candidato.ref.parent.parent!)]);
+      // Si es un adjunto, también su metadato (sha256 y vigencia). Sigue siendo una lectura, antes de cualquier escritura.
+      const tipoDelMensaje: unknown = s.exists ? s.get('tipo') : undefined;
+      const esAdjunto = typeof tipoDelMensaje === 'string' && TIPOS_DE_ADJUNTO.includes(tipoDelMensaje);
+      const objeto: unknown = esAdjunto ? s.get('medio.objeto') : undefined;
+      const meta = esAdjunto && typeof objeto === 'string' && objeto.length > 0
+        ? await tx.get(db.doc(`tenants/${tenantId}/mediosEnviados/${objeto}`)) : null;
       if (!s.exists || s.get('tenantId') !== tenantId || s.get('direccion') !== 'saliente' || s.get('autor') !== 'persona') return 'nada';
       const estado: unknown = s.get('estadoEnvio');
       // LA CADUCIDAD, antes de mirar de qué línea es: un `pendiente` viejo de otra línea tampoco puede
@@ -117,6 +147,26 @@ export async function reclamarSalida(
       const de: unknown = s.get('phoneNumberId');
       if (typeof de === 'string' && de !== phoneNumberId) return 'nada';
       if (estado === 'pendiente') {
+        if (esAdjunto) {
+          // Sin la cabecera del flujo nuevo, o con un adjunto ya en este lote, NO se entrega: queda `pendiente` y caduca
+          // como cualquier pendiente (rechazado, `caducado`, reintentable) si nadie lo reclama a tiempo.
+          if (!conAdjuntos || adjuntosEnLote >= MAXIMO_DE_ADJUNTOS_POR_RECLAMO) return 'nada';
+          // El metadato tiene que ser de ESTE mensaje, estar guardado y vigente: si no, no sale (caduca).
+          const vence = meta?.exists ? milisegundosDeMomento(meta.get('vence')) : null;
+          const sha256: unknown = meta?.get('sha256');
+          const mime: unknown = s.get('medio.mime');
+          const tamano: unknown = s.get('medio.tamano');
+          if (!meta?.exists || meta.get('estado') !== 'guardado' || meta.get('mensajeId') !== clave || meta.get('conversacionId') !== conversacionId
+              || vence === null || vence <= ahoraMs || typeof sha256 !== 'string' || typeof mime !== 'string'
+              || typeof tamano !== 'number') return 'nada';
+          const nombre: unknown = s.get('medio.nombre');
+          const leyenda: unknown = s.get('texto');
+          adjuntoDeLaVuelta = {
+            mime, tamano, sha256, voz: s.get('medio.voz') === true,
+            ...(typeof nombre === 'string' && nombre !== '' ? { nombre } : {}),
+            ...(typeof leyenda === 'string' && leyenda !== '' ? { leyenda } : {}),
+          };
+        }
         tx.update(candidato.ref, { estadoEnvio: 'enviando', reclamadoEn: Timestamp.fromMillis(ahoraMs) });
         return 'reclamado';
       }
@@ -135,10 +185,14 @@ export async function reclamarSalida(
     if (r === 'caducado') { caducados += 1; continue; }
     if (r !== 'reclamado') continue;
     const datos = candidato.data();
-    mensajes.push({
-      mensajeId: clave, conversacionId, claveRele: claveReleDe(tenantId, conversacionId, clave),
-      to: conversacionId.slice(3), texto: String(datos['texto'] ?? ''), tipo: 'text', canal,
-    });
+    const base = { mensajeId: clave, conversacionId, claveRele: claveReleDe(tenantId, conversacionId, clave), to: conversacionId.slice(3), canal };
+    const dellevado = adjuntoDeLaVuelta as MensajeDeAdjuntoReclamado['adjunto'] | null;
+    if (dellevado !== null) {
+      adjuntosEnLote += 1;
+      mensajes.push({ ...base, texto: '', tipo: datos['tipo'] as MensajeDeAdjuntoReclamado['tipo'], adjunto: dellevado });
+    } else {
+      mensajes.push({ ...base, texto: String(datos['texto'] ?? ''), tipo: 'text' });
+    }
   }
   return { mensajes, inciertos, caducados };
 }
@@ -157,9 +211,9 @@ export const reclamarSalidaPersona = onRequest(
     if (!ruta) { respuesta.status(401).send('no autorizado'); return; }
     if (!ID_COMERCIO.test(ruta.tenantId)) { respuesta.status(404).send('numero no asignado'); return; }
     try {
-      const { mensajes, inciertos, caducados } = await reclamarSalida(ruta);
+      const { mensajes, inciertos, caducados } = await reclamarSalida(ruta, undefined, undefined, peticion.get(CABECERA_DE_ADJUNTOS) === '1');
       // Solo el comercio, cuántos y por qué; nunca el texto, el teléfono ni la clave.
-      logger.info('reclamarSalidaPersona', { tenantId: ruta.tenantId, entregados: mensajes.length, inciertos, caducados });
+      logger.info('reclamarSalidaPersona', { tenantId: ruta.tenantId, entregados: mensajes.length, adjuntos: mensajes.filter((m) => m.tipo !== 'text').length, inciertos, caducados });
       respuesta.status(200).json({ mensajes });
     } catch (e) {
       const c = (e as { code?: unknown } | null)?.code;
