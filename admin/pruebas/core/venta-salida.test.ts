@@ -89,12 +89,15 @@ describe('(1) Un embudo único de salida al cliente', () => {
     expect(destinos(f, '¿Con botón?', 1)).toEqual(['Responder al cliente']);
   });
 
-  it('conteo de emisores declarado: texto, botón, aviso al dueño y la imagen del QR (excepción por nombre)', () => {
+  it('conteo de emisores declarado: texto, botón, aviso al dueño, la imagen del QR (excepción por nombre) y el aviso de falla del guardado', () => {
     const envian = f.nodes.filter((n) => (n.type === 'n8n-nodes-base.whatsApp' && n.parameters['operation'] === 'send')
       || (n.type === 'n8n-nodes-base.httpRequest' && /^=?https:\/\/graph\.facebook\.com\//.test(String(n.parameters['url'] ?? ''))
         && String(n.parameters['url']).endsWith('/messages')))
       .map((n) => n.name).sort();
-    expect(envian).toEqual(['Avisar al dueño', 'Avisar al dueño (transferencia)', 'Enviar QR de cobro', 'Responder al cliente', 'Responder con botón']);
+    // «Avisar falla del guardado» (11/11/2026, rama común del guardado de medios) es el 5.º emisor y NO le escribe al cliente: es un texto a la RECEPCIÓN del negocio
+    // («No se pudo guardar un archivo de una conversación (motivo). Revísala en la Consola.», sin datos del cliente), solo si un medio falló al guardarse (413, 415,
+    // 429 o 5xx ya reintentado), solo con la ventana de la recepción abierta y a lo más UNO por día y por comercio. En una conversación normal agrega 0 mensajes.
+    expect(envian).toEqual(['Avisar al dueño', 'Avisar al dueño (transferencia)', 'Avisar falla del guardado', 'Enviar QR de cobro', 'Responder al cliente', 'Responder con botón']);
     // «Enviar QR de cobro» queda fuera del embudo: es la imagen con su pie.
     expect(entradas(f, 'Enviar QR de cobro').sort()).toEqual(['Preparar QR de cobro', 'Preparar reenvío del QR']);
   });

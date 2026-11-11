@@ -28,6 +28,7 @@
  *
  * No necesita emulador: lee archivos y compara bytes.
  */
+import { NODOS_CODE_DEL_GUARDADO } from '../../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 import { afterAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import {
@@ -102,7 +103,9 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
       const m = leerManifiesto(f) as Record<string, any>;
       const a = leerManifiesto('demo-a-agendamiento.json') as Record<string, any>;
       const j = JSON.parse(readFileSync(join(RAIZ_FLUJOS, f), 'utf8')) as { nodes: { name: string; type: string }[] };
-      const code = j.nodes.filter((n) => n.type === 'n8n-nodes-base.code').map((n) => n.name).sort();
+      // Los 3 nodos Code de la rama común del GUARDADO de medios (11/11/2026) NO se inyectan por manifiesto: los arma `injertarGuardado` con su cabecera propia y
+      // `guardado-obligatorio.test.ts` comprueba que incluyen guardado-preparar/reintento/resultado.js tal cual.
+      const code = j.nodes.filter((n) => n.type === 'n8n-nodes-base.code' && !(NODOS_CODE_DEL_GUARDADO as string[]).includes(n.name)).map((n) => n.name).sort();
       expect(Object.keys(m.codigo).sort(), f).toEqual(code);
       // Los medios: el MISMO archivo que usan los flujos de reservas, sea cual sea su carpeta.
       expect(m.codigo['Preparar transcripción'], f).toEqual(a.codigo['Preparar transcripción']);

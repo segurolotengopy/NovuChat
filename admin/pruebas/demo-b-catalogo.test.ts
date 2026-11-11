@@ -34,6 +34,7 @@ import {
   type J, GLOBALES_FUERA_DEL_SANDBOX, codigoDe, configBase, destinos, ejecutar, entradas,
   expresion, leerFlujo, nodo, plantilla,
 } from './lib/flujo.ts';
+import { NODOS_DEL_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -760,7 +761,8 @@ describe('El carrito: el cableado de la rama nueva', () => {
       'Config del carrito', 'Mensaje del carrito', '¿Avisar del carrito?',
       'Recordar pedido', 'Memoria del carrito'];
     const maxDelMensaje = Math.max(...f.nodes
-      .filter((n) => !abajo.includes(n.name)).map((n) => n.position?.[1] ?? 0));
+      // La rama del GUARDADO (11/11/2026) también va debajo de todo y corre después de la respuesta: no es una rama del mensaje.
+      .filter((n) => !abajo.includes(n.name) && !(NODOS_DEL_GUARDADO as string[]).includes(n.name)).map((n) => n.position?.[1] ?? 0));
     for (const n of abajo) expect(y(n), n).toBeGreaterThan(maxDelMensaje);
     // Y el abanico del agente sigue en el mismo orden.
     const ys = destinos(f, 'Procesar respuesta').map(y);
