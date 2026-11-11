@@ -23,12 +23,12 @@ function vgEsGmail(c) {
  * `correo` solo viaja con `recibido`.
  */
 function vgExtraerGmail(crudo) {
-  const texto = String(crudo === undefined || crudo === null ? '' : crudo).normalize('NFKC');
+  const texto = String(crudo === undefined || crudo === null ? '' : crudo).normalize('NFKC').replace(/\p{Cf}/gu, '');
   const hallados = texto.match(/[^\s@<>()\[\],;:"'«»¡¿]+@[^\s@<>()\[\],;:"'«»¡¿]+/g) || [];
   const unicos = [];
   for (const h of hallados) {
     // Se quitan los bordes que no son del correo: la negrita, cursiva o tachado de WhatsApp (* _ ~) y la puntuación de cierre.
-    const c = h.replace(/^[*_~!?]+/, '').replace(/[.,;:!?)*_~]+$/, '').toLowerCase();
+    const c = h.replace(/^[*_~!?]+/, '').replace(/[.,;:!?)*_~\/]+$/, '').toLowerCase();
     if (c !== '' && unicos.indexOf(c) < 0) unicos.push(c);
   }
   if (unicos.length === 0) return { resultado: 'mal_formado', correo: '' };

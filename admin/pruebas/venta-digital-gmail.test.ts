@@ -23,6 +23,11 @@ describe('vgExtraerGmail', () => {
     expect(extraer('¿juan.perez@gmail.com?')).toEqual({ resultado: 'recibido', correo: 'juan.perez@gmail.com' });
     expect(extraer('<juanito@gmail.com>, gracias!')).toEqual({ resultado: 'recibido', correo: 'juanito@gmail.com' });
   });
+  it('los caracteres invisibles (U+200B, U+2060, U+00AD) y la barra final no cambian el correo', () => {
+    expect(extraer('juani\u200bto@gmail.com')).toEqual({ resultado: 'recibido', correo: 'juanito@gmail.com' });
+    expect(extraer('juanito\u2060@gmail.com\u00ad')).toEqual({ resultado: 'recibido', correo: 'juanito@gmail.com' });
+    expect(extraer('juanito@gmail.com/')).toEqual({ resultado: 'recibido', correo: 'juanito@gmail.com' });
+  });
   it('el mismo correo repetido cuenta uno; la arroba de ancho completo se normaliza', () => {
     expect(extraer('juanito@gmail.com o JUANITO@gmail.com')).toEqual({ resultado: 'recibido', correo: 'juanito@gmail.com' });
     expect(extraer('juanito＠gmail.com')).toEqual({ resultado: 'recibido', correo: 'juanito@gmail.com' });

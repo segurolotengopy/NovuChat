@@ -75,7 +75,9 @@ if (esAudio) {
 }
 const textoCliente = t.tipo === 'interactive' ? '' : (esAudio ? transcrito : String(t.texto || ''));
 const norm = raNorm(textoCliente);
-textoDelTurno = raLineaCliente(textoCliente, 300).replace(/\s+/g, ' ').trim();
+// Ningún correo llega al modelo ni a la memoria de la charla: todo lo que parece un correo se cambia por «[correo]» antes de armar lo que ve el modelo (el Gmail válido lo lee el paso «1a-gmail» del texto original).
+const sinCorreos = (x) => String(x === undefined || x === null ? '' : x).normalize('NFKC').replace(/[^\s@<>()\[\],;:"'«»¡¿]+@[^\s@<>()\[\],;:"'«»¡¿]+/g, '[correo]');
+textoDelTurno = raLineaCliente(sinCorreos(textoCliente), 300).replace(/\s+/g, ' ').trim();
 // Un «Sí» o un «No» suelto con una pregunta nuestra vigente (30 min) se resuelve con la pregunta pendiente que guardó la ficha (`ctInterpretarSiNo`, core): si es una pregunta que el código hizo con su intención (`ver_opciones`), el código
 // responde; si no, el modelo recibe la pregunta como dato y qué hacer con ella. Sin pregunta vigente, nada. Nunca abre un QR por sí solo.
 const siNo = !esVisual && t.tipo !== 'interactive' ? ctInterpretarSiNo(textoCliente, ficha, ahora, { usados: ficha.usados, intenciones: RA_INTENCIONES, vigenciaMs: RA_VENTANA_PREGUNTA_MS }) : null;
@@ -227,7 +229,7 @@ const saludo = (boton, extra) => Object.assign({ tipo: 'saludo', cat: cat, boton
 // El plan del modelo para el turno: el cuerpo lleva el `modo` (línea del sistema fuera de <<< >>>). `extra`: campos del plan (`pideOpciones`, `angulo`…). `tema`: el ángulo del anuncio. `paraElModelo`: lo que el modelo lee como mensaje del cliente.
 // Con un QR abierto el plan lleva `qrAbierto` (sin botones de producto, con la invitación a pagar).
 const modeloDelTurno = (modo, extra, tema, paraElModelo) => {
-  const para = paraElModelo === undefined ? textoCliente : paraElModelo;
+  const para = sinCorreos(paraElModelo === undefined ? textoCliente : paraElModelo);
   return salir(Object.assign({ tipo: 'modelo', cat: cat, modo: modo, textoCliente: String(para).slice(0, 500) }, abierto(), extra || {}), {
     llamarModelo: true, cuerpoModelo: raCuerpoModelo(para, ficha.hist, tema || '', base.temperatura, respuestaAPregunta, modo, cfg.nombreNegocio),
   });
@@ -311,7 +313,7 @@ const angulo = raAngulo(norm) || (esVisual ? raAngulo(raNorm(leido)) : '');
 // sin QR nuevo, sin botones de producto y sin derivar. Un comprobante real o un pago con problema no llegan aquí (se resolvieron arriba).
 if (angulo) {
   return salir(Object.assign({ tipo: 'angulo', angulo: angulo, conPresentacion: !ficha.saludado, cat: cat, textoCliente: String(textoCliente || leido).slice(0, 500) }, abierto()), {
-    llamarModelo: true, cuerpoModelo: raCuerpoModelo(textoCliente || leido, ficha.hist, RA_ANGULOS[angulo].tema, base.temperatura, respuestaAPregunta, 'charla', cfg.nombreNegocio),
+    llamarModelo: true, cuerpoModelo: raCuerpoModelo(sinCorreos(textoCliente || leido), ficha.hist, RA_ANGULOS[angulo].tema, base.temperatura, respuestaAPregunta, 'charla', cfg.nombreNegocio),
   });
 }
 // EL PRECIO DE UN PRODUCTO NOMBRADO («¿cuánto cuesta el libro?»): lo dice el CÓDIGO desde el catálogo, ya, aunque la charla no llegara a dos mensajes (si es el primer mensaje, con la presentación). Antes de las opciones, el cierre es el del puente.
