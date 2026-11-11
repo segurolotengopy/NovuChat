@@ -52,6 +52,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { instruccionesDeVoz } from '../functions/src/core/prompt/prompt.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 
@@ -443,8 +444,11 @@ describe('(d2) El prompt enseña a conversar sin agregar mensajes', () => {
 describe('(e) El trato lo manda la configuración, no el prompt', () => {
   it('el prompt inserta el trato y el estilo de la configuración, y no fija ninguno', () => {
     expect(prompt()).toContain('TRATO Y ESTILO (no lo negocies con el cliente): {{ $json.tratamiento }} {{ $json.estiloEmojis }}');
-    const r = plantilla(prompt(), { ...configBase(demoA), tratamiento: 'Trate al cliente de USTED en todo momento, sin excepción.' });
-    expect(r).toContain('Trate al cliente de USTED en todo momento, sin excepción.');
+    // La frase sale de la fuente real del servidor, no de un literal repetido acá.
+    const frase = instruccionesDeVoz({ tratamiento: 'usted' })[0]!;
+    expect(frase).toMatch(/USTED/);
+    const r = plantilla(prompt(), { ...configBase(demoA), tratamiento: frase });
+    expect(r).toContain(frase);
   });
 });
 
@@ -583,10 +587,16 @@ describe('(h) Dos personas con calendarios distintos', () => {
     expect(equipo.slice(0, 2).map((f) => f.calendario)).toEqual([CAL_1, CAL_2]);
   });
 
-  it('sin persona elegida, el servicio cae al calendario 1, y el del negocio es el 1', () => {
-    const mapa = JSON.parse(String(base['calendariosPorServicio'])) as Record<string, string>;
-    expect(new Set(Object.values(mapa))).toEqual(new Set([CAL_1]));
-    expect(base['calendarioId']).toBe(CAL_1);
+  it('en la Config base REAL del Demo A, cada servicio mapeado apunta a una agenda que existe y que atiende ese servicio', () => {
+    const real = configBase(demoA);
+    const mapa = JSON.parse(String(real['calendariosPorServicio'])) as Record<string, string>;
+    const equipo = JSON.parse(String(real['funcionarios'])) as { servicios: string[]; calendario: string }[];
+    expect(Object.keys(mapa).length).toBeGreaterThan(0);
+    for (const [servicio, cal] of Object.entries(mapa)) {
+      const atienden = equipo.filter((f) => f.servicios.includes(servicio)).map((f) => f.calendario);
+      expect(atienden.length, servicio).toBeGreaterThan(0);
+      expect(cal === real['calendarioId'] || atienden.includes(cal), servicio).toBe(true);
+    }
   });
 
   it.each(['consultar_disponibilidad', 'agendar_cita', 'buscar_mi_cita', 'cancelar_cita'])(
@@ -1458,7 +1468,7 @@ describe.each([
     });
   });
 
-  describe('5. cero mensajes agregados; el mismo mecanismo en los dos flujos', () => {
+  describe('5. cero mensajes agregados; el mismo mecanismo en el Demo A y en Bellido', () => {
     it('los mismos dos nodos de envío, y la compuerta y el candado siguen donde estaban', () => {
       expect(f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp' && n.parameters['operation'] === 'send').map((n) => n.name))
         .toEqual(['Responder al cliente', 'Avisar a recepción']);
@@ -1467,11 +1477,11 @@ describe.each([
       expect(destinos('¿Afirma que agendó?', 1)).toEqual(['Mensaje a enviar', '¿Transferir a humano?']);
     });
 
-    it('el código de los cuatro nodos tocados es el del Demo A', () => {
+    it('el código de los cuatro nodos tocados es el mismo en el Demo A y en Bellido', () => {
       for (const n of ['Procesar respuesta', 'Procesar reintento', 'Mensaje a enviar', 'Comprobar reserva']) {
-        expect(codigo(n), n).toBe(String(nodo(demoA, n).parameters['jsCode']));
+        expect(codigo(n), n).toBe(String(nodo(bellido, n).parameters['jsCode']));
       }
-      expect(nodo(f, '¿Afirma que agendó?').parameters).toEqual(nodo(demoA, '¿Afirma que agendó?').parameters);
+      expect(nodo(f, '¿Afirma que agendó?').parameters).toEqual(nodo(bellido, '¿Afirma que agendó?').parameters);
     });
 
     it('nada de lo nuevo trae datos de la clínica ni un secreto (los comentarios cuentan la historia, el código no)', () => {
@@ -1577,7 +1587,7 @@ describe.each([
       ['https://ejemplo.com/maps/AbC'],
       ['https://maps.app.goo.gl.ejemplo.com/AbC'],
       ['https://maps.app.goo.gl@ejemplo.com/AbC'],
-      ['Radial 26, tercer anillo'],
+      ['Av. Ejemplo 123, tercer anillo'],
       ['https://maps.app.goo.gl/' + 'a'.repeat(200)],
     ])('NO deja pasar al prompt un enlace que no sea de Google Maps, aunque el panel lo mande: %s', (enlace) => {
       // Segunda barrera: es lo único que el asistente reenvía tal cual.
@@ -2142,16 +2152,20 @@ describe.each([
       expect(s).toMatchObject({ eventoId: 'ev-retenido', calendarioDelEvento: persona.calendario, senaQrUrl: QR, from: '59170000001', waGraphVersion: 'v26.0' });
     });
 
-    it('trata como manda la configuración: usted o tuteo', () => {
-      const c = String(preparar()['captionQr']);
-      if (/usted/i.test(String(cfg['tratamiento']))) {
-        expect(c).toContain('Escanee el QR con la app de su banco');
-        expect(c).toContain('Cuando termine, guarde o comparta el comprobante');
-        expect(c).not.toMatch(/\b(mandámelo|escaneá|guardá)\b/i);
-      } else {
-        expect(c).toContain('Escaneá el QR con la app de tu banco');
-        expect(c).toContain('mandámelo por acá');
-      }
+    it('trata de usted cuando la configuración lo manda (frase real del servidor)', () => {
+      const frase = instruccionesDeVoz({ tratamiento: 'usted' })[0]!;
+      const c = String(preparar({ ...CON_SENA, tratamiento: frase })['captionQr']);
+      expect(c).toContain('Escanee el QR con la app de su banco');
+      expect(c).toContain('Cuando termine, guarde o comparta el comprobante');
+      expect(c).not.toMatch(/\b(mandámelo|escaneá|guardá)\b/i);
+    });
+
+    it('tutea cuando la configuración lo manda (frase real del servidor)', () => {
+      const frase = instruccionesDeVoz({ tratamiento: 'tu' })[0]!;
+      const c = String(preparar({ ...CON_SENA, tratamiento: frase })['captionQr']);
+      expect(c).toContain('Escaneá el QR con la app de tu banco');
+      expect(c).toContain('mandámelo por acá');
+      expect(c).not.toMatch(/Escanee|su banco/);
     });
 
     it('si el calendario no devolvió la cita, el QR sale igual con lo que devolvió la herramienta; sin nada, con un resumen genérico', () => {
@@ -2286,7 +2300,7 @@ describe.each([
       // forma vieja de Dynamic Links y responde «Invalid Dynamic Link»
       // (comprobado con un teléfono el 19/09/2026).
       const conPin = { ...CON_SENA, direccionMaps: 'https://maps.app.goo.gl/AbCdEfGh12',
-        ubicacionLat: '-17.763381', ubicacionLng: '-63.188263' };
+        ubicacionLat: '-17.800001', ubicacionLng: '-63.200002' };
       const r = String(responder(OK({ resultado: 'cuadra' }), conPin)['respuesta']);
       expect(r).toContain('Calle 1, zona Sur');
       expect(r).not.toContain('maps.app.goo.gl');
@@ -3243,7 +3257,7 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
     transferir: false, herramientas: [], ejecutoAgendar: false, ...extra,
   });
 
-  const LOS_DOS: [string, Flujo][] = [['Demo A', demoA]];
+  const FLUJOS_N: [string, Flujo][] = [['Demo A', demoA]];
 
   describe('1. los nodos que reportan', () => {
     it('no se tocó ningún otro nodo para esto', () => {
@@ -3260,7 +3274,7 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
 
   describe('2. `horarios_ofrecidos`: consultó disponibilidad y NO agendó', () => {
     it('el turno que ofreció horarios y no agendó lo reporta', () => {
-      for (const [quien, f] of LOS_DOS) {
+      for (const [quien, f] of FLUJOS_N) {
         const cuerpo = cuerpoSaliente(turno({ herramientas: ['consultar_disponibilidad'] }))(f);
         expect(cuerpo['evento'], quien).toBe('horarios_ofrecidos');
         // Y lo que ya reportaba sigue igual.
@@ -3271,7 +3285,7 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
     });
 
     it('si además agendó, NO lo reporta: esa conversación ya no está a medio camino', () => {
-      for (const [quien, f] of LOS_DOS) {
+      for (const [quien, f] of FLUJOS_N) {
         expect(cuerpoSaliente(turno({
           herramientas: ['consultar_disponibilidad', 'agendar_cita'], ejecutoAgendar: true,
         }))(f)['evento'], quien).toBeUndefined();
@@ -3284,7 +3298,7 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
     });
 
     it('un turno que no consultó disponibilidad no reporta nada', () => {
-      for (const [quien, f] of LOS_DOS) {
+      for (const [quien, f] of FLUJOS_N) {
         expect(cuerpoSaliente(turno())(f)['evento'], quien).toBeUndefined();
         expect(cuerpoSaliente(turno({ herramientas: ['buscar_mi_cita'] }))(f)['evento'], quien).toBeUndefined();
         // Y los caminos que no vienen de `Procesar respuesta` —texto fijo,
@@ -3297,7 +3311,7 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
 
   describe('3. `no_contactar`: el paciente lo pidió, o el turno pasó a una persona', () => {
     it('transferir a una persona saca a ese teléfono del barrido', () => {
-      for (const [quien, f] of LOS_DOS) {
+      for (const [quien, f] of FLUJOS_N) {
         expect(cuerpoSaliente(turno({ transferir: true }))(f)['evento'], quien).toBe('no_contactar');
         // Y gana sobre `horarios_ofrecidos`: es el hecho más fuerte de los dos.
         expect(cuerpoSaliente(turno({
@@ -3313,7 +3327,7 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
         'no quiero más mensajes', 'no quiero mas mensajes', 'bórrame de la lista',
         'bórreme de su lista', 'quitame de sus mensajes',
       ];
-      for (const [quien, f] of LOS_DOS) {
+      for (const [quien, f] of FLUJOS_N) {
         for (const texto of PIDEN) {
           const cuerpo = cuerpoEntrante({ from: '59170000001', userInput: texto, tipo: 'text' })(f);
           expect(cuerpo['evento'], `${quien}: ${texto}`).toBe('no_contactar');
@@ -3328,7 +3342,7 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
         'gracias, ahí te escribo', 'no puedo ese día', 'mándame la dirección',
         'no me acuerdo de la hora', 'no sé si voy a poder',
       ];
-      for (const [quien, f] of LOS_DOS) {
+      for (const [quien, f] of FLUJOS_N) {
         for (const texto of NORMALES) {
           expect(cuerpoEntrante({ from: '59170000001', userInput: texto, tipo: 'text' })(f)['evento'],
             `${quien}: ${texto}`).toBeUndefined();
@@ -3351,7 +3365,7 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
         'no me molesten', 'no quiero mas mensajes', 'dame de baja',
         'no me llames', 'no me contacten',
       ];
-      for (const [quien, f] of LOS_DOS) {
+      for (const [quien, f] of FLUJOS_N) {
         for (const texto of PIDEN_QUE_NO) {
           expect(cuerpoEntrante({ from: '59170000001', userInput: texto, tipo: 'text' })(f)['evento'],
             `${quien}: ${texto}`).toBe('no_contactar');
@@ -3367,7 +3381,7 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
       // el interruptor «No contactar» de la consola, que enciende una
       // persona. Si alguien amplía la expresión, esta prueba falla y se
       // actualiza a conciencia.
-      for (const [quien, f] of LOS_DOS) {
+      for (const [quien, f] of FLUJOS_N) {
         for (const texto of ['ya no me interesa', 'baja', 'olvidalo', 'déjenme en paz']) {
           expect(cuerpoEntrante({ from: '59170000001', userInput: texto, tipo: 'text' })(f)['evento'],
             `${quien}: ${texto}`).toBeUndefined();
@@ -3376,7 +3390,7 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
     });
 
     it('el reporte entrante sigue mandando lo de siempre, más el origen', () => {
-      for (const [quien, f] of LOS_DOS) {
+      for (const [quien, f] of FLUJOS_N) {
         expect(cuerpoEntrante({
           from: '59170000001', userInput: 'Hola', tipo: 'text',
           mensajeId: 'wamid.E1', nombrePerfil: 'Ana',
@@ -3500,7 +3514,7 @@ describe.each([['demo-a-agendamiento.json', demoA]])(
   '(p) %s · la reserva con seña, como la vio una clienta', (_archivo, f) => {
     const cod = (n: string) => String(nodo(f, n).parameters['jsCode']);
     const CON_SENA_1 = { senaActiva: 'si', senaImporte: '1', senaMoneda: 'Bs', nombreNegocio: 'Un Negocio',
-      ubicacionLat: '-17.763381', ubicacionLng: '-63.188263', direccion: 'Calle 1' };
+      ubicacionLat: '-17.800001', ubicacionLng: '-63.200002', direccion: 'Calle 1' };
     const procesar = (output: string, escribio: string, config: J = CON_SENA_1): J =>
       ejecutar(cod('Procesar respuesta'), [{ output }],
         { 'Normalizar entrada': [{ from: '59170000001', nombrePerfil: 'Sil', userInput: escribio }],
@@ -3762,16 +3776,16 @@ describe('Pago confirmado: sale el pin de ubicación', () => {
   const codigoSena = () => String(nodo(demoA, 'Mensaje de la seña').parameters['jsCode']);
   const base = (resultadoSena: string) => ({ respuesta: 'Recibí tu comprobante y los datos coinciden con tu reserva. Tu cita queda reservada.',
     resultadoSena, motivoTransferencia: 'x', calendarioDelEvento: '', from: '59170000001' });
-  const cfg = { direccion: 'Radial 26', nombreNegocio: 'Negocio de prueba', funcionarios: '[]', phoneNumberId: '1000000001',
-    ubicacionLat: '-17.763381', ubicacionLng: '-63.188263' };
+  const cfg = { direccion: 'Av. Ejemplo 123', nombreNegocio: 'Negocio de prueba', funcionarios: '[]', phoneNumberId: '1000000001',
+    ubicacionLat: '-17.800001', ubicacionLng: '-63.200002' };
   const cita = { id: 'ev', summary: 'Cita Ana — blanqueamiento', start: { dateTime: '2026-09-24T16:00:00-04:00' }, organizer: { email: 'c' } };
   const correr = (resultado: string, c: J = cfg, refs: Record<string, J[]> = { 'Leer cita retenida': [cita], 'Confirmar cita retenida': [cita] }) =>
     ejecutar(codigoSena(), [{}], { 'Respuesta de la seña': [base(resultado)], 'Config del negocio': [c], ...refs })[0] ?? {};
 
   it('si CUADRÓ, sale el pin con las coordenadas, el nombre y la dirección, y el texto no lleva el enlace', () => {
     const r = correr('cuadra');
-    expect(r).toMatchObject({ enviarUbicacion: true, ubicacionLat: -17.763381, ubicacionLng: -63.188263,
-      nombreNegocio: 'Negocio de prueba', direccion: 'Radial 26', phoneNumberId: '1000000001' });
+    expect(r).toMatchObject({ enviarUbicacion: true, ubicacionLat: -17.800001, ubicacionLng: -63.200002,
+      nombreNegocio: 'Negocio de prueba', direccion: 'Av. Ejemplo 123', phoneNumberId: '1000000001' });
     expect(String(r['respuesta'])).not.toContain('maps.app.goo.gl');
     // Lo lee el nodo que ya manda el pin cuando el paciente lo pide.
     expect(expresion(nodo(demoA, '¿Enviar ubicación?').parameters['conditions'].conditions[0].leftValue, {}, { 'Mensaje a enviar': r })).toBe(true);

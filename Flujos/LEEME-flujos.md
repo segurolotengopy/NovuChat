@@ -924,6 +924,8 @@ retiró con él (11/11/2026).
 
 Pieza común del módulo Agenda: flujo «NovuChat — Agenda (Señas vencidas)». Hoy ningún comercio la tiene publicada. Un comercio que la publique necesita en su tabla de marcadores la fila `REEMPLAZAR_PHONE_NUMBER_ID_COMERCIO` y credenciales con los nombres «NovuChat ingesta (comercio)» y «WhatsApp comercio (envío)», porque `publicar-flujo.sh --crear` asigna por nombre.
 
+> **Antes de la PRIMERA publicación de un barrido (revisión de seguridad del 11/11/2026, pendiente).** El marcador `REEMPLAZAR_PHONE_NUMBER_ID_COMERCIO` y los nombres de credencial «(comercio)» son genéricos a propósito, y eso tiene un riesgo si DOS comercios llegan a publicarlos: la tabla global de marcadores admite una sola fila con ese nombre (el segundo heredaría el número del primero) y `publicar-flujo.sh` enlaza por nombre cuando hay una sola credencial con ese nombre (el segundo quedaría con la credencial del primero, en silencio). Vale para los dos barridos, este y el de seguimientos. Hoy no lo tiene publicado nadie. Antes de publicarlo para un comercio: usar una tabla de marcadores propia de ese comercio (`CONFIG_LOCAL_MD`) y credenciales con el nombre del comercio (o dejar el nombre vacío en el JSON para que `--crear` resuelva por tipo desde el flujo conversacional del propio comercio), y pasar por el agente `seguridad`.
+
 Flujo programado, **sin disparador de webhook y sin ningún nodo de WhatsApp**:
 cada 5 minutos (`*/5 * * * *`) pide la configuración al panel
 (`Traer configuración` con `REEMPLAZAR_PHONE_NUMBER_ID_COMERCIO`, el único

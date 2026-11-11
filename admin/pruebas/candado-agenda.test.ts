@@ -668,7 +668,7 @@ describe('Candado de horario: no se agenda cuando el negocio no atiende', () => 
   const CON_HORARIO = {
     mensajeReservaNoConfirmada: '',
     funcionarios: JSON.stringify([
-      { nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE, horario: HORARIO },
+      { nombre: 'Dr. Uno', servicios: [], calendario: CAL_JOSE, horario: HORARIO },
     ]),
   };
   /** Una cita creada recién, sola en la agenda: lo único que la puede tumbar es el horario. */
@@ -720,7 +720,7 @@ describe('Candado de horario: no se agenda cuando el negocio no atiende', () => 
     const partido = {
       mensajeReservaNoConfirmada: '',
       funcionarios: JSON.stringify([{
-        nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE,
+        nombre: 'Dr. Uno', servicios: [], calendario: CAL_JOSE,
         horario: { ...HORARIO, lun: '09:00-12:00, 14:00-19:00' },
       }]),
     };
@@ -736,7 +736,7 @@ describe('Candado de horario: no se agenda cuando el negocio no atiende', () => 
     const dosPersonas = {
       mensajeReservaNoConfirmada: '',
       funcionarios: JSON.stringify([
-        { nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE, horario: HORARIO },
+        { nombre: 'Dr. Uno', servicios: [], calendario: CAL_JOSE, horario: HORARIO },
         { nombre: 'Dra. Guardia', servicios: [], calendario: CAL_MARIA,
           horario: { ...HORARIO, dom: '09:00-13:00' } },
       ]),
@@ -753,7 +753,7 @@ describe('Candado de horario: no se agenda cuando el negocio no atiende', () => 
     // cliente una cita buena.
     const sinDato = {
       mensajeReservaNoConfirmada: '',
-      funcionarios: JSON.stringify([{ nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE }]),
+      funcionarios: JSON.stringify([{ nombre: 'Dr. Uno', servicios: [], calendario: CAL_JOSE }]),
     };
     const r = soloEsta('2026-09-27T10:00:00-04:00', '2026-09-27T11:00:00-04:00', sinDato)[0] ?? {};
     expect(r['citaSolapada']).toBeUndefined();
@@ -763,7 +763,7 @@ describe('Candado de horario: no se agenda cuando el negocio no atiende', () => 
     const raro = {
       mensajeReservaNoConfirmada: '',
       funcionarios: JSON.stringify([{
-        nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE,
+        nombre: 'Dr. Uno', servicios: [], calendario: CAL_JOSE,
         horario: { ...HORARIO, dom: 'a convenir' },
       }]),
     };
@@ -788,7 +788,7 @@ describe('Candado de horario: no se agenda cuando el negocio no atiende', () => 
   it('la causa llega a `citasCaidas`, que es lo que lee el reintento', () => {
     const r = soloEsta('2026-09-27T10:00:00-04:00', '2026-09-27T11:00:00-04:00')[0] ?? {};
     const caidas = r['citasCaidas'] as { causa: string; persona: string }[];
-    expect(caidas[0]).toMatchObject({ causa: 'cerrado', persona: 'Dr. Sandoval' });
+    expect(caidas[0]).toMatchObject({ causa: 'cerrado', persona: 'Dr. Uno' });
   });
 
   it('los dos flujos llevan el MISMO candado de horario', () => {
@@ -905,7 +905,7 @@ describe('Bloqueos repetidos: una restricción, no cincuenta eventos', () => {
   const CONFIG: Record<string, unknown> = {
     mensajeReservaNoConfirmada: '',
     calendarioId: CAL_OTRO,
-    funcionarios: JSON.stringify([{ nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE }]),
+    funcionarios: JSON.stringify([{ nombre: 'Dr. Uno', servicios: [], calendario: CAL_JOSE }]),
   };
   const creadoEn = (id: string, calendario: string, inicio: string, fin: string) =>
     ({ id, calendario, inicio, fin, titulo: `Cita ${id}` });

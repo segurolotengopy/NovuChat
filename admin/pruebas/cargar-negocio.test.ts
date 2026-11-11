@@ -123,7 +123,9 @@ describe('cargar-negocio.mjs', () => {
     // Conteos y nombres, no los textos largos ni los identificadores enteros.
     expect(r.salida).toMatch(/instruccionesExtra\s+\d+ caracteres/);
     expect(r.salida).not.toContain('CAMPAÑA VIGENTE');
-    expect(r.salida).not.toContain('Nataniel Aguirre');
+    // La dirección es de las que se informan por su conteo, no por su texto.
+    expect(base.negocio.direccion.length).toBeGreaterThan(0);
+    expect(r.salida).not.toContain(base.negocio.direccion);
     expect(r.salida).not.toContain(RECEPCION);
     expect(r.salida).not.toContain(CALENDARIO_1);
     // Nada escrito.
