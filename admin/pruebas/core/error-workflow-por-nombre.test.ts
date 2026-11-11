@@ -7,12 +7,13 @@
  * sin red ni n8n, y nada se escribe en n8n.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './entorno-del-hijo.ts';
+import { construir as construirEmma } from '../../../Flujos/experimental/rroca-emma/construir.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '..', '..', '..');
@@ -43,30 +44,30 @@ describe('errorWorkflow por nombre', () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   function entorno(extra: Record<string, string>) {
-    return entornoDelEmulador(undefined, {
+    return {
       PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}`, HOME: dir, BASH_ENV: '', ENV: '',
       REGISTRO_CURL: join(dir, 'curl.log'), CONFIG_LOCAL_MD: join(raiz, 'tabla.md'),
       RESPUESTA_CREDENCIALES: JSON.stringify({ data: [] }),
       HTTPS_PROXY: 'http://127.0.0.1:1', HTTP_PROXY: 'http://127.0.0.1:1', NO_PROXY: '', ...extra,
-    });
+    };
   }
   // eslint-disable-next-line no-control-regex
   const limpia = (t: string) => t.replace(/\u001b\[[0-9;]*m/g, '');
   const escrituras = () => readFileSync(join(dir, 'curl.log'), 'utf8').split('\n').filter((l) => /^(POST|PUT|DELETE|PATCH) /.test(l));
 
-  function preparar(f: unknown, respuestaLista?: string, env = 'N8N_BASE_URL=https://n8n.invalid\nN8N_API_KEY=clave-de-prueba\n') {
+  function preparar(f: unknown, respuestaLista?: string, env = 'N8N_BASE_URL=https://n8n.invalid\nN8N_API_KEY=clave-de-prueba\n', codigoLista = '') {
     writeFileSync(join(raiz, 'Flujos', 'f.json'), JSON.stringify(f));
     writeFileSync(join(raiz, '.env.prueba'), env, { mode: 0o600 });
     const r = spawnSync('bash', ['scripts/preparar-import.sh', 'Flujos/f.json', '.env.prueba'], {
-      cwd: raiz, encoding: 'utf8', env: entorno(respuestaLista === undefined ? {} : { RESPUESTA_LISTA_FLUJOS: respuestaLista }),
+      cwd: raiz, encoding: 'utf8', env: entornoDelEmulador(undefined, entorno({ ...(respuestaLista === undefined ? {} : { RESPUESTA_LISTA_FLUJOS: respuestaLista }), ...(codigoLista ? { CODIGO_LISTA_FLUJOS: codigoLista } : {}) })),
     });
     return { codigo: r.status, salida: limpia(`${r.stdout}${r.stderr}`), local: join(raiz, 'Flujos', 'f.local.json') };
   }
-  function publicar(f: unknown, respuestaLista: string | undefined, args: string[] = []) {
+  function publicar(f: unknown, respuestaLista: string | undefined, args: string[] = [], vivoEw: string = ID_ALERTA, codigoLista = '') {
     writeFileSync(join(raiz, 'Flujos', 'f.json'), JSON.stringify(f));
     const r = spawnSync('bash', ['scripts/publicar-flujo.sh', '--env', '.env.prueba', '--flujo', 'Flujos/f.json', ...args], {
       cwd: raiz, encoding: 'utf8',
-      env: entorno({ RESPUESTA_FLUJO: JSON.stringify({ id: '7', ...flujo({ executionOrder: 'v1', errorWorkflow: ID_ALERTA }) }), ...(respuestaLista === undefined ? {} : { RESPUESTA_LISTA_FLUJOS: respuestaLista }) }),
+      env: entornoDelEmulador(undefined, entorno({ RESPUESTA_FLUJO: JSON.stringify({ id: '7', ...flujo({ executionOrder: 'v1', errorWorkflow: vivoEw }) }), ...(respuestaLista === undefined ? {} : { RESPUESTA_LISTA_FLUJOS: respuestaLista }), ...(codigoLista ? { CODIGO_LISTA_FLUJOS: codigoLista } : {}) })),
     });
     return { codigo: r.status, salida: limpia(`${r.stdout}${r.stderr}`) };
   }
@@ -79,6 +80,22 @@ describe('errorWorkflow por nombre', () => {
       expect(r.salida).not.toContain(ID_ALERTA);
       expect(r.salida).not.toContain('clave-de-prueba');
       expect(escrituras()).toEqual([]);
+    });
+
+    it('escribe el .local.json con modo 600, aunque ya existiera con otro modo', () => {
+      writeFileSync(join(raiz, 'Flujos', 'f.local.json'), '{}', { mode: 0o644 });
+      const r = preparar(flujo(), lista(NOMBRE));
+      expect(r.codigo, r.salida).toBe(0);
+      expect(statSync(r.local).mode & 0o777).toBe(0o600);
+    });
+
+    it('ignora los flujos archivados: uno archivado con el mismo nombre no cuenta como duplicado, y solo archivado = ausente', () => {
+      const conArchivado = JSON.stringify({ data: [{ id: ID_ALERTA, name: NOMBRE }, { id: 'viejo', name: NOMBRE, isArchived: true }, { id: 'viejo2', name: NOMBRE, archived: true }] });
+      const ok = preparar(flujo(), conArchivado);
+      expect(ok.codigo, ok.salida).toBe(0);
+      expect(JSON.parse(readFileSync(ok.local, 'utf8')).settings.errorWorkflow).toBe(ID_ALERTA);
+      const soloArchivado = preparar(flujo(), JSON.stringify({ data: [{ id: 'viejo', name: NOMBRE, isArchived: true }] }));
+      expect(soloArchivado.codigo, soloArchivado.salida).not.toBe(0);
     });
 
     it('NEGATIVA: nombre ausente en el n8n destino -> falla y no escribe la salida', () => {
@@ -142,31 +159,73 @@ describe('errorWorkflow por nombre', () => {
     it('NEGATIVA: nombre duplicado -> falla, nunca publica', () => {
       const r = publicar(flujo(), lista(NOMBRE, NOMBRE), ['--aplicar']);
       expect(r.codigo, r.salida).not.toBe(0);
+      expect(r.salida).toMatch(/2 flujos llamados/);
       expect(escrituras()).toEqual([]);
     });
 
     it('NEGATIVA: marcador sin resolver (la lista no llega) -> falla, nunca publica', () => {
       const r = publicar(flujo(), '', ['--aplicar']);
       expect(r.codigo, r.salida).not.toBe(0);
+      expect(r.salida).toContain('no entregó la lista de flujos');
       expect(escrituras()).toEqual([]);
     });
 
-    it('el comparador tolera que errorWorkflow difiera en el valor, pero no que falte en uno de los dos', () => {
-      // Origen con OTRO id (p. ej. staging vs producción): no cuenta como diferencia.
-      writeFileSync(join(raiz, 'Flujos', 'f.json'), JSON.stringify(flujo({ executionOrder: 'v1', errorWorkflow: 'idDeOtroN8n' })));
-      const ok = spawnSync('bash', ['scripts/publicar-flujo.sh', '--env', '.env.prueba', '--flujo', 'Flujos/f.json'], {
-        cwd: raiz, encoding: 'utf8', env: entorno({ RESPUESTA_FLUJO: JSON.stringify({ id: '7', ...flujo({ executionOrder: 'v1', errorWorkflow: ID_ALERTA }) }) }),
-      });
-      expect(limpia(ok.stdout), limpia(ok.stdout + ok.stderr)).toContain('coincide con el origen');
-      expect(limpia(ok.stdout)).not.toContain(ID_ALERTA);
-      // El vivo no lo tiene: sí cuenta, y se nombra la clave sin valores.
+    it('NEGATIVA: la lista responde HTTP distinto de 200 -> falla con su código, nunca publica (publicar y preparar)', () => {
+      const r = publicar(flujo(), lista(NOMBRE), ['--aplicar'], ID_ALERTA, '503');
+      expect(r.codigo, r.salida).not.toBe(0);
+      expect(r.salida).toContain('HTTP 503');
+      expect(escrituras()).toEqual([]);
+      const p = preparar(flujo(), lista(NOMBRE), undefined, '500');
+      expect(p.codigo, p.salida).not.toBe(0);
+      expect(p.salida).toContain('HTTP 500');
+      expect(existsSync(p.local)).toBe(false);
+    });
+
+    it('comparación ESTRICTA: marcador resuelto con un id y vivo con otro -> diferencia que nombra solo la clave', () => {
+      const r = publicar(flujo(), lista(NOMBRE), [], 'idDeOtroVivo');
+      expect(r.salida).not.toContain('coincide con el origen');
+      expect(r.salida).toContain('claves distintas: errorWorkflow');
+      expect(r.salida).not.toContain('idDeOtroVivo');
+      expect(r.salida).not.toContain(ID_ALERTA);
+    });
+
+    it('el origen sin marcador (id concreto que sí es el del destino) y vivo con otro id: también diferencia; vivo sin la clave: diferencia', () => {
+      const igual = publicar(flujo({ executionOrder: 'v1', errorWorkflow: ID_ALERTA }), lista(NOMBRE), [], ID_ALERTA);
+      expect(igual.salida).toContain('coincide con el origen');
       const sin = spawnSync('bash', ['scripts/publicar-flujo.sh', '--env', '.env.prueba', '--flujo', 'Flujos/f.json'], {
-        cwd: raiz, encoding: 'utf8', env: entorno({ RESPUESTA_FLUJO: JSON.stringify({ id: '7', ...flujo({ executionOrder: 'v1' }) }) }),
+        cwd: raiz, encoding: 'utf8', env: entornoDelEmulador(undefined, entorno({ RESPUESTA_LISTA_FLUJOS: lista(NOMBRE), RESPUESTA_FLUJO: JSON.stringify({ id: '7', ...flujo({ executionOrder: 'v1' }) }) })),
       });
-      const salida = limpia(sin.stdout);
-      expect(salida).not.toContain('coincide con el origen');
-      expect(salida).toContain('claves distintas: errorWorkflow');
-      expect(salida).not.toContain('idDeOtroN8n');
+      expect(limpia(sin.stdout)).toContain('claves distintas: errorWorkflow');
+    });
+
+    it('NEGATIVA: un id concreto que no es el del destino (p. ej. un .local.json de otro n8n) aborta sin escribir', () => {
+      const r = publicar(flujo({ executionOrder: 'v1', errorWorkflow: 'idDeOtroN8n' }), lista(NOMBRE), ['--aplicar']);
+      expect(r.codigo, r.salida).not.toBe(0);
+      expect(r.salida).toContain('no es el id del flujo');
+      expect(r.salida).not.toContain('idDeOtroN8n');
+      expect(escrituras()).toEqual([]);
+      const sinFlujo = publicar(flujo({ executionOrder: 'v1', errorWorkflow: ID_ALERTA }), lista('Otro flujo'), ['--aplicar']);
+      expect(sinFlujo.codigo, sinFlujo.salida).not.toBe(0);
+      expect(escrituras()).toEqual([]);
+    });
+
+    it('«Origen» muestra la ruta versionada y no la copia temporal', () => {
+      const r = publicar(flujo(), lista(NOMBRE));
+      expect(r.salida).toMatch(/Origen\s*: Flujos\/f\.json/);
+    });
+  });
+
+  describe('--verificar de los armadores', () => {
+    it('NEGATIVA: el JSON versionado de Emma con un id resuelto en vez del marcador exacto se rechaza', () => {
+      const tope = join(dir, 'Flujos'); cpSync(join(REPO, 'Flujos'), tope, { recursive: true });
+      const carpeta = join(tope, 'experimental', 'rroca-emma');
+      const bien = construirEmma({ carpeta, verificar: true, tope });
+      expect(bien.every((x: { versionado: string[] }) => x.versionado.length === 0)).toBe(true);
+      const ruta = join(carpeta, 'rroca-emma.json');
+      const j = JSON.parse(readFileSync(ruta, 'utf8')); j.settings.errorWorkflow = ID_ALERTA;
+      writeFileSync(ruta, JSON.stringify(j, null, 2) + '\n');
+      const mal = construirEmma({ carpeta, verificar: true, tope }).find((x: { archivo: string }) => x.archivo === 'rroca-emma.json');
+      expect(mal.versionado.join(' ')).toContain('exactamente REEMPLAZAR_ID_ERROR_WORKFLOW');
     });
   });
 });

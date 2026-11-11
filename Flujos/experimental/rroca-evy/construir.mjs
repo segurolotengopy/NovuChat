@@ -998,6 +998,8 @@ export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS,
     let versionado = [];
     if (actual !== null) {
       try { versionado = guardias(variante, JSON.parse(actual)); } catch (x) { versionado = ['no es un JSON válido']; }
+      // El JSON VERSIONADO lleva el marcador exacto, nunca un id resuelto (el id es de un n8n y no se versiona).
+      if (ES_RELE && versionado.length === 0) { try { if ((JSON.parse(actual).settings || {}).errorWorkflow !== 'REEMPLAZAR_ID_ERROR_WORKFLOW') versionado = ['versionado: `errorWorkflow` tiene que ser exactamente REEMPLAZAR_ID_ERROR_WORKFLOW (un id resuelto no se versiona)']; } catch (x) { /* ya informado */ } }
     }
     if (!verificar) escribirSinSeguirEnlaces(ruta, texto, v.archivo);
     return { archivo: v.archivo, nodos: JSON.parse(texto).nodes.length, existia: actual !== null, alDia: actual === texto, versionado };

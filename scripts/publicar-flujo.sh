@@ -690,13 +690,28 @@ fi
 # copia temporal. Si no existe, si hay más de uno o la lista no llegó completa, FALLA: ni se
 # deja el marcador ni se publica. Solo LEE (GET /workflows).
 FLUJO_ORIGINAL="$FLUJO"
-if [[ $REINICIAR -eq 0 && -f "$FLUJO" ]] && grep -q 'REEMPLAZAR_ID_ERROR_WORKFLOW' "$FLUJO"; then
+export FLUJO_MOSTRAR="$FLUJO_ORIGINAL"   # la ruta que se muestra en «Origen» (no la copia temporal)
+export EW_RESUELTO=0                      # 1 = el marcador se resolvió en ESTA corrida
+# Se resuelve (marcador) o se comprueba (id concreto, p. ej. un .local.json de otro n8n) cuando
+# el archivo trae settings.errorWorkflow.
+TIENE_EW=0
+if [[ $REINICIAR -eq 0 && -f "$FLUJO" ]]; then
+  TIENE_EW="$(python3 -c "
+import json,sys
+try:
+    d=json.load(open(sys.argv[1],encoding='utf-8'))
+    print(1 if isinstance(d,dict) and isinstance(d.get('settings'),dict) and 'errorWorkflow' in d['settings'] else 0)
+except Exception:
+    print(0)" "$FLUJO" 2>/dev/null || echo 0)"
+fi
+if [[ "$TIENE_EW" == "1" ]] || { [[ $REINICIAR -eq 0 && -f "$FLUJO" ]] && grep -q 'REEMPLAZAR_ID_ERROR_WORKFLOW' "$FLUJO"; }; then
   EW_COD=$(curl -s --max-time 30 -o "$TMP/lista-errorworkflow.json" -w '%{http_code}' \
        -H @- "${API}/workflows?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
   if [[ "$EW_COD" != "200" ]]; then
-    printf '\033[1;31m✗ ABORTADO: n8n no entregó la lista de flujos (HTTP %s); sin ella no se resuelve el flujo de alertas.\033[0m\n' "$EW_COD" >&2
+    printf '\033[1;31m✗ ABORTADO: n8n no entregó la lista de flujos (HTTP %s); sin ella no se resuelve ni se comprueba el flujo de alertas.\033[0m\n' "$EW_COD" >&2
     exit 1
   fi
+  grep -q 'REEMPLAZAR_ID_ERROR_WORKFLOW' "$FLUJO" && EW_RESUELTO=1
   python3 scripts/lib/resolver-error-workflow.py "$FLUJO" "$TMP/lista-errorworkflow.json" "$TMP/flujo-errorworkflow.json" || exit 1
   FLUJO="$TMP/flujo-errorworkflow.json"
 fi
@@ -971,7 +986,7 @@ print(f"Flujo vivo : {vivo.get('name')}")
 if webhooks:
     print(f"  webhook  : /webhook/{webhooks[0]}/webhook")
 print(f"  activo   : {vivo.get('active')}   nodos: {len(vivo.get('nodes', []))}")
-print(f"Origen     : {flujo}   nodos: {len(nuevo['nodes'])}\n")
+print(f"Origen     : {os.environ.get('FLUJO_MOSTRAR') or flujo}   nodos: {len(nuevo['nodes'])}\n")
 
 # --- CERROJO: el archivo y el flujo vivo tienen que ser EL MISMO flujo --------
 # El id del flujo sale de N8N_WORKFLOW_ID, que vive en `.env`, y el archivo se
@@ -1316,10 +1331,7 @@ for nodo_, prop in props_dif:
 for nodo_, clave in solo_vivo:
     estructura.append((nodo_, f"parametro presente solo en el vivo, --aplicar lo borraria: {clave}"))
 sv_, sn_ = vivo.get("settings") or {}, nuevo.get("settings") or {}
-# errorWorkflow lleva el id del flujo de alertas en ESE n8n (se resuelve por nombre al publicar):
-# puede diferir en el valor entre el origen y el vivo, asi que si los dos lo tienen no cuenta.
-# Si solo lo tiene uno de los dos, si cuenta. Solo nombres de clave, nunca valores.
-claves_set = sorted(k for k in sn_ if sv_.get(k) != sn_.get(k) and not (k == "errorWorkflow" and k in sv_))
+claves_set = sorted(k for k in sn_ if sv_.get(k) != sn_.get(k) and not (k == "errorWorkflow" and k in sv_ and os.environ.get("EW_RESUELTO") != "1"))  # errorWorkflow: ver «1a» (estricto si el marcador se resolvio en esta corrida; si no, puede diferir en el valor)
 if claves_set:
     estructura.append(("(settings del flujo)", "claves distintas: " + ", ".join(claves_set)))
 # Claves de settings que solo tiene el vivo: --aplicar las borraria. Se ignora
