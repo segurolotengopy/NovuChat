@@ -38,7 +38,7 @@ export function numeroDelAncla(ancla: { name?: string; parameters?: Record<strin
 export function nodosDelGuardado(opciones: OpcionesDelGuardado & { credenciales: CredencialesDelGuardado; numero: string }): NodoDelGuardado[];
 export function credencialesDelFlujo(flujo: { nodes: any[] }, ancla: any, graphDe: string, canal?: 'graph' | 'rele'): CredencialesDelGuardado;
 export function injertarGuardado<T extends { nodes: any[]; connections: Record<string, any> }>(flujo: T, opciones: OpcionesDelGuardado): T;
-export function hallazgosDelGuardado(flujo: unknown, opciones?: { exigir?: boolean }): string[];
+export function hallazgosDelGuardado(flujo: unknown, opciones?: { exigir?: boolean; hermana?: boolean }): string[];
 export function manejaMedios(flujo: unknown): boolean;
 export function urlDescargaRele(releUrl?: string): string;
 export function urlInfoRele(releUrl?: string): string;
