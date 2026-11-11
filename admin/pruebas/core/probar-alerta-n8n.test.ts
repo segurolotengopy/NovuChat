@@ -14,7 +14,7 @@
  *  - el temporal sale con el nodo exacto que exige «Armar alerta», errorWorkflow y sin guardar ejecuciones;
  *  - ningún id, ruta de webhook ni clave sale por pantalla ni por argumentos.
  */
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -85,6 +85,7 @@ if "/api/v1" in url:
             if "activate" in F: salir(500, {})
             wf[k]["active"] = True; guardar(); salir(200, {"id": k, "active": True})
         if metodo == "POST" and partes[3:] == ["deactivate"]:
+            if "deact_no" in F: salir(200, {"id": k, "active": True})
             wf[k]["active"] = False; guardar(); salir(200, {"id": k, "active": False})
         if metodo == "POST" and partes[3:] == ["archive"]:
             wf[k]["archivado"] = True; guardar(); salir(200, {"id": k})
@@ -100,6 +101,12 @@ else:
     est["disparos"] = est.get("disparos", 0) + 1
     if "webhook404" in F:
         guardar(); salir(404, {})
+    if "webhook404_una" in F and est["disparos"] == 1:
+        guardar(); salir(404, {})
+    if "webhook500" in F:
+        guardar(); salir(500, {})
+    if "webhook000" in F:
+        guardar(); sys.exit(7)
     ok = [k for k, v in est["wf"].items() if v["name"].startswith("NovuChat \\u2014 PRUEBA") and v["active"] and url.endswith("/webhook/" + v["nodes"][0]["parameters"]["path"])]
     if not ok:
         guardar(); salir(404, {})
@@ -122,7 +129,7 @@ describe('probar-alerta-n8n.sh', () => {
 
   const alertaWf = (nombre = ALERTA) => ({ name: nombre, active: false, nodes: [{ name: 'Error del flujo', type: 'n8n-nodes-base.errorTrigger' }], settings: {} });
   const clienteWf = { name: 'Flujo de cliente', active: true, nodes: [], settings: {} };
-  function estado(wf: Record<string, unknown>) { writeFileSync(join(dir, 'estado.json'), JSON.stringify({ n: 0, wf, ejec: [{ id: 'e1', status: 'error' }] })); }
+  function estado(wf: Record<string, unknown>, ejec: unknown[] = [{ id: 'e1', status: 'error' }]) { writeFileSync(join(dir, 'estado.json'), JSON.stringify({ n: 0, wf, ejec })); }
   function correr(args: string[], falla = '', extra: Record<string, string> = {}) {
     if (!existsSync(join(dir, 'estado.json'))) estado({ [ID_ALERTA]: alertaWf(), otro: clienteWf });
     const r = spawnSync('bash', [SCRIPT, '--env', join(dir, 'env'), ...args], {
@@ -213,6 +220,7 @@ describe('probar-alerta-n8n.sh', () => {
       expect(llamadas().every((l) => l.startsWith('GET '))).toBe(true);
       expect(r.salida).toContain('Seco: no se escribió nada');
       expect(r.salida).toContain('1 aviso de prueba');
+      expect(r.salida).toContain('aviso INMEDIATO por hora');
       expect(registro()).not.toContain('WEBHOOK');
       expect(restos()).toBe(0);
     });
@@ -276,6 +284,50 @@ describe('probar-alerta-n8n.sh', () => {
       expect(r.salida).toContain('ERROR');
       expect(temporales()).toHaveLength(0);
     });
+    it('desactiva el temporal justo tras el 2xx del webhook y ANTES de leer las ejecuciones de la alerta', () => {
+      const r = correr(aplicar);
+      expect(r.codigo, r.salida).toBe(0);
+      const l = registro().split('\n').filter((x) => x === 'WEBHOOK' || /^(GET|POST|DELETE) \//.test(x));
+      const web = l.indexOf('WEBHOOK');
+      const des = l.findIndex((x, i) => i > web && x.endsWith('/deactivate'));
+      const ejec = l.map((x, i) => (x === 'GET /executions' ? i : -1)).filter((i) => i >= 0).pop()!;
+      expect(web).toBeGreaterThan(-1);
+      expect(des).toBe(web + 1);
+      expect(des).toBeLessThan(ejec);
+      expect(r.salida).toContain('active=false comprobado');
+    });
+    it('limpieza con el id conocido: no vuelve a listar para decidir qué borrar ni toca otro flujo', () => {
+      correr(aplicar);
+      const l = llamadas();
+      const iDel = l.findIndex((x) => x.startsWith('DELETE '));
+      expect(l.slice(0, iDel).filter((x) => x === 'GET /workflows').length).toBe(1); // solo la lectura inicial
+      expect(l.filter((x) => x.startsWith('DELETE ')).every((x) => x.startsWith('DELETE /workflows/tmp'))).toBe(true);
+    });
+    it('el listado se guarda solo con id, nombre y archivado: lista.json no conserva nada más', () => {
+      // Se observa en el script: el ayudante descarta el resto de cada flujo (incluidos los de cliente).
+      const src = readFileSync(SCRIPT, 'utf8');
+      expect(src).toContain('("id", "name", "isArchived", "archived")');
+      expect(src).not.toContain('acum += rta["data"]');
+    });
+    it('NEGANDO: la alerta corrió en la última hora -> aborta (2) sin escribir; con --acepto-sin-aviso-inmediato sigue', () => {
+      const hace = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+      estado({ [ID_ALERTA]: alertaWf(), otro: clienteWf }, [{ id: 'e1', status: 'error', startedAt: hace(10) }]);
+      let r = correr(aplicar);
+      expect(r.codigo, r.salida).toBe(2);
+      expect(r.salida).toContain('--acepto-sin-aviso-inmediato');
+      expect(escrituras()).toEqual([]);
+      r = correr([...aplicar, '--acepto-sin-aviso-inmediato']);
+      expect(r.codigo, r.salida).toBe(0);
+      expect(registro().match(/^WEBHOOK$/gm)).toHaveLength(1);
+    });
+    it('una ejecución de hace más de una hora no bloquea', () => {
+      estado({ [ID_ALERTA]: alertaWf(), otro: clienteWf }, [{ id: 'e1', status: 'error', startedAt: new Date(Date.now() - 2 * 3_600_000).toISOString() }]);
+      expect(correr(aplicar).codigo).toBe(0);
+    });
+    it('--acepto-sin-aviso-inmediato sin --aplicar es un error de uso', () => {
+      expect(correr(['--acepto-sin-aviso-inmediato']).codigo).toBe(2);
+      expect(registro()).toBe('');
+    });
     it('sin ejecuciones nuevas: lo dice con su salvedad (un éxito no se guarda) y sale 0', () => {
       const r = correr(aplicar);
       expect(r.codigo, r.salida).toBe(0);
@@ -307,6 +359,29 @@ describe('probar-alerta-n8n.sh', () => {
       expect(r.codigo).toBe(3);
       expect(temporales()).toHaveLength(0);
     });
+    it('el webhook responde 500 o no responde (000): UN solo disparo, sin reintento, y se limpia', () => {
+      for (const falla of ['webhook500', 'webhook000']) {
+        rmSync(join(dir, 'registro'), { force: true });
+        rmSync(join(dir, 'estado.json'), { force: true });
+        const r = correr(aplicar, falla);
+        expect(r.codigo, falla).toBe(3);
+        expect(registro().match(/^WEBHOOK$/gm), falla).toHaveLength(1);
+        expect(temporales(), falla).toHaveLength(0);
+      }
+    });
+    it('el webhook da 404 y luego 200: exactamente un reintento y la prueba sigue', () => {
+      const r = correr(aplicar, 'webhook404_una');
+      expect(r.codigo, r.salida).toBe(0);
+      expect(registro().match(/^WEBHOOK$/gm)).toHaveLength(2);
+      expect(temporales()).toHaveLength(0);
+    });
+    it('tras desactivar, si n8n sigue diciendo active=true: aborta (3), sin esperar ni leer ejecuciones, y limpia', () => {
+      const r = correr(aplicar, 'deact_no');
+      expect(r.codigo, r.salida).toBe(3);
+      expect(r.salida).not.toContain('Espero');
+      expect(llamadas().filter((l) => l === 'GET /executions')).toHaveLength(1); // solo la lectura previa
+      expect(temporales()).toHaveLength(0);
+    });
     it('n8n exige archivar antes de borrar: archiva y borra', () => {
       const r = correr(aplicar, 'delete_directo');
       expect(r.codigo, r.salida).toBe(0);
@@ -319,17 +394,21 @@ describe('probar-alerta-n8n.sh', () => {
       expect(r.salida).toContain('LIMPIEZA INCOMPLETA');
       expect(temporales().every((w) => !w.active)).toBe(true);
     });
-    it('interrupción (SIGTERM) tras activar: el trap limpia', () => {
-      writeFileSync(join(dir, 'estado.json'), JSON.stringify({ n: 0, wf: { [ID_ALERTA]: alertaWf() }, ejec: [] }));
-      const guion = `"${SCRIPT}" --env "${join(dir, 'env')}" --aplicar --confirmo produccion --espera 5 >/dev/null 2>&1 & p=$!; ` +
-        `for i in $(seq 1 100); do grep -q 'WEBHOOK' "${join(dir, 'registro')}" 2>/dev/null && break; sleep 0.1; done; ` +
-        `sleep 0.3; kill -TERM $p; wait $p; echo rc=$?`;
-      const r = spawnSync('bash', ['-c', guion], {
-        cwd: RAIZ, encoding: 'utf8',
-        env: entornoDelEmulador(undefined, { PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}`, BASH_ENV: '', FAKE_DIR: dir, FAKE_CLAVE: API_KEY, FAKE_FALLA: '', TMPDIR: dir }),
-      });
-      expect(r.stdout).toMatch(/rc=(143|3)/);
-      expect(temporales()).toHaveLength(0);
-    });
+    for (const [senal, esperado] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
+      it(`interrupción (${senal}) tras el disparo: sale ${esperado} (no 3) y el trap deja n8n sin el temporal`, async () => {
+        estado({ [ID_ALERTA]: alertaWf() }, []);
+        const hijo = spawn('bash', [SCRIPT, '--env', join(dir, 'env'), '--aplicar', '--confirmo', 'produccion', '--espera', '3'], {
+          cwd: RAIZ, stdio: 'ignore',
+          env: entornoDelEmulador(undefined, { PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}`, BASH_ENV: '', FAKE_DIR: dir, FAKE_CLAVE: API_KEY, FAKE_FALLA: '', TMPDIR: dir }),
+        });
+        const fin = new Promise<number | null>((ok) => hijo.on('close', (c) => ok(c)));
+        for (let i = 0; i < 200 && !registro().includes('/deactivate'); i++) await new Promise((r) => setTimeout(r, 50));
+        expect(registro()).toContain('WEBHOOK');
+        hijo.kill(senal);
+        expect(await fin).toBe(esperado);
+        expect(temporales()).toHaveLength(0);
+        expect(restos()).toBe(0);
+      }, 30_000);
+    }
   });
 });

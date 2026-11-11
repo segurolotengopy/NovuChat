@@ -10,16 +10,20 @@
 #   ./scripts/probar-alerta-n8n.sh [--env .env] [--espera N]
 #       SECO: comprueba que existe EXACTAMENTE un flujo «NovuChat — Error de envío incierto» (y que tiene su Error Trigger),
 #       que no quedó un temporal de una prueba anterior, y dice qué haría. Solo GET. El id no se imprime.
-#   ./scripts/probar-alerta-n8n.sh --aplicar --confirmo produccion [--env .env] [--espera N]
+#   ./scripts/probar-alerta-n8n.sh --aplicar --confirmo produccion [--env .env] [--espera N] [--acepto-sin-aviso-inmediato]
 #       1. Crea el flujo «NovuChat — PRUEBA alerta (temporal)»: Webhook (ruta aleatoria) -> «Detener por envío incierto»,
 #          con settings.errorWorkflow = el id del flujo de alertas y saveData{Error,Success}Execution = none.
 #       2. Lo activa SOLO el tiempo necesario y lo dispara UNA vez (POST al webhook; solo se repite si el webhook contesta 404,
 #          que significa que NO se ejecutó nada).
+#          Tras el 2xx lo DESACTIVA en el acto y comprueba active=false antes de esperar.
 #       3. Espera N segundos (por omisión 15) e informa si el flujo de alertas registró ejecuciones nuevas y con qué estado.
 #       4. SIEMPRE (trap, también ante Ctrl-C o fallo a mitad): lo desactiva, lo borra y relee que no quede ningún flujo con ese nombre.
 #
-# COSTO: 1 aviso de prueba a Andres (cuenta contra el tope de 5 al día de la Function). 0 mensajes de WhatsApp. Ningún flujo de cliente
-# se lee ni se escribe. Solo se llama a la API pública de n8n y a la ruta de webhook del flujo temporal.
+# COSTO: 1 aviso de prueba a Andres (cuenta contra el tope de 5 al día de la Function) y CONSUME el único aviso inmediato por hora del
+# tipo envio_incierto (alertaOperativa.ts): si un envío incierto REAL ocurre en esa hora, su aviso quedaría diferido. Por eso conviene
+# correrla sin tráfico, y con --aplicar el script aborta (salida 2) si el flujo de alertas ya corrió en la última hora, salvo que se
+# pase --acepto-sin-aviso-inmediato. 0 mensajes de WhatsApp. Ningún flujo de cliente se escribe ni se ejecuta; el listado de flujos de
+# n8n los incluye, pero de él solo se guardan en memoria id, nombre y marca de archivado, y nada de eso se imprime.
 #
 # LO QUE LA API NO PERMITE VER. El flujo de alertas guarda las ejecuciones EXITOSAS con `none` (decisión del 10/11/2026): un envío
 # correcto no deja fila. Por eso el informe distingue «ejecución con error» (la alerta falló) de «sin ejecuciones guardadas» (consistente
@@ -47,12 +51,13 @@ ayuda() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' 
 readonly NOMBRE_ALERTA="NovuChat — Error de envío incierto"
 readonly NOMBRE_TEMPORAL="NovuChat — PRUEBA alerta (temporal)"
 
-ENV_FILE=".env"; APLICAR=0; CONFIRMO=""; ESPERA=15
+ENV_FILE=".env"; APLICAR=0; CONFIRMO=""; ESPERA=15; ACEPTO=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --env)      [[ $# -ge 2 ]] || { echo "✗ --env necesita un valor" >&2; exit 2; }; ENV_FILE="$2"; shift 2 ;;
     --espera)   [[ $# -ge 2 && "$2" =~ ^[0-9]{1,3}$ && "$2" -le 120 ]] || { echo "✗ --espera necesita un entero de 0 a 120 (segundos)" >&2; exit 2; }; ESPERA="$2"; shift 2 ;;
     --aplicar)  APLICAR=1; shift ;;
+    --acepto-sin-aviso-inmediato) ACEPTO=1; shift ;;
     --confirmo) [[ $# -ge 2 ]] || { echo "✗ --confirmo necesita un valor" >&2; exit 2; }; CONFIRMO="$2"; shift 2 ;;
     -h|--help)  ayuda; exit 0 ;;
     *) echo "✗ Opción desconocida (ver --help)" >&2; exit 2 ;;
@@ -60,7 +65,7 @@ while [[ $# -gt 0 ]]; do
 done
 if (( APLICAR )); then
   [[ "$CONFIRMO" == "produccion" ]] || { echo "✗ --aplicar exige --confirmo produccion (escrito a mano). No se escribió nada." >&2; exit 2; }
-elif [[ -n "$CONFIRMO" ]]; then echo "✗ --confirmo solo va con --aplicar" >&2; exit 2; fi
+elif [[ -n "$CONFIRMO" || "$ACEPTO" == 1 ]]; then echo "✗ --confirmo y --acepto-sin-aviso-inmediato solo van con --aplicar" >&2; exit 2; fi
 
 [[ -f "$ENV_FILE" ]] || { echo "✗ No existe --env" >&2; exit 2; }
 if (( APLICAR )); then
@@ -73,6 +78,21 @@ N8N_BASE_URL="$(valor_env N8N_BASE_URL)"; N8N_API_KEY="$(valor_env N8N_API_KEY)"
 [[ "$N8N_API_KEY" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "✗ Falta N8N_API_KEY en --env, o tiene caracteres no esperados" >&2; exit 2; }
 BASE="${N8N_BASE_URL%/}"; API="${BASE}/api/v1"
 
+# El trap se arma ANTES de crear el directorio de trabajo: cualquier salida posterior pasa por la limpieza. Un segundo Ctrl-C
+# mientras limpia se ignora (`trap ''`): la limpieza no se interrumpe.
+WORK=""; ERR=/dev/null; EMPEZO_A_ESCRIBIR=0
+# shellcheck disable=SC2329  # se invoca por trap
+al_salir() {
+  local rc=$?
+  trap '' INT TERM
+  trap - EXIT
+  if declare -F limpiar >/dev/null && ! limpiar; then rc=3; fi
+  [[ -z "$WORK" ]] || rm -rf "$WORK"
+  exit "$rc"
+}
+trap al_salir EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/probar-alerta-n8n.XXXXXX")"
 chmod 700 "$WORK"
 ERR="$WORK/err"; : >"$ERR"
@@ -100,7 +120,8 @@ if cmd == "fusionar":      # <lista.json acumulada> <rta.json>  -> imprime el cu
     acum, rta = cargar(sys.argv[2]), cargar(sys.argv[3])
     if not isinstance(rta, dict) or not isinstance(rta.get("data"), list) or not all(isinstance(x, dict) for x in rta["data"]):
         sys.exit(3)
-    acum += rta["data"]
+    # Solo lo necesario: id, nombre y marca de archivado (el resto del listado, incluidos los flujos de cliente, se descarta).
+    acum += [{k: x.get(k) for k in ("id", "name", "isArchived", "archived") if k in x} for x in rta["data"]]
     json.dump(acum, open(sys.argv[2], "w", encoding="utf-8"))
     c = rta.get("nextCursor")
     if c and not (isinstance(c, str) and re.fullmatch(r"[A-Za-z0-9_=+/.-]{1,512}", c)):
@@ -155,6 +176,21 @@ elif cmd == "ejecuciones":  # <rta.json> -> ids, uno por línea
     if not isinstance(d, dict) or not isinstance(d.get("data"), list): sys.exit(3)
     for x in d["data"]:
         if isinstance(x, dict) and x.get("id") is not None: print(x["id"])
+elif cmd == "recientes":   # <rta.json> -> cuántas ejecuciones empezaron en la última hora (solo la cuenta, nunca datos)
+    import datetime
+    d = cargar(sys.argv[2])
+    if not isinstance(d, dict) or not isinstance(d.get("data"), list): sys.exit(3)
+    ahora, n = datetime.datetime.now(datetime.timezone.utc), 0
+    for x in d["data"]:
+        t = x.get("startedAt") if isinstance(x, dict) else None
+        if isinstance(t, str):
+            try:
+                f = datetime.datetime.fromisoformat(t.replace("Z", "+00:00"))
+            except ValueError:
+                sys.exit(3)
+            if f.tzinfo is None: f = f.replace(tzinfo=datetime.timezone.utc)
+            if (ahora - f).total_seconds() < 3600: n += 1
+    print(n)
 elif cmd == "nuevas":      # <rta.json> <ids previos, uno por línea> -> "<n> <estado>[,<estado>…]" (solo estados, nunca datos)
     d = cargar(sys.argv[2])
     if not isinstance(d, dict) or not isinstance(d.get("data"), list): sys.exit(3)
@@ -188,15 +224,18 @@ listar() { # deja $WORK/lista.json con TODOS los flujos (sigue nextCursor); 1 si
   done
 }
 
-ID_ALERTA=""; ID_TEMPORAL=""; EMPEZO_A_ESCRIBIR=0
-# Borra TODO flujo con el nombre del temporal (la comprobación previa garantiza que no había otro): sirve igual si el POST
-# falló a mitad y no se llegó a conocer el id. n8n 2.x puede exigir archivar antes de borrar: se prueba directo y, si no, archivando.
+ID_ALERTA=""; ID_TEMPORAL=""
+# Con el id del temporal conocido se borra SOLO ese; por nombre únicamente si el id es desconocido (el POST falló a mitad: la
+# comprobación previa garantiza que no había otro con ese nombre). n8n 2.x puede exigir archivar antes de borrar: se prueba directo y, si no, archivando.
 limpiar() {
   local ids i quedan
   (( EMPEZO_A_ESCRIBIR )) || return 0
-
-  if ! listar; then echo "✗ LIMPIEZA: no pude leer la lista de flujos de n8n; compruebe a mano que no quede «${NOMBRE_TEMPORAL}» (activo o no)" >&2; return 1; fi
-  ids="$(py temporales "$WORK/lista.json")" || { echo "✗ LIMPIEZA: lista de flujos ilegible" >&2; return 1; }
+  if [[ -n "$ID_TEMPORAL" ]]; then
+    ids="$ID_TEMPORAL"
+  else
+    if ! listar; then echo "✗ LIMPIEZA: no pude leer la lista de flujos de n8n; compruebe a mano que no quede «${NOMBRE_TEMPORAL}» (activo o no)" >&2; return 1; fi
+    ids="$(py temporales "$WORK/lista.json")" || { echo "✗ LIMPIEZA: lista de flujos ilegible" >&2; return 1; }
+  fi
   for i in $ids; do
     api POST "/workflows/${i}/deactivate"
     api DELETE "/workflows/${i}"
@@ -206,22 +245,12 @@ limpiar() {
     fi
   done
   if ! listar; then echo "✗ LIMPIEZA: no pude releer la lista tras borrar" >&2; return 1; fi
-  quedan="$(py temporales "$WORK/lista.json" | wc -l)"
+  ids="$(py temporales "$WORK/lista.json")" || { echo "✗ LIMPIEZA: lista de flujos ilegible tras borrar" >&2; return 1; }
+  quedan="$(printf '%s' "$ids" | grep -c . || true)"
   if (( quedan != 0 )); then echo "✗ LIMPIEZA INCOMPLETA: queda ${quedan} flujo(s) «${NOMBRE_TEMPORAL}» en n8n. Bórrelo(s) a mano (desactivar y eliminar)." >&2; return 1; fi
   EMPEZO_A_ESCRIBIR=0
   echo "  ✓ Limpieza: el temporal se desactivó y se borró; la relectura no encuentra ningún flujo «${NOMBRE_TEMPORAL}»."
 }
-# shellcheck disable=SC2329  # se invoca por trap
-al_salir() {
-  local rc=$?
-  trap - EXIT INT TERM
-  if ! limpiar; then rc=3; fi
-  rm -rf "$WORK"
-  exit "$rc"
-}
-trap al_salir EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
 
 if (( APLICAR )); then ESTADO="APLICANDO"; else ESTADO="seco (solo lee)"; fi
 echo "Entorno: produccion  ·  prueba de error forzado de la alerta  ·  ${ESTADO}"
@@ -230,10 +259,12 @@ echo
 
 # --- Comprobaciones (también en seco) ----------------------------------------------------------------------------
 listar || { echo "✗ n8n respondió ${CODIGO} o no entregó la lista de flujos: no se sigue" >&2; exit 3; }
-if [[ "$(py equivalentes "$WORK/lista.json")" != 0 ]]; then
+EQUIV="$(py equivalentes "$WORK/lista.json")" || { echo "✗ La lista de flujos de n8n es ilegible: no se sigue" >&2; exit 3; }
+if [[ "$EQUIV" != 0 ]]; then
   echo "✗ Hay un flujo con nombre equivalente pero no exacto a «${NOMBRE_ALERTA}»: se aborta sin escribir" >&2; exit 2
 fi
-mapfile -t ALERTAS < <(py alertas "$WORK/lista.json")
+SAL_ALERTAS="$(py alertas "$WORK/lista.json")" || { echo "✗ La lista de flujos de n8n es ilegible o un id no tiene forma de id: no se sigue" >&2; exit 3; }
+ALERTAS=(); [[ -z "$SAL_ALERTAS" ]] || mapfile -t ALERTAS <<<"$SAL_ALERTAS"
 case "${#ALERTAS[@]}" in
   1) ID_ALERTA="${ALERTAS[0]}" ;;
   0) echo "✗ No existe el flujo «${NOMBRE_ALERTA}» en este n8n: cárguelo antes (scripts/cargar-alerta-n8n.sh). No se escribió nada." >&2; exit 2 ;;
@@ -244,7 +275,8 @@ api GET "/workflows/${ID_ALERTA}"
 [[ "$CODIGO" == 200 ]] || { echo "✗ n8n respondió ${CODIGO} al leer el flujo de alertas" >&2; exit 3; }
 ESTADO_ALERTA="$(py es_alerta "$WORK/rta.json")" || { echo "✗ El flujo de alertas no trae su Error Trigger o su nombre no coincide: se aborta sin escribir" >&2; exit 2; }
 echo "  ✓ Tiene su Error Trigger; está ${ESTADO_ALERTA} (este script no lo cambia)"
-if [[ -n "$(py temporales "$WORK/lista.json")" ]]; then
+PREVIOS_TEMP="$(py temporales "$WORK/lista.json")" || { echo "✗ La lista de flujos de n8n es ilegible: no se sigue" >&2; exit 3; }
+if [[ -n "$PREVIOS_TEMP" ]]; then
   echo "✗ Ya existe un flujo «${NOMBRE_TEMPORAL}» (resto de una prueba anterior): bórrelo a mano y repita. No se escribió nada." >&2; exit 2
 fi
 echo "  ✓ No hay ningún flujo «${NOMBRE_TEMPORAL}» previo"
@@ -256,7 +288,8 @@ if (( ! APLICAR )); then
   echo "  2. activarlo, dispararlo UNA vez y esperar ${ESPERA} s;"
   echo "  3. informar si el flujo de alertas registró ejecuciones nuevas y su estado;"
   echo "  4. desactivarlo y borrarlo SIEMPRE, y releer que no quede ninguno."
-  echo "Costo: 1 aviso de prueba a Andres (tope de 5 al día de la Function). 0 mensajes de WhatsApp."
+  echo "Costo: 1 aviso de prueba a Andres (tope de 5 al día de la Function) y consume el único aviso INMEDIATO por hora del tipo envio_incierto:"
+  echo "  un envío incierto real en esa hora quedaría diferido. Córrala sin tráfico. 0 mensajes de WhatsApp."
   exit 0
 fi
 
@@ -265,6 +298,12 @@ fi
 api GET "/executions?workflowId=${ID_ALERTA}&limit=100"
 [[ "$CODIGO" == 200 ]] || { echo "✗ n8n respondió ${CODIGO} al leer las ejecuciones del flujo de alertas: no se sigue" >&2; exit 3; }
 py ejecuciones "$WORK/rta.json" >"$WORK/previas" || { echo "✗ lista de ejecuciones ilegible" >&2; exit 3; }
+RECIENTES="$(py recientes "$WORK/rta.json")" || { echo "✗ lista de ejecuciones ilegible" >&2; exit 3; }
+if (( RECIENTES > 0 && ! ACEPTO )); then
+  echo "✗ El flujo de alertas corrió ${RECIENTES} vez/veces en la última hora: esta prueba consumiría el único aviso inmediato por hora de envio_incierto" >&2
+  echo "  y podría diferir un aviso REAL. Espere una hora sin tráfico o repita con --acepto-sin-aviso-inmediato. No se escribió nada." >&2
+  exit 2
+fi
 
 RUTA="$(python3 -I -c 'import secrets; print(secrets.token_hex(16))')"
 WEBHOOK_ID="$(python3 -I -c 'import uuid; print(uuid.uuid4())')"
@@ -299,6 +338,11 @@ if [[ ! "$COD_WEBHOOK" =~ ^2[0-9][0-9]$ ]]; then
   echo "✗ El webhook del temporal respondió ${COD_WEBHOOK}: la prueba NO se disparó (se limpia el temporal)" >&2; exit 3
 fi
 echo "  ✓ Disparado una vez (el webhook respondió ${COD_WEBHOOK})"
+# Se desactiva EN EL ACTO: el temporal ya hizo su trabajo y no debe quedar activo mientras se espera.
+api POST "/workflows/${ID_TEMPORAL}/deactivate"
+[[ "$CODIGO" =~ ^(200|201)$ ]] || { echo "✗ n8n respondió ${CODIGO} al desactivar el temporal tras el disparo (se limpia)" >&2; exit 3; }
+[[ "$(py activo "$WORK/rta.json")" == false ]] || { echo "✗ n8n no dejó inactivo el temporal tras el disparo (se limpia)" >&2; exit 3; }
+echo "  ✓ Desactivado (active=false comprobado)"
 
 echo "  · Espero ${ESPERA} s a que n8n dispare el Error Trigger..."
 sleep "$ESPERA"
