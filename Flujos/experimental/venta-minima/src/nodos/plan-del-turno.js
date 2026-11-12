@@ -1151,31 +1151,12 @@ function aExtraerLibre() {
   }
   ruta = 'libre:ok';
   const asistente = vmLinea(cfg.nombreAsistente, 40);
-  const cuerpo = (primera ? 'Soy ' + (asistente ? asistente + ', el asistente virtual' : 'el asistente virtual') + ' de ' + negocio() + '. ' : '') + r.respuesta;
-  mensajes = [r.reencauzar ? conMenu(cuerpo) : { tipo: 'botones', cuerpo: cuerpo, botones: [botonLocal()] }];
-}
-
-// Ruta B: dentro de la extracción de un pedido, el mismo modelo pudo devolver una `respuesta` (solo con `respuestaLibre.activo`). Se usa en vez de repetir la carta
-// o de «no te entendí» SOLO si pasa el mismo filtro; si no, null y todo sigue como hoy.
-function respuestaDeRutaB() {
-  if (!rl.activo || d.accion !== 'extraer_pedido') return null;
-  const r = rcLeerRespuesta(vmJsonDeGemini(vmPrimero('Extraer')));
-  const motivo = motivoDeRespuestaLibre(r);
-  if (motivo) { if (r) errores.push('respuesta_libre_rechazada:' + motivo); return null; }
-  return r;
-}
-// La respuesta de la ruta B como mensaje: con un pedido en curso va DELANTE de lo que sigue (la pregunta o el resumen del paso, en el mismo mensaje); sin pedido,
-// con el menú o con el botón «Escribir al local» según `reencauzar`. Nunca agrega un mensaje.
-function mensajeDeRutaB(r) {
-  ruta = 'libre:ok';
-  if (en.carrito.length || en.pendiente.length) {
-    notas.push(r.respuesta);
-    const m = siguientePasoPedido();
-    if (m) mensajes = conNotas(m);
-    return;
-  }
-  if (en.paso === 'inicio') en.paso = 'menu';
-  mensajes = [r.reencauzar ? conMenu(r.respuesta) : { tipo: 'botones', cuerpo: r.respuesta, botones: [botonLocal()] }];
+  // Si la respuesta ya se presenta («asistente virtual»), no se antepone la presentación (salía duplicada).
+  const yaSePresenta = /asistente virtual/.test(vmNorm(r.respuesta));
+  const cuerpo = (primera && !yaSePresenta ? 'Soy ' + (asistente ? asistente + ', el asistente virtual' : 'el asistente virtual') + ' de ' + negocio() + '. ' : '') + r.respuesta;
+  // Todo texto que manda «al local» (o a recepción) sale con el botón que lo cumple, aunque el modelo haya pedido el menú: un menú no tiene «Escribir al local».
+  const nombraAlLocal = /\b(local|recepcion|encargad\w*|negocio|restaurante|tienda|equipo)\b/.test(vmNorm(r.respuesta).replace(/asistente virtual d(?:e|el|e la) (?:local|negocio|restaurante|tienda)/g, ''));
+  mensajes = [r.reencauzar && !nombraAlLocal ? conMenu(cuerpo) : { tipo: 'botones', cuerpo: cuerpo, botones: [botonLocal()] }];
 }
 
 function aExtraerPedido() {
@@ -1218,8 +1199,6 @@ function aExtraerPedido() {
   // Con productos en el mensaje y sin una petición explícita de persona, se atiende el pedido (no se descarta lo pedido por una marca dudosa del modelo).
   if (x.quiereHablar === true && (!lineas.length || pideUnaPersonaElTexto())) return aclararOPasarConElLocal();
   if (!lineas.length && !datosEntrega) {
-    const libreB = respuestaDeRutaB();
-    if (libreB) return mensajeDeRutaB(libreB);
     // Dos extracciones seguidas sin nada que tomar: se pasa con el local, pero solo mientras falte algo que el cliente deba dar. Con el delivery YA completo (dirección dada)
     // un texto sin dato («Rexibe pedro» con la referencia ya guardada) no suma ni deriva: se vuelve a mostrar el resumen. Un texto que habla de delivery («prefiero delivery»)
     // se perdona UNA sola vez, nunca si niega o cancela («no me manden nada», «cancelen el envío»).
@@ -1280,8 +1259,6 @@ function aclararOPasarConElLocal() {
     return;
   }
   if (explicito || en.aclaro === true) return derivar('pidió hablar con una persona');
-  const libreB = en.aclaro === true ? null : respuestaDeRutaB();
-  if (libreB) return mensajeDeRutaB(libreB);
   ruta = 'boton:aclarar';
   en.aclaro = true;
   const hayPedido = en.carrito.length > 0 && en.paso.indexOf('pedido') === 0;

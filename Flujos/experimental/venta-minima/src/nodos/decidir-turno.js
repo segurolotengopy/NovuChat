@@ -388,8 +388,10 @@ if (paso === 'pedido' && Array.isArray(previo.pendiente) && previo.pendiente.len
 // `menu`, o en `pedido` con el carrito y lo pendiente vacíos. «Gracias», «ok» o 👍 → `acuse` (una frase fija, sin cambiar de paso ni avisar). «¿Ya salió mi pedido?» →
 // `seguimiento` (el pedido real, sin su estado de despacho, con el botón «Escribir al local»; sin aviso al local).
 if (rl.activo && !enComprobante) {
-  const sinPedidoEnCurso = paso === 'inicio' || paso === 'menu'
-    || (paso === 'pedido' && !(Array.isArray(previo.carrito) && previo.carrito.length) && !(Array.isArray(previo.pendiente) && previo.pendiente.length));
+  // Tras «Cambiar algo» queda paso `pedido`, carrito vacío y `carritoAnterior` guardado: ahí «dale»/«ok» responden a esa pregunta, no son un acuse.
+  // Con un carrito o algo pendiente (también tras una derivación que dejó el paso en `menu`) tampoco: dentro de un pedido en curso todo queda como hoy.
+  const sinPedidoEnCurso = !previo.carritoAnterior && !(Array.isArray(previo.carrito) && previo.carrito.length) && !(Array.isArray(previo.pendiente) && previo.pendiente.length)
+    && (paso === 'inicio' || paso === 'menu' || paso === 'pedido');
   if (sinPedidoEnCurso) {
     if (rcEsAcuse(texto)) return salir('acuse', { motivo: 'acuse' });
     let hayPasado = false;
@@ -416,7 +418,7 @@ if (paso.indexOf('pedido') === 0) return extraerPedido();
 if (pedidosOn && quierePedir) return extraerPedido();
 // RESPUESTA COHERENTE: lo que no es un saludo ni una intención conocida y antes caía en el menú lo contesta el modelo DENTRO de los límites fijos de `rc*`
 // (`Plan del turno` verifica lo redactado). Mismo número de mensajes que el menú: uno.
-if (rl.activo && norm && !/^(hola|buenas|buenos|buen)\b/.test(norm)) {
+if (rl.activo && norm && !(Array.isArray(previo.carrito) && previo.carrito.length) && !(Array.isArray(previo.pendiente) && previo.pendiente.length) && !/^\W*(hola+|holi+s?|ola|buenas|buenos|buen|que tal|saludos|hey|hi|hello)\b/.test(norm)) {
   const carta = cartaDelNegocio();
   const ctx = {
     negocio: vmLinea(cfg.nombreNegocio, 60), asistente: vmLinea(cfg.nombreAsistente, 40), fechaHora: vmFechaLocal(ahora) + ' ' + vmHoraLocal(ahora),
@@ -667,7 +669,7 @@ function extraerPedido() {
   const carta = cartaDelNegocio();
   // Sin carta cargada no hay pedido que tomar: lo único que se ofrece es pasar con el local.
   if (!carta.length) return salir('transferir', { motivo: 'carta sin cargar' });
-  return salir('extraer_pedido', { cuerpoExtraccion: pdCuerpoExtraccion(texto, carta, { ahoraMs: ahora, respuestaLibre: rl.activo }) });
+  return salir('extraer_pedido', { cuerpoExtraccion: pdCuerpoExtraccion(texto, carta, { ahoraMs: ahora }) });
 }
 
 function extraerReserva() {

@@ -21,6 +21,8 @@
 //   rcMotivoDeRechazoLibre(texto, rl, textoCliente) -> '' si puede salir, o el motivo
 //   rcTextoRechazo(rl)                       -> el texto fijo cuando el modelo falla o el filtro rechaza
 const RC_PALABRAS_ACUSE = ['gracias', 'muchas', 'mil', 'ok', 'okey', 'okay', 'listo', 'perfecto', 'genial', 'dale', 'bueno', 'excelente', 'vale', 'super', 'entendido', 'de', 'acuerdo'];
+// Al menos una de estas debe estar en el acuse (`de` o `mil` sueltos no lo son); «de acuerdo» cuenta como frase.
+const RC_NUCLEO_ACUSE = ['gracias', 'ok', 'okey', 'okay', 'listo', 'perfecto', 'genial', 'dale', 'bueno', 'excelente', 'vale', 'super', 'entendido'];
 const RC_MAX_PROHIBIDOS = 30;
 const RC_MAX_RESPUESTA = 600;
 const RC_EMOJIS_ACUSE = /[\u{1F44D}\u{1F64F}\u{1F60A}\u{1F44C}\u{1F3FB}-\u{1F3FF}️‍]/gu;
@@ -30,7 +32,9 @@ function rcN(t) {
 }
 function rcTexto(v, max) {
   const s = typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim() : '';
-  return s.length > max ? s.slice(0, max).trim() : s;
+  // Por PUNTOS DE CÓDIGO (como el servidor, `respuestaLibre.ts`): `.slice` parte un emoji por la mitad.
+  const cp = Array.from(s);
+  return cp.length > max ? cp.slice(0, max).join('').trim() : s;
 }
 
 // La configuración del tenant (`respuestaLibre`), saneada. Apagada por defecto: solo `activo === true` la enciende; un tipo raro la apaga.
@@ -69,7 +73,10 @@ function rcEsAcuse(texto) {
   const n = rcN(sinEmojis);
   const ps = n ? n.split(' ') : [];
   if (ps.length === 0) return hayEmoji && /^[\s.!¡]*$/.test(sinEmojis);
-  return ps.length <= 6 && ps.every((w) => RC_PALABRAS_ACUSE.indexOf(w) >= 0);
+  // Una pregunta («ok?», «listo?») no es un acuse.
+  if (/[?¿]/.test(sinEmojis)) return false;
+  const nucleo = ps.some((w) => RC_NUCLEO_ACUSE.indexOf(w) >= 0) || n.indexOf('de acuerdo') >= 0;
+  return nucleo && ps.length <= 6 && ps.every((w) => RC_PALABRAS_ACUSE.indexOf(w) >= 0);
 }
 
 // SEGUIMIENTO: expresión cerrada. «¿Cuánto demora/tarda/falta?» solo cuenta con un pedido ya pasado o si dice «mi pedido/mi orden».
@@ -77,6 +84,8 @@ function rcEsSeguimiento(texto, hayPedidoPasado) {
   const n0 = rcN(texto);
   if (!n0 || n0.length > 80) return false;
   const n = n0.replace(/^(?:(?:y|oye|disculpa|disculpe|hola|buenas|ya) )+/, '');
+  // «Ya llegó mi pedido» / «llegó» dicho como afirmación no es una pregunta de seguimiento; solo cuenta con signo de pregunta.
+  if (/\bllego\b/.test(n) && !/[?¿]/.test(String(texto))) return false;
   const cosa = '(?:pedido|orden|comida|tacos?)';
   if (new RegExp('^(?:salio|sale|llego|llega|viene|va|esta|vino|demora|tarda|esta saliendo|va a llegar) (?:ya )?(?:mi|el|mis|los) ' + cosa + '(?: ya)?$').test(n)) return true;
   if (new RegExp('^(?:como va|donde esta|en que esta|que paso con|que hay de|como viene|como esta) (?:mi|el|mis|los) ' + cosa + '$').test(n)) return true;
@@ -166,7 +175,7 @@ function rcLeerRespuesta(json) {
 
 // Lo que un asistente de un restaurante no puede decir de un pedido: su estado de despacho ni cuánto falta. Vocabulario CERRADO y amplio sobre el texto
 // normalizado: un falso rechazo cae al texto fijo con botón (barato); un «ya sale en 5 minutos» inventado es una promesa sin respaldo (CLAUDE.md).
-const RC_DESPACHO = /\b(llega\w*|lleg[oa]\w*|sale|salio|saliendo|salir|partio|parte|camino|listo|lista|listos|cocin\w*|prepar\w*|despach\w*|repart\w*|moto\w*|recoger|llevamos|mandamos|minutos?|rato|ya casi|falta poco|ya mero|en breve|enseguida|ya viene|viene en|esta en la|estan preparando|lo preparan|va para su)\b|\b(on its way|ready|delivered|shipped|out for delivery)\b/;
+const RC_DESPACHO = /\b(llega\w*|lleg[oa]\w*|sale|salio|saliendo|salir|partio|parte|camino|listo|lista|listos|cocin\w*|prepar\w*|despach\w*|repart\w*|moto\w*|recoger|llevamos|mandamos|enviamos|enviado|enviada|enviar|minutos?|rato|ya casi|falta poco|ya mero|en breve|enseguida|ya viene|viene en|esta en la|estan preparando|lo preparan|va para su)\b|\b(on its way|ready|delivered|shipped|out for delivery)\b/;
 function rcMotivoDeDespacho(s) {
   const t = rcN(s);
   if (RC_DESPACHO.test(t)) return 'despacho';
@@ -216,7 +225,7 @@ function rcMotivoDeRechazoLibre(texto, rl, textoCliente) {
   const prohibidos = rl && Array.isArray(rl.prohibidos) ? rl.prohibidos : [];
   return cmMotivoDeRechazo(texto, {
     maximo: RC_MAX_RESPUESTA, permitirMontos: false, enlacesPermitidos: [], sinDatosDePago: true, sinAfirmarCompra: true,
-    sinPromesasDeAviso: true, sinImagenes: true, textoDelCliente: textoCliente,
+    sinPromesasDeAviso: true, sinImagenes: true, textoDelCliente: textoCliente, maxOraciones: 2,
     extra: [
       rcMotivoDeDespacho,
       rcMotivoDeIdentidad,

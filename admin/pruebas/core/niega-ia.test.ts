@@ -34,6 +34,23 @@ describe('NIEGA_IA: la misma expresión en las tres variantes', () => {
   });
 });
 
+// venta-minima (Q'Taco): la respuesta libre verificada lleva su copia de la expresión en `respuesta-coherente.js` (pieza que el nodo Code incluye) y el flujo armado la trae.
+describe('NIEGA_IA en venta-minima: la pieza de respuesta coherente', () => {
+  const RC = src('core/conversacion/respuesta-coherente.js');
+  const regexRc = (): string => {
+    const l = RC.split('\n').find((x) => x.trimStart().startsWith('const RC_NIEGA_IA'));
+    if (!l) throw new Error('sin RC_NIEGA_IA');
+    return l.trim().replace('const RC_NIEGA_IA', 'const NIEGA_IA');
+  };
+  it('es la misma expresión (fuente idéntica) que la de las tres variantes', () => {
+    expect(regexRc()).toBe(regex(VENTA));
+  });
+  it.each(['venta-minima.qtaco.json', 'venta-minima.prueba.json'])('el flujo armado %s la trae en Plan del turno', (archivo) => {
+    const j = JSON.parse(readFileSync(join(aqui, '../../../Flujos/experimental/venta-minima', archivo), 'utf8')) as { nodes: { name: string; parameters: { jsCode?: string } }[] };
+    expect(j.nodes.find((n) => n.name === 'Plan del turno')?.parameters.jsCode).toContain('RC_NIEGA_IA');
+  });
+});
+
 const CFG: J = { nombreAsistente: 'Sofía', nombreNegocio: 'Clínica', senaActiva: '', funcionarios: '[]' };
 const ENTRADA: J[] = [{ from: '59170000001', nombrePerfil: 'Ana', userInput: 'eres un bot?' }];
 

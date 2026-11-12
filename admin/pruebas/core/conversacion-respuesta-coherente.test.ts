@@ -179,6 +179,27 @@ describe('rcEsSeguimiento: comida y tacos', () => {
   });
 });
 
+describe('revisión de código: oraciones, acuse, seguimiento, recortes', () => {
+  const motivo = (t: string) => rc('rcMotivoDeRechazoLibre')(t, RL, 'hola') as string;
+  it.each(['Llama al 70000000.', 'Tenemos 2x1 los jueves.', 'El delivery demora 30 minutos.', 'Tu pedido llega pronto.', 'Ya lo enviamos.', 'Ya va saliendo.', 'En 20 minutos llega.', 'Estamos cocinando tu pedido.'])('rechaza «%s»', (t) => {
+    expect(motivo(t)).not.toBe('');
+  });
+  it('3 oraciones se rechazan; 2 pasan', () => {
+    expect(motivo('Qué bien. Me alegra. Cuéntame más.')).not.toBe('');
+    expect(motivo('Qué bien. Cuéntame más.')).toBe('');
+  });
+  it.each(['ok?', 'listo?', 'de', 'mil', 'de de', 'muchas'])('«%s» no es acuse', (t) => { expect(rc('rcEsAcuse')(t)).toBe(false); });
+  it.each(['de acuerdo', 'mil gracias', 'ok'])('«%s» sí', (t) => { expect(rc('rcEsAcuse')(t)).toBe(true); });
+  it.each(['ya llegó mi pedido', 'ya llegó', 'llegó', 'llegó mi orden'])('«%s» (afirmación) no es seguimiento', (t) => {
+    expect(rc('rcEsSeguimiento')(t, true)).toBe(false);
+  });
+  it('los textos se recortan por puntos de código: un emoji en el límite no se parte', () => {
+    const c = rc('rcConfig')({ activo: true, acuse: 'a'.repeat(299) + '🌮🌮' });
+    expect(c.acuse).toBe('a'.repeat(299) + '🌮');
+    expect(Array.from(c.acuse as string)).toHaveLength(300);
+  });
+});
+
 describe('rcTextoRechazo', () => {
   it('el del tenant o el de siempre', () => {
     expect(rc('rcTextoRechazo')(rc('rcConfig')({ activo: true, textoRechazo: 'No puedo con eso.' }))).toBe('No puedo con eso.');
