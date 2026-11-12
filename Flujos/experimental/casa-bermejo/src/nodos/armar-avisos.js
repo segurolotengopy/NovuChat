@@ -6,6 +6,7 @@
 //     Una consulta (derivación) usa la misma plantilla: {{1}} el motivo, {{2}} «—», {{3}} «sin pedido», {{4}} «sin comprobante aún».
 //   - Quién avisa: el pedido con su comprobante (cuando llega y se coteja) o el pedido sin cobro; una derivación a recepción (volumen, factura, pieza sin precio, error, comprobante sin cobro…); y el estado «operador» (el
 //     texto de la puerta promete que una persona continúa). La pausa por Tomar (`bloqueado`) NO avisa: cero envíos. A lo más UNA consulta por teléfono cada 30 minutos.
+//   - Un DEFECTO del catálogo (`catalogoAlerta`) cambia el motivo de ESA derivación por la causa y qué hacer (`BM_ALERTAS_CATALOGO`), una vez por causa cada 6 h; el tope se anota en «Armar mensajes» solo si el aviso salió.
 //   - Esta etapa decide lo mismo que «Armar mensajes» (`bmResolver`): el aviso se arma ANTES de saber si salió. También decide si hay que cerrar el cobro abierto (`cancelarCobro`) ANTES de emitir otro QR.
 // Todo texto pasa por `avLimpio` (sin enlaces, sin llaves, sin palabras prohibidas, con tope). NUNCA reenvía la imagen del comprobante ni dice «pago acreditado»; no lleva NIT ni CI. En modo prueba el aviso va al teléfono de prueba.
 const c = bmContexto();
@@ -19,12 +20,17 @@ const servidor = d.servidor && typeof d.servidor === 'object' && d.servidor.ruta
 const llamarServidor = cancelarCobro || servidor !== null;
 // `avisoSi`: el aviso de este turno solo sale si la respuesta del servidor transfiere (lo decide «¿Hay avisos?» con la misma regla que `bmAliasPedirResultado`).
 const avisoSi = d.avisoSi === 'pedir_fallo' ? 'pedir_fallo' : '';
-const sin = (extra) => [{ json: Object.assign({ sinAviso: true, plan: d.tipo || '', planeado: false, repetido: false, clave: clave, motivoFallo: '', cancelarCobro: cancelarCobro, llamarServidor: llamarServidor, servidor: servidor, avisoSi: avisoSi }, extra || {}) }];
+const sin = (extra) => [{ json: Object.assign({ sinAviso: true, plan: d.tipo || '', planeado: false, repetido: false, clave: clave, motivoFallo: '', alertaCatalogo: '', cancelarCobro: cancelarCobro, llamarServidor: llamarServidor, servidor: servidor, avisoSi: avisoSi }, extra || {}) }];
 let aviso = d.aviso && typeof d.aviso === 'object' ? d.aviso : null;
 // El estado «operador»: el texto fijo de la puerta promete que una persona continúa, así que se avisa (y «Armar mensajes» pone el botón).
 if (!aviso && c.puerta.ruta === 'uso_extendido' && c.puerta.responder === true && String(c.puerta.texto || '').trim() !== '') aviso = bmAvisoConsulta(c, 'atencion_humana');
 if (!aviso || !cnClaveValida(c.from) || (aviso.tipo !== 'pedido' && aviso.tipo !== 'consulta')) return sin();
 if (aviso.repetido === true) return sin({ repetido: true });
+// Un DEFECTO del catálogo (clave, versión, moneda…): el MISMO aviso de derivación lleva la causa y qué hacer, a lo más una vez por causa cada 6 h (tope global en datos estáticos). 0 nodos y 0 mensajes agregados.
+const dt = cnPrimero('Decidir turno') || {};
+const alertaCatalogo = aviso.tipo === 'consulta' && aviso.clave === 'sin_configuracion' && dt.catalogoAlerta === true && typeof dt.catalogoMotivo === 'string'
+  && bmAlertaCatalogoLibre(bmAlertasDe(cnMapaDeFichas(false).sd), dt.catalogoMotivo, c.ahora) ? dt.catalogoMotivo : '';
+if (alertaCatalogo) aviso = Object.assign({}, aviso, { motivo: BM_ALERTAS_CATALOGO[alertaCatalogo] });
 
 // El destinatario: el contacto designado del comercio (o el teléfono de prueba). Nunca el propio número de quien escribe.
 const prueba = cfg.modoPrueba === true;
@@ -60,7 +66,7 @@ if (esPedido) {
 texto = avLimpio(texto, 900);
 
 const fichas = cnMapaDeFichas(false).mapa;
-const comun = { phoneNumberId: String(cfg.phoneNumberId || ''), waGraphVersion: cfg.waGraphVersion || 'v26.0', sinAviso: false, plan: d.tipo || '', planeado: true, repetido: false, clave: clave, motivoFallo: '', cancelarCobro: cancelarCobro, llamarServidor: llamarServidor, servidor: servidor, avisoSi: avisoSi };
+const comun = { phoneNumberId: String(cfg.phoneNumberId || ''), waGraphVersion: cfg.waGraphVersion || 'v26.0', sinAviso: false, plan: d.tipo || '', planeado: true, repetido: false, clave: clave, motivoFallo: '', alertaCatalogo: alertaCatalogo, cancelarCobro: cancelarCobro, llamarServidor: llamarServidor, servidor: servidor, avisoSi: avisoSi };
 const pl = bmPlantilla(c.base);
 const items = [];
 for (const dest of destinatarios) {

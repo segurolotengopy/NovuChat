@@ -183,6 +183,7 @@ if (fichas.sd) {
   for (const k of Object.keys(nuevos)) ficha[k] = nuevos[k];
   fichas.mapa[from] = CN_TENANT.fichaVigente(ficha, ahora);
   bmBarrer(fichas.mapa, ahora);
+  if (salio === true && typeof av.alertaCatalogo === 'string' && av.alertaCatalogo !== '') bmAnotarAlerta(fichas.sd, av.alertaCatalogo, ahora);
 }
 
 const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, aviso: avisoPlaneado ? (salio === true ? 'salio' : 'no_salio') : 'ninguno' };

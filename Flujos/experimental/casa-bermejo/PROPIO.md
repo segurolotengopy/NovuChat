@@ -32,7 +32,7 @@ Excepción de Andres para el nodo 57; sustituir los marcadores (credenciales, re
 
 ## Seguimientos declarados (revisión del 06/11)
 - **`Traer catálogo` corre en todo mensaje entrante**, también con la puerta cerrada (Tomar, suspendido) o en un medio: suma llamadas contra el límite de NovuTienda y hasta 4 s de latencia, sin mensajes extra. Mejora posible: un `If ruta === 'sigue'` antes del nodo (+1 nodo, otro punto sobre el tope) o una caché corta en la ficha común.
-- **Aviso a quien opera** cuando el catálogo falla por un defecto (credencial revocada, versión, moneda): `catalogoAlerta` se calcula en «Decidir turno» y falta un consumidor.
+- **Aviso a quien opera** (hecho): cuando el catálogo falla por un defecto (credencial, versión, formato, moneda, país), «Armar avisos» cambia el motivo del aviso de derivación que ya sale por la causa y qué hacer (`BM_ALERTAS_CATALOGO`), una vez por causa cada 6 h (tope global en la clave `casabermejoAlertas` de los datos estáticos, anotado en «Armar mensajes» solo si el aviso salió con `wamid`). 0 nodos nuevos, 0 mensajes agregados; prueba `alerta-catalogo.test.ts`. Limitación: el aviso llega al contacto del comercio, que debe reenviarlo a NovuChat; el tope es blando (datos estáticos).
 - **El aviso del pedido en el turno del comprobante con el catálogo caído** nombra las líneas por id (el `qrCarrito` no guarda el nombre).
 - **Excepción de nodos**: 57 con `Traer catálogo` (el tope de Walisuma es 56): pendiente de Andres; fila en `docs/versiones-por-cliente.md` al aprobarla.
 
