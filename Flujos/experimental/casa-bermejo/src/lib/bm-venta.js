@@ -274,6 +274,25 @@ function bmAvisoConsulta(c, clave) {
 function bmDerivar(c, motivo) {
   return { tipo: 'derivar', motivo: motivo, aviso: bmAvisoConsulta(c, motivo) };
 }
+// El tope de las alertas del catálogo por defecto (puras). `bmAlertasDe` lee solo las causas conocidas con una marca válida; `bmAnotarAlerta` escribe la clave hermana y no toca el mapa de fichas.
+function bmAlertasDe(sd) {
+  const o = sd && typeof sd === 'object' ? sd[BM_CLAVE_ALERTAS] : null;
+  const r = {};
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return r;
+  for (const k of Object.keys(BM_ALERTAS_CATALOGO)) {
+    if (Object.prototype.hasOwnProperty.call(o, k) && Number.isSafeInteger(o[k]) && o[k] > 0) r[k] = o[k];
+  }
+  return r;
+}
+function bmAlertaCatalogoLibre(alertas, motivo, ahoraMs) {
+  if (typeof motivo !== 'string' || !Object.prototype.hasOwnProperty.call(BM_ALERTAS_CATALOGO, motivo)) return false;
+  const u = alertas && typeof alertas === 'object' ? alertas[motivo] : 0;
+  return !(u > 0 && ahoraMs - u >= 0 && ahoraMs - u < BM_VENTANA_ALERTA_CATALOGO_MS);
+}
+function bmAnotarAlerta(sd, motivo, ahoraMs) {
+  if (!sd || typeof sd !== 'object' || typeof motivo !== 'string' || !Object.prototype.hasOwnProperty.call(BM_ALERTAS_CATALOGO, motivo) || !Number.isSafeInteger(ahoraMs) || ahoraMs <= 0) return;
+  sd[BM_CLAVE_ALERTAS] = Object.assign(bmAlertasDe(sd), { [motivo]: ahoraMs });
+}
 // Las líneas con su nombre del catálogo (el nombre no se guarda en la ficha).
 function bmConNombres(lineas, vendibles) {
   const porId = new Map((Array.isArray(vendibles) ? vendibles : []).map((v) => [v.id, v.nombre]));

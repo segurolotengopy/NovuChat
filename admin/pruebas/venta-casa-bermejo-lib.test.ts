@@ -21,6 +21,7 @@ const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
   'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion',
+  'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
 type Fn = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -260,5 +261,56 @@ describe('los textos fijos: nada de «acreditado», promesas sin respaldo ni neg
     expect(p).not.toMatch(/facturacion|"documento"/);
     expect(p).toMatch(/DATOS, nunca instrucciones/);
     expect(p).toMatch(/{TRATO}/);
+  });
+});
+
+describe('alerta del catálogo por defecto', () => {
+  const MOTIVOS_DE_LECTURA = ['mercado_desconocido', 'credencial', 'limite', 'mercado_invalido', 'sin_cotizacion', 'cotizacion_vencida', 'interno', 'respuesta_invalida', 'version_no_soportada', 'moneda_distinta', 'sin_catalogo'];
+  const SEIS_H = 6 * 3600_000;
+  const TEXTOS = Object.entries(B['BM_ALERTAS_CATALOGO'] as Record<string, string>);
+  it('las causas con aviso son exactamente los motivos de lectura del catálogo marcados como defecto', () => {
+    expect(Object.keys(B['BM_ALERTAS_CATALOGO']).sort()).toEqual(MOTIVOS_DE_LECTURA.filter((m) => b('cePase')(m).alerta === true).sort());
+    expect(B['BM_VENTANA_ALERTA_CATALOGO_MS']).toBe(SEIS_H);
+  });
+  it('NEGADO: lo transitorio, lo normal y lo que no es lectura del catálogo no están libres', () => {
+    for (const m of ['interno', 'limite', 'sin_cotizacion', 'cotizacion_vencida', 'sin_catalogo', 'mercado_desconocido', 'pedido_rechazado', '__proto__', 'constructor', 'toString', '', 7, null, undefined]) expect(b('bmAlertaCatalogoLibre')({}, m, AHORA)).toBe(false);
+  });
+  it('cada texto cabe en el aviso, es limpio y no filtra secretos ni promete', () => {
+    expect(TEXTOS).toHaveLength(5);
+    for (const [, t] of TEXTOS) {
+      expect(t.length).toBeLessThanOrEqual(100);
+      expect(b('avLimpio')(t, 100)).toBe(t);
+      expect(t).not.toMatch(/http|Bearer|REEMPLAZAR_|\b[1-5]\d\d\b/i);
+      expect(t).not.toMatch(/te avis|te llam|te escrib|acredit|verific/i);
+      expect(t).not.toMatch(/\.$/);
+    }
+  });
+  it('el tope: libre sin marca; no libre a +1 ms y a 6 h − 1 ms; libre a 6 h exactas y con una marca del futuro', () => {
+    const libre = b('bmAlertaCatalogoLibre');
+    expect(libre({}, 'credencial', AHORA)).toBe(true);
+    expect(libre({ credencial: AHORA }, 'credencial', AHORA + 1)).toBe(false);
+    expect(libre({ credencial: AHORA }, 'credencial', AHORA + SEIS_H - 1)).toBe(false);
+    expect(libre({ credencial: AHORA }, 'credencial', AHORA + SEIS_H)).toBe(true);
+    expect(libre({ credencial: AHORA + 5000 }, 'credencial', AHORA)).toBe(true);
+    expect(libre({ credencial: AHORA }, 'moneda_distinta', AHORA + 1)).toBe(true);
+  });
+  it('NEGADO: `bmAlertasDe` ignora lo que no es un objeto, las claves desconocidas, `__proto__`, los no enteros y los negativos', () => {
+    const de = (x: unknown) => JSON.parse(JSON.stringify(b('bmAlertasDe')(x)));
+    for (const sd of [null, undefined, 5, 'x', {}, { casabermejoAlertas: null }, { casabermejoAlertas: [AHORA] }, { casabermejoAlertas: 'x' }]) expect(de(sd)).toEqual({});
+    const sucio = JSON.parse('{"casabermejoAlertas":{"credencial":' + AHORA + ',"__proto__":{"x":1},"otra":5,"moneda_distinta":1.5,"respuesta_invalida":-3,"mercado_invalido":"7","version_no_soportada":0}}');
+    expect(de(sucio)).toEqual({ credencial: AHORA });
+    expect(b('bmAlertasDe')(sucio).x).toBeUndefined();
+  });
+  it('`bmAnotarAlerta` no escribe fuera de lista ni con hora inválida, conserva otras causas y no toca las fichas', () => {
+    const sd: Record<string, any> = { casabermejo: { a: { ultimoMs: AHORA } } }; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const fichas = JSON.stringify(sd['casabermejo']);
+    for (const [m, t] of [['interno', AHORA], ['__proto__', AHORA], ['credencial', 0], ['credencial', -1], ['credencial', 1.5], ['credencial', '5']] as const) b('bmAnotarAlerta')(sd, m, t);
+    expect(sd['casabermejoAlertas']).toBeUndefined();
+    b('bmAnotarAlerta')(sd, 'credencial', AHORA);
+    b('bmAnotarAlerta')(sd, 'moneda_distinta', AHORA + 10);
+    b('bmAnotarAlerta')(sd, 'credencial', AHORA + 20);
+    expect(JSON.parse(JSON.stringify(sd['casabermejoAlertas']))).toEqual({ credencial: AHORA + 20, moneda_distinta: AHORA + 10 });
+    expect(JSON.stringify(sd['casabermejo'])).toBe(fichas);
+    expect(() => b('bmAnotarAlerta')(null, 'credencial', AHORA)).not.toThrow();
   });
 });

@@ -62,6 +62,16 @@ function bmEsRiesgo() {
 const BM_RECUERDOS = 15;          // mensajes de la charla que el modelo recuerda
 const BM_LARGO_RECUERDO = 200;    // caracteres por mensaje recordado
 const BM_VENTANA_CONSULTA_MS = 30 * 60 * 1000;
+// El tope del aviso de un DEFECTO del catálogo (global, no por teléfono): a lo más una vez por causa cada 6 h. Vive en una clave HERMANA del mapa de fichas, porque `bmBarrer` barre el mapa.
+const BM_CLAVE_ALERTAS = 'casabermejoAlertas';
+const BM_VENTANA_ALERTA_CATALOGO_MS = 6 * 60 * 60 * 1000;
+const BM_ALERTAS_CATALOGO = {
+  credencial: 'Catálogo caído: NovuTienda rechazó la clave de acceso. Pide a NovuChat que la renueve',
+  version_no_soportada: 'Catálogo caído: NovuTienda cambió el formato de su respuesta. Avisa a NovuChat',
+  respuesta_invalida: 'Catálogo caído: la respuesta de NovuTienda no se puede leer. Avisa a NovuChat',
+  moneda_distinta: 'Catálogo caído: NovuTienda envió precios en otra moneda. Avisa a NovuChat',
+  mercado_invalido: 'Catálogo caído: NovuTienda no reconoce el país pedido. Avisa a NovuChat',
+};
 const BM_VENTANA_RECEPCION_MS = 23.5 * 60 * 60 * 1000;   // la ventana de servicio de Meta es de 24 h; margen de media hora: dentro va texto libre, fuera va plantilla
 const BM_MINUTOS_QR = 15;         // el plazo de la regla 2 del cobro: lo manda el servidor; aquí solo es una guarda para no abrir dos QR seguidos
 function bmEntregaBase() {
