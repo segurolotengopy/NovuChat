@@ -207,8 +207,9 @@ Functions, consola y ensamblador).
   entrada verificada del receptor —verificador interno, `wabaIdEsperado` fijo,
   sin «Continue on Fail», repetidos descartados entre ejecuciones—,
   normalización de entrada y filtro de promesas sin respaldo—,
-  que se **incluye** desde core y módulos y **nunca se copia** (una prueba de
-  CI lo comparará byte a byte: compuerta futura, hoy no existe). Lo general, con sus textos, sube a core o a un módulo común. Lo específico de un cliente (tratamiento, tono, calendario, catálogo, reglas comerciales) es un dato de su tenant; si es código y otro cliente lo necesita, se adjunta como sub-módulo del anfitrión, declarado en su PROPIO.md y probado por submodulos.test.ts: sin datos, secretos ni rutas compartidas entre tenants (`docs/arquitectura/submodulos.md`). Seguridad y
+  que se **incluye** desde core y módulos y **nunca se copia** (`nucleo-comun.test.ts`
+  en CI rechaza las copias de core alteradas, con alcance parcial: ver
+  `docs/arquitectura/tenants.md`). Lo general, con sus textos, sube a core o a un módulo común. Lo específico de un cliente (tratamiento, tono, calendario, catálogo, reglas comerciales) es un dato de su tenant; si es código y otro cliente lo necesita, se adjunta como sub-módulo del anfitrión, declarado en su PROPIO.md y probado por submodulos.test.ts: sin datos, secretos ni rutas compartidas entre tenants (`docs/arquitectura/submodulos.md`). Seguridad y
   protección valen para todos sin excepción. Los barridos comunes (uno por
   tipo, que recorre los tenants) son la excepción declarada **a «flujo propio»**,
   no a seguridad ni protección: cada iteración usa solo el número, la credencial

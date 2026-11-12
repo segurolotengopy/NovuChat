@@ -50,9 +50,11 @@ cliente tiene su flujo en `Flujos/clientes/<tenant>/` (regla completa en
 módulos y nunca se copia. Lo que el registro y sus pruebas siguen haciendo
 cumplir es lo común; lo propio entra por su declaración.
 
-- **Compuerta futura, no vigente:** una prueba de CI que compare byte a byte lo
-  incluido contra la fuente del núcleo. No existe todavía; se construye en un PR
-  posterior y recién entonces cuenta como garantía.
+- **Compuerta parcial:** `admin/pruebas/core/nucleo-comun.test.ts` compara byte
+  a byte los `.js` de `Flujos/clientes/<tenant>/` contra el homónimo de
+  `Flujos/src/core/` y fija la lista cerrada de variantes de los 5 nodos
+  comunes. No cubre módulos, sub-módulos, copias renombradas ni archivos que no
+  sean `.js`; el alcance exacto está en `tenants.md`.
 - **La segunda vez que otro cliente pide una pieza propia, pasa a módulo**: se
   le abre manifiesto en el registro, con su versión.
 - **Barridos comunes** (un barrido por tipo que recorre los tenants): excepción
