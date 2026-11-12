@@ -77,11 +77,13 @@ function rcEsSeguimiento(texto, hayPedidoPasado) {
   const n0 = rcN(texto);
   if (!n0 || n0.length > 80) return false;
   const n = n0.replace(/^(?:(?:y|oye|disculpa|disculpe|hola|buenas|ya) )+/, '');
-  if (/^(?:salio|sale|llego|viene|va|esta|vino) (?:ya )?(?:mi|el) (?:pedido|orden)(?: ya)?$/.test(n)) return true;
-  if (/^(?:como va|donde esta|en que esta|que paso con|que hay de) (?:mi|el) (?:pedido|orden)$/.test(n)) return true;
+  const cosa = '(?:pedido|orden|comida|tacos?)';
+  if (new RegExp('^(?:salio|sale|llego|llega|viene|va|esta|vino|demora|tarda|esta saliendo|va a llegar) (?:ya )?(?:mi|el|mis|los) ' + cosa + '(?: ya)?$').test(n)) return true;
+  if (new RegExp('^(?:como va|donde esta|en que esta|que paso con|que hay de|como viene|como esta) (?:mi|el|mis|los) ' + cosa + '$').test(n)) return true;
+  if (new RegExp('^cuanto (?:tiempo )?(?:me )?(?:falta|faltan|demora|demoran|tarda|tardan) (?:para|por) (?:mi|el|mis|los) ' + cosa + '$').test(n)) return true;
   if (/^(?:salio|llego)$/.test(n)) return hayPedidoPasado === true;
-  const demora = /^(?:cuanto|cuanta) (?:tiempo )?(?:me )?(?:falta|faltan|demora|demoran|tarda|tardan|demorara|tardara)(?: (?:mi|el) (?:pedido|orden))?(?: mas| todavia| aun)?$/.test(n);
-  if (demora) return hayPedidoPasado === true || /\b(?:mi|el) (?:pedido|orden)\b/.test(n);
+  const demora = /^(?:cuanto|cuanta) (?:tiempo )?(?:me )?(?:falta|faltan|demora|demoran|tarda|tardan|demorara|tardara)(?: (?:mi|el) (?:pedido|orden|comida))?(?: mas| todavia| aun)?$/.test(n);
+  if (demora) return hayPedidoPasado === true || /\b(?:mi|el) (?:pedido|orden|comida)\b/.test(n);
   return false;
 }
 
@@ -162,10 +164,53 @@ function rcLeerRespuesta(json) {
   return { respuesta: r, reencauzar: j.reencauzar };
 }
 
-// Lo que un asistente de un restaurante no puede decir de un pedido: su estado de despacho.
+// Lo que un asistente de un restaurante no puede decir de un pedido: su estado de despacho ni cuánto falta. Vocabulario CERRADO y amplio sobre el texto
+// normalizado: un falso rechazo cae al texto fijo con botón (barato); un «ya sale en 5 minutos» inventado es una promesa sin respaldo (CLAUDE.md).
+const RC_DESPACHO = /\b(llega\w*|lleg[oa]\w*|sale|salio|saliendo|salir|partio|parte|camino|listo|lista|listos|cocin\w*|prepar\w*|despach\w*|repart\w*|moto\w*|recoger|llevamos|mandamos|minutos?|rato|ya casi|falta poco|ya mero|en breve|enseguida|ya viene|viene en|esta en la|estan preparando|lo preparan|va para su)\b|\b(on its way|ready|delivered|shipped|out for delivery)\b/;
 function rcMotivoDeDespacho(s) {
   const t = rcN(s);
-  return /\b(salio|sale ya|en camino|ya llega|llegando|esta listo|ya esta listo|estan preparando|lo preparan|lo estan preparando|despachad[oa]|despacharon|repartidor|va para su)\b/.test(t) ? 'despacho' : '';
+  if (RC_DESPACHO.test(t)) return 'despacho';
+  // «horas»/«hora» como tiempo de espera solo se rechazan si no hay un horario con formato 10:00 (el horario del local sí se puede decir).
+  return /\bhoras?\b/.test(t) && !/\d{1,2}:\d{2}/.test(cmNorm(s)) ? 'despacho' : '';
+}
+
+// Identidad (prohibición 4): el asistente NUNCA se hace pasar por una persona. `RC_NIEGA_IA` es COPIA de `NIEGA_IA` de `core/procesar-respuesta.js` (ese es un
+// nodo Code que no se puede incluir aquí); `admin/pruebas/core/niega-ia.test.ts` exige que la fuente sea la misma.
+const RC_NIEGA_IA = /(no\s+soy\s+(un[ao]?\s+)?(bot|robot|m[aá]quina|programa|inteligencia\s+artificial|\bia\b|asistente\s+virtual|autom[aá]tic[ao])|soy\s+(un[ao]?\s+)?(persona|humano|humana|ser\s+humano)|habl(as|[aá]s|a)\s+con\s+(un[ao]?\s+)?(persona|humano|humana))/i;
+function rcMotivoDeIdentidad(s) {
+  const t = rcN(s);
+  if (RC_NIEGA_IA.test(String(s))) return 'identidad';
+  if (/\b(persona real|real person|humano|humana|human|humain|menschen?|mensch|de carne y hueso|soy real)\b/.test(t) && !/\basistente virtual\b/.test(t)) return 'identidad';
+  // «soy …»: solo «soy el/tu/un asistente…» o «soy <Nombre>, el asistente virtual…»; «soy Carla del local» es una persona inventada.
+  const re = /\bsoy\b/g;
+  let m;
+  while ((m = re.exec(t)) !== null) {
+    const resto = t.slice(m.index + 4).trim();
+    if (!/^(?:el |tu |un )?asistente\b/.test(resto) && !/^\p{L}+ (?:el|un) asistente virtual\b/u.test(resto)) return 'identidad';
+  }
+  const re2 = /\b(hablas con|habla con|te atiende|te atendera|te atiendo|aqui estoy yo|mi nombre es|me llamo|trabajo|cajer\w*)\b/g;
+  while ((m = re2.exec(t)) !== null) {
+    if (!/^(?:hablas con|habla con|te atiende) (?:el |tu |un )?asistente\b/.test(t.slice(m.index))) return 'identidad';
+  }
+  return '';
+}
+
+// Lo que solo el código dice: cifras (precios, teléfonos, promociones), moneda, pago en cualquier idioma o variante, y enlaces ofuscados.
+const RC_AJENO_AL_ESPANOL = /\b(the|your|you|is|are|has|been|order|payment|ready|human|person|je|suis|ich|bin|pagamento|recebido|voce|with|have|will|thank|thanks)\b/;
+const RC_NUMERO_EN_LETRAS = /\b(uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|quince|veinte|treinta|cuarenta|cincuenta|cien|ciento|mil|mitad)\b/;
+function rcMotivoDeCifras(s) {
+  const n = cmNorm(s);
+  // Solo se admite una cifra si forma una hora (10:00): precios, teléfonos, descuentos y «2x1» no los dice el modelo.
+  if (/\d/.test(n.replace(/\b\d{1,2}:\d{2}\b/g, ' ')) || /%|\d\s*x\s*\d/.test(n)) return 'cifras';
+  const t = rcN(s);
+  if (RC_NUMERO_EN_LETRAS.test(t)) return 'cifras';
+  if (/\b(precio|precios|cuesta\w*|vale|valen|cobra\w*|descuento\w*|gratis|promo\w*|oferta\w*|pesos?|pesitos?|bolivianos?|bs|total|queda en)\b/.test(t)) return 'precio';
+  return /\b(punto|arroba|dot|www)\b/.test(t) ? 'enlace' : '';
+}
+function rcMotivoDePagoAjeno(s) {
+  const t = rcN(s);
+  if (RC_AJENO_AL_ESPANOL.test(t)) return 'otro_idioma';
+  return /\bpagadit\w*|\bal dia\b|\bcuenta\b.{0,15}\b(al dia|en orden|saldada)\b/.test(t) ? 'pago' : '';
 }
 function rcMotivoDeRechazoLibre(texto, rl, textoCliente) {
   const prohibidos = rl && Array.isArray(rl.prohibidos) ? rl.prohibidos : [];
@@ -174,6 +219,9 @@ function rcMotivoDeRechazoLibre(texto, rl, textoCliente) {
     sinPromesasDeAviso: true, sinImagenes: true, textoDelCliente: textoCliente,
     extra: [
       rcMotivoDeDespacho,
+      rcMotivoDeIdentidad,
+      rcMotivoDeCifras,
+      rcMotivoDePagoAjeno,
       (s) => {
         const t = rcN(s);
         return prohibidos.some((p) => p && t.indexOf(p) >= 0) ? 'prohibido_del_negocio' : '';

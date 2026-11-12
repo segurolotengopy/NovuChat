@@ -3,7 +3,16 @@
  * Se carga sobre el filtro común (`cm*`) en un contexto vacío de `node:vm` (como el Code de n8n: sin URL, Buffer ni crypto).
  */
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { cargarFuente } from './fuente-vm';
+
+const fuenteDe = (ruta: string, decl: string): string => {
+  const l = readFileSync(new URL('../../../' + ruta, import.meta.url), 'utf8').split('\n').find((x) => x.trimStart().startsWith(decl));
+  if (!l) throw new Error('sin ' + decl);
+  return l.trim().replace(/^const \w+ = /, '');
+};
+const NIEGA_IA_RC = fuenteDe('Flujos/src/core/conversacion/respuesta-coherente.js', 'const RC_NIEGA_IA');
+const NIEGA_IA_PR = fuenteDe('Flujos/src/core/procesar-respuesta.js', 'const NIEGA_IA');
 
 type F = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
 const RC = cargarFuente<Record<string, F>>(
@@ -124,6 +133,49 @@ describe('rcMotivoDeRechazoLibre', () => {
   it('rechaza lo largo y lo vacío', () => {
     expect(motivo('a '.repeat(400))).not.toBe('');
     expect(motivo('')).not.toBe('');
+  });
+});
+
+// Revisión de seguridad del PR #941: cada texto malo es rechazado (cae al texto fijo con botón); lo legítimo sigue pasando.
+describe('rcMotivoDeRechazoLibre: hallazgos de la revisión de seguridad', () => {
+  const motivo = (t: string, cliente = 'hola') => rc('rcMotivoDeRechazoLibre')(t, RL, cliente) as string;
+  it.each([
+    'Tu pedido estará en 20 minutos.', 'Ya casi llega.', 'Tranquilo, ya mero llega.', 'Lo tienes en 15 minutos.', 'Tu pedido sale en 5.', 'Ya lo despachó la cocina.',
+    'Ya está saliendo.', 'Va saliendo.', 'El delivery ya partió.', 'Ya lo estamos cocinando.', 'Está en la cocina, falta poco.', 'Ya puedes pasar a recoger tu pedido.',
+    'Te lo llevamos en un rato.', 'Your order is on its way.', 'Your order is ready.', 'Llega en dos horas.', 'Enseguida lo tienes.', 'Ya viene tu comida.',
+  ])('1. despacho y tiempos: «%s»', (t) => { expect(motivo(t)).not.toBe(''); });
+  it.each([
+    'Claro, soy Carla del local.', 'Soy Carla, trabajo en caja.', 'Hablas con Carla, la cajera.', 'Claro, aquí te atiende Juan del local.', 'Yes, I am a real person.',
+    'I am a human.', 'Je suis humain.', 'Ich bin ein Mensch.', 'Soy una persona.', 'No soy un bot.', 'Hablas con un humano.', 'Me llamo Pedro y trabajo aquí.',
+  ])('2. hacerse pasar por persona: «%s»', (t) => { expect(motivo(t, '¿eres una persona?')).not.toBe(''); });
+  it.each([
+    'Payment has been received.', 'Your payment went through.', 'Pagamento recebido.', 'Está todo pagadito.', 'Tu cuenta está al día.', 'Tu cuenta está saldada.',
+  ])('3. pago en otros idiomas o variantes: «%s»', (t) => { expect(motivo(t)).not.toBe(''); });
+  it.each([
+    'El precio del taco es 1.', 'Precio especial: 1.', 'Te queda en uno.', 'Son 10 pesitos.', 'Te hago 50% de descuento.', 'Hoy tienes un 2x1.',
+  ])('4. precios y promociones sin moneda: «%s»', (t) => { expect(motivo(t)).not.toBe(''); });
+  it.each([
+    'Llama al 71234567.', 'Llama al 7 123 4567 para reclamos.', 'Visita qtaco punto com', 'www qtaco com', 'Escribe a info arroba qtaco',
+  ])('5. teléfonos y enlaces ofuscados: «%s»', (t) => { expect(motivo(t)).not.toBe(''); });
+  it.each([
+    'Abrimos de 10:00 a 22:00, de lunes a sábado.', 'Estamos en la Calle Comercio, esquina con la plaza.', 'Tenemos tacos de pollo y de carne.',
+    'Soy el asistente virtual de Q Taco, puedo ayudarte con la carta.', 'Soy Taquito, el asistente virtual de Q Taco. ¿Qué te provoca?',
+    '¡Qué bueno que te guste! Si quieres, mira la carta y te ayudo a pedir.', 'Hablas con el asistente virtual del local.',
+  ])('lo legítimo pasa: «%s»', (t) => { expect(motivo(t)).toBe(''); });
+  it('el horario con «hora» sin formato 10:00 cae al texto fijo (comportamiento seguro, documentado)', () => {
+    expect(motivo('Atendemos a toda hora.')).not.toBe('');
+  });
+  it('RC_NIEGA_IA es la misma expresión que NIEGA_IA de Procesar respuesta', () => {
+    expect(NIEGA_IA_RC).toBe(NIEGA_IA_PR);
+  });
+});
+
+describe('rcEsSeguimiento: comida y tacos', () => {
+  it.each(['¿ya viene mi comida?', 'cuánto falta para mi comida', 'cuánto tarda mi comida', 'dónde está mi comida', 'ya viene mi pedido', 'cuánto falta para mis tacos'])('«%s»', (t) => {
+    expect(rc('rcEsSeguimiento')(t, false)).toBe(true);
+  });
+  it.each(['quiero comida', '¿cuánto cuesta la comida?', 'la comida estaba rica', 'mis tacos de birria sin cebolla'])('«%s» no', (t) => {
+    expect(rc('rcEsSeguimiento')(t, true)).toBe(false);
   });
 });
 
