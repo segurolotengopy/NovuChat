@@ -6,10 +6,10 @@
  *  - el seco no escribe; el valor nunca sale por stdout/stderr, ni en éxito ni en error;
  *  - con --aplicar se respalda (600), se agrega solo la línea pedida y el resto queda byte a byte igual;
  *  - marcador ausente o duplicado, variable o marcador fuera de la lista, valor no atómico, valor distinto ya
- *    presente, .env ambiguo o enlace a otro dueño: se niegan sin escribir.
+ *    presente, .env ambiguo o enlace que no resuelve a un archivo común: se niegan sin escribir.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, chmodSync, lstatSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, chmodSync, lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -132,7 +132,7 @@ describe('env-desde-marcador.sh: se niega sin escribir', () => {
     sinCambios();
   });
 
-  for (const [nombre, v] of [['espacios', 'dos palabras'], ['comillas', '"abc"'], ['signo de dólar', 'a$b'], ['punto y coma', 'a;b']] as const) {
+  for (const [nombre, v] of [['espacios', 'dos palabras'], ['comillas', '"abc"'], ['signo de dólar', 'a$b'], ['punto y coma', 'a;b'], ['almohadilla', 'abc#x'], ['control', 'abc\u0001x'], ['punto', 'a.b']] as const) {
     it(`valor no atómico (${nombre})`, () => {
       writeFileSync(localF(), tabla(fila(v)));
       const r = correr(['--aplicar']);
@@ -159,6 +159,26 @@ describe('env-desde-marcador.sh: se niega sin escribir', () => {
     expect(correr(['--reemplazar']).codigo).toBe(2);
   });
 
+  it('tabla con bytes no UTF-8: se niega sin mostrar nada', () => {
+    writeFileSync(localF(), Buffer.from([0x7c, 0x20, 0x60, 0xff, 0xfe, 0x0a]));
+    const r = correr(['--aplicar']);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).not.toContain('Traceback');
+    sinCambios();
+  });
+
+  it('asignación con espacios (VAR = x): se reconoce y no se agrega una segunda', () => {
+    const c = `A=1\n${VARIABLE} = ${OTRO}\n`;
+    writeFileSync(envF(), c);
+    expect(correr(['--aplicar']).codigo).toBe(1);
+    expect(readFileSync(envF(), 'utf8')).toBe(c);
+    const d = `${VARIABLE} = ${OTRO}\n${VARIABLE}=\n`;
+    writeFileSync(envF(), d);
+    expect(correr(['--aplicar']).codigo).toBe(1);
+    expect(readFileSync(envF(), 'utf8')).toBe(d);
+    expect(respaldos()).toEqual([]);
+  });
+
   const ambiguos: Array<[string, string]> = [
     ['dos asignaciones', `${VARIABLE}=\n${VARIABLE}=\n`],
     ['export', `export ${VARIABLE}=\n`],
@@ -179,5 +199,35 @@ describe('env-desde-marcador.sh: se niega sin escribir', () => {
     expect(correr(['--aplicar'], ['--local', join(dir, 'no-existe.md')]).codigo).toBe(1);
     expect(correr(['--aplicar'], ['--local', dir]).codigo).toBe(1);
     sinCambios();
+  });
+});
+
+describe('env-desde-marcador.sh: respaldo, umask y temporales', () => {
+  it('con .env enlazado el respaldo queda junto al archivo real, en 600', () => {
+    const sub = join(dir, 'real');
+    mkdirSync(sub);
+    const real = join(sub, 'real.env');
+    writeFileSync(real, BASE_ENV);
+    rmSync(envF());
+    symlinkSync(real, envF());
+    expect(correr(['--aplicar']).codigo).toBe(0);
+    const resp = readdirSync(sub).filter((n) => n.startsWith('real.env.respaldo-'));
+    expect(resp).toHaveLength(1);
+    expect(statSync(join(sub, resp[0])).mode & 0o777).toBe(0o600);
+    expect(readFileSync(join(sub, resp[0]), 'utf8')).toBe(BASE_ENV);
+    expect(respaldos()).toEqual([]);
+    expect(readdirSync(sub).filter((n) => n.startsWith('.env-desde-marcador.'))).toEqual([]);
+  });
+
+  it('con umask 022 heredado, respaldo y .env quedan en 600', () => {
+    const r = spawnSync('bash', ['-c', 'umask 022; exec bash "$@"', '_', SCRIPT, '--env', envF(), '--variable', VARIABLE, '--marcador', MARCADOR, '--local', localF(), '--aplicar'], { encoding: 'utf8', env: entornoDelEmulador(undefined, { HOME: dir }) });
+    expect(r.status).toBe(0);
+    expect(statSync(envF()).mode & 0o777).toBe(0o600);
+    expect(statSync(join(dir, respaldos()[0])).mode & 0o777).toBe(0o600);
+  });
+
+  it('tras una corrida normal no queda ningún temporal', () => {
+    correr(['--aplicar']);
+    expect(readdirSync(dir).filter((n) => n.startsWith('.env-desde-marcador.'))).toEqual([]);
   });
 });

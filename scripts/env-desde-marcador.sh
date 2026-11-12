@@ -18,11 +18,13 @@
 # Reglas duras:
 #  - Solo variables y marcadores de las listas cerradas de abajo (ampliarlas es un cambio revisado).
 #  - El marcador debe estar en UNA sola fila de la tabla (`${REEMPLAZAR_X}` o `REEMPLAZAR_X`, en comillas
-#    invertidas); 0 o mas de 1 falla. El valor debe ser atomico (misma regex INSEGURO de completar-env.sh).
+#    invertidas); 0 o mas de 1 falla. El valor debe ser atomico (solo letras, digitos, guion y guion bajo).
 #  - Si la variable ya existe con otro valor, NO se pisa (falla). Con el mismo valor: «ya estaba».
 #  - El .env debe ser archivo comun. Decision sobre enlaces simbolicos: se acepta uno solo si
 #    resuelve a un archivo comun del mismo usuario; el respaldo y el temporal van junto al
 #    archivo REAL y el enlace se conserva (no se reemplaza por un archivo comun).
+#  - Los respaldos `<env>.respaldo-*` NO se borran solos: quedan junto al archivo real (con el valor
+#    anterior) y los retira una persona cuando ya no hagan falta.
 #  - El valor viaja a Python por el entorno, nunca por argumentos.
 # Salida: 0 bien (o ya estaba); 1 se nego por una regla; 2 mal uso.
 set -uo pipefail
@@ -54,7 +56,7 @@ done
 
 export ENV_ARCHIVO VARIABLE MARCADOR LOCAL APLICAR
 exec python3 -I - <<'PY'
-import os, re, sys, stat, shutil, time
+import os, re, sys, stat, signal, time
 
 def niega(msg, codigo=1):
     print("✗ " + msg, file=sys.stderr)
@@ -81,14 +83,17 @@ real_local = archivo_comun(local, "el archivo de valores locales")
 real_env = archivo_comun(env_arg, "el .env")
 
 # --- valor de la fila del marcador ------------------------------------------
-INSEGURO = re.compile(r'[\s`"\'()$&;|<>*?!\\]')
+ATOMICO = re.compile(r'[A-Za-z0-9_-]+')
 fila = re.compile(r'^\|\s*`(?:\$\{)?([A-Z0-9_]+)\}?`\s*\|([^|]*)\|')
 filas = []
-with open(real_local, encoding="utf-8") as f:
-    for linea in f:
-        m = fila.match(linea)
-        if m and m.group(1) == marcador:
-            filas.append((m.group(2).strip().strip("`").strip(), "pendiente" in linea.lower()))
+try:
+    with open(real_local, encoding="utf-8") as f:
+        for linea in f:
+            m = fila.match(linea)
+            if m and m.group(1) == marcador:
+                filas.append((m.group(2).strip().strip("`").strip(), "pendiente" in linea.lower()))
+except (UnicodeDecodeError, OSError):
+    niega("No se pudo leer el archivo de valores locales (codificacion invalida o ilegible)")
 if len(filas) == 0:
     niega("El marcador no esta en la tabla")
 if len(filas) > 1:
@@ -96,14 +101,14 @@ if len(filas) > 1:
 valor, pendiente = filas[0]
 if not valor or pendiente:
     niega("La fila del marcador esta vacia o marcada como pendiente")
-if INSEGURO.search(valor):
-    niega("El valor de la fila no es atomico (espacios, comillas u otros caracteres): lo resuelve una persona")
+if not ATOMICO.fullmatch(valor):
+    niega("El valor de la fila no es atomico (solo letras, digitos, guion y guion bajo): lo resuelve una persona")
 
 # --- .env: una sola asignacion a lo sumo, sin export ------------------------
 with open(real_env, "rb") as f:
     datos = f.read()
 lineas = datos.splitlines(keepends=True)
-asig = re.compile(rb'^\s*(export\s+)?' + re.escape(variable.encode()) + rb'=')
+asig = re.compile(rb'^\s*(export\s+)?' + re.escape(variable.encode()) + rb'\s*=')
 idx = [i for i, l in enumerate(lineas) if asig.match(l)]
 if len(idx) > 1:
     niega(f"El .env trae {len(idx)} asignaciones de {variable} (debe ser una sola)")
@@ -150,6 +155,7 @@ else:
     lineas.append(nuevo)
 
 tmp = os.path.join(dirr, f".env-desde-marcador.{os.getpid()}")
+signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
 try:
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as g:
@@ -157,9 +163,11 @@ try:
     os.chmod(tmp, 0o600)
     os.replace(tmp, real_env)
 except Exception:
+    niega("No se pudo escribir el .env (queda como estaba)")
+finally:
+    # Tambien ante Ctrl-C o SIGTERM: nunca queda el temporal.
     try: os.unlink(tmp)
     except OSError: pass
-    niega("No se pudo escribir el .env (queda como estaba)")
 os.chmod(real_env, 0o600)
 print(f"✓ {variable} {'completada' if accion == 'completar' else 'agregada'} (valor no mostrado). Respaldo 600: {os.path.basename(resp)}")
 PY
