@@ -3784,3 +3784,104 @@ describe('ronda 3 de #782: puertas cerradas sin pedido, la prueba sin modoPrueba
   });
 });
 
+
+// ------------------------------------------------------------------------------ reclamo 62 (12/11/2026): «no anotó en el miniCRM» — la fila es POR CONVERSACIÓN de 24 h
+// Hallazgo de la hoja real: el teléfono de Andres tenía tres filas (una vieja del 10/10 y dos duplicadas del 11/11) y NINGUNA del 12/11: el flujo vivo (31/10) busca la PRIMERA coincidencia (la más antigua) y crea fila nueva
+// solo tras 48 h. Estas pruebas NIEGAN esas conductas en el v2.
+describe('reclamo 62: la fila del miniCRM es por conversación de 24 h (no 48), la más reciente, sin duplicados y con el nombre que da el cliente', () => {
+  const HORA = 3_600_000;
+  const anc = (desdeMs: number, nueva: boolean): J => ({ atencion: { estado: 'normal', ...atencionDeConversacion({ desdeMs, nueva }) } });
+  const filasDe = (w: W, tel: string): string[][] => w.hoja.filas.filter((r) => digitos(r[4]) === tel);
+
+  it('la lectura del teléfono NO se queda con la primera coincidencia (la más antigua): «Buscar teléfono en planilla» trae TODAS (returnFirstMatch apagado) y lee A3:J', () => {
+    const nodos = (PRODUCCION as unknown as { nodes: J[] }).nodes;
+    const buscar = nodos.find((n) => n['name'] === 'Buscar teléfono en planilla')!;
+    const opciones = (buscar['parameters'] as J)['options'] as J;
+    expect(opciones['returnFirstMatch']).toBe(false);
+    expect(((opciones['dataLocationOnSheet'] as J)['values'] as J)['range']).toBe('A3:J');
+  });
+
+  it('NIEGA 48 h: dentro de la misma conversación (23 h después del inicio) se actualiza; a las 25 h, con otra conversación de la ingesta, se crea una fila NUEVA', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Ana Pérez' });
+    const desde0 = w.mundo.ahora();
+    w.ingesta = anc(desde0, true);
+    j.texto('Hola');
+    expect(w.hoja.filas).toHaveLength(1);
+    w.ingesta = anc(desde0, false);
+    w.modelo.con = 'ERROR';
+    j.lista('rubro:salud', 23 * 60);
+    expect(w.hoja.filas).toHaveLength(1);
+    expect(w.hoja.filas[0]![5]).toBe('Salud');
+    const desde1 = desde0 + 25 * HORA;
+    w.ingesta = anc(desde1, true);
+    j.texto('Hola otra vez', 2 * 60);
+    expect(w.hoja.filas).toHaveLength(2);
+    expect(w.hoja.filas[0]![0]).toBe('LEAD-1001');
+    expect(w.hoja.filas[1]![0]).toBe('LEAD-1002');
+  });
+
+  it('NIEGA «actualiza la más vieja»: con dos filas viejas del teléfono y una conversación nueva se crea la fila NUEVA y un 2.º mensaje de ESA conversación actualiza la nueva; las viejas no cambian', () => {
+    const w = crear();
+    const tel = digitos(MAMA);
+    const vieja = (id: string, fecha: string, rubro: string): string[] => ENC.map((_h, c) => (c === 0 ? id : c === 1 ? fecha : c === 2 ? 'jorge' : c === 3 ? 'patito' : c === 4 ? tel : c === 5 ? rubro : c === 6 ? '6. Perdido' : ''));
+    w.hoja.filas.push(vieja('LEAD-1001', '2026-10-01 09:00', 'Otro / a medida'), vieja('LEAD-1002', '2026-10-02 09:00', 'Comercio'));
+    const antes = w.hoja.filas.map((r) => r.slice());
+    const j = jugar(w, MAMA, { perfil: 'Ana Pérez' });
+    const desde = w.mundo.ahora();
+    w.ingesta = anc(desde, true);
+    j.texto('Hola');
+    expect(filasDe(w, tel)).toHaveLength(3);
+    w.ingesta = anc(desde, false);
+    w.modelo.con = 'ERROR';
+    j.lista('rubro:belleza', 10);
+    expect(filasDe(w, tel)).toHaveLength(3);
+    expect(w.hoja.filas[0]).toEqual(antes[0]);
+    expect(w.hoja.filas[1]).toEqual(antes[1]);
+    expect(w.hoja.filas[2]![5]).toBe('Belleza');
+    expect(w.hoja.filas[2]![0]).toBe('LEAD-1003');
+  });
+
+  it('NIEGA el duplicado por ráfaga: tres mensajes simultáneos del mismo teléfono (una sola conversación) dejan UNA fila', () => {
+    const tel = digitos(MAMA);
+    const entradas = ['rubro:salud', 'rubro:gastronomia', 'rubro:retail'].map((id) => valorMeta(mLista(id, id), MAMA));
+    const r = rafaga(entradas, MAMA, (w) => { w.modelo.con = 'ERROR'; w.ingesta = anc(AHORA, true); });
+    expect(r.ws[0]!.hoja.filas.filter((f) => digitos(f[4]) === tel)).toHaveLength(1);
+  });
+
+  it('NIEGA el duplicado del 11/11 (dos «primera vez» seguidas): dos turnos de la MISMA conversación con el mismo ancla no crean dos filas, ni con la ficha reseteada entre uno y otro', () => {
+    const w = crear();
+    const tel = digitos(MAMA);
+    const desde = w.mundo.ahora();
+    w.ingesta = anc(desde, true);
+    jugar(w, MAMA, { perfil: 'Andrés Alberdi B.' }).texto('Hola');
+    w.ingesta = anc(desde, false);
+    sembrar(w, MAMA, null);
+    jugar(w, MAMA, { perfil: 'Andrés Alberdi B.' }).texto('Hola');
+    expect(filasDe(w, tel)).toHaveLength(1);
+  });
+
+  it('el nombre que da el cliente GANA al del perfil, y un turno posterior no lo pisa con el perfil', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Perfil Pérez' });
+    j.texto('Hola');
+    expect(filaDe(w, MAMA)![COL.nombre]).toBe('Perfil Pérez');
+    w.modelo.con = 'ERROR';
+    j.lista('rubro:retail');
+    j.boton('equipo');
+    w.modelo.con = dice('¡Gracias! 😊', { nombre: 'Ana Pérez', empresa: 'Panadería Luna' });
+    j.texto('Ana Pérez, Panadería Luna');
+    expect(filaDe(w, MAMA)![COL.nombre]).toBe('Ana Pérez');
+    w.modelo.con = dice('Con gusto, ¡aquí estoy! 😊');
+    j.texto('gracias por todo');
+    j.texto('listo, ya quedó');
+    expect(filaDe(w, MAMA)![COL.nombre]).toBe('Ana Pérez');
+    expect(filaDe(w, MAMA)![COL.empresa]).toBe('Panadería Luna');
+    expect(w.hoja.filas).toHaveLength(1);
+    // la ficha se pierde (otra ejecución, un reseteo) y el prospecto vuelve a traer SOLO el nombre del perfil: la fila ya tiene el que dio el cliente y no se pisa
+    sembrar(w, MAMA, null);
+    j.texto('Hola');
+    expect(filaDe(w, MAMA)![COL.nombre]).toBe('Ana Pérez');
+    expect(w.hoja.filas).toHaveLength(1);
+  });
+});

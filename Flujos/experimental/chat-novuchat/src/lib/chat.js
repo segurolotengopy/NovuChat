@@ -1812,12 +1812,15 @@ function chProspecto(f, cfg, entrada) {
   if (!telefono || f.soporte === true) return null;
   const base = f.primero && typeof f.primero === 'object' ? f.primero : { rubro: f.rubro, empresa: f.empresa };
   const r = chRubroDe(cfg, base.rubro);
+  const dado = chNombreDePersonaValido(f.nombre) || chNombreDePila(f.nombre);
   const h = f.hechos;
   const otros = (f.primero ? f.otros.concat([{ e: f.empresa, r: f.rubro }]) : []).filter((o) => o && (o.e || o.r)).slice(-3)
     .map((o) => ({ empresa: chPlano(o.e, 60), rubro: chPlano((chRubroDe(cfg, o.r) || {}).nombre || '', 60) }));
   const p = {
     telefono: telefono,
-    nombre: chPlano(chNombreDePersonaValido(f.nombre) || chNombreDePila(f.nombre) || chNombreDelPerfil(x.nombrePerfil), 200),
+    nombre: chPlano(dado || chNombreDelPerfil(x.nombrePerfil), 200),
+    // El módulo miniCRM no pisa con el nombre del PERFIL un nombre que la fila ya tiene (reclamo 62): hay que decirle de dónde vino.
+    nombreDePerfil: dado === '',
     empresa: chPlano(base.empresa, 200),
     rubro: chPlano(r ? r.nombre : '', 200),
     flujos: chPlano(r ? r.flujo : '', 200),
