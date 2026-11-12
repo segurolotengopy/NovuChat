@@ -31,6 +31,9 @@ export interface RespuestaLibreSaneada {
   readonly textoQueja?: string;
 }
 
+/** El texto de humor es NEUTRO: sin risas (la misma expresión que `RC_RISAS` de `core/conversacion/respuesta-coherente.js`; una prueba exige la paridad). */
+export const RISAS = /jaja|jeje|jiji|jsjs|haha|\blol\b|\bxd\b|[\u{1F602}\u{1F923}\u{1F606}\u{1F604}]/iu;
+
 const CAMPOS_DE_TEXTO = ['acuse', 'textoSeguimiento', 'textoRechazo', 'textoHumor', 'textoQueja'] as const;
 
 /** Recorta por caracteres reales (no parte un par sustituto por la mitad). */
@@ -53,7 +56,7 @@ export const sanearRespuestaLibre = (datos: unknown): RespuestaLibreSaneada | nu
   const salida: { -readonly [K in keyof RespuestaLibreSaneada]?: RespuestaLibreSaneada[K] } & Record<string, unknown> = { activo: true };
   for (const campo of CAMPOS_DE_TEXTO) {
     const t = textoSaneado(d[campo], TOPES_RESPUESTA_LIBRE[campo]);
-    if (t !== undefined) salida[campo] = t;
+    if (t !== undefined && !(campo === 'textoHumor' && RISAS.test(t))) salida[campo] = t;
   }
   return salida as unknown as RespuestaLibreSaneada;
 };

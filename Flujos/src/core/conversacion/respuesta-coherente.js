@@ -47,7 +47,7 @@ function rcConfig(crudo) {
     acuse: rcTexto(crudo.acuse, 300),
     textoSeguimiento: rcTexto(crudo.textoSeguimiento, 300),
     textoRechazo: rcTexto(crudo.textoRechazo, 200),
-    textoHumor: rcTexto(crudo.textoHumor, 300),
+    textoHumor: RC_RISAS.test(rcTexto(crudo.textoHumor, 300)) ? '' : rcTexto(crudo.textoHumor, 300),
     textoQueja: rcTexto(crudo.textoQueja, 300),
   };
 }
@@ -119,10 +119,52 @@ function rcTextoSeguimiento(pedido, opts) {
 // del modelo («Te habla Pedro», «pago acreditado», «ya va en camino») no tiene por dónde llegar al cliente. Un valor fuera del enum es `null` y sale el rechazo fijo.
 const RC_INTENCIONES = ['horario', 'direccion', 'carta', 'modalidades', 'humor', 'queja', 'identidad', 'acuse', 'crisis_o_baja', 'otro'];
 // Crisis (daño a sí mismo) o baja («no me escribas más»): NUNCA se contesta con humor. Quien llama (`Decidir turno`) deja el turno como siempre (el menú) y `Plan del turno` no usa `humor` con estas señales.
-// La lista incluye (y una prueba de paridad lo exige) la expresión de baja de «Reportar mensaje (entrante)» que marca `no_contactar`.
-const RC_SENAL_CRISIS_O_BAJA = /\b(morir\w*|matar\w*|me mato|suicid\w*|no quiero seguir vivi\w*|no quiero vivir|no quiero estar aqui|desaparecer|quitarme la vida|acabar con mi vida|hacerme dano|lastimarme|no vale la pena vivir|ya no aguanto mas|no (me )?(escrib\w*|mand\w*|envi\w*|molest\w*|contact\w*|llam\w*)|(para|paren|deja|deje|dejen|dejar) de (escrib\w*|mand\w*|envi\w*|molest\w*)|no escriban|qui(ta|te|ten)me|quitenme de la lista|bor(ra|re|ren)me|d(a|e|en)me de baja|darme de baja|dennme de baja|cancelar (la )?suscripcion|borr\w* mis datos|no quiero (recibir )?(mas )?mensajes|dejame en paz|dejenme en paz|unsubscribe|stop|quiero que paren)\b/;
+// La lista incluye (y una prueba de paridad lo exige) la expresión de baja de «Reportar mensaje (entrante)» que marca `no_contactar`. Es una red AMPLIA: un falso positivo cae al menú, como en `main`.
+// Y no es la única barrera: el texto de humor es NEUTRO (sin risas; `rcConfig` y el servidor descartan un `textoHumor` con risas), así que aunque una crisis se escapara de esta lista, no recibe una risa.
+const RC_SENAL_FRAGMENTOS = [
+  'morir\\w*', 'mori', 'morrer', 'matar\\w*', 'matate', 'me mato', 'suicid\\w*', 'no quiero seguir vivi\\w*', 'no quiero vivir', 'no quiero existir', '(dejar de )?existir', 'no quiero estar aqui', 'desaparecer',
+  'quit\\w* (la )?vida', 'acabar con mi vida', 'hacerme dano', 'lastim\\w*', 'me (quiero )?cort\\w*', 'cortar\\w* .{0,20}venas', 'ahorc\\w*', 'no vale la pena vivir', 'ya no aguanto', 'cans\\w* de vivir',
+  'me muer\\w*', 'muert[oa]', 'ir de este mundo', 'tirar(me)? (de|por)', 'no despertar', 'tomar pastillas', '(dar|darme) un tiro', 'sentido a la vida', 'que todo termine', 'vida no vale',
+  'want to die', 'kill myself',
+  'no (me )?(escrib\\w*|mand\\w*|envi\\w*|molest\\w*|contact\\w*|llam\\w*)', '(para|paren|deja|deje|dejen|dejar) de (escrib\\w*|mand\\w*|envi\\w*|molest\\w*)', 'no escriban', 'qui(ta|te|ten)me', 'bor(ra|re|ren)me',
+  'd(a|e|en)me de baja', 'darme de baja', 'cancelar (la )?suscripcion', 'borr\\w* mis datos', 'elimin\\w* (mis datos|mi numero)', 'no quiero (recibir )?(mas )?mensajes', 'dejame en paz', 'dejenme en paz',
+  'dejame tranquil\\w*', 'dejen tranquil\\w*', 'saqu\\w*nme', 'no vuelvan a', 'basta de mensajes', 'no mas mensajes', 'no quiero que me escriban', 'ya basta', 'callense', 'no molestar',
+  'unsubscribe', 'unsuscribe', 'stop', 'quiero que paren', 'remove me',
+];
+const RC_SENAL_ESTRICTA = new RegExp('\\b(?:' + RC_SENAL_FRAGMENTOS.join('|') + ')\\b');
+// Para el texto con letras unidas («m o r i r» → «morir», «n o m e e s c r i b a n»): sin límites de palabra ni espacios.
+const RC_SENAL_UNIDA = new RegExp('(?:' + RC_SENAL_FRAGMENTOS.join('|').replace(/ /g, '') + ')');
+const RC_SENAL_ANCLADA = /^(paren( ya)?|baja|eliminar|stop)$/;
+const RC_SENAL_MAX = 5000;
+// «qu1ero m0rir» → «quiero morir» (solo dentro de palabras que mezclan letras y cifras).
+function rcLeet(t) {
+  return t.replace(/[\p{L}\d]+/gu, (m) => (/\d/.test(m) && /\p{L}/u.test(m) ? m.replace(/0/g, 'o').replace(/1/g, 'i').replace(/3/g, 'e').replace(/4/g, 'a') : m));
+}
+// Une las rachas de 3 o más letras sueltas separadas por espacios («m o r i r»).
+function rcUneLetras(t) {
+  return t.replace(/(?<![\p{L}\p{N}])\p{L}(?: \p{L}(?![\p{L}\p{N}])){2,}/gu, (m) => m.replace(/ /g, ''));
+}
+// «morrrir» → «morir» (se prueba además del texto sin reducir: «llamen» y «escriban» lo necesitan tal cual).
+function rcUnaLetra(t) {
+  return t.replace(/(\p{L})\1+/gu, '$1');
+}
 function rcSenalDeCrisisOBaja(texto) {
-  return RC_SENAL_CRISIS_O_BAJA.test(rcN(texto));
+  let t = String(texto === undefined || texto === null ? '' : texto);
+  if (t.length > RC_SENAL_MAX) t = t.slice(0, RC_SENAL_MAX - 1000) + ' ' + t.slice(-1000);
+  const base = rcN(t);
+  if (RC_SENAL_ANCLADA.test(base)) return true;
+  const leet = rcLeet(base);
+  const estrictas = [base, leet, rcUnaLetra(base), rcUnaLetra(leet)];
+  for (let i = 0; i < estrictas.length; i++) if (RC_SENAL_ESTRICTA.test(estrictas[i])) return true;
+  const unidas = [rcUneLetras(base), rcUneLetras(leet)];
+  for (let i = 0; i < unidas.length; i++) if (unidas[i] !== estrictas[i] && (RC_SENAL_UNIDA.test(unidas[i]) || RC_SENAL_UNIDA.test(rcUnaLetra(unidas[i])))) return true;
+  return false;
+}
+// El texto de humor es NEUTRO: sin risas ni emojis de risa (una crisis que se escapara de la lista de arriba no recibe una risa).
+const RC_RISAS = /jaja|jeje|jiji|jsjs|haha|\blol\b|\bxd\b|[\u{1F602}\u{1F923}\u{1F606}\u{1F604}]/iu;
+const RC_TEXTO_HUMOR = 'Mejor te cuento qué te puedo ofrecer. ¿Qué te gustaría hacer?';
+function rcTextoHumor(rl) {
+  return rl && typeof rl.textoHumor === 'string' && rl.textoHumor && !RC_RISAS.test(rl.textoHumor) ? rl.textoHumor : RC_TEXTO_HUMOR;
 }
 function rcInstrucciones(ctx) {
   const c = ctx && typeof ctx === 'object' ? ctx : {};

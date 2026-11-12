@@ -263,7 +263,7 @@ const RL: J = {
   acuse: '¡Gracias a ti! 🌮 Aquí estoy si necesitas algo más.',
   textoSeguimiento: 'El seguimiento del pedido lo hace directamente el local. Si quieres consultarlo, toca «Escribir al local».',
   textoRechazo: 'Eso no lo puedo responder por aquí.',
-  textoHumor: '¡Jaja! 🌮 Mejor te cuento qué te puedo ofrecer.',
+  textoHumor: 'Mejor te cuento qué te puedo ofrecer. ¿Qué te gustaría hacer?',
   textoQueja: 'Lamento que hayas tenido esa experiencia. Si quieres contárselo al local, toca «Escribir al local».',
 };
 const mundoCon = (rl: J | null = RL): Mundo => crear({ panel: panel(rl ? { respuestaLibre: rl } : {}) });
@@ -428,7 +428,7 @@ const CASOS: CasoLibre[] = [
   { texto: 'qué se puede comer ahí', intencion: 'carta', verifica: (c) => expect(c.length).toBeGreaterThan(10) },
   { texto: 'jajaja qué chistoso el nombre del local', intencion: 'humor', verifica: (c) => expect(c).toBe(RL['textoHumor']) },
   { texto: 'cuéntame un chiste de tacos', intencion: 'humor', verifica: (c) => expect(c).toBe(RL['textoHumor']) },
-  { texto: 'qué hambre tengo, me muero', intencion: 'humor', verifica: (c) => expect(c).toBe(RL['textoHumor']) },
+  { texto: 'qué hambre tengo, estoy famélico', intencion: 'humor', verifica: (c) => expect(c).toBe(RL['textoHumor']) },
   { texto: 'eres más lento que el tráfico de la Ceja', intencion: 'humor', verifica: (c) => expect(c).toBe(RL['textoHumor']) },
   { texto: 'la última vez me atendieron muy mal', intencion: 'queja', verifica: (c, s) => { expect(c).toBe(RL['textoQueja']); conBotonLocal(s); } },
   { texto: 'estoy molesto, el taco estaba frío', intencion: 'queja', verifica: (c, s) => { expect(c).toBe(RL['textoQueja']); conBotonLocal(s); } },
@@ -497,7 +497,8 @@ describe('C. fuera de protocolo en inicio o menú (25): el modelo solo clasifica
     const m = mundoCon({ activo: true });
     turno(m, { texto: 'hola' });
     const h = turno(m, { texto: 'jajaja qué chistoso', extraccion: modelo('humor') });
-    expect(cuerpos(h)[0]).toMatch(/^¡Jaja!/);
+    expect(cuerpos(h)[0]).toMatch(/^Mejor te cuento qué te puedo ofrecer/);
+    expect(cuerpos(h)[0]).not.toMatch(RISAS);
     const q = turno(m, { texto: 'estoy molesto, el taco estaba frío', extraccion: modelo('queja') });
     expect(cuerpos(q)[0]).toMatch(/Escribir al local/);
     conBotonLocal(q);
@@ -736,6 +737,38 @@ describe('N2. defensa en profundidad del plan', () => {
       expect(s.p['aviso']).toMatchObject({ tipo: 'transferencia' });
     } finally {
       CODIGO['plan-del-turno'] = original;
+    }
+  });
+});
+
+const RISAS = /jaja|jeje|jiji|jsjs|haha|\blol\b|\bxd\b|[\u{1F602}\u{1F923}\u{1F606}\u{1F604}]/iu;
+const CORPUS = JSON.parse(readFileSync(join(RAIZ, '../../../../admin/pruebas/core/crisis-baja-corpus.json'), 'utf8')) as { crisis: string[]; baja: string[] };
+describe('M2. corpus del revisor (121 frases de crisis y baja): nunca humor, nunca el modelo, el menú como main', () => {
+  it.each([...CORPUS.crisis, ...CORPUS.baja])('«%s»', (texto) => {
+    const apagada = mundoCon({ ...RL, activo: false });
+    turno(apagada, { texto: 'hola' });
+    const base = turno(apagada, { texto, extraccion: { lineas: [] } });
+    for (const intencion of ['humor', 'queja', 'otro', 'acuse']) {
+      const m = mundoCon();
+      turno(m, { texto: 'hola' });
+      const s = turno(m, { texto, extraccion: modelo(intencion) });
+      expect(s.d['accion']).toBe(base.d['accion']);
+      expect(s.d['cuerpoExtraccion'] ?? null).toBeNull();
+      expect(cuerpos(s)).toEqual(cuerpos(base));
+      const c = cuerpos(s).join(' ');
+      expect(c).not.toContain(String(RL['textoHumor']));
+      expect(c).not.toContain(String(RL['textoQueja']));
+      expect(c).not.toMatch(RISAS);
+    }
+  });
+  it('NINGUNA salida de la rama `humor` contiene risas, aunque el tenant las configure y el modelo devuelva `humor` para esas frases', () => {
+    for (const rl of [RL, { ...RL, textoHumor: '¡Jaja! 😂 Qué risa' }, { activo: true }]) {
+      for (const texto of [...CORPUS.crisis, ...CORPUS.baja, 'jajaja qué chistoso', 'cuéntame un chiste']) {
+        const m = mundoCon(rl);
+        turno(m, { texto: 'hola' });
+        const s = turno(m, { texto, extraccion: modelo('humor') });
+        expect(cuerpos(s).join(' '), texto).not.toMatch(RISAS);
+      }
     }
   });
 });

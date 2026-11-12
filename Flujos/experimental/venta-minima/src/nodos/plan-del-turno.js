@@ -1181,7 +1181,7 @@ function aExtraerLibre() {
   if (intencion === 'crisis_o_baja' || (intencion === 'humor' && rcSenalDeCrisisOBaja(d.texto))) { en.paso = pasoInicial; return aMenu(); }
   if (intencion === 'humor') {
     ruta = 'libre:humor';
-    mensajes = [conMenu(rl.textoHumor || '¡Jaja! Mejor te cuento qué te puedo ofrecer.')];
+    mensajes = [conMenu(rcTextoHumor(rl))];
     return;
   }
   if (intencion === 'queja') {

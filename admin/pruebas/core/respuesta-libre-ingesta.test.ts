@@ -53,7 +53,7 @@ beforeAll(async () => {
 });
 
 const completo = () => ({
-  activo: true, acuse: 'Gracias', textoSeguimiento: 'Escribe al local', textoRechazo: 'No puedo', textoHumor: 'Jaja', textoQueja: 'Lamento eso',
+  activo: true, acuse: 'Gracias', textoSeguimiento: 'Escribe al local', textoRechazo: 'No puedo', textoHumor: 'Mejor te cuento', textoQueja: 'Lamento eso',
 });
 
 describe('configuracionFlujo entrega config/respuestaLibre (PR B / P2)', () => {

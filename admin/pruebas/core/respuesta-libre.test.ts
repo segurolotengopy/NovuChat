@@ -38,3 +38,22 @@ describe('el cableado en ingesta.ts (texto)', () => {
     expect(c).toMatch(/\.\.\.respuestaLibreParaElFlujo\(configRespuestaLibre\.exists \? configRespuestaLibre\.data\(\) : undefined\)/);
   });
 });
+
+describe('textoHumor NEUTRO: sin risas (paridad servidor-cliente)', () => {
+  const RISAS = ['¡Jaja! 🌮', 'jeje', 'JIJI', 'jsjs', 'haha', 'lol', 'xD', 'XD', '😂', '🤣', '😆', '😄', 'qué jajaja'];
+  const LIMPIOS = ['Mejor te cuento qué te puedo ofrecer.', 'Hola 🌮', 'Un lolo no es risa', 'xdr'];
+  it('el servidor descarta un textoHumor con risas y conserva uno limpio', () => {
+    for (const t of RISAS) expect(sanearRespuestaLibre({ activo: true, textoHumor: t })!['textoHumor'], t).toBeUndefined();
+    for (const t of LIMPIOS) expect(sanearRespuestaLibre({ activo: true, textoHumor: t })!['textoHumor'], t).toBe(t);
+  });
+  it('el cliente (`rcConfig`) decide IGUAL que el servidor con las mismas frases', async () => {
+    const { cargarFuente } = await import('./fuente-vm');
+    const RC = cargarFuente<Record<string, (...a: unknown[]) => any>>(['Flujos/src/core/conversacion/respuesta-coherente.js'], ['rcConfig', 'rcTextoHumor']); // eslint-disable-line @typescript-eslint/no-explicit-any
+    for (const t of [...RISAS, ...LIMPIOS]) {
+      const servidor = sanearRespuestaLibre({ activo: true, textoHumor: t })!['textoHumor'];
+      const cliente = RC['rcConfig']!({ activo: true, textoHumor: t }).textoHumor;
+      expect(cliente === '' ? undefined : cliente, t).toBe(servidor);
+    }
+    expect(RC['rcTextoHumor']!({ textoHumor: '¡Jaja!' })).toBe('Mejor te cuento qué te puedo ofrecer. ¿Qué te gustaría hacer?');
+  });
+});

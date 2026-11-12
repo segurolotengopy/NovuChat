@@ -10,7 +10,7 @@ type F = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-
 // La pieza ya no depende del filtro común `cm*`: se carga SOLA en un contexto vacío (como el Code de n8n).
 const RC = cargarFuente<Record<string, F>>(
   ['Flujos/src/core/conversacion/respuesta-coherente.js'],
-  ['rcConfig', 'rcEsAcuse', 'rcEsSeguimiento', 'rcTextoSeguimiento', 'rcInstrucciones', 'rcCuerpoLibre', 'rcLeerIntencion', 'rcTextoRechazo', 'rcSenalDeCrisisOBaja'],
+  ['rcConfig', 'rcEsAcuse', 'rcEsSeguimiento', 'rcTextoSeguimiento', 'rcInstrucciones', 'rcCuerpoLibre', 'rcLeerIntencion', 'rcTextoRechazo', 'rcSenalDeCrisisOBaja', 'rcTextoHumor'],
 );
 const rc = (n: string): F => RC[n] as F;
 const RL = rc('rcConfig')({ activo: true });
@@ -129,8 +129,29 @@ describe('rcSenalDeCrisisOBaja', () => {
     'no escriban más', 'quítenme de la lista', 'bórrame', 'borrenme', 'cancelar suscripción', 'cancelar la suscripción', 'borrar mis datos', 'borren mis datos'])('«%s» es señal', (t) => {
     expect(rc('rcSenalDeCrisisOBaja')(t)).toBe(true);
   });
-  it.each(['qué hambre tengo, me muero', 'jajaja qué chistoso', 'gracias', 'quiero 2 tacos', 'me muero de risa', 'bus stop cerca?'.replace('stop', 'parada')])('«%s» no lo es', (t) => {
+  it.each(['jajaja qué chistoso', 'gracias', 'quiero 2 tacos', 'bus stop cerca?'.replace('stop', 'parada')])('«%s» no lo es', (t) => {
     expect(rc('rcSenalDeCrisisOBaja')(t)).toBe(false);
+  });
+});
+
+describe('corpus del revisor (121 frases de crisis y baja, con evasiones): TODAS se detectan', () => {
+  const corpus = JSON.parse(readFileSync(new URL('./crisis-baja-corpus.json', import.meta.url), 'utf8')) as { crisis: string[]; baja: string[] };
+  it('el corpus tiene 121 frases', () => { expect(corpus.crisis.length + corpus.baja.length).toBe(121); });
+  it.each([...corpus.crisis, ...corpus.baja])('«%s»', (t) => { expect(rc('rcSenalDeCrisisOBaja')(t), JSON.stringify(t)).toBe(true); });
+  it('las frases comunes de un restaurante NO son señal', () => {
+    for (const t of ['quiero 2 tacos de birria', 'hola', 'gracias', 'la carta por favor', 'a qué hora abren', 'tienen delivery', 'quiero reservar para 4', 'estoppa']) expect(rc('rcSenalDeCrisisOBaja')(t), t).toBe(false);
+  });
+  it('ReDoS: entradas de 200 000 caracteres tardan menos de 50 ms', () => {
+    for (const x of ['a '.repeat(100000), 'm o r '.repeat(35000), 'ab1'.repeat(70000), 'q'.repeat(200000), 'no me '.repeat(35000) + 'x', '.'.repeat(200000), 'm0rrrir '.repeat(25000)]) {
+      const t0 = performance.now();
+      rc('rcSenalDeCrisisOBaja')(x);
+      expect(performance.now() - t0).toBeLessThan(50);
+    }
+  });
+  it('humor neutro: un textoHumor con risas se descarta y `rcTextoHumor` da el neutro', () => {
+    expect(rc('rcConfig')({ activo: true, textoHumor: '¡Jaja! 🌮 Mejor te cuento' }).textoHumor).toBe('');
+    expect(rc('rcTextoHumor')(rc('rcConfig')({ activo: true, textoHumor: 'jeje' }))).toBe('Mejor te cuento qué te puedo ofrecer. ¿Qué te gustaría hacer?');
+    expect(rc('rcConfig')({ activo: true, textoHumor: 'Mejor te cuento' }).textoHumor).toBe('Mejor te cuento');
   });
 });
 
