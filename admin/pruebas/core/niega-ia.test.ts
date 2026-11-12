@@ -34,20 +34,33 @@ describe('NIEGA_IA: la misma expresión en las tres variantes', () => {
   });
 });
 
-// venta-minima (Q'Taco): la respuesta libre verificada lleva su copia de la expresión en `respuesta-coherente.js` (pieza que el nodo Code incluye) y el flujo armado la trae.
-describe('NIEGA_IA en venta-minima: la pieza de respuesta coherente', () => {
-  const RC = src('core/conversacion/respuesta-coherente.js');
-  const regexRc = (): string => {
-    const l = RC.split('\n').find((x) => x.trimStart().startsWith('const RC_NIEGA_IA'));
-    if (!l) throw new Error('sin RC_NIEGA_IA');
-    return l.trim().replace('const RC_NIEGA_IA', 'const NIEGA_IA');
+// venta-minima (Q'Taco): el modelo NO escribe frases (solo clasifica), así que la identidad es SIEMPRE el texto fijo del código (`aIdentidad` en `Plan del turno`).
+// Esta prueba exige que ese texto cumpla la regla de la prohibición 4 con la MISMA expresión `NIEGA_IA` de la variante de venta, y que detecte la mutación.
+describe('NIEGA_IA en venta-minima: el texto fijo de identidad', () => {
+  const PLAN = readFileSync(join(aqui, '../../../Flujos/experimental/venta-minima/src/nodos/plan-del-turno.js'), 'utf8');
+  const cuerpoIdentidad = (codigo: string): string => {
+    const m = /function aIdentidad\(\) \{[\s\S]*?\n\}/.exec(codigo);
+    if (!m) throw new Error('sin aIdentidad');
+    return m[0];
   };
-  it('es la misma expresión (fuente idéntica) que la de las tres variantes', () => {
-    expect(regexRc()).toBe(regex(VENTA));
+  // La expresión se toma de la fuente de la variante de venta (no se copia aquí).
+  const nuevaRegex = (): RegExp => (0, eval)(regex(VENTA).replace(/^const NIEGA_IA = /, '').replace(/;$/, '')) as RegExp;
+  const cumple = (codigo: string): boolean => {
+    const c = cuerpoIdentidad(codigo);
+    return !nuevaRegex().test(c) && /asistente virtual/.test(c) && /inteligencia artificial/.test(c);
+  };
+  it('el texto fijo de identidad dice que es un asistente virtual con IA y no niega serlo', () => {
+    expect(cumple(PLAN)).toBe(true);
   });
-  it.each(['venta-minima.qtaco.json', 'venta-minima.prueba.json'])('el flujo armado %s la trae en Plan del turno', (archivo) => {
-    const j = JSON.parse(readFileSync(join(aqui, '../../../Flujos/experimental/venta-minima', archivo), 'utf8')) as { nodes: { name: string; parameters: { jsCode?: string } }[] };
-    expect(j.nodes.find((n) => n.name === 'Plan del turno')?.parameters.jsCode).toContain('RC_NIEGA_IA');
+  it('MUTACIÓN: si el texto fijo pasa a negar ser una IA, la prueba falla', () => {
+    for (const malo of ['Soy una persona de ', 'No soy un bot de ', 'Hablas con una persona de ']) {
+      const mutado = PLAN.replace('Soy un asistente virtual con inteligencia artificial de ', malo);
+      expect(mutado).not.toBe(PLAN);
+      expect(cumple(mutado), malo).toBe(false);
+    }
+  });
+  it('la pieza común no escribe frases al cliente (ni hay filtro que se pueda saltar)', () => {
+    expect(src('core/conversacion/respuesta-coherente.js')).not.toMatch(/rcLeerRespuesta|rcMotivoDeRechazoLibre/);
   });
 });
 

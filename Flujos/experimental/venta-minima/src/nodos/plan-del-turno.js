@@ -169,11 +169,7 @@ function despachar() {
   // Con un comprobante en espera, pedir una persona NO saca al cliente del cobro: el paso y el pedido se conservan.
   if (a === 'transferir' && /^el modo de cobro cambió: comprobante de un pedido simulado/.test(String(d.motivo))) return derivarPorCambioDeModo(pedidoDeLaReferencia() || en.pedido);
   if (a === 'transferir') return derivar(d.motivo || 'derivación', en.paso === 'esperando_comprobante' && !!en.pedido, undefined, d.sinFraseMenu === true);
-  if (a === 'identidad') {
-    if (en.paso === 'inicio') en.paso = 'menu';
-    return (mensajes = [enlace('Soy un asistente virtual con inteligencia artificial de ' + negocio()
-      + '. Si prefieres hablar con una persona de nuestro equipo, toca el botón.')]);
-  }
+  if (a === 'identidad') return aIdentidad();
   if (a === 'medio_no_leido') return aMedioNoLeido();
   if (a === 'imagen_sin_pendiente') return aImagenSinPendiente();
   if (a === 'fuera_de_horario') return aFueraDeHorario();
@@ -1130,33 +1126,57 @@ function aSeguimiento() {
   mensajes = [{ tipo: 'botones', cuerpo: rcTextoSeguimiento(p, { moneda: monedaTxt, cierre: rl.textoSeguimiento, codigo: p ? cbCodigo(p.codigo) : '' }), botones: [botonLocal()] }];
 }
 
-// ¿La respuesta del modelo puede salir? Los límites fijos de `rc*` (monto, enlace, promesa, despacho, pago acreditado, negar ser IA, prohibidos del tenant)
-// más la red de palabras prohibidas del flujo. Devuelve el motivo del rechazo, o '' si pasa.
-function motivoDeRespuestaLibre(r) {
-  if (!r) return 'modelo';
-  return rcMotivoDeRechazoLibre(r.respuesta, rl, d.texto) || (VM_PROHIBIDAS.test(vmCanon(r.respuesta)) || VM_PROHIBIDAS.test(vmNorm(r.respuesta)) ? 'prohibidas_vm' : '');
+// La identidad: SIEMPRE el texto fijo del código (nunca prosa del modelo).
+function aIdentidad() {
+  if (en.paso === 'inicio') en.paso = 'menu';
+  return (mensajes = [enlace('Soy un asistente virtual con inteligencia artificial de ' + negocio()
+    + '. Si prefieres hablar con una persona de nuestro equipo, toca el botón.')]);
 }
 
-// Fuera de protocolo en inicio o menú: la respuesta del modelo, verificada. Si falla (modelo caído, JSON inválido, filtro), un texto fijo con el botón.
+// RESPUESTA POR INTENCIÓN (fuera de protocolo en inicio o menú): el modelo solo CLASIFICÓ (`rcLeerIntencion`: un valor del enum o null); el texto lo escribe
+// ESTE CÓDIGO con datos del negocio y textos fijos del tenant. Nada de lo que escribió el modelo, salvo el valor del enum, llega aquí ni al cliente. Un solo mensaje,
+// sin aviso al local. Sin dato cargado, intención inválida o modelo caído: el texto de rechazo del tenant con el botón «Escribir al local».
 function aExtraerLibre() {
-  const r = rcLeerRespuesta(vmJsonDeGemini(vmPrimero('Extraer')));
-  const motivo = motivoDeRespuestaLibre(r);
-  const primera = en.paso === 'inicio';
+  const intencion = rcLeerIntencion(vmJsonDeGemini(vmPrimero('Extraer')));
   if (en.paso === 'inicio') en.paso = 'menu';
-  if (motivo) {
-    errores.push('respuesta_libre_rechazada:' + motivo);
+  const rechazo = (motivo) => {
+    if (motivo) errores.push('respuesta_libre_rechazada:' + motivo);
     ruta = 'libre:rechazada';
     mensajes = [{ tipo: 'botones', cuerpo: rcTextoRechazo(rl), botones: [botonLocal()] }];
+  };
+  if (!intencion) return rechazo('intencion_invalida');
+  const sinPanel = cfg.panelSinRespuesta === true;
+  if (intencion === 'horario') {
+    if (!horarioEnFrase(vmLinea(cfg.horarioAtencion, 200))) return rechazo('sin_dato:horario');
+    aConsulta('horario'); ruta = 'libre:horario'; return;
+  }
+  if (intencion === 'direccion') {
+    if (!vmLinea(cfg.direccion, 200)) return rechazo('sin_dato:direccion');
+    aConsulta('direccion'); ruta = 'libre:direccion'; return;
+  }
+  if (intencion === 'modalidades') {
+    if (sinPanel || (cfg.aceptaDelivery === false && cfg.aceptaRetiroEnLocal === false)) return rechazo('sin_dato:modalidades');
+    aConsulta('delivery'); ruta = 'libre:modalidades'; return;
+  }
+  if (intencion === 'carta') {
+    const antes = mensajes.length;
+    aCarta();
+    if (mensajes.length === antes) return rechazo('sin_dato:carta');
+    ruta = 'libre:carta';
     return;
   }
-  ruta = 'libre:ok';
-  const asistente = vmLinea(cfg.nombreAsistente, 40);
-  // Si la respuesta ya se presenta («asistente virtual»), no se antepone la presentación (salía duplicada).
-  const yaSePresenta = /asistente virtual/.test(vmNorm(r.respuesta));
-  const cuerpo = (primera && !yaSePresenta ? 'Soy ' + (asistente ? asistente + ', el asistente virtual' : 'el asistente virtual') + ' de ' + negocio() + '. ' : '') + r.respuesta;
-  // Todo texto que manda «al local» (o a recepción) sale con el botón que lo cumple, aunque el modelo haya pedido el menú: un menú no tiene «Escribir al local».
-  const nombraAlLocal = /\b(local|recepcion|encargad\w*|negocio|restaurante|tienda|equipo)\b/.test(vmNorm(r.respuesta).replace(/asistente virtual d(?:e|el|e la) (?:local|negocio|restaurante|tienda)/g, ''));
-  mensajes = [r.reencauzar && !nombraAlLocal ? conMenu(cuerpo) : { tipo: 'botones', cuerpo: cuerpo, botones: [botonLocal()] }];
+  if (intencion === 'identidad') { aIdentidad(); ruta = 'libre:identidad'; return; }
+  if (intencion === 'humor') {
+    ruta = 'libre:humor';
+    mensajes = [conMenu(rl.textoHumor || '¡Jaja! Mejor te cuento qué te puedo ofrecer.')];
+    return;
+  }
+  if (intencion === 'queja') {
+    ruta = 'libre:queja';
+    mensajes = [{ tipo: 'botones', cuerpo: rl.textoQueja || 'Lamento lo ocurrido. Si quieres contárselo al local, toca «Escribir al local».', botones: [botonLocal()] }];
+    return;
+  }
+  return rechazo('');
 }
 
 function aExtraerPedido() {

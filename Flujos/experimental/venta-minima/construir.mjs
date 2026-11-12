@@ -19,7 +19,7 @@
  *       `"@@comun:nodos/<archivo>.js"`  solo `comun.js` + el archivo;
  *       `"@@solo:nodos/<archivo>.js"`   solo el archivo.
  *     El sufijo `+crm` (`@@todo+sesion+crm:…`, solo «Armar mensajes») agrega `src/lib/crm.js` (`vmProspectoCrm`, el miniCRM de Q'Taco).
- *     El sufijo `+coherente` (`@@todo+coherente:…`, «Decidir turno» y «Plan del turno») pega el filtro común de la redacción y `core/conversacion/respuesta-coherente.js`.
+ *     El sufijo `+coherente` (`@@todo+coherente:…`, «Decidir turno» y «Plan del turno») pega `core/conversacion/respuesta-coherente.js` (sin el filtro común: el modelo solo clasifica).
  *     Y el sufijo `+sesion` (`@@todo+sesion:…`, `@@comun+sesion:…`) pega ENTRE las librerías y el nodo el módulo común
  *     `comun-sin-agente/src/sesion.js` (el estado de la conversación en el servidor, PR-4a): se INCLUYE, nunca se copia ni se edita.
  *   - `@@dato:a.b.c@@` (dentro de cualquier texto) se reemplaza por ese dato del tenant;
@@ -67,8 +67,8 @@ const LIB = [...ORDEN_LIBS.map((n) => leer(`src/lib/${n}.js`)), ...MODULOS_COMUN
 const COMUN = leer('src/lib/comun.js').trimEnd();
 // El miniCRM de Q'Taco (`vmProspectoCrm`): se pega SOLO delante de «Armar mensajes» (`+crm`), no en todos los nodos.
 const LIB_CRM = leer('src/lib/crm.js').trimEnd();
-// La respuesta coherente (core): `+coherente` pega, ANTES del nodo, el filtro común de la redacción y la pieza `rc*`. Se INCLUYEN, nunca se copian ni se editan aquí.
-const FUENTE_COHERENTE = [leer('../../src/core/texto/filtro-redaccion.js'), leer('../../src/core/conversacion/respuesta-coherente.js')].map((t) => t.trimEnd()).join('\n\n');
+// La respuesta coherente (core): `+coherente` pega, ANTES del nodo, la pieza `rc*`. Se INCLUYEN, nunca se copian ni se editan aquí.
+const FUENTE_COHERENTE = [leer('../../src/core/conversacion/respuesta-coherente.js')].map((t) => t.trimEnd()).join('\n\n');
 const plantilla = JSON.parse(leer('flujo.plantilla.json'));
 
 const NODOS_DE_ENTRADA = {
