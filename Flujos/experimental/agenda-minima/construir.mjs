@@ -81,13 +81,13 @@ function reglaDeIdentidadDelCore() {
   const finMarca = "  'carne y hueso',\n";
   const fin = ini < 0 ? -1 : fuente.indexOf(finMarca, ini);
   if (ini < 0 || fin < 0) throw new Error('filtro-redaccion.js: no encuentro el bloque «negar ser una IA» (prohibición 4); agenda mínima lo incluye de ahí');
-  // Sin ejecutar nada (regla de SAST): cada línea del bloque es UN literal entre comillas simples; los comentarios se saltan y el texto se des-escapa como JSON.
+  // Sin ejecutar nada (regla de SAST): cada línea del bloque es UN literal entre comillas simples; los comentarios se saltan y el texto se des-escapa en un solo paso.
   const lista = [];
   for (const linea of fuente.slice(ini, fin + finMarca.length).split('\n')) {
     if (/^\s*(?:\/\/.*)?$/.test(linea)) continue;
     const m = /^\s*'((?:[^'\\]|\\.)*)',\s*$/.exec(linea);
     if (!m) throw new Error(`filtro-redaccion.js: una línea del bloque «negar ser una IA» ya no es un literal simple: ${linea.slice(0, 60)}`);
-    lista.push(JSON.parse(`"${m[1].replace(/\\'/g, "'").replace(/"/g, '\\"')}"`));
+    lista.push(m[1].replace(/\\(.)/g, (_, c) => (c === 'n' ? '\n' : c)));  // un solo paso: «\\» → «\», «\'» → «'» (sin escapar a mano)
   }
   if (!Array.isArray(lista) || lista.length < 8 || lista.some((x) => typeof x !== 'string')) throw new Error('filtro-redaccion.js: el bloque «negar ser una IA» ya no es una lista de expresiones');
   return `// REGLA DE IDENTIDAD (prohibición 4) derivada de Flujos/src/core/texto/filtro-redaccion.js al armar; no se edita a mano.\nconst NIEGA_IA_CORE = new RegExp(${JSON.stringify(lista.join('|'))});`;
