@@ -512,6 +512,22 @@ export const DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR = {
   'manual-admin': { modulo: 'crm', campos: ['enlace'], lectura: 'admin' },
 } as const;
 
+/**
+ * DOCUMENTOS DE `config/` DEL CORE QUE SOLO ESCRIBE EL SERVIDOR (12/11/2026, «respuesta coherente», PR B / P2).
+ *
+ * `config/respuestaLibre`: el dato por tenant de la respuesta libre del asistente (acuse, texto de seguimiento, texto de
+ * rechazo, tono, reglas y frases prohibidas). `activo` es false por defecto: sin el documento, o con `activo` distinto de
+ * `true`, `configuracionFlujo` no entrega nada y la respuesta queda idéntica a la de siempre. Lo escribe NovuChat con
+ * `scripts/plataforma/respuesta-libre.mjs`; la consola no lo edita. Lo lee todo miembro por la regla general de `config/`,
+ * pero NINGUNA rama de create, update o delete de `firestore.rules` lo nombra: queda cerrado por omisión, y
+ * `registro.test.ts` y `respuesta-libre-reglas.test.ts` lo prueban. Costo: 0 mensajes; +1 lectura por turno de ingesta.
+ */
+export const DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR = {
+  respuestaLibre: {
+    camposDelServidor: ['activo', 'acuse', 'textoSeguimiento', 'textoRechazo', 'tono', 'reglas', 'prohibidos'],
+  },
+} as const;
+
 export const esModulo = (v: unknown): v is IdModulo =>
   typeof v === 'string' && (IDS_MODULOS as readonly string[]).includes(v);
 

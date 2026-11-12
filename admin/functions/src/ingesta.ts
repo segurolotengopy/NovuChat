@@ -16,6 +16,7 @@ export { MINUTOS_RETENCION_POR_DEFECTO, senaParaElFlujo, IMPORTE_SENA_MAXIMO, ty
 export { milisegundosDe };
 import { alTurnoCampanas } from './modulos/campanas/alTurno.js';
 import { crmParaElFlujo } from './modulos/crm/crm.js';
+import { respuestaLibreParaElFlujo } from './core/conversacion/respuestaLibre.js';
 import { alTurnoCaptacion } from './modulos/captacion/alTurno.js';
 import { modulosDelTurno, type ContextoDelTurno } from './core/turno/ganchosDelTurno.js';
 import { alTurnoCobroDeVenta, type ContextoDeCobro } from './modulos/cobros/alTurno.js';
@@ -1642,7 +1643,7 @@ export const configuracionFlujo = onRequest(
     const docVertical = documentoDeVertical(comercio.flujo);
     const ahoraMs = Date.now();
 
-    const [catalogo, funcionarios, especifica, rotulos, docConversacion, cuenta, metricas, plataformaPrepago, campanas, configCrm] =
+    const [catalogo, funcionarios, especifica, rotulos, docConversacion, cuenta, metricas, plataformaPrepago, campanas, configCrm, configRespuestaLibre] =
       await Promise.all([
         db.collection(`tenants/${comercio.tenantId}/catalogo`)
           .where('activo', '==', true).limit(200).get(),
@@ -1672,6 +1673,8 @@ export const configuracionFlujo = onRequest(
         // EL INTERRUPTOR DEL miniCRM (PR-B3): `config/crm.activo`. Una lectura por turno; el flujo
         // que lleva la rama lo lee en «Prospecto para la planilla», los demás ignoran la clave.
         db.doc(`tenants/${comercio.tenantId}/config/crm`).get(),
+        // LA RESPUESTA LIBRE (PR B / P2): `config/respuestaLibre`, solo del servidor. +1 lectura por turno.
+        db.doc(`tenants/${comercio.tenantId}/config/respuestaLibre`).get(),
       ]);
 
     // LOS ANUNCIOS COMO DATO DEL TENANT (PR-1 de Campañas): las campañas vigentes
@@ -2120,6 +2123,8 @@ export const configuracionFlujo = onRequest(
       ...aporteDeCampanas,
       // `crm: { activo }` solo si el comercio escribió el interruptor; sin documento la respuesta es la de siempre.
       ...crmParaElFlujo(configCrm.exists ? configCrm.data() : undefined),
+      // `respuestaLibre` solo con `activo === true`; sin documento o apagado, la respuesta es la de siempre.
+      ...respuestaLibreParaElFlujo(configRespuestaLibre.exists ? configRespuestaLibre.data() : undefined),
     });
   },
 );

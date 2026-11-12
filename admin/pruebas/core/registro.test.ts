@@ -31,7 +31,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../../web/src/core/lib/firebase', () => ({ db: {} }));
 
 import {
-  COLECCIONES_CERRADAS_DEL_CORE, DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR, IDS_FLUJOS, IDS_MODULOS, MODULOS_COMUNES_HOY, FLUJOS_DE_RUTA, REGISTRO, carpetasDe, documentoDeCobro,
+  COLECCIONES_CERRADAS_DEL_CORE, DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR, DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR, IDS_FLUJOS, IDS_MODULOS, MODULOS_COMUNES_HOY, FLUJOS_DE_RUTA, REGISTRO, carpetasDe, documentoDeCobro,
   documentoDeFlujo, esFlujo, esModulo, etiquetaDeCatalogo, flujosDeFicha, manifiestoDe, modulosDeFicha, modulosDeFlujos, pestanasDe, tieneModulo,
   type FichaConCapacidades, type IdFlujo, type IdModulo, type Manifiesto, type Pestana,
 } from '../../functions/src/registro.ts';
@@ -1217,6 +1217,37 @@ describe('documentos de enlaces solo del servidor y de lectura admin (03/11/2026
       const d = DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR[n as keyof typeof DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR];
       expect(MANIFIESTOS.map((m) => m.modulo as string), n).toContain(d.modulo);
       expect(PRUEBAS_CRM, `${n}: sin prueba negativa`).toContain(`enlaces/${n}`);
+    }
+  });
+});
+
+describe('documentos de config del core que solo escribe el servidor (12/11/2026, respuestaLibre)', () => {
+  const nombres = Object.keys(DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR);
+  const PRUEBA_REGLAS = leer('admin/pruebas/core/respuesta-libre-reglas.test.ts');
+
+  it('declara respuestaLibre con sus siete campos', () => {
+    expect(nombres).toEqual(['respuestaLibre']);
+    expect([...DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR.respuestaLibre.camposDelServidor]).toEqual(
+      ['activo', 'acuse', 'textoSeguimiento', 'textoRechazo', 'tono', 'reglas', 'prohibidos'],
+    );
+  });
+  it('NEGADO: ninguna regla de las reglas (escritura ni lectura aparte) nombra el documento', () => {
+    for (const n of nombres) expect(REGLAS, `${n}: alguna regla lo nombra`).not.toContain(n);
+  });
+  it('NEGADO: ningún módulo lo tiene en su lista blanca de configuración', () => {
+    for (const m of MANIFIESTOS) for (const c of m.configuracion) {
+      for (const n of nombres) expect(c.documento, `${m.modulo}`).not.toBe(`config/${n}`);
+    }
+  });
+  it('la lectura es la regla general de config (todo miembro) y hay una sola regla de escritura de config sin comodín', () => {
+    const bloque = /match \/config\/\{documento\} \{/.exec(REGLAS);
+    expect(bloque, 'no hay match /config/{documento}').not.toBeNull();
+    expect(REGLAS).toMatch(/allow get, list: if esMiembro\(tenantId\)/);
+  });
+  it('cada uno tiene su prueba negativa en el emulador («sin módulo no puede»: nadie crea, actualiza ni borra)', () => {
+    for (const n of nombres) {
+      expect(PRUEBA_REGLAS, `${n}: sin prueba de reglas`).toContain(`config/${n}`);
+      for (const verbo of ['setDoc', 'updateDoc', 'deleteDoc']) expect(PRUEBA_REGLAS, verbo).toContain(verbo);
     }
   });
 });
