@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { cargarFuente } from './fuente-vm';
 
 type F = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -169,10 +170,53 @@ describe('paridad con la baja del entrante («Reportar mensaje (entrante)» marc
   it('el corpus ejerce de verdad la expresión del entrante (al menos 20 frases la activan)', () => {
     expect(CORPUS.filter((t) => baja.test(t)).length).toBeGreaterThanOrEqual(20);
   });
-  it('MUTACIÓN: sin la lista (que nunca coincida) la paridad falla', () => {
-    const sinLista = (_: string): boolean => false;
-    expect(CORPUS.filter((t) => baja.test(t)).some((t) => !sinLista(t))).toBe(true);
+  // Paridad sobre la EXPRESIÓN COMPLETA del entrante: se ENUMERAN todas las frases que acepta (alternativas, grupos, clases y opcionales) y cada una debe ser señal.
+  const expandir = (src: string): string[] => {
+    let pos = 0;
+    const alternativas = (): string[] => {
+      let todas: string[] = [];
+      let actual: string[] = [''];
+      const cerrar = (): void => { todas = todas.concat(actual); actual = ['']; };
+      while (pos < src.length && src[pos] !== ')') {
+        const c = src[pos]!;
+        if (c === '|') { pos++; cerrar(); continue; }
+        let opciones: string[];
+        if (c === '(') { pos++; opciones = alternativas(); pos++; if (src[pos - 1] !== ')') throw new Error('grupo sin cerrar'); }
+        else if (c === '[') { const fin = src.indexOf(']', pos); opciones = src.slice(pos + 1, fin).split(''); pos = fin + 1; }
+        else if (c === '^' || c === '$') { pos++; continue; }
+        else { opciones = [c]; pos++; }
+        if (src[pos] === '?') { pos++; opciones = ['', ...opciones]; }
+        actual = actual.flatMap((a) => opciones.map((o) => a + o));
+      }
+      cerrar();
+      return todas;
+    };
+    return alternativas();
+  };
+  const frases = expandir(String(baja.source));
+  it('la enumeración cubre la expresión entera (decenas de frases, incluida «stop» anclada)', () => {
+    expect(frases.length).toBeGreaterThanOrEqual(25);
+    expect(frases).toContain('stop');
+    for (const f of frases) expect(baja.test(f), f).toBe(true);
   });
+  it.each(frases)('toda frase que acepta el entrante («%s») la detecta `rcSenalDeCrisisOBaja`', (f) => {
+    expect(rc('rcSenalDeCrisisOBaja')(f), f).toBe(true);
+  });
+  // MUTACIÓN REAL: la pieza de verdad, pero con una alternativa de baja quitada de la lista (copia de la fuente en un contexto nuevo): la paridad TIENE que fallar.
+  const conLista = (quita: string): ((t: string) => boolean) => {
+    const fuente = readFileSync(new URL('../../../Flujos/src/core/conversacion/respuesta-coherente.js', import.meta.url), 'utf8');
+    expect(fuente).toContain(quita);
+    const mutada = fuente.replace(quita, "'zzzzzzzz'");
+    return vm.runInNewContext(`${mutada}\n(rcSenalDeCrisisOBaja)`, Object.create(null)) as (t: string) => boolean;
+  };
+  it.each([["'qui(ta|te|ten)me'", ['quítame', 'quiteme', 'quítenme']], ["'d(a|e|en)me de baja'", ['dame de baja', 'deme de baja']], ["'bor(ra|re|ren)me'", ['bórrame', 'borreme']]])(
+    'MUTACIÓN: quitar %s de la lista rompe la paridad',
+    (quita, ejemplos) => {
+      const mutada = conLista(quita);
+      expect((ejemplos as string[]).some((e) => baja.test(e) && !mutada(e))).toBe(true);
+      expect((ejemplos as string[]).every((e) => rc('rcSenalDeCrisisOBaja')(e))).toBe(true);
+    },
+  );
 });
 
 describe('rcTextoRechazo', () => {

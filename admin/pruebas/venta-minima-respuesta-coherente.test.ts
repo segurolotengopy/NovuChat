@@ -685,6 +685,20 @@ describe('N. carta sin cargar, `carritoAnterior` y menú con carrito: la funció
       expect(enc, texto).toEqual(corre({ ...RL, activo: false }));
     }
   });
+  it('«quién eres» y otras formas ampliadas en `menu` con `carritoAnterior`: la salida es IGUAL con `activo` true y false (no se intercepta como identidad)', () => {
+    for (const texto of ['quién eres', '¿con quién hablo?', 'hay alguien', 'who are you']) {
+      const corre = (rl: J | null): { accion: unknown; cuerpos: string[] } => {
+        const m = mundoCon(rl);
+        hastaMenuConCarritoAnterior(m);
+        expect(!!estadoDe(m)['carritoAnterior']).toBe(true);
+        const s = turno(m, { texto, extraccion: { lineas: [] } });
+        return { accion: s.d['accion'], cuerpos: cuerpos(s) };
+      };
+      const enc = corre(RL);
+      expect(enc.accion, texto).not.toBe('identidad');
+      expect(enc, texto).toEqual(corre({ ...RL, activo: false }));
+    }
+  });
   it('en `menu` con el carrito LLENO (tras una derivación), un mensaje libre sale como con la función apagada', () => {
     const corre = (rl: J | null): { accion: unknown; cuerpos: string[] } => {
       const m = mundoCon(rl);
@@ -717,6 +731,19 @@ describe('N2. defensa en profundidad del plan', () => {
         expect(cuerpos(s).join(' ')).not.toContain(String(RL['textoHumor']));
         sinAviso(s);
       }
+    }
+  });
+  it('PRIMER mensaje (sin «hola» previo) clasificado `crisis_o_baja` o `humor` con señal: sale el saludo completo de main («asistente virtual»), no «¿Qué te gustaría hacer ahora?»', () => {
+    for (const intencion of ['crisis_o_baja', 'humor']) {
+      const apagada = mundoCon({ ...RL, activo: false });
+      const base = turno(apagada, { texto: 'quiero morirme', extraccion: { lineas: [] } });
+      const m = mundoCon();
+      const s = turno(m, { texto: 'quiero morirme', decision: (d) => ({ ...d, accion: 'extraer_libre' }), extraccion: modelo(intencion) });
+      expect(s.d['accion']).toBe('extraer_libre');
+      expect(cuerpos(s)).toEqual(cuerpos(base));
+      expect(cuerpos(s).join(' ')).toMatch(/asistente virtual/);
+      expect(cuerpos(s).join(' ')).not.toContain(MENU_AHORA);
+      expect(estadoDe(m)['paso']).toBe(estadoDe(apagada)['paso']);
     }
   });
   it('el acuse por modelo no cambia el paso, igual que el acuse por código', () => {
