@@ -36,7 +36,7 @@ const copia = (f: Flujo): Flujo => JSON.parse(JSON.stringify(f)) as Flujo;
 const nodo = (f: Flujo, n: string): Nodo => { const x = f.nodes.find((y) => y.name === n); if (!x) throw new Error(`falta ${n}`); return x; };
 
 // Tanda 1 de Evy (07/11/2026): mientras CANAL_DE_ENVIO sea 'graph', Evy no va por el relé y sus pruebas del relé no aplican (las de graph están en tenants/rroca-evy/armado.test.ts); Emma sigue por el relé.
-describe.each(CLIENTES.filter((x) => x.nombre !== 'Evy' || evy.ES_RELE))('$nombre por el relé', ({ carpeta, archivo, cliente, cred, c }) => {
+describe.each(CLIENTES.filter((x) => (x.nombre !== 'Evy' || evy.ES_RELE) && (x.nombre !== 'Emma' || emma.ES_RELE)))('$nombre por el relé', ({ carpeta, archivo, cliente, cred, c }) => {
   const prod = leerFlujo(carpeta, archivo);
   const prueba = leerPrueba(carpeta, archivo);
   const mapa = (f: Flujo) => JSON.parse(JSON.stringify(f)) as Flujo;
@@ -229,5 +229,16 @@ describe.each(CLIENTES.filter((x) => x.nombre !== 'Evy' || evy.ES_RELE))('$nombr
       expect(new Set(m.porNodo('Enviar a WhatsApp').map((e) => e.clave)).size).toBe(3);
       expect(r.llamadas.ingesta).toHaveLength(3);
     });
+  });
+});
+
+// Mientras un cliente declare CANAL_DE_ENVIO = 'graph' (Evy desde el 07/11/2026, Emma desde el 11/11/2026), sus pruebas del relé no aplican (las de graph viven en tenants/<cliente>/armado.test.ts); este bloque
+// mantiene la suite con al menos una prueba y exige que el canal sea uno de los dos conocidos.
+describe('canal de envío declarado por cada cliente', () => {
+  it('Evy y Emma declaran graph o rele, y ES_RELE concuerda', () => {
+    for (const x of [evy, emma]) {
+      expect(['graph', 'rele']).toContain(x.CANAL_DE_ENVIO);
+      expect(x.ES_RELE).toBe(x.CANAL_DE_ENVIO === 'rele');
+    }
   });
 });

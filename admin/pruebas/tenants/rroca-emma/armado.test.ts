@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import type { Flujo } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { CONFIG, TOPE_DE_NODOS, guardias, hallazgosDelPrompt, leerPrompt, problemasDeReferencias } from '../../../../Flujos/experimental/rroca-emma/construir.mjs';
+import { CANAL_DE_ENVIO, CONFIG, ES_RELE, TOPE_DE_NODOS, guardias, hallazgosDelPrompt, leerPrompt, problemasDeReferencias } from '../../../../Flujos/experimental/rroca-emma/construir.mjs';
 import { PRODUCCION, PRUEBA } from './mundo';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -20,20 +20,21 @@ const copia = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const g = (v: 'produccion' | 'prueba', f: Flujo): string[] => guardias(v, f) as string[];
 
 describe('lo versionado es lo que arma construir.mjs', () => {
-  it('--verificar sale 0 (los dos JSON al día, 56 y 51 nodos: 36 y 31 más los 9 del guardado, los 8 del miniCRM y los 3 del relé B9)', () => {
+  it('--verificar sale 0 (los dos JSON al día: con envío directo 53 y 48 nodos; con el canal rele 56 y 51, los 3 del relé B9 de más)', () => {
     const r = spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), '--verificar'], { encoding: 'utf8', env: entornoDelEmulador({}) });
-    expect(`${r.stdout}${r.stderr}`).toContain('rroca-emma.json al día (56 nodos)');
-    expect(`${r.stdout}${r.stderr}`).toContain('rroca-emma.prueba.json al día (51 nodos)');
+    expect(`${r.stdout}${r.stderr}`).toContain(`rroca-emma.json al día (${ES_RELE ? 56 : 53} nodos)`);
+    expect(`${r.stdout}${r.stderr}`).toContain(`rroca-emma.prueba.json al día (${ES_RELE ? 51 : 48} nodos)`);
     expect(r.status).toBe(0);
   });
   it('un argumento desconocido se rechaza y no escribe', () => {
     const r = spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), '--ayuda'], { encoding: 'utf8', env: entornoDelEmulador({}) });
     expect(r.status).toBe(2);
   });
-  it('lo armado no viola ninguna guardia y el tope es de 56 nodos (36 más los 9 del guardado, los 8 del miniCRM y los 3 del relé B9)', () => {
+  it('lo armado no viola ninguna guardia y el tope es de 53 nodos con envío directo (56 con el canal rele)', () => {
+    expect(['graph', 'rele']).toContain(CANAL_DE_ENVIO);
     expect(g('produccion', PRODUCCION)).toEqual([]);
     expect(g('prueba', PRUEBA)).toEqual([]);
-    expect(TOPE_DE_NODOS).toBe(56);
+    expect(TOPE_DE_NODOS).toBe(ES_RELE ? 56 : 53);
     expect(CONFIG.variantes.length).toBe(2);
   });
 });
@@ -49,9 +50,9 @@ describe('las guardias se niegan con mutaciones', () => {
     const c = copia(PRODUCCION); c.nodes.push({ ...nodo(c, 'Config base'), name: 'Agente', type: '@n8n/n8n-nodes-langchain.agent' });
     expect(g('produccion', c).join(' ')).toMatch(/agente/);
   });
-  it('más de 56 nodos', () => {
+  it('más del tope de nodos', () => {
     const f = copia(PRODUCCION); f.nodes.push({ ...nodo(f, 'Config base'), name: 'Nodo de más' });
-    expect(g('produccion', f).join(' ')).toMatch(/tope es 56/);
+    expect(g('produccion', f).join(' ')).toMatch(new RegExp(`tope es ${TOPE_DE_NODOS}`));
   });
   it('la entrada del receptor: sin «Continue on Fail», con wabaIdEsperado fijo y repetidos entre ejecuciones', () => {
     const a = copia(PRODUCCION); (nodo(a, 'Verificar firma con el receptor') as Record<string, unknown>)['onError'] = 'continueRegularOutput';
@@ -200,5 +201,48 @@ describe('las copias declaradas son iguales a su fuente', () => {
     const rr = leer('Flujos/experimental/rroca-ruben/src/lib/rr.js');
     const igualar = (s: string): string => s.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n').replace(/\bev(Oraciones|EsPregunta|Parrafos)\b/g, 'x$1').replace(/\brr(Oraciones|EsPregunta|Parrafos)\b/g, 'x$1').replace(/EV_PARRAFO_MAX|RR_PARRAFO_MAX/g, 'MAX');
     for (const [a, b] of [['evOraciones', 'rrOraciones'], ['evParrafos', 'rrParrafos']] as const) expect(igualar(f(ev, a))).toBe(igualar(f(rr, b)));
+  });
+});
+
+// TANDA 1 (Andres, 07/11/2026): con CANAL_DE_ENVIO = 'graph' el flujo envía y baja medios DIRECTO por Graph (como el vivo); el relé B9 queda para la tanda 2.
+describe.skipIf(ES_RELE)('canal graph: el flujo no sabe nada del relé y todo lo que habla con Meta lleva su credencial por nombre', () => {
+  const nodo = (f: Flujo, n: string) => f.nodes.find((x) => x.name === n)!;
+  const hablaConMeta = (n: { type: string; parameters?: Record<string, unknown> }): boolean =>
+    n.type === 'n8n-nodes-base.httpRequest' && /graph\.facebook\.com|\$json\.url|lookaside|fbsbx/.test(String((n.parameters || {}).url || ''));
+  for (const [variante, flujo] of [['produccion', PRODUCCION], ['prueba', PRUEBA]] as const) {
+    it(`${variante}: ningún nodo menciona el relé ni «AAB1 envío», y no queda el marcador de la URL interna`, () => {
+      const texto = JSON.stringify(flujo.nodes.map((n) => ({ ...n, parameters: { ...n.parameters, jsCode: undefined } })));
+      expect(texto).not.toMatch(/relé|AAB1 env[ií]o|REEMPLAZAR_URL_INTERNA_DEL_RELE|\/v1\/envio\//i);
+      expect(JSON.stringify(flujo)).not.toContain('REEMPLAZAR_URL_INTERNA_DEL_RELE');
+      for (const n of ['Detener por envío incierto', 'Leer respuesta del relé', '¿Qué hacer con el envío?', 'Esperar reintento']) expect(flujo.nodes.some((x) => x.name === n)).toBe(false);
+    });
+    it(`${variante}: todo nodo que habla con Meta lleva credencial por nombre y ningún header Authorization escrito a mano`, () => {
+      const meta = flujo.nodes.filter(hablaConMeta);
+      expect(meta.map((n) => n.name)).toEqual(expect.arrayContaining(['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Obtener URL del medio (general)', 'Descargar medio']));
+      for (const n of meta) {
+        const cred = (n.credentials as Record<string, { name?: string }> | undefined)?.httpHeaderAuth;
+        expect(cred?.name, n.name).toMatch(/\S/);
+        const cab = ((((n.parameters as Record<string, any>) || {}).headerParameters || {}).parameters || []) as Array<{ name?: string }>;
+        expect(cab.some((x) => /authorization/i.test(String(x.name || ''))), n.name).toBe(false);
+      }
+    });
+    it(`${variante}: «¿Reportar? (saliente)» exige el id de Meta del envío directo y no el idMeta del relé`, () => {
+      const cond = String(((nodo(flujo, '¿Reportar? (saliente)').parameters as Record<string, any>).conditions.conditions[0]).leftValue);
+      expect(cond).toContain('$json.messages[0].id');
+      expect(cond).not.toMatch(/idMeta|accion/);
+    });
+    it(`${variante}: executionTimeout no es el de 300 s del relé`, () => {
+      expect((flujo.settings as Record<string, unknown>).executionTimeout).not.toBe(300);
+    });
+  }
+  it('las guardias del canal graph se niegan con mutaciones: relé, credencial del relé, Authorization escrito a mano y Graph sin credencial', () => {
+    const a = copia(PRODUCCION); nodo(a, 'Enviar aviso').parameters.url = '=REEMPLAZAR_URL_INTERNA_DEL_RELE/v1/envio/mensajes';
+    expect(g('produccion', a).join(' ')).toMatch(/habla con el relé/);
+    const b = copia(PRODUCCION); (nodo(b, 'Enviar a WhatsApp') as unknown as { credentials: unknown }).credentials = { httpHeaderAuth: { id: '', name: 'AAB1 envío · cliente07' } };
+    expect(g('produccion', b).join(' ')).toMatch(/credencial del relé/);
+    const c = copia(PRODUCCION); (nodo(c, 'Enviar a WhatsApp').parameters as Record<string, unknown>)['headerParameters'] = { parameters: [{ name: 'Authorization', value: 'Bearer x' }] };
+    expect(g('produccion', c).join(' ')).toMatch(/header Authorization/);
+    const d = copia(PRODUCCION); delete (nodo(d, 'Enviar a WhatsApp') as unknown as { credentials?: unknown }).credentials;
+    expect(g('produccion', d).join(' ')).toMatch(/sin credencial por nombre/);
   });
 });

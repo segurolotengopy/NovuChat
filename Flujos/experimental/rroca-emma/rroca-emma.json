@@ -3,7 +3,7 @@
   "settings": {
     "executionOrder": "v1",
     "timezone": "America/La_Paz",
-    "executionTimeout": 300,
+    "executionTimeout": 120,
     "saveDataSuccessExecution": "none",
     "saveDataErrorExecution": "none",
     "saveExecutionProgress": false,
@@ -523,7 +523,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "=REEMPLAZAR_URL_INTERNA_DEL_RELE/v1/envio/medios/{{ String($('Normalizar entrada').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}",
+        "url": "=https://graph.facebook.com/{{ $('Config del negocio').first().json.waGraphVersion }}/{{ String($('Normalizar entrada').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
@@ -533,15 +533,15 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "",
-          "name": "AAB1 envío · cliente07"
+          "name": "Graph WhatsApp Dra. Emma (Bearer)"
         }
       },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "retryOnFail": true,
       "maxTries": 2,
-      "waitBetweenTries": 3000,
-      "notes": "Información del medio por el relé (GET medios/<id>): devuelve id, mime_type y file_size, no el archivo (ni url). Cada GET gasta una de las 500 descargas diarias por WABA (relé B9)."
+      "waitBetweenTries": 1000,
+      "notes": "GET /{media-id}: devuelve url, mime_type y file_size, no el archivo. El id ya viene validado ([A-Za-z0-9_-], hasta 100) por «Normalizar entrada»."
     },
     {
       "id": "si-tamano-aceptable",
@@ -563,7 +563,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ String($json.id || '') !== '' && Number($json.file_size) > 0 && Number($json.file_size) <= ($('Normalizar entrada').first().json.oirAudio === true ? 720000 : 5000000) }}",
+              "leftValue": "={{ String($json.url || '').startsWith('https://lookaside.fbsbx.com/') && Number($json.file_size) > 0 && Number($json.file_size) <= ($('Normalizar entrada').first().json.oirAudio === true ? 720000 : 5000000) }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -589,7 +589,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "=REEMPLAZAR_URL_INTERNA_DEL_RELE/v1/envio/medios/{{ String($('Normalizar entrada').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}/contenido",
+        "url": "={{ $json.url }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
@@ -610,15 +610,15 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "",
-          "name": "AAB1 envío · cliente07"
+          "name": "Graph WhatsApp Dra. Emma (Bearer)"
         }
       },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "retryOnFail": true,
       "maxTries": 2,
-      "waitBetweenTries": 3000,
-      "notes": "Contenido del medio por el relé (GET medios/<id>/contenido): el archivo como binario `data`, sin seguir redirecciones; solo llega aquí si «¿Tamaño aceptable?» confirmó el tamaño. No se guarda en ningún lado."
+      "waitBetweenTries": 1000,
+      "notes": "Baja el archivo CON el token y lo deja como binario `data`, sin seguir redirecciones. No se guarda en ningun lado."
     },
     {
       "id": "si-es-audio",
@@ -882,44 +882,30 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "",
-          "name": "AAB1 envío · cliente07"
+          "name": "Graph WhatsApp Dra. Emma (Bearer)"
         }
       },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "parameters": {
         "method": "POST",
-        "url": "=REEMPLAZAR_URL_INTERNA_DEL_RELE/v1/envio/mensajes/{{ String($json.phoneNumberId).replace(/\\D/g, '') }}",
+        "url": "=https://graph.facebook.com/{{ /^v\\d+\\.\\d$/.test(String($json.waGraphVersion)) ? $json.waGraphVersion : 'v26.0' }}/{{ String($json.phoneNumberId).replace(/\\D/g, '') }}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Idempotency-Key",
-              "value": "={{ 'rroca-emma-' + String($workflow.id).replace(/[^A-Za-z0-9_.-]/g, '_') + '-' + String($execution.id).replace(/[^A-Za-z0-9_.-]/g, '_') + '-aviso-' + (() => { const n = $json.n; if (!Number.isInteger(n) || n < 1) throw new Error('falta el numero del mensaje (n)'); return n; })() }}"
-            }
-          ]
-        },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const p = $json.payload; const o = {}; for (const k of [\"messaging_product\",\"recipient_type\",\"to\",\"type\",\"text\",\"interactive\",\"template\",\"reaction\",\"image\",\"audio\",\"video\",\"document\",\"sticker\"]) { if (p && p[k] !== undefined) o[k] = p[k]; } o.messaging_product = 'whatsapp'; o.to = String($json.para).replace(/\\D/g, ''); const sin = (v) => { if (Array.isArray(v)) return v.map(sin); if (v !== null && typeof v === 'object') { const r = {}; for (const c of Object.keys(v)) { if (c !== 'link') r[c] = sin(v[c]); } return r; } return v; }; const s = JSON.stringify(sin(o)); if (encodeURIComponent(s).replace(/%[0-9A-F]{2}/g, 'x').length > 65536) throw new Error('el mensaje pasa de 64 KiB'); return s; })() }}",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
         "options": {
-          "timeout": 30000,
+          "timeout": 15000,
           "batching": {
             "batch": {
               "batchSize": 1,
               "batchInterval": 1500
             }
-          },
-          "response": {
-            "response": {
-              "neverError": true
-            }
           }
         }
       },
-      "notes": "Envía de a uno, con 1,5 s entre mensajes y en el orden de «Armar previos», POR EL RELÉ (Idempotency-Key rol aviso + n). Sin reintentos: un aviso repetido llegaría dos veces. El resultado (un `wamid` real o el error del relé) lo lee «Armar mensajes»: si la imagen no salió, el texto no la promete.",
+      "notes": "Envía de a uno, con 1,5 s entre mensajes y en el orden de «Armar previos»: primero las imágenes (tipo image, con el id del medio ya subido a Meta) y después el aviso a la recepción (texto libre o plantilla). Sin reintentos: un aviso repetido llegaría dos veces. El resultado (un `wamid` real o un error) lo lee «Armar mensajes»: si la imagen no salió, el texto no la promete.",
       "position": [
         5000,
         200
@@ -1347,250 +1333,38 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "",
-          "name": "AAB1 envío · cliente07"
+          "name": "Graph WhatsApp Dra. Emma (Bearer)"
         }
       },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "parameters": {
         "method": "POST",
-        "url": "=REEMPLAZAR_URL_INTERNA_DEL_RELE/v1/envio/mensajes/{{ String($json.phoneNumberId).replace(/\\D/g, '') }}",
+        "url": "=https://graph.facebook.com/{{ /^v\\d+\\.\\d$/.test(String($json.waGraphVersion)) ? $json.waGraphVersion : 'v26.0' }}/{{ String($json.phoneNumberId).replace(/\\D/g, '') }}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Idempotency-Key",
-              "value": "={{ 'rroca-emma-' + String($workflow.id).replace(/[^A-Za-z0-9_.-]/g, '_') + '-' + String($execution.id).replace(/[^A-Za-z0-9_.-]/g, '_') + '-enviar-' + (() => { const n = $json.n; if (!Number.isInteger(n) || n < 1) throw new Error('falta el numero del mensaje (n)'); return n; })() }}"
-            }
-          ]
-        },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const p = $json.payload; const o = {}; for (const k of [\"messaging_product\",\"recipient_type\",\"to\",\"type\",\"text\",\"interactive\",\"template\",\"reaction\",\"image\",\"audio\",\"video\",\"document\",\"sticker\"]) { if (p && p[k] !== undefined) o[k] = p[k]; } o.messaging_product = 'whatsapp'; o.to = String(($json.payload || {}).to).replace(/\\D/g, ''); const sin = (v) => { if (Array.isArray(v)) return v.map(sin); if (v !== null && typeof v === 'object') { const r = {}; for (const c of Object.keys(v)) { if (c !== 'link') r[c] = sin(v[c]); } return r; } return v; }; const s = JSON.stringify(sin(o)); if (encodeURIComponent(s).replace(/%[0-9A-F]{2}/g, 'x').length > 65536) throw new Error('el mensaje pasa de 64 KiB'); return s; })() }}",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
         "options": {
-          "timeout": 30000,
+          "timeout": 15000,
           "batching": {
             "batch": {
               "batchSize": 1,
               "batchInterval": 1500
             }
-          },
-          "response": {
-            "response": {
-              "neverError": true
-            }
           }
         }
       },
-      "notes": "Un solo nodo para todo (texto, botones, lista, enlace, plantilla), por el relé B9. Envía de a uno con 1,5 s entre mensajes. Idempotency-Key = cliente-ejecución-enviar-n, la MISMA en cada reintento. Sin reintento propio del nodo (retryOnFail repetiría un 504): reintenta el bucle «Leer respuesta del relé» → «Esperar reintento»."
+      "notes": "Un solo nodo para todo (texto, botones, lista, enlace, plantilla). Envía de a uno con 1,5 s entre mensajes: Meta entregaba un mensaje y el siguiente fuera de orden."
     },
     {
-      "id": "rele-leer",
-      "name": "Leer respuesta del relé",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        5960,
-        160
-      ],
-      "parameters": {
-        "jsCode": "// CÓDIGOS DEL RELÉ B9 (módulo común de envío por el relé, PR 1 de la migración de los flujos de Rubén Roca).\n//\n// Se pega DELANTE de `decidir-envio.js` en el nodo Code «Leer respuesta del relé» (lo hace `envio.mjs`): el Code de n8n no tiene módulos.\n// JavaScript plano: sin require, URL, Buffer ni crypto.\n//\n// Las listas son las mismas de `core/salida-persona/resultado-del-envio.js` (contrato H2 §4): son LISTA PERMITIDA. Solo es rechazo seguro lo que el\n// relé rechaza ANTES de llamar a Meta, o un rechazo de Meta (WM-3040) con un código de Meta conocido. Todo lo demás es `incierto`: el mensaje pudo salir.\n//\n//   WM-3010 3011 3012 ... autenticación, pedido inválido, número ajeno\n//   WM-3031 3032 3033 3034 ... falta de clave, link de medio (3032 rechaza CUALQUIER link), tope, token del cliente\n//   WM-3035 ... otro pedido igual en curso (409): se espera 2 a 3 s y se repite con la MISMA clave\n//   WM-3037 ... tope por minuto (429): una espera de 61 a 64 s y se repite con la MISMA clave\n//   WM-3038 ... saturación (reintentable)\n//   WM-3039 ... medio mayor de 16 MiB (413): nunca se reintenta\n//   WM-3040 ... Meta rechazó; `metaCodigo` dice por qué (un id de medio vencido también da 502 WM-3040, no 404)\n//   WM-3041 ... 504, el relé no sabe si Meta lo aceptó: NUNCA se reenvía\n//   WM-3042 ... tipo de contenido inválido del medio\nconst RELE_PREVIOS = ['WM-3010', 'WM-3011', 'WM-3012', 'WM-3031', 'WM-3032', 'WM-3033', 'WM-3034', 'WM-3037', 'WM-3038', 'WM-3039'];\nconst RELE_METAS = ['131047', '131026', '131049', '131051', '131052', '131053', '130429'];\n// Cuántas veces se repite el MISMO mensaje (con la misma Idempotency-Key) por cada causa.\nconst RELE_TOPE_429 = 1;\nconst RELE_TOPE_409 = 2;\nconst RELE_PAUSAS_REINTENTABLE_S = [2, 8];\n// Y un tope TOTAL por mensaje: la suma de los reintentos de todos los motivos no pasa de 3 (sin él, un 409, un 429 y un reintentable harían hasta 5).\nconst RELE_TOPE_TOTAL = 3;\n// Estos NUNCA se repiten, diga lo que diga el relé en `reintentable`: el mismo pedido fallaría igual (un link, un medio de más de 16 MiB).\nconst RELE_NUNCA_REINTENTAR = ['WM-3032', 'WM-3039'];\n\n// LEER RESPUESTA DEL RELÉ (módulo común de envío por el relé B9). Corre en «run once for all items», después de «Enviar a WhatsApp», y decide\n// por cada mensaje qué sigue. La Switch «¿Qué hacer con el envío?» lee `accion`.\n//\n//   ok ........... el relé devolvió {messages:[{id}]}: se reporta con `idMeta`.\n//   reintentar ... se repite el MISMO mensaje con la MISMA clave tras `esperaS` segundos (nodo «Esperar reintento»).\n//   respaldo ..... el relé rechazó antes de Meta, o Meta rechazó con un código conocido: sale el mismo contenido como texto (un solo intento).\n//   incierto ..... el mensaje pudo haber salido (504 WM-3041, error de red, 2xx sin id, un código desconocido): NO se reenvía, sin respaldo, sin reporte.\n//   agotado ...... se acabaron los reintentos de una causa transitoria: sin respaldo y sin reporte (ese turno queda sin esa respuesta; decisión de Andres, D4).\n//\n// Tabla (plan del 02/11, §3f):\n//   WM-3041 ............................ incierto, nunca se reenvía\n//   WM-3037 (429) ...................... UNA vez tras 61 s + azar (61 a 64 s, bajo los 65 s en que n8n deja de esperar en memoria); luego agotado\n//   WM-3035 (409) ...................... hasta 2 veces tras 2 a 3 s; luego agotado\n//   `reintentable` de un código conocido  hasta 2 reintentos (2 s y 8 s); luego agotado (salvo WM-3032 y WM-3039, que nunca se repiten)\n//   TOPE TOTAL ......................... la suma de reintentos de todos los motivos no pasa de 3 por mensaje; el siguiente es agotado\n//   código previo o de Meta conocido ... respaldo\n//   cualquier otra cosa ................ incierto\n//\n// La respuesta llega SIN `fullResponse`: éxito = {messages:[{id}]}, error del relé = {error:{codigo, reintentable, metaCodigo}}, error de red o de tiempo\n// = {error:'texto'} (un string). De dónde viene el mensaje original: de «¿Enviar de verdad?» en la primera vuelta y de «Esperar reintento» en las\n// siguientes (`$runIndex` es el de este nodo, que corre una vez por cada vuelta del envío), emparejado por `pairedItem`.\n// JavaScript plano del nodo Code de n8n: sin require, URL, Buffer ni crypto.\nfunction releDecidir(respuesta, intentos, azar) {\n  const r = respuesta !== null && typeof respuesta === 'object' && !Array.isArray(respuesta) ? respuesta : {};\n  const ya = intentos !== null && typeof intentos === 'object' ? intentos : {};\n  const cuenta = { n429: Number(ya.n429) > 0 ? Number(ya.n429) : 0, n409: Number(ya.n409) > 0 ? Number(ya.n409) : 0, nReint: Number(ya.nReint) > 0 ? Number(ya.nReint) : 0 };\n  // Tope TOTAL por mensaje: la suma de reintentos de todos los motivos no pasa de RELE_TOPE_TOTAL (cada causa tiene además el suyo).\n  const total = cuenta.n429 + cuenta.n409 + cuenta.nReint;\n  const a = Math.min(Math.max(Number(azar) || 0, 0), 0.999999);\n  const limpio = (v) => String(v === undefined || v === null ? '' : v).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 40);\n  const fin = (accion, codigo, extra) => Object.assign({ accion: accion, codigo: limpio(codigo), esperaS: 0, intentos: cuenta }, extra || {});\n  const err = r.error !== null && typeof r.error === 'object' && !Array.isArray(r.error) ? r.error : null;\n  if (!err) {\n    // Un error que no es objeto (red, tiempo agotado): el mensaje pudo salir.\n    if (r.error !== undefined && r.error !== null && r.error !== false) return fin('incierto', 'RED');\n    const primero = Array.isArray(r.messages) ? r.messages[0] : undefined;\n    const id = primero && typeof primero.id === 'string' ? primero.id : '';\n    if (/^[A-Za-z0-9_.=:+/-]{1,120}$/.test(id)) return fin('ok', '', { idMeta: id });\n    return fin('incierto', 'SIN-ID');\n  }\n  const wm = typeof err.codigo === 'string' ? err.codigo : '';\n  if (!/^WM-\\d{4}$/.test(wm)) return fin('incierto', 'SIN-CODIGO');\n  if (wm === 'WM-3041') return fin('incierto', wm);\n  if (wm === 'WM-3037') {\n    if (cuenta.n429 >= RELE_TOPE_429 || total >= RELE_TOPE_TOTAL) return fin('agotado', wm);\n    cuenta.n429 += 1;\n    return fin('reintentar', wm, { esperaS: 61 + Math.floor(a * 4) });\n  }\n  if (wm === 'WM-3035') {\n    if (cuenta.n409 >= RELE_TOPE_409 || total >= RELE_TOPE_TOTAL) return fin('agotado', wm);\n    cuenta.n409 += 1;\n    return fin('reintentar', wm, { esperaS: 2 + Math.round(a * 10) / 10 });\n  }\n  let codigo = wm;\n  let conocido = false;\n  let reintentable = err.reintentable === true;\n  if (wm === 'WM-3040') {\n    const meta = String(err.metaCodigo === undefined || err.metaCodigo === null ? '' : err.metaCodigo);\n    conocido = RELE_METAS.indexOf(meta) >= 0;\n    codigo = conocido ? meta : wm;\n    if (meta === '130429') reintentable = true;\n  } else conocido = RELE_PREVIOS.indexOf(wm) >= 0;\n  if (!conocido) return fin('incierto', codigo);\n  if (reintentable && RELE_NUNCA_REINTENTAR.indexOf(wm) < 0) {\n    if (cuenta.nReint >= RELE_PAUSAS_REINTENTABLE_S.length || total >= RELE_TOPE_TOTAL) return fin('agotado', codigo);\n    const espera = RELE_PAUSAS_REINTENTABLE_S[cuenta.nReint];\n    cuenta.nReint += 1;\n    return fin('reintentar', codigo, { esperaS: espera });\n  }\n  return fin('respaldo', codigo);\n}\n\nconst respuestas = $input.all();\nconst vuelta = $runIndex;\n// FALLA CERRADA: «¿Enviar de verdad?» corre UNA vez por ejecución. Si hubiera una segunda corrida, `all(0, 0)` ya no sería el lote que se está enviando y\n// cada respuesta se emparejaría con el mensaje de OTRO origen (cruzado): se declara `incierto` (no se reenvía, no se respalda, no se reporta) con un motivo claro.\nlet origenCruzado = false;\ntry { origenCruzado = $('¿Enviar de verdad?').all(0, 1).length > 0; } catch (e) { origenCruzado = false; }\nif (origenCruzado) {\n  return respuestas.map((x, i) => ({ json: { accion: 'incierto', codigo: 'ORIGEN-AMBIGUO', esperaS: 0, motivo: '¿Enviar de verdad? corrio mas de una vez: el origen del mensaje es ambiguo' }, pairedItem: { item: i } }));\n}\nconst origen = vuelta > 0 ? $('Esperar reintento').all(0, vuelta - 1) : $('¿Enviar de verdad?').all(0, 0);\nreturn respuestas.map((x, i) => {\n  // La respuesta i del HTTP (neverError, un ítem por ítem de entrada, en orden) es del mensaje i del origen: n8n reescribe el pairedItem de la entrada del nodo\n  // a { item: i } antes de correrlo (n8n-core 2.36.4, workflow-execute.js:893-918) y el Wait devuelve esos mismos ítems, así que el índice i del origen es el correcto.\n  const par = i;\n  const src = origen[par] && origen[par].json && typeof origen[par].json === 'object' ? origen[par].json : null;\n  // Sin el mensaje original no hay con qué reintentar ni con qué respaldar: incierto, sin reenviar.\n  if (!src) return { json: { accion: 'incierto', codigo: 'SIN-ORIGEN', esperaS: 0 }, pairedItem: { item: i } };\n  const d = releDecidir(x.json, src.releIntentos, Math.random());\n  const salida = Object.assign({}, src, { accion: d.accion, codigo: d.codigo, esperaS: d.esperaS, releIntentos: d.intentos });\n  if (d.idMeta) salida.idMeta = d.idMeta; else delete salida.idMeta;\n  return { json: salida, pairedItem: { item: i } };\n});\n"
-      },
-      "notes": "Módulo común Flujos/src/core/rele/. Decide por mensaje: ok, reintentar (429 una vez tras 61 a 64 s; 409 hasta 2 veces tras 2 a 3 s; reintentable, 2 y 8 s), respaldo, incierto (504 WM-3041, red, código desconocido: nunca se reenvía) o agotado."
-    },
-    {
-      "id": "rele-que-hacer",
-      "name": "¿Qué hacer con el envío?",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
-      "position": [
-        6200,
-        300
-      ],
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "id": "a-reintentar",
-                    "leftValue": "={{ $json.accion }}",
-                    "rightValue": "reintentar",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "reintentar"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "id": "a-respaldo",
-                    "leftValue": "={{ $json.accion }}",
-                    "rightValue": "respaldo",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "respaldo"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "id": "a-incierto",
-                    "leftValue": "={{ $json.accion }}",
-                    "rightValue": "incierto",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  },
-                  {
-                    "id": "a-agotado",
-                    "leftValue": "={{ $json.accion }}",
-                    "rightValue": "agotado",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "or"
-              },
-              "renameOutput": true,
-              "outputKey": "detener"
-            }
-          ]
-        },
-        "options": {
-          "fallbackOutput": "extra",
-          "renameFallbackOutput": "listo"
-        }
-      },
-      "notes": "reintentar → espera y vuelve a «Enviar a WhatsApp»; respaldo → el mismo contenido como texto; detener (incierto o agotado, decisión I4 de Andres, 03/11) → «Detener por envío incierto», la ejecución termina en error; listo (ok) → sigue al reporte."
-    },
-    {
-      "id": "rele-esperar",
-      "name": "Esperar reintento",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        6440,
-        -40
-      ],
-      "parameters": {
-        "resume": "timeInterval",
-        "amount": "={{ Math.max(...$input.all().map((i) => Number(i.json.esperaS) || 0)) }}",
-        "unit": "seconds"
-      },
-      "notes": "Espera lo que pidió «Leer respuesta del relé» (2 a 3 s, 2 s, 8 s o 61 a 64 s). Menos de 65 s: n8n la mantiene en memoria. Vuelve a «Enviar a WhatsApp» con el mismo mensaje y la misma clave."
-    },
-    {
-      "id": "enviar-respaldo",
-      "name": "Enviar respaldo",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        6440,
-        160
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "",
-          "name": "AAB1 envío · cliente07"
-        }
-      },
-      "onError": "continueRegularOutput",
-      "alwaysOutputData": true,
-      "parameters": {
-        "method": "POST",
-        "url": "=REEMPLAZAR_URL_INTERNA_DEL_RELE/v1/envio/mensajes/{{ String($('Leer respuesta del relé').item.json.phoneNumberId).replace(/\\D/g, '') }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Idempotency-Key",
-              "value": "={{ 'rroca-emma-' + String($workflow.id).replace(/[^A-Za-z0-9_.-]/g, '_') + '-' + String($execution.id).replace(/[^A-Za-z0-9_.-]/g, '_') + '-respaldo-' + (() => { const n = $('Leer respuesta del relé').item.json.n; if (!Number.isInteger(n) || n < 1) throw new Error('falta el numero del mensaje (n)'); return n; })() }}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ (() => { const p = ({ messaging_product: 'whatsapp', recipient_type: 'individual', type: 'text', text: { preview_url: true, body: String($('Leer respuesta del relé').item.json.respaldo || '').slice(0, 4000) } }); const o = {}; for (const k of [\"messaging_product\",\"recipient_type\",\"to\",\"type\",\"text\",\"interactive\",\"template\",\"reaction\",\"image\",\"audio\",\"video\",\"document\",\"sticker\"]) { if (p && p[k] !== undefined) o[k] = p[k]; } o.messaging_product = 'whatsapp'; o.to = String($('Leer respuesta del relé').item.json.para).replace(/\\D/g, ''); const sin = (v) => { if (Array.isArray(v)) return v.map(sin); if (v !== null && typeof v === 'object') { const r = {}; for (const c of Object.keys(v)) { if (c !== 'link') r[c] = sin(v[c]); } return r; } return v; }; const s = JSON.stringify(sin(o)); if (encodeURIComponent(s).replace(/%[0-9A-F]{2}/g, 'x').length > 65536) throw new Error('el mensaje pasa de 64 KiB'); return s; })() }}",
-        "options": {
-          "timeout": 30000,
-          "batching": {
-            "batch": {
-              "batchSize": 1,
-              "batchInterval": 1500
-            }
-          },
-          "response": {
-            "response": {
-              "neverError": true
-            }
-          }
-        }
-      },
-      "notes": "Si el relé o Meta rechazan el interactivo o la plantilla, sale el mismo contenido como texto: UN solo intento (Idempotency-Key = cliente-ejecución-respaldo-n). Envía de a uno con 1,5 s entre mensajes. Lee el mensaje de «Leer respuesta del relé», no de «Armar mensajes»: el camino por el Switch y la espera es largo y así no depende del emparejamiento."
-    },
-    {
-      "id": "rele-detener",
-      "name": "Detener por envío incierto",
-      "type": "n8n-nodes-base.stopAndError",
-      "typeVersion": 1,
-      "position": [
-        6440,
-        500
-      ],
-      "parameters": {
-        "errorType": "errorMessage",
-        "errorMessage": "={{ 'Envio por el rele sin confirmar (' + String($json.accion).replace(/[^a-z]/g, '').slice(0, 10) + ', codigo ' + String($json.codigo).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 40) + ', rol enviar): no se reenvia, no se respalda, no se reporta.' }}"
-      },
-      "notes": "Decisión I4 (Andres, 03/11/2026): si la decisión del envío es «incierto» (504 WM-3041, red, código desconocido, origen ambiguo) o «agotado», la ejecución TERMINA EN ERROR y se ve en n8n. Sin reenvío, sin respaldo, sin reporte y sin avisar de nuevo al cliente. 0 mensajes por conversación. Va debajo de todo (corre al final)."
-    },
-    {
-      "id": "reportar-sal-si",
-      "name": "¿Reportar? (saliente)",
+      "id": "fallo-si",
+      "name": "¿Falló el envío?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        6680,
+        5960,
         300
       ],
       "parameters": {
@@ -1604,7 +1378,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ (() => { const j = $json || {}; return ((($json || {}).para !== undefined || ($json || {}).reportar !== undefined || ($json || {}).sinMensajes !== undefined) ? $json : $('Leer respuesta del relé').item.json).reportar === true && j.accion !== 'incierto' && j.accion !== 'agotado' && !j.error && !!(j.idMeta || (Array.isArray(j.messages) && j.messages[0] && j.messages[0].id)); })() }}",
+              "leftValue": "={{ !!($json && $json.error) }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -1617,7 +1391,79 @@
         },
         "options": {}
       },
-      "notes": "Solo lo que se envio AL CLIENTE se reporta (para = «cliente»), no en modo prueba, y nunca un envío incierto o agotado (sin idMeta no se cuenta como enviado)."
+      "notes": "Solo mira un campo `error` explicito; sin el, no fallo."
+    },
+    {
+      "id": "enviar-respaldo",
+      "name": "Enviar respaldo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6200,
+        160
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp Dra. Emma (Bearer)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ /^v\\d+\\.\\d$/.test(String($('Armar mensajes').item.json.waGraphVersion)) ? $('Armar mensajes').item.json.waGraphVersion : 'v26.0' }}/{{ String($('Armar mensajes').item.json.phoneNumberId).replace(/\\D/g, '') }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $('Armar mensajes').item.json.para, type: 'text', text: { preview_url: true, body: String($('Armar mensajes').item.json.respaldo || '').slice(0, 4000) } }) }}",
+        "options": {
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "notes": "Si Meta rechaza el interactivo o la plantilla, sale el mismo contenido como texto. Envía de a uno con 1,5 s entre mensajes."
+    },
+    {
+      "id": "reportar-sal-si",
+      "name": "¿Reportar? (saliente)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        6440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Armar mensajes').item.json.reportar === true && !!($json && !$json.error && Array.isArray($json.messages) && $json.messages[0] && $json.messages[0].id) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Solo lo que se envio AL CLIENTE se reporta (para = «cliente»), no en modo prueba y no si ni el respaldo salió (sin idMeta no se cuenta como enviado)."
     },
     {
       "id": "reportar-saliente",
@@ -1625,7 +1471,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        6920,
+        6680,
         160
       ],
       "credentials": {
@@ -1655,10 +1501,10 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const m = ((($json || {}).para !== undefined || ($json || {}).reportar !== undefined || ($json || {}).sinMensajes !== undefined) ? $json : $('Leer respuesta del relé').item.json); const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: $json.idMeta || ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } return JSON.stringify(r); })() }}",
+        "jsonBody": "={{ (() => { const m = $('Armar mensajes').item.json; const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } return JSON.stringify(r); })() }}",
         "options": {}
       },
-      "notes": "Una llamada por cada mensaje enviado al cliente. Lee el texto del nodo que arma los mensajes, no de la respuesta del envio; el idMeta viene de «Leer respuesta del relé» o de la respuesta del respaldo."
+      "notes": "Una llamada por cada mensaje enviado al cliente. Lee el texto del nodo que arma los mensajes, no de la respuesta del envio."
     },
     {
       "id": "gm-preparar",
@@ -1670,7 +1516,7 @@
         1300
       ],
       "parameters": {
-        "jsCode": "// FUENTES DEL GUARDADO: las arma Flujos/experimental/comun-sin-agente/src/guardado.mjs para este flujo (nombres de nodo literales, para que n8n los precargue).\nconst GM_FUENTES = {\n  carga: $('Carga de entrada').isExecuted ? $('Carga de entrada').first().json : {},\n  config: $('Config del negocio').isExecuted ? $('Config del negocio').first().json : {},\n};\nconst GM_CUPO = { porTelefono: 10, global: 30 };\n\n// CUPO DE DESCARGAS DEL GUARDADO (módulo común de medios, SOLO canal «rele»; revisión del PR #757).\n//\n// Por el relé B9 los GET de medios tienen un tope de 500 descargas por día y por WABA, y cada medio guardado gasta 2 (la info y el contenido), hasta 4 con los reintentos. Un solo teléfono\n// que manda fotos en ráfaga, o una conversación larga, no puede gastar el cupo de todos: pasado el tope el medio NO se guarda (el flujo sigue y responde\n// igual; el cliente no lo nota) y se cuenta para poder verlo. Dos topes, por día de La Paz (UTC-4 fijo):\n//   `GM_CUPO.porTelefono` ... medios por teléfono y día (10 por defecto; decisión de Andres, 03/11/2026)\n//   `GM_CUPO.global` ........ medios por flujo y día (30 por defecto: peor caso 4 GET por medio, 2 y sus reintentos, son 120 de las 500 del WABA, y entran 4 flujos)\n// Se cuenta ANTES de bajar nada, y SOLO lo que «Preparar guardado» (que va pegado detrás) dejaría pasar: un mensaje con un teléfono, un id de mensaje o un id\n// de medio inválidos se descarta ahí y acá NO gasta cupo (las mismas validaciones, repetidas abajo). No cuenta lo que escribe la recepción del negocio (es la\n// ventana de las 24 h, no un cliente), ni lo que no es un medio.\n// Se pega DELANTE de `guardado-preparar.js` en el mismo nodo Code (el jsCode empieza con la cabecera de `guardado.mjs` y luego este módulo): un `return []`\n// acá termina la rama en silencio, como el suyo. `GM_FUENTES` y `GM_CUPO` los define esa cabecera. El estado vive en `$getWorkflowStaticData('global')`,\n// clave `cupoDeMedios`; no guarda ningún dato del cliente salvo su número como clave, que se borra al cambiar de día.\n//\n// LO OMITIDO SE VE: sin agregar mensajes, cada medio omitido por cupo suma uno a `cupoDeMedios.omitidos` y al contador diario `guardadoDeMedios.omitidoPorCupo`\n// ({dia, n}), el mismo bloque donde «Resultado del guardado» anota `sinAcceso`, `pedidoInvalido`, `sinDescarga` y `sinTamano`. La rama termina ahí (no hay ítem\n// que llegue a la ingesta ni al aviso); el contador está en el estado del flujo para quien lo mire.\n//\n// LIMITACIÓN DE CONCURRENCIA (riesgo residual aceptado por Andres el 03/11/2026): n8n no da un candado y este estado se lee y se escribe sin él. Una RÁFAGA\n// (un álbum de fotos son N ejecuciones simultáneas) lo atraviesa: todas leen el mismo conteo y pasan. El tope por remitente de verdad lo pone el relé\n// (WAM); este cupo es una red del flujo, no una garantía exacta.\n// JavaScript plano del nodo Code de n8n: sin require, URL, Buffer ni crypto.\nconst gcCarga = (GM_FUENTES && GM_FUENTES.carga && typeof GM_FUENTES.carga === 'object') ? GM_FUENTES.carga : {};\nconst gcCfg = (GM_FUENTES && GM_FUENTES.config && typeof GM_FUENTES.config === 'object') ? GM_FUENTES.config : {};\nconst gcMsg = Array.isArray(gcCarga.messages) && gcCarga.messages[0] && typeof gcCarga.messages[0] === 'object' ? gcCarga.messages[0] : null;\nconst GC_MEDIOS = ['image', 'sticker', 'audio', 'voice', 'video', 'document'];\nif (gcMsg && GC_MEDIOS.indexOf(String(gcMsg.type || '')) >= 0) {\n  const gcTelefono = String(gcMsg.from || '');\n  const gcRecepcion = String(gcCfg.numeroRecepcionDigitos || gcCfg.numeroRecepcion || '').replace(/\\D/g, '');\n  // Las validaciones de «Preparar guardado» que descartan un mensaje: lo descartado no se cuenta.\n  // Mismo cálculo que «Preparar guardado»: un `voice` con solo la clave `audio` (o al revés) también es un medio y gasta cupo.\n  const gcTipoMeta = String(gcMsg.type);\n  const gcMedio = gcMsg[gcTipoMeta] || ((gcTipoMeta === 'audio' || gcTipoMeta === 'voice') ? (gcMsg.audio || gcMsg.voice) : null);\n  const gcValido = !!gcMedio && typeof gcMedio === 'object'\n    && /^\\d{8,15}$/.test(gcTelefono)\n    && /^[\\x21-\\x7e]{1,200}$/.test(String(gcMsg.id || ''))\n    && /^[A-Za-z0-9_-]{1,100}$/.test(String(gcMedio.id || ''));\n  if (gcValido && !(gcRecepcion && gcTelefono === gcRecepcion)) {\n    const gcAhora = Number(gcCarga.ahoraMs) > 0 ? Number(gcCarga.ahoraMs) : Date.now();\n    // El día de La Paz (UTC-4 fijo): el cupo de Meta se reinicia por día, y este se reinicia con el día del negocio.\n    const gcDia = new Date(gcAhora - 4 * 3600 * 1000).toISOString().slice(0, 10);\n    const gcSd = $getWorkflowStaticData('global');\n    if (!gcSd.cupoDeMedios || typeof gcSd.cupoDeMedios !== 'object' || Array.isArray(gcSd.cupoDeMedios) || gcSd.cupoDeMedios.dia !== gcDia) {\n      gcSd.cupoDeMedios = { dia: gcDia, total: 0, omitidos: 0, porTelefono: {} };\n    }\n    const gcCupo = gcSd.cupoDeMedios;\n    const gcCfgCupo = typeof GM_CUPO !== 'undefined' && GM_CUPO && typeof GM_CUPO === 'object' ? GM_CUPO : {};\n    const gcPorTel = Number(gcCfgCupo.porTelefono) > 0 ? Number(gcCfgCupo.porTelefono) : 10;\n    const gcGlobal = Number(gcCfgCupo.global) > 0 ? Number(gcCfgCupo.global) : 30;\n    const gcDeEste = Object.prototype.hasOwnProperty.call(gcCupo.porTelefono, gcTelefono) ? Number(gcCupo.porTelefono[gcTelefono]) : 0;\n    if (gcDeEste >= gcPorTel || gcCupo.total >= gcGlobal) {\n      gcCupo.omitidos += 1;\n      if (!gcSd.guardadoDeMedios || typeof gcSd.guardadoDeMedios !== 'object' || Array.isArray(gcSd.guardadoDeMedios)) gcSd.guardadoDeMedios = {};\n      const gcPrevio = gcSd.guardadoDeMedios.omitidoPorCupo && gcSd.guardadoDeMedios.omitidoPorCupo.dia === gcDia ? Number(gcSd.guardadoDeMedios.omitidoPorCupo.n) || 0 : 0;\n      gcSd.guardadoDeMedios.omitidoPorCupo = { dia: gcDia, n: Math.min(gcPrevio + 1, 1000) };\n      return [];\n    }\n    gcCupo.porTelefono[gcTelefono] = gcDeEste + 1;\n    gcCupo.total += 1;\n  }\n}\n\n// PREPARAR GUARDADO (módulo común de medios, contrato v2 «guardar y descargar TODO» del 30/10/2026 §1 y §4): decide si el medio de ESTE mensaje\n// entrante se guarda y con qué cabeceras.\n//\n// Corre en su PROPIA rama, colgada de «Reportar mensaje (entrante)» (el servidor exige el entrante ya registrado por la ingesta) y DEBAJO de la rama que\n// responde en el lienzo: con `executionOrder: v1` corre DESPUÉS de que el cliente recibió su respuesta, y nada de lo que pase acá corta el turno.\n// Devuelve [] (la rama termina en silencio) si el mensaje no trae un medio, o si le falta un dato que el servidor exige.\n// TODO medio se guarda (decisión de Andres, 30/10): imagen, audio (y nota de voz), video, documento de CUALQUIER tipo y sticker (va como `image`, webp).\n// Ya no hay modo Anotar. Cada uno se baja con SU PROPIA descarga de Meta (no gasta el tope diario de ver u oír). El flujo NO se adelanta al tope por tipo\n// del servidor (imagen 5 MB, audio, video y documento 16 MB): solo deja de bajar lo que Meta informa por encima de 16 MiB (`limite`), que cuenta como 413.\n// `mime` es el que declara Meta SOLO si está en la lista cerrada de abajo; si no, `application/octet-stream` (el servidor decide por los bytes). Viaja en\n// `X-NovuChat-Mime`. `contentType` (el transporte): imagen y audio, ese mismo mime; video y documento SIEMPRE `application/octet-stream`, para que el\n// framework de la Function no intente parsear el cuerpo (un documento declarado application/json, form o multipart daría 400 antes del handler).\n// También anota, en el estado estático del flujo (clave `guardadoDeMedios`), cuándo escribió por última vez la RECEPCIÓN: es la ventana de 24 h que\n// decide si el aviso de falla puede salir como texto libre. Ningún dato del cliente se guarda ahí.\n// Este nodo NO toca el binario: no lo hay todavía (se baja después) y nunca lo lee.\n//\n// `GM_FUENTES` la define la cabecera que arma `guardado.mjs` para cada flujo (`carga`: el nodo con `messages`; `config`: «Config del negocio»).\n// JavaScript plano del nodo Code de n8n: sin require, URL, Buffer ni crypto.\nconst gmCarga = (GM_FUENTES && GM_FUENTES.carga && typeof GM_FUENTES.carga === 'object') ? GM_FUENTES.carga : {};\nconst gmCfg = (GM_FUENTES && GM_FUENTES.config && typeof GM_FUENTES.config === 'object') ? GM_FUENTES.config : {};\nconst gmMsg = Array.isArray(gmCarga.messages) && gmCarga.messages[0] && typeof gmCarga.messages[0] === 'object' ? gmCarga.messages[0] : null;\nconst gmAhora = Number(gmCarga.ahoraMs) > 0 ? Number(gmCarga.ahoraMs) : Date.now();\nconst gmSd = $getWorkflowStaticData('global');\nif (!gmSd.guardadoDeMedios || typeof gmSd.guardadoDeMedios !== 'object' || Array.isArray(gmSd.guardadoDeMedios)) gmSd.guardadoDeMedios = {};\nconst gmEstado = gmSd.guardadoDeMedios;\nif (!gmMsg) return [];\n\nconst gmTelefono = String(gmMsg.from || '');\nconst gmRecepcion = String(gmCfg.numeroRecepcionDigitos || gmCfg.numeroRecepcion || '').replace(/\\D/g, '');\n// La ventana de la recepción: su último mensaje a este número (de cualquier tipo).\nif (gmRecepcion && gmTelefono === gmRecepcion) gmEstado.recepcionMs = gmAhora;\n\n// El tipo del mensaje de WhatsApp → la categoría que se manda en `X-NovuChat-Tipo` (contrato v2 §1: image | audio | video | document).\nconst GM_TIPOS = { image: 'image', sticker: 'image', audio: 'audio', voice: 'audio', video: 'video', document: 'document' };\nconst gmTipoMeta = String(gmMsg.type || '');\nconst gmTipo = Object.prototype.hasOwnProperty.call(GM_TIPOS, gmTipoMeta) ? GM_TIPOS[gmTipoMeta] : '';\nif (!gmTipo) return [];\nconst gmMedio = gmMsg[gmTipoMeta] || (gmTipo === 'audio' ? (gmMsg.audio || gmMsg.voice) : null);\nif (!gmMedio || typeof gmMedio !== 'object') return [];\nconst gmMediaId = String(gmMedio.id || '');\nconst gmIdMeta = String(gmMsg.id || '');\n// Lo que el servidor exige (§1): teléfono de 8 a 15 dígitos y el id del MENSAJE. Lo que viaja en una cabecera, sin espacios ni controles.\nif (!/^\\d{8,15}$/.test(gmTelefono) || !/^[\\x21-\\x7e]{1,200}$/.test(gmIdMeta) || !/^[A-Za-z0-9_-]{1,100}$/.test(gmMediaId)) return [];\nconst gmMimeCrudo = String(gmMedio.mime_type || '').toLowerCase().split(';')[0].trim();\n// La lista CERRADA de mimes que viajan tal cual en `Content-Type`; cualquier otro (o uno de otra categoría) va como application/octet-stream.\nconst GM_MIMES = {\n  image: ['image/jpeg', 'image/png', 'image/webp'],\n  audio: ['audio/ogg', 'audio/opus', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/mpeg', 'audio/aac', 'audio/amr'],\n  video: ['video/mp4', 'video/3gpp'],\n  document: [\n    'application/pdf', 'application/zip', 'text/plain', 'text/csv',\n    'application/msword', 'application/vnd.ms-excel', 'application/vnd.ms-powerpoint',\n    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',\n    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',\n    'application/vnd.openxmlformats-officedocument.presentationml.presentation',\n  ],\n};\nconst gmMime = GM_MIMES[gmTipo].indexOf(gmMimeCrudo) >= 0 ? gmMimeCrudo : 'application/octet-stream';\nconst gmContentType = gmTipo === 'image' || gmTipo === 'audio' ? gmMime : 'application/octet-stream';\n// 16 MiB: lo más grande que el flujo baja (Meta permite documentos de 100 MB; manda el tope de Andres). El tope por tipo lo impone el servidor.\nconst GM_LIMITE = 16 * 1024 * 1024;\n// Video y documento pueden pesar hasta 100 MB en WhatsApp: sin un tamaño informado por Meta NO se bajan (revisión de seguridad de #713). Imagen, audio y\n// sticker se bajan igual: el servidor ya los acota por tipo.\nconst GM_EXIGE_TAMANO = gmTipoMeta === 'video' || gmTipoMeta === 'document';\n\nreturn [{ json: {\n  telefono: gmTelefono,\n  idMeta: gmIdMeta,\n  tipo: gmTipo,\n  contentType: gmContentType,\n  mime: gmMime,\n  mediaId: gmMediaId,\n  limite: GM_LIMITE,\n  exigeTamano: GM_EXIGE_TAMANO,\n  // A quién iría el aviso de falla (el número del NEGOCIO, no del cliente).\n  recepcion: gmRecepcion,\n  ahoraMs: gmAhora,\n} }];\n"
+        "jsCode": "// FUENTES DEL GUARDADO: las arma Flujos/experimental/comun-sin-agente/src/guardado.mjs para este flujo (nombres de nodo literales, para que n8n los precargue).\nconst GM_FUENTES = {\n  carga: $('Carga de entrada').isExecuted ? $('Carga de entrada').first().json : {},\n  config: $('Config del negocio').isExecuted ? $('Config del negocio').first().json : {},\n};\n\n// PREPARAR GUARDADO (módulo común de medios, contrato v2 «guardar y descargar TODO» del 30/10/2026 §1 y §4): decide si el medio de ESTE mensaje\n// entrante se guarda y con qué cabeceras.\n//\n// Corre en su PROPIA rama, colgada de «Reportar mensaje (entrante)» (el servidor exige el entrante ya registrado por la ingesta) y DEBAJO de la rama que\n// responde en el lienzo: con `executionOrder: v1` corre DESPUÉS de que el cliente recibió su respuesta, y nada de lo que pase acá corta el turno.\n// Devuelve [] (la rama termina en silencio) si el mensaje no trae un medio, o si le falta un dato que el servidor exige.\n// TODO medio se guarda (decisión de Andres, 30/10): imagen, audio (y nota de voz), video, documento de CUALQUIER tipo y sticker (va como `image`, webp).\n// Ya no hay modo Anotar. Cada uno se baja con SU PROPIA descarga de Meta (no gasta el tope diario de ver u oír). El flujo NO se adelanta al tope por tipo\n// del servidor (imagen 5 MB, audio, video y documento 16 MB): solo deja de bajar lo que Meta informa por encima de 16 MiB (`limite`), que cuenta como 413.\n// `mime` es el que declara Meta SOLO si está en la lista cerrada de abajo; si no, `application/octet-stream` (el servidor decide por los bytes). Viaja en\n// `X-NovuChat-Mime`. `contentType` (el transporte): imagen y audio, ese mismo mime; video y documento SIEMPRE `application/octet-stream`, para que el\n// framework de la Function no intente parsear el cuerpo (un documento declarado application/json, form o multipart daría 400 antes del handler).\n// También anota, en el estado estático del flujo (clave `guardadoDeMedios`), cuándo escribió por última vez la RECEPCIÓN: es la ventana de 24 h que\n// decide si el aviso de falla puede salir como texto libre. Ningún dato del cliente se guarda ahí.\n// Este nodo NO toca el binario: no lo hay todavía (se baja después) y nunca lo lee.\n//\n// `GM_FUENTES` la define la cabecera que arma `guardado.mjs` para cada flujo (`carga`: el nodo con `messages`; `config`: «Config del negocio»).\n// JavaScript plano del nodo Code de n8n: sin require, URL, Buffer ni crypto.\nconst gmCarga = (GM_FUENTES && GM_FUENTES.carga && typeof GM_FUENTES.carga === 'object') ? GM_FUENTES.carga : {};\nconst gmCfg = (GM_FUENTES && GM_FUENTES.config && typeof GM_FUENTES.config === 'object') ? GM_FUENTES.config : {};\nconst gmMsg = Array.isArray(gmCarga.messages) && gmCarga.messages[0] && typeof gmCarga.messages[0] === 'object' ? gmCarga.messages[0] : null;\nconst gmAhora = Number(gmCarga.ahoraMs) > 0 ? Number(gmCarga.ahoraMs) : Date.now();\nconst gmSd = $getWorkflowStaticData('global');\nif (!gmSd.guardadoDeMedios || typeof gmSd.guardadoDeMedios !== 'object' || Array.isArray(gmSd.guardadoDeMedios)) gmSd.guardadoDeMedios = {};\nconst gmEstado = gmSd.guardadoDeMedios;\nif (!gmMsg) return [];\n\nconst gmTelefono = String(gmMsg.from || '');\nconst gmRecepcion = String(gmCfg.numeroRecepcionDigitos || gmCfg.numeroRecepcion || '').replace(/\\D/g, '');\n// La ventana de la recepción: su último mensaje a este número (de cualquier tipo).\nif (gmRecepcion && gmTelefono === gmRecepcion) gmEstado.recepcionMs = gmAhora;\n\n// El tipo del mensaje de WhatsApp → la categoría que se manda en `X-NovuChat-Tipo` (contrato v2 §1: image | audio | video | document).\nconst GM_TIPOS = { image: 'image', sticker: 'image', audio: 'audio', voice: 'audio', video: 'video', document: 'document' };\nconst gmTipoMeta = String(gmMsg.type || '');\nconst gmTipo = Object.prototype.hasOwnProperty.call(GM_TIPOS, gmTipoMeta) ? GM_TIPOS[gmTipoMeta] : '';\nif (!gmTipo) return [];\nconst gmMedio = gmMsg[gmTipoMeta] || (gmTipo === 'audio' ? (gmMsg.audio || gmMsg.voice) : null);\nif (!gmMedio || typeof gmMedio !== 'object') return [];\nconst gmMediaId = String(gmMedio.id || '');\nconst gmIdMeta = String(gmMsg.id || '');\n// Lo que el servidor exige (§1): teléfono de 8 a 15 dígitos y el id del MENSAJE. Lo que viaja en una cabecera, sin espacios ni controles.\nif (!/^\\d{8,15}$/.test(gmTelefono) || !/^[\\x21-\\x7e]{1,200}$/.test(gmIdMeta) || !/^[A-Za-z0-9_-]{1,100}$/.test(gmMediaId)) return [];\nconst gmMimeCrudo = String(gmMedio.mime_type || '').toLowerCase().split(';')[0].trim();\n// La lista CERRADA de mimes que viajan tal cual en `Content-Type`; cualquier otro (o uno de otra categoría) va como application/octet-stream.\nconst GM_MIMES = {\n  image: ['image/jpeg', 'image/png', 'image/webp'],\n  audio: ['audio/ogg', 'audio/opus', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/mpeg', 'audio/aac', 'audio/amr'],\n  video: ['video/mp4', 'video/3gpp'],\n  document: [\n    'application/pdf', 'application/zip', 'text/plain', 'text/csv',\n    'application/msword', 'application/vnd.ms-excel', 'application/vnd.ms-powerpoint',\n    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',\n    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',\n    'application/vnd.openxmlformats-officedocument.presentationml.presentation',\n  ],\n};\nconst gmMime = GM_MIMES[gmTipo].indexOf(gmMimeCrudo) >= 0 ? gmMimeCrudo : 'application/octet-stream';\nconst gmContentType = gmTipo === 'image' || gmTipo === 'audio' ? gmMime : 'application/octet-stream';\n// 16 MiB: lo más grande que el flujo baja (Meta permite documentos de 100 MB; manda el tope de Andres). El tope por tipo lo impone el servidor.\nconst GM_LIMITE = 16 * 1024 * 1024;\n// Video y documento pueden pesar hasta 100 MB en WhatsApp: sin un tamaño informado por Meta NO se bajan (revisión de seguridad de #713). Imagen, audio y\n// sticker se bajan igual: el servidor ya los acota por tipo.\nconst GM_EXIGE_TAMANO = gmTipoMeta === 'video' || gmTipoMeta === 'document';\n\nreturn [{ json: {\n  telefono: gmTelefono,\n  idMeta: gmIdMeta,\n  tipo: gmTipo,\n  contentType: gmContentType,\n  mime: gmMime,\n  mediaId: gmMediaId,\n  limite: GM_LIMITE,\n  exigeTamano: GM_EXIGE_TAMANO,\n  // A quién iría el aviso de falla (el número del NEGOCIO, no del cliente).\n  recepcion: gmRecepcion,\n  ahoraMs: gmAhora,\n} }];\n"
       },
       "notes": "Rama del GUARDADO de medios (módulo común Flujos/src/core/medios/): todo medio se guarda (imagen, audio, video, documento de cualquier tipo, sticker). Corre después de la respuesta al cliente y nunca la frena. No toca el binario."
     },
@@ -1685,30 +1531,25 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "=REEMPLAZAR_URL_INTERNA_DEL_RELE/v1/envio/medios/{{ String($('Preparar guardado').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}",
+        "url": "=https://graph.facebook.com/{{ (/^v\\d+\\.\\d$/.test(String($('Config del negocio').first().json.waGraphVersion)) ? $('Config del negocio').first().json.waGraphVersion : 'v26.0') }}/{{ String($json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
-          "timeout": 30000,
-          "redirect": {
-            "redirect": {
-              "followRedirects": false
-            }
-          }
+          "timeout": 10000
         }
       },
       "credentials": {
         "httpHeaderAuth": {
           "id": "",
-          "name": "AAB1 envío · cliente07"
+          "name": "Graph WhatsApp Dra. Emma (Bearer)"
         }
       },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "retryOnFail": true,
       "maxTries": 2,
-      "waitBetweenTries": 3000,
-      "notes": "Información del medio por el relé B9 (GET medios/<id>): devuelve id, mime_type, file_size y sha256 (sin url). Reintento propio del nodo (2 intentos, 3 s; GET idempotente): un fallo reintentable (por ejemplo un 502 WM-3040) gasta una descarga más de las 500 diarias por WABA; un 429 no gasta. Llamada PROPIA del guardado (doble descarga)."
+      "waitBetweenTries": 1000,
+      "notes": "GET /{media-id} con la credencial de WhatsApp: devuelve url, mime_type y file_size. Llamada PROPIA del guardado (doble descarga): no gasta el tope de ver u oír."
     },
     {
       "id": "gm-descargar",
@@ -1721,7 +1562,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "={{ (() => { const p = $('Preparar guardado').first().json; const t = $('Pedir el medio a Meta (guardado)').first().json; const tope = p.tipo === 'image' ? Math.min(Number(p.limite), 5242880) : Number(p.limite); return Number.isFinite(tope) && tope > 0 && Number(t.file_size) > 0 && Number(t.file_size) <= tope; })() ? 'REEMPLAZAR_URL_INTERNA_DEL_RELE/v1/envio/medios/' + String($('Preparar guardado').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') + '/contenido' : '' }}",
+        "url": "={{ (String($json.url || '').startsWith('https://lookaside.fbsbx.com/') && !(Number($json.file_size) > Number($('Preparar guardado').first().json.limite)) && !($('Preparar guardado').first().json.exigeTamano === true && !(Number($json.file_size) > 0))) ? $json.url : '' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
@@ -1742,15 +1583,12 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "",
-          "name": "AAB1 envío · cliente07"
+          "name": "Graph WhatsApp Dra. Emma (Bearer)"
         }
       },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
-      "retryOnFail": true,
-      "maxTries": 2,
-      "waitBetweenTries": 3000,
-      "notes": "Baja el archivo por el relé (GET medios/<id>/contenido), sin seguir redirecciones, SOLO si la info trajo un file_size mayor que cero y de hasta 16 MiB. Si no (sin tamaño, demasiado grande, id vencido), la URL queda vacía y no se baja nada. Sin neverError: un 4xx o 5xx deja un item sin binario. 60 s para 16 MiB."
+      "notes": "Baja el archivo del CDN de Meta con el token, sin seguir redirecciones, SOLO si Meta informó un tamaño de hasta 16 MiB. Si no, la URL queda vacía y no se baja nada (cuenta como 413). 60 s para 16 MiB."
     },
     {
       "id": "gm-guardar",
@@ -1932,29 +1770,20 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "=REEMPLAZAR_URL_INTERNA_DEL_RELE/v1/envio/mensajes/{{ String($('Normalizar entrada').first().json.phoneNumberId).replace(/\\D/g, '') }}",
+        "url": "=https://graph.facebook.com/{{ (/^v\\d+\\.\\d$/.test(String($('Config del negocio').first().json.waGraphVersion)) ? $('Config del negocio').first().json.waGraphVersion : 'v26.0') }}/{{ String($('Normalizar entrada').first().json.phoneNumberId).replace(/\\D/g, '') }}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Idempotency-Key",
-              "value": "={{ 'rroca-emma-' + String($workflow.id).replace(/[^A-Za-z0-9_.-]/g, '_') + '-' + String($execution.id).replace(/[^A-Za-z0-9_.-]/g, '_') + '-avisoguardado-' + (() => { const n = 1; if (!Number.isInteger(n) || n < 1) throw new Error('falta el numero del mensaje (n)'); return n; })() }}"
-            }
-          ]
-        },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const p = ({ messaging_product: 'whatsapp', recipient_type: 'individual', type: 'text', text: { preview_url: false, body: String($json.texto || '').slice(0, 500) } }); const o = {}; for (const k of [\"messaging_product\",\"recipient_type\",\"to\",\"type\",\"text\",\"interactive\",\"template\",\"reaction\",\"image\",\"audio\",\"video\",\"document\",\"sticker\"]) { if (p && p[k] !== undefined) o[k] = p[k]; } o.messaging_product = 'whatsapp'; o.to = String($json.numeroRecepcion).replace(/\\D/g, ''); const sin = (v) => { if (Array.isArray(v)) return v.map(sin); if (v !== null && typeof v === 'object') { const r = {}; for (const c of Object.keys(v)) { if (c !== 'link') r[c] = sin(v[c]); } return r; } return v; }; const s = JSON.stringify(sin(o)); if (encodeURIComponent(s).replace(/%[0-9A-F]{2}/g, 'x').length > 65536) throw new Error('el mensaje pasa de 64 KiB'); return s; })() }}",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $json.numeroRecepcion, type: 'text', text: { preview_url: false, body: String($json.texto || '').slice(0, 500) } }) }}",
         "options": {
-          "timeout": 30000
+          "timeout": 10000
         }
       },
       "credentials": {
         "httpHeaderAuth": {
           "id": "",
-          "name": "AAB1 envío · cliente07"
+          "name": "Graph WhatsApp Dra. Emma (Bearer)"
         }
       },
       "notes": "El aviso de falla a la recepción del negocio, en texto libre (su ventana está abierta). Sin reintentos: un aviso repetido llegaría dos veces. Sin onError: si falla, la ejecución termina en error (corre al final, el cliente ya tiene su respuesta). +1 mensaje solo cuando falla el guardado, a lo más uno por día."
@@ -2406,82 +2235,6 @@
         ]
       ]
     },
-    "Enviar a WhatsApp": {
-      "main": [
-        [
-          {
-            "node": "Leer respuesta del relé",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Leer respuesta del relé": {
-      "main": [
-        [
-          {
-            "node": "¿Qué hacer con el envío?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "¿Qué hacer con el envío?": {
-      "main": [
-        [
-          {
-            "node": "Esperar reintento",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Enviar respaldo",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Detener por envío incierto",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "¿Reportar? (saliente)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Esperar reintento": {
-      "main": [
-        [
-          {
-            "node": "Enviar a WhatsApp",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Enviar respaldo": {
-      "main": [
-        [
-          {
-            "node": "¿Reportar? (saliente)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "¿Enviar de verdad?": {
       "main": [
         [
@@ -2491,6 +2244,46 @@
             "index": 0
           }
         ],
+        [
+          {
+            "node": "¿Falló el envío?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar a WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "¿Falló el envío?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Falló el envío?": {
+      "main": [
+        [
+          {
+            "node": "Enviar respaldo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Reportar? (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar respaldo": {
+      "main": [
         [
           {
             "node": "¿Reportar? (saliente)",
