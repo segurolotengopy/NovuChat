@@ -1,5 +1,5 @@
 /**
- * LOS 4 HUECOS DEL FILTRO DE REDACCIÓN SEGURA (`Flujos/experimental/comun-sin-agente/src/filtro-redaccion.js`):
+ * LOS 4 HUECOS DEL FILTRO DE REDACCIÓN SEGURA (`Flujos/src/core/texto/filtro-redaccion.js`):
  * tope de oraciones configurable, datos de pago, afirmar compra/entrega y promesas de aviso. Todas son opciones OPT-IN:
  * apagadas, el filtro se comporta como antes. Banco: `fixtures/redaccion-segura-huecos.json`.
  */
@@ -7,17 +7,17 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ejecutar } from './lib/flujo';
+import { ejecutar } from '../lib/flujo';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const FUENTE = readFileSync(join(AQUI, '../../Flujos/experimental/comun-sin-agente/src/filtro-redaccion.js'), 'utf8');
+const FUENTE = readFileSync(join(AQUI, '../../../Flujos/src/core/texto/filtro-redaccion.js'), 'utf8');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Fn = (...a: any[]) => any;
 const F = ejecutar(`${FUENTE}\nreturn [{ json: { cmMotivoDeRechazo, cmPulirRedaccion } }];`, [{}])[0] as Record<'cmMotivoDeRechazo' | 'cmPulirRedaccion', Fn>;
 const motivo = (t: string, o?: object): string => F.cmMotivoDeRechazo(t, o);
 
 interface Grupo { falsosPositivosConocidos?: string[]; opcion: string; motivo: string; rechazos: string[]; pasan: string[]; conAvisoRespaldado?: { pasan: string[]; rechazos: string[] } }
-const BANCO = JSON.parse(readFileSync(join(AQUI, 'fixtures/redaccion-segura-huecos.json'), 'utf8')) as { grupos: Grupo[] };
+const BANCO = JSON.parse(readFileSync(join(AQUI, '../fixtures/redaccion-segura-huecos.json'), 'utf8')) as { grupos: Grupo[] };
 // Los montos los dice el código; el banco prueba la opción, así que se permiten para que el motivo sea el de la opción.
 const base = { permitirMontos: true };
 

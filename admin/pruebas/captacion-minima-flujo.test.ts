@@ -2192,6 +2192,7 @@ describe('construir.mjs: el flujo armado es el que sale de la plantilla y los da
       mkdirSync(join(tmp, 'Flujos/src/modulos/captacion'), { recursive: true });
       cpSync(join(CARPETA, '../../src/modulos/crm'), join(tmp, 'Flujos/src/modulos/crm'), { recursive: true });
       cpSync(join(CARPETA, '../../src/modulos/captacion/crm-captacion.js'), join(tmp, 'Flujos/src/modulos/captacion/crm-captacion.js'));
+      cpSync(join(CARPETA, '../../src/core/texto/filtro-redaccion.js'), join(tmp, 'Flujos/src/core/texto/filtro-redaccion.js'));
       const sinLocal = (src: string): boolean => !src.endsWith('.local.json'); // un `.local.json` lleva valores reales: nunca a un temporal
       cpSync(CARPETA, cm, { recursive: true, filter: sinLocal });
       cpSync(join(CARPETA, '../comun-sin-agente'), join(exp, 'comun-sin-agente'), { recursive: true, filter: sinLocal });

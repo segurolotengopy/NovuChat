@@ -106,7 +106,7 @@ describe('core/texto/no-repetir', () => {
   });
 });
 
-const FILTRO = readFileSync(join(RAIZ, '../../../experimental/comun-sin-agente/src/filtro-redaccion.js'), 'utf8');
+const FILTRO = readFileSync(join(RAIZ, 'filtro-redaccion.js'), 'utf8');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const F = ejecutar(`${FILTRO}\nreturn [{ json: { cmMotivoDeRechazo } }];`, [{}])[0] as unknown as { json: { cmMotivoDeRechazo: (t: string) => string } } | { cmMotivoDeRechazo: (t: string) => string };
 const motivo = (t: string): string => ('json' in F ? F.json : F).cmMotivoDeRechazo(t);

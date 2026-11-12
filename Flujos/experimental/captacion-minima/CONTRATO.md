@@ -14,7 +14,7 @@ Referencias a leer antes de escribir: `Flujos/experimental/agenda-minima/` (DISE
 plantilla, `construir.mjs`, `src/nodos/_comun.js`, y `admin/pruebas/agenda-minima-flujo.test.ts`
 con su n8n de mentira); `Flujos/experimental/venta-minima/construir.mjs` (datos del tenant,
 `@@cred:`, guardias, huérfanos, retención `none`); `Flujos/experimental/comun-sin-agente/`
-(armador genérico, `src/mensajes.js` con las `cm*`, `src/filtro-redaccion.js`).
+(armador genérico, `src/mensajes.js` con las `cm*`, y el filtro de redacción, que vive en `Flujos/src/core/texto/filtro-redaccion.js`).
 Cantera (solo en la rama del PR 389, commit `8173a00`; se lee con `git show 8173a00:<ruta>`):
 `Flujos/src/modulos/captacion/*` y `Flujos/src/core/captacion/*`.
 

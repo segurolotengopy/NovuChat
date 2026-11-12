@@ -101,7 +101,7 @@ export const CONFIG = {
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
-    filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
+    filtro: ['../../src/core/texto/filtro-redaccion.js'],
     avisos: ['../venta-minima/src/lib/avisos.js'],
     prompt: ['src/lib/prompt-vacio.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],

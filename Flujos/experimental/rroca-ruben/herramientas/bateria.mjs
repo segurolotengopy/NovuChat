@@ -43,7 +43,7 @@ const CARPETA_FLUJO = join(AQUI, '..');
 const RUTA_FLUJO = join(CARPETA_FLUJO, 'rroca-ruben.prueba.json');
 const RUTA_CASOS = join(AQUI, 'bateria-casos.json');
 // El filtro común de la redacción y, EN EL MISMO ORDEN que el armador, las librerías del flujo (base común, core de texto y `rr.js`): no hay una lista aparte que pueda desactualizarse.
-const RUTAS_DE_LA_LIBRERIA = [join(CARPETA_FLUJO, '../comun-sin-agente/src/filtro-redaccion.js'), ...CONFIG.librerias.map((r) => join(CARPETA_FLUJO, r))];
+const RUTAS_DE_LA_LIBRERIA = [join(CARPETA_FLUJO, '../../src/core/texto/filtro-redaccion.js'), ...CONFIG.librerias.map((r) => join(CARPETA_FLUJO, r))];
 
 // Datos de ejemplo: teléfonos sintéticos (seis ceros) y el catálogo de Rubén. Lunes 05/10/2026, 10:00 en La Paz.
 const PID = '59100000003';

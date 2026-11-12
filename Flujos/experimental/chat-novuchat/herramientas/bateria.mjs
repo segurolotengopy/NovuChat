@@ -47,7 +47,7 @@ const RUTA_FLUJO = join(RAIZ_FLUJO, 'chat-novuchat.novuchat.json');
 const RUTA_CASOS = join(AQUI, 'bateria-casos.json');
 const RUTA_DATOS = join(AQUI, '../../../../admin/scripts/datos/chat-novuchat/novuchat.json');
 const RUTA_MENSAJES = join(AQUI, '../../comun-sin-agente/src/mensajes.js');
-const RUTA_FILTRO = join(AQUI, '../../comun-sin-agente/src/filtro-redaccion.js');
+const RUTA_FILTRO = join(AQUI, '../../../src/core/texto/filtro-redaccion.js');
 const RUTA_LIB = join(AQUI, '../src/lib/chat.js');
 
 /** USD por millón de tokens. Los cacheados se cobran a un décimo de la entrada; el razonamiento, como salida. */

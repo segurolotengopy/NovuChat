@@ -1,7 +1,7 @@
 {
  "_leeme": [
   "Banco compartido de frases de redacción del modelo (sin secretos, sin teléfonos reales).",
-  "Lo lee admin/pruebas/comun-sin-agente-filtro.test.ts contra cmMotivoDeRechazo con opciones por defecto (sin permitirMontos).",
+  "Lo lee admin/pruebas/core/texto-filtro-redaccion.test.ts contra cmMotivoDeRechazo con opciones por defecto (sin permitirMontos).",
   "Esquema de cada entrada: { texto, grupo: \"pago\"|\"evasion\"|\"ia\"|\"legitima\", nota, estado_hoy: \"bloquea\"|\"pasa\", conocido?: true, cliente?: string }. `cliente` es lo que preguntó el cliente (textoDelCliente): la prueba lo pasa al filtro.",
   "deben_bloquearse: frases que el filtro DEBE rechazar. deben_pasar: frases legítimas que DEBE dejar salir.",
   "estado_hoy: lo que hace el filtro de esta rama. conocido:true marca un HUECO: una frase de deben_bloquearse que hoy pasa, o una de deben_pasar que hoy se bloquea (falso positivo aceptado).",

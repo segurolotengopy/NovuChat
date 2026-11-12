@@ -224,9 +224,9 @@ describe('lo incluido es byte a byte igual a su fuente', () => {
   });
   it('«Armar mensajes»: librerías + _comun + los constructores de mensajes comunes + su código', () => {
     const libs = LIBS.map(fuente);
-    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('comun-sin-agente/src/mensajes.js'), fuente('comun-sin-agente/src/filtro-redaccion.js'), fuente('../src/modulos/pedidos/qr-del-pedido.js'), fuente('casa-bermejo/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
+    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('comun-sin-agente/src/mensajes.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../src/modulos/pedidos/qr-del-pedido.js'), fuente('casa-bermejo/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar mensajes')).toBe(esperado);
-    const avisos = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('comun-sin-agente/src/filtro-redaccion.js'), fuente('casa-bermejo/src/nodos/armar-avisos.js')].join('\n\n') + '\n';
+    const avisos = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('casa-bermejo/src/nodos/armar-avisos.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar avisos')).toBe(avisos);
     for (const [n, a] of [['Decidir turno', 'decidir-turno'], ['Interpretar lectura', 'interpretar-lectura']]) expect(codigo(PRODUCCION, n), n).toBe([...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente(`casa-bermejo/src/nodos/${a}.js`)].join('\n\n') + '\n');
   });

@@ -49,7 +49,7 @@ export const CONFIG_BASE = {
   comun: ['src/nodos/_comun.js', 'src/nodos/_registro.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
-    filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
+    filtro: ['../../src/core/texto/filtro-redaccion.js'],
     tipeo: ['../../src/core/texto/tipeo.js'],
     // El estado de la conversación en el servidor es un MÓDULO COMÚN (PR-4a0): se INCLUYE, no se copia. Sus parámetros (`SS_CONFIG`) los declara `src/nodos/_registro.js`.
     sesion: ['../comun-sin-agente/src/sesion.js'],

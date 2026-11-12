@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const RESCATE = join(aqui, '../../Flujos/experimental/rescate-22h');
-const FILTRO = join(aqui, '../../Flujos/experimental/comun-sin-agente/src/filtro-redaccion.js');
+const FILTRO = join(aqui, '../../Flujos/src/core/texto/filtro-redaccion.js');
 
 interface Cfg { rescateQuien: string; rescateContexto: string; rescateSaludo: string; rescateTextoFijo: string; quienPromete: string }
 interface Lib {

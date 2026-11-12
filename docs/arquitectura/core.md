@@ -761,3 +761,7 @@ bytes quedan en la base de n8n fuera del plazo y del borrado de arriba. Ninguna
 bandera se enciende antes de que la purga esté desplegada y probada.
 
 **Costo en mensajes por conversación: 0** (guardar no envía nada).
+
+## Filtro común de redacción en `Flujos/src/core/texto/` (08/11/2026)
+
+`Flujos/src/core/texto/filtro-redaccion.js` (`cmMotivoDeRechazo`, `cmPulirRedaccion`, `cmRevisarRedaccion`…) es la **única fuente** del filtro de lo que redacta el modelo. **Origen histórico:** nació en `Flujos/experimental/comun-sin-agente/src/` y de ahí conserva el prefijo `cm` de sus funciones (no se renombra: los consumidores y las suites lo usan). El core no puede depender de experimental, por eso subió. Los 10 constructores que lo usan (captacion-minima, casa-bermejo, chat-novuchat, doctoras, rescate-22h, rroca-antonio, rroca-emma, rroca-evy, rroca-ruben, walisuma) declaran `raiz: ../..` (= `Flujos/`) y lo piden con `../../src/core/texto/filtro-redaccion.js`; sus salidas quedan idénticas byte a byte. Suites: `admin/pruebas/core/texto-filtro-redaccion*.test.ts`. Pendiente con dueño: las copias por cliente (`bm-venta.js`, `ev.js`, `wl-venta.js`, `chat.js`) las retira cada sesión de cliente al adoptar; la adopción en Q'Taco (`venta-minima`) va en el PR B. Costo: 0 mensajes por conversación, 0 nodos.

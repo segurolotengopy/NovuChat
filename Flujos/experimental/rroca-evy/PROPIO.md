@@ -4,7 +4,7 @@ Regla (Andres, 09/10/2026): flujo propio = composición propia + núcleo común 
 Este flujo se rehízo **desde cero** (23/10/2026) y no hereda nada del asistente de las doctoras (`Flujos/experimental/doctoras/`, que sigue siendo de Emma y no se toca).
 
 ## Incluido desde su fuente (nunca copiado)
-- Mensajes (`comun-sin-agente/src/mensajes.js`), filtro de redacción (`comun-sin-agente/src/filtro-redaccion.js`: `cmMotivoDeRechazo`), cadena de envío (`injertar`) y armador: `comun-sin-agente/`.
+- Mensajes (`comun-sin-agente/src/mensajes.js`), filtro de redacción (`Flujos/src/core/texto/filtro-redaccion.js`: `cmMotivoDeRechazo`), cadena de envío (`injertar`) y armador: `comun-sin-agente/`.
 - Avisos (`venta-minima/src/lib/avisos.js`): `avTexto`, `avPlantilla`, `avLimpio`, `avDestinatarios`.
 - La transcripción de audio: `Flujos/src/core/medios/preparar-transcripcion.js`, byte a byte (la guardia de armado y la de publicación lo comprueban).
 

@@ -292,7 +292,7 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
     expect(leer('prompts/emma.md')).toContain('Hoy tu valoración con la Dra. Emma es **100% gratuita y sin compromiso**');
   });
   it('M-c: evNumeroDePrecio no es cuadrática con salidas de 200 000 caracteres (≤ 100 ms)', () => {
-    const lib = runInNewContext(`const EV_PROMPT='';\n${leer('../comun-sin-agente/src/filtro-redaccion.js')}\n${leer('src/lib/ev.js')}\n({ evNumeroDePrecio })`, {}) as { evNumeroDePrecio: (t: string, c: string, d: string) => string };
+    const lib = runInNewContext(`const EV_PROMPT='';\n${leer('../../src/core/texto/filtro-redaccion.js')}\n${leer('src/lib/ev.js')}\n({ evNumeroDePrecio })`, {}) as { evNumeroDePrecio: (t: string, c: string, d: string) => string };
     for (const t of ['9'.repeat(200000), '1,'.repeat(100000), 'unos ' + '1.000'.repeat(40000), 'unos ' + '1'.repeat(200000) + ' minutos', '1.0001.000'.repeat(20000)]) {
       const ini = Date.now();
       lib.evNumeroDePrecio(t, '¿cuánto cuesta?', 'Av. Pauserna # 2055');

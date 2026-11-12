@@ -1,5 +1,5 @@
 /**
- * EL FILTRO DE LA REDACCIÓN DEL MODELO (`Flujos/experimental/comun-sin-agente/src/filtro-redaccion.js`).
+ * EL FILTRO DE LA REDACCIÓN DEL MODELO (`Flujos/src/core/texto/filtro-redaccion.js`).
  *
  * El modelo conversa, pero NADA de lo que escribe sale sin pasar por aquí. Cada regla tiene su caso positivo
  * (el texto se rechaza, con su MOTIVO) y su caso negativo (el texto honesto pasa): un filtro que rechaza todo
@@ -10,9 +10,9 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ejecutar } from './lib/flujo';
+import { ejecutar } from '../lib/flujo';
 
-const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/comun-sin-agente/src/filtro-redaccion.js');
+const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../../Flujos/src/core/texto/filtro-redaccion.js');
 const FUENTE = readFileSync(RUTA, 'utf8');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Fn = (...a: any[]) => any;
@@ -334,7 +334,7 @@ describe('pulir la redacción', () => {
 
 // BANCO COMPARTIDO de frases (esquema en la cabecera `_leeme` del JSON). Lo no marcado `conocido` se AFIRMA; los huecos conocidos solo se informan.
 interface EntradaBanco { texto: string; grupo: string; nota: string; estado_hoy: 'bloquea' | 'pasa'; conocido?: true; cliente?: string }
-const BANCO = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/redaccion-pago-banco.json'), 'utf8')) as { deben_bloquearse: EntradaBanco[]; deben_pasar: EntradaBanco[] };
+const BANCO = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../fixtures/redaccion-pago-banco.json'), 'utf8')) as { deben_bloquearse: EntradaBanco[]; deben_pasar: EntradaBanco[] };
 describe('banco compartido de frases de redacción (admin/pruebas/fixtures/redaccion-pago-banco.json)', () => {
   it('tiene las dos listas y cada entrada cumple el esquema', () => {
     for (const e of [...BANCO.deben_bloquearse, ...BANCO.deben_pasar]) {

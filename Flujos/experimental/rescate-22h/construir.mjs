@@ -46,7 +46,7 @@ export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   librerias: ['src/rescate.js'],
-  paquetes: { filtro: ['../comun-sin-agente/src/filtro-redaccion.js'] },
+  paquetes: { filtro: ['../../src/core/texto/filtro-redaccion.js'] },
 };
 
 // ----------------------------------------------------------------- lectura y escritura sin seguir enlaces simbólicos
@@ -77,7 +77,7 @@ function escribirSinSeguirEnlaces(ruta, texto, nombre) {
 let LIBRERIA = null;
 function libreria() {
   if (LIBRERIA) return LIBRERIA;
-  const filtro = readFileSync(join(AQUI, '../comun-sin-agente/src/filtro-redaccion.js'), 'utf8');
+  const filtro = readFileSync(join(AQUI, '../../src/core/texto/filtro-redaccion.js'), 'utf8');
   const rescate = readFileSync(join(AQUI, 'src/rescate.js'), 'utf8');
   // Excepción deliberada a `devsecops.js-eval-prohibido`: se ejecutan dos archivos NUESTROS y versionados (el cuerpo de un nodo Code de n8n no es un módulo
   // importable), con el único fin de validar los textos de los datos con el mismo código que los verificará en producción. Nada de lo que viene de los datos se evalúa.
