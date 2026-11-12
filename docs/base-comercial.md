@@ -39,6 +39,36 @@ America»). Antes eran gratis.
   67-70 % (`Analisis/49`, `50`). Cada flujo declara su costo de IA por
   conversación, y el modelo lo elige NovuChat por contrato.
 
+**Respuesta coherente del asistente (Q'Taco, 12/11/2026; decidida por Andres el
+08/11).** Pieza común `Flujos/src/core/conversacion/respuesta-coherente.js`,
+apagada por defecto (`respuestaLibre.activo` del tenant) y encendida primero
+solo en Q'Taco. **0 mensajes de diferencia en todos los turnos** (la suite
+`venta-minima-respuesta-coherente.test.ts` lo mide contra la función apagada) y
+**0 nodos** (81 de 81: la acción `extraer_libre` reutiliza `¿Extraer?` y
+`Extraer`). Lo que cambia es el costo de IA (~0,0005 USD por llamada) y un aviso:
+
+| Turno | Antes | Después | Diferencia |
+|---|---|---|---|
+| Acuse («gracias», «ok») en inicio, menú o pedido vacío | 1 mensaje (menú/saludo/carta); 0-1 llamada | 1 mensaje fijo; 0 llamadas | 0 mensajes; −1 llamada en paso pedido |
+| Seguimiento («¿ya salió mi pedido?») | 1 mensaje (la carta; 2 si va en texto) + 1 llamada; al insistir, derivación con aviso | 1 mensaje con el pedido real + botón; 0 llamadas; 0 avisos | 0 mensajes (−1 con la carta en texto); −1 llamada; −1 aviso al insistir |
+| «¿Cuánto demora?» sin pedido pasado | 1 mensaje (menú) | 1 mensaje (respuesta libre) | 0 mensajes; +1 llamada |
+| Fuera de protocolo en inicio o menú | 1 mensaje (menú) | 1 mensaje | 0 mensajes; +1 llamada |
+| Fuera de protocolo en paso pedido | 1 mensaje; 1 llamada | 1 mensaje; 1 llamada (la misma extracción devuelve también la respuesta) | 0 y 0 |
+| Modelo caído o filtro rechaza | 1 mensaje (menú) | 1 mensaje de rechazo con botón | 0 |
+| Tocar «Escribir al local» | derivación existente | igual | sin cambio |
+
+Conversación típica de Q'Taco (un turno fuera de protocolo en el menú y un
+seguimiento): 0 mensajes, 0 llamadas netas, 1 aviso menos; peor caso (2 turnos
+libres sin seguimiento): +0,001 USD por conversación. El seguimiento y el
+rechazo **no avisan al local** (excepción decidida por Andres el 08/11 a la
+política del 21/09: solo ofrecen el botón «Escribir al local», que al tocarse
+deriva con aviso como siempre). Los límites de la respuesta libre son fijos y se
+hacen cumplir en código con el filtro común: solo carta, horarios, dirección,
+modalidades y reglas; nunca precios fuera de la carta, promesas, estados de
+despacho ni «pago acreditado/verificado»; no niega ser una IA; sin enlaces
+ajenos. Costo de nube: +1 lectura de Firestore por turno (el documento
+`config/respuestaLibre`, del PR del servidor).
+
 ### 2. La unidad de cobro: un bloque de 25 respuestas en 24 h
 
 **Decidido el 13/09/2026 (`Analisis/27`), reemplaza al tope con corte del 08/09.**

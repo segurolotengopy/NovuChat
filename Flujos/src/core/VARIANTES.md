@@ -30,3 +30,12 @@ rebanadas queda para después del traslado de Q'Taco (~07/11).
 `admin/pruebas/core/nucleo-comun.test.ts` fija hoy la lista cerrada de variantes
 (no puede crecer sin declararse) y compara byte a byte cualquier copia incluida
 en `Flujos/clientes/<tenant>/` contra core (condición 3).
+
+## Piezas incluidas (no son variantes de un nodo común)
+
+Una pieza que se INCLUYE delante del código de un nodo, sin copiarse, no es una
+variante: es un solo archivo que cada flujo adopta con una marca del armador.
+
+| Pieza | Archivo | Quién la adopta | Marca | Estado |
+|---|---|---|---|---|
+| Respuesta coherente (acuse, seguimiento y respuesta libre verificada; prefijo `rc`, sobre el filtro común `cm*`) | `Flujos/src/core/conversacion/respuesta-coherente.js` | Q'Taco (`venta-minima`: «Decidir turno» y «Plan del turno») | `+coherente` en `construir.mjs` | Adopta Q'Taco (12/11/2026, `activo=false` por defecto; se enciende con el dato `respuestaLibre` del tenant). Los demás flujos no la adoptan hoy: lo decide Andres flujo por flujo. |
