@@ -37,7 +37,7 @@ export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/casa-bermejo/casa-bermejo.json');
 export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../venta-minima/flujo.plantilla.json');
 // 47 + los 9 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026 y v2 del 30/10):
-// +1 nodo (`Traer catálogo`, 57): EXCEPCIÓN PENDIENTE de Andres. Excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
+// +1 nodo (`Traer catálogo`, 57): excepción APROBADA por Andres el 12/11/2026 (docs/versiones-por-cliente.md, «Estado al 12/11/2026 (Casa Bermejo)»). Excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 export const TOPE_DE_NODOS = 57;
 export const FLUJO_PRODUCCION = 'casa-bermejo.json';
 export const FLUJO_PRUEBA = 'casa-bermejo.prueba.json';

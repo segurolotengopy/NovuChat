@@ -28,13 +28,13 @@ Los nodos `Decidir turno` y `Armar *` de Walisuma llaman a `wlVendibles(panel)`,
 `src/nodos/{decidir-turno,interpretar-lectura,armar-avisos,armar-mensajes}.js` se derivaron de los de Walisuma (HUECO declarado, igual que `bm*`): cambian el catálogo (`bmCatalogo` sobre `Traer catálogo` en vez del panel de la consola), la ausencia de piezas sin precio y la moneda de las líneas del QR. `Traer catálogo` (HTTP GET, Bearer del tenant en una credencial de n8n, sin `If-None-Match`) lee una dirección fija (`catalogoUrl`) y SOLO el mercado de Bolivia. La suite del flujo está en `admin/pruebas/tenants/casa-bermejo/` (armado, receptor, sesión, Tomar, cobro, promesas, voz, carrito, campañas y `catalogo-flujo.test.ts` con el costo en mensajes).
 
 ## Pendiente para publicar (no de este bloque)
-Excepción de Andres para el nodo 57; sustituir los marcadores (credenciales, receptor, WABA, número, contacto de aviso, `catalogoUrl`, `hostsFoto`, `tratamiento`, modos de entrega); plantilla de pedido aprobada en Meta; Argentina (B4) y confirmar pedido (B5); ensayo con un teléfono real y el «sí» de Andres por acción.
+Sustituir los marcadores (credenciales, receptor, WABA, número, contacto de aviso, `catalogoUrl`, `hostsFoto`, `tratamiento`, modos de entrega); plantilla de pedido aprobada en Meta; desplegar y abrir las Functions del cobro por alias (#898, fusionado el 10/11/2026, sin desplegar: producción sigue en v0.21.3); ensayo con un teléfono real y el «sí» de Andres por acción.
 
 ## Seguimientos declarados (revisión del 06/11)
 - **`Traer catálogo` corre en todo mensaje entrante**, también con la puerta cerrada (Tomar, suspendido) o en un medio: suma llamadas contra el límite de NovuTienda y hasta 4 s de latencia, sin mensajes extra. Mejora posible: un `If ruta === 'sigue'` antes del nodo (+1 nodo, otro punto sobre el tope) o una caché corta en la ficha común.
 - **Aviso a quien opera** cuando el catálogo falla por un defecto (credencial revocada, versión, moneda): `catalogoAlerta` se calcula en «Decidir turno» y falta un consumidor.
 - **El aviso del pedido en el turno del comprobante con el catálogo caído** nombra las líneas por id (el `qrCarrito` no guarda el nombre).
-- **Excepción de nodos**: 57 con `Traer catálogo` (el tope de Walisuma es 56): pendiente de Andres; fila en `docs/versiones-por-cliente.md` al aprobarla.
+- **Excepción de nodos**: 57 con `Traer catálogo` (el tope de referencia es 56): **aprobada por Andres el 12/11/2026**; fila y detalle en `docs/versiones-por-cliente.md`, «Estado al 12/11/2026 (Casa Bermejo)». Un nodo 58 pide una aprobación nueva.
 
 ## B4a: Argentina hasta el pedido (sin el servidor de alias)
 - **Mercado por prefijo del remitente:** 591 → BO, 54 → AR. `Traer catálogo` pide `?mercado=` con UNA expresión fija (`EXPRESION_MERCADO`, que la guardia compara literal y una prueba contrasta con `ceMercadoDePrefijo`), así que el flujo sigue en 57 nodos. `prefijosPermitidos` pasa a `591,54`; otro país recibe el texto fijo.
@@ -59,4 +59,4 @@ Excepción de Andres para el nodo 57; sustituir los marcadores (credenciales, re
 - **Pruebas:** `admin/pruebas/tenants/casa-bermejo/alias-ar.test.ts`.
 - **Pendiente:** el alias real del comercio (`config/cobros`, lo escribe el servidor) y abrir las Functions de #898 (no nacen invocables); un ensayo con un teléfono real de Argentina; probar el prompt de lectura con comprobantes reales (qué campo trae el alias en cada banco o billetera).
 
-**Estado de B5 y B6:** B5a y B5b (crear y confirmar el pedido externo en el servidor, y el botón «Confirmar» de la Consola) están en `main`; este flujo solo aporta las líneas. B6 (`pedirAliasArs` y `cotejarAliasArs`, PR #898) está abierto y sin desplegar; sus Functions no nacen invocables.
+**Estado de B5 y B6:** B5a y B5b (crear y confirmar el pedido externo en el servidor, y el botón «Confirmar» de la Consola) están en `main`; este flujo solo aporta las líneas. B6 (`pedirAliasArs` y `cotejarAliasArs`, PR #898) está **fusionado en `main` desde el 10/11/2026 y sin desplegar** (producción sigue en la etiqueta v0.21.3); sus Functions no nacen invocables: hay que abrirlas después del despliegue.
