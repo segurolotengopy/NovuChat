@@ -29,10 +29,17 @@ una zona aparte de la de los datos (fila «Flujo de cliente» de `CLAUDE.md`).
   agrega o quita), más el **núcleo común obligatorio**: sesión por
   `messages[0].from`, filtro de eventos, conteo, candado por hecho, rótulos de
   cobro, `NIEGA_IA`, aviso con botón, uso extendido, comercio no operativo, entrada verificada del receptor (verificador interno, `wabaIdEsperado` fijo, sin «Continue on Fail», repetidos descartados entre ejecuciones), normalización de entrada y filtro de promesas sin respaldo.
-- **El núcleo se INCLUYE desde core y módulos y nunca se copia.** Una prueba de
-  CI comparará byte a byte lo incluido contra su fuente. **Esa prueba no
-  existe todavía:** se construye en un PR posterior y, hasta que esté en verde,
-  es una compuerta futura, no una garantía.
+- **El núcleo se INCLUYE desde core y módulos y nunca se copia.** Existe una prueba
+  de CI parcial, `admin/pruebas/core/nucleo-comun.test.ts` (registrada en
+  `admin/vitest.config.ts`): falla si algún `.js` de `Flujos/clientes/<tenant>/`
+  tiene el mismo nombre de archivo que uno de `Flujos/src/core/` y su contenido
+  difiere byte a byte. **No cubre** copias de módulos ni de sub-módulos, copias
+  renombradas, archivos que no sean `.js` ni las salidas generadas; tampoco
+  prueba que cada cliente incluya los nodos del núcleo. Además fija la lista
+  cerrada de las 3 variantes de cada uno de los 5 nodos comunes
+  (`Flujos/src/core/VARIANTES.md`) y que algún manifiesto use cada una. Es una
+  garantía parcial: el resto lo verifica quien arma el flujo y lo mira el
+  revisor.
 - **Lo general sube; lo específico es dato (Andres, 22/10/2026).** Sustituye a «la segunda vez que otro cliente pide una pieza propia, pasa a módulo». La regla, la clasificación y el mecanismo de sub-módulo están en `submodulos.md`.
 - **Seguridad y protección valen para todos sin excepción.**
 - **Barridos comunes:** un barrido por tipo de flujo que recorre los tenants (no
