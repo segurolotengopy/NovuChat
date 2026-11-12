@@ -98,6 +98,7 @@ export const SUITES_PURAS = [
   'pruebas/comun-sin-agente-envio.test.ts',
   'pruebas/core/texto-filtro-redaccion.test.ts',
   'pruebas/core/texto-filtro-redaccion-huecos.test.ts',
+  'pruebas/core/respuesta-libre.test.ts', 'pruebas/plataforma/respuesta-libre-script.test.ts',
   'pruebas/comun-sin-agente-mensajes.test.ts',
   'pruebas/rescate-22h-lib.test.ts',
   'pruebas/rescate-22h-construir.test.ts',
