@@ -14,7 +14,7 @@ Un flujo versionado puede llevar cambios que todavía no se publicaron. Si la mu
 
 ## Prohibido en un PR de mudanza
 
-- Correr `scripts/publicar-flujo.sh` (con o sin `--aplicar`), `flujo-de-prueba.mjs` o `scripts/preparar-import.sh` contra n8n.
+- **Cualquier escritura en n8n**: `scripts/publicar-flujo.sh --aplicar` (y `--crear`, `--encender`), `flujo-de-prueba.mjs`, `scripts/preparar-import.sh` contra n8n, una importación o un Publish. La única lectura permitida es el modo seco de `./scripts/estado-de-versiones.sh` (paso 6), que llama a esos scripts sin aplicar nada.
 - Cualquier cambio en `Flujos/src/`, en la plantilla (`flujo.plantilla.json`) o en los datos del tenant (`admin/scripts/datos/<tenant>/`).
 - Regenerar los JSON con `construir.mjs` sin `--verificar`: si el armado difiere del versionado, la mudanza cambió algo y no es una mudanza.
 - Arreglar de paso un defecto del flujo. Lo que hoy no cumple entra como excepción declarada, no como parche.
@@ -27,6 +27,27 @@ Si un paso exige romper una de estas prohibiciones, el cambio no es una mudanza:
 
 El flujo tiene su fila en el tablero `docs/arquitectura/migracion.md` (la crea el PR de la definición de «migrado»), con la **diferencia frente al vivo declarada**: «sin publicar», «versionado adelantado», «igual al vivo» o «no verificado». Sin fila no se muda: la fila es lo que impide que la mudanza esconda un atraso.
 
+#### Regla de las carpetas compartidas (medida el 12/11/2026)
+
+Una carpeta que **otros flujos importan** no se muda hasta que se cumpla **una** de dos condiciones:
+
+- (a) la parte compartida **sube a `Flujos/src/`** (etapa 1 de la migración), con lo que nadie la importa por ruta de carpeta; o
+- (b) **el mismo PR reapunta a todos sus importadores** y los JSON de todos ellos siguen **byte a byte iguales** (huella antes y después de cada uno, `--verificar` en 0 para cada importador).
+
+Importadores medidos con grep (`[.][.]/(experimental/)?<x>/` en `*.mjs` y `*.js` de `Flujos/`, fuera de la propia carpeta; y `experimental/<x>/`, `../<x>/` o `fuente('<x>/` en `admin/pruebas` y `admin/scripts`, archivos que incluyen las pruebas de la propia carpeta):
+
+| Carpeta | Flujos que la importan | Archivos de `admin/pruebas` y `admin/scripts` |
+|---|---|---|
+| `rroca-ruben` | `walisuma` (ya en `clientes/`), `rroca-antonio`, `casa-bermejo` | 24 |
+| `rroca-antonio` | ninguno | 16 |
+| `venta-minima` | `walisuma`, `doctoras`, `rroca-emma`, `rroca-evy`, `casa-bermejo` | 23 |
+| `venta-digital` | `walisuma`, `rroca-antonio`, `rroca-ruben`, `casa-bermejo` | 16 |
+| `comun-sin-agente` | 12 carpetas (casi todas: `venta-minima`, `captacion-minima`, `rroca-antonio`, `doctoras`, `rescate-22h`, `agenda-minima`, `walisuma`, `rroca-ruben`, `rroca-emma`, `chat-novuchat`, `casa-bermejo`, `rroca-evy`), incluidos sus `herramientas/bateria.mjs` | 48 |
+
+`comun-sin-agente` y `venta-digital` son proveedoras: no son flujos de un cliente y se quedan en `experimental/` hasta la etapa 1. Antes de una mudanza se repite esta medición (los números cambian) y se pega el resultado en el PR.
+
+**Consecuencia para el paso 3:** la regla «`../<otro>/` pasa a `../../experimental/<otro>/`» vale solo mientras `<otro>` sigue en `experimental/`. Cuando `<otro>` ya se mudó, la ruta correcta es `../<otro>/` (ya está en `Flujos/clientes/`). Se mira dónde está hoy cada carpeta importada, no se aplica la regla de memoria.
+
 ### 1. Huella antes
 
 Desde `origin/main`, sin tocar nada:
@@ -36,7 +57,7 @@ git show origin/main:Flujos/experimental/<x>/<flujo>.json | sha256sum
 git show origin/main:Flujos/experimental/<x>/<flujo>.prueba.json | sha256sum   # si existe
 ```
 
-Se anotan las huellas completas en el PR (en este documento y en los ejemplos solo se escriben los primeros y los últimos caracteres). Para un flujo vivo se corre además `./scripts/estado-de-versiones.sh` y se guarda su salida.
+Se anotan las huellas completas en el PR (en este documento y en los ejemplos solo se escriben los primeros y los últimos caracteres). Para un flujo vivo se corre además el modo seco de `./scripts/estado-de-versiones.sh` con el `.env` del cliente (paso 6) y se guarda su salida.
 
 ### 2. Mover
 
@@ -61,6 +82,23 @@ Dentro de la carpeta movida, las rutas relativas a otro flujo pasan de `../<otro
 | `verificar-saneo.sh` | `grep -n "experimental\|<x>" scripts/verificar-saneo.sh` | Exclusiones por ruta, si las hay. |
 | Documentos | `grep -rIn "experimental/<x>" . --exclude-dir=node_modules --exclude-dir=.git` | `PROPIO.md`, `DISENO.md`, `docs/`, `ESTADO.md`. La bitácora (`bitacora/`) es historia y no se reescribe. |
 
+#### Referencias entrantes (las que otros tienen a la carpeta movida)
+
+Las filas de arriba cubren lo que sale de la carpeta; faltan las que **llegan** a ella desde otras carpetas. Se buscan con (desde la raíz; `<x>` es el nombre viejo):
+
+```bash
+grep -rlE "[.][.]/<x>/" Flujos --include=*.mjs --include=*.js --exclude-dir=<x> --exclude-dir=node_modules
+grep -rlE "experimental/<x>/|[.][.]/<x>/|fuente\('<x>/" admin/pruebas admin/scripts
+```
+
+Cada resultado se reapunta en el mismo PR (regla de las carpetas compartidas, arriba). Si el primer grep da resultados y no se cumple (a) ni (b), no se muda.
+
+#### `scripts/publicar-flujo.sh` y `.env`: el orden importa
+
+`scripts/publicar-flujo.sh` tiene **rutas fijas** a `construir.mjs` en sus guardias (líneas 159, 226, 299, 364 y 476 el 12/11/2026): `Flujos/experimental/rroca-ruben/`, `rroca-antonio/`, `doctoras/`, `rroca-evy/` y `rroca-emma/`. Al mudar uno de esos, la guardia busca un archivo que ya no existe, **falla cerrada** y el flujo vivo no se puede publicar. Por eso el cambio de esas rutas va **en el mismo PR de la mudanza** (con la prueba que lo cubre: `scripts` y `frontera/rutas-escritas`), nunca después: un PR posterior dejaría el flujo vivo sin publicación mientras tanto, y reabrir la guardia con prisa es el riesgo que la guardia existe para evitar. El cambio es solo de ruta; no se toca la lógica de la guardia.
+
+La columna «Flujo versionado» de `docs/versiones-por-cliente.md` (la lee `estado-de-versiones.sh`) apunta hoy a `Flujos/experimental/` en las filas de `venta-minima/venta-minima.qtaco.json`, `rroca-ruben/`, `rroca-evy/`, `rroca-emma/`, `chat-novuchat/`, `captacion-minima/` y `rroca-antonio/`, además de las filas sin entorno (por ejemplo `casa-bermejo/`). Se obtiene la lista vigente con `grep -n "Flujos/experimental/" docs/versiones-por-cliente.md` y cada fila se reapunta en la mudanza de su flujo. Los `.env.<cliente>` de las filas con entorno no contienen la ruta, pero son los que hacen falta para el paso 6: sin el `.env` de la fila, no se muda un flujo vivo.
+
 La comprobación final es el mismo grep de documentos sobre todo el repositorio: **sin resultados**, salvo la bitácora y la fila de `docs/versiones-por-cliente.md` que cuenta la mudanza.
 
 ### 4. Verificar el armado
@@ -82,7 +120,12 @@ Cada huella es idéntica a la del paso 1. Además, `git diff -M --stat origin/ma
 
 ### 6. Flujo vivo: el estado de versiones no cambia
 
-Para un flujo que corre en n8n, `./scripts/estado-de-versiones.sh` da la misma salida antes y después. Si cambia, la mudanza modificó lo que se compara con lo vivo: se deshace.
+Para un flujo que corre en n8n se usa **solo el modo seco** de `./scripts/estado-de-versiones.sh`: compara lo vivo con lo versionado y **no escribe nada en n8n** (por dentro llama a `preparar-import.sh` y a `publicar-flujo.sh` sin `--aplicar`; esa es la única excepción a la prohibición de esos scripts). Condiciones:
+
+- Se corre con el `.env.<cliente>` del cliente (en un worktree, con enlaces a los `.env` de la copia base). **Quien no tenga ese `.env` no muda un flujo vivo.**
+- La salida debe ser **0 o 1 antes y la misma después**. La salida **3** («sin poder comprobar») **no vale**: comparar dos veces «no pude comprobar» es cumplir en vacío.
+- Se borra el `.local.json` que el script deje al correr (es el JSON con los marcadores repuestos; contiene valores del cliente y nunca se versiona ni se sube).
+- Si la salida cambia, la mudanza modificó lo que se compara con lo vivo: se deshace.
 
 ### 7. Filas
 
@@ -99,11 +142,16 @@ El PR se abre en borrador y declara: huellas iguales, que no publica, y el costo
 
 - Antes: `Flujos/experimental/walisuma/`, sin publicar (sin flujo vivo que comparar).
 - Huellas antes y después, iguales: `walisuma.json` `1ca574f2…70cc1` y `walisuma.prueba.json` `0375d63e…49043`.
-- `git mv Flujos/experimental/walisuma Flujos/clientes/walisuma`; `git diff -M --stat origin/main -- Flujos`: 12 archivos, renombres con 0 líneas cambiadas salvo `construir.mjs` (24 líneas de rutas) y `PROPIO.md` (2 líneas); `DISENO.md` y `src/` sin cambios.
+- `git mv Flujos/experimental/walisuma Flujos/clientes/walisuma`; `git diff -M --stat origin/main -- Flujos`: 12 archivos, renombres con 0 líneas cambiadas salvo `construir.mjs` (22 líneas de rutas) y `PROPIO.md` (2 líneas); `DISENO.md` y `src/` sin cambios.
+- Walisuma cumple la regla de carpetas compartidas porque nadie la importa (sus importadores son salientes) y no tiene flujo vivo: no hubo paso 6 ni cambio en `publicar-flujo.sh`.
 - Rutas reapuntadas en `construir.mjs`: `../comun-sin-agente/`, `../rroca-ruben/`, `../venta-minima/` y `../venta-digital/` pasaron a `../../experimental/…`; las rutas a `../../src/…` no cambiaron.
 - Fuera de la carpeta: `armado.test.ts`, `crm.test.ts` y `mundo.ts` de `admin/pruebas/tenants/walisuma/`, las dos líneas de `crm-hallazgos-flujos.test.ts` y la línea de `guardado-obligatorio.test.ts`. Ni `publicar-flujo.sh`, ni `estado-de-versiones.sh`, ni `vitest.config.ts`, ni `verificar-saneo.sh` nombraban a Walisuma.
 - `construir.mjs --verificar`: sale 0 («walisuma.json al día (64 nodos)» y «walisuma.prueba.json al día (59 nodos)»).
 - No se corrió `publicar-flujo.sh`, `flujo-de-prueba.mjs` ni `preparar-import.sh`; no se tocó n8n.
+
+## Dónde pueden quedar claves `experimental/<x>/…`
+
+Tras una mudanza, el **único** lugar donde puede quedar una clave `experimental/<x>/…` es `admin/pruebas/core/migracion/excepciones.ts`: el identificador de una excepción ignora la carpeta, y la clave vieja ya no apunta a un archivo. Se corrige ahí en el mismo PR. Tocar `excepciones.ts` (o su TOPE) pasa por el agente `seguridad`: es la lista cerrada que solo puede bajar.
 
 ## Lo que este procedimiento no cubre
 

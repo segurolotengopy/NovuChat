@@ -3,7 +3,7 @@
  * `docs/arquitectura/migracion.md`.
  *
  *  - El tablero tiene una fila por cada flujo de producción del disco y viceversa (un flujo nuevo, o una mudanza que olvida su fila, falla).
- *  - Las filas en estado `mudado` pasan M1 a M7. Hoy no hay ninguna: la primera mudanza (Walisuma, PR-0b) es la que las estrena.
+ *  - Las filas en estado `mudado` pasan M1 a M7. Desde el PR-0b hay al menos una (Walisuma); la prueba exige que haya, para que no pase en vacío.
  *  - Cada regla trae su contraprueba, NEGANDO, en un directorio temporal: un flujo mudado correcto pasa y cada mutación rompe justo su punto.
  *
  * HERMÉTICA: lee el repositorio y un directorio temporal; no usa red ni emulador y no publica nada.
@@ -30,7 +30,8 @@ describe('tablero de la migración: una fila por flujo de producción', () => {
 
   it('las filas pendientes no pasan por M1 a M7: solo las mudadas; cada fila mudada del tablero cumple los siete puntos', () => {
     const mudadas = filas.filter((f) => f.estado === 'mudado');
-    // Hoy ninguna; la prueba queda armada para la primera mudanza.
+    // Desde el PR-0b (Walisuma) hay filas mudadas: sin al menos una, el bucle de abajo no comprobaría nada.
+    expect(mudadas.length).toBeGreaterThan(0);
     for (const f of mudadas) expect(problemasDeMigrado(f), rutaDeFila(f)).toEqual([]);
     expect(filas.every((f) => f.estado === 'pendiente' || f.estado === 'mudado')).toBe(true);
   });
