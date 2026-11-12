@@ -15,6 +15,10 @@ está en `bitacora/2026-11.md`.
 
 ## En producción
 
+- **Ensayo en curso (12/11/2026):** el Demo A corre el chat de NovuChat en ensayo
+  (`docs/ensayo/LEEME.md` §11; sesión Rearquitectura). No sirve para demostraciones
+  hasta la doble restauración; esta línea se retira al cerrarlo.
+
 - **Consola y Functions:** `v0.20.0`, desplegada el 06/11/2026. Incluye el catálogo
   web de Q'Taco (#804, #797) y el despliegue tolerante a un CRM vacío (#821).
   Resultado del despliegue en Actions: sin verificar.
