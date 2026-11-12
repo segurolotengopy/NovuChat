@@ -1983,6 +1983,34 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
   const FINDE = 'Sí, el asistente responde las 24 horas, todos los días de la semana, incluidos fines de semana y feriados, así que tus clientes siempre reciben una respuesta inmediata. ¿Te gustaría ver cómo funciona para otro tipo de negocio que tengas? 🤝';
   const tiene = (m: Enviado, x: RegExp): boolean => x.test(m.cuerpo);
 
+  it('reclamo 62 (12/11): dio su nombre y su negocio y el mensaje no pide nada → «Quedó anotado» NUNCA sale solo: lleva «Ver planes» y «Hablar con el equipo» (ya tenía rubro); 0 mensajes agregados', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    j.lista('rubro:belleza');
+    // el pedido del nombre y el negocio llega pegado a la respuesta del turno siguiente (R4)
+    w.modelo.con = dice(PITCH);
+    j.texto('Pero explícame mejor');
+    // el modelo contesta solo con una cortesía sin pregunta: el código anota y deja el siguiente paso
+    w.modelo.con = dice('¡Gracias! 😊', { nombre: 'Jorge', empresa: 'Patito' });
+    const t = j.texto('jorge mi negocio se llama patito');
+    expect(t.aMi).toHaveLength(1);
+    expect(t.aMi[0]!.cuerpo).toMatch(/Quedó anotado/);
+    expect(idsBotones(t.aMi[0]!).length, 'el mensaje de «Quedó anotado» lleva al menos un botón con el siguiente paso').toBeGreaterThan(0);
+  });
+  it('reclamo 62: «me das tu listado?» a mitad de la conversación → la lista de rubros (opciones tocables), no «ese dato no lo tengo a la mano»; el saludo no se repite', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    j.lista('rubro:belleza');
+    const t = j.texto('me das tu listado?');
+    expect(t.aMi).toHaveLength(1);
+    expect(tipoInter(t.aMi[0]!)).toBe('list');
+    expect(t.aMi[0]!.cuerpo).toMatch(/rubros para los que tenemos asistentes/);
+    expect(t.aMi[0]!.cuerpo).not.toMatch(/no lo tengo a la mano|^¡Hola!/);
+  });
   it('R1, R2, R4, R5: la conversación real de Andres (belleza), con el modelo devolviendo los textos MALOS: las redes los rechazan, un mensaje por turno', () => {
     const w = crear();
     const j = jugar(w, MAMA);

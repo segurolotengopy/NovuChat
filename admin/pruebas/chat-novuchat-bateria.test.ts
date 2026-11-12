@@ -314,7 +314,7 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect(await violacionesCon(f, 'A2')).toContain('ruta_inesperada');
   });
   it('R5: si tras el traspaso siguen los botones en vez de la lista de rubros, se dice `botones_inesperados` y `boton_del_equipo_otra_vez`', async () => {
-    const f = estropear('lista: antes.equipoAhora === true && !ciclo }', 'lista: false }');
+    const f = estropear('lista: trasTraspaso || dec.lista === true,', 'lista: false,');
     expect(await violacionesCon(f, 'A1')).toContain('botones_inesperados');
     // sin la compuerta de «equipo ya pulsado» el botón del equipo reaparece en el MISMO ciclo: lo dicen las invariantes
     const g = estropear('const equipo = v(fila.equipo) && !s.equipoTocado;', 'const equipo = v(fila.equipo);', undefined, f);

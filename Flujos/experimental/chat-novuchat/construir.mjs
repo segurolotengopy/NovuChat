@@ -165,7 +165,7 @@ const CLAVES_CIERRES = ['rubro', 'precios', 'equipo', 'costoMeta', 'integracion'
 const CLAVES_RESPUESTAS = ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad', 'numeroActual', 'coexistencia'];
 const CLAVES_RESPALDOS = ['multiple', 'otroElegido', 'otroLibre', 'fuera', 'equipo', 'generico', 'identidad', 'cortesia', 'datosAmbos', 'datosSoloNombre', 'datosSoloEmpresa', 'datosNinguno', 'empresa', 'complemento', 'noDocumentado', 'sinDato'];
 const CLAVES_TEXTOS = ['saludo', 'listaBoton', 'listaTitulo', 'planesIntro', 'planesIntroRepite', 'planesIntroTopes', 'planesSinPrecios', 'traspasoConPregunta', 'traspasoSinPregunta',
-  'traspasoRepite', 'traspasoSinRecepcion', 'recepcion', 'botonTraspaso', 'saludoWa', 'estadoAviso', 'falla', 'medioIlegible', 'invitaOtroRubro', 'planesAgotado'];
+  'traspasoRepite', 'traspasoSinRecepcion', 'recepcion', 'botonTraspaso', 'saludoWa', 'estadoAviso', 'falla', 'medioIlegible', 'invitaOtroRubro', 'invitaRubro', 'listaPedida', 'planesAgotado'];
 const DESCARTES = ['numero_equivocado', 'vende_o_busca_trabajo', 'sin_negocio', 'spam_o_prueba'];
 
 // EL ENSAYO EN EL DEMO A (`ensayo-demo-a.json` → `chat-novuchat.ensayo-demo-a.json`): el mismo flujo, con el miniCRM CONECTADO, pero contra una HOJA DE PRUEBA y con los marcadores PROPIOS del ensayo.
