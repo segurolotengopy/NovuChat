@@ -14,7 +14,7 @@ import type { Doble, Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
 // @ts-expect-error módulo .mjs sin tipos
 import { hallazgosCrm, inyectarMapa } from '../../../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { CREDENCIAL_CRM, NODOS_DE_CRM, guardias } from '../../../../Flujos/experimental/walisuma/construir.mjs';
+import { CREDENCIAL_CRM, NODOS_DE_CRM, guardias } from '../../../../Flujos/clientes/walisuma/construir.mjs';
 import { respuestaDeIngesta } from '../../modulos/crm/ingesta-conversacion';
 import { ANA, CARPETA, ENTREGA, EXTRANJERO, PRODUCCION, PRUEBA, SUSPENDIDO, COMPROBANTE, crear as crearBase, hablar, mImagen, mSticker, mTexto, modelo, panelConQr, panelOk, valorMeta, type Opciones } from './mundo';
 
