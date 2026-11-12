@@ -116,6 +116,8 @@ export const SUITES_PURAS = [
   'pruebas/core/env-nace-cerrado.test.ts',
   'pruebas/core/gancho-sistemas-ajenos.test.ts',
   'pruebas/core/nucleo-comun.test.ts',
+  // Migración de flujos, etapa 0 (12/11/2026): el tablero, M1 a M7 y la lista cerrada de excepciones. Sin emulador ni red.
+  'pruebas/core/migrado.test.ts', 'pruebas/core/migracion/excepciones.test.ts',
   'pruebas/core/hijos-hermeticos.test.ts',
   'pruebas/core/apps-ajenas-escrituras.test.ts',
   'pruebas/core/cotejar-ids-ajenos.test.ts',

@@ -35,6 +35,23 @@ export function flujosConversacionales(): string[] {
     .filter((d) => d.isDirectory() && existsSync(join(EXPERIMENTAL, d.name, 'flujo.plantilla.json')))
     .map((d) => d.name).sort();
 }
+/**
+ * LA LISTA ÚNICA (migración, etapa 0, 12/11/2026): los flujos de producción que atienden a un cliente (`atiendeCliente`) y NO caen en el registro de
+ * arriba, que es por carpeta de `Flujos/experimental/` con plantilla: los de la raíz de `Flujos/` y los de `Flujos/clientes/`. Para cada uno,
+ * `tabla` dice si tiene su tabla de derivación (`rutaDeTabla` de su carpeta); el que no la tiene va a `excepciones.ts` (regla `ux-derivacion`).
+ */
+export function flujosFueraDelRegistro(
+  produccion: string[], atiende: (ruta: string) => boolean, enRegistro: string[] = flujosConversacionales(),
+  hayTabla: (carpeta: string) => boolean = (c) => existsSync(rutaDeTabla(c)),
+): { flujo: string; tabla: boolean }[] {
+  return produccion.filter(atiende).flatMap((ruta) => {
+    const partes = ruta.split('/');
+    if (partes[0] === 'experimental' && enRegistro.includes(partes[1] ?? '')) return [];
+    const carpeta = partes.length > 1 ? (partes[1] ?? '') : '';
+    return [{ flujo: ruta, tabla: carpeta !== '' && hayTabla(carpeta) }];
+  });
+}
+
 /** Los problemas del registro: un flujo sin tabla ni excepción; una excepción sin fecha o porqué; una excepción que sobra (ya hay tabla o el flujo no existe). */
 export function problemasDelRegistro(
   flujos: string[] = flujosConversacionales(), excepciones: Record<string, Excepcion> = EXCEPCIONES, hayTabla: (f: string) => boolean = (f) => existsSync(rutaDeTabla(f)),

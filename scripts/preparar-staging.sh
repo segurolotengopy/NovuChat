@@ -98,7 +98,8 @@ V=$'\e[32m'; A=$'\e[33m'; X=$'\e[31m'; F=$'\e[0m'
 titulo() { printf '\n%s== %s ==%s\n' "$A" "$*" "$F"; }
 nota()   { echo "  ${A}·${F} $*"; }
 hecho()  { echo "  ${V}✓${F} $*"; }
-falla()  { echo "  ${X}✗${F} $*" >&2; }
+FALLAS=0   # cuenta las fallas; solo `verificar` la consulta al final para fijar el código de salida
+falla()  { echo "  ${X}✗${F} $*" >&2; FALLAS=$((FALLAS + 1)); }
 
 # correr <descripción> -- <comando...>: en seco imprime; con --aplicar ejecuta.
 correr() {
@@ -678,6 +679,8 @@ sys.exit(0 if any((b.get("condition") or {}).get("title") == "secretos-de-las-fu
       echo "  ${A}⚠${F} sa-deploy-staging: $perm → condición no evaluable por Policy Troubleshooter; la cubre la comprobación del binding de arriba"
     else falla "sa-deploy-staging: $perm → ${acceso:-desconocido}"; fi
   done
+  # No se corta a la mitad: se muestran todos los ✓/✗ y se falla al final si hubo alguna ✗.
+  if (( FALLAS > 0 )); then echo "  ${X}✗${F} verificación con ${FALLAS} falla(s)" >&2; return 1; fi
 }
 
 "fase_${FASE//-/_}"

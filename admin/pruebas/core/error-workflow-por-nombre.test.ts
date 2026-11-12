@@ -14,6 +14,10 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './entorno-del-hijo.ts';
 import { construir as construirEmma } from '../../../Flujos/experimental/rroca-emma/construir.mjs';
+import { type Flujo, leerFlujo } from '../lib/flujo';
+import { flujosDeProduccion } from '../lib/flujos-de-cliente';
+import { atiendeCliente, llevaMarcadorDeErrorWorkflow } from './migracion/comprobaciones';
+import { problemasDeRegla } from './migracion/excepciones';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '..', '..', '..');
@@ -227,5 +231,35 @@ describe('errorWorkflow por nombre', () => {
       const mal = construirEmma({ carpeta, verificar: true, tope }).find((x: { archivo: string }) => x.archivo === 'rroca-emma.json');
       expect(mal.versionado.join(' ')).toContain('exactamente REEMPLAZAR_ID_ERROR_WORKFLOW');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migración (etapa 0, 12/11/2026): ESTÁTICO. El marcador en `settings.errorWorkflow` de cada flujo que atiende a un cliente.
+// ---------------------------------------------------------------------------
+
+describe('errorWorkflow por nombre, estático: todo flujo que atiende a un cliente lleva el marcador, o tiene excepción', () => {
+  const flujoSin = (settings: Record<string, unknown> | undefined): Flujo => ({ name: 'x', nodes: [], connections: {}, ...(settings ? { settings } : {}) });
+
+  it('cada flujo de producción que reporta el mensaje entrante lleva el marcador o una excepción; ninguna excepción sobra', () => {
+    const atienden = flujosDeProduccion().filter((a) => atiendeCliente(leerFlujo(a)));
+    expect(atienden.length).toBeGreaterThan(10);
+    const hoy = new Map(atienden.map((a) => [a, llevaMarcadorDeErrorWorkflow(leerFlujo(a)) ? [] : ['settings.errorWorkflow']]));
+    expect(problemasDeRegla('error-workflow-por-nombre', hoy)).toEqual([]);
+  });
+
+  it('contraprueba: solo el marcador exacto cuenta (ni un id resuelto, ni vacío, ni sin settings)', () => {
+    expect(llevaMarcadorDeErrorWorkflow(flujoSin({ errorWorkflow: MARCADOR }))).toBe(true);
+    expect(llevaMarcadorDeErrorWorkflow(flujoSin({ errorWorkflow: ID_ALERTA }))).toBe(false);
+    expect(llevaMarcadorDeErrorWorkflow(flujoSin({ errorWorkflow: '' }))).toBe(false);
+    expect(llevaMarcadorDeErrorWorkflow(flujoSin({ executionOrder: 'v1' }))).toBe(false);
+    expect(llevaMarcadorDeErrorWorkflow(flujoSin(undefined))).toBe(false);
+  });
+
+  it('contraprueba: sin marcador y sin excepción falla; con excepción pasa; la excepción de un flujo que ya lo lleva sobra', () => {
+    const exc = { 'a.json#error-workflow-por-nombre#settings.errorWorkflow': { dueno: 'x', vence: '2027-01-31', motivo: 'm', desde: '2026-11-12' } };
+    expect(problemasDeRegla('error-workflow-por-nombre', new Map([['a.json', ['settings.errorWorkflow']]]), {})).toHaveLength(1);
+    expect(problemasDeRegla('error-workflow-por-nombre', new Map([['a.json', ['settings.errorWorkflow']]]), exc)).toEqual([]);
+    expect(problemasDeRegla('error-workflow-por-nombre', new Map([['a.json', []]]), exc)).toEqual([expect.stringContaining('SOBRA')]);
   });
 });
