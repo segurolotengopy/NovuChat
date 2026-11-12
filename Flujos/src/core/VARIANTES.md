@@ -38,4 +38,4 @@ variante: es un solo archivo que cada flujo adopta con una marca del armador.
 
 | Pieza | Archivo | Quién la adopta | Marca | Estado |
 |---|---|---|---|---|
-| Respuesta coherente (acuse, seguimiento y respuesta libre verificada; prefijo `rc`, sobre el filtro común `cm*`) | `Flujos/src/core/conversacion/respuesta-coherente.js` | Q'Taco (`venta-minima`: «Decidir turno» y «Plan del turno») | `+coherente` en `construir.mjs` | Adopta Q'Taco (12/11/2026, `activo=false` por defecto; se enciende con el dato `respuestaLibre` del tenant). Los demás flujos no la adoptan hoy: lo decide Andres flujo por flujo. |
+| Respuesta coherente (acuse, seguimiento y respuesta por intención: el modelo solo clasifica y el código escribe el texto; prefijo `rc`, sin dependencias) | `Flujos/src/core/conversacion/respuesta-coherente.js` | Q'Taco (`venta-minima`: «Decidir turno» y «Plan del turno») | `+coherente` en `construir.mjs` | Adopta Q'Taco (12/11/2026, `activo=false` por defecto; se enciende con el dato `respuestaLibre` del tenant). Los demás flujos no la adoptan hoy: lo decide Andres flujo por flujo. |
