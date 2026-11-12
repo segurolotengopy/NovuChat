@@ -89,6 +89,7 @@ export const SUITES_PURAS = [
   'pruebas/venta-minima-qtaco-3727.test.ts',
   'pruebas/venta-minima-catalogo-punta-a-punta.test.ts',
   'pruebas/venta-minima-sesion.test.ts', 'pruebas/venta-minima-cupos.test.ts', 'pruebas/venta-minima-prueba-0711.test.ts',
+  'pruebas/core/conversacion-respuesta-coherente.test.ts', 'pruebas/venta-minima-respuesta-coherente.test.ts',
   'pruebas/venta-minima-avisos-vinetas.test.ts',
   // La guardia del sandbox de expresiones de n8n y el chequeo de ejecuciones (07/11/2026): sin red ni emulador.
   'pruebas/core/expresiones-n8n.test.ts', 'pruebas/plataforma/auditar-ejecuciones-n8n.test.ts',
