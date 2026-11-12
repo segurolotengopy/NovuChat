@@ -1008,6 +1008,25 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
     expect(resp('datos').texto).not.toMatch(/¿cómo te llamas/);
     expect(resp('datos', { ficha: { nombre: 'Ana' }, lectura: { empresa: 'Luna' } }).texto).toMatch(/Quedó anotado/);
   });
+  it('reclamo 62: chPideLista — «listado» y «dame la lista» sí; «lista» a secas («ya estoy»), listas de otra cosa y «la lista» sin verbo NO', () => {
+    const l = f('chPideLista');
+    for (const si of ['me das tu listado?', 'listado', 'el listado por favor', 'me pasas la lista', 'puedes mandarme el listado', 'hay lista?', 'quiero ver la lista de rubros']) expect(l(si), si).toBe(true);
+    for (const no of ['lista', 'La lista', 'lista de precios', 'quiero la lista de espera', 'lista de planes', 'hay lista de espera?', 'ya estoy lista', 'me das tu número']) expect(l(no), no).toBe(false);
+  });
+  it('reclamo 62: la fila del «siguiente paso» tras los datos — sin rubro: lista; con rubro: «Ver planes»; si ya los vio: lista (nunca «Quedó anotado» solo); con pregunta o interés: no aplica; tras el traspaso gana la lista', () => {
+    const botones = f('chBotonesDe');
+    const sit = (res: J, ficha: J = {}, plan: J = {}): J => f('chSituacion')({ plan: { ruta: 'modelo', ...plan }, res: { origen: 'codigo', evento: 'datos', lectura: { nombre: 'Ana', empresa: 'Luna' }, texto: '¡Gracias! 😊 Quedó anotado.', ...res }, eventos: [ev('Ana, Luna')], ficha: { ...fichaBase(), ...ficha } });
+    expect(botones(sit({}))).toMatchObject({ fila: 'datos-lista', lista: true, planes: false, equipo: false });
+    expect(botones(sit({}, { rubro: 'belleza' }))).toMatchObject({ fila: 'datos-siguiente', lista: false, planes: true, equipo: false });
+    // ya vio los planes: la compuerta quita el botón y NO queda callado: la lista
+    expect(botones(sit({}, { rubro: 'belleza', planesMostrados: true }))).toMatchObject({ fila: 'datos-siguiente', lista: true, planes: false });
+    expect(botones(sit({}, { rubro: 'belleza', planesTocado: true }))).toMatchObject({ lista: true, planes: false });
+    // con una pregunta en el texto, o con interés del cliente, no es esta fila
+    expect(botones(sit({ texto: '¡Gracias! 😊 Quedó anotado. ¿Qué rubro es?' }))['fila']).not.toMatch(/^datos-/);
+    expect(botones(f('chSituacion')({ plan: { ruta: 'modelo' }, res: { origen: 'codigo', evento: 'datos', lectura: { nombre: 'Ana', empresa: 'Luna' }, texto: '¡Gracias! 😊 Quedó anotado.' }, eventos: [ev('Ana, Luna, cuánto cuesta')], ficha: fichaBase() }))['fila']).not.toMatch(/^datos-/);
+    // sin uno de los dos datos no hay fila de siguiente paso (el respaldo ya pregunta el que falta)
+    expect(botones(sit({ lectura: { nombre: 'Ana' }, texto: 'Ya anoté tu nombre. ¿Y cómo se llama tu negocio?' }))['fila']).not.toMatch(/^datos-/);
+  });
   it('chConCierre: cierra con la pregunta EXACTA (quita la pregunta final del modelo, si la trae)', () => {
     const c = f('chConCierre');
     expect(c('Tu explicación. ¿Quieres ver los planes?', CIERRE_RUBRO)).toBe('Tu explicación. ' + CIERRE_RUBRO);

@@ -768,8 +768,12 @@ function chEsSaludoInicial(t) {
   return p.length <= 7 && p.every((w) => CH_SALUDOS.has(w) || CH_INFO_PALABRAS.has(w)) && p.some((w) => (CH_SALUDOS.has(w) && w !== 'ustedes' && w !== 'usted' && w !== 'todos' && w !== 'todas') || w === 'info' || w === 'informacion');
 }
 // «¿me das tu listado?» / «la lista»: quien ya conversó pide ver las opciones. Es ambiguo («¿de qué?»), así que se le muestra la lista de rubros (opciones tocables), nunca «no tengo ese dato».
-const CH_PIDE_LISTA = /^(?:me )?(?:(?:das|pasas|mandas|envias|muestras|compartes|puedes (?:dar|pasar|mandar|enviar|mostrar)(?:me)?|podrias (?:dar|pasar|mandar|enviar|mostrar)(?:me)?|tienes|hay|quiero ver|quisiera ver) )?(?:(?:tu|su|el|la|un|una) )?(?:listado|lista)(?: (?:completo|completa|de rubros|de negocios|de opciones))?(?: por favor)?$/;
-function chPideLista(t) { return CH_PIDE_LISTA.test(chNorm(t)); }
+const CH_VERBO_LISTA = '(?:das|pasas|mandas|envias|muestras|compartes|puedes (?:dar|pasar|mandar|enviar|mostrar)(?:me)?|podrias (?:dar|pasar|mandar|enviar|mostrar)(?:me)?|tienes|hay|quiero ver|quisiera ver)';
+const CH_COLA_LISTA = '(?: (?:completo|completa|de rubros|de negocios|de opciones))?(?: por favor)?$';
+// «listado» solo basta; «lista» exige un verbo («lista» a secas es «ya estoy / ok» en Bolivia, y «la lista» puede ser el nombre de un negocio).
+const CH_PIDE_LISTADO = new RegExp('^(?:me )?(?:' + CH_VERBO_LISTA + ' )?(?:(?:tu|su|el|la|un|una) )?listado' + CH_COLA_LISTA);
+const CH_PIDE_LISTA_CON_VERBO = new RegExp('^(?:me )?' + CH_VERBO_LISTA + ' (?:(?:tu|su|el|la|un|una) )?lista' + CH_COLA_LISTA);
+function chPideLista(t) { const n = chNorm(t); return CH_PIDE_LISTADO.test(n) || CH_PIDE_LISTA_CON_VERBO.test(n); }
 // Un «sí» corto (con signos, emojis, tildes o mayúsculas) y nada más: «sí, pero cuánto cuesta», «no» y «no gracias» NO lo son (otra palabra o una pregunta).
 const CH_AFIRMA_PALABRAS = new Set('si sii sip sep yes yep claro que ok okey okay dale de acuerdo por favor porfa porfavor quiero me gustaria interesa bueno perfecto listo ya buena idea esta bien adelante hagamoslo vamos va vale obvio supuesto desde luego exacto asi es correcto genial excelente gracias pues entonces'.split(' '));
 const CH_AFIRMA_NUCLEO = /\b(?:si|sii|sip|sep|yes|yep|claro|ok|okey|okay|dale|acuerdo|quiero|gustaria|interesa|bueno|perfecto|listo|ya|idea|bien|adelante|hagamoslo|vamos|va|vale|obvio|supuesto|exacto|correcto|genial|excelente|porfa|porfavor|por favor)\b/;
@@ -915,7 +919,7 @@ function chDecidir(a) {
     if (f.planesPendientes === true) return planes(false);
   }
   if (f.historial.length === 0 && ev.length > 0 && ev.every((e) => e.k === 'texto' && chEsSaludoInicial(e.c))) { plan.ruta = 'lista'; return plan; }
-  if (f.historial.length > 0 && ev.length > 0 && ev.every((e) => e.k === 'texto' && chPideLista(e.c))) { plan.ruta = 'lista'; plan.listaPedida = true; return plan; }
+  if (f.historial.length > 0 && f.preguntaDatos !== true && ev.length > 0 && ev.every((e) => e.k === 'texto' && chPideLista(e.c))) { plan.ruta = 'lista'; plan.listaPedida = true; return plan; }
   plan.contexto = chContexto({ eventos: ev, ficha: f, cfg: cfg });
   // Primer contacto con «quiero más información»: UN mensaje de lista con el pitch fijo dentro (sin modelo); los botones llegan en la respuesta al rubro.
   if (plan.contexto === 'abierta' && f.historial.length === 0 && chPlano(f.rubro) === '' && ev.every((e) => e.k === 'texto' && (chEsSaludoInicial(e.c) || chSoloPideInfo(e.c)))) { plan.ruta = 'lista'; plan.pitch = true; plan.contexto = ''; }
@@ -1471,7 +1475,9 @@ function chBotonesDe(s) {
   const v = (x) => x === true || (x === 'interes' && s.interes === true) || (x === 'sinPlanes' && s.sinPlanes === true);
   const planes = v(fila.planes) && !s.planesTocado && !s.planesVistos;
   const equipo = v(fila.equipo) && !s.equipoTocado;
-  return { fila: fila.id, lista: fila.lista === true, planes: planes, equipo: equipo, ordinaria: fila.id.startsWith('ordinaria'), ofrecio: planes && equipo ? 'ambas' : (planes ? 'planes' : (equipo ? 'equipo' : 'ninguna')) };
+  // Si la compuerta quita «Ver planes» a quien acaba de dar sus datos, no queda callado: sale la lista de rubros (invita a otro negocio).
+  const lista = fila.lista === true || (fila.id === 'datos-siguiente' && !planes);
+  return { fila: fila.id, lista: lista, planes: planes, equipo: equipo, ordinaria: fila.id.startsWith('ordinaria'), ofrecio: planes && equipo ? 'ambas' : (planes ? 'planes' : (equipo ? 'equipo' : 'ninguna')) };
 }
 // Texto y botones coherentes: se quita lo que el mensaje ofrece y no lleva (la oferta doble se queda con su mitad con botón; «los botones de abajo» sin botones; la revisión «por alguien de nuestro equipo» sin el botón sería una promesa sin mecanismo) y se agrega la invitación de lo que sí lleva y el texto no invita. Lo escribe el modelo o el dato: el prompt no es una barrera.
 const CH_OFRECE_EQ = /\bhablar(?:lo)? con (?:alguien|una persona|un asesor|(?:nuestro|el) equipo)|\bnuestro equipo\b|\balguien (?:de nuestro|del) equipo\b|\bcon (?:el|nuestro) equipo\b|\b(?:lo vea|lo revise|te atienda|te ayude) (?:una persona|un asesor)\b/i;

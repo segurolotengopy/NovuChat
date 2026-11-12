@@ -98,7 +98,7 @@ if (plan.ruta === 'sin_estado') {
   fila = dec.fila;
   // La lista de rubros sale tras el traspaso (invita a otro negocio) y cuando el cliente acaba de dar su nombre y su negocio sin que se le pida nada más (invita a elegir rubro).
   const trasTraspaso = antes.equipoAhora === true && !ciclo;
-  const est = { botones: ['planes', 'equipo'].filter((b) => dec[b] === true), lista: trasTraspaso || dec.lista === true, invitacion: trasTraspaso ? 'invitaOtroRubro' : 'invitaRubro' };
+  const est = { botones: ['planes', 'equipo'].filter((b) => dec[b] === true), lista: trasTraspaso || dec.lista === true, invitacion: trasTraspaso || dec.fila === 'datos-siguiente' ? 'invitaOtroRubro' : 'invitaRubro' };
   let complemento = false;
   let anexo = '';
   // El mensaje del turno. La ficha que se guarda dice lo que salió (historial) y lo que el cliente dijo.
