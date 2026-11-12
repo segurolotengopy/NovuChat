@@ -21,6 +21,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import type { Flujo as FlujoCompleto } from './lib/flujo';
+import { flujosDeProduccion } from './lib/flujos-de-cliente';
+import { atiendeCliente } from './core/migracion/comprobaciones';
+import { problemasDeRegla } from './core/migracion/excepciones';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 
@@ -137,5 +141,55 @@ describe('La lista de flujos', () => {
       .filter((f) => f.endsWith('.json'))
       .filter((f) => flujo(f).nodes.some((n) => n.name === 'Reportar mensaje (entrante)'));
     expect(enDisco.sort()).toEqual([...FLUJOS].sort());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migración (etapa 0, 12/11/2026): la lista única. Las pruebas de arriba siguen IGUAL sobre su lista de cuatro. Todo OTRO flujo de producción
+// que atiende a un cliente (reporta el mensaje entrante) debe pasar las mismas comprobaciones o estar en la lista de excepciones con
+// vencimiento (decisión D2 de Andres): ninguno puede quedar fuera de las dos.
+// ---------------------------------------------------------------------------
+
+/** Las mismas cuatro comprobaciones de arriba, sobre cualquier flujo; una falla (o un nodo que no existe) es «no la cumple». */
+function cumpleElOrigen(archivo: string): boolean {
+  // «No tiene los nodos» es «no la cumple»; cualquier OTRO error (código del nodo que revienta, JSON ilegible) NO se traga: hace fallar la prueba.
+  const nodos = flujo(archivo).nodes.map((n) => n.name);
+  if (!nodos.includes('Normalizar entrada') || !nodos.includes('Reportar mensaje (entrante)')) return false;
+  // Tampoco la cumple, para esta comprobación, el reporte que no es una expresión simple sobre `$json` (usa `$(...)`, `$node`, `$input`…): el arnés de arriba
+  // no puede evaluarlo y no hay forma de comprobar que el origen viaje. Es una limitación declarada del arnés, no un error que se esconda.
+  const cuerpo = String(nodo(flujo(archivo), 'Reportar mensaje (entrante)').parameters['jsonBody']);
+  if (!/^=\{\{[\s\S]*\}\}$/.test(cuerpo.trim()) || /\$\(|\$node|\$input|\$items|\$env|\$vars|\$execution|\$workflow|\$now|\$today/.test(cuerpo)) return false;
+  {
+    const anuncio = normalizar(archivo, REFERRAL);
+    const directo = normalizar(archivo, {});
+    const viajaAnuncio = reporte(archivo, anuncio);
+    const viajaDirecto = reporte(archivo, directo);
+    const sinCampo = reporte(archivo, { from: '59170000000', tipo: 'text', userInput: 'hola' });
+    const texto = JSON.stringify(viajaAnuncio);
+    return anuncio['origen'] === 'anuncio' && directo['origen'] === 'directo' && viajaAnuncio['origen'] === 'anuncio'
+      && viajaDirecto['origen'] === 'directo' && sinCampo['origen'] === 'directo' && !texto.includes('fb.me') && !texto.includes('descuento');
+  }
+}
+
+describe('Flujos de origen, lista única: cubierto por la lista de arriba o con excepción declarada', () => {
+  const atienden = flujosDeProduccion().filter((a) => atiendeCliente(flujo(a) as unknown as FlujoCompleto));
+
+  it('todo flujo de producción que atiende a un cliente y no está en la lista de arriba cumple las comprobaciones o tiene excepción; ninguna sobra', () => {
+    expect(atienden.length).toBeGreaterThan(10);
+    for (const a of FLUJOS) expect(atienden, a).toContain(a);
+    const hoy = new Map(atienden.map((a) => [a, FLUJOS.includes(a) || cumpleElOrigen(a) ? [] : ['origen']]));
+    expect(problemasDeRegla('flujos-origen', hoy)).toEqual([]);
+  });
+
+  it('contraprueba: un flujo sin el nodo «Normalizar entrada» (o sin «Reportar mensaje (entrante)») no cumple', () => {
+    expect(cumpleElOrigen('agendamiento-seguimientos.json')).toBe(false);
+    expect(cumpleElOrigen('demo-a-agendamiento.json')).toBe(true);
+  });
+
+  it('contraprueba: sin excepción falla; con excepción pasa; si ya cumple, la excepción sobra', () => {
+    const exc = { 'a.json#flujos-origen#origen': { dueno: 'x', vence: '2027-01-31', motivo: 'm', desde: '2026-11-12' } };
+    expect(problemasDeRegla('flujos-origen', new Map([['a.json', ['origen']]]), {})).toHaveLength(1);
+    expect(problemasDeRegla('flujos-origen', new Map([['a.json', ['origen']]]), exc)).toEqual([]);
+    expect(problemasDeRegla('flujos-origen', new Map([['a.json', []]]), exc)).toEqual([expect.stringContaining('SOBRA')]);
   });
 });

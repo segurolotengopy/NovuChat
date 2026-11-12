@@ -13,7 +13,10 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { codigoDe, ejecutar, leerFlujo, type J } from '../lib/flujo';
+import { codigoDe, ejecutar, leerFlujo, type Flujo, type J } from '../lib/flujo';
+import { flujosDeProduccion } from '../lib/flujos-de-cliente';
+import { atiendeCliente, expresionNiegaIaDeCore, fuenteDeNiegaIa } from './migracion/comprobaciones';
+import { problemasDeRegla } from './migracion/excepciones';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const src = (ruta: string): string => readFileSync(join(aqui, '../../../Flujos/src', ruta), 'utf8');
@@ -75,5 +78,43 @@ describe.each([
     const r = corre(sin, 'No soy un bot, soy Sofía.');
     expect(String(r['respuesta'])).toMatch(/no soy un bot/i);
     expect(r['avisos']).not.toContain('correccion_ia');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M5 de la migración (etapa 0, 12/11/2026): ESTÁTICO, de dónde sale la red NIEGA_IA de cada flujo que atiende a un cliente.
+// ---------------------------------------------------------------------------
+
+const nodoCode = (jsCode: string) => ({ name: 'N', type: 'n8n-nodes-base.code', parameters: { jsCode } });
+const flujoCon = (...codigos: string[]): Flujo => ({ name: 'x', nodes: codigos.map(nodoCode), connections: {} }) as unknown as Flujo;
+const CORE = expresionNiegaIaDeCore();
+
+describe('M5: todo flujo que atiende a un cliente toma NIEGA_IA de core, o tiene excepción', () => {
+  it('la expresión de core se lee del archivo y es la de las tres variantes', () => {
+    expect(CORE).toMatch(/^\/.*\/i$/);
+    expect(regex(VENTA)).toContain(CORE);
+    expect(regex(CAPTACION)).toContain(CORE);
+  });
+
+  it('cada flujo de producción que reporta el mensaje entrante: la expresión es la de core, o hay excepción; ninguna excepción sobra', () => {
+    const atienden = flujosDeProduccion().filter((a) => atiendeCliente(leerFlujo(a)));
+    expect(atienden.length).toBeGreaterThan(10);
+    const hoy = new Map(atienden.map((a) => [a, fuenteDeNiegaIa(leerFlujo(a), CORE) === 'core' ? [] : ['NIEGA_IA']]));
+    expect(problemasDeRegla('niega-ia', hoy)).toEqual([]);
+  });
+
+  it('contraprueba: core pasa; una copia renombrada IDÉNTICA pasa; una copia distinta es «otra»; sin expresión es «ninguna»', () => {
+    expect(fuenteDeNiegaIa(flujoCon(`const NIEGA_IA = ${CORE};`), CORE)).toBe('core');
+    expect(fuenteDeNiegaIa(flujoCon(`const X_NIEGA_IA = ${CORE};`), CORE)).toBe('core');
+    expect(fuenteDeNiegaIa(flujoCon('const EV_NIEGA_IA = /\\bhumano\\b/i;'), CORE)).toBe('otra');
+    expect(fuenteDeNiegaIa(flujoCon(`const NIEGA_IA = ${CORE.replace('soy', 'sos')};`), CORE)).toBe('otra');
+    expect(fuenteDeNiegaIa(flujoCon('return [];'), CORE)).toBe('ninguna');
+  });
+
+  it('contraprueba: un flujo sin la red y sin excepción falla; con excepción pasa; la excepción de un flujo que ya la tiene sobra', () => {
+    const exc = { 'a.json#niega-ia#NIEGA_IA': { dueno: 'x', vence: '2027-01-31', motivo: 'm', desde: '2026-11-12' } };
+    expect(problemasDeRegla('niega-ia', new Map([['a.json', ['NIEGA_IA']]]), {})).toHaveLength(1);
+    expect(problemasDeRegla('niega-ia', new Map([['a.json', ['NIEGA_IA']]]), exc)).toEqual([]);
+    expect(problemasDeRegla('niega-ia', new Map([['a.json', []]]), exc)).toEqual([expect.stringContaining('SOBRA')]);
   });
 });
