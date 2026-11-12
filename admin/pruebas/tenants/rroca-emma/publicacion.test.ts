@@ -219,3 +219,23 @@ describe('el modo prueba de «Entrada de prueba» (variante de prueba)', () => {
     expect(t.mensajes[0]!.a).toBe(ANA);
   });
 });
+
+// El marcador del errorWorkflow (decisión I4) lo resuelve `publicar-flujo.sh` por NOMBRE en el n8n destino: la guardia de publicación lo tolera SOLO en `settings.errorWorkflow` y SOLO exacto.
+describe('guardia de publicación: el marcador del errorWorkflow', () => {
+  it('con el marcador exacto en settings.errorWorkflow NO es un marcador sin sustituir', () => {
+    const x = listo();
+    (x.flujo.settings as Record<string, unknown>)['errorWorkflow'] = 'REEMPLAZAR_ID_ERROR_WORKFLOW';
+    expect(hallazgos(x).join(' | ')).not.toMatch(/REEMPLAZAR_ID_ERROR_WORKFLOW/i);
+  });
+  it('NEGADA: el mismo marcador en cualquier otra parte (un nodo) sí es un marcador sin sustituir', () => {
+    const x = listo();
+    (x.flujo.settings as Record<string, unknown>)['errorWorkflow'] = 'REEMPLAZAR_ID_ERROR_WORKFLOW';
+    (x.flujo.nodes.find((n) => n.name === 'Config base')!.parameters as Record<string, unknown>)['nota'] = 'REEMPLAZAR_ID_ERROR_WORKFLOW';
+    expect(hallazgos(x).join(' | ')).toMatch(/marcador sin sustituir: REEMPLAZAR_ID_ERROR_WORKFLOW/);
+  });
+  it('NEGADA: otro marcador en settings.errorWorkflow (no el exacto) se rechaza', () => {
+    const x = listo();
+    (x.flujo.settings as Record<string, unknown>)['errorWorkflow'] = 'REEMPLAZAR_OTRA_COSA';
+    expect(hallazgos(x).join(' | ')).toMatch(/marcador sin sustituir: REEMPLAZAR_OTRA_COSA/);
+  });
+});

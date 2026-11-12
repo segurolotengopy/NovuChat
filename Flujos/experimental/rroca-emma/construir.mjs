@@ -611,7 +611,10 @@ export function guardiaDePublicacion({ flujo, datos, negocio, etapa = 'encender'
   const enFlujo = Array.isArray(lista) ? Object.fromEntries(lista.map((a) => [a.name, a.value])) : {};
   // 1. Marcadores sin sustituir en CUALQUIER parte del JSON completo. EMMA: la imagen comparativa «¿Sculptra® o Radiesse®?» NO existe: su id es una cadena VACÍA (sin marcador, sin dígitos) y esa imagen queda INACTIVA.
   // Las otras dos (bata y antes y después) sí se exigen resueltas.
-  for (const m of new Set(marcasEn(flujo).map((x) => x.toUpperCase()))) h.push(`marcador sin sustituir: ${m}`);
+  // EXCEPCIÓN ÚNICA: `settings.errorWorkflow` con el marcador EXACTO REEMPLAZAR_ID_ERROR_WORKFLOW (decisión I4): lo resuelve `publicar-flujo.sh` por NOMBRE en el n8n destino, no el `.local.json`. En cualquier otra parte sigue siendo un marcador sin sustituir.
+  const sinMarcadorDeAlertas = (flujo && flujo.settings && flujo.settings.errorWorkflow === 'REEMPLAZAR_ID_ERROR_WORKFLOW')
+    ? { ...flujo, settings: Object.fromEntries(Object.entries(flujo.settings).filter(([k]) => k !== 'errorWorkflow')) } : flujo;
+  for (const m of new Set(marcasEn(sinMarcadorDeAlertas).map((x) => x.toUpperCase()))) h.push(`marcador sin sustituir: ${m}`);
   if (enFlujo.arteComparativoMediaId !== '') h.push('Config base: arteComparativoMediaId tiene que ser una cadena vacía en Emma (la comparativa no existe)');
   if (datos && datos.configBase && datos.configBase.arteComparativoMediaId !== '') h.push('datos: arteComparativoMediaId tiene que ser una cadena vacía en Emma (la comparativa no existe)');
   // El tenantId aparece UNA vez en «Config base» (falla cerrado): un duplicado haría que quien lea el último y quien lea el primero vean tenants distintos.
