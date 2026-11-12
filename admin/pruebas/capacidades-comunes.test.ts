@@ -49,6 +49,9 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Flujo, CARPETA_FLUJOS, leerFlujo } from './lib/flujo.ts';
+import { flujosDeProduccion } from './lib/flujos-de-cliente.ts';
+import { atiendeCliente } from './core/migracion/comprobaciones.ts';
+import { problemasDeRegla } from './core/migracion/excepciones.ts';
 
 const TRIGGER_WHATSAPP = 'n8n-nodes-base.whatsAppTrigger';
 const esAgente = (tipo: string) => tipo === '@n8n/n8n-nodes-langchain.agent';
@@ -320,5 +323,41 @@ describe('La prueba no es vacía: un flujo sin medios, o con la rama rota, FALLA
     const f = base();
     f.nodes.find((x) => x.name === '¿Trae un medio?')!.parameters['conditions'] = { conditions: [{ leftValue: '={{ true }}' }] };
     expect(faltantesDeMedios(f).join('\n')).toMatch(/no decide por esMedioAudio y esMedioVisual/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migración (etapa 0, 12/11/2026): la lista única. La comprobación de arriba sigue IGUAL sobre su lista (los JSON de la raíz de `Flujos/` con
+// disparador de WhatsApp y agente). Todo flujo de producción que ATIENDE a un cliente y no está cubierto por ella (los de `experimental/` y
+// `clientes/`, que no usan el agente de n8n) debe cumplirla o estar en la lista de excepciones con vencimiento (decisión D2 de Andres):
+// ninguno puede quedar fuera de las dos.
+// ---------------------------------------------------------------------------
+
+describe('Capacidades comunes, lista única: cubierto por la comprobación o con excepción declarada', () => {
+  const produccion = flujosDeProduccion();
+  const atienden = produccion.filter((a) => atiendeCliente(leerFlujo(a)));
+  // Los de `conversacionales` ya los recorre, uno por uno y sin excepciones, `it.each(conversacionales)` de arriba.
+  const cubiertoPorLaComprobacion = (a: string): boolean => conversacionales.includes(a);
+
+  it('los flujos de producción que no atienden a un cliente no son conversacionales: quedan fuera por lo que son', () => {
+    const fuera = produccion.filter((a) => !atienden.includes(a));
+    expect(fuera.length).toBeGreaterThan(5);
+    for (const a of fuera) expect(esConversacional(leerFlujo(a)), a).toBe(false);
+  });
+
+  it('todo flujo de producción que atiende a un cliente cumple la comprobación o tiene excepción; ninguna excepción sobra', () => {
+    expect(atienden.length).toBeGreaterThan(10);
+    const hoy = new Map(atienden.map((a) => [a, cubiertoPorLaComprobacion(a) || faltantesDeMedios(leerFlujo(a)).length === 0 ? [] : ['rama de medios']]));
+    expect(problemasDeRegla('capacidades-comunes', hoy)).toEqual([]);
+  });
+
+  it('contraprueba: un flujo que atiende y no tiene la rama de medios falla sin excepción; con excepción pasa; si ya la cumple, la excepción sobra', () => {
+    const exc = { 'a.json#capacidades-comunes#rama de medios': { dueno: 'x', vence: '2027-01-31', motivo: 'm', desde: '2026-11-12' } };
+    const sinRama = { nodes: [{ name: 'Reportar mensaje (entrante)', type: 'n8n-nodes-base.httpRequest', parameters: {} }], connections: {} } as unknown as Flujo;
+    expect(atiendeCliente(sinRama)).toBe(true);
+    expect(faltantesDeMedios(sinRama).length).toBeGreaterThan(0);
+    expect(problemasDeRegla('capacidades-comunes', new Map([['a.json', ['rama de medios']]]), {})).toHaveLength(1);
+    expect(problemasDeRegla('capacidades-comunes', new Map([['a.json', ['rama de medios']]]), exc)).toEqual([]);
+    expect(problemasDeRegla('capacidades-comunes', new Map([['a.json', []]]), exc)).toEqual([expect.stringContaining('SOBRA')]);
   });
 });

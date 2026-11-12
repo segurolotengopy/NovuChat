@@ -338,9 +338,11 @@ de cobro, `NIEGA_IA`, aviso con botón, uso extendido, comercio no operativo,
 entrada verificada del receptor (verificador interno, `wabaIdEsperado` fijo, sin «Continue on Fail», repetidos descartados entre ejecuciones), normalización de entrada y filtro de promesas sin respaldo—,
 que se **incluye** desde core y módulos y **nunca se copia**.
 
-- Una prueba de CI comparará byte a byte lo incluido contra su fuente. **No
-  existe todavía** (PR posterior): hasta entonces, quien arma el flujo verifica
-  a mano que no copió el núcleo, y el revisor lo mira.
+- `admin/pruebas/core/nucleo-comun.test.ts` compara byte a byte los `.js` de
+  `Flujos/clientes/<tenant>/` contra el homónimo de `Flujos/src/core/`. Es una
+  garantía parcial (no cubre módulos, sub-módulos ni copias renombradas,
+  `docs/arquitectura/tenants.md`): quien arma el flujo verifica que no copió el
+  núcleo, y el revisor lo mira.
 - La **segunda vez** que otro cliente pide una pieza propia, pasa a módulo.
 - Seguridad y protección valen para todos sin excepción.
 - Un cliente con dos tipos de negocio (el caso de Rubén Roca: citas y ventas)
