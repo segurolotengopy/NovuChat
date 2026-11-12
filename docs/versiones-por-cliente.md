@@ -50,6 +50,16 @@ Una excepción necesita las tres cosas, o no es una excepción:
 > El guion `—` significa **sin excepción**: ese flujo tiene que estar al día con
 > su JSON versionado, y el script falla si no lo está.
 
+> **Baja de Clínica Platinum (11/11/2026).** Platinum no es cliente: se perdió
+> y Andres ordenó retirarlo (reclamo 58). Sus tres flujos en n8n —reservas,
+> seguimientos y señas vencidas— quedaron **apagados** el 11/11/2026 (lo hizo y
+> lo releyó la sesión Principal). **No tiene fila en esta tabla ni debe volver a
+> tenerla:** `estado-de-versiones.sh` no lo recorre, y
+> `admin/pruebas/estado-de-versiones.test.ts` falla si reaparece una fila suya.
+> Las menciones de Platinum más abajo son historia fechada (24/09 al 29/09) y
+> no se reescriben. Los JSON versionados que todavía llevan su nombre salen del
+> repositorio en un PR aparte, de código.
+
 > **Estado al 10/10/2026 (dos filas actualizadas).**
 > - **Q'Taco** corre «Venta mínima v0» (flujo propio, 50 nodos), origen `main`
 >   `e44da19d` (con #473, el enlace de Maps cuando piden la dirección del

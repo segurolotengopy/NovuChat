@@ -13,7 +13,7 @@
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -185,5 +185,45 @@ describe('estado-de-versiones.sh: lo que no se pudo comprobar no es verde', () =
     preparar('—', diagnostico);
     const { codigo } = correr();
     expect(codigo).toBe(1);
+  });
+});
+
+// BAJA DE CLÍNICA PLATINUM (11/11/2026, reclamo 58 de Andres): Platinum no es
+// cliente y sus tres flujos (reservas, seguimientos, señas vencidas) quedaron
+// apagados. El script recorre lo que diga el registro, así que se prueba con el
+// registro REAL: ninguna fila lo nombra y el script no lo recorre. Corre sin
+// ningún `.env`: cada fila sale «no se puede comprobar», que es justo la lista
+// de lo que el script recorrería.
+describe('estado-de-versiones.sh: el registro real no recorre a un cliente dado de baja', () => {
+  const REGISTRO_REAL = join(aqui, '..', '..', 'docs', 'versiones-por-cliente.md');
+  // Solo el nombre del cliente: los barridos `agendamiento-seguimientos.json` y
+  // `agendamiento-senas-vencidas.json` son del módulo Agenda y otro comercio puede publicarlos.
+  const DE_BAJA = /platinum/i;
+
+  /** Las filas que el script toma: cuatro columnas y un `--env` que empieza con «.env». */
+  function filasDelRegistro() {
+    return readFileSync(REGISTRO_REAL, 'utf8').split('\n')
+      .filter((l) => l.trimStart().startsWith('|'))
+      .map((l) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim().replace(/^`+|`+$/g, '').trim()))
+      .filter((col) => col.length === 4 && col[1]!.startsWith('.env'));
+  }
+
+  it('ninguna fila del registro nombra a Platinum, en el cliente, el --env o el flujo', () => {
+    const filas = filasDelRegistro();
+    expect(filas.length, 'el registro real no dio ninguna fila: la prueba no estaría probando nada').toBeGreaterThan(3);
+    for (const [cliente, env, flujo] of filas) {
+      expect(`${cliente} | ${env} | ${flujo}`).not.toMatch(DE_BAJA);
+    }
+  });
+
+  it('el script, con el registro real, recorre las mismas filas y a Platinum no', () => {
+    preparar('—', '', { sinEnv: true });
+    copyFileSync(REGISTRO_REAL, join(raiz, 'docs', 'versiones-por-cliente.md'));
+    const { codigo, lineas } = correr();
+    const recorridas = lineas.filter((l) => /^ {2}\? .*no se puede comprobar$/.test(l));
+    expect(codigo).toBe(3);
+    expect(recorridas).toHaveLength(filasDelRegistro().length);
+    expect(recorridas.join('\n')).not.toMatch(DE_BAJA);
+    expect(lineas.join('\n')).toContain(`${recorridas.length} de ${recorridas.length} revisado(s) SIN PODER COMPROBAR`);
   });
 });

@@ -137,6 +137,33 @@ describe('MEDIUM de seguridad: embarazo, lactancia, medicamentos y «seguro» si
       expect(textos(t)[0]).not.toMatch(/no se realizan|no se puede|contraindicad|no es recomendable|sí se puede/i);
     });
   }
+  // Humo del 11/11/2026, paso 11 (Silvana, Demo A con #907 cargado): el modelo contestó «durante el embarazo o la lactancia no realizamos este tipo de tratamientos… la Dra. podrá evaluar tu rostro en una valoración» y SALIÓ tal cual:
+  // (1) evNorm quita la puntuación, así que la barrera «por oración» veía UNA sola oración y bastaba «valoración» en cualquier parte; (2) «no realizamos» (primera persona) no estaba en la lista. Ahora, además, el CÓDIGO decide por lo que dice el CLIENTE.
+  const NO_REALIZAMOS = 'Te cuento con total franqueza: durante el embarazo o la lactancia no realizamos este tipo de tratamientos estéticos como medida de precaución.\n\nLo más responsable es esperar. Cuando llegue el momento, la Dra. Evy podrá evaluar tu rostro en una valoración gratuita.';
+  it('NIEGA (humo 11/11): «no realizamos este tipo de tratamientos» cae al texto fijo con el botón', () => {
+    const t = hablar(crear({ modeloDice: dice(NO_REALIZAMOS) }), ANA, mTexto('Estoy embarazada. Puedo hacerme el tratamiento?'));
+    expect(textos(t)[0]).toMatch(/Eso lo evalúa la Dra\. Evy en persona/);
+    expect(textos(t)[0]).not.toMatch(/no realizamos|esperar/i);
+    expect(t.mensajes.length).toBe(1);
+    expect(t.mensajes[0]!.tipo).toBe('interactive');
+  });
+  for (const [q, modelo] of [
+    ['Estoy embarazada, ¿puedo hacérmelo?', 'Lo mejor es esperar a que termine el embarazo; luego la Dra. Evy te recibe en una valoración gratuita.'],
+    ['Estoy amamantando, ¿se puede?', 'En lactancia no hacemos este tratamiento. La Dra. Evy te explica en la valoración.'],
+    ['Tomo anticoagulantes, ¿hay problema?', 'Con anticoagulantes hay riesgo de moretones, pero la valoración con la Dra. Evy es gratuita.'],
+    ['Soy diabética, ¿puedo?', 'Sí puedes, la Dra. Evy te recibe en la valoración gratuita.'],
+  ] as [string, string][]) {
+    it(`EN CÓDIGO, con la condición en el mensaje del cliente: «${q}» no sale si el modelo afirma o niega, aunque nombre la valoración`, () => {
+      const t = hablar(crear({ modeloDice: dice(modelo) }), ANA, mTexto(q));
+      expect(textos(t)[0]).toMatch(/Eso lo evalúa la Dra\. Evy en persona/);
+      expect(t.mensajes[0]!.tipo).toBe('interactive');
+    });
+  }
+  it('NEGADA: sin condición de salud en el mensaje del cliente, la respuesta sana del modelo sigue saliendo', () => {
+    const t = hablar(crear({ modeloDice: dice('Con gusto te cuento: la valoración con la Dra. Evy es gratuita. ¿Qué te gustaría mejorar?') }), ANA, mTexto('¿Cuánto cuesta la valoración?'));
+    expect(textos(t)[0]).toMatch(/valoración/);
+    expect(textos(t)[0]).not.toMatch(/Eso lo evalúa la Dra\. Evy en persona/);
+  });
   it('con remisión pero dando luz verde sigue rechazada', () => {
     expect(fallo(sale('Con diabetes no hay problema, puedes hacértelo. La valoración es gratuita.'))).toBe(true);
   });

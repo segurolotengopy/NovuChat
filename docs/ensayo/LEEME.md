@@ -68,7 +68,7 @@ fusiona** hasta que el ensayo sale bien.
 siempre: `CLOUDSDK_CONFIG=$HOME/.config/gcloud-novuchat-prod`):
 
     node scripts/plataforma/ensayo.mjs --proyecto <proyecto> --numero <phone id del Demo A> --preparar \
-      --cliente platinum --archivo scripts/datos/negocio-platinum.json \
+      --cliente <id> --archivo scripts/datos/negocio-<id>.json \
       --local ~/NovuChat/CONFIGURACION.local.md            # seco: se lee entero
     ... --aplicar
 
@@ -79,7 +79,7 @@ número no es de un comercio con plan `demostracion`.
 
 **2. El flujo** (desde `~/NovuChat`, donde están los `.env`):
 
-    ./scripts/ensayo-flujo.sh --cliente PLATINUM --flujo <worktree>/Flujos/platinum-agendamiento.json   # seco
+    ./scripts/ensayo-flujo.sh --cliente <CLIENTE> --flujo <worktree>/Flujos/<cliente>-agendamiento.json   # seco
     ... --aplicar
 
 El diagnóstico en seco se lee entero. Lo que tiene que decir:

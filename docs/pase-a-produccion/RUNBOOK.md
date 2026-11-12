@@ -125,8 +125,9 @@ como `·`):
 
 **No se rehace: se reutiliza el procedimiento del PR #148** («pase de un cliente
 a su propia WABA, y el ensayo antes de producción»). Su aplicación completa a un
-cliente está en `CLIENTES/PLATINUM/pase-a-produccion-waba-propia.md`, que sirve
-de modelo para cualquier otro:
+caso está en `CLIENTES/PLATINUM (PERDIDO)/pase-a-produccion-waba-propia.md`
+(Platinum ya no es cliente: baja del 11/11/2026; el documento queda solo como
+modelo del procedimiento):
 
 | Caso del comercio | Qué se hace |
 |---|---|
@@ -393,7 +394,7 @@ recordatorio de 24 h que el flujo del comercio no tenga.
 | **Volver a PRUEBA** | `actualizarEstadoCuenta({ tenantId, modalidad: 'prueba' })` o `migrar-prepago.mjs --modalidad prueba` (seco primero) | Los pagos confirmados **no se borran**: un pago no se corrige, se compensa con otro asiento. `periodoPagado` queda escrito |
 | **Sacarlo del prepago** | `migrar-prepago.mjs --modalidad demostracion` | Sin cargo ni corte; el encabezado dice PRUEBA |
 | **Quitar lo pactado por contrato** | `asignar-plan.mjs --operador <correo> --conversaciones plan --precio plan` (y `--cambios plan`), o «Volver a las del plan» / «Volver al precio del plan» en Negocios | Rigen los del plan desde el próximo cobro; los meses ya pagados no se re-tarifan. Auditoría `limites_por_contrato` y `precio_por_contrato` con el antes y el después |
-| **Devolver el número** al portafolio de NovuChat | Rollback del camino B (`CLIENTES/PLATINUM/pase-a-produccion-waba-propia.md` §7) | Otra ventana de 30 a 60 min sin respuesta |
+| **Devolver el número** al portafolio de NovuChat | Rollback del camino B (`CLIENTES/PLATINUM (PERDIDO)/pase-a-produccion-waba-propia.md` §7) | Otra ventana de 30 a 60 min sin respuesta |
 | **Un pago mal cargado** | No se anula un confirmado. Se registra la compensación y se anota el motivo | La auditoría de los dos |
 
 Cada vuelta atrás se anota en `CLIENTES/<NOMBRE>/estado.md` con la fecha y el

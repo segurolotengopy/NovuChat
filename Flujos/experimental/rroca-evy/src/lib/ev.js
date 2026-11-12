@@ -705,7 +705,14 @@ const EV_DA_LUZ_VERDE = /\b(no hay (ningun )?(problema|inconveniente)|tambien se
 const EV_REMISION = /\b(valoracion|la dra|la doctora|doctora evy|dra evy|en persona|evalu\w+)\b/;
 const EV_AFIRMA_SEGURO = /\b(?:es|son|era|resulta|resultan|muy|bastante|super|totalmente|completamente|100 ?%?)\s+(?:muy |bastante |super |totalmente |completamente )?segur[oa]s?\b(?!\s+(?:de |que\b))|\bsegur[oa]s?\s+para\b/;   // «es seguro que te va a gustar» y «estoy seguro de» no afirman seguridad médica
 // AFIRMAR O NEGAR sobre la condición («no se realizan durante el embarazo», «está contraindicado», «se puede»): el modelo nunca lo dice, ni a favor ni en contra; lo ve la Dra. en persona (Andres, 10/11/2026, humo de Evy, paso 11).
-const EV_AFIRMA_NIEGA = /\b(?:no se (?:puede|debe|realiz\w*|hace\w*|aplic\w*|recomiend\w*|indica\w*)|se puede|se realiza\w*|se hace\w*|estan? contraindicad\w*|contraindicad\w*|no es recomendable|no recomendamos|no (?:esta|estan) indicad\w*|esta indicad\w*)\b/;
+const EV_AFIRMA_NIEGA = /\b(?:no se (?:puede|debe|realiz\w*|hace\w*|aplic\w*|recomiend\w*|indica\w*)|no (?:realizamos|hacemos|aplicamos|tratamos|trabajamos|ofrecemos)|no podemos (?:hacer\w*|realizar\w*|aplicar\w*|tratar\w*)|se puede|se realiza\w*|se hace\w*|estan? contraindicad\w*|contraindicad\w*|no es recomendable|no recomendamos|no (?:esta|estan) indicad\w*|esta indicad\w*)\b/;
+// El CLIENTE nombra una condición de salud (embarazo, lactancia, medicamentos, alergia…): lo decide la Dra. en persona y el asistente NO responde si puede o no hacerse el tratamiento. Con una condición en el mensaje del cliente la barrera es MÁS ESTRICTA:
+// cualquier forma de decir que no / que sí se puede / que hay que esperar / que está contraindicado rechaza la salida, aunque nombre la valoración (Andres, 11/11/2026, humo de Evy, paso 11: el modelo dijo «no realizamos este tipo de tratamientos»).
+const EV_NIEGA_O_AFIRMA_AL_CLIENTE = /\b(?:(?:no|ni|nunca|tampoco)\s+(?:\w+\s+){0,3}(?:realiz\w*|hac\w*|aplic\w*|pued\w*|recomend\w*|indic\w*|trat\w*|ofrec\w*|trabaj\w*|permit\w*|aconsej\w*)|esperar|esperes|contraindic\w*|se puede|puedes|si es seguro|es seguro|riesgo\w*|precaucion)\b/;
+function evCondicionDelCliente(textoCliente) {
+  const c = EV_CONDICION.exec(evNorm(textoCliente));
+  return c ? c[0] : '';
+}
 function evSaludSinRemision(norm) {
   const n = String(norm);
   // POR ORACIÓN: toda oración que nombra una condición (embarazo, lactancia, medicamentos…) tiene que remitir ELLA MISMA a la Dra. y no afirmar ni negar nada. Antes bastaba una mención de «valoración» en cualquier parte del texto,
@@ -855,8 +862,12 @@ function evPulirSalida(crudo, ctx) {
   if (garantia) return { texto: '', motivo: 'prohibido', detalle: 'garantía afirmativa («' + garantia + '»)' };
   const silencio = EV_PROMETE_SILENCIO.exec(norm);
   if (silencio) return { texto: '', motivo: 'promete_silencio', detalle: '«' + silencio[0] + '»: el silencio lo promete solo el código (la baja)' };
-  const sinRemision = evSaludSinRemision(norm);
+  // evNorm quita la puntuación: sin partir ANTES por oración, todo el texto era UNA oración y bastaba una mención de «valoración» para que «no realizamos…» pasara (paso 11, 11/11/2026).
+  const sinRemision = evSaludSinRemision(evPartirEnOraciones(marcado).filter((o) => o !== '' && o !== '\n').map((o) => evNorm(o)).join('. '));
   if (sinRemision) return { texto: '', motivo: 'salud_sin_remision', detalle: 'habla de salud o afirma seguridad («' + sinRemision.slice(0, 40) + '») sin remitir a la valoración de la Dra.' };
+  const condCliente = evCondicionDelCliente(c.textoCliente);
+  const niegaAlCliente = condCliente ? EV_NIEGA_O_AFIRMA_AL_CLIENTE.exec(norm) : null;
+  if (niegaAlCliente) return { texto: '', motivo: 'salud_sin_remision', detalle: 'el cliente nombra una condición de salud («' + condCliente.slice(0, 40) + '») y la salida afirma o niega («' + niegaAlCliente[0].slice(0, 40) + '»): lo decide la Dra. en persona' };
   const salud = evConsejoDeSalud(norm);
   if (salud) return { texto: '', motivo: 'prohibido', detalle: 'consejo de salud sobre la condición del cliente («' + salud + '…»)' };
   // Una DURACIÓN («entre 20 y 30 minutos», «unos 40 minutos») no es un precio (batería real del 29/10/2026: «¿cuánto dura?» caía al fallo): solo para las reglas de precio se quita antes de mirar.
