@@ -35,6 +35,7 @@ import {
   type CuentaCruda, type PedidoDePrueba, type PruebaNueva,
 } from '../central/cuenta/prepago.js';
 import { documentoDeVertical } from '../core/prompt/prompt.js';
+import { ejecutarBajaTenant, marcarRutasDelTenant as marcarRutas, type GanchoAlCerrarTenant } from './baja.js';
 
 // --- Ayudantes de autorización del lado servidor ----------------------------
 // Las Cloud Functions NO están sujetas a firestore.rules: usan el SDK Admin y se
@@ -166,44 +167,19 @@ export const altaTenant = onCall(async (peticion) => {
 // nadie siga adentro con un token que todavía no caducó. El borrado real de los
 // datos es un procedimiento aparte, deliberado y con plazo.
 // ---------------------------------------------------------------------------
-/**
- * GANCHO AL CERRAR UN NEGOCIO (baja o suspensión, 03/11/2026): lo que otra zona debe hacer cuando el negocio deja de
- * tener servicio. Hoy lo usa el miniCRM para revocar a TODOS los editores de la hoja. Plataforma no importa módulos,
- * así que lo recibe armado de `ganchos.ts`. NO debe lanzar: si no completa su parte la deja anotada
- * (`revocado_pendiente`, que cierra la reconciliación programada).
- */
-export type GanchoAlCerrarTenant = (tenantId: string, quien: string, motivo: 'baja' | 'suspension') => Promise<void>;
+// El gancho y la lógica de la baja viven en `baja.ts` (los comparte el script `baja-comercio.mjs`).
+export type { GanchoAlCerrarTenant } from './baja.js';
 
 export const crearBajaTenant = (gancho?: GanchoAlCerrarTenant) => onCall(async (peticion) => {
   const uid = exigirPropietario(peticion);
   const tenantId = texto((peticion.data as Record<string, unknown>)['tenantId'], 60);
   if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
 
-  await db().doc(`tenants/${tenantId}`).update({
-    estado: 'dado_de_baja', bajaEn: Timestamp.now(), bajaPor: uid,
-  });
-
-  // LA RUTA TAMBIÉN. Faltaba, y era un agujero: `suspenderTenant`
-  // y `reactivarTenant` propagaban el estado a /rutasWhatsApp y la baja no, así
-  // que un comercio dado de baja conservaba su ruta diciendo `activo`.
-  //
-  // Importa porque `registrarCierre` decide con `ruta.estado`: un comercio ya
-  // dado de baja podía seguir acumulando CIERRES. Los cierres no se facturan
-  // (la unidad es la conversación, `docs/base-comercial.md` §2), pero un
-  // comercio que se fue no debe seguir sumando registros ni recibir servicio.
-  //
-  // Va ANTES de quitar los roles: si algo fallara entre las dos operaciones,
-  // prefiero que el corte de servicio ya esté hecho y queden roles por limpiar,
-  // y no al revés.
-  await marcarRutasDelTenant(tenantId, 'dado_de_baja');
-  // La edición de la hoja del miniCRM con Gmail no depende de los claims: se revoca aparte (no lanza).
-  if (gancho) await gancho(tenantId, uid, 'baja');
-
-  const miembros = await db().collection(`tenants/${tenantId}/miembros`).get();
-  for (const m of miembros.docs) {
-    await asignarRol(m.id, tenantId, null, { revocarSesiones: true });
-  }
-  await auditar(tenantId, 'baja_tenant', uid, { miembros: miembros.size, rutasCortadas: true });
+  await ejecutarBajaTenant({
+    db: db(), ahora: () => Timestamp.now(), auditar,
+    quitarRol: (miembro, id) => asignarRol(miembro, id, null, { revocarSesiones: true }),
+    ...(gancho ? { gancho } : {}),
+  }, tenantId, uid);
   return { ok: true };
 });
 
@@ -318,13 +294,8 @@ export const reactivarTenant = onCall(async (peticion) => {
   return { estado: 'activo' };
 });
 
-/** Propaga el estado del comercio a sus rutas de WhatsApp. */
-async function marcarRutasDelTenant(tenantId: string, estado: string): Promise<void> {
-  const rutas = await db().collection('rutasWhatsApp').where('tenantId', '==', tenantId).get();
-  const lote = db().batch();
-  for (const r of rutas.docs) lote.update(r.ref, { estado });
-  await lote.commit();
-}
+/** Propaga el estado del comercio a sus rutas de WhatsApp (la implementación, compartida con la baja, está en `baja.ts`). */
+const marcarRutasDelTenant = (tenantId: string, estado: string): Promise<void> => marcarRutas(db(), tenantId, estado);
 
 // ---------------------------------------------------------------------------
 // NÚMEROS DE WHATSAPP — un comercio, su número, su flujo.
