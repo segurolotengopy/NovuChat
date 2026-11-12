@@ -18,7 +18,7 @@ cerrada `admin/pruebas/core/migracion/excepciones.ts`, que solo puede bajar (top
 | **M4** | Cada nodo común del flujo —los cinco (Normalizar entrada, Config del negocio, Procesar respuesta, Uso extendido, Comercio no operativo) y los dos de la capa común experimental (Carga de entrada, Puerta del turno)— INCLUYE una variante declarada de `Flujos/src/core` (la lista cerrada de `VARIANTES.md`: igual a ella, o terminado en ella), o tiene excepción. «Carga de entrada» y «Puerta del turno» aún no tienen variante en core: todo flujo que las lleve es excepción hasta que suban a core. | `core/nucleo-comun.test.ts` sobre todos los flujos de producción; `migrado.test.ts` sobre los mudados |
 | **M5** | La red `NIEGA_IA` viene de una fuente declarada (la expresión de `core/procesar-respuesta.js`, idéntica en sus tres variantes), o tiene excepción. | `core/niega-ia.test.ts` (estático); `migrado.test.ts` |
 | **M6** | Las siete pruebas comunes de invariantes lo recorren, descubriéndolo del disco con la lista única (`admin/pruebas/lib/flujos-de-cliente.ts`): `entregas`, `ux-derivacion`, `capacidades-comunes`, `flujos-origen`, `niega-ia`, `error-workflow-por-nombre` y `guardado-obligatorio`. | Cada una de las siete; `migrado.test.ts` verifica que usan la lista única |
-| **M7** | Tiene fila en `docs/versiones-por-cliente.md`. | `migrado.test.ts` |
+| **M7** | Tiene fila en la tabla de clientes de `docs/versiones-por-cliente.md` (cabecera «Cliente \| `--env` \| Flujo versionado»), con su ruta completa entre comillas invertidas (`Flujos/<carpeta>/<json>`, en `experimental/` o `clientes/`). | `migrado.test.ts` |
 
 ## La lista única
 
@@ -31,8 +31,11 @@ nuevo, o uno que se muda de `experimental/` a `clientes/`, entra solo a las siet
 Clave `<json>#<regla>#<nodo>`, con `dueno`, `vence` (AAAA-MM-DD, a no más de 90 días de `ALTA`, 2026-11-12), `motivo` y `desde`. Reglas:
 `nucleo-comun` (M4), `niega-ia` (M5), `error-workflow-por-nombre`, `ux-derivacion`, `capacidades-comunes`, `flujos-origen` y `entregas`.
 Cada prueba común exige tres cosas: que toda violación de hoy tenga su excepción, que ninguna excepción **sobre** (si el flujo ya cumple,
-hay que borrarla) y que la clave nombre un flujo que existe. `TOPE` y `TOPE_POR_REGLA` fijan cuántas hay; cambiarlos, o un `vence`,
-exige pasar por el agente `seguridad`. La identidad de un flujo no depende de su carpeta: una excepción o una fila del tablero
+hay que borrarla) y que la clave nombre un flujo que existe. `TOPE` y `TOPE_POR_REGLA` fijan cuántas hay (114 hoy: se suma la regla `expresiones-n8n`, un armador sin la guardia de expresiones).
+El techo está además en `tope-fijado.ts` (`ALTA_FIJADA`, `TOPE_MAXIMO`), literal y aparte: subir el tope obliga a tocar DOS archivos.
+Cambiar `ALTA`, `TOPE`, `ALTA_FIJADA`, `TOPE_MAXIMO` o un `vence` exige pasar por el agente `seguridad`. Límite conocido de M4:
+`incluyeVariante` rechaza un `return` de nivel superior (columna 0) antes de la variante, pero no un `return` indentado dentro de un bloque que
+corra siempre ni un `throw` previo. La identidad de un flujo no depende de su carpeta: una excepción o una fila del tablero
 sobrevive a `git mv` de `experimental/<x>/` a `clientes/<x>/`.
 
 ## Cómo se muda un flujo

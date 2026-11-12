@@ -133,6 +133,9 @@ describe('M4: cada nodo común de un flujo incluye una variante declarada de cor
     const alterada = `${variante.slice(0, -5)}X${variante.slice(-4)}`;
     expect(incluyeVariante(alterada, [variante])).toBe(false);
     expect(incluyeVariante(`const LIB = 1;\n${alterada}`, [variante])).toBe(false);
+    // Un `return` de nivel superior antes de la variante la deja como código muerto: no cuenta (uno indentado, dentro de una función, sí es legítimo).
+    expect(incluyeVariante(`return [];\n${variante}`, [variante])).toBe(false);
+    expect(incluyeVariante(`function f() {\n  return 1;\n}\n${variante}`, [variante])).toBe(true);
     expect(incluyeVariante('', [variante])).toBe(false);
     expect(incluyeVariante(variante, [])).toBe(false);
   });

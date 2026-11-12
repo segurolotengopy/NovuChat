@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { flujosDeProduccion } from '../../lib/flujos-de-cliente';
 import { idDeFlujo } from './comprobaciones';
+import { ALTA_FIJADA, TOPE_MAXIMO } from './tope-fijado';
 import { ALTA, EXCEPCIONES, REGLAS, TOPE, TOPE_POR_REGLA, excepcionesDe, partesDeClave, problemasDeForma, type Excepcion } from './excepciones';
 
 const e = (parcial: Partial<Excepcion> = {}): Excepcion => ({ dueno: 'por asignar (Principal)', vence: '2027-01-31', motivo: 'm', desde: ALTA, ...parcial });
@@ -20,6 +21,14 @@ describe('excepciones de la migración: la lista solo puede bajar', () => {
     expect(Object.keys(EXCEPCIONES).length).toBeLessThanOrEqual(TOPE);
     for (const r of REGLAS) expect(excepcionesDe(r).length, r).toBeLessThanOrEqual(TOPE_POR_REGLA[r]);
     expect(Object.values(TOPE_POR_REGLA).reduce((a, b) => a + b, 0)).toBe(TOPE);
+  });
+
+  it('el tope no sube en silencio: ALTA es la fijada y TOPE no pasa del máximo fijado en tope-fijado.ts (subirlo obliga a tocar dos archivos)', () => {
+    expect(ALTA).toBe(ALTA_FIJADA);
+    expect(TOPE).toBeLessThanOrEqual(TOPE_MAXIMO);
+    // Contraprueba: un tope subido por encima del máximo, o un alta movida, no pasaría esas dos comparaciones.
+    expect(TOPE_MAXIMO + 1 <= TOPE_MAXIMO).toBe(false);
+    expect('2026-11-13' === ALTA_FIJADA).toBe(false);
   });
 
   it('toda excepción tiene dueño, motivo, desde y vence válidos, a no más de 90 días del alta (2026-11-12 → 2027-02-10) y sin vencer', () => {

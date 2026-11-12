@@ -1,7 +1,7 @@
 /**
  * GUARDIA PERMANENTE: EL SANDBOX DE EXPRESIONES DE n8n 2.36.5 (07/11/2026).
  *
- * Causa: dos imágenes de clientes de Q'Taco no dejaron ninguna ejecución. La expresión del IF «¿Es comprobante?» usaba
+ * Causa: dos imágenes de clientes de un comercio no dejaron ninguna ejecución. La expresión del IF «¿Es comprobante?» usaba
  * `Object.prototype.hasOwnProperty` y n8n la rechazó («Cannot access "prototype" due to security concerns»): la ejecución murió sin registro.
  *
  * Qué protege, NEGANDO primero:
@@ -21,6 +21,9 @@ import { describe, expect, it } from 'vitest';
 import { hallazgosDeExpresiones, REGLAS_DE_EXPRESION } from '../../../Flujos/experimental/comun-sin-agente/src/expresiones.mjs';
 import { crearMundo } from '../lib/n8n-de-mentira';
 import type { Flujo, J } from '../lib/flujo';
+import { flujosDeProduccion } from '../lib/flujos-de-cliente';
+import { idDeFlujo } from './migracion/comprobaciones';
+import { problemasDeRegla } from './migracion/excepciones';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(AQUI, '../../..');
@@ -127,20 +130,28 @@ describe('NEGANDO: las reglas reconocen cada construcción en una copia de un fl
 });
 
 describe('todos los armadores de Flujos/experimental y Flujos/clientes aplican la guardia en su --verificar', () => {
-  // Migración (etapa 0): un flujo puede vivir en una carpeta o en la otra (la mudanza no cambia qué flujo es). Excepción cerrada: el armador de la
-  // redirección de Q'Taco no aplica la guardia hoy (no se arregla en la etapa 0); si la aplica, la excepción sobra y la prueba lo pide.
-  const SIN_GUARDIA = ['Flujos/clientes/qtaco-redireccion/construir.mjs'];
+  // Migración (etapa 0): un flujo puede vivir en una carpeta o en la otra (la mudanza no cambia qué flujo es). Los armadores que hoy no aplican la
+  // guardia son excepciones de `migracion/excepciones.ts` (regla `expresiones-n8n`, con dueño y vencimiento); si uno la aplica, la excepción sobra.
   const todos = [...versionados('Flujos/experimental/*/construir.mjs'), ...versionados('Flujos/clientes/*/construir.mjs')]
     .filter((r) => !r.startsWith('Flujos/experimental/comun-sin-agente/'));
-  const armadores = todos.filter((r) => !SIN_GUARDIA.includes(r));
   const importaLaGuardia = (texto: string): boolean => /from '(\.\.\/comun-sin-agente|\.\.\/\.\.\/experimental\/comun-sin-agente)\/src\/expresiones\.mjs'/.test(texto);
+  const aplicaLaGuardia = (r: string): boolean => { const t = readFileSync(join(RAIZ, r), 'utf8'); return importaLaGuardia(t) && /hallazgosDeExpresionesN8n\(flujo/.test(t); };
+  // El flujo de producción representante de cada armador (el primero de su carpeta), que es el que nombran las excepciones.
+  const representante = (r: string): string => {
+    const carpeta = idDeFlujo(r.replace(/^Flujos\//, '').replace(/construir\.mjs$/, ''));
+    return flujosDeProduccion().find((f) => idDeFlujo(f).startsWith(carpeta)) ?? r;
+  };
+  const hoy = new Map(todos.map((r) => [representante(r), aplicaLaGuardia(r) ? [] : ['construir.mjs']]));
+  const armadores = todos.filter(aplicaLaGuardia);
   it('hay armadores que revisar (la suma de las dos carpetas)', () => expect(armadores.length).toBeGreaterThanOrEqual(12));
-  it('la excepción cerrada existe y sigue sin aplicar la guardia (si la aplica, sobra)', () => {
-    for (const r of SIN_GUARDIA) {
-      const texto = readFileSync(join(RAIZ, r), 'utf8');
-      expect(todos, r).toContain(r);
-      expect(importaLaGuardia(texto) && /hallazgosDeExpresionesN8n\(flujo/.test(texto), r).toBe(false);
-    }
+  it('los armadores sin guardia son exactamente las excepciones declaradas (ni una más, ni una que sobre)', () => {
+    expect(problemasDeRegla('expresiones-n8n', hoy)).toEqual([]);
+  });
+  it('contraprueba: un armador sin guardia y sin excepción falla; con excepción pasa; si ya la aplica, la excepción sobra', () => {
+    const exc = { 'a.json#expresiones-n8n#construir.mjs': { dueno: 'x', vence: '2027-01-31', motivo: 'm', desde: '2026-11-12' } };
+    expect(problemasDeRegla('expresiones-n8n', new Map([['a.json', ['construir.mjs']]]), {})).toHaveLength(1);
+    expect(problemasDeRegla('expresiones-n8n', new Map([['a.json', ['construir.mjs']]]), exc)).toEqual([]);
+    expect(problemasDeRegla('expresiones-n8n', new Map([['a.json', []]]), exc)).toEqual([expect.stringContaining('SOBRA')]);
   });
   it('contraprueba: acepta las dos formas de la importación y rechaza otra', () => {
     expect(importaLaGuardia("import { x } from '../comun-sin-agente/src/expresiones.mjs';")).toBe(true);

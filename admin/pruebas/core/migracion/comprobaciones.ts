@@ -58,7 +58,13 @@ export function variantesDeNodo(nodo: string, srcCore: string = SRC_CORE): strin
 export function incluyeVariante(jsCode: string, variantes: string[]): boolean {
   return variantes.some((v) => {
     const sin = v.replace(/\n$/, '');
-    return sin.length > 0 && (jsCode === v || jsCode === sin || jsCode.endsWith(v) || jsCode.endsWith(sin));
+    if (sin.length === 0) return false;
+    if (jsCode === v || jsCode === sin) return true;
+    const sufijo = jsCode.endsWith(v) ? v : jsCode.endsWith(sin) ? sin : null;
+    if (sufijo === null) return false;
+    // Un `return` de nivel superior (en columna 0) en el prefijo deja la variante como código muerto: no cuenta como incluida.
+    // Limitación declarada: no detecta un `return` indentado dentro de un bloque que se ejecute siempre, ni un `throw` previo.
+    return !/^return\b/m.test(jsCode.slice(0, jsCode.length - sufijo.length));
   });
 }
 

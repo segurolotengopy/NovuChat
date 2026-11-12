@@ -56,8 +56,10 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 - Base medida: `origin/main` 973e7c7d. La mudanza NUNCA publica: la diferencia entre el
   JSON versionado y el flujo vivo se declara en la fila del flujo de `docs/versiones-por-cliente.md` antes de mudarlo (decisión D1).
 - Q'Taco 3727, Walisuma, Casa Bermejo, captación mínima y el rescate de las 22 h están sin publicar; Q'Taco (número anterior) y la
-  redirección conviven hasta la baja del vivo. Bellido corre `agenda-minima.v0.json` (congelado por orden de Andres, con
-  `phoneNumberIdAtadura` sin publicar); `bellido-agendamiento.json` es el flujo anterior, que no corre.
+  redirección conviven hasta la baja del vivo.
+- **A aclarar por la sesión dueña:** cuál es el JSON vivo de Bellido; la fila 32 de `docs/versiones-por-cliente.md` nombra uno
+  (`bellido-agendamiento.json`) y describe la publicación del otro (`agenda-minima.v0.json`, «--desde-b»). En este tablero
+  `bellido-agendamiento.json` queda «congelado (D3)» y `agenda-minima.v0.json` «vivo (según fila 32, publicado desde B)»; no se afirma más.
 - Las dos redirecciones de `clientes/qtaco-redireccion/` ya viven en `clientes/` con su `PROPIO.md` (M1 cumplido) y siguen
   `pendiente` porque les falta su fila en `docs/versiones-por-cliente.md` (M7), que esta etapa no edita.
 - Las filas de los barridos sin constructor (`agendamiento-*`) y de `recordatorio-bellido.v1.json` son JSON editados a mano.

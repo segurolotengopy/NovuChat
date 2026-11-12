@@ -152,7 +152,14 @@ describe('La lista de flujos', () => {
 
 /** Las mismas cuatro comprobaciones de arriba, sobre cualquier flujo; una falla (o un nodo que no existe) es «no la cumple». */
 function cumpleElOrigen(archivo: string): boolean {
-  try {
+  // «No tiene los nodos» es «no la cumple»; cualquier OTRO error (código del nodo que revienta, JSON ilegible) NO se traga: hace fallar la prueba.
+  const nodos = flujo(archivo).nodes.map((n) => n.name);
+  if (!nodos.includes('Normalizar entrada') || !nodos.includes('Reportar mensaje (entrante)')) return false;
+  // Tampoco la cumple, para esta comprobación, el reporte que no es una expresión simple sobre `$json` (usa `$(...)`, `$node`, `$input`…): el arnés de arriba
+  // no puede evaluarlo y no hay forma de comprobar que el origen viaje. Es una limitación declarada del arnés, no un error que se esconda.
+  const cuerpo = String(nodo(flujo(archivo), 'Reportar mensaje (entrante)').parameters['jsonBody']);
+  if (!/^=\{\{[\s\S]*\}\}$/.test(cuerpo.trim()) || /\$\(|\$node|\$input|\$items|\$env|\$vars|\$execution|\$workflow|\$now|\$today/.test(cuerpo)) return false;
+  {
     const anuncio = normalizar(archivo, REFERRAL);
     const directo = normalizar(archivo, {});
     const viajaAnuncio = reporte(archivo, anuncio);
@@ -161,8 +168,6 @@ function cumpleElOrigen(archivo: string): boolean {
     const texto = JSON.stringify(viajaAnuncio);
     return anuncio['origen'] === 'anuncio' && directo['origen'] === 'directo' && viajaAnuncio['origen'] === 'anuncio'
       && viajaDirecto['origen'] === 'directo' && sinCampo['origen'] === 'directo' && !texto.includes('fb.me') && !texto.includes('descuento');
-  } catch {
-    return false;
   }
 }
 

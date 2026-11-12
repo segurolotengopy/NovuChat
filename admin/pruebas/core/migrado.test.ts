@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { flujosDeProduccion } from '../lib/flujos-de-cliente';
 import { variantesDeNodo } from './migracion/comprobaciones';
 import {
-  PRUEBAS_COMUNES, contextoReal, leerTablero, problemasDeMigrado, problemasDelTablero, rutaDeFila, type Contexto, type Fila,
+  PRUEBAS_COMUNES, contextoReal, importaListaUnica, leerTablero, tieneFilaDeVersiones, problemasDeMigrado, problemasDelTablero, rutaDeFila, type Contexto, type Fila,
 } from './migracion/migrado';
 
 const TABLERO = join(contextoReal().repo, 'docs', 'arquitectura', 'migracion.md');
@@ -35,14 +35,14 @@ describe('tablero de la migración: una fila por flujo de producción', () => {
     expect(filas.every((f) => f.estado === 'pendiente' || f.estado === 'mudado')).toBe(true);
   });
 
-  it('Walisuma figura pendiente con dueño Rearquitectura, y el resto con dueño por asignar (Principal)', () => {
-    for (const f of filas) expect(f.dueno, f.json).toBe(f.json === 'walisuma.json' ? 'Rearquitectura' : 'por asignar (Principal)');
+  it('el dueño de cada fila es uno de los dos declarados: Rearquitectura o por asignar (Principal)', () => {
+    for (const f of filas) expect(['Rearquitectura', 'por asignar (Principal)'], f.json).toContain(f.dueno);
   });
 
-  it('la clase «congelado» es la de las doctoras, bellido-agendamiento.json y novuchat-onboarding.json (decisión D3)', () => {
-    expect(filas.filter((f) => f.clase === 'congelado').map((f) => f.json).sort()).toEqual(
-      ['bellido-agendamiento.json', 'doctoras.rroca-emma.json', 'doctoras.rroca-evy.json', 'novuchat-onboarding.json'],
-    );
+  it('los congelados (decisión D3) son 4 y ninguno está mudado: se retiran en un PR aparte, no se mudan', () => {
+    const congelados = filas.filter((f) => f.clase === 'congelado');
+    expect(congelados).toHaveLength(4);
+    for (const f of congelados) expect(f.estado, f.json).toBe('pendiente');
   });
 });
 
@@ -84,8 +84,8 @@ describe('contrapruebas del tablero', () => {
   it('leerTablero rechaza una tabla con otra cabecera o con una fila de otro ancho', () => {
     expect(() => leerTablero('| JSON | carpeta |\n|---|---|\n| a | b |')).toThrow(/debe empezar por/);
     const buena = readFileSync(TABLERO, 'utf8').split('\n');
-    const i = buena.findIndex((l) => l.startsWith('| walisuma.json'));
-    buena[i] = '| walisuma.json | experimental/walisuma |';
+    const i = buena.findIndex((l) => l.startsWith(`| ${filas[0]!.json} `));
+    buena[i] = `| ${filas[0]!.json} | ${filas[0]!.carpeta} |`;
     expect(() => leerTablero(buena.join('\n'))).toThrow(/no tiene 8 columnas/);
   });
 });
@@ -94,7 +94,8 @@ describe('contrapruebas del tablero', () => {
 // Contrapruebas de M1 a M7, en un directorio temporal
 // ---------------------------------------------------------------------------
 
-const agrupar = (hex: string): string => hex.match(/.{8}/g)!.join('-');
+const ENCABEZADO_VERSIONES = '| Cliente | `--env` | Flujo versionado | Excepción declarada |\n|---|---|---|---|\n';
+const agrupar =(hex: string): string => hex.match(/.{8}/g)!.join('-');
 const sha = (texto: string): string => agrupar(createHash('sha256').update(texto).digest('hex'));
 
 interface Montaje { raiz: string; ctx: Contexto; fila: Fila; ruta: string }
@@ -118,7 +119,7 @@ function montar(): Montaje {
   };
   const texto = `${JSON.stringify(flujo, null, 2)}\n`;
   writeFileSync(join(carpeta, 'x.json'), texto);
-  writeFileSync(join(raiz, 'versiones.md'), '| Cliente | Flujo |\n|---|---|\n| X | `Flujos/clientes/x/x.json` |\n');
+  writeFileSync(join(raiz, 'versiones.md'), `${ENCABEZADO_VERSIONES}| X | \`.env\` | \`Flujos/clientes/x/x.json\` | — |\n`);
   const pruebas = PRUEBAS_COMUNES.map((r) => join(raiz, r.replace(/\//g, '__')));
   for (const p of pruebas) writeFileSync(p, "import { flujosDeProduccion } from './lib/flujos-de-cliente';\n");
   const ctx: Contexto = { flujos: join(raiz, 'Flujos'), repo: raiz, versiones: join(raiz, 'versiones.md'), pruebas, correr: () => 0 };
@@ -203,16 +204,34 @@ describe('M1 a M7, NEGANDO, en un directorio temporal', () => {
 
   it('M7: sin fila en versiones-por-cliente.md falla', () => {
     conMontaje((m) => {
-      writeFileSync(m.ctx.versiones, '| Cliente | Flujo |\n|---|---|\n| Otro | `otro.json` |\n');
+      writeFileSync(m.ctx.versiones, `${ENCABEZADO_VERSIONES}| Otro | \`.env\` | \`Flujos/clientes/otro/otro.json\` | — |\n`);
       expect(problemasDeMigrado(m.fila, m.ctx)).toEqual([expect.stringMatching(/^M7:/)]);
       writeFileSync(m.ctx.versiones, 'x.json sin tabla\n');
       expect(problemasDeMigrado(m.fila, m.ctx)).toEqual([expect.stringMatching(/^M7:/)]);
     });
   });
 
+  it('M7: un nombre que contiene a otro no cuenta, ni una fila de otra tabla del documento; la otra carpeta (experimental/ o clientes/) sí', () => {
+    const fila = `${ENCABEZADO_VERSIONES}| A | \`.env\` | \`Flujos/experimental/y/prefijo.x.json\` | — |\n`;
+    expect(tieneFilaDeVersiones(fila, 'clientes/x/x.json')).toBe(false); // «x.json» está dentro de «prefijo.x.json»
+    expect(tieneFilaDeVersiones(fila, 'experimental/y/prefijo.x.json')).toBe(true);
+    expect(tieneFilaDeVersiones(fila, 'clientes/y/prefijo.x.json')).toBe(true);
+    const otraTabla = `${ENCABEZADO_VERSIONES}\n| Salida | Nodos |\n|---|---|\n| \`Flujos/experimental/x/x.json\` | 1 → 2 |\n`;
+    expect(tieneFilaDeVersiones(otraTabla, 'experimental/x/x.json')).toBe(false);
+    expect(tieneFilaDeVersiones('| Salida | Nodos |\n|---|---|\n| `Flujos/x/x.json` | 1 |\n', 'x/x.json')).toBe(false);
+  });
+
+  it('M6: un comentario o una cadena que nombra lib/flujos-de-cliente no es importarla', () => {
+    expect(importaListaUnica("import { flujosDeProduccion } from './lib/flujos-de-cliente';\n")).toBe(true);
+    expect(importaListaUnica("import { a,\n  b } from '../lib/flujos-de-cliente.ts';\n")).toBe(true);
+    expect(importaListaUnica("// import { flujosDeProduccion } from './lib/flujos-de-cliente';\n")).toBe(false);
+    expect(importaListaUnica("/* import x from './lib/flujos-de-cliente'; */\nconst a = 1;\n")).toBe(false);
+    expect(importaListaUnica("const s = 'lib/flujos-de-cliente';\n")).toBe(false);
+  });
+
   it('las siete pruebas comunes existen en el repositorio y descubren con la lista única (el M6 real)', () => {
     expect(PRUEBAS_COMUNES).toHaveLength(7);
     const real = contextoReal();
-    for (const p of real.pruebas) expect(readFileSync(p, 'utf8'), p).toContain('flujos-de-cliente');
+    for (const p of real.pruebas) expect(importaListaUnica(readFileSync(p, 'utf8')), p).toBe(true);
   });
 });

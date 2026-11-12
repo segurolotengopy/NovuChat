@@ -99,7 +99,7 @@ const sha256 = (ruta: string): string => createHash('sha256').update(readFileSyn
  *  - M4: cada nodo común presente incluye una variante declarada de core, o tiene excepción vigente.
  *  - M5: NIEGA_IA sale de core, o tiene excepción vigente (solo si el flujo atiende a un cliente).
  *  - M6: las siete pruebas comunes lo recorren: el flujo está entre los de producción del disco y cada prueba descubre con la lista única.
- *  - M7: tiene fila en `docs/versiones-por-cliente.md`.
+ *  - M7: tiene fila en la tabla de clientes de `docs/versiones-por-cliente.md`, con su ruta completa entre comillas invertidas.
  */
 export function problemasDeMigrado(fila: Fila, ctx: Contexto = contextoReal()): string[] {
   const p: string[] = [];
@@ -127,11 +127,32 @@ export function problemasDeMigrado(fila: Fila, ctx: Contexto = contextoReal()): 
   }
 
   for (const prueba of ctx.pruebas) {
-    if (!existsSync(prueba) || !readFileSync(prueba, 'utf8').includes('flujos-de-cliente')) p.push(`M6: ${prueba.split('/').pop()} no descubre los flujos con la lista única (lib/flujos-de-cliente)`);
+    if (!existsSync(prueba) || !importaListaUnica(readFileSync(prueba, 'utf8'))) p.push(`M6: ${prueba.split('/').pop()} no descubre los flujos con la lista única (lib/flujos-de-cliente)`);
   }
 
-  const nombre = fila.json;
-  const hayFila = existsSync(ctx.versiones) && readFileSync(ctx.versiones, 'utf8').split('\n').some((l) => l.startsWith('|') && l.includes(nombre));
-  if (!hayFila) p.push(`M7: ${nombre} no tiene fila en docs/versiones-por-cliente.md`);
+  const hayFila = existsSync(ctx.versiones) && tieneFilaDeVersiones(readFileSync(ctx.versiones, 'utf8'), ruta);
+  if (!hayFila) p.push(`M7: ${ruta} no tiene fila en la tabla de clientes de docs/versiones-por-cliente.md`);
   return p;
+}
+
+/** M6: ¿el archivo IMPORTA de verdad `lib/flujos-de-cliente`? Un comentario o una cadena que lo nombra no cuenta (se quitan los comentarios antes). */
+export function importaListaUnica(texto: string): boolean {
+  const sinComentarios = texto.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+  return /^\s*import\b[^;]*?\bfrom\s*['"][^'"]*\/flujos-de-cliente(\.ts)?['"]/m.test(sinComentarios);
+}
+
+/**
+ * M7: ¿hay una fila de la tabla de clientes (cabecera «Cliente | `--env` | Flujo versionado») que nombre la RUTA completa del flujo entre
+ * comillas invertidas (`Flujos/<carpeta>/<json>`)? Ni otras tablas del documento, ni un nombre que contiene a otro, ni la otra carpeta
+ * (experimental/ o clientes/) cuentan como falsos positivos o negativos: la identidad ignora esa carpeta.
+ */
+export function tieneFilaDeVersiones(texto: string, ruta: string): boolean {
+  const lineas = texto.split('\n');
+  const i = lineas.findIndex((l) => /^\|\s*Cliente\s*\|\s*`--env`\s*\|\s*Flujo versionado\s*\|/.test(l));
+  if (i < 0) return false;
+  for (const l of lineas.slice(i + 2)) {
+    if (!l.startsWith('|')) break;
+    for (const m of l.matchAll(/`Flujos\/([^`\s]+\.json)`/g)) if (idDeFlujo(m[1] as string) === idDeFlujo(ruta)) return true;
+  }
+  return false;
 }
