@@ -1156,16 +1156,27 @@ function aExtraerLibre() {
   }
   if (intencion === 'modalidades') {
     if (sinPanel || (cfg.aceptaDelivery === false && cfg.aceptaRetiroEnLocal === false)) return rechazo('sin_dato:modalidades');
-    aConsulta('delivery'); ruta = 'libre:modalidades'; return;
+    // Las DOS modalidades con los datos del negocio (la consulta fija de «delivery» no nombra el recojo).
+    const hayDelivery = cfg.aceptaDelivery !== false;
+    const hayRecojo = cfg.aceptaRetiroEnLocal !== false;
+    en.paso = 'menu';
+    ruta = 'libre:modalidades';
+    mensajes = [conBotones(hayDelivery && hayRecojo ? 'Sí, hacemos delivery y también puedes recoger tu pedido en el local.' + textoSinDelivery()
+      : hayDelivery ? 'Sí, hacemos delivery.' + textoSinDelivery() : 'Por ahora no hacemos delivery: puedes recoger tu pedido en el local.', menuBotones())];
+    return;
   }
   if (intencion === 'carta') {
-    const antes = mensajes.length;
-    aCarta();
-    if (mensajes.length === antes) return rechazo('sin_dato:carta');
+    // La carta se comprueba ANTES: sin carta cargada `aCarta` deriva con aviso (otra ruta, otro aviso). Aquí, texto de rechazo con botón y sin aviso.
+    if (!cartaDelNegocio().length) return rechazo('sin_dato:carta');
+    // La ruta se fija ANTES: si aun así `aCarta` deriva (carta sin texto), su ruta `transferir:*` y su aviso quedan (no se pisan).
     ruta = 'libre:carta';
+    aCarta();
     return;
   }
   if (intencion === 'identidad') { aIdentidad(); ruta = 'libre:identidad'; return; }
+  if (intencion === 'acuse') { ruta = 'libre:acuse'; mensajes = [texto(rl.acuse || 'Con gusto.')]; return; }
+  // El humor NUNCA se usa con señales de crisis o de baja (aunque el modelo lo clasifique así): texto de rechazo con botón, sin aviso.
+  if (intencion === 'humor' && rcSenalDeCrisisOBaja(d.texto)) return rechazo('humor_con_senal');
   if (intencion === 'humor') {
     ruta = 'libre:humor';
     mensajes = [conMenu(rl.textoHumor || '¡Jaja! Mejor te cuento qué te puedo ofrecer.')];

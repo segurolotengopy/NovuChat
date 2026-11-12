@@ -31,8 +31,8 @@ const SESION = readFileSync(join(RAIZ, '../../comun-sin-agente/src/sesion.js'), 
 // Y el reconocedor de anuncios por titular (core/medios), también incluido por construir.mjs.
 const APT = readFileSync(join(RAIZ, '../../../src/core/medios/anuncio-por-titular.js'), 'utf8');
 const LIBS = [...LIBRERIAS, PQR, APT].join('\n');
-// La respuesta coherente (core): el filtro común y la pieza `rc*`, DESPUÉS de las librerías y ANTES del nodo (la marca `+coherente` de construir.mjs).
-const COHERENTE = ['core/texto/filtro-redaccion.js', 'core/conversacion/respuesta-coherente.js'].map((r) => readFileSync(join(RAIZ, '../../../src', r), 'utf8')).join('\n');
+// La respuesta coherente (core): la pieza `rc*` SOLA, DESPUÉS de las librerías y ANTES del nodo (la marca `+coherente` de construir.mjs).
+const COHERENTE = ['core/conversacion/respuesta-coherente.js'].map((r) => readFileSync(join(RAIZ, '../../../src', r), 'utf8')).join('\n');
 const CON_COHERENTE = ['decidir-turno', 'plan-del-turno'];
 const CODIGO: Record<string, string> = {};
 const CON_SESION = ['config-del-negocio', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes'];

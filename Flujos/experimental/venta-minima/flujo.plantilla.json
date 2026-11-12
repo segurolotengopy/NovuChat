@@ -1106,7 +1106,7 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 1500,
-      "notes": "El modelo SOLO extrae datos (las líneas del pedido o los campos de la reserva) en JSON con esquema. No calcula precios, ni totales, ni horas; ningún texto al cliente sale de él, SALVO con el dato respuestaLibre.activo del tenant: la acción extraer_libre (y la extracción de pedido) puede traer una respuesta breve que Plan del turno solo usa si el filtro común (cmMotivoDeRechazo + límites fijos de respuesta-coherente.js) la deja pasar; si no, sale un texto fijo con botón."
+      "notes": "El modelo SOLO extrae datos (pedido o reserva) o CLASIFICA en un enum cerrado (extraer_libre); ningún texto al cliente sale de él."
     },
     {
       "id": "plan",

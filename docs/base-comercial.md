@@ -55,7 +55,8 @@ carta en texto (N mensajes), N−1 menos** (la suite
 |---|---|---|---|
 | Acuse («gracias», «ok») en inicio o menú, sin pedido en curso | 1 mensaje (menú/saludo/carta); 0-1 llamada | 1 mensaje fijo; 0 llamadas | 0 mensajes; −1 llamada si iba a la extracción |
 | Seguimiento («¿ya salió mi pedido?») en inicio o menú | 1 mensaje (la carta; N si va en texto) + 1 llamada; al insistir, derivación con aviso | 1 mensaje con el pedido real + botón; 0 llamadas; 0 avisos | 0 agregados (N−1 menos con la carta en texto); −1 llamada; −1 aviso al insistir |
-| Fuera de protocolo en inicio o menú (horario, dirección, modalidades, carta, humor, queja, otro) | 1 mensaje (menú) | 1 mensaje escrito por el código | 0 mensajes; +1 llamada pequeña (~0,0003 USD) |
+| Fuera de protocolo en inicio o menú (horario, dirección, modalidades, carta, acuse fuera de vocabulario, humor, queja, otro) | 1 mensaje (menú) | 1 mensaje escrito por el código (la carta en texto, sin enlace al catálogo web, son N mensajes en vez de 1; en Q'Taco normalmente 1, por el enlace) | 0 mensajes en Q'Taco; +1 llamada pequeña (~0,0003 USD) |
+| Crisis o baja («quiero morir», «no me escribas más») | 1 mensaje (menú) | igual: el código las intercepta antes del modelo; nunca humor | 0 y 0 |
 | Pregunta por la identidad (formas ampliadas, solo con la función activa) | 1 mensaje (menú) | 1 mensaje fijo de identidad; 0 llamadas | 0 |
 | Dentro de un pedido en curso (`pedido*`, carrito lleno, pendiente) | carta, aclaración o derivación | igual (la función no actúa) | 0 y 0 |
 | Modelo caído o intención inválida | 1 mensaje (menú) | 1 mensaje de rechazo con botón | 0 |

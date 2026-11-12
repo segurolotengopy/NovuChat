@@ -46,7 +46,10 @@ describe('NIEGA_IA en venta-minima: el texto fijo de identidad', () => {
   // La expresión se toma de la fuente de la variante de venta (no se copia aquí).
   const nuevaRegex = (): RegExp => (0, eval)(regex(VENTA).replace(/^const NIEGA_IA = /, '').replace(/;$/, '')) as RegExp;
   const cumple = (codigo: string): boolean => {
-    const c = cuerpoIdentidad(codigo);
+    // El texto que produce `aIdentidad`: se evalúa el propio literal (sustituyendo `negocio()`), no el código fuente. El texto armado COMPLETO se fija en
+    // `venta-minima-respuesta-coherente.test.ts` (D0), con la salida real del flujo.
+    const arg = /enlace\(([\s\S]*?)\)\]\);/.exec(cuerpoIdentidad(codigo))?.[1] ?? '';
+    const c = (0, eval)(`(${arg.replace(/negocio\(\)/g, "'Q Taco'")})`) as string;
     return !nuevaRegex().test(c) && /asistente virtual/.test(c) && /inteligencia artificial/.test(c);
   };
   it('el texto fijo de identidad dice que es un asistente virtual con IA y no niega serlo', () => {

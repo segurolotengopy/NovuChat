@@ -27,8 +27,8 @@ const SESION = readFileSync(join(RAIZ, '../../comun-sin-agente/src/sesion.js'), 
 // Y el reconocedor de anuncios por titular (core/medios), también incluido por construir.mjs.
 const APT = readFileSync(join(RAIZ, '../../../src/core/medios/anuncio-por-titular.js'), 'utf8');
 const LIBS = [...LIBRERIAS, PQR, APT].join('\n');
-// La respuesta coherente (core): el filtro común de la redacción y la pieza `rc*`, DESPUÉS de las librerías y ANTES del nodo (la marca `+coherente` de construir.mjs).
-const COHERENTE = ['core/texto/filtro-redaccion.js', 'core/conversacion/respuesta-coherente.js'].map((r) => readFileSync(join(RAIZ, '../../../src', r), 'utf8')).join('\n');
+// La respuesta coherente (core): la pieza `rc*` SOLA (ya no usa el filtro común), DESPUÉS de las librerías y ANTES del nodo (la marca `+coherente` de construir.mjs).
+const COHERENTE = ['core/conversacion/respuesta-coherente.js'].map((r) => readFileSync(join(RAIZ, '../../../src', r), 'utf8')).join('\n');
 const CON_COHERENTE = ['decidir-turno', 'plan-del-turno'];
 const CODIGO: Record<string, string> = {};
 const CON_SESION = ['config-del-negocio', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes'];
@@ -130,6 +130,7 @@ const geminiCandidates = (o: J): J => ({ candidates: [{ content: { parts: [{ tex
 interface Entrada {
   from?: string; nombrePerfil?: string; tipo?: 'text' | 'interactive' | 'image' | 'location' | 'audio';
   texto?: string; boton?: string; mediaId?: string; ubicacion?: J;
+  /** Cambia la decisión de `Decidir turno` antes del plan (para probar la defensa en profundidad del plan). */ decision?: (d: J) => J;
   /** Lo que devuelve el modelo (`Extraer`). */ extraccion?: J;
   /** La salida CRUDA de `Extraer` (error 500, JSON roto, forma rara): se usa tal cual. */ extraerCrudo?: J;
   /** La respuesta de Gemini con la forma `candidates` en vez de `content`. */ candidates?: boolean;
@@ -190,6 +191,7 @@ function turno(m: Mundo, e: Entrada = {}): Salida {
   let p: J;
   if (hayEstado) {
     [d] = correr('decidir-turno', [{}], refs) as [J];
+    if (e.decision) d = e.decision(d);
     refs['Decidir turno'] = d;
     if (String(d['accion']).startsWith('extraer') && (e.extraccion || e.extraerCrudo)) refs['Extraer'] = e.extraerCrudo ?? (e.candidates ? geminiCandidates : gemini)(e.extraccion!);
     [p] = correr('plan-del-turno', [{}], refs) as [J];
@@ -416,7 +418,13 @@ const CASOS: CasoLibre[] = [
   { texto: 'estoy perdido, cómo hago para visitarlos', intencion: 'direccion', verifica: (c) => expect(c).toMatch(/^Estamos en /) },
   { texto: 'a cuántas cuadras de la plaza están', intencion: 'direccion', verifica: (c) => expect(c).toMatch(/^Estamos en /) },
   { texto: 'me lo traen hasta la casa?', intencion: 'modalidades', verifica: (c) => expect(c).toMatch(/delivery/i) },
-  { texto: 'puedo pasar yo a llevármelo?', intencion: 'modalidades', verifica: (c) => expect(c).toMatch(/delivery|recoger/i) },
+  { texto: 'puedo pasar yo a llevármelo?', intencion: 'modalidades', verifica: (c) => { expect(c).toMatch(/delivery/i); expect(c).toMatch(/recoger/i); } },
+  { texto: 'gracias amigo', intencion: 'acuse', verifica: (c) => expect(c).toBe(RL['acuse']) },
+  { texto: 'thanks', intencion: 'acuse', verifica: (c) => expect(c).toBe(RL['acuse']) },
+  { texto: 'okis', intencion: 'acuse', verifica: (c) => expect(c).toBe(RL['acuse']) },
+  { texto: 'gracias, muy amable', intencion: 'acuse', verifica: (c) => expect(c).toBe(RL['acuse']) },
+  { texto: 'ok 😀', intencion: 'acuse', verifica: (c) => expect(c).toBe(RL['acuse']) },
+  { texto: 'gracias 🙂', intencion: 'acuse', verifica: (c) => expect(c).toBe(RL['acuse']) },
   { texto: 'qué se puede comer ahí', intencion: 'carta', verifica: (c) => expect(c.length).toBeGreaterThan(10) },
   { texto: 'jajaja qué chistoso el nombre del local', intencion: 'humor', verifica: (c) => expect(c).toBe(RL['textoHumor']) },
   { texto: 'cuéntame un chiste de tacos', intencion: 'humor', verifica: (c) => expect(c).toBe(RL['textoHumor']) },
@@ -431,7 +439,7 @@ const CASOS: CasoLibre[] = [
   { texto: 'tienen sillas para bebés', intencion: 'otro', verifica: (c, s) => { expect(c).toBe(RL['textoRechazo']); conBotonLocal(s); } },
   { texto: 'platícame de la historia del taco', intencion: 'identidad', verifica: (c) => expect(c).toMatch(/^Soy un asistente virtual con inteligencia artificial de /) },
 ];
-describe('C. fuera de protocolo en inicio o menú (19): el modelo solo clasifica y el texto es del código', () => {
+describe('C. fuera de protocolo en inicio o menú (25): el modelo solo clasifica y el texto es del código', () => {
   it.each(CASOS)('«$texto» → $intencion', ({ texto, intencion, verifica }) => {
     const m = mundoCon();
     turno(m, { texto: 'hola' });
@@ -440,9 +448,13 @@ describe('C. fuera de protocolo en inicio o menú (19): el modelo solo clasifica
     // La llamada pide SOLO un enum cerrado, con muy pocos tokens, y el mensaje va como dato.
     const cuerpo = s.d['cuerpoExtraccion'] as J;
     expect(Object.keys(cuerpo.generationConfig.responseSchema.properties)).toEqual(['intencion']);
-    expect(cuerpo.generationConfig.responseSchema.properties.intencion.enum).toEqual(['horario', 'direccion', 'carta', 'modalidades', 'humor', 'queja', 'identidad', 'otro']);
+    expect(cuerpo.generationConfig.responseSchema.properties.intencion.enum).toEqual(['horario', 'direccion', 'carta', 'modalidades', 'humor', 'queja', 'identidad', 'acuse', 'otro']);
     expect(cuerpo.generationConfig.responseSchema.required).toEqual(['intencion']);
-    expect(cuerpo.generationConfig.maxOutputTokens).toBeLessThanOrEqual(20);
+    // Tope holgado (el mismo de la extracción de pedidos, 400): si el modelo razona antes de contestar, un tope de 20 se agotaría y todo turno libre caería en el rechazo.
+    expect(cuerpo.generationConfig.maxOutputTokens).toBeGreaterThanOrEqual(64);
+    expect(cuerpo.generationConfig.responseMimeType).toBe('application/json');
+    expect(s.p['ruta']).toMatch(/^libre:/);
+    expect(s.p['ruta']).not.toMatch(/^pedido:/); // el miniCRM cuenta `pedido:*`
     expect(cuerpo.contents[0].parts[0].text).toContain(`«${texto}»`);
     const c = cuerpos(s);
     expect(c).toHaveLength(1);
@@ -493,7 +505,12 @@ describe('C. fuera de protocolo en inicio o menú (19): el modelo solo clasifica
 });
 
 // =================================================================================================
+// La expresión de la prohibición 4, tomada de la fuente de la variante de venta (la misma que verifica `core/niega-ia.test.ts`); y su contraprueba: SÍ detecta las negaciones.
+const NIEGA_IA_DE_VENTA = (0, eval)(readFileSync(join(RAIZ, '../../../src/core/venta/procesar-respuesta.js'), 'utf8').split('\n').find((l) => l.trimStart().startsWith('const NIEGA_IA'))!.trim().replace(/^const NIEGA_IA = /, '').replace(/;$/, '')) as RegExp;
 describe('D0. la identidad: texto fijo por código, sin llamar al modelo, en 6 idiomas (prohibición 4)', () => {
+  it('contraprueba: la regla NIEGA_IA detecta «soy una persona», «no soy un bot» y «hablas con una persona»', () => {
+    for (const malo of ['Soy una persona de Q Taco.', 'No soy un bot.', 'Hablas con una persona.']) expect(NIEGA_IA_DE_VENTA.test(malo), malo).toBe(true);
+  });
   it.each([
     '¿eres persona?', '¿eres real?', '¿hay alguien ahí?', '¿hablo con un humano?', 'eres un bot?', 'hablo con una persona real?', '¿con quién hablo?', 'quién eres', 'quién me atiende',
     'are you a bot', 'are you human', 'who are you', 'am I talking to a real person', 'você é um robô?', 'com quem falo?', 'es-tu un robot', 'qui es tu', 'bist du ein mensch', 'wer bist du', 'chi sei', 'con chi parlo',
@@ -503,7 +520,9 @@ describe('D0. la identidad: texto fijo por código, sin llamar al modelo, en 6 i
     const s = turno(m, { texto, extraccion: modelo('otro') });
     expect(s.d['accion']).toBe('identidad');
     expect(s.d['cuerpoExtraccion']).toBeNull();
-    expect(cuerpos(s).join(' ')).toMatch(/^Soy un asistente virtual con inteligencia artificial de /);
+    // El texto COMPLETO producido (no el código fuente): exacto, y sin que lo alcance la regla `NIEGA_IA` de la prohibición 4.
+    expect(cuerpos(s)[0]).toBe("Soy un asistente virtual con inteligencia artificial de Q' Taco de prueba. Si prefieres hablar con una persona de nuestro equipo, toca el botón. Para volver al inicio, escribe «inicio».");
+    expect(NIEGA_IA_DE_VENTA.test(cuerpos(s)[0]!)).toBe(false);
     sinAviso(s);
   });
   it('NEGADO: «¿es real la promo del 2x1?», «¿es de verdad que hay delivery?» y «la carne es de verdad de res» NO son preguntas de identidad', () => {
@@ -553,7 +572,8 @@ describe('D. un modelo malicioso o caído: lo que sale al cliente es texto del c
     // Es uno de los textos del código para ese caso: humor (intención válida), o el rechazo con botón local.
     if (extraccion && extraccion['intencion'] === 'humor') expect(c).toBe(RL['textoHumor']);
     else if (extraccion && extraccion['intencion'] === 'queja') expect(c).toBe(RL['textoQueja']);
-    else { expect(c).toBe(RL['textoRechazo']); conBotonLocal(s); }
+    else { expect(c).toBe(RL['textoRechazo']); conBotonLocal(s); expect(s.p['ruta']).toBe('libre:rechazada'); }
+    expect(s.p['ruta']).not.toMatch(/^pedido:/);
     sinAviso(s);
     sinRespaldoLiteral(s);
   });
@@ -598,7 +618,7 @@ describe('E. dentro de un pedido en curso la función NO actúa: la salida es id
   const TEXTOS = ['👍', 'genial', 'excelente', 'muchas gracias', 'ok', 'dale', 'listo', 'gracias', '¿ya salió mi pedido?', '¿cuánto demora?', 'jajaja qué chistoso'];
   const PASOS: [string, Preparar][] = [
     ['pedido con el carrito lleno (resumen)', (m) => { hastaResumen(m, 'recojo'); }],
-    ['pedido_datos (delivery sin ubicación)', (m) => { hastaResumen(m, 'recojo', CLIENTE, true); }],
+    ['pedido_datos (delivery a medias: dirección escrita, falta la ubicación)', (m) => { hastaResumen(m, 'delivery', CLIENTE, false); expect(String(estadoDe(m)['paso'])).toMatch(/^pedido/); expect(estadoDe(m)['entrega']).toMatchObject({ entrega: 'delivery' }); }],
     ['pedido_entrega', (m) => {
       turno(m, { texto: 'hola' });
       turno(m, { texto: 'quiero 1 orden de tacos de birria', extraccion: { lineas: [{ producto: 'tacos de birria', cantidad: 1, forma: 'orden', detalle: '' }], entrega: '', direccion: '', referencia: '', nombre: '' } });
@@ -631,8 +651,90 @@ describe('E. dentro de un pedido en curso la función NO actúa: la salida es id
 });
 
 // =================================================================================================
+describe('N. carta sin cargar, `carritoAnterior` y menú con carrito: la función no pisa ni cambia nada', () => {
+  it('intención `carta` con la carta VACÍA: rechazo con botón local, 1 mensaje, SIN aviso y sin ruta `transferir:` pisada', () => {
+    const m = crear({ panel: panel({ respuestaLibre: RL, catalogo: [] }) });
+    turno(m, { texto: 'hola' });
+    const s = turno(m, { texto: 'qué se puede comer ahí', extraccion: modelo('carta') });
+    if (s.d['accion'] !== 'extraer_libre') return; // sin carta, `Decidir turno` ya lo resuelve como siempre
+    expect(clientes(s)).toHaveLength(1);
+    expect(s.p['aviso']).toBeNull();
+    expect(s.p['ruta']).toBe('libre:rechazada');
+    expect(cuerpos(s)).toEqual([RL['textoRechazo']]);
+    conBotonLocal(s);
+  });
+  const hastaMenuConCarritoAnterior = (m: Mundo): void => {
+    hastaResumen(m, 'recojo');
+    turno(m, { boton: 'p|cambiar' });
+    turno(m, { boton: 'm|menu' });
+  };
+  it('en `menu` con `carritoAnterior` guardado, «gracias» y un mensaje libre salen EXACTAMENTE como con la función apagada (ni acuse ni `extraer_libre`)', () => {
+    for (const texto of ['gracias', 'gracias amigo', 'ok', 'jajaja qué chistoso']) {
+      const corre = (rl: J | null): { accion: unknown; cuerpos: string[]; paso: unknown; carritoAnterior: boolean } => {
+        const m = mundoCon(rl);
+        hastaMenuConCarritoAnterior(m);
+        const e = estadoDe(m);
+        const s = turno(m, { texto, extraccion: modelo('humor') });
+        return { accion: s.d['accion'], cuerpos: cuerpos(s), paso: e['paso'], carritoAnterior: !!e['carritoAnterior'] };
+      };
+      const enc = corre(RL);
+      expect(enc.carritoAnterior, texto).toBe(true);
+      expect(enc.accion, texto).not.toBe('acuse');
+      expect(enc.accion, texto).not.toBe('extraer_libre');
+      expect(enc, texto).toEqual(corre({ ...RL, activo: false }));
+    }
+  });
+  it('en `menu` con el carrito LLENO (tras una derivación), un mensaje libre sale como con la función apagada', () => {
+    const corre = (rl: J | null): { accion: unknown; cuerpos: string[] } => {
+      const m = mundoCon(rl);
+      hastaResumen(m, 'recojo');
+      turno(m, { texto: 'jaja qué día', extraccion: { lineas: [] } });
+      turno(m, { texto: 'qué calor', extraccion: { lineas: [] } }); // dos vacías: deriva y deja el paso en `menu` con el carrito
+      expect((estadoDe(m)['carrito'] as unknown[]).length).toBeGreaterThan(0);
+      const s = turno(m, { texto: 'jajaja qué chistoso', extraccion: modelo('humor') });
+      return { accion: s.d['accion'], cuerpos: cuerpos(s) };
+    };
+    const enc = corre(RL);
+    expect(enc.accion).not.toBe('extraer_libre');
+    expect(enc).toEqual(corre({ ...RL, activo: false }));
+  });
+});
+
+// =================================================================================================
+describe('N2. defensa en profundidad del plan', () => {
+  it('aunque `Decidir turno` dejara pasar una crisis o una baja, la intención `humor` NUNCA recibe `textoHumor`: rechazo con botón y sin aviso', () => {
+    for (const texto of ['quiero morir', 'no me escribas más', 'dame de baja']) {
+      const m = mundoCon();
+      turno(m, { texto: 'hola' });
+      const s = turno(m, { texto, decision: (d) => ({ ...d, accion: 'extraer_libre' }), extraccion: modelo('humor') });
+      expect(s.d['accion']).toBe('extraer_libre');
+      expect(cuerpos(s)).toEqual([RL['textoRechazo']]);
+      expect(s.p['ruta']).toBe('libre:rechazada');
+      conBotonLocal(s);
+      sinAviso(s);
+    }
+  });
+});
+
 describe('M. textos delicados con la función encendida: no se presentan como atendidos ni cancelados por error', () => {
-  const TEXTOS = ['no me escribas más', 'quiero morir', 'gracias, cancela todo', 'ok gracias, eso es todo'];
+  const TEXTOS = ['no me escribas más', 'quiero morir', 'gracias, cancela todo', 'ok gracias, eso es todo', 'quiero matarme', 'dejen de escribirme', 'dame de baja', 'stop'];
+  const SENAL = ['no me escribas más', 'quiero morir', 'quiero matarme', 'dejen de escribirme', 'dame de baja', 'stop'];
+  it.each(SENAL)('crisis o baja «%s»: NUNCA llama al modelo ni recibe `textoHumor` ni `textoQueja`; el turno queda como siempre (el menú)', (texto) => {
+    const apagada = mundoCon({ ...RL, activo: false });
+    turno(apagada, { texto: 'hola' });
+    const base = turno(apagada, { texto, extraccion: { lineas: [] } });
+    for (const intencion of ['humor', 'queja', 'otro', 'acuse']) {
+      const m = mundoCon();
+      turno(m, { texto: 'hola' });
+      const s = turno(m, { texto, extraccion: modelo(intencion) });
+      expect(s.d['accion'], intencion).toBe(base.d['accion']);
+      expect(s.d['cuerpoExtraccion'] ?? null, intencion).toBeNull();
+      const c = cuerpos(s).join(' ');
+      expect(c).not.toContain(String(RL['textoHumor']));
+      expect(c).not.toContain(String(RL['textoQueja']));
+      expect(cuerpos(s)).toEqual(cuerpos(base));
+    }
+  });
   it.each(TEXTOS)('«%s»', (texto) => {
     const apagada = mundoCon({ ...RL, activo: false });
     turno(apagada, { texto: 'hola' });

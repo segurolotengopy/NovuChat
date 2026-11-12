@@ -37,7 +37,7 @@ const PLAN = readFileSync(join(NODOS, 'plan-del-turno.js'), 'utf8');
 // El módulo común de Pedidos es REAL (no un doble): construir.mjs lo incluye delante de cada nodo.
 const PQR = readFileSync(join(NODOS, '../../../../src/modulos/pedidos/qr-del-pedido.js'), 'utf8');
 // La respuesta coherente (core) es REAL: construir.mjs la incluye (`+coherente`) delante de «Decidir turno» y «Plan del turno».
-const COHERENTE = ['core/texto/filtro-redaccion.js', 'core/conversacion/respuesta-coherente.js'].map((r) => readFileSync(join(NODOS, '../../../../src', r), 'utf8')).join('\n');
+const COHERENTE = ['core/conversacion/respuesta-coherente.js'].map((r) => readFileSync(join(NODOS, '../../../../src', r), 'utf8')).join('\n');
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = Record<string, any>;

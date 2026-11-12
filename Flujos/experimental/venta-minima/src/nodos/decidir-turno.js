@@ -421,7 +421,8 @@ if (paso.indexOf('pedido') === 0) return extraerPedido();
 if (pedidosOn && quierePedir) return extraerPedido();
 // RESPUESTA POR INTENCIÓN: lo que no es un saludo ni una intención conocida y antes caía en el menú lo CLASIFICA el modelo (enum cerrado) y
 // `Plan del turno` escribe la respuesta con datos del negocio. Mismo número de mensajes que el menú: uno.
-if (rl.activo && norm && !(Array.isArray(previo.carrito) && previo.carrito.length) && !(Array.isArray(previo.pendiente) && previo.pendiente.length) && !/^\W*(hola+|holi+s?|ola|buenas|buenos|buen|que tal|saludos|hey|hi|hello)\b/.test(norm)) {
+// Con crisis o baja («quiero morir», «no me escribas más») NO se llama al modelo: el turno queda como siempre (el menú). Mismas exclusiones que el acuse: sin carrito, sin pendiente y sin `carritoAnterior`.
+if (rl.activo && norm && !previo.carritoAnterior && !rcSenalDeCrisisOBaja(texto) && !(Array.isArray(previo.carrito) && previo.carrito.length) && !(Array.isArray(previo.pendiente) && previo.pendiente.length) && !/^\W*(hola+|holi+s?|ola|buenas|buenos|buen|que tal|saludos|hey|hi|hello)\b/.test(norm)) {
   const ctx = { texto: texto };
   return salir('extraer_libre', { cuerpoExtraccion: rcCuerpoLibre(ctx), motivo: 'respuesta_libre' });
 }
