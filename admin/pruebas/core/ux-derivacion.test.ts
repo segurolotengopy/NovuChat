@@ -6,10 +6,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { J } from '../lib/flujo';
+import { leerFlujo, type J } from '../lib/flujo';
+import { flujosDeProduccion } from '../lib/flujos-de-cliente';
+import { atiendeCliente } from './migracion/comprobaciones';
+import { problemasDeRegla } from './migracion/excepciones';
 import type { Mundo, ResultadoTurno } from '../lib/n8n-de-mentira';
 import { coberturaDePlanes, esBotonDeDerivacion, planesDelCodigo, vigilarDerivacion, violacionesDeDerivacion, type TablaDePlanes } from './ux/derivacion';
-import { EXCEPCIONES, flujosConversacionales, problemasDelRegistro } from './ux/flujos-derivacion';
+import { EXCEPCIONES, flujosConversacionales, flujosFueraDelRegistro, problemasDelRegistro } from './ux/flujos-derivacion';
 
 const ctaUrl = (url: string, texto = 'Escribir'): J => ({ interactive: { type: 'cta_url', body: { text: 'Hola' }, action: { name: 'cta_url', parameters: { display_text: texto, url } } } });
 const WA = { tipo: 'interactive', cuerpo: 'Te paso con una persona', payload: ctaUrl('https://wa.me/59170000000?text=Hola') };
@@ -137,5 +140,34 @@ describe('registro de flujos conversacionales', () => {
     expect(problemasDelRegistro(['a'], { a: { desde: '2026-10-23', porque: 'x'.repeat(30) } }, () => true)).toEqual(['a: ya tiene tabla; la excepción sobra']);
     expect(problemasDelRegistro(['a'], { a: { desde: '2026-10-23', porque: 'ok' }, b: { desde: '2026-10-23', porque: 'ok' } }, () => false)).toEqual(['b: excepción de un flujo que no existe']);
     expect(problemasDelRegistro(['a'], { a: { desde: 'ayer', porque: ' ' } }, () => false)).toEqual(['a: la excepción necesita fecha (AAAA-MM-DD) y porqué']);
+  });
+});
+
+// Migración (etapa 0, 12/11/2026): la lista única. El registro de arriba es por carpeta de `experimental/`; los flujos de producción que atienden a
+// un cliente y quedan fuera de él (los de la raíz de `Flujos/` y los de `Flujos/clientes/`) tienen su tabla de derivación o una excepción con vencimiento.
+describe('derivación, lista única: los flujos fuera del registro por carpeta', () => {
+  const atiende = (ruta: string): boolean => atiendeCliente(leerFlujo(ruta));
+  const fuera = flujosFueraDelRegistro(flujosDeProduccion(), atiende);
+
+  it('todo flujo de producción que atiende a un cliente tiene tabla, está en el registro por carpeta, o tiene excepción; ninguna sobra', () => {
+    expect(flujosDeProduccion().filter(atiende).length).toBeGreaterThan(10);
+    const hoy = new Map(flujosDeProduccion().filter(atiende).map((a) => [a, fuera.some((x) => x.flujo === a && !x.tabla) ? ['tabla de derivación'] : []]));
+    expect(problemasDeRegla('ux-derivacion', hoy)).toEqual([]);
+  });
+
+  it('contraprueba: los de la raíz que atienden quedan fuera del registro; los de experimental/ con plantilla no', () => {
+    const lista = ['demo-a-agendamiento.json', 'experimental/rroca-ruben/rroca-ruben.json', 'clientes/x/x.json'];
+    expect(flujosFueraDelRegistro(lista, () => true, ['rroca-ruben'], () => false)).toEqual([
+      { flujo: 'demo-a-agendamiento.json', tabla: false }, { flujo: 'clientes/x/x.json', tabla: false },
+    ]);
+    expect(flujosFueraDelRegistro(lista, () => true, ['rroca-ruben'], (c) => c === 'x').map((x) => x.tabla)).toEqual([false, true]);
+    expect(flujosFueraDelRegistro(lista, () => false, [], () => false)).toEqual([]);
+  });
+
+  it('contraprueba: sin tabla y sin excepción falla; con excepción pasa; la excepción de un flujo con tabla sobra', () => {
+    const exc = { 'a.json#ux-derivacion#tabla de derivación': { dueno: 'x', vence: '2027-01-31', motivo: 'm', desde: '2026-11-12' } };
+    expect(problemasDeRegla('ux-derivacion', new Map([['a.json', ['tabla de derivación']]]), {})).toHaveLength(1);
+    expect(problemasDeRegla('ux-derivacion', new Map([['a.json', ['tabla de derivación']]]), exc)).toEqual([]);
+    expect(problemasDeRegla('ux-derivacion', new Map([['a.json', []]]), exc)).toEqual([expect.stringContaining('SOBRA')]);
   });
 });

@@ -56,6 +56,8 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Flujo, type Nodo, CARPETA_FLUJOS } from '../lib/flujo.ts';
+import { flujosVersionados } from '../lib/flujos-de-cliente.ts';
+import { problemasDeRegla, EXCEPCIONES as EXCEPCIONES_DE_LA_MIGRACION } from './migracion/excepciones.ts';
 
 // ---------------------------------------------------------------------------
 // Descubrimiento
@@ -63,7 +65,8 @@ import { type Flujo, type Nodo, CARPETA_FLUJOS } from '../lib/flujo.ts';
 
 const EXCLUIDO = /\.(local|plantilla|prueba)\.json$/;
 
-// Los JSON de Flujos/ y de Flujos/experimental/<carpeta>/, sin locales, plantillas ni de prueba.
+// Los JSON de Flujos/, de Flujos/experimental/<carpeta>/ y (desde la etapa 0 de la migración, 12/11/2026) de Flujos/clientes/, sin locales, plantillas ni de prueba.
+// Es la UNIÓN de la lista de antes (que incluye los `*.ensayo-demo-a.json`) y la lista única de `lib/flujos-de-cliente.ts`: no se quita nada, se suma `clientes/`.
 export function flujos(): string[] {
   const arriba = readdirSync(CARPETA_FLUJOS).filter((a) => a.endsWith('.json') && !EXCLUIDO.test(a));
   const exp = join(CARPETA_FLUJOS, 'experimental');
@@ -71,7 +74,8 @@ export function flujos(): string[] {
     ? readdirSync(exp, { withFileTypes: true }).filter((e) => e.isDirectory()).flatMap((d) =>
       readdirSync(join(exp, d.name)).filter((a) => a.endsWith('.json') && !EXCLUIDO.test(a)).map((a) => `experimental/${d.name}/${a}`))
     : [];
-  return [...arriba, ...dentro].sort();
+  const clientes = flujosVersionados(CARPETA_FLUJOS).filter((a) => a.startsWith('clientes/') && !EXCLUIDO.test(a));
+  return [...new Set([...arriba, ...dentro, ...clientes])].sort();
 }
 
 const leer = (archivo: string): Flujo => JSON.parse(readFileSync(join(CARPETA_FLUJOS, archivo), 'utf8')) as Flujo;
@@ -829,6 +833,10 @@ const ARCHIVOS = flujos();
 const FLUJOS = new Map(ARCHIVOS.map((a) => [a, leer(a)]));
 const HOY = new Map([...FLUJOS].map(([a, f]) => [a, violaciones(f)]));
 const existeNodo = (archivo: string, nodo: string): boolean => !!FLUJOS.get(archivo)?.nodes.some((n) => n.name === nodo);
+const esDeClientes = (archivo: string): boolean => archivo.startsWith('clientes/');
+/** El «nodo» de una violación en las excepciones de la migración: `regla N:<nodo>` (la regla de esta suite va en el nodo; la regla de la clave es `entregas`). */
+const nodoEnLaMigracion = (x: Violacion): string => `regla ${x.regla}:${x.nodo}`;
+const enLaMigracion = (archivo: string, x: Violacion): boolean => `${archivo}#entregas#${nodoEnLaMigracion(x)}` in EXCEPCIONES_DE_LA_MIGRACION;
 
 describe('Entregas: los flujos del disco', () => {
   it('se descubren del disco: los 8 de Flujos/ y los de experimental/, sin locales, plantillas ni de prueba', () => {
@@ -849,8 +857,17 @@ describe('Entregas: los flujos del disco', () => {
   });
 
   it.each(ARCHIVOS)('%s: no tiene violaciones fuera de las excepciones declaradas', (archivo) => {
-    const sin = (HOY.get(archivo) ?? []).filter((x) => !(clave(archivo, x.regla, x.nodo) in EXCEPCIONES));
+    const sin = (HOY.get(archivo) ?? []).filter((x) => !(clave(archivo, x.regla, x.nodo) in EXCEPCIONES) && !(esDeClientes(archivo) && enLaMigracion(archivo, x)));
     expect(sin.map((x) => `regla ${x.regla}: ${x.detalle}`), `${archivo}:\n  - ${sin.map((x) => x.detalle).join('\n  - ')}`).toEqual([]);
+  });
+
+  // Los flujos de `Flujos/clientes/` entraron a esta suite con la etapa 0 de la migración (12/11/2026): sus violaciones de hoy NO se agregan al mapa de
+  // arriba (con su tope y su PR) sino a `migracion/excepciones.ts`, regla `entregas`, nodo `regla N:<nodo>`, con dueño y vencimiento.
+  it('los flujos de clientes/: sus violaciones están en las excepciones de la migración, y ninguna de esas excepciones sobra', () => {
+    const clientes = ARCHIVOS.filter(esDeClientes);
+    expect(clientes.length).toBeGreaterThan(0);
+    const hoy = new Map(clientes.map((a) => [a, (HOY.get(a) ?? []).filter((x) => !(clave(a, x.regla, x.nodo) in EXCEPCIONES)).map((x) => nodoEnLaMigracion(x))]));
+    expect(problemasDeRegla('entregas', hoy)).toEqual([]);
   });
 
   it('ninguna excepción está vencida, nombra algo que no existe, carece de PR o de fecha, o pasó su fecha', () => {
