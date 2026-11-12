@@ -17,36 +17,18 @@
  *   - `saveDataSuccessExecution` y `saveDataErrorExecution` «none» y `saveExecutionProgress` false (el binario quedaría en la ejecución guardada).
  * Y se prueba NEGANDO: cada regla tiene su mutación que la rompe.
  */
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { codigoLeeBinario, hallazgosDelGuardado, manejaMedios, NODOS_DEL_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 import type { Flujo, J } from './lib/flujo';
+import { flujosVersionados } from './lib/flujos-de-cliente';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const FLUJOS = join(aqui, '../../Flujos');
 
-/** Los JSON de flujo versionados: todo `*.json` bajo `Flujos/` que tenga `nodes` y `connections` (no plantillas, ni copias locales, ni datos). */
-function flujosVersionados(): string[] {
-  const salida: string[] = [];
-  const recorrer = (dir: string): void => {
-    // El tipo sale de la misma lectura del directorio (sin comprobar y después leer: CodeQL js/file-system-race); el JSON se lee una vez, con try/catch.
-    for (const entrada of readdirSync(dir, { withFileTypes: true })) {
-      const nombre = entrada.name;
-      if (nombre === 'node_modules' || nombre.startsWith('.')) continue;
-      const ruta = join(dir, nombre);
-      if (entrada.isDirectory()) { recorrer(ruta); continue; }
-      if (!entrada.isFile()) continue;
-      if (!nombre.endsWith('.json') || nombre.endsWith('.plantilla.json') || nombre.endsWith('.local.json')) continue;
-      let j: J;
-      try { j = JSON.parse(readFileSync(ruta, 'utf8')) as J; } catch { continue; }
-      if (Array.isArray(j['nodes']) && j['connections'] && typeof j['connections'] === 'object') salida.push(relative(FLUJOS, ruta));
-    }
-  };
-  recorrer(FLUJOS);
-  return salida.sort();
-}
+// Los JSON de flujo versionados (todo `*.json` de `Flujos/` con `nodes` y `connections`) los descubre `lib/flujos-de-cliente.ts`.
 const leer = (archivo: string): Flujo => JSON.parse(readFileSync(join(FLUJOS, archivo), 'utf8')) as Flujo;
 
 /**
