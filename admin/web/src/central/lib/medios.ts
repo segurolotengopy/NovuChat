@@ -23,6 +23,9 @@ export const MIMES_DE_AUDIO = [
 
 export const TEXTO_PENDIENTE = 'Todavía se está guardando el archivo.';
 export const TEXTO_VENCIDO = 'El archivo ya no está disponible (se guarda 90 días).';
+/** Los archivos que envía una persona desde la consola se guardan 30 días (no 90). */
+export const TEXTO_VENCIDO_ENVIADO = 'El archivo ya no está disponible (los archivos enviados se guardan 30 días).';
+export const AVISO_DESCARGA_ENVIADO = 'Archivo enviado desde la consola de su negocio.';
 export const AVISO_WA_ME =
   'Lo que escribas por aquí queda FUERA del sistema (no aparece en la conversación ni cuenta como conversación del asistente) y no reemplaza a «Tomar».';
 /** Alerta obligatoria ANTES de descargar un documento (nunca se abre en la consola). */
@@ -59,6 +62,12 @@ export interface MedioDeMensaje {
   tamano: number | null;
   /** Hasta cuándo se guarda (ms); `null` si no consta. */
   vence: number | null;
+  /** `enviado` = lo mandó una persona desde la consola; `recibido` = lo mandó el cliente. */
+  origen: 'recibido' | 'enviado';
+  /** Nota de voz enviada por una persona. */
+  voz: boolean;
+  /** Nombre del documento enviado (cortado a 240); `''` si no consta. */
+  nombre: string;
 }
 
 /** Lee el campo `medio` de un mensaje, tolerante; `null` si no hay (el mensaje se queda como hoy). */
@@ -74,6 +83,9 @@ export function medioDeDatos(x: unknown): MedioDeMensaje | null {
     mime: typeof m['mime'] === 'string' ? m['mime'].slice(0, 100) : '',
     tamano: typeof m['tamano'] === 'number' ? m['tamano'] : null,
     vence,
+    origen: m['origen'] === 'enviado' ? 'enviado' : 'recibido',
+    voz: m['voz'] === true,
+    nombre: typeof m['nombre'] === 'string' ? m['nombre'].slice(0, 240) : '',
   };
 }
 
@@ -127,14 +139,16 @@ export function claseDeMedio(tipo: unknown, mime: unknown): 'imagen' | 'descarga
 const GENERICO = 'No se pudo abrir el archivo. Intente de nuevo en unos minutos.';
 
 /** Texto fijo por `code` (y `details` para failed-precondition). Nunca el mensaje del servidor. */
-export function textoDeErrorMedio(code: unknown, details?: unknown): string {
+export function textoDeErrorMedio(code: unknown, details?: unknown, origen: 'recibido' | 'enviado' = 'recibido'): string {
   switch (code) {
     case 'functions/unauthenticated':
       return 'No se pudo comprobar su sesión. Recargue la página e inicie sesión de nuevo.';
     case 'functions/permission-denied':
       return 'No tiene permiso para ver este archivo.';
     case 'functions/not-found':
-      return 'No hay un archivo guardado para este mensaje. Se conserva hasta 90 días desde que llegó.';
+      return origen === 'enviado'
+        ? 'No hay un archivo guardado para este mensaje. Los archivos enviados se conservan 30 días.'
+        : 'No hay un archivo guardado para este mensaje. Se conserva hasta 90 días desde que llegó.';
     case 'functions/failed-precondition':
       if (details === 'anotado') return 'Este archivo solo se anotó: no se guardó y no se puede mostrar.';
       if (details === 'pendiente') return 'El archivo todavía se está guardando. Intente de nuevo en unos minutos.';
@@ -152,7 +166,7 @@ export function textoDeErrorMedio(code: unknown, details?: unknown): string {
 
 export type RespuestaVerMedio = { tipo?: unknown; extension?: unknown; mime?: unknown; tamano?: unknown; base64?: unknown };
 /** La callable, inyectada: la pantalla pasa `httpsCallable(funciones, 'verMedio')`; las pruebas, una simulada. */
-export type LlamarVerMedio = (a: { tenantId: string; conversacionId: string; idMeta: string; accion: 'ver' | 'descargar' }) => Promise<{ data: RespuestaVerMedio }>;
+export type LlamarVerMedio = (a: { tenantId: string; conversacionId: string; accion: 'ver' | 'descargar' } & ({ idMeta: string } | { mensajeId: string })) => Promise<{ data: RespuestaVerMedio }>;
 
 export type ResultadoMedio =
   | { ok: true; clase: 'imagen'; src: string }
@@ -166,13 +180,16 @@ export type ResultadoMedio =
  */
 export async function pedirMedio(
   llamar: LlamarVerMedio,
-  a: { tenantId: string; conversacionId: string; idMeta: string; accion: 'ver' | 'descargar'; medio: MedioDeMensaje | null; ahora: number },
+  a: { tenantId: string; conversacionId: string; idMeta: string; mensajeId?: string; accion: 'ver' | 'descargar'; medio: MedioDeMensaje | null; ahora: number },
 ): Promise<ResultadoMedio> {
   const accion = accionDeMedio(a.medio, a.ahora);
-  if (accion === 'vencido') return { ok: false, texto: TEXTO_VENCIDO };
+  const origen = a.medio?.origen ?? 'recibido';
+  if (accion === 'vencido') return { ok: false, texto: origen === 'enviado' ? TEXTO_VENCIDO_ENVIADO : TEXTO_VENCIDO };
   if (accion !== 'ver') return { ok: false, texto: textoDeErrorMedio('functions/failed-precondition', 'anotado') };
   try {
-    const r = (await llamar({ tenantId: a.tenantId, conversacionId: a.conversacionId, idMeta: a.idMeta, accion: a.accion })).data;
+    // Un archivo enviado por una persona se pide por el id del mensaje (no tiene `idMeta` en `mediosRecibidos`).
+    const base = { tenantId: a.tenantId, conversacionId: a.conversacionId, accion: a.accion };
+    const r = (await llamar(a.mensajeId ? { ...base, mensajeId: a.mensajeId } : { ...base, idMeta: a.idMeta })).data;
     const clase = claseDeMedio(r.tipo, r.mime);
     const mal = { ok: false as const, texto: textoDeErrorMedio('functions/failed-precondition') };
     if (clase === 'invalida') return mal;
@@ -188,7 +205,7 @@ export async function pedirMedio(
     return { ok: true, clase, bytes, mime: r.mime as string, extension: extensionSegura(r.extension) };
   } catch (e) {
     const x = e as { code?: unknown; details?: unknown } | null;
-    return { ok: false, texto: textoDeErrorMedio(x?.code, x?.details) };
+    return { ok: false, texto: textoDeErrorMedio(x?.code, x?.details, origen) };
   }
 }
 

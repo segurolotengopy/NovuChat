@@ -378,7 +378,7 @@ export function resultadoDesconocido(codigo: string): boolean {
 export const TEXTO_INCIERTO = 'No se pudo confirmar si llegó';
 
 /** El tope de envíos de una persona que se alcanzó (`details.tope`, contrato §8): cada uno se dice distinto. */
-function textoTope(detalles: Record<string, unknown>): string {
+export function textoTope(detalles: Record<string, unknown>): string {
   switch (detalles['tope']) {
     case 'minuto': {
       const n = segundosDe(detalles['esperaSegundos']);

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { funciones } from '../../core/lib/firebase';
 import {
-  AVISO_DESCARGA, MIME_DE_DESCARGA, avisoExtraDe, descargadorUnico, modoDeMedio, pedirMedio,
+  AVISO_DESCARGA, AVISO_DESCARGA_ENVIADO, MIME_DE_DESCARGA, avisoExtraDe, descargadorUnico, modoDeMedio, pedirMedio,
   type LlamarVerMedio, type MedioDeMensaje,
 } from '../lib/medios';
 
@@ -26,10 +26,11 @@ type Estado =
   | { t: 'audio'; url: string }
   | { t: 'descarga'; blob: Blob; extension: string };
 
-export function VisorMedio({ tenantId, conversacionId, idMeta, medio, llamar = llamarReal }: {
-  tenantId: string; conversacionId: string; idMeta: string; medio: MedioDeMensaje; llamar?: LlamarVerMedio;
+export function VisorMedio({ tenantId, conversacionId, idMeta, mensajeId, medio, llamar = llamarReal }: {
+  tenantId: string; conversacionId: string; idMeta: string; mensajeId?: string; medio: MedioDeMensaje; llamar?: LlamarVerMedio;
 }) {
   const modo = modoDeMedio(medio.mime);
+  const enviado = medio.origen === 'enviado';
   const [estado, setEstado] = useState<Estado>({ t: 'reposo' });
   const vuelta = useRef(0);
   const urlViva = useRef<string | null>(null);
@@ -52,7 +53,7 @@ export function VisorMedio({ tenantId, conversacionId, idMeta, medio, llamar = l
   useEffect(() => {
     setEstado({ t: 'reposo' });
     return () => { vuelta.current += 1; soltar(); };
-  }, [tenantId, conversacionId, idMeta]);
+  }, [tenantId, conversacionId, idMeta, mensajeId]);
   useEffect(() => { if (estado.t !== 'reposo') cerrar.current?.focus(); }, [estado.t]);
 
   const pedir = async () => {
@@ -61,7 +62,7 @@ export function VisorMedio({ tenantId, conversacionId, idMeta, medio, llamar = l
     bajar.current = null;
     const mia = ++vuelta.current;
     setEstado({ t: 'cargando' });
-    const r = await pedirMedio(llamar, { tenantId, conversacionId, idMeta, accion: modo, medio, ahora: Date.now() });
+    const r = await pedirMedio(llamar, { tenantId, conversacionId, idMeta, mensajeId, accion: modo, medio, ahora: Date.now() });
     if (mia !== vuelta.current) return;
     if (!r.ok) { setEstado({ t: 'error', texto: r.texto }); return; }
     if (r.clase === 'imagen') { setEstado({ t: 'imagen', src: r.src }); return; }
@@ -106,15 +107,15 @@ export function VisorMedio({ tenantId, conversacionId, idMeta, medio, llamar = l
               {estado.t === 'cargando' ? 'Abriendo el archivo…' : estado.t === 'error' ? estado.texto : ''}
             </div>
             {estado.t === 'imagen' && (
-              <img src={estado.src} alt="Imagen que mandó el cliente"
+              <img src={estado.src} alt={enviado ? 'Imagen enviada al cliente' : 'Imagen que mandó el cliente'}
                    style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain' }} />
             )}
             {estado.t === 'audio' && (
-              <audio controls controlsList="nodownload noplaybackrate" src={estado.url} aria-label="Audio que mandó el cliente" />
+              <audio controls controlsList="nodownload noplaybackrate" src={estado.url} aria-label={enviado ? 'Audio enviado al cliente' : 'Audio que mandó el cliente'} />
             )}
             {estado.t === 'descarga' && (
               <div role="alertdialog" aria-label="Confirmar descarga">
-                <p><strong>{AVISO_DESCARGA}</strong></p>
+                <p><strong>{enviado ? AVISO_DESCARGA_ENVIADO : AVISO_DESCARGA}</strong></p>
                 {avisoExtraDe(estado.extension) && <p><strong>{avisoExtraDe(estado.extension)}</strong></p>}
                 <button type="button" className="btn btn-secondary btn-chico" onClick={cerrarVisor}>Cancelar</button>{' '}
                 <button type="button" className="btn btn-secondary btn-chico"

@@ -848,9 +848,9 @@ describe('ubicación compartida: política de permisos y página', () => {
     expect(valorDe(catalogo as Sitio, '**', 'Permissions-Policy')).toBe(POLITICA);
   });
 
-  it('NEGANDO: la consola conserva `geolocation=()` (la ubicación no es de la consola)', () => {
+  it('NEGANDO: la consola conserva `geolocation=()`; el micrófono solo para sí misma (notas de voz)', () => {
     expect(valorDe(consola as Sitio, '**', 'Permissions-Policy'))
-      .toBe('geolocation=(), camera=(), microphone=(), payment=(), usb=()');
+      .toBe('geolocation=(), camera=(), microphone=(self), payment=(), usb=()');
   });
 
   it('NEGANDO: ningún otro bloque del catálogo define `Permissions-Policy` (dos bloques con la misma clave se pisan)', () => {
