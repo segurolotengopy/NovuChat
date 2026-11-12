@@ -19,16 +19,15 @@ describe('el saneo', () => {
     }
   });
   it('con activo:true recorta a los topes y no parte un emoji', () => {
-    const r = respuestaLibreParaElFlujo({ activo: true, acuse: '🌮'.repeat(400), reglas: 'x'.repeat(900), prohibidos: Array.from({ length: 45 }, () => 'p'.repeat(90)) }).respuestaLibre!;
+    const r = respuestaLibreParaElFlujo({ activo: true, acuse: '🌮'.repeat(400), textoHumor: 'x'.repeat(900), textoQueja: '🌮'.repeat(400) }).respuestaLibre!;
     expect(Array.from(r.acuse!).length).toBe(300);
     expect(r.acuse).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/);
-    expect(r.reglas!.length).toBe(800);
-    expect(r.prohibidos.length).toBe(30);
-    expect(r.prohibidos.every((p) => p.length === 60)).toBe(true);
+    expect(r.textoHumor!.length).toBe(300);
+    expect(Array.from(r.textoQueja!).length).toBe(300);
   });
   it('NEGADO: tipos basura se omiten y los campos ajenos no pasan', () => {
-    const r = sanearRespuestaLibre({ activo: true, acuse: 3, tono: '  ', textoRechazo: {}, prohibidos: [1, null, ' ', 'a'], hoja: 'no' })!;
-    expect(r).toEqual({ activo: true, prohibidos: ['a'] });
+    const r = sanearRespuestaLibre({ activo: true, acuse: 3, textoHumor: '  ', textoRechazo: {}, tono: 'a', prohibidos: ['a'], hoja: 'no' })!;
+    expect(r).toEqual({ activo: true });
   });
 });
 

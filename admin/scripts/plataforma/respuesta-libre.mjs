@@ -2,7 +2,7 @@
  * ESCRIBIR `tenants/{id}/config/respuestaLibre` DE UN SOLO COMERCIO — seco por omisión.
  *
  * QUÉ ES. El dato por tenant de la «respuesta coherente» (PR B): `activo`, `acuse`, `textoSeguimiento`, `textoRechazo`,
- * `tono`, `reglas` y `prohibidos`. Lo escribe NovuChat desde Plataforma: `firestore.rules` no deja que ningún navegador
+ * `textoHumor` y `textoQueja`. Lo escribe NovuChat desde Plataforma: `firestore.rules` no deja que ningún navegador
  * lo escriba (ninguna rama de escritura lo nombra), y `configuracionFlujo` lo entrega al flujo solo con `activo: true`.
  * Los valores de cada comercio viven versionados en `scripts/datos/respuesta-libre/<nombre>.json` (sin identificadores
  * ni teléfonos; son textos del asistente, no secretos).
@@ -39,8 +39,8 @@ const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const ID_DATOS = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const CON_VALOR = ['proyecto', 'tenant', 'datos', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'apagar'];
-const TEXTOS = ['acuse', 'textoSeguimiento', 'textoRechazo', 'tono', 'reglas'];
-const CAMPOS = ['activo', ...TEXTOS, 'prohibidos'];
+const TEXTOS = ['acuse', 'textoSeguimiento', 'textoRechazo', 'textoHumor', 'textoQueja'];
+const CAMPOS = ['activo', ...TEXTOS];
 const DIRECTORIO_DATOS = join(dirname(fileURLToPath(import.meta.url)), '..', 'datos', 'respuesta-libre');
 
 export const USO = '  node scripts/plataforma/respuesta-libre.mjs --proyecto <id> --tenant <id> (--datos <nombre> | --apagar) '
@@ -66,7 +66,7 @@ export function validarDatos(crudo) {
   if (presentes.some((k) => !CAMPOS.includes(k))) return { ok: false, motivo: 'los datos traen campos que no son de este documento' };
   const faltan = TEXTOS.filter((k) => saneado[k] === undefined);
   if (faltan.length) return { ok: false, motivo: `faltan textos válidos: ${faltan.join(', ')}` };
-  if (JSON.stringify(saneado) !== JSON.stringify({ activo: true, ...Object.fromEntries(TEXTOS.map((k) => [k, crudo[k]])), prohibidos: crudo.prohibidos })) {
+  if (JSON.stringify(saneado) !== JSON.stringify({ activo: true, ...Object.fromEntries(TEXTOS.map((k) => [k, crudo[k]])) })) {
     return { ok: false, motivo: 'el saneo del servidor cambiaría los datos (texto largo, vacío o de otro tipo): corríjalos' };
   }
   return { ok: true, valor: saneado };

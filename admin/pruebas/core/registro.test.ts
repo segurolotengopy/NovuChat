@@ -1225,10 +1225,10 @@ describe('documentos de config del core que solo escribe el servidor (12/11/2026
   const nombres = Object.keys(DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR);
   const PRUEBA_REGLAS = leer('admin/pruebas/core/respuesta-libre-reglas.test.ts');
 
-  it('declara respuestaLibre con sus siete campos', () => {
+  it('declara respuestaLibre con sus seis campos', () => {
     expect(nombres).toEqual(['respuestaLibre']);
     expect([...DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR.respuestaLibre.camposDelServidor]).toEqual(
-      ['activo', 'acuse', 'textoSeguimiento', 'textoRechazo', 'tono', 'reglas', 'prohibidos'],
+      ['activo', 'acuse', 'textoSeguimiento', 'textoRechazo', 'textoHumor', 'textoQueja'],
     );
   });
   it('NEGADO: ninguna regla de las reglas (escritura ni lectura aparte) nombra el documento', () => {

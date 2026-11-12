@@ -3,7 +3,6 @@
   "acuse": "¡Gracias a ti! 🌮 Aquí estoy si necesitas algo más.",
   "textoSeguimiento": "El seguimiento del pedido lo hace directamente el local. Si quieres consultarlo, toca «Escribir al local».",
   "textoRechazo": "Eso no lo puedo responder por aquí.",
-  "tono": "Cercano y alegre, tutea, frases cortas, a lo sumo un emoji.",
-  "reglas": "Horario de atención: 10:00 a 22:00 (de 10:00 a 12:00 solo delivery). No inventes precios, promociones ni tiempos de entrega.",
-  "prohibidos": []
+  "textoHumor": "¡Jaja! 🌮 Mejor te cuento qué te puedo ofrecer.",
+  "textoQueja": "Lamento que hayas tenido esa experiencia. Si quieres contárselo al local, toca «Escribir al local»."
 }

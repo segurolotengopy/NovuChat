@@ -53,7 +53,7 @@ beforeAll(async () => {
 });
 
 const completo = () => ({
-  activo: true, acuse: 'Gracias', textoSeguimiento: 'Escribe al local', textoRechazo: 'No puedo', tono: 'Cercano', reglas: 'Sin inventar', prohibidos: ['salió'],
+  activo: true, acuse: 'Gracias', textoSeguimiento: 'Escribe al local', textoRechazo: 'No puedo', textoHumor: 'Jaja', textoQueja: 'Lamento eso',
 });
 
 describe('configuracionFlujo entrega config/respuestaLibre (PR B / P2)', () => {
@@ -88,26 +88,24 @@ describe('configuracionFlujo entrega config/respuestaLibre (PR B / P2)', () => {
     expect(JSON.stringify(r.cuerpo)).not.toMatch(/campoAjeno|cuentaServicio|no viaja/);
   });
 
-  it('con activo:true los textos se recortan a sus topes y los prohibidos a 30 frases de 60', async () => {
+  it('con activo:true los textos se recortan a sus topes (humor y queja a 300)', async () => {
     await escribir({
-      activo: true, acuse: 'a'.repeat(400), textoSeguimiento: 's'.repeat(400), textoRechazo: 'r'.repeat(400), tono: 't'.repeat(400), reglas: 'x'.repeat(1000),
-      prohibidos: Array.from({ length: 40 }, () => 'p'.repeat(100)),
+      activo: true, acuse: 'a'.repeat(400), textoSeguimiento: 's'.repeat(400), textoRechazo: 'r'.repeat(400), textoHumor: 'h'.repeat(400), textoQueja: 'q'.repeat(400), tono: 'x', prohibidos: ['no viaja'],
     });
     const rl = (await configuracion()).cuerpo['respuestaLibre'] as Record<string, unknown>;
     expect((rl['acuse'] as string).length).toBe(300);
     expect((rl['textoSeguimiento'] as string).length).toBe(300);
     expect((rl['textoRechazo'] as string).length).toBe(200);
-    expect((rl['tono'] as string).length).toBe(300);
-    expect((rl['reglas'] as string).length).toBe(800);
-    expect((rl['prohibidos'] as string[]).length).toBe(30);
-    expect((rl['prohibidos'] as string[]).every((p) => p.length === 60)).toBe(true);
+    expect((rl['textoHumor'] as string).length).toBe(300);
+    expect((rl['textoQueja'] as string).length).toBe(300);
+    expect(Object.keys(rl)).not.toEqual(expect.arrayContaining(['tono', 'prohibidos']));
   });
 
-  it('NEGADO: tipos basura se omiten (texto que no es texto, prohibidos que no es lista o trae basura)', async () => {
-    await escribir({ activo: true, acuse: 7, textoSeguimiento: null, textoRechazo: ['x'], tono: '   ', reglas: { a: 1 }, prohibidos: 'salió' });
-    expect((await configuracion()).cuerpo['respuestaLibre']).toEqual({ activo: true, prohibidos: [] });
-    await escribir({ activo: true, acuse: 'ok', prohibidos: [1, null, '', '  ', 'valida', {}] });
-    expect((await configuracion()).cuerpo['respuestaLibre']).toEqual({ activo: true, acuse: 'ok', prohibidos: ['valida'] });
+  it('NEGADO: tipos basura se omiten (texto que no es texto)', async () => {
+    await escribir({ activo: true, acuse: 7, textoSeguimiento: null, textoRechazo: ['x'], textoHumor: '   ', textoQueja: { a: 1 } });
+    expect((await configuracion()).cuerpo['respuestaLibre']).toEqual({ activo: true });
+    await escribir({ activo: true, acuse: 'ok' });
+    expect((await configuracion()).cuerpo['respuestaLibre']).toEqual({ activo: true, acuse: 'ok' });
   });
 
   it('NEGADO: el documento de OTRO comercio no se lee (el tenant sale de la ruta, no del cuerpo)', async () => {

@@ -28,8 +28,7 @@ describe('los datos versionados de Q\'Taco', () => {
     expect(c.ok, c.motivo).toBe(true);
     expect(c.valor).toEqual(crudo);
     expect(crudo['activo']).toBe(true);
-    expect(crudo['prohibidos']).toEqual([]);
-    expect(Object.keys(crudo).sort()).toEqual(['activo', 'acuse', 'prohibidos', 'reglas', 'textoRechazo', 'textoSeguimiento', 'tono'].sort());
+    expect(Object.keys(crudo).sort()).toEqual(['activo', 'acuse', 'textoHumor', 'textoQueja', 'textoRechazo', 'textoSeguimiento'].sort());
   });
   it('sin identificadores: ni correos, ni teléfonos ni cifras largas', () => {
     const t = JSON.stringify(crudo);
@@ -39,12 +38,13 @@ describe('los datos versionados de Q\'Taco', () => {
   });
   it('NIEGA: datos que el saneo cambiaría o incompletos se rechazan', () => {
     expect(mod.validarDatos({ ...crudo, acuse: 'a'.repeat(301) }).ok).toBe(false);
-    expect(mod.validarDatos({ ...crudo, tono: 5 }).ok).toBe(false);
-    expect(mod.validarDatos({ ...crudo, prohibidos: 'x' }).ok).toBe(false);
+    expect(mod.validarDatos({ ...crudo, textoHumor: 5 }).ok).toBe(false);
+    expect(mod.validarDatos({ ...crudo, prohibidos: ['x'] }).ok).toBe(false);
+    expect(mod.validarDatos({ ...crudo, tono: 'x' }).ok).toBe(false);
     expect(mod.validarDatos({ ...crudo, activo: false }).ok).toBe(false);
     expect(mod.validarDatos({ ...crudo, extra: 1 }).ok).toBe(false);
-    const { reglas: _r, ...sinReglas } = crudo;
-    expect(mod.validarDatos(sinReglas).ok).toBe(false);
+    const { textoQueja: _r, ...sinQueja } = crudo;
+    expect(mod.validarDatos(sinQueja).ok).toBe(false);
     expect(mod.validarDatos(null).ok).toBe(false);
     expect(mod.cargarDatos('../x').ok).toBe(false);
     expect(mod.cargarDatos('no-existe').ok).toBe(false);
@@ -125,7 +125,7 @@ describe('el script de Plataforma', () => {
     expect(b.escrituras).toEqual(['create']);
     expect(b.actual()).toEqual(deseado);
     const log = lineas.join('\n');
-    for (const k of ['acuse', 'textoSeguimiento', 'textoRechazo', 'tono', 'reglas']) expect(log).not.toContain(String(deseado[k]));
+    for (const k of ['acuse', 'textoSeguimiento', 'textoRechazo', 'textoHumor', 'textoQueja']) expect(log).not.toContain(String(deseado[k]));
   });
   it('--aplicar sobre otro valor actualiza con precondición; si el documento cambió, no escribe (sale 3)', async () => {
     const otro = { ...deseado, acuse: 'otro' };

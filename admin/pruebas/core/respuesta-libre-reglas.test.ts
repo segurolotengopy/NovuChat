@@ -32,7 +32,7 @@ const propietario = () => entorno.authenticatedContext('u-novuchat', {
 const sinSesion = () => entorno.unauthenticatedContext().firestore();
 const ruta = (t: string) => `tenants/${t}/config/respuestaLibre`;
 const valido = () => ({
-  activo: true, acuse: 'Gracias', textoSeguimiento: 'Escribe al local', textoRechazo: 'No puedo', tono: 'Cercano', reglas: 'Sin inventar', prohibidos: [],
+  activo: true, acuse: 'Gracias', textoSeguimiento: 'Escribe al local', textoRechazo: 'No puedo', textoHumor: 'Jaja', textoQueja: 'Lamento eso',
 });
 
 beforeAll(async () => {
