@@ -148,6 +148,12 @@ describe('un defecto del catálogo lleva su causa en el aviso que ya sale', () =
     expect(marcas(w)['credencial']).toBeGreaterThan(0);
     expect(prod.sd['casabermejoAlertas']).toBeUndefined();
   });
+  it('NEGADO: en la variante de prueba SIN envío de verdad no queda marca (una corrida en seco no gasta el tope)', () => {
+    const w = crear({ flujo: PRUEBA, catalogo: DEFECTOS['credencial'] });
+    const t = w.turno({ headers: {}, body: { modoPrueba: true, telefonoDePrueba: BETO, enviarDeVerdad: false, ...valorMeta(mTexto(CAIDO), ANA) } });
+    expect(t.fallo).toBeNull();
+    expect(w.sd['casabermejoAlertas']).toBeUndefined();
+  });
   it('el flujo no crece: 57 nodos en producción y 52 en prueba', () => {
     expect(PRODUCCION.nodes).toHaveLength(57);
     expect(PRUEBA.nodes).toHaveLength(52);
