@@ -5,6 +5,7 @@ import {
   pantallaConversacionesDeFicha, PANTALLA_POR_DEFECTO, type PantallaConversaciones,
 } from '../../../../functions/src/central/consola-conversaciones';
 import { puedeIntervenirDeFicha } from '../lib/turno';
+import { puedeEnviarMediosDeFicha } from '../lib/adjuntos';
 
 /**
  * Qué pantalla de Conversaciones ve ESTE comercio (`tenants/{id}.consolaConversaciones`;
@@ -63,6 +64,23 @@ export function usePersonaPuedeIntervenir(tenantId: string | undefined): boolean
     if (!tenantId) return;
     return onSnapshot(doc(db, 'tenants', tenantId),
       (d) => setPuede(puedeIntervenirDeFicha(d.data())),
+      () => setPuede(false));
+  }, [tenantId]);
+  return puede;
+}
+
+/**
+ * Lo que la pantalla usa para ofrecer «Adjuntar archivo» y «Grabar nota de voz»: lo de escribir MÁS la segunda bandera
+ * (`personaPuedeEnviarMedios === true`). FALLA CERRADA igual que `usePersonaPuedeIntervenir`: `false` mientras carga y si
+ * la ficha no se puede leer. El servidor vuelve a comprobarla.
+ */
+export function usePersonaPuedeEnviarMedios(tenantId: string | undefined): boolean {
+  const [puede, setPuede] = useState(false);
+  useEffect(() => {
+    setPuede(false);
+    if (!tenantId) return;
+    return onSnapshot(doc(db, 'tenants', tenantId),
+      (d) => setPuede(puedeEnviarMediosDeFicha(d.data())),
       () => setPuede(false));
   }, [tenantId]);
   return puede;

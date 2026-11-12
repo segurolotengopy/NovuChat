@@ -7,7 +7,7 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { db, funciones } from '../../core/lib/firebase';
 import { useSesion } from '../../core/lib/contexto';
-import { useEstadoComercio, usePersonaPuedeIntervenir } from '../componentes/ConsolaConversaciones';
+import { useEstadoComercio, usePersonaPuedeEnviarMedios, usePersonaPuedeIntervenir } from '../componentes/ConsolaConversaciones';
 import { rolEn } from '../../core/lib/sesion';
 import { ListaConversaciones, type Renglon } from '../componentes/ListaConversaciones';
 import { DetalleConversacion } from '../componentes/DetalleConversacion';
@@ -21,6 +21,7 @@ import {
   type Consulta, type ConsultaPlana, type Contadores, type Ficha, type Filtro, type Paginacion,
 } from '../lib/conversaciones';
 import { capaTurnoReal } from '../lib/turno';
+import { capaAdjuntoReal } from '../lib/adjuntos';
 import { capaBloqueoReal, filaBloqueada, type FilaBloqueada } from '../lib/bloqueo';
 import { PanelBloqueados } from '../componentes/PanelBloqueados';
 import '../estilos/conversaciones.css';
@@ -360,6 +361,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
   const miUid = usuario?.uid ?? null;
   // Las tres callables de H2 (tomar, devolver, enviar): una sola capa, que las pruebas pueden reemplazar.
   const capa = useMemo(() => capaTurnoReal(funciones), []);
+  const capaAdjunto = useMemo(() => capaAdjuntoReal(funciones), []);
   const capaBloqueo = useMemo(() => capaBloqueoReal(funciones), []);
   const visible = usePestanaVisible();
 
@@ -401,6 +403,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
   // intentar hasta que crezca: es decir, hasta que haya algo nuevo que marcar.
   const estadoComercio = useEstadoComercio(tenantId);
   const puedeIntervenir = usePersonaPuedeIntervenir(tenantId);
+  const puedeEnviarMedios = usePersonaPuedeEnviarMedios(tenantId);
   const fallidas = useRef<Map<string, number>>(new Map());
   const marcar = fichaAbierta !== null && debeMarcarLeida({
     rol, propietario: permisos.propietario, comercioActivo: estadoComercio === 'activo', visible,
@@ -700,6 +703,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
             onSiguiente={vecina(claves, claveActiva, 1) ? () => irA(1) : null}
             posicion={posicion} puedeGestionar={puedeGestionar} esPropietario={permisos.propietario} comercioActivo={estadoComercio === 'activo'} puedeIntervenir={puedeIntervenir}
             miUid={miUid} esAdmin={rol === 'admin' && !permisos.propietario} capa={capa} capaBloqueo={capaBloqueo}
+            puedeEnviarMedios={puedeEnviarMedios} capaAdjunto={capaAdjunto}
           />
         ) : (
           <div className="cv-detalle cv-detalle--vacio">

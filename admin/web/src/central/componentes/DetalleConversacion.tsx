@@ -10,13 +10,15 @@ import { BarraTurno } from './BarraTurno';
 import { BloqueoContacto } from './BloqueoContacto';
 import { accionesDeBloqueo, accionesSinBloqueadas, type CapaBloqueo } from '../lib/bloqueo';
 import { VisorMedio } from './VisorMedio';
-import { accionDeMedio, enlaceWaMe, textoAnotado, AVISO_WA_ME, TEXTO_VENCIDO, TEXTO_PENDIENTE, medioDeDatos, type MedioDeMensaje } from '../lib/medios';
+import { accionDeMedio, enlaceWaMe, textoAnotado, AVISO_WA_ME, TEXTO_VENCIDO, TEXTO_VENCIDO_ENVIADO, TEXTO_PENDIENTE, medioDeDatos, type MedioDeMensaje } from '../lib/medios';
 import { EscribirComoPersona } from './EscribirComoPersona';
+import { AdjuntarComoPersona } from './AdjuntarComoPersona';
+import { verAdjuntar, type CapaAdjunto } from '../lib/adjuntos';
 import {
   etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, turnoDeFicha, ventanaDeFicha, type Ficha,
 } from '../lib/conversaciones';
 import {
-  AVISO_PROPIETARIO, accionesDeTurno, estadoDeMensaje, mostrarAvisoPropietario, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoRechazoMeta, vencidoDeEnvio, ventanaAbiertaParaTomar,
+  AVISO_PROPIETARIO, accionesDeTurno, estadoDeMensaje, mostrarAvisoPropietario, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoRechazoMeta, vencidoDeEnvio, ventanaAbiertaParaTomar, ventanaDeEnvio,
   type CapaTurno, type EstadoMensajePersona,
 } from '../lib/turno';
 
@@ -80,6 +82,13 @@ const ADJUNTOS: Record<string, string> = {
   location: '📍 Ubicación',
   order: '🛒 Pedido del catálogo',
   interactive: '👆 Respuesta a una lista o botón',
+};
+
+/** Lo que se ve en un mensaje de PERSONA con archivo: era enviado, no «el comprobante» del cliente. */
+const ADJUNTOS_DE_PERSONA: Record<string, string> = {
+  image: '🖼 Imagen enviada',
+  document: '📄 Documento enviado',
+  audio: '🎤 Audio enviado',
 };
 
 function aMensaje(d: QueryDocumentSnapshot): Msg {
@@ -239,6 +248,10 @@ export interface PropsDetalle {
   capa: CapaTurno;
   /** Bloquear contacto: las dos callables. */
   capaBloqueo: CapaBloqueo;
+  /** Medios B4: el comercio puede enviar archivos (`usePersonaPuedeEnviarMedios`); falso mientras carga o si falla. */
+  puedeEnviarMedios: boolean;
+  /** Medios B4: la callable de adjuntos. Las pruebas la reemplazan. */
+  capaAdjunto: CapaAdjunto;
 }
 
 export function DetalleConversacion(p: PropsDetalle) {
@@ -325,6 +338,13 @@ export function DetalleConversacion(p: PropsDetalle) {
   const accionesBloqueo = accionesDeBloqueo({
     puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo, bloqueada: ficha.bloqueada, situacion,
   });
+
+  // Los botones de adjuntar existen solo con las cuatro condiciones. Si se veían y dejan de verse por la ventana o por el
+  // turno, se explica (el archivo preparado se pierde con ellos).
+  const ventanaEnvio = ventanaDeEnvio(ficha.ultimoEntranteEn, p.ahora).estado;
+  const puedeAdjuntar = verAdjuntar({ verEscribir: acciones.verEscribir, puedeEnviarMedios: p.puedeEnviarMedios, ventana: ventanaEnvio, habilitados: acciones.habilitados });
+  const vioAdjuntar = useRef(false);
+  if (puedeAdjuntar) vioAdjuntar.current = true;
 
   let diaPrevio = 0;
   return (
@@ -435,12 +455,22 @@ export function DetalleConversacion(p: PropsDetalle) {
                 <div data-mid={x.id}
                   className={`cv-burbuja cv-burbuja--${x.direccion}${esPersona ? ' cv-burbuja--persona' : ''}${x.id === mensajeId && m.modoSalto ? ' cv-burbuja--buscada' : ''}`}>
                   {rotuloAutor && <span className="cv-autor"><TextoSeguro valor={rotuloAutor} maxLargo={40} /></span>}
-                  {ADJUNTOS[x.tipo] && <span className="adjunto">{ADJUNTOS[x.tipo]}</span>}
+                  {(esPersona ? (x.medio?.voz ? '🎤 Nota de voz enviada' : ADJUNTOS_DE_PERSONA[x.tipo]) : ADJUNTOS[x.tipo]) && (
+                    <span className="adjunto">{esPersona ? (x.medio?.voz ? '🎤 Nota de voz enviada' : ADJUNTOS_DE_PERSONA[x.tipo]) : ADJUNTOS[x.tipo]}</span>
+                  )}
                   <TextoSeguro valor={x.texto} />
-                  {accionDeMedio(x.medio, p.ahora) === 'ver' && x.idMeta && x.medio && (
+                  {x.medio?.origen === 'enviado' && x.medio.nombre && (
+                    <span className="cv-medio-texto"><TextoSeguro valor={x.medio.nombre} maxLargo={240} /></span>
+                  )}
+                  {accionDeMedio(x.medio, p.ahora) === 'ver' && x.medio?.origen === 'enviado' && (
+                    <VisorMedio tenantId={tenantId} conversacionId={ficha.id} idMeta="" mensajeId={x.id} medio={x.medio} />
+                  )}
+                  {accionDeMedio(x.medio, p.ahora) === 'ver' && x.medio?.origen !== 'enviado' && x.idMeta && x.medio && (
                     <VisorMedio tenantId={tenantId} conversacionId={ficha.id} idMeta={x.idMeta} medio={x.medio} />
                   )}
-                  {accionDeMedio(x.medio, p.ahora) === 'vencido' && <span className="cv-medio-texto">{TEXTO_VENCIDO}</span>}
+                  {accionDeMedio(x.medio, p.ahora) === 'vencido' && (
+                    <span className="cv-medio-texto">{x.medio?.origen === 'enviado' ? TEXTO_VENCIDO_ENVIADO : TEXTO_VENCIDO}</span>
+                  )}
                   {accionDeMedio(x.medio, p.ahora) === 'pendiente' && <span className="cv-medio-texto">{TEXTO_PENDIENTE}</span>}
                   {accionDeMedio(x.medio, p.ahora) === 'anotado' && x.medio && (
                     <span className="cv-medio-texto">{textoAnotado(x.medio.mime)}</span>
@@ -473,6 +503,17 @@ export function DetalleConversacion(p: PropsDetalle) {
         <EscribirComoPersona
           key={ficha.id} tenantId={tenantId} conversacionId={ficha.id}
           ultimoEntranteEn={ficha.ultimoEntranteEn} habilitados={acciones.habilitados} capa={p.capa} miUid={p.miUid}
+        />
+      )}
+      {!puedeAdjuntar && vioAdjuntar.current && p.puedeEnviarMedios && (ventanaEnvio !== 'abierta' || !acciones.verEscribir) && (
+        <p role="status" className="cv-aviso-linea">
+          Ya no se pueden enviar archivos en esta conversación: la ventana de 24 h de WhatsApp se cerró o usted ya no la tiene.
+        </p>
+      )}
+      {puedeAdjuntar && (
+        <AdjuntarComoPersona
+          key={ficha.id} tenantId={tenantId} conversacionId={ficha.id} nombreContacto={ficha.nombre} telefono={ficha.telefono}
+          capa={p.capaAdjunto} miUid={p.miUid}
         />
       )}
     </div>
