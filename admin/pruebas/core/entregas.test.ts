@@ -1363,7 +1363,8 @@ describe('Entregas: los *.prueba.json (se importan a n8n para ensayos con teléf
   it('existen, y cada violación de un ensayo tiene su equivalente en la familia', () => {
     expect(pruebas.length).toBeGreaterThan(0);
     for (const a of pruebas) expect(violacionesSinEquivalente(leer(a), familiaDe(a)), a).toEqual([]);
-  });
+    // Tiempo límite explícito de 90 s (antes el de 20 s por defecto): recorre todos los ensayos y, con la suite completa bajo carga, agotaba 20 s.
+  }, 90_000);
 
   it('contraprueba: sin `onError` en «Enviar a WhatsApp» de venta-minima.prueba.json, el ensayo ya no coincide con su familia', () => {
     const a = 'experimental/venta-minima/venta-minima.prueba.json';

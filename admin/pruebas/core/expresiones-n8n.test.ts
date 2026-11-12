@@ -126,13 +126,31 @@ describe('NEGANDO: las reglas reconocen cada construcción en una copia de un fl
   });
 });
 
-describe('todos los armadores de Flujos/experimental aplican la guardia en su --verificar', () => {
-  const armadores = versionados('Flujos/experimental/*/construir.mjs').filter((r) => !r.startsWith('Flujos/experimental/comun-sin-agente/'));
-  it('hay armadores que revisar', () => expect(armadores.length).toBeGreaterThanOrEqual(12));
+describe('todos los armadores de Flujos/experimental y Flujos/clientes aplican la guardia en su --verificar', () => {
+  // Migración (etapa 0): un flujo puede vivir en una carpeta o en la otra (la mudanza no cambia qué flujo es). Excepción cerrada: el armador de la
+  // redirección de Q'Taco no aplica la guardia hoy (no se arregla en la etapa 0); si la aplica, la excepción sobra y la prueba lo pide.
+  const SIN_GUARDIA = ['Flujos/clientes/qtaco-redireccion/construir.mjs'];
+  const todos = [...versionados('Flujos/experimental/*/construir.mjs'), ...versionados('Flujos/clientes/*/construir.mjs')]
+    .filter((r) => !r.startsWith('Flujos/experimental/comun-sin-agente/'));
+  const armadores = todos.filter((r) => !SIN_GUARDIA.includes(r));
+  const importaLaGuardia = (texto: string): boolean => /from '(\.\.\/comun-sin-agente|\.\.\/\.\.\/experimental\/comun-sin-agente)\/src\/expresiones\.mjs'/.test(texto);
+  it('hay armadores que revisar (la suma de las dos carpetas)', () => expect(armadores.length).toBeGreaterThanOrEqual(12));
+  it('la excepción cerrada existe y sigue sin aplicar la guardia (si la aplica, sobra)', () => {
+    for (const r of SIN_GUARDIA) {
+      const texto = readFileSync(join(RAIZ, r), 'utf8');
+      expect(todos, r).toContain(r);
+      expect(importaLaGuardia(texto) && /hallazgosDeExpresionesN8n\(flujo/.test(texto), r).toBe(false);
+    }
+  });
+  it('contraprueba: acepta las dos formas de la importación y rechaza otra', () => {
+    expect(importaLaGuardia("import { x } from '../comun-sin-agente/src/expresiones.mjs';")).toBe(true);
+    expect(importaLaGuardia("import { x } from '../../experimental/comun-sin-agente/src/expresiones.mjs';")).toBe(true);
+    expect(importaLaGuardia("import { x } from '../otro/src/expresiones.mjs';")).toBe(false);
+  });
   for (const r of armadores) {
     it(r, () => {
       const texto = readFileSync(join(RAIZ, r), 'utf8');
-      expect(texto).toContain("from '../comun-sin-agente/src/expresiones.mjs'");
+      expect(importaLaGuardia(texto)).toBe(true);
       expect(texto).toMatch(/hallazgosDeExpresionesN8n\(flujo/);
     });
   }
