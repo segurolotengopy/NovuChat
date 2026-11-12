@@ -5,7 +5,7 @@
  * binding incompleto, es ✗. Cualquier otro valor distinto de GRANTED (DENIED, NOT_GRANTED, UNKNOWN_INFO_DENIED,
  * vacío) sigue siendo ✗. Con un `gcloud` y un `gh` FALSOS (sin red ni nube).
  *
- * `falla()` no acumula ni cambia el código de salida de `verificar`: este PR no lo toca, por eso no se prueba.
+ * El código de salida de `verificar` (acumulado por `falla()`) se prueba en preparar-staging-verificar-salida.test.ts.
  */
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
