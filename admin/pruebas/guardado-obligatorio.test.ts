@@ -59,6 +59,10 @@ export const EXCEPCIONES: Record<string, string> = {
   'novuchat-onboarding.json': 'histórico: el chat de NovuChat corre chat-novuchat (que sí lo trae); queda sin fila en versiones-por-cliente',
   'platinum-agendamiento.json': 'histórico del ensamblador, sin cliente; lo cierra retirarlo',
   'bellido-agendamiento.json': 'flujo A de Bellido, descartado desde el 01/10 (corre agenda-minima); Andres ordenó no tocarlo',
+  // B3 de «envío de medios por consola»: «Subir a Meta» es un POST a `/{número}/media` (SUBE el adjunto que la persona mandó desde la consola), y
+  // `manejaMedios` lo toma por un pedido de medio. No baja nada de un cliente: el archivo ya lo guardó el servidor (`mediosEnviados`, 30 días) y el
+  // flujo no reporta entrantes. La cierra que `manejaMedios` distinga la subida de la bajada. Su retención de ejecuciones se decide aparte (PR #927).
+  'salida-de-persona.json': 'salida de persona: sube a Meta el adjunto de la consola (POST /media), no baja medios de clientes; el servidor ya lo guardó',
 };
 
 /**
