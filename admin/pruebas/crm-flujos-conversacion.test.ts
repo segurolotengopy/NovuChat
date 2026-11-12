@@ -18,7 +18,7 @@ const LINEA_BASE: Array<[string, number, number]> = [
   ['captacion-minima/captacion-minima.novuchat.json', 52, 5], ['captacion-minima/captacion-minima.prueba.json', 52, 5],
   ['chat-novuchat/chat-novuchat.novuchat.json', 73, 5], ['chat-novuchat/chat-novuchat.prueba.json', 73, 5],
   ['rroca-antonio/rroca-antonio.json', 64, 6], ['rroca-antonio/rroca-antonio.prueba.json', 59, 6],
-  ['rroca-emma/rroca-emma.json', 56, 0], ['rroca-emma/rroca-emma.prueba.json', 51, 0],
+  ['rroca-emma/rroca-emma.json', 53, 6], ['rroca-emma/rroca-emma.prueba.json', 48, 6],
   ['rroca-evy/rroca-evy.json', 53, 6], ['rroca-evy/rroca-evy.prueba.json', 48, 6],
   ['rroca-ruben/rroca-ruben.json', 64, 6], ['rroca-ruben/rroca-ruben.prueba.json', 59, 6],
   ['venta-minima/venta-minima.qtaco-3727.json', 81, 7],

@@ -14,7 +14,7 @@ import type { Doble } from '../../lib/n8n-de-mentira';
 // @ts-expect-error módulo .mjs sin tipos
 import { hallazgosCrm, inyectarMapa, urlEncabezados } from '../../../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { CREDENCIAL_CRM, NODOS_DE_CRM, anfitrionPermitido, guardias } from '../../../../Flujos/experimental/rroca-emma/construir.mjs';
+import { CREDENCIAL_CRM, ES_RELE, NODOS_DE_CRM, anfitrionPermitido, guardias } from '../../../../Flujos/experimental/rroca-emma/construir.mjs';
 import { ANA, BETO, CARPETA, PRODUCCION, PRUEBA, SUSPENDIDO, crear, datos, hablar, mTexto, textos } from './mundo';
 import { respuestaDeIngesta } from '../../modulos/crm/ingesta-conversacion';
 
@@ -528,8 +528,8 @@ describe('flujo: la rama, sus rangos y su credencial se NIEGAN con mutaciones', 
   it('los datos sin el mapa `crm` son hallazgo', () => {
     expect((guardias('produccion', PRODUCCION, {}) as string[]).join(' ')).toMatch(/faltan los datos `crm`/);
   });
-  it('conteo de nodos: 56 en producción y 51 en la prueba (el tope sube de 45 a 53, DP1 del 31/10/2026, y a 56 con el relé B9, 03/11/2026)', () => {
-    expect(PRODUCCION.nodes.length).toBe(56);
-    expect(PRUEBA.nodes.length).toBe(51);
+  it('conteo de nodos: 53 en producción y 48 en la prueba con envío directo (el tope sube de 45 a 53, DP1 del 31/10/2026); 56 y 51 con el canal rele (03/11/2026)', () => {
+    expect(PRODUCCION.nodes.length).toBe(ES_RELE ? 56 : 53);
+    expect(PRUEBA.nodes.length).toBe(ES_RELE ? 51 : 48);
   });
 });
