@@ -12,7 +12,7 @@
 #
 #   ./scripts/registrar-numero.sh --env .env.bellido --estado      # solo mira
 #   ./scripts/registrar-numero.sh --env .env.bellido --registrar   # pide el PIN oculto
-#   ./scripts/registrar-numero.sh --env .env.platinum --dar-de-baja  # pide escribir los últimos 4
+#   ./scripts/registrar-numero.sh --env .env.<cliente> --dar-de-baja  # pide escribir los últimos 4
 #
 # --dar-de-baja existe para mover un número a OTRA WABA (Platinum, 21/09/2026:
 # de la WABA de NovuChat a la del portafolio de la clínica): antes de sacarlo de

@@ -29,8 +29,8 @@
 # lee valores de un .env pero no los imprime nunca. En seco (por defecto) solo
 # muestra el plan: credenciales, nodos y flujos, por nombre e id.
 #
-#   ./scripts/actualizar-credenciales-cliente.sh --env-cliente .env.platinum \
-#       --flujo-env .env.platinum-seguimientos --flujo-env .env.platinum-senas [--aplicar]
+#   ./scripts/actualizar-credenciales-cliente.sh --env-cliente .env.<cliente> \
+#       --flujo-env .env.<cliente>-seguimientos --flujo-env .env.<cliente>-senas [--aplicar]
 #
 # --env-cliente   de dónde salen los valores nuevos y el flujo principal
 #                 (N8N_WORKFLOW_ID)

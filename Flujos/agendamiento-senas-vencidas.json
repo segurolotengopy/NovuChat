@@ -1,5 +1,5 @@
 {
-  "name": "NovuChat — Clínica Platinum (Señas vencidas)",
+  "name": "NovuChat — Agenda (Señas vencidas)",
   "settings": {
     "executionOrder": "v1",
     "timezone": "America/La_Paz",
@@ -43,7 +43,7 @@
               "id": "sv1",
               "name": "phoneNumberId",
               "type": "string",
-              "value": "REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM"
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID_COMERCIO"
             },
             {
               "id": "sv2",
@@ -103,7 +103,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "",
-          "name": "NovuChat ingesta (Clínica Platinum)"
+          "name": "NovuChat ingesta (comercio)"
         }
       }
     },
@@ -218,7 +218,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "",
-          "name": "NovuChat ingesta (Clínica Platinum)"
+          "name": "NovuChat ingesta (comercio)"
         }
       },
       "notes": "Le pide permiso al servidor para liberar la cita. Manda tambien CUANDO se creo y los minutos de retencion: el servidor no se fia de que el flujo haya filtrado bien, y vuelve a exigir que el tiempo haya pasado antes de autorizar un borrado."

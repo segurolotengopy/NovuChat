@@ -34,7 +34,7 @@
  * otro. El secreto del alias no cambia, así que n8n no toca su credencial de
  * ingesta. Queda en la auditoría qué número reemplazó a cuál.
  *
- *   node scripts/plataforma/asignar-numero.mjs --proyecto <id> --tenant platinum \
+ *   node scripts/plataforma/asignar-numero.mjs --proyecto <id> --tenant <tenant> \
  *     --numero <nuevo> --waba <waba nueva> --flujo agendamiento --alias cliente02 \
  *     --reemplaza <viejo>
  *

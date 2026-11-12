@@ -30,9 +30,6 @@ import {
 const FLUJOS = [
   { archivo: 'demo-a-agendamiento.json', agente: 'AI Agent (Sofía)', trasElTope: 'AI Agent (Sofía)' },
   { archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat', trasElTope: '¿Saludo inicial?' },
-  // Reservas de Clínica Platinum: el Demo A con una sección más en el prompt
-  // (`instruccionesExtra`), que es texto del negocio y no cambia entre turnos.
-  { archivo: 'platinum-agendamiento.json', agente: 'AI Agent (Sofía)', trasElTope: 'AI Agent (Sofía)' },
   // Reservas del Dr. Bellido: mismo prompt, con `instruccionesExtra` y el bloque
   // conversacional, los dos texto fijo del negocio entre turnos.
   { archivo: 'bellido-agendamiento.json', agente: 'AI Agent (Sofía)', trasElTope: 'AI Agent (Sofía)' },

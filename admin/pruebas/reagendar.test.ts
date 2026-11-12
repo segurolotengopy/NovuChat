@@ -29,7 +29,7 @@
 import { describe, expect, it } from 'vitest';
 import { codigoDe, ejecutar, expresion, leerFlujo, type J, type Referencias } from './lib/flujo';
 
-const FLUJOS = ['demo-a-agendamiento.json', 'platinum-agendamiento.json', 'bellido-agendamiento.json'] as const;
+const FLUJOS = ['demo-a-agendamiento.json', 'bellido-agendamiento.json'] as const;
 const TEL = '59170000001';
 const CFG: J = { tratamiento: 'Trata al cliente de tú.', nombreNegocio: 'Consultorio Ficticio', numeroRecepcion: '59170000002',
   funcionarios: JSON.stringify([{ nombre: 'Dr. Tomás Quiroga', servicios: [], calendario: 'cal-ficticio-1' }]) };

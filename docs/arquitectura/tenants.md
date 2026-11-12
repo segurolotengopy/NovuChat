@@ -61,7 +61,7 @@ una zona aparte de la de los datos (fila «Flujo de cliente» de `CLAUDE.md`).
 | `config/negocio` | Tenant, documento de Central | Sale `calendarioId` hacia `config/agenda` (migración por script, seis tenants) |
 | `config/agendamiento`, `config/venta` | Tenant, documentos de módulo | `config/agenda`, `config/pedidos`, `config/cobros` con lista blanca por manifiesto |
 | `config/marca`, `config/onboarding`, `config/campanas` | Tenant, documentos de módulo | `marca` pasa a Catálogo web; los otros quedan |
-| `Flujos/prompts/reservas/demo-a.md`, `platinum.md` (201 y 202 líneas, 23 distintas) | Core + Agenda + Tenant | El tenant solo aporta variables (nombres, ejemplos del rubro, duración) en `prompts/tenants/<t>.vars` |
+| `Flujos/prompts/reservas/demo-a.md` (hasta el 11/11/2026 también `platinum.md`, retirado con la baja de ese cliente: 201 y 202 líneas, 23 distintas) | Core + Agenda + Tenant | El tenant solo aporta variables (nombres, ejemplos del rubro, duración) en `prompts/tenants/<t>.vars` |
 | `Flujos/<tenant>.json` | Salida de construcción | Generado del registro, los módulos encendidos, las piezas propias de `Flujos/clientes/<tenant>/` y el núcleo común incluido |
 | `cargar-negocio`, `cargar-captacion`, `cargar-fotos-catalogo`, `citas-a-calendario`, `catalogo-demo` | Scripts que cargan datos | `admin/scripts/datos/` bajo `tenants/` |
 | `pruebas/tenants/<t>/` | Pruebas de instancia | «Este tenant tiene estos módulos con esta configuración»; `bellido-flujo` se reparte entre módulos (F5) |

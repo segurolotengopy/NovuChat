@@ -146,7 +146,7 @@ edición bienintencionada abra el paso entre negocios.
 
 `vitest.config.ts` tiene **dos proyectos**. `puras` es una lista explícita
 (`SUITES_PURAS`) de las suites que se verificaron en verde sin emulador: las
-de los flujos de n8n (`platinum-flujo`, `bellido-flujo`, `onboarding-flujo`,
+de los flujos de n8n (`reservas-flujo`, `bellido-flujo`, `onboarding-flujo`,
 `demo-b-*`, `candado-agenda`, `flujos-*`), `planes`, `prepago` puro,
 `campanas-consola`, `umbrales-atencion`, `conteo-bloques`, `ensamblador`,
 `saneo`, `qr`, las de pantalla y las de scripts. `emulador` es **todo lo

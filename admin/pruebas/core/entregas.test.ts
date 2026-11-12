@@ -645,7 +645,7 @@ export interface Excepcion { porque: string; vence: string }
  * La fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-10-03 + 90 = 2027-01-01). */
 export const ALTA_DE_EXCEPCIONES = '2026-10-03';
 /** ATENCIÓN: cambiar este tope exige pasar por el agente `seguridad`. Cuántas excepciones hay hoy. SOLO BAJA: una excepción nueva exige bajar otra, o un PR que cambie este tope y lo justifique. */
-export const TOPE_DE_EXCEPCIONES = 45; // 49 menos las 2 de Venta mínima (PR-7) y las 2 del Demo B (PR-4, #391)
+export const TOPE_DE_EXCEPCIONES = 33; // 49 menos las 2 de Venta mínima (PR-7) y las 2 del Demo B (PR-4, #391), menos las 12 de Platinum, baja del 11/11/2026
 
 /**
  * `archivo#regla#nodo` → { por qué; qué PR la cierra, y hasta cuándo vale }. EMPIEZA con cada
@@ -784,54 +784,6 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
     porque: 'captación: «Ya le pasé tus datos» sale antes del aviso a NovuChat y no depende de él (R4); la cierra PR-8 (captación R4, después del traspaso)',
     vence: '2027-01-01',
   },
-  'platinum-agendamiento.json#1#Enviar ubicación': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#2#Enviar ubicación': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#1#Enviar contacto': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#2#Enviar contacto': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#2#Enviar QR de la seña': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#3#Reportar ubicación (saliente)::Enviar ubicación': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#3#Reportar contacto (saliente)::Enviar contacto': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#5#Procesar respuesta::aviso': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#6#AI Agent (Sofía)::a-continuacion-llega': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#6#AI Agent (Sofía)::avisa-que-un-humano': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#6#AI Agent (Sofía)::le-pasas-el-contacto': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#6#AI Agent (Sofía)::se-lo-mandas-de-nuevo': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
 };
 
 
@@ -883,7 +835,7 @@ describe('Entregas: los flujos del disco', () => {
     expect(ARCHIVOS.filter((a) => !a.includes('/')).length).toBeGreaterThanOrEqual(8);
     expect(ARCHIVOS).toEqual(expect.arrayContaining([
       'bellido-agendamiento.json', 'demo-a-agendamiento.json', 'demo-b-venta-cobro.json', 'novuchat-onboarding.json',
-      'platinum-agendamiento.json', 'agendamiento-seguimientos.json', 'demo-a-recordatorios.json',
+      'agendamiento-seguimientos.json', 'demo-a-recordatorios.json',
       'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/venta-minima/venta-minima.qtaco.json',
     ]));
     for (const a of ARCHIVOS) expect(a, a).not.toMatch(EXCLUIDO);

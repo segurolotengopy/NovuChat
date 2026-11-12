@@ -27,9 +27,9 @@
  * 5 con operador 50): el servidor lo descartaría en silencio y la prueba
  * creería que bajó el techo cuando no lo bajó.
  *
- *   node scripts/plataforma/fijar-umbrales.mjs --proyecto <id> --tenant platinum --operador 3 --bloqueo 5
- *   node scripts/plataforma/fijar-umbrales.mjs --proyecto <id> --tenant platinum --operador 3 --bloqueo 5 --aplicar
- *   node scripts/plataforma/fijar-umbrales.mjs --proyecto <id> --tenant platinum --restaurar --aplicar
+ *   node scripts/plataforma/fijar-umbrales.mjs --proyecto <id> --tenant <tenant> --operador 3 --bloqueo 5
+ *   node scripts/plataforma/fijar-umbrales.mjs --proyecto <id> --tenant <tenant> --operador 3 --bloqueo 5 --aplicar
+ *   node scripts/plataforma/fijar-umbrales.mjs --proyecto <id> --tenant <tenant> --restaurar --aplicar
  *
  * Sin `--aplicar` no escribe nada: dice qué haría.
  */

@@ -5,7 +5,7 @@
  * impide cargar un horario mal formado, un calendario de 63 hexadecimales o una
  * agenda con un servicio que no existe es su propia validación. Por eso se
  * prueba ejecutándolo de verdad, como proceso, y se escribe negando: lo que no
- * debe entrar, no entra. El caso feliz usa el archivo REAL de Clínica Platinum
+ * debe entrar, no entra. El caso feliz usa el fixture sintético de Clínica Ejemplo
  * con una tabla local temporal que trae los marcadores de prueba.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -19,7 +19,7 @@ import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import { modulosDeFlujos } from '../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'datos', 'cargar-negocio.mjs');
-const PLATINUM = join(aqui, '..', 'scripts', 'datos', 'negocio-platinum.json');
+const FIXTURE = join(aqui, 'fixtures', 'negocio-agenda-dos-agendas.json');
 const PROYECTO = 'demo-novuchat-pruebas';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['FIRESTORE_EMULATOR_HOST'] = HOST;
@@ -32,7 +32,7 @@ const { hashCorto } = await import('../functions/src/central/asistente/comportam
 const { contarAgendas } = await import('../functions/src/modulos/agenda/agendasContadas.ts');
 
 // Identificadores propios de esta suite, para no pisar a ninguna otra.
-const T = 'neg-platinum';
+const T = 'neg-clinica-ejemplo';
 const SIN_AGENDA = 'neg-sin-agenda';
 const SUSPENDIDO = 'neg-suspendido';
 /** Comercio propio para el contador del catálogo: se lo llena y se lo vacía a voluntad. */
@@ -45,14 +45,14 @@ const CALENDARIO_1 = 'a'.repeat(64) + '@group.calendar.google.com';
 const CALENDARIO_2 = 'b'.repeat(64) + '@group.calendar.google.com';
 
 const tmp = mkdtempSync(join(tmpdir(), 'cargar-negocio-'));
-const base = JSON.parse(readFileSync(PLATINUM, 'utf8'));
+const base = JSON.parse(readFileSync(FIXTURE, 'utf8'));
 // La tabla local temporal, con el MISMO formato de fila que CONFIGURACION.local.md.
 const LOCAL = join(tmp, 'CONFIGURACION.local.md');
 writeFileSync(LOCAL, [
   '# Tabla de prueba', '', '| Marcador | Valor | Qué es |', '|---|---|---|',
-  `| \`REEMPLAZAR_NUMERO_RECEPCION_PLATINUM\` | ${RECEPCION} | recepción de prueba |`,
-  `| \`REEMPLAZAR_CALENDARIO_PLATINUM_1\` | \`${CALENDARIO_1}\` | agenda 1 de prueba |`,
-  `| \`REEMPLAZAR_CALENDARIO_PLATINUM_2\` | ${CALENDARIO_2} | agenda 2 de prueba |`,
+  `| \`REEMPLAZAR_NUMERO_RECEPCION_CLINICA_EJEMPLO\` | ${RECEPCION} | recepción de prueba |`,
+  `| \`REEMPLAZAR_CALENDARIO_CLINICA_EJEMPLO_1\` | \`${CALENDARIO_1}\` | agenda 1 de prueba |`,
+  `| \`REEMPLAZAR_CALENDARIO_CLINICA_EJEMPLO_2\` | ${CALENDARIO_2} | agenda 2 de prueba |`,
   '| `REEMPLAZAR_CALENDARIO_PENDIENTE` | pendiente | todavía no |', '',
 ].join('\n'));
 const LOCAL_VACIA = join(tmp, 'vacia.md');
@@ -83,8 +83,8 @@ beforeAll(async () => {
     }
   }
   // Como deja alta-comercio.mjs: la ficha, un config/negocio mínimo y el documento del flujo vacío.
-  await db.doc(`tenants/${T}`).set({ nombre: 'Clínica Platinum', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
-  await db.doc(`tenants/${T}/config/negocio`).set({ nombreNegocio: 'Clínica Platinum', zonaHoraria: 'America/La_Paz', moneda: 'BOB', paleta: 'vino' });
+  await db.doc(`tenants/${T}`).set({ nombre: 'Clínica Ejemplo', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
+  await db.doc(`tenants/${T}/config/negocio`).set({ nombreNegocio: 'Clínica Ejemplo', zonaHoraria: 'America/La_Paz', moneda: 'BOB', paleta: 'vino' });
   await db.doc(`tenants/${T}/config/agendamiento`).set({ actualizadoPor: 'alta-comercio' });
   await db.doc(`tenants/${SIN_AGENDA}`).set({ nombre: 'Tienda', estado: 'activo', vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
   await db.doc(`tenants/${SUSPENDIDO}`).set({ nombre: 'Susp', estado: 'suspendido', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
@@ -101,29 +101,31 @@ describe('cargar-negocio.mjs', () => {
     expect(`${r.stdout}${r.stderr}`).toMatch(/--tenant inválido/);
   });
 
-  it('el JSON de PLATINUM cumple el contrato, y en seco no escribe nada ni muestra identificadores', async () => {
-    const r = correr(T, PLATINUM);
+  it('el JSON del fixture cumple el contrato, y en seco no escribe nada ni muestra identificadores', async () => {
+    const r = correr(T, FIXTURE);
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toMatch(/Seco: no se escribió nada/);
     expect(r.salida).toMatch(/config\/negocio:/);
-    expect(r.salida).toMatch(/igual\s+nombreNegocio\s+«Clínica Platinum»/);
+    expect(r.salida).toMatch(/igual\s+nombreNegocio\s+«Clínica Ejemplo»/);
     // El valor sale del ARCHIVO, no de un literal. Esta prueba comprueba que el
     // script informa lo que el archivo dice; escribir «usted» acá la ataba a una
-    // decisión del cliente, y el 17/09 Clínica Platinum pasó a tutear: el CI se
+    // decisión del cliente, y una vez un comercio pasó a tutear: el CI se
     // puso en rojo por un cambio de configuración que no toca una sola línea de
     // código. Lo que se verifica es el mecanismo, no la preferencia del comercio.
     expect(r.salida).toMatch(new RegExp(`nuevo\\s+tratamiento\\s+${base.negocio.tratamiento}`));
     expect(r.salida).toMatch(/nuevo\s+horarios\s+lun 09:00-19:00 .* sab 09:00-13:00 · dom cerrado/);
     expect(r.salida).toMatch(/numeroRecepcion\s+termina en …0001/);
     expect(r.salida).toMatch(/catalogo \(3 ítem\(s\)\)/);
-    expect(r.salida).toMatch(/nuevo\s+blanqueamiento-dental-profesional\s+odontologia · 500 BOB · 60 min · activo/);
+    expect(r.salida).toMatch(/nuevo\s+limpieza-dental-profesional\s+odontologia · 500 BOB · 60 min · activo/);
     expect(r.salida).toMatch(/nuevo\s+valoracion-clinica\s+odontologia · a consultar · 30 min/);
     expect(r.salida).toMatch(/funcionarios \(2 agenda\(s\)\)/);
-    expect(r.salida).toMatch(/christyan-sandoval .*calendario termina en …aaaa · 2 servicio\(s\)/);
+    expect(r.salida).toMatch(/dra-ejemplo-uno .*calendario termina en …aaaa · 2 servicio\(s\)/);
     // Conteos y nombres, no los textos largos ni los identificadores enteros.
     expect(r.salida).toMatch(/instruccionesExtra\s+\d+ caracteres/);
     expect(r.salida).not.toContain('CAMPAÑA VIGENTE');
-    expect(r.salida).not.toContain('Nataniel Aguirre');
+    // La dirección es de las que se informan por su conteo, no por su texto.
+    expect(base.negocio.direccion.length).toBeGreaterThan(0);
+    expect(r.salida).not.toContain(base.negocio.direccion);
     expect(r.salida).not.toContain(RECEPCION);
     expect(r.salida).not.toContain(CALENDARIO_1);
     // Nada escrito.
@@ -134,15 +136,15 @@ describe('cargar-negocio.mjs', () => {
   });
 
   it('con un marcador que falta en la tabla local: en seco avisa y sigue; con --aplicar se niega', async () => {
-    const seco = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--archivo', PLATINUM, '--local', LOCAL_VACIA],
+    const seco = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--archivo', FIXTURE, '--local', LOCAL_VACIA],
       { env: entornoDelEmulador(HOST), encoding: 'utf8' });
     const salidaSeco = `${seco.stdout}${seco.stderr}`;
     expect(seco.status, salidaSeco).toBe(0);
-    expect(salidaSeco).toMatch(/sin resolver.*negocio\.numeroRecepcion: el marcador REEMPLAZAR_NUMERO_RECEPCION_PLATINUM no está/);
-    expect(salidaSeco).toMatch(/funcionarios\/juan-perez\.calendarioId: el marcador REEMPLAZAR_CALENDARIO_PLATINUM_2 no está/);
+    expect(salidaSeco).toMatch(/sin resolver.*negocio\.numeroRecepcion: el marcador REEMPLAZAR_NUMERO_RECEPCION_CLINICA_EJEMPLO no está/);
+    expect(salidaSeco).toMatch(/funcionarios\/dr-ejemplo-dos\.calendarioId: el marcador REEMPLAZAR_CALENDARIO_CLINICA_EJEMPLO_2 no está/);
     expect(salidaSeco).toMatch(/Seco: no se escribió nada/);
 
-    const aplicar = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--archivo', PLATINUM, '--local', LOCAL_VACIA, '--aplicar'],
+    const aplicar = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--archivo', FIXTURE, '--local', LOCAL_VACIA, '--aplicar'],
       { env: entornoDelEmulador(HOST), encoding: 'utf8' });
     expect(aplicar.status).toBe(2);
     expect(`${aplicar.stdout}${aplicar.stderr}`).toMatch(/NEGADO.*todos los marcadores tienen que estar/);
@@ -199,9 +201,9 @@ describe('cargar-negocio.mjs', () => {
       expect(r.codigo, r.salida).toBe(2);
       expect(r.salida).toContain(`negocio.instruccionesExtra: contiene vocabulario de control del asistente: ${motivo}`);
     }
-    // El texto REAL de Platinum pasa: es la razón por la que el JSON versionado
+    // El texto del fixture pasa: es la razón por la que el JSON versionado
     // ya no lleva comillas angulares.
-    const ok = correr(T, PLATINUM);
+    const ok = correr(T, FIXTURE);
     expect(ok.codigo, ok.salida).toBe(0);
   });
 
@@ -216,11 +218,11 @@ describe('cargar-negocio.mjs', () => {
     const tabla = join(tmp, 'tabla-63.md');
     writeFileSync(tabla, [
       '| Marcador | Valor |', '|---|---|',
-      `| \`REEMPLAZAR_NUMERO_RECEPCION_PLATINUM\` | ${RECEPCION} |`,
-      `| \`REEMPLAZAR_CALENDARIO_PLATINUM_1\` | ${'d'.repeat(63)}@group.calendar.google.com |`,
-      `| \`REEMPLAZAR_CALENDARIO_PLATINUM_2\` | ${CALENDARIO_2} |`, '',
+      `| \`REEMPLAZAR_NUMERO_RECEPCION_CLINICA_EJEMPLO\` | ${RECEPCION} |`,
+      `| \`REEMPLAZAR_CALENDARIO_CLINICA_EJEMPLO_1\` | ${'d'.repeat(63)}@group.calendar.google.com |`,
+      `| \`REEMPLAZAR_CALENDARIO_CLINICA_EJEMPLO_2\` | ${CALENDARIO_2} |`, '',
     ].join('\n'));
-    const enTabla = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--archivo', PLATINUM, '--local', tabla, '--aplicar'],
+    const enTabla = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--archivo', FIXTURE, '--local', tabla, '--aplicar'],
       { env: entornoDelEmulador(HOST), encoding: 'utf8' });
     expect(enTabla.status).toBe(2);
     expect(`${enTabla.stdout}${enTabla.stderr}`).toMatch(/calendarioId \(resuelto\): 64 hexadecimales exactos/);
@@ -322,7 +324,7 @@ describe('cargar-negocio.mjs', () => {
   });
 
   it('NO carga agendamiento ni funcionarios en un comercio sin el flujo agendamiento', async () => {
-    const r = correr(SIN_AGENDA, PLATINUM, '--aplicar');
+    const r = correr(SIN_AGENDA, FIXTURE, '--aplicar');
     expect(r.codigo).toBe(1);
     expect(r.salida).toMatch(/no tiene el flujo agendamiento/);
     expect(await doc(`${SIN_AGENDA}/config/negocio`)).toBeUndefined();
@@ -331,18 +333,18 @@ describe('cargar-negocio.mjs', () => {
   });
 
   it('NO reconfigura un comercio suspendido ni uno que no existe', async () => {
-    const s = correr(SUSPENDIDO, PLATINUM, '--aplicar');
+    const s = correr(SUSPENDIDO, FIXTURE, '--aplicar');
     expect(s.codigo).toBe(1);
     expect(s.salida).toMatch(/está suspendido: no se reconfigura/);
     expect(await doc(`${SUSPENDIDO}/config/negocio`)).toBeUndefined();
-    const r = correr('neg-no-existe', PLATINUM, '--aplicar');
+    const r = correr('neg-no-existe', FIXTURE, '--aplicar');
     expect(r.codigo).toBe(1);
     expect(r.salida).toMatch(/No existe el comercio/);
     expect(await doc('neg-no-existe/config/negocio')).toBeUndefined();
   });
 
   it('con --aplicar deja negocio, agendamiento, catálogo y agendas con los campos esperados, y la auditoría', async () => {
-    const r = correr(T, PLATINUM, '--aplicar');
+    const r = correr(T, FIXTURE, '--aplicar');
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toMatch(/✓ Verificación: releídos config\/negocio \(\d+ campos\) · config\/agendamiento \(6 campos\) · 3 ítem\(s\) del catálogo · 2 agenda\(s\)/);
 
@@ -381,8 +383,8 @@ describe('cargar-negocio.mjs', () => {
     const agend = (await doc(`${T}/config/agendamiento`)) ?? {};
     expect(agend).toMatchObject({ ...base.agendamiento, actualizadoPor: 'cargar-negocio' });
 
-    const blanq = (await doc(`${T}/catalogo/blanqueamiento-dental-profesional`)) ?? {};
-    expect(blanq).toMatchObject({ nombre: 'Blanqueamiento dental profesional', area: 'odontologia', precio: 500, moneda: 'BOB', duracionMin: 60, activo: true, actualizadoPor: 'cargar-negocio' });
+    const blanq = (await doc(`${T}/catalogo/limpieza-dental-profesional`)) ?? {};
+    expect(blanq).toMatchObject({ nombre: 'Limpieza dental profesional', area: 'odontologia', precio: 500, moneda: 'BOB', duracionMin: 60, activo: true, actualizadoPor: 'cargar-negocio' });
     expect(blanq['descripcion']).toMatch(/precio regular 600/);
     const valoracion = (await doc(`${T}/catalogo/valoracion-clinica`)) ?? {};
     expect(valoracion).toMatchObject({ nombre: 'Valoración clínica', duracionMin: 30, activo: true });
@@ -391,17 +393,17 @@ describe('cargar-negocio.mjs', () => {
     // en el archivo como INACTIVO para que una recarga lo retire, no lo reviva.
     expect(await doc(`${T}/catalogo/estetica-facial`)).toMatchObject({ area: 'estetica', activo: false });
 
-    const f1 = (await doc(`${T}/funcionarios/christyan-sandoval`)) ?? {};
+    const f1 = (await doc(`${T}/funcionarios/dra-ejemplo-uno`)) ?? {};
     expect(f1).toMatchObject({
-      nombre: 'Dr. Christyan Sandoval', calendarioId: CALENDARIO_1, activo: true, actualizadoPor: 'cargar-negocio',
-      servicios: ['blanqueamiento-dental-profesional', 'valoracion-clinica'],
+      nombre: 'Dra. Ejemplo Uno', calendarioId: CALENDARIO_1, activo: true, actualizadoPor: 'cargar-negocio',
+      servicios: ['limpieza-dental-profesional', 'valoracion-clinica'],
       horarioTrabajo: { lun: '09:00-19:00', sab: '09:00-13:00', dom: 'cerrado' },
     });
     expect(f1['horarioTrabajo']['_nota']).toBeUndefined();
     expect(f1['id']).toBeUndefined();
     expect(f1['calendarioMarcador']).toBeUndefined();
-    const f2 = (await doc(`${T}/funcionarios/juan-perez`)) ?? {};
-    expect(f2).toMatchObject({ calendarioId: CALENDARIO_2, servicios: ['blanqueamiento-dental-profesional', 'valoracion-clinica'] });
+    const f2 = (await doc(`${T}/funcionarios/dr-ejemplo-dos`)) ?? {};
+    expect(f2).toMatchObject({ calendarioId: CALENDARIO_2, servicios: ['limpieza-dental-profesional', 'valoracion-clinica'] });
 
     // El contador que hace cumplir el límite de productos por plan: sin él, la
     // consola del comercio no puede dar de alta ni de baja un producto.
@@ -425,19 +427,19 @@ describe('cargar-negocio.mjs', () => {
   });
 
   it('repetir la misma carga no cambia el contenido', () => {
-    const r = correr(T, PLATINUM);
+    const r = correr(T, FIXTURE);
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toMatch(/Sin cambios de contenido/);
-    expect(r.salida).toMatch(/igual\s+christyan-sandoval/);
+    expect(r.salida).toMatch(/igual\s+dra-ejemplo-uno/);
   });
 
   it('un precio que el archivo ya no trae se borra (ausente = a consultar), y lo ajeno se informa sin tocarse', async () => {
     await db.doc(`tenants/${T}/catalogo/ortodoncia`).set({ nombre: 'Ortodoncia', activo: true });
     const r = correr(T, archivo('sin-precio', con((d) => { delete d.catalogo[0].precio; delete d.catalogo[0].moneda; })), '--aplicar');
     expect(r.codigo, r.salida).toBe(0);
-    expect(r.salida).toMatch(/cambia\s+blanqueamiento-dental-profesional\s+odontologia · a consultar/);
+    expect(r.salida).toMatch(/cambia\s+limpieza-dental-profesional\s+odontologia · a consultar/);
     expect(r.salida).toMatch(/1 ítem\(s\) existente\(s\) que el archivo no nombra quedan como están: ortodoncia/);
-    const blanq = (await doc(`${T}/catalogo/blanqueamiento-dental-profesional`)) ?? {};
+    const blanq = (await doc(`${T}/catalogo/limpieza-dental-profesional`)) ?? {};
     expect(blanq['precio']).toBeUndefined();
     expect(blanq['moneda']).toBeUndefined();
     expect(await doc(`${T}/catalogo/ortodoncia`)).toEqual({ nombre: 'Ortodoncia', activo: true });

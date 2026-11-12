@@ -19,7 +19,7 @@ import { modulosDeFlujos } from '../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'plataforma', 'ensayo.mjs');
 const VENTA = join(aqui, '..', 'scripts', 'datos', 'negocio-demo-venta-resto.json');
-const PLATINUM = join(aqui, '..', 'scripts', 'datos', 'negocio-platinum.json');
+const FIXTURE = join(aqui, 'fixtures', 'negocio-agenda-dos-agendas.json');
 const CAPTACION = join(aqui, '..', 'scripts', 'datos', 'captacion-novuchat.json');
 const PROYECTO = 'demo-novuchat-pruebas';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -48,9 +48,9 @@ writeFileSync(LOCAL, [
   `| \`REEMPLAZAR_NUMERO_RECEPCION_ENSAYO\` | ${TESTER} | quien prueba |`,
   `| \`REEMPLAZAR_CALENDARIO_ENSAYO_1\` | ${CAL_ENSAYO_1} | agenda de prueba 1 |`,
   `| \`REEMPLAZAR_CALENDARIO_ENSAYO_2\` | ${CAL_ENSAYO_2} | agenda de prueba 2 |`,
-  '| `REEMPLAZAR_NUMERO_RECEPCION_PLATINUM` | 59170000001 | recepción REAL |',
-  `| \`REEMPLAZAR_CALENDARIO_PLATINUM_1\` | ${CAL_CLIENTE} | agenda REAL |`,
-  `| \`REEMPLAZAR_CALENDARIO_PLATINUM_2\` | ${CAL_CLIENTE} | agenda REAL |`, '',
+  '| `REEMPLAZAR_NUMERO_RECEPCION_CLINICA_EJEMPLO` | 59170000001 | recepción REAL |',
+  `| \`REEMPLAZAR_CALENDARIO_CLINICA_EJEMPLO_1\` | ${CAL_CLIENTE} | agenda REAL |`,
+  `| \`REEMPLAZAR_CALENDARIO_CLINICA_EJEMPLO_2\` | ${CAL_CLIENTE} | agenda REAL |`, '',
 ].join('\n'));
 
 function correr(...args: string[]) {
@@ -60,7 +60,7 @@ function correr(...args: string[]) {
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
 }
 const preparar = (numero: string, extra: string[] = []) => correr('--numero', numero, '--preparar',
-  '--cliente', 'platinum', '--archivo', PLATINUM, '--local', LOCAL, ...extra);
+  '--cliente', 'clinica-ejemplo', '--archivo', FIXTURE, '--local', LOCAL, ...extra);
 
 beforeAll(async () => {
   for (const d of [`rutasWhatsApp/${NUM_DEMO}`, `rutasWhatsApp/${NUM_CLIENTE}`]) await db.doc(d).delete();
@@ -102,9 +102,9 @@ describe('ensayo.mjs', () => {
     const r = preparar(NUM_DEMO, ['--aplicar']);
     expect(r.codigo, r.salida).toBe(0);
     const ruta = (await db.doc(`rutasWhatsApp/${NUM_DEMO}`).get()).data() ?? {};
-    expect(ruta).toMatchObject({ tenantId: 'ensayo', ensayoDe: DEMO, ensayoCliente: 'platinum', aliasSecreto: 'demoA' });
+    expect(ruta).toMatchObject({ tenantId: 'ensayo', ensayoDe: DEMO, ensayoCliente: 'clinica-ejemplo', aliasSecreto: 'demoA' });
     const negocio = (await db.doc('tenants/ensayo/config/negocio').get()).data() ?? {};
-    const base = JSON.parse(readFileSync(PLATINUM, 'utf8'));
+    const base = JSON.parse(readFileSync(FIXTURE, 'utf8'));
     expect(negocio['nombreNegocio']).toBe(base.negocio.nombreNegocio);
     // Recepción y agendas: las del ensayo, JAMÁS las del cliente.
     expect(negocio['numeroRecepcion']).toBe(TESTER);
@@ -131,7 +131,7 @@ describe('ensayo.mjs', () => {
   it('--estado dice a quién apunta, sin el número completo', () => {
     const r = correr('--numero', NUM_DEMO, '--estado');
     expect(r.codigo).toBe(0);
-    expect(r.salida).toMatch(/en ensayo; su comercio es ens-demo, cliente platinum/);
+    expect(r.salida).toMatch(/en ensayo; su comercio es ens-demo, cliente clinica-ejemplo/);
     expect(r.salida).not.toContain(NUM_DEMO);
   });
 
@@ -318,7 +318,7 @@ describe('ensayo.mjs --flujo venta', () => {
   it('sin --flujo nada cambia: el flujo sale de la ruta y la ruta no se toca de más; la ficha fija SOLO su flujo y vacía los restos de venta', async () => {
     await db.doc('tenants/ensayo/pedidos/de-venta-anterior').set({ total: 1 });
     await db.doc('tenants/ensayo').update({ modulos: ['productos', 'pedidos'] });
-    const r = preparar(NUM_VENTA, ['--aplicar']); // negocio de agendamiento (Platinum), sin --flujo
+    const r = preparar(NUM_VENTA, ['--aplicar']); // negocio de agendamiento (fixture de agenda), sin --flujo
     expect(r.codigo, r.salida).toBe(0);
     const ficha = (await db.doc('tenants/ensayo').get()).data() ?? {};
     expect(ficha['vertical']).toBe('agendamiento');

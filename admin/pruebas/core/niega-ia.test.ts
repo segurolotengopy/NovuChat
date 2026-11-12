@@ -2,10 +2,10 @@
  * PROHIBICIÓN 4 EN CÓDIGO, EN LAS TRES VARIANTES: el agente no niega ser una IA.
  *
  * Hasta el 02/10/2026 solo la variante de venta y la de captación tenían la red
- * `NIEGA_IA`; la de reservas (Demo A, Platinum) dependía del prompt, y un prompt
+ * `NIEGA_IA`; la de reservas (Demo A) dependía del prompt, y un prompt
  * no es una barrera. Esta suite exige que la expresión sea IDÉNTICA (fuente) en
  * las tres, y corre el código real de `Procesar respuesta` de reservas, el que
- * está en el JSON del Demo A y de Platinum.
+ * está en el JSON del Demo A.
  *
  * Corrige texto dentro del mismo mensaje: 0 mensajes agregados.
  */
@@ -47,7 +47,6 @@ const SIN_BLOQUE = (codigo: string): string => codigo
 
 describe.each([
   ['Demo A', 'demo-a-agendamiento.json'],
-  ['Platinum', 'platinum-agendamiento.json'],
 ])('reservas (%s): lo que corre en el JSON', (_n, archivo) => {
   const codigo = codigoDe(leerFlujo(archivo), 'Procesar respuesta');
 

@@ -125,7 +125,7 @@ Y borrar de las agendas del demo las citas de la prueba.
   recepción del cliente, restaura solo al comercio de origen).
 - `scripts/ensayo-flujo.sh` — n8n. Sus dos cerrojos (credenciales del Demo A
   nodo por nodo y marcadores del ensayo) se probaron en seco el 21/09: con
-  el flujo de ejemplo `platinum-agendamiento.json` se genera con las credenciales del Demo A en 29 nodos; con
+  el flujo de ejemplo de entonces (`platinum-agendamiento.json`, retirado el 11/11/2026) se genera con las credenciales del Demo A en 29 nodos; con
   Bellido se niega por sus 6 nodos propios.
 - `scripts/marcador-local.sh --copiar-de` — las filas del ensayo, sin mostrar
   valores.

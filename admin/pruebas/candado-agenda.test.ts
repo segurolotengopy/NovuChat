@@ -496,14 +496,14 @@ describe('Duplicadas: mismo título Y misma hora, no solo el título (26/09/2026
 describe('Calendarios a revisar: solo el que recibió la cita', () => {
   const CAL_DR1 = 'cccc000000cccc@group.calendar.google.com';
   const CAL_DR2 = 'dddd000000dddd@group.calendar.google.com';
-  /** La forma de Platinum: dos odontólogos con agenda propia; la del negocio es la 1. */
-  const PLATINUM: Record<string, unknown> = {
+  /** Dos funcionarios con agenda propia; la del negocio es la 1. (Es la forma que tuvo el caso de la clínica del 20/09.) */
+  const DOS_AGENDAS: Record<string, unknown> = {
     mensajeReservaNoConfirmada: '',
     calendarioId: CAL_DR1,
     calendariosPorServicio: JSON.stringify({ 'blanqueamiento dental profesional': CAL_DR1, 'valoracion clinica': CAL_DR1 }),
     funcionarios: JSON.stringify([
-      { nombre: 'Dr. Christyan Sandoval', servicios: ['blanqueamiento dental profesional', 'valoracion clinica'], calendario: CAL_DR1 },
-      { nombre: 'Dr. Juan Pérez', servicios: ['blanqueamiento dental profesional', 'valoracion clinica'], calendario: CAL_DR2 },
+      { nombre: 'Dr. Uno', servicios: ['blanqueamiento dental profesional', 'valoracion clinica'], calendario: CAL_DR1 },
+      { nombre: 'Dr. Dos', servicios: ['blanqueamiento dental profesional', 'valoracion clinica'], calendario: CAL_DR2 },
     ]),
   };
   const creado = (id: string, calendario: string, inicio = '2026-09-07T10:00:00-04:00', fin = '2026-09-07T10:30:00-04:00') =>
@@ -520,7 +520,7 @@ describe('Calendarios a revisar: solo el que recibió la cita', () => {
   });
 
   it('una cita en el calendario 2 → UN item, el 2', () => {
-    const { calendarios, items } = calendariosARevisar(previaCon([creado('c1', CAL_DR2)]), PLATINUM);
+    const { calendarios, items } = calendariosARevisar(previaCon([creado('c1', CAL_DR2)]), DOS_AGENDAS);
     expect(calendarios).toEqual([CAL_DR2]);
     expect(items[0]?.['revisionAcotada']).toBe(true);
     // El item conserva lo que venía de `Procesar respuesta`.
@@ -530,18 +530,18 @@ describe('Calendarios a revisar: solo el que recibió la cita', () => {
   it('dos citas en calendarios distintos → dos items, uno por calendario', () => {
     const { calendarios } = calendariosARevisar(
       previaCon([creado('c1', CAL_DR1), creado('c2', CAL_DR2, '2026-09-07T11:00:00-04:00', '2026-09-07T11:30:00-04:00')]),
-      PLATINUM);
+      DOS_AGENDAS);
     expect([...calendarios].sort()).toEqual([CAL_DR1, CAL_DR2].sort());
   });
 
   it('dos citas en el MISMO calendario → un solo item: una llamada, no dos', () => {
     const { calendarios } = calendariosARevisar(
       previaCon([creado('c1', CAL_DR2), creado('c2', CAL_DR2, '2026-09-07T11:00:00-04:00', '2026-09-07T11:30:00-04:00')]),
-      PLATINUM);
+      DOS_AGENDAS);
     expect(calendarios).toEqual([CAL_DR2]);
   });
 
-  it('RESPALDO: sin `eventosCreados` se revisan TODOS, como antes (los 2 de Platinum)', () => {
+  it('RESPALDO: sin `eventosCreados` se revisan TODOS, como antes (los 2 calendarios)', () => {
     // La verificación pudo abrirse por el texto del modelo, o por `isExecuted`
     // sin observación: no se sabe dónde quedó la cita, se mira en todos lados.
     for (const previa of [
@@ -552,7 +552,7 @@ describe('Calendarios a revisar: solo el que recibió la cita', () => {
       previaCon('no es una lista'),                        // de otro tipo
       previaCon([null, undefined, 'x']),                   // basura
     ]) {
-      const { calendarios, items } = calendariosARevisar(previa, PLATINUM);
+      const { calendarios, items } = calendariosARevisar(previa, DOS_AGENDAS);
       expect([...calendarios].sort(), JSON.stringify(previa['eventosCreados'])).toEqual([CAL_DR1, CAL_DR2].sort());
       expect(items.every((i) => i['revisionAcotada'] === false)).toBe(true);
     }
@@ -565,7 +565,7 @@ describe('Calendarios a revisar: solo el que recibió la cita', () => {
 
   it('el calendario del evento se revisa aunque NO figure en la configuración: es donde la herramienta escribió', () => {
     const OTRO = 'eeee000000eeee@group.calendar.google.com';
-    const { calendarios } = calendariosARevisar(previaCon([creado('c1', OTRO)]), PLATINUM);
+    const { calendarios } = calendariosARevisar(previaCon([creado('c1', OTRO)]), DOS_AGENDAS);
     expect(calendarios).toEqual([OTRO]);
   });
 
@@ -574,7 +574,7 @@ describe('Calendarios a revisar: solo el que recibió la cita', () => {
     // número de agendas del negocio deja de pesar en el turno que agenda.
     const equipo = Array.from({ length: 7 }, (_, i) =>
       ({ nombre: `Dr. ${i + 1}`, servicios: ['valoracion clinica'], calendario: `odonto${i + 1}000000@group.calendar.google.com` }));
-    const clinica = { ...PLATINUM, calendarioId: equipo[0]!.calendario,
+    const clinica = { ...DOS_AGENDAS, calendarioId: equipo[0]!.calendario,
       calendariosPorServicio: JSON.stringify({ 'valoracion clinica': equipo[0]!.calendario }),
       funcionarios: JSON.stringify(equipo) };
     expect(calendariosARevisar(PREVIA, clinica).calendarios).toHaveLength(7);
@@ -594,19 +594,19 @@ describe('Calendarios a revisar: solo el que recibió la cita', () => {
       '2026-09-07T10:00:00-04:00', '2026-09-07T11:00:00-04:00', '2026-09-05T12:00:00.000Z');
     const previa = previaCon([creado('ev-nuevo', CAL_DR1)]);
 
-    const { calendarios } = calendariosARevisar(previa, PLATINUM);
+    const { calendarios } = calendariosARevisar(previa, DOS_AGENDAS);
     expect(calendarios).toEqual([CAL_DR1]);
     const traidos = traidosDe(calendarios, [yaEstaba, nueva, enLaOtraAgenda]);
     expect(traidos.map((e) => e.id)).toEqual(['existente', 'ev-nuevo']);   // la otra agenda ni se consulta
 
-    const items = comprobarTodo(traidos, AHORA, PLATINUM, previa);
+    const items = comprobarTodo(traidos, AHORA, DOS_AGENDAS, previa);
     expect(items).toHaveLength(1);
     expect(items[0]?.['citaSolapada']).toBe(true);
     expect(items[0]?.['eventoABorrar']).toBe('ev-nuevo');
     expect(items[0]?.['calendarioDelBorrado']).toBe(CAL_DR1);
     expect(items[0]?.['reservaVerificada']).toBe(false);
     expect((items[0]?.['citasCaidas'] as { persona: string; hora: string }[])[0])
-      .toMatchObject({ persona: 'Dr. Christyan Sandoval', hora: '10:00' });
+      .toMatchObject({ persona: 'Dr. Uno', hora: '10:00' });
   });
 
   it('dos odontólogos DISTINTOS a la misma hora → no es cruce, y la agenda del otro ni se consulta', () => {
@@ -616,12 +616,12 @@ describe('Calendarios a revisar: solo el que recibió la cita', () => {
       '2026-09-07T10:00:00-04:00', '2026-09-07T10:30:00-04:00', '2026-09-06T19:00:00.000Z');
     const previa = previaCon([creado('ev-nuevo', CAL_DR2)]);
 
-    const { calendarios } = calendariosARevisar(previa, PLATINUM);
+    const { calendarios } = calendariosARevisar(previa, DOS_AGENDAS);
     expect(calendarios).toEqual([CAL_DR2]);
     const traidos = traidosDe(calendarios, [delDr1, nuevaDr2]);
     expect(traidos.map((e) => e.id)).toEqual(['ev-nuevo']);
 
-    const r = comprobarTodo(traidos, AHORA, PLATINUM, previa)[0] ?? {};
+    const r = comprobarTodo(traidos, AHORA, DOS_AGENDAS, previa)[0] ?? {};
     expect(r['citaSolapada']).toBeUndefined();
     expect(r['reservaVerificada']).toBe(true);
     expect(r['eventoId']).toBe('ev-nuevo');
@@ -635,10 +635,10 @@ describe('Calendarios a revisar: solo el que recibió la cita', () => {
       '2026-09-07T10:00:00-04:00', '2026-09-07T11:00:00-04:00', '2026-09-05T12:00:00.000Z');
     const nueva = ev('n', 'Cita Paciente — valoración', CAL_DR2,
       '2026-09-07T10:00:00-04:00', '2026-09-07T10:30:00-04:00', '2026-09-06T20:15:30.000Z');
-    const { calendarios } = calendariosARevisar(PREVIA, PLATINUM);
+    const { calendarios } = calendariosARevisar(PREVIA, DOS_AGENDAS);
     const traidos = traidosDe(calendarios, [yaEstaba, nueva]);
     expect(traidos).toHaveLength(2);
-    const r = comprobarTodo(traidos, AHORA, PLATINUM, PREVIA)[0] ?? {};
+    const r = comprobarTodo(traidos, AHORA, DOS_AGENDAS, PREVIA)[0] ?? {};
     expect(r['citaSolapada']).toBe(true);
     expect(r['eventoABorrar']).toBe('n');
   });
@@ -660,7 +660,7 @@ describe('Calendarios a revisar: solo el que recibió la cita', () => {
  * excepción a `devsecops.js-eval-prohibido` que el resto del archivo.
  */
 describe('Candado de horario: no se agenda cuando el negocio no atiende', () => {
-  // El horario real de Clínica Platinum, tal como está hoy en producción.
+  // El horario de la clínica del incidente del 20/09/2026 (cliente ya dado de baja), como dato de ejemplo.
   const HORARIO = {
     lun: '09:00-19:00', mar: '09:00-19:00', mie: '09:00-19:00', jue: '09:00-19:00',
     vie: '09:00-19:00', sab: '09:00-13:00', dom: 'cerrado',
@@ -668,7 +668,7 @@ describe('Candado de horario: no se agenda cuando el negocio no atiende', () => 
   const CON_HORARIO = {
     mensajeReservaNoConfirmada: '',
     funcionarios: JSON.stringify([
-      { nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE, horario: HORARIO },
+      { nombre: 'Dr. Uno', servicios: [], calendario: CAL_JOSE, horario: HORARIO },
     ]),
   };
   /** Una cita creada recién, sola en la agenda: lo único que la puede tumbar es el horario. */
@@ -720,7 +720,7 @@ describe('Candado de horario: no se agenda cuando el negocio no atiende', () => 
     const partido = {
       mensajeReservaNoConfirmada: '',
       funcionarios: JSON.stringify([{
-        nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE,
+        nombre: 'Dr. Uno', servicios: [], calendario: CAL_JOSE,
         horario: { ...HORARIO, lun: '09:00-12:00, 14:00-19:00' },
       }]),
     };
@@ -736,7 +736,7 @@ describe('Candado de horario: no se agenda cuando el negocio no atiende', () => 
     const dosPersonas = {
       mensajeReservaNoConfirmada: '',
       funcionarios: JSON.stringify([
-        { nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE, horario: HORARIO },
+        { nombre: 'Dr. Uno', servicios: [], calendario: CAL_JOSE, horario: HORARIO },
         { nombre: 'Dra. Guardia', servicios: [], calendario: CAL_MARIA,
           horario: { ...HORARIO, dom: '09:00-13:00' } },
       ]),
@@ -753,7 +753,7 @@ describe('Candado de horario: no se agenda cuando el negocio no atiende', () => 
     // cliente una cita buena.
     const sinDato = {
       mensajeReservaNoConfirmada: '',
-      funcionarios: JSON.stringify([{ nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE }]),
+      funcionarios: JSON.stringify([{ nombre: 'Dr. Uno', servicios: [], calendario: CAL_JOSE }]),
     };
     const r = soloEsta('2026-09-27T10:00:00-04:00', '2026-09-27T11:00:00-04:00', sinDato)[0] ?? {};
     expect(r['citaSolapada']).toBeUndefined();
@@ -763,7 +763,7 @@ describe('Candado de horario: no se agenda cuando el negocio no atiende', () => 
     const raro = {
       mensajeReservaNoConfirmada: '',
       funcionarios: JSON.stringify([{
-        nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE,
+        nombre: 'Dr. Uno', servicios: [], calendario: CAL_JOSE,
         horario: { ...HORARIO, dom: 'a convenir' },
       }]),
     };
@@ -788,13 +788,13 @@ describe('Candado de horario: no se agenda cuando el negocio no atiende', () => 
   it('la causa llega a `citasCaidas`, que es lo que lee el reintento', () => {
     const r = soloEsta('2026-09-27T10:00:00-04:00', '2026-09-27T11:00:00-04:00')[0] ?? {};
     const caidas = r['citasCaidas'] as { causa: string; persona: string }[];
-    expect(caidas[0]).toMatchObject({ causa: 'cerrado', persona: 'Dr. Sandoval' });
+    expect(caidas[0]).toMatchObject({ causa: 'cerrado', persona: 'Dr. Uno' });
   });
 
-  it('los tres flujos llevan el MISMO candado de horario', () => {
+  it('los dos flujos llevan el MISMO candado de horario', () => {
     // Un cliente con el candado viejo es un defecto que nadie nota hasta que
     // agenda un domingo (CLAUDE.md: se aplica a todos o a ninguno).
-    for (const cliente of ['demo-a', 'platinum', 'bellido']) {
+    for (const cliente of ['demo-a', 'bellido']) {
       const otro = JSON.parse(readFileSync(
         join(aqui, `../../Flujos/${cliente}-agendamiento.json`), 'utf8'),
       ) as { nodes: { name: string; parameters: { jsCode?: string } }[] };
@@ -905,7 +905,7 @@ describe('Bloqueos repetidos: una restricción, no cincuenta eventos', () => {
   const CONFIG: Record<string, unknown> = {
     mensajeReservaNoConfirmada: '',
     calendarioId: CAL_OTRO,
-    funcionarios: JSON.stringify([{ nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE }]),
+    funcionarios: JSON.stringify([{ nombre: 'Dr. Uno', servicios: [], calendario: CAL_JOSE }]),
   };
   const creadoEn = (id: string, calendario: string, inicio: string, fin: string) =>
     ({ id, calendario, inicio, fin, titulo: `Cita ${id}` });
@@ -950,8 +950,8 @@ describe('Bloqueos repetidos: una restricción, no cincuenta eventos', () => {
     expect(dias).toBeGreaterThan(80);
   });
 
-  it('el nodo que consulta usa esa ventana, en los tres flujos', () => {
-    for (const archivo of ['demo-a-agendamiento.json', 'platinum-agendamiento.json', 'bellido-agendamiento.json']) {
+  it('el nodo que consulta usa esa ventana, en los dos flujos', () => {
+    for (const archivo of ['demo-a-agendamiento.json', 'bellido-agendamiento.json']) {
       const f = JSON.parse(readFileSync(join(aqui, '../../Flujos/', archivo), 'utf8')) as
         { nodes: { name: string; parameters: { timeMin?: string; timeMax?: string; options?: Record<string, unknown> } }[] };
       const nodo = f.nodes.find((n) => n.name === 'Verificar en el calendario')!;
@@ -1024,7 +1024,7 @@ describe('Olvidar turno fallido: borra DOS mensajes, no la memoria entera', () =
   // Un parámetro mal nombrado no da error en n8n: el nodo corre con el valor
   // por defecto o con la rama «else». Por eso se fija acá.
   const VALIDOS = ['lastN', 'all'];
-  for (const cliente of ['demo-a', 'platinum', 'bellido']) {
+  for (const cliente of ['demo-a', 'bellido']) {
     it(`${cliente}: deleteMode es lastN con lastMessagesCount 2, y los dos son valores que el nodo conoce`, () => {
       const otro = JSON.parse(readFileSync(
         join(aqui, `../../Flujos/${cliente}-agendamiento.json`), 'utf8'),
@@ -1039,7 +1039,7 @@ describe('Olvidar turno fallido: borra DOS mensajes, no la memoria entera', () =
   }
 });
 
-describe('cancelar_cita: la misma herramienta en los tres flujos', () => {
+describe('cancelar_cita: la misma herramienta en los dos flujos', () => {
   // Un flujo con la compuerta vieja cancelaría la cita que el modelo elija
   // (#6091): la expresión tiene que ser letra por letra la misma.
   const expr = (cliente: string) => {
@@ -1047,10 +1047,9 @@ describe('cancelar_cita: la misma herramienta en los tres flujos', () => {
       { nodes: { name: string; parameters: Record<string, unknown> }[] };
     return String(j.nodes.find((n) => n.name === 'cancelar_cita')?.parameters['eventId']);
   };
-  it('demo-a, platinum y bellido llevan la misma expresión, con el pendiente por teléfono', () => {
+  it('demo-a y bellido llevan la misma expresión, con el pendiente por teléfono', () => {
     const a = expr('demo-a');
     expect(a).toContain('cancelacionPendienteId');
-    expect(expr('platinum')).toBe(a);
     expect(expr('bellido')).toBe(a);
   });
 });

@@ -20,7 +20,7 @@
  *      pago y no prometen un horario que podría no existir.
  *   5. LA PLANTILLA lleva EXACTAMENTE dos parámetros, en su orden.
  *   6. Con el panel caído o el comercio no operativo salen CERO items.
- *   7. Ningún valor real: solo el marcador del número de Platinum.
+ *   7. Ningún valor real: solo el marcador del número del comercio.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -85,9 +85,9 @@ const configBase = (): J => Object.fromEntries(
 const panel = (extra: J = {}) => ({
   statusCode: 200,
   body: {
-    tenantId: 'platinum', flujo: 'agendamiento', estadoComercio: 'activo', phoneNumberId: '1000000001',
+    tenantId: 'clinica-ejemplo', flujo: 'agendamiento', estadoComercio: 'activo', phoneNumberId: '1000000001',
     operacion: { moneda: 'BOB' },
-    datosDelNegocio: { nombreNegocio: 'Clínica Platinum' },
+    datosDelNegocio: { nombreNegocio: 'Clínica Ejemplo' },
     funcionarios: [], catalogo: [], voz: {}, ...extra,
   },
 });
@@ -116,7 +116,7 @@ const items = (pendientes: J[], cfg: J = panel()): J[] => ejecutar(
 
 describe('1. Forma del flujo: programado, orden v1, ids cortos', () => {
   it('se llama como el cliente y corre cada hora al minuto 15', () => {
-    expect(f.name).toBe('NovuChat — Clínica Platinum (Seguimientos)');
+    expect(f.name).toBe('NovuChat — Agenda (Seguimientos)');
     expect(f.settings['executionOrder']).toBe('v1');
     expect(f.settings['timezone']).toBe('America/La_Paz');
     expect(nodo('Cada hora').parameters['rule'].interval[0].expression).toBe('15 * * * *');
@@ -139,12 +139,12 @@ describe('1. Forma del flujo: programado, orden v1, ids cortos', () => {
     const ingesta = ['Traer configuración', 'Pendientes', 'Marcar seguimiento', 'Reportar seguimiento (saliente)'];
     for (const n of ingesta) {
       expect(nodo(n).credentials?.['httpHeaderAuth']).toEqual({
-        id: '', name: 'NovuChat ingesta (Clínica Platinum)',
+        id: '', name: 'NovuChat ingesta (comercio)',
       });
     }
     for (const n of ['Enviar texto', 'Enviar plantilla']) {
       expect(nodo(n).credentials?.['whatsAppApi']).toEqual({
-        id: '', name: 'WhatsApp Clínica Platinum (envío)',
+        id: '', name: 'WhatsApp comercio (envío)',
       });
       expect(nodo(n).credentials?.['httpHeaderAuth']).toBeUndefined();
     }
@@ -152,7 +152,7 @@ describe('1. Forma del flujo: programado, orden v1, ids cortos', () => {
 
   it('el único valor de `Config base` que parece un dato es el marcador del número', () => {
     expect(configBase()).toEqual({
-      phoneNumberId: 'REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM',
+      phoneNumberId: 'REEMPLAZAR_PHONE_NUMBER_ID_COMERCIO',
       waGraphVersion: 'v26.0',
       plantilla: 'solicitud_cita_sin_confirmar',
       idiomaPlantilla: 'es',
@@ -327,7 +327,7 @@ describe('6. La plantilla: dos parámetros, en su orden, y de utilidad', () => {
     expect(cuerpo.template.components).toHaveLength(1);
     expect(cuerpo.template.components[0].type).toBe('body');
     expect(cuerpo.template.components[0].parameters).toEqual([
-      { type: 'text', text: 'Clínica Platinum' },
+      { type: 'text', text: 'Clínica Ejemplo' },
       { type: 'text', text: 'el 16 de septiembre' },
     ]);
   });
@@ -372,7 +372,7 @@ describe('7. El reporte a la ingesta: lo que la persona recibió', () => {
 
   it('en modo plantilla reporta el cuerpo resuelto, no el nombre de la plantilla', () => {
     const item = items([PEND_PLANTILLA])[0] ?? {};
-    expect(String(item['textoReportado'])).toContain('Clínica Platinum');
+    expect(String(item['textoReportado'])).toContain('Clínica Ejemplo');
     expect(String(item['textoReportado'])).toContain('el 16 de septiembre');
     expect(String(item['textoReportado'])).not.toContain('solicitud_cita_sin_confirmar');
   });
@@ -433,7 +433,7 @@ describe('8. Mensajes declarados y saneo', () => {
   });
 
   it('ningún valor real en el JSON versionado', () => {
-    expect(TEXTO).toContain('REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM');
+    expect(TEXTO).toContain('REEMPLAZAR_PHONE_NUMBER_ID_COMERCIO');
     // Ninguna secuencia larga de dígitos (identificadores de Meta, teléfonos).
     expect(TEXTO.replace(/REEMPLAZAR_[A-Z_]+/g, '')).not.toMatch(/\b\d{10,}\b/);
     expect(TEXTO).not.toMatch(/EAA[A-Za-z0-9]{20,}/);

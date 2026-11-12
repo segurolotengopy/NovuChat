@@ -22,9 +22,8 @@
  *      `Flujos/manifiestos/` contiene un valor real: los mismos patrones de
  *      `scripts/verificar-saneo.sh` y las formas que bloquean el repositorio
  *      público (dígitos sin seis ceros, UUID, rutas con usuario del sistema).
- *   7. El Demo A y Platinum comparten TODOS los módulos salvo el prompt de
- *      Sofía: es la afirmación del bloque B-1, y si deja de ser cierta, la
- *      suite lo dice.
+ *   7. Los módulos del Demo A: su manifiesto apunta a su prompt propio y
+ *      reparte sus módulos entre comunes y del vertical de reservas.
  *   8. La línea de comandos sale con 0 sobre el repositorio.
  *
  * No necesita emulador: lee archivos y compara bytes.
@@ -85,9 +84,9 @@ afterAll(() => { for (const d of temporales) rmSync(d, { recursive: true, force:
 const bytes = (ruta: string) => readFileSync(ruta);
 
 describe('Inventario: qué flujos tienen manifiesto', () => {
-  it('hay 10 JSON de flujo, y el vertical de reservas (Demo A y Platinum) tiene manifiesto', () => {
-    expect(FLUJOS).toHaveLength(10);
-    expect(CON_MANIFIESTO).toEqual(expect.arrayContaining(['demo-a-agendamiento.json', 'platinum-agendamiento.json']));
+  it('hay 9 JSON de flujo, y el vertical de reservas (el Demo A) tiene manifiesto', () => {
+    expect(FLUJOS).toHaveLength(9);
+    expect(CON_MANIFIESTO).toEqual(expect.arrayContaining(['demo-a-agendamiento.json']));
     // Desde el 28/09/2026 el Demo B y la captación también tienen manifiesto,
     // SOLO para los dos nodos de medios entrantes («Preparar transcripción» y
     // «Preparar imagen»): son el mismo módulo que en reservas, inyectado, no
@@ -148,7 +147,7 @@ describe('1. Ensamblar reproduce cada JSON byte a byte', () => {
   });
 
   it('el vertical de reservas inyecta 22 puntos: 18 nodos Code y 2 campos en cada uno de los 2 agentes', () => {
-    for (const f of ['demo-a-agendamiento.json', 'platinum-agendamiento.json']) {
+    for (const f of ['demo-a-agendamiento.json']) {
       const r = ensamblarEnMemoria(f);
       expect(r.inyectados, f).toHaveLength(22);
       expect(r.inyectados!.filter((c) => c.startsWith('codigo/'))).toHaveLength(18);
@@ -225,7 +224,7 @@ describe('4. Un módulo modificado hace fallar `verificar`, y la falla nombra el
     const dir = copiaDeFlujos();
     const ruta = join(carpetas(dir).src, moduloDe('Comprobar reserva'));
     writeFileSync(ruta, readFileSync(ruta, 'utf8').replace(/\n$/, ' \n'));
-    for (const f of ['demo-a-agendamiento.json', 'platinum-agendamiento.json']) {
+    for (const f of ['demo-a-agendamiento.json']) {
       const r = verificarFlujo(f, dir);
       expect(r.estado, f).toBe('difiere');
       expect(r.diferencias).toEqual(['codigo/Comprobar reserva']);
@@ -234,12 +233,12 @@ describe('4. Un módulo modificado hace fallar `verificar`, y la falla nombra el
 
   it('un prompt modificado, y solo cae el flujo que lo usa', () => {
     const dir = copiaDeFlujos();
-    const ruta = join(carpetas(dir).prompts, 'reservas/platinum.md');
+    const ruta = join(carpetas(dir).prompts, 'reservas/demo-a.md');
     writeFileSync(ruta, readFileSync(ruta, 'utf8') + 'Y una línea más.\n');
-    expect(verificarFlujo('platinum-agendamiento.json', dir)).toMatchObject({
+    expect(verificarFlujo('demo-a-agendamiento.json', dir)).toMatchObject({
       estado: 'difiere', diferencias: ['prompts/AI Agent (Sofía).systemMessage'],
     });
-    expect(verificarFlujo('demo-a-agendamiento.json', dir).estado).toBe('identico');
+    expect(verificarFlujo('demo-b-venta-cobro.json', dir).estado).toBe('identico');
   });
 
   it('un módulo que falta es un error con la ruta, no un JSON vacío', () => {
@@ -290,7 +289,7 @@ describe('5. Un nodo renombrado hace fallar con un mensaje claro', () => {
   });
 
   it('un manifiesto que declara otro flujo se rechaza', () => {
-    const dir = conManifiestoCambiado((m) => { m.flujo = 'platinum-agendamiento.json'; });
+    const dir = conManifiestoCambiado((m) => { m.flujo = 'demo-b-venta-cobro.json'; });
     expect(() => verificarFlujo('demo-a-agendamiento.json', dir)).toThrow(/declara "flujo"/);
   });
 
@@ -392,16 +391,10 @@ describe('6. Ningún módulo, prompt ni manifiesto contiene un valor real', () =
   });
 });
 
-describe('7. El Demo A y Platinum comparten todos los módulos salvo el prompt de Sofía', () => {
-  it('los dos manifiestos apuntan a los mismos archivos, con una sola excepción', () => {
+describe('7. Los módulos del Demo A', () => {
+  it('el manifiesto del Demo A apunta a su prompt propio', () => {
     const a = leerManifiesto('demo-a-agendamiento.json') as Record<string, any>;
-    const p = leerManifiesto('platinum-agendamiento.json') as Record<string, any>;
-    expect(p.codigo).toEqual(a.codigo);
-    expect(p.conservanMarcadores).toEqual(a.conservanMarcadores);
-    expect(p.prompts['Reintento tras cruce']).toEqual(a.prompts['Reintento tras cruce']);
-    expect(p.prompts['AI Agent (Sofía)'].text).toBe(a.prompts['AI Agent (Sofía)'].text);
     expect(a.prompts['AI Agent (Sofía)'].systemMessage).toBe('reservas/demo-a.md');
-    expect(p.prompts['AI Agent (Sofía)'].systemMessage).toBe('reservas/platinum.md');
   });
 
   // La carpeta común es `comun/` hasta FL1 y `core/` desde FL1 (sus archivos
@@ -480,8 +473,7 @@ describe('8. La línea de comandos', () => {
     }
     expect(codigo).toBe(1);
     expect(salida).toContain('✗ demo-a-agendamiento.json: difiere en codigo/Normalizar entrada');
-    expect(salida).toContain('✗ platinum-agendamiento.json: difiere en codigo/Normalizar entrada');
-    expect(salida).toContain('2 flujo(s) no coinciden con sus módulos.');
+    expect(salida).toContain('1 flujo(s) no coinciden con sus módulos.');
   });
 });
 

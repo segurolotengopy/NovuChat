@@ -174,16 +174,6 @@ const FLUJOS = [
     // bajó (revisión de seguridad del PR #256, M2). También es texto.
     entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen', 'Medio no aceptado'],
   },
-  // El flujo de reservas de Clínica Platinum es el Demo A con los datos del
-  // cliente: obedece los umbrales por los mismos nodos.
-  {
-    archivo: 'platinum-agendamiento.json', agente: 'AI Agent (Sofía)',
-    compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
-    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
-    primeroTrasElEnvio: 'Reportar mensaje (saliente)',
-    antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?'],
-    entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen'],
-  },
   // Reservas del consultorio del Dr. Bellido: también es el Demo A con los datos
   // del cliente, y obedece los umbrales por los mismos nodos. Desde el 18/09
   // tiene, ENTRE la compuerta y el agente, el estado de la conversación y las

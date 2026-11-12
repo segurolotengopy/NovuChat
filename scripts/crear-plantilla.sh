@@ -21,10 +21,10 @@
 # Sin --aplicar SOLO muestra la carga util que mandaria (sin ningun valor del
 # entorno). Con --aplicar la envia y muestra id, estado y categoria devueltos.
 #
-#   ./scripts/crear-plantilla.sh --env .env.platinum \
+#   ./scripts/crear-plantilla.sh --env .env.<cliente> \
 #       --nombre solicitud_cita_sin_confirmar --idioma es \
 #       --cuerpo 'Se registró tu solicitud de cita en {{1}} para {{2}}. Estado: sin confirmar. Responde este mensaje si quieres retomarla.' \
-#       --ejemplos 'Clínica Platinum|el sábado 20 a las 10:00' [--aplicar]
+#       --ejemplos 'Clínica Ejemplo|el sábado 20 a las 10:00' [--aplicar]
 #
 # --encabezado y --pie (24/09/2026) agregan un encabezado de TEXTO y un pie,
 # fijos y sin variables (hasta 60 caracteres cada uno): es la forma de la
@@ -32,7 +32,7 @@
 # la WABA de Silvana. Un flujo que manda solo parametros de cuerpo sigue
 # calzando: el encabezado y el pie fijos no llevan parametros.
 #
-# Despues: ./scripts/listar-plantillas.sh --env .env.platinum --detalle
+# Despues: ./scripts/listar-plantillas.sh --env .env.<cliente> --detalle
 #
 # APPS AJENAS (prohibiciones 5 y 7; revision de seguridad del #265). Antes del
 # POST, `negar_app_ajena` corta si el token es de una app ajena o si no se

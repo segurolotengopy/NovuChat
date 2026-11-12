@@ -39,7 +39,7 @@ en el JSON:
 | `Flujos/src/core/` | Zona Core. En el primer nivel están los nodos Code que existen con el mismo nombre en todos los verticales conversacionales (`Normalizar entrada`, `Procesar respuesta`, `Config del negocio`, `Comercio no operativo`, `Uso extendido`). Hoy llevan la versión del vertical de reservas; el Demo B y la captación tienen la suya, y conciliarlas es de F3. En `core/medios/` están los medios entrantes (`Preparar transcripción`, `Preparar imagen`), que son Core por la regla del 25/09; desde el 28/09/2026 también los inyectan el Demo B y la captación (§0.d) |
 | `Flujos/src/modulos/agenda/` | Los siete nodos Code del módulo Agenda: el candado `Comprobar reserva`, los calendarios, el reintento tras cruce y el reenvío del QR |
 | `Flujos/src/modulos/cobros/` | Los cuatro nodos Code de la seña (módulo Cobros) |
-| `Flujos/prompts/reservas/` | El `systemMessage` de Sofía, uno por flujo (`demo-a.md`, `platinum.md`); el turno del cliente (`turno-del-cliente.md`) y el reintento tras cruce, compartidos |
+| `Flujos/prompts/reservas/` | El `systemMessage` de Sofía, uno por flujo (`demo-a.md`); el turno del cliente (`turno-del-cliente.md`) y el reintento tras cruce, compartidos |
 | `Flujos/manifiestos/<flujo>.json` | Qué nodo de ese JSON toma qué archivo, **por nombre de nodo**. Nunca hay marcadores dentro del código |
 | `admin/scripts/ensamblar-flujo.mjs` | `verificar` (ensambla en memoria y compara byte a byte; sale con 1 si difiere), `ensamblar` (módulos → JSON) y `extraer` (JSON → módulos) |
 | `admin/pruebas/core/ensamblador.test.ts` | La prueba de identidad: para cada JSON con manifiesto, ensamblar reproduce el archivo byte a byte; `extraer` y volver a ensamblar es la identidad; un módulo cambiado o un nodo renombrado hacen fallar con el nombre; y ningún módulo contiene un valor real |
@@ -113,8 +113,8 @@ El ensamblador de hoy responde a esa objeción punto por punto:
 - **Un flujo nuevo de un vertical que ya tiene módulos** (un cliente de
   reservas) se crea con `extraer --nuevo <carpeta>` y después se edita el
   manifiesto para apuntar a `comun/` y `reservas/` lo que comparte, igual que
-  `platinum-agendamiento.json` hoy: su manifiesto es el del Demo A con otro
-  archivo para el prompt de Sofía.
+  hacía el flujo de la clínica de ejemplo (retirado el 11/11/2026): su manifiesto
+  era el del Demo A con otro archivo para el prompt de Sofía.
 
 Dos convenciones que sostienen la identidad: el archivo de un módulo es el
 contenido más **un** salto de línea final (es lo que dejan los editores y el
@@ -136,11 +136,11 @@ nombre simple (`[a-z0-9-]+`).
 **Pendiente para B-2:** hoy `extraer` sobreescribe un módulo compartido con
 un aviso y sale con 0. Cuando el módulo lo referencia otro manifiesto tiene
 que salir con código 3 y no escribir, salvo `--forzar`: si no, un export de
-Platinum puede pisar en silencio el código que también corre en el Demo A.
+otro flujo de reservas puede pisar en silencio el código que también corre en el Demo A.
 
 ### 0.c Lo que sigue en el JSON a propósito (propuesta para B-2)
 
-Entre el Demo A y Platinum difieren, además del prompt de Sofía, la expresión
+Entre el Demo A y el flujo de la clínica de ejemplo (retirado) difirieron, además del prompt de Sofía, la expresión
 `end` y la `toolDescription` de `agendar_cita` (la duración de la cita) y el
 `textBody` de `Avisar a recepción`. En este bloque quedan en el JSON: son
 texto de un nodo que no es Code ni agente, y sacarlos exigiría un tipo más de
@@ -591,31 +591,30 @@ la Function `conocimiento` (pedido en `CLIENTES/NOVUCHAT/02-pedido-sesion-sitio.
 
 ---
 
-## 8. Flujo de reservas de la clínica de ejemplo (`platinum-agendamiento.json`)
+## 8. Vertical de reservas: mecanismos (Demo A)
+
+> **Nota (11/11/2026).** El flujo de la clínica de ejemplo
+> (`platinum-agendamiento.json`) se retiró con la baja de ese cliente (ver
+> `bitacora/2026-11.md`). Era el Demo A con otros datos: los mismos nodos y solo
+> diferían `Config base`, el prompt de Sofía, `agendar_cita` y `Avisar a
+> recepción`. Todo lo que sigue describe mecanismos comunes del vertical de
+> reservas y **vale para el Demo A** (`demo-a-agendamiento.json`); la suite es
+> `admin/pruebas/reservas-flujo.test.ts`, que corre sobre el Demo A y, en sus
+> bloques parametrizados, sobre Bellido.
 
 **Flujo de referencia, no un cliente** (Andres, 28/10/2026; creado el 15/09/2026).
-Clínica dental y de estética facial en Santa Cruz. Es una copia del Demo A
-vigente —59 nodos, umbrales del servidor, prefijo cacheable, `nombreAsistente`,
-candado contra la doble reserva, dirección con enlace a Maps, seña por QR— con los datos del
-cliente y **un solo mecanismo nuevo**: la sección `INFORMACIÓN DEL NEGOCIO` del prompt, que inserta
+El Demo A vigente trae los umbrales del servidor, el prefijo cacheable,
+`nombreAsistente`, el candado contra la doble reserva, la dirección con enlace a
+Maps y la seña por QR. Su sección `INFORMACIÓN DEL NEGOCIO` del prompt inserta
 `instruccionesExtra` (el texto libre de hasta 1.500 caracteres que el comercio
 escribe en su consola) **delimitado y rotulado como dato**, después de las
 reglas de comportamiento y de las herramientas; si contradice una regla, manda
 la regla. `Config del negocio` toma el de la consola si viene con contenido y,
-si no, el respaldo de `Config base` (misma regla que los demás textos). La
-fuente de los textos es `CLIENTES/PLATINUM/conocimiento-asistente.md`, carpeta
-local: si cambia ahí, cambia en `Config base` y en la consola.
+si no, el respaldo de `Config base` (misma regla que los demás textos).
 
-Lo demás que difiere del Demo A: trato de **usted** y pocos emojis (repertorio
-dental), dos agendas —«Dr. Christyan Sandoval» y «Dr. Juan Pérez», nombre
-provisional hasta que la clínica lo confirme— cada una con su calendario, los
-ejemplos del prompt en clave dental, la **duración por servicio** en el prompt y
-en `agendar_cita` (60 minutos el blanqueamiento, 30 la valoración clínica y
-cualquier otro), el rótulo del aviso a recepción, y las credenciales con nombre
-propio e id vacío: «NovuChat ingesta (Clínica Platinum)» en los cinco nodos
-HTTP de ingesta y «WhatsApp Clínica Platinum (envío)» en los dos de WhatsApp y
-en `Enviar ubicación`. `publicar-flujo.sh` asigna por ese nombre y avisa si no
-existe.
+Las credenciales de un flujo de reservas se asignan por nombre:
+`publicar-flujo.sh` las resuelve por ese nombre y avisa si no existe.
+
 
 **Horas ofrecidas, confirmación y lo ya ofrecido (27/09/2026, los tres flujos de
 reservas).** Tres barreras por hecho, en `Procesar respuesta` y `Procesar
@@ -749,7 +748,7 @@ el paciente pide expresamente la ubicación, el modelo termina con
 cualquier saliente. Cuelgan de `Responder al cliente`, debajo del reporte del
 texto (orden v1: el texto se reporta primero). Sin coordenadas la marca se quita
 y no se manda nada. Un pin rechazado por Meta sale por la salida de error del
-nodo y no se reporta. Suite: bloque (j) de `platinum-flujo.test.ts`, sobre los
+nodo y no se reporta. Suite: bloque (j) de `reservas-flujo.test.ts`, sobre los
 dos flujos.
 
 **Seña por QR con cotejo del comprobante (bloque 2, `Analisis/30` §4,
@@ -820,7 +819,7 @@ respuesta al comprobante es **1 mensaje fijo** (sin modelo), que reemplaza al
 turno del agente. Los avisos a recepción (cita pagada, diferencia, ilegible, QR
 rechazado) **los paga NovuChat**. Sin seña: 0 mensajes agregados.
 
-Suite: bloque (l) de `platinum-flujo.test.ts`, sobre los dos flujos.
+Suite: bloque (l) de `reservas-flujo.test.ts`, sobre los dos flujos.
 
 **Medios entrantes: clasificar, no mirar (bloque 3, 17/09/2026, `Analisis/34`
 §3.1 y §4.1), igual en el Demo A.** Un audio, una foto o un PDF que **no** es
@@ -900,13 +899,13 @@ verificaciones que hoy no están hechas y que corresponden a Andres en la VM:
 
 Y falta la prueba contra un teléfono real: que el nodo de WhatsApp baje el
 medio, que Gemini lo acepte, qué forma exacta tiene la salida del nodo de
-transcripción y cuánto pesa de verdad un audio de 30 s (la prueba 3 de la
-aceptación de Platinum, «un sticker y un audio», es el lugar para empezar).
+transcripción y cuánto pesa de verdad un audio de 30 s (la prueba «un sticker y un audio» de la
+aceptación del Demo A, es el lugar para empezar).
 
-Suite: bloque (m) de `platinum-flujo.test.ts`, sobre los dos flujos.
+Suite: bloque (m) de `reservas-flujo.test.ts`, sobre los dos flujos.
 
-Suite: `admin/pruebas/platinum-flujo.test.ts` (ejecuta el JSON versionado:
-compara nodo por nodo con el Demo A, prueba `instruccionesExtra`, el prompt, los
+Suite: `admin/pruebas/reservas-flujo.test.ts` (ejecuta el JSON versionado
+del Demo A: prueba `instruccionesExtra`, el prompt, los
 umbrales, el orden del lienzo y la elección de agenda por odontólogo). Además
 recorre las suites comunes `flujos-umbrales`, `prefijo-cacheable` y
 `estado-comercio`.
@@ -914,45 +913,22 @@ recorre las suites comunes `flujos-umbrales`, `prefijo-cacheable` y
 ### Marcadores e importación
 
 Cada marcador necesita **su fila exacta** en la tabla de `CONFIGURACION.local.md`
-(`preparar-import.sh` no acepta una fila de otro cliente por prefijo):
-
-| Marcador | Qué va |
-|---|---|
-| `REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM` | ID del número de WhatsApp de la clínica (no el número) |
-| `REEMPLAZAR_NUMERO_RECEPCION_PLATINUM` | Celular que recibe los avisos, sin `+` (para el demo, el de Andres; debe escribir primero al número) |
-| `REEMPLAZAR_CALENDARIO_PLATINUM_1` | Calendario del Dr. Sandoval; también es el del negocio y el de los tres servicios sin persona elegida |
-| `REEMPLAZAR_CALENDARIO_PLATINUM_2` | Calendario del Dr. Juan Pérez |
-| `REEMPLAZAR_HORARIO_ATENCION_PLATINUM` | Horario de atención (no consta en las fuentes: confirmar con la clínica). Es el respaldo si la consola no contesta |
-
-```bash
-./scripts/preparar-import.sh Flujos/platinum-agendamiento.json .env.platinum
-```
-
-**Con el segundo argumento**, siempre: sin él el flujo se lleva la ruta de
-webhook del Demo A. Después, en n8n: importar, credenciales (WhatsApp Trigger de
-la app de la clínica, «WhatsApp Clínica Platinum (envío)» con el token
-permanente, «NovuChat ingesta (Clínica Platinum)» con el secreto del alias, la
-Google Calendar OAuth2 que tenga acceso a los DOS calendarios), `Trigger On` =
-Messages, **Publish**, y la URL de Production al webhook de la app.
-
-Los nodos nuevos de la seña llevan las mismas credenciales por nombre
-(«WhatsApp Clínica Platinum (envío)» en `Enviar QR de la seña`,
-`Obtener URL del medio` y `Descargar comprobante`; «NovuChat ingesta (Clínica
-Platinum)» en `Reportar QR (saliente)` y `Cotejar en el servidor`); los dos
-`Leer comprobante` y los dos nodos de Calendar van sin nombre y
-`publicar-flujo.sh` los completa **por tipo** desde el flujo vivo (la
-credencial de Google Gemini del modelo del agente y la OAuth2 de Calendar).
-
-Los del bloque 3 siguen la misma regla: «WhatsApp Clínica Platinum (envío)» en
-`Obtener URL del medio (general)` y `Descargar medio`; `Transcribir audio`,
-`Describir documento` y `Describir imagen` van sin nombre y se completan por
-tipo con la credencial de Gemini.
+(`preparar-import.sh` no acepta una fila de otro cliente por prefijo), y
+`preparar-import.sh` lleva **siempre el segundo argumento** (el `.env` del
+cliente): sin él el flujo se lleva la ruta de webhook del Demo A. Los marcadores
+y las credenciales por nombre de un flujo de reservas de cliente son datos de
+ese cliente. La sección de marcadores del flujo de la clínica de ejemplo se
+retiró con él (11/11/2026).
 
 ### Señas vencidas (`agendamiento-senas-vencidas.json`)
 
+Pieza común del módulo Agenda: flujo «NovuChat — Agenda (Señas vencidas)». Hoy ningún comercio la tiene publicada. Un comercio que la publique necesita en su tabla de marcadores la fila `REEMPLAZAR_PHONE_NUMBER_ID_COMERCIO` y credenciales con los nombres «NovuChat ingesta (comercio)» y «WhatsApp comercio (envío)», porque `publicar-flujo.sh --crear` asigna por nombre.
+
+> **Antes de la PRIMERA publicación de un barrido (revisión de seguridad del 11/11/2026, pendiente).** El marcador `REEMPLAZAR_PHONE_NUMBER_ID_COMERCIO` y los nombres de credencial «(comercio)» son genéricos a propósito, y eso tiene un riesgo si DOS comercios llegan a publicarlos: la tabla global de marcadores admite una sola fila con ese nombre (el segundo heredaría el número del primero) y `publicar-flujo.sh` enlaza por nombre cuando hay una sola credencial con ese nombre (el segundo quedaría con la credencial del primero, en silencio). Vale para los dos barridos, este y el de seguimientos. Hoy no lo tiene publicado nadie. Antes de publicarlo para un comercio: usar una tabla de marcadores propia de ese comercio (`CONFIG_LOCAL_MD`) y credenciales con el nombre del comercio (o dejar el nombre vacío en el JSON para que `--crear` resuelva por tipo desde el flujo conversacional del propio comercio), y pasar por el agente `seguridad`.
+
 Flujo programado, **sin disparador de webhook y sin ningún nodo de WhatsApp**:
-cada 10 minutos (`*/10 * * * *`) pide la configuración al panel
-(`Traer configuración` con `REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM`, el único
+cada 5 minutos (`*/5 * * * *`) pide la configuración al panel
+(`Traer configuración` con `REEMPLAZAR_PHONE_NUMBER_ID_COMERCIO`, el único
 marcador) y, **solo si el comercio está activo y la seña está activa**, revisa
 todas las agendas (`Citas pendientes de seña`, `q: PENDIENTE DE SEÑA`, de ayer
 a 90 días), se queda con las citas cuyo **título empieza** con el prefijo y
@@ -968,24 +944,26 @@ costaría 0,0113 USD y provocaría el reclamo que se quiere evitar.
 **Mensajes: 0.** Suite: `admin/pruebas/senas-vencidas.test.ts`.
 
 Se crea por la API, con las credenciales resueltas por nombre y por tipo desde
-el flujo conversacional de la clínica (el de `.env.platinum`), y queda con su
+el flujo conversacional del comercio (el de `.env.<cliente>`), y queda con su
 propio `.env`:
 
 ```bash
-./scripts/preparar-import.sh Flujos/agendamiento-senas-vencidas.json .env.platinum
-./scripts/publicar-flujo.sh --env .env.platinum --flujo Flujos/agendamiento-senas-vencidas.json \
-    --crear --activar --env-nuevo .env.platinum-senas          # primero sin --aplicar: diagnóstico
+./scripts/preparar-import.sh Flujos/agendamiento-senas-vencidas.json .env.<cliente>
+./scripts/publicar-flujo.sh --env .env.<cliente> --flujo Flujos/agendamiento-senas-vencidas.json \
+    --crear --activar --env-nuevo .env.<cliente>-senas          # primero sin --aplicar: diagnóstico
 ```
 
 Después se actualiza como los demás:
-`./scripts/publicar-flujo.sh --env .env.platinum-senas --flujo Flujos/agendamiento-senas-vencidas.json`.
+`./scripts/publicar-flujo.sh --env .env.<cliente>-senas --flujo Flujos/agendamiento-senas-vencidas.json`.
 
 ### Seguimientos (`agendamiento-seguimientos.json`)
 
-Flujo programado, **el único de la clínica que le escribe a alguien que no
+Pieza común del módulo Agenda: flujo «NovuChat — Agenda (Seguimientos)». Hoy ningún comercio la tiene publicada; mismo marcador y mismas credenciales por nombre que el de señas vencidas.
+
+Flujo programado, **el único del módulo Agenda que le escribe a alguien que no
 escribió primero**. Cada hora al minuto 15 (`15 * * * *`, para no pisar al
 barrido de señas vencidas, que corre en punto) pide la configuración al panel
-(`REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM`, el único marcador) y, **solo si el
+(`REEMPLAZAR_PHONE_NUMBER_ID_COMERCIO`, el único marcador) y, **solo si el
 comercio está activo**, le pregunta al servidor a quién le toca el recordatorio
 de solicitud pendiente.
 
@@ -1017,14 +995,14 @@ es justamente lo que se busca. Suite:
 Se crea igual que el de señas vencidas, con su propio `.env`:
 
 ```bash
-./scripts/preparar-import.sh Flujos/agendamiento-seguimientos.json .env.platinum
-./scripts/publicar-flujo.sh --crear --env .env.platinum \
+./scripts/preparar-import.sh Flujos/agendamiento-seguimientos.json .env.<cliente>
+./scripts/publicar-flujo.sh --crear --env .env.<cliente> \
     --flujo Flujos/agendamiento-seguimientos.json \
-    --activar --env-nuevo .env.platinum-seguimientos     # primero sin --aplicar: diagnóstico
+    --activar --env-nuevo .env.<cliente>-seguimientos     # primero sin --aplicar: diagnóstico
 ```
 
 Después se actualiza como los demás:
-`./scripts/publicar-flujo.sh --env .env.platinum-seguimientos --flujo Flujos/agendamiento-seguimientos.json`.
+`./scripts/publicar-flujo.sh --env .env.<cliente>-seguimientos --flujo Flujos/agendamiento-seguimientos.json`.
 
 **No activarlo antes de que la plantilla esté aprobada:** sin ella el modo
 `plantilla` falla en Meta, y la solicitud ya quedó marcada.
@@ -1037,22 +1015,22 @@ intención (memoria «meta-plantillas-restricciones», 14/09). Se redacta como e
 **estado de una solicitud que la persona hizo**, no como una invitación.
 
 ```bash
-./scripts/crear-plantilla.sh --env .env.platinum \
+./scripts/crear-plantilla.sh --env .env.<cliente> \
     --nombre solicitud_cita_sin_confirmar --idioma es \
     --cuerpo 'Se registró tu solicitud de cita en {{1}} para {{2}}. Estado: sin confirmar. Responde este mensaje si quieres retomarla.' \
-    --ejemplos 'Clínica Platinum|el sábado 20 a las 10:00'     # sin --aplicar: solo muestra la carga útil
+    --ejemplos 'Mi Negocio|el sábado 20 a las 10:00'     # sin --aplicar: solo muestra la carga útil
 ```
 
 Con `--aplicar` la envía a revisión, que **tarda días**. Después:
-`./scripts/listar-plantillas.sh --env .env.platinum --detalle`. La crea Claude
+`./scripts/listar-plantillas.sh --env .env.<cliente> --detalle`. La crea Claude
 con el OK de Andres; los dos parámetros son, en orden, el **nombre del negocio**
 (`{{1}}`) y la **fecha de la solicitud** (`{{2}}`), y los arma
 `Un item por solicitud` desde lo que devuelve el panel.
 
 #### Los dos hechos que aporta el flujo conversacional
 
-`platinum-agendamiento.json` y `demo-a-agendamiento.json` cambian **solo dos
-`jsonBody`**, y **no agregan ningún mensaje**:
+`demo-a-agendamiento.json` cambia **solo dos
+`jsonBody`** respecto de lo anterior, y **no agregan ningún mensaje**:
 
 - `Reportar mensaje (saliente)` suma `evento: 'horarios_ofrecidos'` cuando
   `consultar_disponibilidad` corrió en el turno y `agendar_cita` no, y
@@ -1064,7 +1042,7 @@ con el OK de Andres; los dos parámetros son, en orden, el **nombre del negocio*
   «quitame de»). Lo que la expresión no cubre —«borrame» sin tilde, «stop»— lo
   resuelve el interruptor **No contactar** de la pantalla de conversaciones.
 
-Se cubren en `admin/pruebas/platinum-flujo.test.ts`, bloque **(n)**.
+Se cubren en `admin/pruebas/reservas-flujo.test.ts`, bloque **(n)**.
 
 ---
 

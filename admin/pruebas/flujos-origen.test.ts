@@ -34,7 +34,6 @@ interface Flujo { nodes: Nodo[] }
  */
 const FLUJOS = [
   'demo-a-agendamiento.json',
-  'platinum-agendamiento.json',
   'bellido-agendamiento.json',
   'demo-b-venta-cobro.json',
   'novuchat-onboarding.json',

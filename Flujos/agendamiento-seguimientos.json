@@ -1,5 +1,5 @@
 {
-  "name": "NovuChat — Clínica Platinum (Seguimientos)",
+  "name": "NovuChat — Agenda (Seguimientos)",
   "settings": {
     "executionOrder": "v1",
     "timezone": "America/La_Paz",
@@ -43,7 +43,7 @@
               "id": "sg1",
               "name": "phoneNumberId",
               "type": "string",
-              "value": "REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM"
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID_COMERCIO"
             },
             {
               "id": "sg2",
@@ -109,7 +109,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "",
-          "name": "NovuChat ingesta (Clínica Platinum)"
+          "name": "NovuChat ingesta (comercio)"
         }
       },
       "notes": "Sin `telefono`: este barrido no es el turno de nadie. De acá salen el estado del comercio y el nombre del negocio, que es lo único del mensaje que no escribe el flujo."
@@ -157,7 +157,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "",
-          "name": "NovuChat ingesta (Clínica Platinum)"
+          "name": "NovuChat ingesta (comercio)"
         }
       },
       "notes": "El SERVIDOR decide a quién le toca: una sola vez por solicitud, nunca a `noContactar`, nunca en operador o bloqueado, nunca a quien ya agendó, y solo entre 2 y 4 h (texto) o entre 24 y 48 h (plantilla). Tope 50 por corrida. El flujo no filtra nada."
@@ -216,7 +216,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "",
-          "name": "NovuChat ingesta (Clínica Platinum)"
+          "name": "NovuChat ingesta (comercio)"
         }
       },
       "notes": "LA MARCA VA ANTES DEL ENVÍO, y es deliberado. Si el envío falla después de marcar, ese recordatorio se pierde y nadie lo reintenta: un seguimiento perdido es mejor que dos, porque el segundo es el que hace que la persona bloquee el número. Es idempotente: una segunda llamada contesta `repetido` y no deja mandar otra vez."
@@ -312,7 +312,7 @@
       "credentials": {
         "whatsAppApi": {
           "id": "",
-          "name": "WhatsApp Clínica Platinum (envío)"
+          "name": "WhatsApp comercio (envío)"
         }
       },
       "notes": "Dentro de la ventana de 24 h: texto libre. +1 mensaje en esa conversación (CLAUDE.md §1), solo en las que quedaron a medio camino."
@@ -346,7 +346,7 @@
       "credentials": {
         "whatsAppApi": {
           "id": "",
-          "name": "WhatsApp Clínica Platinum (envío)"
+          "name": "WhatsApp comercio (envío)"
         }
       },
       "notes": "Fuera de la ventana: plantilla de UTILIDAD `solicitud_cita_sin_confirmar`, dos parámetros (negocio y fecha de la solicitud), sin botones, sin precio y sin lenguaje comercial. La ingesta NO cuenta un saliente sobre ventana vencida como conversación: al comercio no se le factura nada (Analisis/31 §2)."
@@ -388,7 +388,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "",
-          "name": "NovuChat ingesta (Clínica Platinum)"
+          "name": "NovuChat ingesta (comercio)"
         }
       },
       "notes": "El recordatorio se cuenta como cualquier otro mensaje del asistente: dentro de la ventana suma una respuesta al bloque de 25; fuera, la ingesta no abre ninguna conversación. La consola muestra el texto que la persona recibió, no el nombre de la plantilla."

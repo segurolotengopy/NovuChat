@@ -242,7 +242,7 @@ export const SUITES_PURAS = [
   'pruebas/plataforma/fijar-flujos.test.ts',
   'pruebas/plataforma/cambiar-correo.test.ts',
   'pruebas/plataforma/plataforma.test.ts',
-  'pruebas/platinum-flujo.test.ts',
+  'pruebas/reservas-flujo.test.ts',
   'pruebas/prefijo-cacheable.test.ts',
   'pruebas/prepago-separacion.test.ts',
   'pruebas/central/prepago.test.ts',

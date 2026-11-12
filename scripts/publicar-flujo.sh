@@ -17,12 +17,12 @@
 #   ./scripts/publicar-flujo.sh --env .env.novuchat --reiniciar-estado [--aplicar]
 #       borra el estado por telefono que guarda n8n (etapa, bienvenida, aviso)
 #   ./scripts/publicar-flujo.sh --flujo Flujos/demo-b-venta-cobro.json --aplicar
-#   ./scripts/publicar-flujo.sh --env .env.platinum-seguimientos --encender [--aplicar]
+#   ./scripts/publicar-flujo.sh --env .env.<cliente>-seguimientos --encender [--aplicar]
 #       ENCIENDE (o --apagar) un flujo QUE YA EXISTE, el de N8N_WORKFLOW_ID.
 #       No toca el contenido. Muestra el nombre antes de escribir, porque el id
 #       sale de un .env y encender el flujo equivocado le escribe a clientes.
-#   ./scripts/publicar-flujo.sh --env .env.platinum --flujo Flujos/agendamiento-senas-vencidas.json \
-#       --crear [--activar] [--env-nuevo .env.platinum-senas] [--aplicar]
+#   ./scripts/publicar-flujo.sh --env .env.<cliente> --flujo Flujos/agendamiento-senas-vencidas.json \
+#       --crear [--activar] [--env-nuevo .env.<cliente>-senas] [--aplicar]
 #       CREA un flujo nuevo (POST) tomando las credenciales POR NOMBRE de la
 #       instancia y, si el nombre no existe, POR TIPO del flujo de referencia
 #       (el N8N_WORKFLOW_ID de --env). Con --activar lo publica; con --env-nuevo

@@ -76,8 +76,8 @@
  * corrección. Un marcador que no está en la tabla: en seco se avisa en rojo y
  * se sigue; con `--aplicar` se niega.
  *
- *   node scripts/datos/cargar-negocio.mjs --proyecto <id> --tenant platinum \
- *     --archivo scripts/datos/negocio-platinum.json \
+ *   node scripts/datos/cargar-negocio.mjs --proyecto <id> --tenant <tenant> \
+ *     --archivo <ruta al JSON del negocio> \
  *     [--local <ruta a CONFIGURACION.local.md>]                # en seco
  *   ... --aplicar                                              # escribe
  *   ... --vaciar-ajenos --aplicar   # y BORRA los productos que el archivo no nombra
