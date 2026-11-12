@@ -20,6 +20,16 @@ export const CARPETA_FLUJOS_DEL_REPO = join(aqui, '../../../Flujos');
 
 /** Los JSON de flujo versionados bajo `raiz`: rutas relativas a ella, ordenadas. */
 export function flujosVersionados(raiz: string = CARPETA_FLUJOS_DEL_REPO): string[] {
+  // Caché a nivel de módulo (un archivo de pruebas = un módulo): el recorrido lee y parsea ~100 JSON y se pedía muchas veces por archivo.
+  // Solo para la carpeta real del repositorio, que las pruebas no modifican; una raíz temporal se recorre cada vez, porque sí cambia.
+  if (raiz === CARPETA_FLUJOS_DEL_REPO && delRepo) return [...delRepo];
+  const salida = recorrerFlujos(raiz);
+  if (raiz === CARPETA_FLUJOS_DEL_REPO) delRepo = salida;
+  return [...salida];
+}
+let delRepo: string[] | undefined;
+
+function recorrerFlujos(raiz: string): string[] {
   const salida: string[] = [];
   const recorrer = (dir: string): void => {
     // El tipo sale de la misma lectura del directorio (sin comprobar y después leer: CodeQL js/file-system-race); el JSON se lee una vez, con try/catch.
