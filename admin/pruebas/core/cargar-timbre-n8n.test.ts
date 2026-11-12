@@ -368,7 +368,11 @@ describe('cargar-timbre-n8n.sh: cargar --aplicar', () => {
     expect(porNombre('Enviar por el relé').credentials?.httpHeaderAuth).toEqual({ id: 'r1', name: `AAB1 envío · ${ALIAS}` });
     expect(porNombre('Enviar por Graph').credentials?.whatsAppApi).toEqual({ id: 'g1', name: `WhatsApp ${ALIAS} (envío)` });
     expect(porNombre('Timbre').credentials?.httpHeaderAuth).toEqual({ id: t!.id, name: t!.name });
-    for (const n of ['Enviar por el relé', 'Enviar por Graph']) {
+    // B3: los nodos del adjunto. Leer lleva la ingesta; subir y enviar el adjunto, la de envío.
+    expect(porNombre('Leer adjunto').credentials?.httpHeaderAuth).toEqual({ id: ing.id, name: ing.name });
+    expect(porNombre('Subir a Meta').credentials?.whatsAppApi).toEqual({ id: 'g1', name: `WhatsApp ${ALIAS} (envío)` });
+    expect(porNombre('Enviar adjunto por Graph').credentials?.whatsAppApi).toEqual({ id: 'g1', name: `WhatsApp ${ALIAS} (envío)` });
+    for (const n of ['Enviar por el relé', 'Enviar por Graph', 'Subir a Meta', 'Enviar adjunto por Graph']) {
       expect(JSON.stringify(porNombre(n).credentials)).not.toContain('ingesta');
       expect(JSON.stringify(porNombre(n).credentials)).not.toContain(ing.id + '"');
     }
@@ -710,9 +714,36 @@ describe('cargar-timbre-n8n.sh: endurecimiento (ronda de revisión)', () => {
     expect(r.salida).toContain('headerAuth');
   });
 
-  it.each(['Reclamar', 'Confirmar', 'Enviar por el relé', 'Enviar por Graph', 'Timbre'])('el nodo %s sin credencial: aborta', (nodo) => {
+  it.each(['Reclamar', 'Confirmar', 'Enviar por el relé', 'Enviar por Graph', 'Leer adjunto', 'Subir a Meta', 'Enviar adjunto por Graph', 'Timbre'])('el nodo %s sin credencial: aborta', (nodo) => {
     const r = variante((f) => { delete f.nodes.find((n) => n.name === nodo)!.credentials; }, 'b.json');
     expect(r.codigo).toBe(2);
+  });
+
+  it('la credencial de ingesta en «Subir a Meta» o en «Enviar adjunto por Graph»: aborta (el Bearer de ingesta no va a Meta)', () => {
+    for (const nodo of ['Subir a Meta', 'Enviar adjunto por Graph']) {
+      const r = variante((f) => {
+        f.nodes.find((n) => n.name === nodo)!.credentials = { httpHeaderAuth: { id: '', name: `NovuChat ingesta (${ALIAS})` } };
+      }, 'i.json');
+      expect(r.codigo, nodo).toBe(2);
+    }
+  });
+
+  it('«Leer adjunto» con la credencial de envío o «Subir a Meta» con otro host: aborta', () => {
+    const a = variante((f) => { f.nodes.find((n) => n.name === 'Leer adjunto')!.credentials = { httpHeaderAuth: { id: '', name: `AAB1 envío · ${ALIAS}` } }; }, 'l.json');
+    expect(a.codigo).toBe(2);
+    const b = variante((f) => { f.nodes.find((n) => n.name === 'Subir a Meta')!.parameters.url = '=https://otro-host.example/v26.0/1/media'; }, 'h.json');
+    expect(b.codigo).toBe(2);
+    expect(b.salida).toMatch(/otro host|URL/);
+    // Mismo host, otro extremo de Graph: el token de negocio solo va a `/messages` y a `/media` (revisión de `seguridad`).
+    const base = "=https://graph.facebook.com/{{ $('Config base').first().json.waGraphVersion }}/{{ $('Config base').first().json.phoneNumberId }}";
+    for (const [nodo, url] of [
+      ['Subir a Meta', `${base}/settings`], ['Subir a Meta', `${base}/messages`], ['Subir a Meta', '=https://graph.facebook.com/{{ $json.ruta }}/media'],
+      ['Enviar adjunto por Graph', `${base}/media`], ['Enviar adjunto por Graph', `${base}/phone_numbers`], ['Enviar por Graph', `${base}/media`],
+    ] as const) {
+      const c = variante((f) => { f.nodes.find((n) => n.name === nodo)!.parameters.url = url; }, 'e.json');
+      expect(c.codigo, `${nodo} -> ${url}`).toBe(2);
+      expect(c.salida, `${nodo} -> ${url}`).toMatch(/otro extremo de Graph/);
+    }
   });
 
   it.each(['subscribed_apps', 'subscriptions', 'register', 'message_templates'])('un nodo HTTP que llama a %s: aborta', (ruta) => {
@@ -1443,6 +1474,16 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
       expect(g.parameters?.url).toBe(plantilla.parameters.url);
       expect(g.parameters?.jsonBody).toBe(plantilla.parameters.jsonBody);
       expect(g.parameters?.options).toEqual(plantilla.parameters.options);
+      // B3: los tres nodos de Graph se ajustan igual; «Leer adjunto» sigue con la ingesta.
+      for (const n of ['Subir a Meta', 'Enviar adjunto por Graph']) {
+        const x = propio().nodes.find((y) => y.name === n)!;
+        expect(x.credentials, n).toEqual({ httpHeaderAuth: { id: 'qg', name: NOM.envio } });
+        expect(x.parameters?.authentication, n).toBe('genericCredentialType');
+        expect(x.parameters?.genericAuthType, n).toBe('httpHeaderAuth');
+        expect(x.parameters, n).not.toHaveProperty('nodeCredentialType');
+      }
+      expect(Object.keys(propio().nodes.find((y) => y.name === 'Leer adjunto')!.credentials ?? {})).toEqual(['httpHeaderAuth']);
+      expect(propio().nodes.find((y) => y.name === 'Leer adjunto')!.credentials?.httpHeaderAuth?.name).toBe(NOM.ingesta);
     });
 
     it('envío whatsAppApi: se acepta y el nodo queda como la plantilla (sin cambio de comportamiento)', () => {
@@ -1502,6 +1543,11 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
         vivoConNodos([nodoVivo('Enviar por Graph', 'httpHeaderAuth', 'qr', NOM.rele)]);
         rechaza();
       });
+      it.each(['Subir a Meta', 'Enviar adjunto por Graph'])('relé citado por un nodo «%s» de otro flujo: rechazado', (nodo) => {
+        conEnvioComo('httpHeaderAuth');
+        vivoConNodos([nodoVivo(nodo, 'httpHeaderAuth', 'qr', NOM.rele)]);
+        rechaza();
+      });
       it('envío citado por un nodo «Enviar por el relé» de otro flujo: rechazado', () => {
         conEnvioComo('httpHeaderAuth');
         vivoConNodos([nodoVivo('Enviar por el relé', 'httpHeaderAuth', 'qg', NOM.envio)]);
@@ -1514,7 +1560,7 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
         writeFileSync(ruta, JSON.stringify(f));
         return ruta;
       };
-      it.each(['Enviar por Graph', 'Enviar por el relé'])('URL editada a otro host en «%s»: rechazado', (nodo) => {
+      it.each(['Enviar por Graph', 'Subir a Meta', 'Enviar adjunto por Graph', 'Enviar por el relé'])('URL editada a otro host en «%s»: rechazado', (nodo) => {
         conEnvioComo('httpHeaderAuth');
         rechaza([...AR(), ...MAPA, '--flujo', conUrl(nodo, '=https://otro-host.example/v1/messages')]);
       });

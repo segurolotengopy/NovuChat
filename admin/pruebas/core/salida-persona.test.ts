@@ -574,14 +574,16 @@ describe('reclamar con adjuntos: solo con la cabecera del flujo nuevo, uno por l
     await sembrarAdjunto(CLAVE(1), { phoneNumberId: NUM_A2 });
     expect(entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS))).toEqual([]);
   });
-  it('el flujo VIEJO (planificar-lote.js) rechaza un adjunto con `NV-TEXTO`: nunca lo manda como texto suelto', async () => {
+  it('el flujo (planificar-lote.js) planifica el adjunto reclamado por la ruta `adjunto`: sin cuerpo de texto ni `link`', async () => {
     await sembrarAdjunto(CLAVE(1));
     const [m] = entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_ADJUNTOS));
     const codigo = readFileSync(join(aqui, '..', '..', '..', 'Flujos', 'src', 'core', 'salida-persona', 'planificar-lote.js'), 'utf8');
     const ejecutar = compileFunction(codigo, ['$', '$input']) as (a: unknown, b: unknown) => Array<{ json: Record<string, unknown> }>;
     const [item] = ejecutar(() => ({ first: () => ({ json: {} }) }), { all: () => [{ json: { mensajes: [m] } }] });
-    expect(item!.json['sinEnvio']).toBe('NV-TEXTO');
-    expect(item!.json['ruta']).toBe('ninguna');
+    expect(item!.json['sinEnvio']).toBe('');
+    expect(item!.json['ruta']).toBe('adjunto');
+    expect(item!.json).not.toHaveProperty('cuerpoEnvio');
+    expect(JSON.stringify(item!.json)).not.toMatch(/"link"/);
   });
 });
 

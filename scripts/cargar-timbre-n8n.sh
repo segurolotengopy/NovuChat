@@ -63,8 +63,8 @@
 # existen en n8n con otros nombres. Estas tres opciones dicen el NOMBRE REAL de cada rol, y el flujo se
 # carga con ellas en lugar de las de ensayo (cargar, --activar y --quitar; el timbre sigue siendo
 # `Salida de persona (timbre <alias>)`, que crea este script):
-#     --cred-ingesta <nombre>  rol ingesta, httpHeaderAuth (Reclamar y Confirmar)
-#     --cred-envio   <nombre>  rol envío por Graph, whatsAppApi o httpHeaderAuth (Enviar por Graph; el script ajusta el nodo al tipo hallado)
+#     --cred-ingesta <nombre>  rol ingesta, httpHeaderAuth (Reclamar, Leer adjunto y Confirmar)
+#     --cred-envio   <nombre>  rol envío por Graph, whatsAppApi o httpHeaderAuth (Enviar por Graph, Subir a Meta y Enviar adjunto por Graph; el script ajusta el nodo al tipo hallado)
 #     --cred-rele    <nombre>  rol relé, httpHeaderAuth (Enviar por el relé)
 # Van LAS TRES o ninguna. El nombre se busca por nombre Y tipo exactos y tiene que haber exactamente una;
 # si falta o está repetida se aborta sin escribir. No se crea ni se modifica ninguna de las tres (no hay
@@ -465,6 +465,12 @@ def ajustar_envio(nodo, tipo):
 
 URL_GRAPH = "=https://graph.facebook.com/"
 URL_RELE = "={{ $('Config base').first().json.releBaseUrl }}"
+# Nodos que hablan con Graph (mensaje de texto, subida del adjunto y envío del adjunto): mismo rol, misma credencial.
+NODOS_GRAPH = ("Enviar por Graph", "Subir a Meta", "Enviar adjunto por Graph")
+# La URL EXACTA de cada uno (revisión de `seguridad` de B3): con el prefijo solo, el token de negocio podía ir a otro
+# extremo de Graph (`/settings`, `/phone_numbers`). Solo `/messages` y `/media` del número de `Config base`.
+_BASE_GRAPH = "=https://graph.facebook.com/{{ $('Config base').first().json.waGraphVersion }}/{{ $('Config base').first().json.phoneNumberId }}"
+URL_EXACTA_GRAPH = {"Enviar por Graph": _BASE_GRAPH + "/messages", "Subir a Meta": _BASE_GRAPH + "/media", "Enviar adjunto por Graph": _BASE_GRAPH + "/messages"}
 
 
 def sin_tildes(s):
@@ -481,14 +487,14 @@ def revisar_cruce_rele_envio(wfs, indice, n, propio):
     if "graph" in nom or "bearer" in nom:
         errores.append("la credencial del rol relé tiene nombre de Graph o de Bearer: no se usa como relé")
     for rol, tipos, nodo_ajeno, msg in (
-            ("rele", ("httpHeaderAuth",), "Enviar por Graph", "la credencial del rol relé la cita un nodo «Enviar por Graph»"),
-            ("graph", TIPOS_ENVIO, "Enviar por el relé", "la credencial del rol envío la cita un nodo «Enviar por el relé»")):
+            ("rele", ("httpHeaderAuth",), NODOS_GRAPH, "la credencial del rol relé la cita un nodo de Graph («Enviar por Graph», «Subir a Meta» o «Enviar adjunto por Graph»)"),
+            ("graph", TIPOS_ENVIO, ("Enviar por el relé",), "la credencial del rol envío la cita un nodo «Enviar por el relé»")):
         ids = {c.get("id") for t in tipos for c in indice.get((t, n[rol]), [])}
         for w in wfs:
             if w.get("name") == propio:
                 continue
             for nodo in w.get("nodes") or []:
-                if nodo.get("name") != nodo_ajeno:
+                if nodo.get("name") not in nodo_ajeno:
                     continue
                 for ctipo, ref in (nodo.get("credentials") or {}).items():
                     if isinstance(ref, dict) and ((ref.get("id") and ref.get("id") in ids) or (ctipo in tipos and ref.get("name") == n[rol])):
@@ -505,7 +511,10 @@ def revisar_roles(nodos, alias):
         "Reclamar": ("httpHeaderAuth", n["ingesta"]),
         "Confirmar": ("httpHeaderAuth", n["ingesta"]),
         "Enviar por el relé": ("httpHeaderAuth", n["rele"]),
+        "Leer adjunto": ("httpHeaderAuth", n["ingesta"]),
         "Enviar por Graph": (None, n["graph"]),  # whatsAppApi o httpHeaderAuth (TIPOS_ENVIO)
+        "Subir a Meta": (None, n["graph"]),
+        "Enviar adjunto por Graph": (None, n["graph"]),
     }
     por_nombre = {x.get("name"): x for x in nodos}
     if len({n["ingesta"], n["rele"], n["graph"]}) != 3:
@@ -526,7 +535,11 @@ def revisar_roles(nodos, alias):
                 continue
         if set(c) != {tipo} or (c[tipo] or {}).get("name") != cred:
             errores.append("%s debe llevar exactamente la credencial %s «%s»" % (nom, tipo, cred))
-    for nom, previo in (("Enviar por Graph", URL_GRAPH), ("Enviar por el relé", URL_RELE)):
+    for nom in NODOS_GRAPH:
+        x = por_nombre.get(nom)
+        if x is not None and str((x.get("parameters") or {}).get("url", "")) != URL_EXACTA_GRAPH[nom]:
+            errores.append("%s tiene una URL que no es la de la plantilla: el Bearer podría ir a otro host o a otro extremo de Graph" % nom)
+    for nom, previo in (("Enviar por el relé", URL_RELE),):
         x = por_nombre.get(nom)
         if x is not None and not str((x.get("parameters") or {}).get("url", "")).startswith(previo):
             errores.append("%s tiene una URL que no es la de la plantilla: el Bearer podría ir a otro host" % nom)
@@ -545,7 +558,7 @@ def revisar_roles(nodos, alias):
         p = json.dumps(nodo.get("parameters") or {})
         if "httprequest" in tipo and re.search(r"subscriptions|subscribed_apps|/register|message_templates", p, re.I):
             errores.append("%s llama a subscriptions/subscribed_apps/register/message_templates: eso es de otra sesión" % nodo.get("name"))
-        manda = nodo.get("name") in ("Enviar por el relé", "Enviar por Graph") or "graph.facebook.com" in p or "releBaseUrl" in p
+        manda = nodo.get("name") in ("Enviar por el relé",) + NODOS_GRAPH or "graph.facebook.com" in p or "releBaseUrl" in p
         for tp, ref in (nodo.get("credentials") or {}).items():
             nom = (ref or {}).get("name", "")
             if RE_AJENO.search(normalizar(nom)):
@@ -785,7 +798,7 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
     # que existe con ese nombre. Solo con credenciales EXISTENTES (mapa): en ensayo la crea este script, whatsAppApi.
     if credenciales_existentes():
         for nodo in flujo["nodes"]:
-            if nodo.get("name") == "Enviar por Graph":
+            if nodo.get("name") in NODOS_GRAPH:
                 ajustar_envio(nodo, tipo_envio(indice, n))
     errores = []
     for nodo in flujo["nodes"]:

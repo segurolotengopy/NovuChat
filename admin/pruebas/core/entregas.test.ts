@@ -286,6 +286,23 @@ export function esEnvio(n: Nodo): boolean {
 }
 
 /**
+ * Una SUBIDA de medio a Meta (B3 de «Envío de medios por consola»): HTTP POST multipart a `…/{phoneNumberId}/media`. Deja
+ * un archivo en Meta y devuelve su `id`; NO le entrega nada a nadie (el mensaje sale después, por un envío a `/messages`
+ * que sí pasa por todas las reglas). Es estricta a propósito: solo el nodo HTTP común (nunca una herramienta del agente),
+ * con el cuerpo multipart y la URL EXACTA de la plantilla: versión y número literales o las dos expresiones de `Config base`,
+ * y `/media` al final. Ninguna otra expresión en la ruta (revisión de `seguridad` de B3: un `{{ $json.ruta }}` con `#` o `?`
+ * adentro dejaría `/media` como fragmento y el POST iría a `/messages` o a `/subscribed_apps`). Cualquier otra escritura
+ * en Graph sigue en la regla 7.
+ */
+const URL_DE_SUBIDA = /^=?https:\/\/graph\.facebook\.com\/(v\d{1,3}\.\d{1,2}|\{\{ \$\('Config base'\)\.first\(\)\.json\.waGraphVersion \}\})\/([0-9]{8,20}|\{\{ \$\('Config base'\)\.first\(\)\.json\.phoneNumberId \}\})\/media$/;
+export function esSubidaDeMedio(n: Nodo): boolean {
+  const p = n.parameters ?? {};
+  return n.type === 'n8n-nodes-base.httpRequest' && String(p['method'] ?? '').toUpperCase() === 'POST'
+    && String(p['contentType'] ?? '') === 'multipart-form-data'
+    && URL_DE_SUBIDA.test(String(p['url'] ?? ''));
+}
+
+/**
  * Lo que sale por el camino de FALLO de un envío: por la salida de error si es `continueErrorOutput`; detrás de un
  * IF o Code que lee el id o `error` si es `continueRegularOutput`. Un texto colgado de la salida de ÉXITO, o de un
  * nodo que no decide nada, no es un camino de fallo (sondas A y B de la revisión de `seguridad`).
@@ -605,11 +622,12 @@ export function violaciones(f: Flujo): Violacion[] {
   }
 
   // 7. Un nodo que habla con Graph y que esta suite no sabe clasificar como envío: una puerta lateral que ninguna
-  // regla vería (sondas I, K y L). Las lecturas (GET) son de medios y perfil: no envían.
+  // regla vería (sondas I, K y L). Las lecturas (GET) son de medios y perfil: no envían. Una subida de medio
+  // (`esSubidaDeMedio`) tampoco: deja un archivo en Meta, no un mensaje.
   for (const n of f.nodes) {
     const url = String((n.parameters ?? {})['url'] ?? '');
     const metodo = String((n.parameters ?? {})['method'] ?? 'GET').toUpperCase();
-    if (url.includes('graph.facebook') && metodo !== 'GET' && !esEnvio(n)) {
+    if (url.includes('graph.facebook') && metodo !== 'GET' && !esEnvio(n) && !esSubidaDeMedio(n)) {
       v.push({ regla: 7, nodo: n.name, detalle: `«${n.name}» (${n.type}, ${metodo}) escribe en Graph y esta suite no lo clasifica como envío` });
     }
   }
@@ -1215,6 +1233,32 @@ describe('Entregas: contrapruebas (cada una falla nombrando el nodo)', () => {
     // Un POST a Graph cuya URL no dice `/messages` (armada con una expresión) no se puede clasificar: falla.
     const raro = mem([tool('n8n-nodes-base.httpRequest', { method: 'POST', url: "=https://graph.facebook.com/v26.0/{{ $json.phoneNumberId }}/{{ $json.ruta }}" })], []);
     expect(reglasDe(raro)).toEqual(['7:Herramienta']);
+    // Una subida de medio (POST multipart a `/media`) no es un envío ni una puerta lateral; lo que se le parece, sí.
+    const MEDIA = "=https://graph.facebook.com/{{ $('Config base').first().json.waGraphVersion }}/{{ $('Config base').first().json.phoneNumberId }}/media";
+    expect(esSubidaDeMedio(tool('n8n-nodes-base.httpRequest', { method: 'POST', url: `https://graph.facebook.com/v26.0/${'1'.repeat(15)}/media`, contentType: 'multipart-form-data' }))).toBe(true);
+    const subida = { method: 'POST', url: MEDIA, contentType: 'multipart-form-data' };
+    expect(esSubidaDeMedio(tool('n8n-nodes-base.httpRequest', subida))).toBe(true);
+    expect(esEnvio(tool('n8n-nodes-base.httpRequest', subida))).toBe(false);
+    expect(reglasDe(mem([tool('n8n-nodes-base.httpRequest', subida)], []))).toEqual([]);
+    for (const casi of [
+      { ...subida, contentType: 'json' }, // sin multipart
+      { method: 'POST', url: MEDIA }, // sin tipo de cuerpo
+      { ...subida, url: `${MEDIA}/{{ $json.ruta }}` }, // algo detrás de /media
+      { ...subida, url: `${MEDIA}?x={{ $json.q }}` },
+      { ...subida, url: '=https://graph.facebook.com/v26.0/{{ $json.appId }}/subscriptions' },
+      { ...subida, url: '=https://graph.facebook.com/{{ $json.ruta }}/media' }, // la ruta la decide un dato: `v26.0/1/messages#`
+      { ...subida, url: '=https://graph.facebook.com/{{ $json.v }}/{{ $json.x }}/media' },
+      { ...subida, url: "=https://graph.facebook.com/v26.0/{{ $('Config base').first().json.phoneNumberId }}/{{ $json.x }}/media" },
+      { ...subida, url: '=https://graph.facebook.com.evil.example/v26.0/1/media' }, // otro host
+      { ...subida, method: 'DELETE' },
+    ]) expect(reglasDe(mem([tool('n8n-nodes-base.httpRequest', casi)], [])), JSON.stringify(casi)).toEqual(['7:Herramienta']);
+    // Con `/messages` en la URL ya es un envío: no es una subida y lo ven las reglas de los envíos, no la 7.
+    const disfrazado = tool('n8n-nodes-base.httpRequest', { ...subida, url: '=https://graph.facebook.com/v26.0/1/messages#/media' });
+    expect(esSubidaDeMedio(disfrazado)).toBe(false);
+    expect(esEnvio(disfrazado)).toBe(true);
+    expect(reglasDe(mem([disfrazado], []))).not.toEqual([]);
+    // Una herramienta del agente nunca sube medios por su cuenta.
+    expect(reglasDe(mem([tool('n8n-nodes-base.httpRequestTool', subida)], []))).toEqual(['7:Herramienta']);
     // Las lecturas (GET) no envían.
     expect(reglasDe(mem([tool('n8n-nodes-base.httpRequest', { url: 'https://graph.facebook.com/v26.0/123' })], []))).toEqual([]);
   });
