@@ -77,7 +77,7 @@ const CLINICO = /dosis|\bmg\b|\bml\b|gotas|paracetamol|ibuprofeno|amoxicilina|an
 const PROMESAS = /lo consulto|lo consultar[eé]|te aviso|te avisar[eé]|te avisamos|te llamamos|te llamar[eé]|te escribir[aá]n|te escribiremos|te contactar[eé]|nos comunicaremos|te confirmo luego|recepcion te|el doctor te/;
 // Lo que el modelo NO puede afirmar (revisión de seguridad): que una cita quedó agendada, confirmada
 // o reservada —eso solo lo dice el código después del candado—, ni negar ser una IA (prohibición 4).
-const AFIRMA = /pago (fue )?(acreditad|verificad|confirmad)|recibimos (tu|su) pago|\b(qued[oa]|esta|estan) (agendad|confirmad|reservad|registrad|list|hech|fij)|\bagende\b|\breserve\b|\bte (agende|reserve)\b|confirm(o|ada|ado) (tu|la|su) cita|tu cita (ya )?(esta|quedo|queda)|no soy (una |un )?(ia|inteligencia|bot|robot|asistente virtual)|soy (una |un )?(persona|humana|humano)\b|soy (el |la )?(doctor|doctora|dr|dra)\b/;
+const AFIRMA = /pago (fue )?(acreditad|verificad|confirmad)|recibimos (tu|su) pago|\b(qued[oa]|esta|estan) (agendad|confirmad|reservad|registrad|list|hech|fij)|\bagende\b|\breserve\b|\bte (agende|reserve)\b|confirm(o|ada|ado) (tu|la|su) cita|tu cita (ya )?(esta|quedo|queda)|no soy (una |un )?(ia|inteligencia|bot|robot|asistente virtual)|soy (una |un )?(persona|humana|humano)\b|soy (el |la )?(doctor|doctora|dr|dra)\b|soy (una |un |la |el )?(asistente|secretaria|recepcionista|ayudante|agente)( \w+)? (real|humana|humano|de verdad)\b/;
 const NEGACION = /no (nos )?(quedan?|hay) (mas )?(horarios?|espacios?|turnos?|citas?|disponibilidad)|sin horarios|no tenemos (horarios|espacio|disponibilidad)|agenda (llena|completa)/;
 function clavesDeHora(texto) {
   const claves = [];
@@ -106,6 +106,8 @@ function redaccionValida(texto, huecos, aviso) {
   // paciente lo pregunta (Andres, 30/09). Aunque `instruccionesExtra` lo nombre, el modelo no lo repite.
   if (/\b\d[\d.,]*\s*(bs|bolivianos?|usd|dolares)\b|\bbs\.?\s*\d|\$\s*\d/.test(n)) return false;
   if (algun(/\b168\b/) || algun(CLINICO) || algun(PROMESAS) || algun(AFIRMA)) return false;
+  // PROHIBICIÓN 4 (nunca niega ser una IA): UNA sola regla, la de IDENTIDAD del FILTRO COMÚN del core (`NIEGA_IA_CORE`, derivada de `filtro-redaccion.js` al armar; no se copia).
+  if (algun(NIEGA_IA_CORE)) return false;
   // A una pregunta de IDENTIDAD («¿eres el doctor?», «¿quién eres?») no se contesta empezando con «Sí».
   if (/\b(eres|es|sos) (el |la )?(doctor|doctora|dr|dra)\b|\bquien (eres|es)\b/.test(cnNorm(base.texto || '')) && /^\W*si\b/.test(n)) return false;
   if (huecos.length && !aviso && NEGACION.test(n)) return false;
@@ -307,6 +309,14 @@ switch (plan) {
 
   // Preguntas sencillas respondidas por código, con textos de la CONFIGURACIÓN (nunca del código común).
   case 'respuesta_fija': {
+    // IDENTIDAD («¿eres una persona / un bot / una IA?»): texto FIJO por código, sin modelo (prohibición 4: nunca niega ser una IA). Se presenta como asistente virtual con IA y ofrece
+    // seguir o pasar con recepción (el botón); si no hay número de recepción distinto del paciente, el botón se omite y el texto no lo nombra (`mensajeConBoton`). 0 mensajes agregados: reemplaza el que redactaba el modelo.
+    if (params.clave === 'identidad_ia') {
+      const de = String(cfg.nombreNegocio || '').split(/\s+[—–-]\s+/)[0].trim();
+      mensajeConBoton(rec, 'Soy la asistente virtual' + (de ? ' de ' + de : '') + ', una inteligencia artificial (IA). Puedo ayudarte a agendar, cancelar o mover una cita y responder dudas sencillas. Si prefieres hablar con una persona del consultorio, tócale el botón y le escribes directo. ¿Seguimos?',
+        'Escribir a recepción', 'Hola, escribo desde el asistente de ' + nombreNegocio + '.');
+      break;
+    }
     const r = respuestaFija(params.clave);
     if (!r) {
       transferir('el paciente preguntó algo que el asistente no tiene en la configuración (' + String(params.clave || '') + ')',

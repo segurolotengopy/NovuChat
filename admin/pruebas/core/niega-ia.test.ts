@@ -77,3 +77,32 @@ describe.each([
     expect(r['avisos']).not.toContain('correccion_ia');
   });
 });
+
+// AGENDA MÍNIMA (Bellido, 12/11/2026): la regla de IDENTIDAD de «Armar mensajes» NO es una copia: se DERIVA al armar del bloque «negar ser una IA» de `filtro-redaccion.js`.
+// Esta prueba exige que lo que lleva el JSON versionado sea exactamente esa lista del core (si el core la cambia y no se regenera agenda mínima, falla) y que ambas variantes la lleven.
+describe('agenda mínima: la regla de identidad es la del core, derivada y no copiada', () => {
+  const FILTRO = src('core/texto/filtro-redaccion.js');
+  const ini = FILTRO.indexOf('  // negar ser una IA (prohibición 4');
+  const marca = "  'carne y hueso',\n";
+  const fin = FILTRO.indexOf(marca, ini);
+  const lista = new Function(`return [${FILTRO.slice(ini, fin + marca.length)}];`)() as string[];
+  it('el bloque del core existe y tiene la forma esperada', () => {
+    expect(ini).toBeGreaterThan(0);
+    expect(lista.length).toBeGreaterThanOrEqual(8);
+    expect(lista).toContain('carne y hueso');
+  });
+  for (const archivo of ['experimental/agenda-minima/agenda-minima.v0.json', 'experimental/agenda-minima/agenda-minima.prueba.json']) {
+    it(`${archivo}: «Armar mensajes» lleva NIEGA_IA_CORE igual a la lista del core y la usa en redaccionValida`, () => {
+      const flujo = JSON.parse(readFileSync(join(aqui, '../../../Flujos', archivo), 'utf8')) as { nodes: { name: string; parameters: { jsCode?: string } }[] };
+      const codigo = flujo.nodes.find((n) => n.name === 'Armar mensajes')!.parameters.jsCode!;
+      expect(codigo).toContain(`const NIEGA_IA_CORE = new RegExp(${JSON.stringify(lista.join('|'))});`);
+      expect(codigo).toContain('if (algun(NIEGA_IA_CORE)) return false;');
+    });
+  }
+  it('NIEGA: la regla del core, aplicada a las negaciones de identidad, las atrapa (y no a la admisión honesta)', () => {
+    const re = new RegExp(lista.join('|'));
+    const norm = (t: string): string => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    for (const mal of ['Soy un ser humano', 'Soy de carne y hueso', 'No soy un programa', 'No soy una máquina', 'No soy una IA, soy una persona real', 'No soy un bot']) expect(re.test(norm(mal)), mal).toBe(true);
+    for (const bien of ['Soy la asistente virtual, una inteligencia artificial', 'Tengo estos horarios para el jueves']) expect(re.test(norm(bien)), bien).toBe(false);
+  });
+});

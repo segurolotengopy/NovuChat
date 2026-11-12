@@ -1294,7 +1294,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@nodos/armar-mensajes.js"
+        "jsCode": "@@niegaia:nodos/armar-mensajes.js"
       },
       "notes": "Un item por mensaje saliente. Es el unico lugar donde se escribe el estado por telefono."
     },

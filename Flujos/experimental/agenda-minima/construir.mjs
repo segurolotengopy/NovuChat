@@ -16,6 +16,7 @@
  * Code de n8n no tiene módulos). Dos marcas más, para no repetir código que el nodo no usa:
  *   `"@@comun:nodos/<archivo>.js"`  utilidades comunes + el archivo (sin la librería de agenda);
  *   `"@@solo:nodos/<archivo>.js"`   solo el archivo.
+ *   `"@@niegaia:nodos/<archivo>.js"` librería + utilidades + `NIEGA_IA_CORE` (la regla de IDENTIDAD del filtro común del core, derivada de su fuente) + el archivo.
  *   `"@@medio:<paquete>"`           un módulo común de medios (`Flujos/src/core/medios/`), tal cual, sin edición.
  * Y la rama común del GUARDADO de medios (`../comun-sin-agente/src/guardado.mjs`, contrato M1↔M2 del 29/10/2026): se INJERTA al armar, colgada de
  * «Reportar mensaje (entrante)» y debajo de todo (corre después de la respuesta); la plantilla, el prompt y los nodos propios no se tocan.
@@ -71,18 +72,33 @@ const MAPA_CRM = JSON.parse(readFileSync(ARCHIVO_DE_DATOS_CRM, 'utf8')).crm;
   if (errores.length) throw new Error(`admin/scripts/datos/bellido/crm.json: el mapa de columnas no es valido: ${errores.join('; ')}`);
 }
 
+// La regla de IDENTIDAD del FILTRO COMÚN (`Flujos/src/core/texto/filtro-redaccion.js`, prohibición 4: el asistente nunca niega ser una IA) se DERIVA de su fuente al armar, nunca se copia a esta carpeta:
+// se lee el bloque «negar ser una IA» de la lista del core y se inyecta como `NIEGA_IA_CORE` delante del código de «Armar mensajes» (`"@@niegaia:nodos/<archivo>.js"`). Se incluye SOLO ese bloque, no todo el
+// filtro: el resto (pagos, «recibido», horas…) rechaza texto legítimo de una agenda. Si el core mueve o renombra el bloque, este armado FALLA a propósito (y `niega-ia.test.ts` lo cubre).
+function reglaDeIdentidadDelCore() {
+  const fuente = leer('../../src/core/texto/filtro-redaccion.js');
+  const ini = fuente.indexOf('  // negar ser una IA (prohibición 4');
+  const finMarca = "  'carne y hueso',\n";
+  const fin = ini < 0 ? -1 : fuente.indexOf(finMarca, ini);
+  if (ini < 0 || fin < 0) throw new Error('filtro-redaccion.js: no encuentro el bloque «negar ser una IA» (prohibición 4); agenda mínima lo incluye de ahí');
+  const lista = new Function(`return [${fuente.slice(ini, fin + finMarca.length)}];`)();
+  if (!Array.isArray(lista) || lista.length < 8 || lista.some((x) => typeof x !== 'string')) throw new Error('filtro-redaccion.js: el bloque «negar ser una IA» ya no es una lista de expresiones');
+  return `// REGLA DE IDENTIDAD (prohibición 4) derivada de Flujos/src/core/texto/filtro-redaccion.js al armar; no se edita a mano.\nconst NIEGA_IA_CORE = new RegExp(${JSON.stringify(lista.join('|'))});`;
+}
+const NIEGA_IA_CORE = reglaDeIdentidadDelCore();
+
 function codigoDe(marca, nodo) {
   if (marca.startsWith('@@medio:')) {
     const archivo = MEDIOS[marca.slice('@@medio:'.length)];
     if (!archivo) throw new Error(`${nodo}: paquete de medios desconocido: ${marca}`);
     return [].concat(archivo).map((a) => leer(a).trimEnd()).join('\n') + '\n';
   }
-  const modo = marca.startsWith('@@solo:') ? 'solo' : (marca.startsWith('@@comun:') ? 'comun' : 'todo');
-  const ruta = marca.slice(modo === 'solo' ? '@@solo:'.length : (modo === 'comun' ? '@@comun:'.length : '@@'.length));
+  const modo = marca.startsWith('@@solo:') ? 'solo' : (marca.startsWith('@@comun:') ? 'comun' : (marca.startsWith('@@niegaia:') ? 'niegaia' : 'todo'));
+  const ruta = marca.slice(modo === 'solo' ? '@@solo:'.length : (modo === 'comun' ? '@@comun:'.length : (modo === 'niegaia' ? '@@niegaia:'.length : '@@'.length)));
   if (!/^nodos\/[a-z0-9-]+\.js$/.test(ruta)) throw new Error(`${nodo}: ruta de código no válida: ${marca}`);
   if (!existsSync(join(AQUI, 'src', ruta))) throw new Error(`${nodo}: no existe src/${ruta}`);
   const propio = leer(`src/${ruta}`).trimEnd();
-  return (modo === 'solo' ? propio : (modo === 'comun' ? `${COMUN}\n\n${propio}` : `${LIB}\n\n${COMUN}\n\n${propio}`)) + '\n';
+  return (modo === 'solo' ? propio : (modo === 'comun' ? `${COMUN}\n\n${propio}` : (modo === 'niegaia' ? `${LIB}\n\n${COMUN}\n\n${NIEGA_IA_CORE}\n\n${propio}` : `${LIB}\n\n${COMUN}\n\n${propio}`))) + '\n';
 }
 
 function armar(v) {
