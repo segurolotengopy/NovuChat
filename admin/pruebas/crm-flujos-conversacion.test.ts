@@ -16,7 +16,7 @@ const cargar = (a: string): { nodes: Nodo[] } => JSON.parse(readFileSync(join(RA
 const LINEA_BASE: Array<[string, number, number]> = [
   ['agenda-minima/agenda-minima.prueba.json', 71, 5], ['agenda-minima/agenda-minima.v0.json', 71, 5],
   ['captacion-minima/captacion-minima.novuchat.json', 52, 5], ['captacion-minima/captacion-minima.prueba.json', 52, 5],
-  ['chat-novuchat/chat-novuchat.novuchat.json', 73, 5], ['chat-novuchat/chat-novuchat.prueba.json', 73, 5],
+  ['chat-novuchat/chat-novuchat.novuchat.json', 75, 5], ['chat-novuchat/chat-novuchat.prueba.json', 75, 5],
   ['rroca-antonio/rroca-antonio.json', 64, 6], ['rroca-antonio/rroca-antonio.prueba.json', 59, 6],
   ['rroca-emma/rroca-emma.json', 53, 6], ['rroca-emma/rroca-emma.prueba.json', 48, 6],
   ['rroca-evy/rroca-evy.json', 53, 6], ['rroca-evy/rroca-evy.prueba.json', 48, 6],

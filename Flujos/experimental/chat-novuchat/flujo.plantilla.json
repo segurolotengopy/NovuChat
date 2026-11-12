@@ -948,7 +948,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        10760,
+        11240,
         560
       ],
       "parameters": {
@@ -1804,6 +1804,81 @@
         300
       ],
       "notes": "Sin pedido que mandar (la replanificación no pudo armar el estado) no se llama al servidor: sale el genérico con botón."
+    },
+    {
+      "id": "crm-releer--en-planilla",
+      "name": "Releer teléfono antes de agregar",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        10760,
+        400
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config del negocio').first().json.planillaProspectosId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Config del negocio').first().json.planillaProspectosHoja }}"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Teléfono WhatsApp",
+              "lookupValue": "={{ String($json['Teléfono WhatsApp']).replace(/\\D/g, '') }}"
+            },
+            {
+              "lookupColumn": "Teléfono WhatsApp",
+              "lookupValue": "={{ '+' + String($json['Teléfono WhatsApp']).replace(/\\D/g, '') }}"
+            }
+          ]
+        },
+        "combineFilters": "OR",
+        "options": {
+          "dataLocationOnSheet": {
+            "values": {
+              "rangeDefinition": "specifyRangeA1",
+              "range": "A3:J"
+            }
+          },
+          "outputFormatting": {
+            "values": {
+              "general": "FORMATTED_VALUE",
+              "date": "FORMATTED_STRING"
+            }
+          },
+          "returnFirstMatch": true
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "",
+          "name": "@@cred:planilla"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Busca SOLO la fila de este telefono (con y sin «+») y solo de A a J: nunca las columnas del equipo (K a N)."
+    },
+    {
+      "parameters": {
+        "jsCode": "@@medio:crm-releer"
+      },
+      "id": "crm-revisar--en-planilla",
+      "name": "Revisar antes de agregar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        11000,
+        400
+      ]
     }
   ],
   "connections": {
@@ -2212,7 +2287,7 @@
       "main": [
         [
           {
-            "node": "Agregar fila",
+            "node": "Releer teléfono antes de agregar",
             "type": "main",
             "index": 0
           }
@@ -2536,6 +2611,28 @@
         [
           {
             "node": "Soltar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Releer teléfono antes de agregar": {
+      "main": [
+        [
+          {
+            "node": "Revisar antes de agregar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revisar antes de agregar": {
+      "main": [
+        [
+          {
+            "node": "Agregar fila",
             "type": "main",
             "index": 0
           }

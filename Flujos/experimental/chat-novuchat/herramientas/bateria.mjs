@@ -855,6 +855,8 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
         const k = comp.hoja.filas.findIndex((f) => valores.includes(String(f[4] ?? '')));
         return k < 0 ? {} : Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, comp.hoja.filas[k][c] ?? ''])));
       },
+      // La relectura antes de agregar (reclamo 62): la misma consulta que «Buscar teléfono en planilla», hecha justo antes de escribir.
+      'Releer teléfono antes de agregar': (ll) => dobles['Buscar teléfono en planilla'](ll),
       'Leer IDs de la planilla': () => (comp.hoja.filas.length ? comp.hoja.filas.map((f, j) => ({ row_number: j + 2, 'ID Lead': f[0] ?? '' })) : [{}]),
       'Agregar fila': (ll) => {
         const formato = String(objeto(ll.parametros.options).cellFormat ?? '');

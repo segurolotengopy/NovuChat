@@ -770,7 +770,7 @@ debe leer el panel de `ensayo` (ver el informe de la sesión que lo construyó).
 > de prospectos de NovuChat nunca se toca. Diseño: `Flujos/experimental/chat-novuchat/DISENO.md`.
 
 **Costo y alcance.** El ensayo agrega **0 mensajes por conversación** y **0 nodos**: la salida
-`chat-novuchat.ensayo-demo-a.json` tiene los mismos 73 nodos y las mismas conexiones que
+`chat-novuchat.ensayo-demo-a.json` tiene los mismos 75 nodos y las mismas conexiones que
 `chat-novuchat.novuchat.json`; solo cambian los valores de «Config base» (marcadores del ensayo) y los
 nombres de credencial. Los JSON de producción y de prueba **no cambian** (se comprueba byte a byte con
 `node Flujos/experimental/chat-novuchat/construir.mjs --verificar`).
@@ -871,6 +871,27 @@ nombres de credencial. Los JSON de producción y de prueba **no cambian** (se co
    --restaurar`; (4) `ensayo.mjs --estado` tiene que decir `Desviada  : no`. Después, la limpieza
    obligatoria del §6 paso 6.4 (respaldos, estado, el `.local.json`) y retirar las filas de `ESTADO.md` y de
    `docs/versiones-por-cliente.md`. La hoja de prueba se vacía o se archiva; nunca se mezcla con la real.
+
+### Pasos del ensayo de la fila por conversación (reclamo 62, 12/11/2026)
+
+Se hacen DENTRO del paso 3 de arriba (con el flujo cargado y la hoja de PRUEBA **limpia**: solo la fila 3 de encabezados, sin
+filas de datos; la limpia Claude con el «sí» de Andres, nunca la hoja real). Cada uno dice qué se hace y qué hay que ver en la hoja;
+si algo no coincide, se detiene el ensayo y se restaura (paso 5). Los teléfonos A y B son dos teléfonos DISTINTOS registrados en la app del Demo A
+(B solo hace falta para el paso C); en ninguno se anota el número en el chat ni en un archivo.
+
+| Paso | Qué hace quien prueba | Qué tiene que verse en la hoja de prueba |
+|---|---|---|
+| **A. Primer mensaje** | Desde A: «hola» (el chat responde con la lista de rubros) | **1 fila** nueva (ID `LEAD-1001`, «Fecha Registro» con hora), origen «Chatbot WhatsApp IA», nombre del PERFIL de A, sin rubro |
+| **A2. Segundo mensaje, misma conversación** | Desde A, dentro de la hora: elegir un rubro en la lista y luego dar «mi nombre y mi negocio» (por ejemplo «Ana, Panadería Luna») | **Sigue 1 fila**: la misma, con el rubro, el nombre **que dio A** (no el del perfil), la empresa, y la calificación y el resumen actualizados. El chat NO responde solo «Quedó anotado»: trae la lista de rubros o «Ver planes» |
+| **A3. Un tercer mensaje con la ficha perdida** | (opcional, lo hace Claude con el «sí» de Andres) resetear la ficha de A con `scripts/resetear-fichas-chat-novuchat.py` y escribir «hola» | **Sigue 1 fila** y el nombre sigue siendo el que dio A (el perfil no lo pisa) |
+| **B. Teléfono con una fila vieja** | Claude agrega **a mano, con el «sí» de Andres**, una fila de ayuda en la hoja de prueba con el teléfono de B y «Fecha Registro» de hace 3 días; luego, desde B: «hola» | **2 filas** para el teléfono de B: la vieja **intacta** (misma fecha, mismo nombre y resumen) y una **NUEVA** con la fecha y hora de hoy. Un segundo mensaje de B actualiza la NUEVA, nunca la vieja |
+| **C. Ráfaga** | Desde A (o B), tres toques o mensajes seguidos en menos de 3 segundos | **1 sola fila** por conversación (no 2 ni 3) y **un solo** mensaje de respuesta |
+| **D. «listado»** | Desde A, a mitad de la conversación: «me das tu listado?» | El chat muestra la lista de rubros (opciones tocables), no «ese dato no lo tengo» |
+
+Costo del ensayo: **0 mensajes de plantilla** (todo ocurre dentro de la ventana de 24 h de cada teléfono); +1 lectura de Google Sheets por
+conversación nueva (la relectura antes de agregar) y las lecturas/escrituras de siempre. Limitación honesta: **no se puede forzar** una carrera
+real entre dos ejecuciones con un solo teléfono; el paso C la acerca (ráfaga) pero la ventana entre la relectura y el «Agregar fila» (cientos de
+milisegundos) solo se prueba en la suite con una hoja simulada (`chat-novuchat-flujo.test.ts`, «NIEGA la carrera de lectura→escritura»).
 
 ### Lo que este ensayo NO prueba ni garantiza
 

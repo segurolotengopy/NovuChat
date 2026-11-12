@@ -126,7 +126,7 @@ interface W {
   modelo: { con: Modelo; llamadas: Llamada[]; reintentos: Llamada[] };
   medio: { transcripcion: string | null; categoria: string | null; texto: string; bytes: number };
   graph: { falla: (payload: J, nodo: string) => boolean };
-  hoja: { filas: string[][]; formulas: string[]; llamadas: { nodo: string; rango: string; formato: string }[]; falla: boolean };
+  hoja: { filas: string[][]; formulas: string[]; llamadas: { nodo: string; rango: string; formato: string }[]; falla: boolean; antesDeReleer?: () => void };
   config: J[];
   malFormado: string[];
   turnos: T[];
@@ -238,6 +238,15 @@ function crear(op: OpcionesDelMundo = {}): W {
       if (w.hoja.falla) return errorDeGoogle();
       const valores = (((ll.parametros['filtersUI'] ?? {})['values'] ?? []) as J[]).map((v) => String(v['lookupValue'] ?? ''));
       // (como Google: TODAS las filas con ese teléfono, no solo la primera)
+      const hallazgos = w.hoja.filas.map((f, k) => ({ f, k })).filter(({ f }) => valores.includes(String(f[4] ?? '')));
+      return hallazgos.length === 0 ? {} : hallazgos.map(({ f, k }) => Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, f[c] ?? ''])))) as unknown as J;
+    },
+    // La relectura justo antes de agregar (reclamo 62): igual que «Buscar teléfono», y con un gancho para simular que OTRA ejecución agregó su fila entre la primera lectura y esta.
+    'Releer teléfono antes de agregar': (ll) => {
+      registrarHoja(ll);
+      if (w.hoja.antesDeReleer) { const otra = w.hoja.antesDeReleer; w.hoja.antesDeReleer = undefined; otra(); }
+      if (w.hoja.falla) return errorDeGoogle();
+      const valores = (((ll.parametros['filtersUI'] ?? {})['values'] ?? []) as J[]).map((v) => String(v['lookupValue'] ?? ''));
       const hallazgos = w.hoja.filas.map((f, k) => ({ f, k })).filter(({ f }) => valores.includes(String(f[4] ?? '')));
       return hallazgos.length === 0 ? {} : hallazgos.map(({ f, k }) => Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, f[c] ?? ''])))) as unknown as J;
     },
@@ -1759,9 +1768,9 @@ describe('la variante de prueba: «Entrada de prueba», todo al teléfono de pru
 
 describe('la topología y las guardias del JSON versionado', () => {
   const nombres = (f: Flujo): string[] => f.nodes.map((n) => n.name);
-  it('tiene 73 nodos por variante (53 de antes más los 20 del estado de la conversación en el servidor: 10 del registro de eventos, 7 del compromiso del turno y 3 de la compensación): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
-    expect(PRODUCCION.nodes).toHaveLength(73);
-    expect(PRUEBA.nodes).toHaveLength(73);
+  it('tiene 75 nodos por variante (53 de antes, los 20 del estado de la conversación en el servidor: 10 del registro de eventos, 7 del compromiso del turno y 3 de la compensación): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
+    expect(PRODUCCION.nodes).toHaveLength(75);
+    expect(PRUEBA.nodes).toHaveLength(75);
     expect(nombres(PRODUCCION)).not.toContain('Entrada de prueba');
     expect(nombres(PRUEBA)).not.toContain('WhatsApp Trigger');
     expect(nombres(PRODUCCION).filter((x) => !nombres(PRUEBA).includes(x))).toEqual(['WhatsApp Trigger']);
@@ -1845,7 +1854,7 @@ describe('la topología y las guardias del JSON versionado', () => {
     };
     visitar('WhatsApp Trigger', []);
     // los 53 de antes (44 + los 9 de la rama común del guardado de medios) y los 20 del estado de la conversación.
-    expect(alcanzables.size).toBe(73);
+    expect(alcanzables.size).toBe(75);
   });
   it('«Llamar al modelo» y «Reintentar el modelo» apuntan a generateContent con el modelo de los datos (gemini-3.5-flash-lite) por expresión', () => {
     for (const nombre of ['Llamar al modelo', 'Reintentar el modelo']) {
@@ -3847,6 +3856,47 @@ describe('reclamo 62: la fila del miniCRM es por conversación de 24 h (no 48), 
     const entradas = ['rubro:salud', 'rubro:gastronomia', 'rubro:retail'].map((id) => valorMeta(mLista(id, id), MAMA));
     const r = rafaga(entradas, MAMA, (w) => { w.modelo.con = 'ERROR'; w.ingesta = anc(AHORA, true); });
     expect(r.ws[0]!.hoja.filas.filter((f) => digitos(f[4]) === tel)).toHaveLength(1);
+  });
+
+  it('NIEGA la carrera de lectura→escritura: otra ejecución agrega la fila de ESTA conversación entre la primera lectura y el «Agregar fila» → la relectura lo ve y NO se agrega una segunda; si la otra fila es de OTRA conversación, sí se agrega', () => {
+    const tel = digitos(MAMA);
+    const rival = (w: W, fecha: string): void => {
+      w.hoja.antesDeReleer = () => { w.hoja.filas.push(ENC.map((_h, c) => (c === 0 ? 'LEAD-1001' : c === 1 ? fecha : c === 4 ? tel : ''))); };
+    };
+    // misma conversación (fecha con hora = el ancla): no se duplica
+    const w = crear();
+    const desde = w.mundo.ahora();
+    w.ingesta = anc(desde, true);
+    rival(w, new Date(desde - 4 * HORA).toISOString().slice(0, 16).replace('T', ' '));
+    jugar(w, MAMA, { perfil: 'Ana Pérez' }).texto('Hola');
+    expect(filasDe(w, tel)).toHaveLength(1);
+    expect(w.hoja.filas[0]![0]).toBe('LEAD-1001');
+    // la fila que apareció es de una conversación VIEJA: ésta sí necesita su fila
+    const w2 = crear();
+    const d2 = w2.mundo.ahora();
+    w2.ingesta = anc(d2, true);
+    rival(w2, '2026-09-01 09:00');
+    jugar(w2, MAMA, { perfil: 'Ana Pérez' }).texto('Hola');
+    expect(filasDe(w2, tel)).toHaveLength(2);
+  });
+
+  it('la relectura se hace SOLO al agregar (una vez por conversación nueva): actualizar o no escribir no la dispara; y si Google falla al releer, no se agrega a ciegas', () => {
+    const w = crear();
+    const desde = w.mundo.ahora();
+    w.ingesta = anc(desde, true);
+    const j = jugar(w, MAMA, { perfil: 'Ana Pérez' });
+    j.texto('Hola');
+    expect(w.hoja.llamadas.filter((l) => l.nodo === 'Releer teléfono antes de agregar')).toHaveLength(1);
+    w.ingesta = anc(desde, false);
+    w.modelo.con = 'ERROR';
+    j.lista('rubro:salud', 5);
+    expect(w.hoja.llamadas.filter((l) => l.nodo === 'Releer teléfono antes de agregar')).toHaveLength(1);
+    // Google falla justo al releer: no se agrega
+    const w3 = crear();
+    w3.ingesta = anc(w3.mundo.ahora(), true);
+    w3.hoja.antesDeReleer = () => { w3.hoja.falla = true; };
+    jugar(w3, MAMA, { perfil: 'Ana Pérez' }).texto('Hola');
+    expect(w3.hoja.filas).toHaveLength(0);
   });
 
   it('NIEGA el duplicado del 11/11 (dos «primera vez» seguidas): dos turnos de la MISMA conversación con el mismo ancla no crean dos filas, ni con la ficha reseteada entre uno y otro', () => {

@@ -53,6 +53,8 @@ export const CONFIG_BASE = {
     tipeo: ['../../src/core/texto/tipeo.js'],
     // El estado de la conversación en el servidor es un MÓDULO COMÚN (PR-4a0): se INCLUYE, no se copia. Sus parámetros (`SS_CONFIG`) los declara `src/nodos/_registro.js`.
     sesion: ['../comun-sin-agente/src/sesion.js'],
+    // Reclamo 62: la relectura antes de agregar una fila (crm.js + su nodo). Solo el chat la usa por ahora; el resto de los flujos no cambia.
+    'crm-releer': ['../../src/modulos/crm/crm.js', '../../src/modulos/crm/nodo-releer-antes-de-agregar.js'],
     ...Object.fromEntries(Object.entries(rutasPaquetesCrm(join(AQUI, '..', '..', 'src', 'modulos', 'captacion', 'crm-captacion.js'))).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
   },
 };
