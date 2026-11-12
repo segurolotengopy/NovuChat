@@ -244,7 +244,10 @@ if (codigo === 409) {
     aceptaDelivery: venta.aceptaDelivery !== false,
     aceptaRetiroEnLocal: venta.aceptaRetiroEnLocal !== false,
     cobro: cobro,
-  });
+  }, (cuerpo.respuestaLibre && typeof cuerpo.respuestaLibre === 'object' && !Array.isArray(cuerpo.respuestaLibre))
+    // RESPUESTA COHERENTE (core): el dato del tenant `respuestaLibre` viaja CRUDO y solo en esta rama; `Decidir turno` y `Plan del turno` lo sanean con `rcConfig`
+    // (apagado salvo `activo === true`). Sin la clave, la salida de este nodo es idéntica a la de siempre.
+    ? { respuestaLibre: cuerpo.respuestaLibre } : {});
 }
 
 // --- NUMERO DE RECEPCION: el del panel; si falta, el respaldo de «Config base» ---

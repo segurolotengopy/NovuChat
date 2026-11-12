@@ -67,6 +67,8 @@
 //  g. Tipos de mensaje que no son texto, botón, audio, imagen, documento ni ubicación
 //     (sticker, contactos, pedido de catálogo…) → `medio_no_leido`.
 const cfg = vmCfg();
+// RESPUESTA COHERENTE (core, `rc*`): el dato `respuestaLibre` del tenant, saneado; apagado salvo `activo === true`. Va ARRIBA porque `extraerPedido()` se llama antes de la última regla.
+const rl = rcConfig(cfg.respuestaLibre);
 const t = vmPrimero('Interpretar entrada') || {};
 const ahora = Number(t.ahoraMs) || Date.now();
 const ses = vmSes(t.from, ahora);
@@ -381,6 +383,24 @@ if (paso === 'pedido_confirmar' && pedidosOn && pideCambiarElPedido(palabras)) r
 const RESPUESTA_FORMA = /^((la|las|en|por|una|un|el) )?(orden|ordenes|suelt[oa]s?|unidad|unidades)( completa)?$/;
 if (paso === 'pedido' && Array.isArray(previo.pendiente) && previo.pendiente.length && (RESPUESTA_FORMA.test(norm) || soloAfirma)) return salir('boton', { motivo: 'forma_pendiente' });
 
+// --- 6b. RESPUESTA COHERENTE (core): un acuse y un seguimiento se contestan con código, sin menú y sin modelo -----------------------------------
+// Solo con el dato `respuestaLibre.activo` del tenant, nunca con un QR esperando comprobante, y solo donde hoy el mensaje caía en el menú o en la carta: en `inicio`,
+// `menu`, o en `pedido` con el carrito y lo pendiente vacíos. «Gracias», «ok» o 👍 → `acuse` (una frase fija, sin cambiar de paso ni avisar). «¿Ya salió mi pedido?» →
+// `seguimiento` (el pedido real, sin su estado de despacho, con el botón «Escribir al local»; sin aviso al local).
+if (rl.activo && !enComprobante) {
+  const sinPedidoEnCurso = paso === 'inicio' || paso === 'menu'
+    || (paso === 'pedido' && !(Array.isArray(previo.carrito) && previo.carrito.length) && !(Array.isArray(previo.pendiente) && previo.pendiente.length));
+  if (sinPedidoEnCurso) {
+    if (rcEsAcuse(texto)) return salir('acuse', { motivo: 'acuse' });
+    let hayPasado = false;
+    for (const k of Object.keys(ses.pedidos)) {
+      const p = ses.pedidos[k];
+      if (p && typeof p === 'object' && String(p.from) === String(t.from) && p.resultado) { hayPasado = true; break; }
+    }
+    if (rcEsSeguimiento(texto, hayPasado)) return salir('seguimiento', { motivo: 'seguimiento' });
+  }
+}
+
 // --- 7. En inicio o menú: consulta fija (dirección, horario, delivery, promociones, carta) ----
 if (paso === 'inicio' || paso === 'menu') {
   const consulta = consultaFija();
@@ -394,6 +414,18 @@ if (paso.indexOf('reserva') === 0) return extraerReserva();
 if (paso.indexOf('pedido') === 0) return extraerPedido();
 // inicio o menu, sin consulta fija: la intención de pedido o de reserva, o el menú.
 if (pedidosOn && quierePedir) return extraerPedido();
+// RESPUESTA COHERENTE: lo que no es un saludo ni una intención conocida y antes caía en el menú lo contesta el modelo DENTRO de los límites fijos de `rc*`
+// (`Plan del turno` verifica lo redactado). Mismo número de mensajes que el menú: uno.
+if (rl.activo && norm && !/^(hola|buenas|buenos|buen)\b/.test(norm)) {
+  const carta = cartaDelNegocio();
+  const ctx = {
+    negocio: vmLinea(cfg.nombreNegocio, 60), asistente: vmLinea(cfg.nombreAsistente, 40), fechaHora: vmFechaLocal(ahora) + ' ' + vmHoraLocal(ahora),
+    carta: carta.map((i) => i.nombre), horario: vmLinea(cfg.horarioAtencion, 200), direccion: vmLinea(cfg.direccion, 200),
+    modalidades: [cfg.aceptaDelivery !== false ? 'delivery' : '', cfg.aceptaRetiroEnLocal !== false ? 'recojo en el local' : ''].filter(Boolean),
+    reglas: rl.reglas, tono: rl.tono, texto: texto,
+  };
+  return salir('extraer_libre', { cuerpoExtraccion: rcCuerpoLibre(ctx), motivo: 'respuesta_libre' });
+}
 return salir('menu');
 
 // ---------------------------------------------------------------------------------------------
@@ -635,7 +667,7 @@ function extraerPedido() {
   const carta = cartaDelNegocio();
   // Sin carta cargada no hay pedido que tomar: lo único que se ofrece es pasar con el local.
   if (!carta.length) return salir('transferir', { motivo: 'carta sin cargar' });
-  return salir('extraer_pedido', { cuerpoExtraccion: pdCuerpoExtraccion(texto, carta, { ahoraMs: ahora }) });
+  return salir('extraer_pedido', { cuerpoExtraccion: pdCuerpoExtraccion(texto, carta, { ahoraMs: ahora, respuestaLibre: rl.activo }) });
 }
 
 function extraerReserva() {

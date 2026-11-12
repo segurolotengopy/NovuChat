@@ -114,6 +114,8 @@
 // anotación de la reserva la resuelve T7b según los `wamid` del aviso.
 const d = vmPrimero('Decidir turno') || {};
 const cfg = vmCfg();
+// RESPUESTA COHERENTE (core, `rc*`): el dato `respuestaLibre` del tenant, saneado; apagado salvo `activo === true`.
+const rl = rcConfig(cfg.respuestaLibre);
 const t = vmPrimero('Interpretar entrada') || {};
 const ahora = Number(t.ahoraMs) || Date.now();
 // El ancla de las claves estables (B0): el `ultimoMensajeMs` del estado LEIDO que fija `Decidir turno`. Sin ancla (un
@@ -178,6 +180,9 @@ function despachar() {
   if (a === 'recordatorio_comprobante') return aRecordatorio();
   if (a === 'reenviar_qr') return aReenviarQr();
   if (a === 'comprobante') return aComprobante();
+  if (a === 'acuse') return aAcuse();
+  if (a === 'seguimiento') return aSeguimiento();
+  if (a === 'extraer_libre') return aExtraerLibre();
   if (a === 'extraer_pedido') return aExtraerPedido();
   if (a === 'extraer_reserva') return aExtraerReserva();
   if (a === 'boton') return aBoton(b);
@@ -1105,6 +1110,74 @@ function resolverForma(i, forma) {
   mostrarPedido();
 }
 
+// --- RESPUESTA COHERENTE (core, `rc*`) -----------------------------------------------------------------------------------------------------------
+// Tres casos que antes caían en el menú o en la carta. NINGUNO agrega un mensaje (siempre sale uno, como antes), ninguno avisa al local (excepción decidida por
+// Andres el 08/11/2026 a la política del 21/09: el seguimiento y el rechazo solo ofrecen el botón «Escribir al local», que al tocarse deriva con aviso como siempre),
+// y ninguna `ruta` empieza con `pedido:` (el miniCRM la contaría como un pedido).
+function botonLocal() { return { id: vmIdDeBoton('m', 'persona'), title: 'Escribir al local' }; }
+
+// «Gracias», «ok», 👍: una frase fija, sin menú, sin cambiar de paso.
+function aAcuse() {
+  ruta = 'acuse';
+  mensajes = [texto(rl.acuse || 'Con gusto.')];
+}
+
+// «¿Ya salió mi pedido?»: lo que el código SABE (código, líneas, total del último pedido ya pasado al local), nunca su estado de despacho.
+function aSeguimiento() {
+  const p = pedidoYaPasado();
+  ruta = p ? 'seguimiento:con_pedido' : 'seguimiento:sin_pedido';
+  if (en.paso === 'inicio') en.paso = 'menu';
+  mensajes = [{ tipo: 'botones', cuerpo: rcTextoSeguimiento(p, { moneda: monedaTxt, cierre: rl.textoSeguimiento, codigo: p ? cbCodigo(p.codigo) : '' }), botones: [botonLocal()] }];
+}
+
+// ¿La respuesta del modelo puede salir? Los límites fijos de `rc*` (monto, enlace, promesa, despacho, pago acreditado, negar ser IA, prohibidos del tenant)
+// más la red de palabras prohibidas del flujo. Devuelve el motivo del rechazo, o '' si pasa.
+function motivoDeRespuestaLibre(r) {
+  if (!r) return 'modelo';
+  return rcMotivoDeRechazoLibre(r.respuesta, rl, d.texto) || (VM_PROHIBIDAS.test(vmCanon(r.respuesta)) || VM_PROHIBIDAS.test(vmNorm(r.respuesta)) ? 'prohibidas_vm' : '');
+}
+
+// Fuera de protocolo en inicio o menú: la respuesta del modelo, verificada. Si falla (modelo caído, JSON inválido, filtro), un texto fijo con el botón.
+function aExtraerLibre() {
+  const r = rcLeerRespuesta(vmJsonDeGemini(vmPrimero('Extraer')));
+  const motivo = motivoDeRespuestaLibre(r);
+  const primera = en.paso === 'inicio';
+  if (en.paso === 'inicio') en.paso = 'menu';
+  if (motivo) {
+    errores.push('respuesta_libre_rechazada:' + motivo);
+    ruta = 'libre:rechazada';
+    mensajes = [{ tipo: 'botones', cuerpo: rcTextoRechazo(rl), botones: [botonLocal()] }];
+    return;
+  }
+  ruta = 'libre:ok';
+  const asistente = vmLinea(cfg.nombreAsistente, 40);
+  const cuerpo = (primera ? 'Soy ' + (asistente ? asistente + ', el asistente virtual' : 'el asistente virtual') + ' de ' + negocio() + '. ' : '') + r.respuesta;
+  mensajes = [r.reencauzar ? conMenu(cuerpo) : { tipo: 'botones', cuerpo: cuerpo, botones: [botonLocal()] }];
+}
+
+// Ruta B: dentro de la extracción de un pedido, el mismo modelo pudo devolver una `respuesta` (solo con `respuestaLibre.activo`). Se usa en vez de repetir la carta
+// o de «no te entendí» SOLO si pasa el mismo filtro; si no, null y todo sigue como hoy.
+function respuestaDeRutaB() {
+  if (!rl.activo || d.accion !== 'extraer_pedido') return null;
+  const r = rcLeerRespuesta(vmJsonDeGemini(vmPrimero('Extraer')));
+  const motivo = motivoDeRespuestaLibre(r);
+  if (motivo) { if (r) errores.push('respuesta_libre_rechazada:' + motivo); return null; }
+  return r;
+}
+// La respuesta de la ruta B como mensaje: con un pedido en curso va DELANTE de lo que sigue (la pregunta o el resumen del paso, en el mismo mensaje); sin pedido,
+// con el menú o con el botón «Escribir al local» según `reencauzar`. Nunca agrega un mensaje.
+function mensajeDeRutaB(r) {
+  ruta = 'libre:ok';
+  if (en.carrito.length || en.pendiente.length) {
+    notas.push(r.respuesta);
+    const m = siguientePasoPedido();
+    if (m) mensajes = conNotas(m);
+    return;
+  }
+  if (en.paso === 'inicio') en.paso = 'menu';
+  mensajes = [r.reencauzar ? conMenu(r.respuesta) : { tipo: 'botones', cuerpo: r.respuesta, botones: [botonLocal()] }];
+}
+
 function aExtraerPedido() {
   const j = vmJsonDeGemini(vmPrimero('Extraer'));
   if (!j) {
@@ -1145,6 +1218,8 @@ function aExtraerPedido() {
   // Con productos en el mensaje y sin una petición explícita de persona, se atiende el pedido (no se descarta lo pedido por una marca dudosa del modelo).
   if (x.quiereHablar === true && (!lineas.length || pideUnaPersonaElTexto())) return aclararOPasarConElLocal();
   if (!lineas.length && !datosEntrega) {
+    const libreB = respuestaDeRutaB();
+    if (libreB) return mensajeDeRutaB(libreB);
     // Dos extracciones seguidas sin nada que tomar: se pasa con el local, pero solo mientras falte algo que el cliente deba dar. Con el delivery YA completo (dirección dada)
     // un texto sin dato («Rexibe pedro» con la referencia ya guardada) no suma ni deriva: se vuelve a mostrar el resumen. Un texto que habla de delivery («prefiero delivery»)
     // se perdona UNA sola vez, nunca si niega o cancela («no me manden nada», «cancelen el envío»).
@@ -1205,6 +1280,8 @@ function aclararOPasarConElLocal() {
     return;
   }
   if (explicito || en.aclaro === true) return derivar('pidió hablar con una persona');
+  const libreB = en.aclaro === true ? null : respuestaDeRutaB();
+  if (libreB) return mensajeDeRutaB(libreB);
   ruta = 'boton:aclarar';
   en.aclaro = true;
   const hayPedido = en.carrito.length > 0 && en.paso.indexOf('pedido') === 0;
