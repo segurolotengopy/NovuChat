@@ -11,6 +11,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { codigoDe, ejecutar, leerFlujo, type J } from '../lib/flujo';
@@ -85,7 +86,7 @@ describe('agenda mínima: la regla de identidad es la del core, derivada y no co
   const ini = FILTRO.indexOf('  // negar ser una IA (prohibición 4');
   const marca = "  'carne y hueso',\n";
   const fin = FILTRO.indexOf(marca, ini);
-  const lista = new Function(`return [${FILTRO.slice(ini, fin + marca.length)}];`)() as string[];
+  const lista = (vm.compileFunction(`return [${FILTRO.slice(ini, fin + marca.length)}];`) as () => string[])();
   it('el bloque del core existe y tiene la forma esperada', () => {
     expect(ini).toBeGreaterThan(0);
     expect(lista.length).toBeGreaterThanOrEqual(8);

@@ -31,6 +31,7 @@
  * Node sin dependencias. No lee ningún .env ni llama a la red.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import vm from 'node:vm';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hallazgosDelGuardado, injertarGuardado } from '../comun-sin-agente/src/guardado.mjs';
@@ -81,7 +82,7 @@ function reglaDeIdentidadDelCore() {
   const finMarca = "  'carne y hueso',\n";
   const fin = ini < 0 ? -1 : fuente.indexOf(finMarca, ini);
   if (ini < 0 || fin < 0) throw new Error('filtro-redaccion.js: no encuentro el bloque «negar ser una IA» (prohibición 4); agenda mínima lo incluye de ahí');
-  const lista = new Function(`return [${fuente.slice(ini, fin + finMarca.length)}];`)();
+  const lista = vm.compileFunction(`return [${fuente.slice(ini, fin + finMarca.length)}];`)();
   if (!Array.isArray(lista) || lista.length < 8 || lista.some((x) => typeof x !== 'string')) throw new Error('filtro-redaccion.js: el bloque «negar ser una IA» ya no es una lista de expresiones');
   return `// REGLA DE IDENTIDAD (prohibición 4) derivada de Flujos/src/core/texto/filtro-redaccion.js al armar; no se edita a mano.\nconst NIEGA_IA_CORE = new RegExp(${JSON.stringify(lista.join('|'))});`;
 }
