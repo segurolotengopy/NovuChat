@@ -1138,6 +1138,7 @@ function aIdentidad() {
 // sin aviso al local. Sin dato cargado, intención inválida o modelo caído: el texto de rechazo del tenant con el botón «Escribir al local».
 function aExtraerLibre() {
   const intencion = rcLeerIntencion(vmJsonDeGemini(vmPrimero('Extraer')));
+  const pasoInicial = en.paso;
   if (en.paso === 'inicio') en.paso = 'menu';
   const rechazo = (motivo) => {
     if (motivo) errores.push('respuesta_libre_rechazada:' + motivo);
@@ -1174,9 +1175,10 @@ function aExtraerLibre() {
     return;
   }
   if (intencion === 'identidad') { aIdentidad(); ruta = 'libre:identidad'; return; }
-  if (intencion === 'acuse') { ruta = 'libre:acuse'; mensajes = [texto(rl.acuse || 'Con gusto.')]; return; }
-  // El humor NUNCA se usa con señales de crisis o de baja (aunque el modelo lo clasifique así): texto de rechazo con botón, sin aviso.
-  if (intencion === 'humor' && rcSenalDeCrisisOBaja(d.texto)) return rechazo('humor_con_senal');
+  // El acuse por modelo se comporta como el acuse por código: no cambia el paso.
+  if (intencion === 'acuse') { en.paso = pasoInicial; ruta = 'libre:acuse'; mensajes = [texto(rl.acuse || 'Con gusto.')]; return; }
+  // Crisis o baja (la clasifique el modelo así, o la clasifique como humor con señales en el texto): SIEMPRE el menú, como en `main`; nunca texto de humor.
+  if (intencion === 'crisis_o_baja' || (intencion === 'humor' && rcSenalDeCrisisOBaja(d.texto))) { en.paso = pasoInicial; return aMenu(); }
   if (intencion === 'humor') {
     ruta = 'libre:humor';
     mensajes = [conMenu(rl.textoHumor || '¡Jaja! Mejor te cuento qué te puedo ofrecer.')];

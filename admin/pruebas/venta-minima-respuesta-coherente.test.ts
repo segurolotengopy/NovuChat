@@ -448,7 +448,7 @@ describe('C. fuera de protocolo en inicio o menú (25): el modelo solo clasifica
     // La llamada pide SOLO un enum cerrado, con muy pocos tokens, y el mensaje va como dato.
     const cuerpo = s.d['cuerpoExtraccion'] as J;
     expect(Object.keys(cuerpo.generationConfig.responseSchema.properties)).toEqual(['intencion']);
-    expect(cuerpo.generationConfig.responseSchema.properties.intencion.enum).toEqual(['horario', 'direccion', 'carta', 'modalidades', 'humor', 'queja', 'identidad', 'acuse', 'otro']);
+    expect(cuerpo.generationConfig.responseSchema.properties.intencion.enum).toEqual(['horario', 'direccion', 'carta', 'modalidades', 'humor', 'queja', 'identidad', 'acuse', 'crisis_o_baja', 'otro']);
     expect(cuerpo.generationConfig.responseSchema.required).toEqual(['intencion']);
     // Tope holgado (el mismo de la extracción de pedidos, 400): si el modelo razona antes de contestar, un tope de 20 se agotaría y todo turno libre caería en el rechazo.
     expect(cuerpo.generationConfig.maxOutputTokens).toBeGreaterThanOrEqual(64);
@@ -615,7 +615,7 @@ describe('E. dentro de un pedido en curso la función NO actúa: la salida es id
       return JSON.stringify({ accion: s.d['accion'], mensajes: s.mensajes.map((x) => x['payload']), ruta: s.p['ruta'], estado: estadoDe(m), aviso: s.p['aviso'], errores: s.p['errores'] });
     });
   };
-  const TEXTOS = ['👍', 'genial', 'excelente', 'muchas gracias', 'ok', 'dale', 'listo', 'gracias', '¿ya salió mi pedido?', '¿cuánto demora?', 'jajaja qué chistoso'];
+  const TEXTOS = ['👍', 'genial', 'excelente', 'muchas gracias', 'ok', 'dale', 'listo', 'gracias', '¿ya salió mi pedido?', '¿cuánto demora?', 'jajaja qué chistoso', 'quién eres', '¿con quién hablo?', 'hay alguien', 'who are you', 'wer bist du', 'eres un bot?'];
   const PASOS: [string, Preparar][] = [
     ['pedido con el carrito lleno (resumen)', (m) => { hastaResumen(m, 'recojo'); }],
     ['pedido_datos (delivery a medias: dirección escrita, falta la ubicación)', (m) => { hastaResumen(m, 'delivery', CLIENTE, false); expect(String(estadoDe(m)['paso'])).toMatch(/^pedido/); expect(estadoDe(m)['entrega']).toMatchObject({ entrega: 'delivery' }); }],
@@ -702,28 +702,53 @@ describe('N. carta sin cargar, `carritoAnterior` y menú con carrito: la funció
 
 // =================================================================================================
 describe('N2. defensa en profundidad del plan', () => {
-  it('aunque `Decidir turno` dejara pasar una crisis o una baja, la intención `humor` NUNCA recibe `textoHumor`: rechazo con botón y sin aviso', () => {
-    for (const texto of ['quiero morir', 'no me escribas más', 'dame de baja']) {
+  it('aunque `Decidir turno` dejara pasar una crisis o una baja, `humor` y `crisis_o_baja` NUNCA reciben `textoHumor`: sale el menú, como en main, sin aviso', () => {
+    for (const texto of ['quiero morirme', 'no me escribas más', 'dame de baja', 'paren de escribirme']) {
+      const apagada = mundoCon({ ...RL, activo: false });
+      turno(apagada, { texto: 'hola' });
+      const base = turno(apagada, { texto, extraccion: { lineas: [] } });
+      for (const intencion of ['humor', 'crisis_o_baja']) {
+        const m = mundoCon();
+        turno(m, { texto: 'hola' });
+        const s = turno(m, { texto, decision: (d) => ({ ...d, accion: 'extraer_libre' }), extraccion: modelo(intencion) });
+        expect(s.d['accion']).toBe('extraer_libre');
+        expect(cuerpos(s)).toEqual(cuerpos(base));
+        expect(cuerpos(s).join(' ')).not.toContain(String(RL['textoHumor']));
+        sinAviso(s);
+      }
+    }
+  });
+  it('el acuse por modelo no cambia el paso, igual que el acuse por código', () => {
+    const porCodigo = mundoCon(); turno(porCodigo, { texto: 'gracias' });
+    const porModelo = mundoCon(); turno(porModelo, { texto: 'gracias amigo', extraccion: modelo('acuse') });
+    expect(estadoDe(porModelo)['paso']).toBe(estadoDe(porCodigo)['paso']);
+  });
+  it('carta sin texto (el armado de la carta no devuelve nada y no hay enlace): la ruta `transferir:*` y su aviso NO se pisan (orden ruta-antes-de-aCarta)', () => {
+    const original = CODIGO['plan-del-turno']!;
+    const roto = original.replace('pdTextoDeLaCarta(carta, {', '(() => [])(carta, {');
+    expect(roto).not.toBe(original);
+    CODIGO['plan-del-turno'] = roto;
+    try {
       const m = mundoCon();
       turno(m, { texto: 'hola' });
-      const s = turno(m, { texto, decision: (d) => ({ ...d, accion: 'extraer_libre' }), extraccion: modelo('humor') });
-      expect(s.d['accion']).toBe('extraer_libre');
-      expect(cuerpos(s)).toEqual([RL['textoRechazo']]);
-      expect(s.p['ruta']).toBe('libre:rechazada');
-      conBotonLocal(s);
-      sinAviso(s);
+      const s = turno(m, { texto: 'qué se puede comer ahí', extraccion: modelo('carta') });
+      expect(s.p['ruta']).toMatch(/^transferir:/);
+      expect(s.p['aviso']).toMatchObject({ tipo: 'transferencia' });
+    } finally {
+      CODIGO['plan-del-turno'] = original;
     }
   });
 });
 
 describe('M. textos delicados con la función encendida: no se presentan como atendidos ni cancelados por error', () => {
   const TEXTOS = ['no me escribas más', 'quiero morir', 'gracias, cancela todo', 'ok gracias, eso es todo', 'quiero matarme', 'dejen de escribirme', 'dame de baja', 'stop'];
-  const SENAL = ['no me escribas más', 'quiero morir', 'quiero matarme', 'dejen de escribirme', 'dame de baja', 'stop'];
+  const SENAL = ['no me escribas más', 'quiero morir', 'quiero matarme', 'dejen de escribirme', 'dame de baja', 'stop', 'quiero morirme', 'Quiero morirme jaja', 'voy a matarme', 'me mato', 'no quiero seguir viviendo', 'no quiero estar aquí', 'quiero desaparecer',
+    'no me manden más mensajes', 'paren de escribirme', 'dejen de enviarme mensajes', 'no escriban más', 'quítenme de la lista', 'bórrame', 'cancelar suscripción', 'borrar mis datos'];
   it.each(SENAL)('crisis o baja «%s»: NUNCA llama al modelo ni recibe `textoHumor` ni `textoQueja`; el turno queda como siempre (el menú)', (texto) => {
     const apagada = mundoCon({ ...RL, activo: false });
     turno(apagada, { texto: 'hola' });
     const base = turno(apagada, { texto, extraccion: { lineas: [] } });
-    for (const intencion of ['humor', 'queja', 'otro', 'acuse']) {
+    for (const intencion of ['humor', 'queja', 'otro', 'acuse', 'crisis_o_baja']) {
       const m = mundoCon();
       turno(m, { texto: 'hola' });
       const s = turno(m, { texto, extraccion: modelo(intencion) });
