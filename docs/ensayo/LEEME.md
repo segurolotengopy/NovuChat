@@ -770,7 +770,7 @@ debe leer el panel de `ensayo` (ver el informe de la sesión que lo construyó).
 > de prospectos de NovuChat nunca se toca. Diseño: `Flujos/experimental/chat-novuchat/DISENO.md`.
 
 **Costo y alcance.** El ensayo agrega **0 mensajes por conversación** y **0 nodos**: la salida
-`chat-novuchat.ensayo-demo-a.json` tiene los mismos 75 nodos y las mismas conexiones que
+`chat-novuchat.ensayo-demo-a.json` tiene los mismos 76 nodos y las mismas conexiones que
 `chat-novuchat.novuchat.json`; solo cambian los valores de «Config base» (marcadores del ensayo) y los
 nombres de credencial. Los JSON de producción y de prueba **no cambian** (se comprueba byte a byte con
 `node Flujos/experimental/chat-novuchat/construir.mjs --verificar`).

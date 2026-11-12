@@ -948,7 +948,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        11240,
+        11480,
         560
       ],
       "parameters": {
@@ -1879,6 +1879,39 @@
         11000,
         400
       ]
+    },
+    {
+      "id": "crm-sigue-agregar-fila",
+      "name": "¿Sigue siendo agregar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        11240,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.accionPlanilla }}",
+              "rightValue": "agregar",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
     }
   ],
   "connections": {
@@ -2632,7 +2665,25 @@
       "main": [
         [
           {
+            "node": "¿Sigue siendo agregar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Sigue siendo agregar?": {
+      "main": [
+        [
+          {
             "node": "Agregar fila",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Actualizar fila?",
             "type": "main",
             "index": 0
           }

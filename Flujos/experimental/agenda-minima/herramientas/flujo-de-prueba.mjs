@@ -253,7 +253,7 @@ async function idDeCredencialDeHojaDeEnsayo() {
   return m[0].id;
 }
 const ID_PLANILLA_VALIDO = (v) => typeof v === 'string' && !v.startsWith('REEMPLAZAR_') && /^[A-Za-z0-9_-]{25,100}$/.test(v);
-const NODOS_CRM_DE_BELLIDO = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Releer teléfono antes de agregar', 'Revisar antes de agregar', 'Agregar fila', 'Actualizar fila'];
+const NODOS_CRM_DE_BELLIDO = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Releer teléfono antes de agregar', 'Revisar antes de agregar', '¿Sigue siendo agregar?', 'Agregar fila', 'Actualizar fila'];
 // EL ENSAYO DEL CHAT DE NOVUCHAT EN EL DEMO A (`--conservar-crm`, SOLO con `--sobre-demo-a`): a diferencia del resto de los ensayos, el miniCRM QUEDA conectado, pero escribe en una HOJA DE PRUEBA.
 // Sin la bandera nada de esto corre y el comportamiento de siempre (quitar la rama del CRM y vaciar la planilla) no cambia. Con ella:
 //   - los nodos de Google Sheets se quedan, y su ÚNICA credencial posible es esta (por nombre exacto, tipo googleApi y exactamente UNA en n8n; el Demo A vivo no la usa todavía, así que no se exige que ya la use);

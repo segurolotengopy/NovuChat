@@ -1768,9 +1768,9 @@ describe('la variante de prueba: «Entrada de prueba», todo al teléfono de pru
 
 describe('la topología y las guardias del JSON versionado', () => {
   const nombres = (f: Flujo): string[] => f.nodes.map((n) => n.name);
-  it('tiene 75 nodos por variante (53 de antes, los 20 del estado de la conversación en el servidor: 10 del registro de eventos, 7 del compromiso del turno y 3 de la compensación): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
-    expect(PRODUCCION.nodes).toHaveLength(75);
-    expect(PRUEBA.nodes).toHaveLength(75);
+  it('tiene 76 nodos por variante (53 de antes, los 20 del estado de la conversación en el servidor: 10 del registro de eventos, 7 del compromiso del turno y 3 de la compensación): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
+    expect(PRODUCCION.nodes).toHaveLength(76);
+    expect(PRUEBA.nodes).toHaveLength(76);
     expect(nombres(PRODUCCION)).not.toContain('Entrada de prueba');
     expect(nombres(PRUEBA)).not.toContain('WhatsApp Trigger');
     expect(nombres(PRODUCCION).filter((x) => !nombres(PRUEBA).includes(x))).toEqual(['WhatsApp Trigger']);
@@ -1854,7 +1854,7 @@ describe('la topología y las guardias del JSON versionado', () => {
     };
     visitar('WhatsApp Trigger', []);
     // los 53 de antes (44 + los 9 de la rama común del guardado de medios) y los 20 del estado de la conversación.
-    expect(alcanzables.size).toBe(75);
+    expect(alcanzables.size).toBe(76);
   });
   it('«Llamar al modelo» y «Reintentar el modelo» apuntan a generateContent con el modelo de los datos (gemini-3.5-flash-lite) por expresión', () => {
     for (const nombre of ['Llamar al modelo', 'Reintentar el modelo']) {
@@ -3871,6 +3871,8 @@ describe('reclamo 62: la fila del miniCRM es por conversación de 24 h (no 48), 
     jugar(w, MAMA, { perfil: 'Ana Pérez' }).texto('Hola');
     expect(filasDe(w, tel)).toHaveLength(1);
     expect(w.hoja.filas[0]![0]).toBe('LEAD-1001');
+    // NO SE PIERDE EL DATO DE ESTE TURNO: la ejecución que perdió la carrera ACTUALIZA la fila de la otra con su nombre (la rival la había dejado vacía)
+    expect(w.hoja.filas[0]![2]).toBe('Ana Pérez');
     // la fila que apareció es de una conversación VIEJA: ésta sí necesita su fila
     const w2 = crear();
     const d2 = w2.mundo.ahora();
@@ -3878,6 +3880,30 @@ describe('reclamo 62: la fila del miniCRM es por conversación de 24 h (no 48), 
     rival(w2, '2026-09-01 09:00');
     jugar(w2, MAMA, { perfil: 'Ana Pérez' }).texto('Hola');
     expect(filasDe(w2, tel)).toHaveLength(2);
+  });
+
+  it('la relectura también cubre: la conversación SIN ancla de la ingesta (cualquier fila del teléfono cuenta), la fila rival guardada con «+» y la relectura SIN coincidencias (deja agregar con su ID)', () => {
+    const tel = digitos(MAMA);
+    // sin ancla (la ingesta no respondió): una fila que aparece entre las dos lecturas impide agregar, y este turno la actualiza
+    const w = crear();
+    w.ingesta = { atencion: { estado: 'normal', ...atencionDeConversacion({ desdeMs: null, nueva: false }) } };
+    w.hoja.antesDeReleer = () => { w.hoja.filas.push(ENC.map((_h, c) => (c === 0 ? 'LEAD-1001' : c === 1 ? '2026-11-12' : c === 4 ? tel : ''))); };
+    jugar(w, MAMA, { perfil: 'Ana Pérez' }).texto('Hola');
+    expect(filasDe(w, tel)).toHaveLength(1);
+    expect(w.hoja.filas[0]![2]).toBe('Ana Pérez');
+    // la fila rival con el teléfono guardado con «+» (el segundo filtro OR) también se ve
+    const w2 = crear();
+    const desde = w2.mundo.ahora();
+    w2.ingesta = anc(desde, true);
+    w2.hoja.antesDeReleer = () => { w2.hoja.filas.push(ENC.map((_h, c) => (c === 0 ? 'LEAD-1001' : c === 1 ? new Date(desde - 4 * HORA).toISOString().slice(0, 16).replace('T', ' ') : c === 4 ? '+' + tel : ''))); };
+    jugar(w2, MAMA, { perfil: 'Ana Pérez' }).texto('Hola');
+    expect(w2.hoja.filas).toHaveLength(1);
+    // sin coincidencias: se agrega, con el ID que decidió «Decidir fila» (LEAD-1001 en una hoja vacía)
+    const w3 = crear();
+    w3.ingesta = anc(w3.mundo.ahora(), true);
+    jugar(w3, MAMA, { perfil: 'Ana Pérez' }).texto('Hola');
+    expect(w3.hoja.filas).toHaveLength(1);
+    expect(w3.hoja.filas[0]![0]).toBe('LEAD-1001');
   });
 
   it('la relectura se hace SOLO al agregar (una vez por conversación nueva): actualizar o no escribir no la dispara; y si Google falla al releer, no se agrega a ciegas', () => {

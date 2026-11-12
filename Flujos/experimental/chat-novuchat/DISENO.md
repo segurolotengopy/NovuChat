@@ -12,7 +12,7 @@ por teléfono lo guarda y lo pasa este mismo flujo, explícito, en cada llamada.
 | `src/lib/chat.js` | Biblioteca pura (prefijo `ch`, ~1.650 líneas). Primera parte: copia adaptada de Captación mínima (detectores, extracción de nombre y empresa, filtros del modelo, aviso); el resto es nuevo |
 | `src/nodos/*.js` | Un archivo por nodo Code. Qué es común y qué propio: `PROPIO.md` |
 | `construir.mjs` | Arma los dos JSON con `../comun-sin-agente/construir.mjs`, valida los datos, inyecta `@@datos` y aplica las guardias. `--verificar` no escribe; un argumento desconocido sale con 2 sin escribir |
-| `chat-novuchat.novuchat.json` / `.prueba.json` | Producción (con «WhatsApp Trigger») y prueba (con «Entrada de prueba»), 75 nodos cada uno (53 hasta PR-4c1 y 20 del estado de la conversación en el servidor) |
+| `chat-novuchat.novuchat.json` / `.prueba.json` | Producción (con «WhatsApp Trigger») y prueba (con «Entrada de prueba»), 76 nodos cada uno (53 hasta PR-4c1 y 20 del estado de la conversación en el servidor) |
 | `admin/scripts/datos/chat-novuchat/{novuchat,ensayo}.json` | LA fuente de datos: instrucciones del documento, 7 rubros con puntos clave, cierres exactos, respaldos, textos, precios (frases) y `modelo` |
 | `herramientas/bateria.mjs`, `bateria-casos.json` | Batería contra el modelo (`--seco` o `--vertex`/`--env`), 53 casos |
 

@@ -1,27 +1,41 @@
-// REVISAR ANTES DE AGREGAR (reclamo 62, 12/11/2026): cierra la carrera que duplicó filas (dos ejecuciones casi a la vez que leyeron la hoja ANTES de que la otra agregara).
+// REVISAR ANTES DE AGREGAR (reclamo 62, 12/11/2026): MITIGA la carrera que duplicó filas (dos ejecuciones casi a la vez que leyeron la hoja ANTES de que la otra agregara).
 // «Releer teléfono antes de agregar» vuelve a leer, justo antes de escribir, las filas de ESTE teléfono; este nodo decide con esa lectura FRESCA:
-//   - si ya hay una fila de ESTA conversación (la más reciente del teléfono es de la misma conversación de 24 h; sin ancla de la ingesta, cualquier fila del teléfono), NO agrega:
-//     otra ejecución se adelantó y la siguiente actualización del turno escribirá sobre esa fila (la regla de siempre: la más reciente);
-//   - si no, deja pasar la fila a agregar tal cual la decidió «Decidir fila de la planilla».
-// La ventana que queda: entre esta lectura y el «Agregar fila» (dos llamadas a Google seguidas, de cientos de milisegundos). Google Sheets no tiene candado.
-// Si la lectura FALLA (Google caído) no se agrega a ciegas: la fila queda sin crear y el turno sigue (la cuota y el error ya los muestra «Buscar teléfono»).
-// MENSAJES: ninguno. Usa `crmMismaConversacion` y `crmFilaMasReciente` de `crm.js` (el mismo criterio que «Decidir fila de la planilla»).
+//   - si ya hay una fila de ESTA conversación (la más reciente del teléfono es de la misma conversación de 24 h; sin ancla de la ingesta, cualquier fila del teléfono) otra ejecución se adelantó:
+//     NO se agrega una segunda, y el prospecto de ESTE turno se convierte en una ACTUALIZACIÓN de esa fila (con la lógica de siempre de `crmDecidirFila`: no se pierde el nombre ni el negocio);
+//   - si no, deja pasar la fila a agregar tal cual la decidió «Decidir fila de la planilla» (con su ID);
+//   - si la lectura FALLA (Google caído) no se agrega a ciegas: sale una acción «nada» con su veredicto `no_leida`.
+// La salida va a «¿Sigue siendo agregar?»: agregar → «Agregar fila»; actualizar o nada → «¿Actualizar fila?».
+// LA VENTANA QUE QUEDA (Google Sheets no tiene candado): entre esta lectura y el «Agregar fila» (dos llamadas seguidas, cientos de milisegundos). Dos ejecuciones que lleguen a releer a la vez y vean
+// «no hay fila» todavía pueden duplicar: esto MITIGA, no cierra. Tampoco evita que dos teléfonos DISTINTOS calculen el mismo ID (lo calcula «Decidir» con la lectura de IDs previa).
+// MENSAJES: ninguno. Usa `crmMismaConversacion`, `crmFilaMasReciente`, `crmFallido` y `crmDecidirFila` de `crm.js` (el mismo criterio que «Decidir fila de la planilla»).
 const crmDecididas = $('Decidir fila de la planilla').all();
 const crmProspectos = $('Prospecto para la planilla').all();
-const crmReleidas = $input.all().map((x) => x.json).filter((f) => f && typeof f === 'object');
-const crmLecturaFallo = crmReleidas.some((f) => f.error !== undefined && f.row_number === undefined);
+const crmEntrada = $input.all();
+const crmReleidas = crmEntrada.map((x) => x.json).filter((f) => f && typeof f === 'object' && f.row_number !== undefined);
+const crmFalloLectura = crmEntrada.find(crmFallido);
 const crmSalida = [];
 crmDecididas.forEach((it, k) => {
   const j = it.json;
   if (!j || j.accionPlanilla !== 'agregar') return;
-  if (crmLecturaFallo) return; // sin lectura fresca no se agrega a ciegas
   const idx = it.pairedItem && typeof it.pairedItem.item === 'number' ? it.pairedItem.item : k;
-  const p = (crmProspectos[idx] && crmProspectos[idx].json) || {};
+  if (crmFalloLectura) { crmSalida.push({ json: { accionPlanilla: 'nada', veredictoPlanilla: 'no_leida: ' + crmPorque(crmFalloLectura.error ?? crmFalloLectura.json.error) }, pairedItem: { item: 0 } }); return; }
+  const prospecto = crmProspectos[idx];
+  const p = (prospecto && prospecto.json) || {};
   const tel = crmDigitos(j[CRM_MAPA.columnas.telefono.titulo]);
   const desdeMs = crmMsValido(p.conversacionDesdeMs);
-  const delTelefono = crmReleidas.filter((f) => f.row_number !== undefined && crmDigitos(f[CRM_MAPA.columnas.telefono.titulo]) === tel);
+  const delTelefono = crmReleidas.filter((f) => crmDigitos(f[CRM_MAPA.columnas.telefono.titulo]) === tel);
   const reciente = crmFilaMasReciente(delTelefono);
   const yaExiste = !!reciente && (desdeMs === null || crmMismaConversacion(reciente, CRM_MAPA, desdeMs));
-  if (!yaExiste) crmSalida.push({ json: j, pairedItem: { item: idx } });
+  if (!yaExiste) { crmSalida.push({ json: j, pairedItem: { item: 0 } }); return; }
+  // otra ejecución se adelantó: este turno ACTUALIZA esa fila (sin IDs que calcular: no se agrega nada)
+  const actualizacion = crmDecidirFila({
+    prospectos: [prospecto],
+    busqueda: crmEntrada.filter((x) => x.json && x.json.row_number !== undefined),
+    lecturaIds: [],
+    mapa: CRM_MAPA,
+    adaptador: typeof CRM_ADAPTADOR !== 'undefined' ? CRM_ADAPTADOR : { calificar: capCalificar, resumir: capResumir, prioridad: CAP_PRIORIDAD },
+    ahoraMs: Date.now(),
+  });
+  for (const a of actualizacion) crmSalida.push({ json: a.json, pairedItem: { item: 0 } });
 });
 return crmSalida;
