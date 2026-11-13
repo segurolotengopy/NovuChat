@@ -6,4 +6,4 @@
  * Bajar `TOPE_MAXIMO` cuando baje el tope real es lo esperado.
  */
 export const ALTA_FIJADA = '2026-11-12';
-export const TOPE_MAXIMO = 114;
+export const TOPE_MAXIMO = 98;
