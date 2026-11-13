@@ -1,6 +1,8 @@
 # Accesibilidad de la consola: lint con línea de base
 
-Alta: 13/11/2026 (brecha D de UX). La consola ya tenía violaciones de accesibilidad; no se arreglan de golpe, pero **no puede entrar ninguna nueva y el tope solo baja**.
+Alta: 13/11/2026 (brecha D de UX). La consola ya tenía violaciones de accesibilidad; no se arreglan de golpe, pero **el CI falla ante una violación nueva y el tope solo baja**.
+
+Límite de la medida: se cuenta por archivo y regla. Si en un mismo cambio se arregla una violación y se agrega otra de la misma regla en el mismo archivo, la cuenta no cambia y el CI no lo nota; eso lo mira la revisión del PR, igual que una clave nueva en la línea de base (la base no gana claves).
 
 ## Qué mide y qué no
 
@@ -36,6 +38,10 @@ Nadie sin pasar por el agente `seguridad` y una decisión escrita de Andres. Sub
 
 Corre dentro de `pruebas:reglas` del job `calidad`: sin paso nuevo ni navegador. Medido el 13/11/2026: la suite tarda entre 3 y 10 s según la caché (ESLint sobre `src` unos 3 s). Cero mensajes por conversación.
 
+## Licencias de lo que se agregó
+
+`eslint-plugin-jsx-a11y` 6.10.2 es MIT. Trae 87 paquetes de desarrollo: 82 MIT, 2 Apache-2.0, 1 BSD-2-Clause, 1 CC0-1.0 y **uno MPL-2.0: `axe-core`**, que el plugin usa para una de sus reglas. MPL-2.0 obliga solo a quien modifica y distribuye esos archivos; aquí se usa sin modificar, solo en desarrollo, y no entra en lo que se despliega. El repositorio no tiene hoy una política de licencias que el CI haga cumplir (ni lista permitida ni denegada), así que nada lo bloquea ni lo aprueba: queda declarado aquí y en el PR.
+
 ## Pruebas con motor (axe)
 
-Pendiente de decisión de licencia (axe-core es MPL-2.0).
+No construidas. Necesitan `axe-core` como dependencia directa y `jsdom` (MIT) para dibujar las páginas en las pruebas. Quedan a la espera de que Andres decida si MPL-2.0 se admite como dependencia directa de desarrollo; la política de licencias no se tocó.

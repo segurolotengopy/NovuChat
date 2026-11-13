@@ -5,9 +5,9 @@
  *
  * ATENCIÓN: cambiar `ALTA`, `TOPE` o la base hacia arriba exige pasar por el agente `seguridad`.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ALTA, LINEA_DE_BASE, TOPE, TOPE_POR_REGLA, compararConLineaDeBase } from './linea-de-base';
@@ -17,7 +17,7 @@ const ADMIN = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const WEB = join(ADMIN, 'web');
 const requerir = createRequire(join(WEB, 'package.json'));
 // `eslint` vive en admin/web y sus tipos no se resuelven desde aquí: se declara solo lo que se usa.
-interface Mensaje { ruleId: string | null; fatal?: boolean; message: string }
+interface Mensaje { ruleId: string | null; fatal?: boolean; severity?: number; message: string }
 type Resultados = { filePath: string; messages: Mensaje[] }[];
 interface Motor {
   lintFiles(p: string[]): Promise<Resultados>;
@@ -29,11 +29,19 @@ const jsxA11y = requerir('eslint-plugin-jsx-a11y') as { flatConfigs: { recommend
 
 const nuevoEslint = (): Motor => new ESLint({ cwd: WEB, overrideConfigFile: 'eslint.a11y.config.js' });
 
+const rutaDe = (absoluta: string): string => relative(WEB, absoluta).split('\\').join('/');
+// Un mensaje sin regla solo es un defecto del lint si es fatal o un ERROR (config rota, parseo). El AVISO de «eslint-disable sin efecto por
+// noInlineConfig» (severidad 1, sin regla) no lo es: un disable legítimo del lint general no debe poner esta suite en rojo.
+const esDefectoDelLint = (m: Mensaje): boolean => m.fatal === true || (!m.ruleId && m.severity !== 1);
+const tsxEnDisco = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+  e.isDirectory() ? tsxEnDisco(join(dir, e.name)) : e.name.endsWith('.tsx') ? [rutaDe(join(dir, e.name))] : []);
+
 function agrupar(resultados: Resultados): Record<string, number> {
   const cuenta: Record<string, number> = {};
   for (const r of resultados) {
-    const archivo = r.filePath.slice(WEB.length + 1).split('\\').join('/');
+    const archivo = rutaDe(r.filePath);
     for (const m of r.messages) {
+      if (!m.ruleId) continue;
       const clave = `${archivo}#${m.ruleId}`;
       cuenta[clave] = (cuenta[clave] ?? 0) + 1;
     }
@@ -48,9 +56,13 @@ describe('lint de accesibilidad de la consola: la línea de base solo puede baja
   }, 60000);
 
   it('el lint corrió de verdad: sin errores fatales ni de configuración (un lint que no corrió no aprueba)', () => {
-    const malos = resultados.flatMap((r) => r.messages.filter((m) => m.fatal || !m.ruleId).map((m) => `${r.filePath}: ${m.message}`));
+    const malos = resultados.flatMap((r) => r.messages.filter(esDefectoDelLint).map((m) => `${rutaDe(r.filePath)}: ${m.message}`));
     expect(malos).toEqual([]);
     expect(resultados.length).toBeGreaterThan(20);
+  });
+
+  it('se revisó TODO archivo .tsx de src: un `ignores` nuevo o una carpeta fuera de `files` no pasa en silencio', () => {
+    expect(resultados.map((r) => rutaDe(r.filePath)).sort()).toEqual(tsxEnDisco(join(WEB, 'src')).sort());
   });
 
   it('lo encontrado coincide con la línea de base: ni violaciones nuevas ni base que sobre', () => {
@@ -86,6 +98,18 @@ describe('lint de accesibilidad de la consola: la línea de base solo puede baja
     expect(activas).toEqual(recomendadas);
     expect(activas.length).toBeGreaterThanOrEqual(30);
   });
+
+  it('nadie afloja una regla: las opciones de cada regla activa son las recomendadas, todas como error, y no hay `settings` de jsx-a11y', async () => {
+    const config = (await nuevoEslint().calculateConfigForFile('src/__regla__.tsx')) as { rules: Record<string, unknown[]>; settings?: Record<string, unknown> };
+    const opcionesDe = (v: unknown): unknown[] => (Array.isArray(v) ? v.slice(1) : []);
+    for (const [regla, valor] of Object.entries(jsxA11y.flatConfigs.recommended.rules)) {
+      const activa = config.rules[regla];
+      if (!activa || activa[0] === 0) continue;
+      expect(activa[0], regla).toBe(2);
+      expect(activa.slice(1), regla).toEqual(opcionesDe(valor));
+    }
+    expect(Object.keys(config.settings ?? {})).not.toContain('jsx-a11y');
+  });
 });
 
 describe('contrapruebas: el motor detecta y la base no se deja engañar', () => {
@@ -102,6 +126,16 @@ describe('contrapruebas: el motor detecta y la base no se deja engañar', () => 
     const texto = 'export const A = () => (\n  // eslint-disable-next-line jsx-a11y/alt-text\n  <img src="x" />\n);\n';
     const [r] = await nuevoEslint().lintText(texto, { filePath: FALSA });
     expect(r?.messages.map((m) => m.ruleId)).toContain('jsx-a11y/alt-text');
+  });
+
+  it('un eslint-disable de OTRA regla (legítimo para el lint general) no pone la suite en rojo, y un error de parseo sí', async () => {
+    const texto = 'export const A = () => (\n  // eslint-disable-next-line @typescript-eslint/no-explicit-any\n  <p>hola</p>\n);\n';
+    const [r] = await nuevoEslint().lintText(texto, { filePath: FALSA });
+    expect(r?.messages.some((m) => !m.ruleId)).toBe(true);
+    expect(r?.messages.filter(esDefectoDelLint)).toEqual([]);
+    expect(agrupar([{ filePath: join(WEB, FALSA), messages: r?.messages ?? [] }])).toEqual({});
+    const [roto] = await nuevoEslint().lintText('export const A = () => <div;\n', { filePath: FALSA });
+    expect(roto?.messages.filter(esDefectoDelLint).length).toBeGreaterThan(0);
   });
 
   describe('compararConLineaDeBase', () => {
