@@ -8,7 +8,7 @@
  * comprueba por comercio y dice SÍ o NO por cada eslabón, sin mostrar nunca un valor.
  *
  *   node scripts/plataforma/verificar-salida-persona.mjs --proyecto <id> --alias <clienteNN> --tenant <id> \
- *        [--env <archivo>] [--probar-timbre] \
+ *        [--env <archivo>] [--probar-timbre] [--medios] \
  *        [--encender [--aplicar --respaldo <ruta> --confirmo-produccion <tenant>]]
  *
  * CHEQUEOS (cada uno: OK / FALLA / NO SE PUDO, con una línea de porqué sin datos sensibles):
@@ -18,8 +18,13 @@
  *   4a flujo n8n activo y publicado  4b credenciales por rol y tipo  4c ingesta distinta de envío
  *   4d el timbre coincide con la ruta del secreto  4e phoneNumberId del flujo = id de la ruta
  *   5a ejecuciones recientes sin error  5b sin 401 de reclamarSalidaPersona (10 min)
+ *   4f el flujo publicado lleva la rama de adjuntos (cabecera `X-NovuChat-Adjuntos: 1` en `Reclamar` y los
+ *      nodos `Leer adjunto` y `Subir a Meta` conectados). SIEMPRE se evalúa y se informa; solo con `--medios`
+ *      su fallo hace fallar el veredicto (un comercio puede tener texto sin adjuntos). Con `--medios`, 1b
+ *      informa además `personaPuedeEnviarMedios` de hoy. Antes de encender esa bandera
+ *      (`aplicar-persona-puede-enviar-medios.mjs`), correr con `--medios`.
  *   6  (solo con --probar-timbre) clave equivocada => 403
- * Los chequeos 1 a 4 son OBLIGATORIOS para `--encender`; 5 y 6 informan.
+ * Los chequeos 1 a 4e son OBLIGATORIOS para `--encender`; 4f, 5 y 6 informan.
  *
  * SOLO LECTURA. Cero escrituras en Firestore, n8n y Secret Manager. Las únicas llamadas con efecto son
  * (a) `--probar-timbre`: UN POST sin datos con la clave EQUIVOCADA (nunca la correcta: podría disparar un
@@ -59,10 +64,10 @@ const ESPERA_MS = 30_000;
 // La lista de flujos pesa decenas de MB y tarda hasta minutos según la carga de la VM.
 const ESPERA_LISTA_MS = 300_000;
 const CON_VALOR = ['proyecto', 'alias', 'tenant', 'env', 'respaldo', 'confirmo-produccion'];
-const BANDERAS = ['probar-timbre', 'encender', 'aplicar'];
+const BANDERAS = ['probar-timbre', 'encender', 'aplicar', 'medios'];
 
 export const USO = '  node scripts/plataforma/verificar-salida-persona.mjs --proyecto <id> --alias <clienteNN> --tenant <id> [--env <archivo>] '
-  + '[--probar-timbre] [--encender [--aplicar --respaldo <ruta> --confirmo-produccion <tenant>]]';
+  + '[--probar-timbre] [--medios] [--encender [--aplicar --respaldo <ruta> --confirmo-produccion <tenant>]]';
 
 export const nombreDelFlujo = (alias) => `NovuChat — Salida de persona (${alias})`;
 const sha = (s) => createHash('sha256').update(String(s)).digest('hex');
@@ -95,6 +100,7 @@ export function analizarArgumentos(argv, env = process.env) {
   const encender = banderas.includes('encender');
   const aplicar = banderas.includes('aplicar');
   const probarTimbre = banderas.includes('probar-timbre');
+  const medios = banderas.includes('medios');
   const { proyecto, alias, tenant, respaldo } = valores;
   const confirmo = valores['confirmo-produccion'];
 
@@ -120,7 +126,7 @@ export function analizarArgumentos(argv, env = process.env) {
   if (problemas.length) return { ok: false, problemas };
   return {
     ok: true,
-    cfg: { proyecto, entorno: proy.entorno, alias, tenant, envArchivo: valores['env'] ?? null, probarTimbre, encender, aplicar, respaldo: respaldo ?? null, confirmo: confirmo ?? null },
+    cfg: { proyecto, entorno: proy.entorno, alias, tenant, envArchivo: valores['env'] ?? null, probarTimbre, medios, encender, aplicar, respaldo: respaldo ?? null, confirmo: confirmo ?? null },
   };
 }
 
@@ -204,9 +210,12 @@ export async function chequeoFirestore(cfg, db, env = process.env) {
   if (f.estado !== 'activo') fallas.push('el comercio no está activo');
   if (f.consolaConversaciones !== 'nueva') fallas.push('consolaConversaciones no es "nueva"');
   if (esTenantExcluido(cfg.tenant, env) || nombreExcluido(f.nombre, env)) fallas.push('comercio EXCLUIDO (NOVUCHAT_TENANTS_EXCLUIDOS)');
+  const medios = cfg.medios === true
+    ? `; personaPuedeEnviarMedios hoy: ${hay(f, 'personaPuedeEnviarMedios') ? (typeof f.personaPuedeEnviarMedios === 'boolean' ? String(f.personaPuedeEnviarMedios) : 'no booleano') : 'ausente'}`
+    : '';
   const actual = hay(f, 'personaPuedeEscribir') ? (typeof f.personaPuedeEscribir === 'boolean' ? String(f.personaPuedeEscribir) : 'no booleano') : 'ausente';
   if (fallas.length) salida.resultados.push(res('1b', 'Ficha del comercio', FALLA, fallas.join('; ')));
-  else salida.resultados.push(res('1b', 'Ficha del comercio', OK, `activo, consola nueva, no excluido; personaPuedeEscribir hoy: ${actual}`));
+  else salida.resultados.push(res('1b', 'Ficha del comercio', OK, `activo, consola nueva, no excluido; personaPuedeEscribir hoy: ${actual}${medios}`));
   return salida;
 }
 
@@ -304,7 +313,7 @@ const credDe = (nodo) => {
 /** 4a a 4e, 5a. `n8n(ruta)` devuelve `{ status, json }` (solo GET). */
 export async function chequeoN8n(cfg, n8n, rutaDelSecreto, phoneId, ahora = Date.now()) {
   const R = [];
-  const todos = (motivo) => ['4a', '4b', '4c', '4d', '4e', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], motivo));
+  const todos = (motivo) => ['4a', '4b', '4c', '4d', '4e', '4f', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], motivo));
   let lista = [];
   let cursor = null;
   try {
@@ -323,7 +332,7 @@ export async function chequeoN8n(cfg, n8n, rutaDelSecreto, phoneId, ahora = Date
   const coinciden = lista.filter((w) => w?.name === nombre);
   if (coinciden.length !== 1) {
     const m = coinciden.length === 0 ? 'no existe el flujo de este alias' : 'hay más de un flujo con ese nombre';
-    return { resultados: [res('4a', TITULOS_N8N['4a'], FALLA, m), ...['4b', '4c', '4d', '4e'].map((id) => noSePudo(id, TITULOS_N8N[id], 'sin flujo que revisar')), noSePudo('5a', TITULOS_N8N['5a'], 'sin flujo que revisar')], flujoId: null };
+    return { resultados: [res('4a', TITULOS_N8N['4a'], FALLA, m), ...['4b', '4c', '4d', '4e', '4f'].map((id) => noSePudo(id, TITULOS_N8N[id], 'sin flujo que revisar')), noSePudo('5a', TITULOS_N8N['5a'], 'sin flujo que revisar')], flujoId: null };
   }
   let w;
   try {
@@ -388,6 +397,9 @@ export async function chequeoN8n(cfg, n8n, rutaDelSecreto, phoneId, ahora = Date
   else if (typeof idFlujo !== 'string' || idFlujo === '' || /REEMPLAZAR/.test(idFlujo)) R.push(res('4e', TITULOS_N8N['4e'], FALLA, 'Config base no tiene un phoneNumberId real'));
   else R.push(idFlujo === phoneId ? res('4e', TITULOS_N8N['4e'], OK, 'el phoneNumberId del flujo coincide con la ruta')
     : res('4e', TITULOS_N8N['4e'], FALLA, 'el phoneNumberId del flujo NO coincide con la ruta'));
+  // 4f
+  if (f4a.some((m) => /versión publicada|borrador/.test(m))) R.push(noSePudo('4f', TITULOS_N8N['4f'], 'el borrador no es lo publicado (ver 4a)'));
+  else R.push(chequeoAdjuntos(nodos, w.connections, cfg.medios === true));
   // 5a
   try {
     const r = await n8n(`/executions?workflowId=${encodeURIComponent(String(coinciden[0].id))}&limit=50`);
@@ -405,9 +417,69 @@ export async function chequeoN8n(cfg, n8n, rutaDelSecreto, phoneId, ahora = Date
   return { resultados: R, flujoId: coinciden[0].id };
 }
 
+const CABECERA_ADJUNTOS = 'X-NovuChat-Adjuntos';
+const NODO_REPARTO = 'Por canal';
+const NODOS_FINALES = ['Resultado del envío', 'Confirmar'];
+const nota4f = ' (informativo: sin --medios no cuenta para el veredicto)';
+
+/** Nodos alcanzables desde `origen` recorriendo `connections` SOLO por nodos que existen y no están desactivados. */
+function alcanzables(nodos, conexiones, origen) {
+  const vivos = new Set(nodos.filter((n) => typeof n?.name === 'string' && n.disabled !== true).map((n) => n.name));
+  const vistos = [];
+  if (!vivos.has(origen) || conexiones === null || typeof conexiones !== 'object') return vistos;
+  const cola = [origen];
+  while (cola.length) {
+    const actual = cola.shift();
+    if (!hay(conexiones, actual)) continue;
+    for (const rama of conexiones[actual]?.main ?? []) {
+      for (const c of Array.isArray(rama) ? rama : []) {
+        if (typeof c?.node === 'string' && vivos.has(c.node) && !vistos.includes(c.node)) { vistos.push(c.node); cola.push(c.node); }
+      }
+    }
+  }
+  return vistos;
+}
+
+/**
+ * 4f. Puro. Informativo salvo que se pida `--medios`: sin esa opción su fallo no cambia el veredicto.
+ * Exige: `Reclamar` activo con `sendHeaders === true` y `X-NovuChat-Adjuntos: 1`; `Leer adjunto` y `Subir a Meta` activos;
+ * y la cadena real: `Leer adjunto` alcanzable desde `Por canal`, `Subir a Meta` alcanzable desde `Leer adjunto` y,
+ * desde `Subir a Meta`, el envío y la confirmación (`Resultado del envío` o `Confirmar`), todo por nodos existentes y activos.
+ */
+export function chequeoAdjuntos(nodos, conexiones, medios) {
+  const f = [];
+  const reclamar = nodoPor(nodos, 'Reclamar');
+  if (!reclamar) f.push('falta el nodo Reclamar');
+  else {
+    if (reclamar.disabled === true) f.push('el nodo Reclamar está desactivado');
+    if (reclamar.parameters?.sendHeaders !== true) f.push('Reclamar no envía cabeceras (sendHeaders no es true)');
+    const cab = reclamar.parameters?.headerParameters?.parameters;
+    const h = Array.isArray(cab) ? cab.find((x) => String(x?.name ?? '').toLowerCase() === CABECERA_ADJUNTOS.toLowerCase()) : undefined;
+    if (!h) f.push(`Reclamar no manda la cabecera ${CABECERA_ADJUNTOS}`);
+    else if (String(h.value) !== '1') f.push(`la cabecera ${CABECERA_ADJUNTOS} de Reclamar no vale 1`);
+  }
+  for (const nom of [NODO_REPARTO, 'Leer adjunto', 'Subir a Meta']) {
+    const n = nodoPor(nodos, nom);
+    if (!n) f.push(`falta el nodo ${nom}`);
+    else if (n.disabled === true) f.push(`el nodo ${nom} está desactivado`);
+  }
+  if (!f.length) {
+    if (!alcanzables(nodos, conexiones, NODO_REPARTO).includes('Leer adjunto')) f.push(`Leer adjunto no es alcanzable desde ${NODO_REPARTO}`);
+    else {
+      const desdeLeer = alcanzables(nodos, conexiones, 'Leer adjunto');
+      if (!desdeLeer.includes('Subir a Meta')) f.push('Subir a Meta no es alcanzable desde Leer adjunto');
+      else if (!NODOS_FINALES.some((x) => alcanzables(nodos, conexiones, 'Subir a Meta').includes(x))) f.push('la salida de Subir a Meta no llega al envío ni a la confirmación');
+    }
+  }
+  const t = TITULOS_N8N['4f'];
+  const extra = { obligatorio: false, informativo: !medios };
+  return f.length ? res('4f', t, FALLA, f.join('; '), extra)
+    : res('4f', t, OK, `Reclamar manda ${CABECERA_ADJUNTOS}: 1 y la cadena ${NODO_REPARTO} → Leer adjunto → Subir a Meta → confirmación está conectada y activa`, extra);
+}
+
 const TITULOS_N8N = {
   '4a': 'Flujo n8n activo y publicado', '4b': 'Credenciales por rol y tipo', '4c': 'Ingesta distinta de envío',
-  '4d': 'Timbre = ruta del secreto', '4e': 'phoneNumberId del flujo = ruta', '5a': 'Ejecuciones recientes sin error',
+  '4d': 'Timbre = ruta del secreto', '4e': 'phoneNumberId del flujo = ruta', '4f': 'El flujo publicado lleva la rama de adjuntos', '5a': 'Ejecuciones recientes sin error',
 };
 
 /** 5b. Solo conteos. Primero las solicitudes TOTALES (el barrido corre cada minuto): con 0 el filtro no sirve. */
@@ -465,9 +537,9 @@ export async function verificar(cfg, deps) {
 
   let rN8n;
   if (!deps.n8nEntorno?.base || !deps.n8nEntorno?.clave) {
-    rN8n = { resultados: ['4a', '4b', '4c', '4d', '4e', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], 'faltan N8N_BASE_URL o N8N_API_KEY válidas')) };
+    rN8n = { resultados: ['4a', '4b', '4c', '4d', '4e', '4f', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], 'faltan N8N_BASE_URL o N8N_API_KEY válidas')) };
   } else if (sec.hostAjeno === true || (sec.ruta !== null && new URL(sec.ruta).host !== new URL(deps.n8nEntorno.base).host)) {
-    rN8n = { resultados: ['4a', '4b', '4c', '4d', '4e', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], 'el host de N8N_BASE_URL no es el de la ruta del secreto: no se envía la clave de la API')) };
+    rN8n = { resultados: ['4a', '4b', '4c', '4d', '4e', '4f', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], 'el host de N8N_BASE_URL no es el de la ruta del secreto: no se envía la clave de la API')) };
   } else {
     rN8n = await chequeoN8n(cfg, deps.n8n, sec.ruta, fs.phoneId, deps.ahora ?? Date.now());
   }
@@ -475,15 +547,22 @@ export async function verificar(cfg, deps) {
   R.push(chequeoLogs(cfg, deps));
   if (cfg.probarTimbre) R.push(await chequeoTimbre(sec.ruta, deps.postTimbre));
 
+  for (const r of R) {
+    if (r.id !== '4f') continue;
+    r.obligatorio = false; r.informativo = cfg.medios !== true;
+    if (r.informativo && r.estado !== OK && !r.motivo.includes('informativo')) r.motivo += nota4f;
+  }   // también si quedó en NO SE PUDO
   R.sort((a, b) => (a.id < b.id ? -1 : 1));
   for (const r of R) {
     log(`  [${r.estado.padEnd(10)}] ${r.id.padEnd(3)} ${r.titulo}: ${r.motivo}`);
     if (r.aviso) log(`                   aviso: ${r.aviso}`);
   }
-  const hayFallas = R.some((r) => r.estado === FALLA);
-  const hayNoPudo = R.some((r) => r.estado === NO_SE_PUDO);
-  const obligatoriosOk = R.filter((r) => r.obligatorio).every((r) => r.estado === OK);
-  log(`\n  Resumen: ${R.filter((r) => r.estado === OK).length} OK, ${R.filter((r) => r.estado === FALLA).length} FALLA, ${R.filter((r) => r.estado === NO_SE_PUDO).length} NO SE PUDO.`);
+  // Lo informativo (4f sin --medios) se muestra pero no entra en el veredicto ni en el resumen.
+  const V = R.filter((r) => r.informativo !== true);
+  const hayFallas = V.some((r) => r.estado === FALLA);
+  const hayNoPudo = V.some((r) => r.estado === NO_SE_PUDO);
+  const obligatoriosOk = V.filter((r) => r.obligatorio).every((r) => r.estado === OK);
+  log(`\n  Resumen: ${V.filter((r) => r.estado === OK).length} OK, ${V.filter((r) => r.estado === FALLA).length} FALLA, ${V.filter((r) => r.estado === NO_SE_PUDO).length} NO SE PUDO.`);
   let codigo = hayFallas ? 1 : hayNoPudo ? 3 : 0;
 
   if (cfg.encender) {
@@ -492,6 +571,7 @@ export async function verificar(cfg, deps) {
       return codigo === 0 ? 1 : codigo;
     }
     log(`  --encender: los chequeos obligatorios están en OK; se invoca aplicar-persona-puede-escribir ${cfg.aplicar ? 'CON --aplicar' : 'EN SECO'}.\n`);
+    if (cfg.medios) log('  nota: --encender solo enciende personaPuedeEscribir; 4f (adjuntos) no es obligatorio para eso. Su resultado cuenta en el código de salida, no en esta invocación. personaPuedeEnviarMedios se enciende aparte (aplicar-persona-puede-enviar-medios.mjs).');
     const args = ['--proyecto', cfg.proyecto, '--tenant', cfg.tenant, '--valor', 'true'];
     if (cfg.aplicar) args.push('--aplicar', '--respaldo', cfg.respaldo, ...(cfg.confirmo ? ['--confirmo-produccion', cfg.confirmo] : []));
     const c = deps.encender(args);

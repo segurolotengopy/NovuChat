@@ -630,6 +630,145 @@ describe('lector de n8n: la lista de flujos espera más y se repite una vez', ()
     const r = await (await import('../../scripts/plataforma/verificar-salida-persona.mjs') as unknown as { chequeoN8n: (c: unknown, n: unknown, r: string | null, p: string | null) => Promise<{ resultados: R[] }> })
       .chequeoN8n({ alias: 'demoA' }, t.lector, null, null);
     expect(r.resultados.every((x) => x.estado !== 'OK')).toBe(true);
-    expect(r.resultados.length).toBe(6);
+    expect(r.resultados.length).toBe(7); // 4a a 4f y 5a
+  });
+});
+
+// ===========================================================================
+describe('4f · la rama de adjuntos (B5)', () => {
+  type Nodo = Record<string, unknown> & { name: string };
+  const INTERMEDIOS = ['Por canal', 'Preparar subida', '¿Se sube?', 'Preparar envío del adjunto', '¿Se envía el adjunto?', 'Enviar adjunto por Graph', 'Juntar salidas', 'Resultado del envío'];
+  const reclamar = (o: { cabecera?: string | null; sendHeaders?: boolean; disabled?: boolean } = {}): Nodo => ({
+    name: 'Reclamar', credentials: { httpHeaderAuth: { id: 'c2', name: 'Ingesta cred' } },
+    ...(o.disabled ? { disabled: true } : {}),
+    parameters: { sendHeaders: o.sendHeaders ?? true, headerParameters: { parameters: [
+      { name: 'X-NovuChat-Numero', value: '={{ x }}' },
+      ...(o.cabecera === null ? [] : [{ name: 'X-NovuChat-Adjuntos', value: o.cabecera ?? '1' }]),
+    ] } },
+  });
+  const nodosAdj = (o: { cabecera?: string | null; sendHeaders?: boolean; sin?: string[]; desactivar?: string[] } = {}): Nodo[] => {
+    const lista: Nodo[] = [
+      ...(nodosOk().filter((n) => n.name !== 'Reclamar') as Nodo[]),
+      reclamar({ cabecera: o.cabecera === undefined ? '1' : o.cabecera, ...(o.sendHeaders === undefined ? {} : { sendHeaders: o.sendHeaders }), disabled: (o.desactivar ?? []).includes('Reclamar') }),
+      ...['Leer adjunto', 'Subir a Meta', ...INTERMEDIOS].map((name) => ({ name })),
+    ];
+    return lista.filter((n) => !(o.sin ?? []).includes(n.name)).map((n) => ((o.desactivar ?? []).includes(n.name) && n.name !== 'Reclamar' ? { ...n, disabled: true } : n));
+  };
+  const un = (a: string, b: string) => ({ main: [[{ node: b, type: 'main', index: 0 }]] });
+  const cadena = (): Record<string, unknown> => ({
+    'Por canal': un('', 'Leer adjunto'), 'Leer adjunto': un('', 'Preparar subida'), 'Preparar subida': un('', '¿Se sube?'),
+    '¿Se sube?': un('', 'Subir a Meta'), 'Subir a Meta': un('', 'Preparar envío del adjunto'),
+    'Preparar envío del adjunto': un('', '¿Se envía el adjunto?'), '¿Se envía el adjunto?': un('', 'Enviar adjunto por Graph'),
+    'Enviar adjunto por Graph': un('', 'Juntar salidas'), 'Juntar salidas': un('', 'Resultado del envío'), 'Resultado del envío': un('', 'Confirmar'),
+  });
+  const sinClave = (...ks: string[]) => { const c = cadena(); for (const k of ks) delete c[k]; return c; };
+  const flujo = (nodes: unknown[], connections: unknown, extra: Record<string, unknown> = {}) => ({ workflow: { nodes, connections, ...extra } }) as Over;
+  const MEDIOS = { medios: true };
+
+  it('flujo con la cadena completa: 4f OK con y sin --medios', async () => {
+    for (const cfg of [{}, MEDIOS]) {
+      const r = await corre(flujo(nodosAdj(), cadena()), cfg);
+      expect(r.estado('4f')).toBe('OK');
+      expect(r.codigo).toBe(0);
+    }
+  });
+
+  const rotos: Array<[string, Nodo[], unknown]> = [
+    ['falta la cabecera', nodosAdj({ cabecera: null }), cadena()],
+    ['cabecera con otro valor (0)', nodosAdj({ cabecera: '0' }), cadena()],
+    ['cabecera con otro valor (vacío)', nodosAdj({ cabecera: '' }), cadena()],
+    ['sendHeaders:false', nodosAdj({ sendHeaders: false }), cadena()],
+    ['Reclamar desactivado', nodosAdj({ desactivar: ['Reclamar'] }), cadena()],
+    ['Leer adjunto desactivado', nodosAdj({ desactivar: ['Leer adjunto'] }), cadena()],
+    ['Subir a Meta desactivado', nodosAdj({ desactivar: ['Subir a Meta'] }), cadena()],
+    ['falta el nodo Leer adjunto', nodosAdj({ sin: ['Leer adjunto'] }), cadena()],
+    ['falta el nodo Subir a Meta', nodosAdj({ sin: ['Subir a Meta'] }), cadena()],
+    ['falta el nodo de reparto Por canal', nodosAdj({ sin: ['Por canal'] }), cadena()],
+    ['Leer adjunto suelto (sin conexiones)', nodosAdj(), sinClave('Por canal', 'Leer adjunto')],
+    ['Subir a Meta suelto', nodosAdj(), sinClave('¿Se sube?', 'Subir a Meta')],
+    ['sin ninguna conexión', nodosAdj(), {}],
+    ['la conexión viene de un nodo inexistente', nodosAdj(), { ...sinClave('Por canal'), Fantasma: un('', 'Leer adjunto') }],
+    ['cadena cortada en un intermedio (Preparar subida)', nodosAdj(), sinClave('Preparar subida')],
+    ['cadena cortada en un intermedio inexistente', nodosAdj({ sin: ['¿Se sube?'] }), cadena()],
+    ['intermedio desactivado', nodosAdj({ desactivar: ['¿Se sube?'] }), cadena()],
+    ['la salida de Subir a Meta se corta antes del envío', nodosAdj(), sinClave('Subir a Meta')],
+    ['la salida de Subir a Meta se corta a mitad (Preparar envío)', nodosAdj(), sinClave('Preparar envío del adjunto')],
+  ];
+  it.each(rotos)('4f FALLA: %s', async (_n, nodes, connections) => {
+    const r = await corre(flujo(nodes, connections), MEDIOS);
+    expect(r.estado('4f')).toBe('FALLA');
+    sinSecretos(r.texto);
+  });
+
+  it.each(rotos)('CON --medios, 4f fallido hace fallar el veredicto (salida 1): %s', async (_n, nodes, connections) => {
+    expect((await corre(flujo(nodes, connections), MEDIOS)).codigo).toBe(1);
+  });
+
+  it('SIN --medios un 4f fallido se informa con su nota pero NO cambia el veredicto ni el resumen', async () => {
+    const r = await corre();
+    expect(r.estado('4f')).toBe('FALLA');
+    expect(r.texto).toContain('informativo: sin --medios no cuenta');
+    expect(r.codigo).toBe(0);
+    expect(r.texto).toContain('Resumen: 11 OK, 0 FALLA, 0 NO SE PUDO.');
+  });
+
+  it('4f depende de 4a: borrador distinto de lo publicado, o sin versión publicada => NO SE PUDO (aunque la cadena esté bien)', async () => {
+    for (const extra of [{ versionId: 'v10' }, { activeVersionId: '' }, { activeVersionId: undefined }]) {
+      const r = await corre(flujo(nodosAdj(), cadena(), extra), MEDIOS);
+      expect(r.estado('4a')).toBe('FALLA');
+      expect(r.estado('4f')).toBe('NO SE PUDO');
+      expect(r.texto).toContain('el borrador no es lo publicado (ver 4a)');
+      expect(r.codigo).toBe(1);
+    }
+  });
+
+  it('un 4f en NO SE PUDO sin --medios lleva la nota informativa y no cuenta', async () => {
+    const r = await corre(flujo(nodosAdj(), cadena(), { versionId: 'v10' }));
+    expect(r.estado('4f')).toBe('NO SE PUDO');
+    expect(r.texto).toMatch(/4f .*informativo: sin --medios no cuenta/);
+    expect(r.texto).toContain('Resumen: 10 OK, 1 FALLA, 0 NO SE PUDO.');   // solo 4a falla; 4f no entra
+  });
+
+  it('con n8n caído: sin --medios, código 3 y resumen SIN 4f; con --medios el NO SE PUDO de 4f cuenta', async () => {
+    const sin = await corre({ n8nCaido: true });
+    expect(sin.codigo).toBe(3);
+    expect(sin.estado('4f')).toBe('NO SE PUDO');
+    const conteoSin = /Resumen: (\d+) OK, (\d+) FALLA, (\d+) NO SE PUDO/.exec(sin.texto)!;
+    const con = await corre({ n8nCaido: true }, MEDIOS);
+    expect(con.codigo).toBe(3);
+    const conteoCon = /Resumen: (\d+) OK, (\d+) FALLA, (\d+) NO SE PUDO/.exec(con.texto)!;
+    expect(Number(conteoCon[3])).toBe(Number(conteoSin[3]) + 1);
+  });
+
+  it('--encender --medios con 4f en FALLA: 4f no es obligatorio para --encender (que solo enciende personaPuedeEscribir) y la salida lo dice', async () => {
+    const r = await corre({}, { encender: true, medios: true });
+    expect(r.estado('4f')).toBe('FALLA');
+    expect(r.llamadas.encender).toHaveLength(1);
+    expect(r.llamadas.encender[0]).toContain('--valor');
+    expect(r.texto).toContain('--encender solo enciende personaPuedeEscribir');
+    expect(r.codigo).toBe(1);                                           // el FALLA de 4f cuenta en el código
+  });
+
+  it('1b informa personaPuedeEnviarMedios solo con --medios', async () => {
+    expect((await corre()).texto).not.toContain('personaPuedeEnviarMedios hoy');
+    expect((await corre({}, MEDIOS)).texto).toContain('personaPuedeEnviarMedios hoy: ausente');
+    expect((await corre({ ficha: { personaPuedeEnviarMedios: true } }, MEDIOS)).texto).toContain('personaPuedeEnviarMedios hoy: true');
+    expect((await corre({ ficha: { personaPuedeEnviarMedios: 'true' } }, MEDIOS)).texto).toContain('personaPuedeEnviarMedios hoy: no booleano');
+  });
+
+  it('--medios es una opción válida (sin valor) y no se repite', () => {
+    const buenos = ['--proyecto', M.proyProd, '--alias', ALIAS, '--tenant', TENANT];
+    const r = mod.analizarArgumentos([...buenos, '--medios'], ENV);
+    expect(r.ok).toBe(true);
+    expect(r.cfg?.['medios']).toBe(true);
+    expect(mod.analizarArgumentos(buenos, ENV).cfg?.['medios']).toBe(false);
+    expect(mod.analizarArgumentos([...buenos, '--medios', '--medios'], ENV).ok).toBe(false);
+  });
+
+  it('el flujo real versionado (Flujos/salida-de-persona.json) pasa 4f con su cadena real', async () => {
+    const j = JSON.parse(readFileSync(join(RAIZ, 'Flujos', 'salida-de-persona.json'), 'utf8')) as { nodes: Nodo[]; connections: unknown };
+    const base = nodosOk().filter((n) => !['Reclamar', 'Confirmar'].includes(n.name)) as Nodo[];
+    const r = await corre(flujo([...base, ...j.nodes.filter((n) => !base.some((b) => b.name === n.name))], j.connections), MEDIOS);
+    expect(r.estado('4f')).toBe('OK');
   });
 });
