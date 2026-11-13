@@ -72,6 +72,8 @@ interface Opc {
   app?: unknown;
   numero?: unknown;
   lista?: unknown;
+  /** Lo que Graph contesta al leer el NODO del número (id, nombre visible, calidad). */
+  nodo?: unknown;
   args?: string[];
   env?: string;
   extra?: Record<string, string>;
@@ -88,6 +90,7 @@ function correr(o: Opc = {}) {
       RESPUESTA_GRAPH: JSON.stringify(o.app ?? APP_PROPIA),
       RESPUESTA_NUMERO: JSON.stringify(o.numero ?? NUMERO_PROPIO),
       RESPUESTA_NUMEROS: JSON.stringify(o.lista ?? LISTA_OK),
+      RESPUESTA_NODO: JSON.stringify(o.nodo ?? { ...NUMERO_PROPIO, quality_rating: 'GREEN', display_phone_number: 'x' }),
       SUSCRITAS_GRAPH: '{}',
       NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA: '',
       NOVUCHAT_NUMEROS_AJENOS_HUELLAS_EXTRA: '',
@@ -334,6 +337,57 @@ describe('reponer-numero-demo-a.sh: lo que se niega sin escribir', () => {
     expect(r.salida).toContain('[token]');
     sinSecretosEnSalida(r.salida);
     sinCambios();
+  });
+
+  // --- WABA de PRUEBA: Graph no deja leer /{WABA} ni /{WABA}/phone_numbers (400, código 100) aunque todo esté bien asignado.
+  const NODO_PRUEBA = { id: PHONE, verified_name: 'Test Number', quality_rating: 'UNKNOWN', display_phone_number: 'x' };
+  const ERROR_WABA_PRUEBA = { error: { message: `Unsupported get request. Object with ID '${WABA}' does not exist, cannot be loaded due to missing permissions`, type: 'GraphMethodException', code: 100, error_subcode: 33 } };
+
+  it('WABA de PRUEBA (número «Test Number», lista ilegible con código 100): AVISO, no negación, y escribe', () => {
+    const r = correr({ nodo: NODO_PRUEBA, numero: { id: PHONE, verified_name: 'Test Number' }, lista: ERROR_WABA_PRUEBA, args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(0);
+    expect(r.salida).toContain('AVISO');
+    expect(r.salida).toContain('límite declarado');
+    expect(r.salida).toContain('«Test Number»');
+    sinSecretosEnSalida(r.salida);
+    expect(readFileSync(envF(), 'utf8')).toContain(`WA_PHONE_ID=${PHONE}\n`);
+  });
+
+  it('el mismo error con un número que NO es «Test Number» (WABA real) sigue negando', () => {
+    const r = correr({ nodo: { ...NODO_PRUEBA, verified_name: 'Clinica Real' }, numero: { id: PHONE, verified_name: 'Clinica Real' }, lista: ERROR_WABA_PRUEBA, args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('NEGÓ la lectura');
+    sinCambios();
+  });
+
+  it('«Test Number» pero el error NO es el de la WABA de prueba (token inválido, código 190): niega', () => {
+    const r = correr({ nodo: NODO_PRUEBA, numero: { id: PHONE, verified_name: 'Test Number' }, lista: { error: { message: 'Invalid OAuth access token', code: 190 } }, args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('código 190');
+    sinCambios();
+  });
+
+  it('«Test Number» y la lista SÍ se lee pero no trae el número: niega (el aviso es solo para el 400)', () => {
+    const r = correr({ nodo: NODO_PRUEBA, numero: { id: PHONE, verified_name: 'Test Number' }, lista: { data: [] }, args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('NO lista el número');
+    sinCambios();
+  });
+
+  it('el nodo del número devuelve otro id, o un error: niega', () => {
+    const a = correr({ nodo: { id: id('88888', '88888'), verified_name: 'Test Number' }, args: ['--aplicar', '--confirmo', '7237'] });
+    expect(a.codigo).toBe(1);
+    sinCambios();
+    const b = correr({ nodo: { error: { message: 'no existe', code: 100 } }, args: ['--aplicar', '--confirmo', '7237'] });
+    expect(b.codigo).toBe(1);
+    expect(b.salida).toContain('NEGÓ la lectura');
+    sinCambios();
+  });
+
+  it('con una WABA de prueba el número se valida por su NODO (id, nombre y calidad) y no se escribe en Graph', () => {
+    const r = correr({ nodo: NODO_PRUEBA, numero: { id: PHONE, verified_name: 'Test Number' }, lista: ERROR_WABA_PRUEBA, args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.llamadas.some((l) => l.includes('fields=id,display_phone_number,verified_name,quality_rating'))).toBe(true);
+    expect(r.llamadas.filter((l) => l.startsWith('ESCRIBE '))).toEqual([]);
   });
 
   it('Graph contesta algo que no es JSON al leer la WABA: se dice, no es un «no» mudo', () => {
