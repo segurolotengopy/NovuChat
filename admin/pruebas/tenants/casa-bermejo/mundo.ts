@@ -11,7 +11,7 @@ import { doblesDelGuardado } from '../../lib/doble-guardado';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-export const CARPETA = join(AQUI, '../../../../Flujos/experimental/casa-bermejo');
+export const CARPETA = join(AQUI, '../../../../Flujos/clientes/casa-bermejo');
 export const leerFlujo = (a: string): Flujo => JSON.parse(readFileSync(join(CARPETA, a), 'utf8')) as Flujo;
 export const PRODUCCION = leerFlujo('casa-bermejo.json');
 export const PRUEBA = leerFlujo('casa-bermejo.prueba.json');

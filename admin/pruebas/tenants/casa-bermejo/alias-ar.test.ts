@@ -279,7 +279,7 @@ describe('piezas puras y guardias', () => {
   const F = cargarFuente<{ bmAliasPedirResultado: (r: unknown) => { tipo: string }; bmCuerpoPedirAlias: (p: string, f: string) => unknown; bmCuerpoCotejarAlias: (...a: unknown[]) => unknown }>([
     join(RAIZ_REPO, 'Flujos/experimental/venta-digital/src/cobro.js'),
     join(RAIZ_REPO, 'Flujos/experimental/venta-digital/src/catalogo-externo.js'),
-    join(RAIZ_REPO, 'Flujos/experimental/casa-bermejo/src/lib/bm-venta.js'),
+    join(RAIZ_REPO, 'Flujos/clientes/casa-bermejo/src/lib/bm-venta.js'),
   ], ['bmAliasPedirResultado', 'bmCuerpoPedirAlias', 'bmCuerpoCotejarAlias']);
   it('los cuerpos rechazan teléfonos, pedidos e idMeta mal formados (null: no se llama)', () => {
     expect(F.bmCuerpoPedirAlias('wa_BM1', ARG)).toEqual({ v: 1, pedidoId: 'wa_BM1', telefono: ARG });
