@@ -171,19 +171,178 @@ function cumpleElOrigen(archivo: string): boolean {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Flujos SIN agente de n8n (etapa 1, 13/11/2026). En estos flujos el origen no lo calcula «Normalizar entrada» por definición: lo calcula el nodo de
+// ENTRADA que el reporte lee. Cuál es, sale del propio reporte (`$('<nodo>').first().json`), no de una lista escrita a mano: «Interpretar entrada» en
+// unos, «Normalizar entrada» en otros. Se EJECUTA su código con un `$` simulado (el mismo método que `normalizar` de arriba: lo que importa es lo que
+// el nodo hace con un `referral`, no lo que dice su texto) y se evalúa la expresión del reporte contra su salida. Si el código no corre con el `$`
+// simulado, el flujo no cumple y se dice por qué (nunca se traga el error).
+// ---------------------------------------------------------------------------
+
+/** Lo que devuelve el nodo de entrada, ejecutado con un mensaje armado a mano; `string` si no se pudo ejecutar. */
+function salidaDeEntrada(codigo: string, mensaje: Record<string, unknown>): Record<string, unknown> | string {
+  const entrada = [{
+    messages: [{ from: '59170000000', id: 'wamid.PRUEBA', type: 'text', text: { body: 'hola' }, ...mensaje }],
+    contacts: [{ profile: { name: 'Prueba' } }], metadata: { phone_number_id: '100000000000000' },
+    nombreNegocio: 'Prueba', direccion: '', prefijosPermitidos: '',
+  }];
+  const $input = { all: () => entrada.map((json) => ({ json })), first: () => ({ json: entrada[0] }) };
+  // La configuración mínima que el filtro de entrada exige: el prefijo del número de prueba y el `phone_number_id` del propio mensaje de prueba.
+  const CONFIG_MINIMA = { prefijosPermitidos: '591', phoneNumberIdEsperado: '100000000000000' };
+  // Estos flujos leen el webhook del nodo «Carga de entrada» y la configuración de «Config del negocio» o «Config base» POR NOMBRE y solo si corrieron (`isExecuted`):
+  // el simulador hace que corran esos tres (la configuración, mínima: aquí se ejercita el origen) y que ningún otro nodo haya corrido.
+  const corridos: Record<string, Record<string, unknown>> = { 'Carga de entrada': entrada[0] as Record<string, unknown>, 'Config del negocio': CONFIG_MINIMA, 'Config base': CONFIG_MINIMA };
+  const $ = (nombre: string) => {
+    const json = corridos[nombre];
+    return { first: () => ({ json }), all: () => (json ? [{ json }] : []), item: { json }, isExecuted: json !== undefined };
+  };
+  try {
+    const salida = (vm.compileFunction(codigo, ['$input', '$']) as (i: unknown, r: unknown) => { json: Record<string, unknown> }[])($input, $);
+    const json = salida?.[0]?.json;
+    return json && typeof json === 'object' ? json : 'el nodo no devolvió ningún ítem con el mensaje de prueba';
+  } catch (e) { return `el nodo de entrada no corre con el $ simulado (${e instanceof Error ? e.message : String(e)})`; }
+}
+
+/** Evalúa el `jsonBody` del reporte con `$('<entrada>').first().json` = `entrada`; `string` si no es evaluable. */
+function reporteDeEntrada(cuerpo: string, entrada: Record<string, unknown>, nombre: string): Record<string, unknown> | string {
+  const m = /^=\{\{([\s\S]*)\}\}$/.exec(cuerpo.trim());
+  if (!m) return 'el reporte no es una expresión simple';
+  try {
+    // Cualquier nombre distinto del nodo de entrada comprobado lanza: no se le da la entrada «a cualquiera».
+    const $ = (n: string) => { if (n !== nombre) throw new Error(`lee del nodo «${n}», no del de entrada «${nombre}»`); return { first: () => ({ json: entrada }) }; };
+    const fn = vm.compileFunction(`return (${m[1]});`, ['$json', '$']) as (j: unknown, r: unknown) => string;
+    return JSON.parse(fn(entrada, $)) as Record<string, unknown>;
+  } catch (e) { return `el reporte no se pudo evaluar (${e instanceof Error ? e.message : String(e)})`; }
+}
+
+/**
+ * Lo que le falta a un flujo SIN agente para reportar el origen del anuncio. Lista vacía = cumple. Las mismas comprobaciones de arriba (con `referral`
+ * marca `anuncio`, sin él `directo`, el origen VIAJA al reporte, sin el campo reporta `directo`, ni titular ni URL), sobre el nodo de entrada que lee el
+ * reporte.
+ */
+export function faltantesDelOrigenSinAgente(f: { nodes: Nodo[] }): string[] {
+  const reportar = f.nodes.find((n) => n.name === 'Reportar mensaje (entrante)');
+  if (!reportar) return ['no tiene «Reportar mensaje (entrante)»'];
+  const cuerpo = String(reportar.parameters['jsonBody'] ?? '');
+  // Las tres formas de comillas; y cada `$(` del texto tiene que ser una de las coincidencias (si no, hay una referencia que no se leyó bien).
+  const coincidencias = [...cuerpo.matchAll(/\$\(\s*(['"`])([^'"`]+)\1\s*\)/g)];
+  const nombres = [...new Set(coincidencias.map((m) => m[2] as string))];
+  if ((cuerpo.match(/\$\s*\(/g) ?? []).length !== coincidencias.length) return ['el reporte tiene una referencia $(...) que no se puede leer (nombre dinámico o sin comillas)'];
+  if (/\$node|\$input|\$items|\$env|\$vars|\$execution|\$workflow|\$now|\$today/.test(cuerpo)) return ['el reporte usa variables de n8n que el arnés no puede simular'];
+  // Un `$json` (solo o mezclado con `$('X')`) lee de OTRO sitio que el nodo de entrada comprobado: no se puede asegurar de dónde sale el origen.
+  if (/\$json\b/.test(cuerpo)) return ['el reporte usa $json: no se puede comprobar de qué nodo sale el origen'];
+  if (nombres.length !== 1) return [`el reporte no lee de UN solo nodo de entrada (lee de ${JSON.stringify(nombres)})`];
+  const entrada = f.nodes.find((n) => n.name === nombres[0]);
+  if (!entrada || entrada.type !== 'n8n-nodes-base.code') return [`el nodo «${nombres[0]}» que lee el reporte no es un nodo Code del flujo`];
+  const codigo = String(entrada.parameters['jsCode'] ?? '');
+  const anuncio = salidaDeEntrada(codigo, REFERRAL);
+  const directo = salidaDeEntrada(codigo, {});
+  for (const x of [anuncio, directo]) if (typeof x === 'string') return [`«${entrada.name}»: ${x}`];
+  const falta: string[] = [];
+  const a = anuncio as Record<string, unknown>;
+  const d = directo as Record<string, unknown>;
+  if (a['origen'] !== 'anuncio') falta.push(`«${entrada.name}» no marca anuncio cuando Meta manda referral (marca ${JSON.stringify(a['origen'])})`);
+  if (d['origen'] !== 'directo') falta.push(`«${entrada.name}» no marca directo cuando no lo manda (marca ${JSON.stringify(d['origen'])})`);
+  const rA = reporteDeEntrada(cuerpo, a, nombres[0] as string);
+  const rD = reporteDeEntrada(cuerpo, d, nombres[0] as string);
+  const rS = reporteDeEntrada(cuerpo, { from: '59170000000', tipo: 'text', userInput: 'hola' }, nombres[0] as string);
+  for (const x of [rA, rD, rS]) if (typeof x === 'string') return [...falta, x];
+  const [ra, rd, rs] = [rA, rD, rS] as Record<string, unknown>[];
+  if (ra['origen'] !== 'anuncio' || rd['origen'] !== 'directo') falta.push('el origen no viaja al reporte');
+  if (rs['origen'] !== 'directo') falta.push('un flujo sin el campo debe reportar directo, nunca anuncio');
+  const texto = JSON.stringify(ra);
+  if (texto.includes('fb.me') || texto.includes('descuento')) falta.push('el reporte trae el titular o la URL de la campaña');
+  return falta;
+}
+
+export const cumpleElOrigenSinAgente = (f: { nodes: Nodo[] }): boolean => faltantesDelOrigenSinAgente(f).length === 0;
+
 describe('Flujos de origen, lista única: cubierto por la lista de arriba o con excepción declarada', () => {
   const atienden = flujosDeProduccion().filter((a) => atiendeCliente(flujo(a) as unknown as FlujoCompleto));
 
   it('todo flujo de producción que atiende a un cliente y no está en la lista de arriba cumple las comprobaciones o tiene excepción; ninguna sobra', () => {
     expect(atienden.length).toBeGreaterThan(10);
     for (const a of FLUJOS) expect(atienden, a).toContain(a);
-    const hoy = new Map(atienden.map((a) => [a, FLUJOS.includes(a) || cumpleElOrigen(a) ? [] : ['origen']]));
-    expect(problemasDeRegla('flujos-origen', hoy)).toEqual([]);
+    // Con agente de n8n: la comprobación de siempre. Sin agente (etapa 1): `cumpleElOrigenSinAgente`, sobre el nodo de entrada que lee el reporte.
+    const conAgente = (a: string): boolean => flujo(a).nodes.some((n) => n.type === '@n8n/n8n-nodes-langchain.agent');
+    const cumple = (a: string): boolean => FLUJOS.includes(a) || (conAgente(a) ? cumpleElOrigen(a) : cumpleElOrigenSinAgente(flujo(a)));
+    const hoy = new Map(atienden.map((a) => [a, cumple(a) ? [] : ['origen']]));
+    const detalle = atienden.filter((a) => !cumple(a) && !conAgente(a)).map((a) => `${a}: ${faltantesDelOrigenSinAgente(flujo(a)).join('; ')}`).join('\n');
+    expect(problemasDeRegla('flujos-origen', hoy), detalle).toEqual([]);
   });
 
   it('contraprueba: un flujo sin el nodo «Normalizar entrada» (o sin «Reportar mensaje (entrante)») no cumple', () => {
     expect(cumpleElOrigen('agendamiento-seguimientos.json')).toBe(false);
     expect(cumpleElOrigen('demo-a-agendamiento.json')).toBe(true);
+  });
+
+  describe('sin agente: la prueba no es vacía, un flujo que no reporta el origen FALLA', () => {
+    const real = (): { nodes: Nodo[] } => JSON.parse(JSON.stringify(flujo('experimental/agenda-minima/agenda-minima.v0.json'))) as { nodes: Nodo[] };
+    const sintetico = (codigo: string, cuerpo: string): { nodes: Nodo[] } => ({
+      nodes: [
+        { name: 'Entrada', type: 'n8n-nodes-base.code', parameters: { jsCode: codigo } },
+        { name: 'Reportar mensaje (entrante)', type: 'n8n-nodes-base.httpRequest', parameters: { jsonBody: cuerpo } },
+      ],
+    });
+    const CODIGO_BUENO = "const m = $input.first().json.messages[0]; return [{ json: { from: m.from, origen: m.referral ? 'anuncio' : 'directo' } }];";
+    const CUERPO_BUENO = "={{ JSON.stringify({ origen: $('Entrada').first().json.origen || 'directo' }) }}";
+
+    it('el flujo real (agenda mínima) y un sintético correcto cumplen', () => {
+      expect(faltantesDelOrigenSinAgente(real())).toEqual([]);
+      expect(cumpleElOrigenSinAgente(sintetico(CODIGO_BUENO, CUERPO_BUENO))).toBe(true);
+    });
+
+    it('un flujo cuya entrada no calcula `origen` falla', () => {
+      const f = sintetico("const m = $input.first().json.messages[0]; return [{ json: { from: m.from } }];", CUERPO_BUENO);
+      expect(faltantesDelOrigenSinAgente(f).join('\n')).toMatch(/no marca anuncio cuando Meta manda referral/);
+    });
+
+    it('un flujo cuya entrada marca siempre `directo` (ignora el referral) falla', () => {
+      const f = sintetico("const m = $input.first().json.messages[0]; return [{ json: { from: m.from, origen: 'directo' } }];", CUERPO_BUENO);
+      expect(faltantesDelOrigenSinAgente(f).join('\n')).toMatch(/no marca anuncio/);
+    });
+
+    it('un reporte sin `origen` (el origen no viaja) falla', () => {
+      const f = sintetico(CODIGO_BUENO, "={{ JSON.stringify({ telefono: $('Entrada').first().json.from }) }}");
+      expect(faltantesDelOrigenSinAgente(f).join('\n')).toMatch(/el origen no viaja al reporte/);
+    });
+
+    it('un reporte que inventa `anuncio` cuando falta el campo, o que trae el titular de la campaña, falla', () => {
+      const inventa = sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $('Entrada').first().json.origen || 'anuncio' }) }}");
+      expect(faltantesDelOrigenSinAgente(inventa).join('\n')).toMatch(/nunca anuncio/);
+      const titular = sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $('Entrada').first().json.origen || 'directo', url: 'fb.me/x' }) }}");
+      expect(faltantesDelOrigenSinAgente(titular).join('\n')).toMatch(/titular o la URL/);
+    });
+
+    it('un flujo real al que se le quita el cálculo del origen, o sin el nodo de reporte, falla', () => {
+      const f = real();
+      const entrada = f.nodes.find((n) => n.name === 'Interpretar entrada')!;
+      entrada.parameters['jsCode'] = String(entrada.parameters['jsCode']).replace("origen: ref ? 'anuncio' : 'directo',", '');
+      expect(cumpleElOrigenSinAgente(f)).toBe(false);
+      expect(faltantesDelOrigenSinAgente({ nodes: [] })).toEqual(['no tiene «Reportar mensaje (entrante)»']);
+    });
+
+    it('un reporte con `$json` (solo o mezclado con `$(...)`) no se puede comprobar y falla', () => {
+      expect(faltantesDelOrigenSinAgente(sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $json.origen || 'directo' }) }}")).join('\n')).toMatch(/usa \$json/);
+      expect(faltantesDelOrigenSinAgente(sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $('Entrada').first().json.origen || $json.origen || 'directo' }) }}")).join('\n')).toMatch(/usa \$json/);
+    });
+
+    it('un reporte con `$(\'Entrada\')` y `$("Otro")`, o con comillas invertidas, no se puede dar por cumplido', () => {
+      const dobles = sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $('Entrada').first().json.origen || 'directo', x: $(\"Otro\").first().json.x }) }}");
+      expect(faltantesDelOrigenSinAgente(dobles).join('\n')).toMatch(/no lee de UN solo nodo de entrada/);
+      const invertidas = sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $(`Entrada`).first().json.origen || 'directo', x: $(`Otro`).first().json.x }) }}");
+      expect(faltantesDelOrigenSinAgente(invertidas).join('\n')).toMatch(/no lee de UN solo nodo de entrada/);
+      const dinamica = sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $('Entrada').first().json.origen || 'directo', x: $(nombre).first().json.x }) }}");
+      expect(faltantesDelOrigenSinAgente(dinamica).join('\n')).toMatch(/no se puede leer/);
+      expect(faltantesDelOrigenSinAgente(sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $(`Entrada`).first().json.origen || 'directo' }) }}"))).toEqual([]);
+    });
+
+    it('un reporte que lee de dos nodos, o de un nodo que no es Code, no se puede comprobar y falla', () => {
+      expect(faltantesDelOrigenSinAgente(sintetico(CODIGO_BUENO, "={{ JSON.stringify({ a: $('Entrada').first().json.origen, b: $('Otro').first().json.x }) }}")).join('\n'))
+        .toMatch(/no lee de UN solo nodo de entrada/);
+      expect(faltantesDelOrigenSinAgente(sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $('Falta').first().json.origen }) }}")).join('\n'))
+        .toMatch(/no es un nodo Code del flujo/);
+    });
   });
 
   it('contraprueba: sin excepción falla; con excepción pasa; si ya cumple, la excepción sobra', () => {
