@@ -225,6 +225,8 @@ export function faltantesDelOrigenSinAgente(f: { nodes: Nodo[] }): string[] {
   const cuerpo = String(reportar.parameters['jsonBody'] ?? '');
   const nombres = [...new Set([...cuerpo.matchAll(/\$\(\s*'([^']+)'\s*\)/g)].map((m) => m[1] as string))];
   if (/\$node|\$input|\$items|\$env|\$vars|\$execution|\$workflow|\$now|\$today/.test(cuerpo)) return ['el reporte usa variables de n8n que el arnés no puede simular'];
+  // Un `$json` (solo o mezclado con `$('X')`) lee de OTRO sitio que el nodo de entrada comprobado: no se puede asegurar de dónde sale el origen.
+  if (/\$json\b/.test(cuerpo)) return ['el reporte usa $json: no se puede comprobar de qué nodo sale el origen'];
   if (nombres.length !== 1) return [`el reporte no lee de UN solo nodo de entrada (lee de ${JSON.stringify(nombres)})`];
   const entrada = f.nodes.find((n) => n.name === nombres[0]);
   if (!entrada || entrada.type !== 'n8n-nodes-base.code') return [`el nodo «${nombres[0]}» que lee el reporte no es un nodo Code del flujo`];
@@ -313,6 +315,11 @@ describe('Flujos de origen, lista única: cubierto por la lista de arriba o con 
       entrada.parameters['jsCode'] = String(entrada.parameters['jsCode']).replace("origen: ref ? 'anuncio' : 'directo',", '');
       expect(cumpleElOrigenSinAgente(f)).toBe(false);
       expect(faltantesDelOrigenSinAgente({ nodes: [] })).toEqual(['no tiene «Reportar mensaje (entrante)»']);
+    });
+
+    it('un reporte con `$json` (solo o mezclado con `$(...)`) no se puede comprobar y falla', () => {
+      expect(faltantesDelOrigenSinAgente(sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $json.origen || 'directo' }) }}")).join('\n')).toMatch(/usa \$json/);
+      expect(faltantesDelOrigenSinAgente(sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $('Entrada').first().json.origen || $json.origen || 'directo' }) }}")).join('\n')).toMatch(/usa \$json/);
     });
 
     it('un reporte que lee de dos nodos, o de un nodo que no es Code, no se puede comprobar y falla', () => {

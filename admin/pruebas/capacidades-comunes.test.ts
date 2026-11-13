@@ -50,8 +50,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Flujo, CARPETA_FLUJOS, leerFlujo } from './lib/flujo.ts';
 import { flujosDeProduccion } from './lib/flujos-de-cliente.ts';
-import { atiendeCliente, incluyeVariante, SRC_CORE } from './core/migracion/comprobaciones.ts';
-import { problemasDeRegla } from './core/migracion/excepciones.ts';
+import { atiendeCliente, idDeFlujo, incluyeVariante, SRC_CORE } from './core/migracion/comprobaciones.ts';
+import { excepcionesDe, problemasDeRegla } from './core/migracion/excepciones.ts';
 
 const TRIGGER_WHATSAPP = 'n8n-nodes-base.whatsAppTrigger';
 const esAgente = (tipo: string) => tipo === '@n8n/n8n-nodes-langchain.agent';
@@ -503,10 +503,18 @@ describe('Capacidades comunes, lista única: cubierto por la comprobación o con
     expect(problemasDeRegla('capacidades-comunes', hoy)).toEqual([]);
   });
 
-  it('los flujos de producción que atienden se reparten sin dejar ninguno fuera: raíz con agente, con agente en otra carpeta, o sin agente', () => {
-    const sin = atienden.filter((a) => esSinAgenteQueAtiende(leerFlujo(a)));
-    expect(sin.length).toBeGreaterThanOrEqual(13);
-    for (const a of atienden) expect(cubiertoPorLaComprobacion(a) || sin.includes(a) || leerFlujo(a).nodes.some((n) => esAgente(n.type)), a).toBe(true);
+  it('el conjunto que atiende, medido aparte por el texto del JSON, es exactamente el que cubren la comprobación con agente, la de sin agente o una excepción', () => {
+    // Medido de forma independiente: el JSON crudo nombra «Reportar mensaje (entrante)» como nodo (no por `atiendeCliente`).
+    const porTexto = produccion.filter((a) => readFileSync(join(CARPETA_FLUJOS, a), 'utf8').includes('"name": "Reportar mensaje (entrante)"'));
+    expect([...porTexto].sort()).toEqual([...atienden].sort());
+    const conAgente = atienden.filter((a) => leerFlujo(a).nodes.some((n) => esAgente(n.type)));
+    const sinAgente = atienden.filter((a) => esSinAgenteQueAtiende(leerFlujo(a)));
+    expect([...conAgente, ...sinAgente].sort()).toEqual([...atienden].sort()); // sin solapes ni huecos
+    const exceptuados = new Set(excepcionesDe('capacidades-comunes').map(([j]) => idDeFlujo(j)));
+    for (const a of atienden) {
+      const cumple = conversacionales.includes(a) || (sinAgente.includes(a) ? faltantesDeMediosSinAgente(leerFlujo(a)) : faltantesDeMedios(leerFlujo(a))).length === 0;
+      expect(cumple || exceptuados.has(idDeFlujo(a)), a).toBe(true);
+    }
   });
 
   it('contraprueba: un flujo que atiende y no tiene la rama de medios falla sin excepción; con excepción pasa; si ya la cumple, la excepción sobra', () => {
