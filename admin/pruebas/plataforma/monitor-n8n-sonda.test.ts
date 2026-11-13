@@ -50,6 +50,11 @@ fin=$(cat "$FAKE_DIR/fin.txt" 2>/dev/null)
 echo "notAfter=$fin"
 `;
 
+/** `sleep` es un binario externo: el falso no espera y anota cada pausa. */
+const SLEEP_FALSO = `#!/usr/bin/env bash
+echo "$1" >> "$FAKE_DIR/pausas.txt"
+`;
+
 let dir: string;
 
 beforeEach(() => {
@@ -58,6 +63,9 @@ beforeEach(() => {
   writeFileSync(join(dir, 'openssl'), OPENSSL_FALSO);
   chmodSync(join(dir, 'curl'), 0o755);
   chmodSync(join(dir, 'openssl'), 0o755);
+  writeFileSync(join(dir, 'sleep'), SLEEP_FALSO);
+  chmodSync(join(dir, 'sleep'), 0o755);
+  writeFileSync(join(dir, 'pausas.txt'), '');
   writeFileSync(join(dir, 'llamadas.txt'), '');
   writeFileSync(join(dir, 'salida.txt'), '');
 });
@@ -81,7 +89,9 @@ function correr(modo: string, secuencia: string[], extra: Record<string, string>
   });
   const llamadas = readFileSync(join(dir, 'llamadas.txt'), 'utf8').split('\n').filter(Boolean);
   const salida = readFileSync(join(dir, 'salida.txt'), 'utf8');
-  return { ...r, llamadas, salida, todo: `${r.stdout}\n${r.stderr}\n${salida}` };
+  const pausas = readFileSync(join(dir, 'pausas.txt'), 'utf8').split('\n').filter(Boolean);
+  const openssl = existsSync(join(dir, 'openssl.txt')) ? readFileSync(join(dir, 'openssl.txt'), 'utf8') : '';
+  return { ...r, llamadas, salida, pausas, openssl, todo: `${r.stdout}\n${r.stderr}\n${salida}` };
 }
 
 describe('sondear-n8n.sh: mal uso no consulta nada', () => {
@@ -153,6 +163,12 @@ describe('sondear-n8n.sh: un parpadeo no declara nada', () => {
     expect(r.status).toBe(1);
     expect(r.llamadas).toHaveLength(6);
     expect(r.salida).toContain('rondas_fallidas=2');
+  });
+
+  it('las pausas: ninguna si responde a la primera; 2+1+2 si fallan las dos rondas, y nunca tras la última consulta', () => {
+    expect(correr('sondear', ['0 200']).pausas).toEqual([]);
+    const r = correr('sondear', ['7 000'], { MONITOR_ESPERA_S: '20', MONITOR_PAUSA_RONDA_S: '240' });
+    expect(r.pausas).toEqual(['20', '20', '240', '20', '20']);
   });
 });
 
@@ -253,6 +269,13 @@ describe('sondear-n8n.sh certificado', () => {
     expect(r.todo).not.toContain('no-es-una-fecha');
   });
 
+  it('verifica la cadena y el nombre: un certificado ajeno no se mide', () => {
+    const r = cert('Jan 11 00:00:00 2027 GMT');
+    expect(r.openssl).toContain('-verify_return_error');
+    expect(r.openssl).toContain(`-verify_hostname ${HOST}`);
+    expect(r.openssl).toContain(`-servername ${HOST}`);
+  });
+
   it('no llama a curl', () => {
     expect(cert('Jan 11 00:00:00 2027 GMT').llamadas).toHaveLength(0);
   });
@@ -303,5 +326,20 @@ describe('monitor-n8n.yml', () => {
     const aviso = sinComentarios.split('- name: Avisar a Healthchecks')[1].split('- name: ')[0];
     expect(aviso).toContain("inputs.simulacro != 'host_inexistente'");
     expect(aviso).toContain('^https://hc-ping\\.com/');
+  });
+
+  it('a Healthchecks le llega «bien» solo si la sonda acertó; si no, el código de salida o /fail', () => {
+    const aviso = sinComentarios.split('- name: Avisar a Healthchecks')[1].split('- name: ')[0];
+    expect(aviso).toContain('RESULTADO: ${{ steps.sonda.outcome }}');
+    expect(aviso).toContain('SALIDA: ${{ steps.sonda.outputs.salida }}');
+    expect(aviso).toContain('if [ "$RESULTADO" = "success" ]; then DESTINO="$PING_URL"');
+    expect(aviso).toContain('DESTINO="$PING_URL/$SALIDA"');
+    expect(aviso).toContain('else DESTINO="$PING_URL/fail"');
+    // Un 404 o un 429 del servicio de ping no pasa por éxito.
+    expect(aviso).toMatch(/curl [^\n]*--fail /);
+    // El paso de la sonda entrega su código de salida y falla con él.
+    const sonda = sinComentarios.split('- name: Sondear la ruta de salud')[1].split('- name: ')[0];
+    expect(sonda).toContain('echo "salida=$rc" >> "$GITHUB_OUTPUT"');
+    expect(sonda).toContain('exit "$rc"');
   });
 });

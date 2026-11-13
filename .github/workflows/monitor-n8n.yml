@@ -2,8 +2,8 @@
 # monitor-n8n.yml — sonda externa del n8n de producción (segunda red)
 # -----------------------------------------------------------------------------
 # Política de Andres del 11/10/2026: ningún monitoreo depende de su laptop, de
-# la app de escritorio ni de una sesión abierta. Diseño: docs/produccion/
-# monitor-n8n.md (decisiones del 12/11/2026).
+# la app de escritorio ni de una sesión abierta. Diseño y cómo leer una alerta:
+# docs/produccion/monitor-n8n.md (decisiones del 12/11/2026).
 #
 # Qué hace: cada 10 minutos consulta la ruta de salud de n8n desde la red de
 # GitHub. Si fallan DOS rondas seguidas (separadas 4 minutos), la corrida falla
@@ -26,9 +26,14 @@
 # repositorio: MONITOR_N8N_URL (https://<host>/healthz/readiness) y
 # MONITOR_N8N_PING_URL (URL de ping del chequeo; es una URL de capacidad).
 #
+# El certificado se MIDE en cada corrida pero el aviso de «por vencer» no sale
+# de aquí (fallar cada 10 minutos durante 14 días sería ruido): lo da el reporte
+# diario del bloque 3, una vez por día.
+#
 # Costo: 0 mensajes de WhatsApp; ~144 corridas al día de menos de 1 minuto
-# (hasta 6 si hay falla); 0 escrituras en la nube. La ruta de salud no crea
-# ejecuciones en n8n.
+# (hasta 6 si hay falla) y, por usar un Environment, ~144 registros diarios en
+# la página de Deployments del repositorio (sin `url`, no exponen nada); 0
+# escrituras en la nube. La ruta de salud no crea ejecuciones en n8n.
 # =============================================================================
 name: Monitor de n8n
 
@@ -76,7 +81,13 @@ jobs:
           # El simulacro no espera 4 minutos entre rondas.
           MONITOR_PAUSA_RONDA_S: ${{ inputs.simulacro == 'host_inexistente' && '5' || '240' }}
           MONITOR_ESPERA_S: ${{ inputs.simulacro == 'host_inexistente' && '2' || '20' }}
-        run: bash scripts/monitor/sondear-n8n.sh sondear
+        run: |
+          # El código de salida se guarda para Healthchecks: 1 = n8n no responde,
+          # 2 = el monitor está mal configurado (no es una caída de n8n).
+          rc=0
+          bash scripts/monitor/sondear-n8n.sh sondear || rc=$?
+          echo "salida=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
 
       - name: Medir el certificado
         id: certificado
@@ -90,6 +101,7 @@ jobs:
         env:
           PING_URL: ${{ secrets.MONITOR_N8N_PING_URL }}
           RESULTADO: ${{ steps.sonda.outcome }}
+          SALIDA: ${{ steps.sonda.outputs.salida }}
         run: |
           set -euo pipefail
           if [ -z "$PING_URL" ]; then
@@ -102,11 +114,17 @@ jobs:
             echo "::error::MONITOR_N8N_PING_URL no tiene la forma https://hc-ping.com/<id>."
             exit 1
           fi
-          if [ "$RESULTADO" = "success" ]; then DESTINO="$PING_URL"; else DESTINO="$PING_URL/fail"; fi
+          # Healthchecks admite el código de salida en la URL: 0 = bien, otro = falló.
+          # Así su registro distingue «n8n caído» (1) de «monitor mal configurado» (2).
+          # Si la sonda ni siquiera corrió (sin código), es una falla.
+          if [ "$RESULTADO" = "success" ]; then DESTINO="$PING_URL"
+          elif [[ "$SALIDA" =~ ^[1-9][0-9]{0,2}$ ]]; then DESTINO="$PING_URL/$SALIDA"
+          else DESTINO="$PING_URL/fail"
+          fi
           # La URL viaja por un archivo de configuración leído de stdin: no queda
           # en la línea de comandos ni en el registro.
           printf 'url = "%s"\n' "$DESTINO" |
-            curl --silent --show-error --output /dev/null --max-time 10 \
+            curl --silent --show-error --fail --output /dev/null --max-time 10 \
               --retry 3 --retry-delay 5 --proto '=https' --config - ||
             echo "::warning::No se pudo avisar a Healthchecks (el silencio también alerta)."
 

@@ -16,6 +16,7 @@
 #                separadas unos minutos, un parpadeo no declara nada.
 #   certificado  Días que le quedan al certificado del host. Nunca falla la
 #                corrida: informa `dias=` y `certificado=vigente|por_vencer|…`.
+#                Quien avisa es el reporte diario, que lee esta salida.
 #
 # Lo que NUNCA hace: imprimir la URL ni el host (el dominio no va en registros
 # de un repositorio público), llamar a una ruta de webhook, ni escribir en n8n.
@@ -136,7 +137,10 @@ sondear() {
 certificado() {
   local fin fin_epoch ahora dias
   # `</dev/null` cierra la sesión TLS en cuanto llega el certificado.
-  fin="$(timeout 20 openssl s_client -connect "$HOST:443" -servername "$HOST" </dev/null 2>/dev/null |
+  # -verify_return_error y -verify_hostname: un certificado que no encadena o que
+  # es de otro nombre no se mide (un intermediario no puede fingir días de sobra).
+  fin="$(timeout 20 openssl s_client -connect "$HOST:443" -servername "$HOST" \
+    -verify_return_error -verify_hostname "$HOST" </dev/null 2>/dev/null |
     openssl x509 -noout -enddate 2>/dev/null)"
   fin="${fin#notAfter=}"
   if [ -z "$fin" ]; then
