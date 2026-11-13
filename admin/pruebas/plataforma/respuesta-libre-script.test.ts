@@ -165,6 +165,7 @@ describe('el script de Plataforma', () => {
       const r = lineaDeComandos(completo, { CLOUDSDK_CONFIG: buenas(), GOOGLE_APPLICATION_CREDENTIALS: '/ruta/otra.json' });
       expect(r.status).toBe(2);
       expect(r.stderr).toContain('GOOGLE_APPLICATION_CREDENTIALS');
+      expect(r.stderr.split('\n').filter((l: string) => l.includes('  ✗'))).toHaveLength(1);
       expect(`${r.stdout}${r.stderr}`).not.toContain(ID);
     });
     it('línea de comandos: sale 2 SOLO por credenciales ilegibles (con respaldo y confirmación dados)', () => {
@@ -172,8 +173,7 @@ describe('el script de Plataforma', () => {
       const r = lineaDeComandos(completo, { CLOUDSDK_CONFIG: creds(null) });
       expect(r.status).toBe(2);
       expect(r.stderr).toContain('no se pudieron leer las credenciales');
-      expect(r.stderr).not.toContain('--respaldo');
-      expect(r.stderr).not.toContain('--confirmo-produccion');
+      expect(r.stderr.split('\n').filter((l: string) => l.includes('  ✗'))).toHaveLength(1);
     });
   });
 
