@@ -19,6 +19,7 @@
  *       `"@@comun:nodos/<archivo>.js"`  solo `comun.js` + el archivo;
  *       `"@@solo:nodos/<archivo>.js"`   solo el archivo.
  *     El sufijo `+crm` (`@@todo+sesion+crm:…`, solo «Armar mensajes») agrega `src/lib/crm.js` (`vmProspectoCrm`, el miniCRM de Q'Taco).
+ *     El sufijo `+coherente` (`@@todo+coherente:…`, «Decidir turno» y «Plan del turno») pega `core/conversacion/respuesta-coherente.js` (sin el filtro común: el modelo solo clasifica).
  *     Y el sufijo `+sesion` (`@@todo+sesion:…`, `@@comun+sesion:…`) pega ENTRE las librerías y el nodo el módulo común
  *     `comun-sin-agente/src/sesion.js` (el estado de la conversación en el servidor, PR-4a): se INCLUYE, nunca se copia ni se edita.
  *   - `@@dato:a.b.c@@` (dentro de cualquier texto) se reemplaza por ese dato del tenant;
@@ -66,6 +67,8 @@ const LIB = [...ORDEN_LIBS.map((n) => leer(`src/lib/${n}.js`)), ...MODULOS_COMUN
 const COMUN = leer('src/lib/comun.js').trimEnd();
 // El miniCRM de Q'Taco (`vmProspectoCrm`): se pega SOLO delante de «Armar mensajes» (`+crm`), no en todos los nodos.
 const LIB_CRM = leer('src/lib/crm.js').trimEnd();
+// La respuesta coherente (core): `+coherente` pega, ANTES del nodo, la pieza `rc*`. Se INCLUYEN, nunca se copian ni se editan aquí.
+const FUENTE_COHERENTE = [leer('../../src/core/conversacion/respuesta-coherente.js')].map((t) => t.trimEnd()).join('\n\n');
 const plantilla = JSON.parse(leer('flujo.plantilla.json'));
 
 const NODOS_DE_ENTRADA = {
@@ -136,18 +139,20 @@ const URL_QR_SIMULADO = /^https:\/\/raw\.githubusercontent\.com\/segurolotengopy
 const MODOS_COBRO = ['simulado', 'real', 'sin_qr'];
 
 function codigoDe(marca, nodo) {
-  const m = /^@@(?:(solo|comun|todo)(\+sesion)?(\+crm)?:)?(nodos\/[a-z0-9-]+\.js)$/.exec(marca);
+  const m = /^@@(?:(solo|comun|todo)(\+sesion)?(\+crm)?(\+coherente)?:)?(nodos\/[a-z0-9-]+\.js)$/.exec(marca);
   if (!m) throw new Error(`${nodo}: ruta de código no válida: ${marca}`);
   const modo = m[1] || 'todo';
   const conSesion = m[2] === '+sesion';
-  const ruta = m[4];
+  const ruta = m[5];
+  const conCoherente = m[4] === '+coherente';
+  if (conCoherente && modo !== 'todo') throw new Error(`${nodo}: «+coherente» solo va con «todo»`);
   const conCrm = m[3] === '+crm';
   if (conCrm && modo !== 'todo') throw new Error(`${nodo}: «+crm» solo va con «todo» (la librería del miniCRM usa los ayudantes de pedido)`);
   if (conSesion && modo === 'solo') throw new Error(`${nodo}: «+sesion» no va con «solo» (el módulo de sesión depende de comun.js)`);
   if (!existsSync(join(AQUI, 'src', ruta))) throw new Error(`${nodo}: no existe src/${ruta}`);
   const propio = leer(`src/${ruta}`).trimEnd();
   const base = modo === 'solo' ? [] : [modo === 'comun' ? COMUN : LIB];
-  return base.concat(conSesion ? [FUENTE_SESION] : []).concat(conCrm ? [LIB_CRM] : []).concat([propio]).join('\n\n') + '\n';
+  return base.concat(conSesion ? [FUENTE_SESION] : []).concat(conCrm ? [LIB_CRM] : []).concat(conCoherente ? [FUENTE_COHERENTE] : []).concat([propio]).join('\n\n') + '\n';
 }
 
 // --- los datos del tenant ---------------------------------------------------------------------------

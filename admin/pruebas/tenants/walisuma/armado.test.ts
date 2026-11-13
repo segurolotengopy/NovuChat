@@ -1,5 +1,5 @@
 /**
- * EL ARMADO del esqueleto de Walisuma (`Flujos/experimental/walisuma/construir.mjs`): lo que el JSON versionado tiene y lo que NO puede tener. Se prueba NEGANDO: cada guardia se prueba contra un JSON dañado a propósito.
+ * EL ARMADO del esqueleto de Walisuma (`Flujos/clientes/walisuma/construir.mjs`): lo que el JSON versionado tiene y lo que NO puede tener. Se prueba NEGANDO: cada guardia se prueba contra un JSON dañado a propósito.
  */
 import { spawnSync } from 'node:child_process';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error — el armador es un módulo .mjs sin tipos
-import * as C from '../../../../Flujos/experimental/walisuma/construir.mjs';
+import * as C from '../../../../Flujos/clientes/walisuma/construir.mjs';
 // @ts-expect-error — el módulo común es un .mjs
 import { NODOS_DEL_GUARDADO as GUARDADO } from '../../../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 import type { Flujo, J } from '../../lib/flujo';
@@ -18,7 +18,7 @@ import { PRODUCCION, PRUEBA } from './mundo';
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(AQUI, '../../../..');
 const FLUJOS = join(RAIZ, 'Flujos/experimental');
-const CARPETA = join(FLUJOS, 'walisuma');
+const CARPETA = join(RAIZ, 'Flujos/clientes/walisuma');
 const leer = (r: string): string => readFileSync(r, 'utf8');
 const DATOS = JSON.parse(leer(join(RAIZ, 'admin/scripts/datos/walisuma/walisuma.json'))) as J;
 const clonar = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
@@ -207,7 +207,7 @@ describe('prohibición 7 y rutas de webhook', () => {
 describe('lo incluido es byte a byte igual a su fuente', () => {
   const codigo = (f: Flujo, n: string): string => String((nodo(f, n)['parameters'] as J)['jsCode']);
   const fuente = (r: string): string => leer(join(FLUJOS, r)).trimEnd();
-  const LIBS = ['venta-digital/src/cobro.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'walisuma/src/lib/wl.js', 'walisuma/src/lib/wl-venta.js'];
+  const LIBS = ['venta-digital/src/cobro.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', '../clientes/walisuma/src/lib/wl.js', '../clientes/walisuma/src/lib/wl-venta.js'];
   it('los módulos comunes de medios, tal cual de Flujos/src/core/medios', () => {
     const medios = join(RAIZ, 'Flujos/src/core/medios');
     expect(codigo(PRODUCCION, 'Preparar transcripción')).toBe(leer(join(medios, 'preparar-transcripcion.js')).trimEnd() + '\n');
@@ -224,11 +224,11 @@ describe('lo incluido es byte a byte igual a su fuente', () => {
   });
   it('«Armar mensajes»: librerías + _comun + los constructores de mensajes comunes + su código', () => {
     const libs = LIBS.map(fuente);
-    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('comun-sin-agente/src/mensajes.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../src/modulos/pedidos/qr-del-pedido.js'), fuente('walisuma/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
+    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('comun-sin-agente/src/mensajes.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../src/modulos/pedidos/qr-del-pedido.js'), fuente('../clientes/walisuma/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar mensajes')).toBe(esperado);
-    const avisos = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('walisuma/src/nodos/armar-avisos.js')].join('\n\n') + '\n';
+    const avisos = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../clientes/walisuma/src/nodos/armar-avisos.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar avisos')).toBe(avisos);
-    for (const [n, a] of [['Decidir turno', 'decidir-turno'], ['Interpretar lectura', 'interpretar-lectura']]) expect(codigo(PRODUCCION, n), n).toBe([...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente(`walisuma/src/nodos/${a}.js`)].join('\n\n') + '\n');
+    for (const [n, a] of [['Decidir turno', 'decidir-turno'], ['Interpretar lectura', 'interpretar-lectura']]) expect(codigo(PRODUCCION, n), n).toBe([...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente(`../clientes/walisuma/src/nodos/${a}.js`)].join('\n\n') + '\n');
   });
   it('«Guardar comprobante» es el de Antonio (commit 7188637c), tal cual: huella fijada del nodo entero', () => {
     // La plantilla lleva la credencial como `@@cred:ingesta`; el armado la sustituye por el nombre del dato. Se vuelve a la forma de la plantilla antes de la huella.

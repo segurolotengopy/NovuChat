@@ -1036,7 +1036,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@nodos/decidir-turno.js"
+        "jsCode": "@@todo+coherente:nodos/decidir-turno.js"
       },
       "notes": "Todo lo que no necesita entender lenguaje se decide con código, sin modelo."
     },
@@ -1106,7 +1106,7 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 1500,
-      "notes": "El modelo SOLO extrae datos (las líneas del pedido o los campos de la reserva) en JSON con esquema. No calcula precios, ni totales, ni horas; ningún texto al cliente sale de él."
+      "notes": "El modelo SOLO extrae datos (pedido o reserva) o CLASIFICA en un enum cerrado (extraer_libre); ningún texto al cliente sale de él."
     },
     {
       "id": "plan",
@@ -1120,7 +1120,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@nodos/plan-del-turno.js"
+        "jsCode": "@@todo+coherente:nodos/plan-del-turno.js"
       },
       "notes": "Arma mensajes, aviso, cierre, pedido y estado nuevo. Los totales, los días y los textos los pone el código."
     },

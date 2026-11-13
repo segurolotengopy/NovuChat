@@ -31,10 +31,13 @@ const SESION = readFileSync(join(RAIZ, '../../comun-sin-agente/src/sesion.js'), 
 // Y el reconocedor de anuncios por titular (core/medios), también incluido por construir.mjs.
 const APT = readFileSync(join(RAIZ, '../../../src/core/medios/anuncio-por-titular.js'), 'utf8');
 const LIBS = [...LIBRERIAS, PQR, APT].join('\n');
+// La respuesta coherente (core): la pieza `rc*` SOLA, DESPUÉS de las librerías y ANTES del nodo (la marca `+coherente` de construir.mjs).
+const COHERENTE = ['core/conversacion/respuesta-coherente.js'].map((r) => readFileSync(join(RAIZ, '../../../src', r), 'utf8')).join('\n');
+const CON_COHERENTE = ['decidir-turno', 'plan-del-turno'];
 const CODIGO: Record<string, string> = {};
 const CON_SESION = ['config-del-negocio', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes'];
 for (const n of ['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'interpretar-lectura', 'decidir-turno', 'plan-del-turno', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes', 'sin-estado']) {
-  CODIGO[n] = `${LIBS}\n${CON_SESION.includes(n) ? `${SESION}\n` : ''}${leer(`nodos/${n}.js`)}`;
+  CODIGO[n] = `${LIBS}\n${CON_SESION.includes(n) ? `${SESION}\n` : ''}${CON_COHERENTE.includes(n) ? `${COHERENTE}\n` : ''}${leer(`nodos/${n}.js`)}`;
 }
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026, 10:00 en La Paz

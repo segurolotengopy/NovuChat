@@ -114,6 +114,8 @@
 // anotación de la reserva la resuelve T7b según los `wamid` del aviso.
 const d = vmPrimero('Decidir turno') || {};
 const cfg = vmCfg();
+// RESPUESTA COHERENTE (core, `rc*`): el dato `respuestaLibre` del tenant, saneado; apagado salvo `activo === true`.
+const rl = rcConfig(cfg.respuestaLibre);
 const t = vmPrimero('Interpretar entrada') || {};
 const ahora = Number(t.ahoraMs) || Date.now();
 // El ancla de las claves estables (B0): el `ultimoMensajeMs` del estado LEIDO que fija `Decidir turno`. Sin ancla (un
@@ -167,17 +169,16 @@ function despachar() {
   // Con un comprobante en espera, pedir una persona NO saca al cliente del cobro: el paso y el pedido se conservan.
   if (a === 'transferir' && /^el modo de cobro cambió: comprobante de un pedido simulado/.test(String(d.motivo))) return derivarPorCambioDeModo(pedidoDeLaReferencia() || en.pedido);
   if (a === 'transferir') return derivar(d.motivo || 'derivación', en.paso === 'esperando_comprobante' && !!en.pedido, undefined, d.sinFraseMenu === true);
-  if (a === 'identidad') {
-    if (en.paso === 'inicio') en.paso = 'menu';
-    return (mensajes = [enlace('Soy un asistente virtual con inteligencia artificial de ' + negocio()
-      + '. Si prefieres hablar con una persona de nuestro equipo, toca el botón.')]);
-  }
+  if (a === 'identidad') return aIdentidad();
   if (a === 'medio_no_leido') return aMedioNoLeido();
   if (a === 'imagen_sin_pendiente') return aImagenSinPendiente();
   if (a === 'fuera_de_horario') return aFueraDeHorario();
   if (a === 'recordatorio_comprobante') return aRecordatorio();
   if (a === 'reenviar_qr') return aReenviarQr();
   if (a === 'comprobante') return aComprobante();
+  if (a === 'acuse') return aAcuse();
+  if (a === 'seguimiento') return aSeguimiento();
+  if (a === 'extraer_libre') return aExtraerLibre();
   if (a === 'extraer_pedido') return aExtraerPedido();
   if (a === 'extraer_reserva') return aExtraerReserva();
   if (a === 'boton') return aBoton(b);
@@ -1103,6 +1104,92 @@ function resolverForma(i, forma) {
   const falto = Array.isArray(r.noEncontrados) && r.noEncontrados.length ? textoNoEncontrados(r.noEncontrados) : '';
   if (falto) notas.push(falto);
   mostrarPedido();
+}
+
+// --- RESPUESTA COHERENTE (core, `rc*`) -----------------------------------------------------------------------------------------------------------
+// Tres casos que antes caían en el menú o en la carta. NINGUNO agrega un mensaje (siempre sale uno, como antes), ninguno avisa al local (excepción decidida por
+// Andres el 08/11/2026 a la política del 21/09: el seguimiento y el rechazo solo ofrecen el botón «Escribir al local», que al tocarse deriva con aviso como siempre),
+// y ninguna `ruta` empieza con `pedido:` (el miniCRM la contaría como un pedido).
+function botonLocal() { return { id: vmIdDeBoton('m', 'persona'), title: 'Escribir al local' }; }
+
+// «Gracias», «ok», 👍: una frase fija, sin menú, sin cambiar de paso.
+function aAcuse() {
+  ruta = 'acuse';
+  mensajes = [texto(rl.acuse || 'Con gusto.')];
+}
+
+// «¿Ya salió mi pedido?»: lo que el código SABE (código, líneas, total del último pedido ya pasado al local), nunca su estado de despacho.
+function aSeguimiento() {
+  const p = pedidoYaPasado();
+  ruta = p ? 'seguimiento:con_pedido' : 'seguimiento:sin_pedido';
+  if (en.paso === 'inicio') en.paso = 'menu';
+  mensajes = [{ tipo: 'botones', cuerpo: rcTextoSeguimiento(p, { moneda: monedaTxt, cierre: rl.textoSeguimiento, codigo: p ? cbCodigo(p.codigo) : '' }), botones: [botonLocal()] }];
+}
+
+// La identidad: SIEMPRE el texto fijo del código (nunca prosa del modelo).
+function aIdentidad() {
+  if (en.paso === 'inicio') en.paso = 'menu';
+  return (mensajes = [enlace('Soy un asistente virtual con inteligencia artificial de ' + negocio()
+    + '. Si prefieres hablar con una persona de nuestro equipo, toca el botón.')]);
+}
+
+// RESPUESTA POR INTENCIÓN (fuera de protocolo en inicio o menú): el modelo solo CLASIFICÓ (`rcLeerIntencion`: un valor del enum o null); el texto lo escribe
+// ESTE CÓDIGO con datos del negocio y textos fijos del tenant. Nada de lo que escribió el modelo, salvo el valor del enum, llega aquí ni al cliente. Un solo mensaje,
+// sin aviso al local. Sin dato cargado, intención inválida o modelo caído: el texto de rechazo del tenant con el botón «Escribir al local».
+function aExtraerLibre() {
+  const intencion = rcLeerIntencion(vmJsonDeGemini(vmPrimero('Extraer')));
+  const pasoInicial = en.paso;
+  if (en.paso === 'inicio') en.paso = 'menu';
+  const rechazo = (motivo) => {
+    if (motivo) errores.push('respuesta_libre_rechazada:' + motivo);
+    ruta = 'libre:rechazada';
+    mensajes = [{ tipo: 'botones', cuerpo: rcTextoRechazo(rl), botones: [botonLocal()] }];
+  };
+  if (!intencion) return rechazo('intencion_invalida');
+  const sinPanel = cfg.panelSinRespuesta === true;
+  if (intencion === 'horario') {
+    if (!horarioEnFrase(vmLinea(cfg.horarioAtencion, 200))) return rechazo('sin_dato:horario');
+    aConsulta('horario'); ruta = 'libre:horario'; return;
+  }
+  if (intencion === 'direccion') {
+    if (!vmLinea(cfg.direccion, 200)) return rechazo('sin_dato:direccion');
+    aConsulta('direccion'); ruta = 'libre:direccion'; return;
+  }
+  if (intencion === 'modalidades') {
+    if (sinPanel || (cfg.aceptaDelivery === false && cfg.aceptaRetiroEnLocal === false)) return rechazo('sin_dato:modalidades');
+    // Las DOS modalidades con los datos del negocio (la consulta fija de «delivery» no nombra el recojo).
+    const hayDelivery = cfg.aceptaDelivery !== false;
+    const hayRecojo = cfg.aceptaRetiroEnLocal !== false;
+    en.paso = 'menu';
+    ruta = 'libre:modalidades';
+    mensajes = [conBotones(hayDelivery && hayRecojo ? 'Sí, hacemos delivery y también puedes recoger tu pedido en el local.' + textoSinDelivery()
+      : hayDelivery ? 'Sí, hacemos delivery.' + textoSinDelivery() : 'Por ahora no hacemos delivery: puedes recoger tu pedido en el local.', menuBotones())];
+    return;
+  }
+  if (intencion === 'carta') {
+    // La carta se comprueba ANTES: sin carta cargada `aCarta` deriva con aviso (otra ruta, otro aviso). Aquí, texto de rechazo con botón y sin aviso.
+    if (!cartaDelNegocio().length) return rechazo('sin_dato:carta');
+    // La ruta se fija ANTES: si aun así `aCarta` deriva (carta sin texto), su ruta `transferir:*` y su aviso quedan (no se pisan).
+    ruta = 'libre:carta';
+    aCarta();
+    return;
+  }
+  if (intencion === 'identidad') { aIdentidad(); ruta = 'libre:identidad'; return; }
+  // El acuse por modelo se comporta como el acuse por código: no cambia el paso.
+  if (intencion === 'acuse') { en.paso = pasoInicial; ruta = 'libre:acuse'; mensajes = [texto(rl.acuse || 'Con gusto.')]; return; }
+  // Crisis o baja (la clasifique el modelo así, o la clasifique como humor con señales en el texto): SIEMPRE el menú, como en `main`; nunca texto de humor.
+  if (intencion === 'crisis_o_baja' || (intencion === 'humor' && rcSenalDeCrisisOBaja(d.texto))) { en.paso = pasoInicial; return aMenu(); }
+  if (intencion === 'humor') {
+    ruta = 'libre:humor';
+    mensajes = [conMenu(rcTextoHumor(rl))];
+    return;
+  }
+  if (intencion === 'queja') {
+    ruta = 'libre:queja';
+    mensajes = [{ tipo: 'botones', cuerpo: rl.textoQueja || 'Lamento lo ocurrido. Si quieres contárselo al local, toca «Escribir al local».', botones: [botonLocal()] }];
+    return;
+  }
+  return rechazo('');
 }
 
 function aExtraerPedido() {
