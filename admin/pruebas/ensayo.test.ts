@@ -441,3 +441,58 @@ describe('ensayo.mjs --flujo onboarding (el chat de NovuChat)', () => {
     expect(correr('--numero', NUM_ONB, '--restaurar', '--aplicar').codigo).toBe(0);
   });
 });
+
+describe('ensayo.mjs --numero-marcador (el phone id sale de la tabla local, sin imprimirse)', () => {
+  const M = 'REEMPLAZAR_PHONE_NUMBER_ID_ENSAYO_DEMO';
+  const tabla = (nombre: string, filas: string) => { const r = join(tmp, nombre); writeFileSync(r, `| Marcador | Valor | Nota |\n|---|---|---|\n${filas}\n`); return r; };
+  const con = (ruta: string, ...extra: string[]) => correr('--numero-marcador', M, '--local', ruta, ...extra);
+  const buena = tabla('marcador-bueno.md', `| \`${M}\` | ${NUM_DEMO} | demo |`);
+
+  it('--estado y --preparar en seco resuelven el número y no lo imprimen', async () => {
+    // Las suites de arriba dejan `ensayo` con otro flujo: se parte de cero para el seco.
+    await db.recursiveDelete(db.doc('tenants/ensayo'));
+    const e = con(buena, '--estado');
+    expect(e.codigo, e.salida).toBe(0);
+    expect(e.salida).not.toContain(NUM_DEMO);
+    const p = con(buena, '--preparar', '--cliente', 'clinica-ejemplo', '--archivo', FIXTURE);
+    expect(p.codigo, p.salida).toBe(0);
+    expect(p.salida).not.toContain(NUM_DEMO);
+  });
+
+  it('--restaurar con el marcador (seco) tampoco lo imprime', () => {
+    const r = con(buena, '--restaurar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).not.toContain(NUM_DEMO);
+  });
+
+  it('se niega con el marcador ausente, repetido, sin valor, inválido o sin --local, sin imprimir el valor', () => {
+    const ausente = con(tabla('m-ausente.md', `| \`REEMPLAZAR_OTRO\` | ${NUM_DEMO} | x |`), '--estado');
+    expect(ausente.codigo).toBe(2);
+    expect(ausente.salida).toMatch(/no está en la tabla local/);
+    const repetido = con(tabla('m-repetido.md', `| \`${M}\` | ${NUM_DEMO} | a |\n| \`${M}\` | ${NUM_CLIENTE} | b |`), '--estado');
+    expect(repetido.codigo).toBe(2);
+    expect(repetido.salida).toMatch(/repetido/);
+    const pendiente = con(tabla('m-pend.md', `| \`${M}\` | pendiente | x |`), '--estado');
+    expect(pendiente.codigo).toBe(2);
+    const invalido = con(tabla('m-inv.md', `| \`${M}\` | 12ab-secreto | x |`), '--estado');
+    expect(invalido.codigo).toBe(2);
+    expect(invalido.salida).toMatch(/no es un phone_number_id/);
+    expect(invalido.salida).not.toContain('12ab-secreto');
+    const sinLocal = correr('--numero-marcador', M, '--estado');
+    expect(sinLocal.codigo).toBe(2);
+    for (const r of [ausente, repetido, pendiente, invalido, sinLocal]) {
+      expect(r.salida).not.toContain(NUM_DEMO);
+      expect(r.salida).not.toContain(NUM_CLIENTE);
+    }
+  });
+
+  it('un valor en lugar del marcador no se repite en el error, y --numero con --numero-marcador no se mezclan', () => {
+    const r = correr('--numero-marcador', NUM_DEMO, '--local', buena, '--estado');
+    expect(r.codigo).toBe(2);
+    expect(r.salida).not.toContain(NUM_DEMO);
+    const j = con(buena, '--numero', NUM_DEMO, '--estado');
+    expect(j.codigo).toBe(2);
+    expect(j.salida).toMatch(/excluyentes/);
+    expect(j.salida).not.toContain(NUM_DEMO);
+  });
+});

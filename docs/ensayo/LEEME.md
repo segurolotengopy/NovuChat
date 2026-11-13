@@ -911,6 +911,8 @@ milisegundos) solo se prueba en la suite con una hoja simulada (`chat-novuchat-f
 > en cada script. **Sin la opción nada cambia**: todo lo anterior sigue siendo el Demo A.
 > Cada `--aplicar` lo corre Claude con el «sí» de Andres, después de leer entero su seco.
 
+> Uso sin ver el id: en lugar de `--numero <phone id>`, `--numero-marcador REEMPLAZAR_PHONE_NUMBER_ID_<ALIAS> --local <CONFIGURACION.local.md>` (excluyentes; sirve a `--estado`, `--preparar` y `--restaurar`; no imprime el valor).
+
 ### Qué cambia con el Demo B
 
 | Pieza | Demo A (por defecto) | Demo B |

@@ -58,6 +58,11 @@
  *     --local <ruta a CONFIGURACION.local.md> [--flujo venta|agendamiento] [--aplicar]
  *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --restaurar [--aplicar]
  *
+ * `--numero-marcador REEMPLAZAR_PHONE_NUMBER_ID_<ALIAS>` (con `--local`, excluyente con `--numero`) toma el
+ * phone id de la tabla local sin que nadie lo lea ni lo vea: sirve a --estado, --preparar y --restaurar.
+ * Se niega con marcador ausente, repetido, sin valor o de forma inválida. `--proyecto` sigue siendo un valor
+ * literal (no se agregó `prod|staging`: ampliaba el alcance sin ser necesario).
+ *
  * DOS NÚMEROS DE ENSAYO A LA VEZ: `--demo a|b` (10/11/2026; por defecto `a`, y sin la
  * opción todo es como siempre). Con `--demo b` el comercio del ensayo es `ensayo-b`,
  * no `ensayo`: la configuración que lee el flujo es UNA por comercio y cada
@@ -94,17 +99,48 @@ const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i
 const APLICAR = args.includes('--aplicar');
 const MODO = ['--preparar', '--restaurar', '--estado'].filter((m) => args.includes(m));
 const PROYECTO = opcion('proyecto');
-const NUMERO = (opcion('numero') ?? '').trim();
+const NUMERO_MARCADOR = (opcion('numero-marcador') ?? '').trim();
+const LOCAL = opcion('local');
 const CLIENTE = (opcion('cliente') ?? '').trim().toLowerCase();
 const ARCHIVO = opcion('archivo');
-const LOCAL = opcion('local');
 const FLUJO = opcion('flujo');
 const FLUJOS_VALIDOS = ['venta', 'agendamiento', 'onboarding'];
+
+// `--numero-marcador`: el phone id sale de la tabla de `--local` (mismo formato de fila que
+// `leerMarcadores` de `cargar-negocio.mjs`) y nunca se imprime: ni en seco, ni al aplicar, ni en
+// errores. Los errores nombran el marcador solo si tiene la forma REEMPLAZAR_… y jamás el valor.
+const FORMA_MARCADOR = /^REEMPLAZAR_[A-Z0-9_]+$/;
+const FORMA_NUMERO = /^[0-9]{6,25}$/;
+function numeroDesdeMarcador(marcador, ruta) {
+  if (!FORMA_MARCADOR.test(marcador)) return { error: '--numero-marcador debe ser un marcador REEMPLAZAR_…' };
+  if (!ruta) return { error: '--numero-marcador requiere --local <CONFIGURACION.local.md>' };
+  let texto;
+  try { texto = readFileSync(ruta, 'utf8'); } catch { return { error: `no se pudo leer ${ruta}` }; }
+  const valores = [];
+  for (const m of texto.matchAll(/^\|\s*`(REEMPLAZAR_[^`]*)`\s*\|([^|]*)\|/gm)) {
+    if (m[1] === marcador) valores.push(m[2].trim().replace(/^`|`$/g, '').trim());
+  }
+  if (valores.length === 0) return { error: `el marcador ${marcador} no está en la tabla local` };
+  if (valores.length > 1) return { error: `el marcador ${marcador} está repetido en la tabla local` };
+  if (!valores[0] || /pendiente/i.test(valores[0])) return { error: `el marcador ${marcador} no tiene valor en la tabla local` };
+  if (!FORMA_NUMERO.test(valores[0])) return { error: `el valor de ${marcador} no es un phone_number_id` };
+  return { valor: valores[0] };
+}
+let NUMERO = (opcion('numero') ?? '').trim();
+const errorMarcador = [];
+if (args.includes('--numero-marcador')) {
+  if (args.includes('--numero')) errorMarcador.push('--numero y --numero-marcador son excluyentes');
+  else {
+    const r = numeroDesdeMarcador(NUMERO_MARCADOR, LOCAL);
+    if (r.error) errorMarcador.push(r.error); else NUMERO = r.valor;
+  }
+}
 
 const cola = (v) => (v ? `…${String(v).slice(-4)}` : '—');
 const problemas = [];
 if (!PROYECTO) problemas.push('falta --proyecto');
-if (!/^[0-9]{6,25}$/.test(NUMERO)) problemas.push('--numero no es un phone_number_id');
+if (errorMarcador.length) problemas.push(...errorMarcador);
+else if (!FORMA_NUMERO.test(NUMERO)) problemas.push('--numero no es un phone_number_id');
 if (FLUJO !== null && !FLUJOS_VALIDOS.includes(FLUJO)) problemas.push('--flujo debe ser venta, agendamiento u onboarding');
 if (MODO.length !== 1) problemas.push('elija UNO: --preparar, --restaurar o --estado');
 if (MODO[0] === '--preparar') {
