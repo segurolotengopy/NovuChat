@@ -138,15 +138,42 @@ describe('el script de Plataforma', () => {
     it('un id literal se comporta como siempre (sigue exigiendo los dos ids en el entorno)', () => {
       expect(mod.analizarArgumentos(['--proyecto', ID, '--tenant', 'comercio-x', '--datos', 'qtaco'], { CLOUDSDK_CONFIG: buenas() }).ok).toBe(false);
     });
-    it('el seco por línea de comandos no imprime el id (stdout ni stderr)', () => {
-      const corrida = (extra: string[]) => spawnSync(process.execPath, ['--experimental-strip-types', join(ADMIN, 'scripts/plataforma/respuesta-libre.mjs'),
-        ...args(extra)], { env: { PATH: process.env['PATH'] ?? '', CLOUDSDK_CONFIG: buenas() }, encoding: 'utf8', timeout: 20000 });
-      const r = corrida(['--aplicar']);
+    it('NIEGA: GOOGLE_APPLICATION_CREDENTIALS puesto en el camino prod (el literal no se ve afectado)', () => {
+      const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: buenas(), GOOGLE_APPLICATION_CREDENTIALS: '/ruta/otra.json' });
+      expect(r.ok).toBe(false);
+      expect(texto(r)).toContain('GOOGLE_APPLICATION_CREDENTIALS');
+      expect(texto(r)).not.toContain(ID);
+    });
+    it('NIEGA: credenciales que apuntan a un proyecto demo-*', () => {
+      const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: creds(JSON.stringify({ quota_project_id: 'demo-novuchat-pruebas' })), FIRESTORE_EMULATOR_HOST: '127.0.0.1:1' });
+      expect(r.ok).toBe(false);
+      const s2 = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: creds(JSON.stringify({ quota_project_id: 'demo-novuchat-pruebas' })) });
+      expect(s2.ok).toBe(false);
+      expect(texto(s2)).toContain('demo-');
+    });
+    it('cfg lleva el directorio de credenciales usado, para exportarlo antes de iniciar Firebase', () => {
+      const d = buenas();
+      const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: d });
+      expect(r.cfg).toMatchObject({ dirCredenciales: d });
+    });
+    const lineaDeComandos = (extra: string[], env: Record<string, string>) => spawnSync(process.execPath, ['--experimental-strip-types',
+      join(ADMIN, 'scripts/plataforma/respuesta-libre.mjs'), ...args(extra)], { env: { PATH: process.env['PATH'] ?? '', ...env }, encoding: 'utf8', timeout: 20000 });
+    it('línea de comandos: sale 2 SOLO por GOOGLE_APPLICATION_CREDENTIALS (con respaldo y confirmación dados) y no imprime el id', () => {
+      const completo = ['--aplicar', '--respaldo', rutaRespaldo(), '--confirmo-produccion', 'comercio-x'];
+      const bien = mod.analizarArgumentos(args(completo), { CLOUDSDK_CONFIG: buenas() });
+      expect(bien.ok, texto(bien)).toBe(true);
+      const r = lineaDeComandos(completo, { CLOUDSDK_CONFIG: buenas(), GOOGLE_APPLICATION_CREDENTIALS: '/ruta/otra.json' });
       expect(r.status).toBe(2);
+      expect(r.stderr).toContain('GOOGLE_APPLICATION_CREDENTIALS');
       expect(`${r.stdout}${r.stderr}`).not.toContain(ID);
-      const sinCreds = spawnSync(process.execPath, ['--experimental-strip-types', join(ADMIN, 'scripts/plataforma/respuesta-libre.mjs'), ...args()],
-        { env: { PATH: process.env['PATH'] ?? '', CLOUDSDK_CONFIG: creds(null) }, encoding: 'utf8', timeout: 20000 });
-      expect(sinCreds.status).toBe(2);
+    });
+    it('línea de comandos: sale 2 SOLO por credenciales ilegibles (con respaldo y confirmación dados)', () => {
+      const completo = ['--aplicar', '--respaldo', rutaRespaldo(), '--confirmo-produccion', 'comercio-x'];
+      const r = lineaDeComandos(completo, { CLOUDSDK_CONFIG: creds(null) });
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain('no se pudieron leer las credenciales');
+      expect(r.stderr).not.toContain('--respaldo');
+      expect(r.stderr).not.toContain('--confirmo-produccion');
     });
   });
 
