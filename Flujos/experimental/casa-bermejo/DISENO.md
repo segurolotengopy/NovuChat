@@ -2,7 +2,7 @@
 
 **Qué es.** El asistente de WhatsApp de un comercio con tienda (tenant `casa-bermejo`). El catálogo, el precio final y el stock los sirve NovuTienda por HTTP (contrato v1: `docs/integracion-novuchat.md` del repositorio de NovuTienda); este flujo no guarda catálogo. El código calcula (carrito, montos, cobro, estados); el modelo conversa. Alcance de este bloque: **Bolivia** (+591, QR del comercio sin monto, comprobante). Argentina (alias en ARS) entra en B4, cuando exista el servidor de alias; confirmar pedido y descuento de stock es del servidor (B5). **Apagado y no publicable**: el flujo se arma, no se importa ni se enciende.
 
-**Regla «basado en» (01/10/2026).** No se copia el flujo de Walisuma. Se parte de esta lista de funcionalidades y se reutilizan los módulos comunes (`Flujos/experimental/venta-digital/src/`, `comun-sin-agente/`, `Flujos/src/core/medios/`), incluidos desde su fuente, nunca copiados.
+**Regla «basado en» (01/10/2026).** No se copia el flujo de Walisuma. Se parte de esta lista de funcionalidades y se reutilizan los módulos comunes (`Flujos/experimental/venta-digital/src/`, `Flujos/src/core/sin-agente/`, `Flujos/src/core/medios/`), incluidos desde su fuente, nunca copiados.
 
 ## Funcionalidades (lista corta, confirmada en el alcance cerrado del 31/10)
 1. Entrar solo por la entrega firmada del receptor; sesión por `messages[0].from`; filtro de eventos; normalización de todos los tipos de entrada.
@@ -22,8 +22,8 @@
 | Carga de entrada, Config del negocio, Normalizar entrada, Puerta del turno, Resumen del turno | `venta-digital/src/nodos/` (neutros, parámetro `CN_TENANT`) |
 | Cobro (`cb*`), avisos (`av*`), conversación (`vd*`), carrito (`vc*`) | `venta-digital/src/` |
 | Catálogo externo (`ce*`) | `venta-digital/src/catalogo-externo.js` (B2) |
-| Medios (voz, imagen, PDF, comprobante guardado) y guardado de medios (11 nodos) | `Flujos/src/core/medios/`, `comun-sin-agente/src/guardado.mjs` |
-| Cadena de envío y reporte saliente | `comun-sin-agente/src/envio.mjs` |
+| Medios (voz, imagen, PDF, comprobante guardado) y guardado de medios (11 nodos) | `Flujos/src/core/medios/`, `Flujos/src/core/sin-agente/guardado.mjs` |
+| Cadena de envío y reporte saliente | `Flujos/src/core/sin-agente/envio.mjs` |
 | **Propio:** `Decidir turno`, `Interpretar lectura`, `Armar avisos`, `Armar mensajes`, la librería `bm*` (venta de este comercio: textos, entrega por país, intenciones por código) y el nodo `Traer catálogo` | `Flujos/experimental/casa-bermejo/` |
 
 ## Nodos y tope

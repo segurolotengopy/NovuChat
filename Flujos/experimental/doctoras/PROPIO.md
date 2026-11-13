@@ -3,7 +3,7 @@
 Regla (Andres, 09/10/2026): flujo propio = composición propia + núcleo común obligatorio. Lo común se incluye desde su fuente; donde no hay fuente utilizable, copia declarada con prueba byte a byte (`huecos.test.ts`).
 
 ## Incluido desde su fuente
-Mensajes (`comun-sin-agente/src/mensajes.js`), filtro de redacción, cadena de envío (`injertar`), armador, y los tres módulos de `Flujos/src/core/medios/` (prueba: `medios.test.ts`).
+Mensajes (`Flujos/src/core/sin-agente/mensajes.js`), filtro de redacción, cadena de envío (`injertar`), armador, y los tres módulos de `Flujos/src/core/medios/` (prueba: `medios.test.ts`).
 
 ## Copia declarada de `rroca-antonio` (tercera vez que se pide: ticket del módulo común para Rearquitectura, es Core y no se crea aquí)
 `carga-de-entrada.js` (idéntico), `puerta-del-turno.js` y `config-del-negocio.js` (los de Antonio + SOLO el modo prueba `etapaPrueba`: ruta `fuera_de_prueba` y recepción de «Config base» manda; fragmentos declarados en `huecos.test.ts`), `_comun.js` (cambia la clave de la ficha a `doctoras`), los nodos JSON del receptor y de configuración (iguales salvo `id`, `notes`, `position`), y en `dr.js` las expresiones NIEGA_IA, violencia o miedo y baja (misma fuente, comparadas en la prueba).

@@ -1,15 +1,15 @@
-# comun-sin-agente — piezas comunes para flujos «sin agente»
+# sin-agente (antes `comun-sin-agente`) — piezas comunes para flujos «sin agente»
 
 Flujos en los que **el código calcula y el modelo conversa**: estado por teléfono, botones, mensajes armados por
 código, y el modelo solo redacta lo que el código verifica. Sacado de `Flujos/experimental/agenda-minima/`, que
-**no se toca** y sigue con sus propias copias. Es experimental: vive fuera de las zonas y de `fronteras.test.ts`.
+**no se toca** y sigue con sus propias copias. Desde el 13/11/2026 (etapa 1, PR 1) vive en **core** (`Flujos/src/core/sin-agente/`) y por eso no puede importar de `experimental/`, de `clientes/` ni de un módulo; por esa regla `construir-crm.mjs` (que importa del módulo `crm`) se quedó en `Flujos/experimental/comun-sin-agente/`.
 
 | Pieza | Qué es |
 |---|---|
 | `construir.mjs` | Armador genérico: plantilla + código de los nodos → un JSON por variante (producción y prueba), con `--verificar`. Se configura con un `construir.config.json` en la carpeta del flujo. Reproduce, byte por byte, los JSON de Agenda mínima. |
-| `src/mensajes.js` | Constructores de lo que sale por WhatsApp: texto, botones, lista, enlace, URL de wa.me y «pasar con una persona» (botón, o solo texto sin mención del botón si no hay a quién). Prefijo `cm`. |
+| `mensajes.js` | Constructores de lo que sale por WhatsApp: texto, botones, lista, enlace, URL de wa.me y «pasar con una persona» (botón, o solo texto sin mención del botón si no hay a quién). Prefijo `cm`. |
 | (`filtro-redaccion.js` ya no vive aquí: es `Flujos/src/core/texto/filtro-redaccion.js`, único origen; los constructores lo piden con `"filtro": ["../../src/core/texto/filtro-redaccion.js"]`, porque su raíz `../..` es `Flujos/`) | Lo que el modelo redacta se **verifica** antes de salir: monto (también en letra), promesas, afirmar un hecho que solo el código puede afirmar (cita, pedido, pago, ✅), negar ser una IA, huecos de plantilla, **enlaces: por defecto ninguno sale**, identidad. Y se **pule**; `cmRevisarRedaccion` pule y valida lo pulido. Las reglas de NovuChat no se apagan con opciones. Normaliza (NFKC, sin invisibles). |
-| `src/envio.mjs` | La cadena de envío: nodos y conexiones (¿Enviar de verdad?, envío con lote de 1 y 1,5 s, respaldo en texto, reporte saliente), sin credenciales por id. El `phoneNumberId` y la versión de Graph se validan antes de entrar a la URL, y lo que ni el respaldo pudo enviar no se reporta como enviado. `injertar()` la cuelga de una plantilla. |
+| `envio.mjs` | La cadena de envío: nodos y conexiones (¿Enviar de verdad?, envío con lote de 1 y 1,5 s, respaldo en texto, reporte saliente), sin credenciales por id. El `phoneNumberId` y la versión de Graph se validan antes de entrar a la URL, y lo que ni el respaldo pudo enviar no se reporta como enviado. `injertar()` la cuelga de una plantilla. |
 
 ## Estado y límites (leer antes de adoptarlo)
 
@@ -32,7 +32,7 @@ código, y el modelo solo redacta lo que el código verifica. Sacado de `Flujos/
      "raiz": "../..",
      "comun": ["src/nodos/comun.js"],
      "paquetes": {
-       "mensajes": ["../comun-sin-agente/src/mensajes.js"],
+       "mensajes": ["../../src/core/sin-agente/mensajes.js"],
        "filtro": ["../../src/core/texto/filtro-redaccion.js"]
      },
      "variantes": [
@@ -44,7 +44,7 @@ código, y el modelo solo redacta lo que el código verifica. Sacado de `Flujos/
 
 2. En la plantilla, cada nodo Code lleva una marca: `"jsCode": "@@comun+mensajes+filtro:nodos/armar.js"`.
    Modos: `todo` (librerías + comunes + paquetes + nodo; `@@nodos/x.js` es lo mismo), `comun` y `solo`.
-3. `node Flujos/experimental/comun-sin-agente/construir.mjs --proyecto <carpeta>` escribe los JSON;
+3. `node Flujos/src/core/sin-agente/construir.mjs --proyecto <carpeta>` escribe los JSON;
    con `--verificar` falla si lo versionado difiere de lo que se arma.
 4. La cadena de envío: `injertar(plantilla, { credenciales: { graph, ingesta }, ingestaUrl, siguiente })`
    desde un `.mjs` propio del flujo, antes de armar.
@@ -92,7 +92,7 @@ siguen verdes sin cambios: este módulo las usa solo para comparar, leyendo sus 
 
 ## Estado de la conversación en el servidor (PR-4a0): el paquete `sesion`
 
-Los ayudantes con que un nodo Code arma el pedido `sesion` (`leer`, `comprometer`) y lee la respuesta de `configuracionFlujo` (contrato: `docs/arquitectura/estado-de-conversacion.md`) son un módulo COMÚN, no del chat: `src/sesion.js` (prefijo **`ss`**, «sesión»: no se confunde con el `cn` de las utilidades de nodo de cada flujo ni con el prefijo propio de cada flujo) y su doble de pruebas `herramientas/servidor-de-sesion.mjs` (+ `.d.mts`), comparado con el núcleo real `core/turno/sesion.ts` por `admin/pruebas/comun-sin-agente-sesion.test.ts`.
+Los ayudantes con que un nodo Code arma el pedido `sesion` (`leer`, `comprometer`) y lee la respuesta de `configuracionFlujo` (contrato: `docs/arquitectura/estado-de-conversacion.md`) son un módulo COMÚN, no del chat: `sesion.js` (prefijo **`ss`**, «sesión»: no se confunde con el `cn` de las utilidades de nodo de cada flujo ni con el prefijo propio de cada flujo) y su doble de pruebas `herramientas/servidor-de-sesion.mjs` (+ `.d.mts`), comparado con el núcleo real `core/turno/sesion.ts` por `admin/pruebas/comun-sin-agente-sesion.test.ts`.
 
 **Cómo se incluye.** Como cualquier paquete de este armador: se declara en el `construir.config.json` del flujo (en el chat, `paquetes.sesion` en `CONFIG_BASE` de su `construir.mjs`) y cada nodo que lo usa lo pide en su marca (`@@todo+sesion:...`, `@@comun+sesion:...`). Se pega TAL CUAL; el chat tiene una guardia en `construir.mjs` (con su prueba negando) que rechaza una copia, una edición o un nodo que usa `ss*` sin el módulo. Depende de `cnNodo`/`cnPrimero` del código común del flujo.
 
@@ -104,3 +104,20 @@ Costo: 0 mensajes por conversación (el chat regenera sus JSON con las mismas fu
 
 Cero mensajes por conversación agregados o quitados: no hay ningún flujo desplegado. Una cadena de envío con lote
 de 1 y 1,5 s por mensaje añade 1,5 s de espera por mensaje adicional del mismo turno, igual que Agenda mínima.
+
+
+## Rutas históricas (NO se editan)
+
+Los comentarios y literales de estos archivos terminan DENTRO de un JSON de flujo (publicado o no) y nombran la ruta vieja `comun-sin-agente/src/…` (o `Flujos/experimental/comun-sin-agente/src/…`). Corregirlos cambiaría 30 JSON (14 de producción) y obligaría a publicarlos: Andres decidió el 13/11/2026 «Dejarlas». Cuando un flujo se publique por otra razón, se pueden corregir en ese PR. Son solo texto: el armador y las suites usan las rutas nuevas.
+
+| Archivo | Dónde |
+|---|---|
+| `Flujos/src/core/sin-agente/guardado.mjs` | línea 184, literal `// FUENTES DEL GUARDADO: las arma Flujos/experimental/comun-sin-agente/src/guardado.mjs…` |
+| `Flujos/src/core/texto/no-repetir.js` | comentario de la línea 3 (nombra `comun-sin-agente/src/filtro-redaccion.js`) |
+| `Flujos/experimental/venta-minima/src/lib/comun.js` | comentario de la línea 39 (`comun-sin-agente/src/sesion.js`) |
+| `Flujos/experimental/captacion-minima/src/lib/captacion.js` | comentario de la línea 12 |
+| `Flujos/experimental/chat-novuchat/src/lib/chat.js` | comentario de la línea 6 |
+| `Flujos/experimental/chat-novuchat/src/nodos/_registro.js` | comentario de la línea 4 |
+| `Flujos/experimental/chat-novuchat/src/nodos/confirmar-envio.js` | comentario de la línea 3 |
+
+Prueba de que no cambió un byte: las huellas sha256 de todos los JSON de `Flujos/` son iguales antes y después del movimiento.

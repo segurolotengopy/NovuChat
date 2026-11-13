@@ -18,7 +18,7 @@
  *   `"@@solo:nodos/<archivo>.js"`   solo el archivo.
  *   (el nodo «Armar mensajes» lleva además `NIEGA_IA_CORE`, la regla de IDENTIDAD del filtro común del core derivada de su fuente, justo delante de su propio código: ver `conReglaDeIdentidad`.)
  *   `"@@medio:<paquete>"`           un módulo común de medios (`Flujos/src/core/medios/`), tal cual, sin edición.
- * Y la rama común del GUARDADO de medios (`../comun-sin-agente/src/guardado.mjs`, contrato M1↔M2 del 29/10/2026): se INJERTA al armar, colgada de
+ * Y la rama común del GUARDADO de medios (`../../src/core/sin-agente/guardado.mjs`, contrato M1↔M2 del 29/10/2026): se INJERTA al armar, colgada de
  * «Reportar mensaje (entrante)» y debajo de todo (corre después de la respuesta); la plantilla, el prompt y los nodos propios no se tocan.
  *
  * DOS VARIANTES, de la misma plantilla:
@@ -33,9 +33,9 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hallazgosDelGuardado, injertarGuardado } from '../comun-sin-agente/src/guardado.mjs';
+import { hallazgosDelGuardado, injertarGuardado } from '../../src/core/sin-agente/guardado.mjs';
 import { reglaDeIdentidadDelCore } from './regla-identidad.mjs';
-import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));

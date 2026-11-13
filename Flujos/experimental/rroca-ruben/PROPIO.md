@@ -11,13 +11,13 @@ Armado: `node Flujos/experimental/rroca-ruben/construir.mjs` escribe `rroca-rube
 
 | Pieza | Fuente |
 |---|---|
-| Mensajes de WhatsApp (texto, botones, lista, `cta_url`, `cmContactoConBoton`) | `Flujos/experimental/comun-sin-agente/src/mensajes.js` |
-| Cadena de envío (¿Enviar de verdad?, Enviar a WhatsApp, respaldo, reporte saliente) | `comun-sin-agente/src/envio.mjs`, `injertar()` |
-| Armador (plantilla + código → JSON, `--verificar`) | `comun-sin-agente/construir.mjs` |
+| Mensajes de WhatsApp (texto, botones, lista, `cta_url`, `cmContactoConBoton`) | `Flujos/src/core/sin-agente/mensajes.js` |
+| Cadena de envío (¿Enviar de verdad?, Enviar a WhatsApp, respaldo, reporte saliente) | `Flujos/src/core/sin-agente/envio.mjs`, `injertar()` |
+| Armador (plantilla + código → JSON, `--verificar`) | `Flujos/src/core/sin-agente/construir.mjs` |
 | Cobro (`cb*`), avisos (`av*`) y el motor de la conversación (`vd*`) | `Flujos/experimental/venta-digital/src/{cobro,avisos,conversacion}.js` |
 | No repetir el texto (`ct*`) y la pregunta pendiente | `Flujos/src/core/texto/no-repetir.js` y `pregunta-pendiente.js` |
 | Medios: preparar transcripción, preparar imagen (con el reconocimiento por titular de la Consola) y medio no aceptado | `Flujos/src/core/medios/*.js`, byte a byte |
-| Guardado de medios (rama común) | `comun-sin-agente/src/guardado.mjs` |
+| Guardado de medios (rama común) | `Flujos/src/core/sin-agente/guardado.mjs` |
 | miniCRM (8 nodos) | `Flujos/src/modulos/crm/` y `comun-sin-agente/construir-crm.mjs` (`ramaCrm`) |
 | Reglas del task runner de n8n sobre `$('…')` (`problemasDeReferencias`, `referenciasDeNodos`) | **viven en este `construir.mjs`** y los importan Antonio, las doctoras y Walisuma (no se mueven en este PR) |
 

@@ -38,15 +38,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { doblesDeBateriaDelGuardado } from '../../comun-sin-agente/src/guardado-dobles.mjs';
-import { crearServidorDeSesion } from '../../comun-sin-agente/herramientas/servidor-de-sesion.mjs';
+import { doblesDeBateriaDelGuardado } from '../../../src/core/sin-agente/guardado-dobles.mjs';
+import { crearServidorDeSesion } from '../../../src/core/sin-agente/herramientas/servidor-de-sesion.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ_FLUJO = join(AQUI, '..');
 const RUTA_FLUJO = join(RAIZ_FLUJO, 'chat-novuchat.novuchat.json');
 const RUTA_CASOS = join(AQUI, 'bateria-casos.json');
 const RUTA_DATOS = join(AQUI, '../../../../admin/scripts/datos/chat-novuchat/novuchat.json');
-const RUTA_MENSAJES = join(AQUI, '../../comun-sin-agente/src/mensajes.js');
+const RUTA_MENSAJES = join(AQUI, '../../../src/core/sin-agente/mensajes.js');
 const RUTA_FILTRO = join(AQUI, '../../../src/core/texto/filtro-redaccion.js');
 const RUTA_LIB = join(AQUI, '../src/lib/chat.js');
 

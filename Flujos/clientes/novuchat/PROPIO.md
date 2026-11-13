@@ -17,7 +17,7 @@ no se mueva el código.
 | Normalización de entrada (`text`, `interactive`, `order`, `image`, audio, documento) | `core/normalizar-entrada.js`, `core/medios/*` | Copia adaptada (mismo hueco) |
 | Comercio no operativo y uso extendido (puerta del turno) | `core/comercio-no-operativo.js`, `core/uso-extendido.js` | Copia adaptada en `src/nodos/puerta-del-turno.js` (hueco) |
 | Config del negocio | `core/config-del-negocio.js` | Copia reducida en `src/nodos/config-del-negocio.js` (hueco) |
-| Mensajes de WhatsApp, botón de contacto, cadena de envío y rótulos | `Flujos/experimental/comun-sin-agente/src/*` | **Incluido** desde su fuente (byte a byte, lo prueba `chat-novuchat-lib.test.ts`) |
+| Mensajes de WhatsApp, botón de contacto, cadena de envío y rótulos | `Flujos/src/core/sin-agente/*` | **Incluido** desde su fuente (byte a byte, lo prueba `chat-novuchat-lib.test.ts`) |
 | Miniatura de hoja de prospectos (miniCRM) | módulo `crm` (`Flujos/src/modulos/crm/`) y adaptador `Flujos/src/modulos/captacion/crm-captacion.js` | **Incluido** |
 | `NIEGA_IA`, aviso con botón a recepción, candado de promesas | `Flujos/src/core/texto/filtro-redaccion.js`, `mensajes.js` | Incluido |
 | Estado de la conversación y mensajes vistos en el servidor (`sesion`) | `docs/arquitectura/estado-de-conversacion.md` | **No adoptado** (ver «Camino de PR-4c») |

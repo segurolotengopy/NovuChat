@@ -32,7 +32,7 @@
  *     "raiz": ".",                                  carpeta fuera de la cual no se lee nada (por defecto, el proyecto)
  *     "librerias": ["src/lib/algo.js"],             delante en el modo `todo`
  *     "comun": ["src/nodos/_comun.js"],             delante en los modos `todo` y `comun`
- *     "paquetes": { "mensajes": ["../comun-sin-agente/src/mensajes.js"] },
+ *     "paquetes": { "mensajes": ["../../src/core/sin-agente/mensajes.js"] },
  *     "variantes": [ { "archivo": "x.v0.json", "quitar": "Entrada de prueba", "nombre": "…" } ]
  *   }
  * `quitar` (texto o lista) saca esos nodos y sus conexiones: la variante de producción lleva el disparador de
@@ -45,8 +45,8 @@ import { closeSync, constants, openSync, readFileSync, realpathSync, writeFileSy
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-// Nada se lee fuera de `Flujos/`: este módulo vive en `Flujos/experimental/comun-sin-agente/`. Las pruebas pasan otro tope.
-const TOPE_POR_DEFECTO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+// Nada se lee fuera de `Flujos/`: este módulo vive en `Flujos/src/core/sin-agente/`. Las pruebas pasan otro tope.
+const TOPE_POR_DEFECTO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 // Nada de «comprobar que existe y luego leer/escribir»: entre una cosa y la otra el archivo puede cambiar (CodeQL
 // js/file-system-race). Se INTENTA, y se interpreta el error.

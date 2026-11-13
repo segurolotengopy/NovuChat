@@ -136,9 +136,9 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { crearMundo, ErrorDeUso, leerCredencial, limpiarSecretos, llamarGemini, TARIFA } from '../../captacion-minima/herramientas/bateria.mjs';
-import { doblesDeBateriaDelGuardado } from '../../comun-sin-agente/src/guardado-dobles.mjs';
+import { doblesDeBateriaDelGuardado } from '../../../src/core/sin-agente/guardado-dobles.mjs';
 // El estado de la conversación vive en el servidor (PR-4a): el servidor de sesión de mentira es el común de los flujos sin agente.
-import { crearServidorDeSesion } from '../../comun-sin-agente/herramientas/servidor-de-sesion.mjs';
+import { crearServidorDeSesion } from '../../../src/core/sin-agente/herramientas/servidor-de-sesion.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RUTA_FLUJO = join(AQUI, '..', 'venta-minima.qtaco.json');

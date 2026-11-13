@@ -3,7 +3,7 @@
 A toda conversación de venta que lleva entre **22 h y 23 h 30 min** sin un mensaje del cliente le sale **un solo** mensaje de texto libre.
 Retoma lo que el cliente contó o, si no hay de qué, es un texto fijo. Nunca sale a quien compró, pasó a una persona, está en pausa, pidió que no
 le escriban o tiene la ventana de 24 h cerrada. Es experimental: vive fuera de las zonas y de `fronteras.test.ts`, con el mismo precedente que
-`comun-sin-agente` y `rroca-ruben`; se muda con la futura mudanza a `Flujos/clientes/`.
+`Flujos/src/core/sin-agente/` y `rroca-ruben`; se muda con la futura mudanza a `Flujos/clientes/`.
 
 ## Cómo está repartido
 
@@ -30,10 +30,10 @@ pareo con la respuesta del modelo es POR POSICIÓN entre los de historial sufici
 | Pieza | Qué es |
 |---|---|
 | `construir.mjs` | `node construir.mjs --tenant <id> [--verificar]` y `--todos [--verificar]`: arma `rescate-22h.<id>.json` desde la plantilla y `admin/scripts/datos/<id>/rescate-22h.json`. `--verificar` no escribe y sale 1 si lo versionado difiere o viola una guardia. `--publicable (--tenant <id> \| --flujo <json>)` sale 1 mientras quede un `REEMPLAZAR_*`. |
-| `flujo.plantilla.json` | Los 7 nodos propios de la plantilla (más `¿Meta aceptó?`), con marcas `@@` (código, credenciales por nombre, URL). La cadena de envío se injerta desde `../comun-sin-agente/src/envio.mjs`. |
+| `flujo.plantilla.json` | Los 7 nodos propios de la plantilla (más `¿Meta aceptó?`), con marcas `@@` (código, credenciales por nombre, URL). La cadena de envío se injerta desde `Flujos/src/core/sin-agente/envio.mjs`. |
 | `src/rescate.js` | Librería (prefijo `rs`): corte, lista de teléfonos, prompt, revisión del cuerpo, texto fijo y saludo válidos, elección del texto. |
 | `src/nodos/preparar-rescates.js`, `armar-rescate.js` | Los dos nodos Code. |
-| `../comun-sin-agente/` | **Se incluye, no se copia ni se modifica**: `leerProyecto`, `armarVariante`, y `injertar`; el filtro de redacción se pide al core (`Flujos/src/core/texto/filtro-redaccion.js`). Una copia declarada: `rsTextoDeGemini` (no hay fuente común de `cnTextoDeGemini`). |
+| `Flujos/src/core/sin-agente/` | **Se incluye, no se copia ni se modifica**: `leerProyecto`, `armarVariante`, y `injertar`; el filtro de redacción se pide al core (`Flujos/src/core/texto/filtro-redaccion.js`). Una copia declarada: `rsTextoDeGemini` (no hay fuente común de `cnTextoDeGemini`). |
 
 ## Datos por tenant (`admin/scripts/datos/<id>/rescate-22h.json`)
 

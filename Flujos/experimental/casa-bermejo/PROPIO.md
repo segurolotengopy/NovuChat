@@ -4,7 +4,7 @@ Zona: `Flujos/experimental/casa-bermejo/`. Diseño: `DISENO.md`. Estado: **B3c**
 Regla «Basado en» (01/10/2026): la lista de funcionalidades está en `DISENO.md`; no se copió el flujo de otro cliente. Lo común se INCLUYE desde su fuente; lo propio vive aquí.
 
 ## Común, incluido desde su fuente
-Cobro (`cb*`), avisos (`av*`), conversación (`vd*`), carrito (`vc*`), catálogo externo (`ce*`) en `Flujos/experimental/venta-digital/src/`; mensajes y filtro de redacción (`cm*`) en `comun-sin-agente/src/`; nodos neutros en `venta-digital/src/nodos/`.
+Cobro (`cb*`), avisos (`av*`), conversación (`vd*`), carrito (`vc*`), catálogo externo (`ce*`) en `Flujos/experimental/venta-digital/src/`; mensajes y filtro de redacción (`cm*`) en `Flujos/src/core/sin-agente/`; nodos neutros en `venta-digital/src/nodos/`.
 
 ## HUECO declarado (copia con fuente común pendiente)
 `src/lib/bm.js` y `src/lib/bm-venta.js` se derivaron de `walisuma/src/lib/wl.js` y `wl-venta.js` (la misma venta por WhatsApp con QR del comercio): ficha de 48 h, entrega, intenciones por código (pagar, identidad, factura, volumen, hablar con una persona), revisión de la redacción del modelo, resolvedor de turno y textos de derivación y de comprobante. Diferencias, todas probadas en `admin/pruebas/venta-casa-bermejo-lib.test.ts`:

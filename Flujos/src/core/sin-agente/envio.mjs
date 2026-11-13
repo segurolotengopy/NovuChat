@@ -3,7 +3,7 @@
  * envio.mjs — la cadena de ENVÍO de un flujo «sin agente»: nodos y conexiones
  * =============================================================================
  *
- *   import { nodosDeEnvio, injertar } from '<ruta>/comun-sin-agente/src/envio.mjs';
+ *   import { nodosDeEnvio, injertar } from '<ruta>/core/sin-agente/envio.mjs';
  *
  * Sacado de «Enviar a WhatsApp» y compañía de `agenda-minima/flujo.plantilla.json`, que sigue con los suyos.
  * Lo que sale de «Armar mensajes» es UN ITEM POR MENSAJE (`src/mensajes.js`); esta cadena los manda:
@@ -275,8 +275,8 @@ export const LIMITE_DEL_CUERPO_RELE = 64 * 1024;
 export const ROLES_DE_CLAVE_RELE = ['enviar', 'respaldo', 'aviso', 'avisoguardado'];
 
 const AQUI_ENVIO = dirname(fileURLToPath(import.meta.url));
-export const FUENTE_CODIGOS_RELE = readFileSync(join(AQUI_ENVIO, '../../../src/core/rele/codigos.js'), 'utf8').trimEnd();
-export const FUENTE_DECIDIR_ENVIO = readFileSync(join(AQUI_ENVIO, '../../../src/core/rele/decidir-envio.js'), 'utf8').trimEnd();
+export const FUENTE_CODIGOS_RELE = readFileSync(join(AQUI_ENVIO, '../rele/codigos.js'), 'utf8').trimEnd();
+export const FUENTE_DECIDIR_ENVIO = readFileSync(join(AQUI_ENVIO, '../rele/decidir-envio.js'), 'utf8').trimEnd();
 
 /** La base del relé que admite el repositorio: SOLO el marcador (lo reemplaza el publicador); las pruebas pueden usar un host `*.example` (con puerto opcional). */
 export function esBaseDeReleAdmitida(base) {
