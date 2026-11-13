@@ -125,6 +125,8 @@ export const SUITES_PURAS = [
   'pruebas/core/cotejar-ids-ajenos.test.ts',
   'pruebas/core/entregas.test.ts',
   'pruebas/core/ux-derivacion.test.ts',
+  // Baja por texto (13/11/2026): la pieza común y la invariante que recorre todos los flujos que atienden. Sin emulador ni red.
+  'pruebas/core/conversacion-baja.test.ts', 'pruebas/core/ux-baja.test.ts',
   'pruebas/core/marcador-local-reemplazar.test.ts',
   'pruebas/core/horario-funcionario-ilegible.test.ts',
   'pruebas/campanas-consola.test.ts',
