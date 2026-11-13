@@ -1,5 +1,5 @@
 /**
- * LA LIBRERÍA DE VENTA DE CASA BERMEJO (`Flujos/experimental/casa-bermejo/src/lib/bm.js` y `bm-venta.js`, bloque B3b): ficha, catálogo externo, decisión de la venta y textos. Pura: sin n8n.
+ * LA LIBRERÍA DE VENTA DE CASA BERMEJO (`Flujos/clientes/casa-bermejo/src/lib/bm.js` y `bm-venta.js`, bloque B3b): ficha, catálogo externo, decisión de la venta y textos. Pura: sin n8n.
  *
  * Se prueba NEGANDO: dos teléfonos nunca comparten ficha, el modelo no pone precios ni totales, un catálogo ilegible pasa con un vendedor, el QR sale solo con el pedido, la entrega y la confirmación del cliente,
  * y ningún texto dice «acreditado», «verificado» ni «recibimos tu pago», ni promete un aviso sin respaldo, ni niega ser una IA.
@@ -15,7 +15,7 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const FLUJOS = join(AQUI, '../../Flujos/experimental');
 const RUTAS = [
   'venta-digital/src/cobro.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js',
-  'comun-sin-agente/src/mensajes.js', '../src/core/texto/filtro-redaccion.js', 'casa-bermejo/src/lib/bm.js', 'casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
+  'comun-sin-agente/src/mensajes.js', '../src/core/texto/filtro-redaccion.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
 ].map((r) => join(FLUJOS, r));
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',

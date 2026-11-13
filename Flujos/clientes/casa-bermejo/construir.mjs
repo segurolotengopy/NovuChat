@@ -4,9 +4,9 @@
  * construir.mjs — arma los JSON del flujo de venta de Casa Bermejo (tenant casa-bermejo) desde la plantilla y los datos
  * =============================================================================
  *
- *   node Flujos/experimental/casa-bermejo/construir.mjs               escribe casa-bermejo.json y casa-bermejo.prueba.json
- *   node Flujos/experimental/casa-bermejo/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
- *   node Flujos/experimental/casa-bermejo/construir.mjs --publicable [--flujo <json>] [--datos <json>]
+ *   node Flujos/clientes/casa-bermejo/construir.mjs               escribe casa-bermejo.json y casa-bermejo.prueba.json
+ *   node Flujos/clientes/casa-bermejo/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
+ *   node Flujos/clientes/casa-bermejo/construir.mjs --publicable [--flujo <json>] [--datos <json>]
  *                                                       no escribe: sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal. HOY SALE 1: quedan marcadores REEMPLAZAR_*
  *   (cualquier otro argumento se rechaza)
  *
@@ -14,12 +14,12 @@
  * (una llamada al modelo que conversa y propone el pedido; el código valida contra el catálogo y calcula el total), el cobro REAL con el QR del comercio y su cotejo, los avisos al comercio y la salida.
  * `--publicable` sigue fallando mientras queden marcadores `REEMPLAZAR_*`, la plantilla `pedido_registrado` sin aprobar o el costo de entrega sin declarar.
  *
- * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código, sin los datos y sin la entrada del receptor. El código de los nodos lo arma el armador genérico `../comun-sin-agente/construir.mjs` (importado, no copiado):
+ * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código, sin los datos y sin la entrada del receptor. El código de los nodos lo arma el armador genérico `../../experimental/comun-sin-agente/construir.mjs` (importado, no copiado):
  *   - `@@dato:a.b.c@@` por ese dato; `@@cred:ingesta|graph|entradaPrueba|gemini` por el nombre de credencial del archivo de datos;
  *   - `@@medio:<paquete>`: los módulos comunes de medios (`Flujos/src/core/medios/*.js`) se INCLUYEN desde su fuente, nunca se copian;
- *   - `@@vd:<nodo>`: el nodo común NEUTRO de `../venta-digital/src/nodos/<nodo>.js`, con las librerías y `_comun.js` delante (lo mismo que el modo `todo` del armador genérico, pero leyendo de la base común);
- *   - LA ENTRADA VERIFICADA DEL RECEPTOR (6 nodos) se INCLUYE leyéndolos POR NOMBRE de `../venta-minima/flujo.plantilla.json` (solo lectura): `--verificar` falla si difieren de su origen;
- *   - LA CADENA DE ENVÍO es común (`../comun-sin-agente/src/envio.mjs`, `injertar()`), con las credenciales por NOMBRE;
+ *   - `@@vd:<nodo>`: el nodo común NEUTRO de `../../experimental/venta-digital/src/nodos/<nodo>.js`, con las librerías y `_comun.js` delante (lo mismo que el modo `todo` del armador genérico, pero leyendo de la base común);
+ *   - LA ENTRADA VERIFICADA DEL RECEPTOR (6 nodos) se INCLUYE leyéndolos POR NOMBRE de `../../experimental/venta-minima/flujo.plantilla.json` (solo lectura): `--verificar` falla si difieren de su origen;
+ *   - LA CADENA DE ENVÍO es común (`../../experimental/comun-sin-agente/src/envio.mjs`, `injertar()`), con las credenciales por NOMBRE;
  *   - dos variantes: PRODUCCIÓN (con el receptor y sin «Entrada de prueba») y PRUEBA (al revés).
  *
  * LOS DATOS son `admin/scripts/datos/casa-bermejo/casa-bermejo.json` (zona Tenants: solo marcadores `REEMPLAZAR_*`, nunca un token, una ruta de webhook real, un teléfono ni un identificador de Meta).
@@ -27,15 +27,15 @@
 import { closeSync, constants, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
-import { injertar } from '../comun-sin-agente/src/envio.mjs';
-import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
-import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
-import { problemasDeReferencias } from '../rroca-ruben/construir.mjs';
+import { armarVariante, leerProyecto } from '../../experimental/comun-sin-agente/construir.mjs';
+import { injertar } from '../../experimental/comun-sin-agente/src/envio.mjs';
+import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../experimental/comun-sin-agente/src/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../experimental/comun-sin-agente/src/expresiones.mjs';
+import { problemasDeReferencias } from '../../experimental/rroca-ruben/construir.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/casa-bermejo/casa-bermejo.json');
-export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../venta-minima/flujo.plantilla.json');
+export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../../experimental/venta-minima/flujo.plantilla.json');
 // 47 + los 9 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026 y v2 del 30/10):
 // +1 nodo (`Traer catálogo`, 57): excepción APROBADA por Andres el 12/11/2026 (docs/versiones-por-cliente.md, «Estado al 12/11/2026 (Casa Bermejo)»). Excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 export const TOPE_DE_NODOS = 57;
@@ -72,10 +72,10 @@ export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   // La base común de las ventas digitales (cobro, avisos, el motor de la conversación y el carrito: prefijos `cb`, `av`, `vd` y `vc`) y, al final, lo PROPIO de Casa Bermejo (`bm.js`: datos, textos y `CN_TENANT`; `bm-venta.js`: la decisión de la venta).
-  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../venta-digital/src/carrito.js', '../venta-digital/src/catalogo-externo.js', 'src/lib/bm.js', 'src/lib/bm-venta.js'],
-  comun: ['../venta-digital/src/nodos/_comun.js'],
+  librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/carrito.js', '../../experimental/venta-digital/src/catalogo-externo.js', 'src/lib/bm.js', 'src/lib/bm-venta.js'],
+  comun: ['../../experimental/venta-digital/src/nodos/_comun.js'],
   paquetes: {
-    mensajes: ['../comun-sin-agente/src/mensajes.js'],
+    mensajes: ['../../experimental/comun-sin-agente/src/mensajes.js'],
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
@@ -83,11 +83,11 @@ export const CONFIG = {
     // Módulo común de Pedidos: lo que el flujo reporta con `qr_enviado` para que el servidor cree el pedido `wa_<referencia>` (solo ids, cantidades y entrega; nunca precios).
     'pedidos-qr': ['../../src/modulos/pedidos/qr-del-pedido.js'],
     // Los nodos comunes neutros (zona venta-digital): se piden con `@@vd:<nodo>`.
-    'vd-carga-de-entrada': ['../venta-digital/src/nodos/carga-de-entrada.js'],
-    'vd-config-del-negocio': ['../venta-digital/src/nodos/config-del-negocio.js'],
-    'vd-normalizar-entrada': ['../venta-digital/src/nodos/normalizar-entrada.js'],
-    'vd-puerta-del-turno': ['../venta-digital/src/nodos/puerta-del-turno.js'],
-    'vd-resumen-del-turno': ['../venta-digital/src/nodos/resumen-del-turno.js'],
+    'vd-carga-de-entrada': ['../../experimental/venta-digital/src/nodos/carga-de-entrada.js'],
+    'vd-config-del-negocio': ['../../experimental/venta-digital/src/nodos/config-del-negocio.js'],
+    'vd-normalizar-entrada': ['../../experimental/venta-digital/src/nodos/normalizar-entrada.js'],
+    'vd-puerta-del-turno': ['../../experimental/venta-digital/src/nodos/puerta-del-turno.js'],
+    'vd-resumen-del-turno': ['../../experimental/venta-digital/src/nodos/resumen-del-turno.js'],
   },
   variantes: [
     { archivo: FLUJO_PRODUCCION, quitar: 'Entrada de prueba', nombre: 'se toma de los datos' },
