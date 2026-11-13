@@ -40,6 +40,7 @@ import { injertarCrm, rutasPaquetesCrm, validarMapaCrm } from '../comun-sin-agen
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const DATOS = join(AQUI, '../../../admin/scripts/datos/chat-novuchat');
+const RUTA_ADAPTADOR_CRM = join(AQUI, '..', '..', 'src', 'modulos', 'captacion', 'crm-captacion.js');
 
 /** El config del armador genérico, sin las variantes (esas salen de los archivos de datos). */
 export const CONFIG_BASE = {
@@ -54,8 +55,8 @@ export const CONFIG_BASE = {
     // El estado de la conversación en el servidor es un MÓDULO COMÚN (PR-4a0): se INCLUYE, no se copia. Sus parámetros (`SS_CONFIG`) los declara `src/nodos/_registro.js`.
     sesion: ['../comun-sin-agente/src/sesion.js'],
     // Reclamo 62: la relectura antes de agregar una fila (crm.js + su nodo). Solo el chat la usa por ahora; el resto de los flujos no cambia.
-    'crm-releer': ['../../src/modulos/crm/crm.js', '../../src/modulos/captacion/crm-captacion.js', '../../src/modulos/crm/nodo-releer-antes-de-agregar.js'],
-    ...Object.fromEntries(Object.entries(rutasPaquetesCrm(join(AQUI, '..', '..', 'src', 'modulos', 'captacion', 'crm-captacion.js'))).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
+    'crm-releer': ['../../src/modulos/crm/crm.js', relative(AQUI, RUTA_ADAPTADOR_CRM), '../../src/modulos/crm/nodo-releer-antes-de-agregar.js'], // (el MISMO adaptador que «Decidir fila»)
+    ...Object.fromEntries(Object.entries(rutasPaquetesCrm(RUTA_ADAPTADOR_CRM)).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
   },
 };
 

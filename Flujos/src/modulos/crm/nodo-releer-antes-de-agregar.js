@@ -20,7 +20,8 @@ crmDecididas.forEach((it, k) => {
   const idx = it.pairedItem && typeof it.pairedItem.item === 'number' ? it.pairedItem.item : k;
   if (crmFalloLectura) { crmSalida.push({ json: { accionPlanilla: 'nada', veredictoPlanilla: 'no_leida: ' + crmPorque(crmFalloLectura.error ?? crmFalloLectura.json.error) }, pairedItem: { item: 0 } }); return; }
   const prospecto = crmProspectos[idx];
-  const p = (prospecto && prospecto.json) || {};
+  if (!prospecto || !prospecto.json) { crmSalida.push({ json: { accionPlanilla: 'nada', veredictoPlanilla: 'sin_prospecto' }, pairedItem: { item: 0 } }); return; }
+  const p = prospecto.json;
   const tel = crmDigitos(j[CRM_MAPA.columnas.telefono.titulo]);
   const desdeMs = crmMsValido(p.conversacionDesdeMs);
   const delTelefono = crmReleidas.filter((f) => crmDigitos(f[CRM_MAPA.columnas.telefono.titulo]) === tel);
@@ -29,13 +30,14 @@ crmDecididas.forEach((it, k) => {
   if (!yaExiste) { crmSalida.push({ json: j, pairedItem: { item: 0 } }); return; }
   // otra ejecución se adelantó: este turno ACTUALIZA esa fila (sin IDs que calcular: no se agrega nada)
   const actualizacion = crmDecidirFila({
-    prospectos: [prospecto],
+    prospectos: [{ json: { ...p, telefono: tel } }], // (con el teléfono en dígitos: el mismo criterio con que se filtró la relectura)
     busqueda: crmEntrada.filter((x) => x.json && x.json.row_number !== undefined),
     lecturaIds: [],
     mapa: CRM_MAPA,
     adaptador: typeof CRM_ADAPTADOR !== 'undefined' ? CRM_ADAPTADOR : { calificar: capCalificar, resumir: capResumir, prioridad: CAP_PRIORIDAD },
     ahoraMs: Date.now(),
   });
-  for (const a of actualizacion) crmSalida.push({ json: a.json, pairedItem: { item: 0 } });
+  // En este camino nunca se AGREGA (sin IDs leídos el ID saldría mal): lo que no sea actualizar o nada se descarta con su veredicto.
+  for (const a of actualizacion) crmSalida.push({ json: a.json.accionPlanilla === 'agregar' ? { accionPlanilla: 'nada', veredictoPlanilla: 'sin_fila_para_actualizar' } : a.json, pairedItem: { item: 0 } });
 });
 return crmSalida;

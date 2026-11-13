@@ -3898,6 +3898,8 @@ describe('reclamo 62: la fila del miniCRM es por conversación de 24 h (no 48), 
     w2.hoja.antesDeReleer = () => { w2.hoja.filas.push(ENC.map((_h, c) => (c === 0 ? 'LEAD-1001' : c === 1 ? new Date(desde - 4 * HORA).toISOString().slice(0, 16).replace('T', ' ') : c === 4 ? '+' + tel : ''))); };
     jugar(w2, MAMA, { perfil: 'Ana Pérez' }).texto('Hola');
     expect(w2.hoja.filas).toHaveLength(1);
+    expect(w2.hoja.filas[0]![2]).toBe('Ana Pérez');                         // y este turno la actualizó
+    expect(w2.hoja.filas[0]![0]).toBe('LEAD-1001');
     // sin coincidencias: se agrega, con el ID que decidió «Decidir fila» (LEAD-1001 en una hoja vacía)
     const w3 = crear();
     w3.ingesta = anc(w3.mundo.ahora(), true);
