@@ -1,6 +1,6 @@
 /**
  * EL GUARDADO DE MEDIOS ES OBLIGATORIO (contrato M1↔M2 del 29/10/2026, §4; contrato v2 «guardar y descargar TODO» del 30/10, §4, §7.6 y §8.1): TODO flujo versionado que maneja medios lleva la rama común
- * `Flujos/experimental/comun-sin-agente/src/guardado.mjs`, en su lugar y con las credenciales correctas.
+ * `Flujos/src/core/sin-agente/guardado.mjs`, en su lugar y con las credenciales correctas.
  *
  * Se recorre `Flujos/` ENTERO (no una lista escrita a mano): un flujo nuevo con medios que no traiga la rama hace fallar esta prueba sin que
  * nadie se acuerde de agregarlo. Las únicas excepciones son las de `EXCEPCIONES`, cada una con su porqué, y se comprueba que sigan existiendo
@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { codigoLeeBinario, hallazgosDelGuardado, manejaMedios, NODOS_DEL_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
+import { codigoLeeBinario, hallazgosDelGuardado, manejaMedios, NODOS_DEL_GUARDADO } from '../../Flujos/src/core/sin-agente/guardado.mjs';
 import type { Flujo, J } from './lib/flujo';
 import { flujosVersionados } from './lib/flujos-de-cliente';
 

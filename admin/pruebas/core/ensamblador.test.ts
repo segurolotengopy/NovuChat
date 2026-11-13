@@ -28,7 +28,7 @@
  *
  * No necesita emulador: lee archivos y compara bytes.
  */
-import { NODOS_CODE_DEL_GUARDADO } from '../../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
+import { NODOS_CODE_DEL_GUARDADO } from '../../../Flujos/src/core/sin-agente/guardado.mjs';
 import { afterAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import {

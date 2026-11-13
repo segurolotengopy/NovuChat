@@ -42,9 +42,9 @@ Importadores medidos con grep (`[.][.]/(experimental/)?<x>/` en `*.mjs` y `*.js`
 | `rroca-antonio` | ninguno | 16 |
 | `venta-minima` | `walisuma`, `doctoras`, `rroca-emma`, `rroca-evy`, `casa-bermejo` | 23 |
 | `venta-digital` | `walisuma`, `rroca-antonio`, `rroca-ruben`, `casa-bermejo` | 16 |
-| `comun-sin-agente` | 12 carpetas (casi todas: `venta-minima`, `captacion-minima`, `rroca-antonio`, `doctoras`, `rescate-22h`, `agenda-minima`, `walisuma`, `rroca-ruben`, `rroca-emma`, `chat-novuchat`, `casa-bermejo`, `rroca-evy`), incluidos sus `herramientas/bateria.mjs` | 48 |
+| `comun-sin-agente` (hoy solo `construir-crm.mjs`; el resto subió a `Flujos/src/core/sin-agente/` el 13/11/2026, etapa 1) | 12 carpetas (casi todas: `venta-minima`, `captacion-minima`, `rroca-antonio`, `doctoras`, `rescate-22h`, `agenda-minima`, `walisuma`, `rroca-ruben`, `rroca-emma`, `chat-novuchat`, `casa-bermejo`, `rroca-evy`), incluidos sus `herramientas/bateria.mjs` | 48 |
 
-`comun-sin-agente` y `venta-digital` son proveedoras: no son flujos de un cliente y se quedan en `experimental/` hasta la etapa 1. Antes de una mudanza se repite esta medición (los números cambian) y se pega el resultado en el PR.
+`comun-sin-agente` (solo `construir-crm.mjs`, que no sube a core porque importa del módulo `crm` y `fronteras.test.ts` lo rechazaría) y `venta-digital` son proveedoras: no son flujos de un cliente y se quedan en `experimental/` hasta la etapa 1. El resto de `comun-sin-agente` (armador, envío, guardado, expresiones, mensajes, sesión y herramientas) vive desde el 13/11/2026 en `Flujos/src/core/sin-agente/`: un flujo lo importa con `../../src/core/sin-agente/…` desde `experimental/` o `clientes/`, igual que `src/core/texto/`. Antes de una mudanza se repite esta medición (los números cambian) y se pega el resultado en el PR.
 
 **Consecuencia para el paso 3:** la regla «`../<otro>/` pasa a `../../experimental/<otro>/`» vale solo mientras `<otro>` sigue en `experimental/`. Cuando `<otro>` ya se mudó, la ruta correcta es `../<otro>/` (ya está en `Flujos/clientes/`). Se mira dónde está hoy cada carpeta importada, no se aplica la regla de memoria.
 
@@ -144,7 +144,7 @@ El PR se abre en borrador y declara: huellas iguales, que no publica, y el costo
 - Huellas antes y después, iguales: `walisuma.json` `1ca574f2…70cc1` y `walisuma.prueba.json` `0375d63e…49043`.
 - `git mv Flujos/experimental/walisuma Flujos/clientes/walisuma`; `git diff -M --stat origin/main -- Flujos`: 12 archivos, renombres con 0 líneas cambiadas salvo `construir.mjs` (22 líneas de rutas) y `PROPIO.md` (2 líneas); `DISENO.md` y `src/` sin cambios.
 - Walisuma cumple la regla de carpetas compartidas porque nadie la importa (sus importadores son salientes) y no tiene flujo vivo: no hubo paso 6 ni cambio en `publicar-flujo.sh`.
-- Rutas reapuntadas en `construir.mjs`: `../comun-sin-agente/`, `../rroca-ruben/`, `../venta-minima/` y `../venta-digital/` pasaron a `../../experimental/…`; las rutas a `../../src/…` no cambiaron.
+- Rutas reapuntadas en `construir.mjs` (antes de subir `comun-sin-agente` a core): `../comun-sin-agente/`, `../rroca-ruben/`, `../venta-minima/` y `../venta-digital/` pasaron a `../../experimental/…`; las rutas a `../../src/…` no cambiaron.
 - Fuera de la carpeta: `armado.test.ts`, `crm.test.ts` y `mundo.ts` de `admin/pruebas/tenants/walisuma/`, las dos líneas de `crm-hallazgos-flujos.test.ts` y la línea de `guardado-obligatorio.test.ts`. Ni `publicar-flujo.sh`, ni `estado-de-versiones.sh`, ni `vitest.config.ts`, ni `verificar-saneo.sh` nombraban a Walisuma.
 - `construir.mjs --verificar`: sale 0 («walisuma.json al día (64 nodos)» y «walisuma.prueba.json al día (59 nodos)»).
 - No se corrió `publicar-flujo.sh`, `flujo-de-prueba.mjs` ni `preparar-import.sh`; no se tocó n8n.
@@ -162,3 +162,11 @@ Tras una mudanza, el **único** lugar donde puede quedar una clave `experimental
 - **Flujos congelados** (se retiran en un PR aparte) y los barridos comunes, que no pertenecen a un tenant.
 - **Datos del tenant** (`admin/scripts/datos/<tenant>/`) y reglas o documentos de la consola.
 - **Renombrar** el flujo, su tenant o sus nodos: cambia la huella y deja de ser una mudanza.
+
+
+## Ejemplo ejecutado: `comun-sin-agente` sube a `Flujos/src/core/sin-agente/` (etapa 1, PR 1, 13/11/2026)
+
+- `git mv` de `src/*`, `herramientas/`, `construir.mjs`, `construir.d.mts` y `LEEME.md` a `Flujos/src/core/sin-agente/`; `construir-crm.mjs` se queda en `Flujos/experimental/comun-sin-agente/` (importa del módulo `crm`: en core rompería `fronteras.test.ts`).
+- Rutas internas: `envio.mjs` lee `../rele/` y `guardado.mjs` lee `../medios/`; el tope por defecto de `construir.mjs` sigue siendo `Flujos/` (sube un nivel más).
+- Los comentarios y literales que terminan dentro de un JSON y nombran la ruta vieja NO se tocan (decisión de Andres, 13/11/2026): están listados como «rutas históricas» en `Flujos/src/core/sin-agente/LEEME.md`.
+- Prueba: las huellas sha256 de todos los JSON de `Flujos/` son iguales antes y después, y todos los `construir.mjs --verificar` salen 0.

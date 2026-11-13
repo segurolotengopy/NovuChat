@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { hallazgosDeExpresiones, REGLAS_DE_EXPRESION } from '../../../Flujos/experimental/comun-sin-agente/src/expresiones.mjs';
+import { hallazgosDeExpresiones, REGLAS_DE_EXPRESION } from '../../../Flujos/src/core/sin-agente/expresiones.mjs';
 import { crearMundo } from '../lib/n8n-de-mentira';
 import type { Flujo, J } from '../lib/flujo';
 import { flujosDeProduccion } from '../lib/flujos-de-cliente';
@@ -132,9 +132,8 @@ describe('NEGANDO: las reglas reconocen cada construcción en una copia de un fl
 describe('todos los armadores de Flujos/experimental y Flujos/clientes aplican la guardia en su --verificar', () => {
   // Migración (etapa 0): un flujo puede vivir en una carpeta o en la otra (la mudanza no cambia qué flujo es). Los armadores que hoy no aplican la
   // guardia son excepciones de `migracion/excepciones.ts` (regla `expresiones-n8n`, con dueño y vencimiento); si uno la aplica, la excepción sobra.
-  const todos = [...versionados('Flujos/experimental/*/construir.mjs'), ...versionados('Flujos/clientes/*/construir.mjs')]
-    .filter((r) => !r.startsWith('Flujos/experimental/comun-sin-agente/'));
-  const importaLaGuardia = (texto: string): boolean => /from '(\.\.\/comun-sin-agente|\.\.\/\.\.\/experimental\/comun-sin-agente)\/src\/expresiones\.mjs'/.test(texto);
+  const todos = [...versionados('Flujos/experimental/*/construir.mjs'), ...versionados('Flujos/clientes/*/construir.mjs')];
+  const importaLaGuardia = (texto: string): boolean => /from '(\.\.\/)+src\/core\/sin-agente\/expresiones\.mjs'/.test(texto);
   const aplicaLaGuardia = (r: string): boolean => { const t = readFileSync(join(RAIZ, r), 'utf8'); return importaLaGuardia(t) && /hallazgosDeExpresionesN8n\(flujo/.test(t); };
   // El flujo de producción representante de cada armador (el primero de su carpeta), que es el que nombran las excepciones.
   const representante = (r: string): string => {
@@ -153,9 +152,9 @@ describe('todos los armadores de Flujos/experimental y Flujos/clientes aplican l
     expect(problemasDeRegla('expresiones-n8n', new Map([['a.json', ['construir.mjs']]]), exc)).toEqual([]);
     expect(problemasDeRegla('expresiones-n8n', new Map([['a.json', []]]), exc)).toEqual([expect.stringContaining('SOBRA')]);
   });
-  it('contraprueba: acepta las dos formas de la importación y rechaza otra', () => {
-    expect(importaLaGuardia("import { x } from '../comun-sin-agente/src/expresiones.mjs';")).toBe(true);
-    expect(importaLaGuardia("import { x } from '../../experimental/comun-sin-agente/src/expresiones.mjs';")).toBe(true);
+  it('contraprueba: acepta la importación desde core/sin-agente (desde experimental o desde clientes) y rechaza otra', () => {
+    expect(importaLaGuardia("import { x } from '../../src/core/sin-agente/expresiones.mjs';")).toBe(true);
+    expect(importaLaGuardia("import { x } from '../../../src/core/sin-agente/expresiones.mjs';")).toBe(true);
     expect(importaLaGuardia("import { x } from '../otro/src/expresiones.mjs';")).toBe(false);
   });
   for (const r of armadores) {

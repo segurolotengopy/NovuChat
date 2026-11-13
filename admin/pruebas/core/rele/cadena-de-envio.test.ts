@@ -9,7 +9,7 @@
  *   - ningún nodo habla con Graph, su CDN ni la credencial `whatsAppApi`; la URL del relé es solo el marcador.
  */
 import { describe, expect, it } from 'vitest';
-import { nodosDeEnvio, injertar, llamaANumerar, hallazgosDelEnvioRele, MARCADOR_URL_DEL_RELE, NODOS_DEL_ENVIO_RELE } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
+import { nodosDeEnvio, injertar, llamaANumerar, hallazgosDelEnvioRele, MARCADOR_URL_DEL_RELE, NODOS_DEL_ENVIO_RELE } from '../../../../Flujos/src/core/sin-agente/envio.mjs';
 import { CLIENTE, WF, CRED_INGESTA, CRED_RELE, MENSAJES_JS, OPC_RELE, falla, flujoConCadena, mensaje, mundoRele, ok, turno, turnoConError, type Envio } from './ayuda';
 import { crearMundo } from '../../lib/n8n-de-mentira';
 import type { J } from '../../lib/flujo';

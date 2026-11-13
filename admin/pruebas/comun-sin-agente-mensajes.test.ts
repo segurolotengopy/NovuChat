@@ -1,5 +1,5 @@
 /**
- * LOS CONSTRUCTORES DE MENSAJES (`Flujos/experimental/comun-sin-agente/src/mensajes.js`).
+ * LOS CONSTRUCTORES DE MENSAJES (`Flujos/src/core/sin-agente/mensajes.js`).
  *
  * Se EJECUTAN con el mismo ayudante que las demás suites de flujos (`./lib/flujo`), que le quita al código los
  * globales que el sandbox de n8n no tiene (`URL`, `Buffer`, `crypto`, `process`, `require`…): si el módulo usara
@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar } from './lib/flujo';
 
-const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/comun-sin-agente/src/mensajes.js');
+const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/src/core/sin-agente/mensajes.js');
 const FUENTE = readFileSync(RUTA, 'utf8');
 const NOMBRES = ['cmRecorte', 'cmTexto', 'cmBotones', 'cmLista', 'cmEnlace', 'cmUrlWa', 'cmMensaje', 'cmSinMencionDelBoton', 'cmMotivoAviso', 'cmTextosMismoNumero', 'cmContactoConBoton'] as const;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

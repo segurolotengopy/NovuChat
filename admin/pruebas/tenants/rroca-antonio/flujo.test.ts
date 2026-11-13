@@ -13,7 +13,7 @@
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import { ANA, BETO, PRODUCCION, PRUEBA, PID, REC, SUSPENDIDO, crear, entrega, hablar, mLista, mTexto, panelOk, textos, valorMeta } from './mundo';
-import { NODOS_DEL_GUARDADO } from '../../../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
+import { NODOS_DEL_GUARDADO } from '../../../../Flujos/src/core/sin-agente/guardado.mjs';
 
 const CORTES = /solo puedo leer texto, notas de voz, fotos y archivos PDF/;
 const PROHIBIDAS = /acreditad|verificad|validad|recibimos tu pago|pago (?:recibido|confirmado)/i;

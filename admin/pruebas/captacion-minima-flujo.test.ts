@@ -108,7 +108,7 @@ const GUION_ANTERIOR: J = {
   }
 };
 const CONSTRUIR_RUTA = join(CARPETA, 'construir.mjs');
-const COMUN_RUTA = join(CARPETA, '../comun-sin-agente/construir.mjs');
+const COMUN_RUTA = join(CARPETA, '../../src/core/sin-agente/construir.mjs');
 const CONSTRUIR = (await import(/* @vite-ignore */ CONSTRUIR_RUTA)) as { CONFIG_BASE: J; cargarDatos: (a: string) => J; validarDatos: (d: J, a: string) => void; armarTenant: (p: unknown, d: J, a: string) => string; salidaDe: (a: string) => string };
 const COMUN = (await import(/* @vite-ignore */ COMUN_RUTA)) as { leerProyecto: (carpeta: string, config: J) => unknown };
 function armarConGuion(archivo: 'novuchat.json' | 'ensayo.json', guion: J): Flujo {
@@ -2195,7 +2195,9 @@ describe('construir.mjs: el flujo armado es el que sale de la plantilla y los da
       cpSync(join(CARPETA, '../../src/core/texto/filtro-redaccion.js'), join(tmp, 'Flujos/src/core/texto/filtro-redaccion.js'));
       const sinLocal = (src: string): boolean => !src.endsWith('.local.json'); // un `.local.json` lleva valores reales: nunca a un temporal
       cpSync(CARPETA, cm, { recursive: true, filter: sinLocal });
-      cpSync(join(CARPETA, '../comun-sin-agente'), join(exp, 'comun-sin-agente'), { recursive: true, filter: sinLocal });
+      cpSync(join(CARPETA, '../../src/core/sin-agente'), join(tmp, 'Flujos/src/core/sin-agente'), { recursive: true, filter: sinLocal });
+      mkdirSync(join(exp, 'comun-sin-agente'), { recursive: true });
+      cpSync(join(CARPETA, '../comun-sin-agente/construir-crm.mjs'), join(exp, 'comun-sin-agente/construir-crm.mjs'));
       cpSync(DATOS, datos, { recursive: true, filter: sinLocal });
       modifica(cm, datos);
       return spawnSync(process.execPath, [join(cm, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador(undefined) });

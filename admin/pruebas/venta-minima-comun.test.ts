@@ -33,7 +33,7 @@ const COMUN = readFileSync(join(RAIZ, 'lib/comun.js'), 'utf8');
 const NODOS = ['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'uso-extendido', 'comercio-no-operativo'] as const;
 const FUENTE_NODO = (n: (typeof NODOS)[number]): string => readFileSync(join(RAIZ, `nodos/${n}.js`), 'utf8');
 // El estado de la conversación en el servidor (PR-4a): `Config del negocio` incluye el módulo común `sesion`, como arma construir.mjs.
-const SESION = readFileSync(join(RAIZ, '../../comun-sin-agente/src/sesion.js'), 'utf8');
+const SESION = readFileSync(join(RAIZ, '../../../src/core/sin-agente/sesion.js'), 'utf8');
 
 // --- El mundo de las pruebas ------------------------------------------------------------------
 // Lunes 05/10/2026, 10:00 en La Paz (UTC-4 fijo).

@@ -21,8 +21,8 @@ import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from './lib/flujo';
 import { crearMundo, type Doble, type Enviado, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
 import { doblesDelGuardado } from './lib/doble-guardado';
-import { crearServidorDeSesion, type ServidorDeSesion } from '../../Flujos/experimental/comun-sin-agente/herramientas/servidor-de-sesion.mjs';
-import { URL_DESCARGA_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
+import { crearServidorDeSesion, type ServidorDeSesion } from '../../Flujos/src/core/sin-agente/herramientas/servidor-de-sesion.mjs';
+import { URL_DESCARGA_GUARDADO } from '../../Flujos/src/core/sin-agente/guardado.mjs';
 import { atencionDeConversacion } from './modulos/crm/ingesta-conversacion';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));

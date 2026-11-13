@@ -25,9 +25,9 @@ const EXPERIMENTAL = join(aqui, '../../Flujos/experimental');
 const CARPETA = join(EXPERIMENTAL, 'chat-novuchat');
 const DATOS_DIR = join(aqui, '../scripts/datos/chat-novuchat');
 const LIB = readFileSync(join(CARPETA, 'src/lib/chat.js'), 'utf8');
-const MENSAJES = readFileSync(join(EXPERIMENTAL, 'comun-sin-agente/src/mensajes.js'), 'utf8');
+const MENSAJES = readFileSync(join(EXPERIMENTAL, '../src/core/sin-agente/mensajes.js'), 'utf8');
 const FILTRO = readFileSync(join(EXPERIMENTAL, '../src/core/texto/filtro-redaccion.js'), 'utf8');
-const SESION = readFileSync(join(EXPERIMENTAL, 'comun-sin-agente/src/sesion.js'), 'utf8');
+const SESION = readFileSync(join(EXPERIMENTAL, '../src/core/sin-agente/sesion.js'), 'utf8');
 const TIPEO = readFileSync(join(aqui, '../../Flujos/src/core/texto/tipeo.js'), 'utf8');
 const RUTA_ORIGINAL = join(EXPERIMENTAL, 'captacion-minima/src/lib/captacion.js');
 const ORIGINAL = existsSync(RUTA_ORIGINAL) ? readFileSync(RUTA_ORIGINAL, 'utf8') : '';
@@ -1430,7 +1430,7 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
     expect(CONSTRUIR.guardias('trigger', d).join(' ')).toMatch(/no trae una credencial explícita/);
   });
   it('el estado de la conversación es el MÓDULO COMÚN `comun-sin-agente/src/sesion.js`: un nodo con una copia propia, editada o sin el módulo se detecta (PR-4a0)', () => {
-    const modulo = readFileSync(join(CARPETA, '../comun-sin-agente/src/sesion.js'), 'utf8').trimEnd();
+    const modulo = readFileSync(join(CARPETA, '../../src/core/sin-agente/sesion.js'), 'utf8').trimEnd();
     expect(prod()['nodes'].filter((n: J) => String(n.parameters?.jsCode ?? '').includes(modulo)).length).toBeGreaterThanOrEqual(8); // lo traen los nodos que lo usan, tal cual
     // (a) un nodo con el módulo EDITADO (una copia que se aparta)
     const a = prod();
@@ -1480,7 +1480,7 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
     }
     // lo versionado, limpio; y el armador pide el paquete común, no uno propio
     expect(CONSTRUIR.guardias('trigger', prod(), DATOS_CRM)).toEqual([]);
-    expect(CONSTRUIR.CONFIG_BASE.paquetes.sesion).toEqual(['../comun-sin-agente/src/sesion.js']);
+    expect(CONSTRUIR.CONFIG_BASE.paquetes.sesion).toEqual(['../../src/core/sin-agente/sesion.js']);
   });
   it('SS_CONFIG: espacioPrueba distinto de espacio y terminado en «-prueba», congelado, y ningún nodo lo reasigna ni lo muta (hallazgos LOW de #794)', () => {
     const edita = (f: J, nodo: string, de: string | RegExp, a: string): J => {
@@ -1578,7 +1578,7 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
     ].join('\n'))).toEqual([]);
     // el módulo común NO se quita antes de analizar: un `//` abierto antes de él no puede esconder código que SÍ se ejecuta (revisión de seguridad de #835)
     {
-      const modulo = readFileSync(join(CARPETA, '../comun-sin-agente/src/sesion.js'), 'utf8').trimEnd();
+      const modulo = readFileSync(join(CARPETA, '../../src/core/sin-agente/sesion.js'), 'utf8').trimEnd();
       const conModulo = (envoltura: (m: string) => string): string[] => { const f = prod(); const nd = f['nodes'].find((x: J) => x.name === 'Soltar mensajes'); expect(String(nd.parameters.jsCode)).toContain(modulo); nd.parameters.jsCode = String(nd.parameters.jsCode).replace(modulo, () => envoltura(modulo)); return CONSTRUIR.guardias('trigger', f, DATOS_CRM); };
       expect(conModulo((m) => "void 0; //" + m + "; ssDesdeAutorizado = () => true;\n").join(' ')).toMatch(/«Soltar mensajes» reasigna o muta/);
       expect(conModulo((m) => m + "\nssDesdeAutorizado = () => true;\n").join(' ')).toMatch(/reasigna o muta/);
@@ -1691,7 +1691,10 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     const datos = join(dir, 'datos');
     mkdirSync(join(dir, 'flujos', 'experimental'), { recursive: true });
     cpSync(CARPETA, carpeta, { recursive: true, filter: (s) => !/fuentes|herramientas/.test(s) });
-    cpSync(join(EXPERIMENTAL, 'comun-sin-agente'), join(dir, 'flujos', 'experimental', 'comun-sin-agente'), { recursive: true });
+    cpSync(join(EXPERIMENTAL, '../src/core/sin-agente'), join(dir, 'flujos', 'src', 'core', 'sin-agente'), { recursive: true });
+    for (const c of ['rele', 'medios']) cpSync(join(EXPERIMENTAL, '../src/core', c), join(dir, 'flujos', 'src', 'core', c), { recursive: true }); // `envio.mjs` y `guardado.mjs` leen sus fuentes de ahí
+    mkdirSync(join(dir, 'flujos', 'experimental', 'comun-sin-agente'), { recursive: true });
+    cpSync(join(EXPERIMENTAL, 'comun-sin-agente/construir-crm.mjs'), join(dir, 'flujos', 'experimental', 'comun-sin-agente', 'construir-crm.mjs'));
     cpSync(DATOS_DIR, datos, { recursive: true });
     mkdirSync(join(dir, 'flujos', 'src', 'core', 'texto'), { recursive: true });
     cpSync(join(aqui, '../../Flujos/src/core/texto/tipeo.js'), join(dir, 'flujos', 'src', 'core', 'texto', 'tipeo.js'));
@@ -1776,7 +1779,7 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
     expect(marca('Armar turno')).toBe('@@todo+tipeo+sesion:nodos/armar-turno.js');
   });
   it('la cadena de envío (enviar, respaldo en texto, reporte saliente) es la de `comun-sin-agente/src/envio.mjs`, injertada sin cambios', async () => {
-    const { nodosDeEnvio } = (await import(/* @vite-ignore */ join(EXPERIMENTAL, 'comun-sin-agente/src/envio.mjs'))) as { nodosDeEnvio: Fn };
+    const { nodosDeEnvio } = (await import(/* @vite-ignore */ join(EXPERIMENTAL, '../src/core/sin-agente/envio.mjs'))) as { nodosDeEnvio: Fn };
     const datos = DATOS_BRUTOS['credenciales'] as J;
     const fuente = nodosDeEnvio({ credenciales: { graph: datos['graph'], ingesta: datos['ingesta'] }, ingestaUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta', desde: [9560, 160], armado: 'Soltar mensajes' });
     for (const n of fuente.nodes as J[]) expect((flujo['nodes'] as J[]).find((x) => x.name === n.name), `«${n.name}» difiere de la fuente común`).toEqual(n);

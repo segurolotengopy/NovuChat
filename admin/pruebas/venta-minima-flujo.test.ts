@@ -31,7 +31,7 @@ import { configBase, destinos, expresion, type Flujo, type J } from './lib/flujo
 import { crearMundo, ROLES_POR_OMISION, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
 import { copiarModulosComunesAlTemporal, doblesDelGuardado } from './lib/doble-guardado';
 import { crearSesion, ESPACIO, ESPACIO_PRUEBA, type SesionDeMentira } from './lib/venta-minima-sesion';
-import { NODOS_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
+import { NODOS_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../Flujos/src/core/sin-agente/guardado.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA_VM = join(AQUI, '../../Flujos/experimental/venta-minima');

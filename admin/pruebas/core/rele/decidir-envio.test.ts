@@ -9,7 +9,7 @@
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { RAIZ_REPO, leerFuentes } from '../fuente-vm';
-import { FUENTE_CODIGOS_RELE, FUENTE_DECIDIR_ENVIO, hallazgosDelEnvioRele } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
+import { FUENTE_CODIGOS_RELE, FUENTE_DECIDIR_ENVIO, hallazgosDelEnvioRele } from '../../../../Flujos/src/core/sin-agente/envio.mjs';
 import { flujoConCadena } from './ayuda';
 
 interface Decision { accion: string; codigo: string; esperaS: number; idMeta?: string; intentos: { n429: number; n409: number; nReint: number } }

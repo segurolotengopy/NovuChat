@@ -12,8 +12,8 @@ import { describe, expect, it } from 'vitest';
 import {
   CUPO_POR_DEFECTO_RELE, cabeceraDeFuentes, FUENTE_CUPO, FUENTE_PREPARAR, hallazgosDelGuardado, injertarGuardado, manejaMedios, nodosDelGuardado, REINTENTO_GET_RELE, urlDescargaRele, urlInfoRele, URL_DESCARGA_GUARDADO, NODOS_DE_META_DEL_GUARDADO,
   type OpcionesDelGuardado,
-} from '../../../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
-import { MARCADOR_URL_DEL_RELE } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
+} from '../../../../Flujos/src/core/sin-agente/guardado.mjs';
+import { MARCADOR_URL_DEL_RELE } from '../../../../Flujos/src/core/sin-agente/envio.mjs';
 import { crearMundo, type LlamadaDoble, type ResultadoTurno } from '../../lib/n8n-de-mentira';
 import type { Flujo, J } from '../../lib/flujo';
 import { CLIENTE, CRED_INGESTA, CRED_RELE, ok } from './ayuda';

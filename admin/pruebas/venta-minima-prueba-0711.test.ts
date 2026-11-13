@@ -17,7 +17,7 @@ import { configBase, ejecutar, type Flujo, type J } from './lib/flujo';
 import { crearMundo, type Doble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
 import { doblesDelGuardado } from './lib/doble-guardado';
 import { editarJson, verificarEnCopia } from './lib/venta-minima-mundo';
-import { hallazgosDeExpresiones } from '../../Flujos/experimental/comun-sin-agente/src/expresiones.mjs';
+import { hallazgosDeExpresiones } from '../../Flujos/src/core/sin-agente/expresiones.mjs';
 import { crearSesion, type SesionDeMentira } from './lib/venta-minima-sesion';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
