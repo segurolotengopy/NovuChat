@@ -13,7 +13,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -148,6 +148,27 @@ describe('reponer-numero-demo-a.sh: seco y aplicar', () => {
     expect(readFileSync(envF(), 'utf8')).toContain(`WA_TO=${TO}\n`);
   });
 
+  it('la última línea de la entrada SIN salto final también cuenta (printf sin \\n)', () => {
+    const r = correr({ entrada: [TOKEN, PHONE, WABA, TO, VISIBLE].join('\n'), args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(0);
+    expect(readFileSync(envF(), 'utf8')).toContain(`WA_TEST_NUMBER=${VISIBLE}\n`);
+  });
+
+  it('un .env con fin de línea CRLF y sin salto final: lo agregado respeta CRLF y no queda mezclado', () => {
+    writeFileSync(envF(), BASE.replace(`WA_TO=${TO_VIEJO}\n`, '').replace(/\n/g, '\r\n').replace(/\r\n$/, ''));
+    const r = correr({ args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(0);
+    const txt = readFileSync(envF(), 'utf8');
+    expect(txt.replace(/\r\n/g, '')).not.toContain('\n');
+    expect(txt).toContain(`WA_TO=${TO}\r\n`);
+  });
+
+  it('una línea sangrada o con export no se toca fuera de las cinco variables', () => {
+    writeFileSync(envF(), BASE + '  OTRA=uno\n');
+    expect(correr({ args: ['--aplicar', '--confirmo', '7237'] }).codigo).toBe(0);
+    expect(readFileSync(envF(), 'utf8')).toContain('  OTRA=uno\n');
+  });
+
   it('solo lee en Graph (ninguna escritura) y el token nunca viaja en los argumentos de curl', () => {
     const r = correr({ args: ['--aplicar', '--confirmo', '7237'] });
     expect(r.codigo).toBe(0);
@@ -180,6 +201,46 @@ describe('reponer-numero-demo-a.sh: lo que se niega sin escribir', () => {
     expect(r.salida).toContain('.env');
     expect(readFileSync(otro, 'utf8')).toBe(BASE);
     expect(readdirSync(dir).filter((n) => n.includes('respaldo'))).toEqual([]);
+  });
+
+  it('un .env que es un ENLACE a otro archivo (editaría el de otro entorno)', () => {
+    const real = join(dir, '.env.cliente-x');
+    writeFileSync(real, BASE);
+    rmSync(envF());
+    symlinkSync(real, envF());
+    const r = correr({ args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('enlace');
+    expect(readFileSync(real, 'utf8')).toBe(BASE);
+    expect(respaldos()).toEqual([]);
+  });
+
+  it('un .env.* con `export WA_PHONE_ID=` y el mismo id es un choque', () => {
+    writeFileSync(join(dir, '.env.cliente'), `export WA_PHONE_ID=${PHONE}\n`);
+    const r = correr({ args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('.env.cliente');
+    sinCambios();
+  });
+
+  it('un .env.* ilegible no se descarta en silencio: se niega', () => {
+    writeFileSync(join(dir, '.env.cliente'), Buffer.from([0xff, 0xfe, 0xfd, 0x80]));
+    const r = correr({ args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('no se pudo leer');
+    sinCambios();
+  });
+
+  it('un destinatario con un dígito de ancho completo (no ASCII)', () => {
+    const r = correr({ entrada: [TOKEN, PHONE, WABA, '5917000000０', VISIBLE].join('\n') + '\n', args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    sinCambios();
+  });
+
+  it('un valor con caracteres de shell en la entrada', () => {
+    const r = correr({ entrada: [TOKEN, `${PHONE};x`, WABA, TO, VISIBLE].join('\n') + '\n', args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    sinCambios();
   });
 
   it('un .env sin WA_APP_ID con forma de id', () => {

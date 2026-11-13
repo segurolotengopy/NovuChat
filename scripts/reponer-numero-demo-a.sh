@@ -15,7 +15,10 @@
 # QUÉ CAMBIA, y solo esto, en el `.env` del Demo A:
 #   WA_TOKEN  WA_PHONE_ID  WABA_ID  WA_TO  WA_TEST_NUMBER
 # El resto del archivo (N8N_API_KEY, WA_APP_ID, WA_APP_SECRET, comentarios,
-# orden) queda byte a byte igual. WA_TO y WA_TEST_NUMBER son opcionales: vacío
+# orden) queda byte a byte igual. Una línea REEMPLAZADA se reescribe entera: un
+# comentario en esa misma línea se pierde (está en el respaldo). Solo los secretos
+# (token) nunca van en argumentos; los ids sí viajan en la URL de curl y en el
+# argv de python (el candado común hace lo mismo: un id no es una credencial). WA_TO y WA_TEST_NUMBER son opcionales: vacío
 # = no se toca esa variable.
 #
 # CÓMO ENTRAN LOS VALORES. Nunca por argumento (se verían en `ps`) ni
@@ -36,7 +39,7 @@
 #     repetidas de esas variables, y trae un WA_APP_ID con forma de id (no es el del Demo A si no);
 #   · el token es de ESA app (el WA_APP_ID del `.env`), y esa app se llama
 #     NovuChat-Demo-A: un token de otra app, o de una app de WhatsApp-Modular, se niega;
-#   · el número y la WABA no son de WhatsApp-Modular (huella y nombre, el candado
+#   · el número no es de WhatsApp-Modular (huella y nombre visible) y la WABA tampoco (solo huella; el candado
 #     común `scripts/lib/apps-ajenas.sh`, prohibiciones 5 y 7 de CLAUDE.md);
 #   · la WABA nueva contiene el phone id nuevo, según Graph, con ese token;
 #   · phone id o WABA no coinciden con los de ningún otro `.env.*` de la carpeta
@@ -50,7 +53,11 @@
 set -uo pipefail
 set +x
 umask 077
+# Los patrones de dígitos y letras son ASCII, no los del idioma (en es_BO un cero de ancho completo pasaría por [0-9]).
+export LC_ALL=C
 
+# Una ruta relativa de --env se cuenta desde donde se corre el script, no desde la raíz del repositorio.
+DONDE="$PWD"
 cd "$(dirname "$0")/.." || exit 2
 
 # El candado de apps ajenas, ANTES de leer nada: queda `readonly`.
@@ -69,7 +76,9 @@ while [[ $# -gt 0 ]]; do
     *) echo "✗ Argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
-[[ "$(basename "$ENV_ARCHIVO")" == ".env" ]] || die "El archivo se debe llamar .env (es el del Demo A); recibí otro nombre. Los demás entornos tienen su propio script"
+[[ "$ENV_ARCHIVO" == /* ]] || ENV_ARCHIVO="$DONDE/$ENV_ARCHIVO"
+# Se llama .env él Y su destino real: un enlace .env -> .env.cliente editaría el archivo de otro.
+[[ "$(basename "$ENV_ARCHIVO")" == ".env" && "$(basename "$(realpath "$ENV_ARCHIVO" 2>/dev/null)")" == ".env" ]] || die "El archivo se debe llamar .env (es el del Demo A), y no ser un enlace a otro archivo. Los demás entornos tienen su propio script"
 [[ -f "$ENV_ARCHIVO" ]] || die "No existe $ENV_ARCHIVO"
 
 # --- 1. El .env como DATOS (no se hace `source`): ¿es el del Demo A? ----------
@@ -117,7 +126,8 @@ pedir() {
     if [[ "$5" == "si" ]]; then read -r -s -p "  $etiqueta: " v || true; echo >&2
     else read -r -p "  $etiqueta: " v || true; fi
   else
-    IFS= read -r v || v=""
+    # `read` devuelve 1 si la última línea no trae salto final, aunque haya leído el valor: no se descarta.
+    IFS= read -r v || true
   fi
   v="$(printf '%s' "$v" | tr -d '[:space:]')"
   if [[ "$1" == "WA_TO" || "$1" == "WA_TEST_NUMBER" ]]; then v="${v//[+-]/}"; fi
@@ -150,13 +160,14 @@ for f in sorted(glob.glob(os.path.join(d, ".env.*"))):
         continue
     try:
         for l in open(f, encoding="utf-8").read().splitlines():
-            m = re.match(r'^\s*(WA_PHONE_ID|WABA_ID)\s*=(.*)$', l)
+            m = re.match(r'^\s*(?:export\s+)?(WA_PHONE_ID|WABA_ID)\s*=(.*)$', l)
             if not m: continue
             v = m.group(2).strip().strip("\"'").strip()
             if (m.group(1) == "WA_PHONE_ID" and v == phone) or (m.group(1) == "WABA_ID" and v == waba):
                 choque.append(f"{n} ({m.group(1)})")
     except (OSError, UnicodeDecodeError):
-        continue
+        # Falla CERRADO: un entorno que no se puede leer no se puede descartar.
+        choque.append(f"{n} (no se pudo leer)")
 if choque:
     print("✗ Ese id ya pertenece a otro entorno: " + ", ".join(choque) + ". No es el del Demo A; no se escribió nada.", file=sys.stderr)
     sys.exit(1)
@@ -226,36 +237,44 @@ with os.fdopen(fd, "wb") as g:
 os.chmod(resp, 0o600)
 
 hecho = []
+# El fin de línea del archivo (CRLF si la primera línea lo trae): lo que se agrega lo respeta.
+eol = b"\r\n" if lineas and lineas[0].endswith(b"\r\n") else b"\n"
 for var, valor in nuevos.items():
     patron = re.compile(rb'^(\s*)' + re.escape(var.encode()) + rb'\s*=')
     idx = [i for i, l in enumerate(lineas) if patron.match(l)]
     nueva = f"{var}={valor}".encode()
     if idx:
         l = lineas[idx[0]]
-        fin = l[len(l.rstrip(b"\r\n")):] or b"\n"
+        fin = l[len(l.rstrip(b"\r\n")):] or eol
         sangria = patron.match(l).group(1)
         lineas[idx[0]] = sangria + nueva + fin
         hecho.append((var, "cambiada"))
     else:
         if lineas and not lineas[-1].endswith(b"\n"):
-            lineas[-1] += b"\n"
-        lineas.append(nueva + b"\n")
+            lineas[-1] += eol
+        lineas.append(nueva + eol)
         hecho.append((var, "agregada"))
 
 dirr = os.path.dirname(ruta)
 tmp = os.path.join(dirr, f".reponer-numero-demo-a.{os.getpid()}")
 signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+creado = False
 try:
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    creado = True
     with os.fdopen(fd, "wb") as g:
         g.write(b"".join(lineas))
+        g.flush()
+        os.fsync(g.fileno())  # que un corte de luz no deje el .env vacío
     os.chmod(tmp, 0o600)
     os.replace(tmp, ruta)
 except Exception:
     niega("No se pudo escribir el .env (queda como estaba)")
 finally:
-    try: os.unlink(tmp)
-    except OSError: pass
+    # Solo se borra el temporal que creó ESTE proceso.
+    if creado:
+        try: os.unlink(tmp)
+        except OSError: pass
 os.chmod(ruta, 0o600)
 
 # Lectura de vuelta: cada variable quedó con su valor y UNA sola asignación.
