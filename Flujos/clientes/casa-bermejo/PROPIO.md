@@ -1,6 +1,6 @@
 # El flujo de venta de Casa Bermejo (tenant `casa-bermejo`): qué es común y qué es propio
 
-Zona: `Flujos/experimental/casa-bermejo/`. Diseño: `DISENO.md`. Estado: **B3c** — flujo completo de Bolivia, ARMADO y APAGADO: `casa-bermejo.json` (57 nodos) y `casa-bermejo.prueba.json` (52), desde `flujo.plantilla.json` y `admin/scripts/datos/casa-bermejo/casa-bermejo.json` (solo marcadores `REEMPLAZAR_*`) con `node Flujos/experimental/casa-bermejo/construir.mjs` (`--verificar` falla si difieren; `--publicable` sale 1 mientras queden marcadores). **No publicable todavía.**
+Zona: `Flujos/clientes/casa-bermejo/`. Diseño: `DISENO.md`. Estado: **B3c** — flujo completo de Bolivia, ARMADO y APAGADO: `casa-bermejo.json` (57 nodos) y `casa-bermejo.prueba.json` (52), desde `flujo.plantilla.json` y `admin/scripts/datos/casa-bermejo/casa-bermejo.json` (solo marcadores `REEMPLAZAR_*`) con `node Flujos/clientes/casa-bermejo/construir.mjs` (`--verificar` falla si difieren; `--publicable` sale 1 mientras queden marcadores). **No publicable todavía.**
 Regla «Basado en» (01/10/2026): la lista de funcionalidades está en `DISENO.md`; no se copió el flujo de otro cliente. Lo común se INCLUYE desde su fuente; lo propio vive aquí.
 
 ## Común, incluido desde su fuente

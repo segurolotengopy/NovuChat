@@ -86,7 +86,7 @@ describe('la foto del catálogo no sale al cliente en B3', () => {
 
 describe('el Bearer del tenant solo sale hacia el host de la tienda', () => {
   it('NEGADO: «Traer catálogo» a otro host, con puerto, usuario, otra ruta u otro mercado viola la guardia', async () => {
-    const C = (await import(/* @vite-ignore */ '../../../../Flujos/experimental/casa-bermejo/construir.mjs')) as { anfitrionPermitido: (u: string, n: string) => boolean; ANFITRIONES_TIENDA: string[]; EXPRESION_MERCADO: string };
+    const C = (await import(/* @vite-ignore */ '../../../../Flujos/clientes/casa-bermejo/construir.mjs')) as { anfitrionPermitido: (u: string, n: string) => boolean; ANFITRIONES_TIENDA: string[]; EXPRESION_MERCADO: string };
     const ruta = '/api/novuchat/v1/catalogo?mercado=' + C.EXPRESION_MERCADO;
     for (const url of ['=https://otro.ejemplo' + ruta, '=https://novutienda-sitio-stg.web.app:8443' + ruta, '=https://u' + String.fromCharCode(64) + 'novutienda-sitio-stg.web.app' + ruta, '=https://novutienda-sitio-stg.web.app.evil.test' + ruta,
       '=https://novutienda-sitio-stg.web.app/api/novuchat/v1/catalogo?mercado=AR', '=https://novutienda-sitio-stg.web.app/api/novuchat/v1/catalogo?mercado=BO', '=https://novutienda-sitio-stg.web.app/api/novuchat/v1/catalogo?mercado={{ $json.m }}', '=https://novutienda-sitio-stg.web.app/api/novuchat/v1/inventario', '={{ $json.url }}']) expect(C.anfitrionPermitido(url, 'Traer catálogo')).toBe(false);
@@ -107,7 +107,7 @@ describe('Argentina (B4a): catálogo en pesos y pedido anotado; el pago por alia
   const itemAr = (o: Record<string, unknown> = {}) => ({ ...CATALOGO[1], moneda: 'ARS', precio: 450000, precioCentavos: 45000000, stock: 10, disponible: true, ...o });
   const catAr = (items: unknown[] = [itemAr()]) => catalogoOk({ mercado: 'AR', moneda: 'ARS' }, items as never);
   it('la expresión del mercado del nodo HTTP da lo mismo que ceMercadoDePrefijo para 591 y 54', async () => {
-    const C = (await import(/* @vite-ignore */ '../../../../Flujos/experimental/casa-bermejo/construir.mjs')) as { EXPRESION_MERCADO: string };
+    const C = (await import(/* @vite-ignore */ '../../../../Flujos/clientes/casa-bermejo/construir.mjs')) as { EXPRESION_MERCADO: string };
     const cuerpo = C.EXPRESION_MERCADO.replace(/^\{\{|\}\}$/g, '').trim();
     const evalua = (from: string): string => (vm.compileFunction(`return (${cuerpo});`, ['$']) as (a: unknown) => string)(() => ({ first: () => ({ json: { from } }) }));
     // Donde la función da null (otro país, número corto o largo) la expresión da «X»: el servidor responde 400 y el turno pasa con recepción.
@@ -169,7 +169,7 @@ describe('Argentina (B4a): catálogo en pesos y pedido anotado; el pago por alia
 
 describe('«Traer catálogo» no puede desviar el Bearer', () => {
   it('NEGADO: query propia, cabeceras propias, proxy, certificados sin validar o redirecciones seguidas violan la guardia de publicación', async () => {
-    const C = (await import(/* @vite-ignore */ '../../../../Flujos/experimental/casa-bermejo/construir.mjs')) as { guardiaDePublicacion: (a: { flujo: unknown; datos: unknown }) => string[] };
+    const C = (await import(/* @vite-ignore */ '../../../../Flujos/clientes/casa-bermejo/construir.mjs')) as { guardiaDePublicacion: (a: { flujo: unknown; datos: unknown }) => string[] };
     const { PRODUCCION } = await import('./mundo');
     const con = (cambio: Record<string, unknown>) => {
       const f = JSON.parse(JSON.stringify(PRODUCCION)) as { nodes: { name: string; parameters: Record<string, unknown> }[] };

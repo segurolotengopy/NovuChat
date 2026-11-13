@@ -106,7 +106,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
     'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/agenda-minima/agenda-minima.prueba.json',
     // Walisuma (#713, 30/10): main la traía con «none»/«all»; pasa a «none» como todos.
     'clientes/walisuma/walisuma.json', 'clientes/walisuma/walisuma.prueba.json',
-    'experimental/casa-bermejo/casa-bermejo.json', 'experimental/casa-bermejo/casa-bermejo.prueba.json',
+    'clientes/casa-bermejo/casa-bermejo.json', 'clientes/casa-bermejo/casa-bermejo.prueba.json',
     // Demo B (11/11/2026): la rama común injertada en el JSON versionado; deja de ser excepción.
     'demo-b-venta-cobro.json',
   ].map((a) => [a, NADA]));

@@ -74,7 +74,7 @@ Dentro de la carpeta movida, las rutas relativas a otro flujo pasan de `../<otro
 | Dónde | Grep exacto | Qué se reapunta |
 |---|---|---|
 | `construir.mjs` y `src/` de la carpeta | `grep -n "\.\./" Flujos/clientes/<tenant>/construir.mjs` y `grep -rn "\.\./" Flujos/clientes/<tenant>/src` | Toda ruta con `../`: a otros flujos (`../../experimental/<otro>/`), a `Flujos/src/` (`../../src/`) y a `admin/scripts/datos/` (`../../../admin/`). Mirar también las claves `raiz`, `librerias` y `comun` del ensamblado. |
-| Pruebas | `grep -rIn "experimental/<x>\|'<x>/src\|join(FLUJOS, '<x>')" admin/pruebas` | Importaciones de `construir.mjs`, constantes `CARPETA` y listas de fuentes (`fuente('<x>/src/...')` pasa a `fuente('../clientes/<tenant>/src/...')` si `fuente` parte de `Flujos/experimental/`). |
+| Pruebas | `grep -rIn "experimental/<x>\|'<x>/src\|<x>/src/\|join(FLUJOS, '<x>')" admin/pruebas` y, aparte, `grep -rIn "<x>/src" admin/pruebas` | Importaciones de `construir.mjs`, constantes `CARPETA`, listas de fuentes y rutas armadas con plantilla de texto (`fuente(`<x>/src/nodos/${a}.js`)`), que el grep por comillas simples no ve. Para pruebas que parten de `FLUJOS = Flujos/experimental`, la forma es `'../clientes/<tenant>/src/...'` (por ejemplo `fuente('<x>/src/lib/a.js')` pasa a `fuente('../clientes/<tenant>/src/lib/a.js')`, y `fuente(`<x>/src/nodos/${a}.js`)` a `fuente(`../clientes/<tenant>/src/nodos/${a}.js`)`); las que parten de la raíz usan `Flujos/clientes/<tenant>/...`. Al terminar, el segundo grep no debe devolver ninguna ruta sin el prefijo `clientes/<tenant>/`. |
 | `guardado-obligatorio.test.ts` | `grep -n "experimental/<x>" admin/pruebas/guardado-obligatorio.test.ts` | La línea con la ruta del flujo. |
 | `publicar-flujo.sh` | `grep -n "experimental/<x>" scripts/publicar-flujo.sh` | Solo si el script nombra al flujo (guardias de otros flujos usan esta forma). Si aparece, el cambio del script va en un PR aparte: tocarlo aquí es riesgo de publicar. |
 | `estado-de-versiones.sh` | `grep -n "<x>" scripts/estado-de-versiones.sh` | Idem: si lo nombra, se reapunta y se verifica la salida igual antes y después (paso 6). |
@@ -149,9 +149,18 @@ El PR se abre en borrador y declara: huellas iguales, que no publica, y el costo
 - `construir.mjs --verificar`: sale 0 («walisuma.json al día (64 nodos)» y «walisuma.prueba.json al día (59 nodos)»).
 - No se corrió `publicar-flujo.sh`, `flujo-de-prueba.mjs` ni `preparar-import.sh`; no se tocó n8n.
 
-## Dónde pueden quedar claves `experimental/<x>/…`
+## Ejemplo ejecutado: Casa Bermejo (13/11/2026)
 
-Tras una mudanza, el **único** lugar donde puede quedar una clave `experimental/<x>/…` es `admin/pruebas/core/migracion/excepciones.ts`: el identificador de una excepción ignora la carpeta, y la clave vieja ya no apunta a un archivo. Se corrige ahí en el mismo PR. Tocar `excepciones.ts` (o su TOPE) pasa por el agente `seguridad`: es la lista cerrada que solo puede bajar.
+- Antes: `Flujos/experimental/casa-bermejo/`, sin publicar. Nadie lo importa (el grep de entrantes en `Flujos/` da vacío); él importa `comun-sin-agente`, `rroca-ruben`, `venta-minima` y `venta-digital`, todas aún en `experimental/`, y nada de Walisuma.
+- Huellas antes y después, iguales: `casa-bermejo.json` `273fb2c9…3cd35f37`, `casa-bermejo.prueba.json` `5ae99a40…67f25` y `flujo.plantilla.json` `a55a0db5…0fcd30`.
+- `git diff -M --stat origin/main -- Flujos`: 12 archivos, renombres con 0 líneas cambiadas salvo `construir.mjs` (23 líneas de rutas) y `PROPIO.md` y `DISENO.md` (una línea cada uno).
+- Fuera de la carpeta: `armado.test.ts`, `alias-ar.test.ts`, `catalogo-flujo.test.ts`, `pedido-lineas.test.ts` y `mundo.ts` de `admin/pruebas/tenants/casa-bermejo/`, `venta-casa-bermejo-lib.test.ts` y `guardado-obligatorio.test.ts`; las filas de `docs/versiones-por-cliente.md` y del tablero. `excepciones.ts`, `scripts/` y `vitest.config.ts` sin cambios.
+- `construir.mjs --verificar`: sale 0 (57 y 52 nodos). `pnpm --dir admin pruebas:puras`: 232 archivos, 14662 pruebas pasadas, 3 omitidas.
+- Tropiezo: la primera corrida falló porque `armado.test.ts` armaba una ruta con plantilla de texto (`fuente(`casa-bermejo/src/nodos/${a}.js`)`) que el grep original no cubría; de ahí el grep ampliado del paso 3.
+
+## Las claves `experimental/<x>/…` de `excepciones.ts` NO se tocan en la mudanza
+
+En `admin/pruebas/core/migracion/excepciones.ts` quedan claves como `experimental/<x>/<flujo>.json`. **No se cambian en la mudanza y no son huérfanas:** la prueba las compara por identificador, y `idDeFlujo` (`admin/pruebas/core/migracion/comprobaciones.ts`) quita el prefijo `experimental/` o `clientes/` (`ruta.replace(/^(experimental|clientes)\//, '')`), de modo que `experimental/walisuma/walisuma.json` y `clientes/walisuma/walisuma.json` son el mismo identificador. Cambiar la carpeta del flujo no obliga a editar la lista. Tocar `excepciones.ts` (o su TOPE) pasa por el agente `seguridad`: es la lista cerrada que solo puede bajar, y una mudanza no es motivo para abrirla. Se comprueba con `grep -n "<x>" admin/pruebas/core/migracion/excepciones.ts` (solo para saber qué excepciones lleva el flujo y declararlas en la columna «falta» del tablero).
 
 ## Lo que este procedimiento no cubre
 
