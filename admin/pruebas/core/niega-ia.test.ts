@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { codigoDe, ejecutar, leerFlujo, type Flujo, type J } from '../lib/flujo';
 import { flujosDeProduccion } from '../lib/flujos-de-cliente';
-import { atiendeCliente, expresionNiegaIaDeCore, fuenteDeNiegaIa } from './migracion/comprobaciones';
+import { atiendeCliente, expresionNiegaIaDeCore, expresionNiegaIaNormalizadaDeCore, expresionesNiegaIaDeCore, fuenteDeNiegaIa } from './migracion/comprobaciones';
 import { problemasDeRegla } from './migracion/excepciones';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -151,6 +151,8 @@ describe('agenda mínima: la regla de identidad es la del core, derivada y no co
 const nodoCode = (jsCode: string) => ({ name: 'N', type: 'n8n-nodes-base.code', parameters: { jsCode } });
 const flujoCon = (...codigos: string[]): Flujo => ({ name: 'x', nodes: codigos.map(nodoCode), connections: {} }) as unknown as Flujo;
 const CORE = expresionNiegaIaDeCore();
+const NORM = expresionNiegaIaNormalizadaDeCore();
+const DECLARADAS = expresionesNiegaIaDeCore();
 
 describe('M5: todo flujo que atiende a un cliente toma NIEGA_IA de core, o tiene excepción', () => {
   it('la expresión de core se lee del archivo y es la de las tres variantes', () => {
@@ -162,7 +164,7 @@ describe('M5: todo flujo que atiende a un cliente toma NIEGA_IA de core, o tiene
   it('cada flujo de producción que reporta el mensaje entrante: la expresión es la de core, o hay excepción; ninguna excepción sobra', () => {
     const atienden = flujosDeProduccion().filter((a) => atiendeCliente(leerFlujo(a)));
     expect(atienden.length).toBeGreaterThan(10);
-    const hoy = new Map(atienden.map((a) => [a, fuenteDeNiegaIa(leerFlujo(a), CORE) === 'core' ? [] : ['NIEGA_IA']]));
+    const hoy = new Map(atienden.map((a) => [a, fuenteDeNiegaIa(leerFlujo(a), DECLARADAS) === 'core' ? [] : ['NIEGA_IA']]));
     expect(problemasDeRegla('niega-ia', hoy)).toEqual([]);
   });
 
@@ -179,5 +181,47 @@ describe('M5: todo flujo que atiende a un cliente toma NIEGA_IA de core, o tiene
     expect(problemasDeRegla('niega-ia', new Map([['a.json', ['NIEGA_IA']]]), {})).toHaveLength(1);
     expect(problemasDeRegla('niega-ia', new Map([['a.json', ['NIEGA_IA']]]), exc)).toEqual([]);
     expect(problemasDeRegla('niega-ia', new Map([['a.json', []]]), exc)).toEqual([expect.stringContaining('SOBRA')]);
+  });
+});
+
+// Etapa 1 (13/11/2026, decisión de Andres «sí, dos declaradas»): core declara DOS expresiones como fuentes; cada flujo lleva una EXACTA, sin importar el nombre de su constante.
+describe('M5: las dos expresiones declaradas de core', () => {
+  const norm = (t: string): string => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+  it('son dos, distintas, y la normalizada se lee de su archivo de core', () => {
+    expect(DECLARADAS).toEqual([CORE, NORM]);
+    expect(NORM).not.toBe(CORE);
+    expect(NORM.length).toBe(911);
+    expect(src('core/texto/niega-ia-normalizado.js')).toContain(`const NIEGA_IA_NORMALIZADO = ${NORM};`);
+  });
+
+  it('la normalizada la llevan, con otro prefijo y el mismo literal, los flujos que la copiaron', () => {
+    const atienden = flujosDeProduccion().map((a) => [a, leerFlujo(a)] as const).filter(([, f]) => atiendeCliente(f));
+    const conNorm = atienden.filter(([, f]) => f.nodes.some((n) => String(n.parameters?.['jsCode'] ?? '').includes(`_NIEGA_IA = ${NORM};`)));
+    expect(conNorm.length).toBeGreaterThanOrEqual(9);
+    for (const [a, f] of conNorm) expect(fuenteDeNiegaIa(f, DECLARADAS), a).toBe('core');
+  });
+
+  it('contraprueba: el literal normalizado exacto cuenta como core con cualquier nombre; alterado un carácter, o sin expresión, no cuenta', () => {
+    expect(fuenteDeNiegaIa(flujoCon(`const WL_NIEGA_IA = ${NORM};`), DECLARADAS)).toBe('core');
+    expect(fuenteDeNiegaIa(flujoCon(`const NIEGA_IA = ${NORM};`), DECLARADAS)).toBe('core');
+    expect(fuenteDeNiegaIa(flujoCon(`const WL_NIEGA_IA = ${NORM.replace('humano', 'humanos')};`), DECLARADAS)).toBe('otra');
+    expect(fuenteDeNiegaIa(flujoCon(`const WL_NIEGA_IA = ${NORM.replace(/\/$/, 'i/')};`), DECLARADAS)).toBe('otra');
+    expect(fuenteDeNiegaIa(flujoCon(`const WL_NIEGA_IA = ${CORE.replace('soy', 'sos')};`), DECLARADAS)).toBe('otra');
+    expect(fuenteDeNiegaIa(flujoCon('return [];'), DECLARADAS)).toBe('ninguna');
+    // Sola, la expresión normalizada no es la de core (compatibilidad con la firma anterior de un solo literal).
+    expect(fuenteDeNiegaIa(flujoCon(`const A_NIEGA_IA = ${NORM};`), CORE)).toBe('otra');
+  });
+
+  it('comportamiento sobre texto normalizado: las negaciones coinciden y la admisión honesta no', () => {
+    const re = (0, eval)(NORM) as RegExp;
+    for (const mal of ['no soy un bot', 'no soy una ia', 'no estas hablando con un robot', 'soy una persona real', 'soy de carne y hueso', 'te atiende un humano', 'no es un mensaje automatico', 'es una chica de ventas', 'no responde ninguna inteligencia']) expect(re.test(norm(mal)), mal).toBe(true);
+    for (const bien of ['soy la asistente virtual de la clinica', 'soy un asistente virtual con inteligencia artificial', 'tengo estos horarios para el jueves', 'el taxi sale a las ocho', 'tu pedido llega manana']) expect(re.test(norm(bien)), bien).toBe(false);
+  });
+
+  it('la de core sigue atrapando lo mismo que antes en texto crudo (no se debilita)', () => {
+    const re = (0, eval)(CORE) as RegExp;
+    for (const mal of ['No soy un bot, soy Sofía', 'Tranquilo, no soy una IA', 'Soy una persona real']) expect(re.test(mal), mal).toBe(true);
+    expect(re.test('Soy un asistente virtual. ¿En qué te ayudo?')).toBe(false);
   });
 });

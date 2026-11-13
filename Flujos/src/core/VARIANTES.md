@@ -39,3 +39,14 @@ variante: es un solo archivo que cada flujo adopta con una marca del armador.
 | Pieza | Archivo | Quién la adopta | Marca | Estado |
 |---|---|---|---|---|
 | Respuesta coherente (acuse, seguimiento y respuesta por intención: el modelo solo clasifica y el código escribe el texto; prefijo `rc`, sin dependencias) | `Flujos/src/core/conversacion/respuesta-coherente.js` | Q'Taco (`venta-minima`: «Decidir turno» y «Plan del turno») | `+coherente` en `construir.mjs` | Adopta Q'Taco (12/11/2026, `activo=false` por defecto; se enciende con el dato `respuestaLibre` del tenant). Los demás flujos no la adoptan hoy: lo decide Andres flujo por flujo. |
+
+## Las dos expresiones declaradas de `NIEGA_IA` (13/11/2026)
+
+Decisión de Andres: «sí, dos declaradas». Core declara DOS fuentes de la red «nunca negar ser una IA» (prohibición 4) y unificarlas queda para después:
+
+| Fuente | Entrada | Quién la lleva hoy |
+|---|---|---|
+| `core/procesar-respuesta.js` (y sus variantes de venta y captación), insensible a mayúsculas, ~248 caracteres | texto de la respuesta tal cual | los flujos de las tres variantes del core |
+| `core/texto/niega-ia-normalizado.js`, 911 caracteres, sin bandera `i` | texto NORMALIZADO (minúsculas, sin tildes) | 9 flujos sin agente, cada uno con su prefijo de constante (el literal es idéntico) |
+
+`niega-ia-normalizado.js` **no lo incluye todavía ningún flujo** (incluirlo cambiaría bytes por el prefijo): es la fuente contra la que `fuenteDeNiegaIa` compara el literal. Un flujo cumple si lleva EXACTO el literal de una de las dos.
