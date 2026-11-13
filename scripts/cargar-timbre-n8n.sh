@@ -782,14 +782,26 @@ def resolver_alerta(flujo, wfs_f):
                            capture_output=True, text=True)
         if h.returncode != 0:
             salir(4, (h.stderr or h.stdout).strip())
+        print(h.stdout.rstrip())  # «+ resuelto por nombre» o «= coincide»: nunca el id
         return cargar(salida)
 
 
 def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_out, plan_out):
     n = nombres(alias)
     flujo = cargar(flujo_f)
-    if isinstance(flujo.get("settings"), dict) and flujo["settings"].get("errorWorkflow") == MARCADOR_EW:
-        flujo = resolver_alerta(flujo, wfs_f)
+    # Se resuelve (marcador) o se comprueba (id concreto) y se aborta antes de escribir si no es el de la alerta; el marcador
+    # fuera de settings también pasa por el helper, que lo rechaza. El segundo plan (tras escribir la credencial) reutiliza el id ya
+    # resuelto, guardado en el directorio de trabajo (modo 600, se borra al salir), en vez de resolver otra vez.
+    ajustes = flujo.get("settings") if isinstance(flujo.get("settings"), dict) else {}
+    ew = ajustes.get("errorWorkflow")
+    if MARCADOR_EW in json.dumps(flujo, ensure_ascii=False) or (isinstance(ew, str) and ew):
+        cache = os.path.join(os.path.dirname(os.path.abspath(wfs_f)), "alerta-resuelta")
+        if ew == MARCADOR_EW and os.path.exists(cache) and MARCADOR_EW not in json.dumps({k: v for k, v in flujo.items() if k != "settings"}):
+            flujo["settings"]["errorWorkflow"] = open(cache, encoding="utf-8").read().strip()
+        else:
+            flujo = resolver_alerta(flujo, wfs_f)
+            if ew == MARCADOR_EW:
+                escribir_600(cache, flujo["settings"]["errorWorkflow"])
     t = cargar(tabla_f)
     path = open(path_f, encoding="utf-8").read()
     reemplazos = {"REEMPLAZAR_ALIAS": alias, "REEMPLAZAR_RUTA_TIMBRE": path,

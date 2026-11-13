@@ -2092,9 +2092,11 @@ describe('cargar-timbre-n8n.sh: settings.errorWorkflow se resuelve por NOMBRE (f
     expect(r.salida).not.toContain(ID_ALERTA);
   });
 
-  it('seco: resuelve contra la lista (lee) y no escribe en n8n', () => {
+  it('seco: resuelve la alerta por nombre (lo dice el plan), no escribe y no imprime el id', () => {
     const r = correr(A());
     expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('settings.errorWorkflow resuelto por nombre');
+    expect(r.salida).not.toContain(ID_ALERTA);
     expect(escrituras()).toEqual([]);
   });
 
@@ -2113,6 +2115,7 @@ describe('cargar-timbre-n8n.sh: settings.errorWorkflow se resuelve por NOMBRE (f
     expect(r.codigo).not.toBe(0);
     expect(r.salida).toMatch(/2 flujos llamados/);
     expect(flujos()).toEqual([]);
+    expect(escrituras()).toEqual([]);
   });
 
   it('NEGATIVA: otro marcador desconocido sigue abortando (el plan sale 4 y el script 2, como antes; no lo tapa la resolución de la alerta)', () => {
@@ -2127,5 +2130,46 @@ describe('cargar-timbre-n8n.sh: settings.errorWorkflow se resuelve por NOMBRE (f
     expect(r.salida).toContain('REEMPLAZAR_MARCADOR_DESCONOCIDO');
     expect(escrituras()).toEqual([]);
     expect(r.salida).not.toContain(ID_ALERTA);
+  });
+
+  const conFlujo = (cambia: (j: any) => void) => {
+    const j = JSON.parse(leerTxt(FLUJO_REAL));
+    cambia(j);
+    const ruta = join(dir, 'flujo-modificado.json');
+    writeFileSync(ruta, JSON.stringify(j));
+    return ruta;
+  };
+  const enUnNodo = (j: any) => { j.nodes.find((n: { parameters?: Record<string, unknown> }) => n.parameters)!.parameters.campoNuevo = MARCADOR; };
+
+  it('NEGATIVA: el marcador de la alerta FUERA de settings (en un nodo), con el de settings: aborta sin escribir', () => {
+    const r = correr([...A(), '--flujo', conFlujo(enUnNodo)]);
+    expect(r.codigo).not.toBe(0);
+    expect(r.salida).toContain('fuera de settings.errorWorkflow');
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('NEGATIVA: el marcador de la alerta fuera de settings y SIN el de settings: aborta sin escribir', () => {
+    const r = correr([...A(), '--flujo', conFlujo((j) => { enUnNodo(j); delete j.settings.errorWorkflow; })]);
+    expect(r.codigo).not.toBe(0);
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('un id concreto en settings.errorWorkflow se compara con el de la alerta: el bueno pasa, uno ajeno aborta sin escribir', () => {
+    const bueno = correr([...A(), '--flujo', conFlujo((j) => { j.settings.errorWorkflow = ID_ALERTA; })]);
+    expect(bueno.codigo).toBe(1);
+    expect(bueno.salida).toContain('coincide');
+    expect(escrituras()).toEqual([]);
+    const ajeno = correr([...A(), '--flujo', conFlujo((j) => { j.settings.errorWorkflow = 'idDeOtroN8n'; })]);
+    expect(ajeno.codigo).not.toBe(0);
+    expect(ajeno.salida).toContain('no es el id del flujo');
+    expect(ajeno.salida).not.toContain('idDeOtroN8n');
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('la alerta se resuelve una sola vez por carga: el segundo plan reutiliza el id (el cuerpo final lo lleva)', () => {
+    const r = correr([...A(), ...APLICAR]);
+    expect(r.codigo).toBe(0);
+    expect(r.salida.match(/settings\.errorWorkflow resuelto por nombre/g)?.length ?? 0).toBeLessThanOrEqual(2);
+    expect((flujos()[0] as unknown as { settings: Record<string, unknown> }).settings.errorWorkflow).toBe(ID_ALERTA);
   });
 });
