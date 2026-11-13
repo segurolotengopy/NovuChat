@@ -62,6 +62,8 @@ else
     *fields=id,name*) cuerpo="$RESPUESTA_GRAPH" ;;
     *fields=id,verified_name*) cuerpo="$RESPUESTA_NUMERO" ;;
     *subscribed_apps*) cuerpo="$SUSCRITAS_GRAPH" ;;
+    # Los números de una WABA (reponer-numero-demo-a.sh). Sin la variable, la lista vacía de siempre.
+    *phone_numbers*) if [ -n "${RESPUESTA_NUMEROS:-}" ]; then cuerpo="$RESPUESTA_NUMEROS"; else cuerpo='{"data":[]}'; fi ;;
     *) cuerpo='{"data":[]}' ;;
   esac
 fi
