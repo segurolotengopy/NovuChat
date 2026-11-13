@@ -1027,7 +1027,7 @@ del §3 con `ensayo-flujo.sh --demo b --cliente <C> --flujo <json>` y, para volv
 `node scripts/plataforma/respuesta-libre.mjs --proyecto prod --tenant <id> --datos <nombre>` toma el proyecto de producción del
 `quota_project_id` de `application_default_credentials.json` dentro de `CLOUDSDK_CONFIG` (por omisión
 `~/.config/gcloud-novuchat-prod`); `quota_project_id` es el proyecto de las credenciales (el de facturación), que aquí es
-producción. El id nunca se imprime y un `demo-*` se rechaza. El script exporta `CLOUDSDK_CONFIG` con ese directorio y se
+producción. El id nunca se imprime y un `demo-*` se rechaza. El script exporta `CLOUDSDK_CONFIG` y `GOOGLE_APPLICATION_CREDENTIALS` (al mismo archivo, que es el que lee Firestore) y se
 niega (salida 2) si `GOOGLE_APPLICATION_CREDENTIALS` está puesto, para que la identidad y el proyecto salgan del mismo archivo.
 
 Diferencia con `scripts/nube-salida-persona.sh`: aquel toma el proyecto de las mismas credenciales pero, con `--aplicar`, exige

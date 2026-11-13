@@ -18,6 +18,7 @@ type Cfg = Record<string, unknown>;
 const mod = await import('../../scripts/plataforma/respuesta-libre.mjs') as unknown as {
   analizarArgumentos: (a: string[], env?: Record<string, string>, op?: Record<string, unknown>) => { ok: boolean; problemas?: string[]; cfg?: Cfg };
   ejecutar: (cfg: Cfg, deps: Record<string, unknown>) => Promise<number>;
+  entornoDeCredenciales: (c: Cfg) => Record<string, string>;
   cargarDatos: (n: string) => { ok: boolean; valor?: Cfg; motivo?: string };
   validarDatos: (c: unknown) => { ok: boolean; valor?: Cfg; motivo?: string };
 };
@@ -150,6 +151,17 @@ describe('el script de Plataforma', () => {
       const s2 = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: creds(JSON.stringify({ quota_project_id: 'demo-novuchat-pruebas' })) });
       expect(s2.ok).toBe(false);
       expect(texto(s2)).toContain('demo-');
+    });
+    it('entornoDeCredenciales exporta CLOUDSDK_CONFIG y GOOGLE_APPLICATION_CREDENTIALS al mismo archivo; sin prod, nada', () => {
+      const d = buenas();
+      const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: d });
+      expect(mod.entornoDeCredenciales(r.cfg!)).toEqual({
+        CLOUDSDK_CONFIG: d,
+        GOOGLE_APPLICATION_CREDENTIALS: join(d, 'application_default_credentials.json'),
+      });
+      expect(mod.entornoDeCredenciales({ dirCredenciales: null })).toEqual({});
+      const lit = mod.analizarArgumentos(['--proyecto', 'demo-novuchat-pruebas', '--tenant', 'comercio-x', '--datos', 'qtaco'], ENV_EMU);
+      expect(mod.entornoDeCredenciales(lit.cfg!)).toEqual({});
     });
     it('cfg lleva el directorio de credenciales usado, para exportarlo antes de iniciar Firebase', () => {
       const d = buenas();

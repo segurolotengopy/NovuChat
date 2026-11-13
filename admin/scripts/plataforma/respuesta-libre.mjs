@@ -29,8 +29,8 @@
  * `--proyecto prod` (palabra literal): el id de producción se toma de `quota_project_id` del archivo
  * `application_default_credentials.json` dentro de CLOUDSDK_CONFIG (por omisión ~/.config/gcloud-novuchat-prod). Ese campo
  * es el proyecto de las credenciales (el de facturación/cuota), que aquí es el de producción. Solo se lee ese campo, con la
- * misma forma de id real; si no se puede leer, o es un `demo-*`, salida 2. El script exporta CLOUDSDK_CONFIG con ese
- * directorio antes de iniciar Firebase, y RECHAZA la corrida (salida 2) si GOOGLE_APPLICATION_CREDENTIALS está puesto: la
+ * misma forma de id real; si no se puede leer, o es un `demo-*`, salida 2. El script exporta CLOUDSDK_CONFIG y GOOGLE_APPLICATION_CREDENTIALS (apuntando a ese
+ * mismo archivo, que es el que lee Firestore) antes de iniciar Firebase, y RECHAZA la corrida (salida 2) si GOOGLE_APPLICATION_CREDENTIALS está puesto: la
  * identidad que escribe debe salir del mismo archivo que el proyecto. El id NUNCA se imprime.
  * Luego pasa por la MISMA lista blanca (`comprobarProyecto`). DIFERENCIA DECLARADA con `scripts/nube-salida-persona.sh`: aquel
  * toma el proyecto de las mismas credenciales, pero con --aplicar exige además GCP_PROJECT_ID_PROD en el entorno (doble llave).
@@ -112,6 +112,20 @@ export function proyectoDesdeCredenciales(env = process.env) {
   if (staging && staging === id) return { ok: false, motivo: '--proyecto prod: GCP_PROJECT_ID_STAGING es igual al proyecto de las credenciales' };
   const sustituto = id === 'staging-no-declarado' ? 'staging-no-declarado-2' : 'staging-no-declarado';
   return { ok: true, id, dir, env: { ...env, GCP_PROJECT_ID_PROD: id, GCP_PROJECT_ID_STAGING: staging || sustituto } };
+}
+
+/**
+ * Variables que `principal` exporta antes de iniciar Firebase, para que la identidad que escribe salga del MISMO archivo del
+ * que salió el proyecto: Firestore autentica con google-auth-library, que ignora CLOUDSDK_CONFIG y lee
+ * GOOGLE_APPLICATION_CREDENTIALS (o ~/.config/gcloud). Solo aplica con `--proyecto prod` (`cfg.dirCredenciales`); si no, `{}`.
+ * `analizarArgumentos` ya rechazó un GOOGLE_APPLICATION_CREDENTIALS puesto por el usuario en ese camino.
+ */
+export function entornoDeCredenciales(cfg) {
+  if (!cfg?.dirCredenciales) return {};
+  return {
+    CLOUDSDK_CONFIG: cfg.dirCredenciales,
+    GOOGLE_APPLICATION_CREDENTIALS: join(cfg.dirCredenciales, 'application_default_credentials.json'),
+  };
 }
 
 export function analizarArgumentos(argv, env = process.env, opciones = {}) {
@@ -265,7 +279,7 @@ async function principal() {
   const { cfg } = analisis;
   const { initializeApp } = await import('firebase-admin/app');
   const { getFirestore } = await import('firebase-admin/firestore');
-  if (cfg.dirCredenciales) process.env.CLOUDSDK_CONFIG = cfg.dirCredenciales;
+  Object.assign(process.env, entornoDeCredenciales(cfg));
   initializeApp({ projectId: cfg.proyecto });
   const db = getFirestore();
   process.on('SIGINT', () => { console.error('\n  ! Interrumpido. Corra el seco para ver el estado.\n'); process.exit(130); });
