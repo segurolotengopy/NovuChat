@@ -191,10 +191,10 @@ modo = sys.argv[1]
 try: d = json.loads(sys.stdin.read() or "")
 except ValueError: print("error|?|?|Graph no devolvió JSON (¿sin red?)"); sys.exit()
 if not isinstance(d, dict): print("error|?|?|Graph no devolvió un objeto"); sys.exit()
-if "error" in d:
+if d.get("error") is not None:
     e = d["error"] if isinstance(d["error"], dict) else {"message": d["error"]}
     msg = re.sub(r"EAA[A-Za-z0-9_-]+", "[token]", str(e.get("message", "?")))
-    msg = re.sub(r"[0-9]{6,}", lambda m: "…" + m.group()[-4:], msg)[:300]
+    msg = re.sub(r"[\x00-\x1f\x7f]", " ", re.sub(r"[0-9]{6,}", lambda m: "…" + m.group()[-4:], msg))[:300]
     cod, sub = str(e.get("code", "?")), str(e.get("error_subcode", "?"))
     print("error|" + re.sub(r"[^0-9A-Za-z?]", "", cod)[:12] + "|" + re.sub(r"[^0-9A-Za-z?]", "", sub)[:12] + "|" + msg.replace("|", "/").replace("\n", " ")); sys.exit()
 if modo == "nodo":
@@ -202,7 +202,8 @@ if modo == "nodo":
         print("no"); sys.exit()
     nom = re.sub(r"[^0-9A-Za-z .-]", "", str(d.get("verified_name") or ""))[:60]
     cal = re.sub(r"[^0-9A-Za-z_]", "", str(d.get("quality_rating") or "?"))[:20]
-    print("si|" + nom + "|" + cal); sys.exit()
+    vis = re.sub(r"[^0-9]", "", str(d.get("display_phone_number") or ""))
+    print("si|" + nom + "|" + cal + "|" + ("1" if vis.startswith("1555") else "0")); sys.exit()
 if modo == "nombre":
     n = str(d.get("name") or "")
     p = re.sub(r"[^a-z0-9]", "", "".join(c for c in unicodedata.normalize("NFKD", n) if not unicodedata.combining(c)).casefold())
@@ -223,19 +224,20 @@ echo "  ✓ la app del token se llama NovuChat-Demo-A"
 NODO="$(curl_token -s --max-time 30 "$G/$WA_PHONE_ID?fields=id,display_phone_number,verified_name,quality_rating" | NV_PHONE="$WA_PHONE_ID" python3 -I -c "$LEER_GRAPH" nodo || echo 'error|?|?|no se pudo leer la respuesta')"
 [[ "$NODO" == error\|* ]] && negar_graph "$NODO" "el número …${WA_PHONE_ID: -4}"
 [[ "$NODO" == si\|* ]] || die "Graph no devolvió el número …${WA_PHONE_ID: -4}. No se escribió nada"
-IFS='|' read -r _ NOMBRE_NUMERO CALIDAD <<<"$NODO"
+IFS='|' read -r _ NOMBRE_NUMERO CALIDAD VIS555 <<<"$NODO"
 echo "  ✓ el número …${WA_PHONE_ID: -4} responde: «${NOMBRE_NUMERO:-?}» (calidad ${CALIDAD:-?})"
-# Es de PRUEBA si Graph lo llama «Test Number».
+# Es de PRUEBA si Graph lo llama «Test Number» Y su número visible es de los de prueba de Meta (+1 555…): dos señales
+# independientes (el nombre lo puede elegir el dueño de una WABA real; el número visible no).
 ES_DE_PRUEBA=no
-[[ "$(printf '%s' "$NOMBRE_NUMERO" | tr -d ' ' | tr '[:upper:]' '[:lower:]')" == "testnumber" ]] && ES_DE_PRUEBA=si
+[[ "$(printf '%s' "$NOMBRE_NUMERO" | tr -d ' ' | tr '[:upper:]' '[:lower:]')" == "testnumber" && "$VIS555" == "1" ]] && ES_DE_PRUEBA=si
 # La WABA contiene el número: la lista de la WABA. Una WABA de PRUEBA no deja leerla (Graph contesta 400, código 100,
 # aunque todo esté bien asignado): ahí el cotejo WABA↔número NO se puede hacer y es un AVISO, no una negación,
 # SOLO si el número se llama «Test Number». Con una WABA real, un error o una lista sin el número siguen negando.
 VISTO="$(curl_token -s --max-time 30 "$G/$WABA_ID/phone_numbers?fields=id" | NV_PHONE="$WA_PHONE_ID" python3 -I -c "$LEER_GRAPH" numero || echo 'error|?|?|no se pudo leer la respuesta')"
 if [[ "$VISTO" == error\|* ]]; then
-  IFS='|' read -r _ COD_V _ <<<"$VISTO"
+  IFS='|' read -r _ COD_V SUB_V _ <<<"$VISTO"
   if [[ "$ES_DE_PRUEBA" == "si" && "$COD_V" == "100" ]]; then
-    echo "  ! AVISO: Graph no deja leer la lista de números de la WABA …${WABA_ID: -4} (código 100): es lo esperado en una WABA de PRUEBA."
+    echo "  ! AVISO: Graph no deja leer la lista de números de la WABA …${WABA_ID: -4} (código 100, subcódigo ${SUB_V:-?}): es lo esperado en una WABA de PRUEBA."
     echo "    NO se pudo comprobar que la WABA contenga el número: el cotejo WABA↔número queda sin hacer (límite declarado). Revise a ojo los últimos 4."
   else
     negar_graph "$VISTO" "los números de la WABA …${WABA_ID: -4}"

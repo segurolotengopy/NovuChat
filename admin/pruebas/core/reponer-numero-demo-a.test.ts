@@ -74,6 +74,8 @@ interface Opc {
   lista?: unknown;
   /** Lo que Graph contesta al leer el NODO del número (id, nombre visible, calidad). */
   nodo?: unknown;
+  /** El cuerpo CRUDO que Graph contesta a la lista de la WABA (no JSON, vacío…). */
+  listaCruda?: string;
   args?: string[];
   env?: string;
   extra?: Record<string, string>;
@@ -89,7 +91,7 @@ function correr(o: Opc = {}) {
       REGISTRO_CURL: registro,
       RESPUESTA_GRAPH: JSON.stringify(o.app ?? APP_PROPIA),
       RESPUESTA_NUMERO: JSON.stringify(o.numero ?? NUMERO_PROPIO),
-      RESPUESTA_NUMEROS: JSON.stringify(o.lista ?? LISTA_OK),
+      RESPUESTA_NUMEROS: o.listaCruda ?? JSON.stringify(o.lista ?? LISTA_OK),
       RESPUESTA_NODO: JSON.stringify(o.nodo ?? { ...NUMERO_PROPIO, quality_rating: 'GREEN', display_phone_number: 'x' }),
       SUSCRITAS_GRAPH: '{}',
       NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA: '',
@@ -340,7 +342,7 @@ describe('reponer-numero-demo-a.sh: lo que se niega sin escribir', () => {
   });
 
   // --- WABA de PRUEBA: Graph no deja leer /{WABA} ni /{WABA}/phone_numbers (400, código 100) aunque todo esté bien asignado.
-  const NODO_PRUEBA = { id: PHONE, verified_name: 'Test Number', quality_rating: 'UNKNOWN', display_phone_number: 'x' };
+  const NODO_PRUEBA = { id: PHONE, verified_name: 'Test Number', quality_rating: 'UNKNOWN', display_phone_number: '+1 (555) 139-3810' };
   const ERROR_WABA_PRUEBA = { error: { message: `Unsupported get request. Object with ID '${WABA}' does not exist, cannot be loaded due to missing permissions`, type: 'GraphMethodException', code: 100, error_subcode: 33 } };
 
   it('WABA de PRUEBA (número «Test Number», lista ilegible con código 100): AVISO, no negación, y escribe', () => {
@@ -391,9 +393,37 @@ describe('reponer-numero-demo-a.sh: lo que se niega sin escribir', () => {
   });
 
   it('Graph contesta algo que no es JSON al leer la WABA: se dice, no es un «no» mudo', () => {
-    const r = correr({ lista: 'esto no es json' as unknown, args: ['--aplicar', '--confirmo', '7237'] });
+    const r = correr({ listaCruda: 'esto no es json <html>', args: ['--aplicar', '--confirmo', '7237'] });
     expect(r.codigo).toBe(1);
     expect(r.salida).toContain('NEGÓ la lectura');
+    expect(r.salida).toContain('no devolvió JSON');
+    sinCambios();
+  });
+
+  it('«Test Number» con código 100 pero con un número visible que NO es de prueba (+1 555): niega', () => {
+    const r = correr({ nodo: { ...NODO_PRUEBA, display_phone_number: '+591 7000 3810' }, numero: { id: PHONE, verified_name: 'Test Number' }, lista: ERROR_WABA_PRUEBA, args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('NEGÓ la lectura');
+    sinCambios();
+  });
+
+  it('el mensaje de error de Graph con «|», saltos de línea y caracteres de control sale en una sola línea y sin escapes', () => {
+    const msg = 'primera|segunda\nterce\u001b[2Kra\rcuarta';
+    const r = correr({ lista: { error: { message: msg, code: 190, error_subcode: 463 } }, args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('código 190');
+    expect(r.salida).toContain('subcódigo 463');
+    expect(r.salida).toContain('primera/segunda');
+    expect(r.salida).not.toContain('\u001b');
+    expect(r.salida).not.toContain('\r');
+    sinCambios();
+  });
+
+  it('`{"error": null}` no se toma por un error de Graph', () => {
+    const r = correr({ lista: { error: null, data: [] }, args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('NO lista el número');
+    expect(r.salida).not.toContain('None');
     sinCambios();
   });
 
