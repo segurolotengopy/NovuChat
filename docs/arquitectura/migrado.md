@@ -31,7 +31,7 @@ nuevo, o uno que se muda de `experimental/` a `clientes/`, entra solo a las siet
 Clave `<json>#<regla>#<nodo>`, con `dueno`, `vence` (AAAA-MM-DD, a no más de 90 días de `ALTA`, 2026-11-12), `motivo` y `desde`. Reglas:
 `nucleo-comun` (M4), `niega-ia` (M5), `error-workflow-por-nombre`, `ux-derivacion`, `capacidades-comunes`, `flujos-origen` y `entregas`.
 Cada prueba común exige tres cosas: que toda violación de hoy tenga su excepción, que ninguna excepción **sobre** (si el flujo ya cumple,
-hay que borrarla) y que la clave nombre un flujo que existe. `TOPE` y `TOPE_POR_REGLA` fijan cuántas hay (104 hoy; eran 113 en main al fusionar: bajaron las 9 de `niega-ia`, pues core declara dos expresiones).
+hay que borrarla) y que la clave nombre un flujo que existe. `TOPE` y `TOPE_POR_REGLA` fijan cuántas hay (88 hoy; eran 114: se cerró la del armador de la redirección; la etapa 1 bajó 13 de `flujos-origen`, que ya no tiene ninguna, y 3 de `capacidades-comunes`, que quedan en 10, porque los flujos sin agente tienen su propio contrato: `faltantesDeMediosSinAgente` y `cumpleElOrigenSinAgente`; y bajaron 9 de `niega-ia`, que quedan en 4, pues core declara dos expresiones).
 El techo está además en `tope-fijado.ts` (`ALTA_FIJADA`, `TOPE_MAXIMO`), literal y aparte: subir el tope obliga a tocar DOS archivos.
 Cambiar `ALTA`, `TOPE`, `ALTA_FIJADA`, `TOPE_MAXIMO` o un `vence` exige pasar por el agente `seguridad`. Límite conocido de M4:
 `incluyeVariante` rechaza un `return` de nivel superior (columna 0) antes de la variante, pero no un `return` indentado dentro de un bloque que

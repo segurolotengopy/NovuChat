@@ -50,8 +50,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Flujo, CARPETA_FLUJOS, leerFlujo } from './lib/flujo.ts';
 import { flujosDeProduccion } from './lib/flujos-de-cliente.ts';
-import { atiendeCliente } from './core/migracion/comprobaciones.ts';
-import { problemasDeRegla } from './core/migracion/excepciones.ts';
+import { atiendeCliente, idDeFlujo, incluyeVariante, SRC_CORE } from './core/migracion/comprobaciones.ts';
+import { excepcionesDe, problemasDeRegla } from './core/migracion/excepciones.ts';
 
 const TRIGGER_WHATSAPP = 'n8n-nodes-base.whatsAppTrigger';
 const esAgente = (tipo: string) => tipo === '@n8n/n8n-nodes-langchain.agent';
@@ -204,6 +204,94 @@ export function faltantesDeMedios(f: Flujo): string[] {
   return falta;
 }
 
+// ---------------------------------------------------------------------------
+// Flujos SIN agente de n8n (etapa 1, 13/11/2026): el contrato equivalente. El agente es código propio del flujo («Decidir turno» y siguientes), así
+// que no hay «¿Trae un medio?» ni un nodo agente al que llegar. Lo que SÍ comparten los flujos con rama de medios es la cadena de abajo, medida
+// contra los JSON reales (nombres verificados, no supuestos): «¿Tamaño aceptable?» corta antes de bajar; «Descargar medio» baja el archivo;
+// «¿Es audio?» → «Transcribir audio» → «Preparar transcripción»; si no, «¿Es un documento?» → «Describir documento» / «Describir imagen» →
+// «Preparar imagen»; y «Medio no aceptado» es la salida del medio que no se baja. Las tres piezas terminales son Code que TERMINAN en el módulo
+// de core (`Flujos/src/core/medios/`, mismo criterio de sufijo que `incluyeVariante`), y vuelven al camino de siempre por los mismos destinos.
+// ---------------------------------------------------------------------------
+
+const TERMINALES_SIN_AGENTE: Record<string, string> = {
+  'Preparar transcripción': 'preparar-transcripcion.js',
+  'Preparar imagen': 'preparar-imagen.js',
+  'Medio no aceptado': 'medio-no-aceptado.js',
+};
+/** Los nodos propios de la rama de medios sin agente (además de los terminales): una sola lista para «requeridos» y «esperados». */
+const NODOS_DE_LA_RAMA_SIN_AGENTE = ['¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', 'Transcribir audio', '¿Es un documento?', 'Describir imagen', 'Describir documento'];
+const DESTINO_DE_NODO_SIN_AGENTE = {
+  'Transcribir audio': ['Preparar transcripción'], 'Describir imagen': ['Preparar imagen'], 'Describir documento': ['Preparar imagen'],
+} as const;
+
+/** El flujo atiende (reporta el entrante) y no tiene ningún nodo agente: le corresponde el contrato «sin agente». */
+export const esSinAgenteQueAtiende = (f: Flujo): boolean => atiendeCliente(f) && !f.nodes.some((n) => esAgente(n.type));
+
+/**
+ * Lo que le falta a un flujo SIN agente que atiende para tener audio, imagen y documento. Lista vacía = cumple. Comprueba el CABLEADO
+ * (conexiones), no solo la presencia de nodos.
+ */
+export function faltantesDeMediosSinAgente(f: Flujo, srcCore: string = SRC_CORE): string[] {
+  const falta: string[] = [];
+  const porNombre = new Map(f.nodes.map((n) => [n.name, n]));
+  const requeridos = [...NODOS_DE_LA_RAMA_SIN_AGENTE, ...Object.keys(TERMINALES_SIN_AGENTE)];
+  for (const n of requeridos) if (!porNombre.has(n)) falta.push(`no tiene el nodo «${n}»`);
+  if (falta.length) return falta;
+
+  // Cada salida (índice) va a UN solo nodo, el esperado.
+  const salida = (desde: string, indice: number): string[] => salidas(f, desde)[indice] ?? [];
+  const exacto = (desde: string, indice: number, hacia: string) => {
+    const d = salida(desde, indice);
+    if (d.length !== 1 || d[0] !== hacia) falta.push(`«${desde}» (salida ${indice}) tiene que ir solo a «${hacia}» (va a ${JSON.stringify(d)})`);
+  };
+  exacto('¿Tamaño aceptable?', 0, 'Descargar medio');
+  exacto('¿Tamaño aceptable?', 1, 'Medio no aceptado');
+  exacto('Descargar medio', 0, '¿Es audio?');
+  exacto('¿Es audio?', 0, 'Transcribir audio');
+  exacto('¿Es audio?', 1, '¿Es un documento?');
+  exacto('¿Es un documento?', 0, 'Describir documento');
+  exacto('¿Es un documento?', 1, 'Describir imagen');
+  for (const [desde, [hacia]] of Object.entries(DESTINO_DE_NODO_SIN_AGENTE)) exacto(desde, 0, hacia);
+  if (salidas(f, 'Descargar medio').flat().length !== 1) falta.push('«Descargar medio» tiene que ir solo a «¿Es audio?»');
+
+  // Alcanzable desde la entrada del flujo: algún disparador o webhook (el de WhatsApp o el del receptor) llega a «¿Tamaño aceptable?».
+  const raices = f.nodes.filter((n) => /trigger|webhook/i.test(n.type)).map((n) => n.name);
+  if (!alcanzables(f, raices).has('¿Tamaño aceptable?')) falta.push('«¿Tamaño aceptable?» no es alcanzable desde la entrada del flujo');
+
+  // La descarga es de verdad un archivo (el binario que NO puede pasar de los «Preparar …»).
+  const d = porNombre.get('Descargar medio')!;
+  if (d.type !== 'n8n-nodes-base.httpRequest' || !JSON.stringify(d.parameters['options'] ?? {}).includes('"responseFormat":"file"')) {
+    falta.push('«Descargar medio» no es un HTTP con respuesta de tipo archivo');
+  }
+
+  // Las tres piezas terminales son Code que terminan en el módulo de core.
+  for (const [nombre, archivo] of Object.entries(TERMINALES_SIN_AGENTE)) {
+    const n = porNombre.get(nombre)!;
+    let modulo = '';
+    try { modulo = readFileSync(join(srcCore, 'medios', archivo), 'utf8'); } catch { falta.push(`core/medios/${archivo} no existe`); continue; }
+    if (n.type !== 'n8n-nodes-base.code') falta.push(`«${nombre}» no es un nodo Code`);
+    else if (!incluyeVariante(String(n.parameters['jsCode'] ?? ''), [modulo])) falta.push(`«${nombre}» no termina en core/medios/${archivo}`);
+  }
+
+  // El binario no pasa de los terminales y la rama no envía nada: desde «¿Tamaño aceptable?», cortando en los terminales, solo hay nodos de la rama.
+  const terminales = new Set(Object.keys(TERMINALES_SIN_AGENTE));
+  const esperados = new Set([...NODOS_DE_LA_RAMA_SIN_AGENTE, ...terminales]);
+  const rama = alcanzables(f, ['¿Tamaño aceptable?'], (n) => terminales.has(n));
+  for (const n of rama) if (!esperados.has(n)) falta.push(`desde «¿Tamaño aceptable?» se llega a «${n}» sin pasar por un «Preparar …» ni «Medio no aceptado»`);
+  for (const n of rama) {
+    const nodo = porNombre.get(n);
+    if (!nodo) continue;
+    const enviaWhatsApp = nodo.type === 'n8n-nodes-base.whatsApp' && String(nodo.parameters['resource'] ?? 'message') !== 'media';
+    const enviaHttp = nodo.type === 'n8n-nodes-base.httpRequest' && String(nodo.parameters['method'] ?? 'GET') !== 'GET';
+    if (enviaWhatsApp || enviaHttp) falta.push(`«${n}», en la rama de medios, envía algo: tiene que ser solo lectura`);
+  }
+
+  // Los tres terminales vuelven al camino de siempre por el MISMO destino (no vacío).
+  const destinos = [...terminales].map((t) => JSON.stringify([...new Set(salidas(f, t).flat())].sort()));
+  if (new Set(destinos).size !== 1 || destinos[0] === '[]') falta.push(`los terminales de la rama no vuelven todos al mismo destino (${destinos.join(' | ')})`);
+  return falta;
+}
+
 const conversacionales = archivos.filter((a) => esConversacional(leerFlujo(a)));
 
 describe('Capacidades comunes: todo flujo conversacional tiene audio, imagen y documento', () => {
@@ -255,6 +343,75 @@ describe('Capacidades comunes: todo flujo conversacional tiene audio, imagen y d
       expect((PORQUE[a] ?? '').trim().length, a).toBeGreaterThan(20);
       expect(registro, a).toContain(a);
     }
+  });
+});
+
+describe('Sin agente: la prueba no es vacía, un flujo con la rama rota FALLA', () => {
+  const base = (): Flujo => JSON.parse(JSON.stringify(leerFlujo('experimental/agenda-minima/agenda-minima.v0.json'))) as Flujo;
+
+  it('la base real (agenda mínima) cumple y es un flujo sin agente que atiende', () => {
+    expect(esSinAgenteQueAtiende(base())).toBe(true);
+    expect(faltantesDeMediosSinAgente(base())).toEqual([]);
+  });
+
+  it('un flujo sin «Preparar imagen» falla y lo nombra', () => {
+    const f = base();
+    f.nodes = f.nodes.filter((n) => n.name !== 'Preparar imagen');
+    expect(faltantesDeMediosSinAgente(f)).toContain('no tiene el nodo «Preparar imagen»');
+  });
+
+  it('un flujo sin rama de medios (solo el reporte del entrante) falla', () => {
+    const f = { nodes: [{ name: 'Reportar mensaje (entrante)', type: 'n8n-nodes-base.httpRequest', parameters: {} }], connections: {} } as unknown as Flujo;
+    expect(esSinAgenteQueAtiende(f)).toBe(true);
+    expect(faltantesDeMediosSinAgente(f).length).toBeGreaterThan(0);
+  });
+
+  it('si un nodo de WhatsApp de MENSAJE entra en la rama, falla; uno de medios (lectura) no', () => {
+    const f = base();
+    const n = f.nodes.find((x) => x.name === 'Describir imagen')!;
+    n.type = 'n8n-nodes-base.whatsApp';
+    n.parameters = { resource: 'message' };
+    expect(faltantesDeMediosSinAgente(f).join('\n')).toMatch(/«Describir imagen», en la rama de medios, envía algo/);
+    n.parameters = { resource: 'media' };
+    expect(faltantesDeMediosSinAgente(f).join('\n')).not.toMatch(/«Describir imagen», en la rama de medios, envía algo/);
+  });
+
+  it('si un HTTP de la rama deja de ser GET (envía algo), falla', () => {
+    const f = base();
+    f.nodes.find((n) => n.name === 'Descargar medio')!.parameters['method'] = 'POST';
+    expect(faltantesDeMediosSinAgente(f).join('\n')).toMatch(/«Descargar medio», en la rama de medios, envía algo/);
+  });
+
+  it('si el binario sale de la rama sin pasar por un «Preparar …», falla y lo nombra', () => {
+    const f = base();
+    f.connections['Describir imagen'] = { main: [[{ node: 'Decidir turno', type: 'main', index: 0 }]] };
+    const falta = faltantesDeMediosSinAgente(f).join('\n');
+    expect(falta).toMatch(/«Describir imagen» \(salida 0\) tiene que ir solo a «Preparar imagen»/);
+    expect(falta).toMatch(/se llega a «Decidir turno» sin pasar por un «Preparar …»/);
+  });
+
+  it('si un «Preparar …» deja de terminar en el módulo de core, o deja de ser Code, falla', () => {
+    const f = base();
+    f.nodes.find((n) => n.name === 'Preparar imagen')!.parameters['jsCode'] = 'return [];';
+    expect(faltantesDeMediosSinAgente(f).join('\n')).toMatch(/«Preparar imagen» no termina en core\/medios\/preparar-imagen.js/);
+    const g = base();
+    g.nodes.find((n) => n.name === 'Medio no aceptado')!.type = 'n8n-nodes-base.set';
+    expect(faltantesDeMediosSinAgente(g).join('\n')).toMatch(/«Medio no aceptado» no es un nodo Code/);
+  });
+
+  it('si la rama no es alcanzable desde la entrada, o el medio demasiado grande no va a «Medio no aceptado», falla', () => {
+    const f = base();
+    f.connections['Obtener URL del medio (general)'] = { main: [[]] };
+    expect(faltantesDeMediosSinAgente(f).join('\n')).toMatch(/«¿Tamaño aceptable\?» no es alcanzable desde la entrada/);
+    const g = base();
+    g.connections['¿Tamaño aceptable?'] = { main: [[{ node: 'Descargar medio', type: 'main', index: 0 }], []] };
+    expect(faltantesDeMediosSinAgente(g).join('\n')).toMatch(/«¿Tamaño aceptable\?» \(salida 1\) tiene que ir solo a «Medio no aceptado»/);
+  });
+
+  it('si los terminales vuelven a destinos distintos, falla', () => {
+    const f = base();
+    f.connections['Medio no aceptado'] = { main: [[{ node: 'Normalizar entrada', type: 'main', index: 0 }]] };
+    expect(faltantesDeMediosSinAgente(f).join('\n')).toMatch(/no vuelven todos al mismo destino/);
   });
 });
 
@@ -347,8 +504,29 @@ describe('Capacidades comunes, lista única: cubierto por la comprobación o con
 
   it('todo flujo de producción que atiende a un cliente cumple la comprobación o tiene excepción; ninguna excepción sobra', () => {
     expect(atienden.length).toBeGreaterThan(10);
-    const hoy = new Map(atienden.map((a) => [a, cubiertoPorLaComprobacion(a) || faltantesDeMedios(leerFlujo(a)).length === 0 ? [] : ['rama de medios']]));
-    expect(problemasDeRegla('capacidades-comunes', hoy)).toEqual([]);
+    // Con agente de n8n: la comprobación de siempre. Sin agente (etapa 1): el contrato equivalente, `faltantesDeMediosSinAgente`.
+    const cumple = (a: string): boolean => {
+      const f = leerFlujo(a);
+      if (cubiertoPorLaComprobacion(a)) return true;
+      return (esSinAgenteQueAtiende(f) ? faltantesDeMediosSinAgente(f) : faltantesDeMedios(f)).length === 0;
+    };
+    const hoy = new Map(atienden.map((a) => [a, cumple(a) ? [] : ['rama de medios']]));
+    const detalle = atienden.filter((a) => !cumple(a)).map((a) => `${a}: ${(esSinAgenteQueAtiende(leerFlujo(a)) ? faltantesDeMediosSinAgente(leerFlujo(a)) : faltantesDeMedios(leerFlujo(a))).join('; ')}`).join('\n');
+    expect(problemasDeRegla('capacidades-comunes', hoy), detalle).toEqual([]);
+  });
+
+  it('el conjunto que atiende, medido aparte por el texto del JSON, es exactamente el que cubren la comprobación con agente, la de sin agente o una excepción', () => {
+    // Medido de forma independiente: el JSON crudo nombra «Reportar mensaje (entrante)» como nodo (no por `atiendeCliente`).
+    const porTexto = produccion.filter((a) => readFileSync(join(CARPETA_FLUJOS, a), 'utf8').includes('"name": "Reportar mensaje (entrante)"'));
+    expect([...porTexto].sort()).toEqual([...atienden].sort());
+    const conAgente = atienden.filter((a) => leerFlujo(a).nodes.some((n) => esAgente(n.type)));
+    const sinAgente = atienden.filter((a) => esSinAgenteQueAtiende(leerFlujo(a)));
+    expect([...conAgente, ...sinAgente].sort()).toEqual([...atienden].sort()); // sin solapes ni huecos
+    const exceptuados = new Set(excepcionesDe('capacidades-comunes').map(([j]) => idDeFlujo(j)));
+    for (const a of atienden) {
+      const cumple = conversacionales.includes(a) || (sinAgente.includes(a) ? faltantesDeMediosSinAgente(leerFlujo(a)) : faltantesDeMedios(leerFlujo(a))).length === 0;
+      expect(cumple || exceptuados.has(idDeFlujo(a)), a).toBe(true);
+    }
   });
 
   it('contraprueba: un flujo que atiende y no tiene la rama de medios falla sin excepción; con excepción pasa; si ya la cumple, la excepción sobra', () => {

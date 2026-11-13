@@ -25,11 +25,11 @@ export interface Excepcion { dueno: string; vence: string; motivo: string; desde
 
 /** Fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-11-12 + 90 = 2027-02-10). */
 export const ALTA = '2026-11-12';
-/** Cuántas excepciones hay hoy, medidas con las pruebas el 12/11/2026 (113 tras cerrar la de la redirección el 13/11/2026; 104 tras declarar dos expresiones de NIEGA_IA). SOLO BAJA. */
-export const TOPE = 104;
+/** Cuántas excepciones hay hoy, medidas con las pruebas el 12/11/2026 (88 tras cerrar la de la redirección, aplicar el contrato sin agente y declarar dos expresiones de NIEGA_IA el 13/11/2026). SOLO BAJA. */
+export const TOPE = 88;
 /** El mismo tope desglosado por regla (la suma es `TOPE`). Cada cuenta es la medida el 12/11/2026. SOLO BAJA. */
 export const TOPE_POR_REGLA: Record<Regla, number> = {
-  'nucleo-comun': 54, 'niega-ia': 4, 'error-workflow-por-nombre': 16, 'ux-derivacion': 4, 'capacidades-comunes': 13, 'flujos-origen': 13, entregas: 0, 'expresiones-n8n': 0,
+  'nucleo-comun': 54, 'niega-ia': 4, 'error-workflow-por-nombre': 16, 'ux-derivacion': 4, 'capacidades-comunes': 10, 'flujos-origen': 0, entregas: 0, 'expresiones-n8n': 0,
 };
 
 const DUENO = 'por asignar (Principal)';
@@ -110,9 +110,19 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
   ], 'settings.errorWorkflow')),
   // Derivación (`core/ux-derivacion.test.ts`): flujos fuera del registro por carpeta, sin tabla de derivación. 4.
   ...porRegla('ux-derivacion', 'Flujo de la raíz de Flujos/ sin tabla de derivación propia (el registro es por carpeta de experimental/); no se arregla en la etapa 0', unNodo(RAIZ_QUE_ATIENDEN, 'tabla de derivación')),
-  // Capacidades comunes y origen del anuncio (D2): los flujos sin agente de n8n quedan fuera de las comprobaciones de la raíz. 13 + 13.
-  ...porRegla('capacidades-comunes', 'Flujo sin agente de n8n: no pasa por la comprobación de la rama de medios (que sigue igual sobre la raíz de Flujos/); decisión D2 de Andres, 12/11/2026', unNodo(SIN_AGENTE_QUE_ATIENDEN, 'rama de medios')),
-  ...porRegla('flujos-origen', 'Flujo sin agente de n8n: no pasa por la comprobación del origen del anuncio (que sigue igual sobre su lista de cuatro); decisión D2 de Andres, 12/11/2026', unNodo(SIN_AGENTE_QUE_ATIENDEN, 'origen')),
+  // Capacidades comunes (D2; etapa 1): el contrato para flujos sin agente (`faltantesDeMediosSinAgente`) lo cumplen agenda mínima y las dos doctoras; el resto conserva su excepción, con lo que le falta. 10.
+  ...porRegla('capacidades-comunes', 'Flujo sin agente: «¿Es audio?» bifurca además a «Guardar comprobante» (POST con el binario, sin pasar por un «Preparar …») y «Interpretar lectura» vuelve a otro destino que los terminales de la rama; el contrato sin agente no admite esa extensión de Cobros (hace falta decidir si se admite como declarada)', unNodo([
+    'experimental/casa-bermejo/casa-bermejo.json', 'experimental/rroca-antonio/rroca-antonio.json', 'experimental/rroca-ruben/rroca-ruben.json', 'experimental/walisuma/walisuma.json',
+  ], 'rama de medios')),
+  ...porRegla('capacidades-comunes', 'Flujo sin agente con rama de medios incompleta: le faltan los nodos «Preparar transcripción», «Preparar imagen» y «Medio no aceptado»', unNodo([
+    'experimental/captacion-minima/captacion-minima.novuchat.json', 'experimental/chat-novuchat/chat-novuchat.novuchat.json',
+  ], 'rama de medios')),
+  ...porRegla('capacidades-comunes', 'Flujo sin agente con rama de medios solo de audio: le faltan «¿Es un documento?», «Describir imagen», «Describir documento», «Preparar imagen» y «Medio no aceptado»', unNodo([
+    'experimental/rroca-emma/rroca-emma.json', 'experimental/rroca-evy/rroca-evy.json',
+  ], 'rama de medios')),
+  ...porRegla('capacidades-comunes', 'Flujo sin agente con rama de medios solo de audio: le faltan «¿Es un documento?», «Describir imagen», «Describir documento», «Preparar transcripción», «Preparar imagen» y «Medio no aceptado»', unNodo([
+    'experimental/venta-minima/venta-minima.qtaco-3727.json', 'experimental/venta-minima/venta-minima.qtaco.json',
+  ], 'rama de medios')),
 };
 
 // ---------------------------------------------------------------------------
