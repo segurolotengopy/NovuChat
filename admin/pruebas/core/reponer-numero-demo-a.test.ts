@@ -141,6 +141,20 @@ describe('reponer-numero-demo-a.sh: seco y aplicar', () => {
     expect(txt).toContain(`WA_PHONE_ID=${PHONE}`);
   });
 
+  it.each(['+1 (555) 139-3810', '(591) 7000-3810', '+591-700.03810'])('el número visible «%s» se limpia (espacios, paréntesis, guiones, puntos y +)', (formato) => {
+    const limpio = formato.replace(/[^0-9]/g, '');
+    const r = correr({ entrada: [TOKEN, PHONE, WABA, TO, formato].join('\n') + '\n', args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(0);
+    expect(readFileSync(envF(), 'utf8')).toContain(`WA_TEST_NUMBER=${limpio}\n`);
+    expect(r.salida).not.toContain(limpio);
+  });
+
+  it('un número visible con letras sigue siendo inválido aunque se limpie', () => {
+    const r = correr({ entrada: [TOKEN, PHONE, WABA, TO, '+1 (555) abc-3810'].join('\n') + '\n', args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    sinCambios();
+  });
+
   it('una variable ausente se AGREGA (WA_TO que el .env no traía)', () => {
     writeFileSync(envF(), BASE.replace(`WA_TO=${TO_VIEJO}\n`, ''));
     const r = correr({ args: ['--aplicar', '--confirmo', '7237'] });
@@ -303,7 +317,29 @@ describe('reponer-numero-demo-a.sh: lo que se niega sin escribir', () => {
   it('una WABA que, con ese token, no contiene el número (falta darle la WABA al usuario de sistema)', () => {
     const r = correr({ lista: { data: [] }, args: ['--aplicar', '--confirmo', '7237'] });
     expect(r.codigo).toBe(1);
-    expect(r.salida).toContain('no lista el número');
+    expect(r.salida).toContain('NO lista el número');
+    expect(r.salida).not.toContain('NEGÓ');
+    sinCambios();
+  });
+
+  it('Graph NIEGA la lectura de la WABA: se ve código, subcódigo y mensaje, sin token ni ids completos', () => {
+    const peligroso = `(#100) Unsupported get request. Object with ID '${WABA}' does not exist; token ${TOKEN}`;
+    const r = correr({ lista: { error: { message: peligroso, type: 'GraphMethodException', code: 100, error_subcode: 33 } }, args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('NEGÓ la lectura');
+    expect(r.salida).toContain('código 100');
+    expect(r.salida).toContain('subcódigo 33');
+    expect(r.salida).toContain('Unsupported get request');
+    expect(r.salida).toContain('…1360'); // el id largo del mensaje, reducido a sus últimos 4
+    expect(r.salida).toContain('[token]');
+    sinSecretosEnSalida(r.salida);
+    sinCambios();
+  });
+
+  it('Graph contesta algo que no es JSON al leer la WABA: se dice, no es un «no» mudo', () => {
+    const r = correr({ lista: 'esto no es json' as unknown, args: ['--aplicar', '--confirmo', '7237'] });
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('NEGÓ la lectura');
     sinCambios();
   });
 

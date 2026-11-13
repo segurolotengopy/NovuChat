@@ -130,7 +130,7 @@ pedir() {
     IFS= read -r v || true
   fi
   v="$(printf '%s' "$v" | tr -d '[:space:]')"
-  if [[ "$1" == "WA_TO" || "$1" == "WA_TEST_NUMBER" ]]; then v="${v//[+-]/}"; fi
+  if [[ "$1" == "WA_TO" || "$1" == "WA_TEST_NUMBER" ]]; then v="${v//[-+().]/}"; fi
   if [[ -z "$v" ]]; then
     [[ "$6" == "si" ]] && { printf -v "$1" '%s' ""; echo "     (vacío: no se toca)" >&2; return 0; }
     die "Falta $etiqueta"
@@ -181,22 +181,41 @@ G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
 echo "== Comprobaciones contra Meta (solo lectura) =="
 negar_app_ajena "$WA_APP_ID" token      # la app dueña del token es la del .env; ni la app ni la WABA son de WhatsApp-Modular
 negar_app_ajena "$WA_APP_ID" numero     # el número no es de WhatsApp-Modular (huella y nombre visible)
-NOMBRE_APP="$(curl_token -s --max-time 30 "$G/app?fields=id,name" | python3 -I -c '
-import json, re, sys, unicodedata
-try: d = json.loads(sys.stdin.read() or "{}")
-except ValueError: d = {}
-n = str(d.get("name") or "") if isinstance(d, dict) else ""
-p = re.sub(r"[^a-z0-9]", "", "".join(c for c in unicodedata.normalize("NFKD", n) if not unicodedata.combining(c)).casefold())
-print("si" if p == "novuchatdemoa" else "no")' || echo error)"
-[[ "$NOMBRE_APP" == "si" ]] || die "El token no es de una app llamada NovuChat-Demo-A: este .env no es el del Demo A (o Graph no contestó). No se escribió nada"
+# Lector común de las respuestas de Graph (sobre la entrada estándar). Modo «nombre»: ¿la app se llama NovuChat-Demo-A?
+# Modo «numero»: ¿la lista de la WABA trae el phone id? Imprime «si», «no» o «error|<código>|<subcódigo>|<mensaje>»:
+# cuando Graph NIEGA la lectura se ve POR QUÉ (sin permiso sobre la WABA, token vencido…), no un «no» mudo.
+# El mensaje se sanea: sin tokens y con los ids largos reducidos a sus últimos 4 dígitos.
+LEER_GRAPH='
+import json, os, re, sys, unicodedata
+modo = sys.argv[1]
+try: d = json.loads(sys.stdin.read() or "")
+except ValueError: print("error|?|?|Graph no devolvió JSON (¿sin red?)"); sys.exit()
+if not isinstance(d, dict): print("error|?|?|Graph no devolvió un objeto"); sys.exit()
+if "error" in d:
+    e = d["error"] if isinstance(d["error"], dict) else {"message": d["error"]}
+    msg = re.sub(r"EAA[A-Za-z0-9_-]+", "[token]", str(e.get("message", "?")))
+    msg = re.sub(r"[0-9]{6,}", lambda m: "…" + m.group()[-4:], msg)[:300]
+    cod, sub = str(e.get("code", "?")), str(e.get("error_subcode", "?"))
+    print("error|" + re.sub(r"[^0-9A-Za-z?]", "", cod)[:12] + "|" + re.sub(r"[^0-9A-Za-z?]", "", sub)[:12] + "|" + msg.replace("|", "/").replace("\n", " ")); sys.exit()
+if modo == "nombre":
+    n = str(d.get("name") or "")
+    p = re.sub(r"[^a-z0-9]", "", "".join(c for c in unicodedata.normalize("NFKD", n) if not unicodedata.combining(c)).casefold())
+    print("si" if p == "novuchatdemoa" else "no")
+else:
+    ids = [str(x.get("id")) for x in (d.get("data") or []) if isinstance(x, dict)]
+    print("si" if os.environ["NV_PHONE"] in ids else "no")'
+# Muestra el error de Graph (código, subcódigo y mensaje saneado) y corta.
+negar_graph() { # $1=resultado de LEER_GRAPH  $2=qué se estaba comprobando
+  IFS='|' read -r _ cod sub msg <<<"$1"
+  die "Graph NEGÓ la lectura ($2): código ${cod:-?}, subcódigo ${sub:-?}: ${msg:-sin mensaje}. No se escribió nada"
+}
+NOMBRE_APP="$(curl_token -s --max-time 30 "$G/app?fields=id,name" | python3 -I -c "$LEER_GRAPH" nombre || echo 'error|?|?|no se pudo leer la respuesta')"
+[[ "$NOMBRE_APP" == error\|* ]] && negar_graph "$NOMBRE_APP" "la app dueña del token"
+[[ "$NOMBRE_APP" == "si" ]] || die "El token no es de una app llamada NovuChat-Demo-A: este .env no es el del Demo A. No se escribió nada"
 echo "  ✓ la app del token se llama NovuChat-Demo-A"
-VISTO="$(curl_token -s --max-time 30 "$G/$WABA_ID/phone_numbers?fields=id" | NV_PHONE="$WA_PHONE_ID" python3 -I -c '
-import json, os, sys
-try: d = json.loads(sys.stdin.read() or "{}")
-except ValueError: d = {}
-ids = [str(x.get("id")) for x in (d.get("data") or []) if isinstance(x, dict)] if isinstance(d, dict) else []
-print("si" if os.environ["NV_PHONE"] in ids else "no")' || echo error)"
-[[ "$VISTO" == "si" ]] || die "Con ese token, la WABA …${WABA_ID: -4} no lista el número …${WA_PHONE_ID: -4} (¿falta agregar la WABA como activo del usuario de sistema?). No se escribió nada"
+VISTO="$(curl_token -s --max-time 30 "$G/$WABA_ID/phone_numbers?fields=id" | NV_PHONE="$WA_PHONE_ID" python3 -I -c "$LEER_GRAPH" numero || echo 'error|?|?|no se pudo leer la respuesta')"
+[[ "$VISTO" == error\|* ]] && negar_graph "$VISTO" "los números de la WABA …${WABA_ID: -4}"
+[[ "$VISTO" == "si" ]] || die "Con ese token la WABA …${WABA_ID: -4} se leyó bien pero NO lista el número …${WA_PHONE_ID: -4} (¿el número es de otra WABA, o el id está mal?). No se escribió nada"
 echo "  ✓ la WABA …${WABA_ID: -4} contiene el número …${WA_PHONE_ID: -4}"
 
 echo
