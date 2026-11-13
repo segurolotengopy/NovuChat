@@ -21,7 +21,7 @@
  *     El sufijo `+crm` (`@@todo+sesion+crm:…`, solo «Armar mensajes») agrega `src/lib/crm.js` (`vmProspectoCrm`, el miniCRM de Q'Taco).
  *     El sufijo `+coherente` (`@@todo+coherente:…`, «Decidir turno» y «Plan del turno») pega `core/conversacion/respuesta-coherente.js` (sin el filtro común: el modelo solo clasifica).
  *     Y el sufijo `+sesion` (`@@todo+sesion:…`, `@@comun+sesion:…`) pega ENTRE las librerías y el nodo el módulo común
- *     `comun-sin-agente/src/sesion.js` (el estado de la conversación en el servidor, PR-4a): se INCLUYE, nunca se copia ni se edita.
+ *     `Flujos/src/core/sin-agente/sesion.js` (el estado de la conversación en el servidor, PR-4a): se INCLUYE, nunca se copia ni se edita.
  *   - `@@dato:a.b.c@@` (dentro de cualquier texto) se reemplaza por ese dato del tenant;
  *   - `@@cred:ingesta|graph|medios|entradaPrueba|trigger` (en el nombre de una credencial) por el nombre que da el tenant;
  *   - `Config base` se llena con `configBase` del tenant (tipos string, number o boolean).
@@ -49,8 +49,8 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
-import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
+import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -59,7 +59,7 @@ const verificar = process.argv.includes('--verificar');
 
 const leer = (ruta) => readFileSync(join(AQUI, ruta), 'utf8');
 // El módulo común del estado de la conversación (PR-4a): lo INCLUYEN los nodos que marcan `+sesion`; la guardia compara con esta fuente.
-const FUENTE_SESION = leer('../comun-sin-agente/src/sesion.js').trimEnd();
+const FUENTE_SESION = leer('../../src/core/sin-agente/sesion.js').trimEnd();
 const ORDEN_LIBS = ['comun', 'pedido', 'reserva', 'avisos', 'promos', 'cobro'];
 // Módulos comunes que se INCLUYEN (no se copian): viven en Flujos/src/modulos/<m>/ y van detrás de las librerías propias.
 const MODULOS_COMUNES = ['../../src/modulos/pedidos/qr-del-pedido.js', '../../src/core/medios/anuncio-por-titular.js'];
@@ -87,7 +87,7 @@ const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 // de Q'Taco tiene como MÁXIMO 51 nodos (50 + el webhook del carrito; el 51 es «Guardar comprobante», por el pedido del 26/10 de que ningún comprobante se pierda; ver DISENO.md). Todo lo demás se hace dentro de los nodos que ya existen
 // (el código vive en `src/lib` y `src/nodos`). `--verificar` falla si un JSON de producción (todo el que no es la variante de
 // prueba) pasa de este tope.
-// 50 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
+// 50 + los 11 de la rama común del GUARDADO de medios (Flujos/src/core/sin-agente/guardado.mjs, contrato M1↔M2 del 29/10/2026):
 // excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 // +1: «Guardar comprobante» (pedido de Andres del 26/10/2026: ningún comprobante se pierde; ver DISENO.md).
 // +9: el estado de la conversación y los vistos en el servidor (PR-4a; tope de Q'Taco 60 → 69, aprobado por Andres el 04/11/2026): «¿Hay estado?», «Sin estado», «¿Comprometer turno?», «Comprometer turno»,
@@ -524,7 +524,7 @@ function guardiasDeEntrega(flujo) {
 
 // =====================================================================================================
 // EL ESTADO DE LA CONVERSACIÓN EN EL SERVIDOR (PR-4a): lo que `--verificar` exige sobre el JSON, armado y versionado.
-//   - los nodos que usan o definen funciones `ss*` traen `comun-sin-agente/src/sesion.js` TAL CUAL (se INCLUYE, no se copia ni se edita) y declaran `SS_CONFIG` y cada `ss*` UNA vez;
+//   - los nodos que usan o definen funciones `ss*` traen `Flujos/src/core/sin-agente/sesion.js` TAL CUAL (se INCLUYE, no se copia ni se edita) y declaran `SS_CONFIG` y cada `ss*` UNA vez;
 //   - «Armar mensajes» cuelga SOLO de «¿Comprometer turno?»; el envío al cliente y el cierre cuelgan de «Soltar mensajes» y de ningún otro;
 //   - los nodos «Comprometer *» llaman a configuracionFlujo, reintentan con el mismo idCompromiso (retryOnFail, maxTries >= 2) y no llevan `neverError`;
 //   - «Traer configuración» pide el `leer` en los MISMOS espacios que declara `SS_CONFIG` (si divergen se lee un documento y se compromete otro) y manda el id del mensaje;
@@ -583,7 +583,7 @@ function guardiasDeSesion(entrada, flujo) {
     const codigo = js.replace(/^\s*\/\/.*$/gm, '');
     const usa = /\bss(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig|NumeroHeader)\(/.test(codigo);
     const define = /function ss[A-Z]\w*\(/.test(codigo);
-    if ((usa || define) && !js.includes(FUENTE_SESION)) h.push(`sesión: el nodo «${n.name}» usa o define funciones de sesión (ss*) sin traer \`comun-sin-agente/src/sesion.js\` tal cual: se INCLUYE el módulo común, no se copia ni se edita`);
+    if ((usa || define) && !js.includes(FUENTE_SESION)) h.push(`sesión: el nodo «${n.name}» usa o define funciones de sesión (ss*) sin traer \`Flujos/src/core/sin-agente/sesion.js\` tal cual: se INCLUYE el módulo común, no se copia ni se edita`);
     if (/function (cn|vm)(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig)\(/.test(codigo)) h.push(`sesión: el nodo «${n.name}» trae una copia propia de los ayudantes de sesión`);
     if (usa || define) {
       const cuenta = new Map();
@@ -610,7 +610,7 @@ function guardiasDeSesion(entrada, flujo) {
 // `prototype`, `__proto__`, `constructor` ni `getPrototypeOf` (tampoco entre comillas): la expresión revienta («Cannot access "prototype" due to security concerns») y, en un IF sin `onError`, la ejecución
 // muere sin dejar registro (así se perdieron las imágenes del 07/11 con `Object.prototype.hasOwnProperty` en «¿Es comprobante?»). Los nodos Code tienen otro
 // sandbox y no entran aquí (su código no empieza con «=»). Para saber si una clave es propia en una expresión: `Object.keys(o).indexOf(k) >= 0`.
-// La regla (qué se revisa y qué no cuenta) vive en `comun-sin-agente/src/expresiones.mjs`; la aplican las guardias de cada armador de
+// La regla (qué se revisa y qué no cuenta) vive en `Flujos/src/core/sin-agente/expresiones.mjs`; la aplican las guardias de cada armador de
 // `Flujos/experimental/*` (en `--verificar` y al construir) y la suite `admin/pruebas/core/expresiones-n8n.test.ts`.
 const guardiaDeExpresiones = (flujo) => hallazgosDeExpresionesN8n(flujo);
 

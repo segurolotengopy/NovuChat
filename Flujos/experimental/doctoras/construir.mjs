@@ -11,13 +11,13 @@
  *   (cualquier otro argumento se rechaza: la ayuda no existe como opción, para que nada escriba por error)
  *
  * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código y sin los datos: UN código para las dos doctoras. El código de los nodos lo arma el armador genérico
- * `../comun-sin-agente/construir.mjs` (importado, no copiado) con el `CONFIG` de este archivo. Cada tenant tiene su archivo de datos
+ * `../../src/core/sin-agente/construir.mjs` (importado, no copiado) con el `CONFIG` de este archivo. Cada tenant tiene su archivo de datos
  * `admin/scripts/datos/doctoras/<tenant>.json` (zona Tenants: solo datos y marcadores `REEMPLAZAR_*`, nunca código ni un token) y de él salen DOS JSON: producción y prueba.
  *
  *   - `@@dato:a.b.c@@` (en cualquier texto de la plantilla) por ese dato; `@@cred:ingesta|graph|entradaPrueba|gemini` (nombre de credencial) por el del archivo de datos;
  *   - `@@medio:<paquete>`: los tres módulos comunes de medios (`Flujos/src/core/medios/*.js`) se INCLUYEN desde su fuente, nunca se copian;
  *   - «Config base» se llena con `configBase` (texto, número o booleano) y el bloque `doctora` como UN texto JSON (lo lee `drDatos`);
- *   - LA CADENA DE ENVÍO es común (`../comun-sin-agente/src/envio.mjs`, `injertar()`), con las credenciales por NOMBRE; la «puerta de la entrega» `¿Meta aceptó?` solo reencamina una conexión;
+ *   - LA CADENA DE ENVÍO es común (`../../src/core/sin-agente/envio.mjs`, `injertar()`), con las credenciales por NOMBRE; la «puerta de la entrega» `¿Meta aceptó?` solo reencamina una conexión;
  *   - dos variantes por tenant: PRODUCCIÓN (con la entrada verificada del receptor y sin «Entrada de prueba») y PRUEBA (al revés).
  *
  * LAS GUARDIAS de lo armado (también se aplican al archivo versionado, aunque alguien lo haya tocado a mano):
@@ -30,14 +30,14 @@
 import { closeSync, constants, openSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
-import { injertar } from '../comun-sin-agente/src/envio.mjs';
-import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
-import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
+import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
+import { injertar } from '../../src/core/sin-agente/envio.mjs';
+import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const CARPETA_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/doctoras');
-// 48 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
+// 48 + los 11 de la rama común del GUARDADO de medios (Flujos/src/core/sin-agente/guardado.mjs, contrato M1↔M2 del 29/10/2026):
 // excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 export const TOPE_DE_NODOS = 57;
 /** Los tenants con archivo de datos (`<tenant>.json`, sin los `negocio-*.json`): hoy las dos doctoras. */
@@ -59,7 +59,7 @@ export function configDe(tenants = tenantsConDatos()) {
     librerias: ['../venta-minima/src/lib/avisos.js', 'src/lib/dr.js'],
     comun: ['src/nodos/_comun.js'],
     paquetes: {
-      mensajes: ['../comun-sin-agente/src/mensajes.js'],
+      mensajes: ['../../src/core/sin-agente/mensajes.js'],
       filtro: ['../../src/core/texto/filtro-redaccion.js'],
       'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
       'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],

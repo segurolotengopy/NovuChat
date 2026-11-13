@@ -1,6 +1,6 @@
 /**
  * EL DOBLE DEL GUARDADO DE MEDIOS: el servidor `guardarMedio` (contrato M1↔M2 del 29/10/2026, §1 y §2, con el contrato v2 «guardar y descargar TODO» del
- * 30/10) y la descarga PROPIA de Meta de la rama común (`Flujos/experimental/comun-sin-agente/src/guardado.mjs`). Se prueba contra el CONTRATO, no contra el
+ * 30/10) y la descarga PROPIA de Meta de la rama común (`Flujos/src/core/sin-agente/guardado.mjs`). Se prueba contra el CONTRATO, no contra el
  * código de M1. Contrato v2: ya no hay modo Anotar (todo medio se guarda con sus bytes); `429` trae `cupo_diario_lleno` o `cupo_telefono_lleno`.
  * Por omisión responde como un comercio con la bandera APAGADA (`409 guardado_apagado`): es el estado por defecto (decisión de Andres) y deja a
  * todas las suites de cada flujo como estaban, sin un mensaje de más. Una prueba cambia la respuesta con `respuesta` (un código y un cuerpo, o una
@@ -81,13 +81,13 @@ export function doblesDelGuardado(o: OpcionesDelGuardado = {}): { dobles: Record
 
 /**
  * Para las pruebas que corren un `construir.mjs` sobre una COPIA en un temporal (`<raiz>/Flujos/experimental/<flujo>`): el guardado es un módulo
- * común que el constructor INCLUYE (no copia), así que la copia necesita también el armado (`comun-sin-agente/src/guardado.mjs`) y el código de
+ * común que el constructor INCLUYE (no copia), así que la copia necesita también el armado (`src/core/sin-agente/guardado.mjs`) y el código de
  * los nodos (`Flujos/src/core/medios/guardado-*.js`), en las mismas rutas relativas.
  */
 const FLUJOS_REALES = join(dirname(fileURLToPath(import.meta.url)), '../../../Flujos');
 export function copiarModulosComunesAlTemporal(raiz: string): void {
   // `guardado.mjs` importa `envio.mjs` (las piezas del canal «rele»), y este lee `src/core/rele/*.js`: van también.
-  for (const rel of ['experimental/comun-sin-agente/src/guardado.mjs', 'experimental/comun-sin-agente/src/expresiones.mjs', 'experimental/comun-sin-agente/src/envio.mjs', 'experimental/comun-sin-agente/src/sesion.js', 'src/core/rele/codigos.js', 'src/core/rele/decidir-envio.js', 'src/core/medios/guardado-preparar.js', 'src/core/medios/guardado-cupo.js','src/core/medios/guardado-resultado.js', 'src/core/medios/guardado-reintento.js', 'src/modulos/pedidos/qr-del-pedido.js',
+  for (const rel of ['src/core/sin-agente/guardado.mjs', 'src/core/sin-agente/expresiones.mjs', 'src/core/sin-agente/envio.mjs', 'src/core/sin-agente/sesion.js', 'src/core/rele/codigos.js', 'src/core/rele/decidir-envio.js', 'src/core/medios/guardado-preparar.js', 'src/core/medios/guardado-cupo.js','src/core/medios/guardado-resultado.js', 'src/core/medios/guardado-reintento.js', 'src/modulos/pedidos/qr-del-pedido.js',
     // el miniCRM de Q'Taco (`construir-crm.mjs` y los paquetes del módulo `crm`)
     'experimental/comun-sin-agente/construir-crm.mjs', 'src/modulos/crm/crm.js', 'src/modulos/crm/adaptador-senales.js', 'src/modulos/crm/nodo-prospecto.js', 'src/modulos/crm/nodo-decidir-fila.js', 'src/core/medios/anuncio-por-titular.js',
     // la respuesta coherente de Q'Taco (`+coherente`): la pieza `rc*` (ya no usa el filtro común)

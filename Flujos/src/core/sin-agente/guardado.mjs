@@ -3,7 +3,7 @@
  * guardado.mjs — la rama común de GUARDADO DE MEDIOS de todo flujo con medios
  * =============================================================================
  *
- *   import { injertarGuardado, hallazgosDelGuardado, NODOS_DEL_GUARDADO } from '<ruta>/comun-sin-agente/src/guardado.mjs';
+ *   import { injertarGuardado, hallazgosDelGuardado, NODOS_DEL_GUARDADO } from '<ruta>/core/sin-agente/guardado.mjs';
  *
  * Contrato M1 (servidor `guardarMedio`) ↔ M2 (flujos) del 29/10/2026, §1, §2 y §4, con el contrato v2 «guardar y descargar TODO» del 30/10/2026 (§4,
  * §7.6 y §8.1). Lo INCLUYE cada constructor, nunca se copia: el código de los tres nodos Code sale de `Flujos/src/core/medios/guardado-preparar.js`,
@@ -156,10 +156,10 @@ export const urlDescargaRele = (releUrl = MARCADOR_URL_DEL_RELE) => `={{ (() => 
 // El id del medio sale de «Preparar guardado» (no de `$json`), así no depende del ítem que llegue.
 export const urlInfoRele = (releUrl = MARCADOR_URL_DEL_RELE) => `=${releUrl}/v1/envio/medios/{{ String($('Preparar guardado').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}`;
 
-export const FUENTE_PREPARAR = readFileSync(join(AQUI, '../../../src/core/medios/guardado-preparar.js'), 'utf8').trimEnd();
-export const FUENTE_CUPO = readFileSync(join(AQUI, '../../../src/core/medios/guardado-cupo.js'), 'utf8').trimEnd();
-export const FUENTE_REINTENTO = readFileSync(join(AQUI, '../../../src/core/medios/guardado-reintento.js'), 'utf8').trimEnd();
-export const FUENTE_RESULTADO = readFileSync(join(AQUI, '../../../src/core/medios/guardado-resultado.js'), 'utf8').trimEnd();
+export const FUENTE_PREPARAR = readFileSync(join(AQUI, '../medios/guardado-preparar.js'), 'utf8').trimEnd();
+export const FUENTE_CUPO = readFileSync(join(AQUI, '../medios/guardado-cupo.js'), 'utf8').trimEnd();
+export const FUENTE_REINTENTO = readFileSync(join(AQUI, '../medios/guardado-reintento.js'), 'utf8').trimEnd();
+export const FUENTE_RESULTADO = readFileSync(join(AQUI, '../medios/guardado-resultado.js'), 'utf8').trimEnd();
 
 const NOMBRE_DE_NODO = /^[^'"\\\r\n`$]{1,80}$/;
 const OPERADOR_BOOLEANO = { type: 'boolean', operation: 'true', singleValue: true };

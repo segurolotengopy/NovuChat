@@ -14,12 +14,12 @@
  * (una llamada al modelo que conversa y propone el pedido; el código valida contra el catálogo y calcula el total), el cobro REAL con el QR del comercio y su cotejo, los avisos al comercio y la salida.
  * `--publicable` sigue fallando mientras queden marcadores `REEMPLAZAR_*`, la plantilla `pedido_registrado` sin aprobar o el umbral de envío gratis (`envioGratisDesdeBs`) sin declarar.
  *
- * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código, sin los datos y sin la entrada del receptor. El código de los nodos lo arma el armador genérico `../../experimental/comun-sin-agente/construir.mjs` (importado, no copiado):
+ * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código, sin los datos y sin la entrada del receptor. El código de los nodos lo arma el armador genérico `../../src/core/sin-agente/construir.mjs` (importado, no copiado):
  *   - `@@dato:a.b.c@@` por ese dato; `@@cred:ingesta|graph|entradaPrueba|gemini` por el nombre de credencial del archivo de datos;
  *   - `@@medio:<paquete>`: los módulos comunes de medios (`Flujos/src/core/medios/*.js`) se INCLUYEN desde su fuente, nunca se copian;
  *   - `@@vd:<nodo>`: el nodo común NEUTRO de `../../experimental/venta-digital/src/nodos/<nodo>.js`, con las librerías y `_comun.js` delante (lo mismo que el modo `todo` del armador genérico, pero leyendo de la base común);
  *   - LA ENTRADA VERIFICADA DEL RECEPTOR (6 nodos) se INCLUYE leyéndolos POR NOMBRE de `../../experimental/venta-minima/flujo.plantilla.json` (solo lectura): `--verificar` falla si difieren de su origen;
- *   - LA CADENA DE ENVÍO es común (`../../experimental/comun-sin-agente/src/envio.mjs`, `injertar()`), con las credenciales por NOMBRE;
+ *   - LA CADENA DE ENVÍO es común (`../../src/core/sin-agente/envio.mjs`, `injertar()`), con las credenciales por NOMBRE;
  *   - dos variantes: PRODUCCIÓN (con el receptor y sin «Entrada de prueba») y PRUEBA (al revés).
  *
  * LOS DATOS son `admin/scripts/datos/walisuma/walisuma.json` (zona Tenants: solo marcadores `REEMPLAZAR_*`, nunca un token, una ruta de webhook real, un teléfono ni un identificador de Meta).
@@ -27,17 +27,17 @@
 import { closeSync, constants, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { armarVariante, leerProyecto } from '../../experimental/comun-sin-agente/construir.mjs';
-import { injertar } from '../../experimental/comun-sin-agente/src/envio.mjs';
+import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
+import { injertar } from '../../src/core/sin-agente/envio.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../../experimental/comun-sin-agente/construir-crm.mjs';
-import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../experimental/comun-sin-agente/src/guardado.mjs';
-import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../experimental/comun-sin-agente/src/expresiones.mjs';
+import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 import { problemasDeReferencias } from '../../experimental/rroca-ruben/construir.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/walisuma/walisuma.json');
 export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../../experimental/venta-minima/flujo.plantilla.json');
-// 47 + los 9 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026 y v2 del 30/10):
+// 47 + los 9 de la rama común del GUARDADO de medios (Flujos/src/core/sin-agente/guardado.mjs, contrato M1↔M2 del 29/10/2026 y v2 del 30/10):
 // excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 // 56 + los 8 de la rama del miniCRM (`ramaCrm`, generada por el módulo `crm`): 56 → 64, excepción de tope aprobada por Andres (D2, 10/11/2026) y declarada en docs/versiones-por-cliente.md.
 export const TOPE_DE_NODOS = 64;
@@ -81,7 +81,7 @@ export const CONFIG = {
   librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/carrito.js', 'src/lib/wl.js', 'src/lib/wl-venta.js'],
   comun: ['../../experimental/venta-digital/src/nodos/_comun.js'],
   paquetes: {
-    mensajes: ['../../experimental/comun-sin-agente/src/mensajes.js'],
+    mensajes: ['../../src/core/sin-agente/mensajes.js'],
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],

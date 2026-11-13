@@ -17,7 +17,7 @@ import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import type { Flujo, J } from './lib/flujo';
 // @ts-expect-error el armador es un .mjs sin tipos
 import { AQUI, RS_URL_INGESTA, RS_URL_RECLAMAR, TOPE_DE_NODOS, archivoDe, construir, estadoDelContrato, guardiaDePublicacion, guardias, tenantsConRescate } from '../../Flujos/experimental/rescate-22h/construir.mjs';
-import { nodosDeEnvio } from '../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
+import { nodosDeEnvio } from '../../Flujos/src/core/sin-agente/envio.mjs';
 
 const ESTA = dirname(fileURLToPath(import.meta.url));
 const RESCATE: string = AQUI;

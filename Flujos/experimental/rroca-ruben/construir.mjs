@@ -17,13 +17,13 @@
  * MISMO teléfono de quien prueba. El cobro NO cambia: el flujo de Rubén solo conoce el cobro real y `rrSeguro` prohíbe la palabra «simulado» (ver el §9 del procedimiento).
  *
  * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código y sin los datos. El código de los nodos lo arma el armador genérico
- * `../comun-sin-agente/construir.mjs` (importado, no copiado) con el `CONFIG` de este archivo. Lo propio de este archivo:
+ * `../../src/core/sin-agente/construir.mjs` (importado, no copiado) con el `CONFIG` de este archivo. Lo propio de este archivo:
  *
  *   - `@@dato:a.b.c@@` (en cualquier texto de la plantilla) por ese dato; `@@cred:ingesta|graph|entradaPrueba|gemini` (nombre de credencial) por el del archivo de datos;
  *   - `@@medio:<paquete>`: los tres módulos comunes de medios (`Flujos/src/core/medios/*.js`) se INCLUYEN desde su fuente, nunca se copian (la lectura la hace el armador
  *     genérico, dentro de la raíz `Flujos/`, sin seguir enlaces simbólicos);
  *   - «Config base» se llena con `configBase` (texto, número o booleano);
- *   - LA CADENA DE ENVÍO es común (`../comun-sin-agente/src/envio.mjs`, `injertar()`), con las credenciales por NOMBRE; la «puerta de la entrega» `¿Meta aceptó?` solo reencamina
+ *   - LA CADENA DE ENVÍO es común (`../../src/core/sin-agente/envio.mjs`, `injertar()`), con las credenciales por NOMBRE; la «puerta de la entrega» `¿Meta aceptó?` solo reencamina
  *     una conexión: el reporte saliente cuenta si Meta devolvió `messages[0].id` y ningún `error`;
  *   - dos variantes: PRODUCCIÓN (con la entrada verificada del receptor y sin «Entrada de prueba») y PRUEBA (al revés).
  *
@@ -42,11 +42,11 @@
 import { closeSync, constants, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
+import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
-import { injertar } from '../comun-sin-agente/src/envio.mjs';
-import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
-import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
+import { injertar } from '../../src/core/sin-agente/envio.mjs';
+import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-ruben/rroca-ruben.json');
@@ -102,7 +102,7 @@ const NODO_TRIGGER = 'WhatsApp Trigger';
 /** Los dos marcadores del ensayo: el phone id del Demo A y el teléfono de quien prueba (los repone `preparar-import.sh` desde la tabla local, nunca el repositorio). */
 export const MARCADORES_DEL_ENSAYO = ['REEMPLAZAR_PHONE_NUMBER_ID', 'REEMPLAZAR_NUMERO_AVISO_ENSAYO'];
 // El flujo anterior de Rubén (Libro IA) tenía 63 nodos; este (Noches Sin Insomnio) tiene la forma del de Antonio.
-// 47 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
+// 47 + los 11 de la rama común del GUARDADO de medios (Flujos/src/core/sin-agente/guardado.mjs, contrato M1↔M2 del 29/10/2026):
 // excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 // 56 + los 8 de la rama del miniCRM (`ramaCrm`, generada por el módulo `crm`; F4 del 02/11/2026): excepción de tope aprobada por Andres (DP1, 31/10/2026) en docs/versiones-por-cliente.md.
 // El relé de envíos B9 (Clínicas, +2, aprobado en D1) sube el tope a 66 cuando se fusione: hoy el flujo tiene 64.
@@ -126,7 +126,7 @@ export const CONFIG = {
   librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/diferencias.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../venta-digital/src/gmail.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/rr.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
-    mensajes: ['../comun-sin-agente/src/mensajes.js'],
+    mensajes: ['../../src/core/sin-agente/mensajes.js'],
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],

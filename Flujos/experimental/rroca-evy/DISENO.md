@@ -1,7 +1,7 @@
 # El flujo nuevo de la Dra. Evy (tenant `rroca-evy`): conversación libre, imágenes por etiqueta, barreras en código
 
 Encargo de Andres, 23/10/2026: lo único que Evy hace es (1) mandar todo mensaje a un agente de IA que conversa libre, con memoria de 15 mensajes, y (2) usar como prompt el guion `23102026` (con correcciones). Sin saludo fijo, sin menú, sin botones de consentimiento, sin respuestas fijas de Radiesse, HArmonyCa ni costos. Todo lo que el prompt no puede garantizar lo garantiza el código. **No se publica nada en este PR.**
-Armador: `../comun-sin-agente/construir.mjs`, importado. `node construir.mjs` escribe `rroca-evy.json` y `rroca-evy.prueba.json`; `--verificar` y `--publicable [--etapa crear|prueba|encender]` no escriben.
+Armador: `Flujos/src/core/sin-agente/construir.mjs`, importado. `node construir.mjs` escribe `rroca-evy.json` y `rroca-evy.prueba.json`; `--verificar` y `--publicable [--etapa crear|prueba|encender]` no escriben.
 
 ## Topología (36 nodos en producción, 31 en la prueba; tope duro 36)
 

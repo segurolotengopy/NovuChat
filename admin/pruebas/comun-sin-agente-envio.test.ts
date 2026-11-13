@@ -1,5 +1,5 @@
 /**
- * LA CADENA DE ENVÍO (`Flujos/experimental/comun-sin-agente/src/envio.mjs`).
+ * LA CADENA DE ENVÍO (`Flujos/src/core/sin-agente/envio.mjs`).
  *
  * Tres cosas:
  *  1. EQUIVALENCIA con «Agenda mínima»: con las mismas credenciales y la misma URL, los seis nodos generados
@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { injertar, nodosDeEnvio, type OpcionesDeEnvio } from '../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
+import { injertar, nodosDeEnvio, type OpcionesDeEnvio } from '../../Flujos/src/core/sin-agente/envio.mjs';
 import { expresion, type J } from './lib/flujo';
 
 const aqui = dirname(fileURLToPath(import.meta.url));

@@ -11,9 +11,9 @@ Pruebas: `admin/pruebas/tenants/walisuma/` — `armado.test.ts` (64 y 59 nodos, 
 |---|---|
 | Entrada verificada del receptor (6 nodos: Entrega del receptor, Verificar firma con el receptor, ¿Firma válida?, Aceptar (200), Rechazar (401), Descartar repetidos) | `Flujos/experimental/venta-minima/flujo.plantilla.json`, leídos POR NOMBRE por `construir.mjs`; `--verificar` falla si difieren (id, posición y notas incluidos) |
 | Cobro (`cb*`), avisos (`av*`) y motor de la conversación (`vd*`) | `Flujos/experimental/venta-digital/src/{cobro,avisos,conversacion}.js`, librerías de todos los nodos `todo` |
-| Mensajes de WhatsApp (`cm*`) | `Flujos/experimental/comun-sin-agente/src/mensajes.js`, paquete `mensajes`, solo en «Armar mensajes» |
-| Cadena de envío (¿Enviar de verdad?, Enviar a WhatsApp, ¿Falló el envío?, Enviar respaldo, ¿Reportar? y Reportar mensaje (saliente)) | `comun-sin-agente/src/envio.mjs`, `injertar()` desde `construir.mjs`; «¿Meta aceptó?» solo reencamina una conexión |
-| Armador (plantilla + código → JSON, `--verificar`) | `comun-sin-agente/construir.mjs` (`leerProyecto`, `armarVariante`) |
+| Mensajes de WhatsApp (`cm*`) | `Flujos/src/core/sin-agente/mensajes.js`, paquete `mensajes`, solo en «Armar mensajes» |
+| Cadena de envío (¿Enviar de verdad?, Enviar a WhatsApp, ¿Falló el envío?, Enviar respaldo, ¿Reportar? y Reportar mensaje (saliente)) | `Flujos/src/core/sin-agente/envio.mjs`, `injertar()` desde `construir.mjs`; «¿Meta aceptó?» solo reencamina una conexión |
+| Armador (plantilla + código → JSON, `--verificar`) | `Flujos/src/core/sin-agente/construir.mjs` (`leerProyecto`, `armarVariante`) |
 | Medios: transcripción, imagen (con las campañas por titular) y medio no aceptado | `Flujos/src/core/medios/{preparar-transcripcion,anuncio-por-titular+preparar-imagen,medio-no-aceptado}.js`, **byte a byte** |
 | Nodos neutros: Carga de entrada, Config del negocio, Normalizar entrada, Puerta del turno, Resumen del turno, y `_comun.js` | `Flujos/experimental/venta-digital/src/nodos/` (ver abajo): subidos NEUTRALIZADOS desde la versión de «El Puente»; la de Antonio no se tocó ni se republicó |
 | Reglas del task runner sobre las referencias `$('…')` | `rroca-ruben/construir.mjs`, **importada** (`problemasDeReferencias`) |
@@ -48,7 +48,7 @@ El «lector del panel» (`raPanelDe` de Antonio) NO lo usa ninguno de estos cinc
 
 ## El guardado de medios (11 nodos más: tope 58)
 
-La rama común `comun-sin-agente/src/guardado.mjs` (Preparar guardado, ¿Anotar medio?, Anotar medio, Pedir el medio a Meta (guardado), Descargar medio (guardado), Guardar medio, ¿Reintentar el guardado?, Preparar reintento, Reintentar el guardado, Resultado del guardado, Avisar falla del guardado) se INCLUYE con `injertarGuardado()` y cuelga de «Reportar mensaje (entrante)», debajo de todo en el lienzo. Tope de nodos: **58 = 47 + 11**, excepción declarada por Andres el 29/10/2026 para el guardado de medios (`docs/versiones-por-cliente.md`). Producción 58, prueba 53. El guardado **no manda mensajes al cliente** (0 mensajes por conversación); sus escrituras en la nube son las de `guardarMedio`: un archivo en Storage y un registro por medio guardado, y, si falla con 413, 415, 429 o 502, a lo más un aviso a recepción por día (el único envío de la rama, con la ventana abierta).
+La rama común `Flujos/src/core/sin-agente/guardado.mjs` (Preparar guardado, ¿Anotar medio?, Anotar medio, Pedir el medio a Meta (guardado), Descargar medio (guardado), Guardar medio, ¿Reintentar el guardado?, Preparar reintento, Reintentar el guardado, Resultado del guardado, Avisar falla del guardado) se INCLUYE con `injertarGuardado()` y cuelga de «Reportar mensaje (entrante)», debajo de todo en el lienzo. Tope de nodos: **58 = 47 + 11**, excepción declarada por Andres el 29/10/2026 para el guardado de medios (`docs/versiones-por-cliente.md`). Producción 58, prueba 53. El guardado **no manda mensajes al cliente** (0 mensajes por conversación); sus escrituras en la nube son las de `guardarMedio`: un archivo en Storage y un registro por medio guardado, y, si falla con 413, 415, 429 o 502, a lo más un aviso a recepción por día (el único envío de la rama, con la ventana abierta).
 
 ## El miniCRM (8 nodos más: 64 en producción y 59 en la prueba)
 

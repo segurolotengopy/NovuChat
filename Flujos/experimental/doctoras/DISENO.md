@@ -1,6 +1,6 @@
 # Las doctoras (tenants `rroca-evy` y `rroca-emma`): captación con derivación a recepción
 
-Plan: `DOCTORAS_plan-y-guion-vs-flujo_2026-10-22.md` (en `~/CLAUDE_DESCARGAS/`). Zona: `Flujos/experimental/doctoras/` (Flujo de cliente, fuera de `fronteras.test.ts`, como Antonio). Armador: `../comun-sin-agente/construir.mjs`, importado, nunca copiado.
+Plan: `DOCTORAS_plan-y-guion-vs-flujo_2026-10-22.md` (en `~/CLAUDE_DESCARGAS/`). Zona: `Flujos/experimental/doctoras/` (Flujo de cliente, fuera de `fronteras.test.ts`, como Antonio). Armador: `Flujos/src/core/sin-agente/construir.mjs`, importado, nunca copiado.
 UN código y UNA plantilla; los datos de cada doctora en `admin/scripts/datos/doctoras/<tenant>.json`. `node construir.mjs` escribe `doctoras.<tenant>.json` y `doctoras.<tenant>.prueba.json`. No se publica nada en este PR.
 
 ## Estado por commit (un solo PR)

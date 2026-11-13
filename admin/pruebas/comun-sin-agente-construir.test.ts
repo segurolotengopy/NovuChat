@@ -1,5 +1,5 @@
 /**
- * EL ARMADOR GENÉRICO (`Flujos/experimental/comun-sin-agente/construir.mjs`).
+ * EL ARMADOR GENÉRICO (`Flujos/src/core/sin-agente/construir.mjs`).
  *
  * Tres cosas se prueban, cada regla con su caso negativo:
  *  1. EQUIVALENCIA: con el config que describe a «Agenda mínima», el armador genérico produce, byte por byte,
@@ -18,8 +18,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import {
   armarVariante, codigoDe, construir, leerProyecto, type ConfigDeConstruccion,
-} from '../../Flujos/experimental/comun-sin-agente/construir.mjs';
-import { injertarGuardado } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
+} from '../../Flujos/src/core/sin-agente/construir.mjs';
+import { injertarGuardado } from '../../Flujos/src/core/sin-agente/guardado.mjs';
 import { injertarCrm, ramaCrm, rutasPaqueteCrmSenales } from '../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 
 // @ts-expect-error módulo .mjs sin tipos
@@ -27,7 +27,7 @@ import { reglaDeIdentidadDelCore } from '../../Flujos/experimental/agenda-minima
 const aqui = dirname(fileURLToPath(import.meta.url));
 // Los proyectos de juguete viven en una carpeta temporal: el tope de lectura de las pruebas es esa carpeta.
 const TOPE = tmpdir();
-const COMUN = join(aqui, '../../Flujos/experimental/comun-sin-agente');
+const COMUN = join(aqui, '../../Flujos/src/core/sin-agente');
 const AGENDA = join(aqui, '../../Flujos/experimental/agenda-minima');
 
 // --- EL CONFIG DE «AGENDA MÍNIMA», escrito aquí: su carpeta no se toca -------------------------------
@@ -50,7 +50,7 @@ const CONFIG_AGENDA: ConfigDeConstruccion = {
 
 describe('el armador genérico produce los JSON de Agenda mínima, byte por byte', () => {
   const p = leerProyecto(AGENDA, CONFIG_AGENDA);
-  // `agenda-minima/construir.mjs` injerta DESPUÉS la rama común del guardado de medios (`comun-sin-agente/src/guardado.mjs`): se injerta igual aquí.
+  // `agenda-minima/construir.mjs` injerta DESPUÉS la rama común del guardado de medios (`src/core/sin-agente/guardado.mjs`): se injerta igual aquí.
   // Y la rama del miniCRM (módulo `crm`, 04/11/2026), que `construir.mjs` de Agenda mínima genera ANTES del guardado: se arma aquí por su cuenta.
   const mapaCrm = (JSON.parse(readFileSync(join(aqui, '../scripts/datos/bellido/crm.json'), 'utf8')) as { crm: unknown }).crm;
   const paquetesCrm = rutasPaqueteCrmSenales() as Record<string, string[]>;

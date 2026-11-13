@@ -34,7 +34,7 @@ import {
   type J, GLOBALES_FUERA_DEL_SANDBOX, codigoDe, configBase, destinos, ejecutar, entradas,
   expresion, leerFlujo, nodo, plantilla,
 } from './lib/flujo.ts';
-import { NODOS_DEL_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
+import { NODOS_DEL_GUARDADO } from '../../Flujos/src/core/sin-agente/guardado.mjs';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));

@@ -15,7 +15,7 @@
  * única viven en la Function `reclamarRescates`), deja redactar el cuerpo al modelo, lo verifica por código y lo envía con la cadena de envío común.
  * El código es el MISMO para todos los tenants: lo único que cambia es el archivo de datos (`admin/scripts/datos/<id>/rescate-22h.json`), que da el
  * nombre del flujo, las credenciales POR NOMBRE y las asignaciones de «Config base». La cadena de envío y el filtro de redacción se INCLUYEN de
- * `../comun-sin-agente/` (no se copian). Esto reemplaza al «barrido común» hasta que exista el relé de envíos.
+ * `Flujos/src/core/sin-agente/` (no se copian). Esto reemplaza al «barrido común» hasta que exista el relé de envíos.
  *
  * LAS GUARDIAS de lo armado (también al archivo versionado, aunque alguien lo haya tocado a mano): ver `guardias()`.
  */
@@ -23,9 +23,9 @@ import { closeSync, constants, openSync, readFileSync, readdirSync, writeFileSyn
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
-import { injertar } from '../comun-sin-agente/src/envio.mjs';
-import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
+import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
+import { injertar } from '../../src/core/sin-agente/envio.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const CARPETA_DE_DATOS = join(AQUI, '../../../admin/scripts/datos');

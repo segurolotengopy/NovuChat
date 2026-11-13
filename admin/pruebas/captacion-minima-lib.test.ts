@@ -30,7 +30,7 @@ const aqui = dirname(fileURLToPath(import.meta.url));
 const EXPERIMENTAL = join(aqui, '../../Flujos/experimental');
 const CARPETA = join(EXPERIMENTAL, 'captacion-minima');
 const LIB = readFileSync(join(CARPETA, 'src/lib/captacion.js'), 'utf8');
-const MENSAJES = readFileSync(join(EXPERIMENTAL, 'comun-sin-agente/src/mensajes.js'), 'utf8');
+const MENSAJES = readFileSync(join(EXPERIMENTAL, '../src/core/sin-agente/mensajes.js'), 'utf8');
 const FILTRO = readFileSync(join(EXPERIMENTAL, '../src/core/texto/filtro-redaccion.js'), 'utf8');
 
 // Las funciones de §8 del contrato (más las ayudas cc* que usan las armadoras).

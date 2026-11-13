@@ -9,7 +9,7 @@
  *   (NUNCA con --help ni --ayuda: cualquier argumento que no sea --verificar escribe los JSON)
  *
  * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código y sin los datos. Este archivo NO arma el código de los nodos: lo hace el armador genérico
- * `../comun-sin-agente/construir.mjs` (importado), con el config de `CONFIG_BASE` (librería `src/lib/chat.js`, comunes `src/nodos/_comun.js` y los paquetes `mensajes` y `filtro`,
+ * `../../src/core/sin-agente/construir.mjs` (importado), con el config de `CONFIG_BASE` (librería `src/lib/chat.js`, comunes `src/nodos/_comun.js` y los paquetes `mensajes` y `filtro`,
  * en una marca como `"jsCode": "@@todo+mensajes+filtro:nodos/armar-mensajes.js"`). Lo propio de este archivo:
  *
  *   - `@@dato:a.b.c@@` (en cualquier texto de la plantilla) por ese dato; `@@cred:trigger|ingesta|graph|planilla|entradaPrueba` (nombre de credencial) por el del archivo de datos;
@@ -30,11 +30,11 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { contarDeclaraciones, hallazgosDelCodigo, TEXTOS as TEXTOS_GUARDA } from './guarda-ast.mjs';
 const TEXTO_NO_ANALIZABLE = TEXTOS_GUARDA.noAnalizable;
-import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
-import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
-import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
-// LA CADENA DE ENVÍO ES COMÚN (no se copia): se injerta desde `comun-sin-agente/src/envio.mjs` (enviar, respaldo en texto, reporte saliente).
-import { injertar } from '../comun-sin-agente/src/envio.mjs';
+import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
+import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
+// LA CADENA DE ENVÍO ES COMÚN (no se copia): se injerta desde `Flujos/src/core/sin-agente/envio.mjs` (enviar, respaldo en texto, reporte saliente).
+import { injertar } from '../../src/core/sin-agente/envio.mjs';
 // EL miniCRM ES UN MÓDULO (no se copia): los paquetes `crm-prospecto` y `crm-decidir`, y el injerto del mapa de columnas del tenant (dato `crm`).
 import { injertarCrm, rutasPaquetesCrm, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 
@@ -49,11 +49,11 @@ export const CONFIG_BASE = {
   librerias: ['src/lib/chat.js'],
   comun: ['src/nodos/_comun.js', 'src/nodos/_registro.js'],
   paquetes: {
-    mensajes: ['../comun-sin-agente/src/mensajes.js'],
+    mensajes: ['../../src/core/sin-agente/mensajes.js'],
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
     tipeo: ['../../src/core/texto/tipeo.js'],
     // El estado de la conversación en el servidor es un MÓDULO COMÚN (PR-4a0): se INCLUYE, no se copia. Sus parámetros (`SS_CONFIG`) los declara `src/nodos/_registro.js`.
-    sesion: ['../comun-sin-agente/src/sesion.js'],
+    sesion: ['../../src/core/sin-agente/sesion.js'],
     // Reclamo 62: la relectura antes de agregar una fila (crm.js + su nodo). Solo el chat la usa por ahora; el resto de los flujos no cambia.
     'crm-releer': ['../../src/modulos/crm/crm.js', relative(AQUI, RUTA_ADAPTADOR_CRM), '../../src/modulos/crm/nodo-releer-antes-de-agregar.js'], // (el MISMO adaptador que «Decidir fila»)
     ...Object.fromEntries(Object.entries(rutasPaquetesCrm(RUTA_ADAPTADOR_CRM)).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
@@ -117,7 +117,7 @@ export function cargarDatos(archivo, dir = DATOS, pila = []) {
 // ----------------------------------------------------------------- las expresiones de la librería (UNA fuente: `src/lib/chat.js`)
 const FUENTE = leerSiExiste(join(AQUI, 'src/lib/chat.js'), 'src/lib/chat.js') || '';
 // El módulo común del estado de la conversación (PR-4a0): los nodos lo INCLUYEN tal cual; la guardia compara con esta fuente.
-const FUENTE_SESION = leerSiExiste(join(AQUI, '../comun-sin-agente/src/sesion.js'), 'comun-sin-agente/src/sesion.js') || '';
+const FUENTE_SESION = leerSiExiste(join(AQUI, '../../src/core/sin-agente/sesion.js'), 'Flujos/src/core/sin-agente/sesion.js') || '';
 // (`_registro.js`, propio del chat y presente en todo nodo, llama a `ssResultadoDeCompromiso` dentro de una función: eso no cuenta como usar el módulo)
 const FUENTE_REGISTRO = leerSiExiste(join(AQUI, 'src/nodos/_registro.js'), 'src/nodos/_registro.js') || '';
 function regexDeLaLibreria(nombre) {
@@ -679,8 +679,8 @@ export function guardias(entrada, flujo, datos = {}, destino = '') {
       // Un 5xx o un timeout se reintenta con el MISMO idCompromiso (el servidor contesta `repetido` si ya se aplicó): reintento activo y sin `neverError` (con él un 5xx no se reintenta).
       if (n.retryOnFail !== true || !(n.maxTries >= 2) || JSON.stringify(parametros(n)).includes('neverError')) h.push(`«${n.name}» tiene que reintentar (retryOnFail, maxTries >= 2) y no llevar neverError`);
     }
-    // EL ESTADO DE LA CONVERSACIÓN ES UN MÓDULO COMÚN (PR-4a0): todo nodo que usa sus funciones `ss*` trae el texto de `comun-sin-agente/src/sesion.js` TAL CUAL, y ninguno lleva una copia propia o editada.
-    if (!FUENTE_SESION) h.push('falta `comun-sin-agente/src/sesion.js` (el módulo común del estado de la conversación)');
+    // EL ESTADO DE LA CONVERSACIÓN ES UN MÓDULO COMÚN (PR-4a0): todo nodo que usa sus funciones `ss*` trae el texto de `Flujos/src/core/sin-agente/sesion.js` TAL CUAL, y ninguno lleva una copia propia o editada.
+    if (!FUENTE_SESION) h.push('falta `Flujos/src/core/sin-agente/sesion.js` (el módulo común del estado de la conversación)');
     for (const n of nodos) {
       const js = String(parametros(n).jsCode || '');
       const sinRegistro = FUENTE_REGISTRO ? js.split(FUENTE_REGISTRO.trimEnd()).join('') : js;
@@ -689,7 +689,7 @@ export function guardias(entrada, flujo, datos = {}, destino = '') {
       // `cnRegistro(` fuera de `_registro.js` también es usar el módulo: llama a `ssResultadoDeCompromiso`.
       const usa = /\bss(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig|NumeroHeader)\(/.test(sinRegistro) || /\bcnRegistro\(/.test(sinRegistro);
       const define = /function\s*\*?\s*ss[A-Z]\w*\s*\(/.test(js);
-      if ((usa || define) && !js.includes(FUENTE_SESION.trimEnd())) h.push(`el nodo «${n.name}» usa o define funciones de sesión (ss*) sin traer \`comun-sin-agente/src/sesion.js\` tal cual: se INCLUYE el módulo común, no se copia ni se edita`);
+      if ((usa || define) && !js.includes(FUENTE_SESION.trimEnd())) h.push(`el nodo «${n.name}» usa o define funciones de sesión (ss*) sin traer \`Flujos/src/core/sin-agente/sesion.js\` tal cual: se INCLUYE el módulo común, no se copia ni se edita`);
       if (/function (cn|ch)(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig)\(/.test(js)) h.push(`el nodo «${n.name}» trae una copia propia de los ayudantes de sesión`);
       if (usa || define) {
         // En JS gana la ÚLTIMA declaración: traer el módulo y luego REDEFINIR una función (`function ssDesdeAutorizado() { return true; }`) anularía el aislamiento. Cada `ss*` y SS_CONFIG, UNA vez por nodo.

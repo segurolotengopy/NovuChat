@@ -28,7 +28,7 @@
  *
  * No necesita emulador: lee archivos y compara bytes.
  */
-import { NODOS_CODE_DEL_GUARDADO } from '../../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
+import { NODOS_CODE_DEL_GUARDADO } from '../../../Flujos/src/core/sin-agente/guardado.mjs';
 import { afterAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import {
@@ -360,7 +360,8 @@ describe('6. Ningún módulo, prompt ni manifiesto contiene un valor real', () =
 
   it('hay módulos que revisar, y están donde el ensamblador los busca', () => {
     expect(TODOS.length).toBeGreaterThanOrEqual(18 + 5 + 2);
-    expect(TODOS.every((p) => /\.(js|md|json)$/.test(p))).toBe(true);
+    // `core/sin-agente/` trae también el armador de los flujos sin agente (`.mjs`, `.d.mts`): no son módulos inyectables, pero SÍ se revisan en busca de valores reales.
+    expect(TODOS.filter((p) => !p.includes('/core/sin-agente/')).every((p) => /\.(js|md|json)$/.test(p))).toBe(true);
   });
 
   it.each(REGLAS)('%s', (_nombre, regla) => {

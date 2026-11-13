@@ -14,7 +14,7 @@ modelo solo pone una línea de empatía, contesta preguntas sueltas con los dato
 | `src/lib/captacion.js` | Librería PURA (prefijo `cc`): estado, detectores por palabra entera, modelo, mensajes, y las dos funciones del turno `ccDecidir` y `ccCompletar`. Sin reloj, sin red, sin `$…` de n8n, sin `URL`/`Buffer`/`crypto` |
 | `src/nodos/_comun.js` | Utilidades `cn*` de los nodos (leer otro nodo por nombre, texto y JSON de Gemini, atención, ficha) |
 | `src/nodos/*.js` | El código de cada nodo Code. «Prospecto para la planilla» y «Decidir fila de la planilla» ya NO tienen archivo aquí: se INCLUYEN del módulo `crm` (`Flujos/src/modulos/crm/`, paquetes `crm-prospecto` y `crm-decidir`; el adaptador de captación es `Flujos/src/modulos/captacion/crm-captacion.js`) y el mapa de columnas es el dato `crm` de `admin/scripts/datos/captacion-minima/novuchat.json` (el ensayo lo hereda) |
-| `construir.mjs` | Arma los dos JSON con el armador genérico `../comun-sin-agente/construir.mjs`, valida los datos, inyecta guion y corpus y aplica las guardias. `--verificar` no escribe |
+| `construir.mjs` | Arma los dos JSON con el armador genérico `Flujos/src/core/sin-agente/construir.mjs`, valida los datos, inyecta guion y corpus y aplica las guardias. `--verificar` no escribe |
 | `captacion-minima.novuchat.json` | **Producción**: con «WhatsApp Trigger», sin «Entrada de prueba» |
 | `captacion-minima.prueba.json` | **Prueba**: con «Entrada de prueba» (Webhook POST con Header Auth), sin «WhatsApp Trigger» |
 | `admin/scripts/datos/captacion-minima/{novuchat,ensayo}.json` | Datos del tenant (zona Tenants): solo marcadores `REEMPLAZAR_*` para identificadores, el guion (por rubro: `dolor`, `pregunta`, `impacto`, `cierre`; las claves son los ids VIVOS de la consola) y el corpus |
@@ -30,7 +30,7 @@ Para cambiar el flujo: editar la plantilla o un archivo de `src/nodos/`, correr 
    el campo) antes de tocar la plantilla.
 2. Por cada archivo de datos quita el disparador que no corresponde, reemplaza `@@dato:…@@` y `@@cred:…`, llena «Config base» con
    `configBase` y deja que el armador genérico pegue DELANTE de cada nodo, en este orden: `src/lib/captacion.js`,
-   `src/nodos/_comun.js`, y los paquetes `mensajes` y `filtro` de `comun-sin-agente` (el Code de n8n no tiene módulos).
+   `src/nodos/_comun.js`, y los paquetes `mensajes` y `filtro` de `Flujos/src/core/sin-agente/` (el Code de n8n no tiene módulos).
 3. Marcas de la plantilla: `@@todo+mensajes+filtro:` (librería + comunes + `cm*`), `@@todo:` (librería + comunes), `@@comun:` (solo
    comunes) y `@@solo:` (solo el archivo). **Quien use `ccLeerModelo`, `ccLista`, `ccOferta`, `ccPlanes`, `ccTraspaso`, `ccFijo` o
    `ccCompletar` pega `+mensajes+filtro`** (hoy solo «Armar mensajes»): las usan al ser llamadas, no al cargarse. «Decidir turno» no usa

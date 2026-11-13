@@ -9,7 +9,7 @@
  *                                    guardia o si hay un JSON sin archivo de datos (huérfano)
  *
  * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código y sin los datos del negocio. Este archivo NO arma
- * el código de los nodos: lo hace el armador genérico `../comun-sin-agente/construir.mjs` (importado), con el
+ * el código de los nodos: lo hace el armador genérico `../../src/core/sin-agente/construir.mjs` (importado), con el
  * config de `CONFIG_BASE` (librería `src/lib/captacion.js`, comunes `src/nodos/_comun.js` y los paquetes
  * `mensajes` y `filtro`, en una marca como `"jsCode": "@@todo+mensajes+filtro:nodos/armar-mensajes.js"`).
  * Lo propio de este archivo es lo que el armador genérico no sabe:
@@ -43,9 +43,9 @@ import { closeSync, constants, openSync, readdirSync, readFileSync, writeFileSyn
 import { runInNewContext } from 'node:vm';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
-import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
-import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
+import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
+import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 
 // EL miniCRM ES UN MÓDULO (no se copia): los paquetes `crm-prospecto` y `crm-decidir`, y el injerto del mapa de columnas del tenant (dato `crm`).
 import { injertarCrm, rutasPaquetesCrm, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
@@ -60,7 +60,7 @@ export const CONFIG_BASE = {
   librerias: ['src/lib/captacion.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
-    mensajes: ['../comun-sin-agente/src/mensajes.js'],
+    mensajes: ['../../src/core/sin-agente/mensajes.js'],
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
     ...Object.fromEntries(Object.entries(rutasPaquetesCrm(join(AQUI, '..', '..', 'src', 'modulos', 'captacion', 'crm-captacion.js'))).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
   },

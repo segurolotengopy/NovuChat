@@ -9,7 +9,7 @@
  *
  * Todo lo que no es un `comprometer` con cupos ni un `asentar` lo contesta el servidor común (que sigue siendo la fuente de verdad de `leer` y del estado).
  */
-import { crearServidorDeSesion, type RespuestaHttp, type ServidorDeSesion } from '../../../Flujos/experimental/comun-sin-agente/herramientas/servidor-de-sesion.mjs';
+import { crearServidorDeSesion, type RespuestaHttp, type ServidorDeSesion } from '../../../Flujos/src/core/sin-agente/herramientas/servidor-de-sesion.mjs';
 import {
   decidirAsentar, decidirCompromiso, idCupo, idSesion, leerConversacion, planDeCupos, validarSesion,
   type ConsumoDeCupo, type DocCupo, type DocSesion,

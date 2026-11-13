@@ -13,7 +13,7 @@ se publica sin el «sí» de Andres.
 Referencias a leer antes de escribir: `Flujos/experimental/agenda-minima/` (DISENO, CONTRATO,
 plantilla, `construir.mjs`, `src/nodos/_comun.js`, y `admin/pruebas/agenda-minima-flujo.test.ts`
 con su n8n de mentira); `Flujos/experimental/venta-minima/construir.mjs` (datos del tenant,
-`@@cred:`, guardias, huérfanos, retención `none`); `Flujos/experimental/comun-sin-agente/`
+`@@cred:`, guardias, huérfanos, retención `none`); `Flujos/src/core/sin-agente/`
 (armador genérico, `src/mensajes.js` con las `cm*`, y el filtro de redacción, que vive en `Flujos/src/core/texto/filtro-redaccion.js`).
 Cantera (solo en la rama del PR 389, commit `8173a00`; se lee con `git show 8173a00:<ruta>`):
 `Flujos/src/modulos/captacion/*` y `Flujos/src/core/captacion/*`.
@@ -58,7 +58,7 @@ Cantera (solo en la rama del PR 389, commit `8173a00`; se lee con `git show 8173
 |---|---|
 | D1 | Una sola llamada al modelo por turno («Llamar al modelo»), opcional, con `responseSchema` |
 | D2 | El modelo ve los planes SIN precio. Si la respuesta está en una aclaración de la consola devuelve su id y el código copia el texto |
-| D3 | Se arma con `comun-sin-agente/construir.mjs` (importado) más un `construir.mjs` propio para datos, guardias y huérfanos |
+| D3 | Se arma con `Flujos/src/core/sin-agente/construir.mjs` (importado) más un `construir.mjs` propio para datos, guardias y huérfanos |
 | D4 | Guion y corpus viven en el archivo de datos del tenant; `construir.mjs` los inyecta como literal JS en dos líneas marcadoras |
 | D5 | Estado en clave nueva `staticData.global.captacionMinima[from]`; no se lee `conversaciones` |
 | D6 | El aviso a recepción sale como un ítem más de «Armar mensajes» por el mismo «Enviar a WhatsApp» |

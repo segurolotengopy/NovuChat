@@ -5,14 +5,14 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { injertar, type OpcionesDeEnvio } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
+import { injertar, type OpcionesDeEnvio } from '../../../../Flujos/src/core/sin-agente/envio.mjs';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 export const RAIZ = join(aqui, '../../../..');
 export const leer = (ruta: string): string => readFileSync(join(RAIZ, ruta), 'utf8');
-export const MENSAJES_JS = leer('Flujos/experimental/comun-sin-agente/src/mensajes.js');
+export const MENSAJES_JS = leer('Flujos/src/core/sin-agente/mensajes.js');
 
 export const CLIENTE = 'prueba';
 /** El `$workflow.id` del flujo de prueba (entra en la Idempotency-Key). */

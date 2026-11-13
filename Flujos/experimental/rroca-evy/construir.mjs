@@ -16,13 +16,13 @@
  * solo las del Demo A; (4) el interruptor `avisarAlPropioNumero` (solo `true`, solo en «Config base», solo en ese archivo de datos), que deja que el aviso y el botón a la recepción lleguen al MISMO teléfono de quien prueba;
  * (5) sin plantilla de aviso aprobada (PENDING: el aviso sale por texto libre), sin modo prueba, sin etapa de prueba y sin los ids de las tres imágenes (son de la WABA de Evy: esas imágenes no se envían en el Demo A).
  *
- * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código y sin los datos. El código de los nodos lo arma el armador genérico `../comun-sin-agente/construir.mjs` (importado, no copiado) con el `CONFIG` de
+ * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código y sin los datos. El código de los nodos lo arma el armador genérico `../../src/core/sin-agente/construir.mjs` (importado, no copiado) con el `CONFIG` de
  * este archivo. Lo propio de este archivo:
  *   - `@@dato:a.b.c@@` por ese dato; `@@cred:ingesta|graph|entradaPrueba|gemini` (nombre de credencial) por el del archivo de datos;
  *   - `@@medio:m-transcripcion`: el módulo común de medios (`Flujos/src/core/medios/preparar-transcripcion.js`) se INCLUYE desde su fuente, nunca se copia;
  *   - EL PROMPT: `prompts/evy.md` (versionado, sin teléfonos ni enlaces con dígitos) se pega como el paquete `prompt`; los marcadores `{{…}}` los sustituye el código EN CADA TURNO con datos de la Consola;
  *   - «Config base» se llena con `configBase` (texto, número o booleano);
- *   - LA CADENA DE ENVÍO es común (`../comun-sin-agente/src/envio.mjs`, `injertar()`), con las credenciales por NOMBRE;
+ *   - LA CADENA DE ENVÍO es común (`../../src/core/sin-agente/envio.mjs`, `injertar()`), con las credenciales por NOMBRE;
  *   - dos variantes: PRODUCCIÓN (con la entrada verificada del receptor y sin «Entrada de prueba») y PRUEBA (al revés).
  *
  * LOS DATOS son `admin/scripts/datos/rroca-evy/rroca-evy.json` (zona Tenants: solo marcadores `REEMPLAZAR_*` para identificadores, rutas e ids de medios; nunca un token, una ruta real, un teléfono ni un id de Meta).
@@ -37,17 +37,17 @@
 import { closeSync, constants, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
+import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
-import { hallazgosDelEnvioRele, injertar, MARCADOR_URL_DEL_RELE, parametrosDeMensajeRele, PREFIJO_CREDENCIAL_RELE } from '../comun-sin-agente/src/envio.mjs';
-import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO, urlDescargaRele } from '../comun-sin-agente/src/guardado.mjs';
-import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
+import { hallazgosDelEnvioRele, injertar, MARCADOR_URL_DEL_RELE, parametrosDeMensajeRele, PREFIJO_CREDENCIAL_RELE } from '../../src/core/sin-agente/envio.mjs';
+import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO, urlDescargaRele } from '../../src/core/sin-agente/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-evy/rroca-evy.json');
 export const ARCHIVO_DE_NEGOCIO = join(AQUI, '../../../admin/scripts/datos/rroca-evy/negocio-rroca-evy.json');
 export const ARCHIVO_DEL_PROMPT = join(AQUI, 'prompts/evy.md');
-// 36 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
+// 36 + los 11 de la rama común del GUARDADO de medios (Flujos/src/core/sin-agente/guardado.mjs, contrato M1↔M2 del 29/10/2026):
 // excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 // 45 + los 8 de la rama del miniCRM (`ramaCrm`, generada por el módulo `crm`; F1 del 31/10/2026): excepción de tope declarada por Andres (DP1, 31/10/2026) en docs/versiones-por-cliente.md.
 // 53 + 3 del canal `rele` (relé B9, PR 2, 03/11/2026: «Leer respuesta del relé», «¿Qué hacer con el envío?», «Esperar reintento» y el nodo «Detener por envío incierto» (I4) menos lo que la cadena de Graph ya tenía): tope 56 APROBADO por Andres el 03/11/2026 (docs/versiones-por-cliente.md).
@@ -100,7 +100,7 @@ export const CONFIG = {
   librerias: ['src/lib/ev.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
-    mensajes: ['../comun-sin-agente/src/mensajes.js'],
+    mensajes: ['../../src/core/sin-agente/mensajes.js'],
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
     avisos: ['../venta-minima/src/lib/avisos.js'],
     prompt: ['src/lib/prompt-vacio.js'],

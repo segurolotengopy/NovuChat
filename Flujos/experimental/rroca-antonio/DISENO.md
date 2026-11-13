@@ -1,7 +1,7 @@
 # El Puente de Antonio (tenant `rroca-antonio`): diseño y avance
 
 Plan completo: `ANTONIO_plan-y-guion-vs-flujo_2026-10-20.md` (§0 a §5 y §7), en `~/CLAUDE_DESCARGAS/`. Este archivo guarda lo que ya se verificó en el código y lo que cada PR agrega.
-Zona: `Flujos/experimental/rroca-antonio/` (Flujo de cliente, fuera de `fronteras.test.ts` como `chat-novuchat`). Armador: `../comun-sin-agente/construir.mjs`, importado, nunca copiado.
+Zona: `Flujos/experimental/rroca-antonio/` (Flujo de cliente, fuera de `fronteras.test.ts` como `chat-novuchat`). Armador: `Flujos/src/core/sin-agente/construir.mjs`, importado, nunca copiado.
 Base: `origin/main` `d260cca8`. Sin teléfonos completos ni datos bancarios en este archivo.
 
 ## Estado por PR
@@ -42,7 +42,7 @@ Base: `origin/main` `d260cca8`. Sin teléfonos completos ni datos bancarios en e
 
 ## Decisiones de diseño de PR-A
 
-- **Qué se incluye (no se copia):** `construir.mjs` y `injertar()` (cadena de envío) de `comun-sin-agente`; `mensajes.js` (paquete `mensajes`, solo en «Armar mensajes»); los tres módulos de `Flujos/src/core/medios/` (paquetes `m-transcripcion`, `m-imagen`, `m-no-aceptado`, leídos por el armador genérico dentro de la raíz `Flujos/`; el JSON los lleva idénticos byte a byte, `medios.test.ts`). `filtro-redaccion.js` queda declarado en el config pero **aún no se incluye en ningún nodo**: PR-B lo agrega a «Armar mensajes» junto con el modelo.
+- **Qué se incluye (no se copia):** `construir.mjs` y `injertar()` (cadena de envío) de `Flujos/src/core/sin-agente/`; `mensajes.js` (paquete `mensajes`, solo en «Armar mensajes»); los tres módulos de `Flujos/src/core/medios/` (paquetes `m-transcripcion`, `m-imagen`, `m-no-aceptado`, leídos por el armador genérico dentro de la raíz `Flujos/`; el JSON los lleva idénticos byte a byte, `medios.test.ts`). `filtro-redaccion.js` queda declarado en el config pero **aún no se incluye en ningún nodo**: PR-B lo agrega a «Armar mensajes» junto con el modelo.
 - **Qué se declara como hueco** (sin módulo común utilizable; copia de `chat-novuchat` o `venta-minima`, no de `rroca-ruben`): ver `PROPIO.md`. Opción (a) de la decisión D1 del plan.
 - **Nombres de nodo del contrato con los medios comunes:** `Normalizar entrada`, `Obtener URL del medio (general)`, `Config del negocio`. `Normalizar entrada` emite `esMedioAudio`, `esMedioVisual`, `esDocumento`, `mediaId` y `mimeType`.
 - **Medios: 12 nodos, no 9.** El plan contó 9; con la rama del PDF (`¿Es un documento?`, `Describir documento`) y `Medio no aceptado` salen 12. Producción tiene hoy 36 nodos; quedan 12 para PR-B (comprobante ~7, avisos 3 y lo que falte) bajo el tope de 48. Si no alcanza: fusionar `¿Es comprobante?` con `¿Bajar medio?` (el plan), no subir el tope.

@@ -8,11 +8,11 @@ import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { crearServidorDeSesion } from '../../Flujos/experimental/comun-sin-agente/herramientas/servidor-de-sesion.mjs';
+import { crearServidorDeSesion } from '../../Flujos/src/core/sin-agente/herramientas/servidor-de-sesion.mjs';
 import { decidirCompromiso, leerConversacion, planDeCupos, validarSesion, type DocSesion } from '../functions/src/core/turno/sesion';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const FUENTE = readFileSync(join(AQUI, '../../Flujos/experimental/comun-sin-agente/src/sesion.js'), 'utf8');
+const FUENTE = readFileSync(join(AQUI, '../../Flujos/src/core/sin-agente/sesion.js'), 'utf8');
 /** Los parámetros del módulo para el chat (`SS_CONFIG`): un OBJETO que entra al contexto como variable, nunca texto de código. */
 const CONFIG_CHAT = { espacio: 'chat-novuchat', espacioPrueba: 'chat-novuchat-prueba', venceMin: 2880, maxBytes: 15000, prefijo: 'chat', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' };
 const EXPORTA = '({ ssEjecucion, ssTelefonoDeSesion, ssCuerpoLeer, ssIdCompromiso, ssCuerpoComprometer, ssBytes, ssSesionDeLaConfig, ssResultadoDeCompromiso, ssNumeroHeader, ssEsPrueba, ssDesdeAutorizado })';
@@ -151,7 +151,7 @@ describe('ayudantes de los nodos Code (sesion.js, prefijo ss)', () => {
   it('el archivo no usa globales que el Code de n8n no tiene (ni eval ni new Function) y SÍ está incluido en los nodos del chat (PR-4a0)', () => {
     expect(FUENTE.replace(/^\s*\/\/.*$/gm, '')).not.toMatch(/\b(URL|Buffer|crypto|require|process|fetch|eval|TextEncoder)\b(?!\s*:)|new\s+Function|\bFunction\s*\(/);
     const cons = readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat/construir.mjs'), 'utf8');
-    expect(cons).toContain('comun-sin-agente/src/sesion.js'); // el chat INCLUYE el módulo común (no lo copia)
+    expect(cons).toContain('Flujos/src/core/sin-agente/sesion.js'); // el chat INCLUYE el módulo común (no lo copia)
     for (const j of ['chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json']) expect(readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat', j), 'utf8')).toContain('ssCuerpoComprometer');
   });
 

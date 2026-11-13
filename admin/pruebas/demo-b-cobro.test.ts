@@ -33,7 +33,7 @@
  * prueba en verde mientras el flujo se rompe.
  */
 import { describe, expect, it } from 'vitest';
-import { NODOS_DEL_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
+import { NODOS_DEL_GUARDADO } from '../../Flujos/src/core/sin-agente/guardado.mjs';
 import {
   type J, codigoDe, configBase, destinos, ejecutar, entradas, expresion, leerFlujo, nodo, plantilla,
 } from './lib/flujo.ts';

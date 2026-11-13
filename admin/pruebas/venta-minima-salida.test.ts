@@ -36,7 +36,7 @@ const RESUMEN = readFileSync(join(CARPETA, 'resumen-del-turno.js'), 'utf8');
 const SOLTAR = readFileSync(join(CARPETA, 'soltar-mensajes.js'), 'utf8');
 const CONFIRMAR = readFileSync(join(CARPETA, 'confirmar-envio.js'), 'utf8');
 // El estado de la conversación en el servidor (PR-4a): el módulo común `sesion` (REAL, como lo incluye construir.mjs) y las piezas REALES de `comun.js` que arman el bloque (no dobles).
-const SESION = readFileSync(join(CARPETA, '../../../comun-sin-agente/src/sesion.js'), 'utf8');
+const SESION = readFileSync(join(CARPETA, '../../../../src/core/sin-agente/sesion.js'), 'utf8');
 const COMUN_REAL = readFileSync(join(CARPETA, '../lib/comun.js'), 'utf8');
 const deComun = (nombre: string): string => {
   const f = new RegExp(`^function ${nombre}\\([\\s\\S]*?^}\\n`, 'm').exec(COMUN_REAL);

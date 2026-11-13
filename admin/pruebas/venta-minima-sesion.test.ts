@@ -21,7 +21,7 @@ import { editarJson, leer, nodoDe, verificarEnCopia } from './lib/venta-minima-m
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src');
 const COMUN = readFileSync(join(RAIZ, 'lib/comun.js'), 'utf8');
-const SESION = readFileSync(join(RAIZ, '../../comun-sin-agente/src/sesion.js'), 'utf8');
+const SESION = readFileSync(join(RAIZ, '../../../src/core/sin-agente/sesion.js'), 'utf8');
 const nodoFuente = (n: string): string => readFileSync(join(RAIZ, `nodos/${n}.js`), 'utf8');
 
 const AHORA = Date.UTC(2026, 9, 5, 14);
@@ -328,7 +328,7 @@ describe('las guardias de `construir.mjs --verificar` sobre el estado de la conv
   rompe('un nodo trae una COPIA EDITADA del módulo `sesion` (el aislamiento de la prueba anulado)', (f) => {
     const n = nodoDe(f, 'Armar mensajes');
     n.parameters['jsCode'] = String(n.parameters['jsCode']).replace('function ssDesdeAutorizado(from) {', 'function ssDesdeAutorizado(from) { return true;');
-  }, /sin traer `comun-sin-agente\/src\/sesion\.js` tal cual/);
+  }, /sin traer `Flujos\/src\/core\/sin-agente\/sesion\.js` tal cual/);
   rompe('un nodo REDEFINE un ayudante de sesión después de traer el módulo (en JS gana la última declaración)', (f) => {
     const n = nodoDe(f, 'Armar mensajes');
     n.parameters['jsCode'] = String(n.parameters['jsCode']) + '\nfunction ssDesdeAutorizado() { return true; }\n';
@@ -382,7 +382,7 @@ describe('las guardias de `construir.mjs --verificar` sobre el estado de la conv
 // =================================================================================================
 describe('lo que los nodos de PR-4a NO pueden tener', () => {
   const NODOS_NUEVOS = ['sin-estado', 'soltar-mensajes', 'confirmar-envio', 'armar-mensajes', 'resumen-del-turno', 'config-del-negocio', 'interpretar-entrada', 'decidir-turno'];
-  const FUENTES = [...NODOS_NUEVOS.map((n) => [`nodos/${n}.js`, nodoFuente(n)] as const), ['lib/comun.js', COMUN] as const, ['comun-sin-agente/src/sesion.js', SESION] as const];
+  const FUENTES = [...NODOS_NUEVOS.map((n) => [`nodos/${n}.js`, nodoFuente(n)] as const), ['lib/comun.js', COMUN] as const, ['Flujos/src/core/sin-agente/sesion.js', SESION] as const];
 
   it('sin `new Function`, `eval`, `Function(`, globales de Node (`Buffer`, `require`, `process`, `URL`, `crypto`) ni red en el código', () => {
     for (const [nombre, fuente] of FUENTES) {

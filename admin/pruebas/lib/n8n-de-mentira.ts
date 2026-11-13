@@ -101,7 +101,7 @@
 import vm from 'node:vm';
 import { ejecutar, GLOBALES_FUERA_DEL_SANDBOX, type Flujo, type J, type Nodo, type Referencias } from './flujo';
 
-import { rechazoDeExpresion } from '../../../Flujos/experimental/comun-sin-agente/src/expresiones.mjs';
+import { rechazoDeExpresion } from '../../../Flujos/src/core/sin-agente/expresiones.mjs';
 
 // ----------------------------------------------------------------------------- tipos públicos
 
