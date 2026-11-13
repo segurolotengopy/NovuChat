@@ -431,6 +431,13 @@ documento no lo duplica. En una línea por tema:
   `scripts/plataforma/aplicar-persona-puede-escribir.mjs` (seco por omisión,
   respaldo, solo si `consolaConversaciones === 'nueva'`, nunca Bellido); ningún
   navegador la escribe (`firestore.rules` no admite escribir `tenants/{id}`).
+- **`personaPuedeEnviarMedios`** (`=== true` exacto): la segunda bandera, para enviar ADJUNTOS como
+  persona (`enviarAdjuntoComoPersona`, `leerAdjuntoPersona`). **Exige la primera**: el servidor pide las dos
+  (`turno.ts`) y el script solo la enciende si `personaPuedeEscribir === true`, la consola es `nueva` y el
+  comercio está activo; apagarla no exige nada. La escribe NovuChat con
+  `scripts/plataforma/aplicar-persona-puede-enviar-medios.mjs` (seco por omisión, respaldo, auditoría
+  `persona_puede_enviar_medios_cambiada` en el mismo lote); antes de encenderla, el flujo «Salida de persona»
+  del número debe llevar la rama de adjuntos (`verificar-salida-persona.mjs --medios`, comprobación 4f).
 - **Pausa**: con `turno.responde === 'persona'`, la ingesta y `configuracionFlujo`
   devuelven `atencion: { estado: 'bloqueado' }` y aviso vacío, sin escribir
   `bloqueado` en `atencionEstado`.
