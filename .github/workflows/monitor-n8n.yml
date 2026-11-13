@@ -1,0 +1,127 @@
+# =============================================================================
+# monitor-n8n.yml — sonda externa del n8n de producción (segunda red)
+# -----------------------------------------------------------------------------
+# Política de Andres del 11/10/2026: ningún monitoreo depende de su laptop, de
+# la app de escritorio ni de una sesión abierta. Diseño: docs/produccion/
+# monitor-n8n.md (decisiones del 12/11/2026).
+#
+# Qué hace: cada 10 minutos consulta la ruta de salud de n8n desde la red de
+# GitHub. Si fallan DOS rondas seguidas (separadas 4 minutos), la corrida falla
+# y GitHub avisa por correo a quien modificó por última vez la línea `cron`. En
+# cada corrida avisa además a un chequeo de Healthchecks.io: «bien» o «falló».
+# Si este workflow deja de correr (GitHub lo desactiva tras 60 días sin
+# actividad en un repositorio público), ese chequeo calla y Healthchecks avisa.
+#
+# Qué NO es: no es el latido de n8n (ese lo envía un flujo de n8n, de adentro
+# hacia afuera) ni reemplaza a la segunda sonda de un tercero. Una sola red que
+# falla es sospecha; el incidente se declara con dos fuentes.
+#
+# Límites verificados el 12/11/2026 (docs.github.com): intervalo mínimo 5 min;
+# el `schedule` puede retrasarse o descartarse con carga alta; solo corre en la
+# rama por defecto; runners estándar gratis en repositorios públicos.
+#
+# Encendido: la variable de repositorio MONITOR_N8N_ACTIVO = "si". Sin ella el
+# job programado se omite (no falla cada 10 minutos por secretos sin cargar).
+# Secretos, en el Environment `monitor-n8n` (limitado a `main`), nunca en el
+# repositorio: MONITOR_N8N_URL (https://<host>/healthz/readiness) y
+# MONITOR_N8N_PING_URL (URL de ping del chequeo; es una URL de capacidad).
+#
+# Costo: 0 mensajes de WhatsApp; ~144 corridas al día de menos de 1 minuto
+# (hasta 6 si hay falla); 0 escrituras en la nube. La ruta de salud no crea
+# ejecuciones en n8n.
+# =============================================================================
+name: Monitor de n8n
+
+on:
+  schedule:
+    # Minutos 7, 17, 27…: fuera del inicio de la hora, donde GitHub más retrasa.
+    - cron: '7-59/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      simulacro:
+        description: 'Prueba sin tocar producción: sondea un host que no existe y NO avisa a Healthchecks'
+        type: choice
+        default: 'no'
+        options:
+          - 'no'
+          - host_inexistente
+
+permissions: {}
+
+concurrency:
+  group: monitor-n8n
+  cancel-in-progress: false
+
+jobs:
+  sonda:
+    name: La ruta de salud de n8n responde
+    if: ${{ vars.MONITOR_N8N_ACTIVO == 'si' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: monitor-n8n
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/monitor
+          sparse-checkout-cone-mode: false
+
+      - name: Sondear la ruta de salud
+        id: sonda
+        env:
+          MONITOR_URL: ${{ inputs.simulacro == 'host_inexistente' && 'https://no-existe.invalid/healthz/readiness' || secrets.MONITOR_N8N_URL }}
+          # El simulacro no espera 4 minutos entre rondas.
+          MONITOR_PAUSA_RONDA_S: ${{ inputs.simulacro == 'host_inexistente' && '5' || '240' }}
+          MONITOR_ESPERA_S: ${{ inputs.simulacro == 'host_inexistente' && '2' || '20' }}
+        run: bash scripts/monitor/sondear-n8n.sh sondear
+
+      - name: Medir el certificado
+        id: certificado
+        if: ${{ always() && inputs.simulacro != 'host_inexistente' }}
+        env:
+          MONITOR_URL: ${{ secrets.MONITOR_N8N_URL }}
+        run: bash scripts/monitor/sondear-n8n.sh certificado
+
+      - name: Avisar a Healthchecks
+        if: ${{ always() && inputs.simulacro != 'host_inexistente' }}
+        env:
+          PING_URL: ${{ secrets.MONITOR_N8N_PING_URL }}
+          RESULTADO: ${{ steps.sonda.outcome }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PING_URL" ]; then
+            echo "::warning::Falta el secreto MONITOR_N8N_PING_URL: nadie vigila que esta sonda siga corriendo."
+            exit 0
+          fi
+          # Solo el servicio de ping, por https y sin consulta: con otra forma la
+          # corrida podría llamar a cualquier servidor.
+          if ! [[ "$PING_URL" =~ ^https://hc-ping\.com/[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)?$ ]]; then
+            echo "::error::MONITOR_N8N_PING_URL no tiene la forma https://hc-ping.com/<id>."
+            exit 1
+          fi
+          if [ "$RESULTADO" = "success" ]; then DESTINO="$PING_URL"; else DESTINO="$PING_URL/fail"; fi
+          # La URL viaja por un archivo de configuración leído de stdin: no queda
+          # en la línea de comandos ni en el registro.
+          printf 'url = "%s"\n' "$DESTINO" |
+            curl --silent --show-error --output /dev/null --max-time 10 \
+              --retry 3 --retry-delay 5 --proto '=https' --config - ||
+            echo "::warning::No se pudo avisar a Healthchecks (el silencio también alerta)."
+
+      - name: Resumen
+        if: ${{ always() }}
+        env:
+          ESTADO: ${{ steps.sonda.outputs.estado }}
+          HTTP: ${{ steps.sonda.outputs.http }}
+          CERT: ${{ steps.certificado.outputs.certificado }}
+          DIAS: ${{ steps.certificado.outputs.dias }}
+          SIMULACRO: ${{ inputs.simulacro }}
+        run: |
+          {
+            echo "### Monitor de n8n"
+            echo "- estado: \`${ESTADO:-sin_datos}\` (http ${HTTP:-000})"
+            echo "- certificado: \`${CERT:-sin_datos}\` (días: ${DIAS:-?})"
+            echo "- simulacro: ${SIMULACRO:-no}"
+          } >> "$GITHUB_STEP_SUMMARY"
