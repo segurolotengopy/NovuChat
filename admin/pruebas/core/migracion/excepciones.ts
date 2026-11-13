@@ -25,11 +25,11 @@ export interface Excepcion { dueno: string; vence: string; motivo: string; desde
 
 /** Fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-11-12 + 90 = 2027-02-10). */
 export const ALTA = '2026-11-12';
-/** Cuántas excepciones hay hoy, medidas con las pruebas el 12/11/2026 (97 tras cerrar la de la redirección y aplicar el contrato sin agente el 13/11/2026). SOLO BAJA. */
-export const TOPE = 97;
+/** Cuántas excepciones hay hoy, medidas con las pruebas el 12/11/2026 (88 tras cerrar la de la redirección, aplicar el contrato sin agente y declarar dos expresiones de NIEGA_IA el 13/11/2026). SOLO BAJA. */
+export const TOPE = 88;
 /** El mismo tope desglosado por regla (la suma es `TOPE`). Cada cuenta es la medida el 12/11/2026. SOLO BAJA. */
 export const TOPE_POR_REGLA: Record<Regla, number> = {
-  'nucleo-comun': 54, 'niega-ia': 13, 'error-workflow-por-nombre': 16, 'ux-derivacion': 4, 'capacidades-comunes': 10, 'flujos-origen': 0, entregas: 0, 'expresiones-n8n': 0,
+  'nucleo-comun': 54, 'niega-ia': 4, 'error-workflow-por-nombre': 16, 'ux-derivacion': 4, 'capacidades-comunes': 10, 'flujos-origen': 0, entregas: 0, 'expresiones-n8n': 0,
 };
 
 const DUENO = 'por asignar (Principal)';
@@ -99,13 +99,7 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
     'experimental/venta-minima/venta-minima.qtaco.json': ['Carga de entrada'],
     'experimental/walisuma/walisuma.json': ['Carga de entrada', 'Puerta del turno'],
   }),
-  // M5 (`core/niega-ia.test.ts`): la red NIEGA_IA no sale de core. 13.
-  ...porRegla('niega-ia', 'Lleva una copia renombrada de NIEGA_IA, distinta de la expresión de core; se unifica con core en la etapa 1', unNodo([
-    'experimental/casa-bermejo/casa-bermejo.json', 'experimental/chat-novuchat/chat-novuchat.novuchat.json',
-    'experimental/doctoras/doctoras.rroca-emma.json', 'experimental/doctoras/doctoras.rroca-evy.json',
-    'experimental/rroca-antonio/rroca-antonio.json', 'experimental/rroca-emma/rroca-emma.json', 'experimental/rroca-evy/rroca-evy.json',
-    'experimental/rroca-ruben/rroca-ruben.json', 'experimental/walisuma/walisuma.json',
-  ], 'NIEGA_IA')),
+  // M5 (`core/niega-ia.test.ts`): la red NIEGA_IA no sale de core. 4. Las 9 copias renombradas de la expresión sobre texto normalizado ya cumplen: core declara DOS expresiones (13/11/2026).
   ...porRegla('niega-ia', 'No declara ninguna expresión NIEGA_IA en su código (búsqueda por la constante; no se descartó otro mecanismo); se avisa a la sesión dueña, y no se arregla en la etapa 0', unNodo([
     'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/captacion-minima/captacion-minima.novuchat.json',
     'experimental/venta-minima/venta-minima.qtaco-3727.json', 'experimental/venta-minima/venta-minima.qtaco.json',
