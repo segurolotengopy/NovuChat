@@ -16,6 +16,7 @@
  * Code de n8n no tiene módulos). Dos marcas más, para no repetir código que el nodo no usa:
  *   `"@@comun:nodos/<archivo>.js"`  utilidades comunes + el archivo (sin la librería de agenda);
  *   `"@@solo:nodos/<archivo>.js"`   solo el archivo.
+ *   (el nodo «Armar mensajes» lleva además `NIEGA_IA_CORE`, la regla de IDENTIDAD del filtro común del core derivada de su fuente, justo delante de su propio código: ver `conReglaDeIdentidad`.)
  *   `"@@medio:<paquete>"`           un módulo común de medios (`Flujos/src/core/medios/`), tal cual, sin edición.
  * Y la rama común del GUARDADO de medios (`../comun-sin-agente/src/guardado.mjs`, contrato M1↔M2 del 29/10/2026): se INJERTA al armar, colgada de
  * «Reportar mensaje (entrante)» y debajo de todo (corre después de la respuesta); la plantilla, el prompt y los nodos propios no se tocan.
@@ -33,6 +34,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hallazgosDelGuardado, injertarGuardado } from '../comun-sin-agente/src/guardado.mjs';
+import { reglaDeIdentidadDelCore } from './regla-identidad.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 
@@ -71,6 +73,18 @@ const MAPA_CRM = JSON.parse(readFileSync(ARCHIVO_DE_DATOS_CRM, 'utf8')).crm;
   if (errores.length) throw new Error(`admin/scripts/datos/bellido/crm.json: el mapa de columnas no es valido: ${errores.join('; ')}`);
 }
 
+// La regla de IDENTIDAD del FILTRO COMÚN (`Flujos/src/core/texto/filtro-redaccion.js`, prohibición 4: el asistente nunca niega ser una IA) se DERIVA de su fuente al armar, nunca se copia a esta carpeta:
+// se lee el bloque «negar ser una IA» de la lista del core y se inyecta como `NIEGA_IA_CORE` delante del código propio de «Armar mensajes» (`conReglaDeIdentidad`). Se incluye SOLO ese bloque, no todo el
+// filtro: el resto (pagos, «recibido», horas…) rechaza texto legítimo de una agenda. Si el core mueve o renombra el bloque, este armado FALLA a propósito (y `niega-ia.test.ts` lo cubre).
+const NIEGA_IA_CORE = reglaDeIdentidadDelCore();
+
+/** «Armar mensajes» lleva `NIEGA_IA_CORE` justo DELANTE de su propio código (después de la librería y las utilidades). */
+function conReglaDeIdentidad(codigo, marca) {
+  const propio = leer(`src/${marca.slice('@@'.length)}`).trimEnd();
+  if (!codigo.endsWith(`${propio}\n`)) throw new Error('Armar mensajes: el código armado ya no termina en armar-mensajes.js');
+  return `${codigo.slice(0, codigo.length - propio.length - 1)}${NIEGA_IA_CORE}\n\n${propio}\n`;
+}
+
 function codigoDe(marca, nodo) {
   if (marca.startsWith('@@medio:')) {
     const archivo = MEDIOS[marca.slice('@@medio:'.length)];
@@ -98,7 +112,7 @@ function armar(v) {
   flujo.connections['Armar mensajes'] = { main: [[...previoDeArmar, { node: rama.entrada, type: 'main', index: 0 }]] };
   for (const n of flujo.nodes) {
     const js = n.parameters && n.parameters.jsCode;
-    if (typeof js === 'string' && js.startsWith('@@')) n.parameters.jsCode = codigoDe(js, n.name);
+    if (typeof js === 'string' && js.startsWith('@@')) n.parameters.jsCode = n.name === 'Armar mensajes' ? conReglaDeIdentidad(codigoDe(js, n.name), js) : codigoDe(js, n.name);
     // La credencial del miniCRM la calcula el tenant; nunca sale de datos.
     for (const c of Object.values(n.credentials || {})) if (c && c.name === '@@cred:crm') c.name = CREDENCIAL_CRM(TENANT_CRM);
     // La variante de PRUEBA no escribe en ninguna planilla: el id va vacio (nunca la hoja de un cliente real).
