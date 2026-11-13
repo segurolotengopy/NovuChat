@@ -204,11 +204,12 @@ function salidaDeEntrada(codigo: string, mensaje: Record<string, unknown>): Reco
 }
 
 /** Evalúa el `jsonBody` del reporte con `$('<entrada>').first().json` = `entrada`; `string` si no es evaluable. */
-function reporteDeEntrada(cuerpo: string, entrada: Record<string, unknown>): Record<string, unknown> | string {
+function reporteDeEntrada(cuerpo: string, entrada: Record<string, unknown>, nombre: string): Record<string, unknown> | string {
   const m = /^=\{\{([\s\S]*)\}\}$/.exec(cuerpo.trim());
   if (!m) return 'el reporte no es una expresión simple';
   try {
-    const $ = () => ({ first: () => ({ json: entrada }) });
+    // Cualquier nombre distinto del nodo de entrada comprobado lanza: no se le da la entrada «a cualquiera».
+    const $ = (n: string) => { if (n !== nombre) throw new Error(`lee del nodo «${n}», no del de entrada «${nombre}»`); return { first: () => ({ json: entrada }) }; };
     const fn = vm.compileFunction(`return (${m[1]});`, ['$json', '$']) as (j: unknown, r: unknown) => string;
     return JSON.parse(fn(entrada, $)) as Record<string, unknown>;
   } catch (e) { return `el reporte no se pudo evaluar (${e instanceof Error ? e.message : String(e)})`; }
@@ -223,7 +224,10 @@ export function faltantesDelOrigenSinAgente(f: { nodes: Nodo[] }): string[] {
   const reportar = f.nodes.find((n) => n.name === 'Reportar mensaje (entrante)');
   if (!reportar) return ['no tiene «Reportar mensaje (entrante)»'];
   const cuerpo = String(reportar.parameters['jsonBody'] ?? '');
-  const nombres = [...new Set([...cuerpo.matchAll(/\$\(\s*'([^']+)'\s*\)/g)].map((m) => m[1] as string))];
+  // Las tres formas de comillas; y cada `$(` del texto tiene que ser una de las coincidencias (si no, hay una referencia que no se leyó bien).
+  const coincidencias = [...cuerpo.matchAll(/\$\(\s*(['"`])([^'"`]+)\1\s*\)/g)];
+  const nombres = [...new Set(coincidencias.map((m) => m[2] as string))];
+  if ((cuerpo.match(/\$\s*\(/g) ?? []).length !== coincidencias.length) return ['el reporte tiene una referencia $(...) que no se puede leer (nombre dinámico o sin comillas)'];
   if (/\$node|\$input|\$items|\$env|\$vars|\$execution|\$workflow|\$now|\$today/.test(cuerpo)) return ['el reporte usa variables de n8n que el arnés no puede simular'];
   // Un `$json` (solo o mezclado con `$('X')`) lee de OTRO sitio que el nodo de entrada comprobado: no se puede asegurar de dónde sale el origen.
   if (/\$json\b/.test(cuerpo)) return ['el reporte usa $json: no se puede comprobar de qué nodo sale el origen'];
@@ -239,9 +243,9 @@ export function faltantesDelOrigenSinAgente(f: { nodes: Nodo[] }): string[] {
   const d = directo as Record<string, unknown>;
   if (a['origen'] !== 'anuncio') falta.push(`«${entrada.name}» no marca anuncio cuando Meta manda referral (marca ${JSON.stringify(a['origen'])})`);
   if (d['origen'] !== 'directo') falta.push(`«${entrada.name}» no marca directo cuando no lo manda (marca ${JSON.stringify(d['origen'])})`);
-  const rA = reporteDeEntrada(cuerpo, a);
-  const rD = reporteDeEntrada(cuerpo, d);
-  const rS = reporteDeEntrada(cuerpo, { from: '59170000000', tipo: 'text', userInput: 'hola' });
+  const rA = reporteDeEntrada(cuerpo, a, nombres[0] as string);
+  const rD = reporteDeEntrada(cuerpo, d, nombres[0] as string);
+  const rS = reporteDeEntrada(cuerpo, { from: '59170000000', tipo: 'text', userInput: 'hola' }, nombres[0] as string);
   for (const x of [rA, rD, rS]) if (typeof x === 'string') return [...falta, x];
   const [ra, rd, rs] = [rA, rD, rS] as Record<string, unknown>[];
   if (ra['origen'] !== 'anuncio' || rd['origen'] !== 'directo') falta.push('el origen no viaja al reporte');
@@ -263,7 +267,8 @@ describe('Flujos de origen, lista única: cubierto por la lista de arriba o con 
     const conAgente = (a: string): boolean => flujo(a).nodes.some((n) => n.type === '@n8n/n8n-nodes-langchain.agent');
     const cumple = (a: string): boolean => FLUJOS.includes(a) || (conAgente(a) ? cumpleElOrigen(a) : cumpleElOrigenSinAgente(flujo(a)));
     const hoy = new Map(atienden.map((a) => [a, cumple(a) ? [] : ['origen']]));
-    expect(problemasDeRegla('flujos-origen', hoy)).toEqual([]);
+    const detalle = atienden.filter((a) => !cumple(a) && !conAgente(a)).map((a) => `${a}: ${faltantesDelOrigenSinAgente(flujo(a)).join('; ')}`).join('\n');
+    expect(problemasDeRegla('flujos-origen', hoy), detalle).toEqual([]);
   });
 
   it('contraprueba: un flujo sin el nodo «Normalizar entrada» (o sin «Reportar mensaje (entrante)») no cumple', () => {
@@ -320,6 +325,16 @@ describe('Flujos de origen, lista única: cubierto por la lista de arriba o con 
     it('un reporte con `$json` (solo o mezclado con `$(...)`) no se puede comprobar y falla', () => {
       expect(faltantesDelOrigenSinAgente(sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $json.origen || 'directo' }) }}")).join('\n')).toMatch(/usa \$json/);
       expect(faltantesDelOrigenSinAgente(sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $('Entrada').first().json.origen || $json.origen || 'directo' }) }}")).join('\n')).toMatch(/usa \$json/);
+    });
+
+    it('un reporte con `$(\'Entrada\')` y `$("Otro")`, o con comillas invertidas, no se puede dar por cumplido', () => {
+      const dobles = sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $('Entrada').first().json.origen || 'directo', x: $(\"Otro\").first().json.x }) }}");
+      expect(faltantesDelOrigenSinAgente(dobles).join('\n')).toMatch(/no lee de UN solo nodo de entrada/);
+      const invertidas = sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $(`Entrada`).first().json.origen || 'directo', x: $(`Otro`).first().json.x }) }}");
+      expect(faltantesDelOrigenSinAgente(invertidas).join('\n')).toMatch(/no lee de UN solo nodo de entrada/);
+      const dinamica = sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $('Entrada').first().json.origen || 'directo', x: $(nombre).first().json.x }) }}");
+      expect(faltantesDelOrigenSinAgente(dinamica).join('\n')).toMatch(/no se puede leer/);
+      expect(faltantesDelOrigenSinAgente(sintetico(CODIGO_BUENO, "={{ JSON.stringify({ origen: $(`Entrada`).first().json.origen || 'directo' }) }}"))).toEqual([]);
     });
 
     it('un reporte que lee de dos nodos, o de un nodo que no es Code, no se puede comprobar y falla', () => {

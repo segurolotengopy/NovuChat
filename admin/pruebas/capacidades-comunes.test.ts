@@ -218,6 +218,8 @@ const TERMINALES_SIN_AGENTE: Record<string, string> = {
   'Preparar imagen': 'preparar-imagen.js',
   'Medio no aceptado': 'medio-no-aceptado.js',
 };
+/** Los nodos propios de la rama de medios sin agente (además de los terminales): una sola lista para «requeridos» y «esperados». */
+const NODOS_DE_LA_RAMA_SIN_AGENTE = ['¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', 'Transcribir audio', '¿Es un documento?', 'Describir imagen', 'Describir documento'];
 const DESTINO_DE_NODO_SIN_AGENTE = {
   'Transcribir audio': ['Preparar transcripción'], 'Describir imagen': ['Preparar imagen'], 'Describir documento': ['Preparar imagen'],
 } as const;
@@ -232,8 +234,7 @@ export const esSinAgenteQueAtiende = (f: Flujo): boolean => atiendeCliente(f) &&
 export function faltantesDeMediosSinAgente(f: Flujo, srcCore: string = SRC_CORE): string[] {
   const falta: string[] = [];
   const porNombre = new Map(f.nodes.map((n) => [n.name, n]));
-  const requeridos = ['¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', 'Transcribir audio', '¿Es un documento?', 'Describir imagen', 'Describir documento',
-    ...Object.keys(TERMINALES_SIN_AGENTE)];
+  const requeridos = [...NODOS_DE_LA_RAMA_SIN_AGENTE, ...Object.keys(TERMINALES_SIN_AGENTE)];
   for (const n of requeridos) if (!porNombre.has(n)) falta.push(`no tiene el nodo «${n}»`);
   if (falta.length) return falta;
 
@@ -274,7 +275,7 @@ export function faltantesDeMediosSinAgente(f: Flujo, srcCore: string = SRC_CORE)
 
   // El binario no pasa de los terminales y la rama no envía nada: desde «¿Tamaño aceptable?», cortando en los terminales, solo hay nodos de la rama.
   const terminales = new Set(Object.keys(TERMINALES_SIN_AGENTE));
-  const esperados = new Set(['¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', 'Transcribir audio', '¿Es un documento?', 'Describir imagen', 'Describir documento', ...terminales]);
+  const esperados = new Set([...NODOS_DE_LA_RAMA_SIN_AGENTE, ...terminales]);
   const rama = alcanzables(f, ['¿Tamaño aceptable?'], (n) => terminales.has(n));
   for (const n of rama) if (!esperados.has(n)) falta.push(`desde «¿Tamaño aceptable?» se llega a «${n}» sin pasar por un «Preparar …» ni «Medio no aceptado»`);
   for (const n of rama) {
@@ -365,7 +366,17 @@ describe('Sin agente: la prueba no es vacía, un flujo con la rama rota FALLA', 
     expect(faltantesDeMediosSinAgente(f).length).toBeGreaterThan(0);
   });
 
-  it('si la rama envía algo (un nodo de WhatsApp de mensaje en la rama), falla', () => {
+  it('si un nodo de WhatsApp de MENSAJE entra en la rama, falla; uno de medios (lectura) no', () => {
+    const f = base();
+    const n = f.nodes.find((x) => x.name === 'Describir imagen')!;
+    n.type = 'n8n-nodes-base.whatsApp';
+    n.parameters = { resource: 'message' };
+    expect(faltantesDeMediosSinAgente(f).join('\n')).toMatch(/«Describir imagen», en la rama de medios, envía algo/);
+    n.parameters = { resource: 'media' };
+    expect(faltantesDeMediosSinAgente(f).join('\n')).not.toMatch(/«Describir imagen», en la rama de medios, envía algo/);
+  });
+
+  it('si un HTTP de la rama deja de ser GET (envía algo), falla', () => {
     const f = base();
     f.nodes.find((n) => n.name === 'Descargar medio')!.parameters['method'] = 'POST';
     expect(faltantesDeMediosSinAgente(f).join('\n')).toMatch(/«Descargar medio», en la rama de medios, envía algo/);
@@ -500,7 +511,8 @@ describe('Capacidades comunes, lista única: cubierto por la comprobación o con
       return (esSinAgenteQueAtiende(f) ? faltantesDeMediosSinAgente(f) : faltantesDeMedios(f)).length === 0;
     };
     const hoy = new Map(atienden.map((a) => [a, cumple(a) ? [] : ['rama de medios']]));
-    expect(problemasDeRegla('capacidades-comunes', hoy)).toEqual([]);
+    const detalle = atienden.filter((a) => !cumple(a)).map((a) => `${a}: ${(esSinAgenteQueAtiende(leerFlujo(a)) ? faltantesDeMediosSinAgente(leerFlujo(a)) : faltantesDeMedios(leerFlujo(a))).join('; ')}`).join('\n');
+    expect(problemasDeRegla('capacidades-comunes', hoy), detalle).toEqual([]);
   });
 
   it('el conjunto que atiende, medido aparte por el texto del JSON, es exactamente el que cubren la comprobación con agente, la de sin agente o una excepción', () => {
