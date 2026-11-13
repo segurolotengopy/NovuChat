@@ -54,7 +54,7 @@ function mensajeConBoton(numero, cuerpo, botonTexto, saludo, evento) {
     agregar('paciente', mEnlace(cuerpo, botonTexto, url), cuerpo, cuerpo + '\n\nEscríbele aquí: ' + url, { tipoReporte: 'interactive', evento: evento });
   } else {
     // Sin número (o el número es el del propio paciente): no hay botón, y el texto no lo nombra.
-    const sinBoton = String(cuerpo || '').replace(/\s*T[oó]ca(le)? el bot[oó]n[^.!?]*[.!?]?/gi, '')
+    const sinBoton = String(cuerpo || '').replace(/\s*Si prefieres hablar con una persona del consultorio, toca el bot[oó]n[^.!?]*[.!?]?/gi, '').replace(/\s*T[oó]ca(le)? el bot[oó]n[^.!?]*[.!?]?/gi, '')
       .replace(/\s*tocando el bot[oó]n/gi, '').replace(/\s+([.,])/g, '$1').trim() || 'Eso lo coordina recepción.';
     agregar('paciente', mTexto(sinBoton), sinBoton, sinBoton, { tipoReporte: 'text', evento: evento });
   }
@@ -313,7 +313,10 @@ switch (plan) {
     // seguir o pasar con recepción (el botón); si no hay número de recepción distinto del paciente, el botón se omite y el texto no lo nombra (`mensajeConBoton`). 0 mensajes agregados: reemplaza el que redactaba el modelo.
     if (params.clave === 'identidad_ia') {
       const de = String(cfg.nombreNegocio || '').split(/\s+[—–-]\s+/)[0].trim();
-      mensajeConBoton(rec, 'Soy la asistente virtual' + (de ? ' de ' + de : '') + ', una inteligencia artificial (IA). Puedo ayudarte a agendar, cancelar o mover una cita y responder dudas sencillas. Si prefieres hablar con una persona del consultorio, tócale el botón y le escribes directo. ¿Seguimos?',
+      const quien = 'Soy la asistente virtual' + (de ? ' de ' + de : '') + ', una inteligencia artificial (IA). Puedo ayudarte a agendar, cancelar o mover una cita y responder dudas sencillas. ¿Seguimos?';
+      if (params.conMenu) { menu(quien); break; }   // primer mensaje: sale con el menú, como las demás respuestas fijas (sigue siendo UN mensaje)
+      // La oferta de recepción es su propia frase: solo existe si hay botón (número de recepción distinto del paciente).
+      mensajeConBoton(rec, quien + ' Si prefieres hablar con una persona del consultorio, toca el botón y le escribes directo.',
         'Escribir a recepción', 'Hola, escribo desde el asistente de ' + nombreNegocio + '.');
       break;
     }
