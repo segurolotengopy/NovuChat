@@ -40,6 +40,7 @@ import { injertarCrm, rutasPaquetesCrm, validarMapaCrm } from '../comun-sin-agen
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const DATOS = join(AQUI, '../../../admin/scripts/datos/chat-novuchat');
+const RUTA_ADAPTADOR_CRM = join(AQUI, '..', '..', 'src', 'modulos', 'captacion', 'crm-captacion.js');
 
 /** El config del armador genérico, sin las variantes (esas salen de los archivos de datos). */
 export const CONFIG_BASE = {
@@ -53,7 +54,9 @@ export const CONFIG_BASE = {
     tipeo: ['../../src/core/texto/tipeo.js'],
     // El estado de la conversación en el servidor es un MÓDULO COMÚN (PR-4a0): se INCLUYE, no se copia. Sus parámetros (`SS_CONFIG`) los declara `src/nodos/_registro.js`.
     sesion: ['../comun-sin-agente/src/sesion.js'],
-    ...Object.fromEntries(Object.entries(rutasPaquetesCrm(join(AQUI, '..', '..', 'src', 'modulos', 'captacion', 'crm-captacion.js'))).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
+    // Reclamo 62: la relectura antes de agregar una fila (crm.js + su nodo). Solo el chat la usa por ahora; el resto de los flujos no cambia.
+    'crm-releer': ['../../src/modulos/crm/crm.js', relative(AQUI, RUTA_ADAPTADOR_CRM), '../../src/modulos/crm/nodo-releer-antes-de-agregar.js'], // (el MISMO adaptador que «Decidir fila»)
+    ...Object.fromEntries(Object.entries(rutasPaquetesCrm(RUTA_ADAPTADOR_CRM)).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
   },
 };
 
@@ -165,7 +168,7 @@ const CLAVES_CIERRES = ['rubro', 'precios', 'equipo', 'costoMeta', 'integracion'
 const CLAVES_RESPUESTAS = ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad', 'numeroActual', 'coexistencia'];
 const CLAVES_RESPALDOS = ['multiple', 'otroElegido', 'otroLibre', 'fuera', 'equipo', 'generico', 'identidad', 'cortesia', 'datosAmbos', 'datosSoloNombre', 'datosSoloEmpresa', 'datosNinguno', 'empresa', 'complemento', 'noDocumentado', 'sinDato'];
 const CLAVES_TEXTOS = ['saludo', 'listaBoton', 'listaTitulo', 'planesIntro', 'planesIntroRepite', 'planesIntroTopes', 'planesSinPrecios', 'traspasoConPregunta', 'traspasoSinPregunta',
-  'traspasoRepite', 'traspasoSinRecepcion', 'recepcion', 'botonTraspaso', 'saludoWa', 'estadoAviso', 'falla', 'medioIlegible', 'invitaOtroRubro', 'planesAgotado'];
+  'traspasoRepite', 'traspasoSinRecepcion', 'recepcion', 'botonTraspaso', 'saludoWa', 'estadoAviso', 'falla', 'medioIlegible', 'invitaOtroRubro', 'invitaRubro', 'listaPedida', 'planesAgotado'];
 const DESCARTES = ['numero_equivocado', 'vende_o_busca_trabajo', 'sin_negocio', 'spam_o_prueba'];
 
 // EL ENSAYO EN EL DEMO A (`ensayo-demo-a.json` → `chat-novuchat.ensayo-demo-a.json`): el mismo flujo, con el miniCRM CONECTADO, pero contra una HOJA DE PRUEBA y con los marcadores PROPIOS del ensayo.

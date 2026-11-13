@@ -302,6 +302,8 @@
       "medioIlegible": "No pude leer lo que me enviaste 😕. ¿Me cuentas con un mensaje de texto de qué rubro es tu negocio?",
       "sitioFrase": "Si quieres ver más detalle, también lo encuentras en {sitio} 🌐",
       "invitaOtroRubro": "Si tienes otro negocio, cuéntame de qué rubro es y te explico cómo te ayudamos 😊",
+      "invitaRubro": "Para darte la info exacta, elige de qué rubro es tu negocio 😊",
+      "listaPedida": "¡Claro! 😊 Estos son los rubros para los que tenemos asistentes. Elige el tuyo y te cuento cómo te ayudamos.",
       "planesAgotado": "Ya te compartí el detalle de los planes 😊. ¿Te gustaría hablar con alguien de nuestro equipo para elegir el ideal para ti? 🤝"
     },
     "pedirDatos": {

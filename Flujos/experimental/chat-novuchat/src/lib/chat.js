@@ -767,6 +767,13 @@ function chEsSaludoInicial(t) {
   const p = n.split(' ');
   return p.length <= 7 && p.every((w) => CH_SALUDOS.has(w) || CH_INFO_PALABRAS.has(w)) && p.some((w) => (CH_SALUDOS.has(w) && w !== 'ustedes' && w !== 'usted' && w !== 'todos' && w !== 'todas') || w === 'info' || w === 'informacion');
 }
+// «¿me das tu listado?» / «la lista»: quien ya conversó pide ver las opciones. Es ambiguo («¿de qué?»), así que se le muestra la lista de rubros (opciones tocables), nunca «no tengo ese dato».
+const CH_VERBO_LISTA = '(?:das|pasas|mandas|envias|muestras|compartes|puedes (?:dar|pasar|mandar|enviar|mostrar)(?:me)?|podrias (?:dar|pasar|mandar|enviar|mostrar)(?:me)?|tienes|hay|quiero ver|quisiera ver)';
+const CH_COLA_LISTA = '(?: (?:completo|completa|de rubros|de negocios|de opciones))?(?: por favor)?$';
+// «listado» solo basta; «lista» exige un verbo («lista» a secas es «ya estoy / ok» en Bolivia, y «la lista» puede ser el nombre de un negocio).
+const CH_PIDE_LISTADO = new RegExp('^(?:me )?(?:' + CH_VERBO_LISTA + ' )?(?:(?:tu|su|el|la|un|una) )?listado' + CH_COLA_LISTA);
+const CH_PIDE_LISTA_CON_VERBO = new RegExp('^(?:me )?' + CH_VERBO_LISTA + ' (?:(?:tu|su|el|la|un|una) )?lista' + CH_COLA_LISTA);
+function chPideLista(t) { const n = chNorm(t); return CH_PIDE_LISTADO.test(n) || CH_PIDE_LISTA_CON_VERBO.test(n); }
 // Un «sí» corto (con signos, emojis, tildes o mayúsculas) y nada más: «sí, pero cuánto cuesta», «no» y «no gracias» NO lo son (otra palabra o una pregunta).
 const CH_AFIRMA_PALABRAS = new Set('si sii sip sep yes yep claro que ok okey okay dale de acuerdo por favor porfa porfavor quiero me gustaria interesa bueno perfecto listo ya buena idea esta bien adelante hagamoslo vamos va vale obvio supuesto desde luego exacto asi es correcto genial excelente gracias pues entonces'.split(' '));
 const CH_AFIRMA_NUCLEO = /\b(?:si|sii|sip|sep|yes|yep|claro|ok|okey|okay|dale|acuerdo|quiero|gustaria|interesa|bueno|perfecto|listo|ya|idea|bien|adelante|hagamoslo|vamos|va|vale|obvio|supuesto|exacto|correcto|genial|excelente|porfa|porfavor|por favor)\b/;
@@ -912,6 +919,7 @@ function chDecidir(a) {
     if (f.planesPendientes === true) return planes(false);
   }
   if (f.historial.length === 0 && ev.length > 0 && ev.every((e) => e.k === 'texto' && chEsSaludoInicial(e.c))) { plan.ruta = 'lista'; return plan; }
+  if (f.historial.length > 0 && f.preguntaDatos !== true && ev.length > 0 && ev.every((e) => e.k === 'texto' && chPideLista(e.c))) { plan.ruta = 'lista'; plan.listaPedida = true; return plan; }
   plan.contexto = chContexto({ eventos: ev, ficha: f, cfg: cfg });
   // Primer contacto con «quiero más información»: UN mensaje de lista con el pitch fijo dentro (sin modelo); los botones llegan en la respuesta al rubro.
   if (plan.contexto === 'abierta' && f.historial.length === 0 && chPlano(f.rubro) === '' && ev.every((e) => e.k === 'texto' && (chEsSaludoInicial(e.c) || chSoloPideInfo(e.c)))) { plan.ruta = 'lista'; plan.pitch = true; plan.contexto = ''; }
@@ -1427,8 +1435,11 @@ function chSituacion(a) {
   const ev = p.ruta === 'modelo' ? chTexto(r.origen === 'modelo' ? r.contexto : r.evento) : '';
   const rub = chTexto(p.rubroElegido || r.rubroId || f.rubro);
   const modeloOfreceEq = p.ruta === 'modelo' && r.origen === 'modelo' && chOfreceAlEquipo(r.texto);
+  // «Quedó anotado» sin pregunta: el cliente dio su nombre y su negocio y el mensaje que sale NO pide nada. Un chat de captación nunca se queda callado: lleva el siguiente paso (la lista de rubros si aún no eligió uno; si ya lo había, los botones).
+  const lec = r.lectura || {};
+  const datosSinSiguiente = ev === 'datos' && !/[?¿]/.test(chTexto(r.texto)) && chPlano((lec.nombre || f.nombre) || '') !== '' && chPlano((lec.empresa || f.empresa) || '') !== '';
   return {
-    ruta: p.ruta, fijo: chTexto(p.fijo), ev, aMedida: p.aMedida === true, sinPlanes: p.sinPlanes === true,
+    ruta: p.ruta, datosSinSiguiente: datosSinSiguiente, sinRubro: rub === '', fijo: chTexto(p.fijo), ev, aMedida: p.aMedida === true, sinPlanes: p.sinPlanes === true,
     interes: CH_INTERES.test(t) || textos.some((c) => chPideCostoDelServicio(c)),
     acabadas: CH_FIN_PREGUNTAS.test(t) || (f.explicado === true && f.respondidas >= 2),
     // declina = el cliente propone una función no documentada para su rubro, o el modelo no la puede resolver (declina o la inventó)
@@ -1451,6 +1462,8 @@ const CH_TABLA = [
   { id: 'declina-ofrece-equipo', cuando: (s) => s.declina && s.modeloOfreceEq && !['identidad', 'cortesia'].includes(s.ev), planes: false, equipo: true, nota: 'El modelo no pudo resolver y su pregunta final ofrece hablar con el equipo: se conserva esa oferta con su botón (aunque la pregunta traiga una palabra de interés).' },
   { id: 'declina', cuando: (s) => s.declina && !['identidad', 'cortesia'].includes(s.ev), planes: 'interes', equipo: true, nota: 'El cliente propone una función no documentada para su rubro, o el modelo declina: nunca un callejón sin salida (con «Ver planes» solo si hay interés).' },
   { id: 'rubro', cuando: (s) => s.ev === 'rubro' || s.ev === 'multiple', planes: true, equipo: false, nota: 'Eligió rubro: es interés; se ofrece «Ver planes» y nada más.' },
+  { id: 'datos-lista', cuando: (s) => s.datosSinSiguiente && s.sinRubro && !s.interes, planes: false, equipo: false, lista: true, nota: 'Dio su nombre y su negocio y no se le pide nada más: la respuesta lleva la lista de rubros (el siguiente paso), nunca un «Quedó anotado» solo.' },
+  { id: 'datos-siguiente', cuando: (s) => s.datosSinSiguiente && !s.sinRubro && !s.interes, planes: true, equipo: false, nota: 'Dio su nombre y su negocio, ya tenía rubro y no se le pide nada más: «Ver planes» (la compuerta lo quita si ya lo pulsó o lo vio); el equipo no se ofrece junto a los planes.' },
   { id: 'sin-oferta', cuando: (s) => CH_SIN_OFERTA.includes(s.ev) && !(s.ev === 'datos' && s.interes), planes: false, equipo: false, nota: 'Pitch, identidad, cortesía, empresa, medio ilegible, respuesta al nombre (si además pregunta algo con interés, se contesta como ordinaria), fuera de contexto, descarte: sin botones ni invitaciones.' },
   { id: 'ordinaria-acabadas', cuando: (s) => s.aMedida || s.acabadas, planes: 'interes', equipo: true, nota: 'Respuesta ordinaria al acabarse las preguntas («no tengo más dudas», «quiero empezar», tercera respuesta seguida) o a medida.' },
   { id: 'ordinaria-interes', cuando: (s) => s.interes, planes: true, equipo: false, nota: 'Respuesta ordinaria a una pregunta de interés (costos, qué incluye, cómo funciona, instalación): se ofrece «Ver planes».' },
@@ -1462,7 +1475,9 @@ function chBotonesDe(s) {
   const v = (x) => x === true || (x === 'interes' && s.interes === true) || (x === 'sinPlanes' && s.sinPlanes === true);
   const planes = v(fila.planes) && !s.planesTocado && !s.planesVistos;
   const equipo = v(fila.equipo) && !s.equipoTocado;
-  return { fila: fila.id, planes: planes, equipo: equipo, ordinaria: fila.id.startsWith('ordinaria'), ofrecio: planes && equipo ? 'ambas' : (planes ? 'planes' : (equipo ? 'equipo' : 'ninguna')) };
+  // Si la compuerta quita «Ver planes» a quien acaba de dar sus datos, no queda callado: sale la lista de rubros (invita a otro negocio).
+  const lista = fila.lista === true || (fila.id === 'datos-siguiente' && !planes);
+  return { fila: fila.id, lista: lista, planes: planes, equipo: equipo, ordinaria: fila.id.startsWith('ordinaria'), ofrecio: planes && equipo ? 'ambas' : (planes ? 'planes' : (equipo ? 'equipo' : 'ninguna')) };
 }
 // Texto y botones coherentes: se quita lo que el mensaje ofrece y no lleva (la oferta doble se queda con su mitad con botón; «los botones de abajo» sin botones; la revisión «por alguien de nuestro equipo» sin el botón sería una promesa sin mecanismo) y se agrega la invitación de lo que sí lleva y el texto no invita. Lo escribe el modelo o el dato: el prompt no es una barrera.
 const CH_OFRECE_EQ = /\bhablar(?:lo)? con (?:alguien|una persona|un asesor|(?:nuestro|el) equipo)|\bnuestro equipo\b|\balguien (?:de nuestro|del) equipo\b|\bcon (?:el|nuestro) equipo\b|\b(?:lo vea|lo revise|te atienda|te ayude) (?:una persona|un asesor)\b/i;
@@ -1492,9 +1507,10 @@ function chRedondear(texto, ids, cfg) {
 }
 function chFilasDeRubros(cfg) { return (chDatos(cfg).rubros || []).slice(0, 10).map((r) => ({ id: 'rubro:' + r.id, title: r.titulo, description: r.descripcion })); }
 // El mensaje con la LISTA de rubros y la invitación a explorar otro negocio (nunca un callejón sin salida tras el traspaso). El cuerpo (la respuesta) se recorta, nunca la invitación.
-function chListaInvitacion(cuerpo, cfg, evento) {
+// `clave`: qué invitación lleva debajo (`invitaOtroRubro` tras el traspaso; `invitaRubro` cuando el cliente acaba de dar su nombre y su negocio y todavía no eligió rubro: nunca un «Quedó anotado» sin el siguiente paso).
+function chListaInvitacion(cuerpo, cfg, evento, clave) {
   const tx = chDatos(cfg).textos || {};
-  const invita = chEmMensaje(chSustituir(tx.invitaOtroRubro, cfg), cfg);
+  const invita = chEmMensaje(chSustituir(tx[clave === 'invitaRubro' ? 'invitaRubro' : 'invitaOtroRubro'], cfg), cfg);
   const maximo = 1000 - invita.length - 2;
   let base = chRedondear(cuerpo, [], null); // (tras el traspaso no hay botones: ninguna oración ofrece al equipo, los planes ni «el botón»)
   if (base.length > maximo) {
@@ -1512,7 +1528,7 @@ function chListaInvitacion(cuerpo, cfg, evento) {
 function chCliente(texto, cfg, evento, est) {
   const ids = (est && est.botones) || [];
   const cuerpo = chEmMensaje(est && est.lista === true ? chLineas(texto) : chRedondear(texto, ids, cfg), cfg);
-  if (est && est.lista === true) return chListaInvitacion(cuerpo, cfg, evento);
+  if (est && est.lista === true) return chListaInvitacion(cuerpo, cfg, evento, est.invitacion);
   const botones = [CH_BOTON_PLANES, CH_BOTON_EQUIPO].filter((b) => ids.includes(b.id));
   if (!botones.length) return cmMensaje('cliente', cmTexto(cuerpo), cuerpo, cuerpo, { tipoReporte: 'text', evento: evento, botones: [] });
   return cmMensaje('cliente', cmBotones(cuerpo, botones), cuerpo, cuerpo + '\n' + (botones.length === 2 ? CH_RESPALDO_BOTONES : (botones[0].id === 'planes' ? CH_RESPALDO_PLANES : CH_RESPALDO_UN_BOTON)), { tipoReporte: 'interactive', evento: evento, botones: botones.map((b) => b.id) });
@@ -1542,7 +1558,7 @@ function chClienteConSitio(texto, cfg, evento, est, f, quiere) {
   const base = chCliente(texto, cfg, evento, est);
   if (quiere !== true) return base;
   const tx = chDatos(cfg).textos || {};
-  const reserva = est && est.lista === true ? 2 + chEmMensaje(chSustituir(tx.invitaOtroRubro, cfg), cfg).length : 0;
+  const reserva = est && est.lista === true ? 2 + chEmMensaje(chSustituir(tx[est.invitacion === 'invitaRubro' ? 'invitaRubro' : 'invitaOtroRubro'], cfg), cfg).length : 0;
   const r = chInsertarSitio(cfg, f, texto, reserva);
   if (!r.puso) return base;
   const m = chCliente(r.texto, cfg, evento, est);
@@ -1551,10 +1567,11 @@ function chClienteConSitio(texto, cfg, evento, est, f, quiere) {
   return m;
 }
 // El primer mensaje: el saludo y la lista de rubros (los 7, cada uno con su descripción).
-function chLista(cfg, pitch) {
+// `pedida`: el cliente ya conversó y pide «el listado» (no es un saludo): la misma lista con su propio texto, sin volver a saludar.
+function chLista(cfg, pitch, pedida) {
   const d = chDatos(cfg);
   const ab = (d.respaldos || {}).abierta || {};
-  const cuerpo = chEmMensaje(chSustituir(pitch === true ? chTexto(ab.pitch) + '\n\n' + chTexto(ab.preguntaLista) : (d.textos || {}).saludo, cfg), cfg);
+  const cuerpo = chEmMensaje(chSustituir(pitch === true ? chTexto(ab.pitch) + '\n\n' + chTexto(ab.preguntaLista) : (pedida === true && chTexto((d.textos || {}).listaPedida) !== '' ? (d.textos || {}).listaPedida : (d.textos || {}).saludo), cfg), cfg);
   const filas = chFilasDeRubros(cfg);
   const payload = cmLista(cuerpo, (d.textos || {}).listaBoton || 'Ver rubros', (d.textos || {}).listaTitulo || 'Rubros', filas);
   const respaldo = cuerpo + '\nPor ejemplo: ' + filas.map((f) => f.title).join(', ') + '.';
@@ -1795,12 +1812,15 @@ function chProspecto(f, cfg, entrada) {
   if (!telefono || f.soporte === true) return null;
   const base = f.primero && typeof f.primero === 'object' ? f.primero : { rubro: f.rubro, empresa: f.empresa };
   const r = chRubroDe(cfg, base.rubro);
+  const dado = chNombreDePersonaValido(f.nombre) || chNombreDePila(f.nombre);
   const h = f.hechos;
   const otros = (f.primero ? f.otros.concat([{ e: f.empresa, r: f.rubro }]) : []).filter((o) => o && (o.e || o.r)).slice(-3)
     .map((o) => ({ empresa: chPlano(o.e, 60), rubro: chPlano((chRubroDe(cfg, o.r) || {}).nombre || '', 60) }));
   const p = {
     telefono: telefono,
-    nombre: chPlano(chNombreDePersonaValido(f.nombre) || chNombreDePila(f.nombre) || chNombreDelPerfil(x.nombrePerfil), 200),
+    nombre: chPlano(dado || chNombreDelPerfil(x.nombrePerfil), 200),
+    // El módulo miniCRM no pisa con el nombre del PERFIL un nombre que la fila ya tiene (reclamo 62): hay que decirle de dónde vino.
+    nombreDePerfil: dado === '',
     empresa: chPlano(base.empresa, 200),
     rubro: chPlano(r ? r.nombre : '', 200),
     flujos: chPlano(r ? r.flujo : '', 200),
