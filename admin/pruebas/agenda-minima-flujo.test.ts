@@ -3844,7 +3844,7 @@ describe('Agenda mínima v0: el asistente nunca niega ser una IA (prohibición 4
     expect(t.enviados[0]!.cuerpo).toBe(HORARIOS);
   });
 
-  const PREGUNTAS = ['¿Eres una persona?', 'Eres un bot?', 'eres una IA', '¿Hablo con un humano?', 'estoy hablando con un robot?', '¿Eres de carne y hueso?', '¿eres real?', 'esto es un bot?', '¿Es usted una persona?', '¿Usted es un robot?', '¿es un bot?', '¿Me atiende un humano?', '¿Me responde una persona?', '¿esto es automático?', '¿hablo con alguien real?'];
+  const PREGUNTAS = ['¿Eres una persona?', 'Eres un bot?', 'eres una IA', '¿Hablo con un humano?', 'estoy hablando con un robot?', '¿Eres de carne y hueso?', '¿eres real?', 'esto es un bot?', '¿Es usted una persona?', '¿Usted es un robot?', '¿es un bot?', '¿Me atiende un humano?', '¿Me responde una persona?', '¿esto es automático?', '¿hablo con alguien real?', 'Buenas, ¿es un bot?', '¿es la IA?'];
   for (const q of PREGUNTAS) {
     it(`«${q}» se contesta con el texto FIJO (asistente virtual con IA + botón a recepción), sin llamar al modelo`, () => {
       const m = mundo({ eventos: [] });
@@ -3861,7 +3861,7 @@ describe('Agenda mínima v0: el asistente nunca niega ser una IA (prohibición 4
     });
   }
   it('NIEGA: una pregunta que NO es de identidad no recibe el texto fijo («¿es real la tarifa?», «¿eres el doctor?»)', () => {
-    for (const q of ['¿Es real la tarifa?', '¿Eres el doctor?', '¿Hay una persona en recepción?', 'Mi abuela es una persona mayor, ¿puede venir?', '¿Sos el programa de vacunas?', '¿Eres la persona encargada?', '¿El doctor atiende en persona?']) {
+    for (const q of ['¿Es real la tarifa?', '¿Eres el doctor?', '¿Hay una persona en recepción?', 'Mi abuela es una persona mayor, ¿puede venir?', '¿Sos el programa de vacunas?', '¿Eres la persona encargada?', '¿El doctor atiende en persona?', 'La doctora atiende una persona de 90 años?', 'Es una persona mayor, ¿la atienden?', 'Si no responde una persona mayor qué hago']) {
       const m = mundo({ eventos: [] });
       m.turno(texto(MAMA, 'hola'));
       const t = m.turno(texto(MAMA, q));
