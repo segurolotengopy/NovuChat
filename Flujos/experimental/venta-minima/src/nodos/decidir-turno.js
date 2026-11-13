@@ -67,6 +67,8 @@
 //  g. Tipos de mensaje que no son texto, botón, audio, imagen, documento ni ubicación
 //     (sticker, contactos, pedido de catálogo…) → `medio_no_leido`.
 const cfg = vmCfg();
+// RESPUESTA COHERENTE (core, `rc*`): el dato `respuestaLibre` del tenant, saneado; apagado salvo `activo === true`. Va ARRIBA porque `extraerPedido()` se llama antes de la última regla.
+const rl = rcConfig(cfg.respuestaLibre);
 const t = vmPrimero('Interpretar entrada') || {};
 const ahora = Number(t.ahoraMs) || Date.now();
 const ses = vmSes(t.from, ahora);
@@ -214,7 +216,10 @@ if (cfg.promosActivo === true && Array.isArray(cfg.campanas) && cfg.campanas.len
 // --- 5. Identidad primero; después, pide una persona ---------------------------------------
 const PREGUNTA_IDENTIDAD = /\b(eres|sos|seras|hablo con|hablando con|estoy hablando con|me atiende|me atiendes|atiende) (un |una |el |la )?(robot|bot|chatbot|ia|inteligencia artificial|maquina|programa|humano|humana|persona|real)\b|\b(robot|chatbot|bot|inteligencia artificial)\b/;
 const PIDE_PERSONA = /\b(hablar|conversar|comunicar|comunicarme|comunicarnos|contactar|contactarme|pasar|pasame|pasenme|comunicame) (con|a) (una |un |la |el |algun |alguna |otra )?(persona|alguien|humano|humana|encargad[oa]|asesor|asesora|duen[oa]|gerente|administrador|administradora|recepcion)\b|\b(quiero|necesito|prefiero|quisiera|pido) (a )?(una |un |la |el )?(persona|humano|humana|asesor|asesora|encargad[oa])\b|\b(reclamo|queja|humano|humana)\b|\b(hablar|conversar|comunicarme|comunicarnos|comunicar|contactar|contactarme) (con|a) (el|la) (local|negocio|restaurante|tienda|equipo)\b|\b(escribir|escribirle|escribirles|escribirnos) (al|a la|con el|con la) (local|negocio|restaurante|tienda|recepcion|equipo|encargad[oa]|duen[oa])\b|^(escribanme|escribame)( por favor)?$/;
-if (PREGUNTA_IDENTIDAD.test(norm)) return salir('identidad');
+// Defensa en profundidad, SOLO con `respuestaLibre.activo` y SOLO en `inicio`/`menu` sin pedido en curso (dentro de un pedido todo es como en `main`): más formas de preguntar si habla con una persona o con quién habla, en español
+// (segunda persona), inglés, portugués, francés, alemán e italiano. Texto fijo por código, sin llamar al modelo.
+const PREGUNTA_IDENTIDAD_AMPLIA = /\b(eres|sos) (un |una )?(persona|humano|humana|bot|robot|real|de verdad|maquina|ia)\b|\bcon quien (hablo|estoy hablando|hablamos)\b|\bquien (eres|sos|me atiende|me esta atendiendo|habla|escribe)\b|^(hola )?hay alguien( ahi| alli| por ahi)?$|\bare you (a |an )?(real )?(bot|human|person|robot|ai)\b|\bis this (a )?(real )?(bot|human|person|robot)\b|\bam i (talking|speaking) (to|with) (a |an )?(real )?(bot|human|person|robot|someone)\b|\bwho (are you|am i talking to)\b|\bvoce (e|eh) (um |uma )?(robo|bot|pessoa|humano|humana)\b|\bcom quem (falo|estou falando)\b|\bquem e voce\b|\b(es tu|tu es|vous etes) (un |une )?(robot|bot|humain|humaine|personne)\b|\bqui es tu\b|\bavec qui (je parle|parle je)\b|\b(bist du|sind sie) (ein |eine )?(roboter|bot|mensch|person|echter mensch)\b|\bmit wem (spreche|rede) ich\b|\bwer bist du\b|\bcon chi parlo\b|\bchi sei\b/;
+if (PREGUNTA_IDENTIDAD.test(norm) || (rl.activo && (paso === 'inicio' || paso === 'menu') && !previo.carritoAnterior && !(Array.isArray(previo.carrito) && previo.carrito.length) && !(Array.isArray(previo.pendiente) && previo.pendiente.length) && PREGUNTA_IDENTIDAD_AMPLIA.test(norm))) return salir('identidad');
 if (PIDE_PERSONA.test(norm)) return salir('transferir', { motivo: 'pidió hablar con una persona' });
 
 // --- 5b. Pide la ubicación o la dirección del LOCAL (09/10/2026, pedido de Q'Taco) ---------------------------------------
@@ -381,6 +386,26 @@ if (paso === 'pedido_confirmar' && pedidosOn && pideCambiarElPedido(palabras)) r
 const RESPUESTA_FORMA = /^((la|las|en|por|una|un|el) )?(orden|ordenes|suelt[oa]s?|unidad|unidades)( completa)?$/;
 if (paso === 'pedido' && Array.isArray(previo.pendiente) && previo.pendiente.length && (RESPUESTA_FORMA.test(norm) || soloAfirma)) return salir('boton', { motivo: 'forma_pendiente' });
 
+// --- 6b. RESPUESTA COHERENTE (core): un acuse y un seguimiento se contestan con código, sin menú y sin modelo -----------------------------------
+// Solo con el dato `respuestaLibre.activo` del tenant, nunca con un QR esperando comprobante, y solo donde hoy el mensaje caía en el menú o en la carta: en `inicio`,
+// o `menu`, sin pedido en curso. «Gracias», «ok» o 👍 → `acuse` (una frase fija, sin cambiar de paso ni avisar). «¿Ya salió mi pedido?» →
+// `seguimiento` (el pedido real, sin su estado de despacho, con el botón «Escribir al local»; sin aviso al local).
+if (rl.activo && !enComprobante) {
+  // SOLO en `inicio` y `menu`, sin carrito, nada pendiente ni `carritoAnterior` (tras «Cambiar algo»): en `pedido*` «ok» o «dale» responden a la pregunta del paso y el
+  // contador de mensajes vacíos y la derivación siguen como hoy.
+  const sinPedidoEnCurso = !previo.carritoAnterior && !(Array.isArray(previo.carrito) && previo.carrito.length) && !(Array.isArray(previo.pendiente) && previo.pendiente.length)
+    && (paso === 'inicio' || paso === 'menu');
+  if (sinPedidoEnCurso) {
+    if (rcEsAcuse(texto)) return salir('acuse', { motivo: 'acuse' });
+    let hayPasado = false;
+    for (const k of Object.keys(ses.pedidos)) {
+      const p = ses.pedidos[k];
+      if (p && typeof p === 'object' && String(p.from) === String(t.from) && p.resultado) { hayPasado = true; break; }
+    }
+    if (rcEsSeguimiento(texto, hayPasado)) return salir('seguimiento', { motivo: 'seguimiento' });
+  }
+}
+
 // --- 7. En inicio o menú: consulta fija (dirección, horario, delivery, promociones, carta) ----
 if (paso === 'inicio' || paso === 'menu') {
   const consulta = consultaFija();
@@ -394,6 +419,13 @@ if (paso.indexOf('reserva') === 0) return extraerReserva();
 if (paso.indexOf('pedido') === 0) return extraerPedido();
 // inicio o menu, sin consulta fija: la intención de pedido o de reserva, o el menú.
 if (pedidosOn && quierePedir) return extraerPedido();
+// RESPUESTA POR INTENCIÓN: lo que no es un saludo ni una intención conocida y antes caía en el menú lo CLASIFICA el modelo (enum cerrado) y
+// `Plan del turno` escribe la respuesta con datos del negocio. Mismo número de mensajes que el menú: uno.
+// Con crisis o baja («quiero morir», «no me escribas más») NO se llama al modelo: el turno queda como siempre (el menú). Mismas exclusiones que el acuse: sin carrito, sin pendiente y sin `carritoAnterior`.
+if (rl.activo && norm && !previo.carritoAnterior && !rcSenalDeCrisisOBaja(texto) && !(Array.isArray(previo.carrito) && previo.carrito.length) && !(Array.isArray(previo.pendiente) && previo.pendiente.length) && !/^\W*(hola+|holi+s?|ola|buenas|buenos|buen|que tal|saludos|hey|hi|hello)\b/.test(norm)) {
+  const ctx = { texto: texto };
+  return salir('extraer_libre', { cuerpoExtraccion: rcCuerpoLibre(ctx), motivo: 'respuesta_libre' });
+}
 return salir('menu');
 
 // ---------------------------------------------------------------------------------------------

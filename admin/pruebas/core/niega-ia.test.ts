@@ -37,6 +37,39 @@ describe('NIEGA_IA: la misma expresión en las tres variantes', () => {
   });
 });
 
+// venta-minima (Q'Taco): el modelo NO escribe frases (solo clasifica), así que la identidad es SIEMPRE el texto fijo del código (`aIdentidad` en `Plan del turno`).
+// Esta prueba exige que ese texto cumpla la regla de la prohibición 4 con la MISMA expresión `NIEGA_IA` de la variante de venta, y que detecte la mutación.
+describe('NIEGA_IA en venta-minima: el texto fijo de identidad', () => {
+  const PLAN = readFileSync(join(aqui, '../../../Flujos/experimental/venta-minima/src/nodos/plan-del-turno.js'), 'utf8');
+  const cuerpoIdentidad = (codigo: string): string => {
+    const m = /function aIdentidad\(\) \{[\s\S]*?\n\}/.exec(codigo);
+    if (!m) throw new Error('sin aIdentidad');
+    return m[0];
+  };
+  // La expresión se toma de la fuente de la variante de venta (no se copia aquí).
+  const nuevaRegex = (): RegExp => (0, eval)(regex(VENTA).replace(/^const NIEGA_IA = /, '').replace(/;$/, '')) as RegExp;
+  const cumple = (codigo: string): boolean => {
+    // El texto que produce `aIdentidad`: se evalúa el propio literal (sustituyendo `negocio()`), no el código fuente. El texto armado COMPLETO se fija en
+    // `venta-minima-respuesta-coherente.test.ts` (D0), con la salida real del flujo.
+    const arg = /enlace\(([\s\S]*?)\)\]\);/.exec(cuerpoIdentidad(codigo))?.[1] ?? '';
+    const c = (0, eval)(`(${arg.replace(/negocio\(\)/g, "'Q Taco'")})`) as string;
+    return !nuevaRegex().test(c) && /asistente virtual/.test(c) && /inteligencia artificial/.test(c);
+  };
+  it('el texto fijo de identidad dice que es un asistente virtual con IA y no niega serlo', () => {
+    expect(cumple(PLAN)).toBe(true);
+  });
+  it('MUTACIÓN: si el texto fijo pasa a negar ser una IA, la prueba falla', () => {
+    for (const malo of ['Soy una persona de ', 'No soy un bot de ', 'Hablas con una persona de ']) {
+      const mutado = PLAN.replace('Soy un asistente virtual con inteligencia artificial de ', malo);
+      expect(mutado).not.toBe(PLAN);
+      expect(cumple(mutado), malo).toBe(false);
+    }
+  });
+  it('la pieza común no escribe frases al cliente (ni hay filtro que se pueda saltar)', () => {
+    expect(src('core/conversacion/respuesta-coherente.js')).not.toMatch(/rcLeerRespuesta|rcMotivoDeRechazoLibre/);
+  });
+});
+
 const CFG: J = { nombreAsistente: 'Sofía', nombreNegocio: 'Clínica', senaActiva: '', funcionarios: '[]' };
 const ENTRADA: J[] = [{ from: '59170000001', nombrePerfil: 'Ana', userInput: 'eres un bot?' }];
 
