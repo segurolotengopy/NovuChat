@@ -1021,3 +1021,11 @@ del §3 con `ensayo-flujo.sh --demo b --cliente <C> --flujo <json>` y, para volv
 | **Plantillas, receptor verificado, flujos programados, latencia real** | Igual que en el Demo A (§4, §6) | En el cliente |
 | **Que las credenciales, el Trigger y la ruta de Meta del Demo B estén como dice la tabla** | Las suites corren contra un n8n de mentira; nada de esto se probó contra n8n ni un teléfono | El seco real y las lecturas de los pasos 0 y 3 |
 
+
+### Nota: `respuesta-libre.mjs --proyecto prod` (sin los ids en el entorno)
+
+`node scripts/plataforma/respuesta-libre.mjs --proyecto prod --tenant <id> --datos <nombre>` toma el proyecto de producción del
+`quota_project_id` de `application_default_credentials.json` dentro de `CLOUDSDK_CONFIG` (por omisión
+`~/.config/gcloud-novuchat-prod`), como `scripts/nube-salida-persona.sh`; el id nunca se imprime. Pasa por la misma lista blanca
+que un id literal; la diferencia es que no exige `GCP_PROJECT_ID_PROD` ni `GCP_PROJECT_ID_STAGING` en el entorno (si están,
+PROD debe ser igual y STAGING distinto). `--aplicar` sigue exigiendo `--confirmo-produccion <tenant>` y `--respaldo`.

@@ -26,10 +26,19 @@
  * PRODUCCIÓN, `--aplicar` exige `--confirmo-produccion <tenant>` igual a `--tenant`). Salida 0: sin diferencias o
  * escritura comprobada. 1: el seco encontró diferencias. 2: uso o salvaguarda. 3: error de ejecución.
  *
+ * `--proyecto prod` (palabra literal): el id de producción se toma de `quota_project_id` del archivo
+ * `application_default_credentials.json` dentro de CLOUDSDK_CONFIG (por omisión ~/.config/gcloud-novuchat-prod), como
+ * `scripts/nube-salida-persona.sh`. Solo se lee ese campo, con la misma forma de id real; si no se puede leer, salida 2.
+ * Después pasa por la MISMA lista blanca (`comprobarProyecto`); la diferencia: aquí la ausencia de GCP_PROJECT_ID_PROD y
+ * GCP_PROJECT_ID_STAGING en el entorno no bloquea (el id viene de las credenciales), pero si están puestas deben ser
+ * coherentes (PROD igual al de las credenciales, STAGING distinto). El id NUNCA se imprime. Un id literal se comporta
+ * como siempre.
+ *
  * COSTO. Seco: dos lecturas. `--aplicar`: tres lecturas y UNA escritura. 0 mensajes por conversación. NO se corre contra
  * producción sin el «sí» de Andres, cliente por cliente.
  */
 import { readFileSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { comprobarProyecto, comprobarRespaldo, guardarRespaldo } from './aplicar-consola-oculta.mjs';
@@ -43,7 +52,7 @@ const TEXTOS = ['acuse', 'textoSeguimiento', 'textoRechazo', 'textoHumor', 'text
 const CAMPOS = ['activo', ...TEXTOS];
 const DIRECTORIO_DATOS = join(dirname(fileURLToPath(import.meta.url)), '..', 'datos', 'respuesta-libre');
 
-export const USO = '  node scripts/plataforma/respuesta-libre.mjs --proyecto <id> --tenant <id> (--datos <nombre> | --apagar) '
+export const USO = '  node scripts/plataforma/respuesta-libre.mjs --proyecto <id|prod> --tenant <id> (--datos <nombre> | --apagar) '
   + '[--aplicar] [--respaldo <ruta>] [--confirmo-produccion <tenant>]';
 
 /** Lee `datos/respuesta-libre/<nombre>.json` y exige que el saneo del servidor no cambie nada. Devuelve `{ok, valor|motivo}`. */
@@ -72,6 +81,31 @@ export function validarDatos(crudo) {
   return { ok: true, valor: saneado };
 }
 
+const ID_PROYECTO_REAL = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
+
+/**
+ * Resuelve `--proyecto prod` desde las credenciales de gcloud, sin imprimir el id. Devuelve `{ok, id, env}` donde `env` es
+ * el entorno con el que `comprobarProyecto` aplica su lista blanca, o `{ok:false, motivo}`.
+ */
+export function proyectoDesdeCredenciales(env = process.env) {
+  const dir = typeof env.CLOUDSDK_CONFIG === 'string' && env.CLOUDSDK_CONFIG !== ''
+    ? env.CLOUDSDK_CONFIG : join(env.HOME || homedir(), '.config', 'gcloud-novuchat-prod');
+  let id;
+  try {
+    id = JSON.parse(readFileSync(join(dir, 'application_default_credentials.json'), 'utf8'))?.quota_project_id;
+  } catch {
+    return { ok: false, motivo: '--proyecto prod: no se pudieron leer las credenciales de gcloud (application_default_credentials.json)' };
+  }
+  if (typeof id !== 'string' || id === '') return { ok: false, motivo: '--proyecto prod: las credenciales no traen quota_project_id' };
+  if (!ID_PROYECTO_REAL.test(id)) return { ok: false, motivo: '--proyecto prod: el proyecto de las credenciales no tiene la forma de un id de Google Cloud' };
+  const prod = typeof env.GCP_PROJECT_ID_PROD === 'string' ? env.GCP_PROJECT_ID_PROD.trim() : '';
+  const staging = typeof env.GCP_PROJECT_ID_STAGING === 'string' ? env.GCP_PROJECT_ID_STAGING.trim() : '';
+  if (prod && prod !== id) return { ok: false, motivo: '--proyecto prod: GCP_PROJECT_ID_PROD no coincide con el proyecto de las credenciales' };
+  if (staging && staging === id) return { ok: false, motivo: '--proyecto prod: GCP_PROJECT_ID_STAGING es igual al proyecto de las credenciales' };
+  const sustituto = id === 'staging-no-declarado' ? 'staging-no-declarado-2' : 'staging-no-declarado';
+  return { ok: true, id, env: { ...env, GCP_PROJECT_ID_PROD: id, GCP_PROJECT_ID_STAGING: staging || sustituto } };
+}
+
 export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   const problemas = [];
   const valores = { __proto__: null };
@@ -95,12 +129,24 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   }
   const aplicar = banderas.includes('aplicar');
   const apagar = banderas.includes('apagar');
-  const { proyecto, tenant, respaldo, datos } = valores;
+  let { proyecto } = valores;
+  const { tenant, respaldo, datos } = valores;
   const confirmo = valores['confirmo-produccion'];
 
   if (proyecto === undefined) problemas.push('falta --proyecto');
-  const proy = proyecto === undefined ? { ok: false } : comprobarProyecto(proyecto, env);
-  if (proyecto !== undefined && !proy.ok) problemas.push(proy.motivo);
+  let proy = { ok: false };
+  if (proyecto === 'prod') {
+    const c = proyectoDesdeCredenciales(env);
+    if (!c.ok) problemas.push(c.motivo);
+    else {
+      proyecto = c.id;
+      proy = comprobarProyecto(proyecto, c.env);
+      if (!proy.ok) problemas.push(proy.motivo);
+    }
+  } else if (proyecto !== undefined) {
+    proy = comprobarProyecto(proyecto, env);
+    if (!proy.ok) problemas.push(proy.motivo);
+  }
 
   if (tenant === undefined) problemas.push('falta --tenant');
   else if (tenant.includes(',')) problemas.push('--tenant admite UN solo comercio por corrida (sin comas)');

@@ -4,7 +4,8 @@
  * core lo importe). El saneo puro está en `pruebas/core/respuesta-libre.test.ts`.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import { chmodSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,6 +84,70 @@ describe('el script de Plataforma', () => {
     expect(mod.analizarArgumentos(prod, ENV_REAL).ok).toBe(false);
     expect(mod.analizarArgumentos([...prod, '--confirmo-produccion', 'otro-comercio'], ENV_REAL).ok).toBe(false);
     expect(mod.analizarArgumentos([...prod, '--confirmo-produccion', 'comercio-x'], ENV_REAL).ok).toBe(true);
+  });
+
+  describe('--proyecto prod: el id sale de las credenciales y nunca se imprime', () => {
+    const ID = 'proyecto-secreto-creds';
+    const dirsC: string[] = [];
+    const creds = (contenido: string | null) => {
+      const d = mkdtempSync(join(tmpdir(), 'cred-')); dirsC.push(d);
+      if (contenido !== null) writeFileSync(join(d, 'application_default_credentials.json'), contenido);
+      return d;
+    };
+    afterAll(() => { for (const d of dirsC) rmSync(d, { recursive: true, force: true }); });
+    const buenas = () => creds(JSON.stringify({ quota_project_id: ID }));
+    const args = (extra: string[] = []) => ['--proyecto', 'prod', '--tenant', 'comercio-x', '--datos', 'qtaco', ...extra];
+    const texto = (r: { problemas?: string[] }) => (r.problemas ?? []).join('\n');
+
+    it('con credenciales válidas y sin ids en el entorno resuelve producción (seco)', () => {
+      const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: buenas() });
+      expect(r.ok, texto(r)).toBe(true);
+      expect(r.cfg).toMatchObject({ entorno: 'produccion', proyecto: ID });
+    });
+    it('con PROD igual y STAGING distinto en el entorno también', () => {
+      const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: buenas(), GCP_PROJECT_ID_PROD: ID, GCP_PROJECT_ID_STAGING: 'otro-proyecto-staging' });
+      expect(r.ok, texto(r)).toBe(true);
+    });
+    it('NIEGA: sin archivo de credenciales, JSON roto, sin quota_project_id, id con forma inválida', () => {
+      for (const c of [creds(null), creds('no es json'), creds('{}'), creds(JSON.stringify({ quota_project_id: 5 })),
+        creds(JSON.stringify({ quota_project_id: 'Id Inválido!' }))]) {
+        const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: c });
+        expect(r.ok).toBe(false);
+        expect(texto(r)).not.toContain(ID);
+      }
+    });
+    it('NIEGA: PROD del entorno distinto; STAGING igual a PROD; sin ensuciar con el id', () => {
+      const a = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: buenas(), GCP_PROJECT_ID_PROD: 'proyecto-ficticio-prod' });
+      expect(a.ok).toBe(false);
+      const b = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: buenas(), GCP_PROJECT_ID_STAGING: ID });
+      expect(b.ok).toBe(false);
+      expect(texto(a) + texto(b)).not.toContain(ID);
+    });
+    it('NIEGA: variables de emulador puestas', () => {
+      expect(mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: buenas(), FIRESTORE_EMULATOR_HOST: '127.0.0.1:1' }).ok).toBe(false);
+    });
+    it('NIEGA: --aplicar sin --confirmo-produccion, o con otro comercio; con el correcto pasa', () => {
+      const env = { CLOUDSDK_CONFIG: buenas() };
+      const ap = args(['--aplicar', '--respaldo', rutaRespaldo()]);
+      const sin = mod.analizarArgumentos(ap, env);
+      expect(sin.ok).toBe(false);
+      expect(texto(sin)).not.toContain(ID);
+      expect(mod.analizarArgumentos([...ap, '--confirmo-produccion', 'otro-comercio'], env).ok).toBe(false);
+      expect(mod.analizarArgumentos([...ap, '--confirmo-produccion', 'comercio-x'], env).ok).toBe(true);
+    });
+    it('un id literal se comporta como siempre (sigue exigiendo los dos ids en el entorno)', () => {
+      expect(mod.analizarArgumentos(['--proyecto', ID, '--tenant', 'comercio-x', '--datos', 'qtaco'], { CLOUDSDK_CONFIG: buenas() }).ok).toBe(false);
+    });
+    it('el seco por línea de comandos no imprime el id (stdout ni stderr)', () => {
+      const corrida = (extra: string[]) => spawnSync(process.execPath, ['--experimental-strip-types', join(ADMIN, 'scripts/plataforma/respuesta-libre.mjs'),
+        ...args(extra)], { env: { PATH: process.env['PATH'] ?? '', CLOUDSDK_CONFIG: buenas() }, encoding: 'utf8', timeout: 20000 });
+      const r = corrida(['--aplicar']);
+      expect(r.status).toBe(2);
+      expect(`${r.stdout}${r.stderr}`).not.toContain(ID);
+      const sinCreds = spawnSync(process.execPath, ['--experimental-strip-types', join(ADMIN, 'scripts/plataforma/respuesta-libre.mjs'), ...args()],
+        { env: { PATH: process.env['PATH'] ?? '', CLOUDSDK_CONFIG: creds(null) }, encoding: 'utf8', timeout: 20000 });
+      expect(sinCreds.status).toBe(2);
+    });
   });
 
   /** Una Firestore mínima en memoria: la ficha y `config/respuestaLibre`, con cuenta de escrituras. */
