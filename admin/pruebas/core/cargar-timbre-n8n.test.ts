@@ -112,7 +112,11 @@ if partes[0] == "credentials":
     if metodo == "PATCH": c["_data"] = cuerpo["data"]; guardar("creds.json", cred); responder(200, {"id": c["id"]})
     if metodo == "DELETE": cred.remove(c); guardar("creds.json", cred); responder(200, {"id": c["id"]})
 if partes[0] == "workflows":
-    if len(partes) == 1 and metodo == "GET": responder(200, {"data": wf})
+    if len(partes) == 1 and metodo == "GET":
+        # El flujo de alertas vive en la instancia pero NO en wfs.json (los casos miran flujos()[0]). Archivos: "sin-alerta" y "alerta-repetida".
+        _al = [] if os.path.exists(os.path.join(E, "sin-alerta")) else [{"id": "alertaId1", "name": "NovuChat \u2014 Error de env\u00edo incierto", "active": True}]
+        if _al and os.path.exists(os.path.join(E, "alerta-repetida")): _al.append(dict(_al[0], id="alertaId2"))
+        responder(200, {"data": wf + _al})
     if len(partes) == 1 and metodo == "POST":
         if set(cuerpo) - {"name", "nodes", "connections", "settings"}: responder(400, {"message": "additional properties"})
         nuevo = dict(cuerpo, id="w%d" % n(), active=False, versionId="ver%d" % n(), activeVersionId=None); wf.append(nuevo); guardar("wfs.json", wf); guardar("contador.json", n())
@@ -840,16 +844,16 @@ describe('cargar-timbre-n8n.sh: segunda mini-ronda', () => {
     const f = JSON.parse(leerTxt(FLUJO_REAL)) as { nodes: Nodo[] };
     f.nodes.push({ name: 'Nota', type: 'n8n-nodes-base.stickyNote', parameters: { content: 'ruta REEMPLAZAR_RUTA_TIMBRE y REEMPLAZAR_PHONE_NUMBER_ID' } });
     writeFileSync(join(dir, 'f.json'), JSON.stringify(f));
-    writeFileSync(join(dir, 'l.json'), JSON.stringify({ data: [] }));
+    writeFileSync(join(dir, 'l.json'), JSON.stringify({ data: [{ id: 'alertaId1', name: 'NovuChat — Error de envío incierto' }] }));
     writeFileSync(join(dir, 'c.json'), JSON.stringify({ data: creds() }));
     writeFileSync(join(dir, 't.json'), JSON.stringify({ phone: PHONE, rele: RELE }));
     writeFileSync(join(dir, 'p.txt'), PATH);
     const r = spawnSync('python3', ['-I', lib, 'plan', join(dir, 'f.json'), join(dir, 'l.json'), join(dir, 'c.json'), join(dir, 't.json'), join(dir, 'p.txt'), ALIAS, '', join(dir, 'cuerpo.json'), join(dir, 'plan.json')], {
-      encoding: 'utf8',
+      encoding: 'utf8', cwd: RAIZ, // el script corre en la raíz del repo (resuelve scripts/lib/ con ruta relativa)
       // la lista negra la fija el shell (una sola fuente): se toma del propio script
       env: { TIMBRE_RE_AJENO: /export TIMBRE_RE_AJENO='([^']+)'/.exec(fuente)![1] },
     });
-    expect(r.status).toBe(0);
+    expect(r.status, `${r.stdout}${r.stderr}`).toBe(0);
     const cuerpo = JSON.parse(leerTxt(join(dir, 'cuerpo.json'))) as { nodes: Array<{ name: string; parameters: Record<string, unknown> }> };
     expect(cuerpo.nodes.find((n) => n.name === 'Nota')!.parameters.content).toBe('ruta <marcador> y <marcador>');
     expect(JSON.stringify(cuerpo.nodes.find((n) => n.name === 'Nota'))).not.toContain(PATH);
@@ -2068,5 +2072,60 @@ describe('cargar-timbre-n8n.sh: la lista de flujos (grande y lenta)', () => {
     expect(e.length).toBeGreaterThan(0);
     expect(e.filter((l) => l === 'POST /workflows').length).toBe(1);
     expect(e.filter((l) => l === 'POST /credentials').length).toBe(1);
+  });
+});
+
+describe('cargar-timbre-n8n.sh: settings.errorWorkflow se resuelve por NOMBRE (flujo de alertas)', () => {
+  const MARCADOR = 'REEMPLAZAR_ID_ERROR_WORKFLOW';
+  const ID_ALERTA = 'alertaId1';
+
+  it('el JSON versionado lleva el marcador exacto', () => {
+    expect(JSON.parse(leerTxt(FLUJO_REAL)).settings.errorWorkflow).toBe(MARCADOR);
+  });
+
+  it('resuelto: el flujo enviado lleva el id de la alerta, ningún marcador, y el id no se imprime', () => {
+    const r = correr([...A(), ...APLICAR]);
+    expect(r.codigo).toBe(0);
+    const f = flujos();
+    expect((f[0] as unknown as { settings: Record<string, unknown> }).settings.errorWorkflow).toBe(ID_ALERTA);
+    expect(JSON.stringify(f[0])).not.toContain('REEMPLAZAR_');
+    expect(r.salida).not.toContain(ID_ALERTA);
+  });
+
+  it('seco: resuelve contra la lista (lee) y no escribe en n8n', () => {
+    const r = correr(A());
+    expect(r.codigo).toBe(1);
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('NEGATIVA: sin flujo de alertas en n8n, aborta y no escribe nada (ni la credencial)', () => {
+    writeFileSync(join(dir, 'sin-alerta'), '');
+    const r = correr([...A(), ...APLICAR]);
+    expect(r.codigo).not.toBe(0);
+    expect(r.salida).toContain('Error de envío incierto');
+    expect(flujos()).toEqual([]);
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('NEGATIVA: el nombre de la alerta repetido es ambiguo: aborta sin elegir ni escribir el flujo', () => {
+    writeFileSync(join(dir, 'alerta-repetida'), '');
+    const r = correr([...A(), ...APLICAR]);
+    expect(r.codigo).not.toBe(0);
+    expect(r.salida).toMatch(/2 flujos llamados/);
+    expect(flujos()).toEqual([]);
+  });
+
+  it('NEGATIVA: otro marcador desconocido sigue abortando (el plan sale 4 y el script 2, como antes; no lo tapa la resolución de la alerta)', () => {
+    const j = JSON.parse(leerTxt(FLUJO_REAL));
+    j.nodes[0].notes = 'x';
+    j.nodes.find((n: { parameters?: Record<string, unknown> }) => n.parameters)!.parameters!.campoNuevo = 'REEMPLAZAR_MARCADOR_DESCONOCIDO';
+    const ruta = join(dir, 'flujo-raro.json');
+    writeFileSync(ruta, JSON.stringify(j));
+    const r = correr([...A(), '--flujo', ruta]);
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain('quedan marcadores sin reponer');
+    expect(r.salida).toContain('REEMPLAZAR_MARCADOR_DESCONOCIDO');
+    expect(escrituras()).toEqual([]);
+    expect(r.salida).not.toContain(ID_ALERTA);
   });
 });
