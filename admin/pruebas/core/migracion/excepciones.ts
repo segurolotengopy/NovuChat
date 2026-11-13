@@ -25,11 +25,11 @@ export interface Excepcion { dueno: string; vence: string; motivo: string; desde
 
 /** Fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-11-12 + 90 = 2027-02-10). */
 export const ALTA = '2026-11-12';
-/** Cuántas excepciones hay hoy, medidas con las pruebas el 12/11/2026. SOLO BAJA. */
-export const TOPE = 98;
+/** Cuántas excepciones hay hoy, medidas con las pruebas el 12/11/2026 (97 tras cerrar la de la redirección y aplicar el contrato sin agente el 13/11/2026). SOLO BAJA. */
+export const TOPE = 97;
 /** El mismo tope desglosado por regla (la suma es `TOPE`). Cada cuenta es la medida el 12/11/2026. SOLO BAJA. */
 export const TOPE_POR_REGLA: Record<Regla, number> = {
-  'nucleo-comun': 54, 'niega-ia': 13, 'error-workflow-por-nombre': 16, 'ux-derivacion': 4, 'capacidades-comunes': 10, 'flujos-origen': 0, entregas: 0, 'expresiones-n8n': 1,
+  'nucleo-comun': 54, 'niega-ia': 13, 'error-workflow-por-nombre': 16, 'ux-derivacion': 4, 'capacidades-comunes': 10, 'flujos-origen': 0, entregas: 0, 'expresiones-n8n': 0,
 };
 
 const DUENO = 'por asignar (Principal)';
@@ -129,11 +129,6 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
   ...porRegla('capacidades-comunes', 'Flujo sin agente con rama de medios solo de audio: le faltan «¿Es un documento?», «Describir imagen», «Describir documento», «Preparar transcripción», «Preparar imagen» y «Medio no aceptado»', unNodo([
     'experimental/venta-minima/venta-minima.qtaco-3727.json', 'experimental/venta-minima/venta-minima.qtaco.json',
   ], 'rama de medios')),
-  // Guardia de expresiones del sandbox de n8n (`core/expresiones-n8n.test.ts`): armadores que no la aplican en su --verificar. 1.
-  ...porRegla('expresiones-n8n', 'El armador de la redirección no aplica la guardia de expresiones de n8n en su --verificar; no se arregla en la etapa 0', {
-    // La clave nombra al primer flujo (por orden alfabético) que arma ese constructor.
-    'clientes/qtaco-redireccion/qtaco-redireccion.qtaco-ruta-nueva.json': ['construir.mjs'],
-  }),
 };
 
 // ---------------------------------------------------------------------------

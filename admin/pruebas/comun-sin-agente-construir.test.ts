@@ -22,6 +22,8 @@ import {
 import { injertarGuardado } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 import { injertarCrm, ramaCrm, rutasPaqueteCrmSenales } from '../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 
+// @ts-expect-error módulo .mjs sin tipos
+import { reglaDeIdentidadDelCore } from '../../Flujos/experimental/agenda-minima/regla-identidad.mjs';
 const aqui = dirname(fileURLToPath(import.meta.url));
 // Los proyectos de juguete viven en una carpeta temporal: el tope de lectura de las pruebas es esa carpeta.
 const TOPE = tmpdir();
@@ -54,6 +56,10 @@ describe('el armador genérico produce los JSON de Agenda mínima, byte por byte
   const paquetesCrm = rutasPaqueteCrmSenales() as Record<string, string[]>;
   const conGuardado = (texto: string): string => {
     const flujo = JSON.parse(texto);
+    // `agenda-minima/construir.mjs` pone `NIEGA_IA_CORE` (la regla de identidad del core, derivada) justo DELANTE del código propio de «Armar mensajes»: se hace igual aquí.
+    const armar = flujo.nodes.find((n: { name: string }) => n.name === 'Armar mensajes') as { parameters: { jsCode: string } };
+    const propioArmar = readFileSync(join(AGENDA, 'src/nodos/armar-mensajes.js'), 'utf8').trimEnd();
+    armar.parameters.jsCode = `${armar.parameters.jsCode.slice(0, armar.parameters.jsCode.length - propioArmar.length - 1)}${reglaDeIdentidadDelCore() as string}\n\n${propioArmar}\n`;
     const rama = ramaCrm({ credencial: '@@cred:crm', desde: 'Armar mensajes', paquete: 'crm-decidir-senales', x: 9080, y: 640 });
     for (const n of rama.nodes as Array<{ parameters: { jsCode?: string }; credentials?: Record<string, { name: string }> }>) {
       const m = /^@@medio:(.+)$/.exec(String(n.parameters.jsCode ?? ''));

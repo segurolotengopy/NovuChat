@@ -3812,3 +3812,95 @@ describe('Agenda mínima v0: el miniCRM', () => {
     expect(Object.keys(m.sd['agendaMinimaCrm'] as J)).toEqual([OTRA]);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// PROHIBICIÓN 4 (nunca niega ser una IA) en agenda mínima — 12/11/2026. Hasta hoy la pregunta «¿eres una persona?» la redactaba el modelo y solo la revisaba una regla propia con huecos
+// («soy un ser humano», «de carne y hueso», «no soy un programa», «soy una asistente real» pasaban). Ahora: (1) la pregunta tiene una respuesta FIJA por código, sin modelo, con el botón
+// a recepción; (2) la redacción del modelo pasa por la regla de IDENTIDAD del filtro común del core (derivada al armar, no copiada). 0 mensajes agregados: reemplaza el que salía.
+describe('Agenda mínima v0: el asistente nunca niega ser una IA (prohibición 4)', () => {
+  const ofertaCon = (redaccion: string): Turno => {
+    const m = mundo({ eventos: [] });
+    m.gemini.redactar = redaccion;
+    m.turno(texto(MAMA, 'hola'));
+    return m.turno(lista(MAMA, SERV_CNS, 'Servicio'));
+  };
+  const HORARIOS = 'Tengo estos horarios; toca el que prefieras.';
+  const NEGACIONES = [
+    'Soy un ser humano y estoy para ayudarte. ', 'Soy de carne y hueso, no te preocupes. ', 'No soy un programa, soy parte del equipo. ', 'No soy una máquina. ',
+    'Soy una asistente real del consultorio. ', 'No soy una IA, soy una persona real. ', 'No soy un bot. ', 'Soy una persona, con gusto te ayudo. ',
+  ];
+  for (const neg of NEGACIONES) {
+    it(`NIEGA: la redacción «${neg.trim()}» no sale: cae al texto fijo con los horarios reales`, () => {
+      const t = ofertaCon(neg + HORARIOS);
+      const cuerpo = t.enviados[0]!.cuerpo;
+      expect(cuerpo).not.toContain(neg.trim());
+      expect(cuerpo).not.toMatch(/ser humano|carne y hueso|no soy un programa|no soy una m[aá]quina|asistente real|no soy una ia|no soy un bot|soy una persona/i);
+      expect(cuerpo).toMatch(/11:00|horario/i);
+    });
+  }
+  it('la redacción que SÍ dice que es una asistente virtual con IA pasa', () => {
+    // Pasa el filtro de identidad (no es una negación); el pulido quita luego la presentación inicial, como siempre: queda la redacción del modelo, no el texto fijo.
+    const t = ofertaCon('Soy una asistente virtual con inteligencia artificial. ' + HORARIOS);
+    expect(t.enviados[0]!.cuerpo).toBe(HORARIOS);
+  });
+
+  const PREGUNTAS = ['¿Eres una persona?', 'Eres un bot?', 'eres una IA', '¿Hablo con un humano?', 'estoy hablando con un robot?', '¿Eres de carne y hueso?', '¿eres real?', 'esto es un bot?', '¿Es usted una persona?', '¿Usted es un robot?', '¿es un bot?', '¿Me atiende un humano?', '¿Me responde una persona?', '¿esto es automático?', '¿hablo con alguien real?', 'Buenas, ¿es un bot?', '¿es la IA?'];
+  for (const q of PREGUNTAS) {
+    it(`«${q}» se contesta con el texto FIJO (asistente virtual con IA + botón a recepción), sin llamar al modelo`, () => {
+      const m = mundo({ eventos: [] });
+      m.turno(texto(MAMA, 'hola'));
+      const t = m.turno(texto(MAMA, q));
+      expect(t.redactar).toHaveLength(0);
+      expect(t.extraer).toHaveLength(0);
+      const alPaciente = t.aPaciente(MAMA);
+      expect(alPaciente).toHaveLength(1);                       // 0 mensajes agregados: uno, como antes
+      expect(alPaciente[0]!.cuerpo).toMatch(/asistente virtual/i);
+      expect(alPaciente[0]!.cuerpo).toMatch(/inteligencia artificial/i);
+      expect(alPaciente[0]!.cuerpo).not.toMatch(/soy una persona|soy humano|carne y hueso/i);
+      expect(alPaciente[0]!.tipo).toBe('interactive');           // el botón «Escribir a recepción»
+    });
+  }
+  it('NIEGA: una pregunta que NO es de identidad no recibe el texto fijo («¿es real la tarifa?», «¿eres el doctor?»)', () => {
+    for (const q of ['¿Es real la tarifa?', '¿Eres el doctor?', '¿Hay una persona en recepción?', 'Mi abuela es una persona mayor, ¿puede venir?', '¿Sos el programa de vacunas?', '¿Eres la persona encargada?', '¿El doctor atiende en persona?', 'La doctora atiende una persona de 90 años?', 'Es una persona mayor, ¿la atienden?', 'Si no responde una persona mayor qué hago']) {
+      const m = mundo({ eventos: [] });
+      m.turno(texto(MAMA, 'hola'));
+      const t = m.turno(texto(MAMA, q));
+      expect(t.aPaciente(MAMA).map((e) => e.cuerpo).join(' '), q).not.toMatch(/inteligencia artificial \(IA\)/);
+    }
+  });
+  it('NIEGA: si la pregunta de identidad trae un pedido de cita, gana la cita (no se pierde el pedido)', () => {
+    const m = mundo({ eventos: [] });
+    m.turno(texto(MAMA, 'hola'));
+    const t = m.turno(texto(MAMA, '¿Eres un bot? quiero agendar para el jueves'));
+    expect(t.aPaciente(MAMA).map((e) => e.cuerpo).join(' ')).not.toMatch(/inteligencia artificial \(IA\)\. Puedo ayudarte/);
+  });
+  it('primer mensaje «¿Eres un bot?»: sale con el MENÚ (un solo mensaje, lista), diciendo que es una IA', () => {
+    const m = mundo({ eventos: [] });
+    const t = m.turno(texto(MAMA, '¿Eres un bot?'));
+    expect(t.redactar).toHaveLength(0);
+    const al = t.aPaciente(MAMA);
+    expect(al).toHaveLength(1);
+    expect(al[0]!.cuerpo).toMatch(/inteligencia artificial \(IA\)/);
+    expect(al[0]!.tipo).toBe('interactive');
+    expect(JSON.stringify(t.enviados[0])).toContain('Ver opciones');
+  });
+  it('SIN número de recepción: el texto no ofrece hablar con una persona ni queda una frase cortada', () => {
+    const panel = JSON.parse(JSON.stringify(PANEL)) as J;
+    delete ((panel['operacion'] as J)['numeroRecepcion']);
+    const m = mundo({ eventos: [], panel, configBase: { respaldoNumeroRecepcion: '' } });
+    m.turno(texto(MAMA, 'hola'));
+    const t = m.turno(texto(MAMA, '¿Es usted una persona?'));
+    const al = t.aPaciente(MAMA);
+    expect(al).toHaveLength(1);
+    expect(al[0]!.cuerpo).toMatch(/inteligencia artificial \(IA\)/);
+    expect(al[0]!.cuerpo).not.toMatch(/persona del consultorio|bot[oó]n|,\s*¿/i);
+    expect(al[0]!.cuerpo).toMatch(/¿Seguimos\?$/);
+  });
+  it('CON número de recepción: la oferta es una frase completa con el botón', () => {
+    const m = mundo({ eventos: [] });
+    m.turno(texto(MAMA, 'hola'));
+    const al = m.turno(texto(MAMA, '¿Eres una IA?')).aPaciente(MAMA);
+    expect(al[0]!.cuerpo).toMatch(/Si prefieres hablar con una persona del consultorio, toca el botón y le escribes directo\.$/);
+  });
+});
+

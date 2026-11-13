@@ -96,12 +96,14 @@ if (plan.ruta === 'sin_estado') {
   // Los botones y las ofertas los decide la TABLA (`CH_TABLA`, una vez por turno): «Ver planes» con interés y nunca tras pulsarlo; «Hablar con el equipo» cuando hace falta o se acabaron las preguntas y nunca tras pulsarlo.
   const dec = chBotonesDe(chSituacion({ plan: Object.assign({}, plan, { sinPlanes: plan.ruta === 'planes' && !chFrasesDePrecios(cfg, plan.aMedida === true).length && !chArchivoDePlanes(cfg) }), res: res, eventos: eventos, ficha: antes }));
   fila = dec.fila;
-  const est = { botones: ['planes', 'equipo'].filter((b) => dec[b] === true), lista: antes.equipoAhora === true && !ciclo };
+  // La lista de rubros sale tras el traspaso (invita a otro negocio) y cuando el cliente acaba de dar su nombre y su negocio sin que se le pida nada más (invita a elegir rubro).
+  const trasTraspaso = antes.equipoAhora === true && !ciclo;
+  const est = { botones: ['planes', 'equipo'].filter((b) => dec[b] === true), lista: trasTraspaso || dec.lista === true, invitacion: trasTraspaso || dec.fila === 'datos-siguiente' ? 'invitaOtroRubro' : 'invitaRubro' };
   let complemento = false;
   let anexo = '';
   // El mensaje del turno. La ficha que se guarda dice lo que salió (historial) y lo que el cliente dijo.
   let m;
-  if (plan.ruta === 'lista') m = chLista(cfg, plan.pitch === true);
+  if (plan.ruta === 'lista') m = chLista(cfg, plan.pitch === true, plan.listaPedida === true);
   else if (plan.ruta === 'planes') {
     // R6: los planes ya se mostraron y piden más: hechos nuevos del complemento, nunca el mismo texto ni la misma imagen (salvo que pregunten por el tope de un plan).
     if (antes.planesMostrados === true && plan.tope !== true) { m = chMensajeComplemento(cfg, { vez: antes.complementos, lista: est.lista, ficha: antes, equipo: dec.equipo }); complemento = true; }

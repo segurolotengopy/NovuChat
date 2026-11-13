@@ -14,6 +14,7 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../experimental/comun-sin-agente/src/expresiones.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const DATOS = join(AQUI, '../../../admin/scripts/datos/qtaco-redireccion');
@@ -83,6 +84,7 @@ function armar(datos, archivo) {
 function guardias(flujo) {
   const f = [];
   const nodos = flujo.nodes || [];
+  f.push(...hallazgosDeExpresionesN8n(flujo));
   const por = (n) => nodos.find((x) => x.name === n);
   if (nodos.length > TOPE_DE_NODOS) f.push(`${nodos.length} nodos: el tope es ${TOPE_DE_NODOS}`);
   for (const n of nodos) {

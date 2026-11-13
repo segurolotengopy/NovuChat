@@ -34,7 +34,7 @@ const leerJson = (ruta: string): J => JSON.parse(readFileSync(ruta, 'utf8')) as 
 const clonar = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const nodo = (w: J, n: string): J => (w.nodes as J[]).find((x) => x.name === n)!;
 const baseDe = (w: J): J => Object.fromEntries((nodo(w, 'Config base').parameters.assignments.assignments as J[]).map((a) => [a.name, a.value]));
-const HOJAS = ['Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Agregar fila', 'Actualizar fila'];
+const HOJAS = ['Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Releer teléfono antes de agregar', 'Agregar fila', 'Actualizar fila'];
 const CRED_ENSAYO = 'Google Sheets miniCRM (crm-ensayo-chat)';
 
 const CONSTRUIR = (await import(/* @vite-ignore */ join(CARPETA, 'construir.mjs'))) as {
@@ -43,12 +43,12 @@ const CONSTRUIR = (await import(/* @vite-ignore */ join(CARPETA, 'construir.mjs'
 };
 
 describe('el armador: datos y salida del ensayo en el Demo A', () => {
-  it('arma tres salidas al día (73 nodos cada una), con la del ensayo con el miniCRM conectado y su Trigger', () => {
+  it('arma tres salidas al día (76 nodos cada una), con la del ensayo con el miniCRM conectado y su Trigger', () => {
     const r = CONSTRUIR.construir({ verificar: true });
     expect(r.resultado.map((x) => [x.archivo, x.alDia, x.versionado, x.nodos])).toEqual([
-      ['chat-novuchat.ensayo-demo-a.json', true, [], 73],
-      ['chat-novuchat.prueba.json', true, [], 73],
-      ['chat-novuchat.novuchat.json', true, [], 73],
+      ['chat-novuchat.ensayo-demo-a.json', true, [], 76],
+      ['chat-novuchat.prueba.json', true, [], 76],
+      ['chat-novuchat.novuchat.json', true, [], 76],
     ]);
     expect(r.huerfanos).toEqual([]);
     expect(CONSTRUIR.salidaDe('ensayo-demo-a.json')).toBe('chat-novuchat.ensayo-demo-a.json');
@@ -309,13 +309,13 @@ describe('la herramienta con --conservar-crm (n8n de mentira)', () => {
     for (const v of [PLANILLA, AVISO, PHONE_ID]) expect(r.salida).not.toContain(v);
   });
 
-  it('con --aplicar: los 4 nodos de Google quedan con la credencial del ensayo por id, el id de la hoja llega a «Config base» y todo lo demás es del Demo A', async () => {
+  it('con --aplicar: los 5 nodos de Google quedan con la credencial del ensayo por id, el id de la hoja llega a «Config base» y todo lo demás es del Demo A', async () => {
     nuevo();
     const r = await sobreDemoA(['--aplicar']);
     expect(r.codigo, r.salida).toBe(0);
     expect(puts).toHaveLength(1);
     const b = puts[0]!;
-    expect((b.nodes as J[]).length).toBe(73);
+    expect((b.nodes as J[]).length).toBe(76);
     for (const n of HOJAS) expect(nodo(b, n).credentials.googleApi, n).toEqual({ id: 'c-hoja', name: CRED_ENSAYO });
     expect(baseDe(b)['planillaProspectosId']).toBe(PLANILLA);
     expect(baseDe(b)['planillaProspectosHoja']).toBe(HOJA);
@@ -442,7 +442,7 @@ describe('sin la bandera el comportamiento de siempre NO cambia', () => {
     const b = puts[0]!;
     for (const n of HOJAS) expect((b.nodes as J[]).some((x) => x.name === n), n).toBe(false);
     expect(baseDe(b)['planillaProspectosId']).toBe('');
-    expect(r.salida).toMatch(/Nodos quitados del candidato: 6/);
+    expect(r.salida).toMatch(/Nodos quitados del candidato: 9/);
     expect(r.salida).not.toMatch(/miniCRM CONSERVADO/);
   });
   it('un flujo con la credencial de hoja y sin la bandera sigue sin estar en la tabla del Demo A (el candidato que la trae y conserva sus nodos de Google se niega)', async () => {

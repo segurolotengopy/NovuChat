@@ -84,6 +84,17 @@ export function injertarCrm(flujo, mapa) {
     enc.parameters.url = urlEncabezados(rangoEncabezados(mapa));
   }
   nodo(flujo, 'Leer IDs de la planilla').parameters.options.dataLocationOnSheet.values.range = `A${f}:A`;
+  // La relectura antes de agregar (reclamo 62), solo en los flujos que la traen: mismo rango, misma columna de búsqueda; el teléfono sale de la fila ya decidida.
+  const releer = flujo.nodes.find((x) => x.name === 'Releer teléfono antes de agregar');
+  if (releer) {
+    const tit = mapa.columnas.telefono.titulo;
+    releer.parameters.options.dataLocationOnSheet.values.range = `A${f}:${letraBot(mapa)}`;
+    releer.parameters.options.returnFirstMatch = false;
+    const [v0, v1] = releer.parameters.filtersUI.values;
+    for (const fl of releer.parameters.filtersUI.values) fl.lookupColumn = tit;
+    v0.lookupValue = `={{ String($json[${JSON.stringify(tit)}]).replace(/\\D/g, '') }}`;
+    v1.lookupValue = `={{ '+' + String($json[${JSON.stringify(tit)}]).replace(/\\D/g, '') }}`;
+  }
   nodo(flujo, 'Agregar fila').parameters.options.locationDefine.values.headerRow = f;
   const act = nodo(flujo, 'Actualizar fila').parameters.options.locationDefine.values;
   act.headerRow = f;

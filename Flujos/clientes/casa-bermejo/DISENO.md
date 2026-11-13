@@ -24,7 +24,7 @@
 | Catálogo externo (`ce*`) | `venta-digital/src/catalogo-externo.js` (B2) |
 | Medios (voz, imagen, PDF, comprobante guardado) y guardado de medios (11 nodos) | `Flujos/src/core/medios/`, `comun-sin-agente/src/guardado.mjs` |
 | Cadena de envío y reporte saliente | `comun-sin-agente/src/envio.mjs` |
-| **Propio:** `Decidir turno`, `Interpretar lectura`, `Armar avisos`, `Armar mensajes`, la librería `bm*` (venta de este comercio: textos, entrega por país, intenciones por código) y el nodo `Traer catálogo` | `Flujos/experimental/casa-bermejo/` |
+| **Propio:** `Decidir turno`, `Interpretar lectura`, `Armar avisos`, `Armar mensajes`, la librería `bm*` (venta de este comercio: textos, entrega por país, intenciones por código) y el nodo `Traer catálogo` | `Flujos/clientes/casa-bermejo/` |
 
 ## Nodos y tope
 Referencia: Walisuma tiene 56 (47 + 9 del guardado). Este flujo agrega UN nodo HTTP, `Traer catálogo` (después de `Puerta del turno`, con «Continue on Fail» solo en ese nodo; la entrada verificada del receptor no lo lleva) → **57 en producción y 52 en prueba**. No se plegó `Interpretar lectura`: el armado y la suite ya lo conectan igual que en la base. El +1 sobre el tope de 56 es una excepción que decide Andres (el catálogo no vive en la consola); `construir.mjs` fija `TOPE_DE_NODOS = 57` y `armado.test.ts` lo exige exacto.

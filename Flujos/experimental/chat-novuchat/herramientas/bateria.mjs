@@ -725,7 +725,7 @@ export function revisarMensaje(m, ctx = {}) {
       // (1) Lo PULSADO no reaparece (la lista de rubros y el botón cta del traspaso no cuentan).
       for (const x of ids) if (ctx.pulsados.has(x)) anota('boton_pulsado_reaparece', `«${x}» ya se pulsó: ${ids.join('+')}`);
       // (2) Nada se ofrece antes de tiempo: «Ver planes» tras elegir rubro o con interés; el equipo cuando hace falta o se acabaron las preguntas.
-      if (ids.includes('planes') && !(ctx.eligioRubro === true || ctx.interes === true)) anota('boton_antes_de_tiempo', '«Ver planes» sin rubro elegido ni interés del cliente');
+      if (ids.includes('planes') && !(ctx.eligioRubro === true || ctx.interes === true || ctx.datosAnotado === true)) anota('boton_antes_de_tiempo', '«Ver planes» sin rubro elegido ni interés del cliente');
       if (ids.includes('equipo') && ctx.equipoPermitido !== true) anota('boton_antes_de_tiempo', '«Hablar con el equipo» sin que haga falta ni se acabaran las preguntas');
       // (5) La oferta del equipo que escribió el modelo no se pierde: si su pregunta final invitaba al equipo, el mensaje enviado lleva el botón (nada de callejón sin salida ni de «Sí» que no deriva).
       if (ctx.ofertaDelModelo === true && !ids.includes('equipo') && ctx.equipoPulsado !== true) anota('oferta_del_modelo_quitada', 'el modelo ofreció al equipo y el mensaje salió sin su botón: ' + c.slice(-90));
@@ -855,6 +855,8 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
         const k = comp.hoja.filas.findIndex((f) => valores.includes(String(f[4] ?? '')));
         return k < 0 ? {} : Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, comp.hoja.filas[k][c] ?? ''])));
       },
+      // La relectura antes de agregar (reclamo 62): la misma consulta que «Buscar teléfono en planilla», hecha justo antes de escribir.
+      'Releer teléfono antes de agregar': (ll) => dobles['Buscar teléfono en planilla'](ll),
       'Leer IDs de la planilla': () => (comp.hoja.filas.length ? comp.hoja.filas.map((f, j) => ({ row_number: j + 2, 'ID Lead': f[0] ?? '' })) : [{}]),
       'Agregar fila': (ll) => {
         const formato = String(objeto(ll.parametros.options).cellFormat ?? '');
@@ -945,6 +947,8 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     ctx.declina = alCliente.some((m) => !m.esRespaldo && /(no lo tengo documentado|no esta documentad\w*|no es mi especialidad|fuera de mi especialidad|no tengo (ese|esa|el|la) (dato|informacion)|no puedo (prometer|confirmar|asegurar)\w*|prefiero no (prometer|darte|afirmar)\w*|no (lo|la) tengo a la mano|no sabria decir\w* (eso|ese dato|con certeza|con seguridad)|desconozco (eso|ese dato|esa informacion|si )|(eso|ese dato|esa informacion|esa pregunta|ese tema|ese otro canal|lo que preguntas) no (lo )?se con (certeza|seguridad)|no cuento con (ese|esa|el|la) (dato|informacion)|no tengo claro)/.test(sinTildes(m.cuerpo)));
     // Invariante SIN VOCABULARIO de declinación: si la pregunta final de lo que escribió el MODELO ofrecía hablar con el equipo, el mensaje enviado lleva el botón del equipo (salvo que ya lo haya pulsado).
     ctx.ofertaDelModelo = ctx.origen === 'modelo' && ctx.plan === 'modelo' && /\b(?:quieres|te gustaria|prefieres|te parece|deseas)\b[^?]*\b(?:equipo|asesor|asesores|persona|alguien)\b/.test(ultimaPreguntaDelModelo(String(resumen.textoModelo ?? '')));
+    // Reclamo 62 (12/11): «Quedó anotado» no sale solo; con rubro ya conocido lleva «Ver planes» (el siguiente paso), aunque el cliente no haya preguntado por ellos en ese turno.
+    ctx.datosAnotado = String(resumen.evento ?? '') === 'datos' && alCliente.some((m) => /Quedó anotado/.test(String(m.cuerpo ?? m.texto ?? '')));
     ctx.equipoPermitido = requeridoPorMensaje || acabaron || funcionNoDocumentada || ctx.declina || ctx.ofertaDelModelo;
     if (alCliente.length) { corrida.inv.texto += 1; if (corrida.pulsados.size) corrida.inv.pulsado += 1; if (alCliente.some((m) => tipoInter(m.payload) === 'button')) corrida.inv.antes += 1; if (ctx.ofertaDelModelo === true) corrida.inv.oferta += 1; }
     for (const m of alCliente) {
