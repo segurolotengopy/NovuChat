@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Flujo } from '../../lib/flujo';
 import { CARPETA_FLUJOS_DEL_REPO } from '../../lib/flujos-de-cliente';
-import { RAIZ_REPO, atiendeCliente, expresionNiegaIaDeCore, fuenteDeNiegaIa, hallazgosM4, idDeFlujo } from './comprobaciones';
+import { RAIZ_REPO, atiendeCliente, expresionesNiegaIaDeCore, fuenteDeNiegaIa, hallazgosM4, idDeFlujo } from './comprobaciones';
 import { problemasDeFlujo } from './excepciones';
 
 export const CLASES = ['sin publicar', 'vivo', 'demo', 'barrido', 'congelado'] as const;
@@ -122,7 +122,7 @@ export function problemasDeMigrado(fila: Fila, ctx: Contexto = contextoReal()): 
   const m4 = problemasDeFlujo('nucleo-comun', ruta, hallazgosM4(flujo));
   p.push(...m4.map((x) => `M4: ${x}`));
   if (atiendeCliente(flujo)) {
-    const fuente = fuenteDeNiegaIa(flujo, expresionNiegaIaDeCore());
+    const fuente = fuenteDeNiegaIa(flujo, expresionesNiegaIaDeCore());
     p.push(...problemasDeFlujo('niega-ia', ruta, fuente === 'core' ? [] : ['NIEGA_IA']).map((x) => `M5: ${x}`));
   }
 

@@ -100,18 +100,31 @@ export function expresionNiegaIaDeCore(srcCore: string = SRC_CORE): string {
   return m[1] as string;
 }
 
+const LITERAL_NIEGA_IA_NORMALIZADO = /^const NIEGA_IA_NORMALIZADO = (\/.*\/[a-z]*);$/m;
+
+/** La segunda expresión declarada: la de texto NORMALIZADO (`core/texto/niega-ia-normalizado.js`, 13/11/2026). Ningún flujo la incluye aún. */
+export function expresionNiegaIaNormalizadaDeCore(srcCore: string = SRC_CORE): string {
+  const m = LITERAL_NIEGA_IA_NORMALIZADO.exec(readFileSync(join(srcCore, 'texto', 'niega-ia-normalizado.js'), 'utf8'));
+  if (!m) throw new Error('core/texto/niega-ia-normalizado.js ya no declara NIEGA_IA_NORMALIZADO');
+  return m[1] as string;
+}
+
+/** Las DOS expresiones de core declaradas como fuentes (decisión de Andres, 13/11/2026: unificarlas queda para después). */
+export const expresionesNiegaIaDeCore = (srcCore: string = SRC_CORE): string[] => [expresionNiegaIaDeCore(srcCore), expresionNiegaIaNormalizadaDeCore(srcCore)];
+
 /**
  * ¿De dónde sale la red NIEGA_IA del flujo? Estático: busca, en el código de cualquier nodo, una expresión asignada a una constante cuyo nombre
- * termina en NIEGA_IA (con o sin prefijo). `core` si alguna es idéntica a la de core; `otra` si hay copias pero ninguna lo es (copia renombrada
+ * termina en NIEGA_IA (con o sin prefijo). `core` si alguna es idéntica (el literal, no el nombre de la constante) a CUALQUIERA de las expresiones declaradas de core; `otra` si hay copias pero ninguna lo es (copia renombrada
  * y distinta); `ninguna` si no declara ninguna.
  */
-export function fuenteDeNiegaIa(f: Flujo, core: string): 'core' | 'otra' | 'ninguna' {
+export function fuenteDeNiegaIa(f: Flujo, core: string | readonly string[]): 'core' | 'otra' | 'ninguna' {
   const encontradas: string[] = [];
   for (const n of f.nodes) {
     const codigo = String(n.parameters?.['jsCode'] ?? '');
     for (const m of codigo.matchAll(TODOS_NIEGA_IA)) encontradas.push(m[1] as string);
   }
-  if (encontradas.includes(core)) return 'core';
+  const declaradas = typeof core === 'string' ? [core] : core;
+  if (encontradas.some((e) => declaradas.includes(e))) return 'core';
   return encontradas.length ? 'otra' : 'ninguna';
 }
 
