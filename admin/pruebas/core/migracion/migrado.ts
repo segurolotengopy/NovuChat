@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Flujo } from '../../lib/flujo';
 import { CARPETA_FLUJOS_DEL_REPO } from '../../lib/flujos-de-cliente';
-import { RAIZ_REPO, atiendeCliente, expresionesNiegaIaDeCore, fuenteDeNiegaIa, hallazgosM4, idDeFlujo } from './comprobaciones';
+import { RAIZ_REPO, atiendeCliente, expresionNiegaIaNormalizadaDeCore, expresionesNiegaIaDeCore, fuenteDeNiegaIa, hallazgosM4, idDeFlujo } from './comprobaciones';
 import { problemasDeFlujo } from './excepciones';
 
 export const CLASES = ['sin publicar', 'vivo', 'demo', 'barrido', 'congelado'] as const;
@@ -55,6 +55,23 @@ export function problemasDelTablero(filas: Fila[], produccion: string[]): string
   const enDisco = new Set(produccion.map(idDeFlujo));
   for (const id of enDisco) if (!ids.has(id)) p.push(`${id}: es un flujo de producción del disco y no tiene fila en el tablero`);
   for (const id of ids.keys()) if (!enDisco.has(id)) p.push(`${id}: tiene fila en el tablero y no es un flujo de producción del disco`);
+  return p;
+}
+
+/**
+ * La huella de CADA fila del tablero (no solo las `mudado`; 14/11/2026) es el sha256 del JSON versionado en el disco. Quien cambia un JSON de
+ * flujo actualiza su fila en el mismo PR; si no, un flujo que se «movió» sin que nadie lo declare deja de ser invisible. La mudanza no cambia la
+ * identidad: si el archivo ya no está en la carpeta de la fila, se busca en la otra (`experimental/` o `clientes/`).
+ */
+export function problemasDeHuellas(filas: Fila[], flujos: string): string[] {
+  const p: string[] = [];
+  for (const f of filas) {
+    const ruta = rutaDeFila(f);
+    const candidatas = [ruta, ruta.replace(/^experimental\//, 'clientes/'), ruta.replace(/^clientes\//, 'experimental/')].map((r) => join(flujos, r));
+    const archivo = candidatas.find((c) => existsSync(c));
+    if (!archivo) { p.push(`${ruta}: la fila tiene huella y el JSON no existe en el disco`); continue; }
+    if (sha256(archivo) !== f.huella.replace(/-/g, '')) p.push(`${ruta}: el sha256 del JSON versionado no es la huella de su fila (fila ${f.estado}, ${f.clase}); el JSON cambió sin actualizar el tablero`);
+  }
   return p;
 }
 
@@ -122,7 +139,7 @@ export function problemasDeMigrado(fila: Fila, ctx: Contexto = contextoReal()): 
   const m4 = problemasDeFlujo('nucleo-comun', ruta, hallazgosM4(flujo));
   p.push(...m4.map((x) => `M4: ${x}`));
   if (atiendeCliente(flujo)) {
-    const fuente = fuenteDeNiegaIa(flujo, expresionesNiegaIaDeCore());
+    const fuente = fuenteDeNiegaIa(flujo, expresionesNiegaIaDeCore(), expresionNiegaIaNormalizadaDeCore());
     p.push(...problemasDeFlujo('niega-ia', ruta, fuente === 'core' ? [] : ['NIEGA_IA']).map((x) => `M5: ${x}`));
   }
 

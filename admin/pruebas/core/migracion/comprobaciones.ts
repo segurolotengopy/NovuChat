@@ -119,21 +119,98 @@ export function expresionNiegaIaNormalizadaDeCore(srcCore: string = SRC_CORE): s
 /** Las DOS expresiones de core declaradas como fuentes (decisión de Andres, 13/11/2026: unificarlas queda para después). */
 export const expresionesNiegaIaDeCore = (srcCore: string = SRC_CORE): string[] => [expresionNiegaIaDeCore(srcCore), expresionNiegaIaNormalizadaDeCore(srcCore)];
 
-/**
- * ¿De dónde sale la red NIEGA_IA del flujo? Estático: busca, en el código de cualquier nodo, una expresión asignada a una constante cuyo nombre
- * termina en NIEGA_IA (con o sin prefijo). `core` si alguna es idéntica (el literal, no el nombre de la constante) a CUALQUIERA de las expresiones declaradas de core; `otra` si hay copias pero ninguna lo es (copia renombrada
- * y distinta); `ninguna` si no declara ninguna.
- */
-export function fuenteDeNiegaIa(f: Flujo, core: string | readonly string[]): 'core' | 'otra' | 'ninguna' {
-  const encontradas: string[] = [];
-  for (const n of f.nodes) {
-    const codigo = String(n.parameters?.['jsCode'] ?? '');
-    for (const m of codigo.matchAll(TODOS_NIEGA_IA)) encontradas.push(m[1] as string);
+/** Quita los comentarios de bloque y de línea (un solo paso, así que uno no confunde al otro). No toca `\/\/` ni `https://`; no entiende cadenas ni plantillas (límite declarado). */
+export const sinComentarios = (codigo: string): string => codigo.replace(/(?<!\\)\/\*[\s\S]*?\*\/|(?<![\\:/])\/\/[^\n]*/g, ' ');
+
+/** Un nombre de función que normaliza texto: `wlNorm`, `evNorm`, `normalizar`, `norm`… (contiene «norm», sin distinguir mayúsculas). */
+const esNormalizador = (nombre: string): boolean => /^[A-Za-z_$][\w$]*$/.test(nombre) && /norm/i.test(nombre);
+
+/** El texto entre el paréntesis que abre en `desde` (que apunta al `(`) y su par; `null` si no cierra. */
+function argumentoBalanceado(codigo: string, desde: number): string | null {
+  let n = 0;
+  for (let i = desde; i < codigo.length; i++) {
+    if (codigo[i] === '(') n++;
+    else if (codigo[i] === ')' && --n === 0) return codigo.slice(desde + 1, i);
   }
-  const declaradas = typeof core === 'string' ? [core] : core;
-  if (encontradas.some((e) => declaradas.includes(e))) return 'core';
-  return encontradas.length ? 'otra' : 'ninguna';
+  return null;
 }
+
+const escaparRegex = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * ¿La constante `nombre` se USA en este código (ya sin comentarios)? `nombre.test(`, `.exec(`, `.source`, o como argumento de `match`, `replace`,
+ * `search`, `split`. Una declaración sin uso no protege nada.
+ */
+export const seUsaLaConstante = (codigo: string, nombre: string): boolean => {
+  const n = escaparRegex(nombre);
+  return new RegExp(`\\b${n}\\s*\\.\\s*(?:test|exec|source)\\b|\\.\\s*(?:match|matchAll|replace|replaceAll|search|split)\\s*\\(\\s*${n}\\b`).test(codigo);
+};
+
+/**
+ * Regla estática de la variante NORMALIZADA (14/11/2026): cada `NOMBRE.test(arg)` / `NOMBRE.exec(arg)` recibe una llamada a un normalizador
+ * (`wlNorm(t)`: el nombre de la función contiene «norm») o una variable que, en el MISMO nodo, se asigna con una llamada así
+ * (`const n = evNorm(c)`). Cualquier otra cosa (un parámetro, el texto crudo, un uso solo por `.source` o `match`) no se puede decidir y se rechaza.
+ * Devuelve lo que no cumple; vacío = cumple.
+ */
+export function usosSinNormalizar(codigo: string, nombre: string): string[] {
+  const n = escaparRegex(nombre);
+  const malos: string[] = [];
+  const llamadas = [...codigo.matchAll(new RegExp(`\\b${n}\\s*\\.\\s*(?:test|exec)\\s*(?=\\()`, 'g'))];
+  if (llamadas.length === 0) return [`${nombre}: se usa sin .test( ni .exec(, no se puede comprobar que reciba texto normalizado`];
+  for (const m of llamadas) {
+    const arg = (argumentoBalanceado(codigo, m.index + m[0].length) ?? '').trim();
+    const llamada = /^([A-Za-z_$][\w$]*)\s*\(/.exec(arg);
+    if (llamada) {
+      const cierre = argumentoBalanceado(arg, llamada[0].length - 1);
+      if (esNormalizador(llamada[1] as string) && cierre !== null && arg.length === llamada[0].length + cierre.length + 1) continue;
+    } else if (/^[A-Za-z_$][\w$]*$/.test(arg)) {
+      // La declaración más cercana ANTES del uso (sin análisis de ámbito: el mismo nombre se reusa en otras funciones del nodo). Su valor empieza por un normalizador, o por una envoltura cuyo primer argumento lo es (`chSinNombrar(cmNorm(x))`).
+      const previas = [...codigo.slice(0, m.index).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${escaparRegex(arg)}\\s*=([^\\n;]*)`, 'g'))];
+      const valor = previas.length ? (previas[previas.length - 1]![1] as string) : '';
+      const cabeza = /^\s*([A-Za-z_$][\w$]*)\s*\(\s*(?:([A-Za-z_$][\w$]*)\s*\()?/.exec(valor);
+      if (cabeza && (esNormalizador(cabeza[1] as string) || esNormalizador(cabeza[2] ?? ''))) continue;
+    }
+    malos.push(`${nombre}.test(${arg}): el argumento no es una llamada a un normalizador ni una variable asignada con una`);
+  }
+  return malos;
+}
+
+export interface AnalisisNiegaIa {
+  fuente: 'core' | 'otra' | 'ninguna';
+  /** Declaraciones USADAS (sin comentarios, con `.test(` o equivalente en su mismo nodo): `[nombre, literal]`. */
+  usadas: [string, string][];
+  /** Usos de la expresión normalizada que no reciben texto normalizado. */
+  sinNormalizar: string[];
+}
+
+/**
+ * ¿De dónde sale la red NIEGA_IA del flujo? Estático, nodo por nodo: descarta comentarios; una declaración `<PREFIJO>_NIEGA_IA = /…/;` solo cuenta si
+ * en el MISMO nodo la constante se usa (`seUsaLaConstante`). `core` si hay al menos una declaración usada y TODAS las usadas son idénticas (el literal,
+ * no el nombre) a una de las expresiones declaradas de core: una copia más débil usada en otro nodo da `otra`. `ninguna` si no hay declaraciones
+ * (una comentada no existe); `otra` si hay declaraciones pero ninguna se usa. Si se pasa `normalizada` y una declaración usada es esa expresión,
+ * además `usosSinNormalizar` debe salir vacío; si no, `otra`.
+ */
+export function analizarNiegaIa(f: Flujo, core: string | readonly string[], normalizada?: string): AnalisisNiegaIa {
+  const declaradas = typeof core === 'string' ? [core] : core;
+  const usadas: [string, string][] = [];
+  const sinNormalizar: string[] = [];
+  let sinUso = 0;
+  for (const n of f.nodes) {
+    const codigo = sinComentarios(String(n.parameters?.['jsCode'] ?? ''));
+    for (const m of codigo.matchAll(TODOS_NIEGA_IA)) {
+      const nombre = /([A-Za-z_]*NIEGA_IA)\s*=/.exec(m[0])?.[1] as string;
+      if (!seUsaLaConstante(codigo, nombre)) { sinUso++; continue; }
+      usadas.push([nombre, m[1] as string]);
+      if (normalizada !== undefined && m[1] === normalizada) sinNormalizar.push(...usosSinNormalizar(codigo, nombre));
+    }
+  }
+  if (usadas.length === 0) return { fuente: sinUso > 0 ? 'otra' : 'ninguna', usadas, sinNormalizar };
+  const todasDeCore = usadas.every(([, lit]) => declaradas.includes(lit));
+  return { fuente: todasDeCore && sinNormalizar.length === 0 ? 'core' : 'otra', usadas, sinNormalizar };
+}
+
+/** Solo la fuente. Sin `normalizada` no se comprueba que la expresión normalizada reciba texto normalizado. */
+export const fuenteDeNiegaIa = (f: Flujo, core: string | readonly string[], normalizada?: string): 'core' | 'otra' | 'ninguna' => analizarNiegaIa(f, core, normalizada).fuente;
 
 // ---------------------------------------------------------------------------
 // errorWorkflow por nombre
