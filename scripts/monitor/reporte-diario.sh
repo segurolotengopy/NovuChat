@@ -55,15 +55,17 @@ CUENTAS="$(jq -r --argjson desde "$DESDE" '
       | select((.created_at | type) == "string")
       | { t: (.created_at | fromdateiso8601), c: (.conclusion // "en_curso") }
       | select(.t >= $desde) ] as $r
-  | ($r | sort_by(.t) | last | .c // "ninguna") as $ultima
+  | ($r | map(select(.c != "en_curso")) | sort_by(.t) | last | .c // "ninguna") as $ultima
+  | ($r | map(select(.c == "en_curso")) | length) as $enCurso
   | [ ($r | length),
       ($r | map(select(.c == "success")) | length),
       ($r | map(select(.c == "failure")) | length),
-      (if ($ultima | IN("success", "failure", "cancelled", "skipped", "en_curso", "ninguna")) then $ultima else "otra" end)
+      (if ($ultima | IN("success", "failure", "cancelled", "skipped", "ninguna")) then $ultima else "otra" end),
+      $enCurso
     ] | @tsv' 2>/dev/null)" || mal_uso "La lista de corridas no tiene la forma esperada."
 
-IFS=$'\t' read -r TOTAL BIEN MAL ULTIMA <<<"$CUENTAS"
-entero total "$TOTAL"; entero bien "$BIEN"; entero mal "$MAL"
+IFS=$'\t' read -r TOTAL BIEN MAL ULTIMA EN_CURSO <<<"$CUENTAS"
+entero total "$TOTAL"; entero bien "$BIEN"; entero mal "$MAL"; entero en_curso "$EN_CURSO"
 
 AVISOS=()
 [ "$TOTAL" -ge "$MINIMO" ] || AVISOS+=("El monitor corrió $TOTAL veces en $HORAS h (mínimo $MINIMO): casi no está vigilando.")
@@ -76,7 +78,11 @@ esac
 if [ "${#AVISOS[@]}" -eq 0 ]; then echo "**Monitor de n8n: vivo, sin novedades.**"; else echo "**Monitor de n8n: REVISAR.**"; fi
 echo
 echo "- Sondas en $HORAS h: $TOTAL de ~$ESPERADAS esperadas ($BIEN bien, $MAL con falla)."
-echo "- Última sonda: \`$ULTIMA\`."
+# «Última sonda» es la última TERMINADA: una corrida en curso (una caída tarda
+# unos 6 minutos en declararse) no puede tapar una falla reciente.
+SUFIJO=""
+[ "$EN_CURSO" -le 0 ] || SUFIJO=" (en curso ahora: $EN_CURSO)"
+echo "- Última sonda terminada: \`$ULTIMA\`$SUFIJO."
 echo "- Certificado: \`$CERT\`${DIAS:+ ($DIAS días)}."
 for a in "${AVISOS[@]:-}"; do [ -z "$a" ] || echo "- ⚠ $a"; done
 echo

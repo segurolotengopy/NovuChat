@@ -81,7 +81,18 @@ describe('reporte-diario.sh', () => {
   it('sin ninguna corrida: sale 1 y lo dice', () => {
     const r = reporte([]);
     expect(r.status).toBe(1);
-    expect(r.stdout).toContain('Última sonda: `ninguna`.');
+    expect(r.stdout).toContain('Última sonda terminada: `ninguna`.');
+  });
+
+  it('una corrida EN CURSO no tapa una falla reciente: la última sonda es la última terminada', () => {
+    const r = reporte([...buenas(140), corrida(3, 'failure'), corrida(1, null)]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain('Última sonda terminada: `failure` (en curso ahora: 1).');
+    expect(r.stdout).toContain('⚠ La última sonda falló');
+    // Con la terminada en verde, la que corre ahora no avisa nada.
+    const bien = reporte([...buenas(140), corrida(1, null)]);
+    expect(bien.status).toBe(0);
+    expect(bien.stdout).toContain('Última sonda terminada: `success` (en curso ahora: 1).');
   });
 
   it('la última sonda falló: sale 1; una falla vieja ya recuperada, no', () => {
@@ -110,7 +121,7 @@ describe('reporte-diario.sh', () => {
       }),
     ];
     const r = reporte(sucia);
-    expect(r.stdout).toContain('Última sonda: `otra`.');
+    expect(r.stdout).toContain('Última sonda terminada: `otra`.');
     for (const m of ['SECRETO', 'secret', 'onerror', '<img', 'example.org', '@alguien']) expect(r.todo, m).not.toContain(m);
   });
 
@@ -204,6 +215,34 @@ exit 0
     expect(r.pantalla).toContain('MONITOR_N8N_PING_URL  NO se carga');
   });
 
+  it('el id del chequeo se lee de un archivo (primera línea) y no queda en pantalla ni en argumentos', () => {
+    const archivo = join(dir, 'ping');
+    writeFileSync(archivo, `${UUID}\nresto-que-se-ignora\n`, { mode: 0o600 });
+    chmodSync(archivo, 0o600);
+    const r = correr(['--env', env, '--ping-desde', archivo, '--aplicar', '--confirmo', 'github']);
+    expect(r.status).toBe(0);
+    expect(r.stdin.trim().split('\n')).toEqual([`https://${HOST}/healthz/readiness`, `https://hc-ping.com/${UUID}`]);
+    for (const v of [UUID, 'resto-que-se-ignora']) {
+      expect(r.pantalla).not.toContain(v);
+      expect(r.args).not.toContain(v);
+    }
+  });
+
+  it('--ping-desde exige un archivo común, del usuario y de modo 600; y un contenido que sea un UUID', () => {
+    const abierto = join(dir, 'abierto');
+    writeFileSync(abierto, `${UUID}\n`, { mode: 0o644 });
+    chmodSync(abierto, 0o644);
+    const malo = join(dir, 'malo');
+    writeFileSync(malo, `${UUID}/fail\n`, { mode: 0o600 });
+    chmodSync(malo, 0o600);
+    for (const a of [abierto, malo, join(dir, 'no-existe'), dir]) {
+      const r = correr(['--env', env, '--ping-desde', a, '--aplicar', '--confirmo', 'github']);
+      expect(r.status, a).toBe(2);
+      expect(r.args).toBe('');
+      expect(r.pantalla).not.toContain(UUID);
+    }
+  });
+
   it('un N8N_BASE_URL que no es https://<host> no escribe nada', () => {
     for (const base of ['http://n8n.example.org', 'https://usuario@n8n.example.org', 'https://n8n.example.org:8443', 'https://10.0.0.1', 'n8n.example.org', '']) {
       writeFileSync(env, `N8N_BASE_URL=${base}\n`);
@@ -275,6 +314,24 @@ describe('monitor-n8n-reporte.yml', () => {
     expect(sinComentarios).toContain('creator=github-actions%5Bbot%5D');
     expect(sinComentarios).toContain('select(.title == $t)');
     expect(sinComentarios).toContain('-F body=@reporte.md');
+  });
+
+  it('si la API falla NO se publica un reporte inventado: sale 2 antes de llamar al script, sin comentar', () => {
+    const armar = sinComentarios.split('- name: Armar el reporte')[1].split('- name: ')[0];
+    // Cada eslabón de la lectura tiene su salida por `no_se_pudo`, que escribe salida=2 y corta.
+    expect(armar).toContain('echo "salida=2" >> "$GITHUB_OUTPUT"');
+    expect(armar).toMatch(/> paginas\.json 2> \/dev\/null \|\| no_se_pudo/);
+    expect(armar).toContain("jq -e 'type == \"array\" and length > 0 and all(.[]; (.workflow_runs | type) == \"array\")' paginas.json > /dev/null || no_se_pudo");
+    expect(armar).toMatch(/> corridas\.json \|\| no_se_pudo/);
+    // La lectura (y su validación) va ANTES de llamar al script del reporte.
+    expect(armar.indexOf('|| no_se_pudo')).toBeLessThan(armar.indexOf('reporte-diario.sh'));
+    // Nada de normalizar un error de la API a «0 corridas».
+    expect(armar).not.toContain('// []) | add // []');
+    expect(armar).not.toMatch(/\.workflow_runs \/\/ \[\]/);
+  });
+
+  it('la búsqueda de la Issue pagina', () => {
+    expect(sinComentarios).toContain('gh api --paginate "repos/${GITHUB_REPOSITORY}/issues?state=open&creator=');
   });
 
   it('falla la corrida cuando el reporte trae avisos, después de comentar', () => {

@@ -69,10 +69,20 @@ jobs:
         run: |
           set -uo pipefail
           DESDE="$(date -u -d '25 hours ago' +%Y-%m-%dT%H:%M:%SZ)"
+          # Si la API falla (límite de consultas, 5xx, token), NO hay reporte: un
+          # «0 corridas» inventado sería un diagnóstico falso en una Issue pública.
+          no_se_pudo() {
+            echo "::error::No se pudo leer la lista de corridas de la API de GitHub: no hay reporte."
+            echo "salida=2" >> "$GITHUB_OUTPUT"
+            exit 2
+          }
           # Solo lectura (actions: read). Hasta 144 corridas al día: se pagina.
           gh api --paginate --slurp \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/monitor-n8n.yml/runs?event=schedule&per_page=100&created=%3E%3D${DESDE}" |
-            jq '{workflow_runs: (map(.workflow_runs // []) | add // [])}' > corridas.json
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/monitor-n8n.yml/runs?event=schedule&per_page=100&created=%3E%3D${DESDE}" \
+            > paginas.json 2> /dev/null || no_se_pudo
+          # Cada página tiene que traer `workflow_runs`: un error de la API sale como objeto con `message`.
+          jq -e 'type == "array" and length > 0 and all(.[]; (.workflow_runs | type) == "array")' paginas.json > /dev/null || no_se_pudo
+          jq '{workflow_runs: (map(.workflow_runs) | add // [])}' paginas.json > corridas.json || no_se_pudo
           rc=0
           bash scripts/monitor/reporte-diario.sh < corridas.json > reporte.md || rc=$?
           cat reporte.md >> "$GITHUB_STEP_SUMMARY"
@@ -88,7 +98,7 @@ jobs:
           TITULO='Monitor n8n — reporte diario'
           # Solo una Issue ABIERTA creada por este mismo workflow: en un
           # repositorio público cualquiera puede abrir otra con el mismo título.
-          NUMERO="$(gh api "repos/${GITHUB_REPOSITORY}/issues?state=open&creator=github-actions%5Bbot%5D&per_page=100" |
+          NUMERO="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues?state=open&creator=github-actions%5Bbot%5D&per_page=100" |
             jq -r --arg t "$TITULO" '[.[] | select(.pull_request == null) | select(.title == $t) | .number] | first // empty')"
           if ! [[ "$NUMERO" =~ ^[0-9]+$ ]]; then
             NUMERO="$(gh api -X POST "repos/${GITHUB_REPOSITORY}/issues" -f title="$TITULO" \
