@@ -22,6 +22,8 @@
  *   modo `comun`  comunes + los paquetes pedidos + el archivo
  *   modo `solo`   los paquetes pedidos + el archivo
  *
+ *   `@@comun>paquete`  los comunes + el paquete (un archivo de core) y nada más: el nodo ES el archivo de core.
+ *
  * Los PAQUETES son nombres de la sección `paquetes` del config: cada uno es un archivo o una lista de archivos
  * (por ejemplo `mensajes` o `filtro` de esta carpeta). Se pegan en el orden en que se piden. Ejemplos:
  *   `@@comun+mensajes:nodos/armar.js`     `@@solo+mensajes+filtro:nodos/armar.js`
@@ -149,6 +151,14 @@ export function codigoDe(p, marca, nodo) {
     const fuente = p.paquetes[medio[1]];
     if (!fuente || fuente.length < 1) throw new Error(`${nodo}: el config no declara el paquete «${medio[1]}»`);
     return fuente.join('\n') + '\n';
+  }
+  // `@@comun>paquete`: los comunes del flujo y, a continuación, un archivo de core declarado como paquete, INCLUIDO tal cual
+  // (el nodo es el archivo de core: una sola fuente, sin copia). Es lo que hacen «Carga de entrada» y «Puerta del turno».
+  const nucleo = /^@@comun>([a-z][a-z0-9-]*)$/.exec(marca);
+  if (nucleo) {
+    const fuente = p.paquetes[nucleo[1]];
+    if (!fuente || fuente.length < 1) throw new Error(`${nodo}: el config no declara el paquete «${nucleo[1]}»`);
+    return [...p.comun, ...fuente].join('\n\n') + '\n';
   }
   const m = MARCA.exec(marca);
   if (!m) throw new Error(`${nodo}: marca no válida: ${marca}`);

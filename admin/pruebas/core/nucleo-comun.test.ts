@@ -22,6 +22,7 @@ import type { Flujo } from '../lib/flujo';
 import { CARPETA_FLUJOS_DEL_REPO, flujosDeProduccion } from '../lib/flujos-de-cliente';
 import { NODOS_COMUNES, hallazgosM4, incluyeVariante, variantesDeNodo } from './migracion/comprobaciones';
 import { problemasDeRegla } from './migracion/excepciones';
+import { codigoDe } from '../../../Flujos/src/core/sin-agente/construir.mjs';
 
 const NODOS = ['normalizar-entrada', 'config-del-negocio', 'procesar-respuesta', 'uso-extendido', 'comercio-no-operativo'];
 const VARIANTES_DECLARADAS = NODOS.flatMap((n) => [`core/${n}.js`, `core/venta/${n}.js`, `core/captacion/${n}.js`]).sort();
@@ -111,10 +112,10 @@ const nodoCode = (name: string, jsCode: string) => ({ name, type: 'n8n-nodes-bas
 const flujoCon = (...nodes: ReturnType<typeof nodoCode>[]): Flujo => ({ nodes, connections: {} }) as unknown as Flujo;
 
 describe('M4: cada nodo común de un flujo incluye una variante declarada de core, o tiene excepción', () => {
-  it('son siete nodos comunes: los 5 del núcleo tienen sus 3 variantes; «Carga de entrada» y «Puerta del turno» no tienen ninguna en core', () => {
+  it('son siete nodos comunes: los 5 del núcleo tienen sus 3 variantes; «Carga de entrada» y «Puerta del turno» tienen UNA cada una en core (`sin-agente/turno/`)', () => {
     expect(NODOS_COMUNES).toHaveLength(7);
     for (const n of NODOS_COMUNES.slice(0, 5)) expect(variantesDeNodo(n), n).toHaveLength(3);
-    for (const n of NODOS_COMUNES.slice(5)) expect(variantesDeNodo(n), n).toEqual([]);
+    for (const n of NODOS_COMUNES.slice(5)) expect(variantesDeNodo(n), n).toHaveLength(1);
   });
 
   it('todo flujo de producción del disco (experimental/ o clientes/) está cubierto: sin violación sin excepción y sin excepción que sobre', () => {
@@ -146,6 +147,13 @@ describe('M4: cada nodo común de un flujo incluye una variante declarada de cor
     expect(hallazgosM4(flujoCon(nodoCode('Normalizar entrada', variante)))).toEqual([]);
     expect(hallazgosM4(flujoCon(nodoCode('Normalizar entrada', `${variante}// x`)))).toEqual(['Normalizar entrada']);
     expect(hallazgosM4(flujoCon(nodoCode('Carga de entrada', 'return [];')))).toEqual(['Carga de entrada']);
+    // «Carga de entrada» y «Puerta del turno»: la variante de core pasa; con un byte alterado (en el sufijo) falla.
+    for (const n of ['Carga de entrada', 'Puerta del turno']) {
+      const [u] = variantesDeNodo(n);
+      const unica = u as string;
+      expect(hallazgosM4(flujoCon(nodoCode(n, `const _c = 1;\n\n${unica}`))), n).toEqual([]);
+      expect(hallazgosM4(flujoCon(nodoCode(n, `const _c = 1;\n\n${unica.slice(0, -5)}X${unica.slice(-4)}`))), n).toEqual([n]);
+    }
     expect(hallazgosM4(flujoCon(nodoCode('Otro nodo', 'return [];')))).toEqual([]);
   });
 
@@ -155,5 +163,35 @@ describe('M4: cada nodo común de un flujo incluye una variante declarada de cor
     expect(problemasDeRegla('nucleo-comun', new Map([['a.json', ['Normalizar entrada']]]), exc)).toEqual([]);
     expect(problemasDeRegla('nucleo-comun', new Map([['a.json', []]]), exc)).toEqual([expect.stringContaining('SOBRA')]);
     expect(problemasDeRegla('nucleo-comun', new Map([['b.json', []]]), exc)).toEqual([expect.stringContaining('no existe')]);
+  });
+});
+
+describe('núcleo común: «Carga de entrada» y «Puerta del turno» de core (`sin-agente/turno/`)', () => {
+  const TURNO = join(SRC, 'core', 'sin-agente', 'turno');
+  const unidos = (a: string[]) => a.map((r) => readFileSync(r, 'utf8').trimEnd());
+  const proyecto = (archivo: string) => ({ comun: ['const CN_COMUN = 1;'], paquetes: { t: unidos([archivo]) }, librerias: [], leerNodo: () => '' }) as never;
+
+  it('la marca `@@comun>paquete` pega los comunes y el archivo de core, y el resultado lo reconoce M4', () => {
+    for (const [nodo, archivo] of [['Carga de entrada', 'carga-de-entrada.js'], ['Puerta del turno', 'puerta-del-turno.js']] as const) {
+      const js = codigoDe(proyecto(join(TURNO, archivo)), '@@comun>t', nodo);
+      expect(js.startsWith('const CN_COMUN = 1;\n\n'), nodo).toBe(true);
+      expect(hallazgosM4(flujoCon(nodoCode(nodo, js))), nodo).toEqual([]);
+      // contraprueba: un byte alterado en la variante incluida hace fallar M4
+      expect(hallazgosM4(flujoCon(nodoCode(nodo, `${js.slice(0, -6)}X${js.slice(-5)}`))), nodo).toEqual([nodo]);
+    }
+  });
+
+  it('contraprueba: la marca con un paquete no declarado lanza', () => {
+    expect(() => codigoDe(proyecto(join(TURNO, 'carga-de-entrada.js')), '@@comun>otro', 'n')).toThrow(/no declara el paquete/);
+  });
+
+  it('las copias de src/nodos que se conservan (para las pruebas de huella) son idénticas a core', () => {
+    const core = (f: string) => readFileSync(join(TURNO, f), 'utf8');
+    for (const f of ['rroca-antonio', 'rroca-ruben', 'rroca-emma', 'rroca-evy', 'doctoras', 'venta-digital']) {
+      expect(readFileSync(join(RAIZ_FLUJOS, 'experimental', f, 'src', 'nodos', 'carga-de-entrada.js'), 'utf8'), f).toBe(core('carga-de-entrada.js'));
+    }
+    for (const f of ['rroca-antonio', 'rroca-ruben', 'venta-digital']) {
+      expect(readFileSync(join(RAIZ_FLUJOS, 'experimental', f, 'src', 'nodos', 'puerta-del-turno.js'), 'utf8'), f).toBe(core('puerta-del-turno.js'));
+    }
   });
 });

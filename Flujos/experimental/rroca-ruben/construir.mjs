@@ -129,6 +129,8 @@ export const CONFIG = {
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
+    'turno-carga': ['../../src/core/sin-agente/turno/carga-de-entrada.js'],
+    'turno-puerta': ['../../src/core/sin-agente/turno/puerta-del-turno.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],

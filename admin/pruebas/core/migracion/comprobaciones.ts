@@ -40,11 +40,18 @@ const ARCHIVO_DE_NODO: Record<string, string> = {
   'Uso extendido': 'uso-extendido', 'Comercio no operativo': 'comercio-no-operativo',
 };
 
+/** Las variantes de los dos nodos de la capa común de los flujos sin agente: un solo archivo cada uno (`core/sin-agente/turno/`, etapa 1 PR 2). */
+const ARCHIVO_DE_TURNO: Record<string, string> = {
+  'Carga de entrada': 'sin-agente/turno/carga-de-entrada.js', 'Puerta del turno': 'sin-agente/turno/puerta-del-turno.js',
+};
+
 /**
  * Las variantes declaradas (lista cerrada de `VARIANTES.md`) de un nodo común, leídas de `Flujos/src/core`. «Carga de entrada» y «Puerta del
- * turno» no tienen variante en core todavía: devuelven lista vacía, y todo flujo que las lleve es una excepción de M4 hasta la etapa 1.
+ * turno» tienen UNA cada una (`sin-agente/turno/`): el flujo que lleva otra versión es una excepción de M4 hasta que se unifique.
  */
 export function variantesDeNodo(nodo: string, srcCore: string = SRC_CORE): string[] {
+  const turno = ARCHIVO_DE_TURNO[nodo];
+  if (turno) return [join(srcCore, turno)].filter((r) => existsSync(r)).map((r) => readFileSync(r, 'utf8'));
   const base = ARCHIVO_DE_NODO[nodo];
   if (!base) return [];
   return [`${base}.js`, `venta/${base}.js`, `captacion/${base}.js`]

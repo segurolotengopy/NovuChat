@@ -40,6 +40,21 @@ variante: es un solo archivo que cada flujo adopta con una marca del armador.
 |---|---|---|---|---|
 | Respuesta coherente (acuse, seguimiento y respuesta por intención: el modelo solo clasifica y el código escribe el texto; prefijo `rc`, sin dependencias) | `Flujos/src/core/conversacion/respuesta-coherente.js` | Q'Taco (`venta-minima`: «Decidir turno» y «Plan del turno») | `+coherente` en `construir.mjs` | Adopta Q'Taco (12/11/2026, `activo=false` por defecto; se enciende con el dato `respuestaLibre` del tenant). Los demás flujos no la adoptan hoy: lo decide Andres flujo por flujo. |
 
+## Las dos variantes de la capa común de los flujos sin agente (13/11/2026, etapa 1 PR 2)
+
+«Carga de entrada» y «Puerta del turno» ya no son copias: son **un archivo único cada uno** en `Flujos/src/core/sin-agente/turno/`
+(`carga-de-entrada.js`, `puerta-del-turno.js`), declarados como variante de su nodo en `admin/pruebas/core/migracion/comprobaciones.ts`
+(`variantesDeNodo`). Los constructores los **incluyen** con la marca `@@comun>turno-carga` / `@@comun>turno-puerta` (los comunes del flujo y el
+archivo de core, sin copia). Se unificaron solo las copias idénticas byte a byte; los JSON no cambian un byte.
+
+| Nodo | Lo incluyen | Conservan su versión propia (excepción M4) |
+|---|---|---|
+| Carga de entrada | Antonio, Rubén, Emma, Evy, doctoras, Walisuma, Casa Bermejo | agenda mínima, captación mínima (congelada), chat propio, venta mínima |
+| Puerta del turno | Antonio, Rubén, Walisuma, Casa Bermejo | Emma, Evy, doctoras (modo prueba), chat propio (baja por texto) |
+
+Rutas históricas: el contenido de los archivos no se retoca; si lleva un comentario con una ruta o nombre, termina igual en el JSON.
+Las copias de `src/nodos/` de esos flujos (y de `venta-digital`) se conservan porque pruebas de huella las leen (`tenants/*/huecos.test.ts`, `neutros.test.ts`); ya no las lee ningún constructor y son idénticas a core.
+
 ## Las dos expresiones declaradas de `NIEGA_IA` (13/11/2026)
 
 Decisión de Andres: «sí, dos declaradas». Core declara DOS fuentes de la red «nunca negar ser una IA» (prohibición 4) y unificarlas queda para después:

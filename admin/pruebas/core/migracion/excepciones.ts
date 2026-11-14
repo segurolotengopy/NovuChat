@@ -25,11 +25,11 @@ export interface Excepcion { dueno: string; vence: string; motivo: string; desde
 
 /** Fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-11-12 + 90 = 2027-02-10). */
 export const ALTA = '2026-11-12';
-/** Cuántas excepciones hay hoy, medidas con las pruebas el 12/11/2026 (88 tras cerrar la de la redirección, aplicar el contrato sin agente y declarar dos expresiones de NIEGA_IA el 13/11/2026). SOLO BAJA. */
-export const TOPE = 88;
+/** Cuántas excepciones hay hoy, medidas con las pruebas el 12/11/2026 (76 tras cerrar la de la redirección, aplicar el contrato sin agente, declarar dos expresiones de NIEGA_IA y llevar «Carga de entrada» y «Puerta del turno» a core el 13/11/2026). SOLO BAJA. */
+export const TOPE = 76;
 /** El mismo tope desglosado por regla (la suma es `TOPE`). Cada cuenta es la medida el 12/11/2026. SOLO BAJA. */
 export const TOPE_POR_REGLA: Record<Regla, number> = {
-  'nucleo-comun': 54, 'niega-ia': 4, 'error-workflow-por-nombre': 16, 'ux-derivacion': 4, 'capacidades-comunes': 10, 'flujos-origen': 0, entregas: 0, 'expresiones-n8n': 0,
+  'nucleo-comun': 42, 'niega-ia': 4, 'error-workflow-por-nombre': 16, 'ux-derivacion': 4, 'capacidades-comunes': 10, 'flujos-origen': 0, entregas: 0, 'expresiones-n8n': 0,
 };
 
 const DUENO = 'por asignar (Principal)';
@@ -66,7 +66,7 @@ const RAIZ_QUE_ATIENDEN = ['bellido-agendamiento.json', 'demo-a-agendamiento.jso
 const unNodo = (lista: string[], nodo: string): Tabla => Object.fromEntries(lista.map((j) => [j, [nodo]]));
 
 export const EXCEPCIONES: Record<string, Excepcion> = {
-  // M4 (`core/nucleo-comun.test.ts`): nodos comunes que no incluyen una variante declarada de core. 32 + 22.
+  // M4 (`core/nucleo-comun.test.ts`): nodos comunes que no incluyen una variante declarada de core. 32 + 10.
   ...porRegla('nucleo-comun', 'El flujo lleva una versión propia del nodo, distinta de las variantes declaradas de core (VARIANTES.md); se unifica con core en la etapa 1, no en la 0', {
     'clientes/qtaco-redireccion/qtaco-redireccion.qtaco-ruta-nueva.json': ['Config del negocio'],
     'clientes/qtaco-redireccion/qtaco-redireccion.qtaco.json': ['Config del negocio'],
@@ -84,20 +84,22 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
     'experimental/venta-minima/venta-minima.qtaco.json': ['Config del negocio', 'Uso extendido', 'Comercio no operativo'],
     'experimental/walisuma/walisuma.json': ['Normalizar entrada', 'Config del negocio'],
   }),
-  ...porRegla('nucleo-comun', 'capa común experimental, sube a core en la etapa 1', {
+  // «Carga de entrada» y «Puerta del turno» ya viven en core (`sin-agente/turno/`, una variante cada una); quedan los flujos con otra versión propia.
+  ...porRegla('nucleo-comun', 'Lleva una versión propia de «Carga de entrada» (no es idéntica a la variante de core `sin-agente/turno/`); se unifica con otra rebanada de la etapa 1', {
     'experimental/agenda-minima/agenda-minima.v0.json': ['Carga de entrada'],
-    'experimental/captacion-minima/captacion-minima.novuchat.json': ['Carga de entrada'],
-    'experimental/casa-bermejo/casa-bermejo.json': ['Carga de entrada', 'Puerta del turno'],
-    'experimental/chat-novuchat/chat-novuchat.novuchat.json': ['Carga de entrada', 'Puerta del turno'],
-    'experimental/doctoras/doctoras.rroca-emma.json': ['Carga de entrada', 'Puerta del turno'],
-    'experimental/doctoras/doctoras.rroca-evy.json': ['Carga de entrada', 'Puerta del turno'],
-    'experimental/rroca-antonio/rroca-antonio.json': ['Carga de entrada', 'Puerta del turno'],
-    'experimental/rroca-emma/rroca-emma.json': ['Carga de entrada', 'Puerta del turno'],
-    'experimental/rroca-evy/rroca-evy.json': ['Carga de entrada', 'Puerta del turno'],
-    'experimental/rroca-ruben/rroca-ruben.json': ['Carga de entrada', 'Puerta del turno'],
+    'experimental/chat-novuchat/chat-novuchat.novuchat.json': ['Carga de entrada'],
     'experimental/venta-minima/venta-minima.qtaco-3727.json': ['Carga de entrada'],
     'experimental/venta-minima/venta-minima.qtaco.json': ['Carga de entrada'],
-    'experimental/walisuma/walisuma.json': ['Carga de entrada', 'Puerta del turno'],
+  }),
+  ...porRegla('nucleo-comun', 'Captación mínima queda CONGELADA (decisión de Andres, 13/11/2026: «congelar y retirar al final»): conserva su «Carga de entrada» propia hasta su retiro, no se unifica', {
+    'experimental/captacion-minima/captacion-minima.novuchat.json': ['Carga de entrada'],
+  }),
+  ...porRegla('nucleo-comun', 'Lleva una versión propia de «Puerta del turno» (no es idéntica a la variante de core `sin-agente/turno/`: se comporta distinto); se unifica con otra rebanada de la etapa 1', {
+    'experimental/chat-novuchat/chat-novuchat.novuchat.json': ['Puerta del turno'],
+    'experimental/doctoras/doctoras.rroca-emma.json': ['Puerta del turno'],
+    'experimental/doctoras/doctoras.rroca-evy.json': ['Puerta del turno'],
+    'experimental/rroca-emma/rroca-emma.json': ['Puerta del turno'],
+    'experimental/rroca-evy/rroca-evy.json': ['Puerta del turno'],
   }),
   // M5 (`core/niega-ia.test.ts`): la red NIEGA_IA no sale de core. 4. Las 9 copias renombradas de la expresión sobre texto normalizado ya cumplen: core declara DOS expresiones (13/11/2026).
   ...porRegla('niega-ia', 'No declara ninguna expresión NIEGA_IA en su código (búsqueda por la constante; no se descartó otro mecanismo); se avisa a la sesión dueña, y no se arregla en la etapa 0', unNodo([
