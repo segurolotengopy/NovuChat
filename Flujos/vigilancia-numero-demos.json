@@ -100,9 +100,6 @@
         480,
         0
       ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000,
       "onError": "continueRegularOutput",
       "credentials": {
         "whatsAppApi": {
@@ -149,9 +146,6 @@
         720,
         0
       ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000,
       "onError": "continueRegularOutput",
       "credentials": {
         "whatsAppApi": {
@@ -162,7 +156,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Clasifica la respuesta de Meta de cada demo con una lista CERRADA de resultados.\n// Nada de lo que devuelve Meta (cuerpos, ids, nombres) pasa al texto de salida:\n// solo los nombres fijos «Demo A» y «Demo B» y las palabras de esta lista.\n//   ok                      200 y status CONNECTED (el único valor que la documentación de Meta garantiza)\n//   estado_<VALOR>          200 y otro status (solo letras y guion bajo, hasta 30)\n//   no_existe_o_sin_acceso  error 100 de Meta: el número no existe O el token no puede leerlo (Meta usa\n//                           el mismo código para las dos cosas; el subcódigo 33 no las separa)\n//   token / permiso         error 190 (token vencido o inválido) / error 10 o 200-299 (permiso)\n//   transitorio             red, 5xx, 429 o errores temporales de Meta: SIN veredicto, no se avisa\n//   respuesta_sin_estado, error_de_meta\nconst cfg = $('Config base').first().json;\nconst DEMOS = [\n  { nombre: 'Demo A', nodo: 'Consultar número Demo A' },\n  { nombre: 'Demo B', nodo: 'Consultar número Demo B' },\n];\nconst TEMPORALES = [1, 2, 4, 17, 32, 341, 613, 80007];\n\nfunction clasificar(r) {\n  if (!r || typeof r !== 'object' || typeof r.statusCode !== 'number') return 'transitorio';\n  const http = r.statusCode;\n  const cuerpo = r.body && typeof r.body === 'object' ? r.body : {};\n  if (http === 200) {\n    if (typeof cuerpo.status !== 'string') return 'respuesta_sin_estado';\n    if (cuerpo.status === 'CONNECTED') return 'ok';\n    return /^[A-Z_]{2,30}$/.test(cuerpo.status) ? 'estado_' + cuerpo.status : 'estado_otro';\n  }\n  const e = cuerpo.error && typeof cuerpo.error === 'object' ? cuerpo.error : {};\n  const c = e.code;\n  if (c === 190) return 'token';\n  if (c === 10 || (typeof c === 'number' && c >= 200 && c <= 299)) return 'permiso';\n  if (http === 429 || http >= 500 || TEMPORALES.includes(c)) return 'transitorio';\n  if (c === 100) return 'no_existe_o_sin_acceso';\n  if (http === 401 || http === 403) return 'token';\n  return 'error_de_meta';\n}\n\nconst resultados = DEMOS.map((d) => {\n  let r;\n  try { r = $(d.nodo).first().json; } catch (e) { r = undefined; }\n  return { nombre: d.nombre, res: clasificar(r) };\n});\nconst fallas = resultados.filter((x) => x.res !== 'ok' && x.res !== 'transitorio');\nconst hayDuda = resultados.some((x) => x.res === 'transitorio');\n// Sin veredicto (y sin falla): no se manda NADA y el silencio lo vigila el chequeo externo.\nif (!fallas.length && hayDuda) return [];\nreturn [{ json: {\n  destino: fallas.length ? 'fail' : 'ok',\n  cuerpo: resultados.map((x) => x.nombre + ': ' + x.res).join(' | '),\n  urlPing: cfg.urlPing,\n} }];\n"
+        "jsCode": "// Clasifica la respuesta de Meta de cada demo con una lista CERRADA de resultados.\n// Nada de lo que devuelve Meta (cuerpos, ids, nombres) pasa al texto de salida:\n// solo los nombres fijos «Demo A» y «Demo B» y las palabras de esta lista.\n//   ok                      200, status CONNECTED (el único valor que la documentación de Meta garantiza) Y el `id`\n//                           de la respuesta es el del número que se consultó\n//   id_no_coincide          200 y CONNECTED pero de OTRO número (un nodo que falla por dentro puede dejar pasar la\n//                           respuesta del demo anterior: nunca un «ok» prestado)\n//   estado_<VALOR>          200 y otro status (solo letras y guion bajo, hasta 30)\n//   no_existe_o_sin_acceso  error 100 de Meta: el número no existe O el token no puede leerlo (Meta usa\n//                           el mismo código para las dos cosas; el subcódigo 33 no las separa)\n//   token / permiso         error 190 (token vencido o inválido) / error 10 o 200-299 (permiso)\n//   transitorio             red, 5xx, 429 o errores temporales de Meta (códigos de la lista o `is_transient`):\n//                           SIN veredicto, no se avisa\n//   error_del_nodo          n8n no pudo ni armar la consulta (credencial borrada o sin asignar): falla\n//   respuesta_sin_estado, error_de_meta\nconst cfg = $('Config base').first().json;\nconst DEMOS = [\n  { nombre: 'Demo A', nodo: 'Consultar número Demo A', numero: cfg.phoneNumberIdA },\n  { nombre: 'Demo B', nodo: 'Consultar número Demo B', numero: cfg.phoneNumberIdB },\n];\nconst TEMPORALES = [1, 2, 4, 17, 32, 341, 613, 80007];\n\n// Un error de n8n SIN respuesta de Meta: si habla de la credencial no se arregla solo (falla, con palabra fija);\n// cualquier otro (red, tiempo, DNS) es temporal. El mensaje de n8n NUNCA se copia.\nconst DE_LA_CREDENCIAL = /credential|credencial|authenticat|unauthori[sz]ed|forbidden|not set|not found|could not be found|does not exist/i;\n\nfunction clasificar(r, numero) {\n  if (!r || typeof r !== 'object') return 'transitorio';\n  if (typeof r.statusCode !== 'number') return typeof r.error === 'string' && DE_LA_CREDENCIAL.test(r.error) ? 'error_del_nodo' : 'transitorio';\n  const http = r.statusCode;\n  const cuerpo = r.body && typeof r.body === 'object' ? r.body : {};\n  if (http === 200) {\n    if (typeof cuerpo.status !== 'string') return 'respuesta_sin_estado';\n    if (cuerpo.status === 'CONNECTED') return String(cuerpo.id) === String(numero) ? 'ok' : 'id_no_coincide';\n    return /^[A-Z_]{2,30}$/.test(cuerpo.status) ? 'estado_' + cuerpo.status : 'estado_otro';\n  }\n  const e = cuerpo.error && typeof cuerpo.error === 'object' ? cuerpo.error : {};\n  const c = e.code;\n  if (c === 190) return 'token';\n  if (c === 10 || (typeof c === 'number' && c >= 200 && c <= 299)) return 'permiso';\n  if (http === 429 || http >= 500 || e.is_transient === true || TEMPORALES.includes(c)) return 'transitorio';\n  if (c === 100) return 'no_existe_o_sin_acceso';\n  if (http === 401 || http === 403) return 'token';\n  return 'error_de_meta';\n}\n\nconst leer = (nodo) => { try { return $(nodo).first().json; } catch (e) { return undefined; } };\nconst resultados = DEMOS.map((d) => ({ nombre: d.nombre, res: clasificar(leer(d.nodo), d.numero) }));\nconst fallas = resultados.filter((x) => x.res !== 'ok' && x.res !== 'transitorio');\nconst hayDuda = resultados.some((x) => x.res === 'transitorio');\n// Sin veredicto (y sin falla): no se manda NADA y el silencio lo vigila el chequeo externo.\nif (!fallas.length && hayDuda) return [];\nreturn [{ json: {\n  destino: fallas.length ? 'fail' : 'ok',\n  cuerpo: resultados.map((x) => x.nombre + ': ' + x.res).join(' | '),\n  urlPing: cfg.urlPing,\n} }];\n"
       },
       "id": "evaluar-numeros",
       "name": "Evaluar números",
@@ -266,7 +260,8 @@
     "executionTimeout": 180,
     "saveDataSuccessExecution": "none",
     "saveDataErrorExecution": "none",
-    "saveManualExecutions": false
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false
   },
   "pinData": {}
 }

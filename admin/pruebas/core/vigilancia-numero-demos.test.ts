@@ -26,17 +26,27 @@ const PING = 'https://hc-ping.com/REEMPLAZAR_ID_PING_NUMERO_DEMOS';
 type Resp = Record<string, unknown>;
 const respuesta = (statusCode: number, body: unknown): Resp => ({ statusCode, body, headers: {} });
 // Armados por partes: una secuencia larga de dígitos en el repositorio público la rechaza el saneo.
-const ID_FALSO = ['1010', '1010', '1010', '10'].join('');
+const ID_A = ['1010', '1010', '1010', '10'].join('');
+const ID_B = ['2020', '2020', '2020', '20'].join('');
+const ID_FALSO = ID_A;
 const TEL_FALSO = ['5491', '1000', '0000'].join('');
-const BIEN = respuesta(200, { status: 'CONNECTED', id: ID_FALSO });
+/** Respuesta conectada: el `id` se completa con el del demo al que se le entrega (ver `evaluar`). */
+const BIEN = respuesta(200, { status: 'CONNECTED', id: '__demo__' });
 const eMeta = (http: number, code: number, extra: Record<string, unknown> = {}): Resp =>
   respuesta(http, { error: { message: 'Unsupported get request. Object with ID does not exist', type: 'GraphMethodException', code, ...extra } });
 
 /** Corre el nodo con la respuesta de cada demo y devuelve los items que emite (vacío = silencio). */
+const conId = (r: Resp | undefined, id: string): Resp | undefined => {
+  const body = r?.body as Record<string, unknown> | undefined;
+  return r && body && typeof body === 'object' && body.id === '__demo__' ? { ...r, body: { ...body, id } } : r;
+};
 const evaluar = (a: Resp | undefined, b: Resp | undefined) => {
-  const referencias: Record<string, Record<string, unknown>> = { 'Config base': { urlPing: PING } };
-  if (a !== undefined) referencias[A] = a;
-  if (b !== undefined) referencias[B] = b;
+  const referencias: Record<string, Record<string, unknown>> = {
+    'Config base': { urlPing: PING, phoneNumberIdA: ID_A, phoneNumberIdB: ID_B },
+  };
+  const ra = conId(a, ID_A); const rb = conId(b, ID_B);
+  if (ra !== undefined) referencias[A] = ra;
+  if (rb !== undefined) referencias[B] = rb;
   return ejecutar(codigo, [{}], referencias);
 };
 
@@ -102,8 +112,8 @@ describe('flujo «Vigilancia del número de los demos»: solo lee, con la creden
       expect(n.parameters.options.timeout).toBe(10000);
       // Un error de red no corta el flujo: sale como «sin veredicto».
       expect(n.onError).toBe('continueRegularOutput');
-      expect(n.retryOnFail).toBe(true);
-      expect(n.maxTries).toBe(3);
+      // Con `neverError` el nodo atrapa por dentro los errores de red y no lanza: un reintento sería inerte.
+      expect(n.retryOnFail).toBeUndefined();
     }
   });
 
@@ -134,10 +144,10 @@ describe('flujo «Vigilancia del número de los demos»: solo lee, con la creden
   it('no guarda ejecuciones (el token y el cuerpo de Meta no quedan), no cuelga del errorWorkflow y cabe en su tiempo', () => {
     expect(f.settings).toEqual({
       executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 180,
-      saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveManualExecutions: false,
+      saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveManualExecutions: false, saveExecutionProgress: false,
     });
-    // Peor caso: 2 consultas × (3 intentos × 10 s + 2 esperas × 3 s) + aviso (3 × 10 s + 2 × 5 s) = 112 s.
-    expect(f.settings.executionTimeout).toBeGreaterThanOrEqual(2 * (3 * 10 + 2 * 3) + (3 * 10 + 2 * 5));
+    // Peor caso: 2 consultas de 10 s + aviso (3 intentos × 10 s + 2 esperas × 5 s) = 60 s.
+    expect(f.settings.executionTimeout).toBeGreaterThanOrEqual(2 * 10 + (3 * 10 + 2 * 5));
   });
 });
 
@@ -215,6 +225,36 @@ describe('«Evaluar números»: qué es un veredicto y qué no', () => {
       expect(r[0]?.cuerpo).toMatch(/^Demo A: [a-zA-Z_]+ \| Demo B: [a-zA-Z_]+$/);
       expect(Object.keys(r[0] ?? {}).sort()).toEqual(['cuerpo', 'destino', 'urlPing']);
     }
+  });
+
+  it('un «ok» PRESTADO no vale: CONNECTED con el id de OTRO número es una falla explícita, no un «bien»', () => {
+    // Un nodo que falla por dentro puede dejar pasar su ENTRADA: la respuesta del Demo A llegaría como la del Demo B.
+    const deA = respuesta(200, { status: 'CONNECTED', id: ID_A });
+    expect(evaluar(deA, deA)[0]).toMatchObject({ destino: 'fail', cuerpo: 'Demo A: ok | Demo B: id_no_coincide' });
+    const deB = respuesta(200, { status: 'CONNECTED', id: ID_B });
+    expect(evaluar(deB, deB)[0]).toMatchObject({ destino: 'fail', cuerpo: 'Demo A: id_no_coincide | Demo B: ok' });
+    // Sin id, o con un id de otro tipo, tampoco.
+    for (const id of [undefined, null, 7, '', {}, `${ID_A}0`]) {
+      expect(evaluar(respuesta(200, { status: 'CONNECTED', id }), BIEN)[0]?.cuerpo, String(id)).toBe('Demo A: id_no_coincide | Demo B: ok');
+    }
+    // El id puede venir como número en JSON: se compara como texto.
+    expect(evaluar(respuesta(200, { status: 'CONNECTED', id: Number(ID_A) }), BIEN)[0]?.cuerpo).toBe('Demo A: ok | Demo B: ok');
+  });
+
+  it('un error de n8n sin respuesta de Meta: de la credencial => falla con palabra fija; de red o tiempo => sin veredicto', () => {
+    for (const msg of ['Node does not have any credentials set', 'Credentials for WhatsApp API are not set', 'Unauthorized', 'The resource you are requesting could not be found']) {
+      const r = evaluar({ error: msg }, BIEN);
+      expect(r[0], msg).toMatchObject({ destino: 'fail', cuerpo: 'Demo A: error_del_nodo | Demo B: ok' });
+      expect(JSON.stringify(r), msg).not.toContain(msg);
+    }
+    for (const msg of ['ECONNRESET', 'getaddrinfo ENOTFOUND graph.facebook.com', 'timeout of 10000ms exceeded', 'socket hang up', 'algo raro']) {
+      expect(evaluar({ error: msg }, BIEN), msg).toEqual([]);
+    }
+  });
+
+  it('un error de Meta marcado `is_transient` no es una falla', () => {
+    expect(evaluar(respuesta(400, { error: { code: 131000, is_transient: true } }), BIEN)).toEqual([]);
+    expect(evaluar(respuesta(400, { error: { code: 131000, is_transient: false } }), BIEN)[0]?.cuerpo).toBe('Demo A: error_de_meta | Demo B: ok');
   });
 
   it('la salida del demo A no se confunde con la del B (cada uno se lee de SU nodo)', () => {
