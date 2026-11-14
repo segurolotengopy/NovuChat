@@ -163,6 +163,22 @@ describe('marcador-local.sh --reemplazar', () => {
     }
   });
 
+  it('ID_PING (latido de n8n) exige un UUID en minúsculas: ni ruta, ni consulta, ni otro host', () => {
+    // Armado por partes: un UUID literal en el repositorio lo rechaza el saneo.
+    const uuid = ['a'.repeat(8), 'b'.repeat(4), 'c'.repeat(4), 'd'.repeat(4), 'e'.repeat(12)].join('-');
+    for (const v of [uuid.toUpperCase(), `${uuid}/fail`, `${uuid}?x=1`, `otro.example.org/${uuid}`, uuid.slice(1), 'mi-chequeo']) {
+      const r = correr(['--marcador', 'REEMPLAZAR_ID_PING_LATIDO_N8N', '--valor', v]);
+      expect(r.status, v).not.toBe(0);
+      // Falla por la FORMA del valor, no por otro error.
+      expect(salida(r), v).toContain('id de chequeo');
+      expect(readFileSync(archivo, 'utf8')).toBe(CONTENIDO);
+    }
+    const r = correr(['--marcador', 'REEMPLAZAR_ID_PING_LATIDO_N8N'], { MARCADOR_VALOR: uuid });
+    expect(r.status).toBe(0);
+    expect(salida(r)).not.toContain(uuid);
+    expect(readFileSync(archivo, 'utf8')).toContain(uuid);
+  });
+
   it('un enlace simbólico se resuelve: el enlace sigue siendo enlace y el destino cambia', () => {
     const enlace = join(dir, 'enlace.md');
     symlinkSync(archivo, enlace);

@@ -41,7 +41,7 @@ import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabeza
 import { injertar } from '../../src/core/sin-agente/envio.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
-import { problemasDeReferencias } from '../rroca-ruben/construir.mjs';
+import { problemasDeReferencias } from '../../src/core/sin-agente/referencias.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-antonio/rroca-antonio.json');
@@ -72,6 +72,8 @@ export const CONFIG = {
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
+    'turno-carga': ['../../src/core/sin-agente/turno/carga-de-entrada.js'],
+    'turno-puerta': ['../../src/core/sin-agente/turno/puerta-del-turno.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
@@ -327,7 +329,7 @@ export function guardias(variante, flujo, mapaCrm) {
     const url = String(p(n).url || '');
     if (!anfitrionPermitido(url, n.name)) h.push(`el nodo «${n.name}» llama a un anfitrión fuera de la lista (graph.facebook.com, generativelanguage.googleapis.com, las Functions de la consola)`);
   }
-  // Las referencias a nodos del task runner de n8n (la lógica es la de Rubén, importada y no copiada): solo literales y antecesores, sin excepciones (desde el corte de nodos de la fase 2 no queda ningún hallazgo conocido).
+  // Las referencias a nodos del task runner de n8n (la lógica es la de `src/core/sin-agente/referencias.mjs`, importada y no copiada): solo literales y antecesores, sin excepciones (desde el corte de nodos de la fase 2 no queda ningún hallazgo conocido).
   for (const x of problemasDeReferencias(flujo || {})) h.push(x);
   // «Avisar al servidor» (cancelar el cobro y reportar `no_contactar` ANTES de armar avisos y mensajes): la llamada síncrona de siempre, con el evento en una lista cerrada, y los dos caminos hacia «Armar avisos».
   const avisar = por('Avisar al servidor');

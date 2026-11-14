@@ -40,9 +40,9 @@ describe('tablero de la migración: una fila por flujo de producción', () => {
     for (const f of filas) expect(['Rearquitectura', 'por asignar (Principal)'], f.json).toContain(f.dueno);
   });
 
-  it('los congelados (decisión D3) son 4 y ninguno está mudado: se retiran en un PR aparte, no se mudan', () => {
+  it('los congelados (decisión D3 y captación mínima, 13/11/2026) son 5 y ninguno está mudado: se retiran en un PR aparte, no se mudan', () => {
     const congelados = filas.filter((f) => f.clase === 'congelado');
-    expect(congelados).toHaveLength(4);
+    expect(congelados).toHaveLength(5);
     for (const f of congelados) expect(f.estado, f.json).toBe('pendiente');
   });
 });

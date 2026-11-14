@@ -31,6 +31,7 @@ ejecuciones. `/metrics` sigue apagado.
 | Latido en silencio y las sondas dan 200 | **Incidente: n8n responde pero no procesa** |
 | Latido al día y las dos sondas externas fallan | **Incidente de entrada**: dominio, certificado o proxy |
 | Certificado con menos de 14 días | Aviso: la renovación automática no está corriendo |
+| Certificado `sin_datos` en el reporte | No se pudo medir. Un certificado vencido o inválido corta la conexión de la medición, así que lo ve la sonda (estado `tls`), no el reporte |
 
 **Un correo es sospecha; dos correos de fuentes distintas en 15 minutos son
 incidente.**
@@ -48,6 +49,18 @@ La sonda de GitHub nombra la causa en `estado`:
 
 En el registro de Healthchecks, el código de la sonda distingue **1 = n8n no
 responde** de **2 = el monitor está mal configurado**.
+
+## Reporte diario y latido del monitor
+
+- **Diario** (`.github/workflows/monitor-n8n-reporte.yml`, 08:10 de La Paz):
+  comenta en la Issue «Monitor n8n — reporte diario» cuántas sondas corrieron en
+  24 h y cuántos días le quedan al certificado. La corrida **falla una vez al
+  día** (un correo de GitHub) si la sonda casi no corrió, si la última falló o
+  si el certificado tiene menos de 14 días.
+- **Semanal**: el informe de los lunes de Healthchecks, con el estado de sus
+  chequeos.
+- **Si el reporte falta**: los workflows programados se desactivan juntos, así
+  que el chequeo de la sonda calla y Healthchecks avisa.
 
 ## Regla para las sesiones
 
@@ -69,6 +82,21 @@ de la oficina.
   local de marcadores.
 - El correo de falla de GitHub llega a **quien modificó por última vez la línea
   `cron`** del workflow.
+
+## Los ids de los chequeos son URL de capacidad
+
+Quien tenga el id de un chequeo puede simular latidos (y tapar una caída) o
+forzar alertas falsas. No expone ningún dato. Por eso:
+
+- viven solo en la tabla local de marcadores, en n8n y en el Environment de
+  GitHub; nunca en el repositorio, el chat, un ticket o una captura;
+- los secretos de GitHub se cargan con `scripts/monitor/cargar-secretos-monitor.sh`
+  (seco por omisión; los valores viajan por la entrada estándar);
+- **si un id se filtra**: crear un chequeo nuevo en Healthchecks, borrar el
+  anterior y reponer el valor (`marcador-local.sh --reemplazar` y volver a
+  publicar el flujo, o el script de secretos para la sonda);
+- el registro de pings de Healthchecks muestra la IP de origen: un latido desde
+  una IP que no sea la de la VM es la señal de un id filtrado.
 
 ## Prueba sin tocar producción
 

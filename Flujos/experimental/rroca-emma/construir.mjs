@@ -73,6 +73,7 @@ export const CONFIG = {
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
     avisos: ['../venta-minima/src/lib/avisos.js'],
     prompt: ['src/lib/prompt-vacio.js'],
+    'turno-carga': ['../../src/core/sin-agente/turno/carga-de-entrada.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     // El miniCRM es un módulo (nunca se copia): los paquetes de código del adaptador general de señales.
     ...Object.fromEntries(Object.entries(rutasPaqueteCrmSenales()).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),

@@ -32,7 +32,7 @@ import { injertar } from '../../src/core/sin-agente/envio.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../../experimental/comun-sin-agente/construir-crm.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
-import { problemasDeReferencias } from '../../experimental/rroca-ruben/construir.mjs';
+import { problemasDeReferencias } from '../../src/core/sin-agente/referencias.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/walisuma/walisuma.json');
@@ -91,10 +91,10 @@ export const CONFIG = {
     // Módulo común de Pedidos: lo que el flujo reporta con `qr_enviado` para que el servidor cree el pedido `wa_<referencia>` (solo ids, cantidades y entrega; nunca precios).
     'pedidos-qr': ['../../src/modulos/pedidos/qr-del-pedido.js'],
     // Los nodos comunes neutros (zona venta-digital): se piden con `@@vd:<nodo>`.
-    'vd-carga-de-entrada': ['../../experimental/venta-digital/src/nodos/carga-de-entrada.js'],
+    'vd-carga-de-entrada': ['../../src/core/sin-agente/turno/carga-de-entrada.js'],
     'vd-config-del-negocio': ['../../experimental/venta-digital/src/nodos/config-del-negocio.js'],
     'vd-normalizar-entrada': ['../../experimental/venta-digital/src/nodos/normalizar-entrada.js'],
-    'vd-puerta-del-turno': ['../../experimental/venta-digital/src/nodos/puerta-del-turno.js'],
+    'vd-puerta-del-turno': ['../../src/core/sin-agente/turno/puerta-del-turno.js'],
     'vd-resumen-del-turno': ['../../experimental/venta-digital/src/nodos/resumen-del-turno.js'],
     // El miniCRM es un módulo (nunca se copia): los paquetes de código del adaptador general de señales.
     ...Object.fromEntries(Object.entries(rutasPaqueteCrmSenales()).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
@@ -421,7 +421,7 @@ export function guardias(variante, flujo, opciones = {}) {
     const url = String(p(n).url || '');
     if (!anfitrionPermitido(url, n.name)) h.push(`el nodo «${n.name}» llama a un anfitrión fuera de la lista (graph.facebook.com, generativelanguage.googleapis.com, las Functions de la consola)`);
   }
-  // Las referencias a nodos del task runner de n8n (la lógica es la de Rubén, importada y no copiada).
+  // Las referencias a nodos del task runner de n8n (la lógica es la de `src/core/sin-agente/referencias.mjs`, importada y no copiada).
   for (const x of problemasDeReferencias(flujo || {})) h.push(x);
   // Retención de ejecuciones, orden y zona horaria.
   const st = (flujo && flujo.settings) || {};

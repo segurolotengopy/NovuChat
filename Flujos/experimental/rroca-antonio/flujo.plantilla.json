@@ -179,7 +179,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@comun:nodos/carga-de-entrada.js"
+        "jsCode": "@@comun>turno-carga"
       },
       "id": "carga-de-entrada",
       "name": "Carga de entrada",
@@ -350,7 +350,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@comun:nodos/puerta-del-turno.js"
+        "jsCode": "@@comun>turno-puerta"
       },
       "id": "puerta-del-turno",
       "name": "Puerta del turno",
