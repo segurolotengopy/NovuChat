@@ -50,6 +50,37 @@ La sonda de GitHub nombra la causa en `estado`:
 En el registro de Healthchecks, el código de la sonda distingue **1 = n8n no
 responde** de **2 = el monitor está mal configurado**.
 
+## Número de los demos en Meta
+
+Flujo `Flujos/vigilancia-numero-demos.json` (decisión de Andres, 14/11/2026): cada 6 horas lee
+`GET /{phone-number-id}?fields=status` del Demo A y del Demo B con la credencial de WhatsApp **propia
+de cada demo** (la misma con que ya envían) y avisa a un chequeo de Healthchecks. No envía nada.
+
+| Resultado por demo | Qué es |
+|---|---|
+| `ok` | HTTP 200, `status` = `CONNECTED` (el único valor que la documentación de Meta garantiza) y el `id` de la respuesta es el del número consultado |
+| `id_no_coincide` | `CONNECTED` pero con el `id` de otro número: una respuesta prestada, no un «bien» |
+| `estado_<VALOR>` | 200 y otro estado, por ejemplo `estado_DISCONNECTED` |
+| `no_existe_o_sin_acceso` | Error 100 de Meta. **Meta usa el mismo código si el número no existe y si el token no puede leerlo**: hay que mirar las dos cosas |
+| `token` / `permiso` | Error 190 (token vencido o inválido) / error 10 o 200 a 299 |
+| `respuesta_sin_estado`, `error_de_meta` | 200 sin `status` / error que no se reconoce |
+| `error_del_nodo` | n8n no pudo armar la consulta (credencial borrada o sin asignar) o dejó pasar su entrada sin respuesta ni error: falla con palabra fija, sin copiar el mensaje. El error de n8n se lee como texto o como objeto |
+| temporal | Red o tiempo agotado, 5xx, 429, errores de Meta 1, 2, 4, 17, 32, 341, 613, 80007 o con `is_transient`: **sin veredicto**, no se manda nada. Un 401 o 403 sin código de Meta cuenta como `token` |
+
+Si algún demo falla, el ping va a `/fail` con el texto `Demo A: <causa> | Demo B: <causa>` (solo
+palabras de esa lista; nada de lo que dice Meta pasa al aviso). Si todo está bien, ping normal. Si solo
+hubo errores temporales, **silencio**, y el chequeo lo avisa si dura un día entero. Una falla real pesa más
+que la duda del otro demo.
+
+Por qué se comprueba solo `CONNECTED`: las páginas de Meta que se leyeron el 14/11/2026 solo muestran ese
+valor y remiten a la referencia de la API para el resto, y el error 100 con subcódigo 33 no está documentado
+allí (se conoce por experiencia). Una cuenta de prueba no deja leer la WABA con el token de usuario de
+sistema, pero el número sí.
+
+Un «ok» exige además que el `id` de la respuesta sea el del número consultado (`id_no_coincide` si no): un nodo que falla por dentro puede dejar pasar la respuesta del demo anterior, y eso nunca cuenta como «bien». Las credenciales se leyeron del flujo vivo de cada demo el 14/11/2026 con `credenciales-flujo.sh`: «WhatsApp account» (Demo A) y «WhatsApp account 2» (Demo B).
+
+Chequeo de Healthchecks: período 12 horas y gracia 12 horas (silencio de un día = aviso).
+
 ## Reporte diario y latido del monitor
 
 - **Diario** (`.github/workflows/monitor-n8n-reporte.yml`, 08:10 de La Paz):

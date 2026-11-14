@@ -84,8 +84,8 @@ afterAll(() => { for (const d of temporales) rmSync(d, { recursive: true, force:
 const bytes = (ruta: string) => readFileSync(ruta);
 
 describe('Inventario: qué flujos tienen manifiesto', () => {
-  it('hay 10 JSON de flujo, y el vertical de reservas (el Demo A) tiene manifiesto', () => {
-    expect(FLUJOS).toHaveLength(10);
+  it('hay 11 JSON de flujo, y el vertical de reservas (el Demo A) tiene manifiesto', () => {
+    expect(FLUJOS).toHaveLength(11);
     expect(CON_MANIFIESTO).toEqual(expect.arrayContaining(['demo-a-agendamiento.json']));
     // Desde el 28/09/2026 el Demo B y la captación también tienen manifiesto,
     // SOLO para los dos nodos de medios entrantes («Preparar transcripción» y
@@ -95,7 +95,7 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
     // Los que todavía no se ensamblan, dichos con nombre: son el bloque B-2.
     expect(SIN_MANIFIESTO).toEqual([
       'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'bellido-agendamiento.json', 'error-envio-incierto.json',
-      'latido-n8n.json',
+      'latido-n8n.json', 'vigilancia-numero-demos.json',
     ]);
   });
 
