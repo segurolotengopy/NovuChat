@@ -438,6 +438,11 @@ documento no lo duplica. En una línea por tema:
   `scripts/plataforma/aplicar-persona-puede-enviar-medios.mjs` (seco por omisión, respaldo, auditoría
   `persona_puede_enviar_medios_cambiada` en el mismo lote); antes de encenderla, el flujo «Salida de persona»
   del número debe llevar la rama de adjuntos (`verificar-salida-persona.mjs --medios`, comprobación 4f).
+  **Retención en n8n (decisión D-B3-1 de Andres, 13/11/2026):** `Flujos/salida-de-persona.json` no guarda
+  ninguna ejecución (`saveDataSuccessExecution` y `saveDataErrorExecution` «none», `saveExecutionProgress`
+  false), igual que los medios entrantes: una fallida dejaría en n8n el binario y la leyenda. Se pierde
+  diagnóstico: la comprobación 5a del verificador ya no ve las fallas (dirá que no hay ejecuciones); una
+  falla se busca en el registro del contenedor de n8n y en el estado del mensaje en Firestore.
 - **Pausa**: con `turno.responde === 'persona'`, la ingesta y `configuracionFlujo`
   devuelven `atencion: { estado: 'bloqueado' }` y aviso vacío, sin escribir
   `bloqueado` en `atencionEstado`.
