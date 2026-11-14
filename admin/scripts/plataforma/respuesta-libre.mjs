@@ -26,6 +26,18 @@
  * PRODUCCIÓN, `--aplicar` exige `--confirmo-produccion <tenant>` igual a `--tenant`). Salida 0: sin diferencias o
  * escritura comprobada. 1: el seco encontró diferencias. 2: uso o salvaguarda. 3: error de ejecución.
  *
+ * `--proyecto prod` (palabra literal): el id de producción se toma de `quota_project_id` del archivo
+ * `application_default_credentials.json` dentro de CLOUDSDK_CONFIG (por omisión ~/.config/gcloud-novuchat-prod). Ese campo
+ * es el proyecto de las credenciales (el de facturación/cuota), que aquí es el de producción. Solo se lee ese campo, con la
+ * misma forma de id real; si no se puede leer, o es un `demo-*`, salida 2. El script exporta CLOUDSDK_CONFIG y GOOGLE_APPLICATION_CREDENTIALS (apuntando a ese
+ * mismo archivo, que es el que lee Firestore) antes de iniciar Firebase, y RECHAZA la corrida (salida 2) si GOOGLE_APPLICATION_CREDENTIALS está puesto: la
+ * identidad que escribe debe salir del mismo archivo que el proyecto. El id NUNCA se imprime.
+ * Luego pasa por la MISMA lista blanca (`comprobarProyecto`). DIFERENCIA DECLARADA con `scripts/nube-salida-persona.sh`: aquel
+ * toma el proyecto de las mismas credenciales, pero con --aplicar exige además GCP_PROJECT_ID_PROD en el entorno (doble llave).
+ * Aquí esa llave se sustituye por `--confirmo-produccion <tenant>` + `--respaldo` (los agentes no pueden leer esos ids), y la
+ * ausencia de GCP_PROJECT_ID_PROD y GCP_PROJECT_ID_STAGING no bloquea; si están puestos, deben ser coherentes (PROD igual al
+ * de las credenciales, STAGING distinto). Un id literal en `--proyecto` se comporta como siempre.
+ *
  * COSTO. Seco: dos lecturas. `--aplicar`: tres lecturas y UNA escritura. 0 mensajes por conversación. NO se corre contra
  * producción sin el «sí» de Andres, cliente por cliente.
  */
@@ -43,7 +55,7 @@ const TEXTOS = ['acuse', 'textoSeguimiento', 'textoRechazo', 'textoHumor', 'text
 const CAMPOS = ['activo', ...TEXTOS];
 const DIRECTORIO_DATOS = join(dirname(fileURLToPath(import.meta.url)), '..', 'datos', 'respuesta-libre');
 
-export const USO = '  node scripts/plataforma/respuesta-libre.mjs --proyecto <id> --tenant <id> (--datos <nombre> | --apagar) '
+export const USO = '  node scripts/plataforma/respuesta-libre.mjs --proyecto <id|prod> --tenant <id> (--datos <nombre> | --apagar) '
   + '[--aplicar] [--respaldo <ruta>] [--confirmo-produccion <tenant>]';
 
 /** Lee `datos/respuesta-libre/<nombre>.json` y exige que el saneo del servidor no cambie nada. Devuelve `{ok, valor|motivo}`. */
@@ -72,6 +84,51 @@ export function validarDatos(crudo) {
   return { ok: true, valor: saneado };
 }
 
+const ID_PROYECTO_REAL = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
+
+/**
+ * Resuelve `--proyecto prod` desde las credenciales de gcloud, sin imprimir el id. Devuelve `{ok, id, dir, env}` donde `env` es
+ * el entorno con el que `comprobarProyecto` aplica su lista blanca, o `{ok:false, motivo}`.
+ */
+export function proyectoDesdeCredenciales(env = process.env) {
+  const casa = typeof env.HOME === 'string' && env.HOME !== '' ? env.HOME : null;
+  const dir = typeof env.CLOUDSDK_CONFIG === 'string' && env.CLOUDSDK_CONFIG !== ''
+    ? env.CLOUDSDK_CONFIG : casa && join(casa, '.config', 'gcloud-novuchat-prod');
+  if (!dir) return { ok: false, motivo: '--proyecto prod: sin CLOUDSDK_CONFIG ni HOME no sé dónde están las credenciales de gcloud' };
+  if (typeof env.GOOGLE_APPLICATION_CREDENTIALS === 'string' && env.GOOGLE_APPLICATION_CREDENTIALS !== '') {
+    return { ok: false, motivo: '--proyecto prod: GOOGLE_APPLICATION_CREDENTIALS está puesto; la identidad debe salir del mismo archivo que el proyecto (quítelo)' };
+  }
+  let id;
+  try {
+    id = JSON.parse(readFileSync(join(dir, 'application_default_credentials.json'), 'utf8'))?.quota_project_id;
+  } catch {
+    return { ok: false, motivo: '--proyecto prod: no se pudieron leer las credenciales de gcloud (application_default_credentials.json)' };
+  }
+  if (typeof id !== 'string' || id === '') return { ok: false, motivo: '--proyecto prod: las credenciales no traen quota_project_id' };
+  if (!ID_PROYECTO_REAL.test(id)) return { ok: false, motivo: '--proyecto prod: el proyecto de las credenciales no tiene la forma de un id de Google Cloud' };
+  if (id.startsWith('demo-')) return { ok: false, motivo: '--proyecto prod: las credenciales apuntan a un proyecto demo-*, que no es producción' };
+  const prod = typeof env.GCP_PROJECT_ID_PROD === 'string' ? env.GCP_PROJECT_ID_PROD.trim() : '';
+  const staging = typeof env.GCP_PROJECT_ID_STAGING === 'string' ? env.GCP_PROJECT_ID_STAGING.trim() : '';
+  if (prod && prod !== id) return { ok: false, motivo: '--proyecto prod: GCP_PROJECT_ID_PROD no coincide con el proyecto de las credenciales' };
+  if (staging && staging === id) return { ok: false, motivo: '--proyecto prod: GCP_PROJECT_ID_STAGING es igual al proyecto de las credenciales' };
+  const sustituto = id === 'staging-no-declarado' ? 'staging-no-declarado-2' : 'staging-no-declarado';
+  return { ok: true, id, dir, env: { ...env, GCP_PROJECT_ID_PROD: id, GCP_PROJECT_ID_STAGING: staging || sustituto } };
+}
+
+/**
+ * Variables que `principal` exporta antes de iniciar Firebase, para que la identidad que escribe salga del MISMO archivo del
+ * que salió el proyecto: Firestore autentica con google-auth-library, que ignora CLOUDSDK_CONFIG y lee
+ * GOOGLE_APPLICATION_CREDENTIALS (o ~/.config/gcloud). Solo aplica con `--proyecto prod` (`cfg.dirCredenciales`); si no, `{}`.
+ * `analizarArgumentos` ya rechazó un GOOGLE_APPLICATION_CREDENTIALS puesto por el usuario en ese camino.
+ */
+export function entornoDeCredenciales(cfg) {
+  if (!cfg?.dirCredenciales) return {};
+  return {
+    CLOUDSDK_CONFIG: cfg.dirCredenciales,
+    GOOGLE_APPLICATION_CREDENTIALS: join(cfg.dirCredenciales, 'application_default_credentials.json'),
+  };
+}
+
 export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   const problemas = [];
   const valores = { __proto__: null };
@@ -95,12 +152,26 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   }
   const aplicar = banderas.includes('aplicar');
   const apagar = banderas.includes('apagar');
-  const { proyecto, tenant, respaldo, datos } = valores;
+  let { proyecto } = valores;
+  const { tenant, respaldo, datos } = valores;
   const confirmo = valores['confirmo-produccion'];
 
   if (proyecto === undefined) problemas.push('falta --proyecto');
-  const proy = proyecto === undefined ? { ok: false } : comprobarProyecto(proyecto, env);
-  if (proyecto !== undefined && !proy.ok) problemas.push(proy.motivo);
+  let proy = { ok: false };
+  let dirCredenciales = null;
+  if (proyecto === 'prod') {
+    const c = proyectoDesdeCredenciales(env);
+    if (!c.ok) problemas.push(c.motivo);
+    else {
+      proyecto = c.id;
+      dirCredenciales = c.dir;
+      proy = comprobarProyecto(proyecto, c.env);
+      if (!proy.ok) problemas.push(proy.motivo);
+    }
+  } else if (proyecto !== undefined) {
+    proy = comprobarProyecto(proyecto, env);
+    if (!proy.ok) problemas.push(proy.motivo);
+  }
 
   if (tenant === undefined) problemas.push('falta --tenant');
   else if (tenant.includes(',')) problemas.push('--tenant admite UN solo comercio por corrida (sin comas)');
@@ -128,7 +199,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     if (r.ok) respaldoReal = respaldo; else problemas.push(r.motivo);
   }
   if (problemas.length) return { ok: false, problemas };
-  return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, deseado, apagar, aplicar, respaldo: respaldoReal } };
+  return { ok: true, cfg: { proyecto, dirCredenciales, entorno: proy.entorno, tenant, deseado, apagar, aplicar, respaldo: respaldoReal } };
 }
 
 const esPrecondicion = (e) => e?.code === 9 || e?.code === 'failed-precondition' || e?.code === 'FAILED_PRECONDITION';
@@ -209,6 +280,7 @@ async function principal() {
   const { cfg } = analisis;
   const { initializeApp } = await import('firebase-admin/app');
   const { getFirestore } = await import('firebase-admin/firestore');
+  Object.assign(process.env, entornoDeCredenciales(cfg));
   initializeApp({ projectId: cfg.proyecto });
   const db = getFirestore();
   process.on('SIGINT', () => { console.error('\n  ! Interrumpido. Corra el seco para ver el estado.\n'); process.exit(130); });

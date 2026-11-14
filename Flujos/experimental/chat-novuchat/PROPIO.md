@@ -46,3 +46,6 @@ las llamadas al modelo son 0 o 1 por turno (2 si una guardia rechaza el mensaje)
 - Antes de escribir se comprueba el encabezado LETRA POR LETRA (A hasta J); un encabezado movido o renombrado da `encabezados_distintos` y no se escribe.
 - `config/crm.activo === false` apaga la escritura (el nodo del prospecto devuelve vacío). La Function que lo entrega es el PR-B3, aparte: hoy el flujo siempre escribe.
 - Mensajes de WhatsApp por conversación: 0 agregados o quitados.
+
+## Baja por texto (13/11/2026)
+La baja («no me escribas más») usa la pieza común `Flujos/src/core/conversacion/baja.js` (`bj*`), incluida byte a byte: un texto fijo de confirmación, sin modelo ni aviso, solo con texto escrito (la misma fuente que marca `no_contactar` en «Reportar mensaje (entrante)»). 0 mensajes agregados, 0 nodos.

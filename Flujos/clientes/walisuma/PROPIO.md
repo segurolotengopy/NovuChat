@@ -127,3 +127,6 @@ Un QR abierto cuyo pedido cambia (diga o no «pagar») cierra el cobro (`cobro_c
 ## El Gmail de Antonio (10/11/2026): Walisuma NO lo adopta
 
 El pedido del Gmail tras una venta confirmada es propio de Antonio (y de Rubén). Cambió en Antonio los nodos `normalizar-entrada` y `resumen-del-turno`, de los que `neutros.test.ts` guarda la huella del origen; solo se actualizó esa huella del origen. Los nodos neutros de `venta-digital/src/nodos/` y todos los nodos de Walisuma quedan como estaban.
+
+## Baja por texto (13/11/2026)
+La baja («no me escribas más») usa la pieza común `Flujos/src/core/conversacion/baja.js` (`bj*`), incluida byte a byte: un texto fijo de confirmación, sin modelo ni aviso, solo con texto escrito (la misma fuente que marca `no_contactar` en «Reportar mensaje (entrante)»). 0 mensajes agregados, 0 nodos.

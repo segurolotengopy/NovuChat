@@ -3963,3 +3963,70 @@ describe('reclamo 62: la fila del miniCRM es por conversación de 24 h (no 48), 
     expect(w.hoja.filas).toHaveLength(1);
   });
 });
+
+// ------------------------------------------------------------------------------ baja por texto (PR A, 13/11/2026): UN texto fijo y nada más
+describe('baja por texto: el cliente pide no recibir más mensajes', () => {
+  const CONFIRMACION = 'Entendido, tomé nota de que no quieres recibir más mensajes. Si más adelante necesitas algo, escríbeme cuando quieras.';
+  const entrantes = (w: W): J[] => w.mundo.llamadas.ingesta.filter((r) => r['direccion'] === 'entrante');
+  const PEDIDOS = ['no me escribas más', 'NO ME ESCRIBAN', 'n0 me escribas', 'dame de baja', 'stop', 'para de escribirme'];
+  it('«no me escribas más»: UN solo texto fijo, sin botones, sin modelo, sin aviso a recepción y sin fila en la planilla', () => {
+    const w = crear();
+    const t = jugar(w, MAMA).texto('no me escribas más');
+    expect(t.aMi).toHaveLength(1);
+    expect(t.aMi[0]!.tipo).toBe('text');
+    expect(t.aMi[0]!.cuerpo).toBe(CONFIRMACION);
+    expect(tipoInter(t.aMi[0]!)).toBe('');
+    expect(t.mensajes.filter((e) => e.tipo === 'interactive')).toHaveLength(0);
+    expect(w.modelo.llamadas).toHaveLength(0);
+    expect(t.orden).not.toContain('Llamar al modelo');
+    expect(t.plantillas).toHaveLength(0);
+    expect(t.aRecepcion).toHaveLength(0);
+    expect(w.hoja.filas).toHaveLength(0);
+    expect(w.hoja.llamadas).toHaveLength(0);
+  });
+  for (const pedido of PEDIDOS) {
+    it(`el reporte del entrante lleva «no_contactar» con «${pedido}» y el turno responde UN mensaje (0 agregados)`, () => {
+      const w = crear();
+      const t = jugar(w, MAMA).texto(pedido);
+      const e = entrantes(w);
+      expect(e).toHaveLength(1);
+      expect(e[0]!['evento']).toBe('no_contactar');
+      expect(t.aMi).toHaveLength(1);
+      expect(t.aMi[0]!.cuerpo).toBe(CONFIRMACION);
+      expect(w.modelo.llamadas).toHaveLength(0);
+    });
+  }
+  for (const noEsBaja of ['el doctor dijo que no me escriban', 'no me escribas el precio, mándame el detalle', '¿no me llamaron ayer?']) {
+    it(`contraprueba: «${noEsBaja}» NO es baja: sin evento y sigue el camino normal`, () => {
+      const w = crear();
+      w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+      const t = jugar(w, MAMA).texto(noEsBaja);
+      expect(entrantes(w)[0]!['evento']).toBeUndefined();
+      expect(t.aMi.map((e) => e.cuerpo)).not.toContain(CONFIRMACION);
+      expect(JSON.stringify(w.mundo.llamadas.ingesta)).not.toMatch(/no_contactar/);
+    });
+  }
+  it('la ficha no se borra: tras la baja, si el cliente vuelve a escribir se le atiende como siempre', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('stop');
+    const t = j.texto('Hola');
+    expect(t.aMi).toHaveLength(1);
+    expect(t.aMi[0]!.cuerpo).not.toBe(CONFIRMACION);
+  });
+  it('sin texto propio en la configuración sale el neutro de la pieza común', () => {
+    const w = crear();
+    expect(jugar(w, MAMA).texto('dame de baja').aMi[0]!.cuerpo).toBe(CONFIRMACION);
+  });
+  it('la expresión del reporte entrante es LITERALMENTE la de la pieza común (`BJ_BAJA` y el plegado de `bjPlegar`), en los dos JSON', () => {
+    const fuente = readFileSync(join(AQUI, '../../Flujos/src/core/conversacion/baja.js'), 'utf8');
+    const literal = /const BJ_BAJA = \/(.*)\/i;\n/.exec(fuente)![1]!;
+    const retorno = /function bjPlegar\(texto\) \{\n {2}return (.*);\n\}/.exec(fuente)![1]!;
+    const plegado = retorno.replace("String(texto === undefined || texto === null ? '' : texto)", "String(t.texto || '')");
+    const esperada = `evento: /${literal}/i.test(${plegado}) ? 'no_contactar' : undefined`;
+    for (const f of [PRODUCCION, PRUEBA]) {
+      const nodo = f.nodes.find((n) => n.name === 'Reportar mensaje (entrante)')!;
+      expect(String((nodo.parameters as J)['jsonBody'])).toContain(esperada);
+    }
+  });
+});

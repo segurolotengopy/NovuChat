@@ -9,6 +9,7 @@
     "build:catalogo": "vite build --config vite.catalogo.config.ts",
     "preview": "vite preview",
     "lint": "eslint src --max-warnings 0",
+    "lint:a11y": "eslint -c eslint.a11y.config.js src",
     "dev:sondeo": "VITE_SONDEO=true vite",
     "servir": "vite preview --port 5230 --strictPort"
   },
@@ -24,6 +25,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.0.0",
     "eslint": "^9.26.0",
+    "eslint-plugin-jsx-a11y": "6.10.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.0",
     "vite": "^7.0.0"

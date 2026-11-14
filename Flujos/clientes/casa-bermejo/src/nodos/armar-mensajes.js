@@ -3,6 +3,7 @@
 // La decisión es de `bmResolver` (la misma que tomó «Armar avisos»); aquí se arman los mensajes y se escribe la ficha. Según el plan:
 //   puerta «suspendido»     el texto neutro del comercio (sin revelar el motivo);   «uso_extendido»  el aviso fijo con el botón para escribirle a recepción (y «Armar avisos» avisó);
 //   «bloqueado»             pausa por Tomar: NO SALE NADA (cero envío, cero modelo, cero descarga);
+//   «baja»                  el pedido de no recibir más mensajes: UN texto fijo de confirmación y nada más;
 //   «fuera_de_pais», «cortes», «identidad», «audio_fijo», «archivo», «imagen_otra», «anuncio»   textos fijos (el producto del anuncio y su precio salen del catálogo);
 //   «modelo»                la redacción del modelo, revisada, más el resumen del pedido que calcula el código;
 //   «qr»                    el resumen del pedido y el QR REAL del comercio (imagen por id de medio, nunca por enlace) con el monto del carrito; «qr_pendiente» el recordatorio del QR abierto;
@@ -66,6 +67,9 @@ if (puerta.ruta === 'sigue') {
     nuevos.fueraDePaisMs = ahora; ev.fueraDePaisMs = fichaAntes.fueraDePaisMs;
   } else if (tipoDePlan === 'cortes') {
     msgs = [texto(conSaludo(BM_TEXTO_CORTES))];
+  } else if (tipoDePlan === 'baja') {
+    // La confirmación de la baja: UN texto fijo (sin saludo, sin botón, sin aviso); el `no_contactar` ya viajó con el entrante. La ficha y el carrito no se tocan.
+    msgs = [texto(bjTextoBaja(c.base && c.base.tratamiento === 'usted' ? BM_TEXTO_BAJA_USTED : undefined))];
   } else if (tipoDePlan === 'identidad') {
     msgs = [texto(BM_TEXTO_IDENTIDAD.replace('{NEGOCIO}', negocio))];
   } else if (tipoDePlan === 'audio_fijo') {

@@ -204,6 +204,8 @@ function bmFechaLaPaz(ahoraMs) {
 // TEXTOS FIJOS (los pone el CÓDIGO; nada de esto lo redacta el modelo). Párrafos separados por una línea en blanco. Ninguno dice «acreditado», «verificado» ni «recibimos tu pago»;
 // ninguno promete avisar, llamar ni escribir después: lo único que se ofrece es pasar con recepción (aviso al comercio MÁS el botón para escribirle directo), y «ya avisé» solo sale con un `wamid` real.
 // -----------------------------------------------------------------------------
+// La confirmación de la baja con tratamiento de usted (el neutro de `bjTextoBaja` tutea); es el `propio` que se le pasa cuando el comercio trata de usted.
+const BM_TEXTO_BAJA_USTED = 'Entendido, tomé nota de que no quiere recibir más mensajes. Si más adelante necesita algo, puede escribirme cuando quiera.';
 const BM_TEXTO_IDENTIDAD = 'Soy el asistente virtual de {NEGOCIO}, una inteligencia artificial. Puedo mostrarte las piezas del catálogo y armar tu pedido; lo que necesite a una persona del equipo, lo paso con recepción.';
 const BM_TEXTO_AUDIO_LARGO = 'Tu nota de voz es muy larga para escucharla entera.\n\nCuéntame lo esencial por escrito o en un audio más corto, por favor.';
 const BM_TEXTO_AUDIO_NO_ENTENDIDO = 'No pude entender tu nota de voz.\n\n¿Me la repites o me la escribes, por favor?';

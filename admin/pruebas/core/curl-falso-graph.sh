@@ -59,9 +59,13 @@ if [ "$tipo" = ESCRIBE ]; then
   cuerpo='{"success":true,"id":"1","status":"PENDING","category":"UTILITY"}'
 else
   case " $* " in
+    # El nodo del número entero (reponer-numero-demo-a.sh); sin la variable, lo mismo que la consulta del candado.
+    *fields=id,display_phone_number*) cuerpo="${RESPUESTA_NODO:-$RESPUESTA_NUMERO}" ;;
     *fields=id,name*) cuerpo="$RESPUESTA_GRAPH" ;;
     *fields=id,verified_name*) cuerpo="$RESPUESTA_NUMERO" ;;
     *subscribed_apps*) cuerpo="$SUSCRITAS_GRAPH" ;;
+    # Los números de una WABA (reponer-numero-demo-a.sh). Sin la variable, la lista vacía de siempre.
+    *phone_numbers*) if [ -n "${RESPUESTA_NUMEROS:-}" ]; then cuerpo="$RESPUESTA_NUMEROS"; else cuerpo='{"data":[]}'; fi ;;
     *) cuerpo='{"data":[]}' ;;
   esac
 fi
