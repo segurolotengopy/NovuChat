@@ -263,3 +263,28 @@ describe('errorWorkflow por nombre, estático: todo flujo que atiende a un clien
     expect(problemasDeRegla('error-workflow-por-nombre', new Map([['a.json', []]]), exc)).toEqual([expect.stringContaining('SOBRA')]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Barridos comunes (13/11/2026): `salida-de-persona.json` no atiende a un cliente, así que la regla de arriba no lo mira; se cubre aparte.
+// ---------------------------------------------------------------------------
+
+describe('errorWorkflow por nombre: el barrido de salida de persona lleva el marcador y la alerta no puede apuntar a sí misma', () => {
+  const leer = (n: string): Flujo => JSON.parse(readFileSync(join(REPO, 'Flujos', n), 'utf8')) as Flujo;
+
+  it('salida-de-persona.json lleva el marcador exacto (no un id resuelto)', () => {
+    expect(llevaMarcadorDeErrorWorkflow(leer('salida-de-persona.json'))).toBe(true);
+  });
+
+  it('la alerta (error-envio-incierto.json) NO lleva errorWorkflow: no hay bucle ni apunta a sí misma', () => {
+    expect((leer('error-envio-incierto.json').settings ?? {})['errorWorkflow']).toBeUndefined();
+  });
+
+  it('contraprueba: sin el marcador, o con un id resuelto, la comprobación falla', () => {
+    const f = leer('salida-de-persona.json');
+    const sin = { ...f, settings: Object.fromEntries(Object.entries(f.settings ?? {}).filter(([k]) => k !== 'errorWorkflow')) };
+    expect(llevaMarcadorDeErrorWorkflow(sin)).toBe(false);
+    expect(llevaMarcadorDeErrorWorkflow({ ...f, settings: { ...f.settings, errorWorkflow: ID_ALERTA } })).toBe(false);
+  });
+
+  // La resolución por nombre de ESTE flujo la hace `cargar-timbre-n8n.sh` (no preparar-import.sh): su prueba está en `cargar-timbre-n8n.test.ts`, «settings.errorWorkflow se resuelve por NOMBRE».
+});
