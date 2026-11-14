@@ -797,7 +797,7 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
     const marcadores = (f: string): string[] => [...new Set(texto(f).match(patron) ?? [])].sort();
     const comunes = ['REEMPLAZAR_DIRECCION_QTACO', 'REEMPLAZAR_HORARIO_ATENCION_QTACO', 'REEMPLAZAR_HORARIO_PEDIDOS_QTACO', 'REEMPLAZAR_NUMERO_AVISO_1_QTACO', 'REEMPLAZAR_NUMERO_AVISO_2_QTACO', 'REEMPLAZAR_NUMERO_RECEPCION_QTACO', 'REEMPLAZAR_PHONE_NUMBER_ID_QTACO'];
     // `REEMPLAZAR_RUTA_CARRITO_QTACO` es el marcador de la ruta del webhook del carrito (segunda entrada de producción, solo en el JSON de Q'Taco).
-    expect(marcadores('venta-minima.qtaco.json')).toEqual([...comunes, 'REEMPLAZAR_RUTA_CARRITO_QTACO', 'REEMPLAZAR_RUTA_RECEPTOR_QTACO', 'REEMPLAZAR_URL_VERIFICADOR_RECEPTOR', 'REEMPLAZAR_WABA_ID_QTACO'].sort());
+    expect(marcadores('venta-minima.qtaco.json')).toEqual([...comunes, 'REEMPLAZAR_ID_ERROR_WORKFLOW', 'REEMPLAZAR_RUTA_CARRITO_QTACO', 'REEMPLAZAR_RUTA_RECEPTOR_QTACO', 'REEMPLAZAR_URL_VERIFICADOR_RECEPTOR', 'REEMPLAZAR_WABA_ID_QTACO'].sort());
     expect(marcadores('venta-minima.prueba.json')).toEqual([...comunes, 'REEMPLAZAR_NUMERO_ENSAYO_QTACO', 'REEMPLAZAR_RUTA_DE_PRUEBA', 'REEMPLAZAR_TELEFONOS_DE_PRUEBA'].sort());
     // El negativo: así se fundían los dos números de aviso (o el WABA y su comilla) cuando iban pegados.
     expect('completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO,cocina:REEMPLAZAR_NUMERO_AVISO_2_QTACO'.match(patron)).toHaveLength(1);
@@ -868,16 +868,18 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
     }
   });
 
-  it('el `settings` de Q\'Taco difiere de la versión del 04/10 en `executionTimeout` (60 → 120) y, desde el 30/10, en la retención (all/all → none/none): nada más', () => {
+  it('el `settings` de Q\'Taco difiere de la versión del 04/10 en `executionTimeout` (60 → 120) , desde el 30/10, en la retención (all/all → none/none) y, desde el 13/11, en el marcador de la alerta de envío incierto (`errorWorkflow`): nada más', () => {
     const anterior = {
       executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 60,
       saveDataSuccessExecution: 'all', saveDataErrorExecution: 'all', saveExecutionProgress: false, saveManualExecutions: false,
     };
-    expect(QTACO.settings).toEqual({ ...anterior, executionTimeout: 120, saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none' });
+    expect(QTACO.settings).toEqual({ ...anterior, executionTimeout: 120, saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', errorWorkflow: 'REEMPLAZAR_ID_ERROR_WORKFLOW' });
     const distintas = Object.keys({ ...anterior, ...(QTACO.settings as J) }).filter((k) => (anterior as J)[k] !== (QTACO.settings as J)[k]);
-    expect(distintas.sort()).toEqual(['executionTimeout', 'saveDataErrorExecution', 'saveDataSuccessExecution']);
+    expect(distintas.sort()).toEqual(['errorWorkflow', 'executionTimeout', 'saveDataErrorExecution', 'saveDataSuccessExecution']);
     // Y no se contagia: la prueba y el ensayo (que heredan los datos de Q'Taco) y la plantilla siguen en 60 s.
     for (const f of [PLANTILLA, PRUEBA, leer('venta-minima.ensayo-demo-a.json')]) expect((f.settings as J)['executionTimeout']).toBe(60);
+    // El marcador de la alerta solo va en las salidas de producción de Q'Taco: la plantilla, la prueba y el ensayo no lo llevan.
+    for (const f of [PLANTILLA, PRUEBA, leer('venta-minima.ensayo-demo-a.json')]) expect((f.settings as J)['errorWorkflow']).toBeUndefined();
   });
 
   it('`--verificar` FALLA si el JSON de Q\'Taco vuelve a 60 s o si otro archivo sube a 120 s', () => {
