@@ -31,6 +31,7 @@ ejecuciones. `/metrics` sigue apagado.
 | Latido en silencio y las sondas dan 200 | **Incidente: n8n responde pero no procesa** |
 | Latido al día y las dos sondas externas fallan | **Incidente de entrada**: dominio, certificado o proxy |
 | Certificado con menos de 14 días | Aviso: la renovación automática no está corriendo |
+| Certificado `sin_datos` en el reporte | No se pudo medir. Un certificado vencido o inválido corta la conexión de la medición, así que lo ve la sonda (estado `tls`), no el reporte |
 
 **Un correo es sospecha; dos correos de fuentes distintas en 15 minutos son
 incidente.**

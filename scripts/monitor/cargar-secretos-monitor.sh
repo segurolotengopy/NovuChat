@@ -67,6 +67,8 @@ if [[ -n "$PING_FILE" ]]; then
   [[ -f "$PING_FILE" && ! -L "$PING_FILE" && -O "$PING_FILE" && "$(stat -c %a "$PING_FILE")" == "600" ]] \
     || { echo "✗ --ping-desde debe ser un archivo común del usuario, de modo 600. No se escribió nada." >&2; exit 2; }
   PING_ID="$(head -n 1 "$PING_FILE" | tr -d '\r\n ')"
+  # Si se pidió el id por archivo y no hay nada que leer, no se carga a medias.
+  [[ -n "$PING_ID" ]] || { echo "✗ --ping-desde no tiene el id en su primera línea. No se escribió nada." >&2; exit 2; }
 fi
 URL_PING=""
 if [[ -n "$PING_ID" ]]; then

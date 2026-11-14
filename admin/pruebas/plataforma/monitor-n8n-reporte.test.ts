@@ -69,6 +69,8 @@ describe('reporte-diario.sh', () => {
     const r = reporte(buenas(100), { REPORTE_CERTIFICADO: 'sin_datos', REPORTE_DIAS: '' });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('Certificado: `sin_datos`.');
+    // Explica que el certificado vencido lo ve la sonda (con -verify_return_error llega como `tls`).
+    expect(r.stdout).toContain('un certificado vencido o inválido lo ve la sonda');
   });
 
   it('el monitor casi no corrió (menos de una vez por hora): sale 1', () => {
@@ -82,6 +84,18 @@ describe('reporte-diario.sh', () => {
     const r = reporte([]);
     expect(r.status).toBe(1);
     expect(r.stdout).toContain('Última sonda terminada: `ninguna`.');
+  });
+
+  it('una sonda que se pasó de tiempo o ni arrancó también es una falla, no «otra»', () => {
+    for (const conclusion of ['timed_out', 'startup_failure', 'failure']) {
+      const r = reporte([...buenas(100), corrida(1, conclusion)]);
+      expect(r.status, conclusion).toBe(1);
+      expect(r.stdout).toContain(`Última sonda terminada: \`${conclusion}\`.`);
+      expect(r.stdout).toContain(`⚠ La última sonda falló (${conclusion})`);
+      expect(r.stdout).toContain('(100 bien, 1 con falla)');
+    }
+    // Cancelada u omitida: no vigiló, pero tampoco es una caída de n8n.
+    for (const conclusion of ['cancelled', 'skipped']) expect(reporte([...buenas(100), corrida(1, conclusion)]).status, conclusion).toBe(0);
   });
 
   it('una corrida EN CURSO no tapa una falla reciente: la última sonda es la última terminada', () => {
@@ -246,6 +260,18 @@ exit 0
     for (const a of [abierto, malo, join(dir, 'no-existe'), dir]) {
       const r = correr(['--env', env, '--ping-desde', a, '--aplicar', '--confirmo', 'github']);
       expect(r.status, a).toBe(2);
+      expect(r.args).toBe('');
+      expect(r.pantalla).not.toContain(UUID);
+    }
+  });
+
+  it('--ping-desde con un archivo vacío o con la primera línea vacía no carga nada a medias', () => {
+    for (const contenido of ['', '\n', '\n' + UUID + '\n', '   \n']) {
+      const archivo = join(dir, 'vacio');
+      writeFileSync(archivo, contenido, { mode: 0o600 });
+      chmodSync(archivo, 0o600);
+      const r = correr(['--env', env, '--ping-desde', archivo, '--aplicar', '--confirmo', 'github']);
+      expect(r.status, JSON.stringify(contenido)).toBe(2);
       expect(r.args).toBe('');
       expect(r.pantalla).not.toContain(UUID);
     }

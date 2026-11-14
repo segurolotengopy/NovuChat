@@ -59,8 +59,8 @@ CUENTAS="$(jq -r --argjson desde "$DESDE" '
   | ($r | map(select(.c == "en_curso")) | length) as $enCurso
   | [ ($r | length),
       ($r | map(select(.c == "success")) | length),
-      ($r | map(select(.c == "failure")) | length),
-      (if ($ultima | IN("success", "failure", "cancelled", "skipped", "ninguna")) then $ultima else "otra" end),
+      ($r | map(select(.c | IN("failure", "timed_out", "startup_failure"))) | length),
+      (if ($ultima | IN("success", "failure", "timed_out", "startup_failure", "cancelled", "skipped", "ninguna")) then $ultima else "otra" end),
       $enCurso
     ] | @tsv' 2>/dev/null)" || mal_uso "La lista de corridas no tiene la forma esperada."
 
@@ -69,7 +69,10 @@ entero total "$TOTAL"; entero bien "$BIEN"; entero mal "$MAL"; entero en_curso "
 
 AVISOS=()
 [ "$TOTAL" -ge "$MINIMO" ] || AVISOS+=("El monitor corrió $TOTAL veces en $HORAS h (mínimo $MINIMO): casi no está vigilando.")
-[ "$ULTIMA" != "failure" ] || AVISOS+=("La última sonda falló: n8n no respondió desde la red de GitHub.")
+# Una sonda que se pasa de tiempo (`timed_out`) o ni arranca (`startup_failure`) tampoco vigiló: es una falla.
+case "$ULTIMA" in
+  failure | timed_out | startup_failure) AVISOS+=("La última sonda falló ($ULTIMA): n8n no respondió desde la red de GitHub, o la sonda no pudo correr.") ;;
+esac
 case "$CERT" in
   por_vencer) AVISOS+=("Al certificado le quedan ${DIAS:-pocos} días: la renovación automática no está corriendo.") ;;
   vencido) AVISOS+=("El certificado está vencido.") ;;
@@ -84,6 +87,7 @@ SUFIJO=""
 [ "$EN_CURSO" -le 0 ] || SUFIJO=" (en curso ahora: $EN_CURSO)"
 echo "- Última sonda terminada: \`$ULTIMA\`$SUFIJO."
 echo "- Certificado: \`$CERT\`${DIAS:+ ($DIAS días)}."
+[ "$CERT" != "sin_datos" ] || echo "- Nota: «sin_datos» es que no se pudo medir; un certificado vencido o inválido lo ve la sonda (estado \`tls\`) y avisa por ahí."
 for a in "${AVISOS[@]:-}"; do [ -z "$a" ] || echo "- ⚠ $a"; done
 echo
 echo "Cómo leerlo: \`docs/produccion/monitor-n8n.md\`. Reporte automático; una sola red que falla es sospecha, no incidente."
