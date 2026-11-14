@@ -159,6 +159,13 @@ exit 0
 `;
   let dir: string;
   let env: string;
+  /** El id del chequeo va en un archivo de modo 600 (`--ping-desde`), como lo hace el operador. */
+  const ping = (valor: string): string[] => {
+    const archivo = join(dir, 'ping');
+    writeFileSync(archivo, `${valor}\n`, { mode: 0o600 });
+    chmodSync(archivo, 0o600);
+    return ['--ping-desde', archivo];
+  };
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'monitor-secretos-'));
@@ -179,7 +186,7 @@ exit 0
   }
 
   it('en seco no llama a GitHub y no muestra ningún valor', () => {
-    const r = correr(['--env', env], { MONITOR_PING_ID: UUID });
+    const r = correr(['--env', env, ...ping(UUID)]);
     expect(r.status).toBe(0);
     expect(r.args).toBe('');
     expect(r.pantalla).toContain('SECO');
@@ -188,14 +195,14 @@ exit 0
 
   it('--aplicar sin --confirmo github no escribe', () => {
     for (const a of [['--aplicar'], ['--aplicar', '--confirmo', 'produccion'], ['--confirmo', 'github']]) {
-      const r = correr(['--env', env, ...a], { MONITOR_PING_ID: UUID });
+      const r = correr(['--env', env, ...ping(UUID), ...a]);
       expect(r.status).toBe(2);
       expect(r.args).toBe('');
     }
   });
 
   it('al aplicar, los dos valores viajan por la entrada estándar al Environment correcto, nunca por argumentos ni pantalla', () => {
-    const r = correr(['--env', env, '--aplicar', '--confirmo', 'github'], { MONITOR_PING_ID: UUID });
+    const r = correr(['--env', env, ...ping(UUID), '--aplicar', '--confirmo', 'github']);
     expect(r.status).toBe(0);
     expect(r.args.trim().split('\n')).toEqual([
       'secret set MONITOR_N8N_URL --env monitor-n8n --repo segurolotengopy/NovuChat',
@@ -208,10 +215,11 @@ exit 0
     }
   });
 
-  it('sin MONITOR_PING_ID carga solo la URL de salud y lo dice', () => {
-    const r = correr(['--env', env, '--aplicar', '--confirmo', 'github']);
+  it('sin --ping-desde carga solo la URL de salud y lo dice; una variable MONITOR_PING_ID del entorno se IGNORA', () => {
+    const r = correr(['--env', env, '--aplicar', '--confirmo', 'github'], { MONITOR_PING_ID: UUID });
     expect(r.status).toBe(0);
     expect(r.args.trim().split('\n')).toHaveLength(1);
+    expect(r.stdin).not.toContain(UUID);
     expect(r.pantalla).toContain('MONITOR_N8N_PING_URL  NO se carga');
   });
 
@@ -246,7 +254,7 @@ exit 0
   it('un N8N_BASE_URL que no es https://<host> no escribe nada', () => {
     for (const base of ['http://n8n.example.org', 'https://usuario@n8n.example.org', 'https://n8n.example.org:8443', 'https://10.0.0.1', 'n8n.example.org', '']) {
       writeFileSync(env, `N8N_BASE_URL=${base}\n`);
-      const r = correr(['--env', env, '--aplicar', '--confirmo', 'github'], { MONITOR_PING_ID: UUID });
+      const r = correr(['--env', env, ...ping(UUID), '--aplicar', '--confirmo', 'github']);
       expect(r.status, base).toBe(2);
       expect(r.args).toBe('');
       if (base) expect(r.pantalla).not.toContain(base);
@@ -255,7 +263,7 @@ exit 0
 
   it('un id de chequeo que no es un UUID en minúsculas no escribe nada (ni siquiera la URL de salud)', () => {
     for (const id of [UUID.toUpperCase(), `${UUID}/fail`, `otro.example.org/${UUID}`, 'mi-chequeo']) {
-      const r = correr(['--env', env, '--aplicar', '--confirmo', 'github'], { MONITOR_PING_ID: id });
+      const r = correr(['--env', env, ...ping(id), '--aplicar', '--confirmo', 'github']);
       expect(r.status, id).toBe(2);
       expect(r.args).toBe('');
       expect(r.pantalla).not.toContain(id);
@@ -263,7 +271,7 @@ exit 0
   });
 
   it('si gh falla: sale 3 y no repite lo que dijo gh', () => {
-    const r = correr(['--env', env, '--aplicar', '--confirmo', 'github'], { MONITOR_PING_ID: UUID, FAKE_GH_FALLA: 'MONITOR_N8N_URL' });
+    const r = correr(['--env', env, ...ping(UUID), '--aplicar', '--confirmo', 'github'], { FAKE_GH_FALLA: 'MONITOR_N8N_URL' });
     expect(r.status).toBe(3);
     expect(r.pantalla).not.toContain('secreto-de-gh');
     expect(r.args.trim().split('\n')).toHaveLength(1);
@@ -272,9 +280,9 @@ exit 0
   it('sin --env, con un --env inexistente o con xtrace: no escribe', () => {
     expect(correr([]).status).toBe(2);
     expect(correr(['--env', join(dir, 'no-existe')]).status).toBe(2);
-    const r = spawnSync('bash', ['-x', SECRETOS, '--env', env, '--aplicar', '--confirmo', 'github'], {
+    const r = spawnSync('bash', ['-x', SECRETOS, '--env', env, ...ping(UUID), '--aplicar', '--confirmo', 'github'], {
       encoding: 'utf8',
-      env: entornoDelEmulador(undefined, { PATH: `${dir}:${process.env.PATH}`, FAKE_DIR: dir, MONITOR_PING_ID: UUID }),
+      env: entornoDelEmulador(undefined, { PATH: `${dir}:${process.env.PATH}`, FAKE_DIR: dir }),
     });
     expect(r.status).toBe(2);
     expect(existsSync(join(dir, 'gh-args.txt'))).toBe(false);
@@ -331,7 +339,9 @@ describe('monitor-n8n-reporte.yml', () => {
   });
 
   it('la búsqueda de la Issue pagina', () => {
-    expect(sinComentarios).toContain('gh api --paginate "repos/${GITHUB_REPOSITORY}/issues?state=open&creator=');
+    expect(sinComentarios).toContain('gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/issues?state=open&creator=');
+    // Con --slurp las páginas son un arreglo de arreglos: `.[][]`, y un solo número de salida.
+    expect(sinComentarios).toContain("jq -r --arg t \"$TITULO\" '[.[][] | select(.pull_request == null)");
   });
 
   it('falla la corrida cuando el reporte trae avisos, después de comentar', () => {

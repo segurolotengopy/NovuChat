@@ -98,8 +98,10 @@ jobs:
           TITULO='Monitor n8n — reporte diario'
           # Solo una Issue ABIERTA creada por este mismo workflow: en un
           # repositorio público cualquiera puede abrir otra con el mismo título.
-          NUMERO="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues?state=open&creator=github-actions%5Bbot%5D&per_page=100" |
-            jq -r --arg t "$TITULO" '[.[] | select(.pull_request == null) | select(.title == $t) | .number] | first // empty')"
+          # --slurp junta las páginas en UN solo arreglo: sin él, `jq` evalúa cada página por
+          # separado y dos coincidencias darían dos números (y una Issue nueva por día).
+          NUMERO="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/issues?state=open&creator=github-actions%5Bbot%5D&per_page=100" |
+            jq -r --arg t "$TITULO" '[.[][] | select(.pull_request == null) | select(.title == $t) | .number] | first // empty')"
           if ! [[ "$NUMERO" =~ ^[0-9]+$ ]]; then
             NUMERO="$(gh api -X POST "repos/${GITHUB_REPOSITORY}/issues" -f title="$TITULO" \
               -f body='Reporte automático diario del monitor externo de n8n. Cómo leerlo: `docs/produccion/monitor-n8n.md`.' |

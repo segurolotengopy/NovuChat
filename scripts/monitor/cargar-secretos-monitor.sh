@@ -7,8 +7,8 @@
 # Por qué existe. «Andres autoriza; Claude opera»: los secretos no se le pasan
 # a Andres para que los pegue, y ninguna sesión puede leer el `.env`. Este paso
 # revisado lee el host de n8n del `.env` COMO DATO (sin ejecutarlo) y arma la
-# URL de salud; el id del chequeo de la sonda llega por el ENTORNO. Los dos
-# valores viajan a `gh secret set` por la entrada estándar: nunca por
+# URL de salud; el id del chequeo de la sonda se lee de un ARCHIVO de modo 600
+# (--ping-desde). Los dos valores viajan a `gh secret set` por la entrada estándar: nunca por
 # argumentos, pantalla ni archivo.
 #
 #   ./scripts/monitor/cargar-secretos-monitor.sh --env <.env>
@@ -20,7 +20,8 @@
 #       y MONITOR_N8N_PING_URL (https://hc-ping.com/<uuid>) en el Environment.
 #       El id del chequeo se lee de la PRIMERA LÍNEA de --ping-desde (archivo del
 #       usuario, modo 600): así no queda en el historial del shell ni en una orden
-#       de sesión. La variable MONITOR_PING_ID existe solo para las pruebas.
+#       de sesión. No hay variable de entorno para el id: una asignación en la línea
+#       de comandos lo dejaría en el historial.
 #       Sin ninguno de los dos carga solo el primer secreto y lo dice.
 #
 # Salida: 0 hecho, o seco sin hallazgos · 2 uso o validación (nada escrito) ·
@@ -60,7 +61,7 @@ if ! [[ "$BASE" =~ ^https://(([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]
 fi
 URL_SALUD="https://${BASH_REMATCH[1]}/healthz/readiness"
 
-PING_ID="${MONITOR_PING_ID:-}"
+PING_ID=""
 if [[ -n "$PING_FILE" ]]; then
   # Archivo común del usuario y no legible por otros: el id es una URL de capacidad.
   [[ -f "$PING_FILE" && ! -L "$PING_FILE" && -O "$PING_FILE" && "$(stat -c %a "$PING_FILE")" == "600" ]] \
@@ -70,7 +71,7 @@ fi
 URL_PING=""
 if [[ -n "$PING_ID" ]]; then
   [[ "$PING_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] \
-    || { echo "✗ MONITOR_PING_ID no tiene forma de id de chequeo (UUID en minúsculas). No se escribió nada." >&2; exit 2; }
+    || { echo "✗ El id del chequeo no tiene forma de UUID en minúsculas. No se escribió nada." >&2; exit 2; }
   URL_PING="https://hc-ping.com/${PING_ID}"
 fi
 
