@@ -253,13 +253,20 @@ describe('M5: la declaración debe ser real, estar usada y ser la única clase d
     }
   });
 
-  it('una copia más débil usada en OTRO nodo no se esconde tras un literal exacto: basta una para dar «otra»; una débil sin usar no pesa', () => {
+  it('una copia más débil usada en OTRO nodo no se esconde tras un literal exacto: basta una para dar «otra», se use directa, indirecta o nunca', () => {
     const exacta = usada('A_NIEGA_IA', CORE);
     const debil = usada('B_NIEGA_IA', '/\\bhumano\\b/i');
     expect(fuenteDeNiegaIa(flujoCon(exacta, debil), CORE)).toBe('otra');
     expect(fuenteDeNiegaIa(flujoCon(debil, exacta), CORE)).toBe('otra');
     expect(fuenteDeNiegaIa(flujoCon(exacta, exacta), CORE)).toBe('core');
-    expect(fuenteDeNiegaIa(flujoCon(exacta, 'const B_NIEGA_IA = /\\bhumano\\b/i;'), CORE)).toBe('core');
+    // Una débil que nadie llama directamente (`[B].some(...)`) o que nadie usa tampoco se disculpa: el uso solo se exige para contar una copia EXACTA.
+    expect(fuenteDeNiegaIa(flujoCon(exacta, 'const B_NIEGA_IA = /\\bhumano\\b/i;'), CORE)).toBe('otra');
+    expect(fuenteDeNiegaIa(flujoCon(exacta, 'const B_NIEGA_IA = /\\bhumano\\b/i;\nif ([B_NIEGA_IA].some((r) => r.test(t))) return [];'), CORE)).toBe('otra');
+    // Dígitos en el prefijo: `W2_NIEGA_IA` también es una declaración.
+    expect(fuenteDeNiegaIa(flujoCon(exacta, 'const W2_NIEGA_IA = /\\bhumano\\b/i;'), CORE)).toBe('otra');
+    expect(fuenteDeNiegaIa(flujoCon(usada('W2_NIEGA_IA', CORE)), CORE)).toBe('core');
+    // Límite declarado (sin lexer): un `/*` dentro de una cadena abre un «comentario» que se come la declaración; falla CERRADO, nunca da «core».
+    expect(fuenteDeNiegaIa(flujoCon(`const s = '/* x';\n${usada('X_NIEGA_IA', CORE)}\nconst e = '*/';`), CORE)).not.toBe('core');
     // Con las dos fuentes declaradas, cada una exacta en su nodo sigue siendo «core».
     expect(fuenteDeNiegaIa(flujoCon(usada('A_NIEGA_IA', CORE), usada('B_NIEGA_IA', NORM)), DECLARADAS)).toBe('core');
   });
@@ -290,6 +297,21 @@ describe('M5: la expresión normalizada se aplica a texto normalizado', () => {
     expect(fuente(con('const re = new RegExp(WL_NIEGA_IA.source);'))).toBe('otra');
     // Un normalizador DESPUÉS del uso (otra función del nodo) no cuenta: se mira la declaración más cercana ANTES.
     expect(fuente(con('const n = String(t);\nif (WL_NIEGA_IA.test(n)) return 1;\nfunction g() { const n = wlNorm(t); return n; }'))).toBe('otra');
+    // La variable debe valer UNA llamada a un normalizador entera, sin reasignar ni sombrear entre la declaración y el uso.
+    for (const mal of [
+      'const n = unir(wlNorm(t), u);\nWL_NIEGA_IA.test(n);',
+      'const n = wlNorm(a) || crudo;\nWL_NIEGA_IA.test(n);',
+      'const n = wlNorm(t) + crudo;\nWL_NIEGA_IA.test(n);',
+      'let n = wlNorm(t);\nn = crudo;\nWL_NIEGA_IA.test(n);',
+      'let n = wlNorm(t);\nn += crudo;\nWL_NIEGA_IA.test(n);',
+      'const n = wlNorm(t);\nfunction h(n) { return WL_NIEGA_IA.test(n); }',
+      'const n = wlNorm(t);\nconst h = (x, n) => WL_NIEGA_IA.test(n);',
+      'const n = wlNorm(t);\nconst h = n => WL_NIEGA_IA.test(n);',
+      'const n = wlNormal(t);\nWL_NIEGA_IA.test(n);',
+      'const n = normal(t);\nWL_NIEGA_IA.test(n);',
+    ]) expect(fuente(con(mal)), mal).toBe('otra');
+    expect(fuente(con('const n = normalizar(t);\nWL_NIEGA_IA.test(n);'))).toBe('core');
+    expect(fuente(con('let n = wlNorm(t);\nconst m = n === x;\nWL_NIEGA_IA.test(n);'))).toBe('core');
     // Un solo uso malo entre varios buenos basta.
     expect(fuente(con('WL_NIEGA_IA.test(wlNorm(a));\nWL_NIEGA_IA.test(b);'))).toBe('otra');
     // Sin pasar la expresión normalizada no se comprueba (firma anterior): el mismo texto crudo es «core».

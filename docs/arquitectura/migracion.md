@@ -22,7 +22,7 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | agenda-minima.v0.json | experimental/agenda-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | a091b435-af36f781-6b7fb443-8faffc74-2fb5c5ce-886d4224-fb23a277-1c998dcf |
 | captacion-minima.novuchat.json | experimental/captacion-minima | congelado | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | e32347c0-840ec86c-a9c416da-7216fcc2-b56fd089-36b142bf-e0d58f1e-fe3bc0a0 |
 | casa-bermejo.json | clientes/casa-bermejo | sin publicar | construir.mjs | M4 M5 (excepción declarada) | por asignar (Principal) | mudado | 658ed06e-659976a5-f5c9c755-cc632963-e6d11189-1432d729-f30a0d4e-9c93040f |
-| chat-novuchat.novuchat.json | experimental/chat-novuchat | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | b8e2fd1f-43fadcac-2f9e3cf7-9c29d5c0-6bd44abf-e0a27a47-95ac4178-c0f1d66f |
+| chat-novuchat.novuchat.json | experimental/chat-novuchat | vivo | construir.mjs | M1 M4 M6 | por asignar (Principal) | pendiente | b8e2fd1f-43fadcac-2f9e3cf7-9c29d5c0-6bd44abf-e0a27a47-95ac4178-c0f1d66f |
 | doctoras.rroca-emma.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | 337d61b8-a3249cab-65a34c35-8b3ca91c-49800e11-5d1b4fc7-7b5046ff-7ed82674 |
 | doctoras.rroca-evy.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | 3db37cc4-ca855db7-c63e4c60-eee71530-10d8026b-50d6b185-b57aa8a4-691eefaf |
 | recordatorio-bellido.v1.json | experimental/recordatorio-bellido | demo | ninguno | M1 M2 M7 | por asignar (Principal) | pendiente | 64289535-4c20a3b1-19b0ab05-b8f97460-a209e62a-b87b132a-ae0d06ff-3c9bb15a |
@@ -48,7 +48,7 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
   hasta la mudanza: la huella de esta tabla es la que la mudanza no debe cambiar.
 - **dueño**: de la mudanza. Lo asigna Principal; Walisuma es de Rearquitectura.
 - **estado**: `pendiente` o `mudado`. Solo las filas `mudado` pasan por M1 a M7.
-- **huella**: sha256 del JSON versionado el 12/11/2026, en hexadecimal y en 8 grupos de 8 caracteres separados por guion (la
+- **huella**: sha256 del JSON versionado en main (medida el 12/11/2026; el 14/11/2026 se actualizaron cuatro filas: agenda mínima, chat NovuChat y los dos de venta mínima), en hexadecimal y en 8 grupos de 8 caracteres separados por guion (la
   prueba compara quitando los guiones). Se calculó con `sha256sum` sobre cada archivo. Desde el 14/11/2026 la prueba la exige a TODAS
   las filas: quien cambia un JSON de flujo actualiza su huella en el mismo PR (la huella es la del JSON versionado en main).
 
