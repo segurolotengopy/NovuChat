@@ -197,7 +197,12 @@ describe('«Evaluar números»: qué es un veredicto y qué no', () => {
       ['código 1', eMeta(400, 1)], ['código 2', eMeta(500, 2)], ['código 4', eMeta(400, 4)], ['código 17', eMeta(400, 17)],
       ['código 32', eMeta(400, 32)], ['código 613', eMeta(400, 613)], ['código 80007', eMeta(400, 80007)],
       ['red (sin código HTTP)', { error: 'ECONNRESET' }], ['red con texto', { error: 'getaddrinfo ENOTFOUND' }],
-      ['vacío', {}], ['el nodo no corrió', undefined],
+      // («el nodo no corrió»: en n8n `$('X').first()` LANZA y el Code lo atrapa como «sin veredicto»; el ayudante de esta suite devuelve `{}`, que sí es un veredicto, así que no se modela acá.)
+      // Texto de n8n para un 404 de una URL: NO es un error de la credencial.
+      ['404 de la URL (texto)', { error: 'The resource you are requesting could not be found' }],
+      ['404 de la URL (objeto)', { error: { message: 'The resource you are requesting could not be found', name: 'NodeApiError' } }],
+      ['red (objeto)', { error: { message: 'getaddrinfo ENOTFOUND graph.facebook.com', name: 'NodeApiError', description: 'The connection cannot be established' } }],
+      ['red (objeto sin mensaje)', { error: {} }],
     ];
     for (const [nombre, t] of temporales) {
       expect(evaluar(t, BIEN), nombre).toEqual([]);
@@ -242,10 +247,18 @@ describe('«Evaluar números»: qué es un veredicto y qué no', () => {
   });
 
   it('un error de n8n sin respuesta de Meta: de la credencial => falla con palabra fija; de red o tiempo => sin veredicto', () => {
-    for (const msg of ['Node does not have any credentials set', 'Credentials for WhatsApp API are not set', 'Unauthorized', 'The resource you are requesting could not be found']) {
-      const r = evaluar({ error: msg }, BIEN);
-      expect(r[0], msg).toMatchObject({ destino: 'fail', cuerpo: 'Demo A: error_del_nodo | Demo B: ok' });
-      expect(JSON.stringify(r), msg).not.toContain(msg);
+    const mensajes = ['Node does not have any credentials set', 'Credentials for WhatsApp API are not set', 'Unauthorized', 'Credential with ID does not exist'];
+    for (const msg of mensajes) {
+      // n8n lo entrega como texto o como objeto con `message` o `description`.
+      for (const error of [msg, { message: msg, name: 'NodeOperationError' }, { message: 'x', description: msg }]) {
+        const r = evaluar({ error }, BIEN);
+        expect(r[0], msg).toMatchObject({ destino: 'fail', cuerpo: 'Demo A: error_del_nodo | Demo B: ok' });
+        expect(JSON.stringify(r), msg).not.toContain(msg);
+      }
+    }
+    // El nodo falló por dentro y n8n dejó pasar su ENTRADA (para el Demo A, el item de «Config base»): ni respuesta ni error.
+    for (const entrada of [{}, { urlPing: PING, phoneNumberIdA: ID_A, waGraphVersion: 'v26.0' }, { error: null }]) {
+      expect(evaluar(entrada, BIEN)[0], JSON.stringify(entrada)).toMatchObject({ destino: 'fail', cuerpo: 'Demo A: error_del_nodo | Demo B: ok' });
     }
     for (const msg of ['ECONNRESET', 'getaddrinfo ENOTFOUND graph.facebook.com', 'timeout of 10000ms exceeded', 'socket hang up', 'algo raro']) {
       expect(evaluar({ error: msg }, BIEN), msg).toEqual([]);
@@ -255,6 +268,11 @@ describe('«Evaluar números»: qué es un veredicto y qué no', () => {
   it('un error de Meta marcado `is_transient` no es una falla', () => {
     expect(evaluar(respuesta(400, { error: { code: 131000, is_transient: true } }), BIEN)).toEqual([]);
     expect(evaluar(respuesta(400, { error: { code: 131000, is_transient: false } }), BIEN)[0]?.cuerpo).toBe('Demo A: error_de_meta | Demo B: ok');
+  });
+
+  it('si faltara el id del número en «Config base», un CONNECTED sin id NO es «ok» (no «undefined» igual a «undefined»)', () => {
+    const referencias = { 'Config base': { urlPing: PING }, [A]: respuesta(200, { status: 'CONNECTED' }), [B]: respuesta(200, { status: 'CONNECTED' }) };
+    expect(ejecutar(codigo, [{}], referencias)[0]).toMatchObject({ destino: 'fail', cuerpo: 'Demo A: id_no_coincide | Demo B: id_no_coincide' });
   });
 
   it('la salida del demo A no se confunde con la del B (cada uno se lee de SU nodo)', () => {

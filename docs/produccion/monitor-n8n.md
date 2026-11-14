@@ -64,7 +64,7 @@ de cada demo** (la misma con que ya envían) y avisa a un chequeo de Healthcheck
 | `no_existe_o_sin_acceso` | Error 100 de Meta. **Meta usa el mismo código si el número no existe y si el token no puede leerlo**: hay que mirar las dos cosas |
 | `token` / `permiso` | Error 190 (token vencido o inválido) / error 10 o 200 a 299 |
 | `respuesta_sin_estado`, `error_de_meta` | 200 sin `status` / error que no se reconoce |
-| `error_del_nodo` | n8n no pudo armar la consulta (credencial borrada o sin asignar): falla con palabra fija, sin copiar el mensaje |
+| `error_del_nodo` | n8n no pudo armar la consulta (credencial borrada o sin asignar) o dejó pasar su entrada sin respuesta ni error: falla con palabra fija, sin copiar el mensaje. El error de n8n se lee como texto o como objeto |
 | temporal | Red o tiempo agotado, 5xx, 429, errores de Meta 1, 2, 4, 17, 32, 341, 613, 80007 o con `is_transient`: **sin veredicto**, no se manda nada. Un 401 o 403 sin código de Meta cuenta como `token` |
 
 Si algún demo falla, el ping va a `/fail` con el texto `Demo A: <causa> | Demo B: <causa>` (solo
