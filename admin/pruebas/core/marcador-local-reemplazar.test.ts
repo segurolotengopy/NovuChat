@@ -169,6 +169,8 @@ describe('marcador-local.sh --reemplazar', () => {
     for (const v of [uuid.toUpperCase(), `${uuid}/fail`, `${uuid}?x=1`, `otro.example.org/${uuid}`, uuid.slice(1), 'mi-chequeo']) {
       const r = correr(['--marcador', 'REEMPLAZAR_ID_PING_LATIDO_N8N', '--valor', v]);
       expect(r.status, v).not.toBe(0);
+      // Falla por la FORMA del valor, no por otro error.
+      expect(salida(r), v).toContain('id de chequeo');
       expect(readFileSync(archivo, 'utf8')).toBe(CONTENIDO);
     }
     const r = correr(['--marcador', 'REEMPLAZAR_ID_PING_LATIDO_N8N'], { MARCADOR_VALOR: uuid });
