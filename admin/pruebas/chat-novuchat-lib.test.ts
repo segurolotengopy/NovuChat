@@ -29,6 +29,7 @@ const MENSAJES = readFileSync(join(EXPERIMENTAL, '../src/core/sin-agente/mensaje
 const FILTRO = readFileSync(join(EXPERIMENTAL, '../src/core/texto/filtro-redaccion.js'), 'utf8');
 const SESION = readFileSync(join(EXPERIMENTAL, '../src/core/sin-agente/sesion.js'), 'utf8');
 const TIPEO = readFileSync(join(aqui, '../../Flujos/src/core/texto/tipeo.js'), 'utf8');
+const BAJA = readFileSync(join(aqui, '../../Flujos/src/core/conversacion/baja.js'), 'utf8');
 const RUTA_ORIGINAL = join(EXPERIMENTAL, 'captacion-minima/src/lib/captacion.js');
 const ORIGINAL = existsSync(RUTA_ORIGINAL) ? readFileSync(RUTA_ORIGINAL, 'utf8') : '';
 
@@ -1699,6 +1700,8 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     mkdirSync(join(dir, 'flujos', 'src', 'core', 'texto'), { recursive: true });
     cpSync(join(aqui, '../../Flujos/src/core/texto/tipeo.js'), join(dir, 'flujos', 'src', 'core', 'texto', 'tipeo.js'));
     cpSync(join(aqui, '../../Flujos/src/core/texto/filtro-redaccion.js'), join(dir, 'flujos', 'src', 'core', 'texto', 'filtro-redaccion.js'));
+    mkdirSync(join(dir, 'flujos', 'src', 'core', 'conversacion'), { recursive: true });
+    cpSync(join(aqui, '../../Flujos/src/core/conversacion/baja.js'), join(dir, 'flujos', 'src', 'core', 'conversacion', 'baja.js'));
     // El módulo crm (se INCLUYE, no se copia al flujo) y su adaptador de captación.
     mkdirSync(join(dir, 'flujos', 'src', 'modulos', 'captacion'), { recursive: true });
     cpSync(join(aqui, '../../Flujos/src/modulos/crm'), join(dir, 'flujos', 'src', 'modulos', 'crm'), { recursive: true });
@@ -1772,10 +1775,11 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
       if (m[1]!.includes('+mensajes')) { expect(js, `«${n.name}» no trae mensajes.js tal cual`).toContain(MENSAJES.trimEnd()); revisados++; }
       if (m[1]!.includes('+filtro')) { expect(js, `«${n.name}» no trae filtro-redaccion.js tal cual`).toContain(FILTRO.trimEnd()); revisados++; }
       if (m[1]!.includes('+sesion')) { expect(js, `«${n.name}» no trae sesion.js (módulo común) tal cual`).toContain(SESION.trimEnd()); revisados++; }
+      if (m[1]!.includes('+baja')) { expect(js, `«${n.name}» no trae core/conversacion/baja.js tal cual`).toContain(BAJA.trimEnd()); revisados++; }
       if (m[1]!.includes('+tipeo')) { expect(js, `«${n.name}» no trae core/texto/tipeo.js tal cual`).toContain(TIPEO.trimEnd()); revisados++; }
     }
     expect(revisados).toBeGreaterThanOrEqual(3);
-    expect(marca('Armar mensajes')).toBe('@@todo+mensajes+filtro+tipeo+sesion:nodos/armar-mensajes.js');
+    expect(marca('Armar mensajes')).toBe('@@todo+mensajes+filtro+tipeo+sesion+baja:nodos/armar-mensajes.js');
     expect(marca('Armar turno')).toBe('@@todo+tipeo+sesion:nodos/armar-turno.js');
   });
   it('la cadena de envío (enviar, respaldo en texto, reporte saliente) es la de `comun-sin-agente/src/envio.mjs`, injertada sin cambios', async () => {

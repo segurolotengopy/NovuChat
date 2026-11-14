@@ -63,12 +63,15 @@ const aviso = (estado, marca, yaAvisado) => {
 const generico = () => chMensajeEquipo(cfg, Object.assign({}, chFichaVigente(null, ahora), { nombrePedido: true }), from);
 if (plan.ruta === 'sin_estado') {
   mensajes.push(generico());
-} else if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
+} else if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido' || plan.ruta === 'baja') {
   // La puerta cerró el turno: nada de modelo, planilla ni historial. Solo se recuerda el id (los repetidos de Meta no se vuelven a contar).
   nueva = chClon(antes);
   chRecordarIds(nueva, [t.mensajeId]);
   nueva.ultimoMs = ahora;
-  if (plan.ruta === 'suspendido') {
+  if (plan.ruta === 'baja') {
+    // Baja por texto: UN mensaje de texto fijo, sin botones, sin aviso y sin evento (el `no_contactar` viajó con el entrante).
+    mensajes.push(cmMensaje('cliente', cmTexto(bjTextoBaja(cfg.textoBaja)), bjTextoBaja(cfg.textoBaja), bjTextoBaja(cfg.textoBaja), { tipoReporte: 'text' }));
+  } else if (plan.ruta === 'suspendido') {
     if (puerta.texto) mensajes.push(texto(String(puerta.texto)));
   } else {
     if (puerta.responder === true && puerta.texto) mensajes.push(texto(String(puerta.texto)));
@@ -185,7 +188,7 @@ const salidaFalla = aItems([generico()]);
 // `CH_TOPE_AVISO_FALLA_HORA` veces por hora y por teléfono (las marcas viven en `staticData.chatNovuchatAvisoFalla`; las anota «Soltar mensajes» solo si salió el genérico). El aviso no marca `avisado`
 // de la ficha (no hay compromiso), no cuenta como `marcaAvisado` para «Confirmar envío» (un rechazo de Meta no corta el turno ni compensa) y no es una respuesta más al cliente (0 mensajes más).
 let avisoFalla = false;
-if (!prueba && claveOk && plan.ruta !== 'suspendido' && plan.ruta !== 'uso_extendido' && recepcion.length >= 6) {
+if (!prueba && claveOk && plan.ruta !== 'suspendido' && plan.ruta !== 'uso_extendido' && plan.ruta !== 'baja' && recepcion.length >= 6) {
   let marcasFalla = [];
   try {
     const sd = $getWorkflowStaticData('global');
@@ -229,6 +232,6 @@ return [{ json: {
   from: from, ahoraMs: ahora, pasada: pasada, plan: accion, resumen: resumen, salida: salida, salidaFalla: salidaFalla, avisoFalla: avisoFalla, nueva: nueva, fichaAntes: fichaAntes, conversacion: conversacion,
   comprometer: compromiso !== null, compromiso: compromiso, numero: ssNumeroHeader(), fallaEstado: sinEstado || compromiso === null,
   // Las puertas cerradas (suspendido, uso extendido, bloqueado) comprometen solo para guardar los ids: si falla, sale lo suyo igual (bloqueado: nada), nunca el genérico. `seqs`: los eventos de este turno.
-  mejorEsfuerzo: plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido', seqs: eventosTurno.map((e) => e.seq),
+  mejorEsfuerzo: plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido' || plan.ruta === 'baja', seqs: eventosTurno.map((e) => e.seq),
   despues: despues, primeraVez: primeraVez, guardarPlanilla: guardarPlanilla,
 } }];

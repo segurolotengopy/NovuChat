@@ -4,6 +4,8 @@
 //                    que el negocio debe dinero. El texto es neutro y sale de «Config del negocio». Se corta ANTES de cualquier llamada al modelo, a la planilla o a recepción.
 //   uso_extendido -> el cliente pasó el umbral de operador o el de bloqueo: operador responde el aviso fijo (cuenta como cualquier respuesta) y la PRIMERA vez avisa a recepción;
 //                    bloqueado no responde nada. NO se llama al modelo.
+//   baja          -> el cliente pidió no recibir más mensajes (`bjPideBaja`, pieza común): UN texto fijo de confirmación y nada más. Sin modelo, sin botones, sin aviso a recepción y sin fila en la planilla.
+//                    Va después de la puerta cerrada y del uso extendido. El `no_contactar` ya viajó con el entrante; la ficha no se borra (si vuelve a escribir, se le atiende como siempre).
 //   sin_estado    -> el servidor no entregó el estado de la conversación: genérico con el botón a recepción más el aviso a recepción (tope por hora), sin compromiso.
 //   sigue         -> todo lo demás: medios, registro del evento, espera de la ráfaga, modelo.
 //
@@ -30,6 +32,7 @@ if (a.estado !== 'normal') {
       : 'llegó a ' + a.respuestas + ' respuestas en su ventana de 24 horas; el asistente no le responde más',
   } }];
 }
+if (bjPideBaja(t.texto)) return [{ json: { ruta: 'baja', texto: bjTextoBaja(cfg.textoBaja), responder: true, transferir: false, motivo: '', from: t.from } }];
 // Sin estado en el servidor (el `leer` falló o no trajo la conversación) no se puede seguir sin arriesgar una ficha falsa: genérico con botón, sin medios, sin modelo y sin compromiso, con el aviso a recepción de la falla (§6).
 if (!cfg.sesion || cfg.sesion.ok !== true) return [{ json: { ruta: 'sin_estado', texto: '', responder: false, transferir: false, motivo: '', from: t.from } }];
 return [{ json: { ruta: 'sigue', texto: '', responder: false, transferir: false, motivo: '', from: t.from } }];

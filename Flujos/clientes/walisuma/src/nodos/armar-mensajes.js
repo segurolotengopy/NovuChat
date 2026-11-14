@@ -64,6 +64,9 @@ if (puerta.ruta === 'sigue') {
     nuevos.fueraDePaisMs = ahora; ev.fueraDePaisMs = fichaAntes.fueraDePaisMs;
   } else if (tipoDePlan === 'cortes') {
     msgs = [texto(conSaludo(WL_TEXTO_CORTES))];
+  } else if (tipoDePlan === 'baja') {
+    // La confirmación de la baja: UN texto fijo (sin saludo, sin botón, sin aviso); el `no_contactar` ya viajó con el entrante. La ficha y el carrito no se tocan.
+    msgs = [texto(bjTextoBaja(undefined))];
   } else if (tipoDePlan === 'identidad') {
     msgs = [texto(WL_TEXTO_IDENTIDAD.replace('{NEGOCIO}', negocio))];
   } else if (tipoDePlan === 'audio_fijo') {
