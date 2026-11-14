@@ -7,3 +7,7 @@
  */
 export const ALTA_FIJADA = '2026-11-13';
 export const TOPE_MAXIMO = 16;
+
+/** Lo mismo para la línea de base del MOTOR (`linea-de-base-motor.ts`, pruebas con axe-core). */
+export const ALTA_MOTOR_FIJADA = '2026-11-13';
+export const TOPE_MOTOR_MAXIMO = 7;

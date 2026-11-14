@@ -125,6 +125,8 @@ export const ZONA_POR_ARCHIVO: Readonly<Record<string, ZonaDeArchivo>> = {
   'admin/pruebas/correr-storage.sh': { zona: 'coordinador', destino: 'admin/pruebas/correr-storage.sh' },
   // Las reglas de Storage amparan a todas las zonas.
   'admin/pruebas/storage-reglas.test.ts': { zona: 'coordinador', destino: 'admin/pruebas/storage-reglas.test.ts' },
+  // Accesibilidad con motor (13/11/2026): monta la `App` real (coordinador) con su marco para medir las pantallas como las ve el usuario.
+  'admin/pruebas/central/accesibilidad/motor.test.ts': { zona: 'coordinador', destino: 'admin/pruebas/central/accesibilidad/motor.test.ts' },
   // Coordinador de turno; en la raíz de Functions hasta F3b.
   'admin/functions/src/ingesta.ts': { zona: 'coordinador', destino: 'admin/functions/src/ingesta.ts' },
   // Los ganchos del cierre (F3b-1b): arma `registrarCierre` con los ganchos de Cobros y de Agenda sobre el contrato de Core; en la raíz de Functions como `ingesta.ts`.
