@@ -6,7 +6,7 @@
  *   - si falta o es inválida, el marcador queda y `publicar-flujo.sh` aborta (cualquier `REEMPLAZAR_[A-Z]…` que quede lo detiene).
  */
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -214,11 +214,25 @@ describe('preparar-import.sh y RELE_URL_INTERNA', () => {
   it('el Flujos/salida-de-persona.json REAL se prepara sin RELE_BASES_PERMITIDAS (la regla nueva no rompe su uso legítimo)', () => {
     copyFileSync(join(REPO, 'Flujos', 'salida-de-persona.json'), join(raiz, 'Flujos', 'salida-de-persona.json'));
     rmSync(join(raiz, 'Flujos', 'salida-de-persona.local.json'), { force: true });
+    // El archivo real lleva el marcador del flujo de alertas (settings.errorWorkflow): se resuelve por NOMBRE contra el n8n destino, igual que en
+    // error-workflow-por-nombre.test.ts: scripts/lib, un curl falso y la lista con la alerta. Sin red.
+    cpSync(join(REPO, 'scripts', 'lib'), join(raiz, 'scripts', 'lib'), { recursive: true });
+    mkdirSync(join(dir, 'bin'));
+    copyFileSync(join(REPO, 'admin', 'pruebas', 'core', 'curl-falso-n8n.sh'), join(dir, 'bin', 'curl'));
+    chmodSync(join(dir, 'bin', 'curl'), 0o755);
+    writeFileSync(join(dir, 'curl.log'), '');
+    writeFileSync(join(raiz, '.env.prueba'), 'N8N_BASE_URL=https://n8n.invalid\nN8N_API_KEY=clave-de-prueba\n', { mode: 0o600 });
     const r = spawnSync('bash', ['scripts/preparar-import.sh', 'Flujos/salida-de-persona.json', '.env.prueba'], {
       cwd: raiz, encoding: 'utf8',
-      env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: join(raiz, 'tabla.md'), BASH_ENV: '', ENV: '', RELE_URL_INTERNA: 'http://relay:8080', RELE_BASES_PERMITIDAS: '' }),
+      env: entornoDelEmulador(undefined, {
+        PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}`, HOME: dir, REGISTRO_CURL: join(dir, 'curl.log'),
+        RESPUESTA_CREDENCIALES: JSON.stringify({ data: [] }), RESPUESTA_LISTA_FLUJOS: JSON.stringify({ data: [{ id: 'idAlerta42', name: 'NovuChat — Error de envío incierto' }] }),
+        HTTPS_PROXY: 'http://127.0.0.1:1', HTTP_PROXY: 'http://127.0.0.1:1', NO_PROXY: '',
+        CONFIG_LOCAL_MD: join(raiz, 'tabla.md'), BASH_ENV: '', ENV: '', RELE_URL_INTERNA: 'http://relay:8080', RELE_BASES_PERMITIDAS: '',
+      }),
     });
     expect(`${r.stdout}${r.stderr}`).not.toContain('RELE_BASES_PERMITIDAS');
+    expect(`${r.stdout}${r.stderr}`).not.toContain('idAlerta42');
     expect(readFileSync(join(raiz, 'Flujos', 'salida-de-persona.local.json'), 'utf8')).toContain('http://relay:8080');
   });
   it('la excepción es NOMBRADA por archivo: Flujos/salida-de-persona.json (ruta exacta) valida su propia lista y se repone sin RELE_BASES_PERMITIDAS', () => {

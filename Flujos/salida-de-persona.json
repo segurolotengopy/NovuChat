@@ -5,7 +5,10 @@
     "timezone": "America/La_Paz",
     "executionTimeout": 300,
     "saveDataSuccessExecution": "none",
-    "saveManualExecutions": false
+    "saveDataErrorExecution": "none",
+    "saveExecutionProgress": false,
+    "saveManualExecutions": false,
+    "errorWorkflow": "REEMPLAZAR_ID_ERROR_WORKFLOW"
   },
   "nodes": [
     {
