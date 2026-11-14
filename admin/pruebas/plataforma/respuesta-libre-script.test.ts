@@ -4,7 +4,9 @@
  * core lo importe). El saneo puro está en `pruebas/core/respuesta-libre.test.ts`.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import { chmodSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +19,7 @@ type Cfg = Record<string, unknown>;
 const mod = await import('../../scripts/plataforma/respuesta-libre.mjs') as unknown as {
   analizarArgumentos: (a: string[], env?: Record<string, string>, op?: Record<string, unknown>) => { ok: boolean; problemas?: string[]; cfg?: Cfg };
   ejecutar: (cfg: Cfg, deps: Record<string, unknown>) => Promise<number>;
+  entornoDeCredenciales: (c: Cfg) => Record<string, string>;
   cargarDatos: (n: string) => { ok: boolean; valor?: Cfg; motivo?: string };
   validarDatos: (c: unknown) => { ok: boolean; valor?: Cfg; motivo?: string };
 };
@@ -83,6 +86,107 @@ describe('el script de Plataforma', () => {
     expect(mod.analizarArgumentos(prod, ENV_REAL).ok).toBe(false);
     expect(mod.analizarArgumentos([...prod, '--confirmo-produccion', 'otro-comercio'], ENV_REAL).ok).toBe(false);
     expect(mod.analizarArgumentos([...prod, '--confirmo-produccion', 'comercio-x'], ENV_REAL).ok).toBe(true);
+  });
+
+  describe('--proyecto prod: el id sale de las credenciales y nunca se imprime', () => {
+    const ID = 'proyecto-secreto-creds';
+    const dirsC: string[] = [];
+    const creds = (contenido: string | null) => {
+      const d = mkdtempSync(join(tmpdir(), 'cred-')); dirsC.push(d);
+      if (contenido !== null) writeFileSync(join(d, 'application_default_credentials.json'), contenido);
+      return d;
+    };
+    afterAll(() => { for (const d of dirsC) rmSync(d, { recursive: true, force: true }); });
+    const buenas = () => creds(JSON.stringify({ quota_project_id: ID }));
+    const args = (extra: string[] = []) => ['--proyecto', 'prod', '--tenant', 'comercio-x', '--datos', 'qtaco', ...extra];
+    const texto = (r: { problemas?: string[] }) => (r.problemas ?? []).join('\n');
+
+    it('con credenciales válidas y sin ids en el entorno resuelve producción (seco)', () => {
+      const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: buenas() });
+      expect(r.ok, texto(r)).toBe(true);
+      expect(r.cfg).toMatchObject({ entorno: 'produccion', proyecto: ID });
+    });
+    it('con PROD igual y STAGING distinto en el entorno también', () => {
+      const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: buenas(), GCP_PROJECT_ID_PROD: ID, GCP_PROJECT_ID_STAGING: 'otro-proyecto-staging' });
+      expect(r.ok, texto(r)).toBe(true);
+    });
+    it('NIEGA: sin archivo de credenciales, JSON roto, sin quota_project_id, id con forma inválida', () => {
+      for (const c of [creds(null), creds('no es json'), creds('{}'), creds(JSON.stringify({ quota_project_id: 5 })),
+        creds(JSON.stringify({ quota_project_id: 'Id Inválido!' }))]) {
+        const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: c });
+        expect(r.ok).toBe(false);
+        expect(texto(r)).not.toContain(ID);
+      }
+    });
+    it('NIEGA: PROD del entorno distinto; STAGING igual a PROD; sin ensuciar con el id', () => {
+      const a = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: buenas(), GCP_PROJECT_ID_PROD: 'proyecto-ficticio-prod' });
+      expect(a.ok).toBe(false);
+      const b = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: buenas(), GCP_PROJECT_ID_STAGING: ID });
+      expect(b.ok).toBe(false);
+      expect(texto(a) + texto(b)).not.toContain(ID);
+    });
+    it('NIEGA: variables de emulador puestas', () => {
+      expect(mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: buenas(), FIRESTORE_EMULATOR_HOST: '127.0.0.1:1' }).ok).toBe(false);
+    });
+    it('NIEGA: --aplicar sin --confirmo-produccion, o con otro comercio; con el correcto pasa', () => {
+      const env = { CLOUDSDK_CONFIG: buenas() };
+      const ap = args(['--aplicar', '--respaldo', rutaRespaldo()]);
+      const sin = mod.analizarArgumentos(ap, env);
+      expect(sin.ok).toBe(false);
+      expect(texto(sin)).not.toContain(ID);
+      expect(mod.analizarArgumentos([...ap, '--confirmo-produccion', 'otro-comercio'], env).ok).toBe(false);
+      expect(mod.analizarArgumentos([...ap, '--confirmo-produccion', 'comercio-x'], env).ok).toBe(true);
+    });
+    it('un id literal se comporta como siempre (sigue exigiendo los dos ids en el entorno)', () => {
+      expect(mod.analizarArgumentos(['--proyecto', ID, '--tenant', 'comercio-x', '--datos', 'qtaco'], { CLOUDSDK_CONFIG: buenas() }).ok).toBe(false);
+    });
+    it('NIEGA: GOOGLE_APPLICATION_CREDENTIALS puesto en el camino prod (el literal no se ve afectado)', () => {
+      const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: buenas(), GOOGLE_APPLICATION_CREDENTIALS: '/ruta/otra.json' });
+      expect(r.ok).toBe(false);
+      expect(texto(r)).toContain('GOOGLE_APPLICATION_CREDENTIALS');
+      expect(texto(r)).not.toContain(ID);
+    });
+    it('NIEGA: credenciales que apuntan a un proyecto demo-*', () => {
+      const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: creds(JSON.stringify({ quota_project_id: 'demo-novuchat-pruebas' })), FIRESTORE_EMULATOR_HOST: '127.0.0.1:1' });
+      expect(r.ok).toBe(false);
+      const s2 = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: creds(JSON.stringify({ quota_project_id: 'demo-novuchat-pruebas' })) });
+      expect(s2.ok).toBe(false);
+      expect(texto(s2)).toContain('demo-');
+    });
+    it('entornoDeCredenciales exporta CLOUDSDK_CONFIG y GOOGLE_APPLICATION_CREDENTIALS al mismo archivo; sin prod, nada', () => {
+      const d = buenas();
+      const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: d });
+      expect(mod.entornoDeCredenciales(r.cfg!)).toEqual({
+        CLOUDSDK_CONFIG: d,
+        GOOGLE_APPLICATION_CREDENTIALS: join(d, 'application_default_credentials.json'),
+      });
+      expect(mod.entornoDeCredenciales({ dirCredenciales: null })).toEqual({});
+      const lit = mod.analizarArgumentos(['--proyecto', 'demo-novuchat-pruebas', '--tenant', 'comercio-x', '--datos', 'qtaco'], ENV_EMU);
+      expect(mod.entornoDeCredenciales(lit.cfg!)).toEqual({});
+    });
+    it('cfg lleva el directorio de credenciales usado, para exportarlo antes de iniciar Firebase', () => {
+      const d = buenas();
+      const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: d });
+      expect(r.cfg).toMatchObject({ dirCredenciales: d });
+    });
+    it('línea de comandos: sale 2 SOLO por GOOGLE_APPLICATION_CREDENTIALS (entornoDelEmulador lo fija; respaldo y confirmación dados) y no imprime el id', () => {
+      const completo = ['--aplicar', '--respaldo', rutaRespaldo(), '--confirmo-produccion', 'comercio-x'];
+      const bien = mod.analizarArgumentos(args(completo), { CLOUDSDK_CONFIG: buenas() });
+      expect(bien.ok, texto(bien)).toBe(true);
+      const r = spawnSync(process.execPath, ['--experimental-strip-types', join(ADMIN, 'scripts/plataforma/respuesta-libre.mjs'), ...args(completo)],
+        { env: entornoDelEmulador(undefined), encoding: 'utf8', timeout: 20000 });
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain('GOOGLE_APPLICATION_CREDENTIALS');
+      expect(r.stderr.split('\n').filter((l: string) => l.includes('  ✗'))).toHaveLength(1);
+      expect(`${r.stdout}${r.stderr}`).not.toContain(ID);
+    });
+    it('credenciales ilegibles: una sola causa, sin pasar por el entorno del hijo', () => {
+      const completo = ['--aplicar', '--respaldo', rutaRespaldo(), '--confirmo-produccion', 'comercio-x'];
+      const r = mod.analizarArgumentos(args(completo), { CLOUDSDK_CONFIG: creds(null) });
+      expect(r.ok).toBe(false);
+      expect(r.problemas).toHaveLength(1);
+      expect(texto(r)).toContain('no se pudieron leer las credenciales');
+    });
   });
 
   /** Una Firestore mínima en memoria: la ficha y `config/respuestaLibre`, con cuenta de escrituras. */
