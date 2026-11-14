@@ -6,6 +6,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -168,24 +169,23 @@ describe('el script de Plataforma', () => {
       const r = mod.analizarArgumentos(args(), { CLOUDSDK_CONFIG: d });
       expect(r.cfg).toMatchObject({ dirCredenciales: d });
     });
-    const lineaDeComandos = (extra: string[], env: Record<string, string>) => spawnSync(process.execPath, ['--experimental-strip-types',
-      join(ADMIN, 'scripts/plataforma/respuesta-libre.mjs'), ...args(extra)], { env: { PATH: process.env['PATH'] ?? '', ...env }, encoding: 'utf8', timeout: 20000 });
-    it('línea de comandos: sale 2 SOLO por GOOGLE_APPLICATION_CREDENTIALS (con respaldo y confirmación dados) y no imprime el id', () => {
+    it('línea de comandos: sale 2 SOLO por GOOGLE_APPLICATION_CREDENTIALS (entornoDelEmulador lo fija; respaldo y confirmación dados) y no imprime el id', () => {
       const completo = ['--aplicar', '--respaldo', rutaRespaldo(), '--confirmo-produccion', 'comercio-x'];
       const bien = mod.analizarArgumentos(args(completo), { CLOUDSDK_CONFIG: buenas() });
       expect(bien.ok, texto(bien)).toBe(true);
-      const r = lineaDeComandos(completo, { CLOUDSDK_CONFIG: buenas(), GOOGLE_APPLICATION_CREDENTIALS: '/ruta/otra.json' });
+      const r = spawnSync(process.execPath, ['--experimental-strip-types', join(ADMIN, 'scripts/plataforma/respuesta-libre.mjs'), ...args(completo)],
+        { env: entornoDelEmulador(undefined), encoding: 'utf8', timeout: 20000 });
       expect(r.status).toBe(2);
       expect(r.stderr).toContain('GOOGLE_APPLICATION_CREDENTIALS');
       expect(r.stderr.split('\n').filter((l: string) => l.includes('  ✗'))).toHaveLength(1);
       expect(`${r.stdout}${r.stderr}`).not.toContain(ID);
     });
-    it('línea de comandos: sale 2 SOLO por credenciales ilegibles (con respaldo y confirmación dados)', () => {
+    it('credenciales ilegibles: una sola causa, sin pasar por el entorno del hijo', () => {
       const completo = ['--aplicar', '--respaldo', rutaRespaldo(), '--confirmo-produccion', 'comercio-x'];
-      const r = lineaDeComandos(completo, { CLOUDSDK_CONFIG: creds(null) });
-      expect(r.status).toBe(2);
-      expect(r.stderr).toContain('no se pudieron leer las credenciales');
-      expect(r.stderr.split('\n').filter((l: string) => l.includes('  ✗'))).toHaveLength(1);
+      const r = mod.analizarArgumentos(args(completo), { CLOUDSDK_CONFIG: creds(null) });
+      expect(r.ok).toBe(false);
+      expect(r.problemas).toHaveLength(1);
+      expect(texto(r)).toContain('no se pudieron leer las credenciales');
     });
   });
 

@@ -42,7 +42,6 @@
  * producción sin el «sí» de Andres, cliente por cliente.
  */
 import { readFileSync, realpathSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { comprobarProyecto, comprobarRespaldo, guardarRespaldo } from './aplicar-consola-oculta.mjs';
@@ -92,8 +91,10 @@ const ID_PROYECTO_REAL = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
  * el entorno con el que `comprobarProyecto` aplica su lista blanca, o `{ok:false, motivo}`.
  */
 export function proyectoDesdeCredenciales(env = process.env) {
+  const casa = typeof env.HOME === 'string' && env.HOME !== '' ? env.HOME : null;
   const dir = typeof env.CLOUDSDK_CONFIG === 'string' && env.CLOUDSDK_CONFIG !== ''
-    ? env.CLOUDSDK_CONFIG : join(env.HOME || homedir(), '.config', 'gcloud-novuchat-prod');
+    ? env.CLOUDSDK_CONFIG : casa && join(casa, '.config', 'gcloud-novuchat-prod');
+  if (!dir) return { ok: false, motivo: '--proyecto prod: sin CLOUDSDK_CONFIG ni HOME no sé dónde están las credenciales de gcloud' };
   if (typeof env.GOOGLE_APPLICATION_CREDENTIALS === 'string' && env.GOOGLE_APPLICATION_CREDENTIALS !== '') {
     return { ok: false, motivo: '--proyecto prod: GOOGLE_APPLICATION_CREDENTIALS está puesto; la identidad debe salir del mismo archivo que el proyecto (quítelo)' };
   }
