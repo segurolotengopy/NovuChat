@@ -56,8 +56,8 @@ const declaradosDe = (f: string): string[] => {
 const ARCHIVOS = jsonDeFlujos();
 
 describe('Higiene de los flujos: ningún id de credencial', () => {
-  it('el inventario incluye los 10 flujos y los de experimental/', () => {
-    expect(ARCHIVOS.filter((f) => !f.includes('/')).length).toBe(10);
+  it('el inventario incluye los 11 flujos y los de experimental/', () => {
+    expect(ARCHIVOS.filter((f) => !f.includes('/')).length).toBe(11);
     expect(ARCHIVOS.some((f) => f.startsWith('experimental/'))).toBe(true);
   });
 
