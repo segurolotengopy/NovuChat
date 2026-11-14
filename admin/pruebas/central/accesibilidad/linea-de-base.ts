@@ -39,7 +39,11 @@ export const TOPE_POR_REGLA: Readonly<Record<string, number>> = {
 };
 
 /** Compara lo encontrado con la base. Devuelve los problemas legibles; `[]` si coinciden exactamente. Pura. */
-export function compararConLineaDeBase(encontradas: Record<string, number>, base: Readonly<Record<string, number>> = LINEA_DE_BASE): string[] {
+export function compararConLineaDeBase(
+  encontradas: Record<string, number>,
+  base: Readonly<Record<string, number>> = LINEA_DE_BASE,
+  donde: { archivo: string; topes: string } = { archivo: 'linea-de-base.ts', topes: 'TOPE y TOPE_MAXIMO' },
+): string[] {
   const problemas: string[] = [];
   for (const clave of Object.keys(encontradas).sort()) {
     const hay = encontradas[clave] ?? 0;
@@ -53,7 +57,7 @@ export function compararConLineaDeBase(encontradas: Record<string, number>, base
     const hay = encontradas[clave] ?? 0;
     const dice = base[clave] ?? 0;
     if (hay < dice) {
-      problemas.push(`la línea de base sobra en ${clave} (hay ${hay}, dice ${dice}): bájala en linea-de-base.ts y baja TOPE y TOPE_MAXIMO`);
+      problemas.push(`la línea de base sobra en ${clave} (hay ${hay}, dice ${dice}): bájala en ${donde.archivo} y baja ${donde.topes}`);
     }
   }
   return problemas;
