@@ -122,6 +122,8 @@ export const SUITES_PURAS = [
   'pruebas/core/migrado.test.ts', 'pruebas/core/migracion/excepciones.test.ts',
   // Lint de accesibilidad de la consola con línea de base cerrada (13/11/2026): ESLint por su API, sin red ni emulador.
   'pruebas/central/accesibilidad/lint.test.ts',
+  // Accesibilidad con motor (13/11/2026): la App real en jsdom con axe-core y la capa de datos sustituida; sin red ni emulador.
+  'pruebas/central/accesibilidad/motor.test.ts',
   'pruebas/core/hijos-hermeticos.test.ts',
   'pruebas/core/apps-ajenas-escrituras.test.ts',
   'pruebas/core/cotejar-ids-ajenos.test.ts',

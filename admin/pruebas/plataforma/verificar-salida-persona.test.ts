@@ -462,6 +462,16 @@ describe('5 · barrido vivo', () => {
   it('sin ejecuciones recientes: NO SE PUDO', async () => {
     expect((await corre({ ejecuciones: [] })).estado('5a')).toBe('NO SE PUDO');
   });
+  it('sin ejecuciones porque el flujo no las guarda: NO SE PUDO con ese motivo, no «el barrido corre cada minuto»', async () => {
+    const ninguna = { saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none' };
+    const r = await corre({ ejecuciones: [], workflow: { settings: ninguna } });
+    expect(r.estado('5a')).toBe('NO SE PUDO');
+    expect(r.texto).toMatch(/5a.*el flujo no guarda ejecuciones/);
+    // Si guarda las fallidas, el motivo sigue siendo el de siempre; y una falla listada sigue siendo FALLA.
+    const guarda = await corre({ ejecuciones: [], workflow: { settings: { saveDataSuccessExecution: 'none' } } });
+    expect(guarda.texto).toMatch(/5a.*el barrido corre cada minuto/);
+    expect((await corre({ ejecuciones: [reciente('error')], workflow: { settings: ninguna } })).estado('5a')).toBe('FALLA');
+  });
   it('401 de reclamarSalidaPersona: 5b FALLA, solo el conteo', async () => {
     const r = await corre({ logs: JSON.stringify([{ textPayload: M.clave }, { textPayload: M.clave }]) });
     expect(r.estado('5b')).toBe('FALLA');

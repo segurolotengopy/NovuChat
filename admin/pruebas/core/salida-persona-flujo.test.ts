@@ -461,8 +461,15 @@ describe('Salida de persona: la estructura del flujo', () => {
     expect(m.parameters).toEqual({ numberInputs: 6 });
   });
 
-  it('las ejecuciones exitosas y manuales no se guardan; la credencial del timbre es POR ALIAS; los envios esperan 10 s', () => {
-    expect(flujo.settings).toMatchObject({ saveDataSuccessExecution: 'none', saveManualExecutions: false, executionOrder: 'v1' });
+  it('ninguna ejecucion se guarda (exitosa, fallida, manual ni su progreso); la credencial del timbre es POR ALIAS; los envios esperan 10 s', () => {
+    // D-B3-1 (Andres, 13/11/2026): una ejecucion FALLIDA guardaria en n8n el binario y la leyenda del adjunto.
+    // Igual que los medios entrantes (30/10/2026, contrato v2 §8.1). `toEqual` y no `toMatchObject`: una clave
+    // ausente vale el ajuste de la instancia, que guarda las fallidas.
+    expect(flujo.settings).toEqual({
+      executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 300,
+      saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false, saveManualExecutions: false,
+      errorWorkflow: 'REEMPLAZAR_ID_ERROR_WORKFLOW',   // #958: el flujo de errores, resuelto por nombre al cargar
+    });
     expect(nodo(flujo, 'Timbre').credentials?.['httpHeaderAuth']?.name).toMatch(/REEMPLAZAR_ALIAS/);
     for (const n of ['Enviar por el relé', 'Enviar por Graph']) {
       expect((nodo(flujo, n).parameters['options'] as J)['timeout'], n).toBe(10000);

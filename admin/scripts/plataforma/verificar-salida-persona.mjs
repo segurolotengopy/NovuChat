@@ -17,7 +17,8 @@
  *   3  las cinco Functions ACTIVE
  *   4a flujo n8n activo y publicado  4b credenciales por rol y tipo  4c ingesta distinta de envío
  *   4d el timbre coincide con la ruta del secreto  4e phoneNumberId del flujo = id de la ruta
- *   5a ejecuciones recientes sin error  5b sin 401 de reclamarSalidaPersona (10 min)
+ *   5a ejecuciones recientes sin error (un flujo que no guarda ejecuciones da NO SE PUDO con ese motivo)
+ *   5b sin 401 de reclamarSalidaPersona (10 min)
  *   4f el flujo publicado lleva la rama de adjuntos (cabecera `X-NovuChat-Adjuntos: 1` en `Reclamar` y los
  *      nodos `Leer adjunto` y `Subir a Meta` conectados). SIEMPRE se evalúa y se informa; solo con `--medios`
  *      su fallo hace fallar el veredicto (un comercio puede tener texto sin adjuntos). Con `--medios`, 1b
@@ -407,7 +408,11 @@ export async function chequeoN8n(cfg, n8n, rutaDelSecreto, phoneId, ahora = Date
     else {
       const recientes = r.json.data.filter((x) => { const t = Date.parse(x?.startedAt ?? ''); return Number.isFinite(t) && ahora - t <= VENTANA_EJECUCIONES_MS; });
       const malas = recientes.filter((x) => x.status === 'error' || x.status === 'crashed').length;
-      if (recientes.length === 0) R.push(noSePudo('5a', TITULOS_N8N['5a'], 'no hay ejecuciones en la última hora (el barrido corre cada minuto)'));
+      // Un flujo con éxitos y fallas en «none» (D-B3-1, 13/11/2026) no deja ejecución que listar: no es que el barrido esté detenido.
+      const sinRegistro = w?.settings?.saveDataSuccessExecution === 'none' && w?.settings?.saveDataErrorExecution === 'none';
+      if (recientes.length === 0) R.push(noSePudo('5a', TITULOS_N8N['5a'], sinRegistro
+        ? 'el flujo no guarda ejecuciones (ajustes «none»): una falla se busca en el registro del contenedor de n8n y en el estado del mensaje'
+        : 'no hay ejecuciones en la última hora (el barrido corre cada minuto)'));
       else R.push(malas ? res('5a', TITULOS_N8N['5a'], FALLA, `${malas} de ${recientes.length} ejecuciones de la última hora terminaron en error`)
         : res('5a', TITULOS_N8N['5a'], OK, `${recientes.length} ejecuciones en la última hora, ninguna con error`));
     }

@@ -7,7 +7,7 @@ Límite de la medida: se cuenta por archivo y regla. Si en un mismo cambio se ar
 ## Qué mide y qué no
 
 - **Mide:** lint estático del JSX de `admin/web/src/**/*.tsx` con las reglas recomendadas de `eslint-plugin-jsx-a11y` (config aparte: `admin/web/eslint.a11y.config.js`; `pnpm lint` general no las incluye y sigue en verde). Los comentarios `eslint-disable` no las apagan.
-- **No mide:** contraste de color, orden y trampas de foco, ni nada que exija renderizar la página. Eso lo hará la prueba con motor (sección final), pendiente.
+- **No mide:** contraste de color, orden y trampas de foco, ni nada que exija renderizar la página. Eso lo mide en parte la prueba con motor (sección final), que dibuja 8 pantallas y les pasa axe-core.
 
 ## Cómo correrlo
 
@@ -42,6 +42,51 @@ Corre dentro de `pruebas:reglas` del job `calidad`: sin paso nuevo ni navegador.
 
 `eslint-plugin-jsx-a11y` 6.10.2 es MIT. Trae 87 paquetes de desarrollo: 82 MIT, 2 Apache-2.0, 1 BSD-2-Clause, 1 CC0-1.0 y **uno MPL-2.0: `axe-core`**, que el plugin usa para una de sus reglas. MPL-2.0 obliga solo a quien modifica y distribuye esos archivos; aquí se usa sin modificar, solo en desarrollo, y no entra en lo que se despliega. El repositorio no tiene hoy una política de licencias que el CI haga cumplir (ni lista permitida ni denegada), así que nada lo bloquea ni lo aprueba: queda declarado aquí y en el PR.
 
+**Andres admitió el 13/11/2026 `axe-core` 4.14.0 (MPL-2.0) como dependencia directa, solo en `devDependencies`** y con versión exacta, para las pruebas con motor. `jsdom` 30.1.3 (MIT) dibuja las páginas en esas pruebas, también solo en desarrollo y con versión exacta. La política de licencias del repositorio no se tocó.
+
 ## Pruebas con motor (axe)
 
-No construidas. Necesitan `axe-core` como dependencia directa y `jsdom` (MIT) para dibujar las páginas en las pruebas. Quedan a la espera de que Andres decida si MPL-2.0 se admite como dependencia directa de desarrollo; la política de licencias no se tocó.
+Alta: 13/11/2026. Archivos en `admin/pruebas/central/accesibilidad/`: `motor.test.ts` (la suite), `paginas.ts` (las pantallas y sus datos), `sustitutos.ts` y `dibujar.ts` (la capa de datos falsa y el dibujo), `linea-de-base-motor.ts` (la base) y `tope-fijado.ts` (el techo).
+
+### Qué mide
+
+- **Monta la `App` real** de la consola (`admin/web/src/App.tsx`, con su cabecera, su menú, su ruta y su guarda de permisos) dentro de jsdom, con `react-dom/client`, en **8 pantallas**: `ingresar`, `tablero`, `conversaciones`, `cobros`, `consumo`, `pagar`, `configuracion` y `negocios`. Solo se sustituye la capa de datos (`firebase/firestore`, `firebase/functions`, `firebase/auth` y los módulos `core/lib/firebase` y `core/lib/contexto`); ninguna página ni componente se reemplaza.
+- **Corre axe-core** 4.14.0 con las etiquetas WCAG 2.0, 2.1 y 2.2, niveles A y AA (`wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`): 59 reglas evaluadas, sin las experimentales ni las obsoletas.
+- **La clave es `<página>#<regla>`** y su valor es el número de nodos. Lo que axe no logra decidir (`incomplete`) se anota como `<página>#<regla>:incompleta` y **cuenta igual** que una violación: «no se pudo comprobar» no es «está bien».
+- **Una página que no se dibuja con datos pone la suite en rojo.** Cada página debe mostrar un dato suyo (un «centinela»), sin «Cargando…» ni «Sin permiso». Y la suite exige que sea hermética: ninguna página escribe, sale a la red ni llama a algo sin sustituto.
+
+### Qué NO mide
+
+- **Las reglas de «buenas prácticas» de axe** (`best-practice`): no son criterios WCAG y quedan fuera de las etiquetas que se corren. Ahí están los puntos de referencia de la página (`region`, `landmark-one-main`, `landmark-unique`) y el orden de títulos (`page-has-heading-one`, `heading-order`). Dato del 13/11/2026: 7 de las 8 pantallas no tienen `<main>` (solo «ingresar» lo tiene), y esta suite no lo cuenta. Medirlo sería una línea de base aparte.
+- **Pantallas en estado de error:** un dibujo que muestre «No se pudo…» no vale como muestra y pone la suite en rojo; los estados de error no se miden.
+- **Escrituras de Storage y de la cuenta** (subir archivos, cambiar contraseña): no están sustituidas ni contadas; hoy fallan sin salir a la red (Storage nulo, sin usuario, `fetch`, `XMLHttpRequest` y `WebSocket` anulados). «Ninguna escribió» se refiere a Firestore.
+
+- **Seis reglas de axe desactivadas**, porque jsdom no puede evaluarlas y darían «pasa» falso o fallarían siempre: `color-contrast` (jsdom no tiene canvas ni colores calculados), `link-in-text-block` (necesita colores calculados), `target-size` (sin layout daría «pasa» falso), `scrollable-region-focusable` (`scrollHeight` siempre es 0), `label-content-name-mismatch` (usa canvas y es experimental) y `css-orientation-lock` (vitest descarta el CSS). La lista está cerrada en `dibujar.ts` (`DESACTIVADAS`) y la suite la exige igual.
+- **Foco y orden de tabulación**, y todo lo que exige manejar el teclado o el lector de pantalla.
+- **La conversación abierta**: se dibuja la lista, no el detalle de una conversación con sus mensajes.
+- **Lo que el CSS oculta o muestra**: el CSS no se carga.
+- **Pantallas que no están entre las 8** (usuarios, contactos, catálogo, campañas, agenda, captación, etc.) ni los estados de error o vacío de las que sí están.
+
+### Cómo correrlo
+
+`cd admin && FIRESTORE_EMULATOR_HOST=127.0.0.1:1 npx vitest run --project puras pruebas/central/accesibilidad`. Corre con el resto de `pruebas:puras`, sin navegador ni emulador.
+
+### Si el CI falla
+
+- **«violación NUEVA de accesibilidad»:** se arregla la pantalla. No se sube la base.
+- **«la línea de base sobra … bájala en linea-de-base-motor.ts»:** se arregló algo (bien). Se quita o se reduce la clave en `linea-de-base-motor.ts` y se bajan `TOPE_MOTOR`, `TOPE_MOTOR_POR_REGLA` y `TOPE_MOTOR_MAXIMO` (este último en `tope-fijado.ts`).
+- **Cambiar los datos de prueba (`paginas.ts`) cambia las cuentas:** agregar una fila a una colección o un dato que haga aparecer otro bloque puede crear o quitar nodos sin que la consola haya cambiado. Los datos son MÍNIMOS a propósito (una fila por colección); quien los toque reconcilia la base en el mismo cambio y lo dice en el PR.
+- Subir el tope exige lo mismo que en el lint: agente `seguridad` y decisión escrita de Andres.
+
+### Línea de base del motor al 13/11/2026 (7 nodos, todos «incompletos»)
+
+| Regla de axe | Dónde | Hay | Qué dice axe |
+|---|---|---|---|
+| `aria-prohibited-attr:incompleta` | `tablero`, `conversaciones`, `cobros`, `consumo`, `pagar`, `configuracion` | 6 (uno por página) | Los elementos solo deben usar atributos ARIA permitidos. Es la franja del comercio (`.franja-comercio`, un `div` con `aria-label="Comercio"` y sin rol): un `aria-label` en un `div` sin rol no lo leen todos los lectores de pantalla. |
+| `bypass:incompleta` | `conversaciones` | 1 | La página debe tener forma de saltar los bloques repetidos (el menú). Axe no pudo decidir en esa pantalla. |
+
+Sin violaciones firmes (`violations`) en las 8 pantallas al darla de alta: lo que hay es lo que axe no pudo decidir. `ingresar` y `negocios` salen limpias.
+
+### Costo en CI
+
+Corre dentro de `pruebas:puras` y `pruebas:reglas` del job `calidad`: sin paso nuevo ni navegador. Medido el 13/11/2026 en una máquina de desarrollo: `motor.test.ts` tarda entre 4 y 7 s de pared (1,4 s de pruebas más el arranque de jsdom y la carga de la `App`). Cero mensajes por conversación.
