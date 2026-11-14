@@ -6,7 +6,7 @@
  * PIEZA 1 del diseño `NOVUCHAT_diseno-alerta-envio-incierto` (07/11/2026), alineada con el contrato
  * `avisos-correo/v1` de WAM (ADR-011). El errorWorkflow de n8n solo deja huella en la ejecución: no avisa a
  * nadie. Esta Function es el EMISOR FUERA DE LA VM de OCI: recibe el evento, lo guarda y avisa por Resend.
- * No reemplaza al latido de n8n/OCI (la vigía de FinOps): si n8n está caído el errorWorkflow no corre.
+ * No reemplaza al latido de n8n (monitor externo, `docs/produccion/monitor-n8n.md`): si n8n está caído el errorWorkflow no corre.
  *
  * LO QUE HACE, EN ORDEN (cada paso cierra la puerta antes de gastar lo siguiente):
  *   1. AUTENTICA (`autenticar`) con FIRMA HMAC PROPIA (`ALERTAS_HMAC`): marca de tiempo + cuerpo
