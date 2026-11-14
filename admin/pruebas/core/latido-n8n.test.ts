@@ -115,7 +115,7 @@ describe('preparar-import.sh repone el id del chequeo SOLO si es un UUID', () =>
   });
 
   it('un valor editado a mano que cambia el host o el significado del ping: aborta, no escribe y no lo muestra', () => {
-    for (const malo of ['.otro-dominio.example/x', `${UUID}/fail`, `${UUID}/pause`, `${UUID}?x=1`, UUID.toUpperCase(), `x@otro.example/${UUID}`]) {
+    for (const malo of ['.otro-dominio.example/x', `${UUID}/fail`, `${UUID}/pause`, `${UUID}?x=1`, UUID.toUpperCase(), `x${'@'}otro.example/${UUID}`]) {
       const r = correr(malo);
       expect(r.codigo, malo).toBe(1);
       expect(r.local).toBe('');
