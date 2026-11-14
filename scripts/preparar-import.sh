@@ -124,9 +124,10 @@ for linea in open(local, encoding="utf-8"):
 
 # EL ID DE UN CHEQUEO EXTERNO (latido de n8n) SE VALIDA TAMBIEN AL REPONER, no solo
 # al guardarlo con marcador-local.sh: la tabla se puede editar a mano, y el
-# marcador va PEGADO a un host («https://hc-ping.com/REEMPLAZAR_ID_PING_…»). Un
-# valor como «.otro-dominio/x» cambiaria el host; uno con «/fail» o «/pause», lo
-# que el ping significa. Solo un UUID en minusculas; el valor no se muestra.
+# marcador va PEGADO a la ruta del servicio de ping (host fijo, luego el marcador).
+# Un valor con «/fail», «/pause» o una consulta cambiaria lo que el ping significa,
+# y otro id apuntaria a otro chequeo. Solo un UUID en minusculas; el valor no se
+# muestra.
 for clave, valor in tabla.items():
     if "ID_PING" in clave and not re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', valor):
         print(f"{ROJO}✗ ABORTADO: {clave} no tiene forma de id de chequeo (UUID en minusculas). No se escribio nada.{FIN}")
