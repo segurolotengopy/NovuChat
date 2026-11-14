@@ -26,7 +26,7 @@ import { AHORA, PAGINAS, type PaginaDePrueba } from './paginas';
 import { ALMACEN, reiniciarAlmacen } from './sustitutos';
 import {
   DESACTIVADAS, agruparAxe, axe, correrAxe, correrAxeSobreHtml, dibujarRuta, problemasDeDibujo, reglasEsperadas, reglasEvaluadas,
-  type AxeInforme,
+  type AxeInforme, inyectarEnRaiz,
 } from './dibujar';
 
 const DONDE_MOTOR = { archivo: 'linea-de-base-motor.ts', topes: 'TOPE_MOTOR y TOPE_MOTOR_MAXIMO' };
@@ -68,6 +68,10 @@ async function medir(p: PaginaDePrueba): Promise<Medida> {
 beforeAll(async () => {
   vi.useFakeTimers({ toFake: ['Date'], now: AHORA });
   vi.stubGlobal('fetch', async () => { ALMACEN.red++; throw new Error('red no permitida en la prueba de accesibilidad'); });
+  // Las otras dos salidas a la red de jsdom: también cuentan y lanzan.
+  const sinRed = function () { ALMACEN.red++; throw new Error('red no permitida en la prueba de accesibilidad'); };
+  vi.stubGlobal('XMLHttpRequest', sinRed);
+  vi.stubGlobal('WebSocket', sinRed);
   const vistas = new Set<string>();
   for (const p of ordenadas) {
     const m = await medir(p);
@@ -164,8 +168,23 @@ describe('contrapruebas: el motor detecta y la suite no se deja engañar', () =>
     expect(problemasDeDibujo('', [])).not.toEqual([]);
     expect(problemasDeDibujo('Cargando…', [])).not.toEqual([]);
     expect(problemasDeDibujo(`${largo} Sin permiso`, [])).not.toEqual([]);
+    expect(problemasDeDibujo(`${largo} No se pudo leer el resumen del negocio. CENTINELA`, ['CENTINELA'])).not.toEqual([]);
     expect(problemasDeDibujo(largo, ['CENTINELA'])).not.toEqual([]);
     expect(problemasDeDibujo(`${largo} CENTINELA`, ['CENTINELA'])).toEqual([]);
+  });
+
+  it('camino completo: una violación dentro de la App YA MONTADA la ve axe (no solo en HTML escrito a mano)', async () => {
+    const p = PAGINAS.find((x) => x.id === 'tablero')!;
+    reiniciarAlmacen(p.escenario());
+    sesion.valor = p.sesion;
+    const d = await dibujarRuta(p.ruta, App);
+    const antes = agruparAxe('t', await correrAxe());
+    inyectarEnRaiz('<img src="x.png"><button type="button"></button>');
+    const despues = agruparAxe('t', await correrAxe());
+    await d.desmontar();
+    expect(antes['t#image-alt']).toBeUndefined();
+    expect(despues['t#image-alt']).toBe(1);
+    expect(despues['t#button-name']).toBe(1);
   });
 
   it('una página sin datos (lecturas colgadas) da problema de dibujo: la suite se pondría en rojo', async () => {

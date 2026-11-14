@@ -57,7 +57,7 @@ export async function dibujarRuta(ruta: string, App: unknown): Promise<Dibujo> {
   global.document.body.innerHTML = '<div id="raiz"></div>';
   global.localStorage.clear();
   const raiz = createRoot(global.document.getElementById('raiz'));
-  await act(() => { raiz.render(createElement(MemoryRouter, { initialEntries: [ruta] }, createElement(App))); });
+  await act(async () => { raiz.render(createElement(MemoryRouter, { initialEntries: [ruta] }, createElement(App))); });
   let anterior = '';
   let asentado = false;
   for (let i = 0; i < 8; i++) {
@@ -110,12 +110,19 @@ export function reglasEsperadas(): string[] {
     .map((r) => r.ruleId).sort();
 }
 
+/** Agrega HTML dentro de la `App` ya montada (solo para la contraprueba del camino completo: App montada → axe). */
+export function inyectarEnRaiz(html: string): void {
+  (global.document.getElementById('raiz') as { insertAdjacentHTML(donde: string, h: string): void }).insertAdjacentHTML('beforeend', html);
+}
+
 /** Por qué un dibujo no vale como muestra: poco texto, «Cargando…», «Sin permiso» o falta el dato centinela. Pura. */
 export function problemasDeDibujo(texto: string, centinelas: string[]): string[] {
   const p: string[] = [];
   if (texto.replace(/\s+/g, '').length < 40) p.push('texto demasiado corto (< 40 caracteres sin espacios)');
   if (texto.includes('Cargando…')) p.push('quedó en «Cargando…»');
   if (texto.includes('Sin permiso')) p.push('dice «Sin permiso»');
+  // Los avisos de error de la consola empiezan así («No se pudo leer…»): una pantalla en estado de error no vale como muestra.
+  if (/No se pudo/.test(texto)) p.push('muestra un aviso de error («No se pudo…»)');
   for (const c of centinelas) if (!texto.includes(c)) p.push(`falta el centinela «${c}»`);
   return p;
 }

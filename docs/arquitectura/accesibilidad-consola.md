@@ -57,6 +57,10 @@ Alta: 13/11/2026. Archivos en `admin/pruebas/central/accesibilidad/`: `motor.tes
 
 ### Qué NO mide
 
+- **Las reglas de «buenas prácticas» de axe** (`best-practice`): no son criterios WCAG y quedan fuera de las etiquetas que se corren. Ahí están los puntos de referencia de la página (`region`, `landmark-one-main`, `landmark-unique`) y el orden de títulos (`page-has-heading-one`, `heading-order`). Dato del 13/11/2026: 7 de las 8 pantallas no tienen `<main>` (solo «ingresar» lo tiene), y esta suite no lo cuenta. Medirlo sería una línea de base aparte.
+- **Pantallas en estado de error:** un dibujo que muestre «No se pudo…» no vale como muestra y pone la suite en rojo; los estados de error no se miden.
+- **Escrituras de Storage y de la cuenta** (subir archivos, cambiar contraseña): no están sustituidas ni contadas; hoy fallan sin salir a la red (Storage nulo, sin usuario, `fetch`, `XMLHttpRequest` y `WebSocket` anulados). «Ninguna escribió» se refiere a Firestore.
+
 - **Seis reglas de axe desactivadas**, porque jsdom no puede evaluarlas y darían «pasa» falso o fallarían siempre: `color-contrast` (jsdom no tiene canvas ni colores calculados), `link-in-text-block` (necesita colores calculados), `target-size` (sin layout daría «pasa» falso), `scrollable-region-focusable` (`scrollHeight` siempre es 0), `label-content-name-mismatch` (usa canvas y es experimental) y `css-orientation-lock` (vitest descarta el CSS). La lista está cerrada en `dibujar.ts` (`DESACTIVADAS`) y la suite la exige igual.
 - **Foco y orden de tabulación**, y todo lo que exige manejar el teclado o el lector de pantalla.
 - **La conversación abierta**: se dibuja la lista, no el detalle de una conversación con sus mensajes.
@@ -85,4 +89,4 @@ Sin violaciones firmes (`violations`) en las 8 pantallas al darla de alta: lo qu
 
 ### Costo en CI
 
-Corre dentro de `pruebas:puras` y `pruebas:reglas` del job `calidad`: sin paso nuevo ni navegador. Medido el 13/11/2026 en una máquina de desarrollo: `motor.test.ts` tarda unos 4,4 s de pared (1,4 s de pruebas más el arranque de jsdom y la carga de la `App`). Cero mensajes por conversación.
+Corre dentro de `pruebas:puras` y `pruebas:reglas` del job `calidad`: sin paso nuevo ni navegador. Medido el 13/11/2026 en una máquina de desarrollo: `motor.test.ts` tarda entre 4 y 7 s de pared (1,4 s de pruebas más el arranque de jsdom y la carga de la `App`). Cero mensajes por conversación.
