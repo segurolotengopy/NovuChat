@@ -1,0 +1,272 @@
+{
+  "name": "NovuChat — Vigilancia del número de los demos",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "cada-6-horas",
+      "name": "Cada 6 horas",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "urlPing",
+              "name": "urlPing",
+              "type": "string",
+              "value": "https://hc-ping.com/REEMPLAZAR_ID_PING_NUMERO_DEMOS"
+            },
+            {
+              "id": "waGraphVersion",
+              "name": "waGraphVersion",
+              "type": "string",
+              "value": "v26.0"
+            },
+            {
+              "id": "phoneNumberIdA",
+              "name": "phoneNumberIdA",
+              "type": "string",
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID"
+            },
+            {
+              "id": "phoneNumberIdB",
+              "name": "phoneNumberIdB",
+              "type": "string",
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID_B"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-base",
+      "name": "Config base",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ $('Config base').first().json.waGraphVersion }}/{{ $('Config base').first().json.phoneNumberIdA }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "status"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "consultar-demo-a",
+      "name": "Consultar número Demo A",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ $('Config base').first().json.waGraphVersion }}/{{ $('Config base').first().json.phoneNumberIdB }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "status"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "consultar-demo-b",
+      "name": "Consultar número Demo B",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Clasifica la respuesta de Meta de cada demo con una lista CERRADA de resultados.\n// Nada de lo que devuelve Meta (cuerpos, ids, nombres) pasa al texto de salida:\n// solo los nombres fijos «Demo A» y «Demo B» y las palabras de esta lista.\n//   ok                      200 y status CONNECTED (el único valor que la documentación de Meta garantiza)\n//   estado_<VALOR>          200 y otro status (solo letras y guion bajo, hasta 30)\n//   no_existe_o_sin_acceso  error 100 de Meta: el número no existe O el token no puede leerlo (Meta usa\n//                           el mismo código para las dos cosas; el subcódigo 33 no las separa)\n//   token / permiso         error 190 (token vencido o inválido) / error 10 o 200-299 (permiso)\n//   transitorio             red, 5xx, 429 o errores temporales de Meta: SIN veredicto, no se avisa\n//   respuesta_sin_estado, error_de_meta\nconst cfg = $('Config base').first().json;\nconst DEMOS = [\n  { nombre: 'Demo A', nodo: 'Consultar número Demo A' },\n  { nombre: 'Demo B', nodo: 'Consultar número Demo B' },\n];\nconst TEMPORALES = [1, 2, 4, 17, 32, 341, 613, 80007];\n\nfunction clasificar(r) {\n  if (!r || typeof r !== 'object' || typeof r.statusCode !== 'number') return 'transitorio';\n  const http = r.statusCode;\n  const cuerpo = r.body && typeof r.body === 'object' ? r.body : {};\n  if (http === 200) {\n    if (typeof cuerpo.status !== 'string') return 'respuesta_sin_estado';\n    if (cuerpo.status === 'CONNECTED') return 'ok';\n    return /^[A-Z_]{2,30}$/.test(cuerpo.status) ? 'estado_' + cuerpo.status : 'estado_otro';\n  }\n  const e = cuerpo.error && typeof cuerpo.error === 'object' ? cuerpo.error : {};\n  const c = e.code;\n  if (c === 190) return 'token';\n  if (c === 10 || (typeof c === 'number' && c >= 200 && c <= 299)) return 'permiso';\n  if (http === 429 || http >= 500 || TEMPORALES.includes(c)) return 'transitorio';\n  if (c === 100) return 'no_existe_o_sin_acceso';\n  if (http === 401 || http === 403) return 'token';\n  return 'error_de_meta';\n}\n\nconst resultados = DEMOS.map((d) => {\n  let r;\n  try { r = $(d.nodo).first().json; } catch (e) { r = undefined; }\n  return { nombre: d.nombre, res: clasificar(r) };\n});\nconst fallas = resultados.filter((x) => x.res !== 'ok' && x.res !== 'transitorio');\nconst hayDuda = resultados.some((x) => x.res === 'transitorio');\n// Sin veredicto (y sin falla): no se manda NADA y el silencio lo vigila el chequeo externo.\nif (!fallas.length && hayDuda) return [];\nreturn [{ json: {\n  destino: fallas.length ? 'fail' : 'ok',\n  cuerpo: resultados.map((x) => x.nombre + ': ' + x.res).join(' | '),\n  urlPing: cfg.urlPing,\n} }];\n"
+      },
+      "id": "evaluar-numeros",
+      "name": "Evaluar números",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.urlPing + ($json.destino === 'fail' ? '/fail' : '') }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain",
+        "body": "={{ $json.cuerpo }}",
+        "options": {
+          "timeout": 10000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "id": "avisar-al-monitor-externo",
+      "name": "Avisar al monitor externo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Cada 6 horas": {
+      "main": [
+        [
+          {
+            "node": "Config base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config base": {
+      "main": [
+        [
+          {
+            "node": "Consultar número Demo A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar número Demo A": {
+      "main": [
+        [
+          {
+            "node": "Consultar número Demo B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar número Demo B": {
+      "main": [
+        [
+          {
+            "node": "Evaluar números",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluar números": {
+      "main": [
+        [
+          {
+            "node": "Avisar al monitor externo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 180,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  },
+  "pinData": {}
+}

@@ -50,6 +50,33 @@ La sonda de GitHub nombra la causa en `estado`:
 En el registro de Healthchecks, el código de la sonda distingue **1 = n8n no
 responde** de **2 = el monitor está mal configurado**.
 
+## Número de los demos en Meta
+
+Flujo `Flujos/vigilancia-numero-demos.json` (decisión de Andres, 14/11/2026): cada 6 horas lee
+`GET /{phone-number-id}?fields=status` del Demo A y del Demo B con la credencial de WhatsApp **propia
+de cada demo** (la misma con que ya envían) y avisa a un chequeo de Healthchecks. No envía nada.
+
+| Resultado por demo | Qué es |
+|---|---|
+| `ok` | HTTP 200 y `status` = `CONNECTED` (el único valor que la documentación de Meta garantiza) |
+| `estado_<VALOR>` | 200 y otro estado, por ejemplo `estado_DISCONNECTED` |
+| `no_existe_o_sin_acceso` | Error 100 de Meta. **Meta usa el mismo código si el número no existe y si el token no puede leerlo**: hay que mirar las dos cosas |
+| `token` / `permiso` | Error 190 (token vencido o inválido) / error 10 o 200 a 299 |
+| `respuesta_sin_estado`, `error_de_meta` | 200 sin `status` / error que no se reconoce |
+| temporal | Red, 5xx, 429 o errores 1, 2, 4, 17, 32, 613: **sin veredicto**, no se manda nada |
+
+Si algún demo falla, el ping va a `/fail` con el texto `Demo A: <causa> | Demo B: <causa>` (solo
+palabras de esa lista; nada de lo que dice Meta pasa al aviso). Si todo está bien, ping normal. Si solo
+hubo errores temporales, **silencio**, y el chequeo lo avisa si dura un día entero. Una falla real pesa más
+que la duda del otro demo.
+
+Por qué se comprueba solo `CONNECTED`: las páginas de Meta que se leyeron el 14/11/2026 solo muestran ese
+valor y remiten a la referencia de la API para el resto, y el error 100 con subcódigo 33 no está documentado
+allí (se conoce por experiencia). Una cuenta de prueba no deja leer la WABA con el token de usuario de
+sistema, pero el número sí.
+
+Chequeo de Healthchecks: período 12 horas y gracia 12 horas (silencio de un día = aviso).
+
 ## Reporte diario y latido del monitor
 
 - **Diario** (`.github/workflows/monitor-n8n-reporte.yml`, 08:10 de La Paz):
