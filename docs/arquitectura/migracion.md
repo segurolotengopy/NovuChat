@@ -15,12 +15,12 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | demo-b-venta-cobro.json | . | demo | ensamblador | M1 M6 | por asignar (Principal) | pendiente | 3b27ada4-2105bc1c-6256c2af-2fd1d3ff-54d46c1b-7f3e6a95-82ed1803-ded9c18c |
 | error-envio-incierto.json | . | barrido | ensamblador | M1 | por asignar (Principal) | pendiente | 22400c1d-0c278bb7-22a0600e-8ff6a382-34c19434-c38b5952-64e66371-347b13be |
 | novuchat-onboarding.json | . | congelado | ensamblador | M1 M6 M7 | por asignar (Principal) | pendiente | e030ed13-0acb4baa-491d32ef-04ac4dc5-2d5371f5-9f805179-f621bfb0-3b414273 |
-| salida-de-persona.json | . | barrido | ensamblador | M1 M7 | por asignar (Principal) | pendiente | da37109f-23a2034d-6d0ae56b-143cfedd-ea96dd63-f24cad62-c94981f2-6ea697e8 |
+| salida-de-persona.json | . | barrido | ensamblador | M1 M7 | por asignar (Principal) | pendiente | b6a58cf1-b7765f29-c0cd91fa-61a3ca91-a96f1d2a-dd291a18-18e57a26-99d5a4b3 |
 | qtaco-redireccion.qtaco.json | clientes/qtaco-redireccion | sin publicar | construir.mjs | M4 M7 | por asignar (Principal) | pendiente | fc15d011-187bf6ca-061f3cf1-bff34e5e-bc264f32-1386e9c9-a727f0d8-71cae22d |
 | qtaco-redireccion.qtaco-ruta-nueva.json | clientes/qtaco-redireccion | sin publicar | construir.mjs | M4 M7 | por asignar (Principal) | pendiente | f3765615-bf165adb-f4a40bf9-dd4a6f3b-e95d6594-45ddfb9d-7aad41ae-9699709a |
 | agenda-minima.v0.json | experimental/agenda-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | a8d5ff4c-6726fbf6-3f417070-df3abbc7-9bfce83a-2a7e4f1c-af613d28-8b78f16d |
 | captacion-minima.novuchat.json | experimental/captacion-minima | sin publicar | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | e32347c0-840ec86c-a9c416da-7216fcc2-b56fd089-36b142bf-e0d58f1e-fe3bc0a0 |
-| casa-bermejo.json | clientes/casa-bermejo | sin publicar | construir.mjs | M4 M5 (excepción declarada) | por asignar (Principal) | mudado | 273fb2c9-f63343ad-26ac6a38-3f6ae911-06ab6242-4730c53a-e9642b9d-3cd35f37 |
+| casa-bermejo.json | clientes/casa-bermejo | sin publicar | construir.mjs | M4 M5 (excepción declarada) | por asignar (Principal) | mudado | 658ed06e-659976a5-f5c9c755-cc632963-e6d11189-1432d729-f30a0d4e-9c93040f |
 | chat-novuchat.novuchat.json | experimental/chat-novuchat | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 4f25c7c1-9f601a5b-3748dd89-46089585-3b3bc870-121082bc-a0ce4aae-7042f1e9 |
 | doctoras.rroca-emma.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | 337d61b8-a3249cab-65a34c35-8b3ca91c-49800e11-5d1b4fc7-7b5046ff-7ed82674 |
 | doctoras.rroca-evy.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | 3db37cc4-ca855db7-c63e4c60-eee71530-10d8026b-50d6b185-b57aa8a4-691eefaf |
@@ -32,7 +32,7 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | rroca-ruben.json | experimental/rroca-ruben | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | f96d999f-a27f029f-b4a82723-337ce075-c934e9a1-35771e91-836f734d-bf6b2bc8 |
 | venta-minima.qtaco-3727.json | experimental/venta-minima | sin publicar | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 027af9b7-8891f240-6bfb9e1c-704a5eac-ead960bd-632f3fa2-97312ff2-c69aa1dd |
 | venta-minima.qtaco.json | experimental/venta-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | bc7ba3e3-485cf076-8b5c1bca-3605630f-6f0783a7-741ca2be-2787efd7-d786cdab |
-| walisuma.json | clientes/walisuma | sin publicar | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 1ca574f2-d525b6ff-72b4f14e-ebabd17a-da00af9a-797d71cf-c427eb91-4ea70cc1 |
+| walisuma.json | clientes/walisuma | sin publicar | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 17ed39ba-674a7950-4c895b3a-d9e309a1-58c7d653-bb58f1d4-fcfe428e-6dca7ba6 |
 
 ## Cómo se lee
 

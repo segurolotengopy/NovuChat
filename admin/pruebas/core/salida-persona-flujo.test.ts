@@ -468,6 +468,7 @@ describe('Salida de persona: la estructura del flujo', () => {
     expect(flujo.settings).toEqual({
       executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 300,
       saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false, saveManualExecutions: false,
+      errorWorkflow: 'REEMPLAZAR_ID_ERROR_WORKFLOW',   // #958: el flujo de errores, resuelto por nombre al cargar
     });
     expect(nodo(flujo, 'Timbre').credentials?.['httpHeaderAuth']?.name).toMatch(/REEMPLAZAR_ALIAS/);
     for (const n of ['Enviar por el relé', 'Enviar por Graph']) {

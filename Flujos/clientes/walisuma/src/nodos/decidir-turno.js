@@ -80,6 +80,10 @@ if (esAudio) {
 textoDelTurno = texto;
 const n = wlNorm(texto);
 if (n === '') return salir({ tipo: 'otro' });
+// 2b. Un pedido de BAJA («no me escribas más», «dame de baja», «stop»): UN texto fijo y nada más, decidido ANTES de cualquier otra intención y del modelo (con o sin QR abierto; el carrito y el pedido no se tocan). `bjPideBaja` es la pieza común del core.
+// Se decide sobre `t.texto`, LA MISMA FUENTE que usa «Reportar mensaje (entrante)» para marcar `no_contactar`: en una nota de voz y en un toque de lista ese campo va vacío, y confirmar una baja que el
+// servidor no registró sería prometer lo que no se cumple. Una nota de voz que pide la baja sigue el camino normal (el modelo la atiende); una foto con pie de baja queda marcada sin confirmación (el lado seguro).
+if (!esAudio && !t.seleccionId && bjPideBaja(t.texto)) return salir({ tipo: 'baja' });
 
 // 3. Sin catálogo no se improvisa: recepción.
 if (!configLista) return sinConfig();

@@ -224,11 +224,11 @@ describe('lo incluido es byte a byte igual a su fuente', () => {
   });
   it('«Armar mensajes»: librerías + _comun + los constructores de mensajes comunes + su código', () => {
     const libs = LIBS.map(fuente);
-    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/sin-agente/mensajes.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../src/modulos/pedidos/qr-del-pedido.js'), fuente('../clientes/walisuma/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
+    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/sin-agente/mensajes.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../src/modulos/pedidos/qr-del-pedido.js'), fuente('../src/core/conversacion/baja.js'), fuente('../clientes/walisuma/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar mensajes')).toBe(esperado);
     const avisos = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../clientes/walisuma/src/nodos/armar-avisos.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar avisos')).toBe(avisos);
-    for (const [n, a] of [['Decidir turno', 'decidir-turno'], ['Interpretar lectura', 'interpretar-lectura']]) expect(codigo(PRODUCCION, n), n).toBe([...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente(`../clientes/walisuma/src/nodos/${a}.js`)].join('\n\n') + '\n');
+    for (const [n, a] of [['Decidir turno', 'decidir-turno'], ['Interpretar lectura', 'interpretar-lectura']]) expect(codigo(PRODUCCION, n), n).toBe([...libs, fuente('venta-digital/src/nodos/_comun.js'), ...(n === 'Decidir turno' ? [fuente('../src/core/conversacion/baja.js')] : []), fuente(`../clientes/walisuma/src/nodos/${a}.js`)].join('\n\n') + '\n');
   });
   it('«Guardar comprobante» es el de Antonio (commit 7188637c), tal cual: huella fijada del nodo entero', () => {
     // La plantilla lleva la credencial como `@@cred:ingesta`; el armado la sustituye por el nombre del dato. Se vuelve a la forma de la plantilla antes de la huella.

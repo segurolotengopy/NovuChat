@@ -60,3 +60,6 @@ Sustituir los marcadores (credenciales, receptor, WABA, número, contacto de avi
 - **Pendiente:** el alias real del comercio (`config/cobros`, lo escribe el servidor) y abrir las Functions de #898 (no nacen invocables); un ensayo con un teléfono real de Argentina; probar el prompt de lectura con comprobantes reales (qué campo trae el alias en cada banco o billetera).
 
 **Estado de B5 y B6:** B5a y B5b (crear y confirmar el pedido externo en el servidor, y el botón «Confirmar» de la Consola) están en `main`; este flujo solo aporta las líneas. B6 (`pedirAliasArs` y `cotejarAliasArs`, PR #898) está **fusionado en `main` desde el 10/11/2026 y sin desplegar** (producción sigue en la etiqueta v0.21.3); sus Functions no nacen invocables: hay que abrirlas después del despliegue.
+
+## Baja por texto (13/11/2026)
+La baja («no me escribas más») usa la pieza común `Flujos/src/core/conversacion/baja.js` (`bj*`), incluida byte a byte: un texto fijo de confirmación, sin modelo ni aviso, solo con texto escrito (la misma fuente que marca `no_contactar` en «Reportar mensaje (entrante)»). 0 mensajes agregados, 0 nodos.
