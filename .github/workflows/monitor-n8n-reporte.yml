@@ -1,0 +1,120 @@
+# =============================================================================
+# monitor-n8n-reporte.yml — reporte diario del monitor externo de n8n
+# -----------------------------------------------------------------------------
+# Política de Andres del 11/10/2026: cada monitor genera un reporte periódico
+# que prueba que sigue vivo. Diseño: docs/produccion/monitor-n8n.md.
+#
+# Qué hace, una vez al día (08:10 de La Paz): cuenta cuántas veces corrió la
+# sonda `monitor-n8n.yml` en 24 horas, mide el certificado y deja un comentario
+# en la Issue «Monitor n8n — reporte diario». La corrida FALLA (un correo de
+# GitHub al día, no uno cada 10 minutos) si:
+#   - la sonda casi no corrió (menos de una vez por hora);
+#   - la última sonda falló;
+#   - al certificado le quedan menos de 14 días o está vencido.
+#
+# El comentario se arma solo con números y palabras de una lista cerrada
+# (scripts/monitor/reporte-diario.sh): la Issue es pública.
+#
+# Quién vigila a este reporte: si GitHub desactiva los workflows programados
+# (60 días sin actividad), el chequeo de Healthchecks de la sonda calla y avisa.
+#
+# Encendido: la misma variable de repositorio MONITOR_N8N_ACTIVO = "si".
+# Costo: 0 mensajes de WhatsApp; 1 corrida, 1 comentario en una Issue y 1
+# registro de Deployments al día; 0 escrituras en la nube.
+# =============================================================================
+name: Monitor de n8n — reporte diario
+
+on:
+  schedule:
+    - cron: '10 12 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: monitor-n8n-reporte
+  cancel-in-progress: false
+
+jobs:
+  reporte:
+    name: Reporte diario del monitor de n8n
+    if: ${{ vars.MONITOR_N8N_ACTIVO == 'si' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: monitor-n8n
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/monitor
+          sparse-checkout-cone-mode: false
+
+      - name: Medir el certificado
+        id: certificado
+        env:
+          MONITOR_URL: ${{ secrets.MONITOR_N8N_URL }}
+        run: bash scripts/monitor/sondear-n8n.sh certificado
+
+      - name: Armar el reporte
+        id: reporte
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORTE_CERTIFICADO: ${{ steps.certificado.outputs.certificado }}
+          REPORTE_DIAS: ${{ steps.certificado.outputs.dias }}
+        run: |
+          set -uo pipefail
+          DESDE="$(date -u -d '25 hours ago' +%Y-%m-%dT%H:%M:%SZ)"
+          # Si la API falla (límite de consultas, 5xx, token), NO hay reporte: un
+          # «0 corridas» inventado sería un diagnóstico falso en una Issue pública.
+          no_se_pudo() {
+            echo "::error::No se pudo leer la lista de corridas de la API de GitHub: no hay reporte."
+            echo "salida=2" >> "$GITHUB_OUTPUT"
+            exit 2
+          }
+          # Solo lectura (actions: read). Hasta 144 corridas al día: se pagina.
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/monitor-n8n.yml/runs?event=schedule&per_page=100&created=%3E%3D${DESDE}" \
+            > paginas.json 2> /dev/null || no_se_pudo
+          # Cada página tiene que traer `workflow_runs`: un error de la API sale como objeto con `message`.
+          jq -e 'type == "array" and length > 0 and all(.[]; (.workflow_runs | type) == "array")' paginas.json > /dev/null || no_se_pudo
+          jq '{workflow_runs: (map(.workflow_runs) | add // [])}' paginas.json > corridas.json || no_se_pudo
+          rc=0
+          bash scripts/monitor/reporte-diario.sh < corridas.json > reporte.md || rc=$?
+          cat reporte.md >> "$GITHUB_STEP_SUMMARY"
+          echo "salida=$rc" >> "$GITHUB_OUTPUT"
+          # 2 = no se pudo armar: no hay nada que comentar y la corrida falla.
+          [ "$rc" -ne 2 ] || exit 2
+
+      - name: Comentar en la Issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TITULO='Monitor n8n — reporte diario'
+          # Solo una Issue ABIERTA creada por este mismo workflow: en un
+          # repositorio público cualquiera puede abrir otra con el mismo título.
+          # --slurp junta las páginas en UN solo arreglo: sin él, `jq` evalúa cada página por
+          # separado y dos coincidencias darían dos números (y una Issue nueva por día).
+          NUMERO="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/issues?state=open&creator=github-actions%5Bbot%5D&per_page=100" |
+            jq -r --arg t "$TITULO" '[.[][] | select(.pull_request == null) | select(.title == $t) | .number] | first // empty')"
+          if ! [[ "$NUMERO" =~ ^[0-9]+$ ]]; then
+            NUMERO="$(gh api -X POST "repos/${GITHUB_REPOSITORY}/issues" -f title="$TITULO" \
+              -f body='Reporte automático diario del monitor externo de n8n. Cómo leerlo: `docs/produccion/monitor-n8n.md`.' |
+              jq -r '.number')"
+          fi
+          [[ "$NUMERO" =~ ^[0-9]+$ ]] || { echo "::error::No se pudo ubicar ni crear la Issue del reporte."; exit 1; }
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${NUMERO}/comments" -F body=@reporte.md --silent
+
+      - name: Fallar si hay algo que avisar
+        env:
+          SALIDA: ${{ steps.reporte.outputs.salida }}
+        run: |
+          if [ "$SALIDA" != "0" ]; then
+            echo "::error::El reporte diario del monitor de n8n tiene avisos: ver el resumen de esta corrida."
+            exit 1
+          fi

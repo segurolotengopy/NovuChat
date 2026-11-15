@@ -113,6 +113,11 @@ case "$MARCADOR" in
   *MEDIA_ID*)
     echo "$VALOR" | grep -Eq '^[0-9]{10,20}$' \
       || { echo "✗ El valor no tiene forma de MEDIA_ID (solo dígitos)." >&2; exit 1; } ;;
+  *ID_PING*)
+    # El id de un chequeo de Healthchecks (latido de n8n): un UUID y nada más, para
+    # que en la URL de ping no entre una ruta, una consulta ni otro host.
+    echo "$VALOR" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' \
+      || { echo "✗ El valor no tiene forma de id de chequeo (UUID en minúsculas)." >&2; exit 1; } ;;
   *NUMERO_RECEPCION*|*NUMERO_DUENO*)
     echo "$VALOR" | grep -Eq '^591[0-9]{7,8}$' \
       || { echo "✗ El valor no tiene forma de número boliviano con prefijo y sin «+» (591…)." >&2; exit 1; } ;;

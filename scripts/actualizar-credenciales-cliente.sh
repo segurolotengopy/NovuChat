@@ -36,11 +36,16 @@
 #                 (N8N_WORKFLOW_ID)
 # --flujo-env     otros entornos del mismo cliente: se toma su N8N_WORKFLOW_ID
 # --flujo-id      o un id de flujo suelto
+# --sin-disparador no toca la credencial del Trigger (la app no cambió: solo
+#                 cambian token y WABA). Con él no se pide WA_APP_SECRET y el
+#                 Trigger compartido con otro demo no bloquea.
+# --permitir-inactivos  un flujo de otro cliente que comparte la credencial pero
+#                 está INACTIVO no bloquea (se avisa). Uno ACTIVO sigue bloqueando.
 # --env-n8n       dónde están N8N_BASE_URL y N8N_API_KEY (por defecto .env)
 # =============================================================================
 set -euo pipefail
 
-ENV_CLIENTE=""; ENV_N8N=".env"; APLICAR=0
+ENV_CLIENTE=""; ENV_N8N=".env"; APLICAR=0; SIN_DISPARADOR=0; PERMITIR_INACTIVOS=0
 FLUJOS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -52,6 +57,8 @@ while [ $# -gt 0 ]; do
       [ -n "$wf" ] || { echo "✗ $2 no tiene N8N_WORKFLOW_ID" >&2; exit 2; }
       FLUJOS+=("$wf"); shift 2 ;;
     --flujo-id)    FLUJOS+=("$2"); shift 2 ;;
+    --sin-disparador) SIN_DISPARADOR=1; shift ;;
+    --permitir-inactivos) PERMITIR_INACTIVOS=1; shift ;;
     --aplicar)     APLICAR=1; shift ;;
     *) echo "Argumento desconocido: $1" >&2; exit 2 ;;
   esac
@@ -71,14 +78,14 @@ WA_TOKEN=$(valor "$ENV_CLIENTE" WA_TOKEN); WABA_ID=$(valor "$ENV_CLIENTE" WABA_I
 PRINCIPAL=$(grep -E '^N8N_WORKFLOW_ID=' "$ENV_CLIENTE" | head -1 | cut -d= -f2- | tr -d '[:space:]"' || true)
 [ -n "$PRINCIPAL" ] || { echo "✗ $ENV_CLIENTE no tiene N8N_WORKFLOW_ID" >&2; exit 2; }
 : "${N8N_BASE_URL:?}" "${N8N_API_KEY:?}" "${WA_APP_ID:?}" "${WA_TOKEN:?}" "${WABA_ID:?}"
-if [ -z "${WA_APP_SECRET:-}" ]; then
+if [ -z "${WA_APP_SECRET:-}" ] && [ "$SIN_DISPARADOR" = 0 ]; then
   # En seco se muestra el plan igual; escribir sin el App Secret dejaría el
   # disparador sin poder validar la firma de Meta.
   [ "$APLICAR" = 1 ] && { echo "✗ WA_APP_SECRET no está en $ENV_CLIENTE: el disparador lo necesita" >&2; exit 2; }
   echo "! WA_APP_SECRET vacío en $ENV_CLIENTE: con --aplicar el script se niega."
 fi
 
-FLUJOS_OBJ="$PRINCIPAL ${FLUJOS[*]:-}" APLICAR="$APLICAR" \
+FLUJOS_OBJ="$PRINCIPAL ${FLUJOS[*]:-}" APLICAR="$APLICAR" SIN_DISPARADOR="$SIN_DISPARADOR" PERMITIR_INACTIVOS="$PERMITIR_INACTIVOS" \
   N8N_BASE_URL="$N8N_BASE_URL" N8N_API_KEY="$N8N_API_KEY" \
   WA_APP_ID="$WA_APP_ID" WA_APP_SECRET="${WA_APP_SECRET:-}" WA_TOKEN="$WA_TOKEN" WABA_ID="$WABA_ID" \
   python3 - <<'PY'
@@ -88,6 +95,8 @@ BASE = os.environ["N8N_BASE_URL"].rstrip("/") + "/api/v1"
 CLAVE = os.environ["N8N_API_KEY"]
 OBJ = [f for f in os.environ["FLUJOS_OBJ"].split() if f]
 APLICAR = os.environ["APLICAR"] == "1"
+SIN_DISPARADOR = os.environ["SIN_DISPARADOR"] == "1"
+PERMITIR_INACTIVOS = os.environ["PERMITIR_INACTIVOS"] == "1"
 V, R, A, G, FIN = "\033[1;32m", "\033[1;31m", "\033[1;33m", "\033[0;90m", "\033[0m"
 
 def api(metodo, ruta, cuerpo=None):
@@ -115,8 +124,16 @@ faltan = [f for f in OBJ if f not in por_id]
 if faltan:
     print(f"{R}✗ No existen en n8n: {', '.join(faltan)}{FIN}"); sys.exit(1)
 
+# Un flujo que otro llama con «Execute Workflow» corre aunque esté inactivo: nunca cuenta como inactivo.
+def _id_llamado(n):
+    w = (n.get("parameters") or {}).get("workflowId", "")
+    return str(w.get("value", "")) if isinstance(w, dict) else str(w)
+LLAMADOS = {_id_llamado(n) for w in todos for n in w.get("nodes", [])
+            if str(n.get("type", "")).endswith("executeWorkflow")}
+
 def es_objetivo(tipo, nombre):
-    if tipo in ("whatsAppTriggerApi", "whatsAppApi"): return True
+    if tipo == "whatsAppTriggerApi": return not SIN_DISPARADOR
+    if tipo == "whatsAppApi": return True
     return tipo == "httpHeaderAuth" and str(nombre or "").startswith("Graph WhatsApp")
 
 uso = {}  # id de credencial -> {tipo, nombre, flujos:set, nodos:list}
@@ -140,10 +157,15 @@ if not candidatas:
 
 bloqueo = False
 for cid, u in candidatas.items():
-    ajenos = [por_id[f]["name"] for f in u["flujos"] if f not in OBJ]
+    otros = [f for f in u["flujos"] if f not in OBJ]
+    # --permitir-inactivos: un flujo AJENO pero INACTIVO que comparte la credencial no recibe mensajes ni envía:
+    # se avisa, y recibiría el valor nuevo si alguien lo reactivara. Uno ACTIVO sigue bloqueando.
+    inactivos = [por_id[f]["name"] for f in otros if PERMITIR_INACTIVOS and por_id[f].get("active") is False and f not in LLAMADOS]
+    ajenos = [por_id[f]["name"] for f in otros if not (PERMITIR_INACTIVOS and por_id[f].get("active") is False and f not in LLAMADOS)]
     marca = f"{R}✗ COMPARTIDA{FIN}" if ajenos else f"{V}✓{FIN}"
     print(f"  {marca} {u['tipo']:<20} id={cid}  «{u['nombre']}»  ({len(u['nodos'])} nodos)")
     for x in u["nodos"]: print(f"      {G}{x}{FIN}")
+    for i in inactivos: print(f"      {A}! la usa también, pero está INACTIVO (recibiría el valor nuevo si se reactivara): «{i}»{FIN}")
     if ajenos:
         bloqueo = True
         for a in ajenos: print(f"      {R}también la usa: «{a}»{FIN}")
@@ -153,7 +175,7 @@ if bloqueo:
     sys.exit(1)
 
 tipos = {u["tipo"] for u in candidatas.values()}
-if "whatsAppTriggerApi" not in tipos:
+if "whatsAppTriggerApi" not in tipos and not SIN_DISPARADOR:
     print(f"{A}! Ningún flujo del cliente usa un disparador: ¿falta --flujo-env del principal?{FIN}")
 
 def datos_para(u):
