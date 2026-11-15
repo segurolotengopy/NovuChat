@@ -17,7 +17,7 @@ const SI = [
   'n0 me escribas', 'ｎｏ　ｍｅ　ｅｓｃｒｉｂａｓ', 'basta, no me escriban', 'para de escribirme', 'dejen de escribirme', 'deja de mandarme mensajes',
   'no me contacten', 'no me molesten', 'no me llamen', 'no quiero recibir más mensajes', 'no quiero más mensajes', 'no vuelvan a escribirme',
   'dame de baja', 'denme de baja', 'bórrenme de la lista', 'stop', 'STOP por favor',
-  'no me manden nada', 'no me manden nada más', 'no me envíen nada', 'no molestar', 'Por favor no molestar', 'bórrame de su base', 'bórrenme de la base de datos', 'elimíname de sus registros', 'bórrame de su base, por favor',
+  'no me manden nada', 'no me manden nada más', 'no me envíen nada', 'no molestar', 'Por favor no molestar', 'bórrame de su base', 'bórrenme de la base de datos', 'elimíname de sus registros', 'bórrame de su base, por favor', 'no me manden nada por favor',
 ];
 const NO = [
   'hola', 'quiero agendar una cita', 'el doctor dijo que no me escriban', 'mi ex no deja de escribirme', 'no me escribas el precio, mándame el QR',
@@ -25,6 +25,7 @@ const NO = [
   'dame de baja el plan anterior', '¿no me llamaron ayer?', 'no me llegó el mensaje', 'stop the music', '', '   ',
   'no me manden nada de eso, solo el catálogo', 'no quiero molestar, una consulta', 'para no molestar te escribo luego', 'bórrame esa foto de su base de ejemplo', 'no me envíen nada hasta el lunes',
   'quítame de su sistema el pedido de ayer', 'bórrame de la base de datos la dirección vieja', 'elimíname de sus registros la tarjeta',
+  'no me manden nada, por favor, solo el QR', 'no me envíen nada por favor sin confirmar el precio',
 ];
 
 describe('bjPideBaja', () => {
