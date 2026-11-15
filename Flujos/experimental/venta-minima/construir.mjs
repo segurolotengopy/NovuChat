@@ -131,6 +131,13 @@ const retencionDe = (destino) => RETENCION_POR_SALIDA[destino] || RETENCION_POR_
 const TIMEOUT_POR_SALIDA = { 'venta-minima.qtaco.json': 120, 'venta-minima.qtaco-3727.json': 120 };
 const timeoutDe = (destino) => TIMEOUT_POR_SALIDA[destino] || plantilla.settings.executionTimeout;
 
+// ALERTA DE «ENVÍO INCIERTO» (`settings.errorWorkflow`, docs/produccion/error-workflow-envio-incierto.md): SOLO las dos salidas de producción de Q'Taco llevan el marcador
+// EXACTO REEMPLAZAR_ID_ERROR_WORKFLOW; `publicar-flujo.sh` y `preparar-import.sh` lo resuelven por el NOMBRE «NovuChat — Error de envío incierto» en el n8n destino y FALLAN
+// si no existe (nunca publican con el marcador). Es solo un ajuste: 0 nodos y 0 mensajes. La prueba y el ensayo no lo llevan.
+const MARCADOR_ERROR_WORKFLOW = 'REEMPLAZAR_ID_ERROR_WORKFLOW';
+const CON_ERROR_WORKFLOW = new Set(['venta-minima.qtaco.json', 'venta-minima.qtaco-3727.json']);
+const llevaErrorWorkflow = (destino) => CON_ERROR_WORKFLOW.has(destino);
+
 // COBRO SIMULADO (piloto de Q'Taco, 03/10/2026): la ÚNICA imagen permitida es el QR de demostración versionado, con el rótulo
 // IMPRESO, fijado EXACTAMENTE a la etiqueta v0.11.0 (no a «cualquier vN.N.N»: una etiqueta futura podría traer otra imagen). Otro anfitrión, otra
 // ruta u otra etiqueta = una imagen sin rótulo garantizado. Subir la etiqueta es una decisión revisada: se cambia aquí, en la prueba del blob
@@ -255,7 +262,7 @@ function armar(datos, archivo) {
   const flujo = JSON.parse(JSON.stringify(plantilla));
   flujo.name = dato(datos, 'nombreFlujo', archivo);
   const retencion = retencionDe(salidaDe(archivo));
-  flujo.settings = { ...flujo.settings, executionTimeout: timeoutDe(salidaDe(archivo)), saveDataSuccessExecution: retencion.exito, saveDataErrorExecution: retencion.error };
+  flujo.settings = { ...flujo.settings, executionTimeout: timeoutDe(salidaDe(archivo)), saveDataSuccessExecution: retencion.exito, saveDataErrorExecution: retencion.error, ...(llevaErrorWorkflow(salidaDe(archivo)) ? { errorWorkflow: MARCADOR_ERROR_WORKFLOW } : {}) };
   const quitar = new Set(Object.entries(NODOS_DE_ENTRADA).filter(([k]) => k !== entrada).flatMap(([, v]) => v));
   if (entrada !== 'prueba') {
     for (const nombre of SOLO_PRUEBA) quitar.add(nombre);
@@ -661,6 +668,9 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
         : '; las ejecuciones llevan texto de clientes: este archivo no guarda nada y no puede hacerlo sin declararlo en RETENCION_POR_SALIDA'));
   }
   if (st.executionTimeout !== timeoutDe(destino)) hallazgos.push(`el tiempo límite de ${destino || 'este archivo'} debe ser executionTimeout ${timeoutDe(destino)} (decisión de Andres, 04/10/2026: 120 s solo Q'Taco, 60 s el resto); tiene ${st.executionTimeout}`);
+  if (llevaErrorWorkflow(destino) ? st.errorWorkflow !== MARCADOR_ERROR_WORKFLOW : st.errorWorkflow !== undefined) {
+    hallazgos.push(`${destino || 'este archivo'}: settings.errorWorkflow ${llevaErrorWorkflow(destino) ? `tiene que ser exactamente ${MARCADOR_ERROR_WORKFLOW} (se resuelve por nombre al publicar)` : "no corresponde (solo lo llevan las salidas de producción de Q'Taco)"}`);
+  }
   // Presupuesto de nodos de producción.
   if (entrada !== 'prueba' && flujo.nodes.length > TOPE_DE_NODOS) {
     hallazgos.push(`tiene ${flujo.nodes.length} nodos y el tope de producción es ${TOPE_DE_NODOS}: reutilice los nodos existentes (el código vive en src/lib y src/nodos)`);

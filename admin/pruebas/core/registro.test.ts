@@ -350,6 +350,8 @@ describe('1. estructura del registro', () => {
       'agendamiento', 'seguimientos', 'senas', 'vencidas', 'demo', 'recordatorios', 'venta', 'cobro',
       'novuchat', 'onboarding', 'captacion', 'negocio', 'resto', 'json', 'salida', 'persona',
       'error', 'envio', 'incierto',
+      // Flujos comunes del monitor externo (sin cliente): palabras de uso general.
+      'latido', 'vigilancia', 'numero', 'demos',
     ]);
     const nombres = new Set(
       [...readdirSync(join(RAIZ, 'Flujos')), ...readdirSync(join(RAIZ, 'admin/scripts/datos'))]
