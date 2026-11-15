@@ -40,12 +40,13 @@ function wlNorm(t) {
 function wlLineaCliente(v, max) {
   return String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u2028\u2029]/g, ' ').slice(0, max);
 }
-// Un texto que el flujo escribe por su cuenta pasa por aquí: si cayera en NIEGA_IA o afirmara un pago (`CB_PROHIBIDAS`, de `cobro.js`), sale el mínimo.
+// Un texto que el flujo escribe por su cuenta pasa por aquí: si cayera en NIEGA_IA o afirmara un pago (`CB_PROHIBIDAS`, de `cobro.js`), sale el mínimo; y todo «asistente virtual» sale con «con IA».
 function wlSeguro(texto) {
   const t = String(texto === undefined || texto === null ? '' : texto);
-  if (WL_NIEGA_IA.test(wlNorm(t))) return WL_SALUDO_MINIMO;
-  if (CB_PROHIBIDAS.test(cbCanon(t))) return WL_SALUDO_MINIMO;
-  return t;
+  if (WL_NIEGA_IA.test(wlNorm(t))) return ctConIA(WL_SALUDO_MINIMO);
+  if (CB_PROHIBIDAS.test(cbCanon(t))) return ctConIA(WL_SALUDO_MINIMO);
+  // Todo texto del flujo que se presenta como «asistente virtual» dice que es una IA (pieza común `identidad.js`, 0 mensajes).
+  return ctConIA(t);
 }
 // Violencia o miedo: no es parte del servicio de este negocio. El gancho existe porque los nodos comunes lo piden; aquí no marca nada.
 function wlEsRiesgo() {

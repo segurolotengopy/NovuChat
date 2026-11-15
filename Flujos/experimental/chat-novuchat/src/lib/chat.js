@@ -1566,12 +1566,12 @@ function chClienteConSitio(texto, cfg, evento, est, f, quiere) {
   m.textoSinSitio = base.texto;
   return m;
 }
-// El primer mensaje: el saludo y la lista de rubros (los 7, cada uno con su descripción).
+// El primer mensaje: el saludo y la lista de rubros (los 7, cada uno con su descripción). Si el saludo se presenta como «asistente virtual», dice «con IA» (pieza común `identidad.js`).
 // `pedida`: el cliente ya conversó y pide «el listado» (no es un saludo): la misma lista con su propio texto, sin volver a saludar.
 function chLista(cfg, pitch, pedida) {
   const d = chDatos(cfg);
   const ab = (d.respaldos || {}).abierta || {};
-  const cuerpo = chEmMensaje(chSustituir(pitch === true ? chTexto(ab.pitch) + '\n\n' + chTexto(ab.preguntaLista) : (pedida === true && chTexto((d.textos || {}).listaPedida) !== '' ? (d.textos || {}).listaPedida : (d.textos || {}).saludo), cfg), cfg);
+  const cuerpo = ctConIA(chEmMensaje(chSustituir(pitch === true ? chTexto(ab.pitch) + '\n\n' + chTexto(ab.preguntaLista) : (pedida === true && chTexto((d.textos || {}).listaPedida) !== '' ? (d.textos || {}).listaPedida : (d.textos || {}).saludo), cfg), cfg));
   const filas = chFilasDeRubros(cfg);
   const payload = cmLista(cuerpo, (d.textos || {}).listaBoton || 'Ver rubros', (d.textos || {}).listaTitulo || 'Rubros', filas);
   const respaldo = cuerpo + '\nPor ejemplo: ' + filas.map((f) => f.title).join(', ') + '.';
