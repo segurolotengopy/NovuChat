@@ -8,7 +8,7 @@ import { leerFlujo, type Flujo } from '../lib/flujo';
 import { flujosDeProduccion } from '../lib/flujos-de-cliente';
 import { atiendeCliente, idDeFlujo } from './migracion/comprobaciones';
 import {
-  ALTA_IDENTIDAD, EXCEPCIONES_DE_IDENTIDAD, LIMITE_IDENTIDAD, TOPE_IDENTIDAD, fuenteDeIdentidad, incluyeLaPiezaDeIdentidad, problemasDeIdentidad,
+  ALTA_IDENTIDAD, EXCEPCIONES_DE_IDENTIDAD, LIMITE_IDENTIDAD, TOPE_IDENTIDAD, fuenteDeIdentidad, incluyeLaPiezaDeIdentidad, nodosQueLlamanSinLaPieza, problemasDeIdentidad,
   type ExcepcionDeIdentidad,
 } from './ux/identidad';
 
@@ -34,6 +34,19 @@ describe('incluyeLaPiezaDeIdentidad', () => {
   });
   it('NIEGA: un flujo sin nodos Code → no', () => {
     expect(incluyeLaPiezaDeIdentidad(flujo())).toBe(false);
+  });
+});
+
+describe('nodosQueLlamanSinLaPieza', () => {
+  const DEF = 'function bmSeguro(t) {\n  return ctConIA(t);\n}\n';
+  it('la definición sola (viaja con la librería) no cuenta; la llamada sin la pieza sí', () => {
+    expect(nodosQueLlamanSinLaPieza(flujo(`${DEF}return [];`))).toEqual([]);
+    expect(nodosQueLlamanSinLaPieza(flujo(`${DEF}const x = bmSeguro('hola');`))).toEqual(['Code 0']);
+  });
+  it('NIEGA: llamar a chLista o wlSeguro sin la pieza también cuenta; con la pieza no', () => {
+    expect(nodosQueLlamanSinLaPieza(flujo("const m = chLista(cfg, false);"))).toEqual(['Code 0']);
+    expect(nodosQueLlamanSinLaPieza(flujo("wlSeguro(x)"))).toEqual(['Code 0']);
+    expect(nodosQueLlamanSinLaPieza(flujo(`${FUENTE}\n${DEF}const x = bmSeguro('hola');`))).toEqual([]);
   });
 });
 
@@ -76,6 +89,10 @@ describe('todos los flujos de producción que atienden a un cliente', () => {
   it('el tope es la cuenta de hoy y el límite son 90 días desde el alta', () => {
     expect(Object.keys(EXCEPCIONES_DE_IDENTIDAD)).toHaveLength(TOPE_IDENTIDAD);
     expect(new Date(`${LIMITE_IDENTIDAD}T00:00:00Z`).getTime() - new Date(`${ALTA_IDENTIDAD}T00:00:00Z`).getTime()).toBe(90 * 86_400_000);
+  });
+  it('ningún nodo llama a las funciones que usan la pieza sin llevarla (ReferenceError en pleno envío)', () => {
+    const sueltos = medidos.flatMap(([ruta, f]) => nodosQueLlamanSinLaPieza(f).map((n) => `${idDeFlujo(ruta)} · ${n}`));
+    expect(sueltos).toEqual([]);
   });
   it('al menos un flujo ya incluye la pieza sin excepción (la regla no es letra muerta)', () => {
     expect(medidos.some(([ruta]) => !faltan.has(idDeFlujo(ruta)))).toBe(true);

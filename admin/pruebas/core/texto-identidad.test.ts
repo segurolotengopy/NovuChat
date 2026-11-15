@@ -22,12 +22,18 @@ describe('ctConIA', () => {
     'Hola, soy el asistente virtual con IA de X.',
     'Soy el asistente virtual de X, una inteligencia artificial.',
     'Soy el asistente virtual con inteligencia artificial.',
-    'Soy el asistente virtual de X (I.A.).',
     'Soy un asistente virtual de X, una IA que ayuda.',
     'Hola, ¿en qué te ayudo?',
     '',
   ])('NIEGA: no cambia «%s» (ya lo dice o no se presenta)', (t) => { expect(L.ctConIA(t)).toBe(t); });
 
+  it('NIEGA: una «IA» en OTRA oración (un producto, una URL, el modelo) no tapa la presentación', () => {
+    expect(L.ctConIA('Hola, soy el asistente virtual de Tienda.\n\nSí, tenemos Crema IA a 45 Bs.')).toBe('Hola, soy el asistente virtual con IA de Tienda.\n\nSí, tenemos Crema IA a 45 Bs.');
+    expect(L.ctConIA('Hola, soy el asistente virtual de Tienda. Mira tienda.com/ia/catalogo')).toBe('Hola, soy el asistente virtual con IA de Tienda. Mira tienda.com/ia/catalogo');
+  });
+  it('NIEGA: «asistente virtuales» no es la presentación (no queda «con IAes»)', () => {
+    expect(L.ctConIA('Los asistente virtuales del negocio')).toBe('Los asistente virtuales del negocio');
+  });
   it('es idempotente', () => {
     const una = L.ctConIA('Hola, soy el asistente virtual de X.');
     expect(L.ctConIA(una)).toBe(una);

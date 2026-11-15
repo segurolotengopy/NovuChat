@@ -8,9 +8,8 @@ function ctDiceIA(texto) {
   const t = String(texto === undefined || texto === null ? '' : texto).normalize('NFKC').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   return /\binteligencia artificial\b/.test(t) || /(^|[^a-z0-9])i\.?a\.?(?![a-z0-9])/.test(t);
 }
-// «asistente virtual» → «asistente virtual con IA» la primera vez que aparece, conservando las mayúsculas del original; sin «asistente virtual» o con la IA ya dicha, el texto no cambia.
+// «asistente virtual» → «asistente virtual con IA» la primera vez que aparece, conservando las mayúsculas del original. Solo se mira la ORACIÓN que se presenta (hasta el próximo . ! ? o salto de línea): una «IA» en otra parte del texto (un producto, una URL, lo que escribió el modelo) no tapa la presentación. Sin «asistente virtual» o con la IA ya dicha en esa oración, el texto no cambia.
 function ctConIA(texto) {
   const t = String(texto === undefined || texto === null ? '' : texto);
-  if (ctDiceIA(t)) return t;
-  return t.replace(/asistente virtual/i, (m) => m + ' ' + CT_ROTULO_IA);
+  return t.replace(/\basistente virtual\b[^.!?\n]*/i, (oracion) => (ctDiceIA(oracion) ? oracion : oracion.replace(/asistente virtual/i, (m) => m + ' ' + CT_ROTULO_IA)));
 }

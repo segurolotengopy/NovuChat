@@ -30,6 +30,22 @@ export function incluyeLaPiezaDeIdentidad(f: Flujo, fuente: string = fuenteDeIde
     .some((c) => c.includes('ctConIA('));
 }
 
+/** Las funciones de los flujos que llaman a `ctConIA` en su cuerpo: donde se las LLAMA, el nodo tiene que llevar la pieza. */
+export const USUARIOS_DE_LA_PIEZA = ['bmSeguro', 'wlSeguro', 'chLista'] as const;
+
+/**
+ * Los nodos Code que LLAMAN a una de esas funciones (fuera de su definición) sin llevar la pieza: ahí fallaría con `ReferenceError` en
+ * pleno envío. La definición sola, que viaja con la librería del cliente en todos los nodos, no cuenta.
+ */
+export function nodosQueLlamanSinLaPieza(f: Flujo, fuente: string = fuenteDeIdentidad()): string[] {
+  const sinDefinir = (c: string): string => USUARIOS_DE_LA_PIEZA.reduce((acc, fn) => acc.replace(new RegExp(`^function ${fn}\\([\\s\\S]*?\\n\\}\\n`, 'm'), ''), c);
+  return f.nodes
+    .map((n) => [n.name, textoDe((n.parameters as Record<string, unknown> | undefined)?.['jsCode'])] as const)
+    .filter(([, c]) => c !== '' && !c.includes(fuente))
+    .filter(([, c]) => USUARIOS_DE_LA_PIEZA.some((fn) => new RegExp(`\\b${fn}\\(`).test(sinDefinir(c))))
+    .map(([nombre]) => nombre);
+}
+
 // ---------------------------------------------------------------------------------------------------------------------------------
 // EXCEPCIONES: lista CERRADA, propia de esta regla, que SOLO BAJA. Cambiar `TOPE_IDENTIDAD`, `ALTA_IDENTIDAD` o un `vence` exige pasar
 // por el agente `seguridad`.
