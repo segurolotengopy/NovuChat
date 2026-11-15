@@ -962,8 +962,10 @@ def cmd_verificar(wf_f, path_f, alias, activo_esperado, creds_f="-"):
 
 
 def cmd_vivo_timbre(vivo_f, creds_f, wfs_f, alias, timbre_id, path_out):
-    """--recargar: la ruta del Timbre se COPIA del flujo vivo, nunca se elige. Cerrojos (cada uno aborta con 4 sin escribir):
-    el flujo vivo es exactamente «Salida de persona (<alias>)», con su id y sin duplicados por nombre; hay UN nodo
+    """--recargar: la ruta del Timbre se COPIA del flujo vivo, nunca se elige. Cerrojos (cada uno aborta con 4 sin escribir;
+    la falta o repetición de la credencial del timbre y los duplicados por nombre los dispara antes el `buscar` genérico, «estado
+    ambiguo»; aquí solo se confirma que la credencial viva sea la del timbre de este alias):
+    el flujo vivo es exactamente «Salida de persona (<alias>)» y su id es el de la lista; hay UN nodo
     Timbre de tipo webhook; su path tiene la forma de una capacidad y no es un marcador; exige headerAuth; su credencial es
     exactamente la del timbre de ESTE alias; su webhookId es el estable del alias; y ningún otro flujo usa ese path ni cita la
     credencial del timbre. El path va solo al archivo de salida (modo 600): no se imprime."""
@@ -1018,7 +1020,36 @@ def cmd_igual(cuerpo_f, vivo_f):
     if ig:
         sc, sv = c.get("settings") or {}, v.get("settings") or {}
         ig = all(k in sv and sv[k] == val for k, val in sc.items())
+        # En el otro sentido: una clave que el vivo trae y el cuerpo ya NO (p. ej. errorWorkflow, saveDataErrorExecution o
+        # saveExecutionProgress quitadas del JSON) es una diferencia y hay que escribirla. Solo se ignoran estos valores POR
+        # DEFECTO de n8n (clave y valor exactos); NO verificado contra n8n real cuáles añade al guardar: lista mínima a ajustar.
+        ig = ig and all(k in sc or (k, val) in DEFECTOS_N8N for k, val in sv.items())
     print("igual" if ig else "distinto")
+
+
+DEFECTOS_N8N = {("availableInMCP", False), ("binaryMode", "separate")}
+
+
+def _rele_de(flujo):
+    """El valor de `releBaseUrl` del nodo Set «Config base» (assignments o values.string), o None si no hay exactamente uno."""
+    hallados = []
+    for nodo in flujo.get("nodes") or []:
+        if nodo.get("name") != "Config base":
+            continue
+        ps = nodo.get("parameters") or {}
+        a = ps.get("assignments")
+        lista = (a.get("assignments") if isinstance(a, dict) else None) or []
+        v = ps.get("values")
+        lista = list(lista) + ((v.get("string") if isinstance(v, dict) else None) or [])
+        hallados += [i.get("value") for i in lista if isinstance(i, dict) and i.get("name") == "releBaseUrl"]
+    return hallados[0] if len(hallados) == 1 and isinstance(hallados[0], str) else None
+
+
+def cmd_rele_igual(cuerpo_f, vivo_f):
+    """--recargar: la URL del relé que se va a escribir tiene que ser la del flujo vivo (nunca cambia el relé de pasada).
+    Imprime «igual» o «distinto» (también si falta en alguno: falla cerrado); no imprime ninguna URL."""
+    a, b = _rele_de(cargar(cuerpo_f)), _rele_de(cargar(vivo_f))
+    print("igual" if a is not None and a == b else "distinto")
 
 
 # --- Las tres credenciales previas (--crear-credenciales / --quitar-credenciales) -------------
@@ -1476,6 +1507,11 @@ if [[ "$MODO" == recargar ]]; then
     falla "el plan se aborta (no se escribió nada):"; echo "$SAL" >&2; exit 2
   fi
   echo "$SAL"
+  RELE_IGUAL="$(py rele_igual "$WORK/cuerpo-flujo.json" "$WORK/vivo.json")" || { falla "no pude comparar la URL del relé del flujo vivo con la que se escribiría"; exit 3; }
+  if [[ "$RELE_IGUAL" != igual ]]; then
+    falla "la URL del relé que se escribiría NO es la del flujo vivo (¿falta o sobra --rele-inerte --canal-graph, o cambió la fila del relé de la tabla?): --recargar no cambia el relé de pasada. No se escribió nada."; exit 2
+  fi
+  ok "la URL del relé coincide con la del flujo vivo (no se imprime)"
   IGUAL="$(py igual "$WORK/cuerpo-flujo.json" "$WORK/vivo.json")" || { falla "no pude comparar el flujo vivo con la versión nueva"; exit 3; }
   if [[ "$IGUAL" == igual ]]; then
     ok "el flujo vivo ya es igual a la versión nueva: nada que hacer"
@@ -1486,6 +1522,12 @@ if [[ "$MODO" == recargar ]]; then
   if (( ! APLICAR )); then
     echo; echo "Diagnóstico: 1 paso pendiente; no se escribió nada. Con --aplicar --confirmo produccion se hace lo marcado «(haría)»."
     exit 1
+  fi
+  # Carrera: si alguien guardó el flujo en n8n desde la primera lectura, la recarga lo pisaría sin saberlo.
+  VERSION_LEIDA="$(py campo "$WORK/vivo.json" versionId)"
+  api GET "/workflows/${WF_ID}"; exigir 200 "no pude releer el flujo vivo antes de escribir" || exit 3
+  if [[ "$(py campo "$WORK/rta.json" versionId)" != "$VERSION_LEIDA" ]]; then
+    falla "el flujo vivo cambió en n8n mientras se preparaba la recarga (versionId distinto): no se escribió nada; vuelva a correr --recargar"; exit 2
   fi
   echo "Escritura"
   api PUT "/workflows/${WF_ID}" "$WORK/cuerpo-flujo.json"; exigir '200|201' "no pude actualizar el flujo" || fallar_r "falló la actualización del flujo"

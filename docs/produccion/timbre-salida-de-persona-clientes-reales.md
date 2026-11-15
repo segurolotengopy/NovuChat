@@ -133,6 +133,8 @@ Cartera lee en el paso P0. Ejemplos de forma, sin valor real: `NovuChat ingesta
 | 6 | Bandera `consolaConversaciones` y roles (paquete de encendido de «Tomar») | Cartera | **Sí** (Firestore, Auth) | Una por acción |
 | R | Reversión: `--quitar --aplicar` (o, tras una recarga, revertir el JSON versionado y volver a correr `--recargar`); `nube-salida-persona.sh --quitar-alias <ALIAS> --aplicar` y redespliegue; bandera a `clasica` | Cartera / Rearquitectura | **Sí** | Una por acción |
 
+**El respaldo de `--recargar` NO se restaura tal cual:** lleva `path="<capacidad>"` (la ruta del timbre no se respalda). Para volver atrás se revierte el JSON versionado y se vuelve a correr `--recargar`, que copia la ruta del flujo vivo. `--recargar` tampoco cambia el relé de pasada: aborta con 2 si la URL del relé que escribiría no es la del flujo vivo (repita o quite `--rele-inerte --canal-graph` según cómo se cargó).
+
 **Los pasos 2 y 3 van en la MISMA sesión** y con el mismo `$XDG_RUNTIME_DIR`: la
 entrega (ruta y clave del timbre) no se deja pendiente ni la lee nadie; el paso 3 la
 consume y la destruye. Si el paso 3 falla, la entrega se conserva y el propio script

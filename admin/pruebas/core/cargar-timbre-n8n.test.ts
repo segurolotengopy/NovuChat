@@ -126,6 +126,9 @@ if partes[0] == "workflows":
     if len(partes) == 2 and metodo == "GET":
         if os.path.exists(os.path.join(E, "get-renombrado")): responder(200, dict(w, name=w["name"] + " X"))
         if os.path.exists(os.path.join(E, "get-otro-id")): responder(200, dict(w, id="wzzz"))
+        if os.path.exists(os.path.join(E, "carrera")):
+            # Alguien guarda el flujo en n8n justo después de esta lectura: la siguiente ve otro versionId.
+            previo = dict(w); w["versionId"] = "vcarrera%d" % n(); guardar("wfs.json", wf); guardar("contador.json", n()); responder(200, previo)
         responder(200, w)
     if len(partes) == 2 and metodo == "PUT":
         if set(cuerpo) - {"name", "nodes", "connections", "settings"}: responder(400, {"message": "additional properties"})
@@ -2345,6 +2348,74 @@ describe('cargar-timbre-n8n.sh: --recargar (actualiza el flujo vivo, sin entrega
     expect(llamadas()).toEqual([]);
   });
 
+  describe('el relé, los ajustes, la carrera y la recuperación', () => {
+    const INERTE = ['--rele-inerte', '--canal-graph'];
+    const MSG_RELE = /URL del relé que se escribiría NO es la del flujo vivo/;
+    it('relé: el vivo es inerte y la corrida no pide --rele-inerte: sale 2 sin escribir (seco y --aplicar)', () => {
+      expect(correr([...A(), ...INERTE, ...APLICAR]).codigo).toBe(0);
+      rmSync(join(dir, 'llamadas'), { force: true });
+      const antes = leerTxt(join(dir, 'wfs.json'));
+      for (const extra of [[], APLICAR]) { const r = correr([...RE(), ...extra]); NO_ESCRIBE(r, antes); expect(r.salida).toMatch(MSG_RELE); }
+    });
+    it('relé: el vivo trae el relé real y la corrida pide --rele-inerte: sale 2 sin escribir (seco y --aplicar)', () => {
+      prepararCargado();
+      const antes = leerTxt(join(dir, 'wfs.json'));
+      for (const extra of [[], APLICAR]) { const r = correr([...RE(), ...INERTE, ...extra]); NO_ESCRIBE(r, antes); expect(r.salida).toMatch(MSG_RELE); }
+    });
+    it('relé: vivo inerte y corrida con --rele-inerte: recarga con un solo PUT', () => {
+      expect(correr([...A(), ...INERTE, ...APLICAR]).codigo).toBe(0);
+      envejecer(); rmSync(join(dir, 'llamadas'), { force: true });
+      expect(correr([...RE(), ...INERTE, ...APLICAR]).codigo).toBe(0);
+      expect(escrituras()).toEqual([`PUT /workflows/${flujos()[0].id}`]);
+    });
+
+    const flujoSinClave = (clave: string) => {
+      const j = JSON.parse(leerTxt(FLUJO_REAL)); delete j.settings[clave];
+      const ruta = join(dir, 'sin-clave.json'); writeFileSync(ruta, JSON.stringify(j)); return ruta;
+    };
+    it.each(['errorWorkflow', 'saveDataErrorExecution', 'saveExecutionProgress'])('ajustes: si el JSON nuevo QUITA «%s», el vivo se considera distinto (hay algo que hacer: sale 1)', (clave) => {
+      prepararCargado();
+      const r = correr([...RE(), '--flujo', flujoSinClave(clave)]);
+      expect(r.codigo).toBe(1);
+      expect(r.salida).not.toContain('nada que hacer');
+    });
+    it('ajustes: un valor por defecto que n8n añade al vivo (availableInMCP=false) no cuenta como diferencia', () => {
+      prepararCargado();
+      alterar((f) => { (f.settings as Record<string, unknown>).availableInMCP = false; });
+      const r = correr(RE());
+      expect(r.codigo).toBe(0);
+      expect(r.salida).toContain('nada que hacer');
+    });
+    it('ajustes: una clave extra del vivo que no es un valor por defecto conocido sí es diferencia', () => {
+      prepararCargado();
+      alterar((f) => { (f.settings as Record<string, unknown>).claveAjena = 'x'; });
+      expect(correr(RE()).codigo).toBe(1);
+    });
+
+    it('carrera: si el flujo cambió en n8n entre la primera lectura y el PUT, sale 2 sin escribir', () => {
+      prepararCargado(); envejecer();
+      writeFileSync(join(dir, 'carrera'), '');
+      const r = correr([...RE(), ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('cambió en n8n');
+      expect(escrituras()).toEqual([]);
+    });
+
+    it('recuperación: PUT bien y el activate no arregla (3); la siguiente recarga cae en C14 (2) y remite a --activar, que publica', () => {
+      prepararCargado(); activoPublicado(); envejecer();
+      writeFileSync(join(dir, 'activar-no-arregla'), '');
+      expect(correr([...RE(), ...APLICAR]).codigo).toBe(3);
+      rmSync(join(dir, 'activar-no-arregla'));
+      rmSync(join(dir, 'llamadas'), { force: true });
+      const r = correr([...RE(), ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('--activar');
+      expect(escrituras()).toEqual([]);
+      expect(correr([...A(), '--activar', ...APLICAR]).codigo).toBe(0);
+      expect(flujos()[0].activeVersionId).toBe(flujos()[0].versionId);
+    });
+  });
+
   describe('cerrojos (cada uno sale 2 sin una sola escritura, en seco y con --aplicar)', () => {
     it('C1 no hay flujo vivo', () => {
       const r = correr([...RE(), ...APLICAR]);
@@ -2389,6 +2460,6 @@ describe('cargar-timbre-n8n.sh: --recargar (actualiza el flujo vivo, sin entrega
     }, /sin publicar|difiere de la versi/));
     it('C14 flujo activo y n8n sin versionId/activeVersionId: no escribe (falla cerrado)', () => niega(() => {
       activoPublicado(); writeFileSync(join(dir, 'sin-versiones'), '');
-    }));
+    }, /no puedo saber qué versión corre/));
   });
 });
