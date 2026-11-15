@@ -451,3 +451,7 @@ Mismo criterio que la sección anterior (base común de venta): los módulos com
 - **Límite conocido en el chat de NovuChat:** hoy su saludo ya dice «con inteligencia artificial» (dato del negocio), así que el cambio es una defensa. Cuando el primer mensaje es «quiero más información» sale el pitch comercial, y cuando es una pregunta sale la respuesta fija o del modelo: ninguno dice «asistente virtual», así que no pasan por la pieza y no se presentan como IA. Corregirlo exige cambiar un texto comercial (dato del negocio); se deja a decisión de Principal y Andres.
 - **Límite conocido (invariante):** la medición exige que el nodo lleve la pieza y la llame; que «Armar mensajes» siga llamando a la función que la usa lo prueba la suite de cada tienda (`identidad.test.ts`), no la invariante.
 - **Mensajes por conversación: 0 agregados o quitados.** Solo cambian dos palabras del texto que ya salía.
+
+## Estado al 15/11/2026: frases de baja ampliadas en la expresión común (sin republicar)
+
+«No me manden/envíen nada», «no molestar» (mensaje entero) y «bórrame de su base / sus registros» ahora piden la baja. Cambian los JSON versionados de Casa Bermejo, Walisuma, el chat de NovuChat, Antonio y Rubén (`RA_BAJA`/`RR_BAJA` y el literal de «Reportar mensaje (entrante)»); Emma, Evy y doctoras conservan su copia propia (excepciones de la baja). Los flujos vivos conservan la expresión anterior hasta su republicación, que es un botón de Andres por cliente después del ensayo. 0 mensajes agregados.
