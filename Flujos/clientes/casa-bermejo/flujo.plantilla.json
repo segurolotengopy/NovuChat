@@ -692,7 +692,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@todo+mensajes+filtro+pedidos-qr+baja:nodos/armar-mensajes.js"
+        "jsCode": "@@todo+mensajes+filtro+pedidos-qr+baja+identidad:nodos/armar-mensajes.js"
       },
       "id": "armar-mensajes",
       "name": "Armar mensajes",

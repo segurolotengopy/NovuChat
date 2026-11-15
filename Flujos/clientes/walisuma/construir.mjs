@@ -85,6 +85,8 @@ export const CONFIG = {
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
     // Pedido de baja por texto (pieza común del core): `bjPideBaja` en «Decidir turno» y `bjTextoBaja` en «Armar mensajes».
     baja: ['../../src/core/conversacion/baja.js'],
+    // «Asistente virtual con IA» en todo texto que lo nombra (pieza común del core): lo usa `wlSeguro` en «Armar mensajes».
+    identidad: ['../../src/core/texto/identidad.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
