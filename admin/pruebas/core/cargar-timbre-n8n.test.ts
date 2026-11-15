@@ -123,7 +123,10 @@ if partes[0] == "workflows":
         responder(200, nuevo)
     w = next((x for x in wf if x["id"] == partes[1]), None)
     if w is None: responder(404)
-    if len(partes) == 2 and metodo == "GET": responder(200, w)
+    if len(partes) == 2 and metodo == "GET":
+        if os.path.exists(os.path.join(E, "get-renombrado")): responder(200, dict(w, name=w["name"] + " X"))
+        if os.path.exists(os.path.join(E, "get-otro-id")): responder(200, dict(w, id="wzzz"))
+        responder(200, w)
     if len(partes) == 2 and metodo == "PUT":
         if set(cuerpo) - {"name", "nodes", "connections", "settings"}: responder(400, {"message": "additional properties"})
         # n8n 2.x: borrador y publicada se separan; el PUT de un flujo activo NO publica la nueva versión
@@ -1993,6 +1996,59 @@ print("\\n".join(errs))`;
     });
   });
 
+  describe('--recargar con el mapa de credenciales existentes', () => {
+    const cargado = () => { expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0); };
+    const viejo = () => {
+      const f = flujos(); f[f.findIndex((x) => x.name === propio().name)].nodes.find((n) => n.name === 'Reclamar')!.parameters.zzViejo = 1;
+      writeFileSync(join(dir, 'wfs.json'), JSON.stringify(f));
+    };
+    const sinEscrituras = (r: { codigo: number | null }, antes: string) => {
+      expect(r.codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+      expect(leerTxt(join(dir, 'wfs.json'))).toBe(antes);
+    };
+
+    it('con el mapa y el relé inerte: recarga con un solo PUT, sin tocar credenciales', () => {
+      cargado(); viejo();
+      rmSync(join(dir, 'llamadas'), { force: true });
+      const credsAntes = JSON.stringify(creds());
+      const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);
+      expect(r.codigo).toBe(0);
+      expect(escrituras()).toEqual([`PUT /workflows/${propio().id}`]);
+      expect(JSON.stringify(creds())).toBe(credsAntes);
+      expect(propio().nodes.find((n) => n.name === 'Reclamar')!.parameters.zzViejo).toBeUndefined();
+    });
+
+    it('C10 negada: un alias real sin el mapa --cred-*: sale 2 sin tocar n8n', () => {
+      cargado();
+      rmSync(join(dir, 'llamadas'), { force: true });
+      const r = correr([...AR(), '--recargar', ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('un cliente real');
+      expect(llamadas()).toEqual([]);
+    });
+
+    it('C11 negada: la ingesta del mapa la cita un flujo de otro número: sale 2 sin escribir', () => {
+      cargado(); viejo();
+      writeFileSync(join(dir, 'wfs.json'), JSON.stringify([...flujos(), flujoVivo('wa', 'Venta de otro comercio', [nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta)], '555000111')]));
+      const antes = leerTxt(join(dir, 'wfs.json'));
+      rmSync(join(dir, 'llamadas'), { force: true });
+      const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);
+      sinEscrituras(r, antes);
+      expect(r.salida).toContain('no están atadas al número de este alias');
+    });
+
+    it('C12 negada: el envío del mapa lo cita un nodo «Enviar por el relé» de otro flujo: sale 2 sin escribir', () => {
+      cargado(); viejo();
+      writeFileSync(join(dir, 'wfs.json'), JSON.stringify([...flujos(), flujoVivo('wc', 'Cruce', [nodoVivo('Enviar por el relé', 'whatsAppApi', 'qg', NOM.envio)], PHONE)]));
+      const antes = leerTxt(join(dir, 'wfs.json'));
+      rmSync(join(dir, 'llamadas'), { force: true });
+      const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);
+      sinEscrituras(r, antes);
+      expect(r.salida).toContain('«Enviar por el relé»');
+    });
+  });
+
   it('--help documenta las tres opciones y el relé inerte', () => {
     const r = correr(['--help']);
     expect(r.codigo).toBe(0);
@@ -2171,5 +2227,168 @@ describe('cargar-timbre-n8n.sh: settings.errorWorkflow se resuelve por NOMBRE (f
     expect(r.codigo).toBe(0);
     expect(r.salida.match(/settings\.errorWorkflow resuelto por nombre/g)?.length ?? 0).toBeLessThanOrEqual(2);
     expect((flujos()[0] as unknown as { settings: Record<string, unknown> }).settings.errorWorkflow).toBe(ID_ALERTA);
+  });
+});
+
+describe('cargar-timbre-n8n.sh: --recargar (actualiza el flujo vivo, sin entrega ni credenciales)', () => {
+  const RE = () => [...A(), '--recargar'];
+  const prepararCargado = () => { expect(correr([...A(), ...APLICAR]).codigo).toBe(0); rmSync(join(dir, 'llamadas'), { force: true }); };
+  const guardarFlujos = (f: Flujo[]) => writeFileSync(join(dir, 'wfs.json'), JSON.stringify(f));
+  // Simula la versión vieja del flujo: un parámetro de más en un nodo.
+  const envejecer = () => { const f = flujos(); f[0].nodes.find((n) => n.name === 'Reclamar')!.parameters.zzViejo = 1; guardarFlujos(f); };
+  const timbre = (f: Flujo) => f.nodes.find((n) => n.name === 'Timbre') as unknown as Nodo & { webhookId?: string };
+  const alterar = (fn: (f: Flujo) => void) => { const f = flujos(); fn(f[0]); guardarFlujos(f); };
+  const activoPublicado = () => alterar((f) => { f.active = true; f.activeVersionId = f.versionId; });
+  const otroFlujo = (nodes: unknown[]): Flujo => ({ id: 'wotro2', name: 'Otro flujo cualquiera', active: false, nodes, connections: {}, settings: {} } as unknown as Flujo);
+  const NO_ESCRIBE = (r: { codigo: number | null; salida: string }, antes: string) => {
+    expect(r.codigo).toBe(2);
+    expect(escrituras()).toEqual([]);
+    expect(leerTxt(join(dir, 'wfs.json'))).toBe(antes);
+    expect(r.salida).not.toContain('flujo actualizado');
+  };
+  /** Prepara el cargado, aplica la alteración, y comprueba que --recargar (seco y con --aplicar) sale 2 sin una sola escritura. */
+  const niega = (alteracion: () => void, texto?: RegExp) => {
+    prepararCargado(); alteracion();
+    const antes = leerTxt(join(dir, 'wfs.json')), credsAntes = JSON.stringify(creds());
+    for (const extra of [[], APLICAR]) {
+      const r = correr([...RE(), ...extra]);
+      NO_ESCRIBE(r, antes);
+      if (texto) expect(r.salida).toMatch(texto);
+    }
+    expect(JSON.stringify(creds())).toBe(credsAntes);
+  };
+
+  it('seco: sin archivo de entrega, sale 1 («haría» un PUT), solo lee y no imprime valores', () => {
+    prepararCargado(); envejecer();
+    expect(existe(entregaRuta())).toBe(false);
+    const r = correr(RE());
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('(haría)');
+    expect(r.salida).toContain('se conserva (no se toca)');
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('--aplicar: un solo PUT al flujo vivo, nunca /credentials, conserva el path y el estado inactivo', () => {
+    prepararCargado(); envejecer();
+    const id = flujos()[0].id, credsAntes = JSON.stringify(creds()), webhookAntes = timbre(flujos()[0]).webhookId;
+    const r = correr([...RE(), ...APLICAR]);
+    expect(r.codigo).toBe(0);
+    expect(escrituras()).toEqual([`PUT /workflows/${id}`]);
+    expect(llamadas().some((l) => l.includes('/credentials') && !l.startsWith('GET '))).toBe(false);
+    expect(JSON.stringify(creds())).toBe(credsAntes);
+    const f = flujos()[0];
+    expect(timbre(f).parameters.path).toBe(PATH);
+    expect(timbre(f).webhookId).toBe(webhookAntes);
+    expect(f.active).toBe(false);
+    expect(f.nodes.find((n) => n.name === 'Reclamar')!.parameters.zzViejo).toBeUndefined();
+    expect(existe(entregaRuta())).toBe(false);
+  });
+
+  it('idempotente: la segunda corrida dice «nada que hacer», sale 0 y no escribe (seco y --aplicar)', () => {
+    prepararCargado(); envejecer();
+    expect(correr([...RE(), ...APLICAR]).codigo).toBe(0);
+    rmSync(join(dir, 'llamadas'), { force: true });
+    for (const extra of [[], APLICAR]) {
+      const r = correr([...RE(), ...extra]);
+      expect(r.codigo).toBe(0);
+      expect(r.salida).toContain('nada que hacer');
+    }
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('flujo ACTIVO y publicado: PUT y publica (activate), conserva el path y queda activo con la última versión', () => {
+    prepararCargado(); activoPublicado(); envejecer();
+    const r = correr([...RE(), ...APLICAR]);
+    expect(r.codigo).toBe(0);
+    const id = flujos()[0].id;
+    expect(escrituras()).toEqual([`PUT /workflows/${id}`, `POST /workflows/${id}/activate`]);
+    const f = flujos()[0];
+    expect(f.active).toBe(true);
+    expect(f.activeVersionId).toBe(f.versionId);
+    expect(timbre(f).parameters.path).toBe(PATH);
+  });
+
+  it('con un n8n que publica al guardar: no hay activate', () => {
+    prepararCargado(); activoPublicado(); envejecer();
+    writeFileSync(join(dir, 'publica-al-guardar'), '');
+    expect(correr([...RE(), ...APLICAR]).codigo).toBe(0);
+    expect(llamadas().filter((l) => /activate$/.test(l))).toEqual([]);
+    expect(flujos()[0].activeVersionId).toBe(flujos()[0].versionId);
+  });
+
+  it('un n8n que guarda un borrador roto: sale 3 y NO publica', () => {
+    prepararCargado(); activoPublicado(); envejecer();
+    writeFileSync(join(dir, 'corrompe-borrador'), '');
+    const r = correr([...RE(), ...APLICAR]);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('NO coincide');
+    expect(llamadas().filter((l) => /activate$/.test(l))).toEqual([]);
+  });
+
+  it('ni la salida ni el respaldo muestran secretos: el path del respaldo va como sha256', () => {
+    prepararCargado(); envejecer();
+    const r = correr([...RE(), ...APLICAR]);
+    expect(r.codigo).toBe(0);
+    const m = /respaldo previo[^:]*: (\S+respaldo-vivo\.json)/.exec(r.salida);
+    expect(m).not.toBeNull();
+    const t = leerTxt(m![1]);
+    // El respaldo lleva por diseño el phoneNumberId y la URL del relé (ver la cabecera del script); lo demás no.
+    for (const x of [PATH, CLAVE, API_KEY, INGESTA, WA_TOKEN, WABA_ID]) expect(t).not.toContain(x);
+    expect(t).toContain('<capacidad>');
+    expect(t).toContain(createHash('sha256').update(PATH).digest('hex'));
+  });
+
+  it('--recargar no se combina con otro modo', () => {
+    prepararCargado();
+    const r = correr([...RE(), '--activar']);
+    expect(r.codigo).toBe(2);
+    expect(llamadas()).toEqual([]);
+  });
+
+  describe('cerrojos (cada uno sale 2 sin una sola escritura, en seco y con --aplicar)', () => {
+    it('C1 no hay flujo vivo', () => {
+      const r = correr([...RE(), ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+      expect(flujos()).toEqual([]);
+    });
+
+    it('C2 falta la credencial del timbre', () => niega(() => writeFileSync(join(dir, 'creds.json'), JSON.stringify(creds().filter((c) => !c.name.startsWith('Salida de persona (timbre')))), /credencial del timbre no existe/));
+    it('C2 la credencial del timbre está repetida', () => niega(() => writeFileSync(join(dir, 'creds.json'), JSON.stringify([...creds(), { id: 'tdup', name: `Salida de persona (timbre ${ALIAS})`, type: 'httpHeaderAuth' }])), /estado ambiguo/));
+
+    it('C3 el flujo vivo, leído por su id, no se llama exactamente así', () => niega(() => writeFileSync(join(dir, 'get-renombrado'), ''), /nombre no es exacto|no es «/));
+    it('C3 el flujo vivo, leído por su id, trae otro id', () => niega(() => writeFileSync(join(dir, 'get-otro-id'), ''), /único con el nombre/));
+    it('C3 hay dos flujos con el mismo nombre', () => niega(() => guardarFlujos([...flujos(), { ...flujos()[0], id: 'wdup' }]), /estado ambiguo/));
+
+    it('C4 el flujo vivo no tiene nodo Timbre', () => niega(() => alterar((f) => { f.nodes = f.nodes.filter((n) => n.name !== 'Timbre'); }), /exactamente un nodo/));
+    it('C4 el nodo Timbre no es de tipo webhook', () => niega(() => alterar((f) => { timbre(f).type = 'n8n-nodes-base.noOp'; }), /exactamente un nodo/));
+    it('C4 hay dos nodos Timbre', () => niega(() => alterar((f) => { f.nodes.push({ ...timbre(f), parameters: { ...timbre(f).parameters, path: `${PATH}x` } }); }), /exactamente un nodo/));
+
+    it('C5 el path no tiene forma de capacidad', () => niega(() => alterar((f) => { timbre(f).parameters.path = 'corto'; }), /forma de una capacidad/));
+    it('C5 el path es un marcador sin reponer', () => niega(() => alterar((f) => { timbre(f).parameters.path = 'REEMPLAZAR_RUTA_TIMBRE'; }), /forma de una capacidad/));
+
+    it('C6 el Timbre no exige headerAuth', () => niega(() => alterar((f) => { timbre(f).parameters.authentication = 'none'; }), /headerAuth/));
+
+    it('C7 el Timbre lleva el id de otra credencial', () => niega(() => alterar((f) => { timbre(f).credentials = { httpHeaderAuth: { id: 'o1', name: `Salida de persona (timbre ${ALIAS})` } }; }), /exactamente la credencial del timbre/));
+    it('C7 el Timbre lleva el nombre de otra credencial', () => niega(() => alterar((f) => { const c = timbre(f).credentials!.httpHeaderAuth; timbre(f).credentials = { httpHeaderAuth: { id: c.id, name: 'NovuChat ingesta (otro)' } }; }), /exactamente la credencial del timbre/));
+    it('C7 el Timbre lleva una credencial de más', () => niega(() => alterar((f) => { timbre(f).credentials = { ...timbre(f).credentials, whatsAppApi: { id: 'g1', name: `WhatsApp ${ALIAS} (envío)` } }; }), /exactamente la credencial del timbre/));
+
+    it('C8 el webhookId del Timbre no es el estable del alias', () => niega(() => alterar((f) => { timbre(f).webhookId = '00000000-0000-0000-0000-000000000000'; }), /webhookId/));
+
+    it('C9 otro flujo usa la misma ruta del timbre', () => niega(() => guardarFlujos([...flujos(), otroFlujo([{ name: 'X', type: 'n8n-nodes-base.webhook', parameters: { path: PATH } }])]), /misma ruta/));
+    it('C9 otro flujo cita la credencial del timbre', () => niega(() => {
+      const c = creds().find((x) => x.name.startsWith('Salida de persona (timbre'))!;
+      guardarFlujos([...flujos(), otroFlujo([{ name: 'X', type: 'n8n-nodes-base.httpRequest', parameters: {}, credentials: { httpHeaderAuth: { id: c.id, name: c.name } } }])]);
+    }, /cita la credencial del timbre/));
+
+    it('C13 sin flujo de alertas: no escribe', () => niega(() => writeFileSync(join(dir, 'sin-alerta'), ''), /Error de envío incierto/));
+    it('C13 el flujo de alertas repetido: no escribe', () => niega(() => writeFileSync(join(dir, 'alerta-repetida'), ''), /flujos llamados/));
+
+    it('C14 flujo activo con borrador distinto de la publicada: no escribe (falla cerrado)', () => niega(() => {
+      alterar((f) => { f.active = true; f.activeVersionId = 'vieja'; });
+    }, /sin publicar|difiere de la versi/));
+    it('C14 flujo activo y n8n sin versionId/activeVersionId: no escribe (falla cerrado)', () => niega(() => {
+      activoPublicado(); writeFileSync(join(dir, 'sin-versiones'), '');
+    }));
   });
 });

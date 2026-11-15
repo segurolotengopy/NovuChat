@@ -129,8 +129,9 @@ Cartera lee en el paso P0. Ejemplos de forma, sin valor real: `NovuChat ingesta
 | 3 | `cargar-timbre-n8n.sh ... --aplicar --confirmo produccion`: crea la credencial del timbre y el flujo **inactivo** y borra la entrega | Cartera | **Sí** (n8n) | Una por acción |
 | 4 | Redespliegue de `enviarComoPersona` (el secreto queda fijo por versión) | Rearquitectura | **Sí** (despliegue) | Una por acción |
 | 5 | `cargar-timbre-n8n.sh ... --activar --aplicar --confirmo produccion`: empieza el barrido de cada minuto | Cartera | **Sí** (n8n) | Una por acción |
+| Recarga | `cargar-timbre-n8n.sh --alias <ALIAS> --cred-ingesta <NOMBRE_INGESTA> --cred-envio <NOMBRE_ENVIO> --cred-rele <NOMBRE_RELE> [--rele-inerte --canal-graph] --recargar` en seco y luego `--aplicar --confirmo produccion`: actualiza el flujo **vivo** con la versión nueva de `Flujos/salida-de-persona.json`, **sin entrega**, sin Secret Manager y sin tocar credenciales ni claves; conserva la ruta del timbre del flujo vivo y su estado activo/inactivo. Sale 2 sin escribir si el flujo vivo no es el de ese alias o su Timbre no es el esperado, y también si está activo con cambios sin publicar | Cartera | **Sí** (n8n) | Una por acción |
 | 6 | Bandera `consolaConversaciones` y roles (paquete de encendido de «Tomar») | Cartera | **Sí** (Firestore, Auth) | Una por acción |
-| R | Reversión: `--quitar --aplicar`; `nube-salida-persona.sh --quitar-alias <ALIAS> --aplicar` y redespliegue; bandera a `clasica` | Cartera / Rearquitectura | **Sí** | Una por acción |
+| R | Reversión: `--quitar --aplicar` (o, tras una recarga, revertir el JSON versionado y volver a correr `--recargar`); `nube-salida-persona.sh --quitar-alias <ALIAS> --aplicar` y redespliegue; bandera a `clasica` | Cartera / Rearquitectura | **Sí** | Una por acción |
 
 **Los pasos 2 y 3 van en la MISMA sesión** y con el mismo `$XDG_RUNTIME_DIR`: la
 entrega (ruta y clave del timbre) no se deja pendiente ni la lee nadie; el paso 3 la
@@ -180,7 +181,7 @@ Se corre primero cada uno **sin** `--aplicar` y se lee entero.
 El relé deja de ser inerte cuando la sesión de WhatsApp-Modular emite la clave real
 (con «sí» de Andres) y `rutasWhatsApp/{numero}.canalSalida` pasa a `rele`. Ese día
 se actualiza **el valor** de la credencial del relé (no su nombre) y se recarga el
-flujo **sin** `--rele-inerte`, con la fila del relé en la tabla. Ningún script
+flujo con `--recargar` **sin** `--rele-inerte`, con la fila del relé en la tabla. Ningún script
 escribe hoy `canalSalida`: lo prepara Cartera aparte, y antes del corte se devuelven
 las conversaciones tomadas.
 

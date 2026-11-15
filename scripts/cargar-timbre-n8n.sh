@@ -27,6 +27,22 @@
 #   ./scripts/cargar-timbre-n8n.sh --alias <alias> --activar [--aplicar --confirmo produccion]
 #       ACTIVAR, paso aparte: el flujo debe existir con credenciales completas. Al
 #       activarlo empieza el barrido de cada minuto (llama a reclamarSalidaPersona).
+#   ./scripts/cargar-timbre-n8n.sh --alias <alias> --recargar [--cred-... --rele-inerte --canal-graph] [--aplicar --confirmo produccion]
+#       RECARGAR: actualiza el flujo VIVO «NovuChat — Salida de persona (<alias>)» con la versión nueva de
+#       Flujos/salida-de-persona.json, SIN archivo de entrega, SIN Secret Manager y SIN tocar credenciales ni claves (nunca
+#       POST/PATCH a /credentials). NUNCA elige una ruta: copia el path del Timbre del flujo vivo y la relectura debe conservarlo.
+#       Seco por omisión: sale 1 si hay algo que hacer, 0 si no («nada que hacer»), 2 si se niega. Repone phoneNumberId y credenciales
+#       por la misma tabla y atadura al alias que cargar (un alias real exige el mapa --cred-*; con relé inerte, repita
+#       --rele-inerte --canal-graph), resuelve errorWorkflow por nombre, conserva activo/inactivo, respalda el flujo vivo antes de
+#       escribir (el path va como sha256), relee y compara. ABORTA con 2 sin escribir nada si:
+#         · no hay flujo vivo, o falta la credencial del timbre o está repetida;
+#         · el flujo vivo no se llama exactamente así, su id no es el de la lista, o hay duplicados por nombre;
+#         · no hay exactamente un nodo «Timbre» de tipo webhook, o su path no tiene forma de capacidad o es un marcador;
+#         · el Timbre no exige headerAuth, no lleva EXACTAMENTE la credencial del timbre de este alias o su webhookId no es el estable;
+#         · otro flujo usa el mismo path o cita la credencial del timbre;
+#         · falta el mapa (alias real), las credenciales no están atadas al número, hay cruce relé/envío o falta/repite la alerta;
+#         · el flujo vivo está ACTIVO y su borrador difiere de la versión publicada (cambios sin publicar que se pisarían).
+#       Idempotente: con el flujo ya igual a la versión nueva (nodo por nodo, conexiones y ajustes) dice «nada que hacer» y sale 0.
 #   ./scripts/cargar-timbre-n8n.sh --alias <alias> --quitar [--aplicar --confirmo produccion]
 #       RESTAURACIÓN: desactiva y borra el flujo del alias y borra la credencial del
 #       timbre de ese alias (nunca las de ingesta, AAB1 ni WhatsApp). Respalda antes.
@@ -152,7 +168,7 @@ ALIAS_ENSAYO="demoA demoB"
 export TIMBRE_RE_AJENO='segurolotengo|aab1wa|waprod|whatsappmodular|receptor|otp'
 # Nombres REALES de las credenciales existentes de un cliente (vacíos = los de ensayo, derivados del alias).
 CRED_INGESTA=""; CRED_ENVIO=""; CRED_RELE=""; CRED_DADAS=0
-fijar_modo() { [[ "$MODO" == cargar ]] || { echo "✗ Un solo modo a la vez (--activar, --quitar, --crear-credenciales o --quitar-credenciales)" >&2; exit 2; }; MODO="$1"; }
+fijar_modo() { [[ "$MODO" == cargar ]] || { echo "✗ Un solo modo a la vez (--activar, --recargar, --quitar, --crear-credenciales o --quitar-credenciales)" >&2; exit 2; }; MODO="$1"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --alias)       [[ $# -ge 2 ]] || { echo "✗ --alias necesita el alias" >&2; exit 2; }; ALIAS="$2"; shift 2 ;;
@@ -160,6 +176,7 @@ while [[ $# -gt 0 ]]; do
     --flujo)       [[ $# -ge 2 ]] || { echo "✗ --flujo necesita un archivo" >&2; exit 2; }; FLUJO="$2"; shift 2 ;;
     --tabla-demo-a) SINSUFIJO=1; shift ;;
     --activar)     fijar_modo activar; shift ;;
+    --recargar)    fijar_modo recargar; shift ;;
     --quitar)      fijar_modo quitar; shift ;;
     --crear-credenciales)   fijar_modo crear-cred; shift ;;
     --quitar-credenciales)  fijar_modo quitar-cred; shift ;;
@@ -212,13 +229,13 @@ if (( CRED_DADAS > 0 )); then
 fi
 # Un alias que no es de ensayo (cliente real) carga y activa SOLO con el mapa de credenciales existentes: sin él se
 # buscarían las de ensayo por el alias, que no están atadas a su número, y la atadura (vincular_al_alias) no correría.
-if (( CRED_DADAS == 0 )) && [[ "$MODO" == cargar || "$MODO" == activar ]]; then
+if (( CRED_DADAS == 0 )) && [[ "$MODO" == cargar || "$MODO" == activar || "$MODO" == recargar ]]; then
   case " $ALIAS_ENSAYO " in
     *" $ALIAS "*) ;;
     *) echo "✗ El alias «${ALIAS}» no es un alias de ensayo (${ALIAS_ENSAYO}): un cliente real se carga y se activa con --cred-ingesta, --cred-envio y --cred-rele (credenciales existentes, atadas a su número). No se tocó n8n." >&2; exit 2 ;;
   esac
 fi
-if (( RELE_INERTE )) && [[ "$MODO" != cargar ]]; then echo "✗ --rele-inerte solo se usa al cargar el flujo (modo por omisión)" >&2; exit 2; fi
+if (( RELE_INERTE )) && [[ "$MODO" != cargar && "$MODO" != recargar ]]; then echo "✗ --rele-inerte solo se usa al cargar o recargar el flujo" >&2; exit 2; fi
 if (( RELE_INERTE && ! CANAL_GRAPH )); then
   echo "✗ --rele-inerte exige --canal-graph: afirme que rutasWhatsApp/{numero}.canalSalida del alias NO es «rele» (el script no puede leerla). No se escribió nada." >&2; exit 2
 fi
@@ -786,7 +803,7 @@ def resolver_alerta(flujo, wfs_f):
         return cargar(salida)
 
 
-def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_out, plan_out):
+def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_out, plan_out, modo="cargar"):
     n = nombres(alias)
     flujo = cargar(flujo_f)
     # Se resuelve (marcador) o se comprueba (id concreto) y se aborta antes de escribir si no es el de la alerta; el marcador
@@ -879,7 +896,8 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
     escribir_600(plan_out, json.dumps({
         "wfId": w[0]["id"] if w else "", "wfActivo": bool(w[0].get("active")) if w else False,
         "timbreId": c[0]["id"] if c else ""}))
-    print("flujo «%s»: %s · credencial del timbre: %s" % (n["flujo"], "se actualiza" if w else "se crea", "se actualiza" if c else "se crea"))
+    print("flujo «%s»: %s · credencial del timbre: %s" % (n["flujo"], "se actualiza" if w else "se crea",
+          "se conserva (no se toca)" if modo == "recargar" else ("se actualiza" if c else "se crea")))
     for nodo in flujo["nodes"]:
         for tipo, ref in (nodo.get("credentials") or {}).items():
             print("    %s <- «%s» (por nombre y tipo %s)" % (nodo["name"], ref["name"], tipo))
@@ -941,6 +959,66 @@ def cmd_verificar(wf_f, path_f, alias, activo_esperado, creds_f="-"):
     if errores:
         salir(4, "\n".join("    " + e for e in errores))
     print("coincide con lo esperado (%d nodos)" % len(wf.get("nodes", [])))
+
+
+def cmd_vivo_timbre(vivo_f, creds_f, wfs_f, alias, timbre_id, path_out):
+    """--recargar: la ruta del Timbre se COPIA del flujo vivo, nunca se elige. Cerrojos (cada uno aborta con 4 sin escribir):
+    el flujo vivo es exactamente «Salida de persona (<alias>)», con su id y sin duplicados por nombre; hay UN nodo
+    Timbre de tipo webhook; su path tiene la forma de una capacidad y no es un marcador; exige headerAuth; su credencial es
+    exactamente la del timbre de ESTE alias; su webhookId es el estable del alias; y ningún otro flujo usa ese path ni cita la
+    credencial del timbre. El path va solo al archivo de salida (modo 600): no se imprime."""
+    vivo, wfs, creds = cargar(vivo_f), cargar(wfs_f)["data"], cargar(creds_f)["data"]
+    n = nombres(alias)
+    if not isinstance(vivo, dict) or vivo.get("name") != n["flujo"]:
+        salir(4, "el flujo vivo no es «%s» (el nombre no es exacto): no se recarga" % n["flujo"])
+    mismos = [w for w in wfs if w.get("name") == n["flujo"]]
+    if len(mismos) != 1 or mismos[0].get("id") != vivo.get("id"):
+        salir(4, "el flujo vivo no es el único con el nombre «%s» en la lista de n8n (id o duplicados): no se recarga" % n["flujo"])
+    if not [c for c in creds if c.get("id") == timbre_id and c.get("name") == n["timbre"] and c.get("type") == "httpHeaderAuth"]:
+        salir(4, "la credencial del timbre de este alias no está en la lista viva de n8n")
+    timbres = [x for x in (vivo.get("nodes") or []) if x.get("name") == "Timbre"]
+    if len(timbres) != 1 or timbres[0].get("type") != "n8n-nodes-base.webhook":
+        salir(4, "el flujo vivo no tiene exactamente un nodo «Timbre» de tipo webhook: no se recarga")
+    t = timbres[0]
+    ps = t.get("parameters") or {}
+    path = ps.get("path")
+    if not (isinstance(path, str) and RE_CAP.match(path)) or "REEMPLAZAR" in path:
+        salir(4, "el path del Timbre vivo no tiene la forma de una capacidad (o es un marcador sin reponer): no se recarga")
+    if ps.get("authentication") != "headerAuth":
+        salir(4, "el Timbre vivo no exige authentication=headerAuth: quedaría abierto; no se recarga")
+    if t.get("credentials") != {"httpHeaderAuth": {"id": timbre_id, "name": n["timbre"]}}:
+        salir(4, "el Timbre vivo no lleva exactamente la credencial del timbre de este alias: no se recarga")
+    if t.get("webhookId") != webhook_id(alias):
+        salir(4, "el webhookId del Timbre vivo no es el estable del alias: no se recarga")
+    for w in wfs:
+        if w.get("id") == vivo.get("id"):
+            continue
+        for nodo in w.get("nodes") or []:
+            if isinstance(nodo.get("parameters"), dict) and nodo["parameters"].get("path") == path:
+                salir(4, "otro flujo usa la misma ruta del timbre: no se recarga")
+            for ctipo, ref in (nodo.get("credentials") or {}).items():
+                if isinstance(ref, dict) and (ref.get("id") == timbre_id or (ctipo == "httpHeaderAuth" and ref.get("name") == n["timbre"])):
+                    salir(4, "otro flujo cita la credencial del timbre de este alias: no se recarga")
+    escribir_600(path_out, path)
+    print("flujo vivo del alias: es el de este alias, su Timbre cumple los cerrojos y su ruta se CONSERVA (no se imprime)")
+
+
+def cmd_igual(cuerpo_f, vivo_f):
+    """Imprime «igual» o «distinto»: nodo por nodo y por nombre (type, typeVersion, parameters, credentials, webhookId), más
+    connections y SOLO las claves de settings que trae el cuerpo (n8n añade las suyas). Posiciones e ids de nodo no cuentan."""
+    c, v = cargar(cuerpo_f), cargar(vivo_f)
+    campos = ("type", "typeVersion", "parameters", "credentials", "webhookId")
+    nc = {x.get("name"): x for x in c.get("nodes") or []}
+    nv = {x.get("name"): x for x in v.get("nodes") or []}
+    ig = set(nc) == set(nv) and len(nc) == len(c.get("nodes") or []) and len(nv) == len(v.get("nodes") or [])
+    if ig:
+        ig = all(all(nc[k].get(f) == nv[k].get(f) for f in campos) for k in nc)
+    if ig:
+        ig = (c.get("connections") or {}) == (v.get("connections") or {})
+    if ig:
+        sc, sv = c.get("settings") or {}, v.get("settings") or {}
+        ig = all(k in sv and sv[k] == val for k, val in sc.items())
+    print("igual" if ig else "distinto")
 
 
 # --- Las tres credenciales previas (--crear-credenciales / --quitar-credenciales) -------------
@@ -1369,6 +1447,71 @@ if [[ "$MODO" == quitar ]]; then
     || { falla "al releer, algo del alias SIGUE en n8n"; exit 3; }
   ok "relectura: no queda flujo ni credencial del timbre de ${ALIAS}"
   nota "respaldo previo (sin la ruta ni la clave del timbre; modo 600): ${WORK}/respaldo-vivo.json"
+  exit 0
+fi
+
+# ======================================================================== RECARGAR
+# Actualiza el flujo VIVO con la versión nueva del JSON, SIN entrega, SIN Secret Manager y SIN tocar credenciales (ni POST ni
+# PATCH a /credentials). NUNCA elige una ruta: copia el path del Timbre del flujo vivo y la relectura debe conservarlo.
+if [[ "$MODO" == recargar ]]; then
+  fallar_r() { falla "$1"; nota "respaldo previo (sin la ruta ni la clave del timbre; modo 600): ${WORK}/respaldo-vivo.json"; exit 3; }
+  echo "Flujo vivo"
+  [[ -n "$WF_ID" ]] || { falla "el flujo del alias no existe: no hay nada que recargar (se carga con la entrega, sin --recargar). No se escribió nada."; exit 2; }
+  [[ -n "$TIMBRE_ID" ]] || { falla "la credencial del timbre no existe o está repetida: no se recarga. No se escribió nada."; exit 2; }
+  api GET "/workflows/${WF_ID}"; exigir 200 "no pude leer el flujo vivo" || exit 3
+  cp "$WORK/rta.json" "$WORK/vivo.json"
+  if ! SAL="$(py vivo_timbre "$WORK/vivo.json" "$WORK/credenciales.json" "$WORK/flujos.json" "$ALIAS" "$TIMBRE_ID" "$WORK/path")"; then
+    falla "el flujo vivo no se puede recargar (no se escribió nada):"; echo "$SAL" >&2; exit 2
+  fi
+  echo "$SAL"
+  PUB="$(py publicada "$WORK/vivo.json")" || { falla "no puedo saber qué versión corre (n8n no mandó versionId/activeVersionId de un flujo activo): falla cerrado, no se escribió nada"; exit 2; }
+  if [[ "$WF_ACTIVO" == true && "$PUB" != si ]]; then
+    falla "el flujo vivo está ACTIVO y su borrador difiere de la versión publicada (versionId distinto de activeVersionId): hay cambios sin publicar que una recarga pisaría. Revíselos en n8n o use --activar. No se escribió nada."; exit 2
+  fi
+  echo "Tabla y plan"
+  LOCAL="${CONFIG_LOCAL_MD:-CONFIGURACION.local.md}"
+  if ! SAL="$(py tabla "$LOCAL" "$ALIAS" "$SINSUFIJO" "$WORK/tabla.json" "$RELE_INERTE")"; then falla "${SAL}"; exit 2; fi
+  ok "tabla: phoneNumberId (y relé) presentes y con forma válida (no se imprimen)"
+  if ! SAL="$(py plan "$FLUJO" "$WORK/flujos.json" "$WORK/credenciales.json" "$WORK/tabla.json" "$WORK/path" "$ALIAS" "$TIMBRE_ID" "$WORK/cuerpo-flujo.json" "$WORK/plan.json" recargar)"; then
+    falla "el plan se aborta (no se escribió nada):"; echo "$SAL" >&2; exit 2
+  fi
+  echo "$SAL"
+  IGUAL="$(py igual "$WORK/cuerpo-flujo.json" "$WORK/vivo.json")" || { falla "no pude comparar el flujo vivo con la versión nueva"; exit 3; }
+  if [[ "$IGUAL" == igual ]]; then
+    ok "el flujo vivo ya es igual a la versión nueva: nada que hacer"
+    echo; echo "Diagnóstico: no falta nada."; exit 0
+  fi
+  hacer "actualizar el flujo vivo del alias con la versión nueva (PUT; la ruta del timbre se conserva; credenciales y claves no se tocan)"
+  [[ "$WF_ACTIVO" != true ]] || hacer "publicar la última versión (el flujo está activo y conserva ese estado)"
+  if (( ! APLICAR )); then
+    echo; echo "Diagnóstico: 1 paso pendiente; no se escribió nada. Con --aplicar --confirmo produccion se hace lo marcado «(haría)»."
+    exit 1
+  fi
+  echo "Escritura"
+  api PUT "/workflows/${WF_ID}" "$WORK/cuerpo-flujo.json"; exigir '200|201' "no pude actualizar el flujo" || fallar_r "falló la actualización del flujo"
+  ok "flujo actualizado"
+  echo "Comprobación (relectura)"
+  api GET "/workflows/${WF_ID}"; exigir 200 "no pude releer el flujo" || fallar_r "falló la relectura"
+  cp "$WORK/rta.json" "$WORK/vivo.json"
+  ESPERADO="false"; [[ "$WF_ACTIVO" != true ]] || ESPERADO="true-borrador"
+  leer_estado
+  if ! SAL="$(py verificar "$WORK/vivo.json" "$WORK/path" "$ALIAS" "$ESPERADO" "$WORK/credenciales.json")"; then fallar_r "el borrador guardado NO coincide y NO se publicó, pero el cambio YA se subió a n8n: un Publish manual desde el editor lo publicaría roto; no lo publique, corrija y vuelva a correr --recargar (o restaure el respaldo):
+${SAL}"; fi
+  if [[ "$ESPERADO" == true-borrador ]]; then
+    PUB="$(py publicada "$WORK/vivo.json")" || fallar_r "no puedo saber qué versión corre (n8n no mandó versionId/activeVersionId)"
+    if [[ "$PUB" == no ]]; then
+      nota "borrador verificado; la versión publicada va atrás: se publica la última"
+      api POST "/workflows/${WF_ID}/activate"; exigir '200|201' "no pude publicar la última versión" || fallar_r "falló la publicación"
+      api GET "/workflows/${WF_ID}"; exigir 200 "no pude releer el flujo" || fallar_r "falló la relectura"
+      cp "$WORK/rta.json" "$WORK/vivo.json"
+    fi
+    if ! SAL="$(py verificar "$WORK/vivo.json" "$WORK/path" "$ALIAS" true "$WORK/credenciales.json")"; then fallar_r "tras publicar, la relectura NO coincide:
+${SAL}"; fi
+  fi
+  ok "$SAL"
+  [[ "$(py igual "$WORK/cuerpo-flujo.json" "$WORK/vivo.json")" == igual ]] || fallar_r "al releer, el flujo vivo NO es igual a la versión enviada"
+  ok "relectura: el flujo vivo es igual a la versión nueva y conserva la ruta del timbre"
+  nota "respaldo previo (sin la ruta ni la clave del timbre; modo 600): ${WORK}/respaldo-vivo.json (bórrelo cuando termine)"
   exit 0
 fi
 
