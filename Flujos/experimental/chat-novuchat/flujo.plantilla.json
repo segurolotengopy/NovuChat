@@ -759,7 +759,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@todo+mensajes+filtro+tipeo+sesion+baja:nodos/armar-mensajes.js"
+        "jsCode": "@@todo+mensajes+filtro+tipeo+sesion+baja+identidad:nodos/armar-mensajes.js"
       },
       "id": "armar-mensajes",
       "name": "Armar mensajes",
@@ -1531,7 +1531,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@todo+mensajes+filtro+tipeo+sesion+baja:nodos/armar-mensajes.js"
+        "jsCode": "@@todo+mensajes+filtro+tipeo+sesion+baja+identidad:nodos/armar-mensajes.js"
       },
       "id": "replanificar-mensajes",
       "name": "Replanificar mensajes",

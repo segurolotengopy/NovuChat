@@ -54,6 +54,8 @@ export const CONFIG_BASE = {
     tipeo: ['../../src/core/texto/tipeo.js'],
     // La baja por texto es una pieza COMÚN (se incluye byte a byte): `BJ_BAJA`, `bjPlegar`, `bjPideBaja`, `bjTextoBaja`.
     baja: ['../../src/core/conversacion/baja.js'],
+    // «Asistente virtual con IA» en el primer mensaje (pieza común del core): lo usa `chLista` aunque el saludo sea un dato del negocio.
+    identidad: ['../../src/core/texto/identidad.js'],
     // El estado de la conversación en el servidor es un MÓDULO COMÚN (PR-4a0): se INCLUYE, no se copia. Sus parámetros (`SS_CONFIG`) los declara `src/nodos/_registro.js`.
     sesion: ['../../src/core/sin-agente/sesion.js'],
     // Reclamo 62: la relectura antes de agregar una fila (crm.js + su nodo). Solo el chat la usa por ahora; el resto de los flujos no cambia.

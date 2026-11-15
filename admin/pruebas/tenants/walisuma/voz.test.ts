@@ -68,7 +68,7 @@ describe('batería de turnos: la voz se cumple en código', () => {
   });
   it('el saludo de la primera vez es del asistente virtual del negocio y NO se repite', () => {
     const m = crear({ modeloDice: modelo('Con gusto, cuéntame qué buscas.') });
-    expect(textos(hablar(m, ANA, mTexto('hola')))[0]).toMatch(/^Hola, soy el asistente virtual de Tienda de prueba\./);
+    expect(textos(hablar(m, ANA, mTexto('hola')))[0]).toMatch(/^Hola, soy el asistente virtual con IA de Tienda de prueba\./);
     expect(textos(hablar(m, ANA, mTexto('busco una billetera')))[0]).not.toMatch(/soy el asistente virtual/);
   });
 });
