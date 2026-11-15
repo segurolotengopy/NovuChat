@@ -15,7 +15,7 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const FLUJOS = join(AQUI, '../../Flujos/experimental');
 const RUTAS = [
   'venta-digital/src/cobro.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js',
-  '../src/core/sin-agente/mensajes.js', '../src/core/texto/filtro-redaccion.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
+  '../src/core/sin-agente/mensajes.js', '../src/core/texto/filtro-redaccion.js', '../src/core/texto/identidad.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
 ].map((r) => join(FLUJOS, r));
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
@@ -250,8 +250,8 @@ describe('los textos fijos: nada de «acreditado», promesas sin respaldo ni neg
   });
   it('la identidad dice que es una IA; el saludo mínimo reemplaza todo texto que la niegue o afirme un pago', () => {
     expect(B['BM_TEXTO_IDENTIDAD']).toMatch(/inteligencia artificial/);
-    expect(b('bmSeguro')('No soy un robot, soy una persona real.')).toBe('Hola, soy el asistente virtual.');
-    expect(b('bmSeguro')('Recibimos tu pago, gracias.')).toBe('Hola, soy el asistente virtual.');
+    expect(b('bmSeguro')('No soy un robot, soy una persona real.')).toBe('Hola, soy el asistente virtual con IA.');
+    expect(b('bmSeguro')('Recibimos tu pago, gracias.')).toBe('Hola, soy el asistente virtual con IA.');
     expect(b('bmSeguro')('Tu pedido tiene dos piezas.')).toBe('Tu pedido tiene dos piezas.');
   });
   it('el prompt no tiene voz de marca ajena, no pide documentos y marca los datos del catálogo como datos', () => {
