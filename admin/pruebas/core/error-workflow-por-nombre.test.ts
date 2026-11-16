@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './entorno-del-hijo.ts';
-import { construir as construirEmma } from '../../../Flujos/experimental/rroca-emma/construir.mjs';
+import { construir as construirEmma } from '../../../Flujos/clientes/rroca-emma/construir.mjs';
 import { type Flujo, leerFlujo } from '../lib/flujo';
 import { flujosDeProduccion } from '../lib/flujos-de-cliente';
 import { atiendeCliente, llevaMarcadorDeErrorWorkflow } from './migracion/comprobaciones';
@@ -222,7 +222,7 @@ describe('errorWorkflow por nombre', () => {
   describe('--verificar de los armadores', () => {
     it('NEGATIVA: el JSON versionado de Emma con un id resuelto en vez del marcador exacto se rechaza', () => {
       const tope = join(dir, 'Flujos'); cpSync(join(REPO, 'Flujos'), tope, { recursive: true });
-      const carpeta = join(tope, 'experimental', 'rroca-emma');
+      const carpeta = join(tope, 'clientes', 'rroca-emma');
       const bien = construirEmma({ carpeta, verificar: true, tope });
       expect(bien.every((x: { versionado: string[] }) => x.versionado.length === 0)).toBe(true);
       const ruta = join(carpeta, 'rroca-emma.json');

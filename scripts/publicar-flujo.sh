@@ -50,8 +50,8 @@
 # archivo (o el flujo VIVO al encenderlo) y pide escribir PUBLICAR EVY (o --confirmo-evy sin terminal). `--etapa-prueba` pide la etapa prueba. El flujo viejo de Evy y el de Emma siguen
 # con la guardia de las doctoras, sin cambios.
 #
-# EL FLUJO NUEVO DE EMMA (tenant rroca-emma, Flujos/experimental/rroca-emma/) TIENE SU GUARDIA, ADITIVA: se reconoce por su CONTENIDO (nodo «Armar previos» y «Config base» con tenantId rroca-emma). Con --aplicar se NIEGA si
-# `Flujos/experimental/rroca-emma/construir.mjs --publicable` no lo aprueba y pide PUBLICAR EMMA (o --confirmo-emma). SOLO puede reemplazar al flujo vivo de Emma; al de Evy o al de otro cliente, nunca, ni con --forzar.
+# EL FLUJO NUEVO DE EMMA (tenant rroca-emma, Flujos/clientes/rroca-emma/) TIENE SU GUARDIA, ADITIVA: se reconoce por su CONTENIDO (nodo «Armar previos» y «Config base» con tenantId rroca-emma). Con --aplicar se NIEGA si
+# `Flujos/clientes/rroca-emma/construir.mjs --publicable` no lo aprueba y pide PUBLICAR EMMA (o --confirmo-emma). SOLO puede reemplazar al flujo vivo de Emma; al de Evy o al de otro cliente, nunca, ni con --forzar.
 #
 # EL ARCHIVO Y EL FLUJO VIVO TIENEN QUE SER EL MISMO FLUJO, y el script lo
 # comprueba por el nombre antes de escribir: el id sale de `--env` y el archivo
@@ -403,9 +403,9 @@ evy_confirmar() {
     fi
   fi
 }
-# --- LA GUARDIA DEL FLUJO NUEVO DE EMMA (tenant rroca-emma, Flujos/experimental/rroca-emma/) ---
+# --- LA GUARDIA DEL FLUJO NUEVO DE EMMA (tenant rroca-emma, Flujos/clientes/rroca-emma/) ---
 # Misma forma que la de Evy y ADITIVA. Se reconoce por el CONTENIDO: el nodo «Armar previos» Y un «Config base» cuyo tenantId es rroca-emma (el nombre no cuenta: se puede renombrar). Con --aplicar exige
-# `Flujos/experimental/rroca-emma/construir.mjs --publicable --flujo <json> --etapa <e>` y la confirmacion explicita (PUBLICAR EMMA, o --confirmo-emma sin terminal). --forzar NO salta nada de esto.
+# `Flujos/clientes/rroca-emma/construir.mjs --publicable --flujo <json> --etapa <e>` y la confirmacion explicita (PUBLICAR EMMA, o --confirmo-emma sin terminal). --forzar NO salta nada de esto.
 # El flujo nuevo de Emma SOLO puede reemplazar al flujo vivo de Emma (el nuevo o el viejo de las doctoras); el de Evy y el de otro cliente, nunca, ni con --forzar; y el de Evy nunca puede pisar el de Emma.
 tenant_nuevo() {  # $1 = archivo JSON ; imprime el tenantId de «Config base» SOLO si el flujo tiene el nodo «Armar previos» (flujos nuevos de clinica); nada en otro caso
   python3 - "$1" <<'PY' 2>/dev/null || true
@@ -473,7 +473,7 @@ emma_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar
   [[ $CREAR -eq 1 && $ACTIVAR -eq 0 && $ENCENDER -eq 0 ]] && etapa=crear
   [[ $ETAPA_PRUEBA -eq 1 ]] && etapa=prueba
   echo "Flujo nuevo de Emma (rroca-emma): se revisa la guardia de publicación ($1; etapa $etapa)."
-  if node Flujos/experimental/rroca-emma/construir.mjs --publicable --flujo "$2" --etapa "$etapa"; then
+  if node Flujos/clientes/rroca-emma/construir.mjs --publicable --flujo "$2" --etapa "$etapa"; then
     GUARDIA_EMMA_OK=1
   else
     GUARDIA_EMMA_OK=0

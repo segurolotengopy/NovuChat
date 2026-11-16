@@ -14,7 +14,7 @@ import type { Doble } from '../../lib/n8n-de-mentira';
 // @ts-expect-error módulo .mjs sin tipos
 import { hallazgosCrm, inyectarMapa, urlEncabezados } from '../../../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { CREDENCIAL_CRM, ES_RELE, NODOS_DE_CRM, anfitrionPermitido, guardias } from '../../../../Flujos/experimental/rroca-emma/construir.mjs';
+import { CREDENCIAL_CRM, ES_RELE, NODOS_DE_CRM, anfitrionPermitido, guardias } from '../../../../Flujos/clientes/rroca-emma/construir.mjs';
 import { ANA, BETO, CARPETA, PRODUCCION, PRUEBA, SUSPENDIDO, crear, datos, hablar, mTexto, textos } from './mundo';
 import { respuestaDeIngesta } from '../../modulos/crm/ingesta-conversacion';
 

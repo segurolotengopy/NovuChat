@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error el motor es un .mjs sin tipos
-import { costosPorSubconjunto, deGrupo, esDuro, evaluar, invariantes, lecturaDeImagen, main, medir, transcripcionDe, validarCasos } from '../../../../Flujos/experimental/rroca-emma/herramientas/bateria.mjs';
+import { costosPorSubconjunto, deGrupo, esDuro, evaluar, invariantes, lecturaDeImagen, main, medir, transcripcionDe, validarCasos } from '../../../../Flujos/clientes/rroca-emma/herramientas/bateria.mjs';
 
 type Turno = { n: number; turno: Record<string, unknown>; plan: string; mensajes: Array<{ tipo: string; cuerpo: string; payload: Record<string, unknown> }>; imagenes: string[]; avisoPlaneado: boolean; llamoAlModelo: boolean; eventos: string[]; fallo: null; ms: number };
 const turno = (o: Partial<Turno> = {}): Turno => ({ n: 1, turno: {}, plan: 'modelo', mensajes: [], imagenes: [], avisoPlaneado: false, llamoAlModelo: true, eventos: [], fallo: null, ms: 0, ...o });
