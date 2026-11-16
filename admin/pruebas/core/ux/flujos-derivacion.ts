@@ -31,17 +31,20 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
 
 export const CLIENTES = join(RAIZ, 'Flujos/clientes');
 
+/** Lista CERRADA de flujos mudados a `clientes/` con otro nombre de carpeta: nombre COMPLETO del JSON -> nombre del registro. Solo los que de verdad se mudaron. */
+export const MUDADOS: Record<string, string> = { 'chat-novuchat.novuchat.json': 'chat-novuchat' };
+
 /**
  * Nombre de registro de un flujo MUDADO: el de su JSON (`chat-novuchat.novuchat.json` -> `chat-novuchat`), no el de su carpeta de `clientes/`
  * (`novuchat`): una mudanza puede cambiar la carpeta, nunca el JSON. Solo cuenta si ese nombre ya está en el registro (una clave de `excepciones`),
  * para que un flujo nuevo de `clientes/` siga el camino de la lista única y no entre aquí por su cuenta.
  */
-export function flujosMudadosDelRegistro(excepciones: Record<string, Excepcion> = EXCEPCIONES, raiz: string = CLIENTES): string[] {
+export function flujosMudadosDelRegistro(excepciones: Record<string, Excepcion> = EXCEPCIONES, raiz: string = CLIENTES, mudados: Record<string, string> = MUDADOS): string[] {
   if (!existsSync(raiz)) return [];
   return readdirSync(raiz, { withFileTypes: true })
     .filter((d) => d.isDirectory() && existsSync(join(raiz, d.name, 'flujo.plantilla.json')))
-    .flatMap((d) => readdirSync(join(raiz, d.name)).filter((f) => f.endsWith('.json') && f !== 'flujo.plantilla.json').map((f) => f.split('.')[0] as string))
-    .filter((n) => n in excepciones);
+    .flatMap((d) => readdirSync(join(raiz, d.name)).filter((f) => Object.hasOwn(mudados, f)).map((f) => mudados[f] as string))
+    .filter((n) => Object.hasOwn(excepciones, n));
 }
 
 /** Los flujos conversacionales del disco (los que traen `flujo.plantilla.json`), en `experimental/` y los ya mudados que están en el registro. */
@@ -58,12 +61,12 @@ export function flujosConversacionales(): string[] {
  */
 export function flujosFueraDelRegistro(
   produccion: string[], atiende: (ruta: string) => boolean, enRegistro: string[] = flujosConversacionales(),
-  hayTabla: (carpeta: string) => boolean = (c) => existsSync(rutaDeTabla(c)),
+  hayTabla: (carpeta: string) => boolean = (c) => existsSync(rutaDeTabla(c)), mudados: Record<string, string> = MUDADOS,
 ): { flujo: string; tabla: boolean }[] {
   return produccion.filter(atiende).flatMap((ruta) => {
     const partes = ruta.split('/');
     if (partes[0] === 'experimental' && enRegistro.includes(partes[1] ?? '')) return [];
-    if (partes[0] === 'clientes' && enRegistro.includes((partes[2] ?? '').split('.')[0] as string)) return [];
+    if (partes[0] === 'clientes' && partes.length === 3 && Object.hasOwn(mudados, partes[2] as string) && enRegistro.includes(mudados[partes[2] as string] as string)) return [];
     const carpeta = partes.length > 1 ? (partes[1] ?? '') : '';
     return [{ flujo: ruta, tabla: carpeta !== '' && hayTabla(carpeta) }];
   });

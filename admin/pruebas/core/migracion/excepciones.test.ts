@@ -75,11 +75,21 @@ describe('excepciones de la migración: la lista solo puede bajar', () => {
     expect(idDeFlujo('experimental/x/x.json')).toBe(idDeFlujo('clientes/x/x.json'));
     expect(idDeFlujo('demo-a-agendamiento.json')).toBe('demo-a-agendamiento.json');
   });
+});
 
 describe('la identidad por archivo sobrevive a una mudanza que cambia el nombre de la carpeta', () => {
   it('experimental/chat-novuchat/x.json y clientes/novuchat/x.json son el mismo flujo; dos JSON distintos nunca', () => {
     expect(idDeFlujo('experimental/chat-novuchat/chat-novuchat.novuchat.json')).toBe(idDeFlujo('clientes/novuchat/chat-novuchat.novuchat.json'));
     expect(idDeFlujo('experimental/a/a.json')).not.toBe(idDeFlujo('experimental/a/b.json'));
+  });
+  it('los JSON de producción tienen nombre único (la identidad por archivo no colisiona)', () => {
+    const ids = flujosDeProduccion().map(idDeFlujo);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+  it('contraprueba: dos flujos con el mismo JSON en carpetas distintas son «identidad ambigua»', () => {
+    const hoy = new Map([['experimental/a/f.json', ['Carga de entrada']], ['clientes/b/f.json', ['Carga de entrada']]]);
+    expect(problemasDeRegla('nucleo-comun', hoy, {}).some((x) => /identidad ambigua/.test(x))).toBe(true);
+    expect(new Set(['experimental/a/f.json', 'clientes/b/f.json'].map(idDeFlujo)).size).toBe(1);
   });
   it('una excepción de la clave vieja cubre al flujo mudado y NO a otro', () => {
     const ex = { 'experimental/chat-novuchat/chat-novuchat.novuchat.json#nucleo-comun#Carga de entrada': { dueno: 'd', motivo: 'm', desde: ALTA, vence: ALTA } as unknown as Excepcion };
@@ -87,5 +97,4 @@ describe('la identidad por archivo sobrevive a una mudanza que cambia el nombre 
     expect(problemasDeRegla('nucleo-comun', new Map([['clientes/novuchat/chat-novuchat.novuchat.json', ['Carga de entrada', 'Puerta del turno']]]), ex)).toHaveLength(1);
     expect(problemasDeRegla('nucleo-comun', new Map([['clientes/otro/otro.json', ['Carga de entrada']]]), ex)).toHaveLength(2);
   });
-});
 });

@@ -177,6 +177,8 @@ describe('un flujo mudado a clientes/ con otro nombre de carpeta sigue en el reg
   it('con su nombre en el registro no cae en la lista única; sin él, sí (contraprueba)', () => {
     expect(flujosFueraDelRegistro([ruta], () => true, ['chat-novuchat'], () => false)).toEqual([]);
     expect(flujosFueraDelRegistro([ruta], () => true, [], () => false)).toEqual([{ flujo: ruta, tabla: false }]);
+    expect(flujosFueraDelRegistro(['clientes/nuevo/venta-minima.nuevo.json'], () => true, ['venta-minima'], () => false)).toHaveLength(1);
+    expect(flujosFueraDelRegistro(['clientes/nuevo/chat-novuchat.novuchat.json'], () => true, ['chat-novuchat'], () => false)).toEqual([]);
     expect(flujosFueraDelRegistro(['clientes/novuchat/otro.json'], () => true, ['chat-novuchat'], () => false)).toHaveLength(1);
   });
   it('flujosMudadosDelRegistro solo toma carpetas con plantilla cuyo JSON está en el registro', () => {
@@ -186,9 +188,10 @@ describe('un flujo mudado a clientes/ con otro nombre de carpeta sigue en el reg
       for (const [d, j] of [['novuchat', 'chat-novuchat.novuchat.json'], ['nuevo', 'nuevo.json']] as const) {
         writeFileSync(join(t, d, 'flujo.plantilla.json'), '{}'); writeFileSync(join(t, d, j), '{}');
       }
-      const ex = { 'chat-novuchat': { desde: '2026-10-23', porque: 'p' } };
-      expect(flujosMudadosDelRegistro(ex, t)).toEqual(['chat-novuchat']);
-      expect(flujosMudadosDelRegistro({}, t)).toEqual([]);
+      const ex = { 'chat-novuchat': { desde: '2026-10-23', porque: 'p' }, nuevo: { desde: '2026-10-23', porque: 'p' } };
+      expect(flujosMudadosDelRegistro(ex, t, { 'chat-novuchat.novuchat.json': 'chat-novuchat' })).toEqual(['chat-novuchat']);
+      expect(flujosMudadosDelRegistro({}, t, { 'chat-novuchat.novuchat.json': 'chat-novuchat' })).toEqual([]);
+      expect(flujosMudadosDelRegistro(ex, t, {})).toEqual([]);
     } finally { rmSync(t, { recursive: true, force: true }); }
   });
 });

@@ -150,6 +150,14 @@ export function excepcionesDe(regla: string, excepciones: Record<string, Excepci
 export function problemasDeRegla(regla: string, hoy: Map<string, string[]>, excepciones: Record<string, Excepcion> = EXCEPCIONES): string[] {
   const problemas: string[] = [];
   const porId = new Map([...hoy].map(([j, nodos]) => [idDeFlujo(j), nodos]));
+  if (porId.size !== hoy.size) {
+    const vistos = new Map<string, string>();
+    for (const j of hoy.keys()) {
+      const otro = vistos.get(idDeFlujo(j));
+      if (otro !== undefined) problemas.push(`${j}#${regla}: identidad ambigua, comparte nombre de JSON con ${otro}`);
+      else vistos.set(idDeFlujo(j), j);
+    }
+  }
   const cubiertas = new Set<string>();
   for (const [json, nodo] of excepcionesDe(regla, excepciones)) {
     const nodos = porId.get(idDeFlujo(json));
