@@ -50,8 +50,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Flujo, CARPETA_FLUJOS, leerFlujo } from './lib/flujo.ts';
 import { flujosDeProduccion } from './lib/flujos-de-cliente.ts';
-import { atiendeCliente, idDeFlujo, incluyeVariante, SRC_CORE } from './core/migracion/comprobaciones.ts';
-import { excepcionesDe, problemasDeRegla } from './core/migracion/excepciones.ts';
+import { atiendeCliente, incluyeVariante, SRC_CORE } from './core/migracion/comprobaciones.ts';
+import { excepcionesDe, idDeFlujo, problemasDeRegla } from './core/migracion/excepciones.ts';
 
 const TRIGGER_WHATSAPP = 'n8n-nodes-base.whatsAppTrigger';
 const esAgente = (tipo: string) => tipo === '@n8n/n8n-nodes-langchain.agent';

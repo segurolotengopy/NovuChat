@@ -1,5 +1,5 @@
 /**
- * LA BATERÍA DE «CHAT NOVUCHAT v2 (KENJI)» (`Flujos/experimental/chat-novuchat/herramientas/bateria.mjs` y `bateria-casos.json`).
+ * LA BATERÍA DE «CHAT NOVUCHAT v2 (KENJI)» (`Flujos/clientes/novuchat/herramientas/bateria.mjs` y `bateria-casos.json`).
  *
  * La batería corre las conversaciones por el flujo armado y mide lo que depende del MODELO. Aquí se prueba SIN modelo ni red (`--seco`: una respuesta fija por turno) y se comprueba:
  *   1. que los casos corren por el flujo versionado y dan CERO violaciones de las reglas duras sobre lo que el cliente recibe (también con tres corridas por caso);
@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const CARPETA = join(aqui, '../../Flujos/experimental/chat-novuchat');
+const CARPETA = join(aqui, '../../Flujos/clientes/novuchat');
 const RUTA_BATERIA = join(CARPETA, 'herramientas/bateria.mjs');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = Record<string, any>;

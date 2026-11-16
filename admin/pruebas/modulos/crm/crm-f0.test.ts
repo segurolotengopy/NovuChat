@@ -272,7 +272,7 @@ describe('ramaCrm: 8 nodos generados', () => {
 describe('los flujos que ya llevan miniCRM siguen cumpliendo', () => {
   const casos: Array<[string, string, string]> = [
     ['captacion-minima', 'captacion-minima.novuchat.json', 'captacion-minima/novuchat.json'],
-    ['chat-novuchat', 'chat-novuchat.novuchat.json', 'chat-novuchat/novuchat.json'],
+    ['../clientes/novuchat', 'chat-novuchat.novuchat.json', 'chat-novuchat/novuchat.json'],
   ];
   it.each(casos)('%s: sin hallazgos de rango ni de retención', (dir, json, datos) => {
     const flujo = JSON.parse(readFileSync(join(RAIZ, 'Flujos', 'experimental', dir, json), 'utf8'));

@@ -1,5 +1,5 @@
 /**
- * LA BIBLIOTECA DE «CHAT NOVUCHAT v2» (`Flujos/experimental/chat-novuchat/src/lib/chat.js`), SU ARMADOR (`construir.mjs`) Y SU ARCHIVO DE DATOS
+ * LA BIBLIOTECA DE «CHAT NOVUCHAT v2» (`Flujos/clientes/novuchat/src/lib/chat.js`), SU ARMADOR (`construir.mjs`) Y SU ARCHIVO DE DATOS
  * (`admin/scripts/datos/chat-novuchat/`).
  *
  * Cada función `ch*` se prueba con sus límites y con sus NEGACIONES: un detector que acepta todo también pasaría las pruebas «detecta X», así que cada regex tiene su caso que
@@ -22,7 +22,7 @@ import { ejecutar } from './lib/flujo';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const EXPERIMENTAL = join(aqui, '../../Flujos/experimental');
-const CARPETA = join(EXPERIMENTAL, 'chat-novuchat');
+const CARPETA = join(EXPERIMENTAL, '..', 'clientes', 'novuchat');
 const DATOS_DIR = join(aqui, '../scripts/datos/chat-novuchat');
 const LIB = readFileSync(join(CARPETA, 'src/lib/chat.js'), 'utf8');
 const MENSAJES = readFileSync(join(EXPERIMENTAL, '../src/core/sin-agente/mensajes.js'), 'utf8');

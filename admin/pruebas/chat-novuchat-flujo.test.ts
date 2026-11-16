@@ -1,5 +1,5 @@
 /**
- * «CHAT NOVUCHAT v2 (KENJI)» DE PUNTA A PUNTA, SIN RED (`Flujos/experimental/chat-novuchat/`).
+ * «CHAT NOVUCHAT v2 (KENJI)» DE PUNTA A PUNTA, SIN RED (`Flujos/clientes/novuchat/`).
  *
  * Prueba de CAJA NEGRA sobre los DOS JSON versionados (`chat-novuchat.novuchat.json`, con el «WhatsApp Trigger», y `chat-novuchat.prueba.json`, con la «Entrada de prueba»): una entrada de
  * WhatsApp entra por el disparador y se observa lo que SALE (mensajes a Graph, ingesta, llamadas al modelo, escrituras en la hoja, ficha en `staticData`). No se importa ningún nodo ni la
@@ -26,7 +26,7 @@ import { URL_DESCARGA_GUARDADO } from '../../Flujos/src/core/sin-agente/guardado
 import { atencionDeConversacion } from './modulos/crm/ingesta-conversacion';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const CARPETA = join(AQUI, '../../Flujos/experimental/chat-novuchat');
+const CARPETA = join(AQUI, '../../Flujos/clientes/novuchat');
 const DATOS = join(AQUI, '../scripts/datos/chat-novuchat');
 const leerFlujo = (archivo: string): Flujo => JSON.parse(readFileSync(join(CARPETA, archivo), 'utf8')) as Flujo;
 // Sin los dos JSON armados la suite FALLA (no se omite): `readFileSync` lanza al cargar el archivo.

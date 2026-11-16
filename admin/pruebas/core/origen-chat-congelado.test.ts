@@ -36,8 +36,8 @@ describe('origen congelado del chat (previo a PR-4c2)', () => {
     }
   });
   it('NEGACIÓN: la fuente VIVA del chat ya NO es el origen congelado (PR-4c2 la cambió): por eso las pruebas de Antonio y Rubén leen el congelado', () => {
-    const vivo = readFileSync(join(REPO, 'Flujos/experimental/chat-novuchat/src/nodos/registrar-evento.js'), 'utf8');
+    const vivo = readFileSync(join(REPO, 'Flujos/clientes/novuchat/src/nodos/registrar-evento.js'), 'utf8');
     expect(vivo).toContain('Comprometer evento');
-    expect(readFileSync(join(REPO, 'Flujos/experimental/chat-novuchat/flujo.plantilla.json'), 'utf8')).not.toBe(readFileSync(join(ORIGEN, 'flujo.plantilla.json'), 'utf8'));
+    expect(readFileSync(join(REPO, 'Flujos/clientes/novuchat/flujo.plantilla.json'), 'utf8')).not.toBe(readFileSync(join(ORIGEN, 'flujo.plantilla.json'), 'utf8'));
   });
 });

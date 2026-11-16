@@ -150,9 +150,9 @@ describe('ayudantes de los nodos Code (sesion.js, prefijo ss)', () => {
   });
   it('el archivo no usa globales que el Code de n8n no tiene (ni eval ni new Function) y SÍ está incluido en los nodos del chat (PR-4a0)', () => {
     expect(FUENTE.replace(/^\s*\/\/.*$/gm, '')).not.toMatch(/\b(URL|Buffer|crypto|require|process|fetch|eval|TextEncoder)\b(?!\s*:)|new\s+Function|\bFunction\s*\(/);
-    const cons = readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat/construir.mjs'), 'utf8');
+    const cons = readFileSync(join(AQUI, '../../Flujos/clientes/novuchat/construir.mjs'), 'utf8');
     expect(cons).toContain('Flujos/src/core/sin-agente/sesion.js'); // el chat INCLUYE el módulo común (no lo copia)
-    for (const j of ['chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json']) expect(readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat', j), 'utf8')).toContain('ssCuerpoComprometer');
+    for (const j of ['chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json']) expect(readFileSync(join(AQUI, '../../Flujos/clientes/novuchat', j), 'utf8')).toContain('ssCuerpoComprometer');
   });
 
 });
