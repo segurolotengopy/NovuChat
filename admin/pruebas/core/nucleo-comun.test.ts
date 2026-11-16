@@ -25,7 +25,11 @@ import { EXCEPCIONES, excepcionesDe, idDeFlujo, problemasDeRegla, type Excepcion
 import { codigoDe } from '../../../Flujos/src/core/sin-agente/construir.mjs';
 
 const NODOS = ['normalizar-entrada', 'config-del-negocio', 'procesar-respuesta', 'uso-extendido', 'comercio-no-operativo'];
-const VARIANTES_DECLARADAS = NODOS.flatMap((n) => [`core/${n}.js`, `core/venta/${n}.js`, `core/captacion/${n}.js`]).sort();
+const VARIANTES_DECLARADAS = [
+  ...NODOS.flatMap((n) => [`core/${n}.js`, `core/venta/${n}.js`, `core/captacion/${n}.js`]),
+  // Etapa 1 PR 3 (13/11/2026): las dos variantes de venta digital, un archivo único cada una.
+  'core/sin-agente/venta-digital/normalizar-entrada.js', 'core/sin-agente/venta-digital/config-del-negocio.js',
+].sort();
 
 const SRC = join(RAIZ_FLUJOS, 'src');
 
@@ -86,6 +90,11 @@ describe('núcleo común: lista cerrada de variantes', () => {
       const m = leerManifiesto(f) as { codigo?: Record<string, unknown> } | null;
       for (const e of Object.values(m?.codigo ?? {})) for (const a of archivosDe(e)) usadas.add(a);
     }
+    // Las dos de venta digital (`core/sin-agente/...`) no van en un manifiesto: las incluyen los constructores (`construir.mjs`) de Walisuma y Casa Bermejo.
+    for (const c of ['walisuma', 'casa-bermejo']) {
+      const fuente = readFileSync(join(RAIZ_FLUJOS, 'clientes', c, 'construir.mjs'), 'utf8');
+      for (const v of VARIANTES_DECLARADAS.filter((x) => x.startsWith('core/sin-agente/venta-digital/'))) if (fuente.includes(`src/${v}`)) usadas.add(v);
+    }
     expect(VARIANTES_DECLARADAS.filter((v) => !usadas.has(v))).toEqual([]);
   });
 
@@ -137,9 +146,9 @@ const nodoCode = (name: string, jsCode: string) => ({ name, type: 'n8n-nodes-bas
 const flujoCon = (...nodes: ReturnType<typeof nodoCode>[]): Flujo => ({ nodes, connections: {} }) as unknown as Flujo;
 
 describe('M4: cada nodo común de un flujo incluye una variante declarada de core, o tiene excepción', () => {
-  it('son siete nodos comunes: los 5 del núcleo tienen sus 3 variantes; «Carga de entrada» y «Puerta del turno» tienen UNA cada una en core (`sin-agente/turno/`)', () => {
+  it('son siete nodos comunes: los 5 del núcleo tienen sus 3 variantes (4 en «Normalizar entrada» y «Config del negocio»: la de venta digital); «Carga de entrada» y «Puerta del turno» tienen UNA cada una en core (`sin-agente/turno/`)', () => {
     expect(NODOS_COMUNES).toHaveLength(7);
-    for (const n of NODOS_COMUNES.slice(0, 5)) expect(variantesDeNodo(n), n).toHaveLength(3);
+    for (const n of NODOS_COMUNES.slice(0, 5)) expect(variantesDeNodo(n), n).toHaveLength(n === 'Normalizar entrada' || n === 'Config del negocio' ? 4 : 3);
     for (const n of NODOS_COMUNES.slice(5)) expect(variantesDeNodo(n), n).toHaveLength(1);
   });
 
@@ -217,6 +226,37 @@ describe('núcleo común: «Carga de entrada» y «Puerta del turno» de core (`
     }
     for (const f of ['rroca-antonio', 'rroca-ruben', 'venta-digital']) {
       expect(readFileSync(join(RAIZ_FLUJOS, 'experimental', f, 'src', 'nodos', 'puerta-del-turno.js'), 'utf8'), f).toBe(core('puerta-del-turno.js'));
+    }
+  });
+});
+
+describe('núcleo común: «Normalizar entrada» y «Config del negocio» de venta digital (`sin-agente/venta-digital/`)', () => {
+  const VD = join(SRC, 'core', 'sin-agente', 'venta-digital');
+  const CASOS = [['Normalizar entrada', 'normalizar-entrada.js'], ['Config del negocio', 'config-del-negocio.js']] as const;
+  const unidos = (a: string[]) => a.map((r) => readFileSync(r, 'utf8').trimEnd());
+  const proyecto = (archivo: string) => ({ comun: ['const CN_COMUN = 1;'], paquetes: { t: unidos([archivo]) }, librerias: [], leerNodo: () => '' }) as never;
+
+  it('la marca `@@comun>paquete` incluye el archivo de core y M4 lo reconoce; con un byte alterado falla (contraprueba)', () => {
+    for (const [nodo, archivo] of CASOS) {
+      expect(variantesDeNodo(nodo).some((v) => v === readFileSync(join(VD, archivo), 'utf8')), nodo).toBe(true);
+      const js = codigoDe(proyecto(join(VD, archivo)), '@@comun>t', nodo);
+      expect(hallazgosM4(flujoCon(nodoCode(nodo, js))), nodo).toEqual([]);
+      expect(hallazgosM4(flujoCon(nodoCode(nodo, `${js.slice(0, -6)}X${js.slice(-5)}`))), nodo).toEqual([nodo]);
+    }
+  });
+
+  it('la copia de src/nodos de venta-digital (que leen pruebas de huella) es idéntica a core', () => {
+    for (const [, archivo] of CASOS) {
+      expect(readFileSync(join(RAIZ_FLUJOS, 'experimental', 'venta-digital', 'src', 'nodos', archivo), 'utf8'), archivo).toBe(readFileSync(join(VD, archivo), 'utf8'));
+    }
+  });
+
+  it('Walisuma y Casa Bermejo incluyen la variante de core desde su constructor (sin copia propia)', () => {
+    for (const c of ['walisuma', 'casa-bermejo']) {
+      const fuente = readFileSync(join(RAIZ_FLUJOS, 'clientes', c, 'construir.mjs'), 'utf8');
+      expect(fuente, c).toContain('src/core/sin-agente/venta-digital/normalizar-entrada.js');
+      expect(fuente, c).toContain('src/core/sin-agente/venta-digital/config-del-negocio.js');
+      expect(fuente, c).not.toMatch(/experimental\/venta-digital\/src\/nodos\/(normalizar-entrada|config-del-negocio)/);
     }
   });
 });

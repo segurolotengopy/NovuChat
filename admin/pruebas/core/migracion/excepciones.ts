@@ -31,11 +31,11 @@ export interface Excepcion { dueno: string; vence: string; motivo: string; desde
 
 /** Fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-11-12 + 90 = 2027-02-10). */
 export const ALTA = '2026-11-12';
-/** Cuántas excepciones hay hoy, medidas con las pruebas el 12/11/2026 (76 tras cerrar la de la redirección, aplicar el contrato sin agente, declarar dos expresiones de NIEGA_IA y llevar «Carga de entrada» y «Puerta del turno» a core, y 74 tras cerrar la de errorWorkflow de Q'Taco, el 13/11/2026). SOLO BAJA. */
-export const TOPE = 74;
+/** Cuántas excepciones hay hoy, medidas con las pruebas el 12/11/2026 (70 tras declarar las dos variantes de venta digital el 13/11/2026 y, antes, 76 tras cerrar la de la redirección, aplicar el contrato sin agente, declarar dos expresiones de NIEGA_IA y llevar «Carga de entrada» y «Puerta del turno» a core, y 74 tras cerrar la de errorWorkflow de Q'Taco, el 13/11/2026). SOLO BAJA. */
+export const TOPE = 70;
 /** El mismo tope desglosado por regla (la suma es `TOPE`). Cada cuenta es la medida el 12/11/2026. SOLO BAJA. */
 export const TOPE_POR_REGLA: Record<Regla, number> = {
-  'nucleo-comun': 42, 'niega-ia': 4, 'error-workflow-por-nombre': 14, 'ux-derivacion': 4, 'capacidades-comunes': 10, 'flujos-origen': 0, entregas: 0, 'expresiones-n8n': 0,
+  'nucleo-comun': 38, 'niega-ia': 4, 'error-workflow-por-nombre': 14, 'ux-derivacion': 4, 'capacidades-comunes': 10, 'flujos-origen': 0, entregas: 0, 'expresiones-n8n': 0,
 };
 
 const DUENO = 'por asignar (Principal)';
@@ -78,7 +78,6 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
     'clientes/qtaco-redireccion/qtaco-redireccion.qtaco.json': ['Config del negocio'],
     'experimental/agenda-minima/agenda-minima.v0.json': ['Normalizar entrada', 'Config del negocio', 'Uso extendido', 'Comercio no operativo'],
     'experimental/captacion-minima/captacion-minima.novuchat.json': ['Config del negocio', 'Uso extendido', 'Comercio no operativo'],
-    'experimental/casa-bermejo/casa-bermejo.json': ['Normalizar entrada', 'Config del negocio'],
     'experimental/chat-novuchat/chat-novuchat.novuchat.json': ['Config del negocio'],
     'experimental/doctoras/doctoras.rroca-emma.json': ['Normalizar entrada', 'Config del negocio'],
     'experimental/doctoras/doctoras.rroca-evy.json': ['Normalizar entrada', 'Config del negocio'],
@@ -88,7 +87,6 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
     'experimental/rroca-ruben/rroca-ruben.json': ['Normalizar entrada', 'Config del negocio'],
     'experimental/venta-minima/venta-minima.qtaco-3727.json': ['Config del negocio', 'Uso extendido', 'Comercio no operativo'],
     'experimental/venta-minima/venta-minima.qtaco.json': ['Config del negocio', 'Uso extendido', 'Comercio no operativo'],
-    'experimental/walisuma/walisuma.json': ['Normalizar entrada', 'Config del negocio'],
   }),
   // «Carga de entrada» y «Puerta del turno» ya viven en core (`sin-agente/turno/`, una variante cada una); quedan los flujos con otra versión propia.
   ...porRegla('nucleo-comun', 'Lleva una versión propia de «Carga de entrada» (no es idéntica a la variante de core `sin-agente/turno/`); se unifica con otra rebanada de la etapa 1', {

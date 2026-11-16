@@ -94,8 +94,8 @@ export const CONFIG = {
     'pedidos-qr': ['../../src/modulos/pedidos/qr-del-pedido.js'],
     // Los nodos comunes neutros (zona venta-digital): se piden con `@@vd:<nodo>`.
     'vd-carga-de-entrada': ['../../src/core/sin-agente/turno/carga-de-entrada.js'],
-    'vd-config-del-negocio': ['../../experimental/venta-digital/src/nodos/config-del-negocio.js'],
-    'vd-normalizar-entrada': ['../../experimental/venta-digital/src/nodos/normalizar-entrada.js'],
+    'vd-config-del-negocio': ['../../src/core/sin-agente/venta-digital/config-del-negocio.js'],
+    'vd-normalizar-entrada': ['../../src/core/sin-agente/venta-digital/normalizar-entrada.js'],
     'vd-puerta-del-turno': ['../../src/core/sin-agente/turno/puerta-del-turno.js'],
     'vd-resumen-del-turno': ['../../experimental/venta-digital/src/nodos/resumen-del-turno.js'],
     // El miniCRM es un módulo (nunca se copia): los paquetes de código del adaptador general de señales.

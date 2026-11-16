@@ -45,6 +45,11 @@ const ARCHIVO_DE_TURNO: Record<string, string> = {
   'Carga de entrada': 'sin-agente/turno/carga-de-entrada.js', 'Puerta del turno': 'sin-agente/turno/puerta-del-turno.js',
 };
 
+/** La cuarta variante de dos nodos (etapa 1 PR 3): la de los flujos de venta digital, un archivo único en `core/sin-agente/venta-digital/`. */
+const ARCHIVO_DE_VENTA_DIGITAL: Record<string, string> = {
+  'Normalizar entrada': 'sin-agente/venta-digital/normalizar-entrada.js', 'Config del negocio': 'sin-agente/venta-digital/config-del-negocio.js',
+};
+
 /**
  * Las variantes declaradas (lista cerrada de `VARIANTES.md`) de un nodo común, leídas de `Flujos/src/core`. «Carga de entrada» y «Puerta del
  * turno» tienen UNA cada una (`sin-agente/turno/`): el flujo que lleva otra versión es una excepción de M4 hasta que se unifique.
@@ -54,7 +59,8 @@ export function variantesDeNodo(nodo: string, srcCore: string = SRC_CORE): strin
   if (turno) return [join(srcCore, turno)].filter((r) => existsSync(r)).map((r) => readFileSync(r, 'utf8'));
   const base = ARCHIVO_DE_NODO[nodo];
   if (!base) return [];
-  return [`${base}.js`, `venta/${base}.js`, `captacion/${base}.js`]
+  return [`${base}.js`, `venta/${base}.js`, `captacion/${base}.js`, ARCHIVO_DE_VENTA_DIGITAL[nodo]]
+    .filter((r): r is string => typeof r === 'string')
     .map((r) => join(srcCore, r)).filter((r) => existsSync(r)).map((r) => readFileSync(r, 'utf8'));
 }
 
