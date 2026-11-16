@@ -12,7 +12,7 @@ import { atiendeCliente } from './migracion/comprobaciones';
 import { problemasDeRegla } from './migracion/excepciones';
 import type { Mundo, ResultadoTurno } from '../lib/n8n-de-mentira';
 import { coberturaDePlanes, esBotonDeDerivacion, planesDelCodigo, vigilarDerivacion, violacionesDeDerivacion, type TablaDePlanes } from './ux/derivacion';
-import { EXCEPCIONES, flujosConversacionales, flujosFueraDelRegistro, flujosMudadosDelRegistro, problemasDelRegistro } from './ux/flujos-derivacion';
+import { EXCEPCIONES, flujosConversacionales, flujosFueraDelRegistro, flujosMudadosDelRegistro, MUDADOS, problemasDeMudados, problemasDelRegistro } from './ux/flujos-derivacion';
 
 const ctaUrl = (url: string, texto = 'Escribir'): J => ({ interactive: { type: 'cta_url', body: { text: 'Hola' }, action: { name: 'cta_url', parameters: { display_text: texto, url } } } });
 const WA = { tipo: 'interactive', cuerpo: 'Te paso con una persona', payload: ctaUrl('https://wa.me/59170000000?text=Hola') };
@@ -193,5 +193,17 @@ describe('un flujo mudado a clientes/ con otro nombre de carpeta sigue en el reg
       expect(flujosMudadosDelRegistro({}, t, { 'chat-novuchat.novuchat.json': 'chat-novuchat' })).toEqual([]);
       expect(flujosMudadosDelRegistro(ex, t, {})).toEqual([]);
     } finally { rmSync(t, { recursive: true, force: true }); }
+  });
+});
+
+describe('la lista cerrada de mudados es verdadera', () => {
+  it('cada entrada tiene su JSON en el disco y su valor es del registro', () => {
+    expect(problemasDeMudados()).toEqual([]);
+    expect(Object.keys(MUDADOS).length).toBeGreaterThan(0);
+  });
+  it('contraprueba: una entrada inventada falla por JSON y por valor', () => {
+    expect(problemasDeMudados({ 'fantasma.json': 'fantasma' })).toHaveLength(2);
+    expect(problemasDeMudados({ 'chat-novuchat.novuchat.json': 'fantasma' })).toHaveLength(2);
+    expect(problemasDeMudados({ 'fantasma.json': 'chat-novuchat' })).toHaveLength(1);
   });
 });

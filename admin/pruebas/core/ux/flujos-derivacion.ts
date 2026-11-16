@@ -34,6 +34,20 @@ export const CLIENTES = join(RAIZ, 'Flujos/clientes');
 /** Lista CERRADA de flujos mudados a `clientes/` con otro nombre de carpeta: nombre COMPLETO del JSON -> nombre del registro. Solo los que de verdad se mudaron. */
 export const MUDADOS: Record<string, string> = { 'chat-novuchat.novuchat.json': 'chat-novuchat' };
 
+/** Problemas de la lista de mudados: un JSON que no existe en `experimental/<valor>/` ni en `clientes/*\/`, o un valor que no es carpeta de `experimental/` ni clave del registro. */
+export function problemasDeMudados(
+  mudados: Record<string, string> = MUDADOS, experimental: string = EXPERIMENTAL, clientes: string = CLIENTES, excepciones: Record<string, Excepcion> = EXCEPCIONES,
+): string[] {
+  const p: string[] = [];
+  const dirs = (raiz: string): string[] => (existsSync(raiz) ? readdirSync(raiz, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name) : []);
+  for (const [json, valor] of Object.entries(mudados)) {
+    const hoy = existsSync(join(experimental, valor, json)) || dirs(clientes).some((d) => existsSync(join(clientes, d, json)));
+    if (!hoy) p.push(`${json}: no existe en experimental/${valor}/ ni en clientes/*/`);
+    if (!dirs(experimental).includes(valor) && !Object.hasOwn(excepciones, valor)) p.push(`${json}: «${valor}» no es carpeta de experimental/ ni clave del registro`);
+  }
+  return p;
+}
+
 /**
  * Nombre de registro de un flujo MUDADO: el de su JSON (`chat-novuchat.novuchat.json` -> `chat-novuchat`), no el de su carpeta de `clientes/`
  * (`novuchat`): una mudanza puede cambiar la carpeta, nunca el JSON. Solo cuenta si ese nombre ya está en el registro (una clave de `excepciones`),

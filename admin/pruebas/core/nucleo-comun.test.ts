@@ -54,8 +54,8 @@ function copiasDistintas(carpetaClientes: string, carpetaCore: string, excepcion
   const exentas = new Set(excepcionesDe('nucleo-comun', excepciones).map(([json, nodo]) => `${idDeFlujo(json)}#${nodo.toLowerCase().replace(/ /g, '-')}.js`));
   const declarada = (r: string): boolean => {
     const [tenant = '', ...resto] = r.split('/');
-    const dirTenant = join(carpetaClientes, tenant);
-    const jsons = existsSync(dirTenant) ? readdirSync(dirTenant).filter((f) => f.endsWith('.json')) : [];
+    // Solo cuentan los FLUJOS de producción de esa carpeta de tenant (nodes + connections): un `{}` llamado como un flujo no exime.
+    const jsons = flujosDeProduccion(join(carpetaClientes, '..')).filter((f) => f.startsWith(`clientes/${tenant}/`)).map(idDeFlujo);
     return jsons.some((j) => exentas.has(`${j}#${resto[resto.length - 1]}`));
   };
   return recorrer(carpetaClientes)
@@ -110,7 +110,12 @@ describe('núcleo común: copias incluidas idénticas a core, byte a byte', () =
       writeFileSync(join(t, 'clientes', 'x', 'uso-extendido.js'), 'return 2;\n');
       expect(copiasDistintas(join(t, 'clientes'), join(t, 'core'))).toEqual(['x/uso-extendido.js']);
       // Con la excepción declarada de ESE nodo en un JSON de la carpeta, la copia pasa (aunque la carpeta se llame distinto que el flujo)...
+      // Un `{}` con el nombre del flujo NO exime (no es un flujo)...
       writeFileSync(join(t, 'clientes', 'x', 'viejo.x.json'), '{}');
+      const exViejo = (nodo: string): Record<string, Excepcion> => ({ [`experimental/viejo/viejo.x.json#nucleo-comun#${nodo}`]: { dueno: 'd', motivo: 'm', desde: '2026-11-12', vence: '2026-12-01' } as unknown as Excepcion });
+      expect(copiasDistintas(join(t, 'clientes'), join(t, 'core'), exViejo('Uso extendido'))).toEqual(['x/uso-extendido.js']);
+      // ...y un flujo mínimo real sí.
+      writeFileSync(join(t, 'clientes', 'x', 'viejo.x.json'), '{"nodes":[],"connections":{}}');
       const ex = (json: string, nodo: string): Record<string, Excepcion> => ({ [`${json}#nucleo-comun#${nodo}`]: { dueno: 'd', motivo: 'm', desde: '2026-11-12', vence: '2026-12-01' } as unknown as Excepcion });
       expect(copiasDistintas(join(t, 'clientes'), join(t, 'core'), ex('experimental/viejo/viejo.x.json', 'Uso extendido'))).toEqual([]);
       // ...pero NO si la excepción es de otro nodo, de otro flujo, o no existe.
