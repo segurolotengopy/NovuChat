@@ -36,6 +36,13 @@ export interface SolicitudDelTurno {
   readonly reactivada: ReturnType<typeof reactivaTras>;
   /** El resultado del cobro (efecto y contadores de métricas), o `null` si el mensaje no trae hecho de cobro. */
   readonly cobro: ReturnType<typeof solicitudDeCobroTras> | null;
+  /**
+   * Contadores de métricas que aporta Agenda a este mensaje (G-2): hoy solo
+   * `senasEnviadas` (un QR de seña salió: evento `qr_enviado`, no ignorado ni
+   * sin id de Meta, y fuera de la regla 2). Vacío si no corresponde. Los
+   * nombres son fijos, nunca del cuerpo; el coordinador los incrementa.
+   */
+  readonly metricas: { readonly senasEnviadas?: 1 };
 }
 
 /** El total de un pedido que viaja en el cuerpo: solo un número finito y positivo dentro del techo. */
@@ -65,5 +72,6 @@ export function solicitudDelTurno(solicitudPrevia: unknown, mensaje: MensajeDeSo
     : cambiosDeCobro;
   // REACTIVADA (bloque 4): el primer mensaje del paciente dentro de las 24 h de un seguimiento.
   const reactivada = reactivaTras(solicitudPrevia, mensaje.direccion, ahoraMs);
-  return { solicitud: solicitud as SolicitudDelTurno['solicitud'], hayBase: !!base, sinQr, reactivada, cobro };
+  return { solicitud: solicitud as SolicitudDelTurno['solicitud'], hayBase: !!base, sinQr, reactivada, cobro,
+    metricas: mensaje.evento === 'qr_enviado' && !sinQr && mensaje.reglaCobro !== 2 ? { senasEnviadas: 1 } : {} };
 }
