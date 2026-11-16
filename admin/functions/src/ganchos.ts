@@ -5,6 +5,17 @@ import { nombreDeProductoApto } from './modulos/productos/nombreSeguro.js';
 import { crearAprobarTerminoProducto } from './plataforma/aprobarTerminoProducto.js';
 import { crearQuitarUsuario } from './central/usuarios.js';
 import { crearBajaTenant, crearSuspenderTenant } from './plataforma/tenants.js';
+export { alTurnoCampanas } from './modulos/campanas/alTurno.js';
+export { crmParaElFlujo } from './modulos/crm/crm.js';
+export { alTurnoCaptacion } from './modulos/captacion/alTurno.js';
+export { alTurnoCobroDeVenta, type ContextoDeCobro } from './modulos/cobros/alTurno.js';
+export { alTurnoSena } from './modulos/agenda/alTurno.js';
+export { alTurnoInventario } from './modulos/inventario/alTurno.js';
+export { despuesDelTurnoPedidos } from './modulos/pedidos/alTurno.js';
+export { solicitudDelTurno, montoUtilizable } from './modulos/agenda/solicitudDelTurno.js';
+export { enlaceDeLaCartaDelTurno } from './modulos/catalogo-web/alTurno.js';
+export { catalogoDelTurno as catalogoParaElModelo } from './modulos/productos/alTurno.js';
+export { sigueVigente, vigentesParaElPrompt } from './modulos/campanas/vigentes.js';
 import { revocarEditorAlQuitarUsuario, revocarEditoresAlCerrarTenant } from './modulos/crm/editoresCrm.js';
 
 /**
@@ -30,7 +41,12 @@ import { revocarEditorAlQuitarUsuario, revocarEditoresAlCerrarTenant } from './m
  *
  * F3b-1b (05/10/2026): hasta aquí `cierres.ts` importaba `solicitudTras` y
  * `cierreDeVentaLoHaceElCotejo` de `ingesta.ts`, el último cruce de la deuda de
- * `fronteras.test.ts`.
+ * `fronteras.test.ts`. Hoy `solicitudTras` vive en `modulos/agenda/` y
+ * `cierreDeVentaLoHaceElCotejo` en `modulos/cobros/alCierre.ts` (no en `ingesta.ts`).
+ *
+ * ETAPA 3 G-3: este archivo también es el único puente de `ingesta.ts` con los módulos. Los
+ * `export ... from './modulos/...'` de arriba son los puertos del turno: `ingesta.ts` importa de aquí y
+ * ya no de `./modulos/`. Mover una llamada detrás de este archivo no cambia lógica.
  */
 export const GANCHOS_DEL_CIERRE = {
   cobro: COBRO_AL_CIERRE,
