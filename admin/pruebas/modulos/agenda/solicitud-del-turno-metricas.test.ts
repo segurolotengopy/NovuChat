@@ -12,6 +12,7 @@ describe('G-2: solicitudDelTurno entrega metricas (señas enviadas)', () => {
   });
   it('con regla 2 (cobro de pedido) no cuenta seña', () => {
     const r = solicitudDelTurno(undefined, msg({ evento: 'qr_enviado', reglaCobro: 2, idMeta: 'wamid.1', referencia: 'P1', monto: 50 }), AHORA);
+    expect(r.sinQr).toBe(false);
     expect(r.metricas).toEqual({});
   });
   it('un QR sin pedido identificable (sinQr) no cuenta', () => {
