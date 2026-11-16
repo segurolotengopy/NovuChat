@@ -13,9 +13,9 @@
 // (cada una con su caso y su texto): una muletilla, un mensaje sin los dos botones, un dígito de más, una promesa de contacto, el nombre de una persona del equipo…  Más tokens, latencia y costo.
 //
 // Se corre desde la raíz del repositorio:
-//   node Flujos/experimental/chat-novuchat/herramientas/bateria.mjs --seco
-//   node Flujos/experimental/chat-novuchat/herramientas/bateria.mjs --env .env.novuchat --n 3
-//   node Flujos/experimental/chat-novuchat/herramientas/bateria.mjs --vertex <proyecto> --casos S1,S2 --json
+//   node Flujos/clientes/novuchat/herramientas/bateria.mjs --seco
+//   node Flujos/clientes/novuchat/herramientas/bateria.mjs --env .env.novuchat --n 3
+//   node Flujos/clientes/novuchat/herramientas/bateria.mjs --vertex <proyecto> --casos S1,S2 --json
 //
 // OPCIONES
 //   --seco            NO llama a nada: el modelo es una respuesta fija por turno (campo `seco` de cada turno del caso; sin él, el modelo «cae» y sale el respaldo). No lee ninguna clave
@@ -1204,7 +1204,7 @@ export function leerConversaciones(r, ids) {
 
 // ------------------------------------------------------------------------------------------------------- principal
 const AYUDA = `Batería de «Chat NovuChat v2 (Kenji)» contra el modelo.
-  node Flujos/experimental/chat-novuchat/herramientas/bateria.mjs [--seco] [--n 1..20] [--casos S1,S3] [--env archivo | --vertex proyecto [--locacion región]] [--json] [--conversaciones]
+  node Flujos/clientes/novuchat/herramientas/bateria.mjs [--seco] [--n 1..20] [--casos S1,S3] [--env archivo | --vertex proyecto [--locacion región]] [--json] [--conversaciones]
   --seco: modelo simulado, sin clave ni red · --env: archivo con la clave (por defecto .env.novuchat) · --vertex: token de gcloud · --json: salida de máquina · --conversaciones: imprime las conversaciones`;
 
 /**

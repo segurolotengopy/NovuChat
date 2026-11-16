@@ -117,8 +117,8 @@ Los comentarios y literales de estos archivos terminan DENTRO de un JSON de fluj
 | `Flujos/src/core/texto/no-repetir.js` | comentario de la línea 3 (nombra `comun-sin-agente/src/filtro-redaccion.js`) |
 | `Flujos/experimental/venta-minima/src/lib/comun.js` | comentario de la línea 39 (`comun-sin-agente/src/sesion.js`) |
 | `Flujos/experimental/captacion-minima/src/lib/captacion.js` | comentario de la línea 12 |
-| `Flujos/experimental/chat-novuchat/src/lib/chat.js` | comentario de la línea 6 |
-| `Flujos/experimental/chat-novuchat/src/nodos/_registro.js` | comentario de la línea 4 |
-| `Flujos/experimental/chat-novuchat/src/nodos/confirmar-envio.js` | comentario de la línea 3 |
+| `Flujos/clientes/novuchat/src/lib/chat.js` | comentario de la línea 6 |
+| `Flujos/clientes/novuchat/src/nodos/_registro.js` | comentario de la línea 4 |
+| `Flujos/clientes/novuchat/src/nodos/confirmar-envio.js` | comentario de la línea 3 |
 
 Prueba de que no cambió un byte: las huellas sha256 de todos los JSON de `Flujos/` son iguales antes y después del movimiento.

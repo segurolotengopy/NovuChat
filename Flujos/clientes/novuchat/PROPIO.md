@@ -7,7 +7,7 @@ Condición 4 del cierre de la rearquitectura (17/10/2026) y regla de zonas de `C
 declara aquí; el núcleo se **incluye** desde core y módulos y **nunca se copia**.
 
 Este archivo es el **mapa de la mudanza**, no la mudanza. Hoy el flujo vivo se construye y se
-publica desde `Flujos/clientes/novuchat/` (`construir.mjs`, `flujo.plantilla.json`,
+publica desde `Flujos/experimental/chat-novuchat/` (`construir.mjs`, `flujo.plantilla.json`,
 `src/`, los dos JSON). Su `PROPIO.md` detallado (nodo por nodo) sigue siendo la referencia mientras
 no se mueva el código.
 
@@ -44,7 +44,7 @@ Es todo lo que `Flujos/clientes/novuchat/PROPIO-chat.md` llama «Propio de NovuC
 
 ## Camino de la mudanza (sin cambiar lo publicado)
 
-1. **Ahora (este PR):** solo este archivo. Nada se mueve ni se borra en `Flujos/clientes/novuchat/`;
+1. **Ahora (este PR):** solo este archivo. Nada se mueve ni se borra en `Flujos/experimental/chat-novuchat/`;
    el JSON publicado no cambia, y `estado-de-versiones.sh` sigue comparando contra
    `chat-novuchat.novuchat.json`.
 2. **Mudar** (PR propio, tras fusionar las variantes únicas de los nodos comunes): `git mv` de
@@ -55,7 +55,7 @@ Es todo lo que `Flujos/clientes/novuchat/PROPIO-chat.md` llama «Propio de NovuC
    de `parameters` cambió, que no debe ocurrir.
 3. **Quitar las copias** de los huecos a medida que el core ofrezca una variante única utilizable por un flujo
    sin agente, siempre con la suite del chat sin quitar un caso y 0 mensajes por conversación agregados.
-4. **`Flujos/clientes/novuchat/`** desaparece al terminar el paso 2; hasta entonces es la única
+4. **`Flujos/experimental/chat-novuchat/`** desaparece al terminar el paso 2; hasta entonces es la única
    copia y es la que se publica.
 
 ## Camino de PR-4c (estado y vistos al servidor)
