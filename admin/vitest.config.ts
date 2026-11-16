@@ -39,6 +39,7 @@ export const SUITES_PURAS = [
   'pruebas/tenants/qtaco/cargar-productos-promos.test.ts',
   'pruebas/modulos/pedidos/rescates-decision.test.ts',
   'pruebas/modulos/agenda/omitir-contactos-bloqueados.test.ts',
+  'pruebas/modulos/agenda/solicitud-del-turno-metricas.test.ts',
   'pruebas/central/cuenta-activa.test.ts',
   'pruebas/central/edicion-crm-pantalla.test.ts',
   'pruebas/central/cuenta-activa-rutas.test.ts',

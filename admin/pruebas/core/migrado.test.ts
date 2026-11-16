@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { flujosDeProduccion } from '../lib/flujos-de-cliente';
 import { variantesDeNodo } from './migracion/comprobaciones';
 import {
-  PRUEBAS_COMUNES, contextoReal, importaListaUnica, leerTablero, tieneFilaDeVersiones, problemasDeMigrado, problemasDelTablero, rutaDeFila, type Contexto, type Fila,
+  PRUEBAS_COMUNES, contextoReal, importaListaUnica, leerTablero, tieneFilaDeVersiones, problemasDeHuellas, problemasDeMigrado, problemasDelTablero, rutaDeFila, type Contexto, type Fila,
 } from './migracion/migrado';
 
 const TABLERO = join(contextoReal().repo, 'docs', 'arquitectura', 'migracion.md');
@@ -26,6 +26,10 @@ describe('tablero de la migración: una fila por flujo de producción', () => {
   it('la tabla de migracion.md se lee y coincide con los flujos de producción del disco, en cualquiera de las dos carpetas', () => {
     expect(filas.length).toBeGreaterThan(20);
     expect(problemasDelTablero(filas, flujosDeProduccion())).toEqual([]);
+  });
+
+  it('la huella de CADA fila (pendiente o mudada, de cualquier clase) es el sha256 del JSON versionado del disco', () => {
+    expect(problemasDeHuellas(filas, contextoReal().flujos)).toEqual([]);
   });
 
   it('las filas pendientes no pasan por M1 a M7: solo las mudadas; cada fila mudada del tablero cumple los siete puntos', () => {
@@ -160,6 +164,20 @@ describe('M1 a M7, NEGANDO, en un directorio temporal', () => {
       const real = { ...m.ctx, correr: contextoReal().correr };
       expect(problemasDeMigrado({ ...m.fila, armador: 'construir.mjs --todos' }, real)).toEqual([]);
       expect(problemasDeMigrado({ ...m.fila, armador: 'construir.mjs' }, real)).toEqual([expect.stringMatching(/^M2:/)]);
+    });
+  });
+
+  it('huellas: se comparan en TODAS las filas (pendiente, vivo, demo…), no solo en las mudadas; un byte cambiado, un JSON ausente o la otra carpeta', () => {
+    conMontaje((m) => {
+      const flujos = join(m.raiz, 'Flujos');
+      const pendiente = { ...m.fila, estado: 'pendiente', clase: 'vivo' };
+      expect(problemasDeHuellas([pendiente], flujos)).toEqual([]);
+      writeFileSync(m.ruta, `${readFileSync(m.ruta, 'utf8')} `);
+      expect(problemasDeHuellas([pendiente], flujos)).toEqual([expect.stringContaining('no es la huella de su fila (fila pendiente, vivo)')]);
+      expect(problemasDeHuellas([{ ...pendiente, clase: 'barrido' }], flujos)).toHaveLength(1);
+      expect(problemasDeHuellas([{ ...pendiente, json: 'otro.json' }], flujos)).toEqual([expect.stringContaining('no existe en el disco')]);
+      // La fila de experimental/ encuentra el flujo ya mudado a clientes/ (misma identidad).
+      expect(problemasDeHuellas([{ ...pendiente, carpeta: 'experimental/x', huella: sha(readFileSync(m.ruta, 'utf8')) }], flujos)).toEqual([]);
     });
   });
 

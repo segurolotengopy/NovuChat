@@ -20,10 +20,10 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | vigilancia-numero-demos.json | . | barrido | ninguno | M1 | por asignar (Principal) | pendiente | 61960cd3-54681464-e3f0231d-d5500e9a-4958ae84-8038d63c-81b5ed09-6f51c6e4 |
 | qtaco-redireccion.qtaco.json | clientes/qtaco-redireccion | sin publicar | construir.mjs | M4 M7 | por asignar (Principal) | pendiente | fc15d011-187bf6ca-061f3cf1-bff34e5e-bc264f32-1386e9c9-a727f0d8-71cae22d |
 | qtaco-redireccion.qtaco-ruta-nueva.json | clientes/qtaco-redireccion | sin publicar | construir.mjs | M4 M7 | por asignar (Principal) | pendiente | f3765615-bf165adb-f4a40bf9-dd4a6f3b-e95d6594-45ddfb9d-7aad41ae-9699709a |
-| agenda-minima.v0.json | experimental/agenda-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | a8d5ff4c-6726fbf6-3f417070-df3abbc7-9bfce83a-2a7e4f1c-af613d28-8b78f16d |
+| agenda-minima.v0.json | experimental/agenda-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | a091b435-af36f781-6b7fb443-8faffc74-2fb5c5ce-886d4224-fb23a277-1c998dcf |
 | captacion-minima.novuchat.json | experimental/captacion-minima | congelado | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | e32347c0-840ec86c-a9c416da-7216fcc2-b56fd089-36b142bf-e0d58f1e-fe3bc0a0 |
 | casa-bermejo.json | clientes/casa-bermejo | sin publicar | construir.mjs | M4 M5 (excepción declarada) | por asignar (Principal) | mudado | 6330e098-11355f6e-8dc7def0-286f00ef-2e79d19b-f72ffd93-0b2f55df-b1e85eb2 |
-| chat-novuchat.novuchat.json | experimental/chat-novuchat | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 4f25c7c1-9f601a5b-3748dd89-46089585-3b3bc870-121082bc-a0ce4aae-7042f1e9 |
+| chat-novuchat.novuchat.json | experimental/chat-novuchat | vivo | construir.mjs | M1 M4 M6 | por asignar (Principal) | pendiente | e7873f40-47fc3e47-a7b3c32a-e4462a50-5cf102f0-e72894d0-40ca4e5b-71984723 |
 | doctoras.rroca-emma.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | 337d61b8-a3249cab-65a34c35-8b3ca91c-49800e11-5d1b4fc7-7b5046ff-7ed82674 |
 | doctoras.rroca-evy.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | 3db37cc4-ca855db7-c63e4c60-eee71530-10d8026b-50d6b185-b57aa8a4-691eefaf |
 | recordatorio-bellido.v1.json | experimental/recordatorio-bellido | demo | ninguno | M1 M2 M7 | por asignar (Principal) | pendiente | 64289535-4c20a3b1-19b0ab05-b8f97460-a209e62a-b87b132a-ae0d06ff-3c9bb15a |
@@ -32,8 +32,8 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | rroca-emma.json | experimental/rroca-emma | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 923e8eee-2b776bb8-0c34f815-c13d7f47-d8d63530-76c4036a-98add59d-2b717a00 |
 | rroca-evy.json | experimental/rroca-evy | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | fcc0abe8-252f2e61-a4657d48-7d550749-1a5e8bb7-e07e8c83-f796b21e-d455db80 |
 | rroca-ruben.json | experimental/rroca-ruben | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | f96d999f-a27f029f-b4a82723-337ce075-c934e9a1-35771e91-836f734d-bf6b2bc8 |
-| venta-minima.qtaco-3727.json | experimental/venta-minima | sin publicar | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 027af9b7-8891f240-6bfb9e1c-704a5eac-ead960bd-632f3fa2-97312ff2-c69aa1dd |
-| venta-minima.qtaco.json | experimental/venta-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | bc7ba3e3-485cf076-8b5c1bca-3605630f-6f0783a7-741ca2be-2787efd7-d786cdab |
+| venta-minima.qtaco-3727.json | experimental/venta-minima | sin publicar | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | aa2d61c6-f2f1f210-bb7f1abd-8459ff30-10f6dc18-59e86d1d-53f76fca-2e2b3057 |
+| venta-minima.qtaco.json | experimental/venta-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 6a9e223e-10e26d2b-73171575-5514da3e-3e3669dc-b9cd6f32-ff67b717-42b8fecc |
 | walisuma.json | clientes/walisuma | sin publicar | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 8bfb62a0-7a75d69f-a60b189f-a5af2f86-67434ee5-aa38fa2a-983df343-25ef1c39 |
 
 ## Cómo se lee
@@ -49,9 +49,9 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
   hasta la mudanza: la huella de esta tabla es la que la mudanza no debe cambiar.
 - **dueño**: de la mudanza. Lo asigna Principal; Walisuma es de Rearquitectura.
 - **estado**: `pendiente` o `mudado`. Solo las filas `mudado` pasan por M1 a M7.
-- **huella**: sha256 del JSON versionado el 12/11/2026, en hexadecimal y en 8 grupos de 8 caracteres separados por guion (la
-  prueba compara quitando los guiones). Se calculó con `sha256sum` sobre cada archivo. La prueba solo la exige a las filas `mudado`:
-  un flujo `pendiente` puede cambiar de contenido por otros PR sin tocar este tablero.
+- **huella**: sha256 del JSON versionado en main (medida el 12/11/2026; el 14/11/2026 se actualizaron cuatro filas: agenda mínima, chat NovuChat y los dos de venta mínima), en hexadecimal y en 8 grupos de 8 caracteres separados por guion (la
+  prueba compara quitando los guiones). Se calculó con `sha256sum` sobre cada archivo. Desde el 14/11/2026 la prueba la exige a TODAS
+  las filas: quien cambia un JSON de flujo actualiza su huella en el mismo PR (la huella es la del JSON versionado en main).
 
 ## Notas de la medición del 12/11/2026
 
