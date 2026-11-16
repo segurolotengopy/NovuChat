@@ -1,26 +1,15 @@
 import { REGION } from './core/region.js';
-import { MINUTOS_RETENCION_POR_DEFECTO } from './modulos/agenda/retencion.js';
-import { milisegundosDe } from './core/turno/tiempo.js';
 // F3b-1a y F3b-1b (05/10/2026): la solicitud, el tiempo y los predicados de cobro se
-// mudaron a `modulos/agenda/solicitud.ts`, `modulos/agenda/retencion.ts`,
-// `core/turno/tiempo.ts` y `modulos/cobros/alCierre.ts` sin cambiar lógica. Se
-// reexportan para que quien ya los importaba de acá (las suites) no cambie;
-// `core/turno/cierres.ts` ya no importa este archivo: recibe sus ganchos de
-// `ganchos.ts`.
-export {
-  DIAS_ADELANTO_A_FAVOR, ETAPAS_PENDIENTES, HORAS_ANTICIPACION_PARA_CANCELAR,
-  reactivaTras, solicitudTras, type Solicitud,
-} from './modulos/agenda/solicitud.js';
-export { cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo } from './modulos/cobros/alCierre.js';
-export { MINUTOS_RETENCION_POR_DEFECTO, senaParaElFlujo, IMPORTE_SENA_MAXIMO, type SenaParaElFlujo };
-export { milisegundosDe };
+// mudaron a `modulos/agenda/`, `core/turno/tiempo.ts` y `modulos/cobros/alCierre.ts`
+// sin cambiar lógica. Etapa 3 G-1: este archivo ya no los reexporta; quien los
+// necesita los importa de su módulo de origen.
 import { alTurnoCampanas } from './modulos/campanas/alTurno.js';
 import { crmParaElFlujo } from './modulos/crm/crm.js';
 import { respuestaLibreParaElFlujo } from './core/conversacion/respuestaLibre.js';
 import { alTurnoCaptacion } from './modulos/captacion/alTurno.js';
 import { modulosDelTurno, type ContextoDelTurno } from './core/turno/ganchosDelTurno.js';
 import { alTurnoCobroDeVenta, type ContextoDeCobro } from './modulos/cobros/alTurno.js';
-import { alTurnoSena, senaParaElFlujo, IMPORTE_SENA_MAXIMO, type SenaParaElFlujo } from './modulos/agenda/alTurno.js';
+import { alTurnoSena } from './modulos/agenda/alTurno.js';
 import { alTurnoInventario } from './modulos/inventario/alTurno.js';
 import { despuesDelTurnoPedidos } from './modulos/pedidos/alTurno.js';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';

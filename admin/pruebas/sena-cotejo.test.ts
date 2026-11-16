@@ -22,11 +22,10 @@ import {
   NO_SE_PUDO_LEER, detalleDeLaSena, esperadoDeLaSena, idDeCierreDeCita, leidoDelCuerpo,
   resultadoDelCotejo,
 } from '../functions/src/modulos/agenda/sena.ts';
-import {
-  IMPORTE_SENA_MAXIMO, MINUTOS_RETENCION_POR_DEFECTO, senaParaElFlujo, solicitudTras,
-} from '../functions/src/ingesta.ts';
+import { IMPORTE_SENA_MAXIMO, senaParaElFlujo } from '../functions/src/modulos/agenda/alTurno.ts';
+import { solicitudTras } from '../functions/src/modulos/agenda/solicitud.ts';
 import { documentoQueCobra } from '../functions/src/modulos/cobros/cobro.ts';
-import { senaVencidaPorTiempo } from '../functions/src/modulos/agenda/retencion.ts';
+import { MINUTOS_RETENCION_POR_DEFECTO, senaVencidaPorTiempo } from '../functions/src/modulos/agenda/retencion.ts';
 
 /** Lo que la prohibición 3 no deja decir, en ninguna forma. */
 const AFIRMA_PAGO = /acreditad|verificad|recibimos|pago confirmado/i;
