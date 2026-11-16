@@ -501,7 +501,7 @@ export function DetalleConversacion(p: PropsDetalle) {
 
       {acciones.verEscribir && (
         <EscribirComoPersona
-          key={ficha.id} tenantId={tenantId} conversacionId={ficha.id}
+          key={`escribir-${ficha.id}`} tenantId={tenantId} conversacionId={ficha.id}
           ultimoEntranteEn={ficha.ultimoEntranteEn} habilitados={acciones.habilitados} capa={p.capa} miUid={p.miUid}
         />
       )}
@@ -512,7 +512,7 @@ export function DetalleConversacion(p: PropsDetalle) {
       )}
       {puedeAdjuntar && (
         <AdjuntarComoPersona
-          key={ficha.id} tenantId={tenantId} conversacionId={ficha.id} nombreContacto={ficha.nombre} telefono={ficha.telefono}
+          key={`adjuntar-${ficha.id}`} tenantId={tenantId} conversacionId={ficha.id} nombreContacto={ficha.nombre} telefono={ficha.telefono}
           capa={p.capaAdjunto} miUid={p.miUid}
         />
       )}
