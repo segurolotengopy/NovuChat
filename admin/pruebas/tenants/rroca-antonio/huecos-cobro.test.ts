@@ -195,7 +195,7 @@ describe('HUECOS del cobro y los avisos: la copia funciona sola (sin `$`, sin re
 describe('HUECO de NIEGA_IA: la expresión es idéntica a la de chat-novuchat (`CH_NIEGA_IA`)', () => {
   it('`RA_NIEGA_IA` de ra.js es BYTE A BYTE `CH_NIEGA_IA` de chat-novuchat, salvo el nombre', () => {
     const linea = (t: string, n: string): string => t.split('\n').find((l) => l.startsWith('const ' + n + ' = '))!.replace(n, 'X');
-    const origen = leer(join(REPO, 'Flujos/experimental/chat-novuchat/src/lib/chat.js'));
+    const origen = leer(join(REPO, 'Flujos/clientes/novuchat/src/lib/chat.js'));
     expect(linea(leer(join(REPO, 'Flujos/clientes/rroca-antonio/src/lib/ra.js')), 'RA_NIEGA_IA')).toBe(linea(origen, 'CH_NIEGA_IA'));
   });
 });

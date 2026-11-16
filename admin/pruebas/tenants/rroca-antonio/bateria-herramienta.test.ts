@@ -177,9 +177,9 @@ describe('la batería de Antonio: validación de casos, detectores y umbral', ()
 
 describe('la batería de Antonio REUTILIZA el motor de chat-novuchat (no copia un cuarto motor) y su lista de librerías sale del armador', () => {
   it('importa `crearMundo`, `llamarGemini`, `leerCredencial`, `limpiarSecretos` y `TARIFA` de `chat-novuchat/herramientas/bateria.mjs` y no los redefine', () => {
-    expect(FUENTE).toMatch(/from '\.\.\/\.\.\/\.\.\/experimental\/chat-novuchat\/herramientas\/bateria\.mjs'/);
+    expect(FUENTE).toMatch(/from '\.\.\/\.\.\/\.\.\/clientes\/novuchat\/herramientas\/bateria\.mjs'/);
     for (const n of ['crearMundo', 'llamarGemini', 'leerCredencial', 'limpiarSecretos', 'TARIFA']) {
-      expect(FUENTE, n).toMatch(new RegExp(`import \\{[^}]*\\b${n}\\b[^}]*\\} from '\\.\\./\\.\\./\\.\\./experimental/chat-novuchat`));
+      expect(FUENTE, n).toMatch(new RegExp(`import \\{[^}]*\\b${n}\\b[^}]*\\} from '\\.\\./\\.\\./\\.\\./clientes\\/novuchat`));
       expect(FUENTE, n).not.toMatch(new RegExp(`(function|const|class) ${n}\\b`));
     }
   });

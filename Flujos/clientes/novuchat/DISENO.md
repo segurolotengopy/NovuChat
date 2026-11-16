@@ -125,7 +125,7 @@ baja de N respuestas a UNA. **Llamadas al modelo: 0 o 1 por turno** (2 si una gu
 - **Peso de los datos estáticos**: n8n graba TODAS las fichas en cada ejecución. Topes: 300 fichas, historial 8 × 300 caracteres, cola 6 eventos de ≤600: la peor ficha pesa ~7 KB y el peor caso ~2 MB serializados (no ~25 MB); el barrido de 48 h lo acota más.
 - **Trato**: se lee `voz.tratamiento` de la consola («usted» cambia lo que se le pide al modelo), pero los textos fijos del dato están en tú.
 - No hay campañas, rubro libre, CRM real, imágenes salientes (salvo la de planes), trato de usted en textos fijos ni miniCRM/Kanban (D4: «panel de control»).
-- Pasarlo a producción: `scripts/preparar-import.sh Flujos/experimental/chat-novuchat/chat-novuchat.novuchat.json .env.<cliente>` y `publicar-flujo.sh` (el nombre del flujo es el del vivo).
+- Pasarlo a producción: `scripts/preparar-import.sh Flujos/clientes/novuchat/chat-novuchat.novuchat.json .env.<cliente>` y `publicar-flujo.sh` (el nombre del flujo es el del vivo).
 
 ## Copias del núcleo en otros flujos (PR-4c2)
 

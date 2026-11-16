@@ -4,7 +4,7 @@
 // QUÉ ES. Corre los turnos del cliente de `bateria-casos.json` (A el camino completo, B «precio primero», C precios en general y el puente, D anuncio) por el flujo armado de PRUEBA (`rroca-antonio.prueba.json`):
 // recorre su grafo nodo por nodo y corre de verdad los nodos Code del JSON. Lo ÚNICO que sale a la red es «Conversar con el modelo» (el cuerpo EXACTO que arma `raCuerpoModelo`, con la línea `[MODO_TURNO: …]`): la
 // consola, la ingesta, Graph, los medios y el cotejo van simulados y en memoria, igual que en `chat-novuchat`. El motor (`crearMundo`, `llamarGemini`, `leerCredencial`, `limpiarSecretos`, `TARIFA`) se IMPORTA de
-// `Flujos/experimental/chat-novuchat/herramientas/bateria.mjs`: NO se copia un cuarto motor. (Es la herramienta de `rroca-ruben/herramientas/bateria.mjs` adaptada a los nombres y a las reglas de Antonio.)
+// `Flujos/clientes/novuchat/herramientas/bateria.mjs`: NO se copia un cuarto motor. (Es la herramienta de `rroca-ruben/herramientas/bateria.mjs` adaptada a los nombres y a las reglas de Antonio.)
 //
 // QUÉ MIDE (lo que depende del MODELO; lo determinista lo cubren `rehecho.test.ts` y el vigilante de UX):
 //   - qué porcentaje de los turnos del modelo pasa las barreras (sin texto de respaldo) y, si no, el motivo del rechazo;
@@ -34,7 +34,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { ErrorDeUso, TARIFA, crearMundo, leerArgumentos, leerCredencial, limpiarSecretos, llamarGemini, telefonoDe, textoDeGemini } from '../../../experimental/chat-novuchat/herramientas/bateria.mjs';
+import { ErrorDeUso, TARIFA, crearMundo, leerArgumentos, leerCredencial, limpiarSecretos, llamarGemini, telefonoDe, textoDeGemini } from '../../../clientes/novuchat/herramientas/bateria.mjs';
 import { CONFIG } from '../construir.mjs';
 import { doblesDeBateriaDelGuardado } from '../../../src/core/sin-agente/guardado-dobles.mjs';
 

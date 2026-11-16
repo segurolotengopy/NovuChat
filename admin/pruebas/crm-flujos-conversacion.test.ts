@@ -16,7 +16,7 @@ const cargar = (a: string): { nodes: Nodo[] } => JSON.parse(readFileSync(join(RA
 const LINEA_BASE: Array<[string, number, number]> = [
   ['agenda-minima/agenda-minima.prueba.json', 71, 5], ['agenda-minima/agenda-minima.v0.json', 71, 5],
   ['captacion-minima/captacion-minima.novuchat.json', 52, 5], ['captacion-minima/captacion-minima.prueba.json', 52, 5],
-  ['chat-novuchat/chat-novuchat.novuchat.json', 76, 5], ['chat-novuchat/chat-novuchat.prueba.json', 76, 5],
+  ['../clientes/novuchat/chat-novuchat.novuchat.json', 76, 5], ['../clientes/novuchat/chat-novuchat.prueba.json', 76, 5],
   ['../clientes/rroca-antonio/rroca-antonio.json', 64, 6], ['../clientes/rroca-antonio/rroca-antonio.prueba.json', 59, 6],
   ['rroca-emma/rroca-emma.json', 53, 6], ['rroca-emma/rroca-emma.prueba.json', 48, 6],
   ['rroca-evy/rroca-evy.json', 53, 6], ['rroca-evy/rroca-evy.prueba.json', 48, 6],
@@ -36,7 +36,7 @@ describe('una fila por conversación: sin mensajes de Meta nuevos en los 15 JSON
 });
 
 describe('una fila por conversación: la declaración de la fila mínima y el contrato en cada flujo con miniCRM', () => {
-  const CON_MINICRM = ['agenda-minima/agenda-minima.v0.json', 'captacion-minima/captacion-minima.novuchat.json', 'chat-novuchat/chat-novuchat.novuchat.json', '../clientes/rroca-antonio/rroca-antonio.json',
+  const CON_MINICRM = ['agenda-minima/agenda-minima.v0.json', 'captacion-minima/captacion-minima.novuchat.json', '../clientes/novuchat/chat-novuchat.novuchat.json', '../clientes/rroca-antonio/rroca-antonio.json',
     'rroca-emma/rroca-emma.json', 'rroca-evy/rroca-evy.json', 'rroca-ruben/rroca-ruben.json', 'venta-minima/venta-minima.qtaco-3727.json'];
   it.each(CON_MINICRM)('%s: el nodo «Prospecto para la planilla» lee el contrato nuevo y declara la fila mínima', (archivo) => {
     const codigo = cargar(archivo).nodes.find((n) => n.name === 'Prospecto para la planilla')?.parameters?.jsCode ?? '';

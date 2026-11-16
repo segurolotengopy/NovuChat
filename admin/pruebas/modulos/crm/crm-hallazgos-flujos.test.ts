@@ -13,8 +13,8 @@ const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..
 const leerJson = (r: string) => JSON.parse(readFileSync(join(RAIZ, r), 'utf8'));
 
 const FLUJOS: { flujo: string; json: string; datos: string }[] = [
-  { flujo: 'chat-novuchat', json: 'Flujos/experimental/chat-novuchat/chat-novuchat.novuchat.json', datos: 'admin/scripts/datos/chat-novuchat/novuchat.json' },
-  { flujo: 'chat-novuchat (prueba)', json: 'Flujos/experimental/chat-novuchat/chat-novuchat.prueba.json', datos: 'admin/scripts/datos/chat-novuchat/novuchat.json' },
+  { flujo: 'chat-novuchat', json: 'Flujos/clientes/novuchat/chat-novuchat.novuchat.json', datos: 'admin/scripts/datos/chat-novuchat/novuchat.json' },
+  { flujo: 'chat-novuchat (prueba)', json: 'Flujos/clientes/novuchat/chat-novuchat.prueba.json', datos: 'admin/scripts/datos/chat-novuchat/novuchat.json' },
   { flujo: 'captacion-minima', json: 'Flujos/experimental/captacion-minima/captacion-minima.novuchat.json', datos: 'admin/scripts/datos/captacion-minima/novuchat.json' },
   { flujo: 'captacion-minima (prueba)', json: 'Flujos/experimental/captacion-minima/captacion-minima.prueba.json', datos: 'admin/scripts/datos/captacion-minima/novuchat.json' },
   { flujo: 'rroca-evy', json: 'Flujos/experimental/rroca-evy/rroca-evy.json', datos: 'admin/scripts/datos/rroca-evy/rroca-evy.json' },

@@ -5,7 +5,7 @@ Los flujos de Antonio (`rroca-antonio`) y de Rubén (`rroca-ruben`) llevan COPIA
 el servidor) y esos dos flujos NO adoptan `sesion` en ese PR: su JSON vivo no cambia (0 mensajes por conversación). Por eso su origen queda **congelado** aquí.
 
 - **Qué es:** los archivos que esas pruebas leen del chat, tal como estaban en el commit `1fff3d59` (`Merge pull request #770`, el último antes de PR-4c2):
-  `Flujos/experimental/chat-novuchat/src/nodos/{_comun,puerta-del-turno,carga-de-entrada,config-del-negocio,interpretar-entrada,resumen-del-turno}.js` y `.../flujo.plantilla.json`.
+  `Flujos/clientes/novuchat/src/nodos/{_comun,puerta-del-turno,carga-de-entrada,config-del-negocio,interpretar-entrada,resumen-del-turno}.js` y `.../flujo.plantilla.json`.
   Sin datos de clientes ni secretos (son el código y la plantilla ya versionados).
 - **Qué NO está aquí:** `src/lib/chat.js` (las pruebas solo leen su línea `CH_NIEGA_IA`, que sigue igual en la fuente viva y debe seguir idéntica) y la batería (`herramientas/bateria.mjs`).
 - **Huellas (SHA-256, en 8 grupos de 8 separados por guion, para no parecer un identificador numérico):** las verifica `core/origen-chat-congelado.test.ts`; si alguien edita un archivo de aquí, falla. Si `git` tiene el commit, también lo compara con `git show 1fff3d59:<ruta>`.
