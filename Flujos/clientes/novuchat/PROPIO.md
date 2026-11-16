@@ -1,5 +1,7 @@
 # Flujo de cliente: chat NovuChat (`Flujos/clientes/novuchat/`)
 
+> **Mudado el 15/11/2026** (`docs/arquitectura/mudanza.md`): el flujo vive en esta carpeta. Su `PROPIO.md` detallado, nodo por nodo, se conservó sin cambios como `PROPIO-chat.md` (este nombre ya lo ocupaba este mapa). Lo que abajo está en futuro describe el camino ya recorrido.
+
 Condición 4 del cierre de la rearquitectura (17/10/2026) y regla de zonas de `CLAUDE.md`
 («Flujo de cliente»): **flujo propio = piezas propias + núcleo común obligatorio**. Lo propio se
 declara aquí; el núcleo se **incluye** desde core y módulos y **nunca se copia**.
@@ -27,7 +29,7 @@ lista cerrada declarada en `Flujos/src/core/VARIANTES.md`, no este archivo.
 
 ## Propio de NovuChat (no sube al core)
 
-Es todo lo que `Flujos/experimental/chat-novuchat/PROPIO.md` llama «Propio de NovuChat»:
+Es todo lo que `Flujos/clientes/novuchat/PROPIO-chat.md` llama «Propio de NovuChat»:
 
 - el cerebro conversacional (historial y ficha por teléfono, coalescencia de clics: `Registrar evento`,
   `Esperar ráfaga`, `Armar turno`), el contexto y la validación del mensaje del modelo, las rutas
@@ -59,7 +61,7 @@ Es todo lo que `Flujos/experimental/chat-novuchat/PROPIO.md` llama «Propio de N
 ## Camino de PR-4c (estado y vistos al servidor)
 
 Construido (PR-4c1: servidor falso y ayudantes; PR-4c2: nodos y plantilla; sin publicar). La ficha entera es el bloque opaco `estadoJson` (espacio `chat-novuchat`), la cola (≤6) va dentro del estado
-versionado, `comprometer` va ANTES de enviar y la compensación está en «Confirmar envío». Detalle y decisiones: `Flujos/experimental/chat-novuchat/DISENO.md`, sección «El estado de la conversación vive en el servidor».
+versionado, `comprometer` va ANTES de enviar y la compensación está en «Confirmar envío». Detalle y decisiones: `Flujos/clientes/novuchat/DISENO.md`, sección «El estado de la conversación vive en el servidor».
 Pendiente: ensayo en el Demo A, reseteo de fichas por `comprometer` y `chatNovuchatCrm`.
 
 ## Mensajes por conversación
