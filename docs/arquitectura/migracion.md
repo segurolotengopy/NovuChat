@@ -23,7 +23,7 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | agenda-minima.v0.json | experimental/agenda-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | a091b435-af36f781-6b7fb443-8faffc74-2fb5c5ce-886d4224-fb23a277-1c998dcf |
 | captacion-minima.novuchat.json | experimental/captacion-minima | congelado | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | e32347c0-840ec86c-a9c416da-7216fcc2-b56fd089-36b142bf-e0d58f1e-fe3bc0a0 |
 | casa-bermejo.json | clientes/casa-bermejo | sin publicar | construir.mjs | M4 M5 (excepción declarada) | por asignar (Principal) | mudado | 0418173c-dcc14b79-9781f089-132ec241-c8e61694-4b74e256-bfffbb8b-15d4de41 |
-| chat-novuchat.novuchat.json | experimental/chat-novuchat | vivo | construir.mjs | M1 M4 M6 | por asignar (Principal) | pendiente | e7873f40-47fc3e47-a7b3c32a-e4462a50-5cf102f0-e72894d0-40ca4e5b-71984723 |
+| chat-novuchat.novuchat.json | experimental/chat-novuchat | vivo | construir.mjs | M1 M4 M6 | por asignar (Principal) | pendiente | 1cc2807d-a8aac5a0-9d6269da-f3624d43-10a0aa8c-2dc9be90-a5331a19-c5e3b0b3 |
 | doctoras.rroca-emma.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | 337d61b8-a3249cab-65a34c35-8b3ca91c-49800e11-5d1b4fc7-7b5046ff-7ed82674 |
 | doctoras.rroca-evy.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | 3db37cc4-ca855db7-c63e4c60-eee71530-10d8026b-50d6b185-b57aa8a4-691eefaf |
 | recordatorio-bellido.v1.json | experimental/recordatorio-bellido | demo | ninguno | M1 M2 M7 | por asignar (Principal) | pendiente | 64289535-4c20a3b1-19b0ab05-b8f97460-a209e62a-b87b132a-ae0d06ff-3c9bb15a |
