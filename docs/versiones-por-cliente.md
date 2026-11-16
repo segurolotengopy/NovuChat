@@ -451,3 +451,7 @@ Mismo criterio que la sección anterior (base común de venta): los módulos com
 - **Límite conocido en el chat de NovuChat:** hoy su saludo ya dice «con inteligencia artificial» (dato del negocio), así que el cambio es una defensa. Cuando el primer mensaje es «quiero más información» sale el pitch comercial, y cuando es una pregunta sale la respuesta fija o del modelo: ninguno dice «asistente virtual», así que no pasan por la pieza y no se presentan como IA. Corregirlo exige cambiar un texto comercial (dato del negocio); se deja a decisión de Principal y Andres.
 - **Límite conocido (invariante):** la medición exige que el nodo lleve la pieza y la llame; que «Armar mensajes» siga llamando a la función que la usa lo prueba la suite de cada tienda (`identidad.test.ts`), no la invariante.
 - **Mensajes por conversación: 0 agregados o quitados.** Solo cambian dos palabras del texto que ya salía.
+
+## Estado al 15/11/2026: pitch del chat de NovuChat con «asistente virtual con inteligencia artificial» (sin republicar)
+
+El texto del pitch del primer contacto («Quiero más información»), que es un dato del chat propio, ahora abre diciendo quién habla: «Te atiende el asistente virtual de {negocio}, con inteligencia artificial». 0 mensajes agregados (cabe en el mismo mensaje de lista, tope 1.024). Cambia el JSON versionado del chat; el flujo vivo y el ensayo pendiente en el Demo A no se tocan hasta su republicación (botón de Andres).
