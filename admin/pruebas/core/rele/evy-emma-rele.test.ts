@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { nodosDeEnvio, MARCADOR_URL_DEL_RELE, hallazgosDelEnvioRele } from '../../../../Flujos/src/core/sin-agente/envio.mjs';
 import { hallazgosDelGuardado } from '../../../../Flujos/src/core/sin-agente/guardado.mjs';
-import * as evy from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
+import * as evy from '../../../../Flujos/clientes/rroca-evy/construir.mjs';
 import * as emma from '../../../../Flujos/experimental/rroca-emma/construir.mjs';
 import type { J } from '../../lib/flujo';
 import { falla, mensaje, mundoRele, ok, turno, turnoConError } from './ayuda';

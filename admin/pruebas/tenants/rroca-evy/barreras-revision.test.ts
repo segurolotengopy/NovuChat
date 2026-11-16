@@ -24,7 +24,7 @@ const ACLARACION = 'Cada rostro responde distinto y no prometemos un resultado i
 
 describe('el modelo vacío: reintento único y margen de salida', () => {
   it('el nodo «Conversar con el modelo» reintenta UNA vez ante un error de red (sin agregar nodos) y el cuerpo deja 1500 tokens de salida', () => {
-    const raiz = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-evy');
+    const raiz = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/clientes/rroca-evy');
     for (const archivo of ['rroca-evy.json', 'rroca-evy.prueba.json']) {
       const flujo = JSON.parse(readFileSync(join(raiz, archivo), 'utf8')) as { nodes: Array<{ name: string; retryOnFail?: boolean; maxTries?: number }> };
       const nodo = flujo.nodes.find((n) => n.name === 'Conversar con el modelo');
@@ -464,7 +464,7 @@ describe('la coletilla interrogativa se evalúa en tiempo lineal', () => {
 describe('el motor de la batería: pausa entre llamadas', () => {
   it('--pausa-ms acepta un entero y rechaza lo demás', async () => {
     // @ts-expect-error el motor es un .mjs sin tipos
-    const { main } = await import('../../../../Flujos/experimental/rroca-evy/herramientas/bateria.mjs');
+    const { main } = await import('../../../../Flujos/clientes/rroca-evy/herramientas/bateria.mjs');
     const sal: string[] = []; const err: string[] = [];
     const deps = { salida: (t: string) => sal.push(t), error: (t: string) => err.push(t) };
     expect(await main(['--seco', '--pausa-ms', 'abc'], deps)).toBe(2);

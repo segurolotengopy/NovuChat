@@ -75,7 +75,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
     expect(CON_MEDIOS.length).toBeGreaterThan(15);
     // Los de cada cliente que guarda medios, por nombre: si uno se renombra o deja de bajar medios, esto lo dice.
     for (const a of [
-      'experimental/rroca-evy/rroca-evy.json', 'experimental/rroca-emma/rroca-emma.json', 'experimental/rroca-ruben/rroca-ruben.json',
+      'clientes/rroca-evy/rroca-evy.json', 'experimental/rroca-emma/rroca-emma.json', 'experimental/rroca-ruben/rroca-ruben.json',
       'experimental/rroca-antonio/rroca-antonio.json', 'experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.ensayo-demo-a.json',
       'experimental/venta-minima/venta-minima.prueba.json', 'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-emma.json',
       'clientes/novuchat/chat-novuchat.novuchat.json', 'experimental/captacion-minima/captacion-minima.novuchat.json',
@@ -93,7 +93,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
   // fijaba (valía el de la instancia). Cambiar una fila obliga a cambiar esta prueba y decirlo en el PR.
   const NADA: [string, string, boolean] = ['none', 'none', false];
   const RETENCION: Record<string, [string | undefined, string | undefined, boolean | undefined]> = Object.fromEntries([
-    'experimental/rroca-evy/rroca-evy.json', 'experimental/rroca-evy/rroca-evy.prueba.json', 'experimental/rroca-evy/rroca-evy.ensayo-demo-a.json',
+    'clientes/rroca-evy/rroca-evy.json', 'clientes/rroca-evy/rroca-evy.prueba.json', 'clientes/rroca-evy/rroca-evy.ensayo-demo-a.json',
     'experimental/rroca-emma/rroca-emma.json', 'experimental/rroca-emma/rroca-emma.prueba.json',
     'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-evy.prueba.json',
     'experimental/doctoras/doctoras.rroca-emma.json', 'experimental/doctoras/doctoras.rroca-emma.prueba.json',

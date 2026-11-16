@@ -46,7 +46,7 @@ const vivoEvyViejo = escribir('vivo-evy-viejo.json', viejoDe(NOMBRE_EVY, 'rroca-
 const vivoOtro = escribir('vivo-otro.json', { name: 'Otro cliente', active: false, nodes: [] });
 
 const REL_NUEVO = 'Flujos/experimental/rroca-emma/rroca-emma.json';
-const REL_EVY_NUEVO = 'Flujos/experimental/rroca-evy/rroca-evy.json';
+const REL_EVY_NUEVO = 'Flujos/clientes/rroca-evy/rroca-evy.json';
 const REL_EMMA_VIEJO = 'Flujos/experimental/doctoras/doctoras.rroca-emma.json';
 const REL_EVY_VIEJO = 'Flujos/experimental/doctoras/doctoras.rroca-evy.json';
 const REL_RENOMBRADO = 'Flujos/experimental/rroca-emma/flujo-renombrado.json';
@@ -55,11 +55,13 @@ const REL_CON_TENANT_DE_EVY = 'Flujos/experimental/rroca-emma/con-tenant-de-evy.
 /** Una raíz de juguete: el script bajo prueba y los construir.mjs de juguete. El de Emma aprueba SOLO la etapa indicada; el de Evy y el de las doctoras dejan su rastro (no deben llamarse para un flujo de Emma). */
 function raizCon(nombre: string, script: string, o: { emma?: string; evy?: string; doctoras?: number } = {}): string {
   const raiz = join(dir, nombre);
-  for (const d of ['scripts', 'Flujos/experimental/doctoras', 'Flujos/experimental/rroca-evy', 'Flujos/experimental/rroca-emma']) mkdirSync(join(raiz, d), { recursive: true });
+  for (const d of ['scripts', 'Flujos/experimental/doctoras', 'Flujos/clientes/rroca-evy', 'Flujos/experimental/rroca-evy', 'Flujos/experimental/rroca-emma']) mkdirSync(join(raiz, d), { recursive: true });
   writeFileSync(join(raiz, 'scripts/publicar-flujo.sh'), script); chmodSync(join(raiz, 'scripts/publicar-flujo.sh'), 0o755);
   writeFileSync(join(raiz, 'Flujos/experimental/doctoras/construir.mjs'), `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.LOG_GUARDIAS, 'doctoras ' + process.argv.slice(2).join(' ') + '\\n'); process.exit(${o.doctoras ?? 0});\n`);
   const guardia = (tenant: string, etapa: string): string => `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.LOG_GUARDIAS, '${tenant} ' + process.argv.slice(2).join(' ') + '\\n'); process.exit(process.argv.join(' ').includes('--etapa ${etapa}') ? 0 : 1);\n`;
   writeFileSync(join(raiz, 'Flujos/experimental/rroca-emma/construir.mjs'), guardia('emma', o.emma ?? 'prueba'));
+  writeFileSync(join(raiz, 'Flujos/clientes/rroca-evy/construir.mjs'), guardia('evy', o.evy ?? 'prueba'));
+  // Mudanza de Evy (16/11/2026): el script de origin/main (la base del cotejo ADITIVO) aún busca la guardia en la ruta vieja; el propio, en la nueva. Las dos rutas, el mismo juguete.
   writeFileSync(join(raiz, 'Flujos/experimental/rroca-evy/construir.mjs'), guardia('evy', o.evy ?? 'prueba'));
   writeFileSync(join(raiz, REL_NUEVO), JSON.stringify(nuevoDe(NOMBRE, 'rroca-emma')));
   writeFileSync(join(raiz, REL_EVY_NUEVO), JSON.stringify(nuevoDe(NOMBRE_EVY, 'rroca-evy', PHONE_EVY)));
