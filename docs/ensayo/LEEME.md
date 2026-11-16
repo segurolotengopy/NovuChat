@@ -767,13 +767,13 @@ debe leer el panel de `ensayo` (ver el informe de la sesión que lo construyó).
 > **Un solo teléfono, el de la persona de prueba, hace de prospecto.** Escribe a la línea del Demo A y el
 > chat de NovuChat (Kenji) le contesta desde el n8n del Demo A. A diferencia de los §6, §9 y §10, **el
 > miniCRM queda conectado**, pero escribe en una **HOJA DE PRUEBA** con su propia credencial; la hoja real
-> de prospectos de NovuChat nunca se toca. Diseño: `Flujos/experimental/chat-novuchat/DISENO.md`.
+> de prospectos de NovuChat nunca se toca. Diseño: `Flujos/clientes/novuchat/DISENO.md`.
 
 **Costo y alcance.** El ensayo agrega **0 mensajes por conversación** y **0 nodos**: la salida
 `chat-novuchat.ensayo-demo-a.json` tiene los mismos 76 nodos y las mismas conexiones que
 `chat-novuchat.novuchat.json`; solo cambian los valores de «Config base» (marcadores del ensayo) y los
 nombres de credencial. Los JSON de producción y de prueba **no cambian** (se comprueba byte a byte con
-`node Flujos/experimental/chat-novuchat/construir.mjs --verificar`).
+`node Flujos/clientes/novuchat/construir.mjs --verificar`).
 
 **Las piezas.**
 
@@ -819,14 +819,14 @@ nombres de credencial. Los JSON de producción y de prueba **no cambian** (se co
 0. **Antes de empezar:** el §6 «Antes de empezar» A a D (anotar el ensayo en `ESTADO.md` y una fila para el
    Demo A en `docs/versiones-por-cliente.md`: «corre el chat de NovuChat en ensayo», con su porqué y su
    cierre; árbol al día en un worktree; línea de base de la suscripción de Meta). Más:
-   `node Flujos/experimental/chat-novuchat/construir.mjs --verificar` en 0; el teléfono de quien prueba
+   `node Flujos/clientes/novuchat/construir.mjs --verificar` en 0; el teléfono de quien prueba
    registrado en la app del Demo A; y la tabla local con los cuatro marcadores del ensayo, sin mostrar sus
    valores (`./scripts/marcador-local.sh --verificar REEMPLAZAR_PLANILLA_ENSAYO_ID`, y lo mismo con
    `REEMPLAZAR_PLANILLA_ENSAYO_HOJA`, `REEMPLAZAR_NUMERO_AVISO_ENSAYO` y `REEMPLAZAR_PHONE_NUMBER_ID`).
 1. **Preparar el import** (reemplaza los cuatro marcadores; ninguno puede quedar sin resolver):
 
        CONFIG_LOCAL_MD=~/NovuChat/CONFIGURACION.local.md ./scripts/preparar-import.sh \
-         <worktree>/Flujos/experimental/chat-novuchat/chat-novuchat.ensayo-demo-a.json .env
+         <worktree>/Flujos/clientes/novuchat/chat-novuchat.ensayo-demo-a.json .env
 
    Deja `chat-novuchat.ensayo-demo-a.local.json` (ignorado por git y no huérfano para `construir.mjs`): se
    borra al terminar. **Aviso:** mientras ese `.local.json` exista en la carpeta del flujo, la prueba
@@ -850,7 +850,7 @@ nombres de credencial. Los JSON de producción y de prueba **no cambian** (se co
        node Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env \
          --estado <scratchpad>/estado-ensayo.json --sobre-demo-a --conservar-crm \
          --respaldo <scratchpad>/respaldo-demo-a.json \
-         --flujo <worktree>/Flujos/experimental/chat-novuchat/chat-novuchat.ensayo-demo-a.local.json
+         --flujo <worktree>/Flujos/clientes/novuchat/chat-novuchat.ensayo-demo-a.local.json
 
    El seco tiene que decir: «Demo A vivo» con `activo=True`; `WhatsApp Trigger: el del Demo A, tal cual
    («…»)` (si no, **detenerse**); «miniCRM CONSERVADO»; los cuatro nodos de Google (`Buscar teléfono en

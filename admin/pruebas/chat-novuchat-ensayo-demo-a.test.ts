@@ -21,7 +21,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const CARPETA = join(aqui, '../../Flujos/experimental/chat-novuchat');
+const CARPETA = join(aqui, '../../Flujos/clientes/novuchat');
 const DATOS_DIR = join(aqui, '../scripts/datos/chat-novuchat');
 const HERRAMIENTA = join(aqui, '../../Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs');
 const DEMO_A = join(aqui, '../../Flujos/demo-a-agendamiento.json');
@@ -425,11 +425,11 @@ describe('publicar-flujo.sh no publica el ensayo del chat', () => {
   it('rechaza chat-novuchat.ensayo-demo-a.json y su .local.json (exit 2) y no rechaza por ese motivo otro archivo', () => {
     const raiz = join(aqui, '../..');
     for (const f of ['chat-novuchat.ensayo-demo-a.json', 'chat-novuchat.ensayo-demo-a.local.json']) {
-      const r = spawnSync('bash', [join(raiz, 'scripts/publicar-flujo.sh'), '--flujo', join(raiz, 'Flujos/experimental/chat-novuchat', f)], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+      const r = spawnSync('bash', [join(raiz, 'scripts/publicar-flujo.sh'), '--flujo', join(raiz, 'Flujos/clientes/novuchat', f)], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
       expect(r.status, f).toBe(2);
       expect(r.stderr, f).toMatch(/es el ensayo del chat en el Demo A y no se publica/);
     }
-    const otro = spawnSync('bash', [join(raiz, 'scripts/publicar-flujo.sh'), '--flujo', join(raiz, 'Flujos/experimental/chat-novuchat/chat-novuchat.prueba.json')], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+    const otro = spawnSync('bash', [join(raiz, 'scripts/publicar-flujo.sh'), '--flujo', join(raiz, 'Flujos/clientes/novuchat/chat-novuchat.prueba.json')], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
     expect(otro.stderr).not.toMatch(/es el ensayo del chat en el Demo A/);
   });
 });

@@ -1,7 +1,7 @@
 {
   "archivos": [
     "Flujos/experimental/captacion-minima/herramientas/bateria.mjs",
-    "Flujos/experimental/chat-novuchat/herramientas/bateria.mjs",
+    "Flujos/clientes/novuchat/herramientas/bateria.mjs",
     "admin/pruebas/bellido-flujo.test.ts",
     "admin/pruebas/reservas-flujo.test.ts",
     "admin/pruebas/tenants/doctoras/armado.test.ts",

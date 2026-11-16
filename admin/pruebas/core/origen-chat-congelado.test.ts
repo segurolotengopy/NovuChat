@@ -31,13 +31,13 @@ describe('origen congelado del chat (previo a PR-4c2)', () => {
   it.skipIf(!tieneCommit)('y con el commit 1fff3d59 cuando git lo tiene (en un clon superficial esta comprobación SE OMITE —y se ve como omitida—, no las huellas)', () => {
     for (const [ruta] of huellas) {
       const rutaGit = ruta === 'flujo.plantilla.json' ? 'flujo.plantilla.json' : `src/${ruta}`;
-      const enGit = execFileSync('git', ['show', `${COMMIT}:Flujos/experimental/chat-novuchat/${rutaGit}`], { cwd: REPO, maxBuffer: 20_000_000 });
+      const enGit = execFileSync('git', ['show', `${COMMIT}:Flujos/clientes/novuchat/${rutaGit}`], { cwd: REPO, maxBuffer: 20_000_000 });
       expect(sha(enGit), ruta).toBe(sha(readFileSync(join(ORIGEN, ruta))));
     }
   });
   it('NEGACIÓN: la fuente VIVA del chat ya NO es el origen congelado (PR-4c2 la cambió): por eso las pruebas de Antonio y Rubén leen el congelado', () => {
-    const vivo = readFileSync(join(REPO, 'Flujos/experimental/chat-novuchat/src/nodos/registrar-evento.js'), 'utf8');
+    const vivo = readFileSync(join(REPO, 'Flujos/clientes/novuchat/src/nodos/registrar-evento.js'), 'utf8');
     expect(vivo).toContain('Comprometer evento');
-    expect(readFileSync(join(REPO, 'Flujos/experimental/chat-novuchat/flujo.plantilla.json'), 'utf8')).not.toBe(readFileSync(join(ORIGEN, 'flujo.plantilla.json'), 'utf8'));
+    expect(readFileSync(join(REPO, 'Flujos/clientes/novuchat/flujo.plantilla.json'), 'utf8')).not.toBe(readFileSync(join(ORIGEN, 'flujo.plantilla.json'), 'utf8'));
   });
 });

@@ -1,11 +1,13 @@
 # Flujo de cliente: chat NovuChat (`Flujos/clientes/novuchat/`)
 
+> **Mudado el 15/11/2026** (`docs/arquitectura/mudanza.md`): el flujo vive en esta carpeta. Su `PROPIO.md` detallado, nodo por nodo, se conservó sin cambios como `PROPIO-chat.md` (este nombre ya lo ocupaba este mapa). Lo que abajo está en futuro describe el camino ya recorrido.
+
 Condición 4 del cierre de la rearquitectura (17/10/2026) y regla de zonas de `CLAUDE.md`
 («Flujo de cliente»): **flujo propio = piezas propias + núcleo común obligatorio**. Lo propio se
 declara aquí; el núcleo se **incluye** desde core y módulos y **nunca se copia**.
 
 Este archivo es el **mapa de la mudanza**, no la mudanza. Hoy el flujo vivo se construye y se
-publica desde `Flujos/experimental/chat-novuchat/` (`construir.mjs`, `flujo.plantilla.json`,
+publica desde `Flujos/clientes/novuchat/` (`construir.mjs`, `flujo.plantilla.json`,
 `src/`, los dos JSON). Su `PROPIO.md` detallado (nodo por nodo) sigue siendo la referencia mientras
 no se mueva el código.
 
@@ -27,7 +29,7 @@ lista cerrada declarada en `Flujos/src/core/VARIANTES.md`, no este archivo.
 
 ## Propio de NovuChat (no sube al core)
 
-Es todo lo que `Flujos/experimental/chat-novuchat/PROPIO.md` llama «Propio de NovuChat»:
+Es todo lo que `Flujos/clientes/novuchat/PROPIO-chat.md` llama «Propio de NovuChat»:
 
 - el cerebro conversacional (historial y ficha por teléfono, coalescencia de clics: `Registrar evento`,
   `Esperar ráfaga`, `Armar turno`), el contexto y la validación del mensaje del modelo, las rutas
@@ -42,7 +44,7 @@ Es todo lo que `Flujos/experimental/chat-novuchat/PROPIO.md` llama «Propio de N
 
 ## Camino de la mudanza (sin cambiar lo publicado)
 
-1. **Ahora (este PR):** solo este archivo. Nada se mueve ni se borra en `Flujos/experimental/chat-novuchat/`;
+1. **Ahora (este PR):** solo este archivo. Nada se mueve ni se borra en `Flujos/clientes/novuchat/`;
    el JSON publicado no cambia, y `estado-de-versiones.sh` sigue comparando contra
    `chat-novuchat.novuchat.json`.
 2. **Mudar** (PR propio, tras fusionar las variantes únicas de los nodos comunes): `git mv` de
@@ -53,13 +55,13 @@ Es todo lo que `Flujos/experimental/chat-novuchat/PROPIO.md` llama «Propio de N
    de `parameters` cambió, que no debe ocurrir.
 3. **Quitar las copias** de los huecos a medida que el core ofrezca una variante única utilizable por un flujo
    sin agente, siempre con la suite del chat sin quitar un caso y 0 mensajes por conversación agregados.
-4. **`Flujos/experimental/chat-novuchat/`** desaparece al terminar el paso 2; hasta entonces es la única
+4. **`Flujos/clientes/novuchat/`** desaparece al terminar el paso 2; hasta entonces es la única
    copia y es la que se publica.
 
 ## Camino de PR-4c (estado y vistos al servidor)
 
 Construido (PR-4c1: servidor falso y ayudantes; PR-4c2: nodos y plantilla; sin publicar). La ficha entera es el bloque opaco `estadoJson` (espacio `chat-novuchat`), la cola (≤6) va dentro del estado
-versionado, `comprometer` va ANTES de enviar y la compensación está en «Confirmar envío». Detalle y decisiones: `Flujos/experimental/chat-novuchat/DISENO.md`, sección «El estado de la conversación vive en el servidor».
+versionado, `comprometer` va ANTES de enviar y la compensación está en «Confirmar envío». Detalle y decisiones: `Flujos/clientes/novuchat/DISENO.md`, sección «El estado de la conversación vive en el servidor».
 Pendiente: ensayo en el Demo A, reseteo de fichas por `comprometer` y `chatNovuchatCrm`.
 
 ## Mensajes por conversación

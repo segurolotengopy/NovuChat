@@ -1,5 +1,5 @@
 /**
- * LA BIBLIOTECA DE «CHAT NOVUCHAT v2» (`Flujos/experimental/chat-novuchat/src/lib/chat.js`), SU ARMADOR (`construir.mjs`) Y SU ARCHIVO DE DATOS
+ * LA BIBLIOTECA DE «CHAT NOVUCHAT v2» (`Flujos/clientes/novuchat/src/lib/chat.js`), SU ARMADOR (`construir.mjs`) Y SU ARCHIVO DE DATOS
  * (`admin/scripts/datos/chat-novuchat/`).
  *
  * Cada función `ch*` se prueba con sus límites y con sus NEGACIONES: un detector que acepta todo también pasaría las pruebas «detecta X», así que cada regex tiene su caso que

@@ -36,7 +36,7 @@ import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/s
 // LA CADENA DE ENVÍO ES COMÚN (no se copia): se injerta desde `Flujos/src/core/sin-agente/envio.mjs` (enviar, respaldo en texto, reporte saliente).
 import { injertar } from '../../src/core/sin-agente/envio.mjs';
 // EL miniCRM ES UN MÓDULO (no se copia): los paquetes `crm-prospecto` y `crm-decidir`, y el injerto del mapa de columnas del tenant (dato `crm`).
-import { injertarCrm, rutasPaquetesCrm, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
+import { injertarCrm, rutasPaquetesCrm, validarMapaCrm } from '../../experimental/comun-sin-agente/construir-crm.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const DATOS = join(AQUI, '../../../admin/scripts/datos/chat-novuchat');
