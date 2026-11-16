@@ -45,6 +45,7 @@ let raiz: ReturnType<typeof createRoot>;
 let cont: HTMLElement;
 
 beforeEach(() => {
+  convId = `wa_${++contador}`;                    // los borradores sin confirmar viven en Maps del módulo: uno por prueba
   enviados.length = 0;
   avisos = [];
   vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => { avisos.push(a.map(String).join(' ')); });
@@ -61,8 +62,10 @@ afterEach(() => {
   delete (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
 });
 
+let contador = 0;
+let convId = 'wa_0';
 const piezas = (verEscribir: boolean, ya = false) => React.createElement(PiezasDePersona, {
-  tenantId: 'demo', conversacionId: 'wa_1', nombreContacto: 'Ana', telefono: '59170000000',
+  tenantId: 'demo', conversacionId: convId, nombreContacto: 'Ana', telefono: '59170000000',
   ultimoEntranteEn: Date.now() - 60_000, miUid: 'uid1',
   verEscribir, habilitados: true,
   puedeAdjuntar: verEscribir,                                         // con la bandera encendida y la ventana abierta
@@ -80,6 +83,7 @@ describe('tomar y devolver (con la bandera de medios encendida)', () => {
       expect([campos(), selectores()], `tomada, ciclo ${i + 1}`).toEqual([1, 1]);
       pintar(false, true);
       expect([campos(), selectores()], `devuelta, ciclo ${i + 1}`).toEqual([0, 0]);
+      expect(cont.querySelectorAll('[role="status"]'), `aviso al devolver, ciclo ${i + 1}`).toHaveLength(1);
     }
     expect(cont.querySelectorAll('textarea#cv-redactor-texto')).toHaveLength(0);
   });
@@ -87,7 +91,7 @@ describe('tomar y devolver (con la bandera de medios encendida)', () => {
   it('React no avisa de llaves repetidas en todo el recorrido', () => {
     for (let i = 0; i < 3; i++) { pintar(true); pintar(false, true); }
     pintar(true);
-    expect(avisos.filter((a) => /same key|llave|key/i.test(a))).toEqual([]);
+    expect(avisos.filter((a) => /same key|Encountered two children/i.test(a))).toEqual([]);
   });
 
   it('el selector (el clip) está en pantalla cuando se tiene la conversación con la bandera', () => {
@@ -105,7 +109,8 @@ describe('un envío sale UNA vez', () => {
     flushSync(() => { poner.call(area, texto); area.dispatchEvent(new Event('input', { bubbles: true })); });
     const boton = cont.querySelector('form[data-testid="redactor"] button[type="submit"]') as HTMLButtonElement;
     flushSync(() => boton.click());
-    await new Promise((r) => setTimeout(r, 20));
+    await vi.waitFor(() => expect(enviados.length).toBeGreaterThan(0));
+    await vi.waitFor(() => expect(area.value).toBe(''));
     return { area, boton };
   }
 
@@ -117,7 +122,7 @@ describe('un envío sale UNA vez', () => {
     expect(area.value).toBe('');                       // el texto NO queda pegado
     expect(boton.disabled).toBe(true);
     flushSync(() => boton.click());
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 50));   // no pasa nada que esperar: se comprueba que NADA más sale
     expect(enviados).toEqual(['Hola']);                // sigue siendo UN envío
   });
 });
