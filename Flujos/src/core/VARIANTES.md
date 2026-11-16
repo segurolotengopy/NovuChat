@@ -65,3 +65,17 @@ Decisión de Andres: «sí, dos declaradas». Core declara DOS fuentes de la red
 | `core/texto/niega-ia-normalizado.js`, 911 caracteres, sin bandera `i` | texto NORMALIZADO (minúsculas, sin tildes) | 9 flujos sin agente, cada uno con su prefijo de constante (el literal es idéntico) |
 
 `niega-ia-normalizado.js` **no lo incluye todavía ningún flujo** (incluirlo cambiaría bytes por el prefijo): es la fuente contra la que `fuenteDeNiegaIa` compara el literal. Un flujo cumple si lleva EXACTO el literal de una de las dos.
+
+## Las dos variantes de venta digital (13/11/2026, etapa 1 PR 3)
+
+Decisión de Andres (13/11, «Sí, agregarlas»): la lista cerrada crece con **dos variantes**, un archivo único cada una en `Flujos/src/core/sin-agente/venta-digital/`
+(`normalizar-entrada.js`, `config-del-negocio.js`), para «Normalizar entrada» y «Config del negocio» de los flujos de venta digital (sin textos ni nombres de cliente: todo entra por `CN_TENANT`).
+Ahora esos dos nodos tienen cuatro variantes declaradas (reservas, venta, captación y venta digital).
+
+| Nodo | Lo incluyen | Conservan su versión propia (excepción M4) |
+|---|---|---|
+| Normalizar entrada | Walisuma, Casa Bermejo | agenda mínima, Antonio, Rubén, Emma, Evy, doctoras (copias distintas) |
+| Config del negocio | Walisuma, Casa Bermejo | el resto de los flujos sin agente (copias distintas) |
+
+Los constructores de Walisuma y Casa Bermejo apuntan el paquete `vd-normalizar-entrada` / `vd-config-del-negocio` al archivo de core; los JSON no cambian un byte.
+La copia de `experimental/venta-digital/src/nodos/` se conserva para las pruebas de huella y es idéntica a core (la prueba lo exige).
