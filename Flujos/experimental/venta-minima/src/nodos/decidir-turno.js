@@ -13,7 +13,7 @@
 // El estado NO se escribe acá: se lee (del servidor: `vmSes`), se copia (`estado`) y lo fija `Plan del turno`; lo
 // compromete `Armar mensajes` ANTES de enviar.
 //
-// ORDEN (diseño §4.5, sin modelo): 1) cotejo, o comprobante simulado → `comprobante`; 2) medios (imagen o documento
+// ORDEN (diseño §4.5, sin modelo): 1) cotejo, o comprobante simulado → `comprobante`; 1c) pide la BAJA por texto → `baja` (antes de todo lo demás); 2) medios (imagen o documento
 // sin QR pendiente, audio); 3) botón, validado contra el estado; 4) texto exacto de una
 // campaña vigente → `promo`; 5) pide una persona → `transferir`, pregunta si es una IA →
 // `identidad` (la identidad se revisa primero); 5b) pide EXPRESAMENTE la ubicación o la dirección del LOCAL → `consulta:direccion_local`
@@ -126,6 +126,11 @@ if (t.comprobanteCruzado === true) return salir('transferir', { motivo: 'el modo
 
 // --- 1b. El carrito del catalogo web (no es un mensaje de WhatsApp: decide `decidirCarrito`, mas abajo) ----
 if (t.tipo === 'carrito') return decidirCarrito();
+
+// --- 1c. Un pedido de BAJA («no me escribas más», «no me manden nada», «stop»): se decide ANTES de cualquier otra intención y del modelo (`bjPideBaja`, pieza común del core) ---
+// Se decide sobre `t.texto` de un mensaje ESCRITO (ni botón ni audio ni pie de foto): la MISMA fuente que usa «Reportar mensaje (entrante)» para marcar `no_contactar`; confirmar una baja que el servidor no
+// registró sería prometer lo que no se cumple. Un audio o el pie de una foto que piden la baja quedan marcados sin confirmación (el lado seguro). `Plan del turno` contesta UN texto fijo y nada más.
+if (t.tipo === 'text' && !t.boton && bjPideBaja(t.texto)) return salir('baja');
 
 // --- 2. Medios -------------------------------------------------------------------------
 if (t.tipo === 'audio') {

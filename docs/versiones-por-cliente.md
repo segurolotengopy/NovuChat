@@ -190,6 +190,16 @@ Ningún comercio está en modalidad `produccion` todavía, así que la
 [ventana de mantenimiento de 23:30 a 01:30](contrato/anexo-tecnico-sla.md) no
 condiciona cuándo se publica.
 
+## Estado al 16/11/2026 (Q'Taco, venta mínima): baja por texto, párrafos y «asistente virtual con IA»
+
+Las tres piezas comunes de UX (core) entran al flujo de Q'Taco con los sufijos `+baja` y `+texto` de `Flujos/experimental/venta-minima/construir.mjs` (se incluyen byte a byte, nunca se copian).
+
+1. **Qué JSON cambian:** los cuatro de `Flujos/experimental/venta-minima/`: `venta-minima.qtaco.json` (73 nodos), `venta-minima.qtaco-3727.json` (81, en el tope), `venta-minima.prueba.json` (69) y `venta-minima.ensayo-demo-a.json` (67). Nodos antes y después: los mismos (0 agregados).
+2. **Qué cambia para el cliente:** (A) «no me escribas más», «no me manden nada», «stop» y sus pares dan UN texto fijo de baja, decidido antes de cualquier otra intención y del modelo (sin aviso al local, sin cobro, sin cupos, sin fila en el miniCRM); «Reportar mensaje (entrante)» marca `no_contactar` con la expresión común, así que «no me llamaron ayer» ya no marca baja. (B) Todo texto largo sale en párrafos separados (`ctParrafos`), respetando los topes de WhatsApp (botones 1.024, texto 4.000) y el pie «Para volver al inicio…». (C1) El saludo dice «asistente virtual con IA».
+3. **Mensajes por conversación:** 0 agregados y 0 quitados (la baja reemplaza la respuesta de ese turno; los párrafos y «con IA» solo cambian el texto).
+4. **Publicación:** nada republicado. Q'Taco se republica con su propio botón de Andres (`publicar-flujo.sh`, desde `main`); hasta entonces el flujo vivo conserva la expresión ancha de baja y el saludo sin «con IA». Es una diferencia **declarada**, no un atraso silencioso.
+5. **Invariantes:** `core/ux/baja.ts` y `core/ux/identidad.ts` pierden las dos excepciones de `venta-minima.qtaco*.json` y su tope baja de 14 a 12. Párrafos no tiene invariante global (ningún otro flujo usa `ctParrafos` todavía): lo prueba la suite de la venta mínima.
+
 ## Estado al 12/11/2026 (Casa Bermejo): excepción declarada al tope de nodos, 57
 
 `Flujos/clientes/casa-bermejo/casa-bermejo.json` tiene **57 nodos** (la variante de prueba, 52) y su constructor fija `TOPE_DE_NODOS = 57`.
