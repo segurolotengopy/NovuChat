@@ -29,11 +29,45 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
   'venta-minima': { desde: '2026-10-23', porque: 'Hoy VIOLA: «identidad» arma enlace() a wa.me y `ya_cotejado` también; la clasificación sale de resumen.ruta (prefijo antes de «:») y del resultado del cobro. Cartera adopta en D4 (Q\'Taco).' },
 };
 
-/** Los flujos conversacionales del disco (los que traen `flujo.plantilla.json`). */
+export const CLIENTES = join(RAIZ, 'Flujos/clientes');
+
+/** Lista CERRADA de flujos mudados a `clientes/` con otro nombre de carpeta: nombre COMPLETO del JSON -> nombre del registro. Solo los que de verdad se mudaron. */
+export const MUDADOS: Record<string, string> = { 'chat-novuchat.novuchat.json': 'chat-novuchat' };
+
+/** Problemas de la lista de mudados: un JSON que no existe en `experimental/<valor>/` ni en `clientes/*\/`, o un valor que no es carpeta de `experimental/` ni clave del registro. */
+export function problemasDeMudados(
+  mudados: Record<string, string> = MUDADOS, experimental: string = EXPERIMENTAL, clientes: string = CLIENTES, excepciones: Record<string, Excepcion> = EXCEPCIONES,
+): string[] {
+  const p: string[] = [];
+  const dirs = (raiz: string): string[] => (existsSync(raiz) ? readdirSync(raiz, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name) : []);
+  for (const [json, valor] of Object.entries(mudados)) {
+    const hoy = existsSync(join(experimental, valor, json)) || dirs(clientes).some((d) => existsSync(join(clientes, d, json)));
+    if (json.split('.')[0] !== valor) p.push(`${json}: el JSON no empieza por «${valor}» (el nombre del registro es lo que va antes del primer punto)`);
+    if (!hoy) p.push(`${json}: no existe en experimental/${valor}/ ni en clientes/*/`);
+    if (!dirs(experimental).includes(valor) && !Object.hasOwn(excepciones, valor)) p.push(`${json}: «${valor}» no es carpeta de experimental/ ni clave del registro`);
+  }
+  return p;
+}
+
+/**
+ * Nombre de registro de un flujo MUDADO: el de su JSON (`chat-novuchat.novuchat.json` -> `chat-novuchat`), no el de su carpeta de `clientes/`
+ * (`novuchat`): una mudanza puede cambiar la carpeta, nunca el JSON. Solo cuenta si ese nombre ya está en el registro (una clave de `excepciones`),
+ * para que un flujo nuevo de `clientes/` siga el camino de la lista única y no entre aquí por su cuenta.
+ */
+export function flujosMudadosDelRegistro(excepciones: Record<string, Excepcion> = EXCEPCIONES, raiz: string = CLIENTES, mudados: Record<string, string> = MUDADOS): string[] {
+  if (!existsSync(raiz)) return [];
+  return readdirSync(raiz, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && existsSync(join(raiz, d.name, 'flujo.plantilla.json')))
+    .flatMap((d) => readdirSync(join(raiz, d.name)).filter((f) => Object.hasOwn(mudados, f)).map((f) => mudados[f] as string))
+    .filter((n) => Object.hasOwn(excepciones, n));
+}
+
+/** Los flujos conversacionales del disco (los que traen `flujo.plantilla.json`), en `experimental/` y los ya mudados que están en el registro. */
 export function flujosConversacionales(): string[] {
-  return readdirSync(EXPERIMENTAL, { withFileTypes: true })
+  const deExperimental = readdirSync(EXPERIMENTAL, { withFileTypes: true })
     .filter((d) => d.isDirectory() && existsSync(join(EXPERIMENTAL, d.name, 'flujo.plantilla.json')))
-    .map((d) => d.name).sort();
+    .map((d) => d.name);
+  return [...new Set([...deExperimental, ...flujosMudadosDelRegistro()])].sort();
 }
 /**
  * LA LISTA ÚNICA (migración, etapa 0, 12/11/2026): los flujos de producción que atienden a un cliente (`atiendeCliente`) y NO caen en el registro de
@@ -42,11 +76,12 @@ export function flujosConversacionales(): string[] {
  */
 export function flujosFueraDelRegistro(
   produccion: string[], atiende: (ruta: string) => boolean, enRegistro: string[] = flujosConversacionales(),
-  hayTabla: (carpeta: string) => boolean = (c) => existsSync(rutaDeTabla(c)),
+  hayTabla: (carpeta: string) => boolean = (c) => existsSync(rutaDeTabla(c)), mudados: Record<string, string> = MUDADOS,
 ): { flujo: string; tabla: boolean }[] {
   return produccion.filter(atiende).flatMap((ruta) => {
     const partes = ruta.split('/');
     if (partes[0] === 'experimental' && enRegistro.includes(partes[1] ?? '')) return [];
+    if (partes[0] === 'clientes' && partes.length === 3 && Object.hasOwn(mudados, partes[2] as string) && enRegistro.includes(mudados[partes[2] as string] as string)) return [];
     const carpeta = partes.length > 1 ? (partes[1] ?? '') : '';
     return [{ flujo: ruta, tabla: carpeta !== '' && hayTabla(carpeta) }];
   });

@@ -21,7 +21,7 @@ import { RAIZ_FLUJOS, listarFlujos, leerManifiesto } from '../../scripts/ensambl
 import type { Flujo } from '../lib/flujo';
 import { CARPETA_FLUJOS_DEL_REPO, flujosDeProduccion } from '../lib/flujos-de-cliente';
 import { NODOS_COMUNES, hallazgosM4, incluyeVariante, variantesDeNodo } from './migracion/comprobaciones';
-import { problemasDeRegla } from './migracion/excepciones';
+import { EXCEPCIONES, excepcionesDe, idDeFlujo, problemasDeRegla, type Excepcion } from './migracion/excepciones';
 import { codigoDe } from '../../../Flujos/src/core/sin-agente/construir.mjs';
 
 const NODOS = ['normalizar-entrada', 'config-del-negocio', 'procesar-respuesta', 'uso-extendido', 'comercio-no-operativo'];
@@ -48,12 +48,24 @@ function variantesEnDisco(): string[] {
     .sort();
 }
 
-/** Copias en clientes que difieren byte a byte de su homónimo de core. */
-function copiasDistintas(carpetaClientes: string, carpetaCore: string): string[] {
+/**
+ * Copias en clientes que difieren byte a byte de su homónimo de core. Una copia adaptada solo se permite si el flujo de esa carpeta
+ * tiene YA declarada la excepción `nucleo-comun` del nodo que esa copia implementa (`config-del-negocio.js` -> «Config del negocio»);
+ * el flujo se reconoce por el nombre de su JSON, no por el de la carpeta (una mudanza puede cambiarlo).
+ */
+function copiasDistintas(carpetaClientes: string, carpetaCore: string, excepciones: Record<string, Excepcion> = EXCEPCIONES): string[] {
   const core = new Map(recorrer(carpetaCore).map((r) => [r.split('/').pop()!, join(carpetaCore, r)]));
+  const exentas = new Set(excepcionesDe('nucleo-comun', excepciones).map(([json, nodo]) => `${idDeFlujo(json)}#${nodo.toLowerCase().replace(/ /g, '-')}.js`));
+  const declarada = (r: string): boolean => {
+    const [tenant = '', ...resto] = r.split('/');
+    // Solo cuentan los FLUJOS de producción de esa carpeta de tenant (nodes + connections): un `{}` llamado como un flujo no exime.
+    const jsons = flujosDeProduccion(join(carpetaClientes, '..')).filter((f) => f.startsWith(`clientes/${tenant}/`)).map(idDeFlujo);
+    return jsons.some((j) => exentas.has(`${j}#${resto[resto.length - 1]}`));
+  };
   return recorrer(carpetaClientes)
     .filter((r) => r.endsWith('.js') && core.has(r.split('/').pop()!))
     .filter((r) => !readFileSync(join(carpetaClientes, r)).equals(readFileSync(core.get(r.split('/').pop()!)!)))
+    .filter((r) => !declarada(r))
     .sort();
 }
 
@@ -106,6 +118,19 @@ describe('núcleo común: copias incluidas idénticas a core, byte a byte', () =
       expect(copiasDistintas(join(t, 'clientes'), join(t, 'core'))).toEqual([]);
       writeFileSync(join(t, 'clientes', 'x', 'uso-extendido.js'), 'return 2;\n');
       expect(copiasDistintas(join(t, 'clientes'), join(t, 'core'))).toEqual(['x/uso-extendido.js']);
+      // Con la excepción declarada de ESE nodo en un JSON de la carpeta, la copia pasa (aunque la carpeta se llame distinto que el flujo)...
+      // Un `{}` con el nombre del flujo NO exime (no es un flujo)...
+      writeFileSync(join(t, 'clientes', 'x', 'viejo.x.json'), '{}');
+      const exViejo = (nodo: string): Record<string, Excepcion> => ({ [`experimental/viejo/viejo.x.json#nucleo-comun#${nodo}`]: { dueno: 'd', motivo: 'm', desde: '2026-11-12', vence: '2026-12-01' } as unknown as Excepcion });
+      expect(copiasDistintas(join(t, 'clientes'), join(t, 'core'), exViejo('Uso extendido'))).toEqual(['x/uso-extendido.js']);
+      // ...y un flujo mínimo real sí.
+      writeFileSync(join(t, 'clientes', 'x', 'viejo.x.json'), '{"nodes":[],"connections":{}}');
+      const ex = (json: string, nodo: string): Record<string, Excepcion> => ({ [`${json}#nucleo-comun#${nodo}`]: { dueno: 'd', motivo: 'm', desde: '2026-11-12', vence: '2026-12-01' } as unknown as Excepcion });
+      expect(copiasDistintas(join(t, 'clientes'), join(t, 'core'), ex('experimental/viejo/viejo.x.json', 'Uso extendido'))).toEqual([]);
+      // ...pero NO si la excepción es de otro nodo, de otro flujo, o no existe.
+      expect(copiasDistintas(join(t, 'clientes'), join(t, 'core'), ex('experimental/viejo/viejo.x.json', 'Config del negocio'))).toEqual(['x/uso-extendido.js']);
+      expect(copiasDistintas(join(t, 'clientes'), join(t, 'core'), ex('experimental/viejo/otro.json', 'Uso extendido'))).toEqual(['x/uso-extendido.js']);
+      expect(copiasDistintas(join(t, 'clientes'), join(t, 'core'), {})).toEqual(['x/uso-extendido.js']);
     } finally {
       rmSync(t, { recursive: true, force: true });
     }

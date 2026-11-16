@@ -320,6 +320,9 @@ export function AdjuntarComoPersona(p: PropsAdjuntar) {
 
       <div role="status" aria-live="polite" className="cv-adjunto-estado">{aviso ?? ''}</div>
 
+      {/* El error va ANTES de la vista previa: con el bloque acotado en altura, debajo quedaba fuera de la vista. */}
+      {error && <p id={idError} role="alert" className="cv-error cv-redactor-error">{error}</p>}
+
       {preparado && (
         <div className="cv-adjunto-previa">
           {preparado.clase === 'imagen' && (
@@ -366,7 +369,6 @@ export function AdjuntarComoPersona(p: PropsAdjuntar) {
         </div>
       )}
 
-      {error && <p id={idError} role="alert" className="cv-error cv-redactor-error">{error}</p>}
     </section>
   );
 }
