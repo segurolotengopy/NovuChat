@@ -461,3 +461,21 @@ Excepción declarada: la copia propia de Emma y Evy (`dr.js`/`ev.js`) conserva l
 ## Estado al 15/11/2026: pitch del chat de NovuChat con «asistente virtual con inteligencia artificial» (sin republicar)
 
 El texto del pitch del primer contacto («Quiero más información»), que es un dato del chat propio, ahora abre diciendo quién habla: «Te atiende el asistente virtual de {negocio}, con inteligencia artificial». 0 mensajes agregados (cabe en el mismo mensaje de lista, tope 1.024). Cambia el JSON versionado del chat; el flujo vivo y el ensayo pendiente en el Demo A no se tocan hasta su republicación (botón de Andres).
+
+## Estado al 16/11/2026: «Salida de persona» con la rama de adjuntos, publicada en 7 números (medios B6, una sola pasada)
+
+`Flujos/salida-de-persona.json` (el versionado que ya lleva `errorWorkflow`, no guardar ejecuciones fallidas y la rama de adjuntos) se cargó en el flujo VIVO con `scripts/cargar-timbre-n8n.sh --recargar` (con el mapa `--cred-*`, `--rele-inerte --canal-graph`, la ruta del timbre conservada, relectura igual a la versión nueva) y quedó verificado con `scripts/verificar-salida-persona.sh --medios` (0 FALLA; el 5a no se pudo medir: el flujo no guarda ejecuciones). **Después** del flujo se encendió `personaPuedeEnviarMedios` en el comercio, con respaldo. 0 mensajes del asistente por conversación; 1 mensaje de persona por adjunto enviado.
+
+| Alias | Comercio | Flujo recargado | Bandera `personaPuedeEnviarMedios` |
+|---|---|---|---|
+| demoA | demo-agendamiento | sí (15/11) | sí (15/11) |
+| cliente01 | novuchat | sí (16/11) | sí (16/11) |
+| cliente03 | bellido | sí (16/11) | sí (16/11) |
+| cliente05 | rroca-ruben | sí (16/11) | sí (16/11) |
+| cliente06 | rroca-antonio | sí (16/11) | sí (16/11) |
+| cliente07 | rroca-emma | sí (16/11) | sí (16/11) |
+| cliente08 | rroca-evy | sí (16/11) | sí (16/11) |
+
+**Excepción declarada: Q'Taco (cliente04 y cliente11), atrasado a propósito.** (1) En seco, el cerrojo de `--recargar` de cliente04 abortó sin escribir: «las credenciales del mapa no están atadas al número de este alias»; hay que averiguar la causa antes de recargar. (2) La bandera es POR COMERCIO (`qtaco`) y el número nuevo cliente11 no tiene flujo de salida de persona (falla 2 y 4a del verificador): encenderla le mostraría el clip sin que exista el flujo que lo envía. Se recarga y se enciende cuando cliente04 pase el seco y cliente11 tenga su flujo.
+
+**Sin verificar:** el envío de un adjunto real por cada comercio (solo se ensayó en Demo A: imagen con texto, PDF, Word, audio, nota de voz grabada, lote texto+imagen y un .exe rechazado; en Firestore `aceptado` con id de Meta) y el iPhone. El consumo de cada adjunto de un comercio real cuenta como 1 mensaje de persona.
