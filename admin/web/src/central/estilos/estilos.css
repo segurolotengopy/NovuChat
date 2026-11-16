@@ -85,49 +85,133 @@
   #raiz > section { padding-top: var(--space-6); padding-bottom: var(--space-10); }
 }
 
-/* ── Cabecera ───────────────────────────────────────────────────────────
-   El menú se desborda en un celular angosto antes que empujar «Salir» fuera de
-   la pantalla, que es como quedaba alguien sin poder cerrar sesión. */
-.cabecera nav { display: flex; gap: var(--space-4); flex: 1; align-items: center; }
+/* ── Cabecera y menú lateral ────────────────────────────────────────────
+   La cabecera es una barra baja: [sándwich] [marca] … [Mi cuenta] [Salir]. Las
+   trece opciones salían en una sola fila y a 1280px «Salir» quedaba fuera de la
+   pantalla; ahora viven en una barra izquierda que se abre con el sándwich
+   (pedido de Andres), en escritorio y en celular.
+
+   El `<nav>` va DENTRO del `<header>` a propósito: `.cabecera` lleva
+   `backdrop-filter`, y eso vuelve a la cabecera el bloque contenedor de todo
+   descendiente `position: fixed`, que dejaría de ser fijo. Por eso el panel es
+   `absolute` bajo la cabecera (`top: 100%`, que incluye la franja del comercio)
+   y su alto se calcula con la altura REAL de la cabecera, que mide
+   `useMenuLateral.ts` y publica en `--alto-cabecera-real`. */
+:root { --ancho-menu: 15rem; }
+.cabecera .boton-menu {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0; flex: none;
+  border: 0; border-radius: var(--radius-md); background: transparent;
+  color: var(--color-text); cursor: pointer;
+}
+/* Sin opciones no hay menú que abrir (lo decide `useMenuLateral.ts`). */
+[data-menu-lateral="vacio"] .cabecera .boton-menu { display: none; }
+.cabecera .boton-menu:hover { background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
+.cabecera .boton-menu:focus-visible,
+.cabecera .menu-lateral a:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+
+.cabecera .menu-lateral {
+  position: absolute; top: 100%; left: 0; z-index: 2;
+  width: var(--ancho-menu);
+  height: calc(100dvh - var(--alto-cabecera-real, 6rem));
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 0;
+  padding-block: var(--space-2);
+  background: var(--color-bg);
+  border-right: 1px solid var(--color-divider);
+  /* Cerrado: fuera de pantalla Y `visibility: hidden`, para que Tab no
+     entre a enlaces invisibles (el `inert` del JSX lo refuerza). La
+     visibilidad espera a que termine el deslizamiento al cerrar. */
+  transform: translateX(-100%);
+  visibility: hidden;
+  transition: transform .2s ease, visibility 0s linear .2s;
+}
+[data-menu-lateral="abierto"] .cabecera .menu-lateral {
+  transform: none; visibility: visible;
+  transition: transform .2s ease, visibility 0s;
+}
+/* Quien pide menos movimiento no ve deslizar el panel. */
+@media (prefers-reduced-motion: reduce) {
+  .cabecera .menu-lateral,
+  [data-menu-lateral="abierto"] .cabecera .menu-lateral { transition: none; }
+}
 
 /* DÓNDE ESTOY PARADO.
    El sistema pinta el enlace activo con el acento cuando lleva
-   `aria-current="page"`… y ese atributo no aparecía NUNCA, porque lo pone
-   `NavLink` y la cabecera usaba `Link`. La regla existía, no se aplicaba a
-   nada, y el menú se veía idéntico en las quince pantallas: se entraba a
-   «Productos» y nada en la barra lo decía.
-
-   El color solo no alcanza en una fila de trece enlaces del mismo tamaño, así
-   que va además una barra debajo. El borde transparente lo llevan TODOS los
-   enlaces y no solo el activo: si lo pusiera solo el activo, al cambiar de
-   pantalla la barra entera se correría dos píxeles. */
-/* `:not(.btn)` no es decorativo acá: el sistema trae `.nav a:not(.btn)` con
-   `color: inherit`, que pesa más que un `.cabecera nav a` pelado y le ganaba a
-   este color. Se vio porque el enlace en reposo seguía saliendo a tono pleno. */
-.cabecera nav a:not(.btn), .cabecera > .contenedor > a:not(.btn) {
-  padding-block: var(--space-1);
-  border-bottom: 2px solid transparent;
+   `aria-current="page"`, que pone `NavLink`. En una lista vertical el color
+   solo no alcanza: va además una barra a la izquierda. El borde transparente lo
+   llevan TODOS los enlaces y no solo el activo: si lo pusiera solo el activo,
+   al cambiar de pantalla el texto se correría tres píxeles. */
+/* `:not(.btn)` no es decorativo: el sistema trae `.nav a:not(.btn)` con
+   `color: inherit`, que pesa más que un selector pelado y le ganaba a este color. */
+.cabecera .menu-lateral a:not(.btn), .cabecera > .contenedor > a:not(.btn) {
   /* Los enlaces en reposo van apagados y el activo a color pleno. En el tema
      claro el acento es la pizarra `#2f3a44`, casi el mismo tono que el texto:
      sin este contraste el «activo» se apoyaría solo en la barra. */
   color: color-mix(in srgb, var(--color-text) 72%, transparent);
 }
-.cabecera nav a:not(.btn):hover,
+.cabecera .menu-lateral a:not(.btn) {
+  display: flex; align-items: center; min-height: 44px;
+  padding: var(--space-1) var(--space-4);
+  border-inline-start: 3px solid transparent;
+}
+.cabecera > .contenedor > a:not(.btn) {
+  padding-block: var(--space-1);
+  border-bottom: 2px solid transparent;
+}
+.cabecera .menu-lateral a:not(.btn):hover,
 .cabecera > .contenedor > a:not(.btn):hover { color: var(--color-text); }
 .cabecera a:not(.btn)[aria-current="page"] {
   color: var(--color-accent);
-  border-bottom-color: var(--color-accent);
 }
+.cabecera .menu-lateral a:not(.btn)[aria-current="page"] { border-inline-start-color: var(--color-accent); }
+.cabecera > .contenedor > a:not(.btn)[aria-current="page"] { border-bottom-color: var(--color-accent); }
 /* NO cambia el grosor de la letra a propósito: Archivo salta de 400 a 800 y el
-   enlace activo se ensancharía, corriendo de lugar a todos los que le siguen
-   cada vez que se cambia de pantalla. */
-@media (max-width: 60rem) {
-  .cabecera .nav { flex-wrap: wrap; padding-block: var(--space-2); }
-  /* `flex: 0 0 100%` y no `width: 100%`: el `flex: 1` de arriba fija la base en
-     0 y le gana al ancho, así que el menú NO bajaba de línea — se quedaba
-     apretado al lado de «Salir» y los últimos enlaces salían de la pantalla,
-     inalcanzables en un celular. Se vio a 390px. */
-  .cabecera nav { order: 3; flex: 0 0 100%; overflow-x: auto; gap: var(--space-3); padding-bottom: 2px; }
+   enlace activo se ensancharía, corriendo de lugar a los demás. */
+
+/* ESCRITORIO: con el menú abierto, el RELLENO izquierdo de `#raiz` le hace
+   lugar y la cabecera lo deshace con un margen negativo para seguir a todo lo
+   ancho. Va en `#raiz` y no en `#raiz > section` porque no todas las páginas
+   cuelgan una sección: el tablero de una cuenta (`TableroDeLaCuenta`) deja sus
+   tarjetas sueltas, y con la regla puesta en la sección quedaban DEBAJO del
+   menú (se vio en la prueba de navegador a 1280px). Así cualquier hijo, con
+   caja o sin ella, empieza donde termina el menú; las secciones siguen
+   centrándose solas en el espacio que queda, y los diálogos de pantalla
+   completa (`position: fixed`) no se enteran. */
+@media (min-width: 60rem) {
+  [data-menu-lateral="abierto"] #raiz { padding-inline-start: var(--ancho-menu); }
+  [data-menu-lateral="abierto"] #raiz > .cabecera { margin-inline-start: calc(-1 * var(--ancho-menu)); }
+}
+
+/* DIÁLOGOS Y VISOR DE MEDIOS. Son `position: fixed` sin `z-index`, y la
+   cabecera lleva `z-index: 40`: antes solo la franja de arriba quedaba encima
+   del fondo oscurecido, pero el panel cuelga de la cabecera y quedaría toda la
+   columna izquierda sin oscurecer y con sus enlaces vivos. Mientras haya uno
+   abierto, la cabecera deja de apilarse por encima. */
+:root:has(.dialog-backdrop, .cv-medio-fondo) .cabecera { z-index: auto; }
+
+/* IMPRESIÓN: ni el menú ni su hueco salen en el papel. */
+@media print {
+  .cabecera .menu-lateral, .cabecera .boton-menu, .cabecera .menu-velo { display: none; }
+  [data-menu-lateral] #raiz { padding-inline-start: 0; }
+  [data-menu-lateral] #raiz > .cabecera { margin-inline-start: 0; }
+}
+
+/* CELULAR: el panel se abre SOBRE el contenido, con un velo que lo oscurece y
+   que, al tocarlo, lo cierra. Va dentro de la cabecera por la misma razón que
+   el menú (`backdrop-filter`), debajo del panel y encima de la página. */
+.cabecera .menu-velo {
+  position: absolute; top: 100%; left: 0; z-index: 1;
+  width: 100vw; height: calc(100dvh - var(--alto-cabecera-real, 6rem));
+  background: color-mix(in srgb, var(--color-text) 45%, transparent);
+}
+@media (max-width: 59.99rem) {
+  .cabecera .menu-lateral { width: min(var(--ancho-menu), 85vw); }
+}
+/* A 375px caben sándwich + isotipo + «Mi cuenta» + «Salir» solo sin el nombre
+   de la marca (que conserva su `aria-label`). */
+@media (max-width: 30rem) {
+  .cabecera .nav-brand span { display: none; }
 }
 
 /* FRANJA DEL COMERCIO: el nombre del negocio y el chip PRUEBA / PRODUCCIÓN,

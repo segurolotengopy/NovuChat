@@ -5,6 +5,8 @@ import { rolEn } from './core/lib/sesion';
 import { cuentasDe, guardarUltima } from './core/lib/cuentaActiva';
 import { Proteger } from './core/componentes/Proteger';
 import { Marca } from './central/componentes/Marca';
+import { BotonMenu } from './central/componentes/BotonMenu';
+import { useMenuLateral } from './central/lib/useMenuLateral';
 import { EncabezadoComercio } from './central/componentes/EncabezadoComercio';
 import { SiNoOculta, useConsolaOculta } from './central/componentes/ConsolaOculta';
 import { esVisible } from '../../functions/src/central/consola-oculta';
@@ -123,6 +125,7 @@ function Cabecera() {
   // Mientras carga (`null`) no se pinta «Pagar»: no aparece y desaparece.
   const ocultos = useConsolaOculta(tenantId);
   useTituloDePagina(modulos);
+  const { abierto, alternar, cerrar, botonRef, esEscritorio } = useMenuLateral(pathname);
   // Recuerda la última cuenta usada: solo una preferencia para destacarla en el
   // selector; la autorización la decide el servidor en cada petición.
   const miembroDeLaRuta = tenantDeLaRuta !== undefined && cuentas.includes(tenantDeLaRuta);
@@ -144,8 +147,10 @@ function Cabecera() {
        una encima de la otra. */
     <header className="cabecera">
       <div className="contenedor nav">
+      <BotonMenu abierto={abierto} alAlternar={alternar} botonRef={botonRef} />
       <Marca />
-      <nav>
+      {!esEscritorio && abierto && <div className="menu-velo" onClick={cerrar} aria-hidden="true" />}
+      <nav id="menu-lateral" aria-label="Menú principal" className="menu-lateral" inert={!abierto}>
         {permisos.propietario && <NavLink to="/negocios">Negocios</NavLink>}
         {permisos.propietario && <NavLink to="/bitacora">Bitácora</NavLink>}
         {/* Con varias cuentas se ofrece volver al selector (salvo que ya se esté
