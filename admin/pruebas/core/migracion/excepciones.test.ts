@@ -9,9 +9,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { flujosDeProduccion } from '../../lib/flujos-de-cliente';
-import { idDeFlujo } from './comprobaciones';
 import { ALTA_FIJADA, TOPE_MAXIMO } from './tope-fijado';
-import { ALTA, EXCEPCIONES, REGLAS, TOPE, TOPE_POR_REGLA, excepcionesDe, partesDeClave, problemasDeForma, type Excepcion } from './excepciones';
+import { ALTA, EXCEPCIONES, REGLAS, idDeFlujo, TOPE, TOPE_POR_REGLA, excepcionesDe, partesDeClave, problemasDeForma, problemasDeRegla, type Excepcion } from './excepciones';
 
 const e = (parcial: Partial<Excepcion> = {}): Excepcion => ({ dueno: 'por asignar (Principal)', vence: '2027-01-31', motivo: 'm', desde: ALTA, ...parcial });
 const ANTES_DEL_VENCIMIENTO = new Date('2026-11-12T12:00:00Z');
@@ -76,4 +75,17 @@ describe('excepciones de la migración: la lista solo puede bajar', () => {
     expect(idDeFlujo('experimental/x/x.json')).toBe(idDeFlujo('clientes/x/x.json'));
     expect(idDeFlujo('demo-a-agendamiento.json')).toBe('demo-a-agendamiento.json');
   });
+
+describe('la identidad por archivo sobrevive a una mudanza que cambia el nombre de la carpeta', () => {
+  it('experimental/chat-novuchat/x.json y clientes/novuchat/x.json son el mismo flujo; dos JSON distintos nunca', () => {
+    expect(idDeFlujo('experimental/chat-novuchat/chat-novuchat.novuchat.json')).toBe(idDeFlujo('clientes/novuchat/chat-novuchat.novuchat.json'));
+    expect(idDeFlujo('experimental/a/a.json')).not.toBe(idDeFlujo('experimental/a/b.json'));
+  });
+  it('una excepción de la clave vieja cubre al flujo mudado y NO a otro', () => {
+    const ex = { 'experimental/chat-novuchat/chat-novuchat.novuchat.json#nucleo-comun#Carga de entrada': { dueno: 'd', motivo: 'm', desde: ALTA, vence: ALTA } as unknown as Excepcion };
+    expect(problemasDeRegla('nucleo-comun', new Map([['clientes/novuchat/chat-novuchat.novuchat.json', ['Carga de entrada']]]), ex)).toEqual([]);
+    expect(problemasDeRegla('nucleo-comun', new Map([['clientes/novuchat/chat-novuchat.novuchat.json', ['Carga de entrada', 'Puerta del turno']]]), ex)).toHaveLength(1);
+    expect(problemasDeRegla('nucleo-comun', new Map([['clientes/otro/otro.json', ['Carga de entrada']]]), ex)).toHaveLength(2);
+  });
+});
 });

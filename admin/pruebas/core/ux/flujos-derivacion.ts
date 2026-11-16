@@ -29,11 +29,27 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
   'venta-minima': { desde: '2026-10-23', porque: 'Hoy VIOLA: «identidad» arma enlace() a wa.me y `ya_cotejado` también; la clasificación sale de resumen.ruta (prefijo antes de «:») y del resultado del cobro. Cartera adopta en D4 (Q\'Taco).' },
 };
 
-/** Los flujos conversacionales del disco (los que traen `flujo.plantilla.json`). */
+export const CLIENTES = join(RAIZ, 'Flujos/clientes');
+
+/**
+ * Nombre de registro de un flujo MUDADO: el de su JSON (`chat-novuchat.novuchat.json` -> `chat-novuchat`), no el de su carpeta de `clientes/`
+ * (`novuchat`): una mudanza puede cambiar la carpeta, nunca el JSON. Solo cuenta si ese nombre ya está en el registro (una clave de `excepciones`),
+ * para que un flujo nuevo de `clientes/` siga el camino de la lista única y no entre aquí por su cuenta.
+ */
+export function flujosMudadosDelRegistro(excepciones: Record<string, Excepcion> = EXCEPCIONES, raiz: string = CLIENTES): string[] {
+  if (!existsSync(raiz)) return [];
+  return readdirSync(raiz, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && existsSync(join(raiz, d.name, 'flujo.plantilla.json')))
+    .flatMap((d) => readdirSync(join(raiz, d.name)).filter((f) => f.endsWith('.json') && f !== 'flujo.plantilla.json').map((f) => f.split('.')[0] as string))
+    .filter((n) => n in excepciones);
+}
+
+/** Los flujos conversacionales del disco (los que traen `flujo.plantilla.json`), en `experimental/` y los ya mudados que están en el registro. */
 export function flujosConversacionales(): string[] {
-  return readdirSync(EXPERIMENTAL, { withFileTypes: true })
+  const deExperimental = readdirSync(EXPERIMENTAL, { withFileTypes: true })
     .filter((d) => d.isDirectory() && existsSync(join(EXPERIMENTAL, d.name, 'flujo.plantilla.json')))
-    .map((d) => d.name).sort();
+    .map((d) => d.name);
+  return [...new Set([...deExperimental, ...flujosMudadosDelRegistro()])].sort();
 }
 /**
  * LA LISTA ÚNICA (migración, etapa 0, 12/11/2026): los flujos de producción que atienden a un cliente (`atiendeCliente`) y NO caen en el registro de
@@ -47,6 +63,7 @@ export function flujosFueraDelRegistro(
   return produccion.filter(atiende).flatMap((ruta) => {
     const partes = ruta.split('/');
     if (partes[0] === 'experimental' && enRegistro.includes(partes[1] ?? '')) return [];
+    if (partes[0] === 'clientes' && enRegistro.includes((partes[2] ?? '').split('.')[0] as string)) return [];
     const carpeta = partes.length > 1 ? (partes[1] ?? '') : '';
     return [{ flujo: ruta, tabla: carpeta !== '' && hayTabla(carpeta) }];
   });
