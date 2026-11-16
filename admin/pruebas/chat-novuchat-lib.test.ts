@@ -606,6 +606,11 @@ describe('chValidarMensaje: cada guardia, con su caso que falla y el que pasa', 
     expect(valida(base + 'Ahora te muestro los planes y te paso con el equipo. ¿Te parece bien?')).toBe('accion');
     expect(valida(base + 'Ahora te muestro los planes. ¿Te parece bien?', { planesOk: true })).toBe('');
   });
+  it('el pitch del primer contacto se presenta como asistente virtual con inteligencia artificial y cabe en la lista (UX C1, 15/11/2026)', () => {
+    const ab = NOVUCHAT['respaldos'].abierta;
+    expect(ab.pitch).toMatch(/asistente virtual[^.]*con inteligencia artificial/);
+    expect((ab.pitch + '\n\n' + ab.preguntaLista).length).toBeLessThanOrEqual(1024);
+  });
   it('contexto «abierta»: exige «el primer empleado… que nunca duerme» y 4 viñetas; «rubro»: cubre todos los puntos clave', () => {
     const pitch = NOVUCHAT['respaldos'].abierta.pitch + '\n\n' + NOVUCHAT['respaldos'].abierta.cierreSinRubro;
     expect(valida(pitch, { contexto: 'abierta' })).toBe('');
