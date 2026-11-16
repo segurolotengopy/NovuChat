@@ -728,12 +728,15 @@ class Indeterminado(Exception):
 MSG_INDETERMINADO = "una credencial la cita un flujo cuyo número no se puede leer"
 
 
-def vincular_al_alias(wfs, indice, n, phone):
+def vincular_al_alias(wfs, indice, n, phone, propio_vivo=False):
     """Ata las credenciales de ingesta y de envío al número del alias, sin otra llamada a n8n.
     Cada una tiene que estar citada (por id, o por nombre Y tipo) por al menos un flujo ACTIVO, distinto del propio
     del alias, cuyo número (el que dicen sus nodos Set) sea el de la tabla local; y ningún flujo (activo o no) que
     la cite puede tener un número distinto del alias, aunque también tenga el del alias. Un flujo (activo o no) que
     la cita y en el que no se encuentra NINGÚN número es INDETERMINADO (Indeterminado): no se adivina de quién es.
+    `propio_vivo` (SOLO al recargar): el flujo vivo del propio alias cuenta como un citante MÁS si ya cita esa credencial, está
+    activo y su único número es el del alias. Al recargar no se estrena ninguna credencial: se repite la que ese flujo ya usa
+    (una credencial distinta de la viva no la cita ningún flujo, así que la atadura sigue exigiendo otro flujo que la corrobore).
     Devuelve [(rol, vinculada)] sin nombres ni valores."""
     resultado = []
     for rol, tipo, etiqueta in (("ingesta", "httpHeaderAuth", "ingesta"), ("graph", tipo_envio(indice, n), "envío")):
@@ -741,7 +744,7 @@ def vincular_al_alias(wfs, indice, n, phone):
         ids = {c.get("id") for c in indice.get((tipo, nom), [])}
         propios, ajenos = 0, 0
         for w in wfs:
-            if w.get("name") == n["flujo"]:
+            if w.get("name") == n["flujo"] and not propio_vivo:
                 continue
             nodos = w.get("nodes") or []
             cita = any(isinstance(ref, dict) and ((ref.get("id") and ref.get("id") in ids) or (ctipo == tipo and ref.get("name") == nom))
@@ -759,10 +762,10 @@ def vincular_al_alias(wfs, indice, n, phone):
     return resultado
 
 
-def exigir_atadura(wfs, indice, n, phone):
+def exigir_atadura(wfs, indice, n, phone, propio_vivo=False):
     """vincular_al_alias que ABORTA (sin escribir) si algún rol da «no» o si un flujo es indeterminado."""
     try:
-        vinculos = vincular_al_alias(wfs, indice, n, phone)
+        vinculos = vincular_al_alias(wfs, indice, n, phone, propio_vivo)
     except Indeterminado as e:
         salir(4, "    " + str(e) + ": no se escribe nada")
     if any(not ok for _, ok in vinculos):
@@ -880,7 +883,7 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
         cruce = revisar_cruce_rele_envio(wfs, indice, n, n["flujo"])
         if cruce:
             salir(4, "\n".join("    " + e for e in cruce) + "\n    no se escribe nada")
-    vinculos = exigir_atadura(wfs, indice, n, t["phone"]) if credenciales_existentes() else []
+    vinculos = exigir_atadura(wfs, indice, n, t["phone"], propio_vivo=(modo == "recargar")) if credenciales_existentes() else []
     w, c = buscar(wfs, creds, alias)
     if len(w) > 1 or len(c) > 1:
         salir(4, "hay duplicados del flujo o de la credencial del timbre: no se elige uno")
