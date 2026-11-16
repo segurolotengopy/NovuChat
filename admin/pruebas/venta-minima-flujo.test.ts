@@ -19,6 +19,7 @@
  * Reloj: lunes 05/10/2026 10:00 en La Paz = `Date.UTC(2026, 9, 5, 14)`. Teléfonos sintéticos con seis ceros.
  * Para ver una conversación con los ojos: `VM_VER=1 pnpm -s vitest run --project puras pruebas/venta-minima-flujo.test.ts -t traza`.
  */
+import { voz } from './lib/venta-minima-voz';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -1928,7 +1929,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       const w = conJueves({ campanaReservaTexto: String(b['campanaReservaTexto']), campanaReservaMensaje: String(b['campanaReservaMensaje']), campanaReservaNoJueves: '' }, [campanaVigente('jueves', String(b['campanaReservaTexto']))]);
       const c = con(w);
       const t = c.escribe(String(b['campanaReservaTexto']));
-      expect(cuerpos(t)[0]).toBe(String(b['campanaReservaMensaje']));
+      expect(cuerpos(t)[0]).toBe(voz(String(b['campanaReservaMensaje'])));
       expect(t.mensajes.flatMap(titulosDe)).toEqual(['Reservar mesa']);
       for (const si of ['sí', 'quiero']) {
         const r = c.escribe(si);
@@ -1984,7 +1985,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       const c = con(w);
       const t = c.escribe(TORTAS.toUpperCase());
       expect(t.mensajes).toHaveLength(1);
-      expect(cuerpos(t)[0]).toBe(MSG);
+      expect(cuerpos(t)[0]).toBe(voz(MSG));
       expect(t.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido']);
       expect(idDeBoton(t, 'Hacer un pedido')).toBe('m|pedido');
       expect(estadoDe(w.mundo)['carrito'] ?? []).toHaveLength(0);
@@ -1998,7 +1999,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       const cfg2 = { ...config, campanaReservaTexto: JUEVES, campanaReservaMensaje: 'Mensaje de jueves agrandar.' };
       const campanas = [campanaVigente('tortas', TORTAS), campanaVigente('jueves', JUEVES)];
       const a = con(conTortas({ ...cfg2, reservasActivo: false }, campanas)).escribe(TORTAS);
-      expect(cuerpos(a)[0]).toBe(MSG);
+      expect(cuerpos(a)[0]).toBe(voz(MSG));
       expect(a.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido']);
       const b = con(conTortas({ ...cfg2, reservasActivo: true }, campanas)).escribe(JUEVES);
       expect(cuerpos(b)[0]).toBe('Mensaje de jueves agrandar.');
@@ -2015,7 +2016,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       expect([...mensaje.matchAll(/Bs (\d+)/g)].map((m) => Number(m[1])).sort()).toEqual([sin['precio'], con_['precio']].map(Number).sort());
       const w = conTortas({ campanaPedidoTexto: String(b['campanaPedidoTexto']), campanaPedidoMensaje: mensaje, campanaPedidoArea: String(b['campanaPedidoArea']) }, undefined, { catalogoWeb: { enlace: 'https://catalogo.ejemplo.com/c/x' } });
       const t = con(w).escribe(TORTAS);
-      expect(cuerpos(t)[0]).toBe(mensaje);
+      expect(cuerpos(t)[0]).toBe(voz(mensaje));
       expect(t.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido']);
     });
   });
@@ -2030,7 +2031,7 @@ describe('menú y promoción', () => {
     const w = crear();
     const t = con(w).escribe('hola');
     expect(t.mensajes).toHaveLength(1);
-    expect(cuerpos(t)[0]).toBe("¡Hola! 👋 Gracias por escribir a Q'Taco. Soy Taqui, el asistente virtual. ¿Qué te gustaría hacer?");
+    expect(cuerpos(t)[0]).toBe("¡Hola! 👋 Gracias por escribir a Q'Taco. Soy Taqui, el asistente virtual con IA.\n\n¿Qué te gustaría hacer?");
     // Con una campaña vigente el menú ofrece «Promociones»; el menú no lleva el botón «Menú» (ya es el menú).
     expect(titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Promociones']);
     const sinCampana = con(crear({ panel: panel({ campanas: [] }) })).escribe('hola');
@@ -2055,7 +2056,7 @@ describe('menú y promoción', () => {
     for (const v of variantes) {
       const t = con(crear()).escribe(v);
       expect((t.resumen as J)['resumen'].ruta, v).toBe('promo');
-      expect(cuerpos(t)[0], v).toBe('¡Hola! Qué bueno que viste nuestra promo. Promo Dúo: 2 órdenes de 3 tacos y 2 refrescos. Precio: 69 Bs.');
+      expect(cuerpos(t)[0], v).toBe(voz('¡Hola! Qué bueno que viste nuestra promo. Promo Dúo: 2 órdenes de 3 tacos y 2 refrescos. Precio: 69 Bs.'));
       expect(titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>), v).toEqual(['Pedir la promo', 'Reservar mesa', 'Ver la carta']);
     }
   });
@@ -2273,7 +2274,7 @@ describe('pedido', () => {
       expect(t.llamadas.extraer).toHaveLength(0);
       expect(tieneEnlace(t)).toBe(true);
       expect(plantillasA(t, AV1)).toHaveLength(1); // el aviso de la derivación
-      expect(cuerpos(t)[0]).toBe('Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Para volver al inicio, escribe «inicio».');
+      expect(cuerpos(t)[0]).toBe(voz('Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Para volver al inicio, escribe «inicio».'));
     }
   });
 
@@ -2318,13 +2319,13 @@ describe('pedido', () => {
     const t = con(w).audio();
     expect(t.ejecutados.has('Descargar medio')).toBe(false);
     expect(t.ejecutados.has('Transcribir audio')).toBe(false);
-    expect(cuerpos(t)[0]).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
+    expect(cuerpos(t)[0]).toBe(voz('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?'));
     // Negativo: el de 719.999 sí se procesa.
     const chico = crear({ dobles: { 'Obtener URL del medio': () => ({ url: 'https://medios.ejemplo.invalid/m', mime_type: 'audio/ogg', file_size: 719_999 }) } });
     expect(con(chico).audio().ejecutados.has('Transcribir audio')).toBe(true);
     // Si la transcripción falla, tampoco hay un error técnico.
     const falla = crear({ dobles: { 'Transcribir audio': () => ({ error: { message: 'sin saldo' } }) } });
-    expect(cuerpos(con(falla).audio())[0]).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
+    expect(cuerpos(con(falla).audio())[0]).toBe(voz('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?'));
   });
 
   // A3. El token de Meta viaja con la descarga del medio: solo por https, sin seguir redirecciones, y con un id de forma conocida.
@@ -2334,7 +2335,7 @@ describe('pedido', () => {
       const t = con(w).audio();
       expect(t.ejecutados.has('Descargar medio'), url).toBe(false);
       expect(t.ejecutados.has('Transcribir audio'), url).toBe(false);
-      expect(cuerpos(t)[0], url).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
+      expect(cuerpos(t)[0], url).toBe(voz('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?'));
     }
     expect(con(crear()).audio().ejecutados.has('Descargar medio')).toBe(true);
     // Lo mismo para un comprobante: con una URL http no hay descarga, ni lectura, ni cotejo.
@@ -2911,7 +2912,7 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
     silencio(c.turno({ type: 'sticker', sticker: { id: 'st-1' } }));
     silencio(c.turno({ type: 'reaction', reaction: { emoji: '👍' } }));
     const contacto = c.turno({ type: 'contacts', contacts: [{ name: { formatted_name: 'X' } }] });
-    expect(cuerpos(contacto)[0]).toBe('No pude entender bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
+    expect(cuerpos(contacto)[0]).toBe(voz('No pude entender bien ese mensaje 😅. ¿Me lo escribes o lo repites?'));
     expect(contacto.avisos).toHaveLength(0);
   });
 });
@@ -3782,7 +3783,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     const c = con(w);
     // 1. «hola» → el menú, amable y con sus botones (y «Promociones» porque hay una campaña vigente).
     const hola = c.escribe('hola');
-    expect(cuerpos(hola)[0]).toBe("¡Hola! 👋 Gracias por escribir a Q'Taco. Soy Taqui, el asistente virtual. ¿Qué te gustaría hacer?");
+    expect(cuerpos(hola)[0]).toBe("¡Hola! 👋 Gracias por escribir a Q'Taco. Soy Taqui, el asistente virtual con IA.\n\n¿Qué te gustaría hacer?");
     expect(titulosDelPrimero(hola)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Promociones']);
     // 2. [Hacer un pedido] → la carta.
     const carta = c.toca('m|pedido', 'Hacer un pedido');
@@ -3808,7 +3809,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     expect(estadoDe(w.mundo)['pendiente']).toHaveLength(1); // la pregunta orden/unidad sigue pendiente
     // 5. una imagen sin comprobante pendiente → texto amable con botones (no «Recibí tu imagen»).
     const imagen = c.imagen('media-5');
-    expect(cuerpos(imagen)[0]).toBe('¡Gracias por la imagen! Por aquí solo leo comprobantes de un pedido con QR, y ahora no tienes ninguno pendiente. ¿Qué te gustaría hacer?');
+    expect(cuerpos(imagen)[0]).toBe(voz('¡Gracias por la imagen! Por aquí solo leo comprobantes de un pedido con QR, y ahora no tienes ninguno pendiente. ¿Qué te gustaría hacer?'));
     expect(titulosDelPrimero(imagen)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Volver a inicio']);
     expect(imagen.avisos).toHaveLength(0);
     // 6. «¿puedo hacer una reserva?» en medio del pedido → la pregunta de la reserva, y el pedido sigue en el estado.
@@ -5171,7 +5172,7 @@ describe('B. «Cambiar algo»: lo que se elija reemplaza el pedido, se dice, y �
   it('la carta dice que reemplaza el pedido actual y lleva el botón «Dejarlo como estaba», sin agregar mensajes', () => {
     const r = armarPedido({ ventana: 5 });
     const t = r.c.toca('p|cambiar', 'Cambiar algo');
-    expect(cuerpos(t)[0]).toMatch(/^Claro\. Elige de nuevo todo lo que quieres: eso reemplaza tu pedido de ahora \(4 × Taco de Birria \(unidad\)\)\. Si mejor lo dejas como está, toca «Dejarlo como estaba»\.\n\nEsta es nuestra carta/);
+    expect(cuerpos(t)[0]).toMatch(/^Claro\.\s+Elige de nuevo todo lo que quieres: eso reemplaza tu pedido de ahora \(4 × Taco de Birria \(unidad\)\)\.\s+Si mejor lo dejas como está, toca «Dejarlo como estaba»\.\n\nEsta es nuestra carta/);
     expect(cuerpos(t)[0]).toContain('Elige de nuevo todo lo que quieres');
     expect(cuerpos(t).join('\n')).not.toMatch(/Tu pedido sigue guardado|Todavía tienes un pedido sin confirmar/);
     const ultimo = t.mensajes[t.mensajes.length - 1] as NonNullable<(typeof t.mensajes)[number]>;
@@ -5183,7 +5184,7 @@ describe('B. «Cambiar algo»: lo que se elija reemplaza el pedido, se dice, y �
   it('texto de «Cambiar algo» (pedido de Andres): dice que elija de nuevo, muestra lo guardado (hasta 3 ítems y «… y N más») y cabe en el mensaje con botón', () => {
     const uno = armarPedido({ ventana: 5, lineas: [ln('horchata', 1)] });
     const t1 = uno.c.toca('p|cambiar', 'Cambiar algo');
-    expect(cuerpos(t1)[0]).toMatch(/^Claro\. Elige de nuevo todo lo que quieres: eso reemplaza tu pedido de ahora \(1 × Horchata\)\. Si mejor lo dejas como está, toca «Dejarlo como estaba»\./);
+    expect(cuerpos(t1)[0]).toMatch(/^Claro\.\s+Elige de nuevo todo lo que quieres: eso reemplaza tu pedido de ahora \(1 × Horchata\)\.\s+Si mejor lo dejas como está, toca «Dejarlo como estaba»\./);
     const seis = armarPedido({ ventana: 5, lineas: [ln('horchata', 1), ln('gaseosas', 2), ln('nachos', 1), ln('queso', 1), ln('suiza', 1)] });
     const t6 = seis.c.toca('p|cambiar', 'Cambiar algo');
     expect(cuerpos(t6)[0]).toContain('(1 × Horchata, 2 × Gaseosas, 1 × Nachos Supremos, … y 2 más)');
@@ -5345,7 +5346,7 @@ describe('C. pedido a medias: «quiero confirmar» no deriva; cambiar a recoger;
   it('«¿no me puedes cobrar el delivery?» sigue transfiriendo (aviso + botón), pero SIN la frase de «menú»', () => {
     const { w, c } = deliveryPendiente();
     const t = c.escribe('¿no me puedes cobrar el delivery?');
-    expect(cuerpos(t)[0]).toBe('El costo del delivery no lo tengo por aquí 🙏. Toca «Escribir al local» y consúltalo con nuestro equipo. Tu pedido sigue guardado.');
+    expect(cuerpos(t)[0]).toBe(voz('El costo del delivery no lo tengo por aquí 🙏. Toca «Escribir al local» y consúltalo con nuestro equipo. Tu pedido sigue guardado.'));
     expect(cuerpos(t)[0]).not.toContain('menú');
     expect(cuerpos(t)[0]).not.toContain('volver al inicio'); // el carrito se conserva: no se sugiere que todo se borra
     expect(t.avisos.length).toBeGreaterThan(0);
@@ -5837,7 +5838,7 @@ describe('L3. el delivery que quita productos dice que no vuelven solos', () => 
   it('«Si vuelves a recojo, vuelve a agregarlo» y, con el carrito vacío, «Tu pedido quedó vacío»', () => {
     const r = armarPedido({ ventana: 5, config: { areasSinDelivery: 'Bebidas' }, lineas: [ln('tacos de birria', 4, 'unidad'), ln('horchata', 1)] });
     const t = r.c.escribe('prefiero delivery');
-    expect(cuerpos(t).join('\n')).toContain('Quité «Horchata» de tu pedido porque no lo enviamos por delivery. Si cambias a recoger, puedes volver a agregarlo.');
+    expect(cuerpos(t).join('\n').replace(/\n\n/g, ' ')).toContain('Quité «Horchata» de tu pedido porque no lo enviamos por delivery. Si cambias a recoger, puedes volver a agregarlo.');
     expect(cuerpos(t).join('\n')).not.toContain('quedó vacío');
     const v = armarPedido({ ventana: 5, config: { areasSinDelivery: 'Bebidas' }, lineas: [ln('horchata', 2)] });
     const u = v.c.escribe('prefiero delivery');
@@ -6137,7 +6138,7 @@ describe('(4) `quiereHablar` del modelo no deriva a la primera: una aclaración 
     const r = armarPedido({ ventana: 5 });
     r.w.estado.extraccion = quiere();
     const t = r.c.escribe('Donde dije');
-    expect(cuerpos(t)[0]).toBe('Disculpa, no te entendí bien. ¿Qué te gustaría hacer?');
+    expect(cuerpos(t)[0]).toBe(voz('Disculpa, no te entendí bien. ¿Qué te gustaría hacer?'));
     expect(t.mensajes.flatMap(titulosDe)).toEqual(expect.arrayContaining(['Seguir con mi pedido', 'Escribir al local']));
     expect(t.avisos).toHaveLength(0);
     expect(tieneEnlace(t)).toBe(false);
@@ -6183,7 +6184,7 @@ describe('(4) `quiereHablar` del modelo no deriva a la primera: una aclaración 
     c.toca('m|pedido', 'Hacer un pedido'); // en el paso de pedido, todavía sin productos
     v.estado.extraccion = EX([], { entrega: '', quiereHablar: true });
     const a = c.escribe('Donde dije');
-    expect(cuerpos(a)[0]).toBe('Disculpa, no te entendí bien. ¿Qué te gustaría hacer?');
+    expect(cuerpos(a)[0]).toBe(voz('Disculpa, no te entendí bien. ¿Qué te gustaría hacer?'));
     expect(a.mensajes.flatMap(titulosDe)).not.toContain('Seguir con mi pedido');
   });
 });

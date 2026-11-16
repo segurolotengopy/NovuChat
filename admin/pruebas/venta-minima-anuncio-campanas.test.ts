@@ -9,6 +9,7 @@
  *   - Lo que se lee en la imagen no llega al cliente; un comprobante pendiente se lee como comprobante y nunca como anuncio; un PDF no se clasifica.
  *   - 0 mensajes agregados: cada respuesta de campaña es UN solo mensaje (reemplaza al saludo).
  */
+import { voz } from './lib/venta-minima-voz';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -141,9 +142,10 @@ const A = String(DATOS['campanaPedidoMensaje']);
 const B = String(DATOS['campanaReservaMensaje']);
 const DETALLE = String(DATOS['campanaReservaDetalle']);
 const SOLO_DELIVERY = String(DATOS['campanaPedidoEntrega']);
-const esA = (t: ResultadoTurno): boolean => { if (cuerpos(t)[0] !== A && process.env['DBG']) console.log('A=', JSON.stringify(A), '\nGOT=', JSON.stringify(cuerpos(t)[0])); return cuerpos(t)[0] === A; };
-const esB = (t: ResultadoTurno): boolean => cuerpos(t)[0] === B;
-const ninguna = (t: ResultadoTurno): boolean => !t.mensajes.some((m) => [A, B, DETALLE, SOLO_DELIVERY].includes(m.cuerpo));
+// Lo que sale al cliente lleva la voz común (identidad «con IA» y párrafos separados: `Armar mensajes`): el texto del negocio se compara ya con ella.
+const esA = (t: ResultadoTurno): boolean => cuerpos(t)[0] === voz(A);
+const esB = (t: ResultadoTurno): boolean => cuerpos(t)[0] === voz(B);
+const ninguna = (t: ResultadoTurno): boolean => !t.mensajes.some((m) => [A, B, DETALLE, SOLO_DELIVERY].map(voz).includes(m.cuerpo));
 
 describe('los datos de Q\'Taco (la adenda)', () => {
   it('el detalle del combo (B) es el de la adenda, con «2 helados» y sin «de tequila», y el área de «Hacer un pedido» es la real del catálogo', () => {
@@ -290,11 +292,11 @@ describe('CAMPAÑA A «Tortas mexicanas»', () => {
     expect(esA(c.escribe(TORTAS))).toBe(true);
     const t = c.escribe('¿por qué dice solo delivery?');
     expect(t.mensajes).toHaveLength(1);
-    expect(cuerpos(t)[0]).toBe(SOLO_DELIVERY);
+    expect(cuerpos(t)[0]).toBe(voz(SOLO_DELIVERY));
     expect(titulos(t)).toEqual(['Hacer un pedido']);
     expect(idDe(t, 'Hacer un pedido')).toBe('m|pedido|promos');
     const nombrada = conversacion(crear()).escribe('vi el anuncio de las tortas mexicanas, ¿es solo delivery?');
-    expect(cuerpos(nombrada)[0]).toBe(SOLO_DELIVERY);
+    expect(cuerpos(nombrada)[0]).toBe(voz(SOLO_DELIVERY));
   });
   it('NEGANDO: la pregunta suelta sin haber visto la campaña no activa nada; tampoco «solo delivery» si el cliente ya cambió de paso', () => {
     expect(ninguna(conversacion(crear()).escribe('¿por qué dice solo delivery?'))).toBe(true);
@@ -320,7 +322,7 @@ describe('CAMPAÑA A: la promesa de «directo a Promos» solo si se cumple (revi
   });
   it('con enlace y área: el mensaje termina en «de nuestra carta.» y promete la sección de Promos', () => {
     expect(A).toMatch(/Promos\/Ofertas de nuestra carta\.$/);
-    expect(cuerpos(conversacion(crear()).escribe(TORTAS))[0]).toBe(A);
+    expect(cuerpos(conversacion(crear()).escribe(TORTAS))[0]).toBe(voz(A));
   });
 });
 
@@ -357,11 +359,11 @@ describe('CAMPAÑA B «Jueves de +2»', () => {
       cc.escribe(JUEVES);
       const t = cc.escribe(q);
       expect(t.mensajes, q).toHaveLength(1);
-      expect(cuerpos(t)[0], q).toBe(DETALLE);
+      expect(cuerpos(t)[0], q).toBe(voz(DETALLE));
       expect(titulos(t), q).toEqual(['Reservar mesa']);
     }
     const directa = conversacion(crear()).escribe('hola, ¿qué incluye el jueves de +2?');
-    expect(cuerpos(directa)[0]).toBe(DETALLE);
+    expect(cuerpos(directa)[0]).toBe(voz(DETALLE));
   });
   it('NEGANDO: «¿qué incluye?» sin haber visto la campaña B no es el combo (cliente regular), ni tras la campaña A', () => {
     expect(ninguna(conversacion(crear()).escribe('¿qué incluye?'))).toBe(true);
@@ -426,15 +428,15 @@ describe('IMAGEN del anuncio (foto o captura)', () => {
   });
   it('con un pie de foto que pregunta: «¿qué incluye?» en el arte B, «solo delivery» en el arte A; sin pregunta, el mensaje de la promo', () => {
     const b = conversacion(crear({ clasifica: { categoria: 'publicidad', titular_principal: 'Jueves de +2' } })).imagen('¿qué incluye?');
-    expect(cuerpos(b)[0]).toBe(DETALLE);
+    expect(cuerpos(b)[0]).toBe(voz(DETALLE));
     const a = conversacion(crear({ clasifica: { categoria: 'publicidad', titular_principal: 'Tortas Mexicanas' } })).imagen('¿por qué dice solo delivery?');
-    expect(cuerpos(a)[0]).toBe(SOLO_DELIVERY);
+    expect(cuerpos(a)[0]).toBe(voz(SOLO_DELIVERY));
     const sinPregunta = conversacion(crear({ clasifica: { categoria: 'publicidad', titular_principal: 'Tortas Mexicanas' } })).imagen('mira esto');
     expect(esA(sinPregunta)).toBe(true);
     // Un pie que nombra la OTRA campaña no cambia la del arte.
     const cruzado = conversacion(crear({ clasifica: { categoria: 'publicidad', titular_principal: 'Tortas Mexicanas' } })).imagen('¿qué incluye el jueves de +2?');
     expect(cuerpos(cruzado)[0]).toContain('Bienvenido a Q\'Taco');
-    expect(cuerpos(cruzado)[0]).not.toBe(DETALLE);
+    expect(cuerpos(cruzado)[0]).not.toBe(voz(DETALLE));
   });
   it('un PDF nunca va al clasificador; una imagen que no es image/* tampoco', () => {
     const w = crear({ clasifica: { categoria: 'publicidad', titular_principal: 'Tortas Mexicanas', campana: 'A' } });
@@ -479,7 +481,7 @@ describe('C-09: una pregunta que el mensaje de la promo no contesta se pasa con 
     expect(cuerpos(t)[0]).not.toMatch(/te avisamos|te llamamos|te escribir/i);
     // El único botón es «Escribir al local»: el cuerpo no nombra el botón de la campaña ni «Promos», y la puntuación es buena.
     expect(cuerpos(t)[0]).not.toMatch(/bot[oó]n de abajo|Promos|Hacer un pedido/);
-    expect(cuerpos(t)[0]).toMatch(/por delivery\. Tu pregunta la ve mejor/);
+    expect(cuerpos(t)[0]).toMatch(/por delivery\.\s+Tu pregunta la ve mejor/);
     expect(t.mensajes[0]?.payload['interactive']?.type).toBe('cta_url');
     expect(t.avisos.length).toBeGreaterThan(0);
   });
@@ -509,7 +511,7 @@ describe('C-09: una pregunta que el mensaje de la promo no contesta se pasa con 
       expect(t.avisos, v).toHaveLength(0);
     }
     const q = conversacion(crear()).escribe('hola, ¿qué incluye el jueves de +2?');
-    expect(cuerpos(q)[0]).toBe(DETALLE);
+    expect(cuerpos(q)[0]).toBe(voz(DETALLE));
     expect(q.avisos).toHaveLength(0);
   });
 });

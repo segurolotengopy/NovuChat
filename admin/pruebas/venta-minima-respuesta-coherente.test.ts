@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar, type J, type Referencias } from './lib/flujo';
+import { voz } from './lib/venta-minima-voz';
 import { asentarCupos, comprometer, consumirCupos, crearSesion, leerSesion, type SesionDeMentira } from './lib/venta-minima-sesion';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src');
@@ -30,10 +31,14 @@ const LIBS = [...LIBRERIAS, PQR, APT].join('\n');
 // La respuesta coherente (core): la pieza `rc*` SOLA (ya no usa el filtro común), DESPUÉS de las librerías y ANTES del nodo (la marca `+coherente` de construir.mjs).
 const COHERENTE = ['core/conversacion/respuesta-coherente.js'].map((r) => readFileSync(join(RAIZ, '../../../src', r), 'utf8')).join('\n');
 const CON_COHERENTE = ['decidir-turno', 'plan-del-turno'];
+// La UX común (core, 16/11/2026): `+baja` (la baja por texto: «Decidir turno» y «Plan del turno») y `+texto` (identidad «con IA» y párrafos: «Armar mensajes»), tal como las incluye construir.mjs.
+const BAJA = readFileSync(join(RAIZ, '../../../src/core/conversacion/baja.js'), 'utf8');
+const TEXTO = ['core/texto/identidad.js', 'core/texto/parrafos.js'].map((r) => readFileSync(join(RAIZ, '../../../src', r), 'utf8')).join('\n');
+const CON_TEXTO = ['armar-mensajes'];
 const CODIGO: Record<string, string> = {};
 const CON_SESION = ['config-del-negocio', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes'];
 for (const n of ['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'interpretar-lectura', 'decidir-turno', 'plan-del-turno', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes', 'sin-estado']) {
-  CODIGO[n] = `${LIBS}\n${CON_SESION.includes(n) ? `${SESION}\n` : ''}${CON_COHERENTE.includes(n) ? `${COHERENTE}\n` : ''}${leer(`nodos/${n}.js`)}`;
+  CODIGO[n] = `${LIBS}\n${CON_SESION.includes(n) ? `${SESION}\n` : ''}${CON_COHERENTE.includes(n) ? `${COHERENTE}\n${BAJA}\n` : ''}${CON_TEXTO.includes(n) ? `${TEXTO}\n` : ''}${leer(`nodos/${n}.js`)}`;
 }
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026, 10:00 en La Paz
@@ -302,7 +307,7 @@ describe('A. acuses (6): una frase fija, sin menú, sin modelo y sin tocar el es
     const s = turno(m, { texto });
     expect(s.d['accion']).toBe('acuse');
     expect(s.d['cuerpoExtraccion']).toBeNull(); // 0 llamadas a «Extraer»
-    expect(cuerpos(s)).toEqual([RL['acuse']]);
+    expect(cuerpos(s)).toEqual([voz(RL['acuse'])]);
     expect(clientes(s)).toHaveLength(1);
     expect(botonesDelPrimero(s)).toEqual([]); // sin ids m|pedido, m|reserva, m|promos
     for (const id of IDS_DEL_MENU) expect(JSON.stringify(clientes(s))).not.toContain(id);
@@ -316,7 +321,7 @@ describe('A. acuses (6): una frase fija, sin menú, sin modelo y sin tocar el es
     const m = mundoCon();
     const s = turno(m, { texto: 'gracias' });
     expect(s.d['accion']).toBe('acuse');
-    expect(cuerpos(s)).toEqual([RL['acuse']]);
+    expect(cuerpos(s)).toEqual([voz(RL['acuse'])]);
   });
   it('NEGADO: «ok, quiero 2 tacos» no es un acuse y sigue su camino de siempre', () => {
     const m = mundoCon();
@@ -419,24 +424,24 @@ const CASOS: CasoLibre[] = [
   { texto: 'a cuántas cuadras de la plaza están', intencion: 'direccion', verifica: (c) => expect(c).toMatch(/^Estamos en /) },
   { texto: 'me lo traen hasta la casa?', intencion: 'modalidades', verifica: (c) => expect(c).toMatch(/delivery/i) },
   { texto: 'puedo pasar yo a llevármelo?', intencion: 'modalidades', verifica: (c) => { expect(c).toMatch(/delivery/i); expect(c).toMatch(/recoger/i); } },
-  { texto: 'gracias amigo', intencion: 'acuse', verifica: (c) => expect(c).toBe(RL['acuse']) },
-  { texto: 'thanks', intencion: 'acuse', verifica: (c) => expect(c).toBe(RL['acuse']) },
-  { texto: 'okis', intencion: 'acuse', verifica: (c) => expect(c).toBe(RL['acuse']) },
-  { texto: 'gracias, muy amable', intencion: 'acuse', verifica: (c) => expect(c).toBe(RL['acuse']) },
-  { texto: 'ok 😀', intencion: 'acuse', verifica: (c) => expect(c).toBe(RL['acuse']) },
-  { texto: 'gracias 🙂', intencion: 'acuse', verifica: (c) => expect(c).toBe(RL['acuse']) },
+  { texto: 'gracias amigo', intencion: 'acuse', verifica: (c) => expect(c).toBe(voz(RL['acuse'])) },
+  { texto: 'thanks', intencion: 'acuse', verifica: (c) => expect(c).toBe(voz(RL['acuse'])) },
+  { texto: 'okis', intencion: 'acuse', verifica: (c) => expect(c).toBe(voz(RL['acuse'])) },
+  { texto: 'gracias, muy amable', intencion: 'acuse', verifica: (c) => expect(c).toBe(voz(RL['acuse'])) },
+  { texto: 'ok 😀', intencion: 'acuse', verifica: (c) => expect(c).toBe(voz(RL['acuse'])) },
+  { texto: 'gracias 🙂', intencion: 'acuse', verifica: (c) => expect(c).toBe(voz(RL['acuse'])) },
   { texto: 'qué se puede comer ahí', intencion: 'carta', verifica: (c) => expect(c.length).toBeGreaterThan(10) },
-  { texto: 'jajaja qué chistoso el nombre del local', intencion: 'humor', verifica: (c) => expect(c).toBe(RL['textoHumor']) },
-  { texto: 'cuéntame un chiste de tacos', intencion: 'humor', verifica: (c) => expect(c).toBe(RL['textoHumor']) },
-  { texto: 'qué hambre tengo, estoy famélico', intencion: 'humor', verifica: (c) => expect(c).toBe(RL['textoHumor']) },
-  { texto: 'eres más lento que el tráfico de la Ceja', intencion: 'humor', verifica: (c) => expect(c).toBe(RL['textoHumor']) },
-  { texto: 'la última vez me atendieron muy mal', intencion: 'queja', verifica: (c, s) => { expect(c).toBe(RL['textoQueja']); conBotonLocal(s); } },
-  { texto: 'estoy molesto, el taco estaba frío', intencion: 'queja', verifica: (c, s) => { expect(c).toBe(RL['textoQueja']); conBotonLocal(s); } },
-  { texto: 'qué mala atención la de ayer', intencion: 'queja', verifica: (c, s) => { expect(c).toBe(RL['textoQueja']); conBotonLocal(s); } },
-  { texto: 'tienen estacionamiento', intencion: 'otro', verifica: (c, s) => { expect(c).toBe(RL['textoRechazo']); conBotonLocal(s); } },
-  { texto: 'aceptan mascotas', intencion: 'otro', verifica: (c, s) => { expect(c).toBe(RL['textoRechazo']); conBotonLocal(s); } },
-  { texto: 'hay wifi para clientes', intencion: 'otro', verifica: (c, s) => { expect(c).toBe(RL['textoRechazo']); conBotonLocal(s); } },
-  { texto: 'tienen sillas para bebés', intencion: 'otro', verifica: (c, s) => { expect(c).toBe(RL['textoRechazo']); conBotonLocal(s); } },
+  { texto: 'jajaja qué chistoso el nombre del local', intencion: 'humor', verifica: (c) => expect(c).toBe(voz(RL['textoHumor'])) },
+  { texto: 'cuéntame un chiste de tacos', intencion: 'humor', verifica: (c) => expect(c).toBe(voz(RL['textoHumor'])) },
+  { texto: 'qué hambre tengo, estoy famélico', intencion: 'humor', verifica: (c) => expect(c).toBe(voz(RL['textoHumor'])) },
+  { texto: 'eres más lento que el tráfico de la Ceja', intencion: 'humor', verifica: (c) => expect(c).toBe(voz(RL['textoHumor'])) },
+  { texto: 'la última vez me atendieron muy mal', intencion: 'queja', verifica: (c, s) => { expect(c).toBe(voz(RL['textoQueja'])); conBotonLocal(s); } },
+  { texto: 'estoy molesto, el taco estaba frío', intencion: 'queja', verifica: (c, s) => { expect(c).toBe(voz(RL['textoQueja'])); conBotonLocal(s); } },
+  { texto: 'qué mala atención la de ayer', intencion: 'queja', verifica: (c, s) => { expect(c).toBe(voz(RL['textoQueja'])); conBotonLocal(s); } },
+  { texto: 'tienen estacionamiento', intencion: 'otro', verifica: (c, s) => { expect(c).toBe(voz(RL['textoRechazo'])); conBotonLocal(s); } },
+  { texto: 'aceptan mascotas', intencion: 'otro', verifica: (c, s) => { expect(c).toBe(voz(RL['textoRechazo'])); conBotonLocal(s); } },
+  { texto: 'hay wifi para clientes', intencion: 'otro', verifica: (c, s) => { expect(c).toBe(voz(RL['textoRechazo'])); conBotonLocal(s); } },
+  { texto: 'tienen sillas para bebés', intencion: 'otro', verifica: (c, s) => { expect(c).toBe(voz(RL['textoRechazo'])); conBotonLocal(s); } },
   { texto: 'platícame de la historia del taco', intencion: 'identidad', verifica: (c) => expect(c).toMatch(/^Soy un asistente virtual con inteligencia artificial de /) },
 ];
 describe('C. fuera de protocolo en inicio o menú (25): el modelo solo clasifica y el texto es del código', () => {
@@ -487,7 +492,7 @@ describe('C. fuera de protocolo en inicio o menú (25): el modelo solo clasifica
   it('como primer mensaje: el paso pasa a menú y no se antepone prosa', () => {
     const m = mundoCon();
     const s = turno(m, { texto: 'jajaja qué chistoso', extraccion: modelo('humor') });
-    expect(cuerpos(s)).toEqual([RL['textoHumor']]);
+    expect(cuerpos(s)).toEqual([voz(RL['textoHumor'])]);
     expect(estadoDe(m)['paso']).toBe('menu');
   });
   it.each(['holi', 'Hola!', '¡Hola!', 'qué tal', 'saludos', 'Holaaa', 'hey'])('el saludo «%s» no llama al modelo', (texto) => {
@@ -571,9 +576,9 @@ describe('D. un modelo malicioso o caído: lo que sale al cliente es texto del c
     const c = cuerpos(s).join('\n');
     expect(c).not.toMatch(FRAGMENTOS_MALOS);
     // Es uno de los textos del código para ese caso: humor (intención válida), o el rechazo con botón local.
-    if (extraccion && extraccion['intencion'] === 'humor') expect(c).toBe(RL['textoHumor']);
-    else if (extraccion && extraccion['intencion'] === 'queja') expect(c).toBe(RL['textoQueja']);
-    else { expect(c).toBe(RL['textoRechazo']); conBotonLocal(s); expect(s.p['ruta']).toBe('libre:rechazada'); }
+    if (extraccion && extraccion['intencion'] === 'humor') expect(c).toBe(voz(RL['textoHumor']));
+    else if (extraccion && extraccion['intencion'] === 'queja') expect(c).toBe(voz(RL['textoQueja']));
+    else { expect(c).toBe(voz(RL['textoRechazo'])); conBotonLocal(s); expect(s.p['ruta']).toBe('libre:rechazada'); }
     expect(s.p['ruta']).not.toMatch(/^pedido:/);
     sinAviso(s);
     sinRespaldoLiteral(s);
@@ -661,7 +666,7 @@ describe('N. carta sin cargar, `carritoAnterior` y menú con carrito: la funció
     expect(clientes(s)).toHaveLength(1);
     expect(s.p['aviso']).toBeNull();
     expect(s.p['ruta']).toBe('libre:rechazada');
-    expect(cuerpos(s)).toEqual([RL['textoRechazo']]);
+    expect(cuerpos(s)).toEqual([voz(RL['textoRechazo'])]);
     conBotonLocal(s);
   });
   const hastaMenuConCarritoAnterior = (m: Mundo): void => {
@@ -721,7 +726,9 @@ describe('N2. defensa en profundidad del plan', () => {
     for (const texto of ['quiero morirme', 'no me escribas más', 'dame de baja', 'paren de escribirme']) {
       const apagada = mundoCon({ ...RL, activo: false });
       turno(apagada, { texto: 'hola' });
-      const base = turno(apagada, { texto, extraccion: { lineas: [] } });
+      // La referencia («como en main»): el menú. Se fuerza la decisión `menu` porque una baja («no me escribas más») YA NO llega al menú: `Decidir turno` la confirma con el texto fijo (UX común, 16/11/2026); lo que prueba
+      // este caso es la defensa del PLAN si una baja o una crisis llegara hasta `extraer_libre`.
+      const base = turno(apagada, { texto, decision: (d) => ({ ...d, accion: 'menu' }), extraccion: { lineas: [] } });
       for (const intencion of ['humor', 'crisis_o_baja']) {
         const m = mundoCon();
         turno(m, { texto: 'hola' });
@@ -947,4 +954,152 @@ describe('H. la batería de pedidos existente, con la respuesta libre ENCENDIDA'
     expect(red).toHaveLength(0);
     expect(r.total.turnos).toBeGreaterThan(0);
   }, 120_000);
+});
+
+// =================================================================================================
+// UX COMÚN (16/11/2026): baja por texto, identidad «con IA» y párrafos. Piezas del core INCLUIDAS (nunca copiadas) por `+baja` y `+texto` de construir.mjs; 0 mensajes agregados.
+describe('UX común · primer mensaje: «asistente virtual con IA»', () => {
+  it.each([
+    ['sin nombre de asistente', '', 'Soy el asistente virtual con IA.'],
+    ['con nombre de asistente', 'Luna', 'Soy Luna, el asistente virtual con IA.'],
+  ])('%s', (_n, nombre, frase) => {
+    const m = crear({ panel: panel({ voz: { nombreAsistente: nombre, nivelEmojis: 'pocos' } }) });
+    const s = turno(m, { texto: 'hola' });
+    expect(clientes(s)).toHaveLength(1);
+    const c = cuerpos(s)[0]!;
+    expect(c).toContain(frase);
+    expect(c).not.toMatch(/asistente virtual(?! con IA)/);
+    expect(c).toContain('¿Qué te gustaría hacer?');
+  });
+  it('el saludo sale en párrafos separados y con la pregunta final sola (los botones y el tope de 1.024 se respetan)', () => {
+    const m = crear();
+    const s = turno(m, { texto: 'hola' });
+    const c = cuerpos(s)[0]!;
+    expect(c.split('\n\n').length).toBeGreaterThanOrEqual(2);
+    expect(c.split('\n\n').at(-1)).toBe('¿Qué te gustaría hacer?');
+    expect(c.length).toBeLessThanOrEqual(1024);
+    expect(botonesDelPrimero(s)).toEqual(IDS_DEL_MENU.filter((id) => botonesDelPrimero(s).includes(id)));
+  });
+  it('NEGADO: la identidad no se agrega dos veces ni toca un texto que ya dice IA (idempotente)', () => {
+    const m = crear();
+    turno(m, { texto: 'hola' });
+    const s = turno(m, { texto: 'eres un robot?' });
+    expect(cuerpos(s).join(' ')).not.toMatch(/con IA con IA/);
+  });
+});
+
+describe('UX común · baja por texto: UN texto fijo, sin avisos, sin cobro y sin CRM', () => {
+  const BAJA_TXT = 'Entendido, tomé nota de que no quieres recibir más mensajes. Si más adelante necesitas algo, escríbeme cuando quieras.';
+  it.each(['no me escribas más', 'no me manden nada', 'stop', 'Dame de baja', 'No me escriban más por favor'])('«%s» → confirmación fija', (texto) => {
+    const m = mundoCon();
+    const s = turno(m, { texto });
+    expect(s.d['accion']).toBe('baja');
+    expect(s.d['cuerpoExtraccion']).toBeNull(); // 0 llamadas al modelo
+    expect(cuerpos(s)).toEqual([BAJA_TXT]);
+    expect(clientes(s)).toHaveLength(1); // reemplaza la respuesta: 0 mensajes agregados
+    expect(botonesDelPrimero(s)).toEqual([]);
+    expect(s.p['ruta']).toBe('baja');
+    expect(s.p['aviso']).toBeNull();
+    expect(s.armados).toHaveLength(0); // ni aviso al local ni cupos
+    expect(s.p['pedido']).toBeNull();
+    expect(s.p['cierre']).toBeNull();
+    expect(JSON.stringify(clientes(s))).not.toMatch(/m\|pedido|m\|reserva|qr_enviado/);
+  });
+  it('la baja se decide ANTES de cualquier intención: con un pedido a medias no se pierde ni se pasa al modelo, y el carrito queda como estaba', () => {
+    const m = mundoCon();
+    turno(m, { texto: 'hola' });
+    turno(m, { texto: 'quiero 2 tacos', extraccion: { lineas: [{ producto: 'tacos de birria', cantidad: 2, forma: 'unidad', detalle: '' }] } });
+    const antes = JSON.stringify(estadoDe(m)['carrito']);
+    expect(antes).not.toBe('[]');
+    const s = turno(m, { texto: 'no me escribas más' });
+    expect(s.d['accion']).toBe('baja');
+    expect(cuerpos(s)).toEqual([BAJA_TXT]);
+    expect(JSON.stringify(estadoDe(m)['carrito'])).toBe(antes);
+  });
+  it('con un QR esperando comprobante tampoco hay aviso ni cobro nuevo', () => {
+    const m = crear({ panel: conCobro() });
+    hastaResumen(m, 'recojo');
+    expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
+    const s = turno(m, { texto: 'stop' });
+    expect(s.d['accion']).toBe('baja');
+    expect(s.armados).toHaveLength(0);
+    expect(JSON.stringify(clientes(s))).not.toContain('qr_enviado');
+    expect(clientes(s).filter((j) => j['evento'])).toHaveLength(0);
+  });
+  it('quien vuelve a escribir después se atiende como siempre (la baja no bloquea el chat)', () => {
+    const m = mundoCon();
+    turno(m, { texto: 'stop' });
+    const s = turno(m, { texto: 'hola' });
+    expect(s.d['accion']).toBe('menu');
+  });
+  it.each(['no me llamaron ayer', 'no me escribiste el precio', 'mi ex no deja de escribirme', 'no me escribas el precio, mándame el QR'])('NEGADO: «%s» no es una baja', (texto) => {
+    const m = mundoCon();
+    const s = turno(m, { texto });
+    expect(s.d['accion']).not.toBe('baja');
+    expect(cuerpos(s).join(' ')).not.toContain(BAJA_TXT);
+  });
+  it('NEGADO: un pedido normal sigue igual (extrae el pedido y pide los datos)', () => {
+    const m = mundoCon();
+    turno(m, { texto: 'hola' });
+    const s = turno(m, { texto: 'quiero 2 tacos de birria', extraccion: { lineas: [{ producto: 'tacos de birria', cantidad: 2, forma: 'unidad', detalle: '' }] } });
+    expect(s.d['accion']).toBe('extraer_pedido');
+    expect(cuerpos(s).join(' ')).not.toContain(BAJA_TXT);
+  });
+  it('NEGADO: el manejo de crisis sigue yendo al menú, no a la baja («quiero morir»)', () => {
+    const m = mundoCon();
+    turno(m, { texto: 'hola' });
+    const s = turno(m, { texto: 'quiero morirme' });
+    expect(s.d['accion']).not.toBe('baja');
+    expect(s.d['accion']).toBe('menu');
+  });
+  it('un botón o una nota de voz nunca se toman por la baja (solo el texto escrito, la misma fuente del reporte)', () => {
+    const m = mundoCon();
+    turno(m, { texto: 'hola' });
+    const s = turno(m, { boton: 'm|menu', texto: 'stop' });
+    expect(s.d['accion']).not.toBe('baja');
+  });
+});
+
+describe('UX común · párrafos: el texto largo sale separado y dentro de los topes de WhatsApp', () => {
+  it('un texto de 3 oraciones o más se parte; uno que ya cabe justo en 1.024 NO se alarga más allá del tope', () => {
+    const m = crear();
+    turno(m, { texto: 'hola' });
+    const largo = 'Esta es una oración de prueba. '.repeat(33).trim(); // ~1.022 caracteres, en botones
+    const s = turno(m, { texto: 'hola', plan: (p) => ({ ...p, mensajes: [{ tipo: 'botones', cuerpo: largo, botones: [{ id: 'm|menu', title: 'Menú' }] }] }) });
+    const c = cuerpos(s)[0]!;
+    expect(c.length).toBeLessThanOrEqual(1024);
+    expect(c.replace(/\n\n/g, ' ')).toBe(largo.slice(0, 1024));
+  });
+  it('un texto largo de 4.000 en mensaje de texto se parte en párrafos', () => {
+    const m = crear();
+    turno(m, { texto: 'hola' });
+    const t = Array.from({ length: 9 }, (_, i) => `Esta es la oración número ${i + 1} del texto.`).join(' ');
+    const s = turno(m, { texto: 'hola', plan: (p) => ({ ...p, mensajes: [{ tipo: 'texto', cuerpo: t }] }) });
+    const c = cuerpos(s)[0]!;
+    expect(c.split('\n\n').length).toBeGreaterThan(3);
+    expect(c.length).toBeLessThanOrEqual(4000);
+    expect(c.replace(/\n\n/g, ' ')).toBe(t);
+  });
+});
+
+describe('UX común · lo que lleva cada JSON versionado (las cuatro salidas: incluidas byte a byte, nunca copiadas)', () => {
+  const VM = join(RAIZ, '..');
+  const SALIDAS = ['venta-minima.qtaco.json', 'venta-minima.qtaco-3727.json', 'venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json'];
+  const PARRAFOS = readFileSync(join(RAIZ, '../../../src/core/texto/parrafos.js'), 'utf8').replace(/\n+$/, '');
+  const codigoDe = (archivo: string, nodo: string): string => {
+    const f = JSON.parse(readFileSync(join(VM, archivo), 'utf8')) as { nodes: Array<{ name: string; parameters: { jsCode?: string } }> };
+    return f.nodes.find((n) => n.name === nodo)?.parameters.jsCode ?? '';
+  };
+  it.each(SALIDAS)('%s: «Armar mensajes» incluye ctParrafos y ctConIA y los llama; «Decidir turno» y «Plan del turno» llevan la baja', (archivo) => {
+    const armar = codigoDe(archivo, 'Armar mensajes');
+    expect(armar).toContain(PARRAFOS);
+    expect(armar.split(PARRAFOS).join('')).toMatch(/\bctParrafos\(/);
+    expect(armar).toMatch(/\bctConIA\(/);
+    expect(codigoDe(archivo, 'Decidir turno')).toMatch(/\bbjPideBaja\(t\.texto\)/);
+    expect(codigoDe(archivo, 'Plan del turno')).toMatch(/\bbjTextoBaja\(\)/);
+  });
+  it('NEGADO: sin la pieza de párrafos (un byte distinto) la inclusión no cuenta', () => {
+    const armar = codigoDe(SALIDAS[0]!, 'Armar mensajes');
+    expect(armar.replace('CT_PARRAFO_MAX = 220', 'CT_PARRAFO_MAX = 221')).not.toContain(PARRAFOS);
+  });
 });

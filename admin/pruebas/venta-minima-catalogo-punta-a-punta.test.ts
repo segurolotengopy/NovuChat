@@ -906,17 +906,22 @@ describe('#435 ronda 2: rasgos de dirección y de referencia, ayuda por código,
     expect(ent(w)['entrega']).toBe('delivery');
   });
 
-  it('LOW-1: «prefiero delivery» se perdona UNA vez (vuelve a pedir la dirección); «no me manden nada» y «cancelen el envío» no se perdonan: derivan a la 2.ª vez', () => {
+  it('LOW-1: «prefiero delivery» se perdona UNA vez (vuelve a pedir la dirección); «cancelen el envío» no se perdona: deriva a la 2.ª vez (y «no me manden nada» ya es una BAJA, decidida antes de todo: UX común del 16/11/2026)', () => {
     const w = sinDireccion();
     const uno = turno(w, texto('prefiero delivery'));
     expect(uno.mensajes[0]!.cuerpo).toBe(PIDE_DIRECCION);
     expect(uno.avisos).toHaveLength(0);
-    for (const dicho of ['no me manden nada', 'cancelen el envio']) {
+    for (const dicho of ['cancelen el envio']) {
       const v = sinDireccion();
       turno(v, texto(dicho));
       const dos = turno(v, texto(dicho));
       expect(dos.mensajes[0]!.cuerpo, dicho).toMatch(DERIVA);
     }
+    // NEGADO: «no me manden nada» ya no se toma por un pedido a medias: es la baja por texto (un texto fijo, sin aviso al local).
+    const baja = turno(sinDireccion(), texto('no me manden nada'));
+    expect(baja.mensajes).toHaveLength(1);
+    expect(baja.mensajes[0]!.cuerpo).toMatch(/no quieres recibir más mensajes/);
+    expect(baja.avisos).toHaveLength(0);
   });
 
   it.each(['dejalo como estaba', 'cambiar algo', 'q hora llega', 'me equivoque', 'una coca cola mas', 'dos de birria mas', 'paso a buscarlo a las 8'])(
