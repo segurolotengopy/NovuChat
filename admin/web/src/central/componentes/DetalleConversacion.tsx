@@ -11,8 +11,7 @@ import { BloqueoContacto } from './BloqueoContacto';
 import { accionesDeBloqueo, accionesSinBloqueadas, type CapaBloqueo } from '../lib/bloqueo';
 import { VisorMedio } from './VisorMedio';
 import { accionDeMedio, enlaceWaMe, textoAnotado, AVISO_WA_ME, TEXTO_VENCIDO, TEXTO_VENCIDO_ENVIADO, TEXTO_PENDIENTE, medioDeDatos, type MedioDeMensaje } from '../lib/medios';
-import { EscribirComoPersona } from './EscribirComoPersona';
-import { AdjuntarComoPersona } from './AdjuntarComoPersona';
+import { PiezasDePersona } from './PiezasDePersona';
 import { verAdjuntar, type CapaAdjunto } from '../lib/adjuntos';
 import {
   etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, turnoDeFicha, ventanaDeFicha, type Ficha,
@@ -499,23 +498,13 @@ export function DetalleConversacion(p: PropsDetalle) {
         </div>
       </div>
 
-      {acciones.verEscribir && (
-        <EscribirComoPersona
-          key={ficha.id} tenantId={tenantId} conversacionId={ficha.id}
-          ultimoEntranteEn={ficha.ultimoEntranteEn} habilitados={acciones.habilitados} capa={p.capa} miUid={p.miUid}
-        />
-      )}
-      {!puedeAdjuntar && vioAdjuntar.current && p.puedeEnviarMedios && (ventanaEnvio !== 'abierta' || !acciones.verEscribir) && (
-        <p role="status" className="cv-aviso-linea">
-          Ya no se pueden enviar archivos en esta conversación: la ventana de 24 h de WhatsApp se cerró o usted ya no la tiene.
-        </p>
-      )}
-      {puedeAdjuntar && (
-        <AdjuntarComoPersona
-          key={ficha.id} tenantId={tenantId} conversacionId={ficha.id} nombreContacto={ficha.nombre} telefono={ficha.telefono}
-          capa={p.capaAdjunto} miUid={p.miUid}
-        />
-      )}
+      <PiezasDePersona
+        tenantId={tenantId} conversacionId={ficha.id} nombreContacto={ficha.nombre} telefono={ficha.telefono}
+        ultimoEntranteEn={ficha.ultimoEntranteEn} miUid={p.miUid}
+        verEscribir={acciones.verEscribir} habilitados={acciones.habilitados} puedeAdjuntar={puedeAdjuntar}
+        avisoSinArchivos={!puedeAdjuntar && vioAdjuntar.current && p.puedeEnviarMedios && (ventanaEnvio !== 'abierta' || !acciones.verEscribir)}
+        capa={p.capa} capaAdjunto={p.capaAdjunto}
+      />
     </div>
   );
 }
