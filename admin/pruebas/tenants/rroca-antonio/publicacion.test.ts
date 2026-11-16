@@ -14,7 +14,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { Flujo } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { AQUI, ARCHIVO_DE_DATOS, ARCHIVO_DE_NEGOCIO, CLAVES_DE_PLANTILLA, IDS_DEL_CATALOGO, ARISTAS_DE_MEDIOS, NODOS_DE_MEDIOS, cargarDatos, guardiaDePublicacion } from '../../../../Flujos/experimental/rroca-antonio/construir.mjs';
+import { AQUI, ARCHIVO_DE_DATOS, ARCHIVO_DE_NEGOCIO, CLAVES_DE_PLANTILLA, IDS_DEL_CATALOGO, ARISTAS_DE_MEDIOS, NODOS_DE_MEDIOS, cargarDatos, guardiaDePublicacion } from '../../../../Flujos/clientes/rroca-antonio/construir.mjs';
 
 const RA: string = AQUI;
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -202,15 +202,15 @@ describe('publicar-flujo.sh: la guardia y la confirmación del flujo de Antonio'
   function raizConGuardia(codigoSalida: number): string {
     const raiz = join(dir, `raiz-${codigoSalida}`);
     mkdirSync(join(raiz, 'scripts'), { recursive: true });
-    mkdirSync(join(raiz, 'Flujos/experimental/rroca-antonio'), { recursive: true });
+    mkdirSync(join(raiz, 'Flujos/clientes/rroca-antonio'), { recursive: true });
     copyFileSync(SCRIPT, join(raiz, 'scripts/publicar-flujo.sh'));
-    writeFileSync(join(raiz, 'Flujos/experimental/rroca-antonio/construir.mjs'), `process.exit(${codigoSalida});\n`);
-    writeFileSync(join(raiz, 'Flujos/experimental/rroca-antonio/rroca-antonio.json'), JSON.stringify({ name: 'rroca-antonio', nodes: [] }));
+    writeFileSync(join(raiz, 'Flujos/clientes/rroca-antonio/construir.mjs'), `process.exit(${codigoSalida});\n`);
+    writeFileSync(join(raiz, 'Flujos/clientes/rroca-antonio/rroca-antonio.json'), JSON.stringify({ name: 'rroca-antonio', nodes: [] }));
     writeFileSync(join(raiz, 'Flujos/demo-a-agendamiento.json'), JSON.stringify({ name: 'Otro cliente', nodes: [] }));
     chmodSync(join(raiz, 'scripts/publicar-flujo.sh'), 0o755);
     return raiz;
   }
-  const REL = 'Flujos/experimental/rroca-antonio/rroca-antonio.json';
+  const REL = 'Flujos/clientes/rroca-antonio/rroca-antonio.json';
 
   it('con --aplicar y el JSON versionado (marcadores) se NIEGA antes de leer el .env o hablar con n8n', () => {
     const r = correr(['--flujo', ANTONIO, '--aplicar']);
@@ -253,8 +253,8 @@ describe('publicar-flujo.sh: la guardia y la confirmación del flujo de Antonio'
   });
   it('NEGANDO: --forzar con un archivo de clase «confirmar» (rroca-antonio-rescate.json) contra el flujo VIVO de Antonio vuelve a correr la guardia estricta: sale 1 y no escribe', () => {
     const raiz = raizConGuardia(1);
-    writeFileSync(join(raiz, 'Flujos/experimental/rroca-antonio/rroca-antonio-rescate.json'), JSON.stringify({ name: 'Otro cliente', nodes: [] }));
-    const r = correrEn(raiz, ['--flujo', 'Flujos/experimental/rroca-antonio/rroca-antonio-rescate.json', '--forzar', '--aplicar', '--confirmo-antonio'], vivoAntonio);
+    writeFileSync(join(raiz, 'Flujos/clientes/rroca-antonio/rroca-antonio-rescate.json'), JSON.stringify({ name: 'Otro cliente', nodes: [] }));
+    const r = correrEn(raiz, ['--flujo', 'Flujos/clientes/rroca-antonio/rroca-antonio-rescate.json', '--forzar', '--aplicar', '--confirmo-antonio'], vivoAntonio);
     expect(r.status).toBe(1);
     expect(r.stdout + r.stderr).toMatch(/flujo vivo de destino/);
     expect(r.stderr).toMatch(/NEGADO/);

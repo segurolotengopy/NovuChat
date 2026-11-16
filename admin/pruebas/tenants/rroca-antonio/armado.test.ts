@@ -19,7 +19,7 @@ import { cargarLibrerias } from './librerias';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
-const CARPETA = join(REPO, 'Flujos/experimental/rroca-antonio');
+const CARPETA = join(REPO, 'Flujos/clientes/rroca-antonio');
 const mod = (await import(pathToFileURL(join(CARPETA, 'construir.mjs')).href)) as {
   construir: (o?: J) => Array<{ archivo: string; nodos: number; alDia: boolean; existia: boolean; versionado: string[] }>;
   guardias: (v: 'produccion' | 'prueba', f: J) => string[];

@@ -161,14 +161,14 @@ describe('landing · el dominio es dato del tenant y el flujo no lo usa', () => 
     expect(datos['landing']).toEqual({ dominio: 'elpuente.dhermacore.com', fraseEntrada: FRASE_LANDING });
   });
   it('el dominio no está en los JSON del flujo, ni en el código de Antonio, ni en la base común (venta-digital): solo en los datos', () => {
-    for (const r of ['Flujos/experimental/rroca-antonio/rroca-antonio.json', 'Flujos/experimental/rroca-antonio/rroca-antonio.prueba.json', 'Flujos/experimental/rroca-antonio/src/lib/ra.js', 'Flujos/experimental/rroca-antonio/src/nodos/decidir-turno.js', 'Flujos/experimental/venta-digital/src/conversacion.js', 'Flujos/experimental/venta-digital/src/cobro.js', 'Flujos/experimental/venta-digital/src/avisos.js']) {
+    for (const r of ['Flujos/clientes/rroca-antonio/rroca-antonio.json', 'Flujos/clientes/rroca-antonio/rroca-antonio.prueba.json', 'Flujos/clientes/rroca-antonio/src/lib/ra.js', 'Flujos/clientes/rroca-antonio/src/nodos/decidir-turno.js', 'Flujos/experimental/venta-digital/src/conversacion.js', 'Flujos/experimental/venta-digital/src/cobro.js', 'Flujos/experimental/venta-digital/src/avisos.js']) {
       expect(leer(r), r).not.toMatch(/dhermacore|elpuente\./i);
     }
-    expect(leer('Flujos/experimental/rroca-antonio/src/lib/ra.js')).not.toMatch(/materiales digitales/i);
+    expect(leer('Flujos/clientes/rroca-antonio/src/lib/ra.js')).not.toMatch(/materiales digitales/i);
   });
   it('la frase llega a «Config base» como `landingFrase`; los nodos son 56 y 51 (47 y 42 más los 9 del guardado de medios) y el prompt no crece (≤ 3.619; tope 4.670)', () => {
     for (const [a, n] of [['rroca-antonio.json', 64], ['rroca-antonio.prueba.json', 59]] as const) {
-      const f = JSON.parse(leer(`Flujos/experimental/rroca-antonio/${a}`)) as { nodes: J[] };
+      const f = JSON.parse(leer(`Flujos/clientes/rroca-antonio/${a}`)) as { nodes: J[] };
       expect(f.nodes, a).toHaveLength(n);
       const base = f.nodes.find((x) => x['name'] === 'Config base')!['parameters'].assignments.assignments as J[];
       expect(base.find((x) => x['name'] === 'landingFrase')?.['value'], a).toBe(FRASE_LANDING);

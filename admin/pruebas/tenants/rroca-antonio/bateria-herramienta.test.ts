@@ -1,5 +1,5 @@
 /**
- * LA BATERÍA DE LA CONVERSACIÓN DE ANTONIO (`Flujos/experimental/rroca-antonio/herramientas/bateria.mjs` y `bateria-casos.json`), REHECHO SOBRE LA ENTREGA 2.
+ * LA BATERÍA DE LA CONVERSACIÓN DE ANTONIO (`Flujos/clientes/rroca-antonio/herramientas/bateria.mjs` y `bateria-casos.json`), REHECHO SOBRE LA ENTREGA 2.
  *
  * Aquí se prueba SIN modelo ni red (`--seco`: una respuesta fija por turno) y se comprueba:
  *   1. que los 15 turnos corren por el flujo de prueba versionado y dan CERO violaciones (invariantes y reglas duras), con 7 llamadas al modelo por corrida;
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const CARPETA = join(aqui, '../../../../Flujos/experimental/rroca-antonio');
+const CARPETA = join(aqui, '../../../../Flujos/clientes/rroca-antonio');
 const RUTA_BATERIA = join(CARPETA, 'herramientas/bateria.mjs');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = Record<string, any>;

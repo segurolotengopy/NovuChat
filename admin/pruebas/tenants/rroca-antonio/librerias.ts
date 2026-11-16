@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import vm from 'node:vm';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { AQUI, CONFIG } from '../../../../Flujos/experimental/rroca-antonio/construir.mjs';
+import { AQUI, CONFIG } from '../../../../Flujos/clientes/rroca-antonio/construir.mjs';
 
 export const RUTAS_DE_LIBRERIAS: string[] = (CONFIG.librerias as string[]).map((r) => join(AQUI as string, r));
 export const CODIGO_LIBRERIAS: string = RUTAS_DE_LIBRERIAS.map((r) => readFileSync(r, 'utf8')).join('\n\n');
