@@ -2052,7 +2052,6 @@ print("\\n".join(errs))`;
         cargado(); viejo(); soloElPropio();
         rmSync(join(dir, 'llamadas'), { force: true });
         const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);
-        expect(r.salida.slice(0, 600)).not.toBe('');
         expect(r.codigo, r.salida.replace(/\x1b\[[0-9;]*m/g, '').slice(-500)).toBe(0);
         expect(r.salida).toContain('credencial de ingesta vinculada al alias: sí');
         expect(escrituras()[0]).toBe(`PUT /workflows/${propio().id}`);   // el PUT y la publicación del flujo activo
@@ -2068,6 +2067,25 @@ print("\\n".join(errs))`;
       });
       it('NEGANDO: el flujo propio con OTRO número además del suyo no ata nada: sale 2 sin escribir', () => {
         cargado(); viejo(); soloElPropio((f) => { f.nodes.push({ ...configBase('555000111'), name: 'Config de otro' }); });
+        const antes = leerTxt(join(dir, 'wfs.json'));
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);
+        sinEscrituras(r, antes);
+      });
+      it('NEGANDO: el flujo propio cita la credencial solo por un NOMBRE viejo (otro id): no ata nada, sale 2 sin escribir', () => {
+        cargado(); viejo();
+        soloElPropio((f) => {
+          for (const nodo of f.nodes) for (const ref of Object.values(nodo.credentials ?? {}) as Array<{ id: string; name: string }>) ref.id = 'id-de-otra-credencial';
+        });
+        const antes = leerTxt(join(dir, 'wfs.json'));
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);
+        sinEscrituras(r, antes);
+        expect(r.salida).toMatch(/no están atadas al número de este alias|el flujo vivo no se puede recargar/);   // otro cerrojo puede cortar antes
+      });
+      it('NEGANDO: el flujo propio SIN número legible que cita la credencial es indeterminado: aborta sin escribir', () => {
+        cargado(); viejo();
+        soloElPropio((f) => { f.nodes = f.nodes.filter((nodo) => nodo.type !== 'n8n-nodes-base.set'); });
         const antes = leerTxt(join(dir, 'wfs.json'));
         rmSync(join(dir, 'llamadas'), { force: true });
         const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);

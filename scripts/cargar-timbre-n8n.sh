@@ -747,7 +747,11 @@ def vincular_al_alias(wfs, indice, n, phone, propio_vivo=False):
             if w.get("name") == n["flujo"] and not propio_vivo:
                 continue
             nodos = w.get("nodes") or []
-            cita = any(isinstance(ref, dict) and ((ref.get("id") and ref.get("id") in ids) or (ctipo == tipo and ref.get("name") == nom))
+            propio = w.get("name") == n["flujo"]
+            # El flujo propio cita SOLO por id: el `name` guardado en un nodo queda viejo si la credencial se renombra, y no debe
+            # servir para corroborar otra credencial que hoy lleva ese nombre (se estrenaría una credencial).
+            cita = any(isinstance(ref, dict) and ((ref.get("id") and ref.get("id") in ids)
+                                                   or (not propio and ctipo == tipo and ref.get("name") == nom))
                        for nodo in nodos for ctipo, ref in (nodo.get("credentials") or {}).items())
             if not cita:
                 continue
