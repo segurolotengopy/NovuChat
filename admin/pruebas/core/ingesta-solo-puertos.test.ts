@@ -19,7 +19,7 @@ describe('ingesta.ts: solo puertos', () => {
 
   it('el incremento de senasEnviadas no está en ingesta.ts: viene de las métricas de solicitudDelTurno', () => {
     expect(ingesta).not.toMatch(/senasEnviadas/);
-    expect(ingesta).toMatch(/metricasDeLaSolicitud/);
+    expect(ingesta).toMatch(/Object\.entries\(metricasDeLaSolicitud\)/);
   });
 
   it('ganchos.ts es quien entrega los puertos', () => {
