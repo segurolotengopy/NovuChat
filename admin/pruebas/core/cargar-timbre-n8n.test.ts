@@ -2041,6 +2041,67 @@ print("\\n".join(errs))`;
       expect(r.salida).toContain('no están atadas al número de este alias');
     });
 
+    // Q'Taco (cliente04, 16/11/2026): ningún OTRO flujo cita sus credenciales, solo el «Salida de persona» del propio alias. Al recargar no se
+    // estrena credencial alguna: el flujo vivo que ya las usa, activo y con SOLO el número del alias, las ata.
+    describe('el flujo vivo del propio alias ata las credenciales que ya usa (solo al recargar)', () => {
+      const soloElPropio = (cambio?: (f: ReturnType<typeof propio>) => void) => {
+        const f = propio(); f.active = true; Object.assign(f, { activeVersionId: f.versionId }); cambio?.(f);
+        writeFileSync(join(dir, 'wfs.json'), JSON.stringify([f]));      // ningún flujo de venta cita las credenciales
+      };
+      it('recarga con un solo PUT cuando ningún otro flujo las cita', () => {
+        cargado(); viejo(); soloElPropio();
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);
+        expect(r.codigo, r.salida.replace(/\x1b\[[0-9;]*m/g, '').slice(-500)).toBe(0);
+        expect(r.salida).toContain('credencial de ingesta vinculada al alias: sí');
+        expect(escrituras()[0]).toBe(`PUT /workflows/${propio().id}`);   // el PUT y la publicación del flujo activo
+        expect(escrituras().some((e) => e.includes('/credentials'))).toBe(false);
+      });
+      it('NEGANDO: el flujo propio INACTIVO no ata nada: sale 2 sin escribir', () => {
+        cargado(); viejo(); soloElPropio((f) => { f.active = false; });
+        const antes = leerTxt(join(dir, 'wfs.json'));
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);
+        sinEscrituras(r, antes);
+        expect(r.salida).toContain('no están atadas al número de este alias');
+      });
+      it('NEGANDO: el flujo propio con OTRO número además del suyo no ata nada: sale 2 sin escribir', () => {
+        cargado(); viejo(); soloElPropio((f) => { f.nodes.push({ ...configBase('555000111'), name: 'Config de otro' }); });
+        const antes = leerTxt(join(dir, 'wfs.json'));
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);
+        sinEscrituras(r, antes);
+      });
+      it('NEGANDO: el flujo propio cita la credencial solo por un NOMBRE viejo (otro id): no ata nada, sale 2 sin escribir', () => {
+        cargado(); viejo();
+        soloElPropio((f) => {
+          for (const nodo of f.nodes.filter((z) => z.name !== 'Timbre')) {     // el Timbre conserva su credencial: otro cerrojo cortaría antes
+            for (const ref of Object.values(nodo.credentials ?? {}) as Array<{ id: string; name: string }>) ref.id = 'id-de-otra-credencial';
+          }
+        });
+        const antes = leerTxt(join(dir, 'wfs.json'));
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);
+        sinEscrituras(r, antes);
+        expect(r.salida).toContain('no están atadas al número de este alias');
+      });
+      it('NEGANDO: el flujo propio SIN número legible que cita la credencial es indeterminado: aborta sin escribir', () => {
+        cargado(); viejo();
+        soloElPropio((f) => { f.nodes = f.nodes.filter((nodo) => nodo.type !== 'n8n-nodes-base.set'); });
+        const antes = leerTxt(join(dir, 'wfs.json'));
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);
+        sinEscrituras(r, antes);
+        expect(r.salida).toContain('una credencial la cita un flujo cuyo número no se puede leer');
+      });
+      it('NEGANDO: al CARGAR (no recargar) el propio flujo no cuenta: sigue exigiendo otro flujo', () => {
+        cargado(); soloElPropio();
+        const r = correr([...AR(), '--activar', ...MAPA, ...APLICAR]);
+        expect(r.codigo).toBe(2);
+        expect(r.salida).toContain('no están atadas al número de este alias');
+      });
+    });
+
     it('C12 negada: el envío del mapa lo cita un nodo «Enviar por el relé» de otro flujo: sale 2 sin escribir', () => {
       cargado(); viejo();
       writeFileSync(join(dir, 'wfs.json'), JSON.stringify([...flujos(), flujoVivo('wc', 'Cruce', [nodoVivo('Enviar por el relé', 'whatsAppApi', 'qg', NOM.envio)], PHONE)]));
