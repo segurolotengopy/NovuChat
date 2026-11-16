@@ -1,17 +1,17 @@
 import { REGION } from './core/region.js';
+// Etapa 3 G-3: este archivo ya no importa de `./modulos/`; todo lo de los módulos le llega por los
+// puertos de `ganchos.ts` (el único archivo coordinador que los conoce).
+import {
+  alTurnoCampanas, crmParaElFlujo, alTurnoCaptacion, alTurnoCobroDeVenta, alTurnoSena, alTurnoInventario,
+  despuesDelTurnoPedidos, solicitudDelTurno, montoUtilizable, enlaceDeLaCartaDelTurno, catalogoParaElModelo,
+  sigueVigente, vigentesParaElPrompt, type ContextoDeCobro,
+} from './ganchos.js';
 // F3b-1a y F3b-1b (05/10/2026): la solicitud, el tiempo y los predicados de cobro se
 // mudaron a `modulos/agenda/`, `core/turno/tiempo.ts` y `modulos/cobros/alCierre.ts`
 // sin cambiar lógica. Etapa 3 G-1: este archivo ya no los reexporta; quien los
 // necesita los importa de su módulo de origen.
-import { alTurnoCampanas } from './modulos/campanas/alTurno.js';
-import { crmParaElFlujo } from './modulos/crm/crm.js';
 import { respuestaLibreParaElFlujo } from './core/conversacion/respuestaLibre.js';
-import { alTurnoCaptacion } from './modulos/captacion/alTurno.js';
 import { modulosDelTurno, type ContextoDelTurno } from './core/turno/ganchosDelTurno.js';
-import { alTurnoCobroDeVenta, type ContextoDeCobro } from './modulos/cobros/alTurno.js';
-import { alTurnoSena } from './modulos/agenda/alTurno.js';
-import { alTurnoInventario } from './modulos/inventario/alTurno.js';
-import { despuesDelTurnoPedidos } from './modulos/pedidos/alTurno.js';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
@@ -48,10 +48,6 @@ import {
   resolverFuncionarios, documentoDeVertical,
   resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT, enlaceDeMapaValido, ubicacionDe,
 } from './core/prompt/prompt.js';
-import { solicitudDelTurno, montoUtilizable } from './modulos/agenda/solicitudDelTurno.js';
-import { enlaceDeLaCartaDelTurno } from './modulos/catalogo-web/alTurno.js';
-import { catalogoDelTurno as catalogoParaElModelo } from './modulos/productos/alTurno.js';
-import { sigueVigente, vigentesParaElPrompt } from './modulos/campanas/vigentes.js';
 export { sigueVigente };
 // Términos de producto registrados (Andres, 24/10/2026): se leen una vez por turno, y solo si lo que
 // va al prompt contiene «prompt»; el sistema los cita entre « » y revalida lo ya aprobado.
@@ -1168,7 +1164,7 @@ export const ingesta = onRequest(
       // Con regla 2, una `referencia` vacía o igual al `idMeta` no identifica un
       // pedido (cada reenvío sería un cobro nuevo con plazo nuevo): se trata
       // como `sin_id_meta` y no abre cobro.
-      const { solicitud, hayBase, sinQr, reactivada, cobro } = solicitudDelTurno(solicitudPrevia, mensaje, ahoraMs);
+      const { solicitud, hayBase, reactivada, cobro, metricas: metricasDeLaSolicitud } = solicitudDelTurno(solicitudPrevia, mensaje, ahoraMs);
       // REACTIVADA (bloque 4): el primer mensaje del paciente dentro de las 24 h
       // de un seguimiento. Se anota en la solicitud y se cuenta en el mes, en
       // la misma transacción que cuenta el mensaje. Cero lecturas extra.
@@ -1308,8 +1304,8 @@ export const ingesta = onRequest(
         //   SEÑAS ENVIADAS = QR de seña que salieron. Con `senasCotejadas` y
         //                    `senasVencidas` (que escribe `sena.ts`) es el
         //                    embudo de la reserva con seña.
-        ...(mensaje.evento === 'qr_enviado' && !sinQr && mensaje.reglaCobro !== 2
-          ? { senasEnviadas: FieldValue.increment(1) } : {}),
+        //                    Lo decide `solicitudDelTurno` (`metricas`); aquí no se cuenta otra vez.
+        ...Object.fromEntries(Object.entries(metricasDeLaSolicitud).map(([k, n]) => [k, FieldValue.increment(n)])),
         //   COBROS (regla 2): los contadores que devuelve `solicitudDeCobroTras`,
         //   en la misma escritura de métricas (0 escrituras extra). Los nombres
         //   son fijos de esa función, nunca del cuerpo.
