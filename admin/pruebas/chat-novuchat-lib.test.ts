@@ -22,7 +22,7 @@ import { ejecutar } from './lib/flujo';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const EXPERIMENTAL = join(aqui, '../../Flujos/experimental');
-const CARPETA = join(EXPERIMENTAL, 'chat-novuchat');
+const CARPETA = join(EXPERIMENTAL, '..', 'clientes', 'novuchat');
 const DATOS_DIR = join(aqui, '../scripts/datos/chat-novuchat');
 const LIB = readFileSync(join(CARPETA, 'src/lib/chat.js'), 'utf8');
 const MENSAJES = readFileSync(join(EXPERIMENTAL, '../src/core/sin-agente/mensajes.js'), 'utf8');

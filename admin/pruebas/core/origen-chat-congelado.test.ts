@@ -31,7 +31,7 @@ describe('origen congelado del chat (previo a PR-4c2)', () => {
   it.skipIf(!tieneCommit)('y con el commit 1fff3d59 cuando git lo tiene (en un clon superficial esta comprobación SE OMITE —y se ve como omitida—, no las huellas)', () => {
     for (const [ruta] of huellas) {
       const rutaGit = ruta === 'flujo.plantilla.json' ? 'flujo.plantilla.json' : `src/${ruta}`;
-      const enGit = execFileSync('git', ['show', `${COMMIT}:Flujos/clientes/novuchat/${rutaGit}`], { cwd: REPO, maxBuffer: 20_000_000 });
+      const enGit = execFileSync('git', ['show', `${COMMIT}:Flujos/experimental/chat-novuchat/${rutaGit}`], { cwd: REPO, maxBuffer: 20_000_000 });
       expect(sha(enGit), ruta).toBe(sha(readFileSync(join(ORIGEN, ruta))));
     }
   });
