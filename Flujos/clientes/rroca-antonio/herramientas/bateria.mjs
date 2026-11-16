@@ -34,7 +34,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { ErrorDeUso, TARIFA, crearMundo, leerArgumentos, leerCredencial, limpiarSecretos, llamarGemini, telefonoDe, textoDeGemini } from '../../experimental/chat-novuchat/herramientas/bateria.mjs';
+import { ErrorDeUso, TARIFA, crearMundo, leerArgumentos, leerCredencial, limpiarSecretos, llamarGemini, telefonoDe, textoDeGemini } from '../../../experimental/chat-novuchat/herramientas/bateria.mjs';
 import { CONFIG } from '../construir.mjs';
 import { doblesDeBateriaDelGuardado } from '../../../src/core/sin-agente/guardado-dobles.mjs';
 

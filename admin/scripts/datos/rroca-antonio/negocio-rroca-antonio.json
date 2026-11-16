@@ -1,5 +1,5 @@
 {
-  "_fuente": "Datos del negocio de «El Puente» de Antonio (tenant rroca-antonio, flujo Flujos/experimental/rroca-antonio/). Se carga con admin/scripts/datos/cargar-negocio.mjs, que solo admite las secciones negocio, agendamiento, catalogo y funcionarios: aquí van negocio y catalogo. Las claves que empiezan con `_` son notas y no se escriben. Los ids del catálogo salen del nombre (idDe) y son los que lee el flujo (raCatalogo): el monto de un QR sale de aquí y de ningún otro lado.",
+  "_fuente": "Datos del negocio de «El Puente» de Antonio (tenant rroca-antonio, flujo Flujos/clientes/rroca-antonio/). Se carga con admin/scripts/datos/cargar-negocio.mjs, que solo admite las secciones negocio, agendamiento, catalogo y funcionarios: aquí van negocio y catalogo. Las claves que empiezan con `_` son notas y no se escriben. Los ids del catálogo salen del nombre (idDe) y son los que lee el flujo (raCatalogo): el monto de un QR sale de aquí y de ningún otro lado.",
   "_pendiente": {
     "_nota": "Resuelto el 21/10/2026: razón comercial del guion y horario abierto siempre (24/7), decisión de Andres del 19/10/2026. El número de recepción sigue siendo un marcador de la tabla local. NovuChat no entrega enlaces: Antonio los envía a mano.",
     "razonComercial": "Antonio Dauber — Libros digitales El Puente",
