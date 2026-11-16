@@ -164,6 +164,15 @@ describe('una vista previa grande no deja el botón fuera de alcance (15/11/2026
     expect(regla('.cv-adjunto-previa img')).toMatch(/max-height:\s*28vh/);
     expect(regla('.cv-adjunto-previa .cv-adjuntar-botones')).toMatch(/position:\s*sticky[^}]*bottom:\s*0|bottom:\s*0[^}]*position:\s*sticky/);
   });
+  it('el fondo de los botones pegados usa un token que existe, y el error va antes de la vista previa', () => {
+    expect(regla('.cv-adjunto-previa .cv-adjuntar-botones')).toMatch(/background:\s*var\(--color-surface\)/);
+    expect(leer('web/src/central/estilos/diseno.css')).toMatch(/--color-surface:/);
+    expect(regla('.cv-adjuntar')).toMatch(/max-height:\s*55dvh/);
+    expect(regla('.cv-adjuntar')).toMatch(/scroll-padding-bottom/);
+    const f = leer('web/src/central/componentes/AdjuntarComoPersona.tsx');
+    expect(f.indexOf('role="alert" className="cv-error')).toBeGreaterThan(0);
+    expect(f.indexOf('role="alert" className="cv-error')).toBeLessThan(f.indexOf('className="cv-adjunto-previa"'));
+  });
   it('NEGANDO: la regla vieja (solo 40 vh y sin desplazamiento) ya no está', () => {
     expect(css).not.toMatch(/\.cv-adjunto-previa img \{[^}]*max-height:\s*40vh/);
   });
