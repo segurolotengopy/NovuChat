@@ -221,11 +221,13 @@
 .cv-bloqueados-filas li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 /* Medios B4: enviar un archivo o una nota de voz como persona. */
-.cv-adjuntar { flex: none; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-top: 1px solid var(--color-border, #ddd); }
+.cv-adjuntar { flex: none; max-height: 55vh; max-height: 55dvh; overflow-y: auto; scroll-padding-bottom: 72px; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-top: 1px solid var(--color-border, #ddd); }
 .cv-adjuntar-botones { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .cv-adjunto-boton { min-height: 44px; }
 .cv-adjunto-estado, .cv-adjunto-nota { margin: 0; font-size: 13px; }
 .cv-adjunto-previa { display: flex; flex-direction: column; gap: var(--space-2); }
-.cv-adjunto-previa img { max-width: 100%; max-height: 40vh; object-fit: contain; }
+.cv-adjunto-previa img { max-width: 100%; max-height: 28vh; object-fit: contain; }
+/* Una vista previa grande NO puede dejar el botón fuera de alcance: el bloque se desplaza y los botones quedan pegados abajo. */
+.cv-adjunto-previa .cv-adjuntar-botones { position: sticky; bottom: 0; z-index: 1; background: var(--color-surface); padding-block: var(--space-2); }
 .cv-adjunto-previa audio { max-width: 100%; }
 .cv-adjunto-confirmar { padding: var(--space-2); border: 1px solid var(--color-accent-100); background: var(--color-accent-100); border-radius: 6px; }
