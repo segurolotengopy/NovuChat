@@ -2075,13 +2075,15 @@ print("\\n".join(errs))`;
       it('NEGANDO: el flujo propio cita la credencial solo por un NOMBRE viejo (otro id): no ata nada, sale 2 sin escribir', () => {
         cargado(); viejo();
         soloElPropio((f) => {
-          for (const nodo of f.nodes) for (const ref of Object.values(nodo.credentials ?? {}) as Array<{ id: string; name: string }>) ref.id = 'id-de-otra-credencial';
+          for (const nodo of f.nodes.filter((z) => z.name !== 'Timbre')) {     // el Timbre conserva su credencial: otro cerrojo cortaría antes
+            for (const ref of Object.values(nodo.credentials ?? {}) as Array<{ id: string; name: string }>) ref.id = 'id-de-otra-credencial';
+          }
         });
         const antes = leerTxt(join(dir, 'wfs.json'));
         rmSync(join(dir, 'llamadas'), { force: true });
         const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);
         sinEscrituras(r, antes);
-        expect(r.salida).toMatch(/no están atadas al número de este alias|el flujo vivo no se puede recargar/);   // otro cerrojo puede cortar antes
+        expect(r.salida).toContain('no están atadas al número de este alias');
       });
       it('NEGANDO: el flujo propio SIN número legible que cita la credencial es indeterminado: aborta sin escribir', () => {
         cargado(); viejo();
@@ -2090,6 +2092,7 @@ print("\\n".join(errs))`;
         rmSync(join(dir, 'llamadas'), { force: true });
         const r = correr([...AR(), '--recargar', ...MAPA, ...INERTE, ...APLICAR]);
         sinEscrituras(r, antes);
+        expect(r.salida).toContain('una credencial la cita un flujo cuyo número no se puede leer');
       });
       it('NEGANDO: al CARGAR (no recargar) el propio flujo no cuenta: sigue exigiendo otro flujo', () => {
         cargado(); soloElPropio();
