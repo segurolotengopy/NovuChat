@@ -42,6 +42,7 @@ export function problemasDeMudados(
   const dirs = (raiz: string): string[] => (existsSync(raiz) ? readdirSync(raiz, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name) : []);
   for (const [json, valor] of Object.entries(mudados)) {
     const hoy = existsSync(join(experimental, valor, json)) || dirs(clientes).some((d) => existsSync(join(clientes, d, json)));
+    if (json.split('.')[0] !== valor) p.push(`${json}: el JSON no empieza por «${valor}» (el nombre del registro es lo que va antes del primer punto)`);
     if (!hoy) p.push(`${json}: no existe en experimental/${valor}/ ni en clientes/*/`);
     if (!dirs(experimental).includes(valor) && !Object.hasOwn(excepciones, valor)) p.push(`${json}: «${valor}» no es carpeta de experimental/ ni clave del registro`);
   }

@@ -202,8 +202,14 @@ describe('la lista cerrada de mudados es verdadera', () => {
     expect(Object.keys(MUDADOS).length).toBeGreaterThan(0);
   });
   it('contraprueba: una entrada inventada falla por JSON y por valor', () => {
-    expect(problemasDeMudados({ 'fantasma.json': 'fantasma' })).toHaveLength(2);
-    expect(problemasDeMudados({ 'chat-novuchat.novuchat.json': 'fantasma' })).toHaveLength(2);
-    expect(problemasDeMudados({ 'fantasma.json': 'chat-novuchat' })).toHaveLength(1);
+    const con = (m: Record<string, string>, re: RegExp): boolean => problemasDeMudados(m).some((x) => re.test(x));
+    expect(con({ 'fantasma.fantasma.json': 'fantasma' }, /no existe en/)).toBe(true);
+    expect(con({ 'fantasma.fantasma.json': 'fantasma' }, /no es carpeta de experimental/)).toBe(true);
+    // Un valor ajeno falla por valor (con independencia de dónde esté hoy el JSON) y por nombre.
+    expect(con({ 'chat-novuchat.novuchat.json': 'fantasma' }, /no es carpeta de experimental/)).toBe(true);
+    expect(con({ 'chat-novuchat.novuchat.json': 'fantasma' }, /no empieza por/)).toBe(true);
+    // Un JSON que no empieza por el valor del registro falla aunque ambos existan.
+    expect(con({ 'chat-novuchat.novuchat.json': 'venta-minima' }, /no empieza por/)).toBe(true);
+    expect(con({ 'chat-novuchat.novuchat.json': 'chat-novuchat' }, /no empieza por/)).toBe(false);
   });
 });
