@@ -452,6 +452,12 @@ Mismo criterio que la sección anterior (base común de venta): los módulos com
 - **Límite conocido (invariante):** la medición exige que el nodo lleve la pieza y la llame; que «Armar mensajes» siga llamando a la función que la usa lo prueba la suite de cada tienda (`identidad.test.ts`), no la invariante.
 - **Mensajes por conversación: 0 agregados o quitados.** Solo cambian dos palabras del texto que ya salía.
 
+## Estado al 15/11/2026: frases de baja ampliadas en la expresión común (sin republicar)
+
+«No me manden/envíen nada», «no molestar» (mensaje entero) y «bórrame de su base / sus registros» ahora piden la baja. Cambian los JSON versionados de Casa Bermejo, Walisuma, el chat de NovuChat, Antonio y Rubén (`RA_BAJA`/`RR_BAJA` y el literal de «Reportar mensaje (entrante)»); Emma, Evy y doctoras conservan su copia propia (excepciones de la baja). Los flujos vivos conservan la expresión anterior hasta su republicación, que es un botón de Andres por cliente después del ensayo. 0 mensajes agregados.
+
+Excepción declarada: la copia propia de Emma y Evy (`dr.js`/`ev.js`) conserva la expresión anterior (ya diferían de la común; excepciones de la baja hasta su mudanza). «No, no me manden nada» como respuesta a «¿le mando la factura?» también pide la baja, igual que ya ocurría con «no me manden».
+
 ## Estado al 15/11/2026: pitch del chat de NovuChat con «asistente virtual con inteligencia artificial» (sin republicar)
 
 El texto del pitch del primer contacto («Quiero más información»), que es un dato del chat propio, ahora abre diciendo quién habla: «Te atiende el asistente virtual de {negocio}, con inteligencia artificial». 0 mensajes agregados (cabe en el mismo mensaje de lista, tope 1.024). Cambia el JSON versionado del chat; el flujo vivo y el ensayo pendiente en el Demo A no se tocan hasta su republicación (botón de Andres).
