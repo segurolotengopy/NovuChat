@@ -55,13 +55,16 @@ describe('AdjuntarComoPersona (render)', () => {
 
 describe('el Detalle', () => {
   const detalle = codigo('web/src/central/componentes/DetalleConversacion.tsx');
+  const piezas = codigo('web/src/central/componentes/PiezasDePersona.tsx');
   it('<AdjuntarComoPersona aparece una sola vez, dentro de la condición que usa verAdjuntar', () => {
-    expect(detalle.match(/<AdjuntarComoPersona/g)).toHaveLength(1);
+    expect(piezas.match(/<AdjuntarComoPersona/g)).toHaveLength(1);
+    expect(detalle).not.toMatch(/<AdjuntarComoPersona/);
     expect(detalle).toMatch(/verAdjuntar\(/);
-    // La condición del componente es la expresión de verAdjuntar (no otra): la variable se arma con la función y se usa en el JSX.
+    // La variable se arma con verAdjuntar, el Detalle la pasa a PiezasDePersona y ahí es la condición del componente.
     const def = /const (\w+) = verAdjuntar\(/.exec(detalle);
     expect(def).not.toBeNull();
-    expect(detalle).toMatch(new RegExp(`\\{${def![1]} && \\(\\s*<AdjuntarComoPersona`));
+    expect(detalle).toMatch(new RegExp(`puedeAdjuntar=\\{${def![1]}\\}`));
+    expect(piezas).toMatch(/\{p\.puedeAdjuntar && \(\s*<AdjuntarComoPersona/);
   });
   it('un archivo enviado se pide por el id del mensaje', () => expect(detalle).toMatch(/mensajeId=\{x\.id\}/));
   it('NEGANDO: el texto de una burbuja de persona no dice «puede ser el comprobante»', () => {
@@ -70,7 +73,8 @@ describe('el Detalle', () => {
     expect(persona).not.toMatch(/comprobante/);
   });
   it('la línea de «ya no se pueden enviar archivos» es un status y solo se muestra con la bandera en true', () => {
-    expect(detalle).toMatch(/p\.puedeEnviarMedios && [\s\S]{0,160}role="status"[\s\S]{0,120}Ya no se pueden enviar archivos/);
+    expect(detalle).toMatch(/avisoSinArchivos=\{[^}]*p\.puedeEnviarMedios/);
+    expect(piezas).toMatch(/\{p\.avisoSinArchivos && \(\s*<p role="status"[\s\S]{0,120}Ya no se pueden enviar archivos/);
   });
 });
 

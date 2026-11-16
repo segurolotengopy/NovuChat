@@ -1,20 +1,27 @@
 // @vitest-environment jsdom
 /**
- * LLAVES DE LOS HERMANOS DEL DETALLE DE CONVERSACIÓN (defecto de B4 en producción, 15/11/2026).
+ * EL CAMPO DE ESCRIBIR Y EL SELECTOR DE ADJUNTOS DEL DETALLE (defecto de B4 en producción, 15/11/2026).
  *
- * El defecto: el campo de escribir (`EscribirComoPersona`) y el selector de adjuntos (`AdjuntarComoPersona`) llevaban la
- * MISMA llave (`key={ficha.id}`) y son hermanos en el mismo arreglo de hijos. React empareja a los hijos por llave: con dos
- * iguales pierde a uno en cada actualización, y los campos de escribir se acumulaban en pantalla (uno nuevo cada ~15 s, el
- * viejo seguía vivo con su reloj congelado) y empujaban el clip fuera de la vista.
+ * El defecto: los dos llevaban la MISMA llave (`key={ficha.id}`) como hermanos. React empareja a los hijos por llave y, al
+ * quitar y volver a poner el campo (cada tomar/devolver), dejaba vivo el campo viejo: reloj congelado, texto que no se borraba
+ * al enviar (de ahí un segundo «Hola» al pulsar de nuevo) y el clip fuera de la vista. Pasaba solo con la bandera de medios
+ * encendida (apagada, el selector no se pinta y no hay llave repetida).
  *
- *  1. Mecanismo, con React real y un DOM: dos hermanos con la misma llave se acumulan al actualizar; con llaves distintas, no.
- *  2. Guarda de fuente: en `DetalleConversacion.tsx` no hay dos `key=` idénticas, y cada hermano tiene la suya.
+ * Estas pruebas pintan `PiezasDePersona`, que es EL MISMO componente que usa el Detalle (con los componentes reales, en un DOM
+ * real con React real), y recorren lo que hace una persona:
+ *  1. tomar y devolver varias veces deja UN solo campo (y UN selector) al tomar, y ninguno al devolver;
+ *  2. un envío sale UNA vez: el texto se borra y el botón queda apagado, un segundo clic no manda nada;
+ *  3. React no avisa de llaves repetidas en todo el recorrido;
+ *  4. NEGANDO: con la llave repetida, el mismo recorrido deja campos de más (la prueba muerde sin el arreglo);
+ *  5. guarda de fuente: las llaves de los dos hermanos son distintas.
  */
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CapaTurno } from '../../web/src/central/lib/turno';
+import type { CapaAdjunto } from '../../web/src/central/lib/adjuntos';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const ADMIN = join(aqui, '..', '..');
@@ -22,52 +29,126 @@ const desdeWeb = createRequire(join(ADMIN, 'web', 'package.json'));
 const React = desdeWeb('react') as typeof import('react');
 const { createRoot } = desdeWeb('react-dom/client') as typeof import('react-dom/client');
 const { flushSync } = desdeWeb('react-dom') as typeof import('react-dom');
+const { PiezasDePersona } = await import('../../web/src/central/componentes/PiezasDePersona');
+const { EscribirComoPersona } = await import('../../web/src/central/componentes/EscribirComoPersona');
+const { AdjuntarComoPersona } = await import('../../web/src/central/componentes/AdjuntarComoPersona');
 
-function Campo() { return React.createElement('form', { className: 'campo' }, 'campo'); }
-function Clip() { return React.createElement('section', { className: 'clip' }, 'clip'); }
+const enviados: string[] = [];
+const CAPA: CapaTurno = {
+  tomar: async () => ({}), devolver: async () => ({}),
+  enviar: async (e) => { enviados.push(e.texto); return { aceptado: true }; },
+};
+const CAPA_ADJ: CapaAdjunto = { enviarAdjunto: async () => ({}) };
 
-/** Pinta lo que pinta el Detalle (campo y selector hermanos), actualiza `vueltas` veces y cuenta los campos en el DOM. */
-function camposTrasActualizar(llaveCampo: string, llaveClip: string, vueltas: number): number {
-  const g = globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean };
-  g.IS_REACT_ACT_ENVIRONMENT = false;
-  const aviso = vi.spyOn(console, 'error').mockImplementation(() => undefined);   // React avisa de la llave repetida
-  try {
-    const cont = document.createElement('div');
-    const raiz = createRoot(cont);
-    // Posiciones FIJAS, como el Detalle: [campo?, aviso?, selector?]; lo que no aplica queda en `false`.
-    const arbol = (campo: boolean, clip: boolean) => React.createElement('div', null,
-      campo && React.createElement(Campo, { key: llaveCampo }),
-      false,
-      clip && React.createElement(Clip, { key: llaveClip }));
-    for (let i = 0; i < vueltas; i++) {
-      flushSync(() => raiz.render(arbol(true, true)));
-      // Como en producción: el turno cambia y el campo se quita y se vuelve a poner mientras el selector sigue.
-      flushSync(() => raiz.render(arbol(false, true)));
-      flushSync(() => raiz.render(arbol(true, true)));
+let avisos: string[] = [];
+let raiz: ReturnType<typeof createRoot>;
+let cont: HTMLElement;
+
+beforeEach(() => {
+  enviados.length = 0;
+  avisos = [];
+  vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => { avisos.push(a.map(String).join(' ')); });
+  vi.spyOn(console, 'warn').mockImplementation((...a: unknown[]) => { avisos.push(a.map(String).join(' ')); });
+  (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false;
+  cont = document.createElement('div');
+  document.body.appendChild(cont);
+  raiz = createRoot(cont);
+});
+afterEach(() => {
+  flushSync(() => raiz.unmount());
+  cont.remove();
+  vi.restoreAllMocks();
+  delete (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+});
+
+const piezas = (verEscribir: boolean, ya = false) => React.createElement(PiezasDePersona, {
+  tenantId: 'demo', conversacionId: 'wa_1', nombreContacto: 'Ana', telefono: '59170000000',
+  ultimoEntranteEn: Date.now() - 60_000, miUid: 'uid1',
+  verEscribir, habilitados: true,
+  puedeAdjuntar: verEscribir,                                         // con la bandera encendida y la ventana abierta
+  avisoSinArchivos: !verEscribir && ya,                               // lo que arma el Detalle al devolver
+  capa: CAPA, capaAdjunto: CAPA_ADJ,
+});
+const pintar = (verEscribir: boolean, ya = false) => flushSync(() => raiz.render(piezas(verEscribir, ya)));
+const campos = () => cont.querySelectorAll('form[data-testid="redactor"]').length;
+const selectores = () => cont.querySelectorAll('[data-testid="adjuntar"]').length;
+
+describe('tomar y devolver (con la bandera de medios encendida)', () => {
+  it('cinco ciclos dejan UN solo campo y UN selector al tomar, y ninguno al devolver', () => {
+    for (let i = 0; i < 5; i++) {
+      pintar(true);
+      expect([campos(), selectores()], `tomada, ciclo ${i + 1}`).toEqual([1, 1]);
+      pintar(false, true);
+      expect([campos(), selectores()], `devuelta, ciclo ${i + 1}`).toEqual([0, 0]);
     }
-    const n = cont.querySelectorAll('form.campo').length;
-    raiz.unmount();
-    return n;
-  } finally { aviso.mockRestore(); }
-}
-
-describe('llaves de los hermanos del Detalle', () => {
-  it('con llaves distintas hay un solo campo de escribir, por mucho que se actualice', () => {
-    expect(camposTrasActualizar('escribir-wa_1', 'adjuntar-wa_1', 6)).toBe(1);
+    expect(cont.querySelectorAll('textarea#cv-redactor-texto')).toHaveLength(0);
   });
 
-  it('con la MISMA llave React pierde un hermano en cada actualización (el defecto de producción)', () => {
-    expect(camposTrasActualizar('wa_1', 'wa_1', 6)).toBeGreaterThan(1);
+  it('React no avisa de llaves repetidas en todo el recorrido', () => {
+    for (let i = 0; i < 3; i++) { pintar(true); pintar(false, true); }
+    pintar(true);
+    expect(avisos.filter((a) => /same key|llave|key/i.test(a))).toEqual([]);
   });
 
-  it('DetalleConversacion.tsx: ninguna llave repetida entre hermanos, y cada pieza lleva la suya', () => {
-    const fuente = readFileSync(join(ADMIN, 'web/src/central/componentes/DetalleConversacion.tsx'), 'utf8');
-    const llaves = [...fuente.matchAll(/\bkey=\{([^}]*(?:\{[^}]*\}[^}]*)*)\}/g)].map((m) => m[1]!.trim());
-    const cuenta = new Map<string, number>();
-    for (const l of llaves) cuenta.set(l, (cuenta.get(l) ?? 0) + 1);
-    const repetidas = [...cuenta].filter(([, n]) => n > 1).map(([l]) => l);
-    expect(repetidas).toEqual([]);
-    expect(fuente).toMatch(/<EscribirComoPersona\s+key=\{`escribir-\$\{ficha\.id\}`\}/);
-    expect(fuente).toMatch(/<AdjuntarComoPersona\s+key=\{`adjuntar-\$\{ficha\.id\}`\}/);
+  it('el selector (el clip) está en pantalla cuando se tiene la conversación con la bandera', () => {
+    pintar(true);
+    const sel = cont.querySelector('[data-testid="adjuntar"]');
+    expect(sel).not.toBeNull();
+    expect(sel!.textContent).toMatch(/Adjuntar|archivo/i);
+  });
+});
+
+describe('un envío sale UNA vez', () => {
+  async function escribirYEnviar(texto: string) {
+    const area = cont.querySelector('textarea#cv-redactor-texto') as HTMLTextAreaElement;
+    const poner = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    flushSync(() => { poner.call(area, texto); area.dispatchEvent(new Event('input', { bubbles: true })); });
+    const boton = cont.querySelector('form[data-testid="redactor"] button[type="submit"]') as HTMLButtonElement;
+    flushSync(() => boton.click());
+    await new Promise((r) => setTimeout(r, 20));
+    return { area, boton };
+  }
+
+  it('tras tomar, devolver y volver a tomar: se envía, el texto se borra, el botón se apaga y otro clic no manda nada', async () => {
+    pintar(true); pintar(false, true); pintar(true); pintar(false, true); pintar(true);
+    expect(campos()).toBe(1);
+    const { area, boton } = await escribirYEnviar('Hola');
+    expect(enviados).toEqual(['Hola']);
+    expect(area.value).toBe('');                       // el texto NO queda pegado
+    expect(boton.disabled).toBe(true);
+    flushSync(() => boton.click());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(enviados).toEqual(['Hola']);                // sigue siendo UN envío
+  });
+});
+
+describe('NEGANDO: la misma llave sí deja campos de más (la prueba muerde sin el arreglo)', () => {
+  it('con las dos piezas bajo la misma llave, tomar y devolver acumula campos', () => {
+    const mal = (verEscribir: boolean) => React.createElement(React.Fragment, null,
+      verEscribir && React.createElement(EscribirComoPersona, {
+        key: 'wa_1', tenantId: 'demo', conversacionId: 'wa_1', ultimoEntranteEn: Date.now() - 60_000,
+        habilitados: true, capa: CAPA, miUid: 'uid1',
+      }),
+      !verEscribir && React.createElement('p', { role: 'status' }, 'Ya no se pueden enviar archivos'),
+      verEscribir && React.createElement(AdjuntarComoPersona, {
+        key: 'wa_1', tenantId: 'demo', conversacionId: 'wa_1', nombreContacto: 'Ana', telefono: '59170000000',
+        capa: CAPA_ADJ, miUid: 'uid1',
+      }));
+    for (let i = 0; i < 4; i++) {
+      flushSync(() => raiz.render(mal(true)));
+      flushSync(() => raiz.render(mal(false)));
+    }
+    flushSync(() => raiz.render(mal(true)));
+    expect(campos()).toBeGreaterThan(1);
+  });
+});
+
+describe('guarda de fuente', () => {
+  it('PiezasDePersona: cada hermano lleva su llave, y son distintas', () => {
+    const f = readFileSync(join(ADMIN, 'web/src/central/componentes/PiezasDePersona.tsx'), 'utf8');
+    expect(f).toMatch(/<EscribirComoPersona\s+key=\{`escribir-\$\{p\.conversacionId\}`\}/);
+    expect(f).toMatch(/<AdjuntarComoPersona\s+key=\{`adjuntar-\$\{p\.conversacionId\}`\}/);
+    const llaves = [...f.matchAll(/\bkey=\{([^}]+)\}/g)].map((m) => m[1]);
+    expect(new Set(llaves).size).toBe(llaves.length);
   });
 });
