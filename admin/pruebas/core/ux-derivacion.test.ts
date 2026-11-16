@@ -2,7 +2,7 @@
  * INVARIANTE GLOBAL «respuesta resuelta ⇒ sin botón de derivación» (22/10/2026): infraestructura (PR D1 de core). Las tablas por flujo las escribe Cartera (D2 a D5).
  * Pruebas NEGADAS de la regla, del vigilante, de la cobertura estática y del registro de flujos conversacionales.
  */
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -12,7 +12,7 @@ import { atiendeCliente } from './migracion/comprobaciones';
 import { problemasDeRegla } from './migracion/excepciones';
 import type { Mundo, ResultadoTurno } from '../lib/n8n-de-mentira';
 import { coberturaDePlanes, esBotonDeDerivacion, planesDelCodigo, vigilarDerivacion, violacionesDeDerivacion, type TablaDePlanes } from './ux/derivacion';
-import { EXCEPCIONES, flujosConversacionales, flujosFueraDelRegistro, problemasDelRegistro } from './ux/flujos-derivacion';
+import { EXCEPCIONES, flujosConversacionales, flujosFueraDelRegistro, flujosMudadosDelRegistro, MUDADOS, problemasDeMudados, problemasDelRegistro } from './ux/flujos-derivacion';
 
 const ctaUrl = (url: string, texto = 'Escribir'): J => ({ interactive: { type: 'cta_url', body: { text: 'Hola' }, action: { name: 'cta_url', parameters: { display_text: texto, url } } } });
 const WA = { tipo: 'interactive', cuerpo: 'Te paso con una persona', payload: ctaUrl('https://wa.me/59170000000?text=Hola') };
@@ -169,5 +169,47 @@ describe('derivación, lista única: los flujos fuera del registro por carpeta',
     expect(problemasDeRegla('ux-derivacion', new Map([['a.json', ['tabla de derivación']]]), {})).toHaveLength(1);
     expect(problemasDeRegla('ux-derivacion', new Map([['a.json', ['tabla de derivación']]]), exc)).toEqual([]);
     expect(problemasDeRegla('ux-derivacion', new Map([['a.json', []]]), exc)).toEqual([expect.stringContaining('SOBRA')]);
+  });
+});
+
+describe('un flujo mudado a clientes/ con otro nombre de carpeta sigue en el registro por su JSON', () => {
+  const ruta = 'clientes/novuchat/chat-novuchat.novuchat.json';
+  it('con su nombre en el registro no cae en la lista única; sin él, sí (contraprueba)', () => {
+    expect(flujosFueraDelRegistro([ruta], () => true, ['chat-novuchat'], () => false)).toEqual([]);
+    expect(flujosFueraDelRegistro([ruta], () => true, [], () => false)).toEqual([{ flujo: ruta, tabla: false }]);
+    expect(flujosFueraDelRegistro(['clientes/nuevo/venta-minima.nuevo.json'], () => true, ['venta-minima'], () => false)).toHaveLength(1);
+    expect(flujosFueraDelRegistro(['clientes/nuevo/chat-novuchat.novuchat.json'], () => true, ['chat-novuchat'], () => false)).toEqual([]);
+    expect(flujosFueraDelRegistro(['clientes/novuchat/otro.json'], () => true, ['chat-novuchat'], () => false)).toHaveLength(1);
+  });
+  it('flujosMudadosDelRegistro solo toma carpetas con plantilla cuyo JSON está en el registro', () => {
+    const t = mkdtempSync(join(tmpdir(), 'mudados-'));
+    try {
+      mkdirSync(join(t, 'novuchat')); mkdirSync(join(t, 'nuevo'));
+      for (const [d, j] of [['novuchat', 'chat-novuchat.novuchat.json'], ['nuevo', 'nuevo.json']] as const) {
+        writeFileSync(join(t, d, 'flujo.plantilla.json'), '{}'); writeFileSync(join(t, d, j), '{}');
+      }
+      const ex = { 'chat-novuchat': { desde: '2026-10-23', porque: 'p' }, nuevo: { desde: '2026-10-23', porque: 'p' } };
+      expect(flujosMudadosDelRegistro(ex, t, { 'chat-novuchat.novuchat.json': 'chat-novuchat' })).toEqual(['chat-novuchat']);
+      expect(flujosMudadosDelRegistro({}, t, { 'chat-novuchat.novuchat.json': 'chat-novuchat' })).toEqual([]);
+      expect(flujosMudadosDelRegistro(ex, t, {})).toEqual([]);
+    } finally { rmSync(t, { recursive: true, force: true }); }
+  });
+});
+
+describe('la lista cerrada de mudados es verdadera', () => {
+  it('cada entrada tiene su JSON en el disco y su valor es del registro', () => {
+    expect(problemasDeMudados()).toEqual([]);
+    expect(Object.keys(MUDADOS).length).toBeGreaterThan(0);
+  });
+  it('contraprueba: una entrada inventada falla por JSON y por valor', () => {
+    const con = (m: Record<string, string>, re: RegExp): boolean => problemasDeMudados(m).some((x) => re.test(x));
+    expect(con({ 'fantasma.fantasma.json': 'fantasma' }, /no existe en/)).toBe(true);
+    expect(con({ 'fantasma.fantasma.json': 'fantasma' }, /no es carpeta de experimental/)).toBe(true);
+    // Un valor ajeno falla por valor (con independencia de dónde esté hoy el JSON) y por nombre.
+    expect(con({ 'chat-novuchat.novuchat.json': 'fantasma' }, /no es carpeta de experimental/)).toBe(true);
+    expect(con({ 'chat-novuchat.novuchat.json': 'fantasma' }, /no empieza por/)).toBe(true);
+    // Un JSON que no empieza por el valor del registro falla aunque ambos existan.
+    expect(con({ 'chat-novuchat.novuchat.json': 'venta-minima' }, /no empieza por/)).toBe(true);
+    expect(con({ 'chat-novuchat.novuchat.json': 'chat-novuchat' }, /no empieza por/)).toBe(false);
   });
 });

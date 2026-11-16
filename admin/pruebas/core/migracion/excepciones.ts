@@ -13,7 +13,13 @@
  * este mapa sea un cheque en blanco. `TOPE` es la cuenta MEDIDA corriendo las pruebas el 12/11/2026, no un número escrito a mano:
  * una excepción nueva exige bajar otra, o un PR que cambie el tope y lo justifique.
  */
-import { idDeFlujo } from './comprobaciones';
+import { idDeFlujo as idSinPrefijo } from './comprobaciones';
+
+/**
+ * Identidad de un flujo para casar excepciones: su archivo JSON, sin carpeta. Una mudanza puede cambiar el nombre de la carpeta
+ * (`experimental/chat-novuchat/` -> `clientes/novuchat/`) pero nunca el del JSON, así que las claves existentes valen en `experimental/` y en `clientes/`.
+ */
+export const idDeFlujo = (ruta: string): string => idSinPrefijo(ruta).split('/').pop() ?? ruta;
 
 /** Las reglas comunes que reconocen excepciones (la 1.ª es M4, la 2.ª es M5, el resto son las pruebas comunes de invariantes). */
 export const REGLAS = [
@@ -142,6 +148,14 @@ export function excepcionesDe(regla: string, excepciones: Record<string, Excepci
 export function problemasDeRegla(regla: string, hoy: Map<string, string[]>, excepciones: Record<string, Excepcion> = EXCEPCIONES): string[] {
   const problemas: string[] = [];
   const porId = new Map([...hoy].map(([j, nodos]) => [idDeFlujo(j), nodos]));
+  if (porId.size !== hoy.size) {
+    const vistos = new Map<string, string>();
+    for (const j of hoy.keys()) {
+      const otro = vistos.get(idDeFlujo(j));
+      if (otro !== undefined) problemas.push(`${j}#${regla}: identidad ambigua, comparte nombre de JSON con ${otro}`);
+      else vistos.set(idDeFlujo(j), j);
+    }
+  }
   const cubiertas = new Set<string>();
   for (const [json, nodo] of excepcionesDe(regla, excepciones)) {
     const nodos = porId.get(idDeFlujo(json));
