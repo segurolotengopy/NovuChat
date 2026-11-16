@@ -145,7 +145,7 @@ const SOLO_DELIVERY = String(DATOS['campanaPedidoEntrega']);
 // Lo que sale al cliente lleva la voz común (identidad «con IA» y párrafos separados: `Armar mensajes`): el texto del negocio se compara ya con ella.
 const esA = (t: ResultadoTurno): boolean => cuerpos(t)[0] === voz(A);
 const esB = (t: ResultadoTurno): boolean => cuerpos(t)[0] === voz(B);
-const ninguna = (t: ResultadoTurno): boolean => !t.mensajes.some((m) => [A, B, DETALLE, SOLO_DELIVERY].map(voz).includes(m.cuerpo));
+const ninguna = (t: ResultadoTurno): boolean => !t.mensajes.some((m) => [A, B, DETALLE, SOLO_DELIVERY].some((x) => m.cuerpo === x || m.cuerpo === voz(x)));
 
 describe('los datos de Q\'Taco (la adenda)', () => {
   it('el detalle del combo (B) es el de la adenda, con «2 helados» y sin «de tequila», y el área de «Hacer un pedido» es la real del catálogo', () => {

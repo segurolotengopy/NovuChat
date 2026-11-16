@@ -906,19 +906,21 @@ describe('#435 ronda 2: rasgos de dirección y de referencia, ayuda por código,
     expect(ent(w)['entrega']).toBe('delivery');
   });
 
-  it('LOW-1: «prefiero delivery» se perdona UNA vez (vuelve a pedir la dirección); «cancelen el envío» no se perdona: deriva a la 2.ª vez (y «no me manden nada» ya es una BAJA, decidida antes de todo: UX común del 16/11/2026)', () => {
+  it('LOW-1: «prefiero delivery» se perdona UNA vez (vuelve a pedir la dirección); «no me manden nada» y «cancelen el envío» no se perdonan: derivan a la 2.ª vez (con un pedido en curso «no me manden nada» NO es una baja: decisión de Andres del 16/11/2026; sin pedido sí)', () => {
     const w = sinDireccion();
     const uno = turno(w, texto('prefiero delivery'));
     expect(uno.mensajes[0]!.cuerpo).toBe(PIDE_DIRECCION);
     expect(uno.avisos).toHaveLength(0);
-    for (const dicho of ['cancelen el envio']) {
+    for (const dicho of ['no me manden nada', 'cancelen el envio']) {
       const v = sinDireccion();
       turno(v, texto(dicho));
       const dos = turno(v, texto(dicho));
       expect(dos.mensajes[0]!.cuerpo, dicho).toMatch(DERIVA);
     }
-    // NEGADO: «no me manden nada» ya no se toma por un pedido a medias: es la baja por texto (un texto fijo, sin aviso al local).
-    const baja = turno(sinDireccion(), texto('no me manden nada'));
+    // Con el pedido en curso no hay baja ni texto de baja; SIN pedido en curso la misma frase sí es la baja (un texto fijo, sin aviso al local).
+    const enCurso = turno(sinDireccion(), texto('no me manden nada'));
+    expect(enCurso.mensajes.map((m) => m.cuerpo).join(' ')).not.toMatch(/no quieres recibir más mensajes/);
+    const baja = turno(crear(), texto('no me manden nada'));
     expect(baja.mensajes).toHaveLength(1);
     expect(baja.mensajes[0]!.cuerpo).toMatch(/no quieres recibir más mensajes/);
     expect(baja.avisos).toHaveLength(0);

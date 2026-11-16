@@ -1026,6 +1026,39 @@ describe('UX común · baja por texto: UN texto fijo, sin avisos, sin cobro y si
     expect(JSON.stringify(clientes(s))).not.toContain('qr_enviado');
     expect(clientes(s).filter((j) => j['evento'])).toHaveLength(0);
   });
+  describe('«no me manden/envíen nada» con un pedido en curso NO es baja (decisión de Andres, 16/11/2026); sin pedido sí', () => {
+    const carritoAbierto = (): Mundo => {
+      const m = mundoCon();
+      turno(m, { texto: 'hola' });
+      turno(m, { texto: 'quiero 2 tacos', extraccion: { lineas: [{ producto: 'tacos de birria', cantidad: 2, forma: 'unidad', detalle: '' }] } });
+      expect(JSON.stringify(estadoDe(m)['carrito'])).not.toBe('[]');
+      return m;
+    };
+    it.each(['no me manden nada', 'no me envíen nada'])('SÍ baja sin pedido: «%s»', (texto) => {
+      const s = turno(mundoCon(), { texto });
+      expect(s.d['accion']).toBe('baja');
+      expect(cuerpos(s)).toEqual([BAJA_TXT]);
+    });
+    it.each(['no me manden nada', 'no me envíen nada'])('NO baja con el carrito abierto: «%s» (sigue el camino de siempre, sin texto de baja)', (texto) => {
+      const m = carritoAbierto();
+      const s = turno(m, { texto, extraccion: { lineas: [] } });
+      expect(s.d['accion']).not.toBe('baja');
+      expect(cuerpos(s).join(' ')).not.toContain(BAJA_TXT);
+    });
+    it('NO baja con un QR esperando comprobante', () => {
+      const m = crear({ panel: conCobro() });
+      hastaResumen(m, 'recojo');
+      turno(m, { boton: 'p|confirmar' });
+      expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
+      const s = turno(m, { texto: 'no me manden nada' });
+      expect(s.d['accion']).not.toBe('baja');
+      expect(cuerpos(s).join(' ')).not.toContain(BAJA_TXT);
+    });
+    it('NEGADO: las otras frases de baja siguen ganando con el carrito abierto («no me escribas más»)', () => {
+      const s = turno(carritoAbierto(), { texto: 'no me escribas más' });
+      expect(s.d['accion']).toBe('baja');
+    });
+  });
   it('quien vuelve a escribir después se atiende como siempre (la baja no bloquea el chat)', () => {
     const m = mundoCon();
     turno(m, { texto: 'stop' });
@@ -1061,6 +1094,15 @@ describe('UX común · baja por texto: UN texto fijo, sin avisos, sin cobro y si
 });
 
 describe('UX común · párrafos: el texto largo sale separado y dentro de los topes de WhatsApp', () => {
+  it('el pie «inicio» de un mensaje con botón de enlace va en su propio párrafo cuando el cuerpo ya los tiene, y pegado si no', () => {
+    const m = crear();
+    turno(m, { texto: 'hola' });
+    const enlace = (cuerpo: string) => turno(m, { texto: 'hola', plan: (p) => ({ ...p, mensajes: [{ tipo: 'enlace', cuerpo, boton: 'Escribir al local' }] }) });
+    const largo = enlace('Primera oración de prueba. Segunda oración de prueba. Tercera oración de prueba. ¿Cuarta?');
+    expect(cuerpos(largo)[0]!.split('\n\n').at(-1)).toBe('Para volver al inicio, escribe «inicio».');
+    expect(cuerpos(largo)[0]!.length).toBeLessThanOrEqual(1024);
+    expect(cuerpos(enlace('Una sola frase.'))[0]).toBe('Una sola frase. Para volver al inicio, escribe «inicio».');
+  });
   it('un texto de 3 oraciones o más se parte; uno que ya cabe justo en 1.024 NO se alarga más allá del tope', () => {
     const m = crear();
     turno(m, { texto: 'hola' });

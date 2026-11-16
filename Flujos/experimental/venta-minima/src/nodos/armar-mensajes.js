@@ -196,7 +196,7 @@ function amEmojis(texto) {
 }
 // Un solo botón (el de enlace): el camino de vuelta al menú va escrito, solo en la conversación y sin repetirlo.
 function amConSeguir(cuerpo) {
-  return !AM_CONVERSA || cuerpo.indexOf(AM_SEGUIR) >= 0 ? cuerpo : cuerpo + ' ' + AM_SEGUIR;
+  return !AM_CONVERSA || cuerpo.indexOf(AM_SEGUIR) >= 0 ? cuerpo : cuerpo + (cuerpo.indexOf('\n\n') >= 0 ? '\n\n' : ' ') + AM_SEGUIR;
 }
 // `sinMenu`: el mensaje no manda a «menú» (con un comprobante en espera el menú no está disponible).
 function amEnlace(cuerpoCrudo, boton, urlDelPlan, tipoReporte, sinMenu) {
@@ -291,7 +291,7 @@ function amArmarUno(m) {
   if (!m || typeof m !== 'object') return null;
   const tipo = String(m.tipo || 'texto');
   const amCrudo = amEmojis(String(m.cuerpo === undefined || m.cuerpo === null ? '' : m.cuerpo).trim()).trim();
-  const amPie = (tipo === 'enlace' || tipo === 'ubicacion') && AM_CONVERSA ? AM_SEGUIR.length + 1 : 0; // lugar para el pie que `amConSeguir` agrega después
+  const amPie = (tipo === 'enlace' || tipo === 'ubicacion') && AM_CONVERSA ? AM_SEGUIR.length + 2 : 0; // lugar para el pie que `amConSeguir` agrega después
   const cuerpo = amVozComun(amCrudo, tipo === 'texto' ? 4000 : 1024, amPie);
   if (!cuerpo) { AM_errores.push('mensaje_sin_cuerpo: ' + tipo); return null; }
   if (!amSeguro(cuerpo)) return amGenerico('texto_reemplazado_por_palabra_prohibida');

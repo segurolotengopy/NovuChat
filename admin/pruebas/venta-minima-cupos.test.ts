@@ -496,7 +496,8 @@ describe('tope de 73 nodos: «Consumir cupos» y «¿Cupo concedido?» no agrega
     expect(antes.nodes.some((n) => n.name === 'Consumir cupos')).toBe(false);
     // Lo único que cambió desde ese fixture es la VOZ COMÚN (16/11/2026: «asistente virtual con IA» y párrafos separados): se aplica a los textos del fixture, con las piezas REALES del core, y todo lo demás
     // (cuántos mensajes, tipos, botones, ids) tiene que seguir idéntico.
-    const conVoz = (v: unknown): unknown => (typeof v === 'string' ? voz(v) : Array.isArray(v) ? v.map(conVoz) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, conVoz(x)])) : v);
+    const CAMPOS_DE_CUERPO = ['cuerpo', 'body', 'text', 'caption', 'texto'];
+    const conVoz = (v: unknown, campo = ''): unknown => (typeof v === 'string' ? (CAMPOS_DE_CUERPO.includes(campo) ? voz(v) : v) : Array.isArray(v) ? v.map((x) => conVoz(x, campo)) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, conVoz(x, k)])) : v);
     expect(recorrido(conPanel(antes)).map((x) => JSON.stringify(conVoz(JSON.parse(x))))).toEqual(recorrido(conPanel(QTACO)));
   });
 

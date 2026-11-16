@@ -130,7 +130,11 @@ if (t.tipo === 'carrito') return decidirCarrito();
 // --- 1c. Un pedido de BAJA («no me escribas más», «no me manden nada», «stop»): se decide ANTES de cualquier otra intención y del modelo (`bjPideBaja`, pieza común del core) ---
 // Se decide sobre `t.texto` de un mensaje ESCRITO (ni botón ni audio ni pie de foto): la MISMA fuente que usa «Reportar mensaje (entrante)» para marcar `no_contactar`; confirmar una baja que el servidor no
 // registró sería prometer lo que no se cumple. Un audio o el pie de una foto que piden la baja quedan marcados sin confirmación (el lado seguro). `Plan del turno` contesta UN texto fijo y nada más.
-if (t.tipo === 'text' && !t.boton && bjPideBaja(t.texto)) return salir('baja');
+// EXCEPCIÓN decidida por Andres (16/11/2026): con un pedido en curso (carrito, líneas pendientes, un paso de pedido o un QR esperando comprobante) «no me manden/envíen nada» es del pedido («no me manden nada a la
+// casa», «no envíen nada todavía»), no una baja: NO se confirma baja y sigue la derivación al local de siempre (el `no_contactar` del reporte queda como está). Sin pedido en curso sí es baja. Las demás frases de baja ganan siempre.
+const bjPedidoEnCurso = (Array.isArray(previo.carrito) && previo.carrito.length > 0) || (Array.isArray(previo.pendiente) && previo.pendiente.length > 0) || String(previo.paso).indexOf('pedido') === 0 || previo.paso === 'esperando_comprobante';
+const bjEsMandenNada = /\bno (?:me |nos |le |les )?(?:mand|envi)(?:e|es|en)\b/.test(bjPlegar(t.texto));
+if (t.tipo === 'text' && !t.boton && bjPideBaja(t.texto) && !(bjPedidoEnCurso && bjEsMandenNada)) return salir('baja');
 
 // --- 2. Medios -------------------------------------------------------------------------
 if (t.tipo === 'audio') {
