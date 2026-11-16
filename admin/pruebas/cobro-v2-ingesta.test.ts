@@ -27,7 +27,7 @@ if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: P
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { ingesta } = await import('../functions/src/ingesta.ts');
-const { cierreBloqueadoPorCobro } = await import('../functions/src/ingesta.ts');
+const { cierreBloqueadoPorCobro } = await import('../functions/src/modulos/cobros/alCierre.ts');
 const { registrarCierre } = await import('../functions/src/ganchos.ts');
 
 const T = 'cobro-v2-ingesta';

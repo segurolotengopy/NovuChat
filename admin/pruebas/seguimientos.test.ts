@@ -35,7 +35,7 @@ const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { seguimientosPendientes, seguimientoEnviado, esPendienteDeSeguimiento, VENTANAS } =
   await import('../functions/src/modulos/agenda/seguimientos.ts');
-const { solicitudTras, reactivaTras, DIAS_ADELANTO_A_FAVOR } = await import('../functions/src/ingesta.ts');
+const { solicitudTras, reactivaTras, DIAS_ADELANTO_A_FAVOR } = await import('../functions/src/modulos/agenda/solicitud.ts');
 
 const T = 'seg-clinica';
 const NUMERO = '1000000098';
