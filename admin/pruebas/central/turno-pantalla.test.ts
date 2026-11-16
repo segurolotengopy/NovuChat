@@ -284,9 +284,10 @@ describe('D. el Detalle junta las piezas', () => {
 
   it('pinta la barra del turno y, SOLO si quien mira tiene la conversación, el campo para escribir', () => {
     expect(d).toContain('<BarraTurno');
-    expect(d).toMatch(/\{acciones\.verEscribir && \(\s*<EscribirComoPersona/);
+    expect(d).toMatch(/verEscribir=\{acciones\.verEscribir\}/);
+    expect(codigo('web/src/central/componentes/PiezasDePersona.tsx')).toMatch(/\{p\.verEscribir && \(\s*<EscribirComoPersona/);
     expect(d).toContain('ultimoEntranteEn={ficha.ultimoEntranteEn}');       // la ventana de Meta: NO `ventanaVenceEn` (contrato §2)
-    expect(d).not.toMatch(/<EscribirComoPersona[^>]*ventanaVenceEn/);
+    expect(d).not.toMatch(/<PiezasDePersona[^>]*ventanaVenceEn/);
     expect(d).toContain('situacionDeTurno(turno, p.miUid)');
     expect(d).toContain('const turno = turnoDeFicha(ficha, p.ahora);');
     expect(d).toContain('ventanaAbierta: ventanaAbiertaParaTomar(ficha.ultimoEntranteEn, p.ahora)');
