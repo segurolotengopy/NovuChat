@@ -266,7 +266,6 @@ test.describe('PED-02: la tarjeta del pedido', () => {
   });
 
   test('la cabecera del administrador cabe en 1280 px: el botón «Salir» queda a la vista', async ({ page }) => {
-    test.fail(true, 'Hallazgo fuera de Pedidos (cabecera de toda la consola): con las 14 pestañas del administrador de Fogon, a 1280 px el menú llega a 1654 px y «Salir» queda fuera de la pantalla (desplazamiento lateral de 374 px). Prueba hermana SIN test.fail: «el operador ve Pedidos y Conversaciones…» (el operador, con menos pestañas, no se sale) y el viewport móvil de o2-pedidos-movil.spec.ts.');
     await abrirComoAdmin(page);
     const salir = await page.getByRole('button', { name: 'Salir' }).boundingBox();
     expect(salir && salir.x + salir.width, 'borde derecho del botón Salir').toBeLessThanOrEqual(1280);
