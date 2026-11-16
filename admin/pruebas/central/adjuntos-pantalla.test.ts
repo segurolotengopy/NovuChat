@@ -151,3 +151,20 @@ describe('cabeceras de la consola', () => {
     for (const v of valores('consola', 'Content-Security-Policy')) expect(/img-src ([^;]+)/.exec(v)?.[1] ?? '').not.toMatch(/blob:/);
   });
 });
+
+describe('una vista previa grande no deja el botón fuera de alcance (15/11/2026)', () => {
+  const css = leer('web/src/central/estilos/conversaciones.css');
+  const regla = (sel: string) => new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+  it('el bloque del selector se desplaza y no pasa de 55 vh', () => {
+    const r = regla('.cv-adjuntar');
+    expect(r).toMatch(/max-height:\s*55vh/);
+    expect(r).toMatch(/overflow-y:\s*auto/);
+  });
+  it('la imagen previa se limita a 28 vh y los botones quedan pegados abajo', () => {
+    expect(regla('.cv-adjunto-previa img')).toMatch(/max-height:\s*28vh/);
+    expect(regla('.cv-adjunto-previa .cv-adjuntar-botones')).toMatch(/position:\s*sticky[^}]*bottom:\s*0|bottom:\s*0[^}]*position:\s*sticky/);
+  });
+  it('NEGANDO: la regla vieja (solo 40 vh y sin desplazamiento) ya no está', () => {
+    expect(css).not.toMatch(/\.cv-adjunto-previa img \{[^}]*max-height:\s*40vh/);
+  });
+});
