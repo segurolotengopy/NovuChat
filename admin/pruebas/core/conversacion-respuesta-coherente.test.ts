@@ -156,7 +156,7 @@ describe('corpus del revisor (121 frases de crisis y baja, con evasiones): TODAS
   });
 });
 
-describe('paridad con la baja del entrante («Reportar mensaje (entrante)» marca `no_contactar`)', () => {
+describe('corpus fijo: frases de baja de la pieza común que `rcSenalDeCrisisOBaja` también detecta (NO es una equivalencia entre las dos)', () => {
   // El entrante de «Venta mínima» lleva la expresión común del core (`BJ_BAJA`, literal en la plantilla: lo fija `ux-baja.test.ts`); aquí se usa la pieza real.
   const plantilla = readFileSync(new URL('../../../Flujos/experimental/venta-minima/flujo.plantilla.json', import.meta.url), 'utf8');
   const BJ = cargarFuente<{ bjPideBaja: (t: string) => boolean }>(['Flujos/src/core/conversacion/baja.js'], ['bjPideBaja']);
@@ -165,15 +165,30 @@ describe('paridad con la baja del entrante («Reportar mensaje (entrante)» marc
   const CORPUS = ['no me escribas', 'no me escribas más', 'no mandes más', 'no me manden nada', 'no me molesten', 'no me molestes', 'no me contacten', 'no contactes', 'no me llamen', 'no me llames', 'no llamar',
     'deja de escribir', 'dejá de escribir', 'dejen de escribir', 'deje de escribir', 'no quiero más mensajes', 'no quiero mas mensajes', 'bórrame', 'borrame', 'borreme', 'quítame', 'quitame', 'quíteme',
     'dame de baja', 'dáme de baja', 'deme de baja', 'stop', 'STOP', 'no escribas', 'no mand', 'por favor no me escribas más gracias'];
-  it.each(CORPUS)('todo lo que marca `no_contactar` («%s») también lo detecta `rcSenalDeCrisisOBaja`', (t) => {
+  it.each(CORPUS)('si `bjPideBaja` da baja con «%s», `rcSenalDeCrisisOBaja` también la detecta (corpus fijo)', (t) => {
     if (baja.test(t)) expect(rc('rcSenalDeCrisisOBaja')(t), t).toBe(true);
   });
-  it('el corpus ejerce de verdad la expresión del entrante (al menos 20 frases la activan)', () => {
+  it('el corpus ejerce de verdad `bjPideBaja` (al menos 20 frases la activan)', () => {
     expect(CORPUS.filter((t) => baja.test(t)).length).toBeGreaterThanOrEqual(20);
   });
   // La paridad por ENUMERACIÓN de la expresión entera se retiró (16/11/2026): el entrante ahora lleva la expresión común del core (`BJ_BAJA`, con
   // lookaheads y opcionales anidados), cuya enumeración crece sin tope (agotó el heap del CI) y que su propia suite (`conversacion-baja.test.ts` y
   // `ux-baja.test.ts`) ya fija frase por frase. La paridad con la señal de crisis o baja del modelo se sigue midiendo con el corpus de arriba.
+  // Lo que protege a quien pide la baja NO es la paridad: `bjPideBaja` acepta frases que `rcSenalDeCrisisOBaja` no («no nos escriban», «elimíname»…). Es el ORDEN en
+  // «Decidir turno»: la salida `baja` precede a toda salida al modelo (`extraer_*`). Prueba estructural, con su contraprueba.
+  const ordenDeLaBaja = (src: string): boolean => {
+    const baja = src.indexOf("bjPideBaja(t.texto)");
+    const libre = src.indexOf("salir('extraer_");
+    return baja >= 0 && libre >= 0 && baja < libre;
+  };
+  const DECIDIR = readFileSync(new URL('../../../Flujos/experimental/venta-minima/src/nodos/decidir-turno.js', import.meta.url), 'utf8');
+  it('ORDEN: en «Decidir turno» la baja por `bjPideBaja` se decide antes de toda salida al modelo (`extraer_*`)', () => {
+    expect(ordenDeLaBaja(DECIDIR)).toBe(true);
+  });
+  it('contraprueba del orden: con la baja DESPUÉS de la primera salida al modelo, la prueba falla', () => {
+    expect(ordenDeLaBaja('salir(\'extraer_libre\'); bjPideBaja(t.texto)')).toBe(false);
+    expect(ordenDeLaBaja('bjPideBaja(t.texto); salir(\'extraer_libre\')')).toBe(true);
+  });
   // MUTACIÓN REAL: la pieza de verdad, pero con una alternativa de baja quitada de la lista (copia de la fuente en un contexto nuevo): la paridad TIENE que fallar.
   const conLista = (quita: string): ((t: string) => boolean) => {
     const fuente = readFileSync(new URL('../../../Flujos/src/core/conversacion/respuesta-coherente.js', import.meta.url), 'utf8');
@@ -182,7 +197,7 @@ describe('paridad con la baja del entrante («Reportar mensaje (entrante)» marc
     return vm.runInNewContext(`${mutada}\n(rcSenalDeCrisisOBaja)`, Object.create(null)) as (t: string) => boolean;
   };
   it.each([["'qui(ta|te|ten)me'", ['quítame', 'quiteme', 'quítenme']], ["'d(a|e|en)me de baja'", ['dame de baja', 'deme de baja']], ["'bor(ra|re|ren)me'", ['bórrame', 'borreme']]])(
-    'MUTACIÓN: quitar %s de la lista rompe la paridad',
+    'MUTACIÓN: quitar %s de la lista de `rcSenalDeCrisisOBaja` deja sin detectar frases del corpus',
     (quita, ejemplos) => {
       const mutada = conLista(quita);
       expect((ejemplos as string[]).some((e) => baja.test(e) && !mutada(e))).toBe(true);
