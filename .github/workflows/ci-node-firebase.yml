@@ -1251,7 +1251,7 @@ jobs:
       github.event_name == 'push' && github.ref == 'refs/heads/main'
       && vars.GCP_PROJECT_ID_STAGING != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 28 # incluye «lo servido es lo construido» (hasta ~400 s)
     # Para humo-staging, que corre SIN Environment (necesita las variables del
     # repositorio, es decir las de producción, para comprobar su ausencia).
     outputs:
@@ -1503,6 +1503,7 @@ jobs:
           fi
 
       - name: Desplegar hosting + reglas + Functions (staging)
+        id: desplegar
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
@@ -1557,11 +1558,38 @@ jobs:
             echo "Simulando: $SIMULAR"
             firebase deploy --only "$SIMULAR" --project "$PROYECTO" --non-interactive $FORZAR --dry-run
           fi
+          # >>> despliegue con compuerta
+          # El 16/11/2026 (v0.23.1) `firebase deploy` salió con código 0 a mitad del
+          # release de Functions: sin «Deploy complete!» y sin publicar Hosting. El
+          # código de salida no alcanza; se guarda la salida y se revisa. La
+          # consola de staging es el sitio por defecto del proyecto.
+          REGISTRO="$RUNNER_TEMP/firebase-deploy.log"
+          echo "firebase_corrio=true" >> "$GITHUB_OUTPUT"
+          set +e
           firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
-            --message "staging ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
+            --message "staging ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})" 2>&1 | tee "$REGISTRO"
+          estados=("${PIPESTATUS[@]}")
+          set -e
+          REGISTRO="$REGISTRO" CODIGO_FIREBASE="${estados[0]}" SOLO="$SOLO" \
+            SITIO_CONSOLA="$PROYECTO" SITIO_CATALOGO="${SITIO_CATALOGO:-}" \
+            bash "$GITHUB_WORKSPACE/scripts/compuerta-registro-despliegue.sh"
+          # <<< despliegue con compuerta
           # Sin la URL: lleva el ID del proyecto y el registro es público. La URL
           # la muestra el Environment del job.
           echo "### Staging desplegado (${GITHUB_SHA::7})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Lo servido es lo construido (consola y catálogo)
+        # El sitio viejo también responde 200: se compara lo servido con el
+        # paquete construido (16/11/2026).
+        id: version
+        # Peor caso: 2 sitios x 8 intentos x (10 s + 15 s) = 400 s; el límite deja
+        # que el script llegue a escribir su ::error::.
+        timeout-minutes: 8
+        env:
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
+          URL_CONSOLA: ${{ vars.STAGING_URL }}
+          URL_CATALOGO: ${{ vars.SITIO_PUBLICO }}
+        run: bash "$GITHUB_WORKSPACE/scripts/comprobar-version-servida.sh"
 
   # ---------------------------------------------------------------------------
   # desplegar-dev — camino corto para PROBAR, no para operar.
@@ -1588,7 +1616,7 @@ jobs:
     needs: [preparar, calidad, construir-staging]
     if: github.event_name == 'workflow_dispatch' && inputs.destino == 'dev'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 22 # incluye «lo servido es lo construido» (hasta ~400 s)
     environment:
       name: dev
       url: ${{ vars.DEV_URL }}
@@ -1632,6 +1660,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Desplegar en el proyecto de desarrollo
+        id: desplegar
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_DEV }}
           # Functions exige plan Blaze. En un proyecto Spark hay que dejar
@@ -1659,10 +1688,44 @@ jobs:
             done
             SOLO="$(IFS=,; echo "${partes[*]}")"
           fi
+          # >>> despliegue con compuerta
+          # El 16/11/2026 (v0.23.1) `firebase deploy` salió con código 0 a mitad del
+          # release de Functions: sin «Deploy complete!» y sin publicar Hosting. El
+          # código de salida no alcanza; se guarda la salida y se revisa. Dev no
+          # tiene sitio del catálogo.
+          REGISTRO="$RUNNER_TEMP/firebase-deploy.log"
+          echo "firebase_corrio=true" >> "$GITHUB_OUTPUT"
+          set +e
           firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive \
-            --message "dev ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
+            --message "dev ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})" 2>&1 | tee "$REGISTRO"
+          estados=("${PIPESTATUS[@]}")
+          set -e
+          REGISTRO="$REGISTRO" CODIGO_FIREBASE="${estados[0]}" SOLO="$SOLO" \
+            SITIO_CONSOLA="$PROYECTO" SITIO_CATALOGO="" \
+            bash "$GITHUB_WORKSPACE/scripts/compuerta-registro-despliegue.sh"
+          # <<< despliegue con compuerta
           echo "### Dev desplegado: componentes [$SOLO] en $PROYECTO" >> "$GITHUB_STEP_SUMMARY"
           echo "URL: https://${PROYECTO}.web.app" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Lo servido es lo construido (solo la consola)
+        # El sitio viejo también responde 200 (16/11/2026). Dev publica solo la
+        # consola: el `hosting` a secas se lee como `hosting:consola`, igual que
+        # en el paso anterior, porque aquí no hay sitio del catálogo.
+        id: version
+        # Peor caso: 2 sitios x 8 intentos x (10 s + 15 s) = 400 s; el límite deja
+        # que el script llegue a escribir su ::error::.
+        timeout-minutes: 8
+        env:
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY_DEV || 'hosting,firestore:rules,firestore:indexes' }}
+          URL_CONSOLA: https://${{ vars.GCP_PROJECT_ID_DEV }}.web.app
+        run: |
+          set -euo pipefail
+          IFS=',' read -r -a partes <<< "$SOLO"
+          for i in "${!partes[@]}"; do
+            [[ "${partes[$i]}" == "hosting" ]] && partes[i]="hosting:consola"
+          done
+          SOLO="$(IFS=,; echo "${partes[*]}")" URL_CATALOGO="" \
+            bash "$GITHUB_WORKSPACE/scripts/comprobar-version-servida.sh"
 
   # ---------------------------------------------------------------------------
   # Fase 5 — dast-y-humo: contra staging recién desplegado.
@@ -1743,9 +1806,12 @@ jobs:
       || (github.event_name == 'workflow_dispatch' && inputs.destino == 'produccion'
             && inputs.confirmar == 'DESPLEGAR')
     runs-on: ubuntu-latest
-    timeout-minutes: 25 # 2.9: incluye el health check (hasta ~450 s) y el rollback
+    timeout-minutes: 35 # 2.9: incluye el health check (hasta ~450 s) y el rollback; +10 por «lo servido es lo construido» (hasta ~400 s)
     outputs:
       salud_ok: ${{ steps.salud.outputs.ok }}
+      despliegue_completo: ${{ steps.desplegar.outputs.completo }}
+      hosting_publicado: ${{ steps.desplegar.outputs.hosting_publicado }}
+      version_servida: ${{ steps.version.outputs.ok }}
     environment:
       name: production
       url: ${{ vars.PROD_URL }}
@@ -1935,6 +2001,7 @@ jobs:
           fi
 
       - name: Desplegar hosting + reglas (producción)
+        id: desplegar
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_PROD }}
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
@@ -2091,12 +2158,40 @@ jobs:
           # piso, y se apaga después. Antes de encenderla hay que comparar las
           # Functions desplegadas con las que exporta el código: si alguna sobra
           # en la nube, `--force` la borra.
+          # >>> despliegue con compuerta
+          # El 16/11/2026 (v0.23.1) `firebase deploy` salió con código 0 a mitad del
+          # release de Functions: sin «Deploy complete!» y sin publicar Hosting. El
+          # código de salida no alcanza; se guarda la salida y se revisa.
+          REGISTRO="$RUNNER_TEMP/firebase-deploy.log"
+          echo "firebase_corrio=true" >> "$GITHUB_OUTPUT"
+          set +e
           firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
-            --message "producción ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})"
+            --message "producción ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})" 2>&1 | tee "$REGISTRO"
+          estados=("${PIPESTATUS[@]}")
+          set -e
+          REGISTRO="$REGISTRO" CODIGO_FIREBASE="${estados[0]}" SOLO="$SOLO" \
+            SITIO_CONSOLA="$SITIO_CONSOLA" SITIO_CATALOGO="${SITIO_CATALOGO:-}" \
+            bash "$GITHUB_WORKSPACE/scripts/compuerta-registro-despliegue.sh"
+          # <<< despliegue con compuerta
           echo "### Producción desplegada: $URL_PROD (${GITHUB_REF_NAME})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Lo servido es lo construido (consola y catálogo)
+        # El health check solo pide 200, y el sitio viejo también responde 200 (16/11/2026).
+        id: version
+        # Peor caso: 2 sitios x 8 intentos x (10 s + 15 s) = 400 s; el límite deja
+        # que el script llegue a escribir su ::error::.
+        timeout-minutes: 8
+        env:
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
+          URL_CONSOLA: ${{ vars.PROD_URL }}
+          URL_CATALOGO: ${{ vars.SITIO_PUBLICO }}
+        run: bash "$GITHUB_WORKSPACE/scripts/comprobar-version-servida.sh"
 
       - name: Health check de producción (10 intentos, 15 s)
         id: salud
+        # También tras un despliegue fallido: un sitio publicado y roto debe
+        # detectarse y revertirse.
+        if: ${{ !cancelled() && steps.desplegar.outputs.firebase_corrio == 'true' }}
         env:
           URL: ${{ vars.PROD_URL }}
           RUTA_SALUD: ${{ vars.HEALTH_PATH || '/health' }}
@@ -2137,7 +2232,8 @@ jobs:
           ./scripts/humo-sitio-publico.sh
 
       - name: Rollback de hosting (clonar canal "previa" sobre live)
-        if: steps.salud.outputs.ok == 'false'
+        # Sin !cancelled() se saltaría tras un paso fallido.
+        if: ${{ !cancelled() && steps.salud.outputs.ok == 'false' }}
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_PROD }}
           SITIO: ${{ vars.FIREBASE_SITE_ID || vars.GCP_PROJECT_ID_PROD }}
@@ -2158,7 +2254,8 @@ jobs:
           fi
 
       - name: Fallar si producción no responde
-        if: steps.salud.outputs.ok == 'false'
+        # Sin !cancelled() se saltaría tras un paso fallido.
+        if: ${{ !cancelled() && steps.salud.outputs.ok == 'false' }}
         run: echo "::error::Health check de producción fallido tras el despliegue; se intentó el rollback (paso anterior)."; exit 1
 
   # ---------------------------------------------------------------------------
@@ -2187,6 +2284,11 @@ jobs:
         env:
           RESULTADO: ${{ needs.desplegar-produccion.result }}
           SALUD_OK: ${{ needs.desplegar-produccion.outputs.salud_ok }}
+          # La compuerta del registro y la versión servida (16/11/2026): un
+          # despliegue a medias tiene su propio texto, no «falló un paso posterior».
+          COMPLETO: ${{ needs.desplegar-produccion.outputs.despliegue_completo }}
+          HOSTING: ${{ needs.desplegar-produccion.outputs.hosting_publicado }}
+          VERSION_SERVIDA: ${{ needs.desplegar-produccion.outputs.version_servida }}
           URL_PROD: ${{ vars.PROD_URL }}
         with:
           script: |
@@ -2195,6 +2297,16 @@ jobs:
               ? 'Health check correcto'
               : process.env.SALUD_OK === 'false'
                 ? 'Health check fallido; rollback intentado en desplegar-produccion'
+                : process.env.COMPLETO === 'false' && process.env.HOSTING === 'ninguno'
+                ? 'Despliegue a medias: firebase deploy no terminó; Hosting no se publicó (live sigue con la versión anterior)'
+                : process.env.COMPLETO === 'false' && process.env.HOSTING === 'parcial'
+                ? 'Despliegue a medias: solo uno de los sitios de Hosting se publicó; revise desplegar-produccion'
+                : process.env.COMPLETO === 'false' && process.env.HOSTING === 'todos'
+                ? 'Despliegue a medias: Hosting publicado, pero hay Functions sin confirmar o en estado inesperado; sin rollback'
+                : process.env.COMPLETO === 'false'
+                ? 'Despliegue a medias: firebase deploy no terminó (sin Hosting en este despliegue)'
+                : process.env.VERSION_SERVIDA === 'false'
+                ? 'Despliegue completo, pero el sitio no sirve la versión construida; sin rollback'
                 : process.env.SALUD_OK === 'true'
                   ? 'Consola sana, pero falló un paso posterior de desplegar-produccion (p. ej. el humo del sitio público); sin rollback'
                   : 'desplegar-produccion falló antes de verificar la salud';
