@@ -13,9 +13,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
+import { carpetaDeFlujo } from '../../lib/carpeta-de-flujo';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
-const EXP = join(RAIZ, 'Flujos', 'experimental');
+const FLUJOS = join(RAIZ, 'Flujos');
+const CARPETA = (d: string): string => join(FLUJOS, carpetaDeFlujo(d), d);
 const RECEPTOR = 'Entrega del receptor';
 const ACEPTAR = 'Aceptar (200)';
 const ANTES_DE_ACEPTAR = ['Verificar firma con el receptor', '¿Firma válida?', 'Rechazar (401)'];
@@ -28,9 +30,9 @@ function flujosDeProduccion(): Array<{ ruta: string; flujo: FlujoMinimo }> {
   const dirs = ['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio', 'doctoras'];
   const salida: Array<{ ruta: string; flujo: FlujoMinimo }> = [];
   for (const d of dirs) {
-    for (const n of readdirSync(join(EXP, d))) {
+    for (const n of readdirSync(CARPETA(d))) {
       if (!/^(rroca-[a-z]+|doctoras\.rroca-[a-z]+)\.json$/.test(n)) continue;
-      salida.push({ ruta: `${d}/${n}`, flujo: JSON.parse(readFileSync(join(EXP, d, n), 'utf8')) as FlujoMinimo });
+      salida.push({ ruta: `${d}/${n}`, flujo: JSON.parse(readFileSync(join(CARPETA(d), n), 'utf8')) as FlujoMinimo });
     }
   }
   return salida;

@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { problemasDeReferencias, referenciasDeNodos } from '../../../Flujos/src/core/sin-agente/referencias.mjs';
+import { carpetaDeFlujo } from '../lib/carpeta-de-flujo';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -68,7 +69,7 @@ describe('referencias de nodos: la función común', () => {
 
   it('los constructores la importan del core y ya no la llevan copiada', () => {
     for (const c of ['rroca-ruben', 'rroca-emma', 'rroca-evy']) {
-      const t = readFileSync(join(RAIZ, `Flujos/experimental/${c}/construir.mjs`), 'utf8');
+      const t = readFileSync(join(RAIZ, `Flujos/${carpetaDeFlujo(c)}/${c}/construir.mjs`), 'utf8');
       expect(t, c).toContain("from '../../src/core/sin-agente/referencias.mjs'");
       expect(t, c).not.toMatch(/const REF_LITERAL/);
       expect(t, c).not.toMatch(/function problemasDeReferencias/);
