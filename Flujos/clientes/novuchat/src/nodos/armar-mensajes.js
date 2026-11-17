@@ -124,7 +124,7 @@ if (plan.ruta === 'sin_estado') {
   }
   else if (plan.ruta === 'equipo') {
     // Si el cliente dio su nombre y su negocio en este mismo turno, el traspaso no los vuelve a pedir: se usan los de la ficha NUEVA (como el aviso).
-    const previa = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: '', ahoraMs: ahora, anuncio: t.anuncio === true });
+    const previa = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: '', ahoraMs: ahora, anuncio: !!t.anuncio });
     m = chMensajeEquipo(cfg, Object.assign({}, antes, { nombre: previa.nombre, empresa: previa.empresa }), from);
   }
   else {
@@ -137,7 +137,7 @@ if (plan.ruta === 'sin_estado') {
     m = chClienteConSitio(unido.texto, cfg, res.evento, est, antes, ['empresa', 'sin_dato', 'no_documentado'].includes(res.evento));
   }
   mensajes.push(m);
-  nueva = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: m.textoSinSitio || m.texto, sitio: m.sitio === true, ahoraMs: ahora, anuncio: t.anuncio === true,
+  nueva = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: m.textoSinSitio || m.texto, sitio: m.sitio === true, ahoraMs: ahora, anuncio: !!t.anuncio,
     sinRecepcion: recepcion.length < 6, ciclo: ciclo, explicacion: plan.ruta === 'modelo' && ['rubro', 'otroRespuesta'].includes(res.contexto), pidioDatos: anexo !== '', complemento: complemento, ordinaria: dec.ordinaria, botones: m.botones });
   // Pedir hablar con el equipo: la plantilla a recepción, UNA vez por ventana (`avisado` cuenta solo lo que Meta aceptó) y nunca al propio número de recepción. Con una empresa DISTINTA a la ya avisada,
   // un aviso nuevo (R5); con la misma, solo se reenvía el botón.
