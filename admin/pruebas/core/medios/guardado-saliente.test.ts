@@ -186,13 +186,13 @@ describe('la rama corrida en el arnés de n8n, sobre un flujo mínimo de envío 
     const { mundo, llamadas } = mundoDe(conRama(['media']), { respuesta: { respuesta: { statusCode: 200, body: { ruta: 'x', repetido: false } } } });
     const r = mundo.turno({ mensajes: [imagenId()] });
     expect(r.fallo).toBeNull();
-    expect(llamadas.saliente.pedir).toHaveLength(1);
-    expect(llamadas.saliente.pedir[0]!.url).toBe(`https://graph.facebook.com/v26.0/${IMG_ID}`);
-    expect(llamadas.saliente.bajar).toHaveLength(1);
-    expect(llamadas.saliente.bajar[0]!.url).toMatch(/^https:\/\/lookaside\.fbsbx\.com\//);
-    expect(llamadas.saliente.enlace).toHaveLength(0);
-    expect(llamadas.saliente.guardar).toHaveLength(1);
-    const g = llamadas.saliente.guardar[0]!;
+    expect(llamadas.salientePedir).toHaveLength(1);
+    expect(llamadas.salientePedir[0]!.url).toBe(`https://graph.facebook.com/v26.0/${IMG_ID}`);
+    expect(llamadas.salienteBajar).toHaveLength(1);
+    expect(llamadas.salienteBajar[0]!.url).toMatch(/^https:\/\/lookaside\.fbsbx\.com\//);
+    expect(llamadas.salienteEnlace).toHaveLength(0);
+    expect(llamadas.salienteGuardar).toHaveLength(1);
+    const g = llamadas.salienteGuardar[0]!;
     expect(g.url).toBe('https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio');
     expect(g.metodo).toBe('POST');
     expect(g.encabezados['X-NovuChat-Numero']).toBe('111');
@@ -207,20 +207,20 @@ describe('la rama corrida en el arnés de n8n, sobre un flujo mínimo de envío 
     const { mundo, llamadas } = mundoDe(conRama(['enlace']));
     const r = mundo.turno({ mensajes: [imagenEnlace()] });
     expect(r.fallo).toBeNull();
-    expect(llamadas.saliente.enlace.map((x) => x.url)).toEqual([ENLACE]);
-    expect(llamadas.saliente.pedir).toHaveLength(0);
-    expect(llamadas.saliente.bajar).toHaveLength(0);
-    expect(llamadas.saliente.guardar).toHaveLength(1);
+    expect(llamadas.salienteEnlace.map((x) => x.url)).toEqual([ENLACE]);
+    expect(llamadas.salientePedir).toHaveLength(0);
+    expect(llamadas.salienteBajar).toHaveLength(0);
+    expect(llamadas.salienteGuardar).toHaveLength(1);
   });
   it('con las dos vías, cada imagen toma la suya (un enlace y un media id en el mismo turno)', () => {
     const { mundo, llamadas } = mundoDe(conRama(['enlace', 'media']));
     const r = mundo.turno({ mensajes: [imagenEnlace(), imagenId()] });
     expect(r.fallo).toBeNull();
-    expect(llamadas.saliente.enlace).toHaveLength(1);
-    expect(llamadas.saliente.pedir).toHaveLength(1);
-    expect(llamadas.saliente.bajar).toHaveLength(1);
-    expect(llamadas.saliente.guardar).toHaveLength(2);
-    const ids = llamadas.saliente.guardar.map((x) => x.encabezados['X-NovuChat-IdMeta']);
+    expect(llamadas.salienteEnlace).toHaveLength(1);
+    expect(llamadas.salientePedir).toHaveLength(1);
+    expect(llamadas.salienteBajar).toHaveLength(1);
+    expect(llamadas.salienteGuardar).toHaveLength(2);
+    const ids = llamadas.salienteGuardar.map((x) => x.encabezados['X-NovuChat-IdMeta']);
     expect(new Set(ids).size).toBe(2);
   });
   it('NEGANDO: un texto, un botón con la imagen de encabezado y un documento no llaman a nada de la rama', () => {
@@ -229,7 +229,7 @@ describe('la rama corrida en el arnés de n8n, sobre un flujo mínimo de envío 
       const r = mundo.turno({ mensajes: [m] });
       expect(r.fallo).toBeNull();
       expect(r.ejecutados.has('Preparar guardado (saliente)')).toBe(true);
-      expect(llamadas.saliente.enlace.length + llamadas.saliente.pedir.length + llamadas.saliente.bajar.length + llamadas.saliente.guardar.length).toBe(0);
+      expect(llamadas.salienteEnlace.length + llamadas.salientePedir.length + llamadas.salienteBajar.length + llamadas.salienteGuardar.length).toBe(0);
     }
   });
   it('NEGANDO: un envío que falló no se guarda (la rama ni empieza: no hay reporte saliente)', () => {
@@ -237,7 +237,7 @@ describe('la rama corrida en el arnés de n8n, sobre un flujo mínimo de envío 
     const r = mundo.turno({ mensajes: [imagenId()] });
     expect(r.ejecutados.has('Reportar mensaje (saliente)')).toBe(false);
     expect(r.ejecutados.has('Preparar guardado (saliente)')).toBe(false);
-    expect(llamadas.saliente.guardar).toHaveLength(0);
+    expect(llamadas.salienteGuardar).toHaveLength(0);
   });
   it('NEGANDO: la rama corre DESPUÉS del reporte y de todo envío al cliente', () => {
     const { mundo } = mundoDe(conRama(['media']));
@@ -272,7 +272,7 @@ describe('la rama corrida en el arnés de n8n, sobre un flujo mínimo de envío 
       const r = mundo.turno({ mensajes: [imagenId()] });
       expect(r.fallo, JSON.stringify(respuesta)).toBeNull();
       expect(r.mensajes).toHaveLength(1);
-      expect(llamadas.saliente.guardar, 'un solo intento: el servidor decide').toHaveLength(1);
+      expect(llamadas.salienteGuardar, 'un solo intento: el servidor decide').toHaveLength(1);
       expect(r.avisos).toHaveLength(0);
     }
   });
@@ -281,7 +281,7 @@ describe('la rama corrida en el arnés de n8n, sobre un flujo mínimo de envío 
       const { mundo, llamadas } = mundoDe(conRama(['media']), { respuesta: o });
       const r = mundo.turno({ mensajes: [imagenId()] });
       expect(r.fallo).toBeNull();
-      expect(llamadas.saliente.bajar.every((x) => x.url === '' ), JSON.stringify(o)).toBe(true);
+      expect(llamadas.salienteBajar.every((x) => x.url === '' ), JSON.stringify(o)).toBe(true);
     }
   });
 });
