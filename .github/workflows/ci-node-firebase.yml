@@ -1251,7 +1251,7 @@ jobs:
       github.event_name == 'push' && github.ref == 'refs/heads/main'
       && vars.GCP_PROJECT_ID_STAGING != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 28 # incluye «lo servido es lo construido» (hasta ~400 s)
+    timeout-minutes: 28 # incluye «lo servido es lo construido» (hasta ~370 s)
     # Para humo-staging, que corre SIN Environment (necesita las variables del
     # repositorio, es decir las de producción, para comprobar su ausencia).
     outputs:
@@ -1582,8 +1582,8 @@ jobs:
         # El sitio viejo también responde 200: se compara lo servido con el
         # paquete construido (16/11/2026).
         id: version
-        # Peor caso: 2 sitios x 8 intentos x (10 s + 15 s) = 400 s; el límite deja
-        # que el script llegue a escribir su ::error::.
+        # Peor caso: 2 sitios x (8 x 10 s de curl + 7 x 15 s de espera) = 370 s;
+        # el límite deja que el script llegue a escribir su ::error::.
         timeout-minutes: 8
         env:
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
@@ -1616,7 +1616,7 @@ jobs:
     needs: [preparar, calidad, construir-staging]
     if: github.event_name == 'workflow_dispatch' && inputs.destino == 'dev'
     runs-on: ubuntu-latest
-    timeout-minutes: 22 # incluye «lo servido es lo construido» (hasta ~400 s)
+    timeout-minutes: 22 # incluye «lo servido es lo construido» (hasta ~185 s: solo la consola)
     environment:
       name: dev
       url: ${{ vars.DEV_URL }}
@@ -1712,8 +1712,9 @@ jobs:
         # consola: el `hosting` a secas se lee como `hosting:consola`, igual que
         # en el paso anterior, porque aquí no hay sitio del catálogo.
         id: version
-        # Peor caso: 2 sitios x 8 intentos x (10 s + 15 s) = 400 s; el límite deja
-        # que el script llegue a escribir su ::error::.
+        # Peor caso: 1 sitio x (8 x 10 s de curl + 7 x 15 s de espera) = 185 s
+        # (dev publica solo la consola); el límite deja que el script llegue a
+        # escribir su ::error::.
         timeout-minutes: 8
         env:
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY_DEV || 'hosting,firestore:rules,firestore:indexes' }}
@@ -1806,7 +1807,7 @@ jobs:
       || (github.event_name == 'workflow_dispatch' && inputs.destino == 'produccion'
             && inputs.confirmar == 'DESPLEGAR')
     runs-on: ubuntu-latest
-    timeout-minutes: 35 # 2.9: incluye el health check (hasta ~450 s) y el rollback; +10 por «lo servido es lo construido» (hasta ~400 s)
+    timeout-minutes: 35 # 2.9: incluye el health check (hasta ~450 s) y el rollback; +10 por «lo servido es lo construido» (hasta ~370 s)
     outputs:
       salud_ok: ${{ steps.salud.outputs.ok }}
       despliegue_completo: ${{ steps.desplegar.outputs.completo }}
@@ -2178,8 +2179,8 @@ jobs:
       - name: Lo servido es lo construido (consola y catálogo)
         # El health check solo pide 200, y el sitio viejo también responde 200 (16/11/2026).
         id: version
-        # Peor caso: 2 sitios x 8 intentos x (10 s + 15 s) = 400 s; el límite deja
-        # que el script llegue a escribir su ::error::.
+        # Peor caso: 2 sitios x (8 x 10 s de curl + 7 x 15 s de espera) = 370 s;
+        # el límite deja que el script llegue a escribir su ::error::.
         timeout-minutes: 8
         env:
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
@@ -2232,8 +2233,11 @@ jobs:
           ./scripts/humo-sitio-publico.sh
 
       - name: Rollback de hosting (clonar canal "previa" sobre live)
-        # Sin !cancelled() se saltaría tras un paso fallido.
-        if: ${{ !cancelled() && steps.salud.outputs.ok == 'false' }}
+        # Sin !cancelled() se saltaría tras un paso fallido. Solo si Hosting se
+        # publicó (todo o en parte): si no se publicó, live ya es la versión
+        # anterior, y clonar «previa» (que puede ser vieja si la copia de esta
+        # corrida falló) revertiría algo que nadie publicó.
+        if: ${{ !cancelled() && steps.salud.outputs.ok == 'false' && steps.desplegar.outputs.hosting_publicado != 'ninguno' }}
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_PROD }}
           SITIO: ${{ vars.FIREBASE_SITE_ID || vars.GCP_PROJECT_ID_PROD }}
@@ -2256,7 +2260,7 @@ jobs:
       - name: Fallar si producción no responde
         # Sin !cancelled() se saltaría tras un paso fallido.
         if: ${{ !cancelled() && steps.salud.outputs.ok == 'false' }}
-        run: echo "::error::Health check de producción fallido tras el despliegue; se intentó el rollback (paso anterior)."; exit 1
+        run: echo "::error::Health check de producción fallido tras el despliegue; se intentó el rollback si Hosting se había publicado (paso anterior)."; exit 1
 
   # ---------------------------------------------------------------------------
   # Fase 7 — post-despliegue: registra el resultado como Deployment (útil en B0).
@@ -2296,13 +2300,15 @@ jobs:
             const descripcion = ok
               ? 'Health check correcto'
               : process.env.SALUD_OK === 'false'
-                ? 'Health check fallido; rollback intentado en desplegar-produccion'
+                ? process.env.HOSTING === 'ninguno'
+                  ? 'Health check fallido tras un despliegue a medias; Hosting no se publicó, sin rollback'
+                  : 'Health check fallido; rollback intentado en desplegar-produccion'
                 : process.env.COMPLETO === 'false' && process.env.HOSTING === 'ninguno'
                 ? 'Despliegue a medias: firebase deploy no terminó; Hosting no se publicó (live sigue con la versión anterior)'
                 : process.env.COMPLETO === 'false' && process.env.HOSTING === 'parcial'
                 ? 'Despliegue a medias: solo uno de los sitios de Hosting se publicó; revise desplegar-produccion'
                 : process.env.COMPLETO === 'false' && process.env.HOSTING === 'todos'
-                ? 'Despliegue a medias: Hosting publicado, pero hay Functions sin confirmar o en estado inesperado; sin rollback'
+                ? 'Despliegue a medias: Hosting publicado, pero firebase deploy no terminó bien; sin rollback'
                 : process.env.COMPLETO === 'false'
                 ? 'Despliegue a medias: firebase deploy no terminó (sin Hosting en este despliegue)'
                 : process.env.VERSION_SERVIDA === 'false'

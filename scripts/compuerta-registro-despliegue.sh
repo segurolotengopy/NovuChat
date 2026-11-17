@@ -35,7 +35,9 @@
 #     redespliegue parcial en un PR futuro)
 #
 # CÓDIGOS: 0 completo · 1 incompleto · 2 error de uso.
-# Nunca imprime el registro: puede traer identificadores de la infraestructura.
+# No vuelve a imprimir el registro (ya salió por `tee` en el paso del workflow),
+# y en ::error:: y en el resumen nombra los sitios por su ROL («consola»,
+# «catálogo»), no por su id: en staging y dev el id del sitio es el del proyecto.
 # =============================================================================
 set -uo pipefail
 # Orden y comparación de bytes estables, sea cual sea el idioma del runner.
@@ -60,7 +62,7 @@ if [[ -n "${FIREBASE_TOOLS_VERSION:-}" && "$FIREBASE_TOOLS_VERSION" != "$VERSION
 fi
 
 # Sin colores ni retornos de carro: el registro viene de un terminal de CI.
-limpio="$(sed -E $'s/\x1b\\[[0-9;]*[A-Za-z]//g; s/\r$//' "$REGISTRO")"
+limpio="$(sed -E $'s/\x1b\\[[0-9;?]*[A-Za-z]//g; s/\r$//' "$REGISTRO")"
 
 IFS=',' read -r -a ELEMENTOS <<< "$SOLO"
 tiene() { # ¿SOLO incluye el componente $1 (entero o calificado, p. ej. functions:x)?
@@ -78,6 +80,16 @@ exacto() { # ¿SOLO incluye exactamente el elemento $1?
   done
   return 1
 }
+
+# Destino de Hosting desconocido: error de uso. Un `hosting:<x>` que no fuera
+# consola ni catálogo no tendría sitio esperado y la regla R5 no lo juzgaría.
+for x in "${ELEMENTOS[@]}"; do
+  x="${x//[[:space:]]/}"
+  case "$x" in
+    hosting:consola|hosting:catalogo) ;;
+    hosting:*) uso "destino de Hosting desconocido en SOLO: «$x» (solo hosting, hosting:consola o hosting:catalogo)" ;;
+  esac
+done
 
 motivos=()
 pendientes=()
@@ -122,31 +134,35 @@ grep -Fq 'This deployment is in an unexpected state' <<< "$limpio" \
 grep -Fq 'Functions deploy had errors' <<< "$limpio" \
   && motivos+=("firebase-tools avisó «Functions deploy had errors»")
 
-# R5: un «release complete» por cada sitio esperado.
-sitios=()
+# R5: un «release complete» por cada sitio esperado. Cada sitio se busca por su
+# id y se nombra por su rol.
+roles=()
 if exacto hosting; then
   [[ -n "$SITIO_CONSOLA" ]] || uso "falta SITIO_CONSOLA y el despliegue incluye hosting"
-  sitios+=("$SITIO_CONSOLA")
-  [[ -z "$SITIO_CATALOGO" ]] || sitios+=("$SITIO_CATALOGO")
+  roles+=(consola)
+  [[ -z "$SITIO_CATALOGO" ]] || roles+=(catalogo)
 fi
 if exacto hosting:consola; then
   [[ -n "$SITIO_CONSOLA" ]] || uso "falta SITIO_CONSOLA y el despliegue incluye hosting:consola"
-  [[ " ${sitios[*]} " == *" $SITIO_CONSOLA "* ]] || sitios+=("$SITIO_CONSOLA")
+  [[ " ${roles[*]} " == *" consola "* ]] || roles+=(consola)
 fi
 if exacto hosting:catalogo; then
   [[ -n "$SITIO_CATALOGO" ]] || uso "falta SITIO_CATALOGO y el despliegue incluye hosting:catalogo"
-  [[ " ${sitios[*]} " == *" $SITIO_CATALOGO "* ]] || sitios+=("$SITIO_CATALOGO")
+  [[ " ${roles[*]} " == *" catalogo "* ]] || roles+=(catalogo)
 fi
 publicados=0
-for s in "${sitios[@]}"; do
-  if grep -Fq "hosting[$s]: release complete" <<< "$limpio"; then
+for rol in "${roles[@]}"; do
+  if [[ "$rol" == consola ]]; then sitio="$SITIO_CONSOLA"; nombre="de la consola"
+  else sitio="$SITIO_CATALOGO"; nombre="del catálogo"
+  fi
+  if grep -Fq "hosting[$sitio]: release complete" <<< "$limpio"; then
     publicados=$((publicados + 1))
   else
-    motivos+=("Hosting no publicó el sitio $s (falta «release complete»)")
+    motivos+=("Hosting no publicó el sitio $nombre (falta «release complete»)")
   fi
 done
-if (( ${#sitios[@]} == 0 )); then hosting_publicado=no_aplica
-elif (( publicados == ${#sitios[@]} )); then hosting_publicado=todos
+if (( ${#roles[@]} == 0 )); then hosting_publicado=no_aplica
+elif (( publicados == ${#roles[@]} )); then hosting_publicado=todos
 elif (( publicados == 0 )); then hosting_publicado=ninguno
 else hosting_publicado=parcial
 fi
@@ -175,7 +191,7 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     (( ${#pendientes[@]} == 0 )) || echo "- Functions sin confirmar: \`$lista\`"
     echo "- Hosting publicado: $hosting_publicado"
     echo ""
-    echo "Qué hacer: **Re-run failed jobs**, que pide de nuevo la aprobación de production; el despliegue es idempotente."
+    echo "Qué hacer: **Re-run failed jobs**; si el entorno exige aprobación, la pide de nuevo; el despliegue es idempotente."
   } >> "$GITHUB_STEP_SUMMARY"
 fi
 exit 1

@@ -8,9 +8,9 @@
  *
  * Esta suite cubre las dos piezas y su cableado:
  *   - `scripts/compuerta-registro-despliegue.sh`: lee el registro y decide con el
- *     texto Y el código de salida (C1-C14).
+ *     texto Y el código de salida (C1-C15).
  *   - `scripts/comprobar-version-servida.sh`: el sitio sirve los mismos
- *     `/assets/*.js|css` que el HTML construido (V1-V6, contra un servidor local).
+ *     `/assets/*.js|css` que el HTML construido (V1-V8, contra un servidor local).
  *   - El workflow: los tres trabajos de despliegue ejecutan la compuerta, en el
  *     orden y con las condiciones que hacen falta (W1-W6). W2 corre el trozo REAL
  *     del workflow con un `firebase` falso.
@@ -154,7 +154,9 @@ describe('compuerta del registro de `firebase deploy`', () => {
   it('C7: sin el release del catálogo falla y Hosting queda «parcial»', () => {
     const r = compuerta(sinLineas(EXITOSO, 'hosting[catalogo-ficticio]: release complete'));
     expect(r.status).toBe(1);
-    expect(r.stdout).toContain('catalogo-ficticio');
+    // Se nombra por su rol, no por su id (en staging y dev el id es el del proyecto).
+    expect(r.stdout).toContain('Hosting no publicó el sitio del catálogo');
+    expect(r.stdout).not.toContain('catalogo-ficticio');
     expect(r.salidas['hosting_publicado']).toBe('parcial');
   });
 
@@ -192,6 +194,20 @@ describe('compuerta del registro de `firebase deploy`', () => {
     const medias = compuerta(conAnsiYCrlf(A_MEDIAS));
     expect(medias.status).toBe(1);
     expect(medias.salidas).toEqual(compuerta(A_MEDIAS).salidas);
+    // Las dos formas reales de firebase-tools: ANSI a mitad de línea en el
+    // release de Hosting y «Deploy complete!» en negrita y subrayado. Más una
+    // secuencia de cursor con «?» (`\x1b[?25l`) delante de «Deploy complete!»: si
+    // el saneo no la quitara, R2 fallaría.
+    const reales = EXITOSO
+      .replace('hosting[consola-ficticia]: release complete',
+        'hosting[consola-ficticia]:\x1b[22m\x1b[39m release complete')
+      .replace('hosting[catalogo-ficticio]: release complete',
+        'hosting[catalogo-ficticio]:\x1b[22m\x1b[39m release complete')
+      .replace('Deploy complete!', '\x1b[?25l\x1b[1m\x1b[4mDeploy complete!\x1b[24m\x1b[22m\x1b[?25h');
+    expect(reales).not.toBe(EXITOSO);
+    const r = compuerta(reales);
+    expect(r.status, r.stdout).toBe(0);
+    expect(r.salidas).toEqual(compuerta(EXITOSO).salidas);
   });
 
   it('C13: registro vacío falla; sin registro o sin SOLO es error de uso', () => {
@@ -207,6 +223,13 @@ describe('compuerta del registro de `firebase deploy`', () => {
     const r = compuerta(sinLineas(sinCodebase, 'functions[fnX(us-east1)] Successful'));
     expect(r.status).toBe(1);
     expect(r.salidas['functions_pendientes']).toBe('functions:fnX');
+  });
+
+  it('C15: un destino de Hosting desconocido en SOLO es error de uso', () => {
+    const r = compuerta(EXITOSO, { SOLO: 'hosting:consola,hosting:otro,functions' });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('destino de Hosting desconocido');
+    expect(r.salidas).toEqual({});
   });
 
   it('nunca imprime el registro', () => {
@@ -320,6 +343,20 @@ describe('lo servido es lo construido', () => {
     expect(peticiones).toBe(0);
     expect((await version({ SOLO: 'hosting' })).status).toBe(2);
   });
+
+  it('V7: un destino de Hosting desconocido en SOLO -> 2 sin peticiones', async () => {
+    responder = () => [200, html(HTML_A)];
+    const r = await version({ SOLO: 'hosting:consola,hosting:otro' });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('destino de Hosting desconocido');
+    expect(peticiones).toBe(0);
+  });
+
+  it('V8: el curl limita redirecciones y esquemas', () => {
+    const s = readFileSync(VERSION, 'utf8');
+    expect(s).toContain('--max-redirs 3 --proto "$proto" --proto-redir "$proto"');
+    expect(s).toContain("if [[ \"$url\" == http://127.0.0.1:* ]]; then proto='=http'; else proto='=https'; fi");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -428,9 +465,18 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
     const j = job('desplegar-produccion');
     expect(paso(j, 'id: salud')).toContain(
       "if: ${{ !cancelled() && steps.desplegar.outputs.firebase_corrio == 'true' }}");
-    for (const nombre of ['Rollback de hosting', 'Fallar si producción no responde']) {
-      expect(paso(j, `- name: ${nombre}`)).toContain("if: ${{ !cancelled() && steps.salud.outputs.ok == 'false' }}");
-    }
+    // El rollback, solo si Hosting se publicó: si no, live ya es la versión anterior
+    // y clonar «previa» revertiría algo que nadie publicó.
+    const rollback = paso(j, '- name: Rollback de hosting');
+    expect(rollback).toContain(
+      "if: ${{ !cancelled() && steps.salud.outputs.ok == 'false' && steps.desplegar.outputs.hosting_publicado != 'ninguno' }}");
+    // Negativa: el if del rollback no puede carecer de la condición de hosting_publicado.
+    const ifRollback = /\n\s+if: (.*)\n/.exec(rollback)?.[1] ?? '';
+    expect(ifRollback).toContain("steps.desplegar.outputs.hosting_publicado != 'ninguno'");
+    expect(ifRollback).not.toBe("${{ !cancelled() && steps.salud.outputs.ok == 'false' }}");
+    // Fallar el job no depende de Hosting: un sitio que no responde falla siempre.
+    expect(paso(j, '- name: Fallar si producción no responde')).toContain(
+      "if: ${{ !cancelled() && steps.salud.outputs.ok == 'false' }}");
     // El humo del catálogo sigue atado a una consola sana.
     expect(paso(j, './scripts/humo-sitio-publico.sh')).toContain("if: steps.salud.outputs.ok == 'true'");
   });
@@ -447,6 +493,14 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
     const textos = [...post.matchAll(/'(Despliegue [^']*)'/g)].map((m) => m[1] ?? '');
     expect(textos.length).toBeGreaterThanOrEqual(5);
     for (const tx of textos) expect(tx.length, tx).toBeLessThanOrEqual(140);
+    // Con health check fallido y Hosting sin publicar no hubo rollback: el texto lo dice.
+    const sinRollback = 'Health check fallido tras un despliegue a medias; Hosting no se publicó, sin rollback';
+    expect(post).toContain(`'${sinRollback}'`);
+    expect(sinRollback.length).toBeLessThanOrEqual(140);
+    expect(post.indexOf("process.env.HOSTING === 'ninguno'")).toBeLessThan(post.indexOf('rollback intentado'));
+    expect(post).toContain(
+      "'Despliegue a medias: Hosting publicado, pero firebase deploy no terminó bien; sin rollback'");
+    expect(post).not.toContain('Functions sin confirmar o en estado inesperado');
     // Un rollback sigue teniendo prioridad sobre el despliegue a medias.
     expect(post.indexOf("SALUD_OK === 'false'")).toBeLessThan(post.indexOf("COMPLETO === 'false'"));
     expect(post.indexOf("VERSION_SERVIDA === 'false'")).toBeLessThan(post.indexOf("SALUD_OK === 'true'"));

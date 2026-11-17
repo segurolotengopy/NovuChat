@@ -48,6 +48,9 @@ for x in "${elementos[@]}"; do
       [[ -n "$URL_CATALOGO" ]] || uso "SOLO incluye hosting y falta URL_CATALOGO" ;;
     hosting:consola) consola=true ;;
     hosting:catalogo) catalogo=true ;;
+    # Un destino de Hosting que no es consola ni catálogo no tiene URL que
+    # comprobar: pasaría en silencio. Es error de uso.
+    hosting:*) uso "destino de Hosting desconocido en SOLO: «${x//[[:space:]]/}» (solo hosting, hosting:consola o hosting:catalogo)" ;;
   esac
 done
 if [[ "$consola" == false && "$catalogo" == false ]]; then
@@ -69,12 +72,16 @@ referencias() {
 
 fallas=0
 comprobar() { # $1 nombre, $2 URL base, $3 ruta de prueba, $4 HTML construido
-  local nombre="$1" url="$2" ruta="$3" html="$4" esperado servido i
+  local nombre="$1" url="$2" ruta="$3" html="$4" esperado servido i proto
+  # Solo https, también al seguir redirecciones (y como mucho 3), para que una
+  # redirección no lleve la petición a otro esquema; http solo contra la
+  # prueba local en 127.0.0.1.
+  if [[ "$url" == http://127.0.0.1:* ]]; then proto='=http'; else proto='=https'; fi
   [[ -f "$html" ]] || uso "no existe el HTML construido de $nombre ($html)"
   esperado="$(referencias < "$html")"
   [[ -n "$esperado" ]] || uso "el HTML construido de $nombre no referencia /assets/*.js|css"
   for ((i = 1; i <= INTENTOS; i++)); do
-    servido="$(curl -sS -L --max-time 10 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+    servido="$(curl -sS -L --max-redirs 3 --proto "$proto" --proto-redir "$proto" --max-time 10 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
       "${url%/}${ruta}?compuerta=${GITHUB_RUN_ID:-local}-$i" 2>/dev/null | referencias)"
     if [[ "$servido" == "$esperado" ]]; then
       echo "$nombre sirve la versión construida (intento $i)."
