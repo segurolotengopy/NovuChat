@@ -23,6 +23,8 @@ export const MIMES_DE_AUDIO = [
 
 export const TEXTO_PENDIENTE = 'Todavía se está guardando el archivo.';
 export const TEXTO_VENCIDO = 'El archivo ya no está disponible (se guarda 90 días).';
+/** Rótulo y aviso de una imagen que mandó el asistente. Verla aquí NO es prueba de ningún pago (prohibición de cobros). */
+export const TEXTO_IMAGEN_DEL_ASISTENTE = 'Imagen enviada por el asistente. Verla aquí no es prueba de ningún pago.';
 /** Los archivos que envía una persona desde la consola se guardan 30 días (no 90). */
 export const TEXTO_VENCIDO_ENVIADO = 'El archivo ya no está disponible (los archivos enviados se guardan 30 días).';
 export const AVISO_DESCARGA_ENVIADO = 'Archivo enviado desde la consola de su negocio.';
@@ -62,8 +64,8 @@ export interface MedioDeMensaje {
   tamano: number | null;
   /** Hasta cuándo se guarda (ms); `null` si no consta. */
   vence: number | null;
-  /** `enviado` = lo mandó una persona desde la consola; `recibido` = lo mandó el cliente. */
-  origen: 'recibido' | 'enviado';
+  /** `enviado` = lo mandó una persona desde la consola; `asistente` = lo mandó el asistente (control de calidad); `recibido` = lo mandó el cliente. */
+  origen: 'recibido' | 'enviado' | 'asistente';
   /** Nota de voz enviada por una persona. */
   voz: boolean;
   /** Nombre del documento enviado (cortado a 240); `''` si no consta. */
@@ -83,7 +85,7 @@ export function medioDeDatos(x: unknown): MedioDeMensaje | null {
     mime: typeof m['mime'] === 'string' ? m['mime'].slice(0, 100) : '',
     tamano: typeof m['tamano'] === 'number' ? m['tamano'] : null,
     vence,
-    origen: m['origen'] === 'enviado' ? 'enviado' : 'recibido',
+    origen: m['origen'] === 'enviado' ? 'enviado' : m['origen'] === 'asistente' ? 'asistente' : 'recibido',
     voz: m['voz'] === true,
     nombre: typeof m['nombre'] === 'string' ? m['nombre'].slice(0, 240) : '',
   };
@@ -139,7 +141,7 @@ export function claseDeMedio(tipo: unknown, mime: unknown): 'imagen' | 'descarga
 const GENERICO = 'No se pudo abrir el archivo. Intente de nuevo en unos minutos.';
 
 /** Texto fijo por `code` (y `details` para failed-precondition). Nunca el mensaje del servidor. */
-export function textoDeErrorMedio(code: unknown, details?: unknown, origen: 'recibido' | 'enviado' = 'recibido'): string {
+export function textoDeErrorMedio(code: unknown, details?: unknown, origen: 'recibido' | 'enviado' | 'asistente' = 'recibido'): string {
   switch (code) {
     case 'functions/unauthenticated':
       return 'No se pudo comprobar su sesión. Recargue la página e inicie sesión de nuevo.';
@@ -248,3 +250,41 @@ export function descargadorUnico(d: DepsDescarga) {
     return true;
   };
 }
+
+/**
+ * LO QUE LLEGÓ Y NO ERA TEXTO. El comprobante de pago es lo más importante de
+ * una conversación de venta; la imagen no se muestra (NovuChat no la guarda,
+ * vive en Meta), pero el mensaje se marca como adjunto para que se encuentre.
+ * Mostrar la imagen son tres cosas más (guardar el `media id`, una función que
+ * la sirva, el permiso): prometerla con una miniatura rota sería peor.
+ */
+const ADJUNTOS: Record<string, string> = {
+  image: '🧾 Imagen — puede ser el comprobante',
+  document: '📄 Documento — puede ser el comprobante',
+  audio: '🎤 Audio',
+  location: '📍 Ubicación',
+  order: '🛒 Pedido del catálogo',
+  interactive: '👆 Respuesta a una lista o botón',
+};
+
+/** Lo que se ve en un mensaje de PERSONA con archivo: era enviado, no «el comprobante» del cliente. */
+const ADJUNTOS_DE_PERSONA: Record<string, string> = {
+  image: '🖼 Imagen enviada',
+  document: '📄 Documento enviado',
+  audio: '🎤 Audio enviado',
+};
+
+/**
+ * La etiqueta de un adjunto. «puede ser el comprobante» es SOLO para lo que manda el cliente: un archivo que mandó el negocio
+ * (una persona o el asistente, p. ej. su QR) nunca se rotula como comprobante (prohibición de cobros). Una imagen del asistente
+ * guardada ya lleva su rótulo propio debajo y aquí no repite nada.
+ */
+export function etiquetaDeAdjunto(direccion: string, esPersona: boolean, tipo: string, voz: boolean, delAsistenteGuardada: boolean): string {
+  if (esPersona) return voz ? '🎤 Nota de voz enviada' : (ADJUNTOS_DE_PERSONA[tipo] ?? '');
+  if (direccion === 'saliente') {
+    if (delAsistenteGuardada) return '';
+    return tipo === 'image' ? '🖼 Imagen enviada por el asistente' : tipo === 'document' ? '📄 Documento enviado por el asistente' : (ADJUNTOS[tipo] ?? '');
+  }
+  return ADJUNTOS[tipo] ?? '';
+}
+
