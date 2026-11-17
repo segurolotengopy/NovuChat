@@ -206,6 +206,47 @@ describe('corpus fijo: frases de baja de la pieza común que `rcSenalDeCrisisOBa
   );
 });
 
+describe('CONTENCIÓN: lo que la baja común (`bjPideBaja`) acepta, `rcSenalDeCrisisOBaja` también lo detecta cuando el nodo trae las dos piezas', () => {
+  // Como el nodo de n8n de «Venta mínima»: la pieza de baja y la de respuesta coherente en el mismo contexto.
+  const CON = cargarFuente<{ bjPideBaja: (t: string) => boolean; rcSenalDeCrisisOBaja: (t: string) => boolean }>(
+    ['Flujos/src/core/conversacion/baja.js', 'Flujos/src/core/conversacion/respuesta-coherente.js'], ['bjPideBaja', 'rcSenalDeCrisisOBaja'],
+  );
+  // Frases que `bjPideBaja` acepta y la lista de `rc` sola NO nombra (las halló la revisión del 16/11/2026), más las comunes.
+  const SOLO_DE_LA_BAJA = ['no nos escriban', 'no le escriba más', 'no les escriban más', 'no nos contacten', 'no vuelvas a escribirme', 'no sigas escribiendo', 'no me sigan escribiendo', 'elimíname',
+    'elimíname de la lista', 'no quiero que me contacten'];
+  const COMUNES = ['no me escribas más', 'no me manden nada', 'stop', 'dame de baja', 'bórrame de la lista', 'quítame de la lista', 'no molestar', 'no me molesten', 'dejen de escribir'];
+  it.each([...SOLO_DE_LA_BAJA, ...COMUNES])('«%s»: si `bjPideBaja` da baja, la señal también', (t) => {
+    expect(CON.bjPideBaja(t), `${t}: debe ser baja común`).toBe(true);
+    expect(CON.rcSenalDeCrisisOBaja(t), t).toBe(true);
+  });
+  it('NIEGA: la lista SOLA (sin la pieza de baja) no nombraba esas frases: la contención viene de `bjPideBaja`, no de una coincidencia', () => {
+    const detectadas = SOLO_DE_LA_BAJA.filter((t) => !rc('rcSenalDeCrisisOBaja')(t));
+    expect(detectadas.length).toBeGreaterThanOrEqual(5);
+  });
+  it('MUTACIÓN: sin la línea de `bjPideBaja` en `rcSenalDeCrisisOBaja`, frases de la baja común dejan de dar señal', () => {
+    const fuente = readFileSync(new URL('../../../Flujos/src/core/conversacion/respuesta-coherente.js', import.meta.url), 'utf8');
+    const linea = "if (typeof bjPideBaja === 'function' && bjPideBaja(texto)) return true;";
+    expect(fuente).toContain(linea);
+    const baja = readFileSync(new URL('../../../Flujos/src/core/conversacion/baja.js', import.meta.url), 'utf8');
+    const sin = vm.runInNewContext(`${baja}\n${fuente.replace(linea, '')}\n({ rcSenalDeCrisisOBaja })`, Object.create(null)) as { rcSenalDeCrisisOBaja: (t: string) => boolean };
+    expect(SOLO_DE_LA_BAJA.some((t) => !sin.rcSenalDeCrisisOBaja(t))).toBe(true);
+    expect(SOLO_DE_LA_BAJA.every((t) => CON.rcSenalDeCrisisOBaja(t))).toBe(true);
+  });
+  it('ESTRUCTURA: la línea de `bjPideBaja` va antes de plegar el texto (`rcN(t)`) y antes del recorte', () => {
+    const fuente = readFileSync(new URL('../../../Flujos/src/core/conversacion/respuesta-coherente.js', import.meta.url), 'utf8');
+    const i = fuente.indexOf('bjPideBaja(texto)');
+    expect(i).toBeGreaterThan(0);
+    expect(i).toBeLessThan(fuente.indexOf('const base = rcN(t)'));
+    expect(i).toBeLessThan(fuente.indexOf('RC_SENAL_MAX - 1000'));
+  });
+  it('NIEGA: lo que no es baja ni crisis sigue sin ser señal con las dos piezas', () => {
+    for (const t of ['quiero 2 tacos de birria', 'hola', 'gracias', 'la carta por favor', 'a qué hora abren', 'no me llegó el pedido']) expect(CON.rcSenalDeCrisisOBaja(t), t).toBe(false);
+  });
+  it('la crisis sigue siendo señal con las dos piezas', () => {
+    for (const t of ['quiero morir', 'me quiero matar', 'no quiero seguir viviendo']) expect(CON.rcSenalDeCrisisOBaja(t), t).toBe(true);
+  });
+});
+
 describe('rcTextoRechazo', () => {
   it('el del tenant o el de siempre', () => {
     expect(rc('rcTextoRechazo')(rc('rcConfig')({ activo: true, textoRechazo: 'No puedo con eso.' }))).toBe('No puedo con eso.');
