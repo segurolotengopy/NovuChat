@@ -59,7 +59,6 @@ const VENCE = '2027-01-31';
 
 const CONGELADO_CONSULTORIO = 'Flujo vivo congelado por orden de Andres: recibe el saludo con IA con su mudanza, en una sola republicación (botón del 13/11/2026).';
 const CONGELADO_CAPTACION = 'Congelado: Andres decidió el 13/11/2026 retirarlo al final; no recibe cambios.';
-const VENTA_MINIMA = 'Recibe la pieza en el PR siguiente de esta serie (A + B + C1 juntos), una vez libre de la sesión del restaurante.';
 const CON_AGENTE = 'Flujo con el agente de n8n: excepción declarada por Andres el 13/11/2026; ya se presenta como IA por prompt y red; no se toca hasta su retiro o su mudanza.';
 const COPIA_DECLARADA = 'Ya se presenta como asistente virtual con IA con su propio texto (otro prefijo): pasa a la pieza común en la etapa 1 de la migración.';
 
@@ -67,8 +66,6 @@ const COPIA_DECLARADA = 'Ya se presenta como asistente virtual con IA con su pro
 export const EXCEPCIONES_DE_IDENTIDAD: Record<string, ExcepcionDeIdentidad> = {
   'agenda-minima/agenda-minima.v0.json': { motivo: CONGELADO_CONSULTORIO, dueno: 'Rearquitectura (mudanza)', vence: VENCE },
   'captacion-minima/captacion-minima.novuchat.json': { motivo: CONGELADO_CAPTACION, dueno: 'Principal', vence: VENCE },
-  'venta-minima/venta-minima.qtaco.json': { motivo: VENTA_MINIMA, dueno: 'UX de conversación', vence: VENCE },
-  'venta-minima/venta-minima.qtaco-3727.json': { motivo: VENTA_MINIMA, dueno: 'UX de conversación', vence: VENCE },
   'bellido-agendamiento.json': { motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
   'demo-a-agendamiento.json': { motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
   'demo-b-venta-cobro.json': { motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
@@ -81,7 +78,7 @@ export const EXCEPCIONES_DE_IDENTIDAD: Record<string, ExcepcionDeIdentidad> = {
   'doctoras/doctoras.rroca-evy.json': { motivo: COPIA_DECLARADA, dueno: 'Rearquitectura (etapa 1)', vence: VENCE },
 };
 /** Cuántos flujos tienen excepción hoy. SOLO BAJA: un flujo nuevo nace con la pieza. */
-export const TOPE_IDENTIDAD = 14;
+export const TOPE_IDENTIDAD = 12;
 
 const AAAA_MM_DD = /^\d{4}-\d{2}-\d{2}$/;
 

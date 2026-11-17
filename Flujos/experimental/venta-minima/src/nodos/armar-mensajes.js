@@ -196,7 +196,7 @@ function amEmojis(texto) {
 }
 // Un solo botón (el de enlace): el camino de vuelta al menú va escrito, solo en la conversación y sin repetirlo.
 function amConSeguir(cuerpo) {
-  return !AM_CONVERSA || cuerpo.indexOf(AM_SEGUIR) >= 0 ? cuerpo : cuerpo + ' ' + AM_SEGUIR;
+  return !AM_CONVERSA || cuerpo.indexOf(AM_SEGUIR) >= 0 ? cuerpo : cuerpo + (cuerpo.indexOf('\n\n') >= 0 ? '\n\n' : ' ') + AM_SEGUIR;
 }
 // `sinMenu`: el mensaje no manda a «menú» (con un comprobante en espera el menú no está disponible).
 function amEnlace(cuerpoCrudo, boton, urlDelPlan, tipoReporte, sinMenu) {
@@ -217,7 +217,7 @@ function amEnlace(cuerpoCrudo, boton, urlDelPlan, tipoReporte, sinMenu) {
 function amGenerico(motivo) {
   AM_errores.push(motivo);
   // El mensaje genérico también respeta `nivelEmojis` (con `ninguno` no sale el 🙂).
-  return amEnlace(amEmojis(AM_GEN_CUERPO).trim(), AM_GEN_BOTON, '', 'interactive');
+  return amEnlace(amVozComun(amEmojis(AM_GEN_CUERPO).trim(), 1024, 0), AM_GEN_BOTON, '', 'interactive');
 }
 
 // ----------------------------------------------------------------- un mensaje del plan
@@ -277,10 +277,22 @@ function amQr(m, cuerpo) {
   }
   return salida;
 }
+// LA VOZ COMÚN (core, 16/11/2026): todo texto que sale al cliente se arma ACÁ con (1) la identidad «asistente virtual con IA» (`ctConIA`) y (2) los PÁRRAFOS separados (`ctParrafos`: una línea en blanco entre dos
+// oraciones, la pregunta final sola). Los dos solo agregan caracteres: si el resultado pasa del tope de WhatsApp del mensaje (botones y enlace 1.024, texto 4.000; `reserva` deja lugar al pie `AM_SEGUIR` que
+// `amConSeguir` agrega después) se deja el texto sin párrafos, y si ni la identidad cabe, el texto tal cual: NUNCA se recorta lo que importa (el total del pedido, el botón). No agrega ni quita mensajes.
+function amVozComun(texto, tope, reserva) {
+  const limite = tope - reserva;
+  const conIa = ctConIA(texto);
+  const conParrafos = ctParrafos(conIa);
+  if (conParrafos.length <= limite) return conParrafos;
+  return conIa.length <= limite ? conIa : texto;
+}
 function amArmarUno(m) {
   if (!m || typeof m !== 'object') return null;
   const tipo = String(m.tipo || 'texto');
-  const cuerpo = amEmojis(String(m.cuerpo === undefined || m.cuerpo === null ? '' : m.cuerpo).trim()).trim();
+  const amCrudo = amEmojis(String(m.cuerpo === undefined || m.cuerpo === null ? '' : m.cuerpo).trim()).trim();
+  const amPie = (tipo === 'enlace' || tipo === 'ubicacion') && AM_CONVERSA ? AM_SEGUIR.length + 2 : 0; // lugar para el pie que `amConSeguir` agrega después
+  const cuerpo = amVozComun(amCrudo, tipo === 'texto' ? 4000 : 1024, amPie);
   if (!cuerpo) { AM_errores.push('mensaje_sin_cuerpo: ' + tipo); return null; }
   if (!amSeguro(cuerpo)) return amGenerico('texto_reemplazado_por_palabra_prohibida');
   if (!AM_PASO && amAfirmaPase(cuerpo)) return amGenerico('pase_afirmado_sin_aviso_salido');
@@ -295,7 +307,7 @@ function amArmarUno(m) {
   // 1.024 caracteres (las notas del turno lo empujan) o el envío falla, sale en texto con la versión SIN botón (`cuerpoSinBoton`): nunca se
   // nombra un botón que no se ve. Las dos versiones pasan por la red de palabras. Es UN mensaje, el mismo que ya salía como texto.
   if (tipo === 'ubicacion') {
-    const sinBoton = amEmojis(String(m.cuerpoSinBoton === undefined || m.cuerpoSinBoton === null ? '' : m.cuerpoSinBoton).trim()).trim();
+    const sinBoton = amVozComun(amEmojis(String(m.cuerpoSinBoton === undefined || m.cuerpoSinBoton === null ? '' : m.cuerpoSinBoton).trim()).trim(), 4000, amPie);
     if (!sinBoton) { AM_errores.push('mensaje_sin_cuerpo: ubicacion_sin_version_sin_boton'); return null; }
     if (!amSeguro(sinBoton)) return amGenerico('texto_reemplazado_por_palabra_prohibida');
     if (!AM_PASO && amAfirmaPase(sinBoton)) return amGenerico('pase_afirmado_sin_aviso_salido');
@@ -530,7 +542,7 @@ if (!AM_salida.length) {
 }
 // Lo que sale si el estado no se pudo guardar (el compromiso falló, o el bloque no cabe): SOLO el genérico con el botón a recepción, sin cierre. REEMPLAZA la respuesta (un mensaje por turno).
 const AM_erroresFalla = AM_errores.concat(['estado_no_comprometido']);
-const AM_dFalla = amEnlace(amEmojis(AM_GEN_CUERPO).trim(), AM_GEN_BOTON, '', 'interactive');
+const AM_dFalla = amEnlace(amVozComun(amEmojis(AM_GEN_CUERPO).trim(), 1024, 0), AM_GEN_BOTON, '', 'interactive');
 const AM_jFalla = amSalir(AM_dFalla);
 const AM_falla = AM_jFalla ? [Object.assign(AM_jFalla, {
   cierre: null, errores: AM_erroresFalla,
@@ -540,7 +552,7 @@ const AM_falla = AM_jFalla ? [Object.assign(AM_jFalla, {
 // RÁFAGA (06/11/2026, Q'Taco): el perdedor de un conflicto de versión SIN hecho externo cede, y el mensaje que escribió quedaba sin respuesta (3 mensajes seguidos daban 2 respuestas). Ya no es silencio:
 // si lo que llegó NO fue un botón (cualquier botón perdido, incluido el doble toque, sigue cediendo en silencio: no se repite el paso), sale UN aviso corto que pide repetir lo que haya quedado sin respuesta. No promete nada, no toca el estado,
 // no avisa al local y no lleva botones. Reemplaza el silencio por un mensaje al cliente (solo en la carrera; 0 mensajes por conversación en el flujo normal).
-const AM_CEDE_CUERPO = amEmojis('Recibí varios mensajes tuyos casi al mismo tiempo 🙂. Si algo quedó sin respuesta, envíalo otra vez.').trim();
+const AM_CEDE_CUERPO = amVozComun(amEmojis('Recibí varios mensajes tuyos casi al mismo tiempo 🙂. Si algo quedó sin respuesta, envíalo otra vez.').trim(), 4000, 0);
 const AM_jCede = !AM_T.boton && AM_CONVERSA ? amSalir({ payload: amTexto(AM_CEDE_CUERPO), texto: AM_CEDE_CUERPO, respaldo: AM_CEDE_CUERPO, tipoReporte: 'text' }) : null;
 const AM_cede = AM_jCede ? [Object.assign(AM_jCede, {
   cierre: null, errores: AM_errores.concat(['rafaga_cedida']),

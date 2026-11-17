@@ -160,6 +160,7 @@ return [{ json: {
 function despachar() {
   const a = d.accion;
   const b = d.boton && typeof d.boton === 'object' ? d.boton : null;
+  if (a === 'baja') return aBaja();
   if (a === 'menu') return aMenu();
   if (a === 'cancelar') return aCancelar();
   if (a === 'carta') return aCarta();
@@ -1127,6 +1128,14 @@ function aSeguimiento() {
 }
 
 // La identidad: SIEMPRE el texto fijo del código (nunca prosa del modelo).
+// LA BAJA POR TEXTO (pieza común `bj*`; `Decidir turno` ya la decidió, antes del modelo y de cualquier intención): UN texto fijo y nada más. Sin botones, sin menú, sin aviso al local (ni cupos), sin cobro ni cierre:
+// el `no_contactar` ya viajó con el entrante («Reportar mensaje (entrante)»). El estado (paso, carrito, pedido y QR abiertos) NO se toca: quien vuelve a escribir se atiende como siempre. Reemplaza a la respuesta que el
+// turno enviaba (0 mensajes agregados). Con la ruta `baja`, el miniCRM no crea un prospecto por una baja (`vmProspectoCrm`).
+function aBaja() {
+  aviso = null;
+  return (mensajes = [texto(bjTextoBaja())]);
+}
+
 function aIdentidad() {
   if (en.paso === 'inicio') en.paso = 'menu';
   return (mensajes = [enlace('Soy un asistente virtual con inteligencia artificial de ' + negocio()

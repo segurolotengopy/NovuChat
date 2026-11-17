@@ -374,6 +374,10 @@ const ROLES_DE_ENVIO: Rol[] = ['mensajes', 'avisos'];
 const ROLES_DE_LLAMADA: Rol[] = ['ingesta', 'cierre', 'cotejo', 'extraer'];
 const ENTRADAS_CONOCIDAS = ['WhatsApp Trigger', 'Entrada de prueba', 'Entrega del receptor'];
 
+type FuncionDeCode = (...a: unknown[]) => { json: J; pairedItem?: { item: number } }[];
+/** Funciones de Code ya compiladas, por (parámetros, código): se comparten entre mundos del mismo archivo de pruebas. */
+const FUNCIONES_COMPILADAS = new Map<string, FuncionDeCode>();
+
 export function crearMundo(op: OpcionesMundo): Mundo {
   const flujo = clonar(op.flujo);
   const nodos = new Map<string, Nodo>(flujo.nodes.map((n) => [n.name, n]));
@@ -761,7 +765,15 @@ export function crearMundo(op: OpcionesMundo): Mundo {
     };
     const propios = Object.keys(globales);
     const vacios = GLOBALES_FUERA_DEL_SANDBOX.filter((g) => !propios.includes(g));
-    const fn = vm.compileFunction(codigo, ['$input', '$', ...vacios, ...propios]) as (...a: unknown[]) => { json: J; pairedItem?: { item: number } }[];
+    // La función compilada se reutiliza: depende solo del código y de los nombres de sus parámetros, y cada llamada abre su propio ámbito.
+    // Compilar cientos de KB de librerías en CADA ejecución de cada nodo llenaba el heap del worker (OOM del CI en la suite de venta mínima).
+    const parametros = ['$input', '$', ...vacios, ...propios];
+    const clave = `${parametros.join(',')}\u0000${codigo}`;
+    let fn = FUNCIONES_COMPILADAS.get(clave);
+    if (!fn) {
+      fn = vm.compileFunction(codigo, parametros) as FuncionDeCode;
+      FUNCIONES_COMPILADAS.set(clave, fn);
+    }
     return fn(entrada, $, ...vacios.map(() => undefined), ...propios.map((k) => globales[k]));
   }
 

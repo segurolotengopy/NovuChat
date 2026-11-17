@@ -931,3 +931,40 @@ describe('sin el dato `crm` no se activa nada (las demás salidas)', () => {
     }
   });
 });
+
+// ================================================================================================ UX COMÚN (16/11/2026)
+describe('UX común: una BAJA por texto no es un prospecto del miniCRM', () => {
+  it('con la ruta `baja` no se crea ni se actualiza una fila, ni en el primer contacto', () => {
+    expect(prospecto({ plan: { ruta: 'baja', pedido: null }, anteriorMs: null })).toBeNull();
+    expect(prospecto({ plan: { ruta: 'baja', pedido: null }, anteriorMs: AHORA - 60_000 })).toBeNull();
+  });
+  it('NEGADO: el mismo turno con otra ruta (el menú) sí es un prospecto de primer contacto', () => {
+    expect(prospecto({ plan: { ruta: 'menu', pedido: null }, anteriorMs: null })).not.toBeNull();
+  });
+});
+
+describe('UX común: la baja por texto de punta a punta en el JSON de 3727 (reporte, un solo mensaje, sin avisos ni planilla)', () => {
+  /** Lo que «Reportar mensaje (entrante)» le manda al servidor en cada turno (el cuerpo ya evaluado) y lo que escribió la planilla. */
+  const corre = (dicho: string) => {
+    const pl = planilla();
+    const w = mundo({ pl });
+    const reportes: J[] = [];
+    w.mundo.dobles['Reportar mensaje (entrante)'] = (ll) => { reportes.push(ll.cuerpo as J); return {}; };
+    const t = turno(w, texto(dicho));
+    return { t, reportes, pl };
+  };
+  it.each(['no me escribas más', 'no me manden nada', 'stop'])('«%s»: marca no_contactar, contesta UN texto fijo y no avisa ni escribe en la planilla', (dicho) => {
+    const { t, reportes, pl } = corre(dicho);
+    expect(reportes.map((r) => r['evento'])).toEqual(['no_contactar']);
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/no quieres recibir más mensajes/);
+    expect(t.avisos).toHaveLength(0);
+    expect(pl.escrituras).toHaveLength(0);
+    expect(pl.actualizaciones).toHaveLength(0);
+  });
+  it.each(['no me llamaron ayer', 'hola', 'no me escribiste el precio'])('NEGADO: «%s» ya no marca baja (la regex ancha de antes marcaba a quien no la pidió)', (dicho) => {
+    const { reportes, t } = corre(dicho);
+    expect(reportes.map((r) => r['evento'])).toEqual([undefined]);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/no quieres recibir más mensajes/);
+  });
+});

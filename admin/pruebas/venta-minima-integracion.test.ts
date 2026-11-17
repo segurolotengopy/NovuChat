@@ -34,10 +34,14 @@ const LIBS = [...LIBRERIAS, PQR, APT].join('\n');
 // La respuesta coherente (core): la pieza `rc*` SOLA, DESPUÉS de las librerías y ANTES del nodo (la marca `+coherente` de construir.mjs).
 const COHERENTE = ['core/conversacion/respuesta-coherente.js'].map((r) => readFileSync(join(RAIZ, '../../../src', r), 'utf8')).join('\n');
 const CON_COHERENTE = ['decidir-turno', 'plan-del-turno'];
+// La UX común (core, 16/11/2026): `+baja` (la baja por texto: «Decidir turno» y «Plan del turno») y `+texto` (identidad «con IA» y párrafos: «Armar mensajes»), tal como las incluye construir.mjs.
+const BAJA = readFileSync(join(RAIZ, '../../../src/core/conversacion/baja.js'), 'utf8');
+const TEXTO = ['core/texto/identidad.js', 'core/texto/parrafos.js'].map((r) => readFileSync(join(RAIZ, '../../../src', r), 'utf8')).join('\n');
+const CON_TEXTO = ['armar-mensajes'];
 const CODIGO: Record<string, string> = {};
 const CON_SESION = ['config-del-negocio', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes'];
 for (const n of ['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'interpretar-lectura', 'decidir-turno', 'plan-del-turno', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes', 'sin-estado']) {
-  CODIGO[n] = `${LIBS}\n${CON_SESION.includes(n) ? `${SESION}\n` : ''}${CON_COHERENTE.includes(n) ? `${COHERENTE}\n` : ''}${leer(`nodos/${n}.js`)}`;
+  CODIGO[n] = `${LIBS}\n${CON_SESION.includes(n) ? `${SESION}\n` : ''}${CON_COHERENTE.includes(n) ? `${COHERENTE}\n${BAJA}\n` : ''}${CON_TEXTO.includes(n) ? `${TEXTO}\n` : ''}${leer(`nodos/${n}.js`)}`;
 }
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026, 10:00 en La Paz
@@ -691,7 +695,7 @@ describe('comprobante: cuadra, no cuadra e ilegible, de punta a punta', () => {
     expect(normal).toMatch(/Los datos coinciden con tu pedido #\w+ \(1 × Orden de 3 tacos de birria, recojo en el local\)\./);
     for (const nombre of ['Orden de 3 tacos de birria (prueba)', 'Tacos Simulados de birria']) {
       const s = conNombre(nombre);
-      expect(s, nombre).toMatch(/Gracias por enviar tu comprobante\. Los datos coinciden con tu pedido #\w+\. Ya lo pas[ée] a nuestro equipo/);
+      expect(s, nombre).toMatch(/Gracias por enviar tu comprobante\.\s+Los datos coinciden con tu pedido #\w+\.\s+Ya lo pas[ée] a nuestro equipo/);
       expect(s, nombre).not.toMatch(/prueba|simulad/i);
     }
   });
