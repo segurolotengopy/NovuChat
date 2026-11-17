@@ -258,7 +258,8 @@ if (!srv) {
   // Ya saludó (ensayo del 17/11/2026): se guarda lo que pidió (día y franja) para no hacérselo repetir al tocar el servicio, y se le pregunta
   // el servicio con una frase corta en vez de repetir el saludo. El primer mensaje (paso `inicio`) sigue con el saludo completo: ya guardó su texto.
   if (est.paso === 'inicio') return salir('menu');
-  en.primerTexto = String(d.textoExtraer || texto).trim().slice(0, 300);
+  // Solo se guarda si dijo algo que conservar (día, hora o franja): un «gracias» suelto no se re-extrae al tocar el servicio.
+  if (x.fechaPreferida || x.horaPreferida || x.franja !== 'cualquiera') en.primerTexto = String(d.textoExtraer || texto).trim().slice(0, 300);
   return salir('menu', { params: { preguntaServicio: true } });
 }
 
