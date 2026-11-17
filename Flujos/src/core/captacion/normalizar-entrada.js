@@ -122,11 +122,16 @@ for (let i = 0; i < items.length; i++) {
     }
   }
 
-  const ref = msg.referral;
+  const plano = (t, max) => String(t ?? '').replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ')
+    .replace(/\s+/g, ' ').trim().slice(0, max);
+  // El anuncio de Meta (`referral`): titular, fuente, ID del anuncio y clic; dato, no orden.
+  const ref = msg.referral && typeof msg.referral === 'object' && !Array.isArray(msg.referral) ? msg.referral : null;
   const anuncio = ref ? {
-    titular: String(ref.headline ?? '').slice(0, 120),
-    fuente: String(ref.source_type ?? ''),
+    titular: plano(ref.headline, 120),
+    fuente: plano(ref.source_type, 20),
     url: String(ref.source_url ?? '').slice(0, 200),
+    idAnuncio: plano(ref.source_id, 40),
+    ctwaClid: plano(ref.ctwa_clid, 200),
   } : null;
 
   // --- LA CAMPAÑA POR TEXTO (Andres, 02/10/2026, D4) -------------------------
@@ -142,11 +147,20 @@ for (let i = 0; i < items.length; i++) {
   let campanas = [];
   try { campanas = JSON.parse(String(cfg.campanasActivas || '[]')); } catch (e) { campanas = []; }
   const escrito = tipo === 'text' ? palabras(msg.text?.body) : '';
-  const laCampana = escrito === '' || !Array.isArray(campanas) ? null
-    : (campanas.find((c) => c && typeof c.texto === 'string' && palabras(c.texto) === escrito) || null);
-  const plano = (t, max) => String(t ?? '').replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ')
-    .replace(/\s+/g, ' ').trim().slice(0, max);
-  const campana = laCampana ? { id: plano(laCampana.id, 60), texto: plano(laCampana.texto, 300).replace(/[\[\]]/g, "") } : null;
+  const idDelAnuncio = anuncio ? anuncio.idAnuncio : '';
+  let laCampana = null;
+  let campanaPor = '';
+  if (Array.isArray(campanas)) {
+    if (idDelAnuncio !== '') {
+      laCampana = campanas.find((c) => c && Array.isArray(c.adIds) && c.adIds.some((a) => String(a) === idDelAnuncio)) || null;
+      if (laCampana) campanaPor = 'adId';
+    }
+    if (!laCampana && escrito !== '') {
+      laCampana = campanas.find((c) => c && typeof c.texto === 'string' && palabras(c.texto) === escrito) || null;
+      if (laCampana) campanaPor = 'texto';
+    }
+  }
+  const campana = laCampana ? { id: plano(laCampana.id, 60), texto: plano(laCampana.texto, 300).replace(/[\[\]]/g, ""), por: campanaPor } : null;
 
   const contacto = Array.isArray(src.contacts) ? src.contacts[0] : undefined;
 
@@ -173,6 +187,9 @@ for (let i = 0; i < items.length; i++) {
     anuncio,
     origen,
     campana,
+    adId: idDelAnuncio,
+    campanaId: campana ? campana.id : '',
+    campanaPor: campana ? campana.por : '',
     mediaId,
     mimeType,
     esMedioAudio,

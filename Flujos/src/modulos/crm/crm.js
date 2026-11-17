@@ -462,6 +462,9 @@ function crmDecidirFila(a) {
     if (mapeado('interes')) fila[T('interes')] = minima ? '' : crmComoTexto(p.rubro);
     for (const [campo, v] of extras) if (!minima || ['ultimaInteraccion', 'ventana24h'].includes(campo)) fila[T(campo)] = campo === 'clasificacion' ? v : crmComoTexto(v);
     if (mapeado('agendo') && agendoP !== 'Sí' && !minima) fila[T('agendo')] = 'No';
+    // EL ID DE CAMPANA (Andres, 17/11/2026): solo AL CREAR y solo si el mapa del tenant declara la columna opcional `idCampana`. Primero el Ad ID del anuncio; si no hay, el id de la campana
+    // reconocida por texto. Nunca pisa una celda del equipo (la fila existente no se toca); sin columna declarada no se escribe nada ni falla.
+    if (mapeado('idCampana') && !minima && (p.adId || p.campanaId)) fila[T('idCampana')] = crmNeutralizarTexto(p.adId ? p.adId : p.campanaId, 60);
     if (mapa.alCrear.estado !== undefined && mapa.equipo.estado) fila[mapa.equipo.estado.titulo] = minima ? CRM_ESTADO_MINIMA : mapa.alCrear.estado;
     out.push({ json: fila, pairedItem: { item: i } });
   });

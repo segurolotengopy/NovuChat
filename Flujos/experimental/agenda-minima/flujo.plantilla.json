@@ -453,7 +453,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const t = $('Interpretar entrada').first().json; return JSON.stringify({ telefono: t.from, direccion: 'entrante', tipo: t.tipo || 'text', texto: t.textoReporte || '', idMeta: t.mensajeId || '', nombreContacto: t.nombrePerfil || '', origen: t.origen || 'directo', evento: /no (me )?(escrib|mand|molest|contact|llam)|dej(a|á|e|en) de escribir|no quiero (más|mas) mensajes|b[oó]rr(a|e)me|qu[ií]t(a|e)me|d(a|á|e)me de baja|^stop$/i.test(String(t.texto || '')) ? 'no_contactar' : undefined }); })() }}",
+        "jsonBody": "={{ (() => { const t = $('Interpretar entrada').first().json; return JSON.stringify({ telefono: t.from, direccion: 'entrante', tipo: t.tipo || 'text', texto: t.textoReporte || '', idMeta: t.mensajeId || '', nombreContacto: t.nombrePerfil || '', origen: t.origen || 'directo', adId: t.adId || undefined, campanaId: t.campanaId || undefined, campanaPor: t.campanaPor || undefined, evento: /no (me )?(escrib|mand|molest|contact|llam)|dej(a|á|e|en) de escribir|no quiero (más|mas) mensajes|b[oó]rr(a|e)me|qu[ií]t(a|e)me|d(a|á|e)me de baja|^stop$/i.test(String(t.texto || '')) ? 'no_contactar' : undefined }); })() }}",
         "options": {
           "timeout": 4000
         }

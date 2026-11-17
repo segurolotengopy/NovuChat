@@ -118,11 +118,14 @@ for (const item of $input.all()) {
   // misma forma. Es DATO del anuncio, no una orden: va recortado y sin saltos.
   const plano = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ')
     .replace(/\s+/g, ' ').trim().slice(0, max);
-  const ref = msg.referral && typeof msg.referral === 'object' ? msg.referral : null;
+  const ref = msg.referral && typeof msg.referral === 'object' && !Array.isArray(msg.referral) ? msg.referral : null;
   const anuncio = ref ? {
     titular: plano(ref.headline, 120),
     fuente: plano(ref.source_type, 20),
     idAnuncio: plano(ref.source_id, 40),
+    // El clic de Meta (`ctwa_clid`): lo manda el primer mensaje de un anuncio y
+    // sirve para atribuir la conversacion. Dato, no orden: recortado y sin saltos.
+    ctwaClid: plano(ref.ctwa_clid, 200),
   } : null;
 
   // --- LA CAMPAÑA SE RECONOCE POR SU TEXTO EXACTO (Andres, 24/09/2026) ------
@@ -141,9 +144,23 @@ for (const item of $input.all()) {
   let campanas = [];
   try { campanas = JSON.parse(String(config.campanasActivas || '[]')); } catch (e) { campanas = []; }
   const escrito = tipo === 'text' ? palabras(msg.text?.body) : '';
-  const laCampana = escrito === '' || !Array.isArray(campanas) ? null
-    : (campanas.find((c) => c && typeof c.texto === 'string' && palabras(c.texto) === escrito) || null);
-  const campana = laCampana ? { id: plano(laCampana.id, 60), texto: plano(laCampana.texto, 300) } : null;
+  // El Ad ID (`referral.source_id`) va PRIMERO y sirve para cualquier tipo de
+  // mensaje: es la igualdad exacta de la cadena contra los `adIds` de la campaña
+  // vigente (Andres, 17/11/2026). Solo si no coincide se prueba el texto.
+  const idDelAnuncio = anuncio ? anuncio.idAnuncio : '';
+  let laCampana = null;
+  let campanaPor = '';
+  if (Array.isArray(campanas)) {
+    if (idDelAnuncio !== '') {
+      laCampana = campanas.find((c) => c && Array.isArray(c.adIds) && c.adIds.some((a) => String(a) === idDelAnuncio)) || null;
+      if (laCampana) campanaPor = 'adId';
+    }
+    if (!laCampana && escrito !== '') {
+      laCampana = campanas.find((c) => c && typeof c.texto === 'string' && palabras(c.texto) === escrito) || null;
+      if (laCampana) campanaPor = 'texto';
+    }
+  }
+  const campana = laCampana ? { id: plano(laCampana.id, 60), texto: plano(laCampana.texto, 300), por: campanaPor } : null;
 
   const contacto = Array.isArray(src.contacts) ? src.contacts[0] : undefined;
 
@@ -189,6 +206,9 @@ for (const item of $input.all()) {
       : '',
     anuncio,
     campana,
+    adId: idDelAnuncio,
+    campanaId: campana ? campana.id : '',
+    campanaPor: campana ? campana.por : '',
     mensajeId: String(msg.id ?? ''),
     mediaId,
     mimeType,

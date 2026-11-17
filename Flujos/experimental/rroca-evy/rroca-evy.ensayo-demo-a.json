@@ -332,7 +332,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const t = $('Normalizar entrada').first().json; return JSON.stringify({ telefono: t.from, direccion: 'entrante', tipo: t.tipo || 'text', texto: t.textoReporte || '', idMeta: t.mensajeId || '', nombreContacto: t.nombrePerfil || '', origen: t.origen || 'directo', evento: (t.riesgoEscrito === true || t.bajaEscrita === true) ? 'no_contactar' : undefined }); })() }}",
+        "jsonBody": "={{ (() => { const t = $('Normalizar entrada').first().json; return JSON.stringify({ telefono: t.from, direccion: 'entrante', tipo: t.tipo || 'text', texto: t.textoReporte || '', idMeta: t.mensajeId || '', nombreContacto: t.nombrePerfil || '', origen: t.origen || 'directo', adId: t.adId || undefined, campanaId: t.campanaId || undefined, campanaPor: t.campanaPor || undefined, evento: (t.riesgoEscrito === true || t.bajaEscrita === true) ? 'no_contactar' : undefined }); })() }}",
         "options": {
           "timeout": 4000
         }
