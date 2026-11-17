@@ -22,7 +22,7 @@ const SI = [
 const NO = [
   'hola', 'quiero agendar una cita', 'el doctor dijo que no me escriban', 'mi ex no deja de escribirme', 'no me escribas el precio, mándame el QR',
   'no me escribiste el precio', 'no me escribas con tanta formalidad', 'no me llamen la atención', 'quiero dar de baja mi pedido',
-  'dame de baja el plan anterior', 'si no pago me dan de baja?', 'cuando me dan de baja del curso', 'mi hijo me dijo que me dan de baja', 'dame la baja del servicio', 'date de baja el servicio', 'me das de baja el plan', 'me das de baja la cuenta de mi hijo', 'me dieron de baja del trabajo', 'dice que me das de baja', 'porque me das de baja siempre', 'me das el precio', '¿no me llamaron ayer?', 'no me llegó el mensaje', 'stop the music', '', '   ',
+  'dame de baja el plan anterior', 'si no pago me dan de baja?', 'cuando me dan de baja del curso', 'mi hijo me dijo que me dan de baja', 'dame la baja del servicio', 'date de baja el servicio', 'me das de baja el plan', 'dame de baja del curso', 'date de baja del curso', 'ayer me dijeron que me das de baja', 'me das de baja la cuenta de mi hijo', 'me dieron de baja del trabajo', 'dice que me das de baja', 'porque me das de baja siempre', 'me das el precio', '¿no me llamaron ayer?', 'no me llegó el mensaje', 'stop the music', '', '   ',
   'no me manden nada de eso, solo el catálogo', 'no quiero molestar, una consulta', 'para no molestar te escribo luego', 'bórrame esa foto de su base de ejemplo', 'no me envíen nada hasta el lunes',
   'quítame de su sistema el pedido de ayer', 'bórrame de la base de datos la dirección vieja', 'elimíname de sus registros la tarjeta',
   'no me manden nada, por favor, solo el QR', 'no me envíen nada por favor sin confirmar el precio',
