@@ -34,6 +34,16 @@ try {
   }
 } catch (e) { desdeMs = null; conversacionNueva = false; }
 
+// LA CAMPANA DE ESTE MENSAJE (Andres, 17/11/2026): el Ad ID y el id de la campana que dejo `Normalizar entrada` viajan con el prospecto SOLO si el productor no los trae; el modulo los escribe
+// en la columna opcional `idCampana` al CREAR la fila. Sin `Normalizar entrada` o sin campana, vacios.
+let adIdDelMensaje = '';
+let campanaIdDelMensaje = '';
+try {
+  const n = $('Normalizar entrada').first().json || {};
+  adIdDelMensaje = typeof n.adId === 'string' ? n.adId : '';
+  campanaIdDelMensaje = typeof n.campanaId === 'string' ? n.campanaId : '';
+} catch (e) { adIdDelMensaje = ''; campanaIdDelMensaje = ''; }
+
 const out = [];
 $input.all().forEach((it, i) => {
   const e = it.json;
@@ -41,7 +51,7 @@ $input.all().forEach((it, i) => {
   if (e.guardarPlanilla === true && p && typeof p === 'object' && p.telefono) {
     // «Ultima interaccion»: si el productor no la trae (captacion, chat), es el instante de este turno.
     const ult = typeof p.ultimaInteraccionMs === 'number' && Number.isFinite(p.ultimaInteraccionMs) ? p.ultimaInteraccionMs : Date.now();
-    out.push({ json: Object.assign({}, p, { ultimaInteraccionMs: ult, conversacionDesdeMs: desdeMs }), pairedItem: { item: i } });
+    out.push({ json: Object.assign({}, adIdDelMensaje !== '' ? { adId: adIdDelMensaje } : {}, campanaIdDelMensaje !== '' ? { campanaId: campanaIdDelMensaje } : {}, p, { ultimaInteraccionMs: ult, conversacionDesdeMs: desdeMs }), pairedItem: { item: i } });
   }
 });
 // FILA MINIMA (Andres, 08/11/2026): ESTE mensaje abrio la conversacion (`conversacionNueva`, con ancla) y NINGUN item trajo prospecto porque el flujo filtro su CONTENIDO
