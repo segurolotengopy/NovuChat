@@ -223,6 +223,22 @@ describe('CONTENCIÓN: lo que la baja común (`bjPideBaja`) acepta, `rcSenalDeCr
     const detectadas = SOLO_DE_LA_BAJA.filter((t) => !rc('rcSenalDeCrisisOBaja')(t));
     expect(detectadas.length).toBeGreaterThanOrEqual(5);
   });
+  it('MUTACIÓN: sin la línea de `bjPideBaja` en `rcSenalDeCrisisOBaja`, frases de la baja común dejan de dar señal', () => {
+    const fuente = readFileSync(new URL('../../../Flujos/src/core/conversacion/respuesta-coherente.js', import.meta.url), 'utf8');
+    const linea = "if (typeof bjPideBaja === 'function' && bjPideBaja(texto)) return true;";
+    expect(fuente).toContain(linea);
+    const baja = readFileSync(new URL('../../../Flujos/src/core/conversacion/baja.js', import.meta.url), 'utf8');
+    const sin = vm.runInNewContext(`${baja}\n${fuente.replace(linea, '')}\n({ rcSenalDeCrisisOBaja })`, Object.create(null)) as { rcSenalDeCrisisOBaja: (t: string) => boolean };
+    expect(SOLO_DE_LA_BAJA.some((t) => !sin.rcSenalDeCrisisOBaja(t))).toBe(true);
+    expect(SOLO_DE_LA_BAJA.every((t) => CON.rcSenalDeCrisisOBaja(t))).toBe(true);
+  });
+  it('ESTRUCTURA: la línea de `bjPideBaja` va antes de plegar el texto (`rcN(t)`) y antes del recorte', () => {
+    const fuente = readFileSync(new URL('../../../Flujos/src/core/conversacion/respuesta-coherente.js', import.meta.url), 'utf8');
+    const i = fuente.indexOf('bjPideBaja(texto)');
+    expect(i).toBeGreaterThan(0);
+    expect(i).toBeLessThan(fuente.indexOf('const base = rcN(t)'));
+    expect(i).toBeLessThan(fuente.indexOf('RC_SENAL_MAX - 1000'));
+  });
   it('NIEGA: lo que no es baja ni crisis sigue sin ser señal con las dos piezas', () => {
     for (const t of ['quiero 2 tacos de birria', 'hola', 'gracias', 'la carta por favor', 'a qué hora abren', 'no me llegó el pedido']) expect(CON.rcSenalDeCrisisOBaja(t), t).toBe(false);
   });
