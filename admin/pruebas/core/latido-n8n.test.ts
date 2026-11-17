@@ -6,7 +6,7 @@
  * internet funcionan; si calla 15 minutos, avisa un servicio que no vive en la VM ni pasa por n8n.
  *
  * Pruebas negando: el flujo no puede escribirle a nadie por WhatsApp, no guarda las ejecuciones que salen bien (las
- * fallidas sí: son la única medida de un silencio), no lleva la URL de
+ * fallidas sí: dejan en n8n el rastro de un silencio), no lleva la URL de
  * ping (es una URL de capacidad: solo el marcador) y no tiene nada que no sea disparar, configurar y avisar.
  */
 import { spawnSync } from 'node:child_process';
@@ -79,7 +79,6 @@ describe('flujo «Latido de n8n»', () => {
       executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 60,
       saveDataSuccessExecution: 'none', saveDataErrorExecution: 'all', saveManualExecutions: false,
     });
-    expect(f.settings.saveDataErrorExecution).not.toBe('none');
     // Con errorWorkflow, una caída de internet de la VM mandaría una alerta por Resend cada 5 minutos.
     expect(f.settings.errorWorkflow).toBeUndefined();
   });

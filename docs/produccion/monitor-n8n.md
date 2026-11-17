@@ -18,7 +18,7 @@ saberlo fue escribirle a un demo desde un celular.
 | **Latido** (flujo `Flujos/latido-n8n.json`, cada 5 min) | n8n PROCESA: planificador, motor y salida a internet | Sale de n8n hacia un chequeo de Healthchecks.io | Correo de Healthchecks si calla 15 min |
 | **Sonda regular** (cron-job.org, cada 5 min) | n8n RESPONDE en `/healthz/readiness`, con frecuencia regular y desde una red que no es GitHub ni la oficina | cron-job.org (cuenta gratuita de NovuChat) | Correo de cron-job.org al fallar, al recuperarse y si desactiva el chequeo |
 | **Sonda de GitHub** (`.github/workflows/monitor-n8n.yml`, programada cada 10 min; **segunda red**) | n8n RESPONDE en `/healthz/readiness` (base conectada), el dominio resuelve y el certificado es válido | GitHub Actions | Correo de GitHub al fallar dos rondas seguidas, y un chequeo de Healthchecks que avisa si la sonda deja de correr |
-| **Sonda de tercero** | Lo mismo, desde otra red y con frecuencia regular | Better Stack | Correo de Better Stack |
+| **Sonda de tercero** (estado sin confirmar al 17/11/2026: no se verificó que esté configurada) | Lo mismo, desde otra red y con frecuencia regular | Better Stack | Correo de Better Stack |
 
 Ninguna pasa por n8n, por la VM ni por la clave de correo que vive en la VM.
 Ninguna consulta una ruta de webhook: son URL de capacidad y crearían
@@ -39,21 +39,33 @@ Configuración del chequeo (se hace en su página, no hay nada en el repositorio
 - Cada 5 minutos, zona horaria `America/La_Paz`.
 - Avisos por correo encendidos los tres: al fallar, al recuperarse y **al
   desactivarse el chequeo**.
-- Cuenta a nombre de NovuChat; la contraseña la tiene solo Andres.
+- Cuenta a nombre de NovuChat, con un buzón de NovuChat que tenga su propio
+  segundo factor; la contraseña la tiene solo Andres, es única y vive en su
+  gestor de contraseñas. Si el servicio ofrece verificación en dos pasos, se
+  activa.
+- El chequeo nunca lleva cabeceras, credenciales ni cuerpo, ni hoy ni después.
+- En cada revisión del monitor se mira que la URL del chequeo siga siendo la de
+  salud y que el chequeo siga activo: una URL cambiada o un chequeo apagado sin
+  correo es señal de que alguien tomó la cuenta.
 
 Dos cosas a saber de este servicio:
 
 - **Se desactiva solo tras más de 25 fallas seguidas**: a 5 minutos, un corte
   de unas dos horas lo apaga. Llega un correo; después de un incidente largo
   hay que **volver a activarlo** en su página.
-- cron-job.org no tiene un latido propio: si el servicio deja de consultar, no
-  avisa. Esa falta la cubren el latido de n8n y la sonda de GitHub.
+- cron-job.org no tiene un latido propio: si el servicio deja de consultar,
+  nadie lo detecta. n8n sigue vigilado por el latido y, con menos frecuencia,
+  por la sonda de GitHub.
 
 **Qué se hace con la sonda de GitHub:** queda encendida y sin cambios, como
 segunda red. Sigue siendo la única que nombra la causa (`estado`) y la que mide
 el certificado. Su reporte diario falla si corrió menos de una vez por hora, y
 con la frecuencia observada eso pasa casi todos los días: ese correo diario
-habla de GitHub, no de n8n.
+habla de GitHub, no de n8n. Por lo mismo, el chequeo de Healthchecks que avisa
+si la sonda de GitHub deja de correr puede estar avisando seguido (su período
+no está en el repositorio y no se verificó). **Mientras GitHub no normalice su
+frecuencia, esas dos alarmas no dicen nada sobre n8n.** Ajustar el umbral del
+reporte o el período de ese chequeo queda como decisión pendiente de Andres.
 
 ## Qué deja el latido cuando falla (17/11/2026)
 
@@ -65,11 +77,19 @@ al día). Un silencio se lee así en las ejecuciones del flujo en n8n:
 | Durante el silencio | Qué fue |
 |---|---|
 | Hay ejecuciones en error cada 5 minutos | n8n procesaba y no pudo llegar al chequeo externo (salida a internet o el servicio de ping) |
-| No hay ninguna ejecución | n8n no procesaba: detenido, reiniciándose o con el planificador parado |
+| No hay ninguna ejecución en error | n8n **probablemente** no procesaba (detenido, reiniciándose, planificador parado). No es prueba: las que salen bien no se guardan, así que también puede ser un flujo desactivado, un ping que salió bien y Healthchecks no contó, o la base de n8n caída. Se confirma con el registro del contenedor, sus reinicios y con que el flujo siga activo |
+
+Para diagnosticar se leen solo el estado, el inicio y el fin de cada ejecución
+(sin `includeData`): los datos del nodo llevan la URL de ping, que es una URL
+de capacidad, y no se copian al chat, a un registro, a un informe ni a una
+captura. Un día entero de corte deja 288 ejecuciones, más que el tope de 250
+por consulta de `auditar-ejecuciones-n8n.mjs`.
 
 Costo: hasta 288 ejecuciones fallidas guardadas por día mientras dure un corte
 de salida, de tres nodos y sin datos de clientes; las borra la poda de
-ejecuciones de n8n.
+ejecuciones de n8n. Un corte de salida de varios días puede ocupar una parte
+grande del máximo de ejecuciones guardadas de la instancia y desplazar las
+fallidas de otros flujos que se usan para auditar.
 
 ## Cómo leer una alerta
 
@@ -79,7 +99,7 @@ ejecuciones de n8n.
 | Una sola fuente falla y las demás están bien | **Sospecha**: un corte en el camino de esa red |
 | Latido en silencio **y** una sonda externa fallando | **Incidente: n8n o la VM caídos** |
 | Latido en silencio y las sondas externas dan 200 | **Incidente: n8n responde pero no procesa** |
-| Latido al día y dos sondas externas fallan | **Incidente de entrada**: dominio, certificado o proxy |
+| Latido al día y dos sondas externas fallan (cron-job.org y GitHub, o Better Stack si está configurada) | **Incidente de entrada**: dominio, certificado o proxy |
 | Certificado con menos de 14 días | Aviso: la renovación automática no está corriendo |
 | Certificado `sin_datos` en el reporte | No se pudo medir. Un certificado vencido o inválido corta la conexión de la medición, así que lo ve la sonda (estado `tls`), no el reporte |
 
@@ -170,7 +190,10 @@ Quien tenga el id de un chequeo puede simular latidos (y tapar una caída) o
 forzar alertas falsas. No expone ningún dato. Por eso:
 
 - viven solo en la tabla local de marcadores, en n8n y en el Environment de
-  GitHub; nunca en el repositorio, el chat, un ticket o una captura;
+  GitHub; nunca en el repositorio, el chat, un ticket o una captura. Desde el
+  17/11/2026 la URL de ping del latido queda además en los datos de cada
+  ejecución fallida guardada en n8n, hasta que la poda la borre: la pantalla de
+  ejecuciones de ese flujo tampoco se captura;
 - los secretos de GitHub se cargan con `scripts/monitor/cargar-secretos-monitor.sh`
   (seco por omisión; los valores viajan por la entrada estándar);
 - **si un id se filtra**: crear un chequeo nuevo en Healthchecks, borrar el
