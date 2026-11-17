@@ -845,7 +845,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ telefono: $json.from, direccion: 'entrante', tipo: $json.tipo || 'text', texto: $json.userInput || '', idMeta: $json.mensajeId || '', nombreContacto: $json.nombrePerfil || '', origen: $json.origen || 'directo', evento: /no (me )?(escrib|mand|molest|contact|llam)|dej(a|á|e|en) de escribir|no quiero (más|mas) mensajes|b[oó]rr(a|e)me|qu[ií]t(a|e)me|d(a|á|e)me de baja|^stop$/i.test(String($json.userInput || '')) ? 'no_contactar' : undefined }) }}",
+        "jsonBody": "={{ JSON.stringify({ telefono: $json.from, direccion: 'entrante', tipo: $json.tipo || 'text', texto: $json.userInput || '', idMeta: $json.mensajeId || '', nombreContacto: $json.nombrePerfil || '', origen: $json.origen || 'directo', adId: $json.adId || undefined, campanaId: $json.campanaId || undefined, campanaPor: $json.campanaPor || undefined, evento: /no (me )?(escrib|mand|molest|contact|llam)|dej(a|á|e|en) de escribir|no quiero (más|mas) mensajes|b[oó]rr(a|e)me|qu[ií]t(a|e)me|d(a|á|e)me de baja|^stop$/i.test(String($json.userInput || '')) ? 'no_contactar' : undefined }) }}",
         "options": {
           "timeout": 4000
         }
