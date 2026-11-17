@@ -122,6 +122,14 @@ interface Entrante {
   /** `anuncio` o `directo` (`ORIGENES`). Solo se guarda al ABRIR la ventana. */
   origen?: string;
   /**
+   * LA CAMPAÑA QUE TRAJO LA VENTANA (contrato Ad ID, 17/11/2026). `adId` es el
+   * `referral.source_id` de Meta; `campanaId` y `campanaPor` los decide el flujo
+   * contra las campañas vigentes. Solo se guardan al ABRIR la ventana, como `origen`.
+   */
+  adId?: string;
+  campanaId?: string;
+  campanaPor?: 'adId' | 'texto';
+  /**
    * HECHO DEL FLUJO que acompaña al mensaje, además del mensaje en sí. Hoy el
    * único es `qr_enviado` —el flujo de reservas mandó el QR de la seña—, y
    * con él viajan `referencia` (el evento del calendario que quedó retenido)
@@ -258,6 +266,11 @@ function normalizar(cuerpo: unknown): Entrante | null {
   // Lista cerrada: lo desconocido cae en `directo`, no en `anuncio` (`ORIGENES`).
   const origen = typeof c['origen'] === 'string' && ORIGENES.has(c['origen'])
     ? c['origen'] : 'directo';
+  // Campaña de la ventana: valor con otra forma se ignora (el mensaje se cuenta igual).
+  const adId = typeof c['adId'] === 'string' && /^[0-9]{1,40}$/.test(c['adId']) ? c['adId'] : undefined;
+  const campanaId = typeof c['campanaId'] === 'string' && /^[A-Za-z0-9_-]{1,60}$/.test(c['campanaId'])
+    ? c['campanaId'] : undefined;
+  const campanaPor = c['campanaPor'] === 'adId' || c['campanaPor'] === 'texto' ? c['campanaPor'] : undefined;
   // El hecho del flujo y sus identificadores. Los dos son datos que n8n copia
   // de la respuesta de Google Calendar; igual se recortan y no se interpolan.
   const evento = typeof c['evento'] === 'string' && EVENTOS.has(c['evento'])
@@ -293,6 +306,9 @@ function normalizar(cuerpo: unknown): Entrante | null {
     ? c['reemplaza'] : undefined;
 
   return { telefono, direccion, tipo, texto, origen, ...(idMeta ? { idMeta } : {}),
+           ...(adId ? { adId } : {}),
+           ...(campanaId ? { campanaId } : {}),
+           ...(campanaId && campanaPor ? { campanaPor } : {}),
            ...(lineas ? { lineas } : {}),
            ...(entrega !== undefined ? { entrega } : {}),
            ...(facturacion !== undefined ? { facturacion } : {}),
@@ -1196,6 +1212,12 @@ export const ingesta = onRequest(
         ...(conteo.atencion ? { atencionDesde: FieldValue.serverTimestamp() } : {}),
         // Se escribe con el mismo hecho y por el mismo motivo que el ancla.
         ...(conteo.atencion ? { origen: origenVentana } : {}),
+        // La campaña, con el mismo hecho y el mismo motivo que `origen`: Meta pone
+        // `referral` solo en el primer mensaje. Mismo documento y misma escritura:
+        // 0 escrituras nuevas, 0 mensajes.
+        ...(conteo.atencion && mensaje.adId ? { adId: mensaje.adId } : {}),
+        ...(conteo.atencion && mensaje.campanaId ? { campanaId: mensaje.campanaId } : {}),
+        ...(conteo.atencion && mensaje.campanaId && mensaje.campanaPor ? { campanaPor: mensaje.campanaPor } : {}),
         mensajesTotal: FieldValue.increment(1),
         periodoContado: periodo,
         // El contador de respuestas se calcula, no se incrementa: dentro de la

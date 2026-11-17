@@ -177,3 +177,66 @@ describe('Ante la duda, directo', () => {
     expect(m.conversacionesPorAnuncio).toBeLessThanOrEqual(m.conversaciones);
   });
 });
+
+describe('La campaña de la ventana (contrato Ad ID, 17/11/2026)', () => {
+  const AD1 = '100000000000001';
+  const AD2 = '100000000000002';
+  const conCampana = (telefono: string, extra: Record<string, unknown>) =>
+    reportar({ telefono, direccion: 'entrante', tipo: 'text', texto: 'hola', origen: 'anuncio', ...extra });
+
+  it('al abrir la ventana se guardan adId, campanaId y campanaPor, y sin sumar mensajes extra', async () => {
+    const t = '5910000000051';
+    const r = await conCampana(t, { adId: AD1, campanaId: 'cuna-hoy_1', campanaPor: 'adId' });
+    expect(r.codigo).toBe(200);
+    expect(await conversacion(t)).toMatchObject({ origen: 'anuncio', adId: AD1, campanaId: 'cuna-hoy_1', campanaPor: 'adId', mensajesTotal: 1 });
+  });
+
+  it('es de la ventana: el segundo mensaje, con otra campaña o sin ella, NO pisa lo guardado', async () => {
+    const t = '5910000000052';
+    await conCampana(t, { adId: AD1, campanaId: 'primera', campanaPor: 'texto' });
+    await conCampana(t, { adId: AD2, campanaId: 'segunda', campanaPor: 'adId' });
+    await entrante(t);
+    expect(await conversacion(t)).toMatchObject({ adId: AD1, campanaId: 'primera', campanaPor: 'texto', mensajesTotal: 3 });
+  });
+
+  it('negando: valores con otra forma se ignoran y el mensaje se cuenta igual', async () => {
+    const malos: Array<Record<string, unknown>> = [
+      { adId: '12a45' }, { adId: '1'.repeat(41) }, { adId: 12345 }, { adId: { x: 1 } },
+      { campanaId: 'con espacio' }, { campanaId: 'x'.repeat(61) }, { campanaId: '../otra' }, { campanaId: ['a'] },
+      { campanaId: 'ok', campanaPor: 'otro' }, { campanaId: 'ok', campanaPor: 1 },
+    ];
+    for (const [i, extra] of malos.entries()) {
+      const t = `591000000006${i}`;
+      const r = await conCampana(t, extra);
+      expect(r.codigo, JSON.stringify(extra)).toBe(200);
+      const c = await conversacion(t);
+      expect(c['mensajesTotal'], JSON.stringify(extra)).toBe(1);
+      for (const k of Object.keys(extra)) {
+        if (k === 'campanaId' && extra['campanaId'] === 'ok') continue;
+        expect(c[k], `${k} ${JSON.stringify(extra)}`).toBeUndefined();
+      }
+      expect(c['origen']).toBe('anuncio');
+    }
+  });
+
+  it('campanaPor sin campanaId no se guarda; una conversación directa no trae ningún campo', async () => {
+    const t = '5910000000071';
+    await conCampana(t, { campanaPor: 'adId' });
+    expect((await conversacion(t))['campanaPor']).toBeUndefined();
+    const d = '5910000000072';
+    await entrante(d);
+    const c = await conversacion(d);
+    expect(c['adId']).toBeUndefined();
+    expect(c['campanaId']).toBeUndefined();
+    expect(c['campanaPor']).toBeUndefined();
+  });
+
+  it('el reporte de una respuesta saliente nunca fija la campaña de la ventana', async () => {
+    const t = '5910000000073';
+    await entrante(t);
+    await reportar({ telefono: t, direccion: 'saliente', tipo: 'text', texto: 'con gusto', adId: AD1, campanaId: 'x', campanaPor: 'adId' });
+    const c = await conversacion(t);
+    expect(c['adId']).toBeUndefined();
+    expect(c['campanaId']).toBeUndefined();
+  });
+});
