@@ -20,7 +20,7 @@ import { auth, db } from '../../core/lib/firebase';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { PLANES, PLANES_PUBLICADOS, esPlanPublicado, esPlanVendible, limiteDeCampanas, nombreDePlan } from '../../central/lib/planes';
 import {
-  MAX_LARGO_TITULAR, MAX_TITULARES, TOPE_ANGULO, TOPE_TEXTO_CAMPANA, campanaParaGuardar, diaBolivia, estadoVisible, fechaLegible, hashListaEnNavegador, idNuevo,
+  MAX_ADIDS, MAX_LARGO_TITULAR, MAX_TITULARES, TOPE_ANGULO, TOPE_TEXTO_CAMPANA, campanaParaGuardar, diaBolivia, estadoVisible, fechaLegible, hashListaEnNavegador, idNuevo,
   ilegiblesAlLeer, leerCampanas, problemaDeTitular, problemaEnPantalla, productosElegibles, sumarDias,
   type Campana, type ProductoElegible, type RevisionDeCampana,
 } from './campanas';
@@ -192,6 +192,9 @@ export function Campanas() {
                       </div>
                     ))}
                     {c.texto !== '' && <div><TextoSeguro valor={c.texto} maxLargo={TOPE_TEXTO_CAMPANA} /></div>}
+                    {(c.adIds ?? []).length > 0 && (
+                      <div className="ayuda">Ad ID: <TextoSeguro valor={(c.adIds ?? []).join(', ')} maxLargo={200} /></div>
+                    )}
                     {c.productoId && (
                       <div className="ayuda">Producto: {productos.find((x) => x.id === c.productoId)?.nombre
                         ? <TextoSeguro valor={productos.find((x) => x.id === c.productoId)?.nombre ?? ''} maxLargo={100} /> : 'no disponible'}</div>
@@ -273,11 +276,36 @@ export function Campanas() {
             no puede negar que es un asistente virtual ni afirmar pagos.
           </p>
           <label>
-            Texto exacto que deja el anuncio {titulares.some((x) => x.trim() !== '') ? '(opcional si hay titulares)' : ''}
+            Texto exacto que deja el anuncio {titulares.some((x) => x.trim() !== '') || (edicion.adIds ?? []).some((x) => x.trim() !== '') ? '(opcional si hay titulares o Ad ID)' : ''}
             <textarea value={edicion.texto} maxLength={TOPE_TEXTO_CAMPANA} rows={3}
               aria-invalid={problema?.campo === 'texto'}
               onChange={(e) => setEdicion({ ...edicion, texto: e.target.value })} />
           </label>
+          <fieldset>
+            <legend>Ad ID de Meta (opcional, hasta {MAX_ADIDS})</legend>
+            <p className="ayuda">
+              Es el número de identificación del anuncio en Meta Ads Manager. Con él reconocemos que la
+              persona vino de este anuncio aunque escriba otra cosa. Cópialo tal cual, solo números. Un
+              mismo Ad ID no puede estar en dos campañas.
+            </p>
+            {(edicion.adIds ?? []).map((a, i) => (
+              <div key={i}>
+                <label>
+                  {`Ad ID ${i + 1}`}
+                  <input type="text" inputMode="numeric" value={a} maxLength={32}
+                    aria-invalid={problema?.campo === 'adIds'}
+                    onChange={(e) => setEdicion({ ...edicion, adIds: (edicion.adIds ?? []).map((x, j) => (j === i ? e.target.value : x)) })} />
+                </label>{' '}
+                <button type="button" aria-label={`Quitar el Ad ID ${i + 1}`}
+                  onClick={() => setEdicion({ ...edicion, adIds: (edicion.adIds ?? []).filter((_, j) => j !== i) })}>Quitar</button>
+              </div>
+            ))}
+            {(edicion.adIds ?? []).length < MAX_ADIDS && (
+              <button type="button" onClick={() => setEdicion({ ...edicion, adIds: [...(edicion.adIds ?? []), ''] })}>
+                Agregar Ad ID
+              </button>
+            )}
+          </fieldset>
           <label>
             Desde
             <input type="date" value={edicion.inicio} min={editando && original ? (original.inicio < hoy ? original.inicio : hoy) : hoy}
@@ -290,7 +318,7 @@ export function Campanas() {
               aria-invalid={problema?.campo === 'fin'}
               onChange={(e) => setEdicion({ ...edicion, fin: e.target.value })} />
           </label>
-          {problema && (edicion.texto.trim() !== '' || problema.campo !== 'titulares' || titulares.length > 0) && (
+          {problema && (edicion.texto.trim() !== '' || problema.campo !== 'titulares' || titulares.length > 0 || (edicion.adIds ?? []).length > 0) && (
             <p className="ayuda alerta" role="alert">{problema.texto}</p>
           )}
           <button type="submit" disabled={guardando || problema !== null}>

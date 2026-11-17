@@ -160,3 +160,34 @@ describe('la página', () => {
     expect(pagina).not.toContain('dangerouslySetInnerHTML');
   });
 });
+
+describe('Ad ID en la consola', () => {
+  const AD1 = '100000000000001';
+  const AD2 = '100000000000002';
+  const k = (extra: Record<string, unknown>) => base({ texto: '', ...extra });
+
+  it('una campaña solo con Ad ID se puede guardar y se escribe con adIds', () => {
+    expect(consola.problemaEnPantalla(k({ adIds: [AD1] }), [], null, HOY)).toBeNull();
+    const out = consola.campanaParaGuardar(k({ adIds: [` ${AD1} `, AD1, ''] }));
+    expect(out['adIds']).toEqual([AD1]);
+    expect('texto' in out).toBe(false);
+    expect(Object.keys(out).length).toBeLessThanOrEqual(consola.MAX_CLAVES_POR_CAMPANA);
+  });
+  it('sin texto, titulares ni Ad ID se avisa', () => {
+    expect(consola.problemaEnPantalla(k({}), [], null, HOY)).toMatchObject({ campo: 'titulares' });
+  });
+  it('un Ad ID mal formado, más de 5 o repetido en otra campaña se avisa', () => {
+    for (const malo of ['12345', 'abc12345678', '1'.repeat(33), '1000 0000 0000']) {
+      expect(consola.problemaEnPantalla(k({ adIds: [malo] }), [], null, HOY), malo).toMatchObject({ campo: 'adIds' });
+    }
+    const seis = ['10000001', '10000002', '10000003', '10000004', '10000005', '10000006'];
+    expect(consola.problemaEnPantalla(k({ adIds: seis }), [], null, HOY)).toMatchObject({ campo: 'adIds' });
+    const otra = { ...base({ adIds: [AD1, AD2] }), id: 'otra' };
+    expect(consola.problemaEnPantalla(k({ adIds: [AD2] }), [otra], null, HOY)).toMatchObject({ campo: 'adIds' });
+  });
+  it('leer devuelve los adIds y la hoja de la lista cambia con ellos', async () => {
+    const [c] = consola.leerCampanas([{ id: 'a', inicio: HOY, fin: HOY, adIds: [AD1] }]);
+    expect(c?.adIds).toEqual([AD1]);
+    expect(consola.leerCampanas([{ id: 'a', inicio: HOY, fin: HOY, adIds: [] }])).toEqual([]);
+  });
+});

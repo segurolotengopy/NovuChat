@@ -19,15 +19,22 @@ export const MAX_TITULARES = 5;
 export const MIN_LARGO_TITULAR = 6;
 export const MAX_LARGO_TITULAR = 100;
 export const TOPE_ANGULO = 300;
-/** Lo más que una campaña escribe en Firestore: la regla admite de 4 a 7 claves. */
-export const MAX_CLAVES_POR_CAMPANA = 7;
+/** Lo más que una campaña escribe en Firestore: la regla admite de 4 a 8 claves. */
+export const MAX_CLAVES_POR_CAMPANA = 8;
+/** Ad ID de Meta por campaña: de 1 a 5, solo números (8 a 32 dígitos). Igual que el servidor. */
+export const MAX_ADIDS = 5;
+const ADID = /^[0-9]{8,32}$/;
+/** Los Ad ID sin espacios ni vacíos y sin repetidos, como los colapsa el servidor. */
+export function adIdsLimpios(a: readonly string[] | undefined): string[] {
+  return [...new Set((a ?? []).map((x) => x.trim()).filter((x) => x !== ''))];
+}
 /** Un monto en un titular: misma expresión que el servidor (el precio vive en el producto). */
 const MONTO = /(\bbs\.?|\busd|\$)\s*\d|\d\s*(bs|usd|\$)/;
 const INVISIBLES = /[\p{Cf}\p{Cc}]/u;
 
 export interface Campana {
   id: string; texto: string; inicio: string; fin: string;
-  titulares?: string[]; productoId?: string; angulo?: string;
+  titulares?: string[]; productoId?: string; angulo?: string; adIds?: string[];
 }
 
 /** Un producto ACTIVO del catálogo del negocio, solo para mostrarlo: no se escribe. */
@@ -73,20 +80,22 @@ export function campanaParaGuardar(c: Campana): Record<string, unknown> {
   const titulares = titularesLimpios(c.titulares);
   const texto = c.texto.trim();
   const angulo = (c.angulo ?? '').trim();
+  const adIds = adIdsLimpios(c.adIds);
   const out: Record<string, unknown> = { id: c.id };
-  if (texto !== '' || titulares.length === 0) out['texto'] = texto;
+  if (texto !== '' || (titulares.length === 0 && adIds.length === 0)) out['texto'] = texto;
   out['inicio'] = c.inicio;
   out['fin'] = c.fin;
   if (titulares.length > 0) out['titulares'] = titulares;
   if (c.productoId) out['productoId'] = c.productoId;
   if (angulo !== '') out['angulo'] = angulo;
+  if (adIds.length > 0) out['adIds'] = adIds;
   return out;
 }
 
 export interface RevisionDeCampana {
   estado: 'aprobada' | 'rechazada' | 'pendiente' | 'fuera_del_plan';
   motivo: string;
-  campo: 'texto' | 'inicio' | 'fin' | 'titulares' | 'productoId' | 'angulo' | '';
+  campo: 'texto' | 'inicio' | 'fin' | 'titulares' | 'productoId' | 'angulo' | 'adIds' | '';
 }
 
 /** El día de Bolivia (UTC-4 fijo) de un instante, `AAAA-MM-DD`. */
@@ -130,12 +139,19 @@ function leerUna(c: unknown): Campana | null {
     if (!Array.isArray(t) || t.length > 2 * MAX_TITULARES || t.some((x) => typeof x !== 'string')) return null;
     titulares = t as string[];
   }
+  let adIds: string[] | undefined;
+  if (r['adIds'] !== undefined) {
+    const a = r['adIds'];
+    if (!Array.isArray(a) || a.length > 2 * MAX_ADIDS || a.some((x) => typeof x !== 'string')) return null;
+    adIds = a as string[];
+  }
   if (r['productoId'] !== undefined && typeof r['productoId'] !== 'string') return null;
   if (r['angulo'] !== undefined && typeof r['angulo'] !== 'string') return null;
-  if (r['texto'] === undefined && titulares === undefined) return null;
+  if (r['texto'] === undefined && titulares === undefined && (adIds === undefined || adIds.length === 0)) return null;
   return {
     id: r['id'], texto: (r['texto'] as string | undefined) ?? '', inicio: r['inicio'], fin: r['fin'],
     ...(titulares !== undefined ? { titulares } : {}),
+    ...(adIds !== undefined && adIds.length > 0 ? { adIds } : {}),
     ...(r['productoId'] !== undefined ? { productoId: r['productoId'] as string } : {}),
     ...(r['angulo'] !== undefined ? { angulo: r['angulo'] as string } : {}),
   };
@@ -166,12 +182,20 @@ export function nombreVisible(t: string): string {
 export function problemaEnPantalla(
   c: Campana, otras: readonly Campana[], original: Campana | null, hoy: string = diaBolivia(),
   productosActivos?: ReadonlySet<string>,
-): { campo: 'texto' | 'inicio' | 'fin' | 'titulares' | 'productoId' | 'angulo'; texto: string } | null {
+): { campo: 'texto' | 'inicio' | 'fin' | 'titulares' | 'productoId' | 'angulo' | 'adIds'; texto: string } | null {
   const t = c.texto.trim();
   const titulares = titularesLimpios(c.titulares);
-  const sinTexto = t === '' && titulares.length > 0;
-  if (t === '' && titulares.length === 0) {
-    return { campo: 'titulares', texto: 'Escribe al menos un titular del anuncio o el texto que deja el anuncio.' };
+  const adIds = adIdsLimpios(c.adIds);
+  const sinTexto = t === '' && (titulares.length > 0 || adIds.length > 0);
+  if (t === '' && titulares.length === 0 && adIds.length === 0) {
+    return { campo: 'titulares', texto: 'Escribe al menos un titular del anuncio, el texto que deja el anuncio o un Ad ID.' };
+  }
+  if (adIds.length > MAX_ADIDS) return { campo: 'adIds', texto: `Una campaña lleva hasta ${MAX_ADIDS} Ad ID.` };
+  if (adIds.some((x) => !ADID.test(x))) {
+    return { campo: 'adIds', texto: 'Un Ad ID son solo números, de 8 a 32 dígitos: cópialo de Meta sin espacios ni letras.' };
+  }
+  if (otras.some((o) => o.id !== c.id && adIdsLimpios(o.adIds).some((x) => adIds.includes(x)))) {
+    return { campo: 'adIds', texto: 'Otra campaña ya usa uno de estos Ad ID.' };
   }
   if (!sinTexto) {
     if (t.length > TOPE_TEXTO_CAMPANA) return { campo: 'texto', texto: `El texto supera los ${TOPE_TEXTO_CAMPANA} caracteres.` };
@@ -238,8 +262,11 @@ export async function hashListaEnNavegador(lista: readonly Campana[]): Promise<s
   if (typeof crypto === 'undefined' || !crypto.subtle) return null;
   // Igual que `hashLista` del servidor: sin claves nuevas, la cuenta de siempre.
   const texto = JSON.stringify(lista.map((c) => (c.titulares === undefined && c.productoId === undefined && c.angulo === undefined
+    && c.adIds === undefined
     ? [c.id, c.texto, c.inicio, c.fin]
-    : [c.id, c.texto, c.inicio, c.fin, c.titulares ?? null, c.productoId ?? null, c.angulo ?? null])));
+    : c.adIds === undefined
+      ? [c.id, c.texto, c.inicio, c.fin, c.titulares ?? null, c.productoId ?? null, c.angulo ?? null]
+      : [c.id, c.texto, c.inicio, c.fin, c.titulares ?? null, c.productoId ?? null, c.angulo ?? null, c.adIds])));
   const resumen = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texto));
   return [...new Uint8Array(resumen)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
 }
