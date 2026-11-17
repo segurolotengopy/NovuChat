@@ -1,6 +1,8 @@
 /**
  * =============================================================================
  * GUARDAR UN MEDIO ENTRANTE (imagen, audio, video, documento) — 90 días, con bandera
+ * (EXCEPCIÓN, 16/11/2026: también se guarda una IMAGEN SALIENTE del asistente, con `origen:'asistente'`, para el control
+ * de calidad en la consola; nunca texto, audio, documento ni lo enviado por una persona. Comparte los topes con lo entrante.)
  * =============================================================================
  *
  * DECISIONES DE ANDRES (20, 22 y 23/10/2026):
@@ -236,7 +238,7 @@ export async function guardarMedioDe(
 
   const db = deps.db ?? getFirestore();
 
-  // Solo se guarda lo que corresponde a un mensaje ENTRANTE reciente del mismo tipo (un sticker
+  // Solo se guarda lo que corresponde a un mensaje ENTRANTE reciente del mismo tipo (o, SOLO imagen, uno SALIENTE del asistente) (un sticker
   // registrado como `sticker` corresponde a `image`: `TIPOS_DE_MENSAJE`).
   let candidatos: FirebaseFirestore.QuerySnapshot;
   try {
