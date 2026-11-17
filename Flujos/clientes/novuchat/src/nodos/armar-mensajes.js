@@ -69,8 +69,10 @@ if (plan.ruta === 'sin_estado') {
   chRecordarIds(nueva, [t.mensajeId]);
   nueva.ultimoMs = ahora;
   if (plan.ruta === 'baja') {
-    // Baja por texto: UN mensaje de texto fijo, sin botones, sin aviso y sin evento (el `no_contactar` viajó con el entrante).
-    mensajes.push(cmMensaje('cliente', cmTexto(bjTextoBaja(cfg.textoBaja)), bjTextoBaja(cfg.textoBaja), bjTextoBaja(cfg.textoBaja), { tipoReporte: 'text' }));
+    // Baja por texto: UN mensaje de texto fijo, sin botones y sin aviso; el `no_contactar` viajó con el entrante. Baja por NOTA DE VOZ (`plan.porVoz`, decidida en «Armar turno» sobre la transcripción): el entrante del audio
+    // no marcó nada, así que el evento viaja en el reporte de ESTE mensaje saliente, y los eventos del turno (el audio) quedan respondidos para que la baja no vuelva como contexto del próximo mensaje.
+    mensajes.push(cmMensaje('cliente', cmTexto(bjTextoBaja(cfg.textoBaja)), bjTextoBaja(cfg.textoBaja), bjTextoBaja(cfg.textoBaja), plan.porVoz === true ? { tipoReporte: 'text', evento: 'no_contactar' } : { tipoReporte: 'text' }));
+    if (plan.porVoz === true && Number(plan.hastaBaja) > 0) { nueva.cola = nueva.cola.filter((e) => e.seq > plan.hastaBaja); nueva.hasta = Math.max(nueva.hasta, plan.hastaBaja); }
   } else if (plan.ruta === 'suspendido') {
     if (puerta.texto) mensajes.push(texto(String(puerta.texto)));
   } else {
