@@ -38,12 +38,11 @@
 .cv-estado-busqueda:empty { min-height: 0; margin: 0; }
 /* Filtros más compactos: en la columna de la lista caben en dos filas (antes eran tres). En celular, una sola fila que se desliza. */
 .cv-filtros { flex: none; display: flex; flex-wrap: wrap; gap: 3px; padding: var(--space-1) var(--space-3); }
-.cv-chip { white-space: nowrap; }
 .cv-chip {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 2px 7px; min-height: 26px;
   border: 1px solid var(--color-borde-control); border-radius: 999px;
-  background: transparent; color: var(--color-text); font-size: 12px; cursor: pointer;
+  background: transparent; color: var(--color-text); font-size: 12px; cursor: pointer; white-space: nowrap;
 }
 .cv-chip:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
 .cv-chip[aria-pressed="true"] { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }

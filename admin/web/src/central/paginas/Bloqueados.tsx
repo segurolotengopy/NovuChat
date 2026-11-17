@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
+import { useSesion } from '../../core/lib/contexto';
 import { funciones } from '../../core/lib/firebase';
 import { PanelBloqueados } from '../componentes/PanelBloqueados';
 import { useEstadoComercio } from '../componentes/ConsolaConversaciones';
@@ -15,9 +16,13 @@ import '../estilos/conversaciones.css';
  */
 export function Bloqueados() {
   const { tenantId = '' } = useParams();
-  const filas = useBloqueados(tenantId, true);
+  const { permisos } = useSesion();
+  // Solo el administrador del negocio, NO el propietario de NovuChat (aunque tenga rol de admin ahí): igual que la opción del menú.
+  const permitido = !permisos.propietario;
+  const filas = useBloqueados(tenantId, permitido);
   const estadoComercio = useEstadoComercio(tenantId);
   const capa = useMemo(() => capaBloqueoReal(funciones), []);
+  if (!permitido) return <Navigate to="/" replace />;
   const n = Array.isArray(filas) ? filas.length : null;
   return (
     <section>

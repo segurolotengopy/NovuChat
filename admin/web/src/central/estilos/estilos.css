@@ -94,7 +94,7 @@
    El `<nav>` va DENTRO del `<header>` a propósito: `.cabecera` lleva
    `backdrop-filter`, y eso vuelve a la cabecera el bloque contenedor de todo
    descendiente `position: fixed`, que dejaría de ser fijo. Por eso el panel es
-   `absolute` bajo la cabecera (`top: 100%`, que incluye la franja del comercio)
+   `absolute` bajo la cabecera (`top: 100%`, justo bajo la barra de una línea)
    y su alto se calcula con la altura REAL de la cabecera, que mide
    `useMenuLateral.ts` y publica en `--alto-cabecera-real`. */
 :root { --ancho-menu: 15rem; }

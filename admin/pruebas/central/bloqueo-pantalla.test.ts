@@ -131,6 +131,12 @@ describe('la lista «Teléfonos bloqueados (N)»', () => {
     const app = readFileSync(join(ADMIN, 'web/src/App.tsx'), 'utf8');
     expect(app).toContain('const veBloqueados = esAdminDelNegocio && !permisos.propietario;');
     expect(app).toMatch(/tenantId && veBloqueados &&\s*<NavLink to=\{`\/negocio\/\$\{tenantId\}\/bloqueados`\}>\{rotuloBloqueados\(/);
+    expect(app).toContain('useCantidadBloqueados(tenantId, veBloqueados, pathname)');
+    expect(app).not.toContain('useBloqueados(');
+    const pantalla = readFileSync(join(ADMIN, 'web/src/central/paginas/Bloqueados.tsx'), 'utf8');
+    expect(pantalla).toContain('const permitido = !permisos.propietario;');
+    expect(pantalla).toContain('useBloqueados(tenantId, permitido)');
+    expect(pantalla).toMatch(/!permitido\) return <Navigate/);
     expect(app).toMatch(/path="\/negocio\/:tenantId\/bloqueados" element=\{\s*<Proteger requiere="adminTenant"><><Cabecera \/><Bloqueados \/>/);
   });
 });

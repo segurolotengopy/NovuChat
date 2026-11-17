@@ -155,13 +155,16 @@ export async function escribirComoUsuario(correo: string, ruta: string, campos: 
 // La pantalla
 // ---------------------------------------------------------------------------------------------------------------------
 
-/** Los rótulos de los enlaces del menú, en orden (sin «Mi cuenta», que va aparte). */
+/** Los rótulos de los enlaces del menú, en orden (sin «Mi cuenta» y «Salir», que van aparte, en el pie: `nav > a`). */
 export function enlacesDelMenu(page: Page) {
-  return page.locator('header.cabecera nav a');
+  return page.locator('header.cabecera nav > a');
 }
 
+/** «Teléfonos bloqueados (N)»: solo el administrador del negocio; el número cambia, por eso va como expresión. */
+export const BLOQUEADOS = /^Teléfonos bloqueados( \(\d+\))?$/;
+
 /** Espera a que el menú tenga exactamente estos rótulos, en este orden (el menú se arma cuando carga la ficha del comercio). */
-export async function esperarMenu(page: Page, rotulos: string[]): Promise<void> {
+export async function esperarMenu(page: Page, rotulos: Array<string | RegExp>): Promise<void> {
   await expect(enlacesDelMenu(page)).toHaveText(rotulos);
 }
 

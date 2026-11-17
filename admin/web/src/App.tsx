@@ -19,7 +19,7 @@ import { Consumo } from './central/paginas/Consumo';
 import { Usuarios } from './central/paginas/Usuarios';
 import { Contactos } from './central/paginas/Contactos';
 import { Bloqueados } from './central/paginas/Bloqueados';
-import { useBloqueados } from './central/lib/useBloqueados';
+import { useCantidadBloqueados } from './central/lib/useBloqueados';
 import { rotuloBloqueados } from './central/lib/bloqueo';
 import { EstadoCuenta } from './central/paginas/EstadoCuenta';
 import { Pagar } from './central/paginas/Pagar';
@@ -141,7 +141,7 @@ function Cabecera() {
   const esPersona = rol === 'admin' || rol === 'oper';
   // «Teléfonos bloqueados (N)»: solo el administrador del negocio (no el propietario de NovuChat), como la lista de siempre.
   const veBloqueados = esAdminDelNegocio && !permisos.propietario;
-  const bloqueados = useBloqueados(tenantId, veBloqueados);
+  const bloqueados = useCantidadBloqueados(tenantId, veBloqueados, pathname);
   if (!usuario) return null;
 
   return (
@@ -199,7 +199,7 @@ function Cabecera() {
         {tenantId && esAdminDelNegocio &&
           <NavLink to={`/negocio/${tenantId}/contactos`}>Contactos</NavLink>}
         {tenantId && veBloqueados &&
-          <NavLink to={`/negocio/${tenantId}/bloqueados`}>{rotuloBloqueados(Array.isArray(bloqueados) ? bloqueados.length : null)}</NavLink>}
+          <NavLink to={`/negocio/${tenantId}/bloqueados`}>{rotuloBloqueados(bloqueados)}</NavLink>}
         {tenantId && (esPersona || permisos.propietario) &&
           <NavLink to={`/negocio/${tenantId}/consumo`}>Consumo</NavLink>}
         {tenantId && esAdminDelNegocio &&
