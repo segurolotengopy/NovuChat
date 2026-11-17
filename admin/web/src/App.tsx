@@ -18,6 +18,9 @@ import { Conversaciones } from './central/paginas/Conversaciones';
 import { Consumo } from './central/paginas/Consumo';
 import { Usuarios } from './central/paginas/Usuarios';
 import { Contactos } from './central/paginas/Contactos';
+import { Bloqueados } from './central/paginas/Bloqueados';
+import { useBloqueados } from './central/lib/useBloqueados';
+import { rotuloBloqueados } from './central/lib/bloqueo';
 import { EstadoCuenta } from './central/paginas/EstadoCuenta';
 import { Pagar } from './central/paginas/Pagar';
 import { Reclamos } from './central/paginas/Reclamos';
@@ -83,6 +86,7 @@ const TITULOS: Record<string, string> = {
   negocios: 'Negocios',
   administrar: 'Administrar negocio',
   bitacora: 'Bitácora',
+  bloqueados: 'Teléfonos bloqueados',
   'mi-cuenta': 'Mi cuenta',
   configuracion: 'Configuración',
   conversaciones: 'Conversaciones',
@@ -132,11 +136,13 @@ function Cabecera() {
   useEffect(() => {
     if (uid && tenantDeLaRuta && miembroDeLaRuta) guardarUltima(uid, tenantDeLaRuta);
   }, [uid, tenantDeLaRuta, miembroDeLaRuta]);
-  if (!usuario) return null;
-
   const rol = tenantId ? rolEn(permisos, tenantId) : null;
   const esAdminDelNegocio = rol === 'admin';
   const esPersona = rol === 'admin' || rol === 'oper';
+  // «Teléfonos bloqueados (N)»: solo el administrador del negocio (no el propietario de NovuChat), como la lista de siempre.
+  const veBloqueados = esAdminDelNegocio && !permisos.propietario;
+  const bloqueados = useBloqueados(tenantId, veBloqueados);
+  if (!usuario) return null;
 
   return (
     /* La cabecera es PEGAJOSA y su contenido va dentro de `.contenedor`, igual
@@ -149,6 +155,11 @@ function Cabecera() {
       <div className="contenedor nav">
       <BotonMenu abierto={abierto} alAlternar={alternar} botonRef={botonRef} />
       <Marca />
+      {/* El comercio que se está mirando y si es PRUEBA o PRODUCCIÓN, en LA MISMA línea que la marca (17/11/2026,
+          pedido de Andres: antes tenía una franja propia debajo). Si el nombre es largo se recorta con «…»; el chip solo
+          se pide a quien las reglas le dejan leer `cuenta/estado`: admin y propietario. */}
+      {tenantId &&
+        <EncabezadoComercio tenantId={tenantId} leeCuenta={esAdminDelNegocio || permisos.propietario} />}
       {!esEscritorio && abierto && <div className="menu-velo" onClick={cerrar} aria-hidden="true" />}
       <nav id="menu-lateral" aria-label="Menú principal" className="menu-lateral" inert={!abierto}>
         {permisos.propietario && <NavLink to="/negocios">Negocios</NavLink>}
@@ -187,6 +198,8 @@ function Cabecera() {
           <NavLink to={`/negocio/${tenantId}/usuarios`}>Usuarios</NavLink>}
         {tenantId && esAdminDelNegocio &&
           <NavLink to={`/negocio/${tenantId}/contactos`}>Contactos</NavLink>}
+        {tenantId && veBloqueados &&
+          <NavLink to={`/negocio/${tenantId}/bloqueados`}>{rotuloBloqueados(Array.isArray(bloqueados) ? bloqueados.length : null)}</NavLink>}
         {tenantId && (esPersona || permisos.propietario) &&
           <NavLink to={`/negocio/${tenantId}/consumo`}>Consumo</NavLink>}
         {tenantId && esAdminDelNegocio &&
@@ -201,17 +214,13 @@ function Cabecera() {
           <NavLink to={`/negocio/${tenantId}/reclamos`}>Reclamos</NavLink>}
         {tenantId && esAdminDelNegocio &&
           <NavLink to={`/negocio/${tenantId}/bitacora`}>Bitácora</NavLink>}
+        {/* «Mi cuenta» y «Salir» viven al pie del menú (17/11/2026): la barra de arriba queda solo con ☰ y la marca. */}
+        <div className="menu-pie">
+          <NavLink to="/mi-cuenta">Mi cuenta</NavLink>
+          <button type="button" className="menu-salir" onClick={salir}>Salir</button>
+        </div>
       </nav>
-      <NavLink to="/mi-cuenta">Mi cuenta</NavLink>
-      <button type="button" className="btn btn-secondary" onClick={salir}>Salir</button>
       </div>
-      {/* El comercio que se está mirando y si es PRUEBA o PRODUCCIÓN. Va en
-          una franja propia debajo del menú y no al lado de la marca: la fila
-          de arriba ya lleva hasta trece enlaces, y el nombre de un negocio
-          largo los empujaba fuera de la pantalla. El chip solo se pide a quien
-          las reglas le dejan leer `cuenta/estado`: admin y propietario. */}
-      {tenantId &&
-        <EncabezadoComercio tenantId={tenantId} leeCuenta={esAdminDelNegocio || permisos.propietario} />}
     </header>
   );
 }
@@ -300,6 +309,8 @@ export function App() {
           <Proteger requiere="adminTenant"><><Cabecera /><Usuarios /></></Proteger>} />
         <Route path="/negocio/:tenantId/contactos" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Contactos /></></Proteger>} />
+        <Route path="/negocio/:tenantId/bloqueados" element={
+          <Proteger requiere="adminTenant"><><Cabecera /><Bloqueados /></></Proteger>} />
         {/* Pestañas de FLUJO. Se pintan solo si el negocio tiene ese flujo, y
             las reglas rechazan la escritura si no lo tiene: la ruta existe
             siempre, la puerta la cierra el servidor. */}

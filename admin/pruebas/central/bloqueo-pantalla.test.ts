@@ -92,7 +92,7 @@ describe('una conversación bloqueada', () => {
   });
 });
 
-describe('la lista «Bloqueados (N)»', () => {
+describe('la lista «Teléfonos bloqueados (N)»', () => {
   const t = (ms: number) => ({ toMillis: () => ms });
   it('lee solo los bloqueados, ordena en el cliente (más reciente primero, sin fecha al final)', () => {
     const filas = [
@@ -109,21 +109,29 @@ describe('la lista «Bloqueados (N)»', () => {
     expect(consultaDeBloqueadas()).toEqual({ restricciones: [{ campo: 'bloqueada', op: '==', valor: true }], orden: [], limite: LIMITE_BLOQUEADAS });
   });
   it('rótulo con número, y sin número mientras no llegó (no se inventa un cero)', () => {
-    expect(rotuloBloqueados(3)).toBe('Bloqueados (3)');
-    expect(rotuloBloqueados(null)).toBe('Bloqueados');
+    expect(rotuloBloqueados(3)).toBe('Teléfonos bloqueados (3)');
+    expect(rotuloBloqueados(null)).toBe('Teléfonos bloqueados');
   });
   it('fecha en hora de Bolivia', () => {
     expect(textoFechaBloqueo(Date.UTC(2026, 9, 31, 18, 5))).toBe('31/10/2026 14:05');
     expect(textoFechaBloqueo(null)).toBe('sin fecha');
   });
-  it('el panel pinta el rótulo con N y no expone filas hasta abrirse; sin sesión de admin no se monta (la página lo condiciona)', () => {
+  it('el panel pinta la lista (con «Desbloquear» por fila), sin botón propio: es una pantalla del menú', () => {
     const filas = [{ id: 'wa_59100000001', telefono: '59100000001', nombre: '', bloqueadaEn: 1000 }];
     const html = renderToStaticMarkup(createElement(PanelBloqueados, { tenantId: 'comercio-x', filas, comercioActivo: true, capa: CAPA }));
-    expect(html).toContain('Bloqueados (1)');
-    expect(html).not.toContain('fila-bloqueada');
+    expect(html).toContain('fila-bloqueada');
+    expect(html).toContain('Desbloquear');
+    expect(html).not.toContain('aria-expanded');
+    expect(html).not.toContain('Bloqueados (');
+  });
+  it('NEGATIVA: ya no hay botón «Bloqueados» con línea propia sobre Conversaciones; es una opción del menú, solo del administrador del negocio', () => {
     const pagina = readFileSync(join(ADMIN, 'web/src/central/paginas/ConversacionesNueva.tsx'), 'utf8');
-    expect(pagina).toMatch(/esAdminDelNegocio && \(\s*<PanelBloqueados/);
-    expect(pagina).toContain("rol === 'admin' && !permisos.propietario");
+    expect(pagina).not.toContain('PanelBloqueados');
+    expect(pagina).not.toContain('useBloqueados');
+    const app = readFileSync(join(ADMIN, 'web/src/App.tsx'), 'utf8');
+    expect(app).toContain('const veBloqueados = esAdminDelNegocio && !permisos.propietario;');
+    expect(app).toMatch(/tenantId && veBloqueados &&\s*<NavLink to=\{`\/negocio\/\$\{tenantId\}\/bloqueados`\}>\{rotuloBloqueados\(/);
+    expect(app).toMatch(/path="\/negocio\/:tenantId\/bloqueados" element=\{\s*<Proteger requiere="adminTenant"><><Cabecera \/><Bloqueados \/>/);
   });
 });
 

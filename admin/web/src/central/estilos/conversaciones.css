@@ -29,17 +29,21 @@
 }
 
 /* ── Lista ─────────────────────────────────────────────────────────────── */
-.cv-lista { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--color-divider); }
+.cv-lista { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-right: 1px solid var(--color-divider); }
 .cv-buscador { flex: none; padding: var(--space-2) var(--space-3) 0; }
 .cv-buscador input { width: 100%; box-sizing: border-box; }
 .cv-estado-busqueda { margin: 2px 0 0; min-height: 1.2em; font-size: 12.5px; color: color-mix(in srgb, var(--color-text) 72%, transparent); }
 .cv-estado-busqueda--ocupado { font-style: italic; }
-.cv-filtros { flex: none; display: flex; flex-wrap: wrap; gap: var(--space-1); padding: var(--space-1) var(--space-3) var(--space-2); }
+/* Sin texto no ocupa línea (antes reservaba una fila vacía entre el buscador y los filtros). */
+.cv-estado-busqueda:empty { min-height: 0; margin: 0; }
+/* Filtros más compactos: en la columna de la lista caben en dos filas (antes eran tres). En celular, una sola fila que se desliza. */
+.cv-filtros { flex: none; display: flex; flex-wrap: wrap; gap: 3px; padding: var(--space-1) var(--space-3); }
+.cv-chip { white-space: nowrap; }
 .cv-chip {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 3px 10px; min-height: 30px;
+  padding: 2px 7px; min-height: 26px;
   border: 1px solid var(--color-borde-control); border-radius: 999px;
-  background: transparent; color: var(--color-text); font-size: 13px; cursor: pointer;
+  background: transparent; color: var(--color-text); font-size: 12px; cursor: pointer;
 }
 .cv-chip:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
 .cv-chip[aria-pressed="true"] { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
@@ -101,10 +105,10 @@
 
 .cv-det-cab {
   flex: none; display: flex; align-items: center; gap: var(--space-3);
-  padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-divider);
+  padding: var(--space-1) var(--space-3); border-bottom: 1px solid var(--color-divider);
   flex-wrap: wrap;
 }
-.cv-volver { display: none; }
+.cv-det-cab > .cv-volver { display: none; } /* con la lista a la vista no hace falta volver a ella */
 .cv-det-titulo { display: grid; min-width: 0; flex: 1 1 10rem; }
 .cv-det-titulo strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cv-det-titulo .text-muted { font-size: 13px; }
@@ -118,17 +122,18 @@
 .cv-pastilla--por-vencer { background: color-mix(in srgb, var(--color-aviso) 20%, var(--color-surface)); color: var(--color-aviso); }
 .cv-pastilla--cerrada { background: color-mix(in srgb, var(--color-text) 10%, transparent); color: var(--color-text); }
 
-.cv-det-sub { flex: none; display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: 4px var(--space-3); border-bottom: 1px solid var(--color-divider); font-size: 13px; }
+.cv-det-sub { flex: none; display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: 2px var(--space-3); border-bottom: 1px solid var(--color-divider); font-size: 13px; }
+.cv-det-sub .btn { min-height: 30px; padding-block: 2px; }
 .cv-nocontactar { display: flex; flex-direction: row; align-items: center; gap: 4px; margin: 0; font-size: 13px; }
 /* ── H2: quién responde, tomar / devolver y el campo para escribir ─────────────────────────────────── */
 .cv-turno {
   flex: none; display: flex; align-items: center; gap: var(--space-2) var(--space-3); flex-wrap: wrap;
-  padding: 6px var(--space-3); border-bottom: 1px solid var(--color-divider);
+  padding: 3px var(--space-3); border-bottom: 1px solid var(--color-divider);
 }
 .cv-turno > .cv-etiqueta { margin: 0; font-size: 12.5px; padding: 2px 9px; }
-.cv-turno-aviso { margin: 0; flex: 1 1 14rem; font-size: 12.5px; color: color-mix(in srgb, var(--color-text) 72%, transparent); }
+.cv-turno-aviso { margin: 0; flex: 1 1 14rem; font-size: 12px; line-height: 1.3; color: color-mix(in srgb, var(--color-text) 72%, transparent); }
 .cv-turno-error { margin: 0; flex-basis: 100%; font-size: 13px; }
-.cv-turno .btn { min-height: 36px; }
+.cv-turno .btn { min-height: 32px; padding-block: 2px; }
 .cv-det-sub .cv-bloqueo { padding: 0; border-bottom: 0; }
 
 .cv-redactor {
@@ -186,15 +191,21 @@
 /* ── Celular: DOS VISTAS. Con una conversación abierta se ve el chat; sin ella, la lista. ── */
 @media (max-width: 52rem) {
   #raiz > section.cv { padding-inline: var(--space-2); height: calc(100dvh - var(--cv-tope, 6rem)); }
-  .cv-cuerpo { grid-template-columns: 1fr; border-radius: 0; }
+  /* `minmax(0, 1fr)`: con `1fr` a secas la columna crecía hasta el ancho de la fila de filtros y la lista se salía de la pantalla. */
+  .cv-cuerpo { grid-template-columns: minmax(0, 1fr); border-radius: 0; }
   .cv--chat .cv-lista { display: none; }
   .cv:not(.cv--chat) .cv-detalle { display: none; }
   .cv-lista { border-right: 0; }
-  .cv-volver { display: inline-flex; min-height: 36px; }
+  .cv-det-cab > .cv-volver { display: inline-flex; min-height: 36px; }
+  /* Una sola fila arriba: [←] [nombre y teléfono] [↑] [↓]; la pastilla de la ventana y el aviso bajan a su fila. */
+  .cv-det-cab > .cv-volver { padding-inline: var(--space-2); }
+  .cv-det-cab > .cv-volver span { display: none; }
+  .cv-det-cab > .cv-det-acciones { order: 2; }
+  .cv-det-cab > .cv-pastilla { order: 3; }
+  .cv-det-cab > .cv-wame-aviso { order: 4; }
   .cv-det-cab { gap: var(--space-2); }
-  .cv-det-acciones { width: 100%; }
   .cv-filtros { flex-wrap: nowrap; overflow-x: auto; padding-bottom: var(--space-1); scrollbar-width: none; }
-  .cv-chip { flex: none; white-space: nowrap; min-height: 28px; }
+  .cv-chip { flex: none; min-height: 28px; }
   .cv-buscador { padding-top: var(--space-1); }
   .cv-det-cab > .cv-avatar, .cv-pos { display: none; }
   .cv-det-cab { padding: var(--space-1) var(--space-2); }
@@ -213,7 +224,8 @@
 .cv-medio-texto { display: block; font-size: 12.5px; font-style: italic; margin: 2px 0; }
 .cv-medio-fondo { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: flex; align-items: center; justify-content: center; z-index: 50; }
 .cv-medio-dialogo { background: var(--fondo, #fff); color: inherit; padding: 16px; border-radius: 8px; max-width: min(92vw, 720px); max-height: 90vh; overflow: auto; }
-.cv-wame-aviso { display: block; font-size: 12px; }
+.cv-wame-aviso { display: block; font-size: 12px; line-height: 1.3; }
+.cv-det-cab > .cv-wame-aviso { flex: 1 0 100%; margin-top: -4px; }
 
 /* Bloquear contacto (31/10/2026) */
 .cv-bloqueados { padding: 6px 10px; }
