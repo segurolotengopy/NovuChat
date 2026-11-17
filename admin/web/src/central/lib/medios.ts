@@ -23,9 +23,9 @@ export const MIMES_DE_AUDIO = [
 
 export const TEXTO_PENDIENTE = 'Todavía se está guardando el archivo.';
 export const TEXTO_VENCIDO = 'El archivo ya no está disponible (se guarda 90 días).';
-/** Los archivos que envía una persona desde la consola se guardan 30 días (no 90). */
 /** Rótulo y aviso de una imagen que mandó el asistente. Verla aquí NO es prueba de ningún pago (prohibición de cobros). */
 export const TEXTO_IMAGEN_DEL_ASISTENTE = 'Imagen enviada por el asistente. Verla aquí no es prueba de ningún pago.';
+/** Los archivos que envía una persona desde la consola se guardan 30 días (no 90). */
 export const TEXTO_VENCIDO_ENVIADO = 'El archivo ya no está disponible (los archivos enviados se guardan 30 días).';
 export const AVISO_DESCARGA_ENVIADO = 'Archivo enviado desde la consola de su negocio.';
 export const AVISO_WA_ME =
