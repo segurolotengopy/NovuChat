@@ -92,9 +92,9 @@ export function useMenuLateral(pathname: string) {
   // El CSS (margen del contenido, panel) lee el estado del `<html>`. Va en
   // `useLayoutEffect` para que el primer dibujo ya salga con el menú en su
   // lugar: con `useEffect` la página se pintaba un instante sin menú y saltaba.
-  // SIN OPCIONES (quien todavía no eligió cuenta, «Mi cuenta» sin negocio) no
-  // hay nada que abrir: el estado es «vacio», el CSS esconde el sándwich y el
-  // contenido no deja un hueco a la izquierda. Corre en cada dibujo porque las
+  // SIN NAV (la cabecera no se dibuja sin sesión) no hay nada que abrir: el estado es «vacio». Desde el 17/11/2026
+  // el menú lleva siempre «Mi cuenta» y «Salir» al pie, así que quien no tiene negocio ve el sándwich con solo esas dos
+  // (sin ellas «Salir» quedaría inaccesible). Corre en cada dibujo porque las
   // opciones llegan después (los módulos del negocio se cargan aparte).
   useLayoutEffect(() => {
     const raiz = document.documentElement;
