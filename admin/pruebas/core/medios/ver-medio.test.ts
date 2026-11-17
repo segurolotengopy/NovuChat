@@ -269,6 +269,21 @@ describe('quién NO pasa (y no deja nada escrito)', () => {
     expect(await documentosDe(OTRO)).toEqual(antes);
     expect(await topes()).toEqual([]);
   });
+  it('un medio con origen «asistente» de OTRO comercio: permission-denied, sin almacén ni cambios en su metadato', async () => {
+    const e = await escena(OTRO, { meta: { origen: 'asistente' } });
+    const antes = await documentosDe(OTRO);
+    for (const quien of [admin(T, 'u-a-asist'), oper(T, 'u-o-asist')]) {
+      await expect(llamar(pedir(e), quien)).rejects.toMatchObject(falla('permission-denied', FIJOS.sinPermiso));
+      await expect(llamar(pedir(e, 'descargar'), quien)).rejects.toMatchObject(falla('permission-denied', FIJOS.sinPermiso));
+    }
+    expect(almacen.llamadas).toBe(0);
+    expect(await documentosDe(OTRO)).toEqual(antes);
+  });
+  it('un medio con origen «asistente» del PROPIO comercio sí se ve (control de la prueba anterior)', async () => {
+    const e = await escena(T, { meta: { origen: 'asistente' } });
+    const r = await llamar(pedir(e), admin(T, 'u-a-propio'));
+    expect(r).toMatchObject({ tipo: 'image' });
+  });
   it('correo sin verificar, sesión de Google con rol de comercio, ingesta y sesión sin claims: denegados sin escribir', async () => {
     const e = await escena();
     const antes = await documentosDe(T);
