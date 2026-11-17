@@ -190,6 +190,16 @@ Ningún comercio está en modalidad `produccion` todavía, así que la
 [ventana de mantenimiento de 23:30 a 01:30](contrato/anexo-tecnico-sla.md) no
 condiciona cuándo se publica.
 
+## Estado al 16/11/2026 (baja por NOTA DE VOZ en todos los flujos con baja por texto): sin publicar
+
+Decisión de Andres (16/11/2026, por botón). Hasta hoy el audio que pedía «no me escriban más» ni se confirmaba ni se registraba (las decisiones usan `t.texto`, vacío en un audio; `no_contactar` solo viajaba con el entrante).
+
+1. **Qué cambia:** cuando la TRANSCRIPCIÓN cumple `bjPideBaja` (pieza común `core/conversacion/baja.js`, sin alterar `BJ_BAJA`), el turno toma la ruta de baja (UN texto fijo, sin modelo, botones ni aviso) y el reporte del mensaje SALIENTE de esa confirmación lleva `evento: 'no_contactar'` (el servidor lo registra igual que el del entrante). Confirmar sin registrar sigue prohibido.
+2. **Dónde:** venta mínima (Q'Taco: `qtaco`, `qtaco-3727`, `prueba`, `ensayo-demo-a`), Walisuma, Casa Bermejo y el chat de NovuChat (decidido en «Armar turno» sobre los eventos de audio de la cola; los marca respondidos). La excepción del pedido en curso («no me manden/envíen nada») ya existía solo en venta mínima y rige igual por voz; en los otros tres no existe y no se agregó.
+3. **Mensajes por conversación:** 0 agregados y 0 quitados (la confirmación reemplaza la respuesta del turno). Un audio no entendido o vacío sigue su camino; topes de transcripción ya existentes (1.000 venta mínima, 1.500 Walisuma y Casa Bermejo, 4.400 chat), sin topes nuevos.
+4. **Segunda pasada (Andres, 16/11):** la baja por voz solo vale con una transcripción de hasta 160 caracteres (`BJ_VOZ_MAX` / `CH_BAJA_VOZ_MAX`, constante nombrada en cada nodo; más largo sigue el camino normal). En el chat, además, solo si ese audio es el ÚLTIMO evento con contenido de la ráfaga, y «Armar mensajes» marca respondido hasta el `seq` de ese audio (`hastaBaja`), nunca mensajes posteriores. Límite conocido: un audio de baja seguido de otro mensaje en la misma ráfaga no registra la baja.
+5. **Publicación:** nada republicado. Cada flujo vivo conserva la baja solo por texto hasta su republicación con botón (`publicar-flujo.sh`, desde `main`). Diferencia **declarada**, no un atraso silencioso.
+
 ## Estado al 16/11/2026 (Q'Taco, venta mínima): baja por texto, párrafos y «asistente virtual con IA»
 
 Las tres piezas comunes de UX (core) entran al flujo de Q'Taco con los sufijos `+baja` y `+texto` de `Flujos/experimental/venta-minima/construir.mjs` (se incluyen byte a byte, nunca se copian).

@@ -4014,6 +4014,110 @@ describe('baja por texto: el cliente pide no recibir más mensajes', () => {
     expect(t.aMi).toHaveLength(1);
     expect(t.aMi[0]!.cuerpo).not.toBe(CONFIRMACION);
   });
+  // BAJA POR NOTA DE VOZ (decisión de Andres, 16/11/2026): se decide en «Armar turno» sobre la TRANSCRIPCIÓN; el entrante de un audio no marca nada, así que el evento viaja en el reporte SALIENTE de la confirmación.
+  const salientes = (w: W): J[] => w.mundo.llamadas.ingesta.filter((r) => r['direccion'] === 'saliente');
+  const conNoContactar = (w: W): J[] => w.mundo.llamadas.ingesta.filter((r) => r['evento'] === 'no_contactar');
+  for (const dicho of ['no me escribas más', 'dame de baja', 'stop', 'Para de escribirme, por favor']) {
+    it(`una nota de voz que dice «${dicho}»: UN texto fijo, sin modelo ni aviso ni fila, y el reporte SALIENTE lleva no_contactar`, () => {
+      const w = crear();
+      w.medio.transcripcion = dicho;
+      const t = jugar(w, MAMA).audio();
+      expect(t.aMi).toHaveLength(1); // reemplaza la respuesta del turno: 0 mensajes agregados
+      expect(t.aMi[0]!.tipo).toBe('text');
+      expect(t.aMi[0]!.cuerpo).toBe(CONFIRMACION);
+      expect(tipoInter(t.aMi[0]!)).toBe('');
+      expect(w.modelo.llamadas).toHaveLength(0);
+      expect(t.orden).not.toContain('Llamar al modelo');
+      expect(t.plantillas).toHaveLength(0);
+      expect(t.aRecepcion).toHaveLength(0);
+      expect(w.hoja.filas).toHaveLength(0);
+      expect(entrantes(w)[0]!['evento']).toBeUndefined(); // el entrante de un audio no marca nada
+      expect(conNoContactar(w)).toHaveLength(1);
+      expect(salientes(w)[0]!['evento']).toBe('no_contactar'); // confirmar y registrar van juntos
+      expect(salientes(w)[0]!['texto']).toBe(CONFIRMACION);
+    });
+  }
+  it('NEGADO: la baja escrita no cambia (el entrante marca; el saliente no repite el evento)', () => {
+    const w = crear();
+    jugar(w, MAMA).texto('no me escribas más');
+    expect(entrantes(w)[0]!['evento']).toBe('no_contactar');
+    expect(salientes(w).filter((r) => r['evento'] === 'no_contactar')).toHaveLength(0);
+  });
+  it('tras la baja por voz el audio queda respondido: el próximo mensaje se atiende como siempre y el modelo no recibe la baja como contexto', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    w.medio.transcripcion = 'no me escribas más';
+    j.audio();
+    w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+    const t = j.texto('tengo una pastelería y quiero que me respondan los mensajes de noche');
+    expect(t.aMi.map((e) => e.cuerpo)).not.toContain(CONFIRMACION);
+    expect(JSON.stringify(w.modelo.llamadas)).not.toMatch(/no me escribas/);
+  });
+  describe('segunda pasada (16/11/2026): tope de 160 caracteres y la baja solo si el audio es lo último de la ráfaga', () => {
+    const RELLENO = ' Estoy en la oficina con mucho trabajo, hablando con varios proveedores y revisando facturas, entonces después te escribo con calma sobre todo lo demás que necesito.';
+    it('SÍ: frase corta («mándame el QR y no me llames que estoy en reunión»)', () => {
+      const w = crear();
+      w.medio.transcripcion = 'mándame el QR y no me llames que estoy en reunión';
+      const t = jugar(w, MAMA).audio();
+      expect(t.aMi.map((e) => e.cuerpo)).toEqual([CONFIRMACION]);
+      expect(conNoContactar(w)).toHaveLength(1);
+    });
+    for (const base of ['mándame el QR y no me llames que estoy en reunión.', 'ya pagué, no me contacten por teléfono.']) {
+      it(`NO: «${base}» de más de 160 caracteres no es baja`, () => {
+        const w = crear();
+        w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+        w.medio.transcripcion = base + RELLENO;
+        expect(w.medio.transcripcion.length).toBeGreaterThan(160);
+        const t = jugar(w, MAMA).audio();
+        expect(t.aMi.map((e) => e.cuerpo)).not.toContain(CONFIRMACION);
+        expect(conNoContactar(w)).toHaveLength(0);
+      });
+    }
+    it('RÁFAGA: un audio de baja seguido de un texto en la misma ráfaga NO es baja (la baja solo vale si el audio es lo último): el texto posterior se atiende y llega al modelo', () => {
+      const r = rafaga([valorMeta(mAudio(), MAMA), valorMeta(mTexto('tengo una pastelería y quiero que me respondan los mensajes de noche'), MAMA)], MAMA, (w) => {
+        w.medio.transcripcion = 'no me escribas más';
+        w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+      });
+      expect(r.aMi).toHaveLength(1);
+      expect(r.aMi[0]!.cuerpo).not.toBe(CONFIRMACION);
+      expect(JSON.stringify(r.ws[0]!.modelo.llamadas)).toMatch(/pastelería/);
+    });
+    it('RÁFAGA: un texto normal seguido de un audio de baja SÍ es baja: la confirmación sale una vez y el reporte saliente lleva no_contactar', () => {
+      const r = rafaga([valorMeta(mTexto('tengo una pastelería y quiero que me respondan los mensajes de noche'), MAMA), valorMeta(mAudio(), MAMA)], MAMA, (w) => {
+        w.medio.transcripcion = 'no me escribas más';
+        w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+      });
+      expect(r.aMi.map((e) => e.cuerpo)).toEqual([CONFIRMACION]);
+      expect(r.ws.flatMap((w) => w.mundo.llamadas.ingesta).filter((x) => x['evento'] === 'no_contactar')).toHaveLength(1);
+    });
+    it('NEGADO: tras la baja por voz, un mensaje POSTERIOR (otro turno) no se descarta: se atiende como siempre', () => {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      w.medio.transcripcion = 'no me escribas más';
+      j.audio();
+      w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+      const t = j.texto('tengo una pastelería y quiero que me respondan los mensajes de noche');
+      expect(t.aMi.map((e) => e.cuerpo)).not.toContain(CONFIRMACION);
+      expect(JSON.stringify(w.modelo.llamadas)).toMatch(/pastelería/);
+    });
+  });
+  for (const noEsBaja of ['mándame el QR', 'no me escribió el precio', 'no me escribas el precio, mándame el detalle', 'el doctor dijo que no me escriban']) {
+    it(`contraprueba: «${noEsBaja}» dicho en un audio NO es baja: ni confirmación ni no_contactar`, () => {
+      const w = crear();
+      w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+      w.medio.transcripcion = noEsBaja;
+      const t = jugar(w, MAMA).audio();
+      expect(t.aMi.map((e) => e.cuerpo)).not.toContain(CONFIRMACION);
+      expect(conNoContactar(w)).toHaveLength(0);
+    });
+  }
+  it('contraprueba: un audio sin transcripción sigue su camino («no pude leerlo»): ni confirmación ni no_contactar', () => {
+    const w = crear();
+    w.medio.transcripcion = null;
+    const t = jugar(w, MAMA).audio();
+    expect(t.aMi.map((e) => e.cuerpo)).not.toContain(CONFIRMACION);
+    expect(conNoContactar(w)).toHaveLength(0);
+  });
   it('sin texto propio en la configuración sale el neutro de la pieza común', () => {
     const w = crear();
     expect(jugar(w, MAMA).texto('dame de baja').aMi[0]!.cuerpo).toBe(CONFIRMACION);
