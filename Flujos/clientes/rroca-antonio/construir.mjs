@@ -4,9 +4,9 @@
  * construir.mjs — arma los JSON de «El Puente» de Antonio (tenant rroca-antonio) desde la plantilla y los datos
  * =============================================================================
  *
- *   node Flujos/experimental/rroca-antonio/construir.mjs               escribe rroca-antonio.json y rroca-antonio.prueba.json
- *   node Flujos/experimental/rroca-antonio/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
- *   node Flujos/experimental/rroca-antonio/construir.mjs --publicable [--flujo <json>] [--datos <json>] [--negocio <json>]
+ *   node Flujos/clientes/rroca-antonio/construir.mjs               escribe rroca-antonio.json y rroca-antonio.prueba.json
+ *   node Flujos/clientes/rroca-antonio/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
+ *   node Flujos/clientes/rroca-antonio/construir.mjs --publicable [--flujo <json>] [--datos <json>] [--negocio <json>]
  *                                                       no escribe: sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal (PR-C; lo llama publicar-flujo.sh)
  *   (cualquier otro argumento se rechaza: la ayuda no existe como opción, para que nada escriba por error)
  *
@@ -37,7 +37,7 @@ import { closeSync, constants, openSync, readFileSync, writeFileSync } from 'nod
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
-import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
+import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../../experimental/comun-sin-agente/construir-crm.mjs';
 import { injertar } from '../../src/core/sin-agente/envio.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
@@ -67,7 +67,7 @@ export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   // La base común de las ventas digitales (cobro, avisos y el motor de la conversación: prefijos `cb`, `av` y `vd`), los módulos del core de texto (no repetir y pregunta pendiente: prefijo `ct`) y, al final, lo PROPIO de Antonio (`ra.js`: solo datos y textos).
-  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../venta-digital/src/gmail.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/ra.js'],
+  librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/gmail.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/ra.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],

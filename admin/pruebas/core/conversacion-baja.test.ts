@@ -66,7 +66,7 @@ describe('bjTextoBaja', () => {
 
 describe('paridad con la copia de origen (hasta que la etapa 1 la retire)', () => {
   it('BJ_BAJA es literalmente la expresión de la venta digital (ampliada en común el 14/11/2026 en las dos)', () => {
-    const origen = readFileSync(join(RAIZ_REPO, 'Flujos/experimental/rroca-antonio/src/lib/ra.js'), 'utf8');
+    const origen = readFileSync(join(RAIZ_REPO, 'Flujos/clientes/rroca-antonio/src/lib/ra.js'), 'utf8');
     const m = /^const RA_BAJA = (\/.+\/i);$/m.exec(origen);
     expect(m, 'la copia de origen ya no existe: borrar esta prueba').not.toBeNull();
     expect(String(L.BJ_BAJA)).toBe(m![1]);

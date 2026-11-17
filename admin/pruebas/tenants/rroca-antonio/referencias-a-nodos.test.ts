@@ -10,7 +10,7 @@ import type { Flujo } from '../../lib/flujo';
 // @ts-expect-error el armador es un .mjs sin tipos
 import { problemasDeReferencias, referenciasDeNodos } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
 
-const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-antonio');
+const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/clientes/rroca-antonio');
 const leer = (a: string): Flujo => JSON.parse(readFileSync(join(CARPETA, a), 'utf8')) as Flujo;
 const copia = (f: Flujo): Flujo => JSON.parse(JSON.stringify(f)) as Flujo;
 const hallazgos = (f: Flujo): string[] => (problemasDeReferencias(f) as string[]);

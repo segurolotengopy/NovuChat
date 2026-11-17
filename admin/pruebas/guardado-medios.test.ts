@@ -326,7 +326,7 @@ const FLUJOS = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/exper
 const leer = (a: string): Flujo => JSON.parse(readFileSync(join(FLUJOS, a), 'utf8')) as Flujo;
 describe('en cada flujo cubierto la rama se arma igual (mismo código, mismas cabeceras) y las credenciales son las del propio flujo', () => {
   const CUBIERTOS = [
-    'rroca-evy/rroca-evy.json', 'rroca-emma/rroca-emma.json', 'rroca-ruben/rroca-ruben.json', 'rroca-antonio/rroca-antonio.json',
+    'rroca-evy/rroca-evy.json', 'rroca-emma/rroca-emma.json', 'rroca-ruben/rroca-ruben.json', '../clientes/rroca-antonio/rroca-antonio.json',
     'venta-minima/venta-minima.qtaco.json', 'venta-minima/venta-minima.ensayo-demo-a.json', 'venta-minima/venta-minima.prueba.json',
     'doctoras/doctoras.rroca-evy.json', 'doctoras/doctoras.rroca-emma.json', '../clientes/novuchat/chat-novuchat.novuchat.json', 'captacion-minima/captacion-minima.novuchat.json',
     'rroca-ruben/rroca-ruben.prueba.json', 'agenda-minima/agenda-minima.v0.json',

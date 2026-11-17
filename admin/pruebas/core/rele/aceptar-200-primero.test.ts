@@ -25,7 +25,7 @@ interface FlujoMinimo { nodes: Nodo[]; connections: Record<string, { main?: Arra
 
 /** Los flujos de producción de los constructores con receptor: rroca-evy, rroca-emma, rroca-ruben, rroca-antonio y las doctoras. */
 function flujosDeProduccion(): Array<{ ruta: string; flujo: FlujoMinimo }> {
-  const dirs = ['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio', 'doctoras'];
+  const dirs = ['rroca-evy', 'rroca-emma', 'rroca-ruben', '../clientes/rroca-antonio', 'doctoras'];
   const salida: Array<{ ruta: string; flujo: FlujoMinimo }> = [];
   for (const d of dirs) {
     for (const n of readdirSync(join(EXP, d))) {
@@ -81,7 +81,7 @@ describe('«Aceptar (200)» queda antes de toda espera y de toda llamada al rel�
   const flujos = flujosDeProduccion();
   it('se revisan los flujos de producción de Evy, Emma, Rubén, Antonio y las doctoras', () => {
     expect(flujos.map((x) => x.ruta).sort()).toEqual([
-      'doctoras/doctoras.rroca-emma.json', 'doctoras/doctoras.rroca-evy.json', 'rroca-antonio/rroca-antonio.json',
+      '../clientes/rroca-antonio/rroca-antonio.json', 'doctoras/doctoras.rroca-emma.json', 'doctoras/doctoras.rroca-evy.json',
       'rroca-emma/rroca-emma.json', 'rroca-evy/rroca-evy.json', 'rroca-ruben/rroca-ruben.json',
     ]);
   });
