@@ -201,7 +201,7 @@ describe('La campaña de la ventana (contrato Ad ID, 17/11/2026)', () => {
 
   it('negando: valores con otra forma se ignoran y el mensaje se cuenta igual', async () => {
     const malos: Array<Record<string, unknown>> = [
-      { adId: '12a45' }, { adId: '1'.repeat(41) }, { adId: 12345 }, { adId: { x: 1 } },
+      { adId: '12a45' }, { adId: '1'.repeat(33) }, { adId: '1234567' }, { adId: 12345 }, { adId: { x: 1 } },
       { campanaId: 'con espacio' }, { campanaId: 'x'.repeat(61) }, { campanaId: '../otra' }, { campanaId: ['a'] },
       { campanaId: 'ok', campanaPor: 'otro' }, { campanaId: 'ok', campanaPor: 1 },
     ];

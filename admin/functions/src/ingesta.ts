@@ -267,7 +267,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
   const origen = typeof c['origen'] === 'string' && ORIGENES.has(c['origen'])
     ? c['origen'] : 'directo';
   // Campaña de la ventana: valor con otra forma se ignora (el mensaje se cuenta igual).
-  const adId = typeof c['adId'] === 'string' && /^[0-9]{1,40}$/.test(c['adId']) ? c['adId'] : undefined;
+  const adId = typeof c['adId'] === 'string' && /^[0-9]{8,32}$/.test(c['adId']) ? c['adId'] : undefined;
   const campanaId = typeof c['campanaId'] === 'string' && /^[A-Za-z0-9_-]{1,60}$/.test(c['campanaId'])
     ? c['campanaId'] : undefined;
   const campanaPor = c['campanaPor'] === 'adId' || c['campanaPor'] === 'texto' ? c['campanaPor'] : undefined;
