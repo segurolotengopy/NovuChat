@@ -103,17 +103,35 @@ async function prepararPantalla(page: Page, menuAbierto: boolean): Promise<void>
   await expect(botonMenu(page)).toHaveAttribute('aria-expanded', String(menuAbierto));
 }
 
-/** Un elemento es ALCANZABLE si, tras llevarlo a la vista, queda dentro de la ventana y dentro de la caja que recorta (`.cv-cuerpo`). */
-async function medir(page: Page, objetivo: ReturnType<Page['locator']>) {
-  await objetivo.scrollIntoViewIfNeeded();
+/**
+ * Un elemento es ALCANZABLE si una persona llega a él con la RUEDA (o el dedo) sobre el hilo y queda dentro de la ventana y de la caja que recorta
+ * (`.cv-cuerpo`). No se usa `scrollIntoViewIfNeeded`: también corre los padres con overflow:hidden, que nadie puede mover, y taparía el defecto.
+ * Además `.cv-cuerpo` tiene que seguir en scrollTop 0 (si se corrió, algo quedó recortado por arriba).
+ */
+async function llegar(page: Page, objetivo: ReturnType<Page['locator']>) {
+  // El cursor va sobre el hilo mientras se ve; si ya se desplazó fuera de la vista, sobre lo que quede visible del detalle.
+  const hilo = (await page.locator('.cv-hilo').boundingBox())!;
+  const cuerpo = (await page.locator('.cv-cuerpo').boundingBox())!;
+  const detalle = (await page.getByTestId('detalle').boundingBox())!;
+  const visible = hilo.y >= cuerpo.y && hilo.y + 40 <= cuerpo.y + cuerpo.height;
+  const x = visible ? hilo.x + hilo.width / 2 : detalle.x + detalle.width / 2;
+  const y = visible ? hilo.y + Math.min(hilo.height / 2, 40) : Math.max(cuerpo.y, 0) + 12;
+  await page.mouse.move(x, y);
+  for (let i = 0; i < 40; i++) {
+    const r = await objetivo.evaluate((el) => { const b = el.getBoundingClientRect(); const c = document.querySelector('.cv-cuerpo')!.getBoundingClientRect(); return { dentro: b.bottom <= Math.min(c.bottom, window.innerHeight) && b.top >= Math.max(c.top, 0) }; });
+    if (r.dentro) break;
+    await page.mouse.wheel(0, 300);
+    await page.waitForTimeout(40);
+  }
   const el = await objetivo.elementHandle();
   return page.evaluate((nodo) => {
     const r = (nodo as HTMLElement).getBoundingClientRect();
-    const caja = document.querySelector('.cv-cuerpo')!.getBoundingClientRect();
+    const cuerpo = document.querySelector('.cv-cuerpo')!;
+    const caja = cuerpo.getBoundingClientRect();
     const hilo = document.querySelector('.cv-hilo')!.getBoundingClientRect();
     return {
       arriba: r.top, abajo: r.bottom, alto: r.height, ventana: window.innerHeight,
-      cajaArriba: caja.top, cajaAbajo: caja.bottom, hiloAlto: hilo.height,
+      cajaArriba: caja.top, cajaAbajo: caja.bottom, hiloAlto: hilo.height, cuerpoScroll: cuerpo.scrollTop,
     };
   }, el);
 }
@@ -143,7 +161,8 @@ for (const t of TAMANOS) {
         await page.getByLabel('Mensaje para el cliente').fill(Array.from({ length: 40 }, (_, i) => `línea ${i + 1}`).join('\n'));
 
         const enviar = page.getByRole('button', { name: 'Enviar archivo' });
-        const m = await medir(page, enviar);
+        const m = await llegar(page, enviar);
+        expect(m.cuerpoScroll, 'la caja de la conversación no se corrió: nada quedó recortado por arriba').toBe(0);
         if (CAPTURAS) await page.screenshot({ path: `${CAPTURAS}/${t.nombre}-menu-${menuAbierto ? 'abierto' : 'plegado'}.png` });
         expect(m.abajo, `«Enviar archivo» termina dentro de la ventana (${m.abajo} de ${m.ventana})`).toBeLessThanOrEqual(m.ventana);
         expect(m.arriba, '«Enviar archivo» no queda por encima de la ventana').toBeGreaterThanOrEqual(0);
@@ -151,7 +170,7 @@ for (const t of TAMANOS) {
         expect(m.arriba, '«Enviar archivo» no queda por encima de la caja').toBeGreaterThanOrEqual(m.cajaArriba - 1);
         await expect(enviar).toBeEnabled();
 
-        const previa = await medir(page, page.getByAltText('Vista previa de la imagen que se enviará'));
+        const previa = await llegar(page, page.getByAltText('Vista previa de la imagen que se enviará'));
         expect(previa.alto, 'la vista previa se ve (no queda en 0 píxeles)').toBeGreaterThan(40);
         expect(previa.abajo, 'la vista previa queda dentro de la caja que recorta').toBeLessThanOrEqual(previa.cajaAbajo + 1);
         // El hilo es lo que se lee: puede reducirse, pero no a nada.
