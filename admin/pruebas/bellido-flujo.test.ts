@@ -1126,6 +1126,31 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
         expect(String(r2['contextoTurno'])).not.toContain('Llegó por una campaña');
       });
 
+      it('Ad ID (17/11/2026): una campaña solo por Ad ID (sin texto) NO salta el menú ni marca la bienvenida; Bellido no cambia', () => {
+        const AD = '100000000000001';
+        const solo = { ...vigente('x', 'solo'), texto: '', adIds: [AD] };
+        const sd: J = {};
+        const e = entra({ type: 'text', text: { body: 'hola' }, referral: { source_type: 'ad', source_id: AD } }, conCampanas([solo]));
+        expect(e['campana']).toMatchObject({ id: 'solo', texto: '', por: 'adId' }); // Normalizar la reconoce; el Estado de Bellido no la cuenta (texto vacío)
+        const r = turno({ userInput: e['userInput'], campana: e['campana'] }, sd);
+        expect(r['accion']).not.toBe('agente');
+        expect(String(r['contextoTurno'] ?? '')).not.toContain('campaña');
+        expect(sd['conversaciones']?.[TELEFONO]?.['menu']).not.toBe(true);
+      });
+
+      it('Ad ID (17/11/2026): una campaña CON texto reconocida por Ad ID salta el menú como la del texto y dice que llegó desde un anuncio', () => {
+        const AD = '100000000000001';
+        const sd: J = {};
+        const e = entra({ type: 'text', text: { body: 'hola' }, referral: { source_type: 'ad', source_id: AD } }, conCampanas([{ ...vigente(TEXTO, 'cb'), adIds: [AD] }]));
+        expect(e['campana']).toMatchObject({ id: 'cb', por: 'adId' });
+        const r = turno({ userInput: e['userInput'], campana: e['campana'] }, sd);
+        expect(r['accion']).toBe('agente');
+        expect(String(r['contextoTurno'])).toContain('preséntate en una línea');
+        expect(String(r['contextoTurno'])).toContain('llegó desde un anuncio de la campaña «' + TEXTO);
+        expect(String(r['contextoTurno'])).not.toContain('su mensaje es el texto de la campaña');
+        expect(sd['conversaciones'][TELEFONO]['menu']).toBe(true);
+      });
+
       it('si el texto de la campaña ES una opción del menú, entra directo a esa rama', () => {
         for (const [texto, tipo] of [['Recién nacido', 'recién nacido'], ['Control niño sano', 'niño sano'], ['niño sano', 'niño sano']] as const) {
           const sd: J = {};
