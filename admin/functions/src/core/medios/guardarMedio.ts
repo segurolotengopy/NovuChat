@@ -1,6 +1,8 @@
 /**
  * =============================================================================
  * GUARDAR UN MEDIO ENTRANTE (imagen, audio, video, documento) — 90 días, con bandera
+ * (EXCEPCIÓN, 16/11/2026: también se guarda una IMAGEN SALIENTE del asistente, con `origen:'asistente'`, para el control
+ * de calidad en la consola; nunca texto, audio, documento ni lo enviado por una persona. Comparte los topes con lo entrante.)
  * =============================================================================
  *
  * DECISIONES DE ANDRES (20, 22 y 23/10/2026):
@@ -236,7 +238,7 @@ export async function guardarMedioDe(
 
   const db = deps.db ?? getFirestore();
 
-  // Solo se guarda lo que corresponde a un mensaje ENTRANTE reciente del mismo tipo (un sticker
+  // Solo se guarda lo que corresponde a un mensaje ENTRANTE reciente del mismo tipo (o, SOLO imagen, uno SALIENTE del asistente) (un sticker
   // registrado como `sticker` corresponde a `image`: `TIPOS_DE_MENSAJE`).
   let candidatos: FirebaseFirestore.QuerySnapshot;
   try {
@@ -248,10 +250,20 @@ export async function guardarMedioDe(
   }
   const mensaje = candidatos.docs.find((d) => {
     const ts = milis(d.get('ts'));
+    const vigente = ts !== null && ahoraMs - ts <= VENTANA_DEL_MENSAJE_MS && ts <= ahoraMs + 5 * 60_000;
+    // IMAGEN SALIENTE DEL ASISTENTE (plan 16/11/2026, control de calidad): la única excepción a «entrante».
+    // Solo `image` (nunca texto, audio, documento ni video), y no la que mandó una PERSONA desde la
+    // consola (`autor: 'persona'` o `medio.origen: 'enviado'`: esa tiene su propio camino y su propio
+    // metadato, `mediosEnviados`). El tipo del mensaje debe ser exactamente `image` (ni sticker).
+    const delAsistente = d.get('direccion') === 'saliente' && tipo === 'image' && String(d.get('tipo')) === 'image'
+      && d.get('autor') !== 'persona' && d.get('medio.origen') !== 'enviado';
+    if (delAsistente) return vigente;
     return d.get('direccion') === 'entrante' && TIPOS_DE_MENSAJE[tipo].includes(String(d.get('tipo')))
       && ts !== null && ahoraMs - ts <= VENTANA_DEL_MENSAJE_MS && ts <= ahoraMs + 5 * 60_000;
   });
   if (!mensaje) return { codigo: 409, cuerpo: { error: 'sin_mensaje' } };
+  // `origen: 'asistente'` SOLO para lo que el asistente envió; lo entrante queda sin el campo, como siempre.
+  const delAsistenteMarca = mensaje.get('direccion') === 'saliente' ? { origen: 'asistente' as const } : {};
 
   const refMedio = db.doc(`tenants/${e.tenantId}/mediosRecibidos/${nombreDeObjeto(idMeta)}`);
   const dia = diaDeLaPaz(ahoraMs);
@@ -337,7 +349,7 @@ export async function guardarMedioDe(
       return { t: 'anotado' };
     }
     tx.create(refMedio, {
-      idMeta, conversacionId: `wa_${e.telefono}`, tipo, categoria: tipo, mime: medio.mime, ext: medio.ext, estado: 'pendiente',
+      idMeta, conversacionId: `wa_${e.telefono}`, tipo, categoria: tipo, mime: medio.mime, ext: medio.ext, estado: 'pendiente', ...delAsistenteMarca,
       tamano, ruta: rutaDeMedio(e.tenantId, dia, idMeta, medio.ext), en: Timestamp.fromMillis(ahoraMs),
       // Un pendiente huérfano caduca solo por el TTL en un día.
       vence: Timestamp.fromMillis(ahoraMs + DIA_MS),
@@ -380,9 +392,9 @@ export async function guardarMedioDe(
     await db.runTransaction(async (tx) => {
       tx.update(refMedio, {
         estado: 'guardado', sha256: createHash('sha256').update(e.bytes).digest('hex'), vence,
-        ruta, ext: firma.ext, mime: firma.mime, tamano, categoria: tipo,
+        ruta, ext: firma.ext, mime: firma.mime, tamano, categoria: tipo, ...delAsistenteMarca,
       });
-      tx.update(mensaje.ref, { medio: { estado: 'guardado', mime: firma.mime, tamano, vence } });
+      tx.update(mensaje.ref, { medio: { estado: 'guardado', mime: firma.mime, tamano, vence, ...delAsistenteMarca } });
     });
     return { codigo: 200, cuerpo: { ruta, repetido: false } };
   } catch (error) {
