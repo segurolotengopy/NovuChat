@@ -283,8 +283,8 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
   it('B (Andres, 24/10): ningún saludo ni texto fijo de Emma menciona «campaña» (la campaña solo se menciona cuando el flujo reconozca su texto de entrada)', () => {
     // «Campaña Meta Ads» es un valor del mapa del miniCRM (dato del equipo), nunca texto al cliente: la excepción vale SOLO para los nodos de la rama del miniCRM (`NODOS_DE_CRM`); en cualquier otro nodo o archivo la palabra sigue prohibida.
     const textoRevisado = (a: string): string => {
-      // Los identificadores del reporte de campana (`campanaId`, `campanaPor`, 17/11/2026) son nombres de campos hacia la ingesta, no texto al cliente.
-      const t = leer(a).replace(/campana(Id|Por)\b/g, 'campo$1');
+      // Los identificadores del vínculo con el anuncio (`campana`, `campanas`, `campanasActivas`, `campanaId`, `campanaPor`, `laCampana`; 17/11/2026) son nombres de campos y de variables, no texto al cliente.
+      const t = leer(a).replace(/\b(?:laCampana|campanasCfg|campanasActivas|campanas|campana|campanaId|campanaPor)\b/g, 'campo');
       if (!a.endsWith('.json')) return t;
       const f = JSON.parse(t) as { nodes?: Array<{ name: string }> };
       return JSON.stringify({ ...f, nodes: (f.nodes ?? []).filter((n) => !(NODOS_DE_CRM as string[]).includes(n.name)) });
