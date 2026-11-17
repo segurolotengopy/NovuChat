@@ -17,14 +17,16 @@ const LINEA_BASE: Array<[string, number, number]> = [
   ['agenda-minima/agenda-minima.prueba.json', 71, 5], ['agenda-minima/agenda-minima.v0.json', 71, 5],
   ['captacion-minima/captacion-minima.novuchat.json', 52, 5], ['captacion-minima/captacion-minima.prueba.json', 52, 5],
   ['../clientes/novuchat/chat-novuchat.novuchat.json', 76, 5], ['../clientes/novuchat/chat-novuchat.prueba.json', 76, 5],
-  ['../clientes/rroca-antonio/rroca-antonio.json', 64, 6], ['../clientes/rroca-antonio/rroca-antonio.prueba.json', 59, 6],
+  ['../clientes/rroca-antonio/rroca-antonio.json', 68, 6], ['../clientes/rroca-antonio/rroca-antonio.prueba.json', 63, 6],
   ['rroca-emma/rroca-emma.json', 53, 6], ['rroca-emma/rroca-emma.prueba.json', 48, 6],
   ['../clientes/rroca-evy/rroca-evy.json', 53, 6], ['../clientes/rroca-evy/rroca-evy.prueba.json', 48, 6],
-  ['rroca-ruben/rroca-ruben.json', 64, 6], ['rroca-ruben/rroca-ruben.prueba.json', 59, 6],
-  ['venta-minima/venta-minima.qtaco-3727.json', 81, 7],
+  ['rroca-ruben/rroca-ruben.json', 68, 6], ['rroca-ruben/rroca-ruben.prueba.json', 63, 6],
+  ['venta-minima/venta-minima.qtaco-3727.json', 84, 7],
 ];
 const HOST_META = new RegExp(['graph', 'facebook', 'com'].join('\\.'));
-const hablaConMeta = (n: Nodo): boolean => HOST_META.test(JSON.stringify(n.parameters ?? {})) || n.type.endsWith('whatsApp');
+// La rama del guardado de la imagen SALIENTE (16/11/2026) hace GET de una imagen ya enviada y la sube a `guardarMedio`: ningún nodo suyo manda un mensaje (+3 o +4 nodos en estos flujos, +0 emisores).
+const RAMA_SALIENTE = ['Preparar guardado (saliente)', '¿Por enlace? (guardado saliente)', 'Descargar enlace (guardado saliente)', 'Pedir imagen a Meta (guardado saliente)', 'Descargar imagen de Meta (guardado saliente)', 'Guardar imagen enviada'];
+const hablaConMeta = (n: Nodo): boolean => (!RAMA_SALIENTE.includes(n.name) && HOST_META.test(JSON.stringify(n.parameters ?? {}))) || n.type.endsWith('whatsApp');
 
 describe('una fila por conversación: sin mensajes de Meta nuevos en los 15 JSON regenerados', () => {
   it('hay 15 JSON en la línea base', () => expect(LINEA_BASE).toHaveLength(15));

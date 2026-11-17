@@ -466,7 +466,7 @@ describe('0 mensajes por conversación agregados o quitados', () => {
 });
 
 // =====================================================================================================
-describe('tope de 73 nodos: «Consumir cupos» y «¿Cupo concedido?» no agregan ni alteran lo que lee el cliente', () => {
+describe('tope de 76 nodos (73 + 3 de la rama del guardado de la imagen saliente): «Consumir cupos» y «¿Cupo concedido?» no agregan ni alteran lo que lee el cliente', () => {
   /** Lo que el cliente recibe, tal cual (texto, botones, tipo): la secuencia completa de un recorrido con aviso. */
   const recorrido = (w: Mundial): string[] => {
     const v: string[] = [];
@@ -513,8 +513,8 @@ describe('tope de 73 nodos: «Consumir cupos» y «¿Cupo concedido?» no agrega
     expect(leido).not.toMatch(/pas[eé] tu pedido|ya (lo |la )?pas[eé]/i);
   });
 
-  it('el flujo versionado de Q\'Taco tiene exactamente 73 nodos y ninguno de los dos es de mensajería al cliente', () => {
-    expect(QTACO.nodes).toHaveLength(73);
+  it('el flujo versionado de Q\'Taco tiene exactamente 76 nodos y ninguno de los dos es de mensajería al cliente', () => {
+    expect(QTACO.nodes).toHaveLength(76);
     for (const n of ['Consumir cupos', '¿Cupo concedido?']) {
       expect(String(nodo(QTACO, n).type)).not.toMatch(/whatsapp/i);
       expect(JSON.stringify(nodo(QTACO, n).parameters)).not.toMatch(/graph\.facebook|messages/);

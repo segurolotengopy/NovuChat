@@ -155,10 +155,10 @@ describe('cabeceras de la consola', () => {
 describe('una vista previa grande no deja el botón fuera de alcance (15/11/2026)', () => {
   const css = leer('web/src/central/estilos/conversaciones.css');
   const regla = (sel: string) => new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
-  it('el bloque del selector se desplaza y no pasa de 55 vh', () => {
-    const r = regla('.cv-adjuntar');
-    expect(r).toMatch(/max-height:\s*55vh/);
-    expect(r).toMatch(/overflow-y:\s*auto/);
+  it('el detalle se desplaza entero y el hilo tiene un mínimo (el tope de 55 dvh del bloque, que se medía contra la ventana, ya no está; 17/11/2026)', () => {
+    expect(regla('.cv-detalle')).toMatch(/overflow-y:\s*auto/);
+    expect(regla('.cv-hilo')).toMatch(/min-height:\s*12rem/);
+    expect(regla('.cv-adjuntar')).not.toMatch(/max-height/);
   });
   it('la imagen previa se limita a 28 vh y los botones quedan pegados abajo', () => {
     expect(regla('.cv-adjunto-previa img')).toMatch(/max-height:\s*28vh/);
@@ -167,8 +167,6 @@ describe('una vista previa grande no deja el botón fuera de alcance (15/11/2026
   it('el fondo de los botones pegados usa un token que existe, y el error va antes de la vista previa', () => {
     expect(regla('.cv-adjunto-previa .cv-adjuntar-botones')).toMatch(/background:\s*var\(--color-surface\)/);
     expect(leer('web/src/central/estilos/diseno.css')).toMatch(/--color-surface:/);
-    expect(regla('.cv-adjuntar')).toMatch(/max-height:\s*55dvh/);
-    expect(regla('.cv-adjuntar')).toMatch(/scroll-padding-bottom/);
     const f = leer('web/src/central/componentes/AdjuntarComoPersona.tsx');
     expect(f.indexOf('role="alert" className="cv-error')).toBeGreaterThan(0);
     expect(f.indexOf('role="alert" className="cv-error')).toBeLessThan(f.indexOf('className="cv-adjunto-previa"'));

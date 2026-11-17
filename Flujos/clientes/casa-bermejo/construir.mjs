@@ -30,6 +30,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
 import { injertar } from '../../src/core/sin-agente/envio.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
+import { fuentesDeLaCadenaComun, hallazgosDelGuardadoSaliente, injertarGuardadoSaliente, NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE, URL_DESCARGA_SALIENTE } from '../../src/core/sin-agente/guardado-saliente.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 import { problemasDeReferencias } from '../../src/core/sin-agente/referencias.mjs';
 
@@ -38,7 +39,8 @@ export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/casa-be
 export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../../experimental/venta-minima/flujo.plantilla.json');
 // 47 + los 9 de la rama común del GUARDADO de medios (Flujos/src/core/sin-agente/guardado.mjs, contrato M1↔M2 del 29/10/2026 y v2 del 30/10):
 // +1 nodo (`Traer catálogo`, 57): excepción APROBADA por Andres el 12/11/2026 (docs/versiones-por-cliente.md, «Estado al 12/11/2026 (Casa Bermejo)»). Excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
-export const TOPE_DE_NODOS = 57;
+// +4: la rama del guardado de la IMAGEN SALIENTE del asistente (QR por media id; plan del 16/11/2026, bloque 2a): «Preparar guardado (saliente)», «Pedir imagen a Meta…», «Descargar imagen de Meta…» y «Guardar imagen enviada». 57 → 61: aprobación de Andres pendiente (docs/versiones-por-cliente.md).
+export const TOPE_DE_NODOS = 61;
 export const FLUJO_PRODUCCION = 'casa-bermejo.json';
 export const FLUJO_PRUEBA = 'casa-bermejo.prueba.json';
 
@@ -256,6 +258,9 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
   if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
   // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
   if (nombreDelNodo === 'Descargar medio (guardado)' && url === URL_DESCARGA_GUARDADO) return true;
+  // El guardado de la imagen SALIENTE: la URL del CDN de Meta (expresión exacta del módulo común) y, solo en la vía por enlace, el MISMO enlace que se envió al cliente (sin credencial).
+  if (nombreDelNodo === 'Descargar imagen de Meta (guardado saliente)' && url === URL_DESCARGA_SALIENTE) return true;
+  if (nombreDelNodo === 'Descargar enlace (guardado saliente)' && url === '={{ $json.enlace }}') return true;
   // El catálogo de la plataforma de la tienda: UNA dirección fija (la base que pone quien publica) y la ruta del contrato v1, solo del mercado de Bolivia, sin nada más.
   if (nombreDelNodo === 'Traer catálogo') {
     // La dirección base (marcador o un host de la lista cerrada) + la ruta del contrato v1 + el mercado calculado por UNA expresión fija (EXPRESION_MERCADO): nada más.
@@ -280,6 +285,8 @@ export function guardias(variante, flujo, opciones = {}) {
   if (nodos.length > tope) h.push(`tiene ${nodos.length} nodos y el tope es ${tope}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md)`);
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
+  // El guardado de la imagen SALIENTE del asistente: la rama común completa (vía media), debajo de todo y sin credencial ajena.
+  h.push(...hallazgosDelGuardadoSaliente(flujo || {}, { exigir: true, vias: ['media'] }));
   // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
   h.push(...hallazgosDeExpresionesN8n(flujo || {}));
   if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
@@ -310,7 +317,7 @@ export function guardias(variante, flujo, opciones = {}) {
   if (bajar && !/ruta === 'sigue'/.test(JSON.stringify(p(bajar)))) h.push('«¿Bajar medio?» no exige que la puerta diga «sigue» (un cliente bloqueado no descarga medios)');
   // La variante de PRUEBA nunca usa credenciales de producción: ni la de Graph ni la de Gemini.
   if (variante === 'prueba') {
-    const libres = new Set([NODO_PRUEBA, 'Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Guardar comprobante', 'Cotejar en el servidor', 'Avisar al servidor', ...NODOS_DE_INGESTA_DEL_GUARDADO]);
+    const libres = new Set([NODO_PRUEBA, 'Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Guardar comprobante', 'Cotejar en el servidor', 'Avisar al servidor', ...NODOS_DE_INGESTA_DEL_GUARDADO, ...NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE]);
     for (const n of nodos) {
       for (const [tipo, c] of Object.entries(n.credentials || {})) {
         const nombreCred = String((c || {}).name || '');
@@ -524,6 +531,8 @@ export function armarCasaBermejo(proyecto, datos, v, origenReceptor = leerRecept
   rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; if ((m.evento === 'qr_enviado' || m.evento === 'pedido_sin_cobro') && Array.isArray(m.lineas) && m.lineas.length) { r.lineas = m.lineas; if (m.entrega) r.entrega = m.entrega; } } return JSON.stringify(r); })() }}";
   // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
   injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
+  // El GUARDADO de la imagen que el asistente ENVÍA (QR por media id): módulo común, cuelga de «Reportar mensaje (saliente)» y va debajo de todo (plan del 16/11/2026, bloque 2a).
+  injertarGuardadoSaliente(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio`, vias: ['media'], fuentes: fuentesDeLaCadenaComun() });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);

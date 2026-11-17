@@ -459,6 +459,8 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   function globalesDe(it: Item | null): J {
     return {
       $json: it?.json ?? {},
+      // `$binary` (los metadatos del binario del ítem actual): el arnés no simula binarios, así que va vacío (como un ítem sin archivo).
+      $binary: {},
       Date: relojFijo(ahoraMs),
       $getWorkflowStaticData: (tipo?: string) => (tipo === 'node' ? (sdNodos['__expresion__'] ??= {}) : sd),
       $workflow: { id: idDeFlujo, name: flujo.name, active: true },
@@ -754,6 +756,16 @@ export function crearMundo(op: OpcionesMundo): Mundo {
       first: (rama?: number, corrida?: number) => ({ json: elegirItems(n, rama, corrida)[0] ?? {} }),
       all: (rama?: number, corrida?: number) => elegirItems(n, rama, corrida).map((json) => ({ json })),
       item: { json: elegirItems(n)[0] ?? {} },
+      // `$('Nodo').itemMatching(i)`: el ítem de ese nodo emparejado con el ítem `i` de la ENTRADA de este Code (como lo resuelve n8n en modo «todos los ítems»).
+      itemMatching: (indice: number) => {
+        const origen = items[indice];
+        if (origen === undefined) throw new Error(`itemMatching: la entrada de «${nombre}» no tiene el ítem ${String(indice)}`);
+        const caminado = caminarEmparejamiento(origen, n);
+        if (caminado !== undefined) return { json: clonar(caminado.json) };
+        const par = origen.linaje[n];
+        if (par !== undefined) return { json: clonar(par) };
+        throw new Error(`sin ítem emparejado con «${n}» (itemMatching ${String(indice)}; n8n: «Paired item data unavailable»)`);
+      },
       isExecuted: n in refs,
     });
     const globales: Record<string, unknown> = {

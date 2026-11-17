@@ -119,8 +119,11 @@ if (!(esVisual && categoriaMedio === 'comprobante') && (ficha.riesgo || raEsRies
 }
 
 // 1a. UN PEDIDO DE BAJA («no me escribas más», «ya no me escriban», «no me escribás»), con o sin QR abierto: un texto fijo corto de confirmación y NADA más —ni el modelo, ni la invitación a pagar, ni botones de producto, ni aviso a Antonio—.
-//     El `no_contactar` ya viaja con el reporte del entrante. El QR abierto queda como está (no se cancela solo). Va justo después de la protección y ANTES de la configuración, los medios, los botones y el cobro con el QR abierto: quien pidió la baja no recibe nada más.
-if (raPideBaja(textoCliente)) return salir({ tipo: 'baja', cat: cat });
+//     El `no_contactar` de un texto escrito ya viaja con el reporte del entrante; el de un audio viaja con la confirmación (reporte saliente, `porVoz`). El QR abierto queda como está (no se cancela solo). Va justo después de la protección y ANTES de la configuración, los medios, los botones y el cobro con el QR abierto: quien pidió la baja no recibe nada más.
+// Una baja DICTADA (nota de voz): solo cuenta la transcripción corta (hasta BAJA_POR_VOZ_MAX caracteres, el mismo valor que BJ_VOZ_MAX y CH_BAJA_VOZ_MAX de #1002, por decisión de Andres del 17/11/2026); un audio más largo que pida la baja ya NO se confirma (antes se confirmaba sin registrarse) y sigue el camino normal.
+// `porVoz` le avisa a «Armar mensajes» que el texto del entrante va vacío (es un audio) y el `no_contactar` debe viajar con la confirmación.
+const BAJA_POR_VOZ_MAX = 160;
+if (raPideBaja(textoCliente) && (!esAudio || textoCliente.length <= BAJA_POR_VOZ_MAX)) return salir({ tipo: 'baja', cat: cat, porVoz: esAudio });
 
 // 1a-gmail. EL GMAIL TRAS UNA VENTA CONFIRMADA: si el flujo ya se lo pidió a este teléfono (`gmailPedidoMs`) y aún no lo tiene (`gmail`), un TEXTO ESCRITO con una «@» es su respuesta. Lo lee el CÓDIGO sobre el texto literal del cliente
 //     (`vgExtraerGmail`); el modelo no interviene, no ve el correo y el turno no entra en la memoria de la charla. Solo `@gmail.com`: otro dominio, varios correos o un correo mal escrito reciben un texto fijo que lo pide de nuevo. Un audio, una imagen o un botón

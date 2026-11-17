@@ -302,6 +302,14 @@ switch (plan) {
     if (base.transferir) avisarARecepcion(base.motivo);
     break;
 
+  // La BAJA (pieza común del core `baja.js`): UN texto fijo, sin saludo, sin botón y sin aviso; ni el menú ni el modelo. 0 mensajes agregados: reemplaza la respuesta del turno. Si fue una nota de voz, el entrante
+  // iba sin texto y no marcó nada: el `no_contactar` viaja en el reporte de ESTE mensaje saliente (confirmar sin registrar está prohibido). No toca citas.
+  case 'baja': {
+    const textoBaja = bjTextoBaja(undefined);
+    agregar('paciente', mTexto(textoBaja), textoBaja, textoBaja, { tipoReporte: 'text', evento: base.porVoz === true ? 'no_contactar' : undefined });
+    break;
+  }
+
   case 'menu': {
     menu(String(cfg.mensajeMenu || '').trim() || '¿Qué necesitas hoy?');
     break;
