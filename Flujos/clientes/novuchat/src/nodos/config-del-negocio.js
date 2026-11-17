@@ -111,7 +111,22 @@ if (codigo === 409) {
     plantillaAviso: plantilla && /^[a-z0-9_]{1,64}$/.test(plantilla) ? plantilla : undefined,
   });
   const estadoDeLaConsola = util(cuerpo.estadoComercio);
+  // --- CAMPAÑAS VIGENTES (17/11/2026, contrato Ad ID + texto): el servidor manda SOLO las aplicadas y vigentes; aqui se vuelve a mirar la vigencia contra el reloj. Elementos
+  // `{ id, texto, adIds }` (el texto puede ser ''), maximo 10; sin texto y sin adIds se descartan. Solo VINCULAN la conversacion: no cambian el menu ni la respuesta.
+  const adIdsDe = (k) => (Array.isArray(k.adIds) ? k.adIds.map((a) => String(a)).filter((a) => /^[0-9]{8,32}$/.test(a)).slice(0, 5) : []);
+  const campanasActivas = JSON.stringify((Array.isArray(cuerpo.campanas) ? cuerpo.campanas : [])
+    .map((k) => (k && typeof k === 'object' ? { k, texto: typeof k.texto === 'string' && k.texto.trim() !== '' && k.texto.length <= 300 ? k.texto.trim() : '', adIds: adIdsDe(k) } : null))
+    .filter((x) => x && (x.texto !== '' || x.adIds.length > 0))
+    .filter(({ k }) => {
+      const desde = Date.parse(String(k.inicio || ''));
+      const hasta = Date.parse(String(k.fin || ''));
+      const ahora = Date.now();
+      return Number.isFinite(desde) && Number.isFinite(hasta) && desde <= ahora && ahora < hasta;
+    })
+    .slice(0, 10)
+    .map((x) => ({ id: String(x.k.id || '').slice(0, 60), texto: x.texto, adIds: x.adIds })));
   cfg = Object.assign({}, deBase, deLaConsola, limpiarOferta(ob), atencion, {
+    campanasActivas,
     // Mandan aunque vengan vacíos: el nombre del asistente. El trato es una frase de la consola (`usted`, `tú`, `vos`, neutro): solo «usted» cambia lo que se le pide al modelo.
     nombreAsistente: linea(voz.nombreAsistente, 40),
     trato: /usted/i.test(String(voz.tratamiento || '')) ? 'usted' : 'tu',

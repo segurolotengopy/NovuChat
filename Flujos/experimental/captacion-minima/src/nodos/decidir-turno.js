@@ -40,7 +40,7 @@ if (t.tipo === 'audio') {
 
 const plan = ccDecidir({
   e: e,
-  t: { from: t.from, nombrePerfil: t.nombrePerfil, tipo: t.tipo, texto: texto, via: t.via, idToque: t.idToque, anuncio: t.anuncio === true,
+  t: { from: t.from, nombrePerfil: t.nombrePerfil, tipo: t.tipo, texto: texto, via: t.via, idToque: t.idToque, anuncio: !!t.anuncio,
     textoDeImagen: textoDeImagen, categoria: categoria, medioFallo: medioFallo },
   cfg: cfg,
 });

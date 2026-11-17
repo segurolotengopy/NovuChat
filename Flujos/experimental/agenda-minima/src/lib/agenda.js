@@ -620,6 +620,12 @@ const AGM_PLANES_CRM = ['menu', 'respuesta_fija', 'pedir_boton', 'pedir_nombre',
 const AGM_SERVICIO_ELEGIDO_CRM = { control_recien_nacido: 'Recién nacido', control_nino_sano: 'Control niño sano', vacunas_otros: 'Vacunas y/o otros' };
 const AGM_SERVICIO_CRM = { control_recien_nacido: 'Control del recién nacido', control_nino_sano: 'Control del niño sano' };
 const AGM_CLAVE_CRM = { servicios: 'Servicios', costo: 'Precio', direccion: 'Ubicación', horario: 'Horario de atención' };
+// El Ad ID y la campana del mensaje (17/11/2026): viajan con el prospecto y el modulo `crm` los escribe SOLO al crear la fila y solo si el mapa declara `idCampana`. Forma validada; lo invalido se omite.
+function agmConCampana(p, x) {
+  if (/^[0-9]{1,40}$/.test(String(x.adId === undefined || x.adId === null ? '' : x.adId))) p.adId = String(x.adId);
+  if (/^[A-Za-z0-9_-]{1,60}$/.test(String(x.campanaId === undefined || x.campanaId === null ? '' : x.campanaId))) p.campanaId = String(x.campanaId);
+  return p;
+}
 function agmProspectoCrm(d) {
   const x = d && typeof d === 'object' ? d : {};
   const plan = String(x.plan || '');
@@ -630,8 +636,8 @@ function agmProspectoCrm(d) {
     .replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim().slice(0, 60);
   if (plan === 'emergencia') {
     // nuevoContacto NO tiene efecto en el miniCRM desde el 08/11/2026 (una fila por conversacion de 24 h: la decide el modulo crm con atencion.conversacionDesde); se conserva solo por compatibilidad.
-    return { telefono: telefono, nombre: nombrePerfil, nombreDePerfil: true, nuevoContacto: x.nuevoContacto === true, servicioElegido: 'Emergencia',
-      ultimaInteraccionMs: Number(x.ahoraMs) };
+    return agmConCampana({ telefono: telefono, nombre: nombrePerfil, nombreDePerfil: true, nuevoContacto: x.nuevoContacto === true, servicioElegido: 'Emergencia',
+      ultimaInteraccionMs: Number(x.ahoraMs) }, x);
   }
   const servicio = Object.prototype.hasOwnProperty.call(AGM_SERVICIO_CRM, x.servicio) ? AGM_SERVICIO_CRM[x.servicio] : '';
   const agendo = plan === 'crear' && x.creada === true;
@@ -697,5 +703,5 @@ function agmProspectoCrm(d) {
     if (!Number.isNaN(mc)) p.citaCanceladaMs = mc;
   }
   else p.agendo = 'No';
-  return p;
+  return agmConCampana(p, x);
 }

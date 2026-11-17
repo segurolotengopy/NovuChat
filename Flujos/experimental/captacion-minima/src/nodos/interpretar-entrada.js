@@ -62,7 +62,30 @@ if (tipo === 'text') {
 }
 
 const contacto = Array.isArray(carga.contacts) ? carga.contacts[0] : undefined;
-const ref = msg.referral && typeof msg.referral === 'object' ? msg.referral : null;
+const ref = msg.referral && typeof msg.referral === 'object' && !Array.isArray(msg.referral) ? msg.referral : null;
+// EL ANUNCIO Y LA CAMPAÑA (Andres, 17/11/2026; contrato Ad ID + texto). `anuncio` es DATO de Meta, no una orden: recortado y sin saltos. La campaña se reconoce PRIMERO por el Ad ID
+// (`referral.source_id`, igualdad exacta de la cadena contra los `adIds` de la campaña vigente, para cualquier tipo de mensaje) y LUEGO por su texto exacto en palabras (solo `text`).
+// Reconocerla solo VINCULA la conversación: no salta ningún menú ni cambia la respuesta. Sin referral y sin texto igual, `campana` es null.
+const planoAd = (v, max) => String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+const anuncio = ref ? { titular: planoAd(ref.headline, 120), fuente: planoAd(ref.source_type, 20), idAnuncio: planoAd(ref.source_id, 40), ctwaClid: planoAd(ref.ctwa_clid, 200) } : null;
+const palabrasAd = (t) => String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+let campanasAd = [];
+campanasAd = Array.isArray(cfg.campanas) ? cfg.campanas : [];
+const escritoAd = tipo === 'text' ? palabrasAd(msg.text && msg.text.body) : '';
+const idDelAnuncio = anuncio ? anuncio.idAnuncio : '';
+let laCampana = null;
+let campanaPor = '';
+if (Array.isArray(campanasAd)) {
+  if (idDelAnuncio !== '') {
+    laCampana = campanasAd.find((c) => c && Array.isArray(c.adIds) && c.adIds.some((a) => String(a) === idDelAnuncio)) || null;
+    if (laCampana) campanaPor = 'adId';
+  }
+  if (!laCampana && escritoAd !== '') {
+    laCampana = campanasAd.find((c) => c && typeof c.texto === 'string' && palabrasAd(c.texto) === escritoAd) || null;
+    if (laCampana) campanaPor = 'texto';
+  }
+}
+const campana = laCampana ? { id: planoAd(laCampana.id, 60), texto: planoAd(laCampana.texto, 300), por: campanaPor } : null;
 const esAudio = tipo === 'audio' && mediaId !== '';
 const esVisual = (tipo === 'image' || tipo === 'document') && mediaId !== '';
 // De qué manera llega lo que dijo (lo calcula este nodo y lo usa «Decidir turno»): texto escrito, audio, un toque, una imagen o
@@ -81,7 +104,11 @@ return [{ json: {
   texto: texto,
   idToque: idToque,
   textoReporte: textoReporte,
-  anuncio: !!ref,
+  anuncio: anuncio,
+  campana: campana,
+  adId: idDelAnuncio,
+  campanaId: campana ? campana.id : '',
+  campanaPor: campana ? campana.por : '',
   origen: ref ? 'anuncio' : 'directo',
   esAudio: esAudio,
   esVisual: esVisual,

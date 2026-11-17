@@ -708,7 +708,7 @@ if (planillaOk && !prueba && salida.length > 0 && cnClaveValida(t.from)) {
       canceladaInicio: base.cancelada && base.cancelada.inicio ? base.cancelada.inicio : '', restantes: Array.isArray(base.restantes) ? base.restantes : [],
       huecos: base.oferta && Array.isArray(base.oferta.huecos) ? base.oferta.huecos.map((h) => h.inicio) : [],
       derivo: plan === 'contacto_doctor' ? 'doctor' : (conBoton ? 'recepcion' : ''),
-      nombrePerfil: t.nombrePerfil, anuncio: t.origen === 'anuncio', nuevoContacto: nuevoContacto, ahoraMs: ahora,
+      nombrePerfil: t.nombrePerfil, anuncio: t.origen === 'anuncio', adId: t.adId, campanaId: t.campanaId, nuevoContacto: nuevoContacto, ahoraMs: ahora,
     });
     if (p) {
       prospectoPlanilla = p;
