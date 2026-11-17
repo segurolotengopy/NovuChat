@@ -60,7 +60,28 @@ if (tipo === 'text') {
 if ((tipo === 'text' || tipo === 'interactive' || tipo === 'button') && texto.trim() === '') return [];
 
 const contacto = Array.isArray(carga.contacts) ? carga.contacts[0] : undefined;
-const ref = msg.referral && typeof msg.referral === 'object' ? msg.referral : null;
+const ref = msg.referral && typeof msg.referral === 'object' && !Array.isArray(msg.referral) ? msg.referral : null;
+// EL VÍNCULO CON EL ANUNCIO (Andres, 17/11/2026): PRIMERO el Ad ID del anuncio (`referral.source_id`, igualdad exacta, cualquier tipo de mensaje) y LUEGO el texto exacto en palabras (solo mensajes `text`). `anuncio` sigue siendo booleano
+// en este canal (lo leen los tenants con `=== true`); el ID, el clic y el vínculo viajan aparte. Vincular no cambia la respuesta: ningún nodo de decisión lee `campana`.
+const planoAd = (v, max) => String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+const adId = ref ? planoAd(ref.source_id, 40) : '';
+const palabrasDe = (t) => String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+let campanasCfg = [];
+try { campanasCfg = JSON.parse(String(cfg.campanasActivas || '[]')); } catch (e) { campanasCfg = []; }
+const escrito = msg.type === 'text' ? palabrasDe(msg.text && msg.text.body) : '';
+let laCampana = null;
+let campanaPor = '';
+if (Array.isArray(campanasCfg)) {
+  if (adId !== '') {
+    laCampana = campanasCfg.find((c) => c && Array.isArray(c.adIds) && c.adIds.some((a) => String(a) === adId)) || null;
+    if (laCampana) campanaPor = 'adId';
+  }
+  if (!laCampana && escrito !== '') {
+    laCampana = campanasCfg.find((c) => c && typeof c.texto === 'string' && palabrasDe(c.texto) === escrito) || null;
+    if (laCampana) campanaPor = 'texto';
+  }
+}
+const campana = laCampana ? { id: planoAd(laCampana.id, 60), texto: planoAd(laCampana.texto, 300).replace(/[\[\]]/g, ''), por: campanaPor } : null;
 const categoria = (tipo === 'text' || tipo === 'interactive' || tipo === 'button') ? 'conversacion' : ((tipo === 'audio' || tipo === 'image' || tipo === 'document') ? 'medio' : 'otro');
 const mimeType = visual && typeof visual.mime_type === 'string' ? visual.mime_type.slice(0, 100) : '';
 // ¿Se escucha este audio o se mira esta foto? Lo decide el código ANTES de bajar nada (tipo, formato y el tope diario por teléfono). Un documento NUNCA se baja.
@@ -90,6 +111,11 @@ return [{ json: {
   esDocumento: tipo === 'document',
   mediaId: mediaId,
   anuncio: !!ref,
+  campana: campana,
+  adId: adId,
+  campanaId: campana ? campana.id : '',
+  campanaPor: campana ? campana.por : '',
+  ctwaClid: ref ? planoAd(ref.ctwa_clid, 200) : '',
   origen: ref ? 'anuncio' : 'directo',
   bajaEscrita: evEsBaja(texto) || evEsBaja(pie),
   riesgoEscrito: evEsRiesgo(evNorm([texto, pie].join(' '))),

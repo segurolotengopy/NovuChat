@@ -117,8 +117,21 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
       '    direccion: util(dn.direccion) && !/https?:|www\\.|wa\\.me|maps|goo\\.gl|\\b[a-z0-9-]+\\.(?:com|net|org|bo|ly|me|io|app|link|gl)\\b|[\\u200B-\\u200F\\u2060\\uFEFF]/i.test(dn.direccion) ? linea(dn.direccion, 160) || undefined : undefined,',
       '    direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,',
       '  const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === \'object\' && !Array.isArray(a)).slice(0, 20) : [];',
+      // El vínculo con el anuncio (17/11/2026): los `campanas` vigentes con sus Ad ID, en la rama 200 (igual que el core).
+      "  const adIdsDe = (k) => (Array.isArray(k.adIds) ? k.adIds.map((a) => String(a)).filter((a) => /^[0-9]{8,32}$/.test(a)).slice(0, 5) : []);",
+      "  const campanasActivas = JSON.stringify((Array.isArray(cuerpo.campanas) ? cuerpo.campanas : [])",
+      "    .map((k) => (k && typeof k === 'object' ? { k, texto: typeof k.texto === 'string' && k.texto.trim() !== '' && k.texto.length <= 300 ? k.texto.trim() : '', adIds: adIdsDe(k) } : null))",
+      "    .filter((x) => x && (x.texto !== '' || x.adIds.length > 0))",
+      "    .filter(({ k }) => {",
+      "      const desde = Date.parse(String(k.inicio || ''));",
+      "      const hasta = Date.parse(String(k.fin || ''));",
+      "      const ahora = Date.now();",
+      "      return Number.isFinite(desde) && Number.isFinite(hasta) && desde <= ahora && ahora < hasta;",
+      "    })",
+      "    .slice(0, 10)",
+      "    .map((x) => ({ id: String(x.k.id || '').slice(0, 60), texto: x.texto, adIds: x.adIds })));",
       '  cfg = {',
-      '    ...deBase, ...deLaConsola, ...atencion, anuncios,',
+      '    ...deBase, ...deLaConsola, ...atencion, anuncios, campanasActivas,',
       '  };',
       'const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;',
       // El miniCRM (02/11/2026): el id y la pestaña de la planilla de ESTE negocio (propias; declaradas en PROPIO.md).
@@ -210,7 +223,10 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo 
     const nuevo = propio.match(/evento: \(t\.riesgoEscrito === true \|\| \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\.normalize\('NFKC'\)\.normalize\('NFD'\)[^]*?\)\) \? 'no_contactar' : undefined/);
     expect(nuevo, 'el propio no trae el evento declarado').not.toBeNull();
     // Todo lo demás es idéntico al origen.
-    expect(propio.replace(nuevo![0], 'EVENTO')).toBe(origen.replace(viejo![0], 'EVENTO'));
+    // Los tres campos del vínculo con el anuncio (17/11/2026) son el otro cambio declarado: se quitan para comparar con el origen.
+    const CAMPOS = 'adId: t.adId || undefined, campanaId: t.campanaId || undefined, campanaPor: t.campanaPor || undefined, ';
+    expect(propio.includes(CAMPOS), 'el reporte lleva adId, campanaId y campanaPor').toBe(true);
+    expect(propio.replace(CAMPOS, '').replace(nuevo![0], 'EVENTO')).toBe(origen.replace(viejo![0], 'EVENTO'));
   });
 
   it('los nodos de medios (bajar, tamaño, descarga, audio, documento) son los de chat-novuchat con los campos del contrato común (`esMedioAudio`, `esMedioVisual`) y las credenciales por nombre', () => {
