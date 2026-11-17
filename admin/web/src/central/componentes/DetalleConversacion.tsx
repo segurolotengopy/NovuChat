@@ -10,7 +10,7 @@ import { BarraTurno } from './BarraTurno';
 import { BloqueoContacto } from './BloqueoContacto';
 import { accionesDeBloqueo, accionesSinBloqueadas, type CapaBloqueo } from '../lib/bloqueo';
 import { VisorMedio } from './VisorMedio';
-import { accionDeMedio, enlaceWaMe, textoAnotado, AVISO_WA_ME, TEXTO_VENCIDO, TEXTO_VENCIDO_ENVIADO, TEXTO_PENDIENTE, medioDeDatos, type MedioDeMensaje } from '../lib/medios';
+import { accionDeMedio, enlaceWaMe, textoAnotado, AVISO_WA_ME, TEXTO_VENCIDO, TEXTO_VENCIDO_ENVIADO, TEXTO_IMAGEN_DEL_ASISTENTE, TEXTO_PENDIENTE, medioDeDatos, type MedioDeMensaje } from '../lib/medios';
 import { PiezasDePersona } from './PiezasDePersona';
 import { verAdjuntar, type CapaAdjunto } from '../lib/adjuntos';
 import {
@@ -458,6 +458,7 @@ export function DetalleConversacion(p: PropsDetalle) {
                     <span className="adjunto">{esPersona ? (x.medio?.voz ? '🎤 Nota de voz enviada' : ADJUNTOS_DE_PERSONA[x.tipo]) : ADJUNTOS[x.tipo]}</span>
                   )}
                   <TextoSeguro valor={x.texto} />
+                  {x.medio?.origen === 'asistente' && <span className="cv-medio-texto">{TEXTO_IMAGEN_DEL_ASISTENTE}</span>}
                   {x.medio?.origen === 'enviado' && x.medio.nombre && (
                     <span className="cv-medio-texto"><TextoSeguro valor={x.medio.nombre} maxLargo={240} /></span>
                   )}

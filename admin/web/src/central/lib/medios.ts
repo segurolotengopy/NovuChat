@@ -24,6 +24,8 @@ export const MIMES_DE_AUDIO = [
 export const TEXTO_PENDIENTE = 'Todavía se está guardando el archivo.';
 export const TEXTO_VENCIDO = 'El archivo ya no está disponible (se guarda 90 días).';
 /** Los archivos que envía una persona desde la consola se guardan 30 días (no 90). */
+/** Rótulo y aviso de una imagen que mandó el asistente. Verla aquí NO es prueba de ningún pago (prohibición de cobros). */
+export const TEXTO_IMAGEN_DEL_ASISTENTE = 'Imagen enviada por el asistente. Verla aquí no es prueba de ningún pago.';
 export const TEXTO_VENCIDO_ENVIADO = 'El archivo ya no está disponible (los archivos enviados se guardan 30 días).';
 export const AVISO_DESCARGA_ENVIADO = 'Archivo enviado desde la consola de su negocio.';
 export const AVISO_WA_ME =
@@ -62,8 +64,8 @@ export interface MedioDeMensaje {
   tamano: number | null;
   /** Hasta cuándo se guarda (ms); `null` si no consta. */
   vence: number | null;
-  /** `enviado` = lo mandó una persona desde la consola; `recibido` = lo mandó el cliente. */
-  origen: 'recibido' | 'enviado';
+  /** `enviado` = lo mandó una persona desde la consola; `asistente` = lo mandó el asistente (control de calidad); `recibido` = lo mandó el cliente. */
+  origen: 'recibido' | 'enviado' | 'asistente';
   /** Nota de voz enviada por una persona. */
   voz: boolean;
   /** Nombre del documento enviado (cortado a 240); `''` si no consta. */
@@ -83,7 +85,7 @@ export function medioDeDatos(x: unknown): MedioDeMensaje | null {
     mime: typeof m['mime'] === 'string' ? m['mime'].slice(0, 100) : '',
     tamano: typeof m['tamano'] === 'number' ? m['tamano'] : null,
     vence,
-    origen: m['origen'] === 'enviado' ? 'enviado' : 'recibido',
+    origen: m['origen'] === 'enviado' ? 'enviado' : m['origen'] === 'asistente' ? 'asistente' : 'recibido',
     voz: m['voz'] === true,
     nombre: typeof m['nombre'] === 'string' ? m['nombre'].slice(0, 240) : '',
   };
@@ -139,7 +141,7 @@ export function claseDeMedio(tipo: unknown, mime: unknown): 'imagen' | 'descarga
 const GENERICO = 'No se pudo abrir el archivo. Intente de nuevo en unos minutos.';
 
 /** Texto fijo por `code` (y `details` para failed-precondition). Nunca el mensaje del servidor. */
-export function textoDeErrorMedio(code: unknown, details?: unknown, origen: 'recibido' | 'enviado' = 'recibido'): string {
+export function textoDeErrorMedio(code: unknown, details?: unknown, origen: 'recibido' | 'enviado' | 'asistente' = 'recibido'): string {
   switch (code) {
     case 'functions/unauthenticated':
       return 'No se pudo comprobar su sesión. Recargue la página e inicie sesión de nuevo.';
