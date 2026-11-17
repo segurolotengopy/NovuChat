@@ -904,9 +904,9 @@ describe('F. cero mensajes de diferencia, y con la función apagada todo igual a
 describe('G. los flujos armados', () => {
   const CARPETA = join(RAIZ, '..');
   const salidas = readdirSync(CARPETA).filter((f) => /^venta-minima\..+\.json$/.test(f));
-  it.each(salidas)('%s tiene 81 nodos o menos y el modelo sigue siendo un sub-nodo «Extraer» sin nodos nuevos', (f) => {
+  it.each(salidas)('%s tiene 84 nodos o menos y el modelo sigue siendo un sub-nodo «Extraer» sin nodos nuevos', (f) => {
     const flujo = JSON.parse(readFileSync(join(CARPETA, f), 'utf8')) as J;
-    expect(flujo.nodes.length).toBeLessThanOrEqual(81);
+    expect(flujo.nodes.length).toBeLessThanOrEqual(84);
     const nombres = flujo.nodes.map((n: J) => n.name);
     expect(nombres.filter((n: string) => n === 'Extraer')).toHaveLength(1);
     const decidir = flujo.nodes.find((n: J) => n.name === 'Decidir turno').parameters.jsCode as string;

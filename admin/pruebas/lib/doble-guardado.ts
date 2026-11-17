@@ -34,13 +34,15 @@ export interface RegistroDelGuardado {
   reintentos: LlamadaDoble[];
   /** Las llamadas que LLEGARON a `guardarMedio` (las de «Guardar medio» y «Reintentar el guardado» con binario). */
   servidor: LlamadaDoble[];
+  /** La rama del guardado de la imagen SALIENTE del asistente (plan del 16/11/2026): una lista por nodo de red. */
+  saliente: { enlace: LlamadaDoble[]; pedir: LlamadaDoble[]; bajar: LlamadaDoble[]; guardar: LlamadaDoble[] };
 }
 
 export const APAGADO: RespuestaDelServidor = { statusCode: 409, body: { error: 'guardado_apagado' } };
 
 /** Los dobles de los cinco nodos de red de la rama, y el registro de llamadas. */
 export function doblesDelGuardado(o: OpcionesDelGuardado = {}): { dobles: Record<string, Doble>; llamadas: RegistroDelGuardado } {
-  const llamadas: RegistroDelGuardado = { guardar: [], obtener: [], descargar: [], avisos: [], reintentos: [], servidor: [] };
+  const llamadas: RegistroDelGuardado = { guardar: [], obtener: [], descargar: [], avisos: [], reintentos: [], servidor: [], saliente: { enlace: [], pedir: [], bajar: [], guardar: [] } };
   const servidor = (ll: LlamadaDoble): J => {
     llamadas.servidor.push(ll);
     const r = typeof o.respuesta === 'function' ? o.respuesta(ll) : (o.respuesta ?? APAGADO);
@@ -68,6 +70,26 @@ export function doblesDelGuardado(o: OpcionesDelGuardado = {}): { dobles: Record
       if (!ll.url) throw new Error('Invalid URL');
       return { descargado: true };
     },
+    // LA RAMA DEL GUARDADO DE LA IMAGEN SALIENTE (`guardado-saliente.mjs`): por omisión responde como un comercio con la bandera APAGADA, igual que la del entrante.
+    'Descargar enlace (guardado saliente)': (ll) => {
+      llamadas.saliente.enlace.push(ll);
+      if (!ll.url) throw new Error('Invalid URL');
+      return { descargado: true };
+    },
+    'Pedir imagen a Meta (guardado saliente)': (ll) => {
+      llamadas.saliente.pedir.push(ll);
+      return { id: 'm', url: o.url ?? 'https://lookaside.fbsbx.com/whatsapp_business/attachments/saliente-1', mime_type: o.mime ?? 'image/png', file_size: o.bytes ?? 200_000 };
+    },
+    'Descargar imagen de Meta (guardado saliente)': (ll) => {
+      llamadas.saliente.bajar.push(ll);
+      if (!ll.url) throw new Error('Invalid URL');
+      return { descargado: true };
+    },
+    'Guardar imagen enviada': (ll) => {
+      llamadas.saliente.guardar.push(ll);
+      if (ll.item && ll.item['error'] !== undefined) throw new Error('This operation expects the node\'s input data to contain a binary file \'data\'');
+      return servidor(ll);
+    },
     'Avisar falla del guardado': (ll) => {
       llamadas.avisos.push(ll);
       if (o.aviso === 'lanza') throw new Error('fetch failed: red caída');
@@ -87,7 +109,7 @@ export function doblesDelGuardado(o: OpcionesDelGuardado = {}): { dobles: Record
 const FLUJOS_REALES = join(dirname(fileURLToPath(import.meta.url)), '../../../Flujos');
 export function copiarModulosComunesAlTemporal(raiz: string): void {
   // `guardado.mjs` importa `envio.mjs` (las piezas del canal «rele»), y este lee `src/core/rele/*.js`: van también.
-  for (const rel of ['src/core/sin-agente/guardado.mjs', 'src/core/sin-agente/expresiones.mjs', 'src/core/sin-agente/envio.mjs', 'src/core/sin-agente/sesion.js', 'src/core/rele/codigos.js', 'src/core/rele/decidir-envio.js', 'src/core/medios/guardado-preparar.js', 'src/core/medios/guardado-cupo.js','src/core/medios/guardado-resultado.js', 'src/core/medios/guardado-reintento.js', 'src/modulos/pedidos/qr-del-pedido.js',
+  for (const rel of ['src/core/sin-agente/guardado.mjs', 'src/core/sin-agente/guardado-saliente.mjs', 'src/core/sin-agente/expresiones.mjs', 'src/core/sin-agente/envio.mjs', 'src/core/sin-agente/sesion.js', 'src/core/rele/codigos.js', 'src/core/rele/decidir-envio.js', 'src/core/medios/guardado-saliente-preparar.js', 'src/core/medios/guardado-preparar.js', 'src/core/medios/guardado-cupo.js','src/core/medios/guardado-resultado.js', 'src/core/medios/guardado-reintento.js', 'src/modulos/pedidos/qr-del-pedido.js',
     // el miniCRM de Q'Taco (`construir-crm.mjs` y los paquetes del módulo `crm`)
     'experimental/comun-sin-agente/construir-crm.mjs', 'src/modulos/crm/crm.js', 'src/modulos/crm/adaptador-senales.js', 'src/modulos/crm/nodo-prospecto.js', 'src/modulos/crm/nodo-decidir-fila.js', 'src/core/medios/anuncio-por-titular.js',
     // la respuesta coherente de Q'Taco (`+coherente`): la pieza `rc*` (ya no usa el filtro común)

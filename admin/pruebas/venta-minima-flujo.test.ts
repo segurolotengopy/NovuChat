@@ -32,7 +32,8 @@ import { configBase, destinos, expresion, type Flujo, type J } from './lib/flujo
 import { crearMundo, ROLES_POR_OMISION, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
 import { copiarModulosComunesAlTemporal, doblesDelGuardado } from './lib/doble-guardado';
 import { crearSesion, ESPACIO, ESPACIO_PRUEBA, type SesionDeMentira } from './lib/venta-minima-sesion';
-import { NODOS_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../Flujos/src/core/sin-agente/guardado.mjs';
+import { NODOS_DEL_GUARDADO, NODOS_DEL_GUARDADO_SALIENTE, URL_DESCARGA_GUARDADO } from '../../Flujos/src/core/sin-agente/guardado.mjs';
+import { URL_DESCARGA_SALIENTE } from '../../Flujos/src/core/sin-agente/guardado-saliente.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA_VM = join(AQUI, '../../Flujos/experimental/venta-minima');
@@ -655,6 +656,9 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
       for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
         // La descarga PROPIA del guardado de medios (módulo común): la URL de Meta solo si el tamaño que informó cabe.
         if (n.name === 'Descargar medio (guardado)') { expect(n.parameters['url']).toBe(URL_DESCARGA_GUARDADO); continue; }
+        // La rama del guardado de la imagen SALIENTE (16/11/2026): el CDN de Meta (expresión exacta del módulo común) y el MISMO enlace que se envió al cliente (sin credencial).
+        if (n.name === 'Descargar imagen de Meta (guardado saliente)') { expect(n.parameters['url']).toBe(URL_DESCARGA_SALIENTE); continue; }
+        if (n.name === 'Descargar enlace (guardado saliente)') { expect(n.parameters['url']).toBe('={{ $json.enlace }}'); expect(n.credentials, n.name).toBeUndefined(); continue; }
         expect(String(n.parameters['url']), n.name).toMatch(/^(=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|us-east1-novuchat-demo\.cloudfunctions\.net)\/|REEMPLAZAR_[A-Z0-9_]+$|=\{\{ \$json\.url \}\}$)/);
       }
     }
@@ -1094,7 +1098,7 @@ describe('la entrada del receptor: verificada, sin Trigger, sin repetidos', () =
       // «Guardar comprobante» manda los BYTES del archivo (`contentType: binaryData`), no un JSON: no hay cuerpo que interpolar.
       // «Guardar medio» y «Reintentar el guardado» (guardado de medios, módulo común) mandan los BYTES del medio (`binaryData`), no un JSON: no hay texto
       // que interpolar. Desde el contrato v2 (30/10) el reintento siempre lleva cuerpo (ya no hay modo Anotar).
-      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters['sendBody'] === true && !(['Guardar medio', 'Reintentar el guardado', 'Guardar comprobante'].includes(x.name) && x.parameters['contentType'] === 'binaryData'))) {
+      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters['sendBody'] === true && !(['Guardar medio', 'Reintentar el guardado', 'Guardar comprobante', 'Guardar imagen enviada'].includes(x.name) && x.parameters['contentType'] === 'binaryData'))) {
         httpConCuerpo++;
         const jb = String(n.parameters['jsonBody']);
         expect(n.parameters['specifyBody'], n.name).toBe('json');
@@ -3163,8 +3167,8 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(73); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 9 del estado en el servidor (PR-4a) + los 2 de los cupos (PR-4b, aprobado por Andres (06/11/2026, en conversación)) + los 2 de la imagen del anuncio (aprobados por Andres el 06/11/2026): el tope de producción es 73 (`construir.mjs` lo impone)
-    expect(PRUEBA.nodes).toHaveLength(69);
+    expect(QTACO.nodes).toHaveLength(76); // +3 de la rama del guardado de la imagen saliente (16/11/2026); 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 9 del estado en el servidor (PR-4a) + los 2 de los cupos (PR-4b, aprobado por Andres (06/11/2026, en conversación)) + los 2 de la imagen del anuncio (aprobados por Andres el 06/11/2026): el tope de producción es 73 (`construir.mjs` lo impone)
+    expect(PRUEBA.nodes).toHaveLength(72); // 69 + 3 de la rama del guardado de la imagen saliente (16/11/2026)
   });
 
   it('L2: en producción un `wamid.SIMULADO-…` NO cuenta como aviso salido: el cliente no lee «pasé tu pedido» y el cierre no lo toma de referencia', () => {
@@ -4250,6 +4254,8 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     for (const n of DEMO_A.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
       // La descarga PROPIA del guardado de medios (módulo común): la URL de Meta solo si el tamaño que informó cabe.
       if (n.name === 'Descargar medio (guardado)') { expect(n.parameters['url']).toBe(URL_DESCARGA_GUARDADO); continue; }
+      if (n.name === 'Descargar imagen de Meta (guardado saliente)') { expect(n.parameters['url']).toBe(URL_DESCARGA_SALIENTE); continue; }
+      if (n.name === 'Descargar enlace (guardado saliente)') { expect(n.parameters['url']).toBe('={{ $json.enlace }}'); expect(n.credentials, n.name).toBeUndefined(); continue; }
       expect(String(n.parameters['url']), n.name).toMatch(/^(=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|us-east1-novuchat-demo\.cloudfunctions\.net)\/|REEMPLAZAR_[A-Z0-9_]+$|=\{\{ \$json\.url \}\}$)/);
     }
   });
@@ -5006,14 +5012,14 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
     expect(sim.qr.mensajes[0]?.payload['image']?.link).toBe(URL_SIMULADO); // es el QR de prueba, no el plan B que también da 3
   });
 
-  it('el JSON de Q\'Taco sigue en 73 nodos o menos (50 más los 9 del guardado de medios, «Guardar comprobante», los 9 del estado en el servidor y los 2 de los cupos) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
+  it('el JSON de Q\'Taco sigue en 76 nodos o menos (50 más los 9 del guardado de medios, «Guardar comprobante», los 9 del estado en el servidor y los 2 de los cupos) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
     // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61, y desde el contrato v2 del 30/10, 59: los 9 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md).
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(73); // tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026) → 71 (PR-4b: aprobado por Andres (06/11/2026, en conversación))
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(76); // tope 73 → 76 (rama del guardado de la imagen saliente, 16/11/2026, pendiente de Andres); tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026) → 71 (PR-4b: aprobado por Andres (06/11/2026, en conversación))
     const base = configBase(QTACO);
     expect(base['cobroSimuladoActivo']).toBe(true);
     expect(base['qrSimuladoUrl']).toBe(URL_SIMULADO);
     // La plantilla no se toca: ningún nodo nuevo, y todo nombre del JSON de producción sale de ella (o de la rama común del guardado, que se injerta al armar).
-    const deLaPlantilla = new Set([...nombresDeLaPlantilla(PLANTILLA), ...NODOS_DEL_GUARDADO]);
+    const deLaPlantilla = new Set([...nombresDeLaPlantilla(PLANTILLA), ...NODOS_DEL_GUARDADO, ...NODOS_DEL_GUARDADO_SALIENTE]);
     for (const n of QTACO.nodes) expect(deLaPlantilla.has(n.name), n.name).toBe(true);
     expect(QTACO.nodes.some((n) => /simulad/i.test(n.name))).toBe(false); // el simulado no agrega nodos
   });
