@@ -9,7 +9,7 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 |---|---|---|---|---|---|---|---|
 | agendamiento-seguimientos.json | . | barrido | ninguno | M1 M2 M7 | por asignar (Principal) | pendiente | c039d03f-88791851-87075e25-fc074372-5d27322f-3c23c47c-643a7f60-2d6abeb7 |
 | agendamiento-senas-vencidas.json | . | barrido | ninguno | M1 M2 M7 | por asignar (Principal) | pendiente | 1806d41f-c793a4d9-30686e10-c5517a52-1a6380b3-9fba0385-1bd22676-8f7989d2 |
-| bellido-agendamiento.json | . | congelado | ninguno | M1 M2 M6 | por asignar (Principal) | pendiente | 7ce44559-4c72fa61-9a939d46-eb30028f-5e86ba4d-23a7b6c0-19a3c98b-8e474891 |
+| bellido-agendamiento.json | . | congelado | ninguno | M1 M2 M6 | por asignar (Principal) | pendiente | 51c88acf-4128bc6c-7922f3e2-3fdbb079-4952a2d6-5488c7c6-0a683857-84523691 |
 | demo-a-agendamiento.json | . | demo | ensamblador | M1 M6 | por asignar (Principal) | pendiente | 5b30bfe4-c403d659-dbd02a7c-1b1b0c32-7dafabdb-ef2cc3a9-b27cbf61-a886c851 |
 | demo-a-recordatorios.json | . | demo | ensamblador | M1 | por asignar (Principal) | pendiente | 7d06ea44-1c362f84-bae2afe3-e7a2a521-b2c865cc-a3736245-ae83472d-22988404 |
 | demo-b-venta-cobro.json | . | demo | ensamblador | M1 M6 | por asignar (Principal) | pendiente | 0959cae2-817d0d4a-f05be355-2d451ac6-7e46981c-1143560f-f1a9dca5-7016308f |
