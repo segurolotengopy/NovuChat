@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ANA, COMPROBANTE, COTEJO_VALIDO, hablar, crear, mAudio, mImagen, mTexto, panelConQr, type Opciones } from './mundo';
 
-const RA = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-antonio');
+const RA = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/clientes/rroca-antonio');
 const cargar = (a: string) => JSON.parse(readFileSync(join(RA, a), 'utf8')) as { nodes: { name: string; position: number[]; parameters: Record<string, unknown>; credentials?: Record<string, { name: string }>; onError?: string }[]; connections: Record<string, { main: { node: string }[][] }> };
 const nodo = (f: ReturnType<typeof cargar>, n: string) => f.nodes.find((x) => x.name === n)!;
 const destinos = (f: ReturnType<typeof cargar>, n: string, i: number) => (f.connections[n]?.main[i] ?? []).map((x) => x.node);

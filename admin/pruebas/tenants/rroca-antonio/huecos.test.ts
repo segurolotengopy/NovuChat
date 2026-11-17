@@ -2,7 +2,7 @@
  * «EL PUENTE» DE ANTONIO (tenant rroca-antonio) — PR-A: LOS HUECOS DECLARADOS, comparados con su ORIGEN.
  *
  * No existe todavía el módulo común de puerta del turno, ficha por teléfono, carga de entrada ni configuración del negocio para un flujo «sin agente»
- * (`Flujos/experimental/rroca-antonio/PROPIO.md`, §«Común SIN fuente utilizable»). Cada pieza es una COPIA declarada de `chat-novuchat` o de `venta-minima` (NO de `rroca-ruben`),
+ * (`Flujos/clientes/rroca-antonio/PROPIO.md`, §«Común SIN fuente utilizable»). Cada pieza es una COPIA declarada de `chat-novuchat` o de `venta-minima` (NO de `rroca-ruben`),
  * y esta suite la compara con su origen:
  *   - `_comun.js` y `puerta-del-turno.js`: IGUALES al origen una vez aplicadas las sustituciones declaradas (y solo ellas);
  *   - `carga-de-entrada.js` y `config-del-negocio.js`: toda línea con código está en el origen, salvo las líneas propias declaradas aquí (una lista cerrada);
@@ -20,7 +20,7 @@ import { ejecutar, type J } from '../../lib/flujo';
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
 const EXP = join(REPO, 'Flujos/experimental');
-const ANTONIO = join(EXP, 'rroca-antonio');
+const ANTONIO = join(REPO, 'Flujos/clientes/rroca-antonio');
 const leer = (r: string): string => readFileSync(r, 'utf8');
 const nodoDe = (ruta: string): string => leer(join(ANTONIO, 'src/nodos', ruta));
 const NQUITADAS = 44;

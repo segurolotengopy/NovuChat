@@ -1,7 +1,7 @@
 # El Puente de Antonio (tenant `rroca-antonio`): diseño y avance
 
 Plan completo: `ANTONIO_plan-y-guion-vs-flujo_2026-10-20.md` (§0 a §5 y §7), en `~/CLAUDE_DESCARGAS/`. Este archivo guarda lo que ya se verificó en el código y lo que cada PR agrega.
-Zona: `Flujos/experimental/rroca-antonio/` (Flujo de cliente, fuera de `fronteras.test.ts` como `chat-novuchat`). Armador: `Flujos/src/core/sin-agente/construir.mjs`, importado, nunca copiado.
+Zona: `Flujos/clientes/rroca-antonio/` (Flujo de cliente, fuera de `fronteras.test.ts` como `chat-novuchat`). Armador: `Flujos/src/core/sin-agente/construir.mjs`, importado, nunca copiado.
 Base: `origin/main` `d260cca8`. Sin teléfonos completos ni datos bancarios en este archivo.
 
 ## Estado por PR
@@ -157,7 +157,7 @@ Procedimiento exacto (nada se ejecuta aquí; cada paso que escribe lo corre Clau
 1. Marcadores de identificadores: `MARCADOR_VALOR=<valor> ./scripts/marcador-local.sh --marcador REEMPLAZAR_NUMERO_RECEPCION_ANTONIO` (con `--reemplazar` si la fila existe; el valor viaja por el entorno, no por argumentos), y lo mismo con `REEMPLAZAR_WABA_ID_RROCA_ANTONIO`, `REEMPLAZAR_PHONE_NUMBER_ID_RROCA_ANTONIO` y `REEMPLAZAR_TELEFONOS_DE_PRUEBA`; si el identificador está en un archivo local, `./scripts/marcador-desde-archivo.sh --marcador <X> --de <archivo> --clave <clave> --cliente RUBEN_ROCA` (en seco primero). Nunca se imprime el valor; la tabla es `CONFIGURACION.local.md` (`CONFIG_LOCAL_MD` la apunta desde un worktree).
 2. Razón comercial y horario NO son marcadores de la tabla: `cargar-negocio.mjs` niega `--aplicar` con cualquier `REEMPLAZAR_` fuera de los campos `*Marcador`. Se copia `negocio-rroca-antonio.json` a un archivo local ignorado (`CLIENTES/RUBEN_ROCA/Antonio/negocio-rroca-antonio.local.json`) con los dos valores reales; el versionado no se toca.
 3. En seco, desde `admin/`: `node scripts/datos/cargar-negocio.mjs --proyecto <proyecto de la consola> --tenant rroca-antonio --archivo <el .local.json> --local <CONFIGURACION.local.md>`; debe listar el catálogo, resolver `numeroRecepcionMarcador` y no dejar marcadores.
-4. `node Flujos/experimental/rroca-antonio/construir.mjs --publicable --negocio <el .local.json>` (más `--flujo` y `--datos` locales con los marcadores sustituidos) debe salir 0 antes de pedir el «sí» de publicar.
+4. `node Flujos/clientes/rroca-antonio/construir.mjs --publicable --negocio <el .local.json>` (más `--flujo` y `--datos` locales con los marcadores sustituidos) debe salir 0 antes de pedir el «sí» de publicar.
 5. `--aplicar` solo con la autorización de Andres, en la ventana de mantenimiento y con la confirmación `PUBLICAR ANTONIO`.
 
 ## Revisión de seguridad de #584 (21/10/2026)

@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FLUJOS = join(AQUI, '../../../../Flujos/experimental');
 const NEUTROS = join(FLUJOS, 'venta-digital/src/nodos');
-const ANTONIO = join(FLUJOS, 'rroca-antonio/src/nodos');
+const ANTONIO = join(FLUJOS, '../clientes/rroca-antonio/src/nodos');
 const leer = (r: string): string => readFileSync(r, 'utf8');
 const huella = (t: string): string => createHash('sha256').update(t).digest('hex').slice(0, 16);
 

@@ -15,7 +15,7 @@ import { ANA, crear, hablar, mBoton, mLista, mTexto, panelOk } from './mundo';
 import { cargarLibrerias } from './librerias';
 import { vigilarUx } from './vigilante-ux';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { cargarDatos } from '../../../../Flujos/experimental/rroca-antonio/construir.mjs';
+import { cargarDatos } from '../../../../Flujos/clientes/rroca-antonio/construir.mjs';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const DATOS = JSON.parse(readFileSync(join(RAIZ, 'admin/scripts/datos/rroca-antonio/rroca-antonio.json'), 'utf8')) as { configBase: Record<string, string> };
@@ -122,7 +122,7 @@ describe('MD modificado · las funciones de etiqueta, con el largo contado como 
     }
   });
   it('las etiquetas del código no llevan montos escritos y el recorte no inventa palabras', () => {
-    const codigo = readFileSync(join(RAIZ, 'Flujos/experimental/rroca-antonio/src/lib/ra.js'), 'utf8').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    const codigo = readFileSync(join(RAIZ, 'Flujos/clientes/rroca-antonio/src/lib/ra.js'), 'utf8').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
     expect(codigo).not.toMatch(/\d+ ?Bs['"`]/);
     expect(codigo).not.toMatch(/Solo Libro|Bonos Individuales|💛|📘|➕/);   // los nombres y los emojis son dato del tenant, no del código
   });

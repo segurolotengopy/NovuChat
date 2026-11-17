@@ -20,6 +20,8 @@
  *       `"@@solo:nodos/<archivo>.js"`   solo el archivo.
  *     El sufijo `+crm` (`@@todo+sesion+crm:…`, solo «Armar mensajes») agrega `src/lib/crm.js` (`vmProspectoCrm`, el miniCRM de Q'Taco).
  *     El sufijo `+coherente` (`@@todo+coherente:…`, «Decidir turno» y «Plan del turno») pega `core/conversacion/respuesta-coherente.js` (sin el filtro común: el modelo solo clasifica).
+ *     Los sufijos `+baja` (`@@todo+coherente+baja:…`, «Decidir turno» y «Plan del turno») y `+texto` («Armar mensajes») pegan, antes del nodo, las piezas comunes de UX del core: la baja por texto
+ *     (`core/conversacion/baja.js`) y la identidad «con IA» + los párrafos (`core/texto/identidad.js` y `parrafos.js`). Van detrás de `+coherente`, en este orden: `+sesion+crm+coherente+baja+texto`.
  *     Y el sufijo `+sesion` (`@@todo+sesion:…`, `@@comun+sesion:…`) pega ENTRE las librerías y el nodo el módulo común
  *     `Flujos/src/core/sin-agente/sesion.js` (el estado de la conversación en el servidor, PR-4a): se INCLUYE, nunca se copia ni se edita.
  *   - `@@dato:a.b.c@@` (dentro de cualquier texto) se reemplaza por ese dato del tenant;
@@ -69,6 +71,10 @@ const COMUN = leer('src/lib/comun.js').trimEnd();
 const LIB_CRM = leer('src/lib/crm.js').trimEnd();
 // La respuesta coherente (core): `+coherente` pega, ANTES del nodo, la pieza `rc*`. Se INCLUYEN, nunca se copian ni se editan aquí.
 const FUENTE_COHERENTE = [leer('../../src/core/conversacion/respuesta-coherente.js')].map((t) => t.trimEnd()).join('\n\n');
+// UX comun (core, 16/11/2026): `+baja` pega la baja por texto (`bj*`: «Decidir turno» la decide y «Plan del turno» la confirma) y `+texto` pega la identidad «con IA» (`ctConIA`) y los
+// parrafos (`ctParrafos`) en «Armar mensajes». Se INCLUYEN byte a byte, nunca se copian ni se editan aqui (lo exigen `admin/pruebas/core/ux/*`).
+const FUENTE_BAJA = leer('../../src/core/conversacion/baja.js').trimEnd();
+const FUENTE_TEXTO = [leer('../../src/core/texto/identidad.js'), leer('../../src/core/texto/parrafos.js')].map((t) => t.trimEnd()).join('\n\n');
 const plantilla = JSON.parse(leer('flujo.plantilla.json'));
 
 const NODOS_DE_ENTRADA = {
@@ -146,11 +152,14 @@ const URL_QR_SIMULADO = /^https:\/\/raw\.githubusercontent\.com\/segurolotengopy
 const MODOS_COBRO = ['simulado', 'real', 'sin_qr'];
 
 function codigoDe(marca, nodo) {
-  const m = /^@@(?:(solo|comun|todo)(\+sesion)?(\+crm)?(\+coherente)?:)?(nodos\/[a-z0-9-]+\.js)$/.exec(marca);
+  const m = /^@@(?:(solo|comun|todo)(\+sesion)?(\+crm)?(\+coherente)?(\+baja)?(\+texto)?:)?(nodos\/[a-z0-9-]+\.js)$/.exec(marca);
   if (!m) throw new Error(`${nodo}: ruta de código no válida: ${marca}`);
   const modo = m[1] || 'todo';
   const conSesion = m[2] === '+sesion';
-  const ruta = m[5];
+  const ruta = m[7];
+  const conBaja = m[5] === '+baja';
+  const conTexto = m[6] === '+texto';
+  if ((conBaja || conTexto) && modo !== 'todo') throw new Error(`${nodo}: «+baja» y «+texto» solo van con «todo»`);
   const conCoherente = m[4] === '+coherente';
   if (conCoherente && modo !== 'todo') throw new Error(`${nodo}: «+coherente» solo va con «todo»`);
   const conCrm = m[3] === '+crm';
@@ -159,7 +168,7 @@ function codigoDe(marca, nodo) {
   if (!existsSync(join(AQUI, 'src', ruta))) throw new Error(`${nodo}: no existe src/${ruta}`);
   const propio = leer(`src/${ruta}`).trimEnd();
   const base = modo === 'solo' ? [] : [modo === 'comun' ? COMUN : LIB];
-  return base.concat(conSesion ? [FUENTE_SESION] : []).concat(conCrm ? [LIB_CRM] : []).concat(conCoherente ? [FUENTE_COHERENTE] : []).concat([propio]).join('\n\n') + '\n';
+  return base.concat(conSesion ? [FUENTE_SESION] : []).concat(conCrm ? [LIB_CRM] : []).concat(conCoherente ? [FUENTE_COHERENTE] : []).concat(conBaja ? [FUENTE_BAJA] : []).concat(conTexto ? [FUENTE_TEXTO] : []).concat([propio]).join('\n\n') + '\n';
 }
 
 // --- los datos del tenant ---------------------------------------------------------------------------

@@ -28,10 +28,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar, type J, type Referencias } from './lib/flujo';
+import { voz } from './lib/venta-minima-voz';
 
 const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/nodos');
 const AVISOS = readFileSync(join(CARPETA, 'armar-avisos.js'), 'utf8');
 const MENSAJES = readFileSync(join(CARPETA, 'armar-mensajes.js'), 'utf8');
+// La identidad «con IA» y los párrafos (core, `+texto` de construir.mjs): REALES, delante de «Armar mensajes».
+const TEXTO = ['core/texto/identidad.js', 'core/texto/parrafos.js'].map((r) => readFileSync(join(CARPETA, '../../../../src', r), 'utf8')).join('\n');
 const RESUMEN = readFileSync(join(CARPETA, 'resumen-del-turno.js'), 'utf8');
 const SOLTAR = readFileSync(join(CARPETA, 'soltar-mensajes.js'), 'utf8');
 const CONFIRMAR = readFileSync(join(CARPETA, 'confirmar-envio.js'), 'utf8');
@@ -176,7 +179,7 @@ function nodo(fuente: string, e: Entrada = {}): Salida {
   if (e.armados) refs['Armar avisos'] = e.armados;
   if (e.enviados) refs['Enviar aviso'] = e.enviados;
   if (e.respaldos) refs['Aviso de respaldo'] = e.respaldos;
-  const items = ejecutar(`${DOBLES}\n${DE_COMUN}\n${esMensajes || fuente === AVISOS || fuente.startsWith('// ARMAR AVISOS') ? `${SESION}\n` : ''}${e.extra ?? ''}\n${fuente}`, [{}], refs, { $getWorkflowStaticData: () => g, __bit: bit, $execution: { id: 'e1' } });
+  const items = ejecutar(`${DOBLES}\n${DE_COMUN}\n${esMensajes || fuente === AVISOS || fuente.startsWith('// ARMAR AVISOS') ? `${SESION}\n` : ''}${esMensajes ? `${TEXTO}\n` : ''}${e.extra ?? ''}\n${fuente}`, [{}], refs, { $getWorkflowStaticData: () => g, __bit: bit, $execution: { id: 'e1' } });
   if (!esMensajes) return { items, g, sd: (g['ventaMinima'] ?? {}) as J, bit };
   // «Armar mensajes» ya no envía ni escribe: arma TODO en un ítem (`salida`) y el bloque a comprometer (`bloque`). Esta vista conserva la lectura de siempre: `items` = lo que sale y `sd` = los
   // datos estáticos que SIGUEN en n8n (residuo de PR-4b) más `estados` y `pedidos` tal como quedarían en el servidor tras el compromiso.
@@ -486,7 +489,7 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
     expect(r.items).toHaveLength(1);
     expect(r.items[0]).toMatchObject({
       para: CLIENTE, destino: 'cliente', tipoReporte: 'text', reportar: true, sinMensajes: false, from: CLIENTE,
-      phoneNumberId: 'PNID_PRUEBA', waGraphVersion: 'v26.0', texto: "¡Hola! Soy el asistente virtual de Q' Taco.",
+      phoneNumberId: 'PNID_PRUEBA', waGraphVersion: 'v26.0', texto: voz("¡Hola! Soy el asistente virtual de Q' Taco."),
     });
     expect(r.items[0]!['payload']).toMatchObject({ messaging_product: 'whatsapp', to: CLIENTE, type: 'text' });
     expect(r.items[0]!['evento']).toBeUndefined();
@@ -514,7 +517,7 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
     expect(i['payload'].interactive.action.parameters.display_text).toBe('Escribir al local');
     expect(i['payload'].interactive.action.parameters.url).toContain(`https://wa.me/${REC}?text=`);
     expect(i['respaldo']).toContain(`https://wa.me/${REC}`);
-    expect(i['texto']).toBe(GENERICO);
+    expect(i['texto']).toBe(voz(GENERICO));
   });
 
   it('S5: enlace con una URL del plan: solo `https://wa.me/<número de recepción>` (con ?text= opcional); cualquier otra se descarta', () => {
@@ -570,7 +573,7 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
     expect(uno.items[0]!['texto']).toBe('Hola');
     const todos = mensajes({ mensajes: [texto('   ')] });
     expect(todos.items).toHaveLength(1);
-    expect(cuerpoDe(todos.items[0]!)).toBe(GENERICO);
+    expect(cuerpoDe(todos.items[0]!)).toBe(voz(GENERICO));
   });
 
   it('un evento que no es qr_enviado pasa con su referencia y monto; qr_enviado en un texto se quita', () => {
@@ -625,7 +628,7 @@ describe('Armar mensajes — el QR', () => {
     expect(i['payload'].type).not.toBe('image');
     expect(i['evento']).toBeUndefined();
     expect(i['monto']).toBeUndefined();
-    expect(cuerpoDe(i)).toBe(GENERICO);
+    expect(cuerpoDe(i)).toBe(voz(GENERICO));
     expect((r.items[0]!['errores'] as string[]).some((e) => e === `qr_rechazado: ${motivo}`)).toBe(true);
     expect(r.items[0]!['resumen']).toMatchObject({ qrRechazado: true });
     expect(r.sd['estados']).toBeUndefined();
@@ -695,7 +698,7 @@ describe('Armar mensajes — el QR del cobro simulado', () => {
     expect(i['payload'].type).not.toBe('image');
     expect(i['evento']).toBeUndefined();
     expect(i['monto']).toBeUndefined();
-    expect(cuerpoDe(i)).toBe(GENERICO);
+    expect(cuerpoDe(i)).toBe(voz(GENERICO));
     expect((i['errores'] as string[]).some((e) => e === `qr_rechazado: ${motivo}`), String(i['errores'])).toBe(true);
     expect(i['resumen']).toMatchObject({ qrRechazado: true });
     expect(r.sd['estados']).toBeUndefined();
@@ -832,11 +835,11 @@ describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', ()
     ['Tus datos llegaron a nuestro equipo.'],
   ])('defensa: «%s» en un mensaje normal SIN aviso salido se reemplaza por la derivación', (frase) => {
     const sin = mensajes({ mensajes: [texto(frase)] });
-    expect(cuerpoDe(sin.items[0]!)).toBe(GENERICO);
+    expect(cuerpoDe(sin.items[0]!)).toBe(voz(GENERICO));
     expect((sin.items[0]!['errores'] as string[]).includes('pase_afirmado_sin_aviso_salido')).toBe(true);
     // el opuesto: con el aviso salido, la frase se queda
     const con = mensajes({ mensajes: [texto(frase)] }, { armados: [armado('pedido')], enviados: [OK()] });
-    expect(con.items[0]!['texto']).toBe(frase);
+    expect(con.items[0]!['texto']).toBe(voz(frase));
   });
 
   it('defensa: una negación honesta («No pude pasarle…») nunca se reemplaza', () => {
@@ -1040,7 +1043,7 @@ describe('Las diez reglas: nada prohibido sale, en ningún texto', () => {
 
   it.each(FRASES)('«%s» en un mensaje al cliente se reemplaza por la derivación', (frase) => {
     const r = mensajes({ mensajes: [texto(frase)] });
-    expect(cuerpoDe(r.items[0]!)).toBe(GENERICO);
+    expect(cuerpoDe(r.items[0]!)).toBe(voz(GENERICO));
     expect(PROHIBIDAS.test(JSON.stringify(textosDe(r.items[0]!)))).toBe(false);
     expect((r.items[0]!['errores'] as string[]).includes('texto_reemplazado_por_palabra_prohibida')).toBe(true);
   });
@@ -1049,7 +1052,7 @@ describe('Las diez reglas: nada prohibido sale, en ningún texto', () => {
     'el título de botón «%s» reemplaza todo el mensaje por la derivación', (titulo) => {
       const r = mensajes({ mensajes: [botones('Elige', 'Hacer un pedido', titulo)] });
       expect(r.items[0]!['payload'].interactive.action.buttons).toBeUndefined();
-      expect(cuerpoDe(r.items[0]!)).toBe(GENERICO);
+      expect(cuerpoDe(r.items[0]!)).toBe(voz(GENERICO));
       expect(PROHIBIDAS.test(JSON.stringify(textosDe(r.items[0]!)))).toBe(false);
       expect((r.items[0]!['errores'] as string[]).includes('boton_reemplazado_por_palabra_prohibida')).toBe(true);
     });
@@ -1431,7 +1434,7 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
     // Negativos: http, IP, usuario, puerto, vacío, otra cosa → la derivación (nunca un botón «Ver la carta» que abre el chat del local).
     for (const mala of ['http://carta.ejemplo.invalid/c', 'https://10.0.0.1/c', ['https://usuario', 'carta.ejemplo.invalid/c'].join('@'), 'https://carta.ejemplo.invalid:8443/c', '', 'ftp://carta.ejemplo.invalid/c']) {
       const i = mensajes({ mensajes: [carta({ url: mala })] }).items[0]!;
-      expect(i['texto'], mala).toBe(GENERICO);
+      expect(i['texto'], mala).toBe(voz(GENERICO));
       expect(JSON.stringify(i['payload']), mala).not.toContain('Ver la carta');
     }
     // Sin la marca `catalogo`, un enlace con otra URL sigue siendo el chat del local (la regla de siempre).
@@ -1464,7 +1467,7 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
     for (const frase of ['Anotamos su reserva para el viernes.', 'Tu reserva quedó anotada.', 'Reserva anotada.', 'Anoté tu reserva para el viernes.',
       'Anotamos tu reservación para el viernes.', 'Anotamos tu reserva para el viernes.', 'Su reserva ya está anotada.', 'La reserva queda anotada.']) {
       const sin = mensajes({ mensajes: [texto(frase)] });
-      expect(cuerpoDe(sin.items[0]!), frase).toBe(GENERICO);
+      expect(cuerpoDe(sin.items[0]!), frase).toBe(voz(GENERICO));
       const con = mensajes({ mensajes: [texto(frase)] }, { armados: [armado('pedido')], enviados: [OK()] });
       expect(con.items[0]!['texto'], frase).toBe(frase);
     }
@@ -1481,29 +1484,29 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
     const ok = mensajes({ mensajes: [mapa()] }, { ...SALIO, cfg: { direccionMaps: MAPA } }).items[0]!;
     expect(ok['payload'].interactive.type).toBe('cta_url');
     expect(ok['payload'].interactive.action.parameters).toEqual({ display_text: 'Ver ubicación', url: MAPA });
-    expect(ok['texto']).toBe(CONF); // sin la frase de «menú» y sin chat
+    expect(ok['texto']).toBe(voz(CONF)); // sin la frase de «menú» y sin chat
     expect(JSON.stringify(ok['payload'])).not.toContain('wa.me');
     // Negativos: otra URL que la de la configuración, una inválida, o la configuración sin mapa → texto, sin botón (no la derivación).
     for (const [url, cfgMapa] of [['https://www.google.com/maps/otro', MAPA], ['https://evil.example/maps/x', 'https://evil.example/maps/x'], [MAPA, ''], ['', MAPA]] as const) {
       const i = mensajes({ mensajes: [mapa({ url })] }, { ...SALIO, cfg: { direccionMaps: cfgMapa } }).items[0]!;
       expect(i['payload'].type, url).toBe('text');
-      expect(i['texto'], url).toBe(CONF);
+      expect(i['texto'], url).toBe(voz(CONF));
       expect(JSON.stringify(i['payload']), url).not.toMatch(/cta_url|wa\.me/);
     }
     // Sin aviso salido, la frase «Anotamos tu reserva» (con o sin mapa) se reemplaza: AM_PASE.
     const sin = mensajes({ mensajes: [mapa()] }, { armados: [SIN_AVISO], cfg: { direccionMaps: MAPA } }).items[0]!;
-    expect(cuerpoDe(sin)).toBe(GENERICO);
+    expect(cuerpoDe(sin)).toBe(voz(GENERICO));
     expect(JSON.stringify(sin['payload'])).not.toContain('google.com');
   });
 
   it('`nivelEmojis`: «pocos» deja el primer emoji de cada mensaje, «ninguno» los quita todos, «muchos» no toca nada', () => {
     const t = '¡Hola! 👋 Soy el asistente 🌮 de Q. ¿Qué te gustaría hacer? 😅';
     const cuerpo = (nivel: string) => mensajes({ mensajes: [texto(t)] }, { cfg: { nivelEmojis: nivel } }).items[0]!['payload'].text.body;
-    expect(cuerpo('pocos')).toBe('¡Hola! 👋 Soy el asistente de Q. ¿Qué te gustaría hacer?');
-    expect(cuerpo('ninguno')).toBe('¡Hola! Soy el asistente de Q. ¿Qué te gustaría hacer?');
-    expect(cuerpo('muchos')).toBe(t);
+    expect(cuerpo('pocos')).toBe(voz('¡Hola! 👋 Soy el asistente de Q. ¿Qué te gustaría hacer?'));
+    expect(cuerpo('ninguno')).toBe(voz('¡Hola! Soy el asistente de Q. ¿Qué te gustaría hacer?'));
+    expect(cuerpo('muchos')).toBe(voz(t));
     // Sin el dato rige «pocos»; y un emoji al principio no deja un espacio suelto.
-    expect(mensajes({ mensajes: [texto(t)] }).items[0]!['payload'].text.body).toBe('¡Hola! 👋 Soy el asistente de Q. ¿Qué te gustaría hacer?');
+    expect(mensajes({ mensajes: [texto(t)] }).items[0]!['payload'].text.body).toBe(voz('¡Hola! 👋 Soy el asistente de Q. ¿Qué te gustaría hacer?'));
     expect(mensajes({ mensajes: [texto('🙂 Hola')] }, { cfg: { nivelEmojis: 'ninguno' } }).items[0]!['payload'].text.body).toBe('Hola');
     // También en el mensaje con botón de enlace.
     expect(mensajes({ mensajes: [enlace(GENERICO)] }, { cfg: { nivelEmojis: 'ninguno' } }).items[0]!['texto']).not.toContain('🙂');
@@ -1579,7 +1582,7 @@ describe('Voz y tono (05/10): lo que afirma un pase a nuestro equipo solo sale s
   it.each(TEXTOS)('%s: CON un aviso salido (wamid) el texto sale tal cual (el caso opuesto)', (_n, t) => {
     const r = mensajes({ mensajes: [texto(t)], aviso: { tipo: 'pedido', datos: {} } }, { armados: [armado('pedido')], enviados: [OK(1)] });
     expect(r.items).toHaveLength(1);
-    expect(r.items[0]!['texto']).toBe(t);
+    expect(r.items[0]!['texto']).toBe(voz(t));
     expect(r.items[0]!['resumen']).toMatchObject({ avisoSalio: true });
   });
 
@@ -1592,7 +1595,7 @@ describe('Voz y tono (05/10): lo que afirma un pase a nuestro equipo solo sale s
     ];
     for (const t of NEGADOS) {
       const r = mensajes({ mensajes: [texto(t)] });
-      expect(r.items[0]!['texto'], t).toBe(t);
+      expect(r.items[0]!['texto'], t).toBe(voz(t));
     }
   });
 });
@@ -1780,7 +1783,7 @@ describe('PR-4b: «Armar mensajes» con los cupos', () => {
     const negado: J = { statusCode: 200, body: { resultado: 'cupo_negado', motivo: 'agotado', clave: 'avisos', conversacion: { version: 0, estado: null, desde: null, vence: null, vencido: false } } };
     const r = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'menu' }, mensajes: [texto('Ya pasé tu pedido al restaurante.')], condicionados: null, aviso: { tipo: 'pedido', datos: {} } }, { armados: [armado('pedido', { cupos: CUPOS })], refs: { 'Consumir cupos': negado } });
     expect(r.items).toHaveLength(1);
-    expect(cuerpoDe(r.items[0]!)).toBe(GENERICO);
+    expect(cuerpoDe(r.items[0]!)).toBe(voz(GENERICO));
     expect((r.items[0]!['errores'] as string[]).some((e) => e.startsWith('cupo_negado: avisos: agotado'))).toBe(true);
     expect(r.armado!['asentar']).toBeNull();
     expect(r.armado!['cupos']).toBe('negado');

@@ -28,12 +28,12 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | doctoras.rroca-evy.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | 3db37cc4-ca855db7-c63e4c60-eee71530-10d8026b-50d6b185-b57aa8a4-691eefaf |
 | recordatorio-bellido.v1.json | experimental/recordatorio-bellido | demo | ninguno | M1 M2 M7 | por asignar (Principal) | pendiente | 64289535-4c20a3b1-19b0ab05-b8f97460-a209e62a-b87b132a-ae0d06ff-3c9bb15a |
 | rescate-22h.rroca-ruben.json | experimental/rescate-22h | sin publicar | construir.mjs --todos | M1 | por asignar (Principal) | pendiente | 30961db8-930cda05-5d3d5992-9d1c66e1-a061bf32-8d1918ac-9edc5daa-62dda067 |
-| rroca-antonio.json | experimental/rroca-antonio | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | c53154d3-fc3cff26-e94ac7a6-a8b4fdb2-c34f8409-f8ede4dc-42fe0f65-c53ecbef |
+| rroca-antonio.json | clientes/rroca-antonio | vivo | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | c53154d3-fc3cff26-e94ac7a6-a8b4fdb2-c34f8409-f8ede4dc-42fe0f65-c53ecbef |
 | rroca-emma.json | experimental/rroca-emma | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 923e8eee-2b776bb8-0c34f815-c13d7f47-d8d63530-76c4036a-98add59d-2b717a00 |
 | rroca-evy.json | clientes/rroca-evy | vivo | construir.mjs | M4 M6 (excepción declarada) | Rearquitectura | mudado | fcc0abe8-252f2e61-a4657d48-7d550749-1a5e8bb7-e07e8c83-f796b21e-d455db80 |
 | rroca-ruben.json | experimental/rroca-ruben | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | b7a96079-c55e076d-b5bf3950-acf5752e-40c008f8-78dcc901-dd54a1e4-1cafe270 |
-| venta-minima.qtaco-3727.json | experimental/venta-minima | sin publicar | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | aa2d61c6-f2f1f210-bb7f1abd-8459ff30-10f6dc18-59e86d1d-53f76fca-2e2b3057 |
-| venta-minima.qtaco.json | experimental/venta-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 6a9e223e-10e26d2b-73171575-5514da3e-3e3669dc-b9cd6f32-ff67b717-42b8fecc |
+| venta-minima.qtaco-3727.json | experimental/venta-minima | sin publicar | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | b0b012a0-3d932498-10c04d4e-a83cdaba-91bbd821-2520ada7-50d16b7e-43bb782f |
+| venta-minima.qtaco.json | experimental/venta-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 831c86e9-98b36d24-e872d118-21cbbc58-91616b29-24964c51-1468440a-a226881f |
 | walisuma.json | clientes/walisuma | sin publicar | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 8bfb62a0-7a75d69f-a60b189f-a5af2f86-67434ee5-aa38fa2a-983df343-25ef1c39 |
 
 ## Cómo se lee

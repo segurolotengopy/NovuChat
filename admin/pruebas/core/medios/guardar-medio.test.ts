@@ -991,3 +991,142 @@ describe('revisión de seguridad de #709: X-NovuChat-Mime y el reintento que tra
     }
   });
 });
+
+// ===========================================================================
+// IMAGEN SALIENTE DEL ASISTENTE (plan 16/11/2026): la única excepción a «solo entrante». Escrito negando.
+// ===========================================================================
+describe('POST guardarMedio: la imagen que ENVIÓ el asistente (origen «asistente»)', () => {
+  const nada = () => expect(almacen.objetos.size).toBe(0);
+  const saliente = (idMeta: string, extra: Record<string, unknown> = {}, tel = TEL, tenant = T) =>
+    mensaje(idMeta, { direccion: 'saliente', tipo: 'image', ...extra }, tel, tenant);
+  async function rutasDe(t: string): Promise<string[]> {
+    const ruta: string[] = [];
+    const visitar = async (r: FirebaseFirestore.DocumentReference) => {
+      if ((await r.get()).exists) ruta.push(r.path);
+      for (const col of await r.listCollections()) for (const d of await col.listDocuments()) await visitar(d);
+    };
+    await visitar(db.doc(`tenants/${t}`));
+    return ruta.sort();
+  }
+
+  it('NIEGA: un saliente de texto, audio, documento o video no se guarda, aunque el flujo pida otro tipo', async () => {
+    for (const [tipoMensaje, tipoPedido, bytes, ct] of [
+      ['text', 'image', JPG(), 'image/jpeg'], ['audio', 'audio', OGG(), 'audio/ogg'], ['document', 'document', PDF(), 'application/pdf'],
+      ['video', 'video', MP4('isom'), 'video/mp4'], ['text', 'document', PDF(), 'application/pdf'],
+      ['audio', 'image', JPG(), 'image/jpeg'], ['image', 'document', PDF(), 'application/pdf'], ['image', 'audio', OGG(), 'audio/ogg'],
+    ] as const) {
+      const id = idNuevo(); await saliente(id, { tipo: tipoMensaje });
+      const r = await peticion(bytes, buenas(id, tipoPedido, ct));
+      expect(r.codigo, `${tipoMensaje}/${tipoPedido}`).toBe(409);
+      expect(r.cuerpo).toEqual({ error: 'sin_mensaje' });
+      expect((await db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`).get()).exists).toBe(false);
+    }
+    nada();
+  });
+
+  it('NIEGA: un sticker saliente (tipo del mensaje distinto de image) no se guarda', async () => {
+    const id = idNuevo(); await saliente(id, { tipo: 'sticker' });
+    expect((await peticion(JPG(), buenas(id, 'image', 'image/jpeg'))).codigo).toBe(409);
+    nada();
+  });
+
+  it('NIEGA: la imagen saliente de OTRO comercio no se guarda en este, y no se escribe nada en el ajeno', async () => {
+    const idAjeno = idNuevo();
+    await db.doc(`tenants/${T_APAGADO}/conversaciones/wa_${TEL}`).set({ telefono: TEL, ultimoMensaje: 'x' });
+    await saliente(idAjeno, {}, TEL, T_APAGADO);
+    const antesAjeno = await rutasDe(T_APAGADO);
+    const antesT = await rutasDe(T);
+    const r = await peticion(JPG(), buenas(idAjeno, 'image', 'image/jpeg'));
+    expect(r.codigo).toBe(409);
+    expect(r.cuerpo).toEqual({ error: 'sin_mensaje' });
+    nada();
+    expect(await rutasDe(T_APAGADO)).toEqual(antesAjeno);
+    expect(await rutasDe(T)).toEqual(antesT);
+    expect((await db.doc(`tenants/${T_APAGADO}/mediosRecibidos/${al.nombreDeObjeto(idAjeno)}`).get()).exists).toBe(false);
+  });
+
+  it('NIEGA: un saliente de hace más de 30 minutos (o del futuro) no se guarda; de 29 minutos sí', async () => {
+    const viejo = idNuevo(); await saliente(viejo, { ts: Timestamp.fromMillis(Date.now() - 31 * MIN) });
+    expect((await peticion(JPG(), buenas(viejo, 'image', 'image/jpeg'))).codigo).toBe(409);
+    const futuro = idNuevo(); await saliente(futuro, { ts: Timestamp.fromMillis(Date.now() + 10 * MIN) });
+    expect((await peticion(JPG(), buenas(futuro, 'image', 'image/jpeg'))).codigo).toBe(409);
+    nada();
+    const reciente = idNuevo(); await saliente(reciente, { ts: Timestamp.fromMillis(Date.now() - 29 * MIN) });
+    expect((await peticion(JPG(), buenas(reciente, 'image', 'image/jpeg'))).codigo).toBe(200);
+  });
+
+  it('NIEGA: la imagen que mandó una PERSONA desde la consola (autor persona / medio.origen enviado) no pasa por aquí', async () => {
+    const a = idNuevo(); await saliente(a, { autor: 'persona', autorUid: 'u1' });
+    const b = idNuevo(); await saliente(b, { medio: { estado: 'guardado', origen: 'enviado', mime: 'image/jpeg', tamano: 5, objeto: 'x' } });
+    for (const id of [a, b]) expect((await peticion(JPG(), buenas(id, 'image', 'image/jpeg'))).codigo).toBe(409);
+    nada();
+  });
+
+  it('NIEGA: con la bandera apagada tampoco se guarda una imagen saliente', async () => {
+    const id = idNuevo();
+    await db.doc(`tenants/${T_APAGADO}/conversaciones/wa_${TEL}`).set({ telefono: TEL, ultimoMensaje: 'x' });
+    await saliente(id, {}, TEL, T_APAGADO);
+    const r = await peticion(JPG(), buenas(id, 'image', 'image/jpeg'), TOKEN_AJENO, 'POST', NUMERO_AJENO);
+    expect(r.codigo).toBe(409);
+    expect(r.cuerpo).toEqual({ error: 'guardado_apagado' });
+    nada();
+  });
+
+  it('una imagen saliente válida se guarda: ruta de siempre, origen «asistente» en el metadato y en el mensaje, 90 días', async () => {
+    const id = idNuevo();
+    const m = await saliente(id);
+    const r = await peticion(PNG(), buenas(id, 'image', 'image/png'));
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo.repetido).toBe(false);
+    expect(r.cuerpo.ruta).toMatch(new RegExp(`^tenants/${T}/medios/\\d{4}-\\d{2}-\\d{2}/${al.nombreDeObjeto(id)}\\.png$`));
+    expect(r.cuerpo.ruta).not.toContain(TEL);
+    const reg = await db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`).get();
+    expect(reg.data()).toMatchObject({ idMeta: id, conversacionId: `wa_${TEL}`, tipo: 'image', ext: 'png', mime: 'image/png', estado: 'guardado', origen: 'asistente', tamano: PNG().length });
+    expect((reg.get('vence').toMillis() - reg.get('en').toMillis()) / DIA_MS).toBe(90);
+    const marca = (await m.get()).get('medio');
+    expect(marca).toMatchObject({ estado: 'guardado', mime: 'image/png', tamano: PNG().length, origen: 'asistente' });
+    expect(marca.vence.toMillis()).toBe(reg.get('vence').toMillis());
+    // Los mismos topes: el medio gastó un cupo del día.
+    expect((await cupoRef().get()).data()).toMatchObject({ n: 1, bytes: PNG().length });
+    // Un reintento es idempotente.
+    const otra = await peticion(PNG(), buenas(id, 'image', 'image/png'));
+    expect(otra.cuerpo).toEqual({ ruta: r.cuerpo.ruta, repetido: true });
+  });
+
+  it('una imagen saliente cuyos bytes no son imagen (HTML, SVG) sigue siendo 415: la verificación por firma es la misma', async () => {
+    for (const bytes of [HTML(), SVG()]) {
+      const id = idNuevo(); await saliente(id);
+      expect((await peticion(bytes, buenas(id, 'image', 'image/jpeg'))).codigo).toBe(415);
+    }
+    nada();
+  });
+
+  it('el medio saliente NO escribe en cobros, pedidos, conteo, mensajesVentana ni respuestasDelPeriodo: solo marcador, cupo y la marca del mensaje', async () => {
+    const id = idNuevo();
+    const m = await saliente(id);
+    const antes = await rutasDe(T);
+    const mensajeAntes = (await m.get()).data()!;
+    expect((await peticion(JPG(), buenas(id, 'image', 'image/jpeg'))).codigo).toBe(200);
+    const despues = await rutasDe(T);
+    const nuevos = despues.filter((p) => !antes.includes(p));
+    expect(nuevos).toEqual([`tenants/${T}/cuposDeMedios/${hoy()}`, `tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`].sort());
+    expect(antes.filter((p) => !despues.includes(p))).toEqual([]);
+    for (const p of despues) expect(p).not.toMatch(/cobros|pedidos|conteo|mensajesVentana|respuestasDelPeriodo|comprobantesRecibidos|metricas|cierres|solicitud/);
+    // El mensaje cambia SOLO en `medio`.
+    const { medio, ...resto } = (await m.get()).data()!;
+    expect(medio).toBeDefined();
+    expect(resto).toEqual(mensajeAntes);
+    // La ficha y la conversación quedan intactas.
+    expect((await db.doc(`tenants/${T}`).get()).data()).toMatchObject({ nombre: 'Tienda', guardarMedios: true });
+    expect((await db.doc(`tenants/${T}/conversaciones/wa_${TEL}`).get()).data()).toEqual({ telefono: TEL, ultimoMensaje: 'hola' });
+  });
+
+  it('lo ENTRANTE sigue igual: se guarda SIN el campo origen', async () => {
+    const id = idNuevo();
+    const m = await mensaje(id, { tipo: 'image' });
+    expect((await peticion(JPG(), buenas(id, 'image', 'image/jpeg'))).codigo).toBe(200);
+    const reg = await db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`).get();
+    expect(reg.get('origen')).toBeUndefined();
+    expect((await m.get()).get('medio.origen')).toBeUndefined();
+  });
+});
