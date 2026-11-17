@@ -104,7 +104,7 @@ describe('Preparar guardado (saliente): solo una imagen que Meta aceptó, por la
     it('un teléfono inválido o un destinatario distinto del que se reporta', () => {
       omite(imagenPorId({ telefono: '123' }));
       omite(imagenPorId({ telefono: 'recepcion' }));
-      omite(imagenPorId({ payload: { type: 'image', to: '59171111111', image: { id: IMG_ID } } }));
+      omite(imagenPorId({ payload: { type: 'image', to: '59170000009', image: { id: IMG_ID } } }));
     });
     it('una vía que el flujo no tiene: el enlace en un flujo de media id, y al revés', () => {
       expect(prepararCon(['media'], [imagenPorEnlace()])).toEqual([]);
