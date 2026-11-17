@@ -78,6 +78,24 @@ const MAPA_CRM = JSON.parse(readFileSync(ARCHIVO_DE_DATOS_CRM, 'utf8')).crm;
 // filtro: el resto (pagos, «recibido», horas…) rechaza texto legítimo de una agenda. Si el core mueve o renombra el bloque, este armado FALLA a propósito (y `niega-ia.test.ts` lo cubre).
 const NIEGA_IA_CORE = reglaDeIdentidadDelCore();
 
+// La BAJA común (`Flujos/src/core/conversacion/baja.js`, 13/11/2026; decisión de Andres del 17/11/2026 para Bellido): la pieza se INCLUYE byte a byte, sin copiar ni alterar, delante del código propio de
+// «Decidir turno» (`bjPideBaja`) y de «Armar mensajes» (`bjTextoBaja`). La expresión del nodo «Reportar mensaje (entrante)» es LITERALMENTE la de la pieza (`expresionDeBaja`): se deriva de la fuente al armar.
+const BAJA_CORE = leer('../../src/core/conversacion/baja.js').trimEnd();
+const NODOS_CON_BAJA = new Set(['Decidir turno', 'Armar mensajes']);
+const BAJA_EXPRESION = /^const BJ_BAJA = (\/.+\/i);$/m.exec(BAJA_CORE)?.[1];
+const BAJA_PLEGADO = /^function bjPlegar\(texto\) \{\n {2}return String\(texto === undefined \|\| texto === null \? '' : texto\)(\..+);\n\}$/m.exec(BAJA_CORE)?.[1];
+if (!BAJA_EXPRESION || !BAJA_PLEGADO) throw new Error('baja.js: no se encontró la expresión o el plegado de la pieza común');
+/** El cuerpo de «Reportar mensaje (entrante)»: el literal de la pieza común y su plegado, sobre `t.texto` (en una nota de voz va vacío: ahí marca el saliente). */
+const CUERPO_ANTERIOR_REPORTE_ENTRANTE = "evento: /no (me )?(escrib|mand|molest|contact|llam)|dej(a|á|e|en) de escribir|no quiero (más|mas) mensajes|b[oó]rr(a|e)me|qu[ií]t(a|e)me|d(a|á|e)me de baja|^stop$/i.test(String(t.texto || '')) ? 'no_contactar' : undefined";
+const CUERPO_NUEVO_REPORTE_ENTRANTE = `evento: ${BAJA_EXPRESION}.test(String(t.texto || '')${BAJA_PLEGADO}) ? 'no_contactar' : undefined`;
+
+/** El código de un nodo con la baja común justo DELANTE de su propio código (después de la librería y las utilidades). */
+function conBaja(codigo, marca) {
+  const propio = leer(`src/${marca.slice('@@'.length)}`).trimEnd();
+  if (!codigo.endsWith(`${propio}\n`)) throw new Error('baja: el código armado ya no termina en el código propio del nodo');
+  return `${codigo.slice(0, codigo.length - propio.length - 1)}${BAJA_CORE}\n\n${propio}\n`;
+}
+
 /** «Armar mensajes» lleva `NIEGA_IA_CORE` justo DELANTE de su propio código (después de la librería y las utilidades). */
 function conReglaDeIdentidad(codigo, marca) {
   const propio = leer(`src/${marca.slice('@@'.length)}`).trimEnd();
@@ -112,7 +130,16 @@ function armar(v) {
   flujo.connections['Armar mensajes'] = { main: [[...previoDeArmar, { node: rama.entrada, type: 'main', index: 0 }]] };
   for (const n of flujo.nodes) {
     const js = n.parameters && n.parameters.jsCode;
-    if (typeof js === 'string' && js.startsWith('@@')) n.parameters.jsCode = n.name === 'Armar mensajes' ? conReglaDeIdentidad(codigoDe(js, n.name), js) : codigoDe(js, n.name);
+    if (typeof js === 'string' && js.startsWith('@@')) {
+      let armado = codigoDe(js, n.name);
+      if (NODOS_CON_BAJA.has(n.name)) armado = conBaja(armado, js);
+      n.parameters.jsCode = n.name === 'Armar mensajes' ? conReglaDeIdentidad(armado, js) : armado;
+    }
+    if (n.name === 'Reportar mensaje (entrante)') {
+      const cuerpo = n.parameters.jsonBody;
+      if (typeof cuerpo !== 'string' || !cuerpo.includes(CUERPO_ANTERIOR_REPORTE_ENTRANTE)) throw new Error('Reportar mensaje (entrante): el cuerpo de la plantilla ya no es el esperado');
+      n.parameters.jsonBody = cuerpo.replace(CUERPO_ANTERIOR_REPORTE_ENTRANTE, () => CUERPO_NUEVO_REPORTE_ENTRANTE);
+    }
     // La credencial del miniCRM la calcula el tenant; nunca sale de datos.
     for (const c of Object.values(n.credentials || {})) if (c && c.name === '@@cred:crm') c.name = CREDENCIAL_CRM(TENANT_CRM);
     // La variante de PRUEBA no escribe en ninguna planilla: el id va vacio (nunca la hoja de un cliente real).

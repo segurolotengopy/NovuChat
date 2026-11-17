@@ -82,6 +82,18 @@ Una excepción necesita las tres cosas, o no es una excepción:
 >   `PROPIO.md`). La excepción de F3a de la fila vieja deja de aplicar a este
 >   flujo; `novuchat-onboarding.json` queda como histórico sin fila.
 
+## Estado al 17/11/2026 (Bellido, Agenda mínima: baja por texto y por voz; VIVO ATRASADO hasta su republicación)
+
+Decisión de Andres (17/11/2026, «Sí, agregarla»; regla: toda función de conversación igual en todos). Bellido (`Flujos/experimental/agenda-minima/`) no tenía baja ni por texto ni por voz.
+
+1. **Qué cambia:** «Decidir turno» incluye la pieza común `Flujos/src/core/conversacion/baja.js` (byte a byte, sin copiar ni alterar) y, DESPUÉS de la protección de emergencia, recepción, doctor y salud (sin cambiar su orden) y ANTES de cualquier cita o menú, manda un pedido de baja (`bjPideBaja`) a la ruta `baja`; «Plan del turno» la deja pasar sin tocar el estado; «Armar mensajes» confirma con UN texto fijo (`bjTextoBaja`, sin modelo, sin botones, sin aviso a recepción). «Reportar mensaje (entrante)» pasa a llevar LITERALMENTE la expresión y el plegado de la pieza (antes una expresión amplia propia). Una baja NO cancela ni agenda citas.
+2. **Voz:** una nota de voz cuya transcripción tiene hasta 160 caracteres (`BJ_VOZ_MAX`) y cumple `bjPideBaja` toma la misma ruta; su entrante va sin texto y no marca nada, por eso la confirmación lleva `evento: 'no_contactar'` en el reporte del mensaje SALIENTE. Más de 160, un audio ilegible o un toque de lista/botón siguen su camino normal.
+3. **Mensajes por conversación:** 0 agregados y 0 quitados (la confirmación reemplaza la respuesta del turno). 0 nodos nuevos (71).
+4. **Excepción de baja cerrada:** `agenda-minima/agenda-minima.v0.json` sale de `EXCEPCIONES_DE_BAJA` y el tope baja de 12 a 11.
+5. **Publicación:** NADA publicado. El flujo VIVO de Bellido (71 nodos, congelado) sigue SIN baja y con su expresión amplia de `no_contactar` hasta que Andres autorice la republicación (botón; `flujo-de-prueba.mjs --env .env.bellido --actualizar-codigo`, que cambia el código de «Decidir turno», «Plan del turno» y «Armar mensajes» y la expresión de «Reportar mensaje (entrante)»; verificar antes el vivo y probar con un teléfono real). Atraso **declarado**, no silencioso. **Reporte del entrante (cambia de la expresión amplia a la común; a decidir con la republicación):** SIGUEN marcando `no_contactar` «bórrame», «quítame», «no me llamen»; DEJAN de marcarlo «no me manden promociones», «no me mandes ofertas», «no me escriban por la noche», «no me escriban al número», «bórrame mi número»; PASAN a marcarlo «STOP!», «no me envíen nada», «dejen de molestar», «eliminame», «sáquenme», «quítenme de la lista»; ya no marca falsos positivos como «no me escribió el precio» (fijado en `agenda-minima-flujo.test.ts`).
+6. **Salud primero:** si el mensaje de baja trae una palabra de salud de la configuración (en cualquier paso, incluidos esperando*, cancelando y moviendo), se deriva a la consulta de salud (aviso + botón) y NO se confirma la baja; el entrante escrito igual marca `no_contactar`. Una foto con pie de baja marca sin confirmación.
+7. **Asimetría declarada texto/voz:** un mensaje ESCRITO se marca siempre por el entrante, llegue a la ruta que llegue. Una nota de voz solo se registra si llega a la ruta `baja` (el `no_contactar` va en el saliente de la confirmación): NO se registra si antes cae en emergencia, recepción, doctor o salud, ni si su transcripción pasa de 160 caracteres.
+
 ## Estado al 28/09/2026 (medios entrantes en el Demo B y la captación)
 
 Primer paso general de «audio e imagen son capacidades de todos los flujos»

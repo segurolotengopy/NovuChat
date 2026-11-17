@@ -63,6 +63,11 @@ if (['text', 'interactive', 'button'].indexOf(tipoEf) < 0) return salir('derivar
 const boton = leerIdDeBoton(String(t.eleccion || ''));
 const norm = cnNorm(texto);
 
+// La lista de palabras de SALUD (se usa en la prioridad de abajo y antes de la baja).
+const reClin = (() => {
+  const partes = String(cfg.palabrasClaveClinicas || '').split('|').map((p) => cnNorm(p)).filter(Boolean).map((p) => p.replace(/[.*+?^${}()[\]\\]/g, '\\$&'));
+  return partes.length ? new RegExp('(?<![\\p{L}\\p{N}])(?:' + partes.join('|') + ')(?![\\p{L}\\p{N}])', 'iu') : null;
+})();
 // --- PRIORIDAD (la de Bellido): emergencia > recepcion > doctor > el resto ------------
 if (!boton) {
   const reEmerg = cnRegexDeLista(cfg.palabrasClaveEmergencia);
@@ -76,12 +81,23 @@ if (!boton) {
   // Una pregunta de SALUD no la responde el asistente: se ofrece pasar con recepción (aviso + botón). Cada palabra de la lista
   // se busca ENTERA (límite de palabra a los dos lados: «tos» no es «tostadas» ni «dolor» es «Dolores»), en cualquier paso salvo
   // cuando se espera un nombre, y solo si el mensaje no pide una cita.
-  const reClin = (() => {
-    const partes = String(cfg.palabrasClaveClinicas || '').split('|').map((p) => cnNorm(p)).filter(Boolean).map((p) => p.replace(/[.*+?^${}()[\]\\]/g, '\\$&'));
-    return partes.length ? new RegExp('(?<![\\p{L}\\p{N}])(?:' + partes.join('|') + ')(?![\\p{L}\\p{N}])', 'iu') : null;
-  })();
   const pideCita = /(?<![\p{L}\p{N}])(cita|citas|ficha|fichas|turno|turnos|agendar|agendame|agendarme|reservar|reserva|cancelar|cancelo|cancelame|anular|anulo|reagendar|reprogramar|mover)(?![\p{L}\p{N}])/iu;
   if (reClin && reClin.test(norm) && !pideCita.test(norm) && String(est.paso || 'inicio').indexOf('esperando') !== 0 && est.paso !== 'cancelando' && est.paso !== 'moviendo') return salir('consulta_clinica');
+}
+
+// --- BAJA (17/11/2026, decisión de Andres: toda función de conversación igual en todos) -----------------------------
+// Un pedido de baja («no me escriban más», «dame de baja», «stop») toma UNA ruta: un texto fijo, sin modelo, sin botones, sin aviso a recepción y sin tocar citas.
+// `bjPideBaja` es la pieza común del core. Va DESPUÉS de la protección de emergencia, salud y recepción (arriba, sin cambiar su orden) y ANTES de cualquier cita o menú.
+// Un mensaje ESCRITO se decide sobre `t.texto`, la MISMA fuente de «Reportar mensaje (entrante)», que ya marca `no_contactar`. Una NOTA DE VOZ se decide sobre su TRANSCRIPCIÓN y solo si es corta
+// (hasta BJ_VOZ_MAX caracteres: un audio largo sigue su camino): su entrante va sin texto y no marca nada, así que la ruta lleva `porVoz` y «Armar mensajes» pone `evento: 'no_contactar'` en el reporte del
+// mensaje SALIENTE de la confirmación. Confirmar sin registrar está prohibido. Un toque de lista o de botón no es una baja; una foto con pie queda marcada sin confirmación (el lado seguro).
+const BJ_VOZ_MAX = 160;
+const bajaPorVoz = t.tipo === 'audio';
+if (!boton && !t.eleccion && (bajaPorVoz ? (texto.length <= BJ_VOZ_MAX && bjPideBaja(texto)) : (t.tipo === 'text' && bjPideBaja(t.texto)))) {
+  // La SALUD va antes también en los pasos que la prioridad de arriba omite (esperando*, cancelando, moviendo): «mi hija tiene fiebre, no me escriban más» se deriva (aviso + botón). El entrante igual marca `no_contactar`
+  // (un mensaje escrito); una nota de voz que cae acá no se registra, porque no llega a la ruta de baja.
+  if (reClin && reClin.test(norm)) return salir('consulta_clinica');
+  return salir('baja', { porVoz: bajaPorVoz });
 }
 
 if (boton && boton.tipo === 'h') return salir('elegir_hueco', { boton: boton });

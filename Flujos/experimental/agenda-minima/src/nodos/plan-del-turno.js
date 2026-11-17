@@ -2,7 +2,7 @@
 // QUE leer del calendario. El modelo solo ENTENDIO el mensaje: aca todo es validado
 // con codigo, y un campo raro del modelo se descarta, no se obedece.
 //
-// Tipos de plan (`plan`): nada, menu, emergencia, contacto_doctor, contacto_recepcion,
+// Tipos de plan (`plan`): nada, baja, menu, emergencia, contacto_doctor, contacto_recepcion,
 // derivar_medio, consulta_clinica, audio_ilegible, imagen_sin_texto, respuesta_fija (params.clave, params.conMenu), pedir_boton, pedir_nombre, transferir, error, responder,
 // ofrecer, elegir_hueco, crear (con nombre), listar (cancelar o mover), cancelar,
 // mover_elegido.
@@ -71,6 +71,8 @@ function nombresValidos(lista) {
 const accion = d.accion;
 
 // --- Planes que no necesitan modelo ni calendario ---------------------------------------
+// La baja no toca el estado de la conversación (ni la oferta pendiente ni las citas): al volver a escribir se atiende como siempre.
+if (accion === 'baja') return salir('baja');
 if (['nada', 'menu', 'emergencia', 'contacto_doctor', 'contacto_recepcion', 'derivar_medio', 'audio_ilegible', 'imagen_sin_texto', 'respuesta_fija', 'consulta_clinica'].indexOf(accion) >= 0) {
   if (accion !== 'nada' && est.paso === 'inicio') en.paso = 'menu';
   // Una pregunta sencilla contestada por codigo: `clave` dice cual y `conMenu` si es el primer mensaje de la
