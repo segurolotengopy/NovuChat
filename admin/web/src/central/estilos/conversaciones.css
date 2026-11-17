@@ -96,7 +96,10 @@
 .cv-etiqueta--cerrada { opacity: .7; }
 
 /* ── Detalle ───────────────────────────────────────────────────────────── */
-.cv-detalle { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+/* El detalle SE DESPLAZA entero (reclamo de Andres, 17/11/2026): cabecera, turno, redactor y adjuntos son `flex: none` y el hilo conserva un mínimo
+   legible; si todo junto pasa de la altura disponible (laptop de 768 px, imagen grande, campo de texto alto), lo que sobra se alcanza con el scroll
+   del detalle en vez de quedar recortado por el `overflow: hidden` de `.cv-cuerpo`. */
+.cv-detalle { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
 .cv-detalle--vacio { align-items: center; justify-content: center; color: color-mix(in srgb, var(--color-text) 65%, transparent); background: var(--fondo-alterno); }
 
 .cv-det-cab {
@@ -151,7 +154,7 @@
 .cv-aviso-linea { flex: none; margin: 0; padding: 4px var(--space-3); font-size: 13px; background: var(--color-accent-100); }
 
 .cv-hilo {
-  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  flex: 1 1 0; min-height: 12rem; overflow-y: auto; overscroll-behavior: contain;
   padding: var(--space-3) var(--space-4); background: var(--fondo-alterno);
 }
 .cv-hilo:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
@@ -221,7 +224,7 @@
 .cv-bloqueados-filas li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 /* Medios B4: enviar un archivo o una nota de voz como persona. */
-.cv-adjuntar { flex: none; max-height: 55vh; max-height: 55dvh; overflow-y: auto; scroll-padding-bottom: 72px; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-top: 1px solid var(--color-border, #ddd); }
+.cv-adjuntar { flex: none; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-top: 1px solid var(--color-border, #ddd); }
 .cv-adjuntar-botones { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .cv-adjunto-boton { min-height: 44px; }
 .cv-adjunto-estado, .cv-adjunto-nota { margin: 0; font-size: 13px; }
