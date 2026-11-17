@@ -25,7 +25,16 @@ if (!r.ok) return cerrado('sin_estado');
 const f = chFichaVigente(r.ficha, t.ahoraMs);
 const eventos = f.cola.filter((e) => e.seq > f.hasta);
 if (!eventos.length) return [];
-const plan = chDecidir({ eventos: eventos, ficha: f, cfg: cfg, from: t.from });
+let plan = chDecidir({ eventos: eventos, ficha: f, cfg: cfg, from: t.from });
+// LA BAJA POR NOTA DE VOZ (decisión de Andres, 16/11/2026): la puerta solo ve el texto ESCRITO (`t.texto`); un audio llega a la cola con su TRANSCRIPCIÓN (`k: 'audio'`, `c`, con el tope de 4.400 caracteres de «Registrar evento»).
+// Si el audio final de este turno pide la baja (`bjPideBaja`, pieza común del core), el turno es `baja`: UN texto fijo, sin modelo, botones ni aviso (0 mensajes agregados: reemplaza la respuesta del turno). El entrante de un audio
+// no marca `no_contactar`, así que `porVoz` hace que «Armar mensajes» lo ponga en el reporte del mensaje SALIENTE de la confirmación (confirmar sin registrar está prohibido). Un audio sin transcripción (`c` vacío) sigue su camino.
+// SEGUNDA PASADA (16/11/2026): la baja por voz solo se decide si ese audio es el ÚLTIMO evento CON CONTENIDO de la ráfaga (un mensaje posterior del cliente manda: sigue su camino y no se pierde) y su transcripción es CORTA (hasta `CH_BAJA_VOZ_MAX` caracteres).
+// `hastaBaja` = el `seq` de ese audio: «Armar mensajes» marca respondido SOLO hasta ahí, nunca mensajes posteriores.
+const CH_BAJA_VOZ_MAX = 160;
+const conContenido = eventos.filter((e) => e && ((typeof e.c === 'string' && e.c !== '') || e.boton));
+const ultimoConContenido = conContenido[conContenido.length - 1];
+if (ultimoConContenido && ultimoConContenido.k === 'audio' && ultimoConContenido.c.length <= CH_BAJA_VOZ_MAX && bjPideBaja(ultimoConContenido.c)) plan = { ruta: 'baja', porVoz: true, hastaBaja: ultimoConContenido.seq, fijo: '', contexto: '', rubroElegido: '', temas: [], soporte: false, tope: false, hechos: {}, aMedida: false };
 const precios = chContextoPrecios(f, eventos);
 const llamar = plan.ruta === 'modelo';
 const cuerpo = llamar ? chCuerpoModelo({ cfg: cfg, ficha: f, eventos: eventos, contexto: plan.contexto, ahoraMs: t.ahoraMs, precios: precios }) : null;

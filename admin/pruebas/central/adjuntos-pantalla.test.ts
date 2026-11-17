@@ -68,7 +68,7 @@ describe('el Detalle', () => {
   });
   it('un archivo enviado se pide por el id del mensaje', () => expect(detalle).toMatch(/mensajeId=\{x\.id\}/));
   it('NEGANDO: el texto de una burbuja de persona no dice «puede ser el comprobante»', () => {
-    const persona = /const ADJUNTOS_DE_PERSONA[\s\S]*?};/.exec(detalle)?.[0] ?? '';
+    const persona = /const ADJUNTOS_DE_PERSONA[\s\S]*?};/.exec(leer('web/src/central/lib/medios.ts'))?.[0] ?? '';
     expect(persona).toMatch(/image/);
     expect(persona).not.toMatch(/comprobante/);
   });
