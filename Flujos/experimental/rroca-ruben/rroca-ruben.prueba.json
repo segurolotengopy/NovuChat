@@ -2033,6 +2033,153 @@
         }
       },
       "notes": "El aviso de falla a la recepción del negocio, en texto libre (su ventana está abierta). Sin reintentos: un aviso repetido llegaría dos veces. Sin onError: si falla, la ejecución termina en error (corre al final, el cliente ya tiene su respuesta). +1 mensaje solo cuando falla el guardado, a lo más uno por día."
+    },
+    {
+      "id": "gs-preparar",
+      "name": "Preparar guardado (saliente)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7640,
+        1900
+      ],
+      "parameters": {
+        "jsCode": "// FUENTES DEL GUARDADO SALIENTE: las arma Flujos/src/core/sin-agente/guardado-saliente.mjs para este flujo (nombres de nodo literales, para que n8n los precargue).\nconst GS_VIAS = [\"media\"];\nconst GS_FUENTE = (i) => ({\n  meta: $('Enviar a WhatsApp').itemMatching(i).json,\n  payload: $('Armar mensajes').itemMatching(i).json.payload,\n  tipoReporte: $('Armar mensajes').itemMatching(i).json.tipoReporte,\n  telefono: $('Armar mensajes').itemMatching(i).json.para,\n  version: $('Armar mensajes').itemMatching(i).json.waGraphVersion,\n});\n\n// PREPARAR GUARDADO SALIENTE (módulo común de medios, plan «imágenes enviadas por el asistente», 16/11/2026, bloque 2a): decide si lo que el flujo ACABA de\n// enviar al cliente es una IMAGEN del asistente que se guarda en la consola para el control de calidad, y con qué datos se baja.\n//\n// Corre en su PROPIA rama, colgada de «Reportar mensaje (saliente)» (el servidor exige el saliente YA registrado por la ingesta: mismo `idMeta`, tipo `image`,\n// 30 minutos) y DESPUÉS de todo envío al cliente: nada de lo que pase acá cambia lo que recibe el cliente, ni su orden, ni suma un mensaje. Devuelve `[]` (la\n// rama termina en silencio) para cualquier ítem que no sea una imagen aceptada por Meta; un texto, un botón, una lista o una imagen que viaja de encabezado\n// de un interactivo NO se guardan (el servidor solo admite un saliente de tipo `image`).\n//\n// QUÉ SE GUARDA, y por qué vía se obtiene (la bajan los nodos que siguen; este NO toca el binario ni hace llamadas):\n//   `enlace` ... el envío fue por enlace https (`image.link`: el QR de cobro de `imagenDeCobro?f=…`): se hace GET del mismo enlace, sin credencial.\n//   `media` .... el envío fue por media id de Meta (`image.id`): Graph, con la MISMA credencial de envío del flujo (GET /{id} → url → GET con la credencial).\n// `GS_VIAS` (la cabecera que arma `guardado-saliente.mjs` para cada flujo) dice cuáles vías tiene la rama de ESE flujo: una imagen cuya vía no está se omite.\n//\n// LA VOZ DEL SERVIDOR MANDA: la bandera `guardarMedios` de la ficha y los topes (tamaño, cupo diario, 30 minutos) los aplica `guardarMedio`; esta rama no\n// reintenta nada y registra nada más. Nunca corta el turno: todo nodo de red de la rama sigue con `onError: continueRegularOutput`.\n//\n// `GS_FUENTE(i)` la define la cabecera: para el ítem `i` de la entrada devuelve { meta, payload, tipoReporte, telefono, version? } con los NOMBRES DE NODO\n// LITERALES de cada flujo (el task runner de n8n solo precarga los nodos nombrados así). Un ítem cuya fuente falla se omite (no hay cómo saber qué se envió).\n// JavaScript plano del nodo Code de n8n: sin require, URL, Buffer ni crypto.\nconst gsVias = Array.isArray(GS_VIAS) ? GS_VIAS.map((v) => String(v)) : [];\nconst gsEntrada = $input.all();\nconst gsSalida = [];\n// Solo https, con un anfitrión de nombre (sin usuario, sin IP ni «localhost»: el enlace sale de la configuración del negocio, pero el flujo no se vuelve un cliente HTTP\n// a cualquier parte). Sin espacios ni controles; hasta 2000 caracteres.\nconst gsEnlaceSeguro = (t) => typeof t === 'string' && t.length <= 2000 && /^https:\\/\\/([a-z0-9-]+\\.)+[a-z][a-z0-9-]*(:\\d{1,5})?([/?#][\\x21-\\x7e]*)?$/i.test(t) && !/^https:\\/\\/(localhost|[0-9.]+)([:/?#]|$)/i.test(t);\nfor (let gsI = 0; gsI < gsEntrada.length; gsI++) {\n  try {\n    const gsF = GS_FUENTE(gsI) || {};\n    // Solo lo que el armado del flujo reportó como imagen Y lo que de verdad se envió como imagen (no un interactivo con la imagen de encabezado).\n    if (gsF.tipoReporte !== 'image') continue;\n    const gsPayload = gsF.payload && typeof gsF.payload === 'object' ? gsF.payload : null;\n    if (!gsPayload || gsPayload.type !== 'image' || !gsPayload.image || typeof gsPayload.image !== 'object') continue;\n    // Meta tiene que haberlo aceptado: el id del mensaje (wamid) sale de SU respuesta; sin él no hay mensaje registrado que guardar.\n    const gsMeta = gsF.meta && typeof gsF.meta === 'object' ? gsF.meta : {};\n    if (gsMeta.error) continue;\n    const gsIdMeta = String((((gsMeta.messages || [])[0]) || {}).id || '');\n    const gsTelefono = String(gsF.telefono || '');\n    // Lo que el servidor exige: teléfono de 8 a 15 dígitos y el id del MENSAJE sin espacios ni controles. Si el payload trae el destinatario, es el mismo.\n    if (!/^\\d{8,15}$/.test(gsTelefono) || !/^[\\x21-\\x7e]{1,200}$/.test(gsIdMeta)) continue;\n    if (gsPayload.to !== undefined && String(gsPayload.to).replace(/\\D/g, '') !== gsTelefono) continue;\n    const gsImagen = gsPayload.image;\n    const gsMediaId = typeof gsImagen.id === 'string' ? gsImagen.id : '';\n    const gsEnlace = typeof gsImagen.link === 'string' ? gsImagen.link : '';\n    const gsVersion = /^v\\d+\\.\\d$/.test(String(gsF.version || '')) ? String(gsF.version) : 'v26.0';\n    let gsVia = '';\n    if (/^[A-Za-z0-9_-]{1,100}$/.test(gsMediaId) && !gsEnlace) gsVia = 'media';\n    else if (gsEnlaceSeguro(gsEnlace) && !gsMediaId) gsVia = 'enlace';\n    if (!gsVia || gsVias.indexOf(gsVia) < 0) continue;\n    gsSalida.push({ json: {\n      telefono: gsTelefono,\n      idMeta: gsIdMeta,\n      tipo: 'image',\n      via: gsVia,\n      mediaId: gsVia === 'media' ? gsMediaId : '',\n      enlace: gsVia === 'enlace' ? gsEnlace : '',\n      waGraphVersion: gsVersion,\n    }, pairedItem: { item: gsI } });\n  } catch (gsError) {\n    // Sin respuesta que reconstruir: este ítem no se guarda y el turno sigue.\n  }\n}\nreturn gsSalida;\n"
+      },
+      "notes": "Rama del GUARDADO de la imagen que el asistente ENVIÓ (módulo común Flujos/src/core/medios/guardado-saliente-preparar.js). Corre después del reporte saliente y de todo envío al cliente; omite todo lo que no sea una imagen aceptada por Meta. No toca el binario ni hace llamadas."
+    },
+    {
+      "id": "gs-pedir",
+      "name": "Pedir imagen a Meta (guardado saliente)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        7880,
+        2020
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ $json.waGraphVersion }}/{{ String($json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp — pruebas (no producción)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "GET /{media-id} con la MISMA credencial de envío del flujo: devuelve url, mime_type y file_size de la imagen que se envió (el media id dura 30 días; el servidor exige que el saliente tenga a lo más 30 minutos)."
+    },
+    {
+      "id": "gs-bajar",
+      "name": "Descargar imagen de Meta (guardado saliente)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        8120,
+        2020
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ (String($json.url || '').startsWith('https://lookaside.fbsbx.com/') && !(Number($json.file_size) > 5242880)) ? $json.url : '' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 8000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp — pruebas (no producción)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Baja el archivo del CDN de Meta con la credencial de envío, sin seguir redirecciones, SOLO desde lookaside.fbsbx.com y si Meta no informó un tamaño por encima de 5 MiB. Si no, la URL queda vacía y no se baja nada."
+    },
+    {
+      "id": "gs-guardar",
+      "name": "Guardar imagen enviada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        8360,
+        1900
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Normalizar entrada').first().json.phoneNumberId }}"
+            },
+            {
+              "name": "X-NovuChat-Telefono",
+              "value": "={{ $('Preparar guardado (saliente)').item.json.telefono }}"
+            },
+            {
+              "name": "X-NovuChat-IdMeta",
+              "value": "={{ $('Preparar guardado (saliente)').item.json.idMeta }}"
+            },
+            {
+              "name": "X-NovuChat-Tipo",
+              "value": "image"
+            },
+            {
+              "name": "Content-Type",
+              "value": "={{ (() => { const ok = ['image/jpeg','image/png','image/webp']; const b = String((($binary || {}).data || {}).mimeType || '').toLowerCase().split(';')[0].trim(); return ok.indexOf(b) >= 0 ? b : 'application/octet-stream'; })() }}"
+            },
+            {
+              "name": "X-NovuChat-Mime",
+              "value": "={{ (() => { const ok = ['image/jpeg','image/png','image/webp']; const b = String((($binary || {}).data || {}).mimeType || '').toLowerCase().split(';')[0].trim(); return ok.indexOf(b) >= 0 ? b : 'application/octet-stream'; })() }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Ruben)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "POST guardarMedio con los BYTES de la imagen enviada y el wamid del saliente: solo el token de ingesta del número, nunca firma. El servidor decide (bandera guardarMedios, tope de tamaño y cupo, 30 minutos): si no la guarda, la rama termina en silencio. Sin reintentos, sin aviso: no suma ningún mensaje de WhatsApp."
     }
   ],
   "connections": {
@@ -2639,7 +2786,13 @@
     },
     "Reportar mensaje (saliente)": {
       "main": [
-        []
+        [
+          {
+            "node": "Preparar guardado (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Preparar guardado": {
@@ -2731,6 +2884,39 @@
         [
           {
             "node": "Avisar falla del guardado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar guardado (saliente)": {
+      "main": [
+        [
+          {
+            "node": "Pedir imagen a Meta (guardado saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedir imagen a Meta (guardado saliente)": {
+      "main": [
+        [
+          {
+            "node": "Descargar imagen de Meta (guardado saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar imagen de Meta (guardado saliente)": {
+      "main": [
+        [
+          {
+            "node": "Guardar imagen enviada",
             "type": "main",
             "index": 0
           }

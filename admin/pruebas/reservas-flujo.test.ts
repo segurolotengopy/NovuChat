@@ -848,7 +848,9 @@ describe.each([
         // El reenvío del QR cuelga del mismo envío y comparte el nodo que manda
         // la imagen; desde el reintento su compuerta tampoco pasa nada.
         '¿Reenviar el QR?', 'Preparar reenvío del QR', 'Enviar QR de la seña',
-        'Reportar QR (saliente)', 'QR no enviado'].sort());
+        'Reportar QR (saliente)', 'QR no enviado',
+        // La rama del GUARDADO de la imagen SALIENTE (16/11/2026) cuelga del reporte del QR: solo baja y guarda, no vuelve a ningún nodo de arriba.
+        'Preparar guardado (saliente)', 'Descargar enlace (guardado saliente)', 'Guardar imagen enviada'].sort());
       // Y al agente principal se entra por UN solo lugar efectivo: la compuerta
       // de medios, directamente o después de convertir el medio en texto.
       expect(origenes(AGENTE).sort()).toEqual(
@@ -2125,7 +2127,8 @@ describe.each([
       expect(d.parameters).toMatchObject({ method: 'GET', url: '={{ $json.url }}', authentication: 'predefinedCredentialType', nodeCredentialType: 'whatsAppApi' });
       expect(d.parameters['options']?.response?.response).toEqual({ responseFormat: 'file', outputPropertyName: 'data' });
       // Ningún nodo del flujo sube un binario ni escribe a un almacén.
-      for (const n of f.nodes) {
+      // (la rama del guardado de la imagen que el asistente ENVIÓ, 16/11/2026, sube a `guardarMedio` el QR que mandó el flujo —no el comprobante del cliente—: es la única excepción)
+      for (const n of f.nodes.filter((x) => x.name !== 'Guardar imagen enviada')) {
         expect(n.type, n.name).not.toMatch(/googleDrive|awsS3|firestore|ftp|writeBinaryFile|readWriteFile/i);
         expect(JSON.stringify(n.parameters), n.name).not.toMatch(/sendBinaryData|inputDataFieldName/);
       }
@@ -2485,10 +2488,12 @@ describe.each([
       expect(destinos('Enviar QR de la seña', 1)).toEqual(['QR no enviado']);
       expect(nodo(f, 'Enviar QR de la seña').onError).toBe('continueErrorOutput');
       expect(destinos('QR no enviado')).toEqual(['¿Transferir a humano?']);
-      expect(destinos('Reportar QR (saliente)')).toEqual([]);
+      // Del reporte del QR solo cuelga la rama del guardado de la imagen SALIENTE (16/11/2026), debajo de todo.
+      expect(destinos('Reportar QR (saliente)')).toEqual(['Preparar guardado (saliente)']);
       // Desde la rama del QR no se vuelve al agente, al envío del texto ni al candado.
       expect([...alcanzables('¿Enviar QR de la seña?')].sort()).toEqual(['Preparar seña', 'Enviar QR de la seña', 'Reportar QR (saliente)',
-        'QR no enviado', '¿Transferir a humano?', 'Avisar a recepción'].sort());
+        'QR no enviado', '¿Transferir a humano?', 'Avisar a recepción',
+        'Preparar guardado (saliente)', 'Descargar enlace (guardado saliente)', 'Guardar imagen enviada'].sort());
     });
 
     it('en el lienzo va DEBAJO del envío y del reporte del texto, y debajo de las otras salidas del candado (orden v1: el texto primero)', () => {

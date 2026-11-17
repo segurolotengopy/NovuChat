@@ -16,6 +16,7 @@ import { type Flujo, type J } from './lib/flujo';
 import type { Doble, ResultadoTurno } from './lib/n8n-de-mentira';
 // @ts-expect-error módulo .mjs sin tipos
 import { hallazgosCrm, inyectarMapa } from '../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
+import { NODOS_DEL_GUARDADO_SALIENTE } from '../../Flujos/src/core/sin-agente/guardado.mjs';
 import { AHORA, CLIENTE, estadoDe, boton, crear, editarJson, idDeBoton, leer, nodoDe, panel, texto, turno, verificarEnCopia, type Mundial } from './lib/venta-minima-mundo';
 import { respuestaDeIngesta } from './modulos/crm/ingesta-conversacion';
 
@@ -795,7 +796,8 @@ describe('aceptación sobre el JSON versionado', () => {
     const cuelgan = new Set<string>(['Armar mensajes']);
     const cola = ['Armar mensajes'];
     while (cola.length) for (const salidas of CRM.connections[cola.shift()!]?.['main'] ?? []) for (const c of salidas ?? []) if (!cuelgan.has(c.node)) { cuelgan.add(c.node); cola.push(c.node); }
-    expect(Math.max(...CRM.nodes.filter((n) => cuelgan.has(n.name)).map((n) => (n.position as [number, number])[1]))).toBe(y(CRM, 'Resumen del turno'));
+    // (la rama del guardado de la imagen SALIENTE, 16/11/2026, cuelga del reporte saliente y va debajo de todo el lienzo: no es una rama de este orden)
+    expect(Math.max(...CRM.nodes.filter((n) => cuelgan.has(n.name) && !NODOS_DEL_GUARDADO_SALIENTE.includes(n.name)).map((n) => (n.position as [number, number])[1]))).toBe(y(CRM, 'Resumen del turno'));
     // en el orden de ejecución (executionOrder v1) la rama corre DESPUÉS del envío, del cierre y del resumen
     const hijos = (CRM.connections['Armar mensajes']?.['main']?.[0] ?? []).map((c) => c.node);
     expect(hijos).toEqual(['¿Comprometer turno?', 'Prospecto para la planilla']);
@@ -902,11 +904,11 @@ describe('aceptación sobre el JSON versionado', () => {
     expect(r.status).not.toBe(0);
     expect(r.stderr).toMatch(/difiere de lo que arma la plantilla/);
   });
-  it('el tope de nodos de producción es 81 y el 3727 lleva exactamente 8 nodos más que el vivo', () => {
+  it('el tope de nodos de producción es 84 (81 + 3 de la rama del guardado de la imagen saliente) y el 3727 lleva exactamente 8 nodos más que el vivo', () => {
     const vivo = leer('venta-minima.qtaco.json');
     expect(CRM.nodes.length).toBe(vivo.nodes.length + 8);
-    expect(readFileSync(join(VM, 'construir.mjs'), 'utf8')).toMatch(/const TOPE_DE_NODOS = 81;/);
-    expect(CRM.nodes.length).toBeLessThanOrEqual(81);
+    expect(readFileSync(join(VM, 'construir.mjs'), 'utf8')).toMatch(/const TOPE_DE_NODOS = 84;/);
+    expect(CRM.nodes.length).toBeLessThanOrEqual(84);
   });
 });
 

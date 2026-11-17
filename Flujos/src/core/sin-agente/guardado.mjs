@@ -66,6 +66,14 @@ export const NODOS_DEL_GUARDADO = [
   'Guardar medio', '¿Reintentar el guardado?', 'Preparar reintento', 'Reintentar el guardado', 'Resultado del guardado', 'Avisar falla del guardado',
 ];
 /**
+ * Los nodos de la rama del guardado de la imagen SALIENTE del asistente (`guardado-saliente.mjs`, plan del 16/11/2026): bajan una imagen que el flujo ENVIÓ,
+ * no un medio entrante, así que `manejaMedios` no los toma por un medio del cliente (ni exige por ellos la rama del entrante).
+ */
+export const NODOS_DEL_GUARDADO_SALIENTE = [
+  'Preparar guardado (saliente)', '¿Por enlace? (guardado saliente)', 'Descargar enlace (guardado saliente)',
+  'Pedir imagen a Meta (guardado saliente)', 'Descargar imagen de Meta (guardado saliente)', 'Guardar imagen enviada',
+];
+/**
  * ¿El flujo baja medios entrantes de Meta? Un nodo conectado (fuera de esta rama) que pide la URL del medio o lo descarga: por su nombre, por ser un nodo
  * de medios de WhatsApp, o por su URL (Graph con un id de medio, o el CDN `lookaside.fbsbx.com`), así que renombrar el nodo no lo esconde. La prueba de CI
  * exige además la rama a TODO flujo con «Reportar mensaje (entrante)», salvo su lista cerrada. Es lo que vuelve OBLIGATORIO el
@@ -95,7 +103,7 @@ export function manejaMedios(flujo) {
   // Solo cuenta un nodo CONECTADO (alguien le entrega ítems): uno suelto no baja nada.
   const conEntrada = new Set();
   for (const salidas of Object.values((flujo && flujo.connections) || {})) for (const s of ((salidas || {}).main || [])) for (const c of (s || [])) conEntrada.add(c.node);
-  return nodos.some((n) => !NODOS_DEL_GUARDADO.includes(n.name) && conEntrada.has(n.name) && (
+  return nodos.some((n) => !NODOS_DEL_GUARDADO.includes(n.name) && !NODOS_DEL_GUARDADO_SALIENTE.includes(n.name) && conEntrada.has(n.name) && (
     // Contrato v2 (30/10): también un nodo que baja un VIDEO o un DOCUMENTO (todos los tipos se guardan).
     /^(Obtener URL del (medio|video|documento)|Descargar (medio|video|documento))/i.test(String(n.name))
     || (n.type === 'n8n-nodes-base.whatsApp' && (n.parameters || {}).resource === 'media')

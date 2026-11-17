@@ -57,9 +57,19 @@ describe('el armador genérico produce los JSON de Agenda mínima, byte por byte
   const conGuardado = (texto: string): string => {
     const flujo = JSON.parse(texto);
     // `agenda-minima/construir.mjs` pone `NIEGA_IA_CORE` (la regla de identidad del core, derivada) justo DELANTE del código propio de «Armar mensajes»: se hace igual aquí.
-    const armar = flujo.nodes.find((n: { name: string }) => n.name === 'Armar mensajes') as { parameters: { jsCode: string } };
-    const propioArmar = readFileSync(join(AGENDA, 'src/nodos/armar-mensajes.js'), 'utf8').trimEnd();
-    armar.parameters.jsCode = `${armar.parameters.jsCode.slice(0, armar.parameters.jsCode.length - propioArmar.length - 1)}${reglaDeIdentidadDelCore() as string}\n\n${propioArmar}\n`;
+    // La BAJA común (`core/conversacion/baja.js`, 17/11/2026) va incluida byte a byte DELANTE del código propio de «Decidir turno» y de «Armar mensajes» (antes de la regla de identidad), y la expresión de «Reportar mensaje (entrante)» es la literal de la pieza.
+    const baja = readFileSync(join(aqui, '../../Flujos/src/core/conversacion/baja.js'), 'utf8').trimEnd();
+    const conBaja = (nombre: string, archivo: string, regla = ''): void => {
+      const nodo = flujo.nodes.find((n: { name: string }) => n.name === nombre) as { parameters: { jsCode: string } };
+      const propio = readFileSync(join(AGENDA, archivo), 'utf8').trimEnd();
+      nodo.parameters.jsCode = `${nodo.parameters.jsCode.slice(0, nodo.parameters.jsCode.length - propio.length - 1)}${baja}\n\n${regla}${propio}\n`;
+    };
+    conBaja('Decidir turno', 'src/nodos/decidir-turno.js');
+    conBaja('Armar mensajes', 'src/nodos/armar-mensajes.js', `${reglaDeIdentidadDelCore() as string}\n\n`);
+    const expresion = /^const BJ_BAJA = (\/.+\/i);$/m.exec(baja)![1]!;
+    const plegado = /^function bjPlegar\(texto\) \{\n {2}return String\(texto === undefined \|\| texto === null \? '' : texto\)(\..+);\n\}$/m.exec(baja)![1]!;
+    const reporte = flujo.nodes.find((n: { name: string }) => n.name === 'Reportar mensaje (entrante)') as { parameters: { jsonBody: string } };
+    reporte.parameters.jsonBody = reporte.parameters.jsonBody.replace(/evento: \/.+\/i\.test\(String\(t\.texto \|\| ''\)\) \? 'no_contactar' : undefined/, () => `evento: ${expresion}.test(String(t.texto || '')${plegado}) ? 'no_contactar' : undefined`);
     const rama = ramaCrm({ credencial: '@@cred:crm', desde: 'Armar mensajes', paquete: 'crm-decidir-senales', x: 9080, y: 640 });
     for (const n of rama.nodes as Array<{ parameters: { jsCode?: string }; credentials?: Record<string, { name: string }> }>) {
       const m = /^@@medio:(.+)$/.exec(String(n.parameters.jsCode ?? ''));
