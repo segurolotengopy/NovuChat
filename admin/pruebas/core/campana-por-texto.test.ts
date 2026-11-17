@@ -64,7 +64,7 @@ for (const { f, nombre, config } of FLUJOS) {
     const cfg = config([VIGENTE, VENCIDA]);
 
     it('Config del negocio deja solo la campaña vigente, como texto JSON', () => {
-      expect(JSON.parse(String(cfg['campanasActivas']))).toEqual([{ id: 'camp-1', texto: TEXTO }]);
+      expect(JSON.parse(String(cfg['campanasActivas']))).toEqual([{ id: 'camp-1', texto: TEXTO, adIds: [] }]);
     });
 
     it('sin campañas, con basura o con el panel caído, campanasActivas es una lista vacía y no rompe', () => {
@@ -75,7 +75,7 @@ for (const { f, nombre, config } of FLUJOS) {
 
     it('el texto parecido (tildes, mayúsculas, signos y emojis distintos) se detecta con id y texto', () => {
       for (const t of [TEXTO, 'hola quiero info del PLAN pro por favor', '¡¡HOLA!! quiero info del plan Pro... por favor 🙂']) {
-        expect(normalizar(f, cfg, texto(t))['campana'], t).toEqual({ id: 'camp-1', texto: TEXTO });
+        expect(normalizar(f, cfg, texto(t))['campana'], t).toEqual({ id: 'camp-1', texto: TEXTO, por: 'texto' });
       }
     });
 
@@ -106,8 +106,8 @@ for (const { f, nombre, config } of FLUJOS) {
       const con = normalizar(f, cfg, texto(TEXTO));
       const nada = normalizar(f, sin, texto(TEXTO));
       expect(nada['campana']).toBeNull();
-      const { campana: _a, campanasActivas: _b, ...restoCon } = con;
-      const { campana: _c, campanasActivas: _d, ...restoNada } = nada;
+      const { campana: _a, campanasActivas: _b, campanaId: _e, campanaPor: _f, ...restoCon } = con;
+      const { campana: _c, campanasActivas: _d, campanaId: _g, campanaPor: _h, ...restoNada } = nada;
       expect(restoCon).toEqual(restoNada);
     });
 
@@ -195,7 +195,7 @@ describe('misma regla que reservas', () => {
     expect(plano(venta)).toBe(plano(reservas));
     expect(plano(captacion)).toBe(plano(reservas));
     const bloque = (j: ReturnType<typeof leerFlujo>): string => {
-      const m = /const campanasActivas = JSON\.stringify[\s\S]*?texto: k\.texto\.trim\(\) \}\)\)\);/.exec(codigoDe(j, 'Config del negocio'));
+      const m = /const campanasActivas = JSON\.stringify[\s\S]*?adIds: x\.adIds \}\)\)\);/.exec(codigoDe(j, 'Config del negocio'));
       if (!m) throw new Error('sin campanasActivas');
       return m[0];
     };
@@ -205,7 +205,7 @@ describe('misma regla que reservas', () => {
 
   it('la forma que manda el servidor (id, texto, inicio, fin) es la que el flujo consume', () => {
     expect(Object.keys(VIGENTE).sort()).toEqual(['fin', 'id', 'inicio', 'texto']);
-    expect(JSON.parse(String(FLUJOS[0]!.config([VIGENTE])['campanasActivas']))[0]).toEqual({ id: 'camp-1', texto: TEXTO });
+    expect(JSON.parse(String(FLUJOS[0]!.config([VIGENTE])['campanasActivas']))[0]).toEqual({ id: 'camp-1', texto: TEXTO, adIds: [] });
   });
 });
 
