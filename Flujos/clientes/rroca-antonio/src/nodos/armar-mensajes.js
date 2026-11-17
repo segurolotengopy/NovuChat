@@ -226,7 +226,8 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     m = texto(raTextoIdentidad(negocio));
   } else if (tipoDePlan === 'baja') {
     // Un pedido de baja: solo la confirmación (sin invitación a pagar, sin botones, sin aviso).
-    m = texto(RA_TEXTO_BAJA);
+    // Por escrito, el `no_contactar` viaja con el reporte del entrante; un audio llega sin texto, así que la confirmación lleva el evento ella misma («solo se ofrece lo que se cumple»).
+    m = plan.porVoz === true ? texto(RA_TEXTO_BAJA, { evento: 'no_contactar' }) : texto(RA_TEXTO_BAJA);
   } else if (tipoDePlan === 'qr_pendiente') {
     m = texto(raTextoQrPendiente(plan.producto, plan.monto, fichaAntes.ultimoHash, nom));
   } else if (tipoDePlan === 'cobro_cerrado') {
