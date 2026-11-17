@@ -175,7 +175,7 @@ describe('campanas.ts: lo que viaja al flujo', () => {
     expect(r.map((c) => c.id)).toEqual(['hoy', 'larga']);
     expect(r[0]).toEqual({ id: 'hoy', texto: 'Quiero una cita',
       inicio: new Date(Date.parse(`${HOY}T00:00:00-04:00`)).toISOString(),
-      fin: new Date(Date.parse(`${HOY}T00:00:00-04:00`) + DIA).toISOString() });
+      fin: new Date(Date.parse(`${HOY}T00:00:00-04:00`) + DIA).toISOString(), adIds: [] });
     expect(campanasParaElFlujo(vigentes, 1, AHORA).map((c) => c.id)).toEqual(['hoy']);
     expect(campanasParaElFlujo(vigentes, 0, AHORA)).toEqual([]);
     expect(campanasParaElFlujo('basura', 10, AHORA)).toEqual([]);
@@ -601,5 +601,78 @@ describe('anuncios contra el emulador', () => {
     expect(anuncios[0]!.producto.nombre.length).toBe(80);   // y el nombre recortado
     const bytes = Buffer.byteLength(JSON.stringify(c['anuncios']));
     expect(bytes).toBeLessThan(8500);   // medido: ~8,0 kB
+  });
+});
+
+
+// ===========================================================================
+describe('Ad ID por campaña (contrato Ad ID, 17/11/2026)', () => {
+  const AD1 = '100000000000001';
+  const AD2 = '100000000000002';
+  const AD3 = '100000000000003';
+  const conAd = (id: string, adIds: string[], extra: Partial<Campana> = {}): Campana =>
+    ({ id, texto: '', inicio: HOY, fin: dia(30), adIds, ...extra });
+  const revisar = (lista: Campana[]) => revisarSinModelo(lista, [], 10, AHORA, SIN_OTROS);
+
+  it('una campaña solo con Ad ID pasa sin texto ni titulares', () => {
+    expect(revisar([conAd('a', [AD1, AD2])]).get('a')).toBeNull();
+  });
+
+  it('negando: más de 5, mal formados, vacíos o repetidos entre campañas se RECHAZAN', () => {
+    const seis = ['10000001', '10000002', '10000003', '10000004', '10000005', '10000006'];
+    expect(revisar([conAd('a', seis)]).get('a')).toMatchObject({ estado: 'rechazada', campo: 'adIds', capa: 'forma' });
+    for (const malo of ['1234567', 'a1000000000', '1'.repeat(33), '1000 0000 0001', '١٠٠٠٠٠٠٠٠']) {
+      expect(revisar([conAd('a', [malo])]).get('a'), malo).toMatchObject({ estado: 'rechazada', campo: 'adIds' });
+    }
+    const r = revisar([conAd('a', [AD1]), conAd('b', [AD2, AD1])]);
+    expect(r.get('a')).toBeNull();
+    expect(r.get('b')).toMatchObject({ estado: 'rechazada', campo: 'adIds', capa: 'duplicada' });
+  });
+
+  it('el mismo Ad ID repetido dentro de la misma campaña se colapsa, no se rechaza', () => {
+    expect(revisar([conAd('a', [AD1, AD1])]).get('a')).toBeNull();
+  });
+
+  it('leerCampanas conserva adIds; sin texto, sin titulares y sin adIds (o con adIds vacíos) se descarta', () => {
+    const base = { inicio: HOY, fin: HOY };
+    expect(leerCampanas([{ id: 'a', ...base, adIds: [AD1] }])).toEqual([{ id: 'a', texto: '', ...base, adIds: [AD1] }]);
+    expect(leerCampanas([{ id: 'a', ...base, adIds: [] }])).toEqual([]);
+    expect(leerCampanas([{ id: 'a', ...base, adIds: 'x' }])).toEqual([]);
+    expect(leerCampanas([{ id: 'a', ...base, adIds: [1] }])).toEqual([]);
+  });
+
+  it('cambiar los Ad ID cambia el hash de la lista; sin ellos, el hash de siempre', () => {
+    const a = { id: 'a', texto: 'Quiero una cita', inicio: HOY, fin: HOY };
+    expect(hashLista([{ ...a, adIds: [AD1] }])).not.toBe(hashLista([a]));
+    expect(hashLista([{ ...a, adIds: [AD1] }])).not.toBe(hashLista([{ ...a, adIds: [AD2] }]));
+  });
+
+  it('al flujo viajan { id, texto, inicio, fin, adIds }: una campaña sin texto pero con Ad ID viaja; sin ninguno, no', () => {
+    const vig = [conAd('solo', [AD1]), campana('texto', 'Quiero una cita'), { ...conAd('vacia', []), texto: '' }];
+    const r = campanasParaElFlujo(vig, 10, AHORA);
+    expect(r.map((c) => c.id)).toEqual(['solo', 'texto']);
+    expect(r[0]).toMatchObject({ texto: '', adIds: [AD1] });
+    expect(r[1]).toMatchObject({ texto: 'Quiero una cita', adIds: [] });
+  });
+
+  it('un Ad ID de una campaña NO vigente (fuera de fechas o del tope) no viaja', () => {
+    const vig = [conAd('pasada', [AD1], { inicio: dia(-9), fin: dia(-1) }), conAd('futura', [AD2], { inicio: dia(2), fin: dia(9) }),
+      conAd('hoy', [AD3])];
+    expect(campanasParaElFlujo(vig, 10, AHORA).flatMap((c) => c.adIds)).toEqual([AD3]);
+    expect(campanasParaElFlujo([conAd('x', [AD1]), conAd('y', [AD2])], 1, AHORA).flatMap((c) => c.adIds)).toEqual([AD1]);
+  });
+
+  it('un adId con forma inválida que llegara a vigentes no viaja', () => {
+    expect(campanasParaElFlujo([conAd('x', ['no-numero', AD1])], 10, AHORA)[0]?.adIds).toEqual([AD1]);
+  });
+
+  it('el modelo no se consulta para una campaña solo con Ad ID, y queda aprobada y vigente con sus adIds', async () => {
+    let llamadas = 0;
+    const contexto = { nombreNegocio: 'N', descripcion: 'd', servicios: [], informacion: '' };
+    const r = await revisarCampanas([conAd('a', [AD1])], [], undefined, 10, AHORA, contexto, SIN_OTROS,
+      async () => { llamadas++; return 'RECHAZADO\nno'; });
+    expect(llamadas).toBe(0);
+    expect(r.porCampana['a']).toMatchObject({ estado: 'aprobada' });
+    expect(r.vigentes[0]?.adIds).toEqual([AD1]);
   });
 });
