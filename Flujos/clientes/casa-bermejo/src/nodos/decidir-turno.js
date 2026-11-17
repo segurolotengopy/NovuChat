@@ -86,9 +86,12 @@ textoDelTurno = texto;
 const n = bmNorm(texto);
 if (n === '') return salir({ tipo: 'otro' });
 // 2b. Un pedido de BAJA («no me escribas más», «dame de baja», «stop»): UN texto fijo y nada más, decidido ANTES de cualquier otra intención y del modelo (con o sin QR abierto; el carrito y el pedido no se tocan). `bjPideBaja` es la pieza común del core.
-// Se decide sobre `t.texto`, LA MISMA FUENTE que usa «Reportar mensaje (entrante)» para marcar `no_contactar`: en una nota de voz y en un toque de lista ese campo va vacío, y confirmar una baja que el
-// servidor no registró sería prometer lo que no se cumple. Una nota de voz que pide la baja sigue el camino normal (el modelo la atiende); una foto con pie de baja queda marcada sin confirmación (el lado seguro).
-if (!esAudio && !t.seleccionId && bjPideBaja(t.texto)) return salir({ tipo: 'baja' });
+// Un mensaje ESCRITO se decide sobre `t.texto`, LA MISMA FUENTE que usa «Reportar mensaje (entrante)» para marcar `no_contactar`. Una NOTA DE VOZ (decisión de Andres, 16/11/2026) se decide sobre su TRANSCRIPCIÓN (`texto`, ya con el tope
+// de siempre): ahí `t.texto` va vacío y el entrante no marca nada, así que la ruta `baja` lleva `porVoz: true` y «Armar mensajes» pone `evento: 'no_contactar'` en el reporte del mensaje SALIENTE de la confirmación (el servidor lo registra igual que el del entrante):
+// confirmar una baja que el servidor no registró sería prometer lo que no se cumple. Un audio no entendido o vacío ya salió arriba (`audio_fijo`). Un toque de lista no es una baja; una foto con pie de baja queda marcada sin confirmación (el lado seguro).
+// TOPE (decisión de Andres, segunda pasada 16/11/2026): solo una transcripción CORTA (hasta `BJ_VOZ_MAX` caracteres) es una baja; un audio largo sigue su camino normal.
+const BJ_VOZ_MAX = 160;
+if (esAudio ? (texto.length <= BJ_VOZ_MAX && bjPideBaja(texto)) : (!t.seleccionId && bjPideBaja(t.texto))) return salir({ tipo: 'baja', porVoz: esAudio });
 
 // 3a. Argentina, con un pedido anotado y sin un pedido nuevo a medias: «pagar» pide el alias al servidor (`pedirAliasArs`). No necesita el catálogo.
 if (esAr && (ficha.aliasEstado === 'pedido' || ficha.aliasEstado === 'abierto') && ficha.carrito.length === 0 && bmQuierePagar(n)) return salir({ tipo: 'alias_pedir' });

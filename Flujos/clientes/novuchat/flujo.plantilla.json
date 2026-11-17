@@ -599,7 +599,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@todo+tipeo+sesion:nodos/armar-turno.js"
+        "jsCode": "@@todo+tipeo+sesion+baja:nodos/armar-turno.js"
       },
       "id": "armar-turno",
       "name": "Armar turno",
