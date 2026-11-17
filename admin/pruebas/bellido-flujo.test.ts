@@ -69,6 +69,14 @@ const flujo = HAY_JSON ? (JSON.parse(TEXTO) as Flujo) : VACIO;
 const demoA = JSON.parse(
   readFileSync(join(aqui, '../../Flujos/demo-a-agendamiento.json'), 'utf8'),
 ) as Flujo;
+// La rama del guardado de la imagen SALIENTE del asistente (16/11/2026, bloque 2a) es del Demo A: el flujo A de Bellido está descartado desde el 01/10 (corre
+// Agenda mínima, que no manda QR) y Andres ordenó no tocarlo, así que NO la lleva. Se la quita del Demo A antes de compararlos, con su empalme al reporte del QR.
+{
+  const rama = ['Preparar guardado (saliente)', '¿Por enlace? (guardado saliente)', 'Descargar enlace (guardado saliente)', 'Pedir imagen a Meta (guardado saliente)', 'Descargar imagen de Meta (guardado saliente)', 'Guardar imagen enviada'];
+  demoA.nodes = demoA.nodes.filter((n) => !rama.includes(n.name));
+  for (const r of rama) delete demoA.connections[r];
+  if (demoA.connections['Reportar QR (saliente)']) delete demoA.connections['Reportar QR (saliente)'];
+}
 
 const AGENTE = 'AI Agent (Sofía)';
 

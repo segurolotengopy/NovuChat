@@ -60,17 +60,17 @@ function copiaDeDatos(): string {
 }
 
 describe('el armado: lo versionado es lo que arma la plantilla', () => {
-  it('`--verificar`: el JSON de ensayo está al día y sin guardias violadas; tiene 51 nodos (64 - 8 del miniCRM - 6 del receptor + 1 Trigger)', () => {
+  it('`--verificar`: el JSON de ensayo está al día y sin guardias violadas; tiene 55 nodos (68 - 8 del miniCRM - 6 del receptor + 1 Trigger)', () => {
     const r = mod.construirEnsayo({ verificar: true });
     expect(r).toMatchObject({ archivo: 'rroca-ruben.ensayo-demo-a.json', existia: true, alDia: true, versionado: [] });
-    expect(r.nodos).toBe(51);
-    expect((ENSAYO['nodes'] as J[]).length).toBe(51);
-    expect(51).toBeLessThanOrEqual(mod.TOPE_DE_NODOS);
+    expect(r.nodos).toBe(55);
+    expect((ENSAYO['nodes'] as J[]).length).toBe(55);
+    expect(55).toBeLessThanOrEqual(mod.TOPE_DE_NODOS);
   });
 
-  it('la producción y la prueba NO cambian: `construir --verificar` las deja al día, con 64 y 59 nodos', () => {
+  it('la producción y la prueba NO cambian: `construir --verificar` las deja al día, con 68 y 63 nodos', () => {
     const r = mod.construir({ verificar: true }) as Array<{ archivo: string; alDia: boolean; versionado: string[]; nodos: number }>;
-    expect(r.map((x) => [x.archivo, x.nodos, x.alDia])).toEqual([['rroca-ruben.json', 64, true], ['rroca-ruben.prueba.json', 59, true]]);
+    expect(r.map((x) => [x.archivo, x.nodos, x.alDia])).toEqual([['rroca-ruben.json', 68, true], ['rroca-ruben.prueba.json', 63, true]]);
     for (const x of r) expect(x.versionado).toEqual([]);
   });
 
@@ -229,7 +229,7 @@ describe('credenciales: solo las del Demo A, por nombre', () => {
     for (const n of ['Transcribir audio', 'Describir documento', 'Describir imagen', 'Conversar con el modelo']) expect(nodo(ENSAYO, n)['credentials']['googlePalmApi']['name'], n).toBe('Google Gemini(PaLM) Api account');
     // Todo nodo que habla con Graph lleva la credencial «Graph WhatsApp Demo A (Bearer)» (la herramienta la cambia a la predefinida), nunca la de la ingesta.
     const graph = (ENSAYO['nodes'] as J[]).filter((n) => n['type'] === 'n8n-nodes-base.httpRequest' && mod.hostDeUrl(n['parameters']['url']) === 'graph.facebook.com');
-    expect(graph.map((n) => n['name']).sort()).toEqual(['Avisar falla del guardado', 'Enviar a WhatsApp', 'Enviar aviso', 'Enviar respaldo', 'Obtener URL del medio (general)', 'Pedir el medio a Meta (guardado)'].sort());
+    expect(graph.map((n) => n['name']).sort()).toEqual(['Avisar falla del guardado', 'Enviar a WhatsApp', 'Enviar aviso', 'Enviar respaldo', 'Obtener URL del medio (general)', 'Pedir el medio a Meta (guardado)', 'Pedir imagen a Meta (guardado saliente)'].sort());
     for (const n of graph) expect(n['credentials']['httpHeaderAuth']['name'], String(n['name'])).toBe('Graph WhatsApp Demo A (Bearer)');
     expect(JSON.stringify(ENSAYO)).not.toMatch(/googleApi|Google Sheets/);
   });
