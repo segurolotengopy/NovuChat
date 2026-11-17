@@ -475,7 +475,9 @@ El texto del pitch del primer contacto («Quiero más información»), que es un
 | cliente06 | rroca-antonio | sí (16/11) | sí (16/11) |
 | cliente07 | rroca-emma | sí (16/11) | sí (16/11) |
 | cliente08 | rroca-evy | sí (16/11) | sí (16/11) |
+| cliente04 | qtaco | sí (16/11) | sí (16/11) |
+| cliente11 | qtaco | creado y activado (16/11) | sí (16/11, por comercio) |
 
-**Excepción declarada: Q'Taco (cliente04 y cliente11), atrasado a propósito.** (1) En seco, el cerrojo de `--recargar` de cliente04 abortó sin escribir: «las credenciales del mapa no están atadas al número de este alias»; hay que averiguar la causa antes de recargar. (2) La bandera es POR COMERCIO (`qtaco`) y el número nuevo cliente11 no tiene flujo de salida de persona (falla 2 y 4a del verificador): encenderla le mostraría el clip sin que exista el flujo que lo envía. Se recarga y se enciende cuando cliente04 pase el seco y cliente11 tenga su flujo.
+**Q'Taco (cliente04 y cliente11): CERRADO el 16/11/2026, ya no es excepción.** Causa del atraso de cliente04: el cerrojo de `--recargar` no hallaba otro flujo que corroborara sus credenciales (PR #993: el flujo vivo del propio alias las ata por id). cliente11 no tenía alias ni flujo: se agregó el alias a `SALIDA_PERSONA_RUTAS`, se redesplegó (v0.24.1), se cargó y activó su «Salida de persona» (11 OK, 0 FALLA) y se recargó cliente04 (11 OK, 0 FALLA); después se encendió `personaPuedeEnviarMedios` en `qtaco` (vale para los dos números), con respaldo. Quedan fuera por no tener «Tomar» o número: demo-venta, ensayo, ensayo-b, walisuma y platinum (dado de baja).
 
 **Sin verificar:** el envío de un adjunto real por cada comercio (solo se ensayó en Demo A: imagen con texto, PDF, Word, audio, nota de voz grabada, lote texto+imagen y un .exe rechazado; en Firestore `aceptado` con id de Meta) y el iPhone. El consumo de cada adjunto de un comercio real cuenta como 1 mensaje de persona.
