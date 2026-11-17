@@ -10,7 +10,7 @@ import { BarraTurno } from './BarraTurno';
 import { BloqueoContacto } from './BloqueoContacto';
 import { accionesDeBloqueo, accionesSinBloqueadas, type CapaBloqueo } from '../lib/bloqueo';
 import { VisorMedio } from './VisorMedio';
-import { accionDeMedio, enlaceWaMe, textoAnotado, AVISO_WA_ME, TEXTO_VENCIDO, TEXTO_VENCIDO_ENVIADO, TEXTO_IMAGEN_DEL_ASISTENTE, TEXTO_PENDIENTE, medioDeDatos, type MedioDeMensaje } from '../lib/medios';
+import { accionDeMedio, enlaceWaMe, textoAnotado, AVISO_WA_ME, TEXTO_VENCIDO, TEXTO_VENCIDO_ENVIADO, TEXTO_IMAGEN_DEL_ASISTENTE, etiquetaDeAdjunto, TEXTO_PENDIENTE, medioDeDatos, type MedioDeMensaje } from '../lib/medios';
 import { PiezasDePersona } from './PiezasDePersona';
 import { verAdjuntar, type CapaAdjunto } from '../lib/adjuntos';
 import {
@@ -67,28 +67,7 @@ interface Msg {
   snap: QueryDocumentSnapshot;
 }
 
-/**
- * LO QUE LLEGÓ Y NO ERA TEXTO. El comprobante de pago es lo más importante de
- * una conversación de venta; la imagen no se muestra (NovuChat no la guarda,
- * vive en Meta), pero el mensaje se marca como adjunto para que se encuentre.
- * Mostrar la imagen son tres cosas más (guardar el `media id`, una función que
- * la sirva, el permiso): prometerla con una miniatura rota sería peor.
- */
-const ADJUNTOS: Record<string, string> = {
-  image: '🧾 Imagen — puede ser el comprobante',
-  document: '📄 Documento — puede ser el comprobante',
-  audio: '🎤 Audio',
-  location: '📍 Ubicación',
-  order: '🛒 Pedido del catálogo',
-  interactive: '👆 Respuesta a una lista o botón',
-};
 
-/** Lo que se ve en un mensaje de PERSONA con archivo: era enviado, no «el comprobante» del cliente. */
-const ADJUNTOS_DE_PERSONA: Record<string, string> = {
-  image: '🖼 Imagen enviada',
-  document: '📄 Documento enviado',
-  audio: '🎤 Audio enviado',
-};
 
 function aMensaje(d: QueryDocumentSnapshot): Msg {
   const x = d.data();
@@ -454,8 +433,8 @@ export function DetalleConversacion(p: PropsDetalle) {
                 <div data-mid={x.id}
                   className={`cv-burbuja cv-burbuja--${x.direccion}${esPersona ? ' cv-burbuja--persona' : ''}${x.id === mensajeId && m.modoSalto ? ' cv-burbuja--buscada' : ''}`}>
                   {rotuloAutor && <span className="cv-autor"><TextoSeguro valor={rotuloAutor} maxLargo={40} /></span>}
-                  {(esPersona ? (x.medio?.voz ? '🎤 Nota de voz enviada' : ADJUNTOS_DE_PERSONA[x.tipo]) : ADJUNTOS[x.tipo]) && (
-                    <span className="adjunto">{esPersona ? (x.medio?.voz ? '🎤 Nota de voz enviada' : ADJUNTOS_DE_PERSONA[x.tipo]) : ADJUNTOS[x.tipo]}</span>
+                  {etiquetaDeAdjunto(x.direccion, esPersona, x.tipo, x.medio?.voz === true, x.medio?.origen === 'asistente') && (
+                    <span className="adjunto">{etiquetaDeAdjunto(x.direccion, esPersona, x.tipo, x.medio?.voz === true, x.medio?.origen === 'asistente')}</span>
                   )}
                   <TextoSeguro valor={x.texto} />
                   {x.medio?.origen === 'asistente' && <span className="cv-medio-texto">{TEXTO_IMAGEN_DEL_ASISTENTE}</span>}

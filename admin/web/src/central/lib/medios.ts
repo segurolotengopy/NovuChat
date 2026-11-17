@@ -250,3 +250,41 @@ export function descargadorUnico(d: DepsDescarga) {
     return true;
   };
 }
+
+/**
+ * LO QUE LLEGÓ Y NO ERA TEXTO. El comprobante de pago es lo más importante de
+ * una conversación de venta; la imagen no se muestra (NovuChat no la guarda,
+ * vive en Meta), pero el mensaje se marca como adjunto para que se encuentre.
+ * Mostrar la imagen son tres cosas más (guardar el `media id`, una función que
+ * la sirva, el permiso): prometerla con una miniatura rota sería peor.
+ */
+const ADJUNTOS: Record<string, string> = {
+  image: '🧾 Imagen — puede ser el comprobante',
+  document: '📄 Documento — puede ser el comprobante',
+  audio: '🎤 Audio',
+  location: '📍 Ubicación',
+  order: '🛒 Pedido del catálogo',
+  interactive: '👆 Respuesta a una lista o botón',
+};
+
+/** Lo que se ve en un mensaje de PERSONA con archivo: era enviado, no «el comprobante» del cliente. */
+const ADJUNTOS_DE_PERSONA: Record<string, string> = {
+  image: '🖼 Imagen enviada',
+  document: '📄 Documento enviado',
+  audio: '🎤 Audio enviado',
+};
+
+/**
+ * La etiqueta de un adjunto. «puede ser el comprobante» es SOLO para lo que manda el cliente: un archivo que mandó el negocio
+ * (una persona o el asistente, p. ej. su QR) nunca se rotula como comprobante (prohibición de cobros). Una imagen del asistente
+ * guardada ya lleva su rótulo propio debajo y aquí no repite nada.
+ */
+export function etiquetaDeAdjunto(direccion: string, esPersona: boolean, tipo: string, voz: boolean, delAsistenteGuardada: boolean): string {
+  if (esPersona) return voz ? '🎤 Nota de voz enviada' : (ADJUNTOS_DE_PERSONA[tipo] ?? '');
+  if (direccion === 'saliente') {
+    if (delAsistenteGuardada) return '';
+    return tipo === 'image' ? '🖼 Imagen enviada por el asistente' : tipo === 'document' ? '📄 Documento enviado por el asistente' : (ADJUNTOS[tipo] ?? '');
+  }
+  return ADJUNTOS[tipo] ?? '';
+}
+

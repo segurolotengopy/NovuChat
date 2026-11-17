@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { accionDeMedio, medioDeDatos, TEXTO_IMAGEN_DEL_ASISTENTE } from '../../web/src/central/lib/medios';
+import { accionDeMedio, etiquetaDeAdjunto, medioDeDatos, TEXTO_IMAGEN_DEL_ASISTENTE } from '../../web/src/central/lib/medios';
 
 const ADMIN = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const fuente = readFileSync(join(ADMIN, 'web/src/central/componentes/DetalleConversacion.tsx'), 'utf8');
@@ -38,5 +38,35 @@ describe('el hilo', () => {
   it('NEGANDO: la burbuja del asistente no se rotula como persona ni como pago', () => {
     expect(TEXTO_IMAGEN_DEL_ASISTENTE).not.toMatch(/pago (acreditado|verificado|recibido)/i);
     expect(TEXTO_IMAGEN_DEL_ASISTENTE).not.toMatch(/persona/i);
+  });
+});
+
+describe('la etiqueta del adjunto nunca llama «comprobante» a lo que mandó el negocio', () => {
+  it('lo ENTRANTE conserva «puede ser el comprobante»', () => {
+    expect(etiquetaDeAdjunto('entrante', false, 'image', false, false)).toMatch(/comprobante/);
+    expect(etiquetaDeAdjunto('entrante', false, 'document', false, false)).toMatch(/comprobante/);
+  });
+  it('NEGANDO: una imagen o documento SALIENTE del asistente no se rotula como comprobante', () => {
+    for (const guardada of [true, false]) {
+      expect(etiquetaDeAdjunto('saliente', false, 'image', false, guardada)).not.toMatch(/comprobante/i);
+      expect(etiquetaDeAdjunto('saliente', false, 'document', false, guardada)).not.toMatch(/comprobante/i);
+    }
+    expect(etiquetaDeAdjunto('saliente', false, 'image', false, false)).toMatch(/asistente/);
+  });
+  it('la imagen del asistente ya guardada no repite rótulo (lo dice su leyenda)', () => {
+    expect(etiquetaDeAdjunto('saliente', false, 'image', false, true)).toBe('');
+  });
+  it('lo de una persona no cambia', () => {
+    expect(etiquetaDeAdjunto('saliente', true, 'image', false, false)).toBe('🖼 Imagen enviada');
+    expect(etiquetaDeAdjunto('saliente', true, 'audio', true, false)).toBe('🎤 Nota de voz enviada');
+  });
+});
+
+describe('el visor no dice que el cliente mandó una imagen del asistente', () => {
+  const visor = readFileSync(join(ADMIN, 'web/src/central/componentes/VisorMedio.tsx'), 'utf8');
+  it('hay un texto propio para «asistente» y el del cliente queda solo para lo recibido', () => {
+    expect(visor).toContain("delAsistente ? 'Imagen enviada por el asistente'");
+    expect(visor).toContain("delAsistente ? 'Audio enviado por el asistente'");
+    expect(visor).toContain("const delAsistente = medio.origen === 'asistente'");
   });
 });
