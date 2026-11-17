@@ -12,20 +12,13 @@
 export const ALTA_MOTOR = '2026-11-13';
 
 export const LINEA_DE_BASE_MOTOR: Readonly<Record<string, number>> = {
-  'cobros#aria-prohibited-attr:incompleta': 1,
-  'configuracion#aria-prohibited-attr:incompleta': 1,
-  'consumo#aria-prohibited-attr:incompleta': 1,
-  'conversaciones#aria-prohibited-attr:incompleta': 1,
   'conversaciones#bypass:incompleta': 1,
-  'pagar#aria-prohibited-attr:incompleta': 1,
-  'tablero#aria-prohibited-attr:incompleta': 1,
 };
 
 /** Total de nodos admitidos. Solo baja. */
-export const TOPE_MOTOR = 7;
+export const TOPE_MOTOR = 1;
 
 /** Desglose por regla (suma `TOPE_MOTOR`). Solo baja. */
 export const TOPE_MOTOR_POR_REGLA: Readonly<Record<string, number>> = {
-  'aria-prohibited-attr:incompleta': 6,
   'bypass:incompleta': 1,
 };

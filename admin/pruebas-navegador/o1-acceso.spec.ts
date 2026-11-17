@@ -4,7 +4,7 @@ import { ingresar } from './ayudas/ingresar';
 import { fijarModulos, leerFicha } from './ayudas/datos';
 import {
   AURORA, CORREO_PROPIETARIO_SIMULADO, FOGON, MODULOS_QTACO, crearOperadorFogon, crearPropietarioSimulado,
-  enlaceMiCuenta, esperarMenu, sinPermiso,
+  BLOQUEADOS, enlaceMiCuenta, esperarMenu, sinPermiso,
 } from './o1-comun';
 import prepararDatos from './preparar-datos';
 
@@ -171,7 +171,7 @@ test.describe('ACC-06: menú y pestañas según los módulos de la ficha y el ro
   test.describe.configure({ timeout: 90_000 });
   const MENU_ADMIN_QTACO = [
     'Configuración', 'Productos', 'Campañas', 'Pedidos', 'Cobros', 'Configuración de QR', 'Conversaciones',
-    'Usuarios', 'Contactos', 'Consumo', 'Cuenta', 'Pagar', 'Reclamos', 'Bitácora',
+    'Usuarios', 'Contactos', BLOQUEADOS, 'Consumo', 'Cuenta', 'Pagar', 'Reclamos', 'Bitácora',
   ];
   const NUNCA = ['Agenda', 'Funcionarios', 'Captación', 'Negocios', 'Inventario'];
 
@@ -219,6 +219,8 @@ test.describe('ACC-06: menú y pestañas según los módulos de la ficha y el ro
     for (const prohibido of ['Configuración', 'Productos', 'Campañas', 'Configuración de QR', 'Usuarios', 'Contactos', 'Cuenta', 'Pagar', 'Bitácora']) {
       await expect(page.locator('header.cabecera').getByRole('link', { name: prohibido, exact: true })).toHaveCount(0);
     }
+    // El operador no ve «Teléfonos bloqueados» (solo el administrador del negocio).
+    await expect(page.locator('header.cabecera').getByRole('link', { name: BLOQUEADOS })).toHaveCount(0);
   });
 
   test('NEGATIVA: sin el módulo Pedidos el operador no ve «Cobros» en el menú y, por la dirección, vuelve al inicio', async ({ page }) => {
@@ -237,7 +239,7 @@ test.describe('ACC-06: menú y pestañas según los módulos de la ficha y el ro
     await ingresar(page, USUARIOS.adminFogon);
     await esperarMenu(page, [
       'Configuración', 'Productos', 'Campañas', 'Pedidos', 'Cobros', 'Inventario', 'Configuración de QR', 'Conversaciones',
-      'Usuarios', 'Contactos', 'Consumo', 'Cuenta', 'Pagar', 'Reclamos', 'Bitácora',
+      'Usuarios', 'Contactos', BLOQUEADOS, 'Consumo', 'Cuenta', 'Pagar', 'Reclamos', 'Bitácora',
     ]);
     for (const nombre of ['Agenda', 'Captación', 'Negocios']) await expect(page.locator('header.cabecera').getByRole('link', { name: nombre, exact: true })).toHaveCount(0);
   });
@@ -252,7 +254,7 @@ test.describe('ACC-06: menú y pestañas según los módulos de la ficha y el ro
     await fijarModulos(FOGON, []);
     await ingresar(page, USUARIOS.adminFogon);
     await esperarMenu(page, [
-      'Configuración', 'Catálogo', 'Campañas', 'Conversaciones', 'Usuarios', 'Contactos', 'Consumo', 'Cuenta', 'Pagar', 'Reclamos', 'Bitácora',
+      'Configuración', 'Catálogo', 'Campañas', 'Conversaciones', 'Usuarios', 'Contactos', BLOQUEADOS, 'Consumo', 'Cuenta', 'Pagar', 'Reclamos', 'Bitácora',
     ]);
   });
 

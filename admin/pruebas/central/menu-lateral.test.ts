@@ -56,3 +56,22 @@ describe('cableado de accesibilidad', () => {
     expect(bloque).not.toBeNull();
   });
 });
+
+describe('la barra de arriba: solo ☰, NovuChat y el negocio (17/11/2026)', () => {
+  const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../web/src/App.tsx'), 'utf8');
+  const cabecera = app.slice(app.indexOf('<header className="cabecera">'), app.indexOf('</header>'));
+  const nav = cabecera.slice(cabecera.indexOf('<nav id="menu-lateral"'), cabecera.indexOf('</nav>'));
+  const barra = cabecera.replace(nav, '');
+  it('«Mi cuenta» y «Salir» están en el menú lateral y NO en la barra', () => {
+    expect(nav).toContain('<NavLink to="/mi-cuenta">Mi cuenta</NavLink>');
+    expect(nav).toMatch(/onClick=\{salir\}>Salir<\/button>/);
+    expect(barra).not.toContain('Mi cuenta');
+    expect(barra).not.toContain('Salir');
+  });
+  it('el nombre del negocio y la pastilla van en la misma barra, sin franja propia debajo', () => {
+    expect(barra).toMatch(/<Marca \/>[\s\S]*<EncabezadoComercio /);
+    expect(cabecera.indexOf('<EncabezadoComercio ')).toBeLessThan(cabecera.indexOf('</div>'));
+    const encabezado = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../web/src/central/componentes/EncabezadoComercio.tsx'), 'utf8');
+    expect(encabezado).not.toContain('contenedor franja-comercio');
+  });
+});

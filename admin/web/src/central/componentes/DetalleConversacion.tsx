@@ -344,9 +344,6 @@ export function DetalleConversacion(p: PropsDetalle) {
               </>
             )}
           </span>
-          {enlaceWaMe(ficha.telefono) && (
-            <span className="text-muted cv-wame-aviso" data-testid="aviso-wame">{AVISO_WA_ME}</span>
-          )}
         </div>
         {/* Sin dato (una conversación de antes de H1): no se pinta pastilla, porque «cerrada» sería falso. */}
         {ficha.ultimoEntranteEn === null && (
@@ -365,6 +362,10 @@ export function DetalleConversacion(p: PropsDetalle) {
             disabled={!p.onSiguiente} aria-label="Conversación siguiente (Alt+↓)" title="Siguiente (Alt+↓)">↓</button>
           <span className="text-muted cv-pos">{p.posicion}</span>
         </div>
+        {/* El aviso va con el ancho de TODA la cabecera (antes, dentro de la columna del nombre, ocupaba cinco líneas). */}
+        {enlaceWaMe(ficha.telefono) && (
+          <span className="text-muted cv-wame-aviso" data-testid="aviso-wame">{AVISO_WA_ME}</span>
+        )}
       </header>
 
       <div className="cv-det-sub">

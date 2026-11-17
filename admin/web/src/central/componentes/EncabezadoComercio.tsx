@@ -6,8 +6,9 @@ import { TextoSeguro } from './TextoSeguro';
 import { ChipModo } from './ChipModo';
 
 /**
- * FRANJA DEL COMERCIO, arriba de todas sus páginas: el nombre del negocio y,
- * para quien puede saberlo, el chip «PRUEBA» / «PRODUCCIÓN».
+ * COMERCIO EN LA BARRA, arriba de todas sus páginas: el nombre del negocio y,
+ * para quien puede saberlo, el chip «PRUEBA» / «PRODUCCIÓN». Va en la MISMA línea que el sándwich y la marca
+ * (17/11/2026, pedido de Andres): ya no tiene una franja propia debajo.
  *
  * SOLO LECTURA. No escribe nada: el nombre es de `tenants/{id}` y la modalidad
  * de `cuenta/estado`, y los dos los escribe el servidor (`CLAUDE.md` §7).
@@ -48,7 +49,7 @@ export function EncabezadoComercio({ tenantId, leeCuenta }: { tenantId: string; 
   if (typeof nombreVigente !== 'string' && !modoVigente) return null;
 
   return (
-    <div className="contenedor franja-comercio" aria-label="Comercio">
+    <div className="franja-comercio" role="group" aria-label="Comercio">
       {typeof nombreVigente === 'string' &&
         <TextoSeguro valor={nombreVigente} maxLargo={80} className="franja-comercio-nombre" />}
       {modoVigente && <ChipModo modo={modoVigente} />}

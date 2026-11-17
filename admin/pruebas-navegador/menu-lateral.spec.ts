@@ -86,8 +86,8 @@ test.describe('Menú lateral en el teléfono (375 px)', () => {
     await expect(boton(page)).toHaveAttribute('aria-expanded', 'false');
     await expect(menu(page)).toBeHidden();
     expect(await desborde(page), 'sin desplazamiento lateral').toBe(0);
-    const salir = await page.getByRole('button', { name: 'Salir' }).boundingBox();
-    expect(salir && salir.x + salir.width, 'borde derecho de «Salir»').toBeLessThanOrEqual(375);
+    // «Salir» y «Mi cuenta» viven en el pie del menú: cerrado, no se ven ni se alcanzan con el teclado.
+    await expect(page.getByRole('button', { name: 'Salir' })).toBeHidden();
     await expect(menu(page)).toHaveAttribute('inert', '');
     await capturar(page, 'movil-cerrado');
   });
