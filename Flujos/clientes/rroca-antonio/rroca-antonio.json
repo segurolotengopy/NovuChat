@@ -2196,7 +2196,7 @@
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
-          "timeout": 8000
+          "timeout": 5000
         }
       },
       "credentials": {
@@ -2224,7 +2224,7 @@
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
-          "timeout": 15000,
+          "timeout": 8000,
           "redirect": {
             "redirect": {
               "followRedirects": false
@@ -2295,7 +2295,7 @@
         "contentType": "binaryData",
         "inputDataFieldName": "data",
         "options": {
-          "timeout": 15000,
+          "timeout": 8000,
           "response": {
             "response": {
               "fullResponse": true,

@@ -26,7 +26,7 @@ const LINEA_BASE: Array<[string, number, number]> = [
 const HOST_META = new RegExp(['graph', 'facebook', 'com'].join('\\.'));
 // La rama del guardado de la imagen SALIENTE (16/11/2026) hace GET de una imagen ya enviada y la sube a `guardarMedio`: ningún nodo suyo manda un mensaje (+3 o +4 nodos en estos flujos, +0 emisores).
 const RAMA_SALIENTE = ['Preparar guardado (saliente)', '¿Por enlace? (guardado saliente)', 'Descargar enlace (guardado saliente)', 'Pedir imagen a Meta (guardado saliente)', 'Descargar imagen de Meta (guardado saliente)', 'Guardar imagen enviada'];
-const hablaConMeta = (n: Nodo): boolean => !RAMA_SALIENTE.includes(n.name) && HOST_META.test(JSON.stringify(n.parameters ?? {})) || n.type.endsWith('whatsApp');
+const hablaConMeta = (n: Nodo): boolean => (!RAMA_SALIENTE.includes(n.name) && HOST_META.test(JSON.stringify(n.parameters ?? {}))) || n.type.endsWith('whatsApp');
 
 describe('una fila por conversación: sin mensajes de Meta nuevos en los 15 JSON regenerados', () => {
   it('hay 15 JSON en la línea base', () => expect(LINEA_BASE).toHaveLength(15));

@@ -15,7 +15,8 @@
  *
  * POR QUÉ ASÍ:
  *  - COLGADA DE «Reportar mensaje (saliente)» y DEBAJO de todo el lienzo: el servidor exige el saliente YA registrado, y con `executionOrder: v1` la rama corre
- *    después de que el cliente recibió todo lo que se le envía. NO agrega un mensaje de WhatsApp (0), no cambia el texto ni el orden de lo que se envía.
+ *    después de TODOS los envíos al cliente, pero ANTES de las ramas hermanas de cada bifurcación (avisos, cierre, CRM): por eso sus timeouts son cortos
+ *    (peor caso ~13 s por enlace y ~21 s por media id, contra 60 s de Demo A y B y 120 s de la cadena común). NO agrega un mensaje de WhatsApp (0), no cambia el texto ni el orden de lo que se envía.
  *  - NADA CORTA EL TURNO: cada nodo de red lleva `onError: continueRegularOutput` y `alwaysOutputData`; «Guardar imagen enviada» pide la respuesta completa
  *    sin error. No hay aviso de falla ni reintento: una copia para el control de calidad que no se pudo guardar se pierde en silencio, nunca rompe el turno.
  *    Los topes y la bandera `guardarMedios` los decide el SERVIDOR (409 `guardado_apagado`, 413, 415, 429): el flujo no reintenta nada.
@@ -154,7 +155,7 @@ export function nodosDelGuardadoSaliente(opciones) {
       id: 'gs-enlace', name: 'Descargar enlace (guardado saliente)', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + (conMedia ? 480 : 240), y - 120],
       parameters: {
         method: 'GET', url: '={{ $json.enlace }}',
-        options: { timeout: 10000, redirect: { redirect: { followRedirects: false } }, response: { response: { responseFormat: 'file', outputPropertyName: 'data' } } },
+        options: { timeout: 5000, redirect: { redirect: { followRedirects: false } }, response: { response: { responseFormat: 'file', outputPropertyName: 'data' } } },
       },
       ...SIN_CORTAR,
       notes: 'Baja el MISMO enlace que se le envió al cliente, SIN credencial (el token de Meta nunca va hacia otro anfitrión) y sin seguir redirecciones. Sin neverError: un 4xx o 5xx deja un ítem sin binario y la rama termina en silencio.',
@@ -165,7 +166,7 @@ export function nodosDelGuardadoSaliente(opciones) {
       id: 'gs-pedir', name: 'Pedir imagen a Meta (guardado saliente)', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + (conEnlace ? 480 : 240), y + 120],
       parameters: {
         method: 'GET', url: "=https://graph.facebook.com/{{ $json.waGraphVersion }}/{{ String($json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}",
-        ...o.meta.parametros, options: { timeout: 8000 },
+        ...o.meta.parametros, options: { timeout: 5000 },
       },
       credentials: o.meta.credentials, ...SIN_CORTAR,
       notes: 'GET /{media-id} con la MISMA credencial de envío del flujo: devuelve url, mime_type y file_size de la imagen que se envió (el media id dura 30 días; el servidor exige que el saliente tenga a lo más 30 minutos).',
@@ -173,7 +174,7 @@ export function nodosDelGuardadoSaliente(opciones) {
       id: 'gs-bajar', name: 'Descargar imagen de Meta (guardado saliente)', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + (conEnlace ? 720 : 480), y + 120],
       parameters: {
         method: 'GET', url: URL_DESCARGA_SALIENTE, ...o.meta.parametros,
-        options: { timeout: 15000, redirect: { redirect: { followRedirects: false } }, response: { response: { responseFormat: 'file', outputPropertyName: 'data' } } },
+        options: { timeout: 8000, redirect: { redirect: { followRedirects: false } }, response: { response: { responseFormat: 'file', outputPropertyName: 'data' } } },
       },
       credentials: o.meta.credentials, ...SIN_CORTAR,
       notes: 'Baja el archivo del CDN de Meta con la credencial de envío, sin seguir redirecciones, SOLO desde lookaside.fbsbx.com y si Meta no informó un tamaño por encima de 5 MiB. Si no, la URL queda vacía y no se baja nada.',
@@ -192,7 +193,7 @@ export function nodosDelGuardadoSaliente(opciones) {
         { name: 'X-NovuChat-Mime', value: MIME_DEL_BINARIO },
       ] },
       sendBody: true, contentType: 'binaryData', inputDataFieldName: 'data',
-      options: { timeout: 15000, response: { response: { fullResponse: true, neverError: true } } },
+      options: { timeout: 8000, response: { response: { fullResponse: true, neverError: true } } },
     },
     credentials: { httpHeaderAuth: { id: '', name: o.ingesta } }, ...SIN_CORTAR,
     notes: 'POST guardarMedio con los BYTES de la imagen enviada y el wamid del saliente: solo el token de ingesta del número, nunca firma. El servidor decide (bandera guardarMedios, tope de tamaño y cupo, 30 minutos): si no la guarda, la rama termina en silencio. Sin reintentos, sin aviso: no suma ningún mensaje de WhatsApp.',

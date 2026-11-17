@@ -2476,7 +2476,7 @@
         "method": "GET",
         "url": "={{ $json.enlace }}",
         "options": {
-          "timeout": 10000,
+          "timeout": 5000,
           "redirect": {
             "redirect": {
               "followRedirects": false
@@ -2541,7 +2541,7 @@
         "contentType": "binaryData",
         "inputDataFieldName": "data",
         "options": {
-          "timeout": 15000,
+          "timeout": 8000,
           "response": {
             "response": {
               "fullResponse": true,
