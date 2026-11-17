@@ -7309,3 +7309,104 @@ describe('ubicación obligatoria: qué es (y qué no es) una negativa explícita
     expect(tieneEnlace(t), dicho).toBe(true);
   });
 });
+
+describe('baja por NOTA DE VOZ (decisión de Andres, 16/11/2026): la confirmación y el registro van juntos', () => {
+  const BAJA_TXT = 'Entendido, tomé nota de que no quieres recibir más mensajes. Si más adelante necesitas algo, escríbeme cuando quieras.';
+  /** Un mundo cuyo audio se transcribe a lo que diga `voz.dicho` (se puede cambiar entre turnos). */
+  const conVoz = (dicho: string) => {
+    const voz = { dicho };
+    const w = crear({ dobles: { 'Transcribir audio': () => ({ content: { parts: [{ text: voz.dicho }] } }) } });
+    return { w, voz };
+  };
+  const salientes = (t: ResultadoTurno): J[] => t.llamadas.ingesta.filter((x) => x['direccion'] === 'saliente');
+  const registraBaja = (t: ResultadoTurno): J[] => salientes(t).filter((x) => x['evento'] === 'no_contactar');
+  it.each(['no me escribas más', 'dame de baja', 'stop', 'Para de escribirme, por favor'])('«%s» dicho en un audio: UN texto fijo, sin modelo ni aviso, y el reporte SALIENTE lleva no_contactar', (dicho) => {
+    const { w } = conVoz(dicho);
+    const t = con(w).audio();
+    expect(t.ejecutados.has('Transcribir audio')).toBe(true);
+    expect(cuerpos(t)).toEqual([BAJA_TXT]); // reemplaza la respuesta del turno: 0 mensajes agregados
+    expect(t.mensajes[0]?.payload['type']).toBe('text');
+    expect(t.mensajes[0]?.payload['interactive']).toBeUndefined();
+    expect(t.llamadas.extraer).toHaveLength(0);
+    expect(t.avisos).toHaveLength(0);
+    expect(salientes(t)).toHaveLength(1);
+    expect(registraBaja(t)).toHaveLength(1);
+    expect(registraBaja(t)[0]?.['texto']).toBe(BAJA_TXT);
+    // El entrante de un audio va sin texto y NO marca nada: por eso el registro es el del saliente.
+    const entrante = t.llamadas.ingesta.find((x) => x['direccion'] === 'entrante') as J;
+    expect(entrante['evento']).toBeUndefined();
+  });
+  it('con un pedido en curso, «no me escribas más» dicho en un audio sigue siendo baja (el carrito queda como estaba)', () => {
+    const { w, voz } = conVoz('quiero 4 tacos de birria');
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    const c = con(w);
+    c.audio();
+    voz.dicho = 'no me escribas más';
+    const t = c.audio();
+    expect(cuerpos(t)).toEqual([BAJA_TXT]);
+    expect(registraBaja(t)).toHaveLength(1);
+  });
+  describe('la excepción del pedido en curso vale igual por voz', () => {
+    it('«no me manden nada» dicho en un audio SIN pedido: es baja y se registra', () => {
+      const { w } = conVoz('no me manden nada');
+      const t = con(w).audio();
+      expect(cuerpos(t)).toEqual([BAJA_TXT]);
+      expect(registraBaja(t)).toHaveLength(1);
+    });
+    it('NEGADO: «no me manden nada» dicho en un audio CON un carrito abierto NO es baja: ni confirmación ni no_contactar', () => {
+      const { w, voz } = conVoz('quiero 4 tacos de birria');
+      w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+      const c = con(w);
+      c.audio();
+      voz.dicho = 'no me manden nada a la casa';
+      const t = c.audio();
+      expect(cuerpos(t).join(' ')).not.toContain(BAJA_TXT);
+      expect(registraBaja(t)).toHaveLength(0);
+    });
+  });
+  describe('tope de la transcripción (segunda pasada, 16/11/2026): hasta 160 caracteres', () => {
+    const RELLENO = ' Estoy en la oficina con mucho trabajo, hablando con varios proveedores y revisando facturas, entonces después te escribo con calma sobre todo lo demás que necesito.';
+    it('SÍ: una frase corta que pide la baja y mezcla otra cosa («mándame el QR y no me llames…») es baja', () => {
+      const t = con(conVoz('mándame el QR y no me llames que estoy en reunión').w).audio();
+      expect(cuerpos(t)).toEqual([BAJA_TXT]);
+      expect(registraBaja(t)).toHaveLength(1);
+    });
+    it('NO: la misma frase, de más de 160 caracteres, sigue el camino normal (sin confirmación ni no_contactar)', () => {
+      const dicho = 'mándame el QR y no me llames que estoy en reunión.' + RELLENO;
+      expect(dicho.length).toBeGreaterThan(160);
+      const t = con(conVoz(dicho).w).audio();
+      expect(cuerpos(t).join(' ')).not.toContain(BAJA_TXT);
+      expect(registraBaja(t)).toHaveLength(0);
+    });
+    it('NO: «ya pagué, no me contacten por teléfono» largo no es baja; corto sí', () => {
+      const largo = 'ya pagué, no me contacten por teléfono.' + RELLENO;
+      expect(largo.length).toBeGreaterThan(160);
+      const t = con(conVoz(largo).w).audio();
+      expect(registraBaja(t)).toHaveLength(0);
+      const corto = con(conVoz('ya pagué, no me contacten por teléfono').w).audio();
+      expect(registraBaja(corto)).toHaveLength(1);
+    });
+  });
+  describe('lo que NO es baja sigue su camino', () => {
+    it.each(['mándame el QR', 'no me escribió el precio', 'no me escribas el precio, mándame el QR', 'mi ex no deja de escribirme'])('«%s» dicho en un audio: no hay confirmación ni no_contactar', (dicho) => {
+      const t = con(conVoz(dicho).w).audio();
+      expect(cuerpos(t).join(' ')).not.toContain(BAJA_TXT);
+      expect(registraBaja(t)).toHaveLength(0);
+    });
+    it('un audio ininteligible, vacío o con la transcripción caída sigue el camino de siempre', () => {
+      for (const dicho of ['', '   ']) {
+        const t = con(conVoz(dicho).w).audio();
+        expect(cuerpos(t).join(' ')).not.toContain(BAJA_TXT);
+        expect(registraBaja(t)).toHaveLength(0);
+      }
+      const falla = con(crear({ dobles: { 'Transcribir audio': () => ({ error: { message: 'sin saldo' } }) } })).audio();
+      expect(cuerpos(falla).join(' ')).not.toContain(BAJA_TXT);
+      expect(registraBaja(falla)).toHaveLength(0);
+    });
+    it('el texto ESCRITO de baja no cambia: la confirmación va sin evento propio (el entrante ya lo marcó)', () => {
+      const t = con(crear()).escribe('no me escribas más');
+      expect(cuerpos(t)).toEqual([BAJA_TXT]);
+      expect(registraBaja(t)).toHaveLength(0);
+    });
+  });
+});

@@ -1133,7 +1133,10 @@ function aSeguimiento() {
 // turno enviaba (0 mensajes agregados). Con la ruta `baja`, el miniCRM no crea un prospecto por una baja (`vmProspectoCrm`).
 function aBaja() {
   aviso = null;
-  return (mensajes = [texto(bjTextoBaja())]);
+  // Una NOTA DE VOZ (`porVoz`): su entrante no marcó `no_contactar` (va sin texto), así que la baja se registra con el reporte SALIENTE de esta confirmación (`evento`, que `Armar mensajes` conserva en el ítem).
+  const m = texto(bjTextoBaja());
+  if (d.porVoz === true) m.evento = 'no_contactar';
+  return (mensajes = [m]);
 }
 
 function aIdentidad() {
