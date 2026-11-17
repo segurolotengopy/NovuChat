@@ -254,7 +254,13 @@ if (est.paso === 'esperando_nombre' && est.huecoElegido) {
 if ((x.intencion === 'consultar' || x.intencion === 'otro') && x.pregunta) {
   return salir('responder', { params: { pregunta: x.pregunta } });
 }
-if (!srv) return salir('menu');
+if (!srv) {
+  // Ya saludó (ensayo del 17/11/2026): se guarda lo que pidió (día y franja) para no hacérselo repetir al tocar el servicio, y se le pregunta
+  // el servicio con una frase corta en vez de repetir el saludo. El primer mensaje (paso `inicio`) sigue con el saludo completo: ya guardó su texto.
+  if (est.paso === 'inicio') return salir('menu');
+  en.primerTexto = String(d.textoExtraer || texto).trim().slice(0, 300);
+  return salir('menu', { params: { preguntaServicio: true } });
+}
 
 // --- HB4: tres rechazos seguidos de ofertas pasan con recepcion -------------------------------
 // Un rechazo es decir que ninguna sirve (la frase la marca el codigo; el modelo lo confirma con

@@ -449,6 +449,41 @@ describe('Agenda mínima v0: el flujo, de punta a punta', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------------------- (b2)
+  // Hallazgo del ensayo del 17/11/2026 en el Demo A: tras el saludo, «quiero una cita para mañana en la tarde» sin servicio
+  // repetía el saludo completo y, al tocar el servicio, ofrecía horarios de la mañana (se perdían la franja y el día).
+  describe('(b2) tras el saludo, una cita pedida sin servicio', () => {
+    it('NIEGA repetir el saludo: pregunta el servicio con una frase corta y la misma lista (UN solo mensaje)', () => {
+      const m = mundo({ eventos: [] });
+      m.turno(texto(MAMA, 'hola'));
+      m.gemini.extraer = extraccion({ servicio: 'desconocido', fechaPreferida: JUEVES, franja: 'tarde' });
+      const t = m.turno(texto(MAMA, 'quiero cita el jueves en la tarde'));
+      expect(t.aPaciente(MAMA)).toHaveLength(1);
+      const msg = t.enviados[0]!;
+      expect(interactivo(msg)['type']).toBe('list');
+      expect(msg.cuerpo).not.toBe(PANEL.datosDelNegocio.mensajeMenu);
+      expect(msg.cuerpo).toMatch(/servicio/i);
+      expect(msg.cuerpo.length).toBeLessThan(80);
+    });
+    it('NIEGA perder la franja y el día: al tocar el servicio se ofrecen los horarios del jueves en la TARDE', () => {
+      const m = mundo({ eventos: [] });
+      m.turno(texto(MAMA, 'hola'));
+      m.gemini.extraer = extraccion({ servicio: 'desconocido', fechaPreferida: JUEVES, franja: 'tarde' });
+      m.turno(texto(MAMA, 'quiero cita el jueves en la tarde'));
+      m.gemini.extraer = extraccion({ servicio: SERV_CNS, fechaPreferida: JUEVES, franja: 'tarde' });
+      m.gemini.redactar = 'Para el jueves en la tarde tengo estos horarios. Toca el que prefieras.';
+      const t = m.turno(lista(MAMA, SERV_CNS, 'Control niño sano'));
+      expect(t.enviados).toHaveLength(1);
+      expect(botonesDe(t.enviados[0]!).map((b) => b.id)).toEqual([idHueco(JUEVES, '14:00'), idHueco(JUEVES, '14:30'), idHueco(JUEVES, '15:00')]);
+    });
+    it('el primer mensaje (sin saludo previo) sigue recibiendo el saludo completo', () => {
+      const m = mundo({ eventos: [] });
+      m.gemini.extraer = extraccion({ servicio: 'desconocido' });
+      const t = m.turno(texto(MAMA, 'hola'));
+      expect(t.enviados[0]!.cuerpo).toBe(PANEL.datosDelNegocio.mensajeMenu);
+    });
+  });
+
   // ---------------------------------------------------------------------------------------- (b)
   describe('(b) «quiero cita el jueves en la tarde»', () => {
     it('ofrece huecos reales del jueves como botones, y el texto va en el cuerpo del MISMO interactivo', () => {
