@@ -3,7 +3,9 @@
 Política de Andres (11/10/2026): ningún monitoreo depende de su laptop, de la app
 de escritorio ni de una sesión abierta. Decisiones del 12/11/2026 (por botón):
 lo construye NovuChat; se reutilizan las cuentas de Healthchecks.io y Better
-Stack; la alerta llega por correo; el latido del monitor es semanal.
+Stack; la alerta llega por correo; el latido del monitor es semanal. Decisión
+del 17/11/2026 (por botón): la sonda regular pasa a **cron-job.org**, y la de
+GitHub queda como segunda red.
 
 Origen: el 11/11/2026 dos sesiones vieron «HTTP 000» al leer n8n desde la
 oficina. Era un cortafuegos en el camino, no una caída, y la única forma de
@@ -14,12 +16,60 @@ saberlo fue escribirle a un demo desde un celular.
 | Fuente | Qué prueba | Dónde vive | Cómo avisa |
 |---|---|---|---|
 | **Latido** (flujo `Flujos/latido-n8n.json`, cada 5 min) | n8n PROCESA: planificador, motor y salida a internet | Sale de n8n hacia un chequeo de Healthchecks.io | Correo de Healthchecks si calla 15 min |
-| **Sonda de GitHub** (`.github/workflows/monitor-n8n.yml`, cada 10 min) | n8n RESPONDE en `/healthz/readiness` (base conectada), el dominio resuelve y el certificado es válido | GitHub Actions | Correo de GitHub al fallar dos rondas seguidas, y un chequeo de Healthchecks que avisa si la sonda deja de correr |
+| **Sonda regular** (cron-job.org, cada 5 min) | n8n RESPONDE en `/healthz/readiness`, con frecuencia regular y desde una red que no es GitHub ni la oficina | cron-job.org (cuenta gratuita de NovuChat) | Correo de cron-job.org al fallar, al recuperarse y si desactiva el chequeo |
+| **Sonda de GitHub** (`.github/workflows/monitor-n8n.yml`, programada cada 10 min; **segunda red**) | n8n RESPONDE en `/healthz/readiness` (base conectada), el dominio resuelve y el certificado es válido | GitHub Actions | Correo de GitHub al fallar dos rondas seguidas, y un chequeo de Healthchecks que avisa si la sonda deja de correr |
 | **Sonda de tercero** | Lo mismo, desde otra red y con frecuencia regular | Better Stack | Correo de Better Stack |
 
 Ninguna pasa por n8n, por la VM ni por la clave de correo que vive en la VM.
 Ninguna consulta una ruta de webhook: son URL de capacidad y crearían
 ejecuciones. `/metrics` sigue apagado.
+
+## Por qué la sonda regular es cron-job.org (17/11/2026)
+
+La sonda de GitHub está programada cada 10 minutos (144 corridas al día) y del
+14 al 17/11/2026 corrió entre 2 y 4 veces por día: GitHub retrasa o descarta
+los `schedule` con carga alta. Sirve como segunda red, no para medir cuánto
+duró un corte. cron-job.org consulta la misma ruta cada 5 minutos.
+
+Configuración del chequeo (se hace en su página, no hay nada en el repositorio):
+
+- URL: la ruta de salud, `https://<host de n8n>/healthz/readiness`. Método GET,
+  sin cabeceras, sin cuerpo y sin credenciales. No es una URL de capacidad ni
+  crea ejecuciones; **nunca** una ruta de webhook.
+- Cada 5 minutos, zona horaria `America/La_Paz`.
+- Avisos por correo encendidos los tres: al fallar, al recuperarse y **al
+  desactivarse el chequeo**.
+- Cuenta a nombre de NovuChat; la contraseña la tiene solo Andres.
+
+Dos cosas a saber de este servicio:
+
+- **Se desactiva solo tras más de 25 fallas seguidas**: a 5 minutos, un corte
+  de unas dos horas lo apaga. Llega un correo; después de un incidente largo
+  hay que **volver a activarlo** en su página.
+- cron-job.org no tiene un latido propio: si el servicio deja de consultar, no
+  avisa. Esa falta la cubren el latido de n8n y la sonda de GitHub.
+
+**Qué se hace con la sonda de GitHub:** queda encendida y sin cambios, como
+segunda red. Sigue siendo la única que nombra la causa (`estado`) y la que mide
+el certificado. Su reporte diario falla si corrió menos de una vez por hora, y
+con la frecuencia observada eso pasa casi todos los días: ese correo diario
+habla de GitHub, no de n8n.
+
+## Qué deja el latido cuando falla (17/11/2026)
+
+El 16/11/2026 el latido calló 7 h 44 min y no se pudo saber por qué: el flujo
+no guardaba sus ejecuciones fallidas. Desde el 17/11 las guarda
+(`saveDataErrorExecution: all`); las que salen bien siguen sin guardarse (288
+al día). Un silencio se lee así en las ejecuciones del flujo en n8n:
+
+| Durante el silencio | Qué fue |
+|---|---|
+| Hay ejecuciones en error cada 5 minutos | n8n procesaba y no pudo llegar al chequeo externo (salida a internet o el servicio de ping) |
+| No hay ninguna ejecución | n8n no procesaba: detenido, reiniciándose o con el planificador parado |
+
+Costo: hasta 288 ejecuciones fallidas guardadas por día mientras dure un corte
+de salida, de tres nodos y sin datos de clientes; las borra la poda de
+ejecuciones de n8n.
 
 ## Cómo leer una alerta
 
@@ -28,8 +78,8 @@ ejecuciones. `/metrics` sigue apagado.
 | Una sola fuente falla una vez | Nada (parpadeo) |
 | Una sola fuente falla y las demás están bien | **Sospecha**: un corte en el camino de esa red |
 | Latido en silencio **y** una sonda externa fallando | **Incidente: n8n o la VM caídos** |
-| Latido en silencio y las sondas dan 200 | **Incidente: n8n responde pero no procesa** |
-| Latido al día y las dos sondas externas fallan | **Incidente de entrada**: dominio, certificado o proxy |
+| Latido en silencio y las sondas externas dan 200 | **Incidente: n8n responde pero no procesa** |
+| Latido al día y dos sondas externas fallan | **Incidente de entrada**: dominio, certificado o proxy |
 | Certificado con menos de 14 días | Aviso: la renovación automática no está corriendo |
 | Certificado `sin_datos` en el reporte | No se pudo medir. Un certificado vencido o inválido corta la conexión de la medición, así que lo ve la sonda (estado `tls`), no el reporte |
 
@@ -144,6 +194,12 @@ con `estado=no_resuelve` y llegar el correo de GitHub.
   primaria.
 - Healthchecks.io (plan gratuito): 20 chequeos. Better Stack (plan gratuito): 10
   monitores y latidos en total.
+- cron-job.org (verificado el 17/11/2026 en https://cron-job.org/en/faq/): el
+  servicio es gratuito; hasta una ejecución por minuto; corta la consulta a los
+  30 segundos; desactiva el chequeo cuando falla más de 25 veces seguidas (con
+  aviso por correo si se enciende); avisa por correo al fallar y al
+  recuperarse; guarda cabeceras y cuerpo de la respuesta 2 días; no limita la
+  cantidad de chequeos por cuenta, con uso razonable.
 
 ## Lo que no cubre
 
