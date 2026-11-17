@@ -1788,7 +1788,7 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
     }
     expect(revisados).toBeGreaterThanOrEqual(3);
     expect(marca('Armar mensajes')).toBe('@@todo+mensajes+filtro+tipeo+sesion+baja+identidad:nodos/armar-mensajes.js');
-    expect(marca('Armar turno')).toBe('@@todo+tipeo+sesion:nodos/armar-turno.js');
+    expect(marca('Armar turno')).toBe('@@todo+tipeo+sesion+baja:nodos/armar-turno.js');
   });
   it('la cadena de envío (enviar, respaldo en texto, reporte saliente) es la de `comun-sin-agente/src/envio.mjs`, injertada sin cambios', async () => {
     const { nodosDeEnvio } = (await import(/* @vite-ignore */ join(EXPERIMENTAL, '../src/core/sin-agente/envio.mjs'))) as { nodosDeEnvio: Fn };
