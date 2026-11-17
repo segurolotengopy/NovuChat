@@ -1,3 +1,4 @@
+import { compileFunction } from 'node:vm';
 /**
  * CAMPANA POR AD ID Y POR TEXTO en el flujo de Q'Taco (familia venta-minima), contrato del 17/11/2026.
  * `Interpretar entrada` entrega `anuncio` (idAnuncio, ctwaClid), `campana` {id, texto, por} y las salidas planas `adId/campanaId/campanaPor`: primero el Ad ID, luego el texto.
@@ -218,7 +219,7 @@ describe("Q'Taco: el miniCRM recibe el Ad ID y la campana sin cambiar nada mas",
     const base = { from: CLIENTE, plan: { ruta: 'menu', pedido: null }, pedidoEstado: null, nombrePerfil: 'Carlos', avisoSalio: false, ahoraMs: AHORA, anteriorMs: null };
     const lib = (n: string): string => readFileSync(join(CARPETA_VM, 'src/lib', n), 'utf8');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const L: any = new Function(`${lib('comun.js')}\n${lib('pedido.js')}\n${lib('crm.js')}\nreturn { vmProspectoCrm };`)();
+    const L: any = compileFunction(`${lib('comun.js')}\n${lib('pedido.js')}\n${lib('crm.js')}\nreturn { vmProspectoCrm };`, [])();
     expect(L.vmProspectoCrm({ ...base, adId: AD_1, campanaId: 'por-ad' })).toMatchObject({ adId: AD_1, campanaId: 'por-ad' });
     const mal = L.vmProspectoCrm({ ...base, adId: 'no es', campanaId: 'con espacios' });
     expect('adId' in mal || 'campanaId' in mal).toBe(false);

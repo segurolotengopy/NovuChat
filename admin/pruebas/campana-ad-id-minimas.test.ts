@@ -1,3 +1,4 @@
+import { compileFunction } from 'node:vm';
 /**
  * LA CAMPAÑA POR AD ID Y POR TEXTO EN LOS FLUJOS CON `Interpretar entrada` PROPIO (Andres, 17/11/2026).
  *
@@ -148,7 +149,7 @@ describe('el reporte entrante manda adId, campanaId y campanaPor solo si no est�
 describe('una campaña solo por Ad ID no salta ningún menú ni cambia la respuesta', () => {
   const aqui = dirname(fileURLToPath(import.meta.url));
   const lib = readFileSync(join(aqui, '../../Flujos/experimental/captacion-minima/src/lib/captacion.js'), 'utf8');
-  const ccCampana = new Function(`${lib}\nreturn ccCampana;`)() as (t: string, c: unknown) => J | null;
+  const ccCampana = compileFunction(`${lib}\nreturn ccCampana;`, [])() as (t: string, c: unknown) => J | null;
   const lista = [{ id: 'solo-ad', texto: '', adIds: [AD_A], destino: 'planes' }, { id: 'con-texto', texto: TEXTO, adIds: [AD_A], destino: 'planes' }];
 
   it('captación: ccCampana exige el texto; la campaña de solo Ad ID nunca toma destino', () => {
@@ -174,7 +175,7 @@ describe('miniCRM: el prospecto de la agenda y de la captación lleva el Ad ID y
   const aqui = dirname(fileURLToPath(import.meta.url));
   const agenda = readFileSync(join(aqui, '../../Flujos/experimental/agenda-minima/src/lib/agenda.js'), 'utf8');
   it('agenda: agmProspectoCrm copia adId y campanaId válidos y omite los inválidos', () => {
-    const f = new Function('msDe', 'diaDeLaSemana', 'fechaLocal', 'horaLocal', '_agmNombreCompleto', `${agenda}\nreturn agmProspectoCrm;`);
+    const f = compileFunction(`${agenda}\nreturn agmProspectoCrm;`, ['msDe', 'diaDeLaSemana', 'fechaLocal', 'horaLocal', '_agmNombreCompleto']);
     const p = f(() => NaN, () => '', () => '', () => '', () => '') as (d: J) => J | null;
     const base = { from: '59170000001', plan: 'menu', ahoraMs: 1 };
     expect(p({ ...base, adId: AD_A, campanaId: 'camp-ad' })).toMatchObject({ adId: AD_A, campanaId: 'camp-ad' });
