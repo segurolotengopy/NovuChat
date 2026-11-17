@@ -319,7 +319,7 @@ describe('monitor-n8n-reporte.yml', () => {
   const yml = existsSync(WORKFLOW) ? readFileSync(WORKFLOW, 'utf8') : '';
   const sinComentarios = yml.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
 
-  it('corre SOLO a pedido (apagado el 17/11/2026: fallaba a diario por la frecuencia de GitHub, no por n8n), y sin la variable de encendido ni eso', () => {
+  it('corre SOLO a pedido (apagado el 17/11/2026: fallaba a diario por la frecuencia de GitHub, no por n8n) y, sin la variable de encendido, tampoco a pedido', () => {
     // Sin `schedule`: un reporte que falla todos los días por una causa ajena a n8n enseña a ignorar el correo.
     expect(sinComentarios).not.toMatch(/^\s*schedule:\s*$/m);
     expect(sinComentarios).not.toContain('cron:');

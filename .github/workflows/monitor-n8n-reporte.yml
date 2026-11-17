@@ -15,21 +15,19 @@
 #
 # Qué hace, cuando se lo corre a pedido: cuenta cuántas veces corrió la
 # sonda `monitor-n8n.yml` en 24 horas, mide el certificado y deja un comentario
-# en la Issue «Monitor n8n — reporte diario». La corrida FALLA (un correo de
-# GitHub al día, no uno cada 10 minutos) si:
+# en la Issue «Monitor n8n — reporte diario». La corrida FALLA si:
 #   - la sonda casi no corrió (menos de una vez por hora);
 #   - la última sonda falló;
 #   - al certificado le quedan menos de 14 días o está vencido.
+# Con la sonda corriendo 2 a 4 veces por día, la falla por «casi no corrió» es
+# esperable: en una corrida a pedido se mira la línea del certificado.
 #
 # El comentario se arma solo con números y palabras de una lista cerrada
 # (scripts/monitor/reporte-diario.sh): la Issue es pública.
 #
-# Quién vigila a este reporte: si GitHub desactiva los workflows programados
-# (60 días sin actividad), el chequeo de Healthchecks de la sonda calla y avisa.
-#
 # Encendido: la misma variable de repositorio MONITOR_N8N_ACTIVO = "si".
 # Costo: 0 mensajes de WhatsApp; 1 corrida, 1 comentario en una Issue y 1
-# registro de Deployments al día; 0 escrituras en la nube.
+# registro de Deployments por cada corrida a pedido; 0 escrituras en la nube.
 # =============================================================================
 name: Monitor de n8n — reporte diario
 
