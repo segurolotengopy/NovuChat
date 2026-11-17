@@ -31,6 +31,7 @@ export function VisorMedio({ tenantId, conversacionId, idMeta, mensajeId, medio,
 }) {
   const modo = modoDeMedio(medio.mime);
   const enviado = medio.origen === 'enviado';
+  const delAsistente = medio.origen === 'asistente';
   const [estado, setEstado] = useState<Estado>({ t: 'reposo' });
   const vuelta = useRef(0);
   const urlViva = useRef<string | null>(null);
@@ -107,15 +108,15 @@ export function VisorMedio({ tenantId, conversacionId, idMeta, mensajeId, medio,
               {estado.t === 'cargando' ? 'Abriendo el archivo…' : estado.t === 'error' ? estado.texto : ''}
             </div>
             {estado.t === 'imagen' && (
-              <img src={estado.src} alt={enviado ? 'Imagen enviada al cliente' : 'Imagen que mandó el cliente'}
+              <img src={estado.src} alt={delAsistente ? 'Imagen enviada por el asistente' : enviado ? 'Imagen enviada al cliente' : 'Imagen que mandó el cliente'}
                    style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain' }} />
             )}
             {estado.t === 'audio' && (
-              <audio controls controlsList="nodownload noplaybackrate" src={estado.url} aria-label={enviado ? 'Audio enviado al cliente' : 'Audio que mandó el cliente'} />
+              <audio controls controlsList="nodownload noplaybackrate" src={estado.url} aria-label={delAsistente ? 'Audio enviado por el asistente' : enviado ? 'Audio enviado al cliente' : 'Audio que mandó el cliente'} />
             )}
             {estado.t === 'descarga' && (
               <div role="alertdialog" aria-label="Confirmar descarga">
-                <p><strong>{enviado ? AVISO_DESCARGA_ENVIADO : AVISO_DESCARGA}</strong></p>
+                <p><strong>{enviado || delAsistente ? AVISO_DESCARGA_ENVIADO : AVISO_DESCARGA}</strong></p>
                 {avisoExtraDe(estado.extension) && <p><strong>{avisoExtraDe(estado.extension)}</strong></p>}
                 <button type="button" className="btn btn-secondary btn-chico" onClick={cerrarVisor}>Cancelar</button>{' '}
                 <button type="button" className="btn btn-secondary btn-chico"
