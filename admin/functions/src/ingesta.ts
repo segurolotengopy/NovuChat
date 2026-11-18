@@ -881,14 +881,20 @@ export const ingesta = onRequest(
         const [convSc, cuentaSc] = await Promise.all([tx.get(refConversacion), tx.get(refCuenta)]);
         const marcasSc = (convSc.data() ?? {}) as MarcasDeConteo;
         const atencionSc = estadoDeAtencion(marcasSc, umbralesDeAtencion(cuentaSc.data()), ahoraMs);
-        tx.create(refConversacion.collection('mensajes').doc(), {
-          direccion: mensaje.direccion,
-          tipo: mensaje.tipo,
-          texto: mensaje.texto,
-          ts: Timestamp.now(),
-          ...(mensaje.idMeta ? { idMeta: mensaje.idMeta } : {}),
-          ...camposDeMensajeIndexado(mensaje.texto, tenantId),
-        });
+        // Sin conversación no se escribe nada (revisión del PR #1016): un mensaje colgado de un documento que no
+        // existe no se vería en la consola y serviría de llave para `guardarMedio` sin haber pasado por el conteo.
+        // El rótulo se recorta a 60 caracteres: el flujo manda «Foto de apoyo: » más 30 como máximo.
+        if (convSc.exists) {
+          const rotuloSc = mensaje.texto.slice(0, 60);
+          tx.create(refConversacion.collection('mensajes').doc(), {
+            direccion: mensaje.direccion,
+            tipo: mensaje.tipo,
+            texto: rotuloSc,
+            ts: Timestamp.now(),
+            ...(mensaje.idMeta ? { idMeta: mensaje.idMeta } : {}),
+            ...camposDeMensajeIndexado(rotuloSc, tenantId),
+          });
+        }
         return { sinConteo: true as const, atencion: atencionSc };
       }
       const [conversacion, cuentaDoc, plataformaDoc] = await Promise.all([

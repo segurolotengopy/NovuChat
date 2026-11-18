@@ -107,10 +107,21 @@ describe('saliente image con sinConteo: true', () => {
   });
 
   it('sobre una conversación que no existe no la crea', async () => {
-    const nueva = '5910000000033';
+    const nueva = '5910000000035';
     const r = await saliente(nueva, { sinConteo: true });
     expect(r.codigo).toBe(200);
     expect((await db.doc(`tenants/${T}/conversaciones/wa_${nueva}`).get()).exists).toBe(false);
+    // Y tampoco deja un mensaje huérfano: no hay hilo donde colgarlo (revisión del PR #1016).
+    expect((await db.collection(`tenants/${T}/conversaciones/wa_${nueva}/mensajes`).get()).size).toBe(0);
+  });
+
+  it('el rótulo se recorta a 60 caracteres', async () => {
+    const tel = '5910000000034';
+    await entrante(tel);
+    await saliente(tel, { sinConteo: true, texto: 'x'.repeat(500) });
+    const m = await db.collection(`tenants/${T}/conversaciones/wa_${tel}/mensajes`).where('direccion', '==', 'saliente').get();
+    expect(m.size).toBe(1);
+    expect(String(m.docs[0]!.get('texto')).length).toBe(60);
   });
 });
 
