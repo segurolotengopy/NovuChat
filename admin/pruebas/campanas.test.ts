@@ -175,7 +175,7 @@ describe('campanas.ts: lo que viaja al flujo', () => {
     expect(r.map((c) => c.id)).toEqual(['hoy', 'larga']);
     expect(r[0]).toEqual({ id: 'hoy', texto: 'Quiero una cita',
       inicio: new Date(Date.parse(`${HOY}T00:00:00-04:00`)).toISOString(),
-      fin: new Date(Date.parse(`${HOY}T00:00:00-04:00`) + DIA).toISOString(), adIds: [] });
+      fin: new Date(Date.parse(`${HOY}T00:00:00-04:00`) + DIA).toISOString() });
     expect(campanasParaElFlujo(vigentes, 1, AHORA).map((c) => c.id)).toEqual(['hoy']);
     expect(campanasParaElFlujo(vigentes, 0, AHORA)).toEqual([]);
     expect(campanasParaElFlujo('basura', 10, AHORA)).toEqual([]);
@@ -647,12 +647,12 @@ describe('Ad ID por campaña (contrato Ad ID, 17/11/2026)', () => {
     expect(hashLista([{ ...a, adIds: [AD1] }])).not.toBe(hashLista([{ ...a, adIds: [AD2] }]));
   });
 
-  it('al flujo viajan { id, texto, inicio, fin, adIds }: una campaña sin texto pero con Ad ID viaja; sin ninguno, no', () => {
+  it('al flujo viajan { id, texto, inicio, fin } y adIds solo si hay: una campaña sin texto pero con Ad ID viaja; sin ninguno, no', () => {
     const vig = [conAd('solo', [AD1]), campana('texto', 'Quiero una cita'), { ...conAd('vacia', []), texto: '' }];
     const r = campanasParaElFlujo(vig, 10, AHORA);
     expect(r.map((c) => c.id)).toEqual(['solo', 'texto']);
     expect(r[0]).toMatchObject({ texto: '', adIds: [AD1] });
-    expect(r[1]).toMatchObject({ texto: 'Quiero una cita', adIds: [] });
+    expect(r[1]).toEqual({ id: 'texto', texto: 'Quiero una cita', inicio: expect.any(String), fin: expect.any(String) });
   });
 
   it('un Ad ID de una campaña NO vigente (fuera de fechas o del tope) no viaja', () => {

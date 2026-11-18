@@ -558,7 +558,7 @@ export async function revisarCampanas(
 // Lo que recibe el flujo
 // ---------------------------------------------------------------------------
 
-export interface CampanaParaElFlujo { id: string; texto: string; inicio: string; fin: string; adIds: string[] }
+export interface CampanaParaElFlujo { id: string; texto: string; inicio: string; fin: string; adIds?: string[] }
 
 /**
  * LAS CAMPAÑAS QUE VIAJAN AL FLUJO en `configuracionFlujo`: las aprobadas
@@ -585,7 +585,9 @@ export function campanasParaElFlujo(vigentes: unknown, limite: number, ahoraMs: 
     .map((c) => ({ c, adIds: colapsarAdIds(c.adIds).filter(adIdValido).slice(0, MAX_ADIDS) }))
     .filter(({ c, adIds }) => c.texto.length <= TOPE_TEXTO_CAMPANA && (c.texto.trim() !== '' || adIds.length > 0))
     .map(({ c, adIds }) => ({
-      id: c.id, texto: c.texto.trim(), adIds,
+      id: c.id, texto: c.texto.trim(),
+      // Solo viaja si hay: la respuesta de un comercio sin Ad ID queda idéntica a la de siempre (0 bytes de más).
+      ...(adIds.length > 0 ? { adIds } : {}),
       inicio: new Date(inicioDelDia(c.inicio)).toISOString(),
       fin: new Date(finDelDia(c.fin)).toISOString(),
     }));
