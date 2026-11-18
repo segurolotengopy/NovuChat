@@ -154,8 +154,8 @@ describe('un defecto del catálogo lleva su causa en el aviso que ya sale', () =
     expect(t.fallo).toBeNull();
     expect(w.sd['casabermejoAlertas']).toBeUndefined();
   });
-  it('el flujo no crece: 57 nodos en producción y 52 en prueba', () => {
-    expect(PRODUCCION.nodes).toHaveLength(57);
-    expect(PRUEBA.nodes).toHaveLength(52);
+  it('el flujo no crece: 61 nodos en producción y 56 en prueba (57 y 52 más los 4 de la rama del guardado de la imagen saliente)', () => {
+    expect(PRODUCCION.nodes).toHaveLength(61);
+    expect(PRUEBA.nodes).toHaveLength(56);
   });
 });

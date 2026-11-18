@@ -2,7 +2,7 @@
 // QUE leer del calendario. El modelo solo ENTENDIO el mensaje: aca todo es validado
 // con codigo, y un campo raro del modelo se descarta, no se obedece.
 //
-// Tipos de plan (`plan`): nada, menu, emergencia, contacto_doctor, contacto_recepcion,
+// Tipos de plan (`plan`): nada, baja, menu, emergencia, contacto_doctor, contacto_recepcion,
 // derivar_medio, consulta_clinica, audio_ilegible, imagen_sin_texto, respuesta_fija (params.clave, params.conMenu), pedir_boton, pedir_nombre, transferir, error, responder,
 // ofrecer, elegir_hueco, crear (con nombre), listar (cancelar o mover), cancelar,
 // mover_elegido.
@@ -71,6 +71,8 @@ function nombresValidos(lista) {
 const accion = d.accion;
 
 // --- Planes que no necesitan modelo ni calendario ---------------------------------------
+// La baja no toca el estado de la conversación (ni la oferta pendiente ni las citas): al volver a escribir se atiende como siempre.
+if (accion === 'baja') return salir('baja');
 if (['nada', 'menu', 'emergencia', 'contacto_doctor', 'contacto_recepcion', 'derivar_medio', 'audio_ilegible', 'imagen_sin_texto', 'respuesta_fija', 'consulta_clinica'].indexOf(accion) >= 0) {
   if (accion !== 'nada' && est.paso === 'inicio') en.paso = 'menu';
   // Una pregunta sencilla contestada por codigo: `clave` dice cual y `conMenu` si es el primer mensaje de la
@@ -252,7 +254,14 @@ if (est.paso === 'esperando_nombre' && est.huecoElegido) {
 if ((x.intencion === 'consultar' || x.intencion === 'otro') && x.pregunta) {
   return salir('responder', { params: { pregunta: x.pregunta } });
 }
-if (!srv) return salir('menu');
+if (!srv) {
+  // Ya saludó (ensayo del 17/11/2026): se guarda lo que pidió (día y franja) para no hacérselo repetir al tocar el servicio, y se le pregunta
+  // el servicio con una frase corta en vez de repetir el saludo. El primer mensaje (paso `inicio`) sigue con el saludo completo: ya guardó su texto.
+  if (est.paso === 'inicio') return salir('menu');
+  // Solo se guarda si dijo algo que conservar (día, hora o franja): un «gracias» suelto no se re-extrae al tocar el servicio.
+  if (x.fechaPreferida || x.horaPreferida || x.franja !== 'cualquiera') en.primerTexto = String(d.textoExtraer || texto).trim().slice(0, 300);
+  return salir('menu', { params: { preguntaServicio: true } });
+}
 
 // --- HB4: tres rechazos seguidos de ofertas pasan con recepcion -------------------------------
 // Un rechazo es decir que ninguna sirve (la frase la marca el codigo; el modelo lo confirma con

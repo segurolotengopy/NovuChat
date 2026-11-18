@@ -339,7 +339,7 @@ describe("los datos de Q'Taco: el 3727 las enciende; el vivo y los demás client
     }
     expect(revisados).toBe(otros.length);
   });
-  it('el 3727 sigue con 81 nodos (ninguno agregado)', () => {
-    expect((JSON.parse(readFileSync(join(VM, 'venta-minima.qtaco-3727.json'), 'utf8')) as Flujo).nodes).toHaveLength(81);
+  it('el 3727 sigue con 84 nodos (los 81 de antes más los 3 de la rama del guardado de la imagen saliente; el resto, ninguno agregado)', () => {
+    expect((JSON.parse(readFileSync(join(VM, 'venta-minima.qtaco-3727.json'), 'utf8')) as Flujo).nodes).toHaveLength(84);
   });
 });

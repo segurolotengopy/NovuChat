@@ -16,6 +16,7 @@ import { type Flujo, type J } from './lib/flujo';
 import type { Doble, ResultadoTurno } from './lib/n8n-de-mentira';
 // @ts-expect-error módulo .mjs sin tipos
 import { hallazgosCrm, inyectarMapa } from '../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
+import { NODOS_DEL_GUARDADO_SALIENTE } from '../../Flujos/src/core/sin-agente/guardado.mjs';
 import { AHORA, CLIENTE, estadoDe, boton, crear, editarJson, idDeBoton, leer, nodoDe, panel, texto, turno, verificarEnCopia, type Mundial } from './lib/venta-minima-mundo';
 import { respuestaDeIngesta } from './modulos/crm/ingesta-conversacion';
 
@@ -795,7 +796,8 @@ describe('aceptación sobre el JSON versionado', () => {
     const cuelgan = new Set<string>(['Armar mensajes']);
     const cola = ['Armar mensajes'];
     while (cola.length) for (const salidas of CRM.connections[cola.shift()!]?.['main'] ?? []) for (const c of salidas ?? []) if (!cuelgan.has(c.node)) { cuelgan.add(c.node); cola.push(c.node); }
-    expect(Math.max(...CRM.nodes.filter((n) => cuelgan.has(n.name)).map((n) => (n.position as [number, number])[1]))).toBe(y(CRM, 'Resumen del turno'));
+    // (la rama del guardado de la imagen SALIENTE, 16/11/2026, cuelga del reporte saliente y va debajo de todo el lienzo: no es una rama de este orden)
+    expect(Math.max(...CRM.nodes.filter((n) => cuelgan.has(n.name) && !NODOS_DEL_GUARDADO_SALIENTE.includes(n.name)).map((n) => (n.position as [number, number])[1]))).toBe(y(CRM, 'Resumen del turno'));
     // en el orden de ejecución (executionOrder v1) la rama corre DESPUÉS del envío, del cierre y del resumen
     const hijos = (CRM.connections['Armar mensajes']?.['main']?.[0] ?? []).map((c) => c.node);
     expect(hijos).toEqual(['¿Comprometer turno?', 'Prospecto para la planilla']);
@@ -902,11 +904,11 @@ describe('aceptación sobre el JSON versionado', () => {
     expect(r.status).not.toBe(0);
     expect(r.stderr).toMatch(/difiere de lo que arma la plantilla/);
   });
-  it('el tope de nodos de producción es 81 y el 3727 lleva exactamente 8 nodos más que el vivo', () => {
+  it('el tope de nodos de producción es 84 (81 + 3 de la rama del guardado de la imagen saliente) y el 3727 lleva exactamente 8 nodos más que el vivo', () => {
     const vivo = leer('venta-minima.qtaco.json');
     expect(CRM.nodes.length).toBe(vivo.nodes.length + 8);
-    expect(readFileSync(join(VM, 'construir.mjs'), 'utf8')).toMatch(/const TOPE_DE_NODOS = 81;/);
-    expect(CRM.nodes.length).toBeLessThanOrEqual(81);
+    expect(readFileSync(join(VM, 'construir.mjs'), 'utf8')).toMatch(/const TOPE_DE_NODOS = 84;/);
+    expect(CRM.nodes.length).toBeLessThanOrEqual(84);
   });
 });
 
@@ -929,5 +931,42 @@ describe('sin el dato `crm` no se activa nada (las demás salidas)', () => {
       const con = leer(f).nodes.filter((n) => String(n.parameters['jsCode'] ?? '').includes('function vmProspectoCrm('));
       expect(con.map((n) => n.name), f).toEqual(['Armar mensajes']);
     }
+  });
+});
+
+// ================================================================================================ UX COMÚN (16/11/2026)
+describe('UX común: una BAJA por texto no es un prospecto del miniCRM', () => {
+  it('con la ruta `baja` no se crea ni se actualiza una fila, ni en el primer contacto', () => {
+    expect(prospecto({ plan: { ruta: 'baja', pedido: null }, anteriorMs: null })).toBeNull();
+    expect(prospecto({ plan: { ruta: 'baja', pedido: null }, anteriorMs: AHORA - 60_000 })).toBeNull();
+  });
+  it('NEGADO: el mismo turno con otra ruta (el menú) sí es un prospecto de primer contacto', () => {
+    expect(prospecto({ plan: { ruta: 'menu', pedido: null }, anteriorMs: null })).not.toBeNull();
+  });
+});
+
+describe('UX común: la baja por texto de punta a punta en el JSON de 3727 (reporte, un solo mensaje, sin avisos ni planilla)', () => {
+  /** Lo que «Reportar mensaje (entrante)» le manda al servidor en cada turno (el cuerpo ya evaluado) y lo que escribió la planilla. */
+  const corre = (dicho: string) => {
+    const pl = planilla();
+    const w = mundo({ pl });
+    const reportes: J[] = [];
+    w.mundo.dobles['Reportar mensaje (entrante)'] = (ll) => { reportes.push(ll.cuerpo as J); return {}; };
+    const t = turno(w, texto(dicho));
+    return { t, reportes, pl };
+  };
+  it.each(['no me escribas más', 'no me manden nada', 'stop'])('«%s»: marca no_contactar, contesta UN texto fijo y no avisa ni escribe en la planilla', (dicho) => {
+    const { t, reportes, pl } = corre(dicho);
+    expect(reportes.map((r) => r['evento'])).toEqual(['no_contactar']);
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/no quieres recibir más mensajes/);
+    expect(t.avisos).toHaveLength(0);
+    expect(pl.escrituras).toHaveLength(0);
+    expect(pl.actualizaciones).toHaveLength(0);
+  });
+  it.each(['no me llamaron ayer', 'hola', 'no me escribiste el precio'])('NEGADO: «%s» ya no marca baja (la regex ancha de antes marcaba a quien no la pidió)', (dicho) => {
+    const { reportes, t } = corre(dicho);
+    expect(reportes.map((r) => r['evento'])).toEqual([undefined]);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/no quieres recibir más mensajes/);
   });
 });

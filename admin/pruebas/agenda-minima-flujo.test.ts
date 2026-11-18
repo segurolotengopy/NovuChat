@@ -449,6 +449,41 @@ describe('Agenda mínima v0: el flujo, de punta a punta', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------------------- (b2)
+  // Hallazgo del ensayo del 17/11/2026 en el Demo A: tras el saludo, «quiero una cita para mañana en la tarde» sin servicio
+  // repetía el saludo completo y, al tocar el servicio, ofrecía horarios de la mañana (se perdían la franja y el día).
+  describe('(b2) tras el saludo, una cita pedida sin servicio', () => {
+    it('NIEGA repetir el saludo: pregunta el servicio con una frase corta y la misma lista (UN solo mensaje)', () => {
+      const m = mundo({ eventos: [] });
+      m.turno(texto(MAMA, 'hola'));
+      m.gemini.extraer = extraccion({ servicio: 'desconocido', fechaPreferida: JUEVES, franja: 'tarde' });
+      const t = m.turno(texto(MAMA, 'quiero cita el jueves en la tarde'));
+      expect(t.aPaciente(MAMA)).toHaveLength(1);
+      const msg = t.enviados[0]!;
+      expect(interactivo(msg)['type']).toBe('list');
+      expect(msg.cuerpo).not.toBe(PANEL.datosDelNegocio.mensajeMenu);
+      expect(msg.cuerpo).toMatch(/servicio/i);
+      expect(msg.cuerpo.length).toBeLessThan(80);
+    });
+    it('NIEGA perder la franja y el día: al tocar el servicio se ofrecen los horarios del jueves en la TARDE', () => {
+      const m = mundo({ eventos: [] });
+      m.turno(texto(MAMA, 'hola'));
+      m.gemini.extraer = extraccion({ servicio: 'desconocido', fechaPreferida: JUEVES, franja: 'tarde' });
+      m.turno(texto(MAMA, 'quiero cita el jueves en la tarde'));
+      m.gemini.extraer = extraccion({ servicio: SERV_CNS, fechaPreferida: JUEVES, franja: 'tarde' });
+      m.gemini.redactar = 'Para el jueves en la tarde tengo estos horarios. Toca el que prefieras.';
+      const t = m.turno(lista(MAMA, SERV_CNS, 'Control niño sano'));
+      expect(t.enviados).toHaveLength(1);
+      expect(botonesDe(t.enviados[0]!).map((b) => b.id)).toEqual([idHueco(JUEVES, '14:00'), idHueco(JUEVES, '14:30'), idHueco(JUEVES, '15:00')]);
+    });
+    it('el primer mensaje (sin saludo previo) sigue recibiendo el saludo completo', () => {
+      const m = mundo({ eventos: [] });
+      m.gemini.extraer = extraccion({ servicio: 'desconocido' });
+      const t = m.turno(texto(MAMA, 'hola'));
+      expect(t.enviados[0]!.cuerpo).toBe(PANEL.datosDelNegocio.mensajeMenu);
+    });
+  });
+
   // ---------------------------------------------------------------------------------------- (b)
   describe('(b) «quiero cita el jueves en la tarde»', () => {
     it('ofrece huecos reales del jueves como botones, y el texto va en el cuerpo del MISMO interactivo', () => {
@@ -3904,3 +3939,199 @@ describe('Agenda mínima v0: el asistente nunca niega ser una IA (prohibición 4
   });
 });
 
+
+// =================================================================================================
+// LA BAJA, POR TEXTO Y POR VOZ (decisión de Andres, 17/11/2026: «toda función de conversación igual en todos»).
+// Pieza común del core `baja.js`; el pedido se decide en «Decidir turno», UN texto fijo sale por «Armar mensajes», y el
+// `no_contactar` viaja con el entrante (texto) o con el saliente de la confirmación (nota de voz). Una baja NO toca citas.
+describe('Agenda mínima: la baja por texto y por voz', () => {
+  const eventosDe = (t: Turno, direccion: string): unknown[] => t.ingesta.filter((i) => i['direccion'] === direccion).map((i) => i['evento']);
+  /** La confirmación fija de la pieza común (sin tratamiento propio: texto neutro). */
+  const CONFIRMA_BAJA = /^Entendido, tomé nota de que no quieres recibir más mensajes\./;
+  const CITA_DE_MAMA = citaDe(MAMA, 'cita-1', JUEVES, '14:00', '14:30', 'Perez Ana');
+  const RELLENO = ' Estoy en la oficina con mucho trabajo, hablando con varios proveedores y revisando facturas, entonces después te escribo con calma sobre lo demás.';
+
+  describe('por texto', () => {
+    for (const dicho of ['no me escriban más', 'No me escribas más', 'dame de baja', 'stop', 'para de escribirme']) {
+      it(`«${dicho}»: un solo texto fijo, sin modelo, sin botones ni aviso, y el entrante marca no_contactar`, () => {
+        const m = mundo({ eventos: [CITA_DE_MAMA] });
+        const t = m.turno(texto(MAMA, dicho));
+        const alPaciente = t.aPaciente(MAMA);
+        expect(alPaciente).toHaveLength(1); // 0 mensajes agregados: reemplaza la respuesta del turno
+        expect(alPaciente[0]!.tipo).toBe('text');
+        expect(alPaciente[0]!.payload['interactive']).toBeUndefined();
+        expect(alPaciente[0]!.cuerpo).toMatch(CONFIRMA_BAJA);
+        expect(t.aRecepcion).toHaveLength(0);
+        expect(t.aDoctor).toHaveLength(0);
+        expect(t.extraer).toHaveLength(0);
+        expect(t.redactar).toHaveLength(0);
+        expect(eventosDe(t, 'entrante')).toEqual(['no_contactar']);
+        expect(eventosDe(t, 'saliente')).toEqual([undefined]); // el saliente no repite el evento
+      });
+    }
+    it('una cita pedida en el mismo mensaje NO se agenda ni se toca: ni modelo, ni calendario, ni cierre', () => {
+      const m = mundo({ eventos: [CITA_DE_MAMA] });
+      m.gemini.extraer = extraccion({ fechaPreferida: JUEVES, horaPreferida: '14:00' });
+      const t = m.turno(texto(MAMA, 'quiero una cita el jueves a las 14:00 y no me escriban más'));
+      expect(t.aPaciente(MAMA)[0]!.cuerpo).toMatch(CONFIRMA_BAJA);
+      expect(t.extraer).toHaveLength(0);
+      expect(t.ejecutados.has('Crear evento')).toBe(false);
+      expect(t.ejecutados.has('Borrar evento')).toBe(false);
+      expect(t.ejecutados.has('Leer agenda')).toBe(false);
+      expect(m.calendario.creaciones).toBe(0);
+      expect(m.calendario.eventos).toHaveLength(1);
+    });
+    it('la baja NO cancela la cita ya agendada (queda en el calendario)', () => {
+      const m = mundo({ eventos: [CITA_DE_MAMA] });
+      m.turno(texto(MAMA, 'hola'));
+      m.turno(texto(MAMA, 'dame de baja'));
+      expect(m.calendario.eventos).toHaveLength(1);
+    });
+    it('NIEGA: escribir de nuevo después de la baja se atiende como siempre (menú)', () => {
+      const m = mundo({ eventos: [] });
+      m.turno(texto(MAMA, 'stop'));
+      const t = m.turno(texto(MAMA, 'hola'));
+      expect(t.aPaciente(MAMA)[0]!.cuerpo).not.toMatch(CONFIRMA_BAJA);
+      expect(interactivo(t.aPaciente(MAMA)[0]!)['type']).toBe('list');
+    });
+    it('la protección de salud y riesgo va ANTES: una emergencia que además pide la baja sigue su camino', () => {
+      const m = mundo({ eventos: [] });
+      const t = m.turno(texto(MAMA, 'mi hijo no respira, no me escriban más'));
+      expect(t.aPaciente(MAMA)[0]!.cuerpo).not.toMatch(CONFIRMA_BAJA);
+      expect(t.aRecepcion.length + t.aDoctor.length).toBeGreaterThan(0);
+    });
+    for (const dicho of ['no me escribió el precio', 'mándame el QR', 'el doctor dijo que no me escriban', 'no me escribas el precio, mándame el QR']) {
+      it(`NIEGA: «${dicho}» no es una baja (ni confirmación ni no_contactar)`, () => {
+        const m = mundo({ eventos: [] });
+        const t = m.turno(texto(MAMA, dicho));
+        expect(textos(t)).not.toMatch(CONFIRMA_BAJA);
+        expect(eventosDe(t, 'entrante')).not.toContain('no_contactar');
+        expect(eventosDe(t, 'saliente')).not.toContain('no_contactar');
+      });
+    }
+    it('NIEGA: un toque de la lista del menú no es una baja', () => {
+      const m = mundo({ eventos: [] });
+      m.turno(texto(MAMA, 'hola'));
+      const t = m.turno(lista(MAMA, SERV_CNS, 'stop'));
+      expect(textos(t)).not.toMatch(CONFIRMA_BAJA);
+    });
+  });
+
+  describe('por nota de voz (hasta 160 caracteres de transcripción)', () => {
+    const porVoz = (dicho: string, eventos: J[] = []): Turno => {
+      const m = mundo({ eventos });
+      m.gemini.transcripcion = dicho;
+      return m.turno(audio(MAMA));
+    };
+    for (const dicho of ['no me escriban más', 'dame de baja', 'stop']) {
+      it(`SÍ: «${dicho}» dicho en voz: la confirmación fija sale y el SALIENTE lleva no_contactar (el entrante de un audio no marca nada)`, () => {
+        const t = porVoz(dicho, [CITA_DE_MAMA]);
+        const alPaciente = t.aPaciente(MAMA);
+        expect(alPaciente).toHaveLength(1);
+        expect(alPaciente[0]!.cuerpo).toMatch(CONFIRMA_BAJA);
+        expect(alPaciente[0]!.payload['interactive']).toBeUndefined();
+        expect(t.aRecepcion).toHaveLength(0);
+        expect(t.extraer).toHaveLength(0);
+        expect(eventosDe(t, 'entrante')).toEqual([undefined]);
+        expect(eventosDe(t, 'saliente')).toEqual(['no_contactar']); // confirmar y registrar van juntos
+      });
+    }
+    it('borde: 160 caracteres SÍ; 161 NO', () => {
+      const base = 'no me escriban más';
+      const de = (n: number): string => base + '.'.repeat(n - base.length);
+      const en160 = de(160);
+      const en161 = de(161);
+      expect(en160).toHaveLength(160);
+      expect(en161).toHaveLength(161);
+      const t160 = porVoz(en160);
+      expect(t160.aPaciente(MAMA)[0]!.cuerpo).toMatch(CONFIRMA_BAJA);
+      expect(eventosDe(t160, 'saliente')).toEqual(['no_contactar']);
+      const t161 = porVoz(en161);
+      expect(textos(t161)).not.toMatch(CONFIRMA_BAJA);
+      expect(eventosDe(t161, 'saliente')).not.toContain('no_contactar');
+    });
+    it('NIEGA: una transcripción larga (más de 160) que contiene el pedido sigue su camino normal', () => {
+      const dicho = 'ya pagué, no me contacten por teléfono.' + RELLENO;
+      expect(dicho.length).toBeGreaterThan(160);
+      const t = porVoz(dicho);
+      expect(textos(t)).not.toMatch(CONFIRMA_BAJA);
+      expect(eventosDe(t, 'saliente')).not.toContain('no_contactar');
+    });
+    for (const dicho of ['no me escribió el precio', 'mándame el QR', 'el doctor dijo que no me escriban']) {
+      it(`NIEGA: «${dicho}» en voz no se confirma ni registra`, () => {
+        const t = porVoz(dicho);
+        expect(textos(t)).not.toMatch(CONFIRMA_BAJA);
+        expect(eventosDe(t, 'saliente')).not.toContain('no_contactar');
+      });
+    }
+    it('NIEGA: un audio sin transcripción sigue su camino de siempre: ni baja ni no_contactar', () => {
+      const m = mundo({ eventos: [] });
+      m.gemini.transcripcion = null;
+      const t = m.turno(audio(MAMA));
+      expect(textos(t)).not.toMatch(CONFIRMA_BAJA);
+      expect(eventosDe(t, 'saliente')).not.toContain('no_contactar');
+    });
+  });
+
+  describe('salud primero, foto con pie y frases del reporte entrante (segunda pasada, 17/11/2026)', () => {
+    it('SALUD: «mi hija tiene fiebre, no me escriban más» con el nombre pendiente se deriva (aviso + botón), no se confirma la baja; el entrante igual marca no_contactar', () => {
+      const m = mundo({ eventos: [] });
+      hastaPedirNombre(m);
+      const t = m.turno(texto(MAMA, 'mi hija tiene fiebre, no me escriban más'));
+      expect(textos(t)).not.toMatch(CONFIRMA_BAJA);
+      expect(textos(t)).toMatch(/no puedo orientarte sobre salud/);
+      expect(eventosDe(t, 'entrante')).toEqual(['no_contactar']);
+    });
+    it('SALUD: en el inicio, con una cita pedida en el mismo mensaje, tampoco se confirma la baja', () => {
+      const m = mundo({ eventos: [] });
+      const t = m.turno(texto(MAMA, 'quiero una cita, mi hija tiene fiebre, no me escriban más'));
+      expect(textos(t)).not.toMatch(CONFIRMA_BAJA);
+    });
+    it('NIEGA: la misma baja sin palabras de salud, con el nombre pendiente, SÍ se confirma', () => {
+      const m = mundo({ eventos: [] });
+      hastaPedirNombre(m);
+      expect(textos(m.turno(texto(MAMA, 'no me escriban más')))).toMatch(CONFIRMA_BAJA);
+    });
+    it('FOTO con pie de baja: el entrante marca no_contactar y NO hay confirmación (el lado seguro)', () => {
+      const m = mundo({ eventos: [] });
+      const t = m.turno(valorMeta({ type: 'image', image: { id: 'media-1', mime_type: 'image/jpeg', caption: 'no me escriban más' } }, MAMA));
+      expect(eventosDe(t, 'entrante')).toEqual(['no_contactar']);
+      expect(textos(t)).not.toMatch(CONFIRMA_BAJA);
+      expect(eventosDe(t, 'saliente')).not.toContain('no_contactar');
+    });
+    // Lo que cambia al pasar de la expresión amplia propia a la común (fija el alcance declarado en versiones-por-cliente.md).
+    const marca = (dicho: string): boolean => eventosDe(mundo({ eventos: [] }).turno(texto(MAMA, dicho)), 'entrante')[0] === 'no_contactar';
+    for (const dicho of ['bórrame', 'quítame', 'no me llamen']) it(`SIGUE marcando: «${dicho}»`, () => { expect(marca(dicho)).toBe(true); });
+    for (const dicho of ['no me manden promociones', 'no me mandes ofertas', 'no me escriban por la noche', 'no me escriban al número', 'bórrame mi número']) {
+      it(`DEJA de marcar: «${dicho}»`, () => { expect(marca(dicho)).toBe(false); });
+    }
+    for (const dicho of ['STOP!', 'no me envíen nada', 'dejen de molestar', 'eliminame', 'sáquenme', 'quítenme de la lista']) {
+      it(`PASA a marcar: «${dicho}»`, () => { expect(marca(dicho)).toBe(true); });
+    }
+    it('ya no marca el falso positivo «no me escribió el precio»', () => { expect(marca('no me escribió el precio')).toBe(false); });
+  });
+
+  describe('mutación ejecutable: la prueba se cae si el código de la baja se rompe', () => {
+    const mutar = (de: string, a: string): Flujo => {
+      const copia = JSON.parse(JSON.stringify(PRODUCCION)) as Flujo;
+      let tocados = 0;
+      for (const n of copia.nodes) {
+        const js = n.parameters['jsCode'];
+        if (typeof js === 'string' && js.includes(de)) { n.parameters['jsCode'] = js.split(de).join(a); tocados++; }
+      }
+      expect(tocados).toBeGreaterThan(0); // la mutación aplicó: si no, la prueba no probaba nada
+      return copia;
+    };
+    it('sin la llamada a bjPideBaja en «Decidir turno», el pedido ya NO toma la ruta de baja', () => {
+      const m = mundo({ eventos: [], flujo: mutar('bjPideBaja(t.texto)', 'false') });
+      const t = m.turno(texto(MAMA, 'no me escriban más'));
+      expect(textos(t)).not.toMatch(CONFIRMA_BAJA);
+    });
+    it('sin el `evento` del saliente, la baja por voz ya NO registra (y la prueba lo ve)', () => {
+      const m = mundo({ eventos: [], flujo: mutar("base.porVoz === true ? 'no_contactar' : undefined", 'undefined') });
+      m.gemini.transcripcion = 'no me escriban más';
+      const t = m.turno(audio(MAMA));
+      expect(eventosDe(t, 'saliente')).not.toContain('no_contactar');
+    });
+  });
+});

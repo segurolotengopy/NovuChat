@@ -906,7 +906,7 @@ describe('#435 ronda 2: rasgos de dirección y de referencia, ayuda por código,
     expect(ent(w)['entrega']).toBe('delivery');
   });
 
-  it('LOW-1: «prefiero delivery» se perdona UNA vez (vuelve a pedir la dirección); «no me manden nada» y «cancelen el envío» no se perdonan: derivan a la 2.ª vez', () => {
+  it('LOW-1: «prefiero delivery» se perdona UNA vez (vuelve a pedir la dirección); «no me manden nada» y «cancelen el envío» no se perdonan: derivan a la 2.ª vez (con un pedido en curso «no me manden nada» NO es una baja: decisión de Andres del 16/11/2026; sin pedido sí)', () => {
     const w = sinDireccion();
     const uno = turno(w, texto('prefiero delivery'));
     expect(uno.mensajes[0]!.cuerpo).toBe(PIDE_DIRECCION);
@@ -917,6 +917,13 @@ describe('#435 ronda 2: rasgos de dirección y de referencia, ayuda por código,
       const dos = turno(v, texto(dicho));
       expect(dos.mensajes[0]!.cuerpo, dicho).toMatch(DERIVA);
     }
+    // Con el pedido en curso no hay baja ni texto de baja; SIN pedido en curso la misma frase sí es la baja (un texto fijo, sin aviso al local).
+    const enCurso = turno(sinDireccion(), texto('no me manden nada'));
+    expect(enCurso.mensajes.map((m) => m.cuerpo).join(' ')).not.toMatch(/no quieres recibir más mensajes/);
+    const baja = turno(crear(), texto('no me manden nada'));
+    expect(baja.mensajes).toHaveLength(1);
+    expect(baja.mensajes[0]!.cuerpo).toMatch(/no quieres recibir más mensajes/);
+    expect(baja.avisos).toHaveLength(0);
   });
 
   it.each(['dejalo como estaba', 'cambiar algo', 'q hora llega', 'me equivoque', 'una coca cola mas', 'dos de birria mas', 'paso a buscarlo a las 8'])(

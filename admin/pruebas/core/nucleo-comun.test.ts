@@ -221,10 +221,10 @@ describe('núcleo común: «Carga de entrada» y «Puerta del turno» de core (`
 
   it('las copias de src/nodos que se conservan (para las pruebas de huella) son idénticas a core', () => {
     const core = (f: string) => readFileSync(join(TURNO, f), 'utf8');
-    for (const f of ['rroca-antonio', 'rroca-ruben', 'rroca-emma', 'rroca-evy', 'doctoras', 'venta-digital']) {
-      expect(readFileSync(join(RAIZ_FLUJOS, f === 'rroca-emma' ? 'clientes' : 'experimental', f, 'src', 'nodos', 'carga-de-entrada.js'), 'utf8'), f).toBe(core('carga-de-entrada.js'));
+    for (const f of ['../clientes/rroca-antonio', 'rroca-ruben', '../clientes/rroca-emma', 'rroca-evy', 'doctoras', 'venta-digital']) {
+      expect(readFileSync(join(RAIZ_FLUJOS, 'experimental', f, 'src', 'nodos', 'carga-de-entrada.js'), 'utf8'), f).toBe(core('carga-de-entrada.js'));
     }
-    for (const f of ['rroca-antonio', 'rroca-ruben', 'venta-digital']) {
+    for (const f of ['../clientes/rroca-antonio', 'rroca-ruben', 'venta-digital']) {
       expect(readFileSync(join(RAIZ_FLUJOS, 'experimental', f, 'src', 'nodos', 'puerta-del-turno.js'), 'utf8'), f).toBe(core('puerta-del-turno.js'));
     }
   });

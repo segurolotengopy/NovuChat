@@ -9,6 +9,7 @@
  *   F. El aviso de una derivación se lee como lo que es con la plantilla de pedido (sus variables).
  * (B, el arte de una campaña con un QR pendiente, está en `venta-minima-anuncio-campanas.test.ts`.)
  */
+import { voz } from './lib/venta-minima-voz';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -253,22 +254,22 @@ describe('C. La promo escrita con variaciones se reconoce por código (y un pedi
   const B_TEXTOS = ['Quiero la promo de jueves +2', 'quiero la promo jueves', 'jueves de más 2', 'jueves +2', 'JUEVES MAS 2', 'la promo del jueves', 'quiero la promo de jueves de 2 mas', 'Promoción de los jueves', 'jueves de 2 mas'];
   const A_TEXTOS = ['Quiero la promo tortas', 'Quiero la promo tortaa', 'promo tortas', 'la promo de tortas', 'quiero la promo tortas mexicanas', 'Promoción de tortas', 'promo torta mexicana', 'PROMO DE LAS TORTAS', 'oferta de tortas', 'tortas de la promo'];
   it('B (Jueves de +2): cada variación muestra el mensaje de la campaña B', () => {
-    for (const texto of B_TEXTOS) expect(cuerpos(conversacion(crear()).escribe(texto))[0], texto).toBe(B);
+    for (const texto of B_TEXTOS) expect(cuerpos(conversacion(crear()).escribe(texto))[0], texto).toBe(voz(B));
   });
   it('B es de RESERVA: a las 23:00, con los pedidos cerrados, «Quiero la promo de jueves +2» muestra la campaña, no «fuera de horario» (el caso del 07/11)', () => {
     const t = conversacion(crear({ ahoraMs: JUEVES_23 })).escribe('Quiero la promo de jueves +2');
-    expect(cuerpos(t)[0]).toBe(B);
+    expect(cuerpos(t)[0]).toBe(voz(B));
     expect(cuerpos(t).join(' ')).not.toMatch(/fuera de nuestro horario/);
     expect(titulos(t)).toContain('Reservar mesa');
   });
   it('A (Tortas mexicanas): cada variación, con mayúsculas, tildes o una letra de más o de menos, muestra el mensaje de la campaña A', () => {
-    for (const texto of A_TEXTOS) expect(cuerpos(conversacion(crear()).escribe(texto))[0], texto).toBe(A);
+    for (const texto of A_TEXTOS) expect(cuerpos(conversacion(crear()).escribe(texto))[0], texto).toBe(voz(A));
   });
   it('también desde el menú (después de «hola»): «Quiero la promo tortaa» ya no devuelve «¿Qué te gustaría hacer ahora?»', () => {
     const c = conversacion(crear());
     c.escribe('hola');
-    expect(cuerpos(c.escribe('Quiero la promo tortaa'))[0]).toBe(A);
-    expect(cuerpos(c.escribe('promo de jueves +2'))[0]).toBe(B);
+    expect(cuerpos(c.escribe('Quiero la promo tortaa'))[0]).toBe(voz(A));
+    expect(cuerpos(c.escribe('promo de jueves +2'))[0]).toBe(voz(B));
   });
   it('NEGANDO (falsos positivos): un pedido de carta, un horario, una mesa para 2 o la promo que no está pegada a la palabra NO activan nada', () => {
     const NEG = ['quiero una torta mexicana con queso', 'quiero 2 tortas mexicanas con queso', 'quiero tortas', 'qué tienen de tortas', 'tengo reserva el jueves de 2 a 4',

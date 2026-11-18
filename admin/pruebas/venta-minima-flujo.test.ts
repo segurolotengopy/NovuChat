@@ -19,6 +19,7 @@
  * Reloj: lunes 05/10/2026 10:00 en La Paz = `Date.UTC(2026, 9, 5, 14)`. Teléfonos sintéticos con seis ceros.
  * Para ver una conversación con los ojos: `VM_VER=1 pnpm -s vitest run --project puras pruebas/venta-minima-flujo.test.ts -t traza`.
  */
+import { voz } from './lib/venta-minima-voz';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -31,7 +32,8 @@ import { configBase, destinos, expresion, type Flujo, type J } from './lib/flujo
 import { crearMundo, ROLES_POR_OMISION, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
 import { copiarModulosComunesAlTemporal, doblesDelGuardado } from './lib/doble-guardado';
 import { crearSesion, ESPACIO, ESPACIO_PRUEBA, type SesionDeMentira } from './lib/venta-minima-sesion';
-import { NODOS_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../Flujos/src/core/sin-agente/guardado.mjs';
+import { NODOS_DEL_GUARDADO, NODOS_DEL_GUARDADO_SALIENTE, URL_DESCARGA_GUARDADO } from '../../Flujos/src/core/sin-agente/guardado.mjs';
+import { URL_DESCARGA_SALIENTE } from '../../Flujos/src/core/sin-agente/guardado-saliente.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA_VM = join(AQUI, '../../Flujos/experimental/venta-minima');
@@ -654,6 +656,9 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
       for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
         // La descarga PROPIA del guardado de medios (módulo común): la URL de Meta solo si el tamaño que informó cabe.
         if (n.name === 'Descargar medio (guardado)') { expect(n.parameters['url']).toBe(URL_DESCARGA_GUARDADO); continue; }
+        // La rama del guardado de la imagen SALIENTE (16/11/2026): el CDN de Meta (expresión exacta del módulo común) y el MISMO enlace que se envió al cliente (sin credencial).
+        if (n.name === 'Descargar imagen de Meta (guardado saliente)') { expect(n.parameters['url']).toBe(URL_DESCARGA_SALIENTE); continue; }
+        if (n.name === 'Descargar enlace (guardado saliente)') { expect(n.parameters['url']).toBe('={{ $json.enlace }}'); expect(n.credentials, n.name).toBeUndefined(); continue; }
         expect(String(n.parameters['url']), n.name).toMatch(/^(=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|us-east1-novuchat-demo\.cloudfunctions\.net)\/|REEMPLAZAR_[A-Z0-9_]+$|=\{\{ \$json\.url \}\}$)/);
       }
     }
@@ -1093,7 +1098,7 @@ describe('la entrada del receptor: verificada, sin Trigger, sin repetidos', () =
       // «Guardar comprobante» manda los BYTES del archivo (`contentType: binaryData`), no un JSON: no hay cuerpo que interpolar.
       // «Guardar medio» y «Reintentar el guardado» (guardado de medios, módulo común) mandan los BYTES del medio (`binaryData`), no un JSON: no hay texto
       // que interpolar. Desde el contrato v2 (30/10) el reintento siempre lleva cuerpo (ya no hay modo Anotar).
-      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters['sendBody'] === true && !(['Guardar medio', 'Reintentar el guardado', 'Guardar comprobante'].includes(x.name) && x.parameters['contentType'] === 'binaryData'))) {
+      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters['sendBody'] === true && !(['Guardar medio', 'Reintentar el guardado', 'Guardar comprobante', 'Guardar imagen enviada'].includes(x.name) && x.parameters['contentType'] === 'binaryData'))) {
         httpConCuerpo++;
         const jb = String(n.parameters['jsonBody']);
         expect(n.parameters['specifyBody'], n.name).toBe('json');
@@ -1928,7 +1933,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       const w = conJueves({ campanaReservaTexto: String(b['campanaReservaTexto']), campanaReservaMensaje: String(b['campanaReservaMensaje']), campanaReservaNoJueves: '' }, [campanaVigente('jueves', String(b['campanaReservaTexto']))]);
       const c = con(w);
       const t = c.escribe(String(b['campanaReservaTexto']));
-      expect(cuerpos(t)[0]).toBe(String(b['campanaReservaMensaje']));
+      expect(cuerpos(t)[0]).toBe(voz(String(b['campanaReservaMensaje'])));
       expect(t.mensajes.flatMap(titulosDe)).toEqual(['Reservar mesa']);
       for (const si of ['sí', 'quiero']) {
         const r = c.escribe(si);
@@ -1984,7 +1989,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       const c = con(w);
       const t = c.escribe(TORTAS.toUpperCase());
       expect(t.mensajes).toHaveLength(1);
-      expect(cuerpos(t)[0]).toBe(MSG);
+      expect(cuerpos(t)[0]).toBe(voz(MSG));
       expect(t.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido']);
       expect(idDeBoton(t, 'Hacer un pedido')).toBe('m|pedido');
       expect(estadoDe(w.mundo)['carrito'] ?? []).toHaveLength(0);
@@ -1998,7 +2003,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       const cfg2 = { ...config, campanaReservaTexto: JUEVES, campanaReservaMensaje: 'Mensaje de jueves agrandar.' };
       const campanas = [campanaVigente('tortas', TORTAS), campanaVigente('jueves', JUEVES)];
       const a = con(conTortas({ ...cfg2, reservasActivo: false }, campanas)).escribe(TORTAS);
-      expect(cuerpos(a)[0]).toBe(MSG);
+      expect(cuerpos(a)[0]).toBe(voz(MSG));
       expect(a.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido']);
       const b = con(conTortas({ ...cfg2, reservasActivo: true }, campanas)).escribe(JUEVES);
       expect(cuerpos(b)[0]).toBe('Mensaje de jueves agrandar.');
@@ -2015,7 +2020,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       expect([...mensaje.matchAll(/Bs (\d+)/g)].map((m) => Number(m[1])).sort()).toEqual([sin['precio'], con_['precio']].map(Number).sort());
       const w = conTortas({ campanaPedidoTexto: String(b['campanaPedidoTexto']), campanaPedidoMensaje: mensaje, campanaPedidoArea: String(b['campanaPedidoArea']) }, undefined, { catalogoWeb: { enlace: 'https://catalogo.ejemplo.com/c/x' } });
       const t = con(w).escribe(TORTAS);
-      expect(cuerpos(t)[0]).toBe(mensaje);
+      expect(cuerpos(t)[0]).toBe(voz(mensaje));
       expect(t.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido']);
     });
   });
@@ -2030,7 +2035,7 @@ describe('menú y promoción', () => {
     const w = crear();
     const t = con(w).escribe('hola');
     expect(t.mensajes).toHaveLength(1);
-    expect(cuerpos(t)[0]).toBe("¡Hola! 👋 Gracias por escribir a Q'Taco. Soy Taqui, el asistente virtual. ¿Qué te gustaría hacer?");
+    expect(cuerpos(t)[0]).toBe("¡Hola! 👋 Gracias por escribir a Q'Taco. Soy Taqui, el asistente virtual con IA.\n\n¿Qué te gustaría hacer?");
     // Con una campaña vigente el menú ofrece «Promociones»; el menú no lleva el botón «Menú» (ya es el menú).
     expect(titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Promociones']);
     const sinCampana = con(crear({ panel: panel({ campanas: [] }) })).escribe('hola');
@@ -2055,7 +2060,7 @@ describe('menú y promoción', () => {
     for (const v of variantes) {
       const t = con(crear()).escribe(v);
       expect((t.resumen as J)['resumen'].ruta, v).toBe('promo');
-      expect(cuerpos(t)[0], v).toBe('¡Hola! Qué bueno que viste nuestra promo. Promo Dúo: 2 órdenes de 3 tacos y 2 refrescos. Precio: 69 Bs.');
+      expect(cuerpos(t)[0], v).toBe(voz('¡Hola! Qué bueno que viste nuestra promo. Promo Dúo: 2 órdenes de 3 tacos y 2 refrescos. Precio: 69 Bs.'));
       expect(titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>), v).toEqual(['Pedir la promo', 'Reservar mesa', 'Ver la carta']);
     }
   });
@@ -2273,7 +2278,7 @@ describe('pedido', () => {
       expect(t.llamadas.extraer).toHaveLength(0);
       expect(tieneEnlace(t)).toBe(true);
       expect(plantillasA(t, AV1)).toHaveLength(1); // el aviso de la derivación
-      expect(cuerpos(t)[0]).toBe('Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Para volver al inicio, escribe «inicio».');
+      expect(cuerpos(t)[0]).toBe(voz('Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Para volver al inicio, escribe «inicio».'));
     }
   });
 
@@ -2318,13 +2323,13 @@ describe('pedido', () => {
     const t = con(w).audio();
     expect(t.ejecutados.has('Descargar medio')).toBe(false);
     expect(t.ejecutados.has('Transcribir audio')).toBe(false);
-    expect(cuerpos(t)[0]).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
+    expect(cuerpos(t)[0]).toBe(voz('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?'));
     // Negativo: el de 719.999 sí se procesa.
     const chico = crear({ dobles: { 'Obtener URL del medio': () => ({ url: 'https://medios.ejemplo.invalid/m', mime_type: 'audio/ogg', file_size: 719_999 }) } });
     expect(con(chico).audio().ejecutados.has('Transcribir audio')).toBe(true);
     // Si la transcripción falla, tampoco hay un error técnico.
     const falla = crear({ dobles: { 'Transcribir audio': () => ({ error: { message: 'sin saldo' } }) } });
-    expect(cuerpos(con(falla).audio())[0]).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
+    expect(cuerpos(con(falla).audio())[0]).toBe(voz('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?'));
   });
 
   // A3. El token de Meta viaja con la descarga del medio: solo por https, sin seguir redirecciones, y con un id de forma conocida.
@@ -2334,7 +2339,7 @@ describe('pedido', () => {
       const t = con(w).audio();
       expect(t.ejecutados.has('Descargar medio'), url).toBe(false);
       expect(t.ejecutados.has('Transcribir audio'), url).toBe(false);
-      expect(cuerpos(t)[0], url).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
+      expect(cuerpos(t)[0], url).toBe(voz('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?'));
     }
     expect(con(crear()).audio().ejecutados.has('Descargar medio')).toBe(true);
     // Lo mismo para un comprobante: con una URL http no hay descarga, ni lectura, ni cotejo.
@@ -2911,7 +2916,7 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
     silencio(c.turno({ type: 'sticker', sticker: { id: 'st-1' } }));
     silencio(c.turno({ type: 'reaction', reaction: { emoji: '👍' } }));
     const contacto = c.turno({ type: 'contacts', contacts: [{ name: { formatted_name: 'X' } }] });
-    expect(cuerpos(contacto)[0]).toBe('No pude entender bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
+    expect(cuerpos(contacto)[0]).toBe(voz('No pude entender bien ese mensaje 😅. ¿Me lo escribes o lo repites?'));
     expect(contacto.avisos).toHaveLength(0);
   });
 });
@@ -3162,8 +3167,8 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(73); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 9 del estado en el servidor (PR-4a) + los 2 de los cupos (PR-4b, aprobado por Andres (06/11/2026, en conversación)) + los 2 de la imagen del anuncio (aprobados por Andres el 06/11/2026): el tope de producción es 73 (`construir.mjs` lo impone)
-    expect(PRUEBA.nodes).toHaveLength(69);
+    expect(QTACO.nodes).toHaveLength(76); // +3 de la rama del guardado de la imagen saliente (16/11/2026); 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 9 del estado en el servidor (PR-4a) + los 2 de los cupos (PR-4b, aprobado por Andres (06/11/2026, en conversación)) + los 2 de la imagen del anuncio (aprobados por Andres el 06/11/2026): el tope de producción es 73 (`construir.mjs` lo impone)
+    expect(PRUEBA.nodes).toHaveLength(72); // 69 + 3 de la rama del guardado de la imagen saliente (16/11/2026)
   });
 
   it('L2: en producción un `wamid.SIMULADO-…` NO cuenta como aviso salido: el cliente no lee «pasé tu pedido» y el cierre no lo toma de referencia', () => {
@@ -3782,7 +3787,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     const c = con(w);
     // 1. «hola» → el menú, amable y con sus botones (y «Promociones» porque hay una campaña vigente).
     const hola = c.escribe('hola');
-    expect(cuerpos(hola)[0]).toBe("¡Hola! 👋 Gracias por escribir a Q'Taco. Soy Taqui, el asistente virtual. ¿Qué te gustaría hacer?");
+    expect(cuerpos(hola)[0]).toBe("¡Hola! 👋 Gracias por escribir a Q'Taco. Soy Taqui, el asistente virtual con IA.\n\n¿Qué te gustaría hacer?");
     expect(titulosDelPrimero(hola)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Promociones']);
     // 2. [Hacer un pedido] → la carta.
     const carta = c.toca('m|pedido', 'Hacer un pedido');
@@ -3808,7 +3813,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     expect(estadoDe(w.mundo)['pendiente']).toHaveLength(1); // la pregunta orden/unidad sigue pendiente
     // 5. una imagen sin comprobante pendiente → texto amable con botones (no «Recibí tu imagen»).
     const imagen = c.imagen('media-5');
-    expect(cuerpos(imagen)[0]).toBe('¡Gracias por la imagen! Por aquí solo leo comprobantes de un pedido con QR, y ahora no tienes ninguno pendiente. ¿Qué te gustaría hacer?');
+    expect(cuerpos(imagen)[0]).toBe(voz('¡Gracias por la imagen! Por aquí solo leo comprobantes de un pedido con QR, y ahora no tienes ninguno pendiente. ¿Qué te gustaría hacer?'));
     expect(titulosDelPrimero(imagen)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Volver a inicio']);
     expect(imagen.avisos).toHaveLength(0);
     // 6. «¿puedo hacer una reserva?» en medio del pedido → la pregunta de la reserva, y el pedido sigue en el estado.
@@ -4249,6 +4254,8 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     for (const n of DEMO_A.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
       // La descarga PROPIA del guardado de medios (módulo común): la URL de Meta solo si el tamaño que informó cabe.
       if (n.name === 'Descargar medio (guardado)') { expect(n.parameters['url']).toBe(URL_DESCARGA_GUARDADO); continue; }
+      if (n.name === 'Descargar imagen de Meta (guardado saliente)') { expect(n.parameters['url']).toBe(URL_DESCARGA_SALIENTE); continue; }
+      if (n.name === 'Descargar enlace (guardado saliente)') { expect(n.parameters['url']).toBe('={{ $json.enlace }}'); expect(n.credentials, n.name).toBeUndefined(); continue; }
       expect(String(n.parameters['url']), n.name).toMatch(/^(=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|us-east1-novuchat-demo\.cloudfunctions\.net)\/|REEMPLAZAR_[A-Z0-9_]+$|=\{\{ \$json\.url \}\}$)/);
     }
   });
@@ -5005,14 +5012,14 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
     expect(sim.qr.mensajes[0]?.payload['image']?.link).toBe(URL_SIMULADO); // es el QR de prueba, no el plan B que también da 3
   });
 
-  it('el JSON de Q\'Taco sigue en 73 nodos o menos (50 más los 9 del guardado de medios, «Guardar comprobante», los 9 del estado en el servidor y los 2 de los cupos) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
+  it('el JSON de Q\'Taco sigue en 76 nodos o menos (50 más los 9 del guardado de medios, «Guardar comprobante», los 9 del estado en el servidor y los 2 de los cupos) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
     // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61, y desde el contrato v2 del 30/10, 59: los 9 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md).
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(73); // tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026) → 71 (PR-4b: aprobado por Andres (06/11/2026, en conversación))
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(76); // tope 73 → 76 (rama del guardado de la imagen saliente, 16/11/2026, pendiente de Andres); tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026) → 71 (PR-4b: aprobado por Andres (06/11/2026, en conversación))
     const base = configBase(QTACO);
     expect(base['cobroSimuladoActivo']).toBe(true);
     expect(base['qrSimuladoUrl']).toBe(URL_SIMULADO);
     // La plantilla no se toca: ningún nodo nuevo, y todo nombre del JSON de producción sale de ella (o de la rama común del guardado, que se injerta al armar).
-    const deLaPlantilla = new Set([...nombresDeLaPlantilla(PLANTILLA), ...NODOS_DEL_GUARDADO]);
+    const deLaPlantilla = new Set([...nombresDeLaPlantilla(PLANTILLA), ...NODOS_DEL_GUARDADO, ...NODOS_DEL_GUARDADO_SALIENTE]);
     for (const n of QTACO.nodes) expect(deLaPlantilla.has(n.name), n.name).toBe(true);
     expect(QTACO.nodes.some((n) => /simulad/i.test(n.name))).toBe(false); // el simulado no agrega nodos
   });
@@ -5171,7 +5178,7 @@ describe('B. «Cambiar algo»: lo que se elija reemplaza el pedido, se dice, y �
   it('la carta dice que reemplaza el pedido actual y lleva el botón «Dejarlo como estaba», sin agregar mensajes', () => {
     const r = armarPedido({ ventana: 5 });
     const t = r.c.toca('p|cambiar', 'Cambiar algo');
-    expect(cuerpos(t)[0]).toMatch(/^Claro\. Elige de nuevo todo lo que quieres: eso reemplaza tu pedido de ahora \(4 × Taco de Birria \(unidad\)\)\. Si mejor lo dejas como está, toca «Dejarlo como estaba»\.\n\nEsta es nuestra carta/);
+    expect(cuerpos(t)[0]).toMatch(/^Claro\.\s+Elige de nuevo todo lo que quieres: eso reemplaza tu pedido de ahora \(4 × Taco de Birria \(unidad\)\)\.\s+Si mejor lo dejas como está, toca «Dejarlo como estaba»\.\n\nEsta es nuestra carta/);
     expect(cuerpos(t)[0]).toContain('Elige de nuevo todo lo que quieres');
     expect(cuerpos(t).join('\n')).not.toMatch(/Tu pedido sigue guardado|Todavía tienes un pedido sin confirmar/);
     const ultimo = t.mensajes[t.mensajes.length - 1] as NonNullable<(typeof t.mensajes)[number]>;
@@ -5183,7 +5190,7 @@ describe('B. «Cambiar algo»: lo que se elija reemplaza el pedido, se dice, y �
   it('texto de «Cambiar algo» (pedido de Andres): dice que elija de nuevo, muestra lo guardado (hasta 3 ítems y «… y N más») y cabe en el mensaje con botón', () => {
     const uno = armarPedido({ ventana: 5, lineas: [ln('horchata', 1)] });
     const t1 = uno.c.toca('p|cambiar', 'Cambiar algo');
-    expect(cuerpos(t1)[0]).toMatch(/^Claro\. Elige de nuevo todo lo que quieres: eso reemplaza tu pedido de ahora \(1 × Horchata\)\. Si mejor lo dejas como está, toca «Dejarlo como estaba»\./);
+    expect(cuerpos(t1)[0]).toMatch(/^Claro\.\s+Elige de nuevo todo lo que quieres: eso reemplaza tu pedido de ahora \(1 × Horchata\)\.\s+Si mejor lo dejas como está, toca «Dejarlo como estaba»\./);
     const seis = armarPedido({ ventana: 5, lineas: [ln('horchata', 1), ln('gaseosas', 2), ln('nachos', 1), ln('queso', 1), ln('suiza', 1)] });
     const t6 = seis.c.toca('p|cambiar', 'Cambiar algo');
     expect(cuerpos(t6)[0]).toContain('(1 × Horchata, 2 × Gaseosas, 1 × Nachos Supremos, … y 2 más)');
@@ -5345,7 +5352,7 @@ describe('C. pedido a medias: «quiero confirmar» no deriva; cambiar a recoger;
   it('«¿no me puedes cobrar el delivery?» sigue transfiriendo (aviso + botón), pero SIN la frase de «menú»', () => {
     const { w, c } = deliveryPendiente();
     const t = c.escribe('¿no me puedes cobrar el delivery?');
-    expect(cuerpos(t)[0]).toBe('El costo del delivery no lo tengo por aquí 🙏. Toca «Escribir al local» y consúltalo con nuestro equipo. Tu pedido sigue guardado.');
+    expect(cuerpos(t)[0]).toBe(voz('El costo del delivery no lo tengo por aquí 🙏. Toca «Escribir al local» y consúltalo con nuestro equipo. Tu pedido sigue guardado.'));
     expect(cuerpos(t)[0]).not.toContain('menú');
     expect(cuerpos(t)[0]).not.toContain('volver al inicio'); // el carrito se conserva: no se sugiere que todo se borra
     expect(t.avisos.length).toBeGreaterThan(0);
@@ -5837,7 +5844,7 @@ describe('L3. el delivery que quita productos dice que no vuelven solos', () => 
   it('«Si vuelves a recojo, vuelve a agregarlo» y, con el carrito vacío, «Tu pedido quedó vacío»', () => {
     const r = armarPedido({ ventana: 5, config: { areasSinDelivery: 'Bebidas' }, lineas: [ln('tacos de birria', 4, 'unidad'), ln('horchata', 1)] });
     const t = r.c.escribe('prefiero delivery');
-    expect(cuerpos(t).join('\n')).toContain('Quité «Horchata» de tu pedido porque no lo enviamos por delivery. Si cambias a recoger, puedes volver a agregarlo.');
+    expect(cuerpos(t).join('\n').replace(/\n\n/g, ' ')).toContain('Quité «Horchata» de tu pedido porque no lo enviamos por delivery. Si cambias a recoger, puedes volver a agregarlo.');
     expect(cuerpos(t).join('\n')).not.toContain('quedó vacío');
     const v = armarPedido({ ventana: 5, config: { areasSinDelivery: 'Bebidas' }, lineas: [ln('horchata', 2)] });
     const u = v.c.escribe('prefiero delivery');
@@ -6137,7 +6144,7 @@ describe('(4) `quiereHablar` del modelo no deriva a la primera: una aclaración 
     const r = armarPedido({ ventana: 5 });
     r.w.estado.extraccion = quiere();
     const t = r.c.escribe('Donde dije');
-    expect(cuerpos(t)[0]).toBe('Disculpa, no te entendí bien. ¿Qué te gustaría hacer?');
+    expect(cuerpos(t)[0]).toBe(voz('Disculpa, no te entendí bien. ¿Qué te gustaría hacer?'));
     expect(t.mensajes.flatMap(titulosDe)).toEqual(expect.arrayContaining(['Seguir con mi pedido', 'Escribir al local']));
     expect(t.avisos).toHaveLength(0);
     expect(tieneEnlace(t)).toBe(false);
@@ -6183,7 +6190,7 @@ describe('(4) `quiereHablar` del modelo no deriva a la primera: una aclaración 
     c.toca('m|pedido', 'Hacer un pedido'); // en el paso de pedido, todavía sin productos
     v.estado.extraccion = EX([], { entrega: '', quiereHablar: true });
     const a = c.escribe('Donde dije');
-    expect(cuerpos(a)[0]).toBe('Disculpa, no te entendí bien. ¿Qué te gustaría hacer?');
+    expect(cuerpos(a)[0]).toBe(voz('Disculpa, no te entendí bien. ¿Qué te gustaría hacer?'));
     expect(a.mensajes.flatMap(titulosDe)).not.toContain('Seguir con mi pedido');
   });
 });
@@ -7300,5 +7307,106 @@ describe('ubicación obligatoria: qué es (y qué no es) una negativa explícita
     const { c } = pendiente();
     const t = c.escribe(dicho);
     expect(tieneEnlace(t), dicho).toBe(true);
+  });
+});
+
+describe('baja por NOTA DE VOZ (decisión de Andres, 16/11/2026): la confirmación y el registro van juntos', () => {
+  const BAJA_TXT = 'Entendido, tomé nota de que no quieres recibir más mensajes. Si más adelante necesitas algo, escríbeme cuando quieras.';
+  /** Un mundo cuyo audio se transcribe a lo que diga `voz.dicho` (se puede cambiar entre turnos). */
+  const conVoz = (dicho: string) => {
+    const voz = { dicho };
+    const w = crear({ dobles: { 'Transcribir audio': () => ({ content: { parts: [{ text: voz.dicho }] } }) } });
+    return { w, voz };
+  };
+  const salientes = (t: ResultadoTurno): J[] => t.llamadas.ingesta.filter((x) => x['direccion'] === 'saliente');
+  const registraBaja = (t: ResultadoTurno): J[] => salientes(t).filter((x) => x['evento'] === 'no_contactar');
+  it.each(['no me escribas más', 'dame de baja', 'stop', 'Para de escribirme, por favor'])('«%s» dicho en un audio: UN texto fijo, sin modelo ni aviso, y el reporte SALIENTE lleva no_contactar', (dicho) => {
+    const { w } = conVoz(dicho);
+    const t = con(w).audio();
+    expect(t.ejecutados.has('Transcribir audio')).toBe(true);
+    expect(cuerpos(t)).toEqual([BAJA_TXT]); // reemplaza la respuesta del turno: 0 mensajes agregados
+    expect(t.mensajes[0]?.payload['type']).toBe('text');
+    expect(t.mensajes[0]?.payload['interactive']).toBeUndefined();
+    expect(t.llamadas.extraer).toHaveLength(0);
+    expect(t.avisos).toHaveLength(0);
+    expect(salientes(t)).toHaveLength(1);
+    expect(registraBaja(t)).toHaveLength(1);
+    expect(registraBaja(t)[0]?.['texto']).toBe(BAJA_TXT);
+    // El entrante de un audio va sin texto y NO marca nada: por eso el registro es el del saliente.
+    const entrante = t.llamadas.ingesta.find((x) => x['direccion'] === 'entrante') as J;
+    expect(entrante['evento']).toBeUndefined();
+  });
+  it('con un pedido en curso, «no me escribas más» dicho en un audio sigue siendo baja (el carrito queda como estaba)', () => {
+    const { w, voz } = conVoz('quiero 4 tacos de birria');
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    const c = con(w);
+    c.audio();
+    voz.dicho = 'no me escribas más';
+    const t = c.audio();
+    expect(cuerpos(t)).toEqual([BAJA_TXT]);
+    expect(registraBaja(t)).toHaveLength(1);
+  });
+  describe('la excepción del pedido en curso vale igual por voz', () => {
+    it('«no me manden nada» dicho en un audio SIN pedido: es baja y se registra', () => {
+      const { w } = conVoz('no me manden nada');
+      const t = con(w).audio();
+      expect(cuerpos(t)).toEqual([BAJA_TXT]);
+      expect(registraBaja(t)).toHaveLength(1);
+    });
+    it('NEGADO: «no me manden nada» dicho en un audio CON un carrito abierto NO es baja: ni confirmación ni no_contactar', () => {
+      const { w, voz } = conVoz('quiero 4 tacos de birria');
+      w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+      const c = con(w);
+      c.audio();
+      voz.dicho = 'no me manden nada a la casa';
+      const t = c.audio();
+      expect(cuerpos(t).join(' ')).not.toContain(BAJA_TXT);
+      expect(registraBaja(t)).toHaveLength(0);
+    });
+  });
+  describe('tope de la transcripción (segunda pasada, 16/11/2026): hasta 160 caracteres', () => {
+    const RELLENO = ' Estoy en la oficina con mucho trabajo, hablando con varios proveedores y revisando facturas, entonces después te escribo con calma sobre todo lo demás que necesito.';
+    it('SÍ: una frase corta que pide la baja y mezcla otra cosa («mándame el QR y no me llames…») es baja', () => {
+      const t = con(conVoz('mándame el QR y no me llames que estoy en reunión').w).audio();
+      expect(cuerpos(t)).toEqual([BAJA_TXT]);
+      expect(registraBaja(t)).toHaveLength(1);
+    });
+    it('NO: la misma frase, de más de 160 caracteres, sigue el camino normal (sin confirmación ni no_contactar)', () => {
+      const dicho = 'mándame el QR y no me llames que estoy en reunión.' + RELLENO;
+      expect(dicho.length).toBeGreaterThan(160);
+      const t = con(conVoz(dicho).w).audio();
+      expect(cuerpos(t).join(' ')).not.toContain(BAJA_TXT);
+      expect(registraBaja(t)).toHaveLength(0);
+    });
+    it('NO: «ya pagué, no me contacten por teléfono» largo no es baja; corto sí', () => {
+      const largo = 'ya pagué, no me contacten por teléfono.' + RELLENO;
+      expect(largo.length).toBeGreaterThan(160);
+      const t = con(conVoz(largo).w).audio();
+      expect(registraBaja(t)).toHaveLength(0);
+      const corto = con(conVoz('ya pagué, no me contacten por teléfono').w).audio();
+      expect(registraBaja(corto)).toHaveLength(1);
+    });
+  });
+  describe('lo que NO es baja sigue su camino', () => {
+    it.each(['mándame el QR', 'no me escribió el precio', 'no me escribas el precio, mándame el QR', 'mi ex no deja de escribirme'])('«%s» dicho en un audio: no hay confirmación ni no_contactar', (dicho) => {
+      const t = con(conVoz(dicho).w).audio();
+      expect(cuerpos(t).join(' ')).not.toContain(BAJA_TXT);
+      expect(registraBaja(t)).toHaveLength(0);
+    });
+    it('un audio ininteligible, vacío o con la transcripción caída sigue el camino de siempre', () => {
+      for (const dicho of ['', '   ']) {
+        const t = con(conVoz(dicho).w).audio();
+        expect(cuerpos(t).join(' ')).not.toContain(BAJA_TXT);
+        expect(registraBaja(t)).toHaveLength(0);
+      }
+      const falla = con(crear({ dobles: { 'Transcribir audio': () => ({ error: { message: 'sin saldo' } }) } })).audio();
+      expect(cuerpos(falla).join(' ')).not.toContain(BAJA_TXT);
+      expect(registraBaja(falla)).toHaveLength(0);
+    });
+    it('el texto ESCRITO de baja no cambia: la confirmación va sin evento propio (el entrante ya lo marcó)', () => {
+      const t = con(crear()).escribe('no me escribas más');
+      expect(cuerpos(t)).toEqual([BAJA_TXT]);
+      expect(registraBaja(t)).toHaveLength(0);
+    });
   });
 });

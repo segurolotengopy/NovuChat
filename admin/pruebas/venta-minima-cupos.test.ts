@@ -12,6 +12,7 @@
  *
  * COSTO EN MENSAJES: 0 por conversación (la secuencia de abajo sigue en [1, 1, 1, 1, 1]).
  */
+import { voz } from './lib/venta-minima-voz';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { type Flujo, type J } from './lib/flujo';
@@ -465,7 +466,7 @@ describe('0 mensajes por conversación agregados o quitados', () => {
 });
 
 // =====================================================================================================
-describe('tope de 73 nodos: «Consumir cupos» y «¿Cupo concedido?» no agregan ni alteran lo que lee el cliente', () => {
+describe('tope de 76 nodos (73 + 3 de la rama del guardado de la imagen saliente): «Consumir cupos» y «¿Cupo concedido?» no agregan ni alteran lo que lee el cliente', () => {
   /** Lo que el cliente recibe, tal cual (texto, botones, tipo): la secuencia completa de un recorrido con aviso. */
   const recorrido = (w: Mundial): string[] => {
     const v: string[] = [];
@@ -493,7 +494,11 @@ describe('tope de 73 nodos: «Consumir cupos» y «¿Cupo concedido?» no agrega
     // copia de origin/main al 06/11/2026 (antes de PR-4b); se compara lo que lee el cliente, no la estructura
     const antes = JSON.parse(readFileSync(new URL('./fixtures/venta-minima.qtaco.main-congelado.json', import.meta.url), 'utf8')) as Flujo;
     expect(antes.nodes.some((n) => n.name === 'Consumir cupos')).toBe(false);
-    expect(recorrido(conPanel(antes))).toEqual(recorrido(conPanel(QTACO)));
+    // Lo único que cambió desde ese fixture es la VOZ COMÚN (16/11/2026: «asistente virtual con IA» y párrafos separados): se aplica a los textos del fixture, con las piezas REALES del core, y todo lo demás
+    // (cuántos mensajes, tipos, botones, ids) tiene que seguir idéntico.
+    const CAMPOS_DE_CUERPO = ['cuerpo', 'body', 'text', 'caption', 'texto'];
+    const conVoz = (v: unknown, campo = ''): unknown => (typeof v === 'string' ? (CAMPOS_DE_CUERPO.includes(campo) ? voz(v) : v) : Array.isArray(v) ? v.map((x) => conVoz(x, campo)) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, conVoz(x, k)])) : v);
+    expect(recorrido(conPanel(antes)).map((x) => JSON.stringify(conVoz(JSON.parse(x))))).toEqual(recorrido(conPanel(QTACO)));
   });
 
   it('BORDE: con el cupo agotado el cliente lee «No pude pasarle tu pedido…» y NO «pasé tu pedido»; sigue siendo UN mensaje', () => {
@@ -508,8 +513,8 @@ describe('tope de 73 nodos: «Consumir cupos» y «¿Cupo concedido?» no agrega
     expect(leido).not.toMatch(/pas[eé] tu pedido|ya (lo |la )?pas[eé]/i);
   });
 
-  it('el flujo versionado de Q\'Taco tiene exactamente 73 nodos y ninguno de los dos es de mensajería al cliente', () => {
-    expect(QTACO.nodes).toHaveLength(73);
+  it('el flujo versionado de Q\'Taco tiene exactamente 76 nodos y ninguno de los dos es de mensajería al cliente', () => {
+    expect(QTACO.nodes).toHaveLength(76);
     for (const n of ['Consumir cupos', '¿Cupo concedido?']) {
       expect(String(nodo(QTACO, n).type)).not.toMatch(/whatsapp/i);
       expect(JSON.stringify(nodo(QTACO, n).parameters)).not.toMatch(/graph\.facebook|messages/);

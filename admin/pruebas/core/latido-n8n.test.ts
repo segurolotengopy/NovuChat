@@ -5,7 +5,8 @@
  * ruta de salud dice que n8n RESPONDE, no que PROCESA. Este flujo prueba que el planificador, el motor y la salida a
  * internet funcionan; si calla 15 minutos, avisa un servicio que no vive en la VM ni pasa por n8n.
  *
- * Pruebas negando: el flujo no puede escribirle a nadie por WhatsApp, no guarda ejecuciones, no lleva la URL de
+ * Pruebas negando: el flujo no puede escribirle a nadie por WhatsApp, no guarda las ejecuciones que salen bien (las
+ * fallidas sí: dejan en n8n el rastro de un silencio), no lleva la URL de
  * ping (es una URL de capacidad: solo el marcador) y no tiene nada que no sea disparar, configurar y avisar.
  */
 import { spawnSync } from 'node:child_process';
@@ -70,10 +71,13 @@ describe('flujo «Latido de n8n»', () => {
     for (const n of f.nodes) expect(n.credentials).toBeUndefined();
   });
 
-  it('no guarda ejecuciones (288 al día) y no cuelga del errorWorkflow', () => {
+  it('no guarda las ejecuciones que salen bien (288 al día), SÍ las fallidas, y no cuelga del errorWorkflow', () => {
+    // El 16/11/2026 el latido calló 7 h 44 min y no se pudo medir: con las fallidas sin guardar, un silencio no
+    // deja rastro en n8n. Guardadas, separan «n8n procesaba y no pudo salir a internet» (hay ejecuciones en error)
+    // de «n8n no procesaba» (no hay ninguna). Las que salen bien siguen sin guardarse.
     expect(f.settings).toEqual({
       executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 60,
-      saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveManualExecutions: false,
+      saveDataSuccessExecution: 'none', saveDataErrorExecution: 'all', saveManualExecutions: false,
     });
     // Con errorWorkflow, una caída de internet de la VM mandaría una alerta por Resend cada 5 minutos.
     expect(f.settings.errorWorkflow).toBeUndefined();

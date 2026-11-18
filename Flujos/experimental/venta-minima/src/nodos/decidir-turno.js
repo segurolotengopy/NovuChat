@@ -13,7 +13,7 @@
 // El estado NO se escribe acá: se lee (del servidor: `vmSes`), se copia (`estado`) y lo fija `Plan del turno`; lo
 // compromete `Armar mensajes` ANTES de enviar.
 //
-// ORDEN (diseño §4.5, sin modelo): 1) cotejo, o comprobante simulado → `comprobante`; 2) medios (imagen o documento
+// ORDEN (diseño §4.5, sin modelo): 1) cotejo, o comprobante simulado → `comprobante`; 1c) pide la BAJA por texto → `baja` (antes de todo lo demás); 2) medios (imagen o documento
 // sin QR pendiente, audio); 3) botón, validado contra el estado; 4) texto exacto de una
 // campaña vigente → `promo`; 5) pide una persona → `transferir`, pregunta si es una IA →
 // `identidad` (la identidad se revisa primero); 5b) pide EXPRESAMENTE la ubicación o la dirección del LOCAL → `consulta:direccion_local`
@@ -127,6 +127,16 @@ if (t.comprobanteCruzado === true) return salir('transferir', { motivo: 'el modo
 // --- 1b. El carrito del catalogo web (no es un mensaje de WhatsApp: decide `decidirCarrito`, mas abajo) ----
 if (t.tipo === 'carrito') return decidirCarrito();
 
+// --- 1c. Un pedido de BAJA («no me escribas más», «no me manden nada», «stop»): se decide ANTES de cualquier otra intención y del modelo (`bjPideBaja`, pieza común del core) ---
+// Se decide sobre `t.texto` de un mensaje ESCRITO (ni botón, ni audio, ni pie de foto): la MISMA fuente que usa «Reportar mensaje (entrante)» para marcar `no_contactar`; confirmar una baja que el servidor no
+// registró sería prometer lo que no se cumple. El pie de una foto que pide la baja queda marcado sin confirmación (el lado seguro); la nota de voz se decide más abajo, sobre su transcripción (§2), y registra la baja con el reporte saliente. `Plan del turno` contesta UN texto fijo y nada más.
+// EXCEPCIÓN decidida por Andres (16/11/2026): con un pedido en curso (carrito, líneas pendientes, un paso de pedido o un QR esperando comprobante) «no me manden/envíen nada» es del pedido («no me manden nada a la
+// casa», «no envíen nada todavía»), no una baja: NO se confirma baja y sigue la derivación al local de siempre (el `no_contactar` del reporte queda como está). Sin pedido en curso sí es baja. Las demás frases de baja ganan siempre.
+const BJ_VOZ_MAX = 160; // tope de la transcripción de una nota de voz para que valga como baja
+const bjPedidoEnCurso = (Array.isArray(previo.carrito) && previo.carrito.length > 0) || (Array.isArray(previo.pendiente) && previo.pendiente.length > 0) || String(previo.paso).indexOf('pedido') === 0 || previo.paso === 'esperando_comprobante';
+const bjEsMandenNada = (s) => /\bno (?:me |nos |le |les )?(?:mand|envi)(?:e|es|en)\b/.test(bjPlegar(s));
+if (t.tipo === 'text' && !t.boton && bjPideBaja(t.texto) && !(bjPedidoEnCurso && bjEsMandenNada(t.texto))) return salir('baja');
+
 // --- 2. Medios -------------------------------------------------------------------------
 if (t.tipo === 'audio') {
   // El audio llega transcripto por fuera; acá solo se decide si se entendió.
@@ -134,6 +144,10 @@ if (t.tipo === 'audio') {
   if (!dicho) return salir('medio_no_leido', { motivo: 'audio' });
   texto = dicho;
   tipoEf = 'text';
+  // LA BAJA POR NOTA DE VOZ (decisión de Andres, 16/11/2026): la TRANSCRIPCIÓN (`dicho`, con su tope de siempre) pide la baja con la MISMA expresión y la MISMA excepción del pedido en curso que el texto escrito. El entrante de un audio lleva `texto`
+  // vacío y NO marca `no_contactar`: por eso la ruta lleva `porVoz: true` y `Armar mensajes` pone `evento: 'no_contactar'` en el reporte del mensaje SALIENTE de la confirmación (el servidor lo registra igual). Confirmar sin registrar está prohibido.
+  // TOPE (decisión de Andres, segunda pasada 16/11/2026): solo una transcripción CORTA (hasta `BJ_VOZ_MAX` caracteres) es una baja; un audio largo («mándame el QR y no me llames que estoy en reunión») sigue su camino normal.
+  if (dicho.length <= BJ_VOZ_MAX && bjPideBaja(dicho) && !(bjPedidoEnCurso && bjEsMandenNada(dicho))) return salir('baja', { porVoz: true });
 } else if (t.tipo === 'image' || t.tipo === 'document') {
   // Una imagen o un documento NO son un pago si no hay un QR esperando comprobante (si lo hubiera,
   // `esComprobante` ya los habría mandado arriba). Con pie de foto, el pie es un texto más.

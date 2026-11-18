@@ -374,6 +374,10 @@ const ROLES_DE_ENVIO: Rol[] = ['mensajes', 'avisos'];
 const ROLES_DE_LLAMADA: Rol[] = ['ingesta', 'cierre', 'cotejo', 'extraer'];
 const ENTRADAS_CONOCIDAS = ['WhatsApp Trigger', 'Entrada de prueba', 'Entrega del receptor'];
 
+type FuncionDeCode = (...a: unknown[]) => { json: J; pairedItem?: { item: number } }[];
+/** Funciones de Code ya compiladas, por (parámetros, código): se comparten entre mundos del mismo archivo de pruebas. */
+const FUNCIONES_COMPILADAS = new Map<string, FuncionDeCode>();
+
 export function crearMundo(op: OpcionesMundo): Mundo {
   const flujo = clonar(op.flujo);
   const nodos = new Map<string, Nodo>(flujo.nodes.map((n) => [n.name, n]));
@@ -455,6 +459,8 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   function globalesDe(it: Item | null): J {
     return {
       $json: it?.json ?? {},
+      // `$binary` (los metadatos del binario del ítem actual): el arnés no simula binarios, así que va vacío (como un ítem sin archivo).
+      $binary: {},
       Date: relojFijo(ahoraMs),
       $getWorkflowStaticData: (tipo?: string) => (tipo === 'node' ? (sdNodos['__expresion__'] ??= {}) : sd),
       $workflow: { id: idDeFlujo, name: flujo.name, active: true },
@@ -750,6 +756,16 @@ export function crearMundo(op: OpcionesMundo): Mundo {
       first: (rama?: number, corrida?: number) => ({ json: elegirItems(n, rama, corrida)[0] ?? {} }),
       all: (rama?: number, corrida?: number) => elegirItems(n, rama, corrida).map((json) => ({ json })),
       item: { json: elegirItems(n)[0] ?? {} },
+      // `$('Nodo').itemMatching(i)`: el ítem de ese nodo emparejado con el ítem `i` de la ENTRADA de este Code (como lo resuelve n8n en modo «todos los ítems»).
+      itemMatching: (indice: number) => {
+        const origen = items[indice];
+        if (origen === undefined) throw new Error(`itemMatching: la entrada de «${nombre}» no tiene el ítem ${String(indice)}`);
+        const caminado = caminarEmparejamiento(origen, n);
+        if (caminado !== undefined) return { json: clonar(caminado.json) };
+        const par = origen.linaje[n];
+        if (par !== undefined) return { json: clonar(par) };
+        throw new Error(`sin ítem emparejado con «${n}» (itemMatching ${String(indice)}; n8n: «Paired item data unavailable»)`);
+      },
       isExecuted: n in refs,
     });
     const globales: Record<string, unknown> = {
@@ -761,7 +777,15 @@ export function crearMundo(op: OpcionesMundo): Mundo {
     };
     const propios = Object.keys(globales);
     const vacios = GLOBALES_FUERA_DEL_SANDBOX.filter((g) => !propios.includes(g));
-    const fn = vm.compileFunction(codigo, ['$input', '$', ...vacios, ...propios]) as (...a: unknown[]) => { json: J; pairedItem?: { item: number } }[];
+    // La función compilada se reutiliza: depende solo del código y de los nombres de sus parámetros, y cada llamada abre su propio ámbito.
+    // Compilar cientos de KB de librerías en CADA ejecución de cada nodo llenaba el heap del worker (OOM del CI en la suite de venta mínima).
+    const parametros = ['$input', '$', ...vacios, ...propios];
+    const clave = `${parametros.join(',')}\u0000${codigo}`;
+    let fn = FUNCIONES_COMPILADAS.get(clave);
+    if (!fn) {
+      fn = vm.compileFunction(codigo, parametros) as FuncionDeCode;
+      FUNCIONES_COMPILADAS.set(clave, fn);
+    }
     return fn(entrada, $, ...vacios.map(() => undefined), ...propios.map((k) => globales[k]));
   }
 

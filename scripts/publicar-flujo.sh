@@ -223,7 +223,7 @@ antonio_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = estricto |
     return 0
   fi
   echo "Flujo de Antonio (rroca-antonio): se revisa la guardia de publicación ($1)."
-  if node Flujos/experimental/rroca-antonio/construir.mjs --publicable --flujo "$2"; then
+  if node Flujos/clientes/rroca-antonio/construir.mjs --publicable --flujo "$2"; then
     GUARDIA_ANTONIO_OK=1
   else
     GUARDIA_ANTONIO_OK=0

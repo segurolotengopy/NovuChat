@@ -20,6 +20,8 @@
  *       `"@@solo:nodos/<archivo>.js"`   solo el archivo.
  *     El sufijo `+crm` (`@@todo+sesion+crm:…`, solo «Armar mensajes») agrega `src/lib/crm.js` (`vmProspectoCrm`, el miniCRM de Q'Taco).
  *     El sufijo `+coherente` (`@@todo+coherente:…`, «Decidir turno» y «Plan del turno») pega `core/conversacion/respuesta-coherente.js` (sin el filtro común: el modelo solo clasifica).
+ *     Los sufijos `+baja` (`@@todo+coherente+baja:…`, «Decidir turno» y «Plan del turno») y `+texto` («Armar mensajes») pegan, antes del nodo, las piezas comunes de UX del core: la baja por texto
+ *     (`core/conversacion/baja.js`) y la identidad «con IA» + los párrafos (`core/texto/identidad.js` y `parrafos.js`). Van detrás de `+coherente`, en este orden: `+sesion+crm+coherente+baja+texto`.
  *     Y el sufijo `+sesion` (`@@todo+sesion:…`, `@@comun+sesion:…`) pega ENTRE las librerías y el nodo el módulo común
  *     `Flujos/src/core/sin-agente/sesion.js` (el estado de la conversación en el servidor, PR-4a): se INCLUYE, nunca se copia ni se edita.
  *   - `@@dato:a.b.c@@` (dentro de cualquier texto) se reemplaza por ese dato del tenant;
@@ -49,7 +51,8 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
+import { hallazgosDelGuardado, injertarGuardado, NODOS_DEL_GUARDADO_SALIENTE, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
+import { fuentesDeLaCadenaComun, hallazgosDelGuardadoSaliente, injertarGuardadoSaliente, NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE, URL_DESCARGA_SALIENTE } from '../../src/core/sin-agente/guardado-saliente.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 
@@ -69,6 +72,10 @@ const COMUN = leer('src/lib/comun.js').trimEnd();
 const LIB_CRM = leer('src/lib/crm.js').trimEnd();
 // La respuesta coherente (core): `+coherente` pega, ANTES del nodo, la pieza `rc*`. Se INCLUYEN, nunca se copian ni se editan aquí.
 const FUENTE_COHERENTE = [leer('../../src/core/conversacion/respuesta-coherente.js')].map((t) => t.trimEnd()).join('\n\n');
+// UX comun (core, 16/11/2026): `+baja` pega la baja por texto (`bj*`: «Decidir turno» la decide y «Plan del turno» la confirma) y `+texto` pega la identidad «con IA» (`ctConIA`) y los
+// parrafos (`ctParrafos`) en «Armar mensajes». Se INCLUYEN byte a byte, nunca se copian ni se editan aqui (lo exigen `admin/pruebas/core/ux/*`).
+const FUENTE_BAJA = leer('../../src/core/conversacion/baja.js').trimEnd();
+const FUENTE_TEXTO = [leer('../../src/core/texto/identidad.js'), leer('../../src/core/texto/parrafos.js')].map((t) => t.trimEnd()).join('\n\n');
 const plantilla = JSON.parse(leer('flujo.plantilla.json'));
 
 const NODOS_DE_ENTRADA = {
@@ -95,7 +102,8 @@ const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 // +2: los CUPOS pasan al servidor (PR-4b; tope de 69 a 71, aprobado por Andres (06/11/2026, en conversación)): «Consumir cupos» y «¿Cupo concedido?». `asentar` NO lleva nodo (segundo ítem de «Confirmar envío»).
 // +10: el miniCRM de Q'Taco 3727 (módulo `crm`, `ramaCrm`: 8 nodos) y la IMAGEN de las campañas (2 nodos), de 71 a 81 (Andres, 06/11/2026: «D2 = tope de nodos aprobado»). 81 = 69 + 2 (cupos) + 2 (imagen) + 8 (miniCRM).
 // El miniCRM solo lo lleva `venta-minima.qtaco-3727.json` (dato `crm`); reconciliado en la integración: el 3727 queda en 81 (el tope, sin margen), qtaco en 73. Ver DISENO.md y docs/versiones-por-cliente.md.
-const TOPE_DE_NODOS = 81;
+// +3: la rama del guardado de la IMAGEN SALIENTE del asistente (QR por enlace; plan del 16/11/2026, bloque 2a): «Preparar guardado (saliente)», «Descargar enlace (guardado saliente)» y «Guardar imagen enviada». 84 = 81 + 3 (qtaco 76); declarado en docs/versiones-por-cliente.md, pendiente de aprobación de Andres.
+const TOPE_DE_NODOS = 84;
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,
 // su credencial de cabecera (la de la ingesta), `responseMode: onReceived` y la ruta como marcador (una URL de capacidad que
@@ -146,11 +154,14 @@ const URL_QR_SIMULADO = /^https:\/\/raw\.githubusercontent\.com\/segurolotengopy
 const MODOS_COBRO = ['simulado', 'real', 'sin_qr'];
 
 function codigoDe(marca, nodo) {
-  const m = /^@@(?:(solo|comun|todo)(\+sesion)?(\+crm)?(\+coherente)?:)?(nodos\/[a-z0-9-]+\.js)$/.exec(marca);
+  const m = /^@@(?:(solo|comun|todo)(\+sesion)?(\+crm)?(\+coherente)?(\+baja)?(\+texto)?:)?(nodos\/[a-z0-9-]+\.js)$/.exec(marca);
   if (!m) throw new Error(`${nodo}: ruta de código no válida: ${marca}`);
   const modo = m[1] || 'todo';
   const conSesion = m[2] === '+sesion';
-  const ruta = m[5];
+  const ruta = m[7];
+  const conBaja = m[5] === '+baja';
+  const conTexto = m[6] === '+texto';
+  if ((conBaja || conTexto) && modo !== 'todo') throw new Error(`${nodo}: «+baja» y «+texto» solo van con «todo»`);
   const conCoherente = m[4] === '+coherente';
   if (conCoherente && modo !== 'todo') throw new Error(`${nodo}: «+coherente» solo va con «todo»`);
   const conCrm = m[3] === '+crm';
@@ -159,7 +170,7 @@ function codigoDe(marca, nodo) {
   if (!existsSync(join(AQUI, 'src', ruta))) throw new Error(`${nodo}: no existe src/${ruta}`);
   const propio = leer(`src/${ruta}`).trimEnd();
   const base = modo === 'solo' ? [] : [modo === 'comun' ? COMUN : LIB];
-  return base.concat(conSesion ? [FUENTE_SESION] : []).concat(conCrm ? [LIB_CRM] : []).concat(conCoherente ? [FUENTE_COHERENTE] : []).concat([propio]).join('\n\n') + '\n';
+  return base.concat(conSesion ? [FUENTE_SESION] : []).concat(conCrm ? [LIB_CRM] : []).concat(conCoherente ? [FUENTE_COHERENTE] : []).concat(conBaja ? [FUENTE_BAJA] : []).concat(conTexto ? [FUENTE_TEXTO] : []).concat([propio]).join('\n\n') + '\n';
 }
 
 // --- los datos del tenant ---------------------------------------------------------------------------
@@ -300,6 +311,9 @@ function armar(datos, archivo) {
   if (datos.crm !== undefined) injertarRamaCrm(flujo, datos, archivo);
   // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
   injertarGuardado(flujo, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
+  // El GUARDADO de la imagen que el asistente ENVÍA (el QR de cobro, por enlace https): módulo común, cuelga de «Reportar mensaje (saliente)» y va debajo de todo (plan del 16/11/2026, bloque 2a).
+  // Solo donde hay envío al cliente que se reporte (la variante de prueba no lo reporta: no hay saliente registrado que guardar).
+  if (flujo.nodes.some((n) => n.name === 'Reportar mensaje (saliente)')) injertarGuardadoSaliente(flujo, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio`, vias: ['enlace'], fuentes: fuentesDeLaCadenaComun('Soltar mensajes') });
   const texto = JSON.stringify(flujo, null, 2) + '\n';
   // Una marca sin reemplazar: en cualquier texto salvo el código de los nodos (las librerías mencionan
   // «@@solo:» en un comentario) o, en el código, al principio del `jsCode`.
@@ -378,7 +392,8 @@ function guardiasDeCrm(flujo, datos) {
   }
   // (la rama del guardado de medios cuelga de «Reportar mensaje (entrante)», corre antes y va más abajo en el lienzo: no cuenta; la comparación es entre lo que cuelga de «Armar mensajes»)
   const deArmar = alcanzables(flujo, 'Armar mensajes');
-  const maxY = Math.max(...nodos.filter((n) => deArmar.has(n.name)).map((n) => (n.position || [0, 0])[1]));
+  // (la rama del guardado de la imagen SALIENTE cuelga de «Reportar mensaje (saliente)», o sea de lo que cuelga de «Armar mensajes», pero corre pegada al envío y va debajo de todo: tampoco cuenta)
+  const maxY = Math.max(...nodos.filter((n) => deArmar.has(n.name) && !NODOS_DEL_GUARDADO_SALIENTE.includes(n.name)).map((n) => (n.position || [0, 0])[1]));
   if (y('Resumen del turno') !== maxY) h.push('miniCRM: «Resumen del turno» tiene que seguir siendo el nodo más bajo de lo que cuelga de «Armar mensajes»');
   for (const n of NODOS_DE_CRM) if (!(y(n) < y('Resumen del turno'))) h.push(`miniCRM: «${n}» tiene que ir encima de «Resumen del turno»`);
   // 2. Cero mensajes: ningún nodo de la rama habla con Meta (ni cuelga de un envío).
@@ -720,6 +735,8 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   hallazgos.push(...guardiasDeCrm(flujo, datos));
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   hallazgos.push(...hallazgosDelGuardado(flujo));
+  // El guardado de la imagen SALIENTE: donde el flujo reporta sus envíos, la rama común completa (vía enlace), debajo de todo.
+  hallazgos.push(...hallazgosDelGuardadoSaliente(flujo, { exigir: flujo.nodes.some((n) => n.name === 'Reportar mensaje (saliente)'), vias: ['enlace'] }));
   // L1. Un WhatsApp Trigger (camino A) exige su credencial explícita, y nunca la de AAB1-WA-Prod (prohibición 7).
   for (const n of flujo.nodes.filter((x) => x.type === 'n8n-nodes-base.whatsAppTrigger')) {
     const nombre = String(((n.credentials || {}).whatsAppTriggerApi || {}).name || '');
@@ -741,6 +758,9 @@ function anfitrionPermitido(nombreDelNodo, url) {
   if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
   // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
   if (nombreDelNodo === 'Descargar medio (guardado)' && url === URL_DESCARGA_GUARDADO) return true;
+  // El guardado de la imagen SALIENTE: la URL del CDN de Meta (expresión exacta del módulo común) y, solo en la vía por enlace, el MISMO enlace que se envió al cliente (sin credencial).
+  if (nombreDelNodo === 'Descargar imagen de Meta (guardado saliente)' && url === URL_DESCARGA_SALIENTE) return true;
+  if (nombreDelNodo === 'Descargar enlace (guardado saliente)' && url === '={{ $json.enlace }}') return true;
   // La consulta de SOLO la fila de encabezados del miniCRM (Google Sheets API, `values.get`): la URL exacta del módulo común, con un rango A<fila>:<letra><fila>.
   if (nombreDelNodo === 'Leer encabezados de la planilla') {
     const [antes, despues] = urlEncabezados('@@').split('@@');

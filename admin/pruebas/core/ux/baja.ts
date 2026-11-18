@@ -89,18 +89,13 @@ export const ALTA_BAJA = '2026-11-13';
 export const LIMITE_BAJA = '2027-02-11';
 const VENCE = '2027-01-31';
 
-const CONGELADO_CONSULTORIO = 'Flujo vivo congelado por orden de Andres: recibe la baja común con su mudanza, en una sola republicación (botón del 13/11/2026).';
 const CONGELADO_CAPTACION = 'Congelado: Andres decidió el 13/11/2026 retirarlo al final; no recibe cambios.';
-const VENTA_MINIMA = 'En manos de otra sesión hasta que se publique al restaurante: recibe la baja común en el último PR de esta serie.';
 const CON_AGENTE = 'Flujo con el agente de n8n: excepción declarada por Andres el 13/11/2026; no se toca hasta su retiro o su mudanza.';
 const COPIA_DECLARADA = 'Ya confirma la baja con una copia propia de la expresión (otro prefijo): pasa a la pieza común en la etapa 1 de la migración.';
 
 /** Clave: la ruta del JSON relativa a `Flujos/` SIN la carpeta de nivel superior (`idDeFlujo`), para que sobreviva a una mudanza. */
 export const EXCEPCIONES_DE_BAJA: Record<string, ExcepcionDeBaja> = {
-  'agenda-minima/agenda-minima.v0.json': { hechos: ['reporte', 'confirma'], motivo: CONGELADO_CONSULTORIO, dueno: 'Rearquitectura (mudanza)', vence: VENCE },
   'captacion-minima/captacion-minima.novuchat.json': { hechos: ['reporte', 'confirma'], motivo: CONGELADO_CAPTACION, dueno: 'Principal', vence: VENCE },
-  'venta-minima/venta-minima.qtaco.json': { hechos: ['reporte', 'confirma'], motivo: VENTA_MINIMA, dueno: 'UX de conversación', vence: VENCE },
-  'venta-minima/venta-minima.qtaco-3727.json': { hechos: ['reporte', 'confirma'], motivo: VENTA_MINIMA, dueno: 'UX de conversación', vence: VENCE },
   'bellido-agendamiento.json': { hechos: ['reporte', 'confirma'], motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
   'demo-a-agendamiento.json': { hechos: ['reporte', 'confirma'], motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
   'demo-b-venta-cobro.json': { hechos: ['reporte', 'confirma'], motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
@@ -113,7 +108,7 @@ export const EXCEPCIONES_DE_BAJA: Record<string, ExcepcionDeBaja> = {
   'doctoras/doctoras.rroca-evy.json': { hechos: ['reporte', 'confirma'], motivo: COPIA_DECLARADA, dueno: 'Rearquitectura (etapa 1)', vence: VENCE },
 };
 /** Cuántos flujos tienen excepción hoy. SOLO BAJA: un flujo nuevo nace con la baja común. */
-export const TOPE_BAJA = 14;
+export const TOPE_BAJA = 11;
 
 const AAAA_MM_DD = /^\d{4}-\d{2}-\d{2}$/;
 

@@ -119,7 +119,7 @@ function rcTextoSeguimiento(pedido, opts) {
 // del modelo («Te habla Pedro», «pago acreditado», «ya va en camino») no tiene por dónde llegar al cliente. Un valor fuera del enum es `null` y sale el rechazo fijo.
 const RC_INTENCIONES = ['horario', 'direccion', 'carta', 'modalidades', 'humor', 'queja', 'identidad', 'acuse', 'crisis_o_baja', 'otro'];
 // Crisis (daño a sí mismo) o baja («no me escribas más»): NUNCA se contesta con humor. Quien llama (`Decidir turno`) deja el turno como siempre (el menú) y `Plan del turno` no usa `humor` con estas señales.
-// La lista incluye (y una prueba de paridad lo exige) la expresión de baja de «Reportar mensaje (entrante)» que marca `no_contactar`. Es una red AMPLIA: un falso positivo cae al menú, como en `main`.
+// La señal es la UNIÓN de dos cosas: esta lista y, cuando el nodo trae la pieza común de baja (`bjPideBaja`, `core/conversacion/baja.js`), la expresión de baja del entrante: lo que marca `no_contactar` también es señal. Una prueba de CONTENCIÓN (corpus fijo de frases, más una mutación que quita la línea de `bjPideBaja`: `conversacion-respuesta-coherente.test.ts`) lo vigila; no es una equivalencia exacta. Es una red AMPLIA: un falso positivo cae al menú, como en `main`.
 // Y no es la única barrera: el texto de humor es NEUTRO (sin risas; `rcConfig` y el servidor descartan un `textoHumor` con risas), así que aunque una crisis se escapara de esta lista, no recibe una risa.
 const RC_SENAL_FRAGMENTOS = [
   'morir\\w*', 'mori', 'morrer', 'matar\\w*', 'matate', 'me mato', 'suicid\\w*', 'no quiero seguir vivi\\w*', 'no quiero vivir', 'no quiero existir', '(dejar de )?existir', 'no quiero estar aqui', 'desaparecer',
@@ -149,6 +149,8 @@ function rcUnaLetra(t) {
   return t.replace(/(\p{L})\1+/gu, '$1');
 }
 function rcSenalDeCrisisOBaja(texto) {
+  // La baja común (si el nodo la trae), sobre el texto ENTERO (como el entrante): lo que marca `no_contactar` es señal aunque la lista de arriba no lo nombre.
+  if (typeof bjPideBaja === 'function' && bjPideBaja(texto)) return true;
   let t = String(texto === undefined || texto === null ? '' : texto);
   if (t.length > RC_SENAL_MAX) t = t.slice(0, RC_SENAL_MAX - 1000) + ' ' + t.slice(-1000);
   const base = rcN(t);

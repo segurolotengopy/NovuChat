@@ -86,7 +86,7 @@
 }
 
 /* ── Cabecera y menú lateral ────────────────────────────────────────────
-   La cabecera es una barra baja: [sándwich] [marca] … [Mi cuenta] [Salir]. Las
+   La cabecera es una barra baja: [sándwich] [marca] [negocio y chip]; «Mi cuenta» y «Salir» van al pie del menú. Las
    trece opciones salían en una sola fila y a 1280px «Salir» quedaba fuera de la
    pantalla; ahora viven en una barra izquierda que se abre con el sándwich
    (pedido de Andres), en escritorio y en celular.
@@ -94,7 +94,7 @@
    El `<nav>` va DENTRO del `<header>` a propósito: `.cabecera` lleva
    `backdrop-filter`, y eso vuelve a la cabecera el bloque contenedor de todo
    descendiente `position: fixed`, que dejaría de ser fijo. Por eso el panel es
-   `absolute` bajo la cabecera (`top: 100%`, que incluye la franja del comercio)
+   `absolute` bajo la cabecera (`top: 100%`, justo bajo la barra de una línea)
    y su alto se calcula con la altura REAL de la cabecera, que mide
    `useMenuLateral.ts` y publica en `--alto-cabecera-real`. */
 :root { --ancho-menu: 15rem; }
@@ -135,6 +135,18 @@
   .cabecera .menu-lateral,
   [data-menu-lateral="abierto"] .cabecera .menu-lateral { transition: none; }
 }
+
+/* PIE DEL MENÚ: «Mi cuenta» y «Salir» (17/11/2026; antes iban sueltos en la barra de arriba). `margin-top: auto`
+   los baja al fondo del panel; «Salir» es un botón que se ve como una opción más del menú. */
+.cabecera .menu-pie { position: sticky; bottom: calc(-1 * var(--space-2)); margin-top: auto; padding-top: var(--space-2); background: var(--color-bg); border-top: 1px solid var(--color-divider); display: flex; flex-direction: column; }
+.cabecera .menu-salir {
+  display: flex; align-items: center; justify-content: flex-start; min-height: 44px; width: 100%;
+  padding: var(--space-1) var(--space-4); border: 0; border-inline-start: 3px solid transparent; border-radius: 0;
+  background: transparent; color: color-mix(in srgb, var(--color-text) 72%, transparent);
+  font: inherit; font-size: 15px; text-align: start; cursor: pointer;
+}
+.cabecera .menu-salir:hover { color: var(--color-text); background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
+.cabecera .menu-salir:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 
 /* DÓNDE ESTOY PARADO.
    El sistema pinta el enlace activo con el acento cuando lleva
@@ -208,27 +220,28 @@
 @media (max-width: 59.99rem) {
   .cabecera .menu-lateral { width: min(var(--ancho-menu), 85vw); }
 }
-/* A 375px caben sándwich + isotipo + «Mi cuenta» + «Salir» solo sin el nombre
+/* A 375px caben sándwich + isotipo + nombre del negocio y chip solo sin el nombre
    de la marca (que conserva su `aria-label`). */
 @media (max-width: 30rem) {
   .cabecera .nav-brand span { display: none; }
 }
 
-/* FRANJA DEL COMERCIO: el nombre del negocio y el chip PRUEBA / PRODUCCIÓN,
-   debajo del menú (`EncabezadoComercio.tsx`). Pedido de Andres (22/09): que se
-   vea, pero no con letras grandes. El nombre va al tamaño de los enlaces del
-   menú y el chip al de las demás pastillas; la franja es baja para no comerse
-   la primera pantalla en un celular. */
+/* COMERCIO EN LA BARRA: el nombre del negocio y el chip PRUEBA / PRODUCCIÓN, en la MISMA línea que el
+   sándwich y la marca (`EncabezadoComercio.tsx`; 17/11/2026, pedido de Andres: antes tenían una franja propia
+   debajo y la cabecera ocupaba dos líneas). Se ve, pero no con letras grandes: el nombre va al tamaño de los
+   enlaces del menú y el chip al de las demás pastillas. Un nombre largo se recorta con «…» y el chip no. */
+.cabecera .nav-brand { margin-right: 0; flex: none; }
 .franja-comercio {
   display: flex; align-items: center; gap: var(--space-2);
-  min-height: 32px; padding-block: var(--space-1);
-  border-top: 1px solid var(--color-divider);
+  min-width: 0; margin-right: auto;
+  padding-inline-start: var(--space-3); border-inline-start: 1px solid var(--color-divider);
 }
 .franja-comercio-nombre {
   font-size: 14px; font-weight: 600;
   color: color-mix(in srgb, var(--color-text) 85%, transparent);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap !important;
 }
+.franja-comercio .tag { flex: none; }
 .franja-comercio .tag { padding: 2px 10px; font-size: 11px; letter-spacing: .06em; font-weight: 600; }
 /* Los colores salen de los tokens de estado, que el tema oscuro redefine: en
    claro y en oscuro el chip es un tinte del color sobre el fondo, con el texto

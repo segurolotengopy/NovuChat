@@ -14,7 +14,7 @@ import type { Doble, Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
 // @ts-expect-error módulo .mjs sin tipos
 import { hallazgosCrm, inyectarMapa, urlEncabezados } from '../../../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { CREDENCIAL_CRM, NODOS_DE_CRM, TOPE_DE_NODOS, anfitrionPermitido, guardias } from '../../../../Flujos/experimental/rroca-antonio/construir.mjs';
+import { CREDENCIAL_CRM, NODOS_DE_CRM, TOPE_DE_NODOS, anfitrionPermitido, guardias } from '../../../../Flujos/clientes/rroca-antonio/construir.mjs';
 import { ANA, CARPETA, COMPROBANTE, PRODUCCION, PRUEBA, SUSPENDIDO, crear as crearBase, entrega, hablar, mBoton, mImagen, mTexto, panelConQr, panelOk, valorMeta, type Opciones } from './mundo';
 import { respuestaDeIngesta } from '../../modulos/crm/ingesta-conversacion';
 
@@ -605,10 +605,10 @@ describe('flujo: la rama, sus rangos y su credencial se NIEGAN con mutaciones', 
   it('los datos sin el mapa `crm` son hallazgo', () => {
     expect((guardias('produccion', PRODUCCION, {}) as string[]).join(' ')).toMatch(/faltan los datos `crm`/);
   });
-  it('conteo de nodos: 64 en producción (el tope sube de 56 a 64, aprobado por Andres el 31/10/2026) y 59 en la prueba', () => {
-    expect(PRODUCCION.nodes.length).toBe(64);
-    expect(PRUEBA.nodes.length).toBe(59);
-    expect(TOPE_DE_NODOS).toBe(64);
+  it('conteo de nodos: 68 en producción (el tope sube de 56 a 64, aprobado por Andres el 31/10/2026, y a 68 con la rama del guardado de la imagen saliente, 16/11/2026, pendiente de su aprobación) y 63 en la prueba', () => {
+    expect(PRODUCCION.nodes.length).toBe(68);
+    expect(PRUEBA.nodes.length).toBe(63);
+    expect(TOPE_DE_NODOS).toBe(68);
   });
 });
 

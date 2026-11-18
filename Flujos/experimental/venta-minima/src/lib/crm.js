@@ -108,6 +108,8 @@ function vmProspectoCrm(d) {
   if (!telefono || !Number.isFinite(ahora)) return null;
   const anterior = Number.isFinite(Number(x.anteriorMs)) && x.anteriorMs !== null ? Number(x.anteriorMs) : null;
   const ruta = String(plan.ruta === undefined || plan.ruta === null ? '' : plan.ruta);
+  // Una BAJA por texto («no me escribas más») no es un prospecto: no se crea ni se actualiza una fila (quien pidió no recibir mensajes no entra al miniCRM por eso).
+  if (ruta === 'baja') return null;
   const ped = plan.pedido && typeof plan.pedido === 'object' && plan.pedido.pedidoId ? plan.pedido
     : (x.pedidoEstado && typeof x.pedidoEstado === 'object' && x.pedidoEstado.pedidoId ? x.pedidoEstado : null);
   let evento = '';

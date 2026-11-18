@@ -33,7 +33,7 @@
  * prueba en verde mientras el flujo se rompe.
  */
 import { describe, expect, it } from 'vitest';
-import { NODOS_DEL_GUARDADO } from '../../Flujos/src/core/sin-agente/guardado.mjs';
+import { NODOS_DEL_GUARDADO, NODOS_DEL_GUARDADO_SALIENTE } from '../../Flujos/src/core/sin-agente/guardado.mjs';
 import {
   type J, codigoDe, configBase, destinos, ejecutar, entradas, expresion, leerFlujo, nodo, plantilla,
 } from './lib/flujo.ts';
@@ -772,7 +772,8 @@ describe('(9) El orden del lienzo y el costo en mensajes', () => {
     };
     // La rama común del GUARDADO de medios (11/11/2026) habla con Graph para BAJAR el medio del cliente («Pedir el medio a Meta», «Descargar medio») y para su
     // aviso de falla, que solo sale si el medio no se pudo guardar: no es un mensaje por conversación (0 agregados), por eso se la deja fuera de este conteo.
-    const porGraph = f.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && !(NODOS_DEL_GUARDADO as string[]).includes(n.name)
+    // La rama del guardado de la imagen SALIENTE (16/11/2026) tampoco: solo hace GET de la imagen que ya se envió y la sube a `guardarMedio`; no manda ningún mensaje.
+    const porGraph = f.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && !(NODOS_DEL_GUARDADO as string[]).includes(n.name) && !(NODOS_DEL_GUARDADO_SALIENTE as string[]).includes(n.name)
       && vaAMeta(String(n.parameters['url'] ?? ''))).map((n) => n.name);
     // F3a (02/10/2026): el segundo HTTP a Graph es el botón de «pasar con una
     // persona», que lleva el MISMO texto en un interactivo: reemplaza al texto

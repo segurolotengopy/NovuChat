@@ -27,11 +27,11 @@ import { ANA, BETO, COMPROBANTE, COTEJO_VALIDO, MEDIA_QR, PRELLENADOS, REC, crea
 import { cargarLibrerias } from './librerias';
 import { violacionesDeUx, vigilarUx, type UxMsg } from './vigilante-ux';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { CONFIG, TOPE_DE_NODOS, guardias } from '../../../../Flujos/experimental/rroca-antonio/construir.mjs';
+import { CONFIG, TOPE_DE_NODOS, guardias } from '../../../../Flujos/clientes/rroca-antonio/construir.mjs';
 // @ts-expect-error el armador de Rubén es un .mjs sin tipos
 import { problemasDeReferencias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
 
-const RA = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-antonio');
+const RA = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/clientes/rroca-antonio');
 const LIB = cargarLibrerias('RA_PROMPT, RA_TEXTO_RIESGO, RA_CIERRE_PUENTE, RA_TEXTOS_PUENTE, RA_PRODUCTOS, raPresentacion, raMenu, raEtiqueta, raNombres, raQuitarEcoDeMarcador, raSeguro, vdEtiquetaConPrecio, raDelNegocio, RA_ARTICULO_DEL_NEGOCIO, raPieQr, raTextoPrecio, raExtraRedaccion, raNorm, RA_SINONIMOS, RA_BAJA, RA_TEXTO_BAJA, raPideBaja, raMenuDeBonos, raTextoOpciones, raTextoBonos, raCuerpoModelo') as J;
 
 const leerFlujoJson = (a: string): { nodes: J[] } => JSON.parse(readFileSync(join(RA, a), 'utf8')) as { nodes: J[] };
@@ -772,7 +772,7 @@ describe('REHECHO · el armado: la base común, el core de texto y solo lo propi
   const leerFlujo = (a: string): J => JSON.parse(readFileSync(join(RA, a), 'utf8')) as J;
   const codigoDe = (f: J, nodo: string): string => (f['nodes'] as J[]).find((n) => n['name'] === nodo)!['parameters']['jsCode'] as string;
   it('las librerías, en orden: cobro, avisos y conversación de la base común; no-repetir y pregunta-pendiente del core; y `ra.js` al final (las copias propias de cobro.js y avisos.js se borraron)', () => {
-    expect(CONFIG.librerias).toEqual(['../venta-digital/src/cobro.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../venta-digital/src/gmail.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/ra.js']);
+    expect(CONFIG.librerias).toEqual(['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/gmail.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/ra.js']);
     expect(existsSync(join(RA, 'src/lib/cobro.js'))).toBe(false);
     expect(existsSync(join(RA, 'src/lib/avisos.js'))).toBe(false);
     for (const archivo of ['rroca-antonio.json', 'rroca-antonio.prueba.json']) {
@@ -795,9 +795,9 @@ describe('REHECHO · el armado: la base común, el core de texto y solo lo propi
   });
   it('los nodos: 56 en producción y 51 en prueba (47 y 42 más los 9 del guardado de medios; antes 48 y 43; +1 por «Guardar comprobante») y las guardias de referencias DEL TASK RUNNER corren en las dos variantes, sin excepciones', () => {
     // +8 (02/11/2026): la rama del miniCRM (módulo `crm`, aprobada por Andres) → 64 y 59.
-    expect(TOPE_DE_NODOS).toBe(64);
-    expect(leerFlujo('rroca-antonio.json')['nodes']).toHaveLength(64);
-    expect(leerFlujo('rroca-antonio.prueba.json')['nodes']).toHaveLength(59);
+    expect(TOPE_DE_NODOS).toBe(68);
+    expect(leerFlujo('rroca-antonio.json')['nodes']).toHaveLength(68);
+    expect(leerFlujo('rroca-antonio.prueba.json')['nodes']).toHaveLength(63);
     for (const [archivo, variante] of [['rroca-antonio.json', 'produccion'], ['rroca-antonio.prueba.json', 'prueba']] as const) {
       expect(guardias(variante, leerFlujo(archivo)), archivo).toEqual([]);
       expect(problemasDeReferencias(leerFlujo(archivo)), archivo).toEqual([]);

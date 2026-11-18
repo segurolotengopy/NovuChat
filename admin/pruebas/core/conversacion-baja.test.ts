@@ -16,13 +16,13 @@ const SI = [
   'no me escribas más', 'No me escriban', 'NO ME ESCRIBAN MÁS', 'ya no me escriban', 'no me escribás', 'no me escriba más por favor',
   'n0 me escribas', 'ｎｏ　ｍｅ　ｅｓｃｒｉｂａｓ', 'basta, no me escriban', 'para de escribirme', 'dejen de escribirme', 'deja de mandarme mensajes',
   'no me contacten', 'no me molesten', 'no me llamen', 'no quiero recibir más mensajes', 'no quiero más mensajes', 'no vuelvan a escribirme',
-  'dame de baja', 'denme de baja', 'bórrenme de la lista', 'stop', 'STOP por favor',
+  'dame de baja', 'denme de baja', 'dame la baja', 'Dame la baja, por favor', 'date de baja', 'Date de baja, por favor.', 'me das de baja', 'Me das de baja, por favor', 'me dan de baja por favor', 'me das la baja', 'quiero que me des de baja', 'Quiero que me des de baja, por favor.', 'denme la baja', 'me dan de baja de su lista', 'bórrenme de la lista', 'stop', 'STOP por favor',
   'no me manden nada', 'no me manden nada más', 'no me envíen nada', 'no molestar', 'Por favor no molestar', 'bórrame de su base', 'bórrenme de la base de datos', 'elimíname de sus registros', 'bórrame de su base, por favor', 'no me manden nada por favor',
 ];
 const NO = [
   'hola', 'quiero agendar una cita', 'el doctor dijo que no me escriban', 'mi ex no deja de escribirme', 'no me escribas el precio, mándame el QR',
   'no me escribiste el precio', 'no me escribas con tanta formalidad', 'no me llamen la atención', 'quiero dar de baja mi pedido',
-  'dame de baja el plan anterior', '¿no me llamaron ayer?', 'no me llegó el mensaje', 'stop the music', '', '   ',
+  'dame de baja el plan anterior', 'si no pago me dan de baja?', 'cuando me dan de baja del curso', 'mi hijo me dijo que me dan de baja', 'dame la baja del servicio', 'date de baja el servicio', 'me das de baja el plan', 'dame de baja del curso', 'date de baja del curso', 'ayer me dijeron que me das de baja', 'me das de baja la cuenta de mi hijo', 'me dieron de baja del trabajo', 'dice que me das de baja', 'porque me das de baja siempre', 'me das el precio', '¿no me llamaron ayer?', 'no me llegó el mensaje', 'stop the music', '', '   ',
   'no me manden nada de eso, solo el catálogo', 'no quiero molestar, una consulta', 'para no molestar te escribo luego', 'bórrame esa foto de su base de ejemplo', 'no me envíen nada hasta el lunes',
   'quítame de su sistema el pedido de ayer', 'bórrame de la base de datos la dirección vieja', 'elimíname de sus registros la tarjeta',
   'no me manden nada, por favor, solo el QR', 'no me envíen nada por favor sin confirmar el precio',
@@ -66,7 +66,7 @@ describe('bjTextoBaja', () => {
 
 describe('paridad con la copia de origen (hasta que la etapa 1 la retire)', () => {
   it('BJ_BAJA es literalmente la expresión de la venta digital (ampliada en común el 14/11/2026 en las dos)', () => {
-    const origen = readFileSync(join(RAIZ_REPO, 'Flujos/experimental/rroca-antonio/src/lib/ra.js'), 'utf8');
+    const origen = readFileSync(join(RAIZ_REPO, 'Flujos/clientes/rroca-antonio/src/lib/ra.js'), 'utf8');
     const m = /^const RA_BAJA = (\/.+\/i);$/m.exec(origen);
     expect(m, 'la copia de origen ya no existe: borrar esta prueba').not.toBeNull();
     expect(String(L.BJ_BAJA)).toBe(m![1]);

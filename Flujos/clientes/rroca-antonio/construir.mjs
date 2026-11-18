@@ -4,9 +4,9 @@
  * construir.mjs — arma los JSON de «El Puente» de Antonio (tenant rroca-antonio) desde la plantilla y los datos
  * =============================================================================
  *
- *   node Flujos/experimental/rroca-antonio/construir.mjs               escribe rroca-antonio.json y rroca-antonio.prueba.json
- *   node Flujos/experimental/rroca-antonio/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
- *   node Flujos/experimental/rroca-antonio/construir.mjs --publicable [--flujo <json>] [--datos <json>] [--negocio <json>]
+ *   node Flujos/clientes/rroca-antonio/construir.mjs               escribe rroca-antonio.json y rroca-antonio.prueba.json
+ *   node Flujos/clientes/rroca-antonio/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
+ *   node Flujos/clientes/rroca-antonio/construir.mjs --publicable [--flujo <json>] [--datos <json>] [--negocio <json>]
  *                                                       no escribe: sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal (PR-C; lo llama publicar-flujo.sh)
  *   (cualquier otro argumento se rechaza: la ayuda no existe como opción, para que nada escriba por error)
  *
@@ -37,9 +37,10 @@ import { closeSync, constants, openSync, readFileSync, writeFileSync } from 'nod
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
-import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
+import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../../experimental/comun-sin-agente/construir-crm.mjs';
 import { injertar } from '../../src/core/sin-agente/envio.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
+import { fuentesDeLaCadenaComun, hallazgosDelGuardadoSaliente, injertarGuardadoSaliente, NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE, URL_DESCARGA_SALIENTE } from '../../src/core/sin-agente/guardado-saliente.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 import { problemasDeReferencias } from '../../src/core/sin-agente/referencias.mjs';
 
@@ -50,7 +51,8 @@ export const ARCHIVO_DE_NEGOCIO = join(AQUI, '../../../admin/scripts/datos/rroca
 // excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 // 56 + los 8 de la rama del miniCRM (`ramaCrm`, generada por el módulo `crm`; F4 del 02/11/2026): excepción de tope aprobada por Andres (DP1, 31/10/2026) en docs/versiones-por-cliente.md.
 // El relé de envíos B9 (Clínicas, +2, aprobado en D1) sube el tope a 66 cuando se fusione: hoy el flujo tiene 64.
-export const TOPE_DE_NODOS = 64;
+// +4: la rama del guardado de la IMAGEN SALIENTE del asistente (QR por media id; plan del 16/11/2026, bloque 2a): «Preparar guardado (saliente)», «Pedir imagen a Meta…», «Descargar imagen de Meta…» y «Guardar imagen enviada». 64 → 68: aprobación de Andres pendiente (docs/versiones-por-cliente.md).
+export const TOPE_DE_NODOS = 68;
 /** Los 8 nodos de la rama del miniCRM (el módulo `crm` los genera). */
 export const NODOS_DE_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
 export const CREDENCIAL_CRM = (tenant) => `Google Sheets miniCRM (crm-${tenant})`;
@@ -67,7 +69,7 @@ export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   // La base común de las ventas digitales (cobro, avisos y el motor de la conversación: prefijos `cb`, `av` y `vd`), los módulos del core de texto (no repetir y pregunta pendiente: prefijo `ct`) y, al final, lo PROPIO de Antonio (`ra.js`: solo datos y textos).
-  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../venta-digital/src/gmail.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/ra.js'],
+  librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/gmail.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/ra.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],
@@ -215,6 +217,9 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
   if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
   // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
   if (nombreDelNodo === 'Descargar medio (guardado)' && url === URL_DESCARGA_GUARDADO) return true;
+  // El guardado de la imagen SALIENTE: la URL del CDN de Meta (expresión exacta del módulo común) y, solo en la vía por enlace, el MISMO enlace que se envió al cliente (sin credencial).
+  if (nombreDelNodo === 'Descargar imagen de Meta (guardado saliente)' && url === URL_DESCARGA_SALIENTE) return true;
+  if (nombreDelNodo === 'Descargar enlace (guardado saliente)' && url === '={{ $json.enlace }}') return true;
   // La consulta de SOLO la fila de encabezados del miniCRM (Google Sheets API, `values.get`): la URL exacta del módulo común, con un rango A<fila>:<letra><fila>.
   if (nombreDelNodo === 'Leer encabezados de la planilla') {
     const [antes, despues] = urlEncabezados('@@').split('@@');
@@ -249,6 +254,8 @@ export function guardias(variante, flujo, mapaCrm) {
   else h.push(...hallazgosCrm(flujo || {}, mapaDeCrm).map((x) => `miniCRM: ${x}`));
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
+  // El guardado de la imagen SALIENTE del asistente: la rama común completa (vía media), debajo de todo y sin credencial ajena.
+  h.push(...hallazgosDelGuardadoSaliente(flujo || {}, { exigir: true, vias: ['media'] }));
   // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
   h.push(...hallazgosDeExpresionesN8n(flujo || {}));
   if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
@@ -291,7 +298,7 @@ export function guardias(variante, flujo, mapaCrm) {
     for (const n of nodos) {
       for (const [tipo, c] of Object.entries(n.credentials || {})) {
         const nombreCred = String((c || {}).name || '');
-        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && n.name !== 'Cotejar en el servidor' && n.name !== 'Guardar comprobante' && n.name !== 'Avisar al servidor' && !NODOS_DE_INGESTA_DEL_GUARDADO.includes(n.name) && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred))) {
+        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && n.name !== 'Cotejar en el servidor' && n.name !== 'Guardar comprobante' && n.name !== 'Avisar al servidor' && !NODOS_DE_INGESTA_DEL_GUARDADO.includes(n.name) && !NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE.includes(n.name) && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred))) {
           h.push(`la prueba usa una credencial de producción en «${n.name}» (${tipo})`);
         }
       }
@@ -537,6 +544,8 @@ export function armarAntonio(proyecto, datos, v) {
   rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; } return JSON.stringify(r); })() }}";
   // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
   injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
+  // El GUARDADO de la imagen que el asistente ENVÍA (QR por media id): módulo común, cuelga de «Reportar mensaje (saliente)» y va debajo de todo (plan del 16/11/2026, bloque 2a).
+  injertarGuardadoSaliente(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio`, vias: ['media'], fuentes: fuentesDeLaCadenaComun() });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
   // El mapa de columnas del tenant (dato, no código) dentro de los nodos del módulo y los rangos de lectura de los nodos de Google.

@@ -42,3 +42,4 @@ export function hallazgosDelGuardado(flujo: unknown, opciones?: { exigir?: boole
 export function manejaMedios(flujo: unknown): boolean;
 export function urlDescargaRele(releUrl?: string): string;
 export function urlInfoRele(releUrl?: string): string;
+export const NODOS_DEL_GUARDADO_SALIENTE: string[];
