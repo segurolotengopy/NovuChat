@@ -50,7 +50,7 @@ export function injertarReporteSinConteo(flujo, opciones = {}) {
     parameters: {
       conditions: {
         options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 },
-        conditions: [{ id: 'c1', leftValue: `={{ $('${origen}').item.json.kind === 'arte' && !($json && $json.error) && ${ID_DEL_ENVIO} !== '' }}`, rightValue: true, operator: OPERADOR_BOOLEANO }],
+        conditions: [{ id: 'c1', leftValue: `={{ $('${origen}').item.json.kind === 'arte' && $('${origen}').item.json.enviar === true && $('Config del negocio').first().json.modoPrueba !== true && !($json && $json.error) && ${ID_DEL_ENVIO} !== '' }}`, rightValue: true, operator: OPERADOR_BOOLEANO }],
         combinator: 'and',
       },
       options: {},
@@ -110,6 +110,7 @@ export function hallazgosDelReporteSinConteo(flujo, opciones = {}) {
   if (/evento/.test(cuerpo)) h.push('reporte sin conteo: una foto no lleva evento');
   if (nRep.onError !== 'continueRegularOutput' || nRep.alwaysOutputData !== true) h.push('reporte sin conteo: el reporte tiene que llevar onError continueRegularOutput y alwaysOutputData');
   if (!/kind === 'arte'/.test(String((nSi.parameters.conditions.conditions[0] || {}).leftValue || ''))) h.push('reporte sin conteo: el `if` solo deja pasar una foto (kind arte)');
+  { const l = String((nSi.parameters.conditions.conditions[0] || {}).leftValue || ''); if (!/\.enviar === true/.test(l) || !/modoPrueba !== true/.test(l)) h.push('reporte sin conteo: el `if` exige enviar === true y modoPrueba !== true (en modo prueba la foto no se reporta a la ingesta real)'); }
   if (salientes && JSON.stringify(salientes.credentials || {}) !== JSON.stringify(nRep.credentials || {})) h.push('reporte sin conteo: usa la credencial de ingesta del «Reportar mensaje (saliente)» del flujo');
   // Los demás reportes NO llevan sinConteo (el servidor lo ignora, pero el flujo no lo manda).
   for (const n of nodos) if (n.name !== REPORTERO_DE_FOTOS && /sinConteo/.test(JSON.stringify(n.parameters || {}))) h.push(`reporte sin conteo: «${n.name}» no puede mandar sinConteo (solo el de las fotos)`);

@@ -1440,7 +1440,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ $('Armar previos').item.json.kind === 'arte' && !($json && $json.error) && (($json || {}).idMeta || ((($json || {}).messages || [])[0] || {}).id || '') !== '' }}",
+              "leftValue": "={{ $('Armar previos').item.json.kind === 'arte' && $('Armar previos').item.json.enviar === true && $('Config del negocio').first().json.modoPrueba !== true && !($json && $json.error) && (($json || {}).idMeta || ((($json || {}).messages || [])[0] || {}).id || '') !== '' }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",

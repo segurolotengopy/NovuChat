@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error el módulo común es un .mjs sin tipos
 import { hallazgosDelReporteSinConteo } from '../../../../Flujos/src/core/sin-agente/reporte-sin-conteo.mjs';
 import type { Flujo, J } from '../../lib/flujo';
-import { ANA, PRODUCCION, PRUEBA, crear, hablar, imagenes, mTexto, tel, textos } from './mundo';
+import { ANA, PRODUCCION, PRUEBA, crear, hablar, imagenes, mTexto, tel, textos, valorMeta } from './mundo';
 
 const FOTO = 'Reportar foto (saliente)';
 const PIDE_VER = 'Quiero ver cómo queda, me da miedo verme artificial';
@@ -190,5 +190,24 @@ describe('otro teléfono, otra foto: cada una se reporta con su propio teléfono
     const t2 = hablar(m, b, mTexto(PIDE_VER));
     expect(conSinConteo(t1).map((c) => c['telefono'])).toEqual([ANA]);
     expect(conSinConteo(t2).map((c) => c['telefono'])).toEqual([b]);
+  });
+});
+
+describe('modo prueba: la foto que sale al teléfono de prueba NO se reporta a la ingesta real', () => {
+  const prueba = (): ReturnType<typeof crear> => crear({ flujo: PRUEBA, modeloDice: dice(ANTES_DESPUES), base: { telefonosDePrueba: `${ANA},${tel(22)}` } });
+  const cuerpo = (extra: J): J => ({ body: { ...valorMeta(mTexto(PIDE_VER), ANA), ...extra } });
+  it('NEGADA: con modoPrueba y enviarDeVerdad la foto sale, pero ninguna llamada lleva sinConteo ni se ejecuta el reporte', () => {
+    const t = prueba().turno(cuerpo({ modoPrueba: true, telefonoDePrueba: ANA, enviarDeVerdad: true }), { via: 'Entrada de prueba' });
+    expect(imagenes(t).length).toBe(1);
+    expect(conSinConteo(t).length).toBe(0);
+    expect(t.ejecutados.has(FOTO)).toBe(false);
+    expect(t.llamadas.ingesta.length).toBe(0);
+  });
+  it('la condición del `if` exige enviar y modoPrueba distinto de true; sin eso la guardia falla', () => {
+    const f = clon(PRODUCCION);
+    const c = (((nodo(f, '¿Reportar foto? (saliente)')['parameters'] as J)['conditions'] as J)['conditions'] as J[])[0] as J;
+    expect(String(c['leftValue'])).toContain('modoPrueba !== true');
+    c['leftValue'] = String(c['leftValue']).replace(" && $('Config del negocio').first().json.modoPrueba !== true", '');
+    expect(hallazgosDelReporteSinConteo(f, { exigir: true }).join(' ')).toMatch(/modoPrueba !== true/);
   });
 });
