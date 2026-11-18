@@ -75,6 +75,7 @@ function ceVendibles(respuesta, opciones) {
   const r = ceObjeto(respuesta) ? respuesta : {};
   const status = r.status;
   if (status === 401) return cePase('credencial');
+  if (status === 404) return cePase('version_no_soportada'); // el contrato responde 404 cuando no sirve la versión pedida (o la ruta no existe en el despliegue): defecto del tercero, con alerta (decisión de Andres, 18/11/2026)
   if (status === 429) return cePase('limite');
   if (status === 400) return cePase('mercado_invalido');
   if (status === 503) return cePase('sin_cotizacion');
