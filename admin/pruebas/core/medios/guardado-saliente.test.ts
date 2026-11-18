@@ -293,12 +293,15 @@ const CON_RAMA: Array<{ archivo: string; vias: ViaDelGuardadoSaliente[]; reporte
   ...['rroca-antonio.json', 'rroca-antonio.prueba.json'].map((a) => ({ archivo: `clientes/rroca-antonio/${a}`, vias: ['media'] as ViaDelGuardadoSaliente[] })),
   ...['walisuma.json', 'walisuma.prueba.json'].map((a) => ({ archivo: `clientes/walisuma/${a}`, vias: ['media'] as ViaDelGuardadoSaliente[] })),
   ...['casa-bermejo.json', 'casa-bermejo.prueba.json'].map((a) => ({ archivo: `clientes/casa-bermejo/${a}`, vias: ['media'] as ViaDelGuardadoSaliente[] })),
+  // Bloque 2b (16/11/2026): las FOTOS de catálogo de Evy y Emma salen por «Enviar aviso» y se reportan SIN CONTEO desde «Reportar foto (saliente)» (reporte-sin-conteo.mjs).
+  ...['experimental/rroca-evy/rroca-evy.json', 'experimental/rroca-evy/rroca-evy.prueba.json', 'experimental/rroca-evy/rroca-evy.ensayo-demo-a.json', 'experimental/rroca-emma/rroca-emma.json', 'experimental/rroca-emma/rroca-emma.prueba.json']
+    .map((archivo) => ({ archivo, vias: ['media'] as ViaDelGuardadoSaliente[], reportero: 'Reportar foto (saliente)', envio: 'Enviar aviso' })),
   { archivo: 'demo-a-agendamiento.json', vias: ['enlace'], reportero: 'Reportar QR (saliente)', envio: 'Enviar QR de la seña' },
   { archivo: 'demo-b-venta-cobro.json', vias: ['enlace', 'media'], reportero: 'Reportar QR (saliente)', envio: 'Enviar QR de cobro' },
 ];
 const SIN_RAMA = [
-  // Bloque 2b (sus imágenes de catálogo hoy no se reportan a la ingesta: requiere un cambio de servidor).
-  'experimental/rroca-evy/rroca-evy.json', 'experimental/rroca-emma/rroca-emma.json', 'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-emma.json',
+  // Los flujos viejos de las doctoras (Evy y Emma ya tienen la rama: ver CON_RAMA).
+  'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-emma.json',
   // La imagen sale de ENCABEZADO de un interactivo (se reporta `interactive` o `text`): el servidor solo admite un saliente de tipo `image`.
   'clientes/novuchat/chat-novuchat.novuchat.json', 'experimental/captacion-minima/captacion-minima.novuchat.json',
   // No envían imágenes del asistente (Agenda mínima no manda QR; el flujo A de Bellido está descartado y el de onboarding es histórico).
@@ -439,8 +442,8 @@ describe('la guardia del guardado saliente, NEGANDO', () => {
     expect(conBase(() => undefined, BASE, { vias: ['enlace'] })).toMatch(/las vías son \["media"\] y se esperaban \["enlace"\]/);
   });
   it('sin la rama, con `exigir`, falla', () => {
-    expect(hallazgosDelGuardadoSaliente(leer('experimental/rroca-evy/rroca-evy.json'), { exigir: true }).join(' ')).toMatch(/falta la rama/);
-    expect(hallazgosDelGuardadoSaliente(leer('experimental/rroca-evy/rroca-evy.json'))).toEqual([]);
+    expect(hallazgosDelGuardadoSaliente(leer('experimental/doctoras/doctoras.rroca-evy.json'), { exigir: true }).join(' ')).toMatch(/falta la rama/);
+    expect(hallazgosDelGuardadoSaliente(leer('experimental/doctoras/doctoras.rroca-evy.json'))).toEqual([]);
   });
   it('injertar: sin reporte saliente, sin nodo de envío, la rama ya injertada, vías inválidas, URL ajena, ingesta como credencial de Meta', () => {
     const url = 'https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio';
