@@ -311,7 +311,7 @@ switch (plan) {
   }
 
   case 'menu': {
-    menu(String(cfg.mensajeMenu || '').trim() || '¿Qué necesitas hoy?');
+    menu(params.preguntaServicio === true ? '¿Para qué servicio es la cita? Elige una opción:' : (String(cfg.mensajeMenu || '').trim() || '¿Qué necesitas hoy?'));
     break;
   }
 
