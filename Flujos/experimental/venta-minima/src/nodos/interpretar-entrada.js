@@ -129,7 +129,7 @@ if (tipo === 'text') {
 }
 
 const contacto = Array.isArray(carga.contacts) ? carga.contacts[0] : undefined;
-const ref = msg.referral && typeof msg.referral === 'object' ? msg.referral : null;
+const ref = msg.referral && typeof msg.referral === 'object' && !Array.isArray(msg.referral) ? msg.referral : null;
 // EL ANUNCIO Y LA CAMPANA (contrato Ad ID + texto, 17/11/2026): primero el Ad ID (`referral.source_id`, igualdad exacta de cadena contra los `adIds` de una campana VIGENTE, sirve para cualquier
 // tipo de mensaje) y luego el texto exacto (solo `text`, con la misma comparacion de siempre: `prCampanaDelTexto`). SOLO vincula: ningun menu ni respuesta cambia por esto (`Decidir turno`
 // no lee `campana`). Las campanas solo por Ad ID viven en `cfg.campanasAdId`, aparte de `cfg.campanas`.
