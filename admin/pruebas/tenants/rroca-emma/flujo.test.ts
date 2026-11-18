@@ -9,9 +9,9 @@ import { ES_RELE } from '../../../../Flujos/experimental/rroca-emma/construir.mj
 import { ANA, BETO, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
 
 describe('topología y tamaño', () => {
-  it('envío directo: producción 53 nodos y prueba 48 (36 y 31 más los 9 del guardado y los 8 del miniCRM); con el canal rele, 56 y 51', () => {
-    expect(PRODUCCION.nodes.length).toBe(ES_RELE ? 56 : 53);
-    expect(PRUEBA.nodes.length).toBe(ES_RELE ? 51 : 48);
+  it('envío directo: producción 59 nodos y prueba 54 (36 y 31 más los 9 del guardado, los 8 del miniCRM y los 6 de la foto sin conteo: 2 del reporte y 4 del guardado saliente); con el canal rele, 58 y 53', () => {
+    expect(PRODUCCION.nodes.length).toBe(ES_RELE ? 58 : 59);
+    expect(PRUEBA.nodes.length).toBe(ES_RELE ? 53 : 54);
   });
   it('sin agente, memoria ni modelo de chat de n8n, y sin WhatsApp Trigger', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
