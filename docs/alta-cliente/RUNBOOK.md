@@ -178,6 +178,8 @@ node admin/scripts/plataforma/asignar-plan.mjs --proyecto <proyecto> --operador 
 node admin/scripts/modulos/productos/contar-catalogo.mjs --proyecto <proyecto> --tenant <id>
 node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --listar
 node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --numero <phone_number_id> --waba <waba_id> --flujo <flujo> --alias <clienteNN>
+# Solo si el comercio vende con catálogo externo (NovuTienda): enciende `config/pedidos.catalogoExterno` (seco primero; luego --aplicar con --respaldo)
+node admin/scripts/plataforma/aplicar-catalogo-externo.mjs --proyecto <proyecto> --tenant <id> --monedas <BOB|ARS|BOB,ARS>
 ```
 
 - **El plan y el contador del catálogo.** `alta-comercio.mjs` deja al comercio
