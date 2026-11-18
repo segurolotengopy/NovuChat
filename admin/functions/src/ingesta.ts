@@ -1215,9 +1215,14 @@ export const ingesta = onRequest(
         // La campaña, con el mismo hecho y el mismo motivo que `origen`: Meta pone
         // `referral` solo en el primer mensaje. Mismo documento y misma escritura:
         // 0 escrituras nuevas, 0 mensajes.
-        ...(conteo.atencion && mensaje.adId ? { adId: mensaje.adId } : {}),
-        ...(conteo.atencion && mensaje.campanaId ? { campanaId: mensaje.campanaId } : {}),
-        ...(conteo.atencion && mensaje.campanaId && mensaje.campanaPor ? { campanaPor: mensaje.campanaPor } : {}),
+        // El documento es el mismo en todas las ventanas (`merge: true`): al ABRIR una ventana
+        // los campos que no llegan se BORRAN, para que una ventana directa no herede la
+        // campaña de la anterior (revisión del PR #1012).
+        ...(conteo.atencion ? {
+          adId: mensaje.adId ? mensaje.adId : FieldValue.delete(),
+          campanaId: mensaje.campanaId ? mensaje.campanaId : FieldValue.delete(),
+          campanaPor: mensaje.campanaId && mensaje.campanaPor ? mensaje.campanaPor : FieldValue.delete(),
+        } : {}),
         mensajesTotal: FieldValue.increment(1),
         periodoContado: periodo,
         // El contador de respuestas se calcula, no se incrementa: dentro de la

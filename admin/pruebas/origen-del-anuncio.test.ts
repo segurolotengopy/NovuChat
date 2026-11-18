@@ -199,6 +199,22 @@ describe('La campaña de la ventana (contrato Ad ID, 17/11/2026)', () => {
     expect(await conversacion(t)).toMatchObject({ adId: AD1, campanaId: 'primera', campanaPor: 'texto', mensajesTotal: 3 });
   });
 
+  it('una ventana NUEVA sin campaña no hereda la de la ventana anterior', async () => {
+    const t = '5910000000099';
+    await conCampana(t, { adId: AD1, campanaId: 'primera', campanaPor: 'adId' });
+    expect(await conversacion(t)).toMatchObject({ adId: AD1, campanaId: 'primera', campanaPor: 'adId' });
+    // La ventana de 24 h se vence: se retrocede su ancla, como hacen las pruebas de conteo.
+    const { Timestamp } = await import('firebase-admin/firestore');
+    await db.doc(`tenants/${T}/conversaciones/wa_${t}`).set(
+      { atencionDesde: Timestamp.fromMillis(Date.now() - 25 * 3600 * 1000) }, { merge: true });
+    await entrante(t, 'directo');
+    const c = await conversacion(t);
+    expect(c['origen']).toBe('directo');
+    expect(c['adId']).toBeUndefined();
+    expect(c['campanaId']).toBeUndefined();
+    expect(c['campanaPor']).toBeUndefined();
+  });
+
   it('negando: valores con otra forma se ignoran y el mensaje se cuenta igual', async () => {
     const malos: Array<Record<string, unknown>> = [
       { adId: '12a45' }, { adId: '1'.repeat(33) }, { adId: '1234567' }, { adId: 12345 }, { adId: { x: 1 } },
