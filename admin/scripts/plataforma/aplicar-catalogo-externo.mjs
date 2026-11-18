@@ -5,7 +5,7 @@
  * `catalogoExterno = { activo: true, monedas: ['BOB'|'ARS', …] }`. Lo lee `configExternaDe` en
  * `functions/src/modulos/pedidos/pedidoDelQr.ts`; sin él, el pedido se arma como siempre. Solo el servidor lo
  * escribe (las reglas no abren `config/pedidos` al cliente); este script es el camino. Calcado de
- * `aplicar-catalogo-externo.mjs` (seco, respaldo, precondición, relectura y vuelta atrás) y reutiliza las piezas
+ * `aplicar-guardar-medios.mjs` (seco, respaldo, precondición, relectura y vuelta atrás) y reutiliza las piezas
  * de `aplicar-consola-conversaciones.mjs`. Escribe SOLO ese campo del documento, nunca otro, y NO escribe
  * `config/cobros` ni alias de cobro.
  *
@@ -156,7 +156,7 @@ export function esFormaValida(v) {
   return typeof v.activo === 'boolean' && Array.isArray(v.monedas) && v.monedas.every((m) => MONEDAS_VALIDAS.includes(m));
 }
 export const iguales = (a, b) => esFormaValida(a) && esFormaValida(b) && a.activo === b.activo
-  && a.monedas.length === b.monedas.length && a.monedas.every((m, i) => m === b.monedas[i]);
+  && a.monedas.length === b.monedas.length && [...a.monedas].sort().join() === [...b.monedas].sort().join();
 const copia = (v) => ({ activo: v.activo, monedas: [...v.monedas] });
 
 /** Lo que se guarda: el valor previo (o su ausencia), el valor escrito y la etiqueta del entorno. Nada del comercio. */
