@@ -4,9 +4,9 @@
  * construir.mjs — arma los JSON del flujo NUEVO de la Dra. Evy Karina (tenant rroca-evy) desde la plantilla, el prompt versionado y los datos
  * =============================================================================
  *
- *   node Flujos/experimental/rroca-evy/construir.mjs               escribe rroca-evy.json, rroca-evy.prueba.json y rroca-evy.ensayo-demo-a.json
- *   node Flujos/experimental/rroca-evy/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado (las tres variantes) difiere de lo que se arma o viola una guardia
- *   node Flujos/experimental/rroca-evy/construir.mjs --publicable [--flujo <json>] [--datos <json>] [--negocio <json>] [--etapa crear|prueba|encender]
+ *   node Flujos/clientes/rroca-evy/construir.mjs               escribe rroca-evy.json, rroca-evy.prueba.json y rroca-evy.ensayo-demo-a.json
+ *   node Flujos/clientes/rroca-evy/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado (las tres variantes) difiere de lo que se arma o viola una guardia
+ *   node Flujos/clientes/rroca-evy/construir.mjs --publicable [--flujo <json>] [--datos <json>] [--negocio <json>] [--etapa crear|prueba|encender]
  *                                                                  GUARDIA DE PUBLICACIÓN: no escribe; sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal
  *   (cualquier otro argumento se rechaza: la ayuda no existe como opción, para que nada escriba por error)
  *
@@ -38,7 +38,7 @@ import { closeSync, constants, openSync, readdirSync, readFileSync, writeFileSyn
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
-import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
+import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../../experimental/comun-sin-agente/construir-crm.mjs';
 import { hallazgosDelEnvioRele, injertar, MARCADOR_URL_DEL_RELE, parametrosDeMensajeRele, PREFIJO_CREDENCIAL_RELE } from '../../src/core/sin-agente/envio.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO, urlDescargaRele } from '../../src/core/sin-agente/guardado.mjs';
 import { antecesoresDe, problemasDeReferencias, referenciasDeNodos } from '../../src/core/sin-agente/referencias.mjs';
@@ -103,7 +103,7 @@ export const CONFIG = {
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
-    avisos: ['../venta-minima/src/lib/avisos.js'],
+    avisos: ['../../experimental/venta-minima/src/lib/avisos.js'],
     prompt: ['src/lib/prompt-vacio.js'],
     'turno-carga': ['../../src/core/sin-agente/turno/carga-de-entrada.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],

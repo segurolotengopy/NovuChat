@@ -73,7 +73,7 @@ Chequeos de contenido ensanchados (no duros), por ser estrechos y no por culpa d
 
 ## Cómo se correrá
 
-Pendiente: el flujo lo construye otro agente en `Flujos/experimental/rroca-evy/` y el comando del motor se define con el constructor. No se inventa aquí. Correr contra el modelo real es gasto y solo con el «sí» de Andres; los textos fijos y la baja no necesitan modelo.
+Pendiente: el flujo lo construye otro agente en `Flujos/clientes/rroca-evy/` y el comando del motor se define con el constructor. No se inventa aquí. Correr contra el modelo real es gasto y solo con el «sí» de Andres; los textos fijos y la baja no necesitan modelo.
 
 ## Dudas abiertas
 
