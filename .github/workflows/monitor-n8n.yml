@@ -27,8 +27,8 @@
 # MONITOR_N8N_PING_URL (URL de ping del chequeo; es una URL de capacidad).
 #
 # El certificado se MIDE en cada corrida pero el aviso de «por vencer» no sale
-# de aquí (fallar cada 10 minutos durante 14 días sería ruido): lo da el reporte
-# diario del bloque 3, una vez por día.
+# de aquí (fallar cada 10 minutos durante 14 días sería ruido): lo daba el
+# reporte diario, apagado el 17/11/2026; hoy se ve corriéndolo a pedido.
 #
 # Costo: 0 mensajes de WhatsApp; ~144 corridas al día de menos de 1 minuto
 # (hasta 6 si hay falla) y, por usar un Environment, ~144 registros diarios en

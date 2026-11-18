@@ -59,8 +59,8 @@ export function accionesSinBloqueadas(acciones: Acciones, bloqueada: boolean): A
   return { ...acciones, sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verEscribir: false };
 }
 
-/** El rótulo del botón de la lista: «Bloqueados (3)»; sin número todavía, sin paréntesis (no se inventa un cero). */
-export const rotuloBloqueados = (n: number | null): string => (n === null ? 'Bloqueados' : `Bloqueados (${n})`);
+/** El rótulo de la opción del menú: «Teléfonos bloqueados (3)»; sin número todavía, sin paréntesis (no se inventa un cero). */
+export const rotuloBloqueados = (n: number | null): string => (n === null ? 'Teléfonos bloqueados' : `Teléfonos bloqueados (${n})`);
 
 /** `bloqueada` solo vale `true` exacto (como en el servidor). */
 export const estaBloqueadaDe = (v: unknown): boolean => v === true;

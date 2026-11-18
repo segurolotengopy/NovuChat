@@ -187,7 +187,7 @@ export function Ingresar() {
       ) : (
         <button type="button" className="enlace-interno"
                 onClick={() => { setModo('novuchat'); setError(null); setAviso(null); }}>
-          Soy propietario de NovuChat (Google)
+          Acceso especial
         </button>
       )}
 

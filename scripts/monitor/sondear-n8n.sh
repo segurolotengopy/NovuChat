@@ -16,7 +16,9 @@
 #                separadas unos minutos, un parpadeo no declara nada.
 #   certificado  Días que le quedan al certificado del host. Nunca falla la
 #                corrida: informa `dias=` y `certificado=vigente|por_vencer|…`.
-#                Quien avisa es el reporte diario, que lee esta salida.
+#                Quien avisaba era el reporte diario (apagado el 17/11/2026;
+#                hoy corre a pedido). El aviso anticipado lo da el chequeo
+#                de cron-job.org.
 #
 # Lo que NUNCA hace: imprimir la URL ni el host (el dominio no va en registros
 # de un repositorio público), llamar a una ruta de webhook, ni escribir en n8n.
