@@ -45,8 +45,8 @@
 # confirmacion explicita (escribir PUBLICAR DOCTORAS; sin terminal, solo con --confirmo-doctoras).
 # --forzar no salta nada de esto; --apagar nunca pide confirmacion.
 #
-# EL FLUJO NUEVO DE EVY (tenant rroca-evy, Flujos/experimental/rroca-evy/) TIENE SU GUARDIA, ADITIVA: se reconoce por su CONTENIDO (un nodo «Armar previos»), no por el nombre, porque conserva
-# el nombre y el id vivo del flujo viejo de las doctoras. Con --aplicar (y con ello --crear o --encender) se NIEGA si `Flujos/experimental/rroca-evy/construir.mjs --publicable` no aprueba el
+# EL FLUJO NUEVO DE EVY (tenant rroca-evy, Flujos/clientes/rroca-evy/) TIENE SU GUARDIA, ADITIVA: se reconoce por su CONTENIDO (un nodo «Armar previos»), no por el nombre, porque conserva
+# el nombre y el id vivo del flujo viejo de las doctoras. Con --aplicar (y con ello --crear o --encender) se NIEGA si `Flujos/clientes/rroca-evy/construir.mjs --publicable` no aprueba el
 # archivo (o el flujo VIVO al encenderlo) y pide escribir PUBLICAR EVY (o --confirmo-evy sin terminal). `--etapa-prueba` pide la etapa prueba. El flujo viejo de Evy y el de Emma siguen
 # con la guardia de las doctoras, sin cambios.
 #
@@ -352,16 +352,16 @@ if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
   fi
 fi
 
-# --- LA GUARDIA DEL FLUJO NUEVO DE EVY (tenant rroca-evy, Flujos/experimental/rroca-evy/) ---
+# --- LA GUARDIA DEL FLUJO NUEVO DE EVY (tenant rroca-evy, Flujos/clientes/rroca-evy/) ---
 # Aditiva: no cambia nada para los demas flujos. Se reconoce por el CONTENIDO (un nodo «Armar previos») y no por el nombre. Con --aplicar (y con ello --crear o --encender) exige que
-# `Flujos/experimental/rroca-evy/construir.mjs --publicable --flujo <json> --etapa <e>` apruebe el flujo, y la confirmacion explicita (PUBLICAR EVY, o --confirmo-evy sin terminal).
+# `Flujos/clientes/rroca-evy/construir.mjs --publicable --flujo <json> --etapa <e>` apruebe el flujo, y la confirmacion explicita (PUBLICAR EVY, o --confirmo-evy sin terminal).
 # --forzar NO salta nada de esto; `--apagar` nunca pide confirmacion. Etapas: `crear` (--crear sin --activar ni --encender), `prueba` (--etapa-prueba) y `encender` (la completa).
 evy_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar
   local etapa=encender
   [[ $CREAR -eq 1 && $ACTIVAR -eq 0 && $ENCENDER -eq 0 ]] && etapa=crear
   [[ $ETAPA_PRUEBA -eq 1 ]] && etapa=prueba
   echo "Flujo nuevo de Evy (rroca-evy): se revisa la guardia de publicación ($1; etapa $etapa)."
-  if node Flujos/experimental/rroca-evy/construir.mjs --publicable --flujo "$2" --etapa "$etapa"; then
+  if node Flujos/clientes/rroca-evy/construir.mjs --publicable --flujo "$2" --etapa "$etapa"; then
     GUARDIA_EVY_OK=1
   else
     GUARDIA_EVY_OK=0

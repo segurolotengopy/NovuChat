@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ARCHIVO_DE_DATOS, cargarDatos } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
+import { ARCHIVO_DE_DATOS, cargarDatos } from '../../../../Flujos/clientes/rroca-evy/construir.mjs';
 import type { J } from '../../lib/flujo';
 import { ANA, PRODUCCION, PRUEBA, avisosARecepcion, crear, datos, dice, hablar, mAudio, mImagen, mTexto, textos } from './mundo';
 
@@ -150,7 +150,7 @@ describe('el constructor NIEGA un texto de campaña peligroso (revisión de segu
 
 describe('el literal NO pasa por ninguna barrera del flujo normal (pedido de Andres, 08/11/2026: vale ANTES y DESPUÉS de levantar las barreras de «inmediato», «bonificado», cuidados y 250 Bs)', () => {
   it('el plan «campana_literal» de «Armar mensajes» no llama a evPulirSalida, evProtegerValor, evSinInmediato, evSinBonificado, evQuitarEnlacesYTelefonos ni evParrafos', () => {
-    const codigo = readFileSync(join(__dirname, '../../../../Flujos/experimental/rroca-evy/src/nodos/armar-mensajes.js'), 'utf8');
+    const codigo = readFileSync(join(__dirname, '../../../../Flujos/clientes/rroca-evy/src/nodos/armar-mensajes.js'), 'utf8');
     const i = codigo.indexOf("efectivo === 'campana_literal'");
     expect(i).toBeGreaterThan(0);
     const tramo = codigo.slice(i, codigo.indexOf("} else if (efectivo === 'gratis')", i)).split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');

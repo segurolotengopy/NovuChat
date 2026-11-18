@@ -1,6 +1,6 @@
 # Batería con modelo real: observaciones de Rubén (28/10/2026), Evy y Emma
 
-Solo la LISTA de casos y su criterio. **No se ejecutó** (no gasta llamadas a Gemini): correrla espera el botón de Andres. El motor es el de siempre (`Flujos/experimental/rroca-evy/herramientas/bateria.mjs`, contra la variante de prueba, modo prueba sin `enviarDeVerdad`), y estos casos se pasan a `bateria-casos.json` con el mismo vocabulario de chequeos (`Flujos/experimental/rroca-evy-bateria/LEEME.md`). Los dos tipos nuevos van marcados **(nuevo)**.
+Solo la LISTA de casos y su criterio. **No se ejecutó** (no gasta llamadas a Gemini): correrla espera el botón de Andres. El motor es el de siempre (`Flujos/clientes/rroca-evy/herramientas/bateria.mjs`, contra la variante de prueba, modo prueba sin `enviarDeVerdad`), y estos casos se pasan a `bateria-casos.json` con el mismo vocabulario de chequeos (`Flujos/experimental/rroca-evy-bateria/LEEME.md`). Los dos tipos nuevos van marcados **(nuevo)**.
 
 **Para Emma:** los mismos casos, cambiando «Dra. Evy» por «Dra. Emma» y con la excepción de su PROPIO.md: **ninguna cifra de dinero**, tampoco en la bienvenida (O4-1 y O4-2 se invierten: `excluye_cifras_de_dinero` sin `permitido`).
 

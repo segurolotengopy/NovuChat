@@ -9,7 +9,7 @@ import { claseDe, coberturaDePlanes, planesDelCodigo, vigilarDerivacion } from '
 import { ANA, crear, hablar, mAudio, mDocumento, mTexto } from './mundo';
 import { TABLA_DE_PLANES } from './derivacion';
 
-const ARMAR = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-evy/src/nodos/armar-mensajes.js');
+const ARMAR = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/clientes/rroca-evy/src/nodos/armar-mensajes.js');
 const PATRON = [/(?<![A-Za-z0-9_.])efectivo\s*===\s*'([a-z_0-9]+)'/];
 
 describe('cobertura estática', () => {

@@ -11,8 +11,8 @@
 // `--seco`: el modelo NO existe (responde un texto genérico); solo se evalúan los chequeos que decide el CÓDIGO (baja, texto fijo, sin agente, etiquetas escritas por el cliente) y los turnos que no llegan al modelo.
 //
 // Se corre desde la raíz del repositorio:
-//   node Flujos/experimental/rroca-evy/herramientas/bateria.mjs --seco
-//   node Flujos/experimental/rroca-evy/herramientas/bateria.mjs --env <archivo> --n 1 --confirmo-gasto [--crudo] [--conversaciones]
+//   node Flujos/clientes/rroca-evy/herramientas/bateria.mjs --seco
+//   node Flujos/clientes/rroca-evy/herramientas/bateria.mjs --env <archivo> --n 1 --confirmo-gasto [--crudo] [--conversaciones]
 //
 // OPCIONES (las de `chat-novuchat` más las propias)
 //   --seco  --n <1..20>  --casos A1,B2  --env <archivo>  --vertex <proyecto>  --locacion <región>  --json  --ayuda
@@ -36,7 +36,7 @@ import { doblesDeBateriaDelGuardado } from '../../../src/core/sin-agente/guardad
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RUTA_FLUJO = join(AQUI, '../rroca-evy.prueba.json');
-const RUTA_CASOS = join(AQUI, '../../rroca-evy-bateria/bateria-casos.json');
+const RUTA_CASOS = join(AQUI, '../../../experimental/rroca-evy-bateria/bateria-casos.json');
 const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);   // lunes 05/10/2026, 10:00 en La Paz
 const num = (...partes) => partes.join('');
 const PID = num('591', '7', '00', '00042');
