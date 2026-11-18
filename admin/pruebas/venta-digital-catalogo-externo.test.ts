@@ -96,7 +96,7 @@ describe('contrato 7: todo error pasa con un vendedor, con una frase fija que no
     ['400', { status: 400, body: { error: 'mercado_invalido' } }, 'mercado_invalido', true],
     ['503 sin cotización', { status: 503, body: { error: 'sin_cotizacion' } }, 'sin_cotizacion', false],
     ['500', { status: 500, body: {} }, 'interno', false],
-    ['404', { status: 404, body: {} }, 'interno', false],
+    ['404', { status: 404, body: {} }, 'version_no_soportada', true],
     ['tiempo agotado (sin status)', { status: undefined, body: undefined }, 'interno', false],
     ['cuerpo que no es objeto', { status: 200, body: 'texto' }, 'respuesta_invalida', true],
     ['sin items', { status: 200, body: { version: 1 } }, 'respuesta_invalida', true],
