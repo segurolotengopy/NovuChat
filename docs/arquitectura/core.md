@@ -778,6 +778,20 @@ Storage. Un QR guardado es lo que se ENVIÓ, nunca prueba de pago (CLAUDE.md, pr
 no escribe en cobros, pedidos ni conteo. Evy y Emma (sus imágenes de catálogo no se reportan hoy a la
 ingesta) y las imágenes de encabezado de un interactivo (chat de NovuChat, captación) quedan para el bloque 2b.
 
+### Saliente de imagen SIN CONTEO en la ingesta (16/11/2026, bloque 2b, servidor)
+
+Para Evy y Emma (fotos de catálogo por media id), decidido por Andres. El reporte `POST` de la ingesta
+acepta `sinConteo: true` **solo** con `direccion === 'saliente'` y `tipo === 'image'`; cualquier otra
+combinación, o un valor que no sea exactamente el booleano `true` (`'true'`, `1`, `null`), se ignora y el
+mensaje se cuenta como siempre (ante la duda, se cuenta). Con `sinConteo` válido la ingesta SOLO escribe el
+mensaje en el hilo (`idMeta` incluido, para la consola y `guardarMedio`) y devuelve el estado de atención sin
+escribirlo. NO toca: `mensajesTotal`, `respuestasDelPeriodo`, `mensajesVentana`, `periodoContado`,
+`atencionEstado`, métricas del mes (conversaciones, bloques adicionales, mensajes), ventana, corte, bolsa,
+aviso de umbral ni de consumo, `ultimoMensaje`/`ultimoEn`, origen, `solicitud` ni el pedido; tampoco crea la
+conversación si no existe, ni escribe el renglón `ingesta_mensaje` (que es lo que se agrupa para costo) ni la
+bitácora de mensaje. Prueba: `admin/pruebas/ingesta-sin-conteo.test.ts`. Es una puerta de servidor: el flujo
+que la use la declara; 0 mensajes de WhatsApp.
+
 ## Filtro común de redacción en `Flujos/src/core/texto/` (08/11/2026)
 
 `Flujos/src/core/texto/filtro-redaccion.js` (`cmMotivoDeRechazo`, `cmPulirRedaccion`, `cmRevisarRedaccion`…) es la **única fuente** del filtro de lo que redacta el modelo. **Origen histórico:** nació en `Flujos/experimental/comun-sin-agente/src/` (hoy `Flujos/src/core/sin-agente/`) y de ahí conserva el prefijo `cm` de sus funciones (no se renombra: los consumidores y las suites lo usan). El core no puede depender de experimental, por eso subió. Los 10 constructores que lo usan (captacion-minima, casa-bermejo, chat-novuchat, doctoras, rescate-22h, rroca-antonio, rroca-emma, rroca-evy, rroca-ruben, walisuma) declaran `raiz: ../..` (= `Flujos/`) y lo piden con `../../src/core/texto/filtro-redaccion.js`; sus salidas quedan idénticas byte a byte. Suites: `admin/pruebas/core/texto-filtro-redaccion*.test.ts`. Pendiente con dueño: las copias por cliente (`bm-venta.js`, `ev.js`, `wl-venta.js`, `chat.js`) las retira cada sesión de cliente al adoptar; la adopción en Q'Taco (`venta-minima`) va en el PR B. Costo: 0 mensajes por conversación, 0 nodos.
