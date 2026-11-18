@@ -37,8 +37,9 @@ Configuración del chequeo (se hace en su página, no hay nada en el repositorio
   sin cabeceras, sin cuerpo y sin credenciales. No es una URL de capacidad ni
   crea ejecuciones; **nunca** una ruta de webhook.
 - Cada 5 minutos, zona horaria `America/La_Paz`.
-- Avisos por correo encendidos los tres: al fallar, al recuperarse y **al
-  desactivarse el chequeo**.
+- Avisos por correo encendidos los cuatro: al fallar (tras 2 fallas seguidas),
+  al recuperarse, **al desactivarse el chequeo** y cuando al certificado le
+  quedan 14 días.
 - Cuenta a nombre de NovuChat, con un buzón de NovuChat que tenga su propio
   segundo factor; la contraseña la tiene solo Andres, es única y vive en su
   gestor de contraseñas. Si el servicio ofrece verificación en dos pasos, se
@@ -59,13 +60,13 @@ Dos cosas a saber de este servicio:
 
 **Qué se hace con la sonda de GitHub:** queda encendida y sin cambios, como
 segunda red. Sigue siendo la única que nombra la causa (`estado`) y la que mide
-el certificado. Su reporte diario falla si corrió menos de una vez por hora, y
-con la frecuencia observada eso pasa casi todos los días: ese correo diario
-habla de GitHub, no de n8n. Por lo mismo, el chequeo de Healthchecks que avisa
-si la sonda de GitHub deja de correr puede estar avisando seguido (su período
-no está en el repositorio y no se verificó). **Mientras GitHub no normalice su
-frecuencia, esas dos alarmas no dicen nada sobre n8n.** Ajustar el umbral del
-reporte o el período de ese chequeo queda como decisión pendiente de Andres.
+el certificado. Su **reporte diario se apagó el 17/11/2026** (decisión de
+Andres): fallaba si la sonda corría menos de una vez por hora, y con la
+frecuencia observada eso pasaba casi todos los días; ese correo hablaba de
+GitHub, no de n8n. Por lo mismo, el chequeo de Healthchecks que avisa si la
+sonda de GitHub deja de correr puede estar avisando seguido (su período no está
+en el repositorio y no se verificó): **mientras GitHub no normalice su
+frecuencia, esa alarma no dice nada sobre n8n.**
 
 ## Qué deja el latido cuando falla (17/11/2026)
 
@@ -100,7 +101,7 @@ fallidas de otros flujos que se usan para auditar.
 | Latido en silencio **y** una sonda externa fallando | **Incidente: n8n o la VM caídos** |
 | Latido en silencio y las sondas externas dan 200 | **Incidente: n8n responde pero no procesa** |
 | Latido al día y dos sondas externas fallan (cron-job.org y GitHub, o Better Stack si está configurada) | **Incidente de entrada**: dominio, certificado o proxy |
-| Certificado con menos de 14 días | Aviso: la renovación automática no está corriendo |
+| Certificado con menos de 14 días | La renovación automática no está corriendo. Desde el 17/11/2026 lo avisa cron-job.org por correo; el reporte de GitHub solo lo dice si se corre a pedido |
 | Certificado `sin_datos` en el reporte | No se pudo medir. Un certificado vencido o inválido corta la conexión de la medición, así que lo ve la sonda (estado `tls`), no el reporte |
 
 **Un correo es sospecha; dos correos de fuentes distintas en 15 minutos son
@@ -153,15 +154,22 @@ Chequeo de Healthchecks: período 12 horas y gracia 12 horas (silencio de un dí
 
 ## Reporte diario y latido del monitor
 
-- **Diario** (`.github/workflows/monitor-n8n-reporte.yml`, 08:10 de La Paz):
-  comenta en la Issue «Monitor n8n — reporte diario» cuántas sondas corrieron en
-  24 h y cuántos días le quedan al certificado. La corrida **falla una vez al
-  día** (un correo de GitHub) si la sonda casi no corrió, si la última falló o
-  si el certificado tiene menos de 14 días.
+- **Diario: apagado desde el 17/11/2026.** `.github/workflows/monitor-n8n-reporte.yml`
+  ya no corre solo; queda a pedido (`gh workflow run monitor-n8n-reporte.yml`)
+  y entonces comenta en la Issue «Monitor n8n — reporte diario» cuántas sondas
+  corrieron en 24 h y cuántos días le quedan al certificado. **Con el reporte
+  apagado nadie avisa solo de un certificado por vencer**: un certificado ya
+  vencido lo ven las sondas (fallan), pero el aviso anticipado de 14 días no
+  sale de GitHub. **Lo da cron-job.org desde el 17/11/2026**: el chequeo tiene
+  encendido el aviso «el certificado TLS del servidor está a punto de expirar»,
+  con 14 días de anticipación (opción vista en el formulario del chequeo ese
+  día; no figura en su página de preguntas frecuentes). Una corrida a pedido
+  del reporte va a fallar por «la sonda casi no corrió» mientras GitHub corra
+  la sonda 2 a 4 veces por día: se mira la línea del certificado.
 - **Semanal**: el informe de los lunes de Healthchecks, con el estado de sus
   chequeos.
-- **Si el reporte falta**: los workflows programados se desactivan juntos, así
-  que el chequeo de la sonda calla y Healthchecks avisa.
+- **Si GitHub desactiva los workflows programados** (60 días sin actividad),
+  el chequeo de Healthchecks de la sonda calla y avisa.
 
 ## Regla para las sesiones
 

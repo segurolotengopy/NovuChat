@@ -22,7 +22,8 @@
 #   REPORTE_CERTIFICADO   vigente | por_vencer | vencido | sin_datos
 #   REPORTE_DIAS          días que le quedan al certificado (entero)
 #
-# Salida: 0 todo bien · 1 hay algo que avisar (GitHub manda UN correo al día):
+# Salida: 0 todo bien · 1 hay algo que avisar (GitHub manda un correo por
+# corrida fallida; desde el 17/11/2026 el reporte corre solo a pedido):
 # el monitor casi no corrió, la última corrida falló, o el certificado está por
 # vencer o vencido · 2 entrada inválida.
 # Pruebas: admin/pruebas/plataforma/monitor-n8n-reporte.test.ts

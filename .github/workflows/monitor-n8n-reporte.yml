@@ -1,32 +1,37 @@
 # =============================================================================
 # monitor-n8n-reporte.yml — reporte diario del monitor externo de n8n
 # -----------------------------------------------------------------------------
+# APAGADO EL 17/11/2026 (decisión de Andres, por botón): ya no corre solo. La
+# sonda de GitHub corría 2 a 4 veces por día (GitHub retrasa o descarta los
+# `schedule`), así que este reporte fallaba casi todos los días por «la sonda
+# casi no corrió» y su correo diario no decía nada sobre n8n. La sonda regular
+# es cron-job.org; `monitor-n8n.yml` sigue como segunda red. Queda solo la
+# corrida a pedido (`workflow_dispatch`), para medir el certificado o contar
+# corridas cuando haga falta. Para volver a encenderlo: reponer el bloque
+# `schedule` con `- cron: '10 12 * * *'`.
+#
 # Política de Andres del 11/10/2026: cada monitor genera un reporte periódico
 # que prueba que sigue vivo. Diseño: docs/produccion/monitor-n8n.md.
 #
-# Qué hace, una vez al día (08:10 de La Paz): cuenta cuántas veces corrió la
+# Qué hace, cuando se lo corre a pedido: cuenta cuántas veces corrió la
 # sonda `monitor-n8n.yml` en 24 horas, mide el certificado y deja un comentario
-# en la Issue «Monitor n8n — reporte diario». La corrida FALLA (un correo de
-# GitHub al día, no uno cada 10 minutos) si:
+# en la Issue «Monitor n8n — reporte diario». La corrida FALLA si:
 #   - la sonda casi no corrió (menos de una vez por hora);
 #   - la última sonda falló;
 #   - al certificado le quedan menos de 14 días o está vencido.
+# Con la sonda corriendo 2 a 4 veces por día, la falla por «casi no corrió» es
+# esperable: en una corrida a pedido se mira la línea del certificado.
 #
 # El comentario se arma solo con números y palabras de una lista cerrada
 # (scripts/monitor/reporte-diario.sh): la Issue es pública.
 #
-# Quién vigila a este reporte: si GitHub desactiva los workflows programados
-# (60 días sin actividad), el chequeo de Healthchecks de la sonda calla y avisa.
-#
 # Encendido: la misma variable de repositorio MONITOR_N8N_ACTIVO = "si".
 # Costo: 0 mensajes de WhatsApp; 1 corrida, 1 comentario en una Issue y 1
-# registro de Deployments al día; 0 escrituras en la nube.
+# registro de Deployments por cada corrida a pedido; 0 escrituras en la nube.
 # =============================================================================
 name: Monitor de n8n — reporte diario
 
 on:
-  schedule:
-    - cron: '10 12 * * *'
   workflow_dispatch:
 
 permissions: {}
