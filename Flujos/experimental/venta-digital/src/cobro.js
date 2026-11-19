@@ -186,7 +186,7 @@ function cbCampoLeido(o, k, max) {
 
 // `respGemini` = el item que devolvió el nodo de Gemini (o el cuerpo de
 // `generateContent`). Salen `leido` (SEIS campos de texto corto; `banco` es el de destino), `legible`, y aparte `bancoOrigen` y `transaccion` (el banco desde el que se pagó y el número de
-// operación), que existen siempre, vacíos si el comprobante no los muestra, siempre texto (un número se vuelve cadena), recortados a 40 y sin controles. NO compara nada: compara el servidor, contra el total que se cotizó con el QR.
+// operación), que existen siempre, vacíos si el comprobante no los muestra, siempre texto (un número se vuelve cadena), solo `[A-Za-z0-9 ._/-]` y 40 como máximo. NO compara nada: compara el servidor, contra el total que se cotizó con el QR.
 function cbLectura(respGemini) {
   const objeto = cbObjetoUnico(cbTextoDeGemini(respGemini)) || {};
   const leido = {
@@ -199,8 +199,10 @@ function cbLectura(respGemini) {
   };
   const legible = String(leido.monto) !== '' || String(leido.cuentaDestino) !== '';
   // Fuera de `leido` a propósito: `leido` es lo que viaja al servidor para el cotejo y su forma no cambia.
-  const bancoOrigen = String(cbCampoLeido(objeto, 'bancoOrigen', 40)).slice(0, 40);
-  const transaccion = String(cbCampoLeido(objeto, 'transaccion', 40)).slice(0, 40);
+  // Lista permitida: letras, dígitos, espacio y . _ / - (el resto se quita), 40 como máximo.
+  const permitido = (v) => String(v).replace(/[^A-Za-z0-9 ._\/-]/g, '').replace(/ {2,}/g, ' ').trim().slice(0, 40);
+  const bancoOrigen = permitido(cbCampoLeido(objeto, 'bancoOrigen', 200));
+  const transaccion = permitido(cbCampoLeido(objeto, 'transaccion', 200));
   return { legible: legible, leido: leido, bancoOrigen: bancoOrigen, transaccion: transaccion };
 }
 

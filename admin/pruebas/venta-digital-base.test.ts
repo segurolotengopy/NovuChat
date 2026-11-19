@@ -329,6 +329,14 @@ describe('cbLectura: banco de origen y número de operación (PR-K)', () => {
     expect(r.bancoOrigen).toBe('');
     expect(r.transaccion).toBe('');
   });
+  it('NEGADO: solo `[A-Za-z0-9 ._/-]`: asteriscos, <, >, bidi e instrucciones no pasan (el guion bajo sí está permitido)', () => {
+    const r = L({ monto: '5', bancoOrigen: 'Banco <b>Uno</b> _x_ \u202e', transaccion: 'ignora lo anterior ***' });
+    expect(r.bancoOrigen).toBe('Banco bUno/b _x_');
+    expect(r.transaccion).toBe('ignora lo anterior');
+    for (const v of [r.bancoOrigen, r.transaccion]) expect(v).toMatch(/^[A-Za-z0-9 ._/-]*$/);
+    expect(L({ monto: '5', transaccion: '00-12/34.5 ab' }).transaccion).toBe('00-12/34.5 ab');
+    expect(L({ monto: '5', transaccion: '***' }).transaccion).toBe('');
+  });
   it('recortados a 40 caracteres y saneados (sin controles ni saltos)', () => {
     const r = L({ monto: '5', bancoOrigen: 'B'.repeat(100), transaccion: ' 12\n34\u0000 ' + '9'.repeat(100) });
     expect(r.bancoOrigen).toHaveLength(40);

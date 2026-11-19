@@ -26,6 +26,8 @@ const RAMA = 'origin/cartera/qtaco-visor-comprobantes';
 
 // DIVERGENCIA DECLARADA (PR-K, 18/11/2026): `cbLectura` ya NO es idéntica a su origen: devuelve además `bancoOrigen` y `transaccion` (fuera de `leido`, que conserva sus seis campos). Se prueba en `venta-digital-base.test.ts`.
 const DIVERGENTES = ['cbLectura'];
+// Su huella PROPIA (sha-256 de la declaración tal como está en la base común): si cambia, la prueba obliga a decidir. No se compara con venta-minima porque diverge a propósito.
+const HASH_DIVERGENTES: Record<string, string> = { cbLectura: '6783579b 75867ec6 65f6ec27 feb418ba 4313b1e9 e2f40086 df507792 6b8b310f' };
 const HASH_COBRO: Record<string, string> = {
   CB_PROHIBIDAS: '6eb20ca8 2eb48d4f 3d675979 ae617106 75db3911 102654f5 13d36474 ab1f135b',
   CB_TOTAL_MAXIMO: '8add9981 9246c1e1 b4f5a59c 386f0b8e b2100c4c d1632597 1e3645e6 82a015dd',
@@ -125,6 +127,15 @@ function suite(archivo: string, hashes: Record<string, string>): void {
     });
   });
 }
+describe('HUECOS del cobro: las declaraciones que divergen a propósito del origen tienen huella propia', () => {
+  for (const [nombre, hash] of Object.entries(HASH_DIVERGENTES)) {
+    it(nombre + ': su huella propia', () => {
+      const d = declaracion(leer(join(RROCA, 'cobro.js')), nombre);
+      expect(d, 'la base no trae ' + nombre).not.toBeNull();
+      expect(sha(d!), nombre + ' cambió: decidir y fijar la huella nueva').toBe(hash.replace(/ /g, ''));
+    });
+  }
+});
 suite('cobro.js', HASH_COBRO);
 suite('avisos.js', HASH_AVISOS);
 
