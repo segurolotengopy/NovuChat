@@ -24,7 +24,7 @@ if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: P
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { cotejarComprobanteVenta } = await import('../../../functions/src/modulos/cobros/cotejoVenta.ts');
-const { solicitudDeCobroTras } = await import('../../../functions/src/modulos/cobros/cobroVenta.ts');
+const { solicitudDeCobroTras, idDeCierreDeVenta } = await import('../../../functions/src/modulos/cobros/cobroVenta.ts');
 const { diaLaPaz } = await import('../../../functions/src/core/turno/correlativo.ts');
 
 const CON = 'codigo-pedido-con';     // con prefijo
@@ -145,6 +145,37 @@ describe('con prefijo configurado', () => {
     expect(codigos.every((c) => typeof c === 'string')).toBe(true);
     expect(new Set(codigos).size).toBe(5);
     expect((await contador(CON)).get('ultimo')).toBe(7);
+  });
+});
+
+describe('cierre previo sin código (lo registró otro camino) y luego hay prefijo', () => {
+  // DECISIÓN: si el cierre del pedido ya existía SIN código y el comercio ahora tiene prefijo, el cotejo que lo
+  // reescribe LE ASIGNA el código (uno solo, en la misma transacción que el contador) y lo guarda en el cierre; de ahí
+  // en adelante es idempotente: el reintento y el segundo comprobante devuelven ese mismo, sin mover el contador.
+  it('se le asigna un código una sola vez y después se repite el mismo', async () => {
+    const tel = '59100000121';
+    await sembrar(CON, tel);
+    await db.doc(`tenants/${CON}/cierres/${idDeCierreDeVenta(`wamid.qr-${tel}`)}`).set({
+      tipo: 'venta', ocurridoEn: Timestamp.now(), referencia: `wamid.qr-${tel}`, monto: 100, moneda: 'BOB',
+    });
+    const antes = (await contador(CON)).get('ultimo');
+    const r = await comp(NUM_CON, tel, '100', 'wamid.pc1');
+    expect(r.cuerpo).toMatchObject({ estado: 'valido', codigoPedido: `WAL-${diaLaPaz(Date.now())}-${String(antes + 1).padStart(3, '0')}` });
+    expect((await db.doc(`tenants/${CON}/cierres/${idDeCierreDeVenta(`wamid.qr-${tel}`)}`).get()).get('codigoPedido')).toBe(r.cuerpo.codigoPedido);
+    expect((await contador(CON)).get('ultimo')).toBe(antes + 1);
+    const otra = await comp(NUM_CON, tel, '100', 'wamid.pc1');            // reintento
+    const segundo = await comp(NUM_CON, tel, '100', 'wamid.pc1-bis');    // otro comprobante del mismo pedido
+    expect(otra.cuerpo.codigoPedido).toBe(r.cuerpo.codigoPedido);
+    expect(segundo.cuerpo.codigoPedido).toBe(r.cuerpo.codigoPedido);
+    expect((await contador(CON)).get('ultimo')).toBe(antes + 1);
+  });
+  it('un cierre previo SIN prefijo en el comercio sigue sin código', async () => {
+    const tel = '59100000203';
+    await sembrar(SIN, tel);
+    await db.doc(`tenants/${SIN}/cierres/${idDeCierreDeVenta(`wamid.qr-${tel}`)}`).set({ tipo: 'venta', ocurridoEn: Timestamp.now(), referencia: `wamid.qr-${tel}`, monto: 100, moneda: 'BOB' });
+    const r = await comp(NUM_SIN, tel, '100', 'wamid.pc2');
+    expect(r.cuerpo.estado).toBe('valido');
+    expect('codigoPedido' in r.cuerpo).toBe(false);
   });
 });
 

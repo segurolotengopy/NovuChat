@@ -151,6 +151,10 @@ export const cotejarComprobanteVenta = onRequest(
       db.doc(`tenants/${tenantId}/config/negocio`).get(),
       db.doc(`tenants/${tenantId}/config/pedidos`).get(),
     ]);
+    // COSTO (PR-S): 1 lectura de `config/pedidos` por cotejo de TODOS los comercios (fuera de la transacción, junto a las
+    // otras dos; no se difiere a «solo si va a cerrar» porque eso se sabe dentro de la transacción y una lectura
+    // nueva ahí chocaría con el orden lecturas-antes-de-escrituras). Con prefijo, además, 1 lectura + 1 escritura del
+    // contador del día, solo en el cotejo que cierra. Sin prefijo: ninguna escritura nueva, ningún contador.
     // Sin prefijo no hay código ni contador: los demás comercios no notan nada.
     const prefijo = prefijoDeCodigo(configPedidos.data());
     const moneda = String(negocio.get('moneda') ?? 'BOB');
