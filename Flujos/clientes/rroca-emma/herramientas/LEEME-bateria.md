@@ -17,8 +17,8 @@
 ## Cómo correrla (la corre Andres o la coordinación, con clave de PRUEBAS y gasto autorizado)
 
 ```
-node Flujos/experimental/rroca-emma/herramientas/bateria.mjs --seco                  # sin costo: chequeos del código, 0 fallos
-node Flujos/experimental/rroca-emma/herramientas/bateria.mjs --env <archivo> --n 1 --confirmo-gasto --motivo [--grupos G,E] [--duros]
+node Flujos/clientes/rroca-emma/herramientas/bateria.mjs --seco                  # sin costo: chequeos del código, 0 fallos
+node Flujos/clientes/rroca-emma/herramientas/bateria.mjs --env <archivo> --n 1 --confirmo-gasto --motivo [--grupos G,E] [--duros]
 ```
 
 - La clave de pruebas tiene un límite bajo de peticiones por minuto: el motor pausa 4500 ms entre llamadas (`--pausa-ms`). Una corrida completa con `--n 1` cuesta del orden de 0,15 USD (previsto por el propio motor en seco); por grupos, mucho menos.

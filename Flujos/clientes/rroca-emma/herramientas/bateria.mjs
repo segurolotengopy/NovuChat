@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // BATERÍA DEL FLUJO NUEVO DE LA DRA. EMMA (tenant rroca-emma) CONTRA EL MODELO REAL.
 //
-// QUÉ ES. Corre los casos de Silvana (`Flujos/experimental/rroca-emma/herramientas/bateria-casos.json`: solo datos, adaptados de los de Evy) por el flujo armado de PRUEBA (`rroca-emma.prueba.json`): recorre su grafo nodo por nodo y corre de
+// QUÉ ES. Corre los casos de Silvana (`Flujos/clientes/rroca-emma/herramientas/bateria-casos.json`: solo datos, adaptados de los de Evy) por el flujo armado de PRUEBA (`rroca-emma.prueba.json`): recorre su grafo nodo por nodo y corre de
 // verdad los nodos Code del JSON. Lo ÚNICO que sale a la red es «Conversar con el modelo» (el cuerpo EXACTO que arma `evCuerpoModelo`, con el prompt versionado y la memoria): la consola, la ingesta, Graph, los medios y los
 // avisos van simulados y en memoria. El motor del grafo (`crearMundo`), la llamada a Gemini, la lectura de la clave y los argumentos se IMPORTAN de `chat-novuchat/herramientas/bateria.mjs`: no se copia otro motor.
 //
@@ -11,8 +11,8 @@
 // `--seco`: el modelo NO existe (responde un texto genérico); solo se evalúan los chequeos que decide el CÓDIGO (baja, texto fijo, sin agente, etiquetas escritas por el cliente) y los turnos que no llegan al modelo.
 //
 // Se corre desde la raíz del repositorio:
-//   node Flujos/experimental/rroca-emma/herramientas/bateria.mjs --seco
-//   node Flujos/experimental/rroca-emma/herramientas/bateria.mjs --env <archivo> --n 1 --confirmo-gasto [--crudo] [--conversaciones]
+//   node Flujos/clientes/rroca-emma/herramientas/bateria.mjs --seco
+//   node Flujos/clientes/rroca-emma/herramientas/bateria.mjs --env <archivo> --n 1 --confirmo-gasto [--crudo] [--conversaciones]
 //
 // OPCIONES (las de `chat-novuchat` más las propias)
 //   --seco  --n <1..20>  --casos A1,B2  --env <archivo>  --vertex <proyecto>  --locacion <región>  --json  --ayuda

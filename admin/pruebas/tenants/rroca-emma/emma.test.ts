@@ -10,10 +10,10 @@ import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error el motor es un .mjs sin tipos
-import { main } from '../../../../Flujos/experimental/rroca-emma/herramientas/bateria.mjs';
+import { main } from '../../../../Flujos/clientes/rroca-emma/herramientas/bateria.mjs';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
-import { NODOS_DE_CRM } from '../../../../Flujos/experimental/rroca-emma/construir.mjs';
+import { NODOS_DE_CRM } from '../../../../Flujos/clientes/rroca-emma/construir.mjs';
 import { ANA, CARPETA, HORARIO_DE_LA_CONSOLA, IDS, PRODUCCION, PRUEBA, REC, avisosARecepcion, conPreferencia, crear, esPreguntaDePreferencia, dice, hablar, hablarYa, imagenes, mImagen, mTexto, panelOk, textos } from './mundo';
 
 const sin = (t: string, ...palabras: string[]): boolean => palabras.every((p) => !t.toLowerCase().includes(p.toLowerCase()));
