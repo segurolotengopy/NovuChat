@@ -71,7 +71,7 @@ describe('receptor: camino feliz del esqueleto', () => {
     const m = crear();
     const t = hablar(m, ANA, mSticker());
     expect(t.mensajes).toHaveLength(1);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/solo puedo leer texto/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/solo podemos leer texto/);
     expect(hablar(m, ANA, mTexto('hola, ¿tienen mantas?')).mensajes).toHaveLength(1);
   });
   it('un número de otro país recibe el texto fijo UNA vez en 24 horas', () => {

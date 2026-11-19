@@ -726,7 +726,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@todo+baja:nodos/decidir-turno.js"
+        "jsCode": "@@todo+baja+titular:nodos/decidir-turno.js"
       },
       "id": "decidir-turno",
       "name": "Decidir turno",

@@ -25,7 +25,7 @@ describe('el titular de una campaña vigente lleva al producto por código', () 
     const m = crear({ panel: panelOk({ anuncios: [ANUNCIO] }), medio: { clasificacion: imagenDe('Oferta de otra tienda en mochilas') } });
     const cuerpo = textos(hablar(m, ANA, mImagen())).join(' ');
     expect(cuerpo).not.toMatch(/tenemos|Bs \d/);
-    expect(cuerpo).toMatch(/Cuéntame por escrito/);
+    expect(cuerpo).toMatch(/Cuéntenos por escrito/);
   });
   it('NEGADO: sin campañas en la consola (o ya vencidas) la misma imagen no reconoce nada', () => {
     const m = crear({ panel: panelOk({ anuncios: [] }), medio: { clasificacion: imagenDe('Bufandas de vicuña para este invierno') } });

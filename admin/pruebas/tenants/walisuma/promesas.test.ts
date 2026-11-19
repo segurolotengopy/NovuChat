@@ -28,7 +28,7 @@ describe('el error del modelo, la pieza sin precio y el volumen pasan con recepc
       expect(t.mensajes).toHaveLength(1);
       expect(BOTON(t)).toBe(true);
       expect(t.avisos).toHaveLength(1);
-      expect(t.mensajes[0]?.cuerpo).toMatch(/Ya avisé a recepción/);
+      expect(t.mensajes[0]?.cuerpo).toMatch(/Pasamos .* a nuestra encargada/);
       expect(t.mensajes[0]?.cuerpo).not.toMatch(PROMESA);
     });
   }
@@ -42,19 +42,19 @@ describe('el error del modelo, la pieza sin precio y el volumen pasan con recepc
 describe('«ya avisé» solo con un wamid real', () => {
   it('NEGADO: si Meta rechaza el aviso, el cliente lee que no se pudo avisar y el botón (no «ya avisé»)', () => {
     const t = deriva({ aviso: 'error' }, 'quiero hablar con una persona');
-    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé/);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/No pude avisar a recepción/);
+    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Pasamos/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/No pudimos avisar a nuestra encargada/);
     expect(BOTON(t)).toBe(true);
   });
   it('NEGADO: si la red del aviso cae, tampoco', () => {
     const t = deriva({ aviso: 'lanza' }, 'quiero hablar con una persona');
-    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé/);
+    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Pasamos/);
     expect(BOTON(t)).toBe(true);
   });
   it('NEGADO: sin plantilla aprobada (y fuera de la ventana del comercio) no hay aviso y no se dice que se avisó', () => {
-    const t = deriva({ base: { avisoPedidoEstado: 'PENDING' } }, 'quiero hablar con una persona');
+    const t = deriva({ base: { avisoPedidoEstado: 'PENDING', avisoRespaldoEstado: 'PENDING' } }, 'quiero hablar con una persona');
     expect(t.avisos).toHaveLength(0);
-    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé/);
+    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Pasamos/);
     expect(BOTON(t)).toBe(true);
   });
   it('a lo más UN aviso de consulta cada 30 minutos: el segundo dice que recepción ya lo recibió', () => {
@@ -62,8 +62,8 @@ describe('«ya avisé» solo con un wamid real', () => {
     expect(hablar(m, ANA, mTexto('quiero hablar con una persona')).avisos).toHaveLength(1);
     const t2 = hablar(m, ANA, mTexto('necesito factura'));
     expect(t2.avisos).toHaveLength(0);
-    expect(t2.mensajes[0]?.cuerpo).toMatch(/ya recibió tu aviso anterior/);
-    expect(t2.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé a recepción;/);
+    expect(t2.mensajes[0]?.cuerpo).toMatch(/ya recibió su aviso anterior/);
+    expect(t2.mensajes[0]?.cuerpo).not.toMatch(/Pasamos su consulta a nuestra encargada;/);
   });
 });
 
@@ -88,9 +88,9 @@ describe('el modelo no promete lo que no se cumple', () => {
     expect(t.mensajes.every((x) => x.tipo !== 'image')).toBe(true);
     expect(t.avisos).toHaveLength(1);
     const vars = (t.avisos[0]?.payload['template'] as any).components[0].parameters.map((p: { text: string }) => p.text); // eslint-disable-line @typescript-eslint/no-explicit-any
-    expect(vars[3]).toBe('sin comprobante aún');
+    expect(vars[0]).toMatch(/comprobante: sin comprobante aún/);
     expect(t.mensajes[0]?.cuerpo).toMatch(/el pago por QR no está disponible/);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/Ya avisé a recepción/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/Pasamos .* a nuestra encargada/);
     expect(BOTON(t)).toBe(true);
   });
 });

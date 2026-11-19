@@ -22,7 +22,47 @@ export const BETO = '59100000022';
 export const EXTRANJERO = '5491100000033'; // prefijo 54: fuera de los prefijos permitidos
 export const REC = '59100000031'; // recepción
 export const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
-export const SUSPENDIDO = 'En este momento no podemos atenderte por este medio. Gracias por escribirnos.';
+export const SUSPENDIDO = 'En este momento no podemos atenderle por este medio. Gracias por escribirnos.';
+
+// ------------------------------------------------------------------------------ los contratos de otros PR, SIMULADOS (fase 1, 18/11/2026)
+// Mientras PR-K no esté en esta rama, «Normalizar entrada» e «Interpretar lectura» se envuelven aquí para publicar los campos del contrato. TODO mundo corre con esta simulación.
+// ------------------------------------------------------------------------------------------- la simulación de los contratos de PR-K
+const SHIM_ENTRADA = `
+let __c = {}; try { __c = $('Carga de entrada').first().json || {}; } catch (e) { __c = {}; }
+const __m = Array.isArray(__c.messages) ? __c.messages[0] : null;
+if (Array.isArray(__r) && __r[0] && __r[0].json && __m) {
+  const j = __r[0].json;
+  const l = __m.type === 'location' && __m.location ? __m.location : null;
+  j.ubicacion = l && typeof l.latitude === 'number' && typeof l.longitude === 'number' && !(l.latitude === 0 && l.longitude === 0) ? { lat: l.latitude, lng: l.longitude } : null;
+  if (j.ubicacion) j.categoria = 'conversacion';
+  const ref = __m.referral && typeof __m.referral === 'object' ? __m.referral : null;
+  j.anuncioId = ref ? String(ref.source_id || '').slice(0, 40) : '';
+  j.anuncioTitular = ref ? String(ref.headline || '').slice(0, 120) : '';
+  j.anuncioCuerpo = ref ? String(ref.body || '').slice(0, 300) : '';
+}
+return __r;`;
+// La lectura: se agregan los dos campos de PR-K dentro del MISMO código del nodo, justo después de `cbLectura` (lo leído de la misma respuesta de Gemini).
+const ANCLA_LECTURA = "const lectura = cbLectura(cnPrimero('Describir documento') || cnPrimero('Describir imagen'));";
+const SHIM_LECTURA = `${ANCLA_LECTURA}
+{ const __o = cbObjetoUnico(cbTextoDeGemini(cnPrimero('Describir documento') || cnPrimero('Describir imagen'))) || {};
+  lectura.leido.bancoOrigen = String(__o.bancoOrigen || '').slice(0, 40); lectura.leido.transaccion = String(__o.transaccion || '').slice(0, 40); }`;
+function envolver(f: Flujo, nodo: string, shim: string): void {
+  const n = f.nodes.find((x) => x.name === nodo) as J;
+  const js = String(n['parameters']['jsCode']);
+  // El código del nodo es: librerías + el nodo (con `return` de nivel superior). Se envuelve SOLO el cuerpo, en una función.
+  n['parameters']['jsCode'] = `const __r = (() => {\n${js}\n})();\n${shim}`;
+}
+export function conContratos(base: Flujo): Flujo {
+  const f = JSON.parse(JSON.stringify(base)) as Flujo;
+  envolver(f, 'Normalizar entrada', SHIM_ENTRADA);
+  const il = f.nodes.find((x) => x.name === 'Interpretar lectura') as J;
+  const js = String(il['parameters']['jsCode']);
+  if (!js.includes(ANCLA_LECTURA)) throw new Error('«Interpretar lectura» cambió: la simulación del contrato de PR-K ya no aplica');
+  il['parameters']['jsCode'] = js.replace(ANCLA_LECTURA, SHIM_LECTURA);
+  return f;
+}
+/** La variante de producción con los contratos simulados: el mundo por omisión. */
+export const CON_CONTRATOS = conContratos(PRODUCCION);
 
 // ------------------------------------------------------------------------------ mensajes entrantes
 let seq = 0;
@@ -65,6 +105,8 @@ export interface Opciones {
   base?: Record<string, unknown>;
   /** Lo que devuelven los medios. */
   medio?: { bytes?: number; url?: string; mime?: string; transcripcion?: string | null; clasificacion?: J | null };
+  /** El reloj del mundo (por omisión AHORA: lunes 05/10/2026, 10:00 en La Paz). */
+  ahoraMs?: number;
 }
 /** El catálogo de PRUEBA (no es el real): piezas con precio, un tapiz SIN precio (a consultar) y un licor apagado. */
 export const CATALOGO = [
@@ -142,13 +184,13 @@ export function crear(o: Opciones = {}): Mundo {
     'Enviar respaldo': enviar('Enviar respaldo'),
   };
   return crearMundo({
-    flujo: o.flujo ?? PRODUCCION,
+    flujo: o.flujo ?? CON_CONTRATOS,
     dobles,
     roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Avisar al servidor'] },
-    ahoraMs: AHORA,
+    ahoraMs: o.ahoraMs ?? AHORA,
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`, nombreNegocio: 'Tienda de prueba',
-      contactoAviso: REC, avisoPedidoPlantilla: 'pedido_registrado', avisoPedidoEstado: 'APPROVED', avisoPlantillaIdioma: 'es', modosDeEntrega: 'Envío en La Paz, Envío en Santa Cruz, Envío nacional, Recojo en tienda', envioGratisDesdeBs: 500,
+      contactoAviso: REC, avisoPedidoPlantilla: 'aviso_pedido_equipo', avisoPedidoEstado: 'APPROVED', avisoRespaldoPlantilla: 'pedido_registrado', avisoRespaldoEstado: 'APPROVED', avisoPlantillaIdioma: 'es', modosDeEntrega: 'Envío en La Paz, Envío en Santa Cruz, Envío nacional, Recojo en tienda', envioGratisDesdeBs: 500,
       tiendaLaPaz: 'Calle Claudio Aliaga 1231, San Miguel', tiendaSantaCruz: 'Av. Marcelo Terceros (3er anillo externo) esq. Flamboyanos',
       ...(o.base ?? {}),
     },

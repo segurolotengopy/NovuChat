@@ -6,7 +6,8 @@
 import { describe, expect, it } from 'vitest';
 import { ANA, crear, hablar, mTexto, panelConQr } from './mundo';
 
-const TUTEO = 'Entendido, tomé nota de que no quieres recibir más mensajes. Si más adelante necesitas algo, escríbeme cuando quieras.';
+// La confirmación del tenant, de USTED (decisión 11 de Andres, 18/11/2026; `bjTextoBaja(WL_TEXTO_BAJA)`). El nombre de la constante se conserva para no tocar las pruebas que la usan.
+const TUTEO = 'Entendido, tomamos nota de que no desea recibir más mensajes. Si más adelante necesita algo, escríbanos cuando quiera.';
 const corridos = (t: ReturnType<typeof hablar>): string[] => t.registro.map((r) => r.nodo);
 /** El `evento` que «Reportar mensaje (entrante)» mandó al servidor en el turno (`no_contactar` apaga seguimientos y rescates). */
 const eventoDelEntrante = (t: ReturnType<typeof hablar>): unknown => t.registro.find((r) => r.nodo === 'Reportar mensaje (entrante)')?.cuerpo?.['evento'];
