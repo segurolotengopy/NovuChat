@@ -8,12 +8,15 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { carpetaDeFlujo } from '../../lib/carpeta-de-flujo';
 import { describe, expect, it } from 'vitest';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental');
+const FLUJOS = join(RAIZ, '..');
+const carpeta = (c: string): string => join(FLUJOS, carpetaDeFlujo(c), c);
 type Turno = { r: 'u' | 'a'; t: string };
 const cargar = (cliente: string): ((texto: string, historial: Turno[]) => string) => {
-  const codigo = readFileSync(join(RAIZ, `${cliente}/src/lib/ev.js`), 'utf8');
+  const codigo = readFileSync(join(carpeta(cliente), 'src/lib/ev.js'), 'utf8');
   const lib = runInNewContext(`const EV_PROMPT='';\n${readFileSync(join(RAIZ, '../src/core/texto/filtro-redaccion.js'), 'utf8')}\n${codigo}\n({ f: evNombreDelMensaje })`, {}) as { f: (t: string, h: Turno[]) => string };
   return lib.f;
 };

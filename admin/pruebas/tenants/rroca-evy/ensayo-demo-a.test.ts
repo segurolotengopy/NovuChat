@@ -24,7 +24,7 @@ import { ANA, PRODUCCION as PROD, PRUEBA as PRU, REC, avisosARecepcion, crear, d
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
-const CARPETA = join(REPO, 'Flujos/experimental/rroca-evy');
+const CARPETA = join(REPO, 'Flujos/clientes/rroca-evy');
 const DATOS = join(REPO, 'admin/scripts/datos/rroca-evy');
 const mod = (await import(pathToFileURL(join(CARPETA, 'construir.mjs')).href)) as {
   construir: (o?: J) => unknown[];

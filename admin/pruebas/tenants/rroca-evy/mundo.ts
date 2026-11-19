@@ -9,12 +9,12 @@ import { fileURLToPath } from 'node:url';
 import type { Flujo, J } from '../../lib/flujo';
 import { horarioAtencion } from '../../../functions/src/core/prompt/prompt';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { ES_RELE } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
+import { ES_RELE } from '../../../../Flujos/clientes/rroca-evy/construir.mjs';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { doblesDelGuardado } from '../../lib/doble-guardado';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-export const CARPETA = join(AQUI, '../../../../Flujos/experimental/rroca-evy');
+export const CARPETA = join(AQUI, '../../../../Flujos/clientes/rroca-evy');
 export const CARPETA_DE_DATOS = join(AQUI, '../../../scripts/datos/rroca-evy');
 export const leerFlujo = (a: string): Flujo => JSON.parse(readFileSync(join(CARPETA, a), 'utf8')) as Flujo;
 export const PRODUCCION = leerFlujo('rroca-evy.json');

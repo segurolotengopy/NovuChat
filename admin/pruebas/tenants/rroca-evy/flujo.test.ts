@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { ES_RELE, NODOS_DE_CRM } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
+import { ES_RELE, NODOS_DE_CRM } from '../../../../Flujos/clientes/rroca-evy/construir.mjs';
 import { ANA, BETO, CARPETA, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, conPreferencia, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
 
 describe('topología y tamaño', () => {

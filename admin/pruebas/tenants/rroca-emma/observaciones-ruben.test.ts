@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { carpetaDeFlujo } from '../../lib/carpeta-de-flujo';
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import { ANA, BETO, REC, avisosARecepcion, crear, dice, esPreguntaDePreferencia, hablar, mTexto, panelOk, textos } from './mundo';
@@ -20,7 +21,9 @@ import { ANA, BETO, REC, avisosARecepcion, crear, dice, esPreguntaDePreferencia,
 const CLIENTE: string = 'rroca-emma';
 const ES_EVY = CLIENTE === 'rroca-' + 'evy';
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental');
-const LIB = readFileSync(join(RAIZ, `${CLIENTE}/src/lib/ev.js`), 'utf8');
+const FLUJOS = join(RAIZ, '..');
+const carpeta = (c: string): string => join(FLUJOS, carpetaDeFlujo(c), c);
+const LIB = readFileSync(join(carpeta(CLIENTE), 'src/lib/ev.js'), 'utf8');
 type Lib = { evPulirSalida: (t: string, c: J) => { texto: string; motivo: string }; evDeclina: (t: string, h: J[]) => boolean; evSoloSaludo: (t: string, n: string) => boolean; evTelefonoNacional: (n: string) => string };
 const lib = runInNewContext(`const EV_PROMPT='';\n${readFileSync(join(RAIZ, '../src/core/texto/filtro-redaccion.js'), 'utf8')}\n${LIB}\n({ evPulirSalida, evDeclina, evSoloSaludo, evTelefonoNacional })`, {}) as Lib;
 
@@ -363,7 +366,7 @@ describe('(4) sin «bonificado»; los 250 Bs solo en la bienvenida', () => {
   });
   it('NEGADA: ningún texto fijo dice «bonific» (cierre, gratuidad, oferta, preferencia, saludo) y el prompt tampoco', () => {
     expect(LIB).not.toMatch(/'[^'\n]*bonific[^'\n]*'/i);
-    const prompt = readFileSync(join(RAIZ, CLIENTE, `prompts/${ES_EVY ? 'evy' : 'emma'}.md`), 'utf8');
+    const prompt = readFileSync(join(carpeta(CLIENTE), `prompts/${ES_EVY ? 'evy' : 'emma'}.md`), 'utf8');
     expect(prompt).not.toMatch(/bonific/i);
     expect(prompt).toContain('sin pagar nada para agendar');
   });
@@ -520,7 +523,7 @@ describe('rendimiento de las expresiones nuevas (CodeQL js/redos)', () => {
 
 describe('la copia es la misma en las dos doctoras', () => {
   it('el bloque de las observaciones es idéntico byte a byte en los dos flujos', () => {
-    const bloque = (c: string) => { const t = readFileSync(join(RAIZ, `${c}/src/lib/ev.js`), 'utf8'); return t.slice(t.indexOf('// OBSERVACIONES DE RUBÉN (decisiones de Andres, 28/10/2026)')).replace(/\/\/ (?:\(4\) SIN «BONIFICADO»|DECISIÓN DE ANDRES \(08\/11\/2026, «la letra del MD»\))[\s\S]*?\nfunction evSinBonificado\(texto\) \{[\s\S]*?\n\}\n/, ''); };
+    const bloque = (c: string) => { const t = readFileSync(join(carpeta(c), 'src/lib/ev.js'), 'utf8'); return t.slice(t.indexOf('// OBSERVACIONES DE RUBÉN (decisiones de Andres, 28/10/2026)')).replace(/\/\/ (?:\(4\) SIN «BONIFICADO»|DECISIÓN DE ANDRES \(08\/11\/2026, «la letra del MD»\))[\s\S]*?\nfunction evSinBonificado\(texto\) \{[\s\S]*?\n\}\n/, ''); };
     const [a, b] = ['rroca-' + 'evy', 'rroca-emma'].map(bloque);
     expect(a!.length).toBeGreaterThan(1000);
     expect(a).toBe(b);

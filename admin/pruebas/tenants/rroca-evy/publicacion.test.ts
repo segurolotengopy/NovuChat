@@ -12,11 +12,11 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { ARCHIVO_DE_DATOS, ARCHIVO_DE_NEGOCIO, guardiaDePublicacion } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
+import { ARCHIVO_DE_DATOS, ARCHIVO_DE_NEGOCIO, guardiaDePublicacion } from '../../../../Flujos/clientes/rroca-evy/construir.mjs';
 import { ANA, AJENO, BETO, IDS, PRODUCCION, PRUEBA, REC, crear, entrega, mTexto, valorMeta } from './mundo';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
-const CONSTRUIR = join(REPO, 'Flujos/experimental/rroca-evy/construir.mjs');
+const CONSTRUIR = join(REPO, 'Flujos/clientes/rroca-evy/construir.mjs');
 const copia = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const MARCADORES = /REEMPLAZAR_[A-Z0-9][A-Z0-9_]*/g;
 type Asignacion = { name: string; value: unknown };

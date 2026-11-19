@@ -178,7 +178,11 @@ node admin/scripts/plataforma/asignar-plan.mjs --proyecto <proyecto> --operador 
 node admin/scripts/modulos/productos/contar-catalogo.mjs --proyecto <proyecto> --tenant <id>
 node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --listar
 node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --numero <phone_number_id> --waba <waba_id> --flujo <flujo> --alias <clienteNN>
+# Solo si el comercio vende con catálogo externo (NovuTienda): enciende `config/pedidos.catalogoExterno` (seco primero; luego --aplicar con --respaldo)
+node admin/scripts/plataforma/aplicar-catalogo-externo.mjs --proyecto <proyecto> --tenant <id> --monedas <BOB|ARS|BOB,ARS>
 ```
+
+**Credencial del catálogo de NovuTienda en n8n** (comercio con catálogo externo; el token llega en un archivo de modo 600 que entrega la sesión de NovuTienda, nunca por un chat): `./scripts/cargar-credencial-catalogo.sh --nombre "NovuTienda catálogo (<comercio>)" --archivo <ruta> --env <.env de referencia>` en seco; con `--aplicar --confirmo "<mismo nombre>"` la crea una vez y borra el archivo (`--conservar` lo deja; si falla, se conserva). La de ingesta se crea con `./scripts/rotar-ingesta.sh crear`. El token de WhatsApp (Graph) no se toca desde NovuChat.
 
 - **El plan y el contador del catálogo.** `alta-comercio.mjs` deja al comercio
   en **Impulso**, con la copia de sus límites en `cuenta/estado.limites` (lo que
