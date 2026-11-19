@@ -251,6 +251,68 @@ describe('plazo', () => {
   });
 });
 
+describe('el evento de factura NO es un mensaje (revisión del PR-F)', () => {
+  it('con texto «Mariana Quiroga NIT 1234567»: nada guarda el NIT y ningún contador cambia', async () => {
+    const tel = '59100000084';
+    await sembrarQr(CON, tel);
+    const cod = (await cotejar(CON, tel, 'wamid.fp1')).cuerpo.codigoPedido as string;
+    await reportar(CON, tel, {});  // un mensaje común, para tener contadores
+    const MES = new Date().toISOString().slice(0, 7);
+    const metricas = async () => (await db.doc(`tenants/${CON}/metricas/${MES}`).get()).data() ?? {};
+    const mensajes = async () => (await db.collection(`tenants/${CON}/conversaciones/wa_${tel}/mensajes`).get()).size;
+    const antesC = await conversacion(CON, tel);
+    const antesM = await metricas();
+    const antesN = await mensajes();
+    const TEXTO = 'Mariana Quiroga NIT 1234567';
+    const r = await reportar(CON, tel, { direccion: 'entrante', evento: 'factura_dada', codigoPedido: cod, texto: TEXTO, nombreContacto: 'Mariana' });
+    expect(r).toEqual({ codigo: 200, cuerpo: { factura: 'marcada' } });
+    const c = await conversacion(CON, tel);
+    expect(JSON.stringify(c)).not.toContain('1234567');
+    for (const k of ['ultimoMensaje', 'ultimoEn', 'mensajesTotal', 'noLeidos', 'sinLeer', 'atencionDesde', 'ultimoEntranteEn',
+      'ventanaVenceEn', 'periodoContado', 'respuestasDelPeriodo', 'mensajesVentana', 'nombreContacto']) {
+      expect(c[k], k).toEqual(antesC[k]);
+    }
+    expect(c['ultimoPedido']).toMatchObject({ codigo: cod, factura: 'dada' });
+    expect(await metricas()).toEqual(antesM);
+    expect(await mensajes()).toBe(antesN);
+    for (const m of (await db.collection(`tenants/${CON}/conversaciones/wa_${tel}/mensajes`).get()).docs) expect(JSON.stringify(m.data())).not.toContain('1234567');
+    for (const b of (await db.collection(`tenants/${CON}/bitacora`).get()).docs) expect(JSON.stringify(b.data())).not.toContain('1234567');
+  });
+
+  it('un rechazo con texto tampoco lo guarda en ningún lado', async () => {
+    const tel = '59100000085';
+    const r = await reportar(CON, tel, { direccion: 'entrante', evento: 'factura_dada', codigoPedido: 'WAL-261119-777', texto: 'NIT 1234567' });
+    expect(r.cuerpo).toEqual({ factura: 'rechazada' });
+    expect((await db.doc(`tenants/${CON}/conversaciones/wa_${tel}`).get()).exists).toBe(false);
+    for (const b of (await db.collection(`tenants/${CON}/bitacora`).get()).docs) expect(JSON.stringify(b.data())).not.toContain('1234567');
+  });
+
+  it('contacto bloqueado: no_aplicado, nada se marca', async () => {
+    const tel = '59100000086';
+    await sembrarQr(CON, tel);
+    const cod = (await cotejar(CON, tel, 'wamid.fb1')).cuerpo.codigoPedido as string;
+    await db.doc(`tenants/${CON}/conversaciones/wa_${tel}`).update({ bloqueada: true });
+    const r = await reportar(CON, tel, { evento: 'factura_dada', codigoPedido: cod });
+    expect(r.cuerpo).toEqual({ factura: 'no_aplicado' });
+    expect((await conversacion(CON, tel))['ultimoPedido'].factura).toBe('pedida');
+  });
+});
+
+describe('plazoFacturaDias de punta a punta', () => {
+  const casos: [unknown, number][] = [['abc', 30], ['45', 30], [3.5, 30], [-5, 30], [0, 30], [1e9, 90], [45, 45]];
+  for (const [i, [valor, dias]] of casos.entries()) {
+    it(`plazoFacturaDias = ${JSON.stringify(valor)} → ${dias} días`, async () => {
+      await db.doc(`tenants/${OTRO}/config/pedidos`).set({ prefijoCodigo: 'OTR', plazoFacturaDias: valor });
+      const tel = `5910000002${i}`;
+      await sembrarQr(OTRO, tel);
+      const r = await cotejar(OTRO, tel, `wamid.pz${i}`);
+      expect(r.cuerpo.codigoPedido).toMatch(/^OTR-/);
+      const u = (await conversacion(OTRO, tel))['ultimoPedido'];
+      expect(u.venceMs - u.desdeMs).toBe(dias * DIA);
+    });
+  }
+});
+
 describe('comercio sin prefijo: sin cambios', () => {
   it('cierra como siempre, sin ultimoPedido, sin la clave en Traer configuración, y el evento no escribe nada', async () => {
     await sembrarQr(SIN, TEL_A);

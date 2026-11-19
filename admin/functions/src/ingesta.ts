@@ -52,7 +52,7 @@ export { sigueVigente };
 // Términos de producto registrados (Andres, 24/10/2026): se leen una vez por turno, y solo si lo que
 // va al prompt contiene «prompt»; el sistema los cita entre « » y revalida lo ya aprobado.
 import { citarTerminos } from './central/asistente/terminos.js';
-import { codigoDePedidoValido, marcaDeFactura, ultimoPedidoParaElFlujo, type MarcaDeFactura } from './core/turno/facturaPedido.js';
+import { aplicarEventoDeFactura, codigoDePedidoValido, ultimoPedidoParaElFlujo } from './core/turno/facturaPedido.js';
 
 /**
  * =========================================================================
@@ -258,7 +258,9 @@ function normalizar(cuerpo: unknown): Entrante | null {
 
   const direccion = c['direccion'] === 'saliente' ? 'saliente' : 'entrante';
   const tipo = typeof c['tipo'] === 'string' && TIPOS.has(c['tipo']) ? c['tipo'] : 'otro';
-  const texto = typeof c['texto'] === 'string' ? c['texto'].slice(0, 4096) : '';
+  // Un evento de factura (PR-F) no es un mensaje: su `texto` (podría traer el NIT) se descarta acá mismo.
+  const esFactura = c['evento'] === 'factura_dada' || c['evento'] === 'factura_sin';
+  const texto = !esFactura && typeof c['texto'] === 'string' ? c['texto'].slice(0, 4096) : '';
   const idMeta = typeof c['idMeta'] === 'string' ? c['idMeta'].slice(0, 120) : undefined;
   const nombreContacto = typeof c['nombreContacto'] === 'string'
     ? c['nombreContacto'].slice(0, 120) : undefined;
@@ -797,6 +799,28 @@ export const ingesta = onRequest(
 
     const idConversacion = `wa_${mensaje.telefono}`;
     const refConversacion = db.doc(`tenants/${tenantId}/conversaciones/${idConversacion}`);
+
+    // -----------------------------------------------------------------------
+    // LA FACTURA DEL ÚLTIMO PEDIDO (PR-F, Walisuma): `factura_dada` / `factura_sin` NO SON UN MENSAJE.
+    // Camino corto y separado: no se guarda ningún mensaje, no se toca `ultimoMensaje`, no se suma a
+    // `mensajesTotal`, `noLeidos` ni a las métricas, no abre ventana ni cuenta conversación. El `texto` que
+    // traiga el cuerpo se descarta en `normalizar` (podría ser «… NIT …» del cliente): el servidor nunca
+    // guarda razón social ni NIT. Solo marca `ultimoPedido.factura` de ESTA conversación, una vez.
+    // Respuesta: 200 `{ factura: 'marcada' | 'ya_marcada' | 'rechazada' | 'no_aplicado' }`
+    // (`no_aplicado` = contacto bloqueado). Un corte por prepago no lo frena: no es un mensaje ni cuesta.
+    // Un rechazo (código ajeno, sin pedido, código inválido) queda en la bitácora, sin el código.
+    // -----------------------------------------------------------------------
+    if (mensaje.evento === 'factura_dada' || mensaje.evento === 'factura_sin') {
+      const r = await aplicarEventoDeFactura(db, refConversacion, mensaje.evento, mensaje.codigoPedido, Date.now());
+      if (r.resultado === 'rechazada') {
+        await registrar(tenantId, {
+          tipo: 'entrada_descartada', resultado: 'rechazado', canal: 'sistema',
+          telefono: mensaje.telefono, conversacionId: idConversacion, codigo: `factura_${r.motivo}`,
+        });
+      }
+      respuesta.status(200).json({ factura: r.resultado });
+      return;
+    }
     // 'aaaa-mm' en UTC. `periodoDe` (planes.ts) es la misma cuenta que usa la
     // consola para saber si el aviso de consumo es de este período.
     const periodo = periodoDe();
@@ -871,11 +895,7 @@ export const ingesta = onRequest(
     const refAuditoria = db.collection(`tenants/${tenantId}/auditoria`);
     const ahoraMs = Date.now();
 
-    // LA FACTURA DEL ÚLTIMO PEDIDO (PR-F): solo con `factura_dada` / `factura_sin`, y solo en el camino
-    // atendido (ni bloqueado ni cortado). Cero lecturas nuevas: es la conversación que ya se lee.
-    let marcaFactura: MarcaDeFactura | null = null;
     const veredicto = await db.runTransaction(async (tx) => {
-      marcaFactura = null;
       const [conversacion, cuentaDoc, plataformaDoc] = await Promise.all([
         tx.get(refConversacion), tx.get(refCuenta), tx.get(refPlataformaPrepago),
       ]);
@@ -1237,13 +1257,6 @@ export const ingesta = onRequest(
         ...(mensaje.evento === 'no_contactar' ? { noContactar: true } : {}),
         // Con la señal de crisis, además, `riesgoEn`: solo se ENCIENDE o se renueva desde acá.
         ...(mensaje.evento === 'no_contactar' && mensaje.riesgo ? { riesgoEn: Timestamp.fromMillis(ahoraMs) } : {}),
-        // LA FACTURA DEL ÚLTIMO PEDIDO (PR-F): solo el estado y la fecha, nunca los datos. Idempotente.
-        ...(() => {
-          if (mensaje.evento !== 'factura_dada' && mensaje.evento !== 'factura_sin') return {};
-          const m = marcaDeFactura(conversacion.get('ultimoPedido'), mensaje.evento, mensaje.codigoPedido, ahoraMs);
-          marcaFactura = m;
-          return m.resultado === 'marcada' ? { ultimoPedido: m.cambios } : {};
-        })(),
         // Derivados de Conversaciones (H1): trozos del teléfono y palabras del
         // nombre siempre; ultimoEntranteEn, ventanaVenceEn, noLeidos y sinLeer
         // SOLO con un entrante. Van al final y no pisan ningún campo de arriba
@@ -1448,15 +1461,6 @@ export const ingesta = onRequest(
         resultado: 'ok', telefono: mensaje.telefono, conversacionId: idConversacion,
       });
     }
-    // Un evento de factura con un código que no es el del último pedido de ESTE teléfono (o sin pedido):
-    // no se marca nada y queda en la bitácora del comercio como rechazado. Sin el código ni los datos.
-    const factura = marcaFactura as MarcaDeFactura | null;
-    if (factura?.resultado === 'rechazada') {
-      await registrar(tenantId, {
-        tipo: 'entrada_descartada', resultado: 'rechazado', canal: 'sistema',
-        telefono: mensaje.telefono, conversacionId: idConversacion, codigo: `factura_${factura.motivo}`,
-      });
-    }
     if (veredicto.avisoConsumo) {
       // Sin teléfono: el aviso es del comercio, no de quien escribió.
       await registrar(tenantId, {
@@ -1507,8 +1511,6 @@ export const ingesta = onRequest(
       // respuesta es byte a byte la de siempre (lo exigen `aviso-consumo` y
       // `entrantes-por-tipo`, y es la negativa de este bloque).
       ...(veredicto.conModalidad && !veredicto.bloqueadoPorContacto ? { servicio } : {}),
-      // PR-F: solo con un evento de factura atendido: 'marcada' | 'ya_marcada' | 'rechazada'.
-      ...(factura ? { factura: factura.resultado } : {}),
     });
   },
 );

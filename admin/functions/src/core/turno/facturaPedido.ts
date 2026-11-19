@@ -19,6 +19,8 @@
  * a 90; más de 90 queda en 90). Se fija AL CERRAR (`venceMs`), con la lectura de `config/pedidos` que el
  * cotejo ya hace: cambiar el dato vale para los pedidos siguientes, no para los ya cerrados.
  */
+import type { DocumentReference, Firestore } from 'firebase-admin/firestore';
+import { estaBloqueada } from '../conversacion/pausa.js';
 
 export const PLAZO_FACTURA_DIAS = 30;
 export const PLAZO_FACTURA_TOPE_DIAS = 90;
@@ -108,4 +110,31 @@ export function marcaDeFactura(
   if (g.codigo !== codigo) return { resultado: 'rechazada', motivo: 'codigo_ajeno' };
   if (g.factura !== 'pedida') return { resultado: 'ya_marcada' };
   return { resultado: 'marcada', cambios: { factura: evento === 'factura_dada' ? 'dada' : 'sin', facturaEnMs: ahoraMs } };
+}
+
+export type ResultadoDelEvento =
+  | { resultado: 'marcada' | 'ya_marcada' | 'no_aplicado' }
+  | { resultado: 'rechazada'; motivo: 'sin_pedido' | 'codigo_ajeno' | 'codigo_invalido' };
+
+/**
+ * El evento de factura contra la base, en una transacción: 1 lectura de la conversación y, solo si marca,
+ * 1 escritura de dos campos de `ultimoPedido`. Nunca crea la conversación, nunca toca otro campo.
+ * Contacto bloqueado → `no_aplicado` (no se escribe nada).
+ */
+export async function aplicarEventoDeFactura(
+  db: Firestore, ref: DocumentReference, evento: 'factura_dada' | 'factura_sin', codigoPedido: unknown, ahoraMs: number,
+): Promise<ResultadoDelEvento> {
+  return db.runTransaction(async (tx) => {
+    const conv = await tx.get(ref);
+    if (!conv.exists) return codigoDePedidoValido(codigoPedido)
+      ? { resultado: 'rechazada', motivo: 'sin_pedido' } as const
+      : { resultado: 'rechazada', motivo: 'codigo_invalido' } as const;
+    if (estaBloqueada(conv.get('bloqueada'))) return { resultado: 'no_aplicado' } as const;
+    const m = marcaDeFactura(conv.get('ultimoPedido'), evento, codigoPedido, ahoraMs);
+    if (m.resultado === 'marcada') {
+      tx.update(ref, { 'ultimoPedido.factura': m.cambios.factura, 'ultimoPedido.facturaEnMs': m.cambios.facturaEnMs });
+      return { resultado: 'marcada' } as const;
+    }
+    return m;
+  });
 }

@@ -32,6 +32,12 @@ describe('plazo', () => {
     expect(plazoFacturaDias({ plazoFacturaDias: -5 })).toBe(30);
     expect(plazoFacturaDias({ plazoFacturaDias: '45' })).toBe(30);
     expect(plazoFacturaDias({ plazoFacturaDias: 2.5 })).toBe(30);
+    expect(plazoFacturaDias({ plazoFacturaDias: 3.5 })).toBe(30);
+    expect(plazoFacturaDias({ plazoFacturaDias: 'abc' })).toBe(30);
+    expect(plazoFacturaDias({ plazoFacturaDias: 1e9 })).toBe(90);
+    expect(plazoFacturaDias({ plazoFacturaDias: Number.NaN })).toBe(30);
+    expect(plazoFacturaDias({ plazoFacturaDias: Number.POSITIVE_INFINITY })).toBe(30);
+    expect(plazoFacturaDias({ plazoFacturaDias: 1 })).toBe(1);
   });
 
   it('al cerrar: pedida, desde ahora, vence a los días del plazo', () => {
