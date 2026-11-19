@@ -52,7 +52,7 @@ describe('NUNCA «pago acreditado» ni «simulado»', () => {
     const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, cotejo: { statusCode: 200, body: { estado: 'reintentar', motivo: 'monto_menor', importe: 450, montoLeido: 50 } } });
     const t = comprobante(m);
     expect(textos(t).join(' ')).toMatch(/hay una diferencia/);
-    expect(textos(t).join(' ')).toMatch(/el comprobante dice 50 Bs y su pedido es de 450 Bs/);
+    expect(textos(t).join(' ')).toMatch(/su comprobante dice Bs 50 y su pedido es Bs 450/);
     expect(t.mensajes[0]?.payload['interactive']).toBeUndefined();
     for (const x of todo(t)) expect(x).not.toMatch(PROHIBIDO);
     expect(t.avisos).toHaveLength(0);

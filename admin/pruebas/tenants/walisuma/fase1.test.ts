@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { cargarFuente } from '../../core/fuente-vm';
-import { ANA, COMPROBANTE, ENTREGA, ENVIO, REC, crear, hablar, mImagen, mTexto, modelo, panelConQr, panelOk, textos, type Opciones } from './mundo';
+import { ANA, COMPROBANTE, ENTREGA, ENVIO, REC, cotejoEnRevision, cotejoMontoDistinto, cotejoValidoConCodigo, crear, hablar, mImagen, mTexto, modelo, panelConQr, panelOk, textos, type Opciones } from './mundo';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(AQUI, '../../../..');
@@ -346,11 +346,39 @@ describe('B2 · la factura ANTES de pagar no deriva (Andres, 19/11/2026)', () =>
   });
 });
 
-describe('B2 · el comprobante «aproximado» es observado y nombra la diferencia', () => {
+describe('B2 · el monto distinto con `montoExacto` (contrato de PR-S): reintentar nombrando los dos montos; el 3.er intento, a nuestra encargada', () => {
+  it('`reintentar` + `monto_distinto`: «su comprobante dice Bs X y su pedido es Bs Y», pide el correcto; sin aviso, botón, «verificado» ni «pagado»', () => {
+    const t = hablar(conQr({ cotejo: cotejoMontoDistinto(400, 450) }), ANA, mImagen({ caption: '' }));
+    const c = t.mensajes[0]?.cuerpo ?? '';
+    expect(c).toMatch(/su comprobante dice Bs 400 y su pedido es Bs 450/);
+    expect(c).toMatch(/Envíenos el comprobante correcto/);
+    expect(c).not.toMatch(PROHIBIDO_COBRO);
+    expect(c).not.toMatch(/confirmado|coinciden/);
+    expect(t.avisos).toHaveLength(0);
+    expect(BOTON_CTA(t)).toBeUndefined();
+  });
+  it('el carrito no se borra: un segundo comprobante correcto confirma el pedido con su código', () => {
+    const m = conQr({ cotejo: cotejoMontoDistinto(400, 450) });
+    hablar(m, ANA, mImagen({ caption: '' }));
+    m.dobles['Cotejar en el servidor'] = () => cotejoValidoConCodigo(450);
+    const t = hablar(m, ANA, mImagen({ caption: '' }));
+    expect(t.mensajes[0]?.cuerpo.startsWith(`Pedido confirmado ${CODIGO}.`)).toBe(true);
+  });
+  it('`en_revision` (3.er intento): pasa con nuestra encargada, con aviso y botón; nunca «verificado» ni «confirmado»', () => {
+    const t = hablar(conQr({ cotejo: cotejoEnRevision(400, 450) }), ANA, mImagen({ caption: '' }));
+    expect(t.avisos).toHaveLength(1);
+    expect(BOTON_CTA(t)).toBeTruthy();
+    expect(t.mensajes[0]?.cuerpo).toMatch(/lo revisa directamente nuestra encargada/);
+    expect(t.mensajes[0]?.cuerpo).not.toMatch(/confirmado|verificad|pagad/i);
+    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/monto distinto al del pedido tras varios intentos, revisar/);
+  });
+});
+
+describe('B2 · el comprobante «aproximado» (comercio sin `montoExacto`) es observado y nombra la diferencia', () => {
   it('con `montoLeido` del servidor: dice la diferencia, pide el correcto, sin aviso, sin «coinciden» ni «Pedido confirmado»', () => {
     const t = hablar(conQr({ cotejo: cotejo({ estado: 'aproximado', montoLeido: 445 }) }), ANA, mImagen({ caption: '' }));
     const c = t.mensajes[0]?.cuerpo ?? '';
-    expect(c).toMatch(/el comprobante dice Bs 445 y su pedido es de Bs 450/);
+    expect(c).toMatch(/su comprobante dice Bs 445 y su pedido es Bs 450/);
     expect(c).not.toMatch(/coinciden|confirmado/);
     expect(t.avisos).toHaveLength(0);
   });

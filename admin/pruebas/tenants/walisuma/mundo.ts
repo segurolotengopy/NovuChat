@@ -134,6 +134,18 @@ export const panelConQr = (monto: number, extra: J = {}): { statusCode: number; 
 export const panelSinCobro = (): { statusCode: number; body: J } => { const p = panelOk(); const { cobroReal: _c, cobro: _o, ...resto } = p.body as J; return { statusCode: 200, body: resto }; };
 export const RUTA_GUARDADA = { statusCode: 200, body: { ruta: 'tenants/walisuma/comprobantes/2026-10-05/abc_1.jpg' } };
 export const COTEJO_VALIDO = { statusCode: 200, body: { estado: 'valido', importe: 45, avisarComercio: true } };
+/**
+ * EL CONTRATO DEL COTEJO DE PR-S (decisión 8, con `config/pedidos.montoExacto === true`), SIMULADO: un monto distinto responde `reintentar` + `monto_distinto` con
+ * `montoLeido`, `montoEsperado`, `diferencia` (leído − esperado, con signo, 2 decimales), `intentos` e `intentosRestantes`; el 3.er intento pasa a `en_revision`;
+ * el cierre válido trae `codigoPedido` (WAL-AAMMDD-NNN).
+ */
+export const cotejoMontoDistinto = (leido: number, esperado: number, intentos = 1): { statusCode: number; body: J } => ({
+  statusCode: 200, body: { estado: 'reintentar', motivo: 'monto_distinto', importe: esperado, montoLeido: leido, montoEsperado: esperado, diferencia: Math.round((leido - esperado) * 100) / 100, intentos, intentosRestantes: Math.max(0, 3 - intentos) },
+});
+export const cotejoEnRevision = (leido: number, esperado: number): { statusCode: number; body: J } => ({
+  statusCode: 200, body: { estado: 'en_revision', motivo: 'monto_distinto', importe: esperado, montoLeido: leido, montoEsperado: esperado, diferencia: Math.round((leido - esperado) * 100) / 100, intentos: 3, intentosRestantes: 0, avisarComercio: true },
+});
+export const cotejoValidoConCodigo = (importe: number, codigoPedido = 'WAL-261005-001'): { statusCode: number; body: J } => ({ statusCode: 200, body: { estado: 'valido', importe, avisarComercio: true, codigoPedido } });
 export const COMPROBANTE = { categoria: 'comprobante', texto: 'Transferencia', monto: '450.00', cuentaDestino: '1*****9', nombreCuenta: 'WALISUMA', fecha: '05/10/2026', hora: '10:00', banco: 'Banco' };
 /** Lo que contesta el modelo (JSON de salida): texto, líneas, entrega y quiereHablar. */
 export const modelo = (texto: string, extra: J = {}): J => ({ texto, lineas: [], entrega: {}, facturacion: {}, quiereHablar: false, ...extra });

@@ -419,6 +419,7 @@ const WL_MOTIVOS_AVISO = {
   comprobante_sin_cobro: 'envió un comprobante sin un pedido con QR abierto',
   pago_con_problema: 'envió la captura de un pago que parece no haberse completado',
   comprobante_sin_cotejo: 'comprobante recibido que no se pudo cotejar',
+  comprobante_en_revision: 'comprobante con un monto distinto del pedido tras varios intentos',
   comprobante_ya_visto: 'el cliente envió otra vez un comprobante que ya estaba registrado',
   monto_invalido: 'el monto del pedido no se pudo calcular',
   atencion_humana: 'uso extendido: se le dijo que una persona continúa la conversación',
@@ -465,17 +466,34 @@ function wlResolverComprobante(c) {
   const pedido = (cotejo) => ({ tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: f.entrega, cotejo: cotejo, codigo: codigo, ref: ref,
     factura: 'sin datos (S/N) por ahora', banco: cbLinea(leido.bancoOrigen, 40), operacion: cbLinea(leido.transaccion, 40), repetido: false });
   const d = { resultado: r.resultado, diferencia: wlDiferenciaUsted(cbDiferencia(r.diferencias, 'BOB')), totalTexto: totalTexto, codigo: codigo, aviso: null };
+  // Un monto (en centavos) del cuerpo del cotejo; null si no es un número positivo.
+  const centavos = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v * 100) : null);
+  // «Su comprobante dice Bs X y su pedido es Bs Y» (decisión 8): los dos montos, del servidor; el esperado, si no viene, es el total del pedido.
+  const nombrarDiferencia = () => {
+    const leidoC = centavos(cuerpo.montoLeido);
+    const esperadoC = centavos(cuerpo.montoEsperado) !== null ? centavos(cuerpo.montoEsperado) : (total !== null && total > 0 ? total : centavos(cuerpo.importe));
+    return leidoC !== null && esperadoC !== null ? 'su comprobante dice ' + vcMonto(leidoC) + ' y su pedido es ' + vcMonto(esperadoC)
+      : 'el monto del comprobante no coincide con su pedido' + (esperadoC !== null ? ' de ' + vcMonto(esperadoC) : '');
+  };
+  if (r.resultado === 'reintentar' && (cuerpo.motivo === 'monto_distinto' || cuerpo.motivo === 'monto_menor' || cuerpo.motivo === 'monto_mayor')) {
+    // Contrato de PR-S con `config/pedidos.montoExacto`: `reintentar` + `monto_distinto` con `montoLeido` y `montoEsperado`. Texto fijo, en usted, que nombra los dos montos.
+    d.diferencia = nombrarDiferencia();
+  }
   if (r.resultado === 'cuadra') {
     d.tipo = 'comprobante'; d.aviso = pedido('llegó y los datos coinciden');
     d.fueraDeHorario = wlFueraDeHorario(c.ahora, c.base);
   } else if (r.resultado === 'aproximado') {
     // Decisión 8: un monto distinto es OBSERVADO y se nombra la diferencia (el servidor devuelve el monto leído); sin aviso, como cualquier comprobante por corregir.
-    const leidoBs = typeof cuerpo.montoLeido === 'number' && Number.isFinite(cuerpo.montoLeido) && cuerpo.montoLeido > 0 ? Math.round(cuerpo.montoLeido * 100) : null;
+    // (Se mantiene para el comercio SIN la bandera `montoExacto`, que todavía responde `aproximado`.)
     d.tipo = 'comprobante_pedir'; d.resultado = 'reintentar';
-    d.diferencia = leidoBs !== null && totalTexto ? 'el comprobante dice ' + vcMonto(leidoBs) + ' y su pedido es de ' + totalTexto : 'el monto del comprobante no coincide con su pedido' + (totalTexto ? ' de ' + totalTexto : '');
+    d.diferencia = nombrarDiferencia();
   }
   else if (r.resultado === 'reintentar' || r.resultado === 'ilegible') { d.tipo = 'comprobante_pedir'; }
   else if (r.resultado === 'ya_cotejado') { d.tipo = 'derivar'; d.motivo = 'comprobante_ya_visto'; d.aviso = wlAvisoConsulta(c, 'comprobante_ya_visto'); }
+  else if (r.causa === 'en_revision') {
+    // El 3.er intento con un monto distinto pasa a `en_revision` (PR-S): pasa con nuestra encargada, con aviso y botón; nunca «verificado» ni «pagado».
+    d.tipo = 'derivar'; d.motivo = 'comprobante_en_revision'; d.aviso = pedido('monto distinto al del pedido tras varios intentos, revisar'); d.aviso.factura = '—';
+  }
   else { d.tipo = 'derivar'; d.motivo = 'comprobante_sin_cotejo'; d.aviso = pedido('llegó; no se pudo cotejar, revisar'); d.aviso.factura = '—'; }
   const sinCambio = d.tipo === 'comprobante_pedir' || r.resultado === 'ya_cotejado';
   d.patch = sinCambio ? {} : { comprobanteMs: c.ahora, qrHastaMs: 0, carrito: [], entrega: wlEntregaBase(), cierre: false, qrCarrito: [], mostrados: [] };
@@ -613,7 +631,7 @@ function wlProspectoCrm(d) {
   const senales = { inicioCompra: inicioCompra === true, pidioLlamada: pidioLlamada === true, llegoPorAnuncio: x.anuncio === true };
   let quePidio = '';
   if (tipo === 'qr' || tipo === 'pedido_sin_cobro' || tipo === 'pedir_ubicacion') quePidio = 'Compra';
-  else if (comprobanteResuelto || (tipo === 'derivar' && (motivo === 'comprobante_sin_cotejo' || motivo === 'comprobante_ya_visto'))) quePidio = 'Comprobante de pago';
+  else if (comprobanteResuelto || (tipo === 'derivar' && (motivo === 'comprobante_sin_cotejo' || motivo === 'comprobante_en_revision' || motivo === 'comprobante_ya_visto'))) quePidio = 'Comprobante de pago';
   else if (pidioLlamada) quePidio = 'Hablar con una persona';
   else if (tipo === 'derivar' && motivo === 'corporativo') quePidio = 'Pedido corporativo o por volumen';
   else if (tipo === 'derivar' && motivo === 'factura') quePidio = 'Factura';

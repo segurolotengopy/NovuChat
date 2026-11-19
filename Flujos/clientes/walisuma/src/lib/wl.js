@@ -265,6 +265,7 @@ const WL_INTROS = {
   comprobante_sin_cobro: 'Recibimos una imagen que parece un comprobante, pero no tenemos un pedido con QR abierto a su nombre.',
   pago_con_problema: 'Recibimos la captura de un pago que parece no haberse completado; eso lo revisa nuestra encargada.',
   comprobante_sin_cotejo: 'Recibimos su comprobante, pero no pudimos compararlo con su pedido desde aquí.',
+  comprobante_en_revision: 'El monto de su comprobante sigue sin coincidir con su pedido, así que lo revisa directamente nuestra encargada.',
   comprobante_ya_visto: 'Ya tenemos registrado su comprobante anterior.',
   monto_invalido: 'No pudimos calcular el monto de su pedido.',
   pedido_sin_cobro: 'Anotamos su pedido, pero el pago por QR no está disponible por ahora.',
