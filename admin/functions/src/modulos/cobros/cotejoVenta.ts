@@ -90,6 +90,14 @@ export interface RespuestaDelCotejo {
    * pedido devuelve el mismo código y no consume otro correlativo.
    */
   codigoPedido?: string;
+  /**
+   * OBSERVADO POR MONTO (PR-S, decisión 8). ADITIVO: solo viene si el comercio tiene `config/pedidos.montoExacto === true` y
+   * el comprobante dio `aproximado`. Entonces la venta NO se cierra (`estado: 'reintentar'`, `motivo: 'monto_distinto'`, con el
+   * tope de intentos de siempre), sin cierre, correlativo ni código. `montoLeido` ya viaja; acá `montoEsperado` (el total del
+   * pedido) y `diferencia` (leído − esperado, con signo) para nombrarla. Un comprobante nuevo del mismo pedido se cotejará otra vez.
+   */
+  montoEsperado?: number;
+  diferencia?: number;
   cierreId: string | null;
   evento: { id: string; calendario: string } | null;
   avisarComercio: boolean;
@@ -157,6 +165,8 @@ export const cotejarComprobanteVenta = onRequest(
     // contador del día, solo en el cotejo que cierra. Sin prefijo: ninguna escritura nueva, ningún contador.
     // Sin prefijo no hay código ni contador: los demás comercios no notan nada.
     const prefijo = prefijoDeCodigo(configPedidos.data());
+    // `montoExacto`: booleano estricto. Ausente o cualquier otro valor (incluida la cadena 'true') = el comportamiento de siempre.
+    const montoExacto = configPedidos.data()?.['montoExacto'] === true;
     const moneda = String(negocio.get('moneda') ?? 'BOB');
     const cobroReal = venta.get('cobroReal') as Record<string, unknown> | undefined;
     // EL COTEJO ES DEL COBRO REAL. En modo simulado no hay intentos ni
@@ -203,6 +213,7 @@ export const cotejarComprobanteVenta = onRequest(
             importe: previoAnotado.importe ?? totalUtilizable(solicitud['monto']), moneda,
             montoLeido: previoAnotado.montoLeido ?? null, montoDistinto: previoAnotado.montoDistinto ?? false,
             ...(typeof codigoAnotado === 'string' && codigoAnotado !== '' ? { codigoPedido: codigoAnotado } : {}),
+            ...(montoExacto && estadoRepetido === 'reintentar' ? diferenciaDe(previoAnotado.importe ?? totalUtilizable(solicitud['monto']), previoAnotado.montoLeido, previoAnotado.motivo) : {}),
             cierreId: conCierre ? idDeCierreDeVenta(pedidoId || idMeta) : null, evento: eventoDevuelto,
             avisarComercio: previoAnotado.avisar === true, repetido: true,
           },
@@ -247,7 +258,8 @@ export const cotejarComprobanteVenta = onRequest(
       const transicion = solicitudDeCobroTras(solicitud, {
         tipo: 'comprobante',
         // Para la máquina de estados, «no es comprobante» es un inválido más.
-        estado: cal === null ? 'invalido' : cal.estado === 'no_es_comprobante' ? 'invalido' : cal.estado,
+        // Con `montoExacto`, un aproximado es un observado: cuenta como inválido (reintentar, con su tope de intentos).
+        estado: cal === null ? 'invalido' : cal.estado === 'no_es_comprobante' || (montoExacto && cal.estado === 'aproximado') ? 'invalido' : cal.estado,
         motivo: cal?.motivo ?? 'tardio',
         idMeta, ruta: rutaImagen,
         importe: esperado > 0 ? esperado : null, montoLeido: cal?.montoLeido ?? montoDeLoLeido,
@@ -341,6 +353,7 @@ export const cotejarComprobanteVenta = onRequest(
           importe, moneda,
           montoLeido: cal?.montoLeido ?? montoDeLoLeido,
           montoDistinto: cal?.montoDistinto ?? false,
+          ...(montoExacto && cal?.estado === 'aproximado' && estado === 'reintentar' ? diferenciaDe(importe, cal.montoLeido, 'monto_distinto') : {}),
           ...(codigoPedido ? { codigoPedido } : {}),
           cierreId: idCierre, evento: eventoDevuelto,
           avisarComercio: transicion.avisarComercio, repetido: false,
@@ -357,6 +370,12 @@ export const cotejarComprobanteVenta = onRequest(
     respuesta.status(salida.codigo).json(salida.cuerpo);
   },
 );
+
+/** `montoEsperado` y `diferencia` (leído − esperado) de un observado por monto; nada si falta algún dato. */
+function diferenciaDe(esperado: number | null | undefined, leido: number | null | undefined, motivo: string | undefined): { montoEsperado?: number; diferencia?: number } {
+  if (motivo !== 'monto_distinto' || typeof esperado !== 'number' || typeof leido !== 'number') return {};
+  return { montoEsperado: esperado, diferencia: Math.round((leido - esperado) * 100) / 100 };
+}
 
 /** Días que vive un registro de recibidos antes de que el TTL de Firestore lo borre. */
 export const DIAS_DE_RECIBIDOS = 90;
