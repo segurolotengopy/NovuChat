@@ -267,16 +267,19 @@ const estadoComercio = util(r.estadoComercio) === 'activo' ? 'operativo'
 // aplicadas y vigentes con el tope del plan cumplido; aca se vuelve a mirar la
 // vigencia contra el reloj. Viaja como texto JSON y `Normalizar entrada` compara
 // el texto. Sin `campanas` o con el panel caido no hay campañas.
+// Los Ad ID de la campana (`referral.source_id` de Meta, cadena numerica): hasta 5, solo digitos de 8 a 32. El servidor ya los valido; aqui se vuelven a mirar.
+const adIdsDe = (k) => (Array.isArray(k.adIds) ? k.adIds.map((a) => String(a)).filter((a) => /^[0-9]{8,32}$/.test(a)).slice(0, 5) : []);
 const campanasActivas = JSON.stringify((Array.isArray(r.campanas) ? r.campanas : [])
-  .filter((k) => k && typeof k.texto === 'string' && k.texto.trim() !== '' && k.texto.length <= 300)
-  .filter((k) => {
+  .map((k) => (k && typeof k === 'object' ? { k, texto: typeof k.texto === 'string' && k.texto.trim() !== '' && k.texto.length <= 300 ? k.texto.trim() : '', adIds: adIdsDe(k) } : null))
+  .filter((x) => x && (x.texto !== '' || x.adIds.length > 0))
+  .filter(({ k }) => {
     const desde = Date.parse(String(k.inicio || ''));
     const hasta = Date.parse(String(k.fin || ''));
     const ahora = Date.now();
     return Number.isFinite(desde) && Number.isFinite(hasta) && desde <= ahora && ahora < hasta;
   })
   .slice(0, 10)
-  .map((k) => ({ id: String(k.id || '').slice(0, 60), texto: k.texto.trim() })));
+  .map((x) => ({ id: String(x.k.id || '').slice(0, 60), texto: x.texto, adIds: x.adIds })));
 
 return [{ json: derivar({
   ...respaldo,

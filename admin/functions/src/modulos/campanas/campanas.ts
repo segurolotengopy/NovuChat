@@ -68,9 +68,18 @@ export interface Campana {
   productoId?: string;
   /** Cómo enfocar la conversación de este anuncio. Es comportamiento del asistente: lo verifica el servidor. */
   angulo?: string;
+  /**
+   * Ad ID de Meta (`referral.source_id`) de los anuncios de esta campaña, de 1 a 5. Dato del
+   * tenant, nunca código. Un anuncio llega por Ad ID aunque el cliente escriba otra cosa.
+   */
+  adIds?: string[];
 }
 
 export const MAX_TITULARES = 5;
+/** Los Ad ID de Meta por campaña: de 1 a 5, cadenas numéricas de 8 a 32 dígitos. */
+export const MAX_ADIDS = 5;
+const ADID = /^[0-9]{8,32}$/;
+export const adIdValido = (v: unknown): v is string => typeof v === 'string' && ADID.test(v);
 export const MIN_LARGO_TITULAR = 6;
 export const MAX_LARGO_TITULAR = 100;
 export const TOPE_ANGULO = 300;
@@ -94,7 +103,7 @@ export interface RevisionCampana {
   estado: EstadoCampana;
   motivo: string;
   /** El campo que hay que corregir, para que la consola lo marque (DISENO.md §4quindecies). */
-  campo: 'texto' | 'inicio' | 'fin' | 'titulares' | 'productoId' | 'angulo' | '';
+  campo: 'texto' | 'inicio' | 'fin' | 'titulares' | 'productoId' | 'angulo' | 'adIds' | '';
   capa: CapaCampana;
   /** Hash del texto revisado por el modelo: con el mismo texto, no se le vuelve a preguntar. */
   textoHash: string;
@@ -154,6 +163,13 @@ function leerTitulares(v: unknown): string[] | null | undefined {
   return v as string[];
 }
 
+/** Los Ad ID tal cual vinieron (hasta 10, para que el revisor pueda rechazar los que sobran). */
+function leerAdIds(v: unknown): string[] | null | undefined {
+  if (v === undefined) return undefined;
+  if (!Array.isArray(v) || v.length > 2 * MAX_ADIDS || v.some((x) => typeof x !== 'string')) return null;
+  return v as string[];
+}
+
 /** Las campañas bien formadas de un valor cualquiera; lo demás se descarta. */
 export function leerCampanas(valor: unknown): Campana[] {
   if (!Array.isArray(valor)) return [];
@@ -166,13 +182,16 @@ export function leerCampanas(valor: unknown): Campana[] {
     if (r['texto'] !== undefined && typeof r['texto'] !== 'string') continue;
     const titulares = leerTitulares(r['titulares']);
     if (titulares === null) continue;
+    const adIds = leerAdIds(r['adIds']);
+    if (adIds === null) continue;
     if (r['productoId'] !== undefined && typeof r['productoId'] !== 'string') continue;
     if (r['angulo'] !== undefined && typeof r['angulo'] !== 'string') continue;
-    // Sin texto y sin titulares no hay anuncio que leer.
-    if (r['texto'] === undefined && titulares === undefined) continue;
+    // Sin texto, sin titulares y sin Ad ID no hay anuncio que reconocer.
+    if (r['texto'] === undefined && titulares === undefined && (adIds === undefined || adIds.length === 0)) continue;
     out.push({
       id: r['id'], texto: (r['texto'] as string | undefined) ?? '', inicio: r['inicio'], fin: r['fin'],
       ...(titulares !== undefined ? { titulares } : {}),
+      ...(adIds !== undefined && adIds.length > 0 ? { adIds } : {}),
       ...(r['productoId'] !== undefined ? { productoId: r['productoId'] as string } : {}),
       ...(r['angulo'] !== undefined ? { angulo: r['angulo'] as string } : {}),
     });
@@ -186,9 +205,11 @@ const MAXIMO_LEIDAS = 10;
 export function hashLista(lista: readonly Campana[]): string {
   // Sin claves nuevas, la misma cuenta de siempre; con ellas, se suman al final.
   return hashCorto(JSON.stringify(lista.map((c) => (c.titulares === undefined && c.productoId === undefined
-    && c.angulo === undefined
+    && c.angulo === undefined && c.adIds === undefined
     ? [c.id, c.texto, c.inicio, c.fin]
-    : [c.id, c.texto, c.inicio, c.fin, c.titulares ?? null, c.productoId ?? null, c.angulo ?? null]))));
+    : c.adIds === undefined
+      ? [c.id, c.texto, c.inicio, c.fin, c.titulares ?? null, c.productoId ?? null, c.angulo ?? null]
+      : [c.id, c.texto, c.inicio, c.fin, c.titulares ?? null, c.productoId ?? null, c.angulo ?? null, c.adIds]))));
 }
 
 // ---------------------------------------------------------------------------
@@ -261,6 +282,9 @@ export const comportamientoNoPermitido = (v: string): boolean => {
 export const colapsarTitulares = (t: readonly string[] | undefined): string[] =>
   [...new Set((t ?? []).map((x) => x.trim().replace(/\s+/g, ' ')))];
 
+/** Los Ad ID sin repetidos dentro de la misma campaña. */
+export const colapsarAdIds = (a: readonly string[] | undefined): string[] => [...new Set(a ?? [])];
+
 /**
  * Lo que se revisó de una campaña, en un solo texto: con el mismo texto y sin las
  * claves nuevas es el texto solo (los hashes de las revisiones ya guardadas siguen
@@ -268,8 +292,9 @@ export const colapsarTitulares = (t: readonly string[] | undefined): string[] =>
  */
 export const huellaDe = (c: Campana): string => {
   const t = c.texto.trim();
-  if (c.titulares === undefined && c.angulo === undefined && c.productoId === undefined) return t;
-  return `${t}\u001f${JSON.stringify([colapsarTitulares(c.titulares), (c.angulo ?? '').trim(), c.productoId ?? null])}`;
+  if (c.titulares === undefined && c.angulo === undefined && c.productoId === undefined && c.adIds === undefined) return t;
+  return `${t}\u001f${JSON.stringify([colapsarTitulares(c.titulares), (c.angulo ?? '').trim(), c.productoId ?? null,
+    ...(c.adIds === undefined ? [] : [colapsarAdIds(c.adIds)])])}`;
 };
 
 /**
@@ -291,6 +316,7 @@ export function revisarSinModelo(
   const previa = new Map(antes.map((c) => [c.id, c]));
   const vistos = new Map<string, string>();
   const titularesVistos = new Map<string, string>();
+  const adIdsVistos = new Map<string, string>();
   const out = new Map<string, RevisionCampana | null>();
   lista.forEach((c, i) => {
     const t = c.texto.trim();
@@ -306,7 +332,7 @@ export function revisarSinModelo(
       return;
     }
     // Forma. El texto es opcional si hay titulares; si viene, se juzga igual.
-    const sinTexto = t === '' && c.titulares !== undefined;
+    const sinTexto = t === '' && (c.titulares !== undefined || (c.adIds !== undefined && c.adIds.length > 0));
     if (!sinTexto && t.length > TOPE_TEXTO_CAMPANA) {
       decidir(revision('rechazada', 'forma', 'texto', `el texto supera los ${TOPE_TEXTO_CAMPANA} caracteres`, h)); return;
     }
@@ -347,6 +373,16 @@ export function revisarSinModelo(
           'un titular no lleva montos: el precio se toma del producto', h)); return;
       }
     }
+    // Los Ad ID no son texto libre: solo la forma. Sin ellos ni texto ni titulares, no hay anuncio.
+    const adIds = colapsarAdIds(c.adIds);
+    if (c.adIds !== undefined) {
+      if (adIds.length < 1 || adIds.length > MAX_ADIDS) {
+        decidir(revision('rechazada', 'forma', 'adIds', `un anuncio lleva de 1 a ${MAX_ADIDS} Ad ID`, h)); return;
+      }
+      if (adIds.some((x) => !adIdValido(x))) {
+        decidir(revision('rechazada', 'forma', 'adIds', 'cada Ad ID son solo números (de 8 a 32 dígitos)', h)); return;
+      }
+    }
     if (c.angulo !== undefined && c.angulo.trim().length > TOPE_ANGULO) {
       decidir(revision('rechazada', 'forma', 'angulo', `el ángulo supera los ${TOPE_ANGULO} caracteres`, h)); return;
     }
@@ -369,7 +405,12 @@ export function revisarSinModelo(
     if (normalizados.some((n) => { const o = titularesVistos.get(n); return o !== undefined && o !== c.id; })) {
       decidir(revision('rechazada', 'duplicada', 'titulares', 'otro anuncio ya usa uno de estos titulares', h)); return;
     }
+    // Un Ad ID en OTRA campaña: el flujo no sabría de cuál viene.
+    if (adIds.some((x) => { const o = adIdsVistos.get(x); return o !== undefined && o !== c.id; })) {
+      decidir(revision('rechazada', 'duplicada', 'adIds', 'otra campaña ya usa uno de estos Ad ID', h)); return;
+    }
     if (!sinTexto) vistos.set(palabras, c.id);
+    for (const x of adIds) adIdsVistos.set(x, c.id);
     for (const n of normalizados) titularesVistos.set(n, c.id);
     // Emergencia.
     if (!sinTexto && tieneEmergencia(t)) {
@@ -489,6 +530,11 @@ export async function revisarCampanas(
       porCampana[c.id] = previa;
       continue;
     }
+    // Solo Ad ID (sin texto, titulares ni ángulo): no hay texto libre que el modelo pueda juzgar.
+    if (c.texto.trim() === '' && colapsarTitulares(c.titulares).length === 0 && (c.angulo ?? '').trim() === '') {
+      porCampana[c.id] = revision('aprobada', 'forma', '', '', t);
+      continue;
+    }
     let respuesta: string | undefined;
     try { respuesta = await consultar(instruccionCampana(c.texto.trim(), contexto,
       { titulares: colapsarTitulares(c.titulares), angulo: c.angulo }, terminos)); } catch { respuesta = undefined; }
@@ -503,6 +549,7 @@ export async function revisarCampanas(
       ...c, texto: c.texto.trim(),
       ...(c.titulares !== undefined ? { titulares: colapsarTitulares(c.titulares) } : {}),
       ...(c.angulo !== undefined ? { angulo: c.angulo.trim() } : {}),
+      ...(c.adIds !== undefined ? { adIds: colapsarAdIds(c.adIds) } : {}),
     }));
   return { porCampana, vigentes };
 }
@@ -511,7 +558,7 @@ export async function revisarCampanas(
 // Lo que recibe el flujo
 // ---------------------------------------------------------------------------
 
-export interface CampanaParaElFlujo { id: string; texto: string; inicio: string; fin: string }
+export interface CampanaParaElFlujo { id: string; texto: string; inicio: string; fin: string; adIds?: string[] }
 
 /**
  * LAS CAMPAÑAS QUE VIAJAN AL FLUJO en `configuracionFlujo`: las aprobadas
@@ -535,9 +582,12 @@ export function vigentesDeHoyDentroDelTope(vigentes: unknown, limite: number, ah
 
 export function campanasParaElFlujo(vigentes: unknown, limite: number, ahoraMs: number): CampanaParaElFlujo[] {
   return vigentesDeHoyDentroDelTope(vigentes, limite, ahoraMs)
-    .filter((c) => c.texto.trim() !== '' && c.texto.length <= TOPE_TEXTO_CAMPANA)
-    .map((c) => ({
+    .map((c) => ({ c, adIds: colapsarAdIds(c.adIds).filter(adIdValido).slice(0, MAX_ADIDS) }))
+    .filter(({ c, adIds }) => c.texto.length <= TOPE_TEXTO_CAMPANA && (c.texto.trim() !== '' || adIds.length > 0))
+    .map(({ c, adIds }) => ({
       id: c.id, texto: c.texto.trim(),
+      // Solo viaja si hay: la respuesta de un comercio sin Ad ID queda idéntica a la de siempre (0 bytes de más).
+      ...(adIds.length > 0 ? { adIds } : {}),
       inicio: new Date(inicioDelDia(c.inicio)).toISOString(),
       fin: new Date(finDelDia(c.fin)).toISOString(),
     }));

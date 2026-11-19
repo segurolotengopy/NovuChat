@@ -831,6 +831,8 @@ describe('REHECHO · el armado: la base común, el core de texto y solo lo propi
     // El miniCRM (02/11/2026) es lo otro que gana: el id y la pestaña de la planilla. También se quita entera para comparar con el origen.
     config = config.replace(/\/\/ LA PLANILLA DEL miniCRM[^\n]*\n\/\/ Sin id válido[^\n]*\nconst idDeLaPlanilla[^\n]*\nconst hojaDeLaPlanilla[^\n]*\n\n/, '')
       .replace('  planillaProspectosId: idDeLaPlanilla,\n  planillaProspectosHoja: hojaDeLaPlanilla,\n', '');
+    // El vínculo con el anuncio (17/11/2026): el bloque `adIdsDe`…`campanasActivas` y su clave en `cfg` son el otro cambio declarado.
+    config = config.replace(/  \/\/ EL VÍNCULO CON LOS ANUNCIOS[^\n]*\n  const adIdsDe[^\n]*\n  const campanasActivas[\s\S]*?\.map\(\(x\) => \(\{ id: String\(x\.k\.id[^\n]*\n/, '').replace('anuncios, campanasActivas,', 'anuncios,');
     config = config.replace(anuncios, '').replace('...atencion, anuncios,', '...atencion,')
       .replace('los prefijos permitidos, la atención (los umbrales de uso extendido) y los ANUNCIOS (a lo más 20, solo en la rama 200).', 'los prefijos permitidos y la atención (los umbrales de uso extendido).');
     expect(h(config), 'config-del-negocio.js sin los anuncios').toBe(ORIGEN['config-del-negocio.js']);

@@ -138,6 +138,8 @@ export const SUITES_PURAS = [
   'pruebas/core/texto-identidad.test.ts', 'pruebas/core/ux-identidad.test.ts',
   'pruebas/core/marcador-local-reemplazar.test.ts',
   'pruebas/core/horario-funcionario-ilegible.test.ts',
+  // La campaña por Ad ID y por texto en todos los esqueletos (17/11/2026): código de los JSON y n8n de mentira; sin emulador ni red.
+  'pruebas/core/campana-ad-id.test.ts', 'pruebas/core/campana-por-texto.test.ts',
   'pruebas/campanas-consola.test.ts',
   'pruebas/campanas-anuncios-consola.test.ts',
   'pruebas/central/contrato-f1b-puras.test.ts',

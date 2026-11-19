@@ -111,6 +111,10 @@ describe('HUECOS del núcleo: el código copiado de rroca-antonio (main afc05293
       + "// con la etapa encendida el número de recepción es el de `Config base` y se IGNORA el de la Consola. Sin `si` (vacío, marcador o cualquier otro valor) todo queda como siempre.\n"
       + "const etapaPrueba = valor(base.etapaPrueba).toLowerCase() === 'si';\nif (etapaPrueba) cfg.numeroRecepcion = deBase.numeroRecepcion;\n\n");
     config = sin(config, "  etapaPrueba,\n  telefonosEtapaPrueba: etapaPrueba ? permitidos : [],\n");
+    // El vínculo con el anuncio (17/11/2026), igual que el core: el bloque `adIdsDe`…`campanasActivas` y su clave en `cfg` son el otro cambio declarado.
+    const bloque = /  \/\/ EL VÍNCULO CON LOS ANUNCIOS[^\n]*\n  const adIdsDe[^\n]*\n  const campanasActivas[\s\S]*?\.map\(\(x\) => \(\{ id: String\(x\.k\.id[^\n]*\n/;
+    expect(bloque.test(config), 'trae el bloque del vínculo con el anuncio').toBe(true);
+    config = unico(config.replace(bloque, ''), '...atencion, campanasActivas,', '...atencion,');
     expect(huella(config)).toBe(ORIGEN['config-del-negocio.js']);
   });
 
@@ -179,7 +183,10 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen (main af
     const propio = jsonCanonico(sinLibres(de('Reportar mensaje (entrante)')));
     const nuevo = "evento: (t.riesgoEscrito === true || t.bajaEscrita === true) ? 'no_contactar' : undefined";
     expect(propio).toContain(nuevo);
-    expect(huella(propio.replace(nuevo, 'EVENTO'))).toBe(NODOS['Reportar mensaje (entrante)']);
+    // Los tres campos del vínculo con el anuncio (17/11/2026) son el otro cambio declarado: se quitan para comparar con el origen.
+    const CAMPOS = 'adId: t.adId || undefined, campanaId: t.campanaId || undefined, campanaPor: t.campanaPor || undefined, ';
+    expect(propio.includes(CAMPOS), 'el reporte lleva adId, campanaId y campanaPor').toBe(true);
+    expect(huella(propio.replace(CAMPOS, '').replace(nuevo, 'EVENTO'))).toBe(NODOS['Reportar mensaje (entrante)']);
   });
 
   it('los nodos de medios (bajar, tamaño, descarga, audio, documento, transcripción) son los de Antonio; «Describir …» cambian el prompt y las opciones (propios) y nada más', () => {

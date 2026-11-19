@@ -127,9 +127,12 @@ if (codigo === 409) {
   const estadoDeLaConsola = util(cuerpo.estadoComercio);
   // --- CAMPAÑAS VIGENTES: el servidor manda SOLO las aplicadas y vigentes; aca se vuelve a mirar la vigencia contra el reloj.
   // Cada una trae `destino` (`rubro:<id>`, `planes` o `asesor`) o no (el servidor hoy no lo manda: se tolera).
+  // Una campaña lleva texto, Ad ID o ambos (contrato 17/11/2026): una solo con Ad ID (texto '') solo VINCULA, nunca toma `destino` ni salta el menu (`ccCampana` exige texto).
+  const adIdsDe = (k) => (Array.isArray(k.adIds) ? k.adIds.map((a) => String(a)).filter((a) => /^[0-9]{8,32}$/.test(a)).slice(0, 5) : []);
   const campanas = lista(cuerpo.campanas)
-    .filter((k) => k && typeof k.texto === 'string' && k.texto.trim() !== '' && k.texto.length <= 300)
-    .filter((k) => {
+    .map((k) => (k && typeof k === 'object' ? { k, texto: typeof k.texto === 'string' && k.texto.trim() !== '' && k.texto.length <= 300 ? k.texto.trim() : '', adIds: adIdsDe(k) } : null))
+    .filter((x) => x && (x.texto !== '' || x.adIds.length > 0))
+    .filter(({ k }) => {
       const desde = Date.parse(String(k.inicio || ''));
       const hasta = Date.parse(String(k.fin || ''));
       const ahora = Date.now();
@@ -137,7 +140,7 @@ if (codigo === 409) {
     })
     .slice(0, 10)
     // El `destino` pasa tal cual (hasta 60 caracteres): la libreria (`ccCampana`) es quien lo valida contra su vocabulario.
-    .map((k) => Object.assign({ id: String(k.id || '').slice(0, 60), texto: k.texto.trim() },
+    .map(({ k, texto, adIds }) => Object.assign({ id: String(k.id || '').slice(0, 60), texto: texto, adIds: adIds },
       typeof k.destino === 'string' ? { destino: k.destino.slice(0, 60) } : {}));
   cfg = Object.assign({}, deBase, deLaConsola, limpiarOferta(ob), atencion, {
     // Mandan aunque vengan vacios: el nombre del asistente y el horario.

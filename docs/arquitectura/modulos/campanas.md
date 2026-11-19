@@ -11,7 +11,7 @@
 | **Qué contiene hoy** | `campanas.ts`, `verificarCampanas.ts`, `config/campanas`; `Campanas.tsx` |
 | **Depende de** | — |
 | **Límite por plan** | campañas (0 / 3 / 10; BYOC 10; propuesta del 24/09 a confirmar). Hecho el 24/09 en `firestore.rules` en `config/campanas`: `lista.size() <= limiteCampanas()`, con la copia `cuenta/estado.limites.campanas` o el plan; `configuracionFlujo` recorta al tope. Ver `limites.md` |
-| **Configuración** | `config/campanas`: texto exacto, vigencia, tope; opcionales por anuncio: `titulares`, `productoId`, `angulo` (ver «Anuncios como dato del tenant») |
+| **Configuración** | `config/campanas`: texto exacto, vigencia, tope; opcionales por anuncio: `titulares`, `productoId`, `angulo`, `adIds` (ver «Anuncios como dato del tenant» y «Ad ID») |
 | **Colecciones** | `config/campanas` |
 | **Pestañas** | Campañas (`admin`) |
 | **Prompt** | las campañas vigentes recortadas al tope entran al contexto de turno |
@@ -163,6 +163,27 @@ opcional si hay titulares.
 - **Producto:** `productoId` entra en la huella (cambiarlo vuelve a revisión) y debe cumplir
   `^[A-Za-z0-9_-]{1,100}$` sin ser `__x__`. La coherencia titular-producto la revisa el modelo
   con la huella, no el servidor por reglas.
+
+### Ad ID por campaña (17/11/2026)
+
+Una conversación se vincula a su campaña por **Ad ID** (`referral.source_id` de Meta) y por texto.
+Contrato único: `adIds` opcional por campaña en `config/campanas.lista[]`; es dato del tenant, nunca código.
+
+- **Forma (servidor, `revisarSinModelo`):** de 1 a 5 cadenas `^[0-9]{8,32}$`; los repetidos dentro de
+  la misma campaña se colapsan; un Ad ID en dos campañas rechaza la segunda (capa `duplicada`, campo
+  `adIds`). `texto` pasa a ser opcional si hay `adIds` (o titulares). No cuentan para el tope del plan.
+- **Sin modelo:** los Ad ID no son texto libre; una campaña solo con Ad ID (sin texto, titulares ni
+  ángulo) se aprueba por forma sin consultar al revisor. Con texto, titulares o ángulo se revisan como siempre.
+- **Regla:** solo sube el tope de claves por campaña de 7 a 8. La forma de `adIds` NO se valida en la
+  regla (agotaría las 1.000 expresiones); la decide el servidor, y lo que no pase nunca viaja al flujo.
+- **Flujo:** `configuracionFlujo` entrega `campanas[] = { id, texto, inicio, fin, adIds }` (siempre
+  `adIds`, vacío si no hay), solo vigentes de hoy y dentro del tope del plan.
+- **Ingesta:** «Reportar mensaje (entrante)» puede traer `adId` (`^[0-9]{1,40}$`), `campanaId`
+  (`^[A-Za-z0-9_-]{1,60}$`) y `campanaPor` (`adId` o `texto`); un valor inválido se ignora y el mensaje se
+  cuenta igual. Se guardan en el doc de la conversación SOLO al abrir la ventana (como `origen`).
+  **Mensajes: 0. Escrituras nuevas: 0** (tres campos más en un documento que ya se escribe).
+- **Pruebas:** `campanas.test.ts` (forma, duplicados, vigencia), `campanas-reglas.test.ts` (negativas de
+  la regla), `campanas-anuncios-consola.test.ts`, `origen-del-anuncio.test.ts`.
 
 ### Contacto bloqueado (31/10/2026)
 

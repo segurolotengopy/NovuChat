@@ -129,7 +129,25 @@ if (tipo === 'text') {
 }
 
 const contacto = Array.isArray(carga.contacts) ? carga.contacts[0] : undefined;
-const ref = msg.referral && typeof msg.referral === 'object' ? msg.referral : null;
+const ref = msg.referral && typeof msg.referral === 'object' && !Array.isArray(msg.referral) ? msg.referral : null;
+// EL ANUNCIO Y LA CAMPANA (contrato Ad ID + texto, 17/11/2026): primero el Ad ID (`referral.source_id`, igualdad exacta de cadena contra los `adIds` de una campana VIGENTE, sirve para cualquier
+// tipo de mensaje) y luego el texto exacto (solo `text`, con la misma comparacion de siempre: `prCampanaDelTexto`). SOLO vincula: ningun menu ni respuesta cambia por esto (`Decidir turno`
+// no lee `campana`). Las campanas solo por Ad ID viven en `cfg.campanasAdId`, aparte de `cfg.campanas`.
+const planoAd = (v, max) => String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+const anuncio = ref ? { titular: planoAd(ref.headline, 120), fuente: planoAd(ref.source_type, 20), idAnuncio: planoAd(ref.source_id, 40), ctwaClid: planoAd(ref.ctwa_clid, 200) } : null;
+const campana = (() => {
+  const idAd = anuncio ? anuncio.idAnuncio : '';
+  if (idAd !== '') {
+    const lista = Array.isArray(cfg.campanasAdId) ? cfg.campanasAdId.slice(0, 20) : [];
+    const c = lista.find((k) => k && Array.isArray(k.adIds) && k.adIds.some((a) => String(a) === idAd) && prVigente(k, ahoraMs));
+    if (c) return { id: planoAd(c.id, 60), texto: planoAd(c.texto, 300), por: 'adId' };
+  }
+  if (tipo === 'text' && texto !== '' && Array.isArray(cfg.campanas)) {
+    const c = prCampanaDelTexto(cfg.campanas, texto, ahoraMs);
+    if (c) return { id: planoAd(c.id, 60), texto: planoAd(c.texto, 300), por: 'texto' };
+  }
+  return null;
+})();
 const cobro = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
 
 // COBRO REAL ENCENDIDO CON UN PEDIDO SIMULADO PENDIENTE (simetrico de «real a simulado»): si el pedido al que apunta el QR pendiente es de
@@ -194,6 +212,11 @@ return [{ json: {
   origen: ref ? 'anuncio' : 'directo',
   // Del `referral` del anuncio SOLO el titular y el cuerpo, saneados (texto de un tercero, no confiable): `Decidir turno` los compara con los titulares de los
   // anuncios vigentes del servidor para elegir QUÉ promoción mostrar; nunca vende ni abre nada. Lo demás (enlaces, ids, imágenes) no pasa.
+  anuncio: anuncio,
+  campana: campana,
+  adId: anuncio ? anuncio.idAnuncio : '',
+  campanaId: campana ? campana.id : '',
+  campanaPor: campana ? campana.por : '',
   referral: ref ? { headline: vmLinea(ref.headline, 200), body: vmLinea(ref.body, 300) } : null,
   esPosibleAnuncio: esImagenPosibleAnuncio,
   clasificarAntes: clasificarAntes,

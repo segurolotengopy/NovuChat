@@ -143,7 +143,7 @@ describe('config/campanas: quién y qué', () => {
 
   it('la forma mínima de cada campaña: un mapa de cuatro claves con texto de hasta 300', async () => {
     const malas: unknown[] = [
-      { ...campana('a'), titulares: ['Un titular largo'], productoId: 'p1', angulo: 'x', otra: 1 },   // 8 claves
+      { ...campana('a'), titulares: ['Un titular largo'], productoId: 'p1', angulo: 'x', adIds: ['100000000000001'], otra: 1 },   // 9 claves
       { ...campana('a'), texto: 7 },
       { id: 'a', texto: 'x', inicio: dia(0) },
       { ...campana('a'), texto: 'x'.repeat(301) },
@@ -178,9 +178,9 @@ describe('config/campanas: los anuncios como dato (titulares, productoId, ángul
     await assertSucceeds(setDoc(doc(adminA(), ruta(A)), { lista: [solo, campana('vieja')], ...sello() }));
   });
 
-  it('más de siete claves, o un texto de más de 300 con claves nuevas, NO entra', async () => {
-    const ocho = { ...anuncio('x'), otra: 1 };
-    await assertFails(setDoc(doc(adminA(), ruta(A)), { lista: [ocho], ...sello() }));
+  it('más de ocho claves, o un texto de más de 300 con claves nuevas, NO entra', async () => {
+    const nueve = { ...anuncio('x'), adIds: ['100000000000001'], otra: 1 };
+    await assertFails(setDoc(doc(adminA(), ruta(A)), { lista: [nueve], ...sello() }));
     await assertFails(setDoc(doc(adminA(), ruta(A)), { lista: [{ ...anuncio('x'), texto: 'x'.repeat(301) }], ...sello() }));
     await assertFails(setDoc(doc(adminA(), ruta(A)), { lista: [{ id: 'a', inicio: dia(0) }], ...sello() }));   // 2 claves
   });
@@ -200,5 +200,35 @@ describe('config/campanas: los anuncios como dato (titulares, productoId, ángul
     await assertFails(updateDoc(doc(adminB(), ruta(B)), { vigentes: anuncios(3), ...sello('u-admin-b') }));
     await assertFails(updateDoc(doc(adminB(), ruta(B)), { lista: anuncios(1), revision: { hash: 'z' }, ...sello('u-admin-b') }));
     await assertFails(updateDoc(doc(operA(), ruta(A)), { lista: anuncios(1), ...sello('u-oper-a') }));
+  });
+});
+
+describe('config/campanas: los Ad ID (contrato Ad ID, 17/11/2026)', () => {
+  const AD1 = '100000000000001';
+  const conAdId = (id: string) => ({ id, inicio: dia(0), fin: dia(30), adIds: [AD1] });
+
+  it('una campaña solo con Ad ID (cuatro claves) y una de ocho claves con Ad ID entran, y diez caben en el tope de expresiones', async () => {
+    await preparar(A, { plan: 'pro' });
+    await assertSucceeds(setDoc(doc(adminA(), ruta(A)), { lista: [conAdId('solo')], ...sello() }));
+    const ocho = { ...campana('ocho'), titulares: ['Titular de ocho claves'], productoId: 'p1', angulo: 'Enfoque', adIds: [AD1] };
+    await assertSucceeds(updateDoc(doc(adminA(), ruta(A)), { lista: [ocho], ...sello() }));
+    const diez = Array.from({ length: 10 }, (_, i) => ({ ...ocho, id: `d${i}` }));
+    await assertSucceeds(updateDoc(doc(adminA(), ruta(A)), { lista: diez, ...sello() }));
+  });
+
+  it('el administrador de otro comercio NO escribe Ad ID, y nadie escribe lo aprobado con Ad ID', async () => {
+    await preparar(B, { plan: 'pro' }, [conAdId('x')]);
+    await assertFails(updateDoc(doc(adminA(), ruta(B)), { lista: [conAdId('y')], ...sello() }));
+    await assertFails(updateDoc(doc(adminB(), ruta(B)), { vigentes: [conAdId('z')], ...sello('u-admin-b') }));
+  });
+
+  it('un operador (no admin) NO escribe Ad ID', async () => {
+    await preparar(A, { plan: 'pro' });
+    await assertFails(setDoc(doc(operA(), ruta(A)), { lista: [conAdId('o')], ...sello('u-oper-a') }));
+  });
+
+  it('el tope del plan sigue contando campañas, no Ad ID: Crecimiento (3) NO admite 4 aunque tengan Ad ID', async () => {
+    const cuatro = Array.from({ length: 4 }, (_, i) => conAdId(`c${i}`));
+    await assertFails(setDoc(doc(adminA(), ruta(A)), { lista: cuatro, ...sello() }));
   });
 });
