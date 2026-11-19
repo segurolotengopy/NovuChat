@@ -805,7 +805,7 @@ describe('pedido: referencias para llegar, aviso del delivery y ejemplo de la no
 
   it('el cuadro de notas trae el ejemplo nuevo y ya no el del timbre', () => {
     const html = pintar({});
-    expect(html).toContain('placeholder="Color, talla u otra indicación…"');
+    expect(html).toContain('placeholder="Ingresa las especificaciones u opciones que elijas sobre tu compra"');
     expect(html).not.toContain('timbre');
   });
 
