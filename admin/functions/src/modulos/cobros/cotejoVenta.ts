@@ -5,6 +5,9 @@ import { SECRETOS_POR_ALIAS, enmascarar, rutaAutenticada } from '../../core/segu
 import { registrar } from '../../core/turno/bitacora.js';
 import { periodoDe } from '../../central/cuenta/planes.js';
 import {
+  escribirCorrelativo, formarCodigo, leerCorrelativo, prefijoDeCodigo, type Correlativo,
+} from '../../core/turno/correlativo.js';
+import {
   calificarComprobante, motivosParaElCliente, parsearMonto, type Calificacion, type Leido,
 } from './cotejo.js';
 import {
@@ -81,6 +84,12 @@ export interface RespuestaDelCotejo {
   moneda: string;
   montoLeido: number | null;
   montoDistinto: boolean;
+  /**
+   * `<PREFIJO>-AAMMDD-NNN`. ADITIVO: solo viene cuando la venta cierra (válido, aproximado o su repetición) Y el comercio
+   * tiene `config/pedidos.prefijoCodigo`; sin prefijo la respuesta es la de siempre. Idempotente por pedido: el mismo
+   * pedido devuelve el mismo código y no consume otro correlativo.
+   */
+  codigoPedido?: string;
   cierreId: string | null;
   evento: { id: string; calendario: string } | null;
   avisarComercio: boolean;
@@ -137,10 +146,13 @@ export const cotejarComprobanteVenta = onRequest(
     // El registro de TODO comprobante recibido (fase 2): su id es el nombre del objeto de Storage.
     const refRecibido = db.doc(`tenants/${tenantId}/comprobantesRecibidos/${nombreDeObjeto(idMeta)}`);
 
-    const [venta, negocio] = await Promise.all([
+    const [venta, negocio, configPedidos] = await Promise.all([
       db.doc(`tenants/${tenantId}/config/venta`).get(),
       db.doc(`tenants/${tenantId}/config/negocio`).get(),
+      db.doc(`tenants/${tenantId}/config/pedidos`).get(),
     ]);
+    // Sin prefijo no hay código ni contador: los demás comercios no notan nada.
+    const prefijo = prefijoDeCodigo(configPedidos.data());
     const moneda = String(negocio.get('moneda') ?? 'BOB');
     const cobroReal = venta.get('cobroReal') as Record<string, unknown> | undefined;
     // EL COTEJO ES DEL COBRO REAL. En modo simulado no hay intentos ni
@@ -175,6 +187,9 @@ export const cotejarComprobanteVenta = onRequest(
         const conCierre = previoAnotado.estado === 'valido' || previoAnotado.estado === 'aproximado';
         const actuales = typeof solicitud['intentosInvalidos'] === 'number' ? (solicitud['intentosInvalidos'] as number) : 0;
         const nAnotado = typeof previoAnotado.intentos === 'number' ? previoAnotado.intentos : actuales;
+        // El código del pedido que se dio entonces, tal cual (no consume otro correlativo).
+        const codigoAnotado = conCierre
+          ? (await tx.get(db.doc(`tenants/${tenantId}/cierres/${idDeCierreDeVenta(pedidoId || idMeta)}`))).get('codigoPedido') : undefined;
         return {
           codigo: 200,
           cuerpo: {
@@ -183,6 +198,7 @@ export const cotejarComprobanteVenta = onRequest(
             intentos: nAnotado, intentosRestantes: Math.max(0, MAX_INTENTOS_INVALIDOS - nAnotado),
             importe: previoAnotado.importe ?? totalUtilizable(solicitud['monto']), moneda,
             montoLeido: previoAnotado.montoLeido ?? null, montoDistinto: previoAnotado.montoDistinto ?? false,
+            ...(typeof codigoAnotado === 'string' && codigoAnotado !== '' ? { codigoPedido: codigoAnotado } : {}),
             cierreId: conCierre ? idDeCierreDeVenta(pedidoId || idMeta) : null, evento: eventoDevuelto,
             avisarComercio: previoAnotado.avisar === true, repetido: true,
           },
@@ -198,6 +214,7 @@ export const cotejarComprobanteVenta = onRequest(
       let referencia = '';
       let refCierre = null as ReturnType<typeof db.doc> | null;
       let previo = false;
+      let cierrePrevio: FirebaseFirestore.DocumentSnapshot | null = null;
       if (enPlazo) {
         // El total del pedido: el del servidor si vino del carrito web; si no,
         // el que se cotizó al mandar el QR. Nunca contra cero.
@@ -210,7 +227,8 @@ export const cotejarComprobanteVenta = onRequest(
         if (esperado <= 0) return { codigo: 409, cuerpo: { error: 'sin_total' } };
         referencia = pedidoId || idMeta;
         refCierre = db.doc(`tenants/${tenantId}/cierres/${idDeCierreDeVenta(referencia)}`);
-        previo = (await tx.get(refCierre)).exists;
+        cierrePrevio = await tx.get(refCierre);
+        previo = cierrePrevio.exists;
         const qrEnviadoEn = typeof (solicitud['qrEnviadoEn'] as { toMillis?: unknown } | undefined)?.toMillis === 'function'
           ? (solicitud['qrEnviadoEn'] as Timestamp).toMillis() : ahoraMs;
         cal = legible
@@ -244,6 +262,20 @@ export const cotejarComprobanteVenta = onRequest(
       const idCierre = cerrado ? idDeCierreDeVenta(referencia)
         : estado === 'ya_resuelto' && pedidoId ? idDeCierreDeVenta(pedidoId) : null;
 
+      // EL CÓDIGO DEL PEDIDO (PR-S). Última lectura de la transacción: antes de cualquier escritura.
+      // Idempotente por pedido: si el cierre ya lo tiene, se repite ese y no se consume otro correlativo.
+      let codigoPedido: string | null = null;
+      let correlativoNuevo: Correlativo | null = null;
+      if (idCierre) {
+        const existente = (cierrePrevio && cerrado ? cierrePrevio : await tx.get(db.doc(`tenants/${tenantId}/cierres/${idCierre}`)))
+          .get('codigoPedido');
+        if (typeof existente === 'string' && existente !== '') codigoPedido = existente;
+        else if (cerrado && prefijo && cal && (cal.estado === 'valido' || cal.estado === 'aproximado')) {
+          correlativoNuevo = await leerCorrelativo(tx, db, tenantId, ahoraMs);
+          codigoPedido = formarCodigo(prefijo, correlativoNuevo.dia, correlativoNuevo.n);
+        }
+      }
+
       if (transicion.cambios) tx.set(refConversacion, { solicitud: transicion.cambios }, { merge: true });
 
       // EL REGISTRO DE RECIBIDOS, en ESTA transacción: si esta escritura falla, el cotejo entero
@@ -263,9 +295,10 @@ export const cotejarComprobanteVenta = onRequest(
           banco: texto((cuerpo['leido'] as Record<string, unknown> | undefined)?.['banco'], 80),
           idMeta, intentos: transicion.intentosInvalidos + 1, en: Timestamp.fromMillis(ahoraMs),
         };
+        if (correlativoNuevo) escribirCorrelativo(tx, correlativoNuevo);
         if (previo) {
           // El cierre ya existía (lo registró otro camino): se reescribe el cotejo, no se cuenta de nuevo.
-          tx.update(refCierre, { cotejo: registroCotejo });
+          tx.update(refCierre, { cotejo: registroCotejo, ...(codigoPedido ? { codigoPedido } : {}) });
           // La ruta de la imagen (ya validada contra ESTE comercio y ESTE idMeta) se agrega con
           // merge: sin ella el visor tendría que derivarla. Sin imagen, nada cambia.
           if (rutaImagen) tx.set(refCierre.collection('privado').doc('datos'), { rutaComprobante: rutaImagen }, { merge: true });
@@ -273,6 +306,7 @@ export const cotejarComprobanteVenta = onRequest(
           tx.set(refCierre, {
             tipo: 'venta', ocurridoEn: Timestamp.fromMillis(ahoraMs), referencia,
             telefonoEnmascarado: enmascarar(telefono), monto: esperado, moneda, cotejo: registroCotejo,
+            ...(codigoPedido ? { codigoPedido } : {}),
           });
           const nombre = texto(conversacion.get('nombreContacto'), 120);
           tx.set(refCierre.collection('privado').doc('datos'), {
@@ -303,6 +337,7 @@ export const cotejarComprobanteVenta = onRequest(
           importe, moneda,
           montoLeido: cal?.montoLeido ?? montoDeLoLeido,
           montoDistinto: cal?.montoDistinto ?? false,
+          ...(codigoPedido ? { codigoPedido } : {}),
           cierreId: idCierre, evento: eventoDevuelto,
           avisarComercio: transicion.avisarComercio, repetido: false,
         },
