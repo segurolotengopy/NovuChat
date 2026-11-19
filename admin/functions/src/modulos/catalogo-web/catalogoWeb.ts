@@ -1137,7 +1137,7 @@ export const checkoutCatalogo = onRequest(
       && Date.now() - atencionDesde.toMillis() < HORAS_VENTANA * 3_600_000;
 
     const pedidoId = `cat_${Date.now().toString(36)}_${randomBytes(4).toString('hex')}`;
-    const resumen = resumenDelPedido(items, entrega, total, monedaPedido);
+    const resumen = resumenDelPedido(items, entrega, total, monedaPedido, nota);
 
     const lote = db().batch();
     lote.create(db().doc(`tenants/${ficha.tenantId}/pedidos/${pedidoId}`), {
@@ -1289,17 +1289,39 @@ export const checkoutCatalogo = onRequest(
   },
 );
 
+/** Tope de la nota del carrito (el mismo número está en la página). */
+export const MAX_NOTA = 300;
+/** Tope del resumen que entra al hilo: el pedido y su nota no crecen sin límite. */
+export const MAX_RESUMEN = 1500;
+const ROTULO_NOTA = '\nNota del cliente: «';
+
 /**
  * Resumen legible del pedido. Es lo que se ve en el visor de conversaciones y
  * lo que queda como `ultimoMensaje`, así que se arma acá una sola vez.
+ *
+ * LA NOTA del carrito (color, talla, aclaraciones) va en una línea aparte, solo
+ * si existe. Es texto libre del cliente y llega al asistente: se sanea con
+ * `lineaLimpia` (sin controles, bidi, enlaces ni `<>&`), se le quitan además
+ * corchetes, llaves y comillas angulares para que no imite una marca interna
+ * como `[ENVIAR_QR]` ni cierre su propio entrecomillado, y va entre comillas en
+ * UNA sola línea para que no parezca otra línea del pedido. Si el resumen no
+ * deja lugar, la nota se recorta o se omite: nunca se sobrepasa MAX_RESUMEN.
  */
-function resumenDelPedido(
+export function resumenDelPedido(
   items: Array<Record<string, unknown>>, entrega: string,
-  total: number, moneda: string,
+  total: number, moneda: string, nota: unknown = '',
 ): string {
   const lineas = items.map((i) => `${String(i['cantidad'])}× ${String(i['nombre'])}`);
-  return `Pedido desde el catálogo web (${entrega === 'envio' ? 'envío' : 'retiro'}): `
+  const base = `Pedido desde el catálogo web (${entrega === 'envio' ? 'envío' : 'retiro'}): `
     + `${lineas.join(', ')} — total ${total} ${moneda || 'BOB'}`;
+  const limpia = lineaLimpia(
+    typeof nota === 'string' ? nota.replace(/[[\]{}«»]/g, ' ') : '', MAX_NOTA);
+  if (!limpia) return base.slice(0, MAX_RESUMEN);
+  // Lo que queda para el texto de la nota, descontando el rótulo y la comilla.
+  const lugar = MAX_RESUMEN - base.length - ROTULO_NOTA.length - 1;
+  if (lugar < 20) return base.slice(0, MAX_RESUMEN);
+  const recortada = [...limpia].slice(0, lugar).join('').trim();
+  return `${base}${ROTULO_NOTA}${recortada}»`;
 }
 
 // ---------------------------------------------------------------------------

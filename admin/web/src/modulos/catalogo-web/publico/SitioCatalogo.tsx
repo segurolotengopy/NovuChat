@@ -587,7 +587,7 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambia
       )}
 
       <label className="cat-campo">
-        ¿Algo que debamos saber? (opcional)
+        ¿Algo que debamos saber, como el color o la talla? (opcional)
         <textarea value={nota} maxLength={300} rows={2}
                   placeholder="Sin cebolla, tipo de carne, tipo de gaseosa…"
                   onChange={(e) => setNota(e.target.value)} />
