@@ -5,8 +5,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, closeSync, existsSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -18,6 +17,14 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(AQUI, '../../../..');
 const CARPETA = join(RAIZ, 'Flujos/clientes/casa-bermejo');
 const VERSIONADOS = [join(CARPETA, 'casa-bermejo.json'), join(CARPETA, 'casa-bermejo.prueba.json'), join(RAIZ, 'admin/scripts/datos/casa-bermejo/casa-bermejo.json')];
+// Las pruebas NO usan el directorio temporal del sistema: sus carpetas de trabajo se crean (0o700, con mkdtemp) bajo una carpeta propia ignorada por git y se borran al terminar.
+const RAIZ_TEMPORAL = join(AQUI, '.tmp-local');
+const carpetaTemporal = (prefijo: string): string => { mkdirSync(RAIZ_TEMPORAL, { recursive: true, mode: 0o700 }); return mkdtempSync(join(RAIZ_TEMPORAL, prefijo)); };
+/** Abre UNA vez y lee modo y contenido del mismo descriptor (sin comprobar la ruta y volver a abrirla). */
+function leerConModo(ruta: string): { modo: number; texto: string } {
+  const fd = openSync(ruta, 'r');
+  try { return { modo: fstatSync(fd).mode & 0o777, texto: readFileSync(fd, 'utf8') }; } finally { closeSync(fd); }
+}
 const corrida = (...args: string[]) => spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador({}) });
 
 // Valores de ensayo FICTICIOS (no son ids de Meta ni rutas reales).
@@ -42,7 +49,7 @@ const completo = (): J => {
 
 const carpetas: string[] = [];
 function archivoLocal(datos: unknown, nombre = 'ensayo.local.json'): string {
-  const d = mkdtempSync(join(tmpdir(), 'cb-local-'));
+  const d = carpetaTemporal('cb-local-');
   carpetas.push(d);
   const ruta = join(d, nombre);
   writeFileSync(ruta, typeof datos === 'string' ? datos : JSON.stringify(datos));
@@ -50,11 +57,11 @@ function archivoLocal(datos: unknown, nombre = 'ensayo.local.json'): string {
 }
 /** Un directorio temporal de SALIDA, y los dos JSON locales que quedarían ahí. */
 function salidaTemporal(): { dir: string; prod: string; prueba: string } {
-  const dir = mkdtempSync(join(tmpdir(), 'cb-salida-'));
+  const dir = carpetaTemporal('cb-salida-');
   carpetas.push(dir);
   return { dir, prod: join(dir, 'casa-bermejo.local.json'), prueba: join(dir, 'casa-bermejo.prueba.local.json') };
 }
-afterEach(() => { for (const d of carpetas.splice(0)) rmSync(d, { recursive: true, force: true }); });
+afterEach(() => { for (const d of carpetas.splice(0)) rmSync(d, { recursive: true, force: true }); rmSync(RAIZ_TEMPORAL, { recursive: true, force: true }); });
 const mensaje = (f: () => unknown): string => { try { f(); } catch (e) { return String((e as Error).message); } return ''; };
 const hash = (rutas: string[]) => rutas.map((r) => readFileSync(r, 'utf8'));
 const armar = (datos: unknown, salida: string) => C.construirLocal({ datosLocal: archivoLocal(datos), salida }) as { archivo: string; nodos: number; pendientes: string[] }[];
@@ -76,13 +83,13 @@ describe('armar con datos locales', () => {
   it('los JSON locales nacen con permisos 600 (llevan la ruta del receptor, una URL de capacidad)', () => {
     const s = salidaTemporal();
     armar(base(), s.dir);
-    for (const f of [s.prod, s.prueba]) expect(statSync(f).mode & 0o777).toBe(0o600);
+    for (const f of [s.prod, s.prueba]) expect(leerConModo(f).modo).toBe(0o600);
   });
   it('un JSON local que YA existía con permisos 644 queda en 600 al volver a armarlo (fchmod, no solo el modo de creación)', () => {
     const s = salidaTemporal();
-    for (const f of [s.prod, s.prueba]) { writeFileSync(f, '{}'); chmodSync(f, 0o644); expect(statSync(f).mode & 0o777).toBe(0o644); }
+    for (const f of [s.prod, s.prueba]) { writeFileSync(f, '{}'); chmodSync(f, 0o644); expect(leerConModo(f).modo).toBe(0o644); }
     armar(base(), s.dir);
-    for (const f of [s.prod, s.prueba]) { expect(statSync(f).mode & 0o777).toBe(0o600); expect(readFileSync(f, 'utf8')).toContain(PHONE); }
+    for (const f of [s.prod, s.prueba]) { const l = leerConModo(f); expect(l.modo).toBe(0o600); expect(l.texto).toContain(PHONE); }
   });
   it('`--verificar` sigue exigiendo los versionados al día y no se contamina con los locales', () => {
     const s = salidaTemporal();
@@ -173,7 +180,7 @@ describe('NEGADO: lo que un dato local no puede traer', () => {
     expect(mensaje(() => C.cargarDatosLocal(archivoLocal(base(), 'datos.json')))).toMatch(/\.local\.json/);
   });
   it('un archivo que no existe, un JSON roto y uno que no es un objeto', () => {
-    expect(mensaje(() => C.cargarDatosLocal(join(tmpdir(), 'no-existe-cb.local.json')))).toMatch(/no existe/);
+    expect(mensaje(() => C.cargarDatosLocal(join(salidaTemporal().dir, 'no-existe.local.json')))).toMatch(/no existe/);
     expect(mensaje(() => C.cargarDatosLocal(archivoLocal('{"a":')))).toMatch(/no es un JSON válido/);
     expect(mensaje(() => C.cargarDatosLocal(archivoLocal('[1]')))).toMatch(/tiene que ser un objeto/);
   });

@@ -26,7 +26,8 @@
  *
  * LOS DATOS son `admin/scripts/datos/casa-bermejo/casa-bermejo.json` (zona Tenants: solo marcadores `REEMPLAZAR_*`, nunca un token, una ruta de webhook real, un teléfono ni un identificador de Meta).
  */
-import { closeSync, constants, fchmodSync, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
@@ -131,19 +132,36 @@ function leerSiExiste(ruta, nombre) {
   }
   try { return readFileSync(fd, 'utf8'); } finally { closeSync(fd); }
 }
-function escribirSinSeguirEnlaces(ruta, texto, nombre, modo = 0o644, forzarModo = false) {
+function escribirSinSeguirEnlaces(ruta, texto, nombre) {
   let fd;
   try {
-    fd = openSync(ruta, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, modo);
+    fd = openSync(ruta, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o644);
   } catch (e) {
     if (e && e.code === 'ELOOP') throw new Error(`${nombre}: es un enlace simbólico y no se escribe`);
     throw e;
   }
+  try { writeFileSync(fd, texto); } finally { closeSync(fd); }
+}
+/**
+ * Escribe un archivo LOCAL (con la ruta del receptor, una URL de capacidad) SIEMPRE nuevo: un archivo vecino creado con `O_CREAT|O_EXCL|O_NOFOLLOW` y modo 0o600 (falla si el nombre ya existe,
+ * sin seguir enlaces) y luego `rename` sobre el destino, que reemplaza el archivo viejo —o un enlace— en vez de abrirlo. No hay comprobar-y-luego-abrir ni un modo heredado del archivo anterior.
+ * El directorio de salida lo elige quien corre el comando; este código nunca usa el directorio temporal del sistema.
+ */
+function escribirLocalNuevo(ruta, texto, nombre) {
+  const vecino = `${ruta}.${randomBytes(8).toString('hex')}.nuevo`;
+  let fd;
   try {
-    // El modo de `openSync` solo vale al CREAR: un archivo que ya existía conserva el suyo. Con `forzarModo` se aplica siempre (fchmod sobre el descriptor, sin seguir enlaces).
-    if (forzarModo) fchmodSync(fd, modo);
-    writeFileSync(fd, texto);
-  } finally { closeSync(fd); }
+    fd = openSync(vecino, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  } catch (e) {
+    throw new Error(`${nombre}: no se pudo crear el archivo nuevo (${e && e.code ? e.code : 'error'})`);
+  }
+  try {
+    try { writeFileSync(fd, texto); } finally { closeSync(fd); }
+    renameSync(vecino, ruta);
+  } catch (e) {
+    try { unlinkSync(vecino); } catch { /* ya no está */ }
+    throw new Error(`${nombre}: no se pudo escribir (${e && e.code ? e.code : 'error'})`);
+  }
 }
 
 // ----------------------------------------------------------------- los datos
@@ -672,7 +690,7 @@ export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS,
 
 /**
  * Arma los JSON LOCALES (`casa-bermejo.local.json` y `casa-bermejo.prueba.local.json`) con los datos locales sustituidos. NUNCA toca los versionados y escribe solo
- * con el sufijo `.local.json` (ignorado por git), con permisos 600 aunque el archivo ya existiera. Arma y pasa las MISMAS guardias de las DOS variantes ANTES de escribir
+ * con el sufijo `.local.json` (ignorado por git), con permisos 600 (siempre archivos nuevos: se reemplaza el viejo). Arma y pasa las MISMAS guardias de las DOS variantes ANTES de escribir
  * ninguna: si una falla, no se escribe nada. Devuelve, por archivo, los nodos y (igual en los dos) los marcadores que quedaron en lo armado.
  *   opciones: { carpeta (de dónde se lee el proyecto), salida (dónde se escribe; por defecto `carpeta`), datosLocal (ruta), versionados (ruta), tope, origenReceptor }
  */
@@ -690,7 +708,7 @@ export function construirLocal({ carpeta = AQUI, salida = carpeta, datosLocal, v
   });
   const pendientes = marcadoresDeLoArmado(armados.map((x) => x.armado), versionados);
   // Recién aquí, con las dos variantes ya armadas y aprobadas por las guardias, se escribe. Permisos 600: llevan la ruta del receptor, que es una URL de capacidad.
-  for (const x of armados) escribirSinSeguirEnlaces(join(salida, x.archivo), x.texto, x.archivo, 0o600, true);
+  for (const x of armados) escribirLocalNuevo(join(salida, x.archivo), x.texto, x.archivo);
   return armados.map((x) => ({ archivo: x.archivo, nodos: x.armado.nodes.length, pendientes }));
 }
 
