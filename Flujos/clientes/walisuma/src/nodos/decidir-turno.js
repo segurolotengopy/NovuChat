@@ -107,7 +107,9 @@ if (wlPideIdentidad(texto)) return salir({ tipo: 'identidad' });
 // Ventana: desde `ultimoPedido.ms` (el «Pedido confirmado»), a lo más `WL_VENTANA_FACTURA_MS`.
 const up = ficha.ultimoPedido;
 const pendiente = !!up && up.factura === 'pedida' && !t.seleccionId && up.ms > 0 && ahora - up.ms >= 0 && ahora - up.ms < WL_VENTANA_FACTURA_MS;
-if (pendiente) {
+// Con la factura pedida, un mensaje que ADEMÁS trae un pedido nuevo no se toma como factura: va al modelo (el número enmascarado) y el código vuelve a pedir los datos de factura.
+const pedidoNuevo = pendiente && wlTraePedidoNuevo(n);
+if (pendiente && !pedidoNuevo) {
   const datos = wlDatosFactura(texto);
   if (datos) return salir({ tipo: 'factura_datos', razonSocial: datos.razonSocial, nit: datos.nit });
   if (wlSinFactura(n)) return salir({ tipo: 'factura_sin' });
@@ -118,11 +120,11 @@ if (wlCorporativo(n)) return salir({ tipo: 'derivar', motivo: 'corporativo' });
 // 4c. La factura ANTES de pagar (Andres, 19/11/2026): no se deriva. Con un NIT o CI en el texto, solo el texto fijo (sin modelo: el NIT nunca llega al modelo);
 // si no, el modelo sigue con la venta y el código agrega la frase fija «le pediremos la razón social y el NIT al confirmar su pedido».
 // Con un pedido YA confirmado cuya factura ya se dio, se negó o cuya ventana pasó, «NIT …» no recibe «se la pedimos al confirmar» (sería una promesa sin respaldo): pasa con nuestra encargada.
-let notaFactura = false;
-if (wlPideFactura(n)) {
+let notaFactura = pedidoNuevo ? 'pedir' : false;
+if (wlPideFactura(n) && !pedidoNuevo) {
   if (up && !pendiente) return salir({ tipo: 'derivar', motivo: 'factura' });
   if (wlDatosFactura(texto)) return salir({ tipo: 'factura_al_confirmar' });
-  notaFactura = true;
+  notaFactura = 'al_confirmar';
 }
 if (wlNombraSinPrecio(n, wlSinPrecio(panel))) return salir({ tipo: 'derivar', motivo: 'sin_precio' });
 if (wlQuiereHablar(n)) return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });

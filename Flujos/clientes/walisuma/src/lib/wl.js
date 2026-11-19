@@ -28,10 +28,44 @@ const WL_NIEGA_IA = /\bno (?:soy|es|eres|estas hablando con|hablas con)\b[^.!?]{
 const WL_NIEGA_IA_EXTRA = /\b(?:le|lo|la|te) (?:atiende|esta atendiendo|escribe|responde|contesta) (?:un |una |nuestra |nuestro |el |la )?(?:asesor\w*|persona\w*|encargad[oa]s?|ejecutiv\w*|vendedor\w*|agente|operador\w*)\b(?! en (?:la )?tienda)|\bsoy (?!el |la |un |una |su |tu |asistente\b|del\b|de\b|parte\b)[a-z]{2,20} (?:del equipo|de ventas|de atencion|de walisuma|de la tienda|de servicio|de la marca|su asesor\w*|su encargad[oa])\b|\b(?:le|te) (?:saluda|escribe|habla) (?!el asistente|un asistente|nuestra |nuestro |el equipo)[a-z]{2,20}(?: [a-z]{2,20})?,? (?:del equipo|de ventas|de atencion|de walisuma)\b/;
 // Y presentarse con un NOMBRE PROPIO, mirado en el texto SIN normalizar (mayúscula inicial): «Soy Carla.», «Hola, soy Carla 😊», «Le saluda Carla», «Le atiende Carla.», «Me llamo Carla».
 // «Soy el asistente…» / «la asistente» no caen; «Me llamó la atención…» tampoco (la tilde de «llamó» y la minúscula de «la»).
-const WL_NIEGA_IA_NOMBRE_PALABRAS = '(?:Tienda|Atenci[oó]n|Asistente|Walisuma|La|El|Los|Las|Do[nñ]a|Don|Equipo|Nuestr[oa]|Su|Un|Una|Recepci[oó]n|Servicio|Ventas|Cat[aá]logo|Encargad[oa]|Asesor[a]?|Atendemos|Bienvenid[oa])';
-// (cuarta pasada) Nombre propio = UNA palabra con mayúscula inicial que no sea ninguna de las de arriba; puede ir precedido de un cargo («la encargada Carla», «la señorita Carla»).
-// Disparadores: «soy», «le/te saluda», «le/te atiende», «le/te habla», «le/te escribe», «aquí (le atiende…)» y «Habla» al comienzo de una oración. Tras «me llamo» / «mi nombre es», cualquier palabra (sin exigir mayúscula).
-const WL_NIEGA_IA_NOMBRE = new RegExp('(?:^|[\\s¡¿,.;:!(])(?:[Ss]oy|[LlTt]e\\s+(?:saluda|atiende|habla|escribe)|[Aa]qu[ií](?:\\s+(?:le|te)\\s+(?:atiende|habla|escribe|saluda))?,?|(?<=(?:^|[.!?¡¿\\n])\\s{0,3})[Hh]abla)\\s+(?:(?:[Ll]a|[Ee]l)\\s+)?(?:(?:encargad[oa]|se[nñ]orita|se[nñ]ora|se[nñ]or|asesora?|vendedora?|ejecutiv[oa])\\s+)?(?!' + WL_NIEGA_IA_NOMBRE_PALABRAS + '(?![\\p{L}]))\\p{Lu}\\p{Ll}{1,20}(?![\\p{L}\\p{N}])|(?:^|[\\s¡¿,.;:!(])[Mm](?:e llamo|i nombre es)\\s+(?!(?:el|la)\\s+asistente|asistente)\\p{L}{2,20}', 'u');
+// (quinta pasada) Presentarse o FIRMAR con un nombre de persona es una negación implícita de ser una IA. Una función con reglas simples, mirada en el texto SIN normalizar:
+//   - «soy <Nombre>» (también «soy la encargada Carla», «Soy CARLA») y «Habla <Nombre>» al comienzo de una oración → negación;
+//   - «le/te atiende|saluda|habla|escribe <Nombre>» → negación, SALVO que siga «en la tienda / en la sucursal» (describe a quien atiende en la tienda: «Le atiende Rosa en la tienda.»);
+//   - «Aquí <Nombre>» y las despedidas («Saludos», «Un saludo», «Atentamente», «Atte.», «Cordialmente», «Con gusto») + <Nombre> → negación SOLO si el nombre cierra la oración
+//     (punto, fin, guion, «aquí» o una coma seguida de minúscula) y no le sigue otra palabra con mayúscula («Aquí, Bufanda Vicuña Clásica: …» no cae);
+//   - «me llamo» / «mi nombre es» + cualquier palabra (sin exigir mayúscula) que no sea «el/la asistente».
+// <Nombre> = una palabra con mayúscula inicial (o toda en mayúsculas) que NO está en `WL_NO_SON_NOMBRES` (artículos, la marca, cargos, ciudades y zonas de las tiendas).
+// RIESGO RESIDUAL declarado: un nombre de persona que coincide con una palabra de esa lista, o una firma sin despedida ni «soy» («— Carla»), no se detecta.
+const WL_NO_SON_NOMBRES = ['tienda', 'atencion', 'asistente', 'walisuma', 'la', 'el', 'los', 'las', 'dona', 'don', 'equipo', 'nuestra', 'nuestro', 'su', 'sus', 'un', 'una', 'recepcion', 'servicio', 'ventas', 'catalogo',
+  'encargada', 'encargado', 'asesora', 'asesor', 'atendemos', 'bienvenido', 'bienvenida', 'le', 'lo', 'les', 'te', 'usted', 'ustedes', 'tiene', 'tenemos', 'paz', 'cruz', 'santa', 'san', 'miguel', 'sopocachi', 'calacoto',
+  'zona', 'sur', 'cochabamba', 'sucre', 'tarija', 'oruro', 'potosi', 'achumani', 'obrajes', 'equipetrol', 'bolivia', 'nuestras', 'nuestros', 'para', 'por', 'de', 'del', 'y', 'con', 'gracias', 'hola', 'bs'];
+function wlNiegaConNombre(texto) {
+  const t = String(texto === undefined || texto === null ? '' : texto).normalize('NFKC');
+  const NOMBRE = '(\\p{Lu}(?:\\p{Ll}{1,20}|\\p{Lu}{1,20}))(?![\\p{L}\\p{N}])';
+  const CARGO = '(?:(?:[Ll]a|[Ee]l)\\s+)?(?:(?:encargad[oa]|se[nñ]orita|se[nñ]ora|se[nñ]or|asesora?|vendedora?|ejecutiv[oa])\\s+)?';
+  const ANTES = '(?:^|[\\s¡¿,.;:!(\\-–—])';
+  const reglas = [
+    [ANTES + '(?:[Ss]oy|SOY)\\s+' + CARGO + NOMBRE, 'siempre'],
+    ['(?:^|[.!?¡¿\\n]\\s{0,3})[Hh]abla\\s+' + CARGO + NOMBRE, 'siempre'],
+    [ANTES + '(?:[Ll]e|[Tt]e)\\s+(?:atiende|saluda|habla|escribe)\\s+' + CARGO + NOMBRE, 'sin_tienda'],
+    [ANTES + '[Aa]qu[ií],?\\s+' + NOMBRE, 'cierra'],
+    [ANTES + '(?:[Ss]aludos|[Uu]n saludo|[Aa]tentamente|[Aa]tte\\.?|[Cc]ordialmente|[Cc]on gusto)[,.:]?\\s+' + NOMBRE, 'cierra'],
+  ];
+  const plegar = (x) => x.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  for (const [fuente, modo] of reglas) {
+    const re = new RegExp(fuente, 'gu');
+    let m;
+    while ((m = re.exec(t)) !== null) {
+      if (WL_NO_SON_NOMBRES.indexOf(plegar(m[1])) >= 0) continue;
+      const despues = t.slice(m.index + m[0].length);
+      if (modo === 'siempre') return true;
+      if (modo === 'sin_tienda') { if (/^\s+en\s+(?:la\s+|nuestra\s+)?(?:tienda|sucursal)\b/i.test(despues)) continue; return true; }
+      if (/^\s+\p{Lu}/u.test(despues)) continue;
+      if (/^(?:\s*(?:[.!?…\-–—)]|$)|\s+aqu[ií](?![\p{L}])|,\s*\p{Ll})/u.test(despues)) return true;
+    }
+  }
+  return /(?:^|[\s¡¿,.;:!(])[Mm](?:e llamo|i nombre es)\s+(?!(?:el|la)\s+asistente|asistente)\p{L}{2,20}/u.test(t);
+}
 const WL_SALUDO_MINIMO = 'Hola, soy el asistente de atención y ventas.';
 
 // Lo que el cliente ve cuando manda algo que este canal no lee (sticker, ubicación, contacto, mensaje no soportado o un medio sin id): texto cortés fijo, sin modelo, una sola invitación y ninguna promesa.
@@ -61,7 +95,7 @@ const WL_FRASE_CONFIRMADO = /^Pedido confirmado(?: WAL-\d{6}-\d{3})?\./;
 // Excepción PERMANENTE declarada en `admin/pruebas/core/ux/identidad.ts` (`EXCEPCIONES_DE_IDENTIDAD`, dueño Andres, 19/11/2026).
 function wlSeguro(texto, permiso) {
   const t = String(texto === undefined || texto === null ? '' : texto);
-  if (WL_NIEGA_IA.test(wlNorm(t)) || WL_NIEGA_IA_EXTRA.test(wlNorm(t)) || WL_NIEGA_IA_NOMBRE.test(t)) return WL_SALUDO_MINIMO;
+  if (WL_NIEGA_IA.test(wlNorm(t)) || WL_NIEGA_IA_EXTRA.test(wlNorm(t)) || wlNiegaConNombre(t)) return WL_SALUDO_MINIMO;
   const frase = permiso === WL_PERMISO_CONFIRMADO ? WL_FRASE_CONFIRMADO.exec(t) : null;
   const resto = frase ? t.slice(frase[0].length) : t;
   if (CB_PROHIBIDAS.test(cbCanon(resto))) return WL_SALUDO_MINIMO;
@@ -324,23 +358,24 @@ function wlTextoComprobante(resultado, diferencia, totalTexto, salio, op) {
 // EL ENMASCARADO DE NÚMEROS (cuarta pasada de la revisión del PR #1020). UNA sola fuente: la usa `wlCuerpoModelo` antes del modelo y `construir.mjs` la inyecta, tal cual, en la expresión
 // del cuerpo de «Reportar mensaje (entrante)» (marca `@@wl-enmascarar@@`). Por eso es una FLECHA sin llamadas a otras funciones del archivo. Reglas:
 //   - el texto pasa por NFKC (dígitos de ancho completo → ASCII) y los códigos de pedido WAL-AAMMDD-NNN (en cualquier mayúscula) se apartan y se devuelven intactos;
-//   - CON etiqueta de documento (NIT, N.I.T., CI, C.I., carnet, cédula, razón social, factura): todo número de 5 a 15 dígitos, aunque venga partido por espacios, saltos, puntos,
-//     comas, barras, guiones o rayas («NIT 12 345 678», «CI: 1 2 3 4 5 6 7», «1/234/567»), sale «[nº]», también si tiene forma de celular («CI 71234567»);
+//   - CON etiqueta de documento (NIT, N.I.T., CI, C.I., carnet, cédula, razón social, factura): todo número de 5 a 15 dígitos (de cualquier escritura: `\p{Nd}`), aunque venga partido por hasta 3
+//     espacios, saltos, puntos, comas, barras, guiones, rayas, «·», el signo menos o espacios de ancho cero («NIT 12 345 678», «CI: 1 2 3 4 5 6 7», «1/234/567»), sale «[nº]», también si tiene forma de celular («CI 71234567»);
 //   - SIN etiqueta: solo los grupos de 7 o más dígitos (sin cruzar espacios ni saltos), salvo una fecha, un celular de Bolivia (si `conservarCelular`), un número precedido por
 //     «Nº», «número», «torre», «calle», «av.», «piso», «casa», «#» o «Bs», o seguido de «unidades», «piezas», «Bs» o «bolivianos». Los de 5 o 6 dígitos sin etiqueta pasan («Torre 10500»).
-// LÍMITE DECLARADO: un NIT o CI SIN etiqueta de 5 o 6 dígitos, o de 8 dígitos que empieza en 6 o 7 (forma de celular), no se enmascara.
+// RIESGO RESIDUAL declarado: SIN etiqueta no se enmascara un NIT o CI de 5 o 6 dígitos, uno de 8 dígitos que empieza en 6 o 7 (forma de celular), ni uno partido por espacios o comas
+// («Ana 12,345,678», «mi tarjeta 4111 1111 1111 1111»): sin etiqueta solo se miran grupos sin espacios.
 const wlEnmascarar = (texto, conservarCelular) => {
   let s = String(texto === undefined || texto === null ? '' : texto).normalize('NFKC');
   const codigos = [];
-  s = s.replace(/wal-\d{6}-\d{3}/gi, (m) => { codigos.push(m); return '\u0001' + String.fromCharCode(65 + Math.min(codigos.length - 1, 25)) + '\u0001'; });
-  const etiqueta = /(?:^|[^a-záéíóúñ])(?:n\.?\s?i\.?\s?t|c\.?\s?i|carnet|c[eé]dula|raz[oó]n\s+social|factura)(?![a-záéíóúñ])/i.test(s);
-  if (etiqueta) s = s.replace(/\d(?:[\s.,\/_–—-]{0,2}\d){4,14}/g, '[nº]');
+  s = s.replace(/wal-\d{6}-\d{3}/giu, (m) => { codigos.push(m); return '\u0001' + String.fromCharCode(65 + Math.min(codigos.length - 1, 25)) + '\u0001'; });
+  const etiqueta = /(?:^|[^\p{L}])(?:n\.?\s?i\.?\s?t|c\.?\s?i|carnet|c[eé]dula|raz[oó]n\s+social|factura)(?![\p{L}])/iu.test(s);
+  if (etiqueta) s = s.replace(/\p{Nd}(?:[\s\p{Pd}−.,·\/_​]{0,3}\p{Nd}){4,14}/gu, '[nº]');
   else {
-    s = s.replace(/\+?\d(?:[.\/-]?\d){6,}/g, (m, i, todo) => {
+    s = s.replace(/\+?\p{Nd}(?:[.\/\p{Pd}−]?\p{Nd}){6,}/gu, (m, i, todo) => {
       const antes = todo.slice(Math.max(0, i - 14), i).toLowerCase();
       const despues = todo.slice(i + m.length, i + m.length + 14).toLowerCase();
-      const fecha = /^\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}$/.test(m);
-      const celular = conservarCelular === true && /^(?:591)?[67]\d{7}$/.test(m.replace(/\D/g, ''));
+      const fecha = /^\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}$/.test(m) || /^\d{4}[.\/-]\d{1,2}[.\/-]\d{1,2}$/.test(m);
+      const celular = conservarCelular === true && /^(?:591)?[67]\d{7}$/.test(m.replace(/[^0-9]/g, ''));
       const conPalabra = /(?:n[º°o]\.?|n[uú]mero|torre|calle|av\.?|avenida|piso|casa|#|bs\.?)\s*$/.test(antes) || /^\s*(?:unidades|unidad|piezas|bs\b|bolivianos)/.test(despues);
       return fecha || celular || conPalabra ? m : '[nº]';
     });

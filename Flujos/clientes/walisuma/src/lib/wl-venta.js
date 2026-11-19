@@ -233,7 +233,7 @@ function wlPideIdentidad(texto) {
 function wlPideIdentidadOracion(n) {
   const t = String(n || '');
   if (t === '') return false;
-  const QUE = '(?:bot|bots|robot|robots|ia|i a|inteligencia artificial|maquina|programa|computadora|chatbot|chat bot|asistente virtual|persona|humano|humana)';
+  const QUE = '(?:bot|bots|robot|robots|ia|i a|inteligencia artificial|maquina|programa|computadora|chatbot|chat bot|chatgpt|chat gpt|gpt|gemini|asistente virtual|persona|humano|humana)';
   // La pregunta TERMINA en lo que se pregunta (el texto normalizado ya no trae «?»), o sigue con una alternativa corta («… o una persona», «… de verdad»):
   // «¿es una persona de La Paz quien teje?», «¿es un programa de descuentos?» o «¿quién me atiende en la tienda?» NO son preguntas por la identidad (revisión del PR #1020).
   const FIN = '(?:\\s+(?:o|u)\\s+(?:un |una )?[a-z ]{1,30}|\\s+(?:de verdad|real|verdad|cierto|no))?\\s*$';
@@ -241,6 +241,7 @@ function wlPideIdentidadOracion(n) {
     || new RegExp('\\b(?:eres|eris|erez|sos|es usted|seras)\\s+(?:real|de verdad|automatic\\w*)' + FIN).test(t)
     || new RegExp('\\b(?:hablo|hablamos|estoy hablando|hablando|chateo|chateando|estoy chateando|converso|conversando|estoy conversando|escribo|estoy escribiendo)\\s+con\\s+(?:un |una |alguien )?' + QUE + FIN).test(t)
     || new RegExp('\\b(?:me|nos)\\s+(?:atiende|esta atendiendo|responde|contesta|escribe)\\s+(?:un |una |alguien )?' + QUE + FIN).test(t)
+    || new RegExp('\\besto\\s+(?:lo|le|me|nos)?\\s*(?:contesta|responde|escribe|atiende)\\s+(?:un |una )?' + QUE + FIN).test(t)
     || new RegExp('(?:\\bpersona real|\\bes (?:un )?bot|\\bquien (?:eres|es usted|me atiende|me responde|me contesta|me escribe)|\\bcon quien (?:hablo|estoy hablando|chateo|estoy chateando)|\\b(?:respuesta|mensaje|chat|contestador)\\w* automatic\\w*|\\bhay (?:alguien|una persona|un humano) (?:ahi|real))' + FIN).test(t)
     || /^\s*(?:esto |este chat |usted )?es automatic\w*\s*$/.test(t);
 }
@@ -259,6 +260,8 @@ function wlPideCambio(n) {
 // Acotado (revisión del PR #1020): «no necesito nada más, gracias» NO es «sin factura»; «a mi nombre nomás» y las respuestas cortas solo cuentan como el mensaje entero.
 function wlSinFactura(n) {
   const t = String(n || '');
+  // «NIT 0» = sin factura (decisión 10: S/N y NIT 0).
+  if (/^(?:mi )?(?:nit|ci)(?: es)? 0(?: gracias)?$/.test(t)) return true;
   return /\bsin (la )?factura\b|\bno (necesito|quiero|requiero|preciso|me hace falta|hace falta)( la| una| de)? factura\b|\bfactura no\b/.test(t)
     || /^(a mi nombre( nomas| no mas| nada mas| noma)?|asi nomas|no gracias|no hace falta|no la necesito|no necesito|no es necesario|no)( gracias)?$/.test(t);
 }
@@ -268,16 +271,24 @@ const WL_NO_ES_FACTURA_TELEFONO = /\b(telefono|telf|tel|celular|cel|whatsapp|wsp
 const WL_NO_ES_FACTURA = /\b(telefono|telf|tel|celular|cel|whatsapp|wsp|numero de contacto|calle|avenida|av|zona|direccion|barrio|edificio|piso|depto|departamento|envio|envien|enviar|pedido|comprar|agregar|agrega|unidad|unidades|pieza|piezas)\b/;
 // Los datos de factura en el texto del cliente: un NIT o CI (5 a 15 dígitos) y la razón social (lo que queda sin las etiquetas). null si no hay número.
 // Solo se usa con una factura PEDIDA tras el pago y el resultado va SOLO al aviso de nuestra encargada: ni ficha, ni memoria, ni planilla, ni modelo.
+// ¿El mensaje trae ADEMÁS un pedido nuevo? («quiero otro pedido, 2 bufandas, NIT …», «mi carnet es … y quiero 2 chompas»): entonces no se toma como datos de factura;
+// el texto va al modelo (con el número enmascarado) para no perder el pedido, y el código vuelve a pedir los datos de factura en un mensaje aparte de él.
+function wlTraePedidoNuevo(n) {
+  const t = String(n || '');
+  return /\b(?:otro|nuevo|un) pedido\b/.test(t) || /\b(?:quiero|quisiera|deseo|dame|deme|agrega\w*|agregue\w*|ademas)\b(?! (?:la |una |mi )?factura)[^]{0,40}?\b\d{1,2} [a-z]{4,}/.test(t)
+    || /\b\d{1,2} (?:chompas?|bufandas?|billeteras?|llaveros?|chales?|gorros?|mitones?|bolsos?|carteras?|neceseres?|tapices?|piezas?|unidades?)\b/.test(t);
+}
 function wlDatosFactura(texto) {
   // NFKC (dígitos de ancho completo) y FUERA el código del pedido (WAL-AAMMDD-NNN, cualquier mayúscula): nunca se toma como NIT.
   const t = cbLinea(String(texto === undefined || texto === null ? '' : texto), 300).normalize('NFKC').replace(/wal-\d{6}-\d{3}/gi, ' ');
   const n = wlNorm(t);
   const celular = (d) => /^(?:591)?[67]\d{7}$/.test(d);
-  // La etiqueta, también pegada al número («NIT1234567», «CI1234567») o con puntos («N.I.T.»). «Factura» sola NO basta para tomar un celular («Factura por favor 71234567»).
-  // Primero una etiqueta FUERTE (NIT, CI, carnet, cédula, razón social); «factura» solo si no hay otra («quiero factura a nombre de Ana, NIT 77665544» toma el NIT).
-  const et = /(?:^|[^a-záéíóúñ])(n\.?\s?i\.?\s?t|c\.?\s?i\.?|carnet|c[eé]dula|raz[oó]n\s+social)(?![a-záéíóúñ])/i.exec(t) || /(?:^|[^a-záéíóúñ])(factura)(?![a-záéíóúñ])/i.exec(t);
+  if (wlTraePedidoNuevo(n)) return null;
+  // SOLO una etiqueta FUERTE captura (NIT, N.I.T., CI, carnet, cédula, razón social), también pegada al número. «Factura» sola NUNCA captura (quinta pasada):
+  // «¿y la factura del pedido 251119-001?» o «la factura que sea por 12500 Bs» no son un NIT.
+  const et = /(?:^|[^a-záéíóúñ])(n\.?\s?i\.?\s?t|c\.?\s?i\.?|carnet|c[eé]dula|raz[oó]n\s+social)(?![a-záéíóúñ])/i.exec(t);
   if (et) {
-    // El número que SIGUE a la etiqueta: primero el grupo sin espacios; si es corto («NIT 1020 3040 50»), el que cruza espacios y separadores.
+    // El número que SIGUE a la etiqueta: primero el grupo sin espacios; si es corto («NIT 1020 3040 5»), el que cruza espacios y separadores.
     const resto = t.slice(et.index + et[0].length);
     const corto = /^[^\d]{0,30}?(\d(?:[.\/-]?\d){4,14})(?!\d)/.exec(resto);
     const largo = /^[^\d]{0,30}?(\d(?:[\s.,\/_–—-]{0,2}\d){4,14})(?!\d)/.exec(resto);
@@ -285,16 +296,16 @@ function wlDatosFactura(texto) {
     if (!m) return null;
     const nit = m[1].replace(/\D/g, '');
     if (!/^\d{5,15}$/.test(nit)) return null;
-    // Con etiqueta, la palabra de teléfono solo descarta un número con forma de celular («NIT 1234567 tel 71234567» sí es factura); «factura» sola tampoco toma un celular.
-    const soloFactura = /^factura$/i.test(et[1].trim());
-    if (celular(nit) && (soloFactura || WL_NO_ES_FACTURA_TELEFONO.test(n))) return null;
-    const razon = t.replace(m[1], ' ').replace(/\b(raz[oó]n social|nombre completo|nombre|n\.?\s?i\.?\s?t|nit|c\.?\s?i\.?|carnet|c[eé]dula|documento|n[uú]mero|factura|mi|es|y|a nombre de|por favor)\b/gi, ' ')
-      .replace(/(?:^|\s)(?:tel|telf|cel|celular|tel[eé]fono|whatsapp)\b[^,;]*/gi, ' ').replace(/\d[\d\s.-]*/g, ' ')
-      .replace(/[:;,.#°º()\[\]{}"'«»]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+    // Con etiqueta, la palabra de teléfono solo descarta un número con forma de celular («NIT 1234567 tel 71234567» sí es factura).
+    if (celular(nit) && WL_NO_ES_FACTURA_TELEFONO.test(n)) return null;
+    // La razón social: sin el número, las etiquetas, el teléfono, el complemento del CI (LP, SC, CB…) ni las palabras de un pedido o una entrega.
+    const razon = t.replace(m[1], ' ').replace(/(?:^|\s)(?:tel|telf|cel|celular|tel[eé]fono|whatsapp)\b[^,;]*/gi, ' ').replace(/\b(?:env[ií]\w*|entreg\w*|pedido)\b[^,;]*/gi, ' ')
+      .replace(/\b(raz[oó]n social|nombre completo|nombre|n\.?\s?i\.?\s?t|nit|c\.?\s?i\.?|carnet|c[eé]dula|documento|n[uú]mero|factura|mi|es|y|a nombre de|por favor|gracias|LP|SC|CB|OR|PT|TJ|CH|BN|PA)\b/gi, ' ')
+      .replace(/\d[\d\s.-]*/g, ' ').replace(/[:;,.#°º()\[\]{}"'«»-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
     return { razonSocial: /\p{L}{2,}/u.test(razon) ? razon : '', nit: nit };
   }
   // Sin etiqueta: solo un mensaje que es SOLO un nombre y un número (sin teléfono, dirección ni pedido), y nunca un celular («Ana 71234567»).
-  if (WL_NO_ES_FACTURA.test(n)) return null;
+  if (WL_NO_ES_FACTURA.test(n) || /\bfactura\b/.test(n)) return null;
   const solo = /^([\p{L}' -]{2,80})[\s,;:-]+(\d(?:[.-]?\d){4,14})\.?$/u.exec(t.trim()) || /^(\d(?:[.-]?\d){4,14})[\s,;:-]+([\p{L}' -]{2,80})\.?$/u.exec(t.trim());
   if (!solo) return null;
   const numero = /\d/.test(solo[1]) ? solo[1] : solo[2];
@@ -304,7 +315,7 @@ function wlDatosFactura(texto) {
   return { razonSocial: nombre.replace(/\s+/g, ' ').trim().slice(0, 80), nit: nit };
 }
 function wlPideFactura(n) {
-  return /\b(factura|facturar|facturacion|nit|razon social)\b/.test(String(n || ''));
+  return /\b(factura|facturar|facturacion|nit|n i t|razon social|ci|c i|carnet|cedula)\b|\b(?:nit|ci)\d/.test(String(n || ''));
 }
 function wlQuiereHablar(n) {
   return /\b(hablar con (una |un )?(persona|humano|asesor|asesora|encargado|encargada|vendedor|vendedora|alguien|recepcion)|asesor|asesora|encargad[oa]|recepcion|atencion al cliente|que me llamen|llamenme|llamarme)\b/.test(String(n || ''));
@@ -426,7 +437,8 @@ function wlCuerpoModelo(c) {
 }
 // Lo que queda en la memoria de la charla: sin números largos (un documento, un teléfono) ni enlaces.
 function wlParaMemoria(t) {
-  return cbLinea(String(t === undefined || t === null ? '' : t).replace(/\d[\d\s.\-]{4,}\d/g, '[nº]'), WL_LARGO_RECUERDO);
+  // La memoria de la charla usa el MISMO enmascarado (quinta pasada): un carnet o una cédula no vuelve al modelo en el turno siguiente.
+  return cbLinea(wlEnmascarar(t, false), WL_LARGO_RECUERDO);
 }
 
 // -----------------------------------------------------------------------------
@@ -627,7 +639,7 @@ function wlResolverModelo(c) {
   if (sinRedaccion) texto = WL_TEXTO_MODELO_SIN_REDACCION;
   // Si el cliente pregunta por el envío, la política la dice el CÓDIGO (el modelo no habla del costo).
   const politica = wlPreguntaEnvio(wlNorm(p.textoCliente));
-  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, resumen: cambio && lineas.length ? vcResumen(lineas) : '', politicaEnvio: politica ? wlTextoPoliticaEnvio(wlUmbralBs(c.base)) : '', notaFactura: p.notaFactura === true });
+  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, resumen: cambio && lineas.length ? vcResumen(lineas) : '', politicaEnvio: politica ? wlTextoPoliticaEnvio(wlUmbralBs(c.base)) : '', notaFactura: p.notaFactura === 'pedir' || p.notaFactura === 'al_confirmar' ? p.notaFactura : '' });
 }
 
 // La ubicación del pin de WhatsApp (sin modelo): se guarda en la entrega y, si el pedido ya estaba confirmado y completo, se cierra (normalmente, el QR).
