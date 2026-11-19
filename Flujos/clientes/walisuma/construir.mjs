@@ -521,7 +521,15 @@ export function armarWalisuma(proyecto, datos, v, origenReceptor = leerReceptorD
     Object.assign(plantilla.connections, JSON.parse(JSON.stringify(origenReceptor.conexiones)));
     plantilla.connections['Descartar repetidos'] = { main: [[{ node: 'Config base', type: 'main', index: 0 }]] };
   }
+  // El enmascarado de números del reporte entrante es la MISMA flecha `wlEnmascarar` de `src/lib/wl.js` (una sola fuente con el que va antes del modelo): se inyecta en la expresión.
+  const fuenteWl = readFileSync(join(AQUI, 'src/lib/wl.js'), 'utf8');
+  const flecha = /\nconst wlEnmascarar = (\(texto, conservarCelular\) => \{[\s\S]*?\n\});\n/.exec(fuenteWl);
+  if (!flecha) throw new Error(`${donde}: no se encontró \`wlEnmascarar\` en src/lib/wl.js`);
   for (const n of plantilla.nodes) {
+    if (n.name === 'Reportar mensaje (entrante)' && typeof n.parameters.jsonBody === 'string') {
+      if (!n.parameters.jsonBody.includes('@@wl-enmascarar@@')) throw new Error(`${donde}: «Reportar mensaje (entrante)» perdió la marca del enmascarado`);
+      n.parameters.jsonBody = n.parameters.jsonBody.replace('@@wl-enmascarar@@', () => flecha[1]);
+    }
     n.parameters = reemplazarTextos(n.parameters, datos, `${donde} · ${n.name}`);
     for (const c of Object.values(n.credentials || {})) {
       const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini|crm)$/.exec(String(c.name));

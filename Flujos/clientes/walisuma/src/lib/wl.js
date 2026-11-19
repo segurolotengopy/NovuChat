@@ -25,10 +25,13 @@ const WL_NIEGA_IA = /\bno (?:soy|es|eres|estas hablando con|hablas con)\b[^.!?]{
 // NIEGA_IA PROPIA de Walisuma (revisión del PR #1020): lo que `WL_NIEGA_IA` (copia declarada, idéntica a la de Antonio) no cubre. Presentarse como una persona con NOMBRE PROPIO
 // («soy Carla, de ventas», «me llamo Carla») o decir que «le atiende un asesor / una persona / nuestra encargada» es una negación implícita de ser una IA. Se prueba sobre el texto NORMALIZADO.
 // «Soy el asistente de atención y ventas» y «esto lo atiende directamente nuestra encargada» (derivación) NO caen: la primera nombra al asistente, la segunda no dice que quien escribe sea ella.
-const WL_NIEGA_IA_EXTRA = /\b(?:le|lo|la|te) (?:atiende|esta atendiendo|escribe|responde|contesta) (?:un |una |nuestra |nuestro |el |la )?(?:asesor\w*|persona\w*|encargad[oa]s?|ejecutiv\w*|vendedor\w*|agente|operador\w*)\b|\bsoy (?!el |la |un |una |su |tu |asistente\b|del\b|de\b|parte\b)[a-z]{2,20} (?:del equipo|de ventas|de atencion|de walisuma|de la tienda|de servicio|de la marca|su asesor\w*|su encargad[oa])\b|\b(?:le|te) (?:saluda|escribe|habla) (?!el asistente|un asistente|nuestra |nuestro |el equipo)[a-z]{2,20}(?: [a-z]{2,20})?,? (?:del equipo|de ventas|de atencion|de walisuma)\b/;
+const WL_NIEGA_IA_EXTRA = /\b(?:le|lo|la|te) (?:atiende|esta atendiendo|escribe|responde|contesta) (?:un |una |nuestra |nuestro |el |la )?(?:asesor\w*|persona\w*|encargad[oa]s?|ejecutiv\w*|vendedor\w*|agente|operador\w*)\b(?! en (?:la )?tienda)|\bsoy (?!el |la |un |una |su |tu |asistente\b|del\b|de\b|parte\b)[a-z]{2,20} (?:del equipo|de ventas|de atencion|de walisuma|de la tienda|de servicio|de la marca|su asesor\w*|su encargad[oa])\b|\b(?:le|te) (?:saluda|escribe|habla) (?!el asistente|un asistente|nuestra |nuestro |el equipo)[a-z]{2,20}(?: [a-z]{2,20})?,? (?:del equipo|de ventas|de atencion|de walisuma)\b/;
 // Y presentarse con un NOMBRE PROPIO, mirado en el texto SIN normalizar (mayúscula inicial): «Soy Carla.», «Hola, soy Carla 😊», «Le saluda Carla», «Le atiende Carla.», «Me llamo Carla».
 // «Soy el asistente…» / «la asistente» no caen; «Me llamó la atención…» tampoco (la tilde de «llamó» y la minúscula de «la»).
-const WL_NIEGA_IA_NOMBRE = /(?:^|[\s¡¿,.;:!(])(?:[Ss]oy|[Ll]e (?:saluda|atiende|habla|escribe)|[Aa]qu[ií] le (?:atiende|habla|escribe)|[Mm]e llamo|[Mm]i nombre es)\s+(?!Walisuma\b)\p{Lu}\p{Ll}{1,20}(?![\p{L}\p{N}])/u;
+const WL_NIEGA_IA_NOMBRE_PALABRAS = '(?:Tienda|Atenci[oó]n|Asistente|Walisuma|La|El|Los|Las|Do[nñ]a|Don|Equipo|Nuestr[oa]|Su|Un|Una|Recepci[oó]n|Servicio|Ventas|Cat[aá]logo|Encargad[oa]|Asesor[a]?|Atendemos|Bienvenid[oa])';
+// (cuarta pasada) Nombre propio = UNA palabra con mayúscula inicial que no sea ninguna de las de arriba; puede ir precedido de un cargo («la encargada Carla», «la señorita Carla»).
+// Disparadores: «soy», «le/te saluda», «le/te atiende», «le/te habla», «le/te escribe», «aquí (le atiende…)» y «Habla» al comienzo de una oración. Tras «me llamo» / «mi nombre es», cualquier palabra (sin exigir mayúscula).
+const WL_NIEGA_IA_NOMBRE = new RegExp('(?:^|[\\s¡¿,.;:!(])(?:[Ss]oy|[LlTt]e\\s+(?:saluda|atiende|habla|escribe)|[Aa]qu[ií](?:\\s+(?:le|te)\\s+(?:atiende|habla|escribe|saluda))?,?|(?<=(?:^|[.!?¡¿\\n])\\s{0,3})[Hh]abla)\\s+(?:(?:[Ll]a|[Ee]l)\\s+)?(?:(?:encargad[oa]|se[nñ]orita|se[nñ]ora|se[nñ]or|asesora?|vendedora?|ejecutiv[oa])\\s+)?(?!' + WL_NIEGA_IA_NOMBRE_PALABRAS + '(?![\\p{L}]))\\p{Lu}\\p{Ll}{1,20}(?![\\p{L}\\p{N}])|(?:^|[\\s¡¿,.;:!(])[Mm](?:e llamo|i nombre es)\\s+(?!(?:el|la)\\s+asistente|asistente)\\p{L}{2,20}', 'u');
 const WL_SALUDO_MINIMO = 'Hola, soy el asistente de atención y ventas.';
 
 // Lo que el cliente ve cuando manda algo que este canal no lee (sticker, ubicación, contacto, mensaje no soportado o un medio sin id): texto cortés fijo, sin modelo, una sola invitación y ninguna promesa.
@@ -317,6 +320,33 @@ function wlTextoComprobante(resultado, diferencia, totalTexto, salio, op) {
   if (resultado === 'ya_cotejado') return wlTextoDerivacion('comprobante_ya_visto', 'repetido');
   return wlTextoDerivacion('comprobante_sin_cotejo', salio);
 }
+
+// EL ENMASCARADO DE NÚMEROS (cuarta pasada de la revisión del PR #1020). UNA sola fuente: la usa `wlCuerpoModelo` antes del modelo y `construir.mjs` la inyecta, tal cual, en la expresión
+// del cuerpo de «Reportar mensaje (entrante)» (marca `@@wl-enmascarar@@`). Por eso es una FLECHA sin llamadas a otras funciones del archivo. Reglas:
+//   - el texto pasa por NFKC (dígitos de ancho completo → ASCII) y los códigos de pedido WAL-AAMMDD-NNN (en cualquier mayúscula) se apartan y se devuelven intactos;
+//   - CON etiqueta de documento (NIT, N.I.T., CI, C.I., carnet, cédula, razón social, factura): todo número de 5 a 15 dígitos, aunque venga partido por espacios, saltos, puntos,
+//     comas, barras, guiones o rayas («NIT 12 345 678», «CI: 1 2 3 4 5 6 7», «1/234/567»), sale «[nº]», también si tiene forma de celular («CI 71234567»);
+//   - SIN etiqueta: solo los grupos de 7 o más dígitos (sin cruzar espacios ni saltos), salvo una fecha, un celular de Bolivia (si `conservarCelular`), un número precedido por
+//     «Nº», «número», «torre», «calle», «av.», «piso», «casa», «#» o «Bs», o seguido de «unidades», «piezas», «Bs» o «bolivianos». Los de 5 o 6 dígitos sin etiqueta pasan («Torre 10500»).
+// LÍMITE DECLARADO: un NIT o CI SIN etiqueta de 5 o 6 dígitos, o de 8 dígitos que empieza en 6 o 7 (forma de celular), no se enmascara.
+const wlEnmascarar = (texto, conservarCelular) => {
+  let s = String(texto === undefined || texto === null ? '' : texto).normalize('NFKC');
+  const codigos = [];
+  s = s.replace(/wal-\d{6}-\d{3}/gi, (m) => { codigos.push(m); return '\u0001' + String.fromCharCode(65 + Math.min(codigos.length - 1, 25)) + '\u0001'; });
+  const etiqueta = /(?:^|[^a-záéíóúñ])(?:n\.?\s?i\.?\s?t|c\.?\s?i|carnet|c[eé]dula|raz[oó]n\s+social|factura)(?![a-záéíóúñ])/i.test(s);
+  if (etiqueta) s = s.replace(/\d(?:[\s.,\/_–—-]{0,2}\d){4,14}/g, '[nº]');
+  else {
+    s = s.replace(/\+?\d(?:[.\/-]?\d){6,}/g, (m, i, todo) => {
+      const antes = todo.slice(Math.max(0, i - 14), i).toLowerCase();
+      const despues = todo.slice(i + m.length, i + m.length + 14).toLowerCase();
+      const fecha = /^\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}$/.test(m);
+      const celular = conservarCelular === true && /^(?:591)?[67]\d{7}$/.test(m.replace(/\D/g, ''));
+      const conPalabra = /(?:n[º°o]\.?|n[uú]mero|torre|calle|av\.?|avenida|piso|casa|#|bs\.?)\s*$/.test(antes) || /^\s*(?:unidades|unidad|piezas|bs\b|bolivianos)/.test(despues);
+      return fecha || celular || conPalabra ? m : '[nº]';
+    });
+  }
+  return s.replace(/\u0001([A-Z])\u0001/g, (x, l) => codigos[l.charCodeAt(0) - 65] || '');
+};
 
 // -----------------------------------------------------------------------------
 // EL PARÁMETRO DEL TENANT para los nodos comunes de `venta-digital/src/nodos/` (`_comun.js` lo lee por este nombre).

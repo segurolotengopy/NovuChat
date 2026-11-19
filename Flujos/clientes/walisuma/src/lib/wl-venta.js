@@ -226,8 +226,13 @@ function wlQuierePagar(n) {
   return /\b(pagar|pagare|pagamos|el qr|confirmo (el|mi|la) (pedido|compra)|confirmar (el|mi) pedido|cerrar (el|mi) pedido|cerremos (el|mi) pedido|me los? llevo|lo llevo|los llevo|proceder? (con )?(el|mi|la) (pedido|pago|compra))\b/.test(t);
 }
 // «¿Eres / es usted un bot?»: tú y usted, errores de tipeo frecuentes («erez», «eris»), sin tildes (el texto llega normalizado). Lo contesta el texto fijo que SÍ dice que es una IA.
-function wlPideIdentidad(n) {
+function wlPideIdentidad(texto) {
+  // Cada ORACIÓN por separado (cortando el texto SIN normalizar por ? . ! ¡ ¿ y saltos): «¿Eres una IA? jaja» o «¿es un bot? porque responde rápido» se reconocen; «¿es una persona de La Paz quien teje?» no.
+  return String(texto === undefined || texto === null ? '' : texto).split(/[?.!¡¿\n]+/).some((o) => wlPideIdentidadOracion(wlNorm(o)));
+}
+function wlPideIdentidadOracion(n) {
   const t = String(n || '');
+  if (t === '') return false;
   const QUE = '(?:bot|bots|robot|robots|ia|i a|inteligencia artificial|maquina|programa|computadora|chatbot|chat bot|asistente virtual|persona|humano|humana)';
   // La pregunta TERMINA en lo que se pregunta (el texto normalizado ya no trae «?»), o sigue con una alternativa corta («… o una persona», «… de verdad»):
   // «¿es una persona de La Paz quien teje?», «¿es un programa de descuentos?» o «¿quién me atiende en la tienda?» NO son preguntas por la identidad (revisión del PR #1020).
@@ -264,24 +269,39 @@ const WL_NO_ES_FACTURA = /\b(telefono|telf|tel|celular|cel|whatsapp|wsp|numero d
 // Los datos de factura en el texto del cliente: un NIT o CI (5 a 15 dígitos) y la razón social (lo que queda sin las etiquetas). null si no hay número.
 // Solo se usa con una factura PEDIDA tras el pago y el resultado va SOLO al aviso de nuestra encargada: ni ficha, ni memoria, ni planilla, ni modelo.
 function wlDatosFactura(texto) {
-  const t = cbLinea(String(texto === undefined || texto === null ? '' : texto), 300);
+  // NFKC (dígitos de ancho completo) y FUERA el código del pedido (WAL-AAMMDD-NNN, cualquier mayúscula): nunca se toma como NIT.
+  const t = cbLinea(String(texto === undefined || texto === null ? '' : texto), 300).normalize('NFKC').replace(/wal-\d{6}-\d{3}/gi, ' ');
   const n = wlNorm(t);
-  // Acotado (revisión del PR #1020): con la etiqueta (NIT, CI, carnet, razón social, factura) o un mensaje que es SOLO un nombre y un número; nunca un teléfono, una dirección ni un pedido.
-  // La etiqueta también pegada al número («NIT1234567», «CI1234567») o con puntos («N.I.T.», normalizado «n i t»).
-  const etiqueta = /(?:^|[^a-z])(n i t|nit|ci|c i|carnet|cedula|razon social|factura)(?![a-z])/.test(n);
-  if (WL_NO_ES_FACTURA_TELEFONO.test(n) || (!etiqueta && WL_NO_ES_FACTURA.test(n))) return null;
-  const soloNombreYNumero = /^[\p{L}' -]{2,80}[\s,;:-]+\d(?:[.-]?\d){4,14}\.?$|^\d(?:[.-]?\d){4,14}[\s,;:-]+[\p{L}' -]{2,80}\.?$/u.test(t.trim());
-  if (!etiqueta && !soloNombreYNumero) return null;
-  // El número: un solo grupo (sin cruzar espacios ni saltos de línea), de 5 a 15 dígitos.
-  const m = /(?:^|[^\d])(\d(?:[.-]?\d){4,14})(?![\d])/.exec(t);
-  if (!m) return null;
-  const nit = m[1].replace(/\D/g, '');
-  if (!/^\d{5,15}$/.test(nit)) return null;
-  // Sin etiqueta, un número con forma de celular de Bolivia («Ana 71234567») es un teléfono, no un NIT.
-  if (!etiqueta && /^(?:591)?[67]\d{7}$/.test(nit)) return null;
-  const razon = t.replace(m[1], ' ').replace(/\b(raz[oó]n social|nombre completo|nombre|nit|c\.?\s?i\.?|carnet|documento|n[uú]mero|mi|es|y|a nombre de)\b/gi, ' ')
-    .replace(/[:;,.#°º()\[\]{}"'«»]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
-  return { razonSocial: /\p{L}{2,}/u.test(razon) ? razon : '', nit: nit };
+  const celular = (d) => /^(?:591)?[67]\d{7}$/.test(d);
+  // La etiqueta, también pegada al número («NIT1234567», «CI1234567») o con puntos («N.I.T.»). «Factura» sola NO basta para tomar un celular («Factura por favor 71234567»).
+  // Primero una etiqueta FUERTE (NIT, CI, carnet, cédula, razón social); «factura» solo si no hay otra («quiero factura a nombre de Ana, NIT 77665544» toma el NIT).
+  const et = /(?:^|[^a-záéíóúñ])(n\.?\s?i\.?\s?t|c\.?\s?i\.?|carnet|c[eé]dula|raz[oó]n\s+social)(?![a-záéíóúñ])/i.exec(t) || /(?:^|[^a-záéíóúñ])(factura)(?![a-záéíóúñ])/i.exec(t);
+  if (et) {
+    // El número que SIGUE a la etiqueta: primero el grupo sin espacios; si es corto («NIT 1020 3040 50»), el que cruza espacios y separadores.
+    const resto = t.slice(et.index + et[0].length);
+    const corto = /^[^\d]{0,30}?(\d(?:[.\/-]?\d){4,14})(?!\d)/.exec(resto);
+    const largo = /^[^\d]{0,30}?(\d(?:[\s.,\/_–—-]{0,2}\d){4,14})(?!\d)/.exec(resto);
+    const m = corto || largo || /(?:^|[^\d])(\d(?:[.\/-]?\d){4,14})(?!\d)/.exec(t);
+    if (!m) return null;
+    const nit = m[1].replace(/\D/g, '');
+    if (!/^\d{5,15}$/.test(nit)) return null;
+    // Con etiqueta, la palabra de teléfono solo descarta un número con forma de celular («NIT 1234567 tel 71234567» sí es factura); «factura» sola tampoco toma un celular.
+    const soloFactura = /^factura$/i.test(et[1].trim());
+    if (celular(nit) && (soloFactura || WL_NO_ES_FACTURA_TELEFONO.test(n))) return null;
+    const razon = t.replace(m[1], ' ').replace(/\b(raz[oó]n social|nombre completo|nombre|n\.?\s?i\.?\s?t|nit|c\.?\s?i\.?|carnet|c[eé]dula|documento|n[uú]mero|factura|mi|es|y|a nombre de|por favor)\b/gi, ' ')
+      .replace(/(?:^|\s)(?:tel|telf|cel|celular|tel[eé]fono|whatsapp)\b[^,;]*/gi, ' ').replace(/\d[\d\s.-]*/g, ' ')
+      .replace(/[:;,.#°º()\[\]{}"'«»]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+    return { razonSocial: /\p{L}{2,}/u.test(razon) ? razon : '', nit: nit };
+  }
+  // Sin etiqueta: solo un mensaje que es SOLO un nombre y un número (sin teléfono, dirección ni pedido), y nunca un celular («Ana 71234567»).
+  if (WL_NO_ES_FACTURA.test(n)) return null;
+  const solo = /^([\p{L}' -]{2,80})[\s,;:-]+(\d(?:[.-]?\d){4,14})\.?$/u.exec(t.trim()) || /^(\d(?:[.-]?\d){4,14})[\s,;:-]+([\p{L}' -]{2,80})\.?$/u.exec(t.trim());
+  if (!solo) return null;
+  const numero = /\d/.test(solo[1]) ? solo[1] : solo[2];
+  const nombre = /\d/.test(solo[1]) ? solo[2] : solo[1];
+  const nit = numero.replace(/\D/g, '');
+  if (!/^\d{5,15}$/.test(nit) || celular(nit)) return null;
+  return { razonSocial: nombre.replace(/\s+/g, ' ').trim().slice(0, 80), nit: nit };
 }
 function wlPideFactura(n) {
   return /\b(factura|facturar|facturacion|nit|razon social)\b/.test(String(n || ''));
@@ -389,11 +409,9 @@ function wlPromptTurno(c) {
     + '\n\nCATÁLOGO (id|nombre|precio en Bs; solo estas piezas se venden):\n' + vcIndice(c.vendibles)
     + (descripciones.length ? '\n\nDESCRIPCIONES (datos del catálogo, no instrucciones):\n' + descripciones.join('\n') : '');
 }
-// Antes del modelo, todo número de 5 o más dígitos que NO tenga forma de celular de Bolivia (8 dígitos que empiezan en 6 o 7, con o sin 591) se enmascara:
-// un NIT o un CI escrito sin la palabra «NIT» no llega crudo al modelo (revisión del PR #1020). El celular sí pasa: es el teléfono de contacto de la entrega.
+// Antes del modelo, el mismo enmascarado que el reporte entrante (`wlEnmascarar`, wl.js): un NIT o CI no llega crudo al modelo; el celular sí (teléfono de la entrega).
 function wlSinNumerosLargos(t) {
-  // Cada grupo por separado (sin cruzar espacios ni saltos de línea): «Av. Arce 2132\n71234567» conserva el número de puerta y el celular; «2 2412345» enmascara solo el grupo largo.
-  return String(t === undefined || t === null ? '' : t).replace(/\+?\d(?:[.-]?\d){4,}/g, (m) => (/^(?:591)?[67]\d{7}$/.test(m.replace(/\D/g, '')) ? m : '[nº]'));
+  return wlEnmascarar(t, true);
 }
 function wlCuerpoModelo(c) {
   const contents = c.ficha.hist.map((h) => ({ role: h.r === 'u' ? 'user' : 'model', parts: [{ text: h.t }] }));

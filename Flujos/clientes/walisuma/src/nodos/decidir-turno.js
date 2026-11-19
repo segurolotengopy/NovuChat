@@ -102,7 +102,7 @@ if (esAudio ? (texto.length <= BJ_VOZ_MAX && bjPideBaja(texto)) : (!t.seleccionI
 // 3. Sin catálogo no se improvisa: recepción.
 if (!configLista) return sinConfig();
 // 4. Lo que decide el código sobre el texto, ANTES de cualquier modelo.
-if (wlPideIdentidad(n)) return salir({ tipo: 'identidad' });
+if (wlPideIdentidad(texto)) return salir({ tipo: 'identidad' });
 // 4a. La factura DESPUÉS del pago (ficha `ultimoPedido.factura === 'pedida'`): el NIT nunca llega al modelo ni a la memoria; va solo en el aviso.
 // Ventana: desde `ultimoPedido.ms` (el «Pedido confirmado»), a lo más `WL_VENTANA_FACTURA_MS`.
 const up = ficha.ultimoPedido;
