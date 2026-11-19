@@ -52,6 +52,7 @@ export { sigueVigente };
 // Términos de producto registrados (Andres, 24/10/2026): se leen una vez por turno, y solo si lo que
 // va al prompt contiene «prompt»; el sistema los cita entre « » y revalida lo ya aprobado.
 import { citarTerminos } from './central/asistente/terminos.js';
+import { aplicarEventoDeFactura, codigoDePedidoValido, ultimoPedidoParaElFlujo } from './core/turno/facturaPedido.js';
 
 /**
  * =========================================================================
@@ -143,7 +144,13 @@ interface Entrante {
    *    con dos orígenes; la dirección del mensaje que lo trae no importa.
    */
   evento?: 'qr_enviado' | 'horarios_ofrecidos' | 'no_contactar' | 'cita_cancelada' | 'adelanto_aplicado' | 'reprogramada'
-    | 'cobro_cancelado' | 'anulacion_avisada' | 'pedido_sin_cobro';
+    | 'cobro_cancelado' | 'anulacion_avisada' | 'pedido_sin_cobro'
+    // LA FACTURA QUE LLEGA TARDE (PR-F, Walisuma): el cliente dio sus datos de factura (`factura_dada`) o
+    // no la quiere (`factura_sin`). Viaja con `codigoPedido` y SIN los datos: la razón social y el NIT van
+    // solo en el aviso a la encargada. Marca `ultimoPedido.factura` de ESTA conversación (`facturaPedido.ts`).
+    | 'factura_dada' | 'factura_sin';
+  /** Solo con `factura_dada` / `factura_sin`: el código del pedido (`<PREFIJO>-AAMMDD-NNN`). */
+  codigoPedido?: string;
   /**
    * LA REGLA DEL COBRO QUE ELIGE EL FLUJO (D1, `cobros.md` §4duodecies.6). Solo
    * `2` con `qr_enviado`: plazo de 15 min, prórroga única y 3 intentos. Cualquier
@@ -235,7 +242,7 @@ const ORIGENES = new Set(['anuncio', 'directo']);
 /** Los hechos del flujo que la ingesta entiende. Uno desconocido se ignora:
  *  el mensaje se cuenta igual y el campo no se guarda. */
 const EVENTOS = new Set(['qr_enviado', 'horarios_ofrecidos', 'no_contactar', 'cita_cancelada', 'adelanto_aplicado', 'reprogramada',
-  'cobro_cancelado', 'anulacion_avisada', 'pedido_sin_cobro']);
+  'cobro_cancelado', 'anulacion_avisada', 'pedido_sin_cobro', 'factura_dada', 'factura_sin']);
 
 /**
  * Normaliza el mensaje entrante. TODO lo de acá es DATO NO CONFIABLE: lo escribió
@@ -251,7 +258,9 @@ function normalizar(cuerpo: unknown): Entrante | null {
 
   const direccion = c['direccion'] === 'saliente' ? 'saliente' : 'entrante';
   const tipo = typeof c['tipo'] === 'string' && TIPOS.has(c['tipo']) ? c['tipo'] : 'otro';
-  const texto = typeof c['texto'] === 'string' ? c['texto'].slice(0, 4096) : '';
+  // Un evento de factura (PR-F) no es un mensaje: su `texto` (podría traer el NIT) se descarta acá mismo.
+  const esFactura = c['evento'] === 'factura_dada' || c['evento'] === 'factura_sin';
+  const texto = !esFactura && typeof c['texto'] === 'string' ? c['texto'].slice(0, 4096) : '';
   const idMeta = typeof c['idMeta'] === 'string' ? c['idMeta'].slice(0, 120) : undefined;
   const nombreContacto = typeof c['nombreContacto'] === 'string'
     ? c['nombreContacto'].slice(0, 120) : undefined;
@@ -277,6 +286,9 @@ function normalizar(cuerpo: unknown): Entrante | null {
   const reglaCobro = evento === 'qr_enviado' && c['reglaCobro'] === 2 ? 2 as const : undefined;
 
   const riesgo = evento === 'no_contactar' && c['riesgo'] === true ? true as const : undefined;
+  // Solo el código: cualquier otro campo del cuerpo (razón social, NIT) se ignora y no se guarda.
+  const codigoPedido = evento === 'factura_dada' || evento === 'factura_sin'
+    ? codigoDePedidoValido(c['codigoPedido']) ?? undefined : undefined;
 
   // El pedido de WhatsApp (PR-4): solo con `qr_enviado`, hasta 30 líneas, y solo objetos planos.
   // El saneo fino (ids, cantidades, tope de unidades) lo hace `armarPedidoWa`.
@@ -301,6 +313,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
            ...(evento ? { evento } : {}),
            ...(reglaCobro ? { reglaCobro } : {}),
            ...(riesgo ? { riesgo } : {}),
+           ...(codigoPedido ? { codigoPedido } : {}),
            ...(referencia ? { referencia } : {}),
            ...(calendario ? { calendario } : {}),
            ...(inicio ? { inicio } : {}),
@@ -786,6 +799,28 @@ export const ingesta = onRequest(
 
     const idConversacion = `wa_${mensaje.telefono}`;
     const refConversacion = db.doc(`tenants/${tenantId}/conversaciones/${idConversacion}`);
+
+    // -----------------------------------------------------------------------
+    // LA FACTURA DEL ÚLTIMO PEDIDO (PR-F, Walisuma): `factura_dada` / `factura_sin` NO SON UN MENSAJE.
+    // Camino corto y separado: no se guarda ningún mensaje, no se toca `ultimoMensaje`, no se suma a
+    // `mensajesTotal`, `noLeidos` ni a las métricas, no abre ventana ni cuenta conversación. El `texto` que
+    // traiga el cuerpo se descarta en `normalizar` (podría ser «… NIT …» del cliente): el servidor nunca
+    // guarda razón social ni NIT. Solo marca `ultimoPedido.factura` de ESTA conversación, una vez.
+    // Respuesta: 200 `{ factura: 'marcada' | 'ya_marcada' | 'rechazada' | 'no_aplicado' }`
+    // (`no_aplicado` = contacto bloqueado). Un corte por prepago no lo frena: no es un mensaje ni cuesta.
+    // Un rechazo (código ajeno, sin pedido, código inválido) queda en la bitácora, sin el código.
+    // -----------------------------------------------------------------------
+    if (mensaje.evento === 'factura_dada' || mensaje.evento === 'factura_sin') {
+      const r = await aplicarEventoDeFactura(db, refConversacion, mensaje.evento, mensaje.codigoPedido, Date.now());
+      if (r.resultado === 'rechazada') {
+        await registrar(tenantId, {
+          tipo: 'entrada_descartada', resultado: 'rechazado', canal: 'sistema',
+          telefono: mensaje.telefono, conversacionId: idConversacion, codigo: `factura_${r.motivo}`,
+        });
+      }
+      respuesta.status(200).json({ factura: r.resultado });
+      return;
+    }
     // 'aaaa-mm' en UTC. `periodoDe` (planes.ts) es la misma cuenta que usa la
     // consola para saber si el aviso de consumo es de este período.
     const periodo = periodoDe();
@@ -1926,12 +1961,18 @@ export const configuracionFlujo = onRequest(
     const aporteDeCobro = alTurnoCobroDeVenta({ ...contextoDelTurno, rotulosDeCobro: rotulos?.data() } as ContextoDeCobro);
     const aporteDeSena = alTurnoSena(contextoDelTurno);
 
+    // EL ÚLTIMO PEDIDO DE ESTE TELÉFONO (PR-F): de la conversación que este turno YA leyó (cero lecturas
+    // nuevas), que es de ESTE comercio y ESTE teléfono por su ruta. Solo si existe y está en plazo, y solo
+    // `codigo`, `factura` y `desdeMs`: sin razón social ni NIT. Sin él, la respuesta es la de siempre.
+    const ultimoPedido = docConversacion ? ultimoPedidoParaElFlujo(docConversacion.get('ultimoPedido'), ahoraMs) : null;
+
     respuesta.status(200).json({
       ...sesionLeida,
       tenantId: comercio.tenantId,
       flujo: comercio.flujo,
       estadoComercio: derivados.estadoComercio,
       phoneNumberId: derivados.phoneNumberId,
+      ...(ultimoPedido ? { ultimoPedido } : {}),
 
       // Estado de atención del teléfono que escribió (`null` si el flujo no
       // mandó `telefono`). Lo que el flujo tiene que hacer con este turno:
