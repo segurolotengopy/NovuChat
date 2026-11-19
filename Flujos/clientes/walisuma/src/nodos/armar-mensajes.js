@@ -31,10 +31,13 @@ const avisoEnviado = avisoPlaneado && (cnTodos('Enviar aviso').some(entregado) |
 const salio = avisoEnviado ? true : (av.repetido === true ? 'repetido' : false);
 
 const texto = (cuerpo, extra) => { const x = wlSeguro(cuerpo); return cmMensaje('cliente', cmTexto(x), x, x, Object.assign({ tipoReporte: 'text' }, extra || {})); };
-// El botón de recepción: el contacto designado del comercio (o el número de recepción de la consola).
+// El botón de nuestra encargada (decisión 6 y MD): «Atención al Cliente» (19 caracteres; `cta_url` admite 20), al contacto designado del comercio (o al número de recepción de la consola),
+// con el saludo precargado del MD (dato `saludoBotonDerivacion`). `permiso` (solo `WL_PERMISO_CONFIRMADO`) deja pasar la frase fija «Pedido confirmado» del código.
 const contacto = cnDigitos(/^REEMPLAZAR_/.test(String(base.contactoAviso || '')) ? '' : base.contactoAviso) || cnDigitos(cfg.numeroRecepcion);
-const conRecepcion = (cuerpo) => cmContactoConBoton({ numero: contacto, desde: from, cuerpo: wlSeguro(cuerpo), botonTexto: 'Escribir', saludo: 'Hola, te escribo desde el chat de ' + negocio, textoDelRespaldo: 'Escríbele aquí:' });
-const saludo = 'Hola, soy el asistente virtual de ' + negocio + '.';
+const saludoBoton = cbLinea(/^REEMPLAZAR_/.test(String(base.saludoBotonDerivacion || '')) ? '' : base.saludoBotonDerivacion, 120) || 'Hola, necesito asistencia con una consulta';
+const conRecepcion = (cuerpo, permiso) => cmContactoConBoton({ numero: contacto, desde: from, cuerpo: wlSeguro(cuerpo, permiso), botonTexto: 'Atención al Cliente', saludo: saludoBoton, textoDelRespaldo: 'Escríbale aquí:', sinNumero: 'Eso lo coordina nuestra encargada.' });
+// El saludo de la primera respuesta (identidad del MD, sin «IA»: decisión 2) con el ofrecimiento de asesoría y del catálogo por chat (sin enlace: Andres, 19/11/2026).
+const saludo = WL_TEXTO_SALUDO.replace('{NEGOCIO}', negocio);
 const conSaludo = (cuerpo) => (fichaAntes.saludado ? cuerpo : saludo + '\n\n' + cuerpo);
 
 let tipoDePlan = d.tipo;
@@ -49,7 +52,8 @@ if (puerta.ruta === 'suspendido') {
   // «bloqueado» (pausa por Tomar) no responde nada; «operador» responde el aviso fijo CON el botón (el texto promete que una persona continúa y «Armar avisos» avisó).
   tipoDePlan = puerta.responder === true && String(puerta.texto || '').trim() !== '' ? 'uso_extendido' : 'bloqueado';
   if (tipoDePlan === 'uso_extendido') {
-    msgs = [conRecepcion(puerta.texto)];
+    // El texto por defecto de la puerta común tutea: Walisuma usa el suyo, de usted (el que traiga la consola es dato del comercio y se respeta).
+    msgs = [conRecepcion(String(puerta.texto).trim() === WL_TEXTO_USO_EXTENDIDO_COMUN ? WL_TEXTO_USO_EXTENDIDO : puerta.texto)];
     // A lo más UN aviso de «una persona continúa» cada 30 minutos por teléfono: si salió, se anota (y se devuelve si el envío no sale).
     if (salio === true) { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
   }
@@ -66,7 +70,7 @@ if (puerta.ruta === 'sigue') {
     msgs = [texto(conSaludo(WL_TEXTO_CORTES))];
   } else if (tipoDePlan === 'baja') {
     // La confirmación de la baja: UN texto fijo (sin saludo, sin botón, sin aviso); el `no_contactar` ya viajó con el entrante (si fue una nota de voz, `t.texto` iba vacío: el evento viaja en el reporte de ESTE mensaje saliente). La ficha y el carrito no se tocan.
-    msgs = [texto(bjTextoBaja(undefined), d.porVoz === true ? { evento: 'no_contactar' } : undefined)];
+    msgs = [texto(bjTextoBaja(WL_TEXTO_BAJA), d.porVoz === true ? { evento: 'no_contactar' } : undefined)];
   } else if (tipoDePlan === 'identidad') {
     msgs = [texto(WL_TEXTO_IDENTIDAD.replace('{NEGOCIO}', negocio))];
   } else if (tipoDePlan === 'audio_fijo') {
@@ -79,37 +83,69 @@ if (puerta.ruta === 'sigue') {
     // El producto del anuncio sale POR CÓDIGO y su precio, del catálogo: nunca del modelo ni de la imagen.
     const v = c.vendibles.find((x) => x.id === d.producto);
     if (v) {
-      msgs = [texto(conSaludo('Sí, tenemos ' + v.nombre + ': ' + vcMonto(v.precioCentavos) + '.\n\n¿Cuántas unidades te gustaría?'))];
+      msgs = [texto(conSaludo('Sí, tenemos ' + v.nombre + ': ' + vcMonto(v.precioCentavos) + '.\n\n¿Cuántas unidades desea?'))];
       nuevos.mostrados = fichaAntes.mostrados.filter((x) => x !== v.id).concat([v.id]).slice(-15); ev.mostrados = fichaAntes.mostrados;
     } else {
       tipoDePlan = 'derivar';
       msgs = [conRecepcion(conSaludo(wlTextoDerivacion('sin_precio', false)))];
     }
-  } else if (tipoDePlan === 'modelo') {
+  } else if (tipoDePlan === 'anuncio_meta') {
+    // El anuncio de Meta por su `source_id`: las piezas y sus precios salen del CATÁLOGO (nunca del modelo ni del anuncio).
+    const piezas = (Array.isArray(d.piezas) ? d.piezas : []).map((id) => c.vendibles.find((x) => x.id === id)).filter((v) => !!v);
+    const cuerpo = d.general === true || !piezas.length ? WL_TEXTO_ANUNCIO_GENERAL.replace('{NEGOCIO}', negocio)
+      : WL_TEXTO_ANUNCIO_PIEZAS + '\n' + piezas.map((v) => '• ' + v.nombre + ': ' + vcMonto(v.precioCentavos)).join('\n') + '\n\n¿Cuál le interesa?';
+    msgs = [texto(conSaludo(cuerpo))];
+    if (piezas.length) { nuevos.mostrados = piezas.map((v) => v.id).concat(fichaAntes.mostrados.filter((x) => !piezas.some((v) => v.id === x))).slice(0, 15); ev.mostrados = fichaAntes.mostrados; }
+  } else if (tipoDePlan === 'ubicacion') {
+    // El pin guardado (sin pedido confirmado todavía): un agradecimiento fijo; responde a su mensaje (0 mensajes extra).
+    msgs = [texto(conSaludo(WL_TEXTO_UBICACION_RECIBIDA))];
+    nuevos.entrega = d.entrega; ev.entrega = fichaAntes.entrega;
+  } else if (tipoDePlan === 'factura_datos') {
+    // Los datos de factura: el aviso a nuestra encargada (lo ÚNICO que lleva el NIT) MÁS el botón; el texto al cliente no repite los datos.
+    msgs = [conRecepcion(wlTextoDerivacion('factura_datos', salio))];
+    Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
+  } else if (tipoDePlan === 'factura_sin') {
+    // «Sin factura» o «a mi nombre nomás» (decisión 10: S/N y NIT 0): el aviso del pedido ya salió con S/N; no se insiste.
+    msgs = [texto(WL_TEXTO_FACTURA_SIN)];
+    Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
+  } else if (tipoDePlan === 'factura_al_confirmar') {
+    // Factura ANTES de pagar con el NIT en el texto: el texto fijo y nada más (sin modelo ni aviso; el NIT no se guarda ni se repite).
+    msgs = [texto(conSaludo(WL_TEXTO_FACTURA_AL_CONFIRMAR))];
+  } else if (tipoDePlan === 'factura_pedir') {
+    msgs = [texto(WL_TEXTO_PIDE_FACTURA)];
+  } else if (tipoDePlan === 'modelo' || tipoDePlan === 'pedir_ubicacion') {
     llamadasModelo = 1;
-    msgs = [texto(conSaludo(d.texto + (d.politicaEnvio ? '\n\n' + d.politicaEnvio : '') + (d.resumen ? '\n\n' + d.resumen : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : '')))];
+    const anulado = d.qrAnulado === true ? '\n\nSu pedido cambió, así que el QR anterior quedó anulado: no pague con él. Cuando confirme su pedido le enviamos uno nuevo.' : '';
+    if (tipoDePlan === 'pedir_ubicacion') {
+      // Un ENVÍO sin el pin: el resumen y el pedido de la ubicación con el botón «Enviar ubicación» (`location_request_message`). +1 mensaje por pedido de envío sin GPS.
+      const cuerpo = wlSeguro(conSaludo((d.texto ? d.texto + '\n\n' : '') + d.resumen + anulado + '\n\n' + WL_TEXTO_PIDE_UBICACION));
+      const payload = Object.assign(cmBase('interactive'), { interactive: { type: 'location_request_message', body: { text: cmRecorte(cuerpo, 1024) }, action: { name: 'send_location' } } });
+      msgs = [cmMensaje('cliente', payload, cuerpo, cuerpo, { tipoReporte: 'interactive' })];
+    } else {
+      msgs = [texto(conSaludo(d.texto + (d.notaFactura === 'al_confirmar' ? '\n\n' + WL_TEXTO_FACTURA_AL_CONFIRMAR : (d.notaFactura === 'pedir' ? '\n\n' + WL_TEXTO_PIDE_FACTURA : '')) + (d.politicaEnvio ? '\n\n' + d.politicaEnvio : '') + (d.resumen ? '\n\n' + d.resumen : '') + anulado))];
+    }
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
     nuevos.entrega = d.entrega;
     nuevos.cierre = d.cierre === true;
     nuevos.mostrados = d.lineas.map((l) => l.id).concat(fichaAntes.mostrados.filter((x) => !d.lineas.some((l) => l.id === x))).slice(0, 15);
     // La memoria de la charla: sin números largos (NIT, CI, teléfonos).
-    const hist = fichaAntes.hist.concat([{ r: 'u', t: wlParaMemoria(c.plan.textoCliente) }, { r: 'm', t: wlParaMemoria(d.texto) }]).filter((x) => x.t !== '');
+    const hist = fichaAntes.hist.concat([{ r: 'u', t: wlParaMemoria(c.plan.textoCliente) }, { r: 'm', t: wlParaMemoria(d.texto || '') }]).filter((x) => x.t !== '');
     nuevos.hist = hist.slice(-WL_RECUERDOS);
     if (d.patch) Object.assign(nuevos, d.patch);
     for (const k of ['carrito', 'entrega', 'cierre', 'mostrados', 'hist', 'qrHastaMs', 'qrCarrito']) ev[k] = fichaAntes[k];
   } else if (tipoDePlan === 'qr') {
     // Nunca un QR sin monto del carrito, sin id de medio o sin un id de pedido válido: se pasa con recepción (sin decir que se avisó: aquí no hay aviso).
     const lineas = wlConNombres(d.lineas, c.vendibles);
-    if (!Number.isSafeInteger(d.total) || d.total <= 0 || d.monto !== d.total / 100 || !/^[A-Za-z0-9_-]{5,100}$/.test(String(d.mediaId || '')) || !/^[A-Za-z0-9]{3,40}$/.test(String(d.pedidoId || ''))) {
+    if (!Number.isSafeInteger(d.total) || d.total <= 0 || d.monto !== d.total / 100 || !/^[A-Za-z0-9_-]{5,100}$/.test(String(d.mediaId || '')) || !/^[A-Za-z0-9_-]{3,40}$/.test(String(d.pedidoId || ''))) {
       tipoDePlan = 'derivar';
-      msgs = [conRecepcion(conSaludo(WL_INTROS.monto_invalido + ' Escríbele a recepción con el botón.'))];
+      msgs = [conRecepcion(conSaludo(WL_INTROS.monto_invalido + ' Escríbale a nuestra encargada con el botón.'))];
     } else {
       // El QR cobra SOLO los productos. Envío gratis desde el umbral (dato); bajo el umbral se cotiza por fuera: el aviso a recepción (si salió) MÁS el botón; recojo: sin costo de envío.
-      const frase = wlFraseEnvio(d.envio, d.umbralBs, d.envio === 'recojo' ? wlDireccionTienda(base, d.entrega.ciudad) : '');
+      const frase = wlFraseEnvio(d.envio, d.umbralBs, d.envio === 'recojo' ? wlDireccionTienda(base, d.entrega.ciudad) : '', false, wlHorarioTiendas(base));
       const aCotizar = d.envio === 'cotizar';
       // Un pedido que cambió con un QR abierto no avisa a recepción (el aviso se arma antes de saber si el cobro anterior se cerró): el texto manda al botón.
-      const pieEnvio = !aCotizar ? '' : '\n\n' + (d.cambioDePedido ? 'El envío de este pedido lo cotiza recepción: escríbele a recepción con el botón para cotizar el envío.' : wlTextoDerivacion('envio_a_cotizar', salio));
-      const cabeza = (d.cambioDePedido ? 'Actualicé tu pedido.\n\n' : '') + 'Este es el resumen de tu pedido:\n\n';
+      const pieEnvio = !aCotizar ? '' : '\n\n' + (d.cambioDePedido ? 'El costo del envío de este pedido se lo indicará nuestra encargada: escríbale con el botón.' : wlTextoDerivacion('envio_a_cotizar', salio));
+      const cabeza = (d.cambioDePedido ? 'Actualizamos su pedido.\n\n' : '') + 'Este es el resumen de su pedido:\n\n';
       const cola = '\n\nEntrega: ' + wlEntregaTexto(d.entrega) + (frase ? '. ' + frase : '.') + pieEnvio + '\n\nAbajo va el QR para pagar.';
       // Bajo el umbral el resumen sale con el botón (cuerpo de a lo más 1.024 caracteres, y el recorte corta el FINAL): se acorta la LISTA de líneas («… y N más»), nunca la cola con la política y el pie. El total siempre queda.
       const filas = vcResumen(lineas).split('\n');
@@ -120,13 +156,14 @@ if (puerta.ruta === 'sigue') {
         while (filas.length > 0 && filas.join('\n').length > reserva) { filas.pop(); omitidas++; }
       }
       const resumen = cabeza + filas.concat(omitidas > 0 ? ['… y ' + omitidas + ' más'] : [], filaTotal ? [filaTotal] : []).join('\n') + cola;
-      const pie = wlSeguro('QR para pagar ' + vcMonto(d.total) + ' (pedido ' + d.pedidoId + '). Cuando pagues, envíame la foto del comprobante por este chat.');
-      const respaldo = 'No pude mostrarte el QR en este momento. Escríbeme de nuevo en unos minutos para intentarlo otra vez.';
+      const pie = wlSeguro('QR para pagar ' + vcMonto(d.total) + ' (pedido ' + d.pedidoId + '). Cuando pague, envíenos la foto del comprobante por este chat.');
+      const respaldo = 'No pudimos mostrarle el QR en este momento. Escríbanos de nuevo en unos minutos para intentarlo otra vez.';
       const imagen = cmMensaje('cliente', Object.assign(cmBase('image'), { image: { id: d.mediaId, caption: pie } }), pie, respaldo, { tipoReporte: 'image' });
       // El evento que ABRE el cobro: `qr_enviado`, con `referencia` (el pedido) y `monto` (el del carrito, en bolivianos). Cobro real: regla 2 (15 minutos, 3 intentos).
       imagen.evento = 'qr_enviado'; imagen.reglaCobro = 2; imagen.referencia = String(d.pedidoId); imagen.monto = d.monto;
       // Para que el servidor cree el pedido `wa_<referencia>`: solo ids, cantidades y entrega (el servidor recalcula precios y total desde el catálogo).
-      { const pqr = pqrCampos(imagen.referencia, d.lineas, { entrega: d.entrega.modo, direccion: d.envio === 'recojo' ? '' : d.entrega.direccion, ciudad: d.entrega.ciudad }, false); if (pqr.lineas) { imagen.lineas = pqr.lineas; imagen.entrega = pqr.entrega; } }
+      // La ubicación del pin viaja en la entrega del pedido (el servidor la acepta: `_pqrUbicacion`). El módulo de pedidos reconoce el envío por la palabra `envio`; los modos de Walisuma («Envío en La Paz»…) se pasan como `envio`.
+      { const pqr = pqrCampos(imagen.referencia, d.lineas, { entrega: d.envio === 'recojo' ? d.entrega.modo : 'envio', direccion: d.envio === 'recojo' ? '' : d.entrega.direccion, ciudad: d.entrega.ciudad, ubicacion: d.envio === 'recojo' ? null : d.entrega.ubicacion }, false); if (pqr.lineas) { imagen.lineas = pqr.lineas; imagen.entrega = pqr.entrega; } }
       msgs = [aCotizar ? conRecepcion(conSaludo(resumen)) : texto(conSaludo(resumen)), imagen];
       nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
       nuevos.entrega = d.entrega; nuevos.cierre = false;
@@ -136,24 +173,27 @@ if (puerta.ruta === 'sigue') {
       for (const k of ['carrito', 'entrega', 'cierre', 'pedidos', 'qrHastaMs', 'qrCarrito']) ev[k] = fichaAntes[k];
     }
   } else if (tipoDePlan === 'qr_pendiente') {
-    msgs = [texto(conSaludo('Ya tienes un QR abierto por ' + vcMonto(d.total) + '. Cuando pagues, envíame la foto del comprobante por este chat.'))];
+    msgs = [texto(conSaludo('Ya tiene un QR abierto por ' + vcMonto(d.total) + '. Cuando pague, envíenos la foto del comprobante por este chat.'))];
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega;
   } else if (tipoDePlan === 'pedido_sin_cobro') {
     const lineas = wlConNombres(d.lineas, c.vendibles);
-    const fraseSc = wlFraseEnvio(d.envio, d.umbralBs, d.envio === 'recojo' ? wlDireccionTienda(base, d.entrega.ciudad) : '', true);
-    msgs = [conRecepcion(conSaludo('Anoté tu pedido:\n\n' + vcResumen(lineas) + (fraseSc ? '\n\n' + fraseSc : '') + '\n\n' + wlTextoDerivacion('pedido_sin_cobro', salio)))];
+    const fraseSc = wlFraseEnvio(d.envio, d.umbralBs, d.envio === 'recojo' ? wlDireccionTienda(base, d.entrega.ciudad) : '', true, wlHorarioTiendas(base));
+    msgs = [conRecepcion(conSaludo('Anotamos su pedido:\n\n' + vcResumen(lineas) + (fraseSc ? '\n\n' + fraseSc : '') + '\n\n' + wlTextoDerivacion('pedido_sin_cobro', salio)))];
     Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
   } else if (tipoDePlan === 'comprobante') {
-    msgs = [conRecepcion(wlTextoComprobante(d.resultado, d.diferencia, d.totalTexto, salio))];
+    // «Pedido confirmado» (frase fija del código, excepción acotada en `wlSeguro`), el aviso, «fuera de horario» y, en el MISMO mensaje, el pedido de los datos de factura.
+    msgs = [conRecepcion(wlTextoComprobante(d.resultado, d.diferencia, d.totalTexto, salio, { codigo: d.codigo, fueraDeHorario: d.fueraDeHorario === true }), WL_PERMISO_CONFIRMADO)];
     Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
   } else if (tipoDePlan === 'comprobante_pedir') {
     msgs = [texto(wlTextoComprobante(d.resultado, d.diferencia, d.totalTexto, salio))];
   } else if (tipoDePlan === 'derivar') {
     // Pasar con recepción: el aviso MÁS el botón. «Ya avisé» solo con un `wamid` real; un motivo sin aviso nunca lo dice.
-    const cuerpo = d.motivo === 'no_cancelo' ? WL_INTROS.no_cancelo + ' Escríbele a recepción con el botón.'
+    const cuerpo = d.motivo === 'no_cancelo' ? WL_INTROS.no_cancelo + ' Escríbale a nuestra encargada con el botón.'
       : wlTextoDerivacion(d.motivo, salio);
     msgs = [conRecepcion(conSaludo(cuerpo))];
+    // La guarda de 30 minutos: las consultas con su marca; el aviso de un comprobante sin cotejar o en revisión (de tipo `pedido`) con la SUYA (`avisoComprobanteMs`).
     if (salio === true && d.aviso && d.aviso.tipo === 'consulta') { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
+    else if (salio === true && d.aviso && (d.motivo === 'comprobante_sin_cotejo' || d.motivo === 'comprobante_en_revision')) { nuevos.avisoComprobanteMs = ahora; ev.avisoComprobanteMs = fichaAntes.avisoComprobanteMs; }
     // Un pedido cambiado cuyo cobro no se pudo cerrar: el pedido nuevo se conserva (el QR viejo sigue abierto y el cliente ya sabe que no pague con él).
     if (d.motivo === 'no_cancelo' && Array.isArray(d.lineas)) { nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega; }
     if (d.motivo === 'comprobante_sin_cotejo' && d.patch) { /* sin cotejo: el comprobante llegó; recepción lo ve */ }

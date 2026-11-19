@@ -24,7 +24,12 @@ const panelBorde = (): ReturnType<typeof panelOk> => panelOk({ catalogo: [...CAT
 function pedir(lineas: unknown[], entrega: Record<string, unknown>, o: Opciones = {}): { m: Mundo; t: ReturnType<typeof hablar> } {
   const m = crear({ panel: panelBorde(), modeloDice: modelo('Con gusto, lo anoto.', { lineas, entrega }), ...o });
   hablar(m, ANA, mTexto('quiero una pieza'));
-  return { m, t: hablar(m, ANA, mTexto('quiero pagar')) };
+  const t = hablar(m, ANA, mTexto('quiero pagar'));
+  // Un ENVÍO exige la ubicación del pin antes del QR (fase 1, 18/11/2026): el cliente la comparte y sale el QR.
+  if (/env[ií]o/i.test(String(entrega['modo'] ?? '')) && (t.mensajes[0]?.payload['interactive'] as { type?: string } | undefined)?.type === 'location_request_message') {
+    return { m, t: hablar(m, ANA, { type: 'location', location: { latitude: -16.5, longitude: -68.12 } }) };
+  }
+  return { m, t };
 }
 const hayQr = (t: ReturnType<typeof hablar>): boolean => t.mensajes.some((x) => x.tipo === 'image');
 const montoQr = (t: ReturnType<typeof hablar>): number => Number(t.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado')?.['monto']);
@@ -44,15 +49,15 @@ describe('el envío es gratis desde 500 Bs (incluido) y bajo el umbral va a rece
     expect(hayQr(t)).toBe(true);
     expect(montoQr(t)).toBe(499.99);
     expect(t.mensajes[0]?.cuerpo).not.toMatch(/no tiene costo/);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/El QR es solo por los productos; el envío se cotiza y se paga aparte, directo a quien lo lleva/);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/Ya avisé a recepción/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/El QR es solo por las piezas; el costo del envío se lo indicará y cobrará nuestra encargada/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/Pasamos .* a nuestra encargada/);
     expect(t.mensajes[0]?.payload['interactive']).toBeTruthy();
     expect(t.avisos).toHaveLength(1);
     const aviso = JSON.stringify(t.avisos[0]?.payload);
     expect(aviso).toMatch(/COTIZAR ENVÍO/);
     expect(aviso).toMatch(/QR emitido o por emitir/);
-    expect(aviso).toMatch(/envío: a cotizar/);
-    expect(aviso).toMatch(/tel\. 71234567/);
+    expect(aviso).toMatch(/envío a cotizar/);
+    expect(aviso).toMatch(/contacto 71234567/);
     expect(aviso).toMatch(/Av\. Arce 2345/);
   });
   it('501 con envío: gratis; también en «Envío nacional» y en «Envío en Santa Cruz» (sin excepciones)', () => {
@@ -88,8 +93,8 @@ describe('el envío es gratis desde 500 Bs (incluido) y bajo el umbral va a rece
   });
   it('NEGADO: si el aviso a recepción no sale, el cliente lee «No pude avisar» y el botón', () => {
     const { t } = pedir([{ id: 'pieza-100', cantidad: 3 }], ENVIO, { aviso: 'error' });
-    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé/);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/No pude avisar a recepción; escríbele directo con el botón/);
+    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Pasamos/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/No pudimos avisar a nuestra encargada; escríbale directamente con el botón/);
     expect(t.mensajes[0]?.payload['interactive']).toBeTruthy();
   });
   it('recojo en tienda con 100 Bs: sin aviso de envío, sin frase de costo, con la dirección de la tienda (dato del comercio)', () => {
@@ -99,7 +104,7 @@ describe('el envío es gratis desde 500 Bs (incluido) y bajo el umbral va a rece
     expect(t.avisos).toHaveLength(0);
     expect(conBoton(t)).toBe(false);
     expect(t.mensajes[0]?.cuerpo).not.toMatch(/envío/i);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/Recoges tu pedido en: Calle Claudio Aliaga 1231, San Miguel/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/Recoge su pedido en: Calle Claudio Aliaga 1231, San Miguel/);
     const sc = pedir([{ id: 'pieza-100', cantidad: 1 }], { ...ENTREGA, ciudad: 'Santa Cruz' });
     expect(sc.t.mensajes[0]?.cuerpo).toMatch(/Av\. Marcelo Terceros/);
   });
@@ -110,19 +115,24 @@ describe('el envío es gratis desde 500 Bs (incluido) y bajo el umbral va a rece
     const t = hablar(m, ANA, mImagen({ caption: '' }));
     expect(t.avisos).toHaveLength(1);
     const vars = ((t.avisos[0]?.payload['template'] as any).components[0].parameters as { text: string }[]).map((p) => p.text); // eslint-disable-line @typescript-eslint/no-explicit-any
-    expect(vars[2]).toBe('Envío en La Paz · La Paz · a nombre de Ana Pérez · tel. 71234567 · Av. Arce 2345, Sopocachi · envío: a cotizar');
-    expect(vars[3]).toBe('llegó y los datos coinciden');
+    // La plantilla de 10 variables (fase 1): entrega, nombre, WhatsApp y dirección con GPS en sus variables.
+    expect(vars[0]).toMatch(/comprobante: llegó y los datos coinciden/);
+    expect(vars[2]).toBe('Envío en La Paz · La Paz · envío a cotizar por separado (compra menor a Bs 500)');
+    expect(vars[3]).toBe('Ana Pérez');
+    expect(vars[4]).toMatch(/contacto 71234567/);
+    expect(vars[6]).toBe('Av. Arce 2345, Sopocachi · GPS -16.5, -68.12');
   });
   it('un cambio de pedido con el QR abierto no avisa (el aviso se arma antes de saber si el cobro se cerró): el texto manda al botón', () => {
     const m = crear({ panel: panelBorde(), modeloDice: (ll) => modelo('Con gusto.', { lineas: [{ id: 'pieza-100', cantidad: /mejor cuatro/.test(String((ll.cuerpo as any)?.contents?.slice(-1)[0]?.parts?.[0]?.text)) ? 4 : 3 }], entrega: ENVIO }) }); // eslint-disable-line @typescript-eslint/no-explicit-any
     hablar(m, ANA, mTexto('tres piezas'));
-    const t1 = hablar(m, ANA, mTexto('quiero pagar'));
+    hablar(m, ANA, mTexto('quiero pagar'));
+    const t1 = hablar(m, ANA, { type: 'location', location: { latitude: -16.5, longitude: -68.12 } });
     expect(t1.avisos).toHaveLength(1);
     m.dobles['Traer configuración'] = () => panelOk({ catalogo: [...CATALOGO, ...BORDE].map((c) => ({ ...c })), cobro: { activo: true, qr: { url: 'https://qr.example.com/q.png' }, pendiente: true, monto: 300, pedido: 'WL1', regla: 2 } });
     const t2 = hablar(m, ANA, mTexto('mejor cuatro'));
     expect(hayQr(t2)).toBe(true);
     expect(t2.avisos).toHaveLength(0);
-    expect(t2.mensajes[0]?.cuerpo).toMatch(/escríbele a recepción con el botón para cotizar el envío/);
+    expect(t2.mensajes[0]?.cuerpo).toMatch(/se lo indicará nuestra encargada: escríbale con el botón/);
     expect(t2.mensajes[0]?.payload['interactive']).toBeTruthy();
   });
 });
@@ -133,14 +143,15 @@ describe('bajo el umbral el resumen cabe en el botón (1.024) sin perder la pol�
     const detalle = 'color azul con borde rojo y nombre bordado en hilo dorado '.repeat(3).slice(0, 120);
     const m = crear({ panel: panelOk({ catalogo: [...CATALOGO, ...piezas].map((c) => ({ ...c })) }), modeloDice: modelo('Con gusto.', { lineas: piezas.map((p) => ({ id: p.id, cantidad: 1, detalle })), entrega: ENVIO }) });
     hablar(m, ANA, mTexto('quiero seis piezas'));
-    const t = hablar(m, ANA, mTexto('quiero pagar'));
+    hablar(m, ANA, mTexto('quiero pagar'));
+    const t = hablar(m, ANA, { type: 'location', location: { latitude: -16.5, longitude: -68.12 } });
     expect(hayQr(t)).toBe(true);
     const cuerpo = String(((t.mensajes[0]?.payload['interactive'] as any).body.text)); // eslint-disable-line @typescript-eslint/no-explicit-any
     expect(cuerpo.length).toBeLessThanOrEqual(1024);
     expect(cuerpo).toMatch(/… y \d+ más/);
     expect(cuerpo).toMatch(/Total: Bs 60/);
-    expect(cuerpo).toMatch(/El QR es solo por los productos; el envío se cotiza y se paga aparte/);
-    expect(cuerpo).toMatch(/Ya avisé a recepción; también puedes escribirle directo con el botón/);
+    expect(cuerpo).toMatch(/El QR es solo por las piezas; el costo del envío se lo indicará y cobrará nuestra encargada/);
+    expect(cuerpo).toMatch(/Pasamos su pedido a nuestra encargada; también puede escribirle directamente con el botón/);
     expect(cuerpo).toMatch(/Abajo va el QR para pagar\./);
   });
   it('sin QR de cobro real el texto no habla del QR junto a «el pago por QR no está disponible»', () => {
@@ -148,8 +159,8 @@ describe('bajo el umbral el resumen cabe en el botón (1.024) sin perder la pol�
     const { t } = pedir([{ id: 'pieza-100', cantidad: 1 }], ENVIO, { panel: { statusCode: 200, body: resto as never } });
     const cuerpo = t.mensajes[0]?.cuerpo ?? '';
     expect(cuerpo).toMatch(/el pago por QR no está disponible/);
-    expect(cuerpo).toMatch(/El envío se cotiza y se paga aparte/);
-    expect(cuerpo).not.toMatch(/El QR es solo por los productos/);
+    expect(cuerpo).toMatch(/El costo del envío se lo indicará y cobrará nuestra encargada/);
+    expect(cuerpo).not.toMatch(/El QR es solo por las piezas/);
   });
 });
 
@@ -228,7 +239,7 @@ describe('el modelo no dice el costo del envío: lo dice el código', () => {
     it(`NEGADO con 300 Bs: «${falso}» no sale; sale el texto fijo`, () => {
       const m = crear({ panel: panelBorde(), modeloDice: modelo(falso, { lineas: [{ id: 'pieza-100', cantidad: 3 }], entrega: ENVIO }) });
       const t = hablar(m, ANA, mTexto('quiero tres piezas'));
-      expect(textos(t).join(' ')).toMatch(/Cuéntame un poco más de lo que buscas/);
+      expect(textos(t).join(' ')).toMatch(/Cuéntenos un poco más de lo que busca/);
       expect(textos(t).join(' ')).not.toContain(falso);
     });
   }
@@ -242,7 +253,7 @@ describe('el modelo no dice el costo del envío: lo dice el código', () => {
   it('si el cliente pregunta por el envío, el código agrega la política fija con el umbral', () => {
     const m = crear({ panel: panelBorde(), modeloDice: modelo('Con gusto, te cuento.') });
     const t = hablar(m, ANA, mTexto('¿hacen envíos a Tarija? ¿cuánto cuesta el envío?'));
-    expect(textos(t).join(' ')).toMatch(/Sobre el envío: desde Bs 500 de compra no tiene costo, en cualquier envío, también al resto del país\. En compras menores, recepción cotiza el envío y se paga aparte/);
+    expect(textos(t).join(' ')).toMatch(/Sobre el envío: desde Bs 500 de compra no tiene costo, en cualquier envío, también al resto del país\. En compras menores, el costo del envío se lo indica y cobra nuestra encargada/);
   });
   it('NEGADO: «te envío el comprobante» o «envío mis datos» no activan la política de envío', () => {
     for (const frase of ['te envío el comprobante ahora', 'envío mis datos: Ana Pérez', 'ya te envié la foto, me envías el QR']) {

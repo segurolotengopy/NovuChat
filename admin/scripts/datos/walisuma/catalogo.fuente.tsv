@@ -2,18 +2,18 @@
 # Columnas separadas por «|»: página | primera línea del pie de foto en el PDF (exacta; «=» = comparte la foto del ítem anterior) | familia del SKU | nombre | descripción | precio en Bs («-» = el PDF no lo trae: a consultar) | área
 # El SKU es WAL-<familia>-<nnn> en el orden de este archivo; es una PROPUESTA que el cliente valida. Una línea que no es de un ítem empieza con «#».
 2|BUFANDA DE VICUÑA|BUF|Bufanda de vicuña|Punto diagonal, 100 % vicuña.|7795|BUF
-3|ESTOLA SIMPLE|BUF|Estola simple|De color vicuña. 70 % baby alpaca y 30 % seda.|911|BUF
-3|CHAL TELAR PREMIUM|BUF|Chal telar premium|Color crudo. 100 % baby alpaca.|910|BUF
-3|CHAL SIMPLE TEJIDO|BUF|Chal simple tejido|De color vicuña. 100 % alpaca superfina.|1125|BUF
-3|CHAL BICOLOR TEJIDO|BUF|Chal bicolor tejido|Colores variables: se consulta la disponibilidad del momento. 100 % alpaca superfina.|1150|BUF
-4|BUFANDA DENNIS|BUF|Bufanda Dennis|Color naranja. Tela de baby alpaca.|850|BUF
-4|BUFANDA PEINADA|BUF|Bufanda peinada|Color gris claro. 100 % baby alpaca.|545|BUF
-4|BUFANDA BICOLOR TEJIDA|BUF|Bufanda bicolor tejida|Colores variables: se consulta la disponibilidad del momento. 100 % alpaca superfina.|510|BUF
-4|BUFANDA SIMPLE TEJIDA|BUF|Bufanda simple tejida|Color gris claro. 100 % alpaca superfina.|510|BUF
-5|BUFANDA PREMIUM|BUF|Bufanda premium|Color negro. 100 % baby alpaca.|410|BUF
+3|ESTOLA SIMPLE|BUF|Estola simple|De color vicuña. Colores del catálogo 2026: vicuña claro, vicuña, gris perla, azul marino y negro. 70 % baby alpaca y 30 % seda.|911|BUF
+3|CHAL TELAR PREMIUM|BUF|Chal telar premium|Color crudo. Colores del catálogo 2026: crudo, café, terracota, rojo, azul marino y negro. 100 % baby alpaca.|910|BUF
+3|CHAL SIMPLE TEJIDO|BUF|Chal simple tejido|De color vicuña. Colores del catálogo 2026: crudo, café, chocolate, gris claro, gris oscuro y negro. 100 % alpaca superfina.|1125|BUF
+3|CHAL BICOLOR TEJIDO|BUF|Chal bicolor tejido|Colores variables: se consulta la disponibilidad del momento. Colores del catálogo 2026: blanco y negro, gris y azul, beige y crudo, café y beige, chocolate y beige, y tonos tierra. 100 % alpaca superfina.|1150|BUF
+4|BUFANDA DENNIS|BUF|Bufanda Dennis|Color naranja. Colores del catálogo 2026: negro, grafito, gris oscuro, azul marino, camel, cobre, naranja y rojo. Tela de baby alpaca.|850|BUF
+4|BUFANDA PEINADA|BUF|Bufanda peinada|Color gris claro. Colores del catálogo 2026: marfil, gris claro, beige, arena, gris topo, camel y café oscuro. 100 % baby alpaca.|545|BUF
+4|BUFANDA BICOLOR TEJIDA|BUF|Bufanda bicolor tejida|Colores variables: se consulta la disponibilidad del momento. Colores del catálogo 2026: blanco y negro, gris y azul, celeste y gris, naranja y rojo, beige y crudo, café y beige. 100 % alpaca superfina.|510|BUF
+4|BUFANDA SIMPLE TEJIDA|BUF|Bufanda simple tejida|Color gris claro. Colores del catálogo 2026: crudo, café, chocolate, gris claro, gris oscuro, negro, azul marino y rojo. 100 % alpaca superfina.|510|BUF
+5|BUFANDA PREMIUM|BUF|Bufanda premium|Color negro. Colores del catálogo 2026: crudo, camel, rojo, gris, gris claro y negro. 100 % baby alpaca.|410|BUF
 5|BUFANDA CUADROS|BUF|Bufanda cuadros|Colores variables: se consulta la disponibilidad del momento. 100 % baby alpaca.|410|BUF
-5|BUFANDA BOUCLE|BUF|Bufanda bouclé|Colores variables: se consulta la disponibilidad del momento. 70 % baby alpaca y 30 % seda.|591|BUF
-5|CUELLO CAROLINA|BUF|Cuello Carolina|Bufanda circular. Colores variables: se consulta la disponibilidad del momento. 100 % baby alpaca.|250|BUF
+5|BUFANDA BOUCLE|BUF|Bufanda bouclé|Colores variables: se consulta la disponibilidad del momento. Colores del catálogo 2026: crudo, beige, arena y gris piedra. 70 % baby alpaca y 30 % seda.|591|BUF
+5|CUELLO CAROLINA|BUF|Cuello Carolina|Bufanda circular. Colores variables: se consulta la disponibilidad del momento. Colores del catálogo 2026: azul marino, camel, gris, crudo y negro. 100 % baby alpaca.|250|BUF
 6|GORRO ESPERANZA|GOR|Gorro Esperanza|100 % baby llama.|350|GOR
 6|CUELLO ESPERANZA|GOR|Cuello Esperanza|100 % baby llama.|700|GOR
 6|MITON ESPERANZA|GOR|Mitón Esperanza|100 % baby llama.|290|GOR
@@ -82,7 +82,7 @@
 15|TAPIZ HOMBRE|TAP|Tapiz hombre 55 x 34 cm|55 x 34 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria. Precio a consultar: son piezas únicas, pueden estar vendidas o variar en tamaño o precio.|-|TAP
 15|TAPIZ CARNAVAL|TAP|Tapiz carnaval 67 x 32 cm|67 x 32 cm. Tejido a mano en telar rústico. Pieza única. Comunidad La Candelaria.|3750|TAP
 15|TAPIZ MATRIMONIO|TAP|Tapiz matrimonio 71 x 38 cm|71 x 38 cm. Tejido a mano en telar rústico. Comunidades Candelaria y Tarabuco.|2300|TAP
-15|TAPIZ JALQ|TAP|Tapiz Jalq 61 x 34 cm|61 x 34 cm. Tejido a mano en telar rústico. Comunidades Candelaria y Tarabuco.|3080|TAP
+15|TAPIZ JALQ|TAP|Tapiz Jalq'a 61 x 34 cm|61 x 34 cm. Tejido a mano en telar rústico. Comunidades Candelaria y Tarabuco.|3080|TAP
 16|CORREDOR DE MESA|MES|Corredor de mesa|Aguayo con tintes naturales, tejido en telar de pie. Comunidades Chuñu Chuñuni y Aramasí.|1700|MES
 16|INDIVIDUALES DE AGUAYO|MES|Individuales de aguayo|Aguayo con tintes naturales, tejido en telar de pie. Comunidades Chuñu Chuñuni y Aramasí. Precio por unidad.|495|MES
 16|INDIVIDUALES TACANA|MES|Individuales Tacana|100 % algodón. Tejidos a mano por mujeres de la comunidad Tacana. Precio por unidad.|230|MES

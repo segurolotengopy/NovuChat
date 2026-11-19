@@ -1,30 +1,34 @@
 /**
- * IDENTIDAD en el esqueleto de Walisuma: el primer mensaje dice «asistente virtual con IA» (pieza común `Flujos/src/core/texto/identidad.js`, aplicada
- * en `Seguro` a todo texto que sale). Costo: 0 mensajes agregados (cambian dos palabras del texto que ya salía). Se prueba NEGANDO.
+ * IDENTIDAD en Walisuma (decisión 2 de Andres, 18/11/2026): el asistente dice que es una IA SOLO SI LE PREGUNTAN, y nunca lo niega. El saludo es la identidad del MD
+ * («asistente de atención y ventas de Walisuma»), sin «IA»; la respuesta a «¿eres un bot?» es un texto fijo del código que SÍ lo dice; todo texto que se presente como
+ * Walisuma ya no lleva la pieza común `identidad.js`: excepción PERMANENTE en `EXCEPCIONES_DE_IDENTIDAD` (dueño Andres, 19/11/2026). Costo: 0 mensajes. Se prueba NEGANDO.
  */
 import { describe, expect, it } from 'vitest';
-import { ANA, EXTRANJERO, crear, hablar, mTexto } from './mundo';
+import { ANA, EXTRANJERO, crear, hablar, mTexto, modelo } from './mundo';
 
-const CON_IA = /asistente virtual con IA/;
-const SIN_IA = /asistente virtual(?! con IA)/;
+const NIEGA = /no soy (un |una )?(bot|robot|ia|inteligencia artificial)|soy (una )?persona (real|de verdad)|humano/i;
 
-describe('el primer mensaje dice que es una IA', () => {
-  it('el saludo de la primera respuesta: «asistente virtual con IA»', () => {
-    const t = hablar(crear(), ANA, mTexto('hola'));
+describe('Walisuma dice que es una IA si le preguntan, y nunca lo niega', () => {
+  it('el saludo de la primera respuesta es «asistente de atención y ventas», sin «IA» (decisión 2)', () => {
+    const t = hablar(crear({ modeloDice: modelo('Con gusto le ayudamos.') }), ANA, mTexto('hola'));
     const primero = t.mensajes[0]?.cuerpo ?? '';
-    expect(primero).toMatch(CON_IA);
-    expect(primero).not.toMatch(SIN_IA);
+    expect(primero).toMatch(/^Hola, soy el asistente de atención y ventas de /);
+    expect(primero).not.toMatch(/\bIA\b|inteligencia artificial/);
   });
-  it('desde fuera de los países atendidos, el texto fijo también lo dice', () => {
-    const t = hablar(crear(), EXTRANJERO, mTexto('hola'));
-    const texto = t.mensajes.map((m) => m.cuerpo ?? '').join('\n');
-    expect(texto).toMatch(CON_IA);
-    expect(texto).not.toMatch(SIN_IA);
+  it('«¿eres un bot?», «¿hablo con una persona?»: el texto fijo dice «inteligencia artificial», sin llamar al modelo', () => {
+    for (const p of ['¿eres un bot?', '¿hablo con una persona?', '¿eres una IA?']) {
+      const t = hablar(crear({ modeloDice: modelo('Soy una persona real.') }), ANA, mTexto(p));
+      expect(t.mensajes[0]?.cuerpo, p).toMatch(/inteligencia artificial/);
+      expect(t.registro.map((r) => r.nodo), p).not.toContain('Conversar con el modelo');
+    }
   });
-  it('NIEGA: ningún mensaje de la conversación se presenta como «asistente virtual» a secas', () => {
-    const mundo = crear();
-    const t1 = hablar(mundo, ANA, mTexto('hola'));
-    const t2 = hablar(mundo, ANA, mTexto('quiero ver el catálogo'));
-    for (const t of [t1, t2]) for (const m of t.mensajes) expect(m.cuerpo ?? '').not.toMatch(SIN_IA);
+  it('NEGADO: ningún mensaje niega ser una IA, aunque el modelo lo intente', () => {
+    const t = hablar(crear({ modeloDice: modelo('No soy un robot, soy una persona real.') }), ANA, mTexto('hola'));
+    for (const m of t.mensajes) expect(m.cuerpo ?? '').not.toMatch(NIEGA);
+  });
+  it('NEGADO: ningún texto fijo se presenta como «asistente virtual» a secas (sin decir que es una IA)', () => {
+    for (const t of [hablar(crear(), EXTRANJERO, mTexto('hola')), hablar(crear({ modeloDice: modelo('Con gusto.') }), ANA, mTexto('hola'))]) {
+      for (const m of t.mensajes) expect(m.cuerpo ?? '').not.toMatch(/asistente virtual(?![^.]*inteligencia artificial)/);
+    }
   });
 });
