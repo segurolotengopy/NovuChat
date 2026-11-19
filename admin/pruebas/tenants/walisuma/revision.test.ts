@@ -120,6 +120,84 @@ describe('4 · el NIT no viaja en el reporte del mensaje entrante', () => {
   });
 });
 
+describe('tercera pasada · el reporte entrante enmascara SIN etiqueta (seguridad)', () => {
+  const reporte = (t: ResultadoTurno): string => String(t.registro.find((r) => r.nodo === 'Reportar mensaje (entrante)')?.cuerpo?.['texto'] ?? '');
+  for (const [texto, numero] of [['Juan Pérez 1234567', '1234567'], ['NIT1234567', '1234567'], ['CI1234567', '1234567'], ['N.I.T. 1234567', '1234567'], ['mi documento es 12.345.678', '12.345.678']] as const) {
+    it(`NEGADO: «${texto}» no llega con el número al reporte`, () => {
+      expect(reporte(hablar(crear({ modeloDice: modelo('Con gusto.') }), ANA, mTexto(texto)))).not.toContain(numero);
+    });
+  }
+  it('control: el celular y el código WAL quedan visibles; el número de puerta corto también; no se cruza un salto de línea', () => {
+    const r = reporte(hablar(crear({ modeloDice: modelo('Con gusto.') }), ANA, mTexto('mi pedido WAL-261005-001, Av. Arce 2132\n71234567')));
+    expect(r).toContain('WAL-261005-001');
+    expect(r).toContain('2132');
+    expect(r).toContain('71234567');
+  });
+});
+
+describe('tercera pasada · la guarda del aviso del comprobante tiene su propia marca (seguridad)', () => {
+  it('una consulta reciente NO silencia el aviso de un comprobante que no se pudo cotejar', () => {
+    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }), medio: { clasificacion: COMPROBANTE }, cotejo: 'cae' });
+    hablar(m, ANA, mTexto('una billetera'));
+    hablar(m, ANA, mTexto('quiero pagar'));
+    expect(hablar(m, ANA, mTexto('quiero hablar con una persona')).avisos).toHaveLength(1);
+    m.dobles['Traer configuración'] = () => panelConQr(450);
+    const t = hablar(m, ANA, mImagen({ caption: '' }));
+    expect(t.avisos).toHaveLength(1);
+    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/no se pudo cotejar/);
+  });
+});
+
+describe('tercera pasada · negación implícita con nombre propio (texto sin normalizar)', () => {
+  for (const falso of ['Soy Carla.', 'Hola, soy Carla 😊', 'Soy Carla, asesora de Walisuma', 'Le saluda Carla', 'Le atiende Carla.', 'Aquí le atiende Carla con gusto.']) {
+    it(`NEGADO: «${falso}» no sale`, () => {
+      expect(textos(hablar(crear({ modeloDice: modelo(falso) }), ANA, mTexto('hola'))).join(' ')).not.toMatch(/Carla/);
+    });
+  }
+  for (const bien of ['Me llamó la atención su pregunta: la bufanda es de vicuña.', 'Soy el asistente de atención y ventas de la tienda.', 'Le atiende nuestro catálogo con piezas de vicuña.']) {
+    it(`control: «${bien}» sale`, () => {
+      expect(textos(hablar(crear({ modeloDice: modelo(bien) }), ANA, mTexto('hola'))).join(' ')).toContain(bien);
+    });
+  }
+});
+
+describe('tercera pasada · regresiones de la factura y de los números', () => {
+  for (const sí of ['NIT 4455667 para mi pedido', 'NIT 4455667, gracias por el envío', 'Textiles Zona Sur SRL NIT 4455667', 'NIT1234567 Ana Pérez']) {
+    it(`con etiqueta, «${sí}» SÍ son datos de factura (sin bucle de pedirlos otra vez)`, () => {
+      const m = pagado();
+      const t = hablar(m, ANA, mTexto(sí));
+      expect(fichaDe(m)['ultimoPedido']['factura']).toBe('dada');
+      expect(t.avisos).toHaveLength(1);
+    });
+  }
+  it('NEGADO: «Ana 71234567» (celular) no es NIT', () => {
+    const m = pagado();
+    hablar(m, ANA, mTexto('Ana 71234567'));
+    expect(fichaDe(m)['ultimoPedido']['factura']).toBe('pedida');
+  });
+  it('antes del modelo cada grupo de cifras se mira por separado: puerta y celular pasan; «2 2412345» enmascara solo el grupo largo', () => {
+    let cuerpo = '';
+    const m = crear({ modeloDice: (ll) => { cuerpo = String(((ll.cuerpo as J)['contents'] as J[]).slice(-1)[0]?.['parts']?.[0]?.text ?? ''); return modelo('Con gusto.'); } });
+    hablar(m, ANA, mTexto('Av. Arce 2132\n71234567'));
+    expect(cuerpo).toContain('2132');
+    expect(cuerpo).toContain('71234567');
+    hablar(m, ANA, mTexto('al 71234567 2 unidades'));
+    expect(cuerpo).toContain('71234567 2 unidades');
+    hablar(m, ANA, mTexto('mi fijo es 2 2412345'));
+    expect(cuerpo).toContain('2 [nº]');
+  });
+  for (const p of ['¿es una persona de La Paz quien teje?', '¿quién me atiende en la tienda?', '¿es un programa de descuentos?', '¿es una máquina de coser la que usan?']) {
+    it(`control: «${p}» no recibe el texto de identidad`, () => {
+      expect(corrio(hablar(crear({ modeloDice: modelo('Con gusto.') }), ANA, mTexto(p)), 'Conversar con el modelo')).toBe(true);
+    });
+  }
+  for (const p of ['¿es usted una persona?', '¿me atiende una persona?', '¿eres un bot?', '¿eres un robot o una persona?']) {
+    it(`«${p}» sí recibe el texto de identidad`, () => {
+      expect(textos(hablar(crear(), ANA, mTexto(p))).join(' ')).toMatch(/inteligencia artificial/);
+    });
+  }
+});
+
 describe('5 · ningún texto que puede llegar al cliente tutea', () => {
   const USTED = modelo('Con gusto le ayudamos.');
   const casos: [string, () => ResultadoTurno][] = [

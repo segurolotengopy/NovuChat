@@ -191,8 +191,9 @@ if (puerta.ruta === 'sigue') {
     const cuerpo = d.motivo === 'no_cancelo' ? WL_INTROS.no_cancelo + ' Escríbale a nuestra encargada con el botón.'
       : wlTextoDerivacion(d.motivo, salio);
     msgs = [conRecepcion(conSaludo(cuerpo))];
-    // La guarda de 30 minutos cuenta también el aviso de un comprobante sin cotejar o en revisión (de tipo `pedido`).
-    if (salio === true && d.aviso && (d.aviso.tipo === 'consulta' || d.motivo === 'comprobante_sin_cotejo' || d.motivo === 'comprobante_en_revision')) { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
+    // La guarda de 30 minutos: las consultas con su marca; el aviso de un comprobante sin cotejar o en revisión (de tipo `pedido`) con la SUYA (`avisoComprobanteMs`).
+    if (salio === true && d.aviso && d.aviso.tipo === 'consulta') { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
+    else if (salio === true && d.aviso && (d.motivo === 'comprobante_sin_cotejo' || d.motivo === 'comprobante_en_revision')) { nuevos.avisoComprobanteMs = ahora; ev.avisoComprobanteMs = fichaAntes.avisoComprobanteMs; }
     // Un pedido cambiado cuyo cobro no se pudo cerrar: el pedido nuevo se conserva (el QR viejo sigue abierto y el cliente ya sabe que no pague con él).
     if (d.motivo === 'no_cancelo' && Array.isArray(d.lineas)) { nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega; }
     if (d.motivo === 'comprobante_sin_cotejo' && d.patch) { /* sin cotejo: el comprobante llegó; recepción lo ve */ }

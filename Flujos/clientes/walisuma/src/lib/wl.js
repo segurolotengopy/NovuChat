@@ -25,7 +25,10 @@ const WL_NIEGA_IA = /\bno (?:soy|es|eres|estas hablando con|hablas con)\b[^.!?]{
 // NIEGA_IA PROPIA de Walisuma (revisión del PR #1020): lo que `WL_NIEGA_IA` (copia declarada, idéntica a la de Antonio) no cubre. Presentarse como una persona con NOMBRE PROPIO
 // («soy Carla, de ventas», «me llamo Carla») o decir que «le atiende un asesor / una persona / nuestra encargada» es una negación implícita de ser una IA. Se prueba sobre el texto NORMALIZADO.
 // «Soy el asistente de atención y ventas» y «esto lo atiende directamente nuestra encargada» (derivación) NO caen: la primera nombra al asistente, la segunda no dice que quien escribe sea ella.
-const WL_NIEGA_IA_EXTRA = /\b(?:le|lo|la|te) (?:atiende|esta atendiendo|escribe|responde|contesta) (?:un |una |nuestra |nuestro |el |la )?(?:asesor\w*|persona\w*|encargad[oa]s?|ejecutiv\w*|vendedor\w*|agente|operador\w*)\b|\bsoy (?!el |la |un |una |su |tu |asistente\b|del\b|de\b|parte\b)[a-z]{2,20} (?:del equipo|de ventas|de atencion|de walisuma|de la tienda|de servicio|de la marca|su asesor\w*|su encargad[oa])\b|\b(?:me llamo|mi nombre es) (?!el asistente|asistente)[a-z]{2,20}\b|\b(?:le|te) (?:saluda|escribe|habla) (?!el asistente|un asistente|nuestra |nuestro |el equipo)[a-z]{2,20}(?: [a-z]{2,20})?,? (?:del equipo|de ventas|de atencion|de walisuma)\b/;
+const WL_NIEGA_IA_EXTRA = /\b(?:le|lo|la|te) (?:atiende|esta atendiendo|escribe|responde|contesta) (?:un |una |nuestra |nuestro |el |la )?(?:asesor\w*|persona\w*|encargad[oa]s?|ejecutiv\w*|vendedor\w*|agente|operador\w*)\b|\bsoy (?!el |la |un |una |su |tu |asistente\b|del\b|de\b|parte\b)[a-z]{2,20} (?:del equipo|de ventas|de atencion|de walisuma|de la tienda|de servicio|de la marca|su asesor\w*|su encargad[oa])\b|\b(?:le|te) (?:saluda|escribe|habla) (?!el asistente|un asistente|nuestra |nuestro |el equipo)[a-z]{2,20}(?: [a-z]{2,20})?,? (?:del equipo|de ventas|de atencion|de walisuma)\b/;
+// Y presentarse con un NOMBRE PROPIO, mirado en el texto SIN normalizar (mayúscula inicial): «Soy Carla.», «Hola, soy Carla 😊», «Le saluda Carla», «Le atiende Carla.», «Me llamo Carla».
+// «Soy el asistente…» / «la asistente» no caen; «Me llamó la atención…» tampoco (la tilde de «llamó» y la minúscula de «la»).
+const WL_NIEGA_IA_NOMBRE = /(?:^|[\s¡¿,.;:!(])(?:[Ss]oy|[Ll]e (?:saluda|atiende|habla|escribe)|[Aa]qu[ií] le (?:atiende|habla|escribe)|[Mm]e llamo|[Mm]i nombre es)\s+(?!Walisuma\b)\p{Lu}\p{Ll}{1,20}(?![\p{L}\p{N}])/u;
 const WL_SALUDO_MINIMO = 'Hola, soy el asistente de atención y ventas.';
 
 // Lo que el cliente ve cuando manda algo que este canal no lee (sticker, ubicación, contacto, mensaje no soportado o un medio sin id): texto cortés fijo, sin modelo, una sola invitación y ninguna promesa.
@@ -55,7 +58,7 @@ const WL_FRASE_CONFIRMADO = /^Pedido confirmado(?: WAL-\d{6}-\d{3})?\./;
 // Excepción PERMANENTE declarada en `admin/pruebas/core/ux/identidad.ts` (`EXCEPCIONES_DE_IDENTIDAD`, dueño Andres, 19/11/2026).
 function wlSeguro(texto, permiso) {
   const t = String(texto === undefined || texto === null ? '' : texto);
-  if (WL_NIEGA_IA.test(wlNorm(t)) || WL_NIEGA_IA_EXTRA.test(wlNorm(t))) return WL_SALUDO_MINIMO;
+  if (WL_NIEGA_IA.test(wlNorm(t)) || WL_NIEGA_IA_EXTRA.test(wlNorm(t)) || WL_NIEGA_IA_NOMBRE.test(t)) return WL_SALUDO_MINIMO;
   const frase = permiso === WL_PERMISO_CONFIRMADO ? WL_FRASE_CONFIRMADO.exec(t) : null;
   const resto = frase ? t.slice(frase[0].length) : t;
   if (CB_PROHIBIDAS.test(cbCanon(resto))) return WL_SALUDO_MINIMO;
@@ -102,7 +105,7 @@ function wlUltimoPedido(v) {
 function wlFichaBase() {
   return {
     v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, fueraDePaisMs: 0,
-    carrito: [], entrega: wlEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, ultimoPedido: null,
+    carrito: [], entrega: wlEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, ultimoPedido: null, avisoComprobanteMs: 0,
   };
 }
 function wlNumero(v, tope) {
@@ -149,6 +152,7 @@ function wlFichaVigente(e, ahoraMs) {
     hist: (Array.isArray(e.hist) ? e.hist : []).filter((x) => x && (x.r === 'u' || x.r === 'm') && typeof x.t === 'string' && x.t !== '').map((x) => ({ r: x.r, t: x.t.slice(0, WL_LARGO_RECUERDO) })).slice(-WL_RECUERDOS),
     avisoConsultaMs: wlNumero(e.avisoConsultaMs),
     ultimoPedido: wlUltimoPedido(e.ultimoPedido),
+    avisoComprobanteMs: wlNumero(e.avisoComprobanteMs),
   };
 }
 function wlYaVisto(ficha, id) {

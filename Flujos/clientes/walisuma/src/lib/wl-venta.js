@@ -229,11 +229,15 @@ function wlQuierePagar(n) {
 function wlPideIdentidad(n) {
   const t = String(n || '');
   const QUE = '(?:bot|bots|robot|robots|ia|i a|inteligencia artificial|maquina|programa|computadora|chatbot|chat bot|asistente virtual|persona|humano|humana)';
-  return new RegExp('\\b(?:eres|eris|erez|eress|sos|es|seras|sera)\\s+(?:usted\\s+)?(?:un |una )?' + QUE + '\\b').test(t)
-    || /\b(?:eres|eris|erez|sos|es usted|seras)\s+(?:real|de verdad|automatic\w*)\b/.test(t)
-    || new RegExp('\\b(?:hablo|hablamos|estoy hablando|hablando|chateo|chateando|estoy chateando|converso|conversando|estoy conversando|escribo|estoy escribiendo)\\s+con\\s+(?:un |una |alguien )?' + QUE + '\\b').test(t)
-    || new RegExp('\\b(?:me|nos)\\s+(?:atiende|esta atendiendo|responde|contesta|escribe)\\s+(?:un |una |alguien )?' + QUE + '\\b').test(t)
-    || /\bpersona real\b|\bes (?:un )?bot\b|\bquien (?:eres|es usted|me atiende|me responde|me contesta|me escribe)\b|\bcon quien (?:hablo|estoy hablando|chateo|estoy chateando)\b|^\s*(?:esto |este chat |usted )?es automatic\w*\s*$|\b(?:respuesta|mensaje|chat|contestador)\w* automatic\w*\b|\bhay (?:alguien|una persona|un humano) (?:ahi|ahí|real)\b/.test(t);
+  // La pregunta TERMINA en lo que se pregunta (el texto normalizado ya no trae «?»), o sigue con una alternativa corta («… o una persona», «… de verdad»):
+  // «¿es una persona de La Paz quien teje?», «¿es un programa de descuentos?» o «¿quién me atiende en la tienda?» NO son preguntas por la identidad (revisión del PR #1020).
+  const FIN = '(?:\\s+(?:o|u)\\s+(?:un |una )?[a-z ]{1,30}|\\s+(?:de verdad|real|verdad|cierto|no))?\\s*$';
+  return new RegExp('\\b(?:eres|eris|erez|eress|sos|es|seras|sera)\\s+(?:usted\\s+)?(?:un |una )?' + QUE + FIN).test(t)
+    || new RegExp('\\b(?:eres|eris|erez|sos|es usted|seras)\\s+(?:real|de verdad|automatic\\w*)' + FIN).test(t)
+    || new RegExp('\\b(?:hablo|hablamos|estoy hablando|hablando|chateo|chateando|estoy chateando|converso|conversando|estoy conversando|escribo|estoy escribiendo)\\s+con\\s+(?:un |una |alguien )?' + QUE + FIN).test(t)
+    || new RegExp('\\b(?:me|nos)\\s+(?:atiende|esta atendiendo|responde|contesta|escribe)\\s+(?:un |una |alguien )?' + QUE + FIN).test(t)
+    || new RegExp('(?:\\bpersona real|\\bes (?:un )?bot|\\bquien (?:eres|es usted|me atiende|me responde|me contesta|me escribe)|\\bcon quien (?:hablo|estoy hablando|chateo|estoy chateando)|\\b(?:respuesta|mensaje|chat|contestador)\\w* automatic\\w*|\\bhay (?:alguien|una persona|un humano) (?:ahi|real))' + FIN).test(t)
+    || /^\s*(?:esto |este chat |usted )?es automatic\w*\s*$/.test(t);
 }
 function wlCorporativo(n) {
   // Personalización (logo, grabado, bordado, empaques) también: no se afirma ni se niega, se deriva (MD, política §2).
@@ -254,6 +258,8 @@ function wlSinFactura(n) {
     || /^(a mi nombre( nomas| no mas| nada mas| noma)?|asi nomas|no gracias|no hace falta|no la necesito|no necesito|no es necesario|no)( gracias)?$/.test(t);
 }
 // Lo que NO es un dato de factura aunque traiga un número: un teléfono, una dirección o un pedido nuevo.
+// Con la ETIQUETA (NIT, CI, razón social) solo descartan las palabras de teléfono: «NIT 1234567 para mi pedido» o «Textiles Zona Sur SRL NIT …» SÍ son datos de factura.
+const WL_NO_ES_FACTURA_TELEFONO = /\b(telefono|telf|tel|celular|cel|whatsapp|wsp|numero de contacto)\b/;
 const WL_NO_ES_FACTURA = /\b(telefono|telf|tel|celular|cel|whatsapp|wsp|numero de contacto|calle|avenida|av|zona|direccion|barrio|edificio|piso|depto|departamento|envio|envien|enviar|pedido|comprar|agregar|agrega|unidad|unidades|pieza|piezas)\b/;
 // Los datos de factura en el texto del cliente: un NIT o CI (5 a 15 dígitos) y la razón social (lo que queda sin las etiquetas). null si no hay número.
 // Solo se usa con una factura PEDIDA tras el pago y el resultado va SOLO al aviso de nuestra encargada: ni ficha, ni memoria, ni planilla, ni modelo.
@@ -261,14 +267,18 @@ function wlDatosFactura(texto) {
   const t = cbLinea(String(texto === undefined || texto === null ? '' : texto), 300);
   const n = wlNorm(t);
   // Acotado (revisión del PR #1020): con la etiqueta (NIT, CI, carnet, razón social, factura) o un mensaje que es SOLO un nombre y un número; nunca un teléfono, una dirección ni un pedido.
-  if (WL_NO_ES_FACTURA.test(n)) return null;
-  const etiqueta = /\b(nit|ci|c i|carnet|cedula|razon social|factura)\b/.test(n);
-  const soloNombreYNumero = /^[\p{L}' -]{2,80}[\s,;:-]+\d[\d.\s-]{3,20}\d\.?$|^\d[\d.\s-]{3,20}\d[\s,;:-]+[\p{L}' -]{2,80}\.?$/u.test(t.trim());
+  // La etiqueta también pegada al número («NIT1234567», «CI1234567») o con puntos («N.I.T.», normalizado «n i t»).
+  const etiqueta = /(?:^|[^a-z])(n i t|nit|ci|c i|carnet|cedula|razon social|factura)(?![a-z])/.test(n);
+  if (WL_NO_ES_FACTURA_TELEFONO.test(n) || (!etiqueta && WL_NO_ES_FACTURA.test(n))) return null;
+  const soloNombreYNumero = /^[\p{L}' -]{2,80}[\s,;:-]+\d(?:[.-]?\d){4,14}\.?$|^\d(?:[.-]?\d){4,14}[\s,;:-]+[\p{L}' -]{2,80}\.?$/u.test(t.trim());
   if (!etiqueta && !soloNombreYNumero) return null;
-  const m = /(?:^|[^\d])(\d[\d.\s-]{3,20}\d)(?![\d])/.exec(t);
+  // El número: un solo grupo (sin cruzar espacios ni saltos de línea), de 5 a 15 dígitos.
+  const m = /(?:^|[^\d])(\d(?:[.-]?\d){4,14})(?![\d])/.exec(t);
   if (!m) return null;
   const nit = m[1].replace(/\D/g, '');
   if (!/^\d{5,15}$/.test(nit)) return null;
+  // Sin etiqueta, un número con forma de celular de Bolivia («Ana 71234567») es un teléfono, no un NIT.
+  if (!etiqueta && /^(?:591)?[67]\d{7}$/.test(nit)) return null;
   const razon = t.replace(m[1], ' ').replace(/\b(raz[oó]n social|nombre completo|nombre|nit|c\.?\s?i\.?|carnet|documento|n[uú]mero|mi|es|y|a nombre de)\b/gi, ' ')
     .replace(/[:;,.#°º()\[\]{}"'«»]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
   return { razonSocial: /\p{L}{2,}/u.test(razon) ? razon : '', nit: nit };
@@ -382,7 +392,8 @@ function wlPromptTurno(c) {
 // Antes del modelo, todo número de 5 o más dígitos que NO tenga forma de celular de Bolivia (8 dígitos que empiezan en 6 o 7, con o sin 591) se enmascara:
 // un NIT o un CI escrito sin la palabra «NIT» no llega crudo al modelo (revisión del PR #1020). El celular sí pasa: es el teléfono de contacto de la entrega.
 function wlSinNumerosLargos(t) {
-  return String(t === undefined || t === null ? '' : t).replace(/\+?\d(?:[\s.-]?\d){4,}/g, (m) => (/^(?:591)?[67]\d{7}$/.test(m.replace(/\D/g, '')) ? m : '[nº]'));
+  // Cada grupo por separado (sin cruzar espacios ni saltos de línea): «Av. Arce 2132\n71234567» conserva el número de puerta y el celular; «2 2412345» enmascara solo el grupo largo.
+  return String(t === undefined || t === null ? '' : t).replace(/\+?\d(?:[.-]?\d){4,}/g, (m) => (/^(?:591)?[67]\d{7}$/.test(m.replace(/\D/g, '')) ? m : '[nº]'));
 }
 function wlCuerpoModelo(c) {
   const contents = c.ficha.hist.map((h) => ({ role: h.r === 'u' ? 'user' : 'model', parts: [{ text: h.t }] }));
@@ -491,7 +502,8 @@ function wlResolverComprobante(c) {
   const leido = { bancoOrigen: typeof lec.bancoOrigen === 'string' ? lec.bancoOrigen : '', transaccion: typeof lec.transaccion === 'string' ? lec.transaccion : '' };
   const ref = /^[A-Za-z0-9_-]{1,60}$/.test(c.cobro.pedidoRef) ? c.cobro.pedidoRef : '';
   // La guarda de 30 minutos de las consultas también vale para el aviso de un comprobante sin cotejar o en revisión: 10 imágenes seguidas dan UN aviso.
-  const reciente = f.avisoConsultaMs > 0 && c.ahora - f.avisoConsultaMs >= 0 && c.ahora - f.avisoConsultaMs < WL_VENTANA_CONSULTA_MS;
+  // Marca PROPIA (`avisoComprobanteMs`): una consulta reciente o el uso extendido no silencian el aviso de un comprobante (revisión del PR #1020).
+  const reciente = f.avisoComprobanteMs > 0 && c.ahora - f.avisoComprobanteMs >= 0 && c.ahora - f.avisoComprobanteMs < WL_VENTANA_CONSULTA_MS;
   const pedido = (cotejo) => ({ tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: f.entrega, cotejo: cotejo, codigo: codigo, ref: ref,
     factura: 'sin datos (S/N) por ahora', banco: cbLinea(leido.bancoOrigen, 40), operacion: cbLinea(leido.transaccion, 40), repetido: false });
   const d = { resultado: r.resultado, diferencia: wlDiferenciaUsted(cbDiferencia(r.diferencias, 'BOB')), totalTexto: totalTexto, codigo: codigo, aviso: null };
