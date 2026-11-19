@@ -1,4 +1,4 @@
-// ARMAR AVISOS: el aviso al comercio (UN destinatario designado, dato del tenant: el …7529 de Walisuma) por TEXTO LIBRE o por PLANTILLA según la ventana de servicio de Meta.
+// ARMAR AVISOS: el aviso al comercio (UN destinatario designado, dato del tenant: el contacto del aviso) por TEXTO LIBRE o por PLANTILLA según la ventana de servicio de Meta.
 //
 //   - DENTRO de 23,5 h del último mensaje que el destinatario le escribió al bot (su ficha, clave = su número): texto libre, que menciona tomar la conversación en la consola. FUERA: la plantilla UTILITY,
 //     «código para las dos» (Andres, 18/11/2026; `wlPlantilla`): `aviso_pedido_equipo` con 10 variables si su estado es APPROVED:

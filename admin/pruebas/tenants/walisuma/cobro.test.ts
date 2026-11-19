@@ -145,7 +145,12 @@ describe('el aviso del pedido al comercio', () => {
   });
   it('antes del pago, la ficha no guarda el NIT ni el CI aunque el cliente los escriba (el NIT solo viaja en el aviso de factura tras el pago: fase1.test.ts)', () => {
     const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA, facturacion: { nombre: 'Ana', documento: '4455667' } }) });
-    hablar(m, ANA, mTexto('una billetera, mi NIT es 4455667'));
+    const t = hablar(m, ANA, mTexto('una billetera, mi NIT es 4455667'));
     expect(JSON.stringify(fichas(m)[ANA])).not.toMatch(/4455667|\[nº\]4455667/);
+    // Antes del pago no hay aviso de factura: ningún aviso sale y, si saliera alguno, no llevaría el NIT; tampoco lo recibe el modelo ni el cliente.
+    expect(t.avisos).toHaveLength(0);
+    for (const a of t.avisos) expect(JSON.stringify(a.payload)).not.toContain('4455667');
+    expect(t.registro.map((r) => r.nodo)).not.toContain('Conversar con el modelo');
+    expect(textos(t).join(' ')).not.toContain('4455667');
   });
 });

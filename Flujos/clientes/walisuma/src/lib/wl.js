@@ -22,6 +22,10 @@ const WL_MODELO = 'gemini-3.5-flash-lite';
 
 // NIEGA_IA (prohibición 4 de CLAUDE.md): ningún texto que ve el cliente puede negar que es una IA. COPIA DECLARADA de la expresión de `rroca-antonio` (`RA_NIEGA_IA`; HUECO en PROPIO.md: no hay fuente común), idéntica salvo el nombre; una prueba la compara. Se aplica al texto NORMALIZADO (`wlNorm`).
 const WL_NIEGA_IA = /\bno (?:soy|es|eres|estas hablando con|hablas con)\b[^.!?]{0,20}\b(?:ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)\b|\bpersona (?:real|de verdad)\b|\bcarne y hueso\b|\bno (?:contesta|responde|atiende|hay) (?:ningun\w* )?(?:ia|inteligencia|bot|robot|maquina)\b|\bnada de (?:robots?|bots?|maquinas?)\b|\bhumano\b|\bpersonalmente\b|\bconmigo (?:hablas|conversas)\b|\bequipo humano\b|\b(?:soy|es) (?:una )?persona\b|\balguien real\b|\bhuman[oa]s?\b|\b(?:personas?|gente) (?:real(?:es)?|de verdad)\b|\b(?:persona|gente|alguien|humano|equipo|ejecutiv\w*|asesor\w*) (?:real|de verdad)\b|\bde verdad\b[^.!?]{0,20}\b(?:persona|gente|humano)\w*|\bno (?:contesta|responde|atiende|hay|habla) (?:(?:un|una|el|la|ningun\w*) )?(?:ia|inteligencia|bot|chatbot|robot|maquina|programa)\b|\bno es (?:un )?(?:mensaje |chat )?automatic\w*|\b(?:es|soy) (?:una? )?(?:chica|chico|mujer|hombre|senorita|joven)\b/;
+// NIEGA_IA PROPIA de Walisuma (revisión del PR #1020): lo que `WL_NIEGA_IA` (copia declarada, idéntica a la de Antonio) no cubre. Presentarse como una persona con NOMBRE PROPIO
+// («soy Carla, de ventas», «me llamo Carla») o decir que «le atiende un asesor / una persona / nuestra encargada» es una negación implícita de ser una IA. Se prueba sobre el texto NORMALIZADO.
+// «Soy el asistente de atención y ventas» y «esto lo atiende directamente nuestra encargada» (derivación) NO caen: la primera nombra al asistente, la segunda no dice que quien escribe sea ella.
+const WL_NIEGA_IA_EXTRA = /\b(?:le|lo|la|te) (?:atiende|esta atendiendo|escribe|responde|contesta) (?:un |una |nuestra |nuestro |el |la )?(?:asesor\w*|persona\w*|encargad[oa]s?|ejecutiv\w*|vendedor\w*|agente|operador\w*)\b|\bsoy (?!el |la |un |una |su |tu |asistente\b|del\b|de\b|parte\b)[a-z]{2,20} (?:del equipo|de ventas|de atencion|de walisuma|de la tienda|de servicio|de la marca|su asesor\w*|su encargad[oa])\b|\b(?:me llamo|mi nombre es) (?!el asistente|asistente)[a-z]{2,20}\b|\b(?:le|te) (?:saluda|escribe|habla) (?!el asistente|un asistente|nuestra |nuestro |el equipo)[a-z]{2,20}(?: [a-z]{2,20})?,? (?:del equipo|de ventas|de atencion|de walisuma)\b/;
 const WL_SALUDO_MINIMO = 'Hola, soy el asistente de atención y ventas.';
 
 // Lo que el cliente ve cuando manda algo que este canal no lee (sticker, ubicación, contacto, mensaje no soportado o un medio sin id): texto cortés fijo, sin modelo, una sola invitación y ninguna promesa.
@@ -51,7 +55,7 @@ const WL_FRASE_CONFIRMADO = /^Pedido confirmado(?: WAL-\d{6}-\d{3})?\./;
 // Excepción PERMANENTE declarada en `admin/pruebas/core/ux/identidad.ts` (`EXCEPCIONES_DE_IDENTIDAD`, dueño Andres, 19/11/2026).
 function wlSeguro(texto, permiso) {
   const t = String(texto === undefined || texto === null ? '' : texto);
-  if (WL_NIEGA_IA.test(wlNorm(t))) return WL_SALUDO_MINIMO;
+  if (WL_NIEGA_IA.test(wlNorm(t)) || WL_NIEGA_IA_EXTRA.test(wlNorm(t))) return WL_SALUDO_MINIMO;
   const frase = permiso === WL_PERMISO_CONFIRMADO ? WL_FRASE_CONFIRMADO.exec(t) : null;
   const resto = frase ? t.slice(frase[0].length) : t;
   if (CB_PROHIBIDAS.test(cbCanon(resto))) return WL_SALUDO_MINIMO;
@@ -241,7 +245,13 @@ const WL_TEXTO_BAJA = 'Entendido, tomamos nota de que no desea recibir más mens
 // El saludo de la primera respuesta (decisión 2: sin «IA»; la identidad del MD): ofrece asesoría y el catálogo POR CHAT, sin enlace (Andres, 19/11/2026: «sin enlace por ahora»). 0 mensajes.
 const WL_TEXTO_SALUDO = 'Hola, soy el asistente de atención y ventas de {NEGOCIO}. Con gusto le asesoramos para elegir una pieza o un regalo, y por este chat le mostramos las piezas de nuestro catálogo con su precio.';
 // La factura pedida ANTES de pagar (Andres, 19/11/2026): no se deriva; se dice cuándo se pide y la venta sigue.
-const WL_TEXTO_FACTURA_AL_CONFIRMAR = 'Con gusto: le pediremos la razón social y el NIT al confirmar su pedido.';
+// Acotado (revisión del PR #1020): la razón social y el NIT se piden SOLO en el mensaje de «Pedido confirmado» del pago por QR; si el pedido lo coordina la encargada (sin QR o en revisión), se le dan a ella.
+const WL_TEXTO_FACTURA_AL_CONFIRMAR = 'Con gusto: cuando confirmemos su pago por QR, en ese mismo mensaje le pediremos la razón social y el NIT; si su pedido lo coordina nuestra encargada, puede dárselos a ella.';
+// El uso extendido de la puerta común tutea en su texto por defecto («Gracias por tu paciencia…»): Walisuma usa el suyo, de usted, cuando la consola no trae uno propio.
+const WL_TEXTO_USO_EXTENDIDO = 'Gracias por su paciencia. Para atenderle mejor, nuestra encargada continuará esta conversación.';
+const WL_TEXTO_USO_EXTENDIDO_COMUN = 'Gracias por tu paciencia. Para atenderte mejor, una persona del equipo va a continuar esta conversación.';
+// La ventana para capturar los datos de factura después de «Pedido confirmado» (desde `ultimoPedido.ms`).
+const WL_VENTANA_FACTURA_MS = 24 * 60 * 60 * 1000;
 // La ubicación del pin de WhatsApp: el pedido (con el botón «Enviar ubicación») y el agradecimiento.
 const WL_TEXTO_PIDE_UBICACION = 'Para coordinar el envío necesitamos su ubicación: toque el botón «Enviar ubicación» y compártala por este chat. Con ella le enviamos el QR para pagar.';
 const WL_TEXTO_UBICACION_RECIBIDA = 'Gracias, anotamos su ubicación para el envío.';
@@ -274,7 +284,7 @@ const WL_INTROS = {
 };
 // Los textos fijos sueltos (la prueba de «usted siempre» los recorre todos).
 const WL_TEXTOS_FIJOS = [WL_TEXTO_CORTES, WL_TEXTO_FUERA_DE_PAIS, WL_TEXTO_IDENTIDAD, WL_TEXTO_AUDIO_LARGO, WL_TEXTO_AUDIO_NO_ENTENDIDO, WL_TEXTO_ARCHIVO_PESADO, WL_TEXTO_ARCHIVO_NO_ABIERTO, WL_TEXTO_IMAGEN, WL_TEXTO_DOCUMENTO,
-  WL_TEXTO_MODELO_SIN_REDACCION, WL_TEXTO_COMPROBANTE_ILEGIBLE, WL_TEXTO_BAJA, WL_TEXTO_SALUDO, WL_TEXTO_FACTURA_AL_CONFIRMAR, WL_TEXTO_PIDE_UBICACION, WL_TEXTO_UBICACION_RECIBIDA, WL_TEXTO_ANUNCIO_PIEZAS, WL_TEXTO_ANUNCIO_GENERAL,
+  WL_TEXTO_MODELO_SIN_REDACCION, WL_TEXTO_COMPROBANTE_ILEGIBLE, WL_TEXTO_BAJA, WL_TEXTO_SALUDO, WL_TEXTO_FACTURA_AL_CONFIRMAR, WL_TEXTO_USO_EXTENDIDO, WL_TEXTO_PIDE_UBICACION, WL_TEXTO_UBICACION_RECIBIDA, WL_TEXTO_ANUNCIO_PIEZAS, WL_TEXTO_ANUNCIO_GENERAL,
   WL_TEXTO_PIDE_FACTURA, WL_TEXTO_FACTURA_SIN, WL_TEXTO_FUERA_DE_HORARIO];
 // Pasar con nuestra encargada (decisión 6): la introducción del motivo + (aviso salió) «Pasamos su consulta a nuestra encargada; también puede escribirle directamente con el botón» / (no salió) «No pudimos avisar…».
 // `salio`: true (hay un `wamid` real), false (no salió) o 'repetido' (ya se avisó hace menos de 30 minutos por el mismo motivo).

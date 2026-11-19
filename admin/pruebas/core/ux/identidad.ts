@@ -86,6 +86,11 @@ export const EXCEPCIONES_DE_IDENTIDAD: Record<string, ExcepcionDeIdentidad> = {
   'doctoras/doctoras.rroca-evy.json': { motivo: COPIA_DECLARADA, dueno: 'Rearquitectura (etapa 1)', vence: VENCE },
   'walisuma/walisuma.json': { motivo: IA_SI_PREGUNTAN, dueno: 'Andres', permanente: true },
 };
+/**
+ * LISTA CERRADA de las excepciones PERMANENTES (sin `vence`). Una permanente que no esté aquí es un problema: otro PR no puede agregar `permanente: true` sin tocar
+ * esta lista (y pasar por el agente `seguridad`). Walisuma: decisión de Andres del 19/11/2026.
+ */
+export const PERMANENTES: readonly string[] = ['walisuma/walisuma.json'];
 /** Cuántos flujos tienen excepción hoy. SOLO BAJA: un flujo nuevo nace con la pieza. 12 → 13 el 19/11/2026: Walisuma, excepción permanente decidida por Andres. */
 export const TOPE_IDENTIDAD = 13;
 
@@ -97,7 +102,7 @@ const AAAA_MM_DD = /^\d{4}-\d{2}-\d{2}$/;
  */
 export function problemasDeIdentidad(
   faltan: Set<string>, excepciones: Record<string, ExcepcionDeIdentidad> = EXCEPCIONES_DE_IDENTIDAD,
-  tope: number = TOPE_IDENTIDAD, hoy: string = new Date().toISOString().slice(0, 10), limite: string = LIMITE_IDENTIDAD,
+  tope: number = TOPE_IDENTIDAD, hoy: string = new Date().toISOString().slice(0, 10), limite: string = LIMITE_IDENTIDAD, permanentes: readonly string[] = PERMANENTES,
 ): string[] {
   const p: string[] = [];
   const claves = Object.keys(excepciones);
@@ -109,6 +114,7 @@ export function problemasDeIdentidad(
     if (x.permanente !== undefined) {
       if (x.permanente !== true) p.push(`${id}: «permanente» solo admite el booleano true`);
       if (x.vence !== undefined) p.push(`${id}: una excepción permanente no lleva «vence»`);
+      if (!permanentes.includes(id)) p.push(`${id}: excepción permanente fuera de la lista cerrada PERMANENTES`);
     }
     else if (!AAAA_MM_DD.test(String(x.vence ?? ''))) p.push(`${id}: «vence» no es una fecha AAAA-MM-DD`);
     else if (String(x.vence) > limite) p.push(`${id}: vence después del límite (${limite})`);

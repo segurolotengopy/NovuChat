@@ -2,10 +2,10 @@
  * WALISUMA, FASE 1 (18/11/2026): lo que pidió el cliente (MD y conversaciones modelo) con las decisiones de Andres (resumen del 18/11, §5 a §7, y el plan
  * consolidado). Bloques B0 (datos), B1 (voz y textos fijos), B2 (decisión de la venta), B3 (avisos) y B4 (mensajes y ficha). Se prueba NEGANDO.
  *
- * CONTRATOS DE OTROS PR que esta rama todavía no trae y que aquí se SIMULAN (sin implementarlos):
+ * CONTRATOS DE OTROS PR:
  *   - PR-K (entrada común): «Normalizar entrada» publica `ubicacion {lat,lng}|null`, `anuncioId`, `anuncioTitular`, `anuncioCuerpo`; la lectura del comprobante trae `bancoOrigen` y `transaccion`.
  *   - PR-S (servidor): la respuesta del cotejo trae `codigoPedido` (WAL-AAMMDD-NNN) y, en `aproximado`, `montoLeido`.
- * La simulación envuelve el código de «Normalizar entrada» e «Interpretar lectura» del JSON versionado (`conContratos`), nunca el código de la rama.
+ * PR-K ya está fusionado: el mundo corre el código común real. El contrato de PR-S se simula solo en las respuestas del doble del cotejo (`mundo.ts`).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -35,7 +35,7 @@ const TUTEO = /\b(te|tu|tus|ti|contigo|cuéntame|escríbeme|envíame|escríbele|
 const PROHIBIDO_COBRO = /verificad|pagad[oa]|acreditad|recibimos tu pago|recibimos su pago/i;
 const CODIGO = 'WAL-261005-001';
 const cotejo = (extra: J = {}) => ({ statusCode: 200, body: { estado: 'valido', importe: 450, avisarComercio: true, ...extra } });
-const COMPROBANTE_W = { ...COMPROBANTE, bancoOrigen: 'Banco Unión', transaccion: 'OP-778899' };
+const COMPROBANTE_W = { ...COMPROBANTE, bancoOrigen: 'Banco Union', transaccion: 'OP-778899' };
 const varsDe = (aviso: { payload: J } | undefined): string[] => ((aviso?.payload['template'] as J)?.['components']?.[0]?.parameters ?? []).map((p: { text: string }) => p.text);
 /** Un mundo con una billetera (450 Bs) y la entrega dada; el QR ya emitido y la consola diciendo que está abierto. */
 function conQr(o: Opciones = {}, entrega: J = ENTREGA): Mundo {
@@ -327,20 +327,20 @@ describe('B2/B3 · la factura después del pago (el NIT viaja SOLO en el aviso)'
 });
 
 describe('B2 · la factura ANTES de pagar no deriva (Andres, 19/11/2026)', () => {
-  it('«¿dan factura?»: sin aviso ni botón; el modelo sigue con la venta y el código agrega «le pediremos la razón social y el NIT al confirmar su pedido»', () => {
+  it('«¿dan factura?»: sin aviso ni botón; el modelo sigue con la venta y el código agrega la frase fija acotada de la factura', () => {
     const t = hablar(mundo({ modeloDice: modelo('Con gusto le mostramos las billeteras.') }), ANA, mTexto('¿dan factura? quiero una billetera'));
     expect(t.avisos).toHaveLength(0);
     expect(BOTON_CTA(t)).toBeUndefined();
     expect(t.registro.map((r) => r.nodo)).toContain('Conversar con el modelo');
     expect(textos(t).join(' ')).toMatch(/Con gusto le mostramos las billeteras/);
-    expect(textos(t).join(' ')).toMatch(/le pediremos la razón social y el NIT al confirmar su pedido/);
+    expect(textos(t).join(' ')).toMatch(/cuando confirmemos su pago por QR, en ese mismo mensaje le pediremos la razón social y el NIT/);
   });
   it('NEGADO: con el NIT en el texto, el modelo NO lo recibe: solo el texto fijo, sin aviso; el NIT no queda en la ficha ni sale al cliente', () => {
     const m = mundo({ modeloDice: modelo('x') });
     const t = hablar(m, ANA, mTexto('quiero factura a nombre de Ana, NIT 77665544'));
     expect(t.registro.map((r) => r.nodo)).not.toContain('Conversar con el modelo');
     expect(t.avisos).toHaveLength(0);
-    expect(textos(t).join(' ')).toMatch(/le pediremos la razón social y el NIT al confirmar su pedido/);
+    expect(textos(t).join(' ')).toMatch(/cuando confirmemos su pago por QR, en ese mismo mensaje le pediremos la razón social y el NIT/);
     expect(textos(t).join(' ')).not.toContain('77665544');
     expect(JSON.stringify(m.sd)).not.toContain('77665544');
   });
@@ -422,7 +422,7 @@ describe('B2 · la «Nota del cliente» del resumen del pedido es un dato, nunca
 });
 
 // =========================================================================================== B3 AVISOS
-describe('B3 · el aviso del pedido al …7529', () => {
+describe('B3 · el aviso del pedido al contacto designado', () => {
   it('con `aviso_pedido_equipo` APPROVED: 10 variables en orden (pedido, total, entrega, nombre, WhatsApp, factura, dirección y GPS, piezas con el color, banco, operación)', () => {
     const m = mundo({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1, detalle: 'color marrón' }], entrega: ENVIO }), medio: { clasificacion: COMPROBANTE_W },
       cotejo: cotejo({ codigoPedido: CODIGO }), base: { avisoPedidoPlantilla: 'aviso_pedido_equipo', avisoPedidoEstado: 'APPROVED' } });
@@ -444,7 +444,7 @@ describe('B3 · el aviso del pedido al …7529', () => {
     expect(v[6]).toMatch(/Av\. Arce 2345/);
     expect(v[6]).toMatch(/-16\.5.*-68\.12/);
     expect(v[7]).toMatch(/Billetera de cuero.*marrón/);
-    expect(v[8]).toBe('Banco Unión');
+    expect(v[8]).toBe('Banco Union');
     expect(v[9]).toBe('OP-778899');
     expect(JSON.stringify(pedido?.payload)).not.toMatch(PROHIBIDO_COBRO);
   });
@@ -457,7 +457,7 @@ describe('B3 · el aviso del pedido al …7529', () => {
     expect(v[2]).toMatch(/Ana Pérez/);
     expect(v[3]).toContain(CODIGO);
     expect(v[3]).toMatch(/S\/N/);
-    expect(v[3]).toMatch(/Banco Unión/);
+    expect(v[3]).toMatch(/Banco Union/);
     for (const x of v) expect(x.length).toBeLessThanOrEqual(500);
   });
   it('NEGADO: ninguna de las dos aprobada: no sale aviso y el cliente no lee que se pasó', () => {

@@ -5,7 +5,8 @@
 import { describe, expect, it } from 'vitest';
 import { ANA, REC, crear, hablar, mTexto, modelo, textos, type Opciones } from './mundo';
 
-const PROMESA = /te aviso|te avisar|te avisamos|te llamamos|te llamar|te escribir|te escribiremos|se comunicar|nos comunicaremos|lo consulto|lo consultamos|te contactar|te confirmamos luego|más tarde te/i;
+// Tú Y usted (revisión del PR #1020: la forma de usted es la que usa Walisuma).
+const PROMESA = /te aviso|te avisar|te avisamos|te llamamos|te llamar|te escribir|te escribiremos|se comunicar|nos comunicaremos|lo consulto|lo consultamos|te contactar|te confirmamos luego|más tarde te|l[eao]s? avis(o|amos|aremos|aré)|l[eao]s? llam(amos|aremos|aré)|l[eao]s? escribir(emos|é)|l[eao]s? contar(emos|é)|l[eao]s? contamos|l[eao]s? haremos saber|l[eao]s? contactar(emos|é)|l[eao]s? informar(emos|é)|apenas tengamos|en cuanto tengamos|nos pondremos en contacto|le confirmamos luego/i;
 const BOTON = (t: ReturnType<typeof hablar>): boolean => t.mensajes.some((x) => (x.payload['interactive'] as any)?.type === 'cta_url' && String((x.payload['interactive'] as any).action.parameters.url).includes(REC)); // eslint-disable-line @typescript-eslint/no-explicit-any
 const deriva = (o: Opciones, texto: string) => hablar(crear(o), ANA, mTexto(texto));
 
@@ -67,7 +68,8 @@ describe('«ya avisé» solo con un wamid real', () => {
 });
 
 describe('el modelo no promete lo que no se cumple', () => {
-  for (const promesa of ['Te aviso luego cuando tengamos novedades.', 'Te llamamos mañana para confirmar.', 'Un asesor se comunicará contigo.', 'Lo consulto con el equipo y te escribo.', 'Te avisaremos apenas llegue.']) {
+  for (const promesa of ['Te aviso luego cuando tengamos novedades.', 'Te llamamos mañana para confirmar.', 'Un asesor se comunicará contigo.', 'Lo consulto con el equipo y te escribo.', 'Te avisaremos apenas llegue.',
+    'Le haremos saber cuando llegue.', 'Apenas tengamos novedades le contamos.', 'Le avisaremos en cuanto esté lista.', 'Le llamaremos mañana para confirmar.', 'Le escribiremos cuando tengamos la pieza.', 'Nos pondremos en contacto con usted.', 'Le contactaremos pronto.']) {
     it(`NEGADO: «${promesa}» no sale`, () => {
       const t = hablar(crear({ modeloDice: modelo(promesa) }), ANA, mTexto('¿tienen más modelos?'));
       expect(textos(t).join(' ')).not.toMatch(PROMESA);

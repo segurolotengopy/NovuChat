@@ -52,7 +52,8 @@ if (puerta.ruta === 'suspendido') {
   // «bloqueado» (pausa por Tomar) no responde nada; «operador» responde el aviso fijo CON el botón (el texto promete que una persona continúa y «Armar avisos» avisó).
   tipoDePlan = puerta.responder === true && String(puerta.texto || '').trim() !== '' ? 'uso_extendido' : 'bloqueado';
   if (tipoDePlan === 'uso_extendido') {
-    msgs = [conRecepcion(puerta.texto)];
+    // El texto por defecto de la puerta común tutea: Walisuma usa el suyo, de usted (el que traiga la consola es dato del comercio y se respeta).
+    msgs = [conRecepcion(String(puerta.texto).trim() === WL_TEXTO_USO_EXTENDIDO_COMUN ? WL_TEXTO_USO_EXTENDIDO : puerta.texto)];
     // A lo más UN aviso de «una persona continúa» cada 30 minutos por teléfono: si salió, se anota (y se devuelve si el envío no sale).
     if (salio === true) { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
   }
@@ -190,7 +191,8 @@ if (puerta.ruta === 'sigue') {
     const cuerpo = d.motivo === 'no_cancelo' ? WL_INTROS.no_cancelo + ' Escríbale a nuestra encargada con el botón.'
       : wlTextoDerivacion(d.motivo, salio);
     msgs = [conRecepcion(conSaludo(cuerpo))];
-    if (salio === true && d.aviso && d.aviso.tipo === 'consulta') { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
+    // La guarda de 30 minutos cuenta también el aviso de un comprobante sin cotejar o en revisión (de tipo `pedido`).
+    if (salio === true && d.aviso && (d.aviso.tipo === 'consulta' || d.motivo === 'comprobante_sin_cotejo' || d.motivo === 'comprobante_en_revision')) { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
     // Un pedido cambiado cuyo cobro no se pudo cerrar: el pedido nuevo se conserva (el QR viejo sigue abierto y el cliente ya sabe que no pague con él).
     if (d.motivo === 'no_cancelo' && Array.isArray(d.lineas)) { nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega; }
     if (d.motivo === 'comprobante_sin_cotejo' && d.patch) { /* sin cotejo: el comprobante llegó; recepción lo ve */ }

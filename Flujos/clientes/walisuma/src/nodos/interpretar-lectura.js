@@ -17,6 +17,9 @@ return [{ json: {
   telefono: String(t.from || ''),
   legible: lectura.legible,
   leido: lectura.leido,
+  // El banco de origen y el n.º de operación (PR-K): fuera de `leido` (lo que viaja al cotejo no cambia); los lee el aviso del pedido.
+  bancoOrigen: lectura.bancoOrigen || '',
+  transaccion: lectura.transaccion || '',
   idMeta: String(t.mensajeId || ''),
   ruta: ruta,
   cotejar: previo.categoriaMedio === 'comprobante' && hayCobro && !!t.from,

@@ -24,46 +24,9 @@ export const REC = '59100000031'; // recepción
 export const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
 export const SUSPENDIDO = 'En este momento no podemos atenderle por este medio. Gracias por escribirnos.';
 
-// ------------------------------------------------------------------------------ los contratos de otros PR, SIMULADOS (fase 1, 18/11/2026)
-// Mientras PR-K no esté en esta rama, «Normalizar entrada» e «Interpretar lectura» se envuelven aquí para publicar los campos del contrato. TODO mundo corre con esta simulación.
-// ------------------------------------------------------------------------------------------- la simulación de los contratos de PR-K
-const SHIM_ENTRADA = `
-let __c = {}; try { __c = $('Carga de entrada').first().json || {}; } catch (e) { __c = {}; }
-const __m = Array.isArray(__c.messages) ? __c.messages[0] : null;
-if (Array.isArray(__r) && __r[0] && __r[0].json && __m) {
-  const j = __r[0].json;
-  const l = __m.type === 'location' && __m.location ? __m.location : null;
-  j.ubicacion = l && typeof l.latitude === 'number' && typeof l.longitude === 'number' && !(l.latitude === 0 && l.longitude === 0) ? { lat: l.latitude, lng: l.longitude } : null;
-  if (j.ubicacion) j.categoria = 'conversacion';
-  const ref = __m.referral && typeof __m.referral === 'object' ? __m.referral : null;
-  j.anuncioId = ref ? String(ref.source_id || '').slice(0, 40) : '';
-  j.anuncioTitular = ref ? String(ref.headline || '').slice(0, 120) : '';
-  j.anuncioCuerpo = ref ? String(ref.body || '').slice(0, 300) : '';
-}
-return __r;`;
-// La lectura: se agregan los dos campos de PR-K dentro del MISMO código del nodo, justo después de `cbLectura` (lo leído de la misma respuesta de Gemini).
-const ANCLA_LECTURA = "const lectura = cbLectura(cnPrimero('Describir documento') || cnPrimero('Describir imagen'));";
-const SHIM_LECTURA = `${ANCLA_LECTURA}
-{ const __o = cbObjetoUnico(cbTextoDeGemini(cnPrimero('Describir documento') || cnPrimero('Describir imagen'))) || {};
-  lectura.leido.bancoOrigen = String(__o.bancoOrigen || '').slice(0, 40); lectura.leido.transaccion = String(__o.transaccion || '').slice(0, 40); }`;
-function envolver(f: Flujo, nodo: string, shim: string): void {
-  const n = f.nodes.find((x) => x.name === nodo) as J;
-  const js = String(n['parameters']['jsCode']);
-  // El código del nodo es: librerías + el nodo (con `return` de nivel superior). Se envuelve SOLO el cuerpo, en una función.
-  n['parameters']['jsCode'] = `const __r = (() => {\n${js}\n})();\n${shim}`;
-}
-export function conContratos(base: Flujo): Flujo {
-  const f = JSON.parse(JSON.stringify(base)) as Flujo;
-  envolver(f, 'Normalizar entrada', SHIM_ENTRADA);
-  const il = f.nodes.find((x) => x.name === 'Interpretar lectura') as J;
-  const js = String(il['parameters']['jsCode']);
-  if (!js.includes(ANCLA_LECTURA)) throw new Error('«Interpretar lectura» cambió: la simulación del contrato de PR-K ya no aplica');
-  il['parameters']['jsCode'] = js.replace(ANCLA_LECTURA, SHIM_LECTURA);
-  return f;
-}
-/** La variante de producción con los contratos simulados: el mundo por omisión. */
-export const CON_CONTRATOS = conContratos(PRODUCCION);
-
+// ------------------------------------------------------------------------------ el flujo por omisión
+// Los contratos de PR-K (ubicación, anuncio, banco de origen y operación) ya están en el código común fusionado: el mundo corre el JSON versionado tal cual, sin simulaciones.
+export const CON_CONTRATOS = PRODUCCION;
 // ------------------------------------------------------------------------------ mensajes entrantes
 let seq = 0;
 export const valorMeta = (msg: J, from: string, op: { wamid?: string; phoneId?: string; contacto?: string } = {}): J => ({
