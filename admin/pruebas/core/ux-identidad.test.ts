@@ -8,7 +8,7 @@ import { leerFlujo, type Flujo } from '../lib/flujo';
 import { flujosDeProduccion } from '../lib/flujos-de-cliente';
 import { atiendeCliente, idDeFlujo } from './migracion/comprobaciones';
 import {
-  ALTA_IDENTIDAD, EXCEPCIONES_DE_IDENTIDAD, LIMITE_IDENTIDAD, TOPE_IDENTIDAD, fuenteDeIdentidad, incluyeLaPiezaDeIdentidad, nodosQueLlamanSinLaPieza, problemasDeIdentidad,
+  ALTA_IDENTIDAD, EXCEPCIONES_DE_IDENTIDAD, PERMANENTES, LIMITE_IDENTIDAD, TOPE_IDENTIDAD, fuenteDeIdentidad, incluyeLaPiezaDeIdentidad, nodosQueLlamanSinLaPieza, problemasDeIdentidad,
   type ExcepcionDeIdentidad,
 } from './ux/identidad';
 
@@ -51,7 +51,7 @@ describe('nodosQueLlamanSinLaPieza', () => {
 });
 
 describe('problemasDeIdentidad: el cruce con las excepciones', () => {
-  const e = (parcial: Partial<ExcepcionDeIdentidad> = {}): ExcepcionDeIdentidad => ({ motivo: 'm', dueno: 'd', vence: '2027-01-31', ...parcial });
+  const e = (parcial: { motivo?: string; dueno?: string; vence?: string } = {}): ExcepcionDeIdentidad => ({ motivo: 'm', dueno: 'd', vence: '2027-01-31', ...parcial });
   const HOY = '2026-11-14';
   it('todo cubierto y nada sobra → sin problemas', () => {
     expect(problemasDeIdentidad(new Set(['a.json']), { 'a.json': e() }, 1, HOY)).toEqual([]);
@@ -72,6 +72,46 @@ describe('problemasDeIdentidad: el cruce con las excepciones', () => {
     expect(problemasDeIdentidad(f, { 'a.json': e({ vence: 'pronto' }) }, 1, HOY)).toEqual([expect.stringContaining('no es una fecha')]);
     expect(problemasDeIdentidad(f, { 'a.json': e({ vence: '2027-02-13' }) }, 1, HOY)).toEqual([expect.stringContaining('después del límite')]);
     expect(problemasDeIdentidad(f, { 'a.json': e({ vence: '2026-11-13' }) }, 1, HOY)).toEqual([expect.stringContaining('VENCIDA')]);
+  });
+});
+
+describe('problemasDeIdentidad: la excepción PERMANENTE (decisión de Andres, 19/11/2026)', () => {
+  const HOY = '2026-11-19';
+  const f = new Set(['a.json']);
+  const L = ['a.json'];
+  it('motivo, dueño y `permanente: true`, sin «vence», y en la lista cerrada → sin problemas', () => {
+    expect(problemasDeIdentidad(f, { 'a.json': { motivo: 'm', dueno: 'Andres', permanente: true } }, 1, HOY, undefined, L)).toEqual([]);
+  });
+  it('NIEGA: una permanente que NO está en la lista cerrada PERMANENTES', () => {
+    expect(problemasDeIdentidad(f, { 'a.json': { motivo: 'm', dueno: 'Andres', permanente: true } }, 1, HOY, undefined, [])).toEqual([expect.stringContaining('fuera de la lista cerrada')]);
+  });
+  it('la lista cerrada es EXACTAMENTE la de hoy (Walisuma) y coincide con las permanentes declaradas', () => {
+    expect([...PERMANENTES]).toEqual(['walisuma/walisuma.json']);
+    expect(Object.entries(EXCEPCIONES_DE_IDENTIDAD).filter(([, e]) => (e as { permanente?: unknown }).permanente !== undefined).map(([id]) => id)).toEqual([...PERMANENTES]);
+  });
+  it('NIEGA: permanente sin motivo, o sin dueño', () => {
+    expect(problemasDeIdentidad(f, { 'a.json': { motivo: ' ', dueno: 'Andres', permanente: true } }, 1, HOY, undefined, L)).toEqual([expect.stringContaining('sin motivo')]);
+    expect(problemasDeIdentidad(f, { 'a.json': { motivo: 'm', dueno: '', permanente: true } }, 1, HOY, undefined, L)).toEqual([expect.stringContaining('sin dueño')]);
+  });
+  it('NIEGA: `permanente` que no es el booleano true («si», 1, false)', () => {
+    for (const v of ['si', 1, false]) {
+      expect(problemasDeIdentidad(f, { 'a.json': { motivo: 'm', dueno: 'Andres', permanente: v } as unknown as ExcepcionDeIdentidad }, 1, HOY, undefined, L)).toEqual([expect.stringContaining('solo admite el booleano true')]);
+    }
+  });
+  it('NIEGA: permanente y «vence» a la vez', () => {
+    expect(problemasDeIdentidad(f, { 'a.json': { motivo: 'm', dueno: 'Andres', permanente: true, vence: '2027-01-31' } as unknown as ExcepcionDeIdentidad }, 1, HOY, undefined, L)).toEqual([expect.stringContaining('no lleva «vence»')]);
+  });
+  it('NIEGA: una permanente que ya incluye la pieza SOBRA igual', () => {
+    expect(problemasDeIdentidad(new Set(), { 'a.json': { motivo: 'm', dueno: 'Andres', permanente: true } }, 1, HOY, undefined, L)).toEqual([expect.stringContaining('SOBRA')]);
+  });
+});
+
+describe('nodosQueLlamanSinLaPieza: una función que ya no llama a ctConIA no exige la pieza', () => {
+  it('wlSeguro definida SIN ctConIA y llamada en el mismo nodo → no cuenta; con ctConIA → sí', () => {
+    const sin = 'function wlSeguro(t) {\n  return t;\n}\n';
+    const con = 'function wlSeguro(t) {\n  return ctConIA(t);\n}\n';
+    expect(nodosQueLlamanSinLaPieza(flujo(`${sin}const x = wlSeguro('hola');`))).toEqual([]);
+    expect(nodosQueLlamanSinLaPieza(flujo(`${con}const x = wlSeguro('hola');`))).toEqual(['Code 0']);
   });
 });
 

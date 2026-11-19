@@ -226,11 +226,11 @@ describe('lo incluido es byte a byte igual a su fuente', () => {
   });
   it('«Armar mensajes»: librerías + _comun + los constructores de mensajes comunes + su código', () => {
     const libs = LIBS.map(fuente);
-    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/sin-agente/mensajes.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../src/modulos/pedidos/qr-del-pedido.js'), fuente('../src/core/conversacion/baja.js'), fuente('../src/core/texto/identidad.js'), fuente('../clientes/walisuma/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
+    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/sin-agente/mensajes.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../src/modulos/pedidos/qr-del-pedido.js'), fuente('../src/core/conversacion/baja.js'), fuente('../clientes/walisuma/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar mensajes')).toBe(esperado);
     const avisos = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../clientes/walisuma/src/nodos/armar-avisos.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar avisos')).toBe(avisos);
-    for (const [n, a] of [['Decidir turno', 'decidir-turno'], ['Interpretar lectura', 'interpretar-lectura']]) expect(codigo(PRODUCCION, n), n).toBe([...libs, fuente('venta-digital/src/nodos/_comun.js'), ...(n === 'Decidir turno' ? [fuente('../src/core/conversacion/baja.js')] : []), fuente(`../clientes/walisuma/src/nodos/${a}.js`)].join('\n\n') + '\n');
+    for (const [n, a] of [['Decidir turno', 'decidir-turno'], ['Interpretar lectura', 'interpretar-lectura']] as const) expect(codigo(PRODUCCION, n), n).toBe([...libs, fuente('venta-digital/src/nodos/_comun.js'), ...(n === 'Decidir turno' ? [fuente('../src/core/conversacion/baja.js'), fuente('../src/core/medios/anuncio-por-titular.js')] : []), fuente(`../clientes/walisuma/src/nodos/${a}.js`)].join('\n\n') + '\n');
   });
   it('«Guardar comprobante» es el de Antonio (commit 7188637c), tal cual: huella fijada del nodo entero', () => {
     // La plantilla lleva la credencial como `@@cred:ingesta`; el armado la sustituye por el nombre del dato. Se vuelve a la forma de la plantilla antes de la huella.
@@ -271,7 +271,8 @@ describe('versionado, no publicable y datos', () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/NO se puede publicar todavía/);
     expect(r.stderr).toMatch(/marcador sin sustituir: REEMPLAZAR_/);
-    expect(r.stderr).toMatch(/avisoPedidoEstado tiene que ser APPROVED/);
+    // «Código para las dos» (18/11/2026): `pedido_registrado` (respaldo) está APPROVED, así que la plantilla ya no bloquea; bloquean los marcadores.
+    expect(r.stderr).not.toMatch(/ni avisoPedidoEstado ni avisoRespaldoEstado son APPROVED/);
     expect(r.stderr).not.toMatch(/envioGratisDesdeBs sin declarar/); // el dato ya trae 500
     expect(r.stderr).not.toMatch(/ESQUELETO/);
     // Los mensajes nombran marcadores, nunca valores de los datos.
@@ -292,6 +293,7 @@ describe('versionado, no publicable y datos', () => {
     expect(C.guardiaDePublicacion({ flujo: conMarcador, datos: DATOS }).join(' ')).toMatch(/REEMPLAZAR_ALGO/);
     const sinAprobar = clonar(flujoListo);
     ponerBase(sinAprobar, 'avisoPedidoEstado', 'PENDING');
+    ponerBase(sinAprobar, 'avisoRespaldoEstado', 'PENDING');
     expect(C.guardiaDePublicacion({ flujo: sinAprobar, datos: DATOS }).join(' ')).toMatch(/APPROVED/);
     const sinPlanilla = clonar(flujoListo);
     ponerBase(sinPlanilla, 'planillaProspectosId', '');
@@ -322,7 +324,8 @@ describe('versionado, no publicable y datos', () => {
     expect((d['configBase'] as J)['costoDeEntrega']).toBeUndefined();
     expect((d['configBase'] as J)['modosDeEntrega']).toBe('Envío en La Paz, Envío en Santa Cruz, Envío nacional, Recojo en tienda');
     expect((d['configBase'] as J)['prefijosPermitidos']).toBe('1,2,3,4,5,6,7,8,9');
-    expect((d['configBase'] as J)['avisoPedidoPlantilla']).toBe('pedido_registrado');
+    expect((d['configBase'] as J)['avisoPedidoPlantilla']).toBe('aviso_pedido_equipo');
+    expect((d['configBase'] as J)['avisoRespaldoPlantilla']).toBe('pedido_registrado');
     expect((d['configBase'] as J)['avisoPlantillaIdioma']).toBe('es');
   });
   it('NEGADO: un dato con forma inválida (credencial real, ruta real, modelo ajeno, umbral de envío ausente o con forma inválida) no se carga', () => {

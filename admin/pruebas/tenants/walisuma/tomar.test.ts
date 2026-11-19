@@ -51,7 +51,7 @@ describe('atención en «operador» (uso extendido)', () => {
     expect(t.mensajes).toHaveLength(1);
     expect(t.avisos).toHaveLength(1);
     expect(((t.mensajes[0]?.payload['interactive'] ?? {}) as { type?: string }).type).toBe('cta_url');
-    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/pedido_registrado/);
+    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/aviso_pedido_equipo/);
     expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/uso extendido/);
     expect(nodosQueCorrieron(t)).not.toContain('Conversar con el modelo');
   });
