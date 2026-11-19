@@ -22,19 +22,19 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | qtaco-redireccion.qtaco-ruta-nueva.json | clientes/qtaco-redireccion | sin publicar | construir.mjs | M4 M7 | por asignar (Principal) | pendiente | f3765615-bf165adb-f4a40bf9-dd4a6f3b-e95d6594-45ddfb9d-7aad41ae-9699709a |
 | agenda-minima.v0.json | experimental/agenda-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 3c0a57d4-30060146-825890d4-13b5ae7a-2053d787-0631f834-b3df7228-59444536 |
 | captacion-minima.novuchat.json | experimental/captacion-minima | congelado | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | e32347c0-840ec86c-a9c416da-7216fcc2-b56fd089-36b142bf-e0d58f1e-fe3bc0a0 |
-| casa-bermejo.json | clientes/casa-bermejo | sin publicar | construir.mjs | M4 M5 (excepción declarada) | por asignar (Principal) | mudado | b43e689b-e8a91464-8cf5c2bf-2cbc418f-2af434b8-d86707a7-3adafc2f-0ffeecf3 |
+| casa-bermejo.json | clientes/casa-bermejo | sin publicar | construir.mjs | M4 M5 (excepción declarada) | por asignar (Principal) | mudado | 68be9a5d-9a8c2009-fee77ae5-f65c7dd7-297bff4a-88f9a181-2506fd81-fa988635 |
 | chat-novuchat.novuchat.json | clientes/novuchat | vivo | construir.mjs | M4 M6 (excepción declarada) | Rearquitectura | mudado | 2d432cd2-75e0055e-206b4c87-4a138c92-d79fef6a-9f915308-b7b2df4f-99f54850 |
 | doctoras.rroca-emma.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | 337d61b8-a3249cab-65a34c35-8b3ca91c-49800e11-5d1b4fc7-7b5046ff-7ed82674 |
 | doctoras.rroca-evy.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | 3db37cc4-ca855db7-c63e4c60-eee71530-10d8026b-50d6b185-b57aa8a4-691eefaf |
 | recordatorio-bellido.v1.json | experimental/recordatorio-bellido | demo | ninguno | M1 M2 M7 | por asignar (Principal) | pendiente | 64289535-4c20a3b1-19b0ab05-b8f97460-a209e62a-b87b132a-ae0d06ff-3c9bb15a |
 | rescate-22h.rroca-ruben.json | experimental/rescate-22h | sin publicar | construir.mjs --todos | M1 | por asignar (Principal) | pendiente | 30961db8-930cda05-5d3d5992-9d1c66e1-a061bf32-8d1918ac-9edc5daa-62dda067 |
-| rroca-antonio.json | clientes/rroca-antonio | vivo | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | ed6da59a-6f952165-63d6d0d2-306f3a67-9e7724f1-3be8101b-10af31db-d2558047 |
+| rroca-antonio.json | clientes/rroca-antonio | vivo | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | 77529be4-8575f0fb-9f85a4e4-e0baa494-e7275f48-1e7e1d09-850dada6-54f26a6f |
 | rroca-emma.json | experimental/rroca-emma | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 923e8eee-2b776bb8-0c34f815-c13d7f47-d8d63530-76c4036a-98add59d-2b717a00 |
 | rroca-evy.json | clientes/rroca-evy | vivo | construir.mjs | M4 M6 (excepción declarada) | Rearquitectura | mudado | fcc0abe8-252f2e61-a4657d48-7d550749-1a5e8bb7-e07e8c83-f796b21e-d455db80 |
-| rroca-ruben.json | experimental/rroca-ruben | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 117631d0-434e388c-3c6aef0a-79827119-f819dd7d-35fa5fa1-4bcd0492-c2cd6fd9 |
+| rroca-ruben.json | experimental/rroca-ruben | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 53df5b74-f1a8f11e-819d9b95-07f04f00-500a750a-3cb65091-e41b073e-5e7b077e |
 | venta-minima.qtaco-3727.json | experimental/venta-minima | sin publicar | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 9d588c78-bc95f0ce-6aa3ad63-b820c6c8-894e0fa5-a3493cb8-f2667359-a2d6bef3 |
 | venta-minima.qtaco.json | experimental/venta-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 8c1fddaa-31cf5150-c2c46587-ff8f7958-301cff62-883f1413-2c40eca9-87df92e6 |
-| walisuma.json | clientes/walisuma | sin publicar | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 11eae65d-4fa54e88-78198b28-5da0e4b5-620456b5-1c4870bc-10bf35b6-94bcdef8 |
+| walisuma.json | clientes/walisuma | sin publicar | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 529d1abb-b790a4fe-a2580c77-d6c54047-482f163e-9ecfdcf0-dede0a6f-b76c95ac |
 
 ## Cómo se lee
 

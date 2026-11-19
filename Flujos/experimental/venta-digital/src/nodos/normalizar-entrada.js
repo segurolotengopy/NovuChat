@@ -5,7 +5,7 @@
 // LA CLAVE DE LA CONVERSACIÓN ES EL NÚMERO DE ORIGEN (`messages[0].from`): dos clientes jamás comparten ficha. Si no son solo dígitos (6 a 20), el mensaje se descarta. Solo se lee `messages[0]` (límite declarado).
 //
 // LA UBICACIÓN (location): con latitud y longitud NÚMEROS finitos en rango (|lat| <= 90, |lng| <= 180) y distintas de (0, 0) —el valor que ponen los clientes sin GPS—, el mensaje es una conversación y sale `ubicacion: {lat, lng}`.
-// Cualquier otra cosa (sin coordenadas, cadenas, fuera de rango, (0,0), otro país) deja `ubicacion: null` y el mensaje sigue siendo «otro», como siempre. El nombre y la dirección que manda el cliente en el pin NO se leen.
+// `ubicacion` se publica siempre (válida o null), pero el mensaje solo pasa a conversación si el tenant declara `aceptaUbicacion: true` en `CN_TENANT`; si no, o si la ubicación no es válida (sin coordenadas, cadenas, fuera de rango, (0,0), otro país), sigue siendo «otro», como siempre. El nombre y la dirección que manda el cliente en el pin NO se leen.
 // EL ANUNCIO (referral): `anuncioId` (source_id, 64), `anuncioTitular` (headline, 200) y `anuncioCuerpo` (body, 200), saneados (sin controles, bidi, <, > ni &). Todos los campos nuevos existen SIEMPRE (vacíos o null).
 // NADA se descarta salvo: no hay mensaje, el número no es válido, el prefijo de país no está permitido y ya se le respondió en las últimas 24 horas, Meta reenvió un mensaje que ya se procesó (los últimos ids de la ficha) y lo que no es una
 // conversación (reacciones, bienvenida, sistema, efímeros). Este nodo SOLO LEE la ficha. `categoria`: `conversacion` (texto o toque), `medio` (audio, imagen o PDF con id de medio) u `otro` (lo que este canal
@@ -75,8 +75,8 @@ if (tipo === 'text') {
   categoria = mediaId !== '' ? 'medio' : 'otro';
 } else if (tipo === 'location') {
   textoReporte = '(ubicación) el cliente compartió su ubicación';
-  if (ubicacion) {
-    // Un texto fijo (nunca el del cliente) para los flujos que no leen `ubicacion` y le pasan el mensaje al modelo.
+  // OPT-IN POR TENANT: solo si su librería declara `CN_TENANT.aceptaUbicacion === true` el pin es una conversación (con un texto fijo, nunca el del cliente); sin el parámetro sigue siendo «otro» (texto cortés, sin modelo), como siempre.
+  if (ubicacion && typeof CN_TENANT === 'object' && CN_TENANT && CN_TENANT.aceptaUbicacion === true) {
     texto = '(el cliente compartió su ubicación)';
     categoria = 'conversacion';
   }
@@ -95,8 +95,8 @@ const mensajeMs = Number.isFinite(tsMeta) && tsMeta <= ahoraTurno && ahoraTurno 
 const contacto = Array.isArray(carga.contacts) ? carga.contacts[0] : undefined;
 const ref = msg.referral && typeof msg.referral === 'object' ? msg.referral : null;
 // Del texto de un anuncio: sin controles, sin marcas bidi, sin <, > ni & (un dato, nunca algo ejecutable) y sin espacios de más. Solo texto: un objeto o una lista valen vacío.
-const textoDeAnuncio = (v, max) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069<>&]/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, max) : '');
-const idDeAnuncio = ((v) => (/^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : ''))(typeof (ref && ref.source_id) === 'string' ? ref.source_id.slice(0, 64) : '');
+const textoDeAnuncio = (v, max) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f\u2028\u2029\u200b\u200e\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff<>&]/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, max) : '');
+const idDeAnuncio = ((v) => (/^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : ''))(typeof (ref && ref.source_id) === 'string' && ref.source_id.length <= 64 ? ref.source_id : '');
 const mimeType = sinControles(visual && visual.mime_type, 100).toLowerCase();
 
 return [{ json: {
