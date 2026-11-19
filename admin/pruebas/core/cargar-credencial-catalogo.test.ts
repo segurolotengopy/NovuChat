@@ -43,6 +43,8 @@ let envRel = '';
 let archivo = '';
 let paginar = false;
 let postFalla = false;
+let getFallaTrasPost = false;
+let redirigir = false;
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'cargar-catalogo-'));
@@ -50,6 +52,8 @@ beforeEach(async () => {
   llamadas = [];
   paginar = false;
   postFalla = false;
+  getFallaTrasPost = false;
+  redirigir = false;
   servidor = createServer((req, res) => {
     const partes: Buffer[] = [];
     req.on('data', (c: Buffer) => partes.push(c));
@@ -59,8 +63,10 @@ beforeEach(async () => {
       const llave = req.headers['x-n8n-api-key'] as string | undefined;
       llamadas.push({ metodo: req.method ?? '', ruta, llave, cuerpo });
       const responder = (codigo: number, o: unknown) => { res.statusCode = codigo; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(o)); };
+      if (redirigir) { res.statusCode = 302; res.setHeader('location', `${base}/otra-parte`); return res.end(); }
       if (llave !== API_KEY) return responder(401, { message: 'unauthorized' });
       if (ruta === '/api/v1/credentials' && req.method === 'GET') {
+        if (getFallaTrasPost && llamadas.some((l) => l.metodo === 'POST')) return responder(500, {});
         const todas = creds.map(({ id, name, type }) => ({ id, name, type }));
         if (!paginar) return responder(200, { data: todas });
         const desde = Number(new URL(req.url ?? '', 'http://x').searchParams.get('cursor') ?? '0');
@@ -90,9 +96,9 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function correr(args: string[]): Promise<{ codigo: number; salida: string }> {
+function correr(args: string[], cwd: string = RAIZ): Promise<{ codigo: number; salida: string }> {
   return new Promise((ok) => {
-    const h = spawn('bash', [SCRIPT, ...args], { cwd: RAIZ, env: entornoDelEmulador(undefined) });
+    const h = spawn('bash', [SCRIPT, ...args], { cwd, env: entornoDelEmulador(undefined) });
     let salida = '';
     h.stdout.on('data', (d: Buffer) => { salida += d.toString(); });
     h.stderr.on('data', (d: Buffer) => { salida += d.toString(); });
@@ -242,5 +248,61 @@ describe('cargar-credencial-catalogo.sh --aplicar', () => {
     expect(codigo).toBe(1);
     expect(escrituras()).toEqual([]);
     expect(existsSync(archivo)).toBe(true);
+  });
+});
+
+describe('cargar-credencial-catalogo.sh: la creación pudo hacerse pero no se pudo comprobar', () => {
+  it('POST bien y la relectura falla: sale 3, dice que pudo crearse y el archivo se CONSERVA', async () => {
+    getFallaTrasPost = true;
+    const { codigo, salida } = await correr(buenos('--aplicar'));
+    expect(codigo).toBe(3);
+    expect(escrituras()).toHaveLength(1);
+    expect(salida).toContain('la credencial pudo crearse: verificar en n8n');
+    expect(existsSync(archivo)).toBe(true);
+    sinSecretos(salida);
+  });
+});
+
+describe('cargar-credencial-catalogo.sh: rutas y conexión', () => {
+  it('--archivo relativo se resuelve contra el directorio de quien llama, no contra la raíz del repositorio', async () => {
+    const { codigo } = await correr(['--nombre', NOMBRE, '--archivo', 'token-catalogo', '--env', join(dir, 'env'), '--aplicar', '--confirmo', NOMBRE], dir);
+    expect(codigo).toBe(0);
+    expect(escrituras()).toHaveLength(1);
+    expect(existsSync(archivo)).toBe(false);
+  });
+  it('--env con ruta absoluta se acepta', async () => {
+    const { codigo } = await correr(['--nombre', NOMBRE, '--archivo', archivo, '--env', join(dir, 'env')]);
+    expect(codigo).toBe(0);
+  });
+  it('el archivo --env NO se ejecuta: una línea con una orden no corre', async () => {
+    const marca = join(dir, 'marca-ejecutada');
+    writeFileSync(join(dir, 'env'), `X=$(touch ${marca})\nN8N_API_KEY="${API_KEY}"\nexport N8N_BASE_URL=${base}\n`);
+    const { codigo } = await correr(buenos());
+    expect(codigo).toBe(0);
+    expect(existsSync(marca)).toBe(false);
+  });
+  it('un env sin la llave: sale 1 sin llamar a n8n', async () => {
+    writeFileSync(join(dir, 'env'), `N8N_BASE_URL=${base}\n`);
+    const { codigo } = await correr(buenos('--aplicar'));
+    expect(codigo).toBe(1);
+    expect(llamadas).toEqual([]);
+    expect(existsSync(archivo)).toBe(true);
+  });
+  it('una dirección de n8n sin https (que no sea local): no se envía la llave', async () => {
+    writeFileSync(join(dir, 'env'), `N8N_API_KEY=${API_KEY}\nN8N_BASE_URL=http://n8n.ejemplo.invalid\n`);
+    const { codigo, salida } = await correr(buenos('--aplicar'));
+    expect(codigo).toBe(1);
+    expect(llamadas).toEqual([]);
+    expect(salida).toContain('https');
+    expect(existsSync(archivo)).toBe(true);
+  });
+  it('una redirección no se sigue: sale 1, nada se escribe y el archivo queda', async () => {
+    redirigir = true;
+    const { codigo, salida } = await correr(buenos('--aplicar'));
+    expect(codigo).toBe(1);
+    expect(escrituras()).toEqual([]);
+    expect(llamadas.every((l) => l.ruta === '/api/v1/credentials')).toBe(true);
+    expect(existsSync(archivo)).toBe(true);
+    sinSecretos(salida);
   });
 });
