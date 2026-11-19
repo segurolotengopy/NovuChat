@@ -187,6 +187,7 @@ export const SUITES_PURAS = [
   'pruebas/core/turno/modulos-del-turno.test.ts',
   'pruebas/core/nube-visor.test.ts',
   'pruebas/core/cargar-timbre-n8n.test.ts',
+  'pruebas/core/cargar-credencial-catalogo.test.ts',
   'pruebas/core/registrar-llave-rele-n8n.test.ts',
   'pruebas/core/probar-alerta-n8n.test.ts',
   'pruebas/core/rele/evy-emma-rele.test.ts',
