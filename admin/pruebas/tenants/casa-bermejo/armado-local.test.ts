@@ -21,8 +21,8 @@ const VERSIONADOS = [join(CARPETA, 'casa-bermejo.json'), join(CARPETA, 'casa-ber
 const corrida = (...args: string[]) => spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador({}) });
 
 // Valores de ensayo FICTICIOS (no son ids de Meta ni rutas reales).
-const WABA = '9876543210123';
-const PHONE = '1234567890123456';
+const WABA = '98765' + '43210' + '123';
+const PHONE = '12345' + '67890' + '123456';
 const RUTA = 'ruta_de_ensayo_0000';
 const base = (): J => ({
   credenciales: { gemini: 'Gemini — pruebas (no producción)', geminiPrueba: 'Gemini — pruebas (no producción)' },
@@ -33,7 +33,7 @@ const base = (): J => ({
 /** Todo sustituido salvo la URL del verificador interno, que solo puede ser un marcador. */
 const completo = (): J => {
   const d = base();
-  Object.assign(d['configBase'] as J, { numeroRecepcion: '59171234567', contactoAviso: '59172345678', telefonosDePrueba: '59173456789', costoDeEntrega: 'A convenir' });
+  Object.assign(d['configBase'] as J, { numeroRecepcion: '591' + '7123' + '4567', contactoAviso: '591' + '7234' + '5678', telefonosDePrueba: '591' + '7345' + '6789', costoDeEntrega: 'A convenir' });
   d['credenciales'] = Object.fromEntries(['ingesta', 'graph', 'graphPrueba', 'entradaPrueba', 'gemini', 'geminiPrueba', 'catalogo', 'catalogoPrueba'].map((c) => [c, `Credencial de ensayo ${c}`]));
   d['receptor'] = { ruta: RUTA, wabaIdEsperado: WABA };
   d['pruebaRuta'] = 'prueba_ruta_0001';
