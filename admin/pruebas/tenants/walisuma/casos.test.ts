@@ -95,7 +95,7 @@ const ENMASCARADO: [string, string[], string[]][] = [
 ];
 describe('3 · el enmascarado de números (reporte entrante y modelo, la misma función)', () => {
   for (const [frase, no, si] of ENMASCARADO) {
-    it(`«${frase.replace('\n', '⏎')}»`, () => {
+    it(`«${frase.replaceAll('\n', '⏎')}»`, () => {
       let alModelo = '';
       const t = hablar(crear({ modeloDice: (ll) => { alModelo = String((((ll.cuerpo as J)['contents'] as J[]).slice(-1)[0] as J)?.['parts']?.[0]?.text ?? ''); return modelo('Con gusto.'); } }), ANA, mTexto(frase));
       const r = reporte(t);

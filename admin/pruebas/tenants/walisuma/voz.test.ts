@@ -110,6 +110,6 @@ describe('sin promesa de galería: por este chat solo sale texto y, al confirmar
     hablar(m, ANA, mTexto('quiero pagar'));
     m.dobles['Traer configuración'] = () => panelConQr(450);
     const t = hablar(m, ANA, mImagen({ caption: '' }));
-    expect(textos(t).join(' ')).toContain('No pudimos leer bien su comprobante.\n\n¿Nos envía una foto más nítida, con el monto, la fecha y la cuenta de destino a la vista?'.replace('\n\n', '\n\n'));
+    expect(textos(t).join(' ')).toContain('No pudimos leer bien su comprobante.\n\n¿Nos envía una foto más nítida, con el monto, la fecha y la cuenta de destino a la vista?');
   });
 });
