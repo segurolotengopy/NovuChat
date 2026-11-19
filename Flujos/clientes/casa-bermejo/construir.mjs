@@ -8,6 +8,8 @@
  *   node Flujos/clientes/casa-bermejo/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
  *   node Flujos/clientes/casa-bermejo/construir.mjs --publicable [--flujo <json>] [--datos <json>]
  *                                                       no escribe: sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal. HOY SALE 1: quedan marcadores REEMPLAZAR_*
+ *   node Flujos/clientes/casa-bermejo/construir.mjs --local --datos <archivo>.local.json [--salida <directorio>]
+ *                                                       arma casa-bermejo.local.json y casa-bermejo.prueba.local.json con los valores de un archivo LOCAL (ignorado por git, nunca versionado); no toca los versionados ni imprime valores
  *   (cualquier otro argumento se rechaza)
  *
  * ESTADO: flujo completo (PR-3), 47 nodos: la entrada verificada del receptor, la entrada y la configuración, la puerta del turno (comercio no operativo, uso extendido y pausa por Tomar), los medios, la conversación
@@ -24,7 +26,8 @@
  *
  * LOS DATOS son `admin/scripts/datos/casa-bermejo/casa-bermejo.json` (zona Tenants: solo marcadores `REEMPLAZAR_*`, nunca un token, una ruta de webhook real, un teléfono ni un identificador de Meta).
  */
-import { closeSync, constants, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
@@ -139,6 +142,27 @@ function escribirSinSeguirEnlaces(ruta, texto, nombre) {
   }
   try { writeFileSync(fd, texto); } finally { closeSync(fd); }
 }
+/**
+ * Escribe un archivo LOCAL (con la ruta del receptor, una URL de capacidad) SIEMPRE nuevo: un archivo vecino creado con `O_CREAT|O_EXCL|O_NOFOLLOW` y modo 0o600 (falla si el nombre ya existe,
+ * sin seguir enlaces) y luego `rename` sobre el destino, que reemplaza el archivo viejo —o un enlace— en vez de abrirlo. No hay comprobar-y-luego-abrir ni un modo heredado del archivo anterior.
+ * El directorio de salida lo elige quien corre el comando; este código nunca usa el directorio temporal del sistema.
+ */
+function escribirLocalNuevo(ruta, texto, nombre) {
+  const vecino = `${ruta}.${randomBytes(8).toString('hex')}.nuevo`;
+  let fd;
+  try {
+    fd = openSync(vecino, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  } catch (e) {
+    throw new Error(`${nombre}: no se pudo crear el archivo nuevo (${e && e.code ? e.code : 'error'})`);
+  }
+  try {
+    try { writeFileSync(fd, texto); } finally { closeSync(fd); }
+    renameSync(vecino, ruta);
+  } catch (e) {
+    try { unlinkSync(vecino); } catch { /* ya no está */ }
+    throw new Error(`${nombre}: no se pudo escribir (${e && e.code ? e.code : 'error'})`);
+  }
+}
 
 // ----------------------------------------------------------------- los datos
 const MARCADOR = /^REEMPLAZAR_[A-Z0-9_]+$/;
@@ -195,6 +219,102 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
   }
   if (errores.length) throw new Error(`casa-bermejo.json: datos no válidos: ${errores.join('; ')}`);
   return d;
+}
+
+// ----------------------------------------------------------------- los datos LOCALES (valores reales de un ensayo o de una publicación; nunca versionados)
+/** Sufijo obligatorio del archivo de datos local y de los JSON que arma: el `.gitignore` del repo ignora `*.local.json`. */
+export const SUFIJO_LOCAL = '.local.json';
+export const FLUJO_PRODUCCION_LOCAL = 'casa-bermejo.local.json';
+export const FLUJO_PRUEBA_LOCAL = 'casa-bermejo.prueba.local.json';
+const FORMA_NOMBRE_CREDENCIAL = /^[^\u0000-\u001f"'\\{}]{3,100}$/u;
+const PARECE_SECRETO = /^(Bearer\s|eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}|EAA[A-Za-z0-9]{10,}|AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9]{10,}|ghp_|xox[a-z]-)|^[A-Za-z0-9_+/=-]{32,}$/;
+const CLAVE_DE_SECRETO = /token|secret|secreto|clave|password|contrase|apikey|api_key|bearer/i;
+const CLAVES_LOCALES = new Set(['nombreFlujo', 'nombreFlujoPrueba', 'credenciales', 'receptor', 'catalogoUrl', 'pruebaRuta', 'configBase']);
+const esMarcador = (v) => typeof v === 'string' && MARCADOR.test(v);
+const esObjeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/**
+ * La forma de cada valor LOCAL (un marcador siempre es válido: queda sin sustituir y la guardia de publicación lo exige). Es una LISTA BLANCA: un texto libre solo se puede
+ * poner desde aquí y con un largo máximo; lo que no figura (por ejemplo `mensajeComercioSuspendido`, que dice lo que el asistente le promete al cliente) NO se cambia por un archivo local.
+ */
+const FORMAS_LOCALES = {
+  'nombreFlujo': (v) => v.length >= 3 && v.length <= 100,
+  'nombreFlujoPrueba': (v) => v.length >= 3 && v.length <= 100,
+  'receptor.ruta': (v) => /^[A-Za-z0-9_-]{8,120}$/.test(v),
+  'pruebaRuta': (v) => /^[A-Za-z0-9_-]{8,120}$/.test(v),
+  // La URL del verificador interno NO se sustituye aquí: la guardia de lo armado solo admite un marcador en ese nodo (se llama por la red interna y nunca se expone). Cualquier valor real se rechaza.
+  'receptor.urlVerificador': () => false,
+  'receptor.wabaIdEsperado': (v) => /^\d{6,25}$/.test(v),
+  // Solo la base (sin ruta ni consulta) y de un anfitrión de la lista cerrada: el Bearer del tenant no sale a otro dominio.
+  'catalogoUrl': (v) => { const m = /^https:\/\/([a-z0-9.-]+)$/.exec(v); return m !== null && ANFITRIONES_TIENDA.includes(m[1]); },
+  'configBase.hostsFoto': (v) => v.length <= 200 && /^[a-z0-9.-]+(,[a-z0-9.-]+)*$/.test(v),
+  'configBase.tratamiento': (v) => /^(usted|tú|tu)$/.test(v),
+  'configBase.modosDeEntrega': (v) => v.length <= 200,
+  'configBase.costoDeEntrega': (v) => v.length <= 200,
+  'configBase.nombreNegocio': (v) => v.length >= 2 && v.length <= 80,
+};
+
+/**
+ * Lee el archivo de datos LOCAL y lo FUSIONA sobre los versionados (una clave local gana). Sirve para armar los JSON locales del ensayo.
+ * Rechaza (los mensajes nombran claves CONOCIDAS, nunca valores ni nombres de clave que no están en los datos versionados): un archivo que no termina en `.local.json`
+ * (el .gitignore no lo cubriría), claves que no existen en los datos versionados (en cualquier nivel), un texto libre que no está en la lista blanca `FORMAS_LOCALES`,
+ * cualquier clave que parezca de un secreto, cualquier valor que parezca un token (Bearer, EAA…, AIza…, JWT, cadena larga), un nombre de credencial con forma de token,
+ * un host de catálogo fuera de ANFITRIONES_TIENDA, una URL del verificador interno (solo puede quedar el marcador) y cualquier valor de forma no válida.
+ * Un marcador que quede sin sustituir se acepta.
+ */
+export function cargarDatosLocal(ruta, versionados = ARCHIVO_DE_DATOS) {
+  if (typeof ruta !== 'string' || !ruta.endsWith(SUFIJO_LOCAL)) throw new Error(`el archivo de datos local tiene que terminar en ${SUFIJO_LOCAL} (así lo ignora git)`);
+  const texto = leerSiExiste(ruta, 'el archivo de datos local');
+  if (texto === null) throw new Error('no existe el archivo de datos local');
+  let l;
+  try { l = JSON.parse(texto); } catch { throw new Error('el archivo de datos local: no es un JSON válido'); }
+  if (!esObjeto(l)) throw new Error('el archivo de datos local: tiene que ser un objeto');
+  const base = cargarDatos(versionados);
+  // Los únicos nombres que un mensaje puede repetir: los de los datos VERSIONADOS. Cualquier otro se informa como «clave no reconocida» (el archivo local puede traer cualquier cosa, también un secreto como nombre).
+  const conocidos = new Set([...CLAVES_LOCALES, ...Object.keys(base.credenciales), ...Object.keys(base.receptor), ...Object.keys(base.configBase)]);
+  const nombre = (camino) => camino.split('.').map((x) => (conocidos.has(x) ? x : '«clave no reconocida»')).join('.');
+  const errores = [];
+  const nivel = new Map([['', new Set(CLAVES_LOCALES)], ['credenciales', new Set(Object.keys(base.credenciales))], ['receptor', new Set(Object.keys(base.receptor))], ['configBase', new Set(Object.keys(base.configBase))]]);
+  const recorrer = (v, camino) => {
+    if (esObjeto(v)) {
+      for (const [c, x] of Object.entries(v)) {
+        const cam = camino ? `${camino}.${c}` : c;
+        if (CLAVE_DE_SECRETO.test(c)) errores.push(`${nombre(cam)}: nombre de clave de un secreto (los secretos no van en este archivo)`);
+        else if (nivel.has(camino) && !nivel.get(camino).has(c)) errores.push(`${nombre(cam)}: no existe en los datos versionados`);
+        recorrer(x, cam);
+      }
+    } else if (Array.isArray(v)) errores.push(`${nombre(camino)}: no se admiten listas`);
+    else if (typeof v === 'string' && !MARCADOR.test(v) && PARECE_SECRETO.test(v) && !/^(receptor\.ruta|pruebaRuta)$/.test(camino)) errores.push(`${nombre(camino)}: el valor parece un token o una clave`);
+  };
+  recorrer(l, '');
+  // Un texto libre local solo es válido si está en la lista blanca (o tiene una forma cerrada en FORMAS_CONFIG); el resto del `configBase` versionado no se cambia desde un archivo local.
+  if (esObjeto(l.configBase)) {
+    for (const c of Object.keys(l.configBase)) {
+      if (!nivel.get('configBase').has(c) || CLAVE_DE_SECRETO.test(c)) continue; // ya informado arriba
+      if (!FORMAS_CONFIG[c] && !FORMAS_LOCALES[`configBase.${c}`]) errores.push(`configBase.${nombre(c)}: ese dato no se cambia desde un archivo local`);
+    }
+  }
+  const datos = { ...base, ...l, credenciales: { ...base.credenciales, ...(esObjeto(l.credenciales) ? l.credenciales : {}) }, receptor: { ...base.receptor, ...(esObjeto(l.receptor) ? l.receptor : {}) }, configBase: { ...base.configBase, ...(esObjeto(l.configBase) ? l.configBase : {}) } };
+  for (const c of Object.keys(base.credenciales)) {
+    const v = datos.credenciales[c];
+    if (typeof v !== 'string' || (!esMarcador(v) && !FORMA_NOMBRE_CREDENCIAL.test(v))) errores.push(`credenciales.${c}: forma de nombre no válida`);
+  }
+  for (const [clave, forma] of Object.entries(FORMAS_LOCALES)) {
+    const v = clave.split('.').reduce((x, p) => (esObjeto(x) ? x[p] : undefined), datos);
+    if (v === undefined) continue;
+    if (typeof v !== 'string' || (!esMarcador(v) && !forma(v))) errores.push(`${clave}: forma no válida`);
+  }
+  for (const [c, v] of Object.entries(datos.configBase)) {
+    if (!['string', 'number', 'boolean'].includes(typeof v)) errores.push(`configBase.${nombre(c)}: solo texto, número o booleano`);
+    if (FORMAS_CONFIG[c] && !FORMAS_CONFIG[c].test(String(v))) errores.push(`configBase.${c}: forma no válida`);
+  }
+  if (errores.length) throw new Error(`datos locales no válidos: ${errores.join('; ')}`);
+  return datos;
+}
+/** Los marcadores que siguen sin sustituir en lo ARMADO (los dos flujos), por su nombre fijo `REEMPLAZAR_*`; solo los que existen en los datos versionados. */
+export function marcadoresDeLoArmado(flujos, versionados = ARCHIVO_DE_DATOS) {
+  const conocidos = new Set(marcasEn(cargarDatos(versionados)).map((x) => x.toUpperCase()));
+  const hallados = new Set(flujos.flatMap((f) => marcasEn(f).map((x) => x.toUpperCase())));
+  return [...hallados].filter((m) => conocidos.has(m)).sort();
 }
 
 function dato(datos, ruta, donde) {
@@ -568,6 +688,30 @@ export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS,
   });
 }
 
+/**
+ * Arma los JSON LOCALES (`casa-bermejo.local.json` y `casa-bermejo.prueba.local.json`) con los datos locales sustituidos. NUNCA toca los versionados y escribe solo
+ * con el sufijo `.local.json` (ignorado por git), con permisos 600 (siempre archivos nuevos: se reemplaza el viejo). Arma y pasa las MISMAS guardias de las DOS variantes ANTES de escribir
+ * ninguna: si una falla, no se escribe nada. Devuelve, por archivo, los nodos y (igual en los dos) los marcadores que quedaron en lo armado.
+ *   opciones: { carpeta (de dónde se lee el proyecto), salida (dónde se escribe; por defecto `carpeta`), datosLocal (ruta), versionados (ruta), tope, origenReceptor }
+ */
+export function construirLocal({ carpeta = AQUI, salida = carpeta, datosLocal, versionados = ARCHIVO_DE_DATOS, tope, origenReceptor } = {}) {
+  const datos = cargarDatosLocal(datosLocal, versionados);
+  const proyecto = leerProyecto(carpeta, CONFIG, tope ? { tope } : {});
+  const origen = origenReceptor ?? leerReceptorDeOrigen();
+  const armados = proyecto.variantes.map((v) => {
+    const texto = armarCasaBermejo(proyecto, datos, v, origen);
+    const variante = v.archivo === FLUJO_PRUEBA ? 'prueba' : 'produccion';
+    const armado = JSON.parse(texto);
+    const propios = [...guardias(variante, armado), ...(variante === 'produccion' ? hallazgosDelReceptor(armado, datos, origen) : [])];
+    if (propios.length) throw new Error(`${v.archivo}: ${propios.join('; ')}`);
+    return { texto, armado, archivo: variante === 'prueba' ? FLUJO_PRUEBA_LOCAL : FLUJO_PRODUCCION_LOCAL };
+  });
+  const pendientes = marcadoresDeLoArmado(armados.map((x) => x.armado), versionados);
+  // Recién aquí, con las dos variantes ya armadas y aprobadas por las guardias, se escribe. Permisos 600: llevan la ruta del receptor, que es una URL de capacidad.
+  for (const x of armados) escribirLocalNuevo(join(salida, x.archivo), x.texto, x.archivo);
+  return armados.map((x) => ({ archivo: x.archivo, nodos: x.armado.nodes.length, pendientes }));
+}
+
 // ----------------------------------------------------------------- línea de comandos
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
@@ -600,8 +744,26 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.exit(1);
     }
   }
+  if (args.includes('--local')) {
+    // --local --datos <archivo>.local.json [--salida <directorio>]: arma los JSON locales (ignorados por git). No imprime ningún valor, solo nodos y marcadores pendientes.
+    const valorDe = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+    const OPC = ['--datos', '--salida'];
+    const resto = args.filter((a, k) => a !== '--local' && !OPC.includes(a) && !OPC.includes(args[k - 1]));
+    const malo = (n) => args.includes(n) && (!valorDe(n) || valorDe(n).startsWith('--'));
+    if (!args.includes('--datos') || malo('--datos') || malo('--salida') || resto.length) { console.error('✗ uso: construir.mjs --local --datos <archivo>.local.json [--salida <directorio>]'); process.exit(2); }
+    try {
+      const resultado = construirLocal({ datosLocal: valorDe('--datos'), ...(valorDe('--salida') ? { salida: valorDe('--salida') } : {}) });
+      for (const r of resultado) console.log(`✓ ${r.archivo} escrito (${r.nodos} nodos, local: no se versiona)`);
+      const pend = resultado[0].pendientes;
+      console.log(pend.length ? `! Quedan ${pend.length} marcadores sin sustituir en lo armado (${pend.join(', ')}): --publicable los exigirá.` : '✓ Sin marcadores pendientes en lo armado.');
+      process.exit(0);
+    } catch (e) {
+      console.error(`✗ ${e instanceof Error ? e.message : String(e)}`);
+      process.exit(1);
+    }
+  }
   const desconocidos = args.filter((a) => a !== '--verificar');
-  if (desconocidos.length) { console.error(`✗ argumento desconocido: ${desconocidos.join(' ').slice(0, 60)}. Solo existen --verificar y --publicable; sin argumentos escribe los JSON.`); process.exit(2); }
+  if (desconocidos.length) { console.error(`✗ argumento desconocido: ${desconocidos.join(' ').slice(0, 60)}. Solo existen --verificar, --publicable y --local --datos <archivo>.local.json [--salida <directorio>]; sin argumentos escribe los JSON.`); process.exit(2); }
   const verificar = args.includes('--verificar');
   try {
     let difiere = false;
