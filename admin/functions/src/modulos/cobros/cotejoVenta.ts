@@ -7,6 +7,7 @@ import { periodoDe } from '../../central/cuenta/planes.js';
 import {
   escribirCorrelativo, formarCodigo, leerCorrelativo, prefijoDeCodigo, type Correlativo,
 } from '../../core/turno/correlativo.js';
+import { ultimoPedidoAlCerrar } from '../../core/turno/facturaPedido.js';
 import {
   calificarComprobante, motivosParaElCliente, parsearMonto, type Calificacion, type Leido,
 } from './cotejo.js';
@@ -292,7 +293,18 @@ export const cotejarComprobanteVenta = onRequest(
         }
       }
 
-      if (transicion.cambios) tx.set(refConversacion, { solicitud: transicion.cambios }, { merge: true });
+      // LA FACTURA DEL PEDIDO (PR-F): SOLO cuando este cotejo le dio el código (un comercio sin prefijo no
+      // escribe nada nuevo; el reintento o un cierre que ya tenía código no vuelve la factura a 'pedida').
+      // Va en la MISMA escritura de la conversación: 0 escrituras nuevas. `facturaEnMs` del pedido anterior se borra.
+      const ultimoPedido = correlativoNuevo && codigoPedido && idCierre
+        ? { ...ultimoPedidoAlCerrar(codigoPedido, idCierre, ahoraMs, configPedidos.data()), facturaEnMs: FieldValue.delete() }
+        : null;
+      if (transicion.cambios || ultimoPedido) {
+        tx.set(refConversacion, {
+          ...(transicion.cambios ? { solicitud: transicion.cambios } : {}),
+          ...(ultimoPedido ? { ultimoPedido } : {}),
+        }, { merge: true });
+      }
 
       // EL REGISTRO DE RECIBIDOS, en ESTA transacción: si esta escritura falla, el cotejo entero
       // se aborta y no queda la conversación, el cierre ni las métricas a medias.
