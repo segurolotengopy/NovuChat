@@ -63,13 +63,13 @@ describe('batería de turnos: la voz se cumple en código', () => {
     expect(prompt).toMatch(/nada es casual/);
     expect(prompt).toMatch(/bufanda-vicuna\|Bufanda de vicuña\|7795/);
     expect(prompt).not.toMatch(/tapiz-mujer-rio|licor-de-coca/);
-    expect(prompt).toMatch(/asistente virtual de Tienda de prueba/);
+    expect(prompt).toMatch(/asistente de atención y ventas de Tienda de prueba/);
     expect(prompt).toMatch(/domingo|lunes|martes|miércoles|jueves|viernes|sábado/);
   });
   it('el saludo de la primera vez es del asistente virtual del negocio y NO se repite', () => {
     const m = crear({ modeloDice: modelo('Con gusto, cuéntame qué buscas.') });
-    expect(textos(hablar(m, ANA, mTexto('hola')))[0]).toMatch(/^Hola, soy el asistente virtual con IA de Tienda de prueba\./);
-    expect(textos(hablar(m, ANA, mTexto('busco una billetera')))[0]).not.toMatch(/soy el asistente virtual/);
+    expect(textos(hablar(m, ANA, mTexto('hola')))[0]).toMatch(/^Hola, soy el asistente de atención y ventas de Tienda de prueba\./);
+    expect(textos(hablar(m, ANA, mTexto('busco una billetera')))[0]).not.toMatch(/soy el asistente/);
   });
 });
 
@@ -80,7 +80,7 @@ describe('sin promesa de galería: por este chat solo sale texto y, al confirmar
       const t = hablar(crear({ modeloDice: modelo(salida) }), ANA, mTexto('¿me muestras las campañas?'));
       expect(t.mensajes.length).toBeGreaterThan(0);
       expect(textos(t).join('\n'), salida).not.toMatch(FOTOS);
-      expect(textos(t).join('\n'), salida).toMatch(/no pude|reformular|de nuevo|intent|cuéntame/i);
+      expect(textos(t).join('\n'), salida).toMatch(/no pud|reformular|de nuevo|intent|cuéntenos/i);
     }
   });
   it('NEGADO: cualquier verbo de envío o muestra en primera persona seguido de fotos, imágenes, álbum o galería', () => {
@@ -88,7 +88,7 @@ describe('sin promesa de galería: por este chat solo sale texto y, al confirmar
       const t = hablar(crear({ modeloDice: modelo(salida) }), ANA, mTexto('¿me muestras las campañas?'));
       expect(t.mensajes.length, salida).toBeGreaterThan(0);
       expect(textos(t).join('\n'), salida).not.toMatch(FOTOS);
-      expect(textos(t).join('\n'), salida).toMatch(/no pude|reformular|de nuevo|intent|cuéntame/i);
+      expect(textos(t).join('\n'), salida).toMatch(/no pud|reformular|de nuevo|intent|cuéntenos/i);
     }
   });
   it('control: «galería» en otro sentido («una galería de arte») NO se rechaza', () => {
@@ -110,6 +110,6 @@ describe('sin promesa de galería: por este chat solo sale texto y, al confirmar
     hablar(m, ANA, mTexto('quiero pagar'));
     m.dobles['Traer configuración'] = () => panelConQr(450);
     const t = hablar(m, ANA, mImagen({ caption: '' }));
-    expect(textos(t).join(' ')).toContain('No pude leer bien tu comprobante.\n\n¿Me envías una foto más nítida, con el monto, la fecha y la cuenta de destino a la vista?'.replace('\n\n', '\n\n'));
+    expect(textos(t).join(' ')).toContain('No pudimos leer bien su comprobante.\n\n¿Nos envía una foto más nítida, con el monto, la fecha y la cuenta de destino a la vista?');
   });
 });

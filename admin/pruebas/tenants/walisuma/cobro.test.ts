@@ -52,7 +52,7 @@ describe('NUNCA «pago acreditado» ni «simulado»', () => {
     const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, cotejo: { statusCode: 200, body: { estado: 'reintentar', motivo: 'monto_menor', importe: 450, montoLeido: 50 } } });
     const t = comprobante(m);
     expect(textos(t).join(' ')).toMatch(/hay una diferencia/);
-    expect(textos(t).join(' ')).toMatch(/el comprobante dice 50 Bs y tu pedido es de 450 Bs/);
+    expect(textos(t).join(' ')).toMatch(/su comprobante dice Bs 50 y su pedido es Bs 450/);
     expect(t.mensajes[0]?.payload['interactive']).toBeUndefined();
     for (const x of todo(t)) expect(x).not.toMatch(PROHIBIDO);
     expect(t.avisos).toHaveLength(0);
@@ -60,19 +60,19 @@ describe('NUNCA «pago acreditado» ni «simulado»', () => {
 });
 
 describe('un comprobante aproximado no dice «coinciden»', () => {
-  it('NEGADO: «aproximado» dice que recepción revisará una pequeña diferencia; el aviso al comercio dice «casi coinciden, revisar»', () => {
+  it('NEGADO (decisión 8, 18/11/2026): «aproximado» ya no se acepta: es OBSERVADO, nombra la diferencia, pide el correcto y no avisa ni dice «coinciden»', () => {
     const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, cotejo: { statusCode: 200, body: { estado: 'aproximado', importe: 450, avisarComercio: true } } });
     const t = comprobante(m);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/recepción revisará una pequeña diferencia/);
-    expect(t.mensajes[0]?.cuerpo).not.toMatch(/coinciden/);
-    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/casi coinciden, revisar/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/hay una diferencia/);
+    expect(t.mensajes[0]?.cuerpo).not.toMatch(/coinciden|confirmado/);
+    expect(t.avisos).toHaveLength(0);
   });
   it('NEGADO: un comprobante ya registrado pasa con recepción como toda derivación: aviso Y botón', () => {
     const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, cotejo: { statusCode: 200, body: { estado: 'ya_resuelto' } } });
     const t = comprobante(m);
     expect(t.avisos).toHaveLength(1);
     expect(t.mensajes[0]?.payload['interactive']).toBeTruthy();
-    expect(t.mensajes[0]?.cuerpo).toMatch(/Ya avisé a recepción/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/Pasamos .* a nuestra encargada/);
   });
 });
 
@@ -102,47 +102,55 @@ describe('el cotejo corre aunque el servidor no guarde el comprobante', () => {
     const t = comprobante(m);
     expect(t.mensajes).toHaveLength(1);
     expect(t.mensajes[0]?.cuerpo).not.toMatch(/datos coinciden/);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/no pude compararlo/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/no pudimos compararlo/);
     expect(t.mensajes[0]?.payload['interactive']).toBeTruthy();
   });
   it('un comprobante SIN QR abierto no se coteja: recepción (aviso y botón)', () => {
     const m = crear({ medio: { clasificacion: COMPROBANTE } });
     const t = comprobante(m);
     expect(t.llamadas.cotejo).toHaveLength(0);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/no tengo un pedido con QR abierto/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/no tenemos un pedido con QR abierto/);
     expect(t.mensajes[0]?.payload['interactive']).toBeTruthy();
     expect(t.avisos).toHaveLength(1);
   });
 });
 
 describe('el aviso del pedido al comercio', () => {
-  it('con el comprobante que coincide sale UN aviso (plantilla `pedido_registrado`, 4 variables) y el cliente ve «ya avisé» solo porque salió', () => {
-    const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE } });
+  it('con la plantilla de 10 variables sin aprobar, sale UN aviso por la de respaldo (`pedido_registrado`, 4 variables, el resto empaquetado) y el cliente lee «pasamos» solo porque salió', () => {
+    const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, base: { avisoPedidoEstado: 'PENDING' } });
     const t = comprobante(m);
     expect(t.avisos).toHaveLength(1);
     const pl = t.avisos[0]?.payload['template'] as any; // eslint-disable-line @typescript-eslint/no-explicit-any
     expect(pl.name).toBe('pedido_registrado');
     const vars = pl.components[0].parameters.map((p: { text: string }) => p.text);
-    expect(vars).toEqual(['1 × Billetera de cuero', 'Bs 450', 'Recojo en tienda · La Paz · a nombre de Ana Pérez · tel. 71234567 · envío: recojo', 'llegó y los datos coinciden']);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/Ya avisé a recepción/);
+    expect(vars).toHaveLength(4);
+    expect(vars.slice(0, 2)).toEqual(['1 × Billetera de cuero', 'Bs 450']);
+    expect(vars[2]).toBe('Recojo en tienda · La Paz · no aplica, recojo en tienda · Ana Pérez · +59100000011 · contacto 71234567 · Recojo: Calle Claudio Aliaga 1231, San Miguel');
+    expect(vars[3]).toBe('ref. WL1 · comprobante: llegó y los datos coinciden · factura: sin datos (S/N) por ahora · banco: no leído · operación: no leída');
+    expect(t.mensajes[0]?.cuerpo).toMatch(/Pasamos .* a nuestra encargada/);
     expect(JSON.stringify(t.avisos[0]?.payload)).not.toMatch(PROHIBIDO);
   });
   it('NEGADO: si el aviso no sale (Meta lo rechaza), el cliente NO lee «ya avisé»: lee que no se pudo y el botón', () => {
     const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, aviso: 'error' });
     const t = comprobante(m);
-    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé/);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/No pude avisar a recepción/);
+    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Pasamos/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/No pudimos avisar a nuestra encargada/);
     expect(t.mensajes[0]?.payload['interactive']).toBeTruthy();
   });
   it('NEGADO: sin plantilla aprobada no sale ningún aviso y el cliente no lee «ya avisé»', () => {
-    const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, base: { avisoPedidoEstado: 'PENDING' } });
+    const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, base: { avisoPedidoEstado: 'PENDING', avisoRespaldoEstado: 'PENDING' } });
     const t = comprobante(m);
     expect(t.avisos).toHaveLength(0);
-    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé/);
+    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Pasamos/);
   });
-  it('el aviso no lleva NIT ni CI aunque el cliente los escriba, y la ficha tampoco los guarda', () => {
+  it('antes del pago, la ficha no guarda el NIT ni el CI aunque el cliente los escriba (el NIT solo viaja en el aviso de factura tras el pago: fase1.test.ts)', () => {
     const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA, facturacion: { nombre: 'Ana', documento: '4455667' } }) });
-    hablar(m, ANA, mTexto('una billetera, mi NIT es 4455667'));
+    const t = hablar(m, ANA, mTexto('una billetera, mi NIT es 4455667'));
     expect(JSON.stringify(fichas(m)[ANA])).not.toMatch(/4455667|\[nº\]4455667/);
+    // Antes del pago no hay aviso de factura: ningún aviso sale y, si saliera alguno, no llevaría el NIT; tampoco lo recibe el modelo ni el cliente.
+    expect(t.avisos).toHaveLength(0);
+    for (const a of t.avisos) expect(JSON.stringify(a.payload)).not.toContain('4455667');
+    expect(t.registro.map((r) => r.nodo)).not.toContain('Conversar con el modelo');
+    expect(textos(t).join(' ')).not.toContain('4455667');
   });
 });

@@ -147,6 +147,11 @@ function vmProspectoCrm(d) {
     quePidio: evento === 'pedido' ? 'Pedido' : evento === 'reserva' ? 'Reserva' : evento === 'eleccion' ? (eligioDe || (famDespues === 'reserva' ? 'Reserva' : 'Pedido')) : '',
     ultimaInteraccionMs: ahora,
   };
+  // El Ad ID y la campaña del mensaje (contrato 17/11/2026): solo si los trae `Interpretar entrada`; el módulo `crm` los escribe en la columna opcional `idCampana` al CREAR la fila, y solo si el mapa la declara.
+  const adIdDe = String(x.adId === undefined || x.adId === null ? '' : x.adId);
+  const campanaIdDe = String(x.campanaId === undefined || x.campanaId === null ? '' : x.campanaId);
+  if (/^[0-9]{1,40}$/.test(adIdDe)) p.adId = adIdDe;
+  if (/^[A-Za-z0-9_-]{1,60}$/.test(campanaIdDe)) p.campanaId = campanaIdDe;
   // «Reserva» (P): la solicitud salió al local. «Pedido» (Q): QR enviado, o sin QR / QR vencido con el aviso salido. Nunca pagado, acreditado, simulado ni verificado.
   if (evento === 'reserva' && salio) p.diaPreferido = 'Enviada ' + vmCrmFechaHora(ahora);
   if (evento === 'pedido' && (ruta === 'pedido:qr' || ruta === 'pedido:qr_simulado' || ((ruta === 'pedido:sin_qr' || ruta === 'pedido:qr_vencido') && salio))) p.horarioPreferido = 'Registrado ' + vmCrmFechaHora(ahora);

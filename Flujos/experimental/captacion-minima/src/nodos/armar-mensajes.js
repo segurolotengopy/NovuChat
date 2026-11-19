@@ -116,6 +116,9 @@ const primeraVez = !previa || antes.ultimoMensajeMs === 0;
 const cambio = despues !== null && (primeraVez || JSON.stringify(despues) !== JSON.stringify(ccProspecto(antes, datosDe(antes))));
 const guardarPlanilla = cambio && planillaOk;
 const guardarCrm = cambio && crmOk;
+// El Ad ID y la campana de ESTE mensaje (17/11/2026) viajan con el prospecto de la planilla (`crm-prospecto` los escribe al crear la fila, solo si el mapa declara `idCampana`).
+// Se agregan DESPUES de decidir si la ficha cambio: no alteran cuando se guarda.
+const adDelMensaje = (p) => (p ? Object.assign({}, p, /^[0-9]{1,40}$/.test(String(t.adId || '')) ? { adId: String(t.adId) } : {}, /^[A-Za-z0-9_-]{1,60}$/.test(String(t.campanaId || '')) ? { campanaId: String(t.campanaId) } : {}) : p);
 const celda = (v) => String(v === undefined || v === null ? '' : v).replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 200);
 
 // R8: la ficha de ANTES de este turno viaja en el primer item: si Meta rechaza el mensaje y su respaldo, «Confirmar envío» la restaura.
@@ -123,14 +126,14 @@ const fichaAntes = claveOk ? antes : null;
 const resumen = { plan: accion, estadoDespues: claveOk ? estado : null, mensajes: salida.length, hechos: estado.hechos, paso: estado.paso, avisos: avisos };
 if (!salida.length) {
   return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: accion, resumen: resumen, fichaAntes: fichaAntes, avisos: avisos,
-    guardarPlanilla: guardarPlanilla, prospectoPlanilla: guardarPlanilla ? despues : null, guardarCrm: false, cuerpoCrm: null } }];
+    guardarPlanilla: guardarPlanilla, prospectoPlanilla: guardarPlanilla ? adDelMensaje(despues) : null, guardarCrm: false, cuerpoCrm: null } }];
 }
 const primero = salida[0].json;
 primero.resumen = resumen;
 primero.avisos = avisos;
 primero.fichaAntes = fichaAntes;
 primero.guardarPlanilla = guardarPlanilla;
-primero.prospectoPlanilla = guardarPlanilla ? despues : null;
+primero.prospectoPlanilla = guardarPlanilla ? adDelMensaje(despues) : null;
 primero.guardarCrm = guardarCrm;
 primero.crmUrl = guardarCrm ? String(cfg.crmUrl) : '';
 primero.cuerpoCrm = guardarCrm ? Object.assign({

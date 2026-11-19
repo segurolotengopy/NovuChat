@@ -18,8 +18,8 @@ const LINEA_BASE: Array<[string, number, number]> = [
   ['captacion-minima/captacion-minima.novuchat.json', 52, 5], ['captacion-minima/captacion-minima.prueba.json', 52, 5],
   ['../clientes/novuchat/chat-novuchat.novuchat.json', 76, 5], ['../clientes/novuchat/chat-novuchat.prueba.json', 76, 5],
   ['../clientes/rroca-antonio/rroca-antonio.json', 68, 6], ['../clientes/rroca-antonio/rroca-antonio.prueba.json', 63, 6],
-  ['../clientes/rroca-emma/rroca-emma.json', 53, 6], ['../clientes/rroca-emma/rroca-emma.prueba.json', 48, 6],
-  ['../clientes/rroca-evy/rroca-evy.json', 53, 6], ['../clientes/rroca-evy/rroca-evy.prueba.json', 48, 6],
+  ['../clientes/rroca-emma/rroca-emma.json', 59, 6], ['../clientes/rroca-emma/rroca-emma.prueba.json', 54, 6],
+  ['../clientes/rroca-evy/rroca-evy.json', 59, 6], ['../clientes/rroca-evy/rroca-evy.prueba.json', 54, 6],
   ['rroca-ruben/rroca-ruben.json', 68, 6], ['rroca-ruben/rroca-ruben.prueba.json', 63, 6],
   ['venta-minima/venta-minima.qtaco-3727.json', 84, 7],
 ];

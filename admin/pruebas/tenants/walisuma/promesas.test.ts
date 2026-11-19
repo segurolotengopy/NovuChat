@@ -5,7 +5,8 @@
 import { describe, expect, it } from 'vitest';
 import { ANA, REC, crear, hablar, mTexto, modelo, textos, type Opciones } from './mundo';
 
-const PROMESA = /te aviso|te avisar|te avisamos|te llamamos|te llamar|te escribir|te escribiremos|se comunicar|nos comunicaremos|lo consulto|lo consultamos|te contactar|te confirmamos luego|más tarde te/i;
+// Tú Y usted (revisión del PR #1020: la forma de usted es la que usa Walisuma).
+const PROMESA = /te aviso|te avisar|te avisamos|te llamamos|te llamar|te escribir|te escribiremos|se comunicar|nos comunicaremos|lo consulto|lo consultamos|te contactar|te confirmamos luego|más tarde te|l[eao]s? avis(o|amos|aremos|aré)|l[eao]s? llam(amos|aremos|aré)|l[eao]s? escribir(emos|é)|l[eao]s? contar(emos|é)|l[eao]s? contamos|l[eao]s? haremos saber|l[eao]s? contactar(emos|é)|l[eao]s? informar(emos|é)|apenas tengamos|en cuanto tengamos|nos pondremos en contacto|le confirmamos luego/i;
 const BOTON = (t: ReturnType<typeof hablar>): boolean => t.mensajes.some((x) => (x.payload['interactive'] as any)?.type === 'cta_url' && String((x.payload['interactive'] as any).action.parameters.url).includes(REC)); // eslint-disable-line @typescript-eslint/no-explicit-any
 const deriva = (o: Opciones, texto: string) => hablar(crear(o), ANA, mTexto(texto));
 
@@ -18,7 +19,6 @@ describe('el error del modelo, la pieza sin precio y el volumen pasan con recepc
     ['«tapices» en general', {}, '¿cuánto cuestan los tapices?'],
     ['regalos corporativos', {}, 'necesito regalos corporativos para mi empresa'],
     ['300 piezas', {}, 'quiero 300 bufandas'],
-    ['pide factura', {}, 'necesito factura con mi NIT'],
     ['pide hablar con una persona', {}, 'quiero hablar con una persona'],
     ['el modelo marca quiereHablar', { modeloDice: modelo('Lo ve una persona.', { quiereHablar: true }) }, 'quiero algo especial hecho a medida'],
   ];
@@ -28,7 +28,7 @@ describe('el error del modelo, la pieza sin precio y el volumen pasan con recepc
       expect(t.mensajes).toHaveLength(1);
       expect(BOTON(t)).toBe(true);
       expect(t.avisos).toHaveLength(1);
-      expect(t.mensajes[0]?.cuerpo).toMatch(/Ya avisé a recepción/);
+      expect(t.mensajes[0]?.cuerpo).toMatch(/Pasamos .* a nuestra encargada/);
       expect(t.mensajes[0]?.cuerpo).not.toMatch(PROMESA);
     });
   }
@@ -42,33 +42,34 @@ describe('el error del modelo, la pieza sin precio y el volumen pasan con recepc
 describe('«ya avisé» solo con un wamid real', () => {
   it('NEGADO: si Meta rechaza el aviso, el cliente lee que no se pudo avisar y el botón (no «ya avisé»)', () => {
     const t = deriva({ aviso: 'error' }, 'quiero hablar con una persona');
-    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé/);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/No pude avisar a recepción/);
+    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Pasamos/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/No pudimos avisar a nuestra encargada/);
     expect(BOTON(t)).toBe(true);
   });
   it('NEGADO: si la red del aviso cae, tampoco', () => {
     const t = deriva({ aviso: 'lanza' }, 'quiero hablar con una persona');
-    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé/);
+    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Pasamos/);
     expect(BOTON(t)).toBe(true);
   });
   it('NEGADO: sin plantilla aprobada (y fuera de la ventana del comercio) no hay aviso y no se dice que se avisó', () => {
-    const t = deriva({ base: { avisoPedidoEstado: 'PENDING' } }, 'quiero hablar con una persona');
+    const t = deriva({ base: { avisoPedidoEstado: 'PENDING', avisoRespaldoEstado: 'PENDING' } }, 'quiero hablar con una persona');
     expect(t.avisos).toHaveLength(0);
-    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé/);
+    expect(t.mensajes[0]?.cuerpo).not.toMatch(/Pasamos/);
     expect(BOTON(t)).toBe(true);
   });
   it('a lo más UN aviso de consulta cada 30 minutos: el segundo dice que recepción ya lo recibió', () => {
     const m = crear();
     expect(hablar(m, ANA, mTexto('quiero hablar con una persona')).avisos).toHaveLength(1);
-    const t2 = hablar(m, ANA, mTexto('necesito factura'));
+    const t2 = hablar(m, ANA, mTexto('quiero regalos corporativos para mi empresa'));
     expect(t2.avisos).toHaveLength(0);
-    expect(t2.mensajes[0]?.cuerpo).toMatch(/ya recibió tu aviso anterior/);
-    expect(t2.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé a recepción;/);
+    expect(t2.mensajes[0]?.cuerpo).toMatch(/ya recibió su aviso anterior/);
+    expect(t2.mensajes[0]?.cuerpo).not.toMatch(/Pasamos su consulta a nuestra encargada;/);
   });
 });
 
 describe('el modelo no promete lo que no se cumple', () => {
-  for (const promesa of ['Te aviso luego cuando tengamos novedades.', 'Te llamamos mañana para confirmar.', 'Un asesor se comunicará contigo.', 'Lo consulto con el equipo y te escribo.', 'Te avisaremos apenas llegue.']) {
+  for (const promesa of ['Te aviso luego cuando tengamos novedades.', 'Te llamamos mañana para confirmar.', 'Un asesor se comunicará contigo.', 'Lo consulto con el equipo y te escribo.', 'Te avisaremos apenas llegue.',
+    'Le haremos saber cuando llegue.', 'Apenas tengamos novedades le contamos.', 'Le avisaremos en cuanto esté lista.', 'Le llamaremos mañana para confirmar.', 'Le escribiremos cuando tengamos la pieza.', 'Nos pondremos en contacto con usted.', 'Le contactaremos pronto.']) {
     it(`NEGADO: «${promesa}» no sale`, () => {
       const t = hablar(crear({ modeloDice: modelo(promesa) }), ANA, mTexto('¿tienen más modelos?'));
       expect(textos(t).join(' ')).not.toMatch(PROMESA);
@@ -88,9 +89,9 @@ describe('el modelo no promete lo que no se cumple', () => {
     expect(t.mensajes.every((x) => x.tipo !== 'image')).toBe(true);
     expect(t.avisos).toHaveLength(1);
     const vars = (t.avisos[0]?.payload['template'] as any).components[0].parameters.map((p: { text: string }) => p.text); // eslint-disable-line @typescript-eslint/no-explicit-any
-    expect(vars[3]).toBe('sin comprobante aún');
+    expect(vars[0]).toMatch(/comprobante: sin comprobante aún/);
     expect(t.mensajes[0]?.cuerpo).toMatch(/el pago por QR no está disponible/);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/Ya avisé a recepción/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/Pasamos .* a nuestra encargada/);
     expect(BOTON(t)).toBe(true);
   });
 });

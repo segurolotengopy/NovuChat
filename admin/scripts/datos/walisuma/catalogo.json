@@ -15,7 +15,7 @@
     },
     {
       "nombre": "Estola simple",
-      "descripcion": "De color vicuña. 70 % baby alpaca y 30 % seda. Cód. WAL-BUF-002.",
+      "descripcion": "De color vicuña. Colores del catálogo 2026: vicuña claro, vicuña, gris perla, azul marino y negro. 70 % baby alpaca y 30 % seda. Cód. WAL-BUF-002.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 911,
       "moneda": "BOB",
@@ -23,7 +23,7 @@
     },
     {
       "nombre": "Chal telar premium",
-      "descripcion": "Color crudo. 100 % baby alpaca. Cód. WAL-BUF-003.",
+      "descripcion": "Color crudo. Colores del catálogo 2026: crudo, café, terracota, rojo, azul marino y negro. 100 % baby alpaca. Cód. WAL-BUF-003.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 910,
       "moneda": "BOB",
@@ -31,7 +31,7 @@
     },
     {
       "nombre": "Chal simple tejido",
-      "descripcion": "De color vicuña. 100 % alpaca superfina. Cód. WAL-BUF-004.",
+      "descripcion": "De color vicuña. Colores del catálogo 2026: crudo, café, chocolate, gris claro, gris oscuro y negro. 100 % alpaca superfina. Cód. WAL-BUF-004.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 1125,
       "moneda": "BOB",
@@ -39,7 +39,7 @@
     },
     {
       "nombre": "Chal bicolor tejido",
-      "descripcion": "Colores variables: se consulta la disponibilidad del momento. 100 % alpaca superfina. Cód. WAL-BUF-005.",
+      "descripcion": "Colores variables: se consulta la disponibilidad del momento. Colores del catálogo 2026: blanco y negro, gris y azul, beige y crudo, café y beige, chocolate y beige, y tonos tierra. 100 % alpaca superfina. Cód. WAL-BUF-005.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 1150,
       "moneda": "BOB",
@@ -47,7 +47,7 @@
     },
     {
       "nombre": "Bufanda Dennis",
-      "descripcion": "Color naranja. Tela de baby alpaca. Cód. WAL-BUF-006.",
+      "descripcion": "Color naranja. Colores del catálogo 2026: negro, grafito, gris oscuro, azul marino, camel, cobre, naranja y rojo. Tela de baby alpaca. Cód. WAL-BUF-006.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 850,
       "moneda": "BOB",
@@ -55,7 +55,7 @@
     },
     {
       "nombre": "Bufanda peinada",
-      "descripcion": "Color gris claro. 100 % baby alpaca. Cód. WAL-BUF-007.",
+      "descripcion": "Color gris claro. Colores del catálogo 2026: marfil, gris claro, beige, arena, gris topo, camel y café oscuro. 100 % baby alpaca. Cód. WAL-BUF-007.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 545,
       "moneda": "BOB",
@@ -63,7 +63,7 @@
     },
     {
       "nombre": "Bufanda bicolor tejida",
-      "descripcion": "Colores variables: se consulta la disponibilidad del momento. 100 % alpaca superfina. Cód. WAL-BUF-008.",
+      "descripcion": "Colores variables: se consulta la disponibilidad del momento. Colores del catálogo 2026: blanco y negro, gris y azul, celeste y gris, naranja y rojo, beige y crudo, café y beige. 100 % alpaca superfina. Cód. WAL-BUF-008.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 510,
       "moneda": "BOB",
@@ -71,7 +71,7 @@
     },
     {
       "nombre": "Bufanda simple tejida",
-      "descripcion": "Color gris claro. 100 % alpaca superfina. Cód. WAL-BUF-009.",
+      "descripcion": "Color gris claro. Colores del catálogo 2026: crudo, café, chocolate, gris claro, gris oscuro, negro, azul marino y rojo. 100 % alpaca superfina. Cód. WAL-BUF-009.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 510,
       "moneda": "BOB",
@@ -79,7 +79,7 @@
     },
     {
       "nombre": "Bufanda premium",
-      "descripcion": "Color negro. 100 % baby alpaca. Cód. WAL-BUF-010.",
+      "descripcion": "Color negro. Colores del catálogo 2026: crudo, camel, rojo, gris, gris claro y negro. 100 % baby alpaca. Cód. WAL-BUF-010.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 410,
       "moneda": "BOB",
@@ -95,7 +95,7 @@
     },
     {
       "nombre": "Bufanda bouclé",
-      "descripcion": "Colores variables: se consulta la disponibilidad del momento. 70 % baby alpaca y 30 % seda. Cód. WAL-BUF-012.",
+      "descripcion": "Colores variables: se consulta la disponibilidad del momento. Colores del catálogo 2026: crudo, beige, arena y gris piedra. 70 % baby alpaca y 30 % seda. Cód. WAL-BUF-012.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 591,
       "moneda": "BOB",
@@ -103,7 +103,7 @@
     },
     {
       "nombre": "Cuello Carolina",
-      "descripcion": "Bufanda circular. Colores variables: se consulta la disponibilidad del momento. 100 % baby alpaca. Cód. WAL-BUF-013.",
+      "descripcion": "Bufanda circular. Colores variables: se consulta la disponibilidad del momento. Colores del catálogo 2026: azul marino, camel, gris, crudo y negro. 100 % baby alpaca. Cód. WAL-BUF-013.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 250,
       "moneda": "BOB",
@@ -648,7 +648,7 @@
       "activo": true
     },
     {
-      "nombre": "Tapiz Jalq 61 x 34 cm",
+      "nombre": "Tapiz Jalq'a 61 x 34 cm",
       "descripcion": "61 x 34 cm. Tejido a mano en telar rústico. Comunidades Candelaria y Tarabuco. Cód. WAL-TAP-006.",
       "area": "Hogar y oficina · Tapices",
       "precio": 3080,

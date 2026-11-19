@@ -26,10 +26,10 @@ const HUELLAS: [string, string, string][] = [
   ['carga-de-entrada.js', '2562bb2b56c2ea23', '2562bb2b56c2ea23'],
   // Antonio ganó la ubicación (02/11/2026: `direccion` y `direccionMaps` de la Consola); el neutro queda como estaba. Su diferencia se declara abajo.
   // El miniCRM (la planilla del negocio) sí está en el neutro desde Walisuma: lo usan los dos tenants.
-  ['config-del-negocio.js', 'd33d652bfb4994d4', '9f9be358f746ec42'],
+  ['config-del-negocio.js', '5eeed2b728e05a24', '852cce1e9ff6a138'],
   // El Gmail tras una venta confirmada (10/11/2026) es SOLO de Antonio y de Rubén: cambió el origen de `normalizar-entrada` (el reporte a la consola no lleva correos) y de `resumen-del-turno` (restaura `gmailPedidoMs`). Los neutros NO lo adoptan:
-  // Walisuma no pide Gmail y no cambia ningún nodo suyo; las huellas de los neutros no se movieron.
-  ['normalizar-entrada.js', '347ab52d1c655be7', '9e1ee45ad10298ca'],
+  // Ad ID (17/11/2026): `config-del-negocio` y `normalizar-entrada` ganaron la campaña por Ad ID en el origen y en el neutro; las huellas se actualizaron.
+  ['normalizar-entrada.js', '4da01ff1efbef141', 'dfd48dcab928872e'],
   ['puerta-del-turno.js', '3f8a837a3912eb78', '3f8a837a3912eb78'],
   ['resumen-del-turno.js', '9ae08c2c8e443766', '08eea9fd84116169'],
 ];

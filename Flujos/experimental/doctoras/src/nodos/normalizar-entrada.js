@@ -76,7 +76,28 @@ const tsMeta = Number(msg.timestamp) * 1000;
 const mensajeMs = Number.isFinite(tsMeta) && tsMeta <= ahoraTurno && ahoraTurno - tsMeta <= 24 * 60 * 60 * 1000 ? tsMeta : ahoraTurno;
 
 const contacto = Array.isArray(carga.contacts) ? carga.contacts[0] : undefined;
-const ref = msg.referral && typeof msg.referral === 'object' ? msg.referral : null;
+const ref = msg.referral && typeof msg.referral === 'object' && !Array.isArray(msg.referral) ? msg.referral : null;
+// EL VÍNCULO CON EL ANUNCIO (Andres, 17/11/2026): PRIMERO el Ad ID del anuncio (`referral.source_id`, igualdad exacta, cualquier tipo de mensaje) y LUEGO el texto exacto en palabras (solo mensajes `text`). `anuncio` sigue siendo booleano
+// en este canal (lo leen los tenants con `=== true`); el ID, el clic y el vínculo viajan aparte. Vincular no cambia la respuesta: ningún nodo de decisión lee `campana`.
+const planoAd = (v, max) => String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+const adId = ref ? planoAd(ref.source_id, 40) : '';
+const palabrasDe = (t) => String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+let campanasCfg = [];
+try { campanasCfg = JSON.parse(String(cfg.campanasActivas || '[]')); } catch (e) { campanasCfg = []; }
+const escrito = msg.type === 'text' ? palabrasDe(msg.text && msg.text.body) : '';
+let laCampana = null;
+let campanaPor = '';
+if (Array.isArray(campanasCfg)) {
+  if (adId !== '') {
+    laCampana = campanasCfg.find((c) => c && Array.isArray(c.adIds) && c.adIds.some((a) => String(a) === adId)) || null;
+    if (laCampana) campanaPor = 'adId';
+  }
+  if (!laCampana && escrito !== '') {
+    laCampana = campanasCfg.find((c) => c && typeof c.texto === 'string' && palabrasDe(c.texto) === escrito) || null;
+    if (laCampana) campanaPor = 'texto';
+  }
+}
+const campana = laCampana ? { id: planoAd(laCampana.id, 60), texto: planoAd(laCampana.texto, 300).replace(/[\[\]]/g, ''), por: campanaPor } : null;
 const mimeType = sinControles(visual && visual.mime_type, 100).toLowerCase();
 
 return [{ json: {
@@ -93,6 +114,11 @@ return [{ json: {
   seleccionId: seleccionId,
   seleccionTitulo: seleccionTitulo,
   anuncio: !!ref,
+  campana: campana,
+  adId: adId,
+  campanaId: campana ? campana.id : '',
+  campanaPor: campana ? campana.por : '',
+  ctwaClid: ref ? planoAd(ref.ctwa_clid, 200) : '',
   origen: ref ? 'anuncio' : 'directo',
   // El contrato con los módulos comunes de medios.
   esMedioAudio: tipo === 'audio' && mediaId !== '',

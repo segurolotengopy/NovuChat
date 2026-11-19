@@ -172,6 +172,20 @@ function campanas(lista) {
   }
   return salida;
 }
+// Campanas con Ad ID (contrato del 17/11/2026): {id, texto, adIds, inicio, fin}. El texto puede ir vacio (campana solo por Ad ID). Van APARTE de `campanas`: esas siguen siendo
+// solo las que tienen texto, y asi una campana solo por Ad ID nunca llega a las promociones, los menus ni la lectura de imagenes: solo se VINCULA (`Interpretar entrada`).
+function campanasAdId(lista) {
+  const salida = [];
+  for (const c of (Array.isArray(lista) ? lista : [])) {
+    if (salida.length >= 20) break;
+    const o = objeto(c);
+    const adIds = (Array.isArray(o.adIds) ? o.adIds : []).map((a) => String(a)).filter((a) => /^[0-9]{8,32}$/.test(a)).slice(0, 5);
+    const id = vmLinea(o.id, 60);
+    if (!id || adIds.length === 0) continue;
+    salida.push({ id: id, texto: vmLinea(o.texto, 300), adIds: adIds, inicio: o.inicio === undefined ? '' : o.inicio, fin: o.fin === undefined ? '' : o.fin });
+  }
+  return salida;
+}
 
 // Los anuncios vigentes con titulares (solo viajan los aprobados y en curso): {id, titulares, angulo, producto}. A lo más 20, solo objetos; el reconocimiento por titular
 // lo hace el módulo común `anuncioPorTitular` (que vuelve a sanear cada campo). Sin anuncios, la lista va vacía y todo queda como antes.
@@ -185,7 +199,7 @@ if (codigo === 409) {
     estadoComercio: 'suspendido',
     mensajeComercioSuspendido: util(cuerpo.mensajeCortesia) || deBase.mensajeComercioSuspendido || RESPALDO.mensajeComercioSuspendido,
     configDeLaConsola: false, panelDice: 'no operativo', panelSinRespuesta: false,
-    catalogo: [], campanas: [], anuncios: [], aceptaDelivery: false, aceptaRetiroEnLocal: false, cobro: COBRO_APAGADO,
+    catalogo: [], campanas: [], campanasAdId: [], anuncios: [], aceptaDelivery: false, aceptaRetiroEnLocal: false, cobro: COBRO_APAGADO,
   });
 } else if (!(codigo === 200 && typeof cuerpo.tenantId === 'string')) {
   cfg = Object.assign({}, RESPALDO, deBase, deBaseDeReglas, deBasePlantillas, atencion, {
@@ -193,7 +207,7 @@ if (codigo === 409) {
     // Sin respuesta del panel NO se sabe qué modalidades acepta: no se fija ninguna. OJO: «falta = sí» valdría para el
     // servidor, pero aquí NO se puede leer como «hay delivery»: `Plan del turno` mira `panelSinRespuesta` y, con él en `true`,
     // ni ofrece ni afirma delivery ni confirma un pedido: deriva (aviso + botón).
-    catalogo: [], campanas: [], anuncios: [], cobro: COBRO_APAGADO,
+    catalogo: [], campanas: [], campanasAdId: [], anuncios: [], cobro: COBRO_APAGADO,
   });
 } else {
   const dn = objeto(cuerpo.datosDelNegocio);
@@ -239,6 +253,7 @@ if (codigo === 409) {
     // Sin enlace válido, '' y la confirmación de la reserva sale sin el botón «Ver ubicación».
     direccionMaps: vmEnlaceDeMapa(dn.direccionMaps),
     campanas: campanas(cuerpo.campanas),
+    campanasAdId: campanasAdId(cuerpo.campanas),
     anuncios: anuncios(cuerpo.anuncios),
     // Solo se apagan con `false`: la falta del dato es «sí», igual que en el servidor (`!== false`).
     aceptaDelivery: venta.aceptaDelivery !== false,

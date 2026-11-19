@@ -45,7 +45,10 @@ if (bien && !mejor && a.guardarPlanilla === true && a.despues) {
   })();
   const nuevoContacto = a.primeraVez === true && !(crm && Number.isFinite(crm[a.from]) && ahora - crm[a.from] < CH_OLVIDO_MS);
   // nuevoContacto NO tiene efecto en el miniCRM desde el 08/11/2026 (una fila por conversacion de 24 h: la decide el modulo crm con atencion.conversacionDesde); se conserva solo por compatibilidad.
-  prospectoSalida = Object.assign({}, a.despues, { nuevoContacto: nuevoContacto });
+  // El Ad ID y la campana de ESTE mensaje (17/11/2026), de `Interpretar entrada`: el modulo `crm` los escribe al crear la fila, solo si el mapa declara `idCampana`. Forma validada.
+  const ti = cnPrimero('Interpretar entrada') || {};
+  prospectoSalida = Object.assign({}, a.despues, { nuevoContacto: nuevoContacto },
+    /^[0-9]{1,40}$/.test(String(ti.adId || '')) ? { adId: String(ti.adId) } : {}, /^[A-Za-z0-9_-]{1,60}$/.test(String(ti.campanaId || '')) ? { campanaId: String(ti.campanaId) } : {});
 }
 // La marca de «último mensaje» se escribe aunque no se guarde la planilla, como siempre (una conversación en curso no es un contacto nuevo).
 if (bien && !mejor && a.conversacion === true && cnClaveValida(a.from)) {

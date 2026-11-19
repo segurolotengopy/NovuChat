@@ -87,8 +87,9 @@ export const CONFIG = {
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
     // Pedido de baja por texto (pieza común del core): `bjPideBaja` en «Decidir turno» y `bjTextoBaja` en «Armar mensajes».
     baja: ['../../src/core/conversacion/baja.js'],
-    // «Asistente virtual con IA» en todo texto que lo nombra (pieza común del core): lo usa `wlSeguro` en «Armar mensajes».
-    identidad: ['../../src/core/texto/identidad.js'],
+    // Sin la pieza común `identidad.js`: Walisuma dice que es una IA solo si le preguntan (decisión 2; excepción permanente en `admin/pruebas/core/ux/identidad.ts`).
+    // El anuncio por su TITULAR (`referral.headline`, campañas vigentes de la consola): la misma pieza común que usa «Preparar imagen», ahora también en «Decidir turno».
+    titular: ['../../src/core/medios/anuncio-por-titular.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
@@ -158,6 +159,18 @@ const FORMAS_CONFIG = {
   avisoPedidoPlantilla: /^([a-z0-9_]{1,100}|REEMPLAZAR_[A-Z0-9_]+)$/,
   avisoPedidoEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL|REEMPLAZAR_[A-Z0-9_]+)$/,
   avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
+  // La plantilla de RESPALDO (4 variables): se usa cuando la del aviso (10 variables) no está APPROVED («código para las dos», Andres 18/11/2026).
+  avisoRespaldoPlantilla: /^([a-z0-9_]{1,100}|REEMPLAZAR_[A-Z0-9_]+)$/,
+  avisoRespaldoEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL|REEMPLAZAR_[A-Z0-9_]+)$/,
+  // El horario de las tiendas (texto para el cliente) y su forma para el reloj de «fuera de horario» (días 0=domingo … 6=sábado; HH:MM de La Paz).
+  horarioTiendas: /^[\p{L}\p{N} :,.-]{1,80}$/u,
+  horarioDias: /^[0-6](,[0-6]){0,6}$/,
+  horarioApertura: /^([01]\d|2[0-3]):[0-5]\d$/,
+  horarioCierre: /^([01]\d|2[0-3]):[0-5]\d$/,
+  // El saludo precargado del botón de derivación. (Sin enlace del catálogo: decisión de Andres del 19/11/2026, «sin enlace por ahora».)
+  saludoBotonDerivacion: /^[\p{L}\p{N} ,.¿?¡!-]{1,120}$/u,
+  // Los anuncios de Meta por su `source_id`: «id:pieza,pieza|id:general|…». El id es un MARCADOR en el repositorio (repo público); las piezas, ids del catálogo.
+  anunciosMeta: /^((REEMPLAZAR_[A-Z0-9_]+|\d{6,25}):(general|[a-z0-9-]{1,60}(,[a-z0-9-]{1,60}){0,9}))(\|(REEMPLAZAR_[A-Z0-9_]+|\d{6,25}):(general|[a-z0-9-]{1,60}(,[a-z0-9-]{1,60}){0,9})){0,29}$/,
   // La planilla del miniCRM: el id de la hoja de Google (un marcador en el repositorio) y el nombre de su pestaña.
   planillaProspectosId: /^(REEMPLAZAR_[A-Z0-9_]+|[A-Za-z0-9_-]{25,100})$/,
   planillaProspectosHoja: /^[\p{L}\p{N}_ .-]{1,100}$/u,
@@ -471,7 +484,8 @@ export function guardiaDePublicacion({ flujo, datos }) {
   const cb = Array.isArray(lista) ? Object.fromEntries(lista.map((a) => [a.name, a.value])) : (datos && datos.configBase);
   if (!cb || typeof cb !== 'object') h.push('no se puede leer la configuración base');
   else {
-    if (cb.avisoPedidoEstado !== 'APPROVED') h.push('avisoPedidoEstado tiene que ser APPROVED (Meta aún no aprobó la plantilla del aviso de pedido)');
+    // «Código para las dos»: basta UNA aprobada, la del aviso (10 variables) o la de respaldo (4 variables).
+    if (cb.avisoPedidoEstado !== 'APPROVED' && cb.avisoRespaldoEstado !== 'APPROVED') h.push('ni avisoPedidoEstado ni avisoRespaldoEstado son APPROVED (Meta no aprobó ninguna plantilla del aviso de pedido)');
     if (!(Number(cb.envioGratisDesdeBs) > 0)) h.push('envioGratisDesdeBs sin declarar: el comercio todavía no dijo desde qué monto el envío es gratis');
   }
   for (const n of ['Guardar comprobante']) if (!nombres.has(n)) h.push(`falta el nodo «${n}»`);
@@ -507,7 +521,15 @@ export function armarWalisuma(proyecto, datos, v, origenReceptor = leerReceptorD
     Object.assign(plantilla.connections, JSON.parse(JSON.stringify(origenReceptor.conexiones)));
     plantilla.connections['Descartar repetidos'] = { main: [[{ node: 'Config base', type: 'main', index: 0 }]] };
   }
+  // El enmascarado de números del reporte entrante es la MISMA flecha `wlEnmascarar` de `src/lib/wl.js` (una sola fuente con el que va antes del modelo): se inyecta en la expresión.
+  const fuenteWl = readFileSync(join(AQUI, 'src/lib/wl.js'), 'utf8');
+  const flecha = /\nconst wlEnmascarar = (\(texto, conservarCelular\) => \{[\s\S]*?\n\});\n/.exec(fuenteWl);
+  if (!flecha) throw new Error(`${donde}: no se encontró \`wlEnmascarar\` en src/lib/wl.js`);
   for (const n of plantilla.nodes) {
+    if (n.name === 'Reportar mensaje (entrante)' && typeof n.parameters.jsonBody === 'string') {
+      if (!n.parameters.jsonBody.includes('@@wl-enmascarar@@')) throw new Error(`${donde}: «Reportar mensaje (entrante)» perdió la marca del enmascarado`);
+      n.parameters.jsonBody = n.parameters.jsonBody.replace('@@wl-enmascarar@@', () => flecha[1]);
+    }
     n.parameters = reemplazarTextos(n.parameters, datos, `${donde} · ${n.name}`);
     for (const c of Object.values(n.credentials || {})) {
       const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini|crm)$/.exec(String(c.name));

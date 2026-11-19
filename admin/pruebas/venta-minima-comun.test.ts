@@ -863,7 +863,7 @@ describe('Interpretar entrada', () => {
     });
     expect(Object.keys(t).sort()).toEqual([
       // 07/11/2026: `clasificarAntes` y `anuncioImagen` (el arte de una campaña con un QR pendiente, punto B).
-      'ahoraMs', 'anuncioImagen', 'boton', 'clasificarAntes', 'comprobanteCruzado', 'comprobanteSimulado', 'esAudio', 'esComprobante', 'esPosibleAnuncio', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
+      'adId', 'ahoraMs', 'anuncio', 'anuncioImagen', 'boton', 'campana', 'campanaId', 'campanaPor', 'clasificarAntes', 'comprobanteCruzado', 'comprobanteSimulado', 'esAudio', 'esComprobante', 'esPosibleAnuncio', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
       'phoneNumberId', 'prueba', 'referral', 'texto', 'textoReporte', 'tipo', 'ubicacion',
     ]);
   });

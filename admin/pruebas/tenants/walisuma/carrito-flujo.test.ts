@@ -46,7 +46,7 @@ describe('lo que propone el modelo se valida contra el catálogo', () => {
     const m = crear({ modeloDice: modelo('Son Bs 1 en total, un precio especial.', { lineas: [{ id: BIL, cantidad: 1 }] }) });
     const t = hablar(m, ANA, mTexto('una billetera'));
     expect(textos(t).join(' ')).not.toMatch(/Bs 1 en total|precio especial/);
-    expect(textos(t)[0]).toMatch(/Cuéntame un poco más/);
+    expect(textos(t)[0]).toMatch(/Cuéntenos un poco más/);
   });
   it('el modelo puede citar el precio de una pieza tal como figura en el catálogo', () => {
     const m = crear({ modeloDice: modelo('La billetera de cuero cuesta Bs 450. ¿Cuántas te gustaría?') });
@@ -89,7 +89,7 @@ describe('del pedido al QR', () => {
     expect(t.mensajes[0]?.cuerpo).toMatch(/2 × Billetera de cuero — Bs 900/);
     expect(t.mensajes[0]?.cuerpo).toMatch(/Total: Bs 900/);
     // Recojo en tienda: sin frase de costo de envío; sale la dirección de la tienda (dato del comercio).
-    expect(t.mensajes[0]?.cuerpo).toMatch(/Recoges tu pedido en: Calle Claudio Aliaga 1231/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/Recoge su pedido en: Calle Claudio Aliaga 1231/);
     expect(t.mensajes[0]?.cuerpo).not.toMatch(/envío/i);
     expect(t.mensajes[1]?.tipo).toBe('image');
     expect((t.mensajes[1]?.payload['image'] as any).id).toBe(MEDIA_QR); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -135,7 +135,7 @@ describe('del pedido al QR', () => {
     const cancel = t.llamadas.ingesta.find((x) => x['evento'] === 'cobro_cancelado');
     expect(cancel).toBeTruthy();
     expect(t.mensajes.filter((x) => x.tipo === 'image')).toHaveLength(1);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/Actualicé tu pedido/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/Actualizamos su pedido/);
     expect(t.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado')).toMatchObject({ monto: 900 });
     expect(fichas(m)[ANA].pedidos).toBe(2);
   });
@@ -171,7 +171,7 @@ describe('del pedido al QR', () => {
     expect(t.mensajes.every((x) => x.tipo !== 'image')).toBe(true);
     expect(t.mensajes).toHaveLength(1);
     expect(t.mensajes[0]?.payload['interactive']).toBeTruthy();
-    expect(t.mensajes[0]?.cuerpo).toMatch(/no pagues con ese QR/i);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/no pague con ese QR/i);
     expect(t.mensajes[0]?.cuerpo).not.toMatch(/ya avis/i);
     // El pedido nuevo se conserva en la ficha (no se pierde por la falla del cierre).
     expect(fichas(m)[ANA].carrito[0].cantidad).toBe(2);
@@ -183,7 +183,7 @@ describe('del pedido al QR', () => {
     m.dobles['Traer configuración'] = () => panelConQr(450);
     const t = hablar(m, ANA, mTexto('quiero pagar ya'));
     expect(t.mensajes.every((x) => x.tipo !== 'image')).toBe(true);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/Ya tienes un QR abierto por Bs 450/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/Ya tiene un QR abierto por Bs 450/);
   });
   it('dos teléfonos intercalados no comparten carrito', () => {
     const m = crear({ modeloDice: (ll) => (/bufanda/.test(ultimo(ll)) ? pide([{ id: BUF, cantidad: 1 }]) : pide([{ id: BIL, cantidad: 3 }])) });

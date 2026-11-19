@@ -22,8 +22,11 @@ export const BETO = '59100000022';
 export const EXTRANJERO = '5491100000033'; // prefijo 54: fuera de los prefijos permitidos
 export const REC = '59100000031'; // recepción
 export const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
-export const SUSPENDIDO = 'En este momento no podemos atenderte por este medio. Gracias por escribirnos.';
+export const SUSPENDIDO = 'En este momento no podemos atenderle por este medio. Gracias por escribirnos.';
 
+// ------------------------------------------------------------------------------ el flujo por omisión
+// Los contratos de PR-K (ubicación, anuncio, banco de origen y operación) ya están en el código común fusionado: el mundo corre el JSON versionado tal cual, sin simulaciones.
+export const CON_CONTRATOS = PRODUCCION;
 // ------------------------------------------------------------------------------ mensajes entrantes
 let seq = 0;
 export const valorMeta = (msg: J, from: string, op: { wamid?: string; phoneId?: string; contacto?: string } = {}): J => ({
@@ -65,6 +68,8 @@ export interface Opciones {
   base?: Record<string, unknown>;
   /** Lo que devuelven los medios. */
   medio?: { bytes?: number; url?: string; mime?: string; transcripcion?: string | null; clasificacion?: J | null };
+  /** El reloj del mundo (por omisión AHORA: lunes 05/10/2026, 10:00 en La Paz). */
+  ahoraMs?: number;
 }
 /** El catálogo de PRUEBA (no es el real): piezas con precio, un tapiz SIN precio (a consultar) y un licor apagado. */
 export const CATALOGO = [
@@ -92,6 +97,18 @@ export const panelConQr = (monto: number, extra: J = {}): { statusCode: number; 
 export const panelSinCobro = (): { statusCode: number; body: J } => { const p = panelOk(); const { cobroReal: _c, cobro: _o, ...resto } = p.body as J; return { statusCode: 200, body: resto }; };
 export const RUTA_GUARDADA = { statusCode: 200, body: { ruta: 'tenants/walisuma/comprobantes/2026-10-05/abc_1.jpg' } };
 export const COTEJO_VALIDO = { statusCode: 200, body: { estado: 'valido', importe: 45, avisarComercio: true } };
+/**
+ * EL CONTRATO DEL COTEJO DE PR-S (decisión 8, con `config/pedidos.montoExacto === true`), SIMULADO: un monto distinto responde `reintentar` + `monto_distinto` con
+ * `montoLeido`, `montoEsperado`, `diferencia` (leído − esperado, con signo, 2 decimales), `intentos` e `intentosRestantes`; el 3.er intento pasa a `en_revision`;
+ * el cierre válido trae `codigoPedido` (WAL-AAMMDD-NNN).
+ */
+export const cotejoMontoDistinto = (leido: number, esperado: number, intentos = 1): { statusCode: number; body: J } => ({
+  statusCode: 200, body: { estado: 'reintentar', motivo: 'monto_distinto', importe: esperado, montoLeido: leido, montoEsperado: esperado, diferencia: Math.round((leido - esperado) * 100) / 100, intentos, intentosRestantes: Math.max(0, 3 - intentos) },
+});
+export const cotejoEnRevision = (leido: number, esperado: number): { statusCode: number; body: J } => ({
+  statusCode: 200, body: { estado: 'en_revision', motivo: 'monto_distinto', importe: esperado, montoLeido: leido, montoEsperado: esperado, diferencia: Math.round((leido - esperado) * 100) / 100, intentos: 3, intentosRestantes: 0, avisarComercio: true },
+});
+export const cotejoValidoConCodigo = (importe: number, codigoPedido = 'WAL-261005-001'): { statusCode: number; body: J } => ({ statusCode: 200, body: { estado: 'valido', importe, avisarComercio: true, codigoPedido } });
 export const COMPROBANTE = { categoria: 'comprobante', texto: 'Transferencia', monto: '450.00', cuentaDestino: '1*****9', nombreCuenta: 'WALISUMA', fecha: '05/10/2026', hora: '10:00', banco: 'Banco' };
 /** Lo que contesta el modelo (JSON de salida): texto, líneas, entrega y quiereHablar. */
 export const modelo = (texto: string, extra: J = {}): J => ({ texto, lineas: [], entrega: {}, facturacion: {}, quiereHablar: false, ...extra });
@@ -142,13 +159,13 @@ export function crear(o: Opciones = {}): Mundo {
     'Enviar respaldo': enviar('Enviar respaldo'),
   };
   return crearMundo({
-    flujo: o.flujo ?? PRODUCCION,
+    flujo: o.flujo ?? CON_CONTRATOS,
     dobles,
     roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Avisar al servidor'] },
-    ahoraMs: AHORA,
+    ahoraMs: o.ahoraMs ?? AHORA,
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`, nombreNegocio: 'Tienda de prueba',
-      contactoAviso: REC, avisoPedidoPlantilla: 'pedido_registrado', avisoPedidoEstado: 'APPROVED', avisoPlantillaIdioma: 'es', modosDeEntrega: 'Envío en La Paz, Envío en Santa Cruz, Envío nacional, Recojo en tienda', envioGratisDesdeBs: 500,
+      contactoAviso: REC, avisoPedidoPlantilla: 'aviso_pedido_equipo', avisoPedidoEstado: 'APPROVED', avisoRespaldoPlantilla: 'pedido_registrado', avisoRespaldoEstado: 'APPROVED', avisoPlantillaIdioma: 'es', modosDeEntrega: 'Envío en La Paz, Envío en Santa Cruz, Envío nacional, Recojo en tienda', envioGratisDesdeBs: 500,
       tiendaLaPaz: 'Calle Claudio Aliaga 1231, San Miguel', tiendaSantaCruz: 'Av. Marcelo Terceros (3er anillo externo) esq. Flamboyanos',
       ...(o.base ?? {}),
     },

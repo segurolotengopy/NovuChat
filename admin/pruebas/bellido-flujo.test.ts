@@ -1082,7 +1082,7 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
         const ayer = { id: 'vieja', texto: 'Promo de agosto', inicio: '2026-08-01T00:00:00-04:00', fin: new Date(Date.now() - HORA).toISOString() };
         const futura = { id: 'futura', texto: 'Promo de diciembre', inicio: new Date(Date.now() + 48 * HORA).toISOString(), fin: new Date(Date.now() + 96 * HORA).toISOString() };
         const activas = JSON.parse(conCampanas([vigente(TEXTO, 'buena'), ayer, futura, { id: 'rota', texto: '' }]));
-        expect(activas).toEqual([{ id: 'buena', texto: TEXTO }]);
+        expect(activas).toEqual([{ id: 'buena', texto: TEXTO, adIds: [] }]);
         const caido = ejecutar(codigo(flujo, 'Config del negocio'), [{ statusCode: 503, body: {} }], { 'Config base': [configBase(flujo)] })[0]!;
         expect(caido['campanasActivas'] ?? '').toBe('');
       });
@@ -1090,7 +1090,7 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       it('el texto de la campaña se reconoce sin mayúsculas, tildes, signos ni emojis; una palabra de más ya no', () => {
         const activas = conCampanas([vigente(TEXTO, 'bebe')]);
         for (const escrito of [TEXTO, 'hola quiero agendar el control de mi bebe', '  HOLA,  QUIERO AGENDAR EL CONTROL DE MI BEBÉ!!  ']) {
-          expect(entra({ type: 'text', text: { body: escrito } }, activas)['campana'], escrito).toEqual({ id: 'bebe', texto: TEXTO });
+          expect(entra({ type: 'text', text: { body: escrito } }, activas)['campana'], escrito).toEqual({ id: 'bebe', texto: TEXTO, por: 'texto' });
         }
         for (const escrito of ['Hola, quiero agendar el control de mi bebé mañana', 'quiero agendar el control de mi bebé']) {
           expect(entra({ type: 'text', text: { body: escrito } }, activas)['campana'], escrito).toBeNull();
@@ -1124,6 +1124,31 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
         expect(r2['accion']).toBe('agente');
         expect(String(r2['contextoTurno'])).toContain('Ya te presentaste');
         expect(String(r2['contextoTurno'])).not.toContain('Llegó por una campaña');
+      });
+
+      it('Ad ID (17/11/2026): una campaña solo por Ad ID (sin texto) NO salta el menú ni marca la bienvenida; Bellido no cambia', () => {
+        const AD = '100000000000001';
+        const solo = { ...vigente('x', 'solo'), texto: '', adIds: [AD] };
+        const sd: J = {};
+        const e = entra({ type: 'text', text: { body: 'hola' }, referral: { source_type: 'ad', source_id: AD } }, conCampanas([solo]));
+        expect(e['campana']).toMatchObject({ id: 'solo', texto: '', por: 'adId' }); // Normalizar la reconoce; el Estado de Bellido no la cuenta (texto vacío)
+        const r = turno({ userInput: e['userInput'], campana: e['campana'] }, sd);
+        expect(r['accion']).not.toBe('agente');
+        expect(String(r['contextoTurno'] ?? '')).not.toContain('campaña');
+        expect(sd['conversaciones']?.[TELEFONO]?.['menu']).not.toBe(true);
+      });
+
+      it('Ad ID (17/11/2026): una campaña CON texto reconocida por Ad ID salta el menú como la del texto y dice que llegó desde un anuncio', () => {
+        const AD = '100000000000001';
+        const sd: J = {};
+        const e = entra({ type: 'text', text: { body: 'hola' }, referral: { source_type: 'ad', source_id: AD } }, conCampanas([{ ...vigente(TEXTO, 'cb'), adIds: [AD] }]));
+        expect(e['campana']).toMatchObject({ id: 'cb', por: 'adId' });
+        const r = turno({ userInput: e['userInput'], campana: e['campana'] }, sd);
+        expect(r['accion']).toBe('agente');
+        expect(String(r['contextoTurno'])).toContain('preséntate en una línea');
+        expect(String(r['contextoTurno'])).toContain('llegó desde un anuncio de la campaña «' + TEXTO);
+        expect(String(r['contextoTurno'])).not.toContain('su mensaje es el texto de la campaña');
+        expect(sd['conversaciones'][TELEFONO]['menu']).toBe(true);
       });
 
       it('si el texto de la campaña ES una opción del menú, entra directo a esa rama', () => {

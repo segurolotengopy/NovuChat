@@ -16,3 +16,4 @@
 - **Fotos:** no van en el repositorio (son de un tercero). Una por ítem, `<id>.webp`, recortadas del PDF; se suben con `cargar-fotos-catalogo.mjs` y el OK de Andres.
 - **Cargar** (solo con el comercio dado de alta y el botón de Andres): `cargar-negocio.mjs --proyecto <id> --tenant walisuma --archivo scripts/datos/walisuma/catalogo.json` en seco y luego con `--aplicar`.
 - **Prueba:** `pruebas/tenants/walisuma/catalogo.test.ts` pasa cada ítem por el normalizador del servidor y niega los casos malos.
+- **Fase 1 (18/11/2026):** las piezas con varios tonos listan en su descripción «Colores del catálogo 2026: …» (nombres leídos por NovuChat de los círculos del PDF, págs. 3 a 5; **a confirmar con Walisuma**); «Tapiz Jalq'a» con apóstrofo (su id pasa a `tapiz-jalq-a-61-x-34-cm`). Precios del MD: Chuspa 453, Bandolera Peki 480, Cartera sobre 759. Licores y pastillas de coca siguen apagados. El catálogo 2024 no se ofrece.

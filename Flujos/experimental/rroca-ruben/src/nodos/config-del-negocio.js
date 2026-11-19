@@ -80,8 +80,21 @@ if (codigo === 409) {
   // LOS ANUNCIOS (campañas vigentes de la Consola, con sus titulares, su ángulo y su producto): el módulo común `anuncio-por-titular.js` (en «Preparar imagen») decide por CÓDIGO si la imagen de un cliente es de uno de ellos.
   // A lo más 20; solo objetos (lo que no lo es se descarta). Sin anuncios en la respuesta, la lista va vacía y todo queda como antes.
   const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === 'object' && !Array.isArray(a)).slice(0, 20) : [];
+  // EL VÍNCULO CON LOS ANUNCIOS (Ad ID y texto): solo los vigentes, con sus Ad ID (hasta 5, 8 a 32 dígitos); `Normalizar entrada` los compara. Sin `campanas` o con el panel caído, ninguno.
+  const adIdsDe = (k) => (Array.isArray(k.adIds) ? k.adIds.map((a) => String(a)).filter((a) => /^[0-9]{8,32}$/.test(a)).slice(0, 5) : []);
+  const campanasActivas = JSON.stringify((Array.isArray(cuerpo.campanas) ? cuerpo.campanas : [])
+    .map((k) => (k && typeof k === 'object' ? { k, texto: typeof k.texto === 'string' && k.texto.trim() !== '' && k.texto.length <= 300 ? k.texto.trim() : '', adIds: adIdsDe(k) } : null))
+    .filter((x) => x && (x.texto !== '' || x.adIds.length > 0))
+    .filter(({ k }) => {
+      const desde = Date.parse(String(k.inicio || ''));
+      const hasta = Date.parse(String(k.fin || ''));
+      const ahora = Date.now();
+      return Number.isFinite(desde) && Number.isFinite(hasta) && desde <= ahora && ahora < hasta;
+    })
+    .slice(0, 10)
+    .map((x) => ({ id: String(x.k.id || '').slice(0, 60), texto: x.texto, adIds: x.adIds })));
   cfg = {
-    ...deBase, ...deLaConsola, ...atencion, anuncios,
+    ...deBase, ...deLaConsola, ...atencion, anuncios, campanasActivas,
     estadoComercio: estadoDeLaConsola === 'activo' ? 'operativo' : (estadoDeLaConsola ? 'suspendido' : 'operativo'),
     configDeLaConsola: true,
   };
