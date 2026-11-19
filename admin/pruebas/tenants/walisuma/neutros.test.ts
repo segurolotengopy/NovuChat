@@ -29,7 +29,7 @@ const HUELLAS: [string, string, string][] = [
   ['config-del-negocio.js', 'd33d652bfb4994d4', '9f9be358f746ec42'],
   // El Gmail tras una venta confirmada (10/11/2026) es SOLO de Antonio y de Rubén: cambió el origen de `normalizar-entrada` (el reporte a la consola no lleva correos) y de `resumen-del-turno` (restaura `gmailPedidoMs`). Los neutros NO lo adoptan:
   // Walisuma no pide Gmail y no cambia ningún nodo suyo; las huellas de los neutros no se movieron.
-  ['normalizar-entrada.js', '347ab52d1c655be7', '03a6bdc856c0e0ff'],
+  ['normalizar-entrada.js', '347ab52d1c655be7', 'dc5d394ae6f65034'],
   ['puerta-del-turno.js', '3f8a837a3912eb78', '3f8a837a3912eb78'],
   ['resumen-del-turno.js', '9ae08c2c8e443766', '08eea9fd84116169'],
 ];

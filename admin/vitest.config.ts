@@ -68,6 +68,7 @@ export const SUITES_PURAS = [
   'pruebas/core/origen-chat-congelado.test.ts',
   'pruebas/venta-digital-base.test.ts',
   'pruebas/venta-digital-carrito-moneda.test.ts',
+  'pruebas/core/normalizar-entrada-venta-digital.test.ts',
   'pruebas/venta-digital-catalogo-externo.test.ts',
   'pruebas/venta-digital-gmail.test.ts',
   'pruebas/venta-casa-bermejo-lib.test.ts',

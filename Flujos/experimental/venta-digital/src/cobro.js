@@ -185,8 +185,8 @@ function cbCampoLeido(o, k, max) {
 }
 
 // `respGemini` = el item que devolvió el nodo de Gemini (o el cuerpo de
-// `generateContent`). Salen SEIS campos y `legible`; nada más. NO compara nada:
-// compara el servidor, contra el total que se cotizó con el QR.
+// `generateContent`). Salen `leido` (SEIS campos de texto corto; `banco` es el de destino), `legible`, y aparte `bancoOrigen` y `transaccion` (el banco desde el que se pagó y el número de
+// operación), que existen siempre, vacíos si el comprobante no los muestra, siempre texto (un número se vuelve cadena), recortados a 40 y sin controles. NO compara nada: compara el servidor, contra el total que se cotizó con el QR.
 function cbLectura(respGemini) {
   const objeto = cbObjetoUnico(cbTextoDeGemini(respGemini)) || {};
   const leido = {
@@ -198,7 +198,10 @@ function cbLectura(respGemini) {
     banco: cbCampoLeido(objeto, 'banco', 80),
   };
   const legible = String(leido.monto) !== '' || String(leido.cuentaDestino) !== '';
-  return { legible: legible, leido: leido };
+  // Fuera de `leido` a propósito: `leido` es lo que viaja al servidor para el cotejo y su forma no cambia.
+  const bancoOrigen = String(cbCampoLeido(objeto, 'bancoOrigen', 40)).slice(0, 40);
+  const transaccion = String(cbCampoLeido(objeto, 'transaccion', 40)).slice(0, 40);
+  return { legible: legible, leido: leido, bancoOrigen: bancoOrigen, transaccion: transaccion };
 }
 
 // La respuesta completa de un HTTP (`{statusCode, body}`) con el cuerpo ya como objeto ({} si no se pudo leer).
