@@ -24,6 +24,10 @@ const RROCA = join(REPO, 'Flujos/experimental/venta-digital/src');
 const VM = join(REPO, 'Flujos/experimental/venta-minima/src/lib');
 const RAMA = 'origin/cartera/qtaco-visor-comprobantes';
 
+// DIVERGENCIA DECLARADA (PR-K, 18/11/2026): `cbLectura` ya NO es idéntica a su origen: devuelve además `bancoOrigen` y `transaccion` (fuera de `leido`, que conserva sus seis campos). Se prueba en `venta-digital-base.test.ts`.
+const DIVERGENTES = ['cbLectura'];
+// Su huella PROPIA (sha-256 de la declaración tal como está en la base común): si cambia, la prueba obliga a decidir. No se compara con venta-minima porque diverge a propósito.
+const HASH_DIVERGENTES: Record<string, string> = { cbLectura: '6783579b 75867ec6 65f6ec27 feb418ba 4313b1e9 e2f40086 df507792 6b8b310f' };
 const HASH_COBRO: Record<string, string> = {
   CB_PROHIBIDAS: '6eb20ca8 2eb48d4f 3d675979 ae617106 75db3911 102654f5 13d36474 ab1f135b',
   CB_TOTAL_MAXIMO: '8add9981 9246c1e1 b4f5a59c 386f0b8e b2100c4c d1632597 1e3645e6 82a015dd',
@@ -42,7 +46,6 @@ const HASH_COBRO: Record<string, string> = {
   cbTextoDeGemini: '0b70c470 2fe5216c 9430a403 0786c80e 7ee99c9b 69092c3d 14c7e847 26f4b160',
   cbObjetoUnico: '69055bc1 d15e7ac1 ffba80c0 23b2abac 2d49682f 77804729 8022e8d1 789e75d0',
   cbCampoLeido: 'd1429319 1e34263d 0c3a9814 4fa62701 1427edb7 2b8eb212 df9277b8 7efb4d5e',
-  cbLectura: 'e80cbbbc 06540526 0c55513d 30c3c8af 07f18324 728d2075 71d45797 4a8afa3d',
   cbCuerpoDe: '64fe1307 952b4d3c 53482080 dd04dd86 96081b61 01b70c4c 7e899a5c 35c3c9bb',
   cbRutaGuardada: 'c5920dc9 bd12f797 6a6ef140 80c28d51 2974084f 01f84a10 c5940b6d 1d0842d2',
   CB_ESTADOS_VENTA: '3dd13d2d 8ed6d653 cde28229 84823c9c 834312a6 eef47c10 3db4132a c024e2b6',
@@ -120,17 +123,26 @@ function suite(archivo: string, hashes: Record<string, string>): void {
     }
     it('no hay declaraciones de más: toda `function` o `const` de nivel superior de la copia está en la lista fijada', () => {
       const nombres = [...propio.matchAll(/^(?:function|const) ([A-Za-z_][A-Za-z0-9_]*)/gm)].map((m) => m[1]!);
-      expect(nombres.filter((n) => !(n in hashes))).toEqual([]);
+      expect(nombres.filter((n) => !(n in hashes) && !(archivo === 'cobro.js' && DIVERGENTES.includes(n)))).toEqual([]);
     });
   });
 }
+describe('HUECOS del cobro: las declaraciones que divergen a propósito del origen tienen huella propia', () => {
+  for (const [nombre, hash] of Object.entries(HASH_DIVERGENTES)) {
+    it(nombre + ': su huella propia', () => {
+      const d = declaracion(leer(join(RROCA, 'cobro.js')), nombre);
+      expect(d, 'la base no trae ' + nombre).not.toBeNull();
+      expect(sha(d!), nombre + ' cambió: decidir y fijar la huella nueva').toBe(hash.replace(/ /g, ''));
+    });
+  }
+});
 suite('cobro.js', HASH_COBRO);
 suite('avisos.js', HASH_AVISOS);
 
 describe('HUECOS del cobro y los avisos: la copia funciona sola (sin `$`, sin red, sin reloj) y hace lo que se espera', () => {
   const cargar = (archivo: string): Record<string, unknown> => {
     // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-    const fn = vm.compileFunction(leer(join(RROCA, archivo)) + '\nreturn { ' + Object.keys(archivo === 'cobro.js' ? HASH_COBRO : HASH_AVISOS).join(', ') + ' };');
+    const fn = vm.compileFunction(leer(join(RROCA, archivo)) + '\nreturn { ' + [...Object.keys(archivo === 'cobro.js' ? HASH_COBRO : HASH_AVISOS), ...(archivo === 'cobro.js' ? DIVERGENTES : [])].join(', ') + ' };');
     return fn() as Record<string, unknown>;
   };
   it('cobro.js: `cbMonto` formatea como Bolivia y `cbTotalValido` solo acepta un número del código', () => {
