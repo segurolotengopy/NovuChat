@@ -8,12 +8,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Flujo, J } from '../../lib/flujo';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { ES_RELE } from '../../../../Flujos/experimental/rroca-emma/construir.mjs';
+import { ES_RELE } from '../../../../Flujos/clientes/rroca-emma/construir.mjs';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { doblesDelGuardado } from '../../lib/doble-guardado';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-export const CARPETA = join(AQUI, '../../../../Flujos/experimental/rroca-emma');
+export const CARPETA = join(AQUI, '../../../../Flujos/clientes/rroca-emma');
 export const CARPETA_DE_DATOS = join(AQUI, '../../../scripts/datos/rroca-emma');
 export const leerFlujo = (a: string): Flujo => JSON.parse(readFileSync(join(CARPETA, a), 'utf8')) as Flujo;
 export const PRODUCCION = leerFlujo('rroca-emma.json');

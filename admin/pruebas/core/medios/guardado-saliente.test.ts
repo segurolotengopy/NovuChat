@@ -294,7 +294,7 @@ const CON_RAMA: Array<{ archivo: string; vias: ViaDelGuardadoSaliente[]; reporte
   ...['walisuma.json', 'walisuma.prueba.json'].map((a) => ({ archivo: `clientes/walisuma/${a}`, vias: ['media'] as ViaDelGuardadoSaliente[] })),
   ...['casa-bermejo.json', 'casa-bermejo.prueba.json'].map((a) => ({ archivo: `clientes/casa-bermejo/${a}`, vias: ['media'] as ViaDelGuardadoSaliente[] })),
   // Bloque 2b (16/11/2026): las FOTOS de catálogo de Evy y Emma salen por «Enviar aviso» y se reportan SIN CONTEO desde «Reportar foto (saliente)» (reporte-sin-conteo.mjs).
-  ...['clientes/rroca-evy/rroca-evy.json', 'clientes/rroca-evy/rroca-evy.prueba.json', 'clientes/rroca-evy/rroca-evy.ensayo-demo-a.json', 'experimental/rroca-emma/rroca-emma.json', 'experimental/rroca-emma/rroca-emma.prueba.json']
+  ...['clientes/rroca-evy/rroca-evy.json', 'clientes/rroca-evy/rroca-evy.prueba.json', 'clientes/rroca-evy/rroca-evy.ensayo-demo-a.json', 'clientes/rroca-emma/rroca-emma.json', 'clientes/rroca-emma/rroca-emma.prueba.json']
     .map((archivo) => ({ archivo, vias: ['media'] as ViaDelGuardadoSaliente[], reportero: 'Reportar foto (saliente)', envio: 'Enviar aviso' })),
   { archivo: 'demo-a-agendamiento.json', vias: ['enlace'], reportero: 'Reportar QR (saliente)', envio: 'Enviar QR de la seña' },
   { archivo: 'demo-b-venta-cobro.json', vias: ['enlace', 'media'], reportero: 'Reportar QR (saliente)', envio: 'Enviar QR de cobro' },

@@ -4,9 +4,9 @@
  * construir.mjs — arma los JSON del flujo NUEVO de la Dra. Emma (tenant rroca-emma) desde la plantilla, el prompt versionado y los datos
  * =============================================================================
  *
- *   node Flujos/experimental/rroca-emma/construir.mjs               escribe rroca-emma.json y rroca-emma.prueba.json
- *   node Flujos/experimental/rroca-emma/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
- *   node Flujos/experimental/rroca-emma/construir.mjs --publicable [--flujo <json>] [--datos <json>] [--negocio <json>] [--etapa crear|prueba|encender]
+ *   node Flujos/clientes/rroca-emma/construir.mjs               escribe rroca-emma.json y rroca-emma.prueba.json
+ *   node Flujos/clientes/rroca-emma/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
+ *   node Flujos/clientes/rroca-emma/construir.mjs --publicable [--flujo <json>] [--datos <json>] [--negocio <json>] [--etapa crear|prueba|encender]
  *                                                                  GUARDIA DE PUBLICACIÓN: no escribe; sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal
  *   (cualquier otro argumento se rechaza: la ayuda no existe como opción, para que nada escriba por error)
  *
@@ -32,7 +32,7 @@ import { closeSync, constants, openSync, readFileSync, writeFileSync } from 'nod
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
-import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
+import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../../experimental/comun-sin-agente/construir-crm.mjs';
 import { hallazgosDelEnvioRele, injertar, MARCADOR_URL_DEL_RELE, parametrosDeMensajeRele, PREFIJO_CREDENCIAL_RELE } from '../../src/core/sin-agente/envio.mjs';
 import { hallazgosDelReporteSinConteo, injertarReporteSinConteo } from '../../src/core/sin-agente/reporte-sin-conteo.mjs';
 import { hallazgosDelGuardadoSaliente, injertarGuardadoSaliente, NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE, URL_DESCARGA_SALIENTE } from '../../src/core/sin-agente/guardado-saliente.mjs';
@@ -75,7 +75,7 @@ export const CONFIG = {
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
-    avisos: ['../venta-minima/src/lib/avisos.js'],
+    avisos: ['../../experimental/venta-minima/src/lib/avisos.js'],
     prompt: ['src/lib/prompt-vacio.js'],
     'turno-carga': ['../../src/core/sin-agente/turno/carga-de-entrada.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],

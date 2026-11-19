@@ -29,7 +29,7 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | recordatorio-bellido.v1.json | experimental/recordatorio-bellido | demo | ninguno | M1 M2 M7 | por asignar (Principal) | pendiente | 64289535-4c20a3b1-19b0ab05-b8f97460-a209e62a-b87b132a-ae0d06ff-3c9bb15a |
 | rescate-22h.rroca-ruben.json | experimental/rescate-22h | sin publicar | construir.mjs --todos | M1 | por asignar (Principal) | pendiente | 30961db8-930cda05-5d3d5992-9d1c66e1-a061bf32-8d1918ac-9edc5daa-62dda067 |
 | rroca-antonio.json | clientes/rroca-antonio | vivo | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | 77529be4-8575f0fb-9f85a4e4-e0baa494-e7275f48-1e7e1d09-850dada6-54f26a6f |
-| rroca-emma.json | experimental/rroca-emma | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | c45af95e-7c46dc39-4ab8942e-7f0bd39f-aecf984d-5b450d8c-7f93bad9-abc23eff |
+| rroca-emma.json | clientes/rroca-emma | vivo | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | c45af95e-7c46dc39-4ab8942e-7f0bd39f-aecf984d-5b450d8c-7f93bad9-abc23eff |
 | rroca-evy.json | clientes/rroca-evy | vivo | construir.mjs | M4 M6 (excepción declarada) | Rearquitectura | mudado | ad062b5d-e9186f87-4728a1ed-7ff6b549-da879cbf-5413c7d6-f2a767e7-d916cdb1 |
 | rroca-ruben.json | experimental/rroca-ruben | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 53df5b74-f1a8f11e-819d9b95-07f04f00-500a750a-3cb65091-e41b073e-5e7b077e |
 | venta-minima.qtaco-3727.json | experimental/venta-minima | sin publicar | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 9d588c78-bc95f0ce-6aa3ad63-b820c6c8-894e0fa5-a3493cb8-f2667359-a2d6bef3 |

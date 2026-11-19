@@ -10,11 +10,11 @@ import { describe, expect, it } from 'vitest';
 import type { Flujo } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { CANAL_DE_ENVIO, CONFIG, ES_RELE, TOPE_DE_NODOS, guardias, hallazgosDelPrompt, leerPrompt, problemasDeReferencias } from '../../../../Flujos/experimental/rroca-emma/construir.mjs';
+import { CANAL_DE_ENVIO, CONFIG, ES_RELE, TOPE_DE_NODOS, guardias, hallazgosDelPrompt, leerPrompt, problemasDeReferencias } from '../../../../Flujos/clientes/rroca-emma/construir.mjs';
 import { PRODUCCION, PRUEBA } from './mundo';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
-const CARPETA = join(REPO, 'Flujos/experimental/rroca-emma');
+const CARPETA = join(REPO, 'Flujos/clientes/rroca-emma');
 const leer = (r: string): string => readFileSync(join(REPO, r), 'utf8');
 const copia = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const g = (v: 'produccion' | 'prueba', f: Flujo): string[] => guardias(v, f) as string[];
@@ -177,11 +177,11 @@ describe('cada $(\'…\') nombra un nodo que existe y es su antecesor', () => {
 
 describe('las copias declaradas son iguales a su fuente', () => {
   it('«Carga de entrada» es la misma de las doctoras, byte a byte', () => {
-    expect(leer('Flujos/experimental/rroca-emma/src/nodos/carga-de-entrada.js')).toBe(leer('Flujos/experimental/doctoras/src/nodos/carga-de-entrada.js'));
+    expect(leer('Flujos/clientes/rroca-emma/src/nodos/carga-de-entrada.js')).toBe(leer('Flujos/experimental/doctoras/src/nodos/carga-de-entrada.js'));
   });
   it('«_comun.js» solo cambia la clave de la ficha y los comentarios', () => {
     const norm = (t: string): string => t.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n').replace(/sd\.doctoras/g, 'sd.emma');
-    expect(norm(leer('Flujos/experimental/rroca-emma/src/nodos/_comun.js'))).toBe(norm(leer('Flujos/experimental/doctoras/src/nodos/_comun.js')));
+    expect(norm(leer('Flujos/clientes/rroca-emma/src/nodos/_comun.js'))).toBe(norm(leer('Flujos/experimental/doctoras/src/nodos/_comun.js')));
   });
   const expr = (fuente: string, nombre: string): string => {
     const i = fuente.indexOf(`const ${nombre} = `);
@@ -189,15 +189,15 @@ describe('las copias declaradas son iguales a su fuente', () => {
     return fuente.slice(i + `const ${nombre} = `.length, fuente.indexOf('\n', i));
   };
   it('NIEGA_IA es la de Rubén (que es la de chat-novuchat)', () => {
-    expect(expr(leer('Flujos/experimental/rroca-emma/src/lib/ev.js'), 'EV_NIEGA_IA')).toBe(expr(leer('Flujos/experimental/rroca-ruben/src/lib/rr.js'), 'RR_NIEGA_IA'));
+    expect(expr(leer('Flujos/clientes/rroca-emma/src/lib/ev.js'), 'EV_NIEGA_IA')).toBe(expr(leer('Flujos/experimental/rroca-ruben/src/lib/rr.js'), 'RR_NIEGA_IA'));
   });
   it('la expresión de riesgo es la de las doctoras (que es la de Antonio)', () => {
     const cuerpo = (f: string, n: string): string => f.slice(f.indexOf(`const ${n} = new RegExp([`), f.indexOf('].join(\'|\'));', f.indexOf(`const ${n} = new RegExp([`)));
-    expect(cuerpo(leer('Flujos/experimental/rroca-emma/src/lib/ev.js'), 'EV_RIESGO').replace('EV_RIESGO', 'X')).toBe(cuerpo(leer('Flujos/experimental/doctoras/src/lib/dr.js'), 'DR_RIESGO').replace('DR_RIESGO', 'X'));
+    expect(cuerpo(leer('Flujos/clientes/rroca-emma/src/lib/ev.js'), 'EV_RIESGO').replace('EV_RIESGO', 'X')).toBe(cuerpo(leer('Flujos/experimental/doctoras/src/lib/dr.js'), 'DR_RIESGO').replace('DR_RIESGO', 'X'));
   });
   it('los párrafos son los de Rubén (evOraciones/evParrafos = rrOraciones/rrParrafos)', () => {
     const f = (t: string, n: string): string => t.slice(t.indexOf(`function ${n}(`), t.indexOf('\n}\n', t.indexOf(`function ${n}(`)) + 3);
-    const ev = leer('Flujos/experimental/rroca-emma/src/lib/ev.js');
+    const ev = leer('Flujos/clientes/rroca-emma/src/lib/ev.js');
     const rr = leer('Flujos/experimental/rroca-ruben/src/lib/rr.js');
     const igualar = (s: string): string => s.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n').replace(/\bev(Oraciones|EsPregunta|Parrafos)\b/g, 'x$1').replace(/\brr(Oraciones|EsPregunta|Parrafos)\b/g, 'x$1').replace(/EV_PARRAFO_MAX|RR_PARRAFO_MAX/g, 'MAX');
     for (const [a, b] of [['evOraciones', 'rrOraciones'], ['evParrafos', 'rrParrafos']] as const) expect(igualar(f(ev, a))).toBe(igualar(f(rr, b)));
