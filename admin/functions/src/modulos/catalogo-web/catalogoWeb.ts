@@ -1305,7 +1305,7 @@ const ROTULO_NOTA = '\nNota del cliente: «';
  * corchetes, llaves y comillas angulares para que no imite una marca interna
  * como `[ENVIAR_QR]` ni cierre su propio entrecomillado, y va entre comillas en
  * UNA sola línea para que no parezca otra línea del pedido. Si el resumen no
- * deja lugar, la nota se recorta o se omite: nunca se sobrepasa MAX_RESUMEN.
+ * deja lugar, la nota se recorta o se omite (y el resumen queda IGUAL al de antes, con su total completo).
  */
 export function resumenDelPedido(
   items: Array<Record<string, unknown>>, entrega: string,
@@ -1316,10 +1316,10 @@ export function resumenDelPedido(
     + `${lineas.join(', ')} — total ${total} ${moneda || 'BOB'}`;
   const limpia = lineaLimpia(
     typeof nota === 'string' ? nota.replace(/[[\]{}«»]/g, ' ') : '', MAX_NOTA);
-  if (!limpia) return base.slice(0, MAX_RESUMEN);
+  if (!limpia) return base;
   // Lo que queda para el texto de la nota, descontando el rótulo y la comilla.
   const lugar = MAX_RESUMEN - base.length - ROTULO_NOTA.length - 1;
-  if (lugar < 20) return base.slice(0, MAX_RESUMEN);
+  if (lugar < 20) return base;
   const recortada = [...limpia].slice(0, lugar).join('').trim();
   return `${base}${ROTULO_NOTA}${recortada}»`;
 }

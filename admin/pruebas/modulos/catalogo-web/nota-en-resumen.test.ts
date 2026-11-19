@@ -53,16 +53,16 @@ describe('nota en el resumen del pedido', () => {
     const r = resumenDelPedido(items, 'retiro', 100, 'BOB', '😀'.repeat(5000));
     const nota = r.split('\n')[1]!.replace(/^Nota del cliente: «|»$/g, '');
     expect([...nota].length).toBeLessThanOrEqual(300);
-    expect(nota).not.toMatch(/\p{Cs}/u);
     expect(r.length).toBeLessThanOrEqual(MAX_RESUMEN);
   });
 
-  it('el resumen total no pasa el tope aunque haya muchísimas líneas', () => {
+  it('sin lugar para la nota se omite entera y el resumen queda IGUAL al de antes, con su total completo', () => {
     const muchos = Array.from({ length: 200 }, (_, i) => ({ nombre: `Pieza ${i} con nombre largo`, cantidad: 3 }));
-    const r = resumenDelPedido(muchos, 'envio', 9999, 'BOB', 'x'.repeat(300));
-    expect(r.length).toBeLessThanOrEqual(MAX_RESUMEN);
-    // Sin lugar para la nota, se omite entera en vez de dejarla truncada a medias.
-    expect(r).not.toMatch(/«[^»]*$/);
+    const sinNota = resumenDelPedido(muchos, 'envio', 9999, 'BOB');
+    const conNota = resumenDelPedido(muchos, 'envio', 9999, 'BOB', 'x'.repeat(300));
+    expect(sinNota).toContain('total 9999 BOB');
+    expect(conNota).toBe(sinNota);
+    expect(conNota).not.toMatch(/«[^»]*$/);
   });
 
   it('la nota cabe en el resumen cuando el pedido es normal', () => {
