@@ -20,7 +20,6 @@ import { spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -48,9 +47,13 @@ let paginar = false;
 let postFalla = false;
 let getFallaTrasPost = false;
 let redirigir = false;
+let relecturaDoble = false;
+let relecturaTipo = false;
+let datosNoLista = false;
+let cursorRepetido = false;
 
 beforeEach(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'entrada-prueba-'));
+  dir = mkdtempSync(join(AQUI, '.tmp-entrada-prueba-'));
   carpeta = join(dir, 'clave');
   mkdirSync(carpeta, { mode: 0o700 });
   chmodSync(carpeta, 0o700);
@@ -60,6 +63,10 @@ beforeEach(async () => {
   postFalla = false;
   getFallaTrasPost = false;
   redirigir = false;
+  relecturaDoble = false;
+  relecturaTipo = false;
+  datosNoLista = false;
+  cursorRepetido = false;
   servidor = createServer((req, res) => {
     const partes: Buffer[] = [];
     req.on('data', (c: Buffer) => partes.push(c));
@@ -73,6 +80,11 @@ beforeEach(async () => {
       if (llave !== API_KEY) return responder(401, { message: 'unauthorized' });
       if (ruta === '/api/v1/credentials' && req.method === 'GET') {
         if (getFallaTrasPost && llamadas.some((l) => l.metodo === 'POST')) return responder(500, {});
+        if (datosNoLista) return responder(200, { data: 'no es una lista' });
+        if (cursorRepetido) return responder(200, { data: [], nextCursor: 'siempre' });
+        const trasPost = llamadas.some((l) => l.metodo === 'POST');
+        if (trasPost && relecturaDoble) return responder(200, { data: creds.flatMap((c) => [c, { ...c, id: `${c.id}2` }]).map(({ id, name, type }) => ({ id, name, type })) });
+        if (trasPost && relecturaTipo) return responder(200, { data: creds.map(({ id, name }) => ({ id, name, type: 'googlePalmApi' })) });
         const todas = creds.map(({ id, name, type }) => ({ id, name, type }));
         if (!paginar) return responder(200, { data: todas });
         const desde = Number(new URL(req.url ?? '', 'http://x').searchParams.get('cursor') ?? '0');
@@ -115,9 +127,14 @@ const buenos = (...mas: string[]) => ['--nombre', NOMBRE, '--archivo', archivo, 
 const escrituras = () => llamadas.filter((l) => l.metodo !== 'GET');
 /** La clave que quedó en el archivo (la prueba la lee; el script nunca la imprime). */
 const claveDelArchivo = () => readFileSync(archivo, 'utf8');
+/** La clave del archivo si existe, o null: se lee directo y se atrapa ENOENT (no se comprueba antes de abrir). */
+function claveSiExiste(): string | null {
+  try { return readFileSync(archivo, 'utf8'); } catch { return null; }
+}
 function sinSecretos(salida: string) {
   expect(salida).not.toContain(API_KEY);
-  if (existsSync(archivo)) expect(salida).not.toContain(claveDelArchivo());
+  const clave = claveSiExiste();
+  if (clave !== null) expect(salida).not.toContain(clave);
 }
 
 describe('crear-credencial-entrada-prueba.sh: mal uso, sale 2 sin tocar nada', () => {
@@ -145,8 +162,9 @@ describe('crear-credencial-entrada-prueba.sh: mal uso, sale 2 sin tocar nada', (
 describe('crear-credencial-entrada-prueba.sh: la carpeta y el archivo se validan antes de escribir', () => {
   it('una carpeta con permisos de grupo u otros (compartida): no genera clave ni escribe', async () => {
     chmodSync(carpeta, 0o755);
-    const { codigo } = await correr(buenos('--aplicar'));
+    const { codigo, salida } = await correr(buenos('--aplicar'));
     expect(codigo).toBe(1);
+    expect(salida).toContain('modo 700');
     expect(llamadas).toEqual([]);
     expect(existsSync(archivo)).toBe(false);
   });
@@ -173,9 +191,17 @@ describe('crear-credencial-entrada-prueba.sh: la carpeta y el archivo se validan
   });
   it('un archivo que ya existe también se niega en el seco', async () => {
     writeFileSync(archivo, 'contenido-previo', { mode: 0o600 });
-    const { codigo } = await correr(buenos());
+    const { codigo, salida } = await correr(buenos());
     expect(codigo).toBe(1);
+    expect(salida).toContain('ya existe');
+    expect(escrituras()).toEqual([]);
     expect(claveDelArchivo()).toBe('contenido-previo');
+  });
+  it('un archivo dentro del repositorio que git NO ignora se rechaza (sale 2, sin llamadas)', async () => {
+    const { codigo, salida } = await correr(['--nombre', NOMBRE, '--archivo', join(RAIZ, 'admin', 'pruebas', 'core', 'clave-no-ignorada'), '--env', envRel, '--aplicar', '--confirmo', NOMBRE]);
+    expect(codigo).toBe(2);
+    expect(salida).toContain('dentro del repositorio');
+    expect(llamadas).toEqual([]);
   });
   it('un enlace colgante como archivo no se sigue: no escribe en n8n', async () => {
     symlinkSync(join(dir, 'destino-ajeno'), archivo);
@@ -263,6 +289,37 @@ describe('crear-credencial-entrada-prueba.sh --aplicar', () => {
     expect(salida).toContain('la credencial pudo crearse: verificar en n8n');
     expect(existsSync(archivo)).toBe(true);
     sinSecretos(salida);
+  });
+  it('POST 200 pero la relectura encuentra 2 credenciales: sale 3 y el archivo se CONSERVA', async () => {
+    relecturaDoble = true;
+    const { codigo, salida } = await correr(buenos('--aplicar'));
+    expect(codigo).toBe(3);
+    expect(escrituras()).toHaveLength(1);
+    expect(salida).toContain('si NO existe en n8n');
+    expect(claveSiExiste()).not.toBeNull();
+    sinSecretos(salida);
+  });
+  it('POST 200 pero la relectura la encuentra de otro tipo: sale 3 y el archivo se CONSERVA', async () => {
+    relecturaTipo = true;
+    const { codigo, salida } = await correr(buenos('--aplicar'));
+    expect(codigo).toBe(3);
+    expect(escrituras()).toHaveLength(1);
+    expect(claveSiExiste()).not.toBeNull();
+    sinSecretos(salida);
+  });
+  it('una lista de credenciales sin forma de lista: sale 3 sin escribir y sin crear el archivo', async () => {
+    datosNoLista = true;
+    const { codigo } = await correr(buenos('--aplicar'));
+    expect(codigo).toBe(3);
+    expect(escrituras()).toEqual([]);
+    expect(claveSiExiste()).toBeNull();
+  });
+  it('un nextCursor que se repite sin fin: sale 3 sin escribir y sin crear el archivo', async () => {
+    cursorRepetido = true;
+    const { codigo } = await correr(buenos('--aplicar'));
+    expect(codigo).toBe(3);
+    expect(escrituras()).toEqual([]);
+    expect(claveSiExiste()).toBeNull();
   });
   it('una llave de API equivocada: no se crea la credencial', async () => {
     writeFileSync(join(dir, 'env'), `N8N_API_KEY=otra\nN8N_BASE_URL=${base}\n`);

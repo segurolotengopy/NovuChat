@@ -60,7 +60,7 @@ fi
 [[ -f "$ENV_FILE" ]] || { echo "✗ no existe el archivo --env" >&2; exit 1; }
 
 # El token lo lee SOLO python, del archivo (nunca por argumentos ni por el entorno).
-APLICAR="$APLICAR" CONSERVAR="$CONSERVAR" NOMBRE="$NOMBRE" ARCHIVO="$ARCHIVO" ENV_FILE="$ENV_FILE" python3 -c '
+APLICAR="$APLICAR" CONSERVAR="$CONSERVAR" NOMBRE="$NOMBRE" ARCHIVO="$ARCHIVO" ENV_FILE="$ENV_FILE" python3 -I -c '
 import json, os, re, stat, sys, urllib.parse, urllib.request, urllib.error
 # 0. El archivo --env NO se ejecuta: solo se leen N8N_API_KEY y N8N_BASE_URL (KEY=VALOR, con comillas y export opcionales).
 claves = {}
@@ -103,7 +103,7 @@ def pedir(metodo, ruta, cuerpo=None):
         return 0, None
 def listar(tras_crear=False):
     # Recorre todas las páginas (nextCursor): un duplicado en la segunda no puede pasar inadvertido.
-    todas, cursor = [], None
+    todas, cursor, paginas, vistos = [], None, 0, set()
     while True:
         ruta = "/credentials?limit=100" + ("&cursor=" + urllib.parse.quote(cursor, safe="") if cursor else "")
         codigo, d = pedir("GET", ruta)
@@ -113,10 +113,19 @@ def listar(tras_crear=False):
                 sys.exit(3)
             print(f"  ✗ n8n no devolvió la lista de credenciales (HTTP {codigo}): no se escribe nada; el archivo del token se conserva")
             sys.exit(1)
-        todas += d.get("data", [])
-        cursor = d.get("nextCursor")
-        if not cursor:
+        if not isinstance(d.get("data"), list):
+            print("  ✗ n8n devolvió una lista de credenciales con una forma inesperada: " + ("la credencial pudo crearse: verificar en n8n antes de reintentar" if tras_crear else "no se escribe nada") + "; el archivo del token se conserva")
+            sys.exit(3)
+        todas += d["data"]
+        siguiente = d.get("nextCursor")
+        paginas += 1
+        if not siguiente:
             return todas
+        if siguiente == cursor or siguiente in vistos or paginas >= 200:
+            print("  ✗ n8n repite o alarga sin fin la paginación de credenciales: " + ("la credencial pudo crearse: verificar en n8n antes de reintentar" if tras_crear else "no se escribe nada") + "; el archivo del token se conserva")
+            sys.exit(3)
+        vistos.add(siguiente)
+        cursor = siguiente
 nombre = os.environ["NOMBRE"]
 ruta_archivo = os.environ["ARCHIVO"]
 aplicar = os.environ["APLICAR"] == "1"

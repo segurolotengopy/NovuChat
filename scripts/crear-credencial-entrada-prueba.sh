@@ -20,7 +20,8 @@
 #       GENERA la clave, crea el archivo (O_EXCL, sin seguir enlaces, modo 600) y SOLO ENTONCES crea la
 #       credencial, una sola vez; relee y comprueba que existe, es única y de tipo httpHeaderAuth.
 #       El archivo SIEMPRE se conserva. Si el pedido de creación falla o se agota, sale 3: verificar en n8n
-#       antes de reintentar (la credencial pudo crearse y el archivo tiene la clave).
+#       antes de reintentar: si la credencial NO existe en n8n, borra el archivo de la clave o usa otra ruta (el archivo ya existe y
+#       el script no lo pisa); si existe, esa clave es la suya.
 #
 # Se niega (sale 2, sin llamar a n8n) si falta el nombre o el archivo, si el nombre no tiene la forma
 # «Entrada de prueba <Comercio>» o si --aplicar viene sin --confirmo igual al nombre. Si ya existe una
@@ -58,9 +59,17 @@ if [[ $APLICAR -eq 1 ]]; then
   [[ "$CONFIRMO" == "$NOMBRE" ]] || { echo "✗ --aplicar exige --confirmo \"$NOMBRE\" (igual al nombre pedido)" >&2; exit 2; }
 fi
 [[ -f "$ENV_FILE" ]] || { echo "✗ no existe el archivo --env" >&2; exit 1; }
+# La clave no puede quedar dentro del repositorio salvo en una ruta que git ignora: un archivo con una clave junto al código acaba en un commit.
+REPO="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -n "$REPO" ]]; then
+  REPO_REAL="$(realpath -m "$REPO")"; ARCHIVO_REAL="$(realpath -m "$ARCHIVO")"
+  case "$ARCHIVO_REAL" in
+    "$REPO_REAL"/*) git -C "$REPO_REAL" check-ignore -q -- "$ARCHIVO_REAL" || { echo "✗ --archivo está dentro del repositorio y git no lo ignora: elige una ruta fuera del repositorio" >&2; exit 2; } ;;
+  esac
+fi
 
 # La clave la genera y la maneja SOLO python (nunca por argumentos ni por el entorno).
-APLICAR="$APLICAR" NOMBRE="$NOMBRE" ARCHIVO="$ARCHIVO" ENV_FILE="$ENV_FILE" python3 -c '
+APLICAR="$APLICAR" NOMBRE="$NOMBRE" ARCHIVO="$ARCHIVO" ENV_FILE="$ENV_FILE" python3 -I -c '
 import base64, json, os, re, stat, sys, urllib.parse, urllib.request, urllib.error
 # 0. El archivo --env NO se ejecuta: solo se leen N8N_API_KEY y N8N_BASE_URL (KEY=VALOR, con comillas y export opcionales).
 claves = {}
@@ -103,20 +112,29 @@ def pedir(metodo, ruta, cuerpo=None):
         return 0, None
 def listar(tras_crear=False):
     # Recorre todas las páginas (nextCursor): un duplicado en la segunda no puede pasar inadvertido.
-    todas, cursor = [], None
+    todas, cursor, paginas, vistos = [], None, 0, set()
     while True:
         ruta = "/credentials?limit=100" + ("&cursor=" + urllib.parse.quote(cursor, safe="") if cursor else "")
         codigo, d = pedir("GET", ruta)
         if codigo != 200 or not isinstance(d, dict):
             if tras_crear:
-                print(f"  ✗ la relectura falló (HTTP {codigo}): la credencial pudo crearse: verificar en n8n antes de reintentar; el archivo de la clave se conserva")
+                print(f"  ✗ la relectura falló (HTTP {codigo}): la credencial pudo crearse: verificar en n8n; si NO existe en n8n, borra el archivo de la clave o usa otra ruta antes de reintentar")
                 sys.exit(3)
             print(f"  ✗ n8n no devolvió la lista de credenciales (HTTP {codigo}): no se escribe nada")
             sys.exit(1)
-        todas += d.get("data", [])
-        cursor = d.get("nextCursor")
-        if not cursor:
+        if not isinstance(d.get("data"), list):
+            print("  ✗ n8n devolvió una lista de credenciales con una forma inesperada: " + ("la credencial pudo crearse: verificar en n8n; si NO existe en n8n, borra el archivo de la clave o usa otra ruta antes de reintentar" if tras_crear else "no se escribe nada"))
+            sys.exit(3)
+        todas += d["data"]
+        siguiente = d.get("nextCursor")
+        paginas += 1
+        if not siguiente:
             return todas
+        if siguiente == cursor or siguiente in vistos or paginas >= 200:
+            print("  ✗ n8n repite o alarga sin fin la paginación de credenciales: " + ("la credencial pudo crearse: verificar en n8n; si NO existe en n8n, borra el archivo de la clave o usa otra ruta antes de reintentar" if tras_crear else "no se escribe nada"))
+            sys.exit(3)
+        vistos.add(siguiente)
+        cursor = siguiente
 nombre = os.environ["NOMBRE"]
 ruta_archivo = os.environ["ARCHIVO"]
 aplicar = os.environ["APLICAR"] == "1"
@@ -165,21 +183,30 @@ except OSError:
     sys.exit(1)
 try:
     os.fchmod(fd, 0o600)
-    os.write(fd, clave.encode())
+    pendiente = memoryview(clave.encode())
+    while len(pendiente):
+        pendiente = pendiente[os.write(fd, pendiente):]
     os.fsync(fd)
-finally:
+except OSError:
     os.close(fd)
+    try:
+        os.unlink(nombre_archivo, dir_fd=dfd)
+    except OSError:
+        pass
+    print("  ✗ no se pudo escribir la clave en el archivo: no se creó nada en n8n")
+    sys.exit(1)
+os.close(fd)
 print("  ✓ clave generada y guardada en el archivo (modo 600; no se imprime)")
 # 4. Crear la credencial una sola vez.
 codigo, _ = pedir("POST", "/credentials", {"name": nombre, "type": "httpHeaderAuth",
                                            "data": {"name": "Authorization", "value": "Bearer " + clave}})
 del clave
 if codigo not in (200, 201):
-    print(f"  ✗ el pedido de creación falló (HTTP {codigo}; 0 = error de red o tiempo agotado): verificar en n8n antes de reintentar, porque la credencial pudo crearse; el archivo de la clave se conserva")
+    print(f"  ✗ el pedido de creación falló (HTTP {codigo}; 0 = error de red o tiempo agotado): verificar en n8n: si la credencial NO existe en n8n, borra el archivo de la clave o usa otra ruta antes de reintentar; el archivo de la clave se conserva")
     sys.exit(3)
 tras = [c for c in listar(True) if c.get("name") == nombre]
 if len(tras) != 1 or tras[0].get("type") != "httpHeaderAuth":
-    print(f"  ✗ tras crear, se hallaron {len(tras)} credenciales «{nombre}» (tiene que haber una de tipo httpHeaderAuth): la credencial pudo crearse: verificar en n8n; el archivo de la clave se conserva")
+    print(f"  ✗ tras crear, se hallaron {len(tras)} credenciales «{nombre}» (tiene que haber una de tipo httpHeaderAuth): la credencial pudo crearse: verificar en n8n; si NO existe en n8n, borra el archivo de la clave o usa otra ruta antes de reintentar")
     sys.exit(3)
 cid = str(tras[0].get("id"))
 print(f"  ✓ credencial «{nombre}» creada, única y de tipo httpHeaderAuth (id …{cid[-4:]})")

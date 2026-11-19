@@ -45,6 +45,8 @@ let paginar = false;
 let postFalla = false;
 let getFallaTrasPost = false;
 let redirigir = false;
+let datosNoLista = false;
+let cursorRepetido = false;
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'cargar-catalogo-'));
@@ -54,6 +56,8 @@ beforeEach(async () => {
   postFalla = false;
   getFallaTrasPost = false;
   redirigir = false;
+  datosNoLista = false;
+  cursorRepetido = false;
   servidor = createServer((req, res) => {
     const partes: Buffer[] = [];
     req.on('data', (c: Buffer) => partes.push(c));
@@ -67,6 +71,8 @@ beforeEach(async () => {
       if (llave !== API_KEY) return responder(401, { message: 'unauthorized' });
       if (ruta === '/api/v1/credentials' && req.method === 'GET') {
         if (getFallaTrasPost && llamadas.some((l) => l.metodo === 'POST')) return responder(500, {});
+        if (datosNoLista) return responder(200, { data: 'no es una lista' });
+        if (cursorRepetido) return responder(200, { data: [], nextCursor: 'siempre' });
         const todas = creds.map(({ id, name, type }) => ({ id, name, type }));
         if (!paginar) return responder(200, { data: todas });
         const desde = Number(new URL(req.url ?? '', 'http://x').searchParams.get('cursor') ?? '0');
@@ -260,6 +266,23 @@ describe('cargar-credencial-catalogo.sh: la creación pudo hacerse pero no se pu
     expect(salida).toContain('la credencial pudo crearse: verificar en n8n');
     expect(existsSync(archivo)).toBe(true);
     sinSecretos(salida);
+  });
+});
+
+describe('cargar-credencial-catalogo.sh: respuestas de n8n con forma inesperada', () => {
+  it('una lista de credenciales sin forma de lista: sale 3, sin escrituras y el archivo queda', async () => {
+    datosNoLista = true;
+    const { codigo } = await correr(buenos('--aplicar'));
+    expect(codigo).toBe(3);
+    expect(escrituras()).toEqual([]);
+    expect(existsSync(archivo)).toBe(true);
+  });
+  it('un nextCursor que se repite sin fin: sale 3, sin escrituras y el archivo queda', async () => {
+    cursorRepetido = true;
+    const { codigo } = await correr(buenos('--aplicar'));
+    expect(codigo).toBe(3);
+    expect(escrituras()).toEqual([]);
+    expect(existsSync(archivo)).toBe(true);
   });
 });
 

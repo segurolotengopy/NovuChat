@@ -85,3 +85,4 @@ Flujos/ensayo-*.json
 # Respaldos de scripts/plataforma/alertas-config.mjs (el estado anterior de plataforma/alertas): nunca versionados.
 alertas-config-respaldo-*
 admin/pruebas/tenants/casa-bermejo/.tmp-local/
+admin/pruebas/core/.tmp-*/
