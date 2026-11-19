@@ -109,42 +109,42 @@ beforeAll(async () => {
 
 describe('con prefijo configurado', () => {
   it('un comprobante válido cierra y trae WAL-AAMMDD-001 con la fecha de La Paz', async () => {
-    await sembrar(CON, '59100000101');
-    const r = await comp(NUM_CON, '59100000101', '100', 'wamid.k1');
+    await sembrar(CON, '59100000001');
+    const r = await comp(NUM_CON, '59100000001', '100', 'wamid.k1');
     expect(r.cuerpo).toMatchObject({ estado: 'valido', codigoPedido: `WAL-${diaLaPaz(Date.now())}-001` });
     expect((await contador(CON)).get('ultimo')).toBe(1);
   });
   it('el mismo comprobante reprocesado devuelve el MISMO código y no consume otro', async () => {
-    const r = await comp(NUM_CON, '59100000101', '100', 'wamid.k1');
+    const r = await comp(NUM_CON, '59100000001', '100', 'wamid.k1');
     expect(r.cuerpo).toMatchObject({ estado: 'valido', repetido: true, codigoPedido: `WAL-${diaLaPaz(Date.now())}-001` });
     expect((await contador(CON)).get('ultimo')).toBe(1);
   });
   it('un segundo comprobante del mismo pedido ya cerrado (ya_resuelto) no consume correlativo y repite el código', async () => {
-    const r = await comp(NUM_CON, '59100000101', '100', 'wamid.k1-otro');
+    const r = await comp(NUM_CON, '59100000001', '100', 'wamid.k1-otro');
     expect(r.cuerpo).toMatchObject({ estado: 'ya_resuelto', codigoPedido: `WAL-${diaLaPaz(Date.now())}-001` });
     expect((await contador(CON)).get('ultimo')).toBe(1);
   });
   it('un pedido aproximado trae código Y el monto leído para nombrar la diferencia', async () => {
-    await sembrar(CON, '59100000102');
-    const r = await comp(NUM_CON, '59100000102', '101', 'wamid.k2');
+    await sembrar(CON, '59100000002');
+    const r = await comp(NUM_CON, '59100000002', '101', 'wamid.k2');
     expect(r.cuerpo).toMatchObject({ estado: 'aproximado', montoLeido: 101, importe: 100, montoDistinto: true, codigoPedido: `WAL-${diaLaPaz(Date.now())}-002` });
   });
   it('un inválido NO consume correlativo ni trae código', async () => {
-    await sembrar(CON, '59100000103');
-    const r = await comp(NUM_CON, '59100000103', '50', 'wamid.k3');
+    await sembrar(CON, '59100000003');
+    const r = await comp(NUM_CON, '59100000003', '50', 'wamid.k3');
     expect(r.cuerpo.estado).toBe('reintentar');
     expect(r.cuerpo.codigoPedido).toBeUndefined();
     expect((await contador(CON)).get('ultimo')).toBe(2);
   });
   it('un tardío NO consume correlativo', async () => {
-    await sembrar(CON, '59100000104', 20);
-    const r = await comp(NUM_CON, '59100000104', '100', 'wamid.k4');
+    await sembrar(CON, '59100000004', 20);
+    const r = await comp(NUM_CON, '59100000004', '100', 'wamid.k4');
     expect(r.cuerpo.estado).toBe('tardio');
     expect(r.cuerpo.codigoPedido).toBeUndefined();
     expect((await contador(CON)).get('ultimo')).toBe(2);
   });
   it('cinco ventas que cierran a la vez reciben códigos distintos', async () => {
-    const tels = ['59100000111', '59100000112', '59100000113', '59100000114', '59100000115'];
+    const tels = ['59100000011', '59100000012', '59100000013', '59100000014', '59100000015'];
     for (const t of tels) await sembrar(CON, t);
     const rs = await Promise.all(tels.map((t) => comp(NUM_CON, t, '100', `wamid.p-${t}`)));
     const codigos = rs.map((r) => r.cuerpo.codigoPedido);
@@ -159,7 +159,7 @@ describe('cierre previo sin código (lo registró otro camino) y luego hay prefi
   // reescribe LE ASIGNA el código (uno solo, en la misma transacción que el contador) y lo guarda en el cierre; de ahí
   // en adelante es idempotente: el reintento y el segundo comprobante devuelven ese mismo, sin mover el contador.
   it('se le asigna un código una sola vez y después se repite el mismo', async () => {
-    const tel = '59100000121';
+    const tel = '59100000021';
     await sembrar(CON, tel);
     await db.doc(`tenants/${CON}/cierres/${idDeCierreDeVenta(`wamid.qr-${tel}`)}`).set({
       tipo: 'venta', ocurridoEn: Timestamp.now(), referencia: `wamid.qr-${tel}`, monto: 100, moneda: 'BOB',
@@ -176,7 +176,7 @@ describe('cierre previo sin código (lo registró otro camino) y luego hay prefi
     expect((await contador(CON)).get('ultimo')).toBe(antes + 1);
   });
   it('un cierre previo SIN prefijo en el comercio sigue sin código', async () => {
-    const tel = '59100000203';
+    const tel = '59100000033';
     await sembrar(SIN, tel);
     await db.doc(`tenants/${SIN}/cierres/${idDeCierreDeVenta(`wamid.qr-${tel}`)}`).set({ tipo: 'venta', ocurridoEn: Timestamp.now(), referencia: `wamid.qr-${tel}`, monto: 100, moneda: 'BOB' });
     const r = await comp(NUM_SIN, tel, '100', 'wamid.pc2');
@@ -187,17 +187,17 @@ describe('cierre previo sin código (lo registró otro camino) y luego hay prefi
 
 describe('sin prefijo: nada cambia', () => {
   it('el cierre no trae codigoPedido y no se crea contador', async () => {
-    await sembrar(SIN, '59100000201');
-    const r = await comp(NUM_SIN, '59100000201', '100', 'wamid.s1');
+    await sembrar(SIN, '59100000031');
+    const r = await comp(NUM_SIN, '59100000031', '100', 'wamid.s1');
     expect(r.cuerpo.estado).toBe('valido');
     expect('codigoPedido' in r.cuerpo).toBe(false);
     expect((await contador(SIN)).exists).toBe(false);
-    const repetido = await comp(NUM_SIN, '59100000201', '100', 'wamid.s1');
+    const repetido = await comp(NUM_SIN, '59100000031', '100', 'wamid.s1');
     expect('codigoPedido' in repetido.cuerpo).toBe(false);
   });
   it('el aproximado sigue trayendo montoLeido', async () => {
-    await sembrar(SIN, '59100000202');
-    const r = await comp(NUM_SIN, '59100000202', '101', 'wamid.s2');
+    await sembrar(SIN, '59100000032');
+    const r = await comp(NUM_SIN, '59100000032', '101', 'wamid.s2');
     expect(r.cuerpo).toMatchObject({ estado: 'aproximado', montoLeido: 101 });
     expect('codigoPedido' in r.cuerpo).toBe(false);
   });
@@ -208,8 +208,8 @@ describe('config/pedidos.montoExacto === true: un monto distinto es observado, n
   // correlativo ni código y NO marca el cierre: responde `estado: 'reintentar'` (el estado que el contrato ya usa para «observado»,
   // con su tope de intentos) y `motivo: 'monto_distinto'`, más `montoLeido`, `montoEsperado` y `diferencia` (leído - esperado).
   it('el aproximado no cierra: reintentar con montoLeido, montoEsperado y diferencia; sin cierre ni contador', async () => {
-    await sembrar(EXA, '59100000301');
-    const r = await comp(NUM_EXA, '59100000301', '101', 'wamid.x1');
+    await sembrar(EXA, '59100000031');
+    const r = await comp(NUM_EXA, '59100000031', '101', 'wamid.x1');
     expect(r.cuerpo).toMatchObject({
       estado: 'reintentar', motivo: 'monto_distinto', montoLeido: 101, montoEsperado: 100, diferencia: 1,
       montoDistinto: true, cierreId: null, intentos: 1, intentosRestantes: 2,
@@ -219,37 +219,37 @@ describe('config/pedidos.montoExacto === true: un monto distinto es observado, n
     expect((await contador(EXA)).exists).toBe(false);
   });
   it('luego un comprobante exacto del mismo pedido SÍ cierra y recibe código', async () => {
-    const r = await comp(NUM_EXA, '59100000301', '100', 'wamid.x2');
+    const r = await comp(NUM_EXA, '59100000031', '100', 'wamid.x2');
     expect(r.cuerpo).toMatchObject({ estado: 'valido', codigoPedido: `WAL-${diaLaPaz(Date.now())}-001` });
     expect((await db.collection(`tenants/${EXA}/cierres`).get()).size).toBe(1);
   });
   it('el mismo comprobante observado repetido repite lo contestado sin contar otro intento', async () => {
-    await sembrar(EXA, '59100000302');
-    await comp(NUM_EXA, '59100000302', '99', 'wamid.x3');
-    const r = await comp(NUM_EXA, '59100000302', '99', 'wamid.x3');
+    await sembrar(EXA, '59100000032');
+    await comp(NUM_EXA, '59100000032', '99', 'wamid.x3');
+    const r = await comp(NUM_EXA, '59100000032', '99', 'wamid.x3');
     expect(r.cuerpo).toMatchObject({ estado: 'reintentar', repetido: true, intentos: 1, montoLeido: 99 });
   });
   it('el tope de intentos de siempre sigue: el tercero pasa a una persona, sin cierre', async () => {
-    await sembrar(EXA, '59100000303');
-    await comp(NUM_EXA, '59100000303', '101', 'wamid.y1');
-    await comp(NUM_EXA, '59100000303', '102', 'wamid.y2');
-    const r = await comp(NUM_EXA, '59100000303', '103', 'wamid.y3');
+    await sembrar(EXA, '59100000033');
+    await comp(NUM_EXA, '59100000033', '101', 'wamid.y1');
+    await comp(NUM_EXA, '59100000033', '102', 'wamid.y2');
+    const r = await comp(NUM_EXA, '59100000033', '103', 'wamid.y3');
     expect(r.cuerpo).toMatchObject({ estado: 'en_revision', cierreId: null });
   });
   it('un monto exacto se comporta igual que siempre', async () => {
-    await sembrar(EXA, '59100000304');
-    expect((await comp(NUM_EXA, '59100000304', '100', 'wamid.z1')).cuerpo.estado).toBe('valido');
+    await sembrar(EXA, '59100000034');
+    expect((await comp(NUM_EXA, '59100000034', '100', 'wamid.z1')).cuerpo.estado).toBe('valido');
   });
   it('sin la bandera (comercio sin montoExacto) el aproximado cierra como hoy, con código', async () => {
-    await sembrar(CON, '59100000305');
-    const r = await comp(NUM_CON, '59100000305', '101', 'wamid.w1');
+    await sembrar(CON, '59100000035');
+    const r = await comp(NUM_CON, '59100000035', '101', 'wamid.w1');
     expect(r.cuerpo).toMatchObject({ estado: 'aproximado', montoLeido: 101 });
     expect(r.cuerpo.codigoPedido).toBeDefined();
     expect(r.cuerpo.montoEsperado).toBeUndefined();
   });
   it("la bandera como cadena 'true' NO activa: el aproximado cierra", async () => {
-    await sembrar(CAD, '59100000306');
-    const r = await comp(NUM_CAD, '59100000306', '101', 'wamid.c1');
+    await sembrar(CAD, '59100000036');
+    const r = await comp(NUM_CAD, '59100000036', '101', 'wamid.c1');
     expect(r.cuerpo).toMatchObject({ estado: 'aproximado', montoLeido: 101 });
     expect(r.cuerpo.montoEsperado).toBeUndefined();
   });
