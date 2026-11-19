@@ -18,7 +18,6 @@ describe('el error del modelo, la pieza sin precio y el volumen pasan con recepc
     ['«tapices» en general', {}, '¿cuánto cuestan los tapices?'],
     ['regalos corporativos', {}, 'necesito regalos corporativos para mi empresa'],
     ['300 piezas', {}, 'quiero 300 bufandas'],
-    ['pide factura', {}, 'necesito factura con mi NIT'],
     ['pide hablar con una persona', {}, 'quiero hablar con una persona'],
     ['el modelo marca quiereHablar', { modeloDice: modelo('Lo ve una persona.', { quiereHablar: true }) }, 'quiero algo especial hecho a medida'],
   ];
@@ -60,7 +59,7 @@ describe('«ya avisé» solo con un wamid real', () => {
   it('a lo más UN aviso de consulta cada 30 minutos: el segundo dice que recepción ya lo recibió', () => {
     const m = crear();
     expect(hablar(m, ANA, mTexto('quiero hablar con una persona')).avisos).toHaveLength(1);
-    const t2 = hablar(m, ANA, mTexto('necesito factura'));
+    const t2 = hablar(m, ANA, mTexto('quiero regalos corporativos para mi empresa'));
     expect(t2.avisos).toHaveLength(0);
     expect(t2.mensajes[0]?.cuerpo).toMatch(/ya recibió su aviso anterior/);
     expect(t2.mensajes[0]?.cuerpo).not.toMatch(/Pasamos su consulta a nuestra encargada;/);

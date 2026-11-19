@@ -27,7 +27,7 @@ const LIB: Record<string, any> = (() => { try { return cargarFuente<Record<strin
 ); } catch { return {}; } })(); // eslint-disable-line @typescript-eslint/no-explicit-any
 
 // ------------------------------------------------------------------------------------------- utilidades
-const BASE_W = { nombreNegocio: 'Walisuma', catalogoEnlace: 'https://catalogo.example.com/walisuma' };
+const BASE_W = { nombreNegocio: 'Walisuma' };
 const mundo = (o: Opciones = {}): Mundo => crear({ ...o, base: { ...BASE_W, ...(o.base ?? {}) } });
 const ubicacionMsg = (lat = -16.5, lng = -68.12): J => ({ type: 'location', location: { latitude: lat, longitude: lng, name: 'Casa', address: 'Calacoto' } });
 const BOTON_CTA = (t: ResultadoTurno): J | undefined => t.mensajes.map((x) => x.payload['interactive'] as J).find((i) => i && i['type'] === 'cta_url');
@@ -73,8 +73,8 @@ describe('B0 · los datos de Walisuma', () => {
     }
     expect(entradas.filter((e) => e.endsWith(':general'))).toHaveLength(6);
   });
-  it('el enlace del catálogo (solo para mirar) y el saludo precargado del botón son dato', () => {
-    expect(String(cb['catalogoEnlace'])).toMatch(/^(https:\/\/|REEMPLAZAR_)/);
+  it('sin enlace del catálogo (Andres, 19/11: «sin enlace por ahora») y el saludo precargado del botón es dato', () => {
+    expect(cb['catalogoEnlace']).toBeUndefined();
     expect(cb['saludoBotonDerivacion']).toBe('Hola Walisuma, necesito asistencia con una consulta');
   });
   it('el catálogo: «Tapiz Jalq\'a» con apóstrofo, precios del MD (Chuspa 453, Peki 480, Cartera 759) y licores y pastillas apagados', () => {
@@ -123,18 +123,19 @@ describe('B1 · usted siempre, primera persona del plural y nuestra encargada', 
     expect(p).toMatch(/Nota del cliente/);
     expect(p).not.toMatch(/más de 2 emojis/);
   });
-  it('el saludo: «asistente de atención y ventas de Walisuma», ofrece asesoría y trae el enlace del catálogo EN EL MISMO mensaje; sin «IA» en el saludo', () => {
+  it('el saludo: «asistente de atención y ventas de Walisuma», ofrece asesoría y el catálogo POR CHAT en el mismo mensaje, sin enlace; sin «IA» en el saludo', () => {
     const t = hablar(mundo({ panel: panelOk({ datosDelNegocio: { nombreNegocio: 'Walisuma' } }), modeloDice: modelo('Con gusto le ayudamos.') }), ANA, mTexto('hola'));
     expect(t.mensajes).toHaveLength(1);
     const c = t.mensajes[0]?.cuerpo ?? '';
     expect(c).toMatch(/^Hola, soy el asistente de atención y ventas de Walisuma\./);
     expect(c).toMatch(/asesor/i);
-    expect(c).toContain('https://catalogo.example.com/walisuma');
+    expect(c).toMatch(/por este chat le mostramos las piezas de nuestro catálogo/);
+    expect(c).not.toMatch(/https?:|REEMPLAZAR/);
     expect(c).not.toMatch(/\bIA\b|inteligencia artificial/);
   });
-  it('NEGADO: sin un enlace https válido (marcador) el saludo no promete un catálogo que no se puede abrir', () => {
-    const t = hablar(mundo({ base: { catalogoEnlace: 'REEMPLAZAR_ENLACE_CATALOGO_WALISUMA' }, modeloDice: modelo('Con gusto le ayudamos.') }), ANA, mTexto('hola'));
-    expect(t.mensajes[0]?.cuerpo ?? '').not.toMatch(/catálogo|REEMPLAZAR|https?:/i);
+  it('NEGADO: aunque un dato traiga un enlace, el saludo no lleva ninguna URL (decisión «sin enlace por ahora»)', () => {
+    const t = hablar(mundo({ base: { catalogoEnlace: 'https://catalogo.example.com/walisuma' }, modeloDice: modelo('Con gusto le ayudamos.') }), ANA, mTexto('hola'));
+    expect(t.mensajes[0]?.cuerpo ?? '').not.toMatch(/https?:|REEMPLAZAR/);
   });
   it('«¿eres un bot?»: texto fijo del código que SÍ dice que es una IA (nunca lo niega)', () => {
     const t = hablar(mundo({ modeloDice: modelo('Soy una persona real.') }), ANA, mTexto('¿eres un bot?'));
@@ -325,6 +326,26 @@ describe('B2/B3 · la factura después del pago (el NIT viaja SOLO en el aviso)'
   });
 });
 
+describe('B2 · la factura ANTES de pagar no deriva (Andres, 19/11/2026)', () => {
+  it('«¿dan factura?»: sin aviso ni botón; el modelo sigue con la venta y el código agrega «le pediremos la razón social y el NIT al confirmar su pedido»', () => {
+    const t = hablar(mundo({ modeloDice: modelo('Con gusto le mostramos las billeteras.') }), ANA, mTexto('¿dan factura? quiero una billetera'));
+    expect(t.avisos).toHaveLength(0);
+    expect(BOTON_CTA(t)).toBeUndefined();
+    expect(t.registro.map((r) => r.nodo)).toContain('Conversar con el modelo');
+    expect(textos(t).join(' ')).toMatch(/Con gusto le mostramos las billeteras/);
+    expect(textos(t).join(' ')).toMatch(/le pediremos la razón social y el NIT al confirmar su pedido/);
+  });
+  it('NEGADO: con el NIT en el texto, el modelo NO lo recibe: solo el texto fijo, sin aviso; el NIT no queda en la ficha ni sale al cliente', () => {
+    const m = mundo({ modeloDice: modelo('x') });
+    const t = hablar(m, ANA, mTexto('quiero factura a nombre de Ana, NIT 77665544'));
+    expect(t.registro.map((r) => r.nodo)).not.toContain('Conversar con el modelo');
+    expect(t.avisos).toHaveLength(0);
+    expect(textos(t).join(' ')).toMatch(/le pediremos la razón social y el NIT al confirmar su pedido/);
+    expect(textos(t).join(' ')).not.toContain('77665544');
+    expect(JSON.stringify(m.sd)).not.toContain('77665544');
+  });
+});
+
 describe('B2 · el comprobante «aproximado» es observado y nombra la diferencia', () => {
   it('con `montoLeido` del servidor: dice la diferencia, pide el correcto, sin aviso, sin «coinciden» ni «Pedido confirmado»', () => {
     const t = hablar(conQr({ cotejo: cotejo({ estado: 'aproximado', montoLeido: 445 }) }), ANA, mImagen({ caption: '' }));
@@ -342,18 +363,18 @@ describe('B2 · el comprobante «aproximado» es observado y nombra la diferenci
 describe('B2 · el anuncio de Meta por su `source_id` (dato) responde POR CÓDIGO con los precios del catálogo', () => {
   const anuncio = (id: string): J => ({ ...mTexto('Hola, precio por favor'), referral: { source_id: id, source_type: 'ad', headline: 'Llavero', body: 'x' } });
   const base = { anunciosMeta: '100000000001:billetera-cuero,llavero-llama|100000000002:general' };
-  it('un anuncio de producto: las piezas con su precio del CATÁLOGO y el enlace del catálogo, sin modelo', () => {
+  it('un anuncio de producto: las piezas con su precio del CATÁLOGO, sin modelo ni enlace', () => {
     const t = hablar(mundo({ base, modeloDice: modelo('Bs 1') }), ANA, anuncio('100000000001'));
     const c = textos(t).join(' ');
     expect(c).toMatch(/Billetera de cuero: Bs 450/);
     expect(c).toMatch(/Llavero de llama: Bs 35,50/);
-    expect(c).toContain('https://catalogo.example.com/walisuma');
+    expect(c).not.toMatch(/https?:/);
     expect(t.registro.map((r) => r.nodo)).not.toContain('Conversar con el modelo');
   });
-  it('un reel: la bienvenida general con el catálogo', () => {
+  it('un reel: la bienvenida general, sin enlace', () => {
     const c = textos(hablar(mundo({ base }), ANA, anuncio('100000000002'))).join(' ');
     expect(c).toMatch(/comunidades/);
-    expect(c).toContain('https://catalogo.example.com/walisuma');
+    expect(c).not.toMatch(/https?:/);
   });
   it('NEGADO: un id que no está en el mapa (o un marcador) no inventa productos: conversa el modelo', () => {
     const t = hablar(mundo({ base: { anunciosMeta: 'REEMPLAZAR_ANUNCIO_X:billetera-cuero' }, modeloDice: modelo('Con gusto.') }), ANA, anuncio('100000000009'));

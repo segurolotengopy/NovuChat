@@ -21,7 +21,8 @@ export const TABLA_DE_PLANES: TablaDePlanes = {
   ubicacion: { clase: 'resuelve' },         // el pin de ubicación guardado: un agradecimiento fijo (fase 1)
   pedir_ubicacion: { clase: 'resuelve' },   // un envío sin GPS: el resumen y el botón «Enviar ubicación» (no es derivación) (fase 1)
   factura_sin: { clase: 'resuelve' },       // «sin factura» / «a mi nombre nomás» tras el pago: S/N, sin insistir (fase 1)
-  factura_pedir: { clase: 'resuelve' },     // vuelve a pedir la razón social y el NIT tras el pago (fase 1)
+  factura_pedir: { clase: 'resuelve' },
+  factura_al_confirmar: { clase: 'resuelve' }, // factura ANTES de pagar con el NIT escrito: «se la pedimos al confirmar» (Andres, 19/11/2026)     // vuelve a pedir la razón social y el NIT tras el pago (fase 1)
   factura_datos: { clase: 'deriva' },       // los datos de factura van a nuestra encargada: aviso + botón (fase 1)
   qr: { clase: 'resuelve' },                // el resumen del pedido y el QR del comercio
   qr_pendiente: { clase: 'resuelve' },      // el recordatorio del QR abierto

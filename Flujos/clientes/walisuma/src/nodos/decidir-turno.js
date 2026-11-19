@@ -7,6 +7,7 @@
 //                  una pieza sin precio (tapiz a consultar), un comprobante sin pedido, un pago con problema, o el catálogo no se pudo leer. Lo decide el CÓDIGO sobre el texto, no el modelo;
 //   ubicacion      el pin de WhatsApp (contrato de «Normalizar entrada»: `ubicacion {lat,lng}`): se guarda y, si el pedido ya estaba confirmado, sale el QR (sin modelo);
 //   factura_*      tras «Pedido confirmado», la respuesta a la factura: datos (razón social y NIT → SOLO al aviso), «sin factura» / «a mi nombre nomás» (S/N) o se vuelven a pedir (sin modelo);
+//   factura_al_confirmar  pide factura ANTES de pagar y escribe su NIT: el texto fijo «se la pedimos al confirmar» (sin modelo); sin NIT, el modelo sigue y el código agrega esa frase;
 //   anuncio_meta   el cliente llega de un anuncio de Meta cuyo `source_id` está en el dato `anunciosMeta`: las piezas del anuncio con los precios del catálogo, o la bienvenida general (sin modelo);
 //   identidad      «¿eres un bot?»: el texto fijo (prohibición 4: nunca niega ser una IA);
 //   audio_fijo     una nota de voz demasiado larga o que no se entendió; archivo: un medio demasiado pesado o que no se abrió; imagen_otra: una foto o captura que no es un comprobante;
@@ -112,7 +113,13 @@ if (pendiente) {
 }
 if (wlPideCambio(n)) return salir({ tipo: 'derivar', motivo: 'cambio' });
 if (wlCorporativo(n)) return salir({ tipo: 'derivar', motivo: 'corporativo' });
-if (wlPideFactura(n)) return salir({ tipo: 'derivar', motivo: 'factura' });
+// 4c. La factura ANTES de pagar (Andres, 19/11/2026): no se deriva. Con un NIT o CI en el texto, solo el texto fijo (sin modelo: el NIT nunca llega al modelo);
+// si no, el modelo sigue con la venta y el código agrega la frase fija «le pediremos la razón social y el NIT al confirmar su pedido».
+let notaFactura = false;
+if (wlPideFactura(n)) {
+  if (wlDatosFactura(texto)) return salir({ tipo: 'factura_al_confirmar' });
+  notaFactura = true;
+}
 if (wlNombraSinPrecio(n, wlSinPrecio(panel))) return salir({ tipo: 'derivar', motivo: 'sin_precio' });
 if (wlQuiereHablar(n)) return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });
 // 4b. El anuncio de Meta (contrato de «Normalizar entrada»: `anuncioId`, `anuncioTitular`). Por su `source_id` (dato `anunciosMeta`): las piezas VENDIBLES del anuncio o la bienvenida general.
@@ -130,4 +137,4 @@ if (!meta && typeof t.anuncioTitular === 'string' && t.anuncioTitular !== '' && 
 
 // 5. La conversación libre: una sola llamada al modelo.
 const contexto = { cfg: cfg, base: base, plan: { textoCliente: texto }, ficha: ficha, vendibles: vendibles, modos: wlModos(base), ahora: ahora };
-return salir({ tipo: 'modelo' }, { llamarModelo: true, cuerpoModelo: wlCuerpoModelo(contexto) });
+return salir({ tipo: 'modelo', notaFactura: notaFactura }, { llamarModelo: true, cuerpoModelo: wlCuerpoModelo(contexto) });

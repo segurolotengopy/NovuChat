@@ -148,11 +148,6 @@ function wlHorarioTiendas(base) {
   const t = cbEsObjeto(base) && typeof base.horarioTiendas === 'string' ? cbLinea(base.horarioTiendas, 80) : '';
   return /^REEMPLAZAR_/.test(t) ? '' : t;
 }
-// El enlace del catálogo web SOLO para mirar (dato `catalogoEnlace`): https y nada más; un marcador o cualquier otra cosa no sale (nunca se promete un catálogo que no se puede abrir).
-function wlEnlaceCatalogo(base) {
-  const t = cbEsObjeto(base) && typeof base.catalogoEnlace === 'string' ? base.catalogoEnlace.trim() : '';
-  return /^https:\/\/[A-Za-z0-9.-]+\.[A-Za-z]{2,}(\/[A-Za-z0-9._~\/-]*)?$/.test(t) ? t : '';
-}
 // LOS ANUNCIOS DE META por su `source_id` (dato `anunciosMeta`: «id:pieza,pieza|id:general|…»). Un id con marcador no se usa. Devuelve { general, piezas } o null.
 function wlAnuncioMeta(anuncioId, base) {
   const id = typeof anuncioId === 'string' ? anuncioId.trim() : '';
@@ -555,7 +550,7 @@ function wlResolverModelo(c) {
   if (sinRedaccion) texto = WL_TEXTO_MODELO_SIN_REDACCION;
   // Si el cliente pregunta por el envío, la política la dice el CÓDIGO (el modelo no habla del costo).
   const politica = wlPreguntaEnvio(wlNorm(p.textoCliente));
-  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, resumen: cambio && lineas.length ? vcResumen(lineas) : '', politicaEnvio: politica ? wlTextoPoliticaEnvio(wlUmbralBs(c.base)) : '' });
+  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, resumen: cambio && lineas.length ? vcResumen(lineas) : '', politicaEnvio: politica ? wlTextoPoliticaEnvio(wlUmbralBs(c.base)) : '', notaFactura: p.notaFactura === true });
 }
 
 // La ubicación del pin de WhatsApp (sin modelo): se guarda en la entrega y, si el pedido ya estaba confirmado y completo, se cierra (normalmente, el QR).
@@ -623,7 +618,7 @@ function wlProspectoCrm(d) {
   else if (tipo === 'derivar' && motivo === 'corporativo') quePidio = 'Pedido corporativo o por volumen';
   else if (tipo === 'derivar' && motivo === 'factura') quePidio = 'Factura';
   else if (tipo === 'derivar') quePidio = 'Consulta para recepción';
-  else if (tipo === 'factura_datos' || tipo === 'factura_sin' || tipo === 'factura_pedir') quePidio = 'Factura';
+  else if (tipo === 'factura_datos' || tipo === 'factura_sin' || tipo === 'factura_pedir' || tipo === 'factura_al_confirmar') quePidio = 'Factura';
   else if (tipo === 'modelo' || tipo === 'anuncio' || tipo === 'anuncio_meta') quePidio = 'Consulta de catálogo';
   const perfil = String(x.nombrePerfil === undefined || x.nombrePerfil === null ? '' : x.nombrePerfil).slice(0, 60).replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim().replace(/^[-'’ ]+/, '');
   const p = { telefono: String(x.from === undefined || x.from === null ? '' : x.from).replace(/\D/g, ''), nombre: perfil, nombreDePerfil: true, anuncio: x.anuncio === true, senales: senales, ultimaInteraccionMs: Number(x.ahoraMs) };

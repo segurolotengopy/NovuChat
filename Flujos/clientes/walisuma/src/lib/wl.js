@@ -28,7 +28,7 @@ const WL_SALUDO_MINIMO = 'Hola, soy el asistente de atención y ventas.';
 const WL_TEXTO_CORTES = 'Recibimos su mensaje, pero por este chat solo podemos leer texto, notas de voz, fotos y archivos PDF.\n\nCuéntenos por escrito o con una nota de voz en qué podemos ayudarle.';
 // Un número de otro país (prefijo no permitido en «Config del negocio»): un texto fijo, sin modelo, sin medios y sin promesas. PROVISIONAL: el texto definitivo lo decide el comercio.
 // INALCANZABLE desde el 10/11/2026: el comercio decidió que «todos se atienden igual» y el dato `prefijosPermitidos` trae todos los dígitos iniciales (1 a 9), así que `fueraDePais` queda en falso. Se conserva por si el comercio vuelve a restringir países.
-const WL_TEXTO_FUERA_DE_PAIS = 'Hola, soy el asistente virtual de atención y ventas. Por este chat atendemos pedidos de números de Bolivia.\n\nGracias por escribirnos.';
+const WL_TEXTO_FUERA_DE_PAIS = 'Hola, soy el asistente de atención y ventas. Por este chat atendemos pedidos de números de Bolivia.\n\nGracias por escribirnos.';
 
 function wlTexto(v) {
   return String(v === undefined || v === null ? '' : v).trim();
@@ -47,14 +47,15 @@ function wlLineaCliente(v, max) {
 const WL_PERMISO_CONFIRMADO = Object.freeze({ permiso: 'pedido-confirmado' });
 const WL_FRASE_CONFIRMADO = /^Pedido confirmado(?: WAL-\d{6}-\d{3})?\./;
 // Un texto que el flujo escribe por su cuenta pasa por aquí: si cayera en NIEGA_IA o afirmara un pago (`CB_PROHIBIDAS`, de `cobro.js`), sale el mínimo.
-// Todo «asistente virtual» sale con «con IA» (pieza común `identidad.js`): el SALUDO de Walisuma ya no dice «asistente virtual» (decisión 2: dice que es una IA solo si le preguntan, y la respuesta fija SÍ lo dice).
+// SIN la pieza común `identidad.js` (`ctConIA`): decisión 2 de Andres (18/11/2026), dice que es una IA SOLO si le preguntan (texto fijo `WL_TEXTO_IDENTIDAD`) y nunca lo niega (`WL_NIEGA_IA`).
+// Excepción PERMANENTE declarada en `admin/pruebas/core/ux/identidad.ts` (`EXCEPCIONES_DE_IDENTIDAD`, dueño Andres, 19/11/2026).
 function wlSeguro(texto, permiso) {
   const t = String(texto === undefined || texto === null ? '' : texto);
   if (WL_NIEGA_IA.test(wlNorm(t))) return WL_SALUDO_MINIMO;
   const frase = permiso === WL_PERMISO_CONFIRMADO ? WL_FRASE_CONFIRMADO.exec(t) : null;
   const resto = frase ? t.slice(frase[0].length) : t;
   if (CB_PROHIBIDAS.test(cbCanon(resto))) return WL_SALUDO_MINIMO;
-  return ctConIA(t);
+  return t;
 }
 // Violencia o miedo: no es parte del servicio de este negocio. El gancho existe porque los nodos comunes lo piden; aquí no marca nada.
 function wlEsRiesgo() {
@@ -237,9 +238,10 @@ const WL_TEXTO_MODELO_SIN_REDACCION = 'Cuéntenos un poco más de lo que busca y
 const WL_TEXTO_COMPROBANTE_ILEGIBLE = 'No pudimos leer bien su comprobante.\n\n¿Nos envía una foto más nítida, con el monto, la fecha y la cuenta de destino a la vista?';
 // La baja (pieza común `baja.js`, `bjTextoBaja(propio)`): el texto del tenant, de usted, una línea.
 const WL_TEXTO_BAJA = 'Entendido, tomamos nota de que no desea recibir más mensajes. Si más adelante necesita algo, escríbanos cuando quiera.';
-// El saludo de la primera respuesta (decisión 2: sin «IA»; la identidad del MD) y el ofrecimiento de asesoría; el enlace del catálogo va en el MISMO mensaje (0 mensajes).
-const WL_TEXTO_SALUDO = 'Hola, soy el asistente de atención y ventas de {NEGOCIO}. Con gusto le asesoramos para elegir una pieza o un regalo.';
-const WL_TEXTO_CATALOGO = 'Puede mirar nuestro catálogo aquí: {ENLACE}';
+// El saludo de la primera respuesta (decisión 2: sin «IA»; la identidad del MD): ofrece asesoría y el catálogo POR CHAT, sin enlace (Andres, 19/11/2026: «sin enlace por ahora»). 0 mensajes.
+const WL_TEXTO_SALUDO = 'Hola, soy el asistente de atención y ventas de {NEGOCIO}. Con gusto le asesoramos para elegir una pieza o un regalo, y por este chat le mostramos las piezas de nuestro catálogo con su precio.';
+// La factura pedida ANTES de pagar (Andres, 19/11/2026): no se deriva; se dice cuándo se pide y la venta sigue.
+const WL_TEXTO_FACTURA_AL_CONFIRMAR = 'Con gusto: le pediremos la razón social y el NIT al confirmar su pedido.';
 // La ubicación del pin de WhatsApp: el pedido (con el botón «Enviar ubicación») y el agradecimiento.
 const WL_TEXTO_PIDE_UBICACION = 'Para coordinar el envío necesitamos su ubicación: toque el botón «Enviar ubicación» y compártala por este chat. Con ella le enviamos el QR para pagar.';
 const WL_TEXTO_UBICACION_RECIBIDA = 'Gracias, anotamos su ubicación para el envío.';
@@ -271,7 +273,7 @@ const WL_INTROS = {
 };
 // Los textos fijos sueltos (la prueba de «usted siempre» los recorre todos).
 const WL_TEXTOS_FIJOS = [WL_TEXTO_CORTES, WL_TEXTO_FUERA_DE_PAIS, WL_TEXTO_IDENTIDAD, WL_TEXTO_AUDIO_LARGO, WL_TEXTO_AUDIO_NO_ENTENDIDO, WL_TEXTO_ARCHIVO_PESADO, WL_TEXTO_ARCHIVO_NO_ABIERTO, WL_TEXTO_IMAGEN, WL_TEXTO_DOCUMENTO,
-  WL_TEXTO_MODELO_SIN_REDACCION, WL_TEXTO_COMPROBANTE_ILEGIBLE, WL_TEXTO_BAJA, WL_TEXTO_SALUDO, WL_TEXTO_CATALOGO, WL_TEXTO_PIDE_UBICACION, WL_TEXTO_UBICACION_RECIBIDA, WL_TEXTO_ANUNCIO_PIEZAS, WL_TEXTO_ANUNCIO_GENERAL,
+  WL_TEXTO_MODELO_SIN_REDACCION, WL_TEXTO_COMPROBANTE_ILEGIBLE, WL_TEXTO_BAJA, WL_TEXTO_SALUDO, WL_TEXTO_FACTURA_AL_CONFIRMAR, WL_TEXTO_PIDE_UBICACION, WL_TEXTO_UBICACION_RECIBIDA, WL_TEXTO_ANUNCIO_PIEZAS, WL_TEXTO_ANUNCIO_GENERAL,
   WL_TEXTO_PIDE_FACTURA, WL_TEXTO_FACTURA_SIN, WL_TEXTO_FUERA_DE_HORARIO];
 // Pasar con nuestra encargada (decisión 6): la introducción del motivo + (aviso salió) «Pasamos su consulta a nuestra encargada; también puede escribirle directamente con el botón» / (no salió) «No pudimos avisar…».
 // `salio`: true (hay un `wamid` real), false (no salió) o 'repetido' (ya se avisó hace menos de 30 minutos por el mismo motivo).
@@ -306,6 +308,9 @@ function wlTextoComprobante(resultado, diferencia, totalTexto, salio, op) {
 // -----------------------------------------------------------------------------
 const CN_TENANT = {
   claveFicha: 'walisuma',
+  // Walisuma LEE la ubicación del pin (GPS obligatorio en el envío): el nodo común «Normalizar entrada» publica `ubicacion` como conversación solo para los tenants que lo declaran
+  // (contrato de PR-K en curso, 19/11/2026; si el nombre final del parámetro difiere, lo ajusta la coordinadora).
+  aceptaUbicacion: true,
   ventanaFueraDePaisMs: WL_VENTANA_FUERA_DE_PAIS_MS,
   fichaVigente: wlFichaVigente,
   yaVisto: wlYaVisto,

@@ -36,15 +36,9 @@ const texto = (cuerpo, extra) => { const x = wlSeguro(cuerpo); return cmMensaje(
 const contacto = cnDigitos(/^REEMPLAZAR_/.test(String(base.contactoAviso || '')) ? '' : base.contactoAviso) || cnDigitos(cfg.numeroRecepcion);
 const saludoBoton = cbLinea(/^REEMPLAZAR_/.test(String(base.saludoBotonDerivacion || '')) ? '' : base.saludoBotonDerivacion, 120) || 'Hola, necesito asistencia con una consulta';
 const conRecepcion = (cuerpo, permiso) => cmContactoConBoton({ numero: contacto, desde: from, cuerpo: wlSeguro(cuerpo, permiso), botonTexto: 'Atención al Cliente', saludo: saludoBoton, textoDelRespaldo: 'Escríbale aquí:', sinNumero: 'Eso lo coordina nuestra encargada.' });
-// El saludo de la primera respuesta (identidad del MD, sin «IA»: decisión 2) con el ofrecimiento de asesoría; el enlace del catálogo para mirar va en el MISMO mensaje (0 mensajes) cuando hay uno https.
+// El saludo de la primera respuesta (identidad del MD, sin «IA»: decisión 2) con el ofrecimiento de asesoría y del catálogo por chat (sin enlace: Andres, 19/11/2026).
 const saludo = WL_TEXTO_SALUDO.replace('{NEGOCIO}', negocio);
-const enlace = wlEnlaceCatalogo(base);
-const lineaCatalogo = enlace ? WL_TEXTO_CATALOGO.replace('{ENLACE}', enlace) : '';
-// `catalogo`: 'primera' (solo con el saludo) o 'siempre' (los anuncios: «siempre con el catálogo»).
-const conSaludo = (cuerpo, catalogo) => {
-  const cat = lineaCatalogo && (catalogo === 'siempre' || (catalogo === 'primera' && !fichaAntes.saludado)) ? '\n\n' + lineaCatalogo : '';
-  return (fichaAntes.saludado ? cuerpo : saludo + '\n\n' + cuerpo) + cat;
-};
+const conSaludo = (cuerpo) => (fichaAntes.saludado ? cuerpo : saludo + '\n\n' + cuerpo);
 
 let tipoDePlan = d.tipo;
 let msgs = [];          // los mensajes de este turno (casi siempre uno)
@@ -72,7 +66,7 @@ if (puerta.ruta === 'sigue') {
     msgs = [texto(WL_TEXTO_FUERA_DE_PAIS)];
     nuevos.fueraDePaisMs = ahora; ev.fueraDePaisMs = fichaAntes.fueraDePaisMs;
   } else if (tipoDePlan === 'cortes') {
-    msgs = [texto(conSaludo(WL_TEXTO_CORTES, 'primera'))];
+    msgs = [texto(conSaludo(WL_TEXTO_CORTES))];
   } else if (tipoDePlan === 'baja') {
     // La confirmación de la baja: UN texto fijo (sin saludo, sin botón, sin aviso); el `no_contactar` ya viajó con el entrante (si fue una nota de voz, `t.texto` iba vacío: el evento viaja en el reporte de ESTE mensaje saliente). La ficha y el carrito no se tocan.
     msgs = [texto(bjTextoBaja(WL_TEXTO_BAJA), d.porVoz === true ? { evento: 'no_contactar' } : undefined)];
@@ -83,23 +77,23 @@ if (puerta.ruta === 'sigue') {
   } else if (tipoDePlan === 'archivo') {
     msgs = [texto(conSaludo(d.pesado === true ? WL_TEXTO_ARCHIVO_PESADO : WL_TEXTO_ARCHIVO_NO_ABIERTO))];
   } else if (tipoDePlan === 'imagen_otra') {
-    msgs = [texto(conSaludo(d.documento === true ? WL_TEXTO_DOCUMENTO : WL_TEXTO_IMAGEN, 'primera'))];
+    msgs = [texto(conSaludo(d.documento === true ? WL_TEXTO_DOCUMENTO : WL_TEXTO_IMAGEN))];
   } else if (tipoDePlan === 'anuncio') {
     // El producto del anuncio sale POR CÓDIGO y su precio, del catálogo: nunca del modelo ni de la imagen.
     const v = c.vendibles.find((x) => x.id === d.producto);
     if (v) {
-      msgs = [texto(conSaludo('Sí, tenemos ' + v.nombre + ': ' + vcMonto(v.precioCentavos) + '.\n\n¿Cuántas unidades desea?', 'siempre'))];
+      msgs = [texto(conSaludo('Sí, tenemos ' + v.nombre + ': ' + vcMonto(v.precioCentavos) + '.\n\n¿Cuántas unidades desea?'))];
       nuevos.mostrados = fichaAntes.mostrados.filter((x) => x !== v.id).concat([v.id]).slice(-15); ev.mostrados = fichaAntes.mostrados;
     } else {
       tipoDePlan = 'derivar';
       msgs = [conRecepcion(conSaludo(wlTextoDerivacion('sin_precio', false)))];
     }
   } else if (tipoDePlan === 'anuncio_meta') {
-    // El anuncio de Meta por su `source_id`: las piezas y sus precios salen del CATÁLOGO (nunca del modelo ni del anuncio), siempre con el enlace del catálogo.
+    // El anuncio de Meta por su `source_id`: las piezas y sus precios salen del CATÁLOGO (nunca del modelo ni del anuncio).
     const piezas = (Array.isArray(d.piezas) ? d.piezas : []).map((id) => c.vendibles.find((x) => x.id === id)).filter((v) => !!v);
     const cuerpo = d.general === true || !piezas.length ? WL_TEXTO_ANUNCIO_GENERAL.replace('{NEGOCIO}', negocio)
       : WL_TEXTO_ANUNCIO_PIEZAS + '\n' + piezas.map((v) => '• ' + v.nombre + ': ' + vcMonto(v.precioCentavos)).join('\n') + '\n\n¿Cuál le interesa?';
-    msgs = [texto(conSaludo(cuerpo, 'siempre'))];
+    msgs = [texto(conSaludo(cuerpo))];
     if (piezas.length) { nuevos.mostrados = piezas.map((v) => v.id).concat(fichaAntes.mostrados.filter((x) => !piezas.some((v) => v.id === x))).slice(0, 15); ev.mostrados = fichaAntes.mostrados; }
   } else if (tipoDePlan === 'ubicacion') {
     // El pin guardado (sin pedido confirmado todavía): un agradecimiento fijo; responde a su mensaje (0 mensajes extra).
@@ -113,6 +107,9 @@ if (puerta.ruta === 'sigue') {
     // «Sin factura» o «a mi nombre nomás» (decisión 10: S/N y NIT 0): el aviso del pedido ya salió con S/N; no se insiste.
     msgs = [texto(WL_TEXTO_FACTURA_SIN)];
     Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
+  } else if (tipoDePlan === 'factura_al_confirmar') {
+    // Factura ANTES de pagar con el NIT en el texto: el texto fijo y nada más (sin modelo ni aviso; el NIT no se guarda ni se repite).
+    msgs = [texto(conSaludo(WL_TEXTO_FACTURA_AL_CONFIRMAR))];
   } else if (tipoDePlan === 'factura_pedir') {
     msgs = [texto(WL_TEXTO_PIDE_FACTURA)];
   } else if (tipoDePlan === 'modelo' || tipoDePlan === 'pedir_ubicacion') {
@@ -124,7 +121,7 @@ if (puerta.ruta === 'sigue') {
       const payload = Object.assign(cmBase('interactive'), { interactive: { type: 'location_request_message', body: { text: cmRecorte(cuerpo, 1024) }, action: { name: 'send_location' } } });
       msgs = [cmMensaje('cliente', payload, cuerpo, cuerpo, { tipoReporte: 'interactive' })];
     } else {
-      msgs = [texto(conSaludo(d.texto + (d.politicaEnvio ? '\n\n' + d.politicaEnvio : '') + (d.resumen ? '\n\n' + d.resumen : '') + anulado, 'primera'))];
+      msgs = [texto(conSaludo(d.texto + (d.notaFactura === true ? '\n\n' + WL_TEXTO_FACTURA_AL_CONFIRMAR : '') + (d.politicaEnvio ? '\n\n' + d.politicaEnvio : '') + (d.resumen ? '\n\n' + d.resumen : '') + anulado))];
     }
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
     nuevos.entrega = d.entrega;

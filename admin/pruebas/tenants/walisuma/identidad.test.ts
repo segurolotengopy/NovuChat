@@ -1,8 +1,7 @@
 /**
  * IDENTIDAD en Walisuma (decisión 2 de Andres, 18/11/2026): el asistente dice que es una IA SOLO SI LE PREGUNTAN, y nunca lo niega. El saludo es la identidad del MD
  * («asistente de atención y ventas de Walisuma»), sin «IA»; la respuesta a «¿eres un bot?» es un texto fijo del código que SÍ lo dice; todo texto que se presente como
- * «asistente virtual» sigue saliendo «con IA» (pieza común `identidad.js`, aplicada en `wlSeguro`). Costo: 0 mensajes. Se prueba NEGANDO.
- * PENDIENTE (informe del 18/11): la excepción declarada en `EXCEPCIONES_DE_IDENTIDAD` exige una fecha de vencimiento y Andres decidió que esta no tenga fecha.
+ * Walisuma ya no lleva la pieza común `identidad.js`: excepción PERMANENTE en `EXCEPCIONES_DE_IDENTIDAD` (dueño Andres, 19/11/2026). Costo: 0 mensajes. Se prueba NEGANDO.
  */
 import { describe, expect, it } from 'vitest';
 import { ANA, EXTRANJERO, crear, hablar, mTexto, modelo } from './mundo';
@@ -27,8 +26,9 @@ describe('Walisuma dice que es una IA si le preguntan, y nunca lo niega', () => 
     const t = hablar(crear({ modeloDice: modelo('No soy un robot, soy una persona real.') }), ANA, mTexto('hola'));
     for (const m of t.mensajes) expect(m.cuerpo ?? '').not.toMatch(NIEGA);
   });
-  it('un texto fijo que se presenta como «asistente virtual» sale «con IA» (la pieza común sigue aplicada)', () => {
-    const t = hablar(crear(), EXTRANJERO, mTexto('hola'));
-    for (const m of t.mensajes) expect(m.cuerpo ?? '').not.toMatch(/asistente virtual(?! con IA)/);
+  it('NEGADO: ningún texto fijo se presenta como «asistente virtual» a secas (sin decir que es una IA)', () => {
+    for (const t of [hablar(crear(), EXTRANJERO, mTexto('hola')), hablar(crear({ modeloDice: modelo('Con gusto.') }), ANA, mTexto('hola'))]) {
+      for (const m of t.mensajes) expect(m.cuerpo ?? '').not.toMatch(/asistente virtual(?![^.]*inteligencia artificial)/);
+    }
   });
 });

@@ -87,8 +87,7 @@ export const CONFIG = {
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
     // Pedido de baja por texto (pieza común del core): `bjPideBaja` en «Decidir turno» y `bjTextoBaja` en «Armar mensajes».
     baja: ['../../src/core/conversacion/baja.js'],
-    // «Asistente virtual con IA» en todo texto que lo nombra (pieza común del core): lo usa `wlSeguro` en «Armar mensajes».
-    identidad: ['../../src/core/texto/identidad.js'],
+    // Sin la pieza común `identidad.js`: Walisuma dice que es una IA solo si le preguntan (decisión 2; excepción permanente en `admin/pruebas/core/ux/identidad.ts`).
     // El anuncio por su TITULAR (`referral.headline`, campañas vigentes de la consola): la misma pieza común que usa «Preparar imagen», ahora también en «Decidir turno».
     titular: ['../../src/core/medios/anuncio-por-titular.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
@@ -168,8 +167,7 @@ const FORMAS_CONFIG = {
   horarioDias: /^[0-6](,[0-6]){0,6}$/,
   horarioApertura: /^([01]\d|2[0-3]):[0-5]\d$/,
   horarioCierre: /^([01]\d|2[0-3]):[0-5]\d$/,
-  // El enlace del catálogo web SOLO para mirar (https) o su marcador; el saludo precargado del botón de derivación.
-  catalogoEnlace: /^(https:\/\/[A-Za-z0-9.-]+(\/[A-Za-z0-9._~\/-]*)?|REEMPLAZAR_[A-Z0-9_]+)$/,
+  // El saludo precargado del botón de derivación. (Sin enlace del catálogo: decisión de Andres del 19/11/2026, «sin enlace por ahora».)
   saludoBotonDerivacion: /^[\p{L}\p{N} ,.¿?¡!-]{1,120}$/u,
   // Los anuncios de Meta por su `source_id`: «id:pieza,pieza|id:general|…». El id es un MARCADOR en el repositorio (repo público); las piezas, ids del catálogo.
   anunciosMeta: /^((REEMPLAZAR_[A-Z0-9_]+|\d{6,25}):(general|[a-z0-9-]{1,60}(,[a-z0-9-]{1,60}){0,9}))(\|(REEMPLAZAR_[A-Z0-9_]+|\d{6,25}):(general|[a-z0-9-]{1,60}(,[a-z0-9-]{1,60}){0,9})){0,29}$/,
