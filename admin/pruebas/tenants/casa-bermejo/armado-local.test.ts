@@ -1,10 +1,11 @@
 /**
  * LOS DATOS LOCALES de Casa Bermejo (`construir.mjs --local --datos <archivo>.local.json`): arma JSON importables con valores de un ensayo SIN que un valor real
  * entre jamás a un archivo versionado. Se prueba NEGANDO: cada regla se prueba con un dato dañado a propósito.
+ * Las pruebas escriben SOLO en directorios temporales (`salida`): nunca tocan ni borran los JSON locales reales de la carpeta del cliente.
  */
 import { spawnSync } from 'node:child_process';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,8 +17,6 @@ import type { J } from '../../lib/flujo';
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(AQUI, '../../../..');
 const CARPETA = join(RAIZ, 'Flujos/clientes/casa-bermejo');
-const LOCAL_PROD = join(CARPETA, 'casa-bermejo.local.json');
-const LOCAL_PRUEBA = join(CARPETA, 'casa-bermejo.prueba.local.json');
 const VERSIONADOS = [join(CARPETA, 'casa-bermejo.json'), join(CARPETA, 'casa-bermejo.prueba.json'), join(RAIZ, 'admin/scripts/datos/casa-bermejo/casa-bermejo.json')];
 const corrida = (...args: string[]) => spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador({}) });
 
@@ -31,6 +30,15 @@ const base = (): J => ({
   catalogoUrl: 'https://novutienda-sitio-stg.web.app',
   configBase: { phoneNumberIdEsperado: PHONE, nombreNegocio: 'Casa Bermejo', avisoPedidoEstado: 'APPROVED', hostsFoto: 'storage.googleapis.com', tratamiento: 'usted', modosDeEntrega: 'Recojo en tienda' },
 });
+/** Todo sustituido salvo la URL del verificador interno, que solo puede ser un marcador. */
+const completo = (): J => {
+  const d = base();
+  Object.assign(d['configBase'] as J, { numeroRecepcion: '59171234567', contactoAviso: '59172345678', telefonosDePrueba: '59173456789', costoDeEntrega: 'A convenir' });
+  d['credenciales'] = Object.fromEntries(['ingesta', 'graph', 'graphPrueba', 'entradaPrueba', 'gemini', 'geminiPrueba', 'catalogo', 'catalogoPrueba'].map((c) => [c, `Credencial de ensayo ${c}`]));
+  d['receptor'] = { ruta: RUTA, wabaIdEsperado: WABA };
+  d['pruebaRuta'] = 'prueba_ruta_0001';
+  return d;
+};
 
 const carpetas: string[] = [];
 function archivoLocal(datos: unknown, nombre = 'ensayo.local.json'): string {
@@ -40,77 +48,117 @@ function archivoLocal(datos: unknown, nombre = 'ensayo.local.json'): string {
   writeFileSync(ruta, typeof datos === 'string' ? datos : JSON.stringify(datos));
   return ruta;
 }
-const limpiar = () => { for (const f of [LOCAL_PROD, LOCAL_PRUEBA]) rmSync(f, { force: true }); for (const d of carpetas.splice(0)) rmSync(d, { recursive: true, force: true }); };
-afterEach(limpiar);
+/** Un directorio temporal de SALIDA, y los dos JSON locales que quedarían ahí. */
+function salidaTemporal(): { dir: string; prod: string; prueba: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'cb-salida-'));
+  carpetas.push(dir);
+  return { dir, prod: join(dir, 'casa-bermejo.local.json'), prueba: join(dir, 'casa-bermejo.prueba.local.json') };
+}
+afterEach(() => { for (const d of carpetas.splice(0)) rmSync(d, { recursive: true, force: true }); });
 const mensaje = (f: () => unknown): string => { try { f(); } catch (e) { return String((e as Error).message); } return ''; };
 const hash = (rutas: string[]) => rutas.map((r) => readFileSync(r, 'utf8'));
+const armar = (datos: unknown, salida: string) => C.construirLocal({ datosLocal: archivoLocal(datos), salida }) as { archivo: string; nodos: number; pendientes: string[] }[];
 
 describe('armar con datos locales', () => {
   it('sustituye lo local en los JSON locales y NO toca ni un byte de los versionados (ni de sus datos)', () => {
     const antes = hash(VERSIONADOS);
-    const r = C.construirLocal({ datosLocal: archivoLocal(base()) }) as { archivo: string; nodos: number }[];
+    const s = salidaTemporal();
+    const r = armar(base(), s.dir);
     expect(r.map((x) => x.archivo)).toEqual(['casa-bermejo.local.json', 'casa-bermejo.prueba.local.json']);
     expect(r.map((x) => x.nodos)).toEqual([61, 56]); // el MISMO tamaño que los versionados: ningún nodo ni mensaje agregado
     expect(hash(VERSIONADOS)).toEqual(antes);
-    const prod = readFileSync(LOCAL_PROD, 'utf8');
+    const prod = readFileSync(s.prod, 'utf8');
     expect(prod).toContain(WABA);
     expect(prod).toContain(PHONE);
     expect(prod).toContain('Gemini — pruebas (no producción)');
     for (const v of VERSIONADOS) { const t = readFileSync(v, 'utf8'); expect(t).not.toContain(WABA); expect(t).not.toContain(PHONE); }
   });
   it('los JSON locales nacen con permisos 600 (llevan la ruta del receptor, una URL de capacidad)', () => {
-    C.construirLocal({ datosLocal: archivoLocal(base()) });
-    for (const f of [LOCAL_PROD, LOCAL_PRUEBA]) expect(statSync(f).mode & 0o777).toBe(0o600);
+    const s = salidaTemporal();
+    armar(base(), s.dir);
+    for (const f of [s.prod, s.prueba]) expect(statSync(f).mode & 0o777).toBe(0o600);
+  });
+  it('un JSON local que YA existía con permisos 644 queda en 600 al volver a armarlo (fchmod, no solo el modo de creación)', () => {
+    const s = salidaTemporal();
+    for (const f of [s.prod, s.prueba]) { writeFileSync(f, '{}'); chmodSync(f, 0o644); expect(statSync(f).mode & 0o777).toBe(0o644); }
+    armar(base(), s.dir);
+    for (const f of [s.prod, s.prueba]) { expect(statSync(f).mode & 0o777).toBe(0o600); expect(readFileSync(f, 'utf8')).toContain(PHONE); }
   });
   it('`--verificar` sigue exigiendo los versionados al día y no se contamina con los locales', () => {
-    expect(corrida('--local', '--datos', archivoLocal(base())).status).toBe(0);
+    const s = salidaTemporal();
+    expect(corrida('--local', '--datos', archivoLocal(base()), '--salida', s.dir).status).toBe(0);
     const v = corrida('--verificar');
     expect(v.status).toBe(0);
     expect(v.stdout).toMatch(/al día \(61 nodos\)/);
   });
-  it('lo local queda ignorado por git, el archivo de datos local también', () => {
-    corrida('--local', '--datos', archivoLocal(base()));
-    for (const f of [LOCAL_PROD, LOCAL_PRUEBA, join(CARPETA, 'datos.local.json')]) {
-      const g = spawnSync('git', ['check-ignore', '-q', f], { cwd: RAIZ });
+  it('lo local queda ignorado por git, el archivo de datos local también (se comprueba por ruta, sin escribir en la carpeta del cliente)', () => {
+    for (const f of ['casa-bermejo.local.json', 'casa-bermejo.prueba.local.json', 'datos.local.json']) {
+      const g = spawnSync('git', ['check-ignore', '-q', join(CARPETA, f)], { cwd: RAIZ });
       expect(g.status, f).toBe(0);
     }
   });
-  it('la línea de comandos no imprime ningún valor, solo los nodos y los marcadores pendientes POR CLAVE', () => {
-    const r = corrida('--local', '--datos', archivoLocal(base()));
+  it('la línea de comandos no imprime ningún valor, solo los nodos y los marcadores pendientes de LO ARMADO (por su nombre fijo)', () => {
+    const s = salidaTemporal();
+    const r = corrida('--local', '--datos', archivoLocal(base()), '--salida', s.dir);
     expect(r.status).toBe(0);
     const salida = r.stdout + r.stderr;
     for (const valor of [WABA, PHONE, 'storage.googleapis.com', 'novutienda-sitio-stg']) expect(salida).not.toContain(valor);
-    expect(salida).toMatch(/marcadores sin sustituir \(credenciales\.ingesta/);
+    expect(salida).toMatch(/marcadores sin sustituir en lo armado \(REEMPLAZAR_CONTACTO_DESIGNADO_AVISO,/);
     expect(salida).toMatch(/61 nodos/);
   });
+  it('los marcadores pendientes se calculan sobre lo armado: un marcador sustituido ya no figura', () => {
+    const s = salidaTemporal();
+    const pend = armar(base(), s.dir)[0]!.pendientes;
+    expect(pend).toContain('REEMPLAZAR_CREDENCIAL_INGESTA');
+    expect(pend).toContain('REEMPLAZAR_URL_VERIFICADOR_RECEPTOR');
+    expect(pend).not.toContain('REEMPLAZAR_WABA_ID_CASA_BERMEJO'); // sustituido por el dato local
+    expect(pend).not.toContain('REEMPLAZAR_CREDENCIAL_GEMINI');
+    expect(pend).not.toContain('REEMPLAZAR_URL_CATALOGO');
+  });
   it('un marcador que queda sin sustituir deja el flujo local NO publicable (`--publicable` nombra el marcador, nunca un valor)', () => {
-    corrida('--local', '--datos', archivoLocal(base()));
-    const p = corrida('--publicable', '--flujo', LOCAL_PRUEBA);
+    const s = salidaTemporal();
+    armar(base(), s.dir);
+    const p = corrida('--publicable', '--flujo', s.prueba);
     expect(p.status).toBe(1);
     expect(p.stderr).toMatch(/marcador sin sustituir: REEMPLAZAR_/);
     expect(p.stderr + p.stdout).not.toContain(WABA);
   });
-  it('con TODO sustituido y el costo de entrega declarado, el flujo local pasa la guardia (y la guardia sigue exigiendo APPROVED)', () => {
-    const d = base();
-    const cb = d['configBase'] as J;
-    Object.assign(cb, { numeroRecepcion: '59171234567', contactoAviso: '59172345678', telefonosDePrueba: '59173456789', costoDeEntrega: 'A convenir' });
-    d['credenciales'] = Object.fromEntries(['ingesta', 'graph', 'graphPrueba', 'entradaPrueba', 'gemini', 'geminiPrueba', 'catalogo', 'catalogoPrueba'].map((c) => [c, `Credencial de ensayo ${c}`]));
-    d['receptor'] = { ruta: RUTA, wabaIdEsperado: WABA };
-    d['pruebaRuta'] = 'prueba_ruta_0001';
-    const r = corrida('--local', '--datos', archivoLocal(d));
+  it('con TODO sustituido y el costo de entrega declarado, la variante de prueba pasa la guardia (la de producción sigue bloqueada por el verificador, y APPROVED se sigue exigiendo)', () => {
+    const s = salidaTemporal();
+    const d = completo();
+    const r = corrida('--local', '--datos', archivoLocal(d), '--salida', s.dir);
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toMatch(/Quedan 1 marcadores sin sustituir \(receptor\.urlVerificador\)/);
-    // La variante de PRUEBA no lleva la entrada del receptor: pasa la guardia con todo sustituido.
-    expect(corrida('--publicable', '--flujo', LOCAL_PRUEBA).status).toBe(0);
-    // La de PRODUCCIÓN sigue bloqueada por el verificador, que solo puede ser un marcador.
-    const pp = corrida('--publicable', '--flujo', LOCAL_PROD);
+    expect(r.stdout).toMatch(/Quedan 1 marcadores sin sustituir en lo armado \(REEMPLAZAR_URL_VERIFICADOR_RECEPTOR\)/);
+    expect(corrida('--publicable', '--flujo', s.prueba).status).toBe(0);
+    const pp = corrida('--publicable', '--flujo', s.prod);
     expect(pp.status).toBe(1);
     expect(pp.stderr).toMatch(/REEMPLAZAR_URL_VERIFICADOR_RECEPTOR/);
-    (cb as J)['avisoPedidoEstado'] = 'PENDING';
-    corrida('--local', '--datos', archivoLocal(d, 'otro.local.json'));
-    const p = corrida('--publicable', '--flujo', LOCAL_PRUEBA);
+    (d['configBase'] as J)['avisoPedidoEstado'] = 'PENDING';
+    corrida('--local', '--datos', archivoLocal(d, 'otro.local.json'), '--salida', s.dir);
+    const p = corrida('--publicable', '--flujo', s.prueba);
     expect(p.status).toBe(1);
     expect(p.stderr).toMatch(/APPROVED/);
+  });
+});
+
+describe('NEGADO: las dos variantes pasan las guardias antes de escribir ninguna', () => {
+  it('una `geminiPrueba` con el nombre de la credencial de producción hace fallar la variante de prueba y NO se escribe NADA (ni la de producción, que sí pasaba)', () => {
+    const s = salidaTemporal();
+    const d = base();
+    (d['credenciales'] as J)['geminiPrueba'] = 'Gemini producción';
+    expect(mensaje(() => armar(d, s.dir))).toMatch(/casa-bermejo\.prueba\.json:/);
+    expect(existsSync(s.prod)).toBe(false);
+    expect(existsSync(s.prueba)).toBe(false);
+    const r = corrida('--local', '--datos', archivoLocal(d), '--salida', s.dir);
+    expect(r.status).toBe(1);
+    expect(existsSync(s.prod)).toBe(false);
+  });
+  it('un dato inválido NO deja un JSON local a medias (nada se escribe)', () => {
+    const s = salidaTemporal();
+    const r = corrida('--local', '--datos', archivoLocal({ ...base(), catalogoUrl: 'https://malo.example.com' }), '--salida', s.dir);
+    expect(r.status).toBe(1);
+    expect(existsSync(s.prod)).toBe(false);
+    expect(existsSync(s.prueba)).toBe(false);
   });
 });
 
@@ -129,15 +177,45 @@ describe('NEGADO: lo que un dato local no puede traer', () => {
     expect(mensaje(() => C.cargarDatosLocal(archivoLocal('{"a":')))).toMatch(/no es un JSON válido/);
     expect(mensaje(() => C.cargarDatosLocal(archivoLocal('[1]')))).toMatch(/tiene que ser un objeto/);
   });
-  it('una clave de nivel superior desconocida y cualquier clave con nombre de secreto', () => {
-    rechaza((d) => { d['extra'] = 'x'; }, /extra: clave desconocida/);
+  it('una clave que no existe en los datos versionados (en cualquier nivel) y cualquier clave con nombre de secreto', () => {
+    rechaza((d) => { d['extra'] = 'x'; }, /no existe en los datos versionados/);
+    rechaza((d) => { (d['configBase'] as J)['campoNuevo'] = 'x'; }, /configBase\.«clave no reconocida»: no existe en los datos versionados/);
+    rechaza((d) => { (d['credenciales'] as J)['otraCredencial'] = 'Una credencial'; }, /credenciales\.«clave no reconocida»: no existe/);
+    rechaza((d) => { (d['receptor'] as J)['otroCampo'] = 'x'; }, /receptor\.«clave no reconocida»: no existe/);
     rechaza((d) => { (d['configBase'] as J)['tokenDeMeta'] = 'abc'; }, /nombre de clave de un secreto/);
     rechaza((d) => { (d['receptor'] as J)['secreto'] = 'abc'; }, /nombre de clave de un secreto/);
   });
-  it('un valor con forma de token o de clave (Bearer, EAA…, AIza…, una cadena larga sin espacios) en cualquier campo', () => {
+  it('un dato versionado que no es de la lista blanca no se cambia desde un archivo local (`mensajeComercioSuspendido` es lo que el asistente le promete al cliente)', () => {
+    const m = rechaza((d) => { (d['configBase'] as J)['mensajeComercioSuspendido'] = 'Te llamamos apenas abramos'; }, /configBase\.mensajeComercioSuspendido: ese dato no se cambia desde un archivo local/);
+    expect(m).not.toContain('Te llamamos');
+  });
+  it('los textos libres de la lista blanca tienen un largo máximo', () => {
+    rechaza((d) => { (d['configBase'] as J)['modosDeEntrega'] = 'x'.repeat(201); }, /modosDeEntrega: forma no válida/);
+    rechaza((d) => { (d['configBase'] as J)['costoDeEntrega'] = 'x '.repeat(101); }, /costoDeEntrega: forma no válida/);
+    rechaza((d) => { (d['configBase'] as J)['nombreNegocio'] = 'x'.repeat(81); }, /nombreNegocio: forma no válida/);
+    rechaza((d) => { d['nombreFlujo'] = 'x'.repeat(101); }, /nombreFlujo: forma no válida/);
+    rechaza((d) => { (d['configBase'] as J)['hostsFoto'] = 'a.com,'.repeat(40); }, /hostsFoto: forma no válida/);
+  });
+  it('el mensaje de error NO repite el nombre de una clave que no está en los datos versionados (puede ser un secreto escrito como clave)', () => {
+    const secreto = 'sk_ESTE_NOMBRE_NO_DEBE_SALIR_9f3k2';
+    for (const colocar of [(d: J) => { d[secreto] = 'x'; }, (d: J) => { (d['configBase'] as J)[secreto] = 'x'; }, (d: J) => { (d['credenciales'] as J)[secreto] = 'x'; }, (d: J) => { (d['receptor'] as J)[secreto] = 'x'; }]) {
+      const d = base(); colocar(d);
+      const m = mensaje(() => C.cargarDatosLocal(archivoLocal(d)));
+      expect(m).not.toBe('');
+      expect(m).not.toContain(secreto);
+      const r = corrida('--local', '--datos', archivoLocal(d), '--salida', salidaTemporal().dir);
+      expect(r.status).toBe(1);
+      expect(r.stdout + r.stderr).not.toContain(secreto);
+    }
+  });
+  it('un valor con forma de token o de clave (Bearer, EAA…, AIza…, JWT, una cadena larga sin espacios) en cualquier campo', () => {
     rechaza((d) => { (d['credenciales'] as J)['graph'] = 'EAAB' + 'x'.repeat(40); }, /credenciales\.graph: el valor parece un token/);
     rechaza((d) => { (d['configBase'] as J)['nombreNegocio'] = 'Bearer abcdefghijklmnop'; }, /nombreNegocio: el valor parece un token/);
     rechaza((d) => { (d['credenciales'] as J)['catalogo'] = 'a'.repeat(40); }, /credenciales\.catalogo: el valor parece un token/);
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.firma_de_ensayo';
+    const m = rechaza((d) => { (d['credenciales'] as J)['ingesta'] = jwt; }, /credenciales\.ingesta: el valor parece un token/);
+    expect(m).not.toContain(jwt);
+    rechaza((d) => { (d['configBase'] as J)['nombreNegocio'] = 'eyJhbGci.eyJzdWIi'; }, /nombreNegocio: el valor parece un token/);
   });
   it('el nombre de una credencial con comillas, llaves, barra invertida o salto de línea', () => {
     for (const malo of ['Cre"dencial', 'Cred{{x}}', 'Cred\\x', 'Cred\nx']) rechaza((d) => { (d['credenciales'] as J)['gemini'] = malo; }, /credenciales\.gemini: forma de nombre no válida/);
@@ -165,29 +243,18 @@ describe('NEGADO: lo que un dato local no puede traer', () => {
     rechaza((d) => { (d['configBase'] as J)['hostsFoto'] = ['a']; }, /no se admiten listas/);
     rechaza((d) => { (d['configBase'] as J)['nombreNegocio'] = { a: 1 }; }, /solo texto, número o booleano/);
   });
-  it('un dato inválido NO deja un JSON local a medias (nada se escribe)', () => {
-    corrida('--local', '--datos', archivoLocal({ ...base(), catalogoUrl: 'https://malo.example.com' }));
-    expect(existsSync(LOCAL_PROD)).toBe(false);
-    expect(existsSync(LOCAL_PRUEBA)).toBe(false);
-  });
 });
 
 describe('línea de comandos', () => {
-  it('`--local` sin `--datos`, con argumentos de más o con `--datos` sin valor sale 2; un dato inválido sale 1 y sin imprimir valores', () => {
+  it('`--local` sin `--datos`, con argumentos de más o con una opción sin valor sale 2; un dato inválido sale 1 y sin imprimir valores', () => {
     expect(corrida('--local').status).toBe(2);
     expect(corrida('--local', '--datos').status).toBe(2);
     expect(corrida('--local', '--datos', archivoLocal(base()), '--otro').status).toBe(2);
     expect(corrida('--local', '--datos', '--verificar').status).toBe(2);
+    expect(corrida('--local', '--datos', archivoLocal(base()), '--salida').status).toBe(2);
     const d = base(); (d['receptor'] as J)['wabaIdEsperado'] = 'valor-malo-12345';
-    const r = corrida('--local', '--datos', archivoLocal(d));
+    const r = corrida('--local', '--datos', archivoLocal(d), '--salida', salidaTemporal().dir);
     expect(r.status).toBe(1);
     expect(r.stderr + r.stdout).not.toContain('valor-malo-12345');
-  });
-  it('los marcadores pendientes se nombran por clave y nunca por valor', () => {
-    const d = C.cargarDatosLocal(archivoLocal(base())) as J;
-    const pend = C.marcadoresPendientes(d) as string[];
-    expect(pend).toContain('credenciales.ingesta');
-    expect(pend).toContain('receptor.ruta');
-    expect(pend.join(' ')).not.toMatch(/REEMPLAZAR_/);
   });
 });
