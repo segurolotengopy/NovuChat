@@ -13,10 +13,11 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { carpetaDeFlujo } from '../../lib/carpeta-de-flujo';
 import { describe, expect, it } from 'vitest';
 import { nodosDeEnvio, MARCADOR_URL_DEL_RELE, hallazgosDelEnvioRele } from '../../../../Flujos/src/core/sin-agente/envio.mjs';
 import { hallazgosDelGuardado } from '../../../../Flujos/src/core/sin-agente/guardado.mjs';
-import * as evy from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
+import * as evy from '../../../../Flujos/clientes/rroca-evy/construir.mjs';
 import * as emma from '../../../../Flujos/experimental/rroca-emma/construir.mjs';
 import type { J } from '../../lib/flujo';
 import { falla, mensaje, mundoRele, ok, turno, turnoConError } from './ayuda';
@@ -30,8 +31,8 @@ const CLIENTES: Array<{ nombre: string; carpeta: string; archivo: string; client
   { nombre: 'Evy', carpeta: 'rroca-evy', archivo: 'rroca-evy', cliente: 'rroca-evy', cred: 'AAB1 envío · cliente08', c: evy },
   { nombre: 'Emma', carpeta: 'rroca-emma', archivo: 'rroca-emma', cliente: 'rroca-emma', cred: 'AAB1 envío · cliente07', c: emma as unknown as Constructor },
 ];
-const leerFlujo = (carpeta: string, archivo: string): Flujo => JSON.parse(readFileSync(join(RAIZ, 'Flujos', 'experimental', carpeta, `${archivo}.json`), 'utf8')) as Flujo;
-const leerPrueba = (carpeta: string, archivo: string): Flujo => JSON.parse(readFileSync(join(RAIZ, 'Flujos', 'experimental', carpeta, `${archivo}.prueba.json`), 'utf8')) as Flujo;
+const leerFlujo = (carpeta: string, archivo: string): Flujo => JSON.parse(readFileSync(join(RAIZ, 'Flujos', carpetaDeFlujo(carpeta), carpeta, `${archivo}.json`), 'utf8')) as Flujo;
+const leerPrueba = (carpeta: string, archivo: string): Flujo => JSON.parse(readFileSync(join(RAIZ, 'Flujos', carpetaDeFlujo(carpeta), carpeta, `${archivo}.prueba.json`), 'utf8')) as Flujo;
 const copia = (f: Flujo): Flujo => JSON.parse(JSON.stringify(f)) as Flujo;
 const nodo = (f: Flujo, n: string): Nodo => { const x = f.nodes.find((y) => y.name === n); if (!x) throw new Error(`falta ${n}`); return x; };
 

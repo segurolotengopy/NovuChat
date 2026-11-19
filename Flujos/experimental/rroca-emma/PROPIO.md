@@ -1,7 +1,7 @@
 # El flujo nuevo de la Dra. Emma (`rroca-emma`, cliente07): qué es común y qué es propio
 
 Regla (Andres, 09/10/2026): flujo propio = composición propia + núcleo común obligatorio. Lo común se incluye desde su fuente; donde no hay fuente utilizable, copia declarada con prueba de igualdad.
-Este flujo se construyó el 24/10/2026 **adaptando el flujo nuevo de la Dra. Evy** (`Flujos/experimental/rroca-evy/`, ya probado y fusionado), no el asistente anterior de las doctoras (`Flujos/experimental/doctoras/`, que sigue siendo de Emma y no se toca). Su diseño, topología (36 nodos en producción, 31 en la prueba) y barreras son los de Evy; ver `DISENO.md` y el de Evy.
+Este flujo se construyó el 24/10/2026 **adaptando el flujo nuevo de la Dra. Evy** (`Flujos/clientes/rroca-evy/`, ya probado y fusionado), no el asistente anterior de las doctoras (`Flujos/experimental/doctoras/`, que sigue siendo de Emma y no se toca). Su diseño, topología (36 nodos en producción, 31 en la prueba) y barreras son los de Evy; ver `DISENO.md` y el de Evy.
 
 ## Incluido desde su fuente (nunca copiado)
 - Mensajes (`Flujos/src/core/sin-agente/mensajes.js`), filtro de redacción (`Flujos/src/core/texto/filtro-redaccion.js`: `cmMotivoDeRechazo`), cadena de envío (`injertar`) y armador: `Flujos/src/core/sin-agente/`.

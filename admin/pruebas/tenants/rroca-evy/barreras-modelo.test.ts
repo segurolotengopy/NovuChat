@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error el motor es un .mjs sin tipos
-import { main, respuestaGuardada, textoDeMotivos } from '../../../../Flujos/experimental/rroca-evy/herramientas/bateria.mjs';
+import { main, respuestaGuardada, textoDeMotivos } from '../../../../Flujos/clientes/rroca-evy/herramientas/bateria.mjs';
 import { ANA, IDS, crear, dice, hablar, imagenes, mAudio, mTexto, textos } from './mundo';
 
 /** Cae al texto fijo: el de fallo del modelo o el de remisión de salud (ambos con el botón de la recepción). */

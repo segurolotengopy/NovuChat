@@ -4,6 +4,9 @@
 // Cubre text, interactive (list_reply ANTES que button_reply), button, audio/voice, image, document, location, sticker, contacts, order y cualquier otro tipo. Nunca se lee `.text.body` sin pasar por aquí.
 // LA CLAVE DE LA CONVERSACIÓN ES EL NÚMERO DE ORIGEN (`messages[0].from`): dos clientes jamás comparten ficha. Si no son solo dígitos (6 a 20), el mensaje se descarta. Solo se lee `messages[0]` (límite declarado).
 //
+// LA UBICACIÓN (location): con latitud y longitud NÚMEROS finitos en rango (|lat| <= 90, |lng| <= 180) y distintas de (0, 0) —el valor que ponen los clientes sin GPS—, el mensaje es una conversación y sale `ubicacion: {lat, lng}`.
+// `ubicacion` se publica siempre (válida o null), pero el mensaje solo pasa a conversación si el tenant declara `aceptaUbicacion: true` en `CN_TENANT`; si no, o si la ubicación no es válida (sin coordenadas, cadenas, fuera de rango, (0,0), otro país), sigue siendo «otro», como siempre. El nombre y la dirección que manda el cliente en el pin NO se leen.
+// EL ANUNCIO (referral): `anuncioId` (source_id, 64), `anuncioTitular` (headline, 200) y `anuncioCuerpo` (body, 200), saneados (sin controles, bidi, <, > ni &). Todos los campos nuevos existen SIEMPRE (vacíos o null).
 // NADA se descarta salvo: no hay mensaje, el número no es válido, el prefijo de país no está permitido y ya se le respondió en las últimas 24 horas, Meta reenvió un mensaje que ya se procesó (los últimos ids de la ficha) y lo que no es una
 // conversación (reacciones, bienvenida, sistema, efímeros). Este nodo SOLO LEE la ficha. `categoria`: `conversacion` (texto o toque), `medio` (audio, imagen o PDF con id de medio) u `otro` (lo que este canal
 // no lee: texto cortés fijo, sin modelo). Un audio, una imagen o un documento salen SIN texto: lo arman los nodos de medios.
@@ -34,6 +37,11 @@ const idDelMedio = (m) => { const id = m && m.id ? String(m.id) : ''; return /^[
 const mediaId = tipo === 'audio' ? idDelMedio(audio) : (visual ? idDelMedio(visual) : '');
 const sinControles = (v, max) => String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').slice(0, max);
 
+const coordenada = (v, max) => (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= max ? v : null);
+const loc = tipo === 'location' && msg.location && typeof msg.location === 'object' ? msg.location : null;
+const lat = loc ? coordenada(loc.latitude, 90) : null;
+const lng = loc ? coordenada(loc.longitude, 180) : null;
+const ubicacion = lat !== null && lng !== null && !(lat === 0 && lng === 0) ? { lat: lat, lng: lng } : null;
 let texto = '';
 let textoReporte = '';
 let pie = '';
@@ -65,6 +73,13 @@ if (tipo === 'text') {
   texto = pie;
   textoReporte = tipo === 'image' ? '(imagen) el cliente envió una foto' : '(documento) el cliente envió un archivo';
   categoria = mediaId !== '' ? 'medio' : 'otro';
+} else if (tipo === 'location') {
+  textoReporte = '(ubicación) el cliente compartió su ubicación';
+  // OPT-IN POR TENANT: solo si su librería declara `CN_TENANT.aceptaUbicacion === true` el pin es una conversación (con un texto fijo, nunca el del cliente); sin el parámetro sigue siendo «otro» (texto cortés, sin modelo), como siempre.
+  if (ubicacion && typeof CN_TENANT === 'object' && CN_TENANT && CN_TENANT.aceptaUbicacion === true) {
+    texto = '(el cliente compartió su ubicación)';
+    categoria = 'conversacion';
+  }
 } else {
   const rotulo = tipo.replace(/[^a-z_]/g, '');
   textoReporte = '(' + rotulo + ') el cliente envió un mensaje de tipo ' + rotulo;
@@ -100,6 +115,9 @@ if (Array.isArray(campanasCfg)) {
   }
 }
 const campana = laCampana ? { id: planoAd(laCampana.id, 60), texto: planoAd(laCampana.texto, 300).replace(/[\[\]]/g, ''), por: campanaPor } : null;
+// Del texto de un anuncio: sin controles, sin marcas bidi, sin <, > ni & (un dato, nunca algo ejecutable) y sin espacios de más. Solo texto: un objeto o una lista valen vacío.
+const textoDeAnuncio = (v, max) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f\u2028\u2029\u200b\u200e\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff<>&]/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, max) : '');
+const idDeAnuncio = ((v) => (/^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : ''))(typeof (ref && ref.source_id) === 'string' && ref.source_id.length <= 64 ? ref.source_id : '');
 const mimeType = sinControles(visual && visual.mime_type, 100).toLowerCase();
 
 return [{ json: {
@@ -122,6 +140,11 @@ return [{ json: {
   campanaPor: campana ? campana.por : '',
   ctwaClid: ref ? planoAd(ref.ctwa_clid, 200) : '',
   origen: ref ? 'anuncio' : 'directo',
+  anuncioId: idDeAnuncio,
+  anuncioTitular: textoDeAnuncio(ref && ref.headline, 200),
+  anuncioCuerpo: textoDeAnuncio(ref && ref.body, 200),
+  // Solo con una ubicación válida de un número atendido; si no, null.
+  ubicacion: fueraDePais ? null : ubicacion,
   // El contrato con los módulos comunes de medios.
   esMedioAudio: !fueraDePais && tipo === 'audio' && mediaId !== '',
   esMedioVisual: !fueraDePais && (tipo === 'image' || tipo === 'document') && mediaId !== '',

@@ -25,21 +25,21 @@ const viejo = { name: NOMBRE, active: false, connections: {}, settings: {}, node
 const vivoNuevo = join(dir, 'vivo-nuevo.json'); writeFileSync(vivoNuevo, JSON.stringify({ ...nuevo, active: false }));
 const vivoViejo = join(dir, 'vivo-viejo.json'); writeFileSync(vivoViejo, JSON.stringify(viejo));
 const vivoOtro = join(dir, 'vivo-otro.json'); writeFileSync(vivoOtro, JSON.stringify({ name: 'Otro cliente', active: false, nodes: [] }));
-const REL_NUEVO = 'Flujos/experimental/rroca-evy/rroca-evy.json';
+const REL_NUEVO = 'Flujos/clientes/rroca-evy/rroca-evy.json';
 const REL_VIEJO = 'Flujos/experimental/doctoras/doctoras.rroca-evy.json';
 const REL_EMMA = 'Flujos/experimental/doctoras/doctoras.rroca-emma.json';
-const REL_RENOMBRADO = 'Flujos/experimental/rroca-evy/flujo-renombrado.json';
-const REL_COMO_EMMA = 'Flujos/experimental/rroca-evy/rroca-emma.json';
+const REL_RENOMBRADO = 'Flujos/clientes/rroca-evy/flujo-renombrado.json';
+const REL_COMO_EMMA = 'Flujos/clientes/rroca-evy/rroca-emma.json';
 
 /** Una raíz de juguete: el script bajo prueba y construir.mjs de juguete (el del flujo nuevo aprueba SOLO la etapa indicada; el de las doctoras aprueba según `doctoras`). Cada uno deja su rastro. */
 function raizCon(nombre: string, script: string, o: { evy?: string; doctoras?: number } = {}): string {
   const raiz = join(dir, nombre);
   mkdirSync(join(raiz, 'scripts'), { recursive: true });
   mkdirSync(join(raiz, 'Flujos/experimental/doctoras'), { recursive: true });
-  mkdirSync(join(raiz, 'Flujos/experimental/rroca-evy'), { recursive: true });
+  mkdirSync(join(raiz, 'Flujos/clientes/rroca-evy'), { recursive: true });
   writeFileSync(join(raiz, 'scripts/publicar-flujo.sh'), script); chmodSync(join(raiz, 'scripts/publicar-flujo.sh'), 0o755);
   writeFileSync(join(raiz, 'Flujos/experimental/doctoras/construir.mjs'), `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.LOG_GUARDIAS, 'doctoras ' + process.argv.slice(2).join(' ') + '\\n'); process.exit(${o.doctoras ?? 0});\n`);
-  writeFileSync(join(raiz, 'Flujos/experimental/rroca-evy/construir.mjs'), `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.LOG_GUARDIAS, 'evy ' + process.argv.slice(2).join(' ') + '\\n'); process.exit(process.argv.join(' ').includes('--etapa ${o.evy ?? 'prueba'}') ? 0 : 1);\n`);
+  writeFileSync(join(raiz, 'Flujos/clientes/rroca-evy/construir.mjs'), `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.LOG_GUARDIAS, 'evy ' + process.argv.slice(2).join(' ') + '\\n'); process.exit(process.argv.join(' ').includes('--etapa ${o.evy ?? 'prueba'}') ? 0 : 1);\n`);
   writeFileSync(join(raiz, REL_NUEVO), JSON.stringify(nuevo));
   writeFileSync(join(raiz, REL_VIEJO), JSON.stringify({ name: 'doctoras', nodes: [] }));
   writeFileSync(join(raiz, REL_EMMA), JSON.stringify({ name: 'doctoras emma rroca-emma', nodes: [] }));

@@ -665,11 +665,11 @@ el flujo deriva («QR no disponible») y esa rama es lo que se prueba.
 > **Un solo teléfono, el de la persona de prueba, hace de cliente y de recepción.** Escribe a la línea del
 > Demo A y el flujo de Evy le contesta desde el n8n del Demo A; el aviso a recepción y el botón «Escribir a
 > recepción» le llegan **al mismo chat**. Nada de esto toca el número, el flujo ni la configuración de
-> Evy. Diseño de la variante: `Flujos/experimental/rroca-evy/DISENO.md`, «La variante de ensayo en el
+> Evy. Diseño de la variante: `Flujos/clientes/rroca-evy/DISENO.md`, «La variante de ensayo en el
 > Demo A». Es el mismo mecanismo del §9 (Rubén) con otro JSON; la herramienta `flujo-de-prueba.mjs`
 > **no se modifica**.
 
-**Las piezas.** `Flujos/experimental/rroca-evy/rroca-evy.ensayo-demo-a.json` (40 nodos), que sale de
+**Las piezas.** `Flujos/clientes/rroca-evy/rroca-evy.ensayo-demo-a.json` (40 nodos), que sale de
 `construir.mjs` con los datos `admin/scripts/datos/rroca-evy/ensayo-demo-a.json` (hereda de
 `rroca-evy.json`). Pruebas: `admin/pruebas/tenants/rroca-evy/ensayo-demo-a.test.ts` y
 `ensayo-demo-a-herramienta.test.ts` (la herramienta real contra un n8n de mentira).
@@ -718,13 +718,13 @@ debe leer el panel de `ensayo` (ver el informe de la sesión que lo construyó).
 0. **Antes de empezar:** el §6 «Antes de empezar» A a D (autorizaciones, anotar el ensayo en `ESTADO.md` y
    **una fila para el Demo A en `docs/versiones-por-cliente.md`** —«corre Evy en ensayo», con su porqué y
    su cierre; se retira al restaurar—, árbol al día en un worktree, línea de base de la suscripción de
-   Meta). Más: `node Flujos/experimental/rroca-evy/construir.mjs --verificar` en 0 (cubre las tres
+   Meta). Más: `node Flujos/clientes/rroca-evy/construir.mjs --verificar` en 0 (cubre las tres
    variantes), el teléfono de quien prueba **registrado en la app del Demo A** (prohibición 6) y la tabla
    local con los dos marcadores: `REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A) y
    `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono de quien prueba, con prefijo 591; sin mostrar el valor,
    **nunca en un archivo del repositorio**).
 1. **Preparar el import:** `CONFIG_LOCAL_MD=~/NovuChat/CONFIGURACION.local.md ./scripts/preparar-import.sh
-   <worktree>/Flujos/experimental/rroca-evy/rroca-evy.ensayo-demo-a.json .env` (los dos marcadores
+   <worktree>/Flujos/clientes/rroca-evy/rroca-evy.ensayo-demo-a.json .env` (los dos marcadores
    resueltos y ninguno sin resolver; deja `rroca-evy.ensayo-demo-a.local.json`, ignorado por git: se
    borra al terminar).
 2. **La plataforma:** `ensayo.mjs --preparar --cliente evy --archivo <copia de negocio-rroca-evy.json en

@@ -2106,7 +2106,8 @@ service cloud.firestore {
                       && conversacionValida()
                       && !request.resource.data.keys().hasAny(['turno', 'envioPersona',
                                                                'ultimoSalientePersonaEn', 'phoneNumberId',
-                                                               'rescate', 'riesgoEn', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn']);
+                                                               'rescate', 'riesgoEn', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn',
+                                                               'ultimoPedido']);
         allow delete: if false;
 
         // Dos ramas de actualización disjuntas:
@@ -2123,7 +2124,8 @@ service cloud.firestore {
                           && conversacionValida()
                           && !request.resource.data.diff(resource.data).affectedKeys()
                                 .hasAny(['turno', 'envioPersona', 'ultimoSalientePersonaEn', 'phoneNumberId',
-                                         'rescate', 'riesgoEn', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn']))
+                                         'rescate', 'riesgoEn', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn',
+                                         'ultimoPedido']))
                       || (esPersonaDelNegocio(tenantId)
                           && tenantOperativo(tenantId)
                           // `noContactar` es la lista de no molestar (bloque 4): una
@@ -2234,7 +2236,15 @@ service cloud.firestore {
                  // los tiene; las ramas create/update de arriba le PROHÍBEN al token de ingesta crearlos o
                  // cambiarlos, y la persona del negocio no los tiene en su `soloCampos`: un navegador no
                  // bloquea ni desbloquea por aquí (el servidor además exige administrador).
-                 , 'bloqueada', 'bloqueadaPor', 'bloqueadaEn'])
+                 , 'bloqueada', 'bloqueadaPor', 'bloqueadaEn'
+                 // LA FACTURA DEL ÚLTIMO PEDIDO (PR-F, Walisuma, 19/11/2026): `ultimoPedido` = { codigo,
+                 // cierreId, factura: pedida|dada|sin, desdeMs, venceMs, facturaEnMs }, SIN razón social ni
+                 // NIT. Lo escriben SOLO `cotejarComprobanteVenta` (al cerrar con código) y la ingesta (evento
+                 // `factura_dada`/`factura_sin`), con el SDK Admin. Se tolera aquí (como `turno`) para que una
+                 // conversación que ya lo tiene no falle la validación; las ramas create/update de arriba le
+                 // PROHÍBEN al token de ingesta crearlo o cambiarlo, y la persona del negocio no lo tiene en su
+                 // `soloCampos`: nadie lo falsifica desde un SDK cliente.
+                 , 'ultimoPedido'])
             && (!d.keys().hasAny(['solicitud'])
                 || (d.solicitud is map
                     // `horarios` es la etapa del bloque 4: el asistente ofreció

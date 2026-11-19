@@ -20,7 +20,7 @@ import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const HERRAMIENTA = join(aqui, '../../../../Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs');
-const EVY = join(aqui, '../../../../Flujos/experimental/rroca-evy/rroca-evy.ensayo-demo-a.json');
+const EVY = join(aqui, '../../../../Flujos/clientes/rroca-evy/rroca-evy.ensayo-demo-a.json');
 const DEMO_A = join(aqui, '../../../../Flujos/demo-a-agendamiento.json');
 const ejecutar = promisify(execFile);
 const PHONE_ID = ['1000', '0000', '0004', '2'].join(''); // el del Demo A, sintético (armado con join: ningún literal largo en el repositorio)
