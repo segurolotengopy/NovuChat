@@ -63,3 +63,10 @@ Sustituir los marcadores (credenciales, receptor, WABA, número, contacto de avi
 
 ## Baja por texto (13/11/2026)
 La baja («no me escribas más») usa la pieza común `Flujos/src/core/conversacion/baja.js` (`bj*`), incluida byte a byte: un texto fijo de confirmación, sin modelo ni aviso, solo con texto escrito (la misma fuente que marca `no_contactar` en «Reportar mensaje (entrante)»). 0 mensajes agregados, 0 nodos.
+
+## JSON locales con datos de ensayo (19/11/2026)
+`node Flujos/clientes/casa-bermejo/construir.mjs --local --datos <archivo>.local.json` arma `casa-bermejo.local.json` y `casa-bermejo.prueba.local.json` con los valores de ese archivo fusionados sobre los datos versionados. Todo lo que termina en `.local.json` lo ignora git, y el comando **nunca** toca los JSON ni los datos versionados (`--verificar` sigue exigiendo que coincidan con la plantilla sin valores) ni imprime un valor: solo nodos y los marcadores que quedan, por clave.
+- **Qué acepta:** nombres de credencial (no tokens), ids de WABA y de número, la ruta del receptor y la de prueba (solo caracteres de ruta, nunca una URL), la base del catálogo (`https://` + un host de `ANFITRIONES_TIENDA`, sin ruta), `hostsFoto`, trato, modos y costo de entrega, estado de la plantilla.
+- **Qué rechaza:** claves con nombre de secreto, valores con forma de token, claves desconocidas, listas, hosts fuera de `ANFITRIONES_TIENDA` y **la URL del verificador interno**: la guardia de lo armado solo admite el marcador en ese nodo, así que `--publicable` seguirá fallando en producción hasta que esa URL tenga un camino aprobado.
+- **Publicar:** `--publicable --flujo <json local>` revisa el flujo ya sustituido; un marcador que quede lo bloquea. Los tokens no entran nunca aquí: las credenciales de n8n se crean aparte y el flujo las nombra.
+- **Pruebas:** `admin/pruebas/tenants/casa-bermejo/armado-local.test.ts`.
