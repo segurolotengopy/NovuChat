@@ -298,7 +298,7 @@ const CON_RAMA: Array<{ archivo: string; vias: ViaDelGuardadoSaliente[]; reporte
 ];
 const SIN_RAMA = [
   // Bloque 2b (sus imágenes de catálogo hoy no se reportan a la ingesta: requiere un cambio de servidor).
-  'clientes/rroca-evy/rroca-evy.json', 'experimental/rroca-emma/rroca-emma.json', 'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-emma.json',
+  'clientes/rroca-evy/rroca-evy.json', 'clientes/rroca-emma/rroca-emma.json', 'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-emma.json',
   // La imagen sale de ENCABEZADO de un interactivo (se reporta `interactive` o `text`): el servidor solo admite un saliente de tipo `image`.
   'clientes/novuchat/chat-novuchat.novuchat.json', 'experimental/captacion-minima/captacion-minima.novuchat.json',
   // No envían imágenes del asistente (Agenda mínima no manda QR; el flujo A de Bellido está descartado y el de onboarding es histórico).

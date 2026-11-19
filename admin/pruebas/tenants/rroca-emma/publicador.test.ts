@@ -45,20 +45,22 @@ const vivoEvyNuevo = escribir('vivo-evy-nuevo.json', { ...nuevoDe(NOMBRE_EVY, 'r
 const vivoEvyViejo = escribir('vivo-evy-viejo.json', viejoDe(NOMBRE_EVY, 'rroca-evy', PHONE_EVY));
 const vivoOtro = escribir('vivo-otro.json', { name: 'Otro cliente', active: false, nodes: [] });
 
-const REL_NUEVO = 'Flujos/experimental/rroca-emma/rroca-emma.json';
+const REL_NUEVO = 'Flujos/clientes/rroca-emma/rroca-emma.json';
 const REL_EVY_NUEVO = 'Flujos/clientes/rroca-evy/rroca-evy.json';
 const REL_EMMA_VIEJO = 'Flujos/experimental/doctoras/doctoras.rroca-emma.json';
 const REL_EVY_VIEJO = 'Flujos/experimental/doctoras/doctoras.rroca-evy.json';
-const REL_RENOMBRADO = 'Flujos/experimental/rroca-emma/flujo-renombrado.json';
-const REL_CON_TENANT_DE_EVY = 'Flujos/experimental/rroca-emma/con-tenant-de-evy.json';
+const REL_RENOMBRADO = 'Flujos/clientes/rroca-emma/flujo-renombrado.json';
+const REL_CON_TENANT_DE_EVY = 'Flujos/clientes/rroca-emma/con-tenant-de-evy.json';
 
 /** Una raíz de juguete: el script bajo prueba y los construir.mjs de juguete. El de Emma aprueba SOLO la etapa indicada; el de Evy y el de las doctoras dejan su rastro (no deben llamarse para un flujo de Emma). */
 function raizCon(nombre: string, script: string, o: { emma?: string; evy?: string; doctoras?: number } = {}): string {
   const raiz = join(dir, nombre);
-  for (const d of ['scripts', 'Flujos/experimental/doctoras', 'Flujos/clientes/rroca-evy', 'Flujos/experimental/rroca-evy', 'Flujos/experimental/rroca-emma']) mkdirSync(join(raiz, d), { recursive: true });
+  for (const d of ['scripts', 'Flujos/experimental/doctoras', 'Flujos/clientes/rroca-evy', 'Flujos/experimental/rroca-evy', 'Flujos/clientes/rroca-emma', 'Flujos/experimental/rroca-emma']) mkdirSync(join(raiz, d), { recursive: true });
   writeFileSync(join(raiz, 'scripts/publicar-flujo.sh'), script); chmodSync(join(raiz, 'scripts/publicar-flujo.sh'), 0o755);
   writeFileSync(join(raiz, 'Flujos/experimental/doctoras/construir.mjs'), `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.LOG_GUARDIAS, 'doctoras ' + process.argv.slice(2).join(' ') + '\\n'); process.exit(${o.doctoras ?? 0});\n`);
   const guardia = (tenant: string, etapa: string): string => `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.LOG_GUARDIAS, '${tenant} ' + process.argv.slice(2).join(' ') + '\\n'); process.exit(process.argv.join(' ').includes('--etapa ${etapa}') ? 0 : 1);\n`;
+  writeFileSync(join(raiz, 'Flujos/clientes/rroca-emma/construir.mjs'), guardia('emma', o.emma ?? 'prueba'));
+  // Mudanza de Emma (16/11/2026): el script de origin/main (la base del cotejo ADITIVO) aún busca la guardia en la ruta vieja; el propio, en la nueva. Las dos rutas, el mismo juguete.
   writeFileSync(join(raiz, 'Flujos/experimental/rroca-emma/construir.mjs'), guardia('emma', o.emma ?? 'prueba'));
   writeFileSync(join(raiz, 'Flujos/clientes/rroca-evy/construir.mjs'), guardia('evy', o.evy ?? 'prueba'));
   // Mudanza de Evy (16/11/2026): el script de origin/main (la base del cotejo ADITIVO) aún busca la guardia en la ruta vieja; el propio, en la nueva. Las dos rutas, el mismo juguete.
@@ -181,10 +183,10 @@ describe('NEGADAS: el flujo nuevo de Emma NUNCA reemplaza un flujo vivo que no e
   }
   it('SEGURIDAD: un tenantId repetido en el archivo o en el vivo se NIEGA (falla cerrado), también con --forzar; y un flujo de otro cliente con las tres condiciones débiles del viejo de Emma NO se reconoce', () => {
     const repetido = (n: string, t1: string, t2: string) => ({ ...nuevoDe(n, t1), nodes: [{ name: 'Armar previos' }, { name: 'Config base', parameters: { assignments: { assignments: [{ name: 'tenantId', value: t1 }, { name: 'tenantId', value: t2 }] } } }] });
-    const archivoRepetido = join(raiz, 'Flujos/experimental/rroca-emma/repetido.json'); writeFileSync(archivoRepetido, JSON.stringify(repetido(NOMBRE, 'rroca-emma', 'rroca-evy')));
+    const archivoRepetido = join(raiz, 'Flujos/clientes/rroca-emma/repetido.json'); writeFileSync(archivoRepetido, JSON.stringify(repetido(NOMBRE, 'rroca-emma', 'rroca-evy')));
     const vivoRepetido = escribir('vivo-repetido.json', repetido(NOMBRE, 'rroca-emma', 'rroca-emma'));
     for (const extra of [[], ['--forzar']]) {
-      const a = correrEn(raiz, ['--flujo', 'Flujos/experimental/rroca-emma/repetido.json', '--aplicar', '--etapa-prueba', '--confirmo-emma', ...extra], vivoEmmaViejo);
+      const a = correrEn(raiz, ['--flujo', 'Flujos/clientes/rroca-emma/repetido.json', '--aplicar', '--etapa-prueba', '--confirmo-emma', ...extra], vivoEmmaViejo);
       expect(a.status, 'archivo repetido').toBe(1); expect(a.stderr).toMatch(/NEGADO: el archivo trae el tenantId repetido/); sinEscritura(a.curl);
       const v = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-emma', ...extra], vivoRepetido);
       expect(v.status, 'vivo repetido').toBe(1); expect(v.stderr).toMatch(/NEGADO: el flujo vivo trae el tenantId repetido/); sinEscritura(v.curl);
@@ -200,10 +202,10 @@ describe('NEGADAS: el flujo nuevo de Emma NUNCA reemplaza un flujo vivo que no e
   });
   it('M-5: más de un nodo «Config base» en el archivo o en el vivo nuevo se NIEGA (falla cerrado), también con --forzar', () => {
     const dos = (n: string) => ({ ...nuevoDe(n, 'rroca-emma'), nodes: [{ name: 'Armar previos' }, configBase('rroca-emma'), configBase('rroca-emma')] });
-    const archivoDos = join(raiz, 'Flujos/experimental/rroca-emma/dos-config.json'); writeFileSync(archivoDos, JSON.stringify(dos(NOMBRE)));
+    const archivoDos = join(raiz, 'Flujos/clientes/rroca-emma/dos-config.json'); writeFileSync(archivoDos, JSON.stringify(dos(NOMBRE)));
     const vivoDos = escribir('vivo-nuevo-dos-config.json', dos(NOMBRE));
     for (const extra of [[], ['--forzar']]) {
-      const a = correrEn(raiz, ['--flujo', 'Flujos/experimental/rroca-emma/dos-config.json', '--aplicar', '--etapa-prueba', '--confirmo-emma', ...extra], vivoEmmaViejo);
+      const a = correrEn(raiz, ['--flujo', 'Flujos/clientes/rroca-emma/dos-config.json', '--aplicar', '--etapa-prueba', '--confirmo-emma', ...extra], vivoEmmaViejo);
       expect(a.status, 'archivo con dos Config base').toBe(1); sinEscritura(a.curl);
       const v = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-emma', ...extra], vivoDos);
       expect(v.status, 'vivo con dos Config base').toBe(1); sinEscritura(v.curl);

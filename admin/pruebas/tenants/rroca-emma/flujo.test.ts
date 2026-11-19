@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { ES_RELE } from '../../../../Flujos/experimental/rroca-emma/construir.mjs';
+import { ES_RELE } from '../../../../Flujos/clientes/rroca-emma/construir.mjs';
 import { ANA, BETO, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
 
 describe('topología y tamaño', () => {

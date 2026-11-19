@@ -439,7 +439,7 @@ describe('El sandbox de EXPRESIONES de n8n no deja leer prototype/__proto__/cons
   };
   it('ninguna expresión de las cuatro salidas armadas, de la plantilla ni de los derivados que comparten nodos (Emma, Evy, doctoras) lee esas propiedades', () => {
     const archivos = ['flujo.plantilla.json', 'venta-minima.qtaco.json', 'venta-minima.qtaco-3727.json', 'venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json',
-      '../rroca-emma/rroca-emma.json', '../rroca-emma/rroca-emma.prueba.json', '../../clientes/rroca-evy/rroca-evy.json', '../../clientes/rroca-evy/rroca-evy.prueba.json',
+      '../../clientes/rroca-emma/rroca-emma.json', '../../clientes/rroca-emma/rroca-emma.prueba.json', '../../clientes/rroca-evy/rroca-evy.json', '../../clientes/rroca-evy/rroca-evy.prueba.json',
       '../doctoras/doctoras.rroca-emma.json', '../doctoras/doctoras.rroca-emma.prueba.json', '../doctoras/doctoras.rroca-evy.json', '../doctoras/doctoras.rroca-evy.prueba.json'];
     for (const a of archivos) {
       const f = JSON.parse(readFileSync(join(CARPETA_VM, a), 'utf8')) as Flujo;
