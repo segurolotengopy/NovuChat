@@ -123,6 +123,11 @@ interface Entrante {
   /** `anuncio` o `directo` (`ORIGENES`). Solo se guarda al ABRIR la ventana. */
   origen?: string;
   /**
+   * SIN CONTEO: solo un saliente de imagen (fotos de catálogo que el asistente manda por media id).
+   * Se guarda en el hilo, pero no mueve ningún contador ni la conversación. Ver `normalizar`.
+   */
+  sinConteo?: true;
+  /**
    * LA CAMPAÑA QUE TRAJO LA VENTANA (contrato Ad ID, 17/11/2026). `adId` es el
    * `referral.source_id` de Meta; `campanaId` y `campanaPor` los decide el flujo
    * contra las campañas vigentes. Solo se guardan al ABRIR la ventana, como `origen`.
@@ -303,6 +308,10 @@ function normalizar(cuerpo: unknown): Entrante | null {
   const codigoPedido = evento === 'factura_dada' || evento === 'factura_sin'
     ? codigoDePedidoValido(c['codigoPedido']) ?? undefined : undefined;
 
+  // SIN CONTEO (16/11/2026): solo el booleano exacto `true`, y solo en un saliente de imagen. Cualquier
+  // otra combinación o valor se ignora y el mensaje se cuenta como siempre (ante la duda, se cuenta).
+  const sinConteo = c['sinConteo'] === true && direccion === 'saliente' && tipo === 'image' ? true as const : undefined;
+
   // El pedido de WhatsApp (PR-4): solo con `qr_enviado`, hasta 30 líneas, y solo objetos planos.
   // El saneo fino (ids, cantidades, tope de unidades) lo hace `armarPedidoWa`.
   // `pedido_sin_cobro` (Argentina, catálogo externo sin QR) trae el mismo carrito pero no abre cobro:
@@ -318,6 +327,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
     ? c['reemplaza'] : undefined;
 
   return { telefono, direccion, tipo, texto, origen, ...(idMeta ? { idMeta } : {}),
+           ...(sinConteo ? { sinConteo } : {}),
            ...(adId ? { adId } : {}),
            ...(campanaId ? { campanaId } : {}),
            ...(campanaId && campanaPor ? { campanaPor } : {}),
@@ -912,6 +922,32 @@ export const ingesta = onRequest(
     const ahoraMs = Date.now();
 
     const veredicto = await db.runTransaction(async (tx) => {
+      // SALIENTE DE IMAGEN SIN CONTEO (16/11/2026, `docs/arquitectura/medios.md`): la foto de catálogo que manda
+      // el asistente queda en el hilo (la consola y `guardarMedio` la hallan por `idMeta`) y NADA MÁS. No toca
+      // contadores (`mensajesTotal`, `respuestasDelPeriodo`, `mensajesVentana`), ni métricas, ni bloques, ni
+      // ventana, ni corte, ni aviso de umbral o de consumo, ni `ultimoMensaje`/`ultimoEn`/origen. Va ANTES de leer
+      // la cuenta y las métricas: lo que no se lee no se puede mover. Solo lee la conversación para devolver el
+      // estado de atención vigente, sin escribirlo. No crea el documento de la conversación si no existe.
+      if (mensaje.sinConteo) {
+        const [convSc, cuentaSc] = await Promise.all([tx.get(refConversacion), tx.get(refCuenta)]);
+        const marcasSc = (convSc.data() ?? {}) as MarcasDeConteo;
+        const atencionSc = estadoDeAtencion(marcasSc, umbralesDeAtencion(cuentaSc.data()), ahoraMs);
+        // Sin conversación no se escribe nada (revisión del PR #1016): un mensaje colgado de un documento que no
+        // existe no se vería en la consola y serviría de llave para `guardarMedio` sin haber pasado por el conteo.
+        // El rótulo se recorta a 60 caracteres: el flujo manda «Foto de apoyo: » más 30 como máximo.
+        if (convSc.exists) {
+          const rotuloSc = mensaje.texto.slice(0, 60);
+          tx.create(refConversacion.collection('mensajes').doc(), {
+            direccion: mensaje.direccion,
+            tipo: mensaje.tipo,
+            texto: rotuloSc,
+            ts: Timestamp.now(),
+            ...(mensaje.idMeta ? { idMeta: mensaje.idMeta } : {}),
+            ...camposDeMensajeIndexado(rotuloSc, tenantId),
+          });
+        }
+        return { sinConteo: true as const, atencion: atencionSc };
+      }
       const [conversacion, cuentaDoc, plataformaDoc] = await Promise.all([
         tx.get(refConversacion), tx.get(refCuenta), tx.get(refPlataformaPrepago),
       ]);
@@ -1401,6 +1437,23 @@ export const ingesta = onRequest(
       return { atencion, aviso, avisoConsumo, conteo, servicio, corte, cortado: false, conModalidad, pausadaPorPersona, bloqueadoPorContacto: false, pedidos,
         conversacion: conversacionDelMensaje(marcas, conteo, ahoraMs, mensaje.direccion) };
     });
+
+    if ('sinConteo' in veredicto) {
+      // Sin conteo no hay renglón de «mensaje contado» (ese log es lo que se agrupa para costo), ni bitácora de
+      // mensaje, ni gancho de pedidos. Solo queda constancia de que se guardó, sin teléfono ni texto.
+      logger.info('ingesta: saliente de imagen sin conteo', { tenantId, flujo: ruta.flujo || 'agendamiento', periodo });
+      respuesta.status(200).json({
+        atencion: {
+          ...veredicto.atencion,
+          ventanaVenceEn: veredicto.atencion.ventanaVenceEn === null
+            ? null : new Date(veredicto.atencion.ventanaVenceEn).toISOString(),
+          conversacionDesde: null, conversacionNueva: false,
+        },
+        avisarRecepcion: '',
+        sinConteo: true,
+      });
+      return;
+    }
 
     // Lo que viaja a n8n y al registro sobre el prepago: el estado del
     // servicio con el que se juzgó ESTE mensaje. `cortado` = no se atendió;

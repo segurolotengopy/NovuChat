@@ -20,21 +20,21 @@ const copia = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const g = (v: 'produccion' | 'prueba', f: Flujo): string[] => guardias(v, f) as string[];
 
 describe('lo versionado es lo que arma construir.mjs', () => {
-  it('--verificar sale 0 (los dos JSON al día: con envío directo 53 y 48 nodos; con el canal rele 56 y 51, los 3 del relé B9 de más)', () => {
+  it('--verificar sale 0 (los dos JSON al día: con envío directo 59 y 54 nodos; con el canal rele 58 y 53)', () => {
     const r = spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), '--verificar'], { encoding: 'utf8', env: entornoDelEmulador({}) });
-    expect(`${r.stdout}${r.stderr}`).toContain(`rroca-emma.json al día (${ES_RELE ? 56 : 53} nodos)`);
-    expect(`${r.stdout}${r.stderr}`).toContain(`rroca-emma.prueba.json al día (${ES_RELE ? 51 : 48} nodos)`);
+    expect(`${r.stdout}${r.stderr}`).toContain(`rroca-emma.json al día (${ES_RELE ? 58 : 59} nodos)`);
+    expect(`${r.stdout}${r.stderr}`).toContain(`rroca-emma.prueba.json al día (${ES_RELE ? 53 : 54} nodos)`);
     expect(r.status).toBe(0);
   });
   it('un argumento desconocido se rechaza y no escribe', () => {
     const r = spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), '--ayuda'], { encoding: 'utf8', env: entornoDelEmulador({}) });
     expect(r.status).toBe(2);
   });
-  it('lo armado no viola ninguna guardia y el tope es de 53 nodos con envío directo (56 con el canal rele)', () => {
+  it('lo armado no viola ninguna guardia y el tope es de 59 nodos con envío directo (58 con el canal rele)', () => {
     expect(['graph', 'rele']).toContain(CANAL_DE_ENVIO);
     expect(g('produccion', PRODUCCION)).toEqual([]);
     expect(g('prueba', PRUEBA)).toEqual([]);
-    expect(TOPE_DE_NODOS).toBe(ES_RELE ? 56 : 53);
+    expect(TOPE_DE_NODOS).toBe(ES_RELE ? 58 : 59);
     expect(CONFIG.variantes.length).toBe(2);
   });
 });

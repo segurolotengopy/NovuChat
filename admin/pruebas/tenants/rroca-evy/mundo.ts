@@ -105,6 +105,7 @@ export function crear(o: Opciones = {}): Mundo {
     'Traer configuración': () => (o.panel === 'cae' ? { statusCode: 503, body: {} } : (o.panel ?? panelOk())),
     'Reportar mensaje (entrante)': () => o.ingesta ?? { ok: true },
     'Reportar mensaje (saliente)': () => ({ ok: true }),
+    'Reportar foto (saliente)': () => ({ ok: true }),
     'Obtener URL del medio (general)': () => ({ id: 'm', url: m.url ?? 'https://lookaside.fbsbx.com/whatsapp_business/attachments/medio-1', mime_type: m.mime ?? 'image/jpeg', file_size: m.bytes ?? 100_000 }),
     'Descargar medio': () => ({ descargado: true }),
     'Conversar con el modelo': (ll) => {
@@ -127,7 +128,7 @@ export function crear(o: Opciones = {}): Mundo {
   return crearMundo({
     flujo: o.flujo ?? PRODUCCION,
     dobles: { ...dobles, ...(o.dobles ?? {}) },
-    roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)'], avisos: ['Enviar aviso'] },
+    roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Reportar foto (saliente)'], avisos: ['Enviar aviso'] },
     ahoraMs: AHORA,
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: `${ANA},${BETO}`, etapaPrueba: '', usarMarcas: 'si',

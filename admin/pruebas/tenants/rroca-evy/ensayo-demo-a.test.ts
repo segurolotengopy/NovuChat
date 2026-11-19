@@ -71,17 +71,17 @@ const editarEnsayo = (d: string, cambio: (e: J) => void): void => {
 const cargar = (d: string): unknown => mod.cargarDatosEnsayo(join(d, 'ensayo-demo-a.json'), join(d, 'rroca-evy.json'));
 
 describe('el armado: lo versionado es lo que arma la plantilla', () => {
-  it('`--verificar`: el JSON de ensayo está al día y sin guardias violadas; tiene 40 nodos (53 - 8 del miniCRM - 6 del receptor + 1 Trigger)', () => {
+  it('`--verificar`: el JSON de ensayo está al día y sin guardias violadas; tiene 46 nodos (59 - 8 del miniCRM - 6 del receptor + 1 Trigger)', () => {
     const r = mod.construirEnsayo({ verificar: true });
     expect(r).toMatchObject({ archivo: 'rroca-evy.ensayo-demo-a.json', existia: true, alDia: true, versionado: [] });
-    expect(r.nodos).toBe(40);
-    expect((ENSAYO['nodes'] as J[]).length).toBe(40);
-    expect(40).toBeLessThanOrEqual(mod.TOPE_DE_NODOS);
+    expect(r.nodos).toBe(46);
+    expect((ENSAYO['nodes'] as J[]).length).toBe(46);
+    expect(46).toBeLessThanOrEqual(mod.TOPE_DE_NODOS);
   });
 
-  it('la producción y la prueba NO cambian: `construir --verificar` las deja al día, con 53 y 48 nodos, y ninguna trae el interruptor', () => {
+  it('la producción y la prueba NO cambian: `construir --verificar` las deja al día, con 59 y 54 nodos, y ninguna trae el interruptor', () => {
     const r = mod.construir({ verificar: true }) as Array<{ archivo: string; alDia: boolean; versionado: string[]; nodos: number }>;
-    expect(r.map((x) => [x.archivo, x.nodos, x.alDia])).toEqual([['rroca-evy.json', 53, true], ['rroca-evy.prueba.json', 48, true]]);
+    expect(r.map((x) => [x.archivo, x.nodos, x.alDia])).toEqual([['rroca-evy.json', 59, true], ['rroca-evy.prueba.json', 54, true]]);
     for (const x of r) expect(x.versionado).toEqual([]);
     for (const f of [PRODUCCION, PRUEBA]) {
       // (La librería común nombra la clave en un comentario de `avDestinatarios`: lo que no puede haber es la asignación ni la LECTURA.)
@@ -94,9 +94,9 @@ describe('el armado: lo versionado es lo que arma la plantilla', () => {
   it('`--verificar` por la línea de comandos cubre las TRES variantes y sale 0', () => {
     const r = spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), '--verificar'], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
     expect(r.status, r.stdout + r.stderr).toBe(0);
-    expect(r.stdout).toContain('rroca-evy.json al día (53 nodos)');
-    expect(r.stdout).toContain('rroca-evy.prueba.json al día (48 nodos)');
-    expect(r.stdout).toContain('rroca-evy.ensayo-demo-a.json al día (40 nodos)');
+    expect(r.stdout).toContain('rroca-evy.json al día (59 nodos)');
+    expect(r.stdout).toContain('rroca-evy.prueba.json al día (54 nodos)');
+    expect(r.stdout).toContain('rroca-evy.ensayo-demo-a.json al día (46 nodos)');
   });
 
   it('nodos: el ensayo es la producción sin los 8 del miniCRM y los 6 del receptor, y con UN WhatsApp Trigger; nada más', () => {
@@ -254,7 +254,7 @@ describe('credenciales: solo las del Demo A, por nombre', () => {
     for (const n of ['Transcribir audio', 'Ver imagen', 'Conversar con el modelo']) expect(nodo(ENSAYO, n)['credentials']['googlePalmApi']['name'], n).toBe('Google Gemini(PaLM) Api account');
     // Todo nodo que habla con Graph lleva la credencial «Graph WhatsApp Demo A (Bearer)», nunca la de la ingesta.
     const graph = (ENSAYO['nodes'] as J[]).filter((n) => n['type'] === 'n8n-nodes-base.httpRequest' && mod.hostDeUrl(n['parameters']['url']) === 'graph.facebook.com');
-    expect(graph.map((n) => n['name']).sort()).toEqual(['Avisar falla del guardado', 'Enviar a WhatsApp', 'Enviar aviso', 'Enviar respaldo', 'Obtener URL del medio (general)', 'Pedir el medio a Meta (guardado)'].sort());
+    expect(graph.map((n) => n['name']).sort()).toEqual(['Avisar falla del guardado', 'Enviar a WhatsApp', 'Enviar aviso', 'Enviar respaldo', 'Obtener URL del medio (general)', 'Pedir el medio a Meta (guardado)', 'Pedir imagen a Meta (guardado saliente)'].sort());
     for (const n of graph) expect(n['credentials']['httpHeaderAuth']['name'], String(n['name'])).toBe('Graph WhatsApp Demo A (Bearer)');
     expect(JSON.stringify(ENSAYO)).not.toMatch(/googleApi|Google Sheets|AAB1 envío/);
   });
@@ -265,7 +265,7 @@ describe('credenciales: solo las del Demo A, por nombre', () => {
     expect(http.length).toBeGreaterThan(10);
     for (const n of http) {
       const host = mod.hostDeUrl(n['parameters']['url']);
-      if (host === null) expect(['Descargar medio', 'Descargar medio (guardado)'], String(n['name'])).toContain(n['name']);
+      if (host === null) expect(['Descargar medio', 'Descargar medio (guardado)', 'Descargar imagen de Meta (guardado saliente)'], String(n['name'])).toContain(n['name']);
       else expect(permitidos, `${n['name']} → ${host}`).toContain(host);
     }
     expect(hallazgos(ENSAYO)).not.toMatch(/destino|lista permitida|fuera de su host|llama a graph/);

@@ -40,6 +40,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../../experimental/comun-sin-agente/construir-crm.mjs';
 import { hallazgosDelEnvioRele, injertar, MARCADOR_URL_DEL_RELE, parametrosDeMensajeRele, PREFIJO_CREDENCIAL_RELE } from '../../src/core/sin-agente/envio.mjs';
+import { hallazgosDelReporteSinConteo, injertarReporteSinConteo } from '../../src/core/sin-agente/reporte-sin-conteo.mjs';
+import { hallazgosDelGuardadoSaliente, injertarGuardadoSaliente, NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE, URL_DESCARGA_SALIENTE } from '../../src/core/sin-agente/guardado-saliente.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO, urlDescargaRele } from '../../src/core/sin-agente/guardado.mjs';
 import { antecesoresDe, problemasDeReferencias, referenciasDeNodos } from '../../src/core/sin-agente/referencias.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
@@ -56,7 +58,9 @@ export const ARCHIVO_DEL_PROMPT = join(AQUI, 'prompts/evy.md');
 /** Canal de envío del flujo: 'graph' (envío directo por Graph, como el flujo vivo) o 'rele' (relé B9 de AAB1). Poner 'rele' cuando el relé B9 de cliente08 esté listo (credencial en n8n y URL interna): ver docs/versiones-por-cliente.md. */
 export const CANAL_DE_ENVIO = 'graph';
 export const ES_RELE = CANAL_DE_ENVIO === 'rele';
-export const TOPE_DE_NODOS = ES_RELE ? 56 : 53;
+// +2 del reporte SIN CONTEO de la foto de catálogo («¿Reportar foto? (saliente)» y «Reportar foto (saliente)», Andres 16/11/2026) y +4 de la rama común del guardado de la imagen enviada (por media id): 53 → 59 (graph);
+// con `rele` solo el reporte (+2): 58. Tope pendiente de aprobación de Andres (docs/versiones-por-cliente.md).
+export const TOPE_DE_NODOS = ES_RELE ? 58 : 59;
 /** El relé B9 de AAB1 (canal `rele`): el prefijo de la Idempotency-Key y la credencial Header Auth de ESTE WABA, por NOMBRE (el valor lo tiene n8n). La URL interna del relé es un marcador que sustituye el publicador. */
 export const CLIENTE_RELE = 'rroca-evy';
 export const CREDENCIAL_RELE = 'AAB1 envío · cliente08';
@@ -91,6 +95,7 @@ const QUITAR_EN_EL_ENSAYO = ['Entrada de prueba', 'Entrega del receptor', 'Verif
 const URL_DE_META_POR_NODO = {
   'Descargar medio': '={{ $json.url }}',
   'Descargar medio (guardado)': URL_DESCARGA_GUARDADO,
+  'Descargar imagen de Meta (guardado saliente)': URL_DESCARGA_SALIENTE,
 };
 const NODOS_CON_URL_DE_META = Object.keys(URL_DE_META_POR_NODO);
 
@@ -369,6 +374,7 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
   // Canal graph: «Descargar medio» baja el medio de la URL que le devuelve Meta (la anterior, «¿Tamaño aceptable?», exige https://lookaside.fbsbx.com/ y un tamaño).
   if (!ES_RELE && nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
   // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
+  if (nombreDelNodo === 'Descargar imagen de Meta (guardado saliente)' && url === URL_DESCARGA_SALIENTE) return true;
   if (nombreDelNodo === 'Descargar medio (guardado)' && (url === URL_DESCARGA_GUARDADO || (ES_RELE && url === urlDescargaRele()))) return true;
   // La consulta de SOLO la fila de encabezados del miniCRM (Google Sheets API, `values.get`): la URL exacta del módulo común, con un rango A<fila>:<letra><fila>.
   if (nombreDelNodo === 'Leer encabezados de la planilla') {
@@ -428,6 +434,8 @@ export function guardias(variante, flujo, mapaCrm) {
   }
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
+  h.push(...hallazgosDelReporteSinConteo(flujo || {}, { exigir: true }));
+  if (!ES_RELE) h.push(...hallazgosDelGuardadoSaliente(flujo || {}, { exigir: true, vias: ['media'], reportero: 'Reportar foto (saliente)', envio: 'Enviar aviso' }));
   // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
   h.push(...hallazgosDeExpresionesN8n(flujo || {}));
   // Las imágenes y el aviso SALEN antes de armar el texto: «Armar previos» → «¿Hay previos?» → «Enviar aviso» → «Armar mensajes»; la rama sin previos también llega a «Armar mensajes».
@@ -509,7 +517,7 @@ export function guardias(variante, flujo, mapaCrm) {
     for (const n of nodos) {
       for (const [tipo, c] of Object.entries(n.credentials || {})) {
         const nombreCred = String((c || {}).name || '');
-        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (ES_RELE && String(((c || {}).name) || '') === CREDENCIAL_RELE ? false : (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && !NODOS_DE_INGESTA_DEL_GUARDADO.includes(n.name) && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred)))) {
+        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (ES_RELE && String(((c || {}).name) || '') === CREDENCIAL_RELE ? false : (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && n.name !== 'Reportar foto (saliente)' && !NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE.includes(n.name) && !NODOS_DE_INGESTA_DEL_GUARDADO.includes(n.name) && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred)))) {
           h.push(`la prueba usa una credencial de producción en «${n.name}» (${tipo})`);
         }
       }
@@ -916,7 +924,11 @@ export function armarEvy(proyecto, datos, v) {
     rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } return JSON.stringify(r); })() }}";
   }
   // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
+  // Las FOTOS de catálogo salen por «Enviar aviso» (previos): se reportan a la ingesta SIN CONTEO (Andres, 16/11/2026) y, por Graph, se guardan para la consola con la rama común del guardado saliente.
+  injertarReporteSinConteo(plantilla);
   injertarGuardado(plantilla, ES_RELE ? { canal: 'rele', cliente: CLIENTE_RELE, guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` } : { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
+  if (!ES_RELE) injertarGuardadoSaliente(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio`, vias: ['media'], reportero: 'Reportar foto (saliente)', envio: 'Enviar aviso',
+    fuentes: { meta: "$('Enviar aviso').itemMatching(i).json", payload: "$('Armar previos').itemMatching(i).json.payload", tipoReporte: "'image'", telefono: "$('Armar previos').itemMatching(i).json.para", version: "$('Armar previos').itemMatching(i).json.waGraphVersion" } });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
   // El mapa de columnas del tenant (dato, no código) dentro de los nodos del módulo y los rangos de lectura de los nodos de Google. El ENSAYO no tiene esa rama.

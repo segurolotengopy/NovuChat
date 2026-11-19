@@ -29,8 +29,8 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | recordatorio-bellido.v1.json | experimental/recordatorio-bellido | demo | ninguno | M1 M2 M7 | por asignar (Principal) | pendiente | 64289535-4c20a3b1-19b0ab05-b8f97460-a209e62a-b87b132a-ae0d06ff-3c9bb15a |
 | rescate-22h.rroca-ruben.json | experimental/rescate-22h | sin publicar | construir.mjs --todos | M1 | por asignar (Principal) | pendiente | 30961db8-930cda05-5d3d5992-9d1c66e1-a061bf32-8d1918ac-9edc5daa-62dda067 |
 | rroca-antonio.json | clientes/rroca-antonio | vivo | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | dbd2b497-619f85b3-827b44aa-a1db3d4a-1e1bc853-baccea64-9ccf2916-5a57dd20 |
-| rroca-emma.json | clientes/rroca-emma | vivo | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | eb7d4835-5a7cf6a9-79148af7-de8ba915-e557ca8a-1f607b09-d0850e5e-76f30300 |
-| rroca-evy.json | clientes/rroca-evy | vivo | construir.mjs | M4 M6 (excepción declarada) | Rearquitectura | mudado | 2d60ef08-ab993284-736efe2a-33845a41-88af7d95-a8821b38-82ffecbf-e6a671d4 |
+| rroca-emma.json | clientes/rroca-emma | vivo | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 0f25352d-85c8df6a-98523d96-f2b3ee58-ea03fc69-ab968993-cf914780-0fea9af5 |
+| rroca-evy.json | clientes/rroca-evy | vivo | construir.mjs | M4 M6 (excepción declarada) | Rearquitectura | mudado | ac7cf6d2-f08e66af-3c869ee0-dd023a2e-18a3b778-7183e1d6-4ac50eb3-1e07cea1 |
 | rroca-ruben.json | experimental/rroca-ruben | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | a0d1436f-8791d3c8-2a78dd06-1b4e64a3-c7568077-3f90bbdf-af940bd1-acfc99fe |
 | venta-minima.qtaco-3727.json | experimental/venta-minima | sin publicar | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | dc04fc5e-cfdcc11d-0cddcee1-76601ad9-6ec94327-a17cc0ff-b489d71e-c446c31b |
 | venta-minima.qtaco.json | experimental/venta-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 10a3eb29-ff150501-591fc7f6-3d08b946-7e6e8c09-4ee05a00-fd810af0-ae991286 |
