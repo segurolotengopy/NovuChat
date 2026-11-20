@@ -19,7 +19,7 @@
 | `tenants.md` | Datos de un cliente, nunca código; y la regla del flujo propio de cada cliente (`Flujos/clientes/<tenant>/` más el núcleo común obligatorio) |
 | `submodulos.md` | Lo general sube a core o a un módulo común, lo específico es dato del tenant, y el sub-módulo del anfitrión: declaración, manifiesto, consumo y seguridad (la prueba `submodulos.test.ts` aún no existe) |
 | `coordinador.md` | El coordinador de turno: las dos llamadas y los ganchos |
-| `registro.md` | El registro de módulos, la frontera de zonas, cómo se mueven archivos entre zonas y la política de capas que reemplaza |
+| `registro.md` | El registro de módulos, la frontera de zonas, cómo se mueven archivos entre zonas y la política de capas que reemplaza; la lista cerrada de carpetas de `Flujos/` con `experimental/` (enmienda C1) |
 | `limites.md` | La tabla de límites comerciales y dónde se hace cumplir cada uno (copia del §7 de la base comercial) |
 | `agentes.md` | Los agentes por zona: la zona de escritura efectiva de cada uno y en qué difiere de `Analisis/41` §8.1 |
 | `zona-de-escritura.md` | El gancho de Claude Code que limita a cada agente a su zona: de dónde lee la zona, qué rechaza y qué no cubre |
