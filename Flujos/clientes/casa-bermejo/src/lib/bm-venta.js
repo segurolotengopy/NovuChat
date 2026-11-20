@@ -215,6 +215,29 @@ function bmFormatearMontos(texto, vendibles) {
     return vcMonto(c, /^ars/i.test(mon) ? 'ARS' : 'BOB');
   });
 }
+// Una lista de piezas SIN precio («Tenemos el A y el B»): el código agrega el precio del catálogo tras cada nombre que no lo trae (el cliente pregunta «a qué precio» y el modelo a veces solo da nombres).
+function bmConPrecios(texto, vendibles) {
+  let t = String(texto);
+  const piezas = (Array.isArray(vendibles) ? vendibles : []).filter((v) => v && typeof v.nombre === 'string' && v.nombre !== '' && Number.isSafeInteger(v.precioCentavos) && v.precioCentavos > 0).sort((a, b) => b.nombre.length - a.nombre.length);
+  const mayus = (x) => x.toLowerCase();
+  for (const v of piezas) {
+    let desde = 0;
+    for (;;) {
+      const i = mayus(t).indexOf(mayus(v.nombre), desde);
+      if (i < 0) break;
+      const fin = i + v.nombre.length;
+      const resto = t.slice(fin, fin + 28);
+      const sigue = /^[\w]/.test(t.slice(fin, fin + 1)) || /^\s*(?:a|por|de|cuesta|cuestan|vale|valen|sale|salen|est[aá]|tiene un precio de|:|-|—|\()?\s*(?:bs|ars|\d)/i.test(resto);
+      // Un nombre que es el comienzo de otro más largo («NEVERA ALFA» dentro de «NEVERA ALFA XL») no se toca: ya se trató con el largo.
+      const dentroDeOtro = piezas.some((o) => o !== v && o.nombre.length > v.nombre.length && mayus(t.slice(i, i + o.nombre.length)) === mayus(o.nombre));
+      if (sigue || dentroDeOtro) { desde = fin; continue; }
+      const aporte = ' a ' + vcMonto(v.precioCentavos, v.moneda === 'ARS' ? 'ARS' : 'BOB');
+      t = t.slice(0, fin) + aporte + t.slice(fin);
+      desde = fin + aporte.length;
+    }
+  }
+  return t;
+}
 // El texto del modelo, revisado: devuelve el texto listo o '' (entonces sale el fijo). Las promesas de aviso NUNCA se permiten aquí: el aviso a recepción lo anuncia el código, no el modelo.
 // El modelo a veces cita una pieza por su id («refrigerador-tcl-f130») en vez de por su nombre: al cliente siempre se le nombra por el NOMBRE visible. Lo decide el código, no el prompt:
 // cada id del catálogo que aparezca como palabra completa en el texto se cambia por su nombre (el más largo primero, para que un id no se coma a otro que lo contiene).
@@ -251,7 +274,7 @@ function bmRedaccion(texto, textoCliente, vendibles) {
   // Un producto llamado «billetera» no debe confundirse con una billetera digital: la palabra se enmascara SOLO para esta revisión (el texto que sale es el pulido). La billetera digital sí queda prohibida.
   if (pulido === '' || BM_PORCENTAJE.test(pulido) || BM_PROHIBIDOS_VOZ.test(bmNorm(pulido)) || cmMotivoDeRechazo(pulido.replace(/billeteras?(?! (?:digital|digitales|movil|moviles|electronica|electronicas|virtual|virtuales)\b)/gi, 'pieza'), opciones) !== '') return '';
   if (!bmMontosValidos(pulido, vendibles)) return '';
-  return bmFormatearMontos(bmLimitarEmojis(pulido), vendibles);
+  return bmFormatearMontos(bmConPrecios(bmLimitarEmojis(pulido), vendibles), vendibles);
 }
 
 // -----------------------------------------------------------------------------

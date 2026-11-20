@@ -20,7 +20,7 @@ const RUTAS = [
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
-  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
+  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -463,5 +463,29 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
   it('un pedido de descuento lo decide el código: pasa con recepción, sin depender de la redacción del modelo', () => {
     expect(b('bmPideDescuento')(b('bmNorm')('¿Me pueden hacer un descuento por comprar 5 aires?'))).toBe(true);
     expect(b('bmPideDescuento')(b('bmNorm')('¿Cuánto cuesta el aire de 12 BTU?'))).toBe(false);
+  });
+  it('una lista de piezas SIN precio sale con el precio del catálogo tras cada nombre; las que ya traen precio no se tocan (humo de Silvana, 2.1)', () => {
+    const v = [{ id: 'a', nombre: 'REFRIGERADOR TCL F130', precioCentavos: 293750, moneda: 'BOB' }, { id: 'b', nombre: 'REFRIGERADOR TCL F130 XL', precioCentavos: 400000, moneda: 'BOB' }, { id: 'c', nombre: 'AIRE TCL 12 BTU', precioCentavos: 340750, moneda: 'BOB' }];
+    expect(b('bmConPrecios')('Tenemos el REFRIGERADOR TCL F130 y el REFRIGERADOR TCL F130 XL.', v)).toBe('Tenemos el REFRIGERADOR TCL F130 a Bs 2.937,50 y el REFRIGERADOR TCL F130 XL a Bs 4.000.');
+    expect(b('bmConPrecios')('El AIRE TCL 12 BTU cuesta Bs 3.407,50.', v)).toBe('El AIRE TCL 12 BTU cuesta Bs 3.407,50.');
+    expect(b('bmConPrecios')('El AIRE TCL 12 BTU a Bs 3.407,50 y el REFRIGERADOR TCL F130.', v)).toBe('El AIRE TCL 12 BTU a Bs 3.407,50 y el REFRIGERADOR TCL F130 a Bs 2.937,50.');
+    const cat = catalogo([item({ id: 'p1', nombre: 'Pieza uno', precio: 120, precioCentavos: 12000 }), item({ id: 'p2', nombre: 'Pieza dos', precio: 50, precioCentavos: 5000 })]);
+    const r = b('bmRedaccion')('Tenemos la Pieza uno y la Pieza dos. ¿Cuál le gusta?', 'qué tienen', cat.vendibles);
+    expect(r).toBe('Tenemos la Pieza uno a Bs 120 y la Pieza dos a Bs 50. ¿Cuál le gusta?');
+  });
+  it('el prompt: las piezas se enumeran con nombre y precio, y un TIPO de pieza sin precisar no se agrega al pedido', () => {
+    const p: string = B['BM_PROMPT_VOZ'];
+    expect(p).toMatch(/cada una va con su NOMBRE y su PRECIO/);
+    expect(p).toMatch(/sin precisar cuál, NO la agregues/);
+  });
+  it('«Conversar con el modelo» reintenta una vez si Gemini falla o tarda (humo de Silvana: «Tuve un inconveniente» en un saludo corriente), en los dos flujos versionados', async () => {
+    const { readFileSync } = await import('node:fs');
+    for (const f of ['casa-bermejo.json', 'casa-bermejo.prueba.json']) {
+      const flujo = JSON.parse(readFileSync(join(AQUI, '../../Flujos/clientes/casa-bermejo', f), 'utf8')) as { nodes: { name: string; retryOnFail?: boolean; maxTries?: number; onError?: string }[] };
+      const n = flujo.nodes.find((x) => x.name === 'Conversar con el modelo');
+      expect(n?.retryOnFail).toBe(true);
+      expect(n?.maxTries).toBe(2);
+      expect(n?.onError).toBe('continueRegularOutput');   // y si el segundo intento también falla, el turno pasa con recepción (aviso + botón)
+    }
   });
 });
