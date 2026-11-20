@@ -38,7 +38,19 @@ const saludoBoton = cbLinea(/^REEMPLAZAR_/.test(String(base.saludoBotonDerivacio
 const conRecepcion = (cuerpo, permiso) => cmContactoConBoton({ numero: contacto, desde: from, cuerpo: wlSeguro(cuerpo, permiso), botonTexto: 'Atención al Cliente', saludo: saludoBoton, textoDelRespaldo: 'Escríbale aquí:', sinNumero: 'Eso lo coordina nuestra encargada.' });
 // El saludo de la primera respuesta (identidad del MD, sin «IA»: decisión 2) con el ofrecimiento de asesoría y del catálogo por chat (sin enlace: Andres, 19/11/2026).
 const saludo = WL_TEXTO_SALUDO.replace('{NEGOCIO}', negocio);
-const conSaludo = (cuerpo) => (fichaAntes.saludado ? cuerpo : saludo + '\n\n' + cuerpo);
+// El saludo sale UNA vez por conversación (20/11/2026: tres mensajes en el mismo segundo corrían en paralelo, los tres leían la ficha vacía y los tres saludaban). La ficha de n8n no es atómica entre ejecuciones;
+// el SERVIDOR sí: en una ráfaga, `atencion.conversacionNueva` lo recibe true UN solo mensaje (el que abrió la conversación). Si el servidor dice false y la ficha aún no tiene el saludo, ese turno NO saluda.
+// Sin respuesta del servidor (modo prueba, error), null: se saluda como siempre (nunca se deja de saludar por no saber).
+let abrioLaConversacion = null;
+try {
+  const rp = cnPrimero('Reportar mensaje (entrante)') || {};
+  let cu = rp.body === undefined ? rp : rp.body;
+  if (typeof cu === 'string') cu = JSON.parse(cu);
+  const at = cu && typeof cu === 'object' ? cu.atencion : null;
+  if (at && typeof at === 'object' && typeof at.conversacionNueva === 'boolean') abrioLaConversacion = at.conversacionNueva;
+} catch (e) { abrioLaConversacion = null; }
+const saluda = !fichaAntes.saludado && abrioLaConversacion !== false;
+const conSaludo = (cuerpo) => (saluda ? saludo + '\n\n' + cuerpo : cuerpo);
 
 let tipoDePlan = d.tipo;
 let msgs = [];          // los mensajes de este turno (casi siempre uno)
@@ -71,6 +83,12 @@ if (puerta.ruta === 'sigue') {
   } else if (tipoDePlan === 'baja') {
     // La confirmación de la baja: UN texto fijo (sin saludo, sin botón, sin aviso); el `no_contactar` ya viajó con el entrante (si fue una nota de voz, `t.texto` iba vacío: el evento viaja en el reporte de ESTE mensaje saliente). La ficha y el carrito no se tocan.
     msgs = [texto(bjTextoBaja(WL_TEXTO_BAJA), d.porVoz === true ? { evento: 'no_contactar' } : undefined)];
+  } else if (tipoDePlan === 'catalogo_web') {
+    // El catálogo web de la conversación (fotos, colores y precios) como BOTÓN; el enlace lo dio la consola y `cmEnlace` solo deja pasar https. El texto fijo no promete nada que el botón no cumpla.
+    const cuerpoCat = wlSeguro(conSaludo(WL_TEXTO_CATALOGO_WEB));
+    msgs = [cmMensaje('cliente', cmEnlace(cuerpoCat, 'Ver catálogo', String(d.enlace || '')), cuerpoCat, cuerpoCat + '\n\n' + String(d.enlace || ''), { tipoReporte: 'interactive', conBoton: true })];
+  } else if (tipoDePlan === 'pago_info') {
+    msgs = [texto(conSaludo(WL_TEXTO_PAGO_INFO))];
   } else if (tipoDePlan === 'identidad') {
     msgs = [texto(WL_TEXTO_IDENTIDAD.replace('{NEGOCIO}', negocio))];
   } else if (tipoDePlan === 'audio_fijo') {
@@ -152,7 +170,7 @@ if (puerta.ruta === 'sigue') {
       const filaTotal = filas.length > 0 && /^Total:/.test(filas[filas.length - 1]) ? filas.pop() : '';
       let omitidas = 0;
       if (aCotizar) {
-        const reserva = 1000 - (fichaAntes.saludado ? 0 : saludo.length + 2) - cabeza.length - cola.length - (filaTotal ? filaTotal.length + 1 : 0) - 20;
+        const reserva = 1000 - (saluda ? saludo.length + 2 : 0) - cabeza.length - cola.length - (filaTotal ? filaTotal.length + 1 : 0) - 20;
         while (filas.length > 0 && filas.join('\n').length > reserva) { filas.pop(); omitidas++; }
       }
       const resumen = cabeza + filas.concat(omitidas > 0 ? ['… y ' + omitidas + ' más'] : [], filaTotal ? [filaTotal] : []).join('\n') + cola;

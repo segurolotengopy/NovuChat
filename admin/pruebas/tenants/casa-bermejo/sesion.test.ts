@@ -46,16 +46,17 @@ describe('ficha por teléfono', () => {
 });
 
 describe('«Resumen del turno» devuelve a la ficha lo que no salió (reversión genérica)', () => {
-  it('si Meta rechaza el envío y su respaldo, `fueraDePaisMs` vuelve a 0 y el siguiente mensaje del número de otro país sí recibe el texto', () => {
+  it('si Meta rechaza el envío y su respaldo, `avisoPaisMs` vuelve a 0 y el siguiente mensaje del número de otro país vuelve a avisar a la tienda', () => {
     const m = crear({ envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
     const t = hablar(m, EXTRANJERO, mTexto('hello'), { toleraFallo: true });
     expect(t.fallo?.mensaje ?? '').toMatch(/Entrega fallida/);
-    expect(fichas(m)[EXTRANJERO].fueraDePaisMs).toBe(0);
+    expect(fichas(m)[EXTRANJERO].avisoPaisMs).toBe(0);
   });
-  it('si el envío salió, `fueraDePaisMs` queda marcado y no se repite el texto en 24 horas', () => {
+  it('si el envío salió, `avisoPaisMs` queda marcado (no se avisa dos veces) y `fueraDePaisMs` NO se marca (la entrada común callaría al número)', () => {
     const m = crear();
     hablar(m, EXTRANJERO, mTexto('hello'));
-    expect(fichas(m)[EXTRANJERO].fueraDePaisMs).toBeGreaterThan(0);
+    expect(fichas(m)[EXTRANJERO].avisoPaisMs).toBeGreaterThan(0);
+    expect(fichas(m)[EXTRANJERO].fueraDePaisMs).toBe(0);
   });
 });
 
