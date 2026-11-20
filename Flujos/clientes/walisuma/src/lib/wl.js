@@ -251,6 +251,7 @@ const WL_PROMPT_VOZ = [
   '{"texto": "<tu respuesta al cliente>", "lineas": [{"id": "<id del catálogo>", "cantidad": <entero>, "detalle": "<color o variante que pidió, o vacío>"}], "entrega": {"modo": "", "ciudad": "", "direccion": "", "nombre": "", "telefono": ""}, "facturacion": {"nombre": "", "documento": ""}, "quiereHablar": false}',
   '- "lineas" es el pedido COMPLETO después de este mensaje (no solo lo nuevo). Si el cliente no cambió el pedido, repite el pedido actual; si no hay pedido, usa una lista vacía.',
   '- "entrega": solo lo que el cliente dijo; deja vacío lo que no sabes. "facturacion" va vacía siempre.',
+  '- Cuando falten datos para cerrar el pedido (los de «FALTAN para cerrar el pedido»), pídelos TODOS en un solo mensaje, no de uno en uno. Escribe con tildes y ñ normales, nunca con entidades HTML (&iacute;, &ntilde;…).',
   '- "texto" no lleva totales ni cuenta el pedido en líneas: el sistema agrega el resumen.',
 ].join('\n');
 // Palabras de material o de tipo de pieza que, nombradas por el cliente, traen sus descripciones al prompt (`vcSeleccion`). Dato del negocio.

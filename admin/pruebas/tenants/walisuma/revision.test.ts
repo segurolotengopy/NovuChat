@@ -276,6 +276,32 @@ describe('la llamada al modelo exige el esquema de la respuesta (20/11/2026)', (
     const e = cfg['responseSchema'];
     expect(e?.type).toBe('OBJECT');
     expect(Object.keys(e.properties).sort()).toEqual(['entrega', 'facturacion', 'lineas', 'quiereHablar', 'texto']);
-    expect(e.required).toEqual(['texto']);
+    // TODOS obligatorios (20/11/2026): con solo `texto` obligatorio el modelo omitía `entrega` y el pedido nunca llegaba al QR.
+    expect(e.required).toEqual(['texto', 'lineas', 'entrega', 'facturacion', 'quiereHablar']);
+    expect(e.propertyOrdering).toEqual(['texto', 'lineas', 'entrega', 'facturacion', 'quiereHablar']);
+    expect(e.properties.entrega.required.sort()).toEqual(['ciudad', 'direccion', 'modo', 'nombre', 'telefono']);
+  });
+});
+
+describe('las entidades HTML del modelo se decodifican antes de revisar (20/11/2026)', () => {
+  it('«ind&iacute;quenos su tel&eacute;fono» sale con tildes, no con entidades', () => {
+    const t = hablar(crear({ modeloDice: modelo('Por favor, ind&iacute;quenos su n&uacute;mero de tel&eacute;fono.') }), ANA, mTexto('hola'));
+    const x = textos(t).join(' ');
+    expect(x).toContain('indíquenos su número de teléfono');
+    expect(x).not.toMatch(/&[a-z]+;/i);
+  });
+  it('NEGADO: una entidad desconocida no se inventa y los códigos de control no pasan', () => {
+    const t = hablar(crear({ modeloDice: modelo('Con gusto &foo; y &#7; fin.') }), ANA, mTexto('hola'));
+    expect(textos(t).join(' ')).not.toMatch(/\u0007/);
+  });
+});
+
+describe('el prompt pide todos los datos que faltan en un solo mensaje (20/11/2026)', () => {
+  it('la instrucción de pedir TODOS los datos juntos y sin entidades HTML está en el prompt', () => {
+    let sistema = '';
+    const m = crear({ modeloDice: (ll) => { sistema = String((ll.cuerpo as J)['systemInstruction']?.['parts']?.[0]?.text ?? ''); return modelo('Con gusto.'); } });
+    hablar(m, ANA, mTexto('quiero una bufanda'));
+    expect(sistema).toMatch(/pídelos TODOS en un solo mensaje/);
+    expect(sistema).toMatch(/nunca con entidades HTML/);
   });
 });
