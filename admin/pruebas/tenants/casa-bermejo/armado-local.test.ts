@@ -130,7 +130,7 @@ describe('armar con datos locales', () => {
     expect(p.stderr).toMatch(/marcador sin sustituir: REEMPLAZAR_/);
     expect(p.stderr + p.stdout).not.toContain(WABA);
   });
-  it('con TODO sustituido y el costo de entrega declarado, la variante de prueba pasa la guardia (la de producción sigue bloqueada por el verificador, y APPROVED se sigue exigiendo)', () => {
+  it('con TODO sustituido y el costo de entrega declarado, la variante de prueba pasa la guardia (la de producción, sin la URL del verificador, sigue con su marcador y bloqueada; y APPROVED se sigue exigiendo)', () => {
     const s = salidaTemporal();
     const d = completo();
     const r = corrida('--local', '--datos', archivoLocal(d), '--salida', s.dir);
@@ -232,10 +232,53 @@ describe('NEGADO: lo que un dato local no puede traer', () => {
       rechaza((d) => { d['catalogoUrl'] = url; }, /catalogoUrl: forma no válida/);
     }
   });
-  it('la URL del verificador interno del receptor NO se sustituye (ni una interna ni una pública): solo puede quedar el marcador', () => {
-    for (const url of ['https://verificador.example.com/x', 'http://verificador-interno:3000/v', 'http://10.0.0.5/v', 'no es una url']) {
-      rechaza((d) => { (d['receptor'] as J)['urlVerificador'] = url; }, /receptor\.urlVerificador: forma no válida/);
+  it('la URL del verificador interno: SOLO la constante exacta (otro host, https, otro puerto, otra ruta, con consulta, con barra final, en mayúsculas o pública, se rechazan)', () => {
+    const U = C.URL_VERIFICADOR_INTERNO as string;
+    expect(U).toBe('http://receptor-clientes:8081/v1/interno/verificar');
+    const malas = [
+      'https://receptor-clientes:8081/v1/interno/verificar', 'http://receptor-clientes:8082/v1/interno/verificar', 'http://receptor-clientes/v1/interno/verificar',
+      'http://receptor-clientes:8081/v1/interno/otra', U + '/', U + '?x=1', U + '#a', 'http://Receptor-Clientes:8081/v1/interno/verificar', U.toUpperCase(), ' ' + U,
+      'http://otro-host:8081/v1/interno/verificar', 'http://usuario@receptor-clientes:8081/v1/interno/verificar', 'https://verificador.example.com/x', 'http://10.0.0.5/v', 'no es una url',
+    ];
+    for (const url of malas) rechaza((d) => { (d['receptor'] as J)['urlVerificador'] = url; }, /receptor\.urlVerificador: forma no válida/);
+  });
+  it('con la constante exacta la variante de PRODUCCIÓN queda sin marcadores y pasa la guardia de publicación; la de prueba no la lleva', () => {
+    const s = salidaTemporal();
+    const d = completo();
+    (d['receptor'] as J)['urlVerificador'] = C.URL_VERIFICADOR_INTERNO;
+    const r = corrida('--local', '--datos', archivoLocal(d), '--salida', s.dir);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).not.toMatch(/marcadores sin sustituir/);
+    expect(corrida('--publicable', '--flujo', s.prod).status).toBe(0);
+    expect(corrida('--publicable', '--flujo', s.prueba).status).toBe(0);
+    expect(readFileSync(s.prueba, 'utf8')).not.toContain('receptor-clientes');
+    expect(C.hallazgosDelReceptor(JSON.parse(readFileSync(s.prod, 'utf8')), C.cargarDatosLocal(archivoLocal(d)))).toEqual([]);
+    expect(C.guardias('produccion', JSON.parse(readFileSync(s.prod, 'utf8')))).toEqual([]);
+    expect(r.stdout + r.stderr).not.toContain('receptor-clientes'); // la consola no repite la URL
+    for (const v of VERSIONADOS) expect(readFileSync(v, 'utf8')).not.toContain('receptor-clientes'); // los versionados conservan el marcador
+  });
+  it('la guardia de lo armado: otra URL en el nodo del verificador, o la constante en «Config base» o en cualquier otro nodo, se rechazan', () => {
+    const s = salidaTemporal();
+    const d = completo();
+    (d['receptor'] as J)['urlVerificador'] = C.URL_VERIFICADOR_INTERNO;
+    expect(corrida('--local', '--datos', archivoLocal(d), '--salida', s.dir).status).toBe(0);
+    const flujo = (): J => JSON.parse(readFileSync(s.prod, 'utf8')) as J;
+    const nodo = (f: J, nombre: string): J => (f['nodes'] as J[]).find((n) => n['name'] === nombre)!;
+    for (const mala of ['https://receptor-clientes:8081/v1/interno/verificar', 'http://receptor-clientes:8082/v1/interno/verificar', 'http://receptor-clientes:8081/v1/interno/verificar?x=1', 'http://Receptor-Clientes:8081/v1/interno/verificar', 'http://otro:8081/v1/interno/verificar']) {
+      const f = flujo(); ((nodo(f, 'Verificar firma con el receptor')['parameters']) as J)['url'] = mala;
+      expect(C.guardias('produccion', f).join(' | '), mala).toMatch(/Verificar firma con el receptor.*(anfitrión no permitido)/);
     }
+    for (const otro of ['Config base', 'Traer catálogo', 'Enviar a WhatsApp']) {
+      const f = flujo(); const n = nodo(f, otro);
+      n['notes'] = 'verificador: ' + C.URL_VERIFICADOR_INTERNO;
+      expect(C.guardias('produccion', f).join(' | '), otro).toMatch(new RegExp(`«${otro}» menciona el verificador interno`));
+      const g = flujo(); (nodo(g, otro)['parameters'] as J)['dato_ajeno'] = C.URL_VERIFICADOR_INTERNO;
+      expect(C.guardias('produccion', g).join(' | '), otro).toMatch(new RegExp(`«${otro}» menciona el verificador interno`));
+    }
+    const sinFijo = flujo(); const cuerpo = (nodo(sinFijo, 'Verificar firma con el receptor')['parameters'] as J); cuerpo['jsonBody'] = String(cuerpo['jsonBody']).replace(/wabaIdEsperado: "\d+"/, 'wabaIdEsperado: $json.x');
+    expect(C.guardias('produccion', sinFijo).join(' | ')).toMatch(/wabaIdEsperado.*FIJO/);
+    const cof = flujo(); nodo(cof, 'Verificar firma con el receptor')['onError'] = 'continueRegularOutput';
+    expect(C.guardias('produccion', cof).join(' | ')).toMatch(/Continue on Fail/);
   });
   it('un id de WABA que no son dígitos, una ruta con una URL o con caracteres raros, un tratamiento ajeno y hosts de fotos con ruta', () => {
     rechaza((d) => { (d['receptor'] as J)['wabaIdEsperado'] = 'abc'; }, /receptor\.wabaIdEsperado: forma no válida/);
