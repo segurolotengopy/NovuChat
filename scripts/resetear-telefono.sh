@@ -11,7 +11,7 @@
 #   - la LISTA BLANCA de teléfonos sale de la tabla local (`CONFIGURACION.local.md`): las filas REEMPLAZAR_TELEFONOS_DE_PRUEBA y
 #     REEMPLAZAR_TELEFONOS_DE_PRUEBA_<COMERCIO> (comas). Un teléfono que no está ahí NO se resetea. Los valores no se imprimen;
 #   - la dirección y la clave de n8n salen del `.env` (se cargan acá, dentro del proceso; nunca se imprimen);
-#   - el respaldo (datos de persona) va a una carpeta temporal 0700 fuera del repositorio y se destruye con la sesión;
+#   - el respaldo (datos de persona) va a una carpeta temporal 0700 fuera del repositorio; BÓRRELO al cerrar la prueba (sirve para deshacer con --revertir);
 #   - `--aplicar` ya trae la confirmación de producción del comercio.
 # Vale para CUALQUIER comercio con flujo en su ficha (no hay lista fija); los demos y NovuChat se rechazan.
 # Variables opcionales: CONFIG_LOCAL_MD (otra tabla), ENV_N8N (otro .env), CLOUDSDK_CONFIG.
@@ -57,10 +57,10 @@ if [ "${RESETEAR_SOLO_LISTA:-0}" = 1 ]; then echo "✓ el teléfono está en la 
 
 ENV_N8N="${ENV_N8N:-.env}"
 [ -f "$ENV_N8N" ] || ENV_N8N="$HOME/NovuChat/.env"
-set -a
-# shellcheck disable=SC1090  # el .env lo elige el operador; no se imprime
-[ -f "$ENV_N8N" ] && . "$ENV_N8N"
-set +a
+# Del .env se toman SOLO la dirección y la clave de n8n (no se carga el archivo entero); no se imprimen.
+valor_env() { grep -E "^$1=" "$ENV_N8N" 2>/dev/null | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"; }
+N8N_BASE_URL="$(valor_env N8N_BASE_URL)"; N8N_API_KEY="$(valor_env N8N_API_KEY)"
+export N8N_BASE_URL N8N_API_KEY
 export TELEFONOS_PRUEBA
 export GCP_PROJECT_ID_PROD="${GCP_PROJECT_ID_PROD:-novuchat-demo}"
 export GCP_PROJECT_ID_STAGING="${GCP_PROJECT_ID_STAGING:-novuchat-staging}"
@@ -70,6 +70,6 @@ ARGS=(--proyecto "$GCP_PROJECT_ID_PROD" --tenant "$TENANT" --tel "$TEL")
 if [ "$APLICAR" = 1 ]; then
   DIR="$(mktemp -d)"; chmod 700 "$DIR"
   ARGS+=(--aplicar --respaldo "$DIR/respaldo.json" --confirmo-produccion "$TENANT")
-  echo "• Respaldo (datos de persona): $DIR/respaldo.json — se destruye al cerrar la prueba."
+  echo "• Respaldo (datos de persona): $DIR/respaldo.json — bórrelo al cerrar la prueba (sirve para --revertir)."
 fi
 ( cd admin && node scripts/plataforma/resetear-telefono-prueba.mjs "${ARGS[@]}" )

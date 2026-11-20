@@ -94,7 +94,7 @@ export const TENANTS_PERMITIDOS = Object.freeze(Object.keys(FLUJO_DE_TENANT));
 export const TENANTS_RESERVADOS = Object.freeze(['novuchat', 'ensayo', 'demo-venta', 'demo-agendamiento']);
 export const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 /** El flujo vivo de un tenant: por el nombre exacto de la tabla de arriba o, si no está, el que lleva «(<tenant>)» en su nombre (convención «NovuChat — <Cliente> (<tenant>)»). */
-export const esFlujoDelTenant = (nombre, tenant) => typeof nombre === 'string' && (FLUJO_DE_TENANT[tenant] !== undefined ? nombre === FLUJO_DE_TENANT[tenant] : nombre.includes(`(${tenant})`));
+export const esFlujoDelTenant = (nombre, tenant) => typeof nombre === 'string' && (FLUJO_DE_TENANT[tenant] !== undefined ? nombre === FLUJO_DE_TENANT[tenant] : (nombre.startsWith('NovuChat') && nombre.includes(`(${tenant})`)));
 /** ¿La ficha tiene un flujo y no está dada de baja? Puro: `ficha` es el documento `tenants/{id}`. */
 export const fichaConFlujo = (ficha) => Boolean(ficha) && typeof ficha === 'object' && ficha.estado !== 'dado_de_baja'
   && ((Array.isArray(ficha.flujos) && ficha.flujos.length > 0) || (Array.isArray(ficha.modulos) && ficha.modulos.length > 0));

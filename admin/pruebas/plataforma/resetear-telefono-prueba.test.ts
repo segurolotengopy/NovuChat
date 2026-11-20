@@ -803,6 +803,7 @@ describe('E9. UN solo reseteo para todos los flujos (09/11/2026)', () => {
     expect(m.esFlujoDelTenant('NovuChat — Walisuma (walisuma)', 'walisuma')).toBe(true);
     expect(m.esFlujoDelTenant("NovuChat — Venta mínima (v0) — Q'Taco", 'qtaco')).toBe(true);
     expect(m.esFlujoDelTenant('Otro flujo (qtaco)', 'qtaco')).toBe(false);
+    expect(m.esFlujoDelTenant('Flujo ajeno (casa-bermejo)', 'casa-bermejo')).toBe(false);
     expect(m.esFlujoDelTenant(undefined, 'qtaco')).toBe(false);
   });
   it('NEGADO: sin ficha, dada de baja o sin flujo, no hay reseteo', () => {

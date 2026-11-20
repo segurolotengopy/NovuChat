@@ -27,9 +27,9 @@ describe('resetear-telefono.sh: la lista blanca sale de la tabla local', () => {
     expect(r.stdout + r.stderr).not.toContain(TEL);
   });
   it('la fila del comercio suma teléfonos solo para ESE comercio', () => {
-    const filas = ['| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_RROCA_RUBEN` | 59173153179 |'];
-    expect(correr(filas, ['--tenant', 'rroca-ruben', '--tel', '59173153179']).status).toBe(0);
-    expect(correr(filas, ['--tenant', 'walisuma', '--tel', '59173153179']).status).toBe(1);
+    const filas = ['| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_RROCA_RUBEN` | 59170000003 |'];
+    expect(correr(filas, ['--tenant', 'rroca-ruben', '--tel', '59170000003']).status).toBe(0);
+    expect(correr(filas, ['--tenant', 'walisuma', '--tel', '59170000003']).status).toBe(1);
   });
   it('NEGADO: un teléfono que no está en la tabla no se resetea', () => {
     const r = correr([`| \`REEMPLAZAR_TELEFONOS_DE_PRUEBA\` | ${TEL} |`], ['--tenant', 'walisuma', '--tel', '59179999999']);
