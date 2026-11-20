@@ -648,8 +648,8 @@ export async function principal(argv = process.argv.slice(2)) {
     if (!lista.ok) throw Object.assign(new Error('n8n'), { code: `n8n-lista-${lista.status}` });
     const permitidos = String(process.env.N8N_WORKFLOWS_PERMITIDOS ?? '').split(',').map((x) => x.trim()).filter(Boolean);
     const hallados = ((await lista.json()).data ?? []).filter((w) => esFlujoDelTenant(w.name, cfg.tenant));
-    if (hallados.length === 1 && (permitidos.length === 0 || permitidos.includes(hallados[0].id))) cfg.workflow = hallados[0].id;
-    else console.error(`\n  ⚠ No se resolvió el flujo de n8n del tenant (hallados: ${hallados.length}; en N8N_WORKFLOWS_PERMITIDOS: ${hallados.length === 1 && (permitidos.length === 0 || permitidos.includes(hallados[0].id)) ? 'sí' : 'no'}). El paso de n8n se omite.\n`);
+    if (hallados.length === 1 && permitidos.includes(hallados[0].id)) cfg.workflow = hallados[0].id;
+    else console.error(`\n  ⚠ No se resolvió el flujo de n8n del tenant (hallados: ${hallados.length}; en N8N_WORKFLOWS_PERMITIDOS: ${hallados.length === 1 && permitidos.includes(hallados[0].id) ? 'sí' : 'no'}). El paso de n8n se omite.\n`);
   }
   if (cfg.workflow && process.env.N8N_BASE_URL && process.env.N8N_API_KEY) {
     const v = validarBaseUrl(process.env.N8N_BASE_URL);

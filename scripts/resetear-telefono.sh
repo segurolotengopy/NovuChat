@@ -61,6 +61,18 @@ ENV_N8N="${ENV_N8N:-.env}"
 valor_env() { grep -E "^$1=" "$ENV_N8N" 2>/dev/null | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"; }
 N8N_BASE_URL="$(valor_env N8N_BASE_URL)"; N8N_API_KEY="$(valor_env N8N_API_KEY)"
 export N8N_BASE_URL N8N_API_KEY
+# La lista cerrada de flujos que el reseteo puede reescribir: SOLO flujos de NovuChat (nombre que empieza por «NovuChat»). El .mjs elige UNO por el nombre del comercio
+# («(<comercio>)» o el nombre fijo de su tabla) y exige que esté en esta lista. Los ids no se imprimen.
+if [ -n "$N8N_BASE_URL" ] && [ -n "$N8N_API_KEY" ]; then
+  N8N_WORKFLOWS_PERMITIDOS="$(curl -s --compressed --max-time 150 -H @- "${N8N_BASE_URL%/}/api/v1/workflows?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" | TENANT="$TENANT" python3 -c '
+import json, os, sys
+t = os.environ["TENANT"]
+try: d = json.load(sys.stdin).get("data", [])
+except Exception: d = []
+print(",".join(w["id"] for w in d if str(w.get("name", "")).startswith("NovuChat")))' || true)"
+  export N8N_WORKFLOWS_PERMITIDOS
+  echo "• flujos de NovuChat en la lista cerrada: $(printf '%s' "$N8N_WORKFLOWS_PERMITIDOS" | tr ',' '\n' | grep -c .)"
+fi
 export TELEFONOS_PRUEBA
 export GCP_PROJECT_ID_PROD="${GCP_PROJECT_ID_PROD:-novuchat-demo}"
 export GCP_PROJECT_ID_STAGING="${GCP_PROJECT_ID_STAGING:-novuchat-staging}"
