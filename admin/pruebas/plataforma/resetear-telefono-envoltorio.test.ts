@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), '../../../scripts/resetear-telefono.sh');
 const dirs: string[] = [];
@@ -16,7 +17,7 @@ afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true 
 function correr(filas: string[], args: string[]) {
   const dir = mkdtempSync(join(tmpdir(), 'novuchat-reset-')); dirs.push(dir);
   writeFileSync(join(dir, 'tabla.md'), ['| Marcador | Valor |', '|---|---|', ...filas].join('\n') + '\n');
-  return spawnSync('bash', [SCRIPT, ...args], { encoding: 'utf8', env: { ...process.env, CONFIG_LOCAL_MD: join(dir, 'tabla.md'), RESETEAR_SOLO_LISTA: '1' } });
+  return spawnSync('bash', [SCRIPT, ...args], { encoding: 'utf8', env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: join(dir, 'tabla.md'), RESETEAR_SOLO_LISTA: '1' }) });
 }
 const TEL = '59170000001';
 

@@ -63,7 +63,7 @@ N8N_BASE_URL="$(valor_env N8N_BASE_URL)"; N8N_API_KEY="$(valor_env N8N_API_KEY)"
 export N8N_BASE_URL N8N_API_KEY
 # La lista cerrada de flujos que el reseteo puede reescribir: SOLO flujos de NovuChat (nombre que empieza por «NovuChat»). El .mjs elige UNO por el nombre del comercio
 # («(<comercio>)» o el nombre fijo de su tabla) y exige que esté en esta lista. Los ids no se imprimen.
-if [ -n "$N8N_BASE_URL" ] && [ -n "$N8N_API_KEY" ]; then
+if [ -n "$N8N_BASE_URL" ]; then
   N8N_WORKFLOWS_PERMITIDOS="$(curl -s --compressed --max-time 150 -H @- "${N8N_BASE_URL%/}/api/v1/workflows?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" | TENANT="$TENANT" python3 -c '
 import json, os, sys
 t = os.environ["TENANT"]
