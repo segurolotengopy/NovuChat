@@ -448,6 +448,19 @@ function wlPromptTurno(c) {
 function wlSinNumerosLargos(t) {
   return wlEnmascarar(t, true);
 }
+// El ESQUEMA de la respuesta (el mismo formato que pide el prompt): con él Gemini devuelve SIEMPRE un JSON válido (decodificación restringida) y no texto plano.
+// 20/11/2026: sin esquema, 2 de cada 20 respuestas de una batería real salían sin JSON y el cliente recibía «tuvimos un inconveniente».
+const WL_ESQUEMA_RESPUESTA = {
+  type: 'OBJECT',
+  properties: {
+    texto: { type: 'STRING' },
+    lineas: { type: 'ARRAY', items: { type: 'OBJECT', properties: { id: { type: 'STRING' }, cantidad: { type: 'INTEGER' }, detalle: { type: 'STRING' } }, required: ['id', 'cantidad'] } },
+    entrega: { type: 'OBJECT', properties: { modo: { type: 'STRING' }, ciudad: { type: 'STRING' }, direccion: { type: 'STRING' }, nombre: { type: 'STRING' }, telefono: { type: 'STRING' } } },
+    facturacion: { type: 'OBJECT', properties: { nombre: { type: 'STRING' }, documento: { type: 'STRING' } } },
+    quiereHablar: { type: 'BOOLEAN' },
+  },
+  required: ['texto'],
+};
 function wlCuerpoModelo(c) {
   const contents = c.ficha.hist.map((h) => ({ role: h.r === 'u' ? 'user' : 'model', parts: [{ text: h.t }] }));
   const texto = wlSinNumerosLargos(cbLinea(String(c.plan.textoCliente || '').replace(/<<<|>>>/g, ' '), 1500));
@@ -456,7 +469,7 @@ function wlCuerpoModelo(c) {
   return {
     systemInstruction: { parts: [{ text: wlPromptTurno(c) }] },
     contents: contents,
-    generationConfig: { temperature: Number.isFinite(temp) && temp >= 0 && temp <= 1 ? temp : 0.4, maxOutputTokens: 900, responseMimeType: 'application/json' },
+    generationConfig: { temperature: Number.isFinite(temp) && temp >= 0 && temp <= 1 ? temp : 0.4, maxOutputTokens: 900, responseMimeType: 'application/json', responseSchema: WL_ESQUEMA_RESPUESTA },
   };
 }
 // Lo que queda en la memoria de la charla: sin números largos (un documento, un teléfono) ni enlaces.
