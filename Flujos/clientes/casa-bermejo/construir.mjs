@@ -7,7 +7,7 @@
  *   node Flujos/clientes/casa-bermejo/construir.mjs               escribe casa-bermejo.json y casa-bermejo.prueba.json
  *   node Flujos/clientes/casa-bermejo/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
  *   node Flujos/clientes/casa-bermejo/construir.mjs --publicable [--flujo <json>] [--datos <json>]
- *                                                       no escribe: sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal. HOY SALE 1: quedan marcadores REEMPLAZAR_*
+ *                                                       no escribe: sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal. HOY SALE 1: quedan marcadores REEMPLAZAR_*. Además corre las guardias de lo armado (`guardias`) y, con `--datos <archivo>.local.json`, la comparación del receptor con su origen
  *   node Flujos/clientes/casa-bermejo/construir.mjs --local --datos <archivo>.local.json [--salida <directorio>]
  *                                                       arma casa-bermejo.local.json y casa-bermejo.prueba.local.json con los valores de un archivo LOCAL (ignorado por git, nunca versionado); no toca los versionados ni imprime valores
  *   (cualquier otro argumento se rechaza)
@@ -112,6 +112,13 @@ export const NODOS_DEL_RECEPTOR = [NODO_RECEPTOR, 'Verificar firma con el recept
 const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
 /** Los anfitriones de la plataforma de la tienda a los que «Traer catálogo» puede llevar el Bearer del tenant: dominio EXACTO, sin puerto ni comodín. Ampliarlo (la producción de NovuTienda) es un cambio revisado, no un dato que ponga quien publica. */
 export const ANFITRIONES_TIENDA = ['novutienda-sitio-stg.web.app'];
+/**
+ * La URL del VERIFICADOR INTERNO del receptor de WhatsApp-Modular: una CONSTANTE (no secreta), documentada en `WhatsApp-Modular/docs/25-receptor-de-clientes.md` §B7.
+ * Vive en un segundo puerto del receptor que el proxy NO publica: solo la alcanza la red interna de Docker. Es el ÚNICO valor, distinto del marcador, que se acepta para
+ * `receptor.urlVerificador` y para la URL del nodo «Verificar firma con el receptor»; comparación EXACTA (ni otro host, ni `https`, ni otro puerto, ni otra ruta, ni consulta, ni mayúsculas).
+ * Los datos VERSIONADOS conservan el marcador: la constante entra solo por el archivo de datos local o por la guardia de lo armado.
+ */
+export const URL_VERIFICADOR_INTERNO = 'http://receptor-clientes:8081/v1/interno/verificar';
 /** El mercado del catálogo (BO o AR) según el prefijo del remitente: la MISMA regla que `ceMercadoDePrefijo`; una prueba compara las dos. */
 export const EXPRESION_MERCADO = "{{ ((d) => d.length < 10 || d.length > 15 ? 'X' : (d.indexOf('591') === 0 ? 'BO' : (d.indexOf('54') === 0 ? 'AR' : 'X')))(String(((($('Normalizar entrada').first().json) || {}).from) || '').replace(/\\D/g, '').replace(/^0+/, '')) }}";
 /** Las dos llamadas síncronas a la Function del servidor que hacen DOS nodos con destino fijo (B9, Argentina): la expresión EXACTA de cada URL (dos destinos cada una, ninguna ruta sale de datos). Una prueba las ejecuta. */
@@ -241,8 +248,8 @@ const FORMAS_LOCALES = {
   'nombreFlujoPrueba': (v) => v.length >= 3 && v.length <= 100,
   'receptor.ruta': (v) => /^[A-Za-z0-9_-]{8,120}$/.test(v),
   'pruebaRuta': (v) => /^[A-Za-z0-9_-]{8,120}$/.test(v),
-  // La URL del verificador interno NO se sustituye aquí: la guardia de lo armado solo admite un marcador en ese nodo (se llama por la red interna y nunca se expone). Cualquier valor real se rechaza.
-  'receptor.urlVerificador': () => false,
+  // El ÚNICO valor distinto del marcador es la constante interna del verificador (red de Docker, sin exponer): comparación exacta. Cualquier otra URL se rechaza.
+  'receptor.urlVerificador': (v) => v === URL_VERIFICADOR_INTERNO,
   'receptor.wabaIdEsperado': (v) => /^\d{6,25}$/.test(v),
   // Solo la base (sin ruta ni consulta) y de un anfitrión de la lista cerrada: el Bearer del tenant no sale a otro dominio.
   'catalogoUrl': (v) => { const m = /^https:\/\/([a-z0-9.-]+)$/.exec(v); return m !== null && ANFITRIONES_TIENDA.includes(m[1]); },
@@ -258,7 +265,7 @@ const FORMAS_LOCALES = {
  * Rechaza (los mensajes nombran claves CONOCIDAS, nunca valores ni nombres de clave que no están en los datos versionados): un archivo que no termina en `.local.json`
  * (el .gitignore no lo cubriría), claves que no existen en los datos versionados (en cualquier nivel), un texto libre que no está en la lista blanca `FORMAS_LOCALES`,
  * cualquier clave que parezca de un secreto, cualquier valor que parezca un token (Bearer, EAA…, AIza…, JWT, cadena larga), un nombre de credencial con forma de token,
- * un host de catálogo fuera de ANFITRIONES_TIENDA, una URL del verificador interno (solo puede quedar el marcador) y cualquier valor de forma no válida.
+ * un host de catálogo fuera de ANFITRIONES_TIENDA, una URL del verificador distinta de la constante exacta URL_VERIFICADOR_INTERNO (o del marcador) y cualquier valor de forma no válida.
  * Un marcador que quede sin sustituir se acepta.
  */
 export function cargarDatosLocal(ruta, versionados = ARCHIVO_DE_DATOS) {
@@ -387,6 +394,8 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
     const m = /^=(?:(REEMPLAZAR_URL_CATALOGO)|https:\/\/([a-z0-9.-]+))\/api\/novuchat\/v1\/catalogo\?mercado=(.*)$/is.exec(url);
     return m !== null && m[3] === EXPRESION_MERCADO && (m[1] !== undefined || ANFITRIONES_TIENDA.includes(String(m[2]).toLowerCase()));
   }
+  // El verificador interno del receptor: SOLO en su nodo y SOLO la constante exacta (el marcador ya pasó arriba).
+  if (nombreDelNodo === 'Verificar firma con el receptor') return url === URL_VERIFICADOR_INTERNO;
   if (nombreDelNodo === 'Cotejar en el servidor' && url === URL_COTEJAR_EXPR) return true;
   if (nombreDelNodo === 'Avisar al servidor' && url === URL_AVISAR_EXPR) return true;
   const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
@@ -460,6 +469,12 @@ export function guardias(variante, flujo, opciones = {}) {
   for (const n of nodos.filter((x) => x.type === 'n8n-nodes-base.webhook')) {
     if (n.name !== (variante === 'produccion' ? NODO_RECEPTOR : NODO_PRUEBA)) h.push(`el webhook «${n.name}» no corresponde a esta variante`);
   }
+  // La URL del verificador interno solo puede estar en «Verificar firma con el receptor»: ni en «Config base» ni en ningún otro nodo (ni en sus notas), en ninguna variante.
+  for (const n of nodos) {
+    if (n.name === 'Verificar firma con el receptor') continue;
+    const { credentials: _cr, ...sinCred } = n;
+    if (/receptor-clientes|:8081|v1\/interno/i.test(JSON.stringify(sinCred))) h.push(`el nodo «${n.name}» menciona el verificador interno del receptor: esa URL solo va en «Verificar firma con el receptor»`);
+  }
   // Las rutas de los webhooks son URL de capacidad: nunca en las notas.
   for (const n of nodos) {
     if (/\/webhook(-test)?\/|webhook-test|\/rest\/|REEMPLAZAR_RUTA/i.test(String(n.notes || ''))) h.push(`las notas de «${n.name}» mencionan la ruta de un webhook`);
@@ -471,7 +486,7 @@ export function guardias(variante, flujo, opciones = {}) {
       if (v.onError !== undefined || v.continueOnFail !== undefined) h.push('«Verificar firma con el receptor» no puede llevar «Continue on Fail» ni `onError` (un 503 del verificador daría 401 y la entrega moriría en vez de reintentarse)');
       const cuerpo = String(p(v).jsonBody || '');
       if (!/wabaIdEsperado: "(REEMPLAZAR_[A-Z0-9_]+|\d{6,25})"/.test(cuerpo)) h.push('«Verificar firma con el receptor»: `wabaIdEsperado` tiene que ser un valor FIJO entre comillas (nunca una expresión)');
-      if (!anfitrionPermitido(String(p(v).url || ''))) h.push('«Verificar firma con el receptor» llama a un anfitrión no permitido');
+      if (!anfitrionPermitido(String(p(v).url || ''), 'Verificar firma con el receptor')) h.push('«Verificar firma con el receptor» llama a un anfitrión no permitido (solo el marcador o la URL interna exacta del verificador)');
     }
     const f = por('¿Firma válida?');
     if (f && (f.onError !== undefined || f.continueOnFail !== undefined)) h.push('«¿Firma válida?» no puede llevar «Continue on Fail»');
@@ -731,7 +746,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     };
     try {
       const flujoJson = leerJson(opcion('--flujo') || join(AQUI, FLUJO_PRODUCCION), 'el flujo');
-      const hallazgos = guardiaDePublicacion({ flujo: flujoJson, datos: cargarDatos(opcion('--datos') || ARCHIVO_DE_DATOS) });
+      const rutaDatos = opcion('--datos');
+      const datosLocales = rutaDatos !== undefined && rutaDatos.endsWith(SUFIJO_LOCAL);
+      const datos = datosLocales ? cargarDatosLocal(rutaDatos) : cargarDatos(rutaDatos || ARCHIVO_DE_DATOS);
+      const hallazgos = guardiaDePublicacion({ flujo: flujoJson, datos });
+      // Además de lo anterior, el JSON que se publica pasa las MISMAS guardias de lo armado que al construirlo: un JSON local editado a mano (otra URL del verificador, `onError`/`continueOnFail`,
+      // un `wabaIdEsperado` como expresión) no pasa. La variante sale de «Entrada de prueba» (solo la de prueba la tiene). La comparación de la entrada del receptor con su origen necesita los datos
+      // con los que se armó (`--datos <archivo>.local.json`) o el flujo versionado con los datos versionados; sin ellos el valor armado no se puede cotejar y solo corren las guardias.
+      const variante = Array.isArray(flujoJson && flujoJson.nodes) && flujoJson.nodes.some((n) => n && n.name === NODO_PRUEBA) ? 'prueba' : 'produccion';
+      hallazgos.push(...guardias(variante, flujoJson));
+      if (variante === 'produccion' && (datosLocales || !opcion('--flujo'))) hallazgos.push(...hallazgosDelReceptor(flujoJson, datos));
       if (hallazgos.length) {
         console.error('✗ El flujo de Casa Bermejo NO se puede publicar todavía:');
         for (const x of hallazgos) console.error(`  - ${x}`);

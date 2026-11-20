@@ -22,6 +22,30 @@ function wlPanelDe(resp) {
   const ok = Number(r.statusCode) === 200 && cbEsObjeto(c) && typeof c.tenantId === 'string';
   return { ok: ok, cuerpo: ok ? c : {} };
 }
+// El enlace del catálogo web de ESTA conversación (`catalogoWeb.enlace`, que la consola manda con `catalogoCompleto: true`): solo https, sin espacios y de largo acotado. Sin enlace, '' (nada se inventa).
+function wlEnlaceCatalogo(panel) {
+  const w = panel && panel.ok && cbEsObjeto(panel.cuerpo.catalogoWeb) ? panel.cuerpo.catalogoWeb : null;
+  const e = w && w.activo === true && typeof w.enlace === 'string' ? w.enlace.trim() : '';
+  return /^https:\/\/[^\s]+$/.test(e) && e.length <= 500 ? e : '';
+}
+// El cliente pide VER el catálogo o las fotos (texto normalizado): el botón con el catálogo web sale por código, sin modelo (MD: [MOSTRAR_CATALOGO]).
+// ESTRECHO a propósito (revisión del PR #1033): un verbo de pedir + «catálogo» o «fotos», o el mensaje corto que es solo eso. Nunca con una negación, un comprobante, un pago o un QR,
+// con cifras (cantidades, montos) ni cuando ya vio el catálogo: ahí el mensaje sigue su camino (pedido, pago, modelo).
+function wlPideCatalogo(n) {
+  const t = String(n || '');
+  if (/\d/.test(t) || /\b(no|ya vi|ya vio|ya tengo|ya conozco|comprobante|pago|pagar|pague|qr|transferencia|deposito|captura|capture|recibo|factura|nit)\b/.test(t)) return false;
+  const objeto = /\b(catalogos?|fotos?|fotografias?)\b/;
+  if (!objeto.test(t)) return false;
+  if (t.split(' ').length <= 4) return true;
+  return /\b(quiero|quisiera|quiere|necesito|dame|damelo|manda|mandame|mandas|envia|enviame|envias|muestra|muestrame|muestras|pasa|pasame|tienen|tiene|hay|ver|veo|puedo ver|podria ver|podrias|a ver)\b[^.?!]{0,40}\b(catalogos?|fotos?|fotografias?)\b/.test(t);
+}
+// El cliente pregunta CÓMO PAGAR (tarjeta, efectivo, formas o métodos de pago): lo dice el código, no el modelo (el filtro de datos de pago le tapaba la respuesta y salía «cuéntenos un poco más»).
+// Estrecho a propósito: «quiero pagar» o «pagar con QR» son el cierre del pedido y NO entran aquí.
+function wlPreguntaPago(n) {
+  const t = String(n || '');
+  if (/\d/.test(t) || /\b(no|comprobante|captura|capture|recibo|transferencia|transferi|deposito|deposite|ya pague|pague|pagado|qr|factura|nit)\b/.test(t)) return false;
+  return /\b(tarjeta|tarjetas|efectivo|contra ?entrega|contraentrega|formas? de pago|metodos? de pago|medios? de pago|como (se |puedo |hago el )?(paga|pagar|pago)|aceptan .{0,20}(pago|tarjeta|efectivo))\b/.test(t);
+}
 // Lo que se puede vender: activo, con precio en Bs y SIN la marca `agotado` de la consola. Los ítems sin precio (cotización) y los apagados (licores) no entran.
 function wlVendibles(panel) {
   const cat = panel && panel.ok && Array.isArray(panel.cuerpo.catalogo) ? panel.cuerpo.catalogo : [];
@@ -424,15 +448,30 @@ function wlPromptTurno(c) {
 function wlSinNumerosLargos(t) {
   return wlEnmascarar(t, true);
 }
+// El ESQUEMA de la respuesta (el mismo formato que pide el prompt): con él Gemini devuelve SIEMPRE un JSON válido (decodificación restringida) y no texto plano.
+// 20/11/2026: sin esquema, 2 de cada 20 respuestas de una batería real salían sin JSON y el cliente recibía «tuvimos un inconveniente».
+const WL_ESQUEMA_RESPUESTA = {
+  type: 'OBJECT',
+  properties: {
+    texto: { type: 'STRING' },
+    lineas: { type: 'ARRAY', items: { type: 'OBJECT', properties: { id: { type: 'STRING' }, cantidad: { type: 'INTEGER' }, detalle: { type: 'STRING' } }, required: ['id', 'cantidad'] } },
+    entrega: { type: 'OBJECT', properties: { modo: { type: 'STRING' }, ciudad: { type: 'STRING' }, direccion: { type: 'STRING' }, nombre: { type: 'STRING' }, telefono: { type: 'STRING' } } },
+    facturacion: { type: 'OBJECT', properties: { nombre: { type: 'STRING' }, documento: { type: 'STRING' } } },
+    quiereHablar: { type: 'BOOLEAN' },
+  },
+  required: ['texto'],
+};
 function wlCuerpoModelo(c) {
-  const contents = c.ficha.hist.map((h) => ({ role: h.r === 'u' ? 'user' : 'model', parts: [{ text: h.t }] }));
+  // Las respuestas anteriores del modelo van en el MISMO formato que se le pide (`{"texto": …}`): con su historial en texto plano, el modelo imitaba el texto plano
+  // y respondía sin JSON en casi todos los turnos después del primero (20/11/2026: 17 de 20 respuestas salieron «tuvimos un inconveniente»).
+  const contents = c.ficha.hist.map((h) => ({ role: h.r === 'u' ? 'user' : 'model', parts: [{ text: h.r === 'u' ? h.t : JSON.stringify({ texto: h.t }) }] }));
   const texto = wlSinNumerosLargos(cbLinea(String(c.plan.textoCliente || '').replace(/<<<|>>>/g, ' '), 1500));
   contents.push({ role: 'user', parts: [{ text: '<<<' + texto + '>>>' }] });
   const temp = Number(c.base && c.base.temperatura);
   return {
     systemInstruction: { parts: [{ text: wlPromptTurno(c) }] },
     contents: contents,
-    generationConfig: { temperature: Number.isFinite(temp) && temp >= 0 && temp <= 1 ? temp : 0.4, maxOutputTokens: 900, responseMimeType: 'application/json' },
+    generationConfig: { temperature: Number.isFinite(temp) && temp >= 0 && temp <= 1 ? temp : 0.4, maxOutputTokens: 900, responseMimeType: 'application/json', responseSchema: WL_ESQUEMA_RESPUESTA },
   };
 }
 // Lo que queda en la memoria de la charla: sin números largos (un documento, un teléfono) ni enlaces.
