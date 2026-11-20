@@ -537,9 +537,27 @@ API="${N8N_BASE_URL%/}/api/v1"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# curl que devuelve SOLO el codigo HTTP en la salida. Si curl falla (sale con codigo distinto de 0), devuelve
+# 000 y dice el codigo de salida por stderr: antes se hacia `curl -w '%{http_code}' || echo 000`, y un curl que
+# imprimia 200 y salia con error (p. ej. 18, transferencia parcial) producia «200000» (2026-11-20).
+# Tiempos maximos. Un flujo de cliente con catalogo y textos pesa ~1,8 MB (Casa Bermejo): con 30 s la lectura
+# salia con el codigo 28 (tiempo agotado) por la lentitud del enlace, no por un error del servidor.
+MAX_N8N_LECTURA="${MAX_N8N_LECTURA:-120}"
+MAX_N8N_ESCRITURA="${MAX_N8N_ESCRITURA:-180}"
+n8n_curl() {
+  local codigo rc=0
+  codigo=$(curl "$@") || rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo "   (curl salio con el codigo $rc)" >&2
+    printf '000'
+  else
+    printf '%s' "$codigo"
+  fi
+}
+
 # --- 1. leer el flujo vivo ----------------------------------------------------
-COD=$(curl -s --max-time 30 -o "$TMP/vivo.json" -w '%{http_code}' \
-      -H @- "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
+COD=$(n8n_curl -s --max-time "$MAX_N8N_LECTURA" -o "$TMP/vivo.json" -w '%{http_code}' \
+      -H @- "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")
 
 if [[ "$COD" != "200" ]]; then
   printf '\033[1;31m✗ No se pudo leer el flujo: HTTP %s\033[0m\n' "$COD"
@@ -671,8 +689,8 @@ if [[ $ENCENDER -eq 1 || $APAGAR -eq 1 ]]; then
     printf '\033[0;90m  Seco: no se escribio nada. Agregue --aplicar.\033[0m\n\n'
     exit 0
   fi
-  COD=$(curl -s --max-time 30 -o "$TMP/estado.json" -w '%{http_code}' -X POST \
-        -H @- "${API}/workflows/${N8N_WORKFLOW_ID}/${RUTA}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
+  COD=$(n8n_curl -s --max-time "$MAX_N8N_LECTURA" -o "$TMP/estado.json" -w '%{http_code}' -X POST \
+        -H @- "${API}/workflows/${N8N_WORKFLOW_ID}/${RUTA}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")
   if [[ "$COD" != "200" ]]; then
     printf '\033[1;31m✗ HTTP %s al %s el flujo\033[0m\n' "$COD" "$QUE"
     head -c 300 "$TMP/estado.json" 2>/dev/null || true
@@ -705,8 +723,8 @@ except Exception:
     print(0)" "$FLUJO" 2>/dev/null || echo 0)"
 fi
 if [[ "$TIENE_EW" == "1" ]] || { [[ $REINICIAR -eq 0 && -f "$FLUJO" ]] && grep -q 'REEMPLAZAR_ID_ERROR_WORKFLOW' "$FLUJO"; }; then
-  EW_COD=$(curl -s --max-time 30 -o "$TMP/lista-errorworkflow.json" -w '%{http_code}' \
-       -H @- "${API}/workflows?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
+  EW_COD=$(n8n_curl -s --max-time "$MAX_N8N_LECTURA" -o "$TMP/lista-errorworkflow.json" -w '%{http_code}' \
+       -H @- "${API}/workflows?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")
   if [[ "$EW_COD" != "200" ]]; then
     printf '\033[1;31m✗ ABORTADO: n8n no entregó la lista de flujos (HTTP %s); sin ella no se resuelve ni se comprueba el flujo de alertas.\033[0m\n' "$EW_COD" >&2
     exit 1
@@ -721,8 +739,8 @@ fi
 # Si la API no las lista, se sigue como antes (heredando del flujo vivo).
 # El codigo HTTP se guarda: con --aplicar, una lista que no llego (403, 5xx) o
 # que llego partida (nextCursor) no es base para decidir credenciales.
-CRED_COD=$(curl -s --max-time 30 -o "$TMP/credenciales.json" -w '%{http_code}' \
-     -H @- "${API}/credentials?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
+CRED_COD=$(n8n_curl -s --max-time "$MAX_N8N_LECTURA" -o "$TMP/credenciales.json" -w '%{http_code}' \
+     -H @- "${API}/credentials?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")
 
 # --- crear un flujo NUEVO ------------------------------------------------------
 # Hasta el 17/09/2026 un flujo nuevo solo entraba por la interfaz: importar el
@@ -863,9 +881,9 @@ if not aplicar:
 PY
   [[ $APLICAR -eq 1 ]] || exit 0
 
-  COD=$(curl -s --max-time 60 -o "$TMP/rta.json" -w '%{http_code}' -X POST \
+  COD=$(n8n_curl -s --max-time "$MAX_N8N_ESCRITURA" -o "$TMP/rta.json" -w '%{http_code}' -X POST \
         -H @- -H "Content-Type: application/json" \
-        --data-binary @"$TMP/cuerpo.json" "${API}/workflows" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
+        --data-binary @"$TMP/cuerpo.json" "${API}/workflows" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")
   if [[ "$COD" != "200" && "$COD" != "201" ]]; then
     printf '\033[1;31m✗ No se pudo crear: HTTP %s\033[0m\n' "$COD"
     head -c 500 "$TMP/rta.json" 2>/dev/null || true; echo
@@ -876,8 +894,8 @@ PY
   [[ -n "$NUEVO_ID" ]] || { echo "  La respuesta no trajo id."; exit 1; }
 
   if [[ $ACTIVAR -eq 1 ]]; then
-    COD=$(curl -s --max-time 60 -o "$TMP/act.json" -w '%{http_code}' -X POST \
-          -H @- "${API}/workflows/${NUEVO_ID}/activate" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
+    COD=$(n8n_curl -s --max-time "$MAX_N8N_ESCRITURA" -o "$TMP/act.json" -w '%{http_code}' -X POST \
+          -H @- "${API}/workflows/${NUEVO_ID}/activate" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")
     if [[ "$COD" == "200" ]]; then
       printf '\033[1;32m✓ Flujo activado (publicado).\033[0m\n'
     else
@@ -952,9 +970,9 @@ cuerpo = {
 open(f"{tmp}/cuerpo.json", "w", encoding="utf-8").write(json.dumps(cuerpo, ensure_ascii=False))
 PY
   [[ $APLICAR -eq 1 ]] || exit 0
-  COD=$(curl -s --max-time 60 -o "$TMP/rta.json" -w '%{http_code}' -X PUT \
+  COD=$(n8n_curl -s --max-time "$MAX_N8N_ESCRITURA" -o "$TMP/rta.json" -w '%{http_code}' -X PUT \
         -H @- -H "Content-Type: application/json" \
-        --data-binary @"$TMP/cuerpo.json" "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
+        --data-binary @"$TMP/cuerpo.json" "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")
   if [[ "$COD" == "200" ]]; then
     RESTAN=$(curl -s --max-time 30 -H @- "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" \
       | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(((d.get("staticData") or {}).get("global") or {}).get("conversaciones") or {}))')
@@ -1415,9 +1433,9 @@ PY
 [[ $APLICAR -eq 1 ]] || exit 0
 
 # --- 2. escribir de vuelta ----------------------------------------------------
-COD=$(curl -s --max-time 60 -o "$TMP/rta.json" -w '%{http_code}' -X PUT \
+COD=$(n8n_curl -s --max-time "$MAX_N8N_ESCRITURA" -o "$TMP/rta.json" -w '%{http_code}' -X PUT \
       -H @- -H "Content-Type: application/json" \
-      --data-binary @"$TMP/cuerpo.json" "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
+      --data-binary @"$TMP/cuerpo.json" "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")
 
 if [[ "$COD" == "200" ]]; then
   printf '\033[1;32m✓ Flujo actualizado en su lugar (HTTP 200).\033[0m\n'
