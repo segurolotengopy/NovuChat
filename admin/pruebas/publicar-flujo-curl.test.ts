@@ -9,6 +9,7 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { afterAll, describe, expect, it } from 'vitest';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const SCRIPT = join(RAIZ, 'scripts/publicar-flujo.sh');
@@ -24,7 +25,7 @@ function correr(salidaDeCurl: string, codigoDeSalida: number): { out: string } {
   const env = join(carpeta, `env-${codigoDeSalida}`);
   writeFileSync(env, 'N8N_API_KEY=clave-de-mentira\nN8N_BASE_URL=http://n8n.invalid\nN8N_WORKFLOW_ID=abc\n');
   const r = spawnSync('bash', [SCRIPT, '--env', relative(RAIZ, env), '--flujo', FLUJO], {
-    cwd: RAIZ, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env['PATH']}` },
+    cwd: RAIZ, encoding: 'utf8', env: entornoDelEmulador(process.env['FIRESTORE_EMULATOR_HOST'], { PATH: `${bin}:${process.env['PATH']}` }),
   });
   return { out: `${r.stdout}${r.stderr}` };
 }
