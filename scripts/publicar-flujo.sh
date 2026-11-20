@@ -31,7 +31,7 @@
 #
 # EL FLUJO DE RUBEN (tenant rroca-ruben) TIENE UNA GUARDIA PROPIA (PR-5): con --aplicar
 # se NIEGA si el archivo trae un marcador REEMPLAZAR_* o si una plantilla de aviso no
-# esta APPROVED (Flujos/experimental/rroca-ruben/construir.mjs --publicable), y despues
+# esta APPROVED (Flujos/clientes/rroca-ruben/construir.mjs --publicable), y despues
 # pide confirmacion explicita (escribir PUBLICAR RUBEN; sin terminal, solo con
 # --confirmo-ruben; la guardia exige además --anuncios <N>, la cantidad de anuncios VIGENTES que la Consola entrega, leída en seco). En seco informa lo que falta, sin abortar. La guardia estricta es del
 # flujo CONVERSACIONAL («NovuChat — Venta digital de Rubén…» o rroca-ruben[.prueba][.local].json);
@@ -156,7 +156,7 @@ ruben_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = estricto | c
     return 0
   fi
   echo "Flujo de Rubén (rroca-ruben): se revisa la guardia de publicación ($1)."
-  if node Flujos/experimental/rroca-ruben/construir.mjs --publicable ${ANUNCIOS:+--anuncios "$ANUNCIOS"} --flujo "$2"; then
+  if node Flujos/clientes/rroca-ruben/construir.mjs --publicable ${ANUNCIOS:+--anuncios "$ANUNCIOS"} --flujo "$2"; then
     GUARDIA_OK=1
   else
     GUARDIA_OK=0

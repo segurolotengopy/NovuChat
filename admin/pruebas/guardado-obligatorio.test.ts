@@ -75,7 +75,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
     expect(CON_MEDIOS.length).toBeGreaterThan(15);
     // Los de cada cliente que guarda medios, por nombre: si uno se renombra o deja de bajar medios, esto lo dice.
     for (const a of [
-      'clientes/rroca-evy/rroca-evy.json', 'clientes/rroca-emma/rroca-emma.json', 'experimental/rroca-ruben/rroca-ruben.json',
+      'clientes/rroca-evy/rroca-evy.json', 'clientes/rroca-emma/rroca-emma.json', 'clientes/rroca-ruben/rroca-ruben.json',
       'clientes/rroca-antonio/rroca-antonio.json', 'experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.ensayo-demo-a.json',
       'experimental/venta-minima/venta-minima.prueba.json', 'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-emma.json',
       'clientes/novuchat/chat-novuchat.novuchat.json', 'experimental/captacion-minima/captacion-minima.novuchat.json',
@@ -97,7 +97,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
     'clientes/rroca-emma/rroca-emma.json', 'clientes/rroca-emma/rroca-emma.prueba.json',
     'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-evy.prueba.json',
     'experimental/doctoras/doctoras.rroca-emma.json', 'experimental/doctoras/doctoras.rroca-emma.prueba.json',
-    'experimental/rroca-ruben/rroca-ruben.json', 'experimental/rroca-ruben/rroca-ruben.prueba.json', 'experimental/rroca-ruben/rroca-ruben.ensayo-demo-a.json',
+    'clientes/rroca-ruben/rroca-ruben.json', 'clientes/rroca-ruben/rroca-ruben.prueba.json', 'clientes/rroca-ruben/rroca-ruben.ensayo-demo-a.json',
     'clientes/rroca-antonio/rroca-antonio.json', 'clientes/rroca-antonio/rroca-antonio.prueba.json',
     'experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.qtaco-3727.json', 'experimental/venta-minima/venta-minima.prueba.json',
     'experimental/venta-minima/venta-minima.ensayo-demo-a.json',

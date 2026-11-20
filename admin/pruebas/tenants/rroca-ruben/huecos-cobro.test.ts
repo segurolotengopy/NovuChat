@@ -208,6 +208,6 @@ describe('HUECO de NIEGA_IA: la expresión es idéntica a la de chat-novuchat (`
   it('`RR_NIEGA_IA` de rr.js es BYTE A BYTE `CH_NIEGA_IA` de chat-novuchat, salvo el nombre', () => {
     const linea = (t: string, n: string): string => t.split('\n').find((l) => l.startsWith('const ' + n + ' = '))!.replace(n, 'X');
     const origen = leer(join(REPO, 'Flujos/clientes/novuchat/src/lib/chat.js'));
-    expect(linea(leer(join(REPO, 'Flujos/experimental/rroca-ruben/src/lib/rr.js')), 'RR_NIEGA_IA')).toBe(linea(origen, 'CH_NIEGA_IA'));
+    expect(linea(leer(join(REPO, 'Flujos/clientes/rroca-ruben/src/lib/rr.js')), 'RR_NIEGA_IA')).toBe(linea(origen, 'CH_NIEGA_IA'));
   });
 });

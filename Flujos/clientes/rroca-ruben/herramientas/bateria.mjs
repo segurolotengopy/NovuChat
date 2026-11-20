@@ -14,9 +14,9 @@
 // UMBRAL para seguir con `gemini-3.5-flash-lite`: al menos 85 % de los turnos del modelo sin texto de respaldo y 0 violaciones duras (si no, DECISIÓN de Andres).
 //
 // Se corre desde la raíz del repositorio:
-//   node Flujos/experimental/rroca-ruben/herramientas/bateria.mjs --seco
-//   node Flujos/experimental/rroca-ruben/herramientas/bateria.mjs --vertex <proyecto-de-pruebas> --n 3 --confirmo-gasto
-//   node Flujos/experimental/rroca-ruben/herramientas/bateria.mjs --env <archivo> --n 3 --confirmo-gasto --conversaciones
+//   node Flujos/clientes/rroca-ruben/herramientas/bateria.mjs --seco
+//   node Flujos/clientes/rroca-ruben/herramientas/bateria.mjs --vertex <proyecto-de-pruebas> --n 3 --confirmo-gasto
+//   node Flujos/clientes/rroca-ruben/herramientas/bateria.mjs --env <archivo> --n 3 --confirmo-gasto --conversaciones
 //
 // OPCIONES (las de `chat-novuchat` más tres propias)
 //   --seco            NO llama a nada: el modelo es una respuesta fija por turno (campo `seco` de cada turno del caso; sin él, el modelo «cae»). No lee ninguna clave ni toca la red.

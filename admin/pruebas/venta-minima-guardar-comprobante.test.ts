@@ -20,7 +20,7 @@ import { QTACO, leer, nodoDe } from './lib/venta-minima-mundo';
 const PRUEBA = leer('venta-minima.prueba.json');
 const DEMO_A = leer('venta-minima.ensayo-demo-a.json');
 const PLANTILLA = leer('flujo.plantilla.json');
-const RUBEN = leerFlujo('experimental/rroca-ruben/flujo.plantilla.json');
+const RUBEN = leerFlujo('clientes/rroca-ruben/flujo.plantilla.json');
 const G = 'Guardar comprobante';
 
 describe('Guardar comprobante: el cableado', () => {

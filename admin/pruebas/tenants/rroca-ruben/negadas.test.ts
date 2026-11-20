@@ -17,7 +17,7 @@ import { PRELLENADOS, COMPROBANTE, ANA, BETO, REC, crear, entrega, hablar, mAudi
 import { cargarLibrerias } from './librerias';
 import { LIB, UX_CONTADOR, vigilarUx, violacionesDeParrafos, violacionesDeUx, type UxMsg } from './vigilante-ux';
 
-const PRODUCCION_JSON = JSON.parse(readFileSync(new URL('../../../../Flujos/experimental/rroca-ruben/rroca-ruben.json', import.meta.url), 'utf8')) as { nodes: J[] };
+const PRODUCCION_JSON = JSON.parse(readFileSync(new URL('../../../../Flujos/clientes/rroca-ruben/rroca-ruben.json', import.meta.url), 'utf8')) as { nodes: J[] };
 const nuevo = (o: Opciones = {}): Mundo => { const w = crear(o); vigilarUx(w); return w; };
 const NEGADAS_PAGO = /acreditad|verificad|validad|recibimos tu pago|pago (?:recibido|confirmado|aprobado|exitoso)|ya (?:pag[oó]|llegó tu pago)/i;
 const ENLACES = /https?:\/\/|www\.|\b[a-z0-9-]+\.(?:com|net|org|bo|app|me)\b/i;
