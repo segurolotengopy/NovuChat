@@ -75,6 +75,8 @@ if (puerta.ruta === 'sigue') {
     // El catálogo web de la conversación (fotos, colores y precios) como BOTÓN; el enlace lo dio la consola y `cmEnlace` solo deja pasar https. El texto fijo no promete nada que el botón no cumpla.
     const cuerpoCat = wlSeguro(conSaludo(WL_TEXTO_CATALOGO_WEB));
     msgs = [cmMensaje('cliente', cmEnlace(cuerpoCat, 'Ver catálogo', String(d.enlace || '')), cuerpoCat, cuerpoCat + '\n\n' + String(d.enlace || ''), { tipoReporte: 'interactive', conBoton: true })];
+  } else if (tipoDePlan === 'pago_info') {
+    msgs = [texto(conSaludo(WL_TEXTO_PAGO_INFO))];
   } else if (tipoDePlan === 'identidad') {
     msgs = [texto(WL_TEXTO_IDENTIDAD.replace('{NEGOCIO}', negocio))];
   } else if (tipoDePlan === 'audio_fijo') {
