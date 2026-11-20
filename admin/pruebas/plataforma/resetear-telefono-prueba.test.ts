@@ -790,11 +790,11 @@ describe('E6. el texto del script', () => {
 });
 
 describe('E9. UN solo reseteo para todos los flujos (09/11/2026)', () => {
-  const TENANTS = ['qtaco', 'rroca-ruben', 'rroca-evy', 'rroca-antonio', 'rroca-emma', 'bellido'];
-  it('admite los seis tenants y rechaza los demás', () => {
+  const TENANTS = ['qtaco', 'rroca-ruben', 'rroca-evy', 'rroca-antonio', 'rroca-emma', 'bellido', 'walisuma'];
+  it('admite los siete tenants y rechaza los demás', () => {
     expect([...m.TENANTS_PERMITIDOS].sort()).toEqual([...TENANTS].sort());
     for (const t of TENANTS) expect(m.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--tel', TEL], ENV).ok, t).toBe(true);
-    for (const t of ['walisuma', 'platinum', 'novuchat', 'ensayo', 'RROCA-RUBEN']) {
+    for (const t of ['platinum', 'novuchat', 'ensayo', 'RROCA-RUBEN']) {
       expect(problemas(m.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--tel', TEL], ENV))).toContain('--tenant');
     }
   });
