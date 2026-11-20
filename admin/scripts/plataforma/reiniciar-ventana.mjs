@@ -23,6 +23,9 @@
  *
  * Sin `--aplicar` informa y no escribe. Queda en la auditoría del comercio.
  */
+// AVISO (20/11/2026): el reinicio de un teléfono de prueba es UNO solo.
+if (process.argv[1] && process.argv[1].endsWith('reiniciar-ventana.mjs')) console.error('\n  ! Para REINICIAR un teléfono de prueba use `./scripts/resetear-telefono.sh --tenant <comercio> --tel <dígitos> [--aplicar]`: es el único reinicio (servidor, cobro pendiente, atención, pausa y n8n, con lista blanca y relectura). Este script sigue existiendo para su uso propio.\n');
+
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
 const APLICAR = args.includes('--aplicar');
