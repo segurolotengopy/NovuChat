@@ -14,7 +14,7 @@ import { configBase, ejecutar, type Flujo } from './lib/flujo';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const VM = join(AQUI, '../../Flujos/experimental/venta-minima');
-const FUENTE = readFileSync(join(VM, 'src/lib/avisos.js'), 'utf8');
+const FUENTE = readFileSync(join(VM, '../../src/core/venta/avisos.js'), 'utf8');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = Record<string, any>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
