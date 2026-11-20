@@ -19,6 +19,7 @@
  */
 import { documentoDeFlujo, esFlujo } from '../../functions/src/registro.ts';
 import { MAX_RUTAS, planearFlujos } from './fijar-flujos-logica.mjs';
+import { COMERCIOS_NO_TOCADOS } from './comercios-no-tocados.mjs';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -30,8 +31,7 @@ const OPERADOR = (opcion('operador') ?? '').trim().toLowerCase();
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 // Estos comercios no se tocan desde acá (regla del proyecto).
-const EXCLUIDOS = ['bellido', 'platinum'];
-const esExcluido = (t) => EXCLUIDOS.some((e) => t.startsWith(e));
+const esExcluido = (t) => COMERCIOS_NO_TOCADOS.some((e) => t.startsWith(e));
 
 const problemas = [];
 if (!PROYECTO) problemas.push('falta --proyecto');

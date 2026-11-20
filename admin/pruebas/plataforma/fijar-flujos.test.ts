@@ -105,7 +105,8 @@ describe('fijar-flujos: el texto del script', () => {
   });
   it('exige operador, no toca a Bellido ni a Platinum y deja auditoría', () => {
     expect(s).toContain("'--operador <correo> es obligatorio");
-    expect(s).toContain("['bellido', 'platinum']");
+    expect(s).toContain('COMERCIOS_NO_TOCADOS.some(');
+    expect(readFileSync(join(aqui, '..', '..', 'scripts', 'plataforma', 'comercios-no-tocados.mjs'), 'utf8')).toContain("['bellido', 'platinum']");
     expect(s).toContain("accion: 'cambiar_flujos'");
   });
 });

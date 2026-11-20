@@ -8,9 +8,10 @@
  * o el correo nuevo ya pertenece a OTRA cuenta. Si la cuenta ya tiene el correo nuevo (una corrida cortada a la
  * mitad), solo se completan las membresías pendientes.
  */
-export const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-const EXCLUIDOS = ['bellido', 'platinum'];
-export const esExcluido = (t) => EXCLUIDOS.some((e) => String(t).toLowerCase().includes(e));
+import { COMERCIOS_NO_TOCADOS } from './comercios-no-tocados.mjs';
+
+export const CORREO =/^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+export const esExcluido = (t) => COMERCIOS_NO_TOCADOS.some((e) => String(t).toLowerCase().includes(e));
 
 /** «a***@g***.com»: lo único que el script imprime de un correo. */
 export const enmascarar = (c) => (typeof c === 'string' && c.includes('@') ? c.replace(/^(.).*@(.).*(\.[^.]+)$/, '$1***@$2***$3') : '(sin correo)');
