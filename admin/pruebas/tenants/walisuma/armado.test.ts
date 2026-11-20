@@ -377,3 +377,13 @@ describe('la rama del miniCRM (módulo `crm`): 8 nodos entre «Armar mensajes» 
     expect(id(PRODUCCION)).toBe('REEMPLAZAR_PLANILLA_PROSPECTOS_ID_WALISUMA');
   });
 });
+
+describe('«Traer configuración» pide el catálogo COMPLETO (20/11/2026)', () => {
+  // El 20/11 el primer «hola» real a Walisuma respondió «sin configuración» y avisó a recepción: la consola resume el catálogo cuando el
+  // catálogo web está encendido y el comercio tiene más de 40 ítems, salvo que el flujo mande `catalogoCompleto: true`. Walisuma tiene
+  // 132, y este flujo calcula el pedido en código desde la carta entera: sin la bandera NO tiene con qué vender.
+  it.each([['producción', PRODUCCION], ['prueba', PRUEBA]] as const)('%s: el cuerpo manda catalogoCompleto: true', (_n, f) => {
+    const cuerpo = String((nodo(f, 'Traer configuración')['parameters'] as J)['jsonBody']);
+    expect(cuerpo).toMatch(/catalogoCompleto:\s*true/);
+  });
+});
