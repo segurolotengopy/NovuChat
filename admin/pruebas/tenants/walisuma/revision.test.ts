@@ -265,3 +265,17 @@ describe('el historial que se le manda al modelo va en el formato que se le pide
     expect(contenidos.filter((c) => c.role === 'user')[0]!.parts[0]!.text).not.toMatch(/^\{/);
   });
 });
+
+describe('la llamada al modelo exige el esquema de la respuesta (20/11/2026)', () => {
+  // Sin esquema, 2 de cada 20 respuestas de una batería real salían en texto plano y el cliente recibía «tuvimos un inconveniente».
+  it('generationConfig lleva responseMimeType JSON y un responseSchema con los campos del prompt', () => {
+    let cfg: Record<string, any> = {};
+    const m = crear({ modeloDice: (ll) => { cfg = ((ll.cuerpo as J)['generationConfig'] ?? {}) as typeof cfg; return modelo('Con gusto.'); } });
+    hablar(m, ANA, mTexto('que piezas tienen'));
+    expect(cfg['responseMimeType']).toBe('application/json');
+    const e = cfg['responseSchema'];
+    expect(e?.type).toBe('OBJECT');
+    expect(Object.keys(e.properties).sort()).toEqual(['entrega', 'facturacion', 'lineas', 'quiereHablar', 'texto']);
+    expect(e.required).toEqual(['texto']);
+  });
+});
