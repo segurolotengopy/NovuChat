@@ -922,6 +922,7 @@ fi
 # Solo toca `staticData`: los nodos, las conexiones y los ajustes se reescriben
 # TAL CUAL estan publicados, no desde el archivo. Guarda antes una copia.
 if [[ $REINICIAR -eq 1 ]]; then
+  echo "  ! --reiniciar-estado borra el estado de n8n de TODOS los teléfonos del flujo. Para reiniciar UN teléfono de prueba use ./scripts/resetear-telefono.sh --tenant <comercio> --tel <dígitos>." >&2
   APLICAR="$APLICAR" TMP="$TMP" python3 - <<'PY'
 import json, os, datetime
 tmp = os.environ["TMP"]

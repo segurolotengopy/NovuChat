@@ -42,7 +42,7 @@ describe('E1. argumentos y salvaguardas', () => {
     for (const x of [TEL, OTRO, '59100000003']) expect(t).not.toContain(x);
   });
   it('NEGADO: otro tenant, sin tenant, proyecto fuera de la lista blanca', () => {
-    expect(problemas(m.analizarArgumentos(['--proyecto', PROY, '--tenant', 'otro-comercio', '--tel', TEL], ENV))).toContain('lista cerrada');
+    expect(problemas(m.analizarArgumentos(['--proyecto', PROY, '--tenant', 'novuchat', '--tel', TEL], ENV))).toContain('reservado');
     expect(problemas(m.analizarArgumentos(['--proyecto', PROY, '--tel', TEL], ENV))).toContain('--tenant');
     expect(problemas(m.analizarArgumentos(['--proyecto', 'otro-proyecto', '--tenant', 'qtaco', '--tel', TEL], ENV))).toContain('lista blanca');
   });
@@ -791,12 +791,26 @@ describe('E6. el texto del script', () => {
 
 describe('E9. UN solo reseteo para todos los flujos (09/11/2026)', () => {
   const TENANTS = ['qtaco', 'rroca-ruben', 'rroca-evy', 'rroca-antonio', 'rroca-emma', 'bellido', 'walisuma'];
-  it('admite los siete tenants y rechaza los demás', () => {
-    expect([...m.TENANTS_PERMITIDOS].sort()).toEqual([...TENANTS].sort());
-    for (const t of TENANTS) expect(m.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--tel', TEL], ENV).ok, t).toBe(true);
-    for (const t of ['platinum', 'novuchat', 'ensayo', 'RROCA-RUBEN']) {
-      expect(problemas(m.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--tel', TEL], ENV))).toContain('--tenant');
+  it('admite CUALQUIER tenant con id válido (sin lista fija) y rechaza los reservados y los mal formados', () => {
+    for (const t of [...TENANTS, 'platinum', 'casa-bermejo', 'tienda-nueva']) expect(m.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--tel', TEL], ENV).ok, t).toBe(true);
+    for (const t of ['novuchat', 'ensayo', 'demo-venta', 'demo-agendamiento', 'RROCA-RUBEN', 'a', '../x']) {
+      expect(problemas(m.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--tel', TEL], ENV)), t).toContain('--tenant');
     }
+  });
+  it('el flujo de n8n de un tenant sin nombre fijo es el que lleva «(<tenant>)»; con nombre fijo, solo ese nombre', () => {
+    expect(m.esFlujoDelTenant('NovuChat — Casa Bermejo (casa-bermejo)', 'casa-bermejo')).toBe(true);
+    expect(m.esFlujoDelTenant('NovuChat — Casa Bermejo (casa-bermejo)', 'walisuma')).toBe(false);
+    expect(m.esFlujoDelTenant('NovuChat — Walisuma (walisuma)', 'walisuma')).toBe(true);
+    expect(m.esFlujoDelTenant("NovuChat — Venta mínima (v0) — Q'Taco", 'qtaco')).toBe(true);
+    expect(m.esFlujoDelTenant('Otro flujo (qtaco)', 'qtaco')).toBe(false);
+    expect(m.esFlujoDelTenant(undefined, 'qtaco')).toBe(false);
+  });
+  it('NEGADO: sin ficha, dada de baja o sin flujo, no hay reseteo', () => {
+    expect(m.fichaConFlujo(undefined)).toBe(false);
+    expect(m.fichaConFlujo({ estado: 'dado_de_baja', flujos: ['venta'] })).toBe(false);
+    expect(m.fichaConFlujo({ flujos: [], modulos: [] })).toBe(false);
+    expect(m.fichaConFlujo({ flujos: ['venta'] })).toBe(true);
+    expect(m.fichaConFlujo({ modulos: ['productos'] })).toBe(true);
   });
   it('cada tenant tiene el nombre exacto de su flujo y ninguno se repite', () => {
     const nombres = TENANTS.map((t) => m.FLUJO_DE_TENANT[t]);
