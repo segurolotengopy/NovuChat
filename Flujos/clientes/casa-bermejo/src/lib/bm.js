@@ -238,6 +238,8 @@ const BM_TEXTO_ARCHIVO_PESADO = 'Ese archivo es demasiado pesado para abrirlo.\n
 const BM_TEXTO_ARCHIVO_NO_ABIERTO = 'No pude abrir ese archivo.\n\n¿Me lo reenvías o me cuentas por escrito qué necesitas?';
 const BM_TEXTO_IMAGEN = 'Recibí tu imagen, pero por aquí no puedo verla con detalle.\n\nCuéntame por escrito qué pieza te interesa y con gusto te ayudo.';
 const BM_TEXTO_DOCUMENTO = 'Recibí tu archivo, pero por aquí no puedo leerlo con detalle.\n\nCuéntame por escrito qué pieza te interesa y con gusto te ayudo.';
+// El catálogo web como botón: texto fijo, de usted; no promete nada que el botón no cumpla.
+const BM_TEXTO_CATALOGO_WEB = 'Con gusto: en el botón puede ver nuestro catálogo con fotos y precios. Cuando elija una pieza, cuénteme cuál y le ayudo con su pedido.';
 const BM_TEXTO_MODELO_SIN_REDACCION = 'Cuéntame un poco más de lo que buscas y con gusto te ayudo a encontrar la pieza.';
 const BM_TEXTO_COMPROBANTE_ILEGIBLE = 'No pude leer bien tu comprobante.\n\n¿Me envías una foto más nítida, con el monto, la fecha y la cuenta de destino a la vista?';
 const BM_INTROS = {

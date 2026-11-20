@@ -98,6 +98,9 @@ if (esAr && (ficha.aliasEstado === 'pedido' || ficha.aliasEstado === 'abierto') 
 // 3. Sin catálogo no se improvisa: recepción.
 if (!configLista) return sinConfig();
 // 4. Lo que decide el código sobre el texto, ANTES de cualquier modelo.
+// El catálogo web como botón, por código (sin modelo), solo sin un pedido en curso y con el enlace del comercio cargado.
+const enlaceCatalogo = bmEnlaceCatalogo(base);
+if (enlaceCatalogo !== '' && !(Array.isArray(ficha.carrito) && ficha.carrito.length > 0) && !(cobro.pendiente === true || ficha.qrHastaMs > ahora) && bmPideCatalogo(n)) return salir({ tipo: 'catalogo_web', enlace: enlaceCatalogo });
 if (bmPideIdentidad(n)) return salir({ tipo: 'identidad' });
 if (bmCorporativo(n)) return salir({ tipo: 'derivar', motivo: 'corporativo' });
 if (bmPideFactura(n)) return salir({ tipo: 'derivar', motivo: 'factura' });

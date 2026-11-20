@@ -259,6 +259,8 @@ const FORMAS_LOCALES = {
   'configBase.costoDeEntrega': (v) => v.length <= 200,
   // Dónde queda la tienda y su horario: dato del comercio que el asistente puede decir tal cual (nunca se inventa: vacío = pasa con recepción).
   'configBase.ubicacionTienda': (v) => v.length <= 200,
+  // El enlace del catálogo web del comercio (https): sale como botón «Ver catálogo».
+  'configBase.enlaceCatalogo': (v) => v === '' || v.length <= 300 && /^https:\/\/[a-z0-9.-]+(\/[^\s"'\\{}]*)?$/.test(v),
   'configBase.horarioTienda': (v) => v.length <= 200,
   'configBase.nombreNegocio': (v) => v.length >= 2 && v.length <= 80,
 };

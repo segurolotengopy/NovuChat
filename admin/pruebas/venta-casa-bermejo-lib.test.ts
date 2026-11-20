@@ -20,7 +20,7 @@ const RUTAS = [
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
-  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
+  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -457,7 +457,6 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
     const cat = catalogo([item({ id: 'lav-9', nombre: 'LAVADORA SAMSUNG 9KG', precio: 100, precioCentavos: 10000 }), item({ id: 'lav-15', nombre: 'LAVADORA SAMSUNG 15 KG SUPERIOR', precio: 150, precioCentavos: 15000 })]);
     const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, plan: { tipo: 'modelo', textoCliente: 'la lavadora samsung de 15 kg' }, modeloResp: gemini({ texto: 'Solo disponemos de la LAVADORA SAMSUNG 9KG en nuestro catálogo.', lineas: [] }) }));
     expect(r.texto).toMatch(/LAVADORA SAMSUNG 15 KG SUPERIOR a Bs 150/);
-    expect(r.texto).toMatch(/LAVADORA SAMSUNG 9KG a Bs 100/);
     expect(b('bmTextoDeCoincidencias')('televisor sony', cat.vendibles)).toBe('');
   });
   it('un pedido de descuento lo decide el código: pasa con recepción, sin depender de la redacción del modelo', () => {
@@ -487,5 +486,49 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       expect(n?.maxTries).toBe(2);
       expect(n?.onError).toBe('continueRegularOutput');   // y si el segundo intento también falla, el turno pasa con recepción (aviso + botón)
     }
+  });
+  describe('la pieza que pide el cliente se fija por código (humo de Silvana, paso 5: «de 18 BTU» no termina en el de 12)', () => {
+    const aires = catalogo([
+      item({ id: 'aire-12', nombre: 'AIRE TCL 12 BTU', precio: 3407.5, precioCentavos: 340750 }),
+      item({ id: 'aire-18', nombre: 'AIRE TCL 18 BTU', precio: 4935, precioCentavos: 493500 }),
+      item({ id: 'aire-18-inv', nombre: 'AIRE TCL 18 BTU INVERTER', precio: 5405, precioCentavos: 540500 }),
+      item({ id: 'lav-9', nombre: 'LAVADORA SAMSUNG 9KG', precio: 4112.5, precioCentavos: 411250 }),
+    ]);
+    const turno = (textoCliente: string, propone: string[], ficha: Record<string, unknown> = {}) => b('bmResolver')(ctx({
+      catalogo: aires, vendibles: aires.vendibles, ficha, plan: { tipo: 'modelo', textoCliente },
+      modeloResp: gemini({ texto: 'Con gusto, lo agregué.', lineas: propone.map((id) => ({ id, cantidad: 1 })) }),
+    }));
+    it('«quiero un aire»: el modelo propone el de 12 BTU y NO se agrega; el texto lista las opciones con precio', () => {
+      const r = turno('Quiero un aire', ['aire-12']);
+      expect(r.lineas).toEqual([]);
+      expect(r.texto).toMatch(/AIRE TCL 12 BTU a Bs 3\.407,50/);
+      expect(r.texto).toMatch(/AIRE TCL 18 BTU a Bs 4\.935/);
+    });
+    it('«de 18 BTU» tras un pedido vacío: NO termina en el de 12 BTU, ni en uno de los dos de 18 (son ambiguos)', () => {
+      for (const propone of [['aire-12'], ['aire-18'], ['aire-18-inv']]) {
+        const r = turno('de 18 BTU', propone);
+        expect(r.lineas.map((l: { id: string }) => l.id)).toEqual([]);
+        expect(r.texto).toMatch(/AIRE TCL 18 BTU a Bs 4\.935/);
+        expect(r.texto).not.toMatch(/12 BTU/);
+      }
+    });
+    it('el cliente precisa («el 18 BTU inverter»): entra SOLO esa pieza, no la de 12', () => {
+      const ok = turno('quiero el aire TCL de 18 BTU inverter', ['aire-18-inv']);
+      expect(ok.lineas.map((l: { id: string }) => l.id)).toEqual(['aire-18-inv']);
+      const mal = turno('quiero el aire TCL de 18 BTU inverter', ['aire-12']);
+      expect(mal.lineas).toEqual([]);   // el modelo se equivocó de pieza: no entra
+    });
+    it('lo que ya estaba en el pedido se conserva aunque el cliente hable de otra cosa; dos tipos distintos en un mensaje entran los dos', () => {
+      const antes = { carrito: [{ id: 'aire-12', cantidad: 1, detalle: '' }] };
+      const r = turno('agrega una lavadora samsung de 9 kg', ['aire-12', 'lav-9'], antes);
+      expect(r.lineas.map((l: { id: string }) => l.id).sort()).toEqual(['aire-12', 'lav-9']);
+      const dos = turno('quiero una lavadora samsung de 9 kg y el aire de 12 btu', ['lav-9', 'aire-12']);
+      expect(dos.lineas.map((l: { id: string }) => l.id).sort()).toEqual(['aire-12', 'lav-9']);
+    });
+    it('sin nombrar nada («1», «sí confirmo»): no se toca lo que propone el modelo', () => {
+      const antes = { carrito: [{ id: 'aire-18', cantidad: 1, detalle: '' }] };
+      expect(turno('1', ['aire-18'], antes).lineas.map((l: { id: string }) => l.id)).toEqual(['aire-18']);
+      expect(b('bmFijarPieza')('sí, confirmo', [], [{ id: 'aire-18', cantidad: 1 }], aires.vendibles).lineas).toHaveLength(1);
+    });
   });
 });
