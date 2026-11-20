@@ -35,6 +35,8 @@
     "avisoPedidoEstado": "REEMPLAZAR_ESTADO_DE_LA_PLANTILLA",
     "avisoPlantillaIdioma": "es",
     "hostsFoto": "REEMPLAZAR_HOSTS_FOTO",
-    "tratamiento": "REEMPLAZAR_TRATAMIENTO"
+    "tratamiento": "REEMPLAZAR_TRATAMIENTO",
+    "ubicacionTienda": "",
+    "horarioTienda": ""
   }
 }

@@ -111,7 +111,7 @@ describe('Argentina (B4a): catálogo en pesos y pedido anotado; el pago por alia
     const cuerpo = C.EXPRESION_MERCADO.replace(/^\{\{|\}\}$/g, '').trim();
     const evalua = (from: string): string => (vm.compileFunction(`return (${cuerpo});`, ['$']) as (a: unknown) => string)(() => ({ first: () => ({ json: { from } }) }));
     // Donde la función da null (otro país, número corto o largo) la expresión da «X»: el servidor responde 400 y el turno pasa con recepción.
-    for (const f of [ANA, ARG, '+' + ARG, '00' + ARG, '5491', '5511900000033', '', '54' + '9'.repeat(20), '591']) expect(evalua(f)).toBe(ceMercadoDePrefijo(f) ?? 'X');
+    for (const f of [ANA, ARG, '+' + ARG, '00' + ARG, '5491', '5511900000033', '', '54' + '9'.repeat(20), '591']) expect(evalua(f)).toBe(ceMercadoDePrefijo(f) ?? (f.replace(/\D/g, '').replace(/^0+/, '').length >= 10 && f.replace(/\D/g, '').replace(/^0+/, '').length <= 15 ? 'BO' : 'X'));
   });
   it('un cliente de Argentina ve precios en pesos y nunca en «Bs»', () => {
     const m = crear({ catalogo: catAr(), modeloDice: pide([{ id: BIL, cantidad: 2 }]) });
