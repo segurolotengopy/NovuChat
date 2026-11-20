@@ -7,7 +7,7 @@
  *   node Flujos/clientes/casa-bermejo/construir.mjs               escribe casa-bermejo.json y casa-bermejo.prueba.json
  *   node Flujos/clientes/casa-bermejo/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
  *   node Flujos/clientes/casa-bermejo/construir.mjs --publicable [--flujo <json>] [--datos <json>]
- *                                                       no escribe: sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal. HOY SALE 1: quedan marcadores REEMPLAZAR_*
+ *                                                       no escribe: sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal. HOY SALE 1: quedan marcadores REEMPLAZAR_*. Además corre las guardias de lo armado (`guardias`) y, con `--datos <archivo>.local.json`, la comparación del receptor con su origen
  *   node Flujos/clientes/casa-bermejo/construir.mjs --local --datos <archivo>.local.json [--salida <directorio>]
  *                                                       arma casa-bermejo.local.json y casa-bermejo.prueba.local.json con los valores de un archivo LOCAL (ignorado por git, nunca versionado); no toca los versionados ni imprime valores
  *   (cualquier otro argumento se rechaza)
@@ -265,7 +265,7 @@ const FORMAS_LOCALES = {
  * Rechaza (los mensajes nombran claves CONOCIDAS, nunca valores ni nombres de clave que no están en los datos versionados): un archivo que no termina en `.local.json`
  * (el .gitignore no lo cubriría), claves que no existen en los datos versionados (en cualquier nivel), un texto libre que no está en la lista blanca `FORMAS_LOCALES`,
  * cualquier clave que parezca de un secreto, cualquier valor que parezca un token (Bearer, EAA…, AIza…, JWT, cadena larga), un nombre de credencial con forma de token,
- * un host de catálogo fuera de ANFITRIONES_TIENDA, una URL del verificador interno (solo puede quedar el marcador) y cualquier valor de forma no válida.
+ * un host de catálogo fuera de ANFITRIONES_TIENDA, una URL del verificador distinta de la constante exacta URL_VERIFICADOR_INTERNO (o del marcador) y cualquier valor de forma no válida.
  * Un marcador que quede sin sustituir se acepta.
  */
 export function cargarDatosLocal(ruta, versionados = ARCHIVO_DE_DATOS) {
@@ -746,7 +746,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     };
     try {
       const flujoJson = leerJson(opcion('--flujo') || join(AQUI, FLUJO_PRODUCCION), 'el flujo');
-      const hallazgos = guardiaDePublicacion({ flujo: flujoJson, datos: cargarDatos(opcion('--datos') || ARCHIVO_DE_DATOS) });
+      const rutaDatos = opcion('--datos');
+      const datosLocales = rutaDatos !== undefined && rutaDatos.endsWith(SUFIJO_LOCAL);
+      const datos = datosLocales ? cargarDatosLocal(rutaDatos) : cargarDatos(rutaDatos || ARCHIVO_DE_DATOS);
+      const hallazgos = guardiaDePublicacion({ flujo: flujoJson, datos });
+      // Además de lo anterior, el JSON que se publica pasa las MISMAS guardias de lo armado que al construirlo: un JSON local editado a mano (otra URL del verificador, `onError`/`continueOnFail`,
+      // un `wabaIdEsperado` como expresión) no pasa. La variante sale de «Entrada de prueba» (solo la de prueba la tiene). La comparación de la entrada del receptor con su origen necesita los datos
+      // con los que se armó (`--datos <archivo>.local.json`) o el flujo versionado con los datos versionados; sin ellos el valor armado no se puede cotejar y solo corren las guardias.
+      const variante = Array.isArray(flujoJson && flujoJson.nodes) && flujoJson.nodes.some((n) => n && n.name === NODO_PRUEBA) ? 'prueba' : 'produccion';
+      hallazgos.push(...guardias(variante, flujoJson));
+      if (variante === 'produccion' && (datosLocales || !opcion('--flujo'))) hallazgos.push(...hallazgosDelReceptor(flujoJson, datos));
       if (hallazgos.length) {
         console.error('✗ El flujo de Casa Bermejo NO se puede publicar todavía:');
         for (const x of hallazgos) console.error(`  - ${x}`);

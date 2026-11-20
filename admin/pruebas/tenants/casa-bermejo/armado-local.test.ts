@@ -37,7 +37,7 @@ const base = (): J => ({
   catalogoUrl: 'https://novutienda-sitio-stg.web.app',
   configBase: { phoneNumberIdEsperado: PHONE, nombreNegocio: 'Casa Bermejo', avisoPedidoEstado: 'APPROVED', hostsFoto: 'storage.googleapis.com', tratamiento: 'usted', modosDeEntrega: 'Recojo en tienda' },
 });
-/** Todo sustituido salvo la URL del verificador interno, que solo puede ser un marcador. */
+/** Todo sustituido salvo la URL del verificador interno, que queda como marcador (solo se acepta el marcador o la constante exacta `URL_VERIFICADOR_INTERNO`). */
 const completo = (): J => {
   const d = base();
   Object.assign(d['configBase'] as J, { numeroRecepcion: '591' + '7123' + '4567', contactoAviso: '591' + '7234' + '5678', telefonosDePrueba: '591' + '7345' + '6789', costoDeEntrega: 'A convenir' });
@@ -256,6 +256,42 @@ describe('NEGADO: lo que un dato local no puede traer', () => {
     expect(C.guardias('produccion', JSON.parse(readFileSync(s.prod, 'utf8')))).toEqual([]);
     expect(r.stdout + r.stderr).not.toContain('receptor-clientes'); // la consola no repite la URL
     for (const v of VERSIONADOS) expect(readFileSync(v, 'utf8')).not.toContain('receptor-clientes'); // los versionados conservan el marcador
+  });
+  it('`--publicable --flujo <json>` corre también las guardias de lo armado: un JSON local editado a mano (otra URL del verificador, `onError`, `wabaIdEsperado` como expresión) sale 1', () => {
+    const s = salidaTemporal();
+    const d = completo();
+    (d['receptor'] as J)['urlVerificador'] = C.URL_VERIFICADOR_INTERNO;
+    const datos = archivoLocal(d);
+    expect(corrida('--local', '--datos', datos, '--salida', s.dir).status).toBe(0);
+    const bien = corrida('--publicable', '--flujo', s.prod, '--datos', datos);
+    expect(bien.status, bien.stderr).toBe(0);
+    const original = JSON.parse(readFileSync(s.prod, 'utf8')) as J;
+    const editar = (cambio: (v: J) => void, nombre: string): string => {
+      const f = JSON.parse(JSON.stringify(original)) as J;
+      cambio((f['nodes'] as J[]).find((n) => n['name'] === 'Verificar firma con el receptor')!);
+      const ruta = join(carpetaTemporal('cb-editado-'), nombre);
+      carpetas.push(dirname(ruta));
+      writeFileSync(ruta, JSON.stringify(f));
+      return ruta;
+    };
+    const casos: [string, (v: J) => void, RegExp][] = [
+      ['otra URL del verificador', (v) => { (v['parameters'] as J)['url'] = 'http://receptor-clientes:8081/v1/interno/otra'; }, /anfitrión no permitido/],
+      ['onError', (v) => { v['onError'] = 'continueRegularOutput'; }, /Continue on Fail/],
+      ['wabaIdEsperado como expresión', (v) => { const q = v['parameters'] as J; q['jsonBody'] = String(q['jsonBody']).replace(/wabaIdEsperado: "\d+"/, 'wabaIdEsperado: $json.x'); }, /wabaIdEsperado.*FIJO/],
+    ];
+    for (const [que, cambio, patron] of casos) {
+      const f = editar(cambio, 'editado.local.json');
+      for (const extra of [[], ['--datos', datos]]) {
+        const r = corrida('--publicable', '--flujo', f, ...extra);
+        expect(r.status, `${que} ${extra.length ? 'con datos' : 'sin datos'}`).toBe(1);
+        expect(r.stderr, que).toMatch(patron);
+      }
+    }
+    // Con los datos locales, la entrada del receptor además se compara con su origen: un nodo cambiado de más también sale 1.
+    const distinto = editar((v) => { v['notes'] = 'cambiado a mano'; }, 'distinto.local.json');
+    const r = corrida('--publicable', '--flujo', distinto, '--datos', datos);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/difiere de su origen/);
   });
   it('la guardia de lo armado: otra URL en el nodo del verificador, o la constante en «Config base» o en cualquier otro nodo, se rechazan', () => {
     const s = salidaTemporal();
