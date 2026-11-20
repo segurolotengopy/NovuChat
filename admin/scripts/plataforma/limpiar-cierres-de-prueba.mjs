@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// AVISO (20/11/2026): el reinicio de un teléfono de prueba es UNO solo.
+if (process.argv[1] && process.argv[1].endsWith('limpiar-cierres-de-prueba.mjs')) console.error('\n  ! Para REINICIAR un teléfono de prueba use `./scripts/resetear-telefono.sh --tenant <comercio> --tel <dígitos> [--aplicar]`: es el único reinicio (servidor, cobro pendiente, atención, pausa y n8n, con lista blanca y relectura). Este script sigue existiendo para su uso propio.\n');
 /**
  * Borra los cierres cuya referencia empieza con `verificacion_`, `prueba_`,
  * `diag_`, `tok_` o `cruz_`, y recalcula el contador del período.
