@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '../../scripts/preparar-import.sh');
@@ -22,7 +23,7 @@ function correr(valor: string, filas: string[]) {
     nodes: [{ id: 'n1', name: 'Dato', type: 'n8n-nodes-base.set', typeVersion: 1, position: [0, 0], parameters: { valor } }],
   }));
   const r = spawnSync('bash', [SCRIPT, flujo, join(dir, 'env')], {
-    encoding: 'utf8', env: { ...process.env, CONFIG_LOCAL_MD: join(dir, 'tabla.md') },
+    encoding: 'utf8', env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: join(dir, 'tabla.md') }),
   });
   const salida = join(dir, 'flujo.local.json');
   return { r, texto: () => readFileSync(salida, 'utf8') };
