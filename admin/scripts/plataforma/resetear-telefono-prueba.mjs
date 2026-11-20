@@ -1,6 +1,6 @@
 /**
  * RESETEAR UN TELÉFONO DE PRUEBA DE UN TENANT — EL ÚNICO RESETEO, en una sola pasada, para todos los flujos (`FLUJO_DE_TENANT`: Q'Taco, Rubén, Evy,
- * Antonio, Emma, Bellido). Seco por omisión.
+ * Antonio, Emma, Bellido, Walisuma). Seco por omisión.
  * (Antes `resetear-estado-turno.mjs`, que queda como envoltorio que avisa. Andres, 07/11/2026: «debería ser UN solo reseteo».)
  *
  * PARA QUÉ. Para volver a probar «como cliente nuevo» con un teléfono de prueba hay que limpiar TODO lo que el sistema recuerda de ESE teléfono.
@@ -87,6 +87,7 @@ export const FLUJO_DE_TENANT = Object.freeze({
   'rroca-antonio': 'NovuChat — El Puente de Antonio (rroca-antonio)',
   'rroca-emma': 'NovuChat — Dra. Emma (rroca-emma)',
   bellido: 'NovuChat Bellido — Agendamiento (Pediatría)',
+  walisuma: 'NovuChat — Walisuma (walisuma)',
 });
 export const TENANTS_PERMITIDOS = Object.freeze(Object.keys(FLUJO_DE_TENANT));
 /** Q'Taco conserva sus espacios y claves de cupo; en los demás tenants cualquier espacio o clave de ESE teléfono de la lista cerrada es estado de prueba. */
