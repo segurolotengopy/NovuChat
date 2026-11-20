@@ -32,14 +32,14 @@ describe('`preparar-import.sh` repone los marcadores de un dato compuesto', () =
   const compuesto = 'REEMPLAZAR_ANUNCIO_A:general|REEMPLAZAR_ANUNCIO_B:llavero,bolso';
 
   it('cada marcador separado por `:` `|` `,` toma el valor de su propia fila', () => {
-    const { r, texto } = correr(compuesto, ['| `REEMPLAZAR_ANUNCIO_A` | 111111111111 |', '| `REEMPLAZAR_ANUNCIO_B` | 222222222222 |']);
+    const { r, texto } = correr(compuesto, ['| `REEMPLAZAR_ANUNCIO_A` | 100000000001 |', '| `REEMPLAZAR_ANUNCIO_B` | 200000000002 |']);
     expect(r.status, r.stdout + r.stderr).toBe(0);
     const v = (JSON.parse(texto()) as { nodes: { parameters: { valor: string } }[] }).nodes[0]!.parameters.valor;
-    expect(v).toBe('111111111111:general|222222222222:llavero,bolso');
+    expect(v).toBe('100000000001:general|200000000002:llavero,bolso');
   });
 
   it('si falta la fila de UNO, sale 1 y dice cuál (no por prefijo)', () => {
-    const { r } = correr(compuesto, ['| `REEMPLAZAR_ANUNCIO_A` | 111111111111 |']);
+    const { r } = correr(compuesto, ['| `REEMPLAZAR_ANUNCIO_A` | 100000000001 |']);
     expect(r.status).toBe(1);
     expect(r.stdout).toContain('REEMPLAZAR_ANUNCIO_B');
     expect(r.stdout).not.toContain('REEMPLAZAR_ANUNCIO_A —');
