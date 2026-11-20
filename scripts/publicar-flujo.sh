@@ -71,6 +71,7 @@ FLUJO="Flujos/demo-a-agendamiento.json"
 APLICAR=0
 FORZAR=0
 REINICIAR=0
+BORRAR=0
 CREAR=0
 ACTIVAR=0
 ENCENDER=0
@@ -91,6 +92,7 @@ while [[ $# -gt 0 ]]; do
     --flujo=*) FLUJO="${1#*=}"; shift ;;
     --aplicar) APLICAR=1; shift ;;
     --reiniciar-estado) REINICIAR=1; shift ;;
+    --borrar) BORRAR=1; shift ;;
     --crear)   CREAR=1; shift ;;
     --activar) ACTIVAR=1; shift ;;
     --encender) ENCENDER=1; shift ;;
@@ -536,6 +538,21 @@ set +a
 API="${N8N_BASE_URL%/}/api/v1"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+
+# --- 0. borrar un flujo TEMPORAL de pruebas (--borrar) ---------------------------
+# Un banco de pruebas (flujo temporal, p. ej. `.env.walisuma-banco`) puede crecer tanto que leerlo por la API tarda mas de 30 s y ni apagarlo ni actualizarlo
+# funcionan. Esto lo desactiva y lo borra SIN leerlo. Salvaguardas: solo para un env que se llame `.env.<algo>-banco` (nunca el flujo de un cliente ni un demo),
+# solo con --aplicar, y relee que ya no exista. Sin --aplicar solo dice que haria.
+if [[ $BORRAR -eq 1 ]]; then
+  [[ "$ENV_FILE" =~ ^\.env\.[a-z0-9-]+-banco$ ]] || { echo "✗ --borrar solo vale para un entorno de banco de pruebas (.env.<nombre>-banco): no se borra el flujo de un cliente" >&2; exit 2; }
+  [[ -z "${N8N_WORKFLOW_ID//[A-Za-z0-9]/}" && -n "$N8N_WORKFLOW_ID" ]] || { echo "✗ N8N_WORKFLOW_ID invalido" >&2; exit 2; }
+  if [[ $APLICAR -ne 1 ]]; then echo "  Seco: se desactivaria y borraria el flujo del banco ($ENV_FILE). Agregue --aplicar."; exit 0; fi
+  curl -s --max-time 60 -o /dev/null -X POST -H @- "${API}/workflows/${N8N_WORKFLOW_ID}/deactivate" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || true
+  COD=$(curl -s --max-time 60 -o /dev/null -w '%{http_code}' -X DELETE -H @- "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
+  COD2=$(curl -s --max-time 60 -o /dev/null -w '%{http_code}' -H @- "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
+  if [[ "$COD" == "200" && "$COD2" == "404" ]]; then printf '\033[1;32m✓ Flujo del banco borrado (DELETE %s) y releido: ya no existe (%s)\033[0m\n' "$COD" "$COD2"; exit 0; fi
+  printf '\033[1;31m✗ No se pudo confirmar el borrado (DELETE %s, relectura %s)\033[0m\n' "$COD" "$COD2" >&2; exit 1
+fi
 
 # --- 1. leer el flujo vivo ----------------------------------------------------
 COD=$(curl -s --max-time 30 -o "$TMP/vivo.json" -w '%{http_code}' \
