@@ -250,3 +250,18 @@ describe('11 · más de una exclamación del modelo no sale', () => {
     expect(textos(hablar(crear({ modeloDice: modelo('¡Qué bonita elección! ¿Qué color prefiere?') }), ANA, mTexto('hola'))).join(' ')).toMatch(/Qué bonita elección/);
   });
 });
+
+describe('el historial que se le manda al modelo va en el formato que se le pide (20/11/2026)', () => {
+  // El historial con las respuestas en TEXTO PLANO hacía que el modelo imitara el texto plano y respondiera sin JSON: 17 de 20 respuestas
+  // de una batería real salieron «tuvimos un inconveniente» y avisaron a recepción. Las respuestas anteriores del modelo van como `{"texto": …}`.
+  it('las respuestas anteriores del modelo viajan como JSON {"texto"} y las del cliente en texto', () => {
+    let contenidos: { role: string; parts: { text: string }[] }[] = [];
+    const m = crear({ modeloDice: (ll) => { contenidos = (ll.cuerpo as J)['contents'] as typeof contenidos; return modelo('Con gusto le muestro piezas.'); } });
+    hablar(m, ANA, mTexto('hola'));
+    hablar(m, ANA, mTexto('que piezas tienen'));
+    const previa = contenidos.filter((c) => c.role === 'model');
+    expect(previa.length).toBeGreaterThan(0);
+    for (const c of previa) expect(JSON.parse(c.parts[0]!.text)).toEqual({ texto: expect.any(String) });
+    expect(contenidos.filter((c) => c.role === 'user')[0]!.parts[0]!.text).not.toMatch(/^\{/);
+  });
+});
