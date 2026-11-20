@@ -75,7 +75,7 @@ export const CONFIG = {
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],
     filtro: ['../../src/core/texto/filtro-redaccion.js'],
-    avisos: ['../../experimental/venta-minima/src/lib/avisos.js'],
+    avisos: ['../../src/core/venta/avisos.js'],
     prompt: ['src/lib/prompt-vacio.js'],
     'turno-carga': ['../../src/core/sin-agente/turno/carga-de-entrada.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],

@@ -56,7 +56,7 @@ export function configDe(tenants = tenantsConDatos()) {
   return {
     plantilla: 'flujo.plantilla.json',
     raiz: '../..',
-    librerias: ['../venta-minima/src/lib/avisos.js', 'src/lib/dr.js'],
+    librerias: ['../../src/core/venta/avisos.js', 'src/lib/dr.js'],
     comun: ['src/nodos/_comun.js'],
     paquetes: {
       mensajes: ['../../src/core/sin-agente/mensajes.js'],

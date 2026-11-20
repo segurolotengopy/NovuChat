@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar } from './lib/flujo';
 
-const FUENTE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/lib/avisos.js'), 'utf8');
+const FUENTE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/src/core/venta/avisos.js'), 'utf8');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = Record<string, any>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
