@@ -314,3 +314,21 @@ describe('alerta del catálogo por defecto', () => {
     expect(() => b('bmAnotarAlerta')(null, 'credencial', AHORA)).not.toThrow();
   });
 });
+
+describe('el cliente ve el NOMBRE de la pieza, nunca su id (20/11/2026)', () => {
+  const cat = catalogo([
+    item({ id: 'nevera-alfa', nombre: 'NEVERA ALFA', precio: 100, precioCentavos: 10000 }),
+    item({ id: 'nevera-alfa-xl', nombre: 'NEVERA ALFA XL', precio: 120, precioCentavos: 12000 }),
+  ]);
+  it('un id citado por el modelo sale como el nombre visible, con el precio intacto', () => {
+    const t = b('bmRedaccion')('Tenemos el nevera-alfa a 100 Bs y el nevera-alfa-xl a 120 Bs. ¿Cuál le gusta?', 'qué tienen', cat.vendibles);
+    expect(t).toContain('NEVERA ALFA a 100 Bs');
+    expect(t).toContain('NEVERA ALFA XL a 120 Bs');
+  });
+  it('NEGADO: ningún id con guiones queda en el texto, y un id dentro de otra palabra no se toca', () => {
+    const t = b('bmRedaccion')('Le sirve el nevera-alfa a 100 Bs. ¿Lo anoto?', 'quiero uno', cat.vendibles);
+    expect(t).not.toMatch(/nevera-alfa/);
+    const t2 = b('bmRedaccion')('Tenemos el modelo-nevera-alfa-max a 100 Bs.', 'quiero uno', cat.vendibles);
+    expect(t2).toContain('modelo-nevera-alfa-max');
+  });
+});

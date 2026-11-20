@@ -165,8 +165,32 @@ function bmLimitarEmojis(texto) {
   return String(texto).replace(/\p{Extended_Pictographic}️?/gu, (e) => (++n <= 2 ? e : '')).replace(/[ \t]{2,}/g, ' ').trim();
 }
 // El texto del modelo, revisado: devuelve el texto listo o '' (entonces sale el fijo). Las promesas de aviso NUNCA se permiten aquí: el aviso a recepción lo anuncia el código, no el modelo.
+// El modelo a veces cita una pieza por su id («refrigerador-tcl-f130») en vez de por su nombre: al cliente siempre se le nombra por el NOMBRE visible. Lo decide el código, no el prompt:
+// cada id del catálogo que aparezca como palabra completa en el texto se cambia por su nombre (el más largo primero, para que un id no se coma a otro que lo contiene).
+function bmNombrarIds(texto, vendibles) {
+  let t = String(texto);
+  const piezas = (Array.isArray(vendibles) ? vendibles : []).filter((v) => v && typeof v.id === 'string' && v.id !== '' && typeof v.nombre === 'string' && v.nombre !== '').sort((a, b) => b.id.length - a.id.length);
+  for (const v of piezas) {
+    const i = t.toLowerCase().indexOf(v.id.toLowerCase());
+    if (i < 0) continue;
+    let desde = 0;
+    let salida = '';
+    const bajo = t.toLowerCase();
+    const id = v.id.toLowerCase();
+    const ES = /[a-z0-9_-]/;
+    for (let k = bajo.indexOf(id, desde); k >= 0; k = bajo.indexOf(id, desde)) {
+      const antes = k === 0 ? '' : bajo[k - 1];
+      const despues = bajo[k + id.length] || '';
+      const completo = !(antes && ES.test(antes)) && !(despues && ES.test(despues));
+      salida += t.slice(desde, k) + (completo ? v.nombre : t.slice(k, k + id.length));
+      desde = k + id.length;
+    }
+    t = salida + t.slice(desde);
+  }
+  return t;
+}
 function bmRedaccion(texto, textoCliente, vendibles) {
-  const crudo = typeof texto === 'string' ? texto.trim() : '';
+  const crudo = typeof texto === 'string' ? bmNombrarIds(texto.trim(), vendibles) : '';
   if (crudo === '') return '';
   const opciones = {
     maximo: 700, permitirMontos: true, sinDatosDePago: true, sinAfirmarCompra: true, sinPromesasDeAviso: true, avisoRespaldado: false,
