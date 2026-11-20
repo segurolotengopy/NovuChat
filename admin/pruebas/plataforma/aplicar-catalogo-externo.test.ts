@@ -43,7 +43,7 @@ const ACTIVO_BOB = { activo: true, monedas: ['BOB'] };
 const ACTIVO_BOB_ARS = { activo: true, monedas: ['BOB', 'ARS'] };
 
 /** Una Firestore en memoria con la ficha y `config/pedidos`: cuenta escrituras y puede cambiar entre la lectura y la escritura. */
-function baseDe(pedidos: Record<string, unknown> | null, opciones: { cambiaAntesDeEscribir?: boolean; ficha?: Record<string, unknown> | null } = {}) {
+function baseDe(pedidos: Record<string, unknown> | null, opciones: { cambiaAntesDeEscribir?: boolean; otroCreaAntes?: boolean; ficha?: Record<string, unknown> | null } = {}) {
   let datos = pedidos === null ? null : { ...pedidos };
   const ficha = opciones.ficha === undefined ? FICHA : opciones.ficha;
   let hora = 1;
@@ -56,6 +56,21 @@ function baseDe(pedidos: Record<string, unknown> | null, opciones: { cambiaAntes
   });
   const refPedidos = {
     es: 'pedidos',
+    get: async () => snap(datos),
+    create: async (campos: Record<string, unknown>) => {
+      if (opciones.otroCreaAntes) { datos = { creadoPorOtro: true }; hora += 1; }
+      if (datos !== null) throw Object.assign(new Error('ya existe'), { code: 6 });
+      datos = { ...campos };
+      hora += 1;
+      escrituras.push({ campos });
+    },
+    delete: async (pre: { lastUpdateTime: { hora: number } }) => {
+      if (datos === null) throw Object.assign(new Error('no existe'), { code: 5 });
+      if (pre.lastUpdateTime.hora !== hora) throw Object.assign(new Error('precondición'), { code: 9 });
+      datos = null;
+      hora += 1;
+      escrituras.push({ campos: { __documento_borrado: true } });
+    },
     update: async (campos: Record<string, unknown>, pre: { lastUpdateTime: { hora: number } }) => {
       if (opciones.cambiaAntesDeEscribir) { hora += 1; datos = { ...(datos ?? {}), otro: 'cambio-ajeno' }; }
       if (pre.lastUpdateTime.hora !== hora) throw Object.assign(new Error('precondición'), { code: 9 });
@@ -309,13 +324,121 @@ describe('C3. revertir', () => {
   });
 });
 
+describe('C5. --crear-documento', () => {
+  const baseArgs = ['--proyecto', PROY, '--tenant', 'tienda-prueba', '--monedas', 'BOB', '--crear-documento'];
+  const problemas = (argv: string[], env: Record<string, string> = ENV_EMU) => {
+    const r = mod.analizarArgumentos(argv, env);
+    expect(r.ok, JSON.stringify(r)).toBe(false);
+    return (r.problemas ?? []).join(' | ');
+  };
+  const crearCfg = (extra: Cfg = {}) => cfgDe({ crearDocumento: true, ...extra });
+
+  it('argumentos: válido solo con --monedas; NEGADO con --desactivar o --revertir; producción exige --confirmo-produccion', () => {
+    expect(mod.analizarArgumentos(baseArgs, ENV_EMU).cfg).toMatchObject({ crearDocumento: true, aplicar: false });
+    expect(mod.analizarArgumentos(baseArgs.slice(0, -1), ENV_EMU).cfg).toMatchObject({ crearDocumento: false });
+    expect(problemas(['--proyecto', PROY, '--tenant', 'tienda-prueba', '--desactivar', '--crear-documento'])).toContain('no se combina con --desactivar');
+    expect(problemas(['--revertir', '--crear-documento', '--proyecto', PROY, '--tenant', 'tienda-prueba', '--respaldo', rutaRespaldo()])).toContain('--revertir no admite');
+    expect(problemas([...baseArgs, '--crear-documento'])).toContain('opción repetida');
+    const prod = ['--proyecto', 'proyecto-ficticio-prod', '--tenant', 'tienda-prueba', '--monedas', 'BOB', '--crear-documento', '--aplicar', '--respaldo', rutaRespaldo()];
+    expect(problemas(prod, ENV_REAL)).toContain('--confirmo-produccion');
+    expect(mod.analizarArgumentos([...prod, '--confirmo-produccion', 'tienda-prueba'], ENV_REAL).ok).toBe(true);
+  });
+
+  it('NEGADO: sin la opción, un documento ausente NO se crea (1, sin escribir ni respaldo)', async () => {
+    const resp = rutaRespaldo();
+    const b = baseDe(null);
+    const r = await correr(cfgDe({ aplicar: true, respaldo: resp }), b);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('sin --crear-documento');
+    expect(b.escrituras).toEqual([]);
+    expect(b.datos()).toBeNull();
+  });
+
+  it('el seco con la opción no escribe (1) y avisa que crearía el documento', async () => {
+    const b = baseDe(null);
+    const r = await correr(crearCfg(), b);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('se CREARÍA');
+    expect(b.escrituras).toEqual([]);
+  });
+
+  it('--aplicar crea el documento con ÚNICAMENTE catalogoExterno, respalda y relee; las lecturas llevan máscara', async () => {
+    const resp = rutaRespaldo();
+    const b = baseDe(null);
+    const r = await correr(crearCfg({ aplicar: true, respaldo: resp, valor: ACTIVO_BOB_ARS }), b);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(b.escrituras).toEqual([{ campos: { catalogoExterno: ACTIVO_BOB_ARS } }]);
+    expect(b.datos()).toEqual({ catalogoExterno: ACTIVO_BOB_ARS });
+    const rr = JSON.parse(readFileSync(resp, 'utf8'));
+    expect(rr).toMatchObject({ documentoCreado: true, previo: { presente: false, valor: null }, escrito: ACTIVO_BOB_ARS });
+    expect(mod.leerRespaldo(resp, { entorno: 'emulador', tenant: 'tienda-prueba' }).ok).toBe(true);
+  });
+
+  it('NEGADO: si el documento YA existe, la opción sale 2 sin escribir (ni en seco ni con --aplicar)', async () => {
+    for (const aplicar of [false, true]) {
+      const b = baseDe({ ...PEDIDOS });
+      const r = await correr(crearCfg({ aplicar, respaldo: aplicar ? rutaRespaldo() : null }), b);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('YA existe');
+      expect(b.escrituras).toEqual([]);
+      expect(b.datos()).toEqual(PEDIDOS);
+    }
+  });
+
+  it('NEGADO: si otro proceso lo crea entre la lectura y la escritura, create() falla y no se pisa nada (3)', async () => {
+    const b = baseDe(null, { otroCreaAntes: true });
+    const r = await correr(crearCfg({ aplicar: true, respaldo: rutaRespaldo() }), b);
+    expect(r.codigo).toBe(3);
+    expect(b.escrituras).toEqual([]);
+    expect(b.datos()).toEqual({ creadoPorOtro: true });
+  });
+
+  it('revertir BORRA el documento creado si sigue idéntico; con --revertir repetido (ya no existe) sale 0', async () => {
+    const resp = rutaRespaldo();
+    const b = baseDe(null);
+    await correr(crearCfg({ aplicar: true, respaldo: resp }), b);
+    const seco = await correr(cfgDe({ revertir: true, aplicar: false, respaldo: resp, valor: null }), b);
+    expect(seco.codigo).toBe(1);
+    expect(b.datos()).not.toBeNull();
+    const r = await correr(cfgDe({ revertir: true, aplicar: true, respaldo: resp, valor: null }), b);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(b.datos()).toBeNull();
+    expect((await correr(cfgDe({ revertir: true, aplicar: true, respaldo: resp, valor: null }), b)).codigo).toBe(0);
+  });
+
+  it('NEGADO: revertir con contenido ajeno (otro campo, o el valor cambiado) sale 2 sin tocar', async () => {
+    for (const cambio of [{ otro: 1 }, { catalogoExterno: { activo: true, monedas: ['ARS'] } }]) {
+      const resp = rutaRespaldo();
+      const b = baseDe(null);
+      await correr(crearCfg({ aplicar: true, respaldo: resp }), b);
+      Object.assign(b.datos() as Record<string, unknown>, cambio);
+      const antes = JSON.stringify(b.datos());
+      const n = b.escrituras.length;
+      const r = await correr(cfgDe({ revertir: true, aplicar: true, respaldo: resp, valor: null }), b);
+      expect(r.codigo, JSON.stringify(cambio)).toBe(2);
+      expect(b.escrituras).toHaveLength(n);
+      expect(JSON.stringify(b.datos())).toBe(antes);
+    }
+  });
+
+  it('NEGADO: revertir con un respaldo de la corrida normal y el documento ausente sale 1 (no lo creó este script)', async () => {
+    const resp = rutaRespaldo();
+    const b = baseDe({ ...PEDIDOS });
+    await correr(cfgDe({ aplicar: true, respaldo: resp }), b);
+    const sin = baseDe(null);
+    expect((await correr(cfgDe({ revertir: true, aplicar: true, respaldo: resp, valor: null }), sin)).codigo).toBe(1);
+  });
+});
+
 describe('C4. el texto del script', () => {
   const texto = readFileSync(SCRIPT, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  it('su única escritura a Firestore es `ref.update` del campo catalogoExterno; no usa set, create, batch ni toca cobros', () => {
+  it('sus escrituras son `ref.update` del campo, `ref.create` con solo ese campo y el borrado de lo que creó; no usa set, batch ni toca cobros', () => {
     expect(texto.match(/\.update\(/g)).toHaveLength(1);
+    expect(texto.match(/\.create\(/g)).toHaveLength(1); // solo --crear-documento, con create() (falla si existe)
+    expect(texto.match(/ref\.delete\(/g)).toHaveLength(1); // solo revertir un documento creado por el script
     expect(texto).toContain("const CAMPO = 'catalogoExterno'");
     expect(texto).toContain('config/pedidos');
-    expect(texto).not.toMatch(/\.set\(|\.create\(|batch\(|runTransaction|bulkWriter/);
+    expect(texto).not.toMatch(/\.set\(|batch\(|runTransaction|bulkWriter/);
     expect(texto).not.toMatch(/config\/cobros|\.doc\([^)]*cobros/);
   });
   it('no imprime el id de un proyecto real ni lee variables de entorno de secretos', () => {

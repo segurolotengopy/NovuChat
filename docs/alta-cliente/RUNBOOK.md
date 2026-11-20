@@ -179,7 +179,8 @@ node admin/scripts/modulos/productos/contar-catalogo.mjs --proyecto <proyecto> -
 node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --listar
 node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --numero <phone_number_id> --waba <waba_id> --flujo <flujo> --alias <clienteNN>
 # Solo si el comercio vende con catálogo externo (NovuTienda): enciende `config/pedidos.catalogoExterno` (seco primero; luego --aplicar con --respaldo)
-node admin/scripts/plataforma/aplicar-catalogo-externo.mjs --proyecto <proyecto> --tenant <id> --monedas <BOB|ARS|BOB,ARS>
+node admin/scripts/plataforma/aplicar-catalogo-externo.mjs --proyecto <proyecto> --tenant <id> --monedas <BOB|ARS|BOB,ARS> [--crear-documento]
+# `--crear-documento`: el alta NO crea `config/pedidos`; con esta opción, y solo con --aplicar, el script lo crea con únicamente `catalogoExterno` (create(): falla si ya existe). `--revertir` lo borra solo si sigue idéntico a lo escrito.
 ```
 
 **Credencial de la entrada de prueba en n8n** (flujo de prueba de un comercio; la clave con la que se lanzan los mensajes simulados): `./scripts/crear-credencial-entrada-prueba.sh --nombre "Entrada de prueba <Comercio>" --archivo <ruta NUEVA dentro de una carpeta propia de modo 700> --env <.env de referencia>` en seco; con `--aplicar --confirmo "<mismo nombre>"` el script GENERA una clave aleatoria, la guarda en ese archivo (modo 600, nunca impresa) y crea la credencial una vez. El archivo se conserva: quien lanza la prueba lo lee y lo borra al terminar. Debe estar FUERA del repositorio (o en una ruta que git ignora). Si sale 3, verificar en n8n: si la credencial NO existe, borra el archivo o usa otra ruta antes de reintentar.
