@@ -43,8 +43,8 @@ function wlPideCatalogo(n) {
 // Estrecho a propósito: «quiero pagar» o «pagar con QR» son el cierre del pedido y NO entran aquí.
 function wlPreguntaPago(n) {
   const t = String(n || '');
-  if (/\b(quiero|voy a|deseo|puedo)? ?pagar con (el )?qr\b/.test(t)) return false;
-  return /\b(tarjeta|tarjetas|efectivo|contra ?entrega|contraentrega|formas? de pago|metodos? de pago|medios? de pago|como (se )?(paga|pago)|aceptan .{0,20}(pago|tarjeta|efectivo))\b/.test(t);
+  if (/\d/.test(t) || /\b(no|comprobante|captura|capture|recibo|transferencia|transferi|deposito|deposite|ya pague|pague|pagado|qr|factura|nit)\b/.test(t)) return false;
+  return /\b(tarjeta|tarjetas|efectivo|contra ?entrega|contraentrega|formas? de pago|metodos? de pago|medios? de pago|como (se |puedo |hago el )?(paga|pagar|pago)|aceptan .{0,20}(pago|tarjeta|efectivo))\b/.test(t);
 }
 // Lo que se puede vender: activo, con precio en Bs y SIN la marca `agotado` de la consola. Los ítems sin precio (cotización) y los apagados (licores) no entran.
 function wlVendibles(panel) {

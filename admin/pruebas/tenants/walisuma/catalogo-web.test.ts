@@ -4,7 +4,7 @@
  * Se prueba NEGANDO.
  */
 import { describe, expect, it } from 'vitest';
-import { ANA, crear, hablar, modelo, mTexto, panelOk, textos } from './mundo';
+import { ANA, crear, hablar, modelo, mTexto, panelConQr, panelOk, textos } from './mundo';
 
 const ENLACE = 'https://catalogo.example.com/c/abc123';
 const conEnlace = (e: unknown = ENLACE) => panelOk({ catalogoWeb: { activo: true, derivar: false, enlace: e } });
@@ -49,7 +49,7 @@ describe('el catálogo web sale como botón y sin modelo', () => {
 });
 
 describe('«¿puedo pagar con tarjeta?» recibe cómo se paga, por código (20/11/2026)', () => {
-  for (const f of ['puedo pagar con tarjeta', 'aceptan efectivo?', 'cuales son las formas de pago', 'como se paga']) {
+  for (const f of ['puedo pagar con tarjeta', 'aceptan efectivo?', 'cuales son las formas de pago', 'como se paga', 'como pagar', 'como hago el pago']) {
     it(`«${f}»: un texto fijo de usted con el cobro por QR, sin modelo y sin «cuéntenos un poco más»`, () => {
       const t = hablar(crear({ modeloDice: modelo('NO DEBE SALIR') }), ANA, mTexto(f));
       expect(t.mensajes).toHaveLength(1);
@@ -61,7 +61,7 @@ describe('«¿puedo pagar con tarjeta?» recibe cómo se paga, por código (20/1
     });
   }
   it('NEGADO: «quiero pagar» y «pago con QR» siguen siendo el cierre del pedido, no esta respuesta', () => {
-    for (const f of ['quiero pagar', 'voy a pagar con qr']) {
+    for (const f of ['quiero pagar', 'voy a pagar con qr', 'le mando el comprobante de la tarjeta', 'mi tarjeta no funciona, mando captura', 'quiero pagar en efectivo 500', 'no quiero pagar con tarjeta']) {
       const t = hablar(crear({ modeloDice: modelo('Con gusto.') }), ANA, mTexto(f));
       expect(textos(t).join(' '), f).not.toMatch(/Si necesita otra forma de pago/);
     }
@@ -75,5 +75,12 @@ describe('el botón del catálogo no interrumpe un pedido en curso (revisión de
     const t = hablar(m, ANA, mTexto('quiero ver fotos'));
     expect(JSON.stringify(t.mensajes)).not.toContain(ENLACE);
     expect(t.registro.map((r) => r.nodo)).toContain('Conversar con el modelo');
+  });
+});
+
+describe('con un QR abierto, la pregunta de pago sigue al modelo (revisión del PR #1033)', () => {
+  it('NEGADO: «puedo pagar con tarjeta» con el cobro pendiente no recibe el texto fijo', () => {
+    const t = hablar(crear({ panel: panelConQr(120), modeloDice: modelo('Con gusto.') }), ANA, mTexto('puedo pagar con tarjeta'));
+    expect(textos(t).join(' ')).not.toMatch(/Si necesita otra forma de pago/);
   });
 });
