@@ -23,6 +23,9 @@
  *
  * Sin `--aplicar` informa y no escribe. Queda en la auditoría del comercio.
  */
+// AVISO (20/11/2026): el reinicio de un teléfono de prueba es UNO solo.
+if (process.argv[1] && process.argv[1].endsWith('soltar-sena-pendiente.mjs')) console.error('\n  ! Para REINICIAR un teléfono de prueba use `./scripts/resetear-telefono.sh --tenant <comercio> --tel <dígitos> [--aplicar]`: es el único reinicio (servidor, cobro pendiente, atención, pausa y n8n, con lista blanca y relectura). Este script sigue existiendo para su uso propio.\n');
+
 console.error('\n  ! Hay UN solo reseteo de un teléfono de prueba (Andres, 07/11/2026): `node scripts/plataforma/resetear-telefono-prueba.mjs --proyecto <id> --tenant <tenant> --tel <dígitos>` limpia ficha de n8n, sesiones, cupos, cobro/QR pendiente, atención y pausa Tomar, y dice ESTADO LIMPIO. Este script ya no se usa para eso.\n' + '  (Si la seña tiene una cita retenida en el calendario, esa NO se borra con ningún script: se borra desde el calendario del negocio.)\n');
 process.exit(2);
 const args = process.argv.slice(2);

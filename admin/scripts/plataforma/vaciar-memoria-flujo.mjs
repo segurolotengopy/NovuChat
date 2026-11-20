@@ -25,6 +25,9 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { comprobarRespaldo, guardarRespaldo } from './aplicar-consola-conversaciones.mjs';
 
+// AVISO (20/11/2026): el reinicio de un teléfono de prueba es UNO solo.
+if (process.argv[1] && process.argv[1].endsWith('vaciar-memoria-flujo.mjs')) console.error('\n  ! Para REINICIAR un teléfono de prueba use `./scripts/resetear-telefono.sh --tenant <comercio> --tel <dígitos> [--aplicar]`: es el único reinicio (servidor, cobro pendiente, atención, pausa y n8n, con lista blanca y relectura). Este script sigue existiendo para su uso propio.\n');
+
 export const CLAVES = Object.freeze(['rroca', 'ruben']);
 export const ESPERA_FINAL_MS = 150_000;
 /** Claves hermanas que solo se borran con --con-topes (por clave). */

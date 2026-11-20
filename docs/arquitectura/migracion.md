@@ -34,7 +34,7 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | rroca-ruben.json | experimental/rroca-ruben | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | a0d1436f-8791d3c8-2a78dd06-1b4e64a3-c7568077-3f90bbdf-af940bd1-acfc99fe |
 | venta-minima.qtaco-3727.json | experimental/venta-minima | sin publicar | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | dc04fc5e-cfdcc11d-0cddcee1-76601ad9-6ec94327-a17cc0ff-b489d71e-c446c31b |
 | venta-minima.qtaco.json | experimental/venta-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 10a3eb29-ff150501-591fc7f6-3d08b946-7e6e8c09-4ee05a00-fd810af0-ae991286 |
-| walisuma.json | clientes/walisuma | sin publicar | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | ce7eaeec-25eee510-acfeaca9-9a016dc1-6f1bade0-f72d3659-7f0cb41f-6cb8e637 |
+| walisuma.json | clientes/walisuma | sin publicar | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | e03cf139-d1b187f5-f8ba983f-f45acde0-d0e8f928-071802b4-c252c984-32da0dd7 |
 
 ## Cómo se lee
 

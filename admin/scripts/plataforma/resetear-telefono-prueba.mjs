@@ -1,6 +1,6 @@
 /**
- * RESETEAR UN TELÉFONO DE PRUEBA DE UN TENANT — EL ÚNICO RESETEO, en una sola pasada, para todos los flujos (`FLUJO_DE_TENANT`: Q'Taco, Rubén, Evy,
- * Antonio, Emma, Bellido, Walisuma). Seco por omisión.
+ * RESETEAR UN TELÉFONO DE PRUEBA DE UN TENANT — EL ÚNICO RESETEO, en una sola pasada, para todos los flujos (CUALQUIER tenant con flujo en su ficha;
+ * `FLUJO_DE_TENANT` solo fija el nombre del flujo de n8n de los primeros). Seco por omisión.
  * (Antes `resetear-estado-turno.mjs`, que queda como envoltorio que avisa. Andres, 07/11/2026: «debería ser UN solo reseteo».)
  *
  * PARA QUÉ. Para volver a probar «como cliente nuevo» con un teléfono de prueba hay que limpiar TODO lo que el sistema recuerda de ESE teléfono.
@@ -45,7 +45,7 @@
  * (`LIMITE_JUSTO_PUT_MS`), y trata cualquier fallo posterior al envío del PUT como AMBIGUO («PUEDE haberse aplicado: corra el seco»).
  *
  * LISTA CERRADA. El repositorio es público: los teléfonos de prueba NO están en el código. Se leen de `TELEFONOS_PRUEBA` (dígitos separados por
- * coma) y `--tel` tiene que estar en ella. El tenant es de una lista cerrada (`TENANTS_PERMITIDOS`); el proyecto, de la lista blanca
+ * coma) y `--tel` tiene que estar en ella. El tenant es cualquiera con flujo en su ficha (menos `TENANTS_RESERVADOS`); el proyecto, de la lista blanca
  * (`GCP_PROJECT_ID_STAGING`/`GCP_PROJECT_ID_PROD`).
  *
  *   TELEFONOS_PRUEBA=… GCP_PROJECT_ID_STAGING=… GCP_PROJECT_ID_PROD=… [N8N_BASE_URL=… N8N_API_KEY=…] node scripts/plataforma/resetear-telefono-prueba.mjs \
@@ -90,6 +90,14 @@ export const FLUJO_DE_TENANT = Object.freeze({
   walisuma: 'NovuChat — Walisuma (walisuma)',
 });
 export const TENANTS_PERMITIDOS = Object.freeze(Object.keys(FLUJO_DE_TENANT));
+/** Un reseteo vale para CUALQUIER tenant con flujo en su ficha (20/11/2026, Andres: «un solo reinicio, unificado»), salvo los demos y la cuenta de NovuChat. */
+export const TENANTS_RESERVADOS = Object.freeze(['novuchat', 'ensayo', 'demo-venta', 'demo-agendamiento']);
+export const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
+/** El flujo vivo de un tenant: por el nombre exacto de la tabla de arriba o, si no está, el que lleva «(<tenant>)» en su nombre (convención «NovuChat — <Cliente> (<tenant>)»). */
+export const esFlujoDelTenant = (nombre, tenant) => typeof nombre === 'string' && (FLUJO_DE_TENANT[tenant] !== undefined ? nombre === FLUJO_DE_TENANT[tenant] : (nombre.startsWith('NovuChat') && nombre.includes(`(${tenant})`)));
+/** ¿La ficha tiene un flujo y no está dada de baja? Puro: `ficha` es el documento `tenants/{id}`. */
+export const fichaConFlujo = (ficha) => Boolean(ficha) && typeof ficha === 'object' && ficha.estado !== 'dado_de_baja'
+  && ((Array.isArray(ficha.flujos) && ficha.flujos.length > 0) || (Array.isArray(ficha.modulos) && ficha.modulos.length > 0));
 /** Q'Taco conserva sus espacios y claves de cupo; en los demás tenants cualquier espacio o clave de ESE teléfono de la lista cerrada es estado de prueba. */
 const soloVentaMinima = (tenant) => tenant === 'qtaco';
 export const ESPACIOS_SESION = Object.freeze(['venta-minima', 'venta-minima-prueba']);
@@ -114,7 +122,7 @@ export const USO = '  node scripts/plataforma/resetear-telefono-prueba.mjs --pro
   + '[--aplicar --respaldo <ruta> --confirmo-produccion <tenant>]\n'
   + '  node scripts/plataforma/resetear-telefono-prueba.mjs --revertir --respaldo <ruta> --proyecto <id> --tenant qtaco --tel <dígitos> '
   + '[--aplicar --confirmo-produccion <tenant>]\n'
-  + `  (con TELEFONOS_PRUEBA, GCP_PROJECT_ID_STAGING y GCP_PROJECT_ID_PROD en el entorno; tenants permitidos: ${TENANTS_PERMITIDOS.join(', ')})`;
+  + `  (con TELEFONOS_PRUEBA, GCP_PROJECT_ID_STAGING y GCP_PROJECT_ID_PROD en el entorno; cualquier tenant con flujo en su ficha, salvo ${TENANTS_RESERVADOS.join(', ')})`;
 
 export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   const problemas = [];
@@ -151,7 +159,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   if (proyecto !== undefined && !proy.ok) problemas.push(proy.motivo);
 
   if (tenant === undefined) problemas.push('falta --tenant');
-  else if (!TENANTS_PERMITIDOS.includes(tenant)) problemas.push(`--tenant fuera de la lista cerrada (${TENANTS_PERMITIDOS.join(', ')})`);
+  else if (!ID_TENANT.test(tenant) || TENANTS_RESERVADOS.includes(tenant)) problemas.push('--tenant: id de comercio inválido o reservado (demos y NovuChat no se resetean)');
 
   // Lista cerrada de teléfonos: del entorno (el repositorio es público). Sin ella no se corre; --tel tiene que estar adentro.
   const crudo = env.TELEFONOS_PRUEBA;
@@ -629,6 +637,8 @@ export async function principal(argv = process.argv.slice(2)) {
   const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
   initializeApp({ projectId: cfg.proyecto });
   const db = getFirestore();
+  // El tenant tiene que existir y tener un flujo en su ficha (sin lista fija de comercios): si no, no se toca nada.
+  if (!fichaConFlujo((await db.doc(`tenants/${cfg.tenant}`).get()).data())) { console.error(`\n  ✗ ${cfg.tenant}: sin ficha, dado de baja o sin flujo: no se resetea nada\n`); process.exit(2); }
   // n8n: la dirección y la clave vienen del ENTORNO del proceso (nunca de un archivo). Sin ellas o sin --workflow, el paso se omite (⚠).
   let n8n = null;
   if (!cfg.workflow && process.env.N8N_BASE_URL && process.env.N8N_API_KEY) {
@@ -637,7 +647,7 @@ export async function principal(argv = process.argv.slice(2)) {
     const lista = await fetch(`${v0.origen}/api/v1/workflows?limit=250`, { headers: { [['X', 'N8N', 'API', 'KEY'].join('-')]: process.env.N8N_API_KEY }, redirect: 'error', signal: AbortSignal.timeout(60000) });
     if (!lista.ok) throw Object.assign(new Error('n8n'), { code: `n8n-lista-${lista.status}` });
     const permitidos = String(process.env.N8N_WORKFLOWS_PERMITIDOS ?? '').split(',').map((x) => x.trim()).filter(Boolean);
-    const hallados = ((await lista.json()).data ?? []).filter((w) => w.name === FLUJO_DE_TENANT[cfg.tenant]);
+    const hallados = ((await lista.json()).data ?? []).filter((w) => esFlujoDelTenant(w.name, cfg.tenant));
     if (hallados.length === 1 && permitidos.includes(hallados[0].id)) cfg.workflow = hallados[0].id;
     else console.error(`\n  ⚠ No se resolvió el flujo de n8n del tenant (hallados: ${hallados.length}; en N8N_WORKFLOWS_PERMITIDOS: ${hallados.length === 1 && permitidos.includes(hallados[0].id) ? 'sí' : 'no'}). El paso de n8n se omite.\n`);
   }
