@@ -43,7 +43,7 @@ const ACTIVO_BOB = { activo: true, monedas: ['BOB'] };
 const ACTIVO_BOB_ARS = { activo: true, monedas: ['BOB', 'ARS'] };
 
 /** Una Firestore en memoria con la ficha y `config/pedidos`: cuenta escrituras y puede cambiar entre la lectura y la escritura. */
-function baseDe(pedidos: Record<string, unknown> | null, opciones: { cambiaAntesDeEscribir?: boolean; otroCreaAntes?: boolean; ficha?: Record<string, unknown> | null } = {}) {
+function baseDe(pedidos: Record<string, unknown> | null, opciones: { cambiaAntesDeEscribir?: boolean; otroCreaAntes?: boolean; injertaTrasCrear?: boolean; desapareceTrasLeer?: boolean; cambiaAntesDeBorrar?: boolean; ficha?: Record<string, unknown> | null } = {}) {
   let datos = pedidos === null ? null : { ...pedidos };
   const ficha = opciones.ficha === undefined ? FICHA : opciones.ficha;
   let hora = 1;
@@ -52,19 +52,24 @@ function baseDe(pedidos: Record<string, unknown> | null, opciones: { cambiaAntes
   const snap = (d: Record<string, unknown> | null, mascara?: string[]) => ({
     exists: d !== null,
     data: () => (d === null ? undefined : Object.fromEntries(Object.entries(d).filter(([k]) => !mascara || mascara.includes(k)))),
-    updateTime: { toDate: () => new Date(hora * 1000), hora },
+    updateTime: d === null ? undefined : { toDate: () => new Date(hora * 1000), hora },
   });
   const refPedidos = {
     es: 'pedidos',
-    get: async () => snap(datos),
+    get: async () => {
+      if (opciones.desapareceTrasLeer) datos = null;
+      return snap(datos);
+    },
     create: async (campos: Record<string, unknown>) => {
       if (opciones.otroCreaAntes) { datos = { creadoPorOtro: true }; hora += 1; }
       if (datos !== null) throw Object.assign(new Error('ya existe'), { code: 6 });
       datos = { ...campos };
+      if (opciones.injertaTrasCrear) datos = { ...datos, injertado: 1 };
       hora += 1;
       escrituras.push({ campos });
     },
     delete: async (pre: { lastUpdateTime: { hora: number } }) => {
+      if (opciones.cambiaAntesDeBorrar) { hora += 1; datos = { ...(datos ?? {}), otro: 'cambio-ajeno' }; }
       if (datos === null) throw Object.assign(new Error('no existe'), { code: 5 });
       if (pre.lastUpdateTime.hora !== hora) throw Object.assign(new Error('precondición'), { code: 9 });
       datos = null;
@@ -418,6 +423,73 @@ describe('C5. --crear-documento', () => {
       expect(r.codigo, JSON.stringify(cambio)).toBe(2);
       expect(b.escrituras).toHaveLength(n);
       expect(JSON.stringify(b.datos())).toBe(antes);
+    }
+  });
+
+  it('NEGADO: tras create(), la relectura SIN máscara detecta un campo inyectado y sale 3', async () => {
+    const b = baseDe(null, { injertaTrasCrear: true });
+    const r = await correr(crearCfg({ aplicar: true, respaldo: rutaRespaldo() }), b);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('relectura no coincide');
+  });
+
+  it('NEGADO: respaldo mal formado (documentoCreado no booleano; true con previo.presente; true con hora de actualización) -> ok:false, salida 2, sin escrituras', async () => {
+    const resp = rutaRespaldo();
+    await correr(crearCfg({ aplicar: true, respaldo: resp }), baseDe(null));
+    const bueno = JSON.parse(readFileSync(resp, 'utf8'));
+    expect(bueno.configActualizadaEn).toBeNull();
+    const malos = [
+      { ...bueno, documentoCreado: 'si' },
+      { ...bueno, previo: { presente: true, valor: ACTIVO_BOB } },
+      { ...bueno, configActualizadaEn: '2026-11-20T00:00:00.000Z' },
+    ];
+    for (const m of malos) {
+      const ruta = rutaRespaldo();
+      writeFileSync(ruta, JSON.stringify(m), { mode: 0o600 });
+      expect(mod.leerRespaldo(ruta, { entorno: 'emulador', tenant: 'tienda-prueba' }).ok, JSON.stringify(m)).toBe(false);
+      const b = baseDe({ catalogoExterno: ACTIVO_BOB });
+      const r = await correr(cfgDe({ revertir: true, aplicar: true, respaldo: ruta, valor: null }), b);
+      expect(r.codigo).toBe(2);
+      expect(b.escrituras).toEqual([]);
+    }
+  });
+
+  it('NEGADO: el documento cambia entre el get y el delete al revertir -> 3, sin borrar', async () => {
+    const resp = rutaRespaldo();
+    const b = baseDe(null);
+    await correr(crearCfg({ aplicar: true, respaldo: resp }), b);
+    const c = baseDe({ catalogoExterno: ACTIVO_BOB }, { cambiaAntesDeBorrar: true });
+    const n = c.escrituras.length;
+    const r = await correr(cfgDe({ revertir: true, aplicar: true, respaldo: resp, valor: null }), c);
+    expect(r.codigo, r.salida).toBe(3);
+    expect(c.escrituras).toHaveLength(n);
+    expect(c.datos()).not.toBeNull();
+  });
+
+  it('el documento desaparece entre la lectura con máscara y ref.get() al revertir -> 0 «ya no existe»', async () => {
+    const resp = rutaRespaldo();
+    await correr(crearCfg({ aplicar: true, respaldo: resp }), baseDe(null));
+    const c = baseDe({ catalogoExterno: ACTIVO_BOB }, { desapareceTrasLeer: true });
+    const r = await correr(cfgDe({ revertir: true, aplicar: true, respaldo: resp, valor: null }), c);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toContain('ya no existe');
+    expect(c.escrituras).toEqual([]);
+  });
+
+  it('idempotente: repetir con el documento exactamente {catalogoExterno: valor} sale 0 sin escribir; con otro contenido, 2', async () => {
+    const igual = baseDe({ catalogoExterno: ACTIVO_BOB });
+    const r = await correr(crearCfg({ aplicar: true, respaldo: rutaRespaldo() }), igual);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(igual.escrituras).toEqual([]);
+    const casos: Record<string, unknown>[] = [
+      { catalogoExterno: ACTIVO_BOB, otro: 1 },
+      { catalogoExterno: ACTIVO_BOB_ARS },
+      { otroCampo: 'x' },
+    ];
+    for (const contenido of casos) {
+      const b = baseDe(contenido);
+      expect((await correr(crearCfg({ aplicar: true, respaldo: rutaRespaldo() }), b)).codigo, JSON.stringify(contenido)).toBe(2);
+      expect(b.escrituras).toEqual([]);
     }
   });
 

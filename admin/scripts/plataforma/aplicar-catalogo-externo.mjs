@@ -30,10 +30,13 @@
  *   · Si `config/pedidos` no existe, sale con 1: por omisión este script no crea documentos.
  *   · `--crear-documento` (solo con `--monedas`; el alta no crea `config/pedidos`): si el documento NO existe, `--aplicar`
  *     lo CREA con `create()` y ÚNICAMENTE `catalogoExterno` (falla sin escribir si otro proceso lo creó entre la lectura y
- *     la escritura: nunca `set` ni merge). Si el documento YA existe, sale con 2 (use la corrida normal). El respaldo
+ *     la escritura: nunca `set` ni merge) y relee SIN máscara para exigir que `catalogoExterno` sea la única clave (si no,
+ *     sale con 3). Si el documento YA existe: con contenido exactamente `{catalogoExterno: valor}` sale con 0 (idempotente,
+ *     sin escribir); con cualquier otro contenido, con 2 (use la corrida normal). El respaldo
  *     anota `documentoCreado: true`; `--revertir` BORRA el documento solo si su contenido sigue siendo exactamente lo que
  *     escribió este script (lo relee completo; si hay otro campo o el valor cambió, sale con 2 sin tocar). Si ya no
- *     existe, sale con 0.
+ *     existe (también si desaparece entre la lectura con máscara y la relectura completa), sale con 0. El respaldo de un
+ *     documento creado exige `configActualizadaEn: null` y `previo.presente: false`.
  *
  * SALVAGUARDA DE PROYECTO. Lista blanca por `GCP_PROJECT_ID_STAGING` y `GCP_PROJECT_ID_PROD`; contra
  * PRODUCCIÓN, `--aplicar` exige `--confirmo-produccion <tenant>` igual a `--tenant`. Contra el emulador
@@ -44,7 +47,8 @@
  * 130: Ctrl-C.
  *
  * COSTO. Seco: una lectura (dos documentos en un `getAll`). `--aplicar`: dos lecturas y UNA escritura de un campo
- * (más el archivo local del respaldo). 0 mensajes por conversación. NO se corre contra producción sin el «sí» de Andres.
+ * (`update`) o, con `--crear-documento`, UN `create` más una relectura completa; revertir un documento creado: dos
+ * lecturas completas y UN borrado (`delete` con precondición). Más el archivo local del respaldo. 0 mensajes por conversación. NO se corre contra producción sin el «sí» de Andres.
  */
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -191,6 +195,7 @@ export function leerRespaldo(ruta, { entorno, tenant }) {
   if (!esFormaValida(r.escrito)) return { ok: false, motivo: 'el respaldo no dice qué valor se escribió' };
   if ('documentoCreado' in r && typeof r.documentoCreado !== 'boolean') return { ok: false, motivo: 'el respaldo no tiene la forma esperada (documentoCreado)' };
   if (r.documentoCreado === true && r.previo.presente) return { ok: false, motivo: 'el respaldo es incoherente: un documento creado no tenía el campo' };
+  if (r.documentoCreado === true && r.configActualizadaEn !== null) return { ok: false, motivo: 'el respaldo es incoherente: un documento creado no tenía hora de actualización' };
   return { ok: true, respaldo: r };
 }
 
@@ -202,7 +207,7 @@ const esPrecondicion = (e) => e?.code === 9 || e?.code === 'failed-precondition'
 const texto = (v) => (esFormaValida(v) ? `activo=${v.activo} monedas=[${v.monedas.join(',')}]` : '(forma no reconocida)');
 const mostrar = (config, hay) => (hay ? texto(config[CAMPO]) : 'AUSENTE (catálogo externo apagado)');
 
-/** LA ÚNICA ESCRITURA A FIRESTORE DE TODO EL ARCHIVO: solo `catalogoExterno`, con la precondición de la hora leída. */
+/** Escritura sobre un documento existente: `update` de solo `catalogoExterno`, con la precondición de la hora leída. (Las otras dos escrituras del archivo son `crearDocumento` y el `delete` de `revertirDocumentoCreado`.) */
 async function escribirCampo(ref, valor, ultimaActualizacion) {
   await ref.update({ [CAMPO]: valor }, { lastUpdateTime: ultimaActualizacion });
 }
@@ -222,6 +227,7 @@ async function revertirDocumentoCreado(cfg, { db, ref, snap, escrito, log, marca
   log(`  «${CAMPO}» antes del respaldo : el documento config/pedidos NO existía (se borraría el documento entero)`);
   if (!snap.exists) { log('\n  ✓ El documento ya no existe: nada que revertir.\n'); return 0; }
   const completo = await ref.get();
+  if (!completo.exists) { log('\n  ✓ El documento ya no existe: nada que revertir.\n'); return 0; }
   const d = completo.data() ?? {};
   const claves = Object.keys(d);
   if (claves.length !== 1 || claves[0] !== CAMPO || !iguales(d[CAMPO], escrito)) {
@@ -271,6 +277,13 @@ export async function ejecutar(cfg, deps) {
   }
   if (!fichaSnap.exists) { log(`\n  ✗ ${cfg.tenant}: no existe la ficha del comercio (${cfg.entorno})\n`); return 1; }
   if (cfg.crearDocumento && snap.exists) {
+    // Idempotente: el documento ya es EXACTAMENTE lo que esta opción crearía (relee sin máscara).
+    const completo = await ref.get();
+    const d = completo.exists ? (completo.data() ?? {}) : null;
+    if (d !== null && Object.keys(d).length === 1 && Object.keys(d)[0] === CAMPO && iguales(d[CAMPO], cfg.valor)) {
+      log(`\n  ✓ config/pedidos ya es exactamente {${CAMPO}: ${texto(cfg.valor)}}: nada que hacer.\n`);
+      return 0;
+    }
     log(`\n  ✗ config/pedidos YA existe (${cfg.entorno}): --crear-documento solo sirve cuando falta. Corra sin esa opción. No se escribió nada.\n`);
     return 2;
   }
@@ -335,7 +348,7 @@ export async function ejecutar(cfg, deps) {
   }
   try {
     guardarRespaldo(cfg.respaldo, contenidoDelRespaldo({
-      entorno: cfg.entorno, tenant: cfg.tenant, config, actualizadoEn: iso(snap.updateTime), escrito: cfg.valor, documentoCreado: creando,
+      entorno: cfg.entorno, tenant: cfg.tenant, config, actualizadoEn: creando ? null : iso(snap.updateTime), escrito: cfg.valor, documentoCreado: creando,
     }));
   } catch (e) {
     if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe un archivo en esa ruta de respaldo: un respaldo nunca se pisa; elija otro nombre. No se escribe nada.\n'); return 2; }
@@ -364,7 +377,8 @@ export async function ejecutar(cfg, deps) {
     if (esPrecondicion(e)) { marcar('respaldo'); log('\n  ✗ El documento cambió entre la lectura y la escritura: no se escribió nada. Vuelva a correr el seco y repita --aplicar con OTRA ruta de --respaldo (la anterior ya existe y no se pisa).\n'); return 3; }
     throw e;
   }
-  const { snap: despues } = await leerConfig(db, cfg.tenant);
+  // Al crear se relee el documento COMPLETO (la máscara de `leerConfig` taparía un campo inyectado).
+  const despues = creando ? await ref.get() : (await leerConfig(db, cfg.tenant)).snap;
   const d = despues.data() ?? {};
   const soloElCampo = !creando || (Object.keys(d).length === 1 && Object.keys(d)[0] === CAMPO);
   if (!iguales(d[CAMPO], cfg.valor) || !soloElCampo) {
