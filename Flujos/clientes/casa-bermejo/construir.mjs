@@ -120,7 +120,7 @@ export const ANFITRIONES_TIENDA = ['novutienda-sitio-stg.web.app'];
  */
 export const URL_VERIFICADOR_INTERNO = 'http://receptor-clientes:8081/v1/interno/verificar';
 /** El mercado del catálogo (BO o AR) según el prefijo del remitente: la MISMA regla que `ceMercadoDePrefijo`; una prueba compara las dos. */
-export const EXPRESION_MERCADO = "{{ ((d) => d.length < 10 || d.length > 15 ? 'X' : (d.indexOf('591') === 0 ? 'BO' : (d.indexOf('54') === 0 ? 'AR' : 'X')))(String(((($('Normalizar entrada').first().json) || {}).from) || '').replace(/\\D/g, '').replace(/^0+/, '')) }}";
+export const EXPRESION_MERCADO = "{{ ((d) => d.length < 10 || d.length > 15 ? 'X' : (d.indexOf('591') === 0 ? 'BO' : (d.indexOf('54') === 0 ? 'AR' : 'BO')))(String(((($('Normalizar entrada').first().json) || {}).from) || '').replace(/\\D/g, '').replace(/^0+/, '')) }}";
 /** Las dos llamadas síncronas a la Function del servidor que hacen DOS nodos con destino fijo (B9, Argentina): la expresión EXACTA de cada URL (dos destinos cada una, ninguna ruta sale de datos). Una prueba las ejecuta. */
 export const URL_COTEJAR_EXPR = `={{ $json.cuerpoAlias ? 'https://${ANFITRION_CONSOLA}/cotejarAliasArs' : 'https://${ANFITRION_CONSOLA}/cotejarComprobanteVenta' }}`;
 export const URL_AVISAR_EXPR = `={{ ($('Armar avisos').first().json.servidor || {}).ruta === 'pedirAliasArs' ? 'https://${ANFITRION_CONSOLA}/pedirAliasArs' : 'https://${ANFITRION_CONSOLA}/ingesta' }}`;
@@ -257,6 +257,9 @@ const FORMAS_LOCALES = {
   'configBase.tratamiento': (v) => /^(usted|tú|tu)$/.test(v),
   'configBase.modosDeEntrega': (v) => v.length <= 200,
   'configBase.costoDeEntrega': (v) => v.length <= 200,
+  // Dónde queda la tienda y su horario: dato del comercio que el asistente puede decir tal cual (nunca se inventa: vacío = pasa con recepción).
+  'configBase.ubicacionTienda': (v) => v.length <= 200,
+  'configBase.horarioTienda': (v) => v.length <= 200,
   'configBase.nombreNegocio': (v) => v.length >= 2 && v.length <= 80,
 };
 

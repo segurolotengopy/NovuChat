@@ -74,9 +74,14 @@ describe('receptor: camino feliz del esqueleto', () => {
     expect(t.mensajes[0]?.cuerpo).toMatch(/solo puedo leer texto/);
     expect(hablar(m, ANA, mTexto('hola, ¿tienen mantas?')).mensajes).toHaveLength(1);
   });
-  it('un número de otro país recibe el texto fijo UNA vez en 24 horas', () => {
+  it('un número de otro país se ATIENDE como Bolivia (no recibe el texto de «fuera de país») y la tienda recibe UN aviso por teléfono (decisión de Andres, 20/11/2026)', () => {
     const m = crear();
-    expect(hablar(m, EXTRANJERO, mTexto('hello')).mensajes).toHaveLength(1);
-    expect(hablar(m, EXTRANJERO, mTexto('hello again')).mensajes).toHaveLength(0);
+    const t1 = hablar(m, EXTRANJERO, mTexto('hello'));
+    expect(t1.mensajes).toHaveLength(1);
+    expect(t1.mensajes[0]?.cuerpo ?? '').not.toMatch(/atendemos pedidos de números de Bolivia/);
+    expect(t1.avisos).toHaveLength(1);
+    const t2 = hablar(m, EXTRANJERO, mTexto('hello again'));
+    expect(t2.mensajes).toHaveLength(1);
+    expect(t2.avisos).toHaveLength(0);
   });
 });

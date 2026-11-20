@@ -1,7 +1,7 @@
 // DECIDIR TURNO: el código decide qué es este turno; el modelo solo conversa cuando hace falta (una sola llamada: conversa Y propone el pedido).
 //
 //   nada           la puerta está cerrada (suspendido, uso extendido, pausa por Tomar): CERO modelo, CERO medios; lo que corresponde lo dice «Armar mensajes» desde la puerta;
-//   fuera_pais     un número de otro país: el texto fijo;
+//   (otro país     se atiende como Bolivia y se avisa a la tienda una vez; ya no hay texto fijo de «fuera de país»)
 //   otro           un tipo de mensaje que este canal no lee: el texto cortés;
 //   derivar        pasar con recepción (aviso + botón): pidió hablar con una persona, volumen o regalos corporativos, factura, algo que el catálogo no tiene (tapiz a consultar), un comprobante sin pedido, un pago con problema,
 //                  o el catálogo no se pudo leer. Lo decide el CÓDIGO sobre el texto, no el modelo;
@@ -21,7 +21,7 @@ const ahora = Number(t.ahoraMs) || Date.now();
 let textoDelTurno = '';
 const panel = bmPanelDe(cnPrimero('Traer configuración'));
 // El catálogo viene de NovuTienda (`Traer catálogo`) y se adapta con `ceVendibles`; la consola solo aporta el cobro, las campañas y la atención.
-const catalogo = bmCatalogo(cnPrimero('Traer catálogo'), ahora, base, ceMercadoDePrefijo(from));
+const catalogo = bmCatalogo(cnPrimero('Traer catálogo'), ahora, base, (ceMercadoDePrefijo(from) || 'BO'));
 const vendibles = catalogo.ok === true ? catalogo.vendibles : [];
 const cobro = bmCobro(panel);
 const ficha = CN_TENANT.fichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora);
@@ -30,8 +30,8 @@ const salir = (plan, extra) => [{ json: Object.assign({ plan: plan, from: from, 
 
 // 0. La puerta cerrada: nada de modelo, de medios ni de cobro. Quien responde (suspendido, operador) lo arma «Armar mensajes» desde la puerta.
 if (puerta.ruta !== 'sigue') return salir({ tipo: 'nada' });
-// 0b. Un número de otro país: el texto fijo. Nada de modelo ni de medios.
-if (t.fueraDePais === true) return salir({ tipo: 'fuera_pais' });
+// 0b. Un número de otro país: se atiende como Bolivia.
+// (Un número de otro país ya no se corta aquí: se atiende como Bolivia y «Resolver» avisa a la tienda una vez. Decisión de Andres, 20/11/2026.)
 
 // 1. El medio de este turno (solo uno de estos nodos corrió) y lo que se leyó en él.
 const prep = cnPrimero('Preparar imagen') || cnPrimero('Preparar transcripción') || cnPrimero('Medio no aceptado') || {};
@@ -77,7 +77,7 @@ if (esAudio) {
   const m = /^\(audio transcripto\) (.*)$/m.exec(entradaMedio);
   if (!m || String(m[1]).trim() === '') return salir({ tipo: 'audio_fijo', causa: /más de cinco minutos/.test(entradaMedio) ? 'largo' : 'no_entendido' });
   texto = cbLinea(m[1], 1500);
-} else if (t.categoria === 'conversacion') {
+} else if (t.categoria === 'conversacion' || (t.fueraDePais === true && String(t.texto || '').trim() !== '')) {   // un texto de otro país es conversación; sus medios no se leen
   texto = t.seleccionId ? cbLinea(t.seleccionTitulo, 100) : cbLinea(t.texto, 1500);
 } else {
   return salir({ tipo: 'otro' });
@@ -104,5 +104,5 @@ if (bmPideFactura(n)) return salir({ tipo: 'derivar', motivo: 'factura' });
 if (bmQuiereHablar(n)) return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });
 
 // 5. La conversación libre: una sola llamada al modelo.
-const contexto = { cfg: cfg, base: base, plan: { textoCliente: texto }, ficha: ficha, vendibles: vendibles, modos: bmModos(base), ahora: ahora, mercado: ceMercadoDePrefijo(from) };
+const contexto = { cfg: cfg, base: base, plan: { textoCliente: texto }, ficha: ficha, vendibles: vendibles, modos: bmModos(base), ahora: ahora, mercado: (ceMercadoDePrefijo(from) || 'BO') };
 return salir({ tipo: 'modelo' }, { llamarModelo: true, cuerpoModelo: bmCuerpoModelo(contexto) });
