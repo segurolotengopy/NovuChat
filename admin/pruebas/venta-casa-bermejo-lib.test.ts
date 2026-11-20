@@ -20,7 +20,7 @@ const RUTAS = [
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
-  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
+  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -437,5 +437,31 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
     expect(vacio).toMatch(/la ubicación aún no está cargada/);
     expect(vacio).toMatch(/el horario aún no está cargado[^\n]*quiereHablar/);
     expect(P({ ubicacionTienda: 'REEMPLAZAR_UBICACION' })).toMatch(/la ubicación aún no está cargada/);
+  });
+  it('con el pedido LISTO, un «quiereHablar» del modelo no lo desvía: se anota el pedido; sin el pedido listo, sí pasa con una persona', () => {
+    const modos = ['recojo en tienda', 'envío'];
+    const envio = { modo: 'envío', nombre: 'Ana Rojas', documento: '1234567', ciudad: 'Oruro', flota: 'Trans Copacabana' };
+    const R = (entrega: Record<string, string>, plan = pagar) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro }, plan, modeloResp: gemini({ texto: 'El envío lo cotiza la tienda.', lineas: [{ id: 'p1', cantidad: 1 }], entrega, quiereHablar: true }) }));
+    expect(R(envio).tipo).toBe('pedido_sin_cobro');
+    expect(R({ ...envio, documento: '' }).tipo).toBe('derivar');
+    expect(R(envio, { tipo: 'modelo', textoCliente: 'ahí está todo' }).tipo).toBe('derivar');
+  });
+  it('si la redacción del modelo no pasa, el texto de reemplazo sigue el estado del pedido (nada de «cuénteme más» con un pedido a medias)', () => {
+    const T = (entrega: Record<string, string>, ficha: Record<string, unknown> = { carrito: carro }) => b('bmResolver')(ctx({ modos: ['recojo en tienda', 'envío'], ficha, plan: { tipo: 'modelo', textoCliente: 'ok' }, modeloResp: gemini({ texto: 'Su pedido está pagado y cerrado.', lineas: [{ id: 'p1', cantidad: 1 }], entrega }) }));
+    expect(T({}).texto).toMatch(/¿Cómo prefiere recibir su pedido: recojo en tienda o envío\?/);
+    expect(T({ modo: 'envío' }).texto).toMatch(/indíqueme por favor: nombre completo, carnet de identidad \(CI\), ciudad de destino, empresa de flota o terminal/);
+    expect(T({ modo: 'recojo en tienda', nombre: 'Ana' }).texto).toMatch(/¿Desea confirmar su pedido\?/);
+    expect(T({}, { carrito: [] }).sinRedaccion).toBe(true);
+  });
+  it('«solo disponemos de la de 9 kg» con varias lavadoras en el catálogo: el código arma el texto con las piezas que coinciden y sus precios', () => {
+    const cat = catalogo([item({ id: 'lav-9', nombre: 'LAVADORA SAMSUNG 9KG', precio: 100, precioCentavos: 10000 }), item({ id: 'lav-15', nombre: 'LAVADORA SAMSUNG 15 KG SUPERIOR', precio: 150, precioCentavos: 15000 })]);
+    const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, plan: { tipo: 'modelo', textoCliente: 'la lavadora samsung de 15 kg' }, modeloResp: gemini({ texto: 'Solo disponemos de la LAVADORA SAMSUNG 9KG en nuestro catálogo.', lineas: [] }) }));
+    expect(r.texto).toMatch(/LAVADORA SAMSUNG 15 KG SUPERIOR a Bs 150/);
+    expect(r.texto).toMatch(/LAVADORA SAMSUNG 9KG a Bs 100/);
+    expect(b('bmTextoDeCoincidencias')('televisor sony', cat.vendibles)).toBe('');
+  });
+  it('un pedido de descuento lo decide el código: pasa con recepción, sin depender de la redacción del modelo', () => {
+    expect(b('bmPideDescuento')(b('bmNorm')('¿Me pueden hacer un descuento por comprar 5 aires?'))).toBe(true);
+    expect(b('bmPideDescuento')(b('bmNorm')('¿Cuánto cuesta el aire de 12 BTU?'))).toBe(false);
   });
 });

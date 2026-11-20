@@ -161,6 +161,10 @@ function bmPideFactura(n) {
 function bmQuiereHablar(n) {
   return /\b(hablar con (una |un )?(persona|humano|asesor|asesora|encargado|encargada|vendedor|vendedora|alguien|recepcion)|asesor|asesora|encargad[oa]|recepcion|atencion al cliente|que me llamen|llamenme|llamarme)\b/.test(String(n || ''));
 }
+// Un descuento, una rebaja o un «mejor precio»: el asistente no ofrece descuentos; lo decide el CÓDIGO (pasa con recepción), no la redacción del modelo.
+function bmPideDescuento(n) {
+  return /\b(descuento|descuentos|rebaja|rebajas|regateo|regatear|mejor precio|precio especial|me lo deja en)\b/.test(String(n || ''));
+}
 // -----------------------------------------------------------------------------
 // Revisión de lo que redacta el modelo
 // -----------------------------------------------------------------------------
@@ -255,20 +259,33 @@ function bmRedaccion(texto, textoCliente, vendibles) {
 // -----------------------------------------------------------------------------
 // Las piezas del catálogo que el cliente nombra: el sistema las busca en TODO el catálogo (palabras del texto contra las del nombre; las cifras cuentan) y se las muestra al modelo, para que ni niegue una pieza que sí existe
 // ni invente una que no. Sin coincidencia lo dice: «ninguna».
-function bmCoincidencias(texto, vendibles) {
+function bmPuntuarCoincidencias(texto, vendibles) {
   const FUERA = new Set(['quiero', 'tienen', 'tiene', 'tienes', 'cuanto', 'cuesta', 'precio', 'para', 'con', 'una', 'uno', 'unos', 'unas', 'los', 'las', 'del', 'que', 'por', 'hola', 'buenas', 'buenos', 'dias', 'tardes', 'noches', 'favor', 'gracias', 'como', 'cual', 'cuales', 'hay', 'esta', 'este', 'esto', 'eso', 'ese', 'sus', 'mis', 'necesito', 'busco', 'sale', 'valor', 'costo', 'comprar', 'deseo', 'quisiera', 'puedo', 'ver', 'mas', 'muy', 'son', 'ser', 'pedir', 'venden', 'vende', 'info', 'informacion']);
   const pal = bmNorm(texto).split(' ').filter((w) => (w.length >= 3 || /\d/.test(w)) && !FUERA.has(w));
   const lista = Array.isArray(vendibles) ? vendibles : [];
-  if (!pal.length || !lista.length) return 'ninguna';
-  const puntaje = lista.map((v) => {
+  if (!pal.length || !lista.length) return null;
+  return lista.map((v) => {
     const n = ' ' + bmNorm(v.nombre + ' ' + (v.area || '')) + ' ';
     const unidos = n.replace(/(\d+) (kg|btu|litros|lts|l|pulgadas|w)\b/g, '$1$2');
     let p = 0;
     for (const w of pal) { if (n.includes(' ' + w + ' ') || unidos.includes(' ' + w + ' ') || (w.length >= 5 && n.includes(' ' + w.replace(/s$/, '')))) p += /\d/.test(w) ? 2 : 1; }
     return { v: v, p: p };
   }).filter((x) => x.p > 0).sort((a, b) => b.p - a.p).slice(0, 6);
-  if (!puntaje.length) return 'ninguna (el catálogo no tiene lo que nombra: dilo y ofrece lo que sí figura)';
-  return puntaje.map((x) => x.v.id + '|' + x.v.nombre).join('; ');
+}
+function bmIdsCoincidencias(texto, vendibles) { return (bmPuntuarCoincidencias(texto, vendibles) || []).map((x) => x.v.id); }
+function bmCoincidencias(texto, vendibles) {
+  const lista = Array.isArray(vendibles) ? vendibles : [];
+  const p = bmPuntuarCoincidencias(texto, vendibles);
+  if (p === null || !lista.length) return 'ninguna';
+  if (!p.length) return 'ninguna (el catálogo no tiene lo que nombra: dilo y ofrece lo que sí figura)';
+  return p.map((x) => x.v.id + '|' + x.v.nombre).join('; ');
+}
+// Si el modelo dice «solo disponemos de X» y el catálogo tiene VARIAS piezas que coinciden con lo que el cliente nombró, se lo está negando: el texto lo arma el código con esas piezas y sus precios.
+function bmTextoDeCoincidencias(texto, vendibles) {
+  const p = bmPuntuarCoincidencias(texto, vendibles) || [];
+  if (p.length < 2) return '';
+  const moneda = (v) => (v.moneda === 'ARS' ? 'ARS' : 'BOB');
+  return 'Tenemos ' + p.slice(0, 4).map((x) => x.v.nombre + ' a ' + vcMonto(x.v.precioCentavos, moneda(x.v))).join(', ') + '. ¿Cuál le interesa?';
 }
 // Lo que el comercio declaró de su tienda (dato de «Config base»): se dice tal cual; lo que falta NO se inventa (pasa con recepción).
 function bmDatosTienda(base) {
@@ -283,7 +300,10 @@ function bmPromptTurno(c) {
   const f = c.ficha;
   const ids = vcSeleccion(c.vendibles, c.plan.textoCliente, f, { max: 15, palabras: BM_PALABRAS });
   const porId = new Map(c.vendibles.map((v) => [v.id, v]));
-  const descripciones = ids.map((id) => { const v = porId.get(id); return id + ': ' + v.nombre + (v.descripcion ? ' — ' + cbLinea(v.descripcion, 160) : ''); });
+  // Las piezas que el cliente nombra van PRIMERO y con su descripción, aunque la selección por palabras no las haya traído.
+  const idsCoinc = bmIdsCoincidencias(c.plan.textoCliente, c.vendibles);
+  const idsDesc = idsCoinc.concat(ids.filter((x) => !idsCoinc.includes(x))).slice(0, 15);
+  const descripciones = idsDesc.map((id) => { const v = porId.get(id); return id + ': ' + v.nombre + (v.descripcion ? ' — ' + cbLinea(v.descripcion, 160) : ''); });
   const carrito = vcLineas(f.carrito, c.vendibles).lineas;
   const e = f.entrega;
   const faltan = bmEntregaFalta(e, c.mercado);
@@ -568,16 +588,26 @@ function bmResolverComprobanteAlias(c) {
   return Object.assign(bmDerivar(c, 'comprobante_sin_cotejo'), { patch: fin });
 }
 
+// Cuando la redacción del modelo no pasa la revisión, el texto de reemplazo sigue el estado del pedido (no un «cuénteme más» fuera de lugar): lo que falta de la entrega, o la confirmación.
+function bmTextoDeEstado(lineas, entrega, cierre, c) {
+  if (!lineas.length) return BM_TEXTO_MODELO_SIN_REDACCION;
+  const faltan = bmEntregaFalta(entrega, c.mercado);
+  if (faltan.length === 1 && faltan[0] === 'modo de entrega') return '¿Cómo prefiere recibir su pedido: ' + (c.modos.length ? c.modos.join(' o ') : 'retiro en tienda o envío') + '?';
+  if (faltan.length) return 'Para continuar con su pedido, indíqueme por favor: ' + faltan.join(', ') + '.';
+  return '¿Desea confirmar su pedido? Escriba «pagar» cuando esté listo.';
+}
 function bmResolverModelo(c) {
   const f = c.ficha;
   const p = c.plan;
   const j = cnJsonDeGemini(c.modeloResp);
   if (!j || typeof j.texto !== 'string' || j.texto.trim() === '') return bmDerivar(c, 'modelo_caido');
-  if (j.quiereHablar === true) return bmDerivar(c, 'quiere_hablar');
   const antes = vcLineas(f.carrito, c.vendibles).lineas;
   const lineas = Array.isArray(j.lineas) ? vcLineas(j.lineas, c.vendibles).lineas : antes;
   const entrega = bmMezclarEntrega(f.entrega, j.entrega, c.modos);
   const cierre = f.cierre || bmQuierePagar(bmNorm(p.textoCliente));
+  // Con el pedido LISTO (piezas, entrega completa y orden de pagar) lo decide el código: un «quiereHablar» del modelo (p. ej. «el envío lo cotiza la tienda») no lo desvía; el pedido se anota y la tienda recibe el aviso.
+  const listo = lineas.length > 0 && bmEntregaCompleta(entrega, c.mercado) && cierre;
+  if (j.quiereHablar === true && !listo) return bmDerivar(c, 'quiere_hablar');
   const cambio = !vcMismoCarrito(antes, lineas);
   // Un número de otro país se atiende como Bolivia y se avisa UNA vez a la tienda (1 mensaje por caso): el aviso sale si aún no se le avisó de este teléfono.
   const avisoPais = c.t && c.t.fueraDePais === true && f.avisoPaisMs === 0 ? bmAvisoConsulta(c, 'otro_pais') : null;
@@ -612,8 +642,10 @@ function bmResolverModelo(c) {
   }
   // Conversación: el texto del modelo, revisado; si no pasa, el fijo. El resumen del pedido (calculado por el código) acompaña cada cambio.
   let texto = bmRedaccion(j.texto, p.textoCliente, c.vendibles);
+  // Negar una pieza que el catálogo sí tiene («solo disponemos de la de 9 kg» cuando hay de 9, 15 y 17 kg): el texto lo arma el código con las piezas que coinciden.
+  if (texto !== '' && /\b(solo|unicamente)\s+(disponemos|tenemos|contamos|hay|ofrecemos)\b/.test(bmNorm(texto))) { const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles); if (coinc !== '') texto = coinc; }
   const sinRedaccion = texto === '';
-  if (sinRedaccion) texto = BM_TEXTO_MODELO_SIN_REDACCION;
+  if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c);
   return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, resumen: cambio && lineas.length ? vcResumen(lineas) : '' });
 }
 

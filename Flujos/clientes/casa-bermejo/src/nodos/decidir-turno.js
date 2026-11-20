@@ -101,7 +101,7 @@ if (!configLista) return sinConfig();
 if (bmPideIdentidad(n)) return salir({ tipo: 'identidad' });
 if (bmCorporativo(n)) return salir({ tipo: 'derivar', motivo: 'corporativo' });
 if (bmPideFactura(n)) return salir({ tipo: 'derivar', motivo: 'factura' });
-if (bmQuiereHablar(n)) return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });
+if (bmQuiereHablar(n) || bmPideDescuento(n)) return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });
 
 // 5. La conversación libre: una sola llamada al modelo.
 const contexto = { cfg: cfg, base: base, plan: { textoCliente: texto }, ficha: ficha, vendibles: vendibles, modos: bmModos(base), ahora: ahora, mercado: (ceMercadoDePrefijo(from) || 'BO') };
