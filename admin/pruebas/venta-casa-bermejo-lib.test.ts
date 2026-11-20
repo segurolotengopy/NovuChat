@@ -20,7 +20,7 @@ const RUTAS = [
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
-  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion',
+  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -35,7 +35,7 @@ const http = (items: unknown[], o: Record<string, unknown> = {}) => ({ statusCod
 const base = { hostsFoto: 'fotos.ejemplo.test', tratamiento: 'tu' };
 const catalogo = (items: unknown[] = [item(), item({ id: 'p2', nombre: 'Pieza dos', precio: 50, precioCentavos: 5000 })]) => b('bmCatalogo')(http(items), AHORA, base, 'BO');
 const COBRO_REAL = { modo: 'real', mediaId: 'MEDIOQR12345', pendiente: false, monto: null, pedidoRef: '', enRevision: false, vencidoHaceMin: null };
-const ENTREGA = { modo: 'envío', ciudad: 'Cochabamba', direccion: 'Terminal de buses', nombre: 'Ana Pérez' };
+const ENTREGA = { modo: 'envío', ciudad: 'Cochabamba', direccion: '', nombre: 'Ana Pérez', documento: '1234567', cp: '', provincia: '', flota: 'Terminal de buses' };
 const gemini = (j: unknown) => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(j) }] } }] });
 const ctx = (o: Record<string, unknown> = {}) => {
   const cat = catalogo();
@@ -60,7 +60,7 @@ describe('la ficha por teléfono', () => {
     expect(b('bmFichaVigente')({ ultimoMs: AHORA - 49 * 3600_000, carrito: [{ id: 'p1', cantidad: 2 }] }, AHORA).carrito).toEqual([]);
     const f = b('bmFichaVigente')({ ultimoMs: AHORA - 1000, carrito: [{ id: '../x', cantidad: 1 }, { id: 'p1', cantidad: 99 }, { id: 'p1', cantidad: 1.5 }, 'x', null], documento: '12345678', ci: '1234567' }, AHORA);
     expect(f.carrito).toEqual([]);
-    expect(JSON.stringify(f)).not.toMatch(/12345678|1234567|documento|"ci"/);
+    expect(JSON.stringify(f)).not.toMatch(/12345678|1234567|"ci"/);
   });
   it('NEGADO: la entrega no guarda números largos (un CI o un NIT escrito como nombre o dirección)', () => {
     const e = b('bmMezclarEntrega')(undefined, { modo: 'envío', ciudad: 'La Paz', direccion: 'Calle 5, CI 1234567 LP', nombre: 'Ana NIT 1234' + '56789012' }, []);
@@ -221,10 +221,33 @@ describe('intenciones decididas por código', () => {
     expect(b('bmQuiereHablar')(n('quiero hablar con una persona'))).toBe(true);
     expect(b('bmQuiereHablar')(n('quiero una pieza'))).toBe(false);
   });
-  it('la entrega a domicilio, flota o terminal pide la dirección', () => {
-    expect(b('bmEntregaCompleta')({ modo: 'envío por flota', ciudad: 'Oruro', direccion: '', nombre: 'Ana' })).toBe(false);
-    expect(b('bmEntregaCompleta')({ modo: 'envío por flota', ciudad: 'Oruro', direccion: 'Terminal', nombre: 'Ana' })).toBe(true);
-    expect(b('bmEntregaCompleta')({ modo: 'retiro en tienda', ciudad: 'La Paz', direccion: '', nombre: 'Ana' })).toBe(true);
+  it('RETIRO en tienda: solo el nombre cierra la entrega (sin ciudad, dirección ni documento) — «lo recojo en tienda» llega hasta el QR (20/11/2026)', () => {
+    const E = b('bmEntregaCompleta');
+    expect(E({ modo: 'recojo en tienda', ciudad: '', direccion: '', nombre: 'Ana' }, 'BO')).toBe(true);
+    expect(E({ modo: 'retiro en tienda', ciudad: '', direccion: '', nombre: '' }, 'BO')).toBe(false);
+    expect(E({ modo: '', ciudad: 'La Paz', direccion: '', nombre: 'Ana' }, 'BO')).toBe(false);
+  });
+  it('ENVÍO en Bolivia: nombre, CI, ciudad y flota; ENVÍO a Argentina: nombre, DNI, dirección, código postal y provincia (decisión de Andres, 20/11/2026)', () => {
+    const E = b('bmEntregaCompleta');
+    const bo = { modo: 'envío por flota', ciudad: 'Oruro', direccion: '', nombre: 'Ana', documento: '1234567', cp: '', provincia: '', flota: 'Trans Copacabana' };
+    expect(E(bo, 'BO')).toBe(true);
+    for (const falta of ['nombre', 'documento', 'ciudad', 'flota']) expect(E({ ...bo, [falta]: '' }, 'BO')).toBe(false);
+    const ar = { modo: 'envío', ciudad: '', direccion: 'Calle Falsa 123', nombre: 'Ana', documento: '30123456', cp: '5500', provincia: 'Mendoza', flota: '' };
+    expect(E(ar, 'AR')).toBe(true);
+    for (const falta of ['nombre', 'documento', 'direccion', 'cp', 'provincia']) expect(E({ ...ar, [falta]: '' }, 'AR')).toBe(false);
+    expect(b('bmEntregaFalta')({ ...bo, documento: '' }, 'BO')).toEqual(['carnet de identidad (CI)']);
+    expect(b('bmEntregaFalta')({ ...ar, documento: '' }, 'AR')).toEqual(['DNI']);
+  });
+  it('el modo «retiro», «recojo» o «recoger en tienda» es el mismo (la lista del comercio dice «recojo en tienda»); «envío» y «flota» también', () => {
+    const lista = ['recojo en tienda', 'envío'];
+    expect(b('bmMezclarEntrega')(undefined, { modo: 'retiro en tienda', nombre: 'Ana' }, lista).modo).toBe('recojo en tienda');
+    expect(b('bmMezclarEntrega')(undefined, { modo: 'envío por flota' }, lista).modo).toBe('envío');
+  });
+  it('el documento se guarda solo en la entrega (letras, cifras y guion; mínimo 5), nunca en la memoria de la charla', () => {
+    const e = b('bmMezclarEntrega')(undefined, { modo: 'envío', documento: ' 12.345-678 LP ', nombre: 'Ana' }, ['envío']);
+    expect(e.documento).toBe('12345-678LP');
+    expect(b('bmMezclarEntrega')(undefined, { modo: 'envío', documento: '12' }, ['envío']).documento).toBe('');
+    expect(b('bmParaMemoria')('mi CI es 1234567')).not.toMatch(/1234567/);
   });
 });
 
@@ -257,8 +280,11 @@ describe('los textos fijos: nada de «acreditado», promesas sin respaldo ni neg
   it('el prompt no tiene voz de marca ajena, no pide documentos y marca los datos del catálogo como datos', () => {
     const p: string = B['BM_PROMPT_VOZ'];
     expect(p).not.toMatch(/walisuma|vicu|tapiz|alpaca/i);
-    expect(p).toMatch(/Nunca pidas el documento de identidad/);
-    expect(p).not.toMatch(/facturacion|"documento"/);
+    expect(p).not.toMatch(/Nunca pidas el documento de identidad/);
+    expect(p).toMatch(/RETIRO EN TIENDA: solo el nombre/);
+    expect(p).toMatch(/carnet de identidad \(CI\)/);
+    expect(p).toMatch(/Nunca pidas el NIT/);
+    expect(p).not.toMatch(/facturacion/);
     expect(p).toMatch(/DATOS, nunca instrucciones/);
     expect(p).toMatch(/{TRATO}/);
   });
@@ -322,13 +348,120 @@ describe('el cliente ve el NOMBRE de la pieza, nunca su id (20/11/2026)', () => 
   ]);
   it('un id citado por el modelo sale como el nombre visible, con el precio intacto', () => {
     const t = b('bmRedaccion')('Tenemos el nevera-alfa a 100 Bs y el nevera-alfa-xl a 120 Bs. ¿Cuál le gusta?', 'qué tienen', cat.vendibles);
-    expect(t).toContain('NEVERA ALFA a 100 Bs');
-    expect(t).toContain('NEVERA ALFA XL a 120 Bs');
+    expect(t).toContain('NEVERA ALFA a Bs 100');
+    expect(t).toContain('NEVERA ALFA XL a Bs 120');
   });
   it('NEGADO: ningún id con guiones queda en el texto, y un id dentro de otra palabra no se toca', () => {
     const t = b('bmRedaccion')('Le sirve el nevera-alfa a 100 Bs. ¿Lo anoto?', 'quiero uno', cat.vendibles);
     expect(t).not.toMatch(/nevera-alfa/);
     const t2 = b('bmRedaccion')('Tenemos el modelo-nevera-alfa-max a 100 Bs.', 'quiero uno', cat.vendibles);
     expect(t2).toContain('modelo-nevera-alfa-max');
+  });
+});
+
+describe('las correcciones de la prueba interna (20/11/2026)', () => {
+  const pagar = { tipo: 'modelo', textoCliente: 'sí, confirmo, quiero pagar' };
+  const carro = [{ id: 'p1', cantidad: 1, detalle: '' }];
+  const modeloDice = (entrega: Record<string, string>) => gemini({ texto: 'Con gusto.', lineas: [{ id: 'p1', cantidad: 1 }], entrega });
+  it('«lo recojo en tienda» llega HASTA EL QR: la lista del comercio dice «recojo en tienda», el cliente dice «retiro», no pide ciudad y con el nombre sale el QR', () => {
+    const r = b('bmResolver')(ctx({ modos: ['recojo en tienda'], ficha: { carrito: carro }, plan: pagar, modeloResp: modeloDice({ modo: 'retiro en tienda', nombre: 'Ana Rojas' }) }));
+    expect(r.tipo).toBe('qr');
+    expect(r.monto).toBe(120);
+  });
+  it('NEGADO: en un retiro sin nombre NO sale el QR; en un envío a Bolivia sin CI o sin flota tampoco; con todo, sí', () => {
+    const modos = ['recojo en tienda', 'envío'];
+    const R = (entrega: Record<string, string>) => b('bmResolver')(ctx({ modos, ficha: { carrito: carro }, plan: pagar, modeloResp: modeloDice(entrega) }));
+    expect(R({ modo: 'retiro en tienda' }).tipo).toBe('modelo');
+    const envio = { modo: 'envío', nombre: 'Ana Rojas', documento: '1234567', ciudad: 'Oruro', flota: 'Trans Copacabana' };
+    expect(R(envio).tipo).toBe('qr');
+    expect(R({ ...envio, documento: '' }).tipo).toBe('modelo');
+    expect(R({ ...envio, flota: '' }).tipo).toBe('modelo');
+    expect(R({ ...envio, ciudad: '' }).tipo).toBe('modelo');
+  });
+  it('envío a Argentina: pide DNI, dirección, código postal y provincia; con todo el pedido se anota (sin QR de Bolivia)', () => {
+    const cat = b('bmCatalogo')(http([item({ moneda: 'ARS', precio: 5000, precioCentavos: 500000 })], { mercado: 'AR', moneda: 'ARS' }), AHORA, base, 'AR');
+    const R = (entrega: Record<string, string>) => b('bmResolver')(ctx({ mercado: 'AR', catalogo: cat, vendibles: cat.vendibles, modos: ['envío'], ficha: { carrito: carro }, plan: pagar, modeloResp: modeloDice(entrega) }));
+    const ar = { modo: 'envío', nombre: 'Ana Rojas', documento: '30123456', direccion: 'Calle Falsa 123', cp: '5500', provincia: 'Mendoza' };
+    expect(R(ar).tipo).toBe('pedido_sin_cobro');
+    for (const falta of ['documento', 'direccion', 'cp', 'provincia']) expect(R({ ...ar, [falta]: '' }).tipo).toBe('modelo');
+  });
+  it('la dirección del pedido para el servidor: retiro = «Retira X»; envío = nombre, documento, flota, dirección, CP y provincia (máx. 120)', () => {
+    expect(b('bmDireccionPedido')({ modo: 'recojo en tienda', nombre: 'Ana' }, 'BO')).toBe('Retira Ana');
+    const d = b('bmDireccionPedido')({ modo: 'envío', nombre: 'Ana', documento: '1234567', flota: 'Trans Copacabana', ciudad: 'Oruro' }, 'BO');
+    expect(d).toBe('Ana, CI 1234567, Trans Copacabana');
+    expect(b('bmDireccionPedido')({ modo: 'envío', nombre: 'Ana', documento: '30123456', direccion: 'Calle Falsa 123', cp: '5500', provincia: 'Mendoza' }, 'AR')).toBe('Ana, DNI 30123456, Calle Falsa 123, CP 5500, Mendoza');
+    expect(b('bmDireccionPedido')({ modo: 'envío', nombre: 'x'.repeat(200), documento: '1234567' }, 'BO').length).toBeLessThanOrEqual(120);
+  });
+  it('un número de otro país se atiende como Bolivia y se avisa a la tienda UNA vez (por `avisoPaisMs`, no por `fueraDePaisMs`)', () => {
+    const modeloResp = gemini({ texto: 'Con gusto, le ayudo.', lineas: [] });
+    const primero = b('bmResolver')(ctx({ t: { fueraDePais: true }, modeloResp }));
+    expect(primero.aviso).toMatchObject({ tipo: 'consulta', clave: 'otro_pais' });
+    expect(primero.tipo).toBe('modelo');
+    const segundo = b('bmResolver')(ctx({ t: { fueraDePais: true }, ficha: { avisoPaisMs: AHORA - 1000, ultimoMs: AHORA - 1000 }, modeloResp }));
+    expect(segundo.aviso).toBeNull();
+    expect(b('bmResolver')(ctx({ t: {}, modeloResp })).aviso).toBeNull();
+  });
+  it('el trato de USTED: ningún texto fijo del flujo sale en «tú» cuando el comercio trata de usted; sin esa marca no se toca', () => {
+    const textos: string[] = [B['BM_TEXTO_IDENTIDAD'], B['BM_TEXTO_AUDIO_LARGO'], B['BM_TEXTO_AUDIO_NO_ENTENDIDO'], B['BM_TEXTO_ARCHIVO_PESADO'], B['BM_TEXTO_ARCHIVO_NO_ABIERTO'], B['BM_TEXTO_IMAGEN'], B['BM_TEXTO_COMPROBANTE_ILEGIBLE'], B['BM_TEXTO_CORTES'], B['BM_TEXTO_MODELO_SIN_REDACCION'],
+      ...Object.keys(B['BM_INTROS']).map((k) => b('bmTextoDerivacion')(k, true)), ...Object.keys(B['BM_INTROS']).map((k) => b('bmTextoDerivacion')(k, false)), b('bmTextoDerivacion')('quiere_hablar', 'repetido'), b('bmTextoComprobante')('cuadra', [], 'Bs 10', true), b('bmTextoComprobante')('aproximado', [], 'Bs 10', false)];
+    const TU = /\b(tu|tus|te|puedes|quieres|quieras|pagues|confirmes|escríbeme|escríbele|cuéntame|envíame|dime|mándame|mostrarte|buscas|necesitas|cambiaste|hagas|transfieras)\b/i;
+    for (const t of textos) {
+      expect(typeof t).toBe('string');
+      expect(b('bmSeguro')(t, true)).not.toMatch(TU);
+    }
+    expect(b('bmSeguro')('Cuéntame qué buscas', undefined)).toBe('Cuéntame qué buscas');
+    expect(b('bmAUsted')('Gracias por tu paciencia. Escríbele directo con el botón.')).toBe('Gracias por su paciencia. Escríbale directo con el botón.');
+  });
+  it('el modelo ve las piezas que el cliente nombra (en TODO el catálogo) y, si no hay ninguna, se lo dice: nada de negar una pieza que existe ni de inventar una que no', () => {
+    const cat = catalogo([
+      item({ id: 'lavadora-samsung-9kg', nombre: 'LAVADORA SAMSUNG 9KG', precio: 100, precioCentavos: 10000 }),
+      item({ id: 'lavadora-samsung-15-kg-superior', nombre: 'LAVADORA SAMSUNG 15 KG SUPERIOR', precio: 150, precioCentavos: 15000 }),
+      item({ id: 'aire-tcl-12-btu', nombre: 'AIRE TCL 12 BTU', precio: 80, precioCentavos: 8000 }),
+    ]);
+    const C = b('bmCoincidencias');
+    expect(C('¿Cómo es la lavadora Samsung de 15 kg?', cat.vendibles)).toMatch(/^lavadora-samsung-15-kg-superior\|/);
+    expect(C('¿Tienen televisores Sony de 65 pulgadas?', cat.vendibles)).toMatch(/^ninguna/);
+    expect(C('hola', cat.vendibles)).toBe('ninguna');
+    const p: string = b('bmCuerpoModelo')(ctx({ plan: { tipo: 'modelo', textoCliente: 'lavadora samsung 15 kg' }, vendibles: cat.vendibles })).systemInstruction.parts[0].text;
+    expect(p).toMatch(/COINCIDENCIAS[^\n]*lavadora-samsung-15-kg-superior/);
+  });
+  it('los precios del modelo salen con el formato del sistema («Bs 3.407,50», «ARS 509.900»); un monto que no es de una pieza no se toca', () => {
+    const v = [{ id: 'a', nombre: 'A', precioCentavos: 340750, moneda: 'BOB' }, { id: 'b', nombre: 'B', precioCentavos: 50990000, moneda: 'ARS' }];
+    expect(b('bmFormatearMontos')('El aire a 3407.50 Bs y el otro a 509900 ARS.', v)).toBe('El aire a Bs 3.407,50 y el otro a ARS 509.900.');
+    expect(b('bmFormatearMontos')('Cuesta 77 Bs.', v)).toBe('Cuesta 77 Bs.');
+  });
+  it('«¿dónde queda y a qué hora atienden?»: el prompt lleva lo que el comercio declaró y, si falta, dice que no está cargado y manda a recepción (nada inventado)', () => {
+    const P = (baseDatos: Record<string, string>) => b('bmCuerpoModelo')(ctx({ base: { ...base, ...baseDatos }, plan: { tipo: 'modelo', textoCliente: 'dónde queda la tienda' } })).systemInstruction.parts[0].text as string;
+    expect(P({ ubicacionTienda: 'Bermejo, Tarija', horarioTienda: 'lunes a sábado de 9 a 19' })).toMatch(/ubicación: Bermejo, Tarija\. horario: lunes a sábado de 9 a 19/);
+    const vacio = P({});
+    expect(vacio).toMatch(/la ubicación aún no está cargada/);
+    expect(vacio).toMatch(/el horario aún no está cargado[^\n]*quiereHablar/);
+    expect(P({ ubicacionTienda: 'REEMPLAZAR_UBICACION' })).toMatch(/la ubicación aún no está cargada/);
+  });
+  it('con el pedido LISTO, un «quiereHablar» del modelo no lo desvía: se anota el pedido; sin el pedido listo, sí pasa con una persona', () => {
+    const modos = ['recojo en tienda', 'envío'];
+    const envio = { modo: 'envío', nombre: 'Ana Rojas', documento: '1234567', ciudad: 'Oruro', flota: 'Trans Copacabana' };
+    const R = (entrega: Record<string, string>, plan = pagar) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro }, plan, modeloResp: gemini({ texto: 'El envío lo cotiza la tienda.', lineas: [{ id: 'p1', cantidad: 1 }], entrega, quiereHablar: true }) }));
+    expect(R(envio).tipo).toBe('pedido_sin_cobro');
+    expect(R({ ...envio, documento: '' }).tipo).toBe('derivar');
+    expect(R(envio, { tipo: 'modelo', textoCliente: 'ahí está todo' }).tipo).toBe('derivar');
+  });
+  it('si la redacción del modelo no pasa, el texto de reemplazo sigue el estado del pedido (nada de «cuénteme más» con un pedido a medias)', () => {
+    const T = (entrega: Record<string, string>, ficha: Record<string, unknown> = { carrito: carro }) => b('bmResolver')(ctx({ modos: ['recojo en tienda', 'envío'], ficha, plan: { tipo: 'modelo', textoCliente: 'ok' }, modeloResp: gemini({ texto: 'Su pedido está pagado y cerrado.', lineas: [{ id: 'p1', cantidad: 1 }], entrega }) }));
+    expect(T({}).texto).toMatch(/¿Cómo prefiere recibir su pedido: recojo en tienda o envío\?/);
+    expect(T({ modo: 'envío' }).texto).toMatch(/indíqueme por favor: nombre completo, carnet de identidad \(CI\), ciudad de destino, empresa de flota o terminal/);
+    expect(T({ modo: 'recojo en tienda', nombre: 'Ana' }).texto).toMatch(/¿Desea confirmar su pedido\?/);
+    expect(T({}, { carrito: [] }).sinRedaccion).toBe(true);
+  });
+  it('«solo disponemos de la de 9 kg» con varias lavadoras en el catálogo: el código arma el texto con las piezas que coinciden y sus precios', () => {
+    const cat = catalogo([item({ id: 'lav-9', nombre: 'LAVADORA SAMSUNG 9KG', precio: 100, precioCentavos: 10000 }), item({ id: 'lav-15', nombre: 'LAVADORA SAMSUNG 15 KG SUPERIOR', precio: 150, precioCentavos: 15000 })]);
+    const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, plan: { tipo: 'modelo', textoCliente: 'la lavadora samsung de 15 kg' }, modeloResp: gemini({ texto: 'Solo disponemos de la LAVADORA SAMSUNG 9KG en nuestro catálogo.', lineas: [] }) }));
+    expect(r.texto).toMatch(/LAVADORA SAMSUNG 15 KG SUPERIOR a Bs 150/);
+    expect(r.texto).toMatch(/LAVADORA SAMSUNG 9KG a Bs 100/);
+    expect(b('bmTextoDeCoincidencias')('televisor sony', cat.vendibles)).toBe('');
+  });
+  it('un pedido de descuento lo decide el código: pasa con recepción, sin depender de la redacción del modelo', () => {
+    expect(b('bmPideDescuento')(b('bmNorm')('¿Me pueden hacer un descuento por comprar 5 aires?'))).toBe(true);
+    expect(b('bmPideDescuento')(b('bmNorm')('¿Cuánto cuesta el aire de 12 BTU?'))).toBe(false);
   });
 });

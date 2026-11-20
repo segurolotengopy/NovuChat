@@ -33,10 +33,12 @@ const avisoPlaneado = av.planeado === true;
 const avisoEnviado = avisoPlaneado && (cnTodos('Enviar aviso').some(entregado) || (prueba && cfg.enviarDeVerdad !== true));
 const salio = avisoEnviado ? true : (av.repetido === true ? 'repetido' : false);
 
-const texto = (cuerpo, extra) => { const x = bmSeguro(cuerpo); return cmMensaje('cliente', cmTexto(x), x, x, Object.assign({ tipoReporte: 'text' }, extra || {})); };
+// El tratamiento es dato del comercio: con «usted», todo texto fijo del flujo sale en usted (`bmAUsted`).
+const usted = base.tratamiento === 'usted';
+const texto = (cuerpo, extra) => { const x = bmSeguro(cuerpo, usted); return cmMensaje('cliente', cmTexto(x), x, x, Object.assign({ tipoReporte: 'text' }, extra || {})); };
 // El botón de recepción: el contacto designado del comercio (o el número de recepción de la consola).
 const contacto = cnDigitos(/^REEMPLAZAR_/.test(String(base.contactoAviso || '')) ? '' : base.contactoAviso) || cnDigitos(cfg.numeroRecepcion);
-const conRecepcion = (cuerpo) => cmContactoConBoton({ numero: contacto, desde: from, cuerpo: bmSeguro(cuerpo), botonTexto: 'Escribir', saludo: 'Hola, te escribo desde el chat de ' + negocio, textoDelRespaldo: 'Escríbele aquí:' });
+const conRecepcion = (cuerpo) => cmContactoConBoton({ numero: contacto, desde: from, cuerpo: bmSeguro(cuerpo, usted), botonTexto: 'Escribir', saludo: 'Hola, te escribo desde el chat de ' + negocio, textoDelRespaldo: usted ? 'Escríbale aquí:' : 'Escríbele aquí:' });
 const saludo = 'Hola, soy el asistente virtual de ' + negocio + '.';
 const conSaludo = (cuerpo) => (fichaAntes.saludado ? cuerpo : saludo + '\n\n' + cuerpo);
 
@@ -109,14 +111,14 @@ if (puerta.ruta === 'sigue') {
     } else {
       const resumen = (d.cambioDePedido ? 'Actualicé tu pedido.\n\n' : '') + 'Este es el resumen de tu pedido:\n\n' + vcResumen(lineas)
         + '\n\nEntrega: ' + bmEntregaTexto(d.entrega) + '. El total no incluye el costo de entrega.\n\nAbajo va el QR para pagar.';
-      const pie = bmSeguro('QR para pagar ' + vcMonto(d.total) + ' (pedido ' + d.pedidoId + '). Cuando pagues, envíame la foto del comprobante por este chat.');
+      const pie = bmSeguro('QR para pagar ' + vcMonto(d.total) + ' (pedido ' + d.pedidoId + '). Cuando pagues, envíame la foto del comprobante por este chat.', usted);
       const respaldo = 'No pude mostrarte el QR en este momento. Escríbeme de nuevo en unos minutos para intentarlo otra vez.';
       const imagen = cmMensaje('cliente', Object.assign(cmBase('image'), { image: { id: d.mediaId, caption: pie } }), pie, respaldo, { tipoReporte: 'image' });
       // El evento que ABRE el cobro: `qr_enviado`, con `referencia` (el pedido) y `monto` (el del carrito, en bolivianos). Cobro real: regla 2 (15 minutos, 3 intentos).
       imagen.evento = 'qr_enviado'; imagen.reglaCobro = 2; imagen.referencia = String(d.pedidoId); imagen.monto = d.monto;
       // Para que el servidor cree el pedido `wa_<referencia>`: el catálogo es externo (NovuTienda) y el servidor no puede recalcularlo, así que viajan el precio y el nombre del CATÁLOGO, calculados aquí.
       // Líneas con la forma CERRADA del catálogo externo (`bmLineasPedido`): id, nombre, cantidad, precio y moneda salen del carrito del código, nunca del modelo.
-      { const ls = bmLineasPedido(d.lineas, from); if (ls) { imagen.lineas = ls; imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: d.entrega.direccion, ciudad: d.entrega.ciudad }); } }
+      { const ls = bmLineasPedido(d.lineas, from); if (ls) { imagen.lineas = ls; imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO'), ciudad: d.entrega.ciudad }); } }
       msgs = [texto(conSaludo(resumen)), imagen];
       nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
       nuevos.entrega = d.entrega; nuevos.cierre = false;
@@ -139,7 +141,7 @@ if (puerta.ruta === 'sigue') {
     msgs = [conRecepcion(conSaludo('Anoté tu pedido:\n\n' + vcResumen(lineas) + '\n\n' + bmTextoDerivacion(d.mercado === 'AR' ? (ofreceAlias ? 'pedido_ar_alias' : 'pedido_ar') : 'pedido_sin_cobro', salio)))];
     if (ls !== null) {
       msgs[0].evento = 'pedido_sin_cobro'; msgs[0].referencia = String(d.pedidoId); msgs[0].lineas = ls;
-      msgs[0].entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: d.entrega.direccion, ciudad: d.entrega.ciudad });
+      msgs[0].entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO'), ciudad: d.entrega.ciudad });
       nuevos.pedidos = fichaAntes.pedidos + 1; ev.pedidos = fichaAntes.pedidos;
       // «pagar» en el turno siguiente pide el alias de ESTE pedido (`wa_<referencia>`, el id que el servidor le da).
       Object.assign(nuevos, { aliasPedidoId: 'wa_' + String(d.pedidoId), aliasEstado: 'pedido', aliasVenceMs: 0, aliasMontoCent: Number.isSafeInteger(d.total) ? d.total : 0, aliasAr: '' });
@@ -176,6 +178,8 @@ if (puerta.ruta === 'sigue') {
   }
 }
 
+// Un número de otro país: el aviso a la tienda sale UNA vez por teléfono; se anota solo si el aviso salió (en prueba sin envío de verdad cuenta como salido).
+if (puerta.ruta === 'sigue' && d.aviso && d.aviso.clave === 'otro_pais' && salio === true) { nuevos.avisoPaisMs = ahora; ev.avisoPaisMs = fichaAntes.avisoPaisMs; }
 // La ficha: se escribe siempre (también cuando no sale nada), una vez por turno, y solo la de ESTE teléfono.
 const fichas = cnMapaDeFichas(true);
 if (fichas.sd) {
