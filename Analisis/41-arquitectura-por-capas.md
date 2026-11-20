@@ -1101,9 +1101,11 @@ Dhermacore pasan por el §12.3 antes de retomarse.
 
 ### Lo real medido (ola 0, 12/11/2026)
 
-- **La barrera de horas rechazadas de Agenda ya está construida.** Las filas F3b y
-  «Bellido y campañas» (§7) la listan como «sin construir»; no lo está. Sale de
-  F3b.
+- **La barrera de horas rechazadas de Agenda: SIN VERIFICAR.** El análisis de la ola 0
+  (12/11) la dio por construida, pero el 20/11 no se encontró en
+  `admin/functions/src/modulos/agenda/` ni en `Flujos/src/modulos/agenda/` un archivo
+  que la implemente. Las filas F3b y «Bellido y campañas» (§7) siguen como están hasta
+  que alguien muestre el archivo y su prueba.
 - **El límite de agendas por plan ya se hace cumplir en las reglas**, con prueba
   negativa (`limites.md`, «Agendas por plan», H2b-9). La fila F2b lo lista como
   pendiente; sale de la lista.
