@@ -29,7 +29,7 @@ import { violacionesDeUx, vigilarUx, type UxMsg } from './vigilante-ux';
 // @ts-expect-error el armador es un .mjs sin tipos
 import { CONFIG, TOPE_DE_NODOS, guardias } from '../../../../Flujos/clientes/rroca-antonio/construir.mjs';
 // @ts-expect-error el armador de Rubén es un .mjs sin tipos
-import { problemasDeReferencias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
+import { problemasDeReferencias } from '../../../../Flujos/clientes/rroca-ruben/construir.mjs';
 
 const RA = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/clientes/rroca-antonio');
 const LIB = cargarLibrerias('RA_PROMPT, RA_TEXTO_RIESGO, RA_CIERRE_PUENTE, RA_TEXTOS_PUENTE, RA_PRODUCTOS, raPresentacion, raMenu, raEtiqueta, raNombres, raQuitarEcoDeMarcador, raSeguro, vdEtiquetaConPrecio, raDelNegocio, RA_ARTICULO_DEL_NEGOCIO, raPieQr, raTextoPrecio, raExtraRedaccion, raNorm, RA_SINONIMOS, RA_BAJA, RA_TEXTO_BAJA, raPideBaja, raMenuDeBonos, raTextoOpciones, raTextoBonos, raCuerpoModelo') as J;

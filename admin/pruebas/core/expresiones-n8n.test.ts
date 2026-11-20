@@ -47,7 +47,7 @@ describe('ningún flujo versionado tiene una expresión que el sandbox de n8n re
   it('se revisan los flujos de verdad (no una lista vacía)', () => {
     expect(flujos.length).toBeGreaterThan(30);
     expect(flujos.some((x) => x.ruta.startsWith('Flujos/experimental/venta-minima/'))).toBe(true);
-    expect(flujos.some((x) => x.ruta.startsWith('Flujos/experimental/rroca-ruben/'))).toBe(true);
+    expect(flujos.some((x) => x.ruta.startsWith('Flujos/clientes/rroca-ruben/'))).toBe(true);
   });
   for (const { ruta, flujo } of flujos) {
     it(ruta, () => {

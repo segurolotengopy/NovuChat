@@ -16,7 +16,7 @@ const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experim
 const COMUN = join(RAIZ, 'venta-digital');
 // Carpetas de flujos que aún conservan COPIAS de la base (cabecera + cuerpo común). Rubén («Noches», 05/11/2026) ya no tiene: INCLUYE la base desde su fuente.
 const COPIAS: string[] = [];
-const SIN_COPIAS = ['rroca-ruben/src/lib'];
+const SIN_COPIAS = ['../clientes/rroca-ruben/src/lib'];
 const leer = (ruta: string): string => readFileSync(ruta, 'utf8');
 
 type F = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any

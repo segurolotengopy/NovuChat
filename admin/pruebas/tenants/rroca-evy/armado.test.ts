@@ -188,7 +188,7 @@ describe('las copias declaradas son iguales a su fuente', () => {
     return fuente.slice(i + `const ${nombre} = `.length, fuente.indexOf('\n', i));
   };
   it('NIEGA_IA es la de Rubén (que es la de chat-novuchat)', () => {
-    expect(expr(leer('Flujos/clientes/rroca-evy/src/lib/ev.js'), 'EV_NIEGA_IA')).toBe(expr(leer('Flujos/experimental/rroca-ruben/src/lib/rr.js'), 'RR_NIEGA_IA'));
+    expect(expr(leer('Flujos/clientes/rroca-evy/src/lib/ev.js'), 'EV_NIEGA_IA')).toBe(expr(leer('Flujos/clientes/rroca-ruben/src/lib/rr.js'), 'RR_NIEGA_IA'));
   });
   it('la expresión de riesgo es la de las doctoras (que es la de Antonio)', () => {
     const cuerpo = (f: string, n: string): string => f.slice(f.indexOf(`const ${n} = new RegExp([`), f.indexOf('].join(\'|\'));', f.indexOf(`const ${n} = new RegExp([`)));
@@ -197,7 +197,7 @@ describe('las copias declaradas son iguales a su fuente', () => {
   it('los párrafos son los de Rubén (evOraciones/evParrafos = rrOraciones/rrParrafos)', () => {
     const f = (t: string, n: string): string => t.slice(t.indexOf(`function ${n}(`), t.indexOf('\n}\n', t.indexOf(`function ${n}(`)) + 3);
     const ev = leer('Flujos/clientes/rroca-evy/src/lib/ev.js');
-    const rr = leer('Flujos/experimental/rroca-ruben/src/lib/rr.js');
+    const rr = leer('Flujos/clientes/rroca-ruben/src/lib/rr.js');
     const igualar = (s: string): string => s.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n').replace(/\bev(Oraciones|EsPregunta|Parrafos)\b/g, 'x$1').replace(/\brr(Oraciones|EsPregunta|Parrafos)\b/g, 'x$1').replace(/EV_PARRAFO_MAX|RR_PARRAFO_MAX/g, 'MAX');
     for (const [a, b] of [['evOraciones', 'rrOraciones'], ['evParrafos', 'rrParrafos']] as const) expect(igualar(f(ev, a))).toBe(igualar(f(rr, b)));
   });
