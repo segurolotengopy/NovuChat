@@ -108,7 +108,8 @@ const enlaceCatalogo = wlEnlaceCatalogo(panel);
 const conPedidoEnCurso = (Array.isArray(ficha.carrito) && ficha.carrito.length > 0) || cobro.pendiente === true || ficha.qrHastaMs > ahora;
 if (enlaceCatalogo !== '' && !conPedidoEnCurso && wlPideCatalogo(n)) return salir({ tipo: 'catalogo_web', enlace: enlaceCatalogo });
 // 4-pago. «¿Puedo pagar con tarjeta?»: el texto fijo de cómo se paga, por código (cobro real por QR; nunca se promete otra forma).
-if (wlPreguntaPago(n)) return salir({ tipo: 'pago_info' });
+const qrAbierto = cobro.pendiente === true || ficha.qrHastaMs > ahora;
+if (!qrAbierto && wlPreguntaPago(n)) return salir({ tipo: 'pago_info' });
 // 4a. La factura DESPUÉS del pago (ficha `ultimoPedido.factura === 'pedida'`): el NIT nunca llega al modelo ni a la memoria; va solo en el aviso.
 // Ventana: desde `ultimoPedido.ms` (el «Pedido confirmado»), a lo más `WL_VENTANA_FACTURA_MS`.
 const up = ficha.ultimoPedido;
