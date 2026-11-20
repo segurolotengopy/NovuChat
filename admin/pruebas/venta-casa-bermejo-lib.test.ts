@@ -20,7 +20,7 @@ const RUTAS = [
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
-  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
+  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -498,6 +498,17 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       catalogo: aires, vendibles: aires.vendibles, ficha, plan: { tipo: 'modelo', textoCliente },
       modeloResp: gemini({ texto: 'Con gusto, lo agregué.', lineas: propone.map((id) => ({ id, cantidad: 1 })) }),
     }));
+    it('si el código quita una línea, el texto «agregué…» del modelo no sale: «agrega una lavadora» con el aire sin precisar no dice que agregó el aire', () => {
+      const r = turno('Agrega también una lavadora samsung de 9kg', ['aire-18', 'lav-9']);
+      expect(r.lineas.map((l: { id: string }) => l.id)).toEqual(['lav-9']);
+      expect(r.texto).not.toMatch(/agregu|lo agregué/i);
+    });
+    it('«el de 18 BTU normal» entre los de 18 BTU: entra la básica (nombre más corto), no la inverter', () => {
+      const r = turno('el de 18 BTU normal', ['aire-18-inv']);
+      expect(r.lineas.map((l: { id: string }) => l.id)).toEqual([]);
+      const ok = turno('el de 18 BTU normal', ['aire-18']);
+      expect(ok.lineas.map((l: { id: string }) => l.id)).toEqual(['aire-18']);
+    });
     it('«quiero un aire»: el modelo propone el de 12 BTU y NO se agrega; el texto lista las opciones con precio', () => {
       const r = turno('Quiero un aire', ['aire-12']);
       expect(r.lineas).toEqual([]);
@@ -529,6 +540,53 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       const antes = { carrito: [{ id: 'aire-18', cantidad: 1, detalle: '' }] };
       expect(turno('1', ['aire-18'], antes).lineas.map((l: { id: string }) => l.id)).toEqual(['aire-18']);
       expect(b('bmFijarPieza')('sí, confirmo', [], [{ id: 'aire-18', cantidad: 1 }], aires.vendibles).lineas).toHaveLength(1);
+    });
+  });
+  describe('el código reconoce el modo y el nombre aunque el modelo no los repita (humo de Silvana, paso 3)', () => {
+    const modos = ['recojo en tienda', 'envío'];
+    it('«Silvana Prueba» tras elegir el retiro se guarda como el nombre; frases que son órdenes, cifras o una sola palabra NO', () => {
+      expect(b('bmNombreDeRespuesta')('Silvana Prueba')).toBe('Silvana Prueba');
+      expect(b('bmNombreDeRespuesta')('Mi nombre es Juan Pérez')).toBe('Juan Pérez');
+      for (const no of ['Sí, confirmo, quiero pagar', 'Silvana', '1', 'Hola buenas tardes', 'Lo recojo en tienda', 'Juan Pérez 4567890', 'quiero hablar con una persona', '¿Cuánto cuesta el envío?']) expect(b('bmNombreDeRespuesta')(no)).toBe('');
+    });
+    it('el modo sale del texto («lo recojo en tienda», «envíenlo a Santa Cruz») y el nombre se completa en el turno siguiente, sin que el modelo devuelva `entrega`', () => {
+      const c1 = b('bmCompletarEntrega')({}, {}, 'Lo recojo en tienda', modos);
+      expect(c1.entrega.modo).toBe('recojo en tienda');
+      expect(b('bmCompletarEntrega')({}, {}, 'Envíenlo a Santa Cruz', modos).entrega.modo).toBe('envío');
+      const c2 = b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Silvana Prueba', modos);
+      expect(c2).toMatchObject({ capturado: true, entrega: { nombre: 'Silvana Prueba' } });
+      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Sí, confirmo, quiero pagar', modos).capturado).toBe(false);
+      expect(b('bmCompletarEntrega')({}, {}, 'Silvana Prueba', modos).capturado).toBe(false);   // sin modo elegido, no se toma por nombre
+    });
+    it('del retiro al pedido: modo + nombre dichos en turnos distintos, SIN `entrega` del modelo, y «sí, confirmo, quiero pagar» anota el pedido', () => {
+      const sinEntrega = (textoCliente: string, ficha: Record<string, unknown>, quiereHablar = false) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha, plan: { tipo: 'modelo', textoCliente }, modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'p1', cantidad: 1 }], quiereHablar }) }));
+      const t1 = sinEntrega('Lo recojo en tienda', { carrito: carro });
+      expect(t1.entrega.modo).toBe('recojo en tienda');
+      const t2 = sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega }, true);
+      expect(t2.tipo).toBe('modelo');           // el «quiereHablar» del modelo no lo desvía: era la respuesta con el nombre
+      expect(t2.entrega.nombre).toBe('Silvana Prueba');
+      const t3 = sinEntrega('Sí, confirmo, quiero pagar', { carrito: carro, entrega: t2.entrega }, true);
+      expect(t3.tipo).toBe('pedido_sin_cobro');
+    });
+  });
+  describe('el mensaje del sitio («N x Nombre (cód. id)») lo lee el código (NovuTienda, punto 3)', () => {
+    const cat = catalogo([
+      item({ id: 'aire-18', nombre: 'AIRE TCL 18 BTU', precio: 4935, precioCentavos: 493500 }),
+      item({ id: 'lav-9', nombre: 'LAVADORA SAMSUNG 9KG', precio: 4112.5, precioCentavos: 411250 }),
+      item({ id: 'frigobar-100', nombre: 'FRIGOBAR PREMIER 100 LITROS', precio: 2115, precioCentavos: 211500 }),
+    ]);
+    const SITIO = 'Hola, quiero consultar por estos productos:\n2 x AIRE TCL 18 BTU (cód. aire-18)\n1 x LAVADORA SAMSUNG 9KG (cód. lav-9)\n1 x PRODUCTO INVENTADO (cód. inventado)';
+    it('lee cantidades y códigos contra el catálogo; un código que no existe se ignora', () => {
+      expect(b('bmLineasDelSitio')(SITIO, cat.vendibles)).toEqual([{ id: 'aire-18', cantidad: 2, detalle: '' }, { id: 'lav-9', cantidad: 1, detalle: '' }]);
+      expect(b('bmLineasDelSitio')('quiero 2 x aire sin código', cat.vendibles)).toEqual([]);
+    });
+    it('con los saltos de línea ya vueltos espacios (lo que llega al flujo) se lee igual', () => {
+      expect(b('bmLineasDelSitio')(SITIO.replace(/\n/g, ' '), cat.vendibles)).toEqual([{ id: 'aire-18', cantidad: 2, detalle: '' }, { id: 'lav-9', cantidad: 1, detalle: '' }]);
+    });
+    it('el pedido queda con esas líneas y cantidades (no con lo que invente el modelo) y el texto pregunta por la entrega', () => {
+      const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, modos: ['recojo en tienda', 'envío'], plan: { tipo: 'modelo', textoCliente: SITIO }, modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'frigobar-100', cantidad: 9 }] }) }));
+      expect(r.lineas.map((l: { id: string; cantidad: number }) => [l.id, l.cantidad])).toEqual([['aire-18', 2], ['lav-9', 1]]);
+      expect(r.texto).toMatch(/¿Cómo prefiere recibir su pedido: recojo en tienda o envío\?/);
     });
   });
 });

@@ -102,8 +102,46 @@ function bmMezclarEntrega(antes, nueva, modos) {
   return salida;
 }
 // Retiro en tienda o envío: lo decide el MODO que eligió el cliente (uno de la lista del comercio).
-function bmEsEnvio(modo) { return /\b(envio|envios|domicilio|delivery|courier|encomienda|flota|terminal)\b/.test(bmNorm(modo)); }
+function bmEsEnvio(modo) { return /\b(envio|envios|enviar|enviarlo|envienlo|enviemelo|enviamelo|mandenlo|mandarlo|domicilio|delivery|courier|encomienda|flota|terminal)\b/.test(bmNorm(modo)); }
 function bmEsRetiro(modo) { return /\b(retiro|retirar|recojo|recoger|recoge|tienda)\b/.test(bmNorm(modo)) && !bmEsEnvio(modo); }
+// Lo que el CÓDIGO reconoce de la respuesta del cliente, para no depender de que el modelo lo repita en su JSON (humo de Silvana: «Silvana Prueba» no se guardaba y el pedido no avanzaba):
+// el modo («lo recojo en tienda», «envíenlo a…») y, ya elegido el modo, el nombre de quien retira o recibe (2 a 5 palabras de letras, sin cifras ni órdenes).
+function bmNombreDeRespuesta(texto) {
+  let t = String(texto || '').replace(/\s+/g, ' ').trim().replace(/^(mi nombre es|me llamo|soy|a nombre de|el nombre es)\s+/i, '');
+  if (t === '' || t.length > 60 || /[^\p{L} .'-]/u.test(t)) return '';
+  const palabras = t.split(' ');
+  if (palabras.length < 2 || palabras.length > 5) return '';
+  const n = bmNorm(t);
+  if (/\b(si|no|hola|gracias|confirmo|confirmar|pagar|pago|quiero|catalogo|precio|cuanto|cuesta|envio|enviar|tienda|recojo|retiro|persona|hablar|descuento|factura|buenas|buenos|dias|tardes|noches|favor|ok|listo|claro)\b/.test(n)) return '';
+  return t;
+}
+function bmCompletarEntrega(nueva, antes, texto, modos) {
+  const n = Object.assign({}, cbEsObjeto(nueva) ? nueva : {});
+  const a = bmEntregaDeFicha(antes);
+  const lista = modos.length ? modos : BM_MODOS_DEFECTO;
+  const norm = bmNorm(texto);
+  const modoNuevo = (typeof n.modo === 'string' && n.modo.trim() !== '') ? n.modo : '';
+  let modo = a.modo !== '' ? a.modo : modoNuevo;
+  if (modo === '') { if (bmEsRetiro(norm)) modo = lista.find((m) => bmEsRetiro(m)) || ''; else if (bmEsEnvio(norm)) modo = lista.find((m) => bmEsEnvio(m)) || ''; }
+  if (modo !== '' && a.modo === '' && modoNuevo === '') n.modo = modo;
+  let capturado = false;
+  const nombreNuevo = typeof n.nombre === 'string' && n.nombre.trim() !== '';
+  if (modo !== '' && a.nombre === '' && !nombreNuevo) { const nom = bmNombreDeRespuesta(texto); if (nom !== '') { n.nombre = nom; capturado = true; } }
+  return { entrega: n, capturado: capturado };
+}
+// El mensaje del SITIO («Hola, quiero consultar por estos productos:» con líneas «N x Nombre (cód. id)»): el código lee las líneas y sus códigos contra el catálogo; no depende del modelo.
+function bmLineasDelSitio(texto, vendibles) {
+  const ids = new Set((Array.isArray(vendibles) ? vendibles : []).map((v) => v.id));
+  const salida = [];
+  // Los saltos de línea ya se perdieron (`cbLinea` los vuelve espacios): se leen «N x nombre (cód. id)» seguidos.
+  const re = /(?:^|[\s:])(\d{1,3})\s*[xX×]\s*[^()]{1,120}?\(\s*c[oó]d\.?\s*:?\s*([A-Za-z0-9][A-Za-z0-9_-]{0,99})\s*\)/g;
+  let m;
+  while ((m = re.exec(String(texto || ''))) !== null && salida.length < 30) {
+    const cantidad = Math.min(Number(m[1]), 50);
+    if (cantidad >= 1 && ids.has(m[2]) && !salida.some((l) => l.id === m[2])) salida.push({ id: m[2], cantidad: cantidad, detalle: '' });
+  }
+  return salida;
+}
 // Lo que falta para cerrar la entrega según el modo y el país (decisión de Andres, 20/11/2026: «como la propuesta»):
 //   RETIRO en tienda: solo el nombre.   ENVÍO en Bolivia: nombre, CI, ciudad y flota o terminal.   ENVÍO a Argentina: nombre, DNI, dirección, código postal y provincia.
 function bmEntregaFalta(e, mercado) {
@@ -328,10 +366,15 @@ function bmFijarPieza(textoCliente, lineasAntes, lineasNuevas, vendibles) {
     veredicto.set(x.v.id, x.p === tope && !ambiguo ? 'si' : ambiguo && x.p === tope ? 'ambigua' : 'no');
   }
   const habia = new Set((Array.isArray(lineasAntes) ? lineasAntes : []).map((l) => l.id));
+  // «el normal», «el común», «sin inverter»: entre piezas empatadas con las mismas palabras, el cliente pide la básica (la de nombre más corto).
+  if (/\b(normal|comun|basico|basica|estandar|simple|sin inverter)\b/.test(bmNorm(textoCliente))) {
+    const ambig = p.filter((x) => veredicto.get(x.v.id) === 'ambigua');
+    if (ambig.length) { ambig.sort((a, b) => a.v.nombre.length - b.v.nombre.length); veredicto.set(ambig[0].v.id, 'si'); for (const x of ambig.slice(1)) veredicto.set(x.v.id, 'no'); }
+  }
   const lineas = lineasNuevas.filter((l) => habia.has(l.id) || veredicto.get(l.id) === 'si');
   const quitada = lineas.length < lineasNuevas.length;
   const ambiguo = [...veredicto.values()].includes('ambigua');
-  return { lineas: lineas, ambiguo: ambiguo, texto: quitada ? bmTextoDeCoincidencias(textoCliente, vendibles) : '' };
+  return { lineas: lineas, ambiguo: ambiguo, quitada: quitada, texto: quitada ? bmTextoDeCoincidencias(textoCliente, vendibles) : '' };
 }
 function bmIdsCoincidencias(texto, vendibles) { return (bmPuntuarCoincidencias(texto, vendibles) || []).map((x) => x.v.id); }
 function bmCoincidencias(texto, vendibles) {
@@ -678,13 +721,21 @@ function bmResolverModelo(c) {
   if (!j || typeof j.texto !== 'string' || j.texto.trim() === '') return bmDerivar(c, 'modelo_caido');
   const antes = vcLineas(f.carrito, c.vendibles).lineas;
   const propuestas = Array.isArray(j.lineas) ? vcLineas(j.lineas, c.vendibles).lineas : antes;
-  const fijada = bmFijarPieza(p.textoCliente, antes, propuestas, c.vendibles);
+  let fijada = bmFijarPieza(p.textoCliente, antes, propuestas, c.vendibles);
+  // El mensaje del sitio trae los códigos: esas líneas entran tal cual (con su cantidad) y el texto lo arma el código.
+  const delSitio = bmLineasDelSitio(p.textoCliente, c.vendibles);
+  if (delSitio.length) {
+    const mapa = new Map(antes.map((l) => [l.id, { id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' }]));
+    for (const l of delSitio) mapa.set(l.id, l);
+    fijada = { lineas: vcLineas([...mapa.values()], c.vendibles).lineas, ambiguo: false, texto: '', delSitio: true };
+  }
   const lineas = fijada.lineas;
-  const entrega = bmMezclarEntrega(f.entrega, j.entrega, c.modos);
+  const comp = bmCompletarEntrega(j.entrega, f.entrega, p.textoCliente, c.modos);
+  const entrega = bmMezclarEntrega(f.entrega, comp.entrega, c.modos);
   const cierre = f.cierre || bmQuierePagar(bmNorm(p.textoCliente));
   // Con el pedido LISTO (piezas, entrega completa y orden de pagar) lo decide el código: un «quiereHablar» del modelo (p. ej. «el envío lo cotiza la tienda») no lo desvía; el pedido se anota y la tienda recibe el aviso.
   const listo = lineas.length > 0 && bmEntregaCompleta(entrega, c.mercado) && cierre;
-  if (j.quiereHablar === true && !listo) return bmDerivar(c, 'quiere_hablar');
+  if (j.quiereHablar === true && !listo && !comp.capturado) return bmDerivar(c, 'quiere_hablar');
   const cambio = !vcMismoCarrito(antes, lineas);
   // Un número de otro país se atiende como Bolivia y se avisa UNA vez a la tienda (1 mensaje por caso): el aviso sale si aún no se le avisó de este teléfono.
   const avisoPais = c.t && c.t.fueraDePais === true && f.avisoPaisMs === 0 ? bmAvisoConsulta(c, 'otro_pais') : null;
@@ -718,7 +769,8 @@ function bmResolverModelo(c) {
     return Object.assign(base, { tipo: 'modelo', texto: texto0, sinRedaccion: sinRed, resumen: lineas.length ? vcResumen(lineas) : '', cancelarCobro: true, qrAnulado: true, patch: { qrHastaMs: 0, qrCarrito: [] } });
   }
   // Conversación: el texto del modelo, revisado; si no pasa, el fijo. El resumen del pedido (calculado por el código) acompaña cada cambio.
-  let texto = fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles);
+  // Si el código quitó una línea que el modelo propuso, su texto («agregué…») ya no es cierto: el texto lo arma el código (las opciones o el estado del pedido).
+  let texto = (fijada.delSitio === true || (fijada.quitada === true && fijada.texto === '')) ? bmTextoDeEstado(lineas, entrega, cierre, c) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
   // Negar una pieza que el catálogo sí tiene («solo disponemos de la de 9 kg» cuando hay de 9, 15 y 17 kg): el texto lo arma el código con las piezas que coinciden.
   if (texto !== '' && /\b(solo|unicamente)\s+(disponemos|tenemos|contamos|hay|ofrecemos)\b/.test(bmNorm(texto))) { const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1); if (coinc !== '') texto = coinc; }
   const sinRedaccion = texto === '';
