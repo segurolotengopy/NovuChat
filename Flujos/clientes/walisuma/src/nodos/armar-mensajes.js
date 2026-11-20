@@ -71,6 +71,10 @@ if (puerta.ruta === 'sigue') {
   } else if (tipoDePlan === 'baja') {
     // La confirmación de la baja: UN texto fijo (sin saludo, sin botón, sin aviso); el `no_contactar` ya viajó con el entrante (si fue una nota de voz, `t.texto` iba vacío: el evento viaja en el reporte de ESTE mensaje saliente). La ficha y el carrito no se tocan.
     msgs = [texto(bjTextoBaja(WL_TEXTO_BAJA), d.porVoz === true ? { evento: 'no_contactar' } : undefined)];
+  } else if (tipoDePlan === 'catalogo_web') {
+    // El catálogo web de la conversación (fotos, colores y precios) como BOTÓN; el enlace lo dio la consola y `cmEnlace` solo deja pasar https. El texto fijo no promete nada que el botón no cumpla.
+    const cuerpoCat = wlSeguro(conSaludo(WL_TEXTO_CATALOGO_WEB));
+    msgs = [cmMensaje('cliente', cmEnlace(cuerpoCat, 'Ver catálogo', String(d.enlace || '')), cuerpoCat, cuerpoCat + '\n\n' + String(d.enlace || ''), { tipoReporte: 'interactive', conBoton: true })];
   } else if (tipoDePlan === 'identidad') {
     msgs = [texto(WL_TEXTO_IDENTIDAD.replace('{NEGOCIO}', negocio))];
   } else if (tipoDePlan === 'audio_fijo') {

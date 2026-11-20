@@ -284,6 +284,8 @@ const WL_TEXTO_COMPROBANTE_ILEGIBLE = 'No pudimos leer bien su comprobante.\n\n�
 // La baja (pieza común `baja.js`, `bjTextoBaja(propio)`): el texto del tenant, de usted, una línea.
 const WL_TEXTO_BAJA = 'Entendido, tomamos nota de que no desea recibir más mensajes. Si más adelante necesita algo, escríbanos cuando quiera.';
 // El saludo de la primera respuesta (decisión 2: sin «IA»; la identidad del MD): ofrece asesoría y el catálogo POR CHAT, sin enlace (Andres, 19/11/2026: «sin enlace por ahora»). 0 mensajes.
+// El catálogo web como botón (Andres, 20/11/2026: «quiero tu catálogo» tiene que dar el catálogo). De usted; no promete nada fuera del botón.
+const WL_TEXTO_CATALOGO_WEB = 'Con gusto: en el botón puede ver nuestro catálogo con fotos, colores y precios. Cuando elija una pieza, cuéntenos cuál y le ayudamos con su pedido.';
 const WL_TEXTO_SALUDO = 'Hola, soy el asistente de atención y ventas de {NEGOCIO}. Con gusto le asesoramos para elegir una pieza o un regalo, y por este chat le mostramos las piezas de nuestro catálogo con su precio.';
 // La factura pedida ANTES de pagar (Andres, 19/11/2026): no se deriva; se dice cuándo se pide y la venta sigue.
 // Acotado (revisión del PR #1020): la razón social y el NIT se piden SOLO en el mensaje de «Pedido confirmado» del pago por QR; si el pedido lo coordina la encargada (sin QR o en revisión), se le dan a ella.

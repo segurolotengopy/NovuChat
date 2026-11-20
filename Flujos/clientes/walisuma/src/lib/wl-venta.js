@@ -22,6 +22,16 @@ function wlPanelDe(resp) {
   const ok = Number(r.statusCode) === 200 && cbEsObjeto(c) && typeof c.tenantId === 'string';
   return { ok: ok, cuerpo: ok ? c : {} };
 }
+// El enlace del catálogo web de ESTA conversación (`catalogoWeb.enlace`, que la consola manda con `catalogoCompleto: true`): solo https, sin espacios y de largo acotado. Sin enlace, '' (nada se inventa).
+function wlEnlaceCatalogo(panel) {
+  const w = panel && panel.ok && cbEsObjeto(panel.cuerpo.catalogoWeb) ? panel.cuerpo.catalogoWeb : null;
+  const e = w && w.activo === true && typeof w.enlace === 'string' ? w.enlace.trim() : '';
+  return /^https:\/\/[^\s]+$/.test(e) && e.length <= 500 ? e : '';
+}
+// El cliente pide VER el catálogo o las fotos (texto normalizado): el botón con el catálogo web sale por código, sin modelo (MD: [MOSTRAR_CATALOGO]).
+function wlPideCatalogo(n) {
+  return /\b(catalogos?|fotos?|fotografias?|imagenes|ver (las |sus |todas las )?(piezas|productos|articulos|opciones)|muestrame (las |sus )?(piezas|productos|opciones))\b/.test(String(n || ''));
+}
 // Lo que se puede vender: activo, con precio en Bs y SIN la marca `agotado` de la consola. Los ítems sin precio (cotización) y los apagados (licores) no entran.
 function wlVendibles(panel) {
   const cat = panel && panel.ok && Array.isArray(panel.cuerpo.catalogo) ? panel.cuerpo.catalogo : [];
