@@ -566,8 +566,8 @@ if [[ $BORRAR -eq 1 ]]; then
   [[ -z "${N8N_WORKFLOW_ID//[A-Za-z0-9]/}" && -n "$N8N_WORKFLOW_ID" ]] || { echo "✗ N8N_WORKFLOW_ID invalido" >&2; exit 2; }
   if [[ $APLICAR -ne 1 ]]; then echo "  Seco: se desactivaria y borraria el flujo del banco ($ENV_FILE). Agregue --aplicar."; exit 0; fi
   curl -s --max-time 60 -o /dev/null -X POST -H @- "${API}/workflows/${N8N_WORKFLOW_ID}/deactivate" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || true
-  COD=$(curl -s --max-time 60 -o /dev/null -w '%{http_code}' -X DELETE -H @- "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
-  COD2=$(curl -s --max-time 60 -o /dev/null -w '%{http_code}' -H @- "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
+  COD=$(n8n_curl -s --max-time 60 -o /dev/null -w '%{http_code}' -X DELETE -H @- "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")
+  COD2=$(n8n_curl -s --max-time 60 -o /dev/null -w '%{http_code}' -H @- "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")
   if [[ "$COD" == "200" && "$COD2" == "404" ]]; then printf '\033[1;32m✓ Flujo del banco borrado (DELETE %s) y releido: ya no existe (%s)\033[0m\n' "$COD" "$COD2"; exit 0; fi
   printf '\033[1;31m✗ No se pudo confirmar el borrado (DELETE %s, relectura %s)\033[0m\n' "$COD" "$COD2" >&2; exit 1
 fi
