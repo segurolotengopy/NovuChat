@@ -7,6 +7,7 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const SCRIPT = join(RAIZ, 'scripts/publicar-flujo.sh');
@@ -19,7 +20,7 @@ function env(nombre: string, id = 'AbC123xyz'): string {
   creados.push(ruta);
   return nombre;
 }
-const correr = (nombre: string, extra: string[] = []) => spawnSync('bash', [SCRIPT, '--env', nombre, '--borrar', ...extra], { encoding: 'utf8', cwd: RAIZ });
+const correr = (nombre: string, extra: string[] = []) => spawnSync('bash', [SCRIPT, '--env', nombre, '--borrar', ...extra], { encoding: 'utf8', cwd: RAIZ, env: entornoDelEmulador({}) });
 
 describe('publicar-flujo.sh --borrar', () => {
   it('SECO: un entorno de banco dice qué haría y no llama a la red', () => {
