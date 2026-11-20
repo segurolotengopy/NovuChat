@@ -92,5 +92,5 @@ código.
 | `antesDelTurno(contexto)` | Al armar el contexto | Campañas (recorta al tope), Captación (rubros y planes), Catálogo (resumen al prompt), miniCRM (`crm: { activo }` al flujo) |
 | `despuesDelTurno(reporte)` | Al recibir el reporte | Seña (retención), Inventario (descuento), Cobros (cotejo), Campañas |
 | `alCierre(cierre)` | Con `registrarCierre` | Agenda (cita), Pedidos (venta) |
-| `alCambiarConfig(doc)` | Disparador de Firestore | Comportamiento, Campañas (verificación) |
-| `programado(cron)` | Tareas | Agenda (recordatorios, seguimientos, señas vencidas), Cobros del prepago |
+| `alCambiarConfig(doc)` | Disparador de Firestore | Comportamiento, Campañas (verificación), miniCRM (revoca editores al apagar) |
+| `programado(cron)` | Tareas | Agenda (recordatorios, seguimientos, señas vencidas), Cobros del prepago, miniCRM (reconciliación de editores) |

@@ -58,8 +58,9 @@ No se agregan llamadas: las dos por turno ya existen.
 los ganchos de seña, inventario, captación, campañas y cobro de venta ya
 volvieron a sus módulos (`modulos/*/alTurno.ts`) y los llama por el registro.
 El miniCRM declara `antesDelTurno` en su manifiesto (G-4): `configuracionFlujo` lee `config/crm`
-una vez por turno y entrega `crm: { activo }` con `crmParaElFlujo` (puerto de `ganchos.ts`).
-Es solo declaración: la lectura sigue dentro de `configuracionFlujo`, sin cambio de conducta.
+una vez por turno y entrega `crm: { activo }` con `crmParaElFlujo` (puerto de `ganchos.ts`) solo si `activo` es booleano; si no,
+la respuesta de siempre. También declara `alCambiarConfig` (`revocarEditoresAlApagarCrm`) y `programado`
+(`reconciliarEditoresCrm`). Es solo declaración: la lectura sigue dentro de `configuracionFlujo`, sin cambio de conducta.
 
 ## El cierre (`registrarCierre`): ganchos inyectados (F3b-1b, 05/10/2026)
 
