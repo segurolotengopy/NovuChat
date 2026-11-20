@@ -1,0 +1,23 @@
+{
+  "_fuente": "Datos que el cliente entregó en su documento de configuración (§1.1, Variables Generales del Comercio) y en el prompt de atención (sucursales, horario, política de cambios). Se cargan con `node scripts/datos/cargar-negocio.mjs --proyecto <id> --tenant walisuma --archivo admin/scripts/datos/walisuma/negocio-walisuma.json --local <tabla> [--aplicar]` (20/11/2026). Solo se escriben las claves que trae este archivo; lo demás de config/negocio queda como estaba.",
+  "negocio": {
+    "nombreNegocio": "Walisuma",
+    "descripcion": "Casa boliviana de piezas y diseño de alta gama hechas junto a artesanos de los Andes, la Amazonía y el Chaco: fibras de baby alpaca y vicuña, cueros nobles, arte textil y madera. Tiendas en La Paz y Santa Cruz.",
+    "direccion": "La Paz: Calle Claudio Aliaga #1231, San Miguel, Zona Sur. Santa Cruz: Av. Marcelo Terceros, esq. Flamboyanos (frente al ex Jardín de Asia).",
+    "numeroRecepcionMarcador": "REEMPLAZAR_NUMERO_RECEPCION_WALISUMA",
+    "zonaHoraria": "America/La_Paz",
+    "moneda": "BOB",
+    "tratamiento": "usted",
+    "politicaCancelacion": "El periodo máximo para solicitar un cambio o una devolución en Walisuma es de 10 días. La solicitud se coordina con nuestra encargada de atención.",
+    "horarios": {
+      "_nota": "Atención y recojo en ambas tiendas: lunes a viernes de 10:00 a 19:00 (documento del cliente, §1.1).",
+      "lun": "10:00-19:00",
+      "mar": "10:00-19:00",
+      "mie": "10:00-19:00",
+      "jue": "10:00-19:00",
+      "vie": "10:00-19:00",
+      "sab": "cerrado",
+      "dom": "cerrado"
+    }
+  }
+}
