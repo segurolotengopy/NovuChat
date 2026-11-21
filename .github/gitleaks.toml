@@ -189,7 +189,7 @@ regexes = [
 ]
 
 # -----------------------------------------------------------------------------
-# Falso positivo del 21/11/2026 (despliegue manual de producción, run 44920222365).
+# Falso positivo del 21/11/2026 (despliegue manual de producción).
 # El despliegue manual escanea la historia completa y la regla `generic-api-key`
 # marcó 5 líneas de commits viejos (scripts/completar-marcadores-desde-vivo.mjs y
 # admin/scripts/plataforma/crm-cuenta-servicio.mjs) que citan la VARIABLE de
