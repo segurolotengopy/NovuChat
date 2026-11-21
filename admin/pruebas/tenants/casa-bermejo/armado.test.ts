@@ -67,7 +67,7 @@ describe('tamaño y composición', () => {
 });
 
 describe('la entrada verificada del receptor: INCLUIDA, no copiada', () => {
-  const origen = JSON.parse(leer(join(FLUJOS, 'venta-minima/flujo.plantilla.json'))) as Flujo;
+  const origen = JSON.parse(leer(join(RAIZ, 'Flujos/src/core/receptor/entrada-del-receptor.plantilla.json'))) as Flujo;
   it('los 6 nodos del flujo son idénticos a su origen (con los datos sustituidos)', () => {
     for (const n of C.NODOS_DEL_RECEPTOR as string[]) {
       const esperado = C.reemplazarTextos(clonar(nodo(origen, n)), DATOS, n);

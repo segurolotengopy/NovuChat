@@ -188,7 +188,7 @@ describe('config-del-negocio.js sin Object.assign: el cuerpo de «Traer configur
 describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo salvo `id`, `notes` y `position`', () => {
   const plantilla = JSON.parse(leer(join(ANTONIO, 'flujo.plantilla.json'))) as { nodes: J[] };
   const chat = JSON.parse(leer(join(ORIGEN_CHAT, 'flujo.plantilla.json'))) as { nodes: J[] };
-  const venta = JSON.parse(leer(join(EXP, 'venta-minima/flujo.plantilla.json'))) as { nodes: J[] };
+  const venta = JSON.parse(leer(join(REPO, 'Flujos/src/core/receptor/entrada-del-receptor.plantilla.json'))) as { nodes: J[] };
   const de = (f: { nodes: J[] }, n: string): J => f.nodes.find((x) => x.name === n) as J;
   const sinLibres = (n: J): J => { const { id: _i, notes: _n, position: _p, ...resto } = n; return resto; };
   /** La única sustitución de contenido: el nodo de entrada se llama «Normalizar entrada» (contrato con los módulos comunes de medios). */
@@ -199,7 +199,7 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo 
     return v;
   };
 
-  it('los 6 nodos de la entrada verificada del receptor son los de venta-minima, sin ninguna diferencia', () => {
+  it('los 6 nodos de la entrada verificada del receptor son los de la pieza de core, sin ninguna diferencia', () => {
     for (const n of ['Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos']) {
       expect(sinLibres(de(plantilla, n)), n).toEqual(sinLibres(de(venta, n)));
     }

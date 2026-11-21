@@ -280,6 +280,11 @@ modo_patrones() {
     # negocio (sin credenciales, URL ni Config) y publicar-flujo.sh aborta ante
     # cualquier REEMPLAZAR_ que quede en el JSON; una prueba lo garantiza.
     case "$json" in Flujos/error-envio-incierto.json) continue ;; esac
+    # Excepcion declarada: fragmento de core (los 6 nodos de la entrada del
+    # receptor), sin nodo `Config del negocio`; sus marcadores son @@dato:...@@.
+    # `receptor-entrada.test.ts` garantiza que no trae ruta, URL real ni
+    # «Continue on Fail». Solo este archivo.
+    case "$json" in Flujos/src/core/receptor/entrada-del-receptor.plantilla.json) continue ;; esac
     grep -q 'REEMPLAZAR_' "$json" || faltan+=("$json")
   done
   if [[ ${#faltan[@]} -gt 0 ]]; then
