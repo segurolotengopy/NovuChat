@@ -165,7 +165,7 @@
               "id": "cb_avisoPedidoEstado",
               "name": "avisoPedidoEstado",
               "type": "string",
-              "value": "PENDING"
+              "value": "APPROVED"
             },
             {
               "id": "cb_avisoRespaldoPlantilla",

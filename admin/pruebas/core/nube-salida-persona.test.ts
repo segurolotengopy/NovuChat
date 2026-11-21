@@ -412,6 +412,34 @@ describe('nube-salida-persona.sh: --agregar-alias y --quitar-alias', () => {
     expect(mapa()).toEqual(previo);
   });
 
+  it('--env: la dirección de n8n sale del archivo (solo esa variable), sin imprimirse ni exportar la clave', () => {
+    secreto(previo);
+    writeFileSync(join(dir, 'repo', '.env.cliente-x'), `N8N_API_KEY=clave-de-api-que-no-debe-salir\nN8N_BASE_URL="${BASE_N8N}"\n`);
+    const r = correr(['--agregar-alias', 'nuevo', '--env', '.env.cliente-x'], { N8N_BASE_URL: '' });
+    expect(r.codigo).toBe(1);
+    expect(r.salida).not.toContain(BASE_N8N);
+    expect(r.salida).not.toContain('clave-de-api-que-no-debe-salir');
+    expect(escrituras()).toEqual([]);
+  });
+
+  it.each([
+    ['con una ruta', '../.env'],
+    ['absoluto', '/etc/passwd'],
+    ['con otro nombre', 'config.txt'],
+    ['inexistente', '.env.no-existe'],
+  ])('--env %s: sale 2 sin tocar gcloud', (_n, archivo) => {
+    const r = correr(['--agregar-alias', 'nuevo', '--env', archivo], { N8N_BASE_URL: '' });
+    expect(r.codigo).toBe(2);
+    expect(llamadas()).toEqual([]);
+  });
+
+  it('--env sin N8N_BASE_URL en el archivo: sale 2', () => {
+    writeFileSync(join(dir, 'repo', '.env.vacio'), 'OTRA=1\n');
+    const r = correr(['--agregar-alias', 'nuevo', '--env', '.env.vacio'], { N8N_BASE_URL: '' });
+    expect(r.codigo).toBe(2);
+    expect(llamadas()).toEqual([]);
+  });
+
   it('agregar: fusiona con lo existente, guarda una versión nueva y entrega un archivo 600 que no se imprime', () => {
     secreto(previo);
     const r = correr(['--agregar-alias', 'nuevo', ...APLICAR]);
