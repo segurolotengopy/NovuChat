@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { USUARIOS } from './entorno';
 import { ingresar } from './ayudas/ingresar';
 import { leerCampo, limpiarConversaciones, sembrarConversacion } from './ayudas/datos';
-import prepararDatos from './preparar-datos';
+import prepararDatos, { fijarPantallaConversaciones } from './preparar-datos';
 
 const FOGON = 'parrilla-el-fogon';
 const TEL = '59100000041';
@@ -13,7 +13,9 @@ async function abrirConversaciones(page: Page): Promise<void> {
 }
 
 test.describe('Conversaciones', () => {
-  test.beforeEach(async () => { prepararDatos(); await limpiarConversaciones(FOGON); });
+  // Esta suite prueba la pantalla CLÁSICA (desde el 24/10/2026 la de por defecto es la nueva): se fija con la bandera explícita.
+  test.beforeEach(async () => { prepararDatos(); await limpiarConversaciones(FOGON); await fijarPantallaConversaciones(FOGON, 'clasica'); });
+  test.afterEach(async () => { await fijarPantallaConversaciones(FOGON, null); });
 
   test('lista los hilos con el último mensaje y abre uno con sus mensajes en orden, entrantes y salientes', async ({ page }) => {
     await sembrarConversacion(FOGON, TEL, [

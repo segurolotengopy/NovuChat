@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
-import { Timestamp } from 'firebase-admin/firestore';
-import { USUARIOS } from './entorno';
+import { getApps, initializeApp } from 'firebase-admin/app';
+import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { PROYECTO, PUERTO_FIRESTORE, USUARIOS } from './entorno';
 import { ingresar } from './ayudas/ingresar';
 import { abrirOpciones } from './ayudas/opciones';
 import { crearUsuarioDeEnsayo, leerCampo, limpiarConversaciones, sembrarConversacion, type MensajeDePrueba } from './ayudas/datos';
@@ -19,6 +20,14 @@ import { palabrasDe, trozosDeTelefono } from '../functions/src/core/conversacion
  */
 
 const FOGON = 'parrilla-el-fogon';
+
+/** Fija o quita `personaPuedeEscribir` del comercio: sin ella no aparece «Tomar conversación» (commit b6b1082c). */
+async function fijarPersonaPuedeEscribir(valor: boolean): Promise<void> {
+  process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${PUERTO_FIRESTORE}`;
+  if (!PROYECTO.startsWith('demo-')) throw new Error('NEGADO: el proyecto de las pruebas de navegador tiene que empezar con «demo-».');
+  if (!getApps().length) initializeApp({ projectId: PROYECTO });
+  await getFirestore().doc(`tenants/${FOGON}`).set({ personaPuedeEscribir: valor ? true : FieldValue.delete() }, { merge: true });
+}
 const TEL_47 = '59100000047';
 const TEL_74 = '59100000074';
 const TEL_12 = '59100000012';
@@ -61,8 +70,9 @@ test.describe('Conversaciones (pantalla nueva)', () => {
     prepararDatos();
     await limpiarConversaciones(FOGON);
     await fijarPantallaConversaciones(FOGON, 'nueva');
+    await fijarPersonaPuedeEscribir(true);
   });
-  test.afterEach(async () => { await fijarPantallaConversaciones(FOGON, null); });
+  test.afterEach(async () => { await fijarPantallaConversaciones(FOGON, null); await fijarPersonaPuedeEscribir(false); });
 
   test('con la bandera se ve la pantalla nueva: lista, filtros (con «El asistente atiende», de H2), «Tomar conversación» y el campo para escribir SOLO tras tomar', async ({ page }) => {
     await sembrarConversacion(FOGON, TEL_47, HOLA, campos(TEL_47, 'Ximena P.', { noLeidos: 2 }));
@@ -263,19 +273,21 @@ test.describe('Conversaciones (pantalla nueva)', () => {
 });
 
 test.describe('Conversaciones (sin la bandera)', () => {
-  test('sin bandera (o con otro valor) se ve la pantalla de siempre, no la nueva', async ({ page }) => {
+  test.afterEach(async () => { await fijarPantallaConversaciones(FOGON, null); });
+
+  test('sin bandera se ve la pantalla NUEVA (la de por defecto desde el 24/10/2026); la clásica solo con la bandera «clasica»', async ({ page }) => {
     prepararDatos();
     await limpiarConversaciones(FOGON);
     await fijarPantallaConversaciones(FOGON, null);
     await sembrarConversacion(FOGON, TEL_47, HOLA, campos(TEL_47, 'Ximena P.'));
     await ingresar(page, USUARIOS.adminFogon);
     await page.getByRole('link', { name: 'Conversaciones', exact: true }).click();
-    // La de siempre lista con botones por teléfono; la nueva no tiene `data-testid="lista"`.
-    await expect(page.getByRole('button', { name: new RegExp(TEL_47) })).toBeVisible();
-    await expect(page.getByTestId('lista')).toHaveCount(0);
+    // La nueva tiene `data-testid="lista"` y fichas `.cv-ficha`; la clásica lista con botones por teléfono.
+    await expect(page.getByTestId('lista')).toBeVisible();
+    await expect(fila(page, 'Ximena P.')).toBeVisible();
     await fijarPantallaConversaciones(FOGON, 'clasica');
     await page.reload();
     await expect(page.getByRole('button', { name: new RegExp(TEL_47) })).toBeVisible();
-    await fijarPantallaConversaciones(FOGON, null);
+    await expect(page.getByTestId('lista')).toHaveCount(0);
   });
 });
