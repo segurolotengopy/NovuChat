@@ -18,7 +18,7 @@ import { crearSesion } from './venta-minima-sesion';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 export const CARPETA_PRUEBAS = join(AQUI, '..');
-export const CARPETA_VM = join(AQUI, '../../../Flujos/experimental/venta-minima');
+export const CARPETA_VM = join(AQUI, '../../../Flujos/clientes/venta-minima');
 export const leer = (archivo: string): Flujo => JSON.parse(readFileSync(join(CARPETA_VM, archivo), 'utf8')) as Flujo;
 export const QTACO = leer('venta-minima.qtaco.json');
 
@@ -167,7 +167,7 @@ export const cobrosAbiertos = (w: Mundial, desde: Marca = { ingesta: 0 }): J[] =
 export function verificarEnCopia(modifica: (vm: string) => void, args: string[] = ['--verificar']) {
   const tmp = mkdtempSync(join(tmpdir(), 'vm-copia-'));
   try {
-    const vm = join(tmp, 'Flujos/experimental/venta-minima');
+    const vm = join(tmp, 'Flujos/clientes/venta-minima');
     const datos = join(tmp, 'admin/scripts/datos/venta-minima');
     mkdirSync(vm, { recursive: true });
     mkdirSync(datos, { recursive: true });

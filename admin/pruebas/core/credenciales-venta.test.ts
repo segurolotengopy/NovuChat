@@ -18,7 +18,7 @@ import { entornoDelEmulador } from './entorno-del-hijo.ts';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '..', '..', '..');
-const JSON_QTACO = join(REPO, 'Flujos', 'experimental', 'venta-minima', 'venta-minima.qtaco.json');
+const JSON_QTACO = join(REPO, 'Flujos', 'clientes', 'venta-minima', 'venta-minima.qtaco.json');
 
 const GRAPH = "Graph WhatsApp Q'Taco (Bearer)";
 const INGESTA = "NovuChat ingesta (Q'Taco)";

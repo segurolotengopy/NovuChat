@@ -1,6 +1,6 @@
 /**
  * LA BATERÍA DE CONVERSACIÓN DE «VENTA MÍNIMA v0» (Q'Taco), SIN RED NI CLAVE
- * (`Flujos/experimental/venta-minima/herramientas/bateria.mjs` y `bateria-casos/*.json`).
+ * (`Flujos/clientes/venta-minima/herramientas/bateria.mjs` y `bateria-casos/*.json`).
  *
  * La batería recorre el JSON ARMADO de producción (`venta-minima.qtaco.json`) nodo por nodo, con el código real de cada Code, y
  * pone dobles solo donde el flujo sale a la red. Esta suite prueba la herramienta, y lo hace NEGANDO:
@@ -27,7 +27,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 type J = Record<string, any>;
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const CARPETA = join(AQUI, '../../Flujos/experimental/venta-minima');
+const CARPETA = join(AQUI, '../../Flujos/clientes/venta-minima');
 const HERRAMIENTA = join(CARPETA, 'herramientas/bateria.mjs');
 const CARPETA_CASOS = join(CARPETA, 'herramientas/bateria-casos');
 const RUTA_FLUJO = join(CARPETA, 'venta-minima.qtaco.json');

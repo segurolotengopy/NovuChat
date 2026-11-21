@@ -9,7 +9,7 @@ Pruebas: `admin/pruebas/tenants/walisuma/` — `armado.test.ts` (64 y 59 nodos, 
 
 | Pieza | Fuente |
 |---|---|
-| Entrada verificada del receptor (6 nodos: Entrega del receptor, Verificar firma con el receptor, ¿Firma válida?, Aceptar (200), Rechazar (401), Descartar repetidos) | `Flujos/experimental/venta-minima/flujo.plantilla.json`, leídos POR NOMBRE por `construir.mjs`; `--verificar` falla si difieren (id, posición y notas incluidos) |
+| Entrada verificada del receptor (6 nodos: Entrega del receptor, Verificar firma con el receptor, ¿Firma válida?, Aceptar (200), Rechazar (401), Descartar repetidos) | `Flujos/src/core/receptor/entrada-del-receptor.plantilla.json` (core, PR-7), leídos POR NOMBRE por `construir.mjs`; `--verificar` falla si difieren (id, posición y notas incluidos) |
 | Cobro (`cb*`), avisos (`av*`) y motor de la conversación (`vd*`) | `Flujos/experimental/venta-digital/src/{cobro,avisos,conversacion}.js`, librerías de todos los nodos `todo` |
 | Mensajes de WhatsApp (`cm*`) | `Flujos/src/core/sin-agente/mensajes.js`, paquete `mensajes`, solo en «Armar mensajes» |
 | Cadena de envío (¿Enviar de verdad?, Enviar a WhatsApp, ¿Falló el envío?, Enviar respaldo, ¿Reportar? y Reportar mensaje (saliente)) | `Flujos/src/core/sin-agente/envio.mjs`, `injertar()` desde `construir.mjs`; «¿Meta aceptó?» solo reencamina una conexión |

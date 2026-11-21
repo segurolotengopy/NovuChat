@@ -21,7 +21,7 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
 // La base común que usa Antonio (antes: `rroca-antonio/src/lib`, copias que se borraron al migrar).
 const RROCA = join(REPO, 'Flujos/experimental/venta-digital/src');
-const VM = join(REPO, 'Flujos/experimental/venta-minima/src/lib');
+const VM = join(REPO, 'Flujos/clientes/venta-minima/src/lib');
 const CORE_VENTA = join(REPO, 'Flujos/src/core/sin-agente');
 const RAMA = 'origin/cartera/qtaco-visor-comprobantes';
 
@@ -96,7 +96,7 @@ function declaracion(texto: string, nombre: string): string | null {
 const sha = (t: string): string => createHash('sha256').update(t).digest('hex');
 const leer = (r: string): string => readFileSync(r, 'utf8');
 function deLaRama(archivo: string): string | null {
-  const r = spawnSync('git', ['show', RAMA + ':Flujos/experimental/venta-minima/src/lib/' + archivo], { cwd: REPO, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+  const r = spawnSync('git', ['show', RAMA + ':Flujos/clientes/venta-minima/src/lib/' + archivo], { cwd: REPO, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
   return r.status === 0 ? r.stdout : null;
 }
 

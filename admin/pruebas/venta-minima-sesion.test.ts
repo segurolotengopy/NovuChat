@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
 import { ejecutar, type J } from './lib/flujo';
 import { editarJson, leer, nodoDe, verificarEnCopia } from './lib/venta-minima-mundo';
 
-const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src');
+const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/venta-minima/src');
 const COMUN = readFileSync(join(RAIZ, 'lib/comun.js'), 'utf8');
 const SESION = readFileSync(join(RAIZ, '../../../src/core/sin-agente/sesion.js'), 'utf8');
 const nodoFuente = (n: string): string => readFileSync(join(RAIZ, `nodos/${n}.js`), 'utf8');

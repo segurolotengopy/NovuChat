@@ -844,7 +844,7 @@ describe('Entregas: los flujos del disco', () => {
     expect(ARCHIVOS).toEqual(expect.arrayContaining([
       'bellido-agendamiento.json', 'demo-a-agendamiento.json', 'demo-b-venta-cobro.json', 'novuchat-onboarding.json',
       'agendamiento-seguimientos.json', 'demo-a-recordatorios.json',
-      'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/venta-minima/venta-minima.qtaco.json',
+      'experimental/agenda-minima/agenda-minima.v0.json', 'clientes/venta-minima/venta-minima.qtaco.json',
     ]));
     for (const a of ARCHIVOS) expect(a, a).not.toMatch(EXCLUIDO);
   });
@@ -1254,14 +1254,14 @@ describe('Entregas: contrapruebas (cada una falla nombrando el nodo)', () => {
   it('el control positivo de Venta mínima es la réplica del diseño OBJETIVO (con «Entrega fallida»); Q\'Taco (PR-7) YA tiene el último recurso en error visible y no tiene ninguna violación', () => {
     expect(reglasDe(ventaMinima())).toEqual([]);
     // Q'Taco y su ensayo en el Demo A: «Resumen del turno» lanza el error cuando el respaldo en texto también falla, así que `Enviar respaldo` cumple la regla 2.
-    for (const a of ['experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.ensayo-demo-a.json']) {
+    for (const a of ['clientes/venta-minima/venta-minima.qtaco.json', 'clientes/venta-minima/venta-minima.ensayo-demo-a.json']) {
       expect((HOY.get(a) ?? []).map((x) => `${x.regla}#${x.nodo}`), a).toEqual([]);
       expect(Object.keys(EXCEPCIONES).filter((k) => k.startsWith(`${a}#`)), `${a}: sin excepciones`).toEqual([]);
     }
   });
 
   it('contraprueba del control de Q\'Taco: si «Resumen del turno» dejara de lanzar el error, `Enviar respaldo` vuelve a violar la regla 2 (la regla sí lo ve)', () => {
-    for (const a of ['experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.ensayo-demo-a.json']) {
+    for (const a of ['clientes/venta-minima/venta-minima.qtaco.json', 'clientes/venta-minima/venta-minima.ensayo-demo-a.json']) {
       const roto = leer(a);
       const resumen = roto.nodes.find((n) => n.name === 'Resumen del turno') as Nodo;
       resumen.parameters['jsCode'] = String(resumen.parameters['jsCode']).replace(/throw new Error\(/g, 'console.log(');
@@ -1336,7 +1336,7 @@ describe('Entregas: segunda revisión (polaridad del IF, IF v2, ventana de leeWa
 /*
  * DECLARADO (revisión de `seguridad` del #379): `EXCLUIDO` deja fuera los `*.prueba.json` (agenda-minima y
  * venta-minima) de las reglas, por la especificación del plan. Pero esos JSON SÍ se importan a n8n para ensayar con
- * teléfonos reales (`docs/ensayo/LEEME.md`, `Flujos/experimental/venta-minima/DISENO.md`: «se importa únicamente para
+ * teléfonos reales (`docs/ensayo/LEEME.md`, `Flujos/clientes/venta-minima/DISENO.md`: «se importa únicamente para
  * ensayar, y se desactiva y se borra al terminar»). Por eso cada violación de un `*.prueba.json` tiene que tener su
  * equivalente (`regla#nodo`) en las violaciones o las excepciones de su familia (los demás JSON de su carpeta):
  * un ensayo no puede probar un camino de envío que el flujo de verdad no tiene.
@@ -1367,7 +1367,7 @@ describe('Entregas: los *.prueba.json (se importan a n8n para ensayos con teléf
   }, 90_000);
 
   it('contraprueba: sin `onError` en «Enviar a WhatsApp» de venta-minima.prueba.json, el ensayo ya no coincide con su familia', () => {
-    const a = 'experimental/venta-minima/venta-minima.prueba.json';
+    const a = 'clientes/venta-minima/venta-minima.prueba.json';
     const roto = leer(a);
     const envio = roto.nodes.find((n) => n.name === 'Enviar a WhatsApp') as Nodo;
     delete envio.onError;

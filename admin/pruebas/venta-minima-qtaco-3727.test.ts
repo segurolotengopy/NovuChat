@@ -12,7 +12,7 @@ import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import { verificarEnCopia } from './lib/venta-minima-mundo';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const DIR = join(REPO, 'Flujos', 'experimental', 'venta-minima');
+const DIR = join(REPO, 'Flujos', 'clientes', 'venta-minima');
 type J = Record<string, any>;
 const cargar = (f: string): J => JSON.parse(readFileSync(join(DIR, f), 'utf8'));
 const NUEVO = cargar('venta-minima.qtaco-3727.json');

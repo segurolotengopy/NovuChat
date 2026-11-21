@@ -29,7 +29,7 @@ describe('chat de NovuChat: el Ad ID y la campana llegan al prospecto', () => {
 });
 
 describe('venta-minima: un referral que no es un objeto no cuenta como anuncio', () => {
-  const f = leerFlujo('experimental/venta-minima/venta-minima.prueba.json');
+  const f = leerFlujo('clientes/venta-minima/venta-minima.prueba.json');
   const interpretar = (referral: unknown): J => ejecutar(codigoDe(f, 'Interpretar entrada'), [{}], {
     'Carga de entrada': { messages: [{ from: '59170000001', id: 'wamid.PRUEBA', type: 'text', text: { body: 'hola' }, referral }], contacts: [{ profile: { name: 'Ana' } }], phoneNumberId: '1000000001' },
     'Config del negocio': { phoneNumberIdEsperado: '1000000001', prefijosPermitidos: '591', campanas: [], campanasAdId: [] },

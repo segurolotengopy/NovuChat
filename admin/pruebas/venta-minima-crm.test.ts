@@ -21,7 +21,7 @@ import { AHORA, CLIENTE, estadoDe, boton, crear, editarJson, idDeBoton, leer, no
 import { respuestaDeIngesta } from './modulos/crm/ingesta-conversacion';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const VM = join(RAIZ, 'Flujos', 'experimental', 'venta-minima');
+const VM = join(RAIZ, 'Flujos', 'clientes', 'venta-minima');
 const F3727 = 'venta-minima.qtaco-3727.json';
 const CRM = leer(F3727);
 const DATOS = JSON.parse(readFileSync(join(RAIZ, 'admin/scripts/datos/venta-minima/qtaco-3727.json'), 'utf8')) as J;

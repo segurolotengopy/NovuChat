@@ -32,7 +32,7 @@ const versionados = (patron: string): string[] =>
 const flujos = versionados('Flujos/*.json')
   .map((ruta) => { try { return { ruta, flujo: JSON.parse(readFileSync(join(RAIZ, ruta), 'utf8')) as Flujo }; } catch { return null; } })
   .filter((x): x is { ruta: string; flujo: Flujo } => !!x && Array.isArray(x.flujo.nodes));
-const QTACO = JSON.parse(readFileSync(join(RAIZ, 'Flujos/experimental/venta-minima/venta-minima.qtaco.json'), 'utf8')) as Flujo;
+const QTACO = JSON.parse(readFileSync(join(RAIZ, 'Flujos/clientes/venta-minima/venta-minima.qtaco.json'), 'utf8')) as Flujo;
 const copia = (): Flujo => JSON.parse(JSON.stringify(QTACO)) as Flujo;
 const flujoCon = (expresion: string): Flujo => ({
   name: 'x', settings: { executionOrder: 'v1' }, connections: { Inicio: { main: [[{ node: 'Usar', type: 'main', index: 0 }]] } },
@@ -46,7 +46,7 @@ const condicionDe = (f: Flujo): J => ((f.nodes.find((n) => n.name === '¿Es comp
 describe('ningún flujo versionado tiene una expresión que el sandbox de n8n rechaza', () => {
   it('se revisan los flujos de verdad (no una lista vacía)', () => {
     expect(flujos.length).toBeGreaterThan(30);
-    expect(flujos.some((x) => x.ruta.startsWith('Flujos/experimental/venta-minima/'))).toBe(true);
+    expect(flujos.some((x) => x.ruta.startsWith('Flujos/clientes/venta-minima/'))).toBe(true);
     expect(flujos.some((x) => x.ruta.startsWith('Flujos/clientes/rroca-ruben/'))).toBe(true);
   });
   for (const { ruta, flujo } of flujos) {
