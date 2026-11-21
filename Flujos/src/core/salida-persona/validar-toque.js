@@ -2,7 +2,7 @@
 //
 // El flujo atiende UN numero (se instala por alias: la misma plantilla con otro
 // `phoneNumberId` en `Config base`). Dos disparadores llegan aqui: el
-// timbre de la Function (POST sin datos) y el barrido de cada minuto, que
+// timbre de la Function (POST sin datos) y el barrido de cada 15 s, que
 // reclama igual por si un timbre se perdio.
 //
 // - Sin `phoneNumberId` configurado el flujo NO corre: un error visible en la
