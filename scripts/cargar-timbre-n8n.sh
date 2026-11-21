@@ -1252,8 +1252,10 @@ PY
 py() { python3 -I "$WORK/lib.py" "$@"; }
 # Lista negra de nombres de credencial (CLAUDE.md, prohibiciones 5 y 7), con la MISMA normalización y la MISMA lista que usa el cerrojo
 # de roles de Python (normalizar() de lib.py). FALLA CERRADO: 0 = limpio, 3 = ajeno; cualquier otro código (un fallo de Python) aborta.
-if (( CRED_DADAS > 0 )); then
-  for _nom in "$CRED_INGESTA" "$CRED_ENVIO" "$CRED_RELE"; do
+if (( CRED_DADAS > 0 )) || [[ "$MODO" == crear-rele ]]; then
+  _noms=("$CRED_INGESTA" "$CRED_ENVIO" "$CRED_RELE")
+  [[ "$MODO" != crear-rele ]] || _noms=("Relé inerte (${ALIAS})")
+  for _nom in "${_noms[@]}"; do
     _cod=0; py ajeno "$_nom" >/dev/null 2>&1 || _cod=$?
     case "$_cod" in
       0) ;;

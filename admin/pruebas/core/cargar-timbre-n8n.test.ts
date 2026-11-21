@@ -104,6 +104,7 @@ def n(): return len(cred) + len(wf) + 1 + int(leer("contador.json", 0))
 if partes[0] == "credentials":
     if metodo == "GET": responder(200, {"data": [{k: v for k, v in c.items() if k != "_data"} for c in cred]})
     if metodo == "POST":
+        if os.path.exists(os.path.join(E, "falla-post-credencial")): responder(500, {"message": "boom"})
         nuevo = {"id": "c%d" % n(), "name": cuerpo["name"], "type": cuerpo["type"], "_data": cuerpo["data"]}
         cred.append(nuevo); guardar("creds.json", cred); guardar("contador.json", n())
         responder(200, {"id": nuevo["id"], "name": nuevo["name"], "type": nuevo["type"]})
@@ -2618,6 +2619,30 @@ describe('cargar-timbre-n8n.sh: --crear-rele-inerte (solo la credencial del relÃ
     const r = correr([...R(), ...extra]);
     expect(r.codigo).toBe(2);
     expect(llamadas()).toEqual([]);
+  });
+
+  it('un alias con nombre de otro sistema (lista negra) se niega: 2 y ni una llamada', () => {
+    for (const a of ['receptor1', 'otpX']) {
+      const r = correr(['--alias', a, '--env', envFile, '--crear-rele-inerte']);
+      expect(r.codigo).toBe(2);
+      expect(llamadas()).toEqual([]);
+    }
+  });
+
+  it('si el POST falla (500): sale 3, no crea nada y no deja registro', () => {
+    writeFileSync(join(dir, 'falla-post-credencial'), '');
+    const r = correr([...R(), ...APLICAR]);
+    expect(r.codigo).toBe(3);
+    expect(propias()).toEqual([]);
+    expect(existe(registroRuta())).toBe(false);
+  });
+
+  it('una credencial con ese nombre que no creÃ³ el script: el seco no escribe y lo dice', () => {
+    instancia([{ id: 'x9', name: NOMBRE, type: 'httpHeaderAuth' }]);
+    const r = correr(R());
+    expect(r.codigo).toBe(0);
+    expect(r.salida).toContain('no consta que la creara este script');
+    expect(escrituras()).toEqual([]);
   });
 
   it('--aplicar sin --confirmo produccion se niega sin llamar a n8n', () => {
