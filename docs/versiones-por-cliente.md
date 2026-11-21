@@ -102,6 +102,12 @@ Banderas leídas en seco el 21/11 (`consolaConversaciones`, `personaPuedeEscribi
 - **Bellido** (Agenda mínima, sin baja): lo publica `flujo-de-prueba.mjs --env .env.bellido --actualizar-codigo` con su propio botón de Andres (ver el estado del 17/11).
 - **Q'Taco**: el flujo vivo con `.env.qtaco` tiene 11 nodos (la redirección); el JSON `venta-minima.qtaco-3727.json` (84 nodos) no se pudo comparar contra un flujo vivo del …3727 por falta de su `.env`. Pendiente de confirmar cuál es el flujo vivo del …3727.
 
+## Estado al 21/11/2026 (Bellido: baja publicada, reporte del entrante SIN actualizar)
+
+**Publicado el 21/11/2026** con `flujo-de-prueba.mjs --env .env.bellido --actualizar-codigo --solo-codigo --aplicar` desde `main` (orden de Andres: «Quita la restricción de no se toca de Bellido»; opción `--solo-codigo` del PR #1056): 71 nodos, activo y publicado, **10 nodos Code con el código nuevo** (Config del negocio, Interpretar entrada, Uso extendido, Decidir turno, Plan del turno, Resolver con agenda, Candado, Armar mensajes, Prospecto para la planilla, Decidir fila de la planilla), leídos de vuelta; credenciales y conexiones iguales. Bellido ya tiene la baja por texto y por voz.
+
+**Diferencia DECLARADA (no es un olvido):** el parámetro `jsonBody` del nodo «Reportar mensaje (entrante)» **NO se actualizó** (`--solo-codigo` deja en paz los nodos que no son Code, por decisión de Andres). Hasta que se actualice, el reporte del entrante de Bellido conserva la expresión amplia de `no_contactar`: SIGUEN marcando «bórrame», «quítame», «no me llamen» y también «no me manden promociones» o «no me escriban por la noche»; NO marca todavía «STOP!», «no me envíen nada», «dejen de molestar», «eliminame», «sáquenme», «quítenme de la lista» (los pares que la expresión común ya cubre). **Lo cierra:** una herramienta que actualice ese nodo (o `--sobre-bellido`) con botón de Andres y prueba con un teléfono registrado. Sin respaldo del vivo previo a esta publicación (el modo no guarda copias): se corrige hacia adelante.
+
 ## Estado al 17/11/2026 (Bellido, Agenda mínima: baja por texto y por voz; VIVO ATRASADO hasta su republicación)
 
 Decisión de Andres (17/11/2026, «Sí, agregarla»; regla: toda función de conversación igual en todos). Bellido (`Flujos/experimental/agenda-minima/`) no tenía baja ni por texto ni por voz.
