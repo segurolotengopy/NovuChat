@@ -4,7 +4,7 @@ Solo DATOS: `bateria-casos.json`. No hay código del flujo ni motor aquí. Fuent
 
 ## Formato
 
-Mismo esqueleto que `Flujos/experimental/rroca-ruben/herramientas/bateria-casos.json` (`nodes: []` por el verificador de saneo, `casos[]` con `id`, `nombre`, `turnos[]`). Cambia el contenido de cada turno: en lugar de marcas de medida (`rubro`, `tema`, `objecion`) lleva una lista `chequeos`, y en lugar de `boton` de producto, lo que dice el cliente puede ser:
+Mismo esqueleto que `Flujos/clientes/rroca-ruben/herramientas/bateria-casos.json` (`nodes: []` por el verificador de saneo, `casos[]` con `id`, `nombre`, `turnos[]`). Cambia el contenido de cada turno: en lugar de marcas de medida (`rubro`, `tema`, `objecion`) lleva una lista `chequeos`, y en lugar de `boton` de producto, lo que dice el cliente puede ser:
 
 - `dice`: texto del cliente.
 - `imagen` (más `dice` opcional como leyenda): lo que entrega el lector de imagen.

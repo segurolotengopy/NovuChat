@@ -146,7 +146,7 @@ for (const ruta of RUTAS) {
 }
 
 describe('el opt-in `aceptaUbicacion` no está declarado en los flujos que no lo piden', () => {
-  const FLUJOS = [join(RAIZ, 'clientes/casa-bermejo/casa-bermejo.json'), join(RAIZ, 'clientes/rroca-antonio/rroca-antonio.json'), join(RAIZ, 'experimental/rroca-ruben/rroca-ruben.json')];
+  const FLUJOS = [join(RAIZ, 'clientes/casa-bermejo/casa-bermejo.json'), join(RAIZ, 'clientes/rroca-antonio/rroca-antonio.json'), join(RAIZ, 'clientes/rroca-ruben/rroca-ruben.json')];
   for (const f of FLUJOS) {
     it(`${f.split('/').pop()}: ningún nodo declara \`aceptaUbicacion: true\` (el pin sigue siendo «otro»)`, () => {
       const flujo = JSON.parse(readFileSync(f, 'utf8')) as { nodes: { parameters?: { jsCode?: string } }[] };

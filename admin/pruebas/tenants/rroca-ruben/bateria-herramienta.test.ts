@@ -1,5 +1,5 @@
 /**
- * LA BATERÍA DE LA CONVERSACIÓN DE RUBÉN (`Flujos/experimental/rroca-ruben/herramientas/bateria.mjs` y `bateria-casos.json`), (NOCHES SIN INSOMNIO).
+ * LA BATERÍA DE LA CONVERSACIÓN DE RUBÉN (`Flujos/clientes/rroca-ruben/herramientas/bateria.mjs` y `bateria-casos.json`), (NOCHES SIN INSOMNIO).
  *
  * Aquí se prueba SIN modelo ni red (`--seco`: una respuesta fija por turno) y se comprueba:
  *   1. que los 24 turnos corren por el flujo de prueba versionado y dan CERO violaciones (invariantes y reglas duras), con 7 llamadas al modelo por corrida;
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const CARPETA = join(aqui, '../../../../Flujos/experimental/rroca-ruben');
+const CARPETA = join(aqui, '../../../../Flujos/clientes/rroca-ruben');
 const RUTA_BATERIA = join(CARPETA, 'herramientas/bateria.mjs');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = Record<string, any>;

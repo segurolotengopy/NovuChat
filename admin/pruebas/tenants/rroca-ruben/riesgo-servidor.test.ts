@@ -15,7 +15,7 @@ import { ANA, COMPROBANTE, crear, hablar, mAudio, mImagen, mTexto, panelConQr } 
 import { vigilarUx } from './vigilante-ux';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const DISENO = readFileSync(join(AQUI, '../../../../Flujos/experimental/rroca-ruben/DISENO.md'), 'utf8');
+const DISENO = readFileSync(join(AQUI, '../../../../Flujos/clientes/rroca-ruben/DISENO.md'), 'utf8');
 const mundo = (o: Parameters<typeof crear>[0] = {}): ReturnType<typeof crear> => { const w = crear(o); vigilarUx(w); return w; };
 const conRiesgo = (t: ResultadoTurno): J[] => t.llamadas.ingesta.filter((c) => 'riesgo' in c && c['riesgo'] !== undefined);
 const avisosNoContactar = (t: ResultadoTurno): J[] => t.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar');
