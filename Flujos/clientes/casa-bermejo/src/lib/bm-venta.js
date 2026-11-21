@@ -344,7 +344,10 @@ function bmRedaccion(texto, textoCliente, vendibles) {
 // ni invente una que no. Sin coincidencia lo dice: «ninguna».
 function bmPuntuarCoincidencias(texto, vendibles) {
   const FUERA = new Set(['quiero', 'tienen', 'tiene', 'tienes', 'cuanto', 'cuesta', 'precio', 'para', 'con', 'los', 'las', 'del', 'que', 'por', 'hola', 'buenas', 'buenos', 'dias', 'tardes', 'noches', 'favor', 'gracias', 'como', 'cual', 'cuales', 'hay', 'esta', 'este', 'esto', 'eso', 'ese', 'sus', 'mis', 'necesito', 'busco', 'sale', 'valor', 'costo', 'comprar', 'deseo', 'quisiera', 'puedo', 'ver', 'mas', 'muy', 'son', 'ser', 'pedir', 'venden', 'vende', 'info', 'informacion']);
-  const pal = bmNorm(texto).split(' ').filter((w) => (w.length >= 3 || /\d/.test(w)) && !FUERA.has(w));
+  const norma = bmNorm(texto);
+  // «9 kg» y «18 BTU» se leen también pegados («9kg», «18btu»), como están en los nombres del catálogo.
+  const juntas = norma.replace(/(\d+) (kg|btu|litros|lts|l|pulgadas|w)\b/g, '$1$2');
+  const pal = [...new Set(norma.split(' ').concat(juntas === norma ? [] : juntas.split(' ')))].filter((w) => (w.length >= 3 || /\d/.test(w)) && !FUERA.has(w));
   const lista = Array.isArray(vendibles) ? vendibles : [];
   if (!pal.length || !lista.length) return null;
   return lista.map((v) => {
@@ -382,6 +385,20 @@ function bmFijarPieza(textoCliente, lineasAntes, lineasNuevas, vendibles) {
   const quitada = lineas.length < lineasNuevas.length;
   const ambiguo = [...veredicto.values()].includes('ambigua');
   return { lineas: lineas, ambiguo: ambiguo, quitada: quitada, texto: quitada ? bmTextoDeCoincidencias(textoCliente, vendibles) : '' };
+}
+// «Agrega también una lavadora de 9 kg»: una ORDEN de agregar con una sola pieza clara (el mayor puntaje sin empate de palabras) entra al pedido por código aunque el modelo solo pregunte «¿desea agregarla?».
+// Solo con el verbo de agregar; «quiero…» o «tienen…» siguen siendo conversación. Cantidad: «un/una» 1, «dos» a «cinco» su número; si no, 1. Devuelve [] si no hay una pieza clara.
+function bmAgregarPorOrden(textoCliente, vendibles) {
+  const n = bmNorm(textoCliente);
+  if (!/\b(agrega|agregue|agregame|agregueme|agregar|anade|anada|anademe|suma|sume|sumale|incluye|incluya|ponga|pon)\b/.test(n)) return [];
+  const p = bmPuntuarCoincidencias(textoCliente, vendibles);
+  if (!p || !p.length) return [];
+  const tope = p[0].p;
+  const empate = p.filter((x) => x.p === tope);
+  if (empate.length !== 1) return [];
+  const palabras = { un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5 };
+  const w = Object.keys(palabras).find((k) => new RegExp('\\b' + k + '\\b').test(n));
+  return [{ id: empate[0].v.id, cantidad: w ? palabras[w] : 1, detalle: '' }];
 }
 function bmIdsCoincidencias(texto, vendibles) { return (bmPuntuarCoincidencias(texto, vendibles) || []).map((x) => x.v.id); }
 function bmCoincidencias(texto, vendibles) {
@@ -736,6 +753,13 @@ function bmResolverModelo(c) {
     for (const l of delSitio) mapa.set(l.id, l);
     fijada = { lineas: vcLineas([...mapa.values()], c.vendibles).lineas, ambiguo: false, texto: '', delSitio: true };
   }
+  // Una orden clara de agregar entra por código aunque el modelo solo pregunte.
+  const ordenadas = fijada.delSitio === true ? [] : bmAgregarPorOrden(p.textoCliente, c.vendibles).filter((l) => !fijada.lineas.some((x) => x.id === l.id));
+  if (ordenadas.length) {
+    const mapa = new Map(fijada.lineas.map((l) => [l.id, { id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' }]));
+    for (const l of ordenadas) mapa.set(l.id, l);
+    fijada = Object.assign({}, fijada, { lineas: vcLineas([...mapa.values()], c.vendibles).lineas, ordenada: true });
+  }
   const lineas = fijada.lineas;
   const comp = bmCompletarEntrega(j.entrega, f.entrega, p.textoCliente, c.modos);
   const entrega = bmMezclarEntrega(f.entrega, comp.entrega, c.modos);
@@ -777,7 +801,7 @@ function bmResolverModelo(c) {
   }
   // Conversación: el texto del modelo, revisado; si no pasa, el fijo. El resumen del pedido (calculado por el código) acompaña cada cambio.
   // Si el código quitó una línea que el modelo propuso, su texto («agregué…») ya no es cierto: el texto lo arma el código (las opciones o el estado del pedido).
-  let texto = (fijada.delSitio === true || (fijada.quitada === true && fijada.texto === '')) ? bmTextoDeEstado(lineas, entrega, cierre, c) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
+  let texto = (fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? bmTextoDeEstado(lineas, entrega, cierre, c) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
   // Negar una pieza que el catálogo sí tiene («solo disponemos de la de 9 kg» cuando hay de 9, 15 y 17 kg): el texto lo arma el código con las piezas que coinciden.
   if (texto !== '' && /\b(solo|unicamente)\s+(disponemos|tenemos|contamos|hay|ofrecemos)\b/.test(bmNorm(texto))) { const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1); if (coinc !== '') texto = coinc; }
   const sinRedaccion = texto === '';

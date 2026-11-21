@@ -20,7 +20,7 @@ const RUTAS = [
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
-  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
+  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -598,6 +598,25 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, modos: ['recojo en tienda', 'envío'], plan: { tipo: 'modelo', textoCliente: SITIO }, modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'frigobar-100', cantidad: 9 }] }) }));
       expect(r.lineas.map((l: { id: string; cantidad: number }) => [l.id, l.cantidad])).toEqual([['aire-18', 2], ['lav-9', 1]]);
       expect(r.texto).toMatch(/¿Cómo prefiere recibir su pedido: recojo en tienda o envío\?/);
+    });
+  });
+  describe('«agrega una lavadora de 9 kg» entra por código aunque el modelo solo pregunte (humo, paso 5.2)', () => {
+    const cat = catalogo([
+      item({ id: 'aire-18', nombre: 'AIRE TCL 18 BTU', precio: 4935, precioCentavos: 493500 }),
+      item({ id: 'lav-9', nombre: 'LAVADORA SAMSUNG 9KG', precio: 4112.5, precioCentavos: 411250 }),
+      item({ id: 'lav-12', nombre: 'LAVADORA LG 12KG', precio: 6000, precioCentavos: 600000 }),
+    ]);
+    it('con el verbo de agregar y una pieza clara entra con su cantidad; sin el verbo, o con una pieza ambigua, NO', () => {
+      expect(b('bmAgregarPorOrden')('Agrega también una lavadora de 9 kg', cat.vendibles)).toEqual([{ id: 'lav-9', cantidad: 1, detalle: '' }]);
+      expect(b('bmAgregarPorOrden')('agregue dos aires de 18 btu', cat.vendibles)).toEqual([{ id: 'aire-18', cantidad: 2, detalle: '' }]);
+      expect(b('bmAgregarPorOrden')('quiero una lavadora de 9 kg', cat.vendibles)).toEqual([]);          // sin verbo de agregar: conversación
+      expect(b('bmAgregarPorOrden')('agrega una lavadora', cat.vendibles)).toEqual([]);                    // ambigua: 9 kg o 12 kg
+      expect(b('bmAgregarPorOrden')('agrega un televisor', cat.vendibles)).toEqual([]);                    // no hay
+    });
+    it('en el turno: el modelo solo pregunta («¿desea agregarla?», sin líneas) y el pedido igual lleva la lavadora, con el aire que ya estaba', () => {
+      const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, modos: ['recojo en tienda', 'envío'], ficha: { carrito: [{ id: 'aire-18', cantidad: 1, detalle: '' }] }, plan: { tipo: 'modelo', textoCliente: 'Agrega también una lavadora de 9 kg' }, modeloResp: gemini({ texto: '¿Desea agregarla a su pedido?', lineas: [{ id: 'aire-18', cantidad: 1 }] }) }));
+      expect(r.lineas.map((l: { id: string }) => l.id).sort()).toEqual(['aire-18', 'lav-9']);
+      expect(r.texto).toMatch(/¿Cómo prefiere recibir su pedido/);
     });
   });
 });
