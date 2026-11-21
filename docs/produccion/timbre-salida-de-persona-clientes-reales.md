@@ -189,13 +189,15 @@ las conversaciones tomadas.
 
 ## Decisión pendiente
 
-**¿Quién crea la credencial inerte del relé de cada cliente real, si no existe?**
-Este cambio no crea credenciales (decisión de Principal). Si `cliente04` o
-`cliente05` no tienen una `httpHeaderAuth` con valor inerte para el relé, hace falta
-una de estas dos salidas, que decide Principal: (a) crearla a mano en el panel de
-n8n con un valor inerte, o (b) agregar al script un modo acotado que cree solo esa
-con un valor inerte fijo (sin ningún secreto) y la registre como creada por él. Sin
-una de las dos, el paso 1 aborta nombrando el rol que falta.
+**Resuelta (Principal, 21/11/2026): opción (b).** Si un cliente real no tiene una `httpHeaderAuth` inerte para
+el relé, la crea `cargar-timbre-n8n.sh --alias <ALIAS> --env <archivo> --crear-rele-inerte`: SOLO esa credencial,
+con nombre fijo `Relé inerte (<ALIAS>)` y valor fijo `Bearer INERTE-NO-ENVIAR` (ningún secreto). Seco por omisión
+(solo lee y dice si existe; sale 1 si falta, 0 si ya está); con `--aplicar --confirmo produccion` la crea, la anota
+en el registro de lo creado por el script y relee. No pisa nada: otro tipo con ese nombre o duplicados abortan sin
+escribir. De `--env` solo lee `N8N_BASE_URL` y `N8N_API_KEY` (ni gcloud ni `WA_TOKEN`). Después se usa como
+`--cred-rele "Relé inerte (<ALIAS>)" --rele-inerte --canal-graph`. No sirve para los alias de ensayo (ahí
+`--crear-credenciales` ya crea la suya) ni se combina con otro modo. Reversión: borrar esa credencial en n8n
+(nada la cita hasta que se carga el flujo del alias).
 
 **Sospecha abierta: token real en el rol relé.** Hoy, con `--rele-inerte` la URL del
 relé del flujo es inerte y la credencial del relé no viaja a ningún lado útil. Pero si

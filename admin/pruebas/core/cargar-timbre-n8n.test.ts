@@ -104,6 +104,7 @@ def n(): return len(cred) + len(wf) + 1 + int(leer("contador.json", 0))
 if partes[0] == "credentials":
     if metodo == "GET": responder(200, {"data": [{k: v for k, v in c.items() if k != "_data"} for c in cred]})
     if metodo == "POST":
+        if os.path.exists(os.path.join(E, "falla-post-credencial")): responder(500, {"message": "boom"})
         nuevo = {"id": "c%d" % n(), "name": cuerpo["name"], "type": cuerpo["type"], "_data": cuerpo["data"]}
         cred.append(nuevo); guardar("creds.json", cred); guardar("contador.json", n())
         responder(200, {"id": nuevo["id"], "name": nuevo["name"], "type": nuevo["type"]})
@@ -2522,5 +2523,138 @@ describe('cargar-timbre-n8n.sh: --recargar (actualiza el flujo vivo, sin entrega
     it('C14 flujo activo y n8n sin versionId/activeVersionId: no escribe (falla cerrado)', () => niega(() => {
       activoPublicado(); writeFileSync(join(dir, 'sin-versiones'), '');
     }, /no puedo saber qué versión corre/));
+  });
+});
+
+describe('cargar-timbre-n8n.sh: --crear-rele-inerte (solo la credencial del relé de un cliente real)', () => {
+  const REAL = 'cliente04';
+  const NOMBRE = `Relé inerte (${REAL})`;
+  const R = () => ['--alias', REAL, '--env', envFile, '--crear-rele-inerte'];
+  const registroRuta = () => join(runtime, `novuchat-credenciales-creadas-${REAL}.json`);
+  const propias = () => creds().filter((c) => c.name === NOMBRE);
+
+  it('seco: dice que no existe, solo lee (GET) y sale 1', () => {
+    const r = correr(R());
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain(NOMBRE);
+    expect(r.salida).toContain('no existe');
+    expect(r.salida).toContain('(haría)');
+    expect(escrituras()).toEqual([]);
+    expect(propias()).toEqual([]);
+    expect(existe(registroRuta())).toBe(false);
+  });
+
+  it('--aplicar crea UNA httpHeaderAuth con el valor inerte fijo, la anota como suya y relee; no toca las demás', () => {
+    const antes = creds();
+    const r = correr([...R(), ...APLICAR]);
+    expect(r.codigo).toBe(0);
+    expect(escrituras()).toEqual(['POST /credentials']);
+    const nuevas = propias();
+    expect(nuevas).toHaveLength(1);
+    expect(nuevas[0]?.type).toBe('httpHeaderAuth');
+    expect(nuevas[0]?._data).toEqual({ name: 'Authorization', value: 'Bearer INERTE-NO-ENVIAR' });
+    for (const c of antes) expect(creds().find((x) => x.id === c.id)).toEqual(c);
+    expect(creds()).toHaveLength(antes.length + 1);
+    expect(modoDe(registroRuta())).toBe(0o600);
+    expect(JSON.parse(leerTxt(registroRuta()))).toEqual({ alias: REAL, creadas: { releInerte: nuevas[0]?.id } });
+    expect(r.salida).toContain('relectura');
+  });
+
+  it('no lee gcloud ni WA_TOKEN ni la entrega: de --env solo la dirección y la clave de n8n', () => {
+    writeFileSync(envFile, `N8N_BASE_URL=${BASE}\nN8N_API_KEY=${API_KEY}\nWA_TOKEN="${WA_TOKEN}"\nWABA_ID=${WABA_ID}\n`, { mode: 0o600 });
+    chmodSync(envFile, 0o600);
+    const r = correr([...R(), ...APLICAR]);
+    expect(r.codigo).toBe(0);
+    expect(existe(join(dir, 'gcloud-llamadas'))).toBe(false);
+    expect(JSON.stringify(creds())).not.toContain(WA_TOKEN);
+    expect(existe(entregaRuta())).toBe(true);
+  });
+
+  it('es idempotente: con la credencial ya creada dice «nada que hacer», sale 0 y no escribe de nuevo', () => {
+    expect(correr([...R(), ...APLICAR]).codigo).toBe(0);
+    const una = propias()[0];
+    const r = correr([...R(), ...APLICAR]);
+    expect(r.codigo).toBe(0);
+    expect(r.salida).toContain('nada que hacer');
+    expect(escrituras()).toEqual(['POST /credentials']);
+    expect(propias()).toEqual([una]);
+    const s = correr(R());
+    expect(s.codigo).toBe(0);
+    expect(s.salida).toContain('la creó este script');
+  });
+
+  it('una credencial con ese nombre pero de otro tipo: aborta con 2 sin escribir (no se pisa)', () => {
+    instancia([{ id: 'x1', name: NOMBRE, type: 'whatsAppApi' }]);
+    for (const extra of [[], APLICAR]) {
+      const r = correr([...R(), ...extra]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('OTRO tipo');
+    }
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('duplicados con ese nombre: aborta con 2 sin escribir', () => {
+    instancia([{ id: 'd1', name: NOMBRE, type: 'httpHeaderAuth' }, { id: 'd2', name: NOMBRE, type: 'httpHeaderAuth' }]);
+    const r = correr([...R(), ...APLICAR]);
+    expect(r.codigo).toBe(2);
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('un alias de ensayo se niega (ahí --crear-credenciales ya crea la suya): 2 y ni una llamada', () => {
+    for (const a of ['demoA', 'demoB']) {
+      const r = correr(['--alias', a, '--env', envFile, '--crear-rele-inerte']);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('de ensayo');
+    }
+    expect(llamadas()).toEqual([]);
+  });
+
+  it.each([
+    ['con --cred-rele', ['--cred-ingesta', 'a', '--cred-envio', 'b', '--cred-rele', 'c']],
+    ['con --rele-inerte --canal-graph', ['--rele-inerte', '--canal-graph']],
+    ['con --tabla-demo-a', ['--tabla-demo-a']],
+    ['con otro modo (--activar)', ['--activar']],
+    ['con --crear-credenciales', ['--crear-credenciales']],
+  ])('no se combina %s: 2 y ni una llamada', (_t, extra) => {
+    const r = correr([...R(), ...extra]);
+    expect(r.codigo).toBe(2);
+    expect(llamadas()).toEqual([]);
+  });
+
+  it('un alias con nombre de otro sistema (lista negra) se niega: 2 y ni una llamada', () => {
+    for (const a of ['receptor1', 'otpX']) {
+      const r = correr(['--alias', a, '--env', envFile, '--crear-rele-inerte']);
+      expect(r.codigo).toBe(2);
+      expect(llamadas()).toEqual([]);
+    }
+  });
+
+  it('si el POST falla (500): sale 3, no crea nada y no deja registro', () => {
+    writeFileSync(join(dir, 'falla-post-credencial'), '');
+    const r = correr([...R(), ...APLICAR]);
+    expect(r.codigo).toBe(3);
+    expect(propias()).toEqual([]);
+    expect(existe(registroRuta())).toBe(false);
+  });
+
+  it('una credencial con ese nombre que no creó el script: el seco no escribe y lo dice', () => {
+    instancia([{ id: 'x9', name: NOMBRE, type: 'httpHeaderAuth' }]);
+    const r = correr(R());
+    expect(r.codigo).toBe(0);
+    expect(r.salida).toContain('no consta que la creara este script');
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('--aplicar sin --confirmo produccion se niega sin llamar a n8n', () => {
+    const r = correr([...R(), '--aplicar']);
+    expect(r.codigo).toBe(2);
+    expect(llamadas()).toEqual([]);
+  });
+
+  it('un --env con permisos de más se niega con --aplicar', () => {
+    chmodSync(envFile, 0o644);
+    const r = correr([...R(), ...APLICAR]);
+    expect(r.codigo).toBe(2);
+    expect(llamadas()).toEqual([]);
   });
 });
