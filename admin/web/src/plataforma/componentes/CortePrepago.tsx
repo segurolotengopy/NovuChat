@@ -55,7 +55,7 @@ export function CortePrepago({ plataforma, alcance, ocupado, onFijar }: {
               : 'Desde el próximo mensaje, un comercio en producción con el mes sin cubrir recibe 409 y su cliente, un mensaje de cortesía.'}
             onConfirmar={() => { onFijar(!activo, motivo.trim()); setPendiente(false); setMotivo(''); }}
             onCancelar={() => setPendiente(false)} />
-        : <button type="button" className={activo ? 'btn btn-secondary btn-chico' : 'btn btn-peligro btn-chico'}
+        : <button type="button" className={activo ? 'btn btn-secondary' : 'btn btn-peligro'}
             disabled={ocupado || plataforma === undefined || motivo.trim().length < 10} onClick={() => setPendiente(true)}>
             {activo ? 'Apagar el corte' : 'Encender el corte'}
           </button>}

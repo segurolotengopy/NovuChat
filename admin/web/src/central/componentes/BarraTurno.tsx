@@ -25,6 +25,8 @@ export interface PropsBarraTurno {
   acciones: Acciones;
   miUid: string | null;
   capa: CapaTurno;
+  /** La etiqueta de quién responde se pinta en otro lugar (la cabecera del detalle): aquí no se repite. */
+  sinEstado?: boolean;
 }
 
 export function BarraTurno(p: PropsBarraTurno) {
@@ -72,10 +74,12 @@ export function BarraTurno(p: PropsBarraTurno) {
 
   return (
     <div className="cv-turno" role="group" aria-label="Quién responde esta conversación">
-      <p role="status" data-testid="estado-turno"
-        className={`cv-etiqueta ${p.turno ? 'cv-etiqueta--persona' : ''}`}>
-        <TextoSeguro valor={textoEstadoTurno(p.turno, p.miUid)} maxLargo={80} />
-      </p>
+      {!p.sinEstado && (
+        <p role="status" data-testid="estado-turno"
+          className={`cv-etiqueta ${p.turno ? 'cv-etiqueta--persona' : ''}`}>
+          <TextoSeguro valor={textoEstadoTurno(p.turno, p.miUid)} maxLargo={80} />
+        </p>
+      )}
 
       {acciones.verTomar && (
         <>

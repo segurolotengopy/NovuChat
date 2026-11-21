@@ -17,7 +17,7 @@ import {
   etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, turnoDeFicha, ventanaDeFicha, type Ficha,
 } from '../lib/conversaciones';
 import {
-  AVISO_PROPIETARIO, accionesDeTurno, estadoDeMensaje, mostrarAvisoPropietario, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoRechazoMeta, vencidoDeEnvio, ventanaAbiertaParaTomar, ventanaDeEnvio,
+  AVISO_PROPIETARIO, accionesDeTurno, estadoDeMensaje, mostrarAvisoPropietario, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoEstadoTurno, textoRechazoMeta, vencidoDeEnvio, ventanaAbiertaParaTomar, ventanaDeEnvio,
   type CapaTurno, type EstadoMensajePersona,
 } from '../lib/turno';
 
@@ -324,6 +324,9 @@ export function DetalleConversacion(p: PropsDetalle) {
   const vioAdjuntar = useRef(false);
   if (puedeAdjuntar) vioAdjuntar.current = true;
 
+  // La cuenta regresiva de la ventana vive en el campo de escribir (una sola vez): la pastilla de la cabecera se omite cuando está.
+  const ventanaEnRedactor = acciones.verEscribir && ventanaEnvio === 'abierta';
+
   let diaPrevio = 0;
   return (
     <div className="cv-detalle" data-testid="detalle">
@@ -334,24 +337,23 @@ export function DetalleConversacion(p: PropsDetalle) {
         <div className="cv-avatar" aria-hidden="true">{iniciales(ficha.nombre)}</div>
         <div className="cv-det-titulo">
           <strong><TextoSeguro valor={ficha.nombre || ficha.telefono} maxLargo={60} /></strong>
-          <span className="text-muted">
-            +<TextoSeguro valor={ficha.telefono} maxLargo={15} />
-            {enlaceWaMe(ficha.telefono) && (
-              <>
-                {' '}
-                <a href={enlaceWaMe(ficha.telefono)!} target="_blank" rel="noopener noreferrer"
-                   className="cv-wame" title={AVISO_WA_ME} data-testid="enlace-wame">Abrir en WhatsApp</a>
-              </>
-            )}
-          </span>
+          <span className="text-muted">+<TextoSeguro valor={ficha.telefono} maxLargo={15} /></span>
         </div>
+        {/* Quién atiende, como etiqueta chica (los botones para tomar y devolver están en «Opciones»). */}
+        <p role="status" data-testid="estado-turno" className={`cv-etiqueta cv-det-turno ${turno ? 'cv-etiqueta--persona' : ''}`}>
+          <TextoSeguro valor={textoEstadoTurno(turno, p.miUid)} maxLargo={80} />
+        </p>
+        {necesitaHumanoDe(ficha, p.ahora) && (
+          <span className="cv-etiqueta cv-etiqueta--humano">Necesita que intervenga una persona</span>
+        )}
         {/* Sin dato (una conversación de antes de H1): no se pinta pastilla, porque «cerrada» sería falso. */}
         {ficha.ultimoEntranteEn === null && (
           // Misma regla que el campo de escribir: sin `ultimoEntranteEn` no se sabe, y se dice.
           <span className="cv-pastilla cv-pastilla--cerrada" title="No consta cuándo escribió el cliente por última vez">Ventana: sin dato</span>
         )}
         {ficha.ultimoEntranteEn !== null && v.estado !== 'sin-dato' && (
-          <span className={`cv-pastilla cv-pastilla--${v.estado}`} title="Ventana de 24 h de WhatsApp: desde el último mensaje del cliente">
+          <span className={`cv-pastilla cv-pastilla--${v.estado}`} hidden={ventanaEnRedactor}
+            title="Ventana de 24 h de WhatsApp: desde el último mensaje del cliente">
             {v.estado === 'cerrada' ? 'Ventana cerrada' : `Ventana: ${textoRestante(v.restanteMs)}`}
           </span>
         )}
@@ -362,42 +364,51 @@ export function DetalleConversacion(p: PropsDetalle) {
             disabled={!p.onSiguiente} aria-label="Conversación siguiente (Alt+↓)" title="Siguiente (Alt+↓)">↓</button>
           <span className="text-muted cv-pos">{p.posicion}</span>
         </div>
-        {/* El aviso va con el ancho de TODA la cabecera (antes, dentro de la columna del nombre, ocupaba cinco líneas). */}
-        {enlaceWaMe(ficha.telefono) && (
-          <span className="text-muted cv-wame-aviso" data-testid="aviso-wame">{AVISO_WA_ME}</span>
-        )}
+        {/* Todo lo que rodea al hilo va aquí. Es un <details>: plegado sigue en el DOM, y en el celular funciona igual. */}
+        <details className="cv-opciones">
+          <summary className="btn btn-secondary">⋯ Opciones</summary>
+          <div className="cv-opciones-panel">
+            {mostrarAvisoPropietario(p.esPropietario === true) && (
+              <p className="cv-aviso-linea" role="note">{AVISO_PROPIETARIO}</p>
+            )}
+            {p.puedeGestionar ? (
+              <label className="cv-nocontactar">
+                <input type="checkbox" checked={ficha.noContactar} disabled={!p.comercioActivo}
+                  title={p.comercioActivo ? undefined : 'El comercio no está activo: no se puede cambiar.'}
+                  onChange={(e) => void cambiarNoContactar(e.target.checked)} />
+                {' '}No contactar
+              </label>
+            ) : (
+              // El propietario de NovuChat mira con una ventana de soporte y no escribe: el control no se ofrece.
+              ficha.noContactar && <span className="cv-etiqueta">No contactar</span>
+            )}
+            {errorNoContactar && <span role="alert" className="cv-error">{errorNoContactar}</span>}
+            {/* «Bloquear contacto» va al lado de «No contactar»: bloquear quita visibilidad, y se decide en el mismo lugar. */}
+            <BloqueoContacto
+              tenantId={tenantId} conversacionId={ficha.id} bloqueada={ficha.bloqueada} acciones={accionesBloqueo} capa={p.capaBloqueo}
+            />
+            <BarraTurno
+              tenantId={tenantId} conversacionId={ficha.id} turno={turno} situacion={situacion}
+              acciones={acciones} miUid={p.miUid} capa={p.capa} sinEstado
+            />
+            {enlaceWaMe(ficha.telefono) && (
+              <div className="cv-wame-bloque">
+                <a href={enlaceWaMe(ficha.telefono)!} target="_blank" rel="noopener noreferrer"
+                   className="cv-wame btn btn-secondary" title={AVISO_WA_ME} data-testid="enlace-wame">Abrir en WhatsApp</a>
+                <span className="text-muted cv-wame-aviso" data-testid="aviso-wame">{AVISO_WA_ME}</span>
+              </div>
+            )}
+            <PiezasDePersona
+              zona="opciones"
+              tenantId={tenantId} conversacionId={ficha.id} nombreContacto={ficha.nombre} telefono={ficha.telefono}
+              ultimoEntranteEn={ficha.ultimoEntranteEn} miUid={p.miUid}
+              verEscribir={acciones.verEscribir} habilitados={acciones.habilitados} puedeAdjuntar={puedeAdjuntar}
+              avisoSinArchivos={!puedeAdjuntar && vioAdjuntar.current && p.puedeEnviarMedios && (ventanaEnvio !== 'abierta' || !acciones.verEscribir)}
+              capa={p.capa} capaAdjunto={p.capaAdjunto}
+            />
+          </div>
+        </details>
       </header>
-
-      <div className="cv-det-sub">
-        {necesitaHumanoDe(ficha, p.ahora) && (
-          <span className="cv-etiqueta cv-etiqueta--humano">Necesita que intervenga una persona</span>
-        )}
-        {p.puedeGestionar ? (
-          <label className="cv-nocontactar">
-            <input type="checkbox" checked={ficha.noContactar} disabled={!p.comercioActivo}
-              title={p.comercioActivo ? undefined : 'El comercio no está activo: no se puede cambiar.'}
-              onChange={(e) => void cambiarNoContactar(e.target.checked)} />
-            {' '}No contactar
-          </label>
-        ) : (
-          // El propietario de NovuChat mira con una ventana de soporte y no escribe: el control no se ofrece.
-          ficha.noContactar && <span className="cv-etiqueta">No contactar</span>
-        )}
-        {errorNoContactar && <span role="alert" className="cv-error">{errorNoContactar}</span>}
-        {/* «Bloquear contacto» va al lado de «No contactar»: bloquear quita visibilidad, y se decide en el mismo lugar. */}
-        <BloqueoContacto
-          tenantId={tenantId} conversacionId={ficha.id} bloqueada={ficha.bloqueada} acciones={accionesBloqueo} capa={p.capaBloqueo}
-        />
-      </div>
-
-      {mostrarAvisoPropietario(p.esPropietario === true) && (
-        <p className="cv-aviso-linea" role="note">{AVISO_PROPIETARIO}</p>
-      )}
-
-      <BarraTurno
-        tenantId={tenantId} conversacionId={ficha.id} turno={turno} situacion={situacion}
-        acciones={acciones} miUid={p.miUid} capa={p.capa}
-      />
 
       {m.saltoFallido && (
         <p className="cv-aviso-linea" role="status">
@@ -480,7 +491,7 @@ export function DetalleConversacion(p: PropsDetalle) {
       </div>
 
       <PiezasDePersona
-        tenantId={tenantId} conversacionId={ficha.id} nombreContacto={ficha.nombre} telefono={ficha.telefono}
+        zona="barra" tenantId={tenantId} conversacionId={ficha.id} nombreContacto={ficha.nombre} telefono={ficha.telefono}
         ultimoEntranteEn={ficha.ultimoEntranteEn} miUid={p.miUid}
         verEscribir={acciones.verEscribir} habilitados={acciones.habilitados} puedeAdjuntar={puedeAdjuntar}
         avisoSinArchivos={!puedeAdjuntar && vioAdjuntar.current && p.puedeEnviarMedios && (ventanaEnvio !== 'abierta' || !acciones.verEscribir)}

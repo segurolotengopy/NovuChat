@@ -4,6 +4,7 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { PROYECTO, PUERTO_FIRESTORE, USUARIOS } from './entorno';
 import { ingresar } from './ayudas/ingresar';
+import { abrirOpciones } from './ayudas/opciones';
 import { limpiarConversaciones, sembrarConversacion, type MensajeDePrueba } from './ayudas/datos';
 import prepararDatos, { fijarPantallaConversaciones } from './preparar-datos';
 import { palabrasDe, trozosDeTelefono } from '../functions/src/core/conversacion/normalizacion';
@@ -96,6 +97,7 @@ async function prepararPantalla(page: Page, menuAbierto: boolean): Promise<void>
   await ingresar(page, USUARIOS.adminFogon);
   await page.goto(`/negocio/${FOGON}/conversaciones/${CONV}`);
   await expect(page.getByTestId('detalle')).toBeVisible();
+  await abrirOpciones(page);
   await page.getByRole('button', { name: 'Tomar conversación' }).click();
   await expect(page.getByTestId('estado-turno')).toHaveText('Responde una persona (usted)');
   const abierto = (await botonMenu(page).getAttribute('aria-expanded')) === 'true';

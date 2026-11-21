@@ -28,27 +28,37 @@ export interface PropsPiezasDePersona {
   avisoSinArchivos: boolean;
   capa: CapaTurno;
   capaAdjunto: CapaAdjunto;
+  /** Dónde se pinta cada pieza: `barra` = el campo de texto (bajo el hilo); `opciones` = el aviso y los adjuntos (menú «Opciones»); sin valor, todo. */
+  zona?: 'barra' | 'opciones';
 }
 
 export function PiezasDePersona(p: PropsPiezasDePersona) {
   return (
     <>
-      {p.verEscribir && (
-        <EscribirComoPersona
-          key={`escribir-${p.conversacionId}`} tenantId={p.tenantId} conversacionId={p.conversacionId}
-          ultimoEntranteEn={p.ultimoEntranteEn} habilitados={p.habilitados} capa={p.capa} miUid={p.miUid}
-        />
+      {p.zona !== 'opciones' && (
+        <>
+          {p.verEscribir && (
+            <EscribirComoPersona
+              key={`escribir-${p.conversacionId}`} tenantId={p.tenantId} conversacionId={p.conversacionId}
+              ultimoEntranteEn={p.ultimoEntranteEn} habilitados={p.habilitados} capa={p.capa} miUid={p.miUid}
+            />
+          )}
+        </>
       )}
-      {p.avisoSinArchivos && (
-        <p role="status" className="cv-aviso-linea">
-          Ya no se pueden enviar archivos en esta conversación: la ventana de 24 h de WhatsApp se cerró o usted ya no la tiene.
-        </p>
-      )}
-      {p.puedeAdjuntar && (
-        <AdjuntarComoPersona
-          key={`adjuntar-${p.conversacionId}`} tenantId={p.tenantId} conversacionId={p.conversacionId}
-          nombreContacto={p.nombreContacto} telefono={p.telefono} capa={p.capaAdjunto} miUid={p.miUid}
-        />
+      {p.zona !== 'barra' && (
+        <>
+          {p.avisoSinArchivos && (
+            <p role="status" className="cv-aviso-linea">
+              Ya no se pueden enviar archivos en esta conversación: la ventana de 24 h de WhatsApp se cerró o usted ya no la tiene.
+            </p>
+          )}
+          {p.puedeAdjuntar && (
+            <AdjuntarComoPersona
+              key={`adjuntar-${p.conversacionId}`} tenantId={p.tenantId} conversacionId={p.conversacionId}
+              nombreContacto={p.nombreContacto} telefono={p.telefono} capa={p.capaAdjunto} miUid={p.miUid}
+            />
+          )}
+        </>
       )}
     </>
   );
