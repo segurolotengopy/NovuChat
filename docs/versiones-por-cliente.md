@@ -82,6 +82,10 @@ Una excepción necesita las tres cosas, o no es una excepción:
 >   `PROPIO.md`). La excepción de F3a de la fila vieja deja de aplicar a este
 >   flujo; `novuchat-onboarding.json` queda como histórico sin fila.
 
+## Estado al 21/11/2026 (Demo A y Demo B publicados con los ajustes de retención)
+
+Cerrado el atraso declarado de la pasada del 21/11: con `main` `0686c328` (PR #1055) los JSON de los demos llevan los ajustes de retención de ejecuciones, y se publicaron **Demo A (77 → 80 nodos)** y **Demo B (85 → 91 nodos)**, HTTP 200, activos. El seco previo ya no avisó de claves de `settings` que se borrarían, y la relectura dice «el flujo vivo coincide con el origen» (incluidos `saveDataSuccessExecution` y `saveDataErrorExecution` «none», `saveExecutionProgress` y `saveManualExecutions`). Respaldos previos en `~/CLAUDE_DESCARGAS/` (`NOVUCHAT_respaldo-demo-a-previo_2026-11-21.json` y `…demo-b…`), con vuelta atrás por `publicar-flujo.sh`. Llevan Ad ID + texto, baja por voz, guardado de imágenes enviadas y la línea de contexto de campaña del Demo B.
+
 ## Estado al 21/11/2026 (pasada de funciones de conversación en todos los comercios)
 
 Orden de Andres (21/11): las funciones de conversación ya hechas las asumen TODOS los comercios sin esperar a que se pida. Publicados HOY desde `main` `e100da4e`, con respaldo previo del flujo vivo (carpeta de trabajo, ignorada por git) y relectura «el flujo vivo coincide con el origen»:
