@@ -37,7 +37,26 @@ export const JUEGO_CON_INFRA = Object.freeze({
   personaPuedeEnviarMedios: true,
 } as const);
 
-/** Claves del juego que faltan o no tienen el valor exacto en la ficha. Vacío = juego completo. */
+/**
+ * Predicados EXACTOS que usa el servidor (`accesoPersona.ts` y `medios/guardarMedio.ts` los importan): la prueba y el
+ * servidor comparten la misma función, así que no pueden divergir. `personaPuedeEscribirDeFicha` y
+ * `personaPuedeEnviarMediosDeFicha` ya viven en `turno.ts` (pura y sin import) y la prueba los usa directamente.
+ */
+export function consolaNuevaEncendida(ficha: { readonly consolaConversaciones?: unknown } | null | undefined): boolean {
+  return !!ficha && ficha.consolaConversaciones === JUEGO_DE_FICHA.consolaConversaciones;
+}
+
+export function guardadoEncendido(ficha: { readonly guardarMedios?: unknown } | null | undefined): boolean {
+  return !!ficha && ficha.guardarMedios === JUEGO_DE_FICHA.guardarMedios;
+}
+
+/**
+ * Claves del juego que faltan o no tienen el valor exacto en la ficha. Vacío = juego completo. *
+ * OJO con Bellido: `habilitadoParaPersona` (accesoPersona.ts) también excluye comercios por nombre o id
+ * (`TENANTS_EXCLUIDOS`, hoy vacía desde el 08/11/2026). Un tenant excluido puede tener el juego completo y seguir
+ * sin habilitación; y al revés, aparece como incompleto aquí aunque su exclusión funcione. `faltanDelJuego` mide
+ * las banderas de la ficha, no la exclusión.
+ */
 export function faltanDelJuego(ficha: Readonly<Record<string, unknown>> | null | undefined): string[] {
   const esperado: Readonly<Record<string, unknown>> = { ...JUEGO_DE_FICHA, ...JUEGO_CON_INFRA };
   return Object.keys(esperado).filter((clave) => !ficha || ficha[clave] !== esperado[clave]);

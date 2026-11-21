@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JUEGO_CON_INFRA, JUEGO_DE_FICHA, faltanDelJuego } from '../../functions/src/core/conversacion/juego';
+import { JUEGO_CON_INFRA, JUEGO_DE_FICHA, consolaNuevaEncendida, faltanDelJuego, guardadoEncendido } from '../../functions/src/core/conversacion/juego';
 import { personaPuedeEnviarMediosDeFicha, personaPuedeEscribirDeFicha } from '../../functions/src/core/conversacion/turno';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -32,6 +32,12 @@ function tenantsConPropio(carpeta: string): string[] {
     .sort();
 }
 
+/** ¿Hay en versiones-por-cliente.md una FILA o sección que nombre al tenant por su ruta `Flujos/clientes/<t>/` o por su nombre entre comillas invertidas? */
+function hayFilaDe(tenant: string, versiones: string): boolean {
+  const ruta = `Flujos/clientes/${tenant}/`;
+  return versiones.split('\n').some((l) => (l.startsWith('|') || l.startsWith('#')) && (l.includes(ruta) || l.includes(`\`${tenant}\``)));
+}
+
 /** Problemas del renglón del juego en cada PROPIO.md y su reflejo en versiones-por-cliente. */
 function problemasDeDeclaracion(carpeta: string, versiones: string): string[] {
   const problemas: string[] = [];
@@ -39,7 +45,7 @@ function problemasDeDeclaracion(carpeta: string, versiones: string): string[] {
     const m = readFileSync(join(carpeta, t, 'PROPIO.md'), 'utf8').match(RENGLON);
     if (!m) {
       problemas.push(`${t}: PROPIO.md sin el renglón «Juego de conversación: completo|excepción»`);
-    } else if (m[1] === 'excepción' && !versiones.includes(t)) {
+    } else if (m[1] === 'excepción' && !hayFilaDe(t, versiones)) {
       problemas.push(`${t}: excepción no reflejada en versiones-por-cliente.md`);
     }
   }
@@ -69,6 +75,21 @@ describe('juego de conversación: claves y valores exactos', () => {
   it('las banderas con infraestructura son las que lee el servidor (turno.ts)', () => {
     expect(personaPuedeEscribirDeFicha(JUEGO_COMPLETO)).toBe(true);
     expect(personaPuedeEnviarMediosDeFicha(JUEGO_COMPLETO)).toBe(true);
+  });
+
+  it('los predicados del servidor (juego.ts, los mismos que importan accesoPersona y guardarMedio) aceptan el juego y niegan lo inexacto', () => {
+    expect(consolaNuevaEncendida(JUEGO_COMPLETO)).toBe(true);
+    expect(guardadoEncendido(JUEGO_COMPLETO)).toBe(true);
+    for (const v of ['true', 1, 'TRUE', false, null, undefined]) expect(guardadoEncendido({ guardarMedios: v })).toBe(false);
+    for (const v of ['Nueva', 'clasica', 'vieja', true, null, undefined]) expect(consolaNuevaEncendida({ consolaConversaciones: v })).toBe(false);
+    expect(guardadoEncendido(null)).toBe(false);
+    expect(consolaNuevaEncendida(undefined)).toBe(false);
+  });
+
+  it('negativa: el número 1 no vale por true (un != flojo no sobrevive)', () => {
+    expect(faltanDelJuego({ ...JUEGO_COMPLETO, guardarMedios: 1 })).toEqual(['guardarMedios']);
+    expect(faltanDelJuego({ ...JUEGO_COMPLETO, personaPuedeEscribir: 1 })).toEqual(['personaPuedeEscribir']);
+    expect(faltanDelJuego({ ...JUEGO_COMPLETO, personaPuedeEnviarMedios: 1 })).toEqual(['personaPuedeEnviarMedios']);
   });
 
   it('negativa: ficha sin guardarMedios', () => {
@@ -115,8 +136,8 @@ describe('juego de conversación: cada tenant lo declara en su PROPIO.md', () =>
     try {
       mkdirSync(join(tmp, 'zeta'));
       writeFileSync(join(tmp, 'zeta', 'PROPIO.md'), 'Juego de conversación: excepción — motivo\n');
-      expect(problemasDeDeclaracion(tmp, 'otro tenant')).toEqual([expect.stringContaining('zeta: excepción no reflejada')]);
-      expect(problemasDeDeclaracion(tmp, 'zeta: excepción del juego')).toEqual([]);
+      expect(problemasDeDeclaracion(tmp, '| otro | `otro` |\nzeta aparece suelto en prosa')).toEqual([expect.stringContaining('zeta: excepción no reflejada')]);
+      expect(problemasDeDeclaracion(tmp, '| Zeta | `zeta` | excepción del juego |')).toEqual([]);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
