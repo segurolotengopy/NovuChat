@@ -46,6 +46,15 @@
 #   ./scripts/cargar-timbre-n8n.sh --alias <alias> --quitar [--aplicar --confirmo produccion]
 #       RESTAURACIÓN: desactiva y borra el flujo del alias y borra la credencial del
 #       timbre de ese alias (nunca las de ingesta, AAB1 ni WhatsApp). Respalda antes.
+#   ./scripts/cargar-timbre-n8n.sh --alias <alias> --crear-rele-inerte [--aplicar --confirmo produccion]
+#       CREAR SOLO la credencial del relé de un cliente REAL que aún no tiene una (decisión de Principal,
+#       21/11/2026; «Decisión pendiente», opción b, de docs/produccion/timbre-salida-de-persona-clientes-reales.md):
+#       «Relé inerte (<alias>)», httpHeaderAuth, `Authorization: Bearer INERTE-NO-ENVIAR` (valor fijo, ningún
+#       secreto). Es lo que `--cred-rele` nombra junto con `--rele-inerte --canal-graph` antes del traslado al relé.
+#       Seco: solo lee (GET) y dice si existe; sale 1 si hay que crearla, 0 si ya está. Con --aplicar la crea, la anota
+#       en el registro de lo creado por este script ($XDG_RUNTIME_DIR) y relee. No pisa ni toca ninguna otra
+#       credencial: si el nombre ya existe con otro tipo, o hay duplicados, aborta sin escribir. No lee gcloud ni
+#       WA_TOKEN: de --env solo lee N8N_BASE_URL y N8N_API_KEY. Sirve para cualquier alias que no sea de ensayo.
 #   ./scripts/cargar-timbre-n8n.sh --alias <alias> --crear-credenciales [--aplicar --confirmo produccion]
 #       CREAR LAS TRES CREDENCIALES PREVIAS que el flujo exige por nombre exacto y tipo y que
 #       ningún otro script crea (paso 0 del ensayo, antes de cargar el timbre):
@@ -168,7 +177,7 @@ ALIAS_ENSAYO="demoA demoB"
 export TIMBRE_RE_AJENO='segurolotengo|aab1wa|waprod|whatsappmodular|receptor|otp'
 # Nombres REALES de las credenciales existentes de un cliente (vacíos = los de ensayo, derivados del alias).
 CRED_INGESTA=""; CRED_ENVIO=""; CRED_RELE=""; CRED_DADAS=0
-fijar_modo() { [[ "$MODO" == cargar ]] || { echo "✗ Un solo modo a la vez (--activar, --recargar, --quitar, --crear-credenciales o --quitar-credenciales)" >&2; exit 2; }; MODO="$1"; }
+fijar_modo() { [[ "$MODO" == cargar ]] || { echo "✗ Un solo modo a la vez (--activar, --recargar, --quitar, --crear-credenciales, --crear-rele-inerte o --quitar-credenciales)" >&2; exit 2; }; MODO="$1"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --alias)       [[ $# -ge 2 ]] || { echo "✗ --alias necesita el alias" >&2; exit 2; }; ALIAS="$2"; shift 2 ;;
@@ -179,6 +188,7 @@ while [[ $# -gt 0 ]]; do
     --recargar)    fijar_modo recargar; shift ;;
     --quitar)      fijar_modo quitar; shift ;;
     --crear-credenciales)   fijar_modo crear-cred; shift ;;
+    --crear-rele-inerte)    fijar_modo crear-rele; shift ;;
     --quitar-credenciales)  fijar_modo quitar-cred; shift ;;
     --cred-ingesta) [[ $# -ge 2 ]] || { echo "✗ --cred-ingesta necesita el nombre de la credencial" >&2; exit 2; }; CRED_INGESTA="$2"; CRED_DADAS=$((CRED_DADAS + 1)); shift 2 ;;
     --cred-envio)  [[ $# -ge 2 ]] || { echo "✗ --cred-envio necesita el nombre de la credencial" >&2; exit 2; }; CRED_ENVIO="$2"; CRED_DADAS=$((CRED_DADAS + 1)); shift 2 ;;
@@ -202,6 +212,14 @@ if [[ "$MODO" == crear-cred || "$MODO" == quitar-cred ]]; then
     *" $ALIAS "*) ;;
     *) echo "✗ El alias «${ALIAS}» no es un alias de ensayo (${ALIAS_ENSAYO}): --crear-credenciales y --quitar-credenciales son solo para el ensayo. Un alias de cliente real tiene credenciales vivas y usa --cred-ingesta, --cred-envio y --cred-rele. No se tocó n8n." >&2; exit 2 ;;
   esac
+fi
+if [[ "$MODO" == crear-rele ]]; then
+  case " $ALIAS_ENSAYO " in
+    *" $ALIAS "*) echo "✗ El alias «${ALIAS}» es de ensayo: ahí --crear-credenciales ya crea «AAB1 envío · ${ALIAS}» con valor inerte. --crear-rele-inerte es para un cliente real. No se tocó n8n." >&2; exit 2 ;;
+  esac
+  if (( CRED_DADAS > 0 || RELE_INERTE || CANAL_GRAPH || SINSUFIJO )); then
+    echo "✗ --crear-rele-inerte va solo (con --alias, --env y, para escribir, --aplicar --confirmo produccion): no se combina con --cred-*, --rele-inerte, --canal-graph ni --tabla-demo-a. No se tocó n8n." >&2; exit 2
+  fi
 fi
 # Credenciales existentes por nombre real: las tres o ninguna, nombres válidos y distintos.
 if (( CRED_DADAS > 0 )); then
@@ -332,6 +350,7 @@ def nombres_de_ensayo(alias):
         "ingesta": "NovuChat ingesta (%s)" % alias,
         "rele": "AAB1 envío · %s" % alias,
         "graph": "WhatsApp %s (envío)" % alias,
+        "releInerte": "Relé inerte (%s)" % alias,
         "flujo": "%s (%s)" % (NOMBRE_BASE, alias),
     }
 
@@ -1102,7 +1121,7 @@ def leer_registro(ruta, alias):
 
 def cmd_cred_registrar(ruta, alias, clave, ident):
     """Anota que este script creó la credencial `clave` del alias con ese id (el registro vive en $XDG_RUNTIME_DIR)."""
-    if clave not in dict(CRED_TIPOS) or not id_valido(ident):
+    if (clave not in dict(CRED_TIPOS) and clave != "releInerte") or not id_valido(ident):
         salir(4, "registro con clave o id inválidos")
     c = leer_registro(ruta, alias)
     c[clave] = ident
@@ -1184,6 +1203,8 @@ def cmd_cred_cuerpo(clave, archivo_env, alias):
         cuerpo = {"name": n["ingesta"], "type": "httpHeaderAuth", "data": {"name": "Authorization", "value": "Bearer " + v}}
     elif clave == "rele":
         cuerpo = {"name": n["rele"], "type": "httpHeaderAuth", "data": {"name": "Authorization", "value": VALOR_RELE_INERTE}}
+    elif clave == "releInerte":
+        cuerpo = {"name": n["releInerte"], "type": "httpHeaderAuth", "data": {"name": "Authorization", "value": VALOR_RELE_INERTE}}
     elif clave == "graph":
         tok, waba = valor_de_env(archivo_env, "WA_TOKEN"), valor_de_env(archivo_env, "WABA_ID")
         if not (RE_WA_TOKEN.match(tok) and RE_WABA.match(waba)):
@@ -1192,6 +1213,24 @@ def cmd_cred_cuerpo(clave, archivo_env, alias):
     else:
         sys.exit(1)
     sys.stdout.write(json.dumps(cuerpo))
+
+
+def cmd_rele_inerte_estado(creds_f, alias, plan_out, registro):
+    """Solo la credencial «Relé inerte (alias)»: cuántas hay con ese nombre Y tipo. Duplicados u otro tipo con el mismo nombre -> aborta."""
+    creds = cargar(creds_f)["data"]
+    nom = nombres_de_ensayo(alias)["releInerte"]
+    mismas = [c for c in creds if c.get("name") == nom and c.get("type") == "httpHeaderAuth"]
+    otras = [c for c in creds if c.get("name") == nom and c.get("type") != "httpHeaderAuth"]
+    if len(mismas) > 1:
+        salir(4, "hay %d credenciales httpHeaderAuth llamadas «%s» (tiene que haber a lo sumo una)" % (len(mismas), nom))
+    if otras:
+        salir(4, "«%s» ya existe pero de OTRO tipo (se esperaba httpHeaderAuth): no se pisa" % nom)
+    if mismas and not id_valido(mismas[0].get("id")):
+        salir(4, "n8n devolvió un id con forma inesperada para «%s»" % nom)
+    ident = mismas[0]["id"] if mismas else ""
+    escribir_600(plan_out, json.dumps({"releInerte": ident}))
+    propia = ident != "" and leer_registro(registro, alias).get("releInerte") == ident
+    print("  «%s»: %s" % (nom, ("existe (la creó este script)" if propia else "existe (no consta que la creara este script)") if mismas else "no existe"))
 
 
 def cmd_cred_verificar(creds_f, alias, esperado):
@@ -1278,6 +1317,35 @@ py buscar "$WORK/flujos.json" "$WORK/credenciales.json" "$ALIAS" "$WORK/plan.jso
 WF_ID="$(py campo "$WORK/plan.json" wfId)"; WF_ACTIVO="$(py campo "$WORK/plan.json" wfActivo)"; TIMBRE_ID="$(py campo "$WORK/plan.json" timbreId)"
 if py respaldar "$WORK/flujos.json" "$WORK/credenciales.json" "$ALIAS" "$WORK/respaldo-vivo.json"; then :; else falla "no pude armar el respaldo"; exit 3; fi
 (( ! APLICAR )) || CONSERVAR=1
+
+# ======================================================================== RELÉ INERTE DE UN CLIENTE REAL
+if [[ "$MODO" == crear-rele ]]; then
+  REGISTRO="/nonexistent/sin-registro"
+  if [[ "$BASE_TMP" == "${XDG_RUNTIME_DIR:-}" ]]; then REGISTRO="${XDG_RUNTIME_DIR}/novuchat-credenciales-creadas-${ALIAS}.json"; fi
+  echo "Relé inerte del alias"
+  if ! SAL="$(py rele_inerte_estado "$WORK/credenciales.json" "$ALIAS" "$WORK/rele-plan.json" "$REGISTRO")"; then
+    falla "el estado de la credencial impide seguir (nada escrito):"; echo "$SAL" >&2; exit 2
+  fi
+  echo "$SAL"
+  ID_REL="$(py campo "$WORK/rele-plan.json" releInerte)"
+  if [[ -n "$ID_REL" ]]; then echo; ok "la credencial del relé ya existe: nada que hacer (no se sobrescribe)"; exit 0; fi
+  hacer "crear «Relé inerte (${ALIAS})» (Header Auth con valor INERTE fijo; sin ningún secreto)"
+  if (( ! APLICAR )); then echo; echo "Diagnóstico: 1 paso pendiente; no se escribió nada. Con --aplicar --confirmo produccion se hace lo marcado «(haría)»."; exit 1; fi
+  echo "Escritura"
+  CUERPO="$(py cred_cuerpo releInerte "$ENV_FILE" "$ALIAS" </dev/null || true)"
+  [[ -n "$CUERPO" ]] || { falla "el cuerpo de la credencial salió vacío: no se envía nada"; exit 3; }
+  api POST "/credentials" <(printf '%s' "$CUERPO"); CUERPO=""
+  exigir '200|201' "no pude crear la credencial del relé inerte" || exit 3
+  NUEVO="$(py id "$WORK/rta.json")" || { falla "n8n creó la credencial pero no devolvió su id"; exit 3; }
+  py cred_registrar "$REGISTRO" "$ALIAS" releInerte "$NUEVO" || nota "no pude anotarla en el registro (la credencial YA se creó): consta solo en n8n"
+  ok "«Relé inerte (${ALIAS})» creada con valor INERTE"
+  leer_estado
+  SAL="$(py rele_inerte_estado "$WORK/credenciales.json" "$ALIAS" "$WORK/rele-plan.json" "$REGISTRO")" || { falla "al releer no quedó exactamente una: ${SAL}"; exit 3; }
+  [[ -n "$(py campo "$WORK/rele-plan.json" releInerte)" ]] || { falla "al releer, la credencial no aparece"; exit 3; }
+  ok "relectura: existe una vez, con su tipo"
+  nota "el valor no se puede leer por la API; es el fijo Bearer INERTE-NO-ENVIAR. Úsela como --cred-rele junto con --rele-inerte --canal-graph"
+  exit 0
+fi
 
 # ======================================================================== CREDENCIALES PREVIAS
 if [[ "$MODO" == crear-cred || "$MODO" == quitar-cred ]]; then
