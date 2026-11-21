@@ -5,7 +5,7 @@ Este flujo se rehízo **desde cero** (23/10/2026) y no hereda nada del asistente
 
 ## Incluido desde su fuente (nunca copiado)
 - Mensajes (`Flujos/src/core/sin-agente/mensajes.js`), filtro de redacción (`Flujos/src/core/texto/filtro-redaccion.js`: `cmMotivoDeRechazo`), cadena de envío (`injertar`) y armador: `Flujos/src/core/sin-agente/`.
-- Avisos (`Flujos/src/core/venta/avisos.js`): `avTexto`, `avPlantilla`, `avLimpio`, `avDestinatarios`.
+- Avisos (`Flujos/src/core/sin-agente/avisos.js`): `avTexto`, `avPlantilla`, `avLimpio`, `avDestinatarios`.
 - La transcripción de audio: `Flujos/src/core/medios/preparar-transcripcion.js`, byte a byte (la guardia de armado y la de publicación lo comprueban).
 
 ## Copia declarada (no existe un módulo común; ticket para Rearquitectura, es Core y no se crea aquí)

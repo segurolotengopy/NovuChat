@@ -5,7 +5,7 @@ Este flujo se construyó el 24/10/2026 **adaptando el flujo nuevo de la Dra. Evy
 
 ## Incluido desde su fuente (nunca copiado)
 - Mensajes (`Flujos/src/core/sin-agente/mensajes.js`), filtro de redacción (`Flujos/src/core/texto/filtro-redaccion.js`: `cmMotivoDeRechazo`), cadena de envío (`injertar`) y armador: `Flujos/src/core/sin-agente/`.
-- Avisos (`Flujos/src/core/venta/avisos.js`) y la transcripción de audio (`Flujos/src/core/medios/preparar-transcripcion.js`, byte a byte).
+- Avisos (`Flujos/src/core/sin-agente/avisos.js`) y la transcripción de audio (`Flujos/src/core/medios/preparar-transcripcion.js`, byte a byte).
 
 ## Copia declarada de Evy (sin tocar la lógica de las barreras)
 `src/lib/ev.js` (prefijo `ev` conservado a propósito para que la copia se pueda comparar con la de Evy), `src/nodos/*.js`, `construir.mjs`, `herramientas/bateria.mjs` y la plantilla del flujo. Cada diferencia con Evy es una de las siguientes y está probada en `admin/pruebas/tenants/rroca-emma/emma.test.ts`:

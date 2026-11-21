@@ -22,7 +22,7 @@ const REPO = join(AQUI, '../../../..');
 // La base común que usa Antonio (antes: `rroca-antonio/src/lib`, copias que se borraron al migrar).
 const RROCA = join(REPO, 'Flujos/experimental/venta-digital/src');
 const VM = join(REPO, 'Flujos/experimental/venta-minima/src/lib');
-const CORE_VENTA = join(REPO, 'Flujos/src/core/venta');
+const CORE_VENTA = join(REPO, 'Flujos/src/core/sin-agente');
 const RAMA = 'origin/cartera/qtaco-visor-comprobantes';
 
 // DIVERGENCIA DECLARADA (PR-K, 18/11/2026): `cbLectura` ya NO es idéntica a su origen: devuelve además `bancoOrigen` y `transaccion` (fuera de `leido`, que conserva sus seis campos). Se prueba en `venta-digital-base.test.ts`.
