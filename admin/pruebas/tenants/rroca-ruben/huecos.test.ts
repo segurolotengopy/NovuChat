@@ -2,7 +2,7 @@
  * «EL PUENTE» DE RUBEN (tenant rroca-ruben) — PR-A: LOS HUECOS DECLARADOS, comparados con su ORIGEN.
  *
  * No existe todavía el módulo común de puerta del turno, ficha por teléfono, carga de entrada ni configuración del negocio para un flujo «sin agente»
- * (`Flujos/experimental/rroca-ruben/PROPIO.md`, §«Común SIN fuente utilizable»). Cada pieza es una COPIA declarada de `chat-novuchat` o de `venta-minima` (NO de `rroca-ruben`),
+ * (`Flujos/clientes/rroca-ruben/PROPIO.md`, §«Común SIN fuente utilizable»). Cada pieza es una COPIA declarada de `chat-novuchat` o de `venta-minima` (NO de `rroca-ruben`),
  * y esta suite la compara con su origen:
  *   - `_comun.js` y `puerta-del-turno.js`: IGUALES al origen una vez aplicadas las sustituciones declaradas (y solo ellas);
  *   - `carga-de-entrada.js` y `config-del-negocio.js`: toda línea con código está en el origen, salvo las líneas propias declaradas aquí (una lista cerrada);
@@ -20,7 +20,7 @@ import { ejecutar, type J } from '../../lib/flujo';
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
 const EXP = join(REPO, 'Flujos/experimental');
-const RUBEN = join(EXP, 'rroca-ruben');
+const RUBEN = join(REPO, 'Flujos/clientes/rroca-ruben');
 const leer = (r: string): string => readFileSync(r, 'utf8');
 const nodoDe = (ruta: string): string => leer(join(RUBEN, 'src/nodos', ruta));
 const NQUITADAS = 44;
@@ -188,7 +188,7 @@ describe('config-del-negocio.js sin Object.assign: el cuerpo de «Traer configur
 describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo salvo `id`, `notes` y `position`', () => {
   const plantilla = JSON.parse(leer(join(RUBEN, 'flujo.plantilla.json'))) as { nodes: J[] };
   const chat = JSON.parse(leer(join(ORIGEN_CHAT, 'flujo.plantilla.json'))) as { nodes: J[] };
-  const venta = JSON.parse(leer(join(EXP, 'venta-minima/flujo.plantilla.json'))) as { nodes: J[] };
+  const venta = JSON.parse(leer(join(REPO, 'Flujos/src/core/receptor/entrada-del-receptor.plantilla.json'))) as { nodes: J[] };
   const de = (f: { nodes: J[] }, n: string): J => f.nodes.find((x) => x.name === n) as J;
   const sinLibres = (n: J): J => { const { id: _i, notes: _n, position: _p, ...resto } = n; return resto; };
   /** La única sustitución de contenido: el nodo de entrada se llama «Normalizar entrada» (contrato con los módulos comunes de medios). */
@@ -199,7 +199,7 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo 
     return v;
   };
 
-  it('los 6 nodos de la entrada verificada del receptor son los de venta-minima, sin ninguna diferencia', () => {
+  it('los 6 nodos de la entrada verificada del receptor son los de la pieza de core, sin ninguna diferencia', () => {
     for (const n of ['Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos']) {
       expect(sinLibres(de(plantilla, n)), n).toEqual(sinLibres(de(venta, n)));
     }

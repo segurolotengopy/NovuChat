@@ -20,7 +20,7 @@ import type { Mundo } from '../../lib/n8n-de-mentira';
 const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/doctoras/src/lib');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
 // nosemgrep: devsecops.js-eval-prohibido
-export const LIB = new Function(['avisos.js', 'dr.js'].map((a) => readFileSync(a === 'avisos.js' ? join(CARPETA_LIB, '../../../venta-minima/src/lib/avisos.js') : join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { drOraciones, drParrafos, drNorm, drSeguro, DR_TEXTO_RIESGO, DR_NIEGA_IA, DR_PROHIBIDAS, DR_TEXTOS_COMUNES, drIntencion, drEsBaja, drEsRiesgo, DR_INTENCIONES, drTextoDe };')() as {
+export const LIB = new Function(['avisos.js', 'dr.js'].map((a) => readFileSync(a === 'avisos.js' ? join(CARPETA_LIB, '../../../../src/core/sin-agente/avisos.js') : join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { drOraciones, drParrafos, drNorm, drSeguro, DR_TEXTO_RIESGO, DR_NIEGA_IA, DR_PROHIBIDAS, DR_TEXTOS_COMUNES, drIntencion, drEsBaja, drEsRiesgo, DR_INTENCIONES, drTextoDe };')() as {
   drOraciones: (b: string) => string[]; drParrafos: (t: string) => string; drNorm: (t: string) => string; drSeguro: (t: string) => string;
   DR_TEXTO_RIESGO: string; DR_NIEGA_IA: RegExp; DR_PROHIBIDAS: RegExp; DR_TEXTOS_COMUNES: Record<string, string>; drIntencion: (n: string) => string;
   drEsBaja: (t: string) => boolean; drEsRiesgo: (n: string) => boolean; DR_INTENCIONES: string[]; drTextoDe: (d: J, c: string, e?: J) => string;

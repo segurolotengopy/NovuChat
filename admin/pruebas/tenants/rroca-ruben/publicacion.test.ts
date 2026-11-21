@@ -14,7 +14,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { Flujo } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { AQUI, ARCHIVO_DE_DATOS, ARCHIVO_DE_NEGOCIO, CLAVES_DE_PLANTILLA, IDS_DEL_CATALOGO, ARISTAS_DE_MEDIOS, NODOS_DE_MEDIOS, cargarDatos, guardiaDePublicacion } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
+import { AQUI, ARCHIVO_DE_DATOS, ARCHIVO_DE_NEGOCIO, CLAVES_DE_PLANTILLA, IDS_DEL_CATALOGO, ARISTAS_DE_MEDIOS, NODOS_DE_MEDIOS, cargarDatos, guardiaDePublicacion } from '../../../../Flujos/clientes/rroca-ruben/construir.mjs';
 
 const RR: string = AQUI;
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -205,15 +205,15 @@ describe('publicar-flujo.sh: la guardia y la confirmación del flujo de Rubén',
   function raizConGuardia(codigoSalida: number): string {
     const raiz = join(dir, `raiz-${codigoSalida}`);
     mkdirSync(join(raiz, 'scripts'), { recursive: true });
-    mkdirSync(join(raiz, 'Flujos/experimental/rroca-ruben'), { recursive: true });
+    mkdirSync(join(raiz, 'Flujos/clientes/rroca-ruben'), { recursive: true });
     copyFileSync(SCRIPT, join(raiz, 'scripts/publicar-flujo.sh'));
-    writeFileSync(join(raiz, 'Flujos/experimental/rroca-ruben/construir.mjs'), `process.exit(${codigoSalida});\n`);
-    writeFileSync(join(raiz, 'Flujos/experimental/rroca-ruben/rroca-ruben.json'), JSON.stringify({ name: 'rroca-ruben', nodes: [] }));
+    writeFileSync(join(raiz, 'Flujos/clientes/rroca-ruben/construir.mjs'), `process.exit(${codigoSalida});\n`);
+    writeFileSync(join(raiz, 'Flujos/clientes/rroca-ruben/rroca-ruben.json'), JSON.stringify({ name: 'rroca-ruben', nodes: [] }));
     writeFileSync(join(raiz, 'Flujos/demo-a-agendamiento.json'), JSON.stringify({ name: 'Otro cliente', nodes: [] }));
     chmodSync(join(raiz, 'scripts/publicar-flujo.sh'), 0o755);
     return raiz;
   }
-  const REL = 'Flujos/experimental/rroca-ruben/rroca-ruben.json';
+  const REL = 'Flujos/clientes/rroca-ruben/rroca-ruben.json';
 
   it('con --aplicar y el JSON versionado (marcadores) se NIEGA antes de leer el .env o hablar con n8n', () => {
     const r = correr(['--flujo', RUBEN, '--aplicar']);

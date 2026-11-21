@@ -20,7 +20,7 @@
  *   - `@@dato:a.b.c@@` por ese dato; `@@cred:ingesta|graph|entradaPrueba|gemini` por el nombre de credencial del archivo de datos;
  *   - `@@medio:<paquete>`: los módulos comunes de medios (`Flujos/src/core/medios/*.js`) se INCLUYEN desde su fuente, nunca se copian;
  *   - `@@vd:<nodo>`: el nodo común NEUTRO de `../../experimental/venta-digital/src/nodos/<nodo>.js`, con las librerías y `_comun.js` delante (lo mismo que el modo `todo` del armador genérico, pero leyendo de la base común);
- *   - LA ENTRADA VERIFICADA DEL RECEPTOR (6 nodos) se INCLUYE leyéndolos POR NOMBRE de `../../experimental/venta-minima/flujo.plantilla.json` (solo lectura): `--verificar` falla si difieren de su origen;
+ *   - LA ENTRADA VERIFICADA DEL RECEPTOR (6 nodos) se INCLUYE leyéndolos POR NOMBRE de `../../src/core/receptor/entrada-del-receptor.plantilla.json` (core, solo lectura): `--verificar` falla si difieren de su origen;
  *   - LA CADENA DE ENVÍO es común (`../../src/core/sin-agente/envio.mjs`, `injertar()`), con las credenciales por NOMBRE;
  *   - dos variantes: PRODUCCIÓN (con el receptor y sin «Entrada de prueba») y PRUEBA (al revés).
  *
@@ -39,7 +39,7 @@ import { problemasDeReferencias } from '../../src/core/sin-agente/referencias.mj
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/casa-bermejo/casa-bermejo.json');
-export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../../experimental/venta-minima/flujo.plantilla.json');
+export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../../src/core/receptor/entrada-del-receptor.plantilla.json');
 // 47 + los 9 de la rama común del GUARDADO de medios (Flujos/src/core/sin-agente/guardado.mjs, contrato M1↔M2 del 29/10/2026 y v2 del 30/10):
 // +1 nodo (`Traer catálogo`, 57): excepción APROBADA por Andres el 12/11/2026 (docs/versiones-por-cliente.md, «Estado al 12/11/2026 (Casa Bermejo)»). Excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 // +4: la rama del guardado de la IMAGEN SALIENTE del asistente (QR por media id; plan del 16/11/2026, bloque 2a): «Preparar guardado (saliente)», «Pedir imagen a Meta…», «Descargar imagen de Meta…» y «Guardar imagen enviada». 57 → 61: aprobación de Andres pendiente (docs/versiones-por-cliente.md).
@@ -345,10 +345,10 @@ export function reemplazarTextos(valor, datos, donde) {
 const asignaciones = (configBase) => Object.entries(configBase).map(([nombre, valor]) => ({ id: `cb_${nombre}`, name: nombre, type: typeof valor, value: valor }));
 
 // ----------------------------------------------------------------- la entrada verificada del receptor: INCLUIDA desde su origen
-/** Los 6 nodos y sus conexiones, tal como están en `venta-minima/flujo.plantilla.json` (sin sustituir los datos). Solo lectura. */
+/** Los 6 nodos y sus conexiones, tal como están en `core/receptor/entrada-del-receptor.plantilla.json` (sin sustituir los datos). Solo lectura. */
 export function leerReceptorDeOrigen(ruta = ORIGEN_DEL_RECEPTOR) {
   const texto = leerSiExiste(ruta, 'el origen del receptor');
-  if (texto === null) throw new Error('no existe el origen de la entrada del receptor (venta-minima/flujo.plantilla.json)');
+  if (texto === null) throw new Error('no existe el origen de la entrada del receptor (core/receptor/entrada-del-receptor.plantilla.json)');
   let o;
   try { o = JSON.parse(texto); } catch { throw new Error('el origen de la entrada del receptor no es un JSON válido'); }
   const nodes = NODOS_DEL_RECEPTOR.map((nombre) => {
@@ -373,12 +373,12 @@ export function hallazgosDelReceptor(flujo, datos, origen = leerReceptorDeOrigen
     const real = nodos.find((n) => n.name === nombre);
     if (!real) { h.push(`falta el nodo «${nombre}» de la entrada verificada del receptor`); continue; }
     const igual = JSON.stringify(reemplazarTextos(esperado, datos, nombre));
-    if (JSON.stringify(real) !== igual) h.push(`el nodo «${nombre}» difiere de su origen (venta-minima/flujo.plantilla.json): la entrada verificada del receptor se incluye, no se edita`);
+    if (JSON.stringify(real) !== igual) h.push(`el nodo «${nombre}» difiere de su origen (core/receptor/entrada-del-receptor.plantilla.json): la entrada verificada del receptor se incluye, no se edita`);
   }
   // Las CONEXIONES de los nodos del receptor (menos «Descartar repetidos», cuyo destino fija este flujo) también son las de su origen: un atajo no pasa.
   const conex = (flujo && flujo.connections) || {};
   for (const [nombre, esperadas] of Object.entries(origen.conexiones)) {
-    if (JSON.stringify(conex[nombre]) !== JSON.stringify(esperadas)) h.push(`las conexiones de «${nombre}» difieren de su origen (venta-minima/flujo.plantilla.json): la entrada verificada del receptor se incluye, no se edita`);
+    if (JSON.stringify(conex[nombre]) !== JSON.stringify(esperadas)) h.push(`las conexiones de «${nombre}» difieren de su origen (core/receptor/entrada-del-receptor.plantilla.json): la entrada verificada del receptor se incluye, no se edita`);
   }
   return h;
 }

@@ -558,11 +558,11 @@ el respaldo (`rm -rf` de su directorio).
 > **Un solo teléfono, el de la persona de prueba, hace de cliente y de Rubén.** Escribe a la línea del
 > Demo A y el flujo de Rubén le contesta desde el n8n del Demo A; el aviso a Rubén y el botón
 > «Escribir a Rubén» le llegan **al mismo chat**. Nada de esto toca el número, el flujo ni la
-> configuración de Rubén. Diseño de la variante: `Flujos/experimental/rroca-ruben/DISENO.md`, «La
+> configuración de Rubén. Diseño de la variante: `Flujos/clientes/rroca-ruben/DISENO.md`, «La
 > variante de ensayo en el Demo A». Es el mismo mecanismo del §6 (Venta mínima) con otro JSON; la
 > herramienta `flujo-de-prueba.mjs` **no se modifica**.
 
-**Las piezas.** `Flujos/experimental/rroca-ruben/rroca-ruben.ensayo-demo-a.json` (51 nodos), que sale de
+**Las piezas.** `Flujos/clientes/rroca-ruben/rroca-ruben.ensayo-demo-a.json` (51 nodos), que sale de
 `construir.mjs` con los datos `admin/scripts/datos/rroca-ruben/ensayo-demo-a.json` (hereda de
 `rroca-ruben.json`). Pruebas: `admin/pruebas/tenants/rroca-ruben/ensayo-demo-a.test.ts` y
 `ensayo-demo-a-herramienta.test.ts` (la herramienta real contra un n8n de mentira).
@@ -616,12 +616,12 @@ el flujo deriva («QR no disponible») y esa rama es lo que se prueba.
 0. **Antes de empezar:** el §6 «Antes de empezar» A a D (autorizaciones, anotar el ensayo en `ESTADO.md` y
    **una fila para el Demo A en `docs/versiones-por-cliente.md`** —«corre Rubén en ensayo», con su porqué y
    su cierre; se retira al restaurar—, árbol al día en un worktree, línea de base de la suscripción de
-   Meta). Más: `node Flujos/experimental/rroca-ruben/construir.mjs --verificar` en 0, el teléfono de quien
+   Meta). Más: `node Flujos/clientes/rroca-ruben/construir.mjs --verificar` en 0, el teléfono de quien
    prueba **registrado en la app del Demo A** (prohibición 6) y la tabla local con los dos marcadores:
    `REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A) y `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono de quien
    prueba, con prefijo 591; sin mostrar el valor, **nunca en un archivo del repositorio**).
 1. **Preparar el import:** `CONFIG_LOCAL_MD=~/NovuChat/CONFIGURACION.local.md ./scripts/preparar-import.sh
-   <worktree>/Flujos/experimental/rroca-ruben/rroca-ruben.ensayo-demo-a.json .env` (los dos marcadores
+   <worktree>/Flujos/clientes/rroca-ruben/rroca-ruben.ensayo-demo-a.json .env` (los dos marcadores
    resueltos y ninguno sin resolver; deja `rroca-ruben.ensayo-demo-a.local.json`, ignorado por git: se
    borra al terminar).
 2. **La plataforma:** `ensayo.mjs --preparar --cliente ruben --flujo venta --archivo <copia de

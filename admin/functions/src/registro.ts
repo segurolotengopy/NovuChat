@@ -467,7 +467,14 @@ export const REGISTRO = [
     herramientas: [],
     functions: ['registrarEditorCrm', 'quitarEditorCrm', 'consultarMiEdicionCrm', 'revocarEditoresAlApagarCrm', 'reconciliarEditoresCrm'],
     flujosProgramados: [],
-    ganchos: [],
+    // `antesDelTurno`: `configuracionFlujo` lee `config/crm` una vez por turno y `crmParaElFlujo`
+    // (`modulos/crm/crm.ts`, puerto de `ganchos.ts`) devuelve `crm: { activo }` solo si `activo` es booleano;
+    // si no, la respuesta de siempre.
+    // `alCambiarConfig`: `revocarEditoresAlApagarCrm` (`onDocumentWritten` sobre `config/crm`) revoca a los editores al apagar.
+    // `programado`: `reconciliarEditoresCrm` (`onSchedule`, cada hora) reintenta las revocaciones pendientes.
+    // Declarativo (G-4): no cambia la conducta. Revocar al quitar usuario o cerrar el negocio lo arma
+    // `ganchos.ts` por inyección; no es gancho del registro.
+    ganchos: ['antesDelTurno', 'alCambiarConfig', 'programado'],
     mensajes: 0,
   },
 ] as const satisfies readonly Manifiesto[];
