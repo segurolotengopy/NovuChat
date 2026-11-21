@@ -58,8 +58,8 @@ describe('B0 · los datos de Walisuma', () => {
     expect(cb['horarioTiendas']).toBe('de lunes a viernes de 10:00 a 19:00');
     expect([cb['horarioDias'], cb['horarioApertura'], cb['horarioCierre']]).toEqual(['1,2,3,4,5', '10:00', '19:00']);
   });
-  it('la plantilla del aviso es `aviso_pedido_equipo` (PENDING en Meta) con `pedido_registrado` (APPROVED) de respaldo', () => {
-    expect([cb['avisoPedidoPlantilla'], cb['avisoPedidoEstado']]).toEqual(['aviso_pedido_equipo', 'PENDING']);
+  it('la plantilla del aviso es `aviso_pedido_equipo` (APPROVED en Meta, WAM 21/11/2026) con `pedido_registrado` (APPROVED) de respaldo', () => {
+    expect([cb['avisoPedidoPlantilla'], cb['avisoPedidoEstado']]).toEqual(['aviso_pedido_equipo', 'APPROVED']);
     expect([cb['avisoRespaldoPlantilla'], cb['avisoRespaldoEstado']]).toEqual(['pedido_registrado', 'APPROVED']);
   });
   it('los 14 anuncios del MD son dato (ids por marcador: el repo es público) y sus piezas existen en el catálogo, con su precio', () => {
