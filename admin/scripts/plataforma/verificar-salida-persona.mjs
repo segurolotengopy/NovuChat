@@ -65,10 +65,10 @@ const ESPERA_MS = 30_000;
 // La lista de flujos pesa decenas de MB y tarda hasta minutos según la carga de la VM.
 const ESPERA_LISTA_MS = 300_000;
 const CON_VALOR = ['proyecto', 'alias', 'tenant', 'env', 'respaldo', 'confirmo-produccion'];
-const BANDERAS = ['probar-timbre', 'encender', 'aplicar', 'medios'];
+const BANDERAS = ['probar-timbre', 'encender', 'aplicar', 'medios', 'sin-redespliegue'];
 
 export const USO = '  node scripts/plataforma/verificar-salida-persona.mjs --proyecto <id> --alias <clienteNN> --tenant <id> [--env <archivo>] '
-  + '[--probar-timbre] [--medios] [--encender [--aplicar --respaldo <ruta> --confirmo-produccion <tenant>]]';
+  + '[--probar-timbre] [--medios] [--sin-redespliegue] [--encender [--aplicar --respaldo <ruta> --confirmo-produccion <tenant>]]';
 
 export const nombreDelFlujo = (alias) => `NovuChat — Salida de persona (${alias})`;
 const sha = (s) => createHash('sha256').update(String(s)).digest('hex');
@@ -102,6 +102,7 @@ export function analizarArgumentos(argv, env = process.env) {
   const aplicar = banderas.includes('aplicar');
   const probarTimbre = banderas.includes('probar-timbre');
   const medios = banderas.includes('medios');
+  const sinRedespliegue = banderas.includes('sin-redespliegue');
   const { proyecto, alias, tenant, respaldo } = valores;
   const confirmo = valores['confirmo-produccion'];
 
@@ -127,7 +128,7 @@ export function analizarArgumentos(argv, env = process.env) {
   if (problemas.length) return { ok: false, problemas };
   return {
     ok: true,
-    cfg: { proyecto, entorno: proy.entorno, alias, tenant, envArchivo: valores['env'] ?? null, probarTimbre, medios, encender, aplicar, respaldo: respaldo ?? null, confirmo: confirmo ?? null },
+    cfg: { proyecto, entorno: proy.entorno, alias, tenant, envArchivo: valores['env'] ?? null, probarTimbre, medios, sinRedespliegue, encender, aplicar, respaldo: respaldo ?? null, confirmo: confirmo ?? null },
   };
 }
 
@@ -252,11 +253,12 @@ export function chequeoFunciones(cfg, deps) {
   return salida;
 }
 
+const MOTIVO_SIN_ALIAS = 'el secreto no tiene la clave del alias';
 function entradaDelAlias(texto, alias) {
   let m;
   try { m = JSON.parse(texto); } catch { return { ok: false, motivo: 'el secreto no es JSON' }; }
   if (m === null || typeof m !== 'object' || Array.isArray(m)) return { ok: false, motivo: 'el secreto no es un objeto' };
-  if (!hay(m, alias)) return { ok: false, motivo: 'el secreto no tiene la clave del alias' };
+  if (!hay(m, alias)) return { ok: false, motivo: MOTIVO_SIN_ALIAS };
   const e = m[alias];
   if (e === null || typeof e !== 'object') return { ok: false, motivo: 'la entrada del alias no es un objeto' };
   return { ok: true, ruta: e.ruta, clave: e.clave };
@@ -272,7 +274,16 @@ export function chequeoSecreto(cfg, deps, versionFijada, base) {
   const leer = (version) => ejecutarGcloud(deps, ['secrets', 'versions', 'access', version, '--secret', SECRETO, '--project', cfg.proyecto]);
   const fijada = leer(versionFijada);
   if (!fijada.ok) { salida.resultado = noSePudo('2', 'Secreto del timbre', 'no pude leer la versión fijada del secreto'); return salida; }
-  const e = entradaDelAlias(fijada.stdout, cfg.alias);
+  let e = entradaDelAlias(fijada.stdout, cfg.alias);
+  // D1 (Andres, 21/11/2026): sin redespliegue, la versión fijada de la Function todavía no trae el alias nuevo. Con
+  // `--sin-redespliegue`, y SOLO por esa causa, se acepta el alias presente en `latest`: el timbre llega con la próxima
+  // etiqueta y mientras tanto entra el barrido del flujo. Cualquier otra falla del secreto sigue siendo FALLA.
+  let soloEnLatest = false;
+  if (!e.ok && cfg.sinRedespliegue === true && versionFijada !== 'latest' && e.motivo === MOTIVO_SIN_ALIAS) {
+    const ult = leer('latest');
+    const u = ult.ok ? entradaDelAlias(ult.stdout, cfg.alias) : { ok: false };
+    if (u.ok) { e = u; soloEnLatest = true; }
+  }
   if (!e.ok) { salida.resultado = res('2', 'Secreto del timbre', FALLA, e.motivo); return salida; }
   const fallas = [];
   let url = null;
@@ -285,7 +296,8 @@ export function chequeoSecreto(cfg, deps, versionFijada, base) {
   salida.ruta = url.toString();
   const avisos = [];
   if (hostOk === null) avisos.push('no se pudo comparar el host (falta N8N_BASE_URL válido)');
-  if (versionFijada !== 'latest') {
+  if (soloEnLatest) avisos.push('AVISO: el timbre llega con la próxima etiqueta; mientras tanto, el barrido (el alias está en latest, no en la versión fijada de la Function)');
+  else if (versionFijada !== 'latest') {
     const ultima = leer('latest');
     if (!ultima.ok) avisos.push('no pude leer latest para compararla');
     else {

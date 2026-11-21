@@ -53,8 +53,8 @@
 # archivo trae un campo `como_usar` con eso mismo. Hoy, `--agregar-alias` sin
 # `--aplicar` (seco) sí se puede correr.
 #
-# LÍMITES. No hay control de concurrencia: no se corre dos veces a la vez (dos
-# `--agregar-alias` en paralelo leen el mismo mapa y el segundo pisa al primero).
+# LÍMITES. Concurrencia: con --aplicar, --agregar-alias y --quitar-alias toman un flock sobre un archivo de
+# $XDG_RUNTIME_DIR; si está tomado salen con 4 sin esperar ni escribir (dos corridas en paralelo se pisarían).
 # `--quitar-alias` escribe una versión nueva sin el alias, pero NO destruye las versiones
 # anteriores (siguen habilitadas y contienen la ruta y la clave) ni borra la credencial
 # ni el webhook de n8n: eso se hace aparte (`gcloud secrets versions destroy` y n8n).
@@ -124,6 +124,19 @@ if [[ "$MODO" == agregar ]]; then
   # La dirección de n8n: https, un host, puerto opcional, sin ruta, sin usuario.
   [[ "${N8N_BASE_URL:-}" =~ ^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{2,5})?$ ]] \
     || { echo "✗ --agregar-alias exige N8N_BASE_URL (en el entorno o en el archivo de --env): https://<host> sin ruta ni usuario, sin «export», sin retorno de carro" >&2; exit 2; }
+fi
+
+# --- Un solo escritor del mapa de alias a la vez --------------------------------------
+# --agregar-alias y --quitar-alias leen el mapa vigente y escriben una versión nueva: dos corridas en paralelo se
+# pisan (la segunda pierde el alias de la primera). Con --aplicar se toma un cerrojo (flock) sobre un archivo de
+# $XDG_RUNTIME_DIR; si está tomado, sale con 4 sin esperar y sin escribir. El cerrojo se suelta al salir.
+if (( APLICAR )) && [[ "$MODO" == agregar || "$MODO" == quitar ]]; then
+  command -v flock >/dev/null 2>&1 || { echo "✗ Falta flock (util-linux): sin el cerrojo no se escribe el mapa de alias. No se escribió nada." >&2; exit 2; }
+  if [[ -z "${XDG_RUNTIME_DIR:-}" || ! -d "$XDG_RUNTIME_DIR" || ! -O "$XDG_RUNTIME_DIR" || "$(stat -c '%a' "$XDG_RUNTIME_DIR" 2>/dev/null)" != "700" ]]; then
+    echo "✗ El cerrojo del mapa de alias exige un \$XDG_RUNTIME_DIR válido (del usuario y de modo 700). No se escribió nada." >&2; exit 2
+  fi
+  exec 9>"$XDG_RUNTIME_DIR/nube-salida-persona.cerrojo"
+  flock -n 9 || { echo "✗ Otra corrida de --agregar-alias o --quitar-alias tiene el mapa de alias tomado: no se espera ni se escribe. Reintente cuando termine (salida 4)." >&2; exit 4; }
 fi
 
 # --- El proyecto, sin imprimirlo ----------------------------------------------

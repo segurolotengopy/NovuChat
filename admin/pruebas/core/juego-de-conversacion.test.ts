@@ -68,7 +68,7 @@ describe('juego de conversación: claves y valores exactos', () => {
     // Se lee como texto: `fronteras.test.ts` prohíbe que core (y su carpeta de pruebas) importe de central.
     const m = readFileSync(CONSOLA_CONVERSACIONES, 'utf8').match(/PANTALLAS_CONVERSACIONES\s*=\s*\[([^\]]*)\]/);
     expect(m, 'PANTALLAS_CONVERSACIONES no encontrada').not.toBeNull();
-    const pantallas = [...(m as RegExpMatchArray)[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
+    const pantallas = [...((m as RegExpMatchArray)[1] ?? '').matchAll(/'([^']+)'/g)].map((x) => x[1] ?? '');
     expect(pantallas).toContain(JUEGO_DE_FICHA.consolaConversaciones);
   });
 
@@ -155,7 +155,5 @@ describe('juego de conversación: cada tenant lo declara en su PROPIO.md', () =>
   });
 });
 
-describe('juego de conversación: piezas del PR2 (plataforma)', () => {
-  it.todo('fichaInicial() de alta-comercio.mjs trae cada clave de JUEGO_DE_FICHA con valor exacto (PR2)');
-  it.todo('pasosDelEncendido() cubre JUEGO_CON_INFRA y no pone ninguna bandera antes de la puerta de verificación (PR2)');
-});
+// Las piezas de plataforma (`fichaInicial` de alta-comercio.mjs y `pasosDelEncendido` de encender-conversacion.mjs) se prueban
+// en `pruebas/plataforma/encender-conversacion.test.ts`: core no importa de `scripts/` ni de plataforma (`fronteras.test.ts`).
