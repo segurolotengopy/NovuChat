@@ -82,6 +82,26 @@ Una excepción necesita las tres cosas, o no es una excepción:
 >   `PROPIO.md`). La excepción de F3a de la fila vieja deja de aplicar a este
 >   flujo; `novuchat-onboarding.json` queda como histórico sin fila.
 
+## Estado al 21/11/2026 (pasada de funciones de conversación en todos los comercios)
+
+Orden de Andres (21/11): las funciones de conversación ya hechas las asumen TODOS los comercios sin esperar a que se pida. Publicados HOY desde `main` `e100da4e`, con respaldo previo del flujo vivo (carpeta de trabajo, ignorada por git) y relectura «el flujo vivo coincide con el origen»:
+
+| Flujo | Nodos | Qué quedó publicado |
+|---|---|---|
+| Rubén (`rroca-ruben`) | 68 | Ad ID + texto de campañas, baja por voz, guardado de imágenes enviadas. El nombre vivo pasa a «…Noches Sin Insomnio» (el del JSON versionado). |
+| Antonio (`rroca-antonio`) | 68 | Ad ID + texto, baja por voz, guardado de imágenes enviadas. |
+| Emma (`rroca-emma`) | 53 → 59 | Ad ID + texto, fotos de catálogo al hilo sin conteo (2b: 6 nodos nuevos), guardado de imágenes enviadas. |
+| Evy (`rroca-evy`) | 59 | Ya al día (publicada el 20/11 con Ad ID, guardado y fotos; sus 3 media id de arte se renovaron ese día y vencen ≈ 20/12/2026: renovarlos antes). |
+| Chat de NovuChat (captación) | 76 | Ad ID + texto, baja por voz, guardado. Era la fila «versionado adelantado, sin publicar». |
+
+Banderas leídas en seco el 21/11 (`consolaConversaciones`, `personaPuedeEscribir`, `personaPuedeEnviarMedios`, `guardarMedios`): ya en `true` en Rubén, Antonio, Evy, Emma, Q'Taco, el chat de NovuChat y el Demo A; Bellido tiene las tres primeras y `guardarMedios` excluido por orden de Andres. «Salida de persona» con `--medios`: 11 OK y 0 FALLA en los comercios comprobados.
+
+**Atrasos declarados (no publicados), con lo que los cierra:**
+
+- **Demo A** (77 → 80 nodos) y **Demo B** (85 → 91): `publicar-flujo.sh --aplicar` borraría de lo vivo las claves de retención de ejecuciones (`saveDataSuccessExecution`, `saveDataErrorExecution` «none», `saveExecutionProgress`, y `saveManualExecutions` en el Demo B), porque el JSON versionado del Demo A no las lleva (y el del Demo B no lleva `saveManualExecutions`). Sin ellas el binario de las imágenes quedaría en los datos de la ejecución de n8n (decisión del 30/10/2026). Lo cierra: que el origen de cada demo lleve esos ajustes (PR de código) y republicar.
+- **Bellido** (Agenda mínima, sin baja): lo publica `flujo-de-prueba.mjs --env .env.bellido --actualizar-codigo` con su propio botón de Andres (ver el estado del 17/11).
+- **Q'Taco**: el flujo vivo con `.env.qtaco` tiene 11 nodos (la redirección); el JSON `venta-minima.qtaco-3727.json` (84 nodos) no se pudo comparar contra un flujo vivo del …3727 por falta de su `.env`. Pendiente de confirmar cuál es el flujo vivo del …3727.
+
 ## Estado al 17/11/2026 (Bellido, Agenda mínima: baja por texto y por voz; VIVO ATRASADO hasta su republicación)
 
 Decisión de Andres (17/11/2026, «Sí, agregarla»; regla: toda función de conversación igual en todos). Bellido (`Flujos/experimental/agenda-minima/`) no tenía baja ni por texto ni por voz.
