@@ -2103,6 +2103,131 @@ print("\\n".join(errs))`;
       });
     });
 
+    // --credenciales-del-vivo: los nombres salen del flujo vivo del alias, no de --cred-*.
+    describe('--credenciales-del-vivo (los nombres salen del flujo vivo)', () => {
+      const VIVO = ['--credenciales-del-vivo'];
+      const retocar = (cambio: (f: ReturnType<typeof propio>) => void) => {
+        const f = flujos(); cambio(f[f.findIndex((x) => x.name === propio().name)]);
+        writeFileSync(join(dir, 'wfs.json'), JSON.stringify(f));
+      };
+      const nodoDe = (f: ReturnType<typeof propio>, nombre: string) => f.nodes.find((n) => n.name === nombre)!;
+
+      it('vivo completo: toma los nombres, los imprime en seco y con --aplicar recarga con un solo PUT sin tocar credenciales', () => {
+        cargado(); viejo();
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const seco = correr([...AR(), '--recargar', ...VIVO, ...INERTE]);
+        expect(seco.codigo, seco.salida.slice(-600)).toBe(1);
+        expect(seco.salida).toContain(NOM.ingesta);
+        expect(seco.salida).toContain(NOM.envio);
+        expect(seco.salida).toContain(NOM.rele);
+        expect(seco.salida).not.toContain(PATH);
+        expect(seco.salida).not.toContain(CLAVE);
+        expect(escrituras()).toEqual([]);
+        const credsAntes = JSON.stringify(creds());
+        const r = correr([...AR(), '--recargar', ...VIVO, ...INERTE, ...APLICAR]);
+        expect(r.codigo, r.salida.slice(-600)).toBe(0);
+        expect(escrituras()).toEqual([`PUT /workflows/${propio().id}`]);
+        expect(JSON.stringify(creds())).toBe(credsAntes);
+        expect(propio().nodes.find((n) => n.name === 'Reclamar')!.parameters.zzViejo).toBeUndefined();
+      });
+
+      it('NEGANDO: el nombre sale de la lista viva por id, no del nombre viejo guardado en el nodo', () => {
+        cargado(); viejo();
+        retocar((f) => { for (const n of f.nodes) for (const ref of Object.values(n.credentials ?? {}) as Array<{ id: string; name: string }>) { if (ref.id === 'qi') ref.name = 'nombre viejo'; } });
+        const r = correr([...AR(), '--recargar', ...VIVO, ...INERTE]);
+        expect(r.salida).toContain(NOM.ingesta);
+        expect(r.salida).not.toContain('nombre viejo');
+      });
+
+      it('rol vacío (el relé no tiene credencial): sale 2 sin escribir y dice qué falta', () => {
+        cargado(); viejo();
+        retocar((f) => { nodoDe(f, 'Enviar por el relé').credentials = {}; });
+        const antes = leerTxt(join(dir, 'wfs.json'));
+        rmSync(join(dir, 'llamadas'), { force: true });
+        for (const extra of [[], APLICAR]) {
+          const r = correr([...AR(), '--recargar', ...VIVO, ...INERTE, ...extra]);
+          sinEscrituras(r, antes);
+          expect(r.salida).toContain('rol relé');
+        }
+      });
+
+      it('rol sin ningún nodo en el vivo (ingesta): sale 2 sin escribir', () => {
+        cargado(); viejo();
+        retocar((f) => { f.nodes = f.nodes.filter((n) => !['Reclamar', 'Leer adjunto', 'Confirmar'].includes(n.name)); });
+        const antes = leerTxt(join(dir, 'wfs.json'));
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const r = correr([...AR(), '--recargar', ...VIVO, ...INERTE, ...APLICAR]);
+        sinEscrituras(r, antes);
+        expect(r.salida).toContain('rol ingesta');
+      });
+
+      it('nombres distintos en el mismo rol (dos nodos de envío con credenciales distintas): sale 2 sin escribir', () => {
+        cargado(); viejo();
+        writeFileSync(join(dir, 'creds.json'), JSON.stringify([...creds(), { id: 'qg2', name: 'Otro envío', type: 'whatsAppApi' }]));
+        retocar((f) => { nodoDe(f, 'Subir a Meta').credentials = { whatsAppApi: { id: 'qg2', name: 'Otro envío' } }; });
+        const antes = leerTxt(join(dir, 'wfs.json'));
+        rmSync(join(dir, 'llamadas'), { force: true });
+        for (const extra of [[], APLICAR]) {
+          const r = correr([...AR(), '--recargar', ...VIVO, ...INERTE, ...extra]);
+          sinEscrituras(r, antes);
+          expect(r.salida).toContain('DISTINTAS');
+        }
+      });
+
+      it('combinado con --cred-*: sale 2 sin tocar n8n', () => {
+        cargado();
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const r = correr([...AR(), '--recargar', ...VIVO, ...MAPA, ...INERTE, ...APLICAR]);
+        expect(r.codigo).toBe(2);
+        expect(r.salida).toContain('no se combina con --cred-ingesta');
+        expect(llamadas()).toEqual([]);
+      });
+
+      it('solo acompaña a --recargar', () => {
+        cargado();
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const r = correr([...AR(), ...VIVO, ...INERTE]);
+        expect(r.codigo).toBe(2);
+        expect(llamadas()).toEqual([]);
+      });
+
+      it('relé inerte: el vivo apunta a relay-inerte.invalid y sin --rele-inerte --canal-graph aborta con 2 sin escribir', () => {
+        cargado(); viejo();
+        const antes = leerTxt(join(dir, 'wfs.json'));
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const r = correr([...AR(), '--recargar', ...VIVO, ...APLICAR]);
+        sinEscrituras(r, antes);
+        expect(r.salida).toContain('--rele-inerte --canal-graph');
+      });
+
+      it('relé inerte: acepta la credencial que el vivo ya cita en el relé aunque no se llame «Relé inerte (<alias>)»', () => {
+        cargado(); viejo();
+        expect(NOM.rele).not.toBe(`Relé inerte (${REAL})`);
+        const r = correr([...AR(), '--recargar', ...VIVO, ...INERTE, ...APLICAR]);
+        expect(r.codigo, r.salida.slice(-600)).toBe(0);
+        expect(r.salida).toContain(NOM.rele);
+      });
+
+      it('NEGANDO: no relaja la atadura: la ingesta citada por un flujo de otro número aborta con 2 sin escribir', () => {
+        cargado(); viejo();
+        writeFileSync(join(dir, 'wfs.json'), JSON.stringify([...flujos(), flujoVivo('wa', 'Venta de otro comercio', [nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta)], '555000111')]));
+        const antes = leerTxt(join(dir, 'wfs.json'));
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const r = correr([...AR(), '--recargar', ...VIVO, ...INERTE, ...APLICAR]);
+        sinEscrituras(r, antes);
+        expect(r.salida).toContain('no están atadas al número de este alias');
+      });
+
+      it('NEGANDO: no relaja la lista negra: una credencial de AAB1 en el vivo aborta con 2', () => {
+        cargado(); viejo();
+        writeFileSync(join(dir, 'creds.json'), JSON.stringify(creds().map((c) => (c.id === 'qi' ? { ...c, name: 'AAB1-WA-Prod ingesta' } : c))));
+        const antes = leerTxt(join(dir, 'wfs.json'));
+        rmSync(join(dir, 'llamadas'), { force: true });
+        const r = correr([...AR(), '--recargar', ...VIVO, ...INERTE, ...APLICAR]);
+        sinEscrituras(r, antes);
+      });
+    });
+
     it('C12 negada: el envío del mapa lo cita un nodo «Enviar por el relé» de otro flujo: sale 2 sin escribir', () => {
       cargado(); viejo();
       writeFileSync(join(dir, 'wfs.json'), JSON.stringify([...flujos(), flujoVivo('wc', 'Cruce', [nodoVivo('Enviar por el relé', 'whatsAppApi', 'qg', NOM.envio)], PHONE)]));

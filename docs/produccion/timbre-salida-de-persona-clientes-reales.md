@@ -133,6 +133,15 @@ Cartera lee en el paso P0. Ejemplos de forma, sin valor real: `NovuChat ingesta
 | 6 | Bandera `consolaConversaciones` y roles (paquete de encendido de «Tomar») | Cartera | **Sí** (Firestore, Auth) | Una por acción |
 | R | Reversión: `--quitar --aplicar` (o, tras una recarga, revertir el JSON versionado y volver a correr `--recargar`); `nube-salida-persona.sh --quitar-alias <ALIAS> --aplicar` y redespliegue; bandera a `clasica` | Cartera / Rearquitectura | **Sí** | Una por acción |
 
+**Recarga de todos los alias con un solo procedimiento: `--credenciales-del-vivo`.** Los nombres de las credenciales no siguen ninguna convención entre comercios («NovuChat ingesta (Q'Taco)», «WhatsApp QTaco 3727 (envio)», «Graph WhatsApp Dra. Emma (Bearer)»…) y varios alias se cargaron con relé inerte sin credencial propia de relé. En lugar de adivinarlos, `--recargar --credenciales-del-vivo` (sin `--cred-*`; no se combinan) los toma del flujo **vivo** del alias, ya validado como propio: ingesta en «Reclamar», «Leer adjunto» y «Confirmar»; envío en «Enviar por Graph», «Subir a Meta» y «Enviar adjunto por Graph»; relé en «Enviar por el relé». El nombre y el tipo salen de la lista viva de credenciales **por id** (el nombre guardado en el nodo puede estar viejo) y el seco los **imprime** (los nombres no son secretos; ids, rutas y claves no se imprimen). Después se aplica exactamente la misma validación y atadura al número del alias que con `--cred-*`: no se relaja ningún cerrojo. Sale 2 sin escribir si un rol no tiene credencial en el vivo o si dos nodos del mismo rol citan credenciales distintas, y lo dice. Si el relé del vivo es `http://relay-inerte.invalid`, hay que repetir `--rele-inerte --canal-graph` (como hoy) y se acepta la credencial que el vivo ya cita en «Enviar por el relé», aunque no se llame «Relé inerte (<ALIAS>)».
+
+Procedimiento para recargar todos los alias (lo ejecuta Claude, uno por vez, con el botón de Andres por acción):
+
+1. Por cada `<ALIAS>`: seco con `cargar-timbre-n8n.sh --alias <ALIAS> --recargar --credenciales-del-vivo [--rele-inerte --canal-graph]`. Si el relé del alias es inerte y no se pasaron las banderas, aborta con 2 y lo dice: se repite con ellas. Sale 1 si hay algo que hacer, 0 si ya está igual, 2 si se niega.
+2. Se revisan los nombres impresos contra el comercio del alias.
+3. Con el seco en 1, la misma orden con `--aplicar --confirmo produccion`.
+4. Un alias que sale 2 por «rol sin credencial» o «credenciales distintas en un rol» no se fuerza: se corrige primero el flujo vivo (con la sesión dueña) o se usa `--cred-*` con los nombres confirmados.
+
 **El respaldo de `--recargar` NO se restaura tal cual:** lleva `path="<capacidad>"` (la ruta del timbre no se respalda). Para volver atrás se revierte el JSON versionado y se vuelve a correr `--recargar`, que copia la ruta del flujo vivo. `--recargar` tampoco cambia el relé de pasada: aborta con 2 si la URL del relé que escribiría no es la del flujo vivo (repita o quite `--rele-inerte --canal-graph` según cómo se cargó).
 
 **Los pasos 2 y 3 van en la MISMA sesión** y con el mismo `$XDG_RUNTIME_DIR`: la
