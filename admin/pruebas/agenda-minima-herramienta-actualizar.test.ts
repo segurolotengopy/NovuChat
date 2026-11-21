@@ -176,6 +176,47 @@ describe('con --aplicar', () => {
   });
 });
 
+describe('--solo-codigo: el código se actualiza y los parámetros de nodos que no son Code se dejan como están', () => {
+  const REPORTE = 'Reportar mensaje (entrante)';
+  const conReporteDistinto = (w: J): void => { nodo(w, REPORTE).parameters.jsonBody = '={"evento":"expresion vieja del vivo"}'; };
+  it('SIN la bandera, una diferencia en el cuerpo de un nodo que no es Code se niega (como siempre) y no hay PUT', async () => {
+    nuevo(vivoDe(BELLIDO, conReporteDistinto));
+    const r = await correr('--aplicar');
+    expect(r.codigo, r.salida).toBe(1);
+    expect(r.salida).toMatch(/hay diferencias que este modo NO toca/);
+    expect(mundo.puts).toHaveLength(0);
+  });
+  it('CON la bandera: escribe el código de los Code y el nodo distinto queda EXACTAMENTE como estaba en el vivo', async () => {
+    const vivo = vivoDe(BELLIDO, conReporteDistinto);
+    const antes = JSON.parse(JSON.stringify(vivo)) as J;
+    nuevo(vivo);
+    const r = await correr('--aplicar', '--solo-codigo');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/Con --solo-codigo se DEJAN COMO ESTÁN \(no se escriben\) 1 nodo\(s\) que no son Code: Reportar mensaje \(entrante\)/);
+    expect(mundo.puts).toHaveLength(1);
+    const b = mundo.puts[0]!;
+    expect(nodo(b, REPORTE)).toEqual(nodo(antes, REPORTE));
+    for (const n of ['Candado', 'Armar mensajes']) expect(nodo(b, n).parameters.jsCode).toBe(nodo(candidato(), n).parameters.jsCode);
+    expect(b.connections).toEqual(antes.connections);
+    expect(b.settings).toEqual(antes.settings);
+  });
+  it('NIEGA: con la bandera, un cambio de tipo o de conexiones, o de «Config base» que no es un marcador llenado, SIGUE prohibido', async () => {
+    nuevo(vivoDe(BELLIDO, (w) => { nodo(w, 'Enviar a WhatsApp').typeVersion = 99; }));
+    let r = await correr('--aplicar', '--solo-codigo');
+    expect(r.codigo, r.salida).toBe(1);
+    expect(mundo.puts).toHaveLength(0);
+    nuevo(vivoDe(BELLIDO, (w) => { (w.connections as J)['Candado'] = { main: [[]] }; }));
+    r = await correr('--aplicar', '--solo-codigo');
+    expect(r.codigo, r.salida).toBe(1);
+    expect(mundo.puts).toHaveLength(0);
+  });
+  it('NIEGA: --solo-codigo sin --actualizar-codigo no se usa solo', async () => {
+    const r = await ejecutar(process.execPath, [HERRAMIENTA, '--env', join(carpeta, '.env.falso'), '--estado', join(carpeta, 'x.json'), '--solo-codigo']).then((x) => ({ codigo: 0, salida: x.stdout + x.stderr }), (e: { code: number; stdout: string; stderr: string }) => ({ codigo: e.code, salida: e.stdout + e.stderr }));
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/--solo-codigo solo se usa con --actualizar-codigo/);
+  });
+});
+
 describe('lo que la herramienta se niega a hacer (y no hay ningún PUT)', () => {
   const niega = async (flujo: J, patron: RegExp, ...args: string[]): Promise<void> => {
     nuevo(flujo);
