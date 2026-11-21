@@ -16,7 +16,7 @@
  *
  * PRECONDICIONES (todas antes de escribir; si falla una, salida 2 y nada escrito):
  *   · la ficha EXISTE (un tenant desconocido no se crea nunca);
- *   · el comercio NO es Bellido (por id, por lo que lo contenga, ni por el nombre de la ficha; la
+ *   · el comercio NO está excluido (por id, por lo que lo contenga, ni por el nombre de la ficha; la
  *     variable `NOVUCHAT_TENANTS_EXCLUIDOS` solo agrega) — vale para encender y para apagar;
  *   · para ENCENDER (`--valor true`): la ficha ya tiene `consolaConversaciones === 'nueva'` EXPLÍCITO y
  *     `estado === 'activo'`. Apagar (`--valor false`) no exige nada más: es la dirección segura y tiene
@@ -192,7 +192,7 @@ export async function ejecutar(cfg, deps) {
   const marcar = deps.marcarEscritura ?? (() => {});
   const rotulo = `${cfg.entorno} · tenant ${cfg.tenant}`;
 
-  // Segunda barrera de Bellido, antes de leer: el id también se comprueba aquí.
+  // Segunda barrera de los excluidos, antes de leer: el id también se comprueba aquí.
   if (esTenantExcluido(cfg.tenant, deps.env)) { log('\n  ✗ Este comercio está EXCLUIDO (NOVUCHAT_TENANTS_EXCLUIDOS). No se escribió nada.\n'); return 2; }
 
   const { ref, snap } = await leerFicha(db, cfg.tenant);
@@ -200,7 +200,7 @@ export async function ejecutar(cfg, deps) {
   if (!snap.exists) { log(`\n  ✗ ${cfg.tenant}: no existe la ficha (${cfg.entorno}). No se escribió nada.\n`); return 2; }
   const ficha = snap.data() ?? {};
   if (nombreExcluido(ficha.nombre, deps.env)) {
-    log('\n  ✗ El nombre de la ficha corresponde a un comercio EXCLUIDO (Bellido no se toca). No se escribió nada.\n');
+    log('\n  ✗ El nombre de la ficha corresponde a un comercio EXCLUIDO (no se toca). No se escribió nada.\n');
     return 2;
   }
   const hoyPresente = Object.prototype.hasOwnProperty.call(ficha, CAMPO);
@@ -246,7 +246,7 @@ export async function ejecutar(cfg, deps) {
   log(`  «${CAMPO}» después  : ${cfg.valor}`);
   log(`  cambio              : ${hoyPresente && esBooleano(ficha[CAMPO]) ? ficha[CAMPO] : 'AUSENTE'} → ${cfg.valor}`);
 
-  // Precondiciones para ENCENDER. Apagar siempre se permite (salvo Bellido, arriba).
+  // Precondiciones para ENCENDER. Apagar siempre se permite (salvo un excluido, arriba).
   if (cfg.valor === true) {
     if (ficha.consolaConversaciones !== 'nueva') {
       log('\n  ✗ Para encenderla, la ficha ya tiene que tener consolaConversaciones === "nueva" (explícito). No se escribió nada.\n');

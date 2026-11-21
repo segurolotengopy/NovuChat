@@ -102,9 +102,9 @@ function baseDe(pedidos: Record<string, unknown> | null, opciones: { cambiaAntes
     FieldValue: { delete: () => ({ __borrar: true }) },
   };
 }
-const correr = async (cfg: Cfg, b: ReturnType<typeof baseDe>) => {
+const correr = async (cfg: Cfg, b: ReturnType<typeof baseDe>, extraDeps: Record<string, unknown> = {}) => {
   const salida: string[] = [];
-  const codigo = await mod.ejecutar(cfg, { db: b.db, FieldValue: b.FieldValue, log: (t: string) => salida.push(t) });
+  const codigo = await mod.ejecutar(cfg, { db: b.db, FieldValue: b.FieldValue, log: (t: string) => salida.push(t), ...extraDeps });
   return { codigo, salida: salida.join('\n') };
 };
 const cfgDe = (extra: Cfg = {}): Cfg => {
@@ -152,10 +152,11 @@ describe('C1. argumentos y salvaguarda (puros)', () => {
     expect(problemas(['--tenant', 'tienda-prueba', '--monedas', 'BOB'])).toContain('falta --proyecto');
   });
 
-  it('NEGADO: tenant excluido (Bellido y NOVUCHAT_TENANTS_EXCLUIDOS)', () => {
+  it('NEGADO: tenant excluido (NOVUCHAT_TENANTS_EXCLUIDOS); Bellido ya no (21/11/2026)', () => {
     const arg = (t: string, env: Record<string, string> = ENV_EMU) => mod.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--monedas', 'BOB'], env);
-    expect(arg('bellido').ok).toBe(false);
-    expect((arg('consultorio-bellido').problemas ?? []).join(' ')).toContain('EXCLUIDO');
+    expect(arg('bellido').ok).toBe(true);
+    expect(arg('bellido', { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' }).ok).toBe(false);
+    expect((arg('consultorio-bellido', { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' }).problemas ?? []).join(' ')).toContain('EXCLUIDO');
     expect(arg('tienda-prueba').ok).toBe(true);
     expect(arg('tienda-prueba', { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'tienda-prueba' }).ok).toBe(false);
   });
@@ -256,7 +257,7 @@ describe('C2. seco, aplicar, una sola escritura con precondición', () => {
 describe('C2b. exclusión por nombre y barreras del respaldo', () => {
   it('NEGADO: segunda barrera en `ejecutar`: el NOMBRE de la ficha nombra a un excluido (2, sin respaldo ni escritura)', async () => {
     const b = baseDe({ ...PEDIDOS }, { ficha: { nombre: 'Consultorio Béllido' } });
-    const r = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b);
+    const r = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b, { env: { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' } });
     expect(r.codigo).toBe(2);
     expect(b.escrituras).toEqual([]);
     expect(r.salida).toContain('EXCLUIDO');

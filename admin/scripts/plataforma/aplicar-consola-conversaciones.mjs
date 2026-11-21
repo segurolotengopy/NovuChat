@@ -28,14 +28,12 @@
  *   · `--pantalla` se valida con `validarPantallaConversaciones` (el mismo archivo que lee la
  *     consola): un valor desconocido se RECHAZA (salida 2).
  *
- * BELLIDO Y LA BANDERA (Andres, 24/10/2026, levanta la decisión P1 del 09/10 SOLO para esta bandera):
- * la pantalla nueva es la de todos, así que Bellido puede recibir su bandera. La exclusión del
- * relleno de datos (`rellenar-conversaciones.mjs`) NO se levanta: sigue usando `TENANTS_EXCLUIDOS`.
+ * BELLIDO (Andres, 24/10/2026 levantó la exclusión para la bandera; 21/11/2026 levantó la restricción por completo):
+ * Bellido es un comercio más; `TENANTS_EXCLUIDOS` quedó vacía.
  * Para la bandera la lista fija (`TENANTS_EXCLUIDOS_BANDERA`) está vacía, pero el script sigue
  * negándose (salida 2, sin abrir Firebase) con cualquier id que agregue la variable
  * `NOVUCHAT_TENANTS_EXCLUIDOS` (ids separados por coma), y una segunda vez si el NOMBRE de la
- * ficha lo nombra. Tomar y escribir como persona NO dependen de este script: el servidor
- * sigue excluyendo a Bellido (`accesoPersona.ts`).
+ * ficha lo nombra. Tomar y escribir como persona NO dependen de este script.
  *
  * SALVAGUARDA DE PROYECTO. Lista blanca por `GCP_PROJECT_ID_STAGING` y `GCP_PROJECT_ID_PROD`;
  * contra PRODUCCIÓN, `--aplicar` exige `--confirmo-produccion <tenant>` igual a `--tenant`.
@@ -86,7 +84,7 @@ const CON_VALOR = ['proyecto', 'tenant', 'pantalla', 'respaldo', 'confirmo-produ
 const BANDERAS = ['aplicar', 'revertir'];
 
 /** Los comercios a los que NUNCA se les corre este script (ni el de relleno). Ver el encabezado. */
-export const TENANTS_EXCLUIDOS = Object.freeze(['bellido']);
+export const TENANTS_EXCLUIDOS = Object.freeze([]);   // 21/11/2026: Bellido ya no se excluye (orden de Andres); queda la variable NOVUCHAT_TENANTS_EXCLUIDOS
 
 /** Los excluidos de la BANDERA de pantalla (24/10/2026): ninguno fijo; la variable de entorno puede agregar. */
 export const TENANTS_EXCLUIDOS_BANDERA = Object.freeze([]);
@@ -98,7 +96,7 @@ export const USO = '  node scripts/plataforma/aplicar-consola-conversaciones.mjs
   + `  pantallas permitidas: ${PANTALLAS_CONVERSACIONES.join(', ')}`;
 
 // ===========================================================================
-// BELLIDO Y LA LISTA DE EXCLUSIÓN (puras)
+// LA LISTA DE EXCLUSIÓN (puras)
 // ===========================================================================
 export const sinTildes = (s) => String(s).normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase();
 
@@ -112,7 +110,7 @@ export function excluidos(env = process.env, base = TENANTS_EXCLUIDOS) {
 
 /**
  * ¿Es un comercio de la lista de exclusión? Coincide si el id ES uno de la lista o LO CONTIENE
- * (`bellido`, `consultorio-bellido`, `bellido2`): ante la duda se niega, nunca se deja pasar.
+ * (`x`, `consultorio-x`, `x2`): ante la duda se niega, nunca se deja pasar.
  */
 export function esTenantExcluido(tenant, env = process.env) {
   if (typeof tenant !== 'string') return false;
@@ -442,7 +440,7 @@ export async function ejecutar(cfg, deps) {
   const marcar = deps.marcarEscritura ?? (() => {});
   const rotulo = `${cfg.entorno} · tenant ${cfg.tenant}`;
 
-  // Segunda barrera de Bellido, antes de leer nada más: el id también se comprueba aquí, no solo al analizar los argumentos.
+  // Segunda barrera de los comercios excluidos (lista fija y variable de entorno), antes de leer nada más: el id también se comprueba aquí, no solo al analizar los argumentos.
   if (esTenantExcluidoDeBandera(cfg.tenant, deps.env)) { log('\n  ✗ Este comercio está EXCLUIDO de la bandera: no se toca.\n'); return 2; }
 
   const { ref, snap } = await leerFicha(db, cfg.tenant);

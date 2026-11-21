@@ -37,7 +37,7 @@
  * una parte de ellas: todos los mensajes son texto fijo.
  *
  * SALIDA. 0: todo OK (y, con --encender, el seco o la escritura terminaron bien). 1: hay FALLAs.
- * 2: uso o salvaguarda (Bellido, proyecto fuera de la lista blanca). 3: error de ejecución, o no se pudo
+ * 2: uso o salvaguarda (comercio excluido, proyecto fuera de la lista blanca). 3: error de ejecución, o no se pudo
  * verificar algo (NO SE PUDO) y nada falló. Un NO SE PUDO nunca cuenta como OK.
  *
  * COSTO. Lecturas: 1 consulta + 1 documento de Firestore, 2 a 3 llamadas a gcloud, 3 a 5 GET a n8n.
@@ -48,7 +48,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { esTenantExcluidoDeBandera as esTenantExcluido, nombreExcluidoDeBandera as nombreExcluido, ID_TENANT } from './aplicar-consola-conversaciones.mjs';   // 08/11/2026: Bellido ya no está excluido
+import { esTenantExcluidoDeBandera as esTenantExcluido, nombreExcluidoDeBandera as nombreExcluido, ID_TENANT } from './aplicar-consola-conversaciones.mjs';   // 08/11/2026 y 21/11/2026: Bellido ya no está excluido
 import { comprobarProyecto } from './aplicar-consola-oculta.mjs';
 
 export const OK = 'OK';

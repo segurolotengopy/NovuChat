@@ -48,6 +48,15 @@ import {
 } from './aplicar-consola-conversaciones.mjs';
 
 const CAMPO = 'guardarMedios';
+
+/**
+ * Comercios a los que NO se les corre ESTE script: decisión de Andres, aparte; NO es la restricción general de
+ * «no se toca» que se levantó el 21/11/2026. Es un dato propio de guardarMedios y no va en la lista general.
+ */
+export const EXCLUIDOS_DE_GUARDADO = Object.freeze(['bellido']);
+const sinTil = (x) => String(x).normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase();
+export const excluidoDeGuardado = (tenant) => typeof tenant === 'string' && EXCLUIDOS_DE_GUARDADO.some((x) => sinTil(tenant).includes(x));
+export const nombreExcluidoDeGuardado = (nombre) => typeof nombre === 'string' && EXCLUIDOS_DE_GUARDADO.some((x) => sinTil(nombre).includes(x));
 const CON_VALOR = ['proyecto', 'tenant', 'valor', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'revertir'];
 
@@ -106,8 +115,8 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   if (tenant === undefined) problemas.push('falta --tenant');
   else if (tenant.includes(',')) problemas.push('--tenant admite UN solo comercio por corrida (sin comas)');
   else if (!ID_TENANT.test(tenant)) problemas.push('--tenant inválido (minúsculas, dígitos y guiones, de 3 a 60)');
-  else if (esTenantExcluido(tenant, env)) {
-    problemas.push('este comercio está EXCLUIDO (Bellido o NOVUCHAT_TENANTS_EXCLUIDOS): no se le corre este script sin una orden expresa de Andres');
+  else if (esTenantExcluido(tenant, env) || excluidoDeGuardado(tenant)) {
+    problemas.push('este comercio está EXCLUIDO (guardado de medios: Bellido por decisión de Andres, o NOVUCHAT_TENANTS_EXCLUIDOS): no se le corre este script sin una orden expresa de Andres');
   }
 
   if (confirmo !== undefined) {
@@ -200,7 +209,7 @@ export async function ejecutar(cfg, deps) {
   if (!snap.exists) { log(`\n  ✗ ${cfg.tenant}: no existe la ficha (${cfg.entorno})\n`); return 1; }
   const ficha = snap.data() ?? {};
   // Segunda barrera: el NOMBRE de la ficha también puede nombrar a un comercio excluido (si el id no fuera el esperado).
-  if (esTenantExcluido(cfg.tenant, deps.env) || nombreExcluido(ficha.nombre, deps.env)) {
+  if (esTenantExcluido(cfg.tenant, deps.env) || excluidoDeGuardado(cfg.tenant) || nombreExcluido(ficha.nombre, deps.env) || nombreExcluidoDeGuardado(ficha.nombre)) {
     log('\n  ✗ Este comercio está EXCLUIDO: no se toca. No se escribió nada.\n');
     return 2;
   }

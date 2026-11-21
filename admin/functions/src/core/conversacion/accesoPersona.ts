@@ -18,19 +18,18 @@
  *     el permiso es el de las reglas de Firestore, que tampoco miran Auth, y dos criterios
  *     distintos de «quién atiende una conversación» sería peor que un token vivo una hora más.
  *  4. HABILITACIÓN EN EL SERVIDOR: el comercio debe tener `consolaConversaciones === 'nueva'` y NO
- *     ser Bellido. La bandera es presentación, pero tomar y enviar exigen habilitación; una
- *     llamada a mano con la pantalla clásica no debe poder pausar al asistente. Bellido no se
- *     toca (decisión P1 de Andres, 09/10/2026): se rechaza aunque alguien le hubiera encendido
- *     la bandera.
+ *     estar en la lista de exclusión (hoy vacía). La bandera es presentación, pero tomar y enviar exigen
+ *     habilitación; una llamada a mano con la pantalla clásica no debe poder pausar al asistente. Bellido
+ *     ya no se excluye (Andres levantó la restricción: 08/11/2026 aquí, 21/11/2026 en los scripts).
  *
  * LA LISTA DE EXCLUSIÓN. Es la de `scripts/plataforma/aplicar-consola-conversaciones.mjs`
  * (`TENANTS_EXCLUIDOS`, `esTenantExcluido`, `nombreExcluido`), repetida acá porque Core no puede
  * importar de `scripts/`. Una prueba compara las dos y falla si se separan. Coincide si el id ES
- * un excluido o LO CONTIENE (`bellido`, `consultorio-bellido`, `bellido2`), sin tildes ni
+ * un excluido o LO CONTIENE (`x`, `consultorio-x`, `x2`), sin tildes ni
  * mayúsculas: ante la duda se niega. El nombre de la ficha es una segunda barrera por si el id
  * no fuera el esperado. La variable `NOVUCHAT_TENANTS_EXCLUIDOS` del script NO se lee acá: una
  * variable de entorno nueva exige tocar el `.env` exacto del CI de producción, y la lista fija
- * ya cubre a Bellido.
+ * es la que rige.
  *
  *  5. SALIDA PUBLICADA (25/10/2026): además, `tenants/{id}.personaPuedeEscribir === true` EXACTO, para tomar y
  *     para escribir (no para devolver). Lo escrito como persona sale por el flujo n8n «Salida de persona» de
@@ -39,7 +38,7 @@
  *     salida existe; ningún navegador la escribe. DEVOLVER no la exige: devolver es la dirección segura (le
  *     da la palabra al asistente) y un comercio que ya tenía una conversación tomada y pierde la bandera no
  *     puede quedar con el asistente callado. Orden de las comprobaciones: rol del token, comercio `activo`,
- *     habilitación (`nueva`, no Bellido), bandera de salida; todas ANTES de cualquier escritura (el tope por
+ *     habilitación (`nueva`, no excluido), bandera de salida; todas ANTES de cualquier escritura (el tope por
  *     usuario también), y la transacción de tomar y la de escribir la vuelven a leer dentro de sí misma,
  *     para que apagarla en medio de una llamada no deje pasar la toma.
  *
@@ -98,7 +97,7 @@ export function exigirRolDePersona(p: CallableRequest, tenantId: unknown): RolDe
 }
 
 /**
- * El comercio: `activo`, habilitado (bandera `nueva`, no Bellido) y, salvo `exigirSalida: false` (devolver), con
+ * El comercio: `activo`, habilitado (bandera `nueva`, no excluido) y, salvo `exigirSalida: false` (devolver), con
  * `personaPuedeEscribir === true`. Devuelve su ficha.
  */
 export async function exigirComercioHabilitado(

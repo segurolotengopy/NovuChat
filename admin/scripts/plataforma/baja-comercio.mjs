@@ -39,7 +39,7 @@
  *
  * SALVAGUARDA DE PROYECTO. Lista blanca por `GCP_PROJECT_ID_STAGING` y `GCP_PROJECT_ID_PROD`; contra PRODUCCIÓN,
  * `--aplicar` exige `--confirmo-produccion <tenant>`. Contra el emulador (`demo-*`) exige `FIRESTORE_EMULATOR_HOST`
- * local. El id de un proyecto real NUNCA se imprime. Un comercio EXCLUIDO (Bellido o `NOVUCHAT_TENANTS_EXCLUIDOS`) no se
+ * local. El id de un proyecto real NUNCA se imprime. Un comercio EXCLUIDO (`NOVUCHAT_TENANTS_EXCLUIDOS`) no se
  * toca sin una orden expresa de Andres.
  *
  * SALIDA. 0: seco sin diferencias (ya dado de baja), o baja hecha y comprobada. 1: el seco encontró un comercio por dar
@@ -104,7 +104,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   else if (tenant.includes(',')) problemas.push('--tenant admite UN solo comercio por corrida (sin comas)');
   else if (!ID_TENANT.test(tenant)) problemas.push('--tenant inválido (minúsculas, dígitos y guiones, de 3 a 60)');
   else if (esTenantExcluido(tenant, env)) {
-    problemas.push('este comercio está EXCLUIDO (Bellido o NOVUCHAT_TENANTS_EXCLUIDOS): no se le corre este script sin una orden expresa de Andres');
+    problemas.push('este comercio está EXCLUIDO (NOVUCHAT_TENANTS_EXCLUIDOS): no se le corre este script sin una orden expresa de Andres');
   }
 
   if (confirmo !== undefined) {
