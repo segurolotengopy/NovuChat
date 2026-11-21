@@ -1,5 +1,5 @@
 /**
- * LAS PROMOCIONES DE «VENTA MÍNIMA v0» (`Flujos/experimental/venta-minima/src/lib/promos.js`, T5).
+ * LAS PROMOCIONES DE «VENTA MÍNIMA v0» (`Flujos/clientes/venta-minima/src/lib/promos.js`, T5).
  *
  * Lo que se protege: una campaña de Facebook decide la bienvenida SOLO por el texto exacto que el comercio
  * cargó y el servidor aprobó. El titular del anuncio, el `referral` y lo que escribe el cliente son entrada no
@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar } from './lib/flujo';
 
-const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/lib/promos.js');
+const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/venta-minima/src/lib/promos.js');
 const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [

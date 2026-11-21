@@ -23,7 +23,7 @@ import { describe, expect, it } from 'vitest';
 import { codigoDe, configBase, ejecutar, type Flujo, type J, type Referencias } from './lib/flujo';
 import { comprometer, crearSesion, leerSesion, type SesionDeMentira } from './lib/venta-minima-sesion';
 
-const CARPETA_VM = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima');
+const CARPETA_VM = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/venta-minima');
 const QTACO = JSON.parse(readFileSync(join(CARPETA_VM, 'venta-minima.qtaco.json'), 'utf8')) as Flujo;
 
 // La red de palabras del contrato (`VM_PROHIBIDAS`): se repite acá a propósito. Si el contrato cambia, esta suite lo dice.

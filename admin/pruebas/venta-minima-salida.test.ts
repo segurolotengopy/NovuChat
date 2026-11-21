@@ -1,6 +1,6 @@
 /**
  * LA SALIDA DE «VENTA MÍNIMA v0»: `armar-avisos.js`, `armar-mensajes.js` y `resumen-del-turno.js`
- * (`Flujos/experimental/venta-minima/src/nodos/`).
+ * (`Flujos/clientes/venta-minima/src/nodos/`).
  *
  * Qué prueban estas tres piezas, por HECHO y no por lo dicho (CLAUDE.md, «Solo se ofrece lo que se
  * cumple» y prohibición 3):
@@ -30,7 +30,7 @@ import { describe, expect, it } from 'vitest';
 import { ejecutar, type J, type Referencias } from './lib/flujo';
 import { voz } from './lib/venta-minima-voz';
 
-const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/nodos');
+const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/venta-minima/src/nodos');
 const AVISOS = readFileSync(join(CARPETA, 'armar-avisos.js'), 'utf8');
 const MENSAJES = readFileSync(join(CARPETA, 'armar-mensajes.js'), 'utf8');
 // La identidad «con IA» y los párrafos (core, `+texto` de construir.mjs): REALES, delante de «Armar mensajes».

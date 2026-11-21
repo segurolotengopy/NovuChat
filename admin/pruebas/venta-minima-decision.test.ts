@@ -1,5 +1,5 @@
 /**
- * LA DECISIÓN DEL TURNO DE «VENTA MÍNIMA v0» (`Flujos/experimental/venta-minima/src/nodos/{decidir-turno,plan-del-turno}.js`).
+ * LA DECISIÓN DEL TURNO DE «VENTA MÍNIMA v0» (`Flujos/clientes/venta-minima/src/nodos/{decidir-turno,plan-del-turno}.js`).
  *
  * `Decidir turno` elige la acción sin llamar a ningún modelo; `Plan del turno` arma los mensajes, el aviso, el
  * cierre y el estado nuevo. Las dos reglas que sostienen esta suite (CLAUDE.md, PROHIBICIÓN 3 y política «solo se
@@ -31,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar } from './lib/flujo';
 
-const NODOS = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/nodos');
+const NODOS = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/venta-minima/src/nodos');
 const DECIDIR = readFileSync(join(NODOS, 'decidir-turno.js'), 'utf8');
 const PLAN = readFileSync(join(NODOS, 'plan-del-turno.js'), 'utf8');
 // El módulo común de Pedidos es REAL (no un doble): construir.mjs lo incluye delante de cada nodo.

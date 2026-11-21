@@ -138,7 +138,7 @@ Y borrar de las agendas del demo las citas de la prueba.
 > en que está pidiendo, y el botón «Escribir al local» abre un chat con su propio teléfono. El
 > `WhatsApp Trigger` del flujo es **el del Demo A, copiado tal cual** del flujo vivo: la
 > credencial de la app NovuChat-Demo-A, nunca la de AAB1-WA-Prod (`CLAUDE.md` prohibición 7).
-> Diseño de la variante: `Flujos/experimental/venta-minima/DISENO.md`, «La variante de ensayo en
+> Diseño de la variante: `Flujos/clientes/venta-minima/DISENO.md`, «La variante de ensayo en
 > el Demo A».
 
 **El interruptor de un solo teléfono (`avisarAlPropioNumero`).** En producción el flujo nunca
@@ -216,7 +216,7 @@ sin declarar. Se retira al restaurar.
 **C. Un árbol al día, no `~/NovuChat`.** Los scripts se corren desde un **worktree
 nacido de `origin/main`** (`.claude/worktrees/<nombre>/`), con la suite en verde,
 `pnpm install --frozen-lockfile` en `admin/` (nunca `npm`) y
-`node Flujos/experimental/venta-minima/construir.mjs --verificar` en 0. La copia
+`node Flujos/clientes/venta-minima/construir.mjs --verificar` en 0. La copia
 principal puede estar cientos de commits atrás y sin `ensayo.mjs` ni los abortos de
 `publicar-flujo.sh`. El worktree no trae los `.env`, así que se enlazan (están ignorados
 por git; `publicar-flujo.sh` hace `. "./$ENV_FILE"` desde la raíz del repositorio):
@@ -258,7 +258,7 @@ repositorio.** Ese teléfono tiene que estar registrado en la app del Demo A.
 **2. Preparar el import** (reemplaza los dos marcadores):
 
     CONFIG_LOCAL_MD=~/NovuChat/CONFIGURACION.local.md ./scripts/preparar-import.sh \
-      <worktree>/Flujos/experimental/venta-minima/venta-minima.ensayo-demo-a.json .env
+      <worktree>/Flujos/clientes/venta-minima/venta-minima.ensayo-demo-a.json .env
 
 Se lee entero: los dos marcadores resueltos y ninguno sin resolver. Deja
 `venta-minima.ensayo-demo-a.local.json` junto al original (ignorado por git, y
@@ -286,7 +286,7 @@ scratchpad (fuera del repositorio; la herramienta se niega si no):
 
     node Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env \
       --estado <scratchpad>/estado-ensayo.json --sobre-demo-a --respaldo <scratchpad>/respaldo-demo-a.json \
-      --flujo <worktree>/Flujos/experimental/venta-minima/venta-minima.ensayo-demo-a.local.json   # seco
+      --flujo <worktree>/Flujos/clientes/venta-minima/venta-minima.ensayo-demo-a.local.json   # seco
     ... --aplicar --autorizo-gemini-produccion
 
 El seco se lee entero. Tiene que decir: «Demo A vivo» con el nombre del Demo A y `activo=True`;

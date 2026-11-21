@@ -21,7 +21,7 @@ const LINEA_BASE: Array<[string, number, number]> = [
   ['../clientes/rroca-emma/rroca-emma.json', 59, 6], ['../clientes/rroca-emma/rroca-emma.prueba.json', 54, 6],
   ['../clientes/rroca-evy/rroca-evy.json', 59, 6], ['../clientes/rroca-evy/rroca-evy.prueba.json', 54, 6],
   ['../clientes/rroca-ruben/rroca-ruben.json', 68, 6], ['../clientes/rroca-ruben/rroca-ruben.prueba.json', 63, 6],
-  ['venta-minima/venta-minima.qtaco-3727.json', 84, 7],
+  ['../clientes/venta-minima/venta-minima.qtaco-3727.json', 84, 7],
 ];
 const HOST_META = new RegExp(['graph', 'facebook', 'com'].join('\\.'));
 // La rama del guardado de la imagen SALIENTE (16/11/2026) hace GET de una imagen ya enviada y la sube a `guardarMedio`: ningún nodo suyo manda un mensaje (+3 o +4 nodos en estos flujos, +0 emisores).
@@ -39,7 +39,7 @@ describe('una fila por conversación: sin mensajes de Meta nuevos en los 15 JSON
 
 describe('una fila por conversación: la declaración de la fila mínima y el contrato en cada flujo con miniCRM', () => {
   const CON_MINICRM = ['agenda-minima/agenda-minima.v0.json', 'captacion-minima/captacion-minima.novuchat.json', '../clientes/novuchat/chat-novuchat.novuchat.json', '../clientes/rroca-antonio/rroca-antonio.json',
-    '../clientes/rroca-emma/rroca-emma.json', '../clientes/rroca-evy/rroca-evy.json', '../clientes/rroca-ruben/rroca-ruben.json', 'venta-minima/venta-minima.qtaco-3727.json'];
+    '../clientes/rroca-emma/rroca-emma.json', '../clientes/rroca-evy/rroca-evy.json', '../clientes/rroca-ruben/rroca-ruben.json', '../clientes/venta-minima/venta-minima.qtaco-3727.json'];
   it.each(CON_MINICRM)('%s: el nodo «Prospecto para la planilla» lee el contrato nuevo y declara la fila mínima', (archivo) => {
     const codigo = cargar(archivo).nodes.find((n) => n.name === 'Prospecto para la planilla')?.parameters?.jsCode ?? '';
     expect(codigo).toContain('minima: true');

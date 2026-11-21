@@ -54,7 +54,7 @@ import { fileURLToPath } from 'node:url';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DEL_GUARDADO_SALIENTE, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
 import { fuentesDeLaCadenaComun, hallazgosDelGuardadoSaliente, injertarGuardadoSaliente, NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE, URL_DESCARGA_SALIENTE } from '../../src/core/sin-agente/guardado-saliente.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
-import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
+import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../../experimental/comun-sin-agente/construir-crm.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const DATOS = join(AQUI, '../../../admin/scripts/datos/venta-minima');

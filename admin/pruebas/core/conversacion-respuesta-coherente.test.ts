@@ -158,7 +158,7 @@ describe('corpus del revisor (121 frases de crisis y baja, con evasiones): TODAS
 
 describe('corpus fijo: frases de baja de la pieza común que `rcSenalDeCrisisOBaja` también detecta (NO es una equivalencia entre las dos)', () => {
   // El entrante de «Venta mínima» lleva la expresión común del core (`BJ_BAJA`, literal en la plantilla: lo fija `ux-baja.test.ts`); aquí se usa la pieza real.
-  const plantilla = readFileSync(new URL('../../../Flujos/experimental/venta-minima/flujo.plantilla.json', import.meta.url), 'utf8');
+  const plantilla = readFileSync(new URL('../../../Flujos/clientes/venta-minima/flujo.plantilla.json', import.meta.url), 'utf8');
   const BJ = cargarFuente<{ bjPideBaja: (t: string) => boolean }>(['Flujos/src/core/conversacion/baja.js'], ['bjPideBaja']);
   const baja = { test: (t: string): boolean => BJ.bjPideBaja(t) };
   it('la expresión del entrante existe en la plantilla', () => { expect(plantilla).toContain('no_contactar'); });
@@ -181,7 +181,7 @@ describe('corpus fijo: frases de baja de la pieza común que `rcSenalDeCrisisOBa
     const libre = src.indexOf("salir('extraer_");
     return baja >= 0 && libre >= 0 && baja < libre;
   };
-  const DECIDIR = readFileSync(new URL('../../../Flujos/experimental/venta-minima/src/nodos/decidir-turno.js', import.meta.url), 'utf8');
+  const DECIDIR = readFileSync(new URL('../../../Flujos/clientes/venta-minima/src/nodos/decidir-turno.js', import.meta.url), 'utf8');
   it('ORDEN: en «Decidir turno» la baja por `bjPideBaja` se decide antes de toda salida al modelo (`extraer_*`)', () => {
     expect(ordenDeLaBaja(DECIDIR)).toBe(true);
   });

@@ -15,7 +15,7 @@ type Pieza = { nodes: J[]; connections: Record<string, unknown> };
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const leer = (r: string): Pieza => JSON.parse(readFileSync(join(RAIZ, r), 'utf8')) as Pieza;
 const CORE = leer('Flujos/src/core/receptor/entrada-del-receptor.plantilla.json');
-const PLANTILLA = leer('Flujos/experimental/venta-minima/flujo.plantilla.json');
+const PLANTILLA = leer('Flujos/clientes/venta-minima/flujo.plantilla.json');
 const NOMBRES = ['Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos'];
 
 /** Hallazgos de seguridad de la pieza: vacío si cumple (marcadores, wabaIdEsperado fijo, repetidos entre ejecuciones, sin Continue on Fail ni credenciales). */

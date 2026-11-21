@@ -15,7 +15,7 @@ import { doblesDelGuardado } from './lib/doble-guardado';
 import { crearSesion, type SesionDeMentira } from './lib/venta-minima-sesion';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const CARPETA_VM = join(AQUI, '../../Flujos/experimental/venta-minima');
+const CARPETA_VM = join(AQUI, '../../Flujos/clientes/venta-minima');
 const QTACO = JSON.parse(readFileSync(join(CARPETA_VM, 'venta-minima.qtaco.json'), 'utf8')) as Flujo;
 const DATOS = configBase(QTACO);
 

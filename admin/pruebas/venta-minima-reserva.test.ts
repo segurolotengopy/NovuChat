@@ -1,5 +1,5 @@
 /**
- * LA LIBRERÍA DE RESERVAS DE «VENTA MÍNIMA v0» (`Flujos/experimental/venta-minima/src/lib/reserva.js`, prefijo `rs*`).
+ * LA LIBRERÍA DE RESERVAS DE «VENTA MÍNIMA v0» (`Flujos/clientes/venta-minima/src/lib/reserva.js`, prefijo `rs*`).
  *
  * Principio del flujo: el código calcula, el modelo SOLO extrae. La reserva de Q'Taco es una SOLICITUD que
  * confirma el restaurante (diseño §3 DD10): fecha pasada, hora fuera de horario, más personas de las que
@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar } from './lib/flujo';
 
-const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/lib/reserva.js');
+const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/venta-minima/src/lib/reserva.js');
 const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [

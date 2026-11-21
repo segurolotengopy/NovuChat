@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest';
 import { ejecutar, type J, type Referencias } from './lib/flujo';
 import { asentarCupos, comprometer, consumirCupos, crearSesion, leerSesion, type SesionDeMentira } from './lib/venta-minima-sesion';
 
-const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src');
+const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/venta-minima/src');
 const leer = (r: string): string => readFileSync(join(RAIZ, r === 'lib/avisos.js' ? '../../../src/core/sin-agente/avisos.js' : r), 'utf8');
 const LIBRERIAS = ['comun', 'pedido', 'reserva', 'promos', 'avisos', 'cobro'].map((n) => leer(`lib/${n}.js`));
 // El módulo común de Pedidos (qr-del-pedido.js) va detrás de las librerías propias, como lo arma construir.mjs.
