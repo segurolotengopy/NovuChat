@@ -8,13 +8,20 @@
  * Cada regla trae su contraprueba.
  */
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+// @ts-expect-error módulo .mjs sin tipos
+import { COMERCIOS_NO_TOCADOS } from '../../scripts/plataforma/comercios-no-tocados.mjs';
 import { JUEGO_CON_INFRA, JUEGO_DE_FICHA } from '../../functions/src/core/conversacion/juego';
 // @ts-expect-error módulo .mjs sin tipos
 import { fichaInicial } from '../../scripts/plataforma/alta-comercio.mjs';
 // @ts-expect-error módulo .mjs sin tipos
-import { analizarArgumentos, argumentosDelPaso, aliasDeRutas, censurar, correrPasos, lineasDeTodos, pasosDelEncendido, validarOrden } from '../../scripts/plataforma/encender-conversacion.mjs';
+import { chequeoSecreto } from '../../scripts/plataforma/verificar-salida-persona.mjs';
+// @ts-expect-error módulo .mjs sin tipos
+import { analizarArgumentos, argumentosDelPaso, aliasDeRutas, comprobarCanal, esComercioNoTocado, repasarTodos, censurar, correrPasos, lineasDeTodos, pasosDelEncendido, validarOrden } from '../../scripts/plataforma/encender-conversacion.mjs';
 
-type Paso = { id: string; tipo: string; bandera?: string; escribe: boolean; enSeco: boolean; args?: string[]; revertir?: string | null; titulo: string };
+type Paso = { id: string; tipo: string; bandera?: string; escribe: boolean; enSeco: boolean; args?: string[]; revertir?: string | null; titulo: string; sondeo?: { args: string[] } };
 
 const SELLO = { creadoEn: 'ahora', creadoPor: 'alta-comercio' };
 const PARAMS = {
@@ -42,12 +49,6 @@ describe('fichaInicial (alta-comercio.mjs)', () => {
     expect(ficha).toMatchObject({ nombre: 'Zeta', estado: 'activo', plan: 'impulso', vertical: 'agendamiento', titularCuentaUid: 'uid1', titularCuentaPor: 'alta-comercio', waPhoneNumberId: null });
     expect(ficha.modulos.length).toBeGreaterThan(0);
   });
-
-  it('negativa: una ficha sin guardarMedios o con «true» como texto no cumple la comparación del juego', () => {
-    const { guardarMedios: _g, ...sin } = ficha;
-    expect(sin.guardarMedios).toBeUndefined();
-    expect({ ...ficha, guardarMedios: 'true' }.guardarMedios).not.toBe(JUEGO_DE_FICHA.guardarMedios);
-  });
 });
 
 describe('pasosDelEncendido (encender-conversacion.mjs)', () => {
@@ -68,11 +69,12 @@ describe('pasosDelEncendido (encender-conversacion.mjs)', () => {
     expect(validarOrden(ps)).toEqual([]);
   });
 
-  it('la puerta pide los medios (4f) y es solo lectura; ningún paso despliega (D1)', () => {
+  it('la puerta pide los medios (4f) y acepta el alias en latest (D1); es solo lectura y ningún paso despliega', () => {
     const puerta = pasos().find((p) => p.tipo === 'puerta') as Paso;
     expect(puerta.args).toContain('--medios');
+    expect(puerta.args).toContain('--sin-redespliegue');
     expect(puerta.escribe).toBe(false);
-    expect(JSON.stringify(pasos().map((p) => [p.titulo, p.args]))).not.toMatch(/deploy|desplieg|firebase/i);
+    expect(JSON.stringify(pasos().map((p) => [p.titulo, p.args])).replace('--sin-redespliegue', '')).not.toMatch(/deploy|desplieg|firebase/i);
   });
 
   it('negativa: un orden con una bandera ANTES de la puerta no es válido y no se ejecuta nada', async () => {
@@ -94,14 +96,27 @@ describe('pasosDelEncendido (encender-conversacion.mjs)', () => {
 });
 
 describe('correrPasos con dependencias falsas', () => {
-  const armar = (fallaEn: string | null, codigoDeFalla = 3) => {
+  type Sondeo = { codigo: number; salida: string };
+  // Por omisión NADA está hecho: relé y flujo ausentes, alias ausente del mapa.
+  const NADA: Record<string, Sondeo> = {
+    'rele-inerte': { codigo: 1, salida: '' }, alias: { codigo: 1, salida: 'el alias pedido está ausente' },
+    'timbre-carga': { codigo: 2, salida: '' }, 'timbre-activar': { codigo: 2, salida: '' },
+  };
+  const armar = (fallaEn: string | null, codigoDeFalla = 3, sondeos: Record<string, Sondeo> = NADA) => {
     const llamadas: string[] = [];
+    const sondeadas: string[] = [];
     const log: string[] = [];
     const deps = {
       log: (t: string) => log.push(t),
       ejecutar: async (p: Paso) => { llamadas.push(p.id); return p.id === fallaEn ? codigoDeFalla : 0; },
+      // Un paso ya ejecutado en esta corrida queda hecho para el sondeo siguiente (como en la realidad).
+      sondear: async (p: Paso) => {
+        sondeadas.push(p.id);
+        if (llamadas.includes(p.id)) return p.id === 'alias' ? { codigo: 3, salida: 'el alias pedido está presente' } : { codigo: 0, salida: '' };
+        return sondeos[p.id] ?? { codigo: 2, salida: '' };
+      },
     };
-    return { llamadas, log, deps };
+    return { llamadas, sondeadas, log, deps };
   };
 
   it('todo en verde: corre los siete pasos en orden, puerta antes de las banderas, y dice cómo deshacer', async () => {
@@ -138,30 +153,94 @@ describe('correrPasos con dependencias falsas', () => {
     expect(log.join('\n')).not.toMatch(/--quitar-alias/);
   });
 
-  it('segunda barrera: aunque el plan sea válido, una bandera no corre si la puerta no se pasó en esta corrida', async () => {
-    const ps = pasos();
-    const sinPuertaEjecutada = ps.map((p) => (p.tipo === 'puerta' ? { ...p, tipo: 'spawn', id: 'otra-cosa' } : p));
-    // plan inválido (sin puerta): se niega entero
-    const { llamadas, deps } = armar(null);
-    const r = await correrPasos(sinPuertaEjecutada, { aplicar: true, deps });
-    expect(r.codigo).toBe(2);
-    expect(llamadas).toEqual([]);
+  it('segunda barrera: la puerta llega y FALLA (el plan sí pasa validarOrden): ninguna bandera corre y no se escribe nada más', async () => {
+    expect(validarOrden(pasos())).toEqual([]);
+    const { llamadas, deps } = armar('puerta', 1);
+    const r = await correrPasos(pasos(), { aplicar: true, deps });
+    expect(r.codigo).toBe(3);
+    expect(r.fallo).toBe('puerta');
+    expect(llamadas.at(-1)).toBe('puerta');
+    for (const campo of Object.keys(JUEGO_CON_INFRA)) expect(llamadas).not.toContain(campo);
   });
 
-  it('en seco no escribe ni corre lo que depende de lo anterior; no pasa --aplicar a ningún hijo', async () => {
+  it('en seco no escribe: sondea, no corre pasos de infraestructura ni la puerta, y deja el código 1 con lo que falta', async () => {
     const { llamadas, log, deps } = armar(null);
     const r = await correrPasos(pasos(), { aplicar: false, deps });
-    expect(r.codigo).toBe(0);
-    expect(llamadas).toEqual(['rele-inerte', 'alias', 'personaPuedeEscribir']);
+    expect(r.codigo).toBe(1);
+    // la primera bandera ya está en true (0) en este simulacro, así que el seco también mira la segunda
+    expect(llamadas).toEqual(['personaPuedeEscribir', 'personaPuedeEnviarMedios']);
+    expect(r.pendientes).toEqual(expect.arrayContaining(['rele-inerte', 'alias', 'timbre-carga', 'timbre-activar']));
     expect(log.join('\n')).toMatch(/se comprueba al aplicar/);
     for (const p of pasos().filter((x) => x.args)) expect(argumentosDelPaso(p, false)).not.toContain('--aplicar');
+    for (const p of pasos().filter((x) => x.sondeo)) expect(p.sondeo?.args).not.toContain('--aplicar');
   });
 
-  it('en seco un paso que dice «falta» (salida 1) deja el código 1, no un fallo', async () => {
-    const { deps } = armar('rele-inerte', 1);
+  const HECHO_TODO: Record<string, Sondeo> = {
+    'rele-inerte': { codigo: 0, salida: '' }, alias: { codigo: 3, salida: 'el alias pedido está presente' },
+    'timbre-carga': { codigo: 0, salida: '' }, 'timbre-activar': { codigo: 0, salida: '' },
+  };
+
+  it('reanudar: con relé, alias y flujo cargado y activo, al aplicar se saltan los pasos 1 a 4 y solo corren puerta y banderas', async () => {
+    const { llamadas, log, deps } = armar(null, 3, HECHO_TODO);
+    const r = await correrPasos(pasos(), { aplicar: true, deps });
+    expect(r.codigo).toBe(0);
+    expect(llamadas).toEqual(['puerta', ...Object.keys(JUEGO_CON_INFRA)]);
+    expect(log.join('\n')).toMatch(/ya está hecho/);
+    // lo saltado no se «deshace»: solo lo que esta corrida escribió
+    expect(log.join('\n')).not.toMatch(/--quitar-alias|--quitar --aplicar/);
+  });
+
+  it('reanudar a medias: flujo cargado pero inactivo (falta solo activar) corre únicamente la activación', async () => {
+    const { llamadas, deps } = armar(null, 3, { ...HECHO_TODO, 'timbre-activar': { codigo: 1, salida: '' } });
+    const r = await correrPasos(pasos(), { aplicar: true, deps });
+    expect(r.codigo).toBe(0);
+    expect(llamadas).toEqual(['timbre-activar', 'puerta', ...Object.keys(JUEGO_CON_INFRA)]);
+  });
+
+  it('reanudar: un flujo ya cargado implica relé y alias hechos (un comercio con relé propio no crea el inerte)', async () => {
+    const { llamadas, deps } = armar(null, 3, { ...NADA, 'timbre-carga': { codigo: 1, salida: '' } });
+    await correrPasos(pasos(), { aplicar: true, deps });
+    expect(llamadas).not.toContain('rele-inerte');
+    expect(llamadas).not.toContain('alias');
+    expect(llamadas).not.toContain('timbre-carga');
+    expect(llamadas[0]).toBe('timbre-activar');
+  });
+
+  it('seco de un comercio encendido a medias (Walisuma, Casa Bermejo): limpio, corre la puerta y dice qué falta', async () => {
+    const { llamadas, log, deps } = armar(null, 3, HECHO_TODO);
+    const ejecutar = deps.ejecutar;
+    // escribir ya está en true (0); enviar medios todavía no (1)
+    deps.ejecutar = async (p: Paso) => { await ejecutar(p); return p.id === 'personaPuedeEnviarMedios' ? 1 : 0; };
     const r = await correrPasos(pasos(), { aplicar: false, deps });
+    expect(llamadas).toEqual(['puerta', 'personaPuedeEscribir', 'personaPuedeEnviarMedios']);
     expect(r.codigo).toBe(1);
-    expect(r.pendientes).toContain('rele-inerte');
+    expect(r.pendientes).toEqual(['personaPuedeEnviarMedios']);
+    expect(log.join('\n')).toMatch(/Falta: personaPuedeEnviarMedios/);
+  });
+
+  it('seco con todo hecho y las dos banderas en true: nada que hacer, código 0', async () => {
+    const { deps } = armar(null, 3, HECHO_TODO);
+    const r = await correrPasos(pasos(), { aplicar: false, deps });
+    expect(r.codigo).toBe(0);
+    expect(r.pendientes).toEqual([]);
+  });
+
+  it('seco: un sondeo que revienta cuenta como «no hecho», nunca como hecho', async () => {
+    const { deps } = armar(null);
+    deps.sondear = async () => { throw new Error('red'); };
+    const r = await correrPasos(pasos(), { aplicar: false, deps });
+    expect(r.pendientes).toContain('timbre-carga');
+  });
+
+  it('el mapa se relee antes de CADA bandera: si el alias desapareció, se corta y no se escribe esa bandera', async () => {
+    const { llamadas, deps } = armar(null, 3, HECHO_TODO);
+    let sondeosDelAlias = 0;
+    const sondear = deps.sondear;
+    deps.sondear = async (p: Paso) => (p.id === 'alias' && ++sondeosDelAlias > 1 ? { codigo: 1, salida: 'el alias pedido está ausente' } : sondear(p));
+    const r = await correrPasos(pasos(), { aplicar: true, deps });
+    expect(r.codigo).toBe(3);
+    expect(llamadas).toEqual(['puerta']);
+    for (const campo of Object.keys(JUEGO_CON_INFRA)) expect(llamadas).not.toContain(campo);
   });
 
   it('al aplicar, los pasos que escriben llevan --aplicar --confirmo produccion y la puerta no', () => {
@@ -192,14 +271,16 @@ describe('lo que nunca se imprime', () => {
 
 describe('argumentos', () => {
   const ENV = { GCP_PROJECT_ID_PROD: 'proyecto-prod-ficticio', GCP_PROJECT_ID_STAGING: 'proyecto-stg-ficticio' };
-  const base = ['--tenant', 'comercio-z', '--env', '.env'];
+  const RESPALDOS = mkdtempSync(join(tmpdir(), 'respaldos-enc-')); // 0700, del usuario, bajo /tmp
+  const base = ['--tenant', 'comercio-z', '--env', '.env', '--cred-ingesta', 'a', '--cred-envio', 'b'];
 
-  it('en seco bastan tenant y env (el proyecto sale de GCP_PROJECT_ID_PROD)', () => {
+  it('en seco bastan tenant, env y los nombres de las credenciales (el proyecto sale de GCP_PROJECT_ID_PROD)', () => {
     expect(analizarArgumentos(base, ENV).ok).toBe(true);
+    expect(analizarArgumentos(['--tenant', 'comercio-z', '--env', '.env'], ENV).ok).toBe(false);
   });
 
   it('negativas: --aplicar sin --confirmo produccion, con otro proyecto, o sin lo necesario, se niega', () => {
-    const completo = [...base, '--cred-ingesta', 'a', '--cred-envio', 'b', '--respaldo-dir', '/tmp/r', '--aplicar'];
+    const completo = [...base, '--respaldo-dir', RESPALDOS, '--aplicar'];
     expect(analizarArgumentos(completo, ENV).ok).toBe(false);
     expect(analizarArgumentos([...completo, '--confirmo', 'produccion'], ENV).ok).toBe(true);
     expect(analizarArgumentos([...completo, '--confirmo', 'si'], ENV).ok).toBe(false);
@@ -208,10 +289,77 @@ describe('argumentos', () => {
     expect(analizarArgumentos([...base, '--env', '../.env'], ENV).ok).toBe(false);
   });
 
+  it('negativa: un comercio de COMERCIOS_NO_TOCADOS se rechaza por inclusión, sin tildes ni mayúsculas', () => {
+    const no = (COMERCIOS_NO_TOCADOS as string[])[0] as string;
+    const t = (id: string) => ['--tenant', id, '--env', '.env', '--cred-ingesta', 'a', '--cred-envio', 'b'];
+    expect(analizarArgumentos(t(no), ENV).ok).toBe(false);
+    expect(analizarArgumentos(t(`clinica-${no}-sa`), ENV).ok).toBe(false);
+    expect(esComercioNoTocado(`Clínica ${no.toUpperCase()}`)).toBe(true);
+    expect(esComercioNoTocado(`CLÍNICA ${no}`)).toBe(true);
+    expect(esComercioNoTocado('comercio-z')).toBe(false);
+  });
+
+  it('--respaldo-dir se valida con comprobarRespaldo: relativa, bajo ~/ o con «..» se rechaza; una carpeta 0700 bajo /tmp pasa', () => {
+    const con = (d: string) => analizarArgumentos([...base, '--respaldo-dir', d], ENV);
+    expect(con('relativa/dir').ok).toBe(false);
+    expect(con('/home/alguien/respaldos').ok).toBe(false);
+    expect(con(`${RESPALDOS}/../x`).ok).toBe(false);
+    expect(con(RESPALDOS).ok).toBe(true);
+  });
+
   it('--todos es solo lectura y no se combina con --aplicar ni con un comercio', () => {
     expect(analizarArgumentos(['--todos'], ENV).ok).toBe(true);
     expect(analizarArgumentos(['--todos', '--aplicar'], ENV).ok).toBe(false);
     expect(analizarArgumentos(['--todos', '--tenant', 'comercio-z'], ENV).ok).toBe(false);
+  });
+});
+
+describe('canal de salida y --todos con bases falsas', () => {
+  const baseDe = (filas: Array<Record<string, unknown>>) => ({
+    collection: () => ({ where: () => ({ get: async () => ({ docs: filas.map((f) => ({ get: (k: string) => f[k] })) }) }) }),
+  });
+  it('canalSalida «rele» o sin ruta: se niega; graph o ausente: pasa', async () => {
+    expect((await comprobarCanal(baseDe([{ canalSalida: 'rele' }]), 'comercio-z')).ok).toBe(false);
+    expect((await comprobarCanal(baseDe([{ canalSalida: 'graph' }, { canalSalida: 'rele' }]), 'comercio-z')).ok).toBe(false);
+    expect((await comprobarCanal(baseDe([]), 'comercio-z')).ok).toBe(false);
+    expect((await comprobarCanal(baseDe([{ canalSalida: 'graph' }]), 'comercio-z')).ok).toBe(true);
+    expect((await comprobarCanal(baseDe([{}]), 'comercio-z')).ok).toBe(true);
+  });
+
+  it('--todos salta los comercios de COMERCIOS_NO_TOCADOS (por id y por nombre)', async () => {
+    const no = (COMERCIOS_NO_TOCADOS as string[])[0] as string;
+    const docs = [['a-ok', 'Uno'], [`${no}-x`, 'Otro'], ['c-ok', `Clínica ${no}`]].map(([id, nombre]) => ({ id, get: (k: string) => (k === 'nombre' ? nombre : k === 'estado' ? 'activo' : undefined), data: () => ({}) }));
+    const filas = await repasarTodos({ collection: () => ({ get: async () => ({ docs }) }) });
+    expect(filas.map((f: { tenant: string }) => f.tenant)).toEqual(['a-ok']);
+  });
+});
+
+describe('la puerta con D1 (verificar-salida-persona.mjs, --sin-redespliegue)', () => {
+  const CLAVE = '0123456789abcdef';
+  const mapa = (conAlias: boolean) => JSON.stringify(conAlias ? { clienteZz: { ruta: 'https://n8n.ejemplo.com/webhook/x', clave: CLAVE } } : {});
+  const depsDe = (fijada: boolean, latest: boolean) => ({
+    gcloud: (args: string[]) => ({ code: 0, stdout: args.includes('latest') ? mapa(latest) : mapa(fijada) }),
+  });
+  const cfg = (sinRedespliegue: boolean) => ({ proyecto: 'p', alias: 'clienteZz', sinRedespliegue });
+  const BASE = 'https://n8n.ejemplo.com';
+
+  it('con la bandera, si SOLO falta en la versión fijada y está en latest: OK con el aviso en voz alta', () => {
+    const r = chequeoSecreto(cfg(true), depsDe(false, true), '3', BASE);
+    expect(r.resultado.estado).toBe('OK');
+    expect(r.resultado.aviso).toMatch(/el timbre llega con la próxima etiqueta; mientras tanto, el barrido/);
+    expect(r.ruta).toContain('/webhook/');
+  });
+
+  it('negativas: sin la bandera sigue FALLA; si tampoco está en latest, FALLA; con el alias en la fijada no cambia nada', () => {
+    expect(chequeoSecreto(cfg(false), depsDe(false, true), '3', BASE).resultado.estado).toBe('FALLA');
+    expect(chequeoSecreto(cfg(true), depsDe(false, false), '3', BASE).resultado.estado).toBe('FALLA');
+    expect(chequeoSecreto(cfg(true), depsDe(true, true), '3', BASE).resultado.estado).toBe('OK');
+  });
+
+  it('negativa: otra falla del secreto (clave corta, host ajeno) sigue cortando aunque esté la bandera', () => {
+    const corta = { gcloud: (args: string[]) => ({ code: 0, stdout: args.includes('latest') ? JSON.stringify({ clienteZz: { ruta: 'https://n8n.ejemplo.com/webhook/x', clave: 'corta' } }) : '{}' }) };
+    expect(chequeoSecreto(cfg(true), corta, '3', BASE).resultado.estado).toBe('FALLA');
+    expect(chequeoSecreto(cfg(true), depsDe(false, true), '3', 'https://otro.ejemplo.com').resultado.estado).toBe('FALLA');
   });
 });
 

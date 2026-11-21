@@ -68,7 +68,7 @@ describe('juego de conversación: claves y valores exactos', () => {
     // Se lee como texto: `fronteras.test.ts` prohíbe que core (y su carpeta de pruebas) importe de central.
     const m = readFileSync(CONSOLA_CONVERSACIONES, 'utf8').match(/PANTALLAS_CONVERSACIONES\s*=\s*\[([^\]]*)\]/);
     expect(m, 'PANTALLAS_CONVERSACIONES no encontrada').not.toBeNull();
-    const pantallas = [...(m as RegExpMatchArray)[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
+    const pantallas = [...((m as RegExpMatchArray)[1] ?? '').matchAll(/'([^']+)'/g)].map((x) => x[1] ?? '');
     expect(pantallas).toContain(JUEGO_DE_FICHA.consolaConversaciones);
   });
 

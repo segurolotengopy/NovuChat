@@ -19,7 +19,7 @@
  *  - NINGÚN valor (ruta, clave, mapa) ni id de proyecto aparece en la salida, y la
  *    entrega es un archivo de modo 600 que el script no imprime.
  */
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, closeSync, fstatSync, openSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -243,6 +243,23 @@ describe('nube-salida-persona.sh: uso y salvaguardas (ni una llamada a gcloud)',
     expect(correr(['--agregar-alias', 'nuevo']).codigo).toBe(1);
     // --quitar-alias no depende del consumidor.
     expect(correr(['--quitar-alias', 'a1', ...APLICAR]).codigo).toBe(0);
+  });
+
+  it('el cerrojo del mapa: con otra corrida tomándolo, --agregar-alias y --quitar-alias --aplicar salen 4 sin escribir; el seco no lo necesita', async () => {
+    secreto({});
+    const cerrojo = join(runtime, 'nube-salida-persona.cerrojo');
+    const duenio = spawn('flock', [cerrojo, 'sleep', '30'], { stdio: 'ignore' });
+    try {
+      await new Promise((r) => setTimeout(r, 400));
+      const a = correr(['--agregar-alias', 'nuevo', ...APLICAR]);
+      expect(a.codigo).toBe(4);
+      expect(a.salida).toContain('tiene el mapa de alias tomado');
+      expect(correr(['--quitar-alias', 'a1', ...APLICAR]).codigo).toBe(4);
+      expect(llamadas()).toEqual([]);
+      expect(correr(['--agregar-alias', 'nuevo']).codigo).toBe(1);
+    } finally {
+      duenio.kill();
+    }
   });
 
   it('GCP_PROJECT_ID_PROD distinto del de las credenciales: sale 2', () => {

@@ -285,7 +285,7 @@ console.log(`\n  ${ok ? '✓' : '✗'} Verificación: ruta → ${ruta.get('tenan
   + ` · titularidad ${ruta.get('titularidad')} · flujos ${JSON.stringify(ficha.get('flujos'))}\n`);
 console.log('  Siguiente: el valor del secreto va a la credencial de cabecera de n8n');
 console.log(`  (Name: Authorization · Value: Bearer <valor>), nunca al repositorio:`);
-console.log(`    gcloud secrets versions access latest --secret=${secreto} --project ${PROYECTO}`);
+console.log(`    gcloud secrets versions access latest --secret=${secreto} --project <proyecto>`);
 console.log('\n  Después, para dejar encendido TODO el juego de conversación del comercio (consola nueva, guardado de medios,');
 console.log('  Tomar y adjuntos de la persona) con una sola corrida: `node scripts/plataforma/encender-conversacion.mjs --tenant <id>`');
 console.log('  (seco por omisión; ver el encabezado del script y docs/produccion/timbre-salida-de-persona-clientes-reales.md).\n');
