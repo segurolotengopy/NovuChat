@@ -20,7 +20,7 @@ const RUTAS = [
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
-  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
+  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -457,11 +457,166 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
     const cat = catalogo([item({ id: 'lav-9', nombre: 'LAVADORA SAMSUNG 9KG', precio: 100, precioCentavos: 10000 }), item({ id: 'lav-15', nombre: 'LAVADORA SAMSUNG 15 KG SUPERIOR', precio: 150, precioCentavos: 15000 })]);
     const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, plan: { tipo: 'modelo', textoCliente: 'la lavadora samsung de 15 kg' }, modeloResp: gemini({ texto: 'Solo disponemos de la LAVADORA SAMSUNG 9KG en nuestro catálogo.', lineas: [] }) }));
     expect(r.texto).toMatch(/LAVADORA SAMSUNG 15 KG SUPERIOR a Bs 150/);
-    expect(r.texto).toMatch(/LAVADORA SAMSUNG 9KG a Bs 100/);
     expect(b('bmTextoDeCoincidencias')('televisor sony', cat.vendibles)).toBe('');
   });
   it('un pedido de descuento lo decide el código: pasa con recepción, sin depender de la redacción del modelo', () => {
     expect(b('bmPideDescuento')(b('bmNorm')('¿Me pueden hacer un descuento por comprar 5 aires?'))).toBe(true);
     expect(b('bmPideDescuento')(b('bmNorm')('¿Cuánto cuesta el aire de 12 BTU?'))).toBe(false);
+  });
+  it('una lista de piezas SIN precio sale con el precio del catálogo tras cada nombre; las que ya traen precio no se tocan (humo de Silvana, 2.1)', () => {
+    const v = [{ id: 'a', nombre: 'REFRIGERADOR TCL F130', precioCentavos: 293750, moneda: 'BOB' }, { id: 'b', nombre: 'REFRIGERADOR TCL F130 XL', precioCentavos: 400000, moneda: 'BOB' }, { id: 'c', nombre: 'AIRE TCL 12 BTU', precioCentavos: 340750, moneda: 'BOB' }];
+    expect(b('bmConPrecios')('Tenemos el REFRIGERADOR TCL F130 y el REFRIGERADOR TCL F130 XL.', v)).toBe('Tenemos el REFRIGERADOR TCL F130 a Bs 2.937,50 y el REFRIGERADOR TCL F130 XL a Bs 4.000.');
+    expect(b('bmConPrecios')('El AIRE TCL 12 BTU cuesta Bs 3.407,50.', v)).toBe('El AIRE TCL 12 BTU cuesta Bs 3.407,50.');
+    expect(b('bmConPrecios')('El AIRE TCL 12 BTU a Bs 3.407,50 y el REFRIGERADOR TCL F130.', v)).toBe('El AIRE TCL 12 BTU a Bs 3.407,50 y el REFRIGERADOR TCL F130 a Bs 2.937,50.');
+    const cat = catalogo([item({ id: 'p1', nombre: 'Pieza uno', precio: 120, precioCentavos: 12000 }), item({ id: 'p2', nombre: 'Pieza dos', precio: 50, precioCentavos: 5000 })]);
+    const r = b('bmRedaccion')('Tenemos la Pieza uno y la Pieza dos. ¿Cuál le gusta?', 'qué tienen', cat.vendibles);
+    expect(r).toBe('Tenemos la Pieza uno a Bs 120 y la Pieza dos a Bs 50. ¿Cuál le gusta?');
+  });
+  it('el prompt: las piezas se enumeran con nombre y precio, y un TIPO de pieza sin precisar no se agrega al pedido', () => {
+    const p: string = B['BM_PROMPT_VOZ'];
+    expect(p).toMatch(/cada una va con su NOMBRE y su PRECIO/);
+    expect(p).toMatch(/sin precisar cuál, NO la agregues/);
+  });
+  it('«Conversar con el modelo» reintenta una vez si Gemini falla o tarda (humo de Silvana: «Tuve un inconveniente» en un saludo corriente), en los dos flujos versionados', async () => {
+    const { readFileSync } = await import('node:fs');
+    for (const f of ['casa-bermejo.json', 'casa-bermejo.prueba.json']) {
+      const flujo = JSON.parse(readFileSync(join(AQUI, '../../Flujos/clientes/casa-bermejo', f), 'utf8')) as { nodes: { name: string; retryOnFail?: boolean; maxTries?: number; onError?: string }[] };
+      const n = flujo.nodes.find((x) => x.name === 'Conversar con el modelo');
+      expect(n?.retryOnFail).toBe(true);
+      expect(n?.maxTries).toBe(2);
+      expect(n?.onError).toBe('continueRegularOutput');   // y si el segundo intento también falla, el turno pasa con recepción (aviso + botón)
+    }
+  });
+  describe('la pieza que pide el cliente se fija por código (humo de Silvana, paso 5: «de 18 BTU» no termina en el de 12)', () => {
+    const aires = catalogo([
+      item({ id: 'aire-12', nombre: 'AIRE TCL 12 BTU', precio: 3407.5, precioCentavos: 340750 }),
+      item({ id: 'aire-18', nombre: 'AIRE TCL 18 BTU', precio: 4935, precioCentavos: 493500 }),
+      item({ id: 'aire-18-inv', nombre: 'AIRE TCL 18 BTU INVERTER', precio: 5405, precioCentavos: 540500 }),
+      item({ id: 'lav-9', nombre: 'LAVADORA SAMSUNG 9KG', precio: 4112.5, precioCentavos: 411250 }),
+    ]);
+    const turno = (textoCliente: string, propone: string[], ficha: Record<string, unknown> = {}) => b('bmResolver')(ctx({
+      catalogo: aires, vendibles: aires.vendibles, ficha, plan: { tipo: 'modelo', textoCliente },
+      modeloResp: gemini({ texto: 'Con gusto, lo agregué.', lineas: propone.map((id) => ({ id, cantidad: 1 })) }),
+    }));
+    it('si el código quita una línea, el texto «agregué…» del modelo no sale: «agrega una lavadora» con el aire sin precisar no dice que agregó el aire', () => {
+      const r = turno('Agrega también una lavadora samsung de 9kg', ['aire-18', 'lav-9']);
+      expect(r.lineas.map((l: { id: string }) => l.id)).toEqual(['lav-9']);
+      expect(r.texto).not.toMatch(/agregu|lo agregué/i);
+    });
+    it('«el de 18 BTU normal» entre los de 18 BTU: entra la básica (nombre más corto), no la inverter', () => {
+      const r = turno('el de 18 BTU normal', ['aire-18-inv']);
+      expect(r.lineas.map((l: { id: string }) => l.id)).toEqual([]);
+      const ok = turno('el de 18 BTU normal', ['aire-18']);
+      expect(ok.lineas.map((l: { id: string }) => l.id)).toEqual(['aire-18']);
+    });
+    it('«quiero un aire»: el modelo propone el de 12 BTU y NO se agrega; el texto lista las opciones con precio', () => {
+      const r = turno('Quiero un aire', ['aire-12']);
+      expect(r.lineas).toEqual([]);
+      expect(r.texto).toMatch(/AIRE TCL 12 BTU a Bs 3\.407,50/);
+      expect(r.texto).toMatch(/AIRE TCL 18 BTU a Bs 4\.935/);
+    });
+    it('«de 18 BTU» tras un pedido vacío: NO termina en el de 12 BTU, ni en uno de los dos de 18 (son ambiguos)', () => {
+      for (const propone of [['aire-12'], ['aire-18'], ['aire-18-inv']]) {
+        const r = turno('de 18 BTU', propone);
+        expect(r.lineas.map((l: { id: string }) => l.id)).toEqual([]);
+        expect(r.texto).toMatch(/AIRE TCL 18 BTU a Bs 4\.935/);
+        expect(r.texto).not.toMatch(/12 BTU/);
+      }
+    });
+    it('el cliente precisa («el 18 BTU inverter»): entra SOLO esa pieza, no la de 12', () => {
+      const ok = turno('quiero el aire TCL de 18 BTU inverter', ['aire-18-inv']);
+      expect(ok.lineas.map((l: { id: string }) => l.id)).toEqual(['aire-18-inv']);
+      const mal = turno('quiero el aire TCL de 18 BTU inverter', ['aire-12']);
+      expect(mal.lineas).toEqual([]);   // el modelo se equivocó de pieza: no entra
+    });
+    it('lo que ya estaba en el pedido se conserva aunque el cliente hable de otra cosa; dos tipos distintos en un mensaje entran los dos', () => {
+      const antes = { carrito: [{ id: 'aire-12', cantidad: 1, detalle: '' }] };
+      const r = turno('agrega una lavadora samsung de 9 kg', ['aire-12', 'lav-9'], antes);
+      expect(r.lineas.map((l: { id: string }) => l.id).sort()).toEqual(['aire-12', 'lav-9']);
+      const dos = turno('quiero una lavadora samsung de 9 kg y el aire de 12 btu', ['lav-9', 'aire-12']);
+      expect(dos.lineas.map((l: { id: string }) => l.id).sort()).toEqual(['aire-12', 'lav-9']);
+    });
+    it('sin nombrar nada («1», «sí confirmo»): no se toca lo que propone el modelo', () => {
+      const antes = { carrito: [{ id: 'aire-18', cantidad: 1, detalle: '' }] };
+      expect(turno('1', ['aire-18'], antes).lineas.map((l: { id: string }) => l.id)).toEqual(['aire-18']);
+      expect(b('bmFijarPieza')('sí, confirmo', [], [{ id: 'aire-18', cantidad: 1 }], aires.vendibles).lineas).toHaveLength(1);
+    });
+  });
+  describe('el código reconoce el modo y el nombre aunque el modelo no los repita (humo de Silvana, paso 3)', () => {
+    const modos = ['recojo en tienda', 'envío'];
+    it('«Silvana Prueba» tras elegir el retiro se guarda como el nombre; frases que son órdenes, cifras o una sola palabra NO', () => {
+      expect(b('bmNombreDeRespuesta')('Silvana Prueba')).toBe('Silvana Prueba');
+      expect(b('bmNombreDeRespuesta')('Mi nombre es Juan Pérez')).toBe('Juan Pérez');
+      for (const no of ['Sí, confirmo, quiero pagar', 'Silvana', '1', 'Hola buenas tardes', 'Lo recojo en tienda', 'Juan Pérez 4567890', 'quiero hablar con una persona', '¿Cuánto cuesta el envío?']) expect(b('bmNombreDeRespuesta')(no)).toBe('');
+    });
+    it('el modo sale del texto («lo recojo en tienda», «envíenlo a Santa Cruz») y el nombre se completa en el turno siguiente, sin que el modelo devuelva `entrega`', () => {
+      const c1 = b('bmCompletarEntrega')({}, {}, 'Lo recojo en tienda', modos);
+      expect(c1.entrega.modo).toBe('recojo en tienda');
+      expect(b('bmCompletarEntrega')({}, {}, 'Envíenlo a Santa Cruz', modos).entrega.modo).toBe('envío');
+      const c2 = b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Silvana Prueba', modos);
+      expect(c2).toMatchObject({ capturado: true, entrega: { nombre: 'Silvana Prueba' } });
+      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Sí, confirmo, quiero pagar', modos).capturado).toBe(false);
+      expect(b('bmCompletarEntrega')({}, {}, 'Silvana Prueba', modos).capturado).toBe(false);   // sin modo elegido, no se toma por nombre
+    });
+    it('el ENVÍO dicho en una frase se lee por código: nombre, CI, flota y ciudad, aunque el modelo no devuelva `entrega`', () => {
+      const e = b('bmCompletarEntrega')({}, { modo: 'envío', ciudad: 'Santa Cruz' }, 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana', modos).entrega;
+      expect(e).toMatchObject({ nombre: 'Juan Pérez', documento: '4567890', flota: 'Trans Copacabana' });
+      const e2 = b('bmCompletarEntrega')({}, { modo: 'envío' }, 'Envíelo a Cochabamba por la terminal de Oruro', modos).entrega;
+      expect(e2.ciudad).toBe('Cochabamba');
+      // NEGADO: sin envío elegido no se inventa ciudad; un CI sin la palabra CI/DNI/carnet no es documento
+      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'voy a Santa Cruz', modos).entrega.ciudad).toBeUndefined();
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío' }, 'mi teléfono es 70123456', modos).entrega.documento).toBeUndefined();
+      const ok = b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro, entrega: { modo: 'envío', ciudad: 'Santa Cruz' } }, plan: { tipo: 'modelo', textoCliente: 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana' }, modeloResp: gemini({ texto: 'Gracias.', lineas: [{ id: 'p1', cantidad: 1 }] }) }));
+      expect(b('bmEntregaCompleta')(ok.entrega, 'BO')).toBe(true);
+    });
+    it('del retiro al pedido: modo + nombre dichos en turnos distintos, SIN `entrega` del modelo, y «sí, confirmo, quiero pagar» anota el pedido', () => {
+      const sinEntrega = (textoCliente: string, ficha: Record<string, unknown>, quiereHablar = false) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha, plan: { tipo: 'modelo', textoCliente }, modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'p1', cantidad: 1 }], quiereHablar }) }));
+      const t1 = sinEntrega('Lo recojo en tienda', { carrito: carro });
+      expect(t1.entrega.modo).toBe('recojo en tienda');
+      const t2 = sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega }, true);
+      expect(t2.tipo).toBe('modelo');           // el «quiereHablar» del modelo no lo desvía: era la respuesta con el nombre
+      expect(t2.entrega.nombre).toBe('Silvana Prueba');
+      const t3 = sinEntrega('Sí, confirmo, quiero pagar', { carrito: carro, entrega: t2.entrega }, true);
+      expect(t3.tipo).toBe('pedido_sin_cobro');
+    });
+  });
+  describe('el mensaje del sitio («N x Nombre (cód. id)») lo lee el código (NovuTienda, punto 3)', () => {
+    const cat = catalogo([
+      item({ id: 'aire-18', nombre: 'AIRE TCL 18 BTU', precio: 4935, precioCentavos: 493500 }),
+      item({ id: 'lav-9', nombre: 'LAVADORA SAMSUNG 9KG', precio: 4112.5, precioCentavos: 411250 }),
+      item({ id: 'frigobar-100', nombre: 'FRIGOBAR PREMIER 100 LITROS', precio: 2115, precioCentavos: 211500 }),
+    ]);
+    const SITIO = 'Hola, quiero consultar por estos productos:\n2 x AIRE TCL 18 BTU (cód. aire-18)\n1 x LAVADORA SAMSUNG 9KG (cód. lav-9)\n1 x PRODUCTO INVENTADO (cód. inventado)';
+    it('lee cantidades y códigos contra el catálogo; un código que no existe se ignora', () => {
+      expect(b('bmLineasDelSitio')(SITIO, cat.vendibles)).toEqual([{ id: 'aire-18', cantidad: 2, detalle: '' }, { id: 'lav-9', cantidad: 1, detalle: '' }]);
+      expect(b('bmLineasDelSitio')('quiero 2 x aire sin código', cat.vendibles)).toEqual([]);
+    });
+    it('con los saltos de línea ya vueltos espacios (lo que llega al flujo) se lee igual', () => {
+      expect(b('bmLineasDelSitio')(SITIO.replace(/\n/g, ' '), cat.vendibles)).toEqual([{ id: 'aire-18', cantidad: 2, detalle: '' }, { id: 'lav-9', cantidad: 1, detalle: '' }]);
+    });
+    it('el pedido queda con esas líneas y cantidades (no con lo que invente el modelo) y el texto pregunta por la entrega', () => {
+      const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, modos: ['recojo en tienda', 'envío'], plan: { tipo: 'modelo', textoCliente: SITIO }, modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'frigobar-100', cantidad: 9 }] }) }));
+      expect(r.lineas.map((l: { id: string; cantidad: number }) => [l.id, l.cantidad])).toEqual([['aire-18', 2], ['lav-9', 1]]);
+      expect(r.texto).toMatch(/¿Cómo prefiere recibir su pedido: recojo en tienda o envío\?/);
+    });
+  });
+  describe('«agrega una lavadora de 9 kg» entra por código aunque el modelo solo pregunte (humo, paso 5.2)', () => {
+    const cat = catalogo([
+      item({ id: 'aire-18', nombre: 'AIRE TCL 18 BTU', precio: 4935, precioCentavos: 493500 }),
+      item({ id: 'lav-9', nombre: 'LAVADORA SAMSUNG 9KG', precio: 4112.5, precioCentavos: 411250 }),
+      item({ id: 'lav-12', nombre: 'LAVADORA LG 12KG', precio: 6000, precioCentavos: 600000 }),
+    ]);
+    it('con el verbo de agregar y una pieza clara entra con su cantidad; sin el verbo, o con una pieza ambigua, NO', () => {
+      expect(b('bmAgregarPorOrden')('Agrega también una lavadora de 9 kg', cat.vendibles)).toEqual([{ id: 'lav-9', cantidad: 1, detalle: '' }]);
+      expect(b('bmAgregarPorOrden')('agregue dos aires de 18 btu', cat.vendibles)).toEqual([{ id: 'aire-18', cantidad: 2, detalle: '' }]);
+      expect(b('bmAgregarPorOrden')('quiero una lavadora de 9 kg', cat.vendibles)).toEqual([]);          // sin verbo de agregar: conversación
+      expect(b('bmAgregarPorOrden')('agrega una lavadora', cat.vendibles)).toEqual([]);                    // ambigua: 9 kg o 12 kg
+      expect(b('bmAgregarPorOrden')('agrega un televisor', cat.vendibles)).toEqual([]);                    // no hay
+    });
+    it('en el turno: el modelo solo pregunta («¿desea agregarla?», sin líneas) y el pedido igual lleva la lavadora, con el aire que ya estaba', () => {
+      const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, modos: ['recojo en tienda', 'envío'], ficha: { carrito: [{ id: 'aire-18', cantidad: 1, detalle: '' }] }, plan: { tipo: 'modelo', textoCliente: 'Agrega también una lavadora de 9 kg' }, modeloResp: gemini({ texto: '¿Desea agregarla a su pedido?', lineas: [{ id: 'aire-18', cantidad: 1 }] }) }));
+      expect(r.lineas.map((l: { id: string }) => l.id).sort()).toEqual(['aire-18', 'lav-9']);
+      expect(r.texto).toMatch(/¿Cómo prefiere recibir su pedido/);
+    });
   });
 });

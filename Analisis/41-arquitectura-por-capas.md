@@ -415,13 +415,13 @@ Un archivo por fila; la columna «Va a» es la carpeta destino de la fase 2.
 
 | Pieza | Zona | Va a | Cambio |
 |---|---|---|---|
-| `Flujos/src/comun/` (5 módulos, variante de reservas) | Core | `Flujos/src/core/` | **Una sola variante** para reservas, venta y captación (F3). Hoy hay tres |
+| `Flujos/src/comun/` (5 módulos, variante de reservas) | Core | `Flujos/src/core/` | ~~**Una sola variante**~~ **[Enmienda C1: núcleo común por contrato con lista cerrada de variantes]** para reservas, venta y captación (F3). Hoy hay tres |
 | `Flujos/src/reservas/` (13) | Agenda y Cobros | `Flujos/src/modulos/agenda/`, `modulos/cobros/` | `preparar-sena`, `respuesta-de-la-sena`, `mensaje-de-la-sena`, `interpretar-lectura` → Cobros con dependencia de Agenda |
 | Nodos Code de Demo B sin extraer (15) | Core, Pedidos, Cobros, Catálogo web | `Flujos/src/…` | F2 los extrae con `ensamblar-flujo.mjs extraer` |
 | Nodos Code del onboarding (12) | Core y Captación | `Flujos/src/…` | El corpus de 807 KB sale del nodo a un recurso que sirve la Function (bloque B-3 ya previsto) |
 | Nodos de medios (transcribir, describir, leer comprobante) | Core | `Flujos/src/core/medios/` | Con el esqueleto único |
 | Los 19 nodos de Bellido | Módulo Menú interactivo | `Flujos/src/modulos/menu-interactivo/` | Dejan de ser de un tenant (F5) |
-| `Flujos/prompts/reservas/demo-a.md`, `platinum.md` (201 y 202 líneas, 23 distintas) | Core + Agenda + Tenant | `prompts/core/base.md` + `prompts/modulos/agenda.md` + `prompts/tenants/<t>.vars` | El prompt se arma por capas; el tenant solo aporta variables (nombres, ejemplos del rubro, duración) |
+| `Flujos/prompts/reservas/demo-a.md`, `platinum.md` (201 y 202 líneas, 23 distintas) | Core + Agenda + Tenant | `prompts/core/base.md` + `prompts/modulos/agenda.md` + `prompts/tenants/<t>.vars` | El prompt se arma por capas; el tenant solo aporta variables (nombres, ejemplos del rubro, duración) **[Enmienda C1: sin `.vars`; los datos entran por la Consola y las capas solo para lo que comparten dos flujos]** |
 | `Flujos/manifiestos/*.json` | Registro de construcción | Se generan del registro de módulos más los módulos encendidos del tenant | |
 | `Flujos/<tenant>.json` | **Salida de construcción** | Siguen versionados porque `publicar-flujo.sh` los necesita, con cabecera «generado, no editar» y gancho de pre-commit que exige `verificar` | Hoy Bellido es fuente; deja de serlo |
 | `agendamiento-seguimientos`, `agendamiento-senas-vencidas`, `demo-a-recordatorios` | Agenda (programados) | Quedan como flujos programados del módulo | |
@@ -563,7 +563,7 @@ como sub-nodo intercambiable» lo aprueba él.
    Lo común (sesión por `messages[0].from`, filtro de eventos, conteo, candado
    por hecho, rótulos de cobro, `NIEGA_IA`, aviso con botón, uso extendido,
    comercio no operativo, entrada verificada del receptor (verificador interno, `wabaIdEsperado` fijo, sin «Continue on Fail», repetidos descartados entre ejecuciones), normalización de entrada y filtro de promesas sin respaldo) se **incluye** desde core y módulos y **nunca se
-   copia**; una prueba de CI comparará byte a byte (compuerta futura, hoy no existe). La segunda vez que otro
+   copia**; una prueba de CI comparará byte a byte (compuerta futura, hoy no existe) **[Enmienda C1: ya existe, `nucleo-comun.test.ts`; ver «Enmiendas (C1)» al final]**. La segunda vez que otro
    cliente pide una pieza propia, pasa a módulo. Seguridad y protección se
    aplican a todos sin excepción.
 2. **Barridos comunes.** Un barrido por tipo recorre los tenants: excepción
@@ -1053,3 +1053,84 @@ De los pedidos abiertos al 25/09: los siete del audio de Bellido son
 configuración o decisión del doctor salvo la lista de cuatro filas (topología,
 espera F3); las decisiones de Platinum son comerciales y de Meta; Q'Taco y
 Dhermacore pasan por el §12.3 antes de retomarse.
+
+---
+
+## Enmiendas (C1, 2026-11-20)
+
+> La historia de este documento no se reescribe: el texto de arriba queda como se
+> decidió. Esta sección dice lo que **cambió después** (decisiones de Andres) y lo
+> que la **ola 0 midió** (plan `NOVUCHAT_plan-terminar-rearquitectura-en-paralelo`,
+> 12/11/2026, §7). Donde una frase de arriba contradice lo de aquí, **manda esta
+> sección**. Detalle por zona: `docs/arquitectura/` (`indice.md`, y
+> `registro.md`, «Carpetas y su estatus», para la lista cerrada).
+
+### Decisiones de Andres
+
+1. **Sin archivos `.vars` por tenant.** §1.1 y §5.4 mencionan
+   `Flujos/prompts/tenants/<t>.vars`. No se construye: los datos de un negocio
+   (nombres, ejemplos del rubro, duración, tono) ya entran por la Consola en cada
+   turno, vía `configuracionFlujo` (§2.2), y son datos del tenant, no un archivo
+   del repositorio. Los tenants siguen siendo **solo datos**.
+2. **Capas de prompt solo para lo que comparten dos flujos o más.** §5.4 y la fila
+   F3b dicen «el prompt se arma por capas (base + módulos + variables)» como
+   norma general. Se acota: se extrae a `Flujos/prompts/core/` o
+   `Flujos/prompts/modulos/` únicamente el texto que hoy repiten dos flujos (primer
+   corte: `prompts/core/economia.md`, compartido por Demo A y Demo B, byte a byte).
+   El prompt propio de un solo flujo se queda con ese flujo.
+3. **«Núcleo común por contrato», no «una sola variante de los 5 nodos».** §2.1,
+   §5.4 y F3b dicen que los tres esqueletos pasan a **una sola variante** de
+   `Normalizar entrada`, `Config del negocio`, `Procesar respuesta`,
+   `Uso extendido` y `Comercio no operativo`. Se reemplaza por: lo común es un
+   **contrato** (qué entra, qué sale, qué garantiza: sesión por
+   `messages[0].from`, `NIEGA_IA`, candado por hecho, aviso con botón…) que todo
+   flujo cumple y que una prueba verifica; las variantes que ya existen quedan
+   en una **lista cerrada declarada** (`Flujos/src/core/VARIANTES.md`, cerrada
+   por `nucleo-comun.test.ts`, Andres 31/10), y solo crece con su decisión. No se
+   unifican por la fuerza (cambia lo que corre y rompe el `verificar` byte a byte).
+4. **Lo común para todos va siempre al CORE** (Andres, 20/11/2026). Refuerza
+   §1.3: ante la duda entre «común» y «de un cliente», lo que necesitan todos los
+   comercios sube a `core/` (o a un módulo común), no se copia por flujo. Lo
+   específico de un cliente sigue siendo dato de su tenant o, si es código,
+   sub-módulo del anfitrión (`submodulos.md`).
+5. **La migración a `Flujos/clientes/<tenant>/` tiene su propio protocolo**
+   (`migracion.md`, `migrado.md`, `mudanza.md`): una mudanza **nunca publica** (mueve
+   con `git mv` sin cambiar un byte del JSON); están **congelados** `doctoras`,
+   `bellido-agendamiento` y `novuchat-onboarding`; **Bellido va al final**.
+   `Flujos/clientes/` ya existe (§5.4 y `tenants.md` decían que no).
+
+### Lo real medido (ola 0, 12/11/2026)
+
+- **La barrera de horas rechazadas de Agenda: SIN VERIFICAR.** El análisis de la ola 0
+  (12/11) la dio por construida, pero el 20/11 no se encontró en
+  `admin/functions/src/modulos/agenda/` ni en `Flujos/src/modulos/agenda/` un archivo
+  que la implemente. Las filas F3b y «Bellido y campañas» (§7) siguen como están hasta
+  que alguien muestre el archivo y su prueba.
+- **El límite de agendas por plan ya se hace cumplir en las reglas**, con prueba
+  negativa (`limites.md`, «Agendas por plan», H2b-9). La fila F2b lo lista como
+  pendiente; sale de la lista.
+- **La compuerta «una prueba de CI comparará byte a byte» (§6.5) ya existe:**
+  `admin/pruebas/core/nucleo-comun.test.ts`. Pasa, pero con alcance parcial: hoy
+  no compara ningún cliente, porque las copias de los clientes están en
+  `Flujos/experimental/*/src/nodos/` y no en `Flujos/clientes/`. Alcance exacto
+  en `tenants.md`.
+- **`NIEGA_IA` no tiene una fuente única en los flujos:** hay copias en tres
+  variantes de core y en los de cliente. La fuente de referencia es
+  `core/texto/niega-ia-normalizado.js` (ver `VARIANTES.md`); unificar es trabajo
+  pendiente, no hecho.
+- **Los nombres de cliente en código común son comentarios**, salvo dos textos de
+  ejemplo en la consola. Quitarlos cambia la huella de los JSON, no la conducta.
+- **Falta de verdad:** la barrera de «agotado» de Inventario (F3a) y sacar el
+  corpus de captación del nodo (el JSON de onboarding, ya congelado y sin correr
+  en vivo, lo lleva dentro).
+
+### Lista cerrada de carpetas, con `Flujos/experimental/`
+
+La lista de zonas de §1.1 habla de código por zona, pero `Flujos/experimental/`
+no figura en ninguna: es la carpeta donde nacieron los flujos de cliente antes de
+la zona «Flujo de cliente». **Estatus:** zona de **transición**, fuera de las
+cinco zonas y de `fronteras.test.ts`; solo contiene flujos y proveedores que aún
+no se mudaron; **se vacía con la migración** a `Flujos/clientes/<tenant>/` y se
+borra cuando el tablero de `migracion.md` no tenga filas en `experimental/`. No
+se crea nada nuevo ahí. La tabla está en `registro.md`, «Carpetas y su
+estatus».

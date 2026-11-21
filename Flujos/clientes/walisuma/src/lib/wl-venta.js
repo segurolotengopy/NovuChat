@@ -455,11 +455,14 @@ const WL_ESQUEMA_RESPUESTA = {
   properties: {
     texto: { type: 'STRING' },
     lineas: { type: 'ARRAY', items: { type: 'OBJECT', properties: { id: { type: 'STRING' }, cantidad: { type: 'INTEGER' }, detalle: { type: 'STRING' } }, required: ['id', 'cantidad'] } },
-    entrega: { type: 'OBJECT', properties: { modo: { type: 'STRING' }, ciudad: { type: 'STRING' }, direccion: { type: 'STRING' }, nombre: { type: 'STRING' }, telefono: { type: 'STRING' } } },
-    facturacion: { type: 'OBJECT', properties: { nombre: { type: 'STRING' }, documento: { type: 'STRING' } } },
+    entrega: { type: 'OBJECT', properties: { modo: { type: 'STRING' }, ciudad: { type: 'STRING' }, direccion: { type: 'STRING' }, nombre: { type: 'STRING' }, telefono: { type: 'STRING' } }, required: ['modo', 'ciudad', 'direccion', 'nombre', 'telefono'] },
+    facturacion: { type: 'OBJECT', properties: { nombre: { type: 'STRING' }, documento: { type: 'STRING' } }, required: ['nombre', 'documento'] },
     quiereHablar: { type: 'BOOLEAN' },
   },
-  required: ['texto'],
+  // Todos los campos son OBLIGATORIOS y en este orden: con `required: ['texto']` el modelo OMITÍA `entrega` y `facturacion` (20/11/2026, conversación real: nombre, teléfono y recojo
+  // nunca llegaron al código y no se emitió el QR; «quiero pagar» terminó con una persona). Las cadenas vacías son el «no sé» que pide el prompt.
+  required: ['texto', 'lineas', 'entrega', 'facturacion', 'quiereHablar'],
+  propertyOrdering: ['texto', 'lineas', 'entrega', 'facturacion', 'quiereHablar'],
 };
 function wlCuerpoModelo(c) {
   // Las respuestas anteriores del modelo van en el MISMO formato que se le pide (`{"texto": …}`): con su historial en texto plano, el modelo imitaba el texto plano
@@ -641,11 +644,20 @@ function wlCerrar(c, base, abierto, cambioConQr) {
   });
 }
 
+// El modelo a veces escribe entidades HTML («&iacute;») aunque el prompt lo prohíbe (20/11/2026): se decodifican las comunes antes de revisar el texto.
+const WL_ENTIDADES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú', Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú', ntilde: 'ñ', Ntilde: 'Ñ', uuml: 'ü', Uuml: 'Ü', iexcl: '¡', iquest: '¿' };
+function wlDecodificarEntidades(t) {
+  return String(t === undefined || t === null ? '' : t).replace(/&(#x[0-9a-fA-F]{1,6}|#[0-9]{1,7}|[A-Za-z]{2,8});/g, (m, e) => {
+    if (e[0] === '#') { const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); return n > 31 && n < 0x10ffff ? String.fromCodePoint(n) : ''; }
+    return Object.prototype.hasOwnProperty.call(WL_ENTIDADES, e) ? WL_ENTIDADES[e] : m;
+  });
+}
 function wlResolverModelo(c) {
   const f = c.ficha;
   const p = c.plan;
   const j = cnJsonDeGemini(c.modeloResp);
   if (!j || typeof j.texto !== 'string' || j.texto.trim() === '') return wlDerivar(c, 'modelo_caido');
+  j.texto = wlDecodificarEntidades(j.texto);
   if (j.quiereHablar === true) return wlDerivar(c, 'quiere_hablar');
   const antes = vcLineas(f.carrito, c.vendibles).lineas;
   const lineas = Array.isArray(j.lineas) ? vcLineas(j.lineas, c.vendibles).lineas : antes;

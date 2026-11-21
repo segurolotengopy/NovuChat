@@ -67,7 +67,7 @@ cumplir es lo común; lo propio entra por su declaración.
   A, sin prueba todavía):** un flujo de cliente puede incluir core y módulos;
   nada fuera de su carpeta puede incluirlo. Se agrega a `fronteras.test.ts`
   cuando exista la zona (hoy `Flujos/experimental/` está fuera de zonas y de
-  esa prueba).
+  esa prueba). **[Enmienda C1: la zona ya existe en `Flujos/clientes/`; estatus de `experimental/` en «Carpetas y su estatus».]**
 
 ## registro.ts (F2, PR 1)
 
@@ -236,6 +236,22 @@ los compone el ensamblador. La frontera Core/módulo de los flujos tiene que
 venir de `ensamblador.test.ts` o `registro.test.ts` cuando en F3 existan
 `Flujos/src/core/` y `Flujos/src/modulos/`. Tampoco las pruebas fuera de una
 carpeta de zona: no las analiza nadie (ver «Límite conocido»).
+
+## Carpetas y su estatus (enmienda C1, 20/11/2026)
+
+La lista cerrada de las carpetas de código de `Flujos/` y de lo que `fronteras.test.ts` hace con cada una. Toda carpeta nueva bajo `Flujos/` se agrega aquí con su estatus antes de usarse; una que no figure no tiene zona.
+
+| Carpeta | Estatus | Zona y prueba |
+|---|---|---|
+| `Flujos/src/core/` | Vigente | Core; `fronteras.test.ts` (raíz `Flujos/src/`) |
+| `Flujos/src/modulos/<m>/` | Vigente | Módulo `<m>`; `fronteras.test.ts` |
+| `Flujos/clientes/<tenant>/` | Vigente, destino de la migración | Flujo de cliente: piezas propias más el núcleo común incluido; `migrado.test.ts` y `nucleo-comun.test.ts`. Nada fuera de su carpeta puede incluirla |
+| `Flujos/experimental/<x>/` | **Transición**, se vacía con la migración | **Fuera de zonas y de `fronteras.test.ts`** (raíz no listada en `RAICES`). Solo flujos aún no mudados y los proveedores `venta-digital` y la parte de `comun-sin-agente` que importa de un módulo. Nada nuevo nace aquí: un flujo nuevo va directo a `Flujos/clientes/`. Se borra cuando el tablero de `migracion.md` no tenga filas `experimental/…` |
+| `Flujos/prompts/core/`, `modulos/` | Vigente, solo para lo que comparten dos flujos | Core o módulo, según `agentes.md`. No hay `prompts/tenants/*.vars`: los datos entran por la Consola (`Analisis/41`, «Enmiendas (C1)») |
+| `Flujos/prompts/reservas/` | Heredada | Prompt de reservas aún no repartido en capas |
+| `Flujos/manifiestos/`, `Flujos/*.json` | Salida de construcción | Se regeneran; no se editan a mano |
+
+Pendiente de código de pruebas (fuera de la zona de este PR): que `fronteras.test.ts` o `migrado.test.ts` falle si aparece una carpeta bajo `Flujos/` que no esté en esta tabla; hoy la lista es documental y la lleva `migracion.md` solo para los JSON.
 
 ## Mover archivos entre zonas
 

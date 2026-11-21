@@ -34,7 +34,7 @@ describe('lo que propone el modelo se valida contra el catálogo', () => {
   it('más de 30 líneas distintas y más de 50 unidades por producto se recortan', () => {
     const muchas = Array.from({ length: 40 }, (_, i) => ({ id: `pieza-${i + 1}`, nombre: `Pieza ${i + 1}`, area: 'Prueba', precio: 10 + i, precioCentavos: (10 + i) * 100, moneda: 'BOB', activo: true, stock: null, disponible: true }));
     const m = crear({ catalogo: catalogoOk({}, muchas), modeloDice: pide([...muchas.map((x) => ({ id: x.id, cantidad: 1 })), { id: 'pieza-1', cantidad: 999 }]) });
-    hablar(m, ANA, mTexto('quiero muchas piezas'));
+    hablar(m, ANA, mTexto('quiero muchas cosas'));
     const car = fichas(m)[ANA].carrito as { id: string; cantidad: number }[];
     expect(car.length).toBeLessThanOrEqual(30);
     expect(car.find((l) => l.id === 'pieza-1')?.cantidad).toBe(50);

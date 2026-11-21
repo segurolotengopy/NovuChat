@@ -55,6 +55,8 @@ export interface Opciones {
   envio?: Partial<Record<'Enviar a WhatsApp' | 'Enviar respaldo', 'acepta' | 'error' | 'lanza'>>;
   verificador?: (ll: LlamadaDoble) => J;
   telefonosDePrueba?: string;
+  /** El enlace del catálogo web del comercio (`enlaceCatalogo` de «Config base»); sin él, no hay botón de catálogo. */
+  enlaceCatalogo?: string;
   /** Lo que escribe el modelo de conversación: el JSON de salida, un texto crudo, null (sin texto), 'cae' (error de servicio) o una función. */
   modeloDice?: J | string | null | 'cae' | ((ll: LlamadaDoble) => J | string);
   /** Lo que contesta `cotejarComprobanteVenta`, `guardarComprobante` y la ingesta al evento `cobro_cancelado`: un código y un cuerpo, o 'cae'. */
@@ -157,7 +159,7 @@ export function crear(o: Opciones = {}): Mundo {
     ahoraMs: AHORA,
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`, nombreNegocio: 'Tienda de prueba',
-      contactoAviso: REC, avisoPedidoPlantilla: 'pedido_registrado', avisoPedidoEstado: 'APPROVED', avisoPlantillaIdioma: 'es', modosDeEntrega: 'Retiro en tienda, Envío', costoDeEntrega: '',
+      contactoAviso: REC, avisoPedidoPlantilla: 'pedido_registrado', avisoPedidoEstado: 'APPROVED', avisoPlantillaIdioma: 'es', modosDeEntrega: 'Retiro en tienda, Envío', costoDeEntrega: '', enlaceCatalogo: o.enlaceCatalogo ?? '',
       ...(o.base ?? {}),
     },
   });

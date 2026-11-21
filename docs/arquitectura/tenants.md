@@ -10,7 +10,7 @@ instrucciones extra verificadas, módulos encendidos. **Nunca código.** Los
 cambia el comercio desde su consola y NovuChat desde Plataforma.
 
 Ejemplos: `config/*`, `catalogo`, `funcionarios`,
-`Flujos/prompts/tenants/<t>.vars`, `CLIENTES/<T>/`.
+`Flujos/prompts/tenants/<t>.vars`, `CLIENTES/<T>/`. **[Enmienda C1: no hay `.vars`; los datos entran por la Consola.]**
 
 **Dependencias:** los tenants no dependen de código. Nada depende de un tenant.
 
@@ -55,7 +55,7 @@ una zona aparte de la de los datos (fila «Flujo de cliente» de `CLAUDE.md`).
   `verificar`. Hoy Bellido es fuente (19 nodos propios); deja de serlo en F5,
   cuando pasan al módulo Menú interactivo (texto de la decisión del 25/09, que
   este documento no toca). `Flujos/clientes/` aún no existe: la mudanza
-  (incluida la de `Flujos/experimental/`) es de un PR posterior.
+  (incluida la de `Flujos/experimental/`) es de un PR posterior. **[Enmienda C1 (20/11/2026): `Flujos/clientes/` ya existe y la mudanza está en curso: `migracion.md`.]**
 - **Dueño:** `flujos-n8n` (indicado por la sesión Principal el 09/10), con
   `admin/pruebas/tenants/<t>/` y `admin/scripts/datos/<t>/` (`agentes.md`). Su
   ficha en `.claude/agents/` aún no declara esta zona: es un cambio aparte, con

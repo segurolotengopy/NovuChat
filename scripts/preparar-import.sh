@@ -248,7 +248,9 @@ if MARCADOR_EW in texto:
         print(h.stdout.rstrip())
         texto = open(resuelto, encoding="utf-8").read()
 
-presentes = sorted(set(re.findall(r'REEMPLAZAR_[A-Z][^"\\\s]*', texto)))
+# Los separadores `: | , ;` terminan un marcador: un dato compuesto («REEMPLAZAR_A:x|REEMPLAZAR_B:y», p. ej. los anuncios
+# de Walisuma) trae VARIOS marcadores, y leerlo como uno solo lo dejaba sin valor aunque cada fila existiera en la tabla.
+presentes = sorted(set(re.findall(r'REEMPLAZAR_[A-Z][^"\\\s:|,;]*', texto)))
 puestos, sin_valor = [], []
 # COINCIDENCIA EXACTA, nunca por prefijo. Antes se aceptaba una fila cuyo
 # nombre fuera el comienzo del marcador, y el 2026-09-15 el respaldo de NovuChat
