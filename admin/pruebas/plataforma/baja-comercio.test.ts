@@ -117,8 +117,8 @@ describe('baja-comercio — argumentos y salvaguardas (negando primero)', () => 
     expect(motivos([...ok, '--forzar'])).toMatch(/opción desconocida/);
     expect(motivos([...ok, '--valor', 'x'])).toMatch(/opción desconocida/);
   });
-  it('un comercio excluido (Bellido) no se toca', () => {
-    expect(motivos(['--proyecto', PROYECTO, '--tenant', 'bellido'])).toMatch(/EXCLUIDO/);
+  it('un comercio excluido (por NOVUCHAT_TENANTS_EXCLUIDOS) no se toca; Bellido ya no está excluido (21/11/2026)', () => {
+    expect(motivos(['--proyecto', PROYECTO, '--tenant', 'bellido'], { ...env, NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' })).toMatch(/EXCLUIDO/);
   });
   it('el proceso real: sin confirmación sale con 2 y no escribe', async () => {
     await sembrar();

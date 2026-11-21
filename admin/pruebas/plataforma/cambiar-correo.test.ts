@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
-import { enmascarar, planearCambioCorreo } from '../../scripts/plataforma/cambiar-correo-logica.mjs';
+import { enmascarar, esExcluido, planearCambioCorreo } from '../../scripts/plataforma/cambiar-correo-logica.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const RUTA = join(aqui, '..', '..', 'scripts', 'plataforma', 'cambiar-correo.mjs');
@@ -61,8 +61,8 @@ describe('cambiar-correo: lo que NO debe hacer', () => {
   it('NEGACIÓN: rechaza una cuenta con Google u otro proveedor', () => {
     expect(planear({ usuario: { ...USUARIO, proveedores: ['google.com', 'password'] } }).error).toContain('proveedor');
   });
-  it('NEGACIÓN: no toca cuentas con acceso a Bellido o Platinum', () => {
-    for (const t of ['bellido', 'platinum2']) {
+  it('NEGACIÓN: no toca cuentas con acceso a Platinum (Bellido ya no está excluido, 21/11/2026)', () => {
+    for (const t of ['platinum', 'platinum2']) {
       const u = { ...USUARIO, claims: { ...USUARIO.claims, [t]: 'admin' } };
       expect(planear({ usuario: u, miembros: [...MIEMBROS, { tenant: t, existe: true, correo: correo('viejo') }] }).error).toContain('no se toca');
     }
@@ -80,6 +80,15 @@ describe('cambiar-correo: lo que NO debe hacer', () => {
   });
 });
 
+describe('cambiar-correo: esExcluido (lista común de comercios no tocados)', () => {
+  it('excluye Platinum (y ya no Bellido) por «contiene», sin distinguir mayúsculas', () => {
+    expect(esExcluido('bellido-x')).toBe(false);   // 21/11/2026: Bellido es un comercio más
+    expect(esExcluido('platinum-x')).toBe(true);
+    expect(esExcluido('Platinum')).toBe(true);
+    expect(esExcluido('qtaco')).toBe(false);
+  });
+});
+
 describe('cambiar-correo: el texto del script', () => {
   const s = sinComentarios(SCRIPT);
   it('es seco por omisión: Auth y Firestore se escriben después de `if (!APLICAR`', () => {
@@ -93,9 +102,9 @@ describe('cambiar-correo: el texto del script', () => {
     expect(planear({ usuario: { ...USUARIO, deshabilitada: true } }).error).toContain('deshabilitada');
     expect(planear({ usuario: { ...USUARIO, conSegundoFactor: true } }).error).toContain('segundo factor');
   });
-  it('NEGACIÓN: Bellido y Platinum se excluyen aunque no estén al principio del nombre', () => {
-    const u = { ...USUARIO, claims: { 'clinica-bellido': 'admin' } };
-    expect(planear({ usuario: u, miembros: [{ tenant: 'clinica-bellido', existe: true, correo: correo('viejo') }] }).error).toContain('no se toca');
+  it('NEGACIÓN: Platinum se excluye aunque no esté al principio del nombre', () => {
+    const u = { ...USUARIO, claims: { 'clinica-platinum': 'admin' } };
+    expect(planear({ usuario: u, miembros: [{ tenant: 'clinica-platinum', existe: true, correo: correo('viejo') }] }).error).toContain('no se toca');
   });
   it('invalida la contraseña anterior y revoca sesiones también al reanudar', () => {
     expect(s).toMatch(/password: randomBytes/);
@@ -116,7 +125,7 @@ describe('cambiar-correo: el texto del script', () => {
     for (const l of logs) expect(l).toMatch(/enmascarar/);
   });
   it('los comercios excluidos salen con código 2 antes de abrir Firebase', () => {
-    for (const tenant of ['bellido', 'platinum-x']) {
+    for (const tenant of ['platinum', 'platinum-x']) {
       const r = spawnSync('node', [RUTA, '--proyecto', 'p', '--operador', correo('operador'), '--tenant', tenant, '--a', correo('nuevo')], { encoding: 'utf8', env: entornoDelEmulador() });
       expect(r.status).toBe(2);
       expect(r.stderr).toContain('no se toca desde este script');

@@ -46,8 +46,8 @@
  *     hallará mensajes NUEVOS (los que entren después de que la ingesta con H1 esté desplegada). Buscar por
  *     teléfono y por nombre sí funciona sobre las conversaciones antiguas rellenadas.
  *
- * BELLIDO NO SE TOCA (decisión P1, Andres, 09/10/2026): a Bellido no se le corre el relleno. El script se NIEGA
- * (salida 2, sin abrir Firebase) si el id es de Bellido o está en la lista de exclusión (la misma de
+ * 21/11/2026 (orden de Andres): Bellido ya no está excluido; la lista fija quedó vacía. El script se NIEGA
+ * (salida 2, sin abrir Firebase) si el id está en la lista de exclusión (la misma de
  * `aplicar-consola-conversaciones.mjs`), y de nuevo si el NOMBRE de la ficha lo nombra.
  *
  * EXCEPCIÓN EXPLÍCITA (Andres, 24/10/2026: la pantalla nueva es la de todos): `--permitir-excluido bellido` levanta la
@@ -166,7 +166,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   else if (tenant.includes(',')) problemas.push('--tenant admite UN solo comercio por corrida (sin comas)');
   else if (!ID_TENANT.test(tenant)) problemas.push('--tenant inválido (minúsculas, dígitos y guiones, de 3 a 60)');
   else if (esTenantExcluido(tenant, env, permitir !== undefined && permitir === tenant && PERMITIBLES.includes(permitir) ? [permitir] : [])) {
-    problemas.push('este comercio está EXCLUIDO: a Bellido no se le corre el relleno de Conversaciones sin --permitir-excluido bellido (decisión del 09/10/2026)');
+    problemas.push('este comercio está EXCLUIDO (NOVUCHAT_TENANTS_EXCLUIDOS): no se le corre el relleno de Conversaciones');
   }
   if (permitir !== undefined) {
     if (!PERMITIBLES.includes(permitir)) problemas.push('--permitir-excluido solo admite un comercio de la lista de permitibles (bellido)');
@@ -377,11 +377,11 @@ export async function ejecutar(cfg, deps) {
   const rotulo = `${cfg.entorno} · tenant ${cfg.tenant}${levantadosDe(cfg).length ? ' · EXCLUSIÓN LEVANTADA SOLO PARA ESTA CORRIDA (--permitir-excluido)' : ''}`;
 
   const levantados = levantadosDe(cfg);
-  if (esTenantExcluido(cfg.tenant, deps.env, levantados)) { log('\n  ✗ Este comercio está EXCLUIDO (Bellido): no se toca.\n'); return 2; }
+  if (esTenantExcluido(cfg.tenant, deps.env, levantados)) { log('\n  ✗ Este comercio está EXCLUIDO: no se toca.\n'); return 2; }
   const ficha = await leerFicha(db, cfg.tenant);
   if (!ficha.exists) { log(`\n  ✗ ${cfg.tenant}: no existe la ficha (${cfg.entorno})\n`); return 1; }
   if (nombreExcluido((ficha.data() ?? {}).nombre, deps.env, levantados)) {
-    log('\n  ✗ El nombre de la ficha corresponde a un comercio EXCLUIDO (Bellido): no se toca. No se escribió nada.\n');
+    log('\n  ✗ El nombre de la ficha corresponde a un comercio EXCLUIDO: no se toca. No se escribió nada.\n');
     return 2;
   }
 
