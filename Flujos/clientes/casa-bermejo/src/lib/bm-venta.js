@@ -732,7 +732,7 @@ function bmResolverComprobanteAlias(c) {
 
 // Cuando la redacción del modelo no pasa la revisión, el texto de reemplazo sigue el estado del pedido (no un «cuénteme más» fuera de lugar): lo que falta de la entrega, o la confirmación.
 function bmTextoDeEstado(lineas, entrega, cierre, c) {
-  if (!lineas.length) return BM_TEXTO_MODELO_SIN_REDACCION;
+  if (!lineas.length) return BM_TEXTO_MODELO_SIN_REDACCION;   // solo lo usa una prueba de respaldo: `bmResolverModelo` ya no llega aquí sin piezas (ver `bmSinRedaccionSinPiezas`)
   const faltan = bmEntregaFalta(entrega, c.mercado);
   if (faltan.length === 1 && faltan[0] === 'modo de entrega') return '¿Cómo prefiere recibir su pedido: ' + (c.modos.length ? c.modos.join(' o ') : 'retiro en tienda o envío') + '?';
   if (faltan.length) return 'Para continuar con su pedido, indíqueme por favor: ' + faltan.join(', ') + '.';
@@ -796,7 +796,7 @@ function bmResolverModelo(c) {
   if (cambioConQr) {
     let texto0 = bmRedaccion(j.texto, p.textoCliente, c.vendibles);
     const sinRed = texto0 === '';
-    if (sinRed) texto0 = BM_TEXTO_MODELO_SIN_REDACCION;
+    if (sinRed) texto0 = bmTextoDeEstado(lineas, entrega, cierre, c);
     return Object.assign(base, { tipo: 'modelo', texto: texto0, sinRedaccion: sinRed, resumen: lineas.length ? vcResumen(lineas) : '', cancelarCobro: true, qrAnulado: true, patch: { qrHastaMs: 0, qrCarrito: [] } });
   }
   // Conversación: el texto del modelo, revisado; si no pasa, el fijo. El resumen del pedido (calculado por el código) acompaña cada cambio.
@@ -805,8 +805,17 @@ function bmResolverModelo(c) {
   // Negar una pieza que el catálogo sí tiene («solo disponemos de la de 9 kg» cuando hay de 9, 15 y 17 kg): el texto lo arma el código con las piezas que coinciden.
   if (texto !== '' && /\b(solo|unicamente)\s+(disponemos|tenemos|contamos|hay|ofrecemos)\b/.test(bmNorm(texto))) { const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1); if (coinc !== '') texto = coinc; }
   const sinRedaccion = texto === '';
-  if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c);
-  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, resumen: cambio && lineas.length ? vcResumen(lineas) : '' });
+  let sinPieza = false;
+  if (sinRedaccion && !lineas.length) {
+    // Sin piezas y sin texto del modelo: NUNCA el «cuéntame más» genérico. Las piezas que coinciden con lo que pidió (con sus precios), o «no lo encuentro» con el botón del catálogo; sin catálogo web, recepción.
+    const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1);
+    texto = coinc !== '' ? coinc : BM_TEXTO_SIN_PIEZA;
+    sinPieza = coinc === '';
+    // La misma respuesta fija dos veces seguidas es un bucle: la segunda pasa con recepción (aviso + botón).
+    const ultima = [...f.hist].reverse().find((x) => x && x.r === 'm');
+    if ((sinPieza && bmEnlaceCatalogo(c.base) === '') || (ultima && ultima.t === bmParaMemoria(texto))) return Object.assign(bmDerivar(c, 'quiere_hablar'), { lineas: lineas, entrega: entrega, cierre: cierre });
+  } else if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c);
+  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: cambio && lineas.length ? vcResumen(lineas) : '' });
 }
 
 // La decisión del turno. `c` viene de `bmContexto()` (+ `modeloResp` y `cancelo`, que completa cada nodo). Devuelve { tipo, ... } con `aviso` (o null) y, cuando cambia la ficha, `patch`.
