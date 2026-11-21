@@ -146,11 +146,27 @@ describe('correrPasos con dependencias falsas', () => {
     expect(log.join('\n')).toMatch(/aplicar-persona-puede-escribir\.mjs --revertir --respaldo \/tmp\/respaldos\/personaPuedeEscribir-comercio-z-s1\.json/);
   });
 
+  it('salida 4 (cerrojo del mapa tomado): no se escribió nada, no se imprime --quitar-alias y se pide esperar', async () => {
+    const { log, deps } = armar('alias', 4);
+    const r = await correrPasos(pasos(), { aplicar: true, deps });
+    expect(r.codigo).toBe(2);
+    expect(log.join('\n')).not.toMatch(/--quitar-alias/);
+    expect(log.join('\n')).toMatch(/espere a que termine la otra corrida/);
+  });
+
   it('una negativa del paso (salida 2) corta con 2 y no lo cuenta como escrito', async () => {
     const { log, deps } = armar('alias', 2);
     const r = await correrPasos(pasos(), { aplicar: true, deps });
     expect(r.codigo).toBe(2);
     expect(log.join('\n')).not.toMatch(/--quitar-alias/);
+  });
+
+  it('segunda barrera (puertaOk): un plan SIN puerta que se salta validarOrden no escribe ninguna bandera', async () => {
+    const sinPuerta = pasos().filter((p) => p.tipo !== 'puerta');
+    const { llamadas, deps } = armar(null);
+    const r = await correrPasos(sinPuerta, { aplicar: true, deps, validar: () => [] });
+    expect(r.codigo).toBe(2);
+    for (const campo of Object.keys(JUEGO_CON_INFRA)) expect(llamadas).not.toContain(campo);
   });
 
   it('segunda barrera: la puerta llega y FALLA (el plan sí pasa validarOrden): ninguna bandera corre y no se escribe nada más', async () => {
@@ -282,7 +298,8 @@ describe('argumentos', () => {
   it('negativas: --aplicar sin --confirmo produccion, con otro proyecto, o sin lo necesario, se niega', () => {
     const completo = [...base, '--respaldo-dir', RESPALDOS, '--aplicar'];
     expect(analizarArgumentos(completo, ENV).ok).toBe(false);
-    expect(analizarArgumentos([...completo, '--confirmo', 'produccion'], ENV).ok).toBe(true);
+    expect(analizarArgumentos([...completo, '--confirmo', 'produccion'], ENV).ok).toBe(false); // sin --v1-verificado (D1 sin verificar)
+    expect(analizarArgumentos([...completo, '--v1-verificado', '--confirmo', 'produccion'], ENV).ok).toBe(true);
     expect(analizarArgumentos([...completo, '--confirmo', 'si'], ENV).ok).toBe(false);
     expect(analizarArgumentos([...completo, '--confirmo', 'produccion', '--proyecto', 'proyecto-stg-ficticio'], ENV).ok).toBe(false);
     expect(analizarArgumentos([...base, '--aplicar', '--confirmo', 'produccion'], ENV).ok).toBe(false);

@@ -21,7 +21,7 @@
  *
  *   node scripts/plataforma/encender-conversacion.mjs --tenant <id> --env .env [--alias <clienteNN>] \
  *        --cred-ingesta "<nombre>" --cred-envio "<nombre>" [--cred-rele "<nombre>"] --respaldo-dir <ruta> \
- *        [--proyecto <id>] [--aplicar --confirmo produccion]
+ *        [--proyecto <id>] [--aplicar --v1-verificado --confirmo produccion]
  *   node scripts/plataforma/encender-conversacion.mjs --todos --proyecto <id>       (solo lectura: `faltanDelJuego`)
  *
  *   · `--alias`: si falta, se lee de `rutasWhatsApp` (`aliasSecreto` de la ruta del comercio, que fija
@@ -47,7 +47,8 @@
  * mientras tanto, el barrido»). Cualquier otra falla de la puerta (flujo no activo, credenciales, 4a, 4f…) corta.
  *
  * !!! D1 TODAVÍA NO ESTÁ VERIFICADO EN EL ENSAYO DEL DEMO A (V1). NO se usa con `--aplicar` en un comercio real hasta
- * !!! ese ensayo: el seco sí se puede correr siempre.
+ * !!! ese ensayo: el seco sí se puede correr siempre. EN CÓDIGO: `--aplicar` se niega sin `--v1-verificado`; esa exigencia
+ * !!! se quita en un PR aparte cuando el ensayo confirme el barrido.
  *
  * REANUDAR (idempotente). Antes de actuar, y sin escribir, cada paso de infraestructura se sondea con lecturas: relé
  * inerte existente (salida 0 de `--crear-rele-inerte` en seco), alias presente en el mapa, flujo del alias cargado
@@ -96,11 +97,11 @@ const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const ID_ALIAS = /^[A-Za-z][A-Za-z0-9]{1,29}$/;
 const ARCHIVO_ENV = /^\.env(\.[a-z0-9-]+)?$/;
 const CON_VALOR = ['tenant', 'alias', 'env', 'proyecto', 'cred-ingesta', 'cred-envio', 'cred-rele', 'respaldo-dir', 'confirmo'];
-const BANDERAS = ['aplicar', 'todos'];
+const BANDERAS = ['aplicar', 'todos', 'v1-verificado'];
 
 export const USO = '  node scripts/plataforma/encender-conversacion.mjs --tenant <id> --env .env [--alias <clienteNN>] '
   + '--cred-ingesta "<nombre>" --cred-envio "<nombre>" [--cred-rele "<nombre>"] --respaldo-dir <ruta> [--proyecto <id>] '
-  + '[--aplicar --confirmo produccion]\n'
+  + '[--aplicar --v1-verificado --confirmo produccion]\n'
   + '  node scripts/plataforma/encender-conversacion.mjs --todos [--proyecto <id>]   (solo lectura)';
 
 /** Quién escribe cada bandera con infraestructura. Si core agrega una a `JUEGO_CON_INFRA` sin escritor aquí, el orquestador se niega. */
@@ -277,6 +278,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   }
   if (aplicar) {
     if (proy.ok && proy.entorno !== 'produccion') problemas.push('--aplicar solo se usa contra producción (los scripts de n8n y de Secret Manager son de producción)');
+    if (!banderas.includes('v1-verificado')) problemas.push('--aplicar exige --v1-verificado: D1 (sin redespliegue) todavía no está verificado en el ensayo del Demo A; esa exigencia se quita en un PR aparte cuando el ensayo confirme el barrido');
     if (valores.confirmo !== 'produccion') problemas.push('--aplicar exige --confirmo produccion (escrito a mano)');
     if (!('respaldo-dir' in valores)) problemas.push('--aplicar exige --respaldo-dir');
   } else if ('confirmo' in valores) {
@@ -316,9 +318,9 @@ const codigosAceptados = (paso, aplicar) => (aplicar || !paso.escribe ? [0] : [0
  * Códigos: 0 todo listo; 1 (seco) hay pasos por hacer; 2 el plan o un paso se niega sin escribir; 3 un paso falló.
  * Reanuda: los pasos de infraestructura ya hechos (según su sondeo) se saltan y no entran en lo que se deshace.
  */
-export async function correrPasos(pasos, { aplicar, deps }) {
+export async function correrPasos(pasos, { aplicar, deps, validar = validarOrden }) {
   const log = deps.log ?? (() => {});
-  const problemas = validarOrden(pasos);
+  const problemas = validar(pasos); // inyectable solo para probar la segunda barrera (puertaOk)
   if (problemas.length) {
     log(`\n  ✗ El plan no es válido; no se ejecutó nada:\n    - ${problemas.join('\n    - ')}\n`);
     return { codigo: 2, fallo: null, hechos: [], pendientes: [] };
@@ -367,13 +369,17 @@ export async function correrPasos(pasos, { aplicar, deps }) {
     salidas[paso.id] = codigo;
     if (!codigosAceptados(paso, aplicar).includes(codigo)) {
       log(`\n  ✗ Se cortó en «${paso.titulo}» (salida ${codigo}). No se escribió ninguna bandera pendiente.`);
-      const aDeshacer = [...(aplicar && paso.escribe && codigo !== 2 ? [paso] : []), ...hechos].filter((p) => p.escribe && p.revertir).reverse();
+      // 2 = se negó sin escribir; 4 = cerrojo del mapa tomado por otra corrida (no se escribió nada): NO se imprime reversión
+      // del paso, porque `--quitar-alias` borraría el alias de la corrida en curso.
+      const sinEscribir = codigo === 2 || codigo === 4;
+      if (codigo === 4) log('  No se escribió nada en este paso; espere a que termine la otra corrida y reintente.');
+      const aDeshacer = [...(aplicar && paso.escribe && !sinEscribir ? [paso] : []), ...hechos].filter((p) => p.escribe && p.revertir).reverse();
       if (aDeshacer.length) {
         log('  Para deshacer lo hecho (en este orden; el orquestador no despliega nada, así que no hay nada que redesplegar):');
         for (const p of aDeshacer) log(`    - ${p.titulo}: ${p.revertir}`);
       }
       log('');
-      return { codigo: codigo === 2 ? 2 : 3, fallo: paso.id, hechos, pendientes };
+      return { codigo: sinEscribir ? 2 : 3, fallo: paso.id, hechos, pendientes };
     }
     if (paso.tipo === 'puerta' && aplicar) puertaOk = true;
     if (!aplicar && paso.tipo === 'bandera' && codigo === 1) pendientes.push(paso.id);
