@@ -503,7 +503,7 @@ niega si el `.env` no es del usuario o tiene permisos de más.
     #    número de versión del secreto al desplegar, así que la versión nueva no se ve hasta entonces:
     #    se despliega con la próxima etiqueta v* (la crea Andres: scripts/etiquetar-version.sh vX.Y.Z
     #    --commit <sha>; el CI despliega) o, en staging, con el push a main.
-    # 4. Activar (paso aparte: empieza el barrido de cada minuto)
+    # 4. Activar (paso aparte: empieza el barrido de cada 15 s)
     ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --activar                          # seco
     ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --activar --aplicar --confirmo produccion
 
