@@ -35,7 +35,7 @@
     "horarioApertura": "10:00",
     "horarioCierre": "19:00",
     "avisoPedidoPlantilla": "aviso_pedido_equipo",
-    "avisoPedidoEstado": "PENDING",
+    "avisoPedidoEstado": "APPROVED",
     "avisoRespaldoPlantilla": "pedido_registrado",
     "avisoRespaldoEstado": "APPROVED",
     "avisoPlantillaIdioma": "es",
