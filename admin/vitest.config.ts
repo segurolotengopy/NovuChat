@@ -275,6 +275,8 @@ export const SUITES_PURAS = [
   'pruebas/plataforma/region-y-cuenta.test.ts',
   'pruebas/plataforma/crm-cuenta-servicio.test.ts',
   'pruebas/plataforma/scripts-con-registro.test.ts',
+  'pruebas/plataforma/encender-conversacion.test.ts',
+  'pruebas/core/juego-de-conversacion.test.ts',
   'pruebas/central/saneo.test.ts',
   'pruebas/central/titular-decision.test.ts',
   'pruebas/central/usuarios-titular-pantalla.test.ts',

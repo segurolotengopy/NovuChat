@@ -155,7 +155,5 @@ describe('juego de conversación: cada tenant lo declara en su PROPIO.md', () =>
   });
 });
 
-describe('juego de conversación: piezas del PR2 (plataforma)', () => {
-  it.todo('fichaInicial() de alta-comercio.mjs trae cada clave de JUEGO_DE_FICHA con valor exacto (PR2)');
-  it.todo('pasosDelEncendido() cubre JUEGO_CON_INFRA y no pone ninguna bandera antes de la puerta de verificación (PR2)');
-});
+// Las piezas de plataforma (`fichaInicial` de alta-comercio.mjs y `pasosDelEncendido` de encender-conversacion.mjs) se prueban
+// en `pruebas/plataforma/encender-conversacion.test.ts`: core no importa de `scripts/` ni de plataforma (`fronteras.test.ts`).
