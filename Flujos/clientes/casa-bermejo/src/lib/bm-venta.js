@@ -807,13 +807,13 @@ function bmResolverModelo(c) {
   const sinRedaccion = texto === '';
   let sinPieza = false;
   if (sinRedaccion && !lineas.length) {
-    // Sin piezas y sin texto del modelo: NUNCA el «cuéntame más» genérico. Las piezas que coinciden con lo que pidió (con sus precios), o «no lo encuentro» con el botón del catálogo; sin catálogo web, recepción.
+    // Sin piezas y sin texto del modelo: NUNCA el «cuéntame más» genérico. Las piezas que coinciden con lo que pidió (con sus precios) o «no lo encuentro» (sin prometer un botón: el botón sale solo con piezas o con un «no tenemos» del modelo).
     const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1);
     texto = coinc !== '' ? coinc : BM_TEXTO_SIN_PIEZA;
     sinPieza = coinc === '';
     // La misma respuesta fija dos veces seguidas es un bucle: la segunda pasa con recepción (aviso + botón).
     const ultima = [...f.hist].reverse().find((x) => x && x.r === 'm');
-    if ((sinPieza && bmEnlaceCatalogo(c.base) === '') || (ultima && ultima.t === bmParaMemoria(texto))) return Object.assign(bmDerivar(c, 'quiere_hablar'), { lineas: lineas, entrega: entrega, cierre: cierre });
+    if (ultima && ultima.t === bmParaMemoria(texto)) return Object.assign(bmDerivar(c, 'quiere_hablar'), { lineas: lineas, entrega: entrega, cierre: cierre });
   } else if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c);
   return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: cambio && lineas.length ? vcResumen(lineas) : '' });
 }

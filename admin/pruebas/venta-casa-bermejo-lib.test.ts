@@ -627,7 +627,7 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
     ]);
     const turno = (texto: string, hist: Array<{ r: string; t: string }> = [], base: Record<string, unknown> = { enlaceCatalogo: 'https://sitio.example' }) =>
       b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, base, ficha: { hist }, plan: { tipo: 'modelo', textoCliente: texto }, modeloResp: gemini({ texto: 'Tenemos un descuento del 10% por tiempo limitado', lineas: [] }) }));
-    it('«Tienen televisores?» (no hay): dice que no lo encuentra y marca el botón del catálogo; no el genérico', () => {
+    it('«Tienen televisores?» (no hay): dice que no lo encuentra; no el genérico', () => {
       const r = turno('Tienen televisores?');
       expect(r.tipo).toBe('modelo');
       expect(r.sinPieza).toBe(true);
@@ -643,9 +643,10 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       const r = turno('Tienen televisores?', [{ r: 'u', t: 'tienen televisores' }, { r: 'm', t: b('bmParaMemoria')(b('BM_TEXTO_SIN_PIEZA')) }]);
       expect(r.tipo).toBe('derivar');
     });
-    it('sin enlace del catálogo no se promete un botón: pasa con recepción', () => {
+    it('sin enlace del catálogo no se promete un botón: el texto no menciona ningún botón', () => {
       const r = turno('Tienen televisores?', [], {});
-      expect(r.tipo).toBe('derivar');
+      expect(r.tipo).toBe('modelo');
+      expect(r.texto).not.toMatch(/bot[oó]n/i);
     });
   });
 });

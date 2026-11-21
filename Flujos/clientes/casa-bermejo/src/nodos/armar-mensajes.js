@@ -100,7 +100,7 @@ if (puerta.ruta === 'sigue') {
     // El botón «Ver catálogo» sale POR CÓDIGO (el texto dice «catálogo» y el botón lo cumple): en el primer saludo, cuando no hay esa pieza o cuando se listan varias; nunca con un pedido o un QR en curso.
     const enlaceCat = bmEnlaceCatalogo(c.base);
     const ofrecePiezas = (String(d.texto).match(/\bBs\s?\d|\bARS\s?\d/g) || []).length >= 1;
-    if (enlaceCat !== '' && d.lineas.length === 0 && !(fichaAntes.qrHastaMs > ahora) && !(fichaAntes.carrito && fichaAntes.carrito.length > 0) && (!fichaAntes.saludado || d.sinPieza === true || ofrecePiezas || /\bno (disponemos|contamos|tenemos|encuentro|hay|manejamos)\b/.test(bmNorm(d.texto)))) {
+    if (enlaceCat !== '' && d.lineas.length === 0 && !(fichaAntes.qrHastaMs > ahora) && !(fichaAntes.carrito && fichaAntes.carrito.length > 0) && ((!fichaAntes.saludado && /^(hola|holi|buenas|buenos|buen dia|saludos|hello)\b/.test(bmNorm(c.plan.textoCliente))) || ofrecePiezas || (d.sinPieza !== true && /\bno (disponemos|contamos|tenemos|hay|manejamos)\b/.test(bmNorm(d.texto))))) {
       const cuerpoBtn = bmSeguro(cuerpoModelo, usted);
       msgs = [cmMensaje('cliente', cmEnlace(cuerpoBtn, 'Ver catálogo', enlaceCat), cuerpoBtn, cuerpoBtn + '\n\n' + enlaceCat, { tipoReporte: 'interactive', conBoton: true })];
     } else msgs = [texto(cuerpoModelo)];
