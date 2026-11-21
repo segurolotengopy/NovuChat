@@ -164,3 +164,7 @@ Fuente: resumen del 18/11 (57 puntos, §5 a §7) y el plan consolidado. **0 nodo
 - **Voz.** A lo más UNA exclamación («!») por texto del modelo; las promesas de aviso o contacto en la forma de usted («le haremos saber», «apenas tengamos novedades…») se rechazan (`WL_PROMESAS_USTED`).
 - **Mensajes por conversación:** +1 al cliente por pedido con envío sin GPS (el pedido de ubicación); +1 aviso a nuestra encargada por pedido cuando los datos de factura llegan después; +1 aviso a nuestra encargada cuando el comprobante llega a `en_revision` (3.er intento); 0 en lo demás.
 - **Pruebas:** `fase1.test.ts` y `revision.test.ts`, contra el código común REAL de PR-K (sin simulaciones); el contrato del cotejo de PR-S se simula en las respuestas del doble (`mundo.ts`).
+
+## Juego de conversación (plan 21/11/2026)
+
+Juego de conversación: excepción — pendiente de verificar con encender-conversacion (plan 21/11)

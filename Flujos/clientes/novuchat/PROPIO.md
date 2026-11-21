@@ -67,3 +67,7 @@ Pendiente: ensayo en el Demo A, reseteo de fichas por `comprometer` y `chatNovuc
 ## Mensajes por conversación
 
 0 agregados y 0 quitados por este archivo (documentación).
+
+## Juego de conversación (plan 21/11/2026)
+
+Juego de conversación: excepción — pendiente de verificar con encender-conversacion (plan 21/11)

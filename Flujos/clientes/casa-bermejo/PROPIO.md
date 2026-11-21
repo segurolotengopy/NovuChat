@@ -70,3 +70,7 @@ La baja («no me escribas más») usa la pieza común `Flujos/src/core/conversac
 - **Qué rechaza:** claves con nombre de secreto, valores con forma de token (también JWT), claves que no existen en los datos versionados (en cualquier nivel; los mensajes nunca repiten un nombre desconocido), textos libres fuera de la lista blanca (`mensajeComercioSuspendido`, por ejemplo) o demasiado largos, listas, hosts fuera de `ANFITRIONES_TIENDA` y **cualquier URL del verificador distinta de la constante**. La guardia de lo armado exige, en «Verificar firma con el receptor», el marcador o esa constante exacta, y que la URL no aparezca en ningún otro nodo (ni en «Config base» ni en notas). Los datos versionados conservan el marcador; la constante entra solo por el archivo local, y con ella la variante de producción puede pasar `--publicable` (cero marcadores).
 - **Publicar:** `--publicable --flujo <json local>` revisa el flujo ya sustituido; un marcador que quede lo bloquea. Los tokens no entran nunca aquí: las credenciales de n8n se crean aparte y el flujo las nombra.
 - **Pruebas:** `admin/pruebas/tenants/casa-bermejo/armado-local.test.ts`.
+
+## Juego de conversación (plan 21/11/2026)
+
+Juego de conversación: excepción — pendiente de verificar con encender-conversacion (plan 21/11)
