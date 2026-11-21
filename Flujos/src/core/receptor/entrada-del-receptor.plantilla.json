@@ -1,0 +1,179 @@
+{
+  "nodes": [
+    {
+      "id": "entrega-receptor",
+      "name": "Entrega del receptor",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1560,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "@@dato:receptor.ruta@@",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "notes": "SOLO en la variante del receptor de clientes (camino B). Recibe la entrega firmada del receptor (cabeceras X-AAB1-Delivery-Id, X-AAB1-Timestamp, X-AAB1-Signature y X-AAB1-Attempt). La ruta es una URL de capacidad: va como marcador y la reemplaza preparar-import.sh. El Code de n8n no tiene crypto: la firma la verifica el receptor, por la red interna, en el nodo siguiente."
+    },
+    {
+      "id": "verificar-firma",
+      "name": "Verificar firma con el receptor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1320,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "@@dato:receptor.urlVerificador@@",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ firma: $json.headers['x-aab1-signature'] ?? '', timestamp: $json.headers['x-aab1-timestamp'] ?? '', deliveryId: $json.headers['x-aab1-delivery-id'] ?? '', cuerpo: JSON.stringify($json.body), wabaIdEsperado: \"@@dato:receptor.wabaIdEsperado@@\" }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "notes": "SIN «Continue on Fail» ni onError, a propósito: con él, un 503 del verificador daría 401 y la entrega moriría en vez de reintentarse. El cuerpo se arma con JSON.stringify, nunca interpolando. El verificador solo se llama por la red interna y nunca se expone. `wabaIdEsperado` va fijo (marcador)."
+    },
+    {
+      "id": "firma-valida",
+      "name": "¿Firma válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1080,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "firma-valida",
+              "leftValue": "={{ $json.valido }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "aceptar-200",
+      "name": "Aceptar (200)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -840,
+        200
+      ],
+      "parameters": {
+        "respondWith": "noData",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "rechazar-401",
+      "name": "Rechazar (401)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -840,
+        420
+      ],
+      "parameters": {
+        "respondWith": "noData",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "notes": "Una firma inválida corta aquí: 0 mensajes, 0 avisos, 0 llamadas."
+    },
+    {
+      "id": "descartar-repetidos",
+      "name": "Descartar repetidos",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        200
+      ],
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "logic": "removeItemsWithAlreadySeenKeyValues",
+        "dedupeValue": "={{ $('Verificar firma con el receptor').item.json.deliveryId }}",
+        "options": {}
+      },
+      "notes": "Descarta una entrega ya vista (el receptor reintenta) entre ejecuciones, por deliveryId. Los repetidos por id de mensaje de Meta los frena además `Interpretar entrada`."
+    }
+  ],
+  "connections": {
+    "Entrega del receptor": {
+      "main": [
+        [
+          {
+            "node": "Verificar firma con el receptor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar firma con el receptor": {
+      "main": [
+        [
+          {
+            "node": "¿Firma válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Firma válida?": {
+      "main": [
+        [
+          {
+            "node": "Aceptar (200)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rechazar (401)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aceptar (200)": {
+      "main": [
+        [
+          {
+            "node": "Descartar repetidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
