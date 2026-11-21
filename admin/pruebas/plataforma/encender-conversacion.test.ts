@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 // @ts-expect-error módulo .mjs sin tipos
 import { COMERCIOS_NO_TOCADOS } from '../../scripts/plataforma/comercios-no-tocados.mjs';
@@ -32,7 +32,7 @@ const pasos = (): Paso[] => pasosDelEncendido(PARAMS);
 const indice = (ps: Paso[], id: string) => ps.findIndex((p) => p.id === id);
 
 describe('fichaInicial (alta-comercio.mjs)', () => {
-  const ficha = fichaInicial({ nombre: 'Zeta', plan: 'impulso', FLUJOS: ['agendamiento'], titularCuentaUid: 'uid1', sello: SELLO });
+  const ficha = fichaInicial({ nombre: 'Zeta', plan: 'impulso', FLUJOS: ['agendamiento'], sello: SELLO });
 
   it('trae cada clave de JUEGO_DE_FICHA con su valor exacto', () => {
     for (const [clave, valor] of Object.entries(JUEGO_DE_FICHA)) {
@@ -46,7 +46,7 @@ describe('fichaInicial (alta-comercio.mjs)', () => {
   });
 
   it('conserva el resto de la ficha de siempre', () => {
-    expect(ficha).toMatchObject({ nombre: 'Zeta', estado: 'activo', plan: 'impulso', vertical: 'agendamiento', titularCuentaUid: 'uid1', titularCuentaPor: 'alta-comercio', waPhoneNumberId: null });
+    expect(ficha).toMatchObject({ nombre: 'Zeta', estado: 'activo', plan: 'impulso', vertical: 'agendamiento', waPhoneNumberId: null });
     expect(ficha.modulos.length).toBeGreaterThan(0);
   });
 });
@@ -319,7 +319,7 @@ describe('argumentos', () => {
   it('--respaldo-dir se valida con comprobarRespaldo: relativa, bajo ~/ o con «..» se rechaza; una carpeta 0700 bajo /tmp pasa', () => {
     const con = (d: string) => analizarArgumentos([...base, '--respaldo-dir', d], ENV);
     expect(con('relativa/dir').ok).toBe(false);
-    expect(con('/home/alguien/respaldos').ok).toBe(false);
+    expect(con(join(homedir(), 'respaldos-enc')).ok).toBe(false);
     expect(con(`${RESPALDOS}/../x`).ok).toBe(false);
     expect(con(RESPALDOS).ok).toBe(true);
   });
@@ -352,7 +352,7 @@ describe('canal de salida y --todos con bases falsas', () => {
 });
 
 describe('la puerta con D1 (verificar-salida-persona.mjs, --sin-redespliegue)', () => {
-  const CLAVE = '0123456789abcdef';
+  const CLAVE = 'clave-de-prueba-x';
   const mapa = (conAlias: boolean) => JSON.stringify(conAlias ? { clienteZz: { ruta: 'https://n8n.ejemplo.com/webhook/x', clave: CLAVE } } : {});
   const depsDe = (fijada: boolean, latest: boolean) => ({
     gcloud: (args: string[]) => ({ code: 0, stdout: args.includes('latest') ? mapa(latest) : mapa(fijada) }),

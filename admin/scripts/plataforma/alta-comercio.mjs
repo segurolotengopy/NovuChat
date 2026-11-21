@@ -64,7 +64,7 @@ import { documentoDeFlujo, esFlujo, modulosDeFlujos } from '../../functions/src/
  * `encender-conversacion.mjs`, después de verificar la salida de persona (flujo antes que bandera).
  */
 // El parámetro se llama FLUJOS (como la lista del script): `scripts-con-registro.test.ts` exige que `modulos` salga de `modulosDeFlujos(FLUJOS)`.
-export function fichaInicial({ nombre, plan, FLUJOS, titularCuentaUid, sello }) {
+export function fichaInicial({ nombre, plan, FLUJOS, sello }) {
   return {
     nombre, estado: 'activo', plan,
     vertical: FLUJOS[0],
@@ -73,8 +73,6 @@ export function fichaInicial({ nombre, plan, FLUJOS, titularCuentaUid, sello }) 
     waPhoneNumberId: null, waWabaId: null, ...sello,
     // El juego de funciones de conversación, de core: el mismo para todos, sin excepción.
     ...JUEGO_DE_FICHA,
-    // El titular de la cuenta (no la «titularidad» del número): el administrador inicial. Solo NovuChat lo cambia (`fijar-titular.mjs`).
-    titularCuentaUid, titularCuentaEn: sello.creadoEn, titularCuentaPor: 'alta-comercio',
   };
 }
 
@@ -192,9 +190,11 @@ async function principal() {
   const cuenta = cuentaInicial();
   const sello = { creadoEn: Timestamp.now(), creadoPor: 'alta-comercio' };
   const lote = db.batch();
-  lote.create(db.doc(`tenants/${TENANT}`), fichaInicial({
-    nombre: NOMBRE, plan: cuenta.plan, FLUJOS, titularCuentaUid: usuario.uid, sello,
-  }));
+  lote.create(db.doc(`tenants/${TENANT}`), {
+    ...fichaInicial({ nombre: NOMBRE, plan: cuenta.plan, FLUJOS, sello }),
+    // El titular de la cuenta (no la «titularidad» del número): el administrador inicial. Solo NovuChat lo cambia (`fijar-titular.mjs`).
+    titularCuentaUid: usuario.uid, titularCuentaEn: sello.creadoEn, titularCuentaPor: 'alta-comercio',
+  });
   lote.create(db.doc(`tenants/${TENANT}/cuenta/estado`), {
     ...cuenta, actualizadoEn: Timestamp.now(),
   });
