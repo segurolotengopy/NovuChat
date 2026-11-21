@@ -23,7 +23,8 @@
 #       3. da roles/secretmanager.secretAccessor sobre él a sa-functions.
 #   ./scripts/nube-salida-persona.sh --agregar-alias <alias> [--aplicar --confirmo produccion]
 #       SOLO para el ensayo, después de los pasos 1 a 3. Exige N8N_BASE_URL (https,
-#       sin ruta: la dirección de n8n). Genera una ruta de webhook y una clave con
+#       sin ruta: la dirección de n8n; sale del entorno o de `--env .env.<nombre>`, que
+#       solo aporta N8N_BASE_URL, leída por dentro y nunca impresa). Genera una ruta de webhook y una clave con
 #       `secrets` de python, las FUSIONA con el mapa vigente en una versión nueva
 #       del secreto y NO las imprime. Entrega ruta y clave en un archivo de modo 600
 #       dentro de $XDG_RUNTIME_DIR (ver ENTREGA). Si el alias ya existe, se niega.
@@ -88,7 +89,7 @@ ayuda() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' 
 readonly SECRETO="SALIDA_PERSONA_RUTAS"
 readonly PREFIJO="SALIDA_PERSONA_"
 
-APLICAR=0; CONFIRMO=""; MODO="preparar"; ALIAS=""
+APLICAR=0; CONFIRMO=""; MODO="preparar"; ALIAS=""; ENV_FILE=""
 fijar_modo() { [[ "$MODO" == preparar ]] || { echo "✗ Un solo modo a la vez (--agregar-alias, --quitar-alias o --revertir-iam)" >&2; exit 2; }; MODO="$1"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -98,6 +99,8 @@ while [[ $# -gt 0 ]]; do
     --agregar-alias) fijar_modo agregar; [[ $# -ge 2 ]] || { echo "✗ --agregar-alias necesita el alias" >&2; exit 2; }; ALIAS="$2"; shift 2 ;;
     --quitar-alias)  fijar_modo quitar;  [[ $# -ge 2 ]] || { echo "✗ --quitar-alias necesita el alias" >&2; exit 2; }; ALIAS="$2"; shift 2 ;;
     --revertir-iam)  fijar_modo revertir; shift ;;
+    --env)           [[ $# -ge 2 ]] || { echo "✗ --env necesita un archivo" >&2; exit 2; }; ENV_FILE="$2"; shift 2 ;;
+    --env=*)         ENV_FILE="${1#*=}"; shift ;;
     -h|--help)       ayuda; exit 0 ;;
     *) echo "✗ Opción desconocida (ver --help)" >&2; exit 2 ;;
   esac
@@ -107,6 +110,15 @@ if (( APLICAR )) && [[ "$CONFIRMO" != "produccion" ]]; then
 fi
 if [[ "$MODO" == agregar || "$MODO" == quitar ]]; then
   [[ "$ALIAS" =~ ^[A-Za-z][A-Za-z0-9]{1,29}$ ]] || { echo "✗ alias inválido (letras y dígitos, de 2 a 30, empieza con letra)" >&2; exit 2; }
+fi
+if [[ -n "$ENV_FILE" ]]; then
+  # --env: SOLO se lee N8N_BASE_URL del archivo, por dentro (como cargar-timbre-n8n.sh): ni se ejecuta
+  # el archivo, ni se exporta otra variable (la clave de la API de n8n no entra), ni el valor pasa por
+  # argumentos o pantalla. El archivo es un .env del repositorio (relativo, sin rutas).
+  [[ "$ENV_FILE" =~ ^\.env(\.[a-z0-9-]+)?$ ]] || { echo "✗ --env tiene que ser un archivo .env de la raíz del repositorio (.env o .env.<nombre>)" >&2; exit 2; }
+  [[ -f "$ENV_FILE" ]] || { echo "✗ Falta $ENV_FILE" >&2; exit 2; }
+  N8N_BASE_URL="$(grep -E '^N8N_BASE_URL=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+  export N8N_BASE_URL
 fi
 if [[ "$MODO" == agregar ]]; then
   # La dirección de n8n: https, un host, puerto opcional, sin ruta, sin usuario.
