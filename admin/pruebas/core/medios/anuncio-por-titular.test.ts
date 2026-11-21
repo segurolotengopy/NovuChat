@@ -351,7 +351,7 @@ describe('los flujos que incluyen «Preparar imagen» llevan anuncio-por-titular
 // Agenda mínima (Bellido): sus dos JSON llevan el módulo nuevo, definido antes de usarse, e INERTE sin `anuncios`
 // ---------------------------------------------------------------------------
 describe('Agenda mínima: «Preparar imagen» de cada JSON define anuncioPorTitular y es inerte sin anuncios', () => {
-  const DIR = join(aqui, '../../../../Flujos/experimental/agenda-minima');
+  const DIR = join(aqui, '../../../../Flujos/clientes/agenda-minima');
   for (const archivo of ['agenda-minima.v0.json', 'agenda-minima.prueba.json']) {
     const flujo = JSON.parse(readFileSync(join(DIR, archivo), 'utf8')) as { nodes: Array<{ name: string; parameters?: { jsCode?: string } }> };
     const codigo = String(flujo.nodes.find((n) => n.name === 'Preparar imagen')?.parameters?.jsCode ?? '');

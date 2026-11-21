@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { codigoDe, ejecutar, leerFlujo } from './lib/flujo';
 
-const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/agenda-minima');
+const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/agenda-minima');
 const COMUN = readFileSync(join(RAIZ, 'src/nodos/_comun.js'), 'utf8');
 const FUENTE_CNNORM = /function cnNorm\(t\) \{[\s\S]*?\n\}\n/.exec(COMUN)?.[0] ?? '';
 
@@ -87,7 +87,7 @@ describe('cnNorm de agenda-minima', () => {
 
   it('los JSON versionados llevan el cnNorm del fuente', () => {
     for (const j of ['agenda-minima.v0.json', 'agenda-minima.prueba.json']) {
-      const f = leerFlujo(`experimental/agenda-minima/${j}`);
+      const f = leerFlujo(`clientes/agenda-minima/${j}`);
       const conNorm = f.nodes.filter((n) => typeof n.parameters?.jsCode === 'string' && n.parameters.jsCode.includes('function cnNorm'));
       expect(conNorm.length).toBeGreaterThan(0);
       for (const n of conNorm) expect(codigoDe(f, n.name)).toContain(FUENTE_CNNORM.trimEnd());

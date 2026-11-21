@@ -18,7 +18,7 @@ Fuentes (solo lectura):
 
 ## 1. Archivos y quién los escribe
 
-Todo va bajo `Flujos/experimental/agenda-minima/` (fuera de la frontera de
+Todo va bajo `Flujos/clientes/agenda-minima/` (fuera de la frontera de
 zonas: `fronteras.test.ts` solo lee `Flujos/src/`).
 
 | Archivo | Quién | Qué |

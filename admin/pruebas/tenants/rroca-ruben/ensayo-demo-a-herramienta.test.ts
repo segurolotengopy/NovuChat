@@ -19,7 +19,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const HERRAMIENTA = join(aqui, '../../../../Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs');
+const HERRAMIENTA = join(aqui, '../../../../Flujos/clientes/agenda-minima/herramientas/flujo-de-prueba.mjs');
 const RUBEN = join(aqui, '../../../../Flujos/clientes/rroca-ruben/rroca-ruben.ensayo-demo-a.json');
 const DEMO_A = join(aqui, '../../../../Flujos/demo-a-agendamiento.json');
 const ejecutar = promisify(execFile);

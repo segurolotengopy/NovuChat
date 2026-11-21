@@ -305,7 +305,7 @@ const SIN_RAMA = [
   // La imagen sale de ENCABEZADO de un interactivo (se reporta `interactive` o `text`): el servidor solo admite un saliente de tipo `image`.
   'clientes/novuchat/chat-novuchat.novuchat.json', 'experimental/captacion-minima/captacion-minima.novuchat.json',
   // No envían imágenes del asistente (Agenda mínima no manda QR; el flujo A de Bellido está descartado y el de onboarding es histórico).
-  'experimental/agenda-minima/agenda-minima.v0.json', 'bellido-agendamiento.json', 'novuchat-onboarding.json',
+  'clientes/agenda-minima/agenda-minima.v0.json', 'bellido-agendamiento.json', 'novuchat-onboarding.json',
 ];
 
 describe('cada flujo versionado que envía una imagen del asistente lleva la rama completa', () => {

@@ -1,7 +1,7 @@
 # sin-agente (antes `comun-sin-agente`) — piezas comunes para flujos «sin agente»
 
 Flujos en los que **el código calcula y el modelo conversa**: estado por teléfono, botones, mensajes armados por
-código, y el modelo solo redacta lo que el código verifica. Sacado de `Flujos/experimental/agenda-minima/`, que
+código, y el modelo solo redacta lo que el código verifica. Sacado de `Flujos/clientes/agenda-minima/`, que
 **no se toca** y sigue con sus propias copias. Desde el 13/11/2026 (etapa 1, PR 1) vive en **core** (`Flujos/src/core/sin-agente/`) y por eso no puede importar de `experimental/`, de `clientes/` ni de un módulo; por esa regla `construir-crm.mjs` (que importa del módulo `crm`) se quedó en `Flujos/experimental/comun-sin-agente/`.
 
 | Pieza | Qué es |

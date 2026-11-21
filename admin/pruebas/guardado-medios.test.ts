@@ -329,7 +329,7 @@ describe('en cada flujo cubierto la rama se arma igual (mismo código, mismas ca
     '../clientes/rroca-evy/rroca-evy.json', '../clientes/rroca-emma/rroca-emma.json', '../clientes/rroca-ruben/rroca-ruben.json', '../clientes/rroca-antonio/rroca-antonio.json',
     'venta-minima/venta-minima.qtaco.json', 'venta-minima/venta-minima.ensayo-demo-a.json', 'venta-minima/venta-minima.prueba.json',
     'doctoras/doctoras.rroca-evy.json', 'doctoras/doctoras.rroca-emma.json', '../clientes/novuchat/chat-novuchat.novuchat.json', 'captacion-minima/captacion-minima.novuchat.json',
-    '../clientes/rroca-ruben/rroca-ruben.prueba.json', 'agenda-minima/agenda-minima.v0.json',
+    '../clientes/rroca-ruben/rroca-ruben.prueba.json', '../clientes/agenda-minima/agenda-minima.v0.json',
   ];
   const nodo = (f: Flujo, n: string) => f.nodes.find((x) => x.name === n)!;
   it.each(CUBIERTOS)('%s', (archivo) => {

@@ -128,7 +128,7 @@ describe('agenda mínima: la regla de identidad es la del core, derivada y no co
     expect(lista.length).toBeGreaterThanOrEqual(8);
     expect(lista).toContain('carne y hueso');
   });
-  for (const archivo of ['experimental/agenda-minima/agenda-minima.v0.json', 'experimental/agenda-minima/agenda-minima.prueba.json']) {
+  for (const archivo of ['clientes/agenda-minima/agenda-minima.v0.json', 'clientes/agenda-minima/agenda-minima.prueba.json']) {
     it(`${archivo}: «Armar mensajes» lleva NIEGA_IA_CORE igual a la lista del core y la usa en redaccionValida`, () => {
       const flujo = JSON.parse(readFileSync(join(aqui, '../../../Flujos', archivo), 'utf8')) as { nodes: { name: string; parameters: { jsCode?: string } }[] };
       const codigo = flujo.nodes.find((n) => n.name === 'Armar mensajes')!.parameters.jsCode!;

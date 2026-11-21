@@ -79,7 +79,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
       'clientes/rroca-antonio/rroca-antonio.json', 'experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.ensayo-demo-a.json',
       'experimental/venta-minima/venta-minima.prueba.json', 'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-emma.json',
       'clientes/novuchat/chat-novuchat.novuchat.json', 'experimental/captacion-minima/captacion-minima.novuchat.json',
-      'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/agenda-minima/agenda-minima.prueba.json',
+      'clientes/agenda-minima/agenda-minima.v0.json', 'clientes/agenda-minima/agenda-minima.prueba.json',
     ]) expect(CUBIERTOS, a).toContain(a);
   });
 
@@ -103,7 +103,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
     'experimental/venta-minima/venta-minima.ensayo-demo-a.json',
     'clientes/novuchat/chat-novuchat.novuchat.json', 'clientes/novuchat/chat-novuchat.prueba.json', 'clientes/novuchat/chat-novuchat.ensayo-demo-a.json',
     'experimental/captacion-minima/captacion-minima.novuchat.json', 'experimental/captacion-minima/captacion-minima.prueba.json',
-    'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/agenda-minima/agenda-minima.prueba.json',
+    'clientes/agenda-minima/agenda-minima.v0.json', 'clientes/agenda-minima/agenda-minima.prueba.json',
     // Walisuma (#713, 30/10): main la traía con «none»/«all»; pasa a «none» como todos.
     'clientes/walisuma/walisuma.json', 'clientes/walisuma/walisuma.prueba.json',
     'clientes/casa-bermejo/casa-bermejo.json', 'clientes/casa-bermejo/casa-bermejo.prueba.json',

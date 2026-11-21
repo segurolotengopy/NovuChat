@@ -5,7 +5,7 @@ conversa**. El modelo nunca decide una hora, nunca lee el calendario y nunca con
 huecos los calcula `src/lib/agenda.js`; la confirmación es un **botón**, no la interpretación de un
 «sí»; el texto de la confirmación lo arma el código con el día y la hora del evento creado.
 
-Es un flujo **experimental**: vive en `Flujos/experimental/agenda-minima/`, fuera de la publicación
+Es un flujo **experimental**: vive en `Flujos/clientes/agenda-minima/`, fuera de la publicación
 normal, y no se activa contra el número de ningún cliente (contrato: `CONTRATO.md`).
 
 ## Estado al 30/09/2026, 19:00 (candidato B del concurso para Bellido, sha 7d49dec)

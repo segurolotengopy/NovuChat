@@ -4187,7 +4187,7 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     // La tabla de la herramienta (`CRED_DEMO_A`) y su regla de los envíos por Graph: `^Graph WhatsApp .+ \(Bearer\)$` pasa a `whatsAppApi`.
     // Acá se comprueba solo que el JSON dice lo que la herramienta espera; lo que la herramienta hace con ellos lo prueba
     // `venta-minima-herramienta-demo-a.test.ts` contra un n8n de mentira.
-    const herramienta = readFileSync(join(AQUI, '../../Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs'), 'utf8');
+    const herramienta = readFileSync(join(AQUI, '../../Flujos/clientes/agenda-minima/herramientas/flujo-de-prueba.mjs'), 'utf8');
     expect(herramienta).toContain("'Cierres NovuChat A (auto)': 'Cierres NovuChat A (auto)'");
     expect(herramienta).toContain("whatsAppApi: 'WhatsApp account'");
     expect(herramienta).toContain('const GRAPH_BEARER = /^Graph WhatsApp .+ \\(Bearer\\)$/;');

@@ -20,7 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const CARPETA = join(aqui, '../../Flujos/experimental/agenda-minima');
+const CARPETA = join(aqui, '../../Flujos/clientes/agenda-minima');
 const HERRAMIENTA = join(CARPETA, 'herramientas/flujo-de-prueba.mjs');
 const CLAVE = 'clave-falsa-de-prueba-no-es-secreta';
 const ejecutar = promisify(execFile);

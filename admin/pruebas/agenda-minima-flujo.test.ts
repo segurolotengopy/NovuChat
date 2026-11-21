@@ -1,5 +1,5 @@
 /**
- * EL FLUJO «AGENDA MÍNIMA v0», DE PUNTA A PUNTA, SIN RED (`Flujos/experimental/agenda-minima/`).
+ * EL FLUJO «AGENDA MÍNIMA v0», DE PUNTA A PUNTA, SIN RED (`Flujos/clientes/agenda-minima/`).
  *
  * Principio del flujo: el código calcula, el modelo conversa. Esta suite lee los DOS JSON armados
  * (`agenda-minima.v0.json`, el de producción, y `agenda-minima.prueba.json`, el del Webhook de prueba)
@@ -30,7 +30,7 @@ import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import { ejecutar, type Flujo, type J, type Nodo, type Referencias } from './lib/flujo';
 import { atencionDeConversacion } from './modulos/crm/ingesta-conversacion';
 
-const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/agenda-minima');
+const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/agenda-minima');
 const leerJson = (archivo: string): Flujo => JSON.parse(readFileSync(join(CARPETA, archivo), 'utf8')) as Flujo;
 const PRODUCCION = leerJson('agenda-minima.v0.json');
 const PRUEBA = leerJson('agenda-minima.prueba.json');

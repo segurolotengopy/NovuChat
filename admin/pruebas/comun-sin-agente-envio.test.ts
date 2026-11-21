@@ -19,7 +19,7 @@ import { injertar, nodosDeEnvio, type OpcionesDeEnvio } from '../../Flujos/src/c
 import { expresion, type J } from './lib/flujo';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const AGENDA = JSON.parse(readFileSync(join(aqui, '../../Flujos/experimental/agenda-minima/flujo.plantilla.json'), 'utf8')) as {
+const AGENDA = JSON.parse(readFileSync(join(aqui, '../../Flujos/clientes/agenda-minima/flujo.plantilla.json'), 'utf8')) as {
   nodes: { name: string; type: string; typeVersion: number; parameters: J; credentials?: J; onError?: string; alwaysOutputData?: boolean; retryOnFail?: boolean; maxTries?: number; waitBetweenTries?: number }[];
   connections: Record<string, { main: { node: string }[][] }>;
 };

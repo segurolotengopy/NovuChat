@@ -1,5 +1,9 @@
 # Agenda mínima (Bellido): lo propio y lo incluido del miniCRM
 
+Zona: `Flujos/clientes/agenda-minima/`. La carpeta conserva el nombre del flujo (identidad del flujo, no del tenant: la mudanza no renombra). Mudada desde `Flujos/experimental/agenda-minima/` (mudanza, `docs/arquitectura/mudanza.md`, 21/11/2026, cuando Andres derogó el «Bellido no se toca»): 0 bytes cambiados en los JSON, sin publicar. **No verificado en vivo, por decisión de Andres (modo seco: huella igual + CI, 16/11/2026).**
+
+Salidas: `agenda-minima.v0.json` (producción; es lo que corre en Bellido, 71 nodos) y `agenda-minima.prueba.json` (variante de prueba). Armado: `node Flujos/clientes/agenda-minima/construir.mjs` las escribe; con `--verificar` no escribe y sale 1 si difieren. Datos del tenant: `admin/scripts/datos/bellido/` (no se tocan en una mudanza). Se publica con `herramientas/flujo-de-prueba.mjs --sobre-bellido`, no con `publicar-flujo.sh`. `bellido-agendamiento.json` (congelado por D3) y `recordatorio-bellido.v1.json` no se mueven. Las diferencias frente al núcleo común (M4 «Normalizar entrada», «Config del negocio», «Uso extendido», «Comercio no operativo» y «Carga de entrada»; M5 `NIEGA_IA`) están declaradas como excepciones en `admin/pruebas/core/migracion/excepciones.ts`, con dueño y vencimiento.
+
 Código de Bellido **descongelado por orden expresa de Andres el 04/11/2026 solo para el miniCRM**: no se tocan la plantilla de recordatorios, el prompt, el candado ni nada que el miniCRM no necesite.
 
 ## miniCRM (módulo `crm`)

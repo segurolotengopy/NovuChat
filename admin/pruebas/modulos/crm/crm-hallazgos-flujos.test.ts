@@ -27,8 +27,8 @@ const FLUJOS: { flujo: string; json: string; datos: string }[] = [
   { flujo: 'rroca-antonio (prueba)', json: 'Flujos/clientes/rroca-antonio/rroca-antonio.prueba.json', datos: 'admin/scripts/datos/rroca-antonio/rroca-antonio.json' },
   { flujo: 'walisuma', json: 'Flujos/clientes/walisuma/walisuma.json', datos: 'admin/scripts/datos/walisuma/walisuma.json' },
   { flujo: 'walisuma (prueba)', json: 'Flujos/clientes/walisuma/walisuma.prueba.json', datos: 'admin/scripts/datos/walisuma/walisuma.json' },
-  { flujo: 'agenda-minima (Bellido)', json: 'Flujos/experimental/agenda-minima/agenda-minima.v0.json', datos: 'admin/scripts/datos/bellido/crm.json' },
-  { flujo: 'agenda-minima (Bellido, prueba)', json: 'Flujos/experimental/agenda-minima/agenda-minima.prueba.json', datos: 'admin/scripts/datos/bellido/crm.json' },
+  { flujo: 'agenda-minima (Bellido)', json: 'Flujos/clientes/agenda-minima/agenda-minima.v0.json', datos: 'admin/scripts/datos/bellido/crm.json' },
+  { flujo: 'agenda-minima (Bellido, prueba)', json: 'Flujos/clientes/agenda-minima/agenda-minima.prueba.json', datos: 'admin/scripts/datos/bellido/crm.json' },
 ];
 
 describe('barreras del miniCRM en cada flujo versionado', () => {
