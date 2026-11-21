@@ -107,7 +107,3 @@ Con #907 cargado en el Demo A, a «Estoy embarazada. ¿Puedo hacerme el tratamie
 ## El nombre dado tras pedírselo (11/11/2026, reclamo 59)
 
 La bienvenida termina pidiendo el nombre. Si el cliente contestaba solo «Rosa» (o «Rosa, quiero mejorar la mandíbula»), `evNombreDelMensaje` lo descartaba (solo valía tras aceptar o pedir agendar) y los avisos, el cierre y el miniCRM salían con el nombre del PERFIL de WhatsApp. Ahora también cuenta cuando el ÚLTIMO mensaje del asistente pide el nombre (`evNombreTrasPedirNombre`, mismo código en Emma). 0 mensajes agregados. Prueba: `nombre-tras-pedirlo.test.ts`.
-
-## Juego de conversación (plan 21/11/2026)
-
-Juego de conversación: excepción — pendiente de verificar con encender-conversacion (plan 21/11)

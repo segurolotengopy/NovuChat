@@ -51,7 +51,3 @@ queda pendiente su decisión antes de publicar.**
   nunca se versiona), republicado con `publicar-flujo.sh --flujo Flujos/respaldo-<id>-<fecha>.local.json --aplicar`. Hay que conservar ese archivo mientras
   la redirección esté publicada.
 - **Pruebas:** `admin/pruebas/qtaco-redireccion.test.ts`.
-
-## Juego de conversación (plan 21/11/2026)
-
-Juego de conversación: excepción — pendiente de verificar con encender-conversacion (plan 21/11)

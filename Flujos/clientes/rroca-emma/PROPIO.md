@@ -80,7 +80,3 @@ P. **Promesa de llamada:** «recepción te llama / te contactará…» se quita 
 
 Mismo arreglo que el flujo de la otra doctora (humo del 11/11, paso 11): `evPulirSalida` pasaba el texto ya normalizado (sin puntuación) y la barrera veía UNA oración, así que bastaba «valoración» en cualquier parte; además faltaban las formas de primera persona («no realizamos»). Ahora se parte por oración antes de normalizar, `EV_AFIRMA_NIEGA` existe y, cuando el CLIENTE nombra una condición de salud, negar, afirmar o «esperar» rechaza la salida y sale el texto fijo con el botón. 0 mensajes agregados. Pruebas: `barreras-modelo.test.ts`.
 
-
-## Juego de conversación (plan 21/11/2026)
-
-Juego de conversación: excepción — pendiente de verificar con encender-conversacion (plan 21/11)

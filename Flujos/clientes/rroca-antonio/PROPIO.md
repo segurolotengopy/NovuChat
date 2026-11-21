@@ -129,7 +129,3 @@ comparan con el ORIGEN CONGELADO (`admin/pruebas/lib/origen-chat-pre-4c2/`, con 
 ## Gmail tras venta confirmada (10/11/2026)
 
 Lo propio de Antonio: los textos fijos del pedido y de las respuestas, la clave de aviso `gmail`, los campos de la ficha (`gmailPedidoMs`, `gmail`) y el cierre de las promesas de entrega en la barrera del modelo. La extracción y validación del correo es común (`vg*`). Detalle en `DISENO.md`. 64 -> 64 nodos; +2 mensajes por venta confirmada; sin publicar.
-
-## Juego de conversación (plan 21/11/2026)
-
-Juego de conversación: excepción — pendiente de verificar con encender-conversacion (plan 21/11)
