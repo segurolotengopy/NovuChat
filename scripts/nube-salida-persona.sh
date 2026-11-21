@@ -123,7 +123,7 @@ fi
 if [[ "$MODO" == agregar ]]; then
   # La dirección de n8n: https, un host, puerto opcional, sin ruta, sin usuario.
   [[ "${N8N_BASE_URL:-}" =~ ^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{2,5})?$ ]] \
-    || { echo "✗ --agregar-alias exige N8N_BASE_URL en el entorno: https://<host> sin ruta ni usuario" >&2; exit 2; }
+    || { echo "✗ --agregar-alias exige N8N_BASE_URL (en el entorno o en el archivo de --env): https://<host> sin ruta ni usuario, sin «export», sin retorno de carro" >&2; exit 2; }
 fi
 
 # --- El proyecto, sin imprimirlo ----------------------------------------------
