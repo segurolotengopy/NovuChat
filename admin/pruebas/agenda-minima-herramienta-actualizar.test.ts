@@ -209,6 +209,16 @@ describe('--solo-codigo: el código se actualiza y los parámetros de nodos que 
     r = await correr('--aplicar', '--solo-codigo');
     expect(r.codigo, r.salida).toBe(1);
     expect(mundo.puts).toHaveLength(0);
+    // «Config base» con un campo que NO es un marcador llenado: sigue prohibido aunque lleve --solo-codigo.
+    nuevo(vivoDe(BELLIDO, (w) => {
+      const base = nodo(w, 'Config base');
+      const campo = (base.parameters.assignments.assignments as J[]).find((x) => !/^lleno-/.test(String(x.value)))!;
+      campo.value = 'valor distinto del candidato';
+    }));
+    r = await correr('--aplicar', '--solo-codigo');
+    expect(r.codigo, r.salida).toBe(1);
+    expect(r.salida).toMatch(/hay diferencias que este modo NO toca/);
+    expect(mundo.puts).toHaveLength(0);
   });
   it('NIEGA: --solo-codigo sin --actualizar-codigo no se usa solo', async () => {
     const r = await ejecutar(process.execPath, [HERRAMIENTA, '--env', join(carpeta, '.env.falso'), '--estado', join(carpeta, 'x.json'), '--solo-codigo']).then((x) => ({ codigo: 0, salida: x.stdout + x.stderr }), (e: { code: number; stdout: string; stderr: string }) => ({ codigo: e.code, salida: e.stdout + e.stderr }));
