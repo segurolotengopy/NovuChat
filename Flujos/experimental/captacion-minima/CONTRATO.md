@@ -12,7 +12,7 @@ se publica sin el «sí» de Andres.
 
 Referencias a leer antes de escribir: `Flujos/clientes/agenda-minima/` (DISENO, CONTRATO,
 plantilla, `construir.mjs`, `src/nodos/_comun.js`, y `admin/pruebas/agenda-minima-flujo.test.ts`
-con su n8n de mentira); `Flujos/experimental/venta-minima/construir.mjs` (datos del tenant,
+con su n8n de mentira); `Flujos/clientes/venta-minima/construir.mjs` (datos del tenant,
 `@@cred:`, guardias, huérfanos, retención `none`); `Flujos/src/core/sin-agente/`
 (armador genérico, `src/mensajes.js` con las `cm*`, y el filtro de redacción, que vive en `Flujos/src/core/texto/filtro-redaccion.js`).
 Cantera (solo en la rama del PR 389, commit `8173a00`; se lee con `git show 8173a00:<ruta>`):

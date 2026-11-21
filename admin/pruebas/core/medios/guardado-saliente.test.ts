@@ -288,7 +288,7 @@ describe('la rama corrida en el arnés de n8n, sobre un flujo mínimo de envío 
 
 // ---------------------------------------------------------------- 3. los flujos versionados
 const CON_RAMA: Array<{ archivo: string; vias: ViaDelGuardadoSaliente[]; reportero?: string; envio?: string }> = [
-  ...['venta-minima.qtaco.json', 'venta-minima.qtaco-3727.json', 'venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json'].map((a) => ({ archivo: `experimental/venta-minima/${a}`, vias: ['enlace'] as ViaDelGuardadoSaliente[] })),
+  ...['venta-minima.qtaco.json', 'venta-minima.qtaco-3727.json', 'venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json'].map((a) => ({ archivo: `clientes/venta-minima/${a}`, vias: ['enlace'] as ViaDelGuardadoSaliente[] })),
   ...['rroca-ruben.json', 'rroca-ruben.prueba.json', 'rroca-ruben.ensayo-demo-a.json'].map((a) => ({ archivo: `clientes/rroca-ruben/${a}`, vias: ['media'] as ViaDelGuardadoSaliente[] })),
   ...['rroca-antonio.json', 'rroca-antonio.prueba.json'].map((a) => ({ archivo: `clientes/rroca-antonio/${a}`, vias: ['media'] as ViaDelGuardadoSaliente[] })),
   ...['walisuma.json', 'walisuma.prueba.json'].map((a) => ({ archivo: `clientes/walisuma/${a}`, vias: ['media'] as ViaDelGuardadoSaliente[] })),
@@ -336,8 +336,8 @@ describe('cada flujo versionado que envía una imagen del asistente lleva la ram
   });
   it('los totales de nodos de cada flujo publicable (tope documentado en docs/versiones-por-cliente.md)', () => {
     const total = (a: string): number => leer(a).nodes.length;
-    expect(total('experimental/venta-minima/venta-minima.qtaco.json')).toBe(76);
-    expect(total('experimental/venta-minima/venta-minima.qtaco-3727.json')).toBe(84);
+    expect(total('clientes/venta-minima/venta-minima.qtaco.json')).toBe(76);
+    expect(total('clientes/venta-minima/venta-minima.qtaco-3727.json')).toBe(84);
     expect(total('clientes/rroca-ruben/rroca-ruben.json')).toBe(68);
     expect(total('clientes/rroca-antonio/rroca-antonio.json')).toBe(68);
     expect(total('clientes/walisuma/walisuma.json')).toBe(68);

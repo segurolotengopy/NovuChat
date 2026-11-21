@@ -1,5 +1,5 @@
 /**
- * LA LIBRERIA DE PEDIDO DE «VENTA MINIMA v0» (`Flujos/experimental/venta-minima/src/lib/pedido.js`, funciones `pd*`).
+ * LA LIBRERIA DE PEDIDO DE «VENTA MINIMA v0» (`Flujos/clientes/venta-minima/src/lib/pedido.js`, funciones `pd*`).
  *
  * Principio del flujo: el codigo calcula, el modelo SOLO extrae. El total sale de la carta de la consola, en
  * centavos enteros; ningun precio, total ni descuento que diga el modelo o el cliente entra a una cuenta. Esta
@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar } from './lib/flujo';
 
-const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/lib');
+const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/venta-minima/src/lib');
 const PEDIDO = readFileSync(join(CARPETA, 'pedido.js'), 'utf8');
 
 // Las seis funciones de comun.js que usa pedido.js, tal como las fija el contrato (§4.2) y B0 (`vmIdEstable`).

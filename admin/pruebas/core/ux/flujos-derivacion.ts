@@ -32,7 +32,7 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
 export const CLIENTES = join(RAIZ, 'Flujos/clientes');
 
 /** Lista CERRADA de flujos mudados a `clientes/` con otro nombre de carpeta: nombre COMPLETO del JSON -> nombre del registro. Solo los que de verdad se mudaron. */
-export const MUDADOS: Record<string, string> = { 'chat-novuchat.novuchat.json': 'chat-novuchat', 'rroca-antonio.json': 'rroca-antonio', 'rroca-ruben.json': 'rroca-ruben', 'agenda-minima.v0.json': 'agenda-minima' };
+export const MUDADOS: Record<string, string> = { 'chat-novuchat.novuchat.json': 'chat-novuchat', 'rroca-antonio.json': 'rroca-antonio', 'rroca-ruben.json': 'rroca-ruben', 'venta-minima.qtaco.json': 'venta-minima', 'venta-minima.qtaco-3727.json': 'venta-minima', 'agenda-minima.v0.json': 'agenda-minima' };
 
 /** Problemas de la lista de mudados: un JSON que no existe en `experimental/<valor>/` ni en `clientes/*\/`, o un valor que no es carpeta de `experimental/` ni clave del registro. */
 export function problemasDeMudados(

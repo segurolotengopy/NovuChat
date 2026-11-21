@@ -36,7 +36,7 @@ import { NODOS_DEL_GUARDADO, NODOS_DEL_GUARDADO_SALIENTE, URL_DESCARGA_GUARDADO 
 import { URL_DESCARGA_SALIENTE } from '../../Flujos/src/core/sin-agente/guardado-saliente.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const CARPETA_VM = join(AQUI, '../../Flujos/experimental/venta-minima');
+const CARPETA_VM = join(AQUI, '../../Flujos/clientes/venta-minima');
 const texto = (archivo: string): string => readFileSync(join(CARPETA_VM, archivo), 'utf8');
 const leer = (archivo: string): Flujo => JSON.parse(texto(archivo)) as Flujo;
 const QTACO = leer('venta-minima.qtaco.json');
@@ -477,7 +477,7 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
   function verificarEnCopia(modifica: (vm: string, datos: string) => void, args: string[] = ['--verificar']) {
     const tmp = mkdtempSync(join(tmpdir(), 'vm-'));
     try {
-      const vm = join(tmp, 'Flujos/experimental/venta-minima');
+      const vm = join(tmp, 'Flujos/clientes/venta-minima');
       const datos = join(tmp, 'admin/scripts/datos/venta-minima');
       mkdirSync(vm, { recursive: true });
       mkdirSync(datos, { recursive: true });
@@ -1889,7 +1889,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     expect(todo.length).toBeGreaterThan(10);
     for (const t of todo) expect(t.replace(/Ver la carta/g, ''), t).not.toMatch(/\bmen[uú]\b/i);
     // Y en el código de los nodos: ningún texto al cliente manda a escribir «menú»/«menu» (los respaldos, derivaciones y la carta incluidos).
-    const nodos = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/nodos');
+    const nodos = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/venta-minima/src/nodos');
     for (const f of readdirSync(nodos).filter((x) => x.endsWith('.js'))) {
       const codigo = readFileSync(join(nodos, f), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
       expect(codigo, f).not.toMatch(/escribe «men[uú]»|title: 'Men[uú]'/i);
@@ -4145,7 +4145,7 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
   function enCopia(modifica: (vm: string, datos: string) => void, args: string[] = []) {
     const tmp = mkdtempSync(join(tmpdir(), 'vm-da-'));
     try {
-      const vm = join(tmp, 'Flujos/experimental/venta-minima');
+      const vm = join(tmp, 'Flujos/clientes/venta-minima');
       const datos = join(tmp, 'admin/scripts/datos/venta-minima');
       mkdirSync(vm, { recursive: true });
       mkdirSync(datos, { recursive: true });

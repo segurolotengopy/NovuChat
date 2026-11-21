@@ -1,7 +1,7 @@
 /**
  * LO COMÚN DE «VENTA MÍNIMA v0» (T1): `src/lib/comun.js` y los cinco nodos de entrada y
  * configuración (`Carga de entrada`, `Config del negocio`, `Interpretar entrada`,
- * `Uso extendido`, `Comercio no operativo`), en `Flujos/experimental/venta-minima/`.
+ * `Uso extendido`, `Comercio no operativo`), en `Flujos/clientes/venta-minima/`.
  *
  * Todas las pruebas son puras y negando: cada caso trae su opuesto. El código se corre con
  * `ejecutar` de `./lib/flujo` (el mismo ayudante que las demás suites de flujos), que le quita
@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar, type J, type Referencias } from './lib/flujo';
 
-const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src');
+const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/venta-minima/src');
 const COMUN = readFileSync(join(RAIZ, 'lib/comun.js'), 'utf8');
 const NODOS = ['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'uso-extendido', 'comercio-no-operativo'] as const;
 const FUENTE_NODO = (n: (typeof NODOS)[number]): string => readFileSync(join(RAIZ, `nodos/${n}.js`), 'utf8');

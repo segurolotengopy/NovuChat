@@ -1,5 +1,5 @@
 /**
- * EL COBRO DE «VENTA MÍNIMA v0» (`Flujos/experimental/venta-minima/src/lib/cobro.js` y
+ * EL COBRO DE «VENTA MÍNIMA v0» (`Flujos/clientes/venta-minima/src/lib/cobro.js` y
  * `src/nodos/interpretar-lectura.js`), tarea T6.
  *
  * Qué se demuestra, y siempre con su caso opuesto (el contrato está en el plan técnico, §4.2 y §5):
@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar } from './lib/flujo';
 
-const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src');
+const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/venta-minima/src');
 const LIB = readFileSync(join(RAIZ, 'lib/cobro.js'), 'utf8');
 const NODO = readFileSync(join(RAIZ, 'nodos/interpretar-lectura.js'), 'utf8');
 

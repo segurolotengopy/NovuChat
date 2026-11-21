@@ -9,10 +9,10 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 |---|---|---|---|---|---|---|---|
 | agendamiento-seguimientos.json | . | barrido | ninguno | M1 M2 M7 | por asignar (Principal) | pendiente | c039d03f-88791851-87075e25-fc074372-5d27322f-3c23c47c-643a7f60-2d6abeb7 |
 | agendamiento-senas-vencidas.json | . | barrido | ninguno | M1 M2 M7 | por asignar (Principal) | pendiente | 1806d41f-c793a4d9-30686e10-c5517a52-1a6380b3-9fba0385-1bd22676-8f7989d2 |
-| bellido-agendamiento.json | . | congelado | ninguno | M1 M2 M6 | por asignar (Principal) | pendiente | 8b69cc43-8ade28cf-0b540973-f814055e-15edf0d5-067b310c-2e2a78e9-7bdfcd3f |
-| demo-a-agendamiento.json | . | demo | ensamblador | M1 M6 | por asignar (Principal) | pendiente | 5b30bfe4-c403d659-dbd02a7c-1b1b0c32-7dafabdb-ef2cc3a9-b27cbf61-a886c851 |
+| bellido-agendamiento.json | . | congelado | ninguno | M1 M2 M6 | por asignar (Principal) | pendiente | 0fc6574f-6e6378e1-1100446e-67de0fe5-aeb46070-88179be6-f2dcaa21-14d2c8d4 |
+| demo-a-agendamiento.json | . | demo | ensamblador | M1 M6 | por asignar (Principal) | pendiente | 5d6ae119-02bdab12-8e24c830-d2ddb877-cc47fd40-0d9c0c2c-1ae29310-3c313d4e |
 | demo-a-recordatorios.json | . | demo | ensamblador | M1 | por asignar (Principal) | pendiente | 7d06ea44-1c362f84-bae2afe3-e7a2a521-b2c865cc-a3736245-ae83472d-22988404 |
-| demo-b-venta-cobro.json | . | demo | ensamblador | M1 M6 | por asignar (Principal) | pendiente | d9abb652-c2acd6f2-a66bd4dc-5de10cdd-5a7a02a2-2242cd15-bbbdf387-82b22a17 |
+| demo-b-venta-cobro.json | . | demo | ensamblador | M1 M6 | por asignar (Principal) | pendiente | 6d770264-c9bf051e-a9023d25-6e71c147-7a6122fd-4d7da7ed-6d7d62de-b7ac8f4e |
 | error-envio-incierto.json | . | barrido | ensamblador | M1 | por asignar (Principal) | pendiente | 22400c1d-0c278bb7-22a0600e-8ff6a382-34c19434-c38b5952-64e66371-347b13be |
 | novuchat-onboarding.json | . | congelado | ensamblador | M1 M6 M7 | por asignar (Principal) | pendiente | 01d3388b-eb92e2a3-e8beb89d-4e6a1155-14d01b1a-5e5d8c9b-a8aea1d5-62e941b9 |
 | salida-de-persona.json | . | barrido | ensamblador | M1 M7 | por asignar (Principal) | pendiente | 53feb0c6-77f019bf-e4191679-3ebc9437-faef9394-a04fc217-7b60414c-cbf8a63a |
@@ -32,8 +32,8 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | rroca-emma.json | clientes/rroca-emma | vivo | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 0f25352d-85c8df6a-98523d96-f2b3ee58-ea03fc69-ab968993-cf914780-0fea9af5 |
 | rroca-evy.json | clientes/rroca-evy | vivo | construir.mjs | M4 M6 (excepción declarada) | Rearquitectura | mudado | ac7cf6d2-f08e66af-3c869ee0-dd023a2e-18a3b778-7183e1d6-4ac50eb3-1e07cea1 |
 | rroca-ruben.json | clientes/rroca-ruben | vivo | construir.mjs | M1 M4 M5 M6 | Rearquitectura | mudado | a0d1436f-8791d3c8-2a78dd06-1b4e64a3-c7568077-3f90bbdf-af940bd1-acfc99fe |
-| venta-minima.qtaco-3727.json | experimental/venta-minima | sin publicar | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | dc04fc5e-cfdcc11d-0cddcee1-76601ad9-6ec94327-a17cc0ff-b489d71e-c446c31b |
-| venta-minima.qtaco.json | experimental/venta-minima | vivo | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 10a3eb29-ff150501-591fc7f6-3d08b946-7e6e8c09-4ee05a00-fd810af0-ae991286 |
+| venta-minima.qtaco-3727.json | clientes/venta-minima | sin publicar | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | dc04fc5e-cfdcc11d-0cddcee1-76601ad9-6ec94327-a17cc0ff-b489d71e-c446c31b |
+| venta-minima.qtaco.json | clientes/venta-minima | vivo | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | 10a3eb29-ff150501-591fc7f6-3d08b946-7e6e8c09-4ee05a00-fd810af0-ae991286 |
 | walisuma.json | clientes/walisuma | sin publicar | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | f72e243a-17b48451-de1d2c9a-d039a22e-52bf7b26-4c0b16fb-fb90997c-e02dfb4b |
 
 ## Cómo se lee

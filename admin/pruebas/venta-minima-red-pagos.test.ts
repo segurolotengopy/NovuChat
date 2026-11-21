@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar } from './lib/flujo';
 
-const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/lib');
+const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/venta-minima/src/lib');
 const leer = (f: string) => readFileSync(f === 'avisos.js' ? join(RAIZ, '../../../../src/core/sin-agente', f) : join(RAIZ, f), 'utf8');
 
 type Red = { nombre: string; re: RegExp; canon: (t: string) => string };

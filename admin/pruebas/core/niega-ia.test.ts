@@ -41,7 +41,7 @@ describe('NIEGA_IA: la misma expresión en las tres variantes', () => {
 // venta-minima (Q'Taco): el modelo NO escribe frases (solo clasifica), así que la identidad es SIEMPRE el texto fijo del código (`aIdentidad` en `Plan del turno`).
 // Esta prueba exige que ese texto cumpla la regla de la prohibición 4 con la MISMA expresión `NIEGA_IA` de la variante de venta, y que detecte la mutación.
 describe('NIEGA_IA en venta-minima: el texto fijo de identidad', () => {
-  const PLAN = readFileSync(join(aqui, '../../../Flujos/experimental/venta-minima/src/nodos/plan-del-turno.js'), 'utf8');
+  const PLAN = readFileSync(join(aqui, '../../../Flujos/clientes/venta-minima/src/nodos/plan-del-turno.js'), 'utf8');
   const cuerpoIdentidad = (codigo: string): string => {
     const m = /function aIdentidad\(\) \{[\s\S]*?\n\}/.exec(codigo);
     if (!m) throw new Error('sin aIdentidad');

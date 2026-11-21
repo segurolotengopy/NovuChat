@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { configBase, ejecutar, type Flujo } from './lib/flujo';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const VM = join(AQUI, '../../Flujos/experimental/venta-minima');
+const VM = join(AQUI, '../../Flujos/clientes/venta-minima');
 const FUENTE = readFileSync(join(VM, '../../src/core/sin-agente/avisos.js'), 'utf8');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = Record<string, any>;
@@ -327,7 +327,7 @@ describe("los datos de Q'Taco: el 3727 las enciende; el vivo y los demás client
   });
   it('el flujo vivo de Q\'Taco, la prueba, el ensayo y los derivados (Emma, Evy, doctoras) no traen ninguna clave nueva', () => {
     let revisados = 0;
-    const otros = ['venta-minima.qtaco.json', 'venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json', '../../clientes/rroca-emma/rroca-emma.json', '../../clientes/rroca-evy/rroca-evy.json', '../doctoras/doctoras.rroca-emma.json', '../doctoras/doctoras.rroca-evy.json'];
+    const otros = ['venta-minima.qtaco.json', 'venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json', '../../clientes/rroca-emma/rroca-emma.json', '../../clientes/rroca-evy/rroca-evy.json', '../../experimental/doctoras/doctoras.rroca-emma.json', '../../experimental/doctoras/doctoras.rroca-evy.json'];
     for (const f of otros) {
       const f0 = JSON.parse(readFileSync(join(VM, f), 'utf8')) as Flujo;
       const nodo = f0.nodes.find((n) => n.name === 'Config base');

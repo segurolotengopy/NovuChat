@@ -6,6 +6,7 @@ export const CARPETA_DE_FLUJO: Readonly<Record<string, 'experimental' | 'cliente
   'rroca-ruben': 'clientes',
   'rroca-evy': 'clientes',
   'agenda-minima': 'clientes',
+  'venta-minima': 'clientes',
 };
 
 /** Subcarpeta de `Flujos/` donde vive el flujo `x`. */

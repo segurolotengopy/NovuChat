@@ -1,7 +1,7 @@
 # NovuChat — Venta mínima (v0): diseño del armado
 
 Flujo **experimental** para el piloto de Q'Taco (restaurante), desde el lunes 05/10/2026. Vive en
-`Flujos/experimental/venta-minima/`, como Agenda mínima, fuera de la publicación normal. El plano completo
+`Flujos/clientes/venta-minima/`, como Agenda mínima, fuera de la publicación normal. El plano completo
 (contratos entre nodos, máquina de estados, textos fijos, costo) está en el diseño de la tarea
 (`CLIENTES/QTACO/solicitudes/diseno-venta-minima-2026-10-01.md`, que no se versiona); este archivo cuenta
 **cómo se arma el JSON y en qué se aparta del plano**.
@@ -28,7 +28,7 @@ restaurante lo arma el código; los totales salen de la carta; los avisos solo d
 | `admin/pruebas/venta-minima-flujo.test.ts` | La suite de punta a punta: corre el JSON armado con el n8n de mentira contra las librerías reales |
 
 Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librería; correr
-`node Flujos/experimental/venta-minima/construir.mjs`; luego, desde `admin/`,
+`node Flujos/clientes/venta-minima/construir.mjs`; luego, desde `admin/`,
 `pnpm -s vitest run --project puras pruebas/venta-minima-flujo.test.ts`. Para ver una conversación:
 `VM_VER=1 pnpm -s vitest run --project puras pruebas/venta-minima-flujo.test.ts -t <nombre>`.
 
@@ -876,7 +876,7 @@ Fuente: `CLIENTES/QTACO (PROD)/Información Campañas Q´Taco/MD adenda_campanas
 - **Marcador nuevo de PR-4a (solo la variante de prueba)**: `REEMPLAZAR_TELEFONOS_DE_PRUEBA` (`telefonosDePrueba` de «Config base»: los únicos teléfonos que usan el espacio `venta-minima-prueba`; sin ellos la prueba responde el genérico con el botón). Los demás JSON no lo llevan.
 - **Publicación de PR-4a** (con el «sí» de Andres): la Function `configuracionFlujo` con la rama `sesion` en producción ANTES que el flujo (si no, Q'Taco derivaría todo con el genérico); ensayo en el Demo A (`ensayo-demo-a`); recién entonces `publicar-flujo.sh` del flujo. Para volver atrás: republicar el JSON anterior (el estado del servidor vence solo).
 - **Marcador nuevo en el alta**: `REEMPLAZAR_RUTA_CARRITO_QTACO` (la ruta del webhook del carrito) entra a la tabla local del alta de Q'Taco.
-- Importar con `./scripts/preparar-import.sh Flujos/experimental/venta-minima/venta-minima.qtaco.json .env.qtaco`
+- Importar con `./scripts/preparar-import.sh Flujos/clientes/venta-minima/venta-minima.qtaco.json .env.qtaco`
   (el patrón de marcadores corta en comillas, barras y espacios: **no pegar dos marcadores con una coma**; la suite lo
   verifica) y **Publish**, con la ventana de mantenimiento y el «sí» de Andres.
 

@@ -327,7 +327,7 @@ const leer = (a: string): Flujo => JSON.parse(readFileSync(join(FLUJOS, a), 'utf
 describe('en cada flujo cubierto la rama se arma igual (mismo código, mismas cabeceras) y las credenciales son las del propio flujo', () => {
   const CUBIERTOS = [
     '../clientes/rroca-evy/rroca-evy.json', '../clientes/rroca-emma/rroca-emma.json', '../clientes/rroca-ruben/rroca-ruben.json', '../clientes/rroca-antonio/rroca-antonio.json',
-    'venta-minima/venta-minima.qtaco.json', 'venta-minima/venta-minima.ensayo-demo-a.json', 'venta-minima/venta-minima.prueba.json',
+    '../clientes/venta-minima/venta-minima.qtaco.json', '../clientes/venta-minima/venta-minima.ensayo-demo-a.json', '../clientes/venta-minima/venta-minima.prueba.json',
     'doctoras/doctoras.rroca-evy.json', 'doctoras/doctoras.rroca-emma.json', '../clientes/novuchat/chat-novuchat.novuchat.json', 'captacion-minima/captacion-minima.novuchat.json',
     '../clientes/rroca-ruben/rroca-ruben.prueba.json', '../clientes/agenda-minima/agenda-minima.v0.json',
   ];

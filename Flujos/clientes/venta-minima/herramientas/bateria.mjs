@@ -11,9 +11,9 @@
 // del turno; con `--vertex` llama a Vertex AI con el cuerpo EXACTO que arma el flujo.
 //
 // Se corre desde la raiz del repositorio:
-//   node Flujos/experimental/venta-minima/herramientas/bateria.mjs --seco
-//   node Flujos/experimental/venta-minima/herramientas/bateria.mjs --seco --casos A9,B1 --json
-//   node Flujos/experimental/venta-minima/herramientas/bateria.mjs --vertex <proyecto> [--locacion us-central1] --n 3
+//   node Flujos/clientes/venta-minima/herramientas/bateria.mjs --seco
+//   node Flujos/clientes/venta-minima/herramientas/bateria.mjs --seco --casos A9,B1 --json
+//   node Flujos/clientes/venta-minima/herramientas/bateria.mjs --vertex <proyecto> [--locacion us-central1] --n 3
 //
 // OPCIONES
 //   --seco              NO llama a nada: el modelo es la respuesta fija de cada turno (`seco`). No lee ninguna clave ni toca la
@@ -135,7 +135,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { crearMundo, ErrorDeUso, leerCredencial, limpiarSecretos, llamarGemini, TARIFA } from '../../captacion-minima/herramientas/bateria.mjs';
+import { crearMundo, ErrorDeUso, leerCredencial, limpiarSecretos, llamarGemini, TARIFA } from '../../../experimental/captacion-minima/herramientas/bateria.mjs';
 import { doblesDeBateriaDelGuardado } from '../../../src/core/sin-agente/guardado-dobles.mjs';
 // El estado de la conversación vive en el servidor (PR-4a): el servidor de sesión de mentira es el común de los flujos sin agente.
 import { crearServidorDeSesion } from '../../../src/core/sin-agente/herramientas/servidor-de-sesion.mjs';
@@ -882,7 +882,7 @@ function textoDelInforme(r, opciones) {
 
 // ------------------------------------------------------------------------------------------------------- principal
 const AYUDA = `Batería de conversación de «Venta mínima v0» (Q'Taco), offline.
-  node Flujos/experimental/venta-minima/herramientas/bateria.mjs (--seco | --vertex proyecto [--locacion región]) [--casos A9,B1] [--n 1..20] [--json] [--tabla]
+  node Flujos/clientes/venta-minima/herramientas/bateria.mjs (--seco | --vertex proyecto [--locacion región]) [--casos A9,B1] [--n 1..20] [--json] [--tabla]
   --seco: modelo simulado, sin clave ni red (1 corrida por caso) · --vertex: Vertex AI con el token de gcloud (nunca se imprime)
   --casos: ids (E8 = el negativo global; sola, corre todos) · --json: salida de máquina · --tabla: tabla en Markdown
   Salida 0 = todo aprobó · 1 = algún caso falló · 2 = uso incorrecto o casos mal formados`;
