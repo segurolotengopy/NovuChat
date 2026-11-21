@@ -27,7 +27,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const HERRAMIENTA = join(aqui, '../../Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs');
+const HERRAMIENTA = join(aqui, '../../Flujos/clientes/agenda-minima/herramientas/flujo-de-prueba.mjs');
 const VENTA = join(aqui, '../../Flujos/clientes/venta-minima/venta-minima.ensayo-demo-a.json');
 const DEMO_A = join(aqui, '../../Flujos/demo-a-agendamiento.json');
 const ejecutar = promisify(execFile);
@@ -423,7 +423,7 @@ describe('endurecimientos de la revisión de seguridad (todos niegan sin escribi
 // El ensayo en el Demo A no escribe en ninguna planilla: los 8 nodos del miniCRM SALEN del candidato (71 → 63), con sus conexiones; ninguna credencial de Bellido llega al Demo A.
 // Motivo (07/11/2026): n8n 2.36.5 no publica nodos con credencial requerida vacía («Missing required credential: googleApi»).
 describe('Agenda mínima v0 (71 nodos, con miniCRM) sobre el Demo A: el ensayo quita la rama del miniCRM', () => {
-  const V0 = join(aqui, '../../Flujos/experimental/agenda-minima/agenda-minima.v0.json');
+  const V0 = join(aqui, '../../Flujos/clientes/agenda-minima/agenda-minima.v0.json');
   // Se repite a propósito (construir.mjs corre al importarse); la prueba compara con el candidato real.
   const NODOS_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
   it('el candidato (para Bellido) tiene 71 nodos, los 8 del miniCRM y su credencial', () => {

@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url';
 import { hallazgosDelGuardado, injertarGuardado } from '../../src/core/sin-agente/guardado.mjs';
 import { reglaDeIdentidadDelCore } from './regla-identidad.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
-import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
+import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, validarMapaCrm } from '../../experimental/comun-sin-agente/construir-crm.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 /** Los datos del tenant (zona Tenants: solo el mapa de columnas del miniCRM; nunca un id de planilla). */

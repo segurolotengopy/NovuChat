@@ -23,7 +23,7 @@ import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(aqui, '../../Flujos/clientes/novuchat');
 const DATOS_DIR = join(aqui, '../scripts/datos/chat-novuchat');
-const HERRAMIENTA = join(aqui, '../../Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs');
+const HERRAMIENTA = join(aqui, '../../Flujos/clientes/agenda-minima/herramientas/flujo-de-prueba.mjs');
 const DEMO_A = join(aqui, '../../Flujos/demo-a-agendamiento.json');
 const ENSAYO = join(CARPETA, 'chat-novuchat.ensayo-demo-a.json');
 const ejecutar = promisify(execFile);

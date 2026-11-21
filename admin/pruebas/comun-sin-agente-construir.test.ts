@@ -23,12 +23,12 @@ import { injertarGuardado } from '../../Flujos/src/core/sin-agente/guardado.mjs'
 import { injertarCrm, ramaCrm, rutasPaqueteCrmSenales } from '../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 
 // @ts-expect-error módulo .mjs sin tipos
-import { reglaDeIdentidadDelCore } from '../../Flujos/experimental/agenda-minima/regla-identidad.mjs';
+import { reglaDeIdentidadDelCore } from '../../Flujos/clientes/agenda-minima/regla-identidad.mjs';
 const aqui = dirname(fileURLToPath(import.meta.url));
 // Los proyectos de juguete viven en una carpeta temporal: el tope de lectura de las pruebas es esa carpeta.
 const TOPE = tmpdir();
 const COMUN = join(aqui, '../../Flujos/src/core/sin-agente');
-const AGENDA = join(aqui, '../../Flujos/experimental/agenda-minima');
+const AGENDA = join(aqui, '../../Flujos/clientes/agenda-minima');
 
 // --- EL CONFIG DE «AGENDA MÍNIMA», escrito aquí: su carpeta no se toca -------------------------------
 const CONFIG_AGENDA: ConfigDeConstruccion = {

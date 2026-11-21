@@ -277,7 +277,7 @@ describe('Flujos de origen, lista única: cubierto por la lista de arriba o con 
   });
 
   describe('sin agente: la prueba no es vacía, un flujo que no reporta el origen FALLA', () => {
-    const real = (): { nodes: Nodo[] } => JSON.parse(JSON.stringify(flujo('experimental/agenda-minima/agenda-minima.v0.json'))) as { nodes: Nodo[] };
+    const real = (): { nodes: Nodo[] } => JSON.parse(JSON.stringify(flujo('clientes/agenda-minima/agenda-minima.v0.json'))) as { nodes: Nodo[] };
     const sintetico = (codigo: string, cuerpo: string): { nodes: Nodo[] } => ({
       nodes: [
         { name: 'Entrada', type: 'n8n-nodes-base.code', parameters: { jsCode: codigo } },

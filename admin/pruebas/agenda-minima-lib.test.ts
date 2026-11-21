@@ -1,5 +1,5 @@
 /**
- * LA LIBRERÍA DE AGENDA DE «AGENDA MÍNIMA v0» (`Flujos/experimental/agenda-minima/src/lib/agenda.js`).
+ * LA LIBRERÍA DE AGENDA DE «AGENDA MÍNIMA v0» (`Flujos/clientes/agenda-minima/src/lib/agenda.js`).
  *
  * Principio del flujo: el código calcula, el modelo conversa. Toda hora que se ofrece sale de estas
  * funciones puras; esta suite las prueba una por una, cada regla con su caso negativo. Cubre los
@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar } from './lib/flujo';
 
-const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/agenda-minima/src/lib/agenda.js');
+const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/clientes/agenda-minima/src/lib/agenda.js');
 const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [

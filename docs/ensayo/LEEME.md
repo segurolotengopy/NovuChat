@@ -165,7 +165,7 @@ completa las credenciales por tipo, deja al Demo A sin credencial en 12 nodos
 (Google Calendar y Gemini en el agente, `consultar_disponibilidad`, `agendar_cita`,
 `Responder al cliente`, `Avisar a recepción`; hallazgo de la revisión del PR #375).
 Eso es un defecto aparte de `ensayo-flujo.sh`, que este procedimiento no toca. Acá
-se usa `Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs`
+se usa `Flujos/clientes/agenda-minima/herramientas/flujo-de-prueba.mjs`
 (`--sobre-demo-a`), que:
 
 - copia el Trigger del Demo A vivo tal cual (id, `webhookId`, parámetros y credencial);
@@ -284,7 +284,7 @@ del Demo A es `agendamiento`, no carga `config/venta`.
 **4. El flujo: `flujo-de-prueba.mjs --sobre-demo-a`.** Con el respaldo y el estado en el
 scratchpad (fuera del repositorio; la herramienta se niega si no):
 
-    node Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env \
+    node Flujos/clientes/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env \
       --estado <scratchpad>/estado-ensayo.json --sobre-demo-a --respaldo <scratchpad>/respaldo-demo-a.json \
       --flujo <worktree>/Flujos/clientes/venta-minima/venta-minima.ensayo-demo-a.local.json   # seco
     ... --aplicar --autorizo-gemini-produccion
@@ -322,7 +322,7 @@ en seco primero y su `--aplicar` con el «sí» de Andres:
 
 1. **El flujo: solo el respaldo exacto.**
 
-       node Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env \
+       node Flujos/clientes/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env \
          --estado <scratchpad>/estado-ensayo.json --restaurar-respaldo --respaldo <scratchpad>/respaldo-demo-a.json   # seco
        ... --aplicar
 
@@ -847,7 +847,7 @@ nombres de credencial. Los JSON de producción y de prueba **no cambian** (se co
    Pruebas negando: `admin/pruebas/ensayo.test.ts`, «--flujo onboarding».
 3. **El flujo, en seco** (guarda el respaldo del vivo y no escribe en n8n):
 
-       node Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env \
+       node Flujos/clientes/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env \
          --estado <scratchpad>/estado-ensayo.json --sobre-demo-a --conservar-crm \
          --respaldo <scratchpad>/respaldo-demo-a.json \
          --flujo <worktree>/Flujos/clientes/novuchat/chat-novuchat.ensayo-demo-a.local.json
@@ -991,7 +991,7 @@ el «sí» de Andres). Costo: un comercio más en Plataforma → Negocios y en l
    ruta lo lleva mientras dura y `--restaurar` lo devuelve (§7).
 3. **El flujo:**
 
-       node Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env.demo-b \
+       node Flujos/clientes/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env.demo-b \
          --estado <scratchpad>/estado-ensayo-b.json --sobre-demo-b --respaldo <scratchpad>/respaldo-demo-b.json \
          --flujo <variante>.local.json   # seco
        ... --aplicar --autorizo-gemini-produccion

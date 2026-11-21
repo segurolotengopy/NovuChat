@@ -267,7 +267,7 @@ Demo A». Decisiones:
   `venta-minima.prueba.json` traen la clave como asignación de «Config base». **El código de los nodos sí nombra la clave** (para
   leerla) en todos los JSON, incluido el de producción: eso no es el dato y no enciende nada. Solo `venta-minima.ensayo-demo-a.json`
   puede llevar el dato.
-- **Se publica con `Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --sobre-demo-a`, no con `ensayo-flujo.sh`.**
+- **Se publica con `Flujos/clientes/agenda-minima/herramientas/flujo-de-prueba.mjs --sobre-demo-a`, no con `ensayo-flujo.sh`.**
   `ensayo-flujo.sh` no sirve: su cerrojo exige los mismos nodos con credencial que el Demo A de agendamiento, y su `--restaurar`
   republica el `demo-a-agendamiento.json` de la copia desde donde se corre (puede traer F3a sin autorizar) y deja 12 nodos del Demo A
   sin credencial (completa por tipo; hallazgo de la revisión del PR #375, defecto aparte). La herramienta, en cambio:

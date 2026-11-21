@@ -756,31 +756,31 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
     porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
     vence: '2027-01-01',
   },
-  'experimental/agenda-minima/agenda-minima.v0.json#1#Enviar a WhatsApp': {
+  'clientes/agenda-minima/agenda-minima.v0.json#1#Enviar a WhatsApp': {
     porque: 'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
     vence: '2027-01-01',
   },
-  'experimental/agenda-minima/agenda-minima.v0.json#1#Enviar respaldo': {
+  'clientes/agenda-minima/agenda-minima.v0.json#1#Enviar respaldo': {
     porque: 'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
     vence: '2027-01-01',
   },
-  'experimental/agenda-minima/agenda-minima.v0.json#2#Enviar respaldo': {
+  'clientes/agenda-minima/agenda-minima.v0.json#2#Enviar respaldo': {
     porque: 'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
     vence: '2027-01-01',
   },
-  'experimental/agenda-minima/agenda-minima.v0.json#3#Reportar mensaje (saliente)::Enviar respaldo': {
+  'clientes/agenda-minima/agenda-minima.v0.json#3#Reportar mensaje (saliente)::Enviar respaldo': {
     porque: 'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
     vence: '2027-01-01',
   },
-  'experimental/agenda-minima/agenda-minima.v0.json#3#Reportar mensaje (saliente)::Enviar a WhatsApp': {
+  'clientes/agenda-minima/agenda-minima.v0.json#3#Reportar mensaje (saliente)::Enviar a WhatsApp': {
     porque: 'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
     vence: '2027-01-01',
   },
-  'experimental/agenda-minima/agenda-minima.v0.json#5#Config del negocio::aviso': {
+  'clientes/agenda-minima/agenda-minima.v0.json#5#Config del negocio::aviso': {
     porque: 'Bellido B: «Ya le avisé al doctor» sale en la misma tanda que la plantilla de emergencia y no depende de que salga (gravedad alta, emergencia clínica); D4 con el doctor; la cierra PR-6 (Bellido B, ventana 2 a 3)',
     vence: '2027-01-01',
   },
-  'experimental/agenda-minima/agenda-minima.v0.json#5#Armar mensajes::aviso': {
+  'clientes/agenda-minima/agenda-minima.v0.json#5#Armar mensajes::aviso': {
     porque: 'Bellido B: «Ya le avisé al doctor» sale en la misma tanda que la plantilla de emergencia y no depende de que salga (gravedad alta, emergencia clínica); D4 con el doctor; la cierra PR-6 (Bellido B, ventana 2 a 3)',
     vence: '2027-01-01',
   },
@@ -844,7 +844,7 @@ describe('Entregas: los flujos del disco', () => {
     expect(ARCHIVOS).toEqual(expect.arrayContaining([
       'bellido-agendamiento.json', 'demo-a-agendamiento.json', 'demo-b-venta-cobro.json', 'novuchat-onboarding.json',
       'agendamiento-seguimientos.json', 'demo-a-recordatorios.json',
-      'experimental/agenda-minima/agenda-minima.v0.json', 'clientes/venta-minima/venta-minima.qtaco.json',
+      'clientes/agenda-minima/agenda-minima.v0.json', 'clientes/venta-minima/venta-minima.qtaco.json',
     ]));
     for (const a of ARCHIVOS) expect(a, a).not.toMatch(EXCLUIDO);
   });

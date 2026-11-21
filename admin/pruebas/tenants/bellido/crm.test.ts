@@ -22,7 +22,7 @@ interface Flujo { nodes: Nodo[]; connections: Record<string, { main: Array<Array
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const leer = (r: string): string => readFileSync(join(RAIZ, r), 'utf8');
 const leerJson = <T = J>(r: string): T => JSON.parse(leer(r)) as T;
-const AM = 'Flujos/experimental/agenda-minima';
+const AM = 'Flujos/clientes/agenda-minima';
 const PRODUCCION = leerJson<Flujo>(`${AM}/agenda-minima.v0.json`);
 const PRUEBA = leerJson<Flujo>(`${AM}/agenda-minima.prueba.json`);
 const MAPA = leerJson<{ crm: J }>('admin/scripts/datos/bellido/crm.json').crm;

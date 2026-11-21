@@ -347,7 +347,7 @@ describe('Capacidades comunes: todo flujo conversacional tiene audio, imagen y d
 });
 
 describe('Sin agente: la prueba no es vacía, un flujo con la rama rota FALLA', () => {
-  const base = (): Flujo => JSON.parse(JSON.stringify(leerFlujo('experimental/agenda-minima/agenda-minima.v0.json'))) as Flujo;
+  const base = (): Flujo => JSON.parse(JSON.stringify(leerFlujo('clientes/agenda-minima/agenda-minima.v0.json'))) as Flujo;
 
   it('la base real (agenda mínima) cumple y es un flujo sin agente que atiende', () => {
     expect(esSinAgenteQueAtiende(base())).toBe(true);

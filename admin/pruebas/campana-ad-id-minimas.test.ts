@@ -36,7 +36,7 @@ const panel = (extra: J): J => ({ statusCode: 200, body: { tenantId: 'un-negocio
 interface Esqueleto { nombre: string; archivo: string }
 const ESQUELETOS: Esqueleto[] = [
   { nombre: 'chat de NovuChat', archivo: 'clientes/novuchat/chat-novuchat.prueba.json' },
-  { nombre: 'agenda mínima', archivo: 'experimental/agenda-minima/agenda-minima.prueba.json' },
+  { nombre: 'agenda mínima', archivo: 'clientes/agenda-minima/agenda-minima.prueba.json' },
   { nombre: 'captación mínima', archivo: 'experimental/captacion-minima/captacion-minima.prueba.json' },
 ];
 
@@ -173,7 +173,7 @@ describe('una campaña solo por Ad ID no salta ningún menú ni cambia la respue
 
 describe('miniCRM: el prospecto de la agenda y de la captación lleva el Ad ID y la campaña', () => {
   const aqui = dirname(fileURLToPath(import.meta.url));
-  const agenda = readFileSync(join(aqui, '../../Flujos/experimental/agenda-minima/src/lib/agenda.js'), 'utf8');
+  const agenda = readFileSync(join(aqui, '../../Flujos/clientes/agenda-minima/src/lib/agenda.js'), 'utf8');
   it('agenda: agmProspectoCrm copia adId y campanaId válidos y omite los inválidos', () => {
     const f = compileFunction(`${agenda}\nreturn agmProspectoCrm;`, ['msDe', 'diaDeLaSemana', 'fechaLocal', 'horaLocal', '_agmNombreCompleto']);
     const p = f(() => NaN, () => '', () => '', () => '', () => '') as (d: J) => J | null;
@@ -188,6 +188,6 @@ describe('miniCRM: el prospecto de la agenda y de la captación lleva el Ad ID y
     const cap = codigoDe(leerFlujo('experimental/captacion-minima/captacion-minima.prueba.json'), 'Armar mensajes');
     expect(cap).toContain('const adDelMensaje');
     expect(cap).toContain('adDelMensaje(despues)');
-    expect(codigoDe(leerFlujo('experimental/agenda-minima/agenda-minima.prueba.json'), 'Armar mensajes')).toContain('adId: t.adId, campanaId: t.campanaId');
+    expect(codigoDe(leerFlujo('clientes/agenda-minima/agenda-minima.prueba.json'), 'Armar mensajes')).toContain('adId: t.adId, campanaId: t.campanaId');
   });
 });

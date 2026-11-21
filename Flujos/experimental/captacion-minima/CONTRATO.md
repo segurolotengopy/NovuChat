@@ -10,7 +10,7 @@ calcula y escribe el guion; el modelo solo pone una línea de empatía, contesta
 sueltas y clasifica**. Flujo experimental: vive en `Flujos/experimental/captacion-minima/` y no
 se publica sin el «sí» de Andres.
 
-Referencias a leer antes de escribir: `Flujos/experimental/agenda-minima/` (DISENO, CONTRATO,
+Referencias a leer antes de escribir: `Flujos/clientes/agenda-minima/` (DISENO, CONTRATO,
 plantilla, `construir.mjs`, `src/nodos/_comun.js`, y `admin/pruebas/agenda-minima-flujo.test.ts`
 con su n8n de mentira); `Flujos/clientes/venta-minima/construir.mjs` (datos del tenant,
 `@@cred:`, guardias, huérfanos, retención `none`); `Flujos/src/core/sin-agente/`
