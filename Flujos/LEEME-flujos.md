@@ -1053,7 +1053,7 @@ del 16/10/2026 §4). No es de un cliente ni de un módulo: se instala por númer
 con la misma plantilla (cambian `phoneNumberId`, el relé, las credenciales y la
 ruta del timbre), y no lleva texto ni nombre de cliente.
 
-- **Camino:** `Timbre` (webhook sin datos, Header Auth) y `Barrido cada minuto`
+- **Camino:** `Timbre` (webhook sin datos, Header Auth) y `Barrido cada 15 s`
   → `Reclamar` (`reclamarSalidaPersona`, pasa `pendiente` a `enviando`) →
   `Por canal` → relé B9 (`Idempotency-Key` = `claveRele`) o Graph → `Juntar
   salidas` → `Resultado del envío` → `Confirmar` (`confirmarSalidaPersona`) →

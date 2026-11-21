@@ -40,21 +40,21 @@
         "rule": {
           "interval": [
             {
-              "field": "minutes",
-              "minutesInterval": 1
+              "field": "seconds",
+              "secondsInterval": 15
             }
           ]
         }
       },
       "id": "sp-barrido",
-      "name": "Barrido cada minuto",
+      "name": "Barrido cada 15 s",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
         -300,
         400
       ],
-      "notes": "Reclama igual que el timbre: si un timbre se perdio, el mensaje `pendiente` sale en el minuto siguiente."
+      "notes": "Reclama igual que el timbre: si un timbre se perdio, el mensaje `pendiente` sale en el barrido siguiente (15 s)."
     },
     {
       "parameters": {
@@ -100,7 +100,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// SALIDA DE PERSONA, paso 1: ¿este toque es para este flujo?\n//\n// El flujo atiende UN numero (se instala por alias: la misma plantilla con otro\n// `phoneNumberId` en `Config base`). Dos disparadores llegan aqui: el\n// timbre de la Function (POST sin datos) y el barrido de cada minuto, que\n// reclama igual por si un timbre se perdio.\n//\n// - Sin `phoneNumberId` configurado el flujo NO corre: un error visible en la\n//   ejecucion, nunca un reclamo con un numero de marcador.\n// - Un timbre que trae `X-NovuChat-Numero` de OTRO numero se descarta: la ruta\n//   del webhook ya es de este numero, esto es solo un cinturon.\n// - La clave y la firma del timbre las verifica el Header Auth del webhook; este\n//   nodo no tiene `crypto` y no las toca.\nconst cfg = $('Config base').first().json;\nconst numero = String(cfg.phoneNumberId ?? '').trim();\nif (!/^[0-9]{8,20}$/.test(numero)) {\n  throw new Error('Salida de persona: Config base no tiene el phoneNumberId de este flujo.');\n}\n\nconst timbre = $('Timbre');\nlet origen = 'barrido';\nif (timbre.isExecuted) {\n  origen = 'timbre';\n  const cabeceras = (timbre.first().json.headers) || {};\n  const deQuien = String(cabeceras['x-novuchat-numero'] ?? '').trim();\n  if (deQuien && deQuien !== numero) return [];\n}\n\nreturn [{ json: { origen, phoneNumberId: numero } }];"
+        "jsCode": "// SALIDA DE PERSONA, paso 1: ¿este toque es para este flujo?\n//\n// El flujo atiende UN numero (se instala por alias: la misma plantilla con otro\n// `phoneNumberId` en `Config base`). Dos disparadores llegan aqui: el\n// timbre de la Function (POST sin datos) y el barrido de cada 15 s, que\n// reclama igual por si un timbre se perdio.\n//\n// - Sin `phoneNumberId` configurado el flujo NO corre: un error visible en la\n//   ejecucion, nunca un reclamo con un numero de marcador.\n// - Un timbre que trae `X-NovuChat-Numero` de OTRO numero se descarta: la ruta\n//   del webhook ya es de este numero, esto es solo un cinturon.\n// - La clave y la firma del timbre las verifica el Header Auth del webhook; este\n//   nodo no tiene `crypto` y no las toca.\nconst cfg = $('Config base').first().json;\nconst numero = String(cfg.phoneNumberId ?? '').trim();\nif (!/^[0-9]{8,20}$/.test(numero)) {\n  throw new Error('Salida de persona: Config base no tiene el phoneNumberId de este flujo.');\n}\n\nconst timbre = $('Timbre');\nlet origen = 'barrido';\nif (timbre.isExecuted) {\n  origen = 'timbre';\n  const cabeceras = (timbre.first().json.headers) || {};\n  const deQuien = String(cabeceras['x-novuchat-numero'] ?? '').trim();\n  if (deQuien && deQuien !== numero) return [];\n}\n\nreturn [{ json: { origen, phoneNumberId: numero } }];"
       },
       "id": "sp-validar",
       "name": "Validar toque",
@@ -732,7 +732,7 @@
         ]
       ]
     },
-    "Barrido cada minuto": {
+    "Barrido cada 15 s": {
       "main": [
         [
           {

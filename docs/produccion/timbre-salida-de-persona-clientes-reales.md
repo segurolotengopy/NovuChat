@@ -128,7 +128,7 @@ Cartera lee en el paso P0. Ejemplos de forma, sin valor real: `NovuChat ingesta
 | 2 | `nube-salida-persona.sh --agregar-alias <ALIAS>` en seco, luego `--aplicar --confirmo produccion`: crea ruta y clave en `SALIDA_PERSONA_RUTAS` y deja la **entrega** en `$XDG_RUNTIME_DIR` | Rearquitectura | **Sí** (Secret Manager) | Una por acción |
 | 3 | `cargar-timbre-n8n.sh ... --aplicar --confirmo produccion`: crea la credencial del timbre y el flujo **inactivo** y borra la entrega | Cartera | **Sí** (n8n) | Una por acción |
 | 4 | Redespliegue de `enviarComoPersona` (el secreto queda fijo por versión) | Rearquitectura | **Sí** (despliegue) | Una por acción |
-| 5 | `cargar-timbre-n8n.sh ... --activar --aplicar --confirmo produccion`: empieza el barrido de cada minuto | Cartera | **Sí** (n8n) | Una por acción |
+| 5 | `cargar-timbre-n8n.sh ... --activar --aplicar --confirmo produccion`: empieza el barrido de cada 15 s | Cartera | **Sí** (n8n) | Una por acción |
 | Recarga | `cargar-timbre-n8n.sh --alias <ALIAS> --cred-ingesta <NOMBRE_INGESTA> --cred-envio <NOMBRE_ENVIO> --cred-rele <NOMBRE_RELE> [--rele-inerte --canal-graph] --recargar` en seco y luego `--aplicar --confirmo produccion`: actualiza el flujo **vivo** con la versión nueva de `Flujos/salida-de-persona.json`, **sin entrega**, sin Secret Manager y sin tocar credenciales ni claves; conserva la ruta del timbre del flujo vivo y su estado activo/inactivo. Sale 2 sin escribir si el flujo vivo no es el de ese alias o su Timbre no es el esperado, y también si está activo con cambios sin publicar | Cartera | **Sí** (n8n) | Una por acción |
 | 6 | Bandera `consolaConversaciones` y roles (paquete de encendido de «Tomar») | Cartera | **Sí** (Firestore, Auth) | Una por acción |
 | R | Reversión: `--quitar --aplicar` (o, tras una recarga, revertir el JSON versionado y volver a correr `--recargar`); `nube-salida-persona.sh --quitar-alias <ALIAS> --aplicar` y redespliegue; bandera a `clasica` | Cartera / Rearquitectura | **Sí** | Una por acción |
@@ -184,8 +184,10 @@ Se corre primero cada uno **sin** `--aplicar` y se lee entero.
 - No imprime la clave del timbre, la ruta, el `phoneNumberId` ni la URL del relé.
 - No activa el flujo al cargarlo (`--activar` es un paso aparte) y no activa ningún
   WhatsApp Trigger.
-- Un `SALIDA_PERSONA_RUTAS` sin el alias del cliente deja los envíos de persona en
-  `pendiente` y caducan; el asistente sigue normal.
+- Un `SALIDA_PERSONA_RUTAS` sin el alias del cliente no tiene timbre, pero el flujo de ese número
+  igual reclama por el barrido (cada 15 s): el ensayo V1 del 21/11 aceptó 3 de 3 mensajes
+  (reclamados entre 44 y 54 s). Sin flujo publicado para el número, el `pendiente` caduca a los 2 minutos;
+  el asistente sigue normal.
 
 ## Después del traslado (~07/11, primer cliente real)
 

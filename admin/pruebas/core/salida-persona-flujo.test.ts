@@ -414,12 +414,12 @@ describe('Salida de persona: Validar toque', () => {
 describe('Salida de persona: la estructura del flujo', () => {
   it('los dos disparadores llegan a Config base; el timbre es POST con Header Auth, responde de inmediato y lleva ruta de marcador', () => {
     expect(destinos(flujo, 'Timbre')).toEqual(['Config base']);
-    expect(destinos(flujo, 'Barrido cada minuto')).toEqual(['Config base']);
+    expect(destinos(flujo, 'Barrido cada 15 s')).toEqual(['Config base']);
     const t = nodo(flujo, 'Timbre').parameters;
     expect(t).toMatchObject({ httpMethod: 'POST', authentication: 'headerAuth', responseMode: 'onReceived' });
     expect(String(t['path'])).toMatch(/^REEMPLAZAR_/);
-    const b = nodo(flujo, 'Barrido cada minuto').parameters as { rule: { interval: { field: string; minutesInterval: number }[] } };
-    expect(b.rule.interval[0]).toEqual({ field: 'minutes', minutesInterval: 1 });
+    const b = nodo(flujo, 'Barrido cada 15 s').parameters as { rule: { interval: { field: string; secondsInterval: number }[] } };
+    expect(b.rule.interval[0]).toEqual({ field: 'seconds', secondsInterval: 15 });
   });
 
   it('el bucle: Verificar y seguir vuelve a Reclamar; Reclamar solo lo alimentan Validar toque y ese cierre', () => {
