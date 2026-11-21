@@ -291,11 +291,20 @@ describe('B. el relleno de conversaciones, como proceso contra el emulador', () 
     expect((await leerTodas(t)).get(`wa_${tel(3)}`)!.data).toHaveProperty('telefonoTrozos');
   });
 
-  it('BELLIDO: el proceso se niega con su id y las conversaciones quedan intactas', async () => {
+  it('BELLIDO ya no está excluido (21/11/2026): sin la variable de exclusión el seco pasa (sale 1) y no escribe', async () => {
+    await sembrar('bellido', 4, { nombre: 'Consultorio Sintetico', estado: 'activo' });
+    const antes = await leerTodas('bellido');
+    const r = hijo(RELLENO, args('bellido'));
+    expect(r.status, r.stdout + r.stderr).toBe(1);
+    expect(r.stderr).not.toContain('EXCLUIDO');
+    for (const [id, v] of await leerTodas('bellido')) expect(v).toEqual(antes.get(id));
+  });
+
+  it('un comercio excluido por NOVUCHAT_TENANTS_EXCLUIDOS (aquí bellido): el proceso se niega con su id y las conversaciones quedan intactas', async () => {
     await sembrar('bellido', 4, { nombre: 'Consultorio Sintetico', estado: 'activo' });
     const antes = await leerTodas('bellido');
     for (const extra of [[], ['--aplicar', '--respaldo', rutaRespaldo()]]) {
-      const r = hijo(RELLENO, args('bellido', extra));
+      const r = hijo(RELLENO, args('bellido', extra), { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' });
       expect(r.status, r.stdout + r.stderr).toBe(2);
       expect(r.stderr).toContain('EXCLUIDO');
     }
@@ -321,7 +330,8 @@ describe('B. el relleno de conversaciones, como proceso contra el emulador', () 
     const todos = hijo(RELLENO, [...args(t), ...permitir, '--todos']);
     expect(todos.status).toBe(2);
     expect(todos.stderr).toContain('opción desconocida: --todos');
-    expect(hijo(RELLENO, args(t)).status).toBe(2); // sin la bandera sigue denegado
+    expect(hijo(RELLENO, args(t)).status).toBe(1); // 21/11/2026: sin la bandera ya no está denegado (seco: sale 1)
+    expect(hijo(RELLENO, args(t), { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' }).status).toBe(2); // la bandera no levanta la variable
 
     // Seco: sale 1 y no escribe nada (datos y hora intactos).
     const seco = hijo(RELLENO, args(t, permitir));
@@ -379,11 +389,11 @@ describe('B. el relleno de conversaciones, como proceso contra el emulador', () 
     for (const [, v] of await leerTodas(otro)) expect(v.data).not.toHaveProperty('telefonoTrozos');
   }, 120_000);
 
-  it('BELLIDO por el nombre de la ficha: se niega aunque el id sea otro', async () => {
+  it('exclusión por el nombre de la ficha (variable con bellido): se niega aunque el id sea otro', async () => {
     const t = nuevoTenant();
     await sembrar(t, 3, { nombre: 'Consultorio del Dr. Bellido', estado: 'activo' });
     const antes = await leerTodas(t);
-    const r = hijo(RELLENO, args(t, ['--aplicar', '--respaldo', rutaRespaldo()]));
+    const r = hijo(RELLENO, args(t, ['--aplicar', '--respaldo', rutaRespaldo()]), { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' });
     expect(r.status).toBe(2);
     expect(r.stdout).toContain('EXCLUIDO');
     for (const [id, v] of await leerTodas(t)) expect(v).toEqual(antes.get(id));

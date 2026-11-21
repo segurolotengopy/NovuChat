@@ -207,6 +207,7 @@ export const SUITES_PURAS = [
   'pruebas/frontera/mudanza.test.ts',
   'pruebas/frontera/referencias-a-scripts.test.ts',
   'pruebas/frontera/titulo-de-pagina.test.ts',
+  'pruebas/frontera/scripts-sin-listas-de-comercios.test.ts',
   'pruebas/frontera/rutas-escritas.test.ts',
   'pruebas/demo-b-catalogo.test.ts',
   'pruebas/demo-b-cobro.test.ts',

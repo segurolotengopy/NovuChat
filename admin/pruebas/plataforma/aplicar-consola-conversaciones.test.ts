@@ -144,9 +144,12 @@ describe('B1. argumentos y salvaguarda (puros)', () => {
     expect(mod.esTenantExcluidoDeBandera(undefined)).toBe(false);
     expect(mod.nombreExcluidoDeBandera('Consultorio Béllido')).toBe(false);
     expect(mod.nombreExcluidoDeBandera('Consultorio Béllido', { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' })).toBe(true);
-    // La lista del RELLENO (otro script) NO se levantó: sigue incluyendo a Bellido.
-    expect(mod.esTenantExcluido('bellido', { NOVUCHAT_TENANTS_EXCLUIDOS: 'otro' })).toBe(true);
-    expect(mod.nombreExcluido('Consultorio Béllido')).toBe(true);
+    // 21/11/2026: la lista fija general también quedó vacía; el mecanismo (variable de entorno) se conserva.
+    expect([...mod.TENANTS_EXCLUIDOS]).toEqual([]);
+    expect(mod.esTenantExcluido('bellido', { NOVUCHAT_TENANTS_EXCLUIDOS: 'otro' })).toBe(false);
+    expect(mod.esTenantExcluido('bellido', { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' })).toBe(true);
+    expect(mod.nombreExcluido('Consultorio Béllido')).toBe(false);
+    expect(mod.nombreExcluido('Consultorio Béllido', { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' })).toBe(true);
     expect(mod.nombreExcluido(undefined)).toBe(false);
   });
 

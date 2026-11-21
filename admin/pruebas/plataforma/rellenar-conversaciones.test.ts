@@ -104,16 +104,21 @@ describe('R1. argumentos y salvaguarda (puros)', () => {
     expect(r.cfg).toMatchObject({ tenant: T, aplicar: false, revertir: false, entorno: 'emulador', respaldo: null });
   });
 
-  it('BELLIDO se rechaza: por id, dentro de otro id y por la variable de exclusión', () => {
-    expect(problemas(['--proyecto', PROY, '--tenant', 'bellido'])).toContain('EXCLUIDO');
-    expect(problemas(['--proyecto', PROY, '--tenant', 'consultorio-bellido'])).toContain('EXCLUIDO');
-    expect(problemas(['--proyecto', PROY, '--tenant', 'bellido2', '--aplicar', '--respaldo', rutaRespaldo()])).toContain('EXCLUIDO');
-    expect(problemas(['--proyecto', PROY, '--tenant', 'bellido', '--revertir', '--respaldo', rutaRespaldo()])).toContain('EXCLUIDO');
+  it('BELLIDO ya NO se rechaza (Andres, 21/11/2026); un comercio se excluye por la variable de exclusión', () => {
+    for (const t of ['bellido', 'consultorio-bellido', 'bellido2']) {
+      const r = mod.analizarArgumentos(['--proyecto', PROY, '--tenant', t], ENV_EMU);
+      expect(r.ok, t).toBe(true);
+    }
+    const ENV_B = { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' };
+    expect(problemas(['--proyecto', PROY, '--tenant', 'bellido'], ENV_B)).toContain('EXCLUIDO');
+    expect(problemas(['--proyecto', PROY, '--tenant', 'consultorio-bellido'], ENV_B)).toContain('EXCLUIDO');
+    expect(problemas(['--proyecto', PROY, '--tenant', 'bellido2', '--aplicar', '--respaldo', rutaRespaldo()], ENV_B)).toContain('EXCLUIDO');
+    expect(problemas(['--proyecto', PROY, '--tenant', 'bellido', '--revertir', '--respaldo', rutaRespaldo()], ENV_B)).toContain('EXCLUIDO');
     expect(problemas(base, { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'otro-comercio,tienda-prueba' })).toContain('EXCLUIDO');
-    expect(comun.esTenantExcluido('Béllido')).toBe(true); // sin tildes ni mayúsculas, igual se reconoce (y el formato del id lo corta antes)
-    expect(comun.esTenantExcluido('bellido')).toBe(true);
-    // La variable solo AGREGA: no puede sacar a Bellido de la lista.
-    expect(comun.esTenantExcluido('bellido', { NOVUCHAT_TENANTS_EXCLUIDOS: 'otro' })).toBe(true);
+    expect(comun.esTenantExcluido('Béllido', { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' })).toBe(true); // sin tildes ni mayúsculas, igual se reconoce
+    expect(comun.esTenantExcluido('bellido')).toBe(false);
+    // La variable solo AGREGA: otra exclusión no cambia lo que no nombra.
+    expect(comun.esTenantExcluido('bellido', { NOVUCHAT_TENANTS_EXCLUIDOS: 'otro' })).toBe(false);
   });
 
   it('UN comercio, sin formas raras, y sin opciones desconocidas ni repetidas', () => {
@@ -737,10 +742,11 @@ describe('R4. aplicar', () => {
 });
 
 // =====================================================================================================
-describe('R5. Bellido y la ficha', () => {
+describe('R5. comercio excluido (por la variable) y la ficha', () => {
+  const ENV_X = { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' };
   it('ejecutar se niega con el id de Bellido aunque lo llamen sin pasar por los argumentos, sin leer nada', async () => {
     const b = baseEnMemoria({ 'tenants/bellido': { nombre: 'Dr. B.' }, [`tenants/bellido/conversaciones/${ID(1)}`]: conv(1) });
-    const { codigo, salida } = await correr(cfgDe({ tenant: 'bellido', aplicar: true, respaldo: rutaRespaldo() }), b);
+    const { codigo, salida } = await correr(cfgDe({ tenant: 'bellido', aplicar: true, respaldo: rutaRespaldo() }), b, { env: ENV_X });
     expect(codigo).toBe(2);
     expect(salida).toContain('EXCLUIDO');
     expect(b.estado.lecturas).toBe(0);
@@ -750,7 +756,7 @@ describe('R5. Bellido y la ficha', () => {
 
   it('segunda barrera: si el NOMBRE de la ficha nombra a Bellido, se niega aunque el id sea otro', async () => {
     const b = sembrar(3, () => ({}), { nombre: 'Consultorio del Dr. Béllido', estado: 'activo' });
-    const { codigo, salida } = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b);
+    const { codigo, salida } = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b, { env: ENV_X });
     expect(codigo).toBe(2);
     expect(salida).toContain('EXCLUIDO');
     expect(b.estado.consultas).toHaveLength(0);
@@ -759,14 +765,14 @@ describe('R5. Bellido y la ficha', () => {
 
   it('revertir tampoco corre con Bellido', async () => {
     const b = sembrar(3, () => ({}), { nombre: 'bellido consultorio' });
-    const { codigo } = await correr(cfgDe({ revertir: true, aplicar: true, respaldo: rutaRespaldo() }), b);
+    const { codigo } = await correr(cfgDe({ revertir: true, aplicar: true, respaldo: rutaRespaldo() }), b, { env: ENV_X });
     expect(codigo).toBe(2);
     expect(b.estado.escrituras).toHaveLength(0);
   });
 
   it('por línea de comandos: el proceso sale 2 antes de abrir Firebase (Bellido, sin comercio, y un proyecto real con emulador heredado)', () => {
     const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROY, '--tenant', 'bellido', '--aplicar', '--respaldo', rutaRespaldo()], {
-      env: entornoDelEmulador(HOST), encoding: 'utf8',
+      env: entornoDelEmulador(HOST, ENV_X), encoding: 'utf8',
     });
     expect(r.status).toBe(2);
     expect(r.stderr).toContain('EXCLUIDO');
@@ -786,7 +792,8 @@ describe('R5. Bellido y la ficha', () => {
 });
 
 // =====================================================================================================
-describe('R5b. --permitir-excluido bellido: la excepción explícita, negando todo lo demás', () => {
+describe('R5b. --permitir-excluido bellido: la bandera se conserva; no levanta lo de la variable de exclusión', () => {
+  const ENV_X = { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' };
   const BASE = ['--proyecto', PROY, '--tenant', 'bellido'];
   const problemas = (argv: string[], env: Record<string, string> = ENV_EMU) => {
     const r = mod.analizarArgumentos(argv, env);
@@ -794,8 +801,8 @@ describe('R5b. --permitir-excluido bellido: la excepción explícita, negando to
     return (r.problemas ?? []).join(' | ');
   };
 
-  it('sin la bandera Bellido sigue denegado; con ella y --tenant bellido pasa, en seco por omisión', () => {
-    expect(problemas(BASE)).toContain('EXCLUIDO');
+  it('Bellido ya pasa sin la bandera (21/11/2026); con ella y --tenant bellido también, en seco por omisión', () => {
+    expect(mod.analizarArgumentos(BASE, ENV_EMU).ok).toBe(true);
     const r = mod.analizarArgumentos([...BASE, '--permitir-excluido', 'bellido'], ENV_EMU);
     expect(r.ok, JSON.stringify(r)).toBe(true);
     expect(r.cfg).toMatchObject({ tenant: 'bellido', aplicar: false, permitirExcluido: 'bellido' });
@@ -804,8 +811,8 @@ describe('R5b. --permitir-excluido bellido: la excepción explícita, negando to
   it('la bandera con otro comercio no levanta nada, y no vale para ids que solo contienen bellido', () => {
     expect(problemas(['--proyecto', PROY, '--tenant', T, '--permitir-excluido', 'bellido'])).toContain('MISMO id');
     expect(problemas(['--proyecto', PROY, '--tenant', 'bellido', '--permitir-excluido', T])).toContain('solo admite');
-    expect(problemas(['--proyecto', PROY, '--tenant', 'consultorio-bellido', '--permitir-excluido', 'bellido'])).toContain('EXCLUIDO');
-    expect(problemas(['--proyecto', PROY, '--tenant', 'bellido2', '--permitir-excluido', 'bellido'])).toContain('EXCLUIDO');
+    expect(problemas(['--proyecto', PROY, '--tenant', 'consultorio-bellido', '--permitir-excluido', 'bellido'])).toContain('MISMO id');
+    expect(problemas(['--proyecto', PROY, '--tenant', 'bellido2', '--permitir-excluido', 'bellido'])).toContain('MISMO id');
     expect(problemas(['--proyecto', PROY, '--tenant', 'consultorio-bellido', '--permitir-excluido', 'consultorio-bellido'])).toContain('solo admite');
     // Un comercio excluido por la variable de entorno tampoco se levanta con la bandera.
     expect(problemas([...BASE, '--permitir-excluido', 'bellido'], { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' })).toContain('EXCLUIDO');
@@ -828,13 +835,13 @@ describe('R5b. --permitir-excluido bellido: la excepción explícita, negando to
     const siembra = () => baseEnMemoria({ 'tenants/bellido': { nombre: 'Consultorio Bellido', estado: 'activo' }, [`tenants/bellido/conversaciones/${ID(1)}`]: conv(1) });
     for (const extra of [{}, { permitirExcluido: 'otro-comercio' }, { permitirExcluido: 'consultorio-bellido' }]) {
       const b = siembra();
-      const { codigo } = await correr(cfgDe({ tenant: 'bellido', ...extra }), b);
+      const { codigo } = await correr(cfgDe({ tenant: 'bellido', ...extra }), b, { env: ENV_X });
       expect(codigo).toBe(2);
       expect(b.estado.lecturas).toBe(0);
     }
     // Un comercio cualquiera con la bandera "bellido" en la cfg no levanta nada: su nombre excluido sigue negado.
     const c = sembrar(2, () => ({}), { nombre: 'Consultorio Bellido', estado: 'activo' });
-    expect((await correr(cfgDe({ permitirExcluido: 'bellido' }), c)).codigo).toBe(2);
+    expect((await correr(cfgDe({ permitirExcluido: 'bellido' }), c, { env: ENV_X })).codigo).toBe(2);
     expect(c.estado.escrituras).toHaveLength(0);
   });
 
