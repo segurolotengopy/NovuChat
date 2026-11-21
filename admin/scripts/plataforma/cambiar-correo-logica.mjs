@@ -10,7 +10,7 @@
  */
 import { COMERCIOS_NO_TOCADOS } from './comercios-no-tocados.mjs';
 
-export const CORREO =/^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+export const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 export const esExcluido = (t) => COMERCIOS_NO_TOCADOS.some((e) => String(t).toLowerCase().includes(e));
 
 /** «a***@g***.com»: lo único que el script imprime de un correo. */
