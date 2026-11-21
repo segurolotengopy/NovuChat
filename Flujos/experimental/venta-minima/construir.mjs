@@ -66,7 +66,7 @@ const FUENTE_SESION = leer('../../src/core/sin-agente/sesion.js').trimEnd();
 const ORDEN_LIBS = ['comun', 'pedido', 'reserva', 'avisos', 'promos', 'cobro'];
 // Módulos comunes que se INCLUYEN (no se copian): viven en Flujos/src/modulos/<m>/ y van detrás de las librerías propias.
 const MODULOS_COMUNES = ['../../src/modulos/pedidos/qr-del-pedido.js', '../../src/core/medios/anuncio-por-titular.js'];
-const LIB = [...ORDEN_LIBS.map((n) => leer(`src/lib/${n}.js`)), ...MODULOS_COMUNES.map((r) => leer(r))].map((t) => t.trimEnd()).join('\n\n');
+const LIB = [...ORDEN_LIBS.map((n) => leer(n === 'avisos' ? '../../src/core/sin-agente/avisos.js' : `src/lib/${n}.js`)), ...MODULOS_COMUNES.map((r) => leer(r))].map((t) => t.trimEnd()).join('\n\n');
 const COMUN = leer('src/lib/comun.js').trimEnd();
 // El miniCRM de Q'Taco (`vmProspectoCrm`): se pega SOLO delante de «Armar mensajes» (`+crm`), no en todos los nodos.
 const LIB_CRM = leer('src/lib/crm.js').trimEnd();

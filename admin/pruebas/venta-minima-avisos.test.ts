@@ -1,5 +1,5 @@
 /**
- * LOS AVISOS AL RESTAURANTE DE «VENTA MÍNIMA v0» (`Flujos/experimental/venta-minima/src/lib/avisos.js`, T4).
+ * LOS AVISOS AL RESTAURANTE DE «VENTA MÍNIMA v0» (`Flujos/src/core/sin-agente/avisos.js`, T4).
  *
  * Qué se prueba, y siempre con su caso negativo:
  *  - destinatarios y roles (`rol:tel[:Nombre]`), sin el propio número y con el rol de menos privilegio;
@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar } from './lib/flujo';
 
-const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/lib/avisos.js');
+const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/src/core/sin-agente/avisos.js');
 const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [

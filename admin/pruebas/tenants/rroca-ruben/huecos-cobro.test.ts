@@ -22,6 +22,7 @@ const REPO = join(AQUI, '../../../..');
 // La base común que usa Rubén (antes: `rroca-ruben/src/lib`, copias que se borraron al migrar).
 const RROCA = join(REPO, 'Flujos/experimental/venta-digital/src');
 const VM = join(REPO, 'Flujos/experimental/venta-minima/src/lib');
+const CORE_VENTA = join(REPO, 'Flujos/src/core/sin-agente');
 const RAMA = 'origin/cartera/qtaco-visor-comprobantes';
 
 // DIVERGENCIA DECLARADA (PR-K, 18/11/2026): `cbLectura` ya NO es idéntica a su origen: devuelve además `bancoOrigen` y `transaccion` (fuera de `leido`, que conserva sus seis campos). Se prueba en `venta-digital-base.test.ts`.
@@ -101,7 +102,7 @@ function deLaRama(archivo: string): string | null {
 
 function suite(archivo: string, hashes: Record<string, string>): void {
   const propio = leer(join(RROCA, archivo));
-  const delArbol = leer(join(VM, archivo));
+  const delArbol = leer(join(archivo === 'avisos.js' ? CORE_VENTA : VM, archivo));
   // El árbol de trabajo solo es un origen válido cuando ya trae lo de #519 (`cbResultadoVenta`); antes de la fusión, `venta-minima` tiene la versión vieja y diferir de ella es lo esperado.
   const arbolEs519 = leer(join(VM, 'cobro.js')).includes('function cbResultadoVenta(');
   const delaRama = deLaRama(archivo);
