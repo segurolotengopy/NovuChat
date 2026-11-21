@@ -52,6 +52,9 @@ const morir = (m) => { console.error(`✗ ${m}`); process.exit(1); };
 // `--actualizar-codigo` corre SOLO: antes, con `--borrar` al lado, corría `--borrar` (revisión de seguridad del #364).
 if (bandera('desde-b') && !bandera('sobre-bellido')) morir('--desde-b solo se usa con --sobre-bellido');
 if (bandera('sobre-bellido') && ['borrar', 'restaurar-respaldo', 'sobre-demo-a', 'sobre-demo-b', 'turno', 'actualizar-codigo'].some((m) => args.includes(`--${m}`))) morir('--sobre-bellido no se combina con otro modo');
+// `--solo-codigo` (Andres, 21/11/2026, la baja de Bellido): solo vale con `--actualizar-codigo`. Deja EN PAZ los parámetros de los nodos que no son Code
+// (p. ej. el cuerpo de «Reportar mensaje (entrante)»): se listan como «se dejan como están» y NO se escriben. El código de los Code sí se actualiza.
+if (bandera('solo-codigo') && !bandera('actualizar-codigo')) morir('--solo-codigo solo se usa con --actualizar-codigo');
 if (bandera('actualizar-codigo') && ['desde-b'].some((m) => args.includes(`--${m}`))) morir('--actualizar-codigo no se combina con --desde-b');
 if (bandera('actualizar-codigo') && ['borrar', 'sobre-bellido', 'sobre-demo-a', 'sobre-demo-b', 'restaurar-respaldo', 'turno'].some((m) => args.includes(`--${m}`))) morir('--actualizar-codigo no se combina con otro modo');
 // EL DEMO DE DESTINO DEL ENSAYO (10/11/2026): `--sobre-demo-a` (el de siempre) o `--sobre-demo-b` (el segundo número de ensayo). Nunca los dos.
@@ -483,7 +486,7 @@ if (bandera('actualizar-codigo')) {
   const sobran = [...nv.keys()].filter((k) => !nc.has(k)); const faltan = [...nc.keys()].filter((k) => !nv.has(k));
   if (sobran.length || faltan.length) morir(`los nodos no coinciden. Solo en el vivo: ${sobran.join(', ') || '—'}. Solo en el candidato: ${faltan.join(', ') || '—'}`);
   const igual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-  const cambian = []; const prohibidas = [];
+  const cambian = []; const prohibidas = []; const omitidas = [];
   for (const [nombre, c] of nc) {
     const n = nv.get(nombre);
     if (n.type !== c.type || n.typeVersion !== c.typeVersion) { prohibidas.push(`${nombre}: tipo o versión`); continue; }
@@ -499,12 +502,17 @@ if (bandera('actualizar-codigo')) {
       const otrosParametros = Object.keys({ ...n.parameters, ...c.parameters }).filter((k) => k !== 'assignments' && !igual(n.parameters[k], c.parameters[k]));
       const camposDistintos = Object.keys({ ...av, ...ac }).filter((k) => !igual(av[k], ac[k]));
       const noMarcador = camposDistintos.filter((k) => !(typeof ac[k] === 'string' && /^REEMPLAZAR_[A-Z0-9_]+$/.test(ac[k]) && typeof av[k] === 'string' && av[k] !== '' && !/^REEMPLAZAR_/.test(av[k])));
-      if (nombre !== 'Config base' || otrosParametros.length || noMarcador.length) prohibidas.push(`${nombre}: ${[...otrosParametros, ...noMarcador].join(', ') || 'parámetros'}`);
+      if (nombre !== 'Config base' || otrosParametros.length || noMarcador.length) {
+        // Con `--solo-codigo` un nodo que NO es Code y NO es «Config base» se deja como está (solo se informa); todo lo demás sigue prohibido.
+        if (bandera('solo-codigo') && nombre !== 'Config base') omitidas.push(`${nombre}: ${[...otrosParametros, ...noMarcador].join(', ') || 'parámetros'}`);
+        else prohibidas.push(`${nombre}: ${[...otrosParametros, ...noMarcador].join(', ') || 'parámetros'}`);
+      }
     }
   }
   if (!igual(v.connections, cand.connections)) prohibidas.push('las conexiones');
   console.log(`Vivo: «${v.name}», ${v.nodes.length} nodos, activo=${v.active}, versión publicada=${v.versionId === v.activeVersionId}. Candidato (${ARCHIVO.split(sep).slice(-2).join('/')}, commit ${commitDelArchivo}): ${cand.nodes.length} nodos.`);
   console.log(`Nodos Code con código distinto (${cambian.length}): ${cambian.join(', ') || '—'}`);
+  if (omitidas.length) console.log(`Con --solo-codigo se DEJAN COMO ESTÁN (no se escriben) ${omitidas.length} nodo(s) que no son Code: ${omitidas.join(' · ')}`);
   if (prohibidas.length) morir(`hay diferencias que este modo NO toca (use --sobre-bellido o revise): ${prohibidas.join(' · ')}`);
   if (!cambian.length) morir('no hay nada que actualizar: el código vivo ya es el del candidato');
   if (args.includes('--previa')) morir('--previa ya no existe: este modo no guarda copias (corrija hacia adelante)');
