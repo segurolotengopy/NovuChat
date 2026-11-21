@@ -37,6 +37,7 @@
     "hostsFoto": "REEMPLAZAR_HOSTS_FOTO",
     "tratamiento": "REEMPLAZAR_TRATAMIENTO",
     "ubicacionTienda": "",
-    "horarioTienda": ""
+    "horarioTienda": "",
+    "enlaceCatalogo": ""
   }
 }

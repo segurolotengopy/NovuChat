@@ -917,6 +917,9 @@
           "name": "@@cred:gemini"
         }
       },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "parameters": {
