@@ -187,3 +187,19 @@ description = "El secreto capturado es otra asignación con literal no secreto"
 regexes = [
   '''^[A-Z][A-Z0-9_]*=(true|false|[0-9]+)$''',
 ]
+
+# -----------------------------------------------------------------------------
+# Falso positivo del 21/11/2026 (despliegue manual de producción, run 44920222365).
+# El despliegue manual escanea la historia completa y la regla `generic-api-key`
+# marcó 5 líneas de commits viejos (scripts/completar-marcadores-desde-vivo.mjs y
+# admin/scripts/plataforma/crm-cuenta-servicio.mjs) que citan la VARIABLE de
+# entorno `env.N8N_API_KEY` (cabecera X-N8N-API-KEY o `apiKey: env.N8N_API_KEY`):
+# el «secreto» capturado es esa referencia, nunca un valor. Se filtra por la FORMA
+# del dato capturado (la lectura de una variable `env.N8N_API_KEY`), no por ruta ni
+# por commit; una clave literal pegada al lado sigue marcándose.
+# -----------------------------------------------------------------------------
+[[allowlists]]
+description = "El secreto capturado es la lectura de la variable env.N8N_API_KEY, no un valor"
+regexes = [
+  '''^env\.N8N_API_KEY$''',
+]
