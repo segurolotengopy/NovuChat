@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
-import { enmascarar, planearCambioCorreo } from '../../scripts/plataforma/cambiar-correo-logica.mjs';
+import { enmascarar, esExcluido, planearCambioCorreo } from '../../scripts/plataforma/cambiar-correo-logica.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const RUTA = join(aqui, '..', '..', 'scripts', 'plataforma', 'cambiar-correo.mjs');
@@ -77,6 +77,14 @@ describe('cambiar-correo: lo que NO debe hacer', () => {
   it('el correo se enmascara', () => {
     expect(enmascarar(correo('viejo'))).not.toContain('viejo');
     expect(enmascarar(undefined)).toBe('(sin correo)');
+  });
+});
+
+describe('cambiar-correo: esExcluido (lista común de comercios no tocados)', () => {
+  it('excluye Bellido y Platinum por «contiene», sin distinguir mayúsculas', () => {
+    expect(esExcluido('bellido-x')).toBe(true);
+    expect(esExcluido('Platinum')).toBe(true);
+    expect(esExcluido('qtaco')).toBe(false);
   });
 });
 
