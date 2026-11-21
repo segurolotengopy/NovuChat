@@ -6,7 +6,8 @@
     "executionTimeout": 60,
     "saveDataSuccessExecution": "none",
     "saveDataErrorExecution": "none",
-    "saveExecutionProgress": false
+    "saveExecutionProgress": false,
+    "saveManualExecutions": false
   },
   "nodes": [
     {
