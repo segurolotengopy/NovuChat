@@ -558,6 +558,17 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Sí, confirmo, quiero pagar', modos).capturado).toBe(false);
       expect(b('bmCompletarEntrega')({}, {}, 'Silvana Prueba', modos).capturado).toBe(false);   // sin modo elegido, no se toma por nombre
     });
+    it('el ENVÍO dicho en una frase se lee por código: nombre, CI, flota y ciudad, aunque el modelo no devuelva `entrega`', () => {
+      const e = b('bmCompletarEntrega')({}, { modo: 'envío', ciudad: 'Santa Cruz' }, 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana', modos).entrega;
+      expect(e).toMatchObject({ nombre: 'Juan Pérez', documento: '4567890', flota: 'Trans Copacabana' });
+      const e2 = b('bmCompletarEntrega')({}, { modo: 'envío' }, 'Envíelo a Cochabamba por la terminal de Oruro', modos).entrega;
+      expect(e2.ciudad).toBe('Cochabamba');
+      // NEGADO: sin envío elegido no se inventa ciudad; un CI sin la palabra CI/DNI/carnet no es documento
+      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'voy a Santa Cruz', modos).entrega.ciudad).toBeUndefined();
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío' }, 'mi teléfono es 70123456', modos).entrega.documento).toBeUndefined();
+      const ok = b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro, entrega: { modo: 'envío', ciudad: 'Santa Cruz' } }, plan: { tipo: 'modelo', textoCliente: 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana' }, modeloResp: gemini({ texto: 'Gracias.', lineas: [{ id: 'p1', cantidad: 1 }] }) }));
+      expect(b('bmEntregaCompleta')(ok.entrega, 'BO')).toBe(true);
+    });
     it('del retiro al pedido: modo + nombre dichos en turnos distintos, SIN `entrega` del modelo, y «sí, confirmo, quiero pagar» anota el pedido', () => {
       const sinEntrega = (textoCliente: string, ficha: Record<string, unknown>, quiereHablar = false) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha, plan: { tipo: 'modelo', textoCliente }, modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'p1', cantidad: 1 }], quiereHablar }) }));
       const t1 = sinEntrega('Lo recojo en tienda', { carrito: carro });

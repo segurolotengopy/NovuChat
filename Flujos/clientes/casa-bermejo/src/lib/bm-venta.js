@@ -127,6 +127,13 @@ function bmCompletarEntrega(nueva, antes, texto, modos) {
   let capturado = false;
   const nombreNuevo = typeof n.nombre === 'string' && n.nombre.trim() !== '';
   if (modo !== '' && a.nombre === '' && !nombreNuevo) { const nom = bmNombreDeRespuesta(texto); if (nom !== '') { n.nombre = nom; capturado = true; } }
+  // Datos del ENVÍO dichos dentro de una frase: el modelo a veces no los repite en su JSON (humo: «Mi nombre es Juan Pérez, mi CI es …, flota …» y el pedido volvía a pedirlos).
+  const crudo = String(texto || '');
+  const vacio = (k) => (typeof n[k] !== 'string' || n[k].trim() === '') && a[k] === '';
+  if (vacio('nombre')) { const m = /(?:mi nombre es|me llamo|a nombre de|soy)\s+([\p{L}][\p{L} .'-]{2,40}?)(?=\s*(?:[,.;]|$|\bmi\b|\by\b|\bci\b|\bdni\b|\bcarnet\b|\bcedula\b))/iu.exec(crudo); if (m && bmNombreDeRespuesta(m[1]) !== '') { n.nombre = m[1].trim(); capturado = true; } }
+  if (vacio('documento')) { const m = /\b(?:c\.?i\.?|dni|carnet(?: de identidad)?|cedula)\b\D{0,15}(\d[\d.-]{4,13})/i.exec(crudo); if (m) n.documento = m[1]; }
+  if (vacio('flota')) { const m = /\b(?:flota|terminal|empresa)\s+(?:de\s+)?([\p{L}][\p{L} ]{2,40}?)(?=\s*(?:[,.;]|$|\by\b|\bmi\b|\bciudad\b))/iu.exec(crudo); if (m) n.flota = m[1].trim(); }
+  if (vacio('ciudad') && bmEsEnvio(modo)) { const m = /\b(?:a|en|para|hasta)\s+([A-ZÁÉÍÓÚÑ][\p{L}]+(?: [A-ZÁÉÍÓÚÑ][\p{L}]+)?)/u.exec(crudo); if (m && !/^(Gracias|Hola|Buenas|Mi|Sí|Si)$/.test(m[1])) n.ciudad = m[1]; }
   return { entrega: n, capturado: capturado };
 }
 // El mensaje del SITIO («Hola, quiero consultar por estos productos:» con líneas «N x Nombre (cód. id)»): el código lee las líneas y sus códigos contra el catálogo; no depende del modelo.
