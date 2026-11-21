@@ -17,9 +17,9 @@
  *  - TOPES DIARIOS (aprobados por Andres el 30/10/2026; bloque «TOPES» de abajo): por comercio
  *    3.000 medios y 3 GiB; por teléfono 100 medios y 500 MiB. Pasado un tope, se deja constancia
  *    en el contador a lo sumo 50 veces por día; después, ni eso.
- *  - La bandera `guardarMedios` de la ficha se enciende SOLO con el anexo
- *    aceptado y el «sí» de Andres (D3): APAGADA por defecto, y con ella
- *    apagada esta Function no guarda NADA (409).
+ *  - La bandera `guardarMedios` de la ficha (`core/conversacion/juego.ts`, `JUEGO_DE_FICHA`) la escribe el alta de
+ *    TODO comercio, sin anexo (decisión de Andres, 11/11/2026; reemplaza al D3 de «apagada por defecto»). Con ella
+ *    ausente o distinta de `true` esta Function no guarda NADA (409).
  *  - Nadie lee el medio por Storage ni por URL: la lectura (PR-2) será una
  *    callable auditada que devuelve BYTES, con tope (D4: soporte no ve medios).
  *
@@ -57,6 +57,7 @@ import { createHash } from 'node:crypto';
 import { onRequest } from 'firebase-functions/v2/https';
 import { FieldPath, FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { REGION } from '../region.js';
+import { guardadoEncendido } from '../conversacion/juego.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../seguridad/firma.js';
 import {
   CARPETA_DE_DIA, DIAS_DE_RETENCION, DIA_MS, ID_TENANT, almacenDeMedios, diaDeLaPaz, idMetaCrudo, nombreDeObjeto, type Almacen,
@@ -456,7 +457,7 @@ export const guardarMedio = onRequest(
     // LA BANDERA. Apagada (o ausente) por defecto: nada se guarda. Se lee de la ficha, que ningún
     // navegador escribe (`allow create, update, delete: if false`): solo el script de plataforma.
     const ficha = ID_TENANT.test(ruta.tenantId) ? await getFirestore().doc(`tenants/${ruta.tenantId}`).get() : null;
-    if (!ficha || !ficha.exists || ficha.get('guardarMedios') !== true) {
+    if (!ficha || !ficha.exists || !guardadoEncendido({ guardarMedios: ficha.get('guardarMedios') })) {
       respuesta.status(409).json({ error: 'guardado_apagado' }); return;
     }
 

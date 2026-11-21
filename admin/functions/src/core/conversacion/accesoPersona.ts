@@ -50,6 +50,7 @@ import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
 import { esAdminDe, esOperDe, exigirAutenticado } from '../seguridad/autorizacion.js';
 import { ID_COMERCIO } from './acceso.js';
+import { consolaNuevaEncendida } from './juego.js';
 import { ErroresDeTurno, personaPuedeEscribirDeFicha } from './turno.js';
 
 /** El rol con el que una persona del negocio fue autorizada. */
@@ -80,8 +81,8 @@ export function nombreExcluido(nombre: unknown, excluidos: readonly string[] = T
  * EXACTAMENTE `'nueva'` (ausente, desconocida o de otro tipo = no) y sin ser un comercio excluido.
  */
 export function habilitadoParaPersona(tenantId: unknown, ficha: DocumentData | null | undefined): boolean {
-  if (!ficha || ficha['consolaConversaciones'] !== 'nueva') return false;
-  return !esTenantExcluido(tenantId) && !nombreExcluido(ficha['nombre']);
+  if (!consolaNuevaEncendida(ficha)) return false;
+  return !esTenantExcluido(tenantId) && !nombreExcluido(ficha?.['nombre']);
 }
 
 /**
