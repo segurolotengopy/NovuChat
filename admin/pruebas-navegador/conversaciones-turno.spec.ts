@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { getApps, initializeApp } from 'firebase-admin/app';
-import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { PROYECTO, PUERTO_FIRESTORE, USUARIOS } from './entorno';
 import { ingresar } from './ayudas/ingresar';
 import { abrirOpciones } from './ayudas/opciones';
@@ -163,8 +163,13 @@ test.describe('Conversaciones: intervención de una persona (H2)', () => {
     prepararDatos();
     await limpiarConversaciones(FOGON);
     await fijarPantallaConversaciones(FOGON, 'nueva');
+    // Tomar y escribir exigen `personaPuedeEscribir === true` en el comercio (commit b6b1082c): sin la bandera no hay «Tomar».
+    await bd().doc(`tenants/${FOGON}`).set({ personaPuedeEscribir: true }, { merge: true });
   });
-  test.afterEach(async () => { await fijarPantallaConversaciones(FOGON, null); });
+  test.afterEach(async () => {
+    await fijarPantallaConversaciones(FOGON, null);
+    await bd().doc(`tenants/${FOGON}`).set({ personaPuedeEscribir: FieldValue.delete() }, { merge: true });
+  });
 
   test('Tomar: llama a la callable con SOLO {tenantId, conversacionId}, el estado cambia en vivo y aparece el campo; Devolver lo deshace', async ({ page }) => {
     await sembrarConversacion(FOGON, TEL, HOLA, campos(TEL, 'Ximena P.'));
@@ -516,6 +521,7 @@ test.describe('Conversaciones: intervención de una persona (H2)', () => {
     await expect(page.locator('.cv-pastilla')).toContainText('Ventana cerrada');
     await page.goto(`/negocio/${FOGON}/conversaciones/${CONV_B}`);
     await expect(page.getByTestId('detalle')).toBeVisible();
+    await abrirOpciones(page);   // tras el `goto` el menú vuelve a nacer cerrado
     await expect(tomar(page)).toHaveCount(0);
     await expect(page.locator('#cv-turno-sin-ventana')).toBeVisible();
     await expect(page.locator('.cv-pastilla')).toHaveText('Ventana: sin dato');
@@ -591,6 +597,8 @@ test.describe('Conversaciones: intervención de una persona (H2)', () => {
     await expect(page.getByText('secreto de la peluquería')).toHaveCount(0);
     await expect(tomar(page)).toHaveCount(0);
     await page.goto(`/negocio/${FOGON}/conversaciones/${CONV}`);
+    await expect(page.getByTestId('detalle')).toBeVisible();
+    await abrirOpciones(page);   // tras el `goto` el menú vuelve a nacer cerrado
     await tomarYEsperar(page);
     expect(servidor.llamadas.every((l) => l.datos['tenantId'] === FOGON)).toBe(true);
     await limpiarConversaciones('salon-aurora');
