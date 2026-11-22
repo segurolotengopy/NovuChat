@@ -92,6 +92,8 @@ export const CONFIG = {
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
     // Módulo común de Pedidos: lo que el flujo reporta con `qr_enviado` para que el servidor cree el pedido `wa_<referencia>` (solo ids, cantidades y entrega; nunca precios).
     'pedidos-qr': ['../../src/modulos/pedidos/qr-del-pedido.js'],
+    // La plantilla del aviso fuera de la ventana («código para las dos», común con Walisuma): `apPlantillaAviso`, `apParametrosConsulta`.
+    'aviso-plantilla': ['../../src/modulos/pedidos/aviso-plantilla.js'],
     // Los nodos comunes neutros (zona venta-digital): se piden con `@@vd:<nodo>`.
     'vd-carga-de-entrada': ['../../src/core/sin-agente/turno/carga-de-entrada.js'],
     'vd-config-del-negocio': ['../../src/core/sin-agente/venta-digital/config-del-negocio.js'],
@@ -186,6 +188,8 @@ const FORMAS_CONFIG = {
   temperatura: /^(0|1|0\.\d{1,2})$/,
   avisoPedidoPlantilla: /^([a-z0-9_]{1,100}|REEMPLAZAR_[A-Z0-9_]+)$/,
   avisoPedidoEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL|REEMPLAZAR_[A-Z0-9_]+)$/,
+  avisoRespaldoPlantilla: /^([a-z0-9_]{1,100}|REEMPLAZAR_[A-Z0-9_]+)$/,
+  avisoRespaldoEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL|REEMPLAZAR_[A-Z0-9_]+)$/,
   avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
@@ -528,7 +532,7 @@ export function guardias(variante, flujo, opciones = {}) {
   if (enviarAviso && enviarAviso.onError !== 'continueRegularOutput') h.push('«Enviar aviso» no lleva `onError: continueRegularOutput`: si Meta lo rechaza, el turno se cortaría y el cliente quedaría sin respuesta');
   if (enviarAviso && enviarAviso.retryOnFail) h.push('«Enviar aviso» no puede reintentar: un aviso repetido llegaría dos veces');
   const codigoAvisos = String(p(por('Armar avisos')).jsCode || '');
-  if (hay('Armar avisos') && !(/bmResolver\(/.test(codigoAvisos) && /bmPlantilla\(/.test(codigoAvisos) && /avPlantilla\(/.test(codigoAvisos))) h.push('«Armar avisos» no lleva la decisión ni la plantilla: el aviso fuera de la ventana no saldría');
+  if (hay('Armar avisos') && !(/bmResolver\(/.test(codigoAvisos) && /apPlantillaAviso\(/.test(codigoAvisos) && /avPlantilla\(/.test(codigoAvisos))) h.push('«Armar avisos» no lleva la decisión ni la plantilla: el aviso fuera de la ventana no saldría');
   const cotejar = por('Cotejar en el servidor');
   if (cotejar && !/cotejarComprobanteVenta$/.test(String(p(cotejar).url || '')) && String(p(cotejar).url || '') !== URL_COTEJAR_EXPR) h.push('«Cotejar en el servidor» no llama a cotejarComprobanteVenta');
   const modelo = por('Conversar con el modelo');
@@ -602,7 +606,7 @@ export function guardiaDePublicacion({ flujo, datos }) {
   const cb = Array.isArray(lista) ? Object.fromEntries(lista.map((a) => [a.name, a.value])) : (datos && datos.configBase);
   if (!cb || typeof cb !== 'object') h.push('no se puede leer la configuración base');
   else {
-    if (cb.avisoPedidoEstado !== 'APPROVED') h.push('avisoPedidoEstado tiene que ser APPROVED (Meta aún no aprobó la plantilla del aviso de pedido)');
+    if (cb.avisoPedidoEstado !== 'APPROVED' && cb.avisoRespaldoEstado !== 'APPROVED') h.push('ni avisoPedidoEstado ni avisoRespaldoEstado son APPROVED (Meta aún no aprobó ninguna plantilla del aviso de pedido)');
     if (String(cb.costoDeEntrega === undefined ? '' : cb.costoDeEntrega).trim() === '') h.push('costoDeEntrega sin declarar: el comercio todavía no dijo cuánto cuesta cada modo de entrega');
   }
   for (const n of ['Guardar comprobante']) if (!nombres.has(n)) h.push(`falta el nodo «${n}»`);

@@ -627,6 +627,13 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
     ]);
     const turno = (texto: string, hist: Array<{ r: string; t: string }> = [], base: Record<string, unknown> = { enlaceCatalogo: 'https://sitio.example' }) =>
       b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, base, ficha: { hist }, plan: { tipo: 'modelo', textoCliente: texto }, modeloResp: gemini({ texto: 'Tenemos un descuento del 10% por tiempo limitado', lineas: [] }) }));
+    it('una ficha con historia que apunta a piezas que ya no están en el catálogo (desactivadas) NO tumba el turno (22/11/2026)', () => {
+      const ficha = { hist: [], carrito: [{ id: 'parlante-de-prueba', cantidad: 2 }], mostrados: ['auricular-de-prueba', 'lav-9'], qrCarrito: [{ id: 'cargador-de-prueba', cantidad: 1, precioCentavos: 1000 }], qrHastaMs: 0 };
+      const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, base: { enlaceCatalogo: 'https://sitio.example' }, ficha, plan: { tipo: 'modelo', textoCliente: 'Hola' }, modeloResp: gemini({ texto: 'Con gusto, ¿qué pieza busca?', lineas: [] }) }));
+      expect(r.tipo).toBe('modelo');
+      expect(r.tipo).not.toBe('derivar');
+      expect(String(r.texto)).not.toMatch(/parlante-de-prueba|auricular-de-prueba|cargador-de-prueba/);
+    });
     it('«Tienen televisores?» (no hay): dice que no lo encuentra; no el genérico', () => {
       const r = turno('Tienen televisores?');
       expect(r.tipo).toBe('modelo');

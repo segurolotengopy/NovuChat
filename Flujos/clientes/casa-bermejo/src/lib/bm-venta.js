@@ -499,15 +499,7 @@ function bmContexto() {
     cancelo: undefined,
   };
 }
-// La plantilla del aviso (`pedido_registrado`): nombre, idioma y estado son DATO de «Config base». Sin nombre válido, idioma válido y estado APPROVED no hay plantilla (nunca se inventa).
-function bmPlantilla(base) {
-  const b = cbEsObjeto(base) ? base : {};
-  const nombre = String(b.avisoPedidoPlantilla === undefined ? '' : b.avisoPedidoPlantilla).trim();
-  const estado = String(b.avisoPedidoEstado === undefined ? '' : b.avisoPedidoEstado).trim().toUpperCase();
-  const idioma = String(b.avisoPlantillaIdioma === undefined ? '' : b.avisoPlantillaIdioma).trim();
-  if (!/^[a-z0-9_]{1,100}$/.test(nombre) || estado !== 'APPROVED' || !/^[a-z]{2,3}(_[A-Z]{2})?$/.test(idioma)) return null;
-  return { nombre: nombre, idioma: idioma };
-}
+// La plantilla del aviso es del módulo común Pedidos: `apPlantillaAviso` (Flujos/src/modulos/pedidos/aviso-plantilla.js), la misma de Walisuma.
 // Los motivos de un aviso de consulta, como los lee el comercio.
 const BM_MOTIVOS_AVISO = {
   otro_pais: 'cliente de un número de otro país: se le atiende como Bolivia; revisa si corresponde',
