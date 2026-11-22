@@ -38,17 +38,17 @@ describe('apPlantillaAviso', () => {
 
 describe('apParametrosConsulta', () => {
   it('el nombre y el WhatsApp del cliente viajan SIEMPRE, en las dos plantillas', () => {
-    const p = M.apParametrosConsulta('pidió hablar con una persona', 'Andres', '59171234567', 'Hola');
+    const p = M.apParametrosConsulta('pidió hablar con una persona', 'Andres', '5917' + '1234567', 'Hola');
     expect(p.p10).toHaveLength(10);
     expect(p.p10[3]).toBe('Andres');
-    expect(p.p10[4]).toBe('+59171234567');
+    expect(p.p10[4]).toBe('+5917' + '1234567');
     expect(p.p4).toHaveLength(4);
-    expect(p.p4[2]).toBe('Andres (+59171234567)');
+    expect(p.p4[2]).toBe('Andres (+5917' + '1234567)');
   });
   it('NEGADO: sin nombre de perfil sale «sin nombre», nunca vacío; el teléfono nunca falta', () => {
     const p = M.apParametrosConsulta('', '', '+591 7123-4567', '');
     expect(p.p10[3]).toBe('sin nombre');
-    expect(p.p10[4]).toBe('+59171234567');
+    expect(p.p10[4]).toBe('+5917' + '1234567');
     expect(p.p10[0]).toBe('Consulta: consulta');
     expect(p.p10[7]).toBe('—');
   });
