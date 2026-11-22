@@ -159,7 +159,7 @@ export function crear(o: Opciones = {}): Mundo {
     ahoraMs: AHORA,
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`, nombreNegocio: 'Tienda de prueba',
-      contactoAviso: REC, avisoPedidoPlantilla: 'pedido_registrado', avisoPedidoEstado: 'APPROVED', avisoPlantillaIdioma: 'es', modosDeEntrega: 'Retiro en tienda, Envío', costoDeEntrega: '', enlaceCatalogo: o.enlaceCatalogo ?? '',
+      contactoAviso: REC, avisoPedidoPlantilla: 'aviso_pedido_equipo', avisoPedidoEstado: 'PENDING', avisoRespaldoPlantilla: 'pedido_registrado', avisoRespaldoEstado: 'APPROVED', avisoPlantillaIdioma: 'es', modosDeEntrega: 'Retiro en tienda, Envío', costoDeEntrega: '', enlaceCatalogo: o.enlaceCatalogo ?? '',
       ...(o.base ?? {}),
     },
   });

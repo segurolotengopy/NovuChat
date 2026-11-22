@@ -98,7 +98,7 @@ describe('un defecto del catálogo lleva su causa en el aviso que ya sale', () =
     expect(t.avisos[0]!.cuerpo).toContain('Motivo: ' + TEXTOS['credencial'] + '.');
   });
   it('A8 NEGADO: si el aviso no sale (envío con error, red caída o plantilla sin aprobar) no queda marca', () => {
-    for (const falla of [{ aviso: 'error' as const }, { aviso: 'lanza' as const }, { base: { avisoPedidoEstado: 'PENDING' } }]) {
+    for (const falla of [{ aviso: 'error' as const }, { aviso: 'lanza' as const }, { base: { avisoPedidoEstado: 'PENDING', avisoRespaldoEstado: 'PENDING' } }]) {
       const m = crear({ catalogo: DEFECTOS['credencial'], ...falla });
       hablar(m, ANA, mTexto(CAIDO));
       expect(m.sd['casabermejoAlertas']).toBeUndefined();
