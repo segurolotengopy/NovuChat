@@ -32,6 +32,12 @@ const CAIDO = 'quiero una billetera';
 const VARS = (a: { payload: J }): string[] => ((a.payload['template'] as J)['components'] as J[])[0]!['parameters'].map((p: { text: string }) => p.text); // eslint-disable-line @typescript-eslint/no-explicit-any
 const primero = (t: ReturnType<typeof hablar>): string => VARS(t.avisos[0]!)[0]!;
 const GENERICO = 'Consulta: el asistente no pudo leer el catálogo o la configuración';
+/** El genérico + la causa en palabras simples (la lee recepción) y el código breve entre corchetes. Sin texto de alerta de defecto. */
+const conCausa = (x: string): void => {
+  expect(x.startsWith(GENERICO + ' (causa: ')).toBe(true);
+  expect(x).toMatch(/\) \[[a-z_ ]+\]$/);
+  expect(x).not.toMatch(/Catálogo caído/);
+};
 const marcas = (m: ReturnType<typeof crear>): Record<string, number> => (m.sd['casabermejoAlertas'] ?? {}) as Record<string, number>;
 const MIN = 60_000;
 
@@ -48,10 +54,20 @@ describe('un defecto del catálogo lleva su causa en el aviso que ya sale', () =
       const m = crear({ catalogo: cat });
       const t = hablar(m, ANA, mTexto(CAIDO));
       expect(t.avisos).toHaveLength(1);
-      expect(primero(t)).toBe(GENERICO);
+      conCausa(primero(t));
+      expect(primero(t)).not.toMatch(/https?:|clave|token|key/i);
       expect(m.sd['casabermejoAlertas']).toBeUndefined();
     });
   }
+  it('NEGADO: la causa del aviso nunca trae URL, clave ni el cuerpo de la respuesta del catálogo', () => {
+    const cuerpo = { error: 'interno', detalle: 'https://secreto.ejemplo/api?token=ABC123SECRETO', clave: 'ABC123SECRETO' };
+    for (const cat of [{ statusCode: 500, body: cuerpo }, { statusCode: 429, body: cuerpo }, { statusCode: 200, body: cuerpo }] as Opciones['catalogo'][]) {
+      const m = crear({ catalogo: cat });
+      const t = hablar(m, ANA, mTexto(CAIDO));
+      const todo = JSON.stringify(t.avisos[0]?.payload) + t.mensajes.map((x) => String(x.cuerpo)).join(' '); // el botón «Escribir» lleva el wa.me del comercio, que no es de la respuesta del catálogo
+      expect(todo).not.toMatch(/ABC123SECRETO|secreto\.ejemplo|https?:\/\//);
+    }
+  });
   for (const [motivo, cat] of Object.entries(DEFECTOS)) {
     it(`A3 el defecto «${motivo}»: 1 aviso con su texto, 1 mensaje al cliente y la marca`, () => {
       const m = crear({ catalogo: cat });
@@ -67,9 +83,9 @@ describe('un defecto del catálogo lleva su causa en el aviso que ya sale', () =
     expect(primero(hablar(m, ANA, mTexto(CAIDO)))).toBe('Consulta: ' + TEXTOS['credencial']);
     const t2 = hablar(m, tel(1), mTexto(CAIDO));
     expect(t2.avisos).toHaveLength(1);
-    expect(primero(t2)).toBe(GENERICO);
+    conCausa(primero(t2));
     m.avanzar(5 * 60 - 2);   // cada turno suma 1 minuto: este llega a +5 h
-    expect(primero(hablar(m, tel(2), mTexto(CAIDO)))).toBe(GENERICO);
+    conCausa(primero(hablar(m, tel(2), mTexto(CAIDO))));
   });
   it('A5 una causa distinta sí avisa y quedan las dos marcas', () => {
     const m = crear({ catalogo: DEFECTOS['credencial'] });
@@ -84,7 +100,7 @@ describe('un defecto del catálogo lleva su causa en el aviso que ya sale', () =
     const inicio = m.ahora();
     // Cada turno adelanta el reloj 1 minuto por sí solo: 358 + 1 = 359 minutos; el turno siguiente llega a los 360.
     m.avanzar(358);
-    expect(primero(hablar(m, tel(1), mTexto(CAIDO)))).toBe(GENERICO);
+    conCausa(primero(hablar(m, tel(1), mTexto(CAIDO))));
     expect(marcas(m)['credencial']).toBe(inicio);
     expect(primero(hablar(m, tel(2), mTexto(CAIDO)))).toBe('Consulta: ' + TEXTOS['credencial']);
     expect(marcas(m)['credencial']).toBe(inicio + 360 * MIN);

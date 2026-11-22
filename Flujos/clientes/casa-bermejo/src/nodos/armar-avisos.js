@@ -33,7 +33,11 @@ const alertaCatalogo = aviso.tipo === 'consulta' && aviso.clave === 'sin_configu
   && bmAlertaCatalogoLibre(bmAlertasDe(cnMapaDeFichas(false).sd), dt.catalogoMotivo, c.ahora) ? dt.catalogoMotivo : '';
 if (alertaCatalogo) aviso = Object.assign({}, aviso, { motivo: BM_ALERTAS_CATALOGO[alertaCatalogo] });
 // Un catálogo que no se pudo leer SIEMPRE deja su causa técnica en el aviso a recepción (aunque no merezca alerta ni haya pasado la ventana de 6 h): sin ejecuciones guardadas (retención «none»), es la única huella de por qué falló.
-else if (aviso.tipo === 'consulta' && aviso.clave === 'sin_configuracion' && typeof dt.catalogoMotivo === 'string' && /^[a-z_]{1,40}$/.test(dt.catalogoMotivo)) aviso = Object.assign({}, aviso, { motivo: String(aviso.motivo || 'consulta') + ' (causa técnica: ' + dt.catalogoMotivo + ')' });
+else if (aviso.tipo === 'consulta' && aviso.clave === 'sin_configuracion' && typeof dt.catalogoMotivo === 'string' && /^[a-z_]{1,40}$/.test(dt.catalogoMotivo)) {
+  // La lee recepción, no un técnico: la causa va en palabras simples y el código, breve, al final entre corchetes. Nunca la URL, la clave ni el cuerpo de la respuesta.
+  const CAUSAS = { limite: 'el catálogo estaba ocupado', interno: 'el catálogo tuvo un error', sin_cotizacion: 'el catálogo no tenía el tipo de cambio', timeout: 'el catálogo no respondió a tiempo', sin_catalogo: 'el catálogo no respondió', respuesta_invalida: 'el catálogo envió algo que no se pudo leer', credencial: 'el catálogo rechazó la clave de acceso', version_no_soportada: 'el catálogo cambió su formato', moneda_distinta: 'el catálogo envió precios en otra moneda', mercado_invalido: 'el catálogo no reconoció el país', cotizacion_vencida: 'el catálogo tenía el tipo de cambio vencido' };
+  aviso = Object.assign({}, aviso, { motivo: String(aviso.motivo || 'consulta') + ' (causa: ' + (CAUSAS[dt.catalogoMotivo] || 'el catálogo no se pudo leer') + ') [' + dt.catalogoMotivo + ']' });
+}
 
 // El destinatario: el contacto designado del comercio (o el teléfono de prueba). Nunca el propio número de quien escribe.
 const prueba = cfg.modoPrueba === true;
@@ -50,7 +54,7 @@ const nombre = avPrimerNombre(c.t.nombrePerfil) || 'sin nombre';
 const cliente = nombre + ' (+' + c.from + ')';
 const esPedido = aviso.tipo === 'pedido';
 const lineas = esPedido ? bmConNombres(aviso.lineas, c.vendibles) : [];
-const itemsTexto = esPedido ? vcLineaAviso(lineas) : avLimpio(aviso.motivo, 100) || 'consulta';
+const itemsTexto = esPedido ? vcLineaAviso(lineas) : avLimpio(aviso.motivo, 200) || 'consulta';
 const totalTexto = esPedido && Number.isSafeInteger(aviso.total) && aviso.total > 0 ? vcMonto(aviso.total, Array.isArray(aviso.lineas) && aviso.lineas[0] ? aviso.lineas[0].moneda : undefined) : '—';
 const entregaTexto = esPedido ? bmEntregaTexto(aviso.entrega) : 'sin pedido';
 const cotejoTexto = esPedido ? avLimpio(aviso.cotejo, 80) || 'sin comprobante aún' : 'sin comprobante aún';
