@@ -104,7 +104,7 @@ const NODOS_CON_URL_DE_META = Object.keys(URL_DE_META_POR_NODO);
 export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
-  librerias: ['src/lib/ev.js'],
+  librerias: ['../../src/core/conversacion/aviso-recepcion.js', 'src/lib/ev.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],

@@ -5,7 +5,8 @@
  *   - Q'Taco (venta-minima), Rubén, Antonio, Walisuma, Evy, Emma y NovuChat: la derivación (y, donde aplica, el aviso sin respuesta) trae el nombre del cliente y los dígitos de su teléfono
  *     para el rol `completo` / recepción.
  *   - Las formas `cita` de `avisos.js` (reserva y derivación) agregan el teléfono SOLO al rol `completo`.
- *   - Bellido (agenda mínima): con la plantilla `plantillaAvisoRecepcion` APPROVED el aviso trae su respaldo en plantilla (nombre, teléfono, motivo); sin APPROVED sale exactamente como antes.
+ *   - Bellido (agenda mínima): se elige ANTES de enviar. Con `plantillaAvisoRecepcion` APPROVED y la ventana de recepción cerrada o desconocida sale la plantilla (nombre, teléfono, motivo); con la ventana abierta, el texto;
+ *     sin APPROVED sale exactamente como antes.
  * NIEGA (R2, decisión de Andres del 22/11): el rol `cocina` de Q'Taco NO recibe el teléfono, ni en plantilla ni en texto, y solo el primer nombre.
  *
  * Los teléfonos son sintéticos (con seis ceros). El reloj es un parámetro o el del mundo de cada flujo.
@@ -235,51 +236,101 @@ describe('NovuChat: la plantilla de aviso a recepción trae el nombre y el telé
 });
 
 // --------------------------------------------------------------------------------------- Bellido (agenda mínima)
-describe('Bellido: el aviso a recepción trae su respaldo en plantilla solo con la plantilla APPROVED', () => {
+describe('Bellido: se elige texto o plantilla ANTES de enviar, según la ventana de 24 h de recepción', () => {
   const FLUJO = leerFlujo('clientes/agenda-minima/agenda-minima.v0.json');
   const FROM = '59100000011';
   const REC = '59100000001';
-  const armar = (cfgExtra: J, recepcion = REC): J[] => {
+  const armar = (cfgExtra: J, sd: J, desde = FROM, plan: J = { plan: 'uso_extendido', responder: false, transferir: true, motivo: 'necesita ayuda', texto: '' }, recepcion = REC): J[] => {
     const cfg = { nombreNegocio: 'Consultorio', numeroRecepcionDigitos: recepcion, numeroDoctorDigitos: '', modoPrueba: false, phoneNumberId: '1', ...cfgExtra };
     const refs = {
-      Candado: [{ plan: 'uso_extendido', responder: false, transferir: true, motivo: 'necesita ayuda', texto: '' }],
-      'Interpretar entrada': [{ from: FROM, nombrePerfil: 'Ana Pérez', ahoraMs: AHORA }],
+      Candado: [plan],
+      'Interpretar entrada': [{ from: desde, nombrePerfil: 'Ana Pérez', ahoraMs: AHORA }],
       'Config del negocio': [cfg],
     };
-    return ejecutar(codigoDe(FLUJO, 'Armar mensajes'), [{}], refs, { $getWorkflowStaticData: () => ({}) });
+    return ejecutar(codigoDe(FLUJO, 'Armar mensajes'), [{}], refs, { $getWorkflowStaticData: () => sd });
   };
   const aRecepcion = (items: J[]): J => items.find((i) => i['destino'] === 'recepcion')!;
+  const ABIERTA = (): J => ({ av: { ventana: { [REC]: AHORA - 2 * HORA } } });
+  const CERRADA = (): J => ({ av: { ventana: { [REC]: AHORA - 25 * HORA } } });
+  const BORDE = (): J => ({ av: { ventana: { [REC]: AHORA - (23.5 * HORA + 1) } } });
+  const DESCONOCIDA = (): J => ({});
 
-  it('con la plantilla APPROVED: sale el texto (gratis con la ventana abierta) y, de respaldo, la plantilla con nombre, teléfono y motivo', () => {
-    const r = aRecepcion(armar(CFG_OK));
+  it('plantilla APPROVED + ventana ABIERTA: sale el texto, no la plantilla', () => {
+    const r = aRecepcion(armar(CFG_OK, ABIERTA()));
     expect(r['payload']).toMatchObject({ type: 'text', to: REC });
     llevaCliente(r['payload'] as J, 'Ana Pérez', FROM);
-    const rp = r['respaldoPayload'] as J;
-    expect(rp).toMatchObject({ type: 'template', to: REC });
-    expect(visible(rp)).toBe('aviso_recepcion_cliente | Ana Pérez | +59100000011 | necesita ayuda');
-    llevaCliente(rp, 'Ana Pérez', FROM);
   });
-  it('NIEGA: sin la clave, con otro estado o con el estado vacío, el aviso sale exactamente como antes (sin respaldo en plantilla)', () => {
-    const antes = aRecepcion(armar({}));
-    expect(antes['respaldoPayload']).toBeNull();
-    for (const extra of [{ plantillaAvisoRecepcion: 'aviso_recepcion_cliente' }, { ...CFG_OK, plantillaAvisoRecepcionEstado: 'PENDING' }, { ...CFG_OK, plantillaAvisoRecepcionEstado: 'REJECTED' }]) {
-      const r = aRecepcion(armar(extra));
-      expect(r['respaldoPayload']).toBeNull();
-      expect(r['payload']).toEqual(antes['payload']);
-      expect(r['respaldo']).toBe(antes['respaldo']);
+  it('plantilla APPROVED + ventana CERRADA (25 h y el borde de 23 h 30 min): sale la plantilla con nombre, teléfono y motivo', () => {
+    for (const sd of [CERRADA(), BORDE()]) {
+      const r = aRecepcion(armar(CFG_OK, sd));
+      expect(r['payload']).toMatchObject({ type: 'template', to: REC });
+      expect(visible(r['payload'] as J)).toBe('aviso_recepcion_cliente | Ana Pérez | +59100000011 | necesita ayuda');
+      llevaCliente(r['payload'] as J, 'Ana Pérez', FROM);
     }
   });
-  it('NIEGA: nunca se avisa al propio número de recepción', () => {
-    expect(armar(CFG_OK, FROM).filter((i) => i['destino'] === 'recepcion')).toHaveLength(0);
+  it('plantilla APPROVED + ventana DESCONOCIDA (recepción nunca escribió): sale la plantilla', () => {
+    const r = aRecepcion(armar(CFG_OK, DESCONOCIDA()));
+    expect(r['payload']).toMatchObject({ type: 'template', to: REC });
+    llevaCliente(r['payload'] as J, 'Ana Pérez', FROM);
   });
-  it('el nodo «Enviar respaldo» manda la plantilla cuando existe y, si no, el texto de siempre', () => {
+  it('NIEGA: sin APPROVED (sin clave, PENDING, REJECTED, vacío) todo queda idéntico a hoy: texto, en las tres ventanas', () => {
+    const antes = aRecepcion(armar({}, ABIERTA()));
+    expect(antes['payload']).toMatchObject({ type: 'text' });
+    for (const extra of [{}, { plantillaAvisoRecepcion: 'aviso_recepcion_cliente' }, { ...CFG_OK, plantillaAvisoRecepcionEstado: 'PENDING' }, { ...CFG_OK, plantillaAvisoRecepcionEstado: 'REJECTED' }, { ...CFG_OK, plantillaAvisoRecepcionEstado: '' }]) {
+      for (const sd of [ABIERTA, CERRADA, DESCONOCIDA]) {
+        const r = aRecepcion(armar(extra, sd()));
+        expect(r['payload']).toEqual(antes['payload']);
+        expect(r['respaldo']).toBe(antes['respaldo']);
+      }
+    }
+  });
+  it('el último mensaje entrante de recepción se anota en `sd.av.ventana` y abre la ventana para el aviso siguiente', () => {
+    const sd: J = {};
+    expect(aRecepcion(armar(CFG_OK, sd)).payload).toMatchObject({ type: 'template' });
+    // Recepción escribe al bot (turno sin aviso: plan «nada»).
+    armar(CFG_OK, sd, REC, { plan: 'nada' });
+    expect((sd['av'] as J)['ventana'][REC]).toBe(AHORA);
+    expect(aRecepcion(armar(CFG_OK, sd))['payload']).toMatchObject({ type: 'text' });
+  });
+  it('NIEGA: lo que escribe un cliente NO abre la ventana de recepción', () => {
+    const sd: J = {};
+    armar(CFG_OK, sd, FROM, { plan: 'nada' });
+    expect(((sd['av'] as J | undefined) ?? {})['ventana'] ?? {}).not.toHaveProperty(REC);
+  });
+  it('NIEGA: nunca se avisa al propio número de recepción', () => {
+    expect(armar(CFG_OK, {}, FROM, undefined, FROM).filter((i) => i['destino'] === 'recepcion')).toHaveLength(0);
+  });
+  it('«Enviar respaldo» sigue siendo solo el texto de siempre (el error de Graph no elige la plantilla)', () => {
     const cuerpo = String(FLUJO.nodes.find((n) => n.name === 'Enviar respaldo')!.parameters['jsonBody']);
-    expect(cuerpo).toContain("$('Armar mensajes').item.json.respaldoPayload ||");
+    expect(cuerpo).not.toContain('respaldoPayload');
     expect(cuerpo).toContain("type: 'text'");
   });
   it('el código del nodo trae la pieza común byte a byte, sin copia propia', () => {
     const codigo = codigoDe(FLUJO, 'Armar mensajes');
     expect(codigo).toContain(APR.trimEnd());
     expect(leerFuente('clientes/agenda-minima/src/nodos/armar-mensajes.js')).not.toContain('function apPlantillaAviso');
+  });
+});
+
+describe('avisos.js: nombre largo, marcas intactas y la reserva en forma `pedido`', () => {
+  const nombre60 = 'Maria de los Angeles Fernandez Rodriguez de la Vega Montes 1';
+  it('forma cita, rol completo: un nombre de 60 caracteres se recorta antes del teléfono y las dos marcas del final salen enteras (≤ 200)', () => {
+    expect(nombre60.length).toBe(60);
+    const datos: J = { codigo: 'R4T9', nombre: nombre60, telefono: CLIENTE, reserva: { personas: 100, fecha: '2026-10-09', hora: '20:00', zona: 'z'.repeat(40), nombre: nombre60, grupoGrande: true, diaLleno: true } };
+    const v = visible(para('reserva', datos, CFG_CITA, false, 'completo')).split(' | ');
+    const detalle = v[3]!;
+    expect(detalle).toContain('GRUPO GRANDE · VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+    expect(detalle.length).toBeLessThanOrEqual(200);
+    expect(detalle).toContain('(+591 0000 0033)');
+  });
+  const CFG_PEDIDO = { prefijosPermitidos: '591', plantillaReserva: 'pedido_registrado', formaPlantillaReserva: 'pedido' };
+  it('reserva en forma `pedido`: el rol completo lleva nombre y teléfono; la cocina (R2) solo el primer nombre y ningún dígito del teléfono', () => {
+    const completo = visible(para('reserva', reservaDatos, CFG_PEDIDO, false, 'completo'));
+    expect(completo).toContain('Ana Pérez');
+    expect(digitos(completo)).toContain(CLIENTE);
+    const cocina = visible(para('reserva', reservaDatos, CFG_PEDIDO, false, 'cocina'));
+    expect(cocina).toContain('Ana');
+    expect(cocina).not.toContain('Pérez');
+    expect(digitos(cocina)).not.toContain(CLIENTE.slice(3));
   });
 });

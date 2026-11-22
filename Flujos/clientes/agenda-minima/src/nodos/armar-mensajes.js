@@ -24,6 +24,10 @@ const rec = String(cfg.numeroRecepcionDigitos || '');
 const doc = String(cfg.numeroDoctorDigitos || '');
 const desdeDigitos = cnDigitos(t.from);
 const msgs = [];
+// La ventana de recepcion (core `apAnotarEntrante`): si quien escribe ES recepcion, se anota su ultimo mensaje entrante antes de armar nada.
+let sdAv = null;
+try { sdAv = $getWorkflowStaticData('global'); } catch (err) { sdAv = null; }
+if (sdAv && rec && desdeDigitos === rec) apAnotarEntrante(sdAv, rec, ahora);
 const errores = (base.errores || []).slice();
 
 // ----------------------------------------------------------------- constructores
@@ -68,11 +72,12 @@ function avisarARecepcion(motivo) {
   if (!rec || rec === desdeDigitos) return; // un aviso nunca va al propio numero
   const aviso = '🔔 NovuChat (' + nombreNegocio + '): el cliente ' + (t.nombrePerfil || '') + ' (' + String(t.from || '') + ') necesita atención humana. Motivo: '
     + (motivo || 'no especificado') + '. Tomar el chat.';
-  // AVISO CON PLANTILLA (22/11/2026, reclamo de Andres: fuera de la ventana de 24 h el texto libre se pierde). Solo si la configuracion trae `plantillaAvisoRecepcion` con estado
-  // APPROVED (`apPlantillaAviso`, core): {{1}} nombre, {{2}} telefono, {{3}} motivo. Sale PRIMERO el texto (gratis con la ventana de recepcion abierta) y, si Meta lo rechaza,
-  // «Enviar respaldo» manda la plantilla en su lugar: 1 plantilla por aviso solo cuando la ventana esta cerrada. Sin plantilla APPROVED, `respaldoPayload` es null y todo sale como siempre.
-  const plantilla = apPlantillaAviso(cfg, t.nombrePerfil, t.from, motivo || 'no especificado');
-  agregar('recepcion', mTexto(aviso), aviso, aviso, { tipoReporte: null, respaldoPayload: plantilla });
+  // AVISO CON PLANTILLA (22/11/2026, reclamo de Andres): Meta acepta un texto fuera de la ventana de 24 h con 200 y lo rechaza despues (131047, webhook de estados), asi que se ELIGE antes de enviar.
+  // Ventana de recepcion abierta (23 h 30 min desde su ultimo mensaje, `sd.av.ventana`): el texto de siempre. Cerrada o desconocida y plantilla `plantillaAvisoRecepcion` APPROVED: la plantilla
+  // ({{1}} nombre, {{2}} telefono, {{3}} motivo; selector del core `apElegirPlantilla`). Sin APPROVED, todo identico a antes. 1 plantilla por aviso solo con la ventana cerrada.
+  const plantilla = apElegirPlantilla(cfg, sdAv, rec, ahora, t.nombrePerfil, t.from, motivo || 'no especificado');
+  if (plantilla) agregar('recepcion', plantilla, aviso, aviso, { tipoReporte: null });
+  else agregar('recepcion', mTexto(aviso), aviso, aviso, { tipoReporte: null });
 }
 const conEmoji = (e) => (cfg.nivelEmojis === 'ninguno' ? '' : e + ' ');
 
@@ -648,12 +653,6 @@ for (const m of msgs) {
   const pre = prueba ? (PREFIJO[m.para] || '') : '';
   const p = m.payload;
   p.to = numero;
-  // La plantilla de respaldo del aviso a recepcion (si hay): mismo destino y, en modo prueba, el mismo prefijo.
-  const rp = m.respaldoPayload || null;
-  if (rp) {
-    rp.to = numero;
-    if (pre) rp.template.components[0].parameters[0].text = cnRecorte(pre + rp.template.components[0].parameters[0].text, 200);
-  }
   let texto = pre + m.texto;
   let respaldo = pre + m.respaldo;
   if (pre) {
@@ -662,7 +661,7 @@ for (const m of msgs) {
     else if (p.type === 'template') p.template.components[0].parameters[0].text = cnRecorte(pre + p.template.components[0].parameters[0].text, 200);
   }
   salida.push({ json: {
-    para: numero, destino: m.para, payload: p, texto: texto, respaldo: respaldo, respaldoPayload: rp,
+    para: numero, destino: m.para, payload: p, texto: texto, respaldo: respaldo,
     tipoReporte: m.tipoReporte || null, evento: m.evento,
     reportar: !prueba && m.para === 'paciente' && !!m.tipoReporte,
     phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion || 'v26.0',

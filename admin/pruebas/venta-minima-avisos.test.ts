@@ -1222,7 +1222,7 @@ describe('la forma `pedido` de la reserva y de la derivación (plantilla `pedido
     for (const rol of [ANDRES, SILVANA]) {
       expect(params(plantillaDe(items, rol))).toEqual([
         'SOLICITUD DE RESERVA R4T9: 4 personas, viernes 9 de octubre a las 20:00, terraza',
-        'sin cobro', 'reserva de mesa por confirmar con el cliente', 'no aplica',
+        'sin cobro', 'reserva de mesa por confirmar con el cliente ' + (rol === ANDRES ? 'Ana Pérez (+591 0000 0033)' : 'Ana'), 'no aplica',
       ]);
     }
     expect(plantillaDe(items, ANDRES).payload.template.name).toBe('pedido_registrado');
@@ -1836,7 +1836,7 @@ describe('la forma `solicitud` de la reserva y la plantilla por rol (`solicitud_
     expect(cocina.payload.template.name).toBe('pedido_registrado');
     expect(params(cocina)).toEqual([
       'SOLICITUD DE RESERVA R4T9: 4 personas, viernes 9 de octubre a las 20:00, terraza',
-      'sin cobro', 'reserva de mesa por confirmar con el cliente', 'no aplica',
+      'sin cobro', 'reserva de mesa por confirmar con el cliente Ana', 'no aplica',
     ]);
     expect(JSON.stringify(cocina.payload)).not.toContain(CLIENTE);
     expect(items.map((i: J) => i.clase)).toEqual(['plantilla', 'plantilla']); // el número de avisos por reserva no cambia
@@ -1882,7 +1882,7 @@ describe('la forma `solicitud` de la reserva y la plantilla por rol (`solicitud_
       const cocina = params(plantillaDe(items, SILVANA));
       expect(cocina).toEqual([
         'SOLICITUD DE RESERVA R4T9: 4 personas, viernes 9 de octubre a las 20:00, terraza',
-        'sin cobro', 'reserva de mesa por confirmar con el cliente', 'no aplica',
+        'sin cobro', 'reserva de mesa por confirmar con el cliente Ana', 'no aplica',
       ]);
       expect(JSON.stringify(plantillaDe(items, SILVANA).payload)).not.toContain(CLIENTE);
     }

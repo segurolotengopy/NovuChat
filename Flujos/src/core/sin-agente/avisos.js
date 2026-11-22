@@ -824,10 +824,13 @@ function avVariablesDeForma(tipo, d, dest, ahoraMs) {
     ].filter(Boolean);
     // Las marcas (grupo grande, día lleno, reserva de mañana y origen del anuncio) van en `modalidad` (tope 500) y no en `items` (tope 200): juntas se cortaban a mitad de la nota.
     const marcas = avMarcasReserva(r);
+    // QUIÉN reserva (22/11/2026, reclamo de Andres; R2 intacta): el rol `completo` lleva nombre y teléfono; `cocina`, solo el primer nombre y nunca el teléfono.
+    const quienReserva = avClienteDeConsulta(Object.assign({}, d, { nombre: r.nombre || d.nombre }), dest);
+    const aQuienReserva = quienReserva.nombre + (quienReserva.telefono ? ' (' + quienReserva.telefono + ')' : '');
     return {
       items: avParametro('SOLICITUD DE RESERVA' + (cod ? ' ' + cod : '') + ': ' + partes.join(', '), 200),
       total: avParametro('sin cobro', 30),
-      modalidad: avParametro('reserva de mesa por confirmar con el cliente' + (marcas.length ? ' — ' + marcas.join(', ') : ''), 500),
+      modalidad: avParametro('reserva de mesa por confirmar con el cliente ' + aQuienReserva + (marcas.length ? ' — ' + marcas.join(', ') : ''), 500),
       cotejo: avParametro('no aplica', 80),
     };
   }
@@ -901,9 +904,10 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
   if (forma === 'pedido' && (tipo === 'reserva' || tipo === 'transferencia')) return avVariablesDeForma(tipo, d, dest, ahoraMs);
   const nombreDe = (n) => (dest.rol === 'cocina' ? avPrimerNombre(n, opc) : avLimpio(n, 60)) || 'cliente';
   // «Nombre (+591…)» (22/11/2026, reclamo de Andres: todo aviso a recepción lleva nombre Y teléfono): el teléfono va SOLO al rol `completo`; `cocina` conserva el primer nombre sin teléfono (R2).
+  // El nombre del rol completo se recorta a 50 ANTES de sumar el teléfono: en la variable `detalle` (200) las marcas del final («GRUPO GRANDE», «VARIAS RESERVAS…») nunca se truncan (peor caso: 143 + 50 = 193).
   const nombreConTel = (n) => {
     const tel = dest.rol === 'completo' ? avDigitos(d.telefono || d.from) : '';
-    return nombreDe(n) + (tel.length >= 8 && tel.length <= 15 ? ' (' + (avTelefonoLegible(d.telefono || d.from) || '+' + tel) + ')' : '');
+    return (dest.rol === 'completo' ? (avLimpio(n, 50) || 'cliente') : nombreDe(n)) + (tel.length >= 8 && tel.length <= 15 ? ' (' + (avTelefonoLegible(d.telefono || d.from) || '+' + tel) + ')' : '');
   };
   if (tipo === 'pedido' || tipo === 'comprobante') {
     const lineas = avLineas(d.lineas);

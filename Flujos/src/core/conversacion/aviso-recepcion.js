@@ -4,7 +4,8 @@
 // (`apCliente`) y (2) el selector de la plantilla de aviso a recepción de los flujos cuyo aviso hoy es solo texto libre (`apPlantillaAviso`).
 // Privacidad (R2, decisión de Andres del 22/11): esta regla es para recepción y el rol `completo`. El rol `cocina` de Q'Taco sigue recibiendo solo el primer nombre y sin teléfono; esta pieza no
 // lo toca (los avisos con rol de `avisos.js` se resuelven allí por rol).
-// Costo: 0 mensajes agregados. `apPlantillaAviso` solo arma el contenido de UN mensaje que el flujo ya enviaba (y que sin la ventana abierta se perdía).
+// Costo: 0 mensajes agregados por conversación al cliente final. Con la plantilla APPROVED, 1 plantilla (UTILITY) por aviso cuando la ventana de 24 h de recepción está cerrada o es desconocida (hoy ese aviso se pierde:
+// Meta acepta el texto con 200 y lo rechaza después por el webhook de estados); con la ventana abierta sale el texto de siempre, sin plantilla.
 //
 // Plantilla de aviso a recepción (UTILITY): {{1}} nombre del cliente, {{2}} su teléfono con «+», {{3}} el motivo. El nombre y el idioma NO tienen valor por omisión en el código: salen de la
 // configuración del negocio (`plantillaAvisoRecepcion`, `plantillaAvisoRecepcionEstado`, `plantillaAvisoRecepcionIdioma`, por defecto `es`). Solo con estado APPROVED sale la plantilla; sin
@@ -57,4 +58,46 @@ function apPlantillaAviso(cfg, nombre, telefono, motivo) {
     messaging_product: 'whatsapp', recipient_type: 'individual', to: '', type: 'template',
     template: { name: pl.nombre, language: { code: pl.idioma }, components: [{ type: 'body', parameters: vars.map((v) => ({ type: 'text', text: v })) }] },
   };
+}
+
+// ---- La ventana de 24 h de recepción: se elige texto o plantilla ANTES de enviar (patrón de `avAnotarEntrante` / `sd.av.ventana` de `avisos.js`). Meta acepta un texto fuera de ventana con 200 y avisa el rechazo
+// (131047) después por el webhook de estados: el error de Graph NO sirve de respaldo. Ventana desconocida (nunca escribió) = cerrada.
+const AP_VENTANA_MS = 23.5 * 60 * 60 * 1000; // 23 h 30 min
+
+/** ¿Escribió `tel` (recepción) hace menos de 23 h 30 min? Solo lee `sd.av.ventana`. */
+function apVentanaAbierta(sd, tel, ahoraMs) {
+  const av = sd && sd.av;
+  const ult = av && av.ventana ? av.ventana[apDigitos(tel)] : undefined;
+  if (typeof ult !== 'number' || !Number.isFinite(ult) || !Number.isFinite(ahoraMs)) return false;
+  const d = ahoraMs - ult;
+  return d >= -300000 && d < AP_VENTANA_MS;
+}
+
+/** Anota que `tel` escribió ahora (nunca hacia atrás) en `sd.av.ventana`; acota el tamaño. */
+function apAnotarEntrante(sd, tel, ahoraMs) {
+  const t = apDigitos(tel);
+  if (!sd || typeof sd !== 'object' || !t || !Number.isFinite(ahoraMs)) return false;
+  if (!sd.av || typeof sd.av !== 'object') sd.av = {};
+  if (!sd.av.ventana || typeof sd.av.ventana !== 'object') sd.av.ventana = {};
+  const v = sd.av.ventana;
+  v[t] = Math.max(typeof v[t] === 'number' ? v[t] : 0, ahoraMs);
+  for (const k of Object.keys(v)) {
+    if (typeof v[k] !== 'number' || ahoraMs - v[k] > 25 * 60 * 60 * 1000) delete v[k];
+  }
+  const resto = Object.keys(v);
+  if (resto.length > 50) {
+    resto.sort((a, b) => v[a] - v[b]);
+    for (const k of resto.slice(0, resto.length - 50)) delete v[k];
+  }
+  return true;
+}
+
+/**
+ * El selector: la plantilla (payload `template`, `to` vacío) SOLO si está APPROVED y la ventana de `recepcion` no está abierta; si no, `null` y el flujo manda el texto de siempre.
+ * Sin plantilla APPROVED nunca devuelve nada (todo queda idéntico a antes).
+ */
+function apElegirPlantilla(cfg, sd, recepcion, ahoraMs, nombre, telefono, motivo) {
+  if (!apConfigPlantilla(cfg)) return null;
+  if (apVentanaAbierta(sd, recepcion, ahoraMs)) return null;
+  return apPlantillaAviso(cfg, nombre, telefono, motivo);
 }

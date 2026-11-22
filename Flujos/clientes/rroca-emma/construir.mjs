@@ -71,7 +71,7 @@ export const ARCHIVO_PRUEBA = 'rroca-emma.prueba.json';
 export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
-  librerias: ['src/lib/ev.js'],
+  librerias: ['../../src/core/conversacion/aviso-recepcion.js', 'src/lib/ev.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],
