@@ -64,8 +64,8 @@ describe('los dos flujos usan el módulo común', () => {
       expect(js).toContain('apParametrosConsulta(');
     });
   }
-  it('Casa Bermejo: un catálogo que no se pudo leer deja su causa técnica en el aviso', () => {
-    expect(flujo('casa-bermejo', 'Armar avisos')).toContain('causa técnica: ');
+  it('Casa Bermejo: un catálogo que no se pudo leer deja su causa, en palabras simples, en el aviso', () => {
+    expect(flujo('casa-bermejo', 'Armar avisos')).toContain("(causa: '");
   });
   it('Casa Bermejo: el aviso de un pedido también lleva el nombre y el WhatsApp en las dos plantillas', () => {
     const js = flujo('casa-bermejo', 'Armar avisos');
