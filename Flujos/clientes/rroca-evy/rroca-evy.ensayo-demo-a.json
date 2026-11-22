@@ -1631,7 +1631,7 @@
       "onError": "continueRegularOutput",
       "parameters": {
         "method": "POST",
-        "url": "=https://graph.facebook.com/{{ (/^v\\d+\\.\\d$/.test(String($('Config del negocio').first().json.waGraphVersion)) ? $('Config del negocio').first().json.waGraphVersion : 'v26.0') }}/{{ String($('Normalizar entrada').first().json.phoneNumberId).replace(/\\D/g, '') }}/messages",
+        "url": "=https://graph.facebook.com/{{ (/^v\\d+\\.\\d$/.test(String($('Config del negocio').first().json.waGraphVersion)) ? $('Config del negocio').first().json.waGraphVersion : 'v26.0') }}/{{ String($('Config del negocio').first().json.modoPrueba === true && $('Config del negocio').first().json.phoneNumberIdEsperado ? $('Config del negocio').first().json.phoneNumberIdEsperado : $('Normalizar entrada').first().json.phoneNumberId).replace(/\\D/g, '') }}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,

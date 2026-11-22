@@ -30,7 +30,7 @@ const nombres = (f: Flujo): string[] => (f.nodes as J[]).map((x) => String(x['na
 const corrida = (...args: string[]) => spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador({}) });
 
 describe('tamaño y composición', () => {
-  it('como máximo 64 nodos (47 + los 9 del guardado de medios, excepción del 29/10/2026, + los 8 del miniCRM, D2 de Andres del 10/11/2026): producción 64 exactos, prueba 59, y +4 de la rama del guardado de la imagen saliente (16/11/2026): producción 68, prueba 63', () => {
+  it('como máximo 64 nodos (47 + los 9 del guardado de medios, excepción del 29/10/2026, + los 8 del miniCRM, D2 de Andres del 10/11/2026): producción 70 exactos con el indicador, prueba 65 (antes 64 y 59), y +4 de la rama del guardado de la imagen saliente (16/11/2026): producción 68, prueba 63', () => {
     expect(PRODUCCION.nodes.length).toBe(70);
     expect(PRUEBA.nodes.length).toBe(65);
     expect(C.TOPE_DE_NODOS).toBe(70);

@@ -28,6 +28,7 @@
  *    niega a armar (no se fuerza).
  *  - CREDENCIAL: la MISMA del nodo que envía la respuesta por Graph en ese flujo; nunca la de ingesta (la trampa del 15/09). Excepción a la prohibición 5 de
  *    CLAUDE.md autorizada por Andres el 21/11/2026: el token del comercio también se usa en este nodo, con `status: read` y `typing_indicator`.
+ *  - NÚMERO: el `phoneNumberId` del entrante normalizado; en modo de prueba, el `phoneNumberIdEsperado` de «Config del negocio» (como el envío: el cuerpo de una prueba nunca decide a qué número se escribe).
  *  - VERSIÓN: `waGraphVersion` de «Config del negocio» (por defecto v26.0, como el resto).
  *  - `message_id`: el `mensajeId` del entrante normalizado («Normalizar entrada» o «Interpretar entrada»).
  *  - «CONTINUE ON FAIL» SOLO EN ESTE NODO, con tiempo máximo de 3000 ms y sin reintentos: si Meta tarda o falla, el flujo sigue igual.
@@ -103,7 +104,7 @@ export function nodosDelIndicador(opciones) {
       credentials: { [c.tipo]: { id: '', name: c.nombre } }, onError: 'continueRegularOutput',
       parameters: {
         method: 'POST',
-        url: `=https://graph.facebook.com/{{ ${version} }}/{{ String(${N}.phoneNumberId).replace(/\\D/g, '') }}/messages`,
+        url: `=https://graph.facebook.com/{{ ${version} }}/{{ String(${C}.modoPrueba === true && ${C}.phoneNumberIdEsperado ? ${C}.phoneNumberIdEsperado : ${N}.phoneNumberId).replace(/\\D/g, '') }}/messages`,
         ...autenticacion,
         sendBody: true, specifyBody: 'json',
         jsonBody: `={{ JSON.stringify({ messaging_product: 'whatsapp', status: 'read', message_id: String(${N}.mensajeId), typing_indicator: { type: 'text' } }) }}`,

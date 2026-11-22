@@ -1618,6 +1618,27 @@ describe('las puertas del turno: comercio suspendido, uso extendido, duplicados,
     expect(t.aMi).toHaveLength(0);
     expect(t.plantillas).toHaveLength(1);
   });
+  it('el indicador de escritura (tres puntos) corre SOLO con la ruta «sigue» de la puerta: nunca con comercio suspendido, servicio cortado (pausa o conversación tomada) ni atención distinta de normal', () => {
+    const wn = crear();
+    wn.modelo.con = dice(PITCH);
+    const normal = jugar(wn, MAMA).texto('Quiero más información para mi clínica dental'); // un mensaje que SÍ llega al modelo
+    expect(normal.ejecutados.has('Indicador de escritura')).toBe(true);
+    expect(normal.ejecutados.has('Llamar al modelo')).toBe(true);
+    const suspendido = crear();
+    suspendido.respuestaPanel = { statusCode: 409, body: { mensajeCortesia: 'Por ahora no podemos atenderte por este medio.' } };
+    const casos: Array<[string, ReturnType<typeof crear>]> = [
+      ['comercio suspendido', suspendido],
+      ['servicio cortado (pausa o conversación tomada)', crear({ ingesta: { servicio: { estado: 'cortado' } } })],
+      ['uso extendido (operador)', crear({ ingesta: { atencion: { estado: 'operador', mensajeFijo: 'x', avisarRecepcion: 'operador', respuestasEnVentana: 30 } } })],
+      ['uso extendido (bloqueado)', crear({ ingesta: { atencion: { estado: 'bloqueado', avisarRecepcion: 'bloqueado', respuestasEnVentana: 80 } } })],
+    ];
+    for (const [nombre, w] of casos) {
+      const t = jugar(w, MAMA).texto('Quiero más información para mi clínica dental');
+      expect(t.ejecutados.has('Puerta del turno'), nombre).toBe(true);
+      expect(t.ejecutados.has('Indicador de escritura'), nombre).toBe(false);
+      expect(t.ejecutados.has('Llamar al modelo'), nombre).toBe(false);
+    }
+  });
   it('Meta reenvía el MISMO mensaje (mismo id): la segunda entrega no se contesta, no se reporta y no llama al modelo', () => {
     const w = crear();
     const t1 = w.mundo.turno(valorMeta(mTexto('Hola'), MAMA, { wamid: 'wamid.DUP1' }), { avanzarMin: 0 });

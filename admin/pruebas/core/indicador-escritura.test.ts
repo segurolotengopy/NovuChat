@@ -295,7 +295,7 @@ describe('indicador de escritura: el interruptor por tenant y el modo de prueba 
     return vm.compileFunction(`return (${cuerpo});`, ['$', 'JSON', 'String'])($, JSON, String);
   };
   const condicion = (f: Flujo): string => nodo(f, NODO_INDICADOR_ACTIVO).parameters.conditions.conditions[0].leftValue;
-  const base = { 'Config base': {}, 'Config del negocio': { waGraphVersion: 'v26.0', modoPrueba: false }, 'Normalizar entrada': { mensajeId: 'wamid.X', phoneNumberId: '123456789012345' } };
+  const base = { 'Config base': {}, 'Config del negocio': { waGraphVersion: 'v26.0', modoPrueba: false }, 'Normalizar entrada': { mensajeId: 'wamid.X', phoneNumberId: '123456789' } };
 
   it('por defecto (sin la clave) corre; `indicadorEscritura: false` lo apaga y `true` lo deja', () => {
     const c = condicion(leer(ANTONIO));
@@ -314,7 +314,7 @@ describe('indicador de escritura: el interruptor por tenant y el modo de prueba 
     const prueba = (extra: Record<string, unknown>) => ({ ...base, 'Config del negocio': { waGraphVersion: 'v26.0', modoPrueba: true, ...extra } });
     expect(evaluar(c, prueba({}))).toBe(false);
     expect(evaluar(c, prueba({ enviarDeVerdad: true }))).toBe(false);
-    expect(evaluar(c, prueba({ enviarDeVerdad: true, telefonoDePrueba: '59170000000' }))).toBe(true);
+    expect(evaluar(c, prueba({ enviarDeVerdad: true, telefonoDePrueba: '5910000' }))).toBe(true);
   });
 
   it('la URL usa waGraphVersion de Config (v26.0 si falta o es inválida) y solo dígitos del número; el cuerpo es el de Meta', () => {
@@ -322,9 +322,9 @@ describe('indicador de escritura: el interruptor por tenant y el modo de prueba 
     const ctx = (v: unknown) => ({ ...base, 'Config del negocio': { waGraphVersion: v } });
     // La URL es texto con dos expresiones `{{ … }}`: se evalúa cada una.
     const url = (v: unknown): string => String(h.parameters.url).replace(/^=/, '').replace(/\{\{([\s\S]+?)\}\}/g, (_: string, e: string) => String(evaluar(`={{${e}}}`, ctx(v))));
-    expect(url('v27.1')).toBe('https://graph.facebook.com/v27.1/123456789012345/messages');
-    expect(url(undefined)).toBe('https://graph.facebook.com/v26.0/123456789012345/messages');
-    expect(url('../../x')).toBe('https://graph.facebook.com/v26.0/123456789012345/messages');
+    expect(url('v27.1')).toBe('https://graph.facebook.com/v27.1/123456789/messages');
+    expect(url(undefined)).toBe('https://graph.facebook.com/v26.0/123456789/messages');
+    expect(url('../../x')).toBe('https://graph.facebook.com/v26.0/123456789/messages');
     expect(JSON.parse(evaluar(h.parameters.jsonBody, base) as string)).toEqual({ messaging_product: 'whatsapp', status: 'read', message_id: 'wamid.X', typing_indicator: { type: 'text' } });
   });
 });

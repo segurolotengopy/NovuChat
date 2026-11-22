@@ -30,7 +30,7 @@ describe('lo versionado es lo que arma construir.mjs', () => {
     const r = spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), '--ayuda'], { encoding: 'utf8', env: entornoDelEmulador({}) });
     expect(r.status).toBe(2);
   });
-  it('lo armado no viola ninguna guardia y el tope es de 59 nodos con envío directo (58 con el canal rele)', () => {
+  it('lo armado no viola ninguna guardia y el tope es de 61 nodos con envío directo (58 con el canal rele)', () => {
     expect(['graph', 'rele']).toContain(CANAL_DE_ENVIO);
     expect(g('produccion', PRODUCCION)).toEqual([]);
     expect(g('prueba', PRUEBA)).toEqual([]);
