@@ -72,7 +72,7 @@ describe('armar con datos locales', () => {
     const s = salidaTemporal();
     const r = armar(base(), s.dir);
     expect(r.map((x) => x.archivo)).toEqual(['casa-bermejo.local.json', 'casa-bermejo.prueba.local.json']);
-    expect(r.map((x) => x.nodos)).toEqual([61, 56]); // el MISMO tamaño que los versionados: ningún nodo ni mensaje agregado
+    expect(r.map((x) => x.nodos)).toEqual([63, 58]); // el MISMO tamaño que los versionados: ningún nodo ni mensaje agregado
     expect(hash(VERSIONADOS)).toEqual(antes);
     const prod = readFileSync(s.prod, 'utf8');
     expect(prod).toContain(WABA);
@@ -96,7 +96,7 @@ describe('armar con datos locales', () => {
     expect(corrida('--local', '--datos', archivoLocal(base()), '--salida', s.dir).status).toBe(0);
     const v = corrida('--verificar');
     expect(v.status).toBe(0);
-    expect(v.stdout).toMatch(/al día \(61 nodos\)/);
+    expect(v.stdout).toMatch(/al día \(63 nodos\)/);
   });
   it('lo local queda ignorado por git, el archivo de datos local también (se comprueba por ruta, sin escribir en la carpeta del cliente)', () => {
     for (const f of ['casa-bermejo.local.json', 'casa-bermejo.prueba.local.json', 'datos.local.json']) {
@@ -111,7 +111,7 @@ describe('armar con datos locales', () => {
     const salida = r.stdout + r.stderr;
     for (const valor of [WABA, PHONE, 'storage.googleapis.com', 'novutienda-sitio-stg']) expect(salida).not.toContain(valor);
     expect(salida).toMatch(/marcadores sin sustituir en lo armado \(REEMPLAZAR_CONTACTO_DESIGNADO_AVISO,/);
-    expect(salida).toMatch(/61 nodos/);
+    expect(salida).toMatch(/63 nodos/);
   });
   it('los marcadores pendientes se calculan sobre lo armado: un marcador sustituido ya no figura', () => {
     const s = salidaTemporal();

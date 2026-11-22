@@ -123,6 +123,8 @@ export const SUITES_PURAS = [
   'pruebas/core/env-nace-cerrado.test.ts',
   'pruebas/core/gancho-sistemas-ajenos.test.ts',
   'pruebas/core/nucleo-comun.test.ts',
+  // El indicador de escritura («escribiendo…», 21/11/2026): la pieza común de `Flujos/src/core/indicador/` y sus negativas. Sin emulador ni red.
+  'pruebas/core/indicador-escritura.test.ts',
   'pruebas/core/receptor-entrada.test.ts',
   // Migración de flujos, etapa 0 (12/11/2026): el tablero, M1 a M7 y la lista cerrada de excepciones. Sin emulador ni red.
   'pruebas/core/migrado.test.ts', 'pruebas/core/migracion/excepciones.test.ts',

@@ -331,6 +331,8 @@ function mundo(op: Opciones = {}) {
       case 'Guardar medio':
       case 'Reintentar el guardado': return [cada(() => [{ statusCode: 409, headers: {}, body: { error: 'guardado_apagado' } }])];
       case 'Avisar falla del guardado': return [cada(() => [{ messaging_product: 'whatsapp', messages: [{ id: 'wamid.GUARDADO' }] }])];
+      // El indicador de escritura (`Flujos/src/core/indicador/`, 21/11/2026): rama lateral sin efecto en el turno; Meta responde `{ success: true }`.
+      case 'Indicador de escritura': return [cada(() => [{ success: true }])];
       default:
         throw new Error(`el n8n de mentira no sabe correr el nodo «${n.name}» (${n.type})`);
     }

@@ -9,9 +9,9 @@ import { ES_RELE } from '../../../../Flujos/clientes/rroca-emma/construir.mjs';
 import { ANA, BETO, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
 
 describe('topología y tamaño', () => {
-  it('envío directo: producción 59 nodos y prueba 54 (36 y 31 más los 9 del guardado, los 8 del miniCRM y los 6 de la foto sin conteo: 2 del reporte y 4 del guardado saliente); con el canal rele, 58 y 53', () => {
-    expect(PRODUCCION.nodes.length).toBe(ES_RELE ? 58 : 59);
-    expect(PRUEBA.nodes.length).toBe(ES_RELE ? 53 : 54);
+  it('envío directo: producción 61 nodos y prueba 56 (2 del indicador de escritura; 36 y 31 más los 9 del guardado, los 8 del miniCRM y los 6 de la foto sin conteo: 2 del reporte y 4 del guardado saliente); con el canal rele, 58 y 53', () => {
+    expect(PRODUCCION.nodes.length).toBe(ES_RELE ? 58 : 61);
+    expect(PRUEBA.nodes.length).toBe(ES_RELE ? 53 : 56);
   });
   it('sin agente, memoria ni modelo de chat de n8n, y sin WhatsApp Trigger', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
@@ -102,6 +102,25 @@ describe('el núcleo común', () => {
     const t2 = hablar(bl, ANA, mTexto('hola'));
     expect(t2.mensajes.length).toBe(0);
     for (const t of [t1, t2]) expect(t.registro.some((r) => r.nodo === 'Conversar con el modelo')).toBe(false);
+  });
+  it('el indicador de escritura (tres puntos) corre SOLO si el asistente va a responder con el modelo: ruta «sigue»; nunca con comercio suspendido, pausa/conversación tomada ni atención distinta de normal', () => {
+    const corre = (t: ReturnType<typeof hablar>) => (t.ejecutados.has('Indicador de escritura') ? 1 : 0);
+    const normal = hablar(crear(), ANA, mTexto('hola'));
+    expect(normal.porNodo['Puerta del turno']![0]!['ruta']).toBe('sigue');
+    expect(corre(normal)).toBe(1);
+    expect(normal.ejecutados.has('Conversar con el modelo')).toBe(true);
+    const casos: Array<[string, ReturnType<typeof crear>]> = [
+      ['comercio suspendido', crear({ panel: { statusCode: 409, body: { mensajeCortesia: SUSPENDIDO } } })],
+      ['conversación tomada o en pausa (servicio cortado)', crear({ ingesta: { servicio: { estado: 'cortado' } } })],
+      ['atención en uso extendido (operador)', crear({ ingesta: { atencion: { estado: 'operador', mensajeFijo: 'x', respuestasEnVentana: 40 } } })],
+      ['atención bloqueada', crear({ ingesta: { atencion: { estado: 'bloqueado', respuestasEnVentana: 60 } } })],
+    ];
+    for (const [nombre, m] of casos) {
+      const t = hablar(m, ANA, mTexto('hola'));
+      expect(t.porNodo['Puerta del turno']![0]!['ruta'], nombre).not.toBe('sigue');
+      expect(corre(t), nombre).toBe(0);
+      expect(t.ejecutados.has('Conversar con el modelo'), nombre).toBe(false);
+    }
   });
   it('la consola de OTRO tenant se ignora (multi-tenant estricto): rige el respaldo y no se usa su dirección', () => {
     let sistema = '';

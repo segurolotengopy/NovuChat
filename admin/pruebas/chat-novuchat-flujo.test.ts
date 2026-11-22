@@ -1618,6 +1618,27 @@ describe('las puertas del turno: comercio suspendido, uso extendido, duplicados,
     expect(t.aMi).toHaveLength(0);
     expect(t.plantillas).toHaveLength(1);
   });
+  it('el indicador de escritura (tres puntos) corre SOLO con la ruta «sigue» de la puerta: nunca con comercio suspendido, servicio cortado (pausa o conversación tomada) ni atención distinta de normal', () => {
+    const wn = crear();
+    wn.modelo.con = dice(PITCH);
+    const normal = jugar(wn, MAMA).texto('Quiero más información para mi clínica dental'); // un mensaje que SÍ llega al modelo
+    expect(normal.ejecutados.has('Indicador de escritura')).toBe(true);
+    expect(normal.ejecutados.has('Llamar al modelo')).toBe(true);
+    const suspendido = crear();
+    suspendido.respuestaPanel = { statusCode: 409, body: { mensajeCortesia: 'Por ahora no podemos atenderte por este medio.' } };
+    const casos: Array<[string, ReturnType<typeof crear>]> = [
+      ['comercio suspendido', suspendido],
+      ['servicio cortado (pausa o conversación tomada)', crear({ ingesta: { servicio: { estado: 'cortado' } } })],
+      ['uso extendido (operador)', crear({ ingesta: { atencion: { estado: 'operador', mensajeFijo: 'x', avisarRecepcion: 'operador', respuestasEnVentana: 30 } } })],
+      ['uso extendido (bloqueado)', crear({ ingesta: { atencion: { estado: 'bloqueado', avisarRecepcion: 'bloqueado', respuestasEnVentana: 80 } } })],
+    ];
+    for (const [nombre, w] of casos) {
+      const t = jugar(w, MAMA).texto('Quiero más información para mi clínica dental');
+      expect(t.ejecutados.has('Puerta del turno'), nombre).toBe(true);
+      expect(t.ejecutados.has('Indicador de escritura'), nombre).toBe(false);
+      expect(t.ejecutados.has('Llamar al modelo'), nombre).toBe(false);
+    }
+  });
   it('Meta reenvía el MISMO mensaje (mismo id): la segunda entrega no se contesta, no se reporta y no llama al modelo', () => {
     const w = crear();
     const t1 = w.mundo.turno(valorMeta(mTexto('Hola'), MAMA, { wamid: 'wamid.DUP1' }), { avanzarMin: 0 });
@@ -1768,9 +1789,9 @@ describe('la variante de prueba: «Entrada de prueba», todo al teléfono de pru
 
 describe('la topología y las guardias del JSON versionado', () => {
   const nombres = (f: Flujo): string[] => f.nodes.map((n) => n.name);
-  it('tiene 76 nodos por variante (53 de antes, los 20 del estado de la conversación en el servidor: 10 del registro de eventos, 7 del compromiso del turno y 3 de la compensación): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
-    expect(PRODUCCION.nodes).toHaveLength(76);
-    expect(PRUEBA.nodes).toHaveLength(76);
+  it('tiene 78 nodos por variante (53 de antes, +2 del indicador de escritura (21/11/2026), los 20 del estado de la conversación en el servidor: 10 del registro de eventos, 7 del compromiso del turno y 3 de la compensación): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
+    expect(PRODUCCION.nodes).toHaveLength(78);
+    expect(PRUEBA.nodes).toHaveLength(78);
     expect(nombres(PRODUCCION)).not.toContain('Entrada de prueba');
     expect(nombres(PRUEBA)).not.toContain('WhatsApp Trigger');
     expect(nombres(PRODUCCION).filter((x) => !nombres(PRUEBA).includes(x))).toEqual(['WhatsApp Trigger']);
@@ -1854,7 +1875,7 @@ describe('la topología y las guardias del JSON versionado', () => {
     };
     visitar('WhatsApp Trigger', []);
     // los 53 de antes (44 + los 9 de la rama común del guardado de medios) y los 20 del estado de la conversación.
-    expect(alcanzables.size).toBe(76);
+    expect(alcanzables.size).toBe(78);
   });
   it('«Llamar al modelo» y «Reintentar el modelo» apuntan a generateContent con el modelo de los datos (gemini-3.5-flash-lite) por expresión', () => {
     for (const nombre of ['Llamar al modelo', 'Reintentar el modelo']) {

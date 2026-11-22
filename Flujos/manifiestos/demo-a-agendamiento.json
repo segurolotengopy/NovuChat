@@ -41,5 +41,12 @@
       "systemMessage": "reservas/reintento-tras-cruce.md",
       "text": "reservas/reintento-tras-cruce.turno.md"
     }
+  },
+  "indicador": {
+    "ancla": {
+      "nodo": "¿Atención normal?",
+      "salida": 0
+    },
+    "normalizador": "Normalizar entrada"
   }
 }

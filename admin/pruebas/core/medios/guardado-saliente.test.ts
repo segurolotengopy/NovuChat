@@ -334,16 +334,16 @@ describe('cada flujo versionado que envía una imagen del asistente lleva la ram
     expect(nodosQueAgrega(['media'])).toBe(4);
     expect(nodosQueAgrega(['enlace', 'media'])).toBe(6);
   });
-  it('los totales de nodos de cada flujo publicable (tope documentado en docs/versiones-por-cliente.md)', () => {
+  it('los totales de nodos de cada flujo publicable (tope documentado en docs/versiones-por-cliente.md; +2 por flujo del indicador de escritura, 21/11/2026)', () => {
     const total = (a: string): number => leer(a).nodes.length;
-    expect(total('clientes/venta-minima/venta-minima.qtaco.json')).toBe(76);
-    expect(total('clientes/venta-minima/venta-minima.qtaco-3727.json')).toBe(84);
-    expect(total('clientes/rroca-ruben/rroca-ruben.json')).toBe(68);
-    expect(total('clientes/rroca-antonio/rroca-antonio.json')).toBe(68);
-    expect(total('clientes/walisuma/walisuma.json')).toBe(68);
-    expect(total('clientes/casa-bermejo/casa-bermejo.json')).toBe(61);
-    expect(total('demo-a-agendamiento.json')).toBe(80);
-    expect(total('demo-b-venta-cobro.json')).toBe(91);
+    expect(total('clientes/venta-minima/venta-minima.qtaco.json')).toBe(78);
+    expect(total('clientes/venta-minima/venta-minima.qtaco-3727.json')).toBe(86);
+    expect(total('clientes/rroca-ruben/rroca-ruben.json')).toBe(70);
+    expect(total('clientes/rroca-antonio/rroca-antonio.json')).toBe(70);
+    expect(total('clientes/walisuma/walisuma.json')).toBe(70);
+    expect(total('clientes/casa-bermejo/casa-bermejo.json')).toBe(63);
+    expect(total('demo-a-agendamiento.json')).toBe(82);
+    expect(total('demo-b-venta-cobro.json')).toBe(93);
   });
   it.each(SIN_RAMA)('%s NO la lleva (bloque 2b o imagen de encabezado: ver el plan)', (archivo) => {
     expect(copia(leer(archivo)).nodes.filter((n: any) => NODOS_DEL_GUARDADO_SALIENTE.includes(n.name))).toEqual([]);

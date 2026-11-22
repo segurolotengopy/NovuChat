@@ -42,6 +42,7 @@
  * Los umbrales, el prefijo cacheable y el estado del comercio se prueban además
  * en las suites comunes, cuando el archivo se agregue a sus listas de flujos.
  */
+import { quitarIndicador } from '../../Flujos/src/core/indicador/indicador-escritura.mjs';
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -69,6 +70,8 @@ const flujo = HAY_JSON ? (JSON.parse(TEXTO) as Flujo) : VACIO;
 const demoA = JSON.parse(
   readFileSync(join(aqui, '../../Flujos/demo-a-agendamiento.json'), 'utf8'),
 ) as Flujo;
+// El indicador de escritura (21/11/2026) es pieza común del Demo A, y Bellido A está congelado (no lo lleva): se lo quita del Demo A antes de compararlos.
+quitarIndicador(demoA);
 // La rama del guardado de la imagen SALIENTE del asistente (16/11/2026, bloque 2a) es del Demo A: el flujo A de Bellido está descartado desde el 01/10 (corre
 // Agenda mínima, que no manda QR) y Andres ordenó no tocarlo, así que NO la lleva. Se la quita del Demo A antes de compararlos, con su empalme al reporte del QR.
 {

@@ -33,6 +33,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
 import { injertar } from '../../src/core/sin-agente/envio.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
+import { hallazgosDelIndicador, injertarIndicador } from '../../src/core/indicador/indicador-escritura.mjs';
 import { fuentesDeLaCadenaComun, hallazgosDelGuardadoSaliente, injertarGuardadoSaliente, NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE, URL_DESCARGA_SALIENTE } from '../../src/core/sin-agente/guardado-saliente.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 import { problemasDeReferencias } from '../../src/core/sin-agente/referencias.mjs';
@@ -43,7 +44,7 @@ export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../../src/core/receptor/entrada-d
 // 47 + los 9 de la rama común del GUARDADO de medios (Flujos/src/core/sin-agente/guardado.mjs, contrato M1↔M2 del 29/10/2026 y v2 del 30/10):
 // +1 nodo (`Traer catálogo`, 57): excepción APROBADA por Andres el 12/11/2026 (docs/versiones-por-cliente.md, «Estado al 12/11/2026 (Casa Bermejo)»). Excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 // +4: la rama del guardado de la IMAGEN SALIENTE del asistente (QR por media id; plan del 16/11/2026, bloque 2a): «Preparar guardado (saliente)», «Pedir imagen a Meta…», «Descargar imagen de Meta…» y «Guardar imagen enviada». 57 → 61: aprobación de Andres pendiente (docs/versiones-por-cliente.md).
-export const TOPE_DE_NODOS = 61;
+export const TOPE_DE_NODOS = 63; // +2 el indicador de escritura (21/11/2026, Andres)
 export const FLUJO_PRODUCCION = 'casa-bermejo.json';
 export const FLUJO_PRUEBA = 'casa-bermejo.prueba.json';
 
@@ -419,6 +420,7 @@ export function guardias(variante, flujo, opciones = {}) {
   if (nodos.length > tope) h.push(`tiene ${nodos.length} nodos y el tope es ${tope}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md)`);
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
+  h.push(...hallazgosDelIndicador(flujo || {}, { exigir: true }));
   // El guardado de la imagen SALIENTE del asistente: la rama común completa (vía media), debajo de todo y sin credencial ajena.
   h.push(...hallazgosDelGuardadoSaliente(flujo || {}, { exigir: true, vias: ['media'] }));
   // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
@@ -673,6 +675,8 @@ export function armarCasaBermejo(proyecto, datos, v, origenReceptor = leerRecept
   injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   // El GUARDADO de la imagen que el asistente ENVÍA (QR por media id): módulo común, cuelga de «Reportar mensaje (saliente)» y va debajo de todo (plan del 16/11/2026, bloque 2a).
   injertarGuardadoSaliente(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio`, vias: ['media'], fuentes: fuentesDeLaCadenaComun() });
+  // El INDICADOR de escritura (los tres puntos; módulo común, nunca copiado): rama lateral ANTES del modelo, con la credencial del envío por Graph, sin Continue on Fail fuera de ese nodo. Excepción a la prohibición 5 autorizada por Andres el 21/11/2026.
+  injertarIndicador(plantilla, { ancla: { nodo: '¿Conversar con el modelo?' } });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);

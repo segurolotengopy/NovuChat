@@ -57,8 +57,8 @@ describe('datos: el mapa de columnas de Bellido', () => {
 
 describe.each(VARIANTES)('rama del miniCRM (%s)', (_n, f) => {
   const por = (n: string): Nodo => f.nodes.find((x) => x.name === n)!;
-  it('71 nodos, y los 8 de la rama están', () => {
-    expect(f.nodes).toHaveLength(71);
+  it('73 nodos (71 + los 2 del indicador de escritura, 21/11/2026), y los 8 de la rama están', () => {
+    expect(f.nodes).toHaveLength(73);
     for (const n of NODOS_DE_CRM) expect(f.nodes.some((x) => x.name === n), n).toBe(true);
   });
   it('«Armar mensajes» sigue conectado a «¿Enviar de verdad?» y además a «Prospecto para la planilla»', () => {

@@ -14,6 +14,7 @@ import * as C from '../../../../Flujos/clientes/casa-bermejo/construir.mjs';
 import { NODOS_DEL_GUARDADO as GUARDADO } from '../../../../Flujos/src/core/sin-agente/guardado.mjs';
 // La rama del guardado de la imagen SALIENTE del asistente (16/11/2026): por media id son estos 4 nodos.
 const SALIENTE = ['Preparar guardado (saliente)', 'Pedir imagen a Meta (guardado saliente)', 'Descargar imagen de Meta (guardado saliente)', 'Guardar imagen enviada'];
+const INDICADOR = ['¿Indicador de escritura activo?', 'Indicador de escritura']; // el indicador de escritura (21/11/2026), común a todo flujo con agente
 import type { Flujo, J } from '../../lib/flujo';
 import { PRODUCCION, PRUEBA } from './mundo';
 
@@ -29,19 +30,19 @@ const nombres = (f: Flujo): string[] => (f.nodes as J[]).map((x) => String(x['na
 const corrida = (...args: string[]) => spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador({}) });
 
 describe('tamaño y composición', () => {
-  it('como máximo 61 nodos (47 + 9 del guardado de medios + el nodo que trae el catálogo + 4 del guardado de la imagen saliente): producción 61 exactos, prueba 56', () => {
-    expect(PRODUCCION.nodes.length).toBe(61);
-    expect(PRUEBA.nodes.length).toBe(56);
-    expect(C.TOPE_DE_NODOS).toBe(61);
+  it('como máximo 63 nodos (2 del indicador de escritura, 21/11/2026; 47 + 9 del guardado de medios + el nodo que trae el catálogo + 4 del guardado de la imagen saliente): producción 63 exactos, prueba 58', () => {
+    expect(PRODUCCION.nodes.length).toBe(63);
+    expect(PRUEBA.nodes.length).toBe(58);
+    expect(C.TOPE_DE_NODOS).toBe(63);
   });
   it('los 11 nodos del PR-3 están (el esqueleto de 36 más 11), sin repetirse', () => {
     for (const n of C.NODOS_DEL_PR3 as string[]) { expect(nombres(PRODUCCION)).toContain(n); expect(nombres(PRUEBA)).toContain(n); }
     expect(new Set(C.NODOS_DEL_PR3).size).toBe(11);
   });
-  it('NEGADO: un flujo con más de 61 nodos viola la guardia', () => {
+  it('NEGADO: un flujo con más de 63 nodos viola la guardia', () => {
     const f = clonar(PRODUCCION);
     for (let i = 0; i < 1; i++) f.nodes.push({ id: `extra-${i}`, name: `Extra ${i}`, type: 'n8n-nodes-base.noOp', typeVersion: 1, position: [0, 0], parameters: {} } as never);
-    expect(C.guardias('produccion', f).join(' ')).toMatch(/tiene 62 nodos y el tope es 61/);
+    expect(C.guardias('produccion', f).join(' ')).toMatch(/tiene 64 nodos y el tope es 63/);
   });
   it('los id de nodo son nombres cortos (nunca UUID) y los nombres y los id no se repiten', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
@@ -56,12 +57,12 @@ describe('tamaño y composición', () => {
     expect(nombres(PRUEBA)).toContain('Entrada de prueba');
     for (const n of C.NODOS_DEL_RECEPTOR as string[]) { expect(nombres(PRODUCCION)).toContain(n); expect(nombres(PRUEBA)).not.toContain(n); }
   });
-  it('las medidas: 6 del receptor, 8 de entrada (con el catálogo), 1 de puerta, 13 de medios, 9 de salida, 11 de la venta, 9 del guardado y 4 del guardado de la imagen saliente', () => {
+  it('las medidas: 2 del indicador de escritura, 6 del receptor, 8 de entrada (con el catálogo), 1 de puerta, 13 de medios, 9 de salida, 11 de la venta, 9 del guardado y 4 del guardado de la imagen saliente', () => {
     const MEDIOS = ['¿Bajar medio?', 'Obtener URL del medio (general)', '¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', 'Transcribir audio', 'Preparar transcripción', 'Guardar comprobante', '¿Es un documento?', 'Describir documento', 'Describir imagen', 'Preparar imagen', 'Medio no aceptado'];
     const ENTRADA = ['Config base', 'Carga de entrada', 'Traer configuración', 'Traer catálogo', 'Config del negocio', 'Normalizar entrada', '¿Reportar? (entrante)', 'Reportar mensaje (entrante)'];
     const SALIDA = ['Armar mensajes', '¿Meta aceptó?', '¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)', 'Reportar mensaje (saliente)', 'Resumen del turno'];
-    const todos = [...C.NODOS_DEL_RECEPTOR, ...ENTRADA, 'Puerta del turno', ...MEDIOS, ...SALIDA, ...C.NODOS_DEL_PR3, ...GUARDADO, ...SALIENTE];
-    expect(new Set(todos).size).toBe(61);
+    const todos = [...C.NODOS_DEL_RECEPTOR, ...ENTRADA, 'Puerta del turno', ...MEDIOS, ...SALIDA, ...C.NODOS_DEL_PR3, ...GUARDADO, ...SALIENTE, ...INDICADOR];
+    expect(new Set(todos).size).toBe(63);
     expect([...nombres(PRODUCCION)].sort()).toEqual([...todos].sort());
   });
 });
@@ -151,7 +152,7 @@ describe('el flujo completo: conexiones y guardias de la venta', () => {
       crecio = false;
       for (const [de, s] of Object.entries(c)) if (!alcanzan.has(de) && ((s as J).main as J[][]).some((o) => (o ?? []).some((x: J) => alcanzan.has(String(x['node']))))) { alcanzan.add(de); crecio = true; }
     }
-    const sueltos = nombres(PRODUCCION).filter((n) => !alcanzan.has(n) && !(GUARDADO as string[]).includes(n) && !SALIENTE.includes(n) && !['Rechazar (401)', 'Guardar comprobante', 'Resumen del turno', 'Reportar mensaje (saliente)', '¿Meta aceptó?', 'Armar mensajes', '¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)'].includes(n));
+    const sueltos = nombres(PRODUCCION).filter((n) => !alcanzan.has(n) && !(GUARDADO as string[]).includes(n) && !SALIENTE.includes(n) && !INDICADOR.includes(n) && !['Rechazar (401)', 'Guardar comprobante', 'Resumen del turno', 'Reportar mensaje (saliente)', '¿Meta aceptó?', 'Armar mensajes', '¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)'].includes(n));
     expect(sueltos).toEqual([]);
   });
   it('el único nodo sin entradas es el receptor (producción) o «Entrada de prueba» (prueba); NEGADO: un disparador o un nodo huérfano', () => {
@@ -263,8 +264,8 @@ describe('versionado, no publicable y datos', () => {
   it('`--verificar` sale 0: los dos JSON versionados son lo que arma la plantilla', () => {
     const r = corrida('--verificar');
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toMatch(/casa-bermejo\.json al día \(61 nodos\)/);
-    expect(r.stdout).toMatch(/casa-bermejo\.prueba\.json al día \(56 nodos\)/);
+    expect(r.stdout).toMatch(/casa-bermejo\.json al día \(63 nodos\)/);
+    expect(r.stdout).toMatch(/casa-bermejo\.prueba\.json al día \(58 nodos\)/);
   });
   it('`--publicable` FALLA hoy, con un mensaje claro: quedan marcadores REEMPLAZAR_*, la plantilla sin aprobar y el costo de entrega sin declarar', () => {
     const r = corrida('--publicable');

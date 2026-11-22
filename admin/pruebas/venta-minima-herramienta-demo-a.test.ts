@@ -426,9 +426,9 @@ describe('Agenda mínima v0 (71 nodos, con miniCRM) sobre el Demo A: el ensayo q
   const V0 = join(aqui, '../../Flujos/clientes/agenda-minima/agenda-minima.v0.json');
   // Se repite a propósito (construir.mjs corre al importarse); la prueba compara con el candidato real.
   const NODOS_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
-  it('el candidato (para Bellido) tiene 71 nodos, los 8 del miniCRM y su credencial', () => {
+  it('el candidato (para Bellido) tiene 73 nodos (71 + los 2 del indicador de escritura, 21/11/2026), los 8 del miniCRM y su credencial', () => {
     const w = leerJson(V0);
-    expect(w.nodes).toHaveLength(71);
+    expect(w.nodes).toHaveLength(73);
     for (const n of NODOS_CRM) expect((w.nodes as J[]).some((x) => x.name === n), n).toBe(true);
     expect(JSON.stringify(w)).toContain('Google Sheets miniCRM (crm-bellido)');
   });
@@ -439,15 +439,15 @@ describe('Agenda mínima v0 (71 nodos, con miniCRM) sobre el Demo A: el ensayo q
     expect(mundo.puts).toHaveLength(0);
     expect(r.salida).toContain('Nodos quitados del candidato: 8');
     expect(r.salida).toMatch(/no escribe en ninguna planilla/);
-    expect(r.salida).toMatch(/63 nodos/);
+    expect(r.salida).toMatch(/65 nodos/);
     expect(r.salida).toMatch(/En seco: no se escribió nada en n8n/);
   });
-  it('con --aplicar simulado: 63 nodos, sin los 8 del miniCRM, sin credencial de Bellido, ninguna credencial vacía y conexiones sin nodos ausentes', async () => {
+  it('con --aplicar simulado: 65 nodos, sin los 8 del miniCRM, sin credencial de Bellido, ninguna credencial vacía y conexiones sin nodos ausentes', async () => {
     nuevo();
     const r = await correr(['--sobre-demo-a', '--respaldo', respaldoNuevo(), '--flujo', V0, '--aplicar', '--autorizo-gemini-produccion']);
     expect(r.codigo, r.salida).toBe(0);
     const p = mundo.puts[0]!;
-    expect(p.nodes).toHaveLength(63);
+    expect(p.nodes).toHaveLength(65);
     const nombresDeNodos = new Set((p.nodes as J[]).map((n) => String(n.name)));
     for (const n of NODOS_CRM) expect(nombresDeNodos.has(n), n).toBe(false);
     const creds = (p.nodes as J[]).flatMap((n) => Object.values(n.credentials ?? {}) as J[]);

@@ -21,6 +21,7 @@
  * botón va dentro), +1 al dueño por teléfono y 24 h, +1 al cliente en el turno
  * en que el modelo falla (antes: silencio).
  */
+import { esNodoIndicador } from '../../../Flujos/src/core/indicador/indicador-escritura.mjs';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -91,7 +92,7 @@ describe('(1) Un embudo único de salida al cliente', () => {
 
   it('conteo de emisores declarado: texto, botón, aviso al dueño, la imagen del QR (excepción por nombre) y el aviso de falla del guardado', () => {
     const envian = f.nodes.filter((n) => (n.type === 'n8n-nodes-base.whatsApp' && n.parameters['operation'] === 'send')
-      || (n.type === 'n8n-nodes-base.httpRequest' && /^=?https:\/\/graph\.facebook\.com\//.test(String(n.parameters['url'] ?? ''))
+      || (n.type === 'n8n-nodes-base.httpRequest' && !esNodoIndicador(n) /* el indicador de escritura (`status: read`, 21/11/2026) no manda un mensaje */ && /^=?https:\/\/graph\.facebook\.com\//.test(String(n.parameters['url'] ?? ''))
         && String(n.parameters['url']).endsWith('/messages')))
       .map((n) => n.name).sort();
     // «Avisar falla del guardado» (11/11/2026, rama común del guardado de medios) es el 5.º emisor y NO le escribe al cliente: es un texto a la RECEPCIÓN del negocio

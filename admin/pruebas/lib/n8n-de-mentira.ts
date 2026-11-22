@@ -102,6 +102,7 @@ import vm from 'node:vm';
 import { ejecutar, GLOBALES_FUERA_DEL_SANDBOX, type Flujo, type J, type Nodo, type Referencias } from './flujo';
 
 import { rechazoDeExpresion } from '../../../Flujos/src/core/sin-agente/expresiones.mjs';
+import { esNodoIndicador } from '../../../Flujos/src/core/indicador/indicador-escritura.mjs';
 
 // ----------------------------------------------------------------------------- tipos públicos
 
@@ -967,7 +968,11 @@ export function crearMundo(op: OpcionesMundo): Mundo {
         case 'wait': salidas = ejecutarEspera(n, items); break;
         // Stop and Error (errorMessage): la ejecución termina en error con el mensaje evaluado; ningún `onError` la esconde.
         case 'stopAndError': throw new FalloDeNodo(n.name, new Error(String(evaluar(n.parameters['errorMessage'], items[0] ?? null))));
-        default: throw new SinDoble(n.name, n.type);
+        default:
+          // El indicador de escritura (21/11/2026, `Flujos/src/core/indicador/`) es una llamada a Meta SIN efecto en el turno (rama lateral y hoja, no entrega
+          // ningún mensaje): sin doble declarado, la prueba lo deja pasar. Un doble declarado (`dobles['Indicador de escritura']`) manda, como en cualquier nodo.
+          if (esNodoIndicador(n)) { salidas = [items.map((it, i) => pasa(n, it, i))]; break; }
+          throw new SinDoble(n.name, n.type);
       }
     }
     const primera = salidas[0];

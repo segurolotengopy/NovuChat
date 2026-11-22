@@ -8,25 +8,27 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import { esNodoIndicador } from '../../Flujos/src/core/indicador/indicador-escritura.mjs';
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 type Nodo = { name: string; type: string; parameters?: { jsCode?: string } };
 const cargar = (a: string): { nodes: Nodo[] } => JSON.parse(readFileSync(join(RAIZ, 'Flujos', 'experimental', a), 'utf8')) as { nodes: Nodo[] };
 
-/** [archivo, nodos, nodos que hablan con Meta]: la línea base de origin/main. El cambio NO agrega ni quita ninguno. */
+/** [archivo, nodos, nodos que hablan con Meta]: la línea base de origin/main. El cambio NO agrega ni quita ninguno (los nodos suben +2 por el indicador de escritura en los flujos con agente). */
 const LINEA_BASE: Array<[string, number, number]> = [
-  ['../clientes/agenda-minima/agenda-minima.prueba.json', 71, 5], ['../clientes/agenda-minima/agenda-minima.v0.json', 71, 5],
+  ['../clientes/agenda-minima/agenda-minima.prueba.json', 73, 5], ['../clientes/agenda-minima/agenda-minima.v0.json', 73, 5],
   ['captacion-minima/captacion-minima.novuchat.json', 52, 5], ['captacion-minima/captacion-minima.prueba.json', 52, 5],
-  ['../clientes/novuchat/chat-novuchat.novuchat.json', 76, 5], ['../clientes/novuchat/chat-novuchat.prueba.json', 76, 5],
-  ['../clientes/rroca-antonio/rroca-antonio.json', 68, 6], ['../clientes/rroca-antonio/rroca-antonio.prueba.json', 63, 6],
-  ['../clientes/rroca-emma/rroca-emma.json', 59, 6], ['../clientes/rroca-emma/rroca-emma.prueba.json', 54, 6],
-  ['../clientes/rroca-evy/rroca-evy.json', 59, 6], ['../clientes/rroca-evy/rroca-evy.prueba.json', 54, 6],
-  ['../clientes/rroca-ruben/rroca-ruben.json', 68, 6], ['../clientes/rroca-ruben/rroca-ruben.prueba.json', 63, 6],
-  ['../clientes/venta-minima/venta-minima.qtaco-3727.json', 84, 7],
+  ['../clientes/novuchat/chat-novuchat.novuchat.json', 78, 5], ['../clientes/novuchat/chat-novuchat.prueba.json', 78, 5],
+  ['../clientes/rroca-antonio/rroca-antonio.json', 70, 6], ['../clientes/rroca-antonio/rroca-antonio.prueba.json', 65, 6],
+  ['../clientes/rroca-emma/rroca-emma.json', 61, 6], ['../clientes/rroca-emma/rroca-emma.prueba.json', 56, 6],
+  ['../clientes/rroca-evy/rroca-evy.json', 61, 6], ['../clientes/rroca-evy/rroca-evy.prueba.json', 56, 6],
+  ['../clientes/rroca-ruben/rroca-ruben.json', 70, 6], ['../clientes/rroca-ruben/rroca-ruben.prueba.json', 65, 6],
+  ['../clientes/venta-minima/venta-minima.qtaco-3727.json', 86, 7],
 ];
 const HOST_META = new RegExp(['graph', 'facebook', 'com'].join('\\.'));
 // La rama del guardado de la imagen SALIENTE (16/11/2026) hace GET de una imagen ya enviada y la sube a `guardarMedio`: ningún nodo suyo manda un mensaje (+3 o +4 nodos en estos flujos, +0 emisores).
 const RAMA_SALIENTE = ['Preparar guardado (saliente)', '¿Por enlace? (guardado saliente)', 'Descargar enlace (guardado saliente)', 'Pedir imagen a Meta (guardado saliente)', 'Descargar imagen de Meta (guardado saliente)', 'Guardar imagen enviada'];
-const hablaConMeta = (n: Nodo): boolean => (!RAMA_SALIENTE.includes(n.name) && HOST_META.test(JSON.stringify(n.parameters ?? {}))) || n.type.endsWith('whatsApp');
+// El indicador de escritura (21/11/2026; `status: read` + `typing_indicator`, pieza común del núcleo) tampoco manda mensajes: +2 nodos, +0 emisores. `esNodoIndicador` mira nombre Y forma.
+const hablaConMeta = (n: Nodo): boolean => (!RAMA_SALIENTE.includes(n.name) && !esNodoIndicador(n) && HOST_META.test(JSON.stringify(n.parameters ?? {}))) || n.type.endsWith('whatsApp');
 
 describe('una fila por conversación: sin mensajes de Meta nuevos en los 15 JSON regenerados', () => {
   it('hay 15 JSON en la línea base', () => expect(LINEA_BASE).toHaveLength(15));

@@ -36,6 +36,7 @@ import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabeza
 import { hallazgosDelEnvioRele, injertar, MARCADOR_URL_DEL_RELE, parametrosDeMensajeRele, PREFIJO_CREDENCIAL_RELE } from '../../src/core/sin-agente/envio.mjs';
 import { hallazgosDelReporteSinConteo, injertarReporteSinConteo } from '../../src/core/sin-agente/reporte-sin-conteo.mjs';
 import { hallazgosDelGuardadoSaliente, injertarGuardadoSaliente, NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE, URL_DESCARGA_SALIENTE } from '../../src/core/sin-agente/guardado-saliente.mjs';
+import { hallazgosDelIndicador, injertarIndicador } from '../../src/core/indicador/indicador-escritura.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO, urlDescargaRele } from '../../src/core/sin-agente/guardado.mjs';
 import { antecesoresDe, problemasDeReferencias, referenciasDeNodos } from '../../src/core/sin-agente/referencias.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
@@ -54,7 +55,7 @@ export const CANAL_DE_ENVIO = 'graph';
 export const ES_RELE = CANAL_DE_ENVIO === 'rele';
 // +2 del reporte SIN CONTEO de la foto de catálogo («¿Reportar foto? (saliente)» y «Reportar foto (saliente)», Andres 16/11/2026) y +4 de la rama común del guardado de la imagen enviada (por media id): 53 → 59 (graph);
 // con `rele` solo el reporte (+2): 58. Tope pendiente de aprobación de Andres (docs/versiones-por-cliente.md).
-export const TOPE_DE_NODOS = ES_RELE ? 58 : 59;
+export const TOPE_DE_NODOS = ES_RELE ? 58 : 61; // +2 (solo canal graph) el indicador de escritura (21/11/2026, Andres)
 /** El relé B9 de AAB1 (canal `rele`): el prefijo de la Idempotency-Key y la credencial Header Auth de ESTE WABA, por NOMBRE (el valor lo tiene n8n). La URL interna del relé es un marcador que sustituye el publicador. */
 export const CLIENTE_RELE = 'rroca-emma';
 export const CREDENCIAL_RELE = 'AAB1 envío · cliente07';
@@ -294,6 +295,7 @@ export function guardias(variante, flujo, mapaCrm) {
   else h.push(...hallazgosCrm(flujo || {}, mapa).map((x) => `miniCRM: ${x}`));
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
+  if (!ES_RELE) h.push(...hallazgosDelIndicador(flujo || {}, { exigir: true }));
   h.push(...hallazgosDelReporteSinConteo(flujo || {}, { exigir: true }));
   if (!ES_RELE) h.push(...hallazgosDelGuardadoSaliente(flujo || {}, { exigir: true, vias: ['media'], reportero: 'Reportar foto (saliente)', envio: 'Enviar aviso' }));
   // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
@@ -713,6 +715,8 @@ export function armarEvy(proyecto, datos, v) {
   injertarGuardado(plantilla, ES_RELE ? { canal: 'rele', cliente: CLIENTE_RELE, guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` } : { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   if (!ES_RELE) injertarGuardadoSaliente(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio`, vias: ['media'], reportero: 'Reportar foto (saliente)', envio: 'Enviar aviso',
     fuentes: { meta: "$('Enviar aviso').itemMatching(i).json", payload: "$('Armar previos').itemMatching(i).json.payload", tipoReporte: "'image'", telefono: "$('Armar previos').itemMatching(i).json.para", version: "$('Armar previos').itemMatching(i).json.waGraphVersion" } });
+  // El INDICADOR de escritura (los tres puntos; módulo común, nunca copiado): rama lateral ANTES del modelo, con la credencial del envío por Graph, sin Continue on Fail fuera de ese nodo. Excepción a la prohibición 5 autorizada por Andres el 21/11/2026.
+  if (!ES_RELE) injertarIndicador(plantilla, { ancla: { nodo: '¿Conversar con el modelo?' } });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
   // El mapa de columnas del tenant (dato, no código) dentro de los nodos del módulo y los rangos de lectura de los nodos de Google.

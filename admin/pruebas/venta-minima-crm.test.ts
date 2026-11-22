@@ -907,8 +907,8 @@ describe('aceptación sobre el JSON versionado', () => {
   it('el tope de nodos de producción es 84 (81 + 3 de la rama del guardado de la imagen saliente) y el 3727 lleva exactamente 8 nodos más que el vivo', () => {
     const vivo = leer('venta-minima.qtaco.json');
     expect(CRM.nodes.length).toBe(vivo.nodes.length + 8);
-    expect(readFileSync(join(VM, 'construir.mjs'), 'utf8')).toMatch(/const TOPE_DE_NODOS = 84;/);
-    expect(CRM.nodes.length).toBeLessThanOrEqual(84);
+    expect(readFileSync(join(VM, 'construir.mjs'), 'utf8')).toMatch(/const TOPE_DE_NODOS = 86;/);
+    expect(CRM.nodes.length).toBeLessThanOrEqual(86);
   });
 });
 

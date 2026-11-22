@@ -54,6 +54,10 @@
  *     `REEMPLAZAR_*`: no entra en ningún módulo, `preparar-import.sh` y
  *     `verificar-saneo.sh` lo siguen encontrando donde siempre, y `verificar`
  *     comprueba que el prefijo sigue ahí.
+ *   - `indicador` (21/11/2026): la UNICA pieza que el ensamblador agrega al lienzo, y solo si el manifiesto la pide: los dos nodos del «escribiendo…»
+ *     (`Flujos/src/core/indicador/indicador-escritura.mjs`, la misma que incluyen los `construir.mjs` de los flujos de cliente; nunca copiada). El valor es
+ *     `{ "ancla": { "nodo": "¿Atención normal?", "salida": 0 }, "normalizador": "Normalizar entrada" }`. `ensamblar` los quita y los vuelve a injertar
+ *     canónicos (idempotente), así que `verificar` los compara byte a byte como el resto: un indicador alterado a mano en el JSON se detecta.
  *   - Si un nodo del manifiesto no existe en el JSON, error ruidoso con el
  *     nombre: es un nodo renombrado en n8n que hay que renombrar acá.
  *
@@ -83,6 +87,7 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { injertarIndicador, quitarIndicador } from '../../Flujos/src/core/indicador/indicador-escritura.mjs';
 
 /**
  * Lee un archivo, o `null` si no existe. Un solo acceso al disco: comprobar
@@ -294,7 +299,11 @@ export function ensamblarEnMemoria(archivoFlujo, raiz = RAIZ_FLUJOS) {
     escribir(contenidoDeModulo(ruta, saltoFinal));
     inyectados.push(clave);
   });
-  return { archivo: archivoFlujo, texto: JSON.stringify(j, null, 2) + '\n', original, conManifiesto: true, inyectados };
+  if (manifiesto.indicador) {
+    quitarIndicador(j);
+    injertarIndicador(j, manifiesto.indicador);
+  }
+  return { archivo: archivoFlujo, texto: JSON.stringify(j, null, 2) + '\n', original, conManifiesto: true, inyectados, indicador: !!manifiesto.indicador };
 }
 
 /**
@@ -314,6 +323,8 @@ export function verificarFlujo(archivoFlujo, raiz = RAIZ_FLUJOS) {
   recorrer(JSON.parse(r.original), manifiesto, raiz, ({ clave, ruta, saltoFinal, leer }) => {
     if (leer() !== contenidoDeModulo(ruta, saltoFinal)) diferencias.push(clave);
   });
+  // Si solo difiere el indicador (los dos nodos del «escribiendo…»), que lo diga en vez de dejar `difiere` sin un solo punto.
+  if (r.indicador && diferencias.length === 0) diferencias.push('indicador');
   return { archivo: archivoFlujo, estado: 'difiere', diferencias, inyectados: r.inyectados };
 }
 
