@@ -161,7 +161,9 @@
   background: var(--color-bg); color: var(--color-text);
   border: 1px solid var(--color-divider); border-radius: 50%;
 }
-.cat-foto-grande { width: 100%; max-height: 45vh; object-fit: cover; }
+/* La foto del detalle se muestra ENTERA (contain): hay fichas de producto cuyo pie —precio y círculos de
+   colores— está abajo, y `cover` con tope de altura lo recortaba (Walisuma, 22/11/2026). */
+.cat-foto-grande { width: 100%; max-height: 60vh; object-fit: contain; background: var(--color-surface); }
 .cat-precio-grande { font-size: 1.3rem; font-weight: 700; margin: 0 0 var(--space-3); }
 
 .cat-resumen { list-style: none; margin: 0 0 var(--space-4); padding: 0; }
