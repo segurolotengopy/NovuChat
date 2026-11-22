@@ -20,7 +20,7 @@ const RUTAS = [
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
-  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
+  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_SIN_PIEZA', 'bmEnlaceCatalogo', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -141,7 +141,8 @@ describe('la decisión de la venta: el modelo conversa, el código calcula', () 
   it('NEGADO: lo que redacta el modelo sobre pagos, avisos o montos inventados no sale: sale el texto fijo', () => {
     for (const falso of ['Tu pago fue acreditado, gracias.', 'Recibimos tu pago.', 'Te aviso apenas llegue.', 'Serían 999 Bs en total.', 'Tu pedido está confirmado y pagado.', 'Te dejo un 10% de descuento.', 'El envío va gratis.', 'Sin costo de envío para ti.']) {
       const r = b('bmResolver')(ctx({ modeloResp: gemini({ texto: falso, lineas: [] }) }));
-      expect(r.texto).toBe(B['BM_TEXTO_MODELO_SIN_REDACCION']);
+      // Ya no sale el «cuéntame más» genérico: sale el texto del código (las piezas que coinciden con su precio), nunca lo que inventó el modelo.
+      expect(r.texto).toBe(b('bmTextoDeCoincidencias')('quiero una pieza uno', ctx().vendibles, 1));
     }
   });
   it('NEGADO: un modelo que no devuelve JSON, o pide hablar con una persona, pasa con un vendedor', () => {
@@ -617,6 +618,35 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, modos: ['recojo en tienda', 'envío'], ficha: { carrito: [{ id: 'aire-18', cantidad: 1, detalle: '' }] }, plan: { tipo: 'modelo', textoCliente: 'Agrega también una lavadora de 9 kg' }, modeloResp: gemini({ texto: '¿Desea agregarla a su pedido?', lineas: [{ id: 'aire-18', cantidad: 1 }] }) }));
       expect(r.lineas.map((l: { id: string }) => l.id).sort()).toEqual(['aire-18', 'lav-9']);
       expect(r.texto).toMatch(/¿Cómo prefiere recibir su pedido/);
+    });
+  });
+  describe('sin piezas y sin redacción: nunca el «cuéntame más» genérico (reclamo de Andres, 21/11/2026)', () => {
+    const cat = catalogo([
+      item({ id: 'lav-9', nombre: 'LAVADORA SAMSUNG 9KG', precio: 4112.5, precioCentavos: 411250 }),
+      item({ id: 'lav-15', nombre: 'LAVADORA LG 15KG', precio: 6000, precioCentavos: 600000 }),
+    ]);
+    const turno = (texto: string, hist: Array<{ r: string; t: string }> = [], base: Record<string, unknown> = { enlaceCatalogo: 'https://sitio.example' }) =>
+      b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, base, ficha: { hist }, plan: { tipo: 'modelo', textoCliente: texto }, modeloResp: gemini({ texto: 'Tenemos un descuento del 10% por tiempo limitado', lineas: [] }) }));
+    it('«Tienen televisores?» (no hay): dice que no lo encuentra; no el genérico', () => {
+      const r = turno('Tienen televisores?');
+      expect(r.tipo).toBe('modelo');
+      expect(r.sinPieza).toBe(true);
+      expect(r.texto).toBe(b('BM_TEXTO_SIN_PIEZA'));
+      expect(r.texto).not.toMatch(/cuénteme un poco más|cuéntame un poco más/i);
+    });
+    it('«Quiero una lavadora de 15 kg» (sí hay): ofrece la pieza con su precio', () => {
+      const r = turno('Quiero una lavadora de 15 kg');
+      expect(r.tipo).toBe('modelo');
+      expect(r.texto).toMatch(/LAVADORA LG 15KG/);
+    });
+    it('la MISMA respuesta fija dos veces seguidas pasa con recepción (aviso + botón)', () => {
+      const r = turno('Tienen televisores?', [{ r: 'u', t: 'tienen televisores' }, { r: 'm', t: b('bmParaMemoria')(b('BM_TEXTO_SIN_PIEZA')) }]);
+      expect(r.tipo).toBe('derivar');
+    });
+    it('sin enlace del catálogo no se promete un botón: el texto no menciona ningún botón', () => {
+      const r = turno('Tienen televisores?', [], {});
+      expect(r.tipo).toBe('modelo');
+      expect(r.texto).not.toMatch(/bot[oó]n/i);
     });
   });
 });
