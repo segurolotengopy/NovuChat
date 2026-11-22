@@ -912,7 +912,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@todo+filtro:nodos/armar-avisos.js"
+        "jsCode": "@@todo+filtro+aviso-plantilla:nodos/armar-avisos.js"
       },
       "notes": "El aviso al comercio (un destinatario designado): texto libre dentro de su ventana de 23,5 h; fuera de ella, la plantilla UTILITY `pedido_registrado` (4 variables). Sin plantilla APPROVED no sale nada y «Armar mensajes» le dice la verdad al cliente. Decide también si hay que cerrar el cobro abierto antes de emitir otro QR."
     },

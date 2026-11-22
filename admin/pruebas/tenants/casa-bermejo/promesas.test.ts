@@ -63,7 +63,7 @@ describe('«ya avisé» solo con un wamid real', () => {
     expect(BOTON(t)).toBe(true);
   });
   it('NEGADO: sin plantilla aprobada (y fuera de la ventana del comercio) no hay aviso y no se dice que se avisó', () => {
-    const t = deriva({ base: { avisoPedidoEstado: 'PENDING' } }, 'quiero hablar con una persona');
+    const t = deriva({ base: { avisoPedidoEstado: 'PENDING', avisoRespaldoEstado: 'PENDING' } }, 'quiero hablar con una persona');
     expect(t.avisos).toHaveLength(0);
     expect(t.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé/);
     expect(BOTON(t)).toBe(true);

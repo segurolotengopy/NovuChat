@@ -123,8 +123,20 @@ describe('el aviso del pedido al comercio', () => {
     const pl = t.avisos[0]?.payload['template'] as any; // eslint-disable-line @typescript-eslint/no-explicit-any
     expect(pl.name).toBe('pedido_registrado');
     const vars = pl.components[0].parameters.map((p: { text: string }) => p.text);
-    expect(vars).toEqual(['1 × Billetera de cuero', 'Bs 450', 'La Paz · Retiro en tienda · Ana Pérez', 'llegó y los datos coinciden']);
+    expect(vars).toEqual(['1 × Billetera de cuero', 'Bs 450', `La Paz · Retiro en tienda · Ana Pérez · Ana (+${ANA})`, 'llegó y los datos coinciden']);
     expect(t.mensajes[0]?.cuerpo).toMatch(/Ya avisé a recepción/);
+    expect(JSON.stringify(t.avisos[0]?.payload)).not.toMatch(PROHIBIDO);
+  });
+  it('con `aviso_pedido_equipo` APPROVED: 10 variables y el nombre y el WhatsApp del cliente viajan SIEMPRE', () => {
+    const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, base: { avisoPedidoEstado: 'APPROVED' } });
+    const t = comprobante(m);
+    expect(t.avisos).toHaveLength(1);
+    const pl = t.avisos[0]?.payload['template'] as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect(pl.name).toBe('aviso_pedido_equipo');
+    const vars = pl.components[0].parameters.map((p: { text: string }) => p.text);
+    expect(vars).toHaveLength(10);
+    expect(vars[3]).toBe('Ana');
+    expect(vars[4]).toBe(`+${ANA}`);
     expect(JSON.stringify(t.avisos[0]?.payload)).not.toMatch(PROHIBIDO);
   });
   it('NEGADO: si el aviso no sale (Meta lo rechaza), el cliente NO lee «ya avisé»: lee que no se pudo y el botón', () => {
@@ -135,7 +147,7 @@ describe('el aviso del pedido al comercio', () => {
     expect(t.mensajes[0]?.payload['interactive']).toBeTruthy();
   });
   it('NEGADO: sin plantilla aprobada no sale ningún aviso y el cliente no lee «ya avisé»', () => {
-    const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, base: { avisoPedidoEstado: 'PENDING' } });
+    const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, base: { avisoPedidoEstado: 'PENDING', avisoRespaldoEstado: 'PENDING' } });
     const t = comprobante(m);
     expect(t.avisos).toHaveLength(0);
     expect(t.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé/);
