@@ -96,7 +96,7 @@ export function VisorMedio({ tenantId, conversacionId, idMeta, mensajeId, medio,
 
   return (
     <span className="cv-medio">
-      <button type="button" ref={boton} className="btn btn-secondary btn-chico" onClick={() => void pedir()}
+      <button type="button" ref={boton} className="btn btn-secondary" onClick={() => void pedir()}
               disabled={estado.t !== 'reposo'}>
         {estado.t === 'cargando' ? 'Abriendo…' : modo === 'ver' ? 'Ver' : 'Descargar'}
       </button>
@@ -118,14 +118,14 @@ export function VisorMedio({ tenantId, conversacionId, idMeta, mensajeId, medio,
               <div role="alertdialog" aria-label="Confirmar descarga">
                 <p><strong>{enviado || delAsistente ? AVISO_DESCARGA_ENVIADO : AVISO_DESCARGA}</strong></p>
                 {avisoExtraDe(estado.extension) && <p><strong>{avisoExtraDe(estado.extension)}</strong></p>}
-                <button type="button" className="btn btn-secondary btn-chico" onClick={cerrarVisor}>Cancelar</button>{' '}
-                <button type="button" className="btn btn-secondary btn-chico"
+                <button type="button" className="btn btn-secondary" onClick={cerrarVisor}>Cancelar</button>{' '}
+                <button type="button" className="btn btn-secondary"
                         onClick={() => { if (bajar.current?.(estado.blob, estado.extension, Date.now())) cerrarVisor(); }}>
                   Descargar de todos modos
                 </button>
               </div>
             )}
-            <p><button type="button" ref={cerrar} className="btn btn-secondary btn-chico" onClick={cerrarVisor}>Cerrar</button></p>
+            <p><button type="button" ref={cerrar} className="btn btn-secondary" onClick={cerrarVisor}>Cerrar</button></p>
           </div>
         </div>
       )}

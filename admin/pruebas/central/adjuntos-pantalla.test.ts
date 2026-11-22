@@ -155,9 +155,11 @@ describe('cabeceras de la consola', () => {
 describe('una vista previa grande no deja el botón fuera de alcance (15/11/2026)', () => {
   const css = leer('web/src/central/estilos/conversaciones.css');
   const regla = (sel: string) => new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
-  it('el detalle se desplaza entero y el hilo tiene un mínimo (el tope de 55 dvh del bloque, que se medía contra la ventana, ya no está; 17/11/2026)', () => {
+  it('el detalle se desplaza si hace falta y el hilo toma todo el alto sobrante (21/11/2026: los adjuntos viven en el panel «Opciones», que tiene su propio scroll)', () => {
     expect(regla('.cv-detalle')).toMatch(/overflow-y:\s*auto/);
-    expect(regla('.cv-hilo')).toMatch(/min-height:\s*12rem/);
+    expect(regla('.cv-hilo')).toMatch(/flex:\s*1 1 0/);
+    expect(regla('.cv-hilo')).toMatch(/min-height:\s*0/);
+    expect(regla('.cv-opciones-panel')).toMatch(/overflow-y:\s*auto/);
     expect(regla('.cv-adjuntar')).not.toMatch(/max-height/);
   });
   it('la imagen previa se limita a 28 vh y los botones quedan pegados abajo', () => {

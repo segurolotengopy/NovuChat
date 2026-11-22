@@ -27,7 +27,7 @@
 #   ./scripts/cargar-timbre-n8n.sh --alias <alias> --activar [--aplicar --confirmo produccion]
 #       ACTIVAR, paso aparte: el flujo debe existir con credenciales completas. Al
 #       activarlo empieza el barrido de cada minuto (llama a reclamarSalidaPersona).
-#   ./scripts/cargar-timbre-n8n.sh --alias <alias> --recargar [--cred-... --rele-inerte --canal-graph] [--aplicar --confirmo produccion]
+#   ./scripts/cargar-timbre-n8n.sh --alias <alias> --recargar [--cred-... | --credenciales-del-vivo] [--rele-inerte --canal-graph] [--aplicar --confirmo produccion]
 #       RECARGAR: actualiza el flujo VIVO «NovuChat — Salida de persona (<alias>)» con la versión nueva de
 #       Flujos/salida-de-persona.json, SIN archivo de entrega, SIN Secret Manager y SIN tocar credenciales ni claves (nunca
 #       POST/PATCH a /credentials). NUNCA elige una ruta: copia el path del Timbre del flujo vivo y la relectura debe conservarlo.
@@ -43,6 +43,12 @@
 #         · falta el mapa (alias real), las credenciales no están atadas al número, hay cruce relé/envío o falta/repite la alerta;
 #         · el flujo vivo está ACTIVO y su borrador difiere de la versión publicada (cambios sin publicar que se pisarían).
 #       Idempotente: con el flujo ya igual a la versión nueva (nodo por nodo, conexiones y ajustes) dice «nada que hacer» y sale 0.
+#       --credenciales-del-vivo (solo con --recargar; no se combina con --cred-*): en lugar de los tres nombres, toma de ESE flujo vivo
+#       (ya validado como propio) el nombre y el tipo de la credencial de cada rol (ingesta: Reclamar, Leer adjunto, Confirmar; envío:
+#       Enviar por Graph, Subir a Meta, Enviar adjunto por Graph; relé: Enviar por el relé), por id contra la lista viva, e imprime los
+#       NOMBRES tomados (no son secretos). Después aplica la misma validación y atadura al alias que --cred-*, sin relajar nada. Aborta
+#       con 2 sin escribir si un rol no tiene credencial o si dos nodos del mismo rol citan credenciales distintas. Con el relé del vivo
+#       en `http://relay-inerte.invalid` exige repetir --rele-inerte --canal-graph y acepta la credencial que el vivo ya cita en el relé.
 #   ./scripts/cargar-timbre-n8n.sh --alias <alias> --quitar [--aplicar --confirmo produccion]
 #       RESTAURACIÓN: desactiva y borra el flujo del alias y borra la credencial del
 #       timbre de ese alias (nunca las de ingesta, AAB1 ni WhatsApp). Respalda antes.
@@ -176,7 +182,7 @@ ALIAS_ENSAYO="demoA demoB"
 # Lista negra de nombres de credencial del otro sistema, ya normalizados: la usan este shell y lib.py.
 export TIMBRE_RE_AJENO='segurolotengo|aab1wa|waprod|whatsappmodular|receptor|otp'
 # Nombres REALES de las credenciales existentes de un cliente (vacíos = los de ensayo, derivados del alias).
-CRED_INGESTA=""; CRED_ENVIO=""; CRED_RELE=""; CRED_DADAS=0
+CRED_INGESTA=""; CRED_ENVIO=""; CRED_RELE=""; CRED_DADAS=0; CRED_DEL_VIVO=0
 fijar_modo() { [[ "$MODO" == cargar ]] || { echo "✗ Un solo modo a la vez (--activar, --recargar, --quitar, --crear-credenciales, --crear-rele-inerte o --quitar-credenciales)" >&2; exit 2; }; MODO="$1"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -193,6 +199,7 @@ while [[ $# -gt 0 ]]; do
     --cred-ingesta) [[ $# -ge 2 ]] || { echo "✗ --cred-ingesta necesita el nombre de la credencial" >&2; exit 2; }; CRED_INGESTA="$2"; CRED_DADAS=$((CRED_DADAS + 1)); shift 2 ;;
     --cred-envio)  [[ $# -ge 2 ]] || { echo "✗ --cred-envio necesita el nombre de la credencial" >&2; exit 2; }; CRED_ENVIO="$2"; CRED_DADAS=$((CRED_DADAS + 1)); shift 2 ;;
     --cred-rele)   [[ $# -ge 2 ]] || { echo "✗ --cred-rele necesita el nombre de la credencial" >&2; exit 2; }; CRED_RELE="$2"; CRED_DADAS=$((CRED_DADAS + 1)); shift 2 ;;
+    --credenciales-del-vivo) CRED_DEL_VIVO=1; shift ;;
     --rele-inerte) RELE_INERTE=1; shift ;;
     --canal-graph) CANAL_GRAPH=1; shift ;;
     --proyecto)    [[ $# -ge 2 ]] || { echo "✗ --proyecto necesita un id" >&2; exit 2; }; PROYECTO="$2"; PROYECTO_EXPLICITO=1; shift 2 ;;
@@ -221,14 +228,8 @@ if [[ "$MODO" == crear-rele ]]; then
     echo "✗ --crear-rele-inerte va solo (con --alias, --env y, para escribir, --aplicar --confirmo produccion): no se combina con --cred-*, --rele-inerte, --canal-graph ni --tabla-demo-a. No se tocó n8n." >&2; exit 2
   fi
 fi
-# Credenciales existentes por nombre real: las tres o ninguna, nombres válidos y distintos.
-if (( CRED_DADAS > 0 )); then
-  if (( CRED_DADAS != 3 )) || [[ -z "$CRED_INGESTA" || -z "$CRED_ENVIO" || -z "$CRED_RELE" ]]; then
-    echo "✗ Las credenciales existentes se indican las TRES (--cred-ingesta, --cred-envio y --cred-rele), una vez cada una y con nombre: falta un rol, está repetido o vacío. No se tocó n8n." >&2; exit 2
-  fi
-  if [[ "$MODO" == crear-cred || "$MODO" == quitar-cred ]]; then
-    echo "✗ --cred-ingesta, --cred-envio y --cred-rele usan credenciales EXISTENTES: no se combinan con --crear-credenciales ni --quitar-credenciales. No se tocó n8n." >&2; exit 2
-  fi
+# Validación del mapa de tres nombres (la misma para --cred-* y para --credenciales-del-vivo).
+validar_mapa() {
   for _nom in "$CRED_INGESTA" "$CRED_ENVIO" "$CRED_RELE"; do
     if [[ ${#_nom} -gt 100 || "$_nom" =~ [[:cntrl:]] || "$_nom" =~ ^[[:space:]] || "$_nom" =~ [[:space:]]$ ]]; then
       echo "✗ Un nombre de credencial no es válido (hasta 100 caracteres, sin caracteres de control ni espacios en los extremos). No se tocó n8n." >&2; exit 2
@@ -240,6 +241,21 @@ if (( CRED_DADAS > 0 )); then
   if [[ "$CRED_INGESTA" == "$CRED_ENVIO" || "$CRED_INGESTA" == "$CRED_RELE" || "$CRED_ENVIO" == "$CRED_RELE" ]]; then
     echo "✗ Los tres roles (ingesta, envío y relé) tienen que nombrar credenciales DISTINTAS: el nodo que manda a Meta o al relé nunca lleva la de ingesta. No se tocó n8n." >&2; exit 2
   fi
+}
+if (( CRED_DEL_VIVO )); then
+  if [[ "$MODO" != recargar ]]; then echo "✗ --credenciales-del-vivo solo acompaña a --recargar. No se tocó n8n." >&2; exit 2; fi
+  if (( CRED_DADAS > 0 )); then echo "✗ --credenciales-del-vivo no se combina con --cred-ingesta, --cred-envio ni --cred-rele: o los nombres salen del flujo vivo o los da usted. No se tocó n8n." >&2; exit 2; fi
+  if (( SINSUFIJO )); then echo "✗ --tabla-demo-a no se combina con las credenciales existentes: la atadura al alias exige la fila del teléfono de ESE alias. No se tocó n8n." >&2; exit 2; fi
+fi
+# Credenciales existentes por nombre real: las tres o ninguna, nombres válidos y distintos.
+if (( CRED_DADAS > 0 )); then
+  if (( CRED_DADAS != 3 )) || [[ -z "$CRED_INGESTA" || -z "$CRED_ENVIO" || -z "$CRED_RELE" ]]; then
+    echo "✗ Las credenciales existentes se indican las TRES (--cred-ingesta, --cred-envio y --cred-rele), una vez cada una y con nombre: falta un rol, está repetido o vacío. No se tocó n8n." >&2; exit 2
+  fi
+  if [[ "$MODO" == crear-cred || "$MODO" == quitar-cred ]]; then
+    echo "✗ --cred-ingesta, --cred-envio y --cred-rele usan credenciales EXISTENTES: no se combinan con --crear-credenciales ni --quitar-credenciales. No se tocó n8n." >&2; exit 2
+  fi
+  validar_mapa
   if (( SINSUFIJO )); then
     echo "✗ --tabla-demo-a no se combina con las credenciales existentes: la atadura al alias exige la fila del teléfono de ESE alias. No se tocó n8n." >&2; exit 2
   fi
@@ -247,7 +263,7 @@ if (( CRED_DADAS > 0 )); then
 fi
 # Un alias que no es de ensayo (cliente real) carga y activa SOLO con el mapa de credenciales existentes: sin él se
 # buscarían las de ensayo por el alias, que no están atadas a su número, y la atadura (vincular_al_alias) no correría.
-if (( CRED_DADAS == 0 )) && [[ "$MODO" == cargar || "$MODO" == activar || "$MODO" == recargar ]]; then
+if (( CRED_DADAS == 0 && ! CRED_DEL_VIVO )) && [[ "$MODO" == cargar || "$MODO" == activar || "$MODO" == recargar ]]; then
   case " $ALIAS_ENSAYO " in
     *" $ALIAS "*) ;;
     *) echo "✗ El alias «${ALIAS}» no es un alias de ensayo (${ALIAS_ENSAYO}): un cliente real se carga y se activa con --cred-ingesta, --cred-envio y --cred-rele (credenciales existentes, atadas a su número). No se tocó n8n." >&2; exit 2 ;;
@@ -1031,6 +1047,58 @@ def cmd_vivo_timbre(vivo_f, creds_f, wfs_f, alias, timbre_id, path_out):
     print("flujo vivo del alias: es el de este alias, su Timbre cumple los cerrojos y su ruta se CONSERVA (no se imprime)")
 
 
+def cmd_del_vivo(vivo_f, creds_f, rele_inerte, mapa_out):
+    """--recargar --credenciales-del-vivo: el NOMBRE y el TIPO de la credencial que usa cada rol en el flujo VIVO (ya validado como
+    propio por vivo_timbre): ingesta (Reclamar, Leer adjunto, Confirmar), envío (Enviar por Graph, Subir a Meta, Enviar adjunto
+    por Graph) y relé (Enviar por el relé). El nombre sale de la lista viva de credenciales POR ID (el `name` guardado en el nodo
+    puede estar viejo). Aborta sin escribir si un rol no tiene credencial, si dos nodos del rol citan credenciales distintas o si
+    la credencial no existe una sola vez con ese tipo. Con el relé del vivo inerte exige --rele-inerte --canal-graph. Imprime
+    los nombres (no son secretos); nunca ids, rutas ni claves. Los nombres van a `mapa_out` (JSON, modo 600) para el shell."""
+    vivo, creds = cargar(vivo_f), cargar(creds_f)["data"]
+    por_nodo = {}
+    for x in vivo.get("nodes") or []:
+        por_nodo.setdefault(x.get("name"), []).append(x)
+    roles = (("ingesta", "ingesta", ("Reclamar", "Leer adjunto", "Confirmar"), ("httpHeaderAuth",)),
+             ("graph", "envío", NODOS_GRAPH, TIPOS_ENVIO),
+             ("rele", "relé", ("Enviar por el relé",), ("httpHeaderAuth",)))
+    mapa, errores = {}, []
+    for clave, etiqueta, nombres_nodo, tipos in roles:
+        citadas, hubo = set(), False
+        for nom in nombres_nodo:
+            for nodo in por_nodo.get(nom, []):
+                hubo = True
+                c = nodo.get("credentials") or {}
+                if len(c) != 1:
+                    errores.append("el nodo «%s» (rol %s) no cita exactamente una credencial" % (nom, etiqueta))
+                    continue
+                tipo, ref = next(iter(c.items()))
+                if tipo not in tipos or not isinstance(ref, dict) or not (ref.get("id") or ref.get("name")):
+                    errores.append("el nodo «%s» (rol %s) cita una credencial de tipo o forma que ese rol no admite" % (nom, etiqueta))
+                    continue
+                if ref.get("id"):
+                    hay = [x for x in creds if x.get("id") == ref["id"] and x.get("type") == tipo]
+                else:
+                    hay = [x for x in creds if x.get("name") == ref.get("name") and x.get("type") == tipo]
+                if len(hay) != 1:
+                    errores.append("el nodo «%s» (rol %s) cita una credencial que no existe una sola vez en la lista viva de n8n" % (nom, etiqueta))
+                    continue
+                citadas.add((hay[0]["id"], hay[0]["name"], tipo))
+        if not hubo:
+            errores.append("el flujo vivo no tiene ningún nodo del rol %s (%s): no hay credencial que tomar" % (etiqueta, ", ".join(nombres_nodo)))
+        elif len(citadas) > 1:
+            errores.append("el rol %s cita credenciales DISTINTAS en sus nodos (%s): no se elige una" % (etiqueta, ", ".join(nombres_nodo)))
+        elif len(citadas) == 1:
+            mapa[clave] = next(iter(citadas))
+    if errores:
+        salir(4, "\n".join("    " + e for e in errores) + "\n    no se escribe nada")
+    if _rele_de(vivo) == RELE_INERTE and rele_inerte != "1":
+        salir(4, "    el relé del flujo vivo es el INERTE (http://relay-inerte.invalid): repita con --rele-inerte --canal-graph\n    no se escribe nada")
+    escribir_600(mapa_out, json.dumps({k: v[1] for k, v in mapa.items()}, ensure_ascii=False))
+    print("credenciales tomadas del flujo vivo (solo nombres; ni ids, ni rutas ni claves):")
+    for clave, etiqueta in (("ingesta", "ingesta"), ("graph", "envío"), ("rele", "relé")):
+        print("    %s: «%s» (%s)" % (etiqueta, mapa[clave][1], mapa[clave][2]))
+
+
 def cmd_igual(cuerpo_f, vivo_f):
     """Imprime «igual» o «distinto»: nodo por nodo y por nombre (type, typeVersion, parameters, credentials, webhookId), más
     connections y SOLO las claves de settings que trae el cuerpo (n8n añade las suyas). Posiciones e ids de nodo no cuentan."""
@@ -1252,10 +1320,9 @@ PY
 py() { python3 -I "$WORK/lib.py" "$@"; }
 # Lista negra de nombres de credencial (CLAUDE.md, prohibiciones 5 y 7), con la MISMA normalización y la MISMA lista que usa el cerrojo
 # de roles de Python (normalizar() de lib.py). FALLA CERRADO: 0 = limpio, 3 = ajeno; cualquier otro código (un fallo de Python) aborta.
-if (( CRED_DADAS > 0 )) || [[ "$MODO" == crear-rele ]]; then
-  _noms=("$CRED_INGESTA" "$CRED_ENVIO" "$CRED_RELE")
-  [[ "$MODO" != crear-rele ]] || _noms=("Relé inerte (${ALIAS})")
-  for _nom in "${_noms[@]}"; do
+revisar_ajenos() { # <nombres...>: lista negra, falla cerrado
+  local _nom _cod
+  for _nom in "$@"; do
     _cod=0; py ajeno "$_nom" >/dev/null 2>&1 || _cod=$?
     case "$_cod" in
       0) ;;
@@ -1263,7 +1330,9 @@ if (( CRED_DADAS > 0 )) || [[ "$MODO" == crear-rele ]]; then
       *) echo "✗ Error al revisar los nombres de las credenciales (no se pudo comprobar la lista negra): se aborta. No se tocó n8n." >&2; exit 2 ;;
     esac
   done
-fi
+}
+if (( CRED_DADAS > 0 )); then revisar_ajenos "$CRED_INGESTA" "$CRED_ENVIO" "$CRED_RELE"; fi
+if [[ "$MODO" == crear-rele ]]; then revisar_ajenos "Relé inerte (${ALIAS})"; fi
 
 # --- n8n por la API: la clave va por stdin (-H @-), nunca por argumentos ---------------
 CODIGO=000
@@ -1572,6 +1641,18 @@ if [[ "$MODO" == recargar ]]; then
     falla "el flujo vivo no se puede recargar (no se escribió nada):"; echo "$SAL" >&2; exit 2
   fi
   echo "$SAL"
+  if (( CRED_DEL_VIVO )); then
+    echo "Credenciales del flujo vivo"
+    if ! SAL="$(py del_vivo "$WORK/vivo.json" "$WORK/credenciales.json" "$RELE_INERTE" "$WORK/mapa-vivo.json")"; then
+      falla "no se pueden tomar las credenciales del flujo vivo (no se escribió nada):"; echo "$SAL" >&2; exit 2
+    fi
+    echo "$SAL"
+    CRED_INGESTA="$(py campo "$WORK/mapa-vivo.json" ingesta)"; CRED_ENVIO="$(py campo "$WORK/mapa-vivo.json" graph)"; CRED_RELE="$(py campo "$WORK/mapa-vivo.json" rele)"
+    [[ -n "$CRED_INGESTA" && -n "$CRED_ENVIO" && -n "$CRED_RELE" ]] || { falla "no pude leer el mapa tomado del flujo vivo: no se escribió nada"; exit 2; }
+    validar_mapa
+    revisar_ajenos "$CRED_INGESTA" "$CRED_ENVIO" "$CRED_RELE"
+    export TIMBRE_CRED_INGESTA="$CRED_INGESTA" TIMBRE_CRED_ENVIO="$CRED_ENVIO" TIMBRE_CRED_RELE="$CRED_RELE"
+  fi
   PUB="$(py publicada "$WORK/vivo.json")" || { falla "no puedo saber qué versión corre (n8n no mandó versionId/activeVersionId de un flujo activo): falla cerrado, no se escribió nada"; exit 2; }
   if [[ "$WF_ACTIVO" == true && "$PUB" != si ]]; then
     falla "el flujo vivo está ACTIVO y su borrador difiere de la versión publicada (versionId distinto de activeVersionId): hay cambios sin publicar que una recarga pisaría. Revíselos en n8n o use --activar. No se escribió nada."; exit 2

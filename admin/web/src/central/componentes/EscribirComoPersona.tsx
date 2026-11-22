@@ -110,34 +110,36 @@ export function EscribirComoPersona(p: PropsEscribir) {
 
   return (
     <form className="cv-redactor" data-testid="redactor" onSubmit={(e) => { e.preventDefault(); void enviar(); }}>
-      {ventana.estado === 'abierta' && (
-        <p className={`cv-redactor-ventana${ventana.restanteMs <= 3_600_000 ? ' cv-redactor-ventana--poco' : ''}`}
-          role="timer" aria-live="off" aria-label="Tiempo que queda de la ventana de 24 horas de WhatsApp">
-          Ventana de WhatsApp: <time data-testid="cuenta-regresiva">{textoCuentaRegresiva(ventana.restanteMs)}</time>
-        </p>
-      )}
       {motivo && <p id={idAyuda} className="cv-redactor-motivo" role="status">{motivo}</p>}
 
       <label htmlFor="cv-redactor-texto" className="cv-redactor-rotulo">Mensaje para el cliente</label>
-      <textarea
-        id="cv-redactor-texto" className="cv-redactor-campo" rows={3} value={crudo}
-        onChange={(e) => { setCrudo(e.target.value); if (aviso) setAviso(null); if (error) setError(null); }}
-        onKeyDown={(e) => {
-          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); void enviar(); }
-        }}
-        disabled={motivo !== null} readOnly={enviando}
-        aria-invalid={invalido ? true : undefined}
-        aria-describedby={[motivo ? idAyuda : '', idContador, error ? idError : ''].filter(Boolean).join(' ')}
-        placeholder="Escriba su respuesta. Ctrl+Enter envía."
-        autoComplete="off" spellCheck
-      />
+      <div className="cv-redactor-fila">
+        <textarea
+          id="cv-redactor-texto" className="cv-redactor-campo" rows={2} value={crudo}
+          onChange={(e) => { setCrudo(e.target.value); if (aviso) setAviso(null); if (error) setError(null); }}
+          onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); void enviar(); }
+          }}
+          disabled={motivo !== null} readOnly={enviando}
+          aria-invalid={invalido ? true : undefined}
+          aria-describedby={[motivo ? idAyuda : '', idContador, error ? idError : ''].filter(Boolean).join(' ')}
+          placeholder="Escriba su respuesta. Ctrl+Enter envía."
+          autoComplete="off" spellCheck
+        />
+        <button type="submit" className="btn btn-primary" disabled={!puedeEnviar} aria-busy={enviando || undefined}>
+          {enviando ? 'Enviando…' : 'Enviar'}
+        </button>
+      </div>
       <div className="cv-redactor-pie">
         <span id={idContador} className={texto.excede ? 'cv-error' : 'text-muted'}>
           {textoContador(texto.largo)}{texto.excede ? ' — se pasó del máximo' : ''}
         </span>
-        <button type="submit" className="btn btn-primary" disabled={!puedeEnviar} aria-busy={enviando || undefined}>
-          {enviando ? 'Enviando…' : 'Enviar'}
-        </button>
+        {ventana.estado === 'abierta' && (
+          <span className={`cv-redactor-ventana${ventana.restanteMs <= 3_600_000 ? ' cv-redactor-ventana--poco' : ''}`}
+            role="timer" aria-live="off" aria-label="Tiempo que queda de la ventana de 24 horas de WhatsApp">
+            Ventana de WhatsApp: <time data-testid="cuenta-regresiva">{textoCuentaRegresiva(ventana.restanteMs)}</time>
+          </span>
+        )}
       </div>
       {error && <p id={idError} role="alert" className="cv-error cv-redactor-error">{error}</p>}
       {aviso && !error && <p role="status" className="cv-redactor-aviso">{aviso}</p>}

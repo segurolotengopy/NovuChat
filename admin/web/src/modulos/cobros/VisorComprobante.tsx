@@ -118,7 +118,7 @@ export function VisorComprobante({ tenantId, origen, etiqueta = 'Ver comprobante
     <div className="visor-comprobante">
       <div role="status" ref={aviso} tabIndex={-1}>{mensaje}</div>
       {(estado.tipo === 'reposo' || estado.tipo === 'error') && (
-        <button type="button" ref={boton} className="btn btn-secondary btn-chico" onClick={() => void ver()}>
+        <button type="button" ref={boton} className="btn btn-secondary" onClick={() => void ver()}>
           {etiqueta}
         </button>
       )}
@@ -127,14 +127,14 @@ export function VisorComprobante({ tenantId, origen, etiqueta = 'Ver comprobante
           <img src={estado.src} alt="Comprobante que mandó el cliente"
                style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain' }} />
           <p>
-            <button type="button" className="btn btn-secondary btn-chico"
+            <button type="button" className="btn btn-secondary"
                     onClick={() => setEstado({ tipo: 'reposo' })}>Ocultar comprobante</button>
           </p>
         </>
       )}
       {estado.tipo === 'pdf' && (
         <p>
-          <button type="button" className="btn btn-secondary btn-chico"
+          <button type="button" className="btn btn-secondary"
                   onClick={() => setEstado({ tipo: 'reposo' })}>Entendido</button>
         </p>
       )}

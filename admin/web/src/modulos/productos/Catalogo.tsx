@@ -315,10 +315,10 @@ function Paginador({ pagina, paginas, onIr }: {
   if (paginas <= 1) return null;
   return (
     <nav className="paginador" aria-label="Páginas del catálogo">
-      <button type="button" className="btn btn-ghost btn-chico" disabled={pagina <= 1}
+      <button type="button" className="btn btn-ghost" disabled={pagina <= 1}
               onClick={() => onIr(pagina - 1)}>← Anterior</button>
       <span>Página {pagina} de {paginas}</span>
-      <button type="button" className="btn btn-ghost btn-chico" disabled={pagina >= paginas}
+      <button type="button" className="btn btn-ghost" disabled={pagina >= paginas}
               onClick={() => onIr(pagina + 1)}>Siguiente →</button>
     </nav>
   );
@@ -904,9 +904,9 @@ export function Catalogo() {
                   {it.activo !== true && (confirmando === it.id ? (
                     <span className="confirmar-baja">
                       ¿Eliminar del todo? No se puede deshacer.{' '}
-                      <button type="button" className="btn btn-ghost btn-chico"
+                      <button type="button" className="btn btn-ghost"
                               onClick={() => void eliminar(it)}>Sí, eliminar</button>
-                      <button type="button" className="btn btn-ghost btn-chico"
+                      <button type="button" className="btn btn-ghost"
                               onClick={() => setConfirmando(null)}>No</button>
                     </span>
                   ) : (
@@ -1149,7 +1149,7 @@ function SubirFoto({ tenantId, itemId, tieneFoto, onEstado }: {
 
   return (
     <span className="subir-foto">
-      <label className="btn btn-secondary btn-chico">
+      <label className="btn btn-secondary">
         {trabajando ? 'Preparando…' : tieneFoto ? 'Cambiar foto' : 'Subir foto'}
         <input type="file" accept="image/*" disabled={trabajando} hidden
                onChange={(e) => { void elegir(e.target.files?.[0]); e.target.value = ''; }} />
@@ -1160,7 +1160,7 @@ function SubirFoto({ tenantId, itemId, tieneFoto, onEstado }: {
           mensaje que hay que ir a buscar es un mensaje que no existe. */}
       {problema && <span className="foto-mal">{problema}</span>}
       {tieneFoto && (
-        <button type="button" className="btn btn-ghost btn-chico" onClick={() => {
+        <button type="button" className="btn btn-ghost" onClick={() => {
           void deleteDoc(doc(db, 'tenants', tenantId, 'fotosCatalogo', itemId));
         }}>Quitar</button>
       )}

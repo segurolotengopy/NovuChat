@@ -304,10 +304,10 @@ function CobrosDelNegocio() {
                         : <span className="tag tag-neutral">Sin comprobar</span>}
                     </td>
                     <td>
-                      <button type="button" className="btn btn-secondary btn-chico"
+                      <button type="button" className="btn btn-secondary"
                               onClick={() => setAbierto(c)}>Ver</button>
                       {soyAdmin && !listo && (
-                        <button type="button" className="btn btn-primary btn-chico"
+                        <button type="button" className="btn btn-primary"
                                 onClick={() => void comprobar(c)}>Comprobar</button>
                       )}
                     </td>

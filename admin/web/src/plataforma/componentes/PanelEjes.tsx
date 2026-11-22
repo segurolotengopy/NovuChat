@@ -176,7 +176,7 @@ function SeccionPlan(p: PanelEjesProps) {
                 : 'Cambia la copia de límites de la cuenta y la mensualidad derivada; no cambia la modalidad. Lo que va por contrato se conserva.'}
               onConfirmar={() => { p.onPlan(elegido); setPendiente(false); }}
               onCancelar={() => setPendiente(false)} />
-          : <button type="button" className="btn btn-secondary btn-chico" disabled={p.ocupado || resumen === null}
+          : <button type="button" className="btn btn-secondary" disabled={p.ocupado || resumen === null}
               onClick={() => setPendiente(true)}>Cambiar el plan</button>}
         <p className="ayuda">
           Una demostración es una modalidad, con cualquier plan: no hay plan de
@@ -209,7 +209,7 @@ function SeccionModalidad(p: PanelEjesProps) {
                 : DESCRIPCION_MODALIDAD[elegida]}
               onConfirmar={() => { p.onModalidad(elegida); setPendiente(false); }}
               onCancelar={() => setPendiente(false)} />
-          : <button type="button" className="btn btn-secondary btn-chico" disabled={p.ocupado || resumen === null}
+          : <button type="button" className="btn btn-secondary" disabled={p.ocupado || resumen === null}
               onClick={() => setPendiente(true)}>Cambiar la modalidad</button>}
       </td>
     </tr>
@@ -265,7 +265,7 @@ function FilaTitularidad({ numero, ocupado, onTitularidad }: {
         ? <Confirmacion resumen={resumen} ocupado={ocupado} advertencia={DESCRIPCION_TITULARIDAD[elegida]}
             onConfirmar={() => { onTitularidad(ruta.phoneNumberId, elegida); setPendiente(false); }}
             onCancelar={() => setPendiente(false)} />
-        : <button type="button" className="btn btn-secondary btn-chico" disabled={ocupado || resumen === null}
+        : <button type="button" className="btn btn-secondary" disabled={ocupado || resumen === null}
             onClick={() => setPendiente(true)}>Cambiar la titularidad</button>}
     </p>
   );
@@ -291,7 +291,7 @@ function SeccionModelo(p: PanelEjesProps & { modeloActual: Modelo }) {
               advertencia="El tope de BYOC se fijó contra Gemini: con Haiku el equilibrio cae a 1.542 conversaciones y con Sonnet a 771. No se cambia sin rehacer esa cuenta."
               onConfirmar={() => { p.onModelo(elegido); setPendiente(false); }}
               onCancelar={() => setPendiente(false)} />
-          : <button type="button" className="btn btn-secondary btn-chico" disabled={p.ocupado || resumen === null}
+          : <button type="button" className="btn btn-secondary" disabled={p.ocupado || resumen === null}
               onClick={() => setPendiente(true)}>Cambiar el modelo</button>}
         <p className="ayuda">Lo decide NovuChat por comercio. En F1 el flujo todavía no lo consume: queda registrado contra qué modelo se fijó el plan.</p>
       </td>
@@ -338,9 +338,9 @@ function SeccionUmbrales(p: PanelEjesProps) {
         )}
         {pendiente === null && (
           <>
-            <button type="button" className="btn btn-secondary btn-chico" disabled={p.ocupado || !cambia}
+            <button type="button" className="btn btn-secondary" disabled={p.ocupado || !cambia}
               onClick={() => setPendiente('fijar')}>Fijar los umbrales</button>{' '}
-            <button type="button" className="btn btn-ghost btn-chico" disabled={p.ocupado || actual.origen !== 'cuenta'}
+            <button type="button" className="btn btn-ghost" disabled={p.ocupado || actual.origen !== 'cuenta'}
               onClick={() => setPendiente('restaurar')}>Volver a los de respaldo</button>
           </>
         )}
@@ -397,9 +397,9 @@ function CambiosPorContrato({ ejes, ocupado, onCambiosIncluidos }: {
       )}
       {pendiente === null && (
         <>
-          <button type="button" className="btn btn-secondary btn-chico" disabled={ocupado || !cambia}
+          <button type="button" className="btn btn-secondary" disabled={ocupado || !cambia}
             onClick={() => setPendiente('fijar')}>Fijar por contrato</button>{' '}
-          <button type="button" className="btn btn-ghost btn-chico" disabled={ocupado || origen !== 'contrato'}
+          <button type="button" className="btn btn-ghost" disabled={ocupado || origen !== 'contrato'}
             onClick={() => setPendiente('plan')}>Volver a los del plan</button>
         </>
       )}
@@ -456,9 +456,9 @@ function ConversacionesPorContrato({ ejes, ocupado, onConversaciones }: {
       )}
       {pendiente === null && (
         <>
-          <button type="button" className="btn btn-secondary btn-chico" disabled={ocupado || !cambia || sinAccion}
+          <button type="button" className="btn btn-secondary" disabled={ocupado || !cambia || sinAccion}
             onClick={() => setPendiente('fijar')}>Fijar las conversaciones por contrato</button>{' '}
-          <button type="button" className="btn btn-ghost btn-chico" disabled={ocupado || origen !== 'contrato' || sinAccion}
+          <button type="button" className="btn btn-ghost" disabled={ocupado || origen !== 'contrato' || sinAccion}
             onClick={() => setPendiente('plan')}>Volver a las del plan</button>
         </>
       )}
@@ -518,9 +518,9 @@ function SeccionPrecio(p: PanelEjesProps) {
         )}
         {pendiente === null && (
           <>
-            <button type="button" className="btn btn-secondary btn-chico" disabled={p.ocupado || !cambia || sinAccion}
+            <button type="button" className="btn btn-secondary" disabled={p.ocupado || !cambia || sinAccion}
               onClick={() => setPendiente('fijar')}>Fijar el precio por contrato</button>{' '}
-            <button type="button" className="btn btn-ghost btn-chico" disabled={p.ocupado || contrato === null || sinAccion}
+            <button type="button" className="btn btn-ghost" disabled={p.ocupado || contrato === null || sinAccion}
               onClick={() => setPendiente('plan')}>Volver al precio del plan</button>
           </>
         )}
@@ -587,7 +587,7 @@ function SeccionPrueba(p: PanelEjesProps) {
               advertencia="Cubre sin huecos desde el primer mes de la prueba. La bolsa no se reinicia sola al extender. Queda en la auditoría."
               onConfirmar={() => { p.onPrueba?.(pedido); setPendiente(false); }}
               onCancelar={() => setPendiente(false)} />
-          : <button type="button" className="btn btn-secondary btn-chico" disabled={p.ocupado || !cambia || !p.onPrueba}
+          : <button type="button" className="btn btn-secondary" disabled={p.ocupado || !cambia || !p.onPrueba}
               onClick={() => setPendiente(true)}>Fijar la prueba</button>}
         {!periodoOk && <p className="field-error">El último mes es aaaa-mm, de {minimo} a {maximo} (como mucho {PRUEBA_MESES_MAXIMO} meses después del mes en curso).</p>}
         {!bolsaOk && <p className="field-error">La bolsa es un entero de 1 a {BOLSA_PRUEBA_MAXIMA}.</p>}
@@ -630,7 +630,7 @@ function RegistrarCambio({ cambios, ocupado, onCambio }: {
             advertencia="Queda en el contador del mes y en la auditoría del comercio."
             onConfirmar={() => { onCambio(descripcion.trim(), agotados && forzar); setPendiente(false); setDescripcion(''); setForzar(false); }}
             onCancelar={() => setPendiente(false)} />
-        : <button type="button" className="btn btn-secondary btn-chico" disabled={ocupado || !listo}
+        : <button type="button" className="btn btn-secondary" disabled={ocupado || !listo}
             onClick={() => setPendiente(true)}>Registrar el cambio</button>}
     </div>
   );

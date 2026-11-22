@@ -3,6 +3,7 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { PROYECTO, PUERTO_FIRESTORE, USUARIOS } from './entorno';
 import { ingresar } from './ayudas/ingresar';
+import { abrirOpciones } from './ayudas/opciones';
 import { crearUsuarioDeEnsayo, limpiarConversaciones, sembrarConversacion, type MensajeDePrueba } from './ayudas/datos';
 import prepararDatos, { fijarPantallaConversaciones } from './preparar-datos';
 import { palabrasDe, trozosDeTelefono } from '../functions/src/core/conversacion/normalizacion';
@@ -143,6 +144,7 @@ async function abrir(page: Page, correo: string = USUARIOS.adminFogon, conv: str
   await ingresar(page, correo);
   await page.goto(`/negocio/${FOGON}/conversaciones/${conv}`);
   await expect(page.getByTestId('detalle')).toBeVisible();
+  await abrirOpciones(page);
 }
 const estado = (page: Page) => page.getByTestId('estado-turno');
 const campo = (page: Page) => page.getByLabel('Mensaje para el cliente');
