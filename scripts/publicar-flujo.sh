@@ -1004,7 +1004,7 @@ PY
 fi
 
 APLICAR="$APLICAR" FORZAR="$FORZAR" ENV_FILE="$ENV_FILE" FLUJO="$FLUJO" TMP="$TMP" CRED_COD="$CRED_COD" python3 - <<'PY'
-import json, os, sys, datetime
+import json, os, re, sys, datetime
 
 aplicar  = os.environ["APLICAR"] == "1"
 forzar   = os.environ["FORZAR"] == "1"
@@ -1135,6 +1135,46 @@ for nodo, nombre, _tipo in faltantes:
     print(f"  {R}✗{FIN} {nodo}: la credencial «{nombre}» no existe en n8n (creela con ese nombre exacto); queda la del flujo vivo")
 for nodo, nombre, cuantas, _tipo in ambiguas:
     print(f"  {R}✗{FIN} {nodo}: hay {cuantas} credenciales llamadas «{nombre}»; queda la del flujo vivo")
+
+# UNA CORRECCION NUNCA CRUZA COMERCIOS (22/11/2026). Si el nodo vivo YA tiene una credencial y la «correccion» la cambia por
+# otra cuyo nombre identifica a OTRO comercio o alias, no es una correccion: es meterle al comercio la credencial de otro
+# (el seco de Casa Bermejo lo hizo hacia Walisuma: ingesta cliente10 -> cliente09, Graph Casa Bermejo -> Graph Walisuma). Se
+# compara por las palabras que IDENTIFICAN (el alias «clienteNN», la marca, el numero), sin las genericas del tipo de
+# credencial. Si no comparten ninguna, o solo una de las dos identifica, cruza. Con --aplicar aborta; el seco la senala.
+GENERICAS = {"novuchat", "ingesta", "whatsapp", "graph", "bearer", "header", "auth", "api", "credencial", "cuenta", "envio",
+             "de", "del", "la", "el", "y", "token", "meta", "cloud", "google", "sheets", "gemini", "palm", "account", "oauth",
+             "pruebas", "no", "produccion", "dra", "dr", "crm", "minicrm", "calendar", "calendario", "catalogo", "cierres"}
+def _identifica(nombre):
+    import unicodedata
+    plano = unicodedata.normalize("NFD", nombre or "").encode("ascii", "ignore").decode().lower()
+    return {t for t in re.findall(r"[a-z]+\d*|\d+", plano) if t not in GENERICAS}
+cruzan = []
+for nodo, antes, despues in corregidas:
+    if antes == "ninguna" or nodo in nuevos:   # un nodo nuevo no tenia credencial viva que cruzar
+        continue
+    ia, ib = _identifica(antes), _identifica(despues)
+    if ia != ib and not (ia & ib) and (ia or ib):
+        cruzan.append((nodo, antes, despues))
+for nodo, antes, despues in cruzan:
+    print(f"  {R}✗{FIN} {nodo}: la correccion CRUZA comercios (vivo «{antes}» -> «{despues}»)")
+if cruzan and aplicar:
+    print(f"\n{R}✗ ABORTADO antes de escribir: una credencial corregida pertenece a OTRO comercio o alias que la del flujo vivo.{FIN}")
+    print(f"{G}  Corrija el nombre de la credencial en el JSON versionado (o en la tabla local) y reintente.{FIN}")
+    sys.exit(1)
+if cruzan:
+    print(f"  {A}!{FIN} con --aplicar se abortaria: {len(cruzan)} credencial(es) corregida(s) cruzan comercios")
+
+# El nodo NUEVO «Indicador de escritura» usa la credencial de envio del PROPIO comercio: la que tiene en el vivo el nodo
+# «Enviar a WhatsApp» (mismo tipo). Gana sobre cualquier nombre declarado.
+for n in nuevo["nodes"]:
+    if n["name"] != "Indicador de escritura" or n["name"] not in nuevos:
+        continue
+    envio = por_nombre.get("Enviar a WhatsApp") or {}
+    for tipo, ref in (n.get("credentials") or {}).items():
+        propia = (envio.get("credentials") or {}).get(tipo)
+        if propia and propia.get("id"):
+            n["credentials"][tipo] = propia
+            print(f"  {V}+{FIN} {n['name']}: credencial de envio del propio comercio (la de «Enviar a WhatsApp» del vivo)")
 
 # Con --aplicar, un nodo cuya credencial NO se pudo resolver por nombre y que
 # la recibio por TIPO (relleno desde otra del mismo tipo: no es la del flujo

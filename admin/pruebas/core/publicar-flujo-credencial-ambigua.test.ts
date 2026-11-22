@@ -28,7 +28,7 @@ const nodo = (name: string, credName: string, id = '') => ({
 });
 const flujo = (nodes: unknown[]) => ({ name: 'Flujo de prueba', nodes, connections: {}, settings: {} });
 /** El flujo vivo: un nodo con una credencial ya conectada (la de «otro negocio» para el relleno por TIPO). */
-const VIVO = flujo([nodo('Existente', 'Ajena', 'ID-AJENA')]);
+const VIVO = flujo([nodo('Existente', 'Mia anterior', 'ID-AJENA')]);
 const UNICA = [cred('C1', 'Mia')];
 const DOBLE = [cred('C1', 'Mia'), cred('C2', 'Mia')];
 
