@@ -253,6 +253,10 @@ Las tres piezas comunes de UX (core) entran al flujo de Q'Taco con los sufijos `
 4. **Publicación:** nada republicado. Q'Taco se republica con su propio botón de Andres (`publicar-flujo.sh`, desde `main`); hasta entonces el flujo vivo conserva la expresión ancha de baja y el saludo sin «con IA». Es una diferencia **declarada**, no un atraso silencioso.
 5. **Invariantes:** `core/ux/baja.ts` y `core/ux/identidad.ts` pierden las dos excepciones de `venta-minima.qtaco*.json` y su tope baja de 14 a 12. Párrafos no tiene invariante global (ningún otro flujo usa `ctParrafos` todavía): lo prueba la suite de la venta mínima.
 
+## Estado al 21/11/2026 (indicador de escritura, PR #1067): +2 nodos por flujo con agente
+
+El indicador de escritura («escribiendo…», pieza común `Flujos/src/core/indicador/`) agrega **2 nodos** (`¿Indicador de escritura activo?` e `Indicador de escritura`) a cada flujo con agente, por orden de Andres (21/11/2026). Es `status: read` con `typing_indicator`: **0 mensajes por conversación** (no es un emisor). Topes y totales: Q'Taco 76 → **78** (3727: 84 → **86**), Rubén y Antonio 68 → **70**, Walisuma 68 → **70**, Casa Bermejo 61 → **63**, Emma y Evy 59 → **61** (canal `rele`: sin cambio), chat NovuChat 76 → **78**, Agenda mínima de Bellido 71 → **73**, Demo A 80 → **82**, Demo B 91 → **93**. Los JSON versionados quedan por delante de los vivos hasta que se publique (un solo OK de Andres): ese atraso es esta excepción declarada.
+
 ## Estado al 12/11/2026 (Casa Bermejo): excepción declarada al tope de nodos, 57
 
 `Flujos/clientes/casa-bermejo/casa-bermejo.json` tiene **57 nodos** (la variante de prueba, 52) y su constructor fija `TOPE_DE_NODOS = 57`.

@@ -48,6 +48,7 @@
  * Los umbrales, el prefijo cacheable y el estado del comercio se prueban además
  * en las suites comunes, que recorren los flujos de reservas junto con los demás.
  */
+import { NODOS_DEL_INDICADOR, esNodoIndicador } from '../../Flujos/src/core/indicador/indicador-escritura.mjs';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -457,7 +458,8 @@ describe('(e) El trato lo manda la configuración, no el prompt', () => {
 // ---------------------------------------------------------------------------
 describe('(f) Obedece los umbrales del servidor antes del modelo', () => {
   const destinos = (desde: string, salida = 0) =>
-    (demoA.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node);
+    // El indicador de escritura (21/11/2026) es una rama lateral sin salida, no una entrada al agente: no cuenta como destino del turno.
+    (demoA.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node).filter((n) => !NODOS_DEL_INDICADOR.includes(n));
   const origenes = (hacia: string) => Object.entries(demoA.connections)
     .filter(([, c]) => (c['main'] ?? []).some((s) => s.some((x) => x.node === hacia)))
     .map(([origen]) => origen);
@@ -665,7 +667,7 @@ describe.each([
   ['demo-a-agendamiento.json', demoA],
 ])('(i) %s · lo que enseñó la ejecución #2867', (_archivo, f) => {
   const destinos = (desde: string, salida = 0) =>
-    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node);
+    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node).filter((n) => !NODOS_DEL_INDICADOR.includes(n)); // el indicador de escritura (rama lateral) no es un destino del turno
   const origenes = (hacia: string) => Object.entries(f.connections)
     .filter(([, c]) => (c['main'] ?? []).some((s) => s.some((x) => x.node === hacia)))
     .map(([origen]) => origen);
@@ -794,7 +796,7 @@ describe.each([
       // La regex va ANCLADA al comienzo: reconocer un host por subcadena es
       // lo que CodeQL marca (js/regex/missing-regexp-anchor), y con razón:
       // `graph.facebook.com.ejemplo.net` pasaría el filtro.
-      const aGraph = f.nodes.filter((n) => META.test(String(n.parameters['url'] ?? ''))).map((n) => n.name);
+      const aGraph = f.nodes.filter((n) => !esNodoIndicador(n) && META.test(String(n.parameters['url'] ?? ''))).map((n) => n.name);
       expect(aGraph.sort()).toEqual(['Enviar QR de la seña', 'Enviar ubicación', 'Enviar contacto'].sort());
       expect(origenes('Enviar ubicación')).toEqual(['¿Enviar ubicación?']);
       // Dos caminos mandan la MISMA imagen: la reserva nueva y el reenvío a
@@ -1107,7 +1109,7 @@ describe.each([
 ])('(j) %s · lo que enseñó la ejecución #2936', (_archivo, f) => {
   const codigo = (nombre: string) => String(nodo(f, nombre).parameters['jsCode']);
   const destinos = (desde: string, salida = 0) =>
-    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node);
+    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node).filter((n) => !NODOS_DEL_INDICADOR.includes(n)); // el indicador de escritura (rama lateral) no es un destino del turno
   const cfg = configBase(f);
   const equipo = JSON.parse(String(cfg['funcionarios'])) as { nombre: string; calendario: string }[];
   const persona = equipo[0]!;
@@ -1517,7 +1519,7 @@ describe.each([
   ['demo-a-agendamiento.json', demoA],
 ])('(k) %s · dirección con enlace a Maps y pin a pedido', (_archivo, f) => {
   const destinos = (desde: string, salida = 0) =>
-    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node);
+    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node).filter((n) => !NODOS_DEL_INDICADOR.includes(n)); // el indicador de escritura (rama lateral) no es un destino del turno
   const origenes = (hacia: string) => Object.entries(f.connections)
     .filter(([, c]) => (c['main'] ?? []).some((s) => s.some((x) => x.node === hacia)))
     .map(([origen]) => origen);
@@ -1843,7 +1845,7 @@ describe.each([
   ['demo-a-agendamiento.json', demoA],
 ])('(l) %s · seña por QR con cotejo del comprobante', (_archivo, f) => {
   const destinos = (desde: string, salida = 0) =>
-    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node);
+    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node).filter((n) => !NODOS_DEL_INDICADOR.includes(n)); // el indicador de escritura (rama lateral) no es un destino del turno
   const origenes = (hacia: string) => Object.entries(f.connections)
     .filter(([, c]) => (c['main'] ?? []).some((s) => s.some((x) => x.node === hacia)))
     .map(([origen]) => origen);
@@ -2652,7 +2654,7 @@ describe.each([
   ['demo-a-agendamiento.json', demoA],
 ])('(m) %s · medios entrantes: audio, imagen y PDF sin comprobante', (_archivo, f) => {
   const destinos = (desde: string, salida = 0) =>
-    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node);
+    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node).filter((n) => !NODOS_DEL_INDICADOR.includes(n)); // el indicador de escritura (rama lateral) no es un destino del turno
   const origenes = (hacia: string) => Object.entries(f.connections)
     .filter(([, c]) => (c['main'] ?? []).some((s) => s.some((x) => x.node === hacia)))
     .map(([origen]) => origen);
@@ -2827,7 +2829,7 @@ describe.each([
       // archivo): no mandan nada al teléfono.
       const envia = (n: Nodo) => (n.type === 'n8n-nodes-base.whatsApp'
           && String(n.parameters['resource'] ?? 'message') === 'message')
-        || (n.type === 'n8n-nodes-base.httpRequest' && String(n.parameters['url'] ?? '').includes('/messages'));
+        || (n.type === 'n8n-nodes-base.httpRequest' && !esNodoIndicador(n) && String(n.parameters['url'] ?? '').includes('/messages')); // el indicador (`status: read`) no manda un mensaje
       expect(f.nodes.filter(envia).map((n) => n.name).sort()).toEqual(
         ['Avisar a recepción', 'Enviar QR de la seña', 'Enviar ubicación', 'Enviar contacto',
           'Responder al cliente'].sort());
