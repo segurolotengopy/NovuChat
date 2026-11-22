@@ -92,7 +92,7 @@
   background: none; border: 0; padding: 0; font: inherit; color: inherit;
 }
 .cat-foto {
-  width: 72px; height: 72px; flex: none; object-fit: cover;
+  width: 72px; height: 72px; flex: none; object-fit: contain;
   background: var(--color-surface);
 }
 .cat-foto-sin { display: block; }
