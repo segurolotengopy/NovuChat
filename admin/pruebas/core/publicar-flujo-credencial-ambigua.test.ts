@@ -27,8 +27,13 @@ const nodo = (name: string, credName: string, id = '') => ({
   credentials: { [TIPO]: { id, name: credName } },
 });
 const flujo = (nodes: unknown[]) => ({ name: 'Flujo de prueba', nodes, connections: {}, settings: {} });
-/** El flujo vivo: un nodo con una credencial ya conectada (la de «otro negocio» para el relleno por TIPO). */
-const VIVO = flujo([nodo('Existente', 'Mia anterior', 'ID-AJENA')]);
+/**
+ * El flujo vivo: un nodo con una credencial ya conectada, la que el relleno por TIPO copia a un nodo nuevo. Es del MISMO
+ * comercio que «Mia» (solo cambia el calificador tolerado «envio»): así las pruebas llegan a las guardas de nombre y de
+ * relleno por TIPO y no se detienen antes en la guarda de «una correccion no cruza comercios» (sus pruebas, con alias
+ * distintos, están en valores-del-vivo.test.ts).
+ */
+const VIVO = flujo([nodo('Existente', 'Mia envio', 'ID-AJENA')]);
 const UNICA = [cred('C1', 'Mia')];
 const DOBLE = [cred('C1', 'Mia'), cred('C2', 'Mia')];
 
@@ -82,9 +87,10 @@ describe('publicar-flujo.sh y las credenciales sin resolver', () => {
   });
 
   it('--aplicar: nombre inexistente y relleno por TIPO aborta antes de escribir', () => {
-    const r = correr(flujo([nodo('Existente', 'Ajena', 'x'), nodo('Nodo nuevo', 'No existe')]), [cred('C9', 'Ajena')], ['--aplicar']);
+    const r = correr(flujo([nodo('Existente', 'Mia envio', 'x'), nodo('Nodo nuevo', 'No existe')]), [cred('C9', 'Mia envio')], ['--aplicar']);
     expect(r.codigo, r.salida).toBe(1);
-    expect(r.salida).toMatch(/Nodo nuevo/);
+    expect(r.salida).toMatch(/ABORTADO antes de escribir: estos nodos recibirian una credencial por TIPO sin que su nombre se resolviera[\s\S]*Nodo nuevo/);
+    expect(r.salida).not.toMatch(/CRUZA/);
     expect(escribio(r.llamadas)).toBe(false);
   });
 

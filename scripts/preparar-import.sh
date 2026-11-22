@@ -267,7 +267,10 @@ if os.environ.get("VALORES_DEL_VIVO") == "1":
     import subprocess, tempfile
     base_de = lambda mk: re.match(r'REEMPLAZAR_[A-Z][A-Z0-9_]*', mk).group(0)
     entradas = set(re.findall(r'REEMPLAZAR_[A-Z][^"\\\s:|,;]*', texto))
-    pedidos = sorted({base_de(e) for e in entradas if e not in tabla and e not in (MARCADOR_RELE, MARCADOR_EW)})
+    # EL VIVO GANA a la tabla en estos dos, aunque este vacio: nunca se publican telefonos de prueba ni la etapa de prueba en
+    # produccion (decision del 22/11/2026). Un marcador «pendiente» de la tabla tampoco tiene valor y se toma del vivo.
+    VIVO_GANA = ("REEMPLAZAR_TELEFONOS_DE_PRUEBA", "REEMPLAZAR_ETAPA_PRUEBA")
+    pedidos = sorted({base_de(e) for e in entradas if (e not in tabla or base_de(e) in VIVO_GANA) and e not in (MARCADOR_RELE, MARCADOR_EW)})
     if pedidos:
         with tempfile.TemporaryDirectory() as tdir:
             salida_v = os.path.join(tdir, "valores.json")
@@ -285,6 +288,9 @@ if os.environ.get("VALORES_DEL_VIVO") == "1":
                 nombre, _, estado = linea.partition("\t")
                 if nombre not in del_vivo:
                     motivos_vivo[nombre] = estado
+        for mk in pedidos:
+            if mk in VIVO_GANA and mk not in del_vivo:
+                tabla.pop(mk, None)   # sin valor del vivo, el de la tabla tampoco se usa: el marcador queda y el script falla
         for mk, val in del_vivo.items():
             esc = json.dumps(val, ensure_ascii=False)[1:-1]
             texto = re.sub(re.escape(mk) + r'(?![A-Za-z0-9_])', lambda _m: esc, texto)

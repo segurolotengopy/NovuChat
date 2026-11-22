@@ -5,7 +5,7 @@
  * la salida jamas contiene el valor. Ademas: una correccion de credencial de publicar-flujo.sh nunca cruza comercios.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -98,9 +98,34 @@ describe('valores-del-vivo.py: extraccion', () => {
     expect(valores).toEqual({});
     for (const m of ['PHONE_NUMBER_ID_X', 'PLANILLA_PROSPECTOS_ID_X', 'RUTA_RECEPTOR_X']) expect(out).toContain(`REEMPLAZAR_${m}`);
   });
+  it('el vivo de OTRO flujo (otro nombre) => falla cerrado «el vivo no es este flujo», sin tomar ni mostrar nada', () => {
+    const v = flujo([nodo('Config', { phone: 'REEMPLAZAR_PHONE_NUMBER_ID_X' })], 'NovuChat — Dra. Evy');
+    const vivo = flujo([nodo('Config', { phone: PHONE })], 'NovuChat — Dra. Emma');
+    const { r, valores, out } = helper(v, vivo, ['REEMPLAZAR_PHONE_NUMBER_ID_X']);
+    expect(r.status).toBe(1);
+    expect(valores).toEqual({});
+    expect(out).toContain('el vivo no es este flujo');
+    expect(out).toContain('REEMPLAZAR_PHONE_NUMBER_ID_X');
+    expect(out).not.toContain(PHONE);
+  });
+  it('la forma se ancla al nombre completo: un *_HOJA no recibe la forma de un id de planilla', () => {
+    const v = flujo([nodo('A', { h: 'REEMPLAZAR_PLANILLA_PROSPECTOS_HOJA', i: 'REEMPLAZAR_PLANILLA_PROSPECTOS_ID_X' })]);
+    const vivo = flujo([nodo('A', { h: PLANILLA, i: PLANILLA })]);
+    const { r, valores, out } = helper(v, vivo, ['REEMPLAZAR_PLANILLA_PROSPECTOS_HOJA', 'REEMPLAZAR_PLANILLA_PROSPECTOS_ID_X']);
+    expect(r.status).toBe(1);
+    expect(Object.keys(valores)).toEqual(['REEMPLAZAR_PLANILLA_PROSPECTOS_ID_X']);
+    expect(out).toContain('REEMPLAZAR_PLANILLA_PROSPECTOS_HOJA\tNO resuelto');
+  });
+  it('TELEFONOS_DE_PRUEBA y ETAPA_PRUEBA admiten el valor vacio del vivo', () => {
+    const v = flujo([nodo('C', { t: 'REEMPLAZAR_TELEFONOS_DE_PRUEBA', e: 'REEMPLAZAR_ETAPA_PRUEBA' })]);
+    const vivo = flujo([nodo('C', { t: '', e: '' })]);
+    const { r, valores } = helper(v, vivo, ['REEMPLAZAR_TELEFONOS_DE_PRUEBA', 'REEMPLAZAR_ETAPA_PRUEBA']);
+    expect(r.status).toBe(0);
+    expect(valores).toEqual({ REEMPLAZAR_TELEFONOS_DE_PRUEBA: '', REEMPLAZAR_ETAPA_PRUEBA: '' });
+  });
   it('un sufijo sin forma declarada nunca se adivina', () => {
-    const v = flujo([nodo('A', { a: 'REEMPLAZAR_ETAPA_PRUEBA' })]);
-    expect(helper(v, flujo([nodo('A', { a: 'no' })]), ['REEMPLAZAR_ETAPA_PRUEBA']).r.status).toBe(1);
+    const v = flujo([nodo('A', { a: 'REEMPLAZAR_COLOR_FAVORITO' })]);
+    expect(helper(v, flujo([nodo('A', { a: 'no' })]), ['REEMPLAZAR_COLOR_FAVORITO']).r.status).toBe(1);
   });
 });
 
@@ -141,6 +166,64 @@ describe('preparar-import.sh --valores-del-vivo', () => {
     expect(texto()).not.toContain(PHONE);
     expect(texto()).toContain(WABA);
   });
+  it('TELEFONOS_DE_PRUEBA y ETAPA_PRUEBA: el vivo gana a la tabla aunque este vacio (nunca telefonos de prueba en produccion)', () => {
+    const v = flujo([nodo('Config', { t: 'REEMPLAZAR_TELEFONOS_DE_PRUEBA', e: 'REEMPLAZAR_ETAPA_PRUEBA', k: 'dato' })]);
+    const vivoVacio = flujo([nodo('Config', { t: '', e: '', k: 'dato' })]);
+    const { r, out, texto } = correr(v, vivoVacio, ['| `REEMPLAZAR_TELEFONOS_DE_PRUEBA` | 500000000001,500000000002 |', '| `REEMPLAZAR_ETAPA_PRUEBA` | si |']);
+    expect(r.status, out).toBe(0);
+    expect(texto()).not.toContain('5000000000');
+    expect(JSON.parse(texto()).nodes[0].parameters).toEqual({ t: '', e: '', k: 'dato' });
+    expect(out).not.toContain('500000000001');
+  });
+  it('TELEFONOS_DE_PRUEBA que el vivo no entrega: no se usa el de la tabla; el marcador queda y el script falla', () => {
+    const v = flujo([nodo('Config', { t: 'REEMPLAZAR_TELEFONOS_DE_PRUEBA' })]);
+    const vivoSin = flujo([nodo('Otro', { t: '' })]);
+    const { r, texto } = correr(v, vivoSin, ['| `REEMPLAZAR_TELEFONOS_DE_PRUEBA` | 500000000001 |']);
+    expect(r.status).toBe(1);
+    expect(texto()).toContain('REEMPLAZAR_TELEFONOS_DE_PRUEBA');
+    expect(texto()).not.toContain('500000000001');
+  });
+  it('un marcador «pendiente» de la tabla se toma del vivo', () => {
+    const { r, texto } = correr(versionado, vivo, ['| `REEMPLAZAR_PHONE_NUMBER_ID_X` | pendiente |']);
+    expect(r.status).toBe(0);
+    expect(texto()).toContain(PHONE);
+  });
+  it('el vivo de otro flujo: falla cerrado y no escribe valores', () => {
+    const otro = flujo([nodo('Config', { phone: PHONE, waba: WABA }), nodo('Codigo', { jsCode: `const p = "${PHONE}";` })], 'Otro comercio');
+    const { r, out, texto } = correr(versionado, otro, []);
+    expect(r.status).toBe(1);
+    expect(out).toContain('el vivo no es este flujo');
+    expect(texto()).not.toContain(PHONE);
+  });
+  it('TELEFONOS_DE_PRUEBA y ETAPA_PRUEBA: el vivo gana a la tabla aunque este vacio (nunca telefonos de prueba en produccion)', () => {
+    const v = flujo([nodo('Config', { t: 'REEMPLAZAR_TELEFONOS_DE_PRUEBA', e: 'REEMPLAZAR_ETAPA_PRUEBA', k: 'dato' })]);
+    const vivoVacio = flujo([nodo('Config', { t: '', e: '', k: 'dato' })]);
+    const { r, out, texto } = correr(v, vivoVacio, ['| `REEMPLAZAR_TELEFONOS_DE_PRUEBA` | 500000000001,500000000002 |', '| `REEMPLAZAR_ETAPA_PRUEBA` | si |']);
+    expect(r.status, out).toBe(0);
+    expect(texto()).not.toContain('5000000000');
+    expect(JSON.parse(texto()).nodes[0].parameters).toEqual({ t: '', e: '', k: 'dato' });
+    expect(out).not.toContain('500000000001');
+  });
+  it('TELEFONOS_DE_PRUEBA que el vivo no entrega: no se usa el de la tabla; el marcador queda y el script falla', () => {
+    const v = flujo([nodo('Config', { t: 'REEMPLAZAR_TELEFONOS_DE_PRUEBA' })]);
+    const vivoSin = flujo([nodo('Otro', { t: '' })]);
+    const { r, texto } = correr(v, vivoSin, ['| `REEMPLAZAR_TELEFONOS_DE_PRUEBA` | 500000000001 |']);
+    expect(r.status).toBe(1);
+    expect(texto()).toContain('REEMPLAZAR_TELEFONOS_DE_PRUEBA');
+    expect(texto()).not.toContain('500000000001');
+  });
+  it('un marcador «pendiente» de la tabla se toma del vivo', () => {
+    const { r, texto } = correr(versionado, vivo, ['| `REEMPLAZAR_PHONE_NUMBER_ID_X` | pendiente |']);
+    expect(r.status).toBe(0);
+    expect(texto()).toContain(PHONE);
+  });
+  it('el vivo de otro flujo: falla cerrado y no escribe valores', () => {
+    const otro = flujo([nodo('Config', { phone: PHONE, waba: WABA }), nodo('Codigo', { jsCode: `const p = "${PHONE}";` })], 'Otro comercio');
+    const { r, out, texto } = correr(versionado, otro, []);
+    expect(r.status).toBe(1);
+    expect(out).toContain('el vivo no es este flujo');
+    expect(texto()).not.toContain(PHONE);
+  });
   it('sin la bandera el vivo no se consulta: el marcador queda y el script falla', () => {
     const { r, out } = correr(versionado, vivo, [], []);
     expect(r.status).toBe(1);
@@ -162,44 +245,71 @@ describe('preparar-import.sh --valores-del-vivo', () => {
 });
 
 describe('publicar-flujo.sh: una correccion de credencial nunca cruza comercios', () => {
-  const GRAPH_VIVO = { id: 'c10', name: 'WhatsApp Graph (Casa Bermejo)' };
-  const GRAPH_OTRO = { id: 'c09', name: 'Graph WhatsApp Walisuma 9448 (Bearer)' };
-  const INGESTA_VIVO = { id: 'i10', name: 'NovuChat ingesta (cliente10)' };
-  const INGESTA_OTRO = { id: 'i09', name: 'NovuChat ingesta (cliente09)' };
-  const PROPIA = { id: 'g11', name: 'Graph WhatsApp Bellido (Bearer)' };
-  const PROPIA_VIEJA = { id: 'g10', name: 'WhatsApp Graph Bellido' };
+  const g = (id: string, name: string): Cred => ({ id, name });
+  const PROPIA = g('g11', 'Graph WhatsApp Bellido (Bearer)');
+  const PROPIA_VIEJA = g('g10', 'WhatsApp Graph Bellido');
 
-  function correr(vivoCred: Cred, origenCred: Cred, aplicar: boolean) {
+  /** Corre publicar-flujo.sh en una COPIA de scripts/ dentro de un directorio temporal (no en la raiz real del repo). */
+  function montar(vivo: unknown, creds: Cred[], origen: unknown, aplicar: boolean) {
     const dir = join(carpeta, `x${n++}`);
+    const raiz = join(dir, 'repo');
     const bin = join(dir, 'bin');
-    mkdirSync(bin, { recursive: true });
-    const cuerpo = (cred: Cred) => ({ id: 'abc', name: 'Flujo ajeno', active: true, nodes: [nodo('Enviar a WhatsApp', { a: 1 }, { httpHeaderAuth: cred })], connections: {}, settings: { executionOrder: 'v1' } });
-    writeFileSync(join(dir, 'vivo.json'), JSON.stringify(cuerpo(vivoCred)));
-    writeFileSync(join(dir, 'creds.json'), JSON.stringify({ data: [vivoCred, origenCred].map((c) => ({ ...c, type: 'httpHeaderAuth' })) }));
-    writeFileSync(join(dir, 'f.json'), JSON.stringify(cuerpo(origenCred)));
-    writeFileSync(join(dir, 'env'), 'N8N_API_KEY=clave-de-mentira\nN8N_BASE_URL=http://n8n.invalid\nN8N_WORKFLOW_ID=abc\n');
+    mkdirSync(join(raiz, 'scripts'), { recursive: true });
+    mkdirSync(bin);
+    copyFileSync(PUBLICAR, join(raiz, 'scripts/publicar-flujo.sh'));
+    if (existsSync(join(RAIZ, 'scripts/lib'))) cpSync(join(RAIZ, 'scripts/lib'), join(raiz, 'scripts/lib'), { recursive: true });
+    writeFileSync(join(dir, 'vivo.json'), JSON.stringify(vivo));
+    writeFileSync(join(dir, 'creds.json'), JSON.stringify({ data: creds.map((c) => ({ ...c, type: 'httpHeaderAuth' })) }));
+    writeFileSync(join(dir, 'f.json'), JSON.stringify(origen));
+    writeFileSync(join(raiz, '.env.prueba'), 'N8N_API_KEY=clave-de-mentira\nN8N_BASE_URL=http://n8n.invalid\nN8N_WORKFLOW_ID=abc\n', { mode: 0o600 });
     writeFileSync(join(bin, 'curl'), `#!/usr/bin/env bash\nurl=''; out=''\nwhile [ $# -gt 0 ]; do case "$1" in -o) out="$2";; http*) url="$1";; esac; shift; done\ncat >/dev/null\ncase "$url" in\n  *credentials*) cp '${join(dir, 'creds.json')}' "$out";;\n  *) cp '${join(dir, 'vivo.json')}' "$out";;\nesac\nprintf 200\n`);
     chmodSync(join(bin, 'curl'), 0o755);
-    const r = spawnSync('bash', [PUBLICAR, '--env', relative(RAIZ, join(dir, 'env')), '--flujo', join(dir, 'f.json'), ...(aplicar ? ['--aplicar'] : [])], {
-      cwd: RAIZ, encoding: 'utf8', input: '', env: entornoDelEmulador(undefined, { PATH: `${bin}:${process.env['PATH']}` }),
+    const r = spawnSync('bash', ['scripts/publicar-flujo.sh', '--env', '.env.prueba', '--flujo', join(dir, 'f.json'), ...(aplicar ? ['--aplicar'] : [])], {
+      cwd: raiz, encoding: 'utf8', input: '', env: entornoDelEmulador(undefined, { PATH: `${bin}:${process.env['PATH']}` }),
     });
     return { r, out: `${r.stdout}${r.stderr}` };
   }
+  const cuerpo = (nodes: Nodo[]) => ({ id: 'abc', name: 'Flujo ajeno', active: true, nodes, connections: {}, settings: { executionOrder: 'v1' } });
+  const envio = (cred: Cred) => nodo('Enviar a WhatsApp', { a: 1 }, { httpHeaderAuth: cred });
 
-  it('Graph del comercio -> Graph de Walisuma: se senala y, con --aplicar, aborta antes de escribir', () => {
-    const seco = correr(GRAPH_VIVO, GRAPH_OTRO, false);
-    expect(seco.out).toContain('CRUZA comercios');
-    const aplicado = correr(GRAPH_VIVO, GRAPH_OTRO, true);
-    expect(aplicado.r.status).not.toBe(0);
-    expect(aplicado.out).toContain('ABORTADO antes de escribir');
-    expect(aplicado.out).toContain('OTRO comercio');
+  function correr(vivoCred: Cred, origenCred: Cred, aplicar: boolean) {
+    return montar(cuerpo([envio(vivoCred)]), [vivoCred, origenCred], cuerpo([envio(origenCred)]), aplicar);
+  }
+
+  const cruces: Array<[string, Cred, Cred]> = [
+    ['Graph del comercio -> Graph de Walisuma', g('c10', 'WhatsApp Graph (Casa Bermejo)'), g('c09', 'Graph WhatsApp Walisuma 9448 (Bearer)')],
+    ['ingesta cliente10 -> cliente09', g('i10', 'NovuChat ingesta (cliente10)'), g('i09', 'NovuChat ingesta (cliente09)')],
+    ['crm-rroca-evy -> crm-rroca-emma', g('s1', 'Google Sheets miniCRM (crm-rroca-evy)'), g('s2', 'Google Sheets miniCRM (crm-rroca-emma)')],
+    ['Ruben -> Antonio', g('r1', 'NovuChat ingesta (Ruben)'), g('r2', 'NovuChat ingesta (Antonio)')],
+    ['Bellido -> Walisuma', g('b1', 'WhatsApp Consultorio Bellido'), g('w1', 'Consultorio Walisuma')],
+    ['Cierres NovuChat A -> B', g('a1', 'Cierres NovuChat A (auto)'), g('b2', 'Cierres NovuChat B (auto)')],
+  ];
+  for (const [titulo, vivoCred, otra] of cruces) {
+    it(`${titulo}: se senala y, con --aplicar, aborta antes de escribir`, () => {
+      expect(correr(vivoCred, otra, false).out).toContain('CRUZA comercios');
+      const aplicado = correr(vivoCred, otra, true);
+      expect(aplicado.r.status).not.toBe(0);
+      expect(aplicado.out).toContain('ABORTADO antes de escribir');
+      expect(aplicado.out).toContain('OTRO comercio');
+    });
+  }
+  it('un nodo NUEVO con la credencial de otro comercio del mismo tipo que las del vivo tambien aborta', () => {
+    const ruben = g('r1', 'NovuChat ingesta (Ruben)');
+    const antonio = g('r2', 'NovuChat ingesta (Antonio)');
+    const { r, out } = montar(cuerpo([envio(ruben)]), [ruben, antonio], cuerpo([envio(ruben), nodo('Nodo nuevo', { a: 2 }, { httpHeaderAuth: antonio })]), true);
+    expect(r.status).not.toBe(0);
+    expect(out).toContain('CRUZA comercios');
+    expect(out).toContain('Nodo nuevo');
   });
-  it('ingesta cliente10 -> cliente09: cruza', () => {
-    expect(correr(INGESTA_VIVO, INGESTA_OTRO, false).out).toContain('CRUZA comercios');
-  });
-  it('una correccion dentro del mismo comercio no se bloquea', () => {
+  it('una correccion dentro del mismo comercio (calificadores tolerados) no se bloquea', () => {
     const { out } = correr(PROPIA_VIEJA, PROPIA, false);
     expect(out).toContain('credencial corregida');
+    expect(out).not.toContain('CRUZA comercios');
+  });
+  it('el indicador de escritura toma la credencial YA RESUELTA de «Enviar a WhatsApp» del origen', () => {
+    const indicador = nodo('Indicador de escritura', { a: 2 }, { httpHeaderAuth: { id: '', name: 'Graph WhatsApp Bellido (Bearer)' } });
+    const { out } = montar(cuerpo([envio(PROPIA_VIEJA)]), [PROPIA_VIEJA, PROPIA], cuerpo([envio(PROPIA), indicador]), false);
+    expect(out).toContain('credencial de envio del propio comercio (la ya resuelta de «Enviar a WhatsApp»)');
     expect(out).not.toContain('CRUZA comercios');
   });
 });

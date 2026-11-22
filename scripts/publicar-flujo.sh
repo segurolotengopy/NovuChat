@@ -1136,25 +1136,55 @@ for nodo, nombre, _tipo in faltantes:
 for nodo, nombre, cuantas, _tipo in ambiguas:
     print(f"  {R}✗{FIN} {nodo}: hay {cuantas} credenciales llamadas «{nombre}»; queda la del flujo vivo")
 
+# El nodo NUEVO «Indicador de escritura» usa la credencial de envio del PROPIO comercio: la que ya quedo resuelta en el
+# origen para el nodo «Enviar a WhatsApp» (mismo tipo), no la del vivo ni un nombre declarado.
+for n in nuevo["nodes"]:
+    if n["name"] != "Indicador de escritura" or n["name"] not in nuevos:
+        continue
+    envio = next((x for x in nuevo["nodes"] if x["name"] == "Enviar a WhatsApp"), {})
+    for tipo, ref in (n.get("credentials") or {}).items():
+        propia = (envio.get("credentials") or {}).get(tipo)
+        if propia and propia.get("id"):
+            n["credentials"][tipo] = dict(propia)
+            print(f"  {V}+{FIN} {n['name']}: credencial de envio del propio comercio (la ya resuelta de «Enviar a WhatsApp»)")
+
 # UNA CORRECCION NUNCA CRUZA COMERCIOS (22/11/2026). Si el nodo vivo YA tiene una credencial y la «correccion» la cambia por
 # otra cuyo nombre identifica a OTRO comercio o alias, no es una correccion: es meterle al comercio la credencial de otro
-# (el seco de Casa Bermejo lo hizo hacia Walisuma: ingesta cliente10 -> cliente09, Graph Casa Bermejo -> Graph Walisuma). Se
-# compara por las palabras que IDENTIFICAN (el alias «clienteNN», la marca, el numero), sin las genericas del tipo de
-# credencial. Si no comparten ninguna, o solo una de las dos identifica, cruza. Con --aplicar aborta; el seco la senala.
-GENERICAS = {"novuchat", "ingesta", "whatsapp", "graph", "bearer", "header", "auth", "api", "credencial", "cuenta", "envio",
+# (el seco de Casa Bermejo lo hizo hacia Walisuma: ingesta cliente10 -> cliente09, Graph Casa Bermejo -> Graph Walisuma).
+# Se compara por DIFERENCIA SIMETRICA de las palabras que identifican (todo lo que no es del TIPO de credencial ni un
+# calificador tolerado): si alguno de los dos nombres tiene una palabra que el otro no tiene, cruza (evy -> emma,
+# Ruben -> Antonio, Bellido -> Walisuma, «Cierres A» -> «Cierres B»). Tambien un nodo NUEVO se compara contra las
+# credenciales del vivo del mismo tipo. Limite conocido: «WhatsApp Q'Taco (envio)» -> «QTaco 3727 (envio)» se marca como
+# cruce (son numeros distintos). Con --aplicar aborta; el seco la senala.
+TIPO_Y_CALIFICADORES = {"novuchat", "ingesta", "whatsapp", "graph", "header", "auth", "api", "credencial", "cuenta",
              "de", "del", "la", "el", "y", "token", "meta", "cloud", "google", "sheets", "gemini", "palm", "account", "oauth",
-             "pruebas", "no", "produccion", "dra", "dr", "crm", "minicrm", "calendar", "calendario", "catalogo", "cierres"}
+             "dra", "dr", "crm", "minicrm", "calendar", "calendario", "catalogo",
+             # calificadores tolerados (no nombran a un comercio)
+             "bearer", "envio", "auto", "prueba", "pruebas", "no", "produccion"}
 def _identifica(nombre):
     import unicodedata
     plano = unicodedata.normalize("NFD", nombre or "").encode("ascii", "ignore").decode().lower()
-    return {t for t in re.findall(r"[a-z]+\d*|\d+", plano) if t not in GENERICAS}
+    return {t for t in re.findall(r"[a-z]+\d*|\d+", plano) if t not in TIPO_Y_CALIFICADORES}
+def _cruza(a, b):
+    return bool(_identifica(a) ^ _identifica(b))
 cruzan = []
 for nodo, antes, despues in corregidas:
-    if antes == "ninguna" or nodo in nuevos:   # un nodo nuevo no tenia credencial viva que cruzar
+    if antes == "ninguna" or nodo in nuevos:   # un nodo nuevo no tenia credencial viva que cruzar (se mira abajo)
         continue
-    ia, ib = _identifica(antes), _identifica(despues)
-    if ia != ib and not (ia & ib) and (ia or ib):
+    if _cruza(antes, despues):
         cruzan.append((nodo, antes, despues))
+nombres_vivo = {}
+for v in vivo.get("nodes", []):
+    for tipo, ref in (v.get("credentials") or {}).items():
+        if (ref or {}).get("name"):
+            nombres_vivo.setdefault(tipo, set()).add(ref["name"])
+for n in nuevo["nodes"]:
+    if n["name"] not in nuevos:
+        continue
+    for tipo, ref in (n.get("credentials") or {}).items():
+        nombre, delvivo = (ref or {}).get("name"), sorted(nombres_vivo.get(tipo, ()))
+        if nombre and delvivo and all(_cruza(x, nombre) for x in delvivo):
+            cruzan.append((n["name"], delvivo[0], nombre))
 for nodo, antes, despues in cruzan:
     print(f"  {R}✗{FIN} {nodo}: la correccion CRUZA comercios (vivo «{antes}» -> «{despues}»)")
 if cruzan and aplicar:
@@ -1163,18 +1193,6 @@ if cruzan and aplicar:
     sys.exit(1)
 if cruzan:
     print(f"  {A}!{FIN} con --aplicar se abortaria: {len(cruzan)} credencial(es) corregida(s) cruzan comercios")
-
-# El nodo NUEVO «Indicador de escritura» usa la credencial de envio del PROPIO comercio: la que tiene en el vivo el nodo
-# «Enviar a WhatsApp» (mismo tipo). Gana sobre cualquier nombre declarado.
-for n in nuevo["nodes"]:
-    if n["name"] != "Indicador de escritura" or n["name"] not in nuevos:
-        continue
-    envio = por_nombre.get("Enviar a WhatsApp") or {}
-    for tipo, ref in (n.get("credentials") or {}).items():
-        propia = (envio.get("credentials") or {}).get(tipo)
-        if propia and propia.get("id"):
-            n["credentials"][tipo] = propia
-            print(f"  {V}+{FIN} {n['name']}: credencial de envio del propio comercio (la de «Enviar a WhatsApp» del vivo)")
 
 # Con --aplicar, un nodo cuya credencial NO se pudo resolver por nombre y que
 # la recibio por TIPO (relleno desde otra del mismo tipo: no es la del flujo

@@ -30,26 +30,34 @@ MARCADOR_RE = re.compile(r'REEMPLAZAR_[A-Z][A-Z0-9_]*')
 CONTEXTO = 80
 SIN_CONTROL = r'[^\x00-\x1f"\\]'
 
-# sufijo (en orden: el primero que coincide) -> (expresión de captura, forma válida de lo capturado)
+# Marcadores en los que el VIVO GANA siempre, aunque esté vacío y aunque la tabla tenga valor (decisión del 22/11/2026): así
+# nunca se publican teléfonos de prueba ni la etapa de prueba en producción. preparar-import.sh los pide siempre.
+VIVO_GANA = ("REEMPLAZAR_TELEFONOS_DE_PRUEBA", "REEMPLAZAR_ETAPA_PRUEBA")
+
+# patrón del NOMBRE del marcador (en orden: el primero que coincide) -> (captura, forma válida de lo capturado).
+# Los patrones están anclados al nombre completo: un «_HOJA» no recibe la forma de un id de planilla.
 FORMAS = [
-    ("PHONE_NUMBER_ID", r'\d+', re.compile(r'\d{6,25}')),
-    ("WABA_ID", r'\d+', re.compile(r'\d{6,25}')),
-    ("MEDIA_ID", r'\d+', re.compile(r'\d{6,25}')),
-    ("NUMERO_RECEPCION", r'\d+', re.compile(r'\d{6,25}')),
-    ("PLANILLA", r'[A-Za-z0-9_-]+', re.compile(r'[A-Za-z0-9_-]{20,}')),
+    (r'REEMPLAZAR_PHONE_NUMBER_ID(_[A-Z0-9_]+)?', r'\d+', re.compile(r'\d{6,25}')),
+    (r'REEMPLAZAR_WABA_ID(_[A-Z0-9_]+)?', r'\d+', re.compile(r'\d{6,25}')),
+    (r'REEMPLAZAR_MEDIA_ID(_[A-Z0-9_]+)?', r'\d+', re.compile(r'\d{6,25}')),
+    (r'REEMPLAZAR_NUMERO_RECEPCION(_[A-Z0-9_]+)?', r'\d+', re.compile(r'\d{6,25}')),
+    (r'REEMPLAZAR_PLANILLA_[A-Z0-9_]*_ID(_[A-Z0-9_]+)?', r'[A-Za-z0-9_-]+', re.compile(r'[A-Za-z0-9_-]{20,}')),
     # La ruta de webhook de n8n es un tramo único (UUID o token); el repo no fija otro patrón.
-    ("RUTA_RECEPTOR", r'[A-Za-z0-9_-]+', re.compile(r'[A-Za-z0-9_-]{16,128}')),
-    ("URL_CATALOGO", r'https?://[A-Za-z0-9.:-]+', re.compile(r'https?://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::\d{1,5})?')),
-    ("CREDENCIAL_", SIN_CONTROL + r'+?', re.compile(SIN_CONTROL + r'{1,100}')),
-    ("TRATAMIENTO", SIN_CONTROL + r'+?', re.compile(SIN_CONTROL + r'{1,60}')),
-    ("MODOS_DE_ENTREGA", SIN_CONTROL + r'+?', re.compile(SIN_CONTROL + r'{1,300}')),
-    ("HOSTS_FOTO", SIN_CONTROL + r'+?', re.compile(SIN_CONTROL + r'{1,300}')),
+    (r'REEMPLAZAR_RUTA_RECEPTOR(_[A-Z0-9_]+)?', r'[A-Za-z0-9_-]+', re.compile(r'[A-Za-z0-9_-]{16,128}')),
+    (r'REEMPLAZAR_URL_CATALOGO', r'https?://[A-Za-z0-9.:-]+', re.compile(r'https?://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::\d{1,5})?')),
+    (r'REEMPLAZAR_CREDENCIAL_[A-Z0-9_]+', SIN_CONTROL + r'+?', re.compile(SIN_CONTROL + r'{1,100}')),
+    (r'REEMPLAZAR_TRATAMIENTO', SIN_CONTROL + r'+?', re.compile(SIN_CONTROL + r'{1,60}')),
+    (r'REEMPLAZAR_MODOS_DE_ENTREGA', SIN_CONTROL + r'+?', re.compile(SIN_CONTROL + r'{1,300}')),
+    (r'REEMPLAZAR_HOSTS_FOTO', SIN_CONTROL + r'+?', re.compile(SIN_CONTROL + r'{1,300}')),
+    # Pueden estar vacíos en el vivo (es lo que se quiere): la forma admite la cadena vacía.
+    (r'REEMPLAZAR_TELEFONOS_DE_PRUEBA', SIN_CONTROL + r'*?', re.compile(r'[0-9+, ]{0,300}')),
+    (r'REEMPLAZAR_ETAPA_PRUEBA', SIN_CONTROL + r'*?', re.compile(r'[A-Za-z0-9_ -]{0,20}')),
 ]
 
 
 def forma_de(marcador):
-    for sufijo, captura, valida in FORMAS:
-        if sufijo in marcador:
+    for patron, captura, valida in FORMAS:
+        if re.fullmatch(patron, marcador):
             return captura, valida
     return None
 
@@ -105,6 +113,10 @@ def extraer(texto_ver, marcador, texto_vivo):
 def resolver(versionado, vivo, marcadores):
     """-> (valores {marcador: valor}, motivos {marcador: texto sin valores})."""
     valores, motivos = {}, {}
+    # El .env equivocado apunta al flujo de OTRO comercio (Evy, Emma y Antonio comparten nombres de nodo): si el vivo no se
+    # llama como el versionado, no se toma NADA.
+    if not isinstance(vivo, dict) or vivo.get("name") != versionado.get("name"):
+        return {}, {m: "el vivo no es este flujo (el nombre no coincide con el del versionado)" for m in marcadores}
     nodos_vivo = {}
     for n in vivo.get("nodes", []) if isinstance(vivo, dict) else []:
         nodos_vivo.setdefault(n.get("name"), []).append(n)
