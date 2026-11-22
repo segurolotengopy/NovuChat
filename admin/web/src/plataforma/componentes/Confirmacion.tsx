@@ -16,10 +16,10 @@ export function Confirmacion({ resumen, advertencia, ocupado, onConfirmar, onCan
     <span className="confirmar-baja" role="group" aria-label="Confirmar el cambio">
       <span>¿Confirmar? {resumen}</span>
       {advertencia && <span className="text-muted">{advertencia}</span>}
-      <button type="button" className="btn btn-primary btn-chico" disabled={ocupado} onClick={onConfirmar}>
+      <button type="button" className="btn btn-primary" disabled={ocupado} onClick={onConfirmar}>
         {ocupado ? 'Guardando…' : 'Confirmar'}
       </button>
-      <button type="button" className="btn btn-secondary btn-chico" disabled={ocupado} onClick={onCancelar}>
+      <button type="button" className="btn btn-secondary" disabled={ocupado} onClick={onCancelar}>
         Cancelar
       </button>
     </span>

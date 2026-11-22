@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { Timestamp } from 'firebase-admin/firestore';
 import { USUARIOS } from './entorno';
 import { ingresar } from './ayudas/ingresar';
+import { abrirOpciones } from './ayudas/opciones';
 import { crearUsuarioDeEnsayo, leerCampo, limpiarConversaciones, sembrarConversacion, type MensajeDePrueba } from './ayudas/datos';
 import prepararDatos, { fijarPantallaConversaciones } from './preparar-datos';
 import { palabrasDe, trozosDeTelefono } from '../functions/src/core/conversacion/normalizacion';
@@ -73,6 +74,7 @@ test.describe('Conversaciones (pantalla nueva)', () => {
     await fila(page, 'Ximena P.').click();
     await expect(page.getByTestId('detalle')).toBeVisible();
     await expect(page.getByTestId('estado-turno')).toHaveText('Responde el asistente');
+    await abrirOpciones(page);
     await expect(page.getByRole('button', { name: 'Tomar conversación' })).toBeVisible();
     await expect(page.getByRole('button', { name: /Devolver/ })).toHaveCount(0);
     await expect(page.locator('textarea')).toHaveCount(0);      // sin tomar no hay campo para escribir (la toma y el envío: conversaciones-turno.spec.ts)
@@ -217,6 +219,7 @@ test.describe('Conversaciones (pantalla nueva)', () => {
     await sembrarConversacion(FOGON, TEL_47, HOLA, campos(TEL_47, 'Ximena P.'));
     await abrirConversaciones(page);
     await fila(page, 'Ximena P.').click();
+    await abrirOpciones(page);
     const casilla = page.getByLabel('No contactar');
     await casilla.click();
     await expect(casilla).toBeChecked();

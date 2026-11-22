@@ -160,9 +160,9 @@ describe('errores y fuente', () => {
 });
 
 describe('posición de «Bloquear contacto»', () => {
-  it('va en la misma fila que «No contactar» (cv-det-sub), justo después, y no suelto debajo de la barra de turno', () => {
+  it('va en el menú «Opciones» (cv-opciones), justo después de «No contactar», y antes de la barra de turno', () => {
     const c = readFileSync(join(ADMIN, 'web/src/central/componentes/DetalleConversacion.tsx'), 'utf8');
-    const sub = c.indexOf('className="cv-det-sub"');
+    const sub = c.indexOf('className="cv-opciones"');
     const noContactar = c.indexOf('className="cv-nocontactar"');
     const bloqueo = c.indexOf('<BloqueoContacto');
     const barra = c.indexOf('<BarraTurno');

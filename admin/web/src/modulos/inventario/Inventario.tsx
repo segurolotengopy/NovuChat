@@ -249,7 +249,7 @@ function FilaStock({ item, ocupado, onMover, onDejar }: {
       <td>
         <input inputMode="numeric" placeholder="hay…" value={contar} disabled={ocupado}
                onChange={(e) => setContar(e.target.value)} />
-        <button type="button" className="btn btn-secondary btn-chico" disabled={ocupado}
+        <button type="button" className="btn btn-secondary" disabled={ocupado}
                 onClick={() => void enviar('fijarEn', contar, () => setContar(''))}>
           Contar
         </button>
@@ -258,14 +258,14 @@ function FilaStock({ item, ocupado, onMover, onDejar }: {
         <input inputMode="numeric" placeholder="entraron…" value={reponer}
                disabled={ocupado || !controla}
                onChange={(e) => setReponer(e.target.value)} />
-        <button type="button" className="btn btn-secondary btn-chico" disabled={ocupado || !controla}
+        <button type="button" className="btn btn-secondary" disabled={ocupado || !controla}
                 onClick={() => void enviar('sumar', reponer, () => setReponer(''))}>
           Reponer
         </button>
       </td>
       <td>
         {controla && (
-          <button type="button" className="btn btn-ghost btn-chico"
+          <button type="button" className="btn btn-ghost"
                   onClick={() => void onDejar(item.id)}>
             Dejar de controlar
           </button>
