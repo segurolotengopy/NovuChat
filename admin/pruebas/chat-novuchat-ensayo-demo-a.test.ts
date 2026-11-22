@@ -43,12 +43,12 @@ const CONSTRUIR = (await import(/* @vite-ignore */ join(CARPETA, 'construir.mjs'
 };
 
 describe('el armador: datos y salida del ensayo en el Demo A', () => {
-  it('arma tres salidas al día (76 nodos cada una), con la del ensayo con el miniCRM conectado y su Trigger', () => {
+  it('arma tres salidas al día (78 nodos cada una: 76 + los 2 del indicador de escritura, 21/11/2026), con la del ensayo con el miniCRM conectado y su Trigger', () => {
     const r = CONSTRUIR.construir({ verificar: true });
     expect(r.resultado.map((x) => [x.archivo, x.alDia, x.versionado, x.nodos])).toEqual([
-      ['chat-novuchat.ensayo-demo-a.json', true, [], 76],
-      ['chat-novuchat.prueba.json', true, [], 76],
-      ['chat-novuchat.novuchat.json', true, [], 76],
+      ['chat-novuchat.ensayo-demo-a.json', true, [], 78],
+      ['chat-novuchat.prueba.json', true, [], 78],
+      ['chat-novuchat.novuchat.json', true, [], 78],
     ]);
     expect(r.huerfanos).toEqual([]);
     expect(CONSTRUIR.salidaDe('ensayo-demo-a.json')).toBe('chat-novuchat.ensayo-demo-a.json');
@@ -315,7 +315,7 @@ describe('la herramienta con --conservar-crm (n8n de mentira)', () => {
     expect(r.codigo, r.salida).toBe(0);
     expect(puts).toHaveLength(1);
     const b = puts[0]!;
-    expect((b.nodes as J[]).length).toBe(76);
+    expect((b.nodes as J[]).length).toBe(78);
     for (const n of HOJAS) expect(nodo(b, n).credentials.googleApi, n).toEqual({ id: 'c-hoja', name: CRED_ENSAYO });
     expect(baseDe(b)['planillaProspectosId']).toBe(PLANILLA);
     expect(baseDe(b)['planillaProspectosHoja']).toBe(HOJA);

@@ -120,6 +120,8 @@ export function copiarModulosComunesAlTemporal(raiz: string): void {
     'experimental/comun-sin-agente/construir-crm.mjs', 'src/modulos/crm/crm.js', 'src/modulos/crm/adaptador-senales.js', 'src/modulos/crm/nodo-prospecto.js', 'src/modulos/crm/nodo-decidir-fila.js', 'src/core/medios/anuncio-por-titular.js',
     // la respuesta coherente de Q'Taco (`+coherente`): la pieza `rc*` (ya no usa el filtro común)
     'src/core/conversacion/respuesta-coherente.js',
+    // el indicador de escritura (21/11/2026): lo incluyen todos los constructores de flujos con agente
+    'src/core/indicador/indicador-escritura.mjs',
     // la UX común de Q'Taco (`+baja` y `+texto`): la baja por texto, la identidad «con IA» y los párrafos
     'src/core/conversacion/baja.js', 'src/core/texto/identidad.js', 'src/core/texto/parrafos.js']) {
     const destino = join(raiz, 'Flujos', rel);

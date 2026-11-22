@@ -70,7 +70,7 @@ WhatsApp (Meta Cloud API)
    capacidad: nunca en archivos versionados, notas de n8n ni registros. El
    detalle con los nombres concretos está en la documentación del receptor
    (WhatsApp-Modular, `docs/25` §6). El token de negocio del alta solo se
-   usa en el nodo de envío (mensajes y medios); cualquier otra llamada con él, en
+   usa en el nodo de envío (mensajes y medios) y en el nodo común «Indicador de escritura» (`status: read` con `typing_indicator`, autorizado por Andres el 21/11/2026); cualquier otra llamada con él, en
    particular `subscribed_apps`, `/subscriptions`, `register` y
    `message_templates`, es de la sesión de WhatsApp-Modular.
 6. **NUNCA** publicar el número de prueba a terceros: solo responde a los 5

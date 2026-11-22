@@ -30,6 +30,7 @@ import {
   MENSAJE_USO_EXTENDIDO, avisoDeTransicion, estadoDeAtencion, umbralesDeAtencion,
 } from '../functions/src/core/conteo/atencion.ts';
 import { contadoresDelMensaje } from '../functions/src/ingesta.ts';
+import { NODOS_DEL_INDICADOR } from '../../Flujos/src/core/indicador/indicador-escritura.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 
@@ -55,7 +56,8 @@ function nodo(f: Flujo, nombre: string): Nodo {
 }
 
 const destinos = (f: Flujo, desde: string, salida = 0) =>
-  (f.connections[desde]?.main?.[salida] ?? []).map((x) => x.node);
+  // El indicador de escritura (21/11/2026) es una rama LATERAL sin salida: no es un eslabón de la cadena hacia el agente ni cambia a quién llega el turno.
+  (f.connections[desde]?.main?.[salida] ?? []).map((x) => x.node).filter((n) => !NODOS_DEL_INDICADOR.includes(n));
 
 /** Quién entra a un nodo, por cualquier salida. */
 const origenes = (f: Flujo, hacia: string) => Object.entries(f.connections)

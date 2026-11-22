@@ -24,6 +24,7 @@ import { injertarCrm, ramaCrm, rutasPaqueteCrmSenales } from '../../Flujos/exper
 
 // @ts-expect-error módulo .mjs sin tipos
 import { reglaDeIdentidadDelCore } from '../../Flujos/clientes/agenda-minima/regla-identidad.mjs';
+import { injertarIndicador } from '../../Flujos/src/core/indicador/indicador-escritura.mjs';
 const aqui = dirname(fileURLToPath(import.meta.url));
 // Los proyectos de juguete viven en una carpeta temporal: el tope de lectura de las pruebas es esa carpeta.
 const TOPE = tmpdir();
@@ -83,6 +84,7 @@ describe('el armador genérico produce los JSON de Agenda mínima, byte por byte
       for (const a of flujo.nodes.find((n: { name: string }) => n.name === 'Config base').parameters.assignments.assignments) if (a.name === 'planillaProspectosId') a.value = '';
     }
     injertarGuardado(flujo, { guardarUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio' });
+    injertarIndicador(flujo, { ancla: { nodo: '¿Extraer?' } }); // el indicador de escritura (21/11/2026), como lo arma el constructor
     injertarCrm(flujo, mapaCrm);
     return `${JSON.stringify(flujo, null, 2)}\n`;
   };

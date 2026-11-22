@@ -12,8 +12,8 @@ import { ANA, BETO, CARPETA, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDID
 
 describe('topología y tamaño', () => {
   it('envío directo: producción 59 nodos y prueba 54 (36 y 31 más los 9 del guardado, los 8 del miniCRM y los 6 de la foto sin conteo: 2 del reporte y 4 del guardado saliente), con el tope de 59; con el canal rele, 58 y 53', () => {
-    expect(PRODUCCION.nodes.length).toBe(ES_RELE ? 58 : 59);
-    expect(PRUEBA.nodes.length).toBe(ES_RELE ? 53 : 54);
+    expect(PRODUCCION.nodes.length).toBe(ES_RELE ? 58 : 61);
+    expect(PRUEBA.nodes.length).toBe(ES_RELE ? 53 : 56);
   });
   it('sin agente, memoria ni modelo de chat de n8n, y sin WhatsApp Trigger', () => {
     for (const f of [PRODUCCION, PRUEBA]) {

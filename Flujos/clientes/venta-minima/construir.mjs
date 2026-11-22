@@ -52,6 +52,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DEL_GUARDADO_SALIENTE, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
+import { esNodoIndicador, hallazgosDelIndicador, injertarIndicador } from '../../src/core/indicador/indicador-escritura.mjs';
 import { fuentesDeLaCadenaComun, hallazgosDelGuardadoSaliente, injertarGuardadoSaliente, NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE, URL_DESCARGA_SALIENTE } from '../../src/core/sin-agente/guardado-saliente.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../../experimental/comun-sin-agente/construir-crm.mjs';
@@ -103,7 +104,7 @@ const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 // +10: el miniCRM de Q'Taco 3727 (módulo `crm`, `ramaCrm`: 8 nodos) y la IMAGEN de las campañas (2 nodos), de 71 a 81 (Andres, 06/11/2026: «D2 = tope de nodos aprobado»). 81 = 69 + 2 (cupos) + 2 (imagen) + 8 (miniCRM).
 // El miniCRM solo lo lleva `venta-minima.qtaco-3727.json` (dato `crm`); reconciliado en la integración: el 3727 queda en 81 (el tope, sin margen), qtaco en 73. Ver DISENO.md y docs/versiones-por-cliente.md.
 // +3: la rama del guardado de la IMAGEN SALIENTE del asistente (QR por enlace; plan del 16/11/2026, bloque 2a): «Preparar guardado (saliente)», «Descargar enlace (guardado saliente)» y «Guardar imagen enviada». 84 = 81 + 3 (qtaco 76); declarado en docs/versiones-por-cliente.md, pendiente de aprobación de Andres.
-const TOPE_DE_NODOS = 84;
+const TOPE_DE_NODOS = 86; // +2 el indicador de escritura (21/11/2026, Andres)
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,
 // su credencial de cabecera (la de la ingesta), `responseMode: onReceived` y la ruta como marcador (una URL de capacidad que
@@ -311,6 +312,8 @@ function armar(datos, archivo) {
   if (datos.crm !== undefined) injertarRamaCrm(flujo, datos, archivo);
   // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
   injertarGuardado(flujo, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
+  // El INDICADOR de escritura (los tres puntos; módulo común, nunca copiado): rama lateral ANTES del modelo, con la credencial del envío por Graph, sin Continue on Fail fuera de ese nodo. Excepción a la prohibición 5 autorizada por Andres el 21/11/2026.
+  injertarIndicador(flujo, { ancla: { nodo: '¿Extraer?' } });
   // El GUARDADO de la imagen que el asistente ENVÍA (el QR de cobro, por enlace https): módulo común, cuelga de «Reportar mensaje (saliente)» y va debajo de todo (plan del 16/11/2026, bloque 2a).
   // Solo donde hay envío al cliente que se reporte (la variante de prueba no lo reporta: no hay saliente registrado que guardar).
   if (flujo.nodes.some((n) => n.name === 'Reportar mensaje (saliente)')) injertarGuardadoSaliente(flujo, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio`, vias: ['enlace'], fuentes: fuentesDeLaCadenaComun('Soltar mensajes') });
@@ -466,7 +469,7 @@ const textoDe = (n) => JSON.stringify(((n.parameters || {}).conditions) || '') +
 // `anfitrionPermitido`, que exige el anfitrion literal: `--verificar` lo rechaza igual. Sin busqueda por subcadena.
 const URL_DE_META = /^=?\s*https?:\/\/graph\.facebook\.com(?:[/:?#]|$)/;
 const esUrlDeMeta = (url) => URL_DE_META.test(String(url || '').trim().toLowerCase());
-const esEnvioAMeta = (n) => n.type === 'n8n-nodes-base.httpRequest' && esUrlDeMeta((n.parameters || {}).url) && /\/messages\b/.test(String((n.parameters || {}).url || ''));
+const esEnvioAMeta = (n) => !esNodoIndicador(n) && n.type === 'n8n-nodes-base.httpRequest' && esUrlDeMeta((n.parameters || {}).url) && /\/messages\b/.test(String((n.parameters || {}).url || ''));
 
 function alcanzables(flujo, desde) {
   const vistos = new Set([desde]);
@@ -735,6 +738,7 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   hallazgos.push(...guardiasDeCrm(flujo, datos));
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   hallazgos.push(...hallazgosDelGuardado(flujo));
+  hallazgos.push(...hallazgosDelIndicador(flujo, { exigir: true }));
   // El guardado de la imagen SALIENTE: donde el flujo reporta sus envíos, la rama común completa (vía enlace), debajo de todo.
   hallazgos.push(...hallazgosDelGuardadoSaliente(flujo, { exigir: flujo.nodes.some((n) => n.name === 'Reportar mensaje (saliente)'), vias: ['enlace'] }));
   // L1. Un WhatsApp Trigger (camino A) exige su credencial explícita, y nunca la de AAB1-WA-Prod (prohibición 7).

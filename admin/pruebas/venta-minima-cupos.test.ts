@@ -514,7 +514,7 @@ describe('tope de 76 nodos (73 + 3 de la rama del guardado de la imagen saliente
   });
 
   it('el flujo versionado de Q\'Taco tiene exactamente 76 nodos y ninguno de los dos es de mensajería al cliente', () => {
-    expect(QTACO.nodes).toHaveLength(76);
+    expect(QTACO.nodes).toHaveLength(78);
     for (const n of ['Consumir cupos', '¿Cupo concedido?']) {
       expect(String(nodo(QTACO, n).type)).not.toMatch(/whatsapp/i);
       expect(JSON.stringify(nodo(QTACO, n).parameters)).not.toMatch(/graph\.facebook|messages/);

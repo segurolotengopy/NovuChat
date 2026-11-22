@@ -163,7 +163,7 @@ describe('los datos de Q\'Taco (la adenda)', () => {
     for (const x of ['Tortas Mexicanas', 'Solo delivery', 'Pide por WhatsApp', 'JUEVES DE +2', 'SOLO LOS JUEVES']) expect(d).toContain(x);
   });
   it('el flujo de Q\'Taco incluye el clasificador con el tope de 76 nodos y maxOutputTokens 150', () => {
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(76); // 73 → 76: +3 de la rama del guardado de la imagen saliente (16/11/2026, bloque 2a; aprobación de Andres pendiente)
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(78); // 73 → 76: +3 de la rama del guardado de la imagen saliente (16/11/2026, bloque 2a; aprobación de Andres pendiente)
     const n = QTACO.nodes.find((x) => x.name === 'Clasificar imagen');
     expect(n?.parameters?.options?.maxOutputTokens).toBe(150);
     expect(n?.onError).toBe('continueRegularOutput');

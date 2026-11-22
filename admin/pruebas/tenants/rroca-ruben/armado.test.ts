@@ -46,9 +46,9 @@ describe('el armado: lo versionado es lo que arma la plantilla', () => {
 
   it('nodos: producción 56 y prueba 51 (≤ 56; antes 47 y 42, +9 por el guardado de medios (eran 11 hasta el contrato v2 del 30/10); antes 48 y 43; +1 por «Guardar comprobante»); la prueba cambia el receptor (6) por la «Entrada de prueba» (1)', () => {
     // +8 (02/11/2026): la rama del miniCRM (módulo `crm`, aprobada por Andres) → 64 y 59.
-    expect((PRODUCCION['nodes'] as J[]).length).toBe(68);
-    expect((PRUEBA['nodes'] as J[]).length).toBe(63);
-    expect(mod.TOPE_DE_NODOS).toBe(68);
+    expect((PRODUCCION['nodes'] as J[]).length).toBe(70);
+    expect((PRUEBA['nodes'] as J[]).length).toBe(65);
+    expect(mod.TOPE_DE_NODOS).toBe(70);
   });
 
   it('el núcleo: Config base, Carga de entrada, Traer configuración, Config del negocio, Normalizar entrada, ¿Reportar? y Reportar (entrante), Puerta del turno', () => {
@@ -108,10 +108,10 @@ describe('las guardias: cada una rechaza su violación', () => {
       expect(hallazgos('produccion', f), t).toMatch(/agente, memoria o modelo/);
     }
   });
-  it('más de 68 nodos', () => {
+  it('más de 70 nodos', () => {
     const f = clon(PRODUCCION);
-    for (let i = (f['nodes'] as J[]).length; i < 69; i++) (f['nodes'] as J[]).push({ name: `Relleno ${i}`, type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] });
-    expect(hallazgos('produccion', f)).toMatch(/69 nodos y el tope es 68/);
+    for (let i = (f['nodes'] as J[]).length; i < 71; i++) (f['nodes'] as J[]).push({ name: `Relleno ${i}`, type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] });
+    expect(hallazgos('produccion', f)).toMatch(/71 nodos y el tope es 70/);
     (f['nodes'] as J[]).pop();
     expect(hallazgos('produccion', f)).not.toMatch(/nodos y el tope es/);
   });

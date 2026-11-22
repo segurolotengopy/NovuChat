@@ -65,5 +65,12 @@
     "Marcar aviso de transferencia": "core/marcar-aviso-de-transferencia-venta.js",
     "Verificar aviso al dueño": "core/verificar-aviso-al-dueno-venta.js"
   },
-  "prompts": {}
+  "prompts": {},
+  "indicador": {
+    "ancla": {
+      "nodo": "¿Atención normal?",
+      "salida": 0
+    },
+    "normalizador": "Normalizar entrada"
+  }
 }

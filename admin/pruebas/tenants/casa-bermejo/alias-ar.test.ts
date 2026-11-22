@@ -332,8 +332,8 @@ describe('piezas puras y guardias', () => {
       expect(t).toMatch(/alias\s+el ALIAS/);
     }
   });
-  it('el flujo sigue en 61 nodos (producción) y 56 (prueba): 57 y 52 más los 4 de la rama del guardado de la imagen saliente', () => {
-    expect((PRODUCCION.nodes as unknown[]).length).toBe(61);
-    expect((PRUEBA.nodes as unknown[]).length).toBe(56);
+  it('el flujo sigue en 63 nodos (producción) y 58 (prueba): 57 y 52 más los 2 del indicador de escritura (21/11/2026) y los 4 de la rama del guardado de la imagen saliente', () => {
+    expect((PRODUCCION.nodes as unknown[]).length).toBe(63);
+    expect((PRUEBA.nodes as unknown[]).length).toBe(58);
   });
 });

@@ -15,6 +15,8 @@ export interface Manifiesto {
   codigo?: Record<string, EntradaDeModulo>;
   /** Agente → archivos bajo `Flujos/prompts/` por campo. */
   prompts?: Record<string, { systemMessage?: EntradaDeModulo; text?: EntradaDeModulo }>;
+  /** El indicador de escritura (los tres puntos), pieza común de `Flujos/src/core/indicador/`: dónde cuelga y qué nodo normaliza el entrante. */
+  indicador?: { ancla: { nodo: string; salida?: number }; normalizador?: string };
 }
 
 export interface Ensamblado {
@@ -25,6 +27,8 @@ export interface Ensamblado {
   conManifiesto: boolean;
   /** Los puntos de inyección aplicados, como `codigo/<nodo>` o `prompts/<nodo>.<campo>`. */
   inyectados?: string[];
+  /** El manifiesto pide el indicador de escritura (pieza común, no es un punto de inyección). */
+  indicador?: boolean;
 }
 
 export interface Verificacion {

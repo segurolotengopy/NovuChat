@@ -34,6 +34,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hallazgosDelGuardado, injertarGuardado } from '../../src/core/sin-agente/guardado.mjs';
+import { hallazgosDelIndicador, injertarIndicador } from '../../src/core/indicador/indicador-escritura.mjs';
 import { reglaDeIdentidadDelCore } from './regla-identidad.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, validarMapaCrm } from '../../experimental/comun-sin-agente/construir-crm.mjs';
@@ -156,9 +157,13 @@ function armar(v) {
   flujo.connections = conexiones;
   // El GUARDADO de medios (módulo común, nunca copiado): credenciales tomadas por nombre del flujo ya armado (ingesta del reporte, WhatsApp de «Descargar medio»).
   injertarGuardado(flujo, { guardarUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio' });
+  // El INDICADOR de escritura (los tres puntos; módulo común, nunca copiado): rama lateral ANTES del modelo, con la credencial del envío por Graph, sin Continue on Fail fuera de ese nodo. Excepción a la prohibición 5 autorizada por Andres el 21/11/2026.
+  injertarIndicador(flujo, { ancla: { nodo: '¿Extraer?' } });
   // La misma guardia que la prueba de CI «guardado obligatorio»: nueve nodos, ningún Code que lea el binario, retención en «none» (contrato v2 del 30/10).
   const hallazgosGuardado = hallazgosDelGuardado(flujo, { exigir: true });
   if (hallazgosGuardado.length) throw new Error(`${v.archivo}: ${hallazgosGuardado.join('; ')}`);
+  const hallazgosIndicador = hallazgosDelIndicador(flujo, { exigir: true });
+  if (hallazgosIndicador.length) throw new Error(`${v.archivo}: ${hallazgosIndicador.join('; ')}`);
   // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
   const hallazgosExpr = hallazgosDeExpresionesN8n(flujo);
   if (hallazgosExpr.length) throw new Error(`${v.archivo}: ${hallazgosExpr.join('; ')}`);

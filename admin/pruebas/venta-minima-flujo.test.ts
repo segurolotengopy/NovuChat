@@ -33,6 +33,7 @@ import { crearMundo, ROLES_POR_OMISION, type Doble, type LlamadaDoble, type Mund
 import { copiarModulosComunesAlTemporal, doblesDelGuardado } from './lib/doble-guardado';
 import { crearSesion, ESPACIO, ESPACIO_PRUEBA, type SesionDeMentira } from './lib/venta-minima-sesion';
 import { NODOS_DEL_GUARDADO, NODOS_DEL_GUARDADO_SALIENTE, URL_DESCARGA_GUARDADO } from '../../Flujos/src/core/sin-agente/guardado.mjs';
+import { NODOS_DEL_INDICADOR } from '../../Flujos/src/core/indicador/indicador-escritura.mjs';
 import { URL_DESCARGA_SALIENTE } from '../../Flujos/src/core/sin-agente/guardado-saliente.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -3167,8 +3168,8 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(76); // +3 de la rama del guardado de la imagen saliente (16/11/2026); 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 9 del estado en el servidor (PR-4a) + los 2 de los cupos (PR-4b, aprobado por Andres (06/11/2026, en conversación)) + los 2 de la imagen del anuncio (aprobados por Andres el 06/11/2026): el tope de producción es 73 (`construir.mjs` lo impone)
-    expect(PRUEBA.nodes).toHaveLength(72); // 69 + 3 de la rama del guardado de la imagen saliente (16/11/2026)
+    expect(QTACO.nodes).toHaveLength(78); // +3 de la rama del guardado de la imagen saliente (16/11/2026); 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 9 del estado en el servidor (PR-4a) + los 2 de los cupos (PR-4b, aprobado por Andres (06/11/2026, en conversación)) + los 2 de la imagen del anuncio (aprobados por Andres el 06/11/2026): el tope de producción es 73 (`construir.mjs` lo impone)
+    expect(PRUEBA.nodes).toHaveLength(74); // 69 + 3 de la rama del guardado de la imagen saliente (16/11/2026)
   });
 
   it('L2: en producción un `wamid.SIMULADO-…` NO cuenta como aviso salido: el cliente no lee «pasé tu pedido» y el cierre no lo toma de referencia', () => {
@@ -4192,7 +4193,7 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     expect(herramienta).toContain("whatsAppApi: 'WhatsApp account'");
     expect(herramienta).toContain('const GRAPH_BEARER = /^Graph WhatsApp .+ \\(Bearer\\)$/;');
     // Y el aviso de falla del guardado de medios (módulo común), que sale con la credencial de envío del flujo.
-    const ENVIOS = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo', 'Avisar falla del guardado'];
+    const ENVIOS = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo', 'Avisar falla del guardado', 'Indicador de escritura'];
     for (const c of credencialesDe(DEMO_A)) {
       if (c.tipo === 'httpHeaderAuth') {
         // El nombre de los envíos es solo la ETIQUETA que la herramienta reconoce: esa credencial NO existe en el Demo A ni se crea.
@@ -5012,14 +5013,14 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
     expect(sim.qr.mensajes[0]?.payload['image']?.link).toBe(URL_SIMULADO); // es el QR de prueba, no el plan B que también da 3
   });
 
-  it('el JSON de Q\'Taco sigue en 76 nodos o menos (50 más los 9 del guardado de medios, «Guardar comprobante», los 9 del estado en el servidor y los 2 de los cupos) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
+  it('el JSON de Q\'Taco sigue en 78 nodos o menos (50 más los 9 del guardado de medios, «Guardar comprobante», los 9 del estado en el servidor y los 2 de los cupos) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
     // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61, y desde el contrato v2 del 30/10, 59: los 9 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md).
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(76); // tope 73 → 76 (rama del guardado de la imagen saliente, 16/11/2026, pendiente de Andres); tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026) → 71 (PR-4b: aprobado por Andres (06/11/2026, en conversación))
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(78); // tope 73 → 76 (rama del guardado de la imagen saliente, 16/11/2026, pendiente de Andres); tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026) → 71 (PR-4b: aprobado por Andres (06/11/2026, en conversación))
     const base = configBase(QTACO);
     expect(base['cobroSimuladoActivo']).toBe(true);
     expect(base['qrSimuladoUrl']).toBe(URL_SIMULADO);
-    // La plantilla no se toca: ningún nodo nuevo, y todo nombre del JSON de producción sale de ella (o de la rama común del guardado, que se injerta al armar).
-    const deLaPlantilla = new Set([...nombresDeLaPlantilla(PLANTILLA), ...NODOS_DEL_GUARDADO, ...NODOS_DEL_GUARDADO_SALIENTE]);
+    // La plantilla no se toca: ningún nodo nuevo, y todo nombre del JSON de producción sale de ella (o de la rama común del guardado y del indicador de escritura, que se injertan al armar).
+    const deLaPlantilla = new Set([...nombresDeLaPlantilla(PLANTILLA), ...NODOS_DEL_GUARDADO, ...NODOS_DEL_GUARDADO_SALIENTE, ...NODOS_DEL_INDICADOR]);
     for (const n of QTACO.nodes) expect(deLaPlantilla.has(n.name), n.name).toBe(true);
     expect(QTACO.nodes.some((n) => /simulad/i.test(n.name))).toBe(false); // el simulado no agrega nodos
   });

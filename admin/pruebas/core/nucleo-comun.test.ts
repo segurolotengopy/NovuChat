@@ -11,6 +11,8 @@
  *  - M4 de la migración (etapa 0, 12/11/2026): en TODO flujo de producción descubierto del disco, cada nodo
  *    común presente (los 5 del núcleo más «Carga de entrada» y «Puerta del turno») INCLUYE una variante declarada
  *    de `Flujos/src/core`, o tiene una excepción en `migracion/excepciones.ts`.
+ *  - El indicador de escritura («escribiendo…», 21/11/2026) es parte del núcleo común OBLIGATORIO: todo flujo con agente (cualquier JSON versionado,
+ *    de producción, de prueba o de ensayo) lleva los dos nodos de `Flujos/src/core/indicador/` sin alterar; los congelados no se tocan.
  * Cada regla trae su contraprueba.
  */
 import { describe, expect, it } from 'vitest';
@@ -19,10 +21,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RAIZ_FLUJOS, listarFlujos, leerManifiesto } from '../../scripts/ensamblar-flujo.mjs';
 import type { Flujo } from '../lib/flujo';
-import { CARPETA_FLUJOS_DEL_REPO, flujosDeProduccion } from '../lib/flujos-de-cliente';
+import { CARPETA_FLUJOS_DEL_REPO, flujosDeProduccion, flujosVersionados } from '../lib/flujos-de-cliente';
 import { NODOS_COMUNES, hallazgosM4, incluyeVariante, variantesDeNodo } from './migracion/comprobaciones';
 import { EXCEPCIONES, excepcionesDe, idDeFlujo, problemasDeRegla, type Excepcion } from './migracion/excepciones';
 import { codigoDe } from '../../../Flujos/src/core/sin-agente/construir.mjs';
+import { NODOS_DEL_INDICADOR, hallazgosDelIndicador, quitarIndicador, tieneAgente } from '../../../Flujos/src/core/indicador/indicador-escritura.mjs';
 
 const NODOS = ['normalizar-entrada', 'config-del-negocio', 'procesar-respuesta', 'uso-extendido', 'comercio-no-operativo'];
 const VARIANTES_DECLARADAS = [
@@ -257,6 +260,66 @@ describe('núcleo común: «Normalizar entrada» y «Config del negocio» de ven
       expect(fuente, c).toContain('src/core/sin-agente/venta-digital/normalizar-entrada.js');
       expect(fuente, c).toContain('src/core/sin-agente/venta-digital/config-del-negocio.js');
       expect(fuente, c).not.toMatch(/experimental\/venta-digital\/src\/nodos\/(normalizar-entrada|config-del-negocio)/);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// El indicador de escritura: núcleo común obligatorio de todo flujo con agente (21/11/2026)
+// ---------------------------------------------------------------------------
+
+/** Los flujos que NO se tocan (decisión de Andres): doctoras, `bellido-agendamiento.json`, el onboarding y captación mínima. */
+const CONGELADOS = [/^bellido-agendamiento\.json$/, /^novuchat-onboarding\.json$/, /^experimental\/doctoras\//, /^experimental\/captacion-minima\//];
+const esCongelado = (ruta: string): boolean => CONGELADOS.some((r) => r.test(ruta));
+/** Los 25 JSON con agente que hoy lo llevan (los diez flujos de cliente con sus variantes de prueba y de ensayo, y los dos demos). */
+const CON_INDICADOR = [
+  'clientes/agenda-minima/agenda-minima.prueba.json', 'clientes/agenda-minima/agenda-minima.v0.json',
+  'clientes/casa-bermejo/casa-bermejo.json', 'clientes/casa-bermejo/casa-bermejo.prueba.json',
+  'clientes/novuchat/chat-novuchat.ensayo-demo-a.json', 'clientes/novuchat/chat-novuchat.novuchat.json', 'clientes/novuchat/chat-novuchat.prueba.json',
+  'clientes/rroca-antonio/rroca-antonio.json', 'clientes/rroca-antonio/rroca-antonio.prueba.json',
+  'clientes/rroca-emma/rroca-emma.json', 'clientes/rroca-emma/rroca-emma.prueba.json',
+  'clientes/rroca-evy/rroca-evy.ensayo-demo-a.json', 'clientes/rroca-evy/rroca-evy.json', 'clientes/rroca-evy/rroca-evy.prueba.json',
+  'clientes/rroca-ruben/rroca-ruben.ensayo-demo-a.json', 'clientes/rroca-ruben/rroca-ruben.json', 'clientes/rroca-ruben/rroca-ruben.prueba.json',
+  'clientes/venta-minima/venta-minima.ensayo-demo-a.json', 'clientes/venta-minima/venta-minima.prueba.json',
+  'clientes/venta-minima/venta-minima.qtaco-3727.json', 'clientes/venta-minima/venta-minima.qtaco.json',
+  'clientes/walisuma/walisuma.json', 'clientes/walisuma/walisuma.prueba.json',
+  'demo-a-agendamiento.json', 'demo-b-venta-cobro.json',
+];
+const leerVersionado = (ruta: string): Flujo => JSON.parse(readFileSync(join(RAIZ_FLUJOS, ruta), 'utf8')) as Flujo;
+
+describe('núcleo común: el indicador de escritura es obligatorio en todo flujo con agente', () => {
+  const conAgente = flujosVersionados().filter((r) => tieneAgente(leerVersionado(r)));
+
+  it('todo JSON con agente (no congelado) lleva los dos nodos comunes sin alterar, y son exactamente los 25 declarados', () => {
+    const exigidos = conAgente.filter((r) => !esCongelado(r));
+    expect(exigidos).toEqual(CON_INDICADOR);
+    for (const r of exigidos) expect(hallazgosDelIndicador(leerVersionado(r), { exigir: true }), r).toEqual([]);
+  });
+
+  it('los flujos congelados (doctoras, bellido-agendamiento, onboarding, captación mínima) tienen agente y NO llevan el indicador: no se tocan', () => {
+    const congelados = conAgente.filter(esCongelado);
+    expect(congelados.length).toBe(8);
+    for (const r of congelados) {
+      const nombres = (leerVersionado(r).nodes as { name: string }[]).map((n) => n.name);
+      expect(NODOS_DEL_INDICADOR.some((n) => nombres.includes(n)), r).toBe(false);
+    }
+  });
+
+  it('un flujo sin agente (redirección de Q\'Taco, rescate de las 22 h) no lo lleva ni se le exige', () => {
+    for (const r of ['clientes/qtaco-redireccion/qtaco-redireccion.qtaco.json', 'experimental/rescate-22h/rescate-22h.rroca-ruben.json']) {
+      expect(tieneAgente(leerVersionado(r)), r).toBe(false);
+      expect(hallazgosDelIndicador(leerVersionado(r)), r).toEqual([]);
+    }
+  });
+
+  it('contraprueba: sin los nodos, con uno alterado o con la credencial de ingesta, el flujo con agente falla nombrando el nodo', () => {
+    for (const r of ['clientes/rroca-ruben/rroca-ruben.json', 'demo-b-venta-cobro.json', 'clientes/venta-minima/venta-minima.qtaco-3727.json']) {
+      const sin = structuredClone(leerVersionado(r));
+      quitarIndicador(sin);
+      expect(hallazgosDelIndicador(sin), r).toEqual([expect.stringContaining('falta el nodo'), expect.stringContaining('falta el nodo')]);
+      const alterado = structuredClone(leerVersionado(r));
+      (alterado.nodes as { name: string; parameters: { jsonBody: string } }[]).find((n) => n.name === 'Indicador de escritura')!.parameters.jsonBody += ' ';
+      expect(hallazgosDelIndicador(alterado), r).toEqual([expect.stringContaining('no es el nodo común')]);
     }
   });
 });

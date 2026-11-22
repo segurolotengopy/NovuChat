@@ -1768,9 +1768,9 @@ describe('la variante de prueba: «Entrada de prueba», todo al teléfono de pru
 
 describe('la topología y las guardias del JSON versionado', () => {
   const nombres = (f: Flujo): string[] => f.nodes.map((n) => n.name);
-  it('tiene 76 nodos por variante (53 de antes, los 20 del estado de la conversación en el servidor: 10 del registro de eventos, 7 del compromiso del turno y 3 de la compensación): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
-    expect(PRODUCCION.nodes).toHaveLength(76);
-    expect(PRUEBA.nodes).toHaveLength(76);
+  it('tiene 78 nodos por variante (53 de antes, +2 del indicador de escritura (21/11/2026), los 20 del estado de la conversación en el servidor: 10 del registro de eventos, 7 del compromiso del turno y 3 de la compensación): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
+    expect(PRODUCCION.nodes).toHaveLength(78);
+    expect(PRUEBA.nodes).toHaveLength(78);
     expect(nombres(PRODUCCION)).not.toContain('Entrada de prueba');
     expect(nombres(PRUEBA)).not.toContain('WhatsApp Trigger');
     expect(nombres(PRODUCCION).filter((x) => !nombres(PRUEBA).includes(x))).toEqual(['WhatsApp Trigger']);
@@ -1854,7 +1854,7 @@ describe('la topología y las guardias del JSON versionado', () => {
     };
     visitar('WhatsApp Trigger', []);
     // los 53 de antes (44 + los 9 de la rama común del guardado de medios) y los 20 del estado de la conversación.
-    expect(alcanzables.size).toBe(76);
+    expect(alcanzables.size).toBe(78);
   });
   it('«Llamar al modelo» y «Reintentar el modelo» apuntan a generateContent con el modelo de los datos (gemini-3.5-flash-lite) por expresión', () => {
     for (const nombre of ['Llamar al modelo', 'Reintentar el modelo']) {

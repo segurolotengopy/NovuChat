@@ -58,6 +58,7 @@ import { join } from 'node:path';
 import { type Flujo, type Nodo, CARPETA_FLUJOS } from '../lib/flujo.ts';
 import { flujosVersionados } from '../lib/flujos-de-cliente.ts';
 import { problemasDeRegla, EXCEPCIONES as EXCEPCIONES_DE_LA_MIGRACION } from './migracion/excepciones.ts';
+import { esNodoIndicador } from '../../../Flujos/src/core/indicador/indicador-escritura.mjs';
 
 // ---------------------------------------------------------------------------
 // Descubrimiento
@@ -281,6 +282,9 @@ export type Clase = 'texto' | 'imagen' | 'boton' | 'plantilla' | 'ubicacion' | '
  */
 export function esEnvio(n: Nodo): boolean {
   const p = n.parameters ?? {};
+  // El indicador de escritura (21/11/2026) es un POST a `/messages` con `status: read` y `typing_indicator`: NO entrega ningún mensaje (no cuesta, no tiene
+  // respaldo ni id que verificar). La excepción es por NOMBRE Y FORMA (`esNodoIndicador`): un envío de verdad con ese nombre sigue siendo un envío.
+  if (esNodoIndicador(n)) return false;
   if (tipo(n) === 'httpRequest') return String(p['method'] ?? '').toUpperCase() === 'POST' && String(p['url'] ?? '').includes('/messages');
   if (tipo(n) === 'whatsApp') {
     if (String(p['resource'] ?? 'message') !== 'message') return false;
@@ -631,7 +635,7 @@ export function violaciones(f: Flujo): Violacion[] {
   for (const n of f.nodes) {
     const url = String((n.parameters ?? {})['url'] ?? '');
     const metodo = String((n.parameters ?? {})['method'] ?? 'GET').toUpperCase();
-    if (url.includes('graph.facebook') && metodo !== 'GET' && !esEnvio(n) && !esSubidaDeMedio(n)) {
+    if (url.includes('graph.facebook') && metodo !== 'GET' && !esEnvio(n) && !esSubidaDeMedio(n) && !esNodoIndicador(n)) {
       v.push({ regla: 7, nodo: n.name, detalle: `«${n.name}» (${n.type}, ${metodo}) escribe en Graph y esta suite no lo clasifica como envío` });
     }
   }

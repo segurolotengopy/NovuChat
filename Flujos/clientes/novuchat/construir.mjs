@@ -32,6 +32,7 @@ import { contarDeclaraciones, hallazgosDelCodigo, TEXTOS as TEXTOS_GUARDA } from
 const TEXTO_NO_ANALIZABLE = TEXTOS_GUARDA.noAnalizable;
 import { armarVariante, leerProyecto } from '../../src/core/sin-agente/construir.mjs';
 import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
+import { hallazgosDelIndicador, injertarIndicador } from '../../src/core/indicador/indicador-escritura.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 // LA CADENA DE ENVÍO ES COMÚN (no se copia): se injerta desde `Flujos/src/core/sin-agente/envio.mjs` (enviar, respaldo en texto, reporte saliente).
 import { injertar } from '../../src/core/sin-agente/envio.mjs';
@@ -636,6 +637,7 @@ export function guardias(entrada, flujo, datos = {}, destino = '') {
   const parametros = (n) => (n && n.parameters) || {};
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   if (nodos.length) h.push(...hallazgosDelGuardado(flujo));
+  if (nodos.length) h.push(...hallazgosDelIndicador(flujo, { exigir: true }));
   // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
   h.push(...hallazgosDeExpresionesN8n(flujo || {}));
   // «Entrada de prueba» nunca en producción: es el único nodo que activa el modo prueba. «WhatsApp Trigger» nunca en la prueba.
@@ -867,6 +869,8 @@ export function armarTenant(proyecto, datos, archivo) {
   reporta.main[0] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
   // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
   injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
+  // El INDICADOR de escritura (los tres puntos; módulo común, nunca copiado): rama lateral ANTES del modelo, con la credencial del envío por Graph, sin Continue on Fail fuera de ese nodo. Excepción a la prohibición 5 autorizada por Andres el 21/11/2026.
+  injertarIndicador(plantilla, { ancla: { nodo: '¿Llamar al modelo?' } });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: salidaDe(archivo), nombre: dato(datos, 'nombreFlujo', archivo), quitar: [] });
   const flujo = JSON.parse(texto);
   inyectar(flujo, MARCA_DATOS, 'CH_DATOS', datos.datos);

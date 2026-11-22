@@ -795,9 +795,9 @@ describe('REHECHO · el armado: la base común, el core de texto y solo lo propi
   });
   it('los nodos: 56 en producción y 51 en prueba (47 y 42 más los 9 del guardado de medios; antes 48 y 43; +1 por «Guardar comprobante») y las guardias de referencias DEL TASK RUNNER corren en las dos variantes, sin excepciones', () => {
     // +8 (02/11/2026): la rama del miniCRM (módulo `crm`, aprobada por Andres) → 64 y 59.
-    expect(TOPE_DE_NODOS).toBe(68);
-    expect(leerFlujo('rroca-antonio.json')['nodes']).toHaveLength(68);
-    expect(leerFlujo('rroca-antonio.prueba.json')['nodes']).toHaveLength(63);
+    expect(TOPE_DE_NODOS).toBe(70);
+    expect(leerFlujo('rroca-antonio.json')['nodes']).toHaveLength(70);
+    expect(leerFlujo('rroca-antonio.prueba.json')['nodes']).toHaveLength(65);
     for (const [archivo, variante] of [['rroca-antonio.json', 'produccion'], ['rroca-antonio.prueba.json', 'prueba']] as const) {
       expect(guardias(variante, leerFlujo(archivo)), archivo).toEqual([]);
       expect(problemasDeReferencias(leerFlujo(archivo)), archivo).toEqual([]);

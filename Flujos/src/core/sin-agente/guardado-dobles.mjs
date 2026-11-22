@@ -1,5 +1,5 @@
 /**
- * Los DOBLES de la rama común del guardado de medios (`guardado.mjs`) para las BATERÍAS en seco de cada flujo (`<flujo>/herramientas/bateria.mjs`):
+ * Los DOBLES de la rama común del guardado de medios (`guardado.mjs`) —y del indicador de escritura, también común— para las BATERÍAS en seco de cada flujo (`<flujo>/herramientas/bateria.mjs`):
  * sin red. `guardarMedio` responde «guardado_apagado» (la bandera por defecto, contrato M1↔M2 §2; contrato v2 sin Anotar), así que la rama termina en silencio y la batería
  * mide exactamente lo mismo que antes. Las pruebas del comportamiento de la rama usan su propio doble del contrato (`admin/pruebas/lib/doble-guardado.ts`).
  */
@@ -11,5 +11,7 @@ export function doblesDeBateriaDelGuardado() {
     'Guardar medio': APAGADO,
     'Reintentar el guardado': APAGADO,
     'Avisar falla del guardado': () => ({ messaging_product: 'whatsapp', messages: [{ id: 'wamid.GUARDADO' }] }),
+    // El indicador de escritura (21/11/2026, `core/indicador/`): una rama lateral sin efecto en el turno; Meta responde `{ success: true }`.
+    'Indicador de escritura': () => ({ success: true }),
   };
 }

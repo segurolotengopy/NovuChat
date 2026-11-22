@@ -20,10 +20,10 @@ const copia = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const g = (v: 'produccion' | 'prueba', f: Flujo): string[] => guardias(v, f) as string[];
 
 describe('lo versionado es lo que arma construir.mjs', () => {
-  it('--verificar sale 0 (los dos JSON al día: con envío directo 59 y 54 nodos; con el canal rele 58 y 53)', () => {
+  it('--verificar sale 0 (los dos JSON al día: con envío directo 61 y 56 nodos (+2 del indicador de escritura, 21/11/2026); con el canal rele 58 y 53)', () => {
     const r = spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), '--verificar'], { encoding: 'utf8', env: entornoDelEmulador({}) });
-    expect(`${r.stdout}${r.stderr}`).toContain(`rroca-evy.json al día (${ES_RELE ? 58 : 59} nodos)`);
-    expect(`${r.stdout}${r.stderr}`).toContain(`rroca-evy.prueba.json al día (${ES_RELE ? 53 : 54} nodos)`);
+    expect(`${r.stdout}${r.stderr}`).toContain(`rroca-evy.json al día (${ES_RELE ? 58 : 61} nodos)`);
+    expect(`${r.stdout}${r.stderr}`).toContain(`rroca-evy.prueba.json al día (${ES_RELE ? 53 : 56} nodos)`);
     expect(r.status).toBe(0);
   });
   it('un argumento desconocido se rechaza y no escribe', () => {
@@ -34,7 +34,7 @@ describe('lo versionado es lo que arma construir.mjs', () => {
     expect(['graph', 'rele']).toContain(CANAL_DE_ENVIO);
     expect(g('produccion', PRODUCCION)).toEqual([]);
     expect(g('prueba', PRUEBA)).toEqual([]);
-    expect(TOPE_DE_NODOS).toBe(ES_RELE ? 58 : 59);
+    expect(TOPE_DE_NODOS).toBe(ES_RELE ? 58 : 61);
     expect(CONFIG.variantes.length).toBe(2);
   });
 });

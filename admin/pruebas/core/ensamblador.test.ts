@@ -362,8 +362,9 @@ describe('6. Ningún módulo, prompt ni manifiesto contiene un valor real', () =
 
   it('hay módulos que revisar, y están donde el ensamblador los busca', () => {
     expect(TODOS.length).toBeGreaterThanOrEqual(18 + 5 + 2);
+    // `core/indicador/` trae el módulo común del «escribiendo…» (`.mjs`, `.d.mts`): tampoco es un módulo inyectable y SÍ se revisa.
     // `core/sin-agente/` trae también el armador de los flujos sin agente (`.mjs`, `.d.mts`): no son módulos inyectables, pero SÍ se revisan en busca de valores reales.
-    expect(TODOS.filter((p) => !p.includes('/core/sin-agente/')).every((p) => /\.(js|md|json)$/.test(p))).toBe(true);
+    expect(TODOS.filter((p) => !p.includes('/core/sin-agente/') && !p.includes('/core/indicador/')).every((p) => /\.(js|md|json)$/.test(p))).toBe(true);
   });
 
   it.each(REGLAS)('%s', (_nombre, regla) => {

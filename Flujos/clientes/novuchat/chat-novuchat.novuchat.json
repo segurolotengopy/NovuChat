@@ -2456,6 +2456,71 @@
         }
       },
       "notes": "El aviso de falla a la recepción del negocio, en texto libre (su ventana está abierta). Sin reintentos: un aviso repetido llegaría dos veces. Sin onError: si falla, la ejecución termina en error (corre al final, el cliente ya tiene su respuesta). +1 mensaje solo cuando falla el guardado, a lo más uno por día."
+    },
+    {
+      "id": "indicador-si",
+      "name": "¿Indicador de escritura activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        6440,
+        150
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { const b = $('Config base').first().json; const c = $('Config del negocio').first().json; const n = $('Interpretar entrada').first().json; return String(b.indicadorEscritura) !== 'false' && !!n.mensajeId && (c.modoPrueba !== true || (c.enviarDeVerdad === true && !!c.telefonoDePrueba)); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Interruptor por negocio: `indicadorEscritura` en «Config base» (verdadero si falta). Rama lateral del indicador de escritura (modulo comun Flujos/src/core/indicador/)."
+    },
+    {
+      "id": "indicador-escritura",
+      "name": "Indicador de escritura",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6680,
+        150
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp NovuChat (Bearer)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ (/^v\\d+\\.\\d$/.test(String($('Config del negocio').first().json.waGraphVersion)) ? $('Config del negocio').first().json.waGraphVersion : 'v26.0') }}/{{ String($('Interpretar entrada').first().json.phoneNumberId).replace(/\\D/g, '') }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', status: 'read', message_id: String($('Interpretar entrada').first().json.mensajeId), typing_indicator: { type: 'text' } }) }}",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "notes": "Los tres puntos (escribiendo…) y el mensaje como leido: una llamada a Meta por entrante, no es un mensaje (0 por conversacion). Rama lateral: con Continue on Fail y 3 s de tope, si falla el turno sigue igual. Misma credencial que el envio; nunca la de ingesta."
     }
   ],
   "connections": {
@@ -2733,6 +2798,11 @@
     "¿Llamar al modelo?": {
       "main": [
         [
+          {
+            "node": "¿Indicador de escritura activo?",
+            "type": "main",
+            "index": 0
+          },
           {
             "node": "Llamar al modelo",
             "type": "main",
@@ -3397,6 +3467,17 @@
         [
           {
             "node": "Avisar falla del guardado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Indicador de escritura activo?": {
+      "main": [
+        [
+          {
+            "node": "Indicador de escritura",
             "type": "main",
             "index": 0
           }

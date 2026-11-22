@@ -159,7 +159,7 @@ describe('la herramienta ACEPTA el JSON de ensayo de Evy', () => {
     expect(mundo.puts).toHaveLength(1);
     const b = mundo.puts[0]!;
     expect(b.name).toBe(NOMBRE_DEMO_A);
-    expect(b.nodes).toHaveLength(46);
+    expect(b.nodes).toHaveLength(48);
     expect(nodo(b, 'WhatsApp Trigger')).toEqual(nodo(vivo, 'WhatsApp Trigger'));
     expect(b.settings).toMatchObject({ saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false });
     const delDemoA = new Set((vivo.nodes as J[]).flatMap((n) => Object.values((n.credentials ?? {}) as J).map((c) => (c as J).id)));
