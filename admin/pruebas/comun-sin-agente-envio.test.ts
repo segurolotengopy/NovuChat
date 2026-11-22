@@ -35,7 +35,7 @@ describe('equivalencia con los nodos de Agenda mínima', () => {
   // Tres diferencias A PROPÓSITO (revisión de seguridad del 01/10), que se prueban abajo: el `phoneNumberId` y la versión
   // de Graph se validan antes de entrar a la URL, y lo que no salió ni por el respaldo no se reporta como enviado
   // (`reportarFallidos: true` lo devuelve a lo de Agenda mínima). Todo lo demás es IGUAL.
-  const cadena = nodosDeEnvio({ ...OPC, reportarFallidos: true });
+  const cadena = nodosDeEnvio({ ...OPC, reportarFallidos: true, respaldoEnPlantilla: true });
   const sinUrl = (p: J): J => { const { url, ...resto } = p; void url; return resto; };
   for (const nombre of NOMBRES) {
     it(`«${nombre}»`, () => {

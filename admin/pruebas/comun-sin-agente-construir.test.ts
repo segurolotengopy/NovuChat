@@ -66,7 +66,9 @@ describe('el armador genérico produce los JSON de Agenda mínima, byte por byte
       nodo.parameters.jsCode = `${nodo.parameters.jsCode.slice(0, nodo.parameters.jsCode.length - propio.length - 1)}${baja}\n\n${regla}${propio}\n`;
     };
     conBaja('Decidir turno', 'src/nodos/decidir-turno.js');
-    conBaja('Armar mensajes', 'src/nodos/armar-mensajes.js', `${reglaDeIdentidadDelCore() as string}\n\n`);
+    // El aviso a recepción con el cliente (`core/conversacion/aviso-recepcion.js`, 22/11/2026) va incluido byte a byte DELANTE de la regla de identidad y del código propio de «Armar mensajes».
+    const avisoRecepcion = readFileSync(join(aqui, '../../Flujos/src/core/conversacion/aviso-recepcion.js'), 'utf8').trimEnd();
+    conBaja('Armar mensajes', 'src/nodos/armar-mensajes.js', `${avisoRecepcion}\n\n${reglaDeIdentidadDelCore() as string}\n\n`);
     const expresion = /^const BJ_BAJA = (\/.+\/i);$/m.exec(baja)![1]!;
     const plegado = /^function bjPlegar\(texto\) \{\n {2}return String\(texto === undefined \|\| texto === null \? '' : texto\)(\..+);\n\}$/m.exec(baja)![1]!;
     const reporte = flujo.nodes.find((n: { name: string }) => n.name === 'Reportar mensaje (entrante)') as { parameters: { jsonBody: string } };

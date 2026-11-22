@@ -130,6 +130,24 @@
               "value": "REEMPLAZAR_NUMERO_DOCTOR_BELLIDO"
             },
             {
+              "id": "b_plantillaAvisoRecepcion",
+              "name": "plantillaAvisoRecepcion",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "id": "b_plantillaAvisoRecepcionEstado",
+              "name": "plantillaAvisoRecepcionEstado",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "id": "b_plantillaAvisoRecepcionIdioma",
+              "name": "plantillaAvisoRecepcionIdioma",
+              "type": "string",
+              "value": "es"
+            },
+            {
               "id": "b_nombreNegocio",
               "name": "nombreNegocio",
               "type": "string",
@@ -1421,7 +1439,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $('Armar mensajes').item.json.para, type: 'text', text: { preview_url: true, body: String($('Armar mensajes').item.json.respaldo || '').slice(0, 4000) } }) }}",
+        "jsonBody": "={{ JSON.stringify($('Armar mensajes').item.json.respaldoPayload || { messaging_product: 'whatsapp', recipient_type: 'individual', to: $('Armar mensajes').item.json.para, type: 'text', text: { preview_url: true, body: String($('Armar mensajes').item.json.respaldo || '').slice(0, 4000) } }) }}",
         "options": {
           "timeout": 15000,
           "batching": {
@@ -1440,7 +1458,7 @@
       },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
-      "notes": "Si Meta rechaza el interactivo o la plantilla, sale el mismo contenido como texto. Al doctor: si falla la plantilla `alerta_emergencia`, sale el texto. Envía de a uno con 1,5 s entre mensajes: Meta entregaba la confirmación y las redes fuera de orden (30/09)."
+      "notes": "Si Meta rechaza el interactivo o la plantilla, sale el mismo contenido como texto. El aviso a recepcion con `plantillaAvisoRecepcion` APPROVED sale al reves: texto primero y, si Meta lo rechaza (ventana cerrada), la plantilla (`respaldoPayload`). Al doctor: si falla la plantilla `alerta_emergencia`, sale el texto. Envía de a uno con 1,5 s entre mensajes: Meta entregaba la confirmación y las redes fuera de orden (30/09)."
     },
     {
       "id": "reportar-sal-si",

@@ -38,6 +38,7 @@
  *   reportar      false si el flujo no reporta: el reporte no se arma
  *   desde         [x, y] del primer nodo (por defecto [8120, 300])
  *   lote          { tamano: 1, intervaloMs: 1500 }
+ *   respaldoEnPlantilla  true: «Enviar respaldo» manda `respaldoPayload` (una plantilla ya armada) si el ítem lo trae; por defecto no (el respaldo es solo el texto `respaldo`).
  *   reportarFallidos  true reporta TAMBIÉN el mensaje que no salió (como Agenda mínima). Por defecto no: si Meta rechazó el
  *                 original Y el respaldo, el mensaje no salió y no se cuenta como enviado.
  *   canal         'graph' (por defecto: nada cambia, ni un byte) o 'rele' (relé B9 de AAB1, ver abajo)
@@ -113,7 +114,10 @@ export function nodosDeEnvio(opciones = {}) {
         url: `=https://graph.facebook.com/{{ /^v\\d+\\.\\d$/.test(String(${A}.item.json.waGraphVersion)) ? ${A}.item.json.waGraphVersion : 'v26.0' }}/{{ String(${A}.item.json.phoneNumberId).replace(/\\D/g, '') }}/messages`,
         authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth',
         sendBody: true, specifyBody: 'json',
-        jsonBody: `={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: ${A}.item.json.para, type: 'text', text: { preview_url: true, body: String(${A}.item.json.respaldo || '').slice(0, 4000) } }) }}`,
+        // `respaldoEnPlantilla` (22/11/2026, aviso a recepción de Bellido): si el ítem trae `respaldoPayload` (la plantilla de aviso, con su `to` ya puesto), el respaldo es ESA plantilla; sin él, el texto de siempre.
+        jsonBody: o.respaldoEnPlantilla === true
+          ? `={{ JSON.stringify(${A}.item.json.respaldoPayload || { messaging_product: 'whatsapp', recipient_type: 'individual', to: ${A}.item.json.para, type: 'text', text: { preview_url: true, body: String(${A}.item.json.respaldo || '').slice(0, 4000) } }) }}`
+          : `={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: ${A}.item.json.para, type: 'text', text: { preview_url: true, body: String(${A}.item.json.respaldo || '').slice(0, 4000) } }) }}`,
         options: { timeout: 15000, batching: lote },
       },
       notes: 'Si Meta rechaza el interactivo o la plantilla, sale el mismo contenido como texto. Envía de a uno con 1,5 s entre mensajes.',

@@ -60,8 +60,8 @@ if (prueba) {
 if (!destinatarios.length) return sin({ motivoFallo: 'sin_destinatario' });
 
 // 4. Los datos del aviso.
-const nombre = avPrimerNombre(t.nombrePerfil) || 'sin nombre';
-const cliente = nombre + ' (+' + from + ')';
+const nombre = apNombre(avPrimerNombre(t.nombrePerfil));
+const cliente = apCliente(nombre, from); // función común del core (aviso-recepcion.js): «Nombre (+591…)»
 const prod = avLimpio(aviso.producto, 80) || 'producto';
 const montoNum = typeof aviso.monto === 'number' && aviso.monto > 0 ? cbMonto(aviso.monto) : '';
 const monto = montoNum ? montoNum + ' Bs' : 'sin monto';
@@ -84,7 +84,7 @@ const responderAntes = aviso.tipo === 'comprobante' ? 'responder antes de ' + ho
 const cual = aviso.tipo === 'comprobante' && motivoComprobante === '' ? 'comprobante' : 'consulta';
 const parametros = cual === 'comprobante'
   ? [nombre, prod, montoNum || '—', '+' + from]
-  : [aviso.tipo === 'comprobante' ? motivoComprobante : motivoConsulta, '+' + from,
+  : [(aviso.tipo === 'comprobante' ? motivoComprobante : motivoConsulta) + ' — cliente ' + nombre, '+' + from,
     aviso.tipo === 'comprobante' ? prod + ' por ' + monto : (mensaje ? 'texto literal del cliente: «' + mensaje + '»' : 'sin mensaje del cliente')];
 
 // 5. El texto libre (dentro de la ventana de Rubén).

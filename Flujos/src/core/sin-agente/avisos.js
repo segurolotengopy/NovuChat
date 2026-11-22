@@ -900,6 +900,11 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
   if (forma === 'solicitud' && tipo === 'reserva') return avVariablesSolicitud(d, dest);
   if (forma === 'pedido' && (tipo === 'reserva' || tipo === 'transferencia')) return avVariablesDeForma(tipo, d, dest, ahoraMs);
   const nombreDe = (n) => (dest.rol === 'cocina' ? avPrimerNombre(n, opc) : avLimpio(n, 60)) || 'cliente';
+  // «Nombre (+591…)» (22/11/2026, reclamo de Andres: todo aviso a recepción lleva nombre Y teléfono): el teléfono va SOLO al rol `completo`; `cocina` conserva el primer nombre sin teléfono (R2).
+  const nombreConTel = (n) => {
+    const tel = dest.rol === 'completo' ? avDigitos(d.telefono || d.from) : '';
+    return nombreDe(n) + (tel.length >= 8 && tel.length <= 15 ? ' (' + (avTelefonoLegible(d.telefono || d.from) || '+' + tel) + ')' : '');
+  };
   if (tipo === 'pedido' || tipo === 'comprobante') {
     const lineas = avLineas(d.lineas);
     const n = lineas.reduce((a, l) => a + l.cantidad, 0);
@@ -917,7 +922,7 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
     const p = Math.floor(Number(r.personas));
     const partes = [
       'Reserva ' + (Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : '—'),
-      nombreDe(r.nombre || d.nombre),
+      nombreConTel(r.nombre || d.nombre),
       avLimpio(r.zona, 40, opc),
     ].concat(avMarcasReserva(r)).filter(Boolean);
     return {
@@ -931,7 +936,7 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
   return {
     destinatario,
     cuando: avParametro(avAhoraLegible(ahoraMs), 70),
-    detalle: avParametro([d.comprobante === true ? 'Comprobante de cliente (no se pudo revisar)' : 'Consulta de cliente', nombreDe(d.nombre), motivo ? 'Nota del cliente: ' + motivo : ''].filter(Boolean).join(' · '), 200),
+    detalle: avParametro([d.comprobante === true ? 'Comprobante de cliente (no se pudo revisar)' : 'Consulta de cliente', nombreConTel(d.nombre), motivo ? 'Nota del cliente: ' + motivo : ''].filter(Boolean).join(' · '), 200),
     codigo: avParametro(avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs), 20),
   };
 }

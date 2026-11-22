@@ -402,7 +402,7 @@ describe('reserva: plantilla `appointment_confirmed` y su orden', () => {
     const a = plantillaDe(items, ANDRES);
     const s = plantillaDe(items, SILVANA);
     expect(a.payload.template.name).toBe('appointment_confirmed');
-    expect(params(a)).toEqual(['Andres', 'viernes 9 de octubre a las 20:00', 'Reserva 4 personas · Ana Pérez · terraza', 'R4T9']);
+    expect(params(a)).toEqual(['Andres', 'viernes 9 de octubre a las 20:00', 'Reserva 4 personas · Ana Pérez (+591 0000 0033) · terraza', 'R4T9']);
     // Silvana (cocina) ve solo el primer nombre del cliente.
     expect(params(s)).toEqual(['Silvana', 'viernes 9 de octubre a las 20:00', 'Reserva 4 personas · Ana · terraza', 'R4T9']);
   });
@@ -415,7 +415,7 @@ describe('reserva: plantilla `appointment_confirmed` y su orden', () => {
     const it = plantillaDe(L.avArmar('reserva', reserva(), CSV, cfg, sdCon(), AHORA), ANDRES);
     expect(it.payload.template.name).toBe('reserva_solicitud');
     expect(it.payload.template.language.code).toBe('es_ES');
-    expect(params(it)).toEqual(['R4T9', 'Reserva 4 personas · Ana Pérez · terraza', 'viernes 9 de octubre a las 20:00', 'Andres']);
+    expect(params(it)).toEqual(['R4T9', 'Reserva 4 personas · Ana Pérez (+591 0000 0033) · terraza', 'viernes 9 de octubre a las 20:00', 'Andres']);
     const malo = L.avPlan('reserva', reserva(), CSV, { ...CFG, ordenReserva: 'codigo,detalle' }, sdCon(), AHORA);
     expect(malo.errores).toContain('orden_invalido_reserva');
     expect(params(plantillaDe(malo.items, ANDRES))[0]).toBe('Andres');
@@ -429,7 +429,7 @@ describe('reserva: plantilla `appointment_confirmed` y su orden', () => {
   });
   it('un persona, zona vacía y sin objeto de reserva', () => {
     const r = reserva(); r.reserva.personas = 1; r.reserva.zona = '';
-    expect(params(plantillaDe(L.avArmar('reserva', r, CSV, CFG, sdCon(), AHORA), ANDRES))[2]).toBe('Reserva 1 persona · Ana Pérez');
+    expect(params(plantillaDe(L.avArmar('reserva', r, CSV, CFG, sdCon(), AHORA), ANDRES))[2]).toBe('Reserva 1 persona · Ana Pérez (+591 0000 0033)');
     const sin = L.avPlan('reserva', {}, CSV, CFG, sdCon(), AHORA);
     expect(sin.items).toEqual([]);
     expect(sin.errores).toEqual(['sin_datos_reserva']);
@@ -451,10 +451,10 @@ describe('reserva: marcas «GRUPO GRANDE» y «VARIAS RESERVAS HOY DE ESTE NÚME
   const con = (m: J): J => reserva({ reserva: { ...reserva().reserva, ...m } });
   it('forma cita (plantilla de 4 variables): el detalle lleva las marcas; sin ellas, nada cambia', () => {
     const p = (r: J): string[] => params(plantillaDe(L.avArmar('reserva', r, CSV, CFG, sdCon(), AHORA), ANDRES));
-    expect(p(con({ grupoGrande: true, personas: 15 }))[2]).toBe('Reserva 15 personas · Ana Pérez · terraza · GRUPO GRANDE');
-    expect(p(con({ diaLleno: true }))[2]).toBe('Reserva 4 personas · Ana Pérez · terraza · VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+    expect(p(con({ grupoGrande: true, personas: 15 }))[2]).toBe('Reserva 15 personas · Ana Pérez (+591 0000 0033) · terraza · GRUPO GRANDE');
+    expect(p(con({ diaLleno: true }))[2]).toBe('Reserva 4 personas · Ana Pérez (+591 0000 0033) · terraza · VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
     expect(p(con({ grupoGrande: true, diaLleno: true, personas: 15 }))[2]).toContain('GRUPO GRANDE · VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
-    expect(p(reserva())[2]).toBe('Reserva 4 personas · Ana Pérez · terraza');
+    expect(p(reserva())[2]).toBe('Reserva 4 personas · Ana Pérez (+591 0000 0033) · terraza');
   });
   it('con ventana abierta, el texto del detalle lleva una línea con las marcas', () => {
     const c = (r: J): string => cuerpo(L.avArmar('reserva', r, CSV, CFG, abierta(), AHORA), ANDRES);
@@ -520,7 +520,7 @@ describe('derivación: texto libre con ventana, plantilla sin ella', () => {
     expect(items.map((i: J) => i.clase)).toEqual(['plantilla', 'plantilla']);
     const it = plantillaDe(items, ANDRES);
     expect(it.payload.template.name).toBe('derivacion_cliente');
-    expect(params(it)).toEqual(['Andres', 'lunes 5 de octubre a las 10:00', 'Consulta de cliente · Ana Pérez · Nota del cliente: quiero hablar de un evento para 40 personas', 'C1D2']);
+    expect(params(it)).toEqual(['Andres', 'lunes 5 de octubre a las 10:00', 'Consulta de cliente · Ana Pérez (+591 0000 0033) · Nota del cliente: quiero hablar de un evento para 40 personas', 'C1D2']);
   });
   it('la derivación NO hereda el idioma de la reserva; el suyo, o el respaldo común, o `es`', () => {
     const sinPropio = L.avArmar('transferencia', datos, CSV, { ...CFG, idiomaPlantillaReserva: 'es_ES' }, sdCon(), AHORA);
@@ -1260,7 +1260,7 @@ describe('la forma `pedido` de la reserva y de la derivación (plantilla `pedido
   });
   it('sin forma configurada rige `cita` (las 4 variables de siempre); una forma desconocida cae a `cita` y se anota', () => {
     const cita = L.avArmar('reserva', reserva(), CSV, CFG, sdCon(), AHORA);
-    expect(params(plantillaDe(cita, ANDRES))).toEqual(['Andres', 'viernes 9 de octubre a las 20:00', 'Reserva 4 personas · Ana Pérez · terraza', 'R4T9']);
+    expect(params(plantillaDe(cita, ANDRES))).toEqual(['Andres', 'viernes 9 de octubre a las 20:00', 'Reserva 4 personas · Ana Pérez (+591 0000 0033) · terraza', 'R4T9']);
     const explicita = L.avArmar('reserva', reserva(), CSV, { ...CFG, formaPlantillaReserva: 'cita' }, sdCon(), AHORA);
     expect(params(plantillaDe(explicita, ANDRES))).toEqual(params(plantillaDe(cita, ANDRES)));
     const rara = L.avPlan('reserva', reserva(), CSV, { ...CFG, formaPlantillaReserva: 'otra' }, sdCon(), AHORA);

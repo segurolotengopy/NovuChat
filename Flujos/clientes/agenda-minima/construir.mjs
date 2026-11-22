@@ -97,6 +97,15 @@ function conBaja(codigo, marca) {
   return `${codigo.slice(0, codigo.length - propio.length - 1)}${BAJA_CORE}\n\n${propio}\n`;
 }
 
+// El AVISO A RECEPCIÓN CON EL CLIENTE (`Flujos/src/core/conversacion/aviso-recepcion.js`, 22/11/2026): nombre y teléfono del cliente en todo aviso a recepción y el selector de la plantilla de aviso (solo con estado APPROVED).
+// Se INCLUYE byte a byte delante del código propio de «Armar mensajes» (`apCliente`, `apPlantillaAviso`); nunca se copia.
+const AVISO_RECEPCION_CORE = leer('../../src/core/conversacion/aviso-recepcion.js').trimEnd();
+function conAvisoRecepcion(codigo, marca) {
+  const propio = leer(`src/${marca.slice('@@'.length)}`).trimEnd();
+  if (!codigo.endsWith(`${propio}\n`)) throw new Error('aviso a recepción: el código armado ya no termina en el código propio del nodo');
+  return `${codigo.slice(0, codigo.length - propio.length - 1)}${AVISO_RECEPCION_CORE}\n\n${propio}\n`;
+}
+
 /** «Armar mensajes» lleva `NIEGA_IA_CORE` justo DELANTE de su propio código (después de la librería y las utilidades). */
 function conReglaDeIdentidad(codigo, marca) {
   const propio = leer(`src/${marca.slice('@@'.length)}`).trimEnd();
@@ -134,6 +143,7 @@ function armar(v) {
     if (typeof js === 'string' && js.startsWith('@@')) {
       let armado = codigoDe(js, n.name);
       if (NODOS_CON_BAJA.has(n.name)) armado = conBaja(armado, js);
+      if (n.name === 'Armar mensajes') armado = conAvisoRecepcion(armado, js);
       n.parameters.jsCode = n.name === 'Armar mensajes' ? conReglaDeIdentidad(armado, js) : armado;
     }
     if (n.name === 'Reportar mensaje (entrante)') {
