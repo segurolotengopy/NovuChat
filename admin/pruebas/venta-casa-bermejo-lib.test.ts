@@ -20,7 +20,7 @@ const RUTAS = [
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
-  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_SIN_PIEZA', 'bmEnlaceCatalogo', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
+  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_SIN_PIEZA', 'bmEnlaceCatalogo', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmDatosTienda', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -558,6 +558,14 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       expect(c2).toMatchObject({ capturado: true, entrega: { nombre: 'Silvana Prueba' } });
       expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Sí, confirmo, quiero pagar', modos).capturado).toBe(false);
       expect(b('bmCompletarEntrega')({}, {}, 'Silvana Prueba', modos).capturado).toBe(false);   // sin modo elegido, no se toma por nombre
+    });
+    it('el horario sale del dato común del comercio cuando «Config base» no lo trae, y el de «Config base» manda si existe', () => {
+      const d = b('bmDatosTienda');
+      expect(d({ ubicacionTienda: 'Bermejo' }, { horarioAtencion: 'lunes a domingo, de 06:00 a 18:00' })).toContain('horario: lunes a domingo, de 06:00 a 18:00.');
+      expect(d({ horarioTienda: 'de 8 a 12' }, { horarioAtencion: 'lunes a domingo, de 06:00 a 18:00' })).toContain('horario: de 8 a 12.');
+      // NEGADO: sin ninguno de los dos no se inventa, se pasa con una persona
+      expect(d({}, {})).toContain('el horario aún no está cargado');
+      expect(d({ horarioTienda: 'REEMPLAZAR_HORARIO' }, { horarioAtencion: '' })).toContain('el horario aún no está cargado');
     });
     it('los MISMOS mensajes de Andres (23/11): «Andres 2441214 yacuiba. Flota bolivar» y luego «2441214» ya no vuelven a pedir CI ni ciudad', () => {
       const e1 = b('bmCompletarEntrega')({ nombre: 'Andres' }, { modo: 'envío' }, 'Andres 2441214 yacuiba. Flota bolivar', modos).entrega;
