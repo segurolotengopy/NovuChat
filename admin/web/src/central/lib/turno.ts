@@ -28,7 +28,7 @@ import { httpsCallable, type Functions } from 'firebase/functions';
 // La regla del turno es de CORE y la consola usa la MISMA que el servidor (Central → Core, hacia abajo): ni una
 // cifra ni una comparación duplicadas. Un turno vencido por inactividad o por la ventana, o con fechas rotas, es «asistente».
 import {
-  INACTIVIDAD_MS, MARGEN_ENVIO_MS, VENTANA_META_MS, leerTurno, personaPuedeEscribirDeFicha, turnoVigente, ventanaDeMetaAbierta, type Turno,
+  INACTIVIDAD_MS, MARGEN_ENVIO_MS, VENTANA_META_MS, leerTurno, personaPuedeEscribirDeFicha, personaPuedeRetomarDeFicha, turnoVigente, ventanaDeMetaAbierta, type Turno,
 } from '../../../../functions/src/core/conversacion/turno';
 
 // Las cifras de Retomar (topes y precio de la plantilla) son del PLAN y salen de `planes.ts`: la pantalla no escribe ninguna.
@@ -151,13 +151,12 @@ export function puedeIntervenirDeFicha(
 /**
  * ¿Puede una persona de este comercio RETOMAR una conversación con la ventana cerrada? Lo de intervenir MÁS
  * `personaPuedeRetomar === true` exacto (C2 del contrato de Retomar; la enciende solo Plataforma). Ausente, `false`,
- * `'true'` o `1` = no. Es una comprobación LOCAL mínima: cuando el core exporte `personaPuedeRetomarDeFicha`
- * (`core/conversacion/turno.ts`, bloque R1) se reemplaza por esa, igual que `puedeIntervenirDeFicha` usa la de escribir.
+ * `'true'` o `1` = no. La bandera es la MISMA función del servidor (`personaPuedeRetomarDeFicha` de Core), igual que `puedeIntervenirDeFicha`.
  */
 export function puedeRetomarDeFicha(
   ficha: { readonly consolaConversaciones?: unknown; readonly personaPuedeEscribir?: unknown; readonly personaPuedeRetomar?: unknown } | null | undefined,
 ): boolean {
-  return puedeIntervenirDeFicha(ficha) && !!ficha && ficha.personaPuedeRetomar === true;
+  return puedeIntervenirDeFicha(ficha) && personaPuedeRetomarDeFicha(ficha);
 }
 
 export const AVISO_SIN_SALIDA = 'Tomar la conversación y escribir como persona todavía no está activo para su negocio.';

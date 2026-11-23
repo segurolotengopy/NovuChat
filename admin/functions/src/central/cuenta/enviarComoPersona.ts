@@ -9,8 +9,9 @@
  */
 import { crearEnviarComoPersona } from '../../core/conversacion/enviarComoPersona.js';
 import { crearEnviarAdjuntoComoPersona } from '../../core/conversacion/enviarAdjuntoComoPersona.js';
+import { crearRetomarConversacion } from '../../core/conversacion/retomarConversacion.js';
 import { titularidadDe } from '../ejes.js';
-import { limitesDePersona, tarifaDe } from './planes.js';
+import { limitesDeRetomar, limitesDePersona, tarifaDe } from './planes.js';
 
 export const enviarComoPersona = crearEnviarComoPersona({ limitesDePersona, titularidadDe, tarifaDe });
 
@@ -19,3 +20,9 @@ export const enviarComoPersona = crearEnviarComoPersona({ limitesDePersona, titu
  * (cada archivo cuenta como un mensaje de persona) y Core sigue sin importar Central.
  */
 export const enviarAdjuntoComoPersona = crearEnviarAdjuntoComoPersona({ limitesDePersona, titularidadDe, tarifaDe });
+
+/**
+ * Retomar (R3): la plantilla de utilidad con la ventana cerrada. La MISMA inyección: los topes (7 días, 20 por día, 100 por mes)
+ * salen de `limitesDeRetomar` del plan y Core no importa Central. La exporta `index.ts` (coordinadora).
+ */
+export const retomarConversacion = crearRetomarConversacion({ limitesDeRetomar, titularidadDe, tarifaDe });
