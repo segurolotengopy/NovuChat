@@ -577,6 +577,10 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       // NEGADO: con otra cosa por faltar (flota), una palabra sola no es la ciudad; un teléfono con su palabra no es el CI; sin envío no se toma nada
       expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', documento: '2441214' }, 'bolivar', modos).entrega.ciudad).toBeUndefined();
       expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres' }, 'mi celular es 70123456', modos).entrega.documento).toBeUndefined();
+      // un número suelto de 8 cifras que empieza con 6 o 7 es un celular: no entra como CI (con la palabra CI sí)
+      for (const cel of ['70123456', '61234567', 'Andres 70123456', '70123456 yacuiba']) expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres' }, cel, modos).entrega.documento).toBeUndefined();
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres' }, 'mi CI es 70123456', modos).entrega.documento).toBe('70123456');
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres' }, '12345678', modos).entrega.documento).toBe('12345678');
       expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda', nombre: 'Andres' }, '2441214', modos).entrega.documento).toBeUndefined();
       expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', documento: '2441214', flota: 'bolivar' }, 'gracias', modos).entrega.ciudad).toBeUndefined();
       // el ciclo completo con el resolvedor: tras el segundo mensaje no falta el CI

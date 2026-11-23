@@ -140,7 +140,8 @@ function bmCompletarEntrega(nueva, antes, texto, modos) {
   if (bmEsEnvio(modo)) {
     if (vacio('documento') && !/\b(?:tel[eé]fono|tel|celular|cel|whatsapp|nit|bs|monto|cuenta|total|precio)\b\D{0,15}\d/i.test(crudo)) {
       const m = /^\s*(\d[\d.-]{3,11}\d)\s*$/.exec(crudo) || /^\s*(\d[\d.-]{3,11}\d)(?=\s+[\p{L}])/u.exec(crudo) || /^[\p{L}][\p{L} .'-]{1,40}?\s+(\d[\d.-]{3,11}\d)(?=\s|[,.;]|$)/u.exec(crudo);
-      if (m) n.documento = m[1];
+      // Un número suelto de 8 cifras que empieza con 6 o 7 es, con más probabilidad, un CELULAR: no entra como CI (si es el CI, el cliente lo escribe con «CI»).
+      if (m && !/^[67]\d{7}$/.test(m[1].replace(/\D/g, ''))) n.documento = m[1];
     }
     const noCiudad = /^(?:flota|terminal|empresa|gracias|hola|buenas|buenos|si|no|ci|dni|mi|el|la|por|favor|ok|listo|claro|quiero|persona)$/i;
     const mayus = (t) => t.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
