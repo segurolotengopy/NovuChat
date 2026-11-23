@@ -8,6 +8,7 @@
 //   «qr»                    el resumen del pedido y el QR REAL del comercio (imagen por id de medio, nunca por enlace) con el monto del carrito; «qr_pendiente» el recordatorio del QR abierto;
 //   «comprobante»           «llegó y los datos coinciden» (NUNCA «acreditado» ni «verificado»), con el botón; «comprobante_pedir» pide uno correcto o más nítido;
 //   «pedido_sin_cobro»      sin QR de cobro real: el pedido queda anotado y lo coordina recepción (aviso + botón);
+//   «carrito_pide»          el pedido del catálogo web con la entrega incompleta: UN mensaje con las piezas, el total y lo que falta (el flujo normal completa la entrega); con la entrega completa sale «qr» en el MISMO mensaje del carrito (QR directo; «carrito_listo» solo si alguna pieza no entró, con cómo confirmar);
 //   «derivar»               pasar con recepción: el aviso MÁS el botón para escribirle directo. «Ya avisé» solo sale si «Enviar aviso» devolvió un `wamid` real.
 // SOLO SE OFRECE LO QUE SE CUMPLE: ninguna promesa de «te aviso luego», «te llamamos» o «te escribirán»; el único ofrecimiento es pasar con recepción.
 // El botón de recepción va SOLO al derivar. Todo texto pasa por `wlSeguro` (NIEGA_IA y palabras prohibidas del cobro). La ficha (`walisuma[<messages[0].from>]`) se escribe AQUÍ, una vez por turno;
@@ -131,12 +132,32 @@ if (puerta.ruta === 'sigue') {
     msgs = [texto(conSaludo(WL_TEXTO_FACTURA_AL_CONFIRMAR))];
   } else if (tipoDePlan === 'factura_pedir') {
     msgs = [texto(WL_TEXTO_PIDE_FACTURA)];
+  } else if (tipoDePlan === 'carrito_pide' || tipoDePlan === 'carrito_listo') {
+    // El pedido que el cliente confirmó en el catálogo web, con la entrega incompleta: UN mensaje con TODAS las piezas y el total (calculados por el código con el catálogo) y lo que falta. No promete nada que el flujo no cumpla.
+    const lineas = wlConNombres(d.lineas, c.vendibles);
+    const anulado = d.qrAnulado === true ? '\n\nSu pedido cambió, así que el QR anterior quedó anulado: no pague con él.' : '';
+    const dir = d.entrega.modo !== '' && wlEsEnvio(d.entrega.modo) && d.entrega.direccion !== '' ? '\nDirección: ' + d.entrega.direccion : '';
+    const sinEntrar = d.noEntraron.length ? '\n\nNo incluimos en el pedido: ' + d.noEntraron.join(', ') + ' (no está disponible para pedir por aquí).' : (d.descartadosServidor > 0 ? '\n\nHay piezas de su selección que no pudimos incluir en el pedido.' : '');
+    const pide = tipoDePlan === 'carrito_listo' ? '\n\nSu pedido está completo. Para confirmarlo y recibir el QR de pago, escriba «confirmo mi pedido».' : '\n\nPara completar su pedido necesitamos: ' + d.faltan.join(', ') + '. Envíenoslo por este chat.';
+    const armar = (nota) => conSaludo((tipoDePlan === 'carrito_listo' ? 'Este es su pedido:\n\n' : 'Recibimos su pedido del catálogo web:\n\n') + d.resumen + '\n\nEntrega: ' + wlEntregaTexto(d.entrega) + dir + (nota ? '\nNota: «' + nota + '»' : '') + sinEntrar + anulado + pide);
+    // La nota es texto del cliente: si con ella el texto cae en la red de palabras prohibidas, sale sin la nota (nunca se pierde el mensaje por ella).
+    const conNota = d.nota !== '' ? armar(d.nota) : '';
+    const cuerpoCarrito = conNota !== '' && wlSeguro(conNota) === conNota ? conNota : armar('');
+    msgs = [texto(cuerpoCarrito)];
+    llamadasModelo = c.plan.tipo === 'modelo' ? 1 : 0;
+    nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
+    nuevos.entrega = d.entrega;
+    nuevos.cierre = false;
+    nuevos.desdeCatalogo = true;
+    nuevos.mostrados = d.lineas.map((l) => l.id).concat(fichaAntes.mostrados.filter((x) => !d.lineas.some((l) => l.id === x))).slice(0, 15);
+    if (d.patch) Object.assign(nuevos, d.patch);
+    for (const k of ['carrito', 'entrega', 'cierre', 'mostrados', 'qrHastaMs', 'qrCarrito', 'desdeCatalogo']) ev[k] = fichaAntes[k];
   } else if (tipoDePlan === 'modelo' || tipoDePlan === 'pedir_ubicacion') {
-    llamadasModelo = 1;
+    llamadasModelo = c.plan.tipo === 'carrito' ? 0 : 1;
     const anulado = d.qrAnulado === true ? '\n\nSu pedido cambió, así que el QR anterior quedó anulado: no pague con él. Cuando confirme su pedido le enviamos uno nuevo.' : '';
     if (tipoDePlan === 'pedir_ubicacion') {
       // Un ENVÍO sin el pin: el resumen y el pedido de la ubicación con el botón «Enviar ubicación» (`location_request_message`). +1 mensaje por pedido de envío sin GPS.
-      const cuerpo = wlSeguro(conSaludo((d.texto ? d.texto + '\n\n' : '') + d.resumen + anulado + '\n\n' + WL_TEXTO_PIDE_UBICACION));
+      const cuerpo = wlSeguro(conSaludo((d.texto ? d.texto + '\n\n' : '') + (Array.isArray(d.noEntraron) && d.noEntraron.length ? 'No incluimos en el pedido: ' + d.noEntraron.join(', ') + ' (no está disponible para pedir por aquí).\n\n' : '') + d.resumen + anulado + '\n\n' + WL_TEXTO_PIDE_UBICACION));
       const payload = Object.assign(cmBase('interactive'), { interactive: { type: 'location_request_message', body: { text: cmRecorte(cuerpo, 1024) }, action: { name: 'send_location' } } });
       msgs = [cmMensaje('cliente', payload, cuerpo, cuerpo, { tipoReporte: 'interactive' })];
     } else {
@@ -163,7 +184,8 @@ if (puerta.ruta === 'sigue') {
       const aCotizar = d.envio === 'cotizar';
       // Un pedido que cambió con un QR abierto no avisa a recepción (el aviso se arma antes de saber si el cobro anterior se cerró): el texto manda al botón.
       const pieEnvio = !aCotizar ? '' : '\n\n' + (d.cambioDePedido ? 'El costo del envío de este pedido se lo indicará nuestra encargada: escríbale con el botón.' : wlTextoDerivacion('envio_a_cotizar', salio));
-      const cabeza = (d.cambioDePedido ? 'Actualizamos su pedido.\n\n' : '') + 'Este es el resumen de su pedido:\n\n';
+      const sinEntrarQr = Array.isArray(d.noEntraron) && d.noEntraron.length ? 'No incluimos en el pedido: ' + d.noEntraron.join(', ') + ' (no está disponible para pedir por aquí).\n\n' : '';
+      const cabeza = (d.cambioDePedido ? 'Actualizamos su pedido.\n\n' : '') + sinEntrarQr + 'Este es el resumen de su pedido:\n\n';
       const cola = '\n\nEntrega: ' + wlEntregaTexto(d.entrega) + (frase ? '. ' + frase : '.') + pieEnvio + '\n\nAbajo va el QR para pagar.';
       // Bajo el umbral el resumen sale con el botón (cuerpo de a lo más 1.024 caracteres, y el recorte corta el FINAL): se acorta la LISTA de líneas («… y N más»), nunca la cola con la política y el pie. El total siempre queda.
       const filas = vcResumen(lineas).split('\n');
@@ -184,11 +206,11 @@ if (puerta.ruta === 'sigue') {
       { const pqr = pqrCampos(imagen.referencia, d.lineas, { entrega: d.envio === 'recojo' ? d.entrega.modo : 'envio', direccion: d.envio === 'recojo' ? '' : d.entrega.direccion, ciudad: d.entrega.ciudad, ubicacion: d.envio === 'recojo' ? null : d.entrega.ubicacion }, false); if (pqr.lineas) { imagen.lineas = pqr.lineas; imagen.entrega = pqr.entrega; } }
       msgs = [aCotizar ? conRecepcion(conSaludo(resumen)) : texto(conSaludo(resumen)), imagen];
       nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
-      nuevos.entrega = d.entrega; nuevos.cierre = false;
+      nuevos.entrega = d.entrega; nuevos.cierre = false; nuevos.desdeCatalogo = false;
       nuevos.pedidos = fichaAntes.pedidos + 1;
       nuevos.qrHastaMs = ahora + WL_MINUTOS_QR * 60 * 1000;
       nuevos.qrCarrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, precioCentavos: l.precioCentavos, detalle: l.detalle }));
-      for (const k of ['carrito', 'entrega', 'cierre', 'pedidos', 'qrHastaMs', 'qrCarrito']) ev[k] = fichaAntes[k];
+      for (const k of ['carrito', 'entrega', 'cierre', 'pedidos', 'qrHastaMs', 'qrCarrito', 'desdeCatalogo']) ev[k] = fichaAntes[k];
     }
   } else if (tipoDePlan === 'qr_pendiente') {
     msgs = [texto(conSaludo('Ya tiene un QR abierto por ' + vcMonto(d.total) + '. Cuando pague, envíenos la foto del comprobante por este chat.'))];

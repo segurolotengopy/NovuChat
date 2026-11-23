@@ -340,7 +340,7 @@ describe('cada flujo versionado que envía una imagen del asistente lleva la ram
     expect(total('clientes/venta-minima/venta-minima.qtaco-3727.json')).toBe(86);
     expect(total('clientes/rroca-ruben/rroca-ruben.json')).toBe(70);
     expect(total('clientes/rroca-antonio/rroca-antonio.json')).toBe(70);
-    expect(total('clientes/walisuma/walisuma.json')).toBe(70);
+    expect(total('clientes/walisuma/walisuma.json')).toBe(71);
     expect(total('clientes/casa-bermejo/casa-bermejo.json')).toBe(63);
     expect(total('demo-a-agendamiento.json')).toBe(82);
     expect(total('demo-b-venta-cobro.json')).toBe(93);

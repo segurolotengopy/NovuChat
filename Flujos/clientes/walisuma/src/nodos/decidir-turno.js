@@ -31,6 +31,19 @@ const salir = (plan, extra) => [{ json: Object.assign({ plan: plan, from: from, 
 
 // 0. La puerta cerrada: nada de modelo, de medios ni de cobro. Quien responde (suspendido, operador) lo arma «Armar mensajes» desde la puerta.
 if (puerta.ruta !== 'sigue') return salir({ tipo: 'nada' });
+// 0a. EL PEDIDO DEL CATÁLOGO WEB (`t.tipo === 'carrito'`, que solo produce «Normalizar entrada» cuando corrió el Webhook «Carrito del catálogo»): no es un mensaje de WhatsApp y se decide ANTES que todo lo demás (tras la puerta).
+//   ventana de 24 h cerrada (la calculó el servidor)  NO sale nada: fuera de la ventana Meta solo acepta una plantilla aprobada y no hay una para esto (como Q'Taco); el pedido sigue en la consola;
+//   el tenant del carrito no es el del panel de ESTE número, otro país o moneda distinta de Bs  no se contesta;  el panel no contestó o no hay catálogo  pasa con nuestra encargada;  si no, `carrito`: `wlResolverCarrito` arma el pedido.
+if (t.tipo === 'carrito') {
+  const c = t.carrito && typeof t.carrito === 'object' ? t.carrito : {};
+  const mismo = (a, b) => { const x = String(a === undefined || a === null ? '' : a); const y = String(b === undefined || b === null ? '' : b); if (!x || !y) return false; let d = x.length === y.length ? 0 : 1; for (let i = 0; i < Math.max(x.length, y.length); i++) d |= (x.charCodeAt(i) || 0) ^ (y.charCodeAt(i) || 0); return d === 0; };
+  if (c.ventanaAbierta !== true || c.accion !== 'responder') return salir({ tipo: 'nada', motivo: 'carrito_ventana_cerrada' });
+  if (!panel.ok) return salir({ tipo: 'derivar', motivo: 'sin_configuracion' });
+  if (!mismo(c.tenantId, panel.cuerpo.tenantId)) return salir({ tipo: 'nada', motivo: 'carrito_otro_tenant' });
+  if (t.fueraDePais === true || c.moneda !== 'Bs') return salir({ tipo: 'nada', motivo: 'carrito_no_atendido' });
+  if (vendibles.length === 0) return salir({ tipo: 'derivar', motivo: 'sin_configuracion' });
+  return salir({ tipo: 'carrito', carrito: c });
+}
 // 0b. Un número de otro país: el texto fijo. Nada de modelo ni de medios.
 if (t.fueraDePais === true) return salir({ tipo: 'fuera_pais' });
 
