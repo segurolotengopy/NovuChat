@@ -380,7 +380,7 @@
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
-          "timeout": 4000,
+          "timeout": 15000,
           "response": {
             "response": {
               "fullResponse": true,
@@ -396,6 +396,9 @@
         }
       },
       "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
       "id": "traer-catalogo",
       "name": "Traer catálogo",
       "type": "n8n-nodes-base.httpRequest",
