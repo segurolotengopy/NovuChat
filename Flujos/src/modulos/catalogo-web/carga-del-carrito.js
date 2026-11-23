@@ -28,6 +28,10 @@ function ccLinea(t, max) {
   const s = String(t === undefined || t === null ? '' : t).replace(/[\u0080-\u0084\u0086-\u009f]/g, '').replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029<>&]/g, ' ').replace(/\s+/g, ' ').trim();
   return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;
 }
+// Texto libre del cliente (nota, dirección): sin corchetes, llaves ni comillas angulares (no imita una marca interna como [ENVIAR_QR]) y sin enlaces.
+function ccTextoLibre(t) {
+  return String(t === undefined || t === null ? '' : t).replace(/https?:\/\/\S+/gi, ' ').replace(/[[\]{}«»]/g, ' ').replace(/\s+/g, ' ').trim();
+}
 // El id de cada item viaja en el cuerpo del servidor; `validar-carrito.js` solo conserva nombre, cantidad y subtotal. Se emparejan por posición (el módulo toma `items.slice(0, 50)` en el mismo orden).
 // Un id con otra forma queda vacío: ese item no se vende. Devuelve los carritos que pasaron la validación (puede ser ninguno) con su número de origen.
 function ccCarritos(entradas) {
@@ -47,7 +51,7 @@ function ccCarritos(entradas) {
         pedidoId: pedidoId, tenantId: String(v.tenantId || ''), accion: String(v.accion || ''), ventanaAbierta: v.ventanaAbierta === true,
         fichaCompartida: v.fichaCompartida === true, moneda: String(v.moneda || 'Bs'), total: Number(v.total) || 0,
         costoEnvio: Number(v.costoEnvio) || 0, entrega: v.entrega === 'envio' ? 'envio' : 'retiro',
-        direccion: String(v.direccion || ''), nota: String(v.nota || ''), descartados: Number(v.descartados) || 0,
+        direccion: ccTextoLibre(v.direccion), nota: ccTextoLibre(v.nota), descartados: Number(v.descartados) || 0,
         // La referencia y la ubicación (opcionales) las manda la página nueva; van FUERA de la validación incluida.
         referencia: ccLinea(String(cuerpo.referencia || ''), 150),
         ubicacion: ccUbicacion(cuerpo.ubicacion),

@@ -49,7 +49,7 @@ describe('el pedido real de Silvana: retiro con dos piezas', () => {
     // El cliente contesta: queda completo y listo para confirmar, sin QR.
     const t2 = hablar(m, ANA, mTexto('Silvana Pérez, La Paz, 70661250'));
     expect(t2.mensajes).toHaveLength(1);
-    expect(textos(t2)[0]).toMatch(/completo y listo para confirmar/);
+    expect(textos(t2)[0]).toMatch(/Su pedido está completo\. Para confirmarlo/);
     expect(textos(t2)[0]).toMatch(/Total: Bs 1\.330/);
     expect(t2.mensajes.some((e) => e.tipo === 'image')).toBe(false);
     expect(t2.mensajes.some((e) => e.evento === 'qr_enviado')).toBe(false);
@@ -74,11 +74,20 @@ describe('con la entrega ya completa en la ficha', () => {
     hablar(m, ANA, mTexto('quiero recoger en La Paz'));
     const t = enviar(m, cuerpo({ pedidoId: 'cat_b2' }));
     expect(t.mensajes).toHaveLength(1);
-    expect(textos(t)[0]).toMatch(/completo y listo para confirmar/);
+    expect(textos(t)[0]).toMatch(/Su pedido está completo\. Para confirmarlo y recibir el QR de pago, escriba «confirmo mi pedido»/);
     expect(textos(t)[0]).toMatch(/Total: Bs 1\.330/);
     expect(t.mensajes.some((e) => e.tipo === 'image' || e.evento === 'qr_enviado')).toBe(false);
     sinAcreditado(t);
     expect(fichas(m)[ANA].cierre).toBe(false);
+  });
+  it('una pregunta distinta DESPUÉS del resumen recibe la respuesta del modelo, no otra vez el resumen del pedido', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Atendemos de lunes a viernes.', { lineas: [], entrega: ENTREGA }) });
+    hablar(m, ANA, mTexto('quiero recoger en La Paz'));
+    enviar(m, cuerpo({ pedidoId: 'cat_b3' }));
+    const t2 = hablar(m, ANA, mTexto('¿hasta qué hora atienden?'));
+    expect(textos(t2).join(' ')).toMatch(/Atendemos de lunes a viernes/);
+    expect(textos(t2).join(' ')).not.toMatch(/Para confirmarlo y recibir el QR/);
+    expect(t2.mensajes.some((e) => e.tipo === 'image')).toBe(false);
   });
 });
 

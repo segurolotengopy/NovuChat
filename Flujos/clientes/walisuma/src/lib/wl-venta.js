@@ -669,7 +669,8 @@ function wlResolverModelo(c) {
   const cambioConQr = abierto && !vcMismoCarrito(qrViejo, lineas);
   if (cambioConQr && c.cancelo === false) return Object.assign(base, { tipo: 'derivar', motivo: 'no_cancelo', aviso: null, cancelarCobro: true });
   // Pedido del catálogo web que se completó con este mensaje y sin orden de pagar: queda listo para confirmar (sin QR).
-  if (f.desdeCatalogo === true && completoAhora && !cierre && !cambioConQr) return wlCarritoListoParaConfirmar(c, base, { noEntraron: [], descartadosServidor: 0, nota: '' }, false);
+  // SOLO en el turno en que la entrega se completa (o el carrito cambió): después, una pregunta distinta recibe la respuesta del modelo, no otra vez el resumen.
+  if (f.desdeCatalogo === true && completoAhora && !cierre && !cambioConQr && (cambio || !completoAntes)) return wlCarritoListoParaConfirmar(c, base, { noEntraron: [], descartadosServidor: 0, nota: '' }, false);
   const cerrado = wlCerrar(c, base, abierto, cambioConQr);
   if (cerrado && cerrado.tipo === 'pedir_ubicacion') {
     // El texto del modelo acompaña al pedido de la ubicación (revisado; si no pasa, el fijo).

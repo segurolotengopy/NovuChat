@@ -8,7 +8,7 @@
 //   «qr»                    el resumen del pedido y el QR REAL del comercio (imagen por id de medio, nunca por enlace) con el monto del carrito; «qr_pendiente» el recordatorio del QR abierto;
 //   «comprobante»           «llegó y los datos coinciden» (NUNCA «acreditado» ni «verificado»), con el botón; «comprobante_pedir» pide uno correcto o más nítido;
 //   «pedido_sin_cobro»      sin QR de cobro real: el pedido queda anotado y lo coordina recepción (aviso + botón);
-//   «carrito_pide»          el pedido del catálogo web con la entrega incompleta: UN mensaje con las piezas, el total y lo que falta (el flujo normal completa la entrega y el QR sale solo); con la entrega completa sale «qr» como siempre;
+//   «carrito_pide»          el pedido del catálogo web con la entrega incompleta: UN mensaje con las piezas, el total y lo que falta (el flujo normal completa la entrega); con la entrega completa sale «carrito_listo» (resumen y cómo confirmar; el QR sale con la orden de confirmar, luego con el botón común);
 //   «derivar»               pasar con recepción: el aviso MÁS el botón para escribirle directo. «Ya avisé» solo sale si «Enviar aviso» devolvió un `wamid` real.
 // SOLO SE OFRECE LO QUE SE CUMPLE: ninguna promesa de «te aviso luego», «te llamamos» o «te escribirán»; el único ofrecimiento es pasar con recepción.
 // El botón de recepción va SOLO al derivar. Todo texto pasa por `wlSeguro` (NIEGA_IA y palabras prohibidas del cobro). La ficha (`walisuma[<messages[0].from>]`) se escribe AQUÍ, una vez por turno;
@@ -138,7 +138,7 @@ if (puerta.ruta === 'sigue') {
     const anulado = d.qrAnulado === true ? '\n\nSu pedido cambió, así que el QR anterior quedó anulado: no pague con él.' : '';
     const dir = d.entrega.modo !== '' && wlEsEnvio(d.entrega.modo) && d.entrega.direccion !== '' ? '\nDirección: ' + d.entrega.direccion : '';
     const sinEntrar = d.noEntraron.length ? '\n\nNo incluimos en el pedido: ' + d.noEntraron.join(', ') + ' (no está disponible para pedir por aquí).' : (d.descartadosServidor > 0 ? '\n\nHay piezas de su selección que no pudimos incluir en el pedido.' : '');
-    const pide = tipoDePlan === 'carrito_listo' ? '\n\nSu pedido está completo y listo para confirmar.' : '\n\nPara completar su pedido necesitamos: ' + d.faltan.join(', ') + '. Envíenoslo por este chat.';
+    const pide = tipoDePlan === 'carrito_listo' ? '\n\nSu pedido está completo. Para confirmarlo y recibir el QR de pago, escriba «confirmo mi pedido».' : '\n\nPara completar su pedido necesitamos: ' + d.faltan.join(', ') + '. Envíenoslo por este chat.';
     const armar = (nota) => conSaludo((tipoDePlan === 'carrito_listo' ? 'Este es su pedido:\n\n' : 'Recibimos su pedido del catálogo web:\n\n') + d.resumen + '\n\nEntrega: ' + wlEntregaTexto(d.entrega) + dir + (nota ? '\nNota: «' + nota + '»' : '') + sinEntrar + anulado + pide);
     // La nota es texto del cliente: si con ella el texto cae en la red de palabras prohibidas, sale sin la nota (nunca se pierde el mensaje por ella).
     const conNota = d.nota !== '' ? armar(d.nota) : '';
