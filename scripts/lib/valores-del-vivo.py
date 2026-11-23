@@ -74,18 +74,28 @@ def recorrer(x, ruta=()):
             yield from recorrer(v, ruta + (i,))
 
 
-def en_ruta(x, ruta):
+def en_ruta(x, ruta, ref=None):
+    """Valor de `x` en `ruta`. Si `ref` (el versionado) trae una lista de elementos con «name» (los campos de un nodo Set),
+    el elemento del vivo se busca POR NOMBRE y no por posicion: el orden de los campos puede diferir."""
     for k in ruta:
         try:
+            if isinstance(k, int) and isinstance(x, list) and isinstance(ref, list) and k < len(ref) \
+                    and isinstance(ref[k], dict) and ref[k].get("name") is not None:
+                coinc = [e for e in x if isinstance(e, dict) and e.get("name") == ref[k]["name"]]
+                if len(coinc) != 1:
+                    return None
+                ref, x = ref[k], coinc[0]
+                continue
             x = x[k]
+            ref = ref[k] if ref is not None else None
         except (KeyError, IndexError, TypeError):
             return None
     return x
 
 
-def extraer(texto_ver, marcador, texto_vivo):
+def extraer(texto_ver, marcador, texto_vivo, captura=None):
     """Valores que el vivo tiene donde el versionado tiene `marcador` (una de sus apariciones por texto)."""
-    captura, _ = forma_de(marcador)
+    captura = captura or forma_de(marcador)[0]
     valores = []
     for m in MARCADOR_RE.finditer(texto_ver):
         if m.group(0) != marcador:
@@ -125,9 +135,13 @@ def resolver(versionado, vivo, marcadores):
         for ruta, texto in recorrer(n):
             for m in set(MARCADOR_RE.findall(texto)):
                 if m in apariciones:
-                    apariciones[m].append((n["name"], ruta, texto))
+                    apariciones[m].append((n["name"], ruta, texto, n))
     for m in marcadores:
         forma = forma_de(m)
+        # Sin forma propia, un marcador que es el valor ENTERO de un campo de la Config (nodo Set) admite texto sin control.
+        if forma is None and apariciones[m] and all(
+                "assignments" in a[1] and a[1][-1] == "value" and a[2] == m for a in apariciones[m]):
+            forma = (SIN_CONTROL + r'+?', re.compile(SIN_CONTROL + r'{1,300}'))
         if forma is None:
             motivos[m] = "el sufijo del marcador no tiene una forma declarada para validarlo"
             continue
@@ -135,16 +149,16 @@ def resolver(versionado, vivo, marcadores):
             motivos[m] = "no aparece en los nodos del versionado"
             continue
         hallados, error = set(), None
-        for nodo, ruta, texto in apariciones[m]:
+        for nodo, ruta, texto, nodo_ver in apariciones[m]:
             pares = nodos_vivo.get(nodo, [])
             if len(pares) != 1:
                 error = f"el nodo «{nodo}» " + ("no existe en el vivo" if not pares else "está repetido en el vivo")
                 break
-            en_vivo = en_ruta(pares[0], ruta)
+            en_vivo = en_ruta(pares[0], ruta, nodo_ver)
             if not isinstance(en_vivo, str):
                 error = f"el vivo no tiene un texto en la misma ruta del nodo «{nodo}»"
                 break
-            for lista in extraer(texto, m, en_vivo):
+            for lista in extraer(texto, m, en_vivo, forma[0]):
                 if not lista:
                     error = f"el texto del nodo «{nodo}» no se alinea con el del vivo alrededor del marcador"
                     break

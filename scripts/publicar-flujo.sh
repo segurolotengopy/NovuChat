@@ -78,6 +78,7 @@ ENCENDER=0
 APAGAR=0
 ENV_NUEVO=""
 ENV_FILE=".env"
+CRED_TIPO_NUEVO=0
 CONFIRMO_RUBEN=0
 ANUNCIOS=""
 CONFIRMO_ANTONIO=0
@@ -100,6 +101,7 @@ while [[ $# -gt 0 ]]; do
     --env-nuevo) ENV_NUEVO="${2:?--env-nuevo necesita una ruta}"; shift 2 ;;
     --env-nuevo=*) ENV_NUEVO="${1#*=}"; shift ;;
     --forzar)  FORZAR=1; shift ;;
+    --credencial-tipo-nuevo) CRED_TIPO_NUEVO=1; shift ;;
     --confirmo-ruben) CONFIRMO_RUBEN=1; shift ;;
     --anuncios) ANUNCIOS="${2:?--anuncios necesita la cantidad de anuncios vigentes que la Consola entrega}"; shift 2 ;;
     --confirmo-antonio) CONFIRMO_ANTONIO=1; shift ;;
@@ -1003,7 +1005,7 @@ PY
   exit 0
 fi
 
-APLICAR="$APLICAR" FORZAR="$FORZAR" ENV_FILE="$ENV_FILE" FLUJO="$FLUJO" TMP="$TMP" CRED_COD="$CRED_COD" python3 - <<'PY'
+CRED_TIPO_NUEVO="$CRED_TIPO_NUEVO" APLICAR="$APLICAR" FORZAR="$FORZAR" ENV_FILE="$ENV_FILE" FLUJO="$FLUJO" TMP="$TMP" CRED_COD="$CRED_COD" python3 - <<'PY'
 import json, os, re, sys, datetime
 
 aplicar  = os.environ["APLICAR"] == "1"
@@ -1060,6 +1062,24 @@ for v in vivo.get("nodes", []):
         if ref.get("id"):
             cred_por_tipo.setdefault(tipo, ref)
 
+TIPO_Y_CALIFICADORES = {"novuchat", "ingesta", "whatsapp", "graph", "header", "auth", "api", "credencial", "cuenta",
+             "de", "del", "la", "el", "y", "token", "meta", "cloud", "google", "sheets", "gemini", "palm", "account", "oauth",
+             "dra", "dr", "crm", "minicrm", "calendar", "calendario", "catalogo",
+             # calificadores tolerados (no nombran a un comercio)
+             "bearer", "envio", "auto", "prueba", "pruebas", "no", "produccion"}
+def _identifica(nombre):
+    import unicodedata
+    plano = unicodedata.normalize("NFD", nombre or "").encode("ascii", "ignore").decode().lower()
+    return {t for t in re.findall(r"[a-z]+\d*|\d+", plano) if t not in TIPO_Y_CALIFICADORES}
+def _cruza(a, b):
+    return bool(_identifica(a) ^ _identifica(b))
+# Lo que una credencial HACE (su proposito), para elegir la del propio comercio cuando la nombrada es de otro.
+PROPOSITO = {"ingesta", "graph", "whatsapp", "meta", "gemini", "sheets", "crm", "minicrm", "calendar", "calendario", "catalogo", "cierres"}
+def _proposito(nombre):
+    import unicodedata
+    plano = unicodedata.normalize("NFD", nombre or "").encode("ascii", "ignore").decode().lower()
+    return {t for t in re.findall(r"[a-z]+", plano) if t in PROPOSITO}
+conservadas = []
 heredadas_por_tipo = []
 declaradas = {n["name"]: dict(n.get("credentials") or {}) for n in nuevo["nodes"]}
 for n in nuevo["nodes"]:
@@ -1110,6 +1130,11 @@ if isinstance(lista_cred, list):
             halladas = indice.get((tipo, nombre), [])
             if len(halladas) == 1:
                 actual = (n.get("credentials") or {}).get(tipo) or {}
+                if n["name"] in por_nombre and actual.get("id") and actual.get("id") != halladas[0].get("id") \
+                        and _cruza(actual.get("name") or "", nombre):
+                    # La nombrada es de OTRO comercio: el nodo conserva la que ya tiene en el vivo (la del propio comercio).
+                    conservadas.append((n["name"], actual.get("name") or "", nombre))
+                    continue
                 if actual.get("id") != halladas[0].get("id"):
                     corregidas.append((n["name"], actual.get("name") or "ninguna", nombre))
                 n.setdefault("credentials", {})[tipo] = {"id": halladas[0]["id"], "name": nombre}
@@ -1156,20 +1181,9 @@ for n in nuevo["nodes"]:
 # Ruben -> Antonio, Bellido -> Walisuma, «Cierres A» -> «Cierres B»). Tambien un nodo NUEVO se compara contra las
 # credenciales del vivo del mismo tipo. Limite conocido: «WhatsApp Q'Taco (envio)» -> «QTaco 3727 (envio)» se marca como
 # cruce (son numeros distintos). Con --aplicar aborta; el seco la senala.
-TIPO_Y_CALIFICADORES = {"novuchat", "ingesta", "whatsapp", "graph", "header", "auth", "api", "credencial", "cuenta",
-             "de", "del", "la", "el", "y", "token", "meta", "cloud", "google", "sheets", "gemini", "palm", "account", "oauth",
-             "dra", "dr", "crm", "minicrm", "calendar", "calendario", "catalogo",
-             # calificadores tolerados (no nombran a un comercio)
-             "bearer", "envio", "auto", "prueba", "pruebas", "no", "produccion"}
-def _identifica(nombre):
-    import unicodedata
-    plano = unicodedata.normalize("NFD", nombre or "").encode("ascii", "ignore").decode().lower()
-    return {t for t in re.findall(r"[a-z]+\d*|\d+", plano) if t not in TIPO_Y_CALIFICADORES}
-def _cruza(a, b):
-    return bool(_identifica(a) ^ _identifica(b))
 cruzan = []
 for nodo, antes, despues in corregidas:
-    if antes == "ninguna" or nodo in nuevos:   # un nodo nuevo no tenia credencial viva que cruzar (se mira abajo)
+    if antes == "ninguna" or nodo in nuevos:   # sin credencial viva que cruzar: se trata como nodo nuevo (se mira abajo)
         continue
     if _cruza(antes, despues):
         cruzan.append((nodo, antes, despues))
@@ -1178,13 +1192,34 @@ for v in vivo.get("nodes", []):
     for tipo, ref in (v.get("credentials") or {}).items():
         if (ref or {}).get("name"):
             nombres_vivo.setdefault(tipo, set()).add(ref["name"])
+refs_vivo = {}
+for v in vivo.get("nodes", []):
+    for tipo, ref in (v.get("credentials") or {}).items():
+        if (ref or {}).get("id"):
+            refs_vivo.setdefault(tipo, {})[ref["id"]] = ref
+tipos_nuevos = []
 for n in nuevo["nodes"]:
-    if n["name"] not in nuevos:
-        continue
     for tipo, ref in (n.get("credentials") or {}).items():
+        # Un nodo NUEVO, o uno existente SIN credencial de ese tipo en el vivo («ninguna»), se trata igual.
+        sin_cred_viva = not ((((por_nombre.get(n["name"]) or {}).get("credentials") or {}).get(tipo) or {}).get("id"))
+        if n["name"] not in nuevos and not sin_cred_viva:
+            continue
         nombre, delvivo = (ref or {}).get("name"), sorted(nombres_vivo.get(tipo, ()))
+        if tipo not in refs_vivo:
+            tipos_nuevos.append((n["name"], tipo))   # el vivo no tiene ninguna credencial de este tipo: no hay propia con que comparar
+            continue
         if nombre and delvivo and all(_cruza(x, nombre) for x in delvivo):
-            cruzan.append((n["name"], delvivo[0], nombre))
+            # Una unica candidata del propio comercio con el mismo proposito (la que ya usa el vivo en otros nodos). Sin
+            # proposito reconocible no se elige ninguna.
+            prop = _proposito(nombre)
+            cands = [r for r in refs_vivo.get(tipo, {}).values() if prop and _proposito(r.get("name")) == prop]
+            if len(cands) == 1:
+                n["credentials"][tipo] = {"id": cands[0]["id"], "name": cands[0]["name"]}
+                conservadas.append((n["name"], cands[0]["name"], nombre))
+            else:
+                cruzan.append((n["name"], delvivo[0], nombre))
+for nodo, propia, otra in conservadas:
+    print(f"  {V}+{FIN} {nodo}: credencial del PROPIO comercio «{propia}» (la nombrada «{otra}» es de otro comercio)")
 for nodo, antes, despues in cruzan:
     print(f"  {R}✗{FIN} {nodo}: la correccion CRUZA comercios (vivo «{antes}» -> «{despues}»)")
 if cruzan and aplicar:
@@ -1193,6 +1228,45 @@ if cruzan and aplicar:
     sys.exit(1)
 if cruzan:
     print(f"  {A}!{FIN} con --aplicar se abortaria: {len(cruzan)} credencial(es) corregida(s) cruzan comercios")
+for nodo, tipo in tipos_nuevos:
+    print(f"  {A}!{FIN} {nodo}: el vivo no tiene ninguna credencial de tipo {tipo}; no se puede comprobar que sea del propio comercio")
+if tipos_nuevos and aplicar and os.environ.get("CRED_TIPO_NUEVO") != "1":
+    print(f"\n{R}✗ ABORTADO antes de escribir: nodos con un tipo de credencial que el flujo vivo no tiene.{FIN}")
+    print(f"{G}  Si es lo que se quiere (un servicio nuevo), repita con --credencial-tipo-nuevo.{FIN}")
+    sys.exit(1)
+if tipos_nuevos and not aplicar:
+    print(f"  {A}!{FIN} con --aplicar se abortaria sin --credencial-tipo-nuevo: {len(tipos_nuevos)} nodo(s) con un tipo de credencial que el vivo no tiene")
+
+# LA CONFIG VIVA NO SE PISA CON UN VACIO, SOLO EN LISTA PERMITIDA (22/11/2026). Los datos que el COMERCIO carga (costo de entrega,
+# enlace del catalogo, ubicacion y horario de la tienda, hosts de fotos, plantillas de respaldo del aviso) el versionado los deja
+# vacios: si el origen trae uno vacio y el vivo lo tiene lleno, se conserva el del vivo. SOLO en el nodo de Config y SOLO esas
+# claves: las demas (senaActiva, senaPendiente, qrUrl, instruccionesExtra, calendarioForzado, telefonosExcluidos, los de PRUEBA...)
+# las decide el repositorio, y vaciarlas a proposito tiene que poder hacerse (prohibicion 3: cobros). Nunca se conserva un valor
+# del vivo que empiece con «=» (una expresion). Se informan clave y longitud, nunca el valor.
+NODOS_DE_CONFIG = {"Config base", "Config del negocio"}
+CLAVES_DEL_COMERCIO = {"costoDeEntrega", "enlaceCatalogo", "ubicacionTienda", "horarioTienda", "hostsFoto"}
+def _del_comercio(clave):
+    return clave in CLAVES_DEL_COMERCIO or str(clave).startswith("avisoRespaldo")
+conservados_cfg = []
+for n in nuevo["nodes"]:
+    par = por_nombre.get(n["name"])
+    if not par or n["name"] not in NODOS_DE_CONFIG:
+        continue
+    an = (n.get("parameters") or {}).get("assignments")
+    av = (par.get("parameters") or {}).get("assignments")
+    if not (isinstance(an, dict) and isinstance(av, dict)):
+        continue
+    vivos_cfg = {c.get("name"): c.get("value") for c in (av.get("assignments") or [])}
+    for c in (an.get("assignments") or []):
+        v = vivos_cfg.get(c.get("name"))
+        if not _del_comercio(c.get("name")):
+            continue
+        if isinstance(v, str) and v.strip() and not v.lstrip().startswith("=") \
+                and isinstance(c.get("value"), str) and not c["value"].strip():
+            c["value"] = v
+            conservados_cfg.append((n["name"], c["name"], len(v)))
+for nodo, clave, largo in conservados_cfg:
+    print(f"  {V}+{FIN} {nodo} · {clave}: el origen lo trae vacio y el vivo lo tiene lleno ({largo} car.): se conserva el del vivo")
 
 # Con --aplicar, un nodo cuya credencial NO se pudo resolver por nombre y que
 # la recibio por TIPO (relleno desde otra del mismo tipo: no es la del flujo

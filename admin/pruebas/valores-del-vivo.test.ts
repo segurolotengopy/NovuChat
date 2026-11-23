@@ -285,21 +285,19 @@ describe('publicar-flujo.sh: una correccion de credencial nunca cruza comercios'
     ['Cierres NovuChat A -> B', g('a1', 'Cierres NovuChat A (auto)'), g('b2', 'Cierres NovuChat B (auto)')],
   ];
   for (const [titulo, vivoCred, otra] of cruces) {
-    it(`${titulo}: se senala y, con --aplicar, aborta antes de escribir`, () => {
-      expect(correr(vivoCred, otra, false).out).toContain('CRUZA comercios');
-      const aplicado = correr(vivoCred, otra, true);
-      expect(aplicado.r.status).not.toBe(0);
-      expect(aplicado.out).toContain('ABORTADO antes de escribir');
-      expect(aplicado.out).toContain('OTRO comercio');
+    it(`${titulo}: no se cambia por la de otro comercio; el nodo conserva la del propio comercio (sin abortar)`, () => {
+      const { out } = correr(vivoCred, otra, false);
+      expect(out).toContain('credencial del PROPIO comercio');
+      expect(out).not.toContain('CRUZA comercios');
+      expect(out).not.toContain('credencial corregida');
     });
   }
-  it('un nodo NUEVO con la credencial de otro comercio del mismo tipo que las del vivo tambien aborta', () => {
+  it('un nodo NUEVO con la credencial de otro comercio recibe la unica del propio comercio con el mismo proposito; si no hay unica, aborta (ver publicar-sin-cruce-ni-vacios.test.ts)', () => {
     const ruben = g('r1', 'NovuChat ingesta (Ruben)');
     const antonio = g('r2', 'NovuChat ingesta (Antonio)');
-    const { r, out } = montar(cuerpo([envio(ruben)]), [ruben, antonio], cuerpo([envio(ruben), nodo('Nodo nuevo', { a: 2 }, { httpHeaderAuth: antonio })]), true);
-    expect(r.status).not.toBe(0);
-    expect(out).toContain('CRUZA comercios');
-    expect(out).toContain('Nodo nuevo');
+    const { out } = montar(cuerpo([envio(ruben)]), [ruben, antonio], cuerpo([envio(ruben), nodo('Nodo nuevo', { a: 2 }, { httpHeaderAuth: antonio })]), false);
+    expect(out).toContain('Nodo nuevo: credencial del PROPIO comercio «NovuChat ingesta (Ruben)»');
+    expect(out).not.toContain('CRUZA comercios');
   });
   it('una correccion dentro del mismo comercio (calificadores tolerados) no se bloquea', () => {
     const { out } = correr(PROPIA_VIEJA, PROPIA, false);

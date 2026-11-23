@@ -270,7 +270,18 @@ if os.environ.get("VALORES_DEL_VIVO") == "1":
     # EL VIVO GANA a la tabla en estos dos, aunque este vacio: nunca se publican telefonos de prueba ni la etapa de prueba en
     # produccion (decision del 22/11/2026). Un marcador «pendiente» de la tabla tampoco tiene valor y se toma del vivo.
     VIVO_GANA = ("REEMPLAZAR_TELEFONOS_DE_PRUEBA", "REEMPLAZAR_ETAPA_PRUEBA")
-    pedidos = sorted({base_de(e) for e in entradas if (e not in tabla or base_de(e) in VIVO_GANA) and e not in (MARCADOR_RELE, MARCADOR_EW)})
+    # Un marcador que es el valor ENTERO de un campo de la Config (nodo Set) tambien se pide al vivo aunque la tabla tenga fila: si el
+    # vivo lo tiene lleno, gana el vivo (la tabla puede traer el valor de OTRO comercio, p. ej. filas compartidas); si no lo
+    # resuelve, se usa la tabla como siempre.
+    en_config = set()
+    for _n in d["nodes"]:
+        _a = (_n.get("parameters") or {}).get("assignments")
+        if isinstance(_a, dict):
+            for _c in (_a.get("assignments") or []):
+                if isinstance(_c.get("value"), str) and re.fullmatch(r'REEMPLAZAR_[A-Z][A-Z0-9_]*', _c["value"]):
+                    en_config.add(_c["value"])
+    pedidos = sorted({base_de(e) for e in entradas
+                      if (e not in tabla or base_de(e) in VIVO_GANA or e in en_config) and e not in (MARCADOR_RELE, MARCADOR_EW)})
     if pedidos:
         with tempfile.TemporaryDirectory() as tdir:
             salida_v = os.path.join(tdir, "valores.json")
