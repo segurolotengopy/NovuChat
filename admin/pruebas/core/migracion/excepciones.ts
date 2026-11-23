@@ -109,10 +109,10 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
   ...porRegla('niega-ia', 'No declara ninguna expresión NIEGA_IA en su código (búsqueda por la constante; no se descartó otro mecanismo); se avisa a la sesión dueña, y no se arregla en la etapa 0', unNodo([
     'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/captacion-minima/captacion-minima.novuchat.json',
   ], 'NIEGA_IA')),
-  // Q'Taco (venta mínima), JUSTIFICADA el 23/11/2026 (no es una deuda): el modelo solo CLASIFICA y nunca escribe una frase al cliente; toda palabra que sale la escribe el código, y la identidad es el texto fijo `aIdentidad`
+  // Q'Taco (venta mínima), JUSTIFICADA el 23/11/2026 (no es una deuda): el modelo no redacta prosa: solo CLASIFICA y extrae datos que dictó el cliente (acotados y filtrados, que se repiten como datos); toda FRASE del asistente la escribe el código, y la identidad es el texto fijo `aIdentidad`
   // («asistente virtual con inteligencia artificial»). Una red NIEGA_IA sobre texto que el modelo no escribe sería código muerto; la garantía es estructural y la prueba la fija con la MISMA expresión de core
-  // (`core/niega-ia.test.ts`, «NIEGA_IA en venta-minima: el texto fijo de identidad», que detecta la mutación). Si algún día el modelo de venta mínima redacta texto, esta excepción deja de valer y hay que declarar la red.
-  ...porRegla('niega-ia', 'El modelo solo clasifica: el texto al cliente lo escribe el código (identidad fija `aIdentidad`, probada con la expresión de core en `core/niega-ia.test.ts`); una red NIEGA_IA sería código muerto. Excepción JUSTIFICADA, no deuda', unNodo([
+  // (`core/niega-ia.test.ts`, «NIEGA_IA en venta-minima: el texto fijo de identidad», que detecta la mutación). Si algún día el modelo de venta mínima redacta texto, esta excepción deja de valer y hay que declarar la red. Al renovar el vencimiento (hoy 2027-01-31, dueño «por asignar») NO es deuda: se revisa solo esa condición.
+  ...porRegla('niega-ia', 'El modelo no redacta prosa (clasifica y extrae datos del cliente): toda frase del asistente la escribe el código (identidad fija `aIdentidad`, probada con la expresión de core en `core/niega-ia.test.ts`); una red NIEGA_IA sería código muerto. Excepción JUSTIFICADA, no deuda', unNodo([
     'experimental/venta-minima/venta-minima.qtaco-3727.json', 'experimental/venta-minima/venta-minima.qtaco.json',
   ], 'NIEGA_IA')),
   // errorWorkflow por nombre (`core/error-workflow-por-nombre.test.ts`): solo Emma y las dos salidas de producción de Q'Taco llevan el marcador. 14.
