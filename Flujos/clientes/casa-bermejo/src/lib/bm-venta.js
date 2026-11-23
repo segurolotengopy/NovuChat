@@ -778,12 +778,12 @@ function bmResolverToqueViejo(c) {
   const entrega = bmEntregaDeFicha(f.entrega);
   const base = { lineas: lineas, entrega: entrega, cierre: false, cambio: false, aviso: null, cancelarCobro: false };
   const vacio = (texto) => Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: false, sinPieza: false, resumen: '', confirmable: false });
-  if (f.carrito.length === 0) return vacio(usted ? 'Ese pedido ya quedó registrado. Si desea otro, dígame qué pieza le interesa.' : 'Ese pedido ya quedó registrado. Si quieres otro, dime qué pieza te interesa.');
-  if (lineas.length === 0) return vacio(usted ? 'Esa pieza ya no está disponible, así que su pedido quedó vacío. Dígame qué pieza le interesa.' : 'Esa pieza ya no está disponible, así que tu pedido quedó vacío. Dime qué pieza te interesa.');
+  if (f.carrito.length === 0) return vacio(usted ? 'Ese botón es de un pedido anterior que ya no está en curso. Dígame qué pieza le interesa.' : 'Ese botón es de un pedido anterior que ya no está en curso. Dime qué pieza te interesa.');
+  if (lineas.length === 0) return vacio(usted ? 'Las piezas de su pedido ya no están disponibles, así que quedó vacío. Dígame qué pieza le interesa.' : 'Las piezas de tu pedido ya no están disponibles, así que quedó vacío. Dime qué pieza te interesa.');
   const abierto = c.cobro.modo === 'real' && (c.cobro.pendiente || f.qrHastaMs > c.ahora);
   if (abierto) return Object.assign(base, { tipo: 'qr_pendiente', total: vcTotalCentavos(lineas) });
   const conBoton = cfSeOfrece(lineas.length, bmEntregaCompleta(entrega, c.mercado), false);
-  const aviso = usted ? 'Revisé su pedido: algo cambió desde ese mensaje (una pieza, un precio o la entrega), así que ya no es el mismo. ' : 'Revisé tu pedido: algo cambió desde ese mensaje (una pieza, un precio o la entrega), así que ya no es el mismo. ';
+  const aviso = usted ? 'Ese botón era de un pedido anterior, y este es su pedido de ahora. ' : 'Ese botón era de un pedido anterior, y este es tu pedido de ahora. ';
   return Object.assign(base, { tipo: 'modelo', texto: aviso + bmTextoDeEstado(lineas, entrega, false, c, conBoton), sinRedaccion: false, sinPieza: false, resumen: vcResumen(lineas), confirmable: conBoton });
 }
 function bmResolverModelo(c) {
