@@ -107,7 +107,7 @@ describe('el texto y el botón dicen lo mismo (solo se ofrece lo que se cumple)'
     m.dobles['Traer configuración'] = () => panelConQr(450);
     const t = hablar(m, ANA, mTexto('gracias'));
     expect(cuerpo(t)).not.toMatch(/Confirmar pedido/);
-    expect(botones(t)).not.toContain('"id":"pedido:confirmar"');
+    expect(botones(t).some((b) => b.includes('pedido:confirmar'))).toBe(false);
   });
 });
 
@@ -118,7 +118,24 @@ describe('NEGADO: si el catálogo cambió entre el resumen y el toque, el botón
     // La billetera se agota (stock 0, no disponible): el resto del catálogo sigue igual.
     const items = CATALOGO.filter((c) => c.activo && typeof (c as Record<string, unknown>)['precio'] === 'number').map((c) => ({ ...c, precioCentavos: Math.round(((c as Record<string, unknown>)['precio'] as number) * 100), stock: c.id === 'billetera-cuero' ? 0 : 10, disponible: c.id !== 'billetera-cuero' }));
     m.dobles['Traer catálogo'] = () => catalogoOk({}, items as never);
-    expect(hayQr(hablar(m, ANA, mToque(id)))).toBe(false);
+    const t = hablar(m, ANA, mToque(id));
+    expect(hayQr(t)).toBe(false);
+    // El cliente ve QUÉ cambió: el pedido de ahora (solo el llavero) y el aviso, con un botón NUEVO; no un «¿confirma?» a ciegas.
+    const c = t.mensajes.map((x) => x.cuerpo).join('\n');
+    expect(c).toMatch(/algo cambió/);
+    expect(c).toMatch(/Llavero de llama/);
+    expect(c).not.toMatch(/Billetera de cuero/);
+    expect(idDelBoton(t)).toMatch(/^pedido:confirmar:[a-z0-9]+$/);
+    expect(idDelBoton(t)).not.toBe(id);
+  });
+  it('un cambio de PRECIO tampoco se confirma a ciegas: el toque no emite el QR y muestra el precio nuevo', () => {
+    const m = crear(LISTO);
+    const id = idDelBoton(hablar(m, ANA, mTexto('una billetera')));
+    const items = CATALOGO.filter((c) => c.activo && typeof (c as Record<string, unknown>)['precio'] === 'number').map((c) => ({ ...c, precio: c.id === 'billetera-cuero' ? 900 : (c as Record<string, unknown>)['precio'], precioCentavos: c.id === 'billetera-cuero' ? 90000 : Math.round(((c as Record<string, unknown>)['precio'] as number) * 100), stock: 10, disponible: true }));
+    m.dobles['Traer catálogo'] = () => catalogoOk({}, items as never);
+    const t = hablar(m, ANA, mToque(id));
+    expect(hayQr(t)).toBe(false);
+    expect(t.mensajes.map((x) => x.cuerpo).join('\n')).toMatch(/900/);
   });
 });
 

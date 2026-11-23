@@ -8,10 +8,10 @@
 const CF_ID_CONFIRMAR = 'pedido:confirmar';   // el id del botón es `pedido:confirmar:<huella del carrito>`: confirma SOLO el pedido que el cliente vio
 const CF_TITULO_CONFIRMAR = 'Confirmar pedido';
 const CF_MAX_CUERPO = 1024;   // el tope del cuerpo de un mensaje con botones de WhatsApp
-// La huella del PEDIDO que muestra el mensaje: un hash corto de sus piezas (id, cantidad y detalle) y de la entrega (todos sus campos, en orden), en minúsculas y cifras (un id de botón admite [a-z0-9:_-]). Si el carrito o la entrega
+// La huella del PEDIDO que muestra el mensaje: un hash corto de sus piezas (id, cantidad, detalle y precio) y de la entrega (todos sus campos, en orden), en minúsculas y cifras (un id de botón admite [a-z0-9:_-]). Si el carrito o la entrega
 // cambian, el botón viejo ya no coincide. Solo viaja el hash: ningún dato de la entrega (el documento incluido) sale en el id.
 function cfHuella(lineas, entrega) {
-  const piezas = (Array.isArray(lineas) ? lineas : []).map((l) => String(l && l.id) + ':' + String(l && l.cantidad) + ':' + String((l && l.detalle) || '')).sort().join('|');
+  const piezas = (Array.isArray(lineas) ? lineas : []).map((l) => String(l && l.id) + ':' + String(l && l.cantidad) + ':' + String((l && l.detalle) || '') + ':' + String((l && l.precioCentavos) || '')).sort().join('|');
   const e = entrega && typeof entrega === 'object' && !Array.isArray(entrega) ? entrega : {};
   const envio = Object.keys(e).sort().map((k) => k + '=' + String(e[k])).join(';');
   const texto = piezas + '#' + envio;
