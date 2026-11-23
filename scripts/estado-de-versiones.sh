@@ -112,7 +112,10 @@ while IFS=$'\t' read -r CLIENTE ENV_FILE FLUJO EXCEPCION; do
   fi
 
   # Los marcadores, repuestos: si no, el seco aborta y no dice nada del atraso.
-  ./scripts/preparar-import.sh "$FLUJO" "$ENV_FILE" > "$TMP/prep" 2>&1
+  # --valores-del-vivo: lo que la tabla no resuelve se toma del flujo vivo de la fila (su N8N_WORKFLOW_ID),
+  # igual que al publicar desde main. Sin eso, un flujo cuyos valores solo viven en n8n (Bellido en Agenda
+  # minima, 23/11/2026) salia «sin poder comprobar». Solo lee: no escribe nada en n8n.
+  ./scripts/preparar-import.sh "$FLUJO" "$ENV_FILE" --valores-del-vivo > "$TMP/prep" 2>&1
   # Sin los codigos de color no se puede buscar por posicion en la linea: el
   # `~` del diagnostico viene precedido de una secuencia ANSI y el `grep` de
   # mas abajo no encontraba ni un nodo (visto al estrenar el script).
