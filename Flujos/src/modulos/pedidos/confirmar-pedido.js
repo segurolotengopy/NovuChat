@@ -10,17 +10,19 @@ const CF_TITULO_CONFIRMAR = 'Confirmar pedido';
 const CF_MAX_CUERPO = 1024;   // el tope del cuerpo de un mensaje con botones de WhatsApp
 // La huella del PEDIDO que muestra el mensaje: un hash corto de sus piezas (id, cantidad, detalle y precio) y de la entrega (todos sus campos, en orden), en minúsculas y cifras (un id de botón admite [a-z0-9:_-]). Si el carrito o la entrega
 // cambian, el botón viejo ya no coincide. Solo viaja el hash: ningún dato de la entrega (el documento incluido) sale en el id.
-function cfHuella(lineas, entrega) {
+function cfHuella(lineas, entrega, numeroDePedido) {
   const piezas = (Array.isArray(lineas) ? lineas : []).map((l) => String(l && l.id) + ':' + String(l && l.cantidad) + ':' + String((l && l.detalle) || '') + ':' + String((l && l.precioCentavos) || '')).sort().join('|');
   const e = entrega && typeof entrega === 'object' && !Array.isArray(entrega) ? entrega : {};
   const envio = Object.keys(e).sort().map((k) => k + '=' + String(e[k])).join(';');
-  const texto = piezas + '#' + envio;
+  const texto = piezas + '#' + envio + '#' + String(Number.isFinite(numeroDePedido) ? numeroDePedido : 0);   // el contador de pedidos: el botón de un pedido ya cerrado no vuelve a coincidir nunca
   let h = 5381;
   for (let i = 0; i < texto.length; i++) h = ((h * 33) ^ texto.charCodeAt(i)) >>> 0;
   return h.toString(36);
 }
 // ¿El toque es el del botón «Confirmar pedido» DE ESTE PEDIDO? Solo el id exacto con la huella del pedido actual: ni el título escrito a mano, ni otro botón, ni el botón de un mensaje con otro carrito u otra entrega.
-function cfEsConfirmacion(seleccionId, lineasActuales, entregaActual) { return seleccionId === CF_ID_CONFIRMAR + ':' + cfHuella(lineasActuales, entregaActual); }
+function cfEsConfirmacion(seleccionId, lineasActuales, entregaActual, numeroDePedido) { return seleccionId === CF_ID_CONFIRMAR + ':' + cfHuella(lineasActuales, entregaActual, numeroDePedido); }
+// ¿Es el toque de un botón «Confirmar pedido» (de cualquier pedido)? Para responder a los que ya no corresponden.
+function cfEsToqueDeConfirmar(seleccionId) { return typeof seleccionId === 'string' && seleccionId.indexOf(CF_ID_CONFIRMAR + ':') === 0; }
 // ¿Se ofrece el botón? Hay piezas, la entrega está completa y NO hay un QR abierto (con un QR abierto ya se confirmó).
 function cfSeOfrece(cantidadDePiezas, entregaCompleta, qrAbierto) { return cantidadDePiezas > 0 && entregaCompleta === true && qrAbierto !== true; }
 // La frase que acompaña al botón, en el trato del comercio.
@@ -36,4 +38,4 @@ function cfCuerpo(cuerpo, usted) {
   return corto + '\n\n' + instr;
 }
 // El botón, en la forma que espera `cmBotones`, con la huella del pedido que se muestra.
-function cfBoton(lineas, entrega) { return { id: CF_ID_CONFIRMAR + ':' + cfHuella(lineas, entrega), title: CF_TITULO_CONFIRMAR }; }
+function cfBoton(lineas, entrega, numeroDePedido) { return { id: CF_ID_CONFIRMAR + ':' + cfHuella(lineas, entrega, numeroDePedido), title: CF_TITULO_CONFIRMAR }; }

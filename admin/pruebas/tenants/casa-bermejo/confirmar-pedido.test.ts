@@ -135,7 +135,33 @@ describe('NEGADO: si el catálogo cambió entre el resumen y el toque, el botón
     m.dobles['Traer catálogo'] = () => catalogoOk({}, items as never);
     const t = hablar(m, ANA, mToque(id));
     expect(hayQr(t)).toBe(false);
-    expect(t.mensajes.map((x) => x.cuerpo).join('\n')).toMatch(/900/);
+    const c = t.mensajes.map((x) => x.cuerpo).join('\n');
+    expect(c).toMatch(/900/);
+    expect(c).toMatch(/algo cambió/);
+    expect(c).not.toMatch(/\bDesea\b|\bsu pedido\b/);   // un solo trato (tuteo): no se mezcla con el usted
+    // El botón NUEVO (con el precio nuevo) sí emite el QR, por el monto nuevo.
+    const nuevo = idDelBoton(t);
+    expect(nuevo).not.toBe(id);
+    const t2 = hablar(m, ANA, mToque(nuevo));
+    expect(hayQr(t2)).toBe(true);
+    expect(JSON.stringify(t2.mensajes.map((x) => x.payload))).toMatch(/900/);
+  });
+  it('una pieza agotada que deja el pedido VACÍO: el cliente lo sabe (no un «no encuentro eso en el catálogo»)', () => {
+    const m = crear(LISTO);
+    const id = idDelBoton(hablar(m, ANA, mTexto('una billetera')));
+    const items = CATALOGO.filter((c) => c.activo && typeof (c as Record<string, unknown>)['precio'] === 'number').map((c) => ({ ...c, precioCentavos: Math.round(((c as Record<string, unknown>)['precio'] as number) * 100), stock: c.id === 'billetera-cuero' ? 0 : 10, disponible: c.id !== 'billetera-cuero' }));
+    m.dobles['Traer catálogo'] = () => catalogoOk({}, items as never);
+    const t = hablar(m, ANA, mToque(id));
+    expect(hayQr(t)).toBe(false);
+    expect(t.mensajes.map((x) => x.cuerpo).join('\n')).toMatch(/ya no está disponible/);
+  });
+  it('el botón de un pedido YA CERRADO (carrito vacío) no cierra otro: «ese pedido ya quedó registrado», sin QR ni pedido nuevo', () => {
+    const m = crear(LISTO);
+    const id = idDelBoton(hablar(m, ANA, mTexto('una billetera')));
+    m.sd['casabermejo'] = JSON.parse(J(m.sd['casabermejo']).replace(/"carrito":\[[^\]]*\]/, '"carrito":[]'));
+    const t = hablar(m, ANA, mToque(id));
+    expect(hayQr(t)).toBe(false);
+    expect(t.mensajes.map((x) => x.cuerpo).join('\n')).toMatch(/ya quedó registrado/);
   });
 });
 

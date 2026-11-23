@@ -766,7 +766,25 @@ function bmTextoDeEstado(lineas, entrega, cierre, c, conBoton) {
   if (faltan.length === 1 && faltan[0] === 'modo de entrega') return '¿Cómo prefiere recibir su pedido: ' + (c.modos.length ? c.modos.join(' o ') : 'retiro en tienda o envío') + '?';
   if (faltan.length) return 'Para continuar con su pedido, indíqueme por favor: ' + faltan.join(', ') + '.';
   // Con el botón en el mismo mensaje, la instrucción la pone `cfCuerpo` (una sola vez y en el trato del comercio); sin botón (hay un QR abierto) sigue el «pagar» de siempre, que lleva al QR abierto.
-  return conBoton === true ? '¿Desea confirmar su pedido?' : '¿Desea confirmar su pedido? Escriba «pagar» cuando esté listo.';
+  const usted = !!(c.base && c.base.tratamiento === 'usted');
+  if (conBoton === true) return usted ? '¿Desea confirmar su pedido?' : '¿Quieres confirmar tu pedido?';
+  return usted ? '¿Desea confirmar su pedido? Escriba «pagar» cuando esté listo.' : '¿Quieres confirmar tu pedido? Escribe «pagar» cuando estés listo.';
+}
+// El toque de un botón «Confirmar pedido» que YA no corresponde (el pedido se cerró, o cambió una pieza, un precio, la cantidad o la entrega desde el mensaje que lo traía): NO cierra nada y lo contesta el CÓDIGO, sin modelo.
+function bmResolverToqueViejo(c) {
+  const f = c.ficha;
+  const usted = !!(c.base && c.base.tratamiento === 'usted');
+  const lineas = vcLineas(f.carrito, c.vendibles).lineas;
+  const entrega = bmEntregaDeFicha(f.entrega);
+  const base = { lineas: lineas, entrega: entrega, cierre: false, cambio: false, aviso: null, cancelarCobro: false };
+  const vacio = (texto) => Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: false, sinPieza: false, resumen: '', confirmable: false });
+  if (f.carrito.length === 0) return vacio(usted ? 'Ese pedido ya quedó registrado. Si desea otro, dígame qué pieza le interesa.' : 'Ese pedido ya quedó registrado. Si quieres otro, dime qué pieza te interesa.');
+  if (lineas.length === 0) return vacio(usted ? 'Esa pieza ya no está disponible, así que su pedido quedó vacío. Dígame qué pieza le interesa.' : 'Esa pieza ya no está disponible, así que tu pedido quedó vacío. Dime qué pieza te interesa.');
+  const abierto = c.cobro.modo === 'real' && (c.cobro.pendiente || f.qrHastaMs > c.ahora);
+  if (abierto) return Object.assign(base, { tipo: 'qr_pendiente', total: vcTotalCentavos(lineas) });
+  const conBoton = cfSeOfrece(lineas.length, bmEntregaCompleta(entrega, c.mercado), false);
+  const aviso = usted ? 'Revisé su pedido: algo cambió desde ese mensaje (una pieza, un precio o la entrega), así que ya no es el mismo. ' : 'Revisé tu pedido: algo cambió desde ese mensaje (una pieza, un precio o la entrega), así que ya no es el mismo. ';
+  return Object.assign(base, { tipo: 'modelo', texto: aviso + bmTextoDeEstado(lineas, entrega, false, c, conBoton), sinRedaccion: false, sinPieza: false, resumen: vcResumen(lineas), confirmable: conBoton });
 }
 function bmResolverModelo(c) {
   const f = c.ficha;
@@ -793,13 +811,11 @@ function bmResolverModelo(c) {
   const lineas = fijada.lineas;
   const comp = bmCompletarEntrega(j.entrega, f.entrega, p.textoCliente, c.modos);
   const entrega = bmMezclarEntrega(f.entrega, comp.entrega, c.modos);
-  const cierre = f.cierre || bmQuierePagar(bmNorm(p.textoCliente)) || (cfEsConfirmacion(c.t && c.t.seleccionId, bmLineasParaHuella(f.carrito, c.vendibles), bmEntregaDeFicha(f.entrega)) && f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado) && bmCarritoVigente(f.carrito, c.vendibles));   // el botón «Confirmar pedido» es la orden de cierre SOLO con el pedido que ya estaba listo (el de un mensaje viejo no cierra uno nuevo) (módulo común Pedidos)
+  const cierre = f.cierre || bmQuierePagar(bmNorm(p.textoCliente)) || (cfEsConfirmacion(c.t && c.t.seleccionId, bmLineasParaHuella(f.carrito, c.vendibles), bmEntregaDeFicha(f.entrega), f.pedidos) && f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado) && bmCarritoVigente(f.carrito, c.vendibles));   // el botón «Confirmar pedido» es la orden de cierre SOLO con el pedido que ya estaba listo (el de un mensaje viejo no cierra uno nuevo) (módulo común Pedidos)
   // Con el pedido LISTO (piezas, entrega completa y orden de pagar) lo decide el código: un «quiereHablar» del modelo (p. ej. «el envío lo cotiza la tienda») no lo desvía; el pedido se anota y la tienda recibe el aviso.
   const listo = lineas.length > 0 && bmEntregaCompleta(entrega, c.mercado) && cierre;
   if (j.quiereHablar === true && !listo && !comp.capturado) return bmDerivar(c, 'quiere_hablar');
   const cambio = !vcMismoCarrito(antes, lineas);
-  // El toque de un botón «Confirmar pedido» que YA no corresponde (cambió una pieza, un precio, la cantidad o la entrega desde el mensaje que lo traía): no cierra; se le muestra el pedido de ahora y se dice que cambió.
-  const toqueViejo = !cierre && typeof (c.t && c.t.seleccionId) === 'string' && c.t.seleccionId.indexOf('pedido:confirmar:') === 0;
   // Un número de otro país se atiende como Bolivia y se avisa UNA vez a la tienda (1 mensaje por caso): el aviso sale si aún no se le avisó de este teléfono.
   const avisoPais = c.t && c.t.fueraDePais === true && f.avisoPaisMs === 0 ? bmAvisoConsulta(c, 'otro_pais') : null;
   const base = { lineas: lineas, entrega: entrega, cierre: cierre, cambio: cambio, aviso: avisoPais, cancelarCobro: false };
@@ -848,7 +864,7 @@ function bmResolverModelo(c) {
     const ultima = [...f.hist].reverse().find((x) => x && x.r === 'm');
     if (ultima && ultima.t === bmParaMemoria(texto)) return Object.assign(bmDerivar(c, 'quiere_hablar'), { lineas: lineas, entrega: entrega, cierre: cierre });
   } else if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c, conBoton);
-  return Object.assign(base, { tipo: 'modelo', texto: toqueViejo && lineas.length ? 'Revisé tu pedido: algo cambió desde ese mensaje (una pieza, un precio o la entrega), así que ya no es el mismo. ' + bmTextoDeEstado(lineas, entrega, cierre, c, conBoton) : texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: (cambio || toqueViejo) && lineas.length ? vcResumen(lineas) : '', confirmable: conBoton });
+  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: cambio && lineas.length ? vcResumen(lineas) : '', confirmable: conBoton });
 }
 
 // La decisión del turno. `c` viene de `bmContexto()` (+ `modeloResp` y `cancelo`, que completa cada nodo). Devuelve { tipo, ... } con `aviso` (o null) y, cuando cambia la ficha, `patch`.
@@ -862,6 +878,7 @@ function bmResolver(c) {
   if (p.tipo === 'alias_pedir') return bmResolverAliasPedir(c);
   if (p.tipo === 'modelo') return bmResolverModelo(c);
   // El toque de «Confirmar pedido» con el pedido listo lo decide el CÓDIGO, sin modelo: la respuesta del modelo es la del carrito tal cual está en la ficha y el cierre sale de `cfEsConfirmacion`.
+  if (p.tipo === 'toque_viejo') return bmResolverToqueViejo(c);
   if (p.tipo === 'confirmar') return bmResolverModelo(Object.assign({}, c, { modeloResp: { candidates: [{ content: { parts: [{ text: JSON.stringify({ texto: 'Revisando su pedido.', lineas: c.ficha.carrito.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' })) }) }] } }] } }));
   return Object.assign({ aviso: null }, p);
 }

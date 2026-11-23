@@ -9,9 +9,9 @@ import { describe, expect, it } from 'vitest';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const CODIGO = readFileSync(join(RAIZ, 'Flujos/src/modulos/pedidos/confirmar-pedido.js'), 'utf8');
-const M = runInNewContext(`${CODIGO}\n({ cfEsConfirmacion, cfSeOfrece, cfCuerpo, cfBoton, cfInstruccion, cfHuella });`) as {
-  cfEsConfirmacion: (x: unknown, l: unknown, e?: unknown) => boolean; cfSeOfrece: (n: number, c: boolean, q: boolean) => boolean;
-  cfCuerpo: (c: unknown, u: boolean) => string; cfBoton: (l: unknown, e?: unknown) => { id: string; title: string }; cfInstruccion: (u: boolean) => string; cfHuella: (l: unknown, e?: unknown) => string;
+const M = runInNewContext(`${CODIGO}\n({ cfEsConfirmacion, cfSeOfrece, cfCuerpo, cfBoton, cfInstruccion, cfHuella, cfEsToqueDeConfirmar });`) as {
+  cfEsConfirmacion: (x: unknown, l: unknown, e?: unknown, n?: unknown) => boolean; cfEsToqueDeConfirmar: (x: unknown) => boolean; cfSeOfrece: (n: number, c: boolean, q: boolean) => boolean;
+  cfCuerpo: (c: unknown, u: boolean) => string; cfBoton: (l: unknown, e?: unknown, n?: unknown) => { id: string; title: string }; cfInstruccion: (u: boolean) => string; cfHuella: (l: unknown, e?: unknown, n?: unknown) => string;
 };
 
 describe('confirmar-pedido', () => {
@@ -36,6 +36,14 @@ describe('confirmar-pedido', () => {
     expect(M.cfEsConfirmacion(M.cfBoton(C1, R).id, C1, E)).toBe(false);
     expect(M.cfBoton(C1, E).id).not.toMatch(/1234567|Ana/);
     expect(M.cfHuella(C1, { b: '2', a: '1' })).toBe(M.cfHuella(C1, { a: '1', b: '2' }));
+  });
+  it('la huella cubre el NÚMERO DE PEDIDO: el botón de un pedido ya cerrado no coincide con el mismo carrito armado de nuevo', () => {
+    expect(M.cfEsConfirmacion(M.cfBoton(C1, {}, 0).id, C1, {}, 0)).toBe(true);
+    expect(M.cfEsConfirmacion(M.cfBoton(C1, {}, 0).id, C1, {}, 1)).toBe(false);
+  });
+  it('se reconoce el toque de cualquier botón de confirmar (para responder a los viejos), y solo ese', () => {
+    expect(M.cfEsToqueDeConfirmar(M.cfBoton(C1, {}, 0).id)).toBe(true);
+    for (const no of ['pedido:confirmar', 'otro:x', '', undefined, 3]) expect(M.cfEsToqueDeConfirmar(no)).toBe(false);
   });
   it('el id y el título cumplen lo que WhatsApp acepta para un botón (id [a-z0-9:_-], título de 20 como máximo)', () => {
     const b = M.cfBoton(C1);

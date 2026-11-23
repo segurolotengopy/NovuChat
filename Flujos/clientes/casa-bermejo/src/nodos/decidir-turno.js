@@ -107,7 +107,9 @@ if (bmPideFactura(n)) return salir({ tipo: 'derivar', motivo: 'factura' });
 if (bmQuiereHablar(n) || bmPideDescuento(n)) return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });
 
 // 4b. El toque de «Confirmar pedido» (módulo común Pedidos) con el pedido ya listo: la orden de cierre la da el botón, no el modelo. Sin modelo (0 llamadas); `Resolver` emite el QR en este mismo turno. Sin pedido listo (el botón es de un mensaje viejo) sigue como una conversación normal.
-if (Array.isArray(ficha.carrito) && ficha.carrito.length > 0 && cfEsConfirmacion(t.seleccionId, bmLineasParaHuella(ficha.carrito, vendibles), bmEntregaDeFicha(ficha.entrega)) && bmEntregaCompleta(ficha.entrega, ceMercadoDePrefijo(from) || 'BO') && bmCarritoVigente(ficha.carrito, vendibles)) return salir({ tipo: 'confirmar' });
+if (Array.isArray(ficha.carrito) && ficha.carrito.length > 0 && cfEsConfirmacion(t.seleccionId, bmLineasParaHuella(ficha.carrito, vendibles), bmEntregaDeFicha(ficha.entrega), ficha.pedidos) && bmEntregaCompleta(ficha.entrega, ceMercadoDePrefijo(from) || 'BO') && bmCarritoVigente(ficha.carrito, vendibles)) return salir({ tipo: 'confirmar' });
+// 4c. El toque de un botón «Confirmar pedido» que YA no corresponde (pedido cerrado, o una pieza, un precio o la entrega cambiaron): lo contesta el código con el pedido de ahora, sin modelo y sin cerrar nada.
+if (cfEsToqueDeConfirmar(t.seleccionId)) return salir({ tipo: 'toque_viejo' });
 // 5. La conversación libre: una sola llamada al modelo.
 const contexto = { cfg: cfg, base: base, plan: { textoCliente: texto }, ficha: ficha, vendibles: vendibles, modos: bmModos(base), ahora: ahora, mercado: (ceMercadoDePrefijo(from) || 'BO') };
 return salir({ tipo: 'modelo' }, { llamarModelo: true, cuerpoModelo: bmCuerpoModelo(contexto) });
