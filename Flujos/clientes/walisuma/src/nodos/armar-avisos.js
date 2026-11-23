@@ -66,11 +66,12 @@ if (esPedido) {
     + '. Dirección: ' + direccion + '. Piezas: ' + piezas + '. Banco de origen: ' + banco + '. Operación: ' + operacion + '. Revise el depósito en su cuenta antes de entregar.' + CONSOLA;
 } else if (esFactura) {
   // El SEGUNDO aviso: los datos de factura que el cliente mandó después del pago. Es el ÚNICO lugar por donde viaja el NIT.
-  const pedidoTexto = (aviso.codigo || (aviso.ref ? 'ref. ' + aviso.ref : 'sin código')) + ' (datos de factura)';
-  const factura = 'Razón social: ' + (aviso.razonSocial || 'no indicada') + ' · NIT/CI: ' + aviso.nit;
+  const sinFact = aviso.sinFactura === true;
+  const pedidoTexto = (aviso.codigo || (aviso.ref ? 'ref. ' + aviso.ref : 'sin código')) + (sinFact ? ' (sin factura)' : ' (datos de factura)');
+  const factura = sinFact ? 'No solicita factura (S/N - NIT 0)' : 'Razón social: ' + (aviso.razonSocial || 'no indicada') + ' · NIT/CI: ' + aviso.nit;
   parametros10 = [pedidoTexto, '—', '—', nombre, '+' + c.from, factura, '—', '—', '—', '—'];
   parametros4 = ['Datos de factura del pedido ' + (aviso.codigo || aviso.ref || 'sin código'), '—', cliente, factura];
-  texto = 'Aviso del asistente: datos de factura del pedido ' + (aviso.codigo || aviso.ref || 'sin código') + '. Cliente: ' + cliente + '. ' + factura + '.' + CONSOLA;
+  texto = 'Aviso del asistente: ' + (sinFact ? 'el cliente no solicita factura del pedido ' : 'datos de factura del pedido ') + (aviso.codigo || aviso.ref || 'sin código') + '. Cliente: ' + cliente + '. ' + factura + '.' + CONSOLA;
 } else {
   // La alerta de derivación: nombre, teléfono y motivo (y el mensaje del cliente, como dato).
   const motivo = avLimpio(aviso.motivo, 100) || 'consulta';

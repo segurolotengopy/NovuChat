@@ -222,6 +222,15 @@ if (puerta.ruta === 'sigue') {
   }
 }
 
+// EL CATÁLOGO SE OFRECE (MD, puntos 16, 22 y 54-60; orden de Andres del 23/11/2026): el botón «Ver catálogo» va en el MISMO mensaje de texto del saludo, de la respuesta a un anuncio y de la primera pregunta por una pieza,
+// UNA vez por conversación (`catalogoOfrecido`), sin pedido en curso y solo si la consola mandó el enlace (`catalogoWeb.enlace` activo). 0 mensajes extra: el mensaje de texto se vuelve el mismo mensaje con botón.
+{
+  const enlaceCat = wlEnlaceCatalogo(c.panel);
+  const enCurso = (Array.isArray(fichaAntes.carrito) && fichaAntes.carrito.length > 0) || fichaAntes.qrHastaMs > ahora;
+  const ocasion = saluda || tipoDePlan === 'anuncio' || tipoDePlan === 'anuncio_meta' || (tipoDePlan === 'modelo' && Array.isArray(nuevos.mostrados) && nuevos.mostrados.length > 0);
+  if (enlaceCat !== '' && !enCurso && fichaAntes.catalogoOfrecido !== true && ocasion && msgs.length === 1 && wlConBotonCatalogo(msgs[0], enlaceCat)) nuevos.catalogoOfrecido = true;
+}
+
 // La ficha: se escribe siempre (también cuando no sale nada), una vez por turno, y solo la de ESTE teléfono.
 const fichas = cnMapaDeFichas(true);
 if (fichas.sd) {

@@ -28,6 +28,14 @@ function wlEnlaceCatalogo(panel) {
   const e = w && w.activo === true && typeof w.enlace === 'string' ? w.enlace.trim() : '';
   return /^https:\/\/[^\s]+$/.test(e) && e.length <= 500 ? e : '';
 }
+// El catálogo como BOTÓN en el MISMO mensaje de texto del turno (saludo, anuncio o primera pregunta por una pieza): 0 mensajes extra. Solo si el mensaje es un texto simple y cabe en el cuerpo del botón; sin enlace, nada.
+function wlConBotonCatalogo(m, enlace) {
+  if (!m || !m.payload || m.payload.type !== 'text' || typeof m.texto !== 'string' || m.texto.length > 1000 || !/^https:\/\/[^\s]+$/.test(String(enlace))) return false;
+  m.payload = cmEnlace(m.texto, 'Ver catálogo', String(enlace));
+  m.respaldo = m.texto + '\n\n' + String(enlace);
+  m.tipoReporte = 'interactive'; m.conBoton = true;
+  return true;
+}
 // El cliente pide VER el catálogo o las fotos (texto normalizado): el botón con el catálogo web sale por código, sin modelo (MD: [MOSTRAR_CATALOGO]).
 // ESTRECHO a propósito (revisión del PR #1033): un verbo de pedir + «catálogo» o «fotos», o el mensaje corto que es solo eso. Nunca con una negación, un comprobante, un pago o un QR,
 // con cifras (cantidades, montos) ni cuando ya vio el catálogo: ahí el mensaje sigue su camino (pedido, pago, modelo).
@@ -707,7 +715,8 @@ function wlResolverUbicacion(c) {
 function wlResolverFactura(c) {
   const p = c.plan;
   const up = c.ficha.ultimoPedido || { codigo: '', ref: '', ms: 0, factura: 'pedida' };
-  if (p.tipo === 'factura_sin') return { tipo: 'factura_sin', aviso: null, patch: { ultimoPedido: Object.assign({}, up, { factura: 'sin' }) } };
+  // «Sin factura» (MD, puntos 27 y 85): nuestra encargada recibe UN aviso «no solicita factura (S/N - NIT 0)»; con la factura ya declarada como «sin» o «dada» no se repite. +1 aviso por pedido sin factura.
+  if (p.tipo === 'factura_sin') return { tipo: 'factura_sin', aviso: up.factura === 'pedida' && (up.codigo || up.ref) ? { tipo: 'factura', clave: 'factura_sin', codigo: up.codigo, ref: up.ref, sinFactura: true, repetido: false } : null, patch: { ultimoPedido: Object.assign({}, up, { factura: 'sin' }) } };
   if (p.tipo === 'factura_pedir') return { tipo: 'factura_pedir', aviso: null };
   const razon = cbLinea(p.razonSocial, 80);
   const nit = /^\d{5,15}$/.test(String(p.nit || '')) ? String(p.nit) : '';

@@ -60,7 +60,9 @@ describe('2 · la captura de los datos de factura tras el pago', () => {
       const ficha = ((m.sd['walisuma'] ?? {}) as J)[ANA] as J;
       if (nit === 'sin') {
         expect(ficha['ultimoPedido']['factura'], frase).toBe('sin');
-        expect(t.avisos, frase).toHaveLength(0);
+        // MD 27 y 85: la encargada recibe «No solicita factura (S/N - NIT 0)»; UN aviso, y sin ningún NIT real ni «datos de factura»
+        expect(t.avisos, frase).toHaveLength(1);
+        expect(JSON.stringify(t.avisos[0]?.payload), frase).toMatch(/No solicita factura \(S\/N - NIT 0\)/);
         return;
       }
       if (nit === null) {

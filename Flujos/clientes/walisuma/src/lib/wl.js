@@ -108,6 +108,7 @@ function wlEsRiesgo() {
 
 // -----------------------------------------------------------------------------
 // LA FICHA por teléfono (`staticData.global.walisuma[<messages[0].from>]`), 48 horas. NUNCA guarda un NIT ni un CI (el documento de facturación no tiene dónde vivir aquí).
+//   catalogoOfrecido (ya se le ofreció el botón del catálogo en esta conversación: se ofrece UNA vez, en el mismo mensaje del saludo, del anuncio o de la primera pregunta por una pieza),
 //   v, ultimoMs (cuándo escribió por última vez), ultimosIds (últimos ids de mensaje de Meta: repetidos), turnos, saludado, fueraDePaisMs (cuándo se le envió el texto de otro país),
 //   carrito (lo que el cliente va pidiendo: SOLO {id, cantidad, detalle}; los precios y el total se recalculan con el catálogo en cada turno), entrega ({modo, ciudad, direccion, nombre, telefono, ubicacion}; en el recojo `ciudad` es la tienda; fichas viejas sin `telefono` se leen con ''; `ubicacion` es {lat,lng} del pin de WhatsApp o null),
 //   ultimoPedido ({codigo, ref, ms, factura}: el último pedido confirmado, para el segundo aviso con los datos de factura; `factura` es 'pedida', 'dada' o 'sin'; NUNCA la razón social ni el NIT),
@@ -141,7 +142,7 @@ function wlUltimoPedido(v) {
 }
 function wlFichaBase() {
   return {
-    v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, fueraDePaisMs: 0,
+    v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, fueraDePaisMs: 0, catalogoOfrecido: false,
     carrito: [], entrega: wlEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, ultimoPedido: null, avisoComprobanteMs: 0,
   };
 }
@@ -178,6 +179,7 @@ function wlFichaVigente(e, ahoraMs) {
     turnos: Number.isFinite(e.turnos) && e.turnos > 0 ? Math.floor(e.turnos) : 0,
     saludado: e.saludado === true,
     fueraDePaisMs: wlNumero(e.fueraDePaisMs),
+    catalogoOfrecido: e.catalogoOfrecido === true,
     carrito: wlCarritoDeFicha(e.carrito),
     entrega: wlEntregaDeFicha(e.entrega),
     cierre: e.cierre === true,
@@ -307,7 +309,8 @@ const WL_TEXTO_ANUNCIO_GENERAL = 'Gracias por su interés en {NEGOCIO}. Reunimos
 // La factura después del pago (decisiones 9 y 10): los datos se pasan SOLO en el aviso a nuestra encargada; el texto al cliente nunca repite el NIT.
 const WL_TEXTO_PIDE_FACTURA = 'Si desea factura, envíenos en un solo mensaje la razón social (o su nombre completo) y el NIT (o CI); si no la necesita, no hace falta responder.';
 const WL_TEXTO_FACTURA_SIN = 'Entendido, su pedido sigue su curso sin datos de factura.';
-const WL_TEXTO_FUERA_DE_HORARIO = 'Su pedido se preparará a la brevedad posible.';
+// Fuera de horario NO se promete un plazo («a la brevedad») que ningún mecanismo cumple: se dice el horario de nuestra encargada, que es un dato.
+const WL_TEXTO_FUERA_DE_HORARIO = 'Nuestra encargada atiende de lunes a viernes de 10:00 a 19:00.';
 const WL_INTROS = {
   modelo_caido: 'Tuvimos un inconveniente para atender su consulta en este momento.',
   sin_configuracion: 'En este momento no podemos consultar el catálogo.',

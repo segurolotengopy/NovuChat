@@ -187,12 +187,13 @@ describe('B1 · «Pedido confirmado»: frase fija del CÓDIGO, nunca del modelo'
     expect(seguro('Gracias. Pedido confirmado.', permiso)).not.toMatch(/confirmado/);
     expect(seguro('Pedido confirmado.', 'otro permiso')).not.toMatch(/confirmado/);
   });
-  it('fuera de lunes a viernes 10-19 (La Paz) la confirmación agrega la frase fija «Su pedido se preparará a la brevedad posible»; dentro, no', () => {
+  it('fuera de lunes a viernes 10-19 (La Paz) la confirmación dice el horario de la encargada (un dato) y NUNCA promete un plazo «a la brevedad»; dentro, no agrega nada', () => {
     const sabado = Date.UTC(2026, 9, 10, 14, 0, 0);
     const fuera = hablar(conQr({ ahoraMs: sabado }), ANA, mImagen({ caption: '' }));
-    expect(fuera.mensajes[0]?.cuerpo).toMatch(/Su pedido se preparará a la brevedad posible\./);
+    expect(fuera.mensajes[0]?.cuerpo).toMatch(/Nuestra encargada atiende de lunes a viernes de 10:00 a 19:00\./);
+    expect(fuera.mensajes[0]?.cuerpo).not.toMatch(/brevedad|se preparará/i);
     const dentro = hablar(conQr(), ANA, mImagen({ caption: '' }));
-    expect(dentro.mensajes[0]?.cuerpo).not.toMatch(/brevedad/);
+    expect(dentro.mensajes[0]?.cuerpo).not.toMatch(/brevedad|Nuestra encargada atiende/);
   });
 });
 
@@ -308,16 +309,19 @@ describe('B2/B3 · la factura después del pago (el NIT viaja SOLO en el aviso)'
     const t2 = hablar(m, ANA, mTexto('NIT: 482910301'));
     expect(t2.avisos.filter((a) => JSON.stringify(a.payload).includes('datos de factura'))).toHaveLength(0);
   });
-  it('«a mi nombre nomás» = S/N y NIT 0: no hay segundo aviso (el primero ya dijo S/N) y no se insiste', () => {
+  it('«a mi nombre nomás» = S/N y NIT 0: UN aviso a la encargada «No solicita factura (S/N - NIT 0)» (MD 27 y 85) y no se insiste; repetirlo no manda otro', () => {
     const m = pagado();
     const t = hablar(m, ANA, mTexto('a mi nombre nomás'));
-    expect(t.avisos).toHaveLength(0);
+    expect(t.avisos).toHaveLength(1);
+    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/No solicita factura \(S\/N - NIT 0\)/);
+    expect(hablar(m, ANA, mTexto('sin factura')).avisos.filter((x) => /No solicita factura/.test(JSON.stringify(x.payload)))).toHaveLength(0);
     expect(t.registro.map((r) => r.nodo)).not.toContain('Conversar con el modelo');
     expect(textos(t).join(' ')).not.toMatch(/NIT|razón social/i);
   });
   it('«no necesito factura»: igual', () => {
     const t = hablar(pagado(), ANA, mTexto('No necesito factura, gracias.'));
-    expect(t.avisos).toHaveLength(0);
+    expect(t.avisos).toHaveLength(1);
+    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/No solicita factura/);
   });
   it('NEGADO: «factura» después del pago ya no deriva: vuelve a pedir los datos sin aviso ni botón', () => {
     const t = hablar(pagado(), ANA, mTexto('sí quiero factura'));
