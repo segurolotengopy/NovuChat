@@ -917,6 +917,9 @@ describe('Salida de persona: plantillas (Retomar, C5/C6)', () => {
     ['parametro con \t', { ...BUENA, parametros: ['Casa\tDemo'] }],
     ['parametro con 4 espacios', { ...BUENA, parametros: ['Casa    Demo'] }],
     ['parametro no texto', { ...BUENA, parametros: [5] }],
+    ['parametro con \r', { ...BUENA, parametros: ['Casa\rDemo'] }],
+    ['plantilla arreglo', [BUENA]],
+    ['plantilla null', null],
   ];
   it.each(MALAS)('forma mala (%s): NV-PLANTILLA-FORMA, rechazado y SIN enviar', (_n, plantilla) => {
     for (const canal of ['graph', 'rele']) {
@@ -935,6 +938,29 @@ describe('Salida de persona: plantillas (Retomar, C5/C6)', () => {
     const b = servidor('graph', [corto]);
     ejecutarFlujo({ servidor: b, enviar: sinEnviar });
     expect(b.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-PLANTILLA-FORMA' });
+  });
+
+  it('plantilla con texto no vacio o destino de 16 digitos: no se envia', () => {
+    const conTexto = { ...pl(20), texto: 'Hola' };
+    const a = servidor('graph', [conTexto]);
+    expect(ejecutarFlujo({ servidor: a, enviar: sinEnviar }).llamadas).toHaveLength(0);
+    expect(a.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-PLANTILLA-FORMA' });
+    const largo = { ...pl(21), conversacionId: 'wa_1234567890123456' };
+    const b = servidor('graph', [largo]);
+    expect(ejecutarFlujo({ servidor: b, enviar: sinEnviar }).llamadas).toHaveLength(0);
+    expect(b.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-PLANTILLA-FORMA' });
+  });
+
+  it('tres espacios seguidos en un parametro SI pasan (el limite es cuatro)', () => {
+    const s = servidor('graph', [pl(23, { ...BUENA, parametros: ['Casa   Demo'] })]);
+    expect(ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.E3') }).llamadas).toHaveLength(1);
+    expect(s.docs[0]!.estado).toBe('aceptado');
+  });
+
+  it.each(['132000', '132001', '132012', '132015'])('rele: rechazo de plantilla de Meta (WM-3040 %s) es rechazado, no incierto', (meta) => {
+    const s = servidor('rele', [pl(24)]);
+    ejecutarFlujo({ servidor: s, enviar: () => ({ statusCode: 502, body: { error: { codigo: 'WM-3040', reintentable: false, metaCodigo: Number(meta) } } }) });
+    expect(s.docs[0]).toMatchObject({ estado: 'rechazado', codigo: meta });
   });
 
   it('10 parametros de 60 caracteres es el limite y pasa', () => {

@@ -57,7 +57,10 @@ if (p.canal === 'rele') {
   // Meta conocido. TODO lo demas (WM-3030, 3035, 3036, 3041, 3042, un WM desconocido,
   // un 5xx o un cuerpo ilegible) es `incierto`: el mensaje pudo haber salido.
   const PREVIOS = ['WM-3010', 'WM-3011', 'WM-3012', 'WM-3031', 'WM-3032', 'WM-3033', 'WM-3034', 'WM-3037', 'WM-3038', 'WM-3039'];
-  const METAS = ['131047', '131026', '131049', '131051', '131052', '131053', '130429'];
+  // 132xxx: Meta rechazó la PLANTILLA (Retomar): parámetros, inexistente, pausada o deshabilitada.
+  // Es un rechazo definitivo; como incierto, la métrica C8 contaría plantillas que no salieron.
+  const METAS = ['131047', '131026', '131049', '131051', '131052', '131053', '130429',
+    '132000', '132001', '132005', '132007', '132012', '132015', '132016'];
   const wm = typeof err.codigo === 'string' ? err.codigo : '';
   if (wm === 'WM-3040') {
     const meta = String(err.metaCodigo ?? '');

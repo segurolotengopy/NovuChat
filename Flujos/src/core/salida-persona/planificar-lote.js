@@ -82,6 +82,7 @@ function planPlantilla(p, mensajeId, conversacionId, to, canal, claveRele) {
   let sinEnvio = '';
   let reintentable = false;
   if (!mensajeId || !conversacionId) sinEnvio = 'NV-RECLAMO';
+  else if (p.texto !== undefined && p.texto !== '') sinEnvio = 'NV-PLANTILLA-FORMA'; // C5: texto ''
   else if (canal !== 'rele' && canal !== 'graph') sinEnvio = 'NV-PLANTILLA-FORMA';
   else if (!/^[0-9]{8,15}$/.test(to)) sinEnvio = 'NV-PLANTILLA-FORMA';
   else if (pl === null || typeof pl !== 'object' || Array.isArray(pl)) sinEnvio = 'NV-PLANTILLA-FORMA';
