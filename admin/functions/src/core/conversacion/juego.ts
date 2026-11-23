@@ -6,7 +6,7 @@
  * los nombres y valores exactos que el servidor exige; el alta (PR2) los escribe y la prueba
  * `pruebas/core/juego-de-conversacion.test.ts` los cruza contra cada `Flujos/clientes/<t>/PROPIO.md`.
  *
- * Las 9 funciones y dónde se cumple cada una:
+ * Las 10 funciones y dónde se cumple cada una:
  *   1. texto              \
  *   2. aviso con botón     |  NÚCLEO COMÚN del flujo (se incluye desde core, no se copia): lo cubre
  *   3. baja                |  `pruebas/core/nucleo-comun.test.ts`. No tienen bandera en la ficha.
@@ -16,6 +16,9 @@
  *   7. Tomar / salida de persona         -> `personaPuedeEscribir === true`       (turno.ts, personaPuedeEscribirDeFicha)
  *   8. adjuntos de la persona            -> `personaPuedeEnviarMedios === true`   (turno.ts, personaPuedeEnviarMediosDeFicha)
  *   9. guardado de medios                -> `guardarMedios === true`              (medios/guardarMedio.ts)
+ *  10. Retomar con plantilla (ventana cerrada) -> `personaPuedeRetomar === true`    (turno.ts, personaPuedeRetomarDeFicha)
+ *      Se enciende además de la 7, solo con la plantilla de utilidad registrada en cada ruta activa (C1) y la salida
+ *      publicada con la cabecera de plantillas (C5): Plataforma lo verifica antes de escribir la bandera.
  *
  * Dos grupos, por orden de escritura:
  *  - JUEGO_DE_FICHA: se escribe en `tenants/{id}` al dar de alta; no depende de nada externo.
@@ -35,6 +38,7 @@ export const JUEGO_DE_FICHA = Object.freeze({
 export const JUEGO_CON_INFRA = Object.freeze({
   personaPuedeEscribir: true,
   personaPuedeEnviarMedios: true,
+  personaPuedeRetomar: true,
 } as const);
 
 /**
