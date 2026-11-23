@@ -2394,12 +2394,12 @@ service cloud.firestore {
         allow create: if esIngesta(tenantId)
                       && tenantOperativo(tenantId)
                       && metricaValida()
-                      && !request.resource.data.keys().hasAny(['mensajesPersona']);
+                      && !request.resource.data.keys().hasAny(['mensajesPersona', 'plantillasPersona']);
         allow update: if esIngesta(tenantId)
                       && tenantOperativo(tenantId)
                       && metricaValida()
                       && !request.resource.data.diff(resource.data).affectedKeys()
-                            .hasAny(['mensajesPersona']);
+                            .hasAny(['mensajesPersona', 'plantillasPersona']);
         allow delete: if false;
 
         // Lista blanca también acá: si el principal de ingesta quedara
@@ -2458,9 +2458,12 @@ service cloud.firestore {
             // la consola (cuentan en los 1.000 gratis del mes, no en el bloque de
             // 25 ni en los umbrales). Enteros no negativos; los suma el servidor
             // (SDK Admin) o el principal de ingesta, nunca una persona.
-            'mensajesPersona'
+            'mensajesPersona',
+            // Plan «Retomar» (23/11/2026): `plantillasPersona`, igual que `mensajesPersona`: lo suma solo el servidor.
+            'plantillasPersona'
           ]) && entrantesPorTipoValido()
-            && contadorEntero('mensajesPersona');
+            && contadorEntero('mensajesPersona')
+            && contadorEntero('plantillasPersona');
         }
 
         function contadorEntero(campo) {

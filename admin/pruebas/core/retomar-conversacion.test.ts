@@ -313,6 +313,16 @@ describe('las banderas de la ficha, exactas', () => {
       await rechaza(mensajeFijo);
     }
   });
+  it('NEGATIVA (orden de §1.4): un comercio sin bandera Y sin ruta recibe `sinRetomar` / `sinSalida`, no un error de canal', async () => {
+    for (const d of await db.collection('rutasWhatsApp').listDocuments()) await d.delete();
+    await db.doc(`tenants/${A}`).update({ personaPuedeRetomar: false });
+    await rechaza({ code: 'permission-denied', message: 'Retomar conversaciones todavía no está activo para su negocio.' });
+    await db.doc(`tenants/${A}`).update({ personaPuedeEscribir: false });
+    await rechaza({ code: 'permission-denied', message: 'Esta función todavía no está activa para su negocio.' });
+    await db.doc(`tenants/${A}`).update({ personaPuedeEscribir: true, personaPuedeRetomar: true });
+    await rechaza({ code: 'failed-precondition', message: 'El canal de envío de este comercio no está disponible.' }); // contraprueba: con las dos banderas sí es de canal
+    expect(llamadasAPlan).toHaveLength(0); // el plan ni se consultó
+  });
   it('NEGATIVA: sin `personaPuedeEscribir === true` tampoco (se exigen las dos)', async () => {
     for (const valor of [false, 'true', 1]) {
       await ficha(A, { personaPuedeEscribir: valor });
@@ -484,6 +494,12 @@ describe('la plantilla registrada en la ruta (C1) y la línea', () => {
     expect(nombreComoParametro('  Casa\nBermejo\t\tSRL  ')).toBe('Casa Bermejo SRL');
     expect(nombreComoParametro('a    b')).toBe('a b'); // cuatro espacios seguidos no pasan
     expect(nombreComoParametro('x'.repeat(80))).toBe('x'.repeat(60));
+    // por puntos de código: un emoji en la posición 60 no se parte en dos mitades sueltas
+    const conEmoji = nombreComoParametro(`${'x'.repeat(59)}😀resto`)!;
+    expect(conEmoji).toBe(`${'x'.repeat(59)}😀`);
+    expect(Array.from(conEmoji)).toHaveLength(60);
+    expect(conEmoji).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+    expect(nombreComoParametro('😀'.repeat(80))).toBe('😀'.repeat(60));
     for (const malo of ['', '   ', '\n\t', 7, null, undefined, {}]) expect(nombreComoParametro(malo)).toBeNull();
   });
 });

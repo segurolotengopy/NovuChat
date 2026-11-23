@@ -55,7 +55,7 @@ function problemasDeDeclaracion(carpeta: string, versiones: string): string[] {
 describe('juego de conversación: claves y valores exactos', () => {
   it('JUEGO_DE_FICHA y JUEGO_CON_INFRA tienen los valores que el servidor exige y están congelados', () => {
     expect(JUEGO_DE_FICHA).toEqual({ consolaConversaciones: 'nueva', guardarMedios: true });
-    expect(JUEGO_CON_INFRA).toEqual({ personaPuedeEscribir: true, personaPuedeEnviarMedios: true, personaPuedeRetomar: true });
+    expect(JUEGO_CON_INFRA).toEqual({ personaPuedeEscribir: true, personaPuedeEnviarMedios: true });
     expect(Object.isFrozen(JUEGO_DE_FICHA)).toBe(true);
     expect(Object.isFrozen(JUEGO_CON_INFRA)).toBe(true);
   });
@@ -75,7 +75,7 @@ describe('juego de conversación: claves y valores exactos', () => {
   it('las banderas con infraestructura son las que lee el servidor (turno.ts)', () => {
     expect(personaPuedeEscribirDeFicha(JUEGO_COMPLETO)).toBe(true);
     expect(personaPuedeEnviarMediosDeFicha(JUEGO_COMPLETO)).toBe(true);
-    expect(personaPuedeRetomarDeFicha(JUEGO_COMPLETO)).toBe(true);
+    expect(personaPuedeRetomarDeFicha({ personaPuedeRetomar: true })).toBe(true); // su entrada al juego es del PR de R4
   });
 
   it('los predicados del servidor (juego.ts, los mismos que importan accesoPersona y guardarMedio) aceptan el juego y niegan lo inexacto', () => {
@@ -91,11 +91,9 @@ describe('juego de conversación: claves y valores exactos', () => {
     expect(faltanDelJuego({ ...JUEGO_COMPLETO, guardarMedios: 1 })).toEqual(['guardarMedios']);
     expect(faltanDelJuego({ ...JUEGO_COMPLETO, personaPuedeEscribir: 1 })).toEqual(['personaPuedeEscribir']);
     expect(faltanDelJuego({ ...JUEGO_COMPLETO, personaPuedeEnviarMedios: 1 })).toEqual(['personaPuedeEnviarMedios']);
-    // Retomar (plan 23/11/2026): mientras falte, `faltanDelJuego` la nombra, con cualquier valor que no sea `true` exacto.
-    for (const v of [undefined, false, 'true', 1]) expect(faltanDelJuego({ ...JUEGO_COMPLETO, personaPuedeRetomar: v })).toEqual(['personaPuedeRetomar']);
-    const { personaPuedeRetomar: _fuera, ...sinRetomar } = JUEGO_COMPLETO;
-    expect(faltanDelJuego(sinRetomar)).toEqual(['personaPuedeRetomar']);
+    // `personaPuedeRetomar` NO es del juego todavía: no la agrega este PR (el alta no tiene escritor para ella).
     expect(faltanDelJuego({ ...JUEGO_COMPLETO })).toEqual([]);
+    expect(Object.keys(JUEGO_CON_INFRA)).not.toContain('personaPuedeRetomar');
   });
 
   it('negativa: ficha sin guardarMedios', () => {
@@ -112,8 +110,8 @@ describe('juego de conversación: claves y valores exactos', () => {
   });
 
   it('negativa: ficha vacía o ausente falta todo', () => {
-    expect(faltanDelJuego({})).toHaveLength(5);
-    expect(faltanDelJuego(null)).toHaveLength(5);
+    expect(faltanDelJuego({})).toHaveLength(4);
+    expect(faltanDelJuego(null)).toHaveLength(4);
   });
 });
 

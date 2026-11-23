@@ -125,7 +125,9 @@ const ID_RESERVADO = /^__.*__$/;
 export function nombreComoParametro(nombre: unknown): string | null {
   if (typeof nombre !== 'string') return null;
   // eslint-disable-next-line no-control-regex
-  const limpio = nombre.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, PARAMETRO_MAXIMO).trim();
+  const colapsado = nombre.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim();
+  // Por puntos de código, no por unidades UTF-16: un emoji en la posición 60 no se parte por la mitad.
+  const limpio = Array.from(colapsado).slice(0, PARAMETRO_MAXIMO).join('').trim();
   return limpio.length > 0 ? limpio : null;
 }
 
@@ -182,14 +184,15 @@ export async function crearRetomada(p: Preparado): Promise<CreadoRetomar> {
 
     // 4. La conversación existe y su ventana está cerrada.
     if (!conv || !conv.exists) throw errorDeTurno('noExiste');
-    const lineaActual: unknown = conv.get('phoneNumberId');
-    if (lineaActual !== undefined && lineaActual !== canal.phoneNumberId) throw errorDeEnvio('canal');
     const ultimoEntranteEn: unknown = conv.get('ultimoEntranteEn');
     const ultimoEntrante = milisegundosDeMomento(ultimoEntranteEn);
     if (ultimoEntrante === null) throw errorDeTurno('noExiste'); // el cliente nunca inició: no hay qué retomar
     if (ultimoEntrante > ahoraMs + MARGEN_RELOJ_MS) throw errorDeTurno('noDisponible'); // dato malo: cerrado
     // El mismo margen con el que `enviarComoPersona` da la ventana por cerrada: o escribe, o retoma.
     if (ventanaDeMetaAbierta(ultimoEntranteEn, ahoraMs, MARGEN_ENVIO_MS)) throw errorDeTurno('ventanaAbierta');
+    // La línea de la conversación (si cambió tras la lectura previa) se comprueba DESPUÉS de la ventana, sin leer de más.
+    const lineaActual: unknown = conv.get('phoneNumberId');
+    if (lineaActual !== undefined && lineaActual !== canal.phoneNumberId) throw errorDeEnvio('canal');
 
     // 5. Bloqueo y «no contactar».
     if (estaBloqueada(conv.get('bloqueada'))) throw errorDeTurno('contactoBloqueado');
@@ -306,6 +309,12 @@ export async function atenderRetomar(
       registrar(FUNCION, e instanceof HttpsError ? e.code : 'unavailable', { tenantId: t, uid, rol });
       throw e;
     }
+
+    // 1b. Las banderas de la ficha, ANTES de resolver el canal y los límites del plan (orden de §1.4): un comercio sin la
+    //     función recibe su error, no uno de canal. Se vuelven a comprobar dentro de la transacción.
+    const fichaPrevia = (await db.doc(`tenants/${t}`).get()).data();
+    if (!personaPuedeEscribirDeFicha(fichaPrevia)) { registrar(FUNCION, 'permission-denied', { tenantId: t, uid, rol, motivo: 'sin_salida' }); throw errorDeTurno('sinSalida'); }
+    if (!personaPuedeRetomarDeFicha(fichaPrevia)) { registrar(FUNCION, 'permission-denied', { tenantId: t, uid, rol, motivo: 'sin_retomar' }); throw errorDeTurno('sinRetomar'); }
 
     // 2. El canal: la línea por la que escribió el cliente, nunca otra (mismo criterio que `enviarComoPersona`).
     const ref = db.doc(`tenants/${t}/conversaciones/${conversacionId}`);

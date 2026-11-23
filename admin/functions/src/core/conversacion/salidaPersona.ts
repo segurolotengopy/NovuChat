@@ -96,7 +96,7 @@ export const IDIOMA_DE_PLANTILLA = /^[a-z]{2,3}(_[A-Z]{2})?$/;
 /** Un parámetro de plantilla: 1 a 60 caracteres, sin saltos de línea ni tabulaciones, sin cuatro espacios seguidos (restricción de Meta). */
 export const PARAMETRO_MAXIMO = 60;
 export const parametroDePlantillaValido = (v: unknown): v is string =>
-  typeof v === 'string' && v.length >= 1 && v.length <= PARAMETRO_MAXIMO && !/[\n\r\t]/.test(v) && !/ {4}/.test(v);
+  typeof v === 'string' && v.length >= 1 && Array.from(v).length <= PARAMETRO_MAXIMO && !/[\n\r\t]/.test(v) && !/ {4}/.test(v);
 /** Cuántos parámetros lleva una plantilla, como máximo (Retomar usa 1). */
 export const PARAMETROS_MAXIMOS = 10;
 
