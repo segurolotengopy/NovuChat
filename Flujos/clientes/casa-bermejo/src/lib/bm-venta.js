@@ -115,7 +115,7 @@ function bmNombreDeRespuesta(texto) {
   if (/\b(si|no|hola|gracias|confirmo|confirmar|pagar|pago|quiero|catalogo|precio|cuanto|cuesta|envio|enviar|tienda|recojo|retiro|persona|hablar|descuento|factura|buenas|buenos|dias|tardes|noches|favor|ok|listo|claro)\b/.test(n)) return '';
   return t;
 }
-function bmCompletarEntrega(nueva, antes, texto, modos) {
+function bmCompletarEntrega(nueva, antes, texto, modos, mercado) {
   const n = Object.assign({}, cbEsObjeto(nueva) ? nueva : {});
   const a = bmEntregaDeFicha(antes);
   const lista = modos.length ? modos : BM_MODOS_DEFECTO;
@@ -134,6 +134,12 @@ function bmCompletarEntrega(nueva, antes, texto, modos) {
   if (vacio('documento')) { const m = /\b(?:c\.?i\.?|dni|carnet(?: de identidad)?|cedula)\b\D{0,15}(\d[\d.-]{4,13})/i.exec(crudo); if (m) n.documento = m[1]; }
   if (vacio('flota')) { const m = /\b(?:flota|terminal|empresa)\s+(?:de\s+)?([\p{L}][\p{L} ]{2,40}?)(?=\s*(?:[,.;]|$|\by\b|\bmi\b|\bciudad\b))/iu.exec(crudo); if (m) n.flota = m[1].trim(); }
   if (vacio('ciudad') && bmEsEnvio(modo)) { const m = /\b(?:a|en|para|hasta)\s+([A-ZÁÉÍÓÚÑ][\p{L}]+(?: [A-ZÁÉÍÓÚÑ][\p{L}]+)?)/u.exec(crudo); if (m && !/^(Gracias|Hola|Buenas|Mi|Sí|Si)$/.test(m[1])) n.ciudad = m[1]; }
+  // Lo que el cliente ya dio NO se vuelve a pedir (23/11/2026): el documento suelto, y el nombre y la ciudad que vienen con él, los capta el CÓDIGO (módulo común Pedidos, `entCapturar`), no la transcripción del modelo.
+  if (modo !== '' && bmEsEnvio(modo)) {
+    const sabe = (k) => (typeof n[k] === 'string' && n[k].trim() !== '' ? n[k] : a[k]);
+    const dato = entCapturar(crudo, { nombre: sabe('nombre'), documento: sabe('documento'), ciudad: sabe('ciudad'), flota: sabe('flota') }, mercado);
+    ['documento', 'ciudad', 'nombre'].forEach((k) => { if (typeof dato[k] === 'string' && dato[k] !== '' && vacio(k)) { n[k] = dato[k]; if (k === 'nombre') capturado = true; } });
+  }
   return { entrega: n, capturado: capturado };
 }
 // El mensaje del SITIO («Hola, quiero consultar por estos productos:» con líneas «N x Nombre (cód. id)»): el código lee las líneas y sus códigos contra el catálogo; no depende del modelo.
@@ -753,7 +759,7 @@ function bmResolverModelo(c) {
     fijada = Object.assign({}, fijada, { lineas: vcLineas([...mapa.values()], c.vendibles).lineas, ordenada: true });
   }
   const lineas = fijada.lineas;
-  const comp = bmCompletarEntrega(j.entrega, f.entrega, p.textoCliente, c.modos);
+  const comp = bmCompletarEntrega(j.entrega, f.entrega, p.textoCliente, c.modos, c.mercado);
   const entrega = bmMezclarEntrega(f.entrega, comp.entrega, c.modos);
   const cierre = f.cierre || bmQuierePagar(bmNorm(p.textoCliente));
   // Con el pedido LISTO (piezas, entrega completa y orden de pagar) lo decide el código: un «quiereHablar» del modelo (p. ej. «el envío lo cotiza la tienda») no lo desvía; el pedido se anota y la tienda recibe el aviso.

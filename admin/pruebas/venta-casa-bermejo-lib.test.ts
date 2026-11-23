@@ -15,7 +15,7 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const FLUJOS = join(AQUI, '../../Flujos/experimental');
 const RUTAS = [
   'venta-digital/src/cobro.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js',
-  '../src/core/sin-agente/mensajes.js', '../src/core/texto/filtro-redaccion.js', '../src/core/texto/identidad.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
+  '../src/core/sin-agente/mensajes.js', '../src/core/texto/filtro-redaccion.js', '../src/core/texto/identidad.js', '../src/modulos/pedidos/datos-de-entrega.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
 ].map((r) => join(FLUJOS, r));
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
@@ -569,6 +569,29 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       expect(b('bmCompletarEntrega')({}, { modo: 'envío' }, 'mi teléfono es 70123456', modos).entrega.documento).toBeUndefined();
       const ok = b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro, entrega: { modo: 'envío', ciudad: 'Santa Cruz' } }, plan: { tipo: 'modelo', textoCliente: 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana' }, modeloResp: gemini({ texto: 'Gracias.', lineas: [{ id: 'p1', cantidad: 1 }] }) }));
       expect(b('bmEntregaCompleta')(ok.entrega, 'BO')).toBe(true);
+    });
+    it('REPRODUCE el reclamo del 23/11 (Casa Bermejo): lo que el cliente ya dio —CI, ciudad, nombre— no se vuelve a pedir aunque el modelo NO devuelva `entrega`', () => {
+      // El modelo responde SIN `entrega` (como en la conversación real): todo lo capta el código.
+      const turno = (textoCliente: string, entrega: Record<string, unknown>) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro, entrega }, plan: { tipo: 'modelo', textoCliente }, modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'p1', cantidad: 2 }] }) })).entrega;
+      // 1) nombre, CI, ciudad y flota en UN mensaje, el CI sin la palabra «CI» y la ciudad en minúsculas.
+      const e1 = turno('Andres 1234567 yacuiba. Flota bolivar', { modo: 'envío' });
+      expect(e1).toMatchObject({ nombre: 'Andres', documento: '1234567', ciudad: 'Yacuiba', flota: 'bolivar' });
+      expect(b('bmEntregaFalta')(e1, 'BO')).toEqual([]);
+      // 2) el CI SOLO («1234567») cuando es lo que faltaba.
+      expect(turno('7654321', { modo: 'envío', nombre: 'Andres', ciudad: 'Yacuiba', flota: 'Bolivar' }).documento).toBe('7654321');
+      // 3) la ciudad SOLA («yacuiba») cuando es lo único que falta.
+      expect(turno('yacuiba', { modo: 'envío', nombre: 'Andres', documento: '1234567', flota: 'Bolivar' }).ciudad).toBe('Yacuiba');
+      // 4) lo ya guardado NO se pisa, y «Ya te lo di» no inventa nada.
+      const e4 = turno('Ya te lo di', { modo: 'envío', nombre: 'Andres', documento: '1234567', ciudad: 'Yacuiba', flota: 'Bolivar' });
+      expect(e4).toMatchObject({ documento: '1234567', ciudad: 'Yacuiba' });
+      expect(turno('9999999 Oruro', { modo: 'envío', nombre: 'Andres', documento: '1234567', ciudad: 'Yacuiba', flota: 'Bolivar' })).toMatchObject({ documento: '1234567', ciudad: 'Yacuiba' });
+      // NEGADO: un celular, un precio o un «sí» no son el CI ni la ciudad; con el retiro en tienda no se pide nada de esto.
+      for (const no of ['mi celular es 70123456', 'Bs 123456', 'sí', 'Ya te lo di', 'no gracias']) {
+        const e = turno(no, { modo: 'envío', nombre: 'Andres', flota: 'Bolivar' });
+        expect(e.documento).toBe('');
+        expect(e.ciudad).toBe('');
+      }
+      expect(turno('1234567 Oruro', { modo: 'recojo en tienda', nombre: 'Andres' })).toMatchObject({ documento: '', ciudad: '' });
     });
     it('del retiro al pedido: modo + nombre dichos en turnos distintos, SIN `entrega` del modelo, y «sí, confirmo, quiero pagar» anota el pedido', () => {
       const sinEntrega = (textoCliente: string, ficha: Record<string, unknown>, quiereHablar = false) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha, plan: { tipo: 'modelo', textoCliente }, modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'p1', cantidad: 1 }], quiereHablar }) }));

@@ -43,6 +43,10 @@ Carpetas destino (F2): `admin/functions/src/modulos/<m>/`,
 `admin/web/src/modulos/<m>/`, `Flujos/src/modulos/<m>/`,
 `admin/pruebas/modulos/<m>/`, y una línea en el registro.
 
+## Los datos de envío que el cliente ya dio no se vuelven a pedir (`Flujos/src/modulos/pedidos/datos-de-entrega.js`, 23/11/2026)
+
+Pieza común, pura, que se INCLUYE (nunca se copia) en los flujos que piden datos de envío (hoy Casa Bermejo; Walisuma pide ubicación, no CI ni ciudad). `entCapturar(texto, saben, mercado)` devuelve solo lo que el CÓDIGO reconoce con seguridad y falta: el documento (cifra suelta de 5 a 10 dígitos; no un celular de Bolivia, ni una cifra con «+», «591», «Bs», «$» o «cód.», ni dos cifras), el nombre y la ciudad dichos en el mismo mensaje que el documento, y la ciudad sola cuando es lo único que falta. Lo ya guardado nunca se pisa. **Causa del reclamo (23/11):** un dato dado dependía de que el modelo lo copiara a su JSON; ahora no depende de él. Prueba: `pruebas/modulos/pedidos/datos-de-entrega.test.ts` y «REPRODUCE el reclamo del 23/11» en `venta-casa-bermejo-lib.test.ts`. Costo: 0 mensajes por conversación (no agrega ni quita ninguno).
+
 ## Rescate de 22 h (`reclamarRescates`)
 
 **Qué es.** Una Function HTTP del módulo (`admin/functions/src/modulos/pedidos/rescates.ts`, declarada en el manifiesto) que **decide y marca** a quién se le escribe UN mensaje de texto libre cuando la conversación de venta lleva entre 22 h y 23 h 30 min sin un mensaje del cliente. **No envía**: el envío y la redacción son de un flujo de n8n por comercio (otro PR), que la llama con la credencial de ingesta de su número. Plan de diseño: `RUBENROCA_plan-rescate_2026-10-20`, paso 1.
