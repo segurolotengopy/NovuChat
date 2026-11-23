@@ -16,7 +16,7 @@ import { hallazgosCrm, inyectarMapa } from '../../../../Flujos/experimental/comu
 // @ts-expect-error el armador es un .mjs sin tipos
 import { CREDENCIAL_CRM, NODOS_DE_CRM, guardias } from '../../../../Flujos/clientes/walisuma/construir.mjs';
 import { respuestaDeIngesta } from '../../modulos/crm/ingesta-conversacion';
-import { ANA, CARPETA, ENTREGA, EXTRANJERO, PRODUCCION, PRUEBA, SUSPENDIDO, COMPROBANTE, crear as crearBase, hablar, mImagen, mSticker, mTexto, modelo, panelConQr, panelOk, valorMeta, type Opciones } from './mundo';
+import { ANA, CARPETA, ENTREGA, EXTRANJERO, PRODUCCION, PRUEBA, SUSPENDIDO, COMPROBANTE, crear as crearBase, entregaEnElSegundoTurno, hablar, mImagen, mSticker, mTexto, modelo, panelConQr, panelOk, valorMeta, type Opciones } from './mundo';
 
 const RAIZ = join(CARPETA, '..', '..', '..');
 const leerMod = (r: string): string => readFileSync(join(RAIZ, 'Flujos', 'src', 'modulos', r), 'utf8');
@@ -196,7 +196,7 @@ describe('flujo: quién guarda', () => {
   });
   it('el turno del QR manda DOS mensajes (resumen e imagen) y guarda UN solo prospecto, Caliente', () => {
     const pl = planilla();
-    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, modeloDice: modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) });
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, modeloDice: entregaEnElSegundoTurno(modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA })) }); // Andres, 23/11/2026: el QR sale en el turno en que la entrega queda completa (aquí, el 2.º)
     hablar(m, ANA, mTexto('una billetera'));
     pl.escrituras.length = 0; pl.actualizaciones.length = 0;
     const t = hablar(m, ANA, mTexto('quiero pagar'));
@@ -211,7 +211,7 @@ describe('flujo: quién guarda', () => {
   });
   it('el comprobante cotejado deja el prospecto con «Comprobante de pago»', () => {
     const pl = planilla();
-    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, medio: { clasificacion: COMPROBANTE }, modeloDice: modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) });
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, medio: { clasificacion: COMPROBANTE }, modeloDice: entregaEnElSegundoTurno(modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA })) }); // Andres, 23/11/2026: el QR sale en el turno en que la entrega queda completa (aquí, el 2.º)
     hablar(m, ANA, mTexto('una billetera'));
     hablar(m, ANA, mTexto('quiero pagar'));
     m.dobles['Traer configuración'] = () => panelConQr(450);

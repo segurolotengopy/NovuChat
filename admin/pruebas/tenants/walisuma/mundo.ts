@@ -113,6 +113,15 @@ export const COMPROBANTE = { categoria: 'comprobante', texto: 'Transferencia', m
 /** Lo que contesta el modelo (JSON de salida): texto, líneas, entrega y quiereHablar. */
 export const modelo = (texto: string, extra: J = {}): J => ({ texto, lineas: [], entrega: {}, facturacion: {}, quiereHablar: false, ...extra });
 /** Recojo en tienda (La Paz): nombre completo y teléfono, sin dirección de entrega. */
+/**
+ * Decisión de Andres (23/11/2026, «Enviar el QR solo»): con el cobro real, el QR sale en el turno en que el pedido y la entrega quedan COMPLETOS, sin esperar «pagar».
+ * Para probar el QR en el turno en que el cliente dice «quiero pagar», el 1.er turno trae solo el pedido (sin entrega) y la entrega llega en el 2.º.
+ * El turno se reconoce por el largo del historial que recibe el modelo (1 = el primero).
+ */
+export const entregaEnElSegundoTurno = (d: J): ((ll: LlamadaDoble) => J) => (ll) => {
+  const n = ((ll.cuerpo?.['contents'] ?? []) as unknown[]).length;
+  return n <= 1 ? { ...d, entrega: {} } : d;
+};
 export const ENTREGA = { modo: 'Recojo en tienda', ciudad: 'La Paz', direccion: '', nombre: 'Ana Pérez', telefono: '71234567' };
 /** Envío a domicilio en La Paz: nombre completo, teléfono y dirección exacta. */
 export const ENVIO = { modo: 'Envío en La Paz', ciudad: 'La Paz', direccion: 'Av. Arce 2345, Sopocachi', nombre: 'Ana Pérez', telefono: '71234567' };

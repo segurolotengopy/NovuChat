@@ -2,7 +2,7 @@
  * EL CARRITO EN EL FLUJO DE WALISUMA, con el n8n de mentira: el modelo propone, el CÓDIGO valida contra el catálogo y calcula. Se prueba NEGANDO.
  */
 import { describe, expect, it } from 'vitest';
-import { ANA, BETO, CATALOGO, ENTREGA, MEDIA_QR, crear, hablar, mTexto, modelo, panelConQr, panelOk, textos } from './mundo';
+import { ANA, BETO, CATALOGO, ENTREGA, MEDIA_QR, crear, entregaEnElSegundoTurno, hablar, mTexto, modelo, panelConQr, panelOk, textos } from './mundo';
 
 const BIL = 'billetera-cuero'; // Bs 450
 const BUF = 'bufanda-vicuna'; // Bs 7.795
@@ -56,12 +56,13 @@ describe('lo que propone el modelo se valida contra el catálogo', () => {
 
 describe('lo que dice el cliente y lo que se guarda', () => {
   it('NEGADO: «confirmo que es para La Paz» NO es una orden de pagar (no emite el QR); «confirmo el pedido» sí', () => {
-    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) });
+    // Decisión de Andres (23/11/2026, «Enviar el QR solo»): con la entrega completa el QR sale solo; la garantía vigente es que sin entrega completa no hay QR y que «confirmo que es para La Paz» no es una orden de pagar.
+    const m = crear({ modeloDice: (ll) => pide([{ id: BIL, cantidad: 1 }], /confirmo el pedido/.test(ultimo(ll)) ? { entrega: ENTREGA } : {}) });
     hablar(m, ANA, mTexto('una billetera'));
     const t1 = hablar(m, ANA, mTexto('confirmo que es para La Paz'));
     expect(t1.mensajes.every((x) => x.tipo !== 'image')).toBe(true);
     const t2 = hablar(m, ANA, mTexto('confirmo el pedido'));
-    expect(t2.mensajes.some((x) => x.tipo === 'image')).toBe(true);
+    expect(t2.mensajes.some((x) => x.tipo === 'image')).toBe(true); // «confirmo el pedido» sí es una orden de pagar (y aquí la entrega queda completa)
   });
   it('NEGADO: un NIT o CI en el nombre o la dirección de entrega no entra a la ficha', () => {
     const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: { ...ENTREGA, nombre: 'Ana Pérez CI 4455667', direccion: 'Calle 5 NIT 987654321' } }) });
@@ -83,7 +84,7 @@ describe('del pedido al QR', () => {
     return hablar(m, tel, mTexto('quiero pagar'));
   };
   it('con el pedido y los datos de entrega, la confirmación emite el resumen y el QR del comercio por id de medio, con el monto del carrito', () => {
-    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 2 }], { entrega: ENTREGA }) });
+    const m = crear({ modeloDice: entregaEnElSegundoTurno(pide([{ id: BIL, cantidad: 2 }], { entrega: ENTREGA })) });
     const t = confirmar(m);
     expect(t.mensajes).toHaveLength(2);
     expect(t.mensajes[0]?.cuerpo).toMatch(/2 × Billetera de cuero — Bs 900/);
@@ -100,32 +101,33 @@ describe('del pedido al QR', () => {
     expect(fichas(m)[ANA].pedidos).toBe(1);
   });
   it('el reporte del QR lleva ids, cantidades y entrega para el pedido de la Consola; nunca precio, nombre ni total del modelo', () => {
-    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 2, precio: 1 }], { entrega: ENTREGA, total: 1 }) });
+    const m = crear({ modeloDice: entregaEnElSegundoTurno(pide([{ id: BIL, cantidad: 2, precio: 1 }], { entrega: ENTREGA, total: 1 })) });
     const rep = confirmar(m).llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado') as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
     expect(rep['lineas']).toEqual([expect.objectContaining({ id: BIL, cantidad: 2 })]);
     expect(rep['entrega']).toBeTruthy();
     expect(JSON.stringify(rep['lineas'])).not.toMatch(/precio|total|nombre/i);
     expect(JSON.stringify(rep)).not.toMatch(/factur/i);
   });
-  it('sin la confirmación o sin la entrega completa NO hay QR', () => {
+  it('sin la entrega completa o con «todavía no quiero pagar» NO hay QR', () => {
     const sinEntrega = crear({ modeloDice: pide([{ id: BIL, cantidad: 1 }]) });
     const t1 = confirmar(sinEntrega);
     expect(t1.mensajes.every((x) => x.tipo !== 'image')).toBe(true);
+    // Decisión de Andres (23/11/2026, «Enviar el QR solo»): con el pedido y la entrega completos el QR sale solo; la garantía vigente es «quien dice que todavía no quiere pagar no lo recibe».
     const sinConfirmar = crear({ modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) });
-    const t2 = hablar(sinConfirmar, ANA, mTexto('quiero una billetera'));
+    const t2 = hablar(sinConfirmar, ANA, mTexto('quiero una billetera, todavía no quiero pagar'));
     expect(t2.mensajes.every((x) => x.tipo !== 'image')).toBe(true);
   });
   it('NEGADO: el monto del QR sale del carrito, jamás del modelo ni del cliente', () => {
-    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 1, precio: 1 }], { entrega: ENTREGA, monto: 1, total: 1 }) });
+    const m = crear({ modeloDice: entregaEnElSegundoTurno(pide([{ id: BIL, cantidad: 1, precio: 1 }], { entrega: ENTREGA, monto: 1, total: 1 })) });
     const t = confirmar(m);
     expect(t.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado')).toMatchObject({ monto: 450 });
-    const m2 = crear({ modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) });
+    const m2 = crear({ modeloDice: entregaEnElSegundoTurno(pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA })) });
     hablar(m2, ANA, mTexto('quiero una billetera'));
     const t2 = hablar(m2, ANA, mTexto('quiero pagar solo Bs 5'));
     expect(t2.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado')).toMatchObject({ monto: 450 });
   });
   it('carrito cambiado con un QR abierto: se avisa al servidor (`cobro_cancelado`) y se emite OTRO QR', () => {
-    const m = crear({ modeloDice: (ll) => pide([{ id: BIL, cantidad: /mejor dos/.test(ultimo(ll)) ? 2 : 1 }], { entrega: ENTREGA }) });
+    const m = crear({ modeloDice: (ll) => entregaEnElSegundoTurno(pide([{ id: BIL, cantidad: /mejor dos/.test(ultimo(ll)) ? 2 : 1 }], { entrega: ENTREGA }))(ll) });
     hablar(m, ANA, mTexto('una billetera'));
     const primero = hablar(m, ANA, mTexto('quiero pagar'));
     expect(primero.mensajes.some((x) => x.tipo === 'image')).toBe(true);
@@ -140,7 +142,7 @@ describe('del pedido al QR', () => {
     expect(fichas(m)[ANA].pedidos).toBe(2);
   });
   it('NEGADO: el cambio SIN decir «pagar» con un QR abierto también cierra el cobro y emite el QR nuevo con el carrito nuevo (nadie paga un carrito viejo)', () => {
-    const m = crear({ modeloDice: (ll) => pide([{ id: BIL, cantidad: /mejor dos/.test(ultimo(ll)) ? 2 : 1 }], { entrega: ENTREGA }) });
+    const m = crear({ modeloDice: (ll) => entregaEnElSegundoTurno(pide([{ id: BIL, cantidad: /mejor dos/.test(ultimo(ll)) ? 2 : 1 }], { entrega: ENTREGA }))(ll) });
     hablar(m, ANA, mTexto('una billetera'));
     hablar(m, ANA, mTexto('quiero pagar'));
     m.dobles['Traer configuración'] = () => panelConQr(450);
@@ -152,7 +154,7 @@ describe('del pedido al QR', () => {
     expect(fichas(m)[ANA].qrCarrito[0].cantidad).toBe(2);
   });
   it('NEGADO: si vacía el pedido con un QR abierto, se cierra el cobro y se le dice que el QR anterior quedó anulado (sin QR nuevo)', () => {
-    const m = crear({ modeloDice: (ll) => pide(/vacío|quita todo/.test(ultimo(ll)) ? [] : [{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) });
+    const m = crear({ modeloDice: (ll) => entregaEnElSegundoTurno(pide(/vacío|quita todo/.test(ultimo(ll)) ? [] : [{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }))(ll) });
     hablar(m, ANA, mTexto('una billetera'));
     hablar(m, ANA, mTexto('quiero pagar'));
     m.dobles['Traer configuración'] = () => panelConQr(450);
@@ -163,7 +165,7 @@ describe('del pedido al QR', () => {
     expect(fichas(m)[ANA].qrHastaMs).toBe(0);
   });
   it('NEGADO: si el servidor no pudo cerrar el cobro, NO se emite otro QR: se pasa con recepción con el botón y sin decir que se avisó', () => {
-    const m = crear({ cancelar: 'cae', modeloDice: (ll) => pide([{ id: BIL, cantidad: /mejor dos/.test(ultimo(ll)) ? 2 : 1 }], { entrega: ENTREGA }) });
+    const m = crear({ cancelar: 'cae', modeloDice: (ll) => entregaEnElSegundoTurno(pide([{ id: BIL, cantidad: /mejor dos/.test(ultimo(ll)) ? 2 : 1 }], { entrega: ENTREGA }))(ll) });
     hablar(m, ANA, mTexto('una billetera'));
     hablar(m, ANA, mTexto('quiero pagar'));
     m.dobles['Traer configuración'] = () => panelConQr(450);
@@ -177,7 +179,7 @@ describe('del pedido al QR', () => {
     expect(fichas(m)[ANA].carrito[0].cantidad).toBe(2);
   });
   it('con el mismo carrito y un QR abierto, un recordatorio sin otro QR', () => {
-    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) });
+    const m = crear({ modeloDice: entregaEnElSegundoTurno(pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA })) });
     hablar(m, ANA, mTexto('una billetera'));
     hablar(m, ANA, mTexto('quiero pagar'));
     m.dobles['Traer configuración'] = () => panelConQr(450);
