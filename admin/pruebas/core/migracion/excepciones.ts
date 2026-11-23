@@ -32,10 +32,10 @@ export interface Excepcion { dueno: string; vence: string; motivo: string; desde
 /** Fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-11-12 + 90 = 2027-02-10). */
 export const ALTA = '2026-11-12';
 /** Cuántas excepciones hay hoy, medidas con las pruebas el 12/11/2026 (70 tras declarar las dos variantes de venta digital el 13/11/2026 y, antes, 76 tras cerrar la de la redirección, aplicar el contrato sin agente, declarar dos expresiones de NIEGA_IA y llevar «Carga de entrada» y «Puerta del turno» a core, y 74 tras cerrar la de errorWorkflow de Q'Taco, el 13/11/2026). SOLO BAJA. */
-export const TOPE = 70;
+export const TOPE = 68;
 /** El mismo tope desglosado por regla (la suma es `TOPE`). Cada cuenta es la medida el 12/11/2026. SOLO BAJA. */
 export const TOPE_POR_REGLA: Record<Regla, number> = {
-  'nucleo-comun': 38, 'niega-ia': 4, 'error-workflow-por-nombre': 14, 'ux-derivacion': 4, 'capacidades-comunes': 10, 'flujos-origen': 0, entregas: 0, 'expresiones-n8n': 0,
+  'nucleo-comun': 38, 'niega-ia': 4, 'error-workflow-por-nombre': 12, 'ux-derivacion': 4, 'capacidades-comunes': 10, 'flujos-origen': 0, entregas: 0, 'expresiones-n8n': 0,
 };
 
 const DUENO = 'por asignar (Principal)';
@@ -110,9 +110,9 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
     'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/captacion-minima/captacion-minima.novuchat.json',
     'experimental/venta-minima/venta-minima.qtaco-3727.json', 'experimental/venta-minima/venta-minima.qtaco.json',
   ], 'NIEGA_IA')),
-  // errorWorkflow por nombre (`core/error-workflow-por-nombre.test.ts`): solo Emma y las dos salidas de producción de Q'Taco llevan el marcador. 14.
+  // errorWorkflow por nombre (`core/error-workflow-por-nombre.test.ts`): Emma, Rubén, Antonio (23/11/2026) y las dos salidas de producción de Q'Taco llevan el marcador. Quedan las demás.
   ...porRegla('error-workflow-por-nombre', 'Sin settings.errorWorkflow con el marcador de la alerta de envío incierto; se asigna al adoptar la alerta, no en la etapa 0', unNodo([
-    ...RAIZ_QUE_ATIENDEN, ...SIN_AGENTE_QUE_ATIENDEN.filter((j) => !j.includes('rroca-emma/') && !j.includes('venta-minima.qtaco')),
+    ...RAIZ_QUE_ATIENDEN, ...SIN_AGENTE_QUE_ATIENDEN.filter((j) => !j.includes('rroca-emma/') && !j.includes('rroca-antonio/') && !j.includes('rroca-ruben/') && !j.includes('venta-minima.qtaco')),
   ], 'settings.errorWorkflow')),
   // Derivación (`core/ux-derivacion.test.ts`): flujos fuera del registro por carpeta, sin tabla de derivación. 4.
   ...porRegla('ux-derivacion', 'Flujo de la raíz de Flujos/ sin tabla de derivación propia (el registro es por carpeta de experimental/); no se arregla en la etapa 0', unNodo(RAIZ_QUE_ATIENDEN, 'tabla de derivación')),
