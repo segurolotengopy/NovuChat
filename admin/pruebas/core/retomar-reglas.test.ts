@@ -100,6 +100,17 @@ describe('Retomar: lo que solo escribe el servidor', () => {
     await assertFails(updateDoc(doc(ingestaA(), C1), { 'turno.retomadoEn': deleteField() }));
   });
 
+  it('NEGATIVA: `plantillasPersona` (métrica) la suma solo el servidor: ni la persona, ni otro comercio, ni la propia ingesta la crean o la cambian', async () => {
+    const m = `tenants/${A}/metricas/2026-11`;
+    for (const cliente of [adminA, operA, adminB, propietario]) await assertFails(setDoc(doc(cliente(), m), { plantillasPersona: 1 }, { merge: true }));
+    await assertFails(setDoc(doc(ingestaA(), m), { plantillasPersona: 1 }));                       // crear
+    await assertFails(setDoc(doc(ingestaA(), m), { mensajesPersona: 0, plantillasPersona: 1 }));
+    await entorno.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), m), { plantillasPersona: 1 }); });
+    await assertFails(updateDoc(doc(ingestaA(), m), { plantillasPersona: 99 }));                   // cambiar
+    await assertFails(updateDoc(doc(ingestaA(), m), { plantillasPersona: deleteField() }));
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-12`), { atenciones: 1 })); // control: la ingesta sigue escribiendo lo suyo
+  });
+
   it('POSITIVA: una conversación ya retomada la sigue actualizando la ingesta en sus campos de siempre (no queda negada)', async () => {
     await sembrarRetomada();
     await assertSucceeds(updateDoc(doc(ingestaA(), C1), { ultimoMensaje: 'Respuesta del cliente', ultimoEn: Timestamp.now(), mensajesTotal: 3 }));
