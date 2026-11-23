@@ -38,6 +38,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
 export const SUITES_PURAS = [
   'pruebas/tenants/qtaco/cargar-productos-promos.test.ts',
   'pruebas/modulos/pedidos/rescates-decision.test.ts',
+  'pruebas/modulos/pedidos/aviso-plantilla.test.ts',
   'pruebas/modulos/agenda/omitir-contactos-bloqueados.test.ts',
   'pruebas/modulos/agenda/solicitud-del-turno-metricas.test.ts',
   'pruebas/core/ingesta-solo-puertos.test.ts',
@@ -100,6 +101,7 @@ export const SUITES_PURAS = [
   'pruebas/core/expresiones-n8n.test.ts', 'pruebas/plataforma/auditar-ejecuciones-n8n.test.ts',
   'pruebas/n8n-de-mentira.test.ts',
   'pruebas/comun-sin-agente-construir.test.ts',
+  'pruebas/valores-del-vivo.test.ts',
   'pruebas/comun-sin-agente-envio.test.ts',
   'pruebas/core/texto-filtro-redaccion.test.ts',
   'pruebas/core/texto-filtro-redaccion-huecos.test.ts',

@@ -323,6 +323,25 @@ describe('avisos.js: nombre largo, marcas intactas y la reserva en forma `pedido
     expect(detalle.length).toBeLessThanOrEqual(200);
     expect(detalle).toContain('(+591 0000 0033)');
   });
+  it('forma cita, rol completo: con reservaManana (y marcaOrigen) las marcas y el teléfono salen enteros; ceden el nombre y la zona, nunca el final', () => {
+    const marcaManana = 'Reserva de mañana (antes de las 12:00): contactar para confirmar o cambiar la hora';
+    const casos: J[] = [
+      // el caso de la revisión: nombre corto, zona y las tres marcas
+      { nombre: 'Ana María Pérez', zona: 'Terraza', extra: { grupoGrande: true, diaLleno: true, reservaManana: '12:00' }, marcas: ['GRUPO GRANDE', 'VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar', marcaManana] },
+      // nombre de 60 y zona de 40 con las tres marcas
+      { nombre: nombre60, zona: 'z'.repeat(40), extra: { grupoGrande: true, diaLleno: true, reservaManana: '12:00' }, marcas: ['GRUPO GRANDE', 'VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar', marcaManana] },
+      // reservaManana + marcaOrigen (una marca de origen corta, como las que arma el flujo)
+      { nombre: nombre60, zona: 'z'.repeat(40), extra: { diaLleno: true, reservaManana: '12:00', marcaOrigen: 'Origen: anuncio' }, marcas: ['VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar', marcaManana, 'Origen: anuncio'] },
+    ];
+    for (const c of casos) {
+      const datos: J = { codigo: 'R4T9', nombre: c['nombre'], telefono: CLIENTE, reserva: { personas: 100, fecha: '2026-10-09', hora: '20:00', zona: c['zona'], nombre: c['nombre'], ...(c['extra'] as J) } };
+      const detalle = visible(para('reserva', datos, CFG_CITA, false, 'completo')).split(' | ')[3]!;
+      expect(detalle.length, detalle).toBeLessThanOrEqual(200);
+      expect(detalle, detalle).toContain('(+591 0000 0033)');
+      for (const m of c['marcas'] as string[]) expect(detalle, detalle).toContain(m);
+      expect(detalle.endsWith((c['marcas'] as string[]).at(-1)!), detalle).toBe(true);
+    }
+  });
   const CFG_PEDIDO = { prefijosPermitidos: '591', plantillaReserva: 'pedido_registrado', formaPlantillaReserva: 'pedido' };
   it('reserva en forma `pedido`: el rol completo lleva nombre y teléfono; la cocina (R2) solo el primer nombre y ningún dígito del teléfono', () => {
     const completo = visible(para('reserva', reservaDatos, CFG_PEDIDO, false, 'completo'));

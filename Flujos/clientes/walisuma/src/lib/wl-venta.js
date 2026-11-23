@@ -504,19 +504,7 @@ function wlContexto() {
     cancelo: undefined,
   };
 }
-// LA PLANTILLA DEL AVISO, «código para las dos» (Andres, 18/11/2026): la del aviso (`avisoPedidoPlantilla`, hoy `aviso_pedido_equipo`, 10 variables) si su estado es APPROVED; si no, la de respaldo
-// (`avisoRespaldoPlantilla`, hoy `pedido_registrado`, 4 variables) si la suya lo es. Nombre, idioma y estado son DATO de «Config base»; sin ninguna aprobada no hay plantilla (nunca se inventa).
-function wlPlantilla(base) {
-  const b = cbEsObjeto(base) ? base : {};
-  const idioma = String(b.avisoPlantillaIdioma === undefined ? '' : b.avisoPlantillaIdioma).trim();
-  if (!/^[a-z]{2,3}(_[A-Z]{2})?$/.test(idioma)) return null;
-  const una = (n, e, variables) => {
-    const nombre = String(n === undefined ? '' : n).trim();
-    const estado = String(e === undefined ? '' : e).trim().toUpperCase();
-    return /^[a-z0-9_]{1,100}$/.test(nombre) && estado === 'APPROVED' ? { nombre: nombre, idioma: idioma, variables: variables } : null;
-  };
-  return una(b.avisoPedidoPlantilla, b.avisoPedidoEstado, 10) || una(b.avisoRespaldoPlantilla, b.avisoRespaldoEstado, 4);
-}
+// La plantilla del aviso («código para las dos») es del módulo común Pedidos: `apPlantillaAviso` (Flujos/src/modulos/pedidos/aviso-plantilla.js), la misma de Casa Bermejo.
 // Los motivos de un aviso de consulta, como los lee el comercio.
 const WL_MOTIVOS_AVISO = {
   modelo_caido: 'el asistente tuvo un inconveniente técnico con la consulta del cliente',

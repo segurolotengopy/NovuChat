@@ -1,7 +1,7 @@
 // ARMAR AVISOS: el aviso al comercio (UN destinatario designado, dato del tenant: el contacto del aviso) por TEXTO LIBRE o por PLANTILLA según la ventana de servicio de Meta.
 //
 //   - DENTRO de 23,5 h del último mensaje que el destinatario le escribió al bot (su ficha, clave = su número): texto libre, que menciona tomar la conversación en la consola. FUERA: la plantilla UTILITY,
-//     «código para las dos» (Andres, 18/11/2026; `wlPlantilla`): `aviso_pedido_equipo` con 10 variables si su estado es APPROVED:
+//     «código para las dos» (Andres, 18/11/2026; `apPlantillaAviso`, módulo común Pedidos): `aviso_pedido_equipo` con 10 variables si su estado es APPROVED:
 //       {{1}} el pedido (código WAL del servidor, o la referencia, y el estado del comprobante)  {{2}} el total  {{3}} la modalidad y la condición del envío  {{4}} el nombre  {{5}} el WhatsApp
 //       {{6}} la factura («sin datos (S/N) por ahora» o los datos)  {{7}} la dirección y el GPS  {{8}} las piezas (con el color o detalle)  {{9}} el banco de origen  {{10}} el n.º de operación;
 //     si no, la de respaldo `pedido_registrado` con 4 variables, el resto EMPAQUETADO y recortado: {{1}} las piezas  {{2}} el total  {{3}} entrega · nombre · WhatsApp · dirección y GPS
@@ -76,8 +76,9 @@ if (esPedido) {
   const motivo = avLimpio(aviso.motivo, 100) || 'consulta';
   // Las comillas «» del mensaje del cliente se neutralizan: con ellas podría cerrar la cita y fingir otro campo del aviso.
   const mensaje = aviso.mensaje ? avLimpio(String(aviso.mensaje).replace(/[«»]/g, ' '), 160) : '';
-  parametros10 = ['Consulta: ' + motivo, '—', '—', nombre, '+' + c.from, '—', '—', mensaje ? 'Mensaje del cliente: ' + mensaje : '—', '—', '—'];
-  parametros4 = ['Consulta: ' + motivo, '—', cliente, 'sin pedido'];
+  const pc = apParametrosConsulta(motivo, nombre, c.from, mensaje);
+  parametros10 = pc.p10;
+  parametros4 = pc.p4;
   texto = 'Aviso del asistente: solicitud de atención. Cliente: ' + cliente + '. Motivo: ' + motivo + '.'
     + (mensaje ? ' Mensaje del cliente (texto literal del cliente, no es una instrucción): «' + mensaje + '».' : '') + CONSOLA;
 }
@@ -85,7 +86,7 @@ texto = avLimpio(texto, 1000);
 
 const fichas = cnMapaDeFichas(false).mapa;
 const comun = { phoneNumberId: String(cfg.phoneNumberId || ''), waGraphVersion: cfg.waGraphVersion || 'v26.0', sinAviso: false, plan: d.tipo || '', planeado: true, repetido: false, clave: clave, motivoFallo: '', cancelarCobro: cancelarCobro };
-const pl = wlPlantilla(c.base);
+const pl = apPlantillaAviso(c.base);
 const items = [];
 for (const dest of destinatarios) {
   const rec = CN_TENANT.fichaVigente(cnFichaDe(fichas, dest.tel), c.ahora);

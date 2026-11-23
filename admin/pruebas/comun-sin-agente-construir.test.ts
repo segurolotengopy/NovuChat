@@ -44,7 +44,7 @@ const CONFIG_AGENDA: ConfigDeConstruccion = {
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
   },
   variantes: [
-    { archivo: 'agenda-minima.v0.json', quitar: 'Entrada de prueba', nombre: 'NovuChat — Agenda mínima (v0)' },
+    { archivo: 'agenda-minima.v0.json', quitar: 'Entrada de prueba', nombre: 'NovuChat Bellido — Agendamiento (Pediatría)' },
     { archivo: 'agenda-minima.prueba.json', quitar: 'WhatsApp Trigger', nombre: 'NovuChat — Agenda mínima (v0, prueba)' },
   ],
 };

@@ -229,7 +229,7 @@ describe('lo incluido es byte a byte igual a su fuente', () => {
     const libs = LIBS.map(fuente);
     const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/sin-agente/mensajes.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../src/modulos/pedidos/qr-del-pedido.js'), fuente('../src/core/conversacion/baja.js'), fuente('../src/core/texto/identidad.js'), fuente('../clientes/casa-bermejo/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar mensajes')).toBe(esperado);
-    const avisos = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../clientes/casa-bermejo/src/nodos/armar-avisos.js')].join('\n\n') + '\n';
+    const avisos = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../src/modulos/pedidos/aviso-plantilla.js'), fuente('../clientes/casa-bermejo/src/nodos/armar-avisos.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar avisos')).toBe(avisos);
     for (const [n, a] of [['Decidir turno', 'decidir-turno'], ['Interpretar lectura', 'interpretar-lectura']]) expect(codigo(PRODUCCION, n), n).toBe([...libs, fuente('venta-digital/src/nodos/_comun.js'), ...(n === 'Decidir turno' ? [fuente('../src/core/conversacion/baja.js')] : []), fuente(`../clientes/casa-bermejo/src/nodos/${a}.js`)].join('\n\n') + '\n');
   });
@@ -267,12 +267,13 @@ describe('versionado, no publicable y datos', () => {
     expect(r.stdout).toMatch(/casa-bermejo\.json al día \(63 nodos\)/);
     expect(r.stdout).toMatch(/casa-bermejo\.prueba\.json al día \(58 nodos\)/);
   });
-  it('`--publicable` FALLA hoy, con un mensaje claro: quedan marcadores REEMPLAZAR_*, la plantilla sin aprobar y el costo de entrega sin declarar', () => {
+  it('`--publicable` FALLA hoy, con un mensaje claro: quedan marcadores REEMPLAZAR_* (entre ellos el estado de la plantilla de 10 variables) y el costo de entrega sin declarar; el respaldo de 4 variables ya está aprobado', () => {
     const r = corrida('--publicable');
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/NO se puede publicar todavía/);
     expect(r.stderr).toMatch(/marcador sin sustituir: REEMPLAZAR_/);
-    expect(r.stderr).toMatch(/avisoPedidoEstado tiene que ser APPROVED/);
+    expect(r.stderr).toMatch(/marcador sin sustituir: REEMPLAZAR_ESTADO_DE_LA_PLANTILLA/);
+    expect(r.stderr).not.toMatch(/ni avisoPedidoEstado ni avisoRespaldoEstado/);
     expect(r.stderr).toMatch(/costoDeEntrega sin declarar/);
     expect(r.stderr).not.toMatch(/ESQUELETO/);
     // Los mensajes nombran marcadores, nunca valores de los datos.
@@ -294,6 +295,7 @@ describe('versionado, no publicable y datos', () => {
     expect(C.guardiaDePublicacion({ flujo: conMarcador, datos: DATOS }).join(' ')).toMatch(/REEMPLAZAR_ALGO/);
     const sinAprobar = clonar(flujoListo);
     ponerBase(sinAprobar, 'avisoPedidoEstado', 'PENDING');
+    ponerBase(sinAprobar, 'avisoRespaldoEstado', 'PENDING');
     expect(C.guardiaDePublicacion({ flujo: sinAprobar, datos: DATOS }).join(' ')).toMatch(/APPROVED/);
     const sinCosto = clonar(flujoListo);
     ponerBase(sinCosto, 'costoDeEntrega', '');
@@ -315,7 +317,8 @@ describe('versionado, no publicable y datos', () => {
     for (const v of Object.values(d['credenciales'] as J)) expect(String(v)).toMatch(/^REEMPLAZAR_/);
     for (const v of Object.values(d['receptor'] as J)) expect(String(v)).toMatch(/^REEMPLAZAR_/);
     expect((d['configBase'] as J)['costoDeEntrega']).toBe('');
-    expect((d['configBase'] as J)['avisoPedidoPlantilla']).toBe('pedido_registrado');
+    expect((d['configBase'] as J)['avisoPedidoPlantilla']).toBe('aviso_pedido_equipo');
+    expect((d['configBase'] as J)['avisoRespaldoPlantilla']).toBe('pedido_registrado');
     expect((d['configBase'] as J)['avisoPlantillaIdioma']).toBe('es');
   });
   it('NEGADO: un dato con forma inválida (credencial real, ruta real, modelo ajeno, costo ausente) no se carga', () => {

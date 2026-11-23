@@ -372,6 +372,19 @@ que se **incluye** desde core y módulos y **nunca se copia**.
    de `CONFIGURACION.local.md` (Phone ID, recepción y horario del cliente). Antes
    del 15/09 el script aceptaba una fila de otro cliente cuyo nombre fuera
    prefijo del marcador, y NovuChat salió con el Phone ID del Demo A.
+   **Un flujo que ya está vivo** (republicar desde `main`) agrega
+   `--valores-del-vivo`: lo que la tabla no resuelve se toma del flujo vivo
+   (mismo nodo, misma ruta, forma validada; falla cerrado y no imprime valores;
+   la tabla gana; un marcador «pendiente» de la tabla se toma del vivo). Ver
+   `scripts/lib/valores-del-vivo.py`. **Excepción: `REEMPLAZAR_TELEFONOS_DE_PRUEBA`
+   y `REEMPLAZAR_ETAPA_PRUEBA` toman SIEMPRE el valor del vivo, aunque esté vacío**
+   (el vivo gana a la tabla): nunca se publican teléfonos de prueba en producción.
+   Si el nombre del vivo no es el del versionado (`.env` equivocado) no se toma
+   nada. `publicar-flujo.sh` aborta con `--aplicar` una corrección de credencial
+   que cruza comercios (diferencia simétrica de las palabras que identifican; se
+   toleran bearer, envío, auto, prueba) o un nodo nuevo con la credencial de otro
+   comercio. Límite: «WhatsApp Q'Taco (envío)» → «QTaco 3727 (envío)» se marca como
+   cruce (números distintos).
 4. En n8n, para clientes del esquema vigente (alta por AAB1, desde el 08/10/2026): importar el flujo, asignar las credenciales de NovuChat (Gemini e ingesta) y **Publish**. **Retirado el 08/10:** `Trigger On` = Messages, la URL de Production al webhook de la app del cliente y completar `N8N_WEBHOOK_*`/`N8N_WORKFLOW_ID` en `.env.<cliente>` (valían para una app propia del cliente; no se siguen).
    **Con la decisión del 08/10 este paso cambia** (fuente: respuesta de la sesión que opera el receptor (WhatsApp-Modular) del 09/10/2026, recibida por la sesión Principal). Los mensajes llegan por la salida del receptor de AAB1 y **nunca** por un WhatsApp Trigger con credenciales de AAB1-WA-Prod (`CLAUDE.md`, prohibición 7). La entrada del flujo del cliente es un **nodo Webhook normal** (no WhatsApp Trigger) más un **HTTP Request al verificador interno del receptor** (firma, timestamp, `deliveryId` y cuerpo; host, puerto y ruta en la documentación del receptor, `docs/25` §6 de WhatsApp-Modular), con `wabaIdEsperado` fijo, **sin «Continue on Fail»**, con *Remove Duplicates* en la operación «Remove Items Processed in Previous Executions» por `deliveryId` y **sin HMAC en n8n** (`CLAUDE.md`, prohibición 5). Los pasos:
    a. NovuChat importa el flujo (la ruta nace al importar) y lo activa.

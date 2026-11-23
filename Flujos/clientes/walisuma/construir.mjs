@@ -96,6 +96,8 @@ export const CONFIG = {
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
     // Módulo común de Pedidos: lo que el flujo reporta con `qr_enviado` para que el servidor cree el pedido `wa_<referencia>` (solo ids, cantidades y entrega; nunca precios).
     'pedidos-qr': ['../../src/modulos/pedidos/qr-del-pedido.js'],
+    // La plantilla del aviso fuera de la ventana («código para las dos», común con Casa Bermejo): `apPlantillaAviso`, `apParametrosConsulta`.
+    'aviso-plantilla': ['../../src/modulos/pedidos/aviso-plantilla.js'],
     // Los nodos comunes neutros (zona venta-digital): se piden con `@@vd:<nodo>`.
     'vd-carga-de-entrada': ['../../src/core/sin-agente/turno/carga-de-entrada.js'],
     'vd-config-del-negocio': ['../../src/core/sin-agente/venta-digital/config-del-negocio.js'],
@@ -420,7 +422,7 @@ export function guardias(variante, flujo, opciones = {}) {
   if (enviarAviso && enviarAviso.onError !== 'continueRegularOutput') h.push('«Enviar aviso» no lleva `onError: continueRegularOutput`: si Meta lo rechaza, el turno se cortaría y el cliente quedaría sin respuesta');
   if (enviarAviso && enviarAviso.retryOnFail) h.push('«Enviar aviso» no puede reintentar: un aviso repetido llegaría dos veces');
   const codigoAvisos = String(p(por('Armar avisos')).jsCode || '');
-  if (hay('Armar avisos') && !(/wlResolver\(/.test(codigoAvisos) && /wlPlantilla\(/.test(codigoAvisos) && /avPlantilla\(/.test(codigoAvisos))) h.push('«Armar avisos» no lleva la decisión ni la plantilla: el aviso fuera de la ventana no saldría');
+  if (hay('Armar avisos') && !(/wlResolver\(/.test(codigoAvisos) && /apPlantillaAviso\(/.test(codigoAvisos) && /avPlantilla\(/.test(codigoAvisos))) h.push('«Armar avisos» no lleva la decisión ni la plantilla: el aviso fuera de la ventana no saldría');
   const cotejar = por('Cotejar en el servidor');
   if (cotejar && !/cotejarComprobanteVenta$/.test(String(p(cotejar).url || ''))) h.push('«Cotejar en el servidor» no llama a cotejarComprobanteVenta');
   const modelo = por('Conversar con el modelo');

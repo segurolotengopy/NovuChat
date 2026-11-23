@@ -141,6 +141,7 @@ describe('armar con datos locales', () => {
     expect(pp.status).toBe(1);
     expect(pp.stderr).toMatch(/REEMPLAZAR_URL_VERIFICADOR_RECEPTOR/);
     (d['configBase'] as J)['avisoPedidoEstado'] = 'PENDING';
+    (d['configBase'] as J)['avisoRespaldoEstado'] = 'PENDING';
     corrida('--local', '--datos', archivoLocal(d, 'otro.local.json'), '--salida', s.dir);
     const p = corrida('--publicable', '--flujo', s.prueba);
     expect(p.status).toBe(1);

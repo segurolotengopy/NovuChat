@@ -685,13 +685,14 @@ tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent
 /* -----------------------------------------------------------------------------
    CATÁLOGO CON FOTOS E IMPORTACIÓN EN LOTE.
 
-   La miniatura tiene tamaño FIJO y `object-fit: cover`. Las fotos que sube un
-   comercio vienen de cualquier lado y con cualquier proporción: sin esto, una
-   foto vertical de 3000 px estira su fila y la tabla deja de poder recorrerse.
+   La miniatura tiene tamaño FIJO y `object-fit: contain`: la foto sale ENTERA
+   (regla de Andres, 22/11/2026: nunca se recorta lo que el cliente cargó). Las
+   fotos vienen de cualquier lado y con cualquier proporción: sin un tamaño fijo,
+   una foto vertical de 3000 px estira su fila y la tabla deja de poder recorrerse.
    -------------------------------------------------------------------------- */
 .fila-con-foto { display: flex; gap: .6rem; align-items: flex-start; }
 .miniatura {
-  width: 44px; height: 44px; flex: none; object-fit: cover;
+  width: 44px; height: 44px; flex: none; object-fit: contain;
   background: var(--fondo-tarjeta); border: 1px solid var(--borde);
 }
 .miniatura-rota {

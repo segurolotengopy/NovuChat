@@ -24,6 +24,17 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
 
+# --valores-del-vivo: los marcadores que la tabla NO resuelve se toman del flujo VIVO (N8N_WORKFLOW_ID del
+# segundo argumento, que pasa a ser obligatorio). La tabla manda siempre; el vivo solo completa. Ver
+# scripts/lib/valores-del-vivo.py. Es la forma de publicar desde main un flujo cuyos valores ya estan en n8n.
+VALORES_DEL_VIVO=0
+ARGS=()
+for a in "$@"; do
+  if [[ "$a" == "--valores-del-vivo" ]]; then VALORES_DEL_VIVO=1; else ARGS+=("$a"); fi
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+if [[ $VALORES_DEL_VIVO -eq 1 && -z "${2:-}" ]]; then echo "✗ --valores-del-vivo exige el .env del flujo como segundo argumento"; exit 1; fi
+
 FLUJO="${1:-Flujos/demo-a-agendamiento.json}"
 # La tabla de marcadores. Se puede apuntar a otra con CONFIG_LOCAL_MD, y lo
 # unico que la usa asi es la suite: sin eso, la guarda de los dos disparadores
@@ -36,7 +47,7 @@ ENV_FILE="${2:-.env}"
 [[ -f "$LOCAL" ]] || { echo "✗ No existe $LOCAL — sin el no hay valores"; exit 1; }
 [[ -f "$ENV_FILE" ]] || { echo "✗ No existe $ENV_FILE"; exit 1; }
 
-FLUJO="$FLUJO" LOCAL="$LOCAL" ENV_FILE="$ENV_FILE" python3 - <<'PY'
+FLUJO="$FLUJO" LOCAL="$LOCAL" ENV_FILE="$ENV_FILE" VALORES_DEL_VIVO="$VALORES_DEL_VIVO" python3 - <<'PY'
 import json, os, re, sys
 
 flujo, local, env_file = os.environ["FLUJO"], os.environ["LOCAL"], os.environ["ENV_FILE"]
@@ -248,6 +259,42 @@ if MARCADOR_EW in texto:
         print(h.stdout.rstrip())
         texto = open(resuelto, encoding="utf-8").read()
 
+# --- 2d. --valores-del-vivo: lo que la tabla no resuelve se toma del flujo vivo ---------------------------------
+# La tabla gana. Un marcador pegado a una ruta («REEMPLAZAR_URL_CATALOGO/api/...») se nombra por su base en mayusculas.
+# Solo escribe el `.local.json`; NUNCA imprime un valor. Lo que no se resuelve queda como marcador y el script falla.
+motivos_vivo, del_vivo = {}, {}
+if os.environ.get("VALORES_DEL_VIVO") == "1":
+    import subprocess, tempfile
+    base_de = lambda mk: re.match(r'REEMPLAZAR_[A-Z][A-Z0-9_]*', mk).group(0)
+    entradas = set(re.findall(r'REEMPLAZAR_[A-Z][^"\\\s:|,;]*', texto))
+    # EL VIVO GANA a la tabla en estos dos, aunque este vacio: nunca se publican telefonos de prueba ni la etapa de prueba en
+    # produccion (decision del 22/11/2026). Un marcador «pendiente» de la tabla tampoco tiene valor y se toma del vivo.
+    VIVO_GANA = ("REEMPLAZAR_TELEFONOS_DE_PRUEBA", "REEMPLAZAR_ETAPA_PRUEBA")
+    pedidos = sorted({base_de(e) for e in entradas if (e not in tabla or base_de(e) in VIVO_GANA) and e not in (MARCADOR_RELE, MARCADOR_EW)})
+    if pedidos:
+        with tempfile.TemporaryDirectory() as tdir:
+            salida_v = os.path.join(tdir, "valores.json")
+            h = subprocess.run([sys.executable, os.path.join("scripts", "lib", "valores-del-vivo.py"), "--flujo", flujo,
+                                "--marcadores", ",".join(pedidos), "--salida", salida_v, "--n8n"],
+                               capture_output=True, text=True,
+                               env=dict(os.environ, N8N_BASE_URL=(env.get("N8N_BASE_URL") or "").strip(),
+                                        N8N_API_KEY=(env.get("N8N_API_KEY") or "").strip(),
+                                        N8N_WORKFLOW_ID=(env.get("N8N_WORKFLOW_ID") or "").strip()))
+            if not os.path.exists(salida_v):
+                print(f"{ROJO}{(h.stderr or h.stdout).strip()}{FIN}")
+                sys.exit(1)
+            del_vivo = json.load(open(salida_v, encoding="utf-8"))
+            for linea in h.stdout.splitlines():
+                nombre, _, estado = linea.partition("\t")
+                if nombre not in del_vivo:
+                    motivos_vivo[nombre] = estado
+        for mk in pedidos:
+            if mk in VIVO_GANA and mk not in del_vivo:
+                tabla.pop(mk, None)   # sin valor del vivo, el de la tabla tampoco se usa: el marcador queda y el script falla
+        for mk, val in del_vivo.items():
+            esc = json.dumps(val, ensure_ascii=False)[1:-1]
+            texto = re.sub(re.escape(mk) + r'(?![A-Za-z0-9_])', lambda _m: esc, texto)
+
 # Los separadores `: | , ;` terminan un marcador: un dato compuesto («REEMPLAZAR_A:x|REEMPLAZAR_B:y», p. ej. los anuncios
 # de Walisuma) trae VARIOS marcadores, y leerlo como uno solo lo dejaba sin valor aunque cada fila existiera en la tabla.
 presentes = sorted(set(re.findall(r'REEMPLAZAR_[A-Z][^"\\\s:|,;]*', texto)))
@@ -278,8 +325,11 @@ print(f"Origen : {flujo}")
 print(f"Salida : {salida}\n")
 print(" ", webhook)
 for c in sorted(set(puestos)):  print(f"  {VERDE}+{FIN} {c}")
+for c in sorted(del_vivo):      print(f"  {VERDE}+{FIN} {c} {GRIS}(resuelto del vivo; no se muestra){FIN}")
 for c in sorted(set(sin_valor)):
     nota = "sin valor en la tabla" if c not in pendientes else "marcado como pendiente"
+    base_c = re.match(r'REEMPLAZAR_[A-Z][A-Z0-9_]*', c).group(0)
+    if base_c in motivos_vivo: nota += f"; {motivos_vivo[base_c]}"
     print(f"  {ROJO}✗{FIN} {c} {ROJO}— {nota}{FIN}")
 
 print()

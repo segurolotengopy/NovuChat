@@ -904,11 +904,12 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
   if (forma === 'pedido' && (tipo === 'reserva' || tipo === 'transferencia')) return avVariablesDeForma(tipo, d, dest, ahoraMs);
   const nombreDe = (n) => (dest.rol === 'cocina' ? avPrimerNombre(n, opc) : avLimpio(n, 60)) || 'cliente';
   // «Nombre (+591…)» (22/11/2026, reclamo de Andres: todo aviso a recepción lleva nombre Y teléfono): el teléfono va SOLO al rol `completo`; `cocina` conserva el primer nombre sin teléfono (R2).
-  // El nombre del rol completo se recorta a 50 ANTES de sumar el teléfono: en la variable `detalle` (200) las marcas del final («GRUPO GRANDE», «VARIAS RESERVAS…») nunca se truncan (peor caso: 143 + 50 = 193).
-  const nombreConTel = (n) => {
+  // `max` (solo rol completo): el nombre se recorta ANTES de sumar el teléfono. El teléfono nunca se recorta.
+  const telParte = () => {
     const tel = dest.rol === 'completo' ? avDigitos(d.telefono || d.from) : '';
-    return (dest.rol === 'completo' ? (avLimpio(n, 50) || 'cliente') : nombreDe(n)) + (tel.length >= 8 && tel.length <= 15 ? ' (' + (avTelefonoLegible(d.telefono || d.from) || '+' + tel) + ')' : '');
+    return tel.length >= 8 && tel.length <= 15 ? ' (' + (avTelefonoLegible(d.telefono || d.from) || '+' + tel) + ')' : '';
   };
+  const nombreConTel = (n, max) => (dest.rol === 'completo' ? (avLimpio(n, max === undefined ? 50 : max) || 'cliente') : nombreDe(n)) + telParte();
   if (tipo === 'pedido' || tipo === 'comprobante') {
     const lineas = avLineas(d.lineas);
     const n = lineas.reduce((a, l) => a + l.cantidad, 0);
@@ -924,11 +925,18 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
   if (tipo === 'reserva') {
     const r = (d.reserva && typeof d.reserva === 'object') ? d.reserva : {};
     const p = Math.floor(Number(r.personas));
-    const partes = [
-      'Reserva ' + (Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : '—'),
-      nombreConTel(r.nombre || d.nombre),
-      avLimpio(r.zona, 40, opc),
-    ].concat(avMarcasReserva(r)).filter(Boolean);
+    // PRIORIDAD en `detalle` (200): las marcas del final («GRUPO GRANDE», «VARIAS RESERVAS…», «Reserva de mañana…», el origen) y el teléfono NUNCA se cortan; el espacio que queda lo reparten el nombre (hasta 50, mínimo 8)
+    // y, con lo que sobre, la zona. Si las marcas solas no caben, ceden primero la zona y el nombre. (Antes el nombre de 60 + el teléfono empujaban las marcas fuera de las 200.)
+    const marcasReserva = avMarcasReserva(r);
+    const inicio = 'Reserva ' + (Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : '—');
+    const colaMarcas = marcasReserva.length ? ' · ' + marcasReserva.join(' · ') : '';
+    const largoTel = avLargo(telParte());
+    const libre = 200 - avLargo(inicio) - avLargo(colaMarcas) - 3 - largoTel;
+    const nombreMax = dest.rol === 'completo' ? Math.max(8, Math.min(50, libre)) : 60;
+    const nombreTxt = nombreConTel(r.nombre || d.nombre, nombreMax);
+    const sobra = 200 - avLargo(inicio) - avLargo(colaMarcas) - 3 - avLargo(nombreTxt) - 3;
+    const zonaTxt = sobra >= 1 ? avCortar(avLimpio(r.zona, 40, opc), sobra) : '';
+    const partes = [inicio, nombreTxt, zonaTxt].concat(marcasReserva).filter(Boolean);
     return {
       destinatario,
       cuando: avParametro(avFechaLegible(r.fecha, r.hora), 70),
