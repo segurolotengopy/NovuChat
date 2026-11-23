@@ -528,7 +528,8 @@ export function guardias(variante, flujo, mapaCrm) {
   // Retención de ejecuciones, orden y zona horaria.
   const st = (flujo && flujo.settings) || {};
   if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» y saveExecutionProgress false (con la rama del guardado de medios el binario quedaría en la ejecución: decisión de Andres del 30/10, contrato v2 §8.1)');
-  if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow`');
+  // La alerta de «envío incierto» (decisión I4): `settings.errorWorkflow` lleva el MARCADOR y `publicar-flujo.sh` lo resuelve por NOMBRE en el n8n destino.
+  if (st.errorWorkflow !== 'REEMPLAZAR_ID_ERROR_WORKFLOW') h.push('tiene que llevar `settings.errorWorkflow` con el marcador REEMPLAZAR_ID_ERROR_WORKFLOW (la alerta de envío incierto, resuelta por nombre al publicar)');
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
   // `REEMPLAZAR_` solo en «Config base», en el receptor y en la ruta de la entrada de prueba.
@@ -688,7 +689,10 @@ export function guardiaDePublicacion({ flujo, datos, negocio, anuncios }) {
   // La variante de ENSAYO en el Demo A (interruptor de un solo teléfono, Trigger, sin miniCRM) NUNCA se publica sobre el número de Rubén: se pone en el Demo A con `flujo-de-prueba.mjs --sobre-demo-a`.
   if (esDelEnsayo(flujo, datos)) h.push(`ensayo: este es el flujo de ENSAYO en el Demo A (${SALIDA_ENSAYO}) y nunca se publica sobre el número de Rubén: se ensaya con flujo-de-prueba.mjs --sobre-demo-a (docs/ensayo/LEEME.md §9)`);
   // 1. Marcadores sin sustituir en CUALQUIER parte del JSON completo (nodos, conexiones, ajustes, pinData, staticData, nivel superior).
-  for (const m of new Set(marcasEn(flujo).map((x) => x.toUpperCase()))) h.push(`marcador sin sustituir: ${m}`);
+  // EXCEPCIÓN ÚNICA: `settings.errorWorkflow` con el marcador EXACTO (lo resuelve `publicar-flujo.sh` por NOMBRE); en cualquier otra parte sigue siendo un marcador sin sustituir.
+  const sinMarcadorDeAlertas = (flujo && flujo.settings && flujo.settings.errorWorkflow === 'REEMPLAZAR_ID_ERROR_WORKFLOW')
+    ? { ...flujo, settings: Object.fromEntries(Object.entries(flujo.settings).filter(([k]) => k !== 'errorWorkflow')) } : flujo;
+  for (const m of new Set(marcasEn(sinMarcadorDeAlertas).map((x) => x.toUpperCase()))) h.push(`marcador sin sustituir: ${m}`);
   // 2. Las plantillas, en lo que se publica («Config base»)…
   const base = nodos.find((n) => n.name === 'Config base');
   const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
