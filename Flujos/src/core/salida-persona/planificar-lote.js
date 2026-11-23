@@ -70,6 +70,37 @@ function planAdjunto(p, tipo, mensajeId, conversacionId, to, canal, claveRele, t
   }};
 }
 
+// PLANTILLA (Retomar, C5/C6): un mensaje `tipo: 'plantilla'` se valida aparte. La forma mala
+// (nombre, idioma, parametros, destino o canal) sale con `NV-PLANTILLA-FORMA` y se confirma como
+// rechazado; nunca se envia a ciegas. El cuerpo es el oficial de `/messages` (type template), el MISMO
+// por el rele y por Graph.
+function esTextoDeParametro(t) {
+  return typeof t === 'string' && t.length >= 1 && t.length <= 60 && !/[\n\r\t]/.test(t) && !/ {4}/.test(t);
+}
+function planPlantilla(p, mensajeId, conversacionId, to, canal, claveRele) {
+  const pl = p.plantilla;
+  let sinEnvio = '';
+  let reintentable = false;
+  if (!mensajeId || !conversacionId) sinEnvio = 'NV-RECLAMO';
+  else if (canal !== 'rele' && canal !== 'graph') sinEnvio = 'NV-PLANTILLA-FORMA';
+  else if (!/^[0-9]{8,15}$/.test(to)) sinEnvio = 'NV-PLANTILLA-FORMA';
+  else if (pl === null || typeof pl !== 'object' || Array.isArray(pl)) sinEnvio = 'NV-PLANTILLA-FORMA';
+  else if (typeof pl.nombre !== 'string' || !/^[a-z0-9_]{1,100}$/.test(pl.nombre)) sinEnvio = 'NV-PLANTILLA-FORMA';
+  else if (typeof pl.idioma !== 'string' || !/^[a-z]{2,3}(_[A-Z]{2})?$/.test(pl.idioma)) sinEnvio = 'NV-PLANTILLA-FORMA';
+  else if (!Array.isArray(pl.parametros) || pl.parametros.length < 1 || pl.parametros.length > 10 || !pl.parametros.every(esTextoDeParametro)) sinEnvio = 'NV-PLANTILLA-FORMA';
+  else if (canal === 'rele' && !/^[A-Za-z0-9_.:-]{16,128}$/.test(claveRele)) sinEnvio = 'NV-CLAVE';
+  else if (canal === 'rele' && !releListo) { sinEnvio = 'NV-RELE-CONFIG'; reintentable = true; }
+  const base = { mensajeId, conversacionId, canal, claveRele, sinEnvio, reintentable, ruta: sinEnvio ? 'ninguna' : canal, tipo: 'plantilla' };
+  if (sinEnvio) return { json: base };
+  return { json: {
+    ...base,
+    cuerpoEnvio: {
+      messaging_product: 'whatsapp', to, type: 'template',
+      template: { name: pl.nombre, language: { code: pl.idioma }, components: [{ type: 'body', parameters: pl.parametros.map((t) => ({ type: 'text', text: t })) }] },
+    },
+  }};
+}
+
 const salida = [];
 for (const m of lista) {
   const p = (m && typeof m === 'object') ? m : {};
@@ -80,6 +111,7 @@ for (const m of lista) {
   const canal = String(p.canal ?? '');
   const claveRele = String(p.claveRele ?? '');
   const tipo = p.tipo === undefined ? 'text' : String(p.tipo);
+  if (tipo === 'plantilla') { salida.push(planPlantilla(p, mensajeId, conversacionId, to, canal, claveRele)); continue; }
   if (tipo !== 'text') { salida.push(planAdjunto(p, tipo, mensajeId, conversacionId, to, canal, claveRele, texto)); continue; }
 
   let sinEnvio = '';

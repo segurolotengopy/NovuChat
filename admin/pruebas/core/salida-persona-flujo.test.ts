@@ -35,7 +35,7 @@ const CONFIG: J = { phoneNumberId: NUMERO, waGraphVersion: 'v26.0', releBaseUrl:
 // El servidor simulado (mismas transiciones que las Functions de H2-3)
 // ---------------------------------------------------------------------------
 type Estado = 'pendiente' | 'enviando' | 'aceptado' | 'rechazado' | 'incierto';
-interface Doc { mensajeId: string; conversacionId: string; texto: string; estado: Estado; idMeta?: string; codigo?: string; reintentable?: boolean; tipo?: string; adjunto?: J }
+interface Doc { mensajeId: string; conversacionId: string; texto: string; estado: Estado; idMeta?: string; codigo?: string; reintentable?: boolean; tipo?: string; adjunto?: J; plantilla?: J }
 
 function servidor(canal: string, docs: Doc[]) {
   const reclamos: number[] = [];
@@ -52,6 +52,7 @@ function servidor(canal: string, docs: Doc[]) {
           mensajeId: d.mensajeId, conversacionId: d.conversacionId, claveRele: ('c'.repeat(16) + d.mensajeId).replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, 48),
           to: d.conversacionId.slice(3), texto: d.texto, tipo: d.tipo ?? 'text', canal,
           ...(d.adjunto !== undefined ? { adjunto: d.adjunto } : {}),
+          ...(d.plantilla !== undefined ? { plantilla: d.plantilla } : {}),
         });
       }
       reclamos.push(entregados.length);
@@ -859,5 +860,114 @@ describe('Salida de persona: adjuntos (B3)', () => {
       expect(js, f).not.toMatch(/[​-‏‪-‮⁠-⁩﻿]/);
       for (const g of GLOBALES_FUERA_DEL_SANDBOX) expect(new RegExp(`(?<![\\w$.])${g.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[.(]`).test(js), `${f} usa ${g}`).toBe(false);
     }
+  });
+});
+
+describe('Salida de persona: plantillas (Retomar, C5/C6)', () => {
+  const BUENA: J = { nombre: 'retomar_conversacion', idioma: 'es', parametros: ['Casa Demo'] };
+  const pl = (n: number, ...resto: [unknown?]): Doc => {
+    const plantilla = resto.length === 0 ? BUENA : resto[0];
+    return { ...doc(n, ''), tipo: 'plantilla', ...(plantilla === undefined ? {} : { plantilla: plantilla as J }) };
+  };
+  const cuerpoMeta = (nombre: string, idioma: string, parametros: string[]) => ({
+    messaging_product: 'whatsapp', to: '', type: 'template',
+    template: { name: nombre, language: { code: idioma }, components: [{ type: 'body', parameters: parametros.map((text) => ({ type: 'text', text })) }] },
+  });
+
+  it('el nodo Reclamar envia x-novuchat-plantillas: 1 (y conserva la de adjuntos)', () => {
+    const cab = (nodo(flujo, 'Reclamar').parameters['headerParameters'] as { parameters: { name: string; value: string }[] }).parameters;
+    expect(cab.find((c) => c.name === 'x-novuchat-plantillas')?.value).toBe('1');
+    expect(cab.find((c) => c.name === 'X-NovuChat-Adjuntos')?.value).toBe('1');
+  });
+
+  it.each(['graph', 'rele'])('plantilla buena por %s: cuerpo C6 y confirmado aceptado', (canal) => {
+    const d = pl(1);
+    const s = servidor(canal, [d]);
+    const r = ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.PL1') });
+    expect(r.llamadas).toHaveLength(1);
+    expect(r.llamadas[0]!.cuerpo).toEqual({ ...cuerpoMeta('retomar_conversacion', 'es', ['Casa Demo']), to: d.conversacionId.slice(3) });
+    expect(r.llamadas[0]!.nodo).toBe(canal === 'rele' ? 'Enviar por el relé' : 'Enviar por Graph');
+    expect(s.docs[0]).toMatchObject({ estado: 'aceptado', idMeta: 'wamid.PL1' });
+  });
+
+  it('el cuerpo es identico por rele y por Graph', () => {
+    const cuerpos = ['rele', 'graph'].map((canal) => {
+      const s = servidor(canal, [pl(2, { nombre: 'a_b1', idioma: 'es_BO', parametros: ['uno', 'dos'] })]);
+      return ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.X') }).llamadas[0]!.cuerpo;
+    });
+    expect(cuerpos[0]).toEqual(cuerpos[1]);
+  });
+
+  const MALAS: [string, unknown][] = [
+    ['sin plantilla', undefined],
+    ['plantilla no objeto', 'retomar'],
+    ['nombre con mayusculas', { ...BUENA, nombre: 'Retomar' }],
+    ['nombre vacio', { ...BUENA, nombre: '' }],
+    ['nombre con guion', { ...BUENA, nombre: 'a-b' }],
+    ['nombre de 101', { ...BUENA, nombre: 'a'.repeat(101) }],
+    ['idioma largo', { ...BUENA, idioma: 'espanol' }],
+    ['idioma minuscula en region', { ...BUENA, idioma: 'es_bo' }],
+    ['idioma vacio', { ...BUENA, idioma: '' }],
+    ['parametros vacios', { ...BUENA, parametros: [] }],
+    ['parametros no lista', { ...BUENA, parametros: 'Casa' }],
+    ['11 parametros', { ...BUENA, parametros: Array.from({ length: 11 }, () => 'x') }],
+    ['parametro vacio', { ...BUENA, parametros: [''] }],
+    ['parametro de 61', { ...BUENA, parametros: ['a'.repeat(61)] }],
+    ['parametro con \n', { ...BUENA, parametros: ['Casa\nDemo'] }],
+    ['parametro con \t', { ...BUENA, parametros: ['Casa\tDemo'] }],
+    ['parametro con 4 espacios', { ...BUENA, parametros: ['Casa    Demo'] }],
+    ['parametro no texto', { ...BUENA, parametros: [5] }],
+  ];
+  it.each(MALAS)('forma mala (%s): NV-PLANTILLA-FORMA, rechazado y SIN enviar', (_n, plantilla) => {
+    for (const canal of ['graph', 'rele']) {
+      const s = servidor(canal, [pl(3, plantilla)]);
+      const r = ejecutarFlujo({ servidor: s, enviar: sinEnviar });
+      expect(r.llamadas).toHaveLength(0);
+      expect(s.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-PLANTILLA-FORMA' });
+    }
+  });
+
+  it('canal desconocido o destino invalido: NV-PLANTILLA-FORMA sin enviar', () => {
+    const a = servidor('satelite', [pl(4)]);
+    ejecutarFlujo({ servidor: a, enviar: sinEnviar });
+    expect(a.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-PLANTILLA-FORMA' });
+    const corto = { ...pl(5), conversacionId: 'wa_1234567' };
+    const b = servidor('graph', [corto]);
+    ejecutarFlujo({ servidor: b, enviar: sinEnviar });
+    expect(b.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-PLANTILLA-FORMA' });
+  });
+
+  it('10 parametros de 60 caracteres es el limite y pasa', () => {
+    const s = servidor('graph', [pl(6, { ...BUENA, parametros: Array.from({ length: 10 }, () => 'a'.repeat(60)) })]);
+    const r = ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.L') });
+    expect(r.llamadas).toHaveLength(1);
+    expect(s.docs[0]!.estado).toBe('aceptado');
+  });
+
+  it('rele sin configurar: no envia; rechazado reintentable (como el texto)', () => {
+    const s = servidor('rele', [pl(7)]);
+    ejecutarFlujo({ servidor: s, enviar: sinEnviar, config: { ...CONFIG, releBaseUrl: 'REEMPLAZAR_RELE' } });
+    expect(s.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-RELE-CONFIG', reintentable: true });
+  });
+
+  it('un rechazo de Meta de la plantilla (132001) se confirma tal cual, sin mapeo nuevo', () => {
+    const s = servidor('graph', [pl(8)]);
+    ejecutarFlujo({ servidor: s, enviar: () => ({ statusCode: 404, body: { error: { code: 132001 } } }) });
+    expect(s.docs[0]).toMatchObject({ estado: 'rechazado', codigo: '132001' });
+  });
+
+  it('sin regresion: texto y plantilla en el mismo lote, cada uno con su cuerpo', () => {
+    const s = servidor('graph', [doc(9, 'Hola'), pl(10), doc(11, 'Chao')]);
+    const r = ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.M') });
+    expect(r.llamadas.map((l) => l.cuerpo['type'])).toEqual(['text', 'template', 'text']);
+    expect(r.llamadas[0]!.cuerpo['text']).toEqual({ body: 'Hola' });
+    expect(s.docs.map((d) => d.estado)).toEqual(['aceptado', 'aceptado', 'aceptado']);
+  });
+
+  it('el cuerpo no lleva token, link ni campos fuera de C6', () => {
+    const s = servidor('graph', [pl(12)]);
+    const c = ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.C') }).llamadas[0]!.cuerpo;
+    expect(Object.keys(c).sort()).toEqual(['messaging_product', 'template', 'to', 'type']);
+    expect(JSON.stringify(c)).not.toMatch(/link|token|http/i);
   });
 });
