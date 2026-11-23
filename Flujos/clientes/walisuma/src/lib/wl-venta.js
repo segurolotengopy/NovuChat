@@ -659,8 +659,8 @@ function wlResolverModelo(c) {
   // sin esperar «pagar»; el QR reemplaza la confirmación (0 mensajes nuevos). Quien dice «no quiero pagar aún» no lo recibe; con un QR ya abierto no se repite (lo cubre `abierto` y `wlCerrar`).
   const completoAntes = antes.length > 0 && wlEntregaCompleta(f.entrega);
   const completoAhora = lineas.length > 0 && wlEntregaCompleta(entrega);
-  // Un pedido que viene del catálogo web NO se cierra solo: el QR espera el botón común «Confirmar pedido» (`wlCarritoListoParaConfirmar`).
-  const qrSolo = c.cobro.modo === 'real' && completoAhora && (cambio || !completoAntes) && !wlNoQuierePagarAun(wlNorm(p.textoCliente)) && f.desdeCatalogo !== true;
+  // Un pedido del catálogo web que queda completo con este mensaje (después de preguntar lo que faltaba) también sale solo: enviar el carrito ya es confirmar el pedido (Andres, 23/11/2026).
+  const qrSolo = c.cobro.modo === 'real' && completoAhora && (cambio || !completoAntes) && !wlNoQuierePagarAun(wlNorm(p.textoCliente));
   const cierre = f.cierre || wlQuierePagar(wlNorm(p.textoCliente)) || qrSolo;
   const base = { lineas: lineas, entrega: entrega, cierre: cierre, cambio: cambio, aviso: null, cancelarCobro: false };
   // Un QR abierto cuyo pedido ya no es el del cliente: SE CIERRA el cobro (aunque no diga «pagar») para que no pague un carrito viejo.
@@ -668,9 +668,6 @@ function wlResolverModelo(c) {
   const qrViejo = wlConNombres(f.qrCarrito, c.vendibles);
   const cambioConQr = abierto && !vcMismoCarrito(qrViejo, lineas);
   if (cambioConQr && c.cancelo === false) return Object.assign(base, { tipo: 'derivar', motivo: 'no_cancelo', aviso: null, cancelarCobro: true });
-  // Pedido del catálogo web que se completó con este mensaje y sin orden de pagar: queda listo para confirmar (sin QR).
-  // SOLO en el turno en que la entrega se completa (o el carrito cambió): después, una pregunta distinta recibe la respuesta del modelo, no otra vez el resumen.
-  if (f.desdeCatalogo === true && completoAhora && !cierre && !cambioConQr && (cambio || !completoAntes)) return wlCarritoListoParaConfirmar(c, base, { noEntraron: [], descartadosServidor: 0, nota: '' }, false);
   const cerrado = wlCerrar(c, base, abierto, cambioConQr);
   if (cerrado && cerrado.tipo === 'pedir_ubicacion') {
     // El texto del modelo acompaña al pedido de la ubicación (revisado; si no pasa, el fijo).
@@ -732,8 +729,15 @@ function wlResolverCarrito(c) {
   const cambioConQr = abierto && !vcMismoCarrito(wlConNombres(f.qrCarrito, c.vendibles), lineas);
   if (cambioConQr && c.cancelo === false) return Object.assign(base, { tipo: 'derivar', motivo: 'no_cancelo', aviso: null, cancelarCobro: true });
   const extra = { noEntraron: noEntraron, descartadosServidor: Math.max(0, Math.floor(Number(car.descartados) || 0)), nota: cbLinea(car.nota, 200) };
-  // Entrega COMPLETA: el paso final está AISLADO en `wlCarritoListoParaConfirmar` (decisión de Andres: el QR sale con el botón común «Confirmar pedido», no solo).
-  if (wlEntregaCompleta(entrega)) return wlCarritoListoParaConfirmar(c, base, extra, cambioConQr);
+  // Entrega COMPLETA: ENVIAR EL CARRITO YA ES CONFIRMAR EL PEDIDO (Andres, 23/11/2026, «QR directo»): el QR sale en ESTE mensaje con el resumen de piezas y el total (`wlCerrar`: cobro real → QR; envío sin pin → se pide la
+  // ubicación; sin cobro real → el pedido queda anotado con recepción). Si alguna pieza no entró (no se vende), NO se cobra de más ni de menos sin decirlo: queda «listo para confirmar» con lo que no entró (`wlCarritoListoParaConfirmar`).
+  if (wlEntregaCompleta(entrega)) {
+    if (noEntraron.length === 0 && extra.descartadosServidor === 0) {
+      const cerrado = wlCerrar(c, base, abierto, cambioConQr);
+      if (cerrado) return Object.assign(cerrado, { nota: extra.nota });
+    }
+    return wlCarritoListoParaConfirmar(c, base, extra, cambioConQr);
+  }
   // Entrega incompleta (o sin QR que emitir): UN mensaje con el resumen y lo que falta. Con un QR abierto de otro pedido, ese cobro se cierra y se avisa que quedó anulado.
   return Object.assign(base, extra, {
     tipo: 'carrito_pide', cierre: false, faltan: wlFaltaEntrega(entrega), resumen: vcResumen(wlConNombres(lineas, c.vendibles)),
@@ -741,7 +745,7 @@ function wlResolverCarrito(c) {
   });
 }
 
-// EL PASO FINAL DEL PEDIDO DEL CATÁLOGO WEB, AISLADO. Con las piezas y la entrega completas, hoy devuelve el resumen del pedido «listo para confirmar», sin QR y sin promesas; la ficha queda con las líneas y la entrega
+// EL CASO BORDE DEL PEDIDO DEL CATÁLOGO WEB: con piezas que NO entraron (no se venden) devuelve el resumen del pedido «listo para confirmar», sin QR y sin promesas; la ficha queda con las líneas y la entrega
 // (`desdeCatalogo` true, `cierre` false). ES EL ÚNICO PUNTO que se conecta al botón común «Confirmar pedido» (el disparador del QR): ahí se llamará a `wlCerrar(c, Object.assign(base, { cierre: true }), abierto, cambioConQr)` y
 // se apagará `desdeCatalogo`. `base` trae lineas, entrega, cierre, cambio, aviso y cancelarCobro; `extra`, lo que no entró y la nota.
 function wlCarritoListoParaConfirmar(c, base, extra, cambioConQr) {

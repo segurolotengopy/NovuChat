@@ -25,7 +25,7 @@ const LINEAS = [{ id: 'billetera-clasica', cantidad: 1 }, { id: 'bufanda-dennis'
 const sinAcreditado = (t: { mensajes: { cuerpo: string }[] }): void => { for (const x of t.mensajes) expect(x.cuerpo).not.toMatch(/acreditad|verificad|recibimos tu pago/i); };
 
 describe('el pedido real de Silvana: retiro con dos piezas', () => {
-  it('UN mensaje con las dos piezas, el total y lo que falta; luego el cliente da sus datos y el pedido queda completo y listo para confirmar (sin QR)', () => {
+  it('UN mensaje con las dos piezas, el total y lo que falta; luego el cliente da sus datos y el QR sale en ese mismo turno (QR directo)', () => {
     const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS, entrega: { modo: 'Recojo en tienda', ciudad: 'La Paz', nombre: 'Silvana Pérez', telefono: '70661250' } }) });
     const t = enviar(m, cuerpo());
     expect(t.fallo).toBeNull();
@@ -46,47 +46,45 @@ describe('el pedido real de Silvana: retiro con dos piezas', () => {
     expect(f.entrega.telefono).toBe(ANA);
     expect(f.cierre).toBe(false);
     expect(f.desdeCatalogo).toBe(true);
-    // El cliente contesta: queda completo y listo para confirmar, sin QR.
+    // El cliente contesta lo que faltaba: el pedido queda completo y el QR sale en ESE turno (enviar el carrito ya es confirmar; Andres, 23/11/2026).
     const t2 = hablar(m, ANA, mTexto('Silvana Pérez, La Paz, 70661250'));
-    expect(t2.mensajes).toHaveLength(1);
-    expect(textos(t2)[0]).toMatch(/Su pedido está completo\. Para confirmarlo/);
-    expect(textos(t2)[0]).toMatch(/Total: Bs 1\.330/);
-    expect(t2.mensajes.some((e) => e.tipo === 'image')).toBe(false);
-    expect(t2.mensajes.some((e) => e.evento === 'qr_enviado')).toBe(false);
+    expect(t2.mensajes.some((e) => e.tipo === 'image')).toBe(true);
+    expect(textos(t2).join(' ')).toMatch(/Total: Bs 1\.330/);
+    expect(textos(t2).join(' ')).not.toMatch(/confirmo mi pedido/);
     sinAcreditado(t2);
     expect(fichas(m)[ANA].entrega).toMatchObject({ modo: 'Recojo en tienda', ciudad: 'La Paz', nombre: 'Silvana Pérez' });
-    expect(fichas(m)[ANA].desdeCatalogo).toBe(true);
   });
-  it('el pedido de la ficha sigue ahí: con la orden explícita de pagar sí sale el QR (el paso final se conectará al botón común)', () => {
+  it('el QR sale UNA vez: la orden explícita de pagar después no manda otro QR con el cobro abierto', () => {
     const dice = modelo('Listo.', { lineas: LINEAS, entrega: { modo: 'Recojo en tienda', ciudad: 'La Paz', nombre: 'Silvana Pérez', telefono: '70661250' } });
     const m = crear({ panel: PANEL(), modeloDice: dice });
     enviar(m, cuerpo());
-    hablar(m, ANA, mTexto('Silvana Pérez, La Paz, 70661250'));
+    const t2 = hablar(m, ANA, mTexto('Silvana Pérez, La Paz, 70661250'));
+    expect(t2.mensajes.filter((e) => e.tipo === 'image')).toHaveLength(1);
+    m.dobles['Traer configuración'] = () => panelConQr(1330);
     const t3 = hablar(m, ANA, mTexto('quiero pagar'));
-    expect(t3.mensajes.some((e) => e.tipo === 'image')).toBe(true);
-    expect(textos(t3).join(' ')).toMatch(/Total: Bs 1\.330/);
+    expect(t3.mensajes.filter((e) => e.tipo === 'image')).toHaveLength(0);
   });
 });
 
 describe('con la entrega ya completa en la ficha', () => {
-  it('el carrito deja el pedido listo para confirmar: un mensaje, sin QR, sin «pago acreditado»', () => {
+  it('el carrito con la entrega ya completa manda el QR en el MISMO turno, con las piezas y el total, sin «pago acreditado» ni «escriba confirmo»', () => {
     const m = crear({ panel: PANEL(), modeloDice: modelo('Anotado.', { lineas: [], entrega: ENTREGA }) });
     hablar(m, ANA, mTexto('quiero recoger en La Paz'));
     const t = enviar(m, cuerpo({ pedidoId: 'cat_b2' }));
-    expect(t.mensajes).toHaveLength(1);
-    expect(textos(t)[0]).toMatch(/Su pedido está completo\. Para confirmarlo y recibir el QR de pago, escriba «confirmo mi pedido»/);
-    expect(textos(t)[0]).toMatch(/Total: Bs 1\.330/);
-    expect(t.mensajes.some((e) => e.tipo === 'image' || e.evento === 'qr_enviado')).toBe(false);
+    expect(t.mensajes.some((e) => e.tipo === 'image')).toBe(true);
+    expect(textos(t).join(' ')).toMatch(/Total: Bs 1\.330/);
+    expect(textos(t).join(' ')).toMatch(/1 × Billetera clásica/);
+    expect(textos(t).join(' ')).toMatch(/1 × Bufanda Dennis/);
+    expect(textos(t).join(' ')).not.toMatch(/confirmo mi pedido/);
     sinAcreditado(t);
-    expect(fichas(m)[ANA].cierre).toBe(false);
   });
-  it('una pregunta distinta DESPUÉS del resumen recibe la respuesta del modelo, no otra vez el resumen del pedido', () => {
+  it('una pregunta distinta DESPUÉS del QR recibe la respuesta del modelo, no otro QR ni otro resumen', () => {
     const m = crear({ panel: PANEL(), modeloDice: modelo('Atendemos de lunes a viernes.', { lineas: [], entrega: ENTREGA }) });
     hablar(m, ANA, mTexto('quiero recoger en La Paz'));
     enviar(m, cuerpo({ pedidoId: 'cat_b3' }));
     const t2 = hablar(m, ANA, mTexto('¿hasta qué hora atienden?'));
     expect(textos(t2).join(' ')).toMatch(/Atendemos de lunes a viernes/);
-    expect(textos(t2).join(' ')).not.toMatch(/Para confirmarlo y recibir el QR/);
+    expect(textos(t2).join(' ')).not.toMatch(/Total: Bs/);
     expect(t2.mensajes.some((e) => e.tipo === 'image')).toBe(false);
   });
 });

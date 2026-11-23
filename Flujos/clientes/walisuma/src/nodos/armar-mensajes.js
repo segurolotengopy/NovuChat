@@ -8,7 +8,7 @@
 //   «qr»                    el resumen del pedido y el QR REAL del comercio (imagen por id de medio, nunca por enlace) con el monto del carrito; «qr_pendiente» el recordatorio del QR abierto;
 //   «comprobante»           «llegó y los datos coinciden» (NUNCA «acreditado» ni «verificado»), con el botón; «comprobante_pedir» pide uno correcto o más nítido;
 //   «pedido_sin_cobro»      sin QR de cobro real: el pedido queda anotado y lo coordina recepción (aviso + botón);
-//   «carrito_pide»          el pedido del catálogo web con la entrega incompleta: UN mensaje con las piezas, el total y lo que falta (el flujo normal completa la entrega); con la entrega completa sale «carrito_listo» (resumen y cómo confirmar; el QR sale con la orden de confirmar, luego con el botón común);
+//   «carrito_pide»          el pedido del catálogo web con la entrega incompleta: UN mensaje con las piezas, el total y lo que falta (el flujo normal completa la entrega); con la entrega completa sale «qr» en el MISMO mensaje del carrito (QR directo; «carrito_listo» solo si alguna pieza no entró, con cómo confirmar);
 //   «derivar»               pasar con recepción: el aviso MÁS el botón para escribirle directo. «Ya avisé» solo sale si «Enviar aviso» devolvió un `wamid` real.
 // SOLO SE OFRECE LO QUE SE CUMPLE: ninguna promesa de «te aviso luego», «te llamamos» o «te escribirán»; el único ofrecimiento es pasar con recepción.
 // El botón de recepción va SOLO al derivar. Todo texto pasa por `wlSeguro` (NIEGA_IA y palabras prohibidas del cobro). La ficha (`walisuma[<messages[0].from>]`) se escribe AQUÍ, una vez por turno;
