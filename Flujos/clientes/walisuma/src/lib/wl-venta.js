@@ -678,7 +678,9 @@ function wlResolverModelo(c) {
   if (sinRedaccion) texto = WL_TEXTO_MODELO_SIN_REDACCION;
   // Si el cliente pregunta por el envío, la política la dice el CÓDIGO (el modelo no habla del costo).
   const politica = wlPreguntaEnvio(wlNorm(p.textoCliente));
-  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, resumen: cambio && lineas.length ? vcResumen(lineas) : '', politicaEnvio: politica ? wlTextoPoliticaEnvio(wlUmbralBs(c.base)) : '', notaFactura: p.notaFactura === 'pedir' || p.notaFactura === 'al_confirmar' ? p.notaFactura : '' });
+  // El cliente con el pedido COMPLETO (piezas y entrega) que todavía no pidió pagar no recibe el QR: se le dice, con una frase fija, qué escribir (sin mensaje nuevo: va en este mismo texto).
+  const invitaPago = c.cobro.modo === 'real' && !abierto && !cierre && lineas.length > 0 && wlEntregaCompleta(entrega);
+  return Object.assign(base, { tipo: 'modelo', invitaPago: invitaPago, texto: texto, sinRedaccion: sinRedaccion, resumen: cambio && lineas.length ? vcResumen(lineas) : '', politicaEnvio: politica ? wlTextoPoliticaEnvio(wlUmbralBs(c.base)) : '', notaFactura: p.notaFactura === 'pedir' || p.notaFactura === 'al_confirmar' ? p.notaFactura : '' });
 }
 
 // La ubicación del pin de WhatsApp (sin modelo): se guarda en la entrega y, si el pedido ya estaba confirmado y completo, se cierra (normalmente, el QR).

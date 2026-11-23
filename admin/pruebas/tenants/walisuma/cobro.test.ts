@@ -59,6 +59,24 @@ describe('NUNCA «pago acreditado» ni «simulado»', () => {
   });
 });
 
+describe('el pedido completo sin orden de pagar dice qué escribir para recibir el QR (reclamo de Andres, 23/11/2026)', () => {
+  it('con piezas y entrega completas y SIN «pagar»: el mismo texto trae la frase fija, no sale ningún QR y no se agrega un mensaje', () => {
+    const m = crear({ modeloDice: modelo('Le esperamos para el recojo.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) });
+    const t = hablar(m, ANA, mTexto('una billetera, recojo en tienda a nombre de Ana'));
+    expect(textos(t).join(' ')).toMatch(/escriba «quiero pagar» y le enviamos el QR/);
+    expect(t.mensajes.some((x) => x.tipo === 'image')).toBe(false);
+    expect(t.mensajes).toHaveLength(1);
+  });
+  it('NEGADO: sin entrega completa, o con el QR ya abierto, o con la orden de pagar, la frase no se agrega', () => {
+    const sinEntrega = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) });
+    expect(textos(hablar(sinEntrega, ANA, mTexto('una billetera'))).join(' ')).not.toMatch(/quiero pagar/);
+    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) });
+    const t = hablar(m, ANA, mTexto('quiero pagar'));
+    expect(t.mensajes.some((x) => x.tipo === 'image')).toBe(true);
+    expect(textos(t).join(' ')).not.toMatch(/escriba «quiero pagar»/);
+  });
+});
+
 describe('un comprobante aproximado no dice «coinciden»', () => {
   it('NEGADO (decisión 8, 18/11/2026): «aproximado» ya no se acepta: es OBSERVADO, nombra la diferencia, pide el correcto y no avisa ni dice «coinciden»', () => {
     const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, cotejo: { statusCode: 200, body: { estado: 'aproximado', importe: 450, avisarComercio: true } } });

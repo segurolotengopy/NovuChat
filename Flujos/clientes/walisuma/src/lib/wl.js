@@ -293,6 +293,8 @@ const WL_TEXTO_SALUDO = 'Hola, soy el asistente de atención y ventas de {NEGOCI
 // La factura pedida ANTES de pagar (Andres, 19/11/2026): no se deriva; se dice cuándo se pide y la venta sigue.
 // Acotado (revisión del PR #1020): la razón social y el NIT se piden SOLO en el mensaje de «Pedido confirmado» del pago por QR; si el pedido lo coordina la encargada (sin QR o en revisión), se le dan a ella.
 const WL_TEXTO_FACTURA_AL_CONFIRMAR = 'Con gusto: cuando confirmemos su pago por QR, en ese mismo mensaje le pediremos la razón social y el NIT; si su pedido lo coordina nuestra encargada, puede dárselos a ella.';
+// El pedido completo sin orden de pagar (Andres, 23/11/2026: «no está enviando el QR»): el QR sale con la orden del cliente (`wlQuierePagar`), así que se le dice qué escribir.
+const WL_TEXTO_INVITA_PAGO = 'Si todo está bien, escriba «quiero pagar» y le enviamos el QR para pagar.';
 // El uso extendido de la puerta común tutea en su texto por defecto («Gracias por tu paciencia…»): Walisuma usa el suyo, de usted, cuando la consola no trae uno propio.
 const WL_TEXTO_USO_EXTENDIDO = 'Gracias por su paciencia. Para atenderle mejor, nuestra encargada continuará esta conversación.';
 const WL_TEXTO_USO_EXTENDIDO_COMUN = 'Gracias por tu paciencia. Para atenderte mejor, una persona del equipo va a continuar esta conversación.';

@@ -140,7 +140,7 @@ if (puerta.ruta === 'sigue') {
       const payload = Object.assign(cmBase('interactive'), { interactive: { type: 'location_request_message', body: { text: cmRecorte(cuerpo, 1024) }, action: { name: 'send_location' } } });
       msgs = [cmMensaje('cliente', payload, cuerpo, cuerpo, { tipoReporte: 'interactive' })];
     } else {
-      msgs = [texto(conSaludo(d.texto + (d.notaFactura === 'al_confirmar' ? '\n\n' + WL_TEXTO_FACTURA_AL_CONFIRMAR : (d.notaFactura === 'pedir' ? '\n\n' + WL_TEXTO_PIDE_FACTURA : '')) + (d.politicaEnvio ? '\n\n' + d.politicaEnvio : '') + (d.resumen ? '\n\n' + d.resumen : '') + anulado))];
+      msgs = [texto(conSaludo(d.texto + (d.notaFactura === 'al_confirmar' ? '\n\n' + WL_TEXTO_FACTURA_AL_CONFIRMAR : (d.notaFactura === 'pedir' ? '\n\n' + WL_TEXTO_PIDE_FACTURA : '')) + (d.politicaEnvio ? '\n\n' + d.politicaEnvio : '') + (d.resumen ? '\n\n' + d.resumen : '') + anulado + (d.invitaPago === true ? '\n\n' + WL_TEXTO_INVITA_PAGO : '')))];
     }
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
     nuevos.entrega = d.entrega;
