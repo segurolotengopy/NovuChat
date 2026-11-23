@@ -20,7 +20,7 @@ const RUTAS = [
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
-  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_SIN_PIEZA', 'bmEnlaceCatalogo', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
+  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_SIN_PIEZA', 'bmEnlaceCatalogo', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmDatosTienda', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -558,6 +558,34 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       expect(c2).toMatchObject({ capturado: true, entrega: { nombre: 'Silvana Prueba' } });
       expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Sí, confirmo, quiero pagar', modos).capturado).toBe(false);
       expect(b('bmCompletarEntrega')({}, {}, 'Silvana Prueba', modos).capturado).toBe(false);   // sin modo elegido, no se toma por nombre
+    });
+    it('el horario sale del dato común del comercio cuando «Config base» no lo trae, y el de «Config base» manda si existe', () => {
+      const d = b('bmDatosTienda');
+      expect(d({ ubicacionTienda: 'Bermejo' }, { horarioAtencion: 'lunes a domingo, de 06:00 a 18:00' })).toContain('horario: lunes a domingo, de 06:00 a 18:00.');
+      expect(d({ horarioTienda: 'de 8 a 12' }, { horarioAtencion: 'lunes a domingo, de 06:00 a 18:00' })).toContain('horario: de 8 a 12.');
+      // NEGADO: sin ninguno de los dos no se inventa, se pasa con una persona
+      expect(d({}, {})).toContain('el horario aún no está cargado');
+      expect(d({ horarioTienda: 'REEMPLAZAR_HORARIO' }, { horarioAtencion: '' })).toContain('el horario aún no está cargado');
+    });
+    it('los MISMOS mensajes de Andres (23/11): «Andres 2441214 yacuiba. Flota bolivar» y luego «2441214» ya no vuelven a pedir CI ni ciudad', () => {
+      const e1 = b('bmCompletarEntrega')({ nombre: 'Andres' }, { modo: 'envío' }, 'Andres 2441214 yacuiba. Flota bolivar', modos).entrega;
+      expect(e1).toMatchObject({ documento: '2441214', ciudad: 'Yacuiba', flota: 'bolivar' });
+      // un turno después, con la ficha ya sin el CI (el modelo no lo devolvió): el número SOLO es el documento
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', flota: 'bolivar' }, '2441214', modos).entrega.documento).toBe('2441214');
+      // la ciudad sola, cuando es lo único que falta
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', documento: '2441214', flota: 'bolivar' }, 'yacuiba', modos).entrega.ciudad).toBe('Yacuiba');
+      // NEGADO: con otra cosa por faltar (flota), una palabra sola no es la ciudad; un teléfono con su palabra no es el CI; sin envío no se toma nada
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', documento: '2441214' }, 'bolivar', modos).entrega.ciudad).toBeUndefined();
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres' }, 'mi celular es 70123456', modos).entrega.documento).toBeUndefined();
+      // un número suelto de 8 cifras que empieza con 6 o 7 es un celular: no entra como CI (con la palabra CI sí)
+      for (const cel of ['70123456', '61234567', 'Andres 70123456', '70123456 yacuiba']) expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres' }, cel, modos).entrega.documento).toBeUndefined();
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres' }, 'mi CI es 70123456', modos).entrega.documento).toBe('70123456');
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres' }, '12345678', modos).entrega.documento).toBe('12345678');
+      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda', nombre: 'Andres' }, '2441214', modos).entrega.documento).toBeUndefined();
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', documento: '2441214', flota: 'bolivar' }, 'gracias', modos).entrega.ciudad).toBeUndefined();
+      // el ciclo completo con el resolvedor: tras el segundo mensaje no falta el CI
+      const ok = b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro, entrega: { modo: 'envío', nombre: 'Andres', flota: 'bolivar' } }, plan: { tipo: 'modelo', textoCliente: '2441214 yacuiba' } }), { entrega: {} });
+      expect(b('bmEntregaFalta')(ok.entrega, 'BO')).toEqual([]);
     });
     it('el ENVÍO dicho en una frase se lee por código: nombre, CI, flota y ciudad, aunque el modelo no devuelva `entrega`', () => {
       const e = b('bmCompletarEntrega')({}, { modo: 'envío', ciudad: 'Santa Cruz' }, 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana', modos).entrega;
