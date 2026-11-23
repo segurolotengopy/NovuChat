@@ -134,6 +134,31 @@ function bmCompletarEntrega(nueva, antes, texto, modos) {
   if (vacio('documento')) { const m = /\b(?:c\.?i\.?|dni|carnet(?: de identidad)?|cedula)\b\D{0,15}(\d[\d.-]{4,13})/i.exec(crudo); if (m) n.documento = m[1]; }
   if (vacio('flota')) { const m = /\b(?:flota|terminal|empresa)\s+(?:de\s+)?([\p{L}][\p{L} ]{2,40}?)(?=\s*(?:[,.;]|$|\by\b|\bmi\b|\bciudad\b))/iu.exec(crudo); if (m) n.flota = m[1].trim(); }
   if (vacio('ciudad') && bmEsEnvio(modo)) { const m = /\b(?:a|en|para|hasta)\s+([A-ZÁÉÍÓÚÑ][\p{L}]+(?: [A-ZÁÉÍÓÚÑ][\p{L}]+)?)/u.exec(crudo); if (m && !/^(Gracias|Hola|Buenas|Mi|Sí|Si)$/.test(m[1])) n.ciudad = m[1]; }
+  // Respuestas SIN palabra clave (humo de Andres, 23/11/2026: «Andres 2441214 yacuiba. Flota bolivar» y luego «2441214»: el CI y la ciudad se volvían a pedir cuatro veces).
+  // Con el ENVÍO elegido y el dato todavía vacío, la pregunta que el cliente acaba de leer decide: un número de 5 a 13 cifras SOLO, o tras el nombre, es el documento (nunca con «teléfono», «celular», «NIT» o «Bs» antes);
+  // y la ciudad es la palabra (o las dos) que sigue al documento, o la respuesta corta cuando es lo único que falta.
+  if (bmEsEnvio(modo)) {
+    if (vacio('documento') && !/\b(?:tel[eé]fono|tel|celular|cel|whatsapp|nit|bs|monto|cuenta|total|precio)\b\D{0,15}\d/i.test(crudo)) {
+      const m = /^\s*(\d[\d.-]{3,11}\d)\s*$/.exec(crudo) || /^\s*(\d[\d.-]{3,11}\d)(?=\s+[\p{L}])/u.exec(crudo) || /^[\p{L}][\p{L} .'-]{1,40}?\s+(\d[\d.-]{3,11}\d)(?=\s|[,.;]|$)/u.exec(crudo);
+      if (m) n.documento = m[1];
+    }
+    const noCiudad = /^(?:flota|terminal|empresa|gracias|hola|buenas|buenos|si|no|ci|dni|mi|el|la|por|favor|ok|listo|claro|quiero|persona)$/i;
+    const mayus = (t) => t.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    if (vacio('ciudad')) {
+      let c = '';
+      const d = /\d[\d.-]{3,11}\d\s+([\p{L}]{3,}(?: [\p{L}]{3,})?)(?=\s*(?:[,.;]|$)|\s+(?:flota|terminal|empresa)\b)/iu.exec(crudo);
+      if (d) c = d[1];
+      else {
+        const sola = (typeof n.documento === 'string' && n.documento !== '') || a.documento !== '';
+        const flota = (typeof n.flota === 'string' && n.flota.trim() !== '') || a.flota !== '';
+        const nom = (typeof n.nombre === 'string' && n.nombre.trim() !== '') || a.nombre !== '';
+        const corta = /^\s*([\p{L}]{3,}(?: [\p{L}]{3,})?)\s*[.]?\s*$/u.exec(crudo);
+        if (sola && flota && nom && corta) c = corta[1];
+      }
+      const primera = c.split(' ')[0] || '';
+      if (c !== '' && !noCiudad.test(primera)) n.ciudad = mayus(c);
+    }
+  }
   return { entrega: n, capturado: capturado };
 }
 // El mensaje del SITIO («Hola, quiero consultar por estos productos:» con líneas «N x Nombre (cód. id)»): el código lee las líneas y sus códigos contra el catálogo; no depende del modelo.

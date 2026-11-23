@@ -559,6 +559,22 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Sí, confirmo, quiero pagar', modos).capturado).toBe(false);
       expect(b('bmCompletarEntrega')({}, {}, 'Silvana Prueba', modos).capturado).toBe(false);   // sin modo elegido, no se toma por nombre
     });
+    it('los MISMOS mensajes de Andres (23/11): «Andres 2441214 yacuiba. Flota bolivar» y luego «2441214» ya no vuelven a pedir CI ni ciudad', () => {
+      const e1 = b('bmCompletarEntrega')({ nombre: 'Andres' }, { modo: 'envío' }, 'Andres 2441214 yacuiba. Flota bolivar', modos).entrega;
+      expect(e1).toMatchObject({ documento: '2441214', ciudad: 'Yacuiba', flota: 'bolivar' });
+      // un turno después, con la ficha ya sin el CI (el modelo no lo devolvió): el número SOLO es el documento
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', flota: 'bolivar' }, '2441214', modos).entrega.documento).toBe('2441214');
+      // la ciudad sola, cuando es lo único que falta
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', documento: '2441214', flota: 'bolivar' }, 'yacuiba', modos).entrega.ciudad).toBe('Yacuiba');
+      // NEGADO: con otra cosa por faltar (flota), una palabra sola no es la ciudad; un teléfono con su palabra no es el CI; sin envío no se toma nada
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', documento: '2441214' }, 'bolivar', modos).entrega.ciudad).toBeUndefined();
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres' }, 'mi celular es 70123456', modos).entrega.documento).toBeUndefined();
+      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda', nombre: 'Andres' }, '2441214', modos).entrega.documento).toBeUndefined();
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', documento: '2441214', flota: 'bolivar' }, 'gracias', modos).entrega.ciudad).toBeUndefined();
+      // el ciclo completo con el resolvedor: tras el segundo mensaje no falta el CI
+      const ok = b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro, entrega: { modo: 'envío', nombre: 'Andres', flota: 'bolivar' } }, plan: { tipo: 'modelo', textoCliente: '2441214 yacuiba' } }), { entrega: {} });
+      expect(b('bmEntregaFalta')(ok.entrega, 'BO')).toEqual([]);
+    });
     it('el ENVÍO dicho en una frase se lee por código: nombre, CI, flota y ciudad, aunque el modelo no devuelva `entrega`', () => {
       const e = b('bmCompletarEntrega')({}, { modo: 'envío', ciudad: 'Santa Cruz' }, 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana', modos).entrega;
       expect(e).toMatchObject({ nombre: 'Juan Pérez', documento: '4567890', flota: 'Trans Copacabana' });
