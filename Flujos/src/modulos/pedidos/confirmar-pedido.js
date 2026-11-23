@@ -8,15 +8,19 @@
 const CF_ID_CONFIRMAR = 'pedido:confirmar';   // el id del botón es `pedido:confirmar:<huella del carrito>`: confirma SOLO el pedido que el cliente vio
 const CF_TITULO_CONFIRMAR = 'Confirmar pedido';
 const CF_MAX_CUERPO = 1024;   // el tope del cuerpo de un mensaje con botones de WhatsApp
-// La huella del carrito que muestra el mensaje: un hash corto de sus piezas (id, cantidad y detalle), en minúsculas y cifras (un id de botón admite [a-z0-9:_-]). Si el carrito cambia, el botón viejo ya no coincide.
-function cfHuella(lineas) {
-  const texto = (Array.isArray(lineas) ? lineas : []).map((l) => String(l && l.id) + ':' + String(l && l.cantidad) + ':' + String((l && l.detalle) || '')).sort().join('|');
+// La huella del PEDIDO que muestra el mensaje: un hash corto de sus piezas (id, cantidad y detalle) y de la entrega (todos sus campos, en orden), en minúsculas y cifras (un id de botón admite [a-z0-9:_-]). Si el carrito o la entrega
+// cambian, el botón viejo ya no coincide. Solo viaja el hash: ningún dato de la entrega (el documento incluido) sale en el id.
+function cfHuella(lineas, entrega) {
+  const piezas = (Array.isArray(lineas) ? lineas : []).map((l) => String(l && l.id) + ':' + String(l && l.cantidad) + ':' + String((l && l.detalle) || '')).sort().join('|');
+  const e = entrega && typeof entrega === 'object' && !Array.isArray(entrega) ? entrega : {};
+  const envio = Object.keys(e).sort().map((k) => k + '=' + String(e[k])).join(';');
+  const texto = piezas + '#' + envio;
   let h = 5381;
   for (let i = 0; i < texto.length; i++) h = ((h * 33) ^ texto.charCodeAt(i)) >>> 0;
   return h.toString(36);
 }
-// ¿El toque es el del botón «Confirmar pedido» DE ESTE CARRITO? Solo el id exacto con la huella del carrito actual: ni el título escrito a mano, ni otro botón, ni el botón de un mensaje con otro carrito.
-function cfEsConfirmacion(seleccionId, lineasActuales) { return seleccionId === CF_ID_CONFIRMAR + ':' + cfHuella(lineasActuales); }
+// ¿El toque es el del botón «Confirmar pedido» DE ESTE PEDIDO? Solo el id exacto con la huella del pedido actual: ni el título escrito a mano, ni otro botón, ni el botón de un mensaje con otro carrito u otra entrega.
+function cfEsConfirmacion(seleccionId, lineasActuales, entregaActual) { return seleccionId === CF_ID_CONFIRMAR + ':' + cfHuella(lineasActuales, entregaActual); }
 // ¿Se ofrece el botón? Hay piezas, la entrega está completa y NO hay un QR abierto (con un QR abierto ya se confirmó).
 function cfSeOfrece(cantidadDePiezas, entregaCompleta, qrAbierto) { return cantidadDePiezas > 0 && entregaCompleta === true && qrAbierto !== true; }
 // La frase que acompaña al botón, en el trato del comercio.
@@ -31,5 +35,5 @@ function cfCuerpo(cuerpo, usted) {
   const corto = base.length > sitio ? base.slice(0, Math.max(0, sitio - 1)).trimEnd() + '…' : base;
   return corto + '\n\n' + instr;
 }
-// El botón, en la forma que espera `cmBotones`, con la huella del carrito que se muestra.
-function cfBoton(lineas) { return { id: CF_ID_CONFIRMAR + ':' + cfHuella(lineas), title: CF_TITULO_CONFIRMAR }; }
+// El botón, en la forma que espera `cmBotones`, con la huella del pedido que se muestra.
+function cfBoton(lineas, entrega) { return { id: CF_ID_CONFIRMAR + ':' + cfHuella(lineas, entrega), title: CF_TITULO_CONFIRMAR }; }

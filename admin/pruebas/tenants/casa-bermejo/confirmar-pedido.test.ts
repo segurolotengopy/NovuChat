@@ -5,7 +5,7 @@
  * un botón de un mensaje viejo o un pedido incompleto NO emiten QR.
  */
 import { describe, expect, it } from 'vitest';
-import { ANA, ENTREGA, crear, hablar, mTexto, modelo, panelConQr, type Opciones } from './mundo';
+import { ANA, CATALOGO, ENTREGA, catalogoOk, crear, hablar, mTexto, modelo, panelConQr, type Opciones } from './mundo';
 
 const J = (x: unknown): string => JSON.stringify(x);
 const mToque = (id: string, title = 'Confirmar pedido') => ({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title } } });
@@ -87,6 +87,37 @@ describe('NEGADO: el botón de un mensaje con OTRO carrito no confirma, y un seg
     const id = idDelBoton(hablar(m, ANA, mTexto('una billetera')));
     expect(hayQr(hablar(m, ANA, mToque(id)))).toBe(true);
     m.dobles['Traer configuración'] = () => panelConQr(450);
+    expect(hayQr(hablar(m, ANA, mToque(id)))).toBe(false);
+  });
+});
+
+describe('el texto y el botón dicen lo mismo (solo se ofrece lo que se cumple)', () => {
+  const cuerpo = (t: ReturnType<typeof hablar>): string => t.mensajes.map((x) => x.cuerpo).join('\n');
+  it('la instrucción de «Confirmar pedido» sale UNA sola vez y en un solo trato, también cuando el texto lo arma el código (pieza por orden)', () => {
+    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [], entrega: ENTREGA }) });
+    const t = hablar(m, ANA, mTexto('agrega una billetera de cuero'));
+    const c = cuerpo(t);
+    expect((c.match(/Confirmar pedido/g) ?? []).length).toBeLessThanOrEqual(1);
+    expect(/toque «/i.test(c) && /toca «/i.test(c)).toBe(false);
+  });
+  it('NEGADO: con un QR abierto el texto NO manda tocar un botón que no sale', () => {
+    const m = crear(LISTO);
+    const id = idDelBoton(hablar(m, ANA, mTexto('una billetera')));
+    hablar(m, ANA, mToque(id));
+    m.dobles['Traer configuración'] = () => panelConQr(450);
+    const t = hablar(m, ANA, mTexto('gracias'));
+    expect(cuerpo(t)).not.toMatch(/Confirmar pedido/);
+    expect(botones(t)).not.toContain('"id":"pedido:confirmar"');
+  });
+});
+
+describe('NEGADO: si el catálogo cambió entre el resumen y el toque, el botón NO cierra otro pedido', () => {
+  it('una pieza que se agotó: el toque no emite el QR del pedido más chico', () => {
+    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }, { id: 'llavero-llama', cantidad: 1 }], entrega: ENTREGA }) });
+    const id = idDelBoton(hablar(m, ANA, mTexto('una billetera y un llavero')));
+    // La billetera se agota (stock 0, no disponible): el resto del catálogo sigue igual.
+    const items = CATALOGO.filter((c) => c.activo && typeof (c as Record<string, unknown>)['precio'] === 'number').map((c) => ({ ...c, precioCentavos: Math.round(((c as Record<string, unknown>)['precio'] as number) * 100), stock: c.id === 'billetera-cuero' ? 0 : 10, disponible: c.id !== 'billetera-cuero' }));
+    m.dobles['Traer catálogo'] = () => catalogoOk({}, items as never);
     expect(hayQr(hablar(m, ANA, mToque(id)))).toBe(false);
   });
 });

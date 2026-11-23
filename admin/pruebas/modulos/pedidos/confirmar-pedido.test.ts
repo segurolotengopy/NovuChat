@@ -10,8 +10,8 @@ import { describe, expect, it } from 'vitest';
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const CODIGO = readFileSync(join(RAIZ, 'Flujos/src/modulos/pedidos/confirmar-pedido.js'), 'utf8');
 const M = runInNewContext(`${CODIGO}\n({ cfEsConfirmacion, cfSeOfrece, cfCuerpo, cfBoton, cfInstruccion, cfHuella });`) as {
-  cfEsConfirmacion: (x: unknown, l: unknown) => boolean; cfSeOfrece: (n: number, c: boolean, q: boolean) => boolean;
-  cfCuerpo: (c: unknown, u: boolean) => string; cfBoton: (l: unknown) => { id: string; title: string }; cfInstruccion: (u: boolean) => string; cfHuella: (l: unknown) => string;
+  cfEsConfirmacion: (x: unknown, l: unknown, e?: unknown) => boolean; cfSeOfrece: (n: number, c: boolean, q: boolean) => boolean;
+  cfCuerpo: (c: unknown, u: boolean) => string; cfBoton: (l: unknown, e?: unknown) => { id: string; title: string }; cfInstruccion: (u: boolean) => string; cfHuella: (l: unknown, e?: unknown) => string;
 };
 
 describe('confirmar-pedido', () => {
@@ -28,6 +28,14 @@ describe('confirmar-pedido', () => {
     expect(M.cfHuella(AB)).toBe(M.cfHuella([...AB].reverse()));
     expect(M.cfHuella(C1)).not.toBe(M.cfHuella(C2));
     expect(M.cfHuella(C1)).not.toBe(M.cfHuella([{ id: 'a', cantidad: 1, detalle: 'rojo' }]));
+  });
+  it('la huella cubre también la entrega: el botón de antes de pasar de retiro a envío no confirma la entrega nueva, y el id no lleva ningún dato', () => {
+    const R = { modo: 'retiro', nombre: 'Ana', documento: '1234567' };
+    const E = { modo: 'envío', nombre: 'Ana', documento: '1234567' };
+    expect(M.cfEsConfirmacion(M.cfBoton(C1, R).id, C1, R)).toBe(true);
+    expect(M.cfEsConfirmacion(M.cfBoton(C1, R).id, C1, E)).toBe(false);
+    expect(M.cfBoton(C1, E).id).not.toMatch(/1234567|Ana/);
+    expect(M.cfHuella(C1, { b: '2', a: '1' })).toBe(M.cfHuella(C1, { a: '1', b: '2' }));
   });
   it('el id y el título cumplen lo que WhatsApp acepta para un botón (id [a-z0-9:_-], título de 20 como máximo)', () => {
     const b = M.cfBoton(C1);

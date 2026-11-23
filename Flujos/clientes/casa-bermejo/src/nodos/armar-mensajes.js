@@ -106,7 +106,7 @@ if (puerta.ruta === 'sigue') {
     } else if (d.confirmable === true) {
       // El pedido está listo: el MISMO mensaje lleva el botón «Confirmar pedido» (0 mensajes más); tocarlo emite el QR en el mismo turno.
       const cuerpoCf = bmSeguro(cfCuerpo(cuerpoModelo, usted), usted);
-      msgs = [cmMensaje('cliente', cmBotones(cuerpoCf, [cfBoton(d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })))]), cuerpoCf, cuerpoCf, { tipoReporte: 'interactive', conBoton: true })];
+      msgs = [cmMensaje('cliente', cmBotones(cuerpoCf, [cfBoton(d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })), bmEntregaDeFicha(d.entrega))]), cuerpoCf, cuerpoCf, { tipoReporte: 'interactive', conBoton: true })];
     } else msgs = [texto(cuerpoModelo)];
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
     nuevos.entrega = d.entrega;
