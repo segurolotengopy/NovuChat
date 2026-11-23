@@ -85,7 +85,7 @@ describe('la captura del Gmail', () => {
     expect(a.tipo).toBe('template');
     const params = a.payload['template'].components[0].parameters.map((p: J) => String(p['text']));
     expect(params).toHaveLength(3);
-    expect(params[0]).toBe('venta con comprobante: enviar el enlace de Drive por el chat'); // sin producto en la ficha, el motivo es genérico
+    expect(params[0]).toBe('venta con comprobante: enviar el enlace de Drive por el chat — cliente Ana'); // sin producto en la ficha, el motivo es genérico
     expect(params[1]).toBe(`+${ANA}`);
     expect(params[2]).toBe('Gmail: juanito' + A + 'gmail.com');
   });

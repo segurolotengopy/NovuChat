@@ -1633,7 +1633,7 @@ describe('no negociable 8: la reserva (día de la semana por código; cada error
     expect(vars).toHaveLength(4);
     expect(vars[0]).toMatch(/^SOLICITUD DE RESERVA /);
     expect(vars[1]).toBe('sin cobro');
-    expect(vars[2]).toBe('reserva de mesa por confirmar con el cliente');
+    expect(vars[2]).toBe('reserva de mesa por confirmar con el cliente Carlos');
     expect(vars[3]).toBe('no aplica');
     expect(vars.join(' ')).not.toMatch(/confirmad/i);
     // Un día de la semana equivocado del modelo no entra: el modelo ni siquiera tiene dónde ponerlo.

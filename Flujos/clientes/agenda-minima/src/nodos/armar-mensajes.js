@@ -24,6 +24,10 @@ const rec = String(cfg.numeroRecepcionDigitos || '');
 const doc = String(cfg.numeroDoctorDigitos || '');
 const desdeDigitos = cnDigitos(t.from);
 const msgs = [];
+// La ventana de recepcion (core `apAnotarEntrante`): si quien escribe ES recepcion, se anota su ultimo mensaje entrante antes de armar nada.
+let sdAv = null;
+try { sdAv = $getWorkflowStaticData('global'); } catch (err) { sdAv = null; }
+if (sdAv && rec && desdeDigitos === rec) apAnotarEntrante(sdAv, rec, ahora);
 const errores = (base.errores || []).slice();
 
 // ----------------------------------------------------------------- constructores
@@ -68,7 +72,12 @@ function avisarARecepcion(motivo) {
   if (!rec || rec === desdeDigitos) return; // un aviso nunca va al propio numero
   const aviso = '🔔 NovuChat (' + nombreNegocio + '): el cliente ' + (t.nombrePerfil || '') + ' (' + String(t.from || '') + ') necesita atención humana. Motivo: '
     + (motivo || 'no especificado') + '. Tomar el chat.';
-  agregar('recepcion', mTexto(aviso), aviso, aviso, { tipoReporte: null });
+  // AVISO CON PLANTILLA (22/11/2026, reclamo de Andres): Meta acepta un texto fuera de la ventana de 24 h con 200 y lo rechaza despues (131047, webhook de estados), asi que se ELIGE antes de enviar.
+  // Ventana de recepcion abierta (23 h 30 min desde su ultimo mensaje, `sd.av.ventana`): el texto de siempre. Cerrada o desconocida y plantilla `plantillaAvisoRecepcion` APPROVED: la plantilla
+  // ({{1}} nombre, {{2}} telefono, {{3}} motivo; selector del core `apElegirPlantilla`). Sin APPROVED, todo identico a antes. 1 plantilla por aviso solo con la ventana cerrada.
+  const plantilla = apElegirPlantilla(cfg, sdAv, rec, ahora, t.nombrePerfil, t.from, motivo || 'no especificado');
+  if (plantilla) agregar('recepcion', plantilla, aviso, aviso, { tipoReporte: null });
+  else agregar('recepcion', mTexto(aviso), aviso, aviso, { tipoReporte: null });
 }
 const conEmoji = (e) => (cfg.nivelEmojis === 'ninguno' ? '' : e + ' ');
 

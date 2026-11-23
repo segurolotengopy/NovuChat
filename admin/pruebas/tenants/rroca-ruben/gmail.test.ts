@@ -109,7 +109,7 @@ describe('la captura del Gmail', () => {
     expect(a.tipo).toBe('template');
     const params = a.payload['template'].components[0].parameters.map((p: J) => String(p['text']));
     expect(params).toHaveLength(3);
-    expect(params[0]).toMatch(/^venta con comprobante de .+: enviar el enlace de Drive por el chat$/);
+    expect(params[0]).toMatch(/^venta con comprobante de .+: enviar el enlace de Drive por el chat — cliente Ana$/);
     expect(params[1]).toBe(`+${ANA}`);
     expect(params[2]).toBe('Gmail: juanperez' + A + 'gmail.com');
   });
@@ -119,7 +119,7 @@ describe('la captura del Gmail', () => {
     hechos(w);
     const t = hablar(w, ANA, mTexto('juanperez' + A + 'gmail.com'));
     const params = t.avisos[0]!.payload['template'].components[0].parameters.map((p: J) => String(p['text']));
-    expect(params[0]).toBe('venta con comprobante: enviar el enlace de Drive por el chat');
+    expect(params[0]).toBe('venta con comprobante: enviar el enlace de Drive por el chat — cliente Ana');
     expect(params[2]).toBe('Gmail: juanperez' + A + 'gmail.com');
   });
 

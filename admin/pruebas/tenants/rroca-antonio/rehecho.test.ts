@@ -771,8 +771,8 @@ describe('REHECHO · 9. una imagen de campaña SIN texto se reconoce por el titu
 describe('REHECHO · el armado: la base común, el core de texto y solo lo propio de Antonio', () => {
   const leerFlujo = (a: string): J => JSON.parse(readFileSync(join(RA, a), 'utf8')) as J;
   const codigoDe = (f: J, nodo: string): string => (f['nodes'] as J[]).find((n) => n['name'] === nodo)!['parameters']['jsCode'] as string;
-  it('las librerías, en orden: cobro, avisos y conversación de la base común; no-repetir y pregunta-pendiente del core; y `ra.js` al final (las copias propias de cobro.js y avisos.js se borraron)', () => {
-    expect(CONFIG.librerias).toEqual(['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/gmail.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/ra.js']);
+  it('las librerías, en orden: cobro, avisos y conversación de la base común; no-repetir, pregunta-pendiente y aviso-recepcion del core; y `ra.js` al final (las copias propias de cobro.js y avisos.js se borraron)', () => {
+    expect(CONFIG.librerias).toEqual(['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/gmail.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', '../../src/core/conversacion/aviso-recepcion.js', 'src/lib/ra.js']);
     expect(existsSync(join(RA, 'src/lib/cobro.js'))).toBe(false);
     expect(existsSync(join(RA, 'src/lib/avisos.js'))).toBe(false);
     for (const archivo of ['rroca-antonio.json', 'rroca-antonio.prueba.json']) {

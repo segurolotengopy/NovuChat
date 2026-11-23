@@ -147,8 +147,8 @@ if (avisoDe) {
       const texto = avLimpio(avisoDe.solicitud
         ? 'Aviso del asistente: solicitud de valoración. Nombre: ' + nombre + '. WhatsApp: +' + from + '. Interés: ' + interes + '. Horario preferido: ' + horario + '.'
         : (clave === 'consulta_medica'
-          ? 'Aviso del asistente: consulta médica de una persona. WhatsApp: +' + from + '. Respóndele directamente por WhatsApp.'
-          : 'Aviso del asistente: una persona hizo una consulta que el asistente no pudo responder. WhatsApp: +' + from + '. Respóndele directamente por WhatsApp.'), 700);
+          ? 'Aviso del asistente: consulta médica de una persona. Cliente: ' + apCliente(nombre, from) + '. Respóndele directamente por WhatsApp.'
+          : 'Aviso del asistente: una persona hizo una consulta que el asistente no pudo responder. Cliente: ' + apCliente(nombre, from) + '. Respóndele directamente por WhatsApp.'), 700);
       for (const d of destinatarios) {
         const rec = evFichaVigente(cnFichaDe(fichas, d.tel), ahora);
         const dentro = rec.ultimoMs > 0 && ahora - rec.ultimoMs >= 0 && ahora - rec.ultimoMs < EV_VENTANA_RECEPCION_MS;

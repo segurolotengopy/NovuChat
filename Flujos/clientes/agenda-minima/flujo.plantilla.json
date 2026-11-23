@@ -130,6 +130,24 @@
               "value": "REEMPLAZAR_NUMERO_DOCTOR_BELLIDO"
             },
             {
+              "id": "b_plantillaAvisoRecepcion",
+              "name": "plantillaAvisoRecepcion",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "id": "b_plantillaAvisoRecepcionEstado",
+              "name": "plantillaAvisoRecepcionEstado",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "id": "b_plantillaAvisoRecepcionIdioma",
+              "name": "plantillaAvisoRecepcionIdioma",
+              "type": "string",
+              "value": "es"
+            },
+            {
               "id": "b_nombreNegocio",
               "name": "nombreNegocio",
               "type": "string",

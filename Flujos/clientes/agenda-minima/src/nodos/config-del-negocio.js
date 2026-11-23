@@ -92,7 +92,9 @@ const CAMPOS_BASE = ['nombreNegocio','descripcion','direccion','direccionMaps','
   'mensajeCierre','mensajeErrorTemporal','mensajeReservaNoConfirmada','mensajeComercioSuspendido','mensajeMenu',
   'mensajeContactoRecepcion','mensajeContactoDoctor','mensajeEmergencia','mensajeRedes','reglasAgenda','tratamiento',
   'estiloEmojis','nivelEmojis','datosQueNoTenemos','prefijosPermitidos','palabrasClaveRecepcion','palabrasClaveDoctor',
-  'palabrasClaveEmergencia','palabrasClaveClinicas','horarioAtencion','respuestaServicios','respuestaCosto'];
+  'palabrasClaveEmergencia','palabrasClaveClinicas','horarioAtencion','respuestaServicios','respuestaCosto',
+  // La plantilla de aviso a recepcion (core `apPlantillaAviso`): solo se usa con estado APPROVED; vacias, el aviso sale como siempre.
+  'plantillaAvisoRecepcion','plantillaAvisoRecepcionEstado','plantillaAvisoRecepcionIdioma'];
 const deBase = {};
 for (const k of CAMPOS_BASE) {
   const v = typeof base[k] === 'string' ? base[k].trim() : '';

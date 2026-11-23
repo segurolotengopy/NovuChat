@@ -824,10 +824,13 @@ function avVariablesDeForma(tipo, d, dest, ahoraMs) {
     ].filter(Boolean);
     // Las marcas (grupo grande, día lleno, reserva de mañana y origen del anuncio) van en `modalidad` (tope 500) y no en `items` (tope 200): juntas se cortaban a mitad de la nota.
     const marcas = avMarcasReserva(r);
+    // QUIÉN reserva (22/11/2026, reclamo de Andres; R2 intacta): el rol `completo` lleva nombre y teléfono; `cocina`, solo el primer nombre y nunca el teléfono.
+    const quienReserva = avClienteDeConsulta(Object.assign({}, d, { nombre: r.nombre || d.nombre }), dest);
+    const aQuienReserva = quienReserva.nombre + (quienReserva.telefono ? ' (' + quienReserva.telefono + ')' : '');
     return {
       items: avParametro('SOLICITUD DE RESERVA' + (cod ? ' ' + cod : '') + ': ' + partes.join(', '), 200),
       total: avParametro('sin cobro', 30),
-      modalidad: avParametro('reserva de mesa por confirmar con el cliente' + (marcas.length ? ' — ' + marcas.join(', ') : ''), 500),
+      modalidad: avParametro('reserva de mesa por confirmar con el cliente ' + aQuienReserva + (marcas.length ? ' — ' + marcas.join(', ') : ''), 500),
       cotejo: avParametro('no aplica', 80),
     };
   }
@@ -900,6 +903,13 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
   if (forma === 'solicitud' && tipo === 'reserva') return avVariablesSolicitud(d, dest);
   if (forma === 'pedido' && (tipo === 'reserva' || tipo === 'transferencia')) return avVariablesDeForma(tipo, d, dest, ahoraMs);
   const nombreDe = (n) => (dest.rol === 'cocina' ? avPrimerNombre(n, opc) : avLimpio(n, 60)) || 'cliente';
+  // «Nombre (+591…)» (22/11/2026, reclamo de Andres: todo aviso a recepción lleva nombre Y teléfono): el teléfono va SOLO al rol `completo`; `cocina` conserva el primer nombre sin teléfono (R2).
+  // `max` (solo rol completo): el nombre se recorta ANTES de sumar el teléfono. El teléfono nunca se recorta.
+  const telParte = () => {
+    const tel = dest.rol === 'completo' ? avDigitos(d.telefono || d.from) : '';
+    return tel.length >= 8 && tel.length <= 15 ? ' (' + (avTelefonoLegible(d.telefono || d.from) || '+' + tel) + ')' : '';
+  };
+  const nombreConTel = (n, max) => (dest.rol === 'completo' ? (avLimpio(n, max === undefined ? 50 : max) || 'cliente') : nombreDe(n)) + telParte();
   if (tipo === 'pedido' || tipo === 'comprobante') {
     const lineas = avLineas(d.lineas);
     const n = lineas.reduce((a, l) => a + l.cantidad, 0);
@@ -915,11 +925,18 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
   if (tipo === 'reserva') {
     const r = (d.reserva && typeof d.reserva === 'object') ? d.reserva : {};
     const p = Math.floor(Number(r.personas));
-    const partes = [
-      'Reserva ' + (Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : '—'),
-      nombreDe(r.nombre || d.nombre),
-      avLimpio(r.zona, 40, opc),
-    ].concat(avMarcasReserva(r)).filter(Boolean);
+    // PRIORIDAD en `detalle` (200): las marcas del final («GRUPO GRANDE», «VARIAS RESERVAS…», «Reserva de mañana…», el origen) y el teléfono NUNCA se cortan; el espacio que queda lo reparten el nombre (hasta 50, mínimo 8)
+    // y, con lo que sobre, la zona. Si las marcas solas no caben, ceden primero la zona y el nombre. (Antes el nombre de 60 + el teléfono empujaban las marcas fuera de las 200.)
+    const marcasReserva = avMarcasReserva(r);
+    const inicio = 'Reserva ' + (Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : '—');
+    const colaMarcas = marcasReserva.length ? ' · ' + marcasReserva.join(' · ') : '';
+    const largoTel = avLargo(telParte());
+    const libre = 200 - avLargo(inicio) - avLargo(colaMarcas) - 3 - largoTel;
+    const nombreMax = dest.rol === 'completo' ? Math.max(8, Math.min(50, libre)) : 60;
+    const nombreTxt = nombreConTel(r.nombre || d.nombre, nombreMax);
+    const sobra = 200 - avLargo(inicio) - avLargo(colaMarcas) - 3 - avLargo(nombreTxt) - 3;
+    const zonaTxt = sobra >= 1 ? avCortar(avLimpio(r.zona, 40, opc), sobra) : '';
+    const partes = [inicio, nombreTxt, zonaTxt].concat(marcasReserva).filter(Boolean);
     return {
       destinatario,
       cuando: avParametro(avFechaLegible(r.fecha, r.hora), 70),
@@ -931,7 +948,7 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
   return {
     destinatario,
     cuando: avParametro(avAhoraLegible(ahoraMs), 70),
-    detalle: avParametro([d.comprobante === true ? 'Comprobante de cliente (no se pudo revisar)' : 'Consulta de cliente', nombreDe(d.nombre), motivo ? 'Nota del cliente: ' + motivo : ''].filter(Boolean).join(' · '), 200),
+    detalle: avParametro([d.comprobante === true ? 'Comprobante de cliente (no se pudo revisar)' : 'Consulta de cliente', nombreConTel(d.nombre), motivo ? 'Nota del cliente: ' + motivo : ''].filter(Boolean).join(' · '), 200),
     codigo: avParametro(avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs), 20),
   };
 }
