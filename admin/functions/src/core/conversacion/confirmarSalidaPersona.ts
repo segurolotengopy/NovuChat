@@ -30,7 +30,8 @@
  * estaba contado (`contado: true`), y uno que pasa a `rechazado` se resta una vez. No toca `salientes`,
  * `mensajesVentana`, el bloque de 25 ni los umbrales: cero mensajes por conversación.
  * El −1 de un `incierto` que resulta `rechazado` cae en el mes de la confirmación, no en el del envío
- * (aceptado). PENDIENTE declarado: ningún cálculo de franquicia lee todavía `mensajesPersona`; lo asume
+ * (aceptado). Un mensaje `tipo: 'plantilla'` (Retomar) suma en `plantillasPersona`, con el mismo criterio y sin tocar
+ * `mensajesPersona`. PENDIENTE declarado: ningún cálculo de franquicia lee todavía `mensajesPersona`; lo asume
  * Core bloque 2.
  */
 import { onRequest } from 'firebase-functions/v2/https';
@@ -39,7 +40,7 @@ import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestor
 import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada, type Ruta } from '../seguridad/firma.js';
 import { ID_COMERCIO } from './acceso.js';
-import { CLAVE_DE_ENVIO, CODIGO_DE_ENVIO, ID_META, sumarMensajePersona } from './salidaPersona.js';
+import { CLAVE_DE_ENVIO, CODIGO_DE_ENVIO, ID_META, sumarMensajePersona, sumarPlantillaPersona } from './salidaPersona.js';
 import { ID_CONVERSACION } from './turno.js';
 
 export type ResultadoDeEnvio = 'aceptado' | 'rechazado' | 'incierto';
@@ -116,8 +117,10 @@ export async function confirmarSalida(
     }
     // El conteo: aceptado e incierto cuentan UNA vez; rechazado no (y si ya contaba como incierto, se resta).
     const cuenta = c.resultado !== 'rechazado';
-    if (cuenta && !contado) { cambios['contado'] = true; sumarMensajePersona(tx, db, tenantId, ahoraMs, 1); }
-    if (!cuenta && contado) { cambios['contado'] = false; sumarMensajePersona(tx, db, tenantId, ahoraMs, -1); }
+    // Una PLANTILLA (Retomar) cuenta en su propio contador, `plantillasPersona`, con el mismo criterio.
+    const sumar = s.get('tipo') === 'plantilla' ? sumarPlantillaPersona : sumarMensajePersona;
+    if (cuenta && !contado) { cambios['contado'] = true; sumar(tx, db, tenantId, ahoraMs, 1); }
+    if (!cuenta && contado) { cambios['contado'] = false; sumar(tx, db, tenantId, ahoraMs, -1); }
     tx.update(ref, cambios);
     return { codigo: 200, estado: c.resultado };
   });

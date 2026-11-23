@@ -2105,7 +2105,7 @@ service cloud.firestore {
                       && tenantOperativo(tenantId)
                       && conversacionValida()
                       && !request.resource.data.keys().hasAny(['turno', 'envioPersona',
-                                                               'ultimoSalientePersonaEn', 'phoneNumberId',
+                                                               'ultimoSalientePersonaEn', 'phoneNumberId', 'ultimaRetomadaEn',
                                                                'rescate', 'riesgoEn', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn',
                                                                'ultimoPedido']);
         allow delete: if false;
@@ -2123,7 +2123,7 @@ service cloud.firestore {
         allow update: if (esIngesta(tenantId) && tenantOperativo(tenantId)
                           && conversacionValida()
                           && !request.resource.data.diff(resource.data).affectedKeys()
-                                .hasAny(['turno', 'envioPersona', 'ultimoSalientePersonaEn', 'phoneNumberId',
+                                .hasAny(['turno', 'envioPersona', 'ultimoSalientePersonaEn', 'phoneNumberId', 'ultimaRetomadaEn',
                                          'rescate', 'riesgoEn', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn',
                                          'ultimoPedido']))
                       || (esPersonaDelNegocio(tenantId)
@@ -2211,6 +2211,10 @@ service cloud.firestore {
                  // que ya los tiene) y las ramas `create`/`update` de arriba le PROHÍBEN crearlos
                  // o cambiarlos (`affectedKeys`).
                  , 'turno', 'envioPersona', 'ultimoSalientePersonaEn'
+                 // Plan «Retomar» (23/11/2026): `ultimaRetomadaEn` y `turno.retomadoEn` los escribe SOLO
+                 // `retomarConversacion` (SDK Admin). Se toleran acá (la conversación retomada debe poder
+                 // actualizarla la ingesta) y las ramas create/update le PROHÍBEN crearlos o cambiarlos.
+                 , 'ultimaRetomadaEn'
                  // H2-3b (17/10/2026): `phoneNumberId` es la línea del último entrante del
                  // cliente. Se tolera aquí (para poder actualizar una conversación que ya lo tiene) pero las
                  // ramas create/update le PROHÍBEN al token de ingesta crearlo o cambiarlo por SDK cliente. Lo suma SOLO la ingesta (SDK Admin) en un entrante, desde la ruta autenticada, nunca
@@ -2278,7 +2282,9 @@ service cloud.firestore {
             && (!d.keys().hasAny(['envioPersona'])
                 || (d.envioPersona is map && d.envioPersona.get('n', -1) is int))
             && (!d.keys().hasAny(['ultimoSalientePersonaEn'])
-                || d.ultimoSalientePersonaEn is timestamp);
+                || d.ultimoSalientePersonaEn is timestamp)
+            && (!d.keys().hasAny(['ultimaRetomadaEn'])
+                || d.ultimaRetomadaEn is timestamp);
         }
 
         // Tipo y tope de los derivados de H1: ni siquiera el principal de ingesta
@@ -2314,7 +2320,8 @@ service cloud.firestore {
             || (d.turno is map
                 && d.turno.keys().hasOnly(['responde', 'tomadoPor', 'tomadoEn',
                                            'actividadPersonaEn', 'devueltoEn',
-                                           'motivoDevolucion'])
+                                           'motivoDevolucion', 'retomadoEn'])
+                && (!d.turno.keys().hasAny(['retomadoEn']) || d.turno.retomadoEn is timestamp)
                 && d.turno.get('responde', '') in ['persona', 'asistente']
                 && cadena(d.turno.get('tomadoPor', null), 128)
                 && d.turno.get('motivoDevolucion', 'manual') in ['manual', 'inactividad', 'ventana']);
