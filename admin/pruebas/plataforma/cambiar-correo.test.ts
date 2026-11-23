@@ -16,10 +16,10 @@ const SCRIPT = readFileSync(RUTA, 'utf8');
 const sinComentarios = (f: string) => f.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const correo = (u: string) => [u, 'ejemplo.test'].join('@');
 
-const USUARIO = { uid: 'u1', email: correo('viejo'), proveedores: ['password'], ultimoIngreso: null, claims: { 'rroca-antonio': 'admin', 'rroca-emma': 'admin' } };
+const USUARIO = { uid: 'u1', email: correo('viejo'), proveedores: ['password'], ultimoIngreso: null, claims: { 'tienda-alfa': 'admin', 'tienda-beta': 'admin' } };
 const MIEMBROS = [
-  { tenant: 'rroca-antonio', existe: true, correo: correo('viejo') },
-  { tenant: 'rroca-emma', existe: true, correo: correo('viejo') },
+  { tenant: 'tienda-alfa', existe: true, correo: correo('viejo') },
+  { tenant: 'tienda-beta', existe: true, correo: correo('viejo') },
 ];
 const planear = (o: Record<string, unknown> = {}) =>
   planearCambioCorreo({ usuario: USUARIO, nuevo: correo('nuevo'), miembros: MIEMBROS, ...o } as never) as Record<string, any>;
@@ -29,7 +29,7 @@ describe('cambiar-correo: lo que sí hace', () => {
     const p = planear();
     expect(p.error).toBeUndefined();
     expect(p.haceAuth).toBe(true);
-    expect(p.miembros).toEqual(['rroca-antonio', 'rroca-emma']);
+    expect(p.miembros).toEqual(['tienda-alfa', 'tienda-beta']);
     expect(p.uid).toBe('u1');
   });
   it('normaliza el correo nuevo a minúsculas', () => {
@@ -38,7 +38,7 @@ describe('cambiar-correo: lo que sí hace', () => {
   it('reanuda: si Auth ya tiene el correo nuevo, solo completa las membresías pendientes', () => {
     const p = planear({ usuario: { ...USUARIO, email: correo('nuevo'), ultimoIngreso: 'ayer' }, miembros: [MIEMBROS[0], { ...MIEMBROS[1], correo: correo('nuevo') }] });
     expect(p.haceAuth).toBe(false);
-    expect(p.miembros).toEqual(['rroca-antonio']);
+    expect(p.miembros).toEqual(['tienda-alfa']);
   });
   it('sin cambios si todo ya está así', () => {
     const p = planear({ usuario: { ...USUARIO, email: correo('nuevo') }, miembros: MIEMBROS.map((m) => ({ ...m, correo: correo('nuevo') })) });
@@ -69,7 +69,7 @@ describe('cambiar-correo: lo que NO debe hacer', () => {
   });
   it('NEGACIÓN: rechaza una cuenta sin comercios o con una membresía que falta', () => {
     expect(planear({ usuario: { ...USUARIO, claims: {} } }).error).toContain('ningún comercio');
-    expect(planear({ miembros: [MIEMBROS[0]] }).error).toContain('falta la membresía en rroca-emma');
+    expect(planear({ miembros: [MIEMBROS[0]] }).error).toContain('falta la membresía en tienda-beta');
   });
   it('NEGACIÓN: una cuenta inexistente se rechaza', () => {
     expect(planear({ usuario: null }).error).toContain('no existe');
@@ -132,7 +132,7 @@ describe('cambiar-correo: el texto del script', () => {
     }
   });
   it('exige --a o --revertir, uno solo', () => {
-    const r = spawnSync('node', [RUTA, '--proyecto', 'p', '--operador', correo('operador'), '--tenant', 'rroca-antonio'], { encoding: 'utf8', env: entornoDelEmulador() });
+    const r = spawnSync('node', [RUTA, '--proyecto', 'p', '--operador', correo('operador'), '--tenant', 'tienda-alfa'], { encoding: 'utf8', env: entornoDelEmulador() });
     expect(r.status).toBe(2);
     expect(r.stderr).toContain('--revertir');
   });

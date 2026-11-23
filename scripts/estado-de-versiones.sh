@@ -98,6 +98,12 @@ SIN_DECLARAR=0; REVISADOS=0; OMITIDOS=0
 
 while IFS=$'\t' read -r CLIENTE ENV_FILE FLUJO EXCEPCION; do
   if [[ -n "$SOLO" && "${CLIENTE,,}" != *"${SOLO,,}"* ]]; then continue; fi
+  # DADO DE BAJA (23/11/2026, orden de Andres: Rubén y sus 3 subcuentas): la fila lo declara con «DADO DE BAJA» al comienzo de la excepción.
+  # No se compara contra n8n (su flujo está apagado a propósito), no cuenta como revisada y no falla: se informa y se sigue.
+  if [[ "${EXCEPCION//\*/}" == "DADO DE BAJA"* ]]; then
+    printf '  %s·%s %-34s %sdado de baja: no se compara ni se actualiza%s\n' "$G" "$FIN" "$CLIENTE" "$G" "$FIN"
+    continue
+  fi
   REVISADOS=$((REVISADOS + 1))
 
   if [[ ! -f "$ENV_FILE" ]]; then
