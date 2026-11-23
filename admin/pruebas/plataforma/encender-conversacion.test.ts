@@ -28,6 +28,8 @@ const PARAMS = {
   tenant: 'comercio-z', alias: 'clienteZz', env: '.env', credIngesta: 'NovuChat ingesta (Z)', credEnvio: 'WhatsApp Z (envío)',
   proyecto: 'proyecto-ficticio-1', respaldoDir: '/tmp/respaldos', sello: 's1',
 };
+// Retomar va al final del juego aunque core todavía no la liste en JUEGO_CON_INFRA (validarOrden admite ambos casos).
+const CAMPOS = [...Object.keys(JUEGO_CON_INFRA), ...('personaPuedeRetomar' in JUEGO_CON_INFRA ? [] : ['personaPuedeRetomar'])];
 const pasos = (): Paso[] => pasosDelEncendido(PARAMS);
 const indice = (ps: Paso[], id: string) => ps.findIndex((p) => p.id === id);
 
@@ -42,7 +44,7 @@ describe('fichaInicial (alta-comercio.mjs)', () => {
   });
 
   it('NO escribe las banderas que certifican infraestructura (esas van después de la puerta)', () => {
-    for (const clave of Object.keys(JUEGO_CON_INFRA)) expect(ficha, clave).not.toHaveProperty(clave);
+    for (const clave of CAMPOS) expect(ficha, clave).not.toHaveProperty(clave);
   });
 
   it('conserva el resto de la ficha de siempre', () => {
@@ -54,17 +56,17 @@ describe('fichaInicial (alta-comercio.mjs)', () => {
 describe('pasosDelEncendido (encender-conversacion.mjs)', () => {
   it('cubre JUEGO_CON_INFRA: una bandera por clave, en el orden del juego, y ninguna de más', () => {
     const banderas = pasos().filter((p) => p.tipo === 'bandera').map((p) => p.bandera);
-    expect(banderas).toEqual(Object.keys(JUEGO_CON_INFRA));
+    expect(banderas).toEqual(CAMPOS);
   });
 
   it('el orden es relé, alias, carga, activación, puerta y después las banderas', () => {
-    expect(pasos().map((p) => p.id)).toEqual(['rele-inerte', 'alias', 'timbre-carga', 'timbre-activar', 'puerta', ...Object.keys(JUEGO_CON_INFRA)]);
+    expect(pasos().map((p) => p.id)).toEqual(['rele-inerte', 'alias', 'timbre-carga', 'timbre-activar', 'puerta', ...CAMPOS]);
   });
 
   it('pone la verificación antes de CADA bandera y toda la infraestructura antes de la verificación', () => {
     const ps = pasos();
     const iPuerta = indice(ps, 'puerta');
-    for (const campo of Object.keys(JUEGO_CON_INFRA)) expect(indice(ps, campo), campo).toBeGreaterThan(iPuerta);
+    for (const campo of CAMPOS) expect(indice(ps, campo), campo).toBeGreaterThan(iPuerta);
     for (const p of ps.filter((x) => x.tipo === 'spawn')) expect(indice(ps, p.id), p.id).toBeLessThan(iPuerta);
     expect(validarOrden(ps)).toEqual([]);
   });
@@ -79,7 +81,7 @@ describe('pasosDelEncendido (encender-conversacion.mjs)', () => {
 
   it('negativa: un orden con una bandera ANTES de la puerta no es válido y no se ejecuta nada', async () => {
     const ps = pasos();
-    const [bandera] = ps.splice(indice(ps, Object.keys(JUEGO_CON_INFRA)[0] as string), 1);
+    const [bandera] = ps.splice(indice(ps, CAMPOS[0] as string), 1);
     ps.splice(indice(ps, 'puerta'), 0, bandera as Paso);
     expect(validarOrden(ps).join('|')).toMatch(/va antes de la puerta/);
     const corridos: string[] = [];
@@ -134,7 +136,7 @@ describe('correrPasos con dependencias falsas', () => {
     const r = await correrPasos(pasos(), { aplicar: true, deps });
     expect(r.codigo).toBe(3);
     expect(r.fallo).toBe(falla);
-    for (const campo of Object.keys(JUEGO_CON_INFRA)) expect(llamadas).not.toContain(campo);
+    for (const campo of CAMPOS) expect(llamadas).not.toContain(campo);
     expect(llamadas[llamadas.length - 1]).toBe(falla);
   });
 
@@ -166,7 +168,7 @@ describe('correrPasos con dependencias falsas', () => {
     const { llamadas, deps } = armar(null);
     const r = await correrPasos(sinPuerta, { aplicar: true, deps, validar: () => [] });
     expect(r.codigo).toBe(2);
-    for (const campo of Object.keys(JUEGO_CON_INFRA)) expect(llamadas).not.toContain(campo);
+    for (const campo of CAMPOS) expect(llamadas).not.toContain(campo);
   });
 
   it('segunda barrera: la puerta llega y FALLA (el plan sí pasa validarOrden): ninguna bandera corre y no se escribe nada más', async () => {
@@ -176,7 +178,7 @@ describe('correrPasos con dependencias falsas', () => {
     expect(r.codigo).toBe(3);
     expect(r.fallo).toBe('puerta');
     expect(llamadas.at(-1)).toBe('puerta');
-    for (const campo of Object.keys(JUEGO_CON_INFRA)) expect(llamadas).not.toContain(campo);
+    for (const campo of CAMPOS) expect(llamadas).not.toContain(campo);
   });
 
   it('en seco no escribe: sondea, no corre pasos de infraestructura ni la puerta, y deja el código 1 con lo que falta', async () => {
@@ -184,7 +186,7 @@ describe('correrPasos con dependencias falsas', () => {
     const r = await correrPasos(pasos(), { aplicar: false, deps });
     expect(r.codigo).toBe(1);
     // la primera bandera ya está en true (0) en este simulacro, así que el seco también mira la segunda
-    expect(llamadas).toEqual(['personaPuedeEscribir', 'personaPuedeEnviarMedios']);
+    expect(llamadas).toEqual(['personaPuedeEscribir', 'personaPuedeEnviarMedios', 'personaPuedeRetomar']);
     expect(r.pendientes).toEqual(expect.arrayContaining(['rele-inerte', 'alias', 'timbre-carga', 'timbre-activar']));
     expect(log.join('\n')).toMatch(/se comprueba al aplicar/);
     for (const p of pasos().filter((x) => x.args)) expect(argumentosDelPaso(p, false)).not.toContain('--aplicar');
@@ -200,7 +202,7 @@ describe('correrPasos con dependencias falsas', () => {
     const { llamadas, log, deps } = armar(null, 3, HECHO_TODO);
     const r = await correrPasos(pasos(), { aplicar: true, deps });
     expect(r.codigo).toBe(0);
-    expect(llamadas).toEqual(['puerta', ...Object.keys(JUEGO_CON_INFRA)]);
+    expect(llamadas).toEqual(['puerta', ...CAMPOS]);
     expect(log.join('\n')).toMatch(/ya está hecho/);
     // lo saltado no se «deshace»: solo lo que esta corrida escribió
     expect(log.join('\n')).not.toMatch(/--quitar-alias|--quitar --aplicar/);
@@ -210,7 +212,7 @@ describe('correrPasos con dependencias falsas', () => {
     const { llamadas, deps } = armar(null, 3, { ...HECHO_TODO, 'timbre-activar': { codigo: 1, salida: '' } });
     const r = await correrPasos(pasos(), { aplicar: true, deps });
     expect(r.codigo).toBe(0);
-    expect(llamadas).toEqual(['timbre-activar', 'puerta', ...Object.keys(JUEGO_CON_INFRA)]);
+    expect(llamadas).toEqual(['timbre-activar', 'puerta', ...CAMPOS]);
   });
 
   it('reanudar: un flujo ya cargado implica relé y alias hechos (un comercio con relé propio no crea el inerte)', async () => {
@@ -228,7 +230,7 @@ describe('correrPasos con dependencias falsas', () => {
     // escribir ya está en true (0); enviar medios todavía no (1)
     deps.ejecutar = async (p: Paso) => { await ejecutar(p); return p.id === 'personaPuedeEnviarMedios' ? 1 : 0; };
     const r = await correrPasos(pasos(), { aplicar: false, deps });
-    expect(llamadas).toEqual(['puerta', 'personaPuedeEscribir', 'personaPuedeEnviarMedios']);
+    expect(llamadas).toEqual(['puerta', 'personaPuedeEscribir', 'personaPuedeEnviarMedios', 'personaPuedeRetomar']);
     expect(r.codigo).toBe(1);
     expect(r.pendientes).toEqual(['personaPuedeEnviarMedios']);
     expect(log.join('\n')).toMatch(/Falta: personaPuedeEnviarMedios/);
@@ -256,7 +258,7 @@ describe('correrPasos con dependencias falsas', () => {
     const r = await correrPasos(pasos(), { aplicar: true, deps });
     expect(r.codigo).toBe(3);
     expect(llamadas).toEqual(['puerta']);
-    for (const campo of Object.keys(JUEGO_CON_INFRA)) expect(llamadas).not.toContain(campo);
+    for (const campo of CAMPOS) expect(llamadas).not.toContain(campo);
   });
 
   it('al aplicar, los pasos que escriben llevan --aplicar --confirmo produccion y la puerta no', () => {
@@ -398,5 +400,90 @@ describe('alias desde rutasWhatsApp y --todos (bases falsas)', () => {
     expect(texto).toMatch(/✓ a-completo/);
     expect(texto).toMatch(/✗ b-incompleto: faltan guardarMedios, personaPuedeEscribir/);
     expect(texto).toMatch(/1 con el juego incompleto/);
+  });
+});
+
+describe('Retomar en el orquestador (personaPuedeRetomar)', () => {
+  const HECHO = (id: string) => (id === 'alias' ? { codigo: 3, salida: 'el alias pedido está presente' } : { codigo: 0, salida: '' });
+  const armar = (retomarCodigo: number) => {
+    const llamadas: string[] = [];
+    const log: string[] = [];
+    const deps = {
+      log: (t: string) => log.push(t),
+      ejecutar: async (p: Paso) => { llamadas.push(p.id); return p.id === 'personaPuedeRetomar' ? retomarCodigo : 0; },
+      sondear: async (p: Paso) => HECHO(p.id),
+    };
+    return { llamadas, log, deps };
+  };
+
+  it('el paso va DESPUÉS de personaPuedeEscribir, y validarOrden lo admite esté o no en JUEGO_CON_INFRA', () => {
+    const ps = pasos();
+    expect(indice(ps, 'personaPuedeRetomar')).toBeGreaterThan(indice(ps, 'personaPuedeEscribir'));
+    expect(indice(ps, 'personaPuedeRetomar')).toBeGreaterThan(indice(ps, 'puerta'));
+    expect(validarOrden(ps)).toEqual([]);
+    expect(validarOrden(ps.filter((p) => p.bandera !== 'personaPuedeRetomar'))).toEqual([]);   // sin el paso, también válido
+    expect(validarOrden([...ps, ...ps.filter((p) => p.bandera === 'personaPuedeRetomar')]).join('|')).toMatch(/personaPuedeRetomar/);
+  });
+
+  it('el paso lleva alias y env para que verifique la salida con --plantillas', () => {
+    const p = pasos().find((x) => x.bandera === 'personaPuedeRetomar') as Paso & { verificacion?: { alias: string; env: string } };
+    expect(p.verificacion).toEqual({ alias: 'clienteZz', env: '.env' });
+  });
+
+  it('negativa: sin plantilla (salida 5) NO corta: no cuenta como hecho, no pide deshacerlo y la corrida termina en 5', async () => {
+    const { llamadas, log, deps } = armar(5);
+    const r = await correrPasos(pasos(), { aplicar: true, deps });
+    expect(llamadas).toContain('personaPuedeEscribir');
+    expect(llamadas).toContain('personaPuedeEnviarMedios');
+    expect(llamadas).toContain('personaPuedeRetomar');
+    expect(r.codigo).toBe(5);
+    expect(r.fallo).toBeNull();
+    expect(r.pendientesMeta).toEqual(['personaPuedeRetomar']);
+    expect(r.hechos.map((p: Paso) => p.id)).not.toContain('personaPuedeRetomar');
+    expect(log.join('\n')).toMatch(/PENDIENTE DE META/);
+    expect(log.join('\n')).not.toMatch(/aplicar-persona-puede-retomar\.mjs --revertir/);
+    expect(log.join('\n')).toMatch(/aplicar-persona-puede-enviar-medios\.mjs --revertir/);
+  });
+
+  it('el 5 no corta el resto aunque Retomar no fuera la última bandera', async () => {
+    const ps = pasos();
+    const [r] = ps.splice(indice(ps, 'personaPuedeRetomar'), 1);
+    ps.splice(indice(ps, 'personaPuedeEnviarMedios'), 0, r as Paso);   // Retomar antes que medios (como si core la lista así)
+    const { llamadas, deps } = armar(5);
+    const res = await correrPasos(ps, { aplicar: true, deps });
+    expect(llamadas.indexOf('personaPuedeEnviarMedios')).toBeGreaterThan(llamadas.indexOf('personaPuedeRetomar'));
+    expect(res.codigo).toBe(5);
+  });
+
+  it('contraprueba: otra salida distinta de 5 (2 o 3) SÍ corta y es un fallo', async () => {
+    for (const c of [2, 3]) {
+      const { deps } = armar(c);
+      const r = await correrPasos(pasos(), { aplicar: true, deps });
+      expect(r.codigo, String(c)).toBe(c === 2 ? 2 : 3);
+      expect(r.fallo).toBe('personaPuedeRetomar');
+    }
+  });
+
+  it('el 5 de un paso que NO es una bandera (la puerta) sigue siendo un fallo y no escribe nada', async () => {
+    const llamadas: string[] = [];
+    const deps = { log: () => {}, sondear: async (p: Paso) => HECHO(p.id), ejecutar: async (p: Paso) => { llamadas.push(p.id); return p.id === 'puerta' ? 5 : 0; } };
+    const r = await correrPasos(pasos(), { aplicar: true, deps });
+    expect(r.codigo).toBe(3);
+    expect(llamadas).not.toContain('personaPuedeEscribir');
+  });
+
+  it('en seco, el 5 se informa como pendiente (código 1) y no escribe nada', async () => {
+    const { log, deps } = armar(5);
+    const r = await correrPasos(pasos(), { aplicar: false, deps });
+    expect(r.codigo).toBe(1);
+    expect(r.pendientes).toContain('personaPuedeRetomar');
+    expect(log.join('\n')).toMatch(/PENDIENTE DE META/);
+  });
+
+  it('todo bien (0): termina en 0 y Retomar queda entre lo que se deshace', async () => {
+    const { log, deps } = armar(0);
+    const r = await correrPasos(pasos(), { aplicar: true, deps });
+    expect(r.codigo).toBe(0);
+    expect(log.join('\n')).toMatch(/aplicar-persona-puede-retomar\.mjs --revertir/);
   });
 });

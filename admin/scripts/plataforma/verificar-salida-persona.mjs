@@ -8,7 +8,7 @@
  * comprueba por comercio y dice SÍ o NO por cada eslabón, sin mostrar nunca un valor.
  *
  *   node scripts/plataforma/verificar-salida-persona.mjs --proyecto <id> --alias <clienteNN> --tenant <id> \
- *        [--env <archivo>] [--probar-timbre] [--medios] \
+ *        [--env <archivo>] [--probar-timbre] [--medios] [--plantillas] \
  *        [--encender [--aplicar --respaldo <ruta> --confirmo-produccion <tenant>]]
  *
  * CHEQUEOS (cada uno: OK / FALLA / NO SE PUDO, con una línea de porqué sin datos sensibles):
@@ -25,7 +25,11 @@
  *      informa además `personaPuedeEnviarMedios` de hoy. Antes de encender esa bandera
  *      (`aplicar-persona-puede-enviar-medios.mjs`), correr con `--medios`.
  *   6  (solo con --probar-timbre) clave equivocada => 403
- * Los chequeos 1 a 4e son OBLIGATORIOS para `--encender`; 4f, 5 y 6 informan.
+ *   4g la salida publicada admite plantillas (Retomar: cabecera `x-novuchat-plantillas: 1` en `Reclamar`). SIEMPRE se
+ *      evalúa y se informa; solo con `--plantillas` su fallo hace fallar el veredicto. Antes de encender
+ *      `personaPuedeRetomar` (`aplicar-persona-puede-retomar.mjs`), correr con `--plantillas`.
+ *
+ * Los chequeos 1 a 4e son OBLIGATORIOS para `--encender`; 4f, 4g, 5 y 6 informan.
  *
  * SOLO LECTURA. Cero escrituras en Firestore, n8n y Secret Manager. Las únicas llamadas con efecto son
  * (a) `--probar-timbre`: UN POST sin datos con la clave EQUIVOCADA (nunca la correcta: podría disparar un
@@ -65,10 +69,10 @@ const ESPERA_MS = 30_000;
 // La lista de flujos pesa decenas de MB y tarda hasta minutos según la carga de la VM.
 const ESPERA_LISTA_MS = 300_000;
 const CON_VALOR = ['proyecto', 'alias', 'tenant', 'env', 'respaldo', 'confirmo-produccion'];
-const BANDERAS = ['probar-timbre', 'encender', 'aplicar', 'medios', 'sin-redespliegue'];
+const BANDERAS = ['probar-timbre', 'encender', 'aplicar', 'medios', 'plantillas', 'sin-redespliegue'];
 
 export const USO = '  node scripts/plataforma/verificar-salida-persona.mjs --proyecto <id> --alias <clienteNN> --tenant <id> [--env <archivo>] '
-  + '[--probar-timbre] [--medios] [--sin-redespliegue] [--encender [--aplicar --respaldo <ruta> --confirmo-produccion <tenant>]]';
+  + '[--probar-timbre] [--medios] [--plantillas] [--sin-redespliegue] [--encender [--aplicar --respaldo <ruta> --confirmo-produccion <tenant>]]';
 
 export const nombreDelFlujo = (alias) => `NovuChat — Salida de persona (${alias})`;
 const sha = (s) => createHash('sha256').update(String(s)).digest('hex');
@@ -102,6 +106,7 @@ export function analizarArgumentos(argv, env = process.env) {
   const aplicar = banderas.includes('aplicar');
   const probarTimbre = banderas.includes('probar-timbre');
   const medios = banderas.includes('medios');
+  const plantillas = banderas.includes('plantillas');
   const sinRedespliegue = banderas.includes('sin-redespliegue');
   const { proyecto, alias, tenant, respaldo } = valores;
   const confirmo = valores['confirmo-produccion'];
@@ -128,7 +133,7 @@ export function analizarArgumentos(argv, env = process.env) {
   if (problemas.length) return { ok: false, problemas };
   return {
     ok: true,
-    cfg: { proyecto, entorno: proy.entorno, alias, tenant, envArchivo: valores['env'] ?? null, probarTimbre, medios, sinRedespliegue, encender, aplicar, respaldo: respaldo ?? null, confirmo: confirmo ?? null },
+    cfg: { proyecto, entorno: proy.entorno, alias, tenant, envArchivo: valores['env'] ?? null, probarTimbre, medios, plantillas, sinRedespliegue, encender, aplicar, respaldo: respaldo ?? null, confirmo: confirmo ?? null },
   };
 }
 
@@ -326,7 +331,7 @@ const credDe = (nodo) => {
 /** 4a a 4e, 5a. `n8n(ruta)` devuelve `{ status, json }` (solo GET). */
 export async function chequeoN8n(cfg, n8n, rutaDelSecreto, phoneId, ahora = Date.now()) {
   const R = [];
-  const todos = (motivo) => ['4a', '4b', '4c', '4d', '4e', '4f', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], motivo));
+  const todos = (motivo) => ['4a', '4b', '4c', '4d', '4e', '4f', '4g', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], motivo));
   let lista = [];
   let cursor = null;
   try {
@@ -345,7 +350,7 @@ export async function chequeoN8n(cfg, n8n, rutaDelSecreto, phoneId, ahora = Date
   const coinciden = lista.filter((w) => w?.name === nombre);
   if (coinciden.length !== 1) {
     const m = coinciden.length === 0 ? 'no existe el flujo de este alias' : 'hay más de un flujo con ese nombre';
-    return { resultados: [res('4a', TITULOS_N8N['4a'], FALLA, m), ...['4b', '4c', '4d', '4e', '4f'].map((id) => noSePudo(id, TITULOS_N8N[id], 'sin flujo que revisar')), noSePudo('5a', TITULOS_N8N['5a'], 'sin flujo que revisar')], flujoId: null };
+    return { resultados: [res('4a', TITULOS_N8N['4a'], FALLA, m), ...['4b', '4c', '4d', '4e', '4f', '4g'].map((id) => noSePudo(id, TITULOS_N8N[id], 'sin flujo que revisar')), noSePudo('5a', TITULOS_N8N['5a'], 'sin flujo que revisar')], flujoId: null };
   }
   let w;
   try {
@@ -413,6 +418,9 @@ export async function chequeoN8n(cfg, n8n, rutaDelSecreto, phoneId, ahora = Date
   // 4f
   if (f4a.some((m) => /versión publicada|borrador/.test(m))) R.push(noSePudo('4f', TITULOS_N8N['4f'], 'el borrador no es lo publicado (ver 4a)'));
   else R.push(chequeoAdjuntos(nodos, w.connections, cfg.medios === true));
+  // 4g
+  if (f4a.some((m) => /versión publicada|borrador/.test(m))) R.push(noSePudo('4g', TITULOS_N8N['4g'], 'el borrador no es lo publicado (ver 4a)'));
+  else R.push(chequeoPlantillas(nodos, cfg.plantillas === true));
   // 5a
   try {
     const r = await n8n(`/executions?workflowId=${encodeURIComponent(String(coinciden[0].id))}&limit=50`);
@@ -494,9 +502,35 @@ export function chequeoAdjuntos(nodos, conexiones, medios) {
     : res('4f', t, OK, `Reclamar manda ${CABECERA_ADJUNTOS}: 1 y la cadena ${NODO_REPARTO} → Leer adjunto → Subir a Meta → confirmación está conectada y activa`, extra);
 }
 
+const CABECERA_PLANTILLAS = 'x-novuchat-plantillas';
+const nota4g = ' (informativo: sin --plantillas no cuenta para el veredicto)';
+
+/**
+ * 4g. Puro. Informativo salvo que se pida `--plantillas` (Retomar): la salida publicada admite plantillas si `Reclamar`
+ * está activo y manda la cabecera `x-novuchat-plantillas: 1` (contrato C5). Sin ella el servidor nunca entrega una
+ * plantilla a ese flujo (queda pendiente y caduca), así que `personaPuedeRetomar` no debe encenderse.
+ */
+export function chequeoPlantillas(nodos, plantillas) {
+  const f = [];
+  const reclamar = nodoPor(nodos, 'Reclamar');
+  if (!reclamar) f.push('falta el nodo Reclamar');
+  else {
+    if (reclamar.disabled === true) f.push('el nodo Reclamar está desactivado');
+    if (reclamar.parameters?.sendHeaders !== true) f.push('Reclamar no envía cabeceras (sendHeaders no es true)');
+    const cab = reclamar.parameters?.headerParameters?.parameters;
+    const h = Array.isArray(cab) ? cab.find((x) => String(x?.name ?? '').toLowerCase() === CABECERA_PLANTILLAS) : undefined;
+    if (!h) f.push(`Reclamar no manda la cabecera ${CABECERA_PLANTILLAS}`);
+    else if (String(h.value) !== '1') f.push(`la cabecera ${CABECERA_PLANTILLAS} de Reclamar no vale 1`);
+  }
+  const t = TITULOS_N8N['4g'];
+  const extra = { obligatorio: false, informativo: !plantillas };
+  return f.length ? res('4g', t, FALLA, f.join('; '), extra)
+    : res('4g', t, OK, `Reclamar manda ${CABECERA_PLANTILLAS}: 1; la salida publicada admite plantillas`, extra);
+}
+
 const TITULOS_N8N = {
   '4a': 'Flujo n8n activo y publicado', '4b': 'Credenciales por rol y tipo', '4c': 'Ingesta distinta de envío',
-  '4d': 'Timbre = ruta del secreto', '4e': 'phoneNumberId del flujo = ruta', '4f': 'El flujo publicado lleva la rama de adjuntos', '5a': 'Ejecuciones recientes sin error',
+  '4d': 'Timbre = ruta del secreto', '4e': 'phoneNumberId del flujo = ruta', '4f': 'El flujo publicado lleva la rama de adjuntos', '4g': 'El flujo publicado admite plantillas (Retomar)', '5a': 'Ejecuciones recientes sin error',
 };
 
 /** 5b. Solo conteos. Primero las solicitudes TOTALES (el barrido corre cada minuto): con 0 el filtro no sirve. */
@@ -554,9 +588,9 @@ export async function verificar(cfg, deps) {
 
   let rN8n;
   if (!deps.n8nEntorno?.base || !deps.n8nEntorno?.clave) {
-    rN8n = { resultados: ['4a', '4b', '4c', '4d', '4e', '4f', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], 'faltan N8N_BASE_URL o N8N_API_KEY válidas')) };
+    rN8n = { resultados: ['4a', '4b', '4c', '4d', '4e', '4f', '4g', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], 'faltan N8N_BASE_URL o N8N_API_KEY válidas')) };
   } else if (sec.hostAjeno === true || (sec.ruta !== null && new URL(sec.ruta).host !== new URL(deps.n8nEntorno.base).host)) {
-    rN8n = { resultados: ['4a', '4b', '4c', '4d', '4e', '4f', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], 'el host de N8N_BASE_URL no es el de la ruta del secreto: no se envía la clave de la API')) };
+    rN8n = { resultados: ['4a', '4b', '4c', '4d', '4e', '4f', '4g', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], 'el host de N8N_BASE_URL no es el de la ruta del secreto: no se envía la clave de la API')) };
   } else {
     rN8n = await chequeoN8n(cfg, deps.n8n, sec.ruta, fs.phoneId, deps.ahora ?? Date.now());
   }
@@ -565,9 +599,10 @@ export async function verificar(cfg, deps) {
   if (cfg.probarTimbre) R.push(await chequeoTimbre(sec.ruta, deps.postTimbre));
 
   for (const r of R) {
-    if (r.id !== '4f') continue;
-    r.obligatorio = false; r.informativo = cfg.medios !== true;
-    if (r.informativo && r.estado !== OK && !r.motivo.includes('informativo')) r.motivo += nota4f;
+    if (r.id !== '4f' && r.id !== '4g') continue;
+    const pedido = r.id === '4f' ? cfg.medios === true : cfg.plantillas === true;
+    r.obligatorio = false; r.informativo = !pedido;
+    if (r.informativo && r.estado !== OK && !r.motivo.includes('informativo')) r.motivo += r.id === '4f' ? nota4f : nota4g;
   }   // también si quedó en NO SE PUDO
   R.sort((a, b) => (a.id < b.id ? -1 : 1));
   for (const r of R) {

@@ -17,7 +17,10 @@
  *   4. puerta            `verificar-salida-persona.mjs --medios` (solo lectura): sale 0 solo con 1a a 4e y 4f en OK
  *   5. personaPuedeEscribir        `ejecutar()` de `aplicar-persona-puede-escribir.mjs`, con respaldo
  *   6. personaPuedeEnviarMedios    `ejecutar()` de `aplicar-persona-puede-enviar-medios.mjs`, con respaldo
- * Ninguna bandera se escribe antes de la puerta, y se corta en el primer paso que falle.
+ *   7. personaPuedeRetomar         `ejecutar()` de `aplicar-persona-puede-retomar.mjs`, con respaldo; verifica C1 en todas las rutas y la
+ *                        salida con `--plantillas`. Si falta la plantilla de Meta sale con 5: queda «pendiente de Meta», no corta el
+ *                        resto y la corrida termina con salida 5 (el juego quedó encendido salvo Retomar).
+ * Ninguna bandera se escribe antes de la puerta, y se corta en el primer paso que falle (salvo el 5 de Retomar).
  *
  *   node scripts/plataforma/encender-conversacion.mjs --tenant <id> --env .env [--alias <clienteNN>] \
  *        --cred-ingesta "<nombre>" --cred-envio "<nombre>" [--cred-rele "<nombre>"] --respaldo-dir <ruta> \
@@ -89,6 +92,7 @@ import { comprobarRespaldo } from './aplicar-consola-conversaciones.mjs';
 import { COMERCIOS_NO_TOCADOS } from './comercios-no-tocados.mjs';
 import * as escribir from './aplicar-persona-puede-escribir.mjs';
 import * as enviarMedios from './aplicar-persona-puede-enviar-medios.mjs';
+import * as retomar from './aplicar-persona-puede-retomar.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(AQUI, '..', '..', '..');
@@ -109,7 +113,22 @@ const ESCRITORES = Object.freeze({
   personaPuedeEscribir: { modulo: escribir, script: 'aplicar-persona-puede-escribir.mjs', enSeco: true },
   // Su precondición es `personaPuedeEscribir === true`: en seco solo se corre si la anterior ya dio 0 (ya está en true).
   personaPuedeEnviarMedios: { modulo: enviarMedios, script: 'aplicar-persona-puede-enviar-medios.mjs', enSeco: false, dependeDe: 'personaPuedeEscribir' },
+  // Retomar (plantilla fuera de ventana): va DESPUÉS de personaPuedeEscribir. Verifica por sí misma C1 en todas las rutas y la
+  // salida publicada con `--plantillas`, así que pide alias y env. Si falta la plantilla sale con 5 (pendiente de Meta).
+  personaPuedeRetomar: { modulo: retomar, script: 'aplicar-persona-puede-retomar.mjs', enSeco: false, dependeDe: 'personaPuedeEscribir', conVerificacion: true },
 });
+
+/** Salida de una bandera cuando la plantilla de Meta todavía no está lista: pendiente, no fallo; no corta el resto. */
+export const CODIGO_PENDIENTE_DE_META = retomar.CODIGO_PENDIENTE_DE_META;
+
+/**
+ * Las banderas del juego en el orden de escritura: las de `JUEGO_CON_INFRA` y, si core todavía no la lista, `personaPuedeRetomar`
+ * al final. Así el orquestador sirve antes y después de que core agregue la clave (`validarOrden` admite ambos casos).
+ */
+const camposDelJuego = () => {
+  const claves = Object.keys(JUEGO_CON_INFRA);
+  return claves.includes('personaPuedeRetomar') ? claves : [...claves, 'personaPuedeRetomar'];
+};
 
 // ===========================================================================
 // LOS PASOS (puro)
@@ -162,13 +181,14 @@ export function pasosDelEncendido({ tenant, alias, env, credIngesta, credEnvio, 
       revertir: null,
     },
   ];
-  for (const campo of Object.keys(JUEGO_CON_INFRA)) {
+  for (const campo of camposDelJuego()) {
     const escritor = ESCRITORES[campo];
     if (!escritor) throw new Error(`falta quién escribe la bandera «${campo}» del juego (ESCRITORES)`);
     const respaldo = respaldoDir ? join(respaldoDir, `${campo}-${tenant}-${sello ?? 'sin-sello'}.json`) : null;
     pasos.push({
       id: campo, tipo: 'bandera', bandera: campo, titulo: `bandera ${campo}`, escribe: true, enSeco: escritor.enSeco,
       dependeDe: escritor.dependeDe ?? null, modulo: escritor.modulo, respaldo,
+      verificacion: escritor.conVerificacion === true ? { alias, env } : null,
       revertir: `node scripts/plataforma/${escritor.script} --revertir --respaldo ${respaldo ?? '<respaldo>'} --tenant ${tenant} --proyecto <el de producción> --aplicar --confirmo-produccion ${tenant}`,
     });
   }
@@ -195,7 +215,9 @@ export function validarOrden(pasos) {
     const n = campos.filter((c) => c === clave).length;
     if (n !== 1) problemas.push(`la bandera «${clave}» del juego aparece ${n} veces (debe ser 1)`);
   }
-  for (const c of campos) if (!(c in JUEGO_CON_INFRA)) problemas.push(`la bandera «${c}» no es del juego (JUEGO_CON_INFRA)`);
+  // `personaPuedeRetomar` se admite esté o no en JUEGO_CON_INFRA: si core no la lista todavía, a lo sumo una vez.
+  if (!('personaPuedeRetomar' in JUEGO_CON_INFRA) && campos.filter((c) => c === 'personaPuedeRetomar').length > 1) problemas.push('la bandera «personaPuedeRetomar» aparece más de una vez (debe ser 1)');
+  for (const c of campos) if (!(c in JUEGO_CON_INFRA) && c !== 'personaPuedeRetomar') problemas.push(`la bandera «${c}» no es del juego (JUEGO_CON_INFRA)`);
   return problemas;
 }
 
@@ -339,6 +361,7 @@ export async function correrPasos(pasos, { aplicar, deps, validar = validarOrden
   const alias = pasos.find((p) => p.id === 'alias');
 
   const hechos = [];
+  const pendientesMeta = [];
   const salidas = {};
   let puertaOk = false;
   for (const [i, paso] of pasos.entries()) {
@@ -367,6 +390,13 @@ export async function correrPasos(pasos, { aplicar, deps, validar = validarOrden
     log(`\n  ▶ ${rotulo}${aplicar ? '' : ' (seco)'}`);
     const codigo = await deps.ejecutar(paso, aplicar);
     salidas[paso.id] = codigo;
+    // Plantilla de Meta todavía no lista: la bandera queda pendiente (nada escrito) y el resto del plan sigue.
+    if (paso.tipo === 'bandera' && codigo === CODIGO_PENDIENTE_DE_META) {
+      pendientesMeta.push(paso.id);
+      log(`\n  ⏳ ${rotulo}: PENDIENTE DE META (falta la plantilla aprobada). No se escribió esta bandera; el resto del plan sigue.`);
+      if (!aplicar) pendientes.push(paso.id);
+      continue;
+    }
     if (!codigosAceptados(paso, aplicar).includes(codigo)) {
       log(`\n  ✗ Se cortó en «${paso.titulo}» (salida ${codigo}). No se escribió ninguna bandera pendiente.`);
       // 2 = se negó sin escribir; 4 = cerrojo del mapa tomado por otra corrida (no se escribió nada): NO se imprime reversión
@@ -386,13 +416,15 @@ export async function correrPasos(pasos, { aplicar, deps, validar = validarOrden
     if (aplicar) hechos.push(paso);
   }
   if (aplicar) {
-    log('\n  ✓ Juego de conversación encendido. Para deshacerlo (en este orden):');
+    log(pendientesMeta.length
+      ? `\n  ✓ Juego de conversación encendido, salvo lo pendiente de Meta: ${pendientesMeta.join(', ')} (registre la plantilla con registrar-plantilla.mjs y repita). Para deshacerlo (en este orden):`
+      : '\n  ✓ Juego de conversación encendido. Para deshacerlo (en este orden):');
     for (const p of [...hechos].filter((x) => x.escribe && x.revertir).reverse()) log(`    - ${p.titulo}: ${p.revertir}`);
     log('');
-    return { codigo: 0, fallo: null, hechos, pendientes: [] };
+    return { codigo: pendientesMeta.length ? CODIGO_PENDIENTE_DE_META : 0, fallo: null, hechos, pendientes: [], pendientesMeta };
   }
   log(pendientes.length ? `\n  Seco: no se escribió nada. Falta: ${pendientes.join(', ')}. Más lo que solo se comprueba al aplicar.\n` : '\n  Seco: no se escribió nada y no falta nada.\n');
-  return { codigo: pendientes.length ? 1 : 0, fallo: null, hechos, pendientes };
+  return { codigo: pendientes.length ? 1 : 0, fallo: null, hechos, pendientes, pendientesMeta };
 }
 
 /** El alias del comercio sale de `rutasWhatsApp` (`aliasSecreto`): debe haber exactamente uno distinto. */
@@ -436,10 +468,11 @@ function dependenciasReales({ cfg, db, FieldValue, secretos }) {
   const ejecutar = async (paso, aplicar) => {
     if (paso.tipo === 'bandera') {
       const argv = ['--proyecto', cfg.proyecto, '--tenant', cfg.tenant, '--valor', 'true'];
+      if (paso.verificacion) argv.push('--alias', paso.verificacion.alias, '--env', paso.verificacion.env, '--sin-redespliegue');
       if (aplicar) argv.push('--aplicar', '--respaldo', paso.respaldo, '--confirmo-produccion', cfg.tenant);
       const a = paso.modulo.analizarArgumentos(argv, process.env);
       if (!a.ok) { log(`\n  ✗ ${a.problemas.join('\n  ✗ ')}\n`); return 2; }
-      return paso.modulo.ejecutar(a.cfg, { db, FieldValue, log, env: process.env });
+      return paso.modulo.ejecutar(a.cfg, { db, FieldValue, log, env: process.env, verificarSalida: (c) => retomar.verificarSalidaReal(c, { log }) });
     }
     const r = correr(paso, argumentosDelPaso(paso, aplicar));
     if (r.stdout) log(r.stdout.trimEnd());
