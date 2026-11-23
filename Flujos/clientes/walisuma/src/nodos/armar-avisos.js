@@ -3,7 +3,7 @@
 //   - DENTRO de 23,5 h del último mensaje que el destinatario le escribió al bot (su ficha, clave = su número): texto libre, que menciona tomar la conversación en la consola. FUERA: la plantilla UTILITY,
 //     «código para las dos» (Andres, 18/11/2026; `apPlantillaAviso`, módulo común Pedidos): `aviso_pedido_equipo` con 10 variables si su estado es APPROVED:
 //       {{1}} el pedido (código WAL del servidor, o la referencia, y el estado del comprobante)  {{2}} el total  {{3}} la modalidad y la condición del envío  {{4}} el nombre  {{5}} el WhatsApp
-//       {{6}} la factura («sin datos (S/N) por ahora» o los datos)  {{7}} la dirección y el GPS  {{8}} las piezas (con el color o detalle)  {{9}} el banco de origen  {{10}} el n.º de operación;
+//       {{6}} la factura («S/N - NIT 0» por defecto, o los datos en un segundo aviso)  {{7}} la dirección y el GPS  {{8}} las piezas (con el color o detalle)  {{9}} el banco de origen  {{10}} el n.º de operación;
 //     si no, la de respaldo `pedido_registrado` con 4 variables, el resto EMPAQUETADO y recortado: {{1}} las piezas  {{2}} el total  {{3}} entrega · nombre · WhatsApp · dirección y GPS
 //     {{4}} pedido · comprobante · factura · banco · operación. Sin ninguna aprobada NUNCA se inventa: no sale nada (`plantilla_no_configurada`) y «Armar mensajes» le dice la verdad al cliente.
 //   - Quién avisa: el pedido con su comprobante (cuando llega y se coteja), el pedido sin cobro y el envío a cotizar; los DATOS DE FACTURA que llegan después del pago (UN segundo aviso: el NIT viaja SOLO
@@ -66,12 +66,11 @@ if (esPedido) {
     + '. Dirección: ' + direccion + '. Piezas: ' + piezas + '. Banco de origen: ' + banco + '. Operación: ' + operacion + '. Revise el depósito en su cuenta antes de entregar.' + CONSOLA;
 } else if (esFactura) {
   // El SEGUNDO aviso: los datos de factura que el cliente mandó después del pago. Es el ÚNICO lugar por donde viaja el NIT.
-  const sinFact = aviso.sinFactura === true;
-  const pedidoTexto = (aviso.codigo || (aviso.ref ? 'ref. ' + aviso.ref : 'sin código')) + (sinFact ? ' (sin factura)' : ' (datos de factura)');
-  const factura = sinFact ? 'No solicita factura (S/N - NIT 0)' : 'Razón social: ' + (aviso.razonSocial || 'no indicada') + ' · NIT/CI: ' + aviso.nit;
+  const pedidoTexto = (aviso.codigo || (aviso.ref ? 'ref. ' + aviso.ref : 'sin código')) + ' (datos de factura)';
+  const factura = 'Razón social: ' + (aviso.razonSocial || 'no indicada') + ' · NIT/CI: ' + aviso.nit;
   parametros10 = [pedidoTexto, '—', '—', nombre, '+' + c.from, factura, '—', '—', '—', '—'];
   parametros4 = ['Datos de factura del pedido ' + (aviso.codigo || aviso.ref || 'sin código'), '—', cliente, factura];
-  texto = 'Aviso del asistente: ' + (sinFact ? 'el cliente no solicita factura del pedido ' : 'datos de factura del pedido ') + (aviso.codigo || aviso.ref || 'sin código') + '. Cliente: ' + cliente + '. ' + factura + '.' + CONSOLA;
+  texto = 'Aviso del asistente: datos de factura del pedido ' + (aviso.codigo || aviso.ref || 'sin código') + '. Cliente: ' + cliente + '. ' + factura + '.' + CONSOLA;
 } else {
   // La alerta de derivación: nombre, teléfono y motivo (y el mensaje del cliente, como dato).
   const motivo = avLimpio(aviso.motivo, 100) || 'consulta';

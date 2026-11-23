@@ -167,7 +167,7 @@ Fuente: resumen del 18/11 (57 puntos, §5 a §7) y el plan consolidado. **0 nodo
 
 ## 23/11/2026: factura sin datos, fuera de horario y catálogo en el saludo (orden de Andres, comparación con el MD base)
 
-- **Sin factura (MD 27 y 85):** «sin factura», «a mi nombre nomás» o «NIT 0» mandan UN aviso a nuestra encargada «No solicita factura (S/N - NIT 0)» (clave `factura_sin`, no se repite). **+1 aviso por pedido sin factura**; el cliente recibe el mismo texto de antes.
+- **Sin factura (MD 27 y 85):** 0 avisos extra. La variable de factura del aviso del pedido ({{6}}) dice «S/N - NIT 0 (si el cliente envía sus datos, llegan en un aviso aparte)»; si el cliente da sus datos sale el segundo aviso de siempre. La encargada ya no recibe «sin datos por ahora» y no necesita un aviso para «no solicita».
 - **Fuera de horario:** ya no se promete «se preparará a la brevedad posible»; se dice el horario de la encargada (un dato).
 - **Catálogo (MD 16, 22, 54-60):** el botón «Ver catálogo» viaja en el MISMO mensaje del saludo, de la respuesta a un anuncio y de la primera pregunta por una pieza, una vez por conversación (`catalogoOfrecido`), sin pedido en curso y solo con el enlace de la consola. **0 mensajes extra.**
 

@@ -576,7 +576,7 @@ function wlResolverComprobante(c) {
   // Marca PROPIA (`avisoComprobanteMs`): una consulta reciente o el uso extendido no silencian el aviso de un comprobante (revisión del PR #1020).
   const reciente = f.avisoComprobanteMs > 0 && c.ahora - f.avisoComprobanteMs >= 0 && c.ahora - f.avisoComprobanteMs < WL_VENTANA_CONSULTA_MS;
   const pedido = (cotejo) => ({ tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: f.entrega, cotejo: cotejo, codigo: codigo, ref: ref,
-    factura: 'sin datos (S/N) por ahora', banco: cbLinea(leido.bancoOrigen, 40), operacion: cbLinea(leido.transaccion, 40), repetido: false });
+    factura: 'S/N - NIT 0 (si el cliente envía sus datos, llegan en un aviso aparte)', banco: cbLinea(leido.bancoOrigen, 40), operacion: cbLinea(leido.transaccion, 40), repetido: false });
   const d = { resultado: r.resultado, diferencia: wlDiferenciaUsted(cbDiferencia(r.diferencias, 'BOB')), totalTexto: totalTexto, codigo: codigo, aviso: null };
   // Un monto (en centavos) del cuerpo del cotejo; null si no es un número positivo.
   const centavos = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v * 100) : null);
@@ -715,8 +715,8 @@ function wlResolverUbicacion(c) {
 function wlResolverFactura(c) {
   const p = c.plan;
   const up = c.ficha.ultimoPedido || { codigo: '', ref: '', ms: 0, factura: 'pedida' };
-  // «Sin factura» (MD, puntos 27 y 85): nuestra encargada recibe UN aviso «no solicita factura (S/N - NIT 0)»; con la factura ya declarada como «sin» o «dada» no se repite. +1 aviso por pedido sin factura.
-  if (p.tipo === 'factura_sin') return { tipo: 'factura_sin', aviso: up.factura === 'pedida' && (up.codigo || up.ref) ? { tipo: 'factura', clave: 'factura_sin', codigo: up.codigo, ref: up.ref, sinFactura: true, repetido: false } : null, patch: { ultimoPedido: Object.assign({}, up, { factura: 'sin' }) } };
+  // «Sin factura»: 0 avisos extra. La encargada ya recibió, en el aviso del pedido, «S/N - NIT 0» como valor por defecto (MD 27 y 85); si el cliente envía datos llegan en el segundo aviso.
+  if (p.tipo === 'factura_sin') return { tipo: 'factura_sin', aviso: null, patch: { ultimoPedido: Object.assign({}, up, { factura: 'sin' }) } };
   if (p.tipo === 'factura_pedir') return { tipo: 'factura_pedir', aviso: null };
   const razon = cbLinea(p.razonSocial, 80);
   const nit = /^\d{5,15}$/.test(String(p.nit || '')) ? String(p.nit) : '';

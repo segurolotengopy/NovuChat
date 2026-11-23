@@ -309,19 +309,16 @@ describe('B2/B3 · la factura después del pago (el NIT viaja SOLO en el aviso)'
     const t2 = hablar(m, ANA, mTexto('NIT: 482910301'));
     expect(t2.avisos.filter((a) => JSON.stringify(a.payload).includes('datos de factura'))).toHaveLength(0);
   });
-  it('«a mi nombre nomás» = S/N y NIT 0: UN aviso a la encargada «No solicita factura (S/N - NIT 0)» (MD 27 y 85) y no se insiste; repetirlo no manda otro', () => {
+  it('«a mi nombre nomás» = S/N y NIT 0: no hay segundo aviso (el del pedido ya dijo «S/N - NIT 0») y no se insiste', () => {
     const m = pagado();
     const t = hablar(m, ANA, mTexto('a mi nombre nomás'));
-    expect(t.avisos).toHaveLength(1);
-    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/No solicita factura \(S\/N - NIT 0\)/);
-    expect(hablar(m, ANA, mTexto('sin factura')).avisos.filter((x) => /No solicita factura/.test(JSON.stringify(x.payload)))).toHaveLength(0);
+    expect(t.avisos).toHaveLength(0);
     expect(t.registro.map((r) => r.nodo)).not.toContain('Conversar con el modelo');
     expect(textos(t).join(' ')).not.toMatch(/NIT|razón social/i);
   });
   it('«no necesito factura»: igual', () => {
     const t = hablar(pagado(), ANA, mTexto('No necesito factura, gracias.'));
-    expect(t.avisos).toHaveLength(1);
-    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/No solicita factura/);
+    expect(t.avisos).toHaveLength(0);
   });
   it('NEGADO: «factura» después del pago ya no deriva: vuelve a pedir los datos sin aviso ni botón', () => {
     const t = hablar(pagado(), ANA, mTexto('sí quiero factura'));
@@ -445,7 +442,7 @@ describe('B3 · el aviso del pedido al contacto designado', () => {
     expect(v[2]).toMatch(/Envío en La Paz/);
     expect(v[3]).toBe('Ana Pérez');
     expect(v[4]).toContain(`+${ANA}`);
-    expect(v[5]).toBe('sin datos (S/N) por ahora');
+    expect(v[5]).toBe('S/N - NIT 0 (si el cliente envía sus datos, llegan en un aviso aparte)'); // MD 27 y 85: S/N - NIT 0 por defecto, 0 avisos extra
     expect(v[6]).toMatch(/Av\. Arce 2345/);
     expect(v[6]).toMatch(/-16\.5.*-68\.12/);
     expect(v[7]).toMatch(/Billetera de cuero.*marrón/);
