@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JUEGO_CON_INFRA, JUEGO_DE_FICHA, consolaNuevaEncendida, faltanDelJuego, guardadoEncendido } from '../../functions/src/core/conversacion/juego';
-import { personaPuedeEnviarMediosDeFicha, personaPuedeEscribirDeFicha } from '../../functions/src/core/conversacion/turno';
+import { personaPuedeEnviarMediosDeFicha, personaPuedeEscribirDeFicha, personaPuedeRetomarDeFicha } from '../../functions/src/core/conversacion/turno';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(AQUI, '..', '..', '..');
@@ -75,6 +75,7 @@ describe('juego de conversación: claves y valores exactos', () => {
   it('las banderas con infraestructura son las que lee el servidor (turno.ts)', () => {
     expect(personaPuedeEscribirDeFicha(JUEGO_COMPLETO)).toBe(true);
     expect(personaPuedeEnviarMediosDeFicha(JUEGO_COMPLETO)).toBe(true);
+    expect(personaPuedeRetomarDeFicha({ personaPuedeRetomar: true })).toBe(true); // su entrada al juego es del PR de R4
   });
 
   it('los predicados del servidor (juego.ts, los mismos que importan accesoPersona y guardarMedio) aceptan el juego y niegan lo inexacto', () => {
@@ -90,6 +91,9 @@ describe('juego de conversación: claves y valores exactos', () => {
     expect(faltanDelJuego({ ...JUEGO_COMPLETO, guardarMedios: 1 })).toEqual(['guardarMedios']);
     expect(faltanDelJuego({ ...JUEGO_COMPLETO, personaPuedeEscribir: 1 })).toEqual(['personaPuedeEscribir']);
     expect(faltanDelJuego({ ...JUEGO_COMPLETO, personaPuedeEnviarMedios: 1 })).toEqual(['personaPuedeEnviarMedios']);
+    // `personaPuedeRetomar` NO es del juego todavía: no la agrega este PR (el alta no tiene escritor para ella).
+    expect(faltanDelJuego({ ...JUEGO_COMPLETO })).toEqual([]);
+    expect(Object.keys(JUEGO_CON_INFRA)).not.toContain('personaPuedeRetomar');
   });
 
   it('negativa: ficha sin guardarMedios', () => {

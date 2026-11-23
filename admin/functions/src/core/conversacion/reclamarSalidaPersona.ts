@@ -35,6 +35,11 @@
  * 'caducado'` y `reintentable: true`, sin contar en `mensajesPersona`. Se decide aunque el mensaje sea de
  * otra línea, para que los viejos no ocupen el lote de la consulta.
  *
+ * LAS PLANTILLAS (Retomar). Un mensaje `tipo: 'plantilla'` solo se entrega si la petición trae la cabecera
+ * `x-novuchat-plantillas: 1`; sin ella sigue `pendiente` y a los 2 min caduca (un flujo viejo nunca la recibe a medias).
+ * Para este tipo la caducidad NO mira la ventana de Meta (existe para la ventana cerrada); los 2 min sí aplican. Entrega
+ * `{texto:'', tipo:'plantilla', plantilla:{nombre, idioma, parametros}}` con la forma ya comprobada.
+ *
  * LA LIMPIEZA. Un mensaje `enviando` por más de 2 minutos (el flujo cayó antes de confirmar) pasa a
  * `incierto` y se cuenta (puede haber llegado). Nunca se vuelve a `pendiente` ni se reenvía solo.
  *
@@ -49,7 +54,8 @@ import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada, type Ruta } from '../seguridad/firma.js';
 import { ID_COMERCIO } from './acceso.js';
 import {
-  CODIGO_CADUCADO, ENVIANDO_MAXIMO_MS, MAXIMO_POR_RECLAMO, PENDIENTE_MAXIMO_MS, canalDeSalidaDe, claveReleDe, sumarMensajePersona, type CanalDeSalida,
+  CODIGO_CADUCADO, ENVIANDO_MAXIMO_MS, MAXIMO_POR_RECLAMO, PENDIENTE_MAXIMO_MS, IDIOMA_DE_PLANTILLA, NOMBRE_DE_PLANTILLA, PARAMETROS_MAXIMOS, canalDeSalidaDe, claveReleDe, parametroDePlantillaValido,
+  sumarMensajePersona, sumarPlantillaPersona, type CanalDeSalida,
 } from './salidaPersona.js';
 import { milisegundosDeMomento, ventanaDeMetaAbierta } from './turno.js';
 
@@ -74,7 +80,19 @@ export interface MensajeDeAdjuntoReclamado extends BaseReclamada {
   tipo: 'image' | 'audio' | 'document';
   adjunto: { mime: string; tamano: number; sha256: string; voz: boolean; nombre?: string; leyenda?: string };
 }
-export type MensajeReclamado = MensajeDeTextoReclamado | MensajeDeAdjuntoReclamado;
+/**
+ * Una PLANTILLA de Retomar (C5 del plan «Retomar»). `texto` va SIEMPRE vacío: un flujo viejo (sin la cabecera de
+ * plantillas) nunca la recibe a medias, ni como texto suelto. El cuerpo hacia Meta lo arma el flujo (C6).
+ */
+export interface MensajeDePlantillaReclamado extends BaseReclamada {
+  texto: '';
+  tipo: 'plantilla';
+  plantilla: { nombre: string; idioma: string; parametros: string[] };
+}
+export type MensajeReclamado = MensajeDeTextoReclamado | MensajeDeAdjuntoReclamado | MensajeDePlantillaReclamado;
+
+/** La cabecera con la que el flujo nuevo declara que sabe enviar plantillas. Sin ella no se entrega ninguna. */
+export const CABECERA_DE_PLANTILLAS = 'x-novuchat-plantillas';
 
 /** La cabecera con la que el flujo nuevo declara que sabe enviar adjuntos. Sin ella no se entrega ninguno. */
 export const CABECERA_DE_ADJUNTOS = 'x-novuchat-adjuntos';
@@ -87,7 +105,7 @@ const CAMINO = /^tenants\/([^/]+)\/conversaciones\/(wa_[0-9]{8,15})\/mensajes\/(
 
 /** El reclamo (exportado para las pruebas). */
 export async function reclamarSalida(
-  ruta: Ruta, db: Firestore = getFirestore(), ahoraMs: number = Date.now(), conAdjuntos = false,
+  ruta: Ruta, db: Firestore = getFirestore(), ahoraMs: number = Date.now(), conAdjuntos = false, conPlantillas = false,
 ): Promise<{ mensajes: MensajeReclamado[]; inciertos: number; caducados: number }> {
   const vacio = { mensajes: [] as MensajeReclamado[], inciertos: 0, caducados: 0 };
   const { tenantId, phoneNumberId } = ruta;
@@ -112,6 +130,8 @@ export async function reclamarSalida(
   const cortadas = new Set<string>();
   // El adjunto reclamado en la transacción en curso (sus datos salen del metadato, que se lee ahí mismo).
   let adjuntoDeLaVuelta: MensajeDeAdjuntoReclamado['adjunto'] | null = null;
+  // La plantilla reclamada en la transacción en curso.
+  let plantillaDeLaVuelta: MensajeDePlantillaReclamado['plantilla'] | null = null;
   for (const candidato of candidatos.docs) {
     if (mensajes.length >= MAXIMO_POR_RECLAMO) break;
     const m = CAMINO.exec(candidato.ref.path);
@@ -119,10 +139,12 @@ export async function reclamarSalida(
     const [, , conversacionId, clave] = m as unknown as [string, string, string, string];
 
     adjuntoDeLaVuelta = null;
+    plantillaDeLaVuelta = null;
     // Orden dentro de una conversación: si un adjunto anterior de ella no salió en este lote, nada posterior sale tampoco.
     if (cortadas.has(conversacionId)) continue;
     const r = await db.runTransaction(async (tx): Promise<'reclamado' | 'incierto' | 'caducado' | 'nada' | 'retenido'> => {
       adjuntoDeLaVuelta = null;
+      plantillaDeLaVuelta = null;
       // Lecturas primero (Firestore exige las lecturas antes de las escrituras): el mensaje y su conversación.
       const [s, conv] = await Promise.all([tx.get(candidato.ref), tx.get(candidato.ref.parent.parent!)]);
       // Si es un adjunto, también su metadato (sha256 y vigencia). Sigue siendo una lectura, antes de cualquier escritura.
@@ -137,8 +159,10 @@ export async function reclamarSalida(
       // quedarse en la cola ocupando lugar. Sin entregarse, sin contar, reintentable.
       if (estado === 'pendiente') {
         const desde = milisegundosDeMomento(s.get('ts'));
+        // Una PLANTILLA existe justamente para la ventana CERRADA: para ella, y solo para ella, la caducidad no mira la
+        // ventana; los 2 minutos sí aplican.
         const vencido = desde === null || ahoraMs - desde >= PENDIENTE_MAXIMO_MS
-          || !conv.exists || !ventanaDeMetaAbierta(conv.get('ultimoEntranteEn'), ahoraMs);
+          || !conv.exists || (tipoDelMensaje !== 'plantilla' && !ventanaDeMetaAbierta(conv.get('ultimoEntranteEn'), ahoraMs));
         if (vencido) {
           tx.update(candidato.ref, {
             estadoEnvio: 'rechazado', codigoEnvio: CODIGO_CADUCADO, reintentable: true,
@@ -150,7 +174,19 @@ export async function reclamarSalida(
       const de: unknown = s.get('phoneNumberId');
       if (typeof de === 'string' && de !== phoneNumberId) return 'nada';
       if (estado === 'pendiente') {
-        if (esAdjunto) {
+        if (tipoDelMensaje === 'plantilla') {
+          // Sin la cabecera del flujo nuevo NO se entrega: queda `pendiente` y caduca a los 2 min (rechazado, `caducado`).
+          // Retenerla corta el resto de esa conversación en este lote (el orden por conversación se respeta).
+          if (!conPlantillas) return 'retenido';
+          const nombre: unknown = s.get('plantilla.nombre');
+          const idioma: unknown = s.get('plantilla.idioma');
+          const parametros: unknown = s.get('plantilla.parametros');
+          // La forma se vuelve a comprobar acá: lo guardado no se fía. Si no es válida, no sale (caduca).
+          if (typeof nombre !== 'string' || !NOMBRE_DE_PLANTILLA.test(nombre) || typeof idioma !== 'string' || !IDIOMA_DE_PLANTILLA.test(idioma)
+              || !Array.isArray(parametros) || parametros.length < 1 || parametros.length > PARAMETROS_MAXIMOS
+              || !parametros.every(parametroDePlantillaValido)) return 'nada';
+          plantillaDeLaVuelta = { nombre, idioma, parametros: [...parametros] as string[] };
+        } else if (esAdjunto) {
           // Sin la cabecera del flujo nuevo, o con un adjunto ya en este lote, NO se entrega: queda `pendiente` y caduca
           // como cualquier pendiente (rechazado, `caducado`, reintentable) si nadie lo reclama a tiempo.
           // Un número que sale por el relé tampoco lo lleva (D-A13): la ruta pudo cambiar tras crear el mensaje.
@@ -179,7 +215,7 @@ export async function reclamarSalida(
         // Sin marca legible también se da por incierto: nadie lo va a confirmar.
         if (desde === null || ahoraMs - desde >= ENVIANDO_MAXIMO_MS) {
           tx.update(candidato.ref, { estadoEnvio: 'incierto', confirmadoEn: Timestamp.fromMillis(ahoraMs), contado: true });
-          sumarMensajePersona(tx, db, tenantId, ahoraMs, 1);
+          (tipoDelMensaje === 'plantilla' ? sumarPlantillaPersona : sumarMensajePersona)(tx, db, tenantId, ahoraMs, 1);
           return 'incierto';
         }
       }
@@ -192,7 +228,10 @@ export async function reclamarSalida(
     const datos = candidato.data();
     const base = { mensajeId: clave, conversacionId, claveRele: claveReleDe(tenantId, conversacionId, clave), to: conversacionId.slice(3), canal };
     const dellevado = adjuntoDeLaVuelta as MensajeDeAdjuntoReclamado['adjunto'] | null;
-    if (dellevado !== null) {
+    const plantillaLlevada = plantillaDeLaVuelta as MensajeDePlantillaReclamado['plantilla'] | null;
+    if (plantillaLlevada !== null) {
+      mensajes.push({ ...base, texto: '', tipo: 'plantilla', plantilla: plantillaLlevada });
+    } else if (dellevado !== null) {
       adjuntosEnLote += 1;
       mensajes.push({ ...base, texto: '', tipo: datos['tipo'] as MensajeDeAdjuntoReclamado['tipo'], adjunto: dellevado });
     } else {
@@ -216,9 +255,9 @@ export const reclamarSalidaPersona = onRequest(
     if (!ruta) { respuesta.status(401).send('no autorizado'); return; }
     if (!ID_COMERCIO.test(ruta.tenantId)) { respuesta.status(404).send('numero no asignado'); return; }
     try {
-      const { mensajes, inciertos, caducados } = await reclamarSalida(ruta, undefined, undefined, peticion.get(CABECERA_DE_ADJUNTOS) === '1');
+      const { mensajes, inciertos, caducados } = await reclamarSalida(ruta, undefined, undefined, peticion.get(CABECERA_DE_ADJUNTOS) === '1', peticion.get(CABECERA_DE_PLANTILLAS) === '1');
       // Solo el comercio, cuántos y por qué; nunca el texto, el teléfono ni la clave.
-      logger.info('reclamarSalidaPersona', { tenantId: ruta.tenantId, entregados: mensajes.length, adjuntos: mensajes.filter((m) => m.tipo !== 'text').length, inciertos, caducados });
+      logger.info('reclamarSalidaPersona', { tenantId: ruta.tenantId, entregados: mensajes.length, adjuntos: mensajes.filter((m) => m.tipo === 'image' || m.tipo === 'audio' || m.tipo === 'document').length, plantillas: mensajes.filter((m) => m.tipo === 'plantilla').length, inciertos, caducados });
       respuesta.status(200).json({ mensajes });
     } catch (e) {
       const c = (e as { code?: unknown } | null)?.code;

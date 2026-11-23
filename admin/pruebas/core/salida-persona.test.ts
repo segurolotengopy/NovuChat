@@ -752,3 +752,130 @@ describe('leerAdjuntoPersona con firma HMAC', () => {
     expect(r.codigo).toBe(401);
   });
 });
+
+// ===========================================================================
+// RETOMAR (plan 23/11/2026, C5 y C8): la PLANTILLA en el reclamo y en la métrica
+// ===========================================================================
+describe('reclamar plantillas (C5): solo con la cabecera `x-novuchat-plantillas: 1`; la caducidad no mira la ventana', () => {
+  const CON_PLANTILLAS = { 'x-novuchat-plantillas': '1' };
+  const HORA = 3_600_000;
+  const cerrarVentana = (conv = CONV1) => db.doc(`tenants/${A}/conversaciones/${conv}`).update({ ultimoEntranteEn: Timestamp.fromMillis(Date.now() - 30 * HORA) });
+  const sembrarPlantilla = (clave: string, o: Datos = {}, conv = CONV1) => sembrar(clave, {
+    tipo: 'plantilla', texto: '', plantilla: { nombre: 'retomar_consulta', idioma: 'es', parametros: ['Comercio de Prueba'] }, huella: 'h', ...o,
+  }, A, conv);
+  const entregadosLibres = (r: Respuesta) => entregados(r) as unknown as Array<Record<string, unknown>>;
+
+  it('CON la cabecera y la ventana CERRADA se entrega, con `texto:\'\'`, el tipo y `plantilla`, y pasa a `enviando`', async () => {
+    await cerrarVentana();
+    await sembrarPlantilla(CLAVE(1));
+    const [m] = entregadosLibres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS));
+    expect(m).toEqual({
+      mensajeId: CLAVE(1), conversacionId: CONV1, claveRele: SALIDA.claveReleDe(A, CONV1, CLAVE(1)), to: CONV1.slice(3), texto: '',
+      tipo: 'plantilla', canal: 'graph', plantilla: { nombre: 'retomar_consulta', idioma: 'es', parametros: ['Comercio de Prueba'] },
+    });
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('enviando');
+  });
+
+  it('NEGATIVA: SIN la cabecera (o con otro valor) no se entrega: queda `pendiente` y a los 2 min caduca', async () => {
+    await cerrarVentana();
+    await sembrarPlantilla(CLAVE(1));
+    expect(entregados(await reclamar())).toEqual([]);
+    for (const v of ['0', 'true', '', '2']) expect(entregados(await reclamar(NUM_A, TOKEN_A, {}, { 'x-novuchat-plantillas': v }))).toEqual([]);
+    expect(entregados(await reclamar(NUM_A, TOKEN_A, {}, { 'x-novuchat-adjuntos': '1' }))).toEqual([]); // la de adjuntos no vale
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
+    await refMsg(CLAVE(1)).update({ ts: Timestamp.fromMillis(Date.now() - 10 * MIN) });
+    await reclamar();
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: true });
+    expect(await metricas()).toEqual({});
+  });
+
+  it('el TEXTO con la ventana cerrada sigue caducando (la excepción es solo de la plantilla)', async () => {
+    await cerrarVentana();
+    await sembrar(CLAVE(1));
+    expect(entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado' });
+  });
+
+  it('la plantilla de más de 2 minutos caduca aunque lleve la cabecera', async () => {
+    await cerrarVentana();
+    await sembrarPlantilla(CLAVE(1), { ts: Timestamp.fromMillis(Date.now() - 3 * MIN) });
+    expect(entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: true });
+  });
+
+  it('NEGATIVA: una plantilla guardada con la forma rota no sale (nombre, idioma, parámetros), y caduca', async () => {
+    await cerrarVentana();
+    const malas: Datos[] = [
+      { plantilla: { nombre: 'Retomar', idioma: 'es', parametros: ['x'] } }, { plantilla: { nombre: 'retomar_consulta', idioma: 'ES', parametros: ['x'] } },
+      { plantilla: { nombre: 'retomar_consulta', idioma: 'es', parametros: [] } }, { plantilla: { nombre: 'retomar_consulta', idioma: 'es', parametros: ['a\nb'] } },
+      { plantilla: { nombre: 'retomar_consulta', idioma: 'es', parametros: ['a\tb'] } }, { plantilla: { nombre: 'retomar_consulta', idioma: 'es', parametros: ['a    b'] } },
+      { plantilla: { nombre: 'retomar_consulta', idioma: 'es', parametros: ['x'.repeat(61)] } }, { plantilla: { nombre: 'retomar_consulta', idioma: 'es', parametros: [7] } },
+      { plantilla: { nombre: 'retomar_consulta', idioma: 'es', parametros: Array(11).fill('x') } }, { plantilla: 'retomar_consulta' },
+    ];
+    for (const [i, mala] of malas.entries()) {
+      await sembrarPlantilla(CLAVE(i + 1), mala);
+      expect(entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS)), JSON.stringify(mala)).toEqual([]);
+      expect((await msg(CLAVE(i + 1)))['estadoEnvio']).toBe('pendiente');
+    }
+  });
+
+  it('una plantilla de OTRA línea no sale por esta', async () => {
+    await cerrarVentana();
+    await sembrarPlantilla(CLAVE(1), { phoneNumberId: NUM_A2 });
+    expect(entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+  });
+
+  it('lote mixto: el orden dentro de una conversación se respeta (una plantilla retenida corta lo posterior de ella; otras conversaciones siguen)', async () => {
+    await cerrarVentana();
+    await db.doc(`tenants/${A}/conversaciones/${CONV2}`).update({ ultimoEntranteEn: Timestamp.fromMillis(Date.now() - MIN) });
+    await sembrarPlantilla(CLAVE(1), { ts: Timestamp.fromMillis(Date.now() - 40_000) });
+    await sembrar(CLAVE(2), { ts: Timestamp.fromMillis(Date.now() - 30_000) });          // texto posterior en CONV1 (ventana cerrada)
+    await sembrar(CLAVE(3), { ts: Timestamp.fromMillis(Date.now() - 20_000) }, A, CONV2); // otra conversación, abierta
+    expect(entregados(await reclamar()).map((m) => m.mensajeId)).toEqual([CLAVE(3)]);     // sin cabecera: solo CONV2
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
+    const r = await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS);
+    expect(entregados(r).map((m) => m.mensajeId)).toEqual([CLAVE(1)]);                    // el texto posterior ya caducó por la ventana
+    expect(await msg(CLAVE(2))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado' });
+  });
+});
+
+describe('plantillas: confirmar y contar en `plantillasPersona` (C8), aparte de `mensajesPersona`', () => {
+  const plantilla = (clave: string, o: Datos = {}) => sembrar(clave, { tipo: 'plantilla', texto: '', plantilla: { nombre: 'retomar_consulta', idioma: 'es', parametros: ['x'] }, estadoEnvio: 'enviando', ...o });
+  const c = (n: number, resultado: string, extra: Datos = {}) => ({ mensajeId: CLAVE(n), conversacionId: CONV1, resultado, ...extra });
+
+  it('`aceptado` suma una vez en `plantillasPersona` y NO en `mensajesPersona`', async () => {
+    await plantilla(CLAVE(1));
+    expect((await confirmar(c(1, 'aceptado', { idMeta: 'wamid.1' }))).codigo).toBe(200);
+    expect(await metricas()).toEqual({ plantillasPersona: 1 });
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'aceptado', contado: true });
+    expect((await confirmar(c(1, 'aceptado', { idMeta: 'wamid.1' }))).codigo).toBe(200); // repetido: sin efecto
+    expect(await metricas()).toEqual({ plantillasPersona: 1 });
+  });
+  it('`rechazado` no suma', async () => {
+    await plantilla(CLAVE(1));
+    expect((await confirmar(c(1, 'rechazado', { codigo: 'NV-PLANTILLA-FORMA' }))).codigo).toBe(200);
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'NV-PLANTILLA-FORMA' });
+    expect(await metricas()).toEqual({});
+  });
+  it('`incierto` suma; si pasa a `rechazado` resta UNA vez; si pasa a `aceptado` no suma de nuevo', async () => {
+    await plantilla(CLAVE(1)); await plantilla(CLAVE(2));
+    await confirmar(c(1, 'incierto')); await confirmar(c(2, 'incierto'));
+    expect(await metricas()).toEqual({ plantillasPersona: 2 });
+    await confirmar(c(1, 'rechazado', { codigo: '132001' }));
+    await confirmar(c(2, 'aceptado', { idMeta: 'wamid.2' }));
+    expect(await metricas()).toEqual({ plantillasPersona: 1 });
+    expect(await confirmar(c(1, 'aceptado', { idMeta: 'wamid.1' }))).toMatchObject({ codigo: 409 }); // una sola resolución del incierto
+    expect(await metricas()).toEqual({ plantillasPersona: 1 });
+  });
+  it('un `enviando` viejo de plantilla pasa a `incierto` y cuenta en `plantillasPersona`', async () => {
+    await plantilla(CLAVE(1), { reclamadoEn: Timestamp.fromMillis(Date.now() - 5 * MIN) });
+    await reclamar();
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'incierto', contado: true });
+    expect(await metricas()).toEqual({ plantillasPersona: 1 });
+  });
+  it('un TEXTO sigue contando en `mensajesPersona` (sin regresión)', async () => {
+    await sembrar(CLAVE(1), { estadoEnvio: 'enviando' });
+    await confirmar(c(1, 'aceptado', { idMeta: 'wamid.1' }));
+    expect(await metricas()).toEqual({ mensajesPersona: 1 });
+  });
+});

@@ -90,6 +90,16 @@ export const canalDeSalidaDe = (ruta: Record<string, unknown> | null | undefined
 
 /** El código de un rechazo: el de Meta (131047…) o el del relé (WM-30xx), como texto corto. */
 export const CODIGO_DE_ENVIO = /^[A-Za-z0-9_.-]{1,40}$/;
+/** El nombre y el idioma de una plantilla de Meta (C1 del plan «Retomar»). */
+export const NOMBRE_DE_PLANTILLA = /^[a-z0-9_]{1,100}$/;
+export const IDIOMA_DE_PLANTILLA = /^[a-z]{2,3}(_[A-Z]{2})?$/;
+/** Un parámetro de plantilla: 1 a 60 caracteres, sin saltos de línea ni tabulaciones, sin cuatro espacios seguidos (restricción de Meta). */
+export const PARAMETRO_MAXIMO = 60;
+export const parametroDePlantillaValido = (v: unknown): v is string =>
+  typeof v === 'string' && v.length >= 1 && Array.from(v).length <= PARAMETRO_MAXIMO && !/[\n\r\t]/.test(v) && !/ {4}/.test(v);
+/** Cuántos parámetros lleva una plantilla, como máximo (Retomar usa 1). */
+export const PARAMETROS_MAXIMOS = 10;
+
 /** El id que Meta devuelve al aceptar un mensaje. */
 export const ID_META = /^[A-Za-z0-9_.=:+/-]{1,120}$/;
 
@@ -121,6 +131,12 @@ export const huellaDeEnvio = (conversacionId: string, uid: string, texto: string
 export const huellaDeAdjunto = (
   conversacionId: string, uid: string, sha256Bytes: string, tipo: string, leyenda: string, nombre: string,
 ): string => sha256('huella-adjunto', conversacionId, uid, sha256Bytes, tipo, leyenda, nombre);
+
+/**
+ * La huella de RETOMAR: ata la clave a (conversación, persona). Prefijo propio (`huella-retomar`): distinta por
+ * construcción de la del texto y la del adjunto. No lleva texto porque el mensaje no tiene texto libre: es la plantilla.
+ */
+export const huellaDeRetomar = (conversacionId: string, uid: string): string => sha256('huella-retomar', conversacionId, uid);
 
 /**
  * La Idempotency-Key del relé: 48 hex del hash de (comercio, conversación, clave). Estable para el mismo
@@ -211,4 +227,14 @@ export const tocarTimbre: TocarTimbre = async (alias, phoneNumberId, ahoraMs) =>
 export function sumarMensajePersona(tx: Transaction, db: Firestore, tenantId: string, ahoraMs: number, n: 1 | -1): void {
   const periodo = new Date(ahoraMs).toISOString().slice(0, 7);
   tx.set(db.doc(`tenants/${tenantId}/metricas/${periodo}`), { mensajesPersona: FieldValue.increment(n) }, { merge: true });
+}
+
+/**
+ * El conteo aparte de las PLANTILLAS de persona (C8 del plan «Retomar»): `plantillasPersona` del mes, con el mismo criterio
+ * que `sumarMensajePersona` (suma con `aceptado` e `incierto`; resta una vez si un `incierto` pasa a `rechazado`). Contador
+ * separado porque Meta cobra la plantilla con otra tarifa que el texto dentro de la ventana.
+ */
+export function sumarPlantillaPersona(tx: Transaction, db: Firestore, tenantId: string, ahoraMs: number, n: 1 | -1): void {
+  const periodo = new Date(ahoraMs).toISOString().slice(0, 7);
+  tx.set(db.doc(`tenants/${tenantId}/metricas/${periodo}`), { plantillasPersona: FieldValue.increment(n) }, { merge: true });
 }
