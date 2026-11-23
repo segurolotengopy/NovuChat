@@ -3,12 +3,14 @@
  * `rutasWhatsApp/{n}.plantillas.retomar` (contrato C1). Contra el emulador de Firestore (proyecto `demo-*`), en proceso.
  *
  * Se niega (negando): MARKETING o AUTHENTICATION con APPROVED, variables distintas de 1 con APPROVED, nombre o idioma
- * malos (siempre), producción sin `--confirmo produccion`, `--confirmo` en seco, ruta inexistente (no se crea), un
+ * malos (siempre), producción sin `--confirmo-produccion <numero>`, `--confirmo-produccion` en seco, comercio excluido, sin `--respaldo`, ruta inexistente (no se crea), un
  * `plantillas` que no es un mapa. Se afirma: seco no escribe; aplicar escribe SOLO `plantillas.retomar` (con
  * `registradaEn`) y conserva el resto de la ruta y los otros usos; idempotente; con estado distinto de APPROVED se
  * puede registrar para apagar; si la ruta cambia entre la lectura y la escritura, no escribe.
  */
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8281'}`;
 process.env['FIRESTORE_EMULATOR_HOST'] = HOST;
@@ -22,7 +24,7 @@ const db = getFirestore(app);
 type Cfg = Record<string, unknown>;
 type Plantilla = { nombre: string; idioma: string; categoria: string; estado: string; variables: number };
 const mod = await import('../../scripts/plataforma/registrar-plantilla.mjs') as unknown as {
-  analizarArgumentos: (argv: string[], env?: Record<string, string>) => { ok: boolean; problemas?: string[]; cfg?: Cfg };
+  analizarArgumentos: (argv: string[], env?: Record<string, string>, op?: Record<string, unknown>) => { ok: boolean; problemas?: string[]; cfg?: Cfg };
   ejecutar: (cfg: Cfg, deps: Record<string, unknown>) => Promise<number>;
   plantillaRetomarValida: (p: unknown) => boolean;
   problemasDeLaPlantilla: (p: unknown) => string[];
@@ -39,6 +41,11 @@ const argv = (n: string, p: Partial<Record<keyof Plantilla, string>> = {}, extra
   '--nombre', p.nombre ?? BUENA.nombre, '--idioma', p.idioma ?? BUENA.idioma, '--categoria', p.categoria ?? BUENA.categoria, '--estado', p.estado ?? BUENA.estado,
   ...(p.variables === undefined ? [] : ['--variables', p.variables]), ...extra,
 ];
+const dirs: string[] = [];
+const rutaRespaldo = () => { const d = mkdtempSync(join('/tmp', 'plantilla-')); chmodSync(d, 0o700); dirs.push(d); return join(d, 'respaldo.json'); };
+afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
+/** `--aplicar` exige respaldo: las pruebas de escritura lo traen por omisión. */
+const aplicar = (n: string, p: Partial<Record<keyof Plantilla, string>> = {}) => argv(n, p, ['--aplicar', '--respaldo', rutaRespaldo()]);
 const cfgDe = (a: string[]) => {
   const r = mod.analizarArgumentos(a, ENV_EMU);
   expect(r.ok, JSON.stringify(r)).toBe(true);
@@ -46,7 +53,7 @@ const cfgDe = (a: string[]) => {
 };
 const corre = async (a: string[], d: Record<string, unknown> = {}) => {
   const salida: string[] = [];
-  const codigo = await mod.ejecutar(cfgDe(a), { db, FieldValue, log: (x: string) => salida.push(x), ...d });
+  const codigo = await mod.ejecutar(cfgDe(a), { db, FieldValue, env: ENV_EMU, log: (x: string) => salida.push(x), ...d });
   return { codigo, texto: salida.join('\n') };
 };
 const ruta = async (n: string, o: Record<string, unknown> = {}) => { await db.doc(`rutasWhatsApp/${n}`).set({ tenantId: 'tienda-prueba', flujo: 'agendamiento', aliasSecreto: 'clienteZz', estado: 'activo', ...o }); };
@@ -133,17 +140,23 @@ describe('problemasDeLaPlantilla y argumentos (puros)', () => {
     expect(problemas(argv('59170000001').map((x) => (x === 'retomar' ? 'aviso' : x)))).toContain('--uso tiene que ser');
   });
 
-  it('NEGATIVA producción: --aplicar sin --confirmo produccion no se acepta; con otro valor tampoco', () => {
+  it('NEGATIVA producción: --aplicar sin --confirmo-produccion no se acepta; con otro valor tampoco; con el número, sí', () => {
     const base = argv('59170000001').map((x) => (x === PROYECTO ? 'proyecto-ficticio-prod' : x));
-    expect(problemas([...base, '--aplicar'], ENV_REAL)).toContain('--aplicar exige --confirmo produccion');
-    expect(problemas([...base, '--aplicar', '--confirmo', 'si'], ENV_REAL)).toContain('exactamente «produccion»');
-    expect(mod.analizarArgumentos([...base, '--aplicar', '--confirmo', 'produccion'], ENV_REAL).ok).toBe(true);
+    const resp = ['--respaldo', rutaRespaldo()];
+    expect(problemas([...base, '--aplicar', ...resp], ENV_REAL)).toContain('--aplicar exige --confirmo-produccion');
+    expect(problemas([...base, '--aplicar', ...resp, '--confirmo-produccion', 'produccion'], ENV_REAL)).toContain('no coincide con --numero');
+    expect(problemas([...base, '--aplicar', ...resp, '--confirmo-produccion', '59170000002'], ENV_REAL)).toContain('no coincide con --numero');
+    expect(mod.analizarArgumentos([...base, '--aplicar', ...resp, '--confirmo-produccion', '59170000001'], ENV_REAL).ok).toBe(true);
     expect(mod.analizarArgumentos(base, ENV_REAL).ok).toBe(true);   // el seco no pide nada
   });
 
-  it('--confirmo solo acompaña a --aplicar y solo contra producción', () => {
-    expect(problemas([...argv('59170000001'), '--confirmo', 'produccion'])).toContain('solo acompaña a --aplicar');
-    expect(problemas([...argv('59170000001'), '--aplicar', '--confirmo', 'produccion'])).toContain('solo se usa contra producción');
+  it('--aplicar exige --respaldo', () => {
+    expect(problemas([...argv('59170000001'), '--aplicar'])).toContain('--aplicar exige --respaldo');
+  });
+
+  it('--confirmo-produccion solo acompaña a --aplicar y solo contra producción', () => {
+    expect(problemas([...argv('59170000001'), '--confirmo-produccion', '59170000001'])).toContain('solo acompaña a --aplicar');
+    expect(problemas([...argv('59170000001'), '--aplicar', '--respaldo', rutaRespaldo(), '--confirmo-produccion', '59170000001'])).toContain('solo se usa contra producción');
   });
 
   it('el proyecto tiene que estar en la lista blanca', () => {
@@ -168,7 +181,7 @@ describe('ejecutar contra el emulador', () => {
     const n = nuevoNumero();
     await ruta(n, { plantillas: { aviso: { nombre: 'aviso_x', idioma: 'es', categoria: 'UTILITY', estado: 'APPROVED', variables: 2 } } });
     const antes = (await leer(n)).data() as Record<string, unknown>;
-    const r = await corre(argv(n, {}, ['--aplicar']));
+    const r = await corre(aplicar(n));
     expect(r.codigo, r.texto).toBe(0);
     const d = (await leer(n)).data() as Record<string, unknown> & { plantillas: Record<string, Record<string, unknown>> };
     expect(d.plantillas['retomar']).toMatchObject(BUENA);
@@ -183,9 +196,9 @@ describe('ejecutar contra el emulador', () => {
   it('idempotente: registrar lo mismo otra vez sale 0 y no escribe (la hora de la ruta no cambia)', async () => {
     const n = nuevoNumero();
     await ruta(n);
-    expect((await corre(argv(n, {}, ['--aplicar']))).codigo).toBe(0);
+    expect((await corre(aplicar(n))).codigo).toBe(0);
     const h = (await leer(n)).updateTime?.toMillis();
-    const r = await corre(argv(n, {}, ['--aplicar']));
+    const r = await corre(aplicar(n));
     expect(r.codigo).toBe(0);
     expect(r.texto).toContain('nada que hacer');
     expect((await leer(n)).updateTime?.toMillis()).toBe(h);
@@ -194,8 +207,8 @@ describe('ejecutar contra el emulador', () => {
   it('cambiar el estado a PAUSED (con la categoría recategorizada) se registra y deja de cumplir C1 (para apagar)', async () => {
     const n = nuevoNumero();
     await ruta(n);
-    expect((await corre(argv(n, {}, ['--aplicar']))).codigo).toBe(0);
-    const r = await corre(argv(n, { estado: 'PAUSED', categoria: 'MARKETING' }, ['--aplicar']));
+    expect((await corre(aplicar(n))).codigo).toBe(0);
+    const r = await corre(aplicar(n, { estado: 'PAUSED', categoria: 'MARKETING' }));
     expect(r.codigo, r.texto).toBe(0);
     const p = (await leer(n)).get('plantillas.retomar');
     expect(p).toMatchObject({ estado: 'PAUSED', categoria: 'MARKETING' });
@@ -205,7 +218,7 @@ describe('ejecutar contra el emulador', () => {
 
   it('NEGATIVA: una ruta inexistente no se crea, sale 2', async () => {
     const n = nuevoNumero();
-    const r = await corre(argv(n, {}, ['--aplicar']));
+    const r = await corre(aplicar(n));
     expect(r.codigo).toBe(2);
     expect((await leer(n)).exists).toBe(false);
   });
@@ -213,7 +226,7 @@ describe('ejecutar contra el emulador', () => {
   it('NEGATIVA: si `plantillas` no es un mapa, no se pisa (2)', async () => {
     const n = nuevoNumero();
     await ruta(n, { plantillas: 'roto' });
-    const r = await corre(argv(n, {}, ['--aplicar']));
+    const r = await corre(aplicar(n));
     expect(r.codigo).toBe(2);
     expect((await leer(n)).get('plantillas')).toBe('roto');
   });
@@ -222,14 +235,91 @@ describe('ejecutar contra el emulador', () => {
     const n = nuevoNumero();
     await ruta(n);
     const real = db.doc(`rutasWhatsApp/${n}`);
-    const carrera = {
-      doc: () => ({
-        get: async () => { const s = await real.get(); await real.update({ otro: 1 }); return s; },
-        update: (...a: unknown[]) => (real.update as (...x: unknown[]) => Promise<unknown>)(...a),
-      }),
-    };
-    const r = await corre(argv(n, {}, ['--aplicar']), { db: carrera });
+    const refCarrera = new Proxy(real, {
+      get: (t, k) => {
+        if (k === 'get') return async () => { const sn = await t.get(); await t.update({ otro: 1 }); return sn; };
+        const v = (t as unknown as Record<string | symbol, unknown>)[k];
+        return typeof v === 'function' ? (v as (...x: unknown[]) => unknown).bind(t) : v;
+      },
+    });
+    const carrera = { doc: (p: string) => (p === `rutasWhatsApp/${n}` ? refCarrera : db.doc(p)), collection: (p: string) => db.collection(p), batch: () => db.batch() };
+    const r = await corre(aplicar(n), { db: carrera });
     expect(r.codigo).toBe(3);
     expect((await leer(n)).data()).not.toHaveProperty('plantillas');
+  });
+
+  const auditorias = async (t: string) => (await db.collection(`tenants/${t}/auditoria`).get()).docs.map((d) => d.data());
+
+  it('AUDITORÍA: un documento en tenants/{tenantId de la ruta}/auditoria, con anterior y nuevo, sin teléfono completo ni proyecto; el seco y lo idempotente no auditan', async () => {
+    const n = nuevoNumero();
+    const t = `aud-${n}`;
+    await ruta(n, { tenantId: t });
+    expect((await corre(argv(n))).codigo).toBe(1);
+    expect(await auditorias(t)).toHaveLength(0);
+    expect((await corre(aplicar(n))).codigo).toBe(0);
+    expect((await corre(aplicar(n, { estado: 'PAUSED' }))).codigo).toBe(0);
+    expect((await corre(aplicar(n, { estado: 'PAUSED' }))).codigo).toBe(0);   // idempotente: no audita
+    const a = (await auditorias(t)).sort((x, y) => (x['nuevo'].estado < y['nuevo'].estado ? -1 : 1));
+    expect(a).toHaveLength(2);
+    expect(a[0]).toMatchObject({ accion: 'plantilla_registrada', uso: 'retomar', script: 'registrar-plantilla', origen: 'script', entorno: 'emulador', anterior: null, nuevo: BUENA });
+    expect(a[1]).toMatchObject({ anterior: BUENA, nuevo: { ...BUENA, estado: 'PAUSED' } });
+    expect(JSON.stringify(a)).not.toContain(n);
+    expect(JSON.stringify(a)).not.toContain(PROYECTO);
+  });
+
+  it('el seco muestra el comercio de la ruta', async () => {
+    const n = nuevoNumero();
+    await ruta(n, { tenantId: 'comercio-visible' });
+    expect((await corre(argv(n))).texto).toContain('comercio : comercio-visible');
+  });
+
+  it('NEGATIVA: un comercio excluido (por id o por el nombre de su ficha) sale 2 y no escribe ni audita', async () => {
+    const n = nuevoNumero();
+    await ruta(n, { tenantId: 'comercio-vetado' });
+    const r1 = await corre(aplicar(n), { env: { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'vetado' } });
+    expect(r1.codigo).toBe(2);
+    expect(r1.texto).toContain('EXCLUIDO');
+    const n2 = nuevoNumero();
+    await ruta(n2, { tenantId: 'comercio-normal-1' });
+    await db.doc('tenants/comercio-normal-1').set({ nombre: 'Tienda Vetada', estado: 'activo' });
+    expect((await corre(aplicar(n2), { env: { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'vetada' } })).codigo).toBe(2);
+    for (const [num, t] of [[n, 'comercio-vetado'], [n2, 'comercio-normal-1']] as const) {
+      expect((await leer(num)).data()).not.toHaveProperty('plantillas');
+      expect(await auditorias(t)).toHaveLength(0);
+    }
+  });
+
+  it('NEGATIVA: una ruta sin tenantId válido sale 2', async () => {
+    const n = nuevoNumero();
+    await ruta(n, { tenantId: 'X' });
+    expect((await corre(aplicar(n))).codigo).toBe(2);
+    expect((await leer(n)).data()).not.toHaveProperty('plantillas');
+  });
+
+  it('un estado distinto de APPROVED avisa que apagar la bandera es un paso aparte y NO toca la ficha del comercio', async () => {
+    const n = nuevoNumero();
+    const t = `ficha-${n}`;
+    await ruta(n, { tenantId: t });
+    await db.doc(`tenants/${t}`).set({ nombre: 'Sintetica', estado: 'activo', personaPuedeRetomar: true });
+    const antes = (await db.doc(`tenants/${t}`).get()).updateTime?.toMillis();
+    const r = await corre(aplicar(n, { estado: 'PAUSED' }));
+    expect(r.codigo, r.texto).toBe(0);
+    expect(r.texto).toContain('paso aparte');
+    expect(r.texto).toContain('aplicar-persona-puede-retomar.mjs --valor false');
+    const d = await db.doc(`tenants/${t}`).get();
+    expect(d.updateTime?.toMillis()).toBe(antes);
+    expect(d.get('personaPuedeRetomar')).toBe(true);
+  });
+
+  it('el respaldo guarda el valor previo y nunca se pisa (un segundo intento con la misma ruta sale 2)', async () => {
+    const n = nuevoNumero();
+    await ruta(n);
+    const resp = rutaRespaldo();
+    expect((await corre(argv(n, {}, ['--aplicar', '--respaldo', resp]))).codigo).toBe(0);
+    const n2 = nuevoNumero();
+    await ruta(n2);
+    const r = await corre(argv(n2, {}, ['--aplicar', '--respaldo', resp]));
+    expect(r.codigo).toBe(2);
+    expect((await leer(n2)).data()).not.toHaveProperty('plantillas');
   });
 });

@@ -91,7 +91,10 @@ describe('argumentos (puros)', () => {
     expect((r.problemas ?? []).join(' ')).toContain('--confirmo-produccion');
   });
 
-  it('el código de «pendiente de Meta» es 5', () => { expect(mod.CODIGO_PENDIENTE_DE_META).toBe(5); });
+  it('el código de «pendiente de Meta» es 5 y el de «pendiente de republicar la salida» es 6', () => {
+    expect(mod.CODIGO_PENDIENTE_DE_META).toBe(5);
+    expect((mod as unknown as Record<string, number>)['CODIGO_PENDIENTE_DE_SALIDA']).toBe(6);
+  });
 });
 
 describe('C1 en las rutas (puro)', () => {
@@ -188,17 +191,58 @@ describe('encender: NEGATIVAS (nada se escribe, ni auditoría)', () => {
     }
   });
 
-  it('plantilla bien pero la salida publicada NO admite plantillas (sin la cabecera): salida 2 y no escribe', async () => {
+  it('plantilla bien pero la salida publicada NO admite plantillas (sin la cabecera): salida 6 (pendiente de republicar) y no escribe', async () => {
     const t = nuevoTenant();
     await ficha(t);
     await rutaOk(t);
     const h0 = await hora(t);
     const r = await corre(encender(t, ['--aplicar', '--respaldo', rutaRespaldo()]), async () => ({ ok: false }));
-    expect(r.codigo).toBe(2);
+    expect(r.codigo).toBe(6);
     expect(r.llamadas).toHaveLength(1);
     expect(r.llamadas[0]).toMatchObject({ alias: 'clienteZz', envArchivo: '.env', tenant: t });
-    expect(r.texto).toContain('NO admite plantillas');
+    expect(r.texto).toContain('PENDIENTE DE REPUBLICAR LA SALIDA');
     await sinEscribir(t, h0);
+  });
+
+  it('dos rutas con C1 válido y alias distintos, y solo UNA salida con la cabecera: salida 6, verifica las dos y no escribe', async () => {
+    const t = nuevoTenant();
+    await ficha(t);
+    await rutaOk(t, { aliasSecreto: 'clienteAa' });
+    await rutaOk(t, { aliasSecreto: 'clienteBb' });
+    const h0 = await hora(t);
+    const r = await corre(['--proyecto', PROYECTO, '--tenant', t, '--valor', 'true', '--alias', 'clienteAa', '--env', '.env', '--aplicar', '--respaldo', rutaRespaldo()],
+      async (c) => ({ ok: c['alias'] === 'clienteAa' }));
+    expect(r.codigo).toBe(6);
+    expect(r.llamadas.map((c) => c['alias']).sort()).toEqual(['clienteAa', 'clienteBb']);
+    await sinEscribir(t, h0);
+  });
+
+  it('dos rutas con alias distintos y las dos salidas con la cabecera: enciende (verificó cada alias)', async () => {
+    const t = nuevoTenant();
+    await ficha(t);
+    await rutaOk(t, { aliasSecreto: 'clienteAa' });
+    await rutaOk(t, { aliasSecreto: 'clienteBb' });
+    const r = await corre(['--proyecto', PROYECTO, '--tenant', t, '--valor', 'true', '--alias', 'clienteBb', '--env', '.env', '--aplicar', '--respaldo', rutaRespaldo()]);
+    expect(r.codigo, r.texto).toBe(0);
+    expect(r.llamadas.map((c) => c['alias']).sort()).toEqual(['clienteAa', 'clienteBb']);
+  });
+
+  it('NEGATIVA: --alias que no es el de ninguna ruta activa: salida 2, sin verificar ni escribir', async () => {
+    const t = nuevoTenant();
+    await ficha(t);
+    await rutaOk(t);
+    const h0 = await hora(t);
+    const r = await corre(['--proyecto', PROYECTO, '--tenant', t, '--valor', 'true', '--alias', 'clienteOtro', '--env', '.env', '--aplicar', '--respaldo', rutaRespaldo()]);
+    expect(r.codigo).toBe(2);
+    expect(r.llamadas).toHaveLength(0);
+    await sinEscribir(t, h0);
+  });
+
+  it('NEGATIVA: una ruta activa sin alias: salida 2', async () => {
+    const t = nuevoTenant();
+    await ficha(t);
+    await rutaOk(t, { aliasSecreto: '' });
+    expect((await corre(encender(t))).codigo).toBe(2);
   });
 
   it('sin poder verificar la salida (no hay función de verificación): salida 2, nunca se escribe a ciegas', async () => {

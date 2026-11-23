@@ -18,7 +18,7 @@
  *   5. personaPuedeEscribir        `ejecutar()` de `aplicar-persona-puede-escribir.mjs`, con respaldo
  *   6. personaPuedeEnviarMedios    `ejecutar()` de `aplicar-persona-puede-enviar-medios.mjs`, con respaldo
  *   7. personaPuedeRetomar         `ejecutar()` de `aplicar-persona-puede-retomar.mjs`, con respaldo; verifica C1 en todas las rutas y la
- *                        salida con `--plantillas`. Si falta la plantilla de Meta sale con 5: queda «pendiente de Meta», no corta el
+ *                        salida con `--plantillas`. Si falta la plantilla de Meta sale con 5, o con 6 si la plantilla está pero la salida no se republicó: queda pendiente, no corta el
  *                        resto y la corrida termina con salida 5 (el juego quedó encendido salvo Retomar).
  * Ninguna bandera se escribe antes de la puerta, y se corta en el primer paso que falle (salvo el 5 de Retomar).
  *
@@ -120,6 +120,8 @@ const ESCRITORES = Object.freeze({
 
 /** Salida de una bandera cuando la plantilla de Meta todavía no está lista: pendiente, no fallo; no corta el resto. */
 export const CODIGO_PENDIENTE_DE_META = retomar.CODIGO_PENDIENTE_DE_META;
+/** Plantilla registrada pero la salida publicada todavía no lleva la cabecera: hay que republicar. Pendiente, igual que el 5. */
+export const CODIGO_PENDIENTE_DE_SALIDA = retomar.CODIGO_PENDIENTE_DE_SALIDA;
 
 /**
  * Las banderas del juego en el orden de escritura: las de `JUEGO_CON_INFRA` y, si core todavía no la lista, `personaPuedeRetomar`
@@ -362,6 +364,7 @@ export async function correrPasos(pasos, { aplicar, deps, validar = validarOrden
 
   const hechos = [];
   const pendientesMeta = [];
+  const codigosPendientes = [];
   const salidas = {};
   let puertaOk = false;
   for (const [i, paso] of pasos.entries()) {
@@ -390,10 +393,14 @@ export async function correrPasos(pasos, { aplicar, deps, validar = validarOrden
     log(`\n  ▶ ${rotulo}${aplicar ? '' : ' (seco)'}`);
     const codigo = await deps.ejecutar(paso, aplicar);
     salidas[paso.id] = codigo;
-    // Plantilla de Meta todavía no lista: la bandera queda pendiente (nada escrito) y el resto del plan sigue.
-    if (paso.tipo === 'bandera' && codigo === CODIGO_PENDIENTE_DE_META) {
+    // Plantilla de Meta todavía no lista (5) o salida sin republicar (6): la bandera queda pendiente (nada escrito), no es un
+    // fallo, no se lista para deshacer y el resto del plan sigue.
+    if (paso.tipo === 'bandera' && (codigo === CODIGO_PENDIENTE_DE_META || codigo === CODIGO_PENDIENTE_DE_SALIDA)) {
       pendientesMeta.push(paso.id);
-      log(`\n  ⏳ ${rotulo}: PENDIENTE DE META (falta la plantilla aprobada). No se escribió esta bandera; el resto del plan sigue.`);
+      codigosPendientes.push(codigo);
+      log(codigo === CODIGO_PENDIENTE_DE_META
+        ? `\n  ⏳ ${rotulo}: PENDIENTE DE META (falta la plantilla aprobada). No se escribió esta bandera; el resto del plan sigue.`
+        : `\n  ⏳ ${rotulo}: PENDIENTE DE REPUBLICAR LA SALIDA (la plantilla está registrada, la salida publicada no lleva la cabecera). No se escribió esta bandera; el resto del plan sigue.`);
       if (!aplicar) pendientes.push(paso.id);
       continue;
     }
@@ -417,11 +424,11 @@ export async function correrPasos(pasos, { aplicar, deps, validar = validarOrden
   }
   if (aplicar) {
     log(pendientesMeta.length
-      ? `\n  ✓ Juego de conversación encendido, salvo lo pendiente de Meta: ${pendientesMeta.join(', ')} (registre la plantilla con registrar-plantilla.mjs y repita). Para deshacerlo (en este orden):`
+      ? `\n  ✓ Juego de conversación encendido, salvo lo pendiente: ${pendientesMeta.join(', ')} (registre la plantilla con registrar-plantilla.mjs, o republique la salida con la cabecera de plantillas, y repita). Para deshacerlo (en este orden):`
       : '\n  ✓ Juego de conversación encendido. Para deshacerlo (en este orden):');
     for (const p of [...hechos].filter((x) => x.escribe && x.revertir).reverse()) log(`    - ${p.titulo}: ${p.revertir}`);
     log('');
-    return { codigo: pendientesMeta.length ? CODIGO_PENDIENTE_DE_META : 0, fallo: null, hechos, pendientes: [], pendientesMeta };
+    return { codigo: codigosPendientes.includes(CODIGO_PENDIENTE_DE_META) ? CODIGO_PENDIENTE_DE_META : codigosPendientes.length ? CODIGO_PENDIENTE_DE_SALIDA : 0, fallo: null, hechos, pendientes: [], pendientesMeta };
   }
   log(pendientes.length ? `\n  Seco: no se escribió nada. Falta: ${pendientes.join(', ')}. Más lo que solo se comprueba al aplicar.\n` : '\n  Seco: no se escribió nada y no falta nada.\n');
   return { codigo: pendientes.length ? 1 : 0, fallo: null, hechos, pendientes, pendientesMeta };

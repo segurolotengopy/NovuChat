@@ -472,6 +472,29 @@ describe('Retomar en el orquestador (personaPuedeRetomar)', () => {
     expect(llamadas).not.toContain('personaPuedeEscribir');
   });
 
+  it('el 6 (plantilla registrada, salida sin republicar) se trata como el 5: no corta, no es fallo, no se lista para deshacer, y la corrida termina en 6', async () => {
+    const { llamadas, log, deps } = armar(6);
+    const r = await correrPasos(pasos(), { aplicar: true, deps });
+    expect(llamadas[llamadas.length - 1]).toBe('personaPuedeRetomar');   // Retomar va en la última posición
+    expect(llamadas).toContain('personaPuedeEnviarMedios');
+    expect(r.codigo).toBe(6);
+    expect(r.fallo).toBeNull();
+    expect(r.pendientesMeta).toEqual(['personaPuedeRetomar']);
+    expect(r.hechos.map((p: Paso) => p.id)).not.toContain('personaPuedeRetomar');
+    expect(log.join('\n')).toMatch(/PENDIENTE DE REPUBLICAR LA SALIDA/);
+    expect(log.join('\n')).not.toMatch(/Se cortó/);
+    expect(log.join('\n')).not.toMatch(/aplicar-persona-puede-retomar\.mjs --revertir/);
+  });
+
+  it('con un 5 y un 6 a la vez, la corrida termina en 5 (lo de Meta manda)', async () => {
+    const ps = pasos();
+    const [r] = ps.splice(indice(ps, 'personaPuedeRetomar'), 1);
+    ps.splice(indice(ps, 'personaPuedeEnviarMedios'), 0, r as Paso);
+    const llamadas: string[] = [];
+    const deps = { log: () => {}, sondear: async (p: Paso) => HECHO(p.id), ejecutar: async (p: Paso) => { llamadas.push(p.id); return p.id === 'personaPuedeRetomar' ? 5 : p.id === 'personaPuedeEnviarMedios' ? 6 : 0; } };
+    expect((await correrPasos(ps, { aplicar: true, deps })).codigo).toBe(5);
+  });
+
   it('en seco, el 5 se informa como pendiente (código 1) y no escribe nada', async () => {
     const { log, deps } = armar(5);
     const r = await correrPasos(pasos(), { aplicar: false, deps });

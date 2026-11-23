@@ -22,7 +22,10 @@
  *     registra la plantilla con `registrar-plantilla.mjs` cuando WAM la informe aprobada;
  *   · la salida publicada admite plantillas: `verificar-salida-persona.mjs --plantillas` (4g: `Reclamar` activo con la
  *     cabecera `x-novuchat-plantillas: 1`), que necesita `--alias` y `--env`. Sin ella el servidor nunca entrega una
- *     plantilla a ese flujo y se perdería. Falla => salida 2.
+ *     plantilla a ese flujo y se perdería. Se verifica la salida de CADA alias distinto de las rutas activas (cada alias es un
+ *     flujo n8n); `--alias` tiene que ser uno de ellos (si no, salida 2). Si alguna no la admite => salida 6.
+ *   · El cambio de rutas ENTRE esta comprobación y la escritura (una ruta nueva, una plantilla pausada) no lo cubre este
+ *     script: lo cubre el servidor al enviar, que vuelve a exigir C1 en la ruta del mensaje y la cabecera en el reclamo.
  *   Apagar (`--valor false`) no exige nada más: es la dirección segura y tiene que poder hacerse aunque una plantilla
  *   se haya pausado.
  *
@@ -37,7 +40,8 @@
  *
  * SALIDA. 0: seco sin diferencias, o escritura hecha y comprobada. 1: el seco encontró diferencias. 2: uso,
  * salvaguarda o precondición (nada escrito). 3: error de ejecución. 5: PENDIENTE DE META (falta una plantilla válida;
- * nada escrito). 130: Ctrl-C.
+ * nada escrito). 6: PENDIENTE DE REPUBLICAR LA SALIDA (plantilla bien, pero la salida de algún alias no lleva la cabecera; nada
+ * escrito). 130: Ctrl-C.
  *
  * COSTO. Seco: lecturas. `--aplicar`: lecturas y dos escrituras (campo y auditoría) en un lote. 0 mensajes por
  * conversación. NO se corre contra producción sin el «sí» de Andres.
@@ -65,6 +69,8 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 
 /** Salida propia: la plantilla no está lista (pendiente de Meta/WAM). El orquestador la trata como «pendiente», no como fallo. */
 export const CODIGO_PENDIENTE_DE_META = 5;
+/** Salida propia: la plantilla está registrada pero la salida publicada todavía no lleva la cabecera de plantillas (hay que republicar). Pendiente, no fallo. */
+export const CODIGO_PENDIENTE_DE_SALIDA = 6;
 
 export const USO = '  node scripts/plataforma/aplicar-persona-puede-retomar.mjs --proyecto <id> --tenant <id> --valor true|false '
   + '[--alias <clienteNN> --env <archivo>] [--aplicar] [--respaldo <ruta>] [--confirmo-produccion <tenant>]\n'
@@ -205,7 +211,7 @@ export async function rutasActivasDelComercio(db, tenant) {
   const snap = await db.collection('rutasWhatsApp').where('tenantId', '==', tenant).get();
   return snap.docs
     .filter((d) => { const e = d.get('estado'); return e === undefined || e === null || e === 'activo'; })
-    .map((d) => ({ id: d.id, plantilla: d.get('plantillas.retomar') }));
+    .map((d) => ({ id: d.id, plantilla: d.get('plantillas.retomar'), alias: d.get('aliasSecreto') }));
 }
 
 /** Rutas sin C1 válido (puro). */
@@ -241,15 +247,29 @@ async function comprobarParaEncender(cfg, deps, log) {
     log(`  Rutas sin plantilla: ${malas.map((r) => `…${String(r.id).slice(-4)}`).join(', ')}\n`);
     return CODIGO_PENDIENTE_DE_META;
   }
+  // La salida que verifica es la de CADA alias distinto de las rutas activas (cada alias es un flujo n8n): con dos números y
+  // una sola salida republicada, la otra perdería la plantilla.
+  const aliases = [...new Set(rutas.map((r) => r.alias))];
+  if (aliases.some((a) => typeof a !== 'string' || a === '')) {
+    log('\n  ✗ Una ruta activa no tiene alias (aliasSecreto): no se puede verificar su salida. No se escribió nada.\n');
+    return 2;
+  }
   if (typeof deps.verificarSalida !== 'function' || !cfg.alias || !cfg.envArchivo) {
     log('\n  ✗ No se puede verificar la salida publicada (faltan --alias y --env): sin la cabecera de plantillas el flujo la perdería. No se escribió nada.\n');
     return 2;
   }
-  log(`\n  Verificando la salida publicada con --plantillas (solo lectura)…`);
-  const v = await deps.verificarSalida(cfg);
-  if (!v?.ok) {
-    log('\n  ✗ La salida publicada NO admite plantillas (4g) o falló otra puerta: republique el flujo con x-novuchat-plantillas: 1 y repita. No se escribió nada.\n');
+  if (!aliases.includes(cfg.alias)) {
+    log('\n  ✗ --alias no es el de ninguna ruta activa del comercio (los alias de sus rutas activas son otros). No se escribió nada.\n');
     return 2;
+  }
+  for (const alias of aliases) {
+    log(`\n  Verificando la salida publicada con --plantillas (solo lectura) · alias ${alias}…`);
+    const v = await deps.verificarSalida({ ...cfg, alias });
+    if (!v?.ok) {
+      log(`\n  ⏳ PENDIENTE DE REPUBLICAR LA SALIDA: la del alias ${alias} NO admite plantillas (4g) o falló otra puerta. `
+        + 'Republique el flujo con x-novuchat-plantillas: 1 y repita. No se escribió nada.\n');
+      return CODIGO_PENDIENTE_DE_SALIDA;
+    }
   }
   return null;
 }
