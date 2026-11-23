@@ -507,6 +507,57 @@ export function limitesDePersona(
 }
 
 /**
+ * LOS TOPES DE «RETOMAR CONVERSACIÓN» (C9 de `Analisis` «Retomar», decisión D-R3 de Andres, 23/11/2026).
+ *
+ * Retomar es la plantilla de utilidad que una persona del comercio manda con la ventana de 24 h CERRADA. Cada envío lo
+ * cobra Meta (`PLANTILLA_UTILIDAD_USD`), y con la titularidad `novuchat` o la tarifa `meta_incluido` lo absorbe NovuChat
+ * hasta el tope mensual (D-R2 a): sin tope, un comercio podría mandar cientos al mes sin ingreso adicional. De ahí:
+ *
+ *  - `diasEntreRetomadas`: 7. Una sola plantilla por conversación hasta que el cliente responda, y como máximo 7 días:
+ *    pasado ese plazo, sin respuesta, se puede volver a retomar. Protege la calidad del número ante Meta.
+ *  - `porDia`: 20 por comercio y día de La Paz.
+ *  - `porMes`: 100 por comercio y mes.
+ *
+ * LAS MISMAS CIFRAS PARA TODOS los planes, tarifas y titularidades: ningún plan del catálogo distingue hoy estos
+ * topes (`limitesDePersona` tampoco distingue por plan) y D-R3 los fijó «por comercio». Los parámetros se aceptan
+ * para que mañana un plan o un BYOC (`estandar` + `comercio`, que paga su Meta) pueda traer los suyos sin cambiar la
+ * firma. Core las recibe por inyección (`crearRetomarConversacion({ limitesDeRetomar, ... })`) y no las escribe.
+ */
+export interface LimitesDeRetomar {
+  diasEntreRetomadas: number;
+  porDia: number;
+  porMes: number;
+}
+
+export const RETOMAR_DIAS_ENTRE_RETOMADAS = 7;
+export const RETOMAR_POR_DIA = 20;
+export const RETOMAR_POR_MES = 100;
+
+export function limitesDeRetomar(
+  plan: unknown, tarifa: Tarifa, titularidad: 'novuchat' | 'comercio',
+): LimitesDeRetomar {
+  void plan; void tarifa; void titularidad;
+  return {
+    diasEntreRetomadas: RETOMAR_DIAS_ENTRE_RETOMADAS,
+    porDia: RETOMAR_POR_DIA,
+    porMes: RETOMAR_POR_MES,
+  };
+}
+
+/**
+ * LO QUE COSTARÍA CADA PLANTILLA DE RETOMAR, para el aviso de la consola (D-R5, Andres, 23/11/2026).
+ *
+ * `PLANTILLA_UTILIDAD_USD` es el precio de una plantilla de UTILIDAD fuera de la ventana de 24 h para Bolivia (mercado
+ * «Rest of Latin America»), tomado de `docs/base-comercial.md` §1. NO está verificado en la tarifa oficial de Meta
+ * (fuentes de terceros dan 0,0113 y 0,0130): por eso la consola lo muestra como cifra aproximada, con su fuente, y
+ * mientras `PLANTILLA_UTILIDAD_VERIFICADA_EL` sea `null` lo dice. Cuando se verifique, se escribe acá la fecha
+ * (texto, p. ej. «2026-12-01») y el aviso deja de decir «sin verificar». La pantalla no escribe la cifra: la lee de acá.
+ */
+export const PLANTILLA_UTILIDAD_USD = 0.0113;
+export const PLANTILLA_UTILIDAD_FUENTE = 'base comercial de NovuChat, octubre de 2026';
+export const PLANTILLA_UTILIDAD_VERIFICADA_EL: string | null = null;
+
+/**
  * LO QUE NACE EN `cuenta/estado` AL DAR DE ALTA UN COMERCIO: el plan más chico
  * con su copia de límites, la versión del catálogo y la TARIFA `estandar`
  * (`TARIFA_DE_ALTA`). Lo usan `altaTenant` (index.ts),

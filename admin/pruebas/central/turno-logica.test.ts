@@ -128,12 +128,12 @@ describe('2. quién ve qué', () => {
   it('admin y oper del negocio ven «Tomar» cuando responde el asistente', () => {
     for (const rol of ['admin', 'oper']) {
       const a = ver('asistente', rol);
-      expect(a).toEqual({ sinIntervencion: false, verTomar: true, sinTomarPorVentana: false, verDevolver: false, verEscribir: false, habilitados: true });
+      expect(a).toEqual({ sinIntervencion: false, verTomar: true, sinTomarPorVentana: false, verRetomar: false, verDevolver: false, verEscribir: false, habilitados: true });
     }
   });
 
   it('NEGATIVA: el propietario de NovuChat, el soporte (sin rol), la ingesta y quien no tiene rol NO ven ningún botón ni el campo', () => {
-    const nadie = { sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verDevolver: false, verEscribir: false, habilitados: false };
+    const nadie = { sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verRetomar: false, verDevolver: false, verEscribir: false, habilitados: false };
     for (const situacion of ['asistente', 'mio', 'ajeno'] as const) {
       expect(ver(situacion, 'admin', true), `propietario ${situacion}`).toEqual(nadie);
       expect(ver(situacion, null), `sin rol ${situacion}`).toEqual(nadie);
@@ -143,10 +143,10 @@ describe('2. quién ve qué', () => {
   });
 
   it('«Devolver» y el campo de escribir: quien la tiene; un admin puede devolver la de otra, un oper no; nadie escribe en la de otra', () => {
-    expect(ver('mio', 'oper')).toEqual({ sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verDevolver: true, verEscribir: true, habilitados: true });
-    expect(ver('mio', 'admin')).toEqual({ sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verDevolver: true, verEscribir: true, habilitados: true });
-    expect(ver('ajeno', 'admin')).toEqual({ sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verDevolver: true, verEscribir: false, habilitados: true });
-    expect(ver('ajeno', 'oper')).toEqual({ sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verDevolver: false, verEscribir: false, habilitados: true });
+    expect(ver('mio', 'oper')).toEqual({ sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verRetomar: false, verDevolver: true, verEscribir: true, habilitados: true });
+    expect(ver('mio', 'admin')).toEqual({ sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verRetomar: false, verDevolver: true, verEscribir: true, habilitados: true });
+    expect(ver('ajeno', 'admin')).toEqual({ sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verRetomar: false, verDevolver: true, verEscribir: false, habilitados: true });
+    expect(ver('ajeno', 'oper')).toEqual({ sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verRetomar: false, verDevolver: false, verEscribir: false, habilitados: true });
     expect(ver('asistente', 'oper').verEscribir).toBe(false);          // sin tomar no hay campo
   });
 
@@ -164,7 +164,7 @@ describe('2. quién ve qué', () => {
   it('SIN `puedeIntervenir` (salida no publicada): no hay «Tomar» ni campo de escribir, se explica; «Devolver» se conserva', () => {
     const e = { puedeGestionar: true, esAdmin: true, comercioActivo: true, ventanaAbierta: true, puedeIntervenir: false } as const;
     expect(accionesDeTurno({ ...e, situacion: 'asistente' })).toEqual({
-      sinIntervencion: true, verTomar: false, sinTomarPorVentana: false, verDevolver: false, verEscribir: false, habilitados: true,
+      sinIntervencion: true, verTomar: false, sinTomarPorVentana: false, verRetomar: false, verDevolver: false, verEscribir: false, habilitados: true,
     });
     // una conversación ya tomada antes de perder la bandera: se puede devolver, no escribir
     expect(accionesDeTurno({ ...e, situacion: 'mio' })).toMatchObject({ verDevolver: true, verEscribir: false, verTomar: false });

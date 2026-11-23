@@ -35,7 +35,7 @@ const { AdjuntarComoPersona } = await import('../../web/src/central/componentes/
 
 const enviados: string[] = [];
 const CAPA: CapaTurno = {
-  tomar: async () => ({}), devolver: async () => ({}),
+  tomar: async () => ({}), devolver: async () => ({}), retomar: async () => ({}),
   enviar: async (e) => { enviados.push(e.texto); return { aceptado: true }; },
 };
 const CAPA_ADJ: CapaAdjunto = { enviarAdjunto: async () => ({}) };

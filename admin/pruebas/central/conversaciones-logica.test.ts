@@ -822,10 +822,10 @@ describe('NEGATIVA: lo que la pantalla escribe, llama y usa (guardas de fuente)'
     expect(f).toContain('return () => clearTimeout(t);');
   });
 
-  it('las Functions que llama son cuatro: `buscarConversaciones` y, desde H2, `tomarConversacion`, `devolverConversacion` y `enviarComoPersona`', () => {
+  it('las Functions que llama son cinco: `buscarConversaciones` y, desde H2, `tomarConversacion`, `devolverConversacion`, `enviarComoPersona` y, desde Retomar, `retomarConversacion`', () => {
     const llamadas = ARCHIVOS.flatMap((r) => [...codigo(r).matchAll(/httpsCallable\s*(?:<[^>]*>)?\(([^)]*)\)/g)].map((m) => m[1]?.replace(/\s+/g, ' ')));
     expect(llamadas).toEqual([
-      "funciones, 'buscarConversaciones'", "funciones, 'tomarConversacion'", "funciones, 'devolverConversacion'", "funciones, 'enviarComoPersona'",
+      "funciones, 'buscarConversaciones'", "funciones, 'tomarConversacion'", "funciones, 'devolverConversacion'", "funciones, 'enviarComoPersona'", "funciones, 'retomarConversacion'",
     ]);
     expect(codigo('web/src/central/paginas/ConversacionesNueva.tsx')).toContain("await buscar({ tenantId, texto, ...(cursor ? { cursor } : {}) })");
   });

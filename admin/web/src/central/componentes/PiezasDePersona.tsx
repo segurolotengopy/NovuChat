@@ -22,6 +22,8 @@ export interface PropsPiezasDePersona {
   /** Quien mira tiene la conversación (el campo de texto se pinta solo entonces). */
   verEscribir: boolean;
   habilitados: boolean;
+  /** `turno.retomadoEn` en ms (se retomó con plantilla): el campo dice «Esperando la respuesta del cliente». */
+  retomadoEn?: number | null;
   /** `verAdjuntar(...)`: bandera, turno, ventana y comercio habilitado, todo junto. */
   puedeAdjuntar: boolean;
   /** Se veía el selector y dejó de verse: se explica por qué (el archivo preparado se pierde con él). */
@@ -41,6 +43,7 @@ export function PiezasDePersona(p: PropsPiezasDePersona) {
             <EscribirComoPersona
               key={`escribir-${p.conversacionId}`} tenantId={p.tenantId} conversacionId={p.conversacionId}
               ultimoEntranteEn={p.ultimoEntranteEn} habilitados={p.habilitados} capa={p.capa} miUid={p.miUid}
+              retomadoEn={p.retomadoEn ?? null}
             />
           )}
         </>

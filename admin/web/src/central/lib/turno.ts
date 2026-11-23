@@ -31,6 +31,12 @@ import {
   INACTIVIDAD_MS, MARGEN_ENVIO_MS, VENTANA_META_MS, leerTurno, personaPuedeEscribirDeFicha, turnoVigente, ventanaDeMetaAbierta, type Turno,
 } from '../../../../functions/src/core/conversacion/turno';
 
+// Las cifras de Retomar (topes y precio de la plantilla) son del PLAN y salen de `planes.ts`: la pantalla no escribe ninguna.
+import {
+  PLANTILLA_UTILIDAD_FUENTE, PLANTILLA_UTILIDAD_USD, PLANTILLA_UTILIDAD_VERIFICADA_EL, TARIFA_DE_RESPALDO, limitesDeRetomar,
+} from '../../../../functions/src/central/cuenta/planes';
+import type { Titularidad } from '../../../../functions/src/central/ejes';
+
 export { INACTIVIDAD_MS, MARGEN_ENVIO_MS, VENTANA_META_MS, leerTurno, turnoVigente, ventanaDeMetaAbierta };
 export type { Turno };
 
@@ -121,6 +127,14 @@ export interface EntradaAcciones {
    * explícita). Falso = fail closed: sin «Tomar» ni cuadro para escribir. Devolver no la necesita (liberar es seguro).
    */
   puedeIntervenir: boolean;
+  /** `puedeRetomarDeFicha`: las dos banderas de la ficha. Ausente = no (falla cerrada). */
+  puedeRetomar?: boolean;
+  /** Consta cuándo escribió el cliente por última vez: sin ese dato no se retoma lo que el cliente nunca inició. */
+  ventanaConDato?: boolean;
+  /** El cliente pidió que no se le escriba (`noContactar === true`): no se ofrece Retomar. */
+  noContactar?: boolean;
+  /** El contacto está bloqueado (`bloqueada === true`): no se ofrece Retomar. */
+  bloqueada?: boolean;
 }
 
 /**
@@ -134,6 +148,18 @@ export function puedeIntervenirDeFicha(
   return !!ficha && ficha.consolaConversaciones === 'nueva' && personaPuedeEscribirDeFicha(ficha);
 }
 
+/**
+ * ¿Puede una persona de este comercio RETOMAR una conversación con la ventana cerrada? Lo de intervenir MÁS
+ * `personaPuedeRetomar === true` exacto (C2 del contrato de Retomar; la enciende solo Plataforma). Ausente, `false`,
+ * `'true'` o `1` = no. Es una comprobación LOCAL mínima: cuando el core exporte `personaPuedeRetomarDeFicha`
+ * (`core/conversacion/turno.ts`, bloque R1) se reemplaza por esa, igual que `puedeIntervenirDeFicha` usa la de escribir.
+ */
+export function puedeRetomarDeFicha(
+  ficha: { readonly consolaConversaciones?: unknown; readonly personaPuedeEscribir?: unknown; readonly personaPuedeRetomar?: unknown } | null | undefined,
+): boolean {
+  return puedeIntervenirDeFicha(ficha) && !!ficha && ficha.personaPuedeRetomar === true;
+}
+
 export const AVISO_SIN_SALIDA = 'Tomar la conversación y escribir como persona todavía no está activo para su negocio.';
 
 export interface Acciones {
@@ -141,6 +167,8 @@ export interface Acciones {
   sinIntervencion: boolean;
   verTomar: boolean;
   sinTomarPorVentana: boolean;
+  /** Ventana cerrada, responde el asistente y las dos banderas: se ofrece «Retomar conversación» (plantilla). */
+  verRetomar: boolean;
   verDevolver: boolean;
   verEscribir: boolean;
   /** Los controles que se ven, ¿se pueden pulsar? Falso con el comercio no activo. */
@@ -150,16 +178,20 @@ export interface Acciones {
 /**
  * Los botones que se ofrecen. El propietario y el soporte solo LEEN: sin `puedeGestionar` no se ve ninguno.
  *  · Tomar: solo cuando responde el asistente y la ventana de 24 h está abierta (si no, el servidor lo rechaza).
+ *  · Retomar: lo contrario de Tomar (ventana CERRADA) y además las dos banderas, sin «No contactar» ni bloqueo.
  *  · Devolver: quien la tiene, o un admin.
  *  · Escribir: solo quien la tiene (el servidor exige el turno de ESA persona).
  */
 export function accionesDeTurno(a: EntradaAcciones): Acciones {
-  if (!a.puedeGestionar) return { sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verDevolver: false, verEscribir: false, habilitados: false };
+  if (!a.puedeGestionar) return { sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verRetomar: false, verDevolver: false, verEscribir: false, habilitados: false };
   return {
     sinIntervencion: a.situacion === 'asistente' && !a.puedeIntervenir,
     verTomar: a.situacion === 'asistente' && a.puedeIntervenir && a.ventanaAbierta,
     // «Tomar» escondido por la ventana: la pantalla lo explica en vez de callar.
     sinTomarPorVentana: a.situacion === 'asistente' && a.puedeIntervenir && !a.ventanaAbierta,
+    // «Retomar» (plantilla): TODAS las condiciones a la vez. El servidor las vuelve a comprobar (esto no es un permiso).
+    verRetomar: a.situacion === 'asistente' && a.puedeIntervenir && a.puedeRetomar === true && a.ventanaConDato === true
+      && !a.ventanaAbierta && a.noContactar !== true && a.bloqueada !== true,
     verDevolver: a.situacion === 'mio' || (a.situacion === 'ajeno' && a.esAdmin),
     verEscribir: a.situacion === 'mio' && a.puedeIntervenir,
     habilitados: a.comercioActivo,
@@ -173,6 +205,84 @@ export function accionesDeTurno(a: EntradaAcciones): Acciones {
 export function cambioVisible(esperado: 'tomar' | 'devolver', situacion: SituacionTurno): boolean {
   return esperado === 'tomar' ? situacion === 'mio' : situacion === 'asistente';
 }
+
+// ── Retomar: esperar al cliente, el aviso de costo y los textos ──────────────
+
+/** Una marca de tiempo de Firestore (`toMillis`) como milisegundos; `null` si no es una fecha. */
+const milisDe = (v: unknown): number | null => {
+  const f = v && typeof v === 'object' ? (v as { toMillis?: unknown }).toMillis : undefined;
+  if (typeof f !== 'function') return null;
+  const n = (v as { toMillis: () => unknown }).toMillis();
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+};
+
+/** `turno.retomadoEn` tal como vino del documento (lo escribe solo el servidor); `null` si no consta o no es fecha. */
+export function retomadoEnDe(turnoCrudo: unknown): number | null {
+  const t = turnoCrudo && typeof turnoCrudo === 'object' && !Array.isArray(turnoCrudo) ? (turnoCrudo as { retomadoEn?: unknown }) : null;
+  return t ? milisDe(t.retomadoEn) : null;
+}
+
+/**
+ * ¿Se retomó y el cliente todavía no respondió? Con la ventana CERRADA, `retomadoEn` y ningún entrante posterior
+ * (`retomadoEn >= ultimoEntranteEn`, la misma comparación de Core): se dice «Esperando la respuesta del cliente».
+ */
+export function esperandoRespuestaDelCliente(retomadoEn: number | null, ultimoEntranteEn: number | null, ahora: number): boolean {
+  if (retomadoEn === null || ultimoEntranteEn === null) return false;
+  return !ventanaAbiertaParaTomar(ultimoEntranteEn, ahora) && retomadoEn >= ultimoEntranteEn;
+}
+
+export const TEXTO_ESPERANDO_CLIENTE =
+  'Esperando la respuesta del cliente. Podrá escribirle cuando responda: se abre una ventana de 24 h nueva.';
+
+/** El mensaje de plantilla del hilo: «Plantilla para retomar», sin texto propio (el texto lo pone Meta). */
+export const ROTULO_PLANTILLA = 'Plantilla para retomar';
+export const esPlantilla = (tipo: unknown): boolean => tipo === 'plantilla';
+
+/**
+ * LA CIFRA DEL AVISO, con coma decimal (`0,0113`) y SALIDA DE `planes.ts`: ni este archivo ni la pantalla escriben el precio.
+ * D-R5: mientras `PLANTILLA_UTILIDAD_VERIFICADA_EL` sea `null` se dice que es aproximada y que no está verificada.
+ */
+export const cifraDePlantilla = (): string => String(PLANTILLA_UTILIDAD_USD).replace('.', ',');
+export const fuenteDeLaCifra = (): string => PLANTILLA_UTILIDAD_VERIFICADA_EL === null
+  ? `${PLANTILLA_UTILIDAD_FUENTE}; todavía sin verificar en la tarifa oficial de Meta`
+  : `${PLANTILLA_UTILIDAD_FUENTE}; verificada en la tarifa de Meta el ${PLANTILLA_UTILIDAD_VERIFICADA_EL}`;
+
+/**
+ * El aviso de costo del modal (§1.8 del plan de Retomar). Depende de quién paga Meta, y es la barrera honesta: no se presenta
+ * un costo como algo que no es.
+ *  · `comercio`: Meta cobra aparte a su negocio.
+ *  · `novuchat` (D-R2 a): NovuChat absorbe la plantilla hasta el tope mensual del plan, sin cobrarle al comercio.
+ *  · `null` (no consta: un operador no puede leer los números): no se afirma quién paga.
+ * Si el cliente responde, se abre una conversación nueva que cuenta en el plan.
+ */
+export function textoAvisoRetomar(titularidad: Titularidad | null): string {
+  const cierre = 'Si el cliente responde, se abre una conversación nueva que cuenta en su plan.';
+  const tarifa = `aprox. USD ${cifraDePlantilla()} por envío (tarifa de Meta para Bolivia, ${fuenteDeLaCifra()})`;
+  if (titularidad === 'comercio') {
+    return `Retomar envía una plantilla de WhatsApp que Meta cobra aparte a su negocio, ${tarifa}. ${cierre}`;
+  }
+  if (titularidad === 'novuchat') {
+    const tope = limitesDeRetomar(null, TARIFA_DE_RESPALDO, 'novuchat').porMes;
+    return `Retomar envía una plantilla de WhatsApp que Meta cobra, ${tarifa}. NovuChat absorbe ese costo, sin cobrarle a su negocio, `
+      + `hasta ${tope} envíos al mes. ${cierre}`;
+  }
+  return `Retomar envía una plantilla de WhatsApp que Meta cobra aparte, ${tarifa}. Según el número de su negocio, el costo lo absorbe `
+    + `NovuChat (hasta el tope mensual de su plan) o Meta se lo cobra a su negocio. ${cierre}`;
+}
+
+/**
+ * La titularidad que se le dice a la persona, de la respuesta de `ejesDeCuenta` (solo la lee un admin; para un operador o
+ * mientras carga es `undefined`/`null` y el aviso no afirma quién paga). Si ALGÚN número es del comercio, Meta le factura
+ * a él: se avisa de eso (lo contrario sería presentar un costo como algo que no es). `numeros` vacío = no consta.
+ */
+export function titularidadParaAviso(ejes: { numeros?: readonly { titularidad?: unknown }[] } | null | undefined): Titularidad | null {
+  const n = ejes?.numeros;
+  if (!Array.isArray(n) || n.length === 0) return null;
+  return n.some((x) => x?.titularidad === 'comercio') ? 'comercio' : 'novuchat';
+}
+
+/** Lo que dice la casilla que hay que marcar antes de enviar. */
+export const TEXTO_CASILLA_RETOMAR = 'Entiendo el costo y quiero enviar la plantilla.';
 
 // ── La ventana de Meta y su cuenta regresiva ─────────────────────────────────
 
@@ -213,7 +323,7 @@ export function motivoVentana(v: VentanaEnvio): string | null {
     return 'No consta cuándo escribió el cliente por última vez, así que no se puede saber si la ventana de 24 h de WhatsApp sigue abierta. No se puede enviar.';
   }
   if (v.estado === 'cerrada') {
-    return 'La ventana de 24 h de WhatsApp está cerrada: solo se puede escribir cuando el cliente vuelva a escribir. (Las plantillas no están disponibles todavía.)';
+    return 'La ventana de 24 h de WhatsApp está cerrada: solo se puede escribir cuando el cliente vuelva a escribir.';
   }
   return null;
 }
@@ -348,7 +458,7 @@ export function rotuloDeAutor(autor: string, autorUid: string, miUid: string | n
 
 // ── Errores de las callables, por código ─────────────────────────────────────
 
-export type AccionTurno = 'tomar' | 'devolver' | 'enviar';
+export type AccionTurno = 'tomar' | 'devolver' | 'enviar' | 'retomar';
 
 /** El código de un error del SDK sin el prefijo `functions/`. Nunca se lee `message`. */
 export function codigoDeError(e: unknown): string {
@@ -411,6 +521,10 @@ export function textoErrorTurno(accion: AccionTurno, codigo: string, detalles: R
       }
       const otra = typeof detalles['tomadoPor'] === 'string' && detalles['tomadoPor'] !== ''
         ? ` (${etiquetaUid(detalles['tomadoPor'], null)})` : '';
+      if (accion === 'retomar') {
+        return 'No se pudo retomar: la ventana de 24 h está abierta (use Tomar), ya se envió una plantilla a este cliente y se espera su respuesta, '
+          + 'la plantilla no está disponible en este número, o la conversación la tiene otra persona.';
+      }
       return accion === 'tomar'
         ? (otra ? `No se pudo tomar: ya la tiene otra persona${otra}.`
           : 'No se pudo tomar: la tiene otra persona, o la ventana de 24 h de WhatsApp está cerrada. El estado de arriba dice cuál.')
@@ -419,13 +533,19 @@ export function textoErrorTurno(accion: AccionTurno, codigo: string, detalles: R
           : 'No se envió: usted ya no tiene esta conversación, la ventana de 24 h de WhatsApp se cerró, o esa clave de envío ya se usó con otro texto. Revise el estado de arriba.';
     }
     case 'invalid-argument':
-      return accion === 'enviar' ? `El mensaje debe tener entre 1 y ${miles(MAX_TEXTO_PERSONA)} caracteres.`
+      return accion === 'retomar' ? 'La conversación no es válida o no se puede retomar.' : accion === 'enviar' ? `El mensaje debe tener entre 1 y ${miles(MAX_TEXTO_PERSONA)} caracteres.`
         : 'La conversación no es válida.';
     case 'resource-exhausted':
+      if (accion === 'retomar') {
+        return detalles['tope'] === 'retomarMes'
+          ? 'Su negocio alcanzó el máximo de conversaciones que se pueden retomar este mes.'
+          : 'Su negocio alcanzó el máximo de conversaciones que se pueden retomar hoy. Intente mañana.';
+      }
       return accion === 'enviar' ? textoTope(detalles) : 'Alcanzó el tope de cambios de atención por hora o por día.';
-    case 'not-found': return 'La conversación ya no existe, o intervenir todavía no está disponible.';
+    case 'not-found': return accion === 'retomar' ? 'La conversación ya no existe, o este cliente nunca escribió por este medio.' : 'La conversación ya no existe, o intervenir todavía no está disponible.';
     default:
-      return accion === 'tomar' ? 'No se pudo tomar la conversación. Intente de nuevo.'
+      return accion === 'retomar' ? 'No se pudo retomar la conversación. Intente de nuevo.'
+        : accion === 'tomar' ? 'No se pudo tomar la conversación. Intente de nuevo.'
         : accion === 'devolver' ? 'No se pudo devolver la conversación. Intente de nuevo.'
           : 'No se pudo enviar el mensaje. Intente de nuevo.';
   }
@@ -509,18 +629,44 @@ export async function ejecutarEnvio(
   }
 }
 
+/**
+ * Hace UN intento de retomar. `clave` es la del intento anterior que no llegó a confirmarse (reintentar es seguro: el servidor
+ * reconoce la misma clave con la misma huella y no manda otra plantilla) o `null` para una nueva. Devuelve la clave con la que
+ * se llamó y si queda ABIERTA (sin respuesta del servidor: red, tiempo agotado) para reutilizarla. Nunca reintenta solo.
+ * Se llama SOLO tras la confirmación del aviso de costo (la casilla): la pantalla no llega acá sin ella.
+ */
+export async function ejecutarRetomar(
+  capa: CapaTurno, entrada: EntradaTurno, clave: string | null, generar: () => string = nuevaClave,
+): Promise<{ salida: SalidaEnvio; clave: string; abierta: boolean }> {
+  const usada = clave !== null && esClaveValida(clave) ? clave : generar();
+  try {
+    const respuesta = await capa.retomar({ tenantId: entrada.tenantId, conversacionId: entrada.conversacionId, claveIdempotencia: usada });
+    return { salida: { tipo: interpretarEnvio(respuesta) }, clave: usada, abierta: false };
+  } catch (e) {
+    const codigo = codigoDeError(e);
+    const desconocido = resultadoDesconocido(codigo);
+    return {
+      salida: { tipo: 'error', codigo, texto: textoErrorTurno('retomar', codigo, detallesDeError(e)), desconocido },
+      clave: usada, abierta: desconocido,
+    };
+  }
+}
+
 // ── La capa que habla con el servidor (simulable en las pruebas) ─────────────
 
 export interface EntradaTurno { tenantId: string; conversacionId: string }
 export interface EntradaEnvio extends EntradaTurno { texto: string; claveIdempotencia: string }
+/** Retomar: SOLO estos tres campos (C3). Nunca un teléfono ni un texto: la plantilla y el destinatario los pone el servidor. */
+export interface EntradaRetomar extends EntradaTurno { claveIdempotencia: string }
 
 export interface CapaTurno {
   tomar(e: EntradaTurno): Promise<unknown>;
   devolver(e: EntradaTurno): Promise<unknown>;
   enviar(e: EntradaEnvio): Promise<unknown>;
+  retomar(e: EntradaRetomar): Promise<unknown>;
 }
 
-/** Las tres callables de Core (región us-east1, la de `funciones`). Cada una recibe solo lo del contrato. */
+/** Las callables de Core (tomar, devolver, enviar y retomar) (región us-east1, la de `funciones`). Cada una recibe solo lo del contrato. */
 export function capaTurnoReal(funciones: Functions): CapaTurno {
   return {
     tomar: async (e) => (await httpsCallable<EntradaTurno, unknown>(funciones, 'tomarConversacion')(
@@ -529,5 +675,7 @@ export function capaTurnoReal(funciones: Functions): CapaTurno {
       { tenantId: e.tenantId, conversacionId: e.conversacionId })).data,
     enviar: async (e) => (await httpsCallable<EntradaEnvio, unknown>(funciones, 'enviarComoPersona')(
       { tenantId: e.tenantId, conversacionId: e.conversacionId, texto: e.texto, claveIdempotencia: e.claveIdempotencia })).data,
+    retomar: async (e) => (await httpsCallable<EntradaRetomar, unknown>(funciones, 'retomarConversacion')(
+      { tenantId: e.tenantId, conversacionId: e.conversacionId, claveIdempotencia: e.claveIdempotencia })).data,
   };
 }

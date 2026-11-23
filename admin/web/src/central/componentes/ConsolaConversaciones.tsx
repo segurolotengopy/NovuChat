@@ -4,7 +4,7 @@ import { db } from '../../core/lib/firebase';
 import {
   pantallaConversacionesDeFicha, PANTALLA_POR_DEFECTO, type PantallaConversaciones,
 } from '../../../../functions/src/central/consola-conversaciones';
-import { puedeIntervenirDeFicha } from '../lib/turno';
+import { puedeIntervenirDeFicha, puedeRetomarDeFicha } from '../lib/turno';
 import { puedeEnviarMediosDeFicha } from '../lib/adjuntos';
 
 /**
@@ -64,6 +64,23 @@ export function usePersonaPuedeIntervenir(tenantId: string | undefined): boolean
     if (!tenantId) return;
     return onSnapshot(doc(db, 'tenants', tenantId),
       (d) => setPuede(puedeIntervenirDeFicha(d.data())),
+      () => setPuede(false));
+  }, [tenantId]);
+  return puede;
+}
+
+/**
+ * Lo que la pantalla usa para ofrecer «Retomar conversación»: lo de intervenir MÁS `personaPuedeRetomar === true`
+ * (`puedeRetomarDeFicha`). FALLA CERRADA igual que `usePersonaPuedeIntervenir`: `false` mientras carga y si la ficha no se
+ * puede leer. La enciende solo Plataforma; el servidor vuelve a comprobarla.
+ */
+export function usePersonaPuedeRetomar(tenantId: string | undefined): boolean {
+  const [puede, setPuede] = useState(false);
+  useEffect(() => {
+    setPuede(false);
+    if (!tenantId) return;
+    return onSnapshot(doc(db, 'tenants', tenantId),
+      (d) => setPuede(puedeRetomarDeFicha(d.data())),
       () => setPuede(false));
   }, [tenantId]);
   return puede;

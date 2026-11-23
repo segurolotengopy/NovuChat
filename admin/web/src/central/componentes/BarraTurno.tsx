@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { TextoSeguro } from './TextoSeguro';
+import { RetomarConversacion } from './RetomarConversacion';
 import {
   AVISO_SIN_SALIDA, AVISO_TOMAR, ESPERA_CAMBIO_MS, cambioVisible, codigoDeError, detallesDeError, textoErrorTurno, textoEstadoTurno,
   type Acciones, type CapaTurno, type SituacionTurno, type Turno,
@@ -10,6 +11,7 @@ import {
  *
  *  · El estado sale del campo `turno` de la conversación EN VIVO (lo escribe el servidor): «Responde una persona (…)» o
  *    «Responde el asistente». Ausente o raro = el asistente (`lib/turno.ts`).
+ *  · «Retomar conversación» (ventana cerrada, `RetomarConversacion`) ocupa el lugar del aviso «No se puede tomar».
  *  · «Tomar» y «Devolver» llaman a `tomarConversacion` y `devolverConversacion`. La pantalla NO cambia el estado por su
  *    cuenta: espera a que el cambio llegue por el oyente en vivo, y mientras tanto deja los botones quietos.
  *  · Solo admin u oper ven los botones (`accionesDeTurno`): el propietario y el soporte solo leen.
@@ -27,6 +29,8 @@ export interface PropsBarraTurno {
   capa: CapaTurno;
   /** La etiqueta de quién responde se pinta en otro lugar (la cabecera del detalle): aquí no se repite. */
   sinEstado?: boolean;
+  /** Quién paga Meta (para el aviso de costo de «Retomar»); `null` = no consta. */
+  titularidad?: import('../../../../functions/src/central/ejes').Titularidad | null;
 }
 
 export function BarraTurno(p: PropsBarraTurno) {
@@ -96,7 +100,14 @@ export function BarraTurno(p: PropsBarraTurno) {
         <p className="cv-turno-aviso" id="cv-turno-sin-salida" data-testid="sin-intervencion">{AVISO_SIN_SALIDA}</p>
       )}
 
-      {acciones.sinTomarPorVentana && (
+      {acciones.verRetomar && (
+        <RetomarConversacion
+          tenantId={tenantId} conversacionId={conversacionId} titularidad={p.titularidad ?? null}
+          habilitados={acciones.habilitados} capa={p.capa}
+        />
+      )}
+
+      {acciones.sinTomarPorVentana && !acciones.verRetomar && (
         <p className="cv-turno-aviso" id="cv-turno-sin-ventana">
           No se puede tomar: la ventana de 24 h de WhatsApp está cerrada o no consta cuándo escribió el cliente. Podrá hacerlo cuando el cliente vuelva a escribir.
         </p>

@@ -17,9 +17,10 @@ import {
   etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, turnoDeFicha, ventanaDeFicha, type Ficha,
 } from '../lib/conversaciones';
 import {
-  AVISO_PROPIETARIO, accionesDeTurno, estadoDeMensaje, mostrarAvisoPropietario, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoEstadoTurno, textoRechazoMeta, vencidoDeEnvio, ventanaAbiertaParaTomar, ventanaDeEnvio,
+  AVISO_PROPIETARIO, ROTULO_PLANTILLA, accionesDeTurno, esPlantilla, estadoDeMensaje, retomadoEnDe, mostrarAvisoPropietario, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoEstadoTurno, textoRechazoMeta, vencidoDeEnvio, ventanaAbiertaParaTomar, ventanaDeEnvio,
   type CapaTurno, type EstadoMensajePersona,
 } from '../lib/turno';
+import type { Titularidad } from '../../../../functions/src/central/ejes';
 
 /**
  * EL DETALLE DE UNA CONVERSACIÓN: un solo hilo, con su propio scroll.
@@ -218,6 +219,10 @@ export interface PropsDetalle {
   comercioActivo: boolean;
   /** El comercio tiene activa la intervención (`usePersonaPuedeIntervenir`); falso mientras carga o si falla. */
   puedeIntervenir: boolean;
+  /** Retomar: las dos banderas de la ficha (`usePersonaPuedeRetomar`); falso mientras carga o si falla. */
+  puedeRetomar?: boolean;
+  /** Retomar: quién paga Meta, para el aviso de costo; `null`/ausente = no consta. */
+  titularidad?: Titularidad | null;
   /** H2: el uid de quien mira (para saber si la conversación la tiene «usted»); `null` sin sesión. */
   miUid: string | null;
   /** H2: quien mira es admin del negocio (puede devolver la conversación de otra persona). */
@@ -312,7 +317,11 @@ export function DetalleConversacion(p: PropsDetalle) {
   const acciones = accionesSinBloqueadas(accionesDeTurno({
     situacion, puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo, puedeIntervenir: p.puedeIntervenir,
     ventanaAbierta: ventanaAbiertaParaTomar(ficha.ultimoEntranteEn, p.ahora),
+    puedeRetomar: p.puedeRetomar === true, ventanaConDato: ficha.ultimoEntranteEn !== null,
+    noContactar: ficha.noContactar, bloqueada: ficha.bloqueada,
   }), ficha.bloqueada);
+  // Se retomó con una plantilla (`turno.retomadoEn`, lo escribe el servidor): con la ventana cerrada se espera al cliente.
+  const retomadoEn = retomadoEnDe(ficha.turno);
   const accionesBloqueo = accionesDeBloqueo({
     puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo, bloqueada: ficha.bloqueada, situacion,
   });
@@ -389,7 +398,7 @@ export function DetalleConversacion(p: PropsDetalle) {
             />
             <BarraTurno
               tenantId={tenantId} conversacionId={ficha.id} turno={turno} situacion={situacion}
-              acciones={acciones} miUid={p.miUid} capa={p.capa} sinEstado
+              acciones={acciones} miUid={p.miUid} capa={p.capa} sinEstado titularidad={p.titularidad ?? null}
             />
             {enlaceWaMe(ficha.telefono) && (
               <div className="cv-wame-bloque">
@@ -402,7 +411,7 @@ export function DetalleConversacion(p: PropsDetalle) {
               zona="opciones"
               tenantId={tenantId} conversacionId={ficha.id} nombreContacto={ficha.nombre} telefono={ficha.telefono}
               ultimoEntranteEn={ficha.ultimoEntranteEn} miUid={p.miUid}
-              verEscribir={acciones.verEscribir} habilitados={acciones.habilitados} puedeAdjuntar={puedeAdjuntar}
+              verEscribir={acciones.verEscribir} habilitados={acciones.habilitados} retomadoEn={retomadoEn} puedeAdjuntar={puedeAdjuntar}
               avisoSinArchivos={!puedeAdjuntar && vioAdjuntar.current && p.puedeEnviarMedios && (ventanaEnvio !== 'abierta' || !acciones.verEscribir)}
               capa={p.capa} capaAdjunto={p.capaAdjunto}
             />
@@ -448,7 +457,9 @@ export function DetalleConversacion(p: PropsDetalle) {
                   {etiquetaDeAdjunto(x.direccion, esPersona, x.tipo, x.medio?.voz === true, x.medio?.origen === 'asistente') && (
                     <span className="adjunto">{etiquetaDeAdjunto(x.direccion, esPersona, x.tipo, x.medio?.voz === true, x.medio?.origen === 'asistente')}</span>
                   )}
-                  <TextoSeguro valor={x.texto} />
+                  {esPlantilla(x.tipo)
+                    ? <span className="cv-plantilla" data-testid="plantilla-retomar">{ROTULO_PLANTILLA}</span>
+                    : <TextoSeguro valor={x.texto} />}
                   {x.medio?.origen === 'asistente' && <span className="cv-medio-texto">{TEXTO_IMAGEN_DEL_ASISTENTE}</span>}
                   {x.medio?.origen === 'enviado' && x.medio.nombre && (
                     <span className="cv-medio-texto"><TextoSeguro valor={x.medio.nombre} maxLargo={240} /></span>
@@ -493,7 +504,7 @@ export function DetalleConversacion(p: PropsDetalle) {
       <PiezasDePersona
         zona="barra" tenantId={tenantId} conversacionId={ficha.id} nombreContacto={ficha.nombre} telefono={ficha.telefono}
         ultimoEntranteEn={ficha.ultimoEntranteEn} miUid={p.miUid}
-        verEscribir={acciones.verEscribir} habilitados={acciones.habilitados} puedeAdjuntar={puedeAdjuntar}
+        verEscribir={acciones.verEscribir} habilitados={acciones.habilitados} retomadoEn={retomadoEn} puedeAdjuntar={puedeAdjuntar}
         avisoSinArchivos={!puedeAdjuntar && vioAdjuntar.current && p.puedeEnviarMedios && (ventanaEnvio !== 'abierta' || !acciones.verEscribir)}
         capa={p.capa} capaAdjunto={p.capaAdjunto}
       />

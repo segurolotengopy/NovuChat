@@ -7,7 +7,7 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { db, funciones } from '../../core/lib/firebase';
 import { useSesion } from '../../core/lib/contexto';
-import { useEstadoComercio, usePersonaPuedeEnviarMedios, usePersonaPuedeIntervenir } from '../componentes/ConsolaConversaciones';
+import { useEstadoComercio, usePersonaPuedeEnviarMedios, usePersonaPuedeIntervenir, usePersonaPuedeRetomar } from '../componentes/ConsolaConversaciones';
 import { rolEn } from '../../core/lib/sesion';
 import { ListaConversaciones, type Renglon } from '../componentes/ListaConversaciones';
 import { DetalleConversacion } from '../componentes/DetalleConversacion';
@@ -20,7 +20,8 @@ import {
   textoErrorBusqueda, unirFichas, vecina, PREFIJOS_PAIS_DEFECTO, MAX_DIGITOS_TELEFONO,
   type Consulta, type ConsultaPlana, type Contadores, type Ficha, type Filtro, type Paginacion,
 } from '../lib/conversaciones';
-import { capaTurnoReal } from '../lib/turno';
+import { capaTurnoReal, titularidadParaAviso } from '../lib/turno';
+import { useEjesDeCuenta } from '../lib/lecturas';
 import { capaAdjuntoReal } from '../lib/adjuntos';
 import { capaBloqueoReal } from '../lib/bloqueo';
 import '../estilos/conversaciones.css';
@@ -42,7 +43,7 @@ import '../estilos/conversaciones.css';
  * leída: `{ noLeidos: 0, sinLeer: false }`, que las reglas solo aceptan hacia cero
  * y solo de una persona del negocio (admin u oper). Todo lo demás pasa por el servidor:
  * `buscarConversaciones` (la búsqueda por palabra) y, desde H2, `tomarConversacion`,
- * `devolverConversacion` y `enviarComoPersona` (`lib/turno.ts`; el campo `turno` y los mensajes de
+ * `devolverConversacion`, `enviarComoPersona` y `retomarConversacion` (`lib/turno.ts`; el campo `turno` y los mensajes de
  * una persona los escribe SOLO el servidor). Ningún `fetch`, ningún almacenamiento del navegador.
  *
  * QUÉ LEE (todo bajo `/tenants/{t}`, la ruta decide qué se puede leer; no hay un
@@ -388,6 +389,11 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
   // intentar hasta que crezca: es decir, hasta que haya algo nuevo que marcar.
   const estadoComercio = useEstadoComercio(tenantId);
   const puedeIntervenir = usePersonaPuedeIntervenir(tenantId);
+  const puedeRetomar = usePersonaPuedeRetomar(tenantId);
+  // La titularidad solo se pide si Retomar está activo (el aviso de costo depende de quién paga Meta). La callable es de
+  // admin: para un operador llega como `null` y el aviso no afirma quién paga.
+  const lecturaEjes = useEjesDeCuenta(puedeRetomar ? tenantId : '');
+  const titularidad = titularidadParaAviso(lecturaEjes.ejes);
   const puedeEnviarMedios = usePersonaPuedeEnviarMedios(tenantId);
   const fallidas = useRef<Map<string, number>>(new Map());
   const marcar = fichaAbierta !== null && debeMarcarLeida({
@@ -682,6 +688,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
             onAnterior={vecina(claves, claveActiva, -1) ? () => irA(-1) : null}
             onSiguiente={vecina(claves, claveActiva, 1) ? () => irA(1) : null}
             posicion={posicion} puedeGestionar={puedeGestionar} esPropietario={permisos.propietario} comercioActivo={estadoComercio === 'activo'} puedeIntervenir={puedeIntervenir}
+            puedeRetomar={puedeRetomar} titularidad={titularidad}
             miUid={miUid} esAdmin={rol === 'admin' && !permisos.propietario} capa={capa} capaBloqueo={capaBloqueo}
             puedeEnviarMedios={puedeEnviarMedios} capaAdjunto={capaAdjunto}
           />

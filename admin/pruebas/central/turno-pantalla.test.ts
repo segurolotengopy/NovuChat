@@ -35,7 +35,7 @@ const { EscribirComoPersona } = await import('../../web/src/central/componentes/
 
 const YO = 'uidDeLaCajeraAbCdEfGhIjKlMnOp';
 const OTRA = 'uidDeOtraPersonaAbCdEfGhIjKlM';
-const CAPA: CapaTurno = { tomar: async () => ({}), devolver: async () => ({}), enviar: async () => ({}) };
+const CAPA: CapaTurno = { tomar: async () => ({}), devolver: async () => ({}), enviar: async () => ({}), retomar: async () => ({}) };
 
 /** BarraTurno tal como la arma el Detalle: la situación y las acciones salen de la lógica. */
 function barra(o: { turno?: unknown; rol: string | null; propietario?: boolean; activo?: boolean; intervenir?: boolean; ventanaAbierta?: boolean }): string {
@@ -222,13 +222,15 @@ describe('C. NEGATIVAS de fuente de lo nuevo', () => {
     expect(c).not.toMatch(/nuevaClave[\s\S]{0,200}Date\.now/);
   });
 
-  it('las tres callables, y SOLO con los campos del contrato; la pantalla no escribe `turno` ni mensajes', () => {
+  it('las cuatro callables, y SOLO con los campos del contrato; la pantalla no escribe `turno` ni mensajes', () => {
     const c = codigo('web/src/central/lib/turno.ts');
     const llamadas = [...c.matchAll(/httpsCallable\s*(?:<[^>]*>)?\(([^)]*)\)\(\s*(\{[^}]*\})/g)].map((m) => `${m[1]!.replace(/\s+/g, ' ')} ${m[2]!.replace(/\s+/g, ' ')}`);
     expect(llamadas).toEqual([
       "funciones, 'tomarConversacion' { tenantId: e.tenantId, conversacionId: e.conversacionId }",
       "funciones, 'devolverConversacion' { tenantId: e.tenantId, conversacionId: e.conversacionId }",
       "funciones, 'enviarComoPersona' { tenantId: e.tenantId, conversacionId: e.conversacionId, texto: e.texto, claveIdempotencia: e.claveIdempotencia }",
+      // Retomar: SOLO tres campos; nunca un teléfono ni un texto (la plantilla y el destinatario los pone el servidor).
+      "funciones, 'retomarConversacion' { tenantId: e.tenantId, conversacionId: e.conversacionId, claveIdempotencia: e.claveIdempotencia }",
     ]);
     for (const ruta of [...NUEVOS, 'web/src/central/paginas/ConversacionesNueva.tsx', 'web/src/central/componentes/DetalleConversacion.tsx']) {
       const f = codigo(ruta);
