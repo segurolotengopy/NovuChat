@@ -529,7 +529,8 @@ export function guardias(variante, flujo, mapaCrm) {
   const st = (flujo && flujo.settings) || {};
   if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» y saveExecutionProgress false (con la rama del guardado de medios el binario quedaría en la ejecución: decisión de Andres del 30/10, contrato v2 §8.1)');
   // La alerta de «envío incierto» (decisión I4): `settings.errorWorkflow` lleva el MARCADOR y `publicar-flujo.sh` lo resuelve por NOMBRE en el n8n destino.
-  if (st.errorWorkflow !== 'REEMPLAZAR_ID_ERROR_WORKFLOW') h.push('tiene que llevar `settings.errorWorkflow` con el marcador REEMPLAZAR_ID_ERROR_WORKFLOW (la alerta de envío incierto, resuelta por nombre al publicar)');
+  // El ENSAYO en el Demo A no lleva la alerta (la herramienta de ensayo se niega con cualquier marcador fuera de los dos suyos): ahí `errorWorkflow` no existe.
+  if (variante === 'ensayo-demo-a' ? st.errorWorkflow !== undefined : st.errorWorkflow !== 'REEMPLAZAR_ID_ERROR_WORKFLOW') h.push('tiene que llevar `settings.errorWorkflow` con el marcador REEMPLAZAR_ID_ERROR_WORKFLOW (la alerta de envío incierto, resuelta por nombre al publicar)');
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
   // `REEMPLAZAR_` solo en «Config base», en el receptor y en la ruta de la entrada de prueba.
@@ -863,7 +864,9 @@ export function construirEnsayo({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_
   const config = { ...CONFIG, variantes: [{ archivo: SALIDA_ENSAYO, quitar: QUITAR_EN_EL_ENSAYO, nombre: 'se toma de los datos' }] };
   const proyecto = leerProyecto(carpeta, config, tope ? { tope } : {});
   const v = proyecto.variantes[0];
-  const texto = armarRuben(proyecto, datos, v);
+  const sinAlerta = JSON.parse(armarRuben(proyecto, datos, v));
+  if (sinAlerta.settings) delete sinAlerta.settings.errorWorkflow;
+  const texto = JSON.stringify(sinAlerta, null, 2) + '\n';
   const propios = guardias('ensayo-demo-a', JSON.parse(texto));
   if (propios.length) throw new Error(`${v.archivo}: ${propios.join('; ')}`);
   const ruta = join(carpeta, v.archivo);

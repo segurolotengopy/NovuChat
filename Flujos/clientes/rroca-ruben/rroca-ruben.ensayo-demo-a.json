@@ -7,8 +7,7 @@
     "saveDataSuccessExecution": "none",
     "saveDataErrorExecution": "none",
     "saveExecutionProgress": false,
-    "saveManualExecutions": false,
-    "errorWorkflow": "REEMPLAZAR_ID_ERROR_WORKFLOW"
+    "saveManualExecutions": false
   },
   "nodes": [
     {
