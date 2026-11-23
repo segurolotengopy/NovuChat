@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { cargarFuente } from '../../core/fuente-vm';
-import { ANA, COMPROBANTE, ENTREGA, ENVIO, REC, cotejoEnRevision, cotejoMontoDistinto, cotejoValidoConCodigo, crear, hablar, mImagen, mTexto, modelo, panelConQr, panelOk, textos, type Opciones } from './mundo';
+import { ANA, COMPROBANTE, ENTREGA, ENVIO, REC, cotejoEnRevision, cotejoMontoDistinto, cotejoValidoConCodigo, crear, entregaEnElSegundoTurno, hablar, mImagen, mTexto, modelo, panelConQr, panelOk, textos, type Opciones } from './mundo';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(AQUI, '../../../..');
@@ -39,7 +39,8 @@ const COMPROBANTE_W = { ...COMPROBANTE, bancoOrigen: 'Banco Union', transaccion:
 const varsDe = (aviso: { payload: J } | undefined): string[] => ((aviso?.payload['template'] as J)?.['components']?.[0]?.parameters ?? []).map((p: { text: string }) => p.text);
 /** Un mundo con una billetera (450 Bs) y la entrega dada; el QR ya emitido y la consola diciendo que está abierto. */
 function conQr(o: Opciones = {}, entrega: J = ENTREGA): Mundo {
-  const m = mundo({ modeloDice: modelo('Con gusto, lo anotamos.', { lineas: [{ id: 'billetera-cuero', cantidad: 1, detalle: 'color marrón' }], entrega }), medio: { clasificacion: COMPROBANTE_W }, ...o });
+  // Andres, 23/11/2026 («Enviar el QR solo»): el QR sale en el turno en que la entrega queda completa; aquí, el 2.º («quiero pagar»).
+  const m = mundo({ modeloDice: entregaEnElSegundoTurno(modelo('Con gusto, lo anotamos.', { lineas: [{ id: 'billetera-cuero', cantidad: 1, detalle: 'color marrón' }], entrega })), medio: { clasificacion: COMPROBANTE_W }, ...o });
   hablar(m, ANA, mTexto('una billetera'));
   const t = hablar(m, ANA, mTexto('quiero pagar'));
   expect(t.mensajes.some((x) => x.tipo === 'image'), 'el QR no se emitió').toBe(true);
@@ -273,7 +274,7 @@ describe('B2/B4 · el envío exige la ubicación GPS antes del QR', () => {
     expect(fichaDe(m)['entrega']['ubicacion']).toEqual({ lat: -16.5, lng: -68.12 });
   });
   it('el recojo no pide GPS: sale el QR con la tienda y su horario', () => {
-    const m = mundo({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }), base: { tiendaLaPaz: 'Calle Claudio Aliaga #1231, San Miguel, Zona Sur', horarioTiendas: 'de lunes a viernes de 10:00 a 19:00' } });
+    const m = mundo({ modeloDice: entregaEnElSegundoTurno(modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA })), base: { tiendaLaPaz: 'Calle Claudio Aliaga #1231, San Miguel, Zona Sur', horarioTiendas: 'de lunes a viernes de 10:00 a 19:00' } });
     hablar(m, ANA, mTexto('una billetera'));
     const t = hablar(m, ANA, mTexto('quiero pagar'));
     expect(t.mensajes.some((x) => x.tipo === 'image')).toBe(true);

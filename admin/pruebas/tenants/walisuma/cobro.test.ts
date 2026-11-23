@@ -3,14 +3,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { Mundo } from '../../lib/n8n-de-mentira';
-import { ANA, COMPROBANTE, ENTREGA, crear, hablar, mImagen, mTexto, modelo, panelConQr, textos, type Opciones } from './mundo';
+import { ANA, COMPROBANTE, ENTREGA, crear, entregaEnElSegundoTurno, hablar, mImagen, mTexto, modelo, panelConQr, textos, type Opciones } from './mundo';
 
 const PROHIBIDO = /pago acreditado|pago verificado|recib[ií]mos? tu pago|acreditad[oa]|verificad[oa]|pagad[oa]|simulad[oa]/i;
 const fichas = (m: Mundo): Record<string, any> => (m.sd['walisuma'] ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const todo = (t: ReturnType<typeof hablar>): string[] => [...textos(t), ...t.mensajes.map((x) => JSON.stringify(x.payload)), ...t.avisos.map((x) => x.cuerpo)];
 /** Un mundo con un pedido de una billetera ya confirmado (QR emitido, 450 Bs) y la consola diciendo que el QR está abierto. */
 function conQrAbierto(o: Opciones = {}): Mundo {
-  const m = crear({ modeloDice: modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }), ...o });
+  // Decisión de Andres (23/11/2026, «Enviar el QR solo»): el QR sale en el turno en que la entrega queda completa; aquí, el 2.º («quiero pagar»).
+  const m = crear({ modeloDice: entregaEnElSegundoTurno(modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA })), ...o });
   hablar(m, ANA, mTexto('una billetera'));
   hablar(m, ANA, mTexto('quiero pagar'));
   m.dobles['Traer configuración'] = () => panelConQr(450);
@@ -28,7 +29,7 @@ describe('NUNCA «pago acreditado» ni «simulado»', () => {
     expect(textos(tComp).join(' ')).not.toMatch(/dinero|acredit|entró la plata/i);
   });
   it('el QR de la primera emisión tampoco lleva el rótulo de simulado', () => {
-    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) });
+    const m = crear({ modeloDice: entregaEnElSegundoTurno(modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA })) });
     hablar(m, ANA, mTexto('una billetera'));
     const t = hablar(m, ANA, mTexto('quiero pagar'));
     expect(t.mensajes.some((x) => x.tipo === 'image')).toBe(true);
@@ -56,6 +57,28 @@ describe('NUNCA «pago acreditado» ni «simulado»', () => {
     expect(t.mensajes[0]?.payload['interactive']).toBeUndefined();
     for (const x of todo(t)) expect(x).not.toMatch(PROHIBIDO);
     expect(t.avisos).toHaveLength(0);
+  });
+});
+
+describe('el QR sale solo cuando el pedido y la entrega quedan completos (Andres, 23/11/2026: «Enviar el QR solo»)', () => {
+  it('con piezas y entrega completas y SIN «pagar»: el QR sale en ese mismo turno, con el monto del carrito, y no hay «pago acreditado»', () => {
+    const m = crear({ modeloDice: modelo('Le esperamos para el recojo.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) });
+    const t = hablar(m, ANA, mTexto('una billetera, recojo en tienda a nombre de Ana'));
+    expect(t.mensajes.some((x) => x.tipo === 'image')).toBe(true);
+    for (const x of todo(t)) expect(x).not.toMatch(PROHIBIDO);
+  });
+  it('un mensaje siguiente (otra pregunta) con el QR abierto NO manda otro QR ni cambia nada', () => {
+    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) });
+    hablar(m, ANA, mTexto('una billetera, recojo en tienda'));
+    m.dobles['Traer configuración'] = () => panelConQr(450);
+    const t2 = hablar(m, ANA, mTexto('gracias, ¿a qué hora cierran?'));
+    expect(t2.mensajes.filter((x) => x.tipo === 'image')).toHaveLength(0);
+  });
+  it('NEGADO: sin entrega completa, o diciendo «no quiero pagar aún», o sin cobro real, no sale el QR', () => {
+    const sinEntrega = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) });
+    expect(hablar(sinEntrega, ANA, mTexto('una billetera')).mensajes.some((x) => x.tipo === 'image')).toBe(false);
+    const aunNo = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) });
+    expect(hablar(aunNo, ANA, mTexto('una billetera, recojo en tienda, todavía no quiero pagar')).mensajes.some((x) => x.tipo === 'image')).toBe(false);
   });
 });
 

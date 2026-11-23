@@ -244,9 +244,12 @@ function wlEntregaAviso(e, totalCentavos, umbralBs) {
 // Intenciones que decide el CÓDIGO sobre el texto del cliente (normalizado con `wlNorm`)
 // -----------------------------------------------------------------------------
 // Una ORDEN de pagar o de cerrar el pedido; «confirmo que es para La Paz» no lo es.
+function wlNoQuierePagarAun(n) {
+  return /\b(no|aun no|todavia no)\s+(quiero\s+)?(pagar|confirmar|cerrar)\b/.test(String(n || ''));
+}
 function wlQuierePagar(n) {
   const t = String(n || '');
-  if (/\b(no|aun no|todavia no)\s+(quiero\s+)?(pagar|confirmar|cerrar)\b/.test(t)) return false;
+  if (wlNoQuierePagarAun(t)) return false;
   return /\b(pagar|pagare|pagamos|el qr|confirmo (el|mi|la) (pedido|compra)|confirmar (el|mi) pedido|cerrar (el|mi) pedido|cerremos (el|mi) pedido|me los? llevo|lo llevo|los llevo|proceder? (con )?(el|mi|la) (pedido|pago|compra))\b/.test(t);
 }
 // «¿Eres / es usted un bot?»: tú y usted, errores de tipeo frecuentes («erez», «eris»), sin tildes (el texto llega normalizado). Lo contesta el texto fijo que SÍ dice que es una IA.
@@ -650,8 +653,13 @@ function wlResolverModelo(c) {
   const antes = vcLineas(f.carrito, c.vendibles).lineas;
   const lineas = Array.isArray(j.lineas) ? vcLineas(j.lineas, c.vendibles).lineas : antes;
   const entrega = wlMezclarEntrega(f.entrega, j.entrega, c.modos, c.from);
-  const cierre = f.cierre || wlQuierePagar(wlNorm(p.textoCliente));
   const cambio = !vcMismoCarrito(antes, lineas);
+  // EL QR SALE SOLO (Andres, 23/11/2026: «Enviar el QR solo»): cuando el pedido y la entrega quedan COMPLETOS en este turno (el carrito cambió o la entrega se completó ahora) y el cobro es REAL, el QR sale en este mismo turno
+  // sin esperar «pagar»; el QR reemplaza la confirmación (0 mensajes nuevos). Quien dice «no quiero pagar aún» no lo recibe; con un QR ya abierto no se repite (lo cubre `abierto` y `wlCerrar`).
+  const completoAntes = antes.length > 0 && wlEntregaCompleta(f.entrega);
+  const completoAhora = lineas.length > 0 && wlEntregaCompleta(entrega);
+  const qrSolo = c.cobro.modo === 'real' && completoAhora && (cambio || !completoAntes) && !wlNoQuierePagarAun(wlNorm(p.textoCliente));
+  const cierre = f.cierre || wlQuierePagar(wlNorm(p.textoCliente)) || qrSolo;
   const base = { lineas: lineas, entrega: entrega, cierre: cierre, cambio: cambio, aviso: null, cancelarCobro: false };
   // Un QR abierto cuyo pedido ya no es el del cliente: SE CIERRA el cobro (aunque no diga «pagar») para que no pague un carrito viejo.
   const abierto = c.cobro.modo === 'real' && (c.cobro.pendiente || f.qrHastaMs > c.ahora);

@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { Mundo } from '../../lib/n8n-de-mentira';
-import { ANA, CATALOGO, COMPROBANTE, ENTREGA, ENVIO, REC, crear, hablar, mImagen, mTexto, modelo, panelConQr, panelOk, textos, type Opciones } from './mundo';
+import { ANA, CATALOGO, COMPROBANTE, ENTREGA, ENVIO, REC, crear, entregaEnElSegundoTurno, hablar, mImagen, mTexto, modelo, panelConQr, panelOk, textos, type Opciones } from './mundo';
 
 const fichas = (m: Mundo): Record<string, any> => (m.sd['walisuma'] ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 // Piezas de prueba justo en el borde del umbral de 500 Bs.
@@ -20,9 +20,9 @@ const BORDE = [
   { id: 'pieza-100', nombre: 'Pieza 100', descripcion: 'x', area: 'x', precio: 100, moneda: 'BOB', activo: true },
 ];
 const panelBorde = (): ReturnType<typeof panelOk> => panelOk({ catalogo: [...CATALOGO, ...BORDE].map((c) => ({ ...c })) });
-/** Un pedido confirmado: el cliente pide y luego dice «quiero pagar». */
+/** Un pedido confirmado: el cliente pide y luego dice «quiero pagar». Decisión de Andres (23/11/2026, «Enviar el QR solo»): el QR sale en el turno en que la entrega queda completa; aquí llega en el 2.º. */
 function pedir(lineas: unknown[], entrega: Record<string, unknown>, o: Opciones = {}): { m: Mundo; t: ReturnType<typeof hablar> } {
-  const m = crear({ panel: panelBorde(), modeloDice: modelo('Con gusto, lo anoto.', { lineas, entrega }), ...o });
+  const m = crear({ panel: panelBorde(), modeloDice: entregaEnElSegundoTurno(modelo('Con gusto, lo anoto.', { lineas, entrega })), ...o });
   hablar(m, ANA, mTexto('quiero una pieza'));
   const t = hablar(m, ANA, mTexto('quiero pagar'));
   // Un ENVÍO exige la ubicación del pin antes del QR (fase 1, 18/11/2026): el cliente la comparte y sale el QR.
@@ -237,7 +237,7 @@ describe('el modelo no dice el costo del envío: lo dice el código', () => {
   ];
   for (const falso of FALSOS) {
     it(`NEGADO con 300 Bs: «${falso}» no sale; sale el texto fijo`, () => {
-      const m = crear({ panel: panelBorde(), modeloDice: modelo(falso, { lineas: [{ id: 'pieza-100', cantidad: 3 }], entrega: ENVIO }) });
+      const m = crear({ panel: panelBorde(), modeloDice: entregaEnElSegundoTurno(modelo(falso, { lineas: [{ id: 'pieza-100', cantidad: 3 }], entrega: ENVIO })) }); // la entrega llega en el 2.º turno: con ella completa el QR sale solo (Andres, 23/11/2026)
       const t = hablar(m, ANA, mTexto('quiero tres piezas'));
       expect(textos(t).join(' ')).toMatch(/Cuéntenos un poco más de lo que busca/);
       expect(textos(t).join(' ')).not.toContain(falso);
