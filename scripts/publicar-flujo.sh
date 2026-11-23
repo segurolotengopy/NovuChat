@@ -1060,6 +1060,24 @@ for v in vivo.get("nodes", []):
         if ref.get("id"):
             cred_por_tipo.setdefault(tipo, ref)
 
+TIPO_Y_CALIFICADORES = {"novuchat", "ingesta", "whatsapp", "graph", "header", "auth", "api", "credencial", "cuenta",
+             "de", "del", "la", "el", "y", "token", "meta", "cloud", "google", "sheets", "gemini", "palm", "account", "oauth",
+             "dra", "dr", "crm", "minicrm", "calendar", "calendario", "catalogo",
+             # calificadores tolerados (no nombran a un comercio)
+             "bearer", "envio", "auto", "prueba", "pruebas", "no", "produccion"}
+def _identifica(nombre):
+    import unicodedata
+    plano = unicodedata.normalize("NFD", nombre or "").encode("ascii", "ignore").decode().lower()
+    return {t for t in re.findall(r"[a-z]+\d*|\d+", plano) if t not in TIPO_Y_CALIFICADORES}
+def _cruza(a, b):
+    return bool(_identifica(a) ^ _identifica(b))
+# Lo que una credencial HACE (su proposito), para elegir la del propio comercio cuando la nombrada es de otro.
+PROPOSITO = {"ingesta", "graph", "gemini", "sheets", "crm", "minicrm", "calendar", "calendario", "catalogo", "cierres"}
+def _proposito(nombre):
+    import unicodedata
+    plano = unicodedata.normalize("NFD", nombre or "").encode("ascii", "ignore").decode().lower()
+    return {t for t in re.findall(r"[a-z]+", plano) if t in PROPOSITO}
+conservadas = []
 heredadas_por_tipo = []
 declaradas = {n["name"]: dict(n.get("credentials") or {}) for n in nuevo["nodes"]}
 for n in nuevo["nodes"]:
@@ -1110,6 +1128,11 @@ if isinstance(lista_cred, list):
             halladas = indice.get((tipo, nombre), [])
             if len(halladas) == 1:
                 actual = (n.get("credentials") or {}).get(tipo) or {}
+                if n["name"] in por_nombre and actual.get("id") and actual.get("id") != halladas[0].get("id") \
+                        and _cruza(actual.get("name") or "", nombre):
+                    # La nombrada es de OTRO comercio: el nodo conserva la que ya tiene en el vivo (la del propio comercio).
+                    conservadas.append((n["name"], actual.get("name") or "", nombre))
+                    continue
                 if actual.get("id") != halladas[0].get("id"):
                     corregidas.append((n["name"], actual.get("name") or "ninguna", nombre))
                 n.setdefault("credentials", {})[tipo] = {"id": halladas[0]["id"], "name": nombre}
@@ -1156,17 +1179,6 @@ for n in nuevo["nodes"]:
 # Ruben -> Antonio, Bellido -> Walisuma, «Cierres A» -> «Cierres B»). Tambien un nodo NUEVO se compara contra las
 # credenciales del vivo del mismo tipo. Limite conocido: «WhatsApp Q'Taco (envio)» -> «QTaco 3727 (envio)» se marca como
 # cruce (son numeros distintos). Con --aplicar aborta; el seco la senala.
-TIPO_Y_CALIFICADORES = {"novuchat", "ingesta", "whatsapp", "graph", "header", "auth", "api", "credencial", "cuenta",
-             "de", "del", "la", "el", "y", "token", "meta", "cloud", "google", "sheets", "gemini", "palm", "account", "oauth",
-             "dra", "dr", "crm", "minicrm", "calendar", "calendario", "catalogo",
-             # calificadores tolerados (no nombran a un comercio)
-             "bearer", "envio", "auto", "prueba", "pruebas", "no", "produccion"}
-def _identifica(nombre):
-    import unicodedata
-    plano = unicodedata.normalize("NFD", nombre or "").encode("ascii", "ignore").decode().lower()
-    return {t for t in re.findall(r"[a-z]+\d*|\d+", plano) if t not in TIPO_Y_CALIFICADORES}
-def _cruza(a, b):
-    return bool(_identifica(a) ^ _identifica(b))
 cruzan = []
 for nodo, antes, despues in corregidas:
     if antes == "ninguna" or nodo in nuevos:   # un nodo nuevo no tenia credencial viva que cruzar (se mira abajo)
@@ -1178,13 +1190,26 @@ for v in vivo.get("nodes", []):
     for tipo, ref in (v.get("credentials") or {}).items():
         if (ref or {}).get("name"):
             nombres_vivo.setdefault(tipo, set()).add(ref["name"])
+refs_vivo = {}
+for v in vivo.get("nodes", []):
+    for tipo, ref in (v.get("credentials") or {}).items():
+        if (ref or {}).get("id"):
+            refs_vivo.setdefault(tipo, {})[ref["id"]] = ref
 for n in nuevo["nodes"]:
     if n["name"] not in nuevos:
         continue
     for tipo, ref in (n.get("credentials") or {}).items():
         nombre, delvivo = (ref or {}).get("name"), sorted(nombres_vivo.get(tipo, ()))
         if nombre and delvivo and all(_cruza(x, nombre) for x in delvivo):
-            cruzan.append((n["name"], delvivo[0], nombre))
+            # Una unica candidata del propio comercio con el mismo proposito (la que ya usa el vivo en otros nodos).
+            cands = [r for r in refs_vivo.get(tipo, {}).values() if _proposito(r.get("name")) == _proposito(nombre)]
+            if len(cands) == 1:
+                n["credentials"][tipo] = {"id": cands[0]["id"], "name": cands[0]["name"]}
+                conservadas.append((n["name"], cands[0]["name"], nombre))
+            else:
+                cruzan.append((n["name"], delvivo[0], nombre))
+for nodo, propia, otra in conservadas:
+    print(f"  {V}+{FIN} {nodo}: credencial del PROPIO comercio «{propia}» (la nombrada «{otra}» es de otro comercio)")
 for nodo, antes, despues in cruzan:
     print(f"  {R}✗{FIN} {nodo}: la correccion CRUZA comercios (vivo «{antes}» -> «{despues}»)")
 if cruzan and aplicar:
@@ -1193,6 +1218,32 @@ if cruzan and aplicar:
     sys.exit(1)
 if cruzan:
     print(f"  {A}!{FIN} con --aplicar se abortaria: {len(cruzan)} credencial(es) corregida(s) cruzan comercios")
+
+# NINGUNA PUBLICACION PISA UN VALOR NO VACIO DE LA CONFIG VIVA CON UN VACIO (22/11/2026). Los campos de un nodo Set (la Config
+# base: costo de entrega, enlace del catalogo, ubicacion de la tienda, hosts de fotos, plantillas de respaldo...) los carga el
+# comercio desde la Consola o a mano en n8n; el versionado los deja vacios. Si el origen trae uno vacio y el vivo lo tiene lleno,
+# se conserva el del vivo. Excepcion: los de PRUEBA (telefonosDePrueba, etapaPrueba), donde manda el origen. Se informan clave y
+# longitud, nunca el valor.
+EXENTAS_DE_CONFIG = {"telefonosDePrueba", "etapaPrueba"}
+conservados_cfg = []
+for n in nuevo["nodes"]:
+    par = por_nombre.get(n["name"])
+    if not par:
+        continue
+    an = (n.get("parameters") or {}).get("assignments")
+    av = (par.get("parameters") or {}).get("assignments")
+    if not (isinstance(an, dict) and isinstance(av, dict)):
+        continue
+    vivos_cfg = {c.get("name"): c.get("value") for c in (av.get("assignments") or [])}
+    for c in (an.get("assignments") or []):
+        v = vivos_cfg.get(c.get("name"))
+        if c.get("name") in EXENTAS_DE_CONFIG:
+            continue
+        if isinstance(v, str) and v.strip() and isinstance(c.get("value"), str) and not c["value"].strip():
+            c["value"] = v
+            conservados_cfg.append((n["name"], c["name"], len(v)))
+for nodo, clave, largo in conservados_cfg:
+    print(f"  {V}+{FIN} {nodo} · {clave}: el origen lo trae vacio y el vivo lo tiene lleno ({largo} car.): se conserva el del vivo")
 
 # Con --aplicar, un nodo cuya credencial NO se pudo resolver por nombre y que
 # la recibio por TIPO (relleno desde otra del mismo tipo: no es la del flujo

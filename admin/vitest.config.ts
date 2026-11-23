@@ -102,6 +102,7 @@ export const SUITES_PURAS = [
   'pruebas/n8n-de-mentira.test.ts',
   'pruebas/comun-sin-agente-construir.test.ts',
   'pruebas/valores-del-vivo.test.ts',
+  'pruebas/publicar-sin-cruce-ni-vacios.test.ts',
   'pruebas/comun-sin-agente-envio.test.ts',
   'pruebas/core/texto-filtro-redaccion.test.ts',
   'pruebas/core/texto-filtro-redaccion-huecos.test.ts',
