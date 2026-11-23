@@ -421,7 +421,10 @@ describe('Retomar en el orquestador (personaPuedeRetomar)', () => {
     expect(indice(ps, 'personaPuedeRetomar')).toBeGreaterThan(indice(ps, 'personaPuedeEscribir'));
     expect(indice(ps, 'personaPuedeRetomar')).toBeGreaterThan(indice(ps, 'puerta'));
     expect(validarOrden(ps)).toEqual([]);
-    expect(validarOrden(ps.filter((p) => p.bandera !== 'personaPuedeRetomar'))).toEqual([]);   // sin el paso, también válido
+    // Con la clave en JUEGO_CON_INFRA, un plan SIN el paso es inválido (cubre cada clave del juego); sin la clave, sería válido.
+    const sin = validarOrden(ps.filter((p) => p.bandera !== 'personaPuedeRetomar'));
+    if ('personaPuedeRetomar' in JUEGO_CON_INFRA) expect(sin.join('|')).toMatch(/personaPuedeRetomar/);
+    else expect(sin).toEqual([]);
     expect(validarOrden([...ps, ...ps.filter((p) => p.bandera === 'personaPuedeRetomar')]).join('|')).toMatch(/personaPuedeRetomar/);
   });
 
