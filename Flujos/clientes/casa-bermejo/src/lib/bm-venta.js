@@ -782,7 +782,7 @@ function bmResolverModelo(c) {
   const lineas = fijada.lineas;
   const comp = bmCompletarEntrega(j.entrega, f.entrega, p.textoCliente, c.modos);
   const entrega = bmMezclarEntrega(f.entrega, comp.entrega, c.modos);
-  const cierre = f.cierre || bmQuierePagar(bmNorm(p.textoCliente)) || (cfEsConfirmacion(c.t && c.t.seleccionId) && f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado));   // el botón «Confirmar pedido» es la orden de cierre SOLO con el pedido que ya estaba listo (el de un mensaje viejo no cierra uno nuevo) (módulo común Pedidos)
+  const cierre = f.cierre || bmQuierePagar(bmNorm(p.textoCliente)) || (cfEsConfirmacion(c.t && c.t.seleccionId, f.carrito) && f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado));   // el botón «Confirmar pedido» es la orden de cierre SOLO con el pedido que ya estaba listo (el de un mensaje viejo no cierra uno nuevo) (módulo común Pedidos)
   // Con el pedido LISTO (piezas, entrega completa y orden de pagar) lo decide el código: un «quiereHablar» del modelo (p. ej. «el envío lo cotiza la tienda») no lo desvía; el pedido se anota y la tienda recibe el aviso.
   const listo = lineas.length > 0 && bmEntregaCompleta(entrega, c.mercado) && cierre;
   if (j.quiereHablar === true && !listo && !comp.capturado) return bmDerivar(c, 'quiere_hablar');

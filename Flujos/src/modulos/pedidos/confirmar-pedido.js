@@ -5,11 +5,18 @@
 // QUÉ HACE. Cuando el pedido está listo (piezas y entrega completa) y todavía no hay un QR abierto, el mensaje de ese turno lleva el botón «Confirmar pedido» (el MISMO mensaje que ya salía: 0 mensajes por conversación
 // más). Tocarlo es la orden de cierre: el QR sale en el mismo turno. El texto «pagar» o «confirmo mi pedido» sigue valiendo (lo reconoce cada flujo). Q'Taco ya lo hace con su propio plan; esta es la pieza común para
 // los flujos de conversación libre (Casa Bermejo y, por Auxiliar 2, Walisuma). El id del botón llega por `seleccionId` de «Normalizar entrada» (un button_reply conserva su id).
-const CF_ID_CONFIRMAR = 'pedido:confirmar';
+const CF_ID_CONFIRMAR = 'pedido:confirmar';   // el id del botón es `pedido:confirmar:<huella del carrito>`: confirma SOLO el pedido que el cliente vio
 const CF_TITULO_CONFIRMAR = 'Confirmar pedido';
 const CF_MAX_CUERPO = 1024;   // el tope del cuerpo de un mensaje con botones de WhatsApp
-// ¿El toque es el del botón «Confirmar pedido»? Solo el id exacto: ni el título escrito a mano ni otro botón.
-function cfEsConfirmacion(seleccionId) { return seleccionId === CF_ID_CONFIRMAR; }
+// La huella del carrito que muestra el mensaje: un hash corto de sus piezas (id, cantidad y detalle), en minúsculas y cifras (un id de botón admite [a-z0-9:_-]). Si el carrito cambia, el botón viejo ya no coincide.
+function cfHuella(lineas) {
+  const texto = (Array.isArray(lineas) ? lineas : []).map((l) => String(l && l.id) + ':' + String(l && l.cantidad) + ':' + String((l && l.detalle) || '')).sort().join('|');
+  let h = 5381;
+  for (let i = 0; i < texto.length; i++) h = ((h * 33) ^ texto.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+// ¿El toque es el del botón «Confirmar pedido» DE ESTE CARRITO? Solo el id exacto con la huella del carrito actual: ni el título escrito a mano, ni otro botón, ni el botón de un mensaje con otro carrito.
+function cfEsConfirmacion(seleccionId, lineasActuales) { return seleccionId === CF_ID_CONFIRMAR + ':' + cfHuella(lineasActuales); }
 // ¿Se ofrece el botón? Hay piezas, la entrega está completa y NO hay un QR abierto (con un QR abierto ya se confirmó).
 function cfSeOfrece(cantidadDePiezas, entregaCompleta, qrAbierto) { return cantidadDePiezas > 0 && entregaCompleta === true && qrAbierto !== true; }
 // La frase que acompaña al botón, en el trato del comercio.
@@ -24,5 +31,5 @@ function cfCuerpo(cuerpo, usted) {
   const corto = base.length > sitio ? base.slice(0, Math.max(0, sitio - 1)).trimEnd() + '…' : base;
   return corto + '\n\n' + instr;
 }
-// El botón, en la forma que espera `cmBotones`.
-function cfBoton() { return { id: CF_ID_CONFIRMAR, title: CF_TITULO_CONFIRMAR }; }
+// El botón, en la forma que espera `cmBotones`, con la huella del carrito que se muestra.
+function cfBoton(lineas) { return { id: CF_ID_CONFIRMAR + ':' + cfHuella(lineas), title: CF_TITULO_CONFIRMAR }; }

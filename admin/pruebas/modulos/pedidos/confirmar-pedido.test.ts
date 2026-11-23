@@ -9,18 +9,28 @@ import { describe, expect, it } from 'vitest';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const CODIGO = readFileSync(join(RAIZ, 'Flujos/src/modulos/pedidos/confirmar-pedido.js'), 'utf8');
-const M = runInNewContext(`${CODIGO}\n({ cfEsConfirmacion, cfSeOfrece, cfCuerpo, cfBoton, cfInstruccion });`) as {
-  cfEsConfirmacion: (x: unknown) => boolean; cfSeOfrece: (n: number, c: boolean, q: boolean) => boolean;
-  cfCuerpo: (c: unknown, u: boolean) => string; cfBoton: () => { id: string; title: string }; cfInstruccion: (u: boolean) => string;
+const M = runInNewContext(`${CODIGO}\n({ cfEsConfirmacion, cfSeOfrece, cfCuerpo, cfBoton, cfInstruccion, cfHuella });`) as {
+  cfEsConfirmacion: (x: unknown, l: unknown) => boolean; cfSeOfrece: (n: number, c: boolean, q: boolean) => boolean;
+  cfCuerpo: (c: unknown, u: boolean) => string; cfBoton: (l: unknown) => { id: string; title: string }; cfInstruccion: (u: boolean) => string; cfHuella: (l: unknown) => string;
 };
 
 describe('confirmar-pedido', () => {
-  it('solo el id exacto del botón confirma; el título, otro id o vacío no', () => {
-    expect(M.cfEsConfirmacion('pedido:confirmar')).toBe(true);
-    for (const no of ['Confirmar pedido', 'pedido:confirmar ', 'otro', '', undefined, null, 1]) expect(M.cfEsConfirmacion(no)).toBe(false);
+  const C1 = [{ id: 'a', cantidad: 1, detalle: '' }];
+  const C2 = [{ id: 'a', cantidad: 2, detalle: '' }];
+  it('solo el id exacto CON LA HUELLA del carrito actual confirma; el título, otro id, vacío o el botón de OTRO carrito no', () => {
+    expect(M.cfEsConfirmacion(M.cfBoton(C1).id, C1)).toBe(true);
+    for (const no of ['Confirmar pedido', 'pedido:confirmar', 'pedido:confirmar:', 'otro', '', undefined, null, 1]) expect(M.cfEsConfirmacion(no, C1)).toBe(false);
+    expect(M.cfEsConfirmacion(M.cfBoton(C1).id, C2)).toBe(false);   // el botón de un mensaje con otro carrito
+    expect(M.cfEsConfirmacion(M.cfBoton(C1).id, [])).toBe(false);
+  });
+  it('la huella no depende del orden de las piezas y cambia con la cantidad o el detalle', () => {
+    const AB = [{ id: 'a', cantidad: 1 }, { id: 'b', cantidad: 1 }];
+    expect(M.cfHuella(AB)).toBe(M.cfHuella([...AB].reverse()));
+    expect(M.cfHuella(C1)).not.toBe(M.cfHuella(C2));
+    expect(M.cfHuella(C1)).not.toBe(M.cfHuella([{ id: 'a', cantidad: 1, detalle: 'rojo' }]));
   });
   it('el id y el título cumplen lo que WhatsApp acepta para un botón (id [a-z0-9:_-], título de 20 como máximo)', () => {
-    const b = M.cfBoton();
+    const b = M.cfBoton(C1);
     expect(b.id).toMatch(/^[a-z0-9:_-]{1,200}$/);
     expect(b.title.length).toBeLessThanOrEqual(20);
   });

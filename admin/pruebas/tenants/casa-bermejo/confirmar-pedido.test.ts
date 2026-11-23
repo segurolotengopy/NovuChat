@@ -5,52 +5,54 @@
  * un botón de un mensaje viejo o un pedido incompleto NO emiten QR.
  */
 import { describe, expect, it } from 'vitest';
-import { ANA, ENTREGA, crear, hablar, mTexto, modelo, type Opciones } from './mundo';
+import { ANA, ENTREGA, crear, hablar, mTexto, modelo, panelConQr, type Opciones } from './mundo';
 
 const J = (x: unknown): string => JSON.stringify(x);
 const mToque = (id: string, title = 'Confirmar pedido') => ({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title } } });
 const LISTO: Opciones = { modeloDice: modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) };
 const hayQr = (t: ReturnType<typeof hablar>): boolean => t.mensajes.some((x) => x.tipo === 'image' && /qr/i.test(J(x.payload)));
 const botones = (t: ReturnType<typeof hablar>): string[] => t.mensajes.flatMap((x) => (J(x.payload).match(/"id":"[^"]+"/g) ?? []));
+/** El id del botón que el cliente vio en el mensaje (lleva la huella de su carrito). */
+const idDelBoton = (t: ReturnType<typeof hablar>): string => /"id":"(pedido:confirmar:[a-z0-9]+)"/.exec(t.mensajes.map((x) => J(x.payload)).join(' '))?.[1] ?? 'pedido:confirmar:sin-boton';
 
 describe('el pedido listo ofrece el botón en el MISMO mensaje', () => {
   it('piezas + entrega completa + sin QR: 1 mensaje, interactivo, con «Confirmar pedido» y su instrucción; sin QR todavía', () => {
     const m = crear(LISTO);
     const t = hablar(m, ANA, mTexto('una billetera'));
     expect(t.mensajes).toHaveLength(1);
-    expect(botones(t)).toContain('"id":"pedido:confirmar"');
+    expect(idDelBoton(t)).toMatch(/^pedido:confirmar:[a-z0-9]+$/);
     expect(J(t.mensajes[0]!.payload)).toMatch(/Confirmar pedido/);
     expect(hayQr(t)).toBe(false);
   });
   it('NEGADO: sin entrega completa o sin piezas NO hay botón', () => {
     const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: {} }) });
-    expect(botones(hablar(m, ANA, mTexto('una billetera')))).not.toContain('"id":"pedido:confirmar"');
+    expect(idDelBoton(hablar(m, ANA, mTexto('una billetera')))).toBe('pedido:confirmar:sin-boton');
     const m2 = crear({ modeloDice: modelo('Hola, ¿qué busca?') });
-    expect(botones(hablar(m2, ANA, mTexto('hola')))).not.toContain('"id":"pedido:confirmar"');
+    expect(idDelBoton(hablar(m2, ANA, mTexto('hola')))).toBe('pedido:confirmar:sin-boton');
   });
 });
 
 describe('INVARIANTE: un pedido confirmado sale SIEMPRE con su QR', () => {
-  const confirmaciones: [string, (m: ReturnType<typeof crear>) => ReturnType<typeof hablar>][] = [
-    ['el botón «Confirmar pedido»', (m) => hablar(m, ANA, mToque('pedido:confirmar'))],
+  const confirmaciones: [string, (m: ReturnType<typeof crear>, id: string) => ReturnType<typeof hablar>][] = [
+    ['el botón «Confirmar pedido»', (m, id) => hablar(m, ANA, mToque(id))],
     ['el texto «quiero pagar»', (m) => hablar(m, ANA, mTexto('quiero pagar'))],
     ['el texto «confirmo mi pedido»', (m) => hablar(m, ANA, mTexto('confirmo mi pedido'))],
   ];
   for (const [nombre, confirmar] of confirmaciones) {
     it(`${nombre}: con el pedido listo, el QR sale en el mismo turno`, () => {
       const m = crear(LISTO);
-      hablar(m, ANA, mTexto('una billetera'));
-      const t = confirmar(m);
+      const id = idDelBoton(hablar(m, ANA, mTexto('una billetera')));
+      const t = confirmar(m, id);
       expect(hayQr(t)).toBe(true);
     });
   }
   it('el toque del botón no llama al modelo (el QR lo decide el código)', () => {
     const m = crear(LISTO);
-    hablar(m, ANA, mTexto('una billetera'));
+    const id = idDelBoton(hablar(m, ANA, mTexto('una billetera')));
     let llamadas = 0;
     const previo = m.dobles['Conversar con el modelo'];
     m.dobles['Conversar con el modelo'] = (...a: unknown[]) => { llamadas++; return (previo as (...x: unknown[]) => unknown)(...a); };
-    const t = hablar(m, ANA, mToque('pedido:confirmar'));
+    const t = hablar(m, ANA, mToque(id));
     expect(hayQr(t)).toBe(true);
     expect(llamadas).toBe(0);
   });
@@ -69,6 +71,23 @@ describe('NEGADO: lo que NO es una confirmación no emite QR', () => {
   });
   it('el botón de un mensaje viejo sin pedido listo (carrito vacío) no emite QR', () => {
     const m = crear(LISTO);
-    expect(hayQr(hablar(m, ANA, mToque('pedido:confirmar')))).toBe(false);
+    expect(hayQr(hablar(m, ANA, mToque('pedido:confirmar:abc')))).toBe(false);
   });
 });
+
+describe('NEGADO: el botón de un mensaje con OTRO carrito no confirma, y un segundo toque no repite el QR', () => {
+  it('el id de un carrito de 1 pieza no cierra un carrito de 2 (el botón viejo confirma lo que el cliente vio, no lo de ahora)', () => {
+    const m = crear(LISTO);
+    const id = idDelBoton(hablar(m, ANA, mTexto('una billetera')));
+    m.sd['casabermejo'] = JSON.parse(J(m.sd['casabermejo']).replace(/"cantidad":1/g, '"cantidad":2'));
+    expect(hayQr(hablar(m, ANA, mToque(id)))).toBe(false);
+  });
+  it('un segundo toque (el QR sigue abierto) no emite otro QR', () => {
+    const m = crear(LISTO);
+    const id = idDelBoton(hablar(m, ANA, mTexto('una billetera')));
+    expect(hayQr(hablar(m, ANA, mToque(id)))).toBe(true);
+    m.dobles['Traer configuración'] = () => panelConQr(450);
+    expect(hayQr(hablar(m, ANA, mToque(id)))).toBe(false);
+  });
+});
+
