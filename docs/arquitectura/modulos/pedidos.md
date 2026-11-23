@@ -43,6 +43,10 @@ Carpetas destino (F2): `admin/functions/src/modulos/<m>/`,
 `admin/web/src/modulos/<m>/`, `Flujos/src/modulos/<m>/`,
 `admin/pruebas/modulos/<m>/`, y una línea en el registro.
 
+## El botón «Confirmar pedido» es el disparador del QR (`Flujos/src/modulos/pedidos/confirmar-pedido.js`, 23/11/2026)
+
+Regla general de Andres para todo comercio con cobro por QR: «SIEMPRE se debe enviar el QR junto con el pedido confirmado, ESE es el disparador». Con el pedido listo (piezas y entrega completa, sin QR abierto) el mensaje del turno —el MISMO, 0 mensajes más— lleva el botón `pedido:confirmar` («Confirmar pedido»); tocarlo emite el QR en el mismo turno y SIN modelo (el código decide). «pagar» o «confirmo mi pedido» siguen valiendo. El botón solo cierra el pedido que ya estaba listo (uno de un mensaje viejo no cierra uno nuevo) y el título escrito a mano no cuenta: solo el id exacto. Q'Taco ya lo hacía con su propio plan; Casa Bermejo lo incluye desde aquí; Walisuma lo adopta por Auxiliar 2. Prueba: `pruebas/tenants/casa-bermejo/confirmar-pedido.test.ts` (invariante: confirmado ⇒ QR) y `pruebas/modulos/pedidos/confirmar-pedido.test.ts`.
+
 ## Rescate de 22 h (`reclamarRescates`)
 
 **Qué es.** Una Function HTTP del módulo (`admin/functions/src/modulos/pedidos/rescates.ts`, declarada en el manifiesto) que **decide y marca** a quién se le escribe UN mensaje de texto libre cuando la conversación de venta lleva entre 22 h y 23 h 30 min sin un mensaje del cliente. **No envía**: el envío y la redacción son de un flujo de n8n por comercio (otro PR), que la llama con la credencial de ingesta de su número. Plan de diseño: `RUBENROCA_plan-rescate_2026-10-20`, paso 1.

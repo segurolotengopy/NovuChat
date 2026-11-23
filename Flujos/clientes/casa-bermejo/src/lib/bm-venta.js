@@ -755,7 +755,7 @@ function bmTextoDeEstado(lineas, entrega, cierre, c) {
   const faltan = bmEntregaFalta(entrega, c.mercado);
   if (faltan.length === 1 && faltan[0] === 'modo de entrega') return '¿Cómo prefiere recibir su pedido: ' + (c.modos.length ? c.modos.join(' o ') : 'retiro en tienda o envío') + '?';
   if (faltan.length) return 'Para continuar con su pedido, indíqueme por favor: ' + faltan.join(', ') + '.';
-  return '¿Desea confirmar su pedido? Escriba «pagar» cuando esté listo.';
+  return '¿Desea confirmar su pedido? Toque «Confirmar pedido» cuando esté listo.';
 }
 function bmResolverModelo(c) {
   const f = c.ficha;
@@ -782,7 +782,7 @@ function bmResolverModelo(c) {
   const lineas = fijada.lineas;
   const comp = bmCompletarEntrega(j.entrega, f.entrega, p.textoCliente, c.modos);
   const entrega = bmMezclarEntrega(f.entrega, comp.entrega, c.modos);
-  const cierre = f.cierre || bmQuierePagar(bmNorm(p.textoCliente));
+  const cierre = f.cierre || bmQuierePagar(bmNorm(p.textoCliente)) || (cfEsConfirmacion(c.t && c.t.seleccionId) && f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado));   // el botón «Confirmar pedido» es la orden de cierre SOLO con el pedido que ya estaba listo (el de un mensaje viejo no cierra uno nuevo) (módulo común Pedidos)
   // Con el pedido LISTO (piezas, entrega completa y orden de pagar) lo decide el código: un «quiereHablar» del modelo (p. ej. «el envío lo cotiza la tienda») no lo desvía; el pedido se anota y la tienda recibe el aviso.
   const listo = lineas.length > 0 && bmEntregaCompleta(entrega, c.mercado) && cierre;
   if (j.quiereHablar === true && !listo && !comp.capturado) return bmDerivar(c, 'quiere_hablar');
@@ -834,7 +834,7 @@ function bmResolverModelo(c) {
     const ultima = [...f.hist].reverse().find((x) => x && x.r === 'm');
     if (ultima && ultima.t === bmParaMemoria(texto)) return Object.assign(bmDerivar(c, 'quiere_hablar'), { lineas: lineas, entrega: entrega, cierre: cierre });
   } else if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c);
-  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: cambio && lineas.length ? vcResumen(lineas) : '' });
+  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: cambio && lineas.length ? vcResumen(lineas) : '', confirmable: cfSeOfrece(lineas.length, completa, abierto) });
 }
 
 // La decisión del turno. `c` viene de `bmContexto()` (+ `modeloResp` y `cancelo`, que completa cada nodo). Devuelve { tipo, ... } con `aviso` (o null) y, cuando cambia la ficha, `patch`.
@@ -847,5 +847,7 @@ function bmResolver(c) {
   if (p.tipo === 'comprobante_alias') return bmResolverComprobanteAlias(c);
   if (p.tipo === 'alias_pedir') return bmResolverAliasPedir(c);
   if (p.tipo === 'modelo') return bmResolverModelo(c);
+  // El toque de «Confirmar pedido» con el pedido listo lo decide el CÓDIGO, sin modelo: la respuesta del modelo es la del carrito tal cual está en la ficha y el cierre sale de `cfEsConfirmacion`.
+  if (p.tipo === 'confirmar') return bmResolverModelo(Object.assign({}, c, { modeloResp: { candidates: [{ content: { parts: [{ text: JSON.stringify({ texto: 'Pedido confirmado.', lineas: c.ficha.carrito.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' })) }) }] } }] } }));
   return Object.assign({ aviso: null }, p);
 }

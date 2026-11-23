@@ -103,6 +103,10 @@ if (puerta.ruta === 'sigue') {
     if (enlaceCat !== '' && d.lineas.length === 0 && !(fichaAntes.qrHastaMs > ahora) && !(fichaAntes.carrito && fichaAntes.carrito.length > 0) && ((!fichaAntes.saludado && /^(hola|holi|buenas|buenos|buen dia|saludos|hello)\b/.test(bmNorm(c.plan.textoCliente))) || ofrecePiezas || (d.sinPieza !== true && /\bno (disponemos|contamos|tenemos|hay|manejamos)\b/.test(bmNorm(d.texto))))) {
       const cuerpoBtn = bmSeguro(cuerpoModelo, usted);
       msgs = [cmMensaje('cliente', cmEnlace(cuerpoBtn, 'Ver catálogo', enlaceCat), cuerpoBtn, cuerpoBtn + '\n\n' + enlaceCat, { tipoReporte: 'interactive', conBoton: true })];
+    } else if (d.confirmable === true) {
+      // El pedido está listo: el MISMO mensaje lleva el botón «Confirmar pedido» (0 mensajes más); tocarlo emite el QR en el mismo turno.
+      const cuerpoCf = bmSeguro(cfCuerpo(cuerpoModelo, usted), usted);
+      msgs = [cmMensaje('cliente', cmBotones(cuerpoCf, [cfBoton()]), cuerpoCf, cuerpoCf, { tipoReporte: 'interactive', conBoton: true })];
     } else msgs = [texto(cuerpoModelo)];
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
     nuevos.entrega = d.entrega;
