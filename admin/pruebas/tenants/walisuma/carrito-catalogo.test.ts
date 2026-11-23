@@ -114,7 +114,7 @@ describe('lo que NO se contesta', () => {
     expect(enviar(m, cuerpo({ items: [] })).mensajes).toHaveLength(0);
     expect(enviar(m, cuerpo({ pedidoId: 'cat_c3' }), { ...cabeceras(m), 'x-novuchat-signature': 'basura' }).mensajes).toHaveLength(0);
     expect(enviar(m, cuerpo({ pedidoId: 'cat_c4', telefono: 'no-es-un-numero' })).mensajes).toHaveLength(0);
-    expect(enviar(m, cuerpo({ pedidoId: 'cat_c5' }), cabeceras(m, '59100099999')).mensajes).toHaveLength(0);
+    expect(enviar(m, cuerpo({ pedidoId: 'cat_c5' }), cabeceras(m, '59100000099')).mensajes).toHaveLength(0);
     expect(enviar(m, cuerpo({ pedidoId: 'cat_c6', moneda: 'USD' })).mensajes).toHaveLength(0);
   });
   it('el reintento del mismo pedidoId no se procesa dos veces', () => {
