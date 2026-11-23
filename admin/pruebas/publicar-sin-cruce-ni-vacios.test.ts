@@ -33,7 +33,7 @@ const set = (name: string, campos: Record<string, string>): Nodo => ({
 
 let n = 0;
 /** Corre publicar-flujo.sh en una copia de scripts/ en un directorio temporal; devuelve la salida y el cuerpo que habria enviado el PUT. */
-function publicar(vivo: unknown, creds: Cred[], origen: unknown, args: string[]) {
+function publicar(vivo: unknown, creds: Array<Cred & { tipo?: string }>, origen: unknown, args: string[]) {
   const dir = join(carpeta, `p${n++}`);
   const raiz = join(dir, 'repo');
   const bin = join(dir, 'bin');
@@ -43,7 +43,7 @@ function publicar(vivo: unknown, creds: Cred[], origen: unknown, args: string[])
   copyFileSync(PUBLICAR, join(raiz, 'scripts/publicar-flujo.sh'));
   if (existsSync(join(RAIZ, 'scripts/lib'))) cpSync(join(RAIZ, 'scripts/lib'), join(raiz, 'scripts/lib'), { recursive: true });
   writeFileSync(join(dir, 'vivo.json'), JSON.stringify(vivo));
-  writeFileSync(join(dir, 'creds.json'), JSON.stringify({ data: creds.map((c) => ({ ...c, type: 'httpHeaderAuth' })) }));
+  writeFileSync(join(dir, 'creds.json'), JSON.stringify({ data: creds.map((c) => ({ ...c, type: (c as Cred & { tipo?: string }).tipo ?? 'httpHeaderAuth' })) }));
   // un nodo nuevo sin credenciales asegura que haya algo que enviar (si no, el script dice «coincide» y no hace PUT)
   const conExtra = { ...(origen as ReturnType<typeof flujo>), nodes: [...(origen as ReturnType<typeof flujo>).nodes, { name: 'Extra nuevo', type: 'n8n-nodes-base.noOp', typeVersion: 1, position: [0, 0], parameters: {} }] };
   writeFileSync(join(dir, 'f.json'), JSON.stringify(conExtra));
@@ -124,6 +124,55 @@ describe('credenciales: ninguna termina en otro comercio', () => {
   });
 });
 
+describe('credenciales: nodos sin credencial en el vivo, propositos y tipos nuevos', () => {
+  const H = 'httpHeaderAuth';
+  const GRAPH = { id: 'g10', name: 'WhatsApp Graph (Casa Bermejo)' };
+  const INGESTA_OTRA = { id: 'i09', name: 'NovuChat ingesta (cliente09)' };
+
+  it('un nodo EXISTENTE sin credencial en el vivo («ninguna») que nombra la de Walisuma se trata como nuevo: sin candidata unica, aborta con --aplicar', () => {
+    const vivo = flujo([nodo('Enviar a WhatsApp', {}, { [H]: GRAPH }), nodo('Guardar medio', {})]);
+    const origen = flujo([nodo('Enviar a WhatsApp', {}, { [H]: GRAPH }), nodo('Guardar medio', {}, { [H]: INGESTA_OTRA })]);
+    const { r, out, enviado } = publicar(vivo, [GRAPH, INGESTA_OTRA], origen, ['--aplicar']);
+    expect(r.status).not.toBe(0);
+    expect(out).toContain('Guardar medio');
+    expect(out).toContain('CRUZA comercios');
+    expect(enviado).toBeNull();
+  });
+  it('«whatsapp» y «meta» cuentan como proposito: WhatsApp Walisuma -> WhatsApp Casa Bermejo se resuelve con la unica del propio comercio', () => {
+    const propia = { id: 'w1', name: 'WhatsApp Casa Bermejo' };
+    const ajena = { id: 'w2', name: 'WhatsApp Walisuma' };
+    const vivo = flujo([nodo('Enviar a WhatsApp', {}, { [H]: propia })]);
+    const origen = flujo([nodo('Enviar a WhatsApp', {}, { [H]: propia }), nodo('Nodo nuevo', {}, { [H]: ajena })]);
+    const { r, out, enviado } = publicar(vivo, [propia, ajena], origen, ['--aplicar']);
+    expect(r.status, out).toBe(0);
+    const nuevoNodo = enviado?.nodes.find((x) => x.name === 'Nodo nuevo');
+    expect(nuevoNodo?.credentials?.[H]?.name).toBe('WhatsApp Casa Bermejo');
+  });
+  it('sin proposito reconocible no se elige candidata: aborta con --aplicar', () => {
+    const propia = { id: 'x1', name: 'Cuenta Casa Bermejo' };
+    const ajena = { id: 'x2', name: 'Cuenta Walisuma' };
+    const vivo = flujo([nodo('Otro envio', {}, { [H]: propia })]);
+    const origen = flujo([nodo('Otro envio', {}, { [H]: propia }), nodo('Nodo nuevo', {}, { [H]: ajena })]);
+    const { r, out, enviado } = publicar(vivo, [propia, ajena], origen, ['--aplicar']);
+    expect(r.status).not.toBe(0);
+    expect(out).toContain('CRUZA comercios');
+    expect(enviado).toBeNull();
+  });
+  it('un nodo nuevo con un tipo de credencial que el vivo no tiene: aborta con --aplicar salvo --credencial-tipo-nuevo', () => {
+    const sheets = { id: 's1', name: 'Hoja nueva', tipo: 'googleApi' };
+    const vivo = flujo([nodo('Enviar a WhatsApp', {}, { [H]: GRAPH })]);
+    const origen = flujo([nodo('Enviar a WhatsApp', {}, { [H]: GRAPH }), nodo('Nodo nuevo', {}, { googleApi: { id: '', name: 'Hoja nueva' } })]);
+    const sin = publicar(vivo, [GRAPH, sheets], origen, ['--aplicar']);
+    expect(sin.r.status).not.toBe(0);
+    expect(sin.out).toContain('--credencial-tipo-nuevo');
+    expect(sin.enviado).toBeNull();
+    expect(publicar(vivo, [GRAPH, sheets], origen, []).out).toContain('con --aplicar se abortaria sin --credencial-tipo-nuevo');
+    const con = publicar(vivo, [GRAPH, sheets], origen, ['--aplicar', '--credencial-tipo-nuevo']);
+    expect(con.r.status, con.out).toBe(0);
+    expect(con.enviado).not.toBeNull();
+  });
+});
+
 describe('Config: ningun valor vivo no vacio queda vacio', () => {
   const vivo = flujo([set('Config base', {
     costoDeEntrega: 'Bs 10 dentro de la ciudad', enlaceCatalogo: 'https://tienda.ejemplo.bo/catalogo', ubicacionTienda: 'Calle Falsa 123',
@@ -156,7 +205,7 @@ describe('Config: ningun valor vivo no vacio queda vacio', () => {
     expect(v['telefonosDePrueba']).toBe('');
     expect(v['etapaPrueba']).toBe('');
   });
-  it('propiedad: tras publicar, ningun campo vivo no vacio (fuera de las dos excepciones) queda vacio', () => {
+  it('propiedad: tras publicar, ningun campo vivo no vacio de la lista permitida queda vacio', () => {
     const { enviado } = publicar(vivo, [], origen, ['--aplicar']);
     const v = valores(enviado);
     const del = valores(vivo as ReturnType<typeof flujo>);
@@ -164,6 +213,40 @@ describe('Config: ningun valor vivo no vacio queda vacio', () => {
       if (['telefonosDePrueba', 'etapaPrueba'].includes(k)) continue;
       if (valor !== '') expect(v[k], k).not.toBe('');
     }
+  });
+});
+
+describe('Config: lista permitida (cobros y expresiones no se resucitan)', () => {
+  const valoresDe = (f: ReturnType<typeof flujo> | null) => {
+    const a = (f?.nodes[0]?.parameters as { assignments: { assignments: Array<{ name: string; value: string }> } }).assignments.assignments;
+    return Object.fromEntries(a.map((c) => [c.name, c.value]));
+  };
+  const vivo = flujo([set('Config base', {
+    senaActiva: 'si', senaPendiente: 'si', qrUrl: 'https://qr.ejemplo.bo/x', instruccionesExtra: 'no dar descuentos', calendarioForzado: 'abc', telefonosExcluidos: '500000000009',
+    costoDeEntrega: '={{ $json.costo }}', ubicacionTienda: 'Calle Falsa 123',
+  })]);
+  const origen = flujo([set('Config base', {
+    senaActiva: '', senaPendiente: '', qrUrl: '', instruccionesExtra: '', calendarioForzado: '', telefonosExcluidos: '', costoDeEntrega: '', ubicacionTienda: '',
+  })]);
+
+  it('si el origen vacia senaActiva, qrUrl y los demas (cobros), lo enviado queda vacio: el vivo no se resucita', () => {
+    const { r, out, enviado } = publicar(vivo, [], origen, ['--aplicar']);
+    expect(r.status, out).toBe(0);
+    const v = valoresDe(enviado);
+    for (const clave of ['senaActiva', 'senaPendiente', 'qrUrl', 'instruccionesExtra', 'calendarioForzado', 'telefonosExcluidos']) expect(v[clave], clave).toBe('');
+    expect(out).not.toContain('qr.ejemplo.bo');
+  });
+  it('un valor del vivo que empieza con «=» (expresion) no se conserva, aunque la clave este permitida', () => {
+    const { enviado } = publicar(vivo, [], origen, ['--aplicar']);
+    expect(valoresDe(enviado)['costoDeEntrega']).toBe('');
+    // y una clave permitida con valor normal si se conserva
+    expect(valoresDe(enviado)['ubicacionTienda']).toBe('Calle Falsa 123');
+  });
+  it('solo el nodo de Config: un campo permitido de otro nodo Set no se conserva', () => {
+    const vivoOtro = flujo([set('Otro Set', { costoDeEntrega: 'Bs 5' })]);
+    const origenOtro = flujo([set('Otro Set', { costoDeEntrega: '' })]);
+    const { enviado } = publicar(vivoOtro, [], origenOtro, ['--aplicar']);
+    expect(valoresDe(enviado)['costoDeEntrega']).toBe('');
   });
 });
 
