@@ -3,7 +3,7 @@ import { TextoSeguro } from './TextoSeguro';
 import { RetomarConversacion } from './RetomarConversacion';
 import {
   AVISO_SIN_SALIDA, AVISO_TOMAR, ESPERA_CAMBIO_MS, cambioVisible, codigoDeError, detallesDeError, textoErrorTurno, textoEstadoTurno,
-  type Acciones, type CapaTurno, type SituacionTurno, type Turno,
+  TEXTO_ESPERANDO_CLIENTE, type Acciones, type CapaTurno, type ContextoDeAviso, type SituacionTurno, type Turno,
 } from '../lib/turno';
 
 /**
@@ -29,8 +29,8 @@ export interface PropsBarraTurno {
   capa: CapaTurno;
   /** La etiqueta de quién responde se pinta en otro lugar (la cabecera del detalle): aquí no se repite. */
   sinEstado?: boolean;
-  /** Quién paga Meta (para el aviso de costo de «Retomar»); `null` = no consta. */
-  titularidad?: import('../../../../functions/src/central/ejes').Titularidad | null;
+  /** Tarifa, titularidad y línea (para el aviso de costo de «Retomar»); cualquiera puede faltar. */
+  aviso?: ContextoDeAviso;
 }
 
 export function BarraTurno(p: PropsBarraTurno) {
@@ -102,12 +102,16 @@ export function BarraTurno(p: PropsBarraTurno) {
 
       {acciones.verRetomar && (
         <RetomarConversacion
-          tenantId={tenantId} conversacionId={conversacionId} titularidad={p.titularidad ?? null}
+          tenantId={tenantId} conversacionId={conversacionId} aviso={p.aviso}
           habilitados={acciones.habilitados} capa={p.capa}
         />
       )}
 
-      {acciones.sinTomarPorVentana && !acciones.verRetomar && (
+      {acciones.esperandoRetomada && (
+        <p className="cv-turno-aviso" id="cv-turno-esperando" data-testid="esperando-retomada" role="status">{TEXTO_ESPERANDO_CLIENTE}</p>
+      )}
+
+      {acciones.sinTomarPorVentana && !acciones.verRetomar && !acciones.esperandoRetomada && (
         <p className="cv-turno-aviso" id="cv-turno-sin-ventana">
           No se puede tomar: la ventana de 24 h de WhatsApp está cerrada o no consta cuándo escribió el cliente. Podrá hacerlo cuando el cliente vuelva a escribir.
         </p>

@@ -33,7 +33,7 @@ import {
 
 // Las cifras de Retomar (topes y precio de la plantilla) son del PLAN y salen de `planes.ts`: la pantalla no escribe ninguna.
 import {
-  PLANTILLA_UTILIDAD_FUENTE, PLANTILLA_UTILIDAD_USD, PLANTILLA_UTILIDAD_VERIFICADA_EL, TARIFA_DE_RESPALDO, limitesDeRetomar,
+  PLANTILLA_UTILIDAD_FUENTE, PLANTILLA_UTILIDAD_USD, PLANTILLA_UTILIDAD_VERIFICADA_EL, TARIFA_DE_RESPALDO, limitesDeRetomar, type Tarifa,
 } from '../../../../functions/src/central/cuenta/planes';
 import type { Titularidad } from '../../../../functions/src/central/ejes';
 
@@ -135,6 +135,12 @@ export interface EntradaAcciones {
   noContactar?: boolean;
   /** El contacto está bloqueado (`bloqueada === true`): no se ofrece Retomar. */
   bloqueada?: boolean;
+  /** Cuándo se mandó la última plantilla (`ultimaRetomadaEn` de la conversación). Con `ultimoEntranteEn` y `ahora`, decide si todavía se espera. */
+  ultimaRetomadaEn?: number | null;
+  /** La hora del último mensaje del cliente (la de la conversación). */
+  ultimoEntranteEn?: number | null;
+  /** El reloj de la pantalla (ms), para el plazo de `diasEntreRetomadas`. */
+  ahora?: number;
 }
 
 /**
@@ -168,6 +174,8 @@ export interface Acciones {
   sinTomarPorVentana: boolean;
   /** Ventana cerrada, responde el asistente y las dos banderas: se ofrece «Retomar conversación» (plantilla). */
   verRetomar: boolean;
+  /** Ya se mandó una plantilla y el cliente no respondió (dentro de `diasEntreRetomadas`): se dice «Esperando la respuesta del cliente». */
+  esperandoRetomada: boolean;
   verDevolver: boolean;
   verEscribir: boolean;
   /** Los controles que se ven, ¿se pueden pulsar? Falso con el comercio no activo. */
@@ -181,8 +189,21 @@ export interface Acciones {
  *  · Devolver: quien la tiene, o un admin.
  *  · Escribir: solo quien la tiene (el servidor exige el turno de ESA persona).
  */
+/**
+ * ¿Ya se mandó una plantilla a este cliente y no respondió? Es la regla `retomadaPendiente` del servidor: `ultimaRetomadaEn`
+ * posterior a `ultimoEntranteEn` y dentro de `diasEntreRetomadas` (de `limitesDeRetomar`, del plan). El servidor la vuelve a
+ * comprobar; acá solo se evita ofrecer lo que va a rechazar.
+ */
+export function retomadaPendienteDe(
+  ultimaRetomadaEn: number | null | undefined, ultimoEntranteEn: number | null | undefined, ahora: number | undefined,
+): boolean {
+  if (typeof ultimaRetomadaEn !== 'number' || typeof ultimoEntranteEn !== 'number' || typeof ahora !== 'number') return false;
+  const dias = limitesDeRetomar(null, TARIFA_DE_RESPALDO, 'novuchat').diasEntreRetomadas;
+  return ultimaRetomadaEn > ultimoEntranteEn && ahora < ultimaRetomadaEn + dias * 24 * 3_600_000;
+}
+
 export function accionesDeTurno(a: EntradaAcciones): Acciones {
-  if (!a.puedeGestionar) return { sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verRetomar: false, verDevolver: false, verEscribir: false, habilitados: false };
+  if (!a.puedeGestionar) return { sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verRetomar: false, esperandoRetomada: false, verDevolver: false, verEscribir: false, habilitados: false };
   return {
     sinIntervencion: a.situacion === 'asistente' && !a.puedeIntervenir,
     verTomar: a.situacion === 'asistente' && a.puedeIntervenir && a.ventanaAbierta,
@@ -190,7 +211,11 @@ export function accionesDeTurno(a: EntradaAcciones): Acciones {
     sinTomarPorVentana: a.situacion === 'asistente' && a.puedeIntervenir && !a.ventanaAbierta,
     // «Retomar» (plantilla): TODAS las condiciones a la vez. El servidor las vuelve a comprobar (esto no es un permiso).
     verRetomar: a.situacion === 'asistente' && a.puedeIntervenir && a.puedeRetomar === true && a.ventanaConDato === true
-      && !a.ventanaAbierta && a.noContactar !== true && a.bloqueada !== true,
+      && !a.ventanaAbierta && a.noContactar !== true && a.bloqueada !== true
+      && !retomadaPendienteDe(a.ultimaRetomadaEn, a.ultimoEntranteEn, a.ahora),
+    esperandoRetomada: a.situacion === 'asistente' && a.puedeIntervenir && a.puedeRetomar === true && a.ventanaConDato === true
+      && !a.ventanaAbierta && a.noContactar !== true && a.bloqueada !== true
+      && retomadaPendienteDe(a.ultimaRetomadaEn, a.ultimoEntranteEn, a.ahora),
     verDevolver: a.situacion === 'mio' || (a.situacion === 'ajeno' && a.esAdmin),
     verEscribir: a.situacion === 'mio' && a.puedeIntervenir,
     habilitados: a.comercioActivo,
@@ -247,37 +272,71 @@ export const fuenteDeLaCifra = (): string => PLANTILLA_UTILIDAD_VERIFICADA_EL ==
   : `${PLANTILLA_UTILIDAD_FUENTE}; verificada en la tarifa de Meta el ${PLANTILLA_UTILIDAD_VERIFICADA_EL}`;
 
 /**
- * El aviso de costo del modal (§1.8 del plan de Retomar). Depende de quién paga Meta, y es la barrera honesta: no se presenta
- * un costo como algo que no es.
- *  · `comercio`: Meta cobra aparte a su negocio.
- *  · `novuchat` (D-R2 a): NovuChat absorbe la plantilla hasta el tope mensual del plan, sin cobrarle al comercio.
- *  · `null` (no consta: un operador no puede leer los números): no se afirma quién paga.
- * Si el cliente responde, se abre una conversación nueva que cuenta en el plan.
+ * LO QUE LA PANTALLA SABE PARA DECIR QUIÉN PAGA LA PLANTILLA: la tarifa de la cuenta, la titularidad de la línea y la línea.
+ * Cualquiera puede faltar (`null`): un operador no puede leer `ejesDeCuenta` (es de admin) y no se afirma lo que no consta.
  */
-export function textoAvisoRetomar(titularidad: Titularidad | null): string {
-  const cierre = 'Si el cliente responde, se abre una conversación nueva que cuenta en su plan.';
-  const tarifa = `aprox. USD ${cifraDePlantilla()} por envío (tarifa de Meta para Bolivia, ${fuenteDeLaCifra()})`;
-  if (titularidad === 'comercio') {
-    return `Retomar envía una plantilla de WhatsApp que Meta cobra aparte a su negocio, ${tarifa}. ${cierre}`;
+export interface ContextoDeAviso {
+  tarifa: Tarifa | null;
+  titularidad: Titularidad | null;
+  /** Los últimos 4 caracteres de la línea de la conversación, o `null` si la ficha no la trae o no se halla entre los números. */
+  linea: string | null;
+}
+export const SIN_CONTEXTO_DE_AVISO: ContextoDeAviso = { tarifa: null, titularidad: null, linea: null };
+
+/**
+ * El contexto del aviso, de la respuesta de `ejesDeCuenta` y la línea de la conversación (`phoneNumberId` de la ficha).
+ * Si la línea se halla entre los números del comercio, su titularidad manda; si no consta, rige la del comercio entero: con
+ * ALGÚN número propio se avisa de que Meta le factura (lo contrario sería presentar un costo como algo que no es).
+ */
+export function contextoDeAviso(
+  ejes: { tarifa?: unknown; numeros?: readonly { phoneNumberId?: unknown; titularidad?: unknown }[] } | null | undefined,
+  phoneNumberId?: string,
+): ContextoDeAviso {
+  const tarifa: Tarifa | null = ejes?.tarifa === 'estandar' || ejes?.tarifa === 'meta_incluido' ? ejes.tarifa : null;
+  const n = ejes?.numeros;
+  if (!Array.isArray(n) || n.length === 0) return { tarifa, titularidad: null, linea: null };
+  const suya = phoneNumberId ? n.find((x) => x?.phoneNumberId === phoneNumberId) : undefined;
+  if (suya) {
+    return { tarifa, titularidad: suya.titularidad === 'comercio' ? 'comercio' : 'novuchat', linea: phoneNumberId!.slice(-4) };
   }
-  if (titularidad === 'novuchat') {
-    const tope = limitesDeRetomar(null, TARIFA_DE_RESPALDO, 'novuchat').porMes;
-    return `Retomar envía una plantilla de WhatsApp que Meta cobra, ${tarifa}. NovuChat absorbe ese costo, sin cobrarle a su negocio, `
-      + `hasta ${tope} envíos al mes. ${cierre}`;
-  }
-  return `Retomar envía una plantilla de WhatsApp que Meta cobra aparte, ${tarifa}. Según el número de su negocio, el costo lo absorbe `
-    + `NovuChat (hasta el tope mensual de su plan) o Meta se lo cobra a su negocio. ${cierre}`;
+  return { tarifa, titularidad: n.some((x) => x?.titularidad === 'comercio') ? 'comercio' : 'novuchat', linea: null };
 }
 
 /**
- * La titularidad que se le dice a la persona, de la respuesta de `ejesDeCuenta` (solo la lee un admin; para un operador o
- * mientras carga es `undefined`/`null` y el aviso no afirma quién paga). Si ALGÚN número es del comercio, Meta le factura
- * a él: se avisa de eso (lo contrario sería presentar un costo como algo que no es). `numeros` vacío = no consta.
+ * QUIÉN PAGA LA PLANTILLA (D-R2 a y `docs/base-comercial.md`, tarifa por cuenta). NovuChat la absorbe SOLO con la tarifa
+ * `meta_incluido` y una línea suya (`novuchat`): con `meta_incluido` la mensajería va en el precio, pero si la línea es del
+ * comercio Meta le factura a él. Con la tarifa `estandar` Meta cobra aparte al comercio, sea cual sea la línea.
+ * `null` = no consta (no se afirma). Las cuatro combinaciones se prueban en `retomar-costo.test.ts`.
  */
-export function titularidadParaAviso(ejes: { numeros?: readonly { titularidad?: unknown }[] } | null | undefined): Titularidad | null {
-  const n = ejes?.numeros;
-  if (!Array.isArray(n) || n.length === 0) return null;
-  return n.some((x) => x?.titularidad === 'comercio') ? 'comercio' : 'novuchat';
+export function quienPagaLaPlantilla(c: Pick<ContextoDeAviso, 'tarifa' | 'titularidad'>): 'comercio' | 'novuchat' | null {
+  if (c.tarifa === 'estandar') return 'comercio';
+  if (c.tarifa === 'meta_incluido') return c.titularidad === 'comercio' ? 'comercio' : c.titularidad === 'novuchat' ? 'novuchat' : null;
+  return null;
+}
+
+/**
+ * El aviso de costo del modal (§1.8 del plan de Retomar). Es la barrera honesta: no se presenta un costo como algo que no es.
+ *  · `comercio`: Meta cobra aparte a su negocio.
+ *  · `novuchat` (D-R2 a): NovuChat absorbe la plantilla, sin cobrarle al comercio, dentro del límite de envíos.
+ *  · sin dato: no se afirma quién paga.
+ * Los 20 por día y 100 por mes (`limitesDeRetomar`, del plan) se dicen SIEMPRE como límite de envío de todos los negocios, no
+ * como «después se cobra». Si la ficha trae la línea, el aviso la nombra; si no, el texto es genérico.
+ */
+export function textoAvisoRetomar(contexto: ContextoDeAviso = SIN_CONTEXTO_DE_AVISO): string {
+  const l = limitesDeRetomar(null, TARIFA_DE_RESPALDO, 'novuchat');
+  const linea = contexto.linea ? ` por la línea terminada en ${contexto.linea}` : '';
+  const tarifa = `aprox. USD ${cifraDePlantilla()} por envío (tarifa de Meta para Bolivia, ${fuenteDeLaCifra()})`;
+  const limite = `Es un límite de envío para todos los negocios: hasta ${l.porDia} por día y ${l.porMes} por mes.`;
+  const cierre = 'Si el cliente responde, se abre una conversación nueva que cuenta en su plan.';
+  switch (quienPagaLaPlantilla(contexto)) {
+    case 'comercio':
+      return `Retomar envía una plantilla de WhatsApp${linea} que Meta cobra aparte a su negocio, ${tarifa}. ${limite} ${cierre}`;
+    case 'novuchat':
+      return `Retomar envía una plantilla de WhatsApp${linea} que Meta cobra, ${tarifa}. NovuChat absorbe ese costo, sin cobrarle a su negocio. ${limite} ${cierre}`;
+    default:
+      return `Retomar envía una plantilla de WhatsApp${linea} que Meta cobra aparte, ${tarifa}. Según la tarifa y la línea de su negocio, el costo lo absorbe `
+        + `NovuChat o Meta se lo cobra a su negocio. ${limite} ${cierre}`;
+  }
 }
 
 /** Lo que dice la casilla que hay que marcar antes de enviar. */
@@ -510,6 +569,7 @@ export function textoErrorTurno(accion: AccionTurno, codigo: string, detalles: R
   switch (codigo) {
     case 'unauthenticated': return 'Su sesión venció. Vuelva a ingresar.';
     case 'permission-denied':
+      if (accion === 'retomar') return 'Retomar conversaciones todavía no está activo para su negocio, o su rol no lo permite.';
       return 'No tiene permiso para intervenir en esta conversación, o esta función no está habilitada para su comercio.';
     case 'failed-precondition': {
       // El bloqueo de 45 s tras un mensaje entrante (contrato §9): el servidor manda `motivo: 'espera'`. Es la única
@@ -521,8 +581,10 @@ export function textoErrorTurno(accion: AccionTurno, codigo: string, detalles: R
       const otra = typeof detalles['tomadoPor'] === 'string' && detalles['tomadoPor'] !== ''
         ? ` (${etiquetaUid(detalles['tomadoPor'], null)})` : '';
       if (accion === 'retomar') {
-        return 'No se pudo retomar: la ventana de 24 h está abierta (use Tomar), ya se envió una plantilla a este cliente y se espera su respuesta, '
-          + 'la plantilla no está disponible en este número, o la conversación la tiene otra persona.';
+        return 'No se pudo retomar. Puede ser que la ventana de 24 h esté abierta (use Tomar), que el cliente pidió que no se le escriba, '
+          + 'que el contacto esté bloqueado, que ya se haya enviado una plantilla y se espere su respuesta, que la plantilla no esté disponible '
+          + 'en este número o la conversación no entre por un canal de WhatsApp, que la tenga otra persona, o que esta acción ya se haya usado con otros datos. '
+          + 'Revise el estado de la conversación.';
       }
       return accion === 'tomar'
         ? (otra ? `No se pudo tomar: ya la tiene otra persona${otra}.`

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { TEXTO_CASILLA_RETOMAR, ejecutarRetomar, textoAvisoRetomar, type CapaTurno } from '../lib/turno';
-import type { Titularidad } from '../../../../functions/src/central/ejes';
+import { SIN_CONTEXTO_DE_AVISO, TEXTO_CASILLA_RETOMAR, ejecutarRetomar, textoAvisoRetomar, type CapaTurno, type ContextoDeAviso } from '../lib/turno';
 
 /**
  * «RETOMAR CONVERSACIÓN»: con la ventana de 24 h cerrada, mandar la plantilla de utilidad que reabre la conversación.
@@ -16,12 +15,14 @@ import type { Titularidad } from '../../../../functions/src/central/ejes';
  *  · El doble clic no manda dos veces (`enCurso` es un `ref`).
  *  · Solo se llama a `retomarConversacion` con `{ tenantId, conversacionId, claveIdempotencia }`: nunca un teléfono.
  *  · Un error se muestra con el texto fijo de su CÓDIGO, nunca con `e.message`.
+ *  · FOCO: al abrir va a la casilla; Tab y Mayús+Tab quedan dentro del modal; Escape o Cancelar lo cierran y el foco vuelve al
+ *    botón «Retomar conversación».
  */
 export interface PropsRetomar {
   tenantId: string;
   conversacionId: string;
-  /** Quién paga Meta; `null` si no consta (un operador no lee los números): el aviso no afirma quién paga. */
-  titularidad: Titularidad | null;
+  /** Tarifa, titularidad y línea para el aviso de costo; cualquiera puede faltar (un operador no lee los números): no se afirma quién paga. */
+  aviso?: ContextoDeAviso;
   /** Falso con el comercio no activo: el botón se ve pero no se puede pulsar. */
   habilitados: boolean;
   capa: CapaTurno;
@@ -36,6 +37,10 @@ export function RetomarConversacion(p: PropsRetomar) {
   const [hecho, setHecho] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const clave = useRef<string | null>(null);
+  const botonRef = useRef<HTMLButtonElement | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const casillaRef = useRef<HTMLInputElement | null>(null);
+  const estabaAbierto = useRef(false);
   const enCurso = useRef(false);
   const vivo = useRef(true);
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; }; }, []);
@@ -47,13 +52,30 @@ export function RetomarConversacion(p: PropsRetomar) {
     setError(null);
   }
 
-  // Escape cierra el modal (sin manejador de teclado sobre el elemento: lo pide el lint de accesibilidad).
+  // Escape cierra el modal y Tab queda dentro de él (sin manejador de teclado sobre el elemento: lo pide el lint de accesibilidad).
   useEffect(() => {
     if (!abierto) return;
-    const alTeclear = (e: KeyboardEvent) => { if (e.key === 'Escape') cerrar(); };
+    const alTeclear = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { cerrar(); return; }
+      if (e.key !== 'Tab' || !modalRef.current) return;
+      const dentro = [...modalRef.current.querySelectorAll<HTMLElement>('input, button')].filter((x) => !(x as HTMLInputElement).disabled);
+      if (dentro.length === 0) return;
+      const primero = dentro[0]!;
+      const ultimo = dentro[dentro.length - 1]!;
+      const activo = document.activeElement;
+      if (!modalRef.current.contains(activo)) { e.preventDefault(); primero.focus(); }
+      else if (e.shiftKey && activo === primero) { e.preventDefault(); ultimo.focus(); }
+      else if (!e.shiftKey && activo === ultimo) { e.preventDefault(); primero.focus(); }
+    };
     document.addEventListener('keydown', alTeclear);
     return () => document.removeEventListener('keydown', alTeclear);
   });
+
+  // Al abrir, el foco va a la casilla; al cerrar sin haber enviado, vuelve al botón que lo abrió.
+  useEffect(() => {
+    if (abierto) { casillaRef.current?.focus(); estabaAbierto.current = true; return; }
+    if (estabaAbierto.current) { estabaAbierto.current = false; botonRef.current?.focus(); }
+  }, [abierto]);
 
   async function confirmar() {
     // La casilla es obligatoria: sin ella no se llama, aunque se fuerce el clic.
@@ -79,8 +101,8 @@ export function RetomarConversacion(p: PropsRetomar) {
   const idError = 'cv-retomar-error';
   return (
     <div className="cv-retomar" data-testid="retomar">
-      <button type="button" className="btn btn-primary" onClick={() => setAbierto(true)}
-        disabled={!p.habilitados || hecho || abierto} aria-haspopup="dialog"
+      <button type="button" ref={botonRef} className="btn btn-primary" onClick={() => setAbierto(true)}
+        disabled={!p.habilitados || hecho} aria-haspopup="dialog"
         title={p.habilitados ? undefined : 'El comercio no está activo: no se puede retomar.'}>
         {hecho ? 'Plantilla enviada…' : 'Retomar conversación'}
       </button>
@@ -91,12 +113,12 @@ export function RetomarConversacion(p: PropsRetomar) {
       )}
 
       {abierto && (
-        <div role="alertdialog" aria-modal="true" aria-labelledby="cv-retomar-titulo" aria-describedby="cv-retomar-aviso"
+        <div role="alertdialog" aria-modal="true" ref={modalRef} aria-labelledby="cv-retomar-titulo" aria-describedby="cv-retomar-aviso"
           className="cv-retomar-modal" data-testid="retomar-modal">
           <h3 id="cv-retomar-titulo">Retomar conversación</h3>
-          <p id="cv-retomar-aviso" data-testid="retomar-aviso">{textoAvisoRetomar(p.titularidad)}</p>
+          <p id="cv-retomar-aviso" data-testid="retomar-aviso">{textoAvisoRetomar(p.aviso ?? SIN_CONTEXTO_DE_AVISO)}</p>
           <label className="cv-retomar-casilla">
-            <input type="checkbox" checked={casilla} disabled={enviando}
+            <input type="checkbox" ref={casillaRef} checked={casilla} disabled={enviando}
               onChange={(e) => setCasilla(e.target.checked)} data-testid="retomar-casilla" />
             {' '}{TEXTO_CASILLA_RETOMAR}
           </label>

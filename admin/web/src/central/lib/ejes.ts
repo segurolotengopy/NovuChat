@@ -113,6 +113,8 @@ export interface EjesDeCuenta {
    * pantalla usa la del plan sin afirmar ningún contrato.
    */
   precio?: { mensualUsd: number; porContrato: number | null; delPlanUsd: number };
+  /** La tarifa que rige (`cuenta/estado.tarifa`, con respaldo `meta_incluido`): de ella depende quién paga la plantilla de Retomar. Opcional: un servidor anterior no la manda. */
+  tarifa?: 'estandar' | 'meta_incluido';
   modalidad: Modalidad;
   modalidadExplicita: boolean;
   modelo: Modelo;

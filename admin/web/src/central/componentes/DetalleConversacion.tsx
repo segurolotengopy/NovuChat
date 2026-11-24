@@ -17,10 +17,9 @@ import {
   etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, turnoDeFicha, ventanaDeFicha, type Ficha,
 } from '../lib/conversaciones';
 import {
-  AVISO_PROPIETARIO, ROTULO_PLANTILLA, accionesDeTurno, esPlantilla, estadoDeMensaje, retomadoEnDe, mostrarAvisoPropietario, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoEstadoTurno, textoRechazoMeta, vencidoDeEnvio, ventanaAbiertaParaTomar, ventanaDeEnvio,
+  AVISO_PROPIETARIO, ROTULO_PLANTILLA, accionesDeTurno, contextoDeAviso, esPlantilla, estadoDeMensaje, retomadoEnDe, mostrarAvisoPropietario, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoEstadoTurno, textoRechazoMeta, vencidoDeEnvio, ventanaAbiertaParaTomar, ventanaDeEnvio,
   type CapaTurno, type EstadoMensajePersona,
 } from '../lib/turno';
-import type { Titularidad } from '../../../../functions/src/central/ejes';
 
 /**
  * EL DETALLE DE UNA CONVERSACIÓN: un solo hilo, con su propio scroll.
@@ -221,8 +220,8 @@ export interface PropsDetalle {
   puedeIntervenir: boolean;
   /** Retomar: las dos banderas de la ficha (`usePersonaPuedeRetomar`); falso mientras carga o si falla. */
   puedeRetomar?: boolean;
-  /** Retomar: quién paga Meta, para el aviso de costo; `null`/ausente = no consta. */
-  titularidad?: Titularidad | null;
+  /** Retomar: la respuesta de `ejesDeCuenta` (tarifa y números), para el aviso de costo; ausente = no consta. */
+  ejes?: Parameters<typeof contextoDeAviso>[0];
   /** H2: el uid de quien mira (para saber si la conversación la tiene «usted»); `null` sin sesión. */
   miUid: string | null;
   /** H2: quien mira es admin del negocio (puede devolver la conversación de otra persona). */
@@ -319,6 +318,7 @@ export function DetalleConversacion(p: PropsDetalle) {
     ventanaAbierta: ventanaAbiertaParaTomar(ficha.ultimoEntranteEn, p.ahora),
     puedeRetomar: p.puedeRetomar === true, ventanaConDato: ficha.ultimoEntranteEn !== null,
     noContactar: ficha.noContactar, bloqueada: ficha.bloqueada,
+    ultimaRetomadaEn: ficha.ultimaRetomadaEn, ultimoEntranteEn: ficha.ultimoEntranteEn, ahora: p.ahora,
   }), ficha.bloqueada);
   // Se retomó con una plantilla (`turno.retomadoEn`, lo escribe el servidor): con la ventana cerrada se espera al cliente.
   const retomadoEn = retomadoEnDe(ficha.turno);
@@ -398,7 +398,7 @@ export function DetalleConversacion(p: PropsDetalle) {
             />
             <BarraTurno
               tenantId={tenantId} conversacionId={ficha.id} turno={turno} situacion={situacion}
-              acciones={acciones} miUid={p.miUid} capa={p.capa} sinEstado titularidad={p.titularidad ?? null}
+              acciones={acciones} miUid={p.miUid} capa={p.capa} sinEstado aviso={contextoDeAviso(p.ejes, ficha.phoneNumberId)}
             />
             {enlaceWaMe(ficha.telefono) && (
               <div className="cv-wame-bloque">
