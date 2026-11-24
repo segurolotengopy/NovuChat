@@ -30,6 +30,8 @@
     "envioGratisDesdeBs": 500,
     "tiendaLaPaz": "Calle Claudio Aliaga #1231, San Miguel, Zona Sur",
     "tiendaSantaCruz": "Av. Marcelo Terceros esq. Flamboyanos (frente al ex Jardín de Asia)",
+    "tiendaLaPazCoordenadas": "-16.542254,-68.0799787",
+    "tiendaSantaCruzCoordenadas": "-17.7648323,-63.1992316",
     "horarioTiendas": "de lunes a viernes de 10:00 a 19:00",
     "horarioDias": "1,2,3,4,5",
     "horarioApertura": "10:00",
