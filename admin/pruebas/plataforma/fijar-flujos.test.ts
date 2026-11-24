@@ -96,7 +96,8 @@ describe('fijar-flujos: el texto del script', () => {
     expect(s).not.toMatch(/\.delete\(/);
   });
   it('los comercios excluidos (y los de prefijo igual) salen con código 2 antes de abrir Firebase', () => {
-    for (const tenant of ['platinum', 'Platinum', 'platinum-xyz', 'platinum2']) {
+    // 23/11/2026: Rubén y sus 3 subcuentas están DADAS DE BAJA y ningún script de Plataforma las toca
+    for (const tenant of ['platinum', 'Platinum', 'platinum-xyz', 'platinum2', 'rroca-ruben', 'rroca-antonio', 'rroca-evy', 'rroca-emma']) {
       const r = spawnSync('node', [join(aqui, '..', '..', 'scripts', 'plataforma', 'fijar-flujos.mjs'),
         '--proyecto', 'p', '--operador', ['operador', 'ejemplo.test'].join('@'), '--tenant', tenant, '--flujos', 'venta'], { encoding: 'utf8', env: entornoDelEmulador() });
       expect(r.status).toBe(2);
@@ -106,7 +107,7 @@ describe('fijar-flujos: el texto del script', () => {
   it('exige operador, no toca a Platinum (Bellido ya no está excluido) y deja auditoría', () => {
     expect(s).toContain("'--operador <correo> es obligatorio");
     expect(s).toContain('COMERCIOS_NO_TOCADOS.some(');
-    expect(readFileSync(join(aqui, '..', '..', 'scripts', 'plataforma', 'comercios-no-tocados.mjs'), 'utf8')).toContain("['platinum']");
+    expect(readFileSync(join(aqui, '..', '..', 'scripts', 'plataforma', 'comercios-no-tocados.mjs'), 'utf8')).toContain("['platinum', 'rroca-ruben', 'rroca-antonio', 'rroca-evy', 'rroca-emma']");
     expect(s).toContain("accion: 'cambiar_flujos'");
   });
 });

@@ -28,6 +28,14 @@ function wlEnlaceCatalogo(panel) {
   const e = w && w.activo === true && typeof w.enlace === 'string' ? w.enlace.trim() : '';
   return /^https:\/\/[^\s]+$/.test(e) && e.length <= 500 ? e : '';
 }
+// El catálogo como BOTÓN en el MISMO mensaje de texto del turno (saludo, anuncio o primera pregunta por una pieza): 0 mensajes extra. Solo si el mensaje es un texto simple y cabe en el cuerpo del botón; sin enlace, nada.
+function wlConBotonCatalogo(m, enlace) {
+  if (!m || !m.payload || m.payload.type !== 'text' || typeof m.texto !== 'string' || m.texto.length > 1000 || !/^https:\/\/[^\s]+$/.test(String(enlace))) return false;
+  m.payload = cmEnlace(m.texto, 'Ver catálogo', String(enlace));
+  m.respaldo = m.texto + '\n\n' + String(enlace);
+  m.tipoReporte = 'interactive'; m.conBoton = true;
+  return true;
+}
 // El cliente pide VER el catálogo o las fotos (texto normalizado): el botón con el catálogo web sale por código, sin modelo (MD: [MOSTRAR_CATALOGO]).
 // ESTRECHO a propósito (revisión del PR #1033): un verbo de pedir + «catálogo» o «fotos», o el mensaje corto que es solo eso. Nunca con una negación, un comprobante, un pago o un QR,
 // con cifras (cantidades, montos) ni cuando ya vio el catálogo: ahí el mensaje sigue su camino (pedido, pago, modelo).
@@ -214,7 +222,7 @@ function wlDireccionTienda(base, ciudad) {
 }
 // La frase del costo del envío que va en el resumen del pedido: gratis, a cotizar (con la política de que el QR es solo por los productos) o, en el recojo, la dirección de la tienda.
 function wlFraseEnvio(envio, umbralBs, direccionTienda, sinQr, horario) {
-  if (envio === 'gratis') return 'El envío no tiene costo' + (umbralBs > 0 ? ' (compras desde ' + vcMonto(umbralBs * 100) + ')' : '') + '.';
+  if (envio === 'gratis') return 'El envío no tiene costo.';
   // Sin QR de cobro no se habla del QR: solo del envío.
   // El envío bajo el umbral lo cotiza y lo cobra nuestra encargada (aclaración de Andres, 18/11/2026), nunca «directo a quien lo lleva».
   if (envio === 'cotizar') return sinQr === true ? 'El costo del envío se lo indicará y cobrará nuestra encargada.' : 'El QR es solo por las piezas; el costo del envío se lo indicará y cobrará nuestra encargada.';
@@ -523,6 +531,7 @@ const WL_MOTIVOS_AVISO = {
   comprobante_en_revision: 'comprobante con un monto distinto del pedido tras varios intentos',
   comprobante_ya_visto: 'el cliente envió otra vez un comprobante que ya estaba registrado',
   monto_invalido: 'el monto del pedido no se pudo calcular',
+  carrito_sin_piezas: 'el pedido del catálogo web no trae ninguna pieza que se pueda pedir (no están en el catálogo vendible)',
   atencion_humana: 'uso extendido: se le dijo que una persona continúa la conversación',
 };
 function wlAvisoConsulta(c, clave) {
@@ -568,7 +577,7 @@ function wlResolverComprobante(c) {
   // Marca PROPIA (`avisoComprobanteMs`): una consulta reciente o el uso extendido no silencian el aviso de un comprobante (revisión del PR #1020).
   const reciente = f.avisoComprobanteMs > 0 && c.ahora - f.avisoComprobanteMs >= 0 && c.ahora - f.avisoComprobanteMs < WL_VENTANA_CONSULTA_MS;
   const pedido = (cotejo) => ({ tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: f.entrega, cotejo: cotejo, codigo: codigo, ref: ref,
-    factura: 'sin datos (S/N) por ahora', banco: cbLinea(leido.bancoOrigen, 40), operacion: cbLinea(leido.transaccion, 40), repetido: false });
+    factura: 'S/N - NIT 0 (si el cliente envía sus datos, llegan en un aviso aparte)', banco: cbLinea(leido.bancoOrigen, 40), operacion: cbLinea(leido.transaccion, 40), repetido: false });
   const d = { resultado: r.resultado, diferencia: wlDiferenciaUsted(cbDiferencia(r.diferencias, 'BOB')), totalTexto: totalTexto, codigo: codigo, aviso: null };
   // Un monto (en centavos) del cuerpo del cotejo; null si no es un número positivo.
   const centavos = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v * 100) : null);
@@ -618,7 +627,7 @@ function wlCerrar(c, base, abierto, cambioConQr) {
   if (c.cobro.modo !== 'real') {
     const umbralSc = wlUmbralBs(c.base);
     // Sin QR de cobro real: el pedido queda anotado y lo coordina nuestra encargada (aviso + botón). El aviso lo manda «Armar avisos» con «sin comprobante aún».
-    return Object.assign(base, { tipo: 'pedido_sin_cobro', total: total, envio: wlEnvioDe(entrega, total, umbralSc), umbralBs: umbralSc, resumen: vcResumen(lineas), cierre: false, aviso: { tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: entrega, cotejo: 'sin comprobante aún', repetido: false }, patch: { carrito: [], entrega: wlEntregaBase(), cierre: false, qrCarrito: [], mostrados: [] } });
+    return Object.assign(base, { tipo: 'pedido_sin_cobro', total: total, envio: wlEnvioDe(entrega, total, umbralSc), umbralBs: umbralSc, resumen: vcResumen(lineas), cierre: false, aviso: { tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: entrega, cotejo: 'sin comprobante aún', repetido: false }, patch: { carrito: [], entrega: wlEntregaBase(), cierre: false, qrCarrito: [], mostrados: [], desdeCatalogo: false } });
   }
   if (abierto && !cambioConQr) return Object.assign(base, { tipo: 'qr_pendiente', total: total });
   // Un ENVÍO sin la ubicación del pin (decisiones del 18/11: GPS obligatorio, también en el interior): NO se emite el QR; se pide la ubicación con el botón (+1 mensaje por pedido).
@@ -658,6 +667,7 @@ function wlResolverModelo(c) {
   // sin esperar «pagar»; el QR reemplaza la confirmación (0 mensajes nuevos). Quien dice «no quiero pagar aún» no lo recibe; con un QR ya abierto no se repite (lo cubre `abierto` y `wlCerrar`).
   const completoAntes = antes.length > 0 && wlEntregaCompleta(f.entrega);
   const completoAhora = lineas.length > 0 && wlEntregaCompleta(entrega);
+  // Un pedido del catálogo web que queda completo con este mensaje (después de preguntar lo que faltaba) también sale solo: enviar el carrito ya es confirmar el pedido (Andres, 23/11/2026).
   const qrSolo = c.cobro.modo === 'real' && completoAhora && (cambio || !completoAntes) && !wlNoQuierePagarAun(wlNorm(p.textoCliente));
   const cierre = f.cierre || wlQuierePagar(wlNorm(p.textoCliente)) || qrSolo;
   const base = { lineas: lineas, entrega: entrega, cierre: cierre, cambio: cambio, aviso: null, cancelarCobro: false };
@@ -689,6 +699,89 @@ function wlResolverModelo(c) {
   return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, resumen: cambio && lineas.length ? vcResumen(lineas) : '', politicaEnvio: politica ? wlTextoPoliticaEnvio(wlUmbralBs(c.base)) : '', notaFactura: p.notaFactura === 'pedir' || p.notaFactura === 'al_confirmar' ? p.notaFactura : '' });
 }
 
+// EL PEDIDO QUE EL CLIENTE CONFIRMÓ EN EL CATÁLOGO WEB (`plan.tipo === 'carrito'`, que decide «Decidir turno» solo si corrió el Webhook «Carrito del catálogo»). El servidor ya guardó el pedido y recalculó
+// los precios; aquí el CÓDIGO arma el pedido del flujo: las piezas por `id` contra los MISMOS vendibles que usa `vcLineas` (una pieza que no se vende se informa y se descarta, nunca se inventa), la entrega parcial
+// (retiro → «Recojo en tienda»; envío → su modo, la dirección y la ubicación del carrito si vienen; el teléfono es el del carrito) y el monto, que sale de las líneas y no del total que dice el carrito.
+//   entrega COMPLETA  → `wlCerrar` con cierre true: el MISMO camino del QR solo (resumen e imagen del QR REAL con el monto en bolivianos; sin cobro real, `pedido_sin_cobro`; jamás «pago acreditado»);
+//   entrega incompleta → `carrito_pide`: UN solo mensaje con el resumen y lo que falta; el cliente lo contesta y el flujo normal completa la entrega (el QR sale solo, `qrSolo`).
+// La ficha guarda las piezas y la entrega parciales (`cierre` en false: no se da por pedida la orden de pagar).
+// La ciudad de un pedido del catálogo web: la nombra la dirección o la referencia; si no, la ubicación (coordenadas) más cercana a La Paz o a Santa Cruz (60 km). Si nada lo dice: vacío.
+function wlCiudadDelCarrito(car) {
+  const t = wlNorm(String(car.direccion || '') + ' ' + String(car.referencia || ''));
+  const lp = /\bla paz\b/.test(t); const sc = /\bsanta cruz\b/.test(t);
+  if (lp !== sc) return lp ? 'La Paz' : 'Santa Cruz';
+  const u = wlUbicacion(car.ubicacion);
+  if (!u) return '';
+  const km = (lat, lng) => { const r = Math.PI / 180; const x = (u.lng - lng) * r * Math.cos(((u.lat + lat) / 2) * r); const y = (u.lat - lat) * r; return Math.sqrt(x * x + y * y) * 6371; };
+  if (km(-16.5, -68.15) <= 60) return 'La Paz';
+  if (km(-17.78, -63.18) <= 60) return 'Santa Cruz';
+  return '';
+}
+// La dirección del catálogo más su referencia («casa 12, portón verde» es parte de cómo llegar): se une dentro del tope de 120 caracteres de la entrega.
+function wlDireccionDelCarrito(car) {
+  const d = String(car.direccion || '').trim(); const r = String(car.referencia || '').trim();
+  if (r === '' || wlNorm(d).includes(wlNorm(r))) return d;
+  return (d === '' ? r : d + ', ' + r).slice(0, 120);
+}
+function wlResolverCarrito(c) {
+  const f = c.ficha;
+  const car = c.plan.carrito && typeof c.plan.carrito === 'object' ? c.plan.carrito : {};
+  const items = (Array.isArray(car.items) ? car.items : []).slice(0, 50).filter((i) => cbEsObjeto(i));
+  const lineas = vcLineas(items.map((i) => ({ id: typeof i.id === 'string' ? i.id : '', cantidad: i.cantidad })), c.vendibles).lineas;
+  if (lineas.length === 0) return wlDerivar(c, 'carrito_sin_piezas');
+  const noEntraron = [];
+  for (const i of items) {
+    const nombre = cbLinea(i.nombre, 60);
+    if (!lineas.some((l) => l.id === i.id) && nombre !== '' && !noEntraron.includes(nombre)) noEntraron.push(nombre);
+  }
+  const modos = c.modos;
+  const previa = wlEntregaDeFicha(f.entrega);
+  let modo = ''; let ciudad = '';
+  if (car.entrega === 'envio') {
+    // La ciudad sale de TODO lo que el catálogo ya trae: la dirección, la referencia y, si no la nombran, la ubicación (el punto más cercano a La Paz o a Santa Cruz, a menos de 60 km). Nunca se vuelve a preguntar lo que ya vino.
+    const ciudadCat = wlCiudadDelCarrito(car);
+    const envios = modos.filter((m) => wlEsEnvio(m));
+    const porCiudad = ciudadCat === '' ? [] : envios.filter((m) => wlNorm(m).includes(wlNorm(ciudadCat)));
+    modo = porCiudad.length === 1 ? porCiudad[0] : (envios.length === 1 ? envios[0] : (modos.length === 0 ? 'Envío' : ''));
+    ciudad = /\bla paz\b/.test(wlNorm(modo)) ? 'La Paz' : (/\bsanta cruz\b/.test(wlNorm(modo)) ? 'Santa Cruz' : ciudadCat);
+  } else {
+    modo = modos.find((m) => wlEsRecojo(m) && !wlEsEnvio(m)) || (modos.length === 0 ? 'Recojo en tienda' : '');
+  }
+  const entrega = wlMezclarEntrega(f.entrega, { modo: modo, ciudad: ciudad, direccion: car.entrega === 'envio' ? wlDireccionDelCarrito(car) : '', telefono: previa.telefono === '' ? 'MISMO' : '' }, modos, c.from);
+  entrega.ubicacion = car.entrega === 'envio' ? (wlUbicacion(car.ubicacion) || previa.ubicacion) : null;
+  const antes = vcLineas(f.carrito, c.vendibles).lineas;
+  const cambio = !vcMismoCarrito(antes, lineas);
+  const base = { lineas: lineas, entrega: entrega, cierre: true, cambio: cambio, aviso: null, cancelarCobro: false };
+  const abierto = c.cobro.modo === 'real' && (c.cobro.pendiente || f.qrHastaMs > c.ahora);
+  const cambioConQr = abierto && !vcMismoCarrito(wlConNombres(f.qrCarrito, c.vendibles), lineas);
+  if (cambioConQr && c.cancelo === false) return Object.assign(base, { tipo: 'derivar', motivo: 'no_cancelo', aviso: null, cancelarCobro: true });
+  const extra = { noEntraron: noEntraron, descartadosServidor: Math.max(0, Math.floor(Number(car.descartados) || 0)), nota: cbLinea(car.nota, 200) };
+  // Entrega COMPLETA: ENVIAR EL CARRITO YA ES CONFIRMAR EL PEDIDO (Andres, 23/11/2026, «QR directo»): el QR sale en ESTE mensaje con el resumen de piezas y el total (`wlCerrar`: cobro real → QR; envío sin pin → se pide la
+  // ubicación; sin cobro real → el pedido queda anotado con recepción). Si alguna pieza no entró (no se vende), NO se cobra de más ni de menos sin decirlo: queda «listo para confirmar» con lo que no entró (`wlCarritoListoParaConfirmar`).
+  if (wlEntregaCompleta(entrega)) {
+    if (noEntraron.length === 0 && extra.descartadosServidor === 0) {
+      const cerrado = wlCerrar(c, base, abierto, cambioConQr);
+      if (cerrado) return Object.assign(cerrado, { nota: extra.nota });
+    }
+    return wlCarritoListoParaConfirmar(c, base, extra, cambioConQr);
+  }
+  // Entrega incompleta (o sin QR que emitir): UN mensaje con el resumen y lo que falta. Con un QR abierto de otro pedido, ese cobro se cierra y se avisa que quedó anulado.
+  return Object.assign(base, extra, {
+    tipo: 'carrito_pide', cierre: false, faltan: wlFaltaEntrega(entrega), resumen: vcResumen(wlConNombres(lineas, c.vendibles)),
+    cancelarCobro: cambioConQr, qrAnulado: cambioConQr, patch: cambioConQr ? { qrHastaMs: 0, qrCarrito: [] } : undefined,
+  });
+}
+
+// EL CASO BORDE DEL PEDIDO DEL CATÁLOGO WEB: con piezas que NO entraron (no se venden) devuelve el resumen del pedido «listo para confirmar», sin QR y sin promesas; la ficha queda con las líneas y la entrega
+// (`desdeCatalogo` true, `cierre` false). ES EL ÚNICO PUNTO que se conecta al botón común «Confirmar pedido» (el disparador del QR): ahí se llamará a `wlCerrar(c, Object.assign(base, { cierre: true }), abierto, cambioConQr)` y
+// se apagará `desdeCatalogo`. `base` trae lineas, entrega, cierre, cambio, aviso y cancelarCobro; `extra`, lo que no entró y la nota.
+function wlCarritoListoParaConfirmar(c, base, extra, cambioConQr) {
+  return Object.assign(base, extra || {}, {
+    tipo: 'carrito_listo', cierre: false, resumen: vcResumen(wlConNombres(base.lineas, c.vendibles)),
+    cancelarCobro: cambioConQr === true, qrAnulado: cambioConQr === true, patch: cambioConQr === true ? { qrHastaMs: 0, qrCarrito: [] } : undefined,
+  });
+}
+
 // La ubicación del pin de WhatsApp (sin modelo): se guarda en la entrega y, si el pedido ya estaba confirmado y completo, se cierra (normalmente, el QR).
 function wlResolverUbicacion(c) {
   const f = c.ficha;
@@ -707,6 +800,7 @@ function wlResolverUbicacion(c) {
 function wlResolverFactura(c) {
   const p = c.plan;
   const up = c.ficha.ultimoPedido || { codigo: '', ref: '', ms: 0, factura: 'pedida' };
+  // «Sin factura»: 0 avisos extra. La encargada ya recibió, en el aviso del pedido, «S/N - NIT 0» como valor por defecto (MD 27 y 85); si el cliente envía datos llegan en el segundo aviso.
   if (p.tipo === 'factura_sin') return { tipo: 'factura_sin', aviso: null, patch: { ultimoPedido: Object.assign({}, up, { factura: 'sin' }) } };
   if (p.tipo === 'factura_pedir') return { tipo: 'factura_pedir', aviso: null };
   const razon = cbLinea(p.razonSocial, 80);
@@ -722,6 +816,7 @@ function wlResolver(c) {
   if (p.tipo === 'comprobante') return wlResolverComprobante(c);
   if (p.tipo === 'modelo') return wlResolverModelo(c);
   if (p.tipo === 'ubicacion') return wlResolverUbicacion(c);
+  if (p.tipo === 'carrito') return wlResolverCarrito(c);
   if (p.tipo === 'factura_datos' || p.tipo === 'factura_sin' || p.tipo === 'factura_pedir') return wlResolverFactura(c);
   return Object.assign({ aviso: null }, p);
 }
