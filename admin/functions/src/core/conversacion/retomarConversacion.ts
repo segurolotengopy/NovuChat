@@ -355,7 +355,8 @@ export async function atenderRetomar(
     const cuenta = ((await db.doc(`tenants/${t}/cuenta/estado`).get()).data() ?? {}) as Record<string, unknown>;
     const limites = deps.limitesDeRetomar(cuenta['plan'], deps.tarifaDe(cuenta), deps.titularidadDe(encontrado.ruta));
     // Cifras ilegibles del plan: cerrado (ni un cupo inventado ni «sin tope»).
-    if (!numeroValido(limites.diasEntreRetomadas) || !numeroValido(limites.porDia) || !numeroValido(limites.porMes)) {
+    if (!numeroValido(limites.diasEntreRetomadas) || !numeroValido(limites.porDia) || !numeroValido(limites.porMes)
+      || (limites.porMinuto !== undefined && !numeroValido(limites.porMinuto))) {
       registrar(FUNCION, 'unavailable', { tenantId: t, uid, rol, motivo: 'limites' });
       throw errorDeTurno('noDisponible');
     }
