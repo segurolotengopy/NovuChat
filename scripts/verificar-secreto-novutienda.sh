@@ -3,7 +3,7 @@
 # (la que usa `confirmarPedidoExterno` para firmar el pedido de WhatsApp hacia NovuTienda).
 #
 #   ./scripts/verificar-secreto-novutienda.sh --tenant casa-bermejo --host novutienda-sitio-stg.web.app \
-#       [--huella 454f6d22] [--proyecto <id>]
+#       [--huella <8 hexadecimales>] [--proyecto <id>]
 #
 # Imprime SOLO «SÍ» o «NO» por punto, con la MISMA regla que `destinoDeNovuTienda` (confirmarExterno.ts):
 #   1. el JSON del secreto es válido y trae la clave del comercio;
@@ -26,15 +26,21 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || { echo "✗ $1 requiere un valor" >&2; exit 2; }
       case "$1" in --tenant) TENANT="$2" ;; --host) HOST="$2" ;; --huella) HUELLA="$2" ;; --proyecto) PROYECTO="$2" ;; esac
       shift 2 ;;
-    -h|--help)  sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "✗ Opción desconocida: $1" >&2; exit 2 ;;
   esac
 done
 [[ "$TENANT" =~ ^[a-z0-9][a-z0-9-]{2,59}$ ]] || { echo "✗ --tenant: id de comercio" >&2; exit 2; }
 [[ "$HOST" =~ ^[a-z0-9.-]{3,253}$ ]] || { echo "✗ --host: nombre de host" >&2; exit 2; }
 [[ -z "$HUELLA" || "$HUELLA" =~ ^[0-9a-f]{8}$ ]] || { echo "✗ --huella: 8 hexadecimales" >&2; exit 2; }
+[[ "$PROYECTO" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo "✗ --proyecto: id de proyecto inválido" >&2; exit 2; }
 
-export CLOUDSDK_CONFIG="${CLOUDSDK_CONFIG:-$HOME/.config/gcloud-novuchat-prod}"
+# gcloud escribe en TEXTO PLANO todo lo que imprime en `$CLOUDSDK_CONFIG/logs/` (revisión de seguridad, 23/11/2026): sin desactivar ese log el
+# valor del secreto quedaría en disco. Se limpian las variables CLOUDSDK_* heredadas (otra cuenta, otro log HTTP) y se desactiva el log en archivo.
+CONFIG_GCLOUD="${CLOUDSDK_CONFIG:-$HOME/.config/gcloud-novuchat-prod}"
+for v in "${!CLOUDSDK_@}"; do unset "$v"; done
+export CLOUDSDK_CONFIG="$CONFIG_GCLOUD"
+export CLOUDSDK_CORE_DISABLE_FILE_LOGGING=true
 # El stderr de gcloud se descarta: no debe nombrar el proyecto ni el secreto. Los estados de las dos etapas se leen aparte
 # para distinguir «gcloud no pudo leer» (3) de «el secreto no cumple» (1).
 set +e
@@ -42,7 +48,10 @@ gcloud secrets versions access latest --secret=NOVUTIENDA_CONFIRMAR --project "$
   | TENANT="$TENANT" HOST="$HOST" HUELLA="$HUELLA" python3 -I -c '
 import sys, os, json, hashlib
 from urllib.parse import urlparse
-raw = sys.stdin.read()
+try:
+    raw = sys.stdin.buffer.read().decode("utf-8", "replace")
+except Exception:
+    raw = ""
 if raw.strip() == "":
     print("✗ secreto vacío o ilegible (¿sin sesión o sin permiso de gcloud?)"); sys.exit(3)
 sn = lambda b: "SÍ" if b else "NO"
@@ -76,7 +85,7 @@ b = "bearer" not in t or (isinstance(t["bearer"], str) and len(t["bearer"].encod
 print("6. bearer ausente, o texto de 8 caracteres o más:", sn(b)); resultados.append(b)
 if os.environ["HUELLA"]:
     try:
-        x = l and hashlib.sha256(f.encode()).hexdigest()[:8] == os.environ["HUELLA"]
+        x = l and hashlib.sha256(f.encode("utf-8", "surrogatepass")).hexdigest()[:8] == os.environ["HUELLA"]
     except Exception:
         x = False
     print("7. huella sha256[:8] de la firma coincide con la de NovuTienda:", sn(x)); resultados.append(x)
