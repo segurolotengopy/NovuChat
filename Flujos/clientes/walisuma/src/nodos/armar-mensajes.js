@@ -108,6 +108,18 @@ if (puerta.ruta === 'sigue') {
       tipoDePlan = 'derivar';
       msgs = [conRecepcion(conSaludo(wlTextoDerivacion('sin_precio', false)))];
     }
+  } else if (tipoDePlan === 'imagen_piezas') {
+    // La imagen de una pieza o de un anuncio, cruzada POR CÓDIGO con el catálogo: sale el nombre y el precio del CATÁLOGO; nada de lo leído en la imagen llega al cliente.
+    const piezas = (Array.isArray(d.piezas) ? d.piezas : []).map((id) => c.vendibles.find((x) => x.id === id)).filter((v) => !!v);
+    if (piezas.length === 1) {
+      msgs = [texto(conSaludo('Sí, tenemos ' + piezas[0].nombre + ': ' + vcMonto(piezas[0].precioCentavos) + '.\n\n¿Cuántas unidades desea?'))];
+    } else if (piezas.length > 1) {
+      msgs = [texto(conSaludo(WL_TEXTO_IMAGEN_PIEZAS + '\n' + piezas.map((v) => '• ' + v.nombre + ': ' + vcMonto(v.precioCentavos)).join('\n') + '\n\n¿Cuál le interesa?'))];
+    } else {
+      tipoDePlan = 'derivar';
+      msgs = [conRecepcion(conSaludo(wlTextoDerivacion('sin_precio', false)))];
+    }
+    if (piezas.length) { nuevos.mostrados = piezas.map((v) => v.id).concat(fichaAntes.mostrados.filter((x) => !piezas.some((v) => v.id === x))).slice(0, 15); ev.mostrados = fichaAntes.mostrados; }
   } else if (tipoDePlan === 'anuncio_meta') {
     // El anuncio de Meta por su `source_id`: las piezas y sus precios salen del CATÁLOGO (nunca del modelo ni del anuncio).
     const piezas = (Array.isArray(d.piezas) ? d.piezas : []).map((id) => c.vendibles.find((x) => x.id === id)).filter((v) => !!v);
@@ -229,7 +241,7 @@ if (puerta.ruta === 'sigue') {
   } else if (tipoDePlan === 'derivar') {
     // Pasar con recepción: el aviso MÁS el botón. «Ya avisé» solo con un `wamid` real; un motivo sin aviso nunca lo dice.
     const cuerpo = d.motivo === 'no_cancelo' ? WL_INTROS.no_cancelo + ' Escríbale a nuestra encargada con el botón.'
-      : wlTextoDerivacion(d.motivo, salio);
+      : wlTextoDerivacion(d.motivo, salio, d.descripcion);
     msgs = [conRecepcion(conSaludo(cuerpo))];
     // La guarda de 30 minutos: las consultas con su marca; el aviso de un comprobante sin cotejar o en revisión (de tipo `pedido`) con la SUYA (`avisoComprobanteMs`).
     if (salio === true && d.aviso && d.aviso.tipo === 'consulta') { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
@@ -249,7 +261,7 @@ if (puerta.ruta === 'sigue') {
 {
   const enlaceCat = wlEnlaceCatalogo(c.panel);
   const enCurso = (Array.isArray(fichaAntes.carrito) && fichaAntes.carrito.length > 0) || fichaAntes.qrHastaMs > ahora;
-  const ocasion = saluda || tipoDePlan === 'anuncio' || tipoDePlan === 'anuncio_meta' || (tipoDePlan === 'modelo' && Array.isArray(nuevos.mostrados) && nuevos.mostrados.length > 0);
+  const ocasion = saluda || tipoDePlan === 'anuncio' || tipoDePlan === 'anuncio_meta' || tipoDePlan === 'imagen_piezas' || (tipoDePlan === 'modelo' && Array.isArray(nuevos.mostrados) && nuevos.mostrados.length > 0);
   if (enlaceCat !== '' && !enCurso && fichaAntes.catalogoOfrecido !== true && ocasion && msgs.length === 1 && wlConBotonCatalogo(msgs[0], enlaceCat)) nuevos.catalogoOfrecido = true;
 }
 

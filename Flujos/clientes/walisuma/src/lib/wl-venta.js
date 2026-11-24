@@ -522,6 +522,7 @@ const WL_MOTIVOS_AVISO = {
   sin_configuracion: 'el asistente no pudo leer el catálogo o la configuración',
   quiere_hablar: 'pidió hablar con una persona o hizo una consulta que el asistente no resuelve',
   sin_precio: 'preguntó por una pieza sin precio (a cotizar)',
+  imagen_sin_coincidencia: 'envió una imagen que no coincide con ninguna pieza del catálogo',
   corporativo: 'consulta de personalización, empaques corporativos o pedido por volumen',
   cambio: 'solicitud de cambio, devolución o reclamo (se le dijo el plazo de 10 días)',
   factura: 'pidió factura',
@@ -793,7 +794,7 @@ function wlResolverFactura(c) {
 // La decisión del turno. `c` viene de `wlContexto()` (+ `modeloResp` y `cancelo`, que completa cada nodo). Devuelve { tipo, ... } con `aviso` (o null) y, cuando cambia la ficha, `patch`.
 function wlResolver(c) {
   const p = c.plan;
-  if (p.tipo === 'derivar') return wlDerivar(c, p.motivo);
+  if (p.tipo === 'derivar') return Object.assign(wlDerivar(c, p.motivo), p.motivo === 'imagen_sin_coincidencia' ? { descripcion: typeof p.descripcion === 'string' ? p.descripcion : '' } : {});
   if (p.tipo === 'comprobante') return wlResolverComprobante(c);
   if (p.tipo === 'modelo') return wlResolverModelo(c);
   if (p.tipo === 'ubicacion') return wlResolverUbicacion(c);

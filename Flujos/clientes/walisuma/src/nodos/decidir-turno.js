@@ -11,6 +11,7 @@
 //   anuncio_meta   el cliente llega de un anuncio de Meta cuyo `source_id` está en el dato `anunciosMeta`: las piezas del anuncio con los precios del catálogo, o la bienvenida general (sin modelo);
 //   identidad      «¿eres un bot?»: el texto fijo (prohibición 4: nunca niega ser una IA);
 //   audio_fijo     una nota de voz demasiado larga o que no se entendió; archivo: un medio demasiado pesado o que no se abrió; imagen_otra: una foto o captura que no es un comprobante;
+//   imagen_piezas  una foto o un anuncio cuyas palabras coinciden con piezas del catálogo: las piezas con su precio, POR CÓDIGO (nunca el texto leído); sin coincidencia sale `derivar` (`imagen_sin_coincidencia`);
 //   anuncio        la imagen de un anuncio reconocido por su titular: el producto sale POR CÓDIGO (nunca el modelo), con el precio del catálogo;
 //   comprobante    la imagen de un comprobante con un cobro abierto: ya corrió «Cotejar en el servidor»; «Armar avisos» y «Armar mensajes» interpretan el resultado;
 //   modelo         la conversación libre: `llamarModelo` y el cuerpo de la llamada (solo con la puerta abierta).
@@ -79,6 +80,16 @@ if (esVisual) {
     if (vendible) return salir({ tipo: 'anuncio', producto: vendible.id, anuncio: idAnuncio });
     // Un anuncio sin producto vendible (sin precio, apagado o agotado): no se inventa ninguno; recepción.
     return salir({ tipo: 'derivar', motivo: 'sin_precio' });
+  }
+  // LEER LA IMAGEN POR CÓDIGO (MD puntos 38 y 39): la lectura del clasificador (la misma llamada de siempre) se cruza con el catálogo; el texto leído es un DATO NO CONFIABLE que solo se compara (`leer-imagen.js`).
+  //   hay coincidencia  → `imagen_piezas`: las piezas del CATÁLOGO con su precio (0 mensajes y 0 llamadas de modelo de más);
+  //   no la hay         → pasar con nuestra encargada (aviso + botón), con la descripción saneada si la hay.
+  // Un documento, o una lectura que falló o parece una instrucción, sigue con el texto fijo.
+  if (t.esDocumento !== true && configLista) {
+    const lectura = liLeer(cnPrimero('Describir imagen'));
+    const piezas = liCoincidencias(lectura, vendibles).map((x) => x.id);
+    if (piezas.length) return salir({ tipo: 'imagen_piezas', piezas: piezas });
+    if (lectura.ok) return salir({ tipo: 'derivar', motivo: 'imagen_sin_coincidencia', descripcion: lectura.descripcion });
   }
   return salir({ tipo: 'imagen_otra', documento: t.esDocumento === true });
 }

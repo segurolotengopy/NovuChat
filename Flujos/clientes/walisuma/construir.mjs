@@ -96,6 +96,8 @@ export const CONFIG = {
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
+    // Leer la imagen de una pieza o de un anuncio y cruzarla con el catálogo POR CÓDIGO (módulo común de Pedidos; `li*`): lo usa «Decidir turno».
+    'leer-imagen': ['../../src/modulos/pedidos/leer-imagen.js'],
     // Módulo común de Pedidos: lo que el flujo reporta con `qr_enviado` para que el servidor cree el pedido `wa_<referencia>` (solo ids, cantidades y entrega; nunca precios).
     'pedidos-qr': ['../../src/modulos/pedidos/qr-del-pedido.js'],
     // La plantilla del aviso fuera de la ventana («código para las dos», común con Casa Bermejo): `apPlantillaAviso`, `apParametrosConsulta`.
