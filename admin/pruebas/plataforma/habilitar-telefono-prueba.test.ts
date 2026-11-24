@@ -3,7 +3,7 @@
  * Lo que se niega: imprimir un teléfono o la tabla, tocar otra fila, romper la idempotencia, aceptar formas inválidas, escribir sobre una fila «pendiente».
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, statSync, chmodSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, chmodSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +14,7 @@ const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), '../../../scripts/h
 const RESETEAR = join(dirname(fileURLToPath(import.meta.url)), '../../../scripts/resetear-telefono.sh');
 const dirs: string[] = [];
 afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
-const BASE = ['# Tabla local de mentira', '', '| Marcador | Valor | Nota |', '|---|---|---|', '| `REEMPLAZAR_OTRA_COSA` | secreto-uno | x |', '| `REEMPLAZAR_TELEFONOS_DE_PRUEBA` | 59170000001 | general |', '| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_RROCA_RUBEN` | 59170000003 | rubén |', '', 'Texto final.'];
+const BASE = ['# Tabla local de mentira', '', '| Marcador | Valor | Nota |', '|---|---|---|', '| `REEMPLAZAR_OTRA_COSA` | secreto-uno | x |', '| `REEMPLAZAR_TELEFONOS_DE_PRUEBA` | 59100000001 | general |', '| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_RROCA_RUBEN` | 59100000003 | rubén |', '', 'Texto final.'];
 
 function armar(filas: string[] = BASE) {
   const dir = mkdtempSync(join(tmpdir(), 'novuchat-hab-')); dirs.push(dir);
@@ -22,8 +22,8 @@ function armar(filas: string[] = BASE) {
   writeFileSync(tabla, filas.join('\n') + '\n'); chmodSync(tabla, 0o600);
   return tabla;
 }
-const correr = (tabla: string, args: string[]) => spawnSync('bash', [SCRIPT, ...args], { encoding: 'utf8', env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: tabla }) });
-const TEL = '59170000007';
+const correr = (tabla: string, args: string[]) => spawnSync('bash', [SCRIPT, ...(args.includes('--simular') ? args.filter((a) => a !== '--simular') : [...args, '--aplicar'])], { encoding: 'utf8', env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: tabla }) });
+const TEL = '59100000007';
 
 describe('habilitar-telefono-prueba.sh', () => {
   it('agrega el teléfono en una fila NUEVA del comercio, deja lo demás igual y no imprime el número ni la tabla', () => {
@@ -32,7 +32,7 @@ describe('habilitar-telefono-prueba.sh', () => {
     const r = correr(t, ['--tenant', 'walisuma', '--tel', TEL]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stdout + r.stderr).not.toContain(TEL);
-    expect(r.stdout + r.stderr).not.toMatch(/secreto-uno|59170000001|59170000003/);
+    expect(r.stdout + r.stderr).not.toMatch(/secreto-uno|59100000001|59100000003/);
     const despues = readFileSync(t, 'utf8');
     expect(despues).toContain('| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_WALISUMA` | ' + TEL + ' |');
     expect(despues.replace(/\| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_WALISUMA`.*\n/, '')).toBe(antes);
@@ -54,14 +54,29 @@ describe('habilitar-telefono-prueba.sh', () => {
     const t = armar();
     expect(correr(t, ['--tenant', 'rroca-ruben', '--tel', TEL]).status).toBe(0);
     let x = readFileSync(t, 'utf8');
-    expect(x).toContain('| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_RROCA_RUBEN` | 59170000003,' + TEL + ' |');
-    expect(x).toContain('| `REEMPLAZAR_TELEFONOS_DE_PRUEBA` | 59170000001 | general |');
+    expect(x).toContain('| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_RROCA_RUBEN` | 59100000003,' + TEL + ' |');
+    expect(x).toContain('| `REEMPLAZAR_TELEFONOS_DE_PRUEBA` | 59100000001 | general |');
     const q = correr(t, ['--tenant', 'rroca-ruben', '--tel', TEL, '--quitar']);
     expect(q.status).toBe(0); expect(q.stdout + q.stderr).not.toContain(TEL);
     x = readFileSync(t, 'utf8');
-    expect(x).not.toContain(TEL); expect(x).toContain('59170000003');
+    expect(x).not.toContain(TEL); expect(x).toContain('59100000003');
     expect(correr(t, ['--tenant', 'rroca-ruben', '--tel', TEL, '--quitar']).stdout).toMatch(/no estaba/);
     expect(correr(t, ['--tenant', 'walisuma', '--tel', TEL, '--quitar']).stdout).toMatch(/nada que quitar/);
+  });
+  it('SIMULA por defecto: sin --aplicar no escribe nada (ni crea la fila) y no imprime el número; el comercio inexistente se rechaza con salida 1', () => {
+    const t = armar(); const antes = readFileSync(t, 'utf8');
+    const r = correr(t, ['--tenant', 'walisuma', '--tel', TEL, '--simular']);
+    expect(r.status, r.stderr).toBe(0); expect(r.stdout).toMatch(/SIMULACRO/); expect(r.stdout + r.stderr).not.toContain(TEL);
+    expect(readFileSync(t, 'utf8')).toBe(antes);
+    const q = correr(t, ['--tenant', 'walisuma', '--tel', TEL, '--quitar', '--simular']);
+    expect(q.status).toBe(0); expect(readFileSync(t, 'utf8')).toBe(antes);
+    const r2 = correr(t, ['--tenant', 'comercio-que-no-existe', '--tel', TEL]);
+    expect(r2.status).toBe(1); expect(r2.stderr).toMatch(/no existe/); expect(readFileSync(t, 'utf8')).toBe(antes);
+    expect(correr(t, ['--tenant', 'comercio-que-no-existe', '--tel', TEL, '--simular']).status).toBe(1);
+  });
+  it('no deja archivos de candado junto a la tabla', () => {
+    const t = armar(); correr(t, ['--tenant', 'walisuma', '--tel', TEL]);
+    expect(readdirSync(dirname(t)).sort()).toEqual(['tabla.md']);
   });
   it('NEGADO: forma inválida de comercio o teléfono, y sin argumentos', () => {
     const t = armar(); const antes = readFileSync(t, 'utf8');
@@ -71,7 +86,7 @@ describe('habilitar-telefono-prueba.sh', () => {
     expect(readFileSync(t, 'utf8')).toBe(antes);
   });
   it('NEGADO: una fila del comercio marcada «pendiente» no se toca; sin tabla o sin filas REEMPLAZAR_* no escribe', () => {
-    const t = armar([...BASE.slice(0, 6), '| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_WALISUMA` | 59170000009 (pendiente) | x |']);
+    const t = armar([...BASE.slice(0, 6), '| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_WALISUMA` | 59100000009 (pendiente) | x |']);
     const antes = readFileSync(t, 'utf8');
     const r = correr(t, ['--tenant', 'walisuma', '--tel', TEL]);
     expect(r.status).toBe(1); expect(r.stderr).toMatch(/pendiente/); expect(r.stderr).not.toContain(TEL);
@@ -82,7 +97,7 @@ describe('habilitar-telefono-prueba.sh', () => {
     expect(readFileSync(sin, 'utf8')).toBe('# nada\n| a | b |\n');
   });
   it('NEGADO: dos filas del mismo comercio (la lista las junta) no se tocan; con CRLF la fila nueva conserva los finales de línea', () => {
-    const doble = armar([...BASE.slice(0, 6), '| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_WALISUMA` | 59170000009 | a |', '| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_WALISUMA` | 59170000008 | b |']);
+    const doble = armar([...BASE.slice(0, 6), '| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_WALISUMA` | 59100000009 | a |', '| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_WALISUMA` | 59100000008 | b |']);
     const antes = readFileSync(doble, 'utf8');
     expect(correr(doble, ['--tenant', 'walisuma', '--tel', TEL, '--quitar']).status).toBe(1);
     expect(readFileSync(doble, 'utf8')).toBe(antes);
