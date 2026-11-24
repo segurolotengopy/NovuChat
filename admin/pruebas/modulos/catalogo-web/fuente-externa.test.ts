@@ -73,6 +73,26 @@ describe('el secreto: sin destino válido NO sale ninguna llamada (falla cerrado
     ['a una IP interna', mapa({ baseUrl: 'https://169.254.169.254', bearer: BEARER })],
     ['sin bearer', mapa({ baseUrl: BASE })],
     ['bearer corto', mapa({ baseUrl: BASE, bearer: 'corto' })],
+    ['con puerto distinto de 443', mapa({ baseUrl: 'https://tienda.ejemplo.test:8443', bearer: BEARER })],
+    ['a un nombre sin punto', mapa({ baseUrl: 'https://intranet', bearer: BEARER })],
+    ['a metadata', mapa({ baseUrl: 'https://metadata', bearer: BEARER })],
+    ['a metadata.google.internal', mapa({ baseUrl: 'https://metadata.google.internal', bearer: BEARER })],
+    ['a un subdominio de localhost', mapa({ baseUrl: 'https://api.localhost', bearer: BEARER })],
+    ['a 0.0.0.0', mapa({ baseUrl: 'https://0.0.0.0', bearer: BEARER })],
+    ['a 0.1.2.3 (0/8)', mapa({ baseUrl: 'https://0.1.2.3', bearer: BEARER })],
+    ['a 100.64/10', mapa({ baseUrl: 'https://100.100.1.1', bearer: BEARER })],
+    ['a 127/8', mapa({ baseUrl: 'https://127.1.2.3', bearer: BEARER })],
+    ['a 127.0.0.1 escrito como número', mapa({ baseUrl: 'https://2130706433', bearer: BEARER })],
+    ['a 169.254/16', mapa({ baseUrl: 'https://169.254.169.254', bearer: BEARER })],
+    ['a 10/8', mapa({ baseUrl: 'https://10.1.2.3', bearer: BEARER })],
+    ['a 172.16/12', mapa({ baseUrl: 'https://172.20.0.1', bearer: BEARER })],
+    ['a 192.168/16', mapa({ baseUrl: 'https://192.168.0.9', bearer: BEARER })],
+    ['a IPv6 ::1', mapa({ baseUrl: 'https://[::1]', bearer: BEARER })],
+    ['a IPv6 ULA (fd00::/8)', mapa({ baseUrl: 'https://[fd12:3456::1]', bearer: BEARER })],
+    ['a IPv6 ULA (fc00::/8)', mapa({ baseUrl: 'https://[fc00::1]', bearer: BEARER })],
+    ['a IPv6 link-local', mapa({ baseUrl: 'https://[fe80::1]', bearer: BEARER })],
+    ['a IPv4 mapeada en IPv6', mapa({ baseUrl: 'https://[::ffff:127.0.0.1]', bearer: BEARER })],
+    ['a IPv4 mapeada en IPv6 (nube)', mapa({ baseUrl: 'https://[::ffff:169.254.169.254]', bearer: BEARER })],
     ['clave de más (mal escrita)', mapa({ baseUrl: BASE, bearer: BEARER, Bearer: 'x' })],
     ['baseUrl que no es texto', mapa({ baseUrl: 5, bearer: BEARER })],
   ];
@@ -151,12 +171,76 @@ describe('caché de 60 s por comercio y mercado', () => {
     expect(ar.llamadas).toHaveLength(1);
   });
 
-  it('una falla NO se guarda: el siguiente intento vuelve a llamar', async () => {
+  it('una falla se recuerda 10 s (caché negativo) y pasado ese rato se vuelve a llamar', async () => {
     let n = 0;
-    const { d, llamadas } = entorno({ respuesta: () => (++n === 1 ? json({}, 503) : json(catalogoBo())) });
+    const reloj = { t: 7_000_000 };
+    const { d, llamadas } = entorno({ ahora: reloj, respuesta: () => (++n === 1 ? json({}, 503) : json(catalogoBo())) });
     expect((await F.leerCatalogoExterno(T, 'BO', d)).ok).toBe(false);
+    reloj.t += 9_000;
+    expect(await F.leerCatalogoExterno(T, 'BO', d)).toEqual({ ok: false, motivo: 'no_disponible' });
+    expect(llamadas).toHaveLength(1); // NO golpea otra vez una fuente caída
+    reloj.t += 2_000;
     expect((await F.leerCatalogoExterno(T, 'BO', d)).ok).toBe(true);
     expect(llamadas).toHaveLength(2);
+    expect(F.VIDA_DEL_CACHE_NEGATIVO_MS).toBeLessThanOrEqual(15_000);
+  });
+
+  it('las fallas de CONFIGURACIÓN no se recuerdan: arreglar el secreto surte efecto de inmediato', async () => {
+    let secreto = 'basura';
+    const { d, llamadas } = entorno({ secreto: () => secreto });
+    expect((await F.leerCatalogoExterno(T, 'BO', d)).ok).toBe(false);
+    secreto = mapa();
+    expect((await F.leerCatalogoExterno(T, 'BO', d)).ok).toBe(true);
+    expect(llamadas).toHaveLength(1);
+  });
+
+  it('NEGANDO: dos llamadas simultáneas de la misma clave comparten UNA sola llamada a la fuente', async () => {
+    let soltar: () => void = () => undefined;
+    const puerta = new Promise<void>((ok) => { soltar = ok; });
+    const { d, llamadas } = entorno({ respuesta: async () => { await puerta; return json(catalogoBo()); } });
+    const a = F.leerCatalogoExterno(T, 'BO', d);
+    const b = F.leerCatalogoExterno(T, 'BO', d);
+    const c = F.leerCatalogoExterno(T, 'AR', d); // otra clave: llamada propia
+    await new Promise((ok) => setTimeout(ok, 5));
+    soltar();
+    const [ra, rb] = await Promise.all([a, b, c]);
+    expect(llamadas.filter((l) => l.url.includes('mercado=BO'))).toHaveLength(1);
+    expect(ra).toBe(rb);
+  });
+
+  it('ETag: pasados los 60 s se pregunta con If-None-Match y un 304 renueva el caché SIN releer el cuerpo', async () => {
+    const reloj = { t: 9_000_000 };
+    let n = 0;
+    const { d, llamadas } = entorno({
+      ahora: reloj,
+      respuesta: () => (++n === 1
+        ? new Response(JSON.stringify(catalogoBo()), { status: 200, headers: { etag: '"abc123"' } })
+        : new Response(null, { status: 304 })),
+    });
+    const primera = await F.leerCatalogoExterno(T, 'BO', d);
+    expect((llamadas[0]!.init.headers as Record<string, string>)['If-None-Match']).toBeUndefined();
+    reloj.t += 61_000;
+    const segunda = await F.leerCatalogoExterno(T, 'BO', d);
+    expect(llamadas).toHaveLength(2);
+    expect((llamadas[1]!.init.headers as Record<string, string>)['If-None-Match']).toBe('"abc123"');
+    expect(segunda).toBe(primera);
+    reloj.t += 30_000; // renovado: dentro de la nueva ventana no llama
+    await F.leerCatalogoExterno(T, 'BO', d);
+    expect(llamadas).toHaveLength(2);
+  });
+
+  it('NEGANDO: un ETag con formato raro no se reenvía, y un 304 sin caché propio es falla de contrato', async () => {
+    const reloj = { t: 11_000_000 };
+    const { d, llamadas } = entorno({
+      ahora: reloj, respuesta: () => new Response(JSON.stringify(catalogoBo()), { status: 200, headers: { etag: 'sin-comillas<script>' } }),
+    });
+    await F.leerCatalogoExterno(T, 'BO', d);
+    reloj.t += 61_000;
+    await F.leerCatalogoExterno(T, 'BO', d);
+    expect((llamadas[1]!.init.headers as Record<string, string>)['If-None-Match']).toBeUndefined();
+    F.vaciarCacheDelCatalogoExterno();
+    const solo = entorno({ respuesta: () => new Response(null, { status: 304 }) });
+    expect(await F.leerCatalogoExterno(T, 'BO', solo.d)).toEqual({ ok: false, motivo: 'contrato' });
   });
 });
 
@@ -171,7 +255,7 @@ describe('cada ítem se valida; el que no cumple se descarta, no tumba el catál
 
   it('ids con mala forma, repetidos, sin nombre, sin precio válido o con otra moneda se descartan', async () => {
     const items = await leer([
-      item({ id: 'bueno' }), item({ id: '../x' }), item({ id: 'con espacio' }), item({ id: '' }), item({ id: 'a'.repeat(81) }),
+      item({ id: 'bueno' }), item({ id: '-polera' }), item({ id: '_polera' }), item({ id: '../x' }), item({ id: 'con espacio' }), item({ id: '' }), item({ id: 'a'.repeat(81) }),
       item({ id: 'bueno' }), item({ id: 'sin-nombre', nombre: '  ' }), item({ id: 'p0', precioCentavos: 0 }),
       item({ id: 'pneg', precioCentavos: -5 }), item({ id: 'pdec', precioCentavos: 10.5 }), item({ id: 'ptxt', precioCentavos: '100' }),
       item({ id: 'pgrande', precioCentavos: 1e12 }), item({ id: 'usd', moneda: 'USD' }), item({ id: 'ars-en-bo', moneda: 'ARS' }),
@@ -259,5 +343,63 @@ describe('el secreto no sale por ningún lado', () => {
     await F.leerCatalogoExterno(T, 'BO', d);
     expect(registros).toHaveLength(1);
     expect(registros[0]![1]).toEqual({ codigo: 'no_disponible', estado: 503 });
+  });
+});
+
+describe('cuerpo acotado: Content-Length y lectura en flujo', () => {
+  it('NEGANDO: un `Content-Length` mayor que 2 MB se rechaza sin leer el cuerpo', async () => {
+    const { d } = entorno({ respuesta: () => new Response(JSON.stringify(catalogoBo()), { status: 200, headers: { 'content-length': '3000000' } }) });
+    expect(await F.leerCatalogoExterno(T, 'BO', d)).toEqual({ ok: false, motivo: 'contrato' });
+  });
+  it('NEGANDO: un cuerpo que pasa de 2 MB sin declararlo se corta en el flujo (y no se lee entero)', async () => {
+    let enviados = 0;
+    const flujo = new ReadableStream<Uint8Array>({
+      pull(c) { enviados += 1; c.enqueue(new Uint8Array(500_000).fill(32)); if (enviados > 200) c.close(); },
+    });
+    const { d } = entorno({ respuesta: () => new Response(flujo, { status: 200 }) });
+    expect(await F.leerCatalogoExterno(T, 'BO', d)).toEqual({ ok: false, motivo: 'contrato' });
+    expect(enviados).toBeLessThan(20); // se cortó cerca del tope, no se leyeron los 100 MB
+  });
+});
+
+describe('ítems crudos y ninguno válido: es un error, nunca un catálogo vacío', () => {
+  it('precioCentavos como texto y moneda en minúsculas en TODOS → falla de contrato, registrando solo la cuenta', async () => {
+    const malos = [item({ id: 'a', precioCentavos: '100' }), item({ id: 'b', moneda: 'bob' }), item({ id: 'c', precioCentavos: '5' })];
+    const { d } = entorno({ respuesta: () => json(catalogoBo(malos)) });
+    expect(await F.leerCatalogoExterno(T, 'BO', d)).toEqual({ ok: false, motivo: 'contrato' });
+    expect(registros.some((r) => JSON.stringify(r[1]) === JSON.stringify({ codigo: 'contrato', estado: 200, descartados: 3 }))).toBe(true);
+  });
+  it('una fuente que de verdad no tiene ítems (lista vacía) sigue siendo un catálogo vacío legítimo', async () => {
+    const { d } = entorno({ respuesta: () => json(catalogoBo([])) });
+    expect(await F.leerCatalogoExterno(T, 'BO', d)).toEqual({ ok: true, moneda: 'BOB', items: [] });
+  });
+  it('con ítems buenos y malos publica los buenos y registra solo la cantidad de descartados', async () => {
+    const { d } = entorno({ respuesta: () => json(catalogoBo([item({ id: 'ok' }), item({ id: 'x', precioCentavos: '1' }), item({ id: 'y', moneda: 'usd' })])) });
+    const r = await F.leerCatalogoExterno(T, 'BO', d);
+    expect(r.ok && r.items.map((i) => i.id)).toEqual(['ok']);
+    expect(registros.map((x) => x[1])).toContainEqual({ codigo: 'items_descartados', descartados: 2 });
+  });
+});
+
+describe('areaClave y ordenArea (aditivos)', () => {
+  const leer = async (items: unknown[]) => {
+    const { d } = entorno({ respuesta: () => json(catalogoBo(items)) });
+    const r = await F.leerCatalogoExterno(T, 'BO', d);
+    if (!r.ok) throw new Error(r.motivo);
+    return r.items;
+  };
+  it('se leen si vienen y quedan en blanco o null si no', async () => {
+    const [con, sin] = await leer([item({ id: 'a', areaClave: 'ropa-hombre', ordenArea: 3 }), item({ id: 'b' })]);
+    expect(con).toMatchObject({ areaClave: 'ropa-hombre', ordenArea: 3 });
+    expect(sin).toMatchObject({ areaClave: '', ordenArea: null });
+  });
+  it('NEGANDO: ordenArea fuera de 0 a 39, no entero o de otro tipo es null; areaClave se recorta a 40', async () => {
+    const its = await leer([
+      item({ id: 'a', ordenArea: 40 }), item({ id: 'b', ordenArea: -1 }), item({ id: 'c', ordenArea: 1.5 }),
+      item({ id: 'd', ordenArea: '2' }), item({ id: 'e', ordenArea: 0 }), item({ id: 'f', ordenArea: 39 }),
+      item({ id: 'g', areaClave: 'k'.repeat(90) }),
+    ]);
+    expect(its.map((i) => i.ordenArea)).toEqual([null, null, null, null, 0, 39, null]);
+    expect(its[6]!.areaClave).toHaveLength(40);
   });
 });

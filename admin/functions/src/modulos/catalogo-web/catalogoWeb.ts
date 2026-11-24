@@ -55,6 +55,7 @@ import { REGION } from '../../core/region.js';
 import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
 import { descontarPedido, fichaDescuentaStock, hayParaVender } from '../inventario/inventario.js';
 import { sePuedeComprar, idDeItemValido, lineaLimpia } from '../pedidos/comprable.js';
+import { configExternaDe, type ConfigCatalogoExterno } from '../pedidos/pedidoDelQr.js';
 import { urlImagenValida } from './urlImagen.js';
 import {
   SECRETO_CATALOGO, hayParaVenderExterno, leerCatalogoExterno, mercadoDeTelefono,
@@ -277,20 +278,13 @@ export const fichaVende = (ficha: FichaConCapacidades | null | undefined): boole
   tieneModulo(ficha, 'catalogo-web');
 
 /**
- * FUENTE EXTERNA (B3): ¿este comercio vende desde un catálogo que vive en otra plataforma?
- * Lo decide el DATO `tenants/{t}/config/pedidos.catalogoExterno.activo === true` (lo escribe el servidor; las reglas
- * no abren `config/pedidos` al cliente). Sin él, todo el módulo se comporta como siempre. `monedas`, si el dato la
- * trae como lista, acota qué moneda puede vender el comercio (BOB, ARS).
+ * FUENTE EXTERNA (B3): ¿este comercio vende desde un catálogo que vive en otra plataforma? Lo decide EL MISMO dato
+ * y la MISMA función que usa Pedidos (`configExternaDe`): `tenants/{t}/config/pedidos.catalogoExterno` con
+ * `activo === true` Y una lista `monedas` con al menos una moneda válida (BOB, ARS). `{activo:true}` sin lista, o con
+ * lista vacía, NO es externo en ninguno de los dos lados. Sin el dato, todo el módulo se comporta como siempre.
  */
-export interface ConfigFuenteExterna { monedas: readonly string[] | null }
-export function fuenteExternaDe(doc: unknown): ConfigFuenteExterna | null {
-  const ce = typeof doc === 'object' && doc !== null ? (doc as Record<string, unknown>)['catalogoExterno'] : undefined;
-  if (typeof ce !== 'object' || ce === null || (ce as Record<string, unknown>)['activo'] !== true) return null;
-  const m = (ce as Record<string, unknown>)['monedas'];
-  return { monedas: Array.isArray(m) ? m.filter((x): x is string => typeof x === 'string') : null };
-}
-const leerFuenteExterna = async (tenantId: string): Promise<ConfigFuenteExterna | null> =>
-  fuenteExternaDe((await db().doc(`tenants/${tenantId}/config/pedidos`).get()).data());
+const leerFuenteExterna = async (tenantId: string): Promise<ConfigCatalogoExterno | null> =>
+  configExternaDe((await db().doc(`tenants/${tenantId}/config/pedidos`).get()).data());
 
 /** El error que la página y el checkout dan cuando la fuente externa no responde (nunca un catálogo vacío). */
 const SIN_CATALOGO = { error: 'catalogo no disponible' } as const;
@@ -651,15 +645,15 @@ export const enlaceCatalogo = onRequest(
       respuesta.status(500).json({ error: 'sitio no configurado' }); return;
     }
 
-    // Fuente externa (B3): sin ítems en Firestore que contar y sin llamar a la fuente.
-    const externoEnlace = await leerFuenteExterna(ruta.tenantId);
-    const [config, catalogo] = await Promise.all([
+    // Fuente externa (B3): la lectura de `config/pedidos` va en paralelo con las demás. Con fuente externa no hay
+    // ítems de Firestore que contar y no se llama a la fuente.
+    const [config, catalogoFs, pedidosDoc] = await Promise.all([
       db().doc(`tenants/${ruta.tenantId}/config/negocio`).get(),
-      externoEnlace
-        ? Promise.resolve(null)
-        : db().collection(`tenants/${ruta.tenantId}/catalogo`)
-          .where('activo', '==', true).limit(501).get(),
+      db().collection(`tenants/${ruta.tenantId}/catalogo`)
+        .where('activo', '==', true).limit(501).get(),
+      db().doc(`tenants/${ruta.tenantId}/config/pedidos`).get(),
     ]);
+    const catalogo = configExternaDe(pedidosDoc.data()) !== null ? null : catalogoFs;
 
     // EL COMERCIO TIENE QUE HABERLO ENCENDIDO. Publicar el catálogo de alguien
     // que no lo pidió es publicar sus precios en una dirección adivinable por
@@ -711,6 +705,8 @@ export const enlaceCatalogo = onRequest(
 interface ItemPublico {
   id: string; nombre: string; descripcion: string; area: string;
   precio: number | null; moneda: string; imagenUrl: string;
+  /** Solo con fuente externa: orden de la categoría (0 a 39) o `null`. */
+  ordenArea?: number | null;
 }
 
 /** Lo que se publica de cada ítem: nada de sellos de auditoría ni de duración. */
@@ -810,10 +806,7 @@ export const catalogoPublico = onRequest(
 
     // FUENTE EXTERNA (B3): el catálogo se lee en vivo de otra plataforma. Sin el dato, este `if` no se cumple y
     // todo lo de abajo es lo de siempre.
-    const externo = await leerFuenteExterna(ficha.tenantId);
-    if (externo) { await responderCatalogoExterno(ficha, externo, respuesta); return; }
-
-    const [config, venta, marca, catalogo, fotos, whatsapp] = await Promise.all([
+    const [config, venta, marca, catalogo, fotos, whatsapp, pedidosDoc] = await Promise.all([
       db().doc(`tenants/${ficha.tenantId}/config/negocio`).get(),
       db().doc(`tenants/${ficha.tenantId}/config/venta`).get(),
       db().doc(`tenants/${ficha.tenantId}/config/marca`).get(),
@@ -835,7 +828,14 @@ export const catalogoPublico = onRequest(
       // todas para después tirarlas.
       db().collection(`tenants/${ficha.tenantId}/fotosCatalogo`).select().get(),
       numeroPublicoDeLaLinea(ficha),
+      // En paralelo con las demás (B3): decide si el catálogo es el de Firestore o el de la fuente externa.
+      db().doc(`tenants/${ficha.tenantId}/config/pedidos`).get(),
     ]);
+    const externo = configExternaDe(pedidosDoc.data());
+    if (externo) {
+      await responderCatalogoExterno(ficha, externo, { config, venta, marca, whatsapp }, respuesta);
+      return;
+    }
     const conFoto = new Set(fotos.docs.map((d) => d.id));
 
     // UN CATÁLOGO APAGADO NO ES UN ENLACE VENCIDO, y decirlo así cuesta caro.
@@ -925,13 +925,24 @@ function itemPublicoExterno(it: ItemExterno): ItemPublico & { tieneFoto: boolean
   return {
     id: it.id, nombre: it.nombre, descripcion: it.descripcion, area: it.area,
     precio: Number((it.precioCentavos / 100).toFixed(2)), moneda: it.moneda,
-    imagenUrl: it.imagenUrl, tieneFoto: false,
+    imagenUrl: it.imagenUrl, tieneFoto: false, ordenArea: it.ordenArea,
   };
 }
 
 /** ¿El comercio acepta esta moneda? Sin lista en el dato, se acepta la del mercado. */
-const monedaAceptada = (cfg: ConfigFuenteExterna, moneda: string): boolean =>
-  cfg.monedas === null || cfg.monedas.length === 0 || cfg.monedas.includes(moneda);
+const monedaAceptada = (cfg: ConfigCatalogoExterno, moneda: string): boolean =>
+  (cfg.monedas as readonly string[]).includes(moneda);
+
+/** Las categorías por `ordenArea` ascendente (`null` al final), luego por nombre; y dentro, por nombre. */
+export function ordenarItemsExternos<T extends { area: string; nombre: string; ordenArea?: number | null }>(items: T[]): T[] {
+  const orden = new Map<string, number>();
+  for (const i of items) {
+    const o = typeof i.ordenArea === 'number' ? i.ordenArea : 99;
+    orden.set(i.area, Math.min(orden.get(i.area) ?? 99, o));
+  }
+  return [...items].sort((a, b) => (orden.get(a.area)! - orden.get(b.area)!)
+    || a.area.localeCompare(b.area, 'es') || a.nombre.localeCompare(b.nombre, 'es'));
+}
 
 /**
  * La respuesta de `catalogoPublico` con fuente externa. Misma forma que la de Firestore, con la moneda del mercado.
@@ -939,15 +950,14 @@ const monedaAceptada = (cfg: ConfigFuenteExterna, moneda: string): boolean =>
  * dan 409 `catalogo no disponible`; nunca una vitrina vacía presentada como real.
  */
 async function responderCatalogoExterno(
-  ficha: Ficha, cfg: ConfigFuenteExterna,
+  ficha: Ficha, cfg: ConfigCatalogoExterno,
+  leidos: {
+    config: { get(k: string): unknown }; venta: { get(k: string): unknown };
+    marca: { get(k: string): unknown }; whatsapp: string;
+  },
   respuesta: { status(c: number): { json(b: unknown): unknown }; set(k: string, v: string): unknown },
 ): Promise<void> {
-  const [config, venta, marca, whatsapp] = await Promise.all([
-    db().doc(`tenants/${ficha.tenantId}/config/negocio`).get(),
-    db().doc(`tenants/${ficha.tenantId}/config/venta`).get(),
-    db().doc(`tenants/${ficha.tenantId}/config/marca`).get(),
-    numeroPublicoDeLaLinea(ficha),
-  ]);
+  const { config, venta, marca, whatsapp } = leidos;
   if (config.get('catalogoWebActivo') !== true) {
     respuesta.status(409).json({ error: 'catalogo web apagado' }); return;
   }
@@ -968,15 +978,16 @@ async function responderCatalogoExterno(
       paleta: paletaValida(config.get('paleta')),
       ...(whatsapp !== '' ? { whatsapp } : {}),
     },
+    // Con fuente externa NO hay costo de envío ni pedido mínimo: son números sin moneda (los de `config/venta` son
+    // de bolivianos) y el envío no se cobra por NovuChat (K1).
     entrega: {
-      costoDelivery: typeof venta.get('costoDelivery') === 'number' ? venta.get('costoDelivery') : null,
-      pedidoMinimo: typeof venta.get('pedidoMinimo') === 'number' ? venta.get('pedidoMinimo') : null,
+      costoDelivery: null,
+      pedidoMinimo: null,
       aceptaDelivery: venta.get('aceptaDelivery') !== false,
       aceptaRetiroEnLocal: venta.get('aceptaRetiroEnLocal') !== false,
     },
     ...(venta.get('detallePorLinea') === true ? { detallePorLinea: true } : {}),
-    items: fuente.items.filter((i) => hayParaVenderExterno(i)).map(itemPublicoExterno)
-      .sort((a, b) => a.area.localeCompare(b.area, 'es') || a.nombre.localeCompare(b.nombre, 'es')),
+    items: ordenarItemsExternos(fuente.items.filter((i) => hayParaVenderExterno(i)).map(itemPublicoExterno)),
     caducaEn: ficha.caducaEn.toDate().toISOString(),
   });
 }
@@ -1056,17 +1067,29 @@ export function detalleDeLinea(v: unknown): string {
   return lineaLimpia(typeof v === 'string' ? v.replace(/[[\]{}«»]/g, ' ') : '', MAX_DETALLE);
 }
 
+/** Une las especificaciones DISTINTAS de un mismo ítem con « / », saneadas y recortadas a 60. */
+export function unirDetalles(detalles: readonly string[]): string {
+  return detalleDeLinea([...new Set(detalles.filter((d) => d !== ''))].join(' / '));
+}
+
 /**
- * Lee del cuerpo SOLO identificadores, cantidades y —si el comercio lo pide— la especificación. Ningún precio.
- * `porDetalle`: la clave de unicidad es id + detalle (la misma pieza con dos especificaciones son dos líneas);
- * sin él es solo el id, como siempre.
+ * Lee del cuerpo SOLO identificadores y cantidades. Ningún precio.
+ *
+ * Camino de Firestore (`externo: false`): como siempre, un renglón por id (el primero gana) y un `detalle` recibido
+ * se IGNORA.
+ *
+ * Fuente externa (`externo: true`): también un renglón por id —`confirmarPedidoExterno` rechaza ids repetidos—,
+ * pero las líneas repetidas se SUMAN (tope 99) y, si el comercio pide especificación por línea (`conDetalle`), las
+ * distintas se unen con « / » (≤ 60, saneadas). El stock se valida después contra esa cantidad ACUMULADA. La clave
+ * id + detalle vive solo en el navegador; el servidor consolida.
  */
 function lineasPedidas(
-  cuerpo: Record<string, unknown>, o: { conDetalle: boolean; porDetalle: boolean } = { conDetalle: false, porDetalle: false },
+  cuerpo: Record<string, unknown>, o: { externo: boolean; conDetalle: boolean } = { externo: false, conDetalle: false },
 ): LineaPedida[] {
   const crudas = Array.isArray(cuerpo['items']) ? cuerpo['items'] : [];
   const vistas = new Set<string>();
   const lineas: LineaPedida[] = [];
+  const acumulado = new Map<string, { cantidad: number; detalles: string[] }>();
   for (const cruda of crudas.slice(0, MAX_LINEAS)) {
     if (typeof cruda !== 'object' || cruda === null) continue;
     const c = cruda as Record<string, unknown>;
@@ -1075,13 +1098,22 @@ function lineasPedidas(
     // pueda traer barras ni puntos no es cosmética: es lo que impide que un
     // `id` fabricado apunte a otro documento.
     if (!idDeItemValido(id)) continue;
-    const detalle = o.conDetalle ? detalleDeLinea(c['detalle']) : '';
-    const clave = o.porDetalle ? `${id}\u0000${detalle}` : id;
-    if (vistas.has(clave)) continue;
+    if (!o.externo && vistas.has(id)) continue;
     const cantidad = Math.trunc(Number(c['cantidad']));
     if (!Number.isFinite(cantidad) || cantidad < 1 || cantidad > MAX_UNIDADES) continue;
-    vistas.add(clave);
-    lineas.push({ id, cantidad, ...(detalle !== '' ? { detalle } : {}) });
+    if (!o.externo) {
+      vistas.add(id);
+      lineas.push({ id, cantidad });
+      continue;
+    }
+    const previo = acumulado.get(id) ?? { cantidad: 0, detalles: [] };
+    previo.cantidad = Math.min(MAX_UNIDADES, previo.cantidad + cantidad);
+    if (o.conDetalle) previo.detalles.push(detalleDeLinea(c['detalle']));
+    acumulado.set(id, previo);
+  }
+  for (const [id, a] of acumulado) {
+    const detalle = unirDetalles(a.detalles);
+    lineas.push({ id, cantidad: a.cantidad, ...(detalle !== '' ? { detalle } : {}) });
   }
   return lineas;
 }
@@ -1112,8 +1144,9 @@ export const checkoutCatalogo = onRequest(
       leerFuenteExterna(ficha.tenantId),
       db().doc(`tenants/${ficha.tenantId}/config/venta`).get(),
     ]);
-    const conDetalle = venta.get('detallePorLinea') === true;
-    const lineas = lineasPedidas(cuerpo, { conDetalle, porDetalle: externo !== null && conDetalle });
+    // La especificación por línea es de la fuente externa; en el camino de Firestore un `detalle` se ignora.
+    const conDetalle = externo !== null && venta.get('detallePorLinea') === true;
+    const lineas = lineasPedidas(cuerpo, { externo: externo !== null, conDetalle });
     if (lineas.length === 0) { respuesta.status(400).json({ error: 'carrito vacio' }); return; }
 
     const entrega = cuerpo['entrega'] === 'envio' ? 'envio' : 'retiro';
@@ -1256,7 +1289,8 @@ export const checkoutCatalogo = onRequest(
     }
 
     // Costo de envío: también del servidor, nunca del navegador (`venta` ya se leyó arriba).
-    const costoEnvio = entrega === 'envio' && typeof venta.get('costoDelivery') === 'number'
+    // Con fuente externa NO hay costo de envío (K1): `costoDelivery` es de bolivianos y no se cobra por NovuChat.
+    const costoEnvio = !externo && entrega === 'envio' && typeof venta.get('costoDelivery') === 'number'
       ? (venta.get('costoDelivery') as number) : 0;
     total = Number((total + costoEnvio).toFixed(2));
 

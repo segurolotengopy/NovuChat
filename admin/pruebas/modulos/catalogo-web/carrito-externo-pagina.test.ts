@@ -11,11 +11,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { precioTexto } from '../../../web/src/modulos/catalogo-web/publico/saneo.ts';
 import {
-  cambiarDetalle, cantidadDeItem, claveDeLinea, detalleDeClave, detalleLimpio, idDeClave, podarCarrito, sumarItem,
+  cambiarDetalle, cantidadDeItem, ordenarAreas, claveDeLinea, detalleDeClave, detalleLimpio, idDeClave, podarCarrito, sumarItem,
 } from '../../../web/src/modulos/catalogo-web/publico/SitioCatalogo.tsx';
 import type { ItemPublico } from '../../../web/src/modulos/catalogo-web/publico/tipos.ts';
 import { ejecutar, GLOBALES_FUERA_DEL_SANDBOX } from '../../lib/flujo.ts';
-import { detalleDeLinea } from '../../../functions/src/modulos/catalogo-web/catalogoWeb.ts';
+import { detalleDeLinea, ordenarItemsExternos, unirDetalles } from '../../../functions/src/modulos/catalogo-web/catalogoWeb.ts';
 
 describe('precioTexto', () => {
   it('ARS: miles con punto, decimales con coma', () => {
@@ -154,5 +154,33 @@ describe('validar-carrito.js (lo que los flujos incluyen)', () => {
       expect(new RegExp(`(?<![.\\w$'"\`])${g}\\s*[(.[]`).test(js), g).toBe(false);
     }
     expect(() => new Function('$input', CODIGO)).not.toThrow();
+  });
+});
+
+describe('el orden de las categorías (ordenArea)', () => {
+  const it_ = (area: string, ordenArea?: number | null): ItemPublico =>
+    ({ id: area, nombre: area, descripcion: '', area, precio: 1, moneda: 'BOB', imagenUrl: '', ...(ordenArea !== undefined ? { ordenArea } : {}) });
+  it('si vienen, mandan: ascendente, las sin orden (null) al final y luego alfabético', () => {
+    expect(ordenarAreas([it_('Ropa', 1), it_('Zapatos', 0), it_('Servicios', null), it_('Accesorios', null)]))
+      .toEqual(['Zapatos', 'Ropa', 'Accesorios', 'Servicios']);
+  });
+  it('NEGANDO: si ninguno lo trae, es el orden de siempre (alfabético simple)', () => {
+    expect(ordenarAreas([it_('Zapatos'), it_('Ropa'), it_('Accesorios'), it_('')])).toEqual(['Accesorios', 'Ropa', 'Zapatos']);
+  });
+  it('en el servidor: misma regla, y dentro de cada categoría por nombre', () => {
+    const r = ordenarItemsExternos([
+      { area: 'B', nombre: 'z', ordenArea: 2 }, { area: 'A', nombre: 'y', ordenArea: null }, { area: 'B', nombre: 'a', ordenArea: 2 },
+      { area: 'C', nombre: 'k', ordenArea: 0 },
+    ]);
+    expect(r.map((x) => `${x.area}${x.nombre}`)).toEqual(['Ck', 'Ba', 'Bz', 'Ay']);
+  });
+});
+
+describe('unirDetalles', () => {
+  it('une los distintos con « / », sin repetidos ni vacíos, saneado y ≤ 60', () => {
+    expect(unirDetalles(['negro', '', 'rojo', 'negro'])).toBe('negro / rojo');
+    expect(unirDetalles([])).toBe('');
+    expect(unirDetalles(['a'.repeat(50), 'b'.repeat(50)])).toHaveLength(60);
+    expect(unirDetalles(['<x> https://m.test [y]'])).not.toMatch(/[<>[\]]|https?:/);
   });
 });

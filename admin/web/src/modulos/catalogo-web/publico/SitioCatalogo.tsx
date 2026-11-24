@@ -265,7 +265,7 @@ function Catalogo({ items, ficha, carrito, moneda, conFotos, alSumar, alAbrir }:
 }) {
   const [busqueda, setBusqueda] = useState('');
   const areas = useMemo(
-    () => [...new Set(items.map((i) => i.area).filter((a) => a !== ''))].sort(),
+    () => ordenarAreas(items),
     [items]);
   // Si el enlace trae `?area=<nombre>`, el filtro arranca en esa área (solo si existe en el negocio); si no, «Todo», como siempre.
   const [area, setArea] = useState(() => (typeof window === 'undefined' ? '' : areaInicial(window.location.search, areas.length > 1 ? areas : [])));
@@ -745,6 +745,22 @@ function Aviso({ texto }: { texto: string }) {
 // ---------------------------------------------------------------------------
 // Estado del carrito
 // ---------------------------------------------------------------------------
+
+/**
+ * Las categorías en el orden en que se muestran. Si los ítems traen `ordenArea` (fuente externa) mandan: la
+ * categoría va según el menor `ordenArea` de sus ítems, ascendente, las sin orden al final y luego alfabético.
+ * Si ninguno lo trae, es el orden alfabético de siempre.
+ */
+export function ordenarAreas(items: ItemPublico[]): string[] {
+  const nombres = [...new Set(items.map((i) => i.area).filter((a) => a !== ''))];
+  if (!items.some((i) => typeof i.ordenArea === 'number')) return nombres.sort();
+  const orden = new Map<string, number>();
+  for (const i of items) {
+    if (i.area === '') continue;
+    orden.set(i.area, Math.min(orden.get(i.area) ?? 99, typeof i.ordenArea === 'number' ? i.ordenArea : 99));
+  }
+  return nombres.sort((a, b) => (orden.get(a)! - orden.get(b)!) || a.localeCompare(b, 'es'));
+}
 
 function sumar(carrito: Carrito, id: string, n: number): Carrito {
   const cantidad = Math.min(99, Math.max(0, (carrito[id] ?? 0) + n));

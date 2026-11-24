@@ -249,6 +249,11 @@
     "region": [
       "us-east1"
     ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "NOVUTIENDA_CATALOGO"
+      }
+    ],
     "labels": {},
     "httpsTrigger": {}
   },
@@ -331,6 +336,9 @@
       },
       {
         "key": "INGESTA_CLIENTE20"
+      },
+      {
+        "key": "NOVUTIENDA_CATALOGO"
       }
     ],
     "labels": {},

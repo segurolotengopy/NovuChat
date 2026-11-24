@@ -1,5 +1,6 @@
 import { getFirestore } from 'firebase-admin/firestore';
-import { enlaceParaElFlujo, fuenteExternaDe, sePuedeComprar, type EnlaceEmitido } from './catalogoWeb.js';
+import { configExternaDe } from '../pedidos/pedidoDelQr.js';
+import { enlaceParaElFlujo, sePuedeComprar, type EnlaceEmitido } from './catalogoWeb.js';
 
 /**
  * EL ENLACE DE LA CARTA EN EL TURNO (F3b-2e). Era un trozo de `configuracionFlujo`
@@ -34,7 +35,7 @@ export async function enlaceDeLaCartaDelTurno(o: {
     // contar, y el enlace NO llama a la fuente (este es el camino caliente de cada turno): una lectura de un
     // documento, y el enlace sale. Sin el dato, todo como siempre.
     const externo = o.catalogoWebActivo
-      && fuenteExternaDe((await getFirestore().doc(`tenants/${o.ruta.tenantId}/config/pedidos`).get()).data()) !== null;
+      && configExternaDe((await getFirestore().doc(`tenants/${o.ruta.tenantId}/config/pedidos`).get()).data()) !== null;
     const emitido = await enlaceParaElFlujo({
       ruta: o.ruta,
       telefono: o.telefono,

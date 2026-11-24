@@ -33,6 +33,8 @@ export interface ItemPublico {
    * podría cachear por separado.
    */
   tieneFoto?: boolean;
+  /** Solo con fuente externa: orden de la categoría (0 a 39); `null` o ausente = al final. */
+  ordenArea?: number | null;
 }
 
 export interface NegocioPublico {

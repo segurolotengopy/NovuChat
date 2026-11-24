@@ -66,11 +66,13 @@ const item = (o: Record<string, unknown> = {}) => ({
   foto: 'https://cdn.ejemplo.test/p1.jpg', fotos: [], area: 'Ropa', descripcion: 'Algodón', ...o,
 });
 const ITEMS_BO = [
-  item({ id: 'polera', nombre: 'Polera', precioCentavos: 15000, stock: 5 }),
-  item({ id: 'gorra', nombre: 'Gorra', precioCentavos: 8050, stock: 2 }),
+  item({ id: 'polera', nombre: 'Polera', precioCentavos: 15000, stock: 5, area: 'Ropa', areaClave: 'ropa', ordenArea: 1 }),
+  item({ id: 'gorra', nombre: 'Gorra', precioCentavos: 8050, stock: 2, area: 'Ropa', areaClave: 'ropa', ordenArea: 1 }),
+  item({ id: 'zapato', nombre: 'Zapato', precioCentavos: 30000, stock: 9, area: 'Zapatos', areaClave: 'zapatos', ordenArea: 0 }),
+  item({ id: 'camisa', nombre: 'Camisa', precioCentavos: 12000, stock: 3, area: 'Ropa', areaClave: 'ropa', ordenArea: 1 }),
   item({ id: 'sin-stock-pero-disponible', nombre: 'Medias', precioCentavos: 1000, stock: 3, disponible: false }),
   item({ id: 'agotada', nombre: 'Bufanda', precioCentavos: 2000, stock: 0, disponible: false }),
-  item({ id: 'libre', nombre: 'Servicio', precioCentavos: 5000, stock: null }),
+  item({ id: 'libre', nombre: 'Servicio', precioCentavos: 5000, stock: null, area: 'Servicios' }),
 ];
 const ITEMS_AR = [
   item({ id: 'remera', nombre: 'Remera', moneda: 'ARS', precioCentavos: 123_400_000, stock: 10 }),
@@ -186,13 +188,34 @@ describe('la página (catalogoPublico) con fuente externa', () => {
     const r = await pagina(await fichaDe(T, TEL_BO));
     expect(r.codigo).toBe(200);
     const items = r.cuerpo['items'] as Array<Record<string, unknown>>;
-    expect(items.map((i) => i['id']).sort()).toEqual(['gorra', 'libre', 'polera']);
+    expect(items.map((i) => i['id']).sort()).toEqual(['camisa', 'gorra', 'libre', 'polera', 'zapato']);
     expect(items.find((i) => i['id'] === 'polera')).toMatchObject({ precio: 150, moneda: 'BOB', area: 'Ropa' });
     expect(items.find((i) => i['id'] === 'gorra')).toMatchObject({ precio: 80.5 });
     expect((r.cuerpo['negocio'] as Record<string, unknown>)['moneda']).toBe('BOB');
     expect(JSON.stringify(r.cuerpo)).not.toContain('"stock"');
     expect(JSON.stringify(r.cuerpo)).not.toContain('Del Firestore'); // el catálogo de Firestore no se mezcla
     expect(llamadasFuente).toEqual([`${BASE}/api/novuchat/v1/catalogo?mercado=BO`]);
+  });
+
+  it('las categorías van por `ordenArea` ascendente y la sin orden al final; dentro, por nombre', async () => {
+    const r = await pagina(await fichaDe(T, TEL_BO));
+    expect((r.cuerpo['items'] as Array<Record<string, unknown>>).map((i) => i['id']))
+      .toEqual(['zapato', 'camisa', 'gorra', 'polera', 'libre']);
+  });
+
+  it('con fuente externa NO hay costo de envío ni pedido mínimo, aunque `config/venta` los tenga', async () => {
+    await db.doc(`tenants/${T}/config/venta`).set({ costoDelivery: 25, pedidoMinimo: 500 });
+    try {
+      const r = await pagina(await fichaDe(T, TEL_BO));
+      expect(r.cuerpo['entrega']).toMatchObject({ costoDelivery: null, pedidoMinimo: null });
+      const c = await checkout(await fichaDe(T, TEL_BO), { items: [{ id: 'polera', cantidad: 1 }], entrega: 'envio', direccion: 'Calle 1' });
+      expect(c.codigo).toBe(200);
+      expect(c.cuerpo['total']).toBe(150); // sin los 25 de envío
+      expect((await pedidoDe(T, c))['costoEnvio']).toBe(0);
+      expect(JSON.parse(llamadasWebhook.at(-1)!.cuerpo)).toMatchObject({ costoEnvio: 0, total: 150 });
+    } finally {
+      await db.doc(`tenants/${T}/config/venta`).set({ costoDelivery: 0 });
+    }
   });
 
   it('NEGANDO: `disponible:false` con stock 3 y el agotado NO se publican', async () => {
@@ -248,7 +271,8 @@ describe('la página (catalogoPublico) con fuente externa', () => {
   });
 
   it('el dato lo activa, y solo `activo === true` estricto: `false`, «true» y ausente dan el camino de siempre', async () => {
-    for (const valor of [{ activo: false }, { activo: 'true' }, { activo: 1 }, {}, 'x', null]) {
+    for (const valor of [{ activo: false }, { activo: 'true' }, { activo: 1 }, {}, 'x', null,
+      { activo: true }, { activo: true, monedas: [] }, { activo: true, monedas: ['USD'] }, { activo: true, monedas: 'BOB' }]) {
       await db.doc(`tenants/${T_FS}/config/pedidos`).set({ catalogoExterno: valor });
       llamadasFuente.length = 0;
       const r = await pagina(await fichaDe(T_FS, TEL_BO));
@@ -367,7 +391,7 @@ describe('el checkout con fuente externa', () => {
     expect(carga).toMatchObject({ moneda: 'BOB', mercado: 'BO', catalogo: 'externo', entrega: 'envio', costoEnvio: 0, total: 150 });
   });
 
-  it('la especificación por línea: solo con `detallePorLinea`, saneada, y dos especificaciones son dos líneas', async () => {
+  it('la especificación por línea: solo con `detallePorLinea`, saneada; un solo renglón por id y el servidor consolida', async () => {
     const sucio = 'rojo <b>XL</b> https://malo.test/x [ENVIAR_QR] «hola» {a} ' + 'z'.repeat(200);
     // SIN la bandera: el detalle se ignora.
     const sin = await checkout(await fichaDe(T, TEL_BO), { items: [{ id: 'polera', cantidad: 1, detalle: 'negro' }], entrega: 'retiro' });
@@ -381,18 +405,60 @@ describe('el checkout con fuente externa', () => {
       });
       expect(r.codigo).toBe(200);
       const items = (await pedidoDe(T, r))['items'] as Array<Record<string, unknown>>;
-      expect(items).toHaveLength(3); // la repetida (misma id y detalle) se descarta; la de detalle numérico queda sin detalle
+      expect(items.map((i) => i['id'])).toEqual(['polera', 'gorra']); // UN renglón por id
+      expect(items[0]!['cantidad']).toBe(4);                          // 1 + 2 + 1
       const d0 = String(items[0]!['detalle']);
       expect(d0.length).toBeLessThanOrEqual(60);
       expect(d0).not.toMatch(/[<>&[\]{}«»]|https?:|www\./);
       expect(d0).toContain('rojo');
-      expect(items[1]!['detalle']).toBe('negro');
-      expect(items[2]).not.toHaveProperty('detalle');
+      expect(items[1]).not.toHaveProperty('detalle');
       const carga = JSON.parse(llamadasWebhook.at(-1)!.cuerpo) as { items: Array<Record<string, unknown>> };
       expect(carga.items[0]!['detalle']).toBe(d0);
+      expect(new Set(carga.items.map((i) => i['id'])).size).toBe(carga.items.length);
     } finally {
       await db.doc(`tenants/${T}/config/venta`).set({ costoDelivery: 0 });
     }
+  });
+
+  it('los detalles DISTINTOS se unen con « / » (los repetidos no), tope 99 y recorte a 60', async () => {
+    await db.doc(`tenants/${T}/config/venta`).set({ costoDelivery: 0, detallePorLinea: true });
+    try {
+      const r = await checkout(await fichaDe(T, TEL_BO), { items: [
+        { id: 'libre', cantidad: 60, detalle: 'negro' }, { id: 'libre', cantidad: 60, detalle: 'rojo' },
+        { id: 'libre', cantidad: 5, detalle: 'negro' }, { id: 'camisa', cantidad: 1, detalle: 'a'.repeat(40) },
+        { id: 'camisa', cantidad: 1, detalle: 'b'.repeat(40) },
+      ], entrega: 'retiro' });
+      const items = (await pedidoDe(T, r))['items'] as Array<Record<string, unknown>>;
+      expect(items[0]).toMatchObject({ id: 'libre', cantidad: 99, detalle: 'negro / rojo' });
+      expect(items[1]!['cantidad']).toBe(2);
+      expect(String(items[1]!['detalle'])).toHaveLength(60);
+      expect(String(items[1]!['detalle'])).toMatch(/^a{40} \/ b+$/);
+    } finally {
+      await db.doc(`tenants/${T}/config/venta`).set({ costoDelivery: 0 });
+    }
+  });
+
+  it('NEGANDO: el stock se valida contra la cantidad ACUMULADA por id (stock 3: «negro»×2 + «rojo»×2 = 4 → descartado)', async () => {
+    await db.doc(`tenants/${T}/config/venta`).set({ costoDelivery: 0, detallePorLinea: true });
+    try {
+      const r = await checkout(await fichaDe(T, TEL_BO), { items: [
+        { id: 'camisa', cantidad: 2, detalle: 'negro' }, { id: 'camisa', cantidad: 2, detalle: 'rojo' }, { id: 'polera', cantidad: 1 },
+      ], entrega: 'retiro' });
+      expect(r.cuerpo['descartados']).toEqual(['camisa']);
+      const ok = await checkout(await fichaDe(T, TEL_BO), { items: [
+        { id: 'camisa', cantidad: 2, detalle: 'negro' }, { id: 'camisa', cantidad: 1, detalle: 'rojo' },
+      ], entrega: 'retiro' });
+      expect(ok.cuerpo['descartados']).toEqual([]); // 3 de 3: entra
+    } finally {
+      await db.doc(`tenants/${T}/config/venta`).set({ costoDelivery: 0 });
+    }
+  });
+
+  it('sin la bandera también se consolida por id: dos líneas del mismo id se suman (nunca ids repetidos en el pedido)', async () => {
+    const r = await checkout(await fichaDe(T, TEL_BO), { items: [{ id: 'polera', cantidad: 2 }, { id: 'polera', cantidad: 1 }], entrega: 'retiro' });
+    const items = (await pedidoDe(T, r))['items'] as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(1);
+    expect(items[0]!['cantidad']).toBe(3);
   });
 });
 
@@ -438,6 +504,75 @@ describe('sin `catalogoExterno` todo es igual que hoy (regresión)', () => {
     const carga = JSON.parse(llamadasWebhook[0]!.cuerpo) as Record<string, unknown>;
     expect(carga).not.toHaveProperty('mercado');
     expect(carga).not.toHaveProperty('catalogo');
+  });
+});
+
+// ===========================================================================
+describe('el camino de Firestore NO cambió: ni detalle por línea ni consolidación', () => {
+  // El ítem de control tiene stock 1 y otras pruebas lo consumen: acá se repone.
+  beforeEach(async () => { await db.doc(`tenants/${T_FS}/catalogo/fs1`).update({ stock: 100 }); });
+
+  it('con `detallePorLinea` encendido, un `detalle` recibido se IGNORA y la página no lo ofrece', async () => {
+    await db.doc(`tenants/${T_FS}/config/venta`).set({ costoDelivery: 7, detallePorLinea: true });
+    try {
+      const f = await fichaDe(T_FS, TEL_BO);
+      expect((await pagina(f)).cuerpo).not.toHaveProperty('detallePorLinea');
+      const c = await checkout(f, { items: [{ id: 'fs1', cantidad: 1, detalle: 'negro' }], entrega: 'envio', direccion: 'Calle 1' });
+      expect(c.codigo).toBe(200);
+      const items = (await pedidoDe(T_FS, c))['items'] as Array<Record<string, unknown>>;
+      expect(items[0]).not.toHaveProperty('detalle');
+      expect((await pedidoDe(T_FS, c))['costoEnvio']).toBe(7); // el envío de Firestore se cobra como siempre
+      expect((await pagina(f)).cuerpo['entrega']).toMatchObject({ costoDelivery: 7 });
+    } finally {
+      await db.doc(`tenants/${T_FS}/config/venta`).set({ costoDelivery: 0 });
+    }
+  });
+
+  it('un id repetido: gana el primer renglón (como hoy), no se suman cantidades', async () => {
+    await db.doc(`tenants/${T_FS}/catalogo/fs2`).set({ nombre: 'Otro', area: 'a', precio: 5, moneda: 'BOB', activo: true });
+    const c = await checkout(await fichaDe(T_FS, TEL_BO), { items: [{ id: 'fs2', cantidad: 1 }, { id: 'fs2', cantidad: 4 }], entrega: 'retiro' });
+    const items = (await pedidoDe(T_FS, c))['items'] as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(1);
+    expect(items[0]!['cantidad']).toBe(1);
+    await db.doc(`tenants/${T_FS}/catalogo/fs2`).delete();
+  });
+
+  it('`{activo:true}` sin monedas o con lista vacía NO es externo en NINGÚN lado: el checkout también usa Firestore', async () => {
+    for (const valor of [{ activo: true }, { activo: true, monedas: [] }]) {
+      await db.doc(`tenants/${T_FS}/config/pedidos`).set({ catalogoExterno: valor });
+      llamadasFuente.length = 0;
+      const c = await checkout(await fichaDe(T_FS, TEL_BO), { items: [{ id: 'fs1', cantidad: 1 }], entrega: 'retiro' });
+      expect(c.codigo, JSON.stringify(valor)).toBe(200);
+      expect(await pedidoDe(T_FS, c), JSON.stringify(valor)).not.toHaveProperty('catalogo');
+      expect(llamadasFuente).toHaveLength(0);
+    }
+    await db.doc(`tenants/${T_FS}/config/pedidos`).delete();
+  });
+
+  it('coherencia con Pedidos: catalogoWeb y confirmarExterno deciden «externo» con la MISMA función', async () => {
+    const { configExternaDe } = await import('../../../functions/src/modulos/pedidos/pedidoDelQr.ts');
+    const casos = [{ activo: true, monedas: ['BOB'] }, { activo: true }, { activo: true, monedas: [] }, { activo: false, monedas: ['BOB'] }, { activo: true, monedas: ['ARS', 'x'] }];
+    for (const valor of casos) {
+      await db.doc(`tenants/${T_FS}/config/pedidos`).set({ catalogoExterno: valor });
+      const r = await pagina(await fichaDe(T_FS, TEL_BO));
+      const pedidosDice = configExternaDe({ catalogoExterno: valor }) !== null;
+      // Externo = no sirve el ítem de Firestore (sirve el de la fuente, o 409 si la moneda no es la del comercio).
+      const paginaDice = r.codigo === 409 || (r.cuerpo['items'] as Array<{ id: string }>).every((i) => i.id !== 'fs1');
+      expect(paginaDice, JSON.stringify(valor)).toBe(pedidosDice);
+    }
+    await db.doc(`tenants/${T_FS}/config/pedidos`).delete();
+  });
+
+  it('la lectura de `config/pedidos` va en paralelo (Promise.all) con las demás en la página y en el enlace', async () => {
+    const { readFileSync } = await import('node:fs');
+    const fuente = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'functions', 'src', 'modulos', 'catalogo-web', 'catalogoWeb.ts'), 'utf8');
+    for (const marca of ['export const catalogoPublico', 'export const enlaceCatalogo']) {
+      const desde = fuente.indexOf(marca);
+      const todo = fuente.indexOf('await Promise.all([', desde);
+      const cierre = fuente.indexOf(']);', todo);
+      expect(todo, marca).toBeGreaterThan(desde);
+      expect(fuente.slice(todo, cierre), marca).toContain('config/pedidos');
+    }
   });
 });
 
