@@ -17,6 +17,7 @@ export const TABLA_DE_PLANES: TablaDePlanes = {
   imagen_otra: { clase: 'resuelve' },       // foto o captura que no es un comprobante: pide que cuente por escrito
   anuncio: { clase: 'resuelve' },           // el producto del anuncio con su precio del catálogo
   modelo: { clase: 'resuelve' },            // la conversación: la redacción del modelo, revisada, sin botón
+  imagen_piezas: { clase: 'resuelve' },     // una foto o un anuncio que coincide con piezas del catálogo: sus nombres y precios, por código (23/11/2026)
   anuncio_meta: { clase: 'resuelve' },      // el anuncio de Meta por su source_id: las piezas con su precio del catálogo y el enlace del catálogo (fase 1)
   ubicacion: { clase: 'resuelve' },         // el pin de ubicación guardado: un agradecimiento fijo (fase 1)
   pedir_ubicacion: { clase: 'resuelve' },   // un envío sin GPS: el resumen y el botón «Enviar ubicación» (no es derivación) (fase 1)
