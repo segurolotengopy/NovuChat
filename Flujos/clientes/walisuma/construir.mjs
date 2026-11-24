@@ -171,6 +171,9 @@ const FORMAS_CONFIG = {
   avisoRespaldoEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL|REEMPLAZAR_[A-Z0-9_]+)$/,
   // El horario de las tiendas (texto para el cliente) y su forma para el reloj de «fuera de horario» (días 0=domingo … 6=sábado; HH:MM de La Paz).
   horarioTiendas: /^[\p{L}\p{N} :,.-]{1,80}$/u,
+  // La ubicación de cada tienda: coordenadas «lat,lng» (el código arma el enlace de Google Maps; el repositorio no guarda enlaces).
+  tiendaLaPazCoordenadas: /^-?\d{1,3}\.\d{1,8},-?\d{1,3}\.\d{1,8}$/,
+  tiendaSantaCruzCoordenadas: /^-?\d{1,3}\.\d{1,8},-?\d{1,3}\.\d{1,8}$/,
   horarioDias: /^[0-6](,[0-6]){0,6}$/,
   horarioApertura: /^([01]\d|2[0-3]):[0-5]\d$/,
   horarioCierre: /^([01]\d|2[0-3]):[0-5]\d$/,

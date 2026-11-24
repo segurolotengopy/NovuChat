@@ -221,13 +221,43 @@ function wlDireccionTienda(base, ciudad) {
   const t = typeof d === 'string' ? cbLinea(d, 120) : '';
   return /^REEMPLAZAR_/.test(t) ? '' : t;
 }
+// EL ENLACE DE MAPA DE CADA TIENDA (Andres, 24/11/2026). El dato del comercio son las COORDENADAS (`tiendaLaPazCoordenadas`, `tiendaSantaCruzCoordenadas`, «lat,lng»): el repositorio no guarda enlaces y el CÓDIGO arma el enlace limpio de Google Maps.
+// Cualquier otra forma (o un marcador) es ''. JAMÁS se da el de una tienda por el de otra: cada ciudad lee SOLO su clave.
+const WL_COORDENADAS = /^(-?\d{1,3}\.\d{1,8}),(-?\d{1,3}\.\d{1,8})$/;
+function wlEnlaceTienda(base, ciudad) {
+  const b = cbEsObjeto(base) ? base : {};
+  const n = wlNorm(ciudad);
+  const d = /\bsanta cruz\b/.test(n) ? b.tiendaSantaCruzCoordenadas : (/\bla paz\b/.test(n) ? b.tiendaLaPazCoordenadas : '');
+  const m = typeof d === 'string' ? WL_COORDENADAS.exec(d) : null;
+  return m && Math.abs(Number(m[1])) <= 90 && Math.abs(Number(m[2])) <= 180 ? 'https://www.google.com/maps/search/?api=1&query=' + m[1] + '%2C' + m[2] : '';
+}
+// ¿El cliente pregunta dónde queda la tienda, cómo llegar o pide la ubicación?
+function wlPreguntaUbicacion(n) {
+  return /\b(donde (queda|quedan|esta|estan|se encuentra|se encuentran|las tienen|los tienen)|ubicacion|ubicados|direccion de la tienda|como (llego|llegar)|mapa)\b/.test(String(n || ''));
+}
+// La respuesta a «¿dónde queda?»: la ciudad sale de lo que el cliente DICE; si no la dice, de la entrega ya anotada; si sigue sin saberse (o nombra las dos), van las DOS, cada una con su nombre.
+function wlTextoUbicacion(base, textoCliente, ciudadEntrega) {
+  const n = wlNorm(textoCliente);
+  const sc = /\bsanta cruz\b/.test(n), lp = /\bla paz\b/.test(n);
+  let ciudades = ['La Paz', 'Santa Cruz'];
+  if (sc && !lp) ciudades = ['Santa Cruz'];
+  else if (lp && !sc) ciudades = ['La Paz'];
+  else if (!lp && !sc) {
+    const e = wlNorm(ciudadEntrega);
+    if (/\bsanta cruz\b/.test(e)) ciudades = ['Santa Cruz'];
+    else if (/\bla paz\b/.test(e)) ciudades = ['La Paz'];
+  }
+  const filas = ciudades.map((c) => ({ c: c, dir: wlDireccionTienda(base, c), url: wlEnlaceTienda(base, c) })).filter((x) => x.url !== '');
+  if (!filas.length) return '';
+  return filas.map((x) => 'Tienda de ' + x.c + (x.dir ? ' (' + x.dir + ')' : '') + ': ' + x.url).join('\n');
+}
 // La frase del costo del envío que va en el resumen del pedido: gratis, a cotizar (con la política de que el QR es solo por los productos) o, en el recojo, la dirección de la tienda.
-function wlFraseEnvio(envio, umbralBs, direccionTienda, sinQr, horario) {
+function wlFraseEnvio(envio, umbralBs, direccionTienda, sinQr, horario, enlace) {
   if (envio === 'gratis') return 'El envío no tiene costo.';
   // Sin QR de cobro no se habla del QR: solo del envío.
   // El envío bajo el umbral lo cotiza y lo cobra nuestra encargada (aclaración de Andres, 18/11/2026), nunca «directo a quien lo lleva».
   if (envio === 'cotizar') return sinQr === true ? 'El costo del envío se lo indicará y cobrará nuestra encargada.' : 'El QR es solo por las piezas; el costo del envío se lo indicará y cobrará nuestra encargada.';
-  return direccionTienda !== '' ? 'Recoge su pedido en: ' + direccionTienda + (horario ? ', ' + horario : '') + '.' : '';
+  return direccionTienda !== '' ? 'Recoge su pedido en: ' + direccionTienda + (horario ? ', ' + horario : '') + '.' + (enlace ? ' Ubicación: ' + enlace : '') : '';
 }
 // La política fija de envíos (se agrega cuando el cliente pregunta por el envío; el modelo no la dice).
 function wlTextoPoliticaEnvio(umbralBs) {
@@ -724,7 +754,7 @@ function wlResolverModelo(c) {
   if (sinRedaccion) texto = WL_TEXTO_MODELO_SIN_REDACCION;
   // Si el cliente pregunta por el envío, la política la dice el CÓDIGO (el modelo no habla del costo).
   const politica = wlPreguntaEnvio(wlNorm(p.textoCliente));
-  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, resumen: cambio && lineas.length ? vcResumen(lineas) : '', politicaEnvio: politica ? wlTextoPoliticaEnvio(wlUmbralBs(c.base)) : '', notaFactura: p.notaFactura === 'pedir' || p.notaFactura === 'al_confirmar' ? p.notaFactura : '' });
+  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, resumen: cambio && lineas.length ? vcResumen(lineas) : '', politicaEnvio: politica ? wlTextoPoliticaEnvio(wlUmbralBs(c.base)) : '', ubicacionTiendas: wlPreguntaUbicacion(wlNorm(p.textoCliente)) ? wlTextoUbicacion(c.base, p.textoCliente, f.entrega.ciudad) : '', notaFactura: p.notaFactura === 'pedir' || p.notaFactura === 'al_confirmar' ? p.notaFactura : '' });
 }
 
 // EL PEDIDO QUE EL CLIENTE CONFIRMÓ EN EL CATÁLOGO WEB (`plan.tipo === 'carrito'`, que decide «Decidir turno» solo si corrió el Webhook «Carrito del catálogo»). El servidor ya guardó el pedido y recalculó

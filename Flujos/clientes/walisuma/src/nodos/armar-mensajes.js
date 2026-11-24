@@ -182,7 +182,7 @@ if (puerta.ruta === 'sigue') {
       const payload = Object.assign(cmBase('interactive'), { interactive: { type: 'location_request_message', body: { text: cmRecorte(cuerpo, 1024) }, action: { name: 'send_location' } } });
       msgs = [cmMensaje('cliente', payload, cuerpo, cuerpo, { tipoReporte: 'interactive' })];
     } else {
-      msgs = [texto(conSaludo(d.texto + (d.notaFactura === 'al_confirmar' ? '\n\n' + WL_TEXTO_FACTURA_AL_CONFIRMAR : (d.notaFactura === 'pedir' ? '\n\n' + WL_TEXTO_PIDE_FACTURA : '')) + (d.politicaEnvio ? '\n\n' + d.politicaEnvio : '') + (d.resumen ? '\n\n' + d.resumen : '') + anulado))];
+      msgs = [texto(conSaludo(d.texto + (d.notaFactura === 'al_confirmar' ? '\n\n' + WL_TEXTO_FACTURA_AL_CONFIRMAR : (d.notaFactura === 'pedir' ? '\n\n' + WL_TEXTO_PIDE_FACTURA : '')) + (d.politicaEnvio ? '\n\n' + d.politicaEnvio : '') + (d.ubicacionTiendas ? '\n\n' + d.ubicacionTiendas : '') + (d.resumen ? '\n\n' + d.resumen : '') + anulado))];
     }
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
     nuevos.entrega = d.entrega;
@@ -201,7 +201,7 @@ if (puerta.ruta === 'sigue') {
       msgs = [conRecepcion(conSaludo(WL_INTROS.monto_invalido + ' Escríbale a nuestra encargada con el botón.'))];
     } else {
       // El QR cobra SOLO los productos. Envío gratis desde el umbral (dato); bajo el umbral se cotiza por fuera: el aviso a recepción (si salió) MÁS el botón; recojo: sin costo de envío.
-      const frase = wlFraseEnvio(d.envio, d.umbralBs, d.envio === 'recojo' ? wlDireccionTienda(base, d.entrega.ciudad) : '', false, wlHorarioTiendas(base));
+      const frase = wlFraseEnvio(d.envio, d.umbralBs, d.envio === 'recojo' ? wlDireccionTienda(base, d.entrega.ciudad) : '', false, wlHorarioTiendas(base), d.envio === 'recojo' ? wlEnlaceTienda(base, d.entrega.ciudad) : '');
       const aCotizar = d.envio === 'cotizar';
       // Un pedido que cambió con un QR abierto no avisa a recepción (el aviso se arma antes de saber si el cobro anterior se cerró): el texto manda al botón.
       const pieEnvio = !aCotizar ? '' : '\n\n' + (d.cambioDePedido ? 'El costo del envío de este pedido se lo indicará nuestra encargada: escríbale con el botón.' : wlTextoDerivacion('envio_a_cotizar', salio));
@@ -238,7 +238,7 @@ if (puerta.ruta === 'sigue') {
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega;
   } else if (tipoDePlan === 'pedido_sin_cobro') {
     const lineas = wlConNombres(d.lineas, c.vendibles);
-    const fraseSc = wlFraseEnvio(d.envio, d.umbralBs, d.envio === 'recojo' ? wlDireccionTienda(base, d.entrega.ciudad) : '', true, wlHorarioTiendas(base));
+    const fraseSc = wlFraseEnvio(d.envio, d.umbralBs, d.envio === 'recojo' ? wlDireccionTienda(base, d.entrega.ciudad) : '', true, wlHorarioTiendas(base), d.envio === 'recojo' ? wlEnlaceTienda(base, d.entrega.ciudad) : '');
     msgs = [conRecepcion(conSaludo('Anotamos su pedido:\n\n' + vcResumen(lineas) + (fraseSc ? '\n\n' + fraseSc : '') + '\n\n' + wlTextoDerivacion('pedido_sin_cobro', salio)))];
     Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
   } else if (tipoDePlan === 'comprobante') {
