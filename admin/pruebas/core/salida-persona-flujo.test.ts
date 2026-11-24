@@ -976,6 +976,21 @@ describe('Salida de persona: plantillas (Retomar, C5/C6)', () => {
     expect(s.docs[0]!.estado).toBe('aceptado');
   });
 
+  it('un nombre de 58 caracteres con 2 emojis (60 reales, 62 UTF-16) pasa, como en el servidor', () => {
+    const nombre = 'a'.repeat(58) + '🌮🌯';
+    expect(nombre.length).toBe(62);
+    const s = servidor('graph', [pl(26, { ...BUENA, parametros: [nombre] })]);
+    const r = ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.EMO') });
+    expect(r.llamadas).toHaveLength(1);
+    expect(s.docs[0]!.estado).toBe('aceptado');
+  });
+
+  it('NIEGA: 59 caracteres y 2 emojis (61 reales) no se envia', () => {
+    const s = servidor('graph', [pl(27, { ...BUENA, parametros: ['a'.repeat(59) + '🌮🌯'] })]);
+    expect(ejecutarFlujo({ servidor: s, enviar: sinEnviar }).llamadas).toHaveLength(0);
+    expect(s.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-PLANTILLA-FORMA' });
+  });
+
   it('rele sin configurar: no envia; rechazado reintentable (como el texto)', () => {
     const s = servidor('rele', [pl(7)]);
     ejecutarFlujo({ servidor: s, enviar: sinEnviar, config: { ...CONFIG, releBaseUrl: 'REEMPLAZAR_RELE' } });
