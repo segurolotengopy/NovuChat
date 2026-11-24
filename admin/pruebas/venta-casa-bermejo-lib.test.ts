@@ -543,6 +543,26 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       expect(b('bmFijarPieza')('sí, confirmo', [], [{ id: 'aire-18', cantidad: 1 }], aires.vendibles).lineas).toHaveLength(1);
     });
   });
+  describe('el pedido del carrito no se toma por envío y los datos de un mensaje no se pierden (reclamo de Andres, 24/11/2026)', () => {
+    const modos = ['recojo en tienda', 'envío'];
+    const sitio = 'Hola, quiero comprar estos productos: 1 x A/C IKA 18 BTU FRIO CALOR (cód. a-c-ika-18-btu-frio-calor): Bs 4.465 c/u, subtotal Bs 4.465 Total referencial: Bs 9.870 El precio final y el envío se confirman por WhatsApp';
+    it('la leyenda «el envío se confirma» no elige el modo, ni siquiera si el modelo lo devolvió', () => {
+      expect(b('bmCompletarEntrega')({}, {}, sitio, modos).entrega.modo).toBeUndefined();
+      expect(b('bmCompletarEntrega')({ modo: 'envío' }, {}, sitio, modos).entrega.modo).toBeUndefined();
+      expect(b('bmEntregaFalta')({}, 'BO')).toEqual(['modo de entrega']);
+    });
+    it('«Silvana Sasaki, 3456291, recojo en tienda» guarda el retiro y el nombre en un solo turno; «Ya te dije Silvana Sasaki» también', () => {
+      const r = b('bmCompletarEntrega')({}, {}, 'Silvana Sasaki, 3456291, recojo en tienda', modos);
+      expect(r.entrega.modo).toBe('recojo en tienda');
+      expect(r.entrega.nombre).toBe('Silvana Sasaki');
+      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Ya te dije Silvana Sasaki', modos).entrega.nombre).toBe('Silvana Sasaki');
+    });
+    it('lo que el cliente dice ahora corrige un modo anterior; una pregunta no cambia nada', () => {
+      expect(b('bmCompletarEntrega')({}, { modo: 'envío' }, 'mejor recojo en tienda', modos).entrega.modo).toBe('recojo en tienda');
+      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'mejor envíenlo a Cochabamba', modos).entrega.modo).toBe('envío');
+      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, '¿hacen envío?', modos).entrega.modo).toBeUndefined();
+    });
+  });
   describe('el código reconoce el modo y el nombre aunque el modelo no los repita (humo de Silvana, paso 3)', () => {
     const modos = ['recojo en tienda', 'envío'];
     it('«Silvana Prueba» tras elegir el retiro se guarda como el nombre; frases que son órdenes, cifras o una sola palabra NO', () => {

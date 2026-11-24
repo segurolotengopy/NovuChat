@@ -107,7 +107,7 @@ function bmEsRetiro(modo) { return /\b(retiro|retirar|recojo|recoger|recoge|tien
 // Lo que el CÓDIGO reconoce de la respuesta del cliente, para no depender de que el modelo lo repita en su JSON (humo de Silvana: «Silvana Prueba» no se guardaba y el pedido no avanzaba):
 // el modo («lo recojo en tienda», «envíenlo a…») y, ya elegido el modo, el nombre de quien retira o recibe (2 a 5 palabras de letras, sin cifras ni órdenes).
 function bmNombreDeRespuesta(texto) {
-  let t = String(texto || '').replace(/\s+/g, ' ').trim().replace(/^(mi nombre es|me llamo|soy|a nombre de|el nombre es)\s+/i, '');
+  let t = String(texto || '').replace(/\s+/g, ' ').trim().replace(/^(ya te lo dije|ya te dije|ya dije|ya te lo di|mi nombre es|me llamo|soy|a nombre de|el nombre es)\s+/i, '');
   if (t === '' || t.length > 60 || /[^\p{L} .'-]/u.test(t)) return '';
   const palabras = t.split(' ');
   if (palabras.length < 2 || palabras.length > 5) return '';
@@ -120,13 +120,24 @@ function bmCompletarEntrega(nueva, antes, texto, modos) {
   const a = bmEntregaDeFicha(antes);
   const lista = modos.length ? modos : BM_MODOS_DEFECTO;
   const norm = bmNorm(texto);
+  // El mensaje del SITIO trae la leyenda «El precio final y el envío se confirman por WhatsApp»: «envío» ahí NO es una elección del cliente (reclamo de Andres, 24/11/2026: el pedido del carrito se tomaba como envío y nunca ofrecía el retiro en tienda).
+  const esSitio = /el precio final y el envio se confirman|total referencial/.test(norm);
+  if (esSitio) delete n.modo;
   const modoNuevo = (typeof n.modo === 'string' && n.modo.trim() !== '') ? n.modo : '';
   let modo = a.modo !== '' ? a.modo : modoNuevo;
-  if (modo === '') { if (bmEsRetiro(norm)) modo = lista.find((m) => bmEsRetiro(m)) || ''; else if (bmEsEnvio(norm)) modo = lista.find((m) => bmEsEnvio(m)) || ''; }
-  if (modo !== '' && a.modo === '' && modoNuevo === '') n.modo = modo;
+  // Lo que el cliente DICE este turno manda sobre lo anterior («recojo en tienda» tras un envío supuesto); una pregunta («¿envío o retiro?») no elige nada.
+  const dicho = /\?/.test(String(texto || '')) ? '' : norm.replace(/el precio final y el envio se confirman por whatsapp/g, ' ');
+  const hallado = dicho === '' ? '' : (bmEsRetiro(dicho) ? lista.find((m) => bmEsRetiro(m)) : (bmEsEnvio(dicho) ? lista.find((m) => bmEsEnvio(m)) : '')) || '';
+  if (hallado !== '' && !esSitio) modo = hallado;
+  if (modo !== '' && modo !== a.modo && (modoNuevo === '' || hallado !== '')) n.modo = modo;
   let capturado = false;
   const nombreNuevo = typeof n.nombre === 'string' && n.nombre.trim() !== '';
-  if (modo !== '' && a.nombre === '' && !nombreNuevo) { const nom = bmNombreDeRespuesta(texto); if (nom !== '') { n.nombre = nom; capturado = true; } }
+  if (modo !== '' && a.nombre === '' && !nombreNuevo) {
+    let nom = bmNombreDeRespuesta(texto);
+    // Varios datos en un mensaje («Silvana Sasaki, 3456291, recojo en tienda»): el nombre es el primer tramo, antes de la coma o de la primera cifra.
+    if (nom === '' && !esSitio) nom = bmNombreDeRespuesta(String(texto || '').split(/[,;]/)[0].replace(/\d.*$/, '').trim());
+    if (nom !== '') { n.nombre = nom; capturado = true; }
+  }
   // Datos del ENVÍO dichos dentro de una frase: el modelo a veces no los repite en su JSON (humo: «Mi nombre es Juan Pérez, mi CI es …, flota …» y el pedido volvía a pedirlos).
   const crudo = String(texto || '');
   const vacio = (k) => (typeof n[k] !== 'string' || n[k].trim() === '') && a[k] === '';
@@ -145,7 +156,7 @@ function bmCompletarEntrega(nueva, antes, texto, modos) {
     }
     const noCiudad = /^(?:flota|terminal|empresa|gracias|hola|buenas|buenos|si|no|ci|dni|mi|el|la|por|favor|ok|listo|claro|quiero|persona)$/i;
     const mayus = (t) => t.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-    if (vacio('ciudad')) {
+    if (vacio('ciudad') && bmEsEnvio(modo)) {
       let c = '';
       const d = /\d[\d.-]{3,11}\d\s+([\p{L}]{3,}(?: [\p{L}]{3,})?)(?=\s*(?:[,.;]|$)|\s+(?:flota|terminal|empresa)\b)/iu.exec(crudo);
       if (d) c = d[1];
