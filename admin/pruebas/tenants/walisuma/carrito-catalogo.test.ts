@@ -185,3 +185,43 @@ describe('el armado: el Webhook solo en producción', () => {
     expect(C.guardias('produccion', d as never, { credencialIngesta: 'REEMPLAZAR_CREDENCIAL_INGESTA' }).join(' ')).toMatch(/credencial de cabecera de la ingesta/);
   });
 });
+
+describe('observación de Andres (23/11): lo que el catálogo ya trae no se vuelve a pedir', () => {
+  const ENVIO = { entrega: 'envio', costoEnvio: 0, direccion: 'Av. Arce 2631, Sopocachi', referencia: 'Frente a la farmacia', ubicacion: { lat: -16.5106, lng: -68.1267 } };
+  it('envío con dirección, referencia y ubicación de La Paz: el modo y la ciudad se deducen, la ubicación se usa y solo se pide el nombre', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS }) });
+    const t = enviar(m, cuerpo(ENVIO));
+    expect(t.fallo).toBeNull();
+    const x = textos(t)[0] as string;
+    expect(x).toMatch(/nombre completo/);
+    expect(x).not.toMatch(/modo de entrega|ciudad|dirección exacta|teléfono de contacto|ubicación/i);
+    expect(x).not.toMatch(/a coordinar/);
+    expect(fichas(m)[ANA].entrega).toMatchObject({ modo: 'Envío en La Paz', ciudad: 'La Paz', direccion: expect.stringContaining('Av. Arce 2631') });
+    expect(fichas(m)[ANA].entrega.ubicacion).toEqual({ lat: -16.5106, lng: -68.1267 });
+  });
+  it('envío sin ciudad en la dirección pero con la ubicación de Santa Cruz: Envío en Santa Cruz', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS }) });
+    enviar(m, cuerpo({ ...ENVIO, ubicacion: { lat: -17.7833, lng: -63.1821 } }));
+    expect(fichas(m)[ANA].entrega).toMatchObject({ modo: 'Envío en Santa Cruz', ciudad: 'Santa Cruz' });
+  });
+  it('la referencia completa una dirección sin número de puerta', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS }) });
+    const t = enviar(m, cuerpo({ ...ENVIO, direccion: 'Sopocachi plaza Avaroa', referencia: 'casa 12, portón verde' }));
+    expect(textos(t)[0] as string).not.toMatch(/dirección exacta/);
+  });
+  it('con los datos completos del catálogo y el nombre en la ficha, el QR sale en el mismo turno', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS, entrega: { nombre: 'Silvana Pérez' } }) });
+    enviar(m, cuerpo(ENVIO));
+    const t2 = hablar(m, ANA, mTexto('Silvana Pérez'));
+    expect(t2.mensajes.some((e) => e.tipo === 'image')).toBe(true);
+  });
+  it('observación 2: el envío gratis dice solo «El envío no tiene costo», sin el umbral ni reglas internas', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS, entrega: { nombre: 'Silvana Pérez' } }) });
+    const t1 = enviar(m, cuerpo(ENVIO));
+    const t2 = hablar(m, ANA, mTexto('Silvana Pérez'));
+    for (const x of [...textos(t1), ...textos(t2), ...t2.mensajes.map((e) => e.cuerpo ?? '')]) {
+      expect(x).not.toMatch(/compras desde|umbral|desdeCatalogo|cotejo|pedido_sin_cobro|\bcierre\b/i);
+    }
+    expect([...textos(t2), ...t2.mensajes.map((e) => e.cuerpo ?? '')].join(' ')).toMatch(/El envío no tiene costo\./);
+  });
+});
