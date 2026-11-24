@@ -60,7 +60,7 @@ describe('2 · la captura de los datos de factura tras el pago', () => {
       const ficha = ((m.sd['walisuma'] ?? {}) as J)[ANA] as J;
       if (nit === 'sin') {
         expect(ficha['ultimoPedido']['factura'], frase).toBe('sin');
-        expect(t.avisos, frase).toHaveLength(0);
+        expect(t.avisos, frase).toHaveLength(0); // 0 avisos extra: «S/N - NIT 0» ya viajó en el aviso del pedido
         return;
       }
       if (nit === null) {
