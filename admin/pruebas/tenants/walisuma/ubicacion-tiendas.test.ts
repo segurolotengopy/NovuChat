@@ -31,8 +31,14 @@ describe('el enlace de mapa por tienda (Walisuma)', () => {
   });
   it('sin ciudad en la pregunta ni en la entrega: van las dos, cada una con su nombre', () => {
     const t = pregunta('¿Dónde quedan sus tiendas?');
-    expect(t).toMatch(new RegExp('Tienda de La Paz[^\\n]*: ' + LP.replace(/[?]/g, '\\?')));
-    expect(t).toMatch(new RegExp('Tienda de Santa Cruz[^\\n]*: ' + SC.replace(/[?]/g, '\\?')));
+    const lineas = t.split('\n');
+    // Cada ciudad con SU enlace en la misma línea; ninguna línea mezcla los dos.
+    const lp = lineas.find((l) => l.startsWith('Tienda de La Paz')) ?? '';
+    const sc = lineas.find((l) => l.startsWith('Tienda de Santa Cruz')) ?? '';
+    expect(lp.endsWith(': ' + LP)).toBe(true);
+    expect(sc.endsWith(': ' + SC)).toBe(true);
+    expect(lp).not.toContain('-17.7648323');
+    expect(sc).not.toContain('-16.542254');
   });
   it('NEGADO: sin el dato, o con una forma que no son coordenadas válidas, no sale ningún enlace', () => {
     const SIN = { tiendaLaPazCoordenadas: '', tiendaSantaCruzCoordenadas: '' };
