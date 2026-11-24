@@ -151,9 +151,8 @@ set +e
 ENTRADA="$(cat -- "$RUTA")"; EST_CAT=$?
 set -e
 [ "$EST_CAT" -eq 0 ] && [ -n "$ENTRADA" ] || { echo "✗ no se pudo leer el archivo de entrada" >&2; exit 2; }
-export ENTRADA HOST
 set +e
-FUSIONADO="$(printf '%s' "$ACTUAL" | python3 -I -c "$PY" fusionar "$TENANT")"; EST_PY=$?
+FUSIONADO="$(printf '%s' "$ACTUAL" | ENTRADA="$ENTRADA" HOST="$HOST" python3 -I -c "$PY" fusionar "$TENANT")"; EST_PY=$?
 set -e
 if [ "$EST_PY" -ne 0 ] || [ -z "$FUSIONADO" ]; then echo "✗ validación fallida: no se escribió nada"; exit 1; fi
 if [ "$APLICAR" -ne 1 ]; then echo "Seco: no se escribió nada (base: versión $ANTERIOR). Con --aplicar se crea una versión nueva del secreto."; exit 0; fi
@@ -176,7 +175,7 @@ RELEIDO="$(leer "$NUEVA")"; EST_LEER=$?
 set -e
 if [ "$EST_LEER" -ne 0 ] || [ -z "$RELEIDO" ]; then echo "✗ no se pudo releer la versión nueva: volver atrás con --revertir $ANTERIOR"; exit 4; fi
 set +e
-printf '%s' "$RELEIDO" | HUELLA_OTRAS="$HUELLA_OTRAS" python3 -I -c "$PY" comprobar "$TENANT"; EST_PY=$?
+printf '%s' "$RELEIDO" | ENTRADA="$ENTRADA" HUELLA_OTRAS="$HUELLA_OTRAS" python3 -I -c "$PY" comprobar "$TENANT"; EST_PY=$?
 set -e
 if [ "$EST_PY" -ne 0 ]; then echo "✗ la relectura no coincide: volver atrás con --revertir $ANTERIOR"; exit 4; fi
 echo "Listo. $AVISO_REDESPLEGAR Falta correr verificar-secreto-novutienda.sh, redesplegar la Function y borrar el archivo de entrada."
