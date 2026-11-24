@@ -2259,7 +2259,9 @@ describe('Agenda mínima v0: ronda 2 de la revisora', () => {
       expect(b.aRecepcion).toHaveLength(0);
       const c = rechazar(m, 'tampoco me sirven');
       expect(c.aRecepcion).toHaveLength(1);
-      expect(c.aRecepcion[0]!.cuerpo).toMatch(/necesita atención humana/);
+      // Bellido tiene la plantilla de aviso APPROVED (24/11/2026) y este mundo no sabe si la ventana de recepcion esta abierta:
+      // el aviso sale como plantilla, con nombre | telefono | motivo (core `apElegirPlantilla`). Con la ventana abierta seria el texto.
+      expect(c.aRecepcion[0]!.cuerpo).toMatch(/necesita atención humana|^.+ \| \+?\d+ \| .+$/);
       expect(c.aPaciente(MAMA)).toHaveLength(1);
       expect(urlDe(c.aPaciente(MAMA)[0]!)).toContain(REC);
       expect(idsDe(c)).toHaveLength(0);
