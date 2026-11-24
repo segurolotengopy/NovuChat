@@ -572,6 +572,10 @@ describe('10. Flujos en subcarpetas: el manifiesto lleva la ruta relativa a Fluj
     expect(rutaRelativaAFlujos('Flujos/clientes/x/y.json')).toBe('clientes/x/y.json');
     expect(rutaRelativaAFlujos('/a/b/Flujos/clientes/x/y.json')).toBe('clientes/x/y.json');
     expect(rutaRelativaAFlujos('demo-b-venta-cobro.json')).toBe('demo-b-venta-cobro.json');
+    // Negando (revisión de seguridad del #1103): ninguna ruta sale de Flujos/.
+    for (const fuera of ['../admin/package.json', 'Flujos/../../x.json', 'clientes/../../x.json', '/etc/passwd', '.']) {
+      expect(() => rutaRelativaAFlujos(fuera), fuera).toThrow(/fuera de Flujos/);
+    }
     expect(() => execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/demo-b-venta-cobro.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8' })).not.toThrow();
     let codigo = 0;
     try { execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/latido-n8n.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8', stdio: 'pipe' }); } catch (e) { codigo = (e as { status: number }).status; }

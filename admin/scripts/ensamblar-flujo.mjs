@@ -85,7 +85,7 @@
  * apuntar a `core/` lo que se comparte y se vuelve a correr `extraer`.
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { injertarIndicador, quitarIndicador } from '../../Flujos/src/core/indicador/indicador-escritura.mjs';
 
@@ -153,9 +153,13 @@ export function listarFlujosConManifiestoEnSubcarpetas(raiz = RAIZ_FLUJOS) {
 }
 
 /** Una ruta de línea de comandos a ruta relativa a `Flujos/`: quita todo hasta el último `Flujos/`; sin él, se respeta. */
-export const rutaRelativaAFlujos = (arg) => {
+export const rutaRelativaAFlujos = (arg, raiz = RAIZ_FLUJOS) => {
   const i = arg.lastIndexOf('Flujos/');
-  return (i >= 0 ? arg.slice(i + 'Flujos/'.length) : arg).replace(/^\.\//, '');
+  const rel = (i >= 0 ? arg.slice(i + 'Flujos/'.length) : arg).replace(/^\.\//, '');
+  // Nunca fuera de Flujos/ (revisión de seguridad del #1103, CWE-22): `extraer ../x.json` escribiría un manifiesto afuera.
+  const dentro = relative(raiz, resolve(raiz, rel));
+  if (!dentro || dentro.startsWith('..') || isAbsolute(dentro)) throw new Error(`ruta fuera de Flujos/: ${arg}`);
+  return dentro.split(sep).join('/');
 };
 
 export const rutaDeManifiesto = (archivoFlujo, raiz = RAIZ_FLUJOS) =>
@@ -439,7 +443,9 @@ function principal(argv) {
   const opcion = (n) => { const i = resto.indexOf(`--${n}`); return i >= 0 ? resto[i + 1] : null; };
   const archivos = resto.filter((a, i) => !a.startsWith('--') && resto[i - 1] !== '--nuevo');
   const exigir = resto.includes('--exigir-manifiesto');
-  const lista = archivos.length ? archivos.map(rutaRelativaAFlujos) : [...listarFlujos(), ...listarFlujosConManifiestoEnSubcarpetas()];
+  let rutas;
+  try { rutas = archivos.map((a) => rutaRelativaAFlujos(a)); } catch (e) { console.error(`✗ ${e.message}`); return 2; }
+  const lista = archivos.length ? rutas : [...listarFlujos(), ...listarFlujosConManifiestoEnSubcarpetas()];
 
   if (comando === 'verificar') {
     let fallas = 0;
