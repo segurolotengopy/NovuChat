@@ -83,6 +83,15 @@ describe('NEGADO: lo que el código no reconoce como elegir modo o dar el nombre
       expect(t.avisos.length, pregunta).toBeGreaterThanOrEqual(1);
     }
   });
+  it('«Vale» o «Mariana» sí son un nombre de una palabra', () => {
+    for (const nombre of ['Vale', 'Mariana']) {
+      const m = crear({ modeloDice: adverso() });
+      hablar(m, ANA, mTexto('quiero una billetera'));
+      hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
+      hablar(m, ANA, mTexto(nombre));
+      expect(ficha(m).entrega.nombre, nombre).toBe(nombre);
+    }
+  });
   it('una palabra suelta que no es un nombre («Garantía», «Perfecto», «Dale», «Billetera») no se toma como el nombre de quien retira', () => {
     for (const palabra of ['Garantía', 'Perfecto', 'Dale', 'Billetera']) {
       const m = crear({ modeloDice: adverso() });
@@ -90,6 +99,39 @@ describe('NEGADO: lo que el código no reconoce como elegir modo o dar el nombre
       hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
       hablar(m, ANA, mTexto(palabra));
       expect(ficha(m).entrega.nombre ?? '', palabra).toBe('');
+    }
+  });
+});
+
+describe('envío con los datos en mensajes SEPARADOS y el modelo adverso (el caso del humo)', () => {
+  it('botón Envío → nombre → «CI ciudad» → «flota»: el código guarda cada dato y el quiereHablar del modelo no desvía el pedido', () => {
+    const m = crear({ modeloDice: adverso() });
+    hablar(m, ANA, mTexto('quiero una billetera'));
+    hablar(m, ANA, mToque('entrega:envio', 'Envío'));
+    for (const dato of ['Ana Pérez', '4412345 Cochabamba', 'flota Bolivar']) {
+      const t = hablar(m, ANA, mTexto(dato));
+      expect(t.avisos, dato).toHaveLength(0);
+      expect(t.mensajes.map((x) => x.cuerpo).join(' '), dato).not.toMatch(PERSONA);
+    }
+    expect(ficha(m).entrega).toMatchObject({ nombre: 'Ana Pérez' });
+    expect(ficha(m).carrito).toHaveLength(1);
+  });
+  it('NEGADO: un modo que SOLO propuso el modelo (el cliente no lo dijo) más una pregunta de garantía sigue derivando', () => {
+    let n = 0;
+    const m = crear({ modeloDice: () => { n++; return n === 1 ? modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) : modelo('Una persona lo verá.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: { modo: 'Retiro en tienda' }, quiereHablar: true }); } });
+    hablar(m, ANA, mTexto('quiero una billetera'));
+    expect(hablar(m, ANA, mTexto('¿tienen garantía?')).avisos.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('«cancelar» es PAGAR en Bolivia: no vacía el carrito', () => {
+  it('«ya cancelé» y «no quiero envío, lo recojo» con lineas: [] del modelo conservan el carrito', () => {
+    for (const frase of ['ya cancelé', 'no quiero envío, lo recojo']) {
+      let n = 0;
+      const m = crear({ modeloDice: () => { n++; return n === 1 ? modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) : modelo('Listo.', { lineas: [] }); } });
+      hablar(m, ANA, mTexto('quiero una billetera'));
+      hablar(m, ANA, mTexto(frase));
+      expect(ficha(m).carrito, frase).toHaveLength(1);
     }
   });
 });

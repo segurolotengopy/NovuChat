@@ -136,11 +136,12 @@ function bmNombreDeRespuesta(texto, minPalabras) {
   const minimo = minPalabras === 1 ? 1 : 2;
   if (palabras.length < minimo || palabras.length > 5 || (palabras.length === 1 && palabras[0].length < 3)) return '';
   const n = bmNorm(t);
-  if (/\b(si|no|hola|gracias|confirmo|confirmar|pagar|pago|quiero|catalogo|precio|cuanto|cuesta|envio|enviar|tienda|recojo|retiro|persona|hablar|descuento|factura|buenas|buenos|dias|tardes|noches|favor|ok|okey|okay|listo|claro|perfecto|bueno|buena|dale|vale|genial|correcto|entendido|cancelar|cancela|garantia|manana|despues|luego|ahora|nada|gracia|saludos|disculpa|perdon|ayuda|informacion|consulta|pedido|catalogo|envios|oferta|promocion|cambio|devolucion|reclamo)\b/.test(n)) return '';
+  if (/\b(si|no|hola|gracias|confirmo|confirmar|pagar|pago|quiero|catalogo|precio|cuanto|cuesta|envio|enviar|tienda|recojo|retiro|persona|hablar|descuento|factura|buenas|buenos|dias|tardes|noches|favor|ok|okey|okay|listo|claro|perfecto|bueno|buena|dale|genial|correcto|entendido|cancelar|cancela|garantia|manana|despues|luego|ahora|nada|gracia|saludos|disculpa|perdon|ayuda|informacion|consulta|pedido|catalogo|envios|oferta|promocion|cambio|devolucion|reclamo)\b/.test(n)) return '';
   return t;
 }
 function bmCompletarEntrega(nueva, antes, texto, modos, vendibles) {
   const n = Object.assign({}, cbEsObjeto(nueva) ? nueva : {});
+  const delModelo = Object.assign({}, n);   // lo que propuso el modelo: lo que el código agregue o cambie después es lo que el CÓDIGO reconoció
   const a = bmEntregaDeFicha(antes);
   const lista = modos.length ? modos : BM_MODOS_DEFECTO;
   const norm = bmNorm(texto);
@@ -162,7 +163,7 @@ function bmCompletarEntrega(nueva, antes, texto, modos, vendibles) {
     // Varios datos en un mensaje («Silvana Sasaki, 3456291, recojo en tienda»): el nombre es el primer tramo, antes de la coma o de la primera cifra.
     if (nom === '' && !esSitio) nom = bmNombreDeRespuesta(String(texto || '').split(/[,;]/)[0].replace(/\d.*$/, '').trim());
     // Una sola palabra que es parte del nombre de una pieza del catálogo («Billetera») es el producto, no el nombre de quien retira.
-    if (nom !== '' && nom.indexOf(' ') < 0 && (Array.isArray(vendibles) ? vendibles : []).some((v) => bmNorm(v.nombre).split(' ').indexOf(bmNorm(nom)) >= 0)) nom = '';
+    if (nom !== '' && nom.indexOf(' ') < 0 && (Array.isArray(vendibles) ? vendibles : []).some((v) => bmNorm(v.nombre).split(' ')[0] === bmNorm(nom))) nom = '';   // solo el TIPO de pieza (la primera palabra de su nombre): «Rosa» o «Luz» sí pueden ser nombres
     if (nom !== '') { n.nombre = nom; capturado = true; }
   }
   // Datos del ENVÍO dichos dentro de una frase: el modelo a veces no los repite en su JSON (humo: «Mi nombre es Juan Pérez, mi CI es …, flota …» y el pedido volvía a pedirlos).
@@ -198,7 +199,9 @@ function bmCompletarEntrega(nueva, antes, texto, modos, vendibles) {
       if (c !== '' && !noCiudad.test(primera)) n.ciudad = mayus(c);
     }
   }
-  return { entrega: n, capturado: capturado };
+  // ¿El código reconoció algo en ESTE mensaje? El modo dicho (`hallado`), el nombre o cualquier dato de la entrega que el código llenó y el modelo no propuso: un `quiereHablar` del modelo en ese turno no desvía el pedido.
+  const porCodigo = capturado || (hallado !== '' && !esSitio) || ['nombre', 'documento', 'ciudad', 'flota', 'direccion', 'cp', 'provincia'].some((k) => typeof n[k] === 'string' && n[k].trim() !== '' && n[k] !== delModelo[k] && a[k] !== n[k]);
+  return { entrega: n, capturado: capturado, reconocido: porCodigo };
 }
 // El mensaje del SITIO («Hola, quiero consultar por estos productos:» con líneas «N x Nombre (cód. id)»): el código lee las líneas y sus códigos contra el catálogo; no depende del modelo.
 function bmLineasDelSitio(texto, vendibles) {
@@ -848,7 +851,7 @@ function bmResolverModelo(c) {
   if (!j || typeof j.texto !== 'string' || j.texto.trim() === '') return bmDerivar(c, 'modelo_caido');
   const antes = vcLineas(f.carrito, c.vendibles).lineas;
   // Una lista vacía del modelo SIN una orden clara de vaciar el pedido no borra el carrito (el modelo a veces devuelve [] por descuido): se conserva el de la ficha.
-  const ordenVaciar = /\b(quita\w*|saca\w*|elimin\w*|borr\w*|cancel\w*|anula\w*|vaci\w*|ya no quiero|no quiero|mejor no|empez\w* de nuevo|empez\w* otra vez|desde cero)\b/.test(bmNorm(p.textoCliente));
+  const ordenVaciar = /\b(quita\w*|saca\w*|elimin\w*|borr\w*|vaci\w*)\b|\b(cancela|cancelar|anula|anular)\s+(todo|el pedido|mi pedido|la compra|mi compra)\b|\bya no quiero (nada|ninguno|ninguna|la|el|los|las|esa|ese|esas|esos)\b|\bempez\w* (de nuevo|otra vez)\b|\bdesde cero\b/.test(bmNorm(p.textoCliente));
   const propuestas = Array.isArray(j.lineas) && !(j.lineas.length === 0 && antes.length > 0 && !ordenVaciar) ? vcLineas(j.lineas, c.vendibles).lineas : antes;
   let fijada = bmFijarPieza(p.textoCliente, antes, propuestas, c.vendibles);
   // El mensaje del sitio trae los códigos: esas líneas entran tal cual (con su cantidad) y el texto lo arma el código.
@@ -873,8 +876,7 @@ function bmResolverModelo(c) {
   const listo = lineas.length > 0 && bmEntregaCompleta(entrega, c.mercado) && cierre;
   // Si ESTE turno el código reconoció la elección del modo de entrega o el nombre (o el pedido está listo), el «quiereHablar» del modelo no lo desvía: elegir el recojo o el envío, o dar el nombre, no es pedir una persona.
   // Lo demás (garantía, costo del envío, una pieza que no existe…) sí deriva aunque haya pedido en curso. Entonces el texto del turno lo arma `bmTextoDeEstado`, nunca la redacción del modelo («lo verá una persona del equipo»).
-  const eligioElModo = lineas.length > 0 && entrega.modo !== '' && entrega.modo !== bmEntregaDeFicha(f.entrega).modo;
-  const ignoraQuiereHablar = j.quiereHablar === true && (listo || comp.capturado || eligioElModo);
+  const ignoraQuiereHablar = j.quiereHablar === true && (listo || (lineas.length > 0 && comp.reconocido === true));
   if (j.quiereHablar === true && !ignoraQuiereHablar) return bmDerivar(c, 'quiere_hablar');
   const cambio = !vcMismoCarrito(antes, lineas);
   // Un número de otro país se atiende como Bolivia y se avisa UNA vez a la tienda (1 mensaje por caso): el aviso sale si aún no se le avisó de este teléfono.

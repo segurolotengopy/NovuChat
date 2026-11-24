@@ -444,10 +444,9 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
     const envio = { modo: 'envío', nombre: 'Ana Rojas', documento: '1234567', ciudad: 'Oruro', flota: 'Trans Copacabana' };
     const R = (entrega: Record<string, string>, plan = pagar) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro }, plan, modeloResp: gemini({ texto: 'El envío lo cotiza la tienda.', lineas: [{ id: 'p1', cantidad: 1 }], entrega, quiereHablar: true }) }));
     expect(R(envio).tipo).toBe('pedido_sin_cobro');
-    // B2 (24/11): con el modo de entrega ya elegido el pedido está EN CURSO: el «quiereHablar» del modelo no lo desvía (el código pide lo que falta). Sin modo, sí pasa con una persona.
-    expect(R({ ...envio, documento: '' }).tipo).toBe('modelo');
-    expect(R(envio, { tipo: 'modelo', textoCliente: 'ahí está todo' }).tipo).toBe('modelo');
-    expect(R({}, { tipo: 'modelo', textoCliente: 'ahí está todo' }).tipo).toBe('derivar');
+    // B2 (24/11): el modo que SOLO propuso el modelo no cuenta como «reconocido por el código»: sin el pedido listo, el quiereHablar sigue derivando.
+    expect(R({ ...envio, documento: '' }).tipo).toBe('derivar');
+    expect(R(envio, { tipo: 'modelo', textoCliente: 'ahí está todo' }).tipo).toBe('derivar');
   });
   it('si la redacción del modelo no pasa, el texto de reemplazo sigue el estado del pedido (nada de «cuénteme más» con un pedido a medias)', () => {
     const T = (entrega: Record<string, string>, ficha: Record<string, unknown> = { carrito: carro }) => b('bmResolver')(ctx({ modos: ['recojo en tienda', 'envío'], ficha, plan: { tipo: 'modelo', textoCliente: 'ok' }, modeloResp: gemini({ texto: 'Su pedido está pagado y cerrado.', lineas: [{ id: 'p1', cantidad: 1 }], entrega }) }));
