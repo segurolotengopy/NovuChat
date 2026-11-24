@@ -1,0 +1,11 @@
+{
+  "flujo": "error-envio-incierto.json",
+  "conservanMarcadores": {
+    "Armar alerta": "REEMPLAZAR_"
+  },
+  "codigo": {
+    "Registrar flujo y hora": "barridos/registrar-flujo-y-hora.js",
+    "Armar alerta": "barridos/armar-alerta.js"
+  },
+  "prompts": {}
+}

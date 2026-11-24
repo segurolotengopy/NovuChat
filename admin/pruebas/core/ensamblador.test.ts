@@ -67,7 +67,7 @@ const MARCADORES_DECLARADOS_APARTE: Record<string, Record<string, string>> = {
   'salida-de-persona.json': { 'Timbre': 'REEMPLAZAR_' },
 };
 /** El nodo base que conserva los REEMPLAZAR_* cuando no se llama `Config base`. */
-const NODO_BASE_DE: Record<string, string> = { 'demo-a-recordatorios.json': 'Config base del recordatorio' };
+const NODO_BASE_DE: Record<string, string> = { 'demo-a-recordatorios.json': 'Config base del recordatorio', 'error-envio-incierto.json': 'Armar alerta' };
 const nodoBase = (f: string): string => NODO_BASE_DE[f] ?? 'Config base';
 const SIN_MANIFIESTO = FLUJOS.filter((f) => leerManifiesto(f) === null);
 
@@ -94,7 +94,7 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
     expect(CON_MANIFIESTO).toEqual(expect.arrayContaining(['demo-b-venta-cobro.json', 'novuchat-onboarding.json']));
     // Los que todavía no se ensamblan, dichos con nombre: son el bloque B-2.
     expect(SIN_MANIFIESTO).toEqual([
-      'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'bellido-agendamiento.json', 'error-envio-incierto.json',
+      'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'bellido-agendamiento.json',
       'latido-n8n.json', 'vigilancia-numero-demos.json',
     ]);
   });

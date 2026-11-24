@@ -13,7 +13,7 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | demo-a-agendamiento.json | . | demo | ensamblador | M1 M6 | por asignar (Principal) | pendiente | 6feb51cb-72895440-f4ff787c-57159818-fcb97b53-e14eb5c3-b9356e56-de355a19 |
 | demo-a-recordatorios.json | . | demo | ensamblador | M1 | por asignar (Principal) | pendiente | 7d06ea44-1c362f84-bae2afe3-e7a2a521-b2c865cc-a3736245-ae83472d-22988404 |
 | demo-b-venta-cobro.json | . | demo | ensamblador | M1 M6 | por asignar (Principal) | pendiente | c0f879b9-1b79090e-adea89fd-284d7ac7-bd5ec3d5-4d9ac08e-9685db0a-8666d0ac |
-| error-envio-incierto.json | . | barrido | ensamblador | M1 | por asignar (Principal) | pendiente | 22400c1d-0c278bb7-22a0600e-8ff6a382-34c19434-c38b5952-64e66371-347b13be |
+| error-envio-incierto.json | . | barrido | ensamblador | M1 | por asignar (Principal) | pendiente | 2ff4b291-ed46e596-13a95489-8cccdf57-adc9df5b-079cd030-7eb163fa-0c73fe27 |
 | novuchat-onboarding.json | . | congelado | ensamblador | M1 M6 M7 | por asignar (Principal) | pendiente | 01d3388b-eb92e2a3-e8beb89d-4e6a1155-14d01b1a-5e5d8c9b-a8aea1d5-62e941b9 |
 | salida-de-persona.json | . | barrido | ensamblador | M1 M7 | por asignar (Principal) | pendiente | df529a8a-b5f09840-fd0f0d7b-015aaba3-53c203b6-c62ff10a-095291fd-af8e27bd |
 | latido-n8n.json | . | barrido | ninguno | M1 | por asignar (Principal) | pendiente | 2f4160a4-4f1447ee-bf929d0f-1006e97d-8cc2e711-cb09925a-7ba38cb0-4e84282f |
@@ -49,7 +49,7 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
   hasta la mudanza: la huella de esta tabla es la que la mudanza no debe cambiar.
 - **dueño**: de la mudanza. Lo asigna Principal; Walisuma es de Rearquitectura.
 - **estado**: `pendiente` o `mudado`. Solo las filas `mudado` pasan por M1 a M7.
-- **huella**: sha256 del JSON versionado en main (medida el 12/11/2026; el 14/11/2026 se actualizaron cuatro filas: agenda mínima, chat NovuChat y los dos de venta mínima; el 21/11/2026, doce filas por el indicador de escritura: los dos demos y los diez flujos de cliente con modelo, ver `Flujos/src/core/indicador/`), en hexadecimal y en 8 grupos de 8 caracteres separados por guion (la
+- **huella**: sha256 del JSON versionado en main (medida el 12/11/2026; el 14/11/2026 se actualizaron cuatro filas: agenda mínima, chat NovuChat y los dos de venta mínima; el 21/11/2026, doce filas por el indicador de escritura: los dos demos y los diez flujos de cliente con modelo, ver `Flujos/src/core/indicador/`; el 24/11/2026, `error-envio-incierto.json`, reescrito una vez con el formato estándar del ensamblador para darle manifiesto: solo cambian los espacios, el contenido es idéntico; decisión de Andres), en hexadecimal y en 8 grupos de 8 caracteres separados por guion (la
   prueba compara quitando los guiones). Se calculó con `sha256sum` sobre cada archivo. Desde el 14/11/2026 la prueba la exige a TODAS
   las filas: quien cambia un JSON de flujo actualiza su huella en el mismo PR (la huella es la del JSON versionado en main).
 
