@@ -313,3 +313,29 @@ valor por defecto de nada.
   nube creado. Ver §9.
 
 ---
+
+## K1 — contrato de la carga del carrito con fuente externa (24/11/2026, bloque B3)
+
+**Qué es.** La carga firmada que `checkoutCatalogo` manda al webhook del carrito de n8n (`despertarFlujo`). K1 es **la de hoy más campos opcionales**: un flujo que no los lee sigue funcionando igual (compatible hacia atrás). Lo fija B3 y lo consume B4 (Casa Bermejo) sin esperar el código de B3.
+
+**Qué se activa por dato, sin nombres de cliente en el código.** Un tenant con `config/pedidos.catalogoExterno.activo === true` toma el catálogo de una fuente externa en vivo (primera implementación: NovuTienda v1) en `catalogoPublico` y `checkoutCatalogo`; sin ese dato, todo se comporta exactamente como hoy (Walisuma, Q'Taco). El mercado sale del teléfono de la ficha: 591 → `BO`, 54 → `AR`, otro → sin catálogo (409).
+
+### La carga (campos de hoy, sin cambio)
+`tenantId`, `tipo: 'carrito'`, `pedidoId` (`cat_…`), `conversacionId`, `telefono`, `items[]`, `total`, `moneda`, `costoEnvio`, `entrega` (`retiro`|`envio`), `direccion`, `nota`, `referencia?`, `ubicacion?`, `descartados[]` (ids), `ventanaAbierta`, `accion` (`responder`|`plantilla_carrito_espera`), `fichaCompartida`.
+
+### Lo que K1 agrega (todo opcional)
+| Campo | Forma | Regla |
+|---|---|---|
+| `items[].precioCentavos` | entero ≥ 0 | Precio unitario en centavos de la moneda del pedido. **Informativo**: el flujo NO cobra de aquí; el QR sale del precio vivo del catálogo («Traer catálogo»). Un cliente que edite la página no puede cambiarlo: el servidor lo relee de la fuente. |
+| `items[].detalle` | texto ≤ 60 | Especificación libre por línea («color: negro»), sin cambio de precio (decisión D2-a). Saneado con `lineaLimpia` (sin controles, bidi, enlaces ni `<>&`) y sin `[]{}«»`. Solo si `config/venta.detallePorLinea === true`. Ausente = sin especificación. |
+| `moneda` | `'BOB'` \| `'USD'` \| `'ARS'` | `ARS` solo con fuente externa del mercado `AR`. Una carga no mezcla monedas (409 `monedas mezcladas`). |
+| `mercado` | `'BO'` \| `'AR'` | Solo con fuente externa. Ausente en los tenants de Firestore. |
+| `catalogo` | `'externo'` | Solo con fuente externa (también queda en `pedidos/cat_…`). Ausente = catálogo de Firestore. |
+
+### Reglas que el flujo puede asumir
+1. `items[].id` es el id de la fuente (NovuTienda: su `id`, de forma `^[A-Za-z0-9_-]{1,80}$`); `descartados` trae los ids que ya no se ofrecen (no existe, `disponible:false`, sin precio, stock insuficiente).
+2. `subtotal` y `total` son decimales en unidades de la moneda (como hoy); `precioCentavos` es el mismo precio sin pérdida.
+3. Con `entrega: 'envio'` el servidor NO inventa costo de envío para un tenant externo (`costoEnvio` = lo de `config/venta`, hoy 0): el envío no se cobra por NovuChat.
+4. `reemplaza`: el flujo, al emitir el QR de este carrito, manda `reemplaza: <pedidoId>` (contrato K2, ya existente en `pedidoDelQr.ts`).
+5. Un carrito con `descartados` no emite QR solo: el flujo ofrece «Confirmar pedido» con el total real (decisión del 23/11).
+6. Costo: 0 mensajes por conversación. Nube: una llamada a la fuente por carga de página y una por checkout.
