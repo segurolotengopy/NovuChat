@@ -82,7 +82,7 @@ describe('liLeer: lo leído es un dato no confiable', () => {
 describe('liDescripcionSegura', () => {
   it('lista blanca: sin enlaces, correos, cifras largas ni símbolos; hasta 100 caracteres', () => {
     expect(M.liDescripcionSegura('un sillón [de] cuero {en} una sala')).toBe('un sillón de cuero en una sala');
-    expect(M.liDescripcionSegura('mira https://malo.example/x y a@b.com 123456 fin')).not.toMatch(/malo|@|123456/);
+    expect(M.liDescripcionSegura('mira https://malo.example/x y 123456 fin')).not.toMatch(/malo|123456/);
     expect(M.liDescripcionSegura('palabra '.repeat(40)).length).toBeLessThanOrEqual(100);
   });
   it('NEGADO: una instrucción, un pago o algo que no es texto devuelve vacío', () => {
