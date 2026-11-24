@@ -200,7 +200,7 @@ function bmCompletarEntrega(nueva, antes, texto, modos, vendibles) {
     }
   }
   // ¿El código reconoció algo en ESTE mensaje? El modo dicho (`hallado`), el nombre o cualquier dato de la entrega que el código llenó y el modelo no propuso: un `quiereHablar` del modelo en ese turno no desvía el pedido.
-  const porCodigo = capturado || (hallado !== '' && !esSitio) || ['nombre', 'documento', 'ciudad', 'flota', 'direccion', 'cp', 'provincia'].some((k) => typeof n[k] === 'string' && n[k].trim() !== '' && n[k] !== delModelo[k] && a[k] !== n[k]);
+  const porCodigo = capturado || (hallado !== '' && !esSitio && hallado !== a.modo) || ['nombre', 'documento', 'flota', 'direccion', 'cp', 'provincia'].some((k) => typeof n[k] === 'string' && n[k].trim() !== '' && n[k] !== delModelo[k] && a[k] !== n[k]);
   return { entrega: n, capturado: capturado, reconocido: porCodigo };
 }
 // El mensaje del SITIO («Hola, quiero consultar por estos productos:» con líneas «N x Nombre (cód. id)»): el código lee las líneas y sus códigos contra el catálogo; no depende del modelo.
@@ -851,7 +851,12 @@ function bmResolverModelo(c) {
   if (!j || typeof j.texto !== 'string' || j.texto.trim() === '') return bmDerivar(c, 'modelo_caido');
   const antes = vcLineas(f.carrito, c.vendibles).lineas;
   // Una lista vacía del modelo SIN una orden clara de vaciar el pedido no borra el carrito (el modelo a veces devuelve [] por descuido): se conserva el de la ficha.
-  const ordenVaciar = /\b(quita\w*|saca\w*|elimin\w*|borr\w*|vaci\w*)\b|\b(cancela|cancelar|anula|anular)\s+(todo|el pedido|mi pedido|la compra|mi compra)\b|\bya no quiero (nada|ninguno|ninguna|la|el|los|las|esa|ese|esas|esos)\b|\bempez\w* (de nuevo|otra vez)\b|\bdesde cero\b/.test(bmNorm(p.textoCliente));
+  // ¿El cliente pide VACIAR el pedido o quitar una pieza que tiene en el carrito? Sin una orden clara, un `[]` del modelo no borra nada. «cancelar» NO cuenta: en Bolivia es pagar. «ya no quiero la entrega…» cambia el modo, no las piezas.
+  const tOrden = bmNorm(p.textoCliente);
+  const piezaDelCarrito = antes.some((l) => { const v = c.vendibles.find((x) => x.id === l.id); return !!v && bmNorm(v.nombre).split(' ').some((w) => w.length >= 4 && new RegExp('\\b' + w + '\\b').test(tOrden)); });
+  const ordenVaciar = /\b(quita\w*|elimin\w*|borr\w*|vaci\w*|anul\w*)\s+(todo|todos|el pedido|mi pedido|la compra|mi compra)\b/.test(tOrden) || /\b(cancela|cancelar|saca|sacar)\s+todo\b/.test(tOrden)
+    || /\bya no quiero (nada|ninguno|ninguna)\b/.test(tOrden) || /\bempez\w* (de nuevo|otra vez)\b|\bdesde cero\b/.test(tOrden)
+    || (piezaDelCarrito && (/\b(quita\w*|saca\w*|elimin\w*|borr\w*)\b/.test(tOrden) || (/\bya no quiero (la|el|los|las|esa|ese|esas|esos)\b/.test(tOrden) && !/\b(envio|entrega|domicilio|recojo|retiro|delivery)\b/.test(tOrden))));
   const propuestas = Array.isArray(j.lineas) && !(j.lineas.length === 0 && antes.length > 0 && !ordenVaciar) ? vcLineas(j.lineas, c.vendibles).lineas : antes;
   let fijada = bmFijarPieza(p.textoCliente, antes, propuestas, c.vendibles);
   // El mensaje del sitio trae los códigos: esas líneas entran tal cual (con su cantidad) y el texto lo arma el código.

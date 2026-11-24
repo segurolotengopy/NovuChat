@@ -136,6 +136,40 @@ describe('«cancelar» es PAGAR en Bolivia: no vacía el carrito', () => {
   });
 });
 
+describe('consultas que SIGUEN derivando aunque nombren el modo ya elegido', () => {
+  it('«envio» y luego «cuanto cuesta el envio a Tarija», o «recojo en tienda» y luego «la tienda tiene garantia»: aviso, y no se toma «Tarija» como la ciudad del pedido', () => {
+    for (const [modo, consulta] of [['envio', 'cuanto cuesta el envio a Tarija'], ['recojo en tienda', 'la tienda tiene garantia']] as const) {
+      const m = crear({ modeloDice: adverso() });
+      hablar(m, ANA, mTexto('quiero una billetera'));
+      hablar(m, ANA, mTexto(modo));
+      const t = hablar(m, ANA, mTexto(consulta));
+      expect(t.avisos.length, consulta).toBeGreaterThanOrEqual(1);
+      expect(ficha(m).entrega.ciudad ?? '', consulta).not.toMatch(/Tarija/);
+    }
+  });
+});
+
+describe('cambiar la entrega o frases comunes NO vacían el carrito (lineas: [] del modelo)', () => {
+  it('«ya no quiero la entrega a domicilio, mejor recojo», «cancela el pedido por QR», «cuando sacan el pedido» y «me quitas una duda» conservan la billetera', () => {
+    for (const frase of ['ya no quiero la entrega a domicilio, mejor recojo', 'cancela el pedido por QR', 'cuando sacan el pedido', 'me quitas una duda']) {
+      let n = 0;
+      const m = crear({ modeloDice: () => { n++; return n === 1 ? modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) : modelo('Listo.', { lineas: [] }); } });
+      hablar(m, ANA, mTexto('quiero una billetera'));
+      hablar(m, ANA, mTexto(frase));
+      expect(ficha(m).carrito, frase).toHaveLength(1);
+    }
+  });
+  it('«ya no quiero la billetera» y «vacía el pedido» sí lo vacían', () => {
+    for (const frase of ['ya no quiero la billetera', 'vacía el pedido']) {
+      let n = 0;
+      const m = crear({ modeloDice: () => { n++; return n === 1 ? modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) : modelo('Listo.', { lineas: [] }); } });
+      hablar(m, ANA, mTexto('quiero una billetera'));
+      hablar(m, ANA, mTexto(frase));
+      expect(ficha(m).carrito, frase).toHaveLength(0);
+    }
+  });
+});
+
 describe('lineas: [] del modelo', () => {
   it('sin una orden de quitar conserva el carrito; con «quita la billetera» lo vacía', () => {
     let n = 0;
