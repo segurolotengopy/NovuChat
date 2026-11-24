@@ -570,7 +570,10 @@ describe('los topes del plan (D-R3): por día y por mes por comercio, contados e
     expect(await retomar(base({ tenantId: OTRO, claveIdempotencia: claveN(3) }), oper(OTRO, 'u-otro'))).toMatchObject({ estado: 'pendiente' });
   });
   it('NEGATIVA: cifras ilegibles del plan o un contador roto fallan cerrado (ni cupo inventado ni «sin tope»)', async () => {
-    for (const malo of [{ diasEntreRetomadas: NaN, porDia: 1, porMes: 1 }, { diasEntreRetomadas: 7, porDia: -1, porMes: 1 }, { diasEntreRetomadas: 7, porDia: 1, porMes: Infinity }, { diasEntreRetomadas: 7, porDia: '20', porMes: 1 }]) {
+    for (const malo of [{ diasEntreRetomadas: NaN, porDia: 1, porMes: 1 }, { diasEntreRetomadas: 7, porDia: -1, porMes: 1 }, { diasEntreRetomadas: 7, porDia: 1, porMes: Infinity }, { diasEntreRetomadas: 7, porDia: '20', porMes: 1 },
+      // `porMinuto` presente pero ilegible: cerrado, nunca «sin tope» (NaN haría `uMin >= NaN` siempre falso).
+      { diasEntreRetomadas: 7, porDia: 20, porMes: 100, porMinuto: NaN }, { diasEntreRetomadas: 7, porDia: 20, porMes: 100, porMinuto: null },
+      { diasEntreRetomadas: 7, porDia: 20, porMes: 100, porMinuto: 1.5 }, { diasEntreRetomadas: 7, porDia: 20, porMes: 100, porMinuto: '10' }]) {
       limites = malo as typeof limites;
       await rechaza({ code: 'unavailable' });
     }
