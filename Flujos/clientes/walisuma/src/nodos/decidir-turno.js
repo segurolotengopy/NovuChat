@@ -114,6 +114,10 @@ if (esAudio) {
   texto = cbLinea(m[1], 1500);
 } else if (t.categoria === 'conversacion') {
   texto = t.seleccionId ? cbLinea(t.seleccionTitulo, 100) : cbLinea(t.texto, 1500);
+  // El toque de «Confirmar pedido» DE ESTE pedido (id con la huella del carrito y la entrega que el cliente vio) es la orden de cerrar: el código la lee como la orden de siempre y el QR sale en este turno.
+  // Un botón de otro pedido (huella distinta) no confirma nada: queda como el texto del título.
+  if (t.seleccionId && Array.isArray(ficha.carrito) && ficha.carrito.length > 0 && wlEntregaCompleta(ficha.entrega)
+    && cfEsConfirmacion(t.seleccionId, wlLineasParaHuella(ficha.carrito, vendibles), wlEntregaDeFicha(ficha.entrega), ficha.pedidos)) texto = 'confirmo mi pedido';
 } else {
   return salir({ tipo: 'otro' });
 }
@@ -162,7 +166,7 @@ if (wlPideFactura(n) && !pedidoNuevo) {
   if (wlDatosFactura(texto)) return salir({ tipo: 'factura_al_confirmar' });
   notaFactura = 'al_confirmar';
 }
-if (wlNombraSinPrecio(n, wlSinPrecio(panel))) return salir({ tipo: 'derivar', motivo: 'sin_precio' });
+if (wlNombraSinPrecio(n, wlSinPrecio(panel), wlConPrecio(panel))) return salir({ tipo: 'derivar', motivo: 'sin_precio' });
 if (wlQuiereHablar(n)) return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });
 // 4b. El anuncio de Meta (contrato de «Normalizar entrada»: `anuncioId`, `anuncioTitular`). Por su `source_id` (dato `anunciosMeta`): las piezas VENDIBLES del anuncio o la bienvenida general.
 const meta = wlAnuncioMeta(t.anuncioId, base);
