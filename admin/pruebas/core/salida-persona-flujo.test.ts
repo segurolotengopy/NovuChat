@@ -963,6 +963,12 @@ describe('Salida de persona: plantillas (Retomar, C5/C6)', () => {
     expect(s.docs[0]).toMatchObject({ estado: 'rechazado', codigo: meta });
   });
 
+  it.each(['132000', '132015'])('NIEGA: un TEXTO con WM-3040 %s sigue incierto (132xxx es solo de plantillas)', (meta) => {
+    const s = servidor('rele', [doc(25)]);
+    ejecutarFlujo({ servidor: s, enviar: () => ({ statusCode: 502, body: { error: { codigo: 'WM-3040', reintentable: false, metaCodigo: Number(meta) } } }) });
+    expect(s.docs[0]!.estado).toBe('incierto');
+  });
+
   it('10 parametros de 60 caracteres es el limite y pasa', () => {
     const s = servidor('graph', [pl(6, { ...BUENA, parametros: Array.from({ length: 10 }, () => 'a'.repeat(60)) })]);
     const r = ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.L') });
