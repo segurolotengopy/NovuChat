@@ -45,7 +45,7 @@
  */
 import { createHash, createHmac } from 'node:crypto';
 import { defineSecret } from 'firebase-functions/params';
-import { FieldValue, type Firestore, type Transaction } from 'firebase-admin/firestore';
+import { FieldValue, type DocumentSnapshot, type Firestore, type Transaction } from 'firebase-admin/firestore';
 
 // ---------------------------------------------------------------------------
 // CONSTANTES (con nombre: ninguna cifra suelta en el código que las usa)
@@ -65,7 +65,7 @@ export const BLOQUEO_DE_CARRERA_MS = 45_000;
 export const ENVIANDO_MAXIMO_MS = 2 * 60_000;
 /**
  * Un `pendiente` más viejo que esto, o cuya ventana de Meta ya se cerró, no se entrega: pasa a `rechazado`
- * con el código `caducado` (reintentable), sin contar. Un mensaje que esperó minutos por un timbre perdido
+ * con el código `caducado` (reintentable salvo en una plantilla, que se vuelve a pedir con un Retomar nuevo), sin contar. Un mensaje que esperó minutos por un timbre perdido
  * ya no es lo que la persona quiso decir, y fuera de la ventana Meta lo rechazaría.
  */
 export const PENDIENTE_MAXIMO_MS = 2 * 60_000;
@@ -237,4 +237,40 @@ export function sumarMensajePersona(tx: Transaction, db: Firestore, tenantId: st
 export function sumarPlantillaPersona(tx: Transaction, db: Firestore, tenantId: string, ahoraMs: number, n: 1 | -1): void {
   const periodo = new Date(ahoraMs).toISOString().slice(0, 7);
   tx.set(db.doc(`tenants/${tenantId}/metricas/${periodo}`), { plantillasPersona: FieldValue.increment(n) }, { merge: true });
+}
+
+// ---------------------------------------------------------------------------
+// UN RECHAZO DE PLANTILLA LIBERA LO QUE EL RETOMAR RESERVÓ
+// ---------------------------------------------------------------------------
+
+/** El contador de topes de Retomar de un comercio (el mismo que cuenta `retomarConversacion`). */
+export const refTopesDeRetomar = (db: Firestore, tenantId: string) => db.doc(`topesDeEnvio/r_${tenantId}`);
+
+const contadorValido = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+
+/**
+ * Un mensaje `tipo: 'plantilla'` que termina `rechazado` NO salió: no debe seguir bloqueando la conversación 7 días
+ * (`retomadaPendiente`) ni gastando cupo. En la MISMA transacción que lo marca `rechazado`:
+ *  (a) se borra `ultimaRetomadaEn` (y `ultimaRetomadaMensajeId`) de la conversación SOLO si ese Retomar es el de este
+ *      mensaje (`ultimaRetomadaMensajeId === mensaje.id`): una retomada posterior no se toca;
+ *  (b) se devuelve una unidad al día y al mes de `topesDeEnvio/r_{comercio}` EN QUE SE CONTÓ (guardados en el mensaje como
+ *      `cupoRetomarDia` y `cupoRetomarMes`, no los de hoy), sin bajar de 0. Si el contador ya cambió de día o de mes, ese
+ *      cupo ya se reinició y no hay nada que devolver.
+ * Un `aceptado` o un `incierto` NO llaman a esto (el incierto pudo salir). Es idempotente por construcción: el estado
+ * `rechazado` es terminal y esta función solo corre en la transición hacia él.
+ * Las lecturas (`conv`, `topes`) las hace quien llama ANTES de cualquier escritura de la transacción.
+ */
+export function liberarRetomada(tx: Transaction, mensaje: DocumentSnapshot, conv: DocumentSnapshot, topes: DocumentSnapshot): void {
+  if (conv.exists && conv.get('ultimaRetomadaMensajeId') === mensaje.id) {
+    tx.update(conv.ref, { ultimaRetomadaEn: FieldValue.delete(), ultimaRetomadaMensajeId: FieldValue.delete() });
+  }
+  if (!topes.exists) return;
+  const dia: unknown = mensaje.get('cupoRetomarDia');
+  const mes: unknown = mensaje.get('cupoRetomarMes');
+  const cambios: Record<string, unknown> = {};
+  const nDia: unknown = topes.get('nDia');
+  const nMes: unknown = topes.get('nMes');
+  if (typeof dia === 'string' && topes.get('dia') === dia && contadorValido(nDia)) cambios['nDia'] = Math.max(0, nDia - 1);
+  if (typeof mes === 'string' && topes.get('mes') === mes && contadorValido(nMes)) cambios['nMes'] = Math.max(0, nMes - 1);
+  if (Object.keys(cambios).length > 0) tx.update(topes.ref, cambios);
 }
