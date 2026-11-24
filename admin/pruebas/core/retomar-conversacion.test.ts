@@ -292,7 +292,7 @@ describe('la forma de la entrada', () => {
     }
   });
   it('NEGATIVA: la clave de idempotencia tiene que ser de 16 a 128 caracteres válidos', async () => {
-    for (const mala of ['corta', 'x'.repeat(129), 'con espacio 0123456789', '__reservado__', 7, undefined]) {
+    for (const mala of ['corta', 'x'.repeat(129), 'con espacio abcdefghij', '__reservado__', 7, undefined]) {
       await rechaza({ code: 'invalid-argument' }, base({ claveIdempotencia: mala }));
     }
   });
@@ -529,36 +529,36 @@ describe('los topes del plan (D-R3): por día y por mes por comercio, contados e
   it('NEGATIVA: el tope DIARIO rechaza con `retomarDia` y no consume cupo; mañana vuelve a andar', async () => {
     limites = { ...limites, porDia: 2 };
     for (let i = 1; i <= 2; i++) {
-      await conversacion(A, `wa_5910000010${i}`);
-      await retomar(base({ conversacionId: `wa_5910000010${i}`, claveIdempotencia: claveN(i) }));
+      await conversacion(A, `wa_59100000010${i}`);
+      await retomar(base({ conversacionId: `wa_59100000010${i}`, claveIdempotencia: claveN(i) }));
     }
     const antes = await topes();
-    await conversacion(A, 'wa_59100000103');
-    const e = await rechazo(retomar(base({ conversacionId: 'wa_59100000103', claveIdempotencia: claveN(3) })));
+    await conversacion(A, 'wa_591000000103');
+    const e = await rechazo(retomar(base({ conversacionId: 'wa_591000000103', claveIdempotencia: claveN(3) })));
     expect(e).toMatchObject({ code: 'resource-exhausted', details: { tope: 'retomarDia' } });
     expect(await topes()).toEqual(antes);
-    expect(await mensajes(A, 'wa_59100000103')).toHaveLength(0);
+    expect(await mensajes(A, 'wa_591000000103')).toHaveLength(0);
     expect(timbres).toHaveLength(2);
-    expect(await retomar(base({ conversacionId: 'wa_59100000103', claveIdempotencia: claveN(3) }), ANA, AHORA + DIA)).toMatchObject({ estado: 'pendiente' });
+    expect(await retomar(base({ conversacionId: 'wa_591000000103', claveIdempotencia: claveN(3) }), ANA, AHORA + DIA)).toMatchObject({ estado: 'pendiente' });
   });
   it('NEGATIVA: el tope MENSUAL rechaza con `retomarMes` aunque el diario alcance, y el mes siguiente se reinicia', async () => {
     limites = { ...limites, porMes: 2, porDia: 50 };
     for (let i = 1; i <= 2; i++) {
-      await conversacion(A, `wa_5910000010${i}`);
-      await retomar(base({ conversacionId: `wa_5910000010${i}`, claveIdempotencia: claveN(i) }), ANA, AHORA + i * DIA);
+      await conversacion(A, `wa_59100000010${i}`);
+      await retomar(base({ conversacionId: `wa_59100000010${i}`, claveIdempotencia: claveN(i) }), ANA, AHORA + i * DIA);
     }
-    await conversacion(A, 'wa_59100000103');
+    await conversacion(A, 'wa_591000000103');
     const antes = await topes();
-    const e = await rechazo(retomar(base({ conversacionId: 'wa_59100000103', claveIdempotencia: claveN(3) }), ANA, AHORA + 3 * DIA));
+    const e = await rechazo(retomar(base({ conversacionId: 'wa_591000000103', claveIdempotencia: claveN(3) }), ANA, AHORA + 3 * DIA));
     expect(e).toMatchObject({ code: 'resource-exhausted', details: { tope: 'retomarMes' } });
     expect(await topes()).toEqual(antes);
-    expect(await retomar(base({ conversacionId: 'wa_59100000103', claveIdempotencia: claveN(3) }), ANA, AHORA + 10 * DIA)).toMatchObject({ estado: 'pendiente' });
+    expect(await retomar(base({ conversacionId: 'wa_591000000103', claveIdempotencia: claveN(3) }), ANA, AHORA + 10 * DIA)).toMatchObject({ estado: 'pendiente' });
   });
   it('los topes son por COMERCIO: los usos de otra persona del mismo comercio cuentan; los de otro comercio no', async () => {
     limites = { ...limites, porDia: 1 };
     await retomar(base());
-    await conversacion(A, 'wa_59100000102');
-    await rechazo(retomar(base({ conversacionId: 'wa_59100000102', claveIdempotencia: claveN(2) }), BRUNO));
+    await conversacion(A, 'wa_591000000102');
+    await rechazo(retomar(base({ conversacionId: 'wa_591000000102', claveIdempotencia: claveN(2) }), BRUNO));
     await db.doc(`tenants/${OTRO}`).update({ nombre: 'Otro' });
     await ruta({ tenantId: OTRO, aliasSecreto: 'cliente09' }, '1000000904');
     await conversacion(OTRO, CONV1, { phoneNumberId: '1000000904' });
