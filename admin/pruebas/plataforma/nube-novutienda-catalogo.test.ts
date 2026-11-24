@@ -15,7 +15,7 @@ import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'scripts', 'nube-novutienda-catalogo.sh');
 const PROYECTO = 'proy-prueba-123';
-const TOKEN = 'tok-secreto-ZZ9988776655';
+const TOKEN = 'tok-secreto-ZZ99887766';
 const HOST = 'tienda.example.org';
 const ENTREGA_OK = { baseUrl: `https://${HOST}`, endpoint: '/api/novuchat/v1/catalogo', token: TOKEN };
 
@@ -28,10 +28,10 @@ args=(); while [ $# -gt 0 ]; do case "$1" in --project) shift 2 ;; --quiet) shif
 set -- "\${args[@]}"
 ultima() { ls "$E/v" | sort -n | tail -1; }
 case "$1 $2" in
-  "projects describe") echo 123456789012 ;;
+  "projects describe") echo 1234567 ;;
   "projects get-iam-policy")
-    if [ "\${FAKE_SIN_IAM:-0}" = 1 ]; then expr='resource.name.startsWith("projects/123456789012/secrets/OTRO_")'
-    else expr='resource.name.startsWith("projects/123456789012/secrets/OTRO_") || resource.name.startsWith("projects/123456789012/secrets/NOVUTIENDA_")'; fi
+    if [ "\${FAKE_SIN_IAM:-0}" = 1 ]; then expr='resource.name.startsWith("projects/1234567/secrets/OTRO_")'
+    else expr='resource.name.startsWith("projects/1234567/secrets/OTRO_") || resource.name.startsWith("projects/1234567/secrets/NOVUTIENDA_")'; fi
     printf '{"bindings":[{"role":"projects/x/roles/desplegadorSecretos","members":["serviceAccount:sa-deploy-prod@%s.iam.gserviceaccount.com"],"condition":{"title":"secretos-de-las-functions","expression":%s}}]}' "$FAKE_PROYECTO" "$(python3 -I -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$expr")" ;;
   "secrets describe") [ -f "$E/existe" ] || exit 1 ;;
   "secrets create") cat > "$E/v/1"; touch "$E/existe" ;;
@@ -49,7 +49,7 @@ case "$1 $2" in
         [ "\${FAKE_CARRERA_POST:-0}" = 1 ] && { echo '{}' > "$E/v/$n"; n=$(( n + 1 )); }
         if [ "\${FAKE_MALO:-0}" = 1 ]; then cat > /dev/null; echo '{"mal":{}}' > "$E/v/$n"; else cat > "$E/v/$n"; fi
         if [ -n "\${FAKE_SWAP:-}" ]; then rm -f "$FAKE_SWAP"; echo '{}' > "$FAKE_SWAP"; chmod 600 "$FAKE_SWAP"; fi
-        echo "projects/123456789012/secrets/NOVUTIENDA_CATALOGO/versions/$n" ;;
+        echo "projects/1234567/secrets/NOVUTIENDA_CATALOGO/versions/$n" ;;
       *) exit 1 ;;
     esac ;;
   *) exit 1 ;;
