@@ -41,6 +41,7 @@ export function RetomarConversacion(p: PropsRetomar) {
   const modalRef = useRef<HTMLDivElement | null>(null);
   const casillaRef = useRef<HTMLInputElement | null>(null);
   const estabaAbierto = useRef(false);
+  const avisoHechoRef = useRef<HTMLParagraphElement | null>(null);
   const enCurso = useRef(false);
   const vivo = useRef(true);
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; }; }, []);
@@ -74,8 +75,11 @@ export function RetomarConversacion(p: PropsRetomar) {
   // Al abrir, el foco va a la casilla; al cerrar sin haber enviado, vuelve al botón que lo abrió.
   useEffect(() => {
     if (abierto) { casillaRef.current?.focus(); estabaAbierto.current = true; return; }
-    if (estabaAbierto.current) { estabaAbierto.current = false; botonRef.current?.focus(); }
+    if (estabaAbierto.current) { estabaAbierto.current = false; if (!hecho) botonRef.current?.focus(); }
   }, [abierto]);
+
+  // Tras enviar, el modal se cierra y el botón queda deshabilitado: el foco va al aviso (enfocable con tabIndex=-1) para no perderse.
+  useEffect(() => { if (hecho) avisoHechoRef.current?.focus(); }, [hecho]);
 
   async function confirmar() {
     // La casilla es obligatoria: sin ella no se llama, aunque se fuerce el clic.
@@ -107,7 +111,7 @@ export function RetomarConversacion(p: PropsRetomar) {
         {hecho ? 'Plantilla enviada…' : 'Retomar conversación'}
       </button>
       {hecho && (
-        <p role="status" className="cv-turno-aviso">
+        <p role="status" className="cv-turno-aviso" ref={avisoHechoRef} tabIndex={-1} data-testid="retomar-hecho">
           Se pidió el envío de la plantilla. El estado aparece en el hilo; podrá escribirle cuando el cliente responda.
         </p>
       )}

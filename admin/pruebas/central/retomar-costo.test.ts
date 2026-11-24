@@ -5,8 +5,10 @@
  * Lo que se defiende, negando:
  *  A. LAS CIFRAS SON DEL PLAN (C9): `limitesDeRetomar` da 7 días, 20 por día y 100 por mes a TODOS (D-R3), y el precio de la
  *     plantilla (`PLANTILLA_UTILIDAD_USD`) con su fuente salen de `planes.ts`. Ni la pantalla ni `lib/turno.ts` escriben la cifra.
- *  B. EL AVISO DE COSTO cambia con la titularidad (comercio: Meta le cobra; novuchat: NovuChat absorbe hasta el tope mensual;
- *     sin dato: no afirma quién paga) y, mientras la tarifa no esté verificada (D-R5), lo dice con su fuente.
+ *  B. EL AVISO DE COSTO afirma quién paga SOLO en los dos casos que `planes.ts` define (`estandar`+`comercio`: Meta cobra aparte
+ *     al negocio; `meta_incluido`+`novuchat`: NovuChat absorbe, dentro del límite de envíos). Las combinaciones MIXTAS y todo
+ *     lo que no consta (sin tarifa o titularidad ESCRITAS, línea sin identificar con titularidades distintas) dan el texto
+ *     neutro, que no afirma quién paga. Mientras la tarifa no esté verificada (D-R5), lo dice con su fuente.
  *  C. EL MODAL EXIGE LA CASILLA: sin marcarla no se llama a `retomarConversacion`, ni forzando el clic; marcada, se llama UNA
  *     vez y SOLO con `{ tenantId, conversacionId, claveIdempotencia }`; un reintento sin respuesta usa la MISMA clave.
  *  D. CUÁNDO SE VE «Retomar»: solo con la ventana cerrada, las dos banderas EXACTAS, sin `noContactar` ni bloqueo, con dato de
@@ -83,22 +85,30 @@ describe('B. el aviso de costo depende de la TARIFA y de la línea (D-R2 a)', ()
   const ctx = (tarifa: ContextoDeAviso['tarifa'], titularidad: ContextoDeAviso['titularidad'], linea: string | null = null): ContextoDeAviso => ({ tarifa, titularidad, linea });
   const l = limitesDeRetomar(null, 'meta_incluido', 'novuchat');
 
-  it('las 4 combinaciones tarifa × titularidad: NovuChat absorbe SOLO con `meta_incluido` y una línea suya', () => {
-    expect(quienPagaLaPlantilla(ctx('meta_incluido', 'novuchat'))).toBe('novuchat');
-    expect(quienPagaLaPlantilla(ctx('meta_incluido', 'comercio'))).toBe('comercio');   // la línea es del comercio: Meta le factura a él
-    expect(quienPagaLaPlantilla(ctx('estandar', 'novuchat'))).toBe('comercio');        // `estandar`: Meta cobra aparte al comercio
+  it('SOLO dos combinaciones afirman quién paga: `estandar`+`comercio` (Meta cobra aparte) y `meta_incluido`+`novuchat` (NovuChat absorbe)', () => {
     expect(quienPagaLaPlantilla(ctx('estandar', 'comercio'))).toBe('comercio');
-    expect(textoAvisoRetomar(ctx('meta_incluido', 'novuchat'))).toContain('NovuChat absorbe ese costo, sin cobrarle a su negocio');
-    for (const [t, tit] of [['meta_incluido', 'comercio'], ['estandar', 'novuchat'], ['estandar', 'comercio']] as const) {
-      const x = textoAvisoRetomar(ctx(t, tit));
-      expect(x, `${t}/${tit}`).toContain('Meta cobra aparte a su negocio');
-      expect(x, `${t}/${tit}`).not.toContain('NovuChat absorbe');
+    expect(quienPagaLaPlantilla(ctx('meta_incluido', 'novuchat'))).toBe('novuchat');
+    const c = textoAvisoRetomar(ctx('estandar', 'comercio'));
+    expect(c).toContain('Meta cobra aparte a su negocio');
+    expect(c).not.toContain('NovuChat absorbe');
+    const n = textoAvisoRetomar(ctx('meta_incluido', 'novuchat'));
+    expect(n).toContain('NovuChat absorbe ese costo, sin cobrarle a su negocio');
+    expect(n).not.toContain('Meta cobra aparte a su negocio');
+  });
+
+  it('NEGATIVA: las combinaciones MIXTAS no afirman quién paga (esa decisión no se toma acá)', () => {
+    for (const mixta of [ctx('estandar', 'novuchat'), ctx('meta_incluido', 'comercio')]) {
+      expect(quienPagaLaPlantilla(mixta), JSON.stringify(mixta)).toBeNull();
+      const x = textoAvisoRetomar(mixta);
+      expect(x).toContain('el costo lo absorbe NovuChat o Meta se lo cobra a su negocio');
+      expect(x).not.toContain('NovuChat absorbe ese costo');
+      expect(x).not.toContain('Meta cobra aparte a su negocio');
     }
   });
 
-  it('NEGATIVA: sin tarifa o sin titularidad (con `meta_incluido`) no se afirma quién paga', () => {
-    for (const c of [ctx(null, null), ctx(null, 'novuchat'), ctx(null, 'comercio'), ctx('meta_incluido', null)]) {
-      expect(quienPagaLaPlantilla(c)).toBeNull();
+  it('NEGATIVA: sin tarifa o sin titularidad no se afirma quién paga', () => {
+    for (const c of [ctx(null, null), ctx(null, 'novuchat'), ctx(null, 'comercio'), ctx('meta_incluido', null), ctx('estandar', null)]) {
+      expect(quienPagaLaPlantilla(c), JSON.stringify(c)).toBeNull();
       const x = textoAvisoRetomar(c);
       expect(x).toContain('el costo lo absorbe NovuChat o Meta se lo cobra a su negocio');
       expect(x).not.toContain('NovuChat absorbe ese costo');
@@ -109,7 +119,7 @@ describe('B. el aviso de costo depende de la TARIFA y de la línea (D-R2 a)', ()
 
   it('la cifra sale de planes.ts, con su fuente y, sin verificar (D-R5), lo dice', () => {
     expect(cifraDePlantilla()).toBe(cifra);
-    for (const c of [ctx('estandar', 'comercio'), ctx('meta_incluido', 'novuchat'), ctx(null, null)]) {
+    for (const c of [ctx('estandar', 'comercio'), ctx('meta_incluido', 'novuchat'), ctx('estandar', 'novuchat'), ctx(null, null)]) {
       const t = textoAvisoRetomar(c);
       expect(t).toContain(`aprox. USD ${cifra} por envío`);
       expect(t).toContain('tarifa de Meta para Bolivia');
@@ -134,18 +144,39 @@ describe('B. el aviso de costo depende de la TARIFA y de la línea (D-R2 a)', ()
     expect(textoAvisoRetomar(ctx('estandar', 'comercio', null))).not.toContain('línea terminada');
   });
 
-  it('`contextoDeAviso`: la titularidad de la línea de la conversación manda; si no consta, un número propio basta; sin números, no consta', () => {
-    const ejes = { tarifa: 'meta_incluido', numeros: [{ phoneNumberId: 'AAA111', titularidad: 'novuchat' }, { phoneNumberId: 'BBB222', titularidad: 'comercio' }] };
+  const num = (phoneNumberId: string, titularidad: string, titularidadExplicita = true) => ({ phoneNumberId, titularidad, titularidadExplicita });
+  it('`contextoDeAviso`: la titularidad de la línea de la conversación manda; sin identificarla, solo si todos los números coinciden', () => {
+    const ejes = { tarifa: 'meta_incluido', tarifaExplicita: true, numeros: [num('AAA111', 'novuchat'), num('BBB222', 'comercio')] };
     expect(contextoDeAviso(ejes, 'AAA111')).toEqual({ tarifa: 'meta_incluido', titularidad: 'novuchat', linea: 'A111' });
     expect(contextoDeAviso(ejes, 'BBB222')).toEqual({ tarifa: 'meta_incluido', titularidad: 'comercio', linea: 'B222' });
-    expect(contextoDeAviso(ejes, undefined)).toEqual({ tarifa: 'meta_incluido', titularidad: 'comercio', linea: null });
-    expect(contextoDeAviso(ejes, '')).toMatchObject({ titularidad: 'comercio', linea: null });
-    expect(contextoDeAviso({ tarifa: 'estandar', numeros: [] }, 'AAA111')).toEqual({ tarifa: 'estandar', titularidad: null, linea: null });
+    // I1: la línea no se identifica y hay números de las dos titularidades: no se afirma
+    expect(contextoDeAviso(ejes, undefined)).toEqual({ tarifa: 'meta_incluido', titularidad: null, linea: null });
+    expect(contextoDeAviso(ejes, '')).toEqual({ tarifa: 'meta_incluido', titularidad: null, linea: null });
+    expect(contextoDeAviso(ejes, 'ZZZ999')).toMatchObject({ titularidad: null, linea: null });
+    // todos los números iguales: aunque no se identifique la línea, consta
+    const iguales = { tarifa: 'estandar', tarifaExplicita: true, numeros: [num('A1', 'comercio'), num('B2', 'comercio')] };
+    expect(contextoDeAviso(iguales, undefined)).toEqual({ tarifa: 'estandar', titularidad: 'comercio', linea: null });
+    expect(contextoDeAviso({ tarifa: 'estandar', tarifaExplicita: true, numeros: [] }, 'AAA111')).toEqual({ tarifa: 'estandar', titularidad: null, linea: null });
     for (const v of [undefined, null, {}, { tarifa: 'rara' }]) expect(contextoDeAviso(v as never, 'AAA111'), JSON.stringify(v)).toEqual({ tarifa: null, titularidad: null, linea: null });
+  });
+
+  it('NEGATIVA (I2): un valor de respaldo, sin `tarifaExplicita` o `titularidadExplicita`, no cuenta: texto neutro', () => {
+    const sinTarifa = { tarifa: 'estandar', tarifaExplicita: false, numeros: [num('A1', 'comercio')] };
+    expect(contextoDeAviso(sinTarifa, 'A1')).toMatchObject({ tarifa: null, titularidad: 'comercio' });
+    expect(quienPagaLaPlantilla(contextoDeAviso(sinTarifa, 'A1'))).toBeNull();
+    const sinTitular = { tarifa: 'meta_incluido', tarifaExplicita: true, numeros: [num('A1', 'novuchat', false)] };   // `novuchat` es solo el respaldo
+    expect(contextoDeAviso(sinTitular, 'A1')).toMatchObject({ tarifa: 'meta_incluido', titularidad: null });
+    expect(quienPagaLaPlantilla(contextoDeAviso(sinTitular, 'A1'))).toBeNull();
+    expect(textoAvisoRetomar(contextoDeAviso(sinTitular, 'A1'))).toContain('el costo lo absorbe NovuChat o Meta se lo cobra a su negocio');
+    expect(contextoDeAviso({ tarifa: 'meta_incluido', tarifaExplicita: true, numeros: [num('A1', 'novuchat', false)] }, undefined).titularidad).toBeNull();
+    // las dos explícitas sí afirman
+    const ok = { tarifa: 'meta_incluido', tarifaExplicita: true, numeros: [num('A1', 'novuchat')] };
+    expect(quienPagaLaPlantilla(contextoDeAviso(ok, 'A1'))).toBe('novuchat');
   });
 
   it('el servidor manda la tarifa en `ejesDeCuenta` y la consola la lee de ahí', () => {
     expect(codigo('functions/src/central/ejesDeCuenta.ts')).toMatch(/^\s*tarifa,$/m);
+    expect(codigo('functions/src/central/ejesDeCuenta.ts')).toContain('tarifaExplicita: esTarifa(cuenta[\'tarifa\'])');
     expect(codigo('web/src/central/lib/ejes.ts')).toContain("tarifa?: 'estandar' | 'meta_incluido'");
     expect(codigo('web/src/central/componentes/DetalleConversacion.tsx')).toContain('contextoDeAviso(p.ejes, ficha.phoneNumberId)');
   });
@@ -285,6 +316,19 @@ describe('C. el modal exige la casilla antes de llamar', () => {
     expect(document.activeElement).toBe(boton(/Retomar conversación/));
   });
 
+  it('tras un envío exitoso el foco va al aviso (enfocable), no a un botón deshabilitado', async () => {
+    document.body.appendChild(cont);
+    pintar();
+    flushSync(() => boton(/Retomar conversación/)!.click());
+    flushSync(() => casilla()!.click());
+    boton(/Enviar plantilla/)!.click(); await asentar(); await asentar();
+    const hecho = cont.querySelector('[data-testid="retomar-hecho"]') as HTMLElement;
+    expect(hecho).not.toBeNull();
+    expect(hecho.getAttribute('tabindex')).toBe('-1');
+    expect(document.activeElement).toBe(hecho);
+    expect((document.activeElement as HTMLButtonElement).disabled).not.toBe(true);
+  });
+
   it('el texto de `failed-precondition` de Retomar nombra noContactar, bloqueo, canal y clave usada; `permission-denied` tiene el suyo', () => {
     const f = textoErrorTurno('retomar', 'failed-precondition');
     for (const frase of ['pidió que no se le escriba', 'bloqueado', 'canal de WhatsApp', 'otros datos', 'ventana de 24 h esté abierta', 'ya se haya enviado una plantilla', 'plantilla no esté disponible']) {
@@ -352,6 +396,17 @@ describe('D. cuándo se ve «Retomar» (cada condición se niega por separado)',
       expect(retomadaPendienteDe(ultimo + HORA, ultimo, undefined)).toBe(false);
       expect(retomadaPendienteDe(ultimo + HORA, ultimo, AHORA)).toBe(true);
       expect(codigo('web/src/central/lib/turno.ts')).toContain("limitesDeRetomar(null, TARIFA_DE_RESPALDO, 'novuchat').diasEntreRetomadas");
+    });
+    it('M2: `ultimaRetomadaEn` presente pero ilegible = retomada pendiente (el servidor la rechaza): no se ve «Retomar»', () => {
+      const a = accionesDeTurno({ ...base, ultimoEntranteEn: ultimo, ultimaRetomadaEn: null, retomadaIlegible: true, ahora: AHORA });
+      expect(a.verRetomar).toBe(false);
+      expect(a.esperandoRetomada).toBe(true);
+      expect(retomadaPendienteDe(null, ultimo, AHORA, true)).toBe(true);
+      expect(accionesDeTurno({ ...base, ultimoEntranteEn: ultimo, ultimaRetomadaEn: null, retomadaIlegible: false, ahora: AHORA }).verRetomar).toBe(true);
+      // la ficha distingue ausente de ilegible
+      const fuente = codigo('web/src/central/lib/conversaciones.ts');
+      expect(fuente).toContain("ultimaRetomadaIlegible: x['ultimaRetomadaEn'] !== undefined && ms(x['ultimaRetomadaEn']) === null");
+      expect(codigo('web/src/central/componentes/DetalleConversacion.tsx')).toContain('retomadaIlegible: ficha.ultimaRetomadaIlegible');
     });
     it('sin permiso de gestionar no se ve ni el aviso de espera', () => {
       expect(accionesDeTurno({ ...conRetomada(ultimo + HORA), puedeGestionar: false }).esperandoRetomada).toBe(false);

@@ -141,6 +141,8 @@ export interface EntradaAcciones {
   ultimoEntranteEn?: number | null;
   /** El reloj de la pantalla (ms), para el plazo de `diasEntreRetomadas`. */
   ahora?: number;
+  /** `ultimaRetomadaEn` presente pero ilegible: se trata como retomada pendiente (el servidor la rechaza). */
+  retomadaIlegible?: boolean;
 }
 
 /**
@@ -196,7 +198,9 @@ export interface Acciones {
  */
 export function retomadaPendienteDe(
   ultimaRetomadaEn: number | null | undefined, ultimoEntranteEn: number | null | undefined, ahora: number | undefined,
+  ilegible = false,
 ): boolean {
+  if (ilegible) return true;   // un `ultimaRetomadaEn` que no es fecha falla cerrado en el servidor: no se ofrece lo que rechazaría
   if (typeof ultimaRetomadaEn !== 'number' || typeof ultimoEntranteEn !== 'number' || typeof ahora !== 'number') return false;
   const dias = limitesDeRetomar(null, TARIFA_DE_RESPALDO, 'novuchat').diasEntreRetomadas;
   return ultimaRetomadaEn > ultimoEntranteEn && ahora < ultimaRetomadaEn + dias * 24 * 3_600_000;
@@ -212,10 +216,10 @@ export function accionesDeTurno(a: EntradaAcciones): Acciones {
     // «Retomar» (plantilla): TODAS las condiciones a la vez. El servidor las vuelve a comprobar (esto no es un permiso).
     verRetomar: a.situacion === 'asistente' && a.puedeIntervenir && a.puedeRetomar === true && a.ventanaConDato === true
       && !a.ventanaAbierta && a.noContactar !== true && a.bloqueada !== true
-      && !retomadaPendienteDe(a.ultimaRetomadaEn, a.ultimoEntranteEn, a.ahora),
+      && !retomadaPendienteDe(a.ultimaRetomadaEn, a.ultimoEntranteEn, a.ahora, a.retomadaIlegible === true),
     esperandoRetomada: a.situacion === 'asistente' && a.puedeIntervenir && a.puedeRetomar === true && a.ventanaConDato === true
       && !a.ventanaAbierta && a.noContactar !== true && a.bloqueada !== true
-      && retomadaPendienteDe(a.ultimaRetomadaEn, a.ultimoEntranteEn, a.ahora),
+      && retomadaPendienteDe(a.ultimaRetomadaEn, a.ultimoEntranteEn, a.ahora, a.retomadaIlegible === true),
     verDevolver: a.situacion === 'mio' || (a.situacion === 'ajeno' && a.esAdmin),
     verEscribir: a.situacion === 'mio' && a.puedeIntervenir,
     habilitados: a.comercioActivo,
@@ -285,32 +289,37 @@ export const SIN_CONTEXTO_DE_AVISO: ContextoDeAviso = { tarifa: null, titularida
 
 /**
  * El contexto del aviso, de la respuesta de `ejesDeCuenta` y la línea de la conversación (`phoneNumberId` de la ficha).
- * Si la línea se halla entre los números del comercio, su titularidad manda; si no consta, rige la del comercio entero: con
- * ALGÚN número propio se avisa de que Meta le factura (lo contrario sería presentar un costo como algo que no es).
+ * SOLO SE USA LO ESCRITO (`tarifaExplicita`, `titularidadExplicita`): el respaldo por defecto (`meta_incluido`, `novuchat`) no
+ * dice quién paga y afirmarlo sería presentar un costo como algo que no es. Sin dato explícito, `null` y texto neutro.
+ *  · Si la línea se halla entre los números, rige su titularidad (si está escrita).
+ *  · Si no se identifica, rige la del comercio solo cuando TODOS sus números la traen escrita y es la misma; con las dos
+ *    titularidades, o con alguna sin escribir, `null`: no se afirma.
  */
 export function contextoDeAviso(
-  ejes: { tarifa?: unknown; numeros?: readonly { phoneNumberId?: unknown; titularidad?: unknown }[] } | null | undefined,
+  ejes: { tarifa?: unknown; tarifaExplicita?: unknown; numeros?: readonly { phoneNumberId?: unknown; titularidad?: unknown; titularidadExplicita?: unknown }[] } | null | undefined,
   phoneNumberId?: string,
 ): ContextoDeAviso {
-  const tarifa: Tarifa | null = ejes?.tarifa === 'estandar' || ejes?.tarifa === 'meta_incluido' ? ejes.tarifa : null;
+  const tarifa: Tarifa | null = ejes?.tarifaExplicita === true && (ejes.tarifa === 'estandar' || ejes.tarifa === 'meta_incluido') ? ejes.tarifa : null;
   const n = ejes?.numeros;
   if (!Array.isArray(n) || n.length === 0) return { tarifa, titularidad: null, linea: null };
+  const escrita = (x: { titularidad?: unknown; titularidadExplicita?: unknown } | undefined): Titularidad | null =>
+    x?.titularidadExplicita === true && (x.titularidad === 'comercio' || x.titularidad === 'novuchat') ? x.titularidad : null;
   const suya = phoneNumberId ? n.find((x) => x?.phoneNumberId === phoneNumberId) : undefined;
-  if (suya) {
-    return { tarifa, titularidad: suya.titularidad === 'comercio' ? 'comercio' : 'novuchat', linea: phoneNumberId!.slice(-4) };
-  }
-  return { tarifa, titularidad: n.some((x) => x?.titularidad === 'comercio') ? 'comercio' : 'novuchat', linea: null };
+  if (suya) return { tarifa, titularidad: escrita(suya), linea: phoneNumberId!.slice(-4) };
+  const todas = n.map((x) => escrita(x));
+  const unica = todas[0] !== null && todas.every((t) => t === todas[0]) ? todas[0]! : null;
+  return { tarifa, titularidad: unica, linea: null };
 }
 
 /**
- * QUIÉN PAGA LA PLANTILLA (D-R2 a y `docs/base-comercial.md`, tarifa por cuenta). NovuChat la absorbe SOLO con la tarifa
- * `meta_incluido` y una línea suya (`novuchat`): con `meta_incluido` la mensajería va en el precio, pero si la línea es del
- * comercio Meta le factura a él. Con la tarifa `estandar` Meta cobra aparte al comercio, sea cual sea la línea.
- * `null` = no consta (no se afirma). Las cuatro combinaciones se prueban en `retomar-costo.test.ts`.
+ * QUIÉN PAGA LA PLANTILLA: la MISMA regla de `limitesDePersona` (`planes.ts`): el comercio paga su Meta SOLO con la tarifa
+ * `estandar` Y la titularidad `comercio`; NovuChat la absorbe (D-R2 a) con `meta_incluido` Y `novuchat`. Las combinaciones
+ * MIXTAS (`estandar`+`novuchat`, `meta_incluido`+`comercio`) y todo lo que no consta devuelven `null`: no se afirma quién paga
+ * (cuál es el criterio para las mixtas lo decide Andres aparte). Las cuatro combinaciones se prueban en `retomar-costo.test.ts`.
  */
 export function quienPagaLaPlantilla(c: Pick<ContextoDeAviso, 'tarifa' | 'titularidad'>): 'comercio' | 'novuchat' | null {
-  if (c.tarifa === 'estandar') return 'comercio';
-  if (c.tarifa === 'meta_incluido') return c.titularidad === 'comercio' ? 'comercio' : c.titularidad === 'novuchat' ? 'novuchat' : null;
+  if (c.tarifa === 'estandar' && c.titularidad === 'comercio') return 'comercio';
+  if (c.tarifa === 'meta_incluido' && c.titularidad === 'novuchat') return 'novuchat';
   return null;
 }
 

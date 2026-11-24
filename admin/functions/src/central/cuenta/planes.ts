@@ -510,9 +510,10 @@ export function limitesDePersona(
  * LOS TOPES DE «RETOMAR CONVERSACIÓN» (C9 de `Analisis` «Retomar», decisión D-R3 de Andres, 23/11/2026).
  *
  * Retomar es la plantilla de utilidad que una persona del comercio manda con la ventana de 24 h CERRADA. Cada envío lo
- * cobra Meta (`PLANTILLA_UTILIDAD_USD`). Lo absorbe NovuChat SOLO con la tarifa `meta_incluido` (y un número de titularidad
- * `novuchat`: si el número es del comercio, Meta le factura a él), dentro de estos topes (D-R2 a; `docs/base-comercial.md`, tarifa
- * por cuenta). Con la tarifa `estandar` Meta cobra aparte al comercio. Los topes valen igual para todos como LÍMITE DE ENVÍO:
+ * cobra Meta (`PLANTILLA_UTILIDAD_USD`). Igual que en `limitesDePersona`, el comercio paga su Meta SOLO con la tarifa `estandar`
+ * Y la titularidad `comercio` (las dos a la vez); NovuChat la absorbe (D-R2 a, `docs/base-comercial.md`, tarifa por cuenta) con la
+ * tarifa `meta_incluido` Y un número `novuchat`, dentro de estos topes. Las combinaciones mixtas no están decididas: la consola
+ * no afirma quién paga en ellas. Los topes valen igual para todos como LÍMITE DE ENVÍO:
  * sin ellos, un comercio podría mandar cientos al mes. De ahí:
  *
  *  - `diasEntreRetomadas`: 7. Una sola plantilla por conversación hasta que el cliente responda, y como máximo 7 días:

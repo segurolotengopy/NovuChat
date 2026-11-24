@@ -92,6 +92,8 @@ export interface Ficha {
   ventanaVenceEn: number | null;
   /** Cuándo se mandó la última plantilla de Retomar (lo escribe solo el servidor); `null` si nunca o no es fecha. */
   ultimaRetomadaEn: number | null;
+  /** `ultimaRetomadaEn` está presente pero no es una fecha: el servidor la rechaza (falla cerrado), así que la consola no ofrece Retomar. */
+  ultimaRetomadaIlegible: boolean;
   /** La línea de WhatsApp por la que escribe el cliente (`phoneNumberId`); `''` si la conversación no la trae. */
   phoneNumberId: string;
   noLeidos: number;
@@ -152,6 +154,7 @@ export function fichaDeDocumento(id: string, datos: Record<string, unknown> | nu
     ultimoEntranteEn: ms(x['ultimoEntranteEn']),
     ventanaVenceEn: ms(x['ventanaVenceEn']),
     ultimaRetomadaEn: ms(x['ultimaRetomadaEn']),
+    ultimaRetomadaIlegible: x['ultimaRetomadaEn'] !== undefined && ms(x['ultimaRetomadaEn']) === null,
     phoneNumberId: str(x['phoneNumberId']).slice(0, 40),
     noLeidos,
     sinLeer: x['sinLeer'] === true,

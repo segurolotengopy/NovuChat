@@ -318,7 +318,7 @@ export function DetalleConversacion(p: PropsDetalle) {
     ventanaAbierta: ventanaAbiertaParaTomar(ficha.ultimoEntranteEn, p.ahora),
     puedeRetomar: p.puedeRetomar === true, ventanaConDato: ficha.ultimoEntranteEn !== null,
     noContactar: ficha.noContactar, bloqueada: ficha.bloqueada,
-    ultimaRetomadaEn: ficha.ultimaRetomadaEn, ultimoEntranteEn: ficha.ultimoEntranteEn, ahora: p.ahora,
+    ultimaRetomadaEn: ficha.ultimaRetomadaEn, ultimoEntranteEn: ficha.ultimoEntranteEn, ahora: p.ahora, retomadaIlegible: ficha.ultimaRetomadaIlegible,
   }), ficha.bloqueada);
   // Se retomó con una plantilla (`turno.retomadoEn`, lo escribe el servidor): con la ventana cerrada se espera al cliente.
   const retomadoEn = retomadoEnDe(ficha.turno);
