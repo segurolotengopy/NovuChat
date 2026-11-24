@@ -100,6 +100,21 @@ describe('Retomar: lo que solo escribe el servidor', () => {
     await assertFails(updateDoc(doc(ingestaA(), C1), { 'turno.retomadoEn': deleteField() }));
   });
 
+  it('NEGATIVA: `ultimaRetomadaMensajeId` (la referencia que libera un rechazo) la escribe solo el servidor: ni la persona ni la ingesta la crean, cambian o borran', async () => {
+    for (const cliente of [adminA, operA, adminB, propietario]) {
+      await assertFails(updateDoc(doc(cliente(), C1), { ultimaRetomadaMensajeId: 'otra-clave-de-retomar' }));
+      await assertFails(updateDoc(doc(cliente(), C1), { ultimaRetomadaMensajeId: 'otra-clave-de-retomar', notaInterna: 'x' }));
+    }
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c3`), {
+      telefono: '59170000003', ultimoMensaje: 'Hola', canal: 'whatsapp', ultimoEn: Timestamp.now(), mensajesTotal: 1, ultimaRetomadaMensajeId: 'x',
+    }));
+    await assertFails(updateDoc(doc(ingestaA(), C1), { ultimaRetomadaMensajeId: 'x' }));
+    await entorno.withSecurityRulesDisabled(async (ctx) => { await updateDoc(doc(ctx.firestore(), C1), { ultimaRetomadaMensajeId: 'clave-de-retomar-0001' }); });
+    await assertFails(updateDoc(doc(ingestaA(), C1), { ultimaRetomadaMensajeId: 'otra' }));
+    await assertFails(updateDoc(doc(ingestaA(), C1), { ultimaRetomadaMensajeId: deleteField() }));
+    for (const cliente of [adminA, operA]) await assertFails(updateDoc(doc(cliente(), C1), { ultimaRetomadaMensajeId: deleteField() }));
+  });
+
   it('NEGATIVA: `plantillasPersona` (métrica) la suma solo el servidor: ni la persona, ni otro comercio, ni la propia ingesta la crean o la cambian', async () => {
     const m = `tenants/${A}/metricas/2026-11`;
     for (const cliente of [adminA, operA, adminB, propietario]) await assertFails(setDoc(doc(cliente(), m), { plantillasPersona: 1 }, { merge: true }));

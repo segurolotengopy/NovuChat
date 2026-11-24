@@ -161,10 +161,10 @@ const MINUTO_MS = 60_000;
 /** Cuánto antes del entrante tiene que haber sido tomada la conversación para no haber carrera. */
 const MARGEN_TURNO_PREVIO_MS = 60_000;
 /** El minuto en UTC (`aaaa-mm-ddThh:mm`) y el día de La Paz (UTC-4 fijo), como los otros contadores. */
-const minutoDe = (ms: number): string => new Date(ms).toISOString().slice(0, 16);
+export const minutoDe = (ms: number): string => new Date(ms).toISOString().slice(0, 16);
 const diaDe = (ms: number): string => new Date(ms - 4 * 3_600_000).toISOString().slice(0, 10);
 /** Segundos que faltan para que cambie el minuto (al menos 1). */
-const esperaHastaElMinuto = (ms: number): number => Math.max(1, Math.ceil((MINUTO_MS - (ms % MINUTO_MS)) / 1000));
+export const esperaHastaElMinuto = (ms: number): number => Math.max(1, Math.ceil((MINUTO_MS - (ms % MINUTO_MS)) / 1000));
 
 // ---------------------------------------------------------------------------
 // LA TRANSACCIÓN

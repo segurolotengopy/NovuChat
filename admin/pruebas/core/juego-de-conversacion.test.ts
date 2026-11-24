@@ -91,9 +91,10 @@ describe('juego de conversación: claves y valores exactos', () => {
     expect(faltanDelJuego({ ...JUEGO_COMPLETO, guardarMedios: 1 })).toEqual(['guardarMedios']);
     expect(faltanDelJuego({ ...JUEGO_COMPLETO, personaPuedeEscribir: 1 })).toEqual(['personaPuedeEscribir']);
     expect(faltanDelJuego({ ...JUEGO_COMPLETO, personaPuedeEnviarMedios: 1 })).toEqual(['personaPuedeEnviarMedios']);
-    // `personaPuedeRetomar` NO es del juego todavía: no la agrega este PR (el alta no tiene escritor para ella).
+    // `personaPuedeRetomar` (C2) entra a JUEGO_CON_INFRA con R4, junto con su escritor en el alta: traslado decidido por
+    // la Principal el 24/11 porque encender-conversacion.test exige un escritor para cada clave del juego. Este PR no la
+    // agrega ni afirma que quede fuera.
     expect(faltanDelJuego({ ...JUEGO_COMPLETO })).toEqual([]);
-    expect(Object.keys(JUEGO_CON_INFRA)).not.toContain('personaPuedeRetomar');
   });
 
   it('negativa: ficha sin guardarMedios', () => {

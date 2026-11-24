@@ -32,7 +32,7 @@
  *
  * LA CADUCIDAD DEL `pendiente`. Un `pendiente` con más de 2 minutos (`PENDIENTE_MAXIMO_MS`), o cuya ventana
  * de Meta ya se cerró según `ultimoEntranteEn`, NO se entrega: pasa a `rechazado` con `codigoEnvio:
- * 'caducado'` y `reintentable: true`, sin contar en `mensajesPersona`. Se decide aunque el mensaje sea de
+ * 'caducado'` y `reintentable: true` (`false` en una plantilla, y ahí además se libera la conversación y el cupo de Retomar: `liberarRetomada`), sin contar en `mensajesPersona`. Se decide aunque el mensaje sea de
  * otra línea, para que los viejos no ocupen el lote de la consulta.
  *
  * LAS PLANTILLAS (Retomar). Un mensaje `tipo: 'plantilla'` solo se entrega si la petición trae la cabecera
@@ -54,7 +54,7 @@ import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada, type Ruta } from '../seguridad/firma.js';
 import { ID_COMERCIO } from './acceso.js';
 import {
-  CODIGO_CADUCADO, ENVIANDO_MAXIMO_MS, MAXIMO_POR_RECLAMO, PENDIENTE_MAXIMO_MS, IDIOMA_DE_PLANTILLA, NOMBRE_DE_PLANTILLA, PARAMETROS_MAXIMOS, canalDeSalidaDe, claveReleDe, parametroDePlantillaValido,
+  CODIGO_CADUCADO, ENVIANDO_MAXIMO_MS, MAXIMO_POR_RECLAMO, PENDIENTE_MAXIMO_MS, IDIOMA_DE_PLANTILLA, NOMBRE_DE_PLANTILLA, PARAMETROS_MAXIMOS, canalDeSalidaDe, claveReleDe, liberarRetomada, parametroDePlantillaValido, refTopesDeRetomar,
   sumarMensajePersona, sumarPlantillaPersona, type CanalDeSalida,
 } from './salidaPersona.js';
 import { milisegundosDeMomento, ventanaDeMetaAbierta } from './turno.js';
@@ -155,6 +155,8 @@ export async function reclamarSalida(
         ? await tx.get(db.doc(`tenants/${tenantId}/mediosEnviados/${objeto}`)) : null;
       if (!s.exists || s.get('tenantId') !== tenantId || s.get('direccion') !== 'saliente' || s.get('autor') !== 'persona') return 'nada';
       const estado: unknown = s.get('estadoEnvio');
+      // Una plantilla `pendiente` puede caducar abajo: su cupo se devuelve en la misma transacción (lectura antes de escribir).
+      const topesDeRetomar = estado === 'pendiente' && tipoDelMensaje === 'plantilla' ? await tx.get(refTopesDeRetomar(db, tenantId)) : null;
       // LA CADUCIDAD, antes de mirar de qué línea es: un `pendiente` viejo de otra línea tampoco puede
       // quedarse en la cola ocupando lugar. Sin entregarse, sin contar, reintentable.
       if (estado === 'pendiente') {
@@ -165,9 +167,10 @@ export async function reclamarSalida(
           || !conv.exists || (tipoDelMensaje !== 'plantilla' && !ventanaDeMetaAbierta(conv.get('ultimoEntranteEn'), ahoraMs));
         if (vencido) {
           tx.update(candidato.ref, {
-            estadoEnvio: 'rechazado', codigoEnvio: CODIGO_CADUCADO, reintentable: true,
+            estadoEnvio: 'rechazado', codigoEnvio: CODIGO_CADUCADO, reintentable: tipoDelMensaje !== 'plantilla',
             confirmadoEn: Timestamp.fromMillis(ahoraMs), contado: false,
           });
+          if (topesDeRetomar !== null) liberarRetomada(tx, s, conv, topesDeRetomar);
           return 'caducado';
         }
       }

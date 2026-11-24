@@ -44,14 +44,19 @@
  * 10. LOS TOPES, del plan (`limitesDeRetomar`, inyectada) y contados en la MISMA transacción que crea el mensaje, en
  *     `topesDeEnvio/r_{comercio}`: `porDia` (día de La Paz) y `porMes`. `resource-exhausted` con
  *     `details.tope: 'retomarDia' | 'retomarMes'`; un rechazo no consume cupo. Las cifras NO están en core.
+ * 10b. EL TOPE POR PERSONA y por minuto (`limites.porMinuto`, 10 si el plan no lo trae): el contador `u_{uid}` que comparte
+ *     con `enviarComoPersona`; `resource-exhausted` con `details.tope: 'minuto'`.
+ *     UN RECHAZO DE PLANTILLA LIBERA: si el mensaje termina `rechazado` (confirmación, caducidad), `ultimaRetomadaEn` se
+ *     borra (solo si es el de ese mensaje: `ultimaRetomadaMensajeId`) y el cupo del día y del mes se devuelve
+ *     (`liberarRetomada`, en `salidaPersona.ts`). Aceptado e incierto no devuelven nada.
  * 11. AUDITORÍA FALLA-CERRADA Y ATÓMICA (`conversacion_retomada`): en la misma transacción, con `telefono4` y nunca el
  *     teléfono. Si no se puede escribir, no hay mensaje.
  * 12. El timbre se toca DESPUÉS de la transacción y solo si el mensaje es nuevo. Su fallo no falla el uso: el mensaje queda
  *     `pendiente` y lo reclama el siguiente timbre o el barrido (si no llega en 2 min, caduca `rechazado/caducado`).
  *
  * LO QUE ESCRIBE: el mensaje `{direccion:'saliente', tipo:'plantilla', texto:'', autor:'persona', autorUid, estadoEnvio:
- * 'pendiente', to, phoneNumberId, tenantId, huella, plantilla:{nombre, idioma, parametros:[nombre del comercio]}}`; en la
- * conversación, `ultimaRetomadaEn`, `ultimoEn`, `ultimoMensaje` y el turno `{responde:'persona', tomadoPor, tomadoEn,
+ * 'pendiente', to, phoneNumberId, tenantId, huella, cupoRetomarDia, cupoRetomarMes, plantilla:{nombre, idioma, parametros:[nombre del comercio]}}`; en la
+ * conversación, `ultimaRetomadaEn`, `ultimaRetomadaMensajeId`, `ultimoEn`, `ultimoMensaje` y el turno `{responde:'persona', tomadoPor, tomadoEn,
  * actividadPersonaEn, retomadoEn}` (D-R1 (a): con la regla de `turnoVigente`, si el cliente responde dentro de 30 min
  * contesta la persona; si no, el asistente). NO toca `mensajesVentana`, el bloque de 25, los umbrales, `ventanaVenceEn`,
  * `atencionEstado` ni `envioPersona`: cero mensajes por conversación del asistente. El turno anterior vencido se reemplaza
@@ -71,7 +76,7 @@ import { exigirAutenticado } from '../seguridad/autorizacion.js';
 import { cuentaVigenteDe } from '../seguridad/vigencia.js';
 import { exigirComercioHabilitado, exigirRolDePersona } from './accesoPersona.js';
 import { camposDeMensajeIndexado } from './derivados.js';
-import { canalDe, errorDeEnvio, esObjeto, type Canal, type EntornoDeEnvio } from './enviarComoPersona.js';
+import { canalDe, errorDeEnvio, esObjeto, esperaHastaElMinuto, minutoDe, type Canal, type EntornoDeEnvio } from './enviarComoPersona.js';
 import { estaBloqueada } from './pausa.js';
 import {
   CLAVE_DE_ENVIO, IDIOMA_DE_PLANTILLA, NOMBRE_DE_PLANTILLA, PARAMETRO_MAXIMO, SECRETO_DE_SALIDA_PERSONA, huellaDeRetomar,
@@ -95,7 +100,16 @@ export interface LimitesDeRetomar {
   diasEntreRetomadas: number;
   porDia: number;
   porMes: number;
+  /**
+   * Retomadas por minuto POR PERSONA (el mismo contador `topesDeEnvio/u_{uid}` de `enviarComoPersona`: un solo tope por
+   * persona para todo lo que escribe en nombre del comercio). Opcional: si el plan no lo trae rige
+   * `RETOMAR_POR_MINUTO_PREDETERMINADO`, nunca «sin tope».
+   */
+  porMinuto?: number;
 }
+
+/** El mismo valor que `MENSAJES_PERSONA_POR_MINUTO` de Central; solo rige si `limitesDeRetomar` no trae `porMinuto`. */
+export const RETOMAR_POR_MINUTO_PREDETERMINADO = 10;
 
 export interface DependenciasDeRetomar {
   limitesDeRetomar(plan: unknown, tarifa: 'estandar' | 'meta_incluido', titularidad: 'novuchat' | 'comercio'): LimitesDeRetomar;
@@ -163,11 +177,12 @@ export async function crearRetomada(p: Preparado): Promise<CreadoRetomar> {
   const { db, tenantId, uid, ahoraMs, ref, conversacionId } = c;
   const refMensaje = ref.collection('mensajes').doc(clave);
   const refTopes = db.doc(`topesDeEnvio/r_${tenantId}`);
+  const refUsuario = db.doc(`topesDeEnvio/u_${uid}`);
   const refFicha = db.doc(`tenants/${tenantId}`);
   const refRuta = db.doc(`rutasWhatsApp/${canal.phoneNumberId}`);
 
   return db.runTransaction<CreadoRetomar>(async (tx) => {
-    const [ficha, conv, previo, topes, ruta] = await tx.getAll(refFicha, ref, refMensaje, refTopes, refRuta);
+    const [ficha, conv, previo, topes, ruta, tUsuario] = await tx.getAll(refFicha, ref, refMensaje, refTopes, refRuta, refUsuario);
 
     // 2. Las dos banderas, DENTRO de la transacción (si se apagaron tras la lectura previa, no se escribe nada).
     if (!personaPuedeEscribirDeFicha(ficha?.data())) throw errorDeTurno('sinSalida');
@@ -234,6 +249,14 @@ export async function crearRetomada(p: Preparado): Promise<CreadoRetomar> {
     if (nDia >= limites.porDia) throw errorDeTurno('topeRetomarDia', { tope: 'retomarDia' });
     if (nMes >= limites.porMes) throw errorDeTurno('topeRetomarMes', { tope: 'retomarMes' });
 
+    // 10b. El tope POR PERSONA y por minuto (el contador `u_{uid}` que comparte con `enviarComoPersona`).
+    const minuto = minutoDe(ahoraMs);
+    const u = tUsuario && tUsuario.exists ? (tUsuario.data() ?? {}) : {};
+    const uMin = u['min'] === minuto ? u['n'] : 0;
+    if (!numeroValido(uMin)) throw errorDeTurno('noDisponible');
+    const porMinuto = limites.porMinuto ?? RETOMAR_POR_MINUTO_PREDETERMINADO;
+    if (uMin >= porMinuto) throw errorDeEnvio('topeMinuto', { tope: 'minuto', esperaSegundos: esperaHastaElMinuto(ahoraMs) });
+
     // 11. Las escrituras, todas o ninguna.
     const ts = Timestamp.fromMillis(ahoraMs);
     tx.create(refMensaje, {
@@ -244,14 +267,17 @@ export async function crearRetomada(p: Preparado): Promise<CreadoRetomar> {
       phoneNumberId: canal.phoneNumberId,
       huella,
       plantilla: { nombre: plantilla.nombre, idioma: plantilla.idioma, parametros: [nombre] },
+      // El día y el mes en que se contó el cupo: si el envío termina `rechazado`, se devuelve a ESE día y mes (`liberarRetomada`).
+      cupoRetomarDia: dia, cupoRetomarMes: mes,
       ...camposDeMensajeIndexado('', tenantId),
     });
     tx.update(ref, {
-      ultimaRetomadaEn: ts, ultimoEn: ts, ultimoMensaje: ULTIMO_MENSAJE_AL_RETOMAR,
+      ultimaRetomadaEn: ts, ultimaRetomadaMensajeId: clave, ultimoEn: ts, ultimoMensaje: ULTIMO_MENSAJE_AL_RETOMAR,
       // El turno se REEMPLAZA entero (sin `devueltoEn` ni motivo de una devolución anterior).
       turno: turnoAFirestore({ responde: 'persona', tomadoPor: uid, tomadoEn: ahoraMs, actividadPersonaEn: ahoraMs, retomadoEn: ahoraMs }),
     });
     tx.set(refTopes, { dia, nDia: nDia + 1, mes, nMes: nMes + 1, actualizadoEn: ts });
+    tx.set(refUsuario, { min: minuto, n: uMin + 1, actualizadoEn: ts });
     auditarEnTransaccion(tx, c, 'conversacion_retomada', { mensajeId: clave });
     return { estado: 'pendiente', mensajeId: clave, repetido: false };
   });
@@ -305,14 +331,15 @@ export async function atenderRetomar(
       registrar(FUNCION, 'permission-denied', { tenantId: t, uid, rol, motivo: 'cuenta_no_vigente' });
       throw errorDeTurno('sinPermiso');
     }
-    try { await exigirComercioHabilitado(t, db); } catch (e) {
+    // La ficha se lee UNA vez: `exigirComercioHabilitado` la devuelve (como `exigirPersonaDe`) y de ahí salen las banderas.
+    let fichaPrevia: Record<string, unknown>;
+    try { fichaPrevia = await exigirComercioHabilitado(t, db, { exigirSalida: false }); } catch (e) {
       registrar(FUNCION, e instanceof HttpsError ? e.code : 'unavailable', { tenantId: t, uid, rol });
       throw e;
     }
 
     // 1b. Las banderas de la ficha, ANTES de resolver el canal y los límites del plan (orden de §1.4): un comercio sin la
     //     función recibe su error, no uno de canal. Se vuelven a comprobar dentro de la transacción.
-    const fichaPrevia = (await db.doc(`tenants/${t}`).get()).data();
     if (!personaPuedeEscribirDeFicha(fichaPrevia)) { registrar(FUNCION, 'permission-denied', { tenantId: t, uid, rol, motivo: 'sin_salida' }); throw errorDeTurno('sinSalida'); }
     if (!personaPuedeRetomarDeFicha(fichaPrevia)) { registrar(FUNCION, 'permission-denied', { tenantId: t, uid, rol, motivo: 'sin_retomar' }); throw errorDeTurno('sinRetomar'); }
 
