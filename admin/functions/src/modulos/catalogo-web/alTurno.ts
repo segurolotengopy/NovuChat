@@ -1,4 +1,5 @@
-import { enlaceParaElFlujo, sePuedeComprar, type EnlaceEmitido } from './catalogoWeb.js';
+import { getFirestore } from 'firebase-admin/firestore';
+import { enlaceParaElFlujo, fuenteExternaDe, sePuedeComprar, type EnlaceEmitido } from './catalogoWeb.js';
 
 /**
  * EL ENLACE DE LA CARTA EN EL TURNO (F3b-2e). Era un trozo de `configuracionFlujo`
@@ -29,11 +30,17 @@ export async function enlaceDeLaCartaDelTurno(o: {
   catalogo: readonly { data(): Record<string, unknown> }[];
 }): Promise<EnlaceDelTurno> {
   try {
+    // FUENTE EXTERNA (B3): un comercio con `config/pedidos.catalogoExterno.activo` no tiene ítems en Firestore que
+    // contar, y el enlace NO llama a la fuente (este es el camino caliente de cada turno): una lectura de un
+    // documento, y el enlace sale. Sin el dato, todo como siempre.
+    const externo = o.catalogoWebActivo
+      && fuenteExternaDe((await getFirestore().doc(`tenants/${o.ruta.tenantId}/config/pedidos`).get()).data()) !== null;
     const emitido = await enlaceParaElFlujo({
       ruta: o.ruta,
       telefono: o.telefono,
       catalogoWebActivo: o.catalogoWebActivo,
-      vendibles: o.catalogo.filter((d) => sePuedeComprar(d.data())).length,
+      vendibles: externo ? 0 : o.catalogo.filter((d) => sePuedeComprar(d.data())).length,
+      ...(externo ? { catalogoExterno: true } : {}),
     });
     return 'url' in emitido ? { enlace: emitido, motivo: null } : { enlace: null, motivo: emitido.motivo };
   } catch (error) {

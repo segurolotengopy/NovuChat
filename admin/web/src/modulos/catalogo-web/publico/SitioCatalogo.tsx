@@ -31,8 +31,28 @@ import { variablesDe } from '../../../central/lib/paletas';
 
 const RUTA_API = '/api/catalogo';
 
-/** El carrito: identificador del ítem -> cantidad. Nada más. */
+/**
+ * El carrito: clave de línea -> cantidad. Nada más. La clave es el id del ítem y, si el comercio pide
+ * especificación por línea (`detallePorLinea`) y la persona escribió una, el id + NUL + la especificación: la misma
+ * pieza con dos especificaciones son dos líneas.
+ */
 type Carrito = Record<string, number>;
+
+/** Tope de la especificación por línea; el servidor aplica el mismo (60) y la vuelve a sanear. */
+export const MAX_DETALLE = 60;
+const SEP = '\u0000';
+export const claveDeLinea = (id: string, detalle = ''): string => (detalle === '' ? id : `${id}${SEP}${detalle}`);
+export const idDeClave = (clave: string): string => clave.split(SEP, 1)[0] ?? '';
+export const detalleDeClave = (clave: string): string => {
+  const i = clave.indexOf(SEP);
+  return i < 0 ? '' : clave.slice(i + 1);
+};
+/** Lo que la persona escribió, listo para la clave: sin controles, espacios colapsados y recortado. */
+export const detalleLimpio = (v: string): string =>
+  v.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_DETALLE);
+/** Las unidades de un ítem en todas sus líneas. */
+export const cantidadDeItem = (carrito: Carrito, id: string): number =>
+  Object.entries(carrito).reduce((a, [k, n]) => (idDeClave(k) === id ? a + n : a), 0);
 
 /**
  * La dirección de la imagen de un ítem, venga de donde venga.
@@ -61,7 +81,14 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
   useEffect(() => {
     let vivo = true;
     fetch(`${RUTA_API}/${ficha}`, { headers: { Accept: 'application/json' } })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(async (r) => {
+        if (r.ok) return r.json();
+        // Un 409 puede ser «catálogo apagado» o «catálogo no disponible» (la fuente externa no respondió): se
+        // distinguen por el código del servidor, que no lleva nada del comercio.
+        const cuerpo = await r.json().catch(() => null) as { error?: unknown } | null;
+        return Promise.reject(new Error(r.status === 409 && cuerpo?.error === 'catalogo no disponible'
+          ? 'no-disponible' : String(r.status)));
+      })
       .then((d: CatalogoPublico) => { if (vivo) setDatos(d); })
       .catch((e: Error) => {
         if (!vivo) return;
@@ -74,7 +101,10 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
         // mandarlo a «escríbenos por WhatsApp y te damos otro» cuando ningún
         // enlace nuevo va a funcionar es hacerle perder el tiempo a un cliente
         // y una conversación pagada al comercio.
-        setError(e.message === '409'
+        setError(e.message === 'no-disponible'
+          ? 'El catálogo no está disponible en este momento. Inténtalo de nuevo '
+            + 'en unos minutos o escríbenos por WhatsApp.'
+          : e.message === '409'
           ? 'Este negocio todavía no publicó su catálogo. Escríbenos por '
             + 'WhatsApp y te atendemos por ahí.'
           : 'Este enlace ya no está disponible. Escríbenos por WhatsApp '
@@ -142,6 +172,7 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
   const items = datos.items;
   const total = totalDelCarrito(items, carrito);
   const unidades = Object.values(carrito).reduce((a, b) => a + b, 0);
+  const detallePorLinea = datos.detallePorLinea === true;
 
   return (
     <div className="cat" style={estilo}>
@@ -153,7 +184,7 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
       ) : vista === 'pedido' ? (
         <Pedido
           ficha={ficha} items={items} carrito={carrito} entrega={datos.entrega}
-          moneda={datos.negocio.moneda} total={total}
+          moneda={datos.negocio.moneda} total={total} detallePorLinea={detallePorLinea}
           alCambiar={setCarrito}
           alVolver={() => setVista('catalogo')}
           alConfirmar={(r) => {
@@ -165,7 +196,7 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
           ficha={ficha}
           items={items} carrito={carrito} moneda={datos.negocio.moneda}
           conFotos={items.some((i) => fotoDelItem(i, ficha) !== '')}
-          alSumar={(id, n) => setCarrito((c) => sumar(c, id, n))}
+          alSumar={(id, n) => setCarrito((c) => sumarItem(c, id, n))}
           alAbrir={setDetalle}
         />
       )}
@@ -174,8 +205,8 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
         <Detalle
           ficha={ficha}
           item={detalle} moneda={datos.negocio.moneda}
-          cantidad={carrito[detalle.id] ?? 0}
-          alSumar={(n) => setCarrito((c) => sumar(c, detalle.id, n))}
+          cantidad={cantidadDeItem(carrito, detalle.id)}
+          alSumar={(n) => setCarrito((c) => sumarItem(c, detalle.id, n))}
           alCerrar={() => setDetalle(null)}
         />
       )}
@@ -275,7 +306,7 @@ function Catalogo({ items, ficha, carrito, moneda, conFotos, alSumar, alAbrir }:
         <ul className="cat-lista">
           {visibles.map((i) => (
             <Tarjeta key={i.id} item={i} ficha={ficha} moneda={moneda} conFotos={conFotos}
-                     cantidad={carrito[i.id] ?? 0}
+                     cantidad={cantidadDeItem(carrito, i.id)}
                      alSumar={(n) => alSumar(i.id, n)}
                      alAbrir={() => alAbrir(i)} />
           ))}
@@ -381,9 +412,11 @@ export const PRECISION_AVISO_M = 100;
 
 type EstadoUbicacion = 'nada' | 'pidiendo' | 'lista' | 'denegada' | 'fallo' | 'sin_soporte';
 
-export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambiar, alVolver, alConfirmar }: {
+export function Pedido({ ficha, items, carrito, entrega, moneda, total, detallePorLinea = false, alCambiar, alVolver, alConfirmar }: {
   ficha: string; items: ItemPublico[]; carrito: Carrito;
   entrega: CatalogoPublico['entrega']; moneda: string; total: number;
+  /** `config/venta.detallePorLinea`: pide «Especificaciones (opcional)» en cada línea. */
+  detallePorLinea?: boolean;
   alCambiar: (c: Carrito) => void;
   alVolver: () => void;
   alConfirmar: (r: RespuestaCheckout) => void;
@@ -406,7 +439,7 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambia
   const [enviando, setEnviando] = useState(false);
   const [fallo, setFallo] = useState<string | null>(null);
 
-  const elegidos = items.filter((i) => (carrito[i.id] ?? 0) > 0);
+  const elegidos = lineasDelCarrito(items, carrito);
   const costoEnvio = modo === 'envio' && entrega.costoDelivery !== null ? entrega.costoDelivery : 0;
   const totalConEnvio = total + costoEnvio;
   // SOLO CON ENVÍO. El mínimo es una condición de la entrega a domicilio, y
@@ -457,7 +490,10 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambia
         headers: { 'Content-Type': 'application/json' },
         // SOLO IDENTIFICADORES Y CANTIDADES. Ver la cabecera del archivo.
         body: JSON.stringify({
-          items: elegidos.map((i) => ({ id: i.id, cantidad: carrito[i.id] })),
+          items: elegidos.map((l) => ({
+            id: l.item.id, cantidad: l.cantidad,
+            ...(detallePorLinea && l.detalle !== '' ? { detalle: l.detalle } : {}),
+          })),
           entrega: modo,
           ...(modo === 'envio' ? { direccion } : {}),
           // OPCIONAL y solo con envío: un objeto {lat, lng} ya redondeado. El
@@ -488,14 +524,22 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambia
       <h2>Tu pedido</h2>
 
       <ul className="cat-resumen">
-        {elegidos.map((i) => (
-          <li key={i.id}>
-            <span>{i.nombre}</span>
-            <Contador cantidad={carrito[i.id] ?? 0} nombre={i.nombre}
-                      alSumar={(n) => alCambiar(sumar(carrito, i.id, n))} />
+        {elegidos.map((l) => (
+          <li key={l.clave}>
+            <span>{l.item.nombre}</span>
+            <Contador cantidad={l.cantidad} nombre={l.item.nombre}
+                      alSumar={(n) => alCambiar(sumar(carrito, l.clave, n))} />
             <strong>{precioTexto(
-              i.precio === null ? null : i.precio * (carrito[i.id] ?? 0),
-              i.moneda || moneda)}</strong>
+              l.item.precio === null ? null : l.item.precio * l.cantidad,
+              l.item.moneda || moneda)}</strong>
+            {detallePorLinea && (
+              <label className="cat-detalle-linea">
+                <span>Especificaciones (opcional)</span>
+                <input type="text" maxLength={MAX_DETALLE} defaultValue={l.detalle}
+                       placeholder="Por ejemplo: color negro"
+                       onBlur={(e) => alCambiar(cambiarDetalle(carrito, l.clave, e.target.value))} />
+              </label>
+            )}
           </li>
         ))}
       </ul>
@@ -710,6 +754,45 @@ function sumar(carrito: Carrito, id: string, n: number): Carrito {
 }
 
 /**
+ * Suma o resta unidades de un ÍTEM desde el catálogo. Sumar va a la línea sin especificación; restar baja esa
+ * línea y, si no existe, la primera línea del ítem (así el «−» de la tarjeta funciona aunque todas las líneas
+ * lleven especificación).
+ */
+export function sumarItem(carrito: Carrito, id: string, n: number): Carrito {
+  if (n >= 0 || carrito[id] !== undefined) return sumar(carrito, id, n);
+  const clave = Object.keys(carrito).find((k) => idDeClave(k) === id);
+  return clave === undefined ? carrito : sumar(carrito, clave, n);
+}
+
+/**
+ * Cambia la especificación de una línea: la línea pasa a la clave id + detalle y, si ya existía otra con esa misma
+ * clave, las unidades se juntan (tope 99).
+ */
+export function cambiarDetalle(carrito: Carrito, clave: string, texto: string): Carrito {
+  const cantidad = carrito[clave];
+  if (cantidad === undefined) return carrito;
+  const nueva = claveDeLinea(idDeClave(clave), detalleLimpio(texto));
+  if (nueva === clave) return carrito;
+  const copia = { ...carrito };
+  delete copia[clave];
+  copia[nueva] = Math.min(99, (copia[nueva] ?? 0) + cantidad);
+  return copia;
+}
+
+interface LineaDelCarrito { clave: string; item: ItemPublico; cantidad: number; detalle: string }
+
+/** Las líneas del carrito que siguen en el catálogo, en el orden del carrito. */
+function lineasDelCarrito(items: ItemPublico[], carrito: Carrito): LineaDelCarrito[] {
+  const porId = new Map(items.map((i) => [i.id, i] as const));
+  const lineas: LineaDelCarrito[] = [];
+  for (const [clave, cantidad] of Object.entries(carrito)) {
+    const item = porId.get(idDeClave(clave));
+    if (item && cantidad > 0) lineas.push({ clave, item, cantidad, detalle: detalleDeClave(clave) });
+  }
+  return lineas;
+}
+
+/**
  * EL CARRITO, PODADO CONTRA EL CATÁLOGO VIGENTE.
  *
  * Se exporta y es pura para poder probarla: el efecto que la llama vive dentro
@@ -722,15 +805,14 @@ function sumar(carrito: Carrito, id: string, n: number): Carrito {
  */
 export function podarCarrito(carrito: Carrito, items: ItemPublico[]): Carrito {
   const vigentes = new Set(items.map((i) => i.id));
-  const quedan = Object.entries(carrito).filter(([id]) => vigentes.has(id));
+  const quedan = Object.entries(carrito).filter(([clave]) => vigentes.has(idDeClave(clave)));
   return quedan.length === Object.keys(carrito).length ? carrito : Object.fromEntries(quedan);
 }
 
 function totalDelCarrito(items: ItemPublico[], carrito: Carrito): number {
   let total = 0;
-  for (const i of items) {
-    const n = carrito[i.id] ?? 0;
-    if (n > 0 && i.precio !== null) total += i.precio * n;
+  for (const l of lineasDelCarrito(items, carrito)) {
+    if (l.item.precio !== null) total += l.item.precio * l.cantidad;
   }
   return Number(total.toFixed(2));
 }
@@ -784,7 +866,10 @@ function mensajeDeFallo(estado: number, codigo: unknown): string {
     return 'Lo que elegiste ya no se puede pedir por acá. Actualiza la página para ver el catálogo de ahora.';
   }
   if (codigo === 'monedas mezcladas') {
-    return 'Tu pedido mezcla precios en bolivianos y en dólares. Sepáralos en dos pedidos.';
+    return 'Tu pedido mezcla precios de monedas distintas. Sepáralos en dos pedidos.';
+  }
+  if (codigo === 'catalogo no disponible') {
+    return 'El catálogo no está disponible en este momento. Inténtalo de nuevo en unos minutos o escríbenos por WhatsApp.';
   }
   return 'No pudimos registrar el pedido. Inténtalo de nuevo en un momento.';
 }

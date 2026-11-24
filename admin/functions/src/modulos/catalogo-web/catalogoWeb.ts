@@ -55,6 +55,11 @@ import { REGION } from '../../core/region.js';
 import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
 import { descontarPedido, fichaDescuentaStock, hayParaVender } from '../inventario/inventario.js';
 import { sePuedeComprar, idDeItemValido, lineaLimpia } from '../pedidos/comprable.js';
+import { urlImagenValida } from './urlImagen.js';
+import {
+  SECRETO_CATALOGO, hayParaVenderExterno, leerCatalogoExterno, mercadoDeTelefono,
+  type ItemExterno, type Mercado,
+} from './fuenteExterna.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../../core/seguridad/firma.js';
 // `enmascarar` sale de `ingesta.ts` y no de `firma.ts`, que tiene la suya con
 // otro recorte. Las dos pasan la regla, pero un mismo teléfono se vería
@@ -271,6 +276,25 @@ async function tieneVenta(tenantId: string): Promise<boolean> {
 export const fichaVende = (ficha: FichaConCapacidades | null | undefined): boolean =>
   tieneModulo(ficha, 'catalogo-web');
 
+/**
+ * FUENTE EXTERNA (B3): ¿este comercio vende desde un catálogo que vive en otra plataforma?
+ * Lo decide el DATO `tenants/{t}/config/pedidos.catalogoExterno.activo === true` (lo escribe el servidor; las reglas
+ * no abren `config/pedidos` al cliente). Sin él, todo el módulo se comporta como siempre. `monedas`, si el dato la
+ * trae como lista, acota qué moneda puede vender el comercio (BOB, ARS).
+ */
+export interface ConfigFuenteExterna { monedas: readonly string[] | null }
+export function fuenteExternaDe(doc: unknown): ConfigFuenteExterna | null {
+  const ce = typeof doc === 'object' && doc !== null ? (doc as Record<string, unknown>)['catalogoExterno'] : undefined;
+  if (typeof ce !== 'object' || ce === null || (ce as Record<string, unknown>)['activo'] !== true) return null;
+  const m = (ce as Record<string, unknown>)['monedas'];
+  return { monedas: Array.isArray(m) ? m.filter((x): x is string => typeof x === 'string') : null };
+}
+const leerFuenteExterna = async (tenantId: string): Promise<ConfigFuenteExterna | null> =>
+  fuenteExternaDe((await db().doc(`tenants/${tenantId}/config/pedidos`).get()).data());
+
+/** El error que la página y el checkout dan cuando la fuente externa no responde (nunca un catálogo vacío). */
+const SIN_CATALOGO = { error: 'catalogo no disponible' } as const;
+
 // `sePuedeComprar` se mudó a Pedidos (PR-4): Pedidos no importa de Catálogo web.
 export { sePuedeComprar };
 
@@ -278,40 +302,8 @@ export { sePuedeComprar };
 // URL DE IMAGEN — la validación que decide qué puede pintar el navegador
 // ---------------------------------------------------------------------------
 
-/**
- * Una URL de imagen sirve si —y solo si— es `https://`, no trae credenciales
- * embebidas y no apunta a un nombre que resuelva dentro de la red privada.
- *
- * Las tres condiciones responden a cosas distintas:
- *
- *  - **`https` y nada más.** `javascript:` y `data:` en un atributo `src` son
- *    dos vías de ejecución conocidas; `http://` haría que la página del
- *    catálogo cargue contenido mixto y el navegador lo bloquee sin avisar, que
- *    para el comercio se ve como «no se ven las fotos» sin ninguna pista.
- *  - **Sin usuario ni contraseña en la URL.** Es una forma clásica de
- *    disfrazar el destino real de un enlace.
- *  - **Sin destinos internos.** Nadie las va a buscar desde el servidor —el
- *    navegador del cliente es quien las carga— pero dejar entrar
- *    `http://169.254.169.254/…` al catálogo es sembrar el día que alguien
- *    agregue una miniatura del lado servidor.
- *
- * Se exporta porque la consola valida lo mismo antes de guardar: el navegador
- * avisa, el servidor decide.
- */
-export function urlImagenValida(valor: unknown): boolean {
-  if (typeof valor !== 'string' || valor === '' || valor.length > 500) return false;
-  let u: URL;
-  try { u = new URL(valor); } catch { return false; }
-  if (u.protocol !== 'https:') return false;
-  if (u.username !== '' || u.password !== '') return false;
-  const h = u.hostname.toLowerCase();
-  if (h === 'localhost' || h.endsWith('.local') || h.endsWith('.internal')) return false;
-  if (/^(127|10|169\.254)\./.test(h)) return false;
-  if (/^192\.168\./.test(h)) return false;
-  if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(h)) return false;
-  if (h === '[::1]' || h === '0.0.0.0') return false;
-  return true;
-}
+// `urlImagenValida` vive en `urlImagen.ts` (B3); se reexporta con el mismo nombre.
+export { urlImagenValida };
 
 /**
  * Las cinco paletas. La tabla con los colores vive en `web/src/central/lib/paletas.ts`,
@@ -564,10 +556,15 @@ export async function enlaceParaElFlujo(o: {
   telefono: string | null;
   catalogoWebActivo: boolean;
   vendibles: number;
+  /**
+   * Fuente externa (B3): el catálogo no está en Firestore, así que NO hay ítems que contar y el enlace sale sin
+   * llamar a la fuente (camino caliente). Ausente = como siempre.
+   */
+  catalogoExterno?: boolean;
 }): Promise<EnlaceDelFlujo> {
   const { ruta } = o;
   if (!o.catalogoWebActivo) return { motivo: 'sinCatalogoWeb' };
-  if (o.vendibles < 1) return { motivo: 'sinVendibles' };
+  if (o.vendibles < 1 && o.catalogoExterno !== true) return { motivo: 'sinVendibles' };
   if (ruta.flujo !== 'venta' || ruta.estado !== 'activo' || !ID_TENANT.test(ruta.tenantId)) {
     return { motivo: 'sinVenta' };
   }
@@ -654,10 +651,14 @@ export const enlaceCatalogo = onRequest(
       respuesta.status(500).json({ error: 'sitio no configurado' }); return;
     }
 
+    // Fuente externa (B3): sin ítems en Firestore que contar y sin llamar a la fuente.
+    const externoEnlace = await leerFuenteExterna(ruta.tenantId);
     const [config, catalogo] = await Promise.all([
       db().doc(`tenants/${ruta.tenantId}/config/negocio`).get(),
-      db().collection(`tenants/${ruta.tenantId}/catalogo`)
-        .where('activo', '==', true).limit(501).get(),
+      externoEnlace
+        ? Promise.resolve(null)
+        : db().collection(`tenants/${ruta.tenantId}/catalogo`)
+          .where('activo', '==', true).limit(501).get(),
     ]);
 
     // EL COMERCIO TIENE QUE HABERLO ENCENDIDO. Publicar el catálogo de alguien
@@ -671,9 +672,9 @@ export const enlaceCatalogo = onRequest(
     // vacía, y mandar a alguien a una tienda vacía es peor que no mandarlo.
     // Antes esto se comprobaba con `catalogo.empty` y se le habría mandado el
     // enlace igual.
-    const vendibles = catalogo.docs.filter(
+    const vendibles = catalogo === null ? 0 : catalogo.docs.filter(
       (d) => sePuedeComprar(d.data() as Record<string, unknown>)).length;
-    if (vendibles === 0) {
+    if (catalogo !== null && vendibles === 0) {
       respuesta.status(409).json({ error: 'catalogo sin items vendibles' }); return;
     }
 
@@ -687,7 +688,8 @@ export const enlaceCatalogo = onRequest(
 
     await registrar(ruta.tenantId, {
       tipo: 'catalogo_enlace', resultado: 'ok', telefono,
-      conversacionId: `wa_${telefono}`, detalle: `items=${vendibles}/${catalogo.size}`,
+      conversacionId: `wa_${telefono}`,
+      detalle: catalogo === null ? 'items=externo' : `items=${vendibles}/${catalogo.size}`,
     });
 
     respuesta.status(200).json({
@@ -697,7 +699,7 @@ export const enlaceCatalogo = onRequest(
       // cargado. Si el flujo dijera «tenemos 300 productos» y la página muestra
       // 40, el asistente queda mintiendo por un dato nuestro.
       items: vendibles,
-      catalogoGrande: catalogo.size > UMBRAL_CATALOGO_AL_PROMPT,
+      catalogoGrande: catalogo === null ? true : catalogo.size > UMBRAL_CATALOGO_AL_PROMPT,
     });
   },
 );
@@ -785,7 +787,7 @@ function idDeLaRuta(peticion: { path?: string; url?: string; originalUrl?: strin
 }
 
 export const catalogoPublico = onRequest(
-  { region: REGION, cors: false, maxInstances: 20 },
+  { region: REGION, secrets: [SECRETO_CATALOGO], cors: false, maxInstances: 20 },
   async (peticion, respuesta) => {
     if (peticion.method !== 'GET') { respuesta.status(405).send('metodo'); return; }
 
@@ -805,6 +807,11 @@ export const catalogoPublico = onRequest(
     const id = idDeLaRuta(peticion);
     const ficha = await fichaVigente(id);
     if (!ficha) { respuesta.status(404).json({ error: 'enlace vencido' }); return; }
+
+    // FUENTE EXTERNA (B3): el catálogo se lee en vivo de otra plataforma. Sin el dato, este `if` no se cumple y
+    // todo lo de abajo es lo de siempre.
+    const externo = await leerFuenteExterna(ficha.tenantId);
+    if (externo) { await responderCatalogoExterno(ficha, externo, respuesta); return; }
 
     const [config, venta, marca, catalogo, fotos, whatsapp] = await Promise.all([
       db().doc(`tenants/${ficha.tenantId}/config/negocio`).get(),
@@ -913,6 +920,67 @@ export const catalogoPublico = onRequest(
   },
 );
 
+/** Lo que se publica de un ítem de la fuente externa: el precio en unidades, sin stock ni ids de otra plataforma. */
+function itemPublicoExterno(it: ItemExterno): ItemPublico & { tieneFoto: boolean } {
+  return {
+    id: it.id, nombre: it.nombre, descripcion: it.descripcion, area: it.area,
+    precio: Number((it.precioCentavos / 100).toFixed(2)), moneda: it.moneda,
+    imagenUrl: it.imagenUrl, tieneFoto: false,
+  };
+}
+
+/** ¿El comercio acepta esta moneda? Sin lista en el dato, se acepta la del mercado. */
+const monedaAceptada = (cfg: ConfigFuenteExterna, moneda: string): boolean =>
+  cfg.monedas === null || cfg.monedas.length === 0 || cfg.monedas.includes(moneda);
+
+/**
+ * La respuesta de `catalogoPublico` con fuente externa. Misma forma que la de Firestore, con la moneda del mercado.
+ * Falla CERRADA: mercado sin catálogo, moneda que el comercio no vende, 401/429/503/tiempo/contrato de la fuente
+ * dan 409 `catalogo no disponible`; nunca una vitrina vacía presentada como real.
+ */
+async function responderCatalogoExterno(
+  ficha: Ficha, cfg: ConfigFuenteExterna,
+  respuesta: { status(c: number): { json(b: unknown): unknown }; set(k: string, v: string): unknown },
+): Promise<void> {
+  const [config, venta, marca, whatsapp] = await Promise.all([
+    db().doc(`tenants/${ficha.tenantId}/config/negocio`).get(),
+    db().doc(`tenants/${ficha.tenantId}/config/venta`).get(),
+    db().doc(`tenants/${ficha.tenantId}/config/marca`).get(),
+    numeroPublicoDeLaLinea(ficha),
+  ]);
+  if (config.get('catalogoWebActivo') !== true) {
+    respuesta.status(409).json({ error: 'catalogo web apagado' }); return;
+  }
+  const mercado: Mercado | null = mercadoDeTelefono(ficha.telefono);
+  if (mercado === null) { respuesta.status(409).json(SIN_CATALOGO); return; }
+  const fuente = await leerCatalogoExterno(ficha.tenantId, mercado);
+  if (!fuente.ok || !monedaAceptada(cfg, fuente.moneda)) { respuesta.status(409).json(SIN_CATALOGO); return; }
+
+  respuesta.set('Cache-Control', 'no-store');
+  respuesta.set('X-Content-Type-Options', 'nosniff');
+  respuesta.status(200).json({
+    negocio: {
+      nombre: texto(config.get('nombreNegocio'), 80),
+      descripcion: texto(config.get('descripcion'), 400),
+      direccion: texto(config.get('direccion'), 200),
+      moneda: fuente.moneda,
+      logo: logoValido(marca.get('logo')) ? String(marca.get('logo')) : '',
+      paleta: paletaValida(config.get('paleta')),
+      ...(whatsapp !== '' ? { whatsapp } : {}),
+    },
+    entrega: {
+      costoDelivery: typeof venta.get('costoDelivery') === 'number' ? venta.get('costoDelivery') : null,
+      pedidoMinimo: typeof venta.get('pedidoMinimo') === 'number' ? venta.get('pedidoMinimo') : null,
+      aceptaDelivery: venta.get('aceptaDelivery') !== false,
+      aceptaRetiroEnLocal: venta.get('aceptaRetiroEnLocal') !== false,
+    },
+    ...(venta.get('detallePorLinea') === true ? { detallePorLinea: true } : {}),
+    items: fuente.items.filter((i) => hayParaVenderExterno(i)).map(itemPublicoExterno)
+      .sort((a, b) => a.area.localeCompare(b.area, 'es') || a.nombre.localeCompare(b.nombre, 'es')),
+    caducaEn: ficha.caducaEn.toDate().toISOString(),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // 2 bis) vistaPreviaCatalogo — el comercio mira su propia página
 // ---------------------------------------------------------------------------
@@ -975,10 +1043,27 @@ export const vistaPreviaCatalogo = onCall({ region: REGION }, async (peticion: C
 // 3) checkoutCatalogo — vuelve el carrito
 // ---------------------------------------------------------------------------
 
-interface LineaPedida { id: string; cantidad: number }
+interface LineaPedida { id: string; cantidad: number; detalle?: string }
 
-/** Lee del cuerpo SOLO identificadores y cantidades. Ningún precio. */
-function lineasPedidas(cuerpo: Record<string, unknown>): LineaPedida[] {
+/** Tope de la especificación por línea (D2-a); el mismo número está en la página. */
+export const MAX_DETALLE = 60;
+
+/**
+ * La especificación libre de una línea («color: negro»), o `''`. Saneada con `lineaLimpia` (sin controles, bidi,
+ * enlaces ni `<>&`) y sin `[]{}«»`, para que no imite una marca interna ni cierre un entrecomillado.
+ */
+export function detalleDeLinea(v: unknown): string {
+  return lineaLimpia(typeof v === 'string' ? v.replace(/[[\]{}«»]/g, ' ') : '', MAX_DETALLE);
+}
+
+/**
+ * Lee del cuerpo SOLO identificadores, cantidades y —si el comercio lo pide— la especificación. Ningún precio.
+ * `porDetalle`: la clave de unicidad es id + detalle (la misma pieza con dos especificaciones son dos líneas);
+ * sin él es solo el id, como siempre.
+ */
+function lineasPedidas(
+  cuerpo: Record<string, unknown>, o: { conDetalle: boolean; porDetalle: boolean } = { conDetalle: false, porDetalle: false },
+): LineaPedida[] {
   const crudas = Array.isArray(cuerpo['items']) ? cuerpo['items'] : [];
   const vistas = new Set<string>();
   const lineas: LineaPedida[] = [];
@@ -990,11 +1075,13 @@ function lineasPedidas(cuerpo: Record<string, unknown>): LineaPedida[] {
     // pueda traer barras ni puntos no es cosmética: es lo que impide que un
     // `id` fabricado apunte a otro documento.
     if (!idDeItemValido(id)) continue;
-    if (vistas.has(id)) continue;
+    const detalle = o.conDetalle ? detalleDeLinea(c['detalle']) : '';
+    const clave = o.porDetalle ? `${id}\u0000${detalle}` : id;
+    if (vistas.has(clave)) continue;
     const cantidad = Math.trunc(Number(c['cantidad']));
     if (!Number.isFinite(cantidad) || cantidad < 1 || cantidad > MAX_UNIDADES) continue;
-    vistas.add(id);
-    lineas.push({ id, cantidad });
+    vistas.add(clave);
+    lineas.push({ id, cantidad, ...(detalle !== '' ? { detalle } : {}) });
   }
   return lineas;
 }
@@ -1002,7 +1089,7 @@ function lineasPedidas(cuerpo: Record<string, unknown>): LineaPedida[] {
 export const checkoutCatalogo = onRequest(
   {
     region: REGION,
-    secrets: Object.values(SECRETOS_POR_ALIAS),
+    secrets: [...Object.values(SECRETOS_POR_ALIAS), SECRETO_CATALOGO],
     cors: false,
     maxInstances: 20,
   },
@@ -1019,7 +1106,14 @@ export const checkoutCatalogo = onRequest(
     }
 
     const cuerpo = (peticion.body ?? {}) as Record<string, unknown>;
-    const lineas = lineasPedidas(cuerpo);
+    // Dos datos del comercio que deciden la forma del pedido: la fuente externa (B3) y si pide especificación por
+    // línea (D2-a, `config/venta.detallePorLinea`). Sin ellos, el cuerpo se lee como siempre.
+    const [externo, venta] = await Promise.all([
+      leerFuenteExterna(ficha.tenantId),
+      db().doc(`tenants/${ficha.tenantId}/config/venta`).get(),
+    ]);
+    const conDetalle = venta.get('detallePorLinea') === true;
+    const lineas = lineasPedidas(cuerpo, { conDetalle, porDetalle: externo !== null && conDetalle });
     if (lineas.length === 0) { respuesta.status(400).json({ error: 'carrito vacio' }); return; }
 
     const entrega = cuerpo['entrega'] === 'envio' ? 'envio' : 'retiro';
@@ -1056,15 +1150,57 @@ export const checkoutCatalogo = onRequest(
       respuesta.status(409).json({ error: 'vista previa: no se pueden hacer pedidos' }); return;
     }
 
-    const refs = lineas.map((l) => db().doc(`tenants/${ficha.tenantId}/catalogo/${l.id}`));
-    const docs = await db().getAll(...refs);
-
     const items: Array<Record<string, unknown>> = [];
     const descartados: string[] = [];
     let total = 0;
     let monedaPedido = '';
+    let mercadoExterno: Mercado | null = null;
 
-    for (let i = 0; i < lineas.length; i += 1) {
+    if (externo) {
+      // -------------------------------------------------------------------
+      // CATÁLOGO EXTERNO (B3). El precio, el nombre y la disponibilidad salen de la fuente EN VIVO; del navegador
+      // solo salieron un id, una cantidad y, si el comercio lo pide, una especificación. NO hay transacción de
+      // stock en Firestore ni `descontarPedido`: el stock lo descuenta la otra plataforma al confirmar el pedido,
+      // y acá solo se valida contra `disponible` y `stock` de la fuente.
+      // -------------------------------------------------------------------
+      mercadoExterno = mercadoDeTelefono(ficha.telefono);
+      if (mercadoExterno === null) { respuesta.status(409).json(SIN_CATALOGO); return; }
+      const fuente = await leerCatalogoExterno(ficha.tenantId, mercadoExterno);
+      if (!fuente.ok) { respuesta.status(409).json(SIN_CATALOGO); return; }
+      // Una moneda que el comercio no vende (p. ej. pesos en un comercio solo de bolivianos) es una mezcla.
+      if (!monedaAceptada(externo, fuente.moneda)) {
+        respuesta.status(409).json({ error: 'monedas mezcladas' }); return;
+      }
+      const porId = new Map(fuente.items.map((it) => [it.id, it] as const));
+      let totalCentavos = 0;
+      for (const linea of lineas) {
+        const it = porId.get(linea.id);
+        if (!it || !hayParaVenderExterno(it, linea.cantidad)) { descartados.push(linea.id); continue; }
+        if (monedaPedido === '') monedaPedido = it.moneda;
+        else if (monedaPedido !== it.moneda) { respuesta.status(409).json({ error: 'monedas mezcladas' }); return; }
+        const subtotalCentavos = it.precioCentavos * linea.cantidad;
+        totalCentavos += subtotalCentavos;
+        items.push({
+          id: it.id,
+          nombre: it.nombre,
+          cantidad: linea.cantidad,
+          precio: Number((it.precioCentavos / 100).toFixed(2)),
+          precioCentavos: it.precioCentavos,
+          moneda: it.moneda,
+          subtotal: Number((subtotalCentavos / 100).toFixed(2)),
+          // Es la marca con la que Pedidos reconoce una línea de catálogo externo (confirmar, reemplazo del QR).
+          externa: true,
+          ...(linea.detalle ? { detalle: linea.detalle } : {}),
+          ...(it.imagenUrl ? { imagenUrl: it.imagenUrl } : {}),
+        });
+      }
+      total = totalCentavos / 100;
+    }
+
+    const refs = externo ? [] : lineas.map((l) => db().doc(`tenants/${ficha.tenantId}/catalogo/${l.id}`));
+    const docs = refs.length > 0 ? await db().getAll(...refs) : [];
+
+    for (let i = 0; i < (externo ? 0 : lineas.length); i += 1) {
       const linea = lineas[i] as LineaPedida;
       const doc = docs[i];
       if (!doc || !doc.exists || doc.get('activo') !== true) {
@@ -1110,6 +1246,7 @@ export const checkoutCatalogo = onRequest(
         precio,
         moneda,
         subtotal: Number((precio * linea.cantidad).toFixed(2)),
+        ...(linea.detalle ? { detalle: linea.detalle } : {}),
         ...(urlImagenValida(d['imagenUrl']) ? { imagenUrl: String(d['imagenUrl']) } : {}),
       });
     }
@@ -1118,8 +1255,7 @@ export const checkoutCatalogo = onRequest(
       respuesta.status(409).json({ error: 'nada de lo pedido sigue disponible' }); return;
     }
 
-    // Costo de envío: también del servidor, nunca del navegador.
-    const venta = await db().doc(`tenants/${ficha.tenantId}/config/venta`).get();
+    // Costo de envío: también del servidor, nunca del navegador (`venta` ya se leyó arriba).
     const costoEnvio = entrega === 'envio' && typeof venta.get('costoDelivery') === 'number'
       ? (venta.get('costoDelivery') as number) : 0;
     total = Number((total + costoEnvio).toFixed(2));
@@ -1151,6 +1287,8 @@ export const checkoutCatalogo = onRequest(
       items,
       total,
       moneda: monedaPedido || (venta.get('moneda') === 'USD' ? 'USD' : 'BOB'),
+      // Solo con fuente externa (K1): de dónde salieron las líneas y para qué mercado. Ausente = Firestore.
+      ...(externo ? { catalogo: 'externo', mercado: mercadoExterno } : {}),
       costoEnvio,
       entrega,
       ...(direccion ? { direccion } : {}),
@@ -1224,7 +1362,7 @@ export const checkoutCatalogo = onRequest(
     // Solo si la ficha lleva el módulo `inventario` (H2b-10; antes se descontaba
     // siempre porque catálogo web y venta venían juntos). Se decidió al leer la
     // ficha: sin lectura nueva que pueda fallar después de guardar el pedido.
-    const faltantes = ficha.descuentaStock
+    const faltantes = ficha.descuentaStock && !externo
       ? await descontarPedido(
         ficha.tenantId, pedidoId, items as Array<{ id?: unknown; cantidad?: unknown }>, 'catalogo-web',
       )
@@ -1255,6 +1393,8 @@ export const checkoutCatalogo = onRequest(
       // log. Sin ubicación la carga es idéntica a la de antes.
       ...(ubicacion ? { ubicacion } : {}),
       descartados,
+      // K1 (solo con fuente externa): el mercado y la marca del catálogo. Sin ellos la carga es la de siempre.
+      ...(externo ? { mercado: mercadoExterno, catalogo: 'externo' } : {}),
       ventanaAbierta,
       // Fuera de la ventana, el flujo NO puede mandar un mensaje libre. Se le
       // dice qué plantilla usar; el texto y el idioma los decide él, que es
@@ -1311,7 +1451,8 @@ export function resumenDelPedido(
   items: Array<Record<string, unknown>>, entrega: string,
   total: number, moneda: string, nota: unknown = '',
 ): string {
-  const lineas = items.map((i) => `${String(i['cantidad'])}× ${String(i['nombre'])}`);
+  const lineas = items.map((i) => `${String(i['cantidad'])}× ${String(i['nombre'])}`
+    + (typeof i['detalle'] === 'string' && i['detalle'] !== '' ? ` (${i['detalle']})` : ''));
   const base = `Pedido desde el catálogo web (${entrega === 'envio' ? 'envío' : 'retiro'}): `
     + `${lineas.join(', ')} — total ${total} ${moneda || 'BOB'}`;
   const limpia = lineaLimpia(

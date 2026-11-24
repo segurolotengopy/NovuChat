@@ -73,6 +73,8 @@ export interface CatalogoPublico {
   entrega: EntregaPublica;
   items: ItemPublico[];
   caducaEn: string;
+  /** `config/venta.detallePorLinea`: la página pide «Especificaciones (opcional)» por línea. Ausente = no. */
+  detallePorLinea?: boolean;
 }
 
 export interface RespuestaCheckout {
