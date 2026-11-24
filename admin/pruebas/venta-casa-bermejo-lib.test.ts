@@ -15,7 +15,7 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const FLUJOS = join(AQUI, '../../Flujos/experimental');
 const RUTAS = [
   'venta-digital/src/cobro.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js',
-  '../src/core/sin-agente/mensajes.js', '../src/core/texto/filtro-redaccion.js', '../src/core/texto/identidad.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
+  '../src/core/sin-agente/mensajes.js', '../src/core/texto/filtro-redaccion.js', '../src/core/texto/identidad.js', '../src/modulos/pedidos/confirmar-pedido.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
 ].map((r) => join(FLUJOS, r));
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
@@ -451,7 +451,7 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
     const T = (entrega: Record<string, string>, ficha: Record<string, unknown> = { carrito: carro }) => b('bmResolver')(ctx({ modos: ['recojo en tienda', 'envío'], ficha, plan: { tipo: 'modelo', textoCliente: 'ok' }, modeloResp: gemini({ texto: 'Su pedido está pagado y cerrado.', lineas: [{ id: 'p1', cantidad: 1 }], entrega }) }));
     expect(T({}).texto).toMatch(/¿Cómo prefiere recibir su pedido: recojo en tienda o envío\?/);
     expect(T({ modo: 'envío' }).texto).toMatch(/indíqueme por favor: nombre completo, carnet de identidad \(CI\), ciudad de destino, empresa de flota o terminal/);
-    expect(T({ modo: 'recojo en tienda', nombre: 'Ana' }).texto).toMatch(/¿Desea confirmar su pedido\?/);
+    expect(T({ modo: 'recojo en tienda', nombre: 'Ana' }).texto).toMatch(/¿Quieres confirmar tu pedido\?/);   // trato «tu» del fixture; con «usted» sale «¿Desea confirmar su pedido?»
     expect(T({}, { carrito: [] }).sinRedaccion).toBe(true);
   });
   it('«solo disponemos de la de 9 kg» con varias lavadoras en el catálogo: el código arma el texto con las piezas que coinciden y sus precios', () => {
