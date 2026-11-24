@@ -697,6 +697,24 @@ function wlResolverModelo(c) {
 //   entrega COMPLETA  → `wlCerrar` con cierre true: el MISMO camino del QR solo (resumen e imagen del QR REAL con el monto en bolivianos; sin cobro real, `pedido_sin_cobro`; jamás «pago acreditado»);
 //   entrega incompleta → `carrito_pide`: UN solo mensaje con el resumen y lo que falta; el cliente lo contesta y el flujo normal completa la entrega (el QR sale solo, `qrSolo`).
 // La ficha guarda las piezas y la entrega parciales (`cierre` en false: no se da por pedida la orden de pagar).
+// La ciudad de un pedido del catálogo web: la nombra la dirección o la referencia; si no, la ubicación (coordenadas) más cercana a La Paz o a Santa Cruz (60 km). Si nada lo dice: vacío.
+function wlCiudadDelCarrito(car) {
+  const t = wlNorm(String(car.direccion || '') + ' ' + String(car.referencia || ''));
+  const lp = /\bla paz\b/.test(t); const sc = /\bsanta cruz\b/.test(t);
+  if (lp !== sc) return lp ? 'La Paz' : 'Santa Cruz';
+  const u = wlUbicacion(car.ubicacion);
+  if (!u) return '';
+  const km = (lat, lng) => { const r = Math.PI / 180; const x = (u.lng - lng) * r * Math.cos(((u.lat + lat) / 2) * r); const y = (u.lat - lat) * r; return Math.sqrt(x * x + y * y) * 6371; };
+  if (km(-16.5, -68.15) <= 60) return 'La Paz';
+  if (km(-17.78, -63.18) <= 60) return 'Santa Cruz';
+  return '';
+}
+// La dirección del catálogo más su referencia («casa 12, portón verde» es parte de cómo llegar): se une dentro del tope de 120 caracteres de la entrega.
+function wlDireccionDelCarrito(car) {
+  const d = String(car.direccion || '').trim(); const r = String(car.referencia || '').trim();
+  if (r === '' || wlNorm(d).includes(wlNorm(r))) return d;
+  return (d === '' ? r : d + ', ' + r).slice(0, 120);
+}
 function wlResolverCarrito(c) {
   const f = c.ficha;
   const car = c.plan.carrito && typeof c.plan.carrito === 'object' ? c.plan.carrito : {};
@@ -712,15 +730,16 @@ function wlResolverCarrito(c) {
   const previa = wlEntregaDeFicha(f.entrega);
   let modo = ''; let ciudad = '';
   if (car.entrega === 'envio') {
-    const dir = wlNorm(car.direccion);
+    // La ciudad sale de TODO lo que el catálogo ya trae: la dirección, la referencia y, si no la nombran, la ubicación (el punto más cercano a La Paz o a Santa Cruz, a menos de 60 km). Nunca se vuelve a preguntar lo que ya vino.
+    const ciudadCat = wlCiudadDelCarrito(car);
     const envios = modos.filter((m) => wlEsEnvio(m));
-    const porCiudad = envios.filter((m) => (/\bla paz\b/.test(wlNorm(m)) && /\bla paz\b/.test(dir)) || (/\bsanta cruz\b/.test(wlNorm(m)) && /\bsanta cruz\b/.test(dir)));
+    const porCiudad = ciudadCat === '' ? [] : envios.filter((m) => wlNorm(m).includes(wlNorm(ciudadCat)));
     modo = porCiudad.length === 1 ? porCiudad[0] : (envios.length === 1 ? envios[0] : (modos.length === 0 ? 'Envío' : ''));
-    ciudad = /\bla paz\b/.test(wlNorm(modo)) ? 'La Paz' : (/\bsanta cruz\b/.test(wlNorm(modo)) ? 'Santa Cruz' : '');
+    ciudad = /\bla paz\b/.test(wlNorm(modo)) ? 'La Paz' : (/\bsanta cruz\b/.test(wlNorm(modo)) ? 'Santa Cruz' : ciudadCat);
   } else {
     modo = modos.find((m) => wlEsRecojo(m) && !wlEsEnvio(m)) || (modos.length === 0 ? 'Recojo en tienda' : '');
   }
-  const entrega = wlMezclarEntrega(f.entrega, { modo: modo, ciudad: ciudad, direccion: car.entrega === 'envio' ? String(car.direccion || '') : '', telefono: previa.telefono === '' ? 'MISMO' : '' }, modos, c.from);
+  const entrega = wlMezclarEntrega(f.entrega, { modo: modo, ciudad: ciudad, direccion: car.entrega === 'envio' ? wlDireccionDelCarrito(car) : '', telefono: previa.telefono === '' ? 'MISMO' : '' }, modos, c.from);
   entrega.ubicacion = car.entrega === 'envio' ? (wlUbicacion(car.ubicacion) || previa.ubicacion) : null;
   const antes = vcLineas(f.carrito, c.vendibles).lineas;
   const cambio = !vcMismoCarrito(antes, lineas);
