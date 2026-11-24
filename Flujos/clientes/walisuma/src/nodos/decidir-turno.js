@@ -11,6 +11,7 @@
 //   anuncio_meta   el cliente llega de un anuncio de Meta cuyo `source_id` está en el dato `anunciosMeta`: las piezas del anuncio con los precios del catálogo, o la bienvenida general (sin modelo);
 //   identidad      «¿eres un bot?»: el texto fijo (prohibición 4: nunca niega ser una IA);
 //   audio_fijo     una nota de voz demasiado larga o que no se entendió; archivo: un medio demasiado pesado o que no se abrió; imagen_otra: una foto o captura que no es un comprobante;
+//   imagen_piezas  una foto o un anuncio cuyas palabras coinciden con piezas del catálogo: las piezas con su precio, POR CÓDIGO (nunca el texto leído); sin coincidencia sale `derivar` (`imagen_sin_coincidencia`);
 //   anuncio        la imagen de un anuncio reconocido por su titular: el producto sale POR CÓDIGO (nunca el modelo), con el precio del catálogo;
 //   comprobante    la imagen de un comprobante con un cobro abierto: ya corrió «Cotejar en el servidor»; «Armar avisos» y «Armar mensajes» interpretan el resultado;
 //   modelo         la conversación libre: `llamarModelo` y el cuerpo de la llamada (solo con la puerta abierta).
@@ -31,6 +32,19 @@ const salir = (plan, extra) => [{ json: Object.assign({ plan: plan, from: from, 
 
 // 0. La puerta cerrada: nada de modelo, de medios ni de cobro. Quien responde (suspendido, operador) lo arma «Armar mensajes» desde la puerta.
 if (puerta.ruta !== 'sigue') return salir({ tipo: 'nada' });
+// 0a. EL PEDIDO DEL CATÁLOGO WEB (`t.tipo === 'carrito'`, que solo produce «Normalizar entrada» cuando corrió el Webhook «Carrito del catálogo»): no es un mensaje de WhatsApp y se decide ANTES que todo lo demás (tras la puerta).
+//   ventana de 24 h cerrada (la calculó el servidor)  NO sale nada: fuera de la ventana Meta solo acepta una plantilla aprobada y no hay una para esto (como Q'Taco); el pedido sigue en la consola;
+//   el tenant del carrito no es el del panel de ESTE número, otro país o moneda distinta de Bs  no se contesta;  el panel no contestó o no hay catálogo  pasa con nuestra encargada;  si no, `carrito`: `wlResolverCarrito` arma el pedido.
+if (t.tipo === 'carrito') {
+  const c = t.carrito && typeof t.carrito === 'object' ? t.carrito : {};
+  const mismo = (a, b) => { const x = String(a === undefined || a === null ? '' : a); const y = String(b === undefined || b === null ? '' : b); if (!x || !y) return false; let d = x.length === y.length ? 0 : 1; for (let i = 0; i < Math.max(x.length, y.length); i++) d |= (x.charCodeAt(i) || 0) ^ (y.charCodeAt(i) || 0); return d === 0; };
+  if (c.ventanaAbierta !== true || c.accion !== 'responder') return salir({ tipo: 'nada', motivo: 'carrito_ventana_cerrada' });
+  if (!panel.ok) return salir({ tipo: 'derivar', motivo: 'sin_configuracion' });
+  if (!mismo(c.tenantId, panel.cuerpo.tenantId)) return salir({ tipo: 'nada', motivo: 'carrito_otro_tenant' });
+  if (t.fueraDePais === true || c.moneda !== 'Bs') return salir({ tipo: 'nada', motivo: 'carrito_no_atendido' });
+  if (vendibles.length === 0) return salir({ tipo: 'derivar', motivo: 'sin_configuracion' });
+  return salir({ tipo: 'carrito', carrito: c });
+}
 // 0b. Un número de otro país: el texto fijo. Nada de modelo ni de medios.
 if (t.fueraDePais === true) return salir({ tipo: 'fuera_pais' });
 
@@ -67,6 +81,21 @@ if (esVisual) {
     // Un anuncio sin producto vendible (sin precio, apagado o agotado): no se inventa ninguno; recepción.
     return salir({ tipo: 'derivar', motivo: 'sin_precio' });
   }
+  // LEER LA IMAGEN POR CÓDIGO (MD puntos 38 y 39): la lectura del clasificador (la misma llamada de siempre) se cruza con el catálogo; el texto leído es un DATO NO CONFIABLE que solo se compara (`leer-imagen.js`).
+  //   hay coincidencia  → `imagen_piezas`: las piezas del CATÁLOGO con su precio (0 mensajes y 0 llamadas de modelo de más);
+  //   no la hay         → pasar con nuestra encargada (aviso + botón), con la descripción saneada si la hay.
+  // Un documento, o una lectura que falló o parece una instrucción, sigue con el texto fijo.
+  if (t.esDocumento !== true && configLista) {
+    const lectura = liLeer(cnPrimero('Describir imagen'));
+    // Con un cobro real abierto, una imagen que habla de un pago (aunque el clasificador no la marcó como comprobante) NUNCA se toma por una pieza: va a recepción sin cotejar.
+    const cobroAbierto = cobro.modo === 'real' && (cobro.pendiente || cobro.enRevision || cobro.vencidoHaceMin !== null);
+    if (cobroAbierto && lectura.mencionaPago === true) return salir({ tipo: 'derivar', motivo: 'comprobante_sin_cotejo' });
+    const piezas = liCoincidencias(lectura, vendibles).map((x) => x.id);
+    if (piezas.length) return salir({ tipo: 'imagen_piezas', piezas: piezas });
+    // Sin coincidencia y con un cobro real abierto probablemente sea el comprobante (aunque la lectura falló o su texto quedó vacío): recepción, como un medio ilegible.
+    if (cobroAbierto) return salir({ tipo: 'derivar', motivo: 'comprobante_sin_cotejo' });
+    if (lectura.ok) return salir({ tipo: 'derivar', motivo: 'imagen_sin_coincidencia', descripcion: lectura.descripcion });
+  }
   return salir({ tipo: 'imagen_otra', documento: t.esDocumento === true });
 }
 
@@ -85,6 +114,10 @@ if (esAudio) {
   texto = cbLinea(m[1], 1500);
 } else if (t.categoria === 'conversacion') {
   texto = t.seleccionId ? cbLinea(t.seleccionTitulo, 100) : cbLinea(t.texto, 1500);
+  // El toque de «Confirmar pedido» DE ESTE pedido (id con la huella del carrito y la entrega que el cliente vio) es la orden de cerrar: va a un plan SIN modelo que cierra con las líneas y la entrega de la ficha y emite el QR en este turno.
+  // Un botón de otro pedido (huella distinta) no confirma nada: queda como el texto del título.
+  if (t.seleccionId && Array.isArray(ficha.carrito) && ficha.carrito.length > 0 && wlEntregaCompleta(ficha.entrega)
+    && cfEsConfirmacion(t.seleccionId, wlLineasParaHuella(ficha.carrito, vendibles), wlEntregaDeFicha(ficha.entrega), ficha.pedidos)) return salir({ tipo: 'confirmar' });
 } else {
   return salir({ tipo: 'otro' });
 }
@@ -133,7 +166,7 @@ if (wlPideFactura(n) && !pedidoNuevo) {
   if (wlDatosFactura(texto)) return salir({ tipo: 'factura_al_confirmar' });
   notaFactura = 'al_confirmar';
 }
-if (wlNombraSinPrecio(n, wlSinPrecio(panel))) return salir({ tipo: 'derivar', motivo: 'sin_precio' });
+if (wlNombraSinPrecio(n, wlSinPrecio(panel), wlConPrecio(panel))) return salir({ tipo: 'derivar', motivo: 'sin_precio' });
 if (wlQuiereHablar(n)) return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });
 // 4b. El anuncio de Meta (contrato de «Normalizar entrada»: `anuncioId`, `anuncioTitular`). Por su `source_id` (dato `anunciosMeta`): las piezas VENDIBLES del anuncio o la bienvenida general.
 const meta = wlAnuncioMeta(t.anuncioId, base);

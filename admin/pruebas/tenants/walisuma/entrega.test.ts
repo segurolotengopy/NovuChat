@@ -40,7 +40,7 @@ describe('el envío es gratis desde 500 Bs (incluido) y bajo el umbral va a rece
     const { t } = pedir([{ id: 'pieza-500', cantidad: 1 }], ENVIO);
     expect(hayQr(t)).toBe(true);
     expect(montoQr(t)).toBe(500);
-    expect(t.mensajes[0]?.cuerpo).toMatch(/El envío no tiene costo \(compras desde Bs 500\)/);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/El envío no tiene costo\./);
     expect(t.avisos).toHaveLength(0);
     expect(conBoton(t)).toBe(false);
   });

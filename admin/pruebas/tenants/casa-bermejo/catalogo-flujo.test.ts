@@ -180,3 +180,14 @@ describe('«Traer catálogo» no puede desviar el Bearer', () => {
     expect(con({})).not.toMatch(/no puede llevar query/);
   });
 });
+
+describe('«Traer catálogo» aguanta el arranque en frío del servidor (23/11/2026)', () => {
+  it('espera 15 s o más y reintenta una vez: el servidor tardó 3,5 a 4,1 s por arranque en frío y con 4 s el asistente decía «no puedo consultar el catálogo»', async () => {
+    const { readFileSync } = await import('node:fs');
+    const flujo = JSON.parse(readFileSync(new URL('../../../../Flujos/clientes/casa-bermejo/casa-bermejo.json', import.meta.url), 'utf8')) as { nodes: { name: string; parameters: { options?: { timeout?: number } }; retryOnFail?: boolean; maxTries?: number }[] };
+    const n = flujo.nodes.find((x) => x.name === 'Traer catálogo')!;
+    expect(n.parameters.options?.timeout).toBeGreaterThanOrEqual(15000);
+    expect(n.retryOnFail).toBe(true);
+    expect(n.maxTries).toBe(2);
+  });
+});
