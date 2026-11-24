@@ -222,7 +222,7 @@ function wlDireccionTienda(base, ciudad) {
 }
 // La frase del costo del envío que va en el resumen del pedido: gratis, a cotizar (con la política de que el QR es solo por los productos) o, en el recojo, la dirección de la tienda.
 function wlFraseEnvio(envio, umbralBs, direccionTienda, sinQr, horario) {
-  if (envio === 'gratis') return 'El envío no tiene costo' + (umbralBs > 0 ? ' (compras desde ' + vcMonto(umbralBs * 100) + ')' : '') + '.';
+  if (envio === 'gratis') return 'El envío no tiene costo.';
   // Sin QR de cobro no se habla del QR: solo del envío.
   // El envío bajo el umbral lo cotiza y lo cobra nuestra encargada (aclaración de Andres, 18/11/2026), nunca «directo a quien lo lleva».
   if (envio === 'cotizar') return sinQr === true ? 'El costo del envío se lo indicará y cobrará nuestra encargada.' : 'El QR es solo por las piezas; el costo del envío se lo indicará y cobrará nuestra encargada.';

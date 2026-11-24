@@ -215,4 +215,13 @@ describe('observación de Andres (23/11): lo que el catálogo ya trae no se vuel
     const t2 = hablar(m, ANA, mTexto('Silvana Pérez'));
     expect(t2.mensajes.some((e) => e.tipo === 'image')).toBe(true);
   });
+  it('observación 2: el envío gratis dice solo «El envío no tiene costo», sin el umbral ni reglas internas', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS, entrega: { nombre: 'Silvana Pérez' } }) });
+    const t1 = enviar(m, cuerpo(ENVIO));
+    const t2 = hablar(m, ANA, mTexto('Silvana Pérez'));
+    for (const x of [...textos(t1), ...textos(t2), ...t2.mensajes.map((e) => e.cuerpo ?? '')]) {
+      expect(x).not.toMatch(/compras desde|umbral|desdeCatalogo|cotejo|pedido_sin_cobro|\bcierre\b/i);
+    }
+    expect([...textos(t2), ...t2.mensajes.map((e) => e.cuerpo ?? '')].join(' ')).toMatch(/El envío no tiene costo\./);
+  });
 });
