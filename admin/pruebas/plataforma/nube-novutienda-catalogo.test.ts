@@ -48,7 +48,7 @@ case "$1 $2" in
       add) n=$(( $(ultima) + 1 ))
         [ "\${FAKE_CARRERA_POST:-0}" = 1 ] && { echo '{}' > "$E/v/$n"; n=$(( n + 1 )); }
         if [ "\${FAKE_MALO:-0}" = 1 ]; then cat > /dev/null; echo '{"mal":{}}' > "$E/v/$n"; else cat > "$E/v/$n"; fi
-        if [ -n "\${FAKE_SWAP:-}" ]; then rm -f "$FAKE_SWAP"; echo '{}' > "$FAKE_SWAP"; chmod 600 "$FAKE_SWAP"; fi
+        if [ -n "\${FAKE_SWAP:-}" ]; then echo '{}' > "$FAKE_SWAP.nuevo"; chmod 600 "$FAKE_SWAP.nuevo"; mv -f "$FAKE_SWAP.nuevo" "$FAKE_SWAP"; fi
         echo "projects/1234567/secrets/NOVUTIENDA_CATALOGO/versions/$n" ;;
       *) exit 1 ;;
     esac ;;
