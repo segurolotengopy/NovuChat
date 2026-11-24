@@ -89,6 +89,8 @@ if (esVisual) {
     const lectura = liLeer(cnPrimero('Describir imagen'));
     const piezas = liCoincidencias(lectura, vendibles).map((x) => x.id);
     if (piezas.length) return salir({ tipo: 'imagen_piezas', piezas: piezas });
+    // Con un cobro real abierto, una imagen que no es una pieza probablemente sea el comprobante que el clasificador no marcó: va a recepción sin cotejar, como un medio ilegible.
+    if (lectura.ok && cobro.modo === 'real' && (cobro.pendiente || cobro.enRevision || cobro.vencidoHaceMin !== null)) return salir({ tipo: 'derivar', motivo: 'comprobante_sin_cotejo' });
     if (lectura.ok) return salir({ tipo: 'derivar', motivo: 'imagen_sin_coincidencia', descripcion: lectura.descripcion });
   }
   return salir({ tipo: 'imagen_otra', documento: t.esDocumento === true });

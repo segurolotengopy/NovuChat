@@ -22,7 +22,7 @@ const LI_MAX_PIEZAS = 4;
 const LI_CONTROL = /[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁯﻿­]/g;
 const LI_INSTRUCCION = /(\basistente\s*:|\b(ignor|olvid|desobedec|disregard|forget|instrucci|prompt|sistema|system|actua\s+como|eres\s+ahora|you\s+are|responde\s+(con|que)|di\s+que|aviso_sistema|transferir|nuevas?\s+(orden|regla)))/;
 const LI_INSTRUCCION_PEGADA = /(ignor|olvid|desobedec|disregard|forget|instrucci|prompt|actuacomo|eresahora|youare|respondecon|respondeque|dique|nuevas?(orden|regla))/;
-const LI_PAGO = /(acredit|verific|confirmad|aprobad|exito|complet|realizad|recibid|pagad|depositad|transferid|\bpaid\b|success|approv)/;
+const LI_PAGO = /\b(acredit\w*|verificad\w*|confirmad\w*|aprobad\w*|exitos\w*|pagad\w*|depositad\w*|transferid\w*|paid|success\w*|approv\w*)\b/;
 const LI_PARADAS = new Set(['para', 'con', 'sin', 'los', 'las', 'del', 'una', 'uno', 'unos', 'unas', 'por', 'que', 'como', 'esta', 'este', 'estos', 'estas', 'ese', 'esa', 'esos', 'esas', 'muy', 'mas', 'son', 'hay', 'tienen', 'tienes', 'tiene', 'tenemos', 'imagen', 'foto', 'fotografia', 'captura', 'pantalla', 'anuncio', 'publicidad', 'promocion', 'oferta', 'ofertas', 'nuevo', 'nueva', 'nuevos', 'nuevas', 'solo', 'hoy', 'precio', 'precios', 'tienda', 'venta', 'pieza', 'piezas', 'producto', 'productos', 'hecho', 'hecha', 'hechos', 'hechas', 'mano', 'color', 'colores', 'diseno', 'disenos', 'modelo', 'modelos', 'varios', 'varias', 'cada', 'todo', 'toda', 'todos', 'todas', 'sobre', 'entre', 'desde', 'hasta', 'bolivia', 'texto', 'persona', 'personas', 'fondo', 'sobre', 'mesa']);
 
 function liNorm(t) {
@@ -32,7 +32,7 @@ function liNorm(t) {
 function liRaiz(p) {
   let r = p;
   if (r.length > 6 && /(es)$/.test(r) && /[lrnzd]es$/.test(r)) r = r.slice(0, -2);
-  else if (r.length > 4 && /s$/.test(r)) r = r.slice(0, -1);
+  else if (r.length > 5 && /s$/.test(r)) r = r.slice(0, -1);
   return r;
 }
 function liPalabras(texto) {
@@ -44,10 +44,13 @@ function liPalabras(texto) {
   }
   return out.slice(0, 80);
 }
+// Para la descripción que SÍ se muestra al cliente: se descarta ENTERA si parece una instrucción, afirma o nombra un pago, promete algo (gratis, descuento, envío…),
+// trae cifras, enlaces o dominios, o letras de otro alfabeto (homóglifos). Para COINCIDIR con el catálogo no hace falta ningún filtro: en ese camino nada de lo leído llega al cliente.
+const LI_PROMESA = /\b(gratis|gratuit\w*|descuent\w*|regal\w*|promo\w*|garanti\w*|devoluc\w*|envio\w*|oferta\w*|rebaja\w*|pago|pagos|pagad\w*|transferenc\w*|deposit\w*|comprobante\w*|acredit\w*|realizad\w*|exitos\w*|aprobad\w*|confirmad\w*|verificad\w*|recibid\w*|paid|success\w*|approv\w*)\b/;
 function liParece(texto) {
   const plano = liNorm(texto);
   const pegado = plano.replace(/[^a-z]/g, '');
-  return LI_INSTRUCCION.test(plano) || LI_INSTRUCCION_PEGADA.test(pegado) || LI_PAGO.test(plano);
+  return LI_INSTRUCCION.test(plano) || LI_INSTRUCCION_PEGADA.test(pegado) || LI_PROMESA.test(plano) || LI_PAGO.test(plano);
 }
 function liTextoDe(j) {
   if (!j || typeof j !== 'object') return '';
@@ -65,7 +68,7 @@ function liTextoDe(j) {
 function liDescripcionSegura(v) {
   if (typeof v !== 'string') return '';
   const base = v.slice(0, 400).normalize('NFKC').replace(LI_CONTROL, ' ');
-  if (liParece(base)) return '';
+  if (liParece(base) || /\d/.test(base) || /\w\.[a-z]{2,}\b/i.test(base) || /[^\u0000-\u024f\u2010-\u2027]/.test(base)) return '';
   let t = base.replace(/https?:\/\/\S+|www\.\S+|\S+@\S+/gi, ' ').replace(/\d{3,}/g, ' ').replace(/[^\p{L}\p{N} ,.]/gu, ' ').replace(/\s+/g, ' ').trim();
   if (t.length > 100) { t = t.slice(0, 100); const k = t.lastIndexOf(' '); if (k > 20) t = t.slice(0, k); t = t.trim(); }
   return t.replace(/[,.]+$/, '');
@@ -77,12 +80,13 @@ function liLeer(salida) {
   const m = /\{[\s\S]*\}/.exec(liTextoDe(salida));
   if (m) { try { objeto = JSON.parse(m[0]); } catch (e) { objeto = null; } }
   if (!objeto || typeof objeto !== 'object' || Array.isArray(objeto)) return vacio;
-  // Cada campo se juzga por separado: el que parece una instrucción o un pago se descarta ENTERO (ni coincide ni se muestra); los demás siguen.
-  const campo = (k) => { const v = typeof objeto[k] === 'string' ? objeto[k].slice(0, 600) : ''; return liParece(v) ? '' : v; };
-  const crudo = [campo('titular_principal'), campo('texto'), campo('descripcion')].join(' ').slice(0, LI_PARTES_MAX);
+  // Coincidir: SOLO con lo escrito en la imagen (titular y texto), nunca con la `descripcion` libre del modelo (decía «un collar» y coincidía con «Cuello»). Sin filtros: nada de esto se muestra.
+  const campo = (k) => (typeof objeto[k] === 'string' ? objeto[k].slice(0, 600) : '');
+  const escrito = [campo('titular_principal'), campo('texto')].join(' ').slice(0, LI_PARTES_MAX);
   const categoria = liNorm(typeof objeto.categoria === 'string' ? objeto.categoria.slice(0, 40) : '').trim().replace(/[\s-]+/g, '_');
-  if (crudo.trim() === '') return { ok: false, categoria: categoria, partes: [], descripcion: '' };
-  return { ok: true, categoria: categoria, partes: liPalabras(crudo), descripcion: liDescripcionSegura(campo('descripcion')) };
+  const descripcion = liDescripcionSegura(campo('descripcion'));
+  if (escrito.trim() === '' && descripcion === '') return { ok: false, categoria: categoria, partes: [], descripcion: '' };
+  return { ok: true, categoria: categoria, partes: liPalabras(escrito), descripcion: descripcion };
 }
 // Las piezas que la imagen nombra. El nombre de una pieza empieza por QUÉ ES («Individual tejido…», «Billetera de cuero», «Llavero de llama»): una pieza coincide si la imagen
 // nombra ESA palabra (el tipo de pieza) o DOS palabras distintas de su nombre. Una sola palabra suelta del material («cuero») no basta: un sillón de cuero no es una billetera.
