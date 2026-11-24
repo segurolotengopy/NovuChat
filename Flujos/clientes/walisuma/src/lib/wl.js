@@ -164,7 +164,7 @@ function wlEntregaDeFicha(v) {
   const campo = (x, max) => (typeof x === 'string' ? cbLinea(x, max) : '');
   // El teléfono de contacto: solo dígitos, de 8 a 15; cualquier otra cosa es ''.
   const tel = typeof e.telefono === 'string' ? e.telefono : '';
-  return { modo: campo(e.modo, 40), ciudad: campo(e.ciudad, 40), direccion: campo(e.direccion, 120), nombre: campo(e.nombre, 60), telefono: /^\d{8,15}$/.test(tel) ? tel : '', ubicacion: wlUbicacion(e.ubicacion) };
+  return { modo: campo(e.modo, 40), ciudad: campo(e.ciudad, 40), direccion: campo(e.direccion, 120), nombre: campo(e.nombre, 60), telefono: /^\d{8,15}$/.test(tel) ? tel : '', ubicacion: wlUbicacion(e.ubicacion), ...(e.dirCat === true ? { dirCat: true } : {}) };
 }
 // La ficha vigente de un teléfono: si pasó el olvido, es una ficha nueva.
 function wlFichaVigente(e, ahoraMs) {
@@ -239,7 +239,7 @@ const WL_PROMPT_VOZ = [
   '',
   'REGLAS DEL CATÁLOGO Y DEL PEDIDO.',
   '- Solo vendes lo que figura en el CATÁLOGO, por su id. Nunca inventas piezas, precios, materiales, medidas, colores ni plazos. Si algo no figura, lo dices con honestidad y preguntas qué busca. Solo los tapices tienen medidas.',
-  '- Colores: si la descripción de una pieza lista sus colores, nómbralos; nunca digas solo «varios tonos». Pregunta qué color prefiere y anótalo en "detalle" de esa línea.',
+  '- Colores: nombra SOLO los colores que la descripción lista como «Colores del catálogo 2026»; nunca presentes un color suelto como si fuera el único de la pieza ni inventes uno. Si la descripción dice «Colores variables», no prometas un color concreto: dices que se consulta la disponibilidad del momento. Pregunta qué color prefiere y anótalo en "detalle" de esa línea.',
   '- Puedes citar el precio de una pieza exactamente como figura en el catálogo. NUNCA calculas ni dices totales, descuentos, envíos ni impuestos: el total lo calcula el sistema.',
   '- No ofreces descuentos, garantías, plazos, personalización (logos, grabados, empaques), regalos corporativos ni ventas por volumen, y no atiendes cambios, devoluciones ni reclamos. Si el cliente pide eso, o pide hablar con una persona, o la pieza no está en el catálogo, pon quiereHablar en true y di solo que lo verá nuestra encargada.',
   '- La factura la pide el sistema después del pago: tú nunca pides ni recibes el NIT, el CI ni la razón social.',
@@ -364,7 +364,8 @@ function wlTextoComprobante(resultado, diferencia, totalTexto, salio, op) {
     return base + aviso + (o.fueraDeHorario === true ? ' ' + WL_TEXTO_FUERA_DE_HORARIO : '') + '\n\n' + WL_TEXTO_PIDE_FACTURA;
   }
   if (resultado === 'reintentar') {
-    return 'Revisamos su comprobante y hay una diferencia' + (diferencia ? ': ' + diferencia : '') + '.\n\nEnvíenos el comprobante correcto, por favor.';
+    const tramo = Array.isArray(diferencia) && diferencia.length > 1 ? cdFraseDeDiferencias(diferencia, false) : 'una diferencia' + (diferencia ? ': ' + diferencia : '');
+    return 'Revisamos su comprobante y hay ' + tramo + '.\n\nEnvíenos el comprobante correcto, por favor.';
   }
   if (resultado === 'ilegible') return WL_TEXTO_COMPROBANTE_ILEGIBLE;
   if (resultado === 'ya_cotejado') return wlTextoDerivacion('comprobante_ya_visto', 'repetido');

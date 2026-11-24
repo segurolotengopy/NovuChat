@@ -117,6 +117,7 @@ function wlMezclarEntrega(antes, nueva, modos, from) {
   const campo = (v, max) => (typeof v === 'string' ? wlParaMemoria(cbLinea(v, max)).slice(0, max) : '');
   // La ubicación NO la propone el modelo: solo viene del pin de WhatsApp (plan `ubicacion`); aquí se conserva la que ya estaba.
   const salida = { modo: a.modo, ciudad: a.ciudad, direccion: a.direccion, nombre: a.nombre, telefono: a.telefono, ubicacion: a.ubicacion };
+  if (a.dirCat === true) salida.dirCat = true;
   const modo = campo(n.modo, 40);
   if (modo !== '') {
     if (modos.length === 0) salida.modo = modo;
@@ -126,13 +127,13 @@ function wlMezclarEntrega(antes, nueva, modos, from) {
   if (ciudad !== '') salida.ciudad = ciudad;
   // La dirección NO pasa por `wlParaMemoria` (mutilaría «2do piso»): solo se enmascaran las secuencias de 7 o más dígitos (un NIT, un CI).
   const direccion = typeof n.direccion === 'string' ? cbLinea(n.direccion, 120).replace(/\d(?:[\s.-]?\d){6,}/g, '[nº]').slice(0, 120) : '';
-  if (direccion !== '') salida.direccion = direccion;
+  if (direccion !== '') { if (direccion !== a.direccion) delete salida.dirCat; salida.direccion = direccion; }   // una dirección dicha por chat se valida como siempre; solo la del catálogo (`dirCat`) se acepta tal cual
   const nombre = campo(n.nombre, 60);
   if (nombre !== '') salida.nombre = nombre;
   const telefono = wlTelefono(n.telefono, from);
   if (telefono !== '') salida.telefono = telefono;
   // Si el modo es recojo (no un envío), la dirección vieja se limpia: el recojo no lleva dirección de entrega.
-  if (wlEsRecojo(salida.modo) && !wlEsEnvio(salida.modo)) salida.direccion = '';
+  if (wlEsRecojo(salida.modo) && !wlEsEnvio(salida.modo)) { salida.direccion = ''; delete salida.dirCat; }
   return salida;
 }
 // Una dirección EXACTA: 8 caracteres o más, 2 palabras o más y un NÚMERO de puerta (una cifra suelta como «2631», «12-B» o «#45»; no un ordinal como «4to» o «3er») o «s/n» / «sin número». «Zona sur», «Zona Sur 4to anillo» y «Santa Cruz 3er anillo» no lo son.
@@ -153,7 +154,7 @@ function wlFaltaEntrega(e) {
   else if (x.ciudad === '') f.push('ciudad');
   if (x.nombre.split(/\s+/).filter((p) => p !== '').length < 2) f.push('nombre completo de quien recibe (nombre y apellido)');
   if (!/^\d{8,15}$/.test(x.telefono)) f.push('teléfono de contacto');
-  if (wlEsEnvio(x.modo) && !wlDireccionExacta(x.direccion)) f.push('dirección exacta (calle o avenida, número y zona o referencia)');
+  if (wlEsEnvio(x.modo) && !(x.dirCat === true && x.direccion.length >= 5) && !wlDireccionExacta(x.direccion)) f.push('dirección exacta (calle o avenida, número y zona o referencia)');
   return f;
 }
 function wlEntregaCompleta(e) {
@@ -220,13 +221,43 @@ function wlDireccionTienda(base, ciudad) {
   const t = typeof d === 'string' ? cbLinea(d, 120) : '';
   return /^REEMPLAZAR_/.test(t) ? '' : t;
 }
+// EL ENLACE DE MAPA DE CADA TIENDA (Andres, 24/11/2026). El dato del comercio son las COORDENADAS (`tiendaLaPazCoordenadas`, `tiendaSantaCruzCoordenadas`, «lat,lng»): el repositorio no guarda enlaces y el CÓDIGO arma el enlace limpio de Google Maps.
+// Cualquier otra forma (o un marcador) es ''. JAMÁS se da el de una tienda por el de otra: cada ciudad lee SOLO su clave.
+const WL_COORDENADAS = /^(-?\d{1,3}\.\d{1,8}),(-?\d{1,3}\.\d{1,8})$/;
+function wlEnlaceTienda(base, ciudad) {
+  const b = cbEsObjeto(base) ? base : {};
+  const n = wlNorm(ciudad);
+  const d = /\bsanta cruz\b/.test(n) ? b.tiendaSantaCruzCoordenadas : (/\bla paz\b/.test(n) ? b.tiendaLaPazCoordenadas : '');
+  const m = typeof d === 'string' ? WL_COORDENADAS.exec(d) : null;
+  return m && Math.abs(Number(m[1])) <= 90 && Math.abs(Number(m[2])) <= 180 ? 'https://www.google.com/maps/search/?api=1&query=' + m[1] + '%2C' + m[2] : '';
+}
+// ¿El cliente pregunta dónde queda la tienda, cómo llegar o pide la ubicación?
+function wlPreguntaUbicacion(n) {
+  return /\b(donde (queda|quedan|esta|estan|se encuentra|se encuentran|las tienen|los tienen)|ubicacion|ubicados|direccion de la tienda|como (llego|llegar)|mapa)\b/.test(String(n || ''));
+}
+// La respuesta a «¿dónde queda?»: la ciudad sale de lo que el cliente DICE; si no la dice, de la entrega ya anotada; si sigue sin saberse (o nombra las dos), van las DOS, cada una con su nombre.
+function wlTextoUbicacion(base, textoCliente, ciudadEntrega) {
+  const n = wlNorm(textoCliente);
+  const sc = /\bsanta cruz\b/.test(n), lp = /\bla paz\b/.test(n);
+  let ciudades = ['La Paz', 'Santa Cruz'];
+  if (sc && !lp) ciudades = ['Santa Cruz'];
+  else if (lp && !sc) ciudades = ['La Paz'];
+  else if (!lp && !sc) {
+    const e = wlNorm(ciudadEntrega);
+    if (/\bsanta cruz\b/.test(e)) ciudades = ['Santa Cruz'];
+    else if (/\bla paz\b/.test(e)) ciudades = ['La Paz'];
+  }
+  const filas = ciudades.map((c) => ({ c: c, dir: wlDireccionTienda(base, c), url: wlEnlaceTienda(base, c) })).filter((x) => x.url !== '');
+  if (!filas.length) return '';
+  return filas.map((x) => 'Tienda de ' + x.c + (x.dir ? ' (' + x.dir + ')' : '') + ': ' + x.url).join('\n');
+}
 // La frase del costo del envío que va en el resumen del pedido: gratis, a cotizar (con la política de que el QR es solo por los productos) o, en el recojo, la dirección de la tienda.
-function wlFraseEnvio(envio, umbralBs, direccionTienda, sinQr, horario) {
+function wlFraseEnvio(envio, umbralBs, direccionTienda, sinQr, horario, enlace) {
   if (envio === 'gratis') return 'El envío no tiene costo.';
   // Sin QR de cobro no se habla del QR: solo del envío.
   // El envío bajo el umbral lo cotiza y lo cobra nuestra encargada (aclaración de Andres, 18/11/2026), nunca «directo a quien lo lleva».
   if (envio === 'cotizar') return sinQr === true ? 'El costo del envío se lo indicará y cobrará nuestra encargada.' : 'El QR es solo por las piezas; el costo del envío se lo indicará y cobrará nuestra encargada.';
-  return direccionTienda !== '' ? 'Recoge su pedido en: ' + direccionTienda + (horario ? ', ' + horario : '') + '.' : '';
+  return direccionTienda !== '' ? 'Recoge su pedido en: ' + direccionTienda + (horario ? ', ' + horario : '') + '.' + (enlace ? ' Ubicación: ' + enlace : '') : '';
 }
 // La política fija de envíos (se agrega cuando el cliente pregunta por el envío; el modelo no la dice).
 function wlTextoPoliticaEnvio(umbralBs) {
@@ -355,10 +386,21 @@ function wlPideFactura(n) {
 function wlQuiereHablar(n) {
   return /\b(hablar con (una |un )?(persona|humano|asesor|asesora|encargado|encargada|vendedor|vendedora|alguien|recepcion)|asesor|asesora|encargad[oa]|recepcion|atencion al cliente|que me llamen|llamenme|llamarme)\b/.test(String(n || ''));
 }
-// ¿Nombra una pieza que la consola tiene sin precio? Por su nombre completo, o por «tapiz» cuando alguna de esas piezas lo lleva en el nombre.
-function wlNombraSinPrecio(n, sinPrecio) {
+// ¿Nombra una pieza que la consola tiene sin precio? Por su nombre completo, o por «tapiz» a secas cuando alguna de esas piezas lo lleva en el nombre. Si el cliente nombra un tapiz CON precio («el Tapiz Carnaval»),
+// la palabra «tapiz» no lo manda a cotizar: se vende con su precio (24/11/2026: «quiero el Tapiz Carnaval», Bs 3.750, recibía «no tenemos un precio»). `conPrecio` = los nombres normalizados de los ítems activos con precio.
+function wlNombraSinPrecio(n, sinPrecio, conPrecio) {
   const t = ' ' + String(n || '') + ' ';
-  return sinPrecio.some((x) => t.indexOf(' ' + x + ' ') >= 0 || (t.indexOf(' tapiz ') >= 0 && x.indexOf('tapiz') >= 0) || (t.indexOf(' tapices ') >= 0 && x.indexOf('tapiz') >= 0));
+  const nombraUnoConPrecio = (Array.isArray(conPrecio) ? conPrecio : []).some((x) => x.indexOf('tapiz') >= 0 && t.indexOf(' ' + x + ' ') >= 0);
+  return sinPrecio.some((x) => t.indexOf(' ' + x + ' ') >= 0 || (!nombraUnoConPrecio && x.indexOf('tapiz') >= 0 && (t.indexOf(' tapiz ') >= 0 || t.indexOf(' tapices ') >= 0)));
+}
+// Las líneas en la forma que usa la huella del botón «Confirmar pedido» (`cfHuella`): id, cantidad, detalle y precio, igual al armar el mensaje y al leer el toque.
+function wlLineasParaHuella(carrito, vendibles) {
+  return vcLineas(Array.isArray(carrito) ? carrito : [], vendibles).lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '', precioCentavos: l.precioCentavos }));
+}
+// Los nombres (normalizados) de los ítems ACTIVOS con un precio válido.
+function wlConPrecio(panel) {
+  const cat = panel && panel.ok && Array.isArray(panel.cuerpo.catalogo) ? panel.cuerpo.catalogo : [];
+  return cat.filter((x) => cbEsObjeto(x) && x.activo === true && typeof x.nombre === 'string' && typeof x.precio === 'number' && Number.isFinite(x.precio) && x.precio > 0).map((x) => wlNorm(x.nombre)).filter((x) => x !== '');
 }
 
 // -----------------------------------------------------------------------------
@@ -589,9 +631,24 @@ function wlResolverComprobante(c) {
     return leidoC !== null && esperadoC !== null ? 'su comprobante dice ' + vcMonto(leidoC) + ' y su pedido es ' + vcMonto(esperadoC)
       : 'el monto del comprobante no coincide con su pedido' + (esperadoC !== null ? ' de ' + vcMonto(esperadoC) : '');
   };
+  // TODAS las diferencias, el destinatario primero (Andres, 07/11/2026: «nombra todas»; base común `diferencias.js`). El servidor manda `motivos[]`; con más de una frase que decir sale la lista completa y NINGUNA tapa a otra
+  // (antes la del monto reemplazaba a la del destinatario). El monto, con sus dos números; lo leído de la imagen nunca se copia. Con una sola diferencia sigue el camino de siempre.
+  const todasLasDiferencias = () => {
+    const frases = cdFrasesDeMotivos(cuerpo);
+    if (frases.length < 2) return null;
+    const dichas = [];
+    for (const fr of frases) {
+      const t = /^El (comprobante dice|monto del comprobante)/.test(fr) ? nombrarDiferencia() : wlDiferenciaUsted(cbDiferencia([fr], 'BOB'));
+      if (t !== '' && !dichas.includes(t)) dichas.push(t);
+    }
+    return dichas.length > 1 ? dichas : null;
+  };
+  const varias = r.resultado === 'reintentar' || r.resultado === 'aproximado' ? todasLasDiferencias() : null;
   if (r.resultado === 'reintentar' && (cuerpo.motivo === 'monto_distinto' || cuerpo.motivo === 'monto_menor' || cuerpo.motivo === 'monto_mayor')) {
     // Contrato de PR-S con `config/pedidos.montoExacto`: `reintentar` + `monto_distinto` con `montoLeido` y `montoEsperado`. Texto fijo, en usted, que nombra los dos montos.
-    d.diferencia = nombrarDiferencia();
+    d.diferencia = varias || nombrarDiferencia();
+  } else if (varias) {
+    d.diferencia = varias;
   }
   if (r.resultado === 'cuadra') {
     d.tipo = 'comprobante'; d.aviso = pedido('llegó y los datos coinciden');
@@ -600,7 +657,7 @@ function wlResolverComprobante(c) {
     // Decisión 8: un monto distinto es OBSERVADO y se nombra la diferencia (el servidor devuelve el monto leído); sin aviso, como cualquier comprobante por corregir.
     // (Se mantiene para el comercio SIN la bandera `montoExacto`, que todavía responde `aproximado`.)
     d.tipo = 'comprobante_pedir'; d.resultado = 'reintentar';
-    d.diferencia = nombrarDiferencia();
+    d.diferencia = varias || nombrarDiferencia();
   }
   else if (r.resultado === 'reintentar' || r.resultado === 'ilegible') { d.tipo = 'comprobante_pedir'; }
   else if (r.resultado === 'ya_cotejado') { d.tipo = 'derivar'; d.motivo = 'comprobante_ya_visto'; d.aviso = wlAvisoConsulta(c, 'comprobante_ya_visto'); }
@@ -697,7 +754,7 @@ function wlResolverModelo(c) {
   if (sinRedaccion) texto = WL_TEXTO_MODELO_SIN_REDACCION;
   // Si el cliente pregunta por el envío, la política la dice el CÓDIGO (el modelo no habla del costo).
   const politica = wlPreguntaEnvio(wlNorm(p.textoCliente));
-  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, resumen: cambio && lineas.length ? vcResumen(lineas) : '', politicaEnvio: politica ? wlTextoPoliticaEnvio(wlUmbralBs(c.base)) : '', notaFactura: p.notaFactura === 'pedir' || p.notaFactura === 'al_confirmar' ? p.notaFactura : '' });
+  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, resumen: cambio && lineas.length ? vcResumen(lineas) : '', politicaEnvio: politica ? wlTextoPoliticaEnvio(wlUmbralBs(c.base)) : '', ubicacionTiendas: wlPreguntaUbicacion(wlNorm(p.textoCliente)) ? wlTextoUbicacion(c.base, p.textoCliente, f.entrega.ciudad) : '', notaFactura: p.notaFactura === 'pedir' || p.notaFactura === 'al_confirmar' ? p.notaFactura : '' });
 }
 
 // EL PEDIDO QUE EL CLIENTE CONFIRMÓ EN EL CATÁLOGO WEB (`plan.tipo === 'carrito'`, que decide «Decidir turno» solo si corrió el Webhook «Carrito del catálogo»). El servidor ya guardó el pedido y recalculó
@@ -708,14 +765,19 @@ function wlResolverModelo(c) {
 // La ficha guarda las piezas y la entrega parciales (`cierre` en false: no se da por pedida la orden de pagar).
 // La ciudad de un pedido del catálogo web: la nombra la dirección o la referencia; si no, la ubicación (coordenadas) más cercana a La Paz o a Santa Cruz (60 km). Si nada lo dice: vacío.
 function wlCiudadDelCarrito(car) {
-  const t = wlNorm(String(car.direccion || '') + ' ' + String(car.referencia || ''));
+  // La ubicación (el pin) manda sobre el TEXTO: «Calle Santa Cruz 45» o «Calle Sucre» con el pin en La Paz es La Paz.
+  const u = wlUbicacion(car.ubicacion);
+  if (u) {
+    const km = (lat, lng) => { const r = Math.PI / 180; const x = (u.lng - lng) * r * Math.cos(((u.lat + lat) / 2) * r); const y = (u.lat - lat) * r; return Math.sqrt(x * x + y * y) * 6371; };
+    if (km(-16.5, -68.15) <= 60) return 'La Paz';
+    if (km(-17.78, -63.18) <= 60) return 'Santa Cruz';
+  }
+  // Sin pin (o con el pin lejos de las dos): la ciudad por su nombre en la dirección o la referencia, salvo que sea el nombre de una calle («calle Sucre», «av. Santa Cruz»).
+  const t = wlNorm(String(car.direccion || '') + ' ' + String(car.referencia || '')).replace(/\b(calle|c|av|avenida|pasaje|plaza|paseo|esq|esquina)\.?\s+(la paz|santa cruz|cochabamba|sucre|oruro|potosi|tarija|trinidad|cobija)\b/g, ' ');
   const lp = /\bla paz\b/.test(t); const sc = /\bsanta cruz\b/.test(t);
   if (lp !== sc) return lp ? 'La Paz' : 'Santa Cruz';
-  const u = wlUbicacion(car.ubicacion);
-  if (!u) return '';
-  const km = (lat, lng) => { const r = Math.PI / 180; const x = (u.lng - lng) * r * Math.cos(((u.lat + lat) / 2) * r); const y = (u.lat - lat) * r; return Math.sqrt(x * x + y * y) * 6371; };
-  if (km(-16.5, -68.15) <= 60) return 'La Paz';
-  if (km(-17.78, -63.18) <= 60) return 'Santa Cruz';
+  const otra = /\b(cochabamba|sucre|oruro|potosi|tarija|trinidad|cobija)\b/.exec(t);
+  if (otra) return otra[1] === 'potosi' ? 'Potosí' : otra[1].charAt(0).toUpperCase() + otra[1].slice(1);
   return '';
 }
 // La dirección del catálogo más su referencia («casa 12, portón verde» es parte de cómo llegar): se une dentro del tope de 120 caracteres de la entrega.
@@ -723,6 +785,12 @@ function wlDireccionDelCarrito(car) {
   const d = String(car.direccion || '').trim(); const r = String(car.referencia || '').trim();
   if (r === '' || wlNorm(d).includes(wlNorm(r))) return d;
   return (d === '' ? r : d + ', ' + r).slice(0, 120);
+}
+// Lo que falta tras un carrito: lo mismo de siempre, pero si el catálogo ya dijo «envío» no se pregunta el modo de entrega; solo la ciudad del envío.
+function wlFaltanDelCarrito(entrega, car) {
+  const f = wlFaltaEntrega(entrega);
+  if (car.entrega !== 'envio' || !(f.includes('modo de entrega') || f.includes('ciudad'))) return f;
+  return ['ciudad del envío'].concat(f.filter((x) => x !== 'modo de entrega' && x !== 'ciudad'));
 }
 function wlResolverCarrito(c) {
   const f = c.ficha;
@@ -743,13 +811,18 @@ function wlResolverCarrito(c) {
     const ciudadCat = wlCiudadDelCarrito(car);
     const envios = modos.filter((m) => wlEsEnvio(m));
     const porCiudad = ciudadCat === '' ? [] : envios.filter((m) => wlNorm(m).includes(wlNorm(ciudadCat)));
-    modo = porCiudad.length === 1 ? porCiudad[0] : (envios.length === 1 ? envios[0] : (modos.length === 0 ? 'Envío' : ''));
+    // Fuera de La Paz y Santa Cruz (la dirección nombra otra ciudad, o la ubicación cae lejos de las dos): el modo es el envío nacional, que ya está dicho por el carrito.
+    const nacionales = envios.filter((m) => /\bnacional\b/.test(wlNorm(m)));
+    const fueraDeLasDos = porCiudad.length === 0 && (ciudadCat !== '' || wlUbicacion(car.ubicacion) !== null);
+    modo = porCiudad.length === 1 ? porCiudad[0] : (fueraDeLasDos && nacionales.length === 1 ? nacionales[0] : (envios.length === 1 ? envios[0] : (modos.length === 0 ? 'Envío' : '')));
     ciudad = /\bla paz\b/.test(wlNorm(modo)) ? 'La Paz' : (/\bsanta cruz\b/.test(wlNorm(modo)) ? 'Santa Cruz' : ciudadCat);
   } else {
     modo = modos.find((m) => wlEsRecojo(m) && !wlEsEnvio(m)) || (modos.length === 0 ? 'Recojo en tienda' : '');
   }
   const entrega = wlMezclarEntrega(f.entrega, { modo: modo, ciudad: ciudad, direccion: car.entrega === 'envio' ? wlDireccionDelCarrito(car) : '', telefono: previa.telefono === '' ? 'MISMO' : '' }, modos, c.from);
   entrega.ubicacion = car.entrega === 'envio' ? (wlUbicacion(car.ubicacion) || previa.ubicacion) : null;
+  // La dirección que el cliente escribió en el catálogo (con o sin número de puerta) vale tal cual: no se vuelve a pedir. La que dice por chat sigue validándose como siempre.
+  if (car.entrega === 'envio' && entrega.direccion.length >= 5 && wlDireccionDelCarrito(car) === entrega.direccion) entrega.dirCat = true;
   const antes = vcLineas(f.carrito, c.vendibles).lineas;
   const cambio = !vcMismoCarrito(antes, lineas);
   const base = { lineas: lineas, entrega: entrega, cierre: true, cambio: cambio, aviso: null, cancelarCobro: false };
@@ -768,7 +841,7 @@ function wlResolverCarrito(c) {
   }
   // Entrega incompleta (o sin QR que emitir): UN mensaje con el resumen y lo que falta. Con un QR abierto de otro pedido, ese cobro se cierra y se avisa que quedó anulado.
   return Object.assign(base, extra, {
-    tipo: 'carrito_pide', cierre: false, faltan: wlFaltaEntrega(entrega), resumen: vcResumen(wlConNombres(lineas, c.vendibles)),
+    tipo: 'carrito_pide', cierre: false, faltan: wlFaltanDelCarrito(entrega, car), resumen: vcResumen(wlConNombres(lineas, c.vendibles)),
     cancelarCobro: cambioConQr, qrAnulado: cambioConQr, patch: cambioConQr ? { qrHastaMs: 0, qrCarrito: [] } : undefined,
   });
 }
@@ -783,6 +856,18 @@ function wlCarritoListoParaConfirmar(c, base, extra, cambioConQr) {
   });
 }
 
+// El toque válido de «Confirmar pedido» (sin modelo): cierra el pedido con las líneas y la entrega de la FICHA, como la orden de pagar, y emite el QR en este turno. El modelo no interviene: no puede vaciar ni cambiar el carrito.
+function wlResolverConfirmar(c) {
+  const f = c.ficha;
+  const entrega = wlEntregaDeFicha(f.entrega);
+  const lineas = vcLineas(f.carrito, c.vendibles).lineas;
+  const base = { lineas: lineas, entrega: entrega, cierre: true, cambio: false, aviso: null, cancelarCobro: false };
+  const abierto = c.cobro.modo === 'real' && (c.cobro.pendiente || f.qrHastaMs > c.ahora);
+  const cambioConQr = abierto && !vcMismoCarrito(wlConNombres(f.qrCarrito, c.vendibles), lineas);
+  if (cambioConQr && c.cancelo === false) return Object.assign(base, { tipo: 'derivar', motivo: 'no_cancelo', aviso: null, cancelarCobro: true });
+  const cerrado = lineas.length > 0 && wlEntregaCompleta(entrega) ? wlCerrar(c, base, abierto, cambioConQr) : null;
+  return cerrado || wlDerivar(c, 'quiere_hablar');
+}
 // La ubicación del pin de WhatsApp (sin modelo): se guarda en la entrega y, si el pedido ya estaba confirmado y completo, se cierra (normalmente, el QR).
 function wlResolverUbicacion(c) {
   const f = c.ficha;
@@ -817,6 +902,7 @@ function wlResolver(c) {
   if (p.tipo === 'comprobante') return wlResolverComprobante(c);
   if (p.tipo === 'modelo') return wlResolverModelo(c);
   if (p.tipo === 'ubicacion') return wlResolverUbicacion(c);
+  if (p.tipo === 'confirmar') return wlResolverConfirmar(c);
   if (p.tipo === 'carrito') return wlResolverCarrito(c);
   if (p.tipo === 'factura_datos' || p.tipo === 'factura_sin' || p.tipo === 'factura_pedir') return wlResolverFactura(c);
   return Object.assign({ aviso: null }, p);

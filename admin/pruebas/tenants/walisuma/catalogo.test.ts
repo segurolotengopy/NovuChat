@@ -83,7 +83,10 @@ describe('Walisuma: el catálogo importable', () => {
     expect(items.some((it) => it.nombre === 'Posavasos Rombo')).toBe(true);
     expect(items.some((it) => /segundo dise/i.test(it.nombre))).toBe(false);
     // No hay chal ni estola de vicuña: «vicuña» es un color; solo las bufandas son de vicuña.
-    for (const it of items.filter((x) => /^(Chal|Estola)/.test(x.nombre))) expect(/\bde color vicu|^(?!.*vicu)/is.test(it.descripcion ?? ''), it.nombre).toBe(true);
+    // «vicuña» es un color, no un material: en un chal o una estola solo aparece dentro de la lista «Colores del catálogo 2026».
+    for (const it of items.filter((x) => /^(Chal|Estola)/.test(x.nombre))) expect((it.descripcion ?? '').replace(/Colores del catálogo 2026:[^.]*\./, ''), it.nombre).not.toMatch(/vicu/i);
+    // Ninguna prenda abre la descripción con UN color suelto («De color vicuña.», «Color negro.»): solo la lista de colores del catálogo o «Colores variables» (24/11/2026).
+    for (const it of items) expect(it.descripcion ?? '', it.nombre).not.toMatch(/^(De color|Color) /);
     for (const it of items.filter((x) => /Colores variables/.test(x.descripcion ?? ''))) expect(it.descripcion, it.nombre).toMatch(/disponibilidad del momento/);
     expect(items.filter((x) => /Colores varios/i.test(x.descripcion ?? '')).length).toBe(0);
   });
