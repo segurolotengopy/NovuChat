@@ -39,6 +39,9 @@ set -euo pipefail
 case "$-" in *x*) echo "✗ xtrace activo (bash -x o SHELLOPTS=xtrace): imprimiría el token. No se escribió nada." >&2; exit 2 ;; esac
 [[ "${SHELLOPTS:-}" != *xtrace* ]] || { echo "✗ SHELLOPTS=xtrace en el entorno: imprimiría el token. No se escribió nada." >&2; exit 2; }
 set +x
+# Una variable heredada (y exportada) con el nombre de las que llevan valores iría al entorno de gcloud: se desexporta y se descarta.
+export -n ENTRADA ACTUAL FUSIONADO RELEIDO ANTIGUA HUELLA_OTRAS ESPERADO 2>/dev/null || true
+unset ENTRADA ACTUAL FUSIONADO RELEIDO ANTIGUA HUELLA_OTRAS ESPERADO
 ESTE="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$ESTE")/.." || exit 1
 
@@ -86,12 +89,20 @@ if [[ "$MODO" == cargar ]]; then
   [[ -f "$ARCHIVO" && ! -L "$ARCHIVO" ]] || { echo "✗ el archivo no existe o es un enlace" >&2; exit 2; }
   BASE_ENTREGA="$(realpath -e -- "$HOME/CLAUDE_DESCARGAS" 2>/dev/null || true)"
   [[ -n "$BASE_ENTREGA" ]] || { echo "✗ no existe ~/CLAUDE_DESCARGAS" >&2; exit 2; }
+  # La carpeta de entrega: del usuario y sin escritura para el grupo ni para otros (nadie más puede cambiar el archivo por otro).
+  read -r MODO_DIR UID_DIR < <(stat -c '%a %u' -- "$BASE_ENTREGA")
+  { [[ "$UID_DIR" == "$(id -u)" ]] && (( (8#$MODO_DIR & 8#022) == 0 )); } \
+    || { echo "✗ ~/CLAUDE_DESCARGAS tiene que ser del usuario y sin escritura para el grupo ni para otros" >&2; exit 2; }
   RUTA="$(realpath -e -- "$ARCHIVO")"
   [[ "$RUTA" == "$BASE_ENTREGA"/* ]] || { echo "✗ el archivo tiene que estar dentro de ~/CLAUDE_DESCARGAS" >&2; exit 2; }
-  [[ "$(stat -c '%a %u %h' -- "$RUTA")" == "600 $(id -u) 1" ]] \
+  # Se abre UNA vez: todo lo demás (stat y lectura) va sobre ese descriptor, no sobre la ruta (sin carrera entre revisar y leer).
+  exec 3<"$RUTA" || { echo "✗ no se pudo abrir el archivo" >&2; exit 2; }
+  [[ "$(stat -L -c '%a %u %h' /proc/self/fd/3)" == "600 $(id -u) 1" ]] \
     || { echo "✗ el archivo tiene que ser del usuario actual, de modo 600 y sin enlaces duros" >&2; exit 2; }
-  [[ "$(stat -c '%s' -- "$RUTA")" -le 16384 ]] || { echo "✗ el archivo es demasiado grande" >&2; exit 2; }
-  set +e; ENTRADA="$(cat -- "$RUTA")"; EST_CAT=$?; set -e
+  [[ -f /proc/self/fd/3 && "$(stat -L -c '%s' /proc/self/fd/3)" -le 16384 ]] || { echo "✗ el archivo no es regular o es demasiado grande" >&2; exit 2; }
+  INODO="$(stat -L -c '%d:%i' /proc/self/fd/3)"
+  set +e; ENTRADA="$(cat <&3)"; EST_CAT=$?; set -e
+  exec 3<&-
   [[ "$EST_CAT" -eq 0 && -n "$ENTRADA" ]] || { echo "✗ no se pudo leer el archivo de entrada" >&2; exit 2; }
 fi
 
@@ -100,7 +111,7 @@ fi
 # comprobar (stdin: versión nueva) · copiar (stdin debe ser un objeto JSON) · igual (stdin igual a ESPERADO).
 # Decodificación ESTRICTA: un byte que no es UTF-8, una clave repetida, NaN o Infinity abortan en vez de alterarse en silencio.
 PY='
-import sys, os, json, hashlib
+import sys, os, json, hashlib, re
 from urllib.parse import urlparse
 sn = lambda b: "SÍ" if b else "NO"
 def _no(c): raise ValueError(c)
@@ -123,17 +134,17 @@ def validar(t, host, hu):
     try:
         if isinstance(bu, str) and u16(bu) <= 2048:
             u = urlparse(bu); pt = u.port
-            h = u.scheme == "https" and not u.username and not u.password and not u.query and not u.fragment and bool(u.hostname)
+            h = bu == bu.strip() and not re.search(r"[\x00-\x1f\x7f]", bu) and u.scheme == "https" and not u.username and not u.password and not u.query and not u.fragment and bool(u.hostname)
             p = pt in (None, 443)
             d = u.hostname == host
     except Exception:
         h = p = d = False
-    r.append(("baseUrl texto https, sin usuario, clave, query ni fragmento", h))
+    r.append(("baseUrl texto https, sin espacios ni caracteres de control, sin usuario, clave, query ni fragmento", h))
     r.append(("puerto 443 o ausente", p))
     r.append(("host de la baseUrl igual al indicado en --host", d))
     e = t.get("endpoint"); r.append(("endpoint empieza con /api/novuchat/v1/catalogo", isinstance(e, str) and e.startswith("/api/novuchat/v1/catalogo")))
-    tk = t.get("token"); tok = isinstance(tk, str) and u16(tk) >= 8
-    r.append(("token texto de 8 caracteres o más", tok))
+    tk = t.get("token"); tok = isinstance(tk, str) and re.fullmatch(r"[\x21-\x7e]{8,512}", tk) is not None
+    r.append(("token de 8 a 512 caracteres ASCII visibles, sin espacios", tok))
     if hu:
         try: hok = tok and hashlib.sha256(tk.encode("utf-8")).hexdigest()[:8] == hu
         except Exception: hok = False
@@ -335,6 +346,7 @@ if [[ "$MODO" == revertir ]]; then
   set +e; NUEVA="$(agregar "$ANTIGUA")"; EST_ADD=$?; set -e
   if [[ "$EST_ADD" -ne 0 ]] || ! [[ "$NUEVA" =~ ([0-9]+)$ ]]; then falla "gcloud no confirmó la versión nueva: revise la lista de versiones antes de reintentar"; exit 3; fi
   NUEVA="${BASH_REMATCH[1]}"
+  (( 10#$NUEVA == 10#$ANTERIOR + 1 )) || { falla "la versión nueva no es la siguiente a la ${ANTERIOR}: alguien escribió a la vez; revise las versiones y use --revertir <la correcta>"; exit 4; }
   ok "versión nueva ${NUEVA} con el contenido de la ${REVERTIR}"
   set +e; RELEIDO="$(leer "$NUEVA")"; EST_LEER=$?; set -e
   [[ "$EST_LEER" -eq 0 && -n "$RELEIDO" ]] || { falla "no pude releer la versión nueva: revise el secreto"; exit 4; }
@@ -362,6 +374,7 @@ set +e; HUELLA_OTRAS="$(printf '%s' "$ACTUAL" | python3 -I -c "$PY" huella "$TEN
 set +e; NUEVA="$(agregar "$FUSIONADO")"; EST_ADD=$?; set -e
 if [[ "$EST_ADD" -ne 0 ]] || ! [[ "$NUEVA" =~ ([0-9]+)$ ]]; then falla "gcloud no confirmó la versión nueva (el archivo se conserva): revise la lista de versiones antes de reintentar"; exit 3; fi
 NUEVA="${BASH_REMATCH[1]}"
+(( 10#$NUEVA == 10#$ANTERIOR + 1 )) || { falla "la versión nueva no es la siguiente a la ${ANTERIOR}: alguien escribió a la vez (el archivo se conserva): revise las versiones; para volver atrás, --revertir ${ANTERIOR}"; exit 4; }
 ok "versión nueva ${NUEVA} (la anterior, ${ANTERIOR}, sigue habilitada; para volver atrás: --revertir ${ANTERIOR})"
 set +e; RELEIDO="$(leer "$NUEVA")"; EST_LEER=$?; set -e
 [[ "$EST_LEER" -eq 0 && -n "$RELEIDO" ]] || { falla "no pude releer la versión nueva (el archivo se conserva): volver atrás con --revertir ${ANTERIOR}"; exit 4; }
@@ -369,6 +382,9 @@ set +e
 printf '%s' "$RELEIDO" | ENTRADA="$ENTRADA" HOST="$HOST" HUELLA="$HUELLA" HUELLA_OTRAS="$HUELLA_OTRAS" python3 -I -c "$PY" comprobar "$TENANT"; EST_PY=$?
 set -e
 [[ "$EST_PY" -eq 0 ]] || { falla "la relectura no coincide (el archivo se conserva): volver atrás con --revertir ${ANTERIOR}"; exit 4; }
-if rm -f -- "$RUTA"; then ok "archivo de entrada borrado"; else nota "no pude borrar el archivo de entrada: bórrelo a mano"; fi
+# Solo se borra si la ruta sigue siendo el MISMO archivo que se validó y leyó (no un reemplazo hecho entretanto).
+if [[ ! -L "$RUTA" && "$(stat -c '%d:%i' -- "$RUTA" 2>/dev/null || true)" == "$INODO" ]]; then
+  if rm -f -- "$RUTA"; then ok "archivo de entrada borrado"; else nota "no pude borrar el archivo de entrada: bórrelo a mano"; fi
+else nota "la ruta ya no es el archivo que se leyó: NO lo borro; revise ~/CLAUDE_DESCARGAS a mano"; fi
 nota "$AVISO_REDESPLEGAR"
 exit 0

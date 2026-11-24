@@ -23,6 +23,7 @@ const GCLOUD_FALSO = `#!/usr/bin/env bash
 set -u
 E="$FAKE_DIR/estado"; mkdir -p "$E/v"
 echo "$*" >> "$FAKE_DIR/llamadas"
+env >> "$FAKE_DIR/entornos"
 args=(); while [ $# -gt 0 ]; do case "$1" in --project) shift 2 ;; --quiet) shift ;; *) args+=("$1"); shift ;; esac; done
 set -- "\${args[@]}"
 ultima() { ls "$E/v" | sort -n | tail -1; }
@@ -44,7 +45,11 @@ case "$1 $2" in
         [ -f "$E/v/$4" ] || exit 1
         cat "$E/v/$4"
         if [ "\${FAKE_CARRERA:-0}" = 1 ] && [ ! -f "$E/carrera" ]; then touch "$E/carrera"; echo '{"otro":{"baseUrl":"https://x.example.org","bearer":"12345678"}}' > "$E/v/$(( $(ultima) + 1 ))"; fi ;;
-      add) n=$(( $(ultima) + 1 )); cat > "$E/v/$n"; echo "projects/123456789012/secrets/NOVUTIENDA_CATALOGO/versions/$n" ;;
+      add) n=$(( $(ultima) + 1 ))
+        [ "\${FAKE_CARRERA_POST:-0}" = 1 ] && { echo '{}' > "$E/v/$n"; n=$(( n + 1 )); }
+        if [ "\${FAKE_MALO:-0}" = 1 ]; then cat > /dev/null; echo '{"mal":{}}' > "$E/v/$n"; else cat > "$E/v/$n"; fi
+        if [ -n "\${FAKE_SWAP:-}" ]; then rm -f "$FAKE_SWAP"; echo '{}' > "$FAKE_SWAP"; chmod 600 "$FAKE_SWAP"; fi
+        echo "projects/123456789012/secrets/NOVUTIENDA_CATALOGO/versions/$n" ;;
       *) exit 1 ;;
     esac ;;
   *) exit 1 ;;
@@ -58,7 +63,7 @@ beforeEach(() => {
   mkdirSync(join(dir, 'bin')); mkdirSync(join(dir, 'run'), { mode: 0o700 }); chmodSync(join(dir, 'run'), 0o700);
   mkdirSync(join(dir, 'gcloud-cfg'));
   writeFileSync(join(dir, 'gcloud-cfg', 'application_default_credentials.json'), JSON.stringify({ quota_project_id: PROYECTO }));
-  descargas = join(dir, 'CLAUDE_DESCARGAS'); mkdirSync(descargas);
+  descargas = join(dir, 'CLAUDE_DESCARGAS'); mkdirSync(descargas); chmodSync(descargas, 0o755);
   writeFileSync(join(dir, 'bin', 'gcloud'), GCLOUD_FALSO);
   chmodSync(join(dir, 'bin', 'gcloud'), 0o755);
 });
@@ -271,9 +276,7 @@ describe('nube-novutienda-catalogo.sh: --cargar', () => {
     sembrar();
     const ruta = entrega();
     // Un gcloud que guarda algo distinto de lo recibido.
-    const g = readFileSync(join(dir, 'bin', 'gcloud'), 'utf8').replace('add) n=$(( $(ultima) + 1 )); cat >', 'add) n=$(( $(ultima) + 1 )); echo \'{"mal":{}}\' >');
-    writeFileSync(join(dir, 'bin', 'gcloud'), g);
-    const r = correr([...CARGAR(ruta), ...APLICAR]);
+    const r = correr([...CARGAR(ruta), ...APLICAR], { FAKE_MALO: '1' });
     expect(r.codigo).toBe(4);
     expect(existsSync(ruta)).toBe(true);
     sinFugas(r.salida);
@@ -303,5 +306,63 @@ describe('nube-novutienda-catalogo.sh: --revertir', () => {
     const r = correr(['--revertir', '1', ...APLICAR], { FAKE_CARRERA: '1' });
     expect(r.codigo).toBe(1);
     expect(llamadas()).not.toContain('versions add');
+  });
+});
+
+describe('nube-novutienda-catalogo.sh: correcciones de la revisión de seguridad', () => {
+  it('una ENTRADA/ACTUAL/ANTIGUA ya exportada no llega al entorno de gcloud', () => {
+    sembrar({ otro: { baseUrl: 'https://x.example.org', bearer: 'bearer-ajeno-12345' } });
+    const exportadas = { ENTRADA: JSON.stringify(ENTREGA_OK), ACTUAL: 'bearer-ajeno-12345', FUSIONADO: TOKEN, RELEIDO: TOKEN, ANTIGUA: 'bearer-ajeno-12345', HUELLA_OTRAS: 'x' };
+    expect(correr([...CARGAR(entrega()), ...APLICAR], exportadas).codigo).toBe(0);
+    expect(correr(['--revertir', '1', ...APLICAR], exportadas).codigo).toBe(0);
+    const entornos = readFileSync(join(dir, 'entornos'), 'utf8');
+    expect(entornos.length).toBeGreaterThan(0);
+    expect(entornos).not.toContain(TOKEN);
+    expect(entornos).not.toContain('bearer-ajeno');
+  });
+  it('~/CLAUDE_DESCARGAS con escritura para el grupo o para otros: sale 2 sin llamar a gcloud', () => {
+    const ruta = entrega();
+    chmodSync(descargas, 0o775);
+    expect(correr(CARGAR(ruta)).codigo).toBe(2);
+    chmodSync(descargas, 0o757);
+    expect(correr(CARGAR(ruta)).codigo).toBe(2);
+    expect(llamadas()).toBe('');
+  });
+  it('si el archivo se reemplaza por otro mientras se carga, NO se borra el reemplazo', () => {
+    sembrar();
+    const ruta = entrega();
+    const r = correr([...CARGAR(ruta), ...APLICAR], { FAKE_SWAP: ruta });
+    expect(r.codigo).toBe(0);
+    expect(existsSync(ruta)).toBe(true);
+    expect(r.salida).toContain('NO lo borro');
+  });
+  it('carrera posterior al add (la versión nueva no es la siguiente): sale 4 y conserva el archivo, en --cargar y en --revertir', () => {
+    sembrar();
+    const ruta = entrega();
+    const r = correr([...CARGAR(ruta), ...APLICAR], { FAKE_CARRERA_POST: '1' });
+    expect(r.codigo).toBe(4);
+    expect(existsSync(ruta)).toBe(true);
+    expect(r.salida).toContain('--revertir');
+    sinFugas(r.salida);
+    const q = correr(['--revertir', '1', ...APLICAR], { FAKE_CARRERA_POST: '1' });
+    expect(q.codigo).toBe(4);
+  });
+  it('--revertir con la relectura distinta: sale 4', () => {
+    sembrar();
+    writeFileSync(version(2), '{"otro":{"baseUrl":"https://y.example.org","bearer":"abcdefgh"}}');
+    expect(correr(['--revertir', '1', ...APLICAR], { FAKE_MALO: '1' }).codigo).toBe(4);
+  });
+  it('baseUrl con tabulación, salto de línea o espacio inicial, y token con espacio, tabulación o más de 512: sale 1 sin escribir', () => {
+    sembrar();
+    const malos: object[] = [
+      { ...ENTREGA_OK, baseUrl: `https://${HOST}\t` }, { ...ENTREGA_OK, baseUrl: `https://${HOST}\n` }, { ...ENTREGA_OK, baseUrl: ` https://${HOST}` },
+      { ...ENTREGA_OK, token: `${TOKEN} x` }, { ...ENTREGA_OK, token: `${TOKEN}\t` }, { ...ENTREGA_OK, token: ` ${TOKEN}` }, { ...ENTREGA_OK, token: 'a'.repeat(513) },
+    ];
+    for (const m of malos) {
+      const r = correr([...CARGAR(entrega(m)), ...APLICAR]);
+      expect(r.codigo, JSON.stringify(m).slice(0, 40)).toBe(1);
+      sinFugas(r.salida);
+    }
+    expect(escrituras()).toEqual([]);
   });
 });
