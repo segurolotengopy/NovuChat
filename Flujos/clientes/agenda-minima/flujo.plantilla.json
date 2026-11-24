@@ -133,13 +133,13 @@
               "id": "b_plantillaAvisoRecepcion",
               "name": "plantillaAvisoRecepcion",
               "type": "string",
-              "value": ""
+              "value": "aviso_recepcion_atencion"
             },
             {
               "id": "b_plantillaAvisoRecepcionEstado",
               "name": "plantillaAvisoRecepcionEstado",
               "type": "string",
-              "value": ""
+              "value": "APPROVED"
             },
             {
               "id": "b_plantillaAvisoRecepcionIdioma",
