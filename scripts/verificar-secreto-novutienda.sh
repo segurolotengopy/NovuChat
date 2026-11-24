@@ -26,12 +26,14 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || { echo "✗ $1 requiere un valor" >&2; exit 2; }
       case "$1" in --tenant) TENANT="$2" ;; --host) HOST="$2" ;; --huella) HUELLA="$2" ;; --proyecto) PROYECTO="$2" ;; esac
       shift 2 ;;
-    -h|--help)  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)  sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "✗ Opción desconocida: $1" >&2; exit 2 ;;
   esac
 done
 [[ "$TENANT" =~ ^[a-z0-9][a-z0-9-]{2,59}$ ]] || { echo "✗ --tenant: id de comercio" >&2; exit 2; }
 [[ "$HOST" =~ ^[a-z0-9.-]{3,253}$ ]] || { echo "✗ --host: nombre de host" >&2; exit 2; }
+# WHATWG trata como dirección IPv4 todo host cuya última etiqueta es numérica (o 0x…): esos nombres no se aceptan como --host.
+[[ "${HOST##*.}" =~ ^([0-9]+|0[xX][0-9a-fA-F]*)$ ]] && { echo "✗ --host: la última etiqueta no puede ser numérica" >&2; exit 2; }
 [[ -z "$HUELLA" || "$HUELLA" =~ ^[0-9a-f]{8}$ ]] || { echo "✗ --huella: 8 hexadecimales" >&2; exit 2; }
 [[ "$PROYECTO" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo "✗ --proyecto: id de proyecto inválido" >&2; exit 2; }
 
@@ -52,12 +54,11 @@ try:
     raw = sys.stdin.buffer.read().decode("utf-8", "replace")
 except Exception:
     raw = ""
-if raw.strip() == "":
-    print("✗ secreto vacío o ilegible (¿sin sesión o sin permiso de gcloud?)"); sys.exit(3)
 sn = lambda b: "SÍ" if b else "NO"
 resultados = []
 try:
-    m = json.loads(raw)
+    def _no(c): raise ValueError(c)
+    m = json.loads(raw, parse_constant=_no)  # JSON.parse rechaza NaN e Infinity: se rechazan igual
 except Exception:
     print("1. JSON del secreto válido y clave del comercio presente: NO"); sys.exit(1)
 t = m.get(os.environ["TENANT"]) if isinstance(m, dict) else None
@@ -69,7 +70,7 @@ print("2. solo claves permitidas (baseUrl, firmaSecreto, bearer):", sn(c)); resu
 bu = t.get("baseUrl")
 h = d = False
 try:
-    if isinstance(bu, str) and len(bu) <= 2048:
+    if isinstance(bu, str) and len(bu.encode("utf-16-le", "surrogatepass")) // 2 <= 2048:
         u = urlparse(bu)
         u.port  # un puerto inválido lanza ValueError
         h = u.scheme == "https" and not u.username and not u.password and not u.query and not u.fragment and bool(u.hostname)
@@ -93,5 +94,5 @@ sys.exit(0 if all(resultados) else 1)
 '
 ESTADOS=("${PIPESTATUS[@]}")
 set -e
-if [ "${ESTADOS[0]}" -ne 0 ]; then echo "✗ no se pudo leer el secreto (gcloud)"; exit 3; fi
+if [ "${ESTADOS[0]}" -ne 0 ]; then echo "✗ no se pudo leer el secreto (gcloud: ¿sin sesión, sin permiso o secreto inexistente?)"; exit 3; fi
 exit "${ESTADOS[1]}"
