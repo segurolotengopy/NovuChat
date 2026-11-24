@@ -84,6 +84,16 @@ describe('lo que NO cambia', () => {
     expect(cuerpo).not.toMatch(/parece ser|no la encontramos/);
     expect(cuerpo).toMatch(/comprobante/i);
   });
+  it('con un cobro real abierto, un comprobante mal clasificado con la descripción de una transferencia y sin texto va a recepción (no se pierde)', () => {
+    const { t } = turno(imagen({ categoria: 'foto', texto: '', descripcion: 'captura de una transferencia bancaria de Bs 150' }), panelConQr(100));
+    expect(textos(t).join(' ')).toMatch(/comprobante/i);
+    expect(t.avisos).toHaveLength(1);
+  });
+  it('con un cobro real abierto, un comprobante mal clasificado cuya glosa nombra una pieza NO se toma por la pieza', () => {
+    const { t } = turno(imagen({ categoria: 'foto', texto: 'Pago exitoso Bs 150. Glosa: individual tejido' }), panelConQr(100));
+    expect(textos(t).join(' ')).not.toMatch(/Individual tejido de mesa llama: Bs/);
+    expect(textos(t).join(' ')).toMatch(/comprobante/i);
+  });
   it('un pago con problema sigue derivando (no se confunde con una pieza)', () => {
     const { t } = turno(imagen({ categoria: 'pago_con_problema', texto: 'Individual tejido' }));
     expect(textos(t).join(' ')).not.toMatch(/Individual tejido de mesa llama: Bs/);

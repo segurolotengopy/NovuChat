@@ -75,7 +75,7 @@ function liDescripcionSegura(v) {
 }
 // La lectura de la salida del clasificador (el nodo «Describir imagen»). `ok` es falso si no se pudo leer o si el texto parece una instrucción o un pago: entonces no se usa nada.
 function liLeer(salida) {
-  const vacio = { ok: false, categoria: '', partes: [], descripcion: '' };
+  const vacio = { ok: false, categoria: '', partes: [], descripcion: '', mencionaPago: false };
   let objeto = null;
   const m = /\{[\s\S]*\}/.exec(liTextoDe(salida));
   if (m) { try { objeto = JSON.parse(m[0]); } catch (e) { objeto = null; } }
@@ -85,8 +85,11 @@ function liLeer(salida) {
   const escrito = [campo('titular_principal'), campo('texto')].join(' ').slice(0, LI_PARTES_MAX);
   const categoria = liNorm(typeof objeto.categoria === 'string' ? objeto.categoria.slice(0, 40) : '').trim().replace(/[\s-]+/g, '_');
   const descripcion = liDescripcionSegura(campo('descripcion'));
-  if (escrito.trim() === '' && descripcion === '') return { ok: false, categoria: categoria, partes: [], descripcion: '' };
-  return { ok: true, categoria: categoria, partes: liPalabras(escrito), descripcion: descripcion };
+  // ¿La imagen habla de un pago? (para que, con un cobro abierto, un comprobante mal clasificado nunca se tome por una pieza ni se pierda)
+  const todo = liNorm([escrito, campo('descripcion')].join(' '));
+  const mencionaPago = LI_PAGO.test(todo) || /\b(pago|pagos|transferenc\w*|comprobante\w*|deposit\w*|operacion|transaccion)\b/.test(todo);
+  if (escrito.trim() === '' && descripcion === '') return { ok: false, categoria: categoria, partes: [], descripcion: '', mencionaPago: mencionaPago };
+  return { ok: true, categoria: categoria, partes: liPalabras(escrito), descripcion: descripcion, mencionaPago: mencionaPago };
 }
 // Las piezas que la imagen nombra. El nombre de una pieza empieza por QUÉ ES («Individual tejido…», «Billetera de cuero», «Llavero de llama»): una pieza coincide si la imagen
 // nombra ESA palabra (el tipo de pieza) o DOS palabras distintas de su nombre. Una sola palabra suelta del material («cuero») no basta: un sillón de cuero no es una billetera.

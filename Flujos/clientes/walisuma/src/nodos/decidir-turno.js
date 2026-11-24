@@ -87,10 +87,13 @@ if (esVisual) {
   // Un documento, o una lectura que falló o parece una instrucción, sigue con el texto fijo.
   if (t.esDocumento !== true && configLista) {
     const lectura = liLeer(cnPrimero('Describir imagen'));
+    // Con un cobro real abierto, una imagen que habla de un pago (aunque el clasificador no la marcó como comprobante) NUNCA se toma por una pieza: va a recepción sin cotejar.
+    const cobroAbierto = cobro.modo === 'real' && (cobro.pendiente || cobro.enRevision || cobro.vencidoHaceMin !== null);
+    if (cobroAbierto && lectura.mencionaPago === true) return salir({ tipo: 'derivar', motivo: 'comprobante_sin_cotejo' });
     const piezas = liCoincidencias(lectura, vendibles).map((x) => x.id);
     if (piezas.length) return salir({ tipo: 'imagen_piezas', piezas: piezas });
-    // Con un cobro real abierto, una imagen que no es una pieza probablemente sea el comprobante que el clasificador no marcó: va a recepción sin cotejar, como un medio ilegible.
-    if (lectura.ok && cobro.modo === 'real' && (cobro.pendiente || cobro.enRevision || cobro.vencidoHaceMin !== null)) return salir({ tipo: 'derivar', motivo: 'comprobante_sin_cotejo' });
+    // Sin coincidencia y con un cobro real abierto probablemente sea el comprobante (aunque la lectura falló o su texto quedó vacío): recepción, como un medio ilegible.
+    if (cobroAbierto) return salir({ tipo: 'derivar', motivo: 'comprobante_sin_cotejo' });
     if (lectura.ok) return salir({ tipo: 'derivar', motivo: 'imagen_sin_coincidencia', descripcion: lectura.descripcion });
   }
   return salir({ tipo: 'imagen_otra', documento: t.esDocumento === true });
