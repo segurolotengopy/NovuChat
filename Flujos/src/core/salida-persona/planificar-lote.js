@@ -76,7 +76,7 @@ function planAdjunto(p, tipo, mensajeId, conversacionId, to, canal, claveRele, t
 // por el rele y por Graph.
 function esTextoDeParametro(t) {
   // 60 caracteres REALES (puntos de código), como el servidor (parametroDePlantillaValido): un emoji cuenta 1.
-  return typeof t === 'string' && t.length >= 1 && Array.from(t).length <= 60 && !/[\n\r\t]/.test(t) && !/ {4}/.test(t);
+  return typeof t === 'string' && t.trim().length >= 1 && Array.from(t).length <= 60 && !/[\n\r\t]/.test(t) && !/ {4}/.test(t);
 }
 function planPlantilla(p, mensajeId, conversacionId, to, canal, claveRele) {
   const pl = p.plantilla;

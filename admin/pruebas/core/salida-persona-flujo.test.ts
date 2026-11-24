@@ -912,6 +912,7 @@ describe('Salida de persona: plantillas (Retomar, C5/C6)', () => {
     ['parametros no lista', { ...BUENA, parametros: 'Casa' }],
     ['11 parametros', { ...BUENA, parametros: Array.from({ length: 11 }, () => 'x') }],
     ['parametro vacio', { ...BUENA, parametros: [''] }],
+    ['parametro solo de espacios', { ...BUENA, parametros: ['   '] }],
     ['parametro de 61', { ...BUENA, parametros: ['a'.repeat(61)] }],
     ['parametro con \n', { ...BUENA, parametros: ['Casa\nDemo'] }],
     ['parametro con \t', { ...BUENA, parametros: ['Casa\tDemo'] }],
