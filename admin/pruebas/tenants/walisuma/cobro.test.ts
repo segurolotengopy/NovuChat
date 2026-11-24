@@ -149,7 +149,7 @@ describe('el aviso del pedido al comercio', () => {
     expect(vars).toHaveLength(4);
     expect(vars.slice(0, 2)).toEqual(['1 × Billetera de cuero', 'Bs 450']);
     expect(vars[2]).toBe('Recojo en tienda · La Paz · no aplica, recojo en tienda · Ana Pérez · +59100000011 · contacto 71234567 · Recojo: Calle Claudio Aliaga 1231, San Miguel');
-    expect(vars[3]).toBe('ref. WL1 · comprobante: llegó y los datos coinciden · factura: sin datos (S/N) por ahora · banco: no leído · operación: no leída');
+    expect(vars[3]).toBe('ref. WL1 · comprobante: llegó y los datos coinciden · factura: S/N - NIT 0 (si el cliente envía sus datos, llegan en un aviso aparte) · banco: no leído · operación: no leída');
     expect(t.mensajes[0]?.cuerpo).toMatch(/Pasamos .* a nuestra encargada/);
     expect(JSON.stringify(t.avisos[0]?.payload)).not.toMatch(PROHIBIDO);
   });

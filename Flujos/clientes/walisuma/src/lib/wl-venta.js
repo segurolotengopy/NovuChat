@@ -28,6 +28,14 @@ function wlEnlaceCatalogo(panel) {
   const e = w && w.activo === true && typeof w.enlace === 'string' ? w.enlace.trim() : '';
   return /^https:\/\/[^\s]+$/.test(e) && e.length <= 500 ? e : '';
 }
+// El catálogo como BOTÓN en el MISMO mensaje de texto del turno (saludo, anuncio o primera pregunta por una pieza): 0 mensajes extra. Solo si el mensaje es un texto simple y cabe en el cuerpo del botón; sin enlace, nada.
+function wlConBotonCatalogo(m, enlace) {
+  if (!m || !m.payload || m.payload.type !== 'text' || typeof m.texto !== 'string' || m.texto.length > 1000 || !/^https:\/\/[^\s]+$/.test(String(enlace))) return false;
+  m.payload = cmEnlace(m.texto, 'Ver catálogo', String(enlace));
+  m.respaldo = m.texto + '\n\n' + String(enlace);
+  m.tipoReporte = 'interactive'; m.conBoton = true;
+  return true;
+}
 // El cliente pide VER el catálogo o las fotos (texto normalizado): el botón con el catálogo web sale por código, sin modelo (MD: [MOSTRAR_CATALOGO]).
 // ESTRECHO a propósito (revisión del PR #1033): un verbo de pedir + «catálogo» o «fotos», o el mensaje corto que es solo eso. Nunca con una negación, un comprobante, un pago o un QR,
 // con cifras (cantidades, montos) ni cuando ya vio el catálogo: ahí el mensaje sigue su camino (pedido, pago, modelo).
@@ -569,7 +577,7 @@ function wlResolverComprobante(c) {
   // Marca PROPIA (`avisoComprobanteMs`): una consulta reciente o el uso extendido no silencian el aviso de un comprobante (revisión del PR #1020).
   const reciente = f.avisoComprobanteMs > 0 && c.ahora - f.avisoComprobanteMs >= 0 && c.ahora - f.avisoComprobanteMs < WL_VENTANA_CONSULTA_MS;
   const pedido = (cotejo) => ({ tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: f.entrega, cotejo: cotejo, codigo: codigo, ref: ref,
-    factura: 'sin datos (S/N) por ahora', banco: cbLinea(leido.bancoOrigen, 40), operacion: cbLinea(leido.transaccion, 40), repetido: false });
+    factura: 'S/N - NIT 0 (si el cliente envía sus datos, llegan en un aviso aparte)', banco: cbLinea(leido.bancoOrigen, 40), operacion: cbLinea(leido.transaccion, 40), repetido: false });
   const d = { resultado: r.resultado, diferencia: wlDiferenciaUsted(cbDiferencia(r.diferencias, 'BOB')), totalTexto: totalTexto, codigo: codigo, aviso: null };
   // Un monto (en centavos) del cuerpo del cotejo; null si no es un número positivo.
   const centavos = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v * 100) : null);
@@ -792,6 +800,7 @@ function wlResolverUbicacion(c) {
 function wlResolverFactura(c) {
   const p = c.plan;
   const up = c.ficha.ultimoPedido || { codigo: '', ref: '', ms: 0, factura: 'pedida' };
+  // «Sin factura»: 0 avisos extra. La encargada ya recibió, en el aviso del pedido, «S/N - NIT 0» como valor por defecto (MD 27 y 85); si el cliente envía datos llegan en el segundo aviso.
   if (p.tipo === 'factura_sin') return { tipo: 'factura_sin', aviso: null, patch: { ultimoPedido: Object.assign({}, up, { factura: 'sin' }) } };
   if (p.tipo === 'factura_pedir') return { tipo: 'factura_pedir', aviso: null };
   const razon = cbLinea(p.razonSocial, 80);

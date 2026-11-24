@@ -3,7 +3,7 @@
 //   - DENTRO de 23,5 h del último mensaje que el destinatario le escribió al bot (su ficha, clave = su número): texto libre, que menciona tomar la conversación en la consola. FUERA: la plantilla UTILITY,
 //     «código para las dos» (Andres, 18/11/2026; `apPlantillaAviso`, módulo común Pedidos): `aviso_pedido_equipo` con 10 variables si su estado es APPROVED:
 //       {{1}} el pedido (código WAL del servidor, o la referencia, y el estado del comprobante)  {{2}} el total  {{3}} la modalidad y la condición del envío  {{4}} el nombre  {{5}} el WhatsApp
-//       {{6}} la factura («sin datos (S/N) por ahora» o los datos)  {{7}} la dirección y el GPS  {{8}} las piezas (con el color o detalle)  {{9}} el banco de origen  {{10}} el n.º de operación;
+//       {{6}} la factura («S/N - NIT 0» por defecto, o los datos en un segundo aviso)  {{7}} la dirección y el GPS  {{8}} las piezas (con el color o detalle)  {{9}} el banco de origen  {{10}} el n.º de operación;
 //     si no, la de respaldo `pedido_registrado` con 4 variables, el resto EMPAQUETADO y recortado: {{1}} las piezas  {{2}} el total  {{3}} entrega · nombre · WhatsApp · dirección y GPS
 //     {{4}} pedido · comprobante · factura · banco · operación. Sin ninguna aprobada NUNCA se inventa: no sale nada (`plantilla_no_configurada`) y «Armar mensajes» le dice la verdad al cliente.
 //   - Quién avisa: el pedido con su comprobante (cuando llega y se coteja), el pedido sin cobro y el envío a cotizar; los DATOS DE FACTURA que llegan después del pago (UN segundo aviso: el NIT viaja SOLO

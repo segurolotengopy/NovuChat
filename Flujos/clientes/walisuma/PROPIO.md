@@ -164,3 +164,10 @@ Fuente: resumen del 18/11 (57 puntos, §5 a §7) y el plan consolidado. **0 nodo
 - **Voz.** A lo más UNA exclamación («!») por texto del modelo; las promesas de aviso o contacto en la forma de usted («le haremos saber», «apenas tengamos novedades…») se rechazan (`WL_PROMESAS_USTED`).
 - **Mensajes por conversación:** +1 al cliente por pedido con envío sin GPS (el pedido de ubicación); +1 aviso a nuestra encargada por pedido cuando los datos de factura llegan después; +1 aviso a nuestra encargada cuando el comprobante llega a `en_revision` (3.er intento); 0 en lo demás.
 - **Pruebas:** `fase1.test.ts` y `revision.test.ts`, contra el código común REAL de PR-K (sin simulaciones); el contrato del cotejo de PR-S se simula en las respuestas del doble (`mundo.ts`).
+
+## 23/11/2026: factura sin datos, fuera de horario y catálogo en el saludo (orden de Andres, comparación con el MD base)
+
+- **Sin factura (MD 27 y 85):** 0 avisos extra. La variable de factura del aviso del pedido ({{6}}) dice «S/N - NIT 0 (si el cliente envía sus datos, llegan en un aviso aparte)»; si el cliente da sus datos sale el segundo aviso de siempre. La encargada ya no recibe «sin datos por ahora» y no necesita un aviso para «no solicita».
+- **Fuera de horario:** ya no se promete «se preparará a la brevedad posible»; se dice el horario de la encargada (un dato).
+- **Catálogo (MD 16, 22, 54-60):** el botón «Ver catálogo» viaja en el MISMO mensaje del saludo, de la respuesta a un anuncio y de la primera pregunta por una pieza, una vez por conversación (`catalogoOfrecido`), sin pedido en curso y solo con el enlace de la consola. **0 mensajes extra.**
+
