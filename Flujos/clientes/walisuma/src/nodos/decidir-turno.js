@@ -114,10 +114,10 @@ if (esAudio) {
   texto = cbLinea(m[1], 1500);
 } else if (t.categoria === 'conversacion') {
   texto = t.seleccionId ? cbLinea(t.seleccionTitulo, 100) : cbLinea(t.texto, 1500);
-  // El toque de «Confirmar pedido» DE ESTE pedido (id con la huella del carrito y la entrega que el cliente vio) es la orden de cerrar: el código la lee como la orden de siempre y el QR sale en este turno.
+  // El toque de «Confirmar pedido» DE ESTE pedido (id con la huella del carrito y la entrega que el cliente vio) es la orden de cerrar: va a un plan SIN modelo que cierra con las líneas y la entrega de la ficha y emite el QR en este turno.
   // Un botón de otro pedido (huella distinta) no confirma nada: queda como el texto del título.
   if (t.seleccionId && Array.isArray(ficha.carrito) && ficha.carrito.length > 0 && wlEntregaCompleta(ficha.entrega)
-    && cfEsConfirmacion(t.seleccionId, wlLineasParaHuella(ficha.carrito, vendibles), wlEntregaDeFicha(ficha.entrega), ficha.pedidos)) texto = 'confirmo mi pedido';
+    && cfEsConfirmacion(t.seleccionId, wlLineasParaHuella(ficha.carrito, vendibles), wlEntregaDeFicha(ficha.entrega), ficha.pedidos)) return salir({ tipo: 'confirmar' });
 } else {
   return salir({ tipo: 'otro' });
 }

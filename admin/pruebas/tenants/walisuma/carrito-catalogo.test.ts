@@ -236,10 +236,11 @@ const botonDe = (t: ReturnType<typeof enviar>): { id: string; title: string } | 
 
 describe('recuento del 24/11 (Andres): botón «Confirmar pedido», dirección del catálogo y envío a otra ciudad', () => {
   it('punto 3: con una pieza que no entró y la entrega completa, el MISMO mensaje lleva el botón «Confirmar pedido» (no «escriba confirmo mi pedido»); tocarlo emite el QR', () => {
-    // El modelo (de mentira) conserva las piezas del pedido cuando el cliente confirma, como el real, que las ve en el estado del pedido.
-    const ultimoTexto = (ll: { cuerpo?: Record<string, any> }): string => { const c = (ll.cuerpo?.['contents'] ?? []) as { parts: { text: string }[] }[]; return c[c.length - 1]?.parts[0]?.text ?? ''; }; // eslint-disable-line @typescript-eslint/no-explicit-any
-    const m = crear({ panel: PANEL(), modeloDice: (ll) => (/confirmo mi pedido/.test(ultimoTexto(ll)) ? modelo('Listo.', { lineas: LINEAS, entrega: ENTREGA }) : modelo('Anotado.', { lineas: [], entrega: ENTREGA })) });
+    // El toque NO pasa por el modelo: aun con un modelo que devuelve `lineas: []` (o piezas distintas), el QR sale con el carrito de la FICHA.
+    let llamadas = 0;
+    const m = crear({ panel: PANEL(), modeloDice: () => { llamadas++; return modelo('Anotado.', { lineas: [], entrega: ENTREGA }); } });
     hablar(m, ANA, mTexto('quiero recoger en La Paz'));
+    const antes = llamadas;
     const t = enviar(m, cuerpo({ pedidoId: 'cat_c1', items: [...(cuerpo().items as J[]), { id: 'pieza-fantasma', nombre: 'Pieza fantasma', cantidad: 1, subtotal: 10 }], total: 1340 }));
     expect(t.mensajes).toHaveLength(1);
     expect(textos(t).join(' ')).not.toMatch(/confirmo mi pedido|escriba/i);
@@ -251,6 +252,10 @@ describe('recuento del 24/11 (Andres): botón «Confirmar pedido», dirección d
     // El botón de ESTE pedido emite el QR; el de otro pedido (huella distinta) no confirma nada (prueba aparte).
     const t2 = hablar(m, ANA, mToque(b!.id));
     expect(t2.mensajes.some((e) => e.tipo === 'image')).toBe(true);
+    expect(llamadas).toBe(antes);   // ni el carrito ni el toque llamaron al modelo
+    expect(textos(t2).join(' ')).toMatch(/Total: Bs 1\.330/);
+    expect(textos(t2).join(' ')).toMatch(/1 × Billetera clásica/);
+    expect(fichas(m)[ANA].carrito).toEqual([{ id: 'billetera-clasica', cantidad: 1, detalle: '' }, { id: 'bufanda-dennis', cantidad: 1, detalle: '' }]);
     sinAcreditado(t2);
   });
   it('punto 3 NEGADO: el botón «Confirmar pedido» de OTRO pedido (huella distinta) no emite el QR', () => {
@@ -285,6 +290,9 @@ describe('recuento del 24/11 (Andres): botón «Confirmar pedido», dirección d
     const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS }) });
     enviar(m, cuerpo({ ...ENVIO, direccion: 'Calle Sucre 120, Sopocachi' }));
     expect(fichas(m)[ANA].entrega).toMatchObject({ modo: 'Envío en La Paz', ciudad: 'La Paz' });
+    const m3 = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS }) });
+    enviar(m3, cuerpo({ ...ENVIO, direccion: 'Calle Santa Cruz 45, Sopocachi', pedidoId: 'cat_p3' }));
+    expect(fichas(m3)[ANA].entrega).toMatchObject({ modo: 'Envío en La Paz', ciudad: 'La Paz' });
     const m2 = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS }) });
     enviar(m2, cuerpo({ entrega: 'envio', costoEnvio: 0, direccion: 'Av. Potosí esq. Pinilla', referencia: '', ubicacion: undefined, pedidoId: 'cat_p2' }));
     expect(fichas(m2)[ANA].entrega.ciudad).not.toBe('Potosí');

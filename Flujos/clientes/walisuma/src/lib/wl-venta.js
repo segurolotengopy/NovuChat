@@ -765,19 +765,18 @@ function wlResolverModelo(c) {
 // La ficha guarda las piezas y la entrega parciales (`cierre` en false: no se da por pedida la orden de pagar).
 // La ciudad de un pedido del catálogo web: la nombra la dirección o la referencia; si no, la ubicación (coordenadas) más cercana a La Paz o a Santa Cruz (60 km). Si nada lo dice: vacío.
 function wlCiudadDelCarrito(car) {
-  const t = wlNorm(String(car.direccion || '') + ' ' + String(car.referencia || ''));
-  const lp = /\bla paz\b/.test(t); const sc = /\bsanta cruz\b/.test(t);
-  if (lp !== sc) return lp ? 'La Paz' : 'Santa Cruz';
-  // La ubicación (el pin) manda sobre el NOMBRE de una calle: «Calle Sucre» con el pin en La Paz es La Paz.
+  // La ubicación (el pin) manda sobre el TEXTO: «Calle Santa Cruz 45» o «Calle Sucre» con el pin en La Paz es La Paz.
   const u = wlUbicacion(car.ubicacion);
   if (u) {
     const km = (lat, lng) => { const r = Math.PI / 180; const x = (u.lng - lng) * r * Math.cos(((u.lat + lat) / 2) * r); const y = (u.lat - lat) * r; return Math.sqrt(x * x + y * y) * 6371; };
     if (km(-16.5, -68.15) <= 60) return 'La Paz';
     if (km(-17.78, -63.18) <= 60) return 'Santa Cruz';
   }
-  // Otra ciudad por su nombre, salvo que sea el nombre de una calle («calle Sucre», «av. Potosí»).
-  const sinCalles = t.replace(/\b(calle|c|av|avenida|pasaje|plaza|paseo|esq|esquina)\.?\s+(cochabamba|sucre|oruro|potosi|tarija|trinidad|cobija)\b/g, ' ');
-  const otra = /\b(cochabamba|sucre|oruro|potosi|tarija|trinidad|cobija)\b/.exec(sinCalles);
+  // Sin pin (o con el pin lejos de las dos): la ciudad por su nombre en la dirección o la referencia, salvo que sea el nombre de una calle («calle Sucre», «av. Santa Cruz»).
+  const t = wlNorm(String(car.direccion || '') + ' ' + String(car.referencia || '')).replace(/\b(calle|c|av|avenida|pasaje|plaza|paseo|esq|esquina)\.?\s+(la paz|santa cruz|cochabamba|sucre|oruro|potosi|tarija|trinidad|cobija)\b/g, ' ');
+  const lp = /\bla paz\b/.test(t); const sc = /\bsanta cruz\b/.test(t);
+  if (lp !== sc) return lp ? 'La Paz' : 'Santa Cruz';
+  const otra = /\b(cochabamba|sucre|oruro|potosi|tarija|trinidad|cobija)\b/.exec(t);
   if (otra) return otra[1] === 'potosi' ? 'Potosí' : otra[1].charAt(0).toUpperCase() + otra[1].slice(1);
   return '';
 }
@@ -857,6 +856,18 @@ function wlCarritoListoParaConfirmar(c, base, extra, cambioConQr) {
   });
 }
 
+// El toque válido de «Confirmar pedido» (sin modelo): cierra el pedido con las líneas y la entrega de la FICHA, como la orden de pagar, y emite el QR en este turno. El modelo no interviene: no puede vaciar ni cambiar el carrito.
+function wlResolverConfirmar(c) {
+  const f = c.ficha;
+  const entrega = wlEntregaDeFicha(f.entrega);
+  const lineas = vcLineas(f.carrito, c.vendibles).lineas;
+  const base = { lineas: lineas, entrega: entrega, cierre: true, cambio: false, aviso: null, cancelarCobro: false };
+  const abierto = c.cobro.modo === 'real' && (c.cobro.pendiente || f.qrHastaMs > c.ahora);
+  const cambioConQr = abierto && !vcMismoCarrito(wlConNombres(f.qrCarrito, c.vendibles), lineas);
+  if (cambioConQr && c.cancelo === false) return Object.assign(base, { tipo: 'derivar', motivo: 'no_cancelo', aviso: null, cancelarCobro: true });
+  const cerrado = lineas.length > 0 && wlEntregaCompleta(entrega) ? wlCerrar(c, base, abierto, cambioConQr) : null;
+  return cerrado || wlDerivar(c, 'quiere_hablar');
+}
 // La ubicación del pin de WhatsApp (sin modelo): se guarda en la entrega y, si el pedido ya estaba confirmado y completo, se cierra (normalmente, el QR).
 function wlResolverUbicacion(c) {
   const f = c.ficha;
@@ -891,6 +902,7 @@ function wlResolver(c) {
   if (p.tipo === 'comprobante') return wlResolverComprobante(c);
   if (p.tipo === 'modelo') return wlResolverModelo(c);
   if (p.tipo === 'ubicacion') return wlResolverUbicacion(c);
+  if (p.tipo === 'confirmar') return wlResolverConfirmar(c);
   if (p.tipo === 'carrito') return wlResolverCarrito(c);
   if (p.tipo === 'factura_datos' || p.tipo === 'factura_sin' || p.tipo === 'factura_pedir') return wlResolverFactura(c);
   return Object.assign({ aviso: null }, p);
