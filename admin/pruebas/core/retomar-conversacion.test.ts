@@ -22,6 +22,8 @@ vi.mock('firebase-admin/auth', async (importOriginal) => {
 });
 await import('../../functions/src/index.ts'); // inicializa la app de Admin
 const { crearRetomarConversacion, nombreComoParametro, plantillaDeRetomarDe } = await import('../../functions/src/core/conversacion/retomarConversacion.ts');
+const { confirmarSalida } = await import('../../functions/src/core/conversacion/confirmarSalidaPersona.ts');
+const { reclamarSalida } = await import('../../functions/src/core/conversacion/reclamarSalidaPersona.ts');
 const { getFirestore, Timestamp, Transaction } = await import('firebase-admin/firestore');
 const db = getFirestore();
 
@@ -187,7 +189,10 @@ describe('el camino feliz', () => {
     expect(d['ultimoEn']).toEqual(ts(AHORA));
     expect(d['ultimoMensaje']).toBe('Plantilla para retomar enviada');
     expect(d['turno']).toEqual({ responde: 'persona', tomadoPor: 'u-ana', tomadoEn: ts(AHORA), actividadPersonaEn: ts(AHORA), retomadoEn: ts(AHORA) });
-    expect(await topes()).toEqual([[`r_${A}`, { dia: '2026-11-23', nDia: 1, mes: '2026-11', nMes: 1, actualizadoEn: ts(AHORA) }]]);
+    expect(await topes()).toEqual([
+      [`r_${A}`, { dia: '2026-11-23', nDia: 1, mes: '2026-11', nMes: 1, actualizadoEn: ts(AHORA) }],
+      ['u_u-ana', { min: '2026-11-23T15:00', n: 1, actualizadoEn: ts(AHORA) }], // el tope por persona y minuto
+    ]);
   });
 
   it('NO toca el conteo ni la ventana de facturación: mensajesVentana, bloque de 25, umbrales, ventanaVenceEn, atencionEstado, envioPersona, métricas', async () => {
@@ -637,6 +642,185 @@ describe('la auditoría es falla-cerrada y atómica con el mensaje', () => {
     expect((await rechazo(retomar(base()))).code).toBe('unavailable');
     await sinEfectos(antes);
     expect(registros.join('\n')).not.toContain('zanahoria');
+  });
+});
+
+// ===========================================================================
+describe('un rechazo de plantilla libera la conversación y el cupo (revisión R1, punto 2)', () => {
+  const RUTA = { phoneNumberId: NUMERO, tenantId: A, flujo: 'agendamiento', estado: 'activo' };
+  const refMsg = (clave: string, conv = CONV1) => db.doc(`tenants/${A}/conversaciones/${conv}/mensajes/${clave}`);
+  const nuevaConv = async (n: number) => { const id = `wa_5910000002${n}0`; await conversacion(A, id); return id; };
+  /** Retomar + reclamo (pendiente -> enviando) para poder confirmar. */
+  async function retomada(conv: string, clave: string, ahoraMs = AHORA) {
+    await retomar(base({ conversacionId: conv, claveIdempotencia: clave }), ANA, ahoraMs);
+    const r = await reclamarSalida(RUTA, db, ahoraMs + 1000, false, true);
+    expect(r.mensajes.map((m) => m.mensajeId)).toContain(clave);
+  }
+  const confirmar = (conv: string, clave: string, c: Record<string, unknown>, ahoraMs = AHORA + 5000) =>
+    confirmarSalida(RUTA, { mensajeId: clave, conversacionId: conv, ...c } as never, db, ahoraMs);
+  const tope = async () => (await db.doc(`topesDeEnvio/r_${A}`).get()).data() ?? {};
+
+  it('rechazado: borra `ultimaRetomadaEn` (de ese mensaje) y devuelve el cupo del día y del mes; la conversación se puede retomar de nuevo', async () => {
+    await retomada(CONV1, CLAVE);
+    expect(await leerConv()).toMatchObject({ ultimaRetomadaMensajeId: CLAVE });
+    expect(await tope()).toMatchObject({ nDia: 1, nMes: 1 });
+    expect(await confirmar(CONV1, CLAVE, { resultado: 'rechazado', codigo: '132001', reintentable: true })).toEqual({ codigo: 200, estado: 'rechazado' });
+    const conv = await leerConv();
+    expect(conv).not.toHaveProperty('ultimaRetomadaEn');
+    expect(conv).not.toHaveProperty('ultimaRetomadaMensajeId');
+    expect(await tope()).toMatchObject({ nDia: 0, nMes: 0 });
+    // Una plantilla rechazada nunca promete reintento: nada del servidor la reenvía.
+    expect((await refMsg(CLAVE).get()).get('reintentable')).toBe(false);
+    // La conversación quedó libre: un Retomar nuevo (otra clave) pasa, aun dentro de los 7 días.
+    // (la vuelta del turno de la persona la resuelve `turnoVigente`; acá solo importa que ya no sea `retomadaPendiente`).
+    expect(await retomar(base({ claveIdempotencia: claveN(2) }), ANA, AHORA + 10 * MIN)).toMatchObject({ estado: 'pendiente' });
+  });
+
+  it('NEGATIVA: `aceptado` e `incierto` NO devuelven nada ni borran `ultimaRetomadaEn` (el incierto pudo salir)', async () => {
+    await retomada(CONV1, CLAVE);
+    await confirmar(CONV1, CLAVE, { resultado: 'incierto' });
+    expect(await leerConv()).toHaveProperty('ultimaRetomadaEn');
+    expect(await tope()).toMatchObject({ nDia: 1, nMes: 1 });
+    await confirmar(CONV1, CLAVE, { resultado: 'aceptado', idMeta: 'wamid.ABC' });
+    expect(await leerConv()).toHaveProperty('ultimaRetomadaEn');
+    expect(await tope()).toMatchObject({ nDia: 1, nMes: 1 });
+    const c2 = await nuevaConv(1);
+    await retomada(c2, claveN(5));
+    await confirmar(c2, claveN(5), { resultado: 'aceptado', idMeta: 'wamid.DEF' });
+    expect(await tope()).toMatchObject({ nDia: 2, nMes: 2 });
+  });
+
+  it('un `incierto` que luego resulta `rechazado` sí libera (se confirmó que no salió)', async () => {
+    await retomada(CONV1, CLAVE);
+    await confirmar(CONV1, CLAVE, { resultado: 'incierto' });
+    await confirmar(CONV1, CLAVE, { resultado: 'rechazado', codigo: '132001' });
+    expect(await leerConv()).not.toHaveProperty('ultimaRetomadaEn');
+    expect(await tope()).toMatchObject({ nDia: 0, nMes: 0 });
+  });
+
+  it('NEGATIVA: el rechazo de un TEXTO no toca los topes de retomar ni `ultimaRetomadaEn`', async () => {
+    await retomada(CONV1, CLAVE);
+    const antes = await tope();
+    const convAntes = await leerConv();
+    await refMsg(claveN(9)).set({
+      direccion: 'saliente', tipo: 'text', texto: 'hola', ts: ts(AHORA), autor: 'persona', autorUid: 'u-ana', estadoEnvio: 'enviando',
+      tenantId: A, to: TEL1, phoneNumberId: NUMERO, huellaEnvio: 'h',
+    });
+    expect(await confirmar(CONV1, claveN(9), { resultado: 'rechazado', codigo: '131047', reintentable: true })).toEqual({ codigo: 200, estado: 'rechazado' });
+    expect(await tope()).toEqual(antes);
+    expect(await leerConv()).toEqual(convAntes);
+    expect((await refMsg(claveN(9)).get()).get('reintentable')).toBe(true); // el texto conserva lo que dijo el flujo
+  });
+
+  it('NEGATIVA: la confirmación repetida no devuelve dos veces (ni baja de 0)', async () => {
+    const c2 = await nuevaConv(1);
+    await retomada(CONV1, CLAVE);
+    await retomada(c2, claveN(5));
+    expect(await tope()).toMatchObject({ nDia: 2, nMes: 2 });
+    for (let i = 0; i < 3; i++) await confirmar(CONV1, CLAVE, { resultado: 'rechazado', codigo: '132001' });
+    expect(await tope()).toMatchObject({ nDia: 1, nMes: 1 });
+    // Y otra confirmación DISTINTA sobre un mensaje ya rechazado es 409: tampoco devuelve.
+    expect(await confirmar(CONV1, CLAVE, { resultado: 'rechazado', codigo: '132002' })).toEqual({ codigo: 409 });
+    expect(await tope()).toMatchObject({ nDia: 1, nMes: 1 });
+  });
+
+  it('NEGATIVA: una retomada POSTERIOR no se borra (solo se libera el cupo del rechazado)', async () => {
+    await retomada(CONV1, CLAVE);
+    const posterior = ts(AHORA + 3 * DIA);
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ ultimaRetomadaEn: posterior, ultimaRetomadaMensajeId: claveN(7) });
+    await confirmar(CONV1, CLAVE, { resultado: 'rechazado', codigo: '132001' });
+    expect(await leerConv()).toMatchObject({ ultimaRetomadaEn: posterior, ultimaRetomadaMensajeId: claveN(7) });
+    expect(await tope()).toMatchObject({ nDia: 0, nMes: 0 });
+  });
+
+  it('el cupo vuelve al día y al mes EN QUE SE CONTÓ, no a los de hoy', async () => {
+    const c2 = await nuevaConv(1);
+    await retomada(CONV1, CLAVE, AHORA);                       // día 23
+    await retomada(c2, claveN(5), AHORA + DIA);                // día 24, mismo mes: el contador ya es de ese día
+    expect(await tope()).toMatchObject({ dia: '2026-11-24', nDia: 1, nMes: 2 });
+    await confirmar(CONV1, CLAVE, { resultado: 'rechazado', codigo: '132001' }, AHORA + DIA + 5000);
+    // El día 23 ya se reinició: no hay nada que devolver ahí. El mes sí (noviembre).
+    expect(await tope()).toMatchObject({ dia: '2026-11-24', nDia: 1, nMes: 1 });
+  });
+
+  it('un contador que ya cambió de mes no se toca', async () => {
+    await retomada(CONV1, CLAVE, AHORA);
+    await db.doc(`topesDeEnvio/r_${A}`).set({ dia: '2026-12-05', nDia: 3, mes: '2026-12', nMes: 4 });
+    await confirmar(CONV1, CLAVE, { resultado: 'rechazado', codigo: '132001' });
+    expect(await tope()).toEqual({ dia: '2026-12-05', nDia: 3, mes: '2026-12', nMes: 4 });
+    expect(await leerConv()).not.toHaveProperty('ultimaRetomadaEn');
+  });
+
+  it('nunca baja de 0 (contador en 0 con la misma fecha)', async () => {
+    await retomada(CONV1, CLAVE);
+    await db.doc(`topesDeEnvio/r_${A}`).update({ nDia: 0, nMes: 0 });
+    await confirmar(CONV1, CLAVE, { resultado: 'rechazado', codigo: '132001' });
+    expect(await tope()).toMatchObject({ nDia: 0, nMes: 0 });
+  });
+
+  it('la CADUCIDAD de una plantilla (2 min sin reclamar) también libera, y no promete reintento', async () => {
+    await retomar(base());
+    expect(await tope()).toMatchObject({ nDia: 1, nMes: 1 });
+    const r = await reclamarSalida(RUTA, db, AHORA + 3 * MIN, false, true);
+    expect(r.caducados).toBe(1);
+    const m = await refMsg(CLAVE).get();
+    expect(m.data()).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: false });
+    expect(await leerConv()).not.toHaveProperty('ultimaRetomadaEn');
+    expect(await tope()).toMatchObject({ nDia: 0, nMes: 0 });
+  });
+
+  it('la caducidad de una plantilla sin la cabecera del flujo también libera (queda `pendiente` y caduca)', async () => {
+    await retomar(base());
+    const r = await reclamarSalida(RUTA, db, AHORA + 30_000, false, false);
+    expect(r.mensajes).toHaveLength(0);
+    expect(await tope()).toMatchObject({ nDia: 1, nMes: 1 });          // todavía no caducó: nada se devuelve
+    expect(await leerConv()).toHaveProperty('ultimaRetomadaEn');
+    await reclamarSalida(RUTA, db, AHORA + 3 * MIN, false, false);
+    expect(await tope()).toMatchObject({ nDia: 0, nMes: 0 });
+  });
+});
+
+// ===========================================================================
+describe('el tope por persona y por minuto (revisión R1, punto 3)', () => {
+  it('NEGATIVA: más de `porMinuto` por persona en el mismo minuto es `topeMinuto`, sin efectos; el minuto siguiente anda', async () => {
+    limites = { ...limites, porMinuto: 2 };
+    for (let i = 1; i <= 2; i++) {
+      await conversacion(A, `wa_59100000030${i}`);
+      await retomar(base({ conversacionId: `wa_59100000030${i}`, claveIdempotencia: claveN(i) }));
+    }
+    await conversacion(A, 'wa_591000000303');
+    const antes = await topes();
+    const e = await rechazo(retomar(base({ conversacionId: 'wa_591000000303', claveIdempotencia: claveN(3) })));
+    expect(e).toMatchObject({ code: 'resource-exhausted', details: { tope: 'minuto' } });
+    expect(await topes()).toEqual(antes);
+    expect(await mensajes(A, 'wa_591000000303')).toHaveLength(0);
+    expect(timbres).toHaveLength(2);
+    // Otra persona del mismo comercio no está topada; la topada vuelve a andar al minuto siguiente.
+    expect(await retomar(base({ conversacionId: 'wa_591000000303', claveIdempotencia: claveN(3) }), BRUNO)).toMatchObject({ estado: 'pendiente' });
+    await conversacion(A, 'wa_591000000304');
+    expect(await retomar(base({ conversacionId: 'wa_591000000304', claveIdempotencia: claveN(4) }), ANA, AHORA + MIN)).toMatchObject({ estado: 'pendiente' });
+  });
+  it('sin `porMinuto` en el plan rige el predeterminado (10): nunca «sin tope»', async () => {
+    for (let i = 1; i <= 10; i++) {
+      await conversacion(A, `wa_5910000004${String(i).padStart(2, '0')}`);
+      await retomar(base({ conversacionId: `wa_5910000004${String(i).padStart(2, '0')}`, claveIdempotencia: claveN(i) }));
+    }
+    await conversacion(A, 'wa_591000000411');
+    expect(await rechazo(retomar(base({ conversacionId: 'wa_591000000411', claveIdempotencia: claveN(11) })))).toMatchObject({ details: { tope: 'minuto' } });
+  });
+  it('NEGATIVA: un contador de persona ilegible falla cerrado', async () => {
+    const roto = { min: new Date(AHORA).toISOString().slice(0, 16), n: 'x' };
+    await db.doc('topesDeEnvio/u_u-ana').set(roto);
+    const antes = await leerConv();
+    expect(await rechazo(retomar(base()))).toMatchObject({ code: 'unavailable' });
+    expect(await mensajes()).toHaveLength(0);
+    expect(await topes()).toEqual([['u_u-ana', roto]]);
+    expect(await leerConv()).toEqual(antes);
+    expect(timbres).toHaveLength(0);
+  });
+  it('la ficha del comercio se lee UNA vez antes de la transacción (no dos)', () => {
+    const f = FUENTE('retomarConversacion.ts');
+    expect(f).not.toMatch(/db\.doc\(`tenants\/\$\{t\}`\)\.get\(\)/);
   });
 });
 

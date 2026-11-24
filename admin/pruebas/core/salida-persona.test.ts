@@ -785,7 +785,7 @@ describe('reclamar plantillas (C5): solo con la cabecera `x-novuchat-plantillas:
     expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
     await refMsg(CLAVE(1)).update({ ts: Timestamp.fromMillis(Date.now() - 10 * MIN) });
     await reclamar();
-    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: true });
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: false });
     expect(await metricas()).toEqual({});
   });
 
@@ -800,7 +800,7 @@ describe('reclamar plantillas (C5): solo con la cabecera `x-novuchat-plantillas:
     await cerrarVentana();
     await sembrarPlantilla(CLAVE(1), { ts: Timestamp.fromMillis(Date.now() - 3 * MIN) });
     expect(entregados(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
-    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: true });
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: false });
   });
 
   it('NEGATIVA: una plantilla guardada con la forma rota no sale (nombre, idioma, parámetros), y caduca', async () => {
