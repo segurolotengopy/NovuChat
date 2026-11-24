@@ -54,17 +54,55 @@ describe('recojo en tienda con el modelo adverso', () => {
 });
 
 describe('envío con el modelo adverso', () => {
-  it('el modo «envío» escrito se guarda; el nombre de UNA palabra NO basta (se pide más); con los datos completos sale «Confirmar pedido» y luego el QR', () => {
+  it('el modo «envío» escrito se guarda; el nombre de UNA palabra NO basta; con los datos completos sale «Confirmar pedido» y tocarlo emite el QR', () => {
     const m = crear({ modeloDice: adverso() });
     hablar(m, ANA, mTexto('quiero una billetera'));
     const t1 = hablar(m, ANA, mTexto('con envío'));
     expect(ficha(m).entrega.modo).toMatch(/env/i);
     expect(t1.mensajes.map((x) => x.cuerpo).join(' ')).not.toMatch(PERSONA);
     expect(t1.avisos).toHaveLength(0);
+    hablar(m, ANA, mTexto('Silvana'));
+    expect(ficha(m).entrega.nombre ?? '').toBe(''); // una palabra no es el nombre completo que pide el envío
     const t2 = hablar(m, ANA, mTexto('Ana Pérez 4412345 Cochabamba flota Bolivar'));
     expect(t2.mensajes.map((x) => x.cuerpo).join(' ')).not.toMatch(PERSONA);
     expect(ficha(m).carrito).toHaveLength(1);
     expect(ficha(m).entrega.nombre).toMatch(/Ana/);
+    const id = /"id":"(pedido:confirmar:[a-z0-9]+)"/.exec(J(t2.mensajes.map((x) => x.payload)))?.[1] ?? 'sin-boton';
+    expect(id).toMatch(/^pedido:confirmar:/);
+    expect(hayQr(hablar(m, ANA, mToque(id, 'Confirmar pedido')))).toBe(true);
+  });
+});
+
+describe('NEGADO: lo que el código no reconoce como elegir modo o dar el nombre sigue derivando aunque haya pedido en curso', () => {
+  it('con el recojo ya elegido, «¿tienen garantía?» o una pieza que no existe pasan con recepción (aviso)', () => {
+    for (const pregunta of ['¿tienen garantía?', '¿tienen la mochila negra?']) {
+      const m = crear({ modeloDice: adverso() });
+      hablar(m, ANA, mTexto('quiero una billetera'));
+      hablar(m, ANA, mTexto('recojo en tienda'));
+      const t = hablar(m, ANA, mTexto(pregunta));
+      expect(t.avisos.length, pregunta).toBeGreaterThanOrEqual(1);
+    }
+  });
+  it('una palabra suelta que no es un nombre («Garantía», «Perfecto», «Dale», «Billetera») no se toma como el nombre de quien retira', () => {
+    for (const palabra of ['Garantía', 'Perfecto', 'Dale', 'Billetera']) {
+      const m = crear({ modeloDice: adverso() });
+      hablar(m, ANA, mTexto('quiero una billetera'));
+      hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
+      hablar(m, ANA, mTexto(palabra));
+      expect(ficha(m).entrega.nombre ?? '', palabra).toBe('');
+    }
+  });
+});
+
+describe('lineas: [] del modelo', () => {
+  it('sin una orden de quitar conserva el carrito; con «quita la billetera» lo vacía', () => {
+    let n = 0;
+    const m = crear({ modeloDice: () => { n++; return n === 1 ? modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) : modelo('Listo.', { lineas: [] }); } });
+    hablar(m, ANA, mTexto('quiero una billetera'));
+    hablar(m, ANA, mTexto('hola de nuevo, ¿qué más tienen?'));
+    expect(ficha(m).carrito).toHaveLength(1);
+    hablar(m, ANA, mTexto('quita la billetera'));
+    expect(ficha(m).carrito).toHaveLength(0);
   });
 });
 
