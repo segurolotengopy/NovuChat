@@ -153,8 +153,10 @@ if (puerta.ruta === 'sigue') {
     if (ofreceAlias) {
       // Argentina: el ofrecimiento de pagar es un BOTÓN de respuesta (`pedido:alias`, «Pagar»): nunca se le pide escribir «pagar». Un mensaje no puede llevar a la vez un botón de respuesta y el enlace a recepción: el aviso a recepción ya salió.
       // Si el botón no sale, el respaldo es el texto de siempre (el pago lo coordina recepción), sin prometer nada.
-      const cuerpoAl = bmSeguro(conSaludo(cabeza + bmTextoDerivacion('pedido_ar_alias', salio)), usted);
-      const respaldoAl = bmSeguro(conSaludo(cabeza + bmTextoDerivacion('pedido_ar', salio)), usted);
+      // El cuerpo del botón NO nombra «el botón» de recepción (el único botón es «Pagar»): solo dice que el aviso salió. El respaldo en texto sí lleva el enlace a recepción.
+      const colaAl = salio === 'repetido' ? ' Recepción ya recibió tu aviso anterior.' : ' Ya avisé a recepción.';
+      const cuerpoAl = bmSeguro(conSaludo(cabeza + BM_INTROS.pedido_ar_alias + colaAl), usted);
+      const respaldoAl = conRecepcion(conSaludo(cabeza + bmTextoDerivacion('pedido_ar', salio))).respaldo;
       msgs = [cmMensaje('cliente', cmBotones(cuerpoAl, [{ id: BM_ID_PAGAR_ALIAS, title: 'Pagar' }]), cuerpoAl, respaldoAl, { tipoReporte: 'interactive', conBoton: true })];
     } else msgs = [conRecepcion(conSaludo(cabeza + bmTextoDerivacion(d.mercado === 'AR' ? 'pedido_ar' : 'pedido_sin_cobro', salio)))];
     if (ls !== null) {

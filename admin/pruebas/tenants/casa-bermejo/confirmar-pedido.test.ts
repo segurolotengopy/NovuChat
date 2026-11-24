@@ -165,3 +165,17 @@ describe('NEGADO: si el catálogo cambió entre el resumen y el toque, el botón
   });
 });
 
+
+describe('Bolivia sin QR de cobro: el pedido se anota y pasa a recepción con aviso + botón (invariante que sostiene la tabla de derivación)', () => {
+  it('el pedido completo sin cobro real: aviso a recepción y el mensaje lleva el botón/enlace a recepción; nunca un QR ni «acreditado»', async () => {
+    const { panelSinCobro } = await import('./mundo');
+    const m = crear({ ...LISTO, panel: panelSinCobro() });
+    const t = hablar(m, ANA, mTexto('una billetera'));
+    const t2 = hablar(m, ANA, mTexto('pagar'));
+    const todo = [...t.mensajes, ...t2.mensajes].map((x) => J(x.payload)).join(' ');
+    expect(hayQr(t) || hayQr(t2)).toBe(false);
+    expect([...t.avisos, ...t2.avisos].length).toBeGreaterThanOrEqual(1);
+    expect(todo).toMatch(/wa\.me/);
+    expect(todo).not.toMatch(/acreditad|verificad/i);
+  });
+});

@@ -193,3 +193,7 @@ la conversación. Esos avisos se quitan cuando llegue el dato, no antes.
 Inventario y Configuración de QR. «Pedidos» es la primera con `oper` entre sus
 roles, y la compuerta de la cabecera (`App.tsx`) ya filtra por `roles` en vez de
 suponer que una pestaña de flujo implica administrador.
+
+## El comprobante que no coincide (`Flujos/src/modulos/pedidos/comprobante-diferencias.js`, 24/11/2026)
+
+Función pura `cdTextoComprobanteConDiferencias(dif, salio, usted)`: el texto al cliente cuando un comprobante LLEGÓ pero no coincide con el pedido. Nombra **todas** las diferencias (la lista de `cdDiferenciaParaElTexto`, destinatario primero), dice que ya pasó a recepción (aviso + botón, a lo más uno cada 30 minutos por teléfono) y **no pide otro comprobante**; nunca afirma un pago. Costo: +1 aviso a recepción por comprobante con diferencias, 0 mensajes más al cliente. Lo usa Casa Bermejo (decisión D3-a, Andres 24/11/2026). Prueba: `pruebas/modulos/pedidos/comprobante-diferencias.test.ts`.

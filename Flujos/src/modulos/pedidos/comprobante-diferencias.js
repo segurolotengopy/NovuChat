@@ -1,4 +1,4 @@
-// COMPROBANTE CON DIFERENCIAS (módulo común de Pedidos; 24/11/2026). Usa `cdFraseDeDiferencias`-style lists de `venta-digital/src/diferencias.js` (se incluye antes). Sin nombres de cliente.
+// COMPROBANTE CON DIFERENCIAS (módulo común de Pedidos; 24/11/2026): el texto al cliente cuando un comprobante llegó pero no coincide. Función pura sin dependencias; sin nombres de cliente.
 // El texto al cliente cuando un comprobante LLEGÓ pero no coincide con su pedido (Andres, 24/11/2026, D3): se le dicen TODAS las diferencias (`dif`: la lista de `cdDiferenciaParaElTexto`, o un texto, o '') y el caso PASA A RECEPCIÓN
 // (aviso + botón) en lugar de pedirle otro comprobante. `salio`: true (el aviso a recepción salió con un `wamid` real), 'repetido' (recepción ya recibió uno hace menos de 30 minutos) o false (no salió: se le dice y se le da el botón).
 // Nunca dice «acreditado», «verificado» ni «recibimos tu pago»: solo que llegó y qué no coincide. `usted`: el trato del comercio. Sin nombres de cliente ni de comercio.

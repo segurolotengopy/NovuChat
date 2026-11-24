@@ -56,6 +56,15 @@ describe('el pedido anotado (turno 0): cero mensajes agregados', () => {
     const ev = t0.llamadas.ingesta.find((x) => x['evento'] === 'pedido_sin_cobro') as Rep;
     expect(fichas(m)[ARG]).toMatchObject({ aliasEstado: 'pedido', aliasPedidoId: 'wa_' + ev['referencia'] });
   });
+  it('NEGADO: con el botón «Pagar» como ÚNICO botón, el texto no promete un botón de recepción; el respaldo en texto sí lleva el enlace a recepción', () => {
+    const { t0 } = conPedido();
+    const msg = t0.mensajes[0] as Rep;
+    expect(msg['cuerpo']).not.toMatch(/escr[ií]b\w*[^.]{0,40}(con el )?bot[oó]n/i);
+    expect(msg['cuerpo']).toMatch(/Ya avis[eé] a recepci[oó]n/);
+    // Si Meta rechaza el interactivo, sale el respaldo en texto: debe llevar el enlace a recepción (no puede quedar sin camino).
+    const r = conPedido({ envio: { 'Enviar a WhatsApp': 'error' } }).t0;
+    expect(JSON.stringify([textos(r), r.mensajes.map((x) => x.payload)])).toMatch(/wa\.me/);
+  });
   it('NEGADO: si el aviso a recepción no salió, NO se ofrece «pagar» (cae al texto de siempre: escríbele directo)', () => {
     const { t0 } = conPedido({ aviso: 'error' });
     expect(textos(t0).join(' ')).not.toMatch(/«pagar»/);
