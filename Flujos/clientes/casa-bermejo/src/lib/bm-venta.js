@@ -129,11 +129,12 @@ function bmOfreceBotonesDeEntrega(nPiezas, entrega, mercado, modos, qrAbierto) {
 }
 // Lo que el CÓDIGO reconoce de la respuesta del cliente, para no depender de que el modelo lo repita en su JSON (humo de Silvana: «Silvana Prueba» no se guardaba y el pedido no avanzaba):
 // el modo («lo recojo en tienda», «envíenlo a…») y, ya elegido el modo, el nombre de quien retira o recibe (2 a 5 palabras de letras, sin cifras ni órdenes).
-function bmNombreDeRespuesta(texto) {
+function bmNombreDeRespuesta(texto, minPalabras) {
   let t = String(texto || '').replace(/\s+/g, ' ').trim().replace(/^(ya te lo dije|ya te dije|ya dije|ya te lo di|mi nombre es|me llamo|soy|a nombre de|el nombre es)\s+/i, '');
   if (t === '' || t.length > 60 || /[^\p{L} .'-]/u.test(t)) return '';
   const palabras = t.split(' ');
-  if (palabras.length < 2 || palabras.length > 5) return '';
+  const minimo = minPalabras === 1 ? 1 : 2;
+  if (palabras.length < minimo || palabras.length > 5 || (palabras.length === 1 && palabras[0].length < 3)) return '';
   const n = bmNorm(t);
   if (/\b(si|no|hola|gracias|confirmo|confirmar|pagar|pago|quiero|catalogo|precio|cuanto|cuesta|envio|enviar|tienda|recojo|retiro|persona|hablar|descuento|factura|buenas|buenos|dias|tardes|noches|favor|ok|listo|claro)\b/.test(n)) return '';
   return t;
@@ -156,7 +157,8 @@ function bmCompletarEntrega(nueva, antes, texto, modos) {
   let capturado = false;
   const nombreNuevo = typeof n.nombre === 'string' && n.nombre.trim() !== '';
   if (modo !== '' && a.nombre === '' && !nombreNuevo) {
-    let nom = bmNombreDeRespuesta(texto);
+    // Con el RETIRO el nombre es lo único que se pregunta: una sola palabra («Silvana») vale. Con el envío se pregunta más (ciudad, flota), así que se piden 2 palabras.
+    let nom = bmNombreDeRespuesta(texto, bmEsRetiro(modo) ? 1 : 2);
     // Varios datos en un mensaje («Silvana Sasaki, 3456291, recojo en tienda»): el nombre es el primer tramo, antes de la coma o de la primera cifra.
     if (nom === '' && !esSitio) nom = bmNombreDeRespuesta(String(texto || '').split(/[,;]/)[0].replace(/\d.*$/, '').trim());
     if (nom !== '') { n.nombre = nom; capturado = true; }
@@ -843,7 +845,9 @@ function bmResolverModelo(c) {
   const j = cnJsonDeGemini(c.modeloResp);
   if (!j || typeof j.texto !== 'string' || j.texto.trim() === '') return bmDerivar(c, 'modelo_caido');
   const antes = vcLineas(f.carrito, c.vendibles).lineas;
-  const propuestas = Array.isArray(j.lineas) ? vcLineas(j.lineas, c.vendibles).lineas : antes;
+  // Una lista vacía del modelo SIN una orden clara de vaciar el pedido no borra el carrito (el modelo a veces devuelve [] por descuido): se conserva el de la ficha.
+  const ordenVaciar = /\b(vacia|vaciar|quita todo|quitar todo|borra todo|borrar todo|borra el pedido|borrar el pedido|cancela el pedido|cancelar el pedido|cancelar todo|cancela todo|empezar de nuevo|empezar otra vez|desde cero|ya no quiero nada)\b/.test(bmNorm(p.textoCliente));
+  const propuestas = Array.isArray(j.lineas) && !(j.lineas.length === 0 && antes.length > 0 && !ordenVaciar) ? vcLineas(j.lineas, c.vendibles).lineas : antes;
   let fijada = bmFijarPieza(p.textoCliente, antes, propuestas, c.vendibles);
   // El mensaje del sitio trae los códigos: esas líneas entran tal cual (con su cantidad) y el texto lo arma el código.
   const delSitio = bmLineasDelSitio(p.textoCliente, c.vendibles);
@@ -865,7 +869,11 @@ function bmResolverModelo(c) {
   const cierre = f.cierre || bmQuierePagar(bmNorm(p.textoCliente)) || (cfEsConfirmacion(c.t && c.t.seleccionId, bmLineasParaHuella(f.carrito, c.vendibles), bmEntregaDeFicha(f.entrega), f.pedidos) && f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado) && bmCarritoVigente(f.carrito, c.vendibles));   // el botón «Confirmar pedido» es la orden de cierre SOLO con el pedido que ya estaba listo (el de un mensaje viejo no cierra uno nuevo) (módulo común Pedidos)
   // Con el pedido LISTO (piezas, entrega completa y orden de pagar) lo decide el código: un «quiereHablar» del modelo (p. ej. «el envío lo cotiza la tienda») no lo desvía; el pedido se anota y la tienda recibe el aviso.
   const listo = lineas.length > 0 && bmEntregaCompleta(entrega, c.mercado) && cierre;
-  if (j.quiereHablar === true && !listo && !comp.capturado) return bmDerivar(c, 'quiere_hablar');
+  // Un pedido EN CURSO (piezas y modo de entrega ya elegido, por botón o reconocido por código) no se desvía por el «quiereHablar» del modelo: elegir el recojo o el envío, o dar el nombre, no es pedir una persona
+  // (lo que sí pide una persona —descuento, factura, hablar con alguien— lo detecta el código antes del modelo). Entonces el texto del turno lo arma `bmTextoDeEstado`, nunca la redacción del modelo («lo verá una persona del equipo»).
+  const enCurso = lineas.length > 0 && entrega.modo !== '';
+  const ignoraQuiereHablar = j.quiereHablar === true && (listo || comp.capturado || enCurso);
+  if (j.quiereHablar === true && !ignoraQuiereHablar) return bmDerivar(c, 'quiere_hablar');
   const cambio = !vcMismoCarrito(antes, lineas);
   // Un número de otro país se atiende como Bolivia y se avisa UNA vez a la tienda (1 mensaje por caso): el aviso sale si aún no se le avisó de este teléfono.
   const avisoPais = c.t && c.t.fueraDePais === true && f.avisoPaisMs === 0 ? bmAvisoConsulta(c, 'otro_pais') : null;
@@ -901,7 +909,7 @@ function bmResolverModelo(c) {
   }
   // Conversación: el texto del modelo, revisado; si no pasa, el fijo. El resumen del pedido (calculado por el código) acompaña cada cambio.
   // Si el código quitó una línea que el modelo propuso, su texto («agregué…») ya no es cierto: el texto lo arma el código (las opciones o el estado del pedido).
-  let texto = (fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? bmTextoDeEstado(lineas, entrega, cierre, c, conBoton) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
+  let texto = (ignoraQuiereHablar || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? bmTextoDeEstado(lineas, entrega, cierre, c, conBoton) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
   // Negar una pieza que el catálogo sí tiene («solo disponemos de la de 9 kg» cuando hay de 9, 15 y 17 kg): el texto lo arma el código con las piezas que coinciden.
   if (texto !== '' && /\b(solo|unicamente)\s+(disponemos|tenemos|contamos|hay|ofrecemos)\b/.test(bmNorm(texto))) { const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1); if (coinc !== '') texto = coinc; }
   const sinRedaccion = texto === '';
@@ -915,7 +923,7 @@ function bmResolverModelo(c) {
     const ultima = [...f.hist].reverse().find((x) => x && x.r === 'm');
     if (ultima && ultima.t === bmParaMemoria(texto)) return Object.assign(bmDerivar(c, 'quiere_hablar'), { lineas: lineas, entrega: entrega, cierre: cierre });
   } else if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c, conBoton);
-  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: cambio && lineas.length ? vcResumen(lineas) : '', confirmable: conBoton, botonesEntrega: bmOfreceBotonesDeEntrega(lineas.length, entrega, c.mercado, c.modos, abierto) });
+  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: (cambio || conBoton) && lineas.length ? vcResumen(lineas) : '', confirmable: conBoton, botonesEntrega: bmOfreceBotonesDeEntrega(lineas.length, entrega, c.mercado, c.modos, abierto) });
 }
 
 // La decisión del turno. `c` viene de `bmContexto()` (+ `modeloResp` y `cancelo`, que completa cada nodo). Devuelve { tipo, ... } con `aviso` (o null) y, cuando cambia la ficha, `patch`.

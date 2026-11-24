@@ -21,7 +21,7 @@ export const TABLA_DE_PLANES: TablaDePlanes = {
   qr_pendiente: { clase: 'resuelve' },      // el recordatorio del QR abierto
   comprobante_pedir: { clase: 'resuelve' }, // el comprobante no se lee (pide una foto más nítida) o, en Argentina, el alias no coincide (pide el correcto)
   comprobante: { clase: 'deriva' },         // «llegó y los datos coinciden» o «NO coinciden» (todas las diferencias, B2/D3): recepción lo revisa (aviso + botón)
-  pedido_sin_cobro: { clase: 'exento', porque: 'Argentina con el aviso ya enviado: el mensaje lleva el botón de respuesta «Pagar» (pedido:alias), que no puede ir junto al enlace a recepción en un mismo mensaje (B2/D6); su respaldo en texto SÍ lleva el enlace (alias-ar.test.ts). Bolivia sin QR no emite este plan: va por `derivar` con aviso + botón (confirmar-pedido.test.ts, «Bolivia sin QR»).' },
+  pedido_sin_cobro: { clase: 'deriva' },    // sin QR de cobro real (Bolivia, o Argentina sin el botón «Pagar»): el pedido queda anotado y recepción coordina (aviso + botón). La variante de Argentina con el botón de respuesta «Pagar» (pedido:alias) no lleva el enlace a recepción en el mensaje interactivo —un mensaje no admite ambos— pero SÍ en su respaldo en texto (alias-ar.test.ts)
   derivar: { clase: 'deriva' },             // pasar con recepción: error, volumen, factura, pieza sin precio, comprobante sin pedido…
   uso_extendido: { clase: 'deriva' },       // el texto de la puerta promete una persona: aviso + botón
 };
