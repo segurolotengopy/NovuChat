@@ -143,7 +143,7 @@ function wlUltimoPedido(v) {
 function wlFichaBase() {
   return {
     v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, fueraDePaisMs: 0, catalogoOfrecido: false,
-    carrito: [], entrega: wlEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, ultimoPedido: null, avisoComprobanteMs: 0,
+    carrito: [], entrega: wlEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, ultimoPedido: null, avisoComprobanteMs: 0, desdeCatalogo: false,
   };
 }
 function wlNumero(v, tope) {
@@ -192,6 +192,8 @@ function wlFichaVigente(e, ahoraMs) {
     avisoConsultaMs: wlNumero(e.avisoConsultaMs),
     ultimoPedido: wlUltimoPedido(e.ultimoPedido),
     avisoComprobanteMs: wlNumero(e.avisoComprobanteMs),
+    // El pedido en curso viene del catálogo web: mientras sea así, completar la entrega NO emite el QR por sí solo (el paso final es `wlCarritoListoParaConfirmar`).
+    desdeCatalogo: e.desdeCatalogo === true,
   };
 }
 function wlYaVisto(ficha, id) {
@@ -329,6 +331,7 @@ const WL_INTROS = {
   monto_invalido: 'No pudimos calcular el monto de su pedido.',
   pedido_sin_cobro: 'Anotamos su pedido, pero el pago por QR no está disponible por ahora.',
   atencion_humana: 'Gracias por su paciencia: nuestra encargada continúa esta conversación.',
+  carrito_sin_piezas: 'Recibimos su pedido del catálogo web, pero ninguna de sus piezas está disponible para pedir por aquí en este momento.',
   no_cancelo: 'Su pedido cambió, pero desde aquí no podemos cerrar el cobro anterior: no pague con ese QR.',
 };
 // Los textos fijos sueltos (la prueba de «usted siempre» los recorre todos).
