@@ -7,7 +7,7 @@
 //   «fuera_de_pais», «cortes», «identidad», «audio_fijo», «archivo», «imagen_otra», «anuncio»   textos fijos (el producto del anuncio y su precio salen del catálogo);
 //   «modelo»                la redacción del modelo, revisada, más el resumen del pedido que calcula el código;
 //   «qr»                    el resumen del pedido y el QR REAL del comercio (imagen por id de medio, nunca por enlace) con el monto del carrito; «qr_pendiente» el recordatorio del QR abierto;
-//   «comprobante»           «llegó y los datos coinciden» (NUNCA «acreditado» ni «verificado»), con el botón; «comprobante_pedir» pide uno correcto o más nítido;
+//   «comprobante»           «llegó y los datos coinciden» (NUNCA «acreditado» ni «verificado»), con el botón; si NO coinciden (`no_cuadra`) se nombran TODAS las diferencias y pasa a recepción (aviso + botón), sin pedir otro; «comprobante_pedir» pide una foto más nítida;
 //   «pedido_sin_cobro»      sin QR de cobro real: el pedido queda anotado y lo coordina recepción (aviso + botón);
 //   «derivar»               pasar con recepción: el aviso MÁS el botón para escribirle directo. «Ya avisé» solo sale si «Enviar aviso» devolvió un `wamid` real.
 // SOLO SE OFRECE LO QUE SE CUMPLE: ninguna promesa de «te aviso luego», «te llamamos» o «te escribirán»; el único ofrecimiento es pasar con recepción.
@@ -72,10 +72,6 @@ if (puerta.ruta === 'sigue') {
   } else if (tipoDePlan === 'baja') {
     // La confirmación de la baja: UN texto fijo (sin saludo, sin botón, sin aviso); el `no_contactar` ya viajó con el entrante (si fue una nota de voz, `t.texto` iba vacío: el evento viaja en el reporte de ESTE mensaje saliente). La ficha y el carrito no se tocan.
     msgs = [texto(bjTextoBaja(c.base && c.base.tratamiento === 'usted' ? BM_TEXTO_BAJA_USTED : undefined), d.porVoz === true ? { evento: 'no_contactar' } : undefined)];
-  } else if (tipoDePlan === 'catalogo_web') {
-    // El catálogo web como BOTÓN; `cmEnlace` solo deja pasar https. El texto fijo no promete nada que el botón no cumpla.
-    const cuerpoCat = bmSeguro(conSaludo(BM_TEXTO_CATALOGO_WEB), usted);
-    msgs = [cmMensaje('cliente', cmEnlace(cuerpoCat, 'Ver catálogo', String(d.enlace || '')), cuerpoCat, cuerpoCat + '\n\n' + String(d.enlace || ''), { tipoReporte: 'interactive', conBoton: true })];
   } else if (tipoDePlan === 'identidad') {
     msgs = [texto(BM_TEXTO_IDENTIDAD.replace('{NEGOCIO}', negocio))];
   } else if (tipoDePlan === 'audio_fijo') {
@@ -95,18 +91,18 @@ if (puerta.ruta === 'sigue') {
       msgs = [conRecepcion(conSaludo(bmTextoDerivacion('quiere_hablar', false)))];
     }
   } else if (tipoDePlan === 'modelo') {
-    llamadasModelo = 1;
+    llamadasModelo = c.plan.tipo === 'modelo' ? 1 : 0;   // el toque de «Confirmar pedido» o de un botón de entrega lo decide el código: 0 llamadas
     const cuerpoModelo = conSaludo(d.texto + (d.resumen ? '\n\n' + d.resumen : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : ''));
-    // El botón «Ver catálogo» sale POR CÓDIGO (el texto dice «catálogo» y el botón lo cumple): en el primer saludo, cuando no hay esa pieza o cuando se listan varias; nunca con un pedido o un QR en curso.
-    const enlaceCat = bmEnlaceCatalogo(c.base);
-    const ofrecePiezas = (String(d.texto).match(/\bBs\s?\d|\bARS\s?\d/g) || []).length >= 1;
-    if (enlaceCat !== '' && d.lineas.length === 0 && !(fichaAntes.qrHastaMs > ahora) && !(fichaAntes.carrito && fichaAntes.carrito.length > 0) && ((!fichaAntes.saludado && /^(hola|holi|buenas|buenos|buen dia|saludos|hello)\b/.test(bmNorm(c.plan.textoCliente))) || ofrecePiezas || (d.sinPieza !== true && /\bno (disponemos|contamos|tenemos|hay|manejamos)\b/.test(bmNorm(d.texto))))) {
-      const cuerpoBtn = bmSeguro(cuerpoModelo, usted);
-      msgs = [cmMensaje('cliente', cmEnlace(cuerpoBtn, 'Ver catálogo', enlaceCat), cuerpoBtn, cuerpoBtn + '\n\n' + enlaceCat, { tipoReporte: 'interactive', conBoton: true })];
-    } else if (d.confirmable === true) {
+    // Sin botón «Ver catálogo» (Andres, 24/11/2026, D7): las piezas se muestran por este chat. Lo que el mensaje puede llevar es UN botón de respuesta que el código cumple: «Confirmar pedido» (pedido listo) o los de entrega (solo falta el modo).
+    if (d.confirmable === true) {
       // El pedido está listo: el MISMO mensaje lleva el botón «Confirmar pedido» (0 mensajes más); tocarlo emite el QR en el mismo turno.
       const cuerpoCf = bmSeguro(cfCuerpo(cuerpoModelo, usted), usted);
       msgs = [cmMensaje('cliente', cmBotones(cuerpoCf, [cfBoton(d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '', precioCentavos: l.precioCentavos })), bmEntregaDeFicha(d.entrega), fichaAntes.pedidos)]), cuerpoCf, cuerpoCf, { tipoReporte: 'interactive', conBoton: true })];
+    } else if (d.botonesEntrega === true && bmBotonesDeEntrega(c.modos).length > 0) {
+      // Lo único que falta es el modo de entrega: el MISMO mensaje lleva «Recojo en tienda» y «Envío» (0 mensajes más); tocar uno lo anota sin modelo. Si el texto no pregunta por la entrega, la pregunta la agrega el código.
+      const pregunta = /\b(recib|entrega|retir|recoj|envi)/.test(bmNorm(d.texto)) ? '' : '¿Cómo prefieres recibir tu pedido?';
+      const cuerpoBe = bmSeguro(pregunta === '' ? cuerpoModelo : (cuerpoModelo.length > 1024 - pregunta.length - 2 ? cuerpoModelo.slice(0, Math.max(0, 1024 - pregunta.length - 3)).trimEnd() + '…' : cuerpoModelo) + '\n\n' + pregunta, usted);
+      msgs = [cmMensaje('cliente', cmBotones(cuerpoBe, bmBotonesDeEntrega(c.modos)), cuerpoBe, cuerpoBe, { tipoReporte: 'interactive', conBoton: true })];
     } else msgs = [texto(cuerpoModelo)];
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
     nuevos.entrega = d.entrega;
@@ -153,7 +149,14 @@ if (puerta.ruta === 'sigue') {
     const ls = d.mercado === 'AR' && /^[A-Za-z0-9]{3,40}$/.test(String(d.pedidoId || '')) ? bmLineasPedido(d.lineas, from) : null;
     // El texto que ofrece «pagar» (el alias llega en el turno siguiente) solo sale si el pedido se reportó Y el aviso a recepción salió; si no, sigue el de siempre (el pago lo coordina recepción) sin prometer nada.
     const ofreceAlias = ls !== null && (salio === true || salio === 'repetido');
-    msgs = [conRecepcion(conSaludo('Anoté tu pedido:\n\n' + vcResumen(lineas) + '\n\n' + bmTextoDerivacion(d.mercado === 'AR' ? (ofreceAlias ? 'pedido_ar_alias' : 'pedido_ar') : 'pedido_sin_cobro', salio)))];
+    const cabeza = 'Anoté tu pedido:\n\n' + vcResumen(lineas) + '\n\n';
+    if (ofreceAlias) {
+      // Argentina: el ofrecimiento de pagar es un BOTÓN de respuesta (`pedido:alias`, «Pagar»): nunca se le pide escribir «pagar». Un mensaje no puede llevar a la vez un botón de respuesta y el enlace a recepción: el aviso a recepción ya salió.
+      // Si el botón no sale, el respaldo es el texto de siempre (el pago lo coordina recepción), sin prometer nada.
+      const cuerpoAl = bmSeguro(conSaludo(cabeza + bmTextoDerivacion('pedido_ar_alias', salio)), usted);
+      const respaldoAl = bmSeguro(conSaludo(cabeza + bmTextoDerivacion('pedido_ar', salio)), usted);
+      msgs = [cmMensaje('cliente', cmBotones(cuerpoAl, [{ id: BM_ID_PAGAR_ALIAS, title: 'Pagar' }]), cuerpoAl, respaldoAl, { tipoReporte: 'interactive', conBoton: true })];
+    } else msgs = [conRecepcion(conSaludo(cabeza + bmTextoDerivacion(d.mercado === 'AR' ? 'pedido_ar' : 'pedido_sin_cobro', salio)))];
     if (ls !== null) {
       msgs[0].evento = 'pedido_sin_cobro'; msgs[0].referencia = String(d.pedidoId); msgs[0].lineas = ls;
       msgs[0].entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO'), ciudad: d.entrega.ciudad });
@@ -173,8 +176,10 @@ if (puerta.ruta === 'sigue') {
     // Sin respuesta del servidor (no debería pasar: el nodo corrió): pasa con recepción, sin prometer.
     msgs = [conRecepcion(conSaludo(bmTextoDerivacion('alias_problema', salio)))];
   } else if (tipoDePlan === 'comprobante') {
-    msgs = [conRecepcion(bmTextoComprobante(d.resultado, d.diferencia, d.totalTexto, salio))];
+    msgs = [conRecepcion(bmTextoComprobante(d.resultado, d.diferencia, d.totalTexto, salio, usted))];
     Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
+    // Un comprobante que NO coincide: el aviso a recepción sale a lo más una vez cada 30 minutos; se anota solo si salió (y se devuelve si el envío no sale).
+    if (d.resultado === 'no_cuadra' && salio === true) { nuevos.avisoNoCuadraMs = ahora; ev.avisoNoCuadraMs = fichaAntes.avisoNoCuadraMs; }
   } else if (tipoDePlan === 'comprobante_pedir') {
     msgs = [texto(bmTextoComprobante(d.resultado, d.diferencia, d.totalTexto, salio))];
   } else if (tipoDePlan === 'derivar') {

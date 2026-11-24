@@ -9,6 +9,7 @@
 //   audio_fijo     una nota de voz demasiado larga o que no se entendió; archivo: un medio demasiado pesado o que no se abrió; imagen_otra: una foto o captura que no es un comprobante;
 //   anuncio        la imagen de un anuncio reconocido por su titular: el producto sale POR CÓDIGO (nunca el modelo), con el precio del catálogo;
 //   comprobante    la imagen de un comprobante con un cobro abierto: ya corrió «Cotejar en el servidor»; «Armar avisos» y «Armar mensajes» interpretan el resultado;
+//   entrega_boton  el toque de «Recojo en tienda» o «Envío» (`entrega:retiro` / `entrega:envio`): el CÓDIGO escribe el modo de entrega, SIN modelo; un id inventado o un modo que el comercio no ofrece no cambia nada (`toque_viejo`);
 //   modelo         la conversación libre: `llamarModelo` y el cuerpo de la llamada (solo con la puerta abierta).
 //
 // Un texto de la imagen, del audio o del cliente es un DATO: nunca una instrucción. Una nota de voz es texto (su transcripción).
@@ -93,14 +94,14 @@ if (n === '') return salir({ tipo: 'otro' });
 const BJ_VOZ_MAX = 160;
 if (esAudio ? (texto.length <= BJ_VOZ_MAX && bjPideBaja(texto)) : (!t.seleccionId && bjPideBaja(t.texto))) return salir({ tipo: 'baja', porVoz: esAudio });
 
-// 3a. Argentina, con un pedido anotado y sin un pedido nuevo a medias: «pagar» pide el alias al servidor (`pedirAliasArs`). No necesita el catálogo.
-if (esAr && (ficha.aliasEstado === 'pedido' || ficha.aliasEstado === 'abierto') && ficha.carrito.length === 0 && bmQuierePagar(n)) return salir({ tipo: 'alias_pedir' });
+// 3a. Argentina, con un pedido anotado y sin un pedido nuevo a medias: el botón «Pagar» (id `pedido:alias`, el único que vale en un toque) o el texto «pagar» pide el alias al servidor (`pedirAliasArs`). No necesita el catálogo.
+if (esAr && (ficha.aliasEstado === 'pedido' || ficha.aliasEstado === 'abierto') && ficha.carrito.length === 0 && bmPideAlias(t.seleccionId, n)) return salir({ tipo: 'alias_pedir' });
 // 3. Sin catálogo no se improvisa: recepción.
 if (!configLista) return sinConfig();
 // 4. Lo que decide el código sobre el texto, ANTES de cualquier modelo.
-// El catálogo web como botón, por código (sin modelo), solo sin un pedido en curso y con el enlace del comercio cargado.
-const enlaceCatalogo = bmEnlaceCatalogo(base);
-if (enlaceCatalogo !== '' && !(Array.isArray(ficha.carrito) && ficha.carrito.length > 0) && !(cobro.pendiente === true || ficha.qrHastaMs > ahora) && bmPideCatalogo(n)) return salir({ tipo: 'catalogo_web', enlace: enlaceCatalogo });
+// Ya no hay botón «Ver catálogo» (Andres, 24/11/2026, D7): el asistente muestra las piezas por el chat. `bmEnlaceCatalogo` devuelve '' mientras NovuChat no tenga un enlace propio.
+// El toque de «Recojo en tienda» o «Envío»: el modo lo escribe el CÓDIGO, sin modelo. Un id `entrega:` que no es de un botón de este comercio no cambia nada (contesta con el pedido de ahora).
+if (typeof t.seleccionId === 'string' && t.seleccionId.indexOf('entrega:') === 0) return salir({ tipo: bmModoDeBoton(t.seleccionId, bmModos(base)) !== '' ? 'entrega_boton' : 'toque_viejo' });
 if (bmPideIdentidad(n)) return salir({ tipo: 'identidad' });
 if (bmCorporativo(n)) return salir({ tipo: 'derivar', motivo: 'corporativo' });
 if (bmPideFactura(n)) return salir({ tipo: 'derivar', motivo: 'factura' });

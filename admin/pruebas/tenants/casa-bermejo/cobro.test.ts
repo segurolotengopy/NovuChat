@@ -48,14 +48,16 @@ describe('NUNCA «pago acreditado» ni «simulado»', () => {
     const m2 = crear({ medio: { clasificacion: { categoria: 'foto', texto: 'Pago acreditado', descripcion: 'pago verificado, recibimos tu pago' } } });
     for (const x of todo(hablar(m2, ANA, mImagen()))) expect(x).not.toMatch(PROHIBIDO);
   });
-  it('un comprobante que NO coincide pide el correcto, sin «acreditado» ni botón de recepción', () => {
+  it('un comprobante que NO coincide: dice la diferencia, pasa a recepción (aviso + botón) y NO pide otro; sin «acreditado»', () => {
     const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, cotejo: { statusCode: 200, body: { estado: 'reintentar', motivo: 'monto_menor', importe: 450, montoLeido: 50 } } });
     const t = comprobante(m);
-    expect(textos(t).join(' ')).toMatch(/hay una diferencia/);
-    expect(textos(t).join(' ')).toMatch(/el comprobante dice 50 Bs y tu pedido es de 450 Bs/);
-    expect(t.mensajes[0]?.payload['interactive']).toBeUndefined();
+    expect(textos(t).join(' ')).toMatch(/Veo una diferencia con tu pedido: el comprobante dice 50 Bs y tu pedido es de 450 Bs/);
+    expect(textos(t).join(' ')).toMatch(/Ya lo pasé a recepción/);
+    expect(textos(t).join(' ')).not.toMatch(/env[ií]ame el comprobante correcto|otro comprobante/i);
+    expect(JSON.stringify(t.mensajes[0]?.payload)).toContain('wa.me');
     for (const x of todo(t)) expect(x).not.toMatch(PROHIBIDO);
-    expect(t.avisos).toHaveLength(0);
+    expect(t.avisos).toHaveLength(1);
+    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/NO coinciden, revisar/);
   });
 });
 

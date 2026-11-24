@@ -104,6 +104,29 @@ function bmMezclarEntrega(antes, nueva, modos) {
 // Retiro en tienda o envío: lo decide el MODO que eligió el cliente (uno de la lista del comercio).
 function bmEsEnvio(modo) { return /\b(envio|envios|enviar|enviarlo|envienlo|enviemelo|enviamelo|mandenlo|mandarlo|domicilio|delivery|courier|encomienda|flota|terminal)\b/.test(bmNorm(modo)); }
 function bmEsRetiro(modo) { return /\b(retiro|retirar|recojo|recoger|recoge|tienda)\b/.test(bmNorm(modo)) && !bmEsEnvio(modo); }
+// Los BOTONES de entrega (Andres, 24/11/2026): cuando lo único que falta del pedido es el modo, el mensaje lleva «Recojo en tienda» y «Envío» (ids `entrega:retiro` y `entrega:envio`, títulos de a lo más 20). Tocar uno escribe el modo SIN llamar al modelo.
+// El modo que escribe es SIEMPRE uno de la lista del comercio (el primero que cumple `bmEsRetiro` o `bmEsEnvio`): un id inventado o un modo que el comercio no ofrece da '' y no cambia nada.
+const BM_ID_ENTREGA_RETIRO = 'entrega:retiro';
+const BM_ID_ENTREGA_ENVIO = 'entrega:envio';
+function bmModoDeBoton(seleccionId, modos) {
+  const lista = Array.isArray(modos) && modos.length ? modos : BM_MODOS_DEFECTO;
+  if (seleccionId === BM_ID_ENTREGA_RETIRO) return lista.find((m) => bmEsRetiro(m)) || '';
+  if (seleccionId === BM_ID_ENTREGA_ENVIO) return lista.find((m) => bmEsEnvio(m)) || '';
+  return '';
+}
+// Los botones que el comercio puede cumplir (los que resuelven a un modo de su lista), en la forma que espera `cmBotones`.
+function bmBotonesDeEntrega(modos) {
+  const b = [];
+  if (bmModoDeBoton(BM_ID_ENTREGA_RETIRO, modos) !== '') b.push({ id: BM_ID_ENTREGA_RETIRO, title: 'Recojo en tienda' });
+  if (bmModoDeBoton(BM_ID_ENTREGA_ENVIO, modos) !== '') b.push({ id: BM_ID_ENTREGA_ENVIO, title: 'Envío' });
+  return b;
+}
+// ¿Lo ÚNICO que falta es el modo de entrega (hay piezas, ningún QR abierto)? Entonces el mensaje del turno lleva los botones.
+function bmOfreceBotonesDeEntrega(nPiezas, entrega, mercado, modos, qrAbierto) {
+  if (!(nPiezas > 0) || qrAbierto === true || bmBotonesDeEntrega(modos).length === 0) return false;
+  const faltan = bmEntregaFalta(entrega, mercado);
+  return faltan.length === 1 && faltan[0] === 'modo de entrega';
+}
 // Lo que el CÓDIGO reconoce de la respuesta del cliente, para no depender de que el modelo lo repita en su JSON (humo de Silvana: «Silvana Prueba» no se guardaba y el pedido no avanzaba):
 // el modo («lo recojo en tienda», «envíenlo a…») y, ya elegido el modo, el nombre de quien retira o recibe (2 a 5 palabras de letras, sin cifras ni órdenes).
 function bmNombreDeRespuesta(texto) {
@@ -241,6 +264,9 @@ function bmQuierePagar(n) {
   if (/^(como|que|donde|cuando|cual|cuanto|se puede|puedo|es posible|hay|aceptan|tienen)\b/.test(t) || /\b(se puede|puedo|con tarjeta|aceptan|metodos? de pago|formas? de pago)\b/.test(t)) return false;
   return /\b(pagar|pagare|pagamos|(?:mandame|enviame|envia|manda|dame|pasame|quiero|necesito) (?:ya )?el qr|confirmo (el|mi|la) (pedido|compra)|confirmar (el|mi) pedido|cerrar (el|mi) pedido|cerremos (el|mi) pedido|me los? llevo|lo llevo|los llevo|proceder? (con )?(el|mi|la) (pedido|pago|compra))\b/.test(t);
 }
+// El botón «Pagar» de Argentina (alias): su id exacto. Un toque con otro id nunca pide el alias, aunque su título diga «Pagar».
+const BM_ID_PAGAR_ALIAS = 'pedido:alias';
+function bmPideAlias(seleccionId, n) { return seleccionId ? seleccionId === BM_ID_PAGAR_ALIAS : bmQuierePagar(n); }
 function bmPideIdentidad(n) {
   return /\b(eres|sos|es|seras)\s+(un |una )?(bot|robot|ia|inteligencia artificial|maquina|programa|persona|humano|humana|real)\b|\b(hablo|estoy hablando|hablando) con (un |una )?(bot|robot|ia|persona|humano|humana|maquina)\b|\bpersona real\b|\bes un bot\b|\bquien eres\b|\bcon quien hablo\b/.test(String(n || ''));
 }
@@ -253,21 +279,11 @@ function bmPideFactura(n) {
 function bmQuiereHablar(n) {
   return /\b(hablar con (una |un )?(persona|humano|asesor|asesora|encargado|encargada|vendedor|vendedora|alguien|recepcion)|asesor|asesora|encargad[oa]|recepcion|atencion al cliente|que me llamen|llamenme|llamarme)\b/.test(String(n || ''));
 }
-// El enlace del catálogo web de ESTE comercio (`enlaceCatalogo` de «Config base», dato del comercio): solo https, sin espacios y de largo acotado. Sin enlace, '' (nada se inventa).
-function bmEnlaceCatalogo(base) {
-  const e = cbEsObjeto(base) && typeof base.enlaceCatalogo === 'string' ? base.enlaceCatalogo.trim() : '';
-  return /^https:\/\/[^\s]+$/.test(e) && e.length <= 500 ? e : '';
-}
-// El cliente pide VER el catálogo o las fotos (texto normalizado): el botón con el enlace sale por código, sin modelo. ESTRECHO a propósito (derivado de `wlPideCatalogo`, #1033 de Walisuma; HUECO declarado hasta que suba al módulo común):
-// un verbo de pedir + «catálogo» o «fotos», o el mensaje corto que es solo eso; nunca con una negación, un comprobante, un pago o un QR, con cifras, ni con un pedido en curso.
-function bmPideCatalogo(n) {
-  const t = String(n || '');
-  if (/\d/.test(t) || /\b(no|ya vi|ya vio|ya tengo|ya conozco|comprobante|pago|pagar|pague|qr|transferencia|deposito|captura|capture|recibo|factura|nit)\b/.test(t)) return false;
-  const objeto = /\b(catalogos?|fotos?|fotografias?|pagina web|sitio web|pagina|sitio)\b/;
-  if (!objeto.test(t)) return false;
-  if (t.split(' ').length <= 4) return true;
-  return /\b(quiero|quisiera|quiere|necesito|dame|damelo|manda|mandame|mandeme|mandas|envia|enviame|envieme|envias|muestra|muestrame|muestreme|muestras|pasa|pasame|paseme|deme|tienen|tiene|tienes|hay|ver|veo|puedo ver|podria ver|podrias|a ver)\b[^.?!]{0,40}\b(catalogos?|fotos?|fotografias?|pagina web|sitio web|pagina|sitio)\b/.test(t);
-}
+// El enlace del catálogo web: NO HAY (Andres, 24/11/2026, D7): el sitio de NovuTienda ya no se ofrece y NovuChat aún no tiene un enlace propio. Mientras no exista, devuelve '' y ningún texto ni botón lo promete («solo se ofrece lo que se cumple»);
+// el asistente muestra las piezas por este chat. El dato `enlaceCatalogo` de «Config base» queda vacío y, aunque alguien lo cargue, NO sale (hace falta cambiar esta función junto con un enlace que NovuChat cumpla).
+function bmEnlaceCatalogo(_base) { return ''; }
+// Un texto del modelo que promete un enlace, una página o un botón que el código no pone: se descarta (sale el texto del código).
+const BM_PROMETE_ENLACE = /\b(enlace|enlaces|link|links|pagina web|sitio web|pagina|catalogo web|ver catalogo|boton|botones)\b/;
 // Un descuento, una rebaja o un «mejor precio»: el asistente no ofrece descuentos; lo decide el CÓDIGO (pasa con recepción), no la redacción del modelo.
 function bmPideDescuento(n) {
   return /\b(descuento|descuentos|rebaja|rebajas|regateo|regatear|mejor precio|precio especial|me lo deja en)\b/.test(String(n || ''));
@@ -379,7 +395,7 @@ function bmRedaccion(texto, textoCliente, vendibles) {
   };
   const pulido = cmPulirRedaccion(crudo, opciones);
   // Un producto llamado «billetera» no debe confundirse con una billetera digital: la palabra se enmascara SOLO para esta revisión (el texto que sale es el pulido). La billetera digital sí queda prohibida.
-  if (pulido === '' || BM_PORCENTAJE.test(pulido) || BM_PROHIBIDOS_VOZ.test(bmNorm(pulido)) || cmMotivoDeRechazo(pulido.replace(/billeteras?(?! (?:digital|digitales|movil|moviles|electronica|electronicas|virtual|virtuales)\b)/gi, 'pieza'), opciones) !== '') return '';
+  if (pulido === '' || BM_PROMETE_ENLACE.test(bmNorm(pulido)) || BM_PORCENTAJE.test(pulido) || BM_PROHIBIDOS_VOZ.test(bmNorm(pulido)) || cmMotivoDeRechazo(pulido.replace(/billeteras?(?! (?:digital|digitales|movil|moviles|electronica|electronicas|virtual|virtuales)\b)/gi, 'pieza'), opciones) !== '') return '';
   if (!bmMontosValidos(pulido, vendibles)) return '';
   return bmFormatearMontos(bmConPrecios(bmLimitarEmojis(pulido), vendibles), vendibles);
 }
@@ -662,13 +678,21 @@ function bmResolverComprobante(c) {
   const total = lineas.length ? vcTotalCentavos(lineas) : (c.cobro.monto !== null ? Math.round(c.cobro.monto * 100) : null);
   const totalTexto = total !== null && total > 0 ? vcMonto(total) : '';
   const pedido = (cotejo) => ({ tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: f.entrega, cotejo: cotejo, repetido: false });
-  const d = { resultado: r.resultado, diferencia: cbDiferencia(r.diferencias, 'BOB'), totalTexto: totalTexto, aviso: null };
+  // TODAS las diferencias (el destinatario primero, luego el monto y la fecha), no solo la primera: una lista cuando hay varias, un texto cuando hay una.
+  const cuerpoCotejo = cnNodo('Cotejar en el servidor') ? cbCuerpoDe(cnPrimero('Cotejar en el servidor')).cuerpo : {};
+  const d = { resultado: r.resultado, diferencia: cdDiferenciaParaElTexto(cuerpoCotejo, r, 'BOB'), totalTexto: totalTexto, aviso: null };
   if (r.resultado === 'cuadra') { d.tipo = 'comprobante'; d.aviso = pedido('llegó y los datos coinciden'); }
   else if (r.resultado === 'aproximado') { d.tipo = 'comprobante'; d.aviso = pedido('llegó; los datos casi coinciden, revisar'); }
-  else if (r.resultado === 'reintentar' || r.resultado === 'ilegible') { d.tipo = 'comprobante_pedir'; }
+  else if (r.resultado === 'reintentar') {
+    // El comprobante LLEGÓ pero no coincide (D3): se nombran todas las diferencias y pasa a recepción (aviso + botón), SIN pedir otro comprobante. El aviso sale a lo más una vez cada 30 minutos por teléfono.
+    d.tipo = 'comprobante'; d.resultado = 'no_cuadra';
+    d.aviso = pedido('llegó; NO coinciden, revisar');
+    d.aviso.repetido = f.avisoNoCuadraMs > 0 && c.ahora - f.avisoNoCuadraMs >= 0 && c.ahora - f.avisoNoCuadraMs < BM_VENTANA_CONSULTA_MS;
+  }
+  else if (r.resultado === 'ilegible') { d.tipo = 'comprobante_pedir'; }
   else if (r.resultado === 'ya_cotejado') { d.tipo = 'derivar'; d.motivo = 'comprobante_ya_visto'; d.aviso = bmAvisoConsulta(c, 'comprobante_ya_visto'); }
   else { d.tipo = 'derivar'; d.motivo = 'comprobante_sin_cotejo'; d.aviso = pedido('llegó; no se pudo cotejar, revisar'); }
-  d.patch = (r.resultado === 'reintentar' || r.resultado === 'ilegible' || r.resultado === 'ya_cotejado') ? {} : { comprobanteMs: c.ahora, qrHastaMs: 0, carrito: [], entrega: bmEntregaBase(), cierre: false, qrCarrito: [], mostrados: [] };
+  d.patch = (d.resultado === 'no_cuadra' || r.resultado === 'ilegible' || r.resultado === 'ya_cotejado') ? {} : { comprobanteMs: c.ahora, qrHastaMs: 0, carrito: [], entrega: bmEntregaBase(), cierre: false, qrCarrito: [], mostrados: [] };
   return d;
 }
 
@@ -776,10 +800,10 @@ function bmTextoDeEstado(lineas, entrega, cierre, c, conBoton) {
   const faltan = bmEntregaFalta(entrega, c.mercado);
   if (faltan.length === 1 && faltan[0] === 'modo de entrega') return '¿Cómo prefiere recibir su pedido: ' + (c.modos.length ? c.modos.join(' o ') : 'retiro en tienda o envío') + '?';
   if (faltan.length) return 'Para continuar con su pedido, indíqueme por favor: ' + faltan.join(', ') + '.';
-  // Con el botón en el mismo mensaje, la instrucción la pone `cfCuerpo` (una sola vez y en el trato del comercio); sin botón (hay un QR abierto) sigue el «pagar» de siempre, que lleva al QR abierto.
+  // Con el botón en el mismo mensaje, la instrucción la pone `cfCuerpo` (una sola vez y en el trato del comercio). NUNCA se le pide escribir «pagar» (Andres, 23/11/2026): sin botón (hay un QR abierto) se le recuerda el QR y el comprobante.
   const usted = !!(c.base && c.base.tratamiento === 'usted');
   if (conBoton === true) return usted ? '¿Desea confirmar su pedido?' : '¿Quieres confirmar tu pedido?';
-  return usted ? '¿Desea confirmar su pedido? Escriba «pagar» cuando esté listo.' : '¿Quieres confirmar tu pedido? Escribe «pagar» cuando estés listo.';
+  return usted ? 'Su pedido ya tiene un QR abierto. Cuando pague, envíeme la foto del comprobante por este chat.' : 'Tu pedido ya tiene un QR abierto. Cuando pagues, envíame la foto del comprobante por este chat.';
 }
 // El toque de un botón «Confirmar pedido» que YA no corresponde (el pedido se cerró, o cambió una pieza, un precio, la cantidad o la entrega desde el mensaje que lo traía): NO cierra nada y lo contesta el CÓDIGO, sin modelo.
 function bmResolverToqueViejo(c) {
@@ -795,7 +819,23 @@ function bmResolverToqueViejo(c) {
   if (abierto) return Object.assign(base, { tipo: 'qr_pendiente', total: vcTotalCentavos(lineas) });
   const conBoton = cfSeOfrece(lineas.length, bmEntregaCompleta(entrega, c.mercado), false);
   const aviso = usted ? 'Ese botón era de un pedido anterior, y este es su pedido de ahora. ' : 'Ese botón era de un pedido anterior, y este es tu pedido de ahora. ';
-  return Object.assign(base, { tipo: 'modelo', texto: aviso + bmTextoDeEstado(lineas, entrega, false, c, conBoton), sinRedaccion: false, sinPieza: false, resumen: vcResumen(lineas), confirmable: conBoton });
+  return Object.assign(base, { tipo: 'modelo', texto: aviso + bmTextoDeEstado(lineas, entrega, false, c, conBoton), sinRedaccion: false, sinPieza: false, resumen: vcResumen(lineas), confirmable: conBoton, botonesEntrega: bmOfreceBotonesDeEntrega(lineas.length, entrega, c.mercado, c.modos, false) });
+}
+// El toque de «Recojo en tienda» o «Envío» (`entrega:retiro` / `entrega:envio`): el CÓDIGO escribe el modo en la entrega y sigue con lo que falta, SIN llamar al modelo. Si con eso el pedido queda completo sale el resumen con «Confirmar pedido» (el QR espera ese botón).
+// NO cambia nada (contesta `bmResolverToqueViejo`, con el pedido de ahora) si el id no es de un botón, si el comercio no ofrece ese modo, si el pedido está vacío, si hay un QR abierto o si el modo ya estaba elegido (el botón es de un mensaje viejo).
+function bmResolverEntregaBoton(c) {
+  const f = c.ficha;
+  const modo = bmModoDeBoton(c.t && c.t.seleccionId, c.modos);
+  const abierto = c.cobro.modo === 'real' && (c.cobro.pendiente || f.qrHastaMs > c.ahora);
+  if (modo === '' || f.carrito.length === 0 || abierto || bmEntregaDeFicha(f.entrega).modo !== '') return bmResolverToqueViejo(c);
+  const resp = { candidates: [{ content: { parts: [{ text: JSON.stringify({ texto: 'Anotado.', lineas: f.carrito.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' })), entrega: { modo: modo } }) }] } }] };
+  const r = bmResolverModelo(Object.assign({}, c, { plan: Object.assign({}, c.plan, { textoCliente: '' }), modeloResp: resp }));
+  // El texto lo arma el código (nunca el del modelo, que no corrió): qué se anotó y lo que falta, o la confirmación con su botón.
+  if (r.tipo === 'modelo') {
+    r.texto = 'Anoté la entrega: ' + r.entrega.modo + '. ' + bmTextoDeEstado(r.lineas, r.entrega, false, c, r.confirmable === true);
+    r.sinRedaccion = false; r.sinPieza = false; r.resumen = r.lineas.length ? vcResumen(r.lineas) : ''; r.sinModelo = true;
+  }
+  return r;
 }
 function bmResolverModelo(c) {
   const f = c.ficha;
@@ -875,7 +915,7 @@ function bmResolverModelo(c) {
     const ultima = [...f.hist].reverse().find((x) => x && x.r === 'm');
     if (ultima && ultima.t === bmParaMemoria(texto)) return Object.assign(bmDerivar(c, 'quiere_hablar'), { lineas: lineas, entrega: entrega, cierre: cierre });
   } else if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c, conBoton);
-  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: cambio && lineas.length ? vcResumen(lineas) : '', confirmable: conBoton });
+  return Object.assign(base, { tipo: 'modelo', texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: cambio && lineas.length ? vcResumen(lineas) : '', confirmable: conBoton, botonesEntrega: bmOfreceBotonesDeEntrega(lineas.length, entrega, c.mercado, c.modos, abierto) });
 }
 
 // La decisión del turno. `c` viene de `bmContexto()` (+ `modeloResp` y `cancelo`, que completa cada nodo). Devuelve { tipo, ... } con `aviso` (o null) y, cuando cambia la ficha, `patch`.
@@ -890,6 +930,7 @@ function bmResolver(c) {
   if (p.tipo === 'modelo') return bmResolverModelo(c);
   // El toque de «Confirmar pedido» con el pedido listo lo decide el CÓDIGO, sin modelo: la respuesta del modelo es la del carrito tal cual está en la ficha y el cierre sale de `cfEsConfirmacion`.
   if (p.tipo === 'toque_viejo') return bmResolverToqueViejo(c);
+  if (p.tipo === 'entrega_boton') return bmResolverEntregaBoton(c);
   if (p.tipo === 'confirmar') return bmResolverModelo(Object.assign({}, c, { modeloResp: { candidates: [{ content: { parts: [{ text: JSON.stringify({ texto: 'Revisando su pedido.', lineas: c.ficha.carrito.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' })) }) }] } }] } }));
   return Object.assign({ aviso: null }, p);
 }

@@ -14,13 +14,13 @@ import { cargarFuente } from './core/fuente-vm';
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FLUJOS = join(AQUI, '../../Flujos/experimental');
 const RUTAS = [
-  'venta-digital/src/cobro.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js',
+  'venta-digital/src/cobro.js', 'venta-digital/src/diferencias.js', '../src/modulos/pedidos/comprobante-diferencias.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js',
   '../src/core/sin-agente/mensajes.js', '../src/core/texto/filtro-redaccion.js', '../src/core/texto/identidad.js', '../src/modulos/pedidos/confirmar-pedido.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
 ].map((r) => join(FLUJOS, r));
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
-  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_SIN_PIEZA', 'bmEnlaceCatalogo', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmDatosTienda', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
+  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_SIN_PIEZA', 'bmEnlaceCatalogo', 'bmModoDeBoton', 'bmBotonesDeEntrega', 'bmOfreceBotonesDeEntrega', 'bmPideAlias', 'bmTextoDeEstado', 'cdTextoComprobanteConDiferencias', 'cdDiferenciaParaElTexto', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmDatosTienda', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -702,6 +702,98 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       const r = turno('Tienen televisores?', [], {});
       expect(r.tipo).toBe('modelo');
       expect(r.texto).not.toMatch(/bot[oó]n/i);
+    });
+  });
+});
+
+describe('B2 (24/11/2026): botones de entrega, sin «escribe pagar», alias con botón, comprobante con todas las diferencias, sin enlace al sitio', () => {
+  describe('bmModoDeBoton: el modo sale SIEMPRE de la lista del comercio', () => {
+    const modos = ['Retiro en tienda', 'Envío por flota'];
+    it('retiro → el primer modo de retiro; envío → el primer modo de envío', () => {
+      expect(b('bmModoDeBoton')('entrega:retiro', modos)).toBe('Retiro en tienda');
+      expect(b('bmModoDeBoton')('entrega:envio', modos)).toBe('Envío por flota');
+      expect(b('bmModoDeBoton')('entrega:retiro', ['Envío', 'Recojo en tienda'])).toBe('Recojo en tienda');
+    });
+    it('NEGADO: un id inventado, de otro tipo o con otra forma da \'\'; un modo que el comercio no ofrece también', () => {
+      for (const id of ['entrega:x', 'entrega:', 'entrega:Retiro', 'ENTREGA:RETIRO', 'entrega:retiro ', 'pedido:confirmar:abc', '', undefined, null, 7]) expect(b('bmModoDeBoton')(id, modos), String(id)).toBe('');
+      expect(b('bmModoDeBoton')('entrega:envio', ['Retiro en tienda'])).toBe('');
+      expect(b('bmModoDeBoton')('entrega:retiro', ['Envío'])).toBe('');
+    });
+    it('los botones son los que el comercio puede cumplir y sus títulos caben en 20 caracteres', () => {
+      expect(b('bmBotonesDeEntrega')(modos).map((x: { id: string }) => x.id)).toEqual(['entrega:retiro', 'entrega:envio']);
+      expect(b('bmBotonesDeEntrega')(['Retiro en tienda']).map((x: { id: string }) => x.id)).toEqual(['entrega:retiro']);
+      for (const x of b('bmBotonesDeEntrega')(modos)) expect(x.title.length).toBeLessThanOrEqual(20);
+    });
+    it('solo se ofrecen cuando lo ÚNICO que falta es el modo, con piezas y sin QR abierto', () => {
+      const e = (o: Record<string, string>) => ({ modo: '', ciudad: '', direccion: '', nombre: '', documento: '', cp: '', provincia: '', flota: '', ...o });
+      expect(b('bmOfreceBotonesDeEntrega')(1, e({}), 'BO', modos, false)).toBe(true);
+      expect(b('bmOfreceBotonesDeEntrega')(0, e({}), 'BO', modos, false)).toBe(false);
+      expect(b('bmOfreceBotonesDeEntrega')(1, e({}), 'BO', modos, true)).toBe(false);
+      expect(b('bmOfreceBotonesDeEntrega')(1, e({ modo: 'Retiro en tienda' }), 'BO', modos, false)).toBe(false);
+      expect(b('bmOfreceBotonesDeEntrega')(1, e({}), 'BO', ['Mensajería'], false)).toBe(false);
+    });
+  });
+
+  describe('NUNCA se le pide escribir «pagar»', () => {
+    const textoDe = (usted: boolean, conBoton: boolean, mercado = 'BO') => b('bmTextoDeEstado')([{ id: 'p1', cantidad: 1 }], { ...ENTREGA, modo: 'retiro en tienda' }, false, { base: { tratamiento: usted ? 'usted' : 'tu' }, modos: [], mercado }, conBoton);
+    const PIDE_PAGAR = /escr[ií]b\w*\s+(?:\w+\s+){0,3}«?"?pagar/i;
+    it('el texto de estado, con o sin botón, en usted y en tuteo, no lo pide', () => {
+      for (const usted of [true, false]) for (const conBoton of [true, false]) expect(textoDe(usted, conBoton), `${usted}/${conBoton}`).not.toMatch(PIDE_PAGAR);
+    });
+    it('ninguna introducción fija ni texto del comprobante lo pide', () => {
+      for (const t of Object.values(B['BM_INTROS']) as string[]) expect(t).not.toMatch(PIDE_PAGAR);
+      for (const t of [b('bmTextoDerivacion')('pedido_ar_alias', true), b('bmTextoDerivacion')('pedido_ar', true), b('bmTextoDerivacion')('pedido_sin_cobro', true)]) expect(t).not.toMatch(PIDE_PAGAR);
+      expect(b('bmTextoDerivacion')('pedido_ar_alias', true)).toMatch(/toca el botón «Pagar»/);
+    });
+    it('el texto «pagar» escrito por el cliente SIGUE entendiéndose (no se le pide, pero se lo reconoce)', () => {
+      expect(b('bmQuierePagar')(b('bmNorm')('quiero pagar'))).toBe(true);
+    });
+    it('el botón «Pagar» de Argentina: solo el id exacto `pedido:alias` pide el alias; un toque con otro id y título «Pagar» NO; el texto sí', () => {
+      expect(b('bmPideAlias')('pedido:alias', 'pagar')).toBe(true);
+      for (const id of ['pedido:alias2', 'otro', 'PEDIDO:ALIAS', 'pedido:confirmar:abc']) expect(b('bmPideAlias')(id, 'pagar'), id).toBe(false);
+      expect(b('bmPideAlias')(undefined, 'pagar')).toBe(true);
+      expect(b('bmPideAlias')('', 'hola')).toBe(false);
+    });
+  });
+
+  describe('sin enlace al sitio de NovuTienda', () => {
+    it('`bmEnlaceCatalogo` devuelve \'\' aunque el dato esté cargado (ni https válido lo trae de vuelta)', () => {
+      for (const e of ['https://sitio.example', 'https://novutienda.example/catalogo', '', 'http://x.y']) expect(b('bmEnlaceCatalogo')({ enlaceCatalogo: e }), e).toBe('');
+    });
+    it('NEGADO: una redacción del modelo que promete un enlace, una página, un sitio o un botón no pasa (sale el texto del código)', () => {
+      const cat = catalogo();
+      for (const t of ['Puede ver todo en nuestro sitio web.', 'Le dejo el enlace al catálogo.', 'Toque el botón para ver las fotos.', 'Visite nuestra página.', 'Mire el link del catálogo.']) expect(b('bmRedaccion')(t, 'hola', cat.vendibles), t).toBe('');
+      expect(b('bmRedaccion')('Con gusto, ¿qué pieza busca?', 'hola', cat.vendibles)).not.toBe('');
+    });
+    it('el prompt del modelo ya no ofrece la página, el enlace ni un botón', () => {
+      expect(B['BM_PROMPT_VOZ']).not.toMatch(/ver cat[aá]logo|sitio web|p[aá]gina web.*(ofrece|puedes ver)/i);
+      expect(B['BM_PROMPT_VOZ']).toMatch(/No ofreces ni mencionas enlaces, páginas web ni botones/);
+    });
+  });
+
+  describe('comprobante que NO coincide: TODAS las diferencias, a recepción, sin pedir otro', () => {
+    const DIF = ['la cuenta de destino no es la del QR', 'el comprobante dice 50 Bs y tu pedido es de 450 Bs', 'la fecha del comprobante es anterior a tu pedido'];
+    it('tres diferencias dan tres frases en el texto, y NO una sola', () => {
+      const t = b('bmTextoComprobante')('no_cuadra', DIF, 'Bs 450', true, false);
+      for (const f of DIF) expect(t).toContain(f);
+      expect(t).toMatch(/Veo estas diferencias con tu pedido: la cuenta de destino/);
+      expect(t.indexOf(DIF[0]!)).toBeLessThan(t.indexOf(DIF[1]!));
+      expect(t.indexOf(DIF[1]!)).toBeLessThan(t.indexOf(DIF[2]!));
+      expect(t).not.toMatch(/env[ií]ame el comprobante|otro comprobante|correcto/i);
+    });
+    it('con aviso: «Ya lo pasé a recepción… también puedes escribirle con el botón»; sin aviso: «No pude avisar… escríbele directo con el botón»; nunca «acreditado»', () => {
+      expect(b('bmTextoComprobante')('no_cuadra', DIF, '', true, false)).toMatch(/Ya lo pasé a recepción para que lo revise; también puedes escribirle con el botón\./);
+      expect(b('bmTextoComprobante')('no_cuadra', DIF, '', false, false)).toMatch(/No pude avisar a recepción; escríbele directo con el botón\./);
+      for (const salio of [true, false, 'repetido']) for (const d of [DIF, DIF[0], '']) for (const usted of [true, false]) expect(b('bmTextoComprobante')('no_cuadra', d, 'Bs 450', salio, usted)).not.toMatch(PROHIBIDO);
+    });
+    it('en usted el texto sale en usted (su pedido, puede)', () => {
+      const t = b('bmTextoComprobante')('no_cuadra', [DIF[0], DIF[1]], '', true, true);
+      expect(t).toMatch(/su comprobante|su pedido/);
+      expect(t).not.toMatch(/\btu\b|puedes/);
+    });
+    it('`ilegible` sigue pidiendo una foto más nítida; `reintentar` (alias de Argentina) sigue pidiendo el correcto', () => {
+      expect(b('bmTextoComprobante')('ilegible', '', '', true, false)).toMatch(/más nítida/);
+      expect(b('bmTextoComprobante')('reintentar', 'monto', '', true, false)).toMatch(/Envíame el comprobante correcto/);
     });
   });
 });

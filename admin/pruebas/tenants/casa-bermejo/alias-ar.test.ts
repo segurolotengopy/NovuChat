@@ -43,11 +43,14 @@ const abierto = (m: ReturnType<typeof crear>, extra: Rep = {}) => ({ statusCode:
 const codigo = (c: string, extra: Rep = {}) => ({ statusCode: 200, body: { codigo: c, intentosRestantes: 2, reintento: false, ...extra } });
 
 describe('el pedido anotado (turno 0): cero mensajes agregados', () => {
-  it('sigue siendo 1 mensaje y 1 aviso; ofrece «pagar» y guarda el pedido en la ficha, sin decir el alias ni prometer', () => {
+  it('sigue siendo 1 mensaje y 1 aviso; ofrece «Pagar» con un BOTÓN (nunca pide escribirlo) y guarda el pedido en la ficha, sin decir el alias ni prometer', () => {
     const { m, t0 } = conPedido();
     expect(t0.mensajes).toHaveLength(1);
     expect(t0.avisos).toHaveLength(1);
-    expect(textos(t0).join(' ')).toMatch(/escríbeme «pagar»/);
+    const botones = ((t0.mensajes[0]?.payload['interactive'] as Rep)?.['action'] as Rep)?.['buttons'] as Rep[];
+    expect(botones?.map((x) => x['reply'])).toEqual([{ id: 'pedido:alias', title: 'Pagar' }]);
+    expect(textos(t0).join(' ')).toMatch(/toca el botón «Pagar»/);
+    expect(textos(t0).join(' ')).not.toMatch(/escr[ií]b\w*[^.]{0,30}«?pagar/i);
     expect(textos(t0).join(' ')).not.toMatch(new RegExp(ALIAS));
     for (const x of todo(t0)) { expect(x).not.toMatch(PROHIBIDO); expect(x).not.toMatch(PROMESA); }
     const ev = t0.llamadas.ingesta.find((x) => x['evento'] === 'pedido_sin_cobro') as Rep;
@@ -57,6 +60,31 @@ describe('el pedido anotado (turno 0): cero mensajes agregados', () => {
     const { t0 } = conPedido({ aviso: 'error' });
     expect(textos(t0).join(' ')).not.toMatch(/«pagar»/);
     expect(textos(t0).join(' ')).toMatch(/no pude avisar a recepción/i);
+  });
+});
+
+const mToque = (id: string, title: string) => ({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title } } });
+describe('el botón «Pagar» (id exacto `pedido:alias`) pide el alias', () => {
+  it('el toque llama a pedirAliasArs, sin modelo, y dice el alias; el texto «pagar» sigue valiendo', () => {
+    const { m } = conPedido();
+    servidor(m, () => abierto(m));
+    const t = hablar(m, ARG, mToque('pedido:alias', 'Pagar'));
+    expect(llamadas).toHaveLength(1);
+    expect(llamadas[0]?.url).toMatch(/\/pedirAliasArs$/);
+    expect(textos(t).join(' ')).toContain(ALIAS);
+    expect(t.salidas['Conversar con el modelo']).toBeUndefined();
+  });
+  it('NEGADO: otro id con el título «Pagar» NO pide el alias (solo vale el id exacto)', () => {
+    for (const id of ['pedido:alias2', 'pedido:confirmar:abc', 'otro:pagar', 'PEDIDO:ALIAS']) {
+      const { m } = conPedido();
+      servidor(m, () => abierto(m));
+      hablar(m, ARG, mToque(id, 'Pagar'));
+      expect(llamadas.filter((x) => /pedirAliasArs$/.test(x.url)), id).toHaveLength(0);
+    }
+  });
+  it('NEGADO: si el aviso a recepción no salió, no hay botón «Pagar» (nada que ofrecer)', () => {
+    const { t0 } = conPedido({ aviso: 'error' });
+    expect(JSON.stringify(t0.mensajes.map((x) => x.payload))).not.toContain('pedido:alias');
   });
 });
 
