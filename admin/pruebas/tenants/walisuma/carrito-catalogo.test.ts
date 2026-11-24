@@ -224,4 +224,113 @@ describe('observación de Andres (23/11): lo que el catálogo ya trae no se vuel
     }
     expect([...textos(t2), ...t2.mensajes.map((e) => e.cuerpo ?? '')].join(' ')).toMatch(/El envío no tiene costo\./);
   });
+
+});
+
+const mToque = (id: string, title = 'Confirmar pedido') => ({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title } } });
+const botonDe = (t: ReturnType<typeof enviar>): { id: string; title: string } | undefined => {
+  const i = (t.mensajes[0]?.payload as J | undefined)?.['interactive'] as J | undefined;
+  const bs = ((i?.['action'] as J | undefined)?.['buttons'] as J[] | undefined) ?? [];
+  return bs[0]?.['reply'] as { id: string; title: string } | undefined;
+};
+
+describe('recuento del 24/11 (Andres): botón «Confirmar pedido», dirección del catálogo y envío a otra ciudad', () => {
+  it('punto 3: con una pieza que no entró y la entrega completa, el MISMO mensaje lleva el botón «Confirmar pedido» (no «escriba confirmo mi pedido»); tocarlo emite el QR', () => {
+    // El toque NO pasa por el modelo: aun con un modelo que devuelve `lineas: []` (o piezas distintas), el QR sale con el carrito de la FICHA.
+    let llamadas = 0;
+    const m = crear({ panel: PANEL(), modeloDice: () => { llamadas++; return modelo('Anotado.', { lineas: [], entrega: ENTREGA }); } });
+    hablar(m, ANA, mTexto('quiero recoger en La Paz'));
+    const antes = llamadas;
+    const t = enviar(m, cuerpo({ pedidoId: 'cat_c1', items: [...(cuerpo().items as J[]), { id: 'pieza-fantasma', nombre: 'Pieza fantasma', cantidad: 1, subtotal: 10 }], total: 1340 }));
+    expect(t.mensajes).toHaveLength(1);
+    expect(textos(t).join(' ')).not.toMatch(/confirmo mi pedido|escriba/i);
+    expect(textos(t).join(' ')).toMatch(/No incluimos en el pedido: Pieza fantasma/);
+    const b = botonDe(t);
+    expect(b?.title).toBe('Confirmar pedido');
+    expect(b?.id).toMatch(/^pedido:confirmar:/);
+    expect(t.mensajes.some((e) => e.tipo === 'image')).toBe(false);
+    // El botón de ESTE pedido emite el QR; el de otro pedido (huella distinta) no confirma nada (prueba aparte).
+    const t2 = hablar(m, ANA, mToque(b!.id));
+    expect(t2.mensajes.some((e) => e.tipo === 'image')).toBe(true);
+    expect(llamadas).toBe(antes);   // ni el carrito ni el toque llamaron al modelo
+    expect(textos(t2).join(' ')).toMatch(/Total: Bs 1\.330/);
+    expect(textos(t2).join(' ')).toMatch(/1 × Billetera clásica/);
+    expect(fichas(m)[ANA].carrito).toEqual([{ id: 'billetera-clasica', cantidad: 1, detalle: '' }, { id: 'bufanda-dennis', cantidad: 1, detalle: '' }]);
+    sinAcreditado(t2);
+  });
+  it('punto 3 NEGADO: el botón «Confirmar pedido» de OTRO pedido (huella distinta) no emite el QR', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Anotado.', { lineas: [], entrega: ENTREGA }) });
+    hablar(m, ANA, mTexto('quiero recoger en La Paz'));
+    enviar(m, cuerpo({ pedidoId: 'cat_c2', items: [...(cuerpo().items as J[]), { id: 'pieza-fantasma', nombre: 'Pieza fantasma', cantidad: 1, subtotal: 10 }], total: 1340 }));
+    expect(hablar(m, ANA, mToque('pedido:confirmar:viejo')).mensajes.some((e) => e.tipo === 'image')).toBe(false);
+  });
+  const ENVIO = { entrega: 'envio', costoEnvio: 0, referencia: 'Frente a la farmacia', ubicacion: { lat: -16.5106, lng: -68.1267 } };
+  it('punto 4: una dirección SIN número de puerta que vino en el carrito no se vuelve a pedir', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS }) });
+    const t = enviar(m, cuerpo({ ...ENVIO, direccion: 'Av. Arce esq. Pinilla, edificio Torre Azul' }));
+    expect(textos(t)[0]).toMatch(/nombre completo/);
+    expect(textos(t)[0]).not.toMatch(/dirección exacta|calle o avenida|modo de entrega|ubicación/i);
+    expect(fichas(m)[ANA].entrega).toMatchObject({ modo: 'Envío en La Paz', dirCat: true });
+  });
+  it('punto 4: el envío a OTRA ciudad (Cochabamba, sin ubicación) queda como envío nacional con su ciudad; solo se pide el nombre', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS }) });
+    const t = enviar(m, cuerpo({ entrega: 'envio', costoEnvio: 0, direccion: 'Calle Bolívar entre Lanza y Ayacucho, Cochabamba', referencia: '', ubicacion: undefined }));
+    expect(textos(t)[0]).toMatch(/nombre completo/);
+    expect(textos(t)[0]).not.toMatch(/modo de entrega|ciudad|dirección exacta/i);
+    expect(fichas(m)[ANA].entrega).toMatchObject({ modo: 'Envío nacional', ciudad: 'Cochabamba' });
+  });
+  it('punto 4: el envío con la ubicación lejos de La Paz y Santa Cruz y sin ciudad escrita es nacional y solo pide la ciudad', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS }) });
+    const t = enviar(m, cuerpo({ entrega: 'envio', costoEnvio: 0, direccion: 'Calle Junín 120, zona central', referencia: '', ubicacion: { lat: -17.39, lng: -66.157 } }));
+    expect(textos(t)[0]).toMatch(/ciudad del envío/);
+    expect(textos(t)[0]).not.toMatch(/modo de entrega|dirección exacta/i);
+    expect(fichas(m)[ANA].entrega.modo).toBe('Envío nacional');
+  });
+  it('punto 4 NEGADO: «Calle Sucre» con el pin en La Paz es La Paz, no un envío nacional a Sucre', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS }) });
+    enviar(m, cuerpo({ ...ENVIO, direccion: 'Calle Sucre 120, Sopocachi' }));
+    expect(fichas(m)[ANA].entrega).toMatchObject({ modo: 'Envío en La Paz', ciudad: 'La Paz' });
+    const m3 = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS }) });
+    enviar(m3, cuerpo({ ...ENVIO, direccion: 'Calle Santa Cruz 45, Sopocachi', pedidoId: 'cat_p3' }));
+    expect(fichas(m3)[ANA].entrega).toMatchObject({ modo: 'Envío en La Paz', ciudad: 'La Paz' });
+    const m2 = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS }) });
+    enviar(m2, cuerpo({ entrega: 'envio', costoEnvio: 0, direccion: 'Av. Potosí esq. Pinilla', referencia: '', ubicacion: undefined, pedidoId: 'cat_p2' }));
+    expect(fichas(m2)[ANA].entrega.ciudad).not.toBe('Potosí');
+  });
+  it('punto 4: si el modelo REPITE la dirección del catálogo al dar el nombre, no se vuelve a pedir ni se pierde', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS, entrega: { direccion: 'Av. Arce esq. Pinilla, edificio Torre Azul, Frente a la farmacia', nombre: 'Silvana Pérez' } }) });
+    enviar(m, cuerpo({ ...ENVIO, direccion: 'Av. Arce esq. Pinilla, edificio Torre Azul' }));
+    const t2 = hablar(m, ANA, mTexto('Silvana Pérez'));
+    expect(t2.mensajes.some((e) => e.tipo === 'image')).toBe(true);
+    expect(textos(t2).join(' ')).not.toMatch(/dirección exacta/);
+  });
+  it('punto 3: un carrito largo con una pieza que no entró conserva «No incluimos en el pedido» y la entrega dentro de los 1.024 caracteres del botón', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Anotado.', { lineas: [], entrega: ENTREGA }) });
+    hablar(m, ANA, mTexto('quiero recoger en La Paz'));
+    const piezas = Array.from({ length: 30 }, (_, i) => ({ id: i % 2 ? 'billetera-clasica' : 'bufanda-dennis', nombre: 'Pieza ' + i, cantidad: 1, subtotal: 450 }));
+    const t = enviar(m, cuerpo({ pedidoId: 'cat_c3', items: [...piezas, { id: 'pieza-fantasma', nombre: 'Pieza fantasma', cantidad: 1, subtotal: 10 }], nota: '' }));
+    const cuerpoTexto = String((((t.mensajes[0]?.payload as J)['interactive'] as J)['body'] as J)['text']);
+    expect(cuerpoTexto.length).toBeLessThanOrEqual(1024);
+    expect(cuerpoTexto).toMatch(/Entrega: /);
+    expect(cuerpoTexto).toMatch(/No incluimos en el pedido: Pieza fantasma/);
+    expect(cuerpoTexto).toMatch(/Confirmar pedido/);
+  });
+  it('punto 4 NEGADO: una dirección dicha por CHAT sin número de puerta sigue sin valer como exacta', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Gracias.', { lineas: LINEAS, entrega: { modo: 'Envío en La Paz', ciudad: 'La Paz', direccion: 'Zona sur', nombre: 'Ana Pérez', telefono: 'MISMO' } }) });
+    const t = hablar(m, ANA, mTexto('envío en La Paz, zona sur, Ana Pérez'));
+    expect(t.mensajes.some((e) => e.tipo === 'image')).toBe(false);
+  });
+});
+
+describe('punto 6 del recuento (Andres, «Sí, si pregunta»): la regla del envío con su umbral solo se dice si el cliente PREGUNTA', () => {
+  it('el resumen del pedido dice solo «El envío no tiene costo»; si después pregunta por el envío, se le informa la regla con el umbral', () => {
+    const m = crear({ panel: PANEL(), modeloDice: modelo('Con gusto, te cuento.', { lineas: LINEAS, entrega: { nombre: 'Silvana Pérez' } }) });
+    const t1 = enviar(m, cuerpo({ entrega: 'envio', costoEnvio: 0, direccion: 'Av. Arce 2631, Sopocachi', referencia: 'Frente a la farmacia', ubicacion: { lat: -16.5106, lng: -68.1267 } }));
+    const t2 = hablar(m, ANA, mTexto('Silvana Pérez'));
+    const resumen = [...textos(t1), ...textos(t2)].join(' ');
+    expect(resumen).toMatch(/El envío no tiene costo\./);
+    expect(resumen).not.toMatch(/Bs 500|compras desde|desde Bs/);
+    const t3 = hablar(m, ANA, mTexto('¿cuánto cuesta el envío?'));
+    expect(textos(t3).join(' ')).toMatch(/Sobre el envío: desde Bs 500 de compra no tiene costo/);
+  });
 });

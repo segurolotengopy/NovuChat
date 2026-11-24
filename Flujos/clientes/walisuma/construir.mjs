@@ -83,7 +83,7 @@ export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   // La base común de las ventas digitales (cobro, avisos, el motor de la conversación y el carrito: prefijos `cb`, `av`, `vd` y `vc`) y, al final, lo PROPIO de Walisuma (`wl.js`: datos, textos y `CN_TENANT`; `wl-venta.js`: la decisión de la venta).
-  librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/carrito.js', 'src/lib/wl.js', 'src/lib/wl-venta.js'],
+  librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/diferencias.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/carrito.js', '../../src/modulos/pedidos/confirmar-pedido.js', 'src/lib/wl.js', 'src/lib/wl-venta.js'],
   comun: ['../../experimental/venta-digital/src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],
@@ -171,6 +171,9 @@ const FORMAS_CONFIG = {
   avisoRespaldoEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL|REEMPLAZAR_[A-Z0-9_]+)$/,
   // El horario de las tiendas (texto para el cliente) y su forma para el reloj de «fuera de horario» (días 0=domingo … 6=sábado; HH:MM de La Paz).
   horarioTiendas: /^[\p{L}\p{N} :,.-]{1,80}$/u,
+  // La ubicación de cada tienda: coordenadas «lat,lng» (el código arma el enlace de Google Maps; el repositorio no guarda enlaces).
+  tiendaLaPazCoordenadas: /^-?\d{1,3}\.\d{1,8},-?\d{1,3}\.\d{1,8}$/,
+  tiendaSantaCruzCoordenadas: /^-?\d{1,3}\.\d{1,8},-?\d{1,3}\.\d{1,8}$/,
   horarioDias: /^[0-6](,[0-6]){0,6}$/,
   horarioApertura: /^([01]\d|2[0-3]):[0-5]\d$/,
   horarioCierre: /^([01]\d|2[0-3]):[0-5]\d$/,
