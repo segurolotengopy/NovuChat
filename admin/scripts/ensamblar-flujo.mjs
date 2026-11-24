@@ -85,7 +85,7 @@
  * apuntar a `core/` lo que se comparte y se vuelve a correr `extraer`.
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { injertarIndicador, quitarIndicador } from '../../Flujos/src/core/indicador/indicador-escritura.mjs';
 
@@ -128,6 +128,35 @@ export const slug = (nombre) => nombre
 export const listarFlujos = (raiz = RAIZ_FLUJOS) => readdirSync(raiz)
   .filter((f) => f.endsWith('.json') && !f.endsWith('.local.json'))
   .sort();
+
+/**
+ * Los flujos de subcarpetas que tienen manifiesto (`manifiestos/<ruta>.json`): rutas relativas a `Flujos/`,
+ * como `clientes/demo-a/x.json`. Los de la raíz los da `listarFlujos`.
+ */
+export function listarFlujosConManifiestoEnSubcarpetas(raiz = RAIZ_FLUJOS) {
+  const base = carpetas(raiz).manifiestos;
+  const salida = [];
+  const recorrer = (dir) => {
+    let entradas;
+    try { entradas = readdirSync(dir, { withFileTypes: true }); } catch (e) { if (e && e.code === 'ENOENT') return; throw e; }
+    for (const e of entradas) {
+      const ruta = join(dir, e.name);
+      if (e.isDirectory()) recorrer(ruta);
+      else if (e.isFile() && e.name.endsWith('.json')) {
+        const rel = relative(base, ruta).split(sep).join('/');
+        if (rel.includes('/')) salida.push(rel);
+      }
+    }
+  };
+  recorrer(base);
+  return salida.sort();
+}
+
+/** Una ruta de línea de comandos a ruta relativa a `Flujos/`: quita todo hasta el último `Flujos/`; sin él, se respeta. */
+export const rutaRelativaAFlujos = (arg) => {
+  const i = arg.lastIndexOf('Flujos/');
+  return (i >= 0 ? arg.slice(i + 'Flujos/'.length) : arg).replace(/^\.\//, '');
+};
 
 export const rutaDeManifiesto = (archivoFlujo, raiz = RAIZ_FLUJOS) =>
   join(carpetas(raiz).manifiestos, archivoFlujo);
@@ -409,13 +438,15 @@ function principal(argv) {
   const [comando, ...resto] = argv;
   const opcion = (n) => { const i = resto.indexOf(`--${n}`); return i >= 0 ? resto[i + 1] : null; };
   const archivos = resto.filter((a, i) => !a.startsWith('--') && resto[i - 1] !== '--nuevo');
-  const lista = archivos.length ? archivos.map((a) => a.replace(/^.*\//, '')) : listarFlujos();
+  const exigir = resto.includes('--exigir-manifiesto');
+  const lista = archivos.length ? archivos.map(rutaRelativaAFlujos) : [...listarFlujos(), ...listarFlujosConManifiestoEnSubcarpetas()];
 
   if (comando === 'verificar') {
     let fallas = 0;
     for (const a of lista) {
       const r = verificarFlujo(a);
-      if (r.estado === 'sin-manifiesto') console.log(`  · ${a}: sin manifiesto, idéntico por definición`);
+      if (r.estado === 'sin-manifiesto' && exigir) { fallas++; console.log(`  ✗ ${a}: sin manifiesto (se exigía uno)`); }
+      else if (r.estado === 'sin-manifiesto') console.log(`  · ${a}: sin manifiesto, idéntico por definición`);
       else if (r.estado === 'identico') console.log(`  ✓ ${a}: idéntico (${r.inyectados.length} puntos de inyección)`);
       else { fallas++; console.log(`  ✗ ${a}: difiere en ${r.diferencias.join(', ') || 'algo fuera de los puntos de inyección'}`); }
     }
@@ -433,7 +464,7 @@ function principal(argv) {
     for (const v of r.avisos) console.log(`  ! ${v}`);
     return 0;
   }
-  console.error('Uso: ensamblar-flujo.mjs verificar|ensamblar [flujo.json ...]  |  extraer <flujo.json> [--nuevo <carpeta>]');
+  console.error('Uso: ensamblar-flujo.mjs verificar [--exigir-manifiesto]|ensamblar [ruta/relativa/a/Flujos.json ...]  |  extraer <flujo.json> [--nuevo <carpeta>]');
   return 2;
 }
 

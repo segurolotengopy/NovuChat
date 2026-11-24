@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest';
 import { hallazgosDeExpresiones, REGLAS_DE_EXPRESION } from '../../../Flujos/src/core/sin-agente/expresiones.mjs';
 import { crearMundo } from '../lib/n8n-de-mentira';
 import type { Flujo, J } from '../lib/flujo';
-import { flujosDeProduccion } from '../lib/flujos-de-cliente';
+import { flujosDeProduccion, flujosVersionados } from '../lib/flujos-de-cliente';
 import { idDeFlujo } from './migracion/comprobaciones';
 import { problemasDeRegla } from './migracion/excepciones';
 
@@ -29,7 +29,7 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(AQUI, '../../..');
 const versionados = (patron: string): string[] =>
   execFileSync('git', ['ls-files', patron], { cwd: RAIZ, encoding: 'utf8' }).split('\n').filter(Boolean);
-const flujos = versionados('Flujos/*.json')
+const flujos = flujosVersionados().map((r) => `Flujos/${r}`)
   .map((ruta) => { try { return { ruta, flujo: JSON.parse(readFileSync(join(RAIZ, ruta), 'utf8')) as Flujo }; } catch { return null; } })
   .filter((x): x is { ruta: string; flujo: Flujo } => !!x && Array.isArray(x.flujo.nodes));
 const QTACO = JSON.parse(readFileSync(join(RAIZ, 'Flujos/clientes/venta-minima/venta-minima.qtaco.json'), 'utf8')) as Flujo;

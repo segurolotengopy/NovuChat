@@ -38,7 +38,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 import {
-  RAIZ_FLUJOS, carpetas, ensamblarEnMemoria, ensamblarFlujo, extraerFlujo, leerManifiesto, listarFlujos,
+  RAIZ_FLUJOS, carpetas, ensamblarEnMemoria, ensamblarFlujo, extraerFlujo, leerManifiesto, listarFlujos, listarFlujosConManifiestoEnSubcarpetas, rutaRelativaAFlujos,
   manifiestoInicial, rutaDeManifiesto, slug, verificarFlujo,
 } from '../../scripts/ensamblar-flujo.mjs';
 import { entornoDelEmulador } from './entorno-del-hijo.ts';
@@ -525,5 +525,57 @@ describe('8. Una lista de módulos mal formada se rechaza con un error claro', (
     const dir = conEntrada(valor);
     expect(() => ensamblarEnMemoria('demo-a-agendamiento.json', dir)).toThrow(/manifiesto/);
     expect(() => extraerFlujo('demo-a-agendamiento.json', { raiz: dir })).toThrow(/manifiesto/);
+  });
+});
+
+describe('10. Flujos en subcarpetas: el manifiesto lleva la ruta relativa a Flujos/', () => {
+  /** Copia de Flujos/ con el Demo B movido a `clientes/zz-prueba/` y su manifiesto en `manifiestos/clientes/zz-prueba/`. */
+  const conFlujoMudado = (): { dir: string; ruta: string } => {
+    const dir = copiaDeFlujos();
+    const ruta = 'clientes/zz-prueba/demo-b-venta-cobro.json';
+    mkdirSync(join(dir, 'clientes/zz-prueba'), { recursive: true });
+    writeFileSync(join(dir, ruta), readFileSync(join(dir, 'demo-b-venta-cobro.json')));
+    const m = JSON.parse(readFileSync(rutaDeManifiesto('demo-b-venta-cobro.json', dir), 'utf8'));
+    m.flujo = ruta;
+    mkdirSync(dirname(rutaDeManifiesto(ruta, dir)), { recursive: true });
+    writeFileSync(rutaDeManifiesto(ruta, dir), JSON.stringify(m, null, 2) + '\n');
+    return { dir, ruta };
+  };
+
+  it('verifica idéntico un flujo de subcarpeta con su manifiesto, y lo lista sin tocar la raíz', () => {
+    const { dir, ruta } = conFlujoMudado();
+    expect(verificarFlujo(ruta, dir).estado).toBe('identico');
+    expect(listarFlujosConManifiestoEnSubcarpetas(dir)).toEqual([ruta]);
+    expect(listarFlujos(dir)).toEqual(listarFlujos());
+  });
+
+  it('negando: un módulo alterado hace fallar el flujo de la subcarpeta, nombrando el punto', () => {
+    const { dir, ruta } = conFlujoMudado();
+    const m = leerManifiesto(ruta, dir) as { codigo: Record<string, string> };
+    const modulo = join(dir, 'src', Object.values(m.codigo).map((e) => (Array.isArray(e) ? e[e.length - 1] : (e as { archivo?: string }).archivo ?? e))[0] as string);
+    writeFileSync(modulo, readFileSync(modulo, 'utf8') + '\n// alterado\n');
+    const r = verificarFlujo(ruta, dir);
+    expect(r.estado).toBe('difiere');
+    expect(r.diferencias.length).toBeGreaterThan(0);
+  });
+
+  it('negando: un manifiesto cuyo "flujo" no es la ruta del archivo se rechaza', () => {
+    const { dir, ruta } = conFlujoMudado();
+    const ruta2 = rutaDeManifiesto(ruta, dir);
+    const m = JSON.parse(readFileSync(ruta2, 'utf8'));
+    m.flujo = 'demo-b-venta-cobro.json';
+    writeFileSync(ruta2, JSON.stringify(m, null, 2) + '\n');
+    expect(() => verificarFlujo(ruta, dir)).toThrow(/declara/);
+  });
+
+  it('la línea de comandos acepta la ruta (con o sin el prefijo Flujos/), y --exigir-manifiesto hace fallar «sin manifiesto»', () => {
+    expect(rutaRelativaAFlujos('Flujos/clientes/x/y.json')).toBe('clientes/x/y.json');
+    expect(rutaRelativaAFlujos('/a/b/Flujos/clientes/x/y.json')).toBe('clientes/x/y.json');
+    expect(rutaRelativaAFlujos('demo-b-venta-cobro.json')).toBe('demo-b-venta-cobro.json');
+    expect(() => execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/demo-b-venta-cobro.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8' })).not.toThrow();
+    let codigo = 0;
+    try { execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/latido-n8n.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8', stdio: 'pipe' }); } catch (e) { codigo = (e as { status: number }).status; }
+    expect(codigo, 'un flujo sin manifiesto no cumple si se exige uno').toBe(1);
+    expect(() => execFileSync(process.execPath, [SCRIPT, 'verificar', 'Flujos/latido-n8n.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8' })).not.toThrow();
   });
 });

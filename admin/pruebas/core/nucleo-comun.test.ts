@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { RAIZ_FLUJOS, listarFlujos, leerManifiesto } from '../../scripts/ensamblar-flujo.mjs';
+import { RAIZ_FLUJOS, leerManifiesto } from '../../scripts/ensamblar-flujo.mjs';
 import type { Flujo } from '../lib/flujo';
 import { CARPETA_FLUJOS_DEL_REPO, flujosDeProduccion, flujosVersionados } from '../lib/flujos-de-cliente';
 import { NODOS_COMUNES, hallazgosM4, incluyeVariante, variantesDeNodo } from './migracion/comprobaciones';
@@ -89,7 +89,7 @@ describe('núcleo común: lista cerrada de variantes', () => {
 
   it('cada variante la usa algún manifiesto', () => {
     const usadas = new Set<string>();
-    for (const f of listarFlujos()) {
+    for (const f of flujosVersionados()) {
       const m = leerManifiesto(f) as { codigo?: Record<string, unknown> } | null;
       for (const e of Object.values(m?.codigo ?? {})) for (const a of archivosDe(e)) usadas.add(a);
     }
