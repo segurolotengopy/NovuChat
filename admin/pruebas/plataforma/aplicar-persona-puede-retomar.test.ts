@@ -242,7 +242,21 @@ describe('encender: NEGATIVAS (nada se escribe, ni auditoría)', () => {
     const t = nuevoTenant();
     await ficha(t);
     await rutaOk(t, { aliasSecreto: '' });
-    expect((await corre(encender(t))).codigo).toBe(2);
+    const h0 = await hora(t);
+    const r = await corre(encender(t, ['--aplicar', '--respaldo', rutaRespaldo()]));
+    expect(r.codigo).toBe(2);
+    expect(r.llamadas).toHaveLength(0);          // no llama a verificarSalida
+    await sinEscribir(t, h0);
+  });
+
+  it('los alias no salen completos en pantalla (solo la cola)', async () => {
+    const t = nuevoTenant();
+    await ficha(t);
+    await rutaOk(t, { aliasSecreto: 'clienteSecretoZz' });
+    const r = await corre(['--proyecto', PROYECTO, '--tenant', t, '--valor', 'true', '--alias', 'clienteSecretoZz', '--env', '.env'], async () => ({ ok: false }));
+    expect(r.codigo).toBe(6);
+    expect(r.texto).not.toContain('clienteSecretoZz');
+    expect(r.texto).toContain('…toZz');
   });
 
   it('sin poder verificar la salida (no hay función de verificación): salida 2, nunca se escribe a ciegas', async () => {

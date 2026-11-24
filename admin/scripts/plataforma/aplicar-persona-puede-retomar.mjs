@@ -206,6 +206,9 @@ const AVISO_ENCENDER = [
   '    · el texto de la plantilla aprobado en Meta es el que WAM informó (D-R4).',
 ].join('\n');
 
+/** Los alias son del secreto de rutas: en pantalla solo la cola. */
+const cola = (v) => (v ? `…${String(v).slice(-4)}` : '—');
+
 /** Rutas activas del comercio (solo lectura). Activa = sin `estado` o `estado === 'activo'`. */
 export async function rutasActivasDelComercio(db, tenant) {
   const snap = await db.collection('rutasWhatsApp').where('tenantId', '==', tenant).get();
@@ -263,10 +266,10 @@ async function comprobarParaEncender(cfg, deps, log) {
     return 2;
   }
   for (const alias of aliases) {
-    log(`\n  Verificando la salida publicada con --plantillas (solo lectura) · alias ${alias}…`);
+    log(`\n  Verificando la salida publicada con --plantillas (solo lectura) · alias ${cola(alias)}…`);
     const v = await deps.verificarSalida({ ...cfg, alias });
     if (!v?.ok) {
-      log(`\n  ⏳ PENDIENTE DE REPUBLICAR LA SALIDA: la del alias ${alias} NO admite plantillas (4g) o falló otra puerta. `
+      log(`\n  ⏳ PENDIENTE DE REPUBLICAR LA SALIDA: la del alias ${cola(alias)} NO admite plantillas (4g) o falló otra puerta. `
         + 'Republique el flujo con x-novuchat-plantillas: 1 y repita. No se escribió nada.\n');
       return CODIGO_PENDIENTE_DE_SALIDA;
     }
