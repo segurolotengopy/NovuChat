@@ -29,7 +29,8 @@ const HUELLAS: [string, string, string][] = [
   ['config-del-negocio.js', '5eeed2b728e05a24', '852cce1e9ff6a138'],
   // El Gmail tras una venta confirmada (10/11/2026) es SOLO de Antonio y de Rubén: cambió el origen de `normalizar-entrada` (el reporte a la consola no lleva correos) y de `resumen-del-turno` (restaura `gmailPedidoMs`). Los neutros NO lo adoptan:
   // Ad ID (17/11/2026): `config-del-negocio` y `normalizar-entrada` ganaron la campaña por Ad ID en el origen y en el neutro; las huellas se actualizaron.
-  ['normalizar-entrada.js', '4da01ff1efbef141', 'dfd48dcab928872e'],
+  // Carrito del catálogo web (23/11/2026, módulo catalogo-web): el neutro reconoce `type: 'carrito'` solo con `carritoWeb: true`; huella actualizada.
+  ['normalizar-entrada.js', '4da01ff1efbef141', 'd2a28e4fc97baa96'],
   ['puerta-del-turno.js', '3f8a837a3912eb78', '3f8a837a3912eb78'],
   ['resumen-del-turno.js', '9ae08c2c8e443766', '08eea9fd84116169'],
 ];

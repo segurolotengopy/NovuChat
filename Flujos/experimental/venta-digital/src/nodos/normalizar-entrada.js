@@ -30,6 +30,11 @@ const mensajeId = String(msg.id || '').slice(0, 200);
 if (mensajeId && CN_TENANT.yaVisto(fichaAntes, mensajeId)) return [];
 
 const tipo = msg.type === 'voice' ? 'audio' : String(msg.type || 'desconocido');
+// EL CARRITO DEL CATÁLOGO WEB (módulo catalogo-web): `type: 'carrito'` solo existe si «Carga de entrada» lo marcó con `carritoWeb: true` (corrió el Webhook «Carrito del catálogo») y trae un `carrito` objeto.
+// Meta no tiene ese tipo: uno que llegue sin la marca, o la marca con otro tipo, no es nada (se descarta). Sale con `tipo: 'carrito'` y `carrito` (el cuerpo ya validado); `Decidir turno` lo decide por `tipo` y el servidor ya escribió el pedido y el hilo (no se reporta como entrante).
+const esCarritoWeb = carga.carritoWeb === true;
+if ((tipo === 'carrito') !== esCarritoWeb) return [];
+if (esCarritoWeb && (!msg.carrito || typeof msg.carrito !== 'object' || Array.isArray(msg.carrito))) return [];
 const sel = msg.interactive ? (msg.interactive.list_reply || msg.interactive.button_reply) : null;
 const audio = msg.audio || msg.voice || null;
 const visual = tipo === 'image' ? msg.image : (tipo === 'document' ? msg.document : null);
@@ -73,6 +78,10 @@ if (tipo === 'text') {
   texto = pie;
   textoReporte = tipo === 'image' ? '(imagen) el cliente envió una foto' : '(documento) el cliente envió un archivo';
   categoria = mediaId !== '' ? 'medio' : 'otro';
+} else if (tipo === 'carrito') {
+  // Sin texto ni categoría de conversación: no es un mensaje de WhatsApp. El servidor ya lo registró; `textoReporte` vacío.
+  textoReporte = '';
+  categoria = 'carrito';
 } else if (tipo === 'location') {
   textoReporte = '(ubicación) el cliente compartió su ubicación';
   // OPT-IN POR TENANT: solo si su librería declara `CN_TENANT.aceptaUbicacion === true` el pin es una conversación (con un texto fijo, nunca el del cliente); sin el parámetro sigue siendo «otro» (texto cortés, sin modelo), como siempre.
@@ -157,4 +166,6 @@ return [{ json: {
   mimeType: mimeType,
   ahoraMs: ahoraTurno,
   prueba: carga.prueba || null,
+  // Solo el carrito del catálogo web trae estas dos claves (el resto de las entradas queda exactamente como estaba).
+  ...(esCarritoWeb ? { carrito: msg.carrito } : {}),
 } }];

@@ -83,6 +83,24 @@ const diagnostico = [
   '',
 ].join('\n');
 
+describe('estado-de-versiones.sh: un comercio DADO DE BAJA no se compara ni se actualiza (23/11/2026)', () => {
+  it('la fila con «DADO DE BAJA» al comienzo de la excepción se informa y no falla, aunque el flujo esté atrasado o no haya .env', () => {
+    for (const opciones of [{}, { sinEnv: true }, { publicarFalla: true }]) {
+      preparar('**DADO DE BAJA el 23/11/2026** (orden de Andres): flujo apagado', diagnostico, opciones);
+      const { codigo, lineas } = correr();
+      expect(codigo, JSON.stringify(opciones)).toBe(0);
+      expect(lineas.join('\n')).toContain('dado de baja: no se compara ni se actualiza');
+      expect(lineas.join('\n')).not.toMatch(/ATRASADO|SIN PODER COMPROBAR|difiere en/);
+    }
+  });
+  it('NEGADO: «dado de baja» en medio de la excepción NO exime: un atraso sin declarar sigue fallando', () => {
+    preparar('pendiente; el cliente no está dado de baja', diagnostico);
+    expect(correr().codigo).toBe(0); // con excepción declarada
+    preparar('—', diagnostico);
+    expect(correr().codigo).toBe(1);
+  });
+});
+
 describe('estado-de-versiones.sh: los nodos que difieren', () => {
   it('sin excepción: falla y da un nodo por línea, sin repetir, sin comas ni espacios pegados', () => {
     preparar('—', diagnostico);
@@ -205,7 +223,9 @@ describe('estado-de-versiones.sh: el registro real no recorre a un cliente dado 
     return readFileSync(REGISTRO_REAL, 'utf8').split('\n')
       .filter((l) => l.trimStart().startsWith('|'))
       .map((l) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim().replace(/^`+|`+$/g, '').trim()))
-      .filter((col) => col.length === 4 && col[1]!.startsWith('.env'));
+      .filter((col) => col.length === 4 && col[1]!.startsWith('.env'))
+      // 23/11/2026: las filas «DADO DE BAJA» (Rubén y sus 3 subcuentas) se informan aparte y no se recorren
+      .filter((col) => !col[3]!.replace(/\*/g, '').startsWith('DADO DE BAJA'));
   }
 
   it('ninguna fila del registro nombra a Platinum, en el cliente, el --env o el flujo', () => {
@@ -225,5 +245,7 @@ describe('estado-de-versiones.sh: el registro real no recorre a un cliente dado 
     expect(recorridas).toHaveLength(filasDelRegistro().length);
     expect(recorridas.join('\n')).not.toMatch(DE_BAJA);
     expect(lineas.join('\n')).toContain(`${recorridas.length} de ${recorridas.length} revisado(s) SIN PODER COMPROBAR`);
+    // las 4 cuentas dadas de baja del 23/11/2026 salen informadas, no comparadas
+    expect(lineas.filter((l) => /dado de baja: no se compara ni se actualiza/.test(l)).length).toBeGreaterThanOrEqual(4);
   });
 });

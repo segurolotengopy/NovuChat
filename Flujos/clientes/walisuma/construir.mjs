@@ -35,6 +35,7 @@ import { hallazgosDelIndicador, injertarIndicador } from '../../src/core/indicad
 import { fuentesDeLaCadenaComun, hallazgosDelGuardadoSaliente, injertarGuardadoSaliente, NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE, URL_DESCARGA_SALIENTE } from '../../src/core/sin-agente/guardado-saliente.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 import { problemasDeReferencias } from '../../src/core/sin-agente/referencias.mjs';
+import { cargaConCarrito, hallazgosDelCarrito, injertarCarrito, WEBHOOK_DEL_CARRITO } from '../../src/modulos/catalogo-web/carrito-del-catalogo.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/walisuma/walisuma.json');
@@ -43,7 +44,8 @@ export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../../src/core/receptor/entrada-d
 // excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 // 56 + los 8 de la rama del miniCRM (`ramaCrm`, generada por el módulo `crm`): 56 → 64, excepción de tope aprobada por Andres (D2, 10/11/2026) y declarada en docs/versiones-por-cliente.md.
 // +4: la rama del guardado de la IMAGEN SALIENTE del asistente (QR por media id; plan del 16/11/2026, bloque 2a): «Preparar guardado (saliente)», «Pedir imagen a Meta…», «Descargar imagen de Meta…» y «Guardar imagen enviada». 64 → 68: aprobación de Andres pendiente (docs/versiones-por-cliente.md).
-export const TOPE_DE_NODOS = 70; // +2 el indicador de escritura (21/11/2026, Andres)
+// +1 el webhook «Carrito del catálogo» (módulo catalogo-web; tope 71 autorizado por Andres el 23/11/2026, «común, tope 71»): solo en la variante de producción.
+export const TOPE_DE_NODOS = 71; // +2 el indicador de escritura (21/11/2026, Andres)
 /** Los 8 nodos de la rama del miniCRM (el módulo `crm` los genera). */
 export const NODOS_DE_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
 export const CREDENCIAL_CRM = (tenant) => `Google Sheets miniCRM (crm-${tenant})`;
@@ -81,7 +83,7 @@ export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   // La base común de las ventas digitales (cobro, avisos, el motor de la conversación y el carrito: prefijos `cb`, `av`, `vd` y `vc`) y, al final, lo PROPIO de Walisuma (`wl.js`: datos, textos y `CN_TENANT`; `wl-venta.js`: la decisión de la venta).
-  librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/carrito.js', 'src/lib/wl.js', 'src/lib/wl-venta.js'],
+  librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/diferencias.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/carrito.js', '../../src/modulos/pedidos/confirmar-pedido.js', 'src/lib/wl.js', 'src/lib/wl-venta.js'],
   comun: ['../../experimental/venta-digital/src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],
@@ -94,6 +96,8 @@ export const CONFIG = {
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
+    // Leer la imagen de una pieza o de un anuncio y cruzarla con el catálogo POR CÓDIGO (módulo común de Pedidos; `li*`): lo usa «Decidir turno».
+    'leer-imagen': ['../../src/modulos/pedidos/leer-imagen.js'],
     // Módulo común de Pedidos: lo que el flujo reporta con `qr_enviado` para que el servidor cree el pedido `wa_<referencia>` (solo ids, cantidades y entrega; nunca precios).
     'pedidos-qr': ['../../src/modulos/pedidos/qr-del-pedido.js'],
     // La plantilla del aviso fuera de la ventana («código para las dos», común con Casa Bermejo): `apPlantillaAviso`, `apParametrosConsulta`.
@@ -167,6 +171,9 @@ const FORMAS_CONFIG = {
   avisoRespaldoEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL|REEMPLAZAR_[A-Z0-9_]+)$/,
   // El horario de las tiendas (texto para el cliente) y su forma para el reloj de «fuera de horario» (días 0=domingo … 6=sábado; HH:MM de La Paz).
   horarioTiendas: /^[\p{L}\p{N} :,.-]{1,80}$/u,
+  // La ubicación de cada tienda: coordenadas «lat,lng» (el código arma el enlace de Google Maps; el repositorio no guarda enlaces).
+  tiendaLaPazCoordenadas: /^-?\d{1,3}\.\d{1,8},-?\d{1,3}\.\d{1,8}$/,
+  tiendaSantaCruzCoordenadas: /^-?\d{1,3}\.\d{1,8},-?\d{1,3}\.\d{1,8}$/,
   horarioDias: /^[0-6](,[0-6]){0,6}$/,
   horarioApertura: /^([01]\d|2[0-3]):[0-5]\d$/,
   horarioCierre: /^([01]\d|2[0-3]):[0-5]\d$/,
@@ -374,8 +381,11 @@ export function guardias(variante, flujo, opciones = {}) {
   }
   // Webhooks: en producción solo el del receptor; en la prueba solo la entrada de prueba.
   for (const n of nodos.filter((x) => x.type === 'n8n-nodes-base.webhook')) {
+    if (variante === 'produccion' && n.name === WEBHOOK_DEL_CARRITO) continue; // su forma exacta la valida `hallazgosDelCarrito`
     if (n.name !== (variante === 'produccion' ? NODO_RECEPTOR : NODO_PRUEBA)) h.push(`el webhook «${n.name}» no corresponde a esta variante`);
   }
+  // El carrito del catálogo web (módulo catalogo-web): solo en producción y con su forma exacta (POST, headerAuth de la ingesta, ruta como marcador, conectado solo a «Config base»).
+  h.push(...hallazgosDelCarrito(flujo || {}, { tenant: TENANT, credencialIngesta: opciones.credencialIngesta, variante }));
   // Las rutas de los webhooks son URL de capacidad: nunca en las notas.
   for (const n of nodos) {
     if (/\/webhook(-test)?\/|webhook-test|\/rest\/|REEMPLAZAR_RUTA/i.test(String(n.notes || ''))) h.push(`las notas de «${n.name}» mencionan la ruta de un webhook`);
@@ -396,7 +406,9 @@ export function guardias(variante, flujo, opciones = {}) {
     if (!destinosDe('Descartar repetidos', 0).includes('Config base')) h.push('«Descartar repetidos» no sigue a «Config base»');
     // «Config base» solo se alcanza después de verificar la firma y descartar repetidos; «Entrega del receptor» solo sale hacia el verificador.
     const entradasDeConfigBase = Object.entries(conex).filter(([, s]) => ((s && s.main) || []).some((o) => (o || []).some((x) => x.node === 'Config base'))).map(([de]) => de);
-    if (entradasDeConfigBase.length !== 1 || entradasDeConfigBase[0] !== 'Descartar repetidos') h.push(`«Config base» tiene que tener como única entrada a «Descartar repetidos» (hoy: ${entradasDeConfigBase.join(', ') || 'ninguna'})`);
+    // La segunda entrada es el carrito del catálogo web (autenticado por su propio nodo): «Config base» tiene que correr antes que «Carga de entrada», que lee su `phoneNumberIdEsperado`.
+    const esperadas = ['Descartar repetidos', WEBHOOK_DEL_CARRITO];
+    if (entradasDeConfigBase.length !== 2 || !esperadas.every((e) => entradasDeConfigBase.includes(e))) h.push(`«Config base» tiene que tener como únicas entradas a «Descartar repetidos» y «${WEBHOOK_DEL_CARRITO}» (hoy: ${entradasDeConfigBase.join(', ') || 'ninguna'})`);
     const salidasDeEntrega = [...new Set((((conex[NODO_RECEPTOR] || {}).main) || []).flat().map((x) => x.node))];
     if (salidasDeEntrega.length !== 1 || salidasDeEntrega[0] !== 'Verificar firma con el receptor') h.push('«Entrega del receptor» tiene que salir solo hacia «Verificar firma con el receptor»');
     if (!destinosDe('¿Firma válida?', 1).includes('Rechazar (401)')) h.push('«¿Firma válida?» no manda la firma inválida a «Rechazar (401)»');
@@ -409,7 +421,9 @@ export function guardias(variante, flujo, opciones = {}) {
   for (const s of Object.values(conex)) for (const o of ((s && s.main) || [])) for (const x of (o || [])) conEntrada.add(x.node);
   const sinEntradas = nodos.filter((n) => !conEntrada.has(n.name)).map((n) => n.name);
   const unica = variante === 'produccion' ? NODO_RECEPTOR : NODO_PRUEBA;
-  if (sinEntradas.length !== 1 || sinEntradas[0] !== unica) h.push(`el único nodo sin entradas tiene que ser «${unica}» (hoy: ${sinEntradas.join(', ') || 'ninguno'})`);
+  // En producción, además del receptor, el webhook del carrito del catálogo web (la segunda y última entrada).
+  const sinEntradasEsperadas = variante === 'produccion' ? [NODO_RECEPTOR, WEBHOOK_DEL_CARRITO].sort() : [NODO_PRUEBA];
+  if (JSON.stringify([...sinEntradas].sort()) !== JSON.stringify(sinEntradasEsperadas)) h.push(`los únicos nodos sin entradas tienen que ser «${sinEntradasEsperadas.join('», «')}» (hoy: ${sinEntradas.join(', ') || 'ninguno'})`);
   for (const n of NODOS_DEL_PR3) if (!nombres.has(n)) h.push(`falta el nodo «${n}» de la conversación, el cotejo y los avisos`);
   for (const [de, a] of EMPALMES_DEL_PR3) {
     if (nombres.has(de) && nombres.has(a) && !(((conex[de] || {}).main) || []).some((o) => (o || []).some((x) => x.node === a))) h.push(`«${de}» no está conectado a «${a}»`);
@@ -456,7 +470,7 @@ export function guardias(variante, flujo, opciones = {}) {
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
   // `REEMPLAZAR_` solo en «Config base», en el receptor, en la ruta de la entrada de prueba y en los NOMBRES de credencial (`credentials`).
-  const conMarcador = new Set(['Config base', NODO_RECEPTOR, 'Verificar firma con el receptor', NODO_PRUEBA]);
+  const conMarcador = new Set(['Config base', NODO_RECEPTOR, 'Verificar firma con el receptor', NODO_PRUEBA, WEBHOOK_DEL_CARRITO]);
   for (const n of nodos) {
     if (conMarcador.has(n.name)) continue;
     const { credentials: _c, ...sinCredenciales } = n;
@@ -524,6 +538,8 @@ export function armarWalisuma(proyecto, datos, v, origenReceptor = leerReceptorD
     plantilla.nodes.unshift(...JSON.parse(JSON.stringify(origenReceptor.nodes)));
     Object.assign(plantilla.connections, JSON.parse(JSON.stringify(origenReceptor.conexiones)));
     plantilla.connections['Descartar repetidos'] = { main: [[{ node: 'Config base', type: 'main', index: 0 }]] };
+    // El carrito del catálogo web (módulo catalogo-web): el webhook y su conexión; el código de «Carga de entrada» lo incluye más abajo. La variante de prueba no lo lleva.
+    injertarCarrito(plantilla, { tenant: TENANT, credencialIngesta: dato(datos, 'credenciales.ingesta', donde), prueba });
   }
   // El enmascarado de números del reporte entrante es la MISMA flecha `wlEnmascarar` de `src/lib/wl.js` (una sola fuente con el que va antes del modelo): se inyecta en la expresión.
   const fuenteWl = readFileSync(join(AQUI, 'src/lib/wl.js'), 'utf8');
@@ -561,7 +577,9 @@ export function armarWalisuma(proyecto, datos, v, origenReceptor = leerReceptorD
     if (vd) {
       const fuente = proyecto.paquetes[`vd-${vd[1]}`];
       if (!fuente || fuente.length !== 1) throw new Error(`${donde} · ${n.name}: el config no declara el nodo común «${vd[1]}»`);
-      n.parameters.jsCode = [...proyecto.librerias, ...proyecto.comun, fuente[0]].join('\n\n') + '\n';
+      // «Carga de entrada» lleva antepuesta la rama del carrito del catálogo web (módulo catalogo-web; el código común del core no se toca).
+      const codigoNodo = vd[1] === 'carga-de-entrada' ? cargaConCarrito(fuente[0]) : fuente[0];
+      n.parameters.jsCode = [...proyecto.librerias, ...proyecto.comun, codigoNodo].join('\n\n') + '\n';
     }
   }
   // La cadena de envío común (no se copia), con las credenciales por NOMBRE. Cuelga de «Armar mensajes»; el resumen cuelga aparte y corre al final.
@@ -606,7 +624,7 @@ export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS,
     const texto = armarWalisuma(proyecto, datos, v, origen);
     const variante = v.archivo === FLUJO_PRUEBA ? 'prueba' : 'produccion';
     const armado = JSON.parse(texto);
-    const propios = [...guardias(variante, armado, { mapaCrm: datos.crm }), ...(variante === 'produccion' ? hallazgosDelReceptor(armado, datos, origen) : [])];
+    const propios = [...guardias(variante, armado, { mapaCrm: datos.crm, credencialIngesta: datos.credenciales.ingesta }), ...(variante === 'produccion' ? hallazgosDelReceptor(armado, datos, origen) : [])];
     if (propios.length) throw new Error(`${v.archivo}: ${propios.join('; ')}`);
     const ruta = join(carpeta, v.archivo);
     const actual = leerSiExiste(ruta, v.archivo);
@@ -615,7 +633,7 @@ export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS,
     if (actual !== null) {
       try {
         const j = JSON.parse(actual);
-        versionado = [...guardias(variante, j, { mapaCrm: datos.crm }), ...(variante === 'produccion' ? hallazgosDelReceptor(j, datos, origen) : [])];
+        versionado = [...guardias(variante, j, { mapaCrm: datos.crm, credencialIngesta: datos.credenciales.ingesta }), ...(variante === 'produccion' ? hallazgosDelReceptor(j, datos, origen) : [])];
       } catch (x) { versionado = ['no es un JSON válido']; }
     }
     if (!verificar) escribirSinSeguirEnlaces(ruta, texto, v.archivo);

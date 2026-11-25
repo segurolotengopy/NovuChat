@@ -36,7 +36,9 @@ describe('el catálogo web sale como botón y sin modelo', () => {
   });
   it('una pregunta que no pide el catálogo (precio, color, horario, pago, comprobante, pedido) no recibe el botón', () => {
     for (const f of ['cuanto cuesta la bufanda dennis', 'tienen en otros colores', 'a que hora atienden', 'ya vi el catálogo, quiero 2 bufandas dennis', 'le mando la foto del comprobante', 'quiero ver las opciones de pago', 'no quiero ver el catálogo', 'mandame fotos de las 3 bufandas', 'quiero ver las piezas']) {
-      const t = hablar(crear({ panel: conEnlace(), modeloDice: modelo('Con gusto.') }), ANA, mTexto(f));
+      const m = crear({ panel: conEnlace(), modeloDice: modelo('Con gusto.') });
+      hablar(m, ANA, mTexto('hola')); // el saludo ya ofrece el botón (una vez por conversación); el resto de las preguntas no lo repite
+      const t = hablar(m, ANA, mTexto(f));
       expect(JSON.stringify(t.mensajes), f).not.toContain(ENLACE);
     }
   });
@@ -82,5 +84,29 @@ describe('con un QR abierto, la pregunta de pago sigue al modelo (revisión del 
   it('NEGADO: «puedo pagar con tarjeta» con el cobro pendiente no recibe el texto fijo', () => {
     const t = hablar(crear({ panel: panelConQr(120), modeloDice: modelo('Con gusto.') }), ANA, mTexto('puedo pagar con tarjeta'));
     expect(textos(t).join(' ')).not.toMatch(/Si necesita otra forma de pago/);
+  });
+});
+
+describe('el catálogo se OFRECE en el saludo y en la primera pregunta por una pieza (MD 16, 22, 54-60; orden de Andres del 23/11/2026)', () => {
+  for (const frase of ['hola', 'cuanto cuesta la bufanda dennis', 'buenas tardes, quisiera un regalo']) {
+    it(`«${frase}» como primer mensaje: UN solo mensaje (saludo o respuesta) y con el botón «Ver catálogo»; 0 mensajes extra`, () => {
+      const m = crear({ panel: conEnlace(), modeloDice: modelo('Con gusto le cuento de las piezas.') });
+      const t = hablar(m, ANA, mTexto(frase));
+      expect(t.mensajes).toHaveLength(1);
+      const b = boton(t);
+      expect(b?.type).toBe('cta_url');
+      expect(b?.action?.parameters?.url).toBe(ENLACE);
+      expect(b?.action?.parameters?.display_text).toBe('Ver catálogo');
+      expect(textos(t).join(' ')).toMatch(/asistente de atención y ventas/);
+      // se ofrece UNA vez por conversación
+      expect(JSON.stringify(hablar(m, ANA, mTexto('tienen otros colores')).mensajes)).not.toContain(ENLACE);
+    });
+  }
+  it('NEGADO: sin enlace de la consola, o con el catálogo apagado, el saludo sale como texto sin botón (nada se inventa)', () => {
+    for (const panel of [conEnlace(''), panelOk({ catalogoWeb: { activo: false, enlace: ENLACE } })]) {
+      const t = hablar(crear({ panel, modeloDice: modelo('Con gusto.') }), ANA, mTexto('hola'));
+      expect(t.mensajes).toHaveLength(1);
+      expect(JSON.stringify(t.mensajes)).not.toContain(ENLACE);
+    }
   });
 });

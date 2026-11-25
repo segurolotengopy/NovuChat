@@ -166,7 +166,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true }}",
+              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true && $('Normalizar entrada').first().json.tipo !== 'carrito' }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -726,7 +726,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@todo+baja+titular:nodos/decidir-turno.js"
+        "jsCode": "@@todo+baja+titular+leer-imagen:nodos/decidir-turno.js"
       },
       "id": "decidir-turno",
       "name": "Decidir turno",

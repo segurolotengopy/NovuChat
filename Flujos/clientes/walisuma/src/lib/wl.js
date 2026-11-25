@@ -108,6 +108,7 @@ function wlEsRiesgo() {
 
 // -----------------------------------------------------------------------------
 // LA FICHA por teléfono (`staticData.global.walisuma[<messages[0].from>]`), 48 horas. NUNCA guarda un NIT ni un CI (el documento de facturación no tiene dónde vivir aquí).
+//   catalogoOfrecido (ya se le ofreció el botón del catálogo en esta conversación: se ofrece UNA vez, en el mismo mensaje del saludo, del anuncio o de la primera pregunta por una pieza),
 //   v, ultimoMs (cuándo escribió por última vez), ultimosIds (últimos ids de mensaje de Meta: repetidos), turnos, saludado, fueraDePaisMs (cuándo se le envió el texto de otro país),
 //   carrito (lo que el cliente va pidiendo: SOLO {id, cantidad, detalle}; los precios y el total se recalculan con el catálogo en cada turno), entrega ({modo, ciudad, direccion, nombre, telefono, ubicacion}; en el recojo `ciudad` es la tienda; fichas viejas sin `telefono` se leen con ''; `ubicacion` es {lat,lng} del pin de WhatsApp o null),
 //   ultimoPedido ({codigo, ref, ms, factura}: el último pedido confirmado, para el segundo aviso con los datos de factura; `factura` es 'pedida', 'dada' o 'sin'; NUNCA la razón social ni el NIT),
@@ -141,8 +142,8 @@ function wlUltimoPedido(v) {
 }
 function wlFichaBase() {
   return {
-    v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, fueraDePaisMs: 0,
-    carrito: [], entrega: wlEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, ultimoPedido: null, avisoComprobanteMs: 0,
+    v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, fueraDePaisMs: 0, catalogoOfrecido: false,
+    carrito: [], entrega: wlEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, ultimoPedido: null, avisoComprobanteMs: 0, desdeCatalogo: false,
   };
 }
 function wlNumero(v, tope) {
@@ -163,7 +164,7 @@ function wlEntregaDeFicha(v) {
   const campo = (x, max) => (typeof x === 'string' ? cbLinea(x, max) : '');
   // El teléfono de contacto: solo dígitos, de 8 a 15; cualquier otra cosa es ''.
   const tel = typeof e.telefono === 'string' ? e.telefono : '';
-  return { modo: campo(e.modo, 40), ciudad: campo(e.ciudad, 40), direccion: campo(e.direccion, 120), nombre: campo(e.nombre, 60), telefono: /^\d{8,15}$/.test(tel) ? tel : '', ubicacion: wlUbicacion(e.ubicacion) };
+  return { modo: campo(e.modo, 40), ciudad: campo(e.ciudad, 40), direccion: campo(e.direccion, 120), nombre: campo(e.nombre, 60), telefono: /^\d{8,15}$/.test(tel) ? tel : '', ubicacion: wlUbicacion(e.ubicacion), ...(e.dirCat === true ? { dirCat: true } : {}) };
 }
 // La ficha vigente de un teléfono: si pasó el olvido, es una ficha nueva.
 function wlFichaVigente(e, ahoraMs) {
@@ -178,6 +179,7 @@ function wlFichaVigente(e, ahoraMs) {
     turnos: Number.isFinite(e.turnos) && e.turnos > 0 ? Math.floor(e.turnos) : 0,
     saludado: e.saludado === true,
     fueraDePaisMs: wlNumero(e.fueraDePaisMs),
+    catalogoOfrecido: e.catalogoOfrecido === true,
     carrito: wlCarritoDeFicha(e.carrito),
     entrega: wlEntregaDeFicha(e.entrega),
     cierre: e.cierre === true,
@@ -190,6 +192,8 @@ function wlFichaVigente(e, ahoraMs) {
     avisoConsultaMs: wlNumero(e.avisoConsultaMs),
     ultimoPedido: wlUltimoPedido(e.ultimoPedido),
     avisoComprobanteMs: wlNumero(e.avisoComprobanteMs),
+    // El pedido en curso viene del catálogo web: mientras sea así, completar la entrega NO emite el QR por sí solo (el paso final es `wlCarritoListoParaConfirmar`).
+    desdeCatalogo: e.desdeCatalogo === true,
   };
 }
 function wlYaVisto(ficha, id) {
@@ -235,7 +239,7 @@ const WL_PROMPT_VOZ = [
   '',
   'REGLAS DEL CATÁLOGO Y DEL PEDIDO.',
   '- Solo vendes lo que figura en el CATÁLOGO, por su id. Nunca inventas piezas, precios, materiales, medidas, colores ni plazos. Si algo no figura, lo dices con honestidad y preguntas qué busca. Solo los tapices tienen medidas.',
-  '- Colores: si la descripción de una pieza lista sus colores, nómbralos; nunca digas solo «varios tonos». Pregunta qué color prefiere y anótalo en "detalle" de esa línea.',
+  '- Colores: nombra SOLO los colores que la descripción lista como «Colores del catálogo 2026»; nunca presentes un color suelto como si fuera el único de la pieza ni inventes uno. Si la descripción dice «Colores variables», no prometas un color concreto: dices que se consulta la disponibilidad del momento. Pregunta qué color prefiere y anótalo en "detalle" de esa línea.',
   '- Puedes citar el precio de una pieza exactamente como figura en el catálogo. NUNCA calculas ni dices totales, descuentos, envíos ni impuestos: el total lo calcula el sistema.',
   '- No ofreces descuentos, garantías, plazos, personalización (logos, grabados, empaques), regalos corporativos ni ventas por volumen, y no atiendes cambios, devoluciones ni reclamos. Si el cliente pide eso, o pide hablar con una persona, o la pieza no está en el catálogo, pon quiereHablar en true y di solo que lo verá nuestra encargada.',
   '- La factura la pide el sistema después del pago: tú nunca pides ni recibes el NIT, el CI ni la razón social.',
@@ -303,11 +307,14 @@ const WL_TEXTO_PIDE_UBICACION = 'Para coordinar el envío necesitamos su ubicaci
 const WL_TEXTO_UBICACION_RECIBIDA = 'Gracias, anotamos su ubicación para el envío.';
 // El anuncio de Meta (por su `source_id`): la bienvenida por código; las piezas y sus precios salen del catálogo.
 const WL_TEXTO_ANUNCIO_PIEZAS = 'Gracias por escribirnos desde nuestro anuncio. Estas son las piezas del anuncio:';
+// Las piezas que coinciden con una imagen (foto o anuncio): los nombres y precios salen del catálogo.
+const WL_TEXTO_IMAGEN_PIEZAS = 'Gracias por su imagen. Encontramos estas piezas en nuestro catálogo:';
 const WL_TEXTO_ANUNCIO_GENERAL = 'Gracias por su interés en {NEGOCIO}. Reunimos piezas seleccionadas en fibra de vicuña, baby alpaca, cueros nobles y arte textil, trabajadas junto a comunidades andinas y amazónicas.\n\n¿Busca una pieza o un regalo en particular?';
 // La factura después del pago (decisiones 9 y 10): los datos se pasan SOLO en el aviso a nuestra encargada; el texto al cliente nunca repite el NIT.
 const WL_TEXTO_PIDE_FACTURA = 'Si desea factura, envíenos en un solo mensaje la razón social (o su nombre completo) y el NIT (o CI); si no la necesita, no hace falta responder.';
 const WL_TEXTO_FACTURA_SIN = 'Entendido, su pedido sigue su curso sin datos de factura.';
-const WL_TEXTO_FUERA_DE_HORARIO = 'Su pedido se preparará a la brevedad posible.';
+// Fuera de horario NO se promete un plazo («a la brevedad») que ningún mecanismo cumple: se dice el horario de nuestra encargada, que es un dato.
+const WL_TEXTO_FUERA_DE_HORARIO = 'Nuestra encargada atiende de lunes a viernes de 10:00 a 19:00.';
 const WL_INTROS = {
   modelo_caido: 'Tuvimos un inconveniente para atender su consulta en este momento.',
   sin_configuracion: 'En este momento no podemos consultar el catálogo.',
@@ -326,16 +333,20 @@ const WL_INTROS = {
   monto_invalido: 'No pudimos calcular el monto de su pedido.',
   pedido_sin_cobro: 'Anotamos su pedido, pero el pago por QR no está disponible por ahora.',
   atencion_humana: 'Gracias por su paciencia: nuestra encargada continúa esta conversación.',
+  carrito_sin_piezas: 'Recibimos su pedido del catálogo web, pero ninguna de sus piezas está disponible para pedir por aquí en este momento.',
+  imagen_sin_coincidencia: 'Recibimos su imagen, pero no la encontramos entre las piezas que tenemos disponibles.',
   no_cancelo: 'Su pedido cambió, pero desde aquí no podemos cerrar el cobro anterior: no pague con ese QR.',
 };
 // Los textos fijos sueltos (la prueba de «usted siempre» los recorre todos).
 const WL_TEXTOS_FIJOS = [WL_TEXTO_CORTES, WL_TEXTO_FUERA_DE_PAIS, WL_TEXTO_IDENTIDAD, WL_TEXTO_AUDIO_LARGO, WL_TEXTO_AUDIO_NO_ENTENDIDO, WL_TEXTO_ARCHIVO_PESADO, WL_TEXTO_ARCHIVO_NO_ABIERTO, WL_TEXTO_IMAGEN, WL_TEXTO_DOCUMENTO,
-  WL_TEXTO_MODELO_SIN_REDACCION, WL_TEXTO_COMPROBANTE_ILEGIBLE, WL_TEXTO_BAJA, WL_TEXTO_SALUDO, WL_TEXTO_FACTURA_AL_CONFIRMAR, WL_TEXTO_USO_EXTENDIDO, WL_TEXTO_PIDE_UBICACION, WL_TEXTO_UBICACION_RECIBIDA, WL_TEXTO_ANUNCIO_PIEZAS, WL_TEXTO_ANUNCIO_GENERAL,
+  WL_TEXTO_MODELO_SIN_REDACCION, WL_TEXTO_COMPROBANTE_ILEGIBLE, WL_TEXTO_BAJA, WL_TEXTO_SALUDO, WL_TEXTO_FACTURA_AL_CONFIRMAR, WL_TEXTO_USO_EXTENDIDO, WL_TEXTO_PIDE_UBICACION, WL_TEXTO_UBICACION_RECIBIDA, WL_TEXTO_ANUNCIO_PIEZAS, WL_TEXTO_IMAGEN_PIEZAS, WL_TEXTO_ANUNCIO_GENERAL,
   WL_TEXTO_PIDE_FACTURA, WL_TEXTO_FACTURA_SIN, WL_TEXTO_FUERA_DE_HORARIO];
 // Pasar con nuestra encargada (decisión 6): la introducción del motivo + (aviso salió) «Pasamos su consulta a nuestra encargada; también puede escribirle directamente con el botón» / (no salió) «No pudimos avisar…».
 // `salio`: true (hay un `wamid` real), false (no salió) o 'repetido' (ya se avisó hace menos de 30 minutos por el mismo motivo).
-function wlTextoDerivacion(motivo, salio) {
-  const intro = Object.prototype.hasOwnProperty.call(WL_INTROS, motivo) ? WL_INTROS[motivo] : WL_INTROS.quiere_hablar;
+function wlTextoDerivacion(motivo, salio, descripcion) {
+  let intro = Object.prototype.hasOwnProperty.call(WL_INTROS, motivo) ? WL_INTROS[motivo] : WL_INTROS.quiere_hablar;
+  // La descripción de la imagen es un dato del cliente ya saneado por `liDescripcionSegura`: va como «parece ser…», nunca como un hecho ni una orden.
+  if (motivo === 'imagen_sin_coincidencia' && typeof descripcion === 'string' && descripcion !== '') intro = 'Recibimos su imagen (parece ser: ' + descripcion + '), pero no la encontramos entre las piezas que tenemos disponibles.';
   const que = motivo === 'pedido_sin_cobro' || motivo === 'envio_a_cotizar' ? 'su pedido' : (motivo === 'factura_datos' ? 'los datos de su factura' : 'su consulta');
   if (salio === true) return intro + ' Pasamos ' + que + ' a nuestra encargada; también puede escribirle directamente con el botón.';
   if (salio === 'repetido') return intro + ' Nuestra encargada ya recibió su aviso anterior; si lo desea, escríbale directamente con el botón.';
@@ -353,7 +364,8 @@ function wlTextoComprobante(resultado, diferencia, totalTexto, salio, op) {
     return base + aviso + (o.fueraDeHorario === true ? ' ' + WL_TEXTO_FUERA_DE_HORARIO : '') + '\n\n' + WL_TEXTO_PIDE_FACTURA;
   }
   if (resultado === 'reintentar') {
-    return 'Revisamos su comprobante y hay una diferencia' + (diferencia ? ': ' + diferencia : '') + '.\n\nEnvíenos el comprobante correcto, por favor.';
+    const tramo = Array.isArray(diferencia) && diferencia.length > 1 ? cdFraseDeDiferencias(diferencia, false) : 'una diferencia' + (diferencia ? ': ' + diferencia : '');
+    return 'Revisamos su comprobante y hay ' + tramo + '.\n\nEnvíenos el comprobante correcto, por favor.';
   }
   if (resultado === 'ilegible') return WL_TEXTO_COMPROBANTE_ILEGIBLE;
   if (resultado === 'ya_cotejado') return wlTextoDerivacion('comprobante_ya_visto', 'repetido');
