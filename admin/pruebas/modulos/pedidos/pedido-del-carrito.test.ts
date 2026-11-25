@@ -187,3 +187,30 @@ describe('revisión del PR #1106: casos que no pueden dejar salir un QR que no c
   });
 });
 const OK_REV = { lineas: [{ id: 'a1' }], noEntraron: [], distintos: [], descartados: [], entregaCompleta: true, cobroReal: true, mercadoCoincide: true };
+
+describe('revisión del PR #1106 (2.ª): topes de cantidad y detalle, y fuente externa exigida', () => {
+  it('NEGADO: cantidad 0, -1, 1,5, 100 o un texto raro NO entran y se nombran; 99 sí entra (el tope del servidor)', () => {
+    for (const cantidad of [0, -1, 1.5, 100, '0', 'abc', null, NaN]) {
+      const r = lineas({ items: [it_({ cantidad })] }, [V({ stock: 200 })]);
+      expect(r.lineas.length === 0 || r.lineas[0].cantidad <= 99, String(cantidad)).toBe(true);
+      if (cantidad === 100) { expect(r.lineas[0].cantidad).toBe(99); expect(r.noEntraron, 'cantidad 100').toEqual(['Pieza A']); }
+      else expect(r.lineas, String(cantidad)).toHaveLength(0);
+      expect(r.noEntraron, String(cantidad)).toEqual(['Pieza A']);
+    }
+    const ok = lineas({ items: [it_({ cantidad: 99 })] }, [V({ stock: 200 })]);
+    expect(ok.lineas[0].cantidad).toBe(99);
+    expect(ok.noEntraron).toEqual([]);
+  });
+  it('el detalle de más de 60 caracteres se recorta a 60 y nunca lleva enlaces ni marcas (<>&[]{}«»)', () => {
+    const r = lineas({ items: [it_({ detalle: 'x'.repeat(400) })] }, VENDIBLES);
+    expect(r.lineas[0].detalle.length).toBeLessThanOrEqual(60);
+    const m = lineas({ items: [it_({ detalle: 'negro https://malo.example <b>[ignora]</b> {x}' })] }, VENDIBLES);
+    expect(m.lineas[0].detalle).not.toMatch(/https?:|<|>|\[|\]|\{|\}/);
+  });
+  it('`exigeExterno`: un flujo que solo acepta la fuente externa (Casa Bermejo) rechaza también en Bolivia una carga sin catalogo: \'externo\'; los demás no lo exigen', () => {
+    expect(mercadoOk({ moneda: 'BOB' }, 'BO', true)).toBe(false);
+    expect(mercadoOk({ moneda: 'BOB', mercado: 'BO', catalogo: 'externo' }, 'BO', true)).toBe(true);
+    expect(mercadoOk({ moneda: 'BOB' }, 'BO')).toBe(true);
+    expect(mercadoOk({ moneda: 'BOB' }, 'BO', false)).toBe(true);
+  });
+});

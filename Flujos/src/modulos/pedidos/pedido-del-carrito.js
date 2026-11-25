@@ -19,7 +19,9 @@ function pcLineasDelCarrito(carrito, vendibles) {
   const car = vcObjeto(carrito) ? carrito : {};
   const todos = (Array.isArray(car.items) ? car.items : []);
   const items = todos.slice(0, 50).filter(vcObjeto);
-  const crudas = items.map((i) => ({ id: typeof i.id === 'string' ? i.id : '', cantidad: i.cantidad, detalle: typeof i.detalle === 'string' ? i.detalle : '' }));
+  // El detalle es un DATO no confiable: defensa en profundidad aunque el servidor ya lo sanee (K1): sin `<>&[]{}«»` (marcas que un texto de cliente podría usar para fingir una estructura), de a lo más 60 caracteres, y `vcLineas` quita enlaces y cifras de otra moneda.
+  const detalleLimpio = (d) => (typeof d === 'string' ? vcLimpiar(d.replace(/[<>&\[\]{}«»]/g, ' '), 60) : '');
+  const crudas = items.map((i) => ({ id: typeof i.id === 'string' ? i.id : '', cantidad: i.cantidad, detalle: detalleLimpio(i.detalle) }));
   // Los topes del servidor (K1): hasta 50 renglones y 99 unidades por pieza.
   const r = vcLineas(crudas, vendibles, { maxLineas: 50, maxCantidad: 99 });
   const lineas = r.lineas;
@@ -107,7 +109,7 @@ function pcQrSoloAlCompletar(x) {
 // K1 (contrato de la carga, 24/11/2026): ¿la moneda y el mercado que dice la carga son los del país del TELÉFONO del cliente? `mercadoDelTelefono`: 'BO' | 'AR' (lo decide el flujo por el prefijo; otro país = '').
 // BO ⇒ moneda BOB (o ausente: los tenants de Firestore no la traen en K1) y mercado BO (o ausente); AR ⇒ ARS y AR. USD nunca coincide con un mercado externo. La carga nunca decide el mercado: solo se COMPRUEBA contra el teléfono.
 // Si no coincide, el flujo no emite un QR de esa carga: pasa a `listo_para_confirmar`/derivar según su regla; jamás cobra en la moneda equivocada.
-function pcMercadoCoincide(carrito, mercadoDelTelefono) {
+function pcMercadoCoincide(carrito, mercadoDelTelefono, exigeExterno) {
   if (!vcObjeto(carrito)) return false;
   const car = carrito;
   const m = mercadoDelTelefono === 'BO' || mercadoDelTelefono === 'AR' ? mercadoDelTelefono : '';
@@ -115,6 +117,8 @@ function pcMercadoCoincide(carrito, mercadoDelTelefono) {
   const moneda = car.moneda === undefined || car.moneda === null || car.moneda === '' ? '' : car.moneda;
   const mercado = car.mercado === undefined || car.mercado === null || car.mercado === '' ? '' : car.mercado;
   // Bolivia: BOB (o sin moneda, como los tenants de Firestore) y mercado BO (o ausente). Argentina solo existe con fuente externa: ARS, mercado AR y catalogo 'externo', los tres presentes.
+  // `exigeExterno === true`: el flujo SOLO acepta cargas de la fuente externa (p. ej. Casa Bermejo, con NovuTienda): también en Bolivia la carga debe traer `catalogo: 'externo'`. Los tenants de Firestore (Walisuma, Q'Taco) no lo traen.
+  if (exigeExterno === true && car.catalogo !== 'externo') return false;
   if (m === 'BO') return (moneda === '' || moneda === 'BOB') && (mercado === '' || mercado === 'BO');
   return moneda === 'ARS' && mercado === 'AR' && car.catalogo === 'externo';
 }
