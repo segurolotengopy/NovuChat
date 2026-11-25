@@ -520,6 +520,7 @@ export function limitesDePersona(
  *    pasado ese plazo, sin respuesta, se puede volver a retomar. Protege la calidad del número ante Meta.
  *  - `porDia`: 20 por comercio y día de La Paz.
  *  - `porMes`: 100 por comercio y mes.
+ *  - `porMinuto`: el de `limitesDePersona` (10 por minuto), leído de ahí para que no haya dos cifras.
  *
  * LAS MISMAS CIFRAS PARA TODOS los planes, tarifas y titularidades: ningún plan del catálogo distingue hoy estos
  * topes (`limitesDePersona` tampoco distingue por plan) y D-R3 los fijó «por comercio». Los parámetros se aceptan
@@ -530,6 +531,8 @@ export interface LimitesDeRetomar {
   diasEntreRetomadas: number;
   porDia: number;
   porMes: number;
+  /** Envíos por minuto de una persona: el MISMO valor que `limitesDePersona` (Retomar sale por el mismo carril). Core no tiene cifra propia. */
+  porMinuto: number;
 }
 
 export const RETOMAR_DIAS_ENTRE_RETOMADAS = 7;
@@ -539,11 +542,11 @@ export const RETOMAR_POR_MES = 100;
 export function limitesDeRetomar(
   plan: unknown, tarifa: Tarifa, titularidad: 'novuchat' | 'comercio',
 ): LimitesDeRetomar {
-  void plan; void tarifa; void titularidad;
   return {
     diasEntreRetomadas: RETOMAR_DIAS_ENTRE_RETOMADAS,
     porDia: RETOMAR_POR_DIA,
     porMes: RETOMAR_POR_MES,
+    porMinuto: limitesDePersona(plan, tarifa, titularidad).porMinuto,
   };
 }
 

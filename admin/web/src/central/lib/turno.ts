@@ -35,6 +35,7 @@ import {
 import {
   PLANTILLA_UTILIDAD_FUENTE, PLANTILLA_UTILIDAD_USD, PLANTILLA_UTILIDAD_VERIFICADA_EL, TARIFA_DE_RESPALDO, limitesDeRetomar, type Tarifa,
 } from '../../../../functions/src/central/cuenta/planes';
+import { mensajeDeError } from './mensajeServidor';
 import type { Titularidad } from '../../../../functions/src/central/ejes';
 
 export { INACTIVIDAD_MS, MARGEN_ENVIO_MS, VENTANA_META_MS, leerTurno, turnoVigente, ventanaDeMetaAbierta };
@@ -344,8 +345,8 @@ export function textoAvisoRetomar(contexto: ContextoDeAviso = SIN_CONTEXTO_DE_AV
     case 'novuchat':
       return `Retomar envía una plantilla de WhatsApp${linea} que Meta cobra, ${tarifa}. NovuChat absorbe ese costo, sin cobrarle a su negocio. ${limite} ${cierre}`;
     default:
-      return `Retomar envía una plantilla de WhatsApp${linea} que Meta cobra aparte, ${tarifa}. Según la tarifa y la línea de su negocio, el costo lo absorbe `
-        + `NovuChat o Meta se lo cobra a su negocio. ${limite} ${cierre}`;
+      return `Retomar envía una plantilla de WhatsApp${linea} que Meta cobra aparte, ${tarifa}. Según la tarifa y la línea de su negocio, `
+        + `este costo puede estar incluido o cobrarse aparte. ${limite} ${cierre}`;
   }
 }
 
@@ -528,7 +529,7 @@ export function rotuloDeAutor(autor: string, autorUid: string, miUid: string | n
 
 export type AccionTurno = 'tomar' | 'devolver' | 'enviar' | 'retomar';
 
-/** El código de un error del SDK sin el prefijo `functions/`. Nunca se lee `message`. */
+/** El código de un error del SDK sin el prefijo `functions/`. Solo Retomar lee `message`, en `mensajeServidor.ts`. */
 export function codigoDeError(e: unknown): string {
   const c = e && typeof e === 'object' ? (e as { code?: unknown }).code : undefined;
   return typeof c === 'string' ? c.replace(/^functions\//, '') : '';
@@ -571,15 +572,31 @@ export function textoTope(detalles: Record<string, unknown>): string {
   }
 }
 
+/** Los códigos que el SDK genera por su cuenta (red, tiempo, interno): su `message` no es del servidor y no se muestra. */
+const CODIGOS_DEL_CLIENTE = ['', 'unauthenticated', 'internal', 'unknown', 'cancelled', 'deadline-exceeded', 'data-loss', 'aborted'];
+
+/**
+ * Los errores de Retomar muestran el TEXTO DEL SERVIDOR tal cual (`ErroresDeTurno` y `ErroresDeEnvio`): no hay una redacción
+ * paralela que se desincronice. El tope por minuto reutiliza `textoTope` (el mismo texto aprobado del envío): el mensaje del
+ * servidor no trae los segundos. Sin mensaje (red, sesión vencida) un texto genérico.
+ */
+export function textoErrorRetomar(codigo: string, detalles: Record<string, unknown> = {}, mensaje = ''): string {
+  if (codigo === 'resource-exhausted' && detalles['tope'] === 'minuto') return textoTope(detalles);
+  if (codigo === 'unauthenticated') return 'Su sesión venció. Vuelva a ingresar.';
+  const m = mensaje.trim();
+  if (m !== '' && !CODIGOS_DEL_CLIENTE.includes(codigo)) return m;
+  return 'No se pudo retomar la conversación. Intente de nuevo.';
+}
+
 /** El texto que ve la persona, según la acción y el código del error. Los códigos y textos son fijos. */
-export function textoErrorTurno(accion: AccionTurno, codigo: string, detalles: Record<string, unknown> = {}): string {
+export function textoErrorTurno(accion: AccionTurno, codigo: string, detalles: Record<string, unknown> = {}, mensaje = ''): string {
+  if (accion === 'retomar') return textoErrorRetomar(codigo, detalles, mensaje);
   if (accion === 'enviar' && resultadoDesconocido(codigo)) {
     return `${TEXTO_INCIERTO}. Revise la conversación. Si vuelve a pulsar «Enviar», se reintenta este mismo envío y no se duplica.`;
   }
   switch (codigo) {
     case 'unauthenticated': return 'Su sesión venció. Vuelva a ingresar.';
     case 'permission-denied':
-      if (accion === 'retomar') return 'Retomar conversaciones todavía no está activo para su negocio, o su rol no lo permite.';
       return 'No tiene permiso para intervenir en esta conversación, o esta función no está habilitada para su comercio.';
     case 'failed-precondition': {
       // El bloqueo de 45 s tras un mensaje entrante (contrato §9): el servidor manda `motivo: 'espera'`. Es la única
@@ -590,12 +607,6 @@ export function textoErrorTurno(accion: AccionTurno, codigo: string, detalles: R
       }
       const otra = typeof detalles['tomadoPor'] === 'string' && detalles['tomadoPor'] !== ''
         ? ` (${etiquetaUid(detalles['tomadoPor'], null)})` : '';
-      if (accion === 'retomar') {
-        return 'No se pudo retomar. Puede ser que la ventana de 24 h esté abierta (use Tomar), que el cliente pidió que no se le escriba, '
-          + 'que el contacto esté bloqueado, que ya se haya enviado una plantilla y se espere su respuesta, que la plantilla no esté disponible '
-          + 'en este número o la conversación no entre por un canal de WhatsApp, que la tenga otra persona, o que esta acción ya se haya usado con otros datos. '
-          + 'Revise el estado de la conversación.';
-      }
       return accion === 'tomar'
         ? (otra ? `No se pudo tomar: ya la tiene otra persona${otra}.`
           : 'No se pudo tomar: la tiene otra persona, o la ventana de 24 h de WhatsApp está cerrada. El estado de arriba dice cuál.')
@@ -604,19 +615,13 @@ export function textoErrorTurno(accion: AccionTurno, codigo: string, detalles: R
           : 'No se envió: usted ya no tiene esta conversación, la ventana de 24 h de WhatsApp se cerró, o esa clave de envío ya se usó con otro texto. Revise el estado de arriba.';
     }
     case 'invalid-argument':
-      return accion === 'retomar' ? 'La conversación no es válida o no se puede retomar.' : accion === 'enviar' ? `El mensaje debe tener entre 1 y ${miles(MAX_TEXTO_PERSONA)} caracteres.`
+      return accion === 'enviar' ? `El mensaje debe tener entre 1 y ${miles(MAX_TEXTO_PERSONA)} caracteres.`
         : 'La conversación no es válida.';
     case 'resource-exhausted':
-      if (accion === 'retomar') {
-        return detalles['tope'] === 'retomarMes'
-          ? 'Su negocio alcanzó el máximo de conversaciones que se pueden retomar este mes.'
-          : 'Su negocio alcanzó el máximo de conversaciones que se pueden retomar hoy. Intente mañana.';
-      }
       return accion === 'enviar' ? textoTope(detalles) : 'Alcanzó el tope de cambios de atención por hora o por día.';
-    case 'not-found': return accion === 'retomar' ? 'La conversación ya no existe, o este cliente nunca escribió por este medio.' : 'La conversación ya no existe, o intervenir todavía no está disponible.';
+    case 'not-found': return 'La conversación ya no existe, o intervenir todavía no está disponible.';
     default:
-      return accion === 'retomar' ? 'No se pudo retomar la conversación. Intente de nuevo.'
-        : accion === 'tomar' ? 'No se pudo tomar la conversación. Intente de nuevo.'
+      return accion === 'tomar' ? 'No se pudo tomar la conversación. Intente de nuevo.'
         : accion === 'devolver' ? 'No se pudo devolver la conversación. Intente de nuevo.'
           : 'No se pudo enviar el mensaje. Intente de nuevo.';
   }
@@ -717,7 +722,7 @@ export async function ejecutarRetomar(
     const codigo = codigoDeError(e);
     const desconocido = resultadoDesconocido(codigo);
     return {
-      salida: { tipo: 'error', codigo, texto: textoErrorTurno('retomar', codigo, detallesDeError(e)), desconocido },
+      salida: { tipo: 'error', codigo, texto: textoErrorTurno('retomar', codigo, detallesDeError(e), mensajeDeError(e)), desconocido },
       clave: usada, abierta: desconocido,
     };
   }

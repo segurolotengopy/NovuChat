@@ -22,13 +22,16 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  PLANTILLA_UTILIDAD_FUENTE, PLANTILLA_UTILIDAD_USD, PLANTILLA_UTILIDAD_VERIFICADA_EL, PLANES, TARIFAS, limitesDeRetomar,
+  PLANTILLA_UTILIDAD_FUENTE, PLANTILLA_UTILIDAD_USD, PLANTILLA_UTILIDAD_VERIFICADA_EL, PLANES, TARIFAS, limitesDeRetomar, limitesDePersona,
 } from '../../functions/src/central/cuenta/planes';
 import {
   ROTULO_PLANTILLA, TEXTO_ESPERANDO_CLIENTE, accionesDeTurno, cifraDePlantilla, contextoDeAviso, ejecutarRetomar, esPlantilla,
   esperandoRespuestaDelCliente, fuenteDeLaCifra, puedeRetomarDeFicha, quienPagaLaPlantilla, retomadaPendienteDe, retomadoEnDe,
-  textoAvisoRetomar, textoErrorTurno, type CapaTurno, type ContextoDeAviso, type EntradaAcciones,
+  textoAvisoRetomar, textoErrorTurno, textoErrorRetomar, textoTope, codigoDeError, type CapaTurno, type ContextoDeAviso, type EntradaAcciones,
 } from '../../web/src/central/lib/turno';
+import { mensajeDeError } from '../../web/src/central/lib/mensajeServidor';
+import { ErroresDeEnvio } from '../../functions/src/core/conversacion/enviarComoPersona';
+import { ErroresDeTurno } from '../../functions/src/core/conversacion/turno';
 import { accionesSinBloqueadas } from '../../web/src/central/lib/bloqueo';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -53,7 +56,11 @@ describe('A. las cifras salen de `planes.ts` (C9, D-R3, D-R5)', () => {
     for (const plan of [...Object.keys(PLANES), 'demostracion', undefined, 'no-existe']) {
       for (const tarifa of TARIFAS) {
         for (const tit of ['novuchat', 'comercio'] as const) {
-          expect(limitesDeRetomar(plan, tarifa, tit), `${String(plan)}/${tarifa}/${tit}`).toEqual({ diasEntreRetomadas: 7, porDia: 20, porMes: 100 });
+          const l = limitesDeRetomar(plan, tarifa, tit);
+          expect(l, `${String(plan)}/${tarifa}/${tit}`).toEqual({ diasEntreRetomadas: 7, porDia: 20, porMes: 100, porMinuto: l.porMinuto });
+          // `porMinuto` sale del plan: presente, entero y IGUAL al de `limitesDePersona` (core no tiene cifra propia)
+          expect(Number.isInteger(l.porMinuto) && l.porMinuto > 0, `${String(plan)}/${tarifa}/${tit}`).toBe(true);
+          expect(l.porMinuto).toBe(limitesDePersona(plan, tarifa, tit).porMinuto);
         }
       }
     }
@@ -87,7 +94,7 @@ describe('B. el aviso de costo depende de la TARIFA y de la línea (D-R2 a)', ()
 
   const COMERCIO = 'con un costo aparte para su negocio';
   const ABSORBE = 'NovuChat absorbe ese costo, sin cobrarle a su negocio';
-  const NEUTRO = 'el costo lo absorbe NovuChat o Meta se lo cobra a su negocio';
+  const NEUTRO = 'Según la tarifa y la línea de su negocio, este costo puede estar incluido o cobrarse aparte.';
   const pagaComercio = (c: ContextoDeAviso) => {
     expect(quienPagaLaPlantilla(c), JSON.stringify(c)).toBe('comercio');
     const t = textoAvisoRetomar(c);
@@ -120,6 +127,8 @@ describe('B. el aviso de costo depende de la TARIFA y de la línea (D-R2 a)', ()
       expect(x).toContain(NEUTRO);
       expect(x).not.toContain(ABSORBE);
       expect(x).not.toContain(COMERCIO);
+      expect(x).not.toContain('Meta se lo cobra');   // con tarifa estándar y línea de NovuChat quien cobra es NovuChat: no se afirma quién
+      expect(x).not.toContain('NovuChat absorbe');
     }
     expect(textoAvisoRetomar()).toBe(textoAvisoRetomar(ctx(null, null)));
   });
@@ -178,7 +187,7 @@ describe('B. el aviso de costo depende de la TARIFA y de la línea (D-R2 a)', ()
     const sinTitular = { tarifa: 'meta_incluido', tarifaExplicita: true, numeros: [num('A1', 'novuchat', false)] };   // `novuchat` es solo el respaldo
     expect(contextoDeAviso(sinTitular, 'A1')).toMatchObject({ tarifa: 'meta_incluido', titularidad: null });
     expect(quienPagaLaPlantilla(contextoDeAviso(sinTitular, 'A1'))).toBeNull();
-    expect(textoAvisoRetomar(contextoDeAviso(sinTitular, 'A1'))).toContain('el costo lo absorbe NovuChat o Meta se lo cobra a su negocio');
+    expect(textoAvisoRetomar(contextoDeAviso(sinTitular, 'A1'))).toContain('este costo puede estar incluido o cobrarse aparte');
     expect(contextoDeAviso({ tarifa: 'meta_incluido', tarifaExplicita: true, numeros: [num('A1', 'novuchat', false)] }, undefined).titularidad).toBeNull();
     // las dos explícitas sí afirman
     const ok = { tarifa: 'meta_incluido', tarifaExplicita: true, numeros: [num('A1', 'novuchat')] };
@@ -257,16 +266,26 @@ describe('C. el modal exige la casilla antes de llamar', () => {
     expect(boton(/Plantilla enviada/)!.disabled).toBe(true);                          // y no se puede repetir
   });
 
-  it('un error muestra el texto fijo de su CÓDIGO (topes) y deja el modal abierto; no sale `e.message`', async () => {
-    respuestas.push(async () => { throw Object.assign(new Error('detalle interno'), { code: 'functions/resource-exhausted', details: { tope: 'retomarDia' } }); });
+  it('un error de Retomar muestra el texto del SERVIDOR tal cual y deja el modal abierto; el del SDK sin servidor no sale', async () => {
+    respuestas.push(async () => { throw Object.assign(new Error(ErroresDeTurno.topeRetomarDia.message), { code: 'functions/resource-exhausted', details: { tope: 'retomarDia' } }); });
     pintar();
     flushSync(() => boton(/Retomar conversación/)!.click());
     flushSync(() => casilla()!.click());
     boton(/Enviar plantilla/)!.click(); await asentar();
     const alerta = cont.querySelector('[role="alert"]')!.textContent!;
-    expect(alerta).toContain('retomar hoy');
-    expect(alerta).not.toContain('detalle interno');
+    expect(alerta).toContain('El comercio llegó al tope diario de conversaciones retomadas.');
     expect(cont.querySelector('[data-testid="retomar-modal"]')).not.toBeNull();
+  });
+
+  it('un error interno del SDK (sin texto del servidor) no se muestra: sale el genérico', async () => {
+    respuestas.push(async () => { throw Object.assign(new Error('detalle interno'), { code: 'functions/internal' }); });
+    pintar();
+    flushSync(() => boton(/Retomar conversación/)!.click());
+    flushSync(() => casilla()!.click());
+    boton(/Enviar plantilla/)!.click(); await asentar();
+    const alerta = cont.querySelector('[role="alert"]')!.textContent!;
+    expect(alerta).toContain('No se pudo retomar la conversación. Intente de nuevo.');
+    expect(alerta).not.toContain('detalle interno');
   });
 
   it('sin respuesta del servidor (red) el reintento usa LA MISMA clave: el servidor lo reconoce y no manda otra plantilla', async () => {
@@ -340,21 +359,66 @@ describe('C. el modal exige la casilla antes de llamar', () => {
     expect((document.activeElement as HTMLButtonElement).disabled).not.toBe(true);
   });
 
-  it('el texto de `failed-precondition` de Retomar nombra noContactar, bloqueo, canal y clave usada; `permission-denied` tiene el suyo', () => {
-    const f = textoErrorTurno('retomar', 'failed-precondition');
-    for (const frase of ['pidió que no se le escriba', 'bloqueado', 'canal de WhatsApp', 'otros datos', 'ventana de 24 h esté abierta', 'ya se haya enviado una plantilla', 'plantilla no esté disponible']) {
-      expect(f, frase).toContain(frase);
-    }
-    expect(textoErrorTurno('retomar', 'permission-denied')).toContain('Retomar conversaciones todavía no está activo para su negocio');
-    expect(textoErrorTurno('enviar', 'permission-denied')).toContain('No tiene permiso para intervenir');   // el de siempre no cambia
+  // Los errores de Retomar muestran el texto del SERVIDOR tal cual (`ErroresDeTurno` / `ErroresDeEnvio`): una prueba por clave.
+  const delServidor: Array<[string, string, string]> = [
+    ['sinRetomar', 'permission-denied', ErroresDeTurno.sinRetomar.message],
+    ['noHabilitado', 'permission-denied', ErroresDeTurno.noHabilitado.message],
+    ['sinSalida', 'permission-denied', ErroresDeTurno.sinSalida.message],
+    ['sinPermiso', 'permission-denied', ErroresDeTurno.sinPermiso.message],
+    ['solicitudInvalida', 'invalid-argument', ErroresDeTurno.solicitudInvalida.message],
+    ['noExiste', 'not-found', ErroresDeTurno.noExiste.message],
+    ['ocupada', 'failed-precondition', ErroresDeTurno.ocupada.message],
+    ['ventanaAbierta', 'failed-precondition', ErroresDeTurno.ventanaAbierta.message],
+    ['noContactar', 'failed-precondition', ErroresDeTurno.noContactar.message],
+    ['contactoBloqueado', 'failed-precondition', ErroresDeTurno.contactoBloqueado.message],
+    ['retomadaPendiente', 'failed-precondition', ErroresDeTurno.retomadaPendiente.message],
+    ['sinPlantilla', 'failed-precondition', ErroresDeTurno.sinPlantilla.message],
+    ['canal', 'failed-precondition', ErroresDeEnvio.canal.message],
+    ['claveUsada', 'failed-precondition', ErroresDeEnvio.claveUsada.message],
+    ['topeRetomarDia', 'resource-exhausted', ErroresDeTurno.topeRetomarDia.message],
+    ['topeRetomarMes', 'resource-exhausted', ErroresDeTurno.topeRetomarMes.message],
+    ['noDisponible', 'unavailable', ErroresDeTurno.noDisponible.message],
+  ];
+  for (const [clave, codigo, mensaje] of delServidor) {
+    it(`el error «${clave}» del servidor se muestra tal cual`, () => {
+      expect(textoErrorTurno('retomar', codigo, {}, mensaje)).toBe(mensaje);
+      // y por el camino real: un error del SDK con su code y su message
+      expect(textoErrorRetomar(codigoDeError({ code: `functions/${codigo}` }), {}, mensajeDeError({ message: `  ${mensaje} ` }))).toBe(mensaje);
+    });
+  }
+
+  it('tope diario y mensual: exactamente el texto del servidor', () => {
+    expect(textoErrorTurno('retomar', 'resource-exhausted', { tope: 'retomarDia' }, ErroresDeTurno.topeRetomarDia.message))
+      .toBe('El comercio llegó al tope diario de conversaciones retomadas.');
+    expect(textoErrorTurno('retomar', 'resource-exhausted', { tope: 'retomarMes' }, ErroresDeTurno.topeRetomarMes.message))
+      .toBe('El comercio llegó al tope mensual de conversaciones retomadas.');
   });
 
-  it('los textos de error de Retomar salen del código y son fijos', () => {
-    expect(textoErrorTurno('retomar', 'resource-exhausted', { tope: 'retomarMes' })).toContain('este mes');
-    expect(textoErrorTurno('retomar', 'resource-exhausted', { tope: 'retomarDia' })).toContain('hoy');
-    expect(textoErrorTurno('retomar', 'failed-precondition')).toContain('No se pudo retomar');
-    expect(textoErrorTurno('retomar', 'permission-denied')).toContain('Retomar conversaciones todavía no está activo');
-    expect(textoErrorTurno('retomar', 'cosa-rara')).toBe('No se pudo retomar la conversación. Intente de nuevo.');
+  it('NEGATIVA: el tope por minuto nunca dice «mañana» y dice los segundos (el texto del envío)', () => {
+    const d = { tope: 'minuto', esperaSegundos: 23 };
+    const t = textoErrorTurno('retomar', 'resource-exhausted', d, ErroresDeEnvio.topeMinuto.message);
+    expect(t).toBe(textoTope(d));
+    expect(t).toContain('23 s');
+    expect(t.toLowerCase()).not.toContain('mañana');
+    expect(t.toLowerCase()).not.toContain('hoy');
+    const sin = textoErrorTurno('retomar', 'resource-exhausted', { tope: 'minuto' }, ErroresDeEnvio.topeMinuto.message);
+    expect(sin).toBe(textoTope({ tope: 'minuto' }));
+    expect(sin.toLowerCase()).not.toContain('mañana');
+  });
+
+  it('sin mensaje del servidor (red, sesión vencida, interno) sale un texto genérico breve, nunca el texto del SDK', () => {
+    const generico = 'No se pudo retomar la conversación. Intente de nuevo.';
+    expect(textoErrorTurno('retomar', '')).toBe(generico);
+    expect(textoErrorTurno('retomar', 'failed-precondition', {}, '   ')).toBe(generico);
+    expect(textoErrorTurno('retomar', 'internal', {}, 'internal')).toBe(generico);
+    expect(textoErrorTurno('retomar', 'deadline-exceeded', {}, 'deadline-exceeded')).toBe(generico);
+    expect(textoErrorTurno('retomar', 'unauthenticated', {}, 'Inicie sesión.')).toBe('Su sesión venció. Vuelva a ingresar.');
+    expect(textoErrorTurno('retomar', 'cosa-rara')).toBe(generico);
+  });
+
+  it('las otras acciones no cambian: `enviar` y `tomar` siguen con sus textos', () => {
+    expect(textoErrorTurno('enviar', 'permission-denied')).toContain('No tiene permiso para intervenir');
+    expect(textoErrorTurno('tomar', 'resource-exhausted')).toBe('Alcanzó el tope de cambios de atención por hora o por día.');
   });
 });
 
