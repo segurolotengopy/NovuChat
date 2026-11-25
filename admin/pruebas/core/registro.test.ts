@@ -37,6 +37,7 @@ import {
 } from '../../functions/src/registro.ts';
 import { VERTICALES_CONOCIDOS, documentoDeVertical } from '../../functions/src/core/prompt/prompt.ts';
 import { PLANES } from '../../functions/src/central/cuenta/planes.ts';
+import { flujosVersionados } from '../lib/flujos-de-cliente.ts';
 import { zonaDeCodigo } from '../frontera/frontera.ts';
 
 process.env['GCLOUD_PROJECT'] ??= 'demo-test';
@@ -315,7 +316,7 @@ describe('1. estructura del registro', () => {
   });
 
   it('los flujos programados existen en Flujos/', () => {
-    const hay = new Set(readdirSync(join(RAIZ, 'Flujos')));
+    const hay = new Set([...readdirSync(join(RAIZ, 'Flujos')), ...flujosVersionados()]);
     for (const f of MANIFIESTOS.flatMap((m) => m.flujosProgramados)) expect(hay.has(f), f).toBe(true);
   });
 
@@ -352,9 +353,12 @@ describe('1. estructura del registro', () => {
       'error', 'envio', 'incierto',
       // Flujos comunes del monitor externo (sin cliente): palabras de uso general.
       'latido', 'vigilancia', 'numero', 'demos',
+      // Desde que la lista recorre las subcarpetas (#1103): partes genéricas de los nombres de flujos de clientes/ y experimental/.
+      // Los nombres de cliente de esas carpetas (los que sí hay que buscar) entran ahora y antes no.
+      'agenda', 'minima', 'chat', 'prueba', 'recordatorio', 'rescate', 'ruta', 'nueva', 'ensayo', 'redireccion',
     ]);
     const nombres = new Set(
-      [...readdirSync(join(RAIZ, 'Flujos')), ...readdirSync(join(RAIZ, 'admin/scripts/datos'))]
+      [...flujosVersionados().map((x) => x.split('/').pop() as string), ...readdirSync(join(RAIZ, 'admin/scripts/datos'))]
         .filter((n) => n.endsWith('.json'))
         .flatMap((n) => n.replace(/\.json$/, '').split(/[-_.]/))
         .filter((t) => t.length >= 4 && !/^\d+$/.test(t) && !GENERICAS.has(t)),
@@ -762,7 +766,7 @@ describe('5. límites: el registro contra planes.ts y las reglas', () => {
 describe('6. herramientas: el registro contra los nodos de Flujos/*.json', () => {
   it('cada nodo-herramienta de un flujo es de exactamente un módulo, y al revés', () => {
     const enFlujos = new Set<string>();
-    for (const n of readdirSync(join(RAIZ, 'Flujos')).filter((x) => x.endsWith('.json'))) {
+    for (const n of flujosVersionados()) {
       const flujo = JSON.parse(leer(`Flujos/${n}`)) as { nodes?: { name: string; type: string }[] };
       for (const nodo of flujo.nodes ?? []) if (/tool/i.test(nodo.type)) enFlujos.add(nodo.name);
     }
