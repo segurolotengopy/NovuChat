@@ -11,7 +11,7 @@
 # SECO por omisión: lee y muestra «hoy → después», no escribe. Escribe SOLO con `--aplicar --confirmo <entorno>`
 # (escrito a mano, igual a --entorno); en producción además pasa `--confirmo-produccion <tenant>` al script de Node.
 # RESPALDO obligatorio al escribir, en /var/tmp/novuchat-respaldos-<uid>/ (fuera del repositorio, sobrevive a un
-# reinicio): la carpeta la crea este envoltorio con 0700 y exige que sea del usuario, no un enlace y 0700; el archivo lo
+# reinicio, pero systemd-tmpfiles BORRA /var/tmp a los 30 días: para conservarlo más, cópielo a un lugar durable): la carpeta la crea este envoltorio con 0700 y exige que sea del usuario, no un enlace y 0700; el archivo lo
 # escribe el script de Node con 0600 y nunca pisa otro. Se imprime su ruta (no es secreta). `--revertir` solo acepta un
 # .json de esa carpeta, regular, del usuario y 0600 (seco primero; con --aplicar --confirmo <entorno> restaura).
 #
@@ -40,7 +40,9 @@ export -n P OTRO CUOTA STAGING PROD 2>/dev/null || true
 unset P OTRO CUOTA STAGING PROD
 
 # Huellas de los proyectos (sha256 del id, primeros 12 hex). Cambian solo si cambia el proyecto: entonces, con el «sí» de
-# Andres, se recalculan sin imprimir el id y se actualizan aquí.
+# Andres, se recalculan sin imprimir el id y se actualizan aquí. RIESGO ACEPTADO (revisión del 25/11/2026): en un
+# repositorio público, una huella permite CONFIRMAR una adivinanza del id (poca entropía); no da acceso, porque escribir
+# exige igual las credenciales. La alternativa (HMAC con un secreto local) agregaría un secreto que hoy no hace falta.
 readonly HUELLA_STAGING="2dedea95e190"
 readonly HUELLA_PROD="100cf4f1401f"
 readonly BASE_RESPALDOS="/var/tmp"
@@ -106,7 +108,11 @@ CUOTA="$(grep -o '"quota_project_id": *"[^"]*"' "$ADC" 2>/dev/null | sed 's/.*"\
 
 leer_variable() { # variable del repositorio con gh, solo lectura; vacío si no se puede. El valor nunca se imprime.
   command -v gh >/dev/null 2>&1 || return 0
-  env -u GH_REPO -u GH_HOST -u GH_ENTERPRISE_TOKEN gh variable get "$1" --repo "$REPO" 2>/dev/null || true
+  # GH_CONFIG_DIR se CONSERVA a propósito (el proyecto lo usa para la segunda cuenta); lo demás que desvía a gh, no. Un
+  # valor desviado igual lo rechazan las huellas.
+  env -u GH_REPO -u GH_HOST -u GH_ENTERPRISE_TOKEN -u GH_TOKEN -u GITHUB_TOKEN -u GH_DEBUG -u GH_PAGER \
+    -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy -u ALL_PROXY -u all_proxy \
+    gh variable get "$1" --repo "$REPO" 2>/dev/null || true
 }
 # Del entorno o de gh; si están las dos fuentes, tienen que coincidir (un id heredado no reemplaza al del repositorio).
 resolver() { # $1 = nombre de la variable; imprime el valor elegido (a una variable, nunca a la pantalla)
@@ -171,6 +177,8 @@ set +e
 (
   # shellcheck disable=SC2163  # se DESEXPORTA la variable cuyo nombre está en $v (no se exporta v)
   while IFS= read -r v; do export -n "$v" 2>/dev/null || true; done < <(compgen -e)
+  while IFS= read -r f; do unset -f "$f" 2>/dev/null || true; done < <(compgen -A function)
+  # Queda solo lo que bash no puede quitar (entradas heredadas con nombres que no son identificadores): Node no las lee.
   export PATH="$CAMINO" HOME="$CASA" LANG="$IDIOMA" GOOGLE_APPLICATION_CREDENTIALS="$ADC"
   export GCP_PROJECT_ID_STAGING="$STAGING" GCP_PROJECT_ID_PROD="$PROD"
   if [[ -n "$EXCLUIDOS" ]]; then export NOVUCHAT_TENANTS_EXCLUIDOS="$EXCLUIDOS"; fi
