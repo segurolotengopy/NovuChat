@@ -42,7 +42,7 @@ const panel = (voz: unknown) => ({
 
 const FLUJOS = [
   {
-    archivo: 'demo-a-agendamiento.json', agente: 'AI Agent (Sofía)',
+    archivo: 'clientes/demo-a/demo-a-agendamiento.json', agente: 'AI Agent (Sofía)',
     // La primera frase del prompt de hoy, ya renderizada.
     hoy: 'Eres Sofía, la asistente virtual de Un Negocio.\n',
     conNombre: 'Eres Kenji, el asistente virtual de Un Negocio.'
@@ -259,7 +259,7 @@ describe('demo-b-venta-cobro.json: la corrección de la prohibición 4 dice el n
 
 describe('demo-a-recordatorios.json: no presenta al asistente, por eso no cambia', () => {
   it('el recordatorio habla en nombre del negocio, no del asistente', () => {
-    const f = flujo('demo-a-recordatorios.json');
+    const f = flujo('clientes/demo-a/demo-a-recordatorios.json');
     const set = nodo(f, 'Config base del recordatorio').parameters as
       { assignments: { assignments: { name: string; value: unknown }[] } };
     const texto = String(set.assignments.assignments.find((a) => a.name === 'textoRecordatorio')?.value);

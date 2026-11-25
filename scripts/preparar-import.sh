@@ -35,7 +35,7 @@ done
 set -- "${ARGS[@]+"${ARGS[@]}"}"
 if [[ $VALORES_DEL_VIVO -eq 1 && -z "${2:-}" ]]; then echo "✗ --valores-del-vivo exige el .env del flujo como segundo argumento"; exit 1; fi
 
-FLUJO="${1:-Flujos/demo-a-agendamiento.json}"
+FLUJO="${1:-Flujos/clientes/demo-a/demo-a-agendamiento.json}"
 # La tabla de marcadores. Se puede apuntar a otra con CONFIG_LOCAL_MD, y lo
 # unico que la usa asi es la suite: sin eso, la guarda de los dos disparadores
 # -la que evita que el webhook del carrito le pise la ruta a Meta- solo se

@@ -28,7 +28,7 @@ import { ejecutar as ejecutarNodo } from './lib/flujo';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const flujo = JSON.parse(
-  readFileSync(join(aqui, '../../Flujos/demo-a-agendamiento.json'), 'utf8'),
+  readFileSync(join(aqui, '../../Flujos/clientes/demo-a/demo-a-agendamiento.json'), 'utf8'),
 ) as { nodes: { name: string; parameters: { jsCode?: string } }[] };
 
 const codigo = flujo.nodes.find((n) => n.name === 'Comprobar reserva')?.parameters.jsCode;
@@ -91,7 +91,7 @@ function comprobarTodo(
   // La regla prohíbe la ejecución dinámica de código, y tiene toda la razón
   // donde importa: en producción, con datos de terceros. Acá no hay nada de
   // eso. Lo que se ejecuta es un archivo NUESTRO, versionado en el repositorio
-  // —`Flujos/demo-a-agendamiento.json`—, dentro de una prueba que no corre en
+  // —`Flujos/clientes/demo-a/demo-a-agendamiento.json`—, dentro de una prueba que no corre en
   // ningún servidor. La alternativa sería copiar la lógica del candado a este
   // archivo, y entonces la prueba comprobaría la copia: quedaría en verde para
   // siempre mientras el flujo se rompe en silencio. Eso es peor.
@@ -796,7 +796,7 @@ describe('Candado de horario: no se agenda cuando el negocio no atiende', () => 
     // agenda un domingo (CLAUDE.md: se aplica a todos o a ninguno).
     for (const cliente of ['demo-a', 'bellido']) {
       const otro = JSON.parse(readFileSync(
-        join(aqui, `../../Flujos/${cliente}-agendamiento.json`), 'utf8'),
+        join(aqui, `../../Flujos/${cliente === 'demo-a' ? 'clientes/demo-a/' : ''}${cliente}-agendamiento.json`), 'utf8'),
       ) as { nodes: { name: string; parameters: { jsCode?: string } }[] };
       const suyo = otro.nodes.find((n) => n.name === 'Comprobar reserva')?.parameters.jsCode;
       expect(suyo, cliente).toBe(codigo);
@@ -951,7 +951,7 @@ describe('Bloqueos repetidos: una restricción, no cincuenta eventos', () => {
   });
 
   it('el nodo que consulta usa esa ventana, en los dos flujos', () => {
-    for (const archivo of ['demo-a-agendamiento.json', 'bellido-agendamiento.json']) {
+    for (const archivo of ['clientes/demo-a/demo-a-agendamiento.json', 'bellido-agendamiento.json']) {
       const f = JSON.parse(readFileSync(join(aqui, '../../Flujos/', archivo), 'utf8')) as
         { nodes: { name: string; parameters: { timeMin?: string; timeMax?: string; options?: Record<string, unknown> } }[] };
       const nodo = f.nodes.find((n) => n.name === 'Verificar en el calendario')!;
@@ -1027,7 +1027,7 @@ describe('Olvidar turno fallido: borra DOS mensajes, no la memoria entera', () =
   for (const cliente of ['demo-a', 'bellido']) {
     it(`${cliente}: deleteMode es lastN con lastMessagesCount 2, y los dos son valores que el nodo conoce`, () => {
       const otro = JSON.parse(readFileSync(
-        join(aqui, `../../Flujos/${cliente}-agendamiento.json`), 'utf8'),
+        join(aqui, `../../Flujos/${cliente === 'demo-a' ? 'clientes/demo-a/' : ''}${cliente}-agendamiento.json`), 'utf8'),
       ) as { nodes: { name: string; type: string; typeVersion: number; parameters: Record<string, unknown> }[] };
       const m = otro.nodes.find((n) => n.name === 'Olvidar turno fallido');
       expect(m, cliente).toBeDefined();
@@ -1043,7 +1043,7 @@ describe('cancelar_cita: la misma herramienta en los dos flujos', () => {
   // Un flujo con la compuerta vieja cancelaría la cita que el modelo elija
   // (#6091): la expresión tiene que ser letra por letra la misma.
   const expr = (cliente: string) => {
-    const j = JSON.parse(readFileSync(join(aqui, `../../Flujos/${cliente}-agendamiento.json`), 'utf8')) as
+    const j = JSON.parse(readFileSync(join(aqui, `../../Flujos/${cliente === 'demo-a' ? 'clientes/demo-a/' : ''}${cliente}-agendamiento.json`), 'utf8')) as
       { nodes: { name: string; parameters: Record<string, unknown> }[] };
     return String(j.nodes.find((n) => n.name === 'cancelar_cita')?.parameters['eventId']);
   };

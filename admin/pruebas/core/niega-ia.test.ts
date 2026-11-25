@@ -83,7 +83,7 @@ const SIN_BLOQUE = (codigo: string): string => codigo
   .replace(/\n\s*if \(NIEGA_IA\.test\(respuesta\)\) \{[\s\S]*?avisos\.push\('correccion_ia'\);\n\s*\}\n/, '\n');
 
 describe.each([
-  ['Demo A', 'demo-a-agendamiento.json'],
+  ['Demo A', 'clientes/demo-a/demo-a-agendamiento.json'],
 ])('reservas (%s): lo que corre en el JSON', (_n, archivo) => {
   const codigo = codigoDe(leerFlujo(archivo), 'Procesar respuesta');
 

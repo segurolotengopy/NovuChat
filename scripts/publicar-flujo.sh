@@ -67,7 +67,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
 
-FLUJO="Flujos/demo-a-agendamiento.json"
+FLUJO="Flujos/clientes/demo-a/demo-a-agendamiento.json"
 APLICAR=0
 FORZAR=0
 REINICIAR=0

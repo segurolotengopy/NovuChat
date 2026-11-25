@@ -275,6 +275,7 @@ const esCongelado = (ruta: string): boolean => CONGELADOS.some((r) => r.test(rut
 const CON_INDICADOR = [
   'clientes/agenda-minima/agenda-minima.prueba.json', 'clientes/agenda-minima/agenda-minima.v0.json',
   'clientes/casa-bermejo/casa-bermejo.json', 'clientes/casa-bermejo/casa-bermejo.prueba.json',
+  'clientes/demo-a/demo-a-agendamiento.json',
   'clientes/novuchat/chat-novuchat.ensayo-demo-a.json', 'clientes/novuchat/chat-novuchat.novuchat.json', 'clientes/novuchat/chat-novuchat.prueba.json',
   'clientes/rroca-antonio/rroca-antonio.json', 'clientes/rroca-antonio/rroca-antonio.prueba.json',
   'clientes/rroca-emma/rroca-emma.json', 'clientes/rroca-emma/rroca-emma.prueba.json',
@@ -283,7 +284,7 @@ const CON_INDICADOR = [
   'clientes/venta-minima/venta-minima.ensayo-demo-a.json', 'clientes/venta-minima/venta-minima.prueba.json',
   'clientes/venta-minima/venta-minima.qtaco-3727.json', 'clientes/venta-minima/venta-minima.qtaco.json',
   'clientes/walisuma/walisuma.json', 'clientes/walisuma/walisuma.prueba.json',
-  'demo-a-agendamiento.json', 'demo-b-venta-cobro.json',
+  'demo-b-venta-cobro.json',
 ];
 const leerVersionado = (ruta: string): Flujo => JSON.parse(readFileSync(join(RAIZ_FLUJOS, ruta), 'utf8')) as Flujo;
 

@@ -132,7 +132,7 @@ export interface Manifiesto {
   readonly herramientas: readonly string[];
   /** Functions exportadas por `index.ts` que son de este módulo. */
   readonly functions: readonly string[];
-  /** Flujos programados de n8n (`Flujos/<nombre>.json`) que son de este módulo. */
+  /** Flujos programados de n8n (ruta relativa a `Flujos/`) que son de este módulo. */
   readonly flujosProgramados: readonly string[];
   readonly ganchos: readonly Gancho[];
   /**
@@ -259,7 +259,7 @@ export const REGISTRO = [
     herramientas: ['consultar_disponibilidad', 'agendar_cita', 'buscar_mi_cita', 'cancelar_cita'],
     functions: ['cotejarComprobante', 'senaVencida', 'seguimientosPendientes', 'seguimientoEnviado'],
     flujosProgramados: [
-      'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'demo-a-recordatorios.json',
+      'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'clientes/demo-a/demo-a-recordatorios.json',
     ],
     // Agregado `antesDelTurno` respecto del diseño: `configuracionFlujo` lee
     // `funcionarios` para el contexto. Después: la retención de la seña
