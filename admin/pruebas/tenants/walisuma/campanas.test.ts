@@ -24,12 +24,14 @@ describe('el titular de una campaña vigente lleva al producto por código', () 
   it('NEGADO: un titular que no es de ninguna campaña vigente no lleva a ningún producto', () => {
     const m = crear({ panel: panelOk({ anuncios: [ANUNCIO] }), medio: { clasificacion: imagenDe('Oferta de otra tienda en mochilas') } });
     const cuerpo = textos(hablar(m, ANA, mImagen())).join(' ');
-    expect(cuerpo).not.toMatch(/tenemos|Bs \d/);
-    expect(cuerpo).toMatch(/Cuéntenos por escrito/);
+    expect(cuerpo).not.toMatch(/Sí, tenemos|Bs \d/);
+    expect(cuerpo).toMatch(/no la encontramos entre las piezas/); // sin coincidencia con el catálogo: pasa con recepción (leer-imagen.test.ts)
   });
-  it('NEGADO: sin campañas en la consola (o ya vencidas) la misma imagen no reconoce nada', () => {
+  it('sin campañas en la consola (o ya vencidas) la imagen no se reconoce como campaña, pero el CATÁLOGO sí la nombra: sale por código con su precio vigente (leer-imagen.test.ts)', () => {
     const m = crear({ panel: panelOk({ anuncios: [] }), medio: { clasificacion: imagenDe('Bufandas de vicuña para este invierno') } });
-    expect(textos(hablar(m, ANA, mImagen())).join(' ')).not.toMatch(/tenemos Bufanda/);
+    const t = hablar(m, ANA, mImagen());
+    expect(textos(t).join(' ')).toMatch(/Bufanda de vicuña: Bs 7\.795/);
+    expect(t.registro.map((r) => r.nodo)).not.toContain('Conversar con el modelo');
   });
   it('NEGADO: una campaña cuyo producto no se puede vender (sin precio) pasa con recepción; nunca se inventa un precio', () => {
     const sinPrecio = { ...ANUNCIO, id: 'tap', titulares: ['Tapices tejidos a mano'], producto: { id: 'tapiz-mujer-rio', nombre: 'Tapiz mujer río', agotado: false } };
