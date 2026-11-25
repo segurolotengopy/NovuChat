@@ -609,10 +609,10 @@ describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `i
     name: 'sintetico-rafaga',
     nodes: [
       nodoSet('Normalizar entrada', [240, 300]), nodoSet('Config del negocio', [480, 300]), nodoSet('Config base', [480, 100]),
-      { id: 'traer', name: 'Traer configuración', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [240, 100], credentials: { httpHeaderAuth: { id: '', name: 'REEMPLAZAR_credencial_ingesta' } }, parameters: { method: 'POST', url: URL_SERVIDOR, authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth' } },
+      { id: 'traer', name: 'Traer configuración', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [240, 100], credentials: { httpHeaderAuth: { id: '', name: 'REEMPLAZAR_credencial_ingesta' } }, parameters: { method: 'POST', url: URL_SERVIDOR, authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth', sendHeaders: true, headerParameters: { parameters: [{ name: 'X-NovuChat-Numero', value: '={{ $json.phoneNumberId }}' }] } } },
       nodoSet('Reportar mensaje (entrante)', [960, 100]), nodoSet('¿Atención normal?', [960, 300]), nodoSet('Agente', [1200, 400]),
     ],
-    connections: { 'Normalizar entrada': enlaces('Config del negocio', 'Reportar mensaje (entrante)'), 'Config del negocio': enlaces('¿Atención normal?'), '¿Atención normal?': enlaces('Agente') },
+    connections: { 'Normalizar entrada': enlaces('Config base', 'Reportar mensaje (entrante)'), 'Config base': enlaces('Config del negocio'), 'Config del negocio': enlaces('¿Atención normal?'), '¿Atención normal?': enlaces('Agente') },
   });
   const MANIFIESTO = { flujo: 'sintetico-rafaga.json', rafaga: { ancla: { nodo: '¿Atención normal?', salida: 0, destino: 'Agente' } } };
   /** Una raíz temporal con el flujo sintético SIN la pieza y su manifiesto que la pide. */

@@ -54,29 +54,64 @@ vuelve a injertar canónicos (idempotente): `verificar` los compara byte a byte,
 
 ## La decisión (función pura, `agrupar-rafaga.js`)
 
-- **Agrupable:** `tipo === 'text'`, con texto y sin `[nº]` (la copia guardada ocultó un número).
-- **Cadena:** del fragmento **más nuevo** hacia atrás, mientras cada uno sea agrupable y el salto entre dos consecutivos sea
-  `<= espera - 500 ms`. Máximo 5.
-- Estoy en la cadena y no soy el último: **silencio** (`[]`). Soy el último y hay más de uno: **agrupado**, con los textos unidos por
-  salto de línea (los ajenos como los devuelve el servidor, el mío crudo). Cualquier otro caso: **solo**.
-- Audio, imagen, botón y cualquier otro tipo **no esperan ni se callan**, y cortan la cadena. Un saliente también corta (el servidor
-  deja de leer en el primero).
-- Mismo instante: se ordena por (`ms`, `idMeta`), así todas las ejecuciones ven el mismo último y hay exactamente un ganador. Un
-  `idMeta` repetido (reintento de Meta) cuenta una vez.
-- **Falla ABIERTO:** consulta caída, respuesta que no es `{rafaga:{v:1, fragmentos:[…]}}`, un fragmento mal formado, mi `idMeta`
-  ausente o sin `mensajeId`: responde solo, como hoy. A lo sumo se duplica una respuesta; no se pierde un mensaje.
-- Riesgo declarado: si la ejecución que debe responder muere después de que las anteriores callaron, el grupo no recibe respuesta.
-  Es el mismo riesgo que ya tiene un mensaje aislado (el flujo cae), no uno nuevo.
+Cada ejecución consulta en un momento distinto y ve una lista distinta (lo escrito hasta su propio instante más la espera). Por eso la
+regla es **relativa a la posición del propio mensaje**, no al mensaje más nuevo, y solo usa datos que no cambian: lo que está antes de mí
+y lo que llegó a menos de un salto después.
 
-Salidas con `textoDelTurno`: en esta entrega el nodo solo lo entrega; que el flujo lo use en lugar de `userInput` lo cablea el PR de
-cada flujo.
+1. Se ordenan **todas** las entradas (textos, medios y marcas de saliente) por (`ms`, `idMeta`).
+2. **Agrupable:** `tipo === 'text'`, con `idMeta`, con texto y sin `[nº]` (la copia guardada ocultó un número). Todo lo demás (audio,
+   imagen, botón, marca de saliente) es **separador**.
+3. Hay **arista** entre dos entradas adyacentes si las dos son agrupables y `ms_siguiente - ms_anterior <= espera - 500 ms`. Un separador
+   entre dos textos los deja de ser adyacentes, así que los desconecta.
+4. Si mi propio mensaje no está en la lista, la consulta falló o mi fragmento no es agrupable: **solo** (como hoy).
+5. Si hay arista entre yo y mi vecino **siguiente**: **silencio** (otro cubrirá mi texto).
+6. Si no, respondo con mi componente hacia atrás (vecinos anteriores mientras haya arista), cronológico, unido por salto de línea (los
+   ajenos como los devuelve el servidor, el mío crudo). Componente de uno: **solo**.
+
+**Propiedad** (`rafaga-propiedad.test.ts`): para toda secuencia de mensajes, con cada ejecución viendo solo lo escrito hasta su propio
+`ms + espera`, cada texto que ejecuta el nodo aparece **exactamente una vez** entre los textos respondidos (ni se pierde ni se repite).
+La prueba recorre todas las secuencias de 1 a 4 mensajes con texto, `[nº]`, audio y saliente en cualquier posición, las de 5 con un
+separador en cualquier posición, y esperas de 1, 2 y 5 s. Una mutación de la regla la hace fallar. El defecto que motivó esta regla
+(revisión del PR): con la cadena armada desde el mensaje más nuevo, A en 0 s, B en 1 s y C en 2,8 s dejaban a A sin respuesta, porque
+B consultaba tarde, veía a C y respondía solo.
+
+- **Falla ABIERTO:** consulta caída, respuesta que no es `{rafaga:{v:1, fragmentos:[…]}}`, un fragmento mal formado, mi `idMeta`
+  ausente o sin `mensajeId`: responde solo, como hoy.
+- Audio, imagen, botón y cualquier otro tipo **no esperan ni se callan**. Un `idMeta` repetido (reintento de Meta) cuenta una vez.
+- Mismo instante: el orden por (`ms`, `idMeta`) es el mismo para todas las ejecuciones.
+
+### Riesgos residuales (aceptados, declarados)
+
+- **Seis o más textos seguidos a menos de 1,5 s:** el servidor entrega hasta 6 entradas, así que el extremo más viejo de la lista es un
+  borde; el grupo respondido puede quedar partido en dos respuestas (nunca se pierde un texto agrupable en las secuencias de la prueba,
+  que caben en la lista).
+- **Si la consulta de la ejecución que debe responder falla**, esa ejecución responde sola y **los textos que las otras callaron no se
+  contestan**. Es el costo de fallar abierto: se prefiere responder el último mensaje a quedarse en silencio.
+- Si la ejecución que debe responder muere después de que las anteriores callaron, el grupo queda sin respuesta (el mismo riesgo que ya
+  tiene un mensaje aislado cuando el flujo cae).
+
+El nodo solo entrega `textoDelTurno`; que cada flujo lo use en lugar de `userInput` lo cablea el PR de cada flujo.
+
+### De dónde lee cada nodo
+
+El IF (`$json`), la consulta y el Code leen el id del mensaje, el teléfono, el número y el texto del **mismo item: el del ancla**, con
+los nombres de campo de `campos` (por defecto `tipo`, `mensajeId`, `from`, `phoneNumberId`, `userInput`, los del normalizador común).
+El normalizador, «Config del negocio» y «Config base» tienen que ser **ascendientes del ancla** (el ensamblador se niega a armar y la
+guardia lo exige en un flujo armado); además, toda lectura fallida da `false` en el IF y espera de 2 s en el Wait y el Code, de modo que
+nunca rompe el turno. La cabecera `X-NovuChat-Numero` de la consulta sale del mismo número que la de «Traer configuración»: si esa no
+manda la cabecera, o no sale de `phoneNumberId` (o usa `modoPrueba` sin `phoneNumberIdEsperado`), no se arma. Los nombres que no son los
+predeterminados («Config base», «Config del negocio», «Traer configuración», `campos`) se pasan por opciones, también a
+`hallazgosDeLaRafaga`.
 
 ## El servidor (contrato; lo construye `core-functions`)
 
 Rama `rafaga` dentro de `configuracionFlujo`, sin endpoint nuevo: pedido `{telefono, rafaga:{v:1, idMeta}}`, autenticado por la firma
-del número de siempre; `rafaga` junto con `sesion` es 400. Lee `mensajes.orderBy('ts','desc').limit(6)` del hilo de ese teléfono,
-corta en el primer saliente y responde `{rafaga:{v:1, fragmentos:[{idMeta, tipo, texto (máx 1500), ms}]}}` en orden cronológico, máx 5.
-La respuesta de `configuracionFlujo` agrega `rafagaApagada: true` **solo** si el comercio la apagó (campo de `tenants/{id}`, solo Admin SDK).
+del número de siempre; `rafaga` junto con `sesion` es 400. Lee hasta 6 entradas del hilo de ese teléfono y responde
+`{rafaga:{v:1, fragmentos:[{idMeta, tipo, texto (máx 1500), ms}]}}` en orden cronológico. Los fragmentos incluyen **también marcas de
+saliente** `{idMeta:'', tipo:'saliente', texto:'', ms}` (ya no se corta en el primer saliente: el nodo las usa como separador); solo los
+entrantes con `idMeta` repetido se deduplican; se descartan los de más de 30 s de antigüedad; y si ninguna entrada leída tiene el `idMeta`
+pedido, devuelve `fragmentos: []` (el nodo responde solo). La respuesta de `configuracionFlujo` agrega `rafagaApagada: true` **solo** si el
+comercio la apagó (campo de `tenants/{id}`, solo Admin SDK).
 
 ## Interruptores
 
@@ -86,5 +121,6 @@ La respuesta de `configuracionFlujo` agrega `rafagaApagada: true` **solo** si el
 ## Pruebas
 
 `admin/pruebas/core/rafaga-decision.test.ts` (el nodo, ejecutado como el Code de n8n, negando cada regla),
+`rafaga-propiedad.test.ts` (ninguna pérdida ni repetición con la vista propia de cada ejecución),
 `rafaga-injerto.test.ts` (el injerto sobre un flujo sintético, la condición evaluada y las guardias) y el caso 9 de
 `ensamblador.test.ts` (la clave del manifiesto). Los flujos reales las suman cuando la adopten.

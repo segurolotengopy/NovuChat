@@ -130,14 +130,64 @@ describe('configuracionFlujo con `rafaga`', () => {
     } finally { await db.doc(`tenants/${TA}`).update({ estado: 'activo' }); }
   });
 
-  it('con 10 mensajes devuelve como mucho 5 y no escribe nada', async () => {
+  it('con 10 mensajes devuelve como mucho 6 entradas, las más nuevas, y no escribe nada', async () => {
     const antes = await contarTodo(TA);
     await sembrar(TA, Array.from({ length: 10 }, (_, i) => ent(`m${i}`, `m${i}`, T0 + 1000 + i * 10)));
     const despues = await contarTodo(TA);
     const r = await pedir({ telefono: TEL, rafaga: R('m9') });
-    expect((r.cuerpo['rafaga'] as { fragmentos: unknown[] }).fragmentos).toHaveLength(5);
+    const f = (r.cuerpo['rafaga'] as { fragmentos: { idMeta: string }[] }).fragmentos;
+    expect(f.map((x) => x.idMeta)).toEqual(['m4', 'm5', 'm6', 'm7', 'm8', 'm9']);
     expect(await contarTodo(TA)).toBe(despues);
     expect(despues).toBeGreaterThan(antes);
+  });
+
+  it('un wamid que la conversación no tiene (teléfono ajeno) no devuelve texto', async () => {
+    const r = await pedir({ telefono: TEL, rafaga: R('wamid.QUE-NO-TENGO') });
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo['rafaga']).toEqual({ v: 1, fragmentos: [] });
+    const rb = await pedir({ telefono: '59100000099', rafaga: R('a3') });
+    expect(rb.cuerpo['rafaga']).toEqual({ v: 1, fragmentos: [] });
+  });
+
+  it('descarta lo anterior a 30 s y entrega los salientes como marca', async () => {
+    const T = 'rafaga-c';
+    const numero = '1000000733';
+    await db.doc(`rutasWhatsApp/${numero}`).set({ tenantId: T, flujo: 'agendamiento', aliasSecreto: 'cliente19', estado: 'activo' });
+    await db.doc(`tenants/${T}`).set({ nombre: 'Rafaga C', estado: 'activo', plan: 'crecimiento' });
+    await db.doc(`tenants/${T}/config/negocio`).set({ nombreNegocio: 'C', numeroRecepcion: '70000001' });
+    await sembrar(T, [
+      ent('v1', 'MUY VIEJO', T0 - 31_000),
+      { direccion: 'saliente', tipo: 'text', texto: 'respuesta del bot', idMeta: 'wamid.S', ts: T0 - 2000 },
+      ent('n1', 'reciente', T0 - 1000),
+    ]);
+    const r = await pedir({ telefono: TEL, rafaga: R('n1') }, numero);
+    expect(JSON.stringify(r.cuerpo)).not.toContain('MUY VIEJO');
+    expect(JSON.stringify(r.cuerpo)).not.toContain('respuesta del bot');
+    expect((r.cuerpo['rafaga'] as { fragmentos: unknown[] }).fragmentos).toEqual([
+      { idMeta: '', tipo: 'saliente', texto: '', ms: T0 - 2000 },
+      { idMeta: 'n1', tipo: 'text', texto: 'reciente', ms: T0 - 1000 },
+    ]);
+  });
+
+  it('si la lectura falla: 500 rafaga_lectura y el registro no lleva teléfono ni ruta', async () => {
+    const proto = Object.getPrototypeOf(db.collection('x').orderBy('ts')) as { get: (...a: unknown[]) => Promise<unknown> };
+    const original = proto.get;
+    // `functions/` tiene su propio node_modules: el registro se espía en la misma copia que usa `ingesta.ts`.
+    const { logger } = await import('../functions/node_modules/firebase-functions/lib/v2/index.js') as unknown as
+      { logger: { warn: (...a: unknown[]) => void } };
+    const escrito: unknown[][] = [];
+    const aviso = vi.spyOn(logger, 'warn').mockImplementation((...a: unknown[]) => { escrito.push(a); });
+    proto.get = function (this: unknown) { return Promise.reject(new Error(`falla con ${TEL} en tenants/${TA}`)); };
+    try {
+      const r = await pedir({ telefono: TEL, rafaga: R() });
+      expect(r.codigo).toBe(500);
+      expect(r.cuerpo).toEqual({ error: 'rafaga_lectura' });
+    } finally { proto.get = original; aviso.mockRestore(); }
+    expect(escrito).toHaveLength(1);
+    const lineaDeRegistro = JSON.stringify(escrito[0]);
+    expect(escrito[0]![1]).toEqual({ evento: 'configuracion_flujo', tenantId: TA, accion: 'rafaga' });
+    expect(lineaDeRegistro).not.toContain(TEL);
+    expect(lineaDeRegistro).not.toContain('conversaciones');
   });
 });
 

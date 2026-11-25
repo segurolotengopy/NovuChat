@@ -18,7 +18,7 @@ export interface Manifiesto {
   /** El indicador de escritura (los tres puntos), pieza común de `Flujos/src/core/indicador/`: dónde cuelga y qué nodo normaliza el entrante. */
   indicador?: { ancla: { nodo: string; salida?: number }; normalizador?: string };
   /** La ráfaga (agrupar textos seguidos), pieza común de `Flujos/src/core/rafaga/`: entre qué nodos va y qué nodo normaliza el entrante. */
-  rafaga?: { ancla: { nodo: string; salida?: number; destino: string }; normalizador?: string; puerta?: string; config?: string; configBase?: string; traerConfiguracion?: string };
+  rafaga?: { ancla: { nodo: string; salida?: number; destino: string }; normalizador?: string; campos?: { tipo?: string; mensajeId?: string; from?: string; phoneNumberId?: string; texto?: string }; puerta?: string; config?: string; configBase?: string; traerConfiguracion?: string };
 }
 
 export interface Ensamblado {

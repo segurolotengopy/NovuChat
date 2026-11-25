@@ -21,7 +21,6 @@ export const VERSION_RAFAGA = 1;
 /** Documentos que se leen como máximo (los 6 más recientes de la conversación). */
 export const MAX_LECTURAS = 6;
 /** Fragmentos que se devuelven como máximo. */
-export const MAX_FRAGMENTOS = 5;
 export const MAX_TEXTO = 1500;
 export const MAX_ID_META = 120;
 
@@ -71,49 +70,69 @@ function aMs(ts: unknown): number | null {
   return null;
 }
 
+/** Un saliente se entrega como MARCA: el nodo la usa de separador, sin texto ni idMeta. */
+export const TIPO_MARCA_SALIENTE = 'saliente';
+/** Un fragmento más viejo que esto no se devuelve: una ráfaga es cosa de segundos. */
+export const VENTANA_MS = 30_000;
+
 /**
- * Pura. `docsNuevoAViejo` viene ordenado por `ts` descendente. Se recorre del más nuevo al más viejo y
- * se corta en el primer saliente (lo que el asistente ya contestó no es parte de la ráfaga). Los
- * `idMeta` repetidos (reintento de Meta) quedan una vez, en su primera aparición cronológica. Se
- * devuelven en orden cronológico, máximo `MAX_FRAGMENTOS` (los más nuevos).
+ * Pura. `docsNuevoAViejo` viene ordenado por `ts` descendente. Devuelve hasta `MAX_LECTURAS` entradas en
+ * orden cronológico (por `ms`, luego `idMeta`): los entrantes con su texto (≤1500) y los salientes como
+ * MARCA `{idMeta:'', tipo:'saliente', texto:'', ms}`. Un entrante sin `idMeta` (p. ej. el pedido del
+ * catálogo web) sale con `idMeta:''` y su tipo real: el nodo lo trata como no agrupable. Los entrantes
+ * con `idMeta` repetido (reintento de Meta) quedan una vez, el más antiguo.
  */
 export function fragmentosDeRafaga(docsNuevoAViejo: readonly MensajeCrudo[]): FragmentoDeRafaga[] {
-  const recientes: FragmentoDeRafaga[] = [];
+  const todos: FragmentoDeRafaga[] = [];
   for (const d of docsNuevoAViejo.slice(0, MAX_LECTURAS)) {
-    if (d.direccion !== 'entrante') break;
     const ms = aMs(d.ts);
     if (ms === null) continue;
-    recientes.push({
-      idMeta: typeof d.idMeta === 'string' ? d.idMeta.slice(0, MAX_ID_META) : '',
-      tipo: typeof d.tipo === 'string' ? d.tipo : '',
-      texto: typeof d.texto === 'string' ? d.texto.slice(0, MAX_TEXTO) : '',
-      ms,
-    });
-  }
-  const cronologico = recientes.reverse();
-  const vistos = new Set<string>();
-  const unicos: FragmentoDeRafaga[] = [];
-  for (const f of cronologico) {
-    if (f.idMeta) {
-      if (vistos.has(f.idMeta)) continue;
-      vistos.add(f.idMeta);
+    if (d.direccion === 'saliente') {
+      todos.push({ idMeta: '', tipo: TIPO_MARCA_SALIENTE, texto: '', ms });
+    } else if (d.direccion === 'entrante') {
+      todos.push({
+        idMeta: typeof d.idMeta === 'string' ? d.idMeta.slice(0, MAX_ID_META) : '',
+        tipo: typeof d.tipo === 'string' ? d.tipo : '',
+        texto: typeof d.texto === 'string' ? d.texto.slice(0, MAX_TEXTO) : '',
+        ms,
+      });
     }
-    unicos.push(f);
   }
-  return unicos.slice(-MAX_FRAGMENTOS);
+  todos.sort((x, y) => x.ms - y.ms || (x.idMeta < y.idMeta ? -1 : x.idMeta > y.idMeta ? 1 : 0));
+  const vistos = new Set<string>();
+  return todos.filter((f) => {
+    if (!f.idMeta) return true;
+    if (vistos.has(f.idMeta)) return false;
+    vistos.add(f.idMeta);
+    return true;
+  });
+}
+
+/**
+ * Pura. Acota lo que se entrega: si NINGÚN entrante leído tiene el `idMeta` pedido, `[]` (quien no
+ * conoce un wamid reciente de esta conversación no lee texto ajeno; el nodo responde solo); y se
+ * descartan los fragmentos con `ms` anterior a `ahoraMs - VENTANA_MS`.
+ */
+export function acotarRafaga(
+  fragmentos: readonly FragmentoDeRafaga[], idMeta: string, ahoraMs: number,
+): FragmentoDeRafaga[] {
+  if (!fragmentos.some((f) => f.tipo !== TIPO_MARCA_SALIENTE && f.idMeta === idMeta)) return [];
+  return fragmentos.filter((f) => f.ms >= ahoraMs - VENTANA_MS);
 }
 
 /**
  * Lee los `MAX_LECTURAS` mensajes más recientes de `tenants/{tenantId}/conversaciones/wa_{telefono}`.
- * El tenant lo pone el que llama desde la ruta autenticada. Cero escrituras.
+ * El tenant lo pone el que llama desde la ruta autenticada. Cero escrituras. Puede lanzar: quien
+ * llama decide (la rama de `configuracionFlujo` responde 500 y el flujo falla abierto).
  */
 export async function leerRafaga(
-  db: Firestore, tenantId: string, telefono: string,
+  db: Firestore, tenantId: string, telefono: string, idMeta: string, ahoraMs: number = Date.now(),
 ): Promise<{ v: 1; fragmentos: FragmentoDeRafaga[] }> {
   const snap = await db
     .collection(`tenants/${tenantId}/conversaciones/wa_${telefono}/mensajes`)
     .orderBy('ts', 'desc')
     .limit(MAX_LECTURAS)
     .get();
-  return { v: VERSION_RAFAGA, fragmentos: fragmentosDeRafaga(snap.docs.map((d) => d.data() as MensajeCrudo)) };
+  const todos = fragmentosDeRafaga(snap.docs.map((d) => d.data() as MensajeCrudo));
+  return { v: VERSION_RAFAGA, fragmentos: acotarRafaga(todos, idMeta, ahoraMs) };
 }

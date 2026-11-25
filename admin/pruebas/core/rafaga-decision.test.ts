@@ -80,7 +80,7 @@ describe('rafaga: decisión', () => {
   });
 
   it('falla ABIERTO: un fragmento mal formado invalida la lista entera (nadie se calla por un dato dudoso)', () => {
-    const malos = [{ idMeta: 'A', tipo: 'text', texto: 'x' }, { idMeta: 'A', tipo: 'text', texto: 'x', ms: '1' }, { idMeta: '', tipo: 'text', texto: 'x', ms: 1 }, { idMeta: 'A', tipo: 'text', texto: 5, ms: 1 }, null];
+    const malos = [{ idMeta: 'A', tipo: 'text', texto: 'x' }, { idMeta: 'A', tipo: 'text', texto: 'x', ms: '1' }, { idMeta: 'A', tipo: 'text', texto: 5, ms: 1 }, null];
     for (const m of malos) {
       const out = como('A', 'hola', { rafaga: { v: 1, fragmentos: [m, f('B', 'y', 1500)] } });
       expect(out).toHaveLength(1);
@@ -108,8 +108,8 @@ describe('rafaga: decisión', () => {
     expect(como('A', 'hola', ok([f('A', 'hola', 1000), f('A', 'hola', 1100)]))[0].rafaga.accion).toBe('solo');
   });
 
-  it('un saliente, un audio, un botón o un [nº] EN MEDIO corta la cadena: nadie se calla antes', () => {
-    for (const medio of [f('M', 'te respondo', 1500, 'saliente'), f('M', '', 1500, 'audio'), f('M', 'Sí', 1500, 'interactive'), f('M', 'mi cel es [nº]', 1500)]) {
+  it('una marca de saliente, un audio, un botón o un [nº] EN MEDIO separa: cada lado responde lo suyo', () => {
+    for (const medio of [f('', '', 1500, 'saliente'), f('M', '', 1500, 'audio'), f('M', 'Sí', 1500, 'interactive'), f('M', 'mi cel es [nº]', 1500)]) {
       const lista = ok([f('A', 'uno', 1000), medio, f('B', 'dos', 2000)]);
       const a = como('A', 'uno', lista);
       const b = como('B', 'dos', lista);
@@ -120,10 +120,20 @@ describe('rafaga: decisión', () => {
     }
   });
 
-  it('un medio como último mensaje: los textos de antes responden solos (el medio no espera ni se calla)', () => {
+  it('un medio como último mensaje: el último texto responde a los de antes (el medio no espera ni se calla)', () => {
     const lista = ok([f('A', 'uno', 1000), f('B', 'dos', 1500), f('C', '', 1800, 'audio')]);
-    expect(como('A', 'uno', lista)[0].rafaga.accion).toBe('solo');
-    expect(como('B', 'dos', lista)[0].rafaga.accion).toBe('solo');
+    expect(como('A', 'uno', lista)).toEqual([]);
+    expect(como('B', 'dos', lista)[0].textoDelTurno).toBe('uno\ndos');
+  });
+
+  it('el defecto del revisor (B1): A, B y C con G = 1500; cada ejecución con SU vista, nadie queda sin respuesta', () => {
+    const A = f('A', 'a', 0); const B = f('B', 'b', 1000); const C = f('C', 'c', 2800);
+    // A consulta en t=2000 y ve [A, B]; B consulta en t=3000 y ve [A, B, C]; C en t=4800 ve todo.
+    expect(como('A', 'a', ok([A, B]))).toEqual([]);
+    const [b] = como('B', 'b', ok([A, B, C]));
+    expect(b.textoDelTurno).toBe('a\nb');
+    const [c] = como('C', 'c', ok([A, B, C]));
+    expect(c.rafaga).toEqual({ accion: 'solo', ids: ['C'] });
   });
 
   it('un medio ANTES de la ráfaga no la estorba', () => {
@@ -157,13 +167,16 @@ describe('rafaga: decisión', () => {
     expect(como('B', 'dos', ok([f('A', 'uno', 0), f('B', 'dos', 1400)]), -3)[0].rafaga.accion).toBe('agrupado');
   });
 
-  it('más de 5 fragmentos: la cadena es de 5; el sexto más viejo responde solo', () => {
+  it('seis entradas (el tope del servidor): el último responde a las seis y las demás callan', () => {
     const lista = ok(['A', 'B', 'C', 'D', 'E', 'F'].map((id, i) => f(id, id.toLowerCase(), 1000 + i * 100)));
     const [ultimo] = como('F', 'f', lista);
-    expect(ultimo.rafaga.ids).toEqual(['B', 'C', 'D', 'E', 'F']);
-    expect(ultimo.textoDelTurno).toBe('b\nc\nd\ne\nf');
-    expect(como('A', 'a', lista)[0].rafaga.accion).toBe('solo');
-    for (const id of ['B', 'C', 'D', 'E']) expect(como(id, id.toLowerCase(), lista)).toEqual([]);
+    expect(ultimo.rafaga.ids).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
+    for (const id of ['A', 'B', 'C', 'D', 'E']) expect(como(id, id.toLowerCase(), lista)).toEqual([]);
+  });
+
+  it('mi fragmento no es agrupable ([nº] guardado) → solo, aunque haya vecinos', () => {
+    expect(como('B', 'mi cel 70000000', ok([f('A', 'uno', 1000), f('B', 'mi cel es [nº]', 1200)]))[0].rafaga.accion).toBe('solo');
+    expect(como('A', 'uno', ok([f('A', 'uno', 1000), f('B', 'mi cel es [nº]', 1200)]))[0].rafaga.accion).toBe('solo');
   });
 
   it('un texto vacío o solo espacios no es agrupable', () => {

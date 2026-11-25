@@ -1705,8 +1705,16 @@ export const configuracionFlujo = onRequest(
       const vr = validarRafaga(cuerpo['rafaga'], telefono);
       if (!vr.ok) { respuesta.status(vr.status).json({ error: vr.error }); return; }
       if (comercio.estado !== 'activo') { respuesta.status(409).json({ estado: comercio.estado }); return; }
-      const leida = await leerRafaga(db, comercio.tenantId, telefono as string);
-      respuesta.status(200).json({ rafaga: leida });
+      try {
+        const leida = await leerRafaga(db, comercio.tenantId, telefono as string, vr.idMeta);
+        respuesta.status(200).json({ rafaga: leida });
+      } catch {
+        // Sin teléfono ni ruta en el registro: solo el comercio y la acción. El flujo falla abierto.
+        logger.warn('configuracionFlujo: lectura de rafaga fallida', {
+          evento: EVENTO_CONFIGURACION, tenantId: comercio.tenantId, accion: 'rafaga',
+        });
+        respuesta.status(500).json({ error: 'rafaga_lectura' });
+      }
       return;
     }
 
