@@ -157,6 +157,23 @@ describe('M1 a M7, NEGANDO, en un directorio temporal', () => {
     });
   });
 
+  it('M2: el ensamblador recibe la ruta de la fila y exige manifiesto (sin manifiesto no cuenta como verificado)', () => {
+    conMontaje((m) => {
+      const llamadas: string[][] = [];
+      const ctx = { ...m.ctx, correr: (_c: string, args: string[]) => { llamadas.push(args); return 0; } };
+      expect(problemasDeMigrado({ ...m.fila, armador: 'ensamblador' }, ctx)).toEqual([]);
+      expect(llamadas[0]?.slice(1)).toEqual(['verificar', '--exigir-manifiesto', 'clientes/x/x.json']);
+      // Con el ensamblador real: esa ruta no existe en el repo, y M2 falla por eso (no por «sin manifiesto»: la causa se nombra bien).
+      const real = { ...m.ctx, correr: contextoReal().correr };
+      expect(problemasDeMigrado({ ...m.fila, armador: 'ensamblador' }, real)).toEqual(['M2: el ensamblador no dice «idéntico» para esa ruta']);
+      // Negando: cada causa con su texto. Un JSON que difiere (salida 1) no se confunde con «sin manifiesto» (salida 3).
+      const difiere = { ...m.ctx, correr: () => 1 };
+      expect(problemasDeMigrado({ ...m.fila, armador: 'ensamblador' }, difiere)).toEqual(['M2: el ensamblador no dice «idéntico» para esa ruta']);
+      const sinManifiesto = { ...m.ctx, correr: () => 3 };
+      expect(problemasDeMigrado({ ...m.fila, armador: 'ensamblador' }, sinManifiesto)).toEqual([expect.stringMatching(/^M2: sin manifiesto para esa ruta/)]);
+    });
+  });
+
   it('M2: el constructor corre de verdad en la carpeta del flujo, con --verificar y los argumentos de la fila', () => {
     conMontaje((m) => {
       const carpeta = join(m.raiz, 'Flujos', 'clientes', 'x');
