@@ -1,0 +1,13 @@
+{
+  "flujo": "vigilancia-numero-demos.json",
+  "conservanMarcadores": {
+    "Config base": "REEMPLAZAR_"
+  },
+  "codigo": {
+    "Evaluar números": {
+      "archivo": "core/barridos/evaluar-numeros.js",
+      "saltoFinal": true
+    }
+  },
+  "prompts": {}
+}

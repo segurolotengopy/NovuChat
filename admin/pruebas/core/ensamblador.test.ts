@@ -95,7 +95,7 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
     // Los que todavía no se ensamblan, dichos con nombre: son el bloque B-2.
     expect(SIN_MANIFIESTO).toEqual([
       'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'bellido-agendamiento.json',
-      'latido-n8n.json', 'vigilancia-numero-demos.json',
+      'latido-n8n.json',
     ]);
   });
 
