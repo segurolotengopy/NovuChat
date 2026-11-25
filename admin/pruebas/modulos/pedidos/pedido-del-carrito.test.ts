@@ -75,7 +75,7 @@ describe('pcEntregaDelCarrito', () => {
   it('NEGADO: un retiro nunca toma un modo de envío (ni al revés); sin un modo reconocible, el modo queda vacío y se pregunta', () => {
     expect(entrega({ entrega: 'retiro' }, ['Envío por flota'], retiro, envio).modo).toBe('');
     expect(entrega({ entrega: 'envio' }, ['Retiro en tienda'], retiro, envio).modo).toBe('');
-    expect(entrega({ entrega: 'otra cosa' }, MODOS, retiro, envio).modo).toBe('Retiro en tienda');   // un valor raro es retiro: el caso que menos compromete
+    expect(entrega({ entrega: 'otra cosa' }, MODOS, retiro, envio).modo).toBe('');   // un valor raro NO es retiro: se pregunta (revisión del PR #1106)
     expect(entrega({ entrega: 'envio' }, undefined, retiro, envio)).toEqual({ modo: '', direccion: '' });
   });
   it('la dirección es un DATO: sin enlaces y de 120 caracteres como máximo; un retiro no lleva dirección', () => {
@@ -86,7 +86,7 @@ describe('pcEntregaDelCarrito', () => {
 });
 
 describe('pcDecision (la regla del 23/11/2026)', () => {
-  const OK = { lineas: [{ id: 'a1' }], noEntraron: [], distintos: [], descartados: 0, entregaCompleta: true, cobroReal: true };
+  const OK = { lineas: [{ id: 'a1' }], noEntraron: [], distintos: [], descartados: 0, entregaCompleta: true, cobroReal: true, mercadoCoincide: true };
   it('todo entró + entrega completa + cobro real ⇒ qr', () => { expect(decision(OK)).toBe('qr'); });
   it('sin piezas, o sin nada ⇒ derivar (antes que cualquier otra regla)', () => {
     expect(decision({ ...OK, lineas: [] })).toBe('derivar');
@@ -108,8 +108,8 @@ describe('pcDecision (la regla del 23/11/2026)', () => {
   });
   it('NEGADO: un dato ilegible en `descartados` cuenta como «hubo descartados»', () => {
     for (const d of [undefined, NaN, 'muchos', {}, Infinity]) expect(decision({ ...OK, descartados: d })).toBe('listo_para_confirmar');
-    expect(decision({ ...OK, descartados: '0' })).toBe('qr');   // un número escrito como texto es el número
-    expect(decision({ ...OK, descartados: -3 })).toBe('qr');   // no hay descartados negativos
+    expect(decision({ ...OK, descartados: '0' })).toBe('listo_para_confirmar');   // K1 manda un ARREGLO de ids: un texto no es el número (revisión del PR #1106)
+    expect(decision({ ...OK, descartados: -3 })).toBe('listo_para_confirmar');   // un negativo es un dato raro
   });
   it('la entrega incompleta gana sobre lo descartado (se pregunta primero); `pcQrSoloAlCompletar` dice si el QR saldría solo al completarla', () => {
     expect(decision({ ...OK, entregaCompleta: false, descartados: 2 })).toBe('pedir_faltante');
@@ -129,6 +129,12 @@ describe('pcMercadoCoincide (K1): la moneda y el mercado de la carga se COMPRUEB
     expect(mercadoOk({ moneda: 'BOB', mercado: 'BO', catalogo: 'externo' }, 'BO')).toBe(true);
     expect(mercadoOk({ moneda: 'ARS', mercado: 'AR', catalogo: 'externo' }, 'AR')).toBe(true);
   });
+  it('NEGADO: una carga de Argentina exige moneda ARS, mercado AR y catalogo externo, los tres; una carga vacía o solo con mercado no sirve', () => {
+    expect(mercadoOk({}, 'AR')).toBe(false);
+    expect(mercadoOk({ mercado: 'AR' }, 'AR')).toBe(false);
+    expect(mercadoOk({ moneda: 'ARS', mercado: 'AR' }, 'AR')).toBe(false);
+    expect(mercadoOk({ moneda: 'ARS', catalogo: 'externo' }, 'AR')).toBe(false);
+  });
   it('NEGADO: la moneda o el mercado de otro país, USD, ARS sin fuente externa y un teléfono de otro país NO coinciden', () => {
     expect(mercadoOk({ moneda: 'ARS', catalogo: 'externo' }, 'BO')).toBe(false);
     expect(mercadoOk({ moneda: 'BOB' }, 'AR')).toBe(false);
@@ -141,3 +147,43 @@ describe('pcMercadoCoincide (K1): la moneda y el mercado de la carga se COMPRUEB
     expect(mercadoOk({ moneda: 'BOB' }, 'otro')).toBe(false);
   });
 });
+
+describe('revisión del PR #1106: casos que no pueden dejar salir un QR que no corresponde', () => {
+  it('`descartados` es el ARREGLO de ids de K1: cualquier id (incluso «0») impide el QR; vacío lo permite; un valor ilegible cuenta como descartado', () => {
+    expect(decision({ ...OK_REV, descartados: ['0'] })).toBe('listo_para_confirmar');
+    expect(decision({ ...OK_REV, descartados: ['x', 'y'] })).toBe('listo_para_confirmar');
+    expect(decision({ ...OK_REV, descartados: [] })).toBe('qr');
+    expect(decision({ ...OK_REV, descartados: 0 })).toBe('qr');
+    for (const raro of ['', null, undefined, 'a', -1, 1.5, {}]) expect(decision({ ...OK_REV, descartados: raro }), String(raro)).toBe('listo_para_confirmar');
+  });
+  it('NEGADO: sin `mercadoCoincide === true` NUNCA sale el QR (el candado está en la decisión)', () => {
+    for (const v of [false, undefined, null, 'true', 1]) expect(decision({ ...OK_REV, mercadoCoincide: v }), String(v)).toBe('listo_para_confirmar');
+    expect(qrSolo({ lineas: [{ id: 'a1' }], noEntraron: [], distintos: [], descartados: [], cobroReal: true })).toBe(false);
+  });
+  it('una cantidad en texto («5») con stock 2 NO se cobra en silencio: la pieza queda en `noEntraron`', () => {
+    const r = lineas({ items: [it_({ cantidad: '5' })] }, [V({ stock: 2 })]);
+    expect(r.lineas[0].cantidad).toBe(2);
+    expect(r.noEntraron).toEqual(['Pieza A']);
+  });
+  it('más de 50 renglones: lo que sobra se dice (`otras piezas`), no se pierde en silencio', () => {
+    const items = Array.from({ length: 50 }, () => it_({ cantidad: 1 })).concat([it_({ id: 'b2', nombre: 'Pieza B' })]);
+    expect(lineas({ items }, VENDIBLES).noEntraron).toContain('otras piezas');
+  });
+  it('hasta 99 unidades por pieza (el tope del servidor), no 50', () => {
+    const r = lineas({ items: [it_({ cantidad: 60 })] }, [V({ stock: 99 })]);
+    expect(r.lineas[0].cantidad).toBe(60);
+    expect(r.noEntraron).toEqual([]);
+  });
+  it('NEGADO: monedas mezcladas en las líneas del catálogo vivo, aun sin `total` en la carga, quedan en `distintos` (no hay total honesto)', () => {
+    const r = lineas({ items: [it_(), it_({ id: 'b2', nombre: 'Pieza B' })] }, [V({ moneda: 'BOB' }), V({ id: 'b2', nombre: 'Pieza B', moneda: 'ARS' })]);
+    expect(r.distintos).toContain('_moneda');
+    expect(decision({ ...OK_REV, distintos: r.distintos })).toBe('listo_para_confirmar');
+  });
+  it('NEGADO: una entrega ausente o rara NO se toma como retiro (el modo queda vacío y se pregunta); tampoco lanza con reconocedores que no son funciones', () => {
+    for (const e of [undefined, null, '', 'otra', 'RETIRO', 7]) expect(entrega({ entrega: e }, ['Retiro en tienda', 'Envío'], retiro, envio).modo, String(e)).toBe('');
+    expect(entrega({ entrega: 'retiro' }, ['Retiro en tienda'], retiro, envio).modo).toBe('Retiro en tienda');
+    expect(() => entrega({ entrega: 'retiro' }, ['Retiro en tienda'], undefined, 'x')).not.toThrow();
+    expect(entrega({ entrega: 'retiro' }, ['Retiro en tienda'], undefined, 'x').modo).toBe('');
+  });
+});
+const OK_REV = { lineas: [{ id: 'a1' }], noEntraron: [], distintos: [], descartados: [], entregaCompleta: true, cobroReal: true, mercadoCoincide: true };

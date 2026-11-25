@@ -17,22 +17,28 @@
 //   distintos   los ids cuyo `precioCentavos` de la carga no es el vivo; `'_total'` si el total de la carga no es el real (ni el real más el envío)
 function pcLineasDelCarrito(carrito, vendibles) {
   const car = vcObjeto(carrito) ? carrito : {};
-  const items = (Array.isArray(car.items) ? car.items : []).slice(0, 50).filter(vcObjeto);
+  const todos = (Array.isArray(car.items) ? car.items : []);
+  const items = todos.slice(0, 50).filter(vcObjeto);
   const crudas = items.map((i) => ({ id: typeof i.id === 'string' ? i.id : '', cantidad: i.cantidad, detalle: typeof i.detalle === 'string' ? i.detalle : '' }));
-  const lineas = vcLineas(crudas, vendibles).lineas;
+  // Los topes del servidor (K1): hasta 50 renglones y 99 unidades por pieza.
+  const r = vcLineas(crudas, vendibles, { maxLineas: 50, maxCantidad: 99 });
+  const lineas = r.lineas;
   const porId = new Map();
   for (const l of lineas) porId.set(l.id, (porId.get(l.id) || 0) + l.cantidad);
+  // Lo pedido por id con la MISMA lectura de cantidad que `vcLineas` (un entero, o un texto de dígitos como «5»).
+  const pedida = (c) => (typeof c === 'string' && /^\s*[1-9]\d{0,5}\s*$/.test(c) ? Number(c) : c);
   const pedido = new Map();
-  for (const i of items) if (typeof i.id === 'string' && Number.isInteger(i.cantidad) && i.cantidad > 0) pedido.set(i.id, (pedido.get(i.id) || 0) + i.cantidad);
+  for (const i of items) { const q = pedida(i.cantidad); if (typeof i.id === 'string' && Number.isInteger(q) && q > 0) pedido.set(i.id, (pedido.get(i.id) || 0) + q); }
   const noEntraron = [];
+  const marca = (nombre) => { const n = nombre !== '' ? nombre : 'una pieza'; if (!noEntraron.includes(n)) noEntraron.push(n); };
   for (const i of items) {
-    const nombre = vcLimpiar(i.nombre, 60);
     const id = typeof i.id === 'string' ? i.id : '';
     const entro = porId.has(id) && (pedido.get(id) || 0) <= porId.get(id);
-    if (!entro && nombre !== '' && !noEntraron.includes(nombre)) noEntraron.push(nombre);
-    // Un renglón sin nombre usable que no entró igual cuenta: no se pierde por falta de nombre.
-    if (!entro && nombre === '' && !noEntraron.includes('una pieza')) noEntraron.push('una pieza');
+    if (!entro) marca(vcLimpiar(i.nombre, 60));
   }
+  // Más de 50 renglones: lo que sobra NO entra (y se dice), nunca se pierde en silencio. Y lo que `vcLineas` descartó sin que un renglón lo explique también cuenta.
+  if (todos.length > 50) marca('otras piezas');
+  if (r.descartadas.length > 0 && noEntraron.length === 0) marca('una pieza');
   const distintos = [];
   for (const i of items) {
     if (Number.isSafeInteger(i.precioCentavos) && i.precioCentavos >= 0 && typeof i.id === 'string') {
@@ -40,6 +46,8 @@ function pcLineasDelCarrito(carrito, vendibles) {
       if (viva && viva.precioCentavos !== i.precioCentavos && !distintos.includes(i.id)) distintos.push(i.id);
     }
   }
+  // Monedas mezcladas en las líneas del catálogo vivo: no hay un total honesto.
+  if (lineas.length > 0 && vcTotalCentavos(lineas) === null) distintos.push('_moneda');
   // El total de la carga contra el REAL: igual al real, o al real más el costo de envío que el servidor declara. Un total ausente (≤ 0) no dice nada.
   const total = Number(car.total);
   if (Number.isFinite(total) && total > 0 && lineas.length > 0) {
@@ -57,7 +65,10 @@ function pcEntregaDelCarrito(carrito, modos, esRetiro, esEnvio) {
   const car = vcObjeto(carrito) ? carrito : {};
   const lista = (Array.isArray(modos) ? modos : []).filter((m) => typeof m === 'string' && m !== '');
   const envia = car.entrega === 'envio';
-  const modo = envia ? (lista.find((m) => esEnvio(m)) || '') : (lista.find((m) => esRetiro(m) && !esEnvio(m)) || '');
+  const retira = car.entrega === 'retiro';
+  const sirve = typeof esRetiro === 'function' && typeof esEnvio === 'function';
+  // Solo `entrega === 'retiro'` o `'envio'` eligen un modo: una entrega ausente o rara deja el modo vacío y se pregunta (nunca un retiro que el cliente no eligió).
+  const modo = !sirve ? '' : (envia ? (lista.find((m) => esEnvio(m)) || '') : (retira ? (lista.find((m) => esRetiro(m) && !esEnvio(m)) || '') : ''));
   let direccion = '';
   if (envia) {
     const d = vcLimpiar(car.direccion, 120);
@@ -79,8 +90,10 @@ function pcDecision(x) {
   if (e.entregaCompleta !== true) return 'pedir_faltante';
   const noEntraron = Array.isArray(e.noEntraron) ? e.noEntraron : [];
   const distintos = Array.isArray(e.distintos) ? e.distintos : [];
-  const descartados = Number.isFinite(Number(e.descartados)) ? Math.max(0, Math.floor(Number(e.descartados))) : 1;   // un dato ilegible cuenta como «hubo descartados»: nunca más cobro por un dato raro
-  if (noEntraron.length > 0 || distintos.length > 0 || descartados > 0 || e.cobroReal !== true) return 'listo_para_confirmar';
+  // `descartados`: el ARREGLO de ids de K1 (cuenta su largo), o un entero ≥ 0; cualquier otro valor ilegible cuenta como «hubo descartados»: nunca más cobro por un dato raro.
+  const descartados = Array.isArray(e.descartados) ? e.descartados.length : (Number.isSafeInteger(e.descartados) && e.descartados >= 0 ? e.descartados : 1);
+  // El QR exige que el mercado y la moneda de la carga coincidan con el país del teléfono (`pcMercadoCoincide`): el candado está AQUÍ, no en quien llama.
+  if (noEntraron.length > 0 || distintos.length > 0 || descartados > 0 || e.cobroReal !== true || e.mercadoCoincide !== true) return 'listo_para_confirmar';
   return 'qr';
 }
 
@@ -88,7 +101,7 @@ function pcDecision(x) {
 function pcQrSoloAlCompletar(x) {
   const e = vcObjeto(x) ? x : {};
   const lineas = Array.isArray(e.lineas) ? e.lineas : [];
-  return pcDecision({ lineas: lineas, noEntraron: e.noEntraron, distintos: e.distintos, descartados: e.descartados, entregaCompleta: true, cobroReal: e.cobroReal }) === 'qr';
+  return pcDecision({ lineas: lineas, noEntraron: e.noEntraron, distintos: e.distintos, descartados: e.descartados, entregaCompleta: true, cobroReal: e.cobroReal, mercadoCoincide: e.mercadoCoincide }) === 'qr';
 }
 
 // K1 (contrato de la carga, 24/11/2026): ¿la moneda y el mercado que dice la carga son los del país del TELÉFONO del cliente? `mercadoDelTelefono`: 'BO' | 'AR' (lo decide el flujo por el prefijo; otro país = '').
@@ -99,12 +112,9 @@ function pcMercadoCoincide(carrito, mercadoDelTelefono) {
   const car = carrito;
   const m = mercadoDelTelefono === 'BO' || mercadoDelTelefono === 'AR' ? mercadoDelTelefono : '';
   if (m === '') return false;
-  const esperada = m === 'BO' ? 'BOB' : 'ARS';
   const moneda = car.moneda === undefined || car.moneda === null || car.moneda === '' ? '' : car.moneda;
   const mercado = car.mercado === undefined || car.mercado === null || car.mercado === '' ? '' : car.mercado;
-  if (moneda !== '' && moneda !== esperada) return false;
-  if (mercado !== '' && mercado !== m) return false;
-  // Una carga de ARS sin fuente externa no existe: ARS exige `catalogo: 'externo'`.
-  if (moneda === 'ARS' && car.catalogo !== 'externo') return false;
-  return true;
+  // Bolivia: BOB (o sin moneda, como los tenants de Firestore) y mercado BO (o ausente). Argentina solo existe con fuente externa: ARS, mercado AR y catalogo 'externo', los tres presentes.
+  if (m === 'BO') return (moneda === '' || moneda === 'BOB') && (mercado === '' || mercado === 'BO');
+  return moneda === 'ARS' && mercado === 'AR' && car.catalogo === 'externo';
 }
