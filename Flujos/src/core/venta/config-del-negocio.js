@@ -445,6 +445,8 @@ const estadoComercio = util(r.estadoComercio) === 'activo' ? 'operativo'
 const delCatalogo = {
   moneda,
   catalogoPorArea,
+  // Nombres de lo agotado (texto JSON): `Procesar respuesta` los usa como red secundaria para no mandar el QR de un pedido que nombra uno.
+  agotadosNombres: JSON.stringify(agotados.map((i) => String(i.nombre == null ? '' : i.nombre).slice(0, 80)).slice(0, 50)),
   areasDelCatalogo,
   claseGastronomia,
   claseVariantes,

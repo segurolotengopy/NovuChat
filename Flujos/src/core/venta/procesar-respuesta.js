@@ -130,12 +130,12 @@ for (let i = 0; i < $input.all().length; i++) {
   const fallo = item.json.error !== undefined
     || (item.json.output === undefined && item.json.text === undefined);
   const bruto = fallo ? '' : String(item.json.output ?? item.json.text ?? '').trim();
-  const enviarQr = /\[ENVIAR_QR\]/i.test(bruto);
-  const pedidoConfirmado = /\[PEDIDO_CONFIRMADO\]/i.test(bruto);
+  let enviarQr = /\[ENVIAR_QR\]/i.test(bruto);
+  let pedidoConfirmado = /\[PEDIDO_CONFIRMADO\]/i.test(bruto);
   // [TRANSFERIR]: el modelo pide pasar con una persona del negocio. La marca la
   // convierte el codigo en aviso al dueno (una vez por telefono y ventana de
   // 24 h) y en un boton para escribirle directo, dentro del mismo mensaje.
-  const pideTransferir = /\[TRANSFERIR\]/i.test(bruto);
+  let pideTransferir = /\[TRANSFERIR\]/i.test(bruto);
   const numeroDuenoLimpio = String(ent.numeroDueno ?? '').replace(/\D/g, '');
   // [ENVIAR_CATALOGO]: el agente pide derivar al catalogo web propio. La marca
   // se obedece SIEMPRE, aunque la configuracion diga que esta apagado: quien
@@ -167,6 +167,39 @@ for (let i = 0; i < $input.all().length; i++) {
   // se ignora, se deja constancia y el texto no promete nada (filtro PROMESA).
   let transferir = pideTransferir && numeroDuenoLimpio !== '';
   if (pideTransferir && !transferir) avisos.push('transferencia_sin_numero');
+
+  // --- CANDADO DE EXISTENCIAS: RED SECUNDARIA (24/11/2026) --------------------
+  // El Demo B ofrecio una gaseosa con existencias 0. `Config del negocio` ya saca lo agotado del catalogo del prompt (`agotadosNombres`,
+  // texto JSON con los nombres que el servidor marco `agotado`), pero el modelo puede nombrar uno igual. Si en el mismo turno sale
+  // [ENVIAR_QR] o [PEDIDO_CONFIRMADO] y el texto NOMBRA un item agotado, no sale el QR ni se confirma el pedido: se pasa con una persona
+  // (politica del 21/09: aviso + boton). Es una red SECUNDARIA y por TEXTO: el cobro por chat sigue tomando el total del texto del modelo
+  // (`Preparar QR de cobro`), no de una lista de items; ese hueco de fondo esta anotado en docs/arquitectura/ y no se resuelve aca.
+  // Comparacion normalizada: sin tildes ni mayusculas ni signos, y cada palabra en singular (plural -s / -es); el nombre del item se
+  // busca como secuencia de palabras, completo o sin lo que va entre parentesis. Palabras de menos de 3 letras no se comparan solas.
+  let agotadosNombres = [];
+  try { agotadosNombres = JSON.parse(String(ent.agotadosNombres || '[]')); } catch (e) { agotadosNombres = []; }
+  const sing = (w) => (w.length > 4 && /es$/.test(w) ? w.slice(0, -2) : (w.length > 3 && /s$/.test(w) ? w.slice(0, -1) : w));
+  const secuencia = (t) => ' ' + String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .split(/[^a-z0-9ñ]+/).filter((w) => w !== '').map(sing).join(' ') + ' ';
+  const nombraAgotado = (t) => {
+    const hay = secuencia(t);
+    return (Array.isArray(agotadosNombres) ? agotadosNombres : []).some((n) => {
+      const completo = secuencia(n);
+      const sinParentesis = secuencia(String(n ?? '').replace(/\([^)]*\)/g, ' '));
+      return [completo, sinParentesis].some((q) => q.trim().length >= 3 && hay.includes(q));
+    });
+  };
+  if ((enviarQr || pedidoConfirmado) && !fallo && nombraAgotado(texto)) {
+    enviarQr = false;
+    pedidoConfirmado = false;
+    pideTransferir = true;
+    transferir = numeroDuenoLimpio !== '';
+    avisos.push('candado_agotado');
+    const quienAtiende = String(ent.nombreNegocio ?? '').trim() || 'el negocio';
+    texto = transferir
+      ? 'Disculpa, uno de los productos de tu pedido no está disponible por ahora, así que todavía no te envío el QR de pago. Toca el botón y escríbele directo a ' + quienAtiende + ' para revisar tu pedido.'
+      : 'Disculpa, uno de los productos de tu pedido no está disponible por ahora, así que todavía no te envío el QR de pago. Dime qué prefieres cambiar y lo revisamos.';
+  }
 
   // ¿EL TEXTO VA EN EL PIE DE LA IMAGEN, O APARTE? (23/09/2026)
   //
