@@ -5,7 +5,7 @@
   },
   "codigo": {
     "Evaluar números": {
-      "archivo": "barridos/evaluar-numeros.js",
+      "archivo": "core/barridos/evaluar-numeros.js",
       "saltoFinal": true
     }
   },
