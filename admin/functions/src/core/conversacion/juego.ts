@@ -16,6 +16,8 @@
  *   7. Tomar / salida de persona         -> `personaPuedeEscribir === true`       (turno.ts, personaPuedeEscribirDeFicha)
  *   8. adjuntos de la persona            -> `personaPuedeEnviarMedios === true`   (turno.ts, personaPuedeEnviarMediosDeFicha)
  *   9. guardado de medios                -> `guardarMedios === true`              (medios/guardarMedio.ts)
+ *  (Retomar con plantilla, `personaPuedeRetomar === true`, `turno.ts` `personaPuedeRetomarDeFicha`, entrará aquí en el PR de
+ *   Plataforma (R4), que agrega quien escribe la bandera: sin escritor, el alta no puede encenderla.)
  *
  * Dos grupos, por orden de escritura:
  *  - JUEGO_DE_FICHA: se escribe en `tenants/{id}` al dar de alta; no depende de nada externo.

@@ -86,6 +86,11 @@ export interface Turno {
   actividadPersonaEn: number;
   devueltoEn?: number;
   motivoDevolucion?: MotivoDevolucion;
+  /**
+   * Cuándo una persona RETOMÓ la conversación con la ventana cerrada (`retomarConversacion`, plantilla de utilidad).
+   * Solo lo escribe el servidor. Ver «RETOMAR» en `turnoVigente`.
+   */
+  retomadoEn?: number;
 }
 
 /** Lo que se lee del campo `turno` de una conversación. */
@@ -162,6 +167,11 @@ export function leerTurno(crudo: unknown): LecturaDeTurno {
     if (!(MOTIVOS_DE_DEVOLUCION as readonly unknown[]).includes(motivoDevolucion)) return { estado: 'ilegible' };
     turno.motivoDevolucion = motivoDevolucion as MotivoDevolucion;
   }
+  if (crudo['retomadoEn'] !== undefined) {
+    const retomadoEn = milisegundosDeMomento(crudo['retomadoEn']);
+    if (retomadoEn === null) return { estado: 'ilegible' };
+    turno.retomadoEn = retomadoEn;
+  }
   return { estado: 'ok', turno };
 }
 
@@ -204,6 +214,8 @@ export function turnoVigente(turno: unknown, conversacion: ConversacionParaTurno
   if (t.actividadPersonaEn > ahoraMs + MARGEN_RELOJ_MS || t.tomadoEn > ahoraMs + MARGEN_RELOJ_MS) {
     return { responde: 'asistente', motivo: 'ilegible' };
   }
+  // Lo mismo para `retomadoEn`: un retomar del futuro lejano es un dato malo (falla hacia el asistente).
+  if (t.retomadoEn !== undefined && t.retomadoEn > ahoraMs + MARGEN_RELOJ_MS) return { responde: 'asistente', motivo: 'ilegible' };
   const venceInactividad = t.actividadPersonaEn + INACTIVIDAD_MS;
 
   const ultimo = milisegundosDeMomento(conversacion?.ultimoEntranteEn);
@@ -211,13 +223,21 @@ export function turnoVigente(turno: unknown, conversacion: ConversacionParaTurno
   if (ultimo > ahoraMs + MARGEN_RELOJ_MS) return { responde: 'asistente', motivo: 'ilegible' };
   const venceVentana = ultimo + VENTANA_META_MS;
 
-  const ventanaVencida = ahoraMs >= venceVentana;
+  // RETOMAR (plan 23/11/2026, §1.5). Si la persona retomó con la ventana cerrada y todavía no hubo un entrante DESPUÉS
+  // (`retomadoEn >= ultimo`), la ventana vieja no cuenta: manda solo la inactividad de 30 min desde `actividadPersonaEn`.
+  // Así, si el cliente responde dentro de ese plazo, el asistente calla y contesta la persona; pasado el plazo, contesta
+  // el asistente (motivo `inactividad`). Desde el siguiente entrante `ultimo` supera a `retomadoEn` y rige la regla normal.
+  const retomadaSinRespuesta = t.retomadoEn !== undefined && t.retomadoEn >= ultimo;
+  const ventanaVencida = !retomadaSinRespuesta && ahoraMs >= venceVentana;
   const inactividadVencida = ahoraMs >= venceInactividad;
   if (ventanaVencida && (!inactividadVencida || venceVentana <= venceInactividad)) {
     return { responde: 'asistente', motivo: 'ventana', venceEnMs: venceVentana };
   }
   if (inactividadVencida) return { responde: 'asistente', motivo: 'inactividad', venceEnMs: venceInactividad };
-  return { responde: 'persona', motivo: 'tomado', venceEnMs: Math.min(venceInactividad, venceVentana) };
+  return {
+    responde: 'persona', motivo: 'tomado',
+    venceEnMs: retomadaSinRespuesta ? venceInactividad : Math.min(venceInactividad, venceVentana),
+  };
 }
 
 /**
@@ -268,6 +288,16 @@ export function personaPuedeEnviarMediosDeFicha(ficha: { readonly personaPuedeEn
   return !!ficha && ficha.personaPuedeEnviarMedios === true;
 }
 
+/**
+ * ¿Puede una persona del comercio RETOMAR una conversación con la ventana cerrada (plantilla de utilidad)? SOLO si la ficha
+ * tiene `personaPuedeRetomar === true` (booleano exacto; ausente, `false`, `'true'`, `1` o ficha ilegible = no). Se exige
+ * ADEMÁS de `personaPuedeEscribir`. La escribe solo Plataforma, y solo cuando todas las rutas activas del comercio tienen
+ * la plantilla registrada (`rutasWhatsApp/{n}.plantillas.retomar`) y la salida publicada admite plantillas. Pura y sin `import`.
+ */
+export function personaPuedeRetomarDeFicha(ficha: { readonly personaPuedeRetomar?: unknown } | null | undefined): boolean {
+  return !!ficha && ficha.personaPuedeRetomar === true;
+}
+
 // ---------------------------------------------------------------------------
 // ERRORES: códigos y mensajes fijos, sin detalle
 // ---------------------------------------------------------------------------
@@ -293,6 +323,16 @@ export const ErroresDeTurno = {
   contactoBloqueado: { code: 'failed-precondition', message: 'Este contacto está bloqueado. Desbloquéelo para atenderlo.' },
   /** Una persona tiene la conversación: antes de bloquear hay que devolverla. */
   turnoVigente: { code: 'failed-precondition', message: 'Devuelva la conversación antes de bloquear el contacto.' },
+  /** RETOMAR. La bandera `personaPuedeRetomar` no está en `true` (no nombra la bandera ni la plantilla). */
+  sinRetomar: { code: 'permission-denied', message: 'Retomar conversaciones todavía no está activo para su negocio.' },
+  /** RETOMAR solo sirve con la ventana cerrada: con la abierta se usa Tomar. */
+  ventanaAbierta: { code: 'failed-precondition', message: 'La ventana de 24 horas está abierta: use Tomar conversación.' },
+  noContactar: { code: 'failed-precondition', message: 'Este cliente pidió que no se le escriba.' },
+  /** Ya se envió una plantilla y el cliente no respondió (un solo Retomar hasta que responda, con plazo máximo). */
+  retomadaPendiente: { code: 'failed-precondition', message: 'Ya se envió una plantilla a este cliente; espere su respuesta.' },
+  sinPlantilla: { code: 'failed-precondition', message: 'La plantilla para retomar no está disponible en este número.' },
+  topeRetomarDia: { code: 'resource-exhausted', message: 'El comercio llegó al tope diario de conversaciones retomadas.' },
+  topeRetomarMes: { code: 'resource-exhausted', message: 'El comercio llegó al tope mensual de conversaciones retomadas.' },
   noDisponible: { code: 'unavailable', message: 'No se pudo completar la operación. Intente de nuevo.' },
 } as const;
 
