@@ -336,17 +336,25 @@ PY
   # Un REEMPLAZAR_ fuera de «Config base» y fuera de un jsCode (donde solo
   # aparece dentro de una expresion regular) existe unicamente si el manifiesto
   # del flujo lo declara en conservanMarcadores (Flujos/LEEME-flujos.md §0.a).
+  # Alcance (24/11/2026, revision de Principal del #1103): los JSON de la raiz
+  # de Flujos/ y TODO flujo de una subcarpeta que tenga manifiesto
+  # (Flujos/manifiestos/<ruta>): al mudar un flujo con manifiesto a clientes/<t>/
+  # no deja de pasar por aqui. Los de subcarpeta SIN manifiesto los arma su
+  # construir.mjs (no tienen donde declarar) y quedan fuera, como antes.
   local sin_declarar
   sin_declarar="$(python3 - "${ARCHIVOS[@]}" <<'PY'
 import json, os, sys
 for ruta in sys.argv[1:]:
-    if not (ruta.startswith("Flujos/") and ruta.endswith(".json")) or "/" in ruta[len("Flujos/"):]:
+    if not (ruta.startswith("Flujos/") and ruta.endswith(".json")):
+        continue
+    rel = ruta[len("Flujos/"):]
+    man = os.path.join("Flujos", "manifiestos", rel)
+    if "/" in rel and (rel.startswith(("manifiestos/", "src/", "prompts/")) or not os.path.isfile(man)):
         continue
     try:
         datos = json.load(open(ruta, encoding="utf-8"))
         nodos = datos["nodes"]
         assert isinstance(nodos, list)
-        man = os.path.join("Flujos", "manifiestos", os.path.basename(ruta))
         declarados = set()
         if os.path.isfile(man):
             cm = json.load(open(man, encoding="utf-8")).get("conservanMarcadores") or {}
