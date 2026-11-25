@@ -42,6 +42,15 @@ const ACCIONES = ['responder', 'plantilla_carrito_espera'];
 const limpio = (v, max) => String(v ?? '')
   .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const numero = (v) => (typeof v === 'number' && Number.isFinite(v)) ? v : 0;
+// K1: la especificacion por linea («color: negro»). El servidor ya la sanea; aca se vuelve a sanear porque va a
+// salir por WhatsApp: sin enlaces, sin `<>&` ni `[]{}«»` (no puede imitar una marca interna ni cerrar un
+// entrecomillado) y con tope de 60.
+const detalle = (v) => typeof v !== 'string' ? '' : limpio(v.replace(/https?:\/\/\S+/gi, ' ').replace(/www\.\S+/gi, ' '), 200)
+  .replace(/[<>&\[\]{}«»]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+// K1: precio unitario en centavos (entero >= 0); informativo, el flujo NO cobra de aca.
+const centavos = (v) => (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0) ? v : null;
+// Moneda por IGUALDAD ESTRICTA: lo que no es exactamente USD o ARS es Bs (no se adivina por prefijo).
+const moneda = (v) => v === 'USD' ? 'USD' : (v === 'ARS' ? 'ARS' : 'Bs');
 
 const out = [];
 
@@ -84,14 +93,24 @@ for (const item of $input.all()) {
     accion: String(cuerpo.accion ?? ''),
     ventanaAbierta: cuerpo.ventanaAbierta === true,
     fichaCompartida: cuerpo.fichaCompartida === true,
-    items: items.slice(0, 50).map((i) => ({
-      nombre: limpio((i ?? {}).nombre, 80) || 'producto',
-      cantidad: numero((i ?? {}).cantidad) || 1,
-      subtotal: numero((i ?? {}).subtotal),
-    })),
+    items: items.slice(0, 50).map((i) => {
+      const esp = detalle((i ?? {}).detalle);
+      const pc = centavos((i ?? {}).precioCentavos);
+      return {
+        nombre: limpio((i ?? {}).nombre, 80) || 'producto',
+        cantidad: numero((i ?? {}).cantidad) || 1,
+        subtotal: numero((i ?? {}).subtotal),
+        // Solo si hay: sin ellos el item es identico al de antes (compatible hacia atras).
+        ...(pc !== null ? { precioCentavos: pc } : {}),
+        ...(esp !== '' ? { detalle: esp } : {}),
+      };
+    }),
     itemsTotal: items.length,
     total: numero(cuerpo.total),
-    moneda: cuerpo.moneda === 'USD' ? 'USD' : 'Bs',
+    moneda: moneda(cuerpo.moneda),
+    // K1 (solo con fuente externa): el mercado y la marca del catalogo. Igualdad estricta; ausentes = vacios.
+    mercado: cuerpo.mercado === 'BO' || cuerpo.mercado === 'AR' ? cuerpo.mercado : '',
+    catalogo: cuerpo.catalogo === 'externo' ? 'externo' : '',
     costoEnvio: numero(cuerpo.costoEnvio),
     entrega: String(cuerpo.entrega ?? '') === 'envio' ? 'envio' : 'retiro',
     // `direccion` y `nota` viajan SIEMPRE, aunque vengan vacias.
