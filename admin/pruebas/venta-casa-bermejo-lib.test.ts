@@ -23,7 +23,7 @@ const NOMBRES = [
   'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_SIN_PIEZA', 'bmEnlaceCatalogo', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmDatosTienda', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
   // UBICACIÓN DE LA TIENDA (25/11/2026)
-  'bmMapaTienda', 'bmUbicacionTienda', 'bmPideUbicacion',
+  'bmMapaTienda', 'bmUbicacionTienda', 'bmPideUbicacion', 'bmTiendaDelCatalogo', 'bmTextoDeTienda',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
 type Fn = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -719,7 +719,7 @@ describe('ubicación de la tienda: el dato y la pregunta', () => {
     expect(largo.length).toBe(200);
     expect(M(largo)).toBe(largo);
     for (const mal of ['', undefined, null, 5, {}, 'http://maps.app.goo.gl/x', 'ftp://maps.app.goo.gl/x', 'javascript:alert(1)', 'https://ejemplo.com/maps', 'https://maps.app.goo.gl.evil.com/x', 'https://evil.com/?https://maps.app.goo.gl/x', 'https://maps.app.goo.gl/a b',
-      ' https://maps.app.goo.gl/x', 'https://maps.app.goo.gl/x\n', 'https://maps.app.goo.gl/x\u0000', 'https://maps.app.goo.gl@evil.com/x', 'https://u:p@maps.app.goo.gl/x', 'https://maps.app.goo.gl:8443/x', 'https://goo.gl/mapsx', 'REEMPLAZAR_MAPA', largo + 'a']) expect(M(mal)).toBe('');
+      ' https://maps.app.goo.gl/x', 'https://maps.app.goo.gl/x\n', 'https://maps.app.goo.gl/x\u0000', 'https://maps.app.goo.gl@evil.com/x', 'https://u:p@maps.app.goo.gl/x', 'https://maps.app.goo.gl:8443/x', 'https://goo.gl/mapsx', 'REEMPLAZAR_MAPA', 'https://maps.app.goo.gl/../x', 'https://maps.app.goo.gl/a/./x', 'https://maps.app.goo.gl/%2e%2e/x', 'https://maps.app.goo.gl/a%2Fb', 'https://maps.app.goo.gl/a%5Cb', 'https://maps.app.goo.gl/a%2E%2e', 'https://maps.google.com/url?q=https://evil.example.com', 'https://maps.google.com/URL?q=x', 'https://www.google.com/url?q=x', largo + 'a']) expect(M(mal)).toBe('');
   });
   it('el dato: un marcador o un texto vacío es «sin dato»; el horario no cuenta como ubicación', () => {
     const U = (o: Record<string, unknown>) => b('bmUbicacionTienda')(o) as { direccion: string; mapa: string; horario: string; hayDato: boolean };
@@ -732,12 +732,43 @@ describe('ubicación de la tienda: el dato y la pregunta', () => {
   });
   it('SÍ pide la ubicación: las frases del reclamo y sus variantes, con o sin tildes y sin «?»', () => {
     for (const f of ['Si quería saber dónde están ubicados', 'dónde queda', 'donde queda?', 'dónde están', 'donde estan ubicados ustedes', 'dónde se ubican', 'dónde se encuentran', 'en qué zona quedan', 'dónde es la tienda', 'dónde queda el local', 'dónde los puedo encontrar',
-      'cual es la direccion', 'cuál es su dirección?', 'direccion', 'la ubicación', 'ubicacion?', 'me pasa la ubicación por favor', 'dame la dirección de la tienda', 'como llego', 'cómo llegar a la tienda', 'mandame el mapa', 'el mapa', 'tienen google maps', 'link de la ubicación', 'hola, dónde están ubicados?', 'tienen tienda física'])
+      'cual es la direccion', 'cuál es su dirección?', 'direccion', 'la ubicación', 'ubicacion?', 'me pasa la ubicación por favor', 'dame la dirección de la tienda', 'como llego', 'cómo llegar a la tienda', 'mandame el mapa', 'el mapa', 'tienen google maps', 'link de la ubicación', '¿me puedes enviar la ubicación?', 'me pueden mandar la dirección?', 'me podría pasar la ubicación?', 'pásenme la ubicación', 'mándenme la dirección', 'y la dirección?', '¿Dónde están ubicados en Cochabamba?', 'dónde están en La Paz', 'hola, dónde están ubicados?', 'tienen tienda física'])
       expect(pide(f), f).toBe(true);
   });
   it('NEGADO: datos de entrega, pedidos, productos, horario y cifras NO son la pregunta', () => {
-    for (const f of ['dirección de envío: calle Falsa', 'direccion: calle falsa', 'Dirección: Av. Busch', 'Ana Pérez 4412345 Cochabamba', 'mi dirección es calle Sucre', 'la dirección es av busch', 'dirección calle bolivar', 'envíenlo a mi dirección', 'cuanto cuesta el envío a esta dirección', 'mi ubicación es el centro',
+    for (const f of ['necesito cambiar la dirección', 'quiero cambiar la dirección', 'quiero darles la dirección', 'favor anoten la dirección', 'quisiera saber la dirección para que me lo traigan', 'ya tienen la dirección?', 'dónde están las billeteras en stock', 'dirección de envío: calle Falsa', 'direccion: calle falsa', 'Dirección: Av. Busch', 'Ana Pérez 4412345 Cochabamba', 'mi dirección es calle Sucre', 'la dirección es av busch', 'dirección calle bolivar', 'envíenlo a mi dirección', 'cuanto cuesta el envío a esta dirección', 'mi ubicación es el centro',
       'dónde está mi pedido', 'dónde están las billeteras', 'donde esta la billetera', 'dónde queda mi envío', 'donde estan mis cosas', 'cómo llega mi pedido', 'cómo llego a pagar', 'quiero una billetera', 'a qué hora abren', 'hola', 'quiero un mapa de cuero', 'dirección 123', 'donde es la entrega', 'no tengo tienda física', '',
       'cual es la direccion 4412345', 'mándame la dirección de envío', 'necesito la dirección de entrega', 'dame la ubicación de mi pedido', 'queria dirección: el centro', 'por favor anote la dirección calle Bolivar', 'dónde estan ubicados ' + 'x '.repeat(14)]) expect(pide(f), f).toBe(false);
+  });
+});
+
+describe('ubicación de la tienda: la fuente del catálogo y el texto de un tercero', () => {
+  const K = (tienda: unknown, extra: Record<string, unknown> = {}) => b('bmTiendaDelCatalogo')({ statusCode: 200, body: { version: 1, ...extra, tienda } }) as { direccion: string; mapa: string; horario: string };
+  const T = (v: unknown): string => b('bmTextoDeTienda')(v) as string;
+  it('lee `tienda` de la respuesta CRUDA (cuerpo objeto o texto), sin depender de que el catálogo sea «ok»', () => {
+    expect(K({ direccion: 'Calle Ejemplo 1', enlaceMapa: 'https://maps.app.goo.gl/x', horario: 'de 9 a 19' })).toEqual({ direccion: 'Calle Ejemplo 1', mapa: 'https://maps.app.goo.gl/x', horario: 'de 9 a 19' });
+    expect(b('bmTiendaDelCatalogo')({ statusCode: 200, body: JSON.stringify({ tienda: { direccion: 'Calle Ejemplo 1' } }) }).direccion).toBe('Calle Ejemplo 1');
+    const vacio = { direccion: '', mapa: '', horario: '' };
+    for (const r of [undefined, null, {}, { statusCode: 503, body: { tienda: { direccion: 'x' } } }, { statusCode: 200, body: 'no es json' }, { statusCode: 200, body: { tienda: null } }, { statusCode: 200, body: { tienda: 'x' } }, { statusCode: 200, body: { tienda: [1] } }]) expect(b('bmTiendaDelCatalogo')(r)).toEqual(vacio);
+    expect(K({ nombre: null, direccion: null, enlaceMapa: null, coordenadas: null, horario: null })).toEqual(vacio);
+  });
+  it('coordenadas: solo números finitos en rango arman el enlace limpio; el enlace válido gana a las coordenadas', () => {
+    expect(K({ coordenadas: { lat: -16.5, lng: -68.15 } }).mapa).toBe('https://www.google.com/maps/search/?api=1&query=-16.500000%2C-68.150000');
+    expect(K({ enlaceMapa: 'https://maps.app.goo.gl/x', coordenadas: { lat: 1, lng: 2 } }).mapa).toBe('https://maps.app.goo.gl/x');
+    expect(K({ enlaceMapa: 'https://evil.example.com', coordenadas: { lat: 1, lng: 2 } }).mapa).toBe('https://www.google.com/maps/search/?api=1&query=1.000000%2C2.000000');
+    for (const c of [{ lat: 90.1, lng: 0 }, { lat: 0, lng: -180.1 }, { lat: '1', lng: 2 }, { lat: NaN, lng: 2 }, { lat: Infinity, lng: 2 }, { lat: 1 }, null, 'x']) expect(K({ coordenadas: c }).mapa).toBe('');
+  });
+  it('el respaldo del tenant solo rige donde el catálogo no trajo el subcampo', () => {
+    const U = b('bmUbicacionTienda');
+    const resp = { statusCode: 200, body: { tienda: { direccion: 'Del catálogo', enlaceMapa: null, horario: null } } };
+    expect(U({ ubicacionTienda: 'Del tenant', mapaTienda: 'https://maps.app.goo.gl/t', horarioTienda: 'de 8 a 12' }, resp)).toMatchObject({ direccion: 'Del catálogo', mapa: 'https://maps.app.goo.gl/t', horario: 'de 8 a 12', hayDato: true });
+    expect(U({}, resp)).toMatchObject({ direccion: 'Del catálogo', mapa: '', horario: '', hayDato: true });
+    expect(U({}, undefined).hayDato).toBe(false);
+  });
+  it('texto de un tercero: sin enlaces ni dominios (sin dato) y sin marcas de WhatsApp', () => {
+    expect(T('*Av.* _Ejemplo_ ~s/n~ `zona`')).toBe('Av. Ejemplo s/n zona');
+    expect(T('Av. Busch No. 12, piso 2')).toBe('Av. Busch No. 12, piso 2');
+    expect(T('lunes a sábado de 9:00 a 19:00')).toBe('lunes a sábado de 9:00 a 19:00');
+    for (const malo of ['https://evil.example.com', 'http://x', 'www.evil.example', 'visite promo.com/oferta', 'ver evil.com', 'escriba a tienda.bo', 'REEMPLAZAR_UBICACION', 5, null, undefined, '']) expect(T(malo)).toBe('');
   });
 });

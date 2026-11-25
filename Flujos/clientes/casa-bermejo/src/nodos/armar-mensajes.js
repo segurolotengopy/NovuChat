@@ -78,7 +78,7 @@ if (puerta.ruta === 'sigue') {
     msgs = [cmMensaje('cliente', cmEnlace(cuerpoCat, 'Ver catálogo', String(d.enlace || '')), cuerpoCat, cuerpoCat + '\n\n' + String(d.enlace || ''), { tipoReporte: 'interactive', conBoton: true })];
   // UBICACIÓN DE LA TIENDA (25/11/2026): la dirección en texto, el enlace de Maps como botón «Ver ubicación» y el horario declarado: UN mensaje, todo del dato del comercio (nada inventado). Un `cmEnlace` solo deja pasar https.
   } else if (tipoDePlan === 'ubicacion_tienda') {
-    const u = bmUbicacionTienda(c.base);
+    const u = bmUbicacionTienda(c.base, cnPrimero('Traer catálogo'));
     if (!u.hayDato) {
       // No debería pasar (Decidir turno ya derivó sin dato): jamás una dirección inventada; pasa con recepción.
       tipoDePlan = 'derivar';

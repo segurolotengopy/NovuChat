@@ -97,7 +97,7 @@ if (esAudio ? (texto.length <= BJ_VOZ_MAX && bjPideBaja(texto)) : (!t.seleccionI
 if (esAr && (ficha.aliasEstado === 'pedido' || ficha.aliasEstado === 'abierto') && ficha.carrito.length === 0 && bmQuierePagar(n)) return salir({ tipo: 'alias_pedir' });
 // UBICACIÓN DE LA TIENDA (25/11/2026): «¿dónde están ubicados?» lo contesta el CÓDIGO con el dato del comercio, SIN modelo y sin depender del catálogo (por eso va antes). Sin dato cargado: recepción (aviso + botón), nunca una dirección inventada.
 // Un pedido en curso no se toca (la ficha no cambia). Un toque de lista no es esta pregunta.
-if (!t.seleccionId && bmPideUbicacion(n, texto)) return bmUbicacionTienda(base).hayDato ? salir({ tipo: 'ubicacion_tienda' }) : salir({ tipo: 'derivar', motivo: 'ubicacion_sin_dato' });
+if (!t.seleccionId && bmPideUbicacion(n, texto)) return bmUbicacionTienda(base, cnPrimero('Traer catálogo')).hayDato ? salir({ tipo: 'ubicacion_tienda' }) : salir({ tipo: 'derivar', motivo: 'ubicacion_sin_dato' });
 // 3. Sin catálogo no se improvisa: recepción.
 if (!configLista) return sinConfig();
 // 4. Lo que decide el código sobre el texto, ANTES de cualquier modelo.
