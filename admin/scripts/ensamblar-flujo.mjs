@@ -84,7 +84,7 @@
  * con un archivo por nodo bajo esa carpeta; después se edita a mano para
  * apuntar a `core/` lo que se comparte y se vuelve a correr `extraer`.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { injertarIndicador, quitarIndicador } from '../../Flujos/src/core/indicador/indicador-escritura.mjs';
@@ -158,13 +158,19 @@ export function listarFlujosConManifiestoEnSubcarpetas(raiz = RAIZ_FLUJOS) {
  */
 export function rutaDentroDe(base, rel) {
   const abs = resolve(base, rel);
-  const fuera = (b, a) => { const r = relative(b, a); return !r || r === '..' || r.startsWith(`..${sep}`) || isAbsolute(r); };
-  if (fuera(base, abs)) throw new Error(`ruta fuera de ${base}: ${rel}`);
-  // Un enlace simbólico se juzga por su destino real (el de la ruta, si existe; si no, el de su carpeta más cercana que exista).
-  let real = abs; let resto = '';
-  while (!existsSync(real) && real !== dirname(real)) { resto = join(real.slice(dirname(real).length + 1), resto); real = dirname(real); }
-  const baseReal = existsSync(base) ? realpathSync(base) : base;
-  if (fuera(baseReal, join(realpathSync(real), resto))) throw new Error(`ruta fuera de ${base} (enlace simbólico): ${rel}`);
+  const sale = (r) => r === '..' || r.startsWith(`..${sep}`) || isAbsolute(r);
+  const r0 = relative(base, abs);
+  if (!r0 || sale(r0)) throw new Error(`ruta fuera de ${base}: ${rel}`);
+  // Un enlace simbólico se juzga por su destino real: el de la carpeta más cercana que exista (la ruta misma, si existe).
+  // Lo que todavía no existe debajo de ella no puede ser un enlace, y `abs` ya no tiene `..`. Sin `join` sobre lo calculado:
+  // así `rutas-escritas.test.ts` no lo toma por una ruta del script que no puede seguir.
+  if (existsSync(base)) {
+    // `lstat`, no `exists`: un enlace roto también cuenta como existente (y `realpathSync` lo rechaza), para no saltarlo.
+    const hay = (r) => { try { lstatSync(r); return true; } catch { return false; } };
+    let real = abs;
+    while (!hay(real) && real !== dirname(real)) real = dirname(real);
+    if (sale(relative(realpathSync(base), realpathSync(real)))) throw new Error(`ruta fuera de ${base} (enlace simbólico): ${rel}`);
+  }
   return abs;
 }
 

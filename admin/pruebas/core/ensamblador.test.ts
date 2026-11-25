@@ -590,6 +590,9 @@ describe('10. Flujos en subcarpetas: el manifiesto lleva la ruta relativa a Fluj
     expect(() => rutaDentroDe(dir, 'enlace/x.json')).toThrow(/enlace simbólico/);
     expect(() => verificarFlujo('enlace/x.json', dir)).toThrow(/fuera de/);
     expect(rutaDentroDe(dir, 'clientes/nuevo/no-existe.json')).toBe(join(dir, 'clientes/nuevo/no-existe.json'));
+    // Un enlace ROTO que apunta afuera tampoco pasa (escribir por él crearía el archivo afuera).
+    symlinkSync(join(afuera, 'no-existe.json'), join(dir, 'roto.json'));
+    expect(() => rutaDentroDe(dir, 'roto.json')).toThrow();
     expect(() => execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/demo-b-venta-cobro.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8' })).not.toThrow();
     let codigo = 0;
     try { execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/latido-n8n.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8', stdio: 'pipe' }); } catch (e) { codigo = (e as { status: number }).status; }

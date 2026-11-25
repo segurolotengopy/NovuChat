@@ -353,6 +353,9 @@ describe('1. estructura del registro', () => {
       'error', 'envio', 'incierto',
       // Flujos comunes del monitor externo (sin cliente): palabras de uso general.
       'latido', 'vigilancia', 'numero', 'demos',
+      // Desde que la lista recorre las subcarpetas (#1103): partes genéricas de los nombres de flujos de clientes/ y experimental/.
+      // Los nombres de cliente de esas carpetas (los que sí hay que buscar) entran ahora y antes no.
+      'agenda', 'minima', 'chat', 'prueba', 'recordatorio', 'rescate', 'ruta', 'nueva', 'ensayo', 'redireccion',
     ]);
     const nombres = new Set(
       [...flujosVersionados().map((x) => x.split('/').pop() as string), ...readdirSync(join(RAIZ, 'admin/scripts/datos'))]
