@@ -56,10 +56,10 @@ const declaradosDe = (f: string): string[] => {
 const ARCHIVOS = jsonDeFlujos();
 
 describe('Higiene de los flujos: ningún id de credencial', () => {
-  it('el inventario incluye los 9 flujos de la raíz, los del Demo A y los de experimental/', () => {
-    // Mudanza del Demo A (25/11/2026): sus dos flujos salieron de la raíz (11 → 9) y se siguen revisando desde clientes/demo-a/.
-    expect(ARCHIVOS.filter((f) => !f.includes('/')).length).toBe(9);
-    expect(ARCHIVOS).toEqual(expect.arrayContaining(['clientes/demo-a/demo-a-agendamiento.json', 'clientes/demo-a/demo-a-recordatorios.json']));
+  it('el inventario incluye los 10 flujos de la raíz, el del Demo A en clientes/ y los de experimental/', () => {
+    // Mudanza del Demo A (25/11/2026): el agendamiento salió de la raíz (11 → 10) y se sigue revisando desde clientes/demo-a/; los recordatorios siguen en la raíz.
+    expect(ARCHIVOS.filter((f) => !f.includes('/')).length).toBe(10);
+    expect(ARCHIVOS).toEqual(expect.arrayContaining(['clientes/demo-a/demo-a-agendamiento.json', 'demo-a-recordatorios.json']));
     expect(ARCHIVOS.some((f) => f.startsWith('experimental/'))).toBe(true);
   });
 

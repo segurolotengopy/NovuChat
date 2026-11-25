@@ -847,14 +847,14 @@ describe('Entregas: los flujos del disco', () => {
     expect(ARCHIVOS.filter((a) => !a.includes('/')).length).toBeGreaterThanOrEqual(8);
     expect(ARCHIVOS).toEqual(expect.arrayContaining([
       'bellido-agendamiento.json', 'clientes/demo-a/demo-a-agendamiento.json', 'demo-b-venta-cobro.json', 'novuchat-onboarding.json',
-      'agendamiento-seguimientos.json', 'clientes/demo-a/demo-a-recordatorios.json',
+      'agendamiento-seguimientos.json', 'demo-a-recordatorios.json',
       'clientes/agenda-minima/agenda-minima.v0.json', 'clientes/venta-minima/venta-minima.qtaco.json',
     ]));
     for (const a of ARCHIVOS) expect(a, a).not.toMatch(EXCLUIDO);
   });
 
   it('los programados se reconocen por su disparador, no por su nombre', () => {
-    for (const a of ['agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'clientes/demo-a/demo-a-recordatorios.json']) {
+    for (const a of ['agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'demo-a-recordatorios.json']) {
       expect(esProgramado(FLUJOS.get(a) as Flujo), a).toBe(true);
     }
     for (const a of ['demo-b-venta-cobro.json', 'novuchat-onboarding.json']) expect(esProgramado(FLUJOS.get(a) as Flujo), a).toBe(false);

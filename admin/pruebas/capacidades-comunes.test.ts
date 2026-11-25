@@ -302,7 +302,7 @@ describe('Capacidades comunes: todo flujo conversacional tiene audio, imagen y d
       'novuchat-onboarding.json',
     ]));
     // Los programados quedan fuera por lo que son, no por su nombre.
-    for (const a of ['agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'clientes/demo-a/demo-a-recordatorios.json']) {
+    for (const a of ['agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'demo-a-recordatorios.json']) {
       expect(conversacionales, a).not.toContain(a);
     }
   });

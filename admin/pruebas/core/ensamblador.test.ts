@@ -70,7 +70,7 @@ const MARCADORES_DECLARADOS_APARTE: Record<string, Record<string, string>> = {
   'salida-de-persona.json': { 'Timbre': 'REEMPLAZAR_' },
 };
 /** El nodo base que conserva los REEMPLAZAR_* cuando no se llama `Config base`. */
-const NODO_BASE_DE: Record<string, string> = { 'clientes/demo-a/demo-a-recordatorios.json': 'Config base del recordatorio', 'error-envio-incierto.json': 'Armar alerta' };
+const NODO_BASE_DE: Record<string, string> = { 'demo-a-recordatorios.json': 'Config base del recordatorio', 'error-envio-incierto.json': 'Armar alerta' };
 const nodoBase = (f: string): string => NODO_BASE_DE[f] ?? 'Config base';
 const SIN_MANIFIESTO = FLUJOS.filter((f) => leerManifiesto(f) === null);
 

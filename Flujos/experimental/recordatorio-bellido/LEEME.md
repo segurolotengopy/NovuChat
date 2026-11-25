@@ -79,7 +79,7 @@ plantilla antes de producción.
 ## Hallazgo: `timeMin`/`timeMax` en `options` no se aplican
 En el nodo Google Calendar «Obtener varios» las fechas «After/Before» son parámetros del nodo, **no** de `options`. Con
 `options.timeMin`/`options.timeMax` el nodo devolvió también una cita de dentro de tres días. Con los parámetros
-`timeMin`/`timeMax` al nivel del nodo, solo las de mañana. `Flujos/clientes/demo-a/demo-a-recordatorios.json` («Citas de mañana») usa
+`timeMin`/`timeMax` al nivel del nodo, solo las de mañana. `Flujos/demo-a-recordatorios.json` («Citas de mañana») usa
 `options`: ese flujo recordaría **todas** las citas futuras con teléfono, no solo las de mañana. Está anotado para
 corregirse aparte (no es de este PR).
 

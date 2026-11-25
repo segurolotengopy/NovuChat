@@ -259,7 +259,7 @@ export const REGISTRO = [
     herramientas: ['consultar_disponibilidad', 'agendar_cita', 'buscar_mi_cita', 'cancelar_cita'],
     functions: ['cotejarComprobante', 'senaVencida', 'seguimientosPendientes', 'seguimientoEnviado'],
     flujosProgramados: [
-      'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'clientes/demo-a/demo-a-recordatorios.json',
+      'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'demo-a-recordatorios.json',
     ],
     // Agregado `antesDelTurno` respecto del diseño: `configuracionFlujo` lee
     // `funcionarios` para el contexto. Después: la retención de la seña

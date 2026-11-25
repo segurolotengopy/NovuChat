@@ -26,7 +26,7 @@ const flujo = leerFlujo;
 const FLUJOS = [
   { archivo: 'clientes/demo-a/demo-a-agendamiento.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },
   { archivo: 'demo-b-venta-cobro.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },
-  { archivo: 'clientes/demo-a/demo-a-recordatorios.json', fusion: 'Config del recordatorio', base: 'Config base del recordatorio', cortaSinRespuesta: true },
+  { archivo: 'demo-a-recordatorios.json', fusion: 'Config del recordatorio', base: 'Config base del recordatorio', cortaSinRespuesta: true },
   // El flujo de captación de NovuChat: si se suspende el tenant `novuchat`, deja
   // de atender igual que el de cualquier cliente.
   { archivo: 'novuchat-onboarding.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },

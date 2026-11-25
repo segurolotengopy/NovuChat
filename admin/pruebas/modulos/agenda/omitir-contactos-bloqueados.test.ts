@@ -11,7 +11,7 @@ import {
   GLOBALES_FUERA_DEL_SANDBOX, codigoDe, correr, destinos, entradas, leerFlujo, nodo, type J,
 } from '../../lib/flujo.ts';
 
-const f = leerFlujo('clientes/demo-a/demo-a-recordatorios.json');
+const f = leerFlujo('demo-a-recordatorios.json');
 const CODIGO = codigoDe(f, 'Omitir bloqueados');
 const lote = (n: number): J[] => Array.from({ length: n }, (_, i) => ({ eventoId: `ev${i}`, telefono: `5917000000${i}`, nombre: `N${i}` }));
 const ok = (atencion: unknown): J => ({ statusCode: 200, body: { atencion } });

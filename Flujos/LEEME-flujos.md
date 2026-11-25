@@ -69,7 +69,7 @@ El ensamblador de hoy responde a esa objeción punto por punto:
    cosas: `parameters.jsCode` de un nodo Code, y
    `parameters.options.systemMessage` / `parameters.text` de un agente. Todo
    lo demás del archivo queda como estaba, incluido el orden de las claves
-   (`clientes/demo-a/demo-a-recordatorios.json` tiene otro orden de primer nivel y se
+   (`demo-a-recordatorios.json` tiene otro orden de primer nivel y se
    conserva).
 2. **La identidad byte a byte impide divergir mecánicamente.** Aquel
    generador podía producir algo distinto del lienzo y nadie se enteraba.

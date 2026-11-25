@@ -1,5 +1,5 @@
 {
-  "flujo": "clientes/demo-a/demo-a-recordatorios.json",
+  "flujo": "demo-a-recordatorios.json",
   "conservanMarcadores": {
     "Config base del recordatorio": "REEMPLAZAR_"
   },
