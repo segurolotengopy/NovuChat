@@ -345,7 +345,7 @@ export function textoAvisoRetomar(contexto: ContextoDeAviso = SIN_CONTEXTO_DE_AV
     case 'novuchat':
       return `Retomar envía una plantilla de WhatsApp${linea} que Meta cobra, ${tarifa}. NovuChat absorbe ese costo, sin cobrarle a su negocio. ${limite} ${cierre}`;
     default:
-      return `Retomar envía una plantilla de WhatsApp${linea} que Meta cobra aparte, ${tarifa}. Según la tarifa y la línea de su negocio, `
+      return `Retomar envía una plantilla de WhatsApp${linea} que Meta cobra, ${tarifa}. Según la tarifa y la línea de su negocio, `
         + `este costo puede estar incluido o cobrarse aparte. ${limite} ${cierre}`;
   }
 }

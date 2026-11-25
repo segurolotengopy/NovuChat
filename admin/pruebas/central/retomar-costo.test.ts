@@ -120,6 +120,10 @@ describe('B. el aviso de costo depende de la TARIFA y de la línea (D-R2 a)', ()
     pagaComercio(ctx(null, 'comercio'));
   });
 
+  it('NEGATIVA: el neutro no dice «cobra aparte» (no afirma que se cobre aparte)', () => {
+    expect(textoAvisoRetomar(ctx(null, null))).not.toContain('cobra aparte');
+  });
+
   it('NEGATIVA: lo que no alcanza para decidir no afirma quién paga (nunca «absorbe» sin las dos cosas escritas)', () => {
     for (const c of [ctx(null, null), ctx(null, 'novuchat'), ctx('meta_incluido', null)]) {
       expect(quienPagaLaPlantilla(c), JSON.stringify(c)).toBeNull();
