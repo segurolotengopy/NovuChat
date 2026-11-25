@@ -34,7 +34,7 @@ const ordenar = (a: Entrada, b: Entrada) => (a.ms - b.ms) || (a.idMeta < b.idMet
 
 /** Un generador determinista (mulberry32): misma semilla, misma corrida. */
 function semilla(s: number): () => number {
-  return () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  return () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32; };
 }
 
 function armar(clases: Clase[], saltos: number[], alea?: () => number): Mensaje[] {
