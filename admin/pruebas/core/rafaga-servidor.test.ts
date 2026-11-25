@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { Timestamp } from 'firebase-admin/firestore';
 import type { Firestore } from 'firebase-admin/firestore';
 import {
-  fragmentosDeRafaga, leerRafaga, validarRafaga, MAX_LECTURAS, VENTANA_MS, acotarRafaga, type MensajeCrudo,
+  fragmentosDeRafaga, leerRafaga, validarRafaga, MAX_LECTURAS, VENTANA_PROPIA_MS, type MensajeCrudo,
 } from '../../functions/src/core/conversacion/rafaga.ts';
 
 const TEL = '59100000031';
@@ -76,12 +76,6 @@ describe('fragmentosDeRafaga (pura)', () => {
     const f = fragmentosDeRafaga([ent('z', 'z', T0), ent('a', 'a', T0)]);
     expect(f.map((x) => x.idMeta)).toEqual(['a', 'z']);
   });
-  it('mira como mucho 6 documentos, los más nuevos, en orden cronológico', () => {
-    const docs = Array.from({ length: 20 }, (_, i) => ent(`id${19 - i}`, `t${19 - i}`, T0 + (19 - i) * 1000));
-    const f = fragmentosDeRafaga(docs);
-    expect(f).toHaveLength(MAX_LECTURAS);
-    expect(f.map((x) => x.texto)).toEqual(['t14', 't15', 't16', 't17', 't18', 't19']);
-  });
   it('recorta el texto a 1500 y conserva el tipo (audio sin texto)', () => {
     const f = fragmentosDeRafaga([ent('a', 'x'.repeat(2000), T0), ent('b', '', T0 - 1, { tipo: 'audio' })]);
     expect(f[1]!.texto).toHaveLength(1500);
@@ -96,54 +90,105 @@ describe('fragmentosDeRafaga (pura)', () => {
   });
 });
 
-describe('leerRafaga: una sola consulta, acotada', () => {
-  it('consulta la conversación del tenant dado, ts descendente, límite 6, sin escribir', async () => {
-    const llamadas: unknown[][] = [];
-    const consulta = {
-      orderBy(...a: unknown[]) { llamadas.push(['orderBy', ...a]); return consulta; },
-      limit(...a: unknown[]) { llamadas.push(['limit', ...a]); return consulta; },
-      async get() { llamadas.push(['get']); return { docs: [{ data: () => ent('a', 'uno', T0) }] }; },
-    };
-    const falsa = { collection(p: string) { llamadas.push(['collection', p]); return consulta; } } as unknown as Firestore;
-    const r = await leerRafaga(falsa, 'tenant-x', TEL, 'a', T0 + 1000);
-    expect(llamadas).toEqual([
-      ['collection', `tenants/tenant-x/conversaciones/wa_${TEL}/mensajes`],
-      ['orderBy', 'ts', 'desc'], ['limit', MAX_LECTURAS], ['get'],
-    ]);
-    expect(MAX_LECTURAS).toBe(6);
-    expect(r).toEqual({ v: 1, fragmentos: [{ idMeta: 'a', tipo: 'text', texto: 'uno', ms: T0 }] });
+/**
+ * Firestore en memoria, lo mínimo que usa `leerRafaga`: where('idMeta','==').limit, orderBy('ts', dir)
+ * .startAfter(doc).limit. Orden total (ts, id), igual que Firestore con cursor de documento.
+ * Cuenta los documentos entregados (lecturas) y registra cada consulta.
+ */
+interface DocFalso { id: string; data: () => MensajeCrudo }
+function firestoreFalso(docs: { id: string; d: MensajeCrudo }[]) {
+  const estado = { leidos: 0, consultas: [] as string[], coleccion: '' };
+  const todos: DocFalso[] = docs.map((x) => ({ id: x.id, data: () => x.d }));
+  const ms = (d: DocFalso) => d.data().ts as number;
+  const cmp = (x: DocFalso, y: DocFalso) => ms(x) - ms(y) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0);
+  const consulta = (filtro: DocFalso[], dir: 'asc' | 'desc' | null, tras: DocFalso | null, tope: number, etiqueta: string) => ({
+    where(campo: string, op: string, valor: unknown) {
+      return consulta(filtro.filter((d) => op === '==' && d.data()[campo as 'idMeta'] === valor), dir, tras, tope, `${etiqueta}where(${campo})`);
+    },
+    orderBy(campo: string, d: 'asc' | 'desc') { return consulta(filtro, campo === 'ts' ? d : dir, tras, tope, `${etiqueta}orderBy(${campo},${d})`); },
+    startAfter(doc: DocFalso) { return consulta(filtro, dir, doc, tope, `${etiqueta}startAfter`); },
+    limit(n: number) { return consulta(filtro, dir, tras, n, `${etiqueta}limit(${n})`); },
+    async get() {
+      estado.consultas.push(etiqueta);
+      let r = [...filtro].sort(cmp);
+      if (dir === 'desc') r.reverse();
+      if (tras) { const i = r.findIndex((d) => d.id === tras.id); r = r.slice(i + 1); }
+      r = r.slice(0, tope);
+      estado.leidos += r.length;
+      return { docs: r };
+    },
   });
-});
+  const db = { collection(p: string) { estado.coleccion = p; return consulta(todos, null, null, Infinity, ''); } } as unknown as Firestore;
+  return { db, estado };
+}
+const sem = (...e: [string, MensajeCrudo][]) => e.map(([id, d]) => ({ id, d }));
+const sal = (ms: number): MensajeCrudo => ({ direccion: 'saliente', tipo: 'text', texto: 'bot', ts: ms });
 
-describe('acotarRafaga: lo que no se devuelve', () => {
-  const lista = [
-    { idMeta: 'a', tipo: 'text', texto: 'uno', ms: T0 }, { idMeta: '', tipo: 'saliente', texto: '', ms: T0 + 1000 },
-    { idMeta: 'b', tipo: 'text', texto: 'dos', ms: T0 + 2000 },
-  ];
-  it('sin un entrante con el idMeta pedido, no devuelve nada (teléfono ajeno sin wamid reciente)', () => {
-    expect(acotarRafaga(lista, 'wamid.AJENO', T0 + 3000)).toEqual([]);
-    expect(acotarRafaga(lista, '', T0 + 3000)).toEqual([]);
+describe('leerRafaga: relativa a mi mensaje', () => {
+  it('lee la conversación del tenant dado y devuelve predecesores, yo y sucesores en orden', async () => {
+    const { db, estado } = firestoreFalso(sem(
+      ['d1', ent('a', 'uno', T0)], ['d2', ent('b', 'dos', T0 + 1000)], ['d3', ent('c', 'tres', T0 + 2000)],
+    ));
+    const r = await leerRafaga(db, 'tenant-x', TEL, 'b', T0 + 3000);
+    expect(estado.coleccion).toBe(`tenants/tenant-x/conversaciones/wa_${TEL}/mensajes`);
+    expect(r.fragmentos.map((f) => f.texto)).toEqual(['uno', 'dos', 'tres']);
   });
-  it('una marca de saliente nunca prueba conocer el wamid', () => {
-    expect(acotarRafaga(lista, '', T0)).toEqual([]);
+  it('un álbum de 8 fotos DESPUÉS de mi mensaje no me saca: predecesores y sucesor inmediato siguen', async () => {
+    const docs = [['p1', ent('p1', 'previo1', T0)], ['p2', ent('p2', 'previo2', T0 + 100)], ['yo', ent('yo', 'mio', T0 + 200)]] as [string, MensajeCrudo][];
+    for (let i = 0; i < 8; i++) docs.push([`f${i}`, ent(`f${i}`, '', T0 + 300 + i, { tipo: 'image' })]);
+    const { db, estado } = firestoreFalso(sem(...docs));
+    const r = await leerRafaga(db, 't', TEL, 'yo', T0 + 5000);
+    expect(r.fragmentos.map((f) => f.idMeta)).toEqual(['p1', 'p2', 'yo', 'f0', 'f1', 'f2']);
+    expect(estado.leidos).toBeLessThanOrEqual(MAX_LECTURAS);
   });
-  it('con el idMeta propio, devuelve todo lo reciente', () => {
-    expect(acotarRafaga(lista, 'b', T0 + 3000)).toEqual(lista);
+  it('salientes entran como marca; entrantes sin idMeta con idMeta vacío', async () => {
+    const { db } = firestoreFalso(sem(
+      ['s', sal(T0)], ['o', { direccion: 'entrante', tipo: 'order', texto: 'x', ts: T0 + 100 }], ['yo', ent('yo', 'mio', T0 + 200)],
+    ));
+    const r = await leerRafaga(db, 't', TEL, 'yo', T0 + 300);
+    expect(r.fragmentos.map((f) => [f.idMeta, f.tipo, f.texto])).toEqual([
+      ['', 'saliente', ''], ['', 'order', 'x'], ['yo', 'text', 'mio'],
+    ]);
   });
-  it('descarta lo anterior a ahora - 30 s, y deja lo justo en el borde', () => {
-    const f = acotarRafaga(lista, 'b', T0 + 2000 + VENTANA_MS);
-    expect(f.map((x) => x.idMeta)).toEqual(['b']);
-    expect(acotarRafaga(lista, 'b', T0 + VENTANA_MS)).toHaveLength(3);
+  it('máximo 5 anteriores y 3 posteriores: 9 documentos leídos', async () => {
+    const docs: [string, MensajeCrudo][] = [];
+    for (let i = 0; i < 20; i++) docs.push([`d${String(i).padStart(2, '0')}`, ent(`i${i}`, `t${i}`, T0 + i * 100)]);
+    const { db, estado } = firestoreFalso(sem(...docs));
+    const r = await leerRafaga(db, 't', TEL, 'i10', T0 + 2500);
+    expect(r.fragmentos.map((f) => f.idMeta)).toEqual(['i5', 'i6', 'i7', 'i8', 'i9', 'i10', 'i11', 'i12', 'i13']);
+    expect(estado.leidos).toBe(9);
+    expect(MAX_LECTURAS).toBe(9);
   });
-  it('si lo propio ya es viejo, lista vacía', () => {
-    expect(acotarRafaga(lista, 'b', T0 + 2000 + VENTANA_MS + 1)).toEqual([]);
+  it('wamid ajeno (que la conversación no tiene) -> [] sin leer vecinos', async () => {
+    const { db, estado } = firestoreFalso(sem(['d1', ent('a', 'SECRETO', T0)]));
+    expect(await leerRafaga(db, 't', TEL, 'wamid.otro', T0 + 1000)).toEqual({ v: 1, fragmentos: [] });
+    expect(estado.leidos).toBe(0);
+    expect(estado.consultas).toHaveLength(1);
   });
-  it('leerRafaga lo aplica: wamid ajeno -> []', async () => {
-    const consulta = {
-      orderBy() { return consulta; }, limit() { return consulta; },
-      async get() { return { docs: [{ data: () => ent('a', 'SECRETO', T0) }] }; },
-    };
-    const falsa = { collection() { return consulta; } } as unknown as Firestore;
-    expect(await leerRafaga(falsa, 't', TEL, 'wamid.otro', T0 + 1000)).toEqual({ v: 1, fragmentos: [] });
+  it('un wamid que es de un SALIENTE no sirve de llave', async () => {
+    const { db } = firestoreFalso(sem(['s', { ...sal(T0), idMeta: 'wamid.S' }], ['a', ent('a', 'SECRETO', T0 - 10)]));
+    expect((await leerRafaga(db, 't', TEL, 'wamid.S', T0 + 1000)).fragmentos).toEqual([]);
+  });
+  it('mi mensaje con más de 10 minutos -> []; justo en el borde, sí', async () => {
+    const { db } = firestoreFalso(sem(['a', ent('a', 'uno', T0)]));
+    expect((await leerRafaga(db, 't', TEL, 'a', T0 + VENTANA_PROPIA_MS + 1)).fragmentos).toEqual([]);
+    expect((await leerRafaga(db, 't', TEL, 'a', T0 + VENTANA_PROPIA_MS)).fragmentos).toHaveLength(1);
+  });
+  it('empate de ts: ningún vecino se pierde ni se repite, y yo no me duplico', async () => {
+    const { db } = firestoreFalso(sem(
+      ['a', ent('a', 'a', T0)], ['b', ent('b', 'b', T0)], ['c', ent('c', 'c', T0)], ['d', ent('d', 'd', T0)],
+    ));
+    for (const yo of ['a', 'b', 'c', 'd']) {
+      const r = await leerRafaga(db, 't', TEL, yo, T0 + 100);
+      expect(r.fragmentos.map((f) => f.idMeta).sort()).toEqual(['a', 'b', 'c', 'd']);
+    }
+  });
+  it('idMeta duplicado (reintento de Meta): se toma el más antiguo y queda una vez', async () => {
+    const { db, estado } = firestoreFalso(sem(
+      ['x1', ent('yo', 'primero', T0)], ['x2', ent('yo', 'reintento', T0 + 400)], ['z', ent('z', 'sig', T0 + 500)],
+    ));
+    const r = await leerRafaga(db, 't', TEL, 'yo', T0 + 1000);
+    expect(r.fragmentos.map((f) => [f.idMeta, f.texto])).toEqual([['yo', 'primero'], ['z', 'sig']]);
+    expect(estado.leidos).toBeLessThanOrEqual(MAX_LECTURAS + 1);
   });
 });

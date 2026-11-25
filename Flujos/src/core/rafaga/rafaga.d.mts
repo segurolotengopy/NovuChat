@@ -5,6 +5,8 @@ export const NODO_RAFAGA_AGRUPAR: string;
 export const NODOS_DE_LA_RAFAGA: string[];
 export const ANCLA_REPORTE: string;
 export const TIMEOUT_RAFAGA_MS: number;
+export const REINTENTOS_MAXIMOS: number;
+export const ESPERA_ENTRE_INTENTOS_MS: number;
 export const ESPERA_POR_DEFECTO_SEG: number;
 export const NORMALIZADORES: string[];
 export interface CamposDeLaRafaga { tipo: string; mensajeId: string; from: string; phoneNumberId: string; texto: string }

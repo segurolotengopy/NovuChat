@@ -3,7 +3,7 @@
  *
  * Forma: ancla → ¿Esperar ráfaga? ─sí→ Esperar ráfaga → Consultar ráfaga → Agrupar ráfaga → destino, y ¿Esperar ráfaga? ─no→ destino.
  * Se prueba negando: sin ancla, sin destino, enlace inexistente, nombres repetidos, «Reportar mensaje (entrante)» que no corre antes, Continue on Fail
- * fuera del HTTP, tiempo mayor de 3000 ms, reintentos, credencial o URL cambiadas, código alterado, destinos que no coinciden; y que `quitar` devuelve el
+ * fuera del HTTP, tiempo mayor de 3000 ms, más de un reintento, credencial o URL cambiadas, código alterado, destinos que no coinciden; y que `quitar` devuelve el
  * flujo exacto (idempotencia que el ensamblador necesita).
  */
 import { describe, expect, it } from 'vitest';
@@ -85,7 +85,7 @@ describe('rafaga: la forma', () => {
     expect(c.onError).toBe('continueRegularOutput');
     expect(c.parameters.options.timeout).toBe(TIMEOUT_RAFAGA_MS);
     expect(TIMEOUT_RAFAGA_MS).toBe(3000);
-    expect(c.retryOnFail).toBeUndefined();
+    expect(c).toMatchObject({ retryOnFail: true, maxTries: 2, waitBetweenTries: 300 }); // H2: un reintento
     expect(c.parameters.headerParameters.parameters[0].name).toBe('X-NovuChat-Numero');
     expect(c.parameters.jsonBody).toContain("rafaga: { v: 1, idMeta: String($('¿Esperar ráfaga?').first().json.mensajeId) }");
   });
@@ -294,7 +294,9 @@ describe('rafaga: las guardias detectan lo alterado (NEGATIVAS)', () => {
   });
   it('tiempo mayor de 3000 ms o reintentos', () => {
     expect(alterar((f) => { nodo(f, NODO_RAFAGA_CONSULTAR).parameters.options.timeout = 60000; }).join('|')).toMatch(/tiempo máximo de 3000/);
-    expect(alterar((f) => { nodo(f, NODO_RAFAGA_CONSULTAR).retryOnFail = true; }).join('|')).toMatch(/reintentos/);
+    expect(alterar((f) => { nodo(f, NODO_RAFAGA_CONSULTAR).maxTries = 5; }).join('|')).toMatch(/reintentar UNA vez/);
+    expect(alterar((f) => { delete nodo(f, NODO_RAFAGA_CONSULTAR).retryOnFail; }).join('|')).toMatch(/reintentar UNA vez/);
+    expect(alterar((f) => { nodo(f, NODO_RAFAGA_CONSULTAR).waitBetweenTries = 10000; }).join('|')).toMatch(/reintentar UNA vez/);
   });
   it('credencial, URL o código cambiados a mano', () => {
     expect(alterar((f) => { nodo(f, NODO_RAFAGA_CONSULTAR).credentials.httpHeaderAuth.name = 'otra'; }).join('|')).toMatch(/no es el nodo común/);

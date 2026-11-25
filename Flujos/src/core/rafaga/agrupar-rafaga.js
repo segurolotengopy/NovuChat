@@ -23,11 +23,11 @@
 //     Si no: respondo con mi componente hacia atrás (vecinos anteriores
 //     mientras haya arista), en orden cronológico, unidos por salto de línea
 //     (los ajenos como los devuelve el servidor, el mío crudo). Componente de uno: solo.
-//   - Cada texto agrupable cae en exactamente un grupo, y cada grupo lo responde
-//     su último texto: ni se pierde ni se repite (lo prueba rafaga-propiedad.test.ts).
-//   - Riesgo residual declarado: la lista trae hasta 6 entradas; en una cadena
-//     de 6 o más textos seguidos, el extremo más viejo es borde y el resto se
-//     responde junto.
+//   - Sin fallas, cada texto agrupable cae en exactamente un grupo y cada grupo lo
+//     responde su último texto (lo prueba rafaga-propiedad.test.ts). Con fallas
+//     el error es DUPLICAR (una consulta fallida responde sola), no perder;
+//     la excepción declarada es la consulta fallida de quien debía responder el
+//     grupo y las cadenas de 7 o más textos (docs/arquitectura/rafagas.md).
 const MARGEN_MS = 500;
 const CAMPO_ID = 'mensajeId';
 const CAMPO_TEXTO = 'userInput';

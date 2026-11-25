@@ -17,9 +17,17 @@
  */
 import type { Firestore } from 'firebase-admin/firestore';
 
-export const VERSION_RAFAGA = 1;
-/** Documentos que se leen como máximo (los 6 más recientes de la conversación). */
-export const MAX_LECTURAS = 6;
+export const VERSION_RAFAGA = 1 as const;
+/** Vecinos que se leen alrededor del mensaje propio: hasta 5 anteriores y 3 posteriores. */
+export const MAX_PREDECESORES = 5;
+export const MAX_SUCESORES = 3;
+/**
+ * Documentos que se leen como máximo: el propio (1), 5 + 3 vecinos = 9. Con un reintento de Meta
+ * (el mismo `idMeta` en dos documentos) se lee uno más: 10.
+ */
+export const MAX_LECTURAS = 1 + MAX_PREDECESORES + MAX_SUCESORES;
+/** El mensaje propio debe ser de los últimos 10 minutos: sin un wamid reciente no se lee nada. */
+export const VENTANA_PROPIA_MS = 10 * 60_000;
 /** Fragmentos que se devuelven como máximo. */
 export const MAX_TEXTO = 1500;
 export const MAX_ID_META = 120;
@@ -72,11 +80,9 @@ function aMs(ts: unknown): number | null {
 
 /** Un saliente se entrega como MARCA: el nodo la usa de separador, sin texto ni idMeta. */
 export const TIPO_MARCA_SALIENTE = 'saliente';
-/** Un fragmento más viejo que esto no se devuelve: una ráfaga es cosa de segundos. */
-export const VENTANA_MS = 30_000;
 
 /**
- * Pura. `docsNuevoAViejo` viene ordenado por `ts` descendente. Devuelve hasta `MAX_LECTURAS` entradas en
+ * Pura. `docsNuevoAViejo` viene en cualquier orden. Devuelve las entradas dadas en
  * orden cronológico (por `ms`, luego `idMeta`): los entrantes con su texto (≤1500) y los salientes como
  * MARCA `{idMeta:'', tipo:'saliente', texto:'', ms}`. Un entrante sin `idMeta` (p. ej. el pedido del
  * catálogo web) sale con `idMeta:''` y su tipo real: el nodo lo trata como no agrupable. Los entrantes
@@ -84,7 +90,7 @@ export const VENTANA_MS = 30_000;
  */
 export function fragmentosDeRafaga(docsNuevoAViejo: readonly MensajeCrudo[]): FragmentoDeRafaga[] {
   const todos: FragmentoDeRafaga[] = [];
-  for (const d of docsNuevoAViejo.slice(0, MAX_LECTURAS)) {
+  for (const d of docsNuevoAViejo) {
     const ms = aMs(d.ts);
     if (ms === null) continue;
     if (d.direccion === 'saliente') {
@@ -109,30 +115,38 @@ export function fragmentosDeRafaga(docsNuevoAViejo: readonly MensajeCrudo[]): Fr
 }
 
 /**
- * Pura. Acota lo que se entrega: si NINGÚN entrante leído tiene el `idMeta` pedido, `[]` (quien no
- * conoce un wamid reciente de esta conversación no lee texto ajeno; el nodo responde solo); y se
- * descartan los fragmentos con `ms` anterior a `ahoraMs - VENTANA_MS`.
- */
-export function acotarRafaga(
-  fragmentos: readonly FragmentoDeRafaga[], idMeta: string, ahoraMs: number,
-): FragmentoDeRafaga[] {
-  if (!fragmentos.some((f) => f.tipo !== TIPO_MARCA_SALIENTE && f.idMeta === idMeta)) return [];
-  return fragmentos.filter((f) => f.ms >= ahoraMs - VENTANA_MS);
-}
-
-/**
- * Lee los `MAX_LECTURAS` mensajes más recientes de `tenants/{tenantId}/conversaciones/wa_{telefono}`.
+ * Lee la vecindad de MI mensaje en `tenants/{tenantId}/conversaciones/wa_{telefono}/mensajes`.
  * El tenant lo pone el que llama desde la ruta autenticada. Cero escrituras. Puede lanzar: quien
  * llama decide (la rama de `configuracionFlujo` responde 500 y el flujo falla abierto).
+ *
+ * RELATIVA A MI MENSAJE, no a «los últimos»: si después del mío llegan muchas entradas (un álbum de
+ * fotos, salientes), mi vecindad sigue siendo la misma.
+ *  1. Mi documento: `where('idMeta','==',idMeta).limit(2)`. Si hay dos (reintento de Meta) se toma el
+ *     de menor `ts` (y, a igual `ts`, el de menor id). Ninguno, o más viejo que 10 min -> `[]`: quien
+ *     no conoce un wamid reciente de esta conversación no lee texto ajeno, y el nodo responde solo.
+ *  2. Anteriores: `orderBy('ts','desc').startAfter(mi documento).limit(5)`; posteriores:
+ *     `orderBy('ts','asc').startAfter(mi documento).limit(3)`.
+ * DESEMPATE: el cursor con el documento usa `ts` y, a igual `ts`, el id del documento (Firestore lo
+ * agrega solo, en la misma dirección). Es un orden total y estable: los empates caen de un lado u
+ * otro de mi documento según su id, ninguno se pierde ni se repite, y el propio nunca se duplica.
+ * Son consultas de un solo campo (`idMeta`, `ts`): no necesitan índice compuesto.
  */
 export async function leerRafaga(
   db: Firestore, tenantId: string, telefono: string, idMeta: string, ahoraMs: number = Date.now(),
 ): Promise<{ v: 1; fragmentos: FragmentoDeRafaga[] }> {
-  const snap = await db
-    .collection(`tenants/${tenantId}/conversaciones/wa_${telefono}/mensajes`)
-    .orderBy('ts', 'desc')
-    .limit(MAX_LECTURAS)
-    .get();
-  const todos = fragmentosDeRafaga(snap.docs.map((d) => d.data() as MensajeCrudo));
-  return { v: VERSION_RAFAGA, fragmentos: acotarRafaga(todos, idMeta, ahoraMs) };
+  const vacia = { v: VERSION_RAFAGA, fragmentos: [] as FragmentoDeRafaga[] };
+  const coleccion = db.collection(`tenants/${tenantId}/conversaciones/wa_${telefono}/mensajes`);
+  const propios = await coleccion.where('idMeta', '==', idMeta).limit(2).get();
+  const candidatos = propios.docs
+    .map((d) => ({ d, ms: aMs((d.data() as MensajeCrudo).ts), entrante: (d.data() as MensajeCrudo).direccion === 'entrante' }))
+    .filter((x): x is typeof x & { ms: number } => x.entrante && x.ms !== null)
+    .sort((x, y) => x.ms - y.ms || (x.d.id < y.d.id ? -1 : x.d.id > y.d.id ? 1 : 0));
+  const mio = candidatos[0];
+  if (!mio || mio.ms < ahoraMs - VENTANA_PROPIA_MS) return vacia;
+  const [antes, despues] = await Promise.all([
+    coleccion.orderBy('ts', 'desc').startAfter(mio.d).limit(MAX_PREDECESORES).get(),
+    coleccion.orderBy('ts', 'asc').startAfter(mio.d).limit(MAX_SUCESORES).get(),
+  ]);
+  const docs = [...antes.docs, mio.d, ...despues.docs].map((d) => d.data() as MensajeCrudo);
+  return { v: VERSION_RAFAGA, fragmentos: fragmentosDeRafaga(docs) };
 }

@@ -26,9 +26,11 @@
  *    negocio» y «Config base» tienen que ser ASCENDIENTES del ancla (si no, se niega a armar).
  *  - «Esperar ráfaga» (Wait): `esperaRafagaSeg` de «Config base» (defecto 2, acotado a 1-5).
  *  - «Consultar ráfaga» (HTTP): `POST` a `configuracionFlujo` con `{telefono, rafaga:{v:1, idMeta}}`; URL y credencial son las de «Traer configuración» de ese
- *    flujo. «Continue on Fail» SOLO acá, 3000 ms de tope y sin reintentos: si falla, «Agrupar ráfaga» responde solo (falla ABIERTO).
+ *    flujo. «Continue on Fail» SOLO acá, 3000 ms de tope y UN reintento (2 intentos, 300 ms entre ellos; peor caso ~6,3 s): si sigue fallando, «Agrupar ráfaga» responde solo (falla ABIERTO).
  *  - «Agrupar ráfaga» (Code, `agrupar-rafaga.js`): devuelve `[]` (silencio) o el item del turno con `rafaga:{accion, ids}` y, si agrupó, `textoDelTurno`.
  *
+ *  - REQUISITO DE CADA FLUJO (no se puede validar sin estado): el ancla va DESPUÉS de todos los desvíos que responden por otra rama (atención de un operador, bloqueado, palabra clave de menú,
+ *    `puerta` falsa). La ráfaga supone que mi vecino siguiente llegará al mismo ancla: si se desvía, quien calló por él no recibe respuesta.
  *  - ORDEN DEL LIENZO (`executionOrder: v1`): «Reportar mensaje (entrante)» tiene que correr ANTES (es ascendiente del ancla, o va más arriba que el destino); si
  *    no, se niega a armar. La condición `isExecuted` del IF lo vuelve a exigir en tiempo de ejecución.
  *  - Nombres: la pieza usa los nombres «¿Esperar ráfaga?», «Esperar ráfaga», «Consultar ráfaga» y «Agrupar ráfaga». Un flujo que ya tenga uno (el chat de NovuChat
@@ -53,6 +55,9 @@ export const NODO_RAFAGA_AGRUPAR = 'Agrupar ráfaga';
 export const NODOS_DE_LA_RAFAGA = [NODO_RAFAGA_SI, NODO_RAFAGA_ESPERAR, NODO_RAFAGA_CONSULTAR, NODO_RAFAGA_AGRUPAR];
 export const ANCLA_REPORTE = 'Reportar mensaje (entrante)';
 export const TIMEOUT_RAFAGA_MS = 3000;
+/** Un reintento: una consulta fallida de la ejecución anterior haría que la siguiente duplique su texto (lado seguro, pero cuesta un mensaje). */
+export const REINTENTOS_MAXIMOS = 2;
+export const ESPERA_ENTRE_INTENTOS_MS = 300;
 export const ESPERA_POR_DEFECTO_SEG = 2;
 export const NORMALIZADORES = ['Interpretar entrada', 'Normalizar entrada'];
 
@@ -136,6 +141,7 @@ export function nodosDeLaRafaga(opciones) {
     {
       id: 'rafaga-consultar', name: NODO_RAFAGA_CONSULTAR, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + 480, y],
       credentials: { [cred[0][0]]: { id: '', name: String((cred[0][1] || {}).name || '') } }, onError: 'continueRegularOutput',
+      retryOnFail: true, maxTries: REINTENTOS_MAXIMOS, waitBetweenTries: ESPERA_ENTRE_INTENTOS_MS,
       parameters: {
         method: 'POST', url, ...autenticacion,
         sendHeaders: true,
@@ -144,7 +150,7 @@ export function nodosDeLaRafaga(opciones) {
         jsonBody: `={{ JSON.stringify({ telefono: String(${N}.${k.from} || '').replace(/\\D/g, ''), rafaga: { v: 1, idMeta: String(${N}.${k.mensajeId}) } }) }}`,
         options: { timeout: TIMEOUT_RAFAGA_MS },
       },
-      notes: 'Lee del servidor los ultimos mensajes de este telefono (maximo 6 lecturas, ninguna escritura). Misma URL y credencial que «Traer configuracion». Con Continue on Fail y 3 s de tope: si falla, «Agrupar rafaga» responde solo.',
+      notes: 'Lee del servidor los ultimos mensajes de este telefono (maximo 6 lecturas, ninguna escritura). Misma URL y credencial que «Traer configuracion». Con Continue on Fail, 3 s de tope y un reintento: si sigue fallando, «Agrupar rafaga» responde solo.',
     },
     {
       id: 'rafaga-agrupar', name: NODO_RAFAGA_AGRUPAR, type: 'n8n-nodes-base.code', typeVersion: 2, position: [x + 720, y],
@@ -268,7 +274,7 @@ export function hallazgosDeLaRafaga(flujo, opciones = {}) {
   if (consultar.onError !== 'continueRegularOutput') h.push(`rafaga: «${NODO_RAFAGA_CONSULTAR}» tiene que llevar Continue on Fail`);
   if (!((consultar.parameters || {}).options && consultar.parameters.options.timeout <= TIMEOUT_RAFAGA_MS)) h.push(`rafaga: «${NODO_RAFAGA_CONSULTAR}» tiene que tener un tiempo máximo de ${TIMEOUT_RAFAGA_MS} ms o menos`);
   for (const n of [si, esperar, agrupar]) if (n.onError || n.continueOnFail) h.push(`rafaga: «${n.name}» no lleva Continue on Fail (es solo del nodo HTTP)`);
-  if (consultar.retryOnFail) h.push(`rafaga: «${NODO_RAFAGA_CONSULTAR}» no lleva reintentos`);
+  if (consultar.retryOnFail !== true || consultar.maxTries !== REINTENTOS_MAXIMOS || consultar.waitBetweenTries !== ESPERA_ENTRE_INTENTOS_MS) h.push(`rafaga: «${NODO_RAFAGA_CONSULTAR}» tiene que reintentar UNA vez (maxTries ${REINTENTOS_MAXIMOS}, ${ESPERA_ENTRE_INTENTOS_MS} ms entre intentos)`);
 
   // Conexiones: ancla → ¿esperar? → (sí) esperar → consultar → agrupar → destino; (no) → el mismo destino.
   const padres = nodosDe(flujo).filter((n) => [0, 1].some((i) => destinos(flujo, n.name, i).includes(NODO_RAFAGA_SI)));

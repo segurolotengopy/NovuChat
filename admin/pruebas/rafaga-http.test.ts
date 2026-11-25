@@ -130,7 +130,7 @@ describe('configuracionFlujo con `rafaga`', () => {
     } finally { await db.doc(`tenants/${TA}`).update({ estado: 'activo' }); }
   });
 
-  it('con 10 mensajes devuelve como mucho 6 entradas, las más nuevas, y no escribe nada', async () => {
+  it('con 10 mensajes devuelve mis 5 anteriores y a mí, y no escribe nada', async () => {
     const antes = await contarTodo(TA);
     await sembrar(TA, Array.from({ length: 10 }, (_, i) => ent(`m${i}`, `m${i}`, T0 + 1000 + i * 10)));
     const despues = await contarTodo(TA);
@@ -149,24 +149,27 @@ describe('configuracionFlujo con `rafaga`', () => {
     expect(rb.cuerpo['rafaga']).toEqual({ v: 1, fragmentos: [] });
   });
 
-  it('descarta lo anterior a 30 s y entrega los salientes como marca', async () => {
+  it('salientes como marca; álbum de 8 fotos después de mi mensaje; mi mensaje de >10 min -> [] (un vecino viejo sí entra)', async () => {
     const T = 'rafaga-c';
     const numero = '1000000733';
     await db.doc(`rutasWhatsApp/${numero}`).set({ tenantId: T, flujo: 'agendamiento', aliasSecreto: 'cliente19', estado: 'activo' });
     await db.doc(`tenants/${T}`).set({ nombre: 'Rafaga C', estado: 'activo', plan: 'crecimiento' });
     await db.doc(`tenants/${T}/config/negocio`).set({ nombreNegocio: 'C', numeroRecepcion: '70000001' });
     await sembrar(T, [
-      ent('v1', 'MUY VIEJO', T0 - 31_000),
+      ent('v1', 'previo', T0 - 4000),
       { direccion: 'saliente', tipo: 'text', texto: 'respuesta del bot', idMeta: 'wamid.S', ts: T0 - 2000 },
-      ent('n1', 'reciente', T0 - 1000),
+      ent('n1', 'mio', T0 - 1000),
+      ...Array.from({ length: 8 }, (_, i) => ({ ...ent(`f${i}`, '', T0 + i * 10), tipo: 'image' })),
+      ent('viejo', 'de hace 11 minutos', T0 - 11 * 60_000),
     ]);
     const r = await pedir({ telefono: TEL, rafaga: R('n1') }, numero);
-    expect(JSON.stringify(r.cuerpo)).not.toContain('MUY VIEJO');
     expect(JSON.stringify(r.cuerpo)).not.toContain('respuesta del bot');
-    expect((r.cuerpo['rafaga'] as { fragmentos: unknown[] }).fragmentos).toEqual([
-      { idMeta: '', tipo: 'saliente', texto: '', ms: T0 - 2000 },
-      { idMeta: 'n1', tipo: 'text', texto: 'reciente', ms: T0 - 1000 },
+    expect((r.cuerpo['rafaga'] as { fragmentos: { idMeta: string; tipo: string }[] }).fragmentos
+      .map((f) => [f.idMeta, f.tipo])).toEqual([
+      ['viejo', 'text'], ['v1', 'text'], ['', 'saliente'], ['n1', 'text'], ['f0', 'image'], ['f1', 'image'], ['f2', 'image'],
     ]);
+    const rv = await pedir({ telefono: TEL, rafaga: R('viejo') }, numero);
+    expect(rv.cuerpo['rafaga']).toEqual({ v: 1, fragmentos: [] });
   });
 
   it('si la lectura falla: 500 rafaga_lectura y el registro no lleva teléfono ni ruta', async () => {

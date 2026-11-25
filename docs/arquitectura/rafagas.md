@@ -8,7 +8,7 @@ sin enviar nada.
 
 - **Mensajes por conversación: nunca agrega; en una ráfaga de n textos quita n-1.** Cada mensaje enviado cuesta 0,0113 USD
   (`docs/base-comercial.md` §1). Un mensaje aislado sale igual que hoy.
-- Lecturas en la nube: hasta 6 documentos por consulta y 0 escrituras (ver «El servidor»). Una llamada HTTP más por texto, que no
+- Lecturas en la nube: unas pocas lecturas por consulta (hasta 9 entradas del hilo, según el servidor) y 0 escrituras (ver «El servidor»). Una llamada HTTP más por texto, que no
   es un mensaje de WhatsApp.
 
 ## Estado de la entrega
@@ -28,7 +28,7 @@ flujo la adopta en su propio PR. La rama `rafaga` de `configuracionFlujo` (servi
 |---|---|---|
 | `¿Esperar ráfaga?` | IF 2.2 | Interruptor encendido, entrante de tipo `text`, con `mensajeId` y teléfono, «Reportar mensaje (entrante)» ya corrido y la `puerta` del flujo. |
 | `Esperar ráfaga` | Wait 1.1 | `esperaRafagaSeg` de «Config base» (defecto 2, acotado a 1-5 s). Menos de 65 s: n8n la mantiene en memoria. |
-| `Consultar ráfaga` | HTTP 4.2 | `POST` a `configuracionFlujo` con `{telefono, rafaga:{v:1, idMeta}}`. URL y credencial son las de «Traer configuración». **Continue on Fail solo aquí**, 3000 ms, sin reintentos. |
+| `Consultar ráfaga` | HTTP 4.2 | `POST` a `configuracionFlujo` con `{telefono, rafaga:{v:1, idMeta}}`. URL y credencial son las de «Traer configuración». **Continue on Fail solo aquí**, 3000 ms y **un reintento** (2 intentos, 300 ms entre ellos; peor caso ~6,3 s, y el Wait de la ráfaga queda muy por debajo de los 65 s de n8n). |
 | `Agrupar ráfaga` | Code 2 | Devuelve `[]` (silencio) o el item del turno con `rafaga:{accion, ids}` y, si agrupó, `textoDelTurno`. |
 
 Agrega **4 nodos por flujo**. La salida «no» del IF y la de «Agrupar ráfaga» llegan al destino original: un item sin `rafaga` es un
@@ -68,27 +68,55 @@ y lo que llegó a menos de un salto después.
 6. Si no, respondo con mi componente hacia atrás (vecinos anteriores mientras haya arista), cronológico, unido por salto de línea (los
    ajenos como los devuelve el servidor, el mío crudo). Componente de uno: **solo**.
 
-**Propiedad** (`rafaga-propiedad.test.ts`): para toda secuencia de mensajes, con cada ejecución viendo solo lo escrito hasta su propio
-`ms + espera`, cada texto que ejecuta el nodo aparece **exactamente una vez** entre los textos respondidos (ni se pierde ni se repite).
-La prueba recorre todas las secuencias de 1 a 4 mensajes con texto, `[nº]`, audio y saliente en cualquier posición, las de 5 con un
-separador en cualquier posición, y esperas de 1, 2 y 5 s. Una mutación de la regla la hace fallar. El defecto que motivó esta regla
-(revisión del PR): con la cadena armada desde el mensaje más nuevo, A en 0 s, B en 1 s y C en 2,8 s dejaban a A sin respuesta, porque
-B consultaba tarde, veía a C y respondía solo.
+**Propiedad** (`rafaga-propiedad.test.ts`). Cada ejecución recibe lo que el servidor entrega según el contrato relativo a su mensaje (hasta
+5 predecesores, el propio y hasta 3 sucesores, con marcas de saliente y medios) y solo lo ya visible a su propio `ms + espera`.
+- **Sin fallas**, cada texto que ejecuta el nodo aparece **exactamente una vez** entre los respondidos: todas las secuencias de 1 a 4
+  mensajes con texto, `[nº]`, audio y saliente en cualquier posición; las de 5 con un separador en cualquier posición; esperas de 1, 2 y
+  5 s; y secuencias sorteadas de 7 a 9 entradas con separadores. Lo mismo con un retraso de escritura de hasta 500 ms por entrada (el
+  margen de 500 ms existe para eso).
+- **Con consultas que fallan** (responden solo), la prueba predice en los dos sentidos qué se pierde y qué se duplica, y exige que sea
+  exactamente eso (ver «Riesgos residuales»).
+- Un álbum de 6 o más entradas posterior a mi mensaje no cambia mi decisión: la regla solo mira a mi vecino siguiente, y el tope de 3
+  sucesores del servidor tampoco cambia ninguna decisión.
+- Una mutación de la regla (silencio sin mirar al vecino, o un salto mayor que el margen) la hace fallar.
+El defecto que motivó esta regla (revisión del PR): con la cadena armada desde el mensaje más nuevo, A en 0 s, B en 1 s y C en 2,8 s
+dejaban a A sin respuesta, porque B consultaba tarde, veía a C y respondía solo.
 
 - **Falla ABIERTO:** consulta caída, respuesta que no es `{rafaga:{v:1, fragmentos:[…]}}`, un fragmento mal formado, mi `idMeta`
   ausente o sin `mensajeId`: responde solo, como hoy.
 - Audio, imagen, botón y cualquier otro tipo **no esperan ni se callan**. Un `idMeta` repetido (reintento de Meta) cuenta una vez.
 - Mismo instante: el orden por (`ms`, `idMeta`) es el mismo para todas las ejecuciones.
 
-### Riesgos residuales (aceptados, declarados)
+### Riesgos residuales (aceptados, declarados; la regla NO promete «ni se pierde ni se repite» fuera de la ausencia de fallas)
 
-- **Seis o más textos seguidos a menos de 1,5 s:** el servidor entrega hasta 6 entradas, así que el extremo más viejo de la lista es un
-  borde; el grupo respondido puede quedar partido en dos respuestas (nunca se pierde un texto agrupable en las secuencias de la prueba,
-  que caben en la lista).
-- **Si la consulta de la ejecución que debe responder falla**, esa ejecución responde sola y **los textos que las otras callaron no se
-  contestan**. Es el costo de fallar abierto: se prefiere responder el último mensaje a quedarse en silencio.
+Duplicar cuesta un mensaje (0,0113 USD); perder deja a una persona sin respuesta. Todo lo que no se puede resolver sin estado compartido
+se inclina hacia duplicar. Lo que queda:
+
+- **Duplicado: la consulta de la ejecución ANTERIOR falla** (después del reintento). Esa ejecución responde sola y la siguiente, que sí
+  consulta bien, la incluye en su grupo: el texto se contesta dos veces. Lado seguro.
+- **Duplicado: el margen de 500 ms es una suposición.** `ts` del servidor es `Timestamp.now()` tomado ANTES del commit; una contención de
+  transacciones podría hacer visible un mensaje más tarde que ese margen. El efecto de que un vecino llegue tarde a la vista es que el
+  anterior no lo ve y responde solo mientras el vecino lo incluye: duplicar, no perder. (La prueba con retraso de hasta 500 ms demuestra que
+  dentro del margen no pasa nada.)
+- **Pérdida: la consulta de la ejecución que debía responder el grupo falla** (después del reintento). Responde sola y los textos que las
+  otras callaron por ella no se contestan. Es el costo de fallar abierto.
+- **Pérdida: 7 o más textos seguidos a menos de 1,5 s.** El responsable ve a lo sumo 5 predecesores; los más viejos del grupo ya callaron
+  esperándolo y no se contestan. (Seis textos seguidos caben y se contestan juntos.)
+- **Pérdida: un desvío del vecino siguiente** (ver «Requisitos de cada flujo»).
 - Si la ejecución que debe responder muere después de que las anteriores callaron, el grupo queda sin respuesta (el mismo riesgo que ya
   tiene un mensaje aislado cuando el flujo cae).
+
+### Requisitos de cada flujo (cada PR de flujo los cumple y lo prueba)
+
+La arista supone que mi vecino siguiente llegará al **mismo ancla**: si se desvía antes (atención de un operador, bloqueado, palabra clave de
+menú, `puerta` falsa) la ejecución anterior ya calló por él y nadie la contesta. No se puede resolver sin estado compartido. Por eso:
+
+1. **El ancla va DESPUÉS de todos los desvíos que responden por otra rama.** Lo que entra a la ráfaga es solo lo que el asistente va a
+   contestar con el modelo.
+2. El PR de cada flujo **lista sus desvíos** y prueba que un mensaje desviado no deja huérfano al anterior; si un desvío no puede quedar
+   antes del ancla, se declara la excepción en ese PR.
+3. `injertarRafaga` no valida los desvíos: detectarlos exige conocer la semántica de cada flujo y daría falsos errores; queda como requisito
+   documentado y como parte de la revisión del PR de cada flujo.
 
 El nodo solo entrega `textoDelTurno`; que cada flujo lo use en lugar de `userInput` lo cablea el PR de cada flujo.
 
@@ -106,7 +134,7 @@ predeterminados («Config base», «Config del negocio», «Traer configuración
 ## El servidor (contrato; lo construye `core-functions`)
 
 Rama `rafaga` dentro de `configuracionFlujo`, sin endpoint nuevo: pedido `{telefono, rafaga:{v:1, idMeta}}`, autenticado por la firma
-del número de siempre; `rafaga` junto con `sesion` es 400. Lee hasta 6 entradas del hilo de ese teléfono y responde
+del número de siempre; `rafaga` junto con `sesion` es 400. Lee del hilo de ese teléfono, **relativo al mensaje pedido**, hasta 5 predecesores, el propio y hasta 3 sucesores, y responde
 `{rafaga:{v:1, fragmentos:[{idMeta, tipo, texto (máx 1500), ms}]}}` en orden cronológico. Los fragmentos incluyen **también marcas de
 saliente** `{idMeta:'', tipo:'saliente', texto:'', ms}` (ya no se corta en el primer saliente: el nodo las usa como separador); solo los
 entrantes con `idMeta` repetido se deduplican; se descartan los de más de 30 s de antigüedad; y si ninguna entrada leída tiene el `idMeta`
