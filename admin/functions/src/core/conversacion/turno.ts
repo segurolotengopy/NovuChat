@@ -23,7 +23,8 @@
  * y se olvida la devuelve sola de dos maneras:
  *
  *   - INACTIVIDAD: pasaron 30 minutos desde su última actividad (`actividadPersonaEn`:
- *     cuando tomó o cuando mandó su último mensaje).
+ *     cuando tomó o cuando mandó su último mensaje; tras Retomar, además, la ingesta la
+ *     mueve UNA vez al primer entrante del cliente, D-R1 en `pausa.ts`).
  *   - VENTANA: se cerró la ventana de 24 horas de Meta, contada desde el último
  *     mensaje ENTRANTE (`ultimoEntranteEn` + 24 h), no desde `atencion.ventanaVenceEn`
  *     (esa es la ventana de FACTURACIÓN, otra cosa). Pasada la ventana la persona no
