@@ -16,6 +16,9 @@ const PERSONA = /persona del equipo|se encargar/i;
 /** El modelo adverso: el primer turno agrega la billetera sin pedir nada raro; los demás devuelven lineas: [] y quiereHablar:true con el texto de la derivación. */
 const adverso = () => { let n = 0; return () => { n++; return n === 1 ? modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) : modelo('Una persona del equipo se encargará.', { lineas: [], quiereHablar: true }); }; };
 
+/** El modelo BIEN portado: agrega la billetera al primer turno y después no pone quiereHablar. */
+const sano = () => { let n = 0; return () => { n++; return n === 1 ? modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) : modelo('Listo.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }); }; };
+
 describe('recojo en tienda con el modelo adverso', () => {
   it('el modo escrito se guarda por código, no deriva y el texto lo arma el código (nunca «una persona del equipo»); el nombre de UNA palabra completa el pedido: «Confirmar pedido» con el resumen', () => {
     const m = crear({ modeloDice: adverso() });
@@ -26,11 +29,17 @@ describe('recojo en tienda con el modelo adverso', () => {
     expect(ficha(m).carrito).toHaveLength(1); // lineas: [] del modelo NO borra el pedido
     expect(t1.mensajes.map((x) => x.cuerpo).join(' ')).not.toMatch(PERSONA);
     expect(t1.avisos).toHaveLength(0);
+    // Un nombre de UNA palabra se guarda, pero NO cuenta como «reconocido»: si el modelo marca quiereHablar, el turno deriva (nunca se ignora en silencio).
     const t2 = hablar(m, ANA, mTexto('Silvana'));
-    expect(ficha(m).entrega.nombre).toBe('Silvana');
-    expect(t2.mensajes.map((x) => x.cuerpo).join(' ')).not.toMatch(PERSONA);
-    expect(t2.mensajes.map((x) => x.cuerpo).join(' ')).toMatch(/Billetera de cuero/); // el resumen acompaña al botón aunque el carrito no cambió
-    expect(ids(t2).join(' ')).toMatch(/pedido:confirmar:/);
+    expect(t2.avisos.length).toBeGreaterThanOrEqual(1);
+    // Con un modelo bien portado (sin quiereHablar) el mismo nombre completa el pedido: resumen + «Confirmar pedido».
+    const b = crear({ modeloDice: sano() });
+    hablar(b, ANA, mTexto('quiero una billetera'));
+    hablar(b, ANA, mTexto('recojo en tienda'));
+    const t3 = hablar(b, ANA, mTexto('Silvana'));
+    expect(t3.avisos).toHaveLength(0);
+    expect(t3.mensajes.map((x) => x.cuerpo).join(' ')).toMatch(/Billetera de cuero/); // el resumen acompaña al botón aunque el carrito no cambió
+    expect(ids(t3).join(' ')).toMatch(/pedido:confirmar:/);
     void t0;
   });
   it('tocar «Confirmar pedido» emite el QR en el mismo turno', () => {
@@ -48,8 +57,13 @@ describe('recojo en tienda con el modelo adverso', () => {
     const t1 = hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
     expect(t1.mensajes.map((x) => x.cuerpo).join(' ')).not.toMatch(PERSONA);
     const t2 = hablar(m, ANA, mTexto('Silvana'));
-    expect(t2.avisos).toHaveLength(0);
-    expect(ids(t2).join(' ')).toMatch(/pedido:confirmar:/);
+    expect(t2.avisos.length).toBeGreaterThanOrEqual(1); // quiereHablar del modelo + nombre de una palabra: deriva
+    const b = crear({ modeloDice: sano() });
+    hablar(b, ANA, mTexto('quiero una billetera'));
+    hablar(b, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
+    const t3 = hablar(b, ANA, mTexto('Silvana'));
+    expect(t3.avisos).toHaveLength(0);
+    expect(ids(t3).join(' ')).toMatch(/pedido:confirmar:/);
   });
 });
 
@@ -74,6 +88,17 @@ describe('envío con el modelo adverso', () => {
 });
 
 describe('NEGADO: lo que el código no reconoce como elegir modo o dar el nombre sigue derivando aunque haya pedido en curso', () => {
+  it('SIN «?» y sin tildes: «el envio tiene garantia» o «cuanto cuesta el envio» derivan y no eligen el envío', () => {
+    for (const consulta of ['el envio tiene garantia', 'cuanto cuesta el envio', 'precio del envio a Oruro']) {
+      const m = crear({ modeloDice: adverso() });
+      hablar(m, ANA, mTexto('quiero una billetera'));
+      hablar(m, ANA, mTexto('recojo en tienda'));
+      const modoAntes = ficha(m).entrega.modo;
+      const t = hablar(m, ANA, mTexto(consulta));
+      expect(t.avisos.length, consulta).toBeGreaterThanOrEqual(1);
+      expect(ficha(m).entrega.modo, consulta).toBe(modoAntes);
+    }
+  });
   it('con el recojo ya elegido, «¿tienen garantía?» o una pieza que no existe pasan con recepción (aviso)', () => {
     for (const pregunta of ['¿tienen garantía?', '¿tienen la mochila negra?']) {
       const m = crear({ modeloDice: adverso() });
@@ -85,7 +110,7 @@ describe('NEGADO: lo que el código no reconoce como elegir modo o dar el nombre
   });
   it('«Vale» o «Mariana» sí son un nombre de una palabra', () => {
     for (const nombre of ['Vale', 'Mariana']) {
-      const m = crear({ modeloDice: adverso() });
+      const m = crear({ modeloDice: sano() });
       hablar(m, ANA, mTexto('quiero una billetera'));
       hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
       hablar(m, ANA, mTexto(nombre));
@@ -133,6 +158,34 @@ describe('«cancelar» es PAGAR en Bolivia: no vacía el carrito', () => {
       hablar(m, ANA, mTexto(frase));
       expect(ficha(m).carrito, frase).toHaveLength(1);
     }
+  });
+});
+
+describe('NEGADO: una palabra suelta no es el nombre de quien retira (decide el ESTADO, no solo una lista)', () => {
+  it('«Humano», «Vendedor», «Excelente», «Espera» y «Precios» tras el botón de retiro NO quedan como nombre y no llevan a «Confirmar pedido»', () => {
+    for (const palabra of ['Humano', 'Vendedor', 'Excelente', 'Espera', 'Precios']) {
+      for (const modeloDice of [adverso(), sano()]) {
+        const m = crear({ modeloDice });
+        hablar(m, ANA, mTexto('quiero una billetera'));
+        hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
+        const t = hablar(m, ANA, mTexto(palabra));
+        expect(ficha(m).entrega.nombre ?? '', palabra).toBe('');
+        expect(ids(t).join(' '), palabra).not.toMatch(/pedido:confirmar:/);
+      }
+    }
+  });
+  it('«Humano» con el modelo adverso (quiereHablar) deriva con aviso: el cliente que pide una persona no queda ignorado', () => {
+    const m = crear({ modeloDice: adverso() });
+    hablar(m, ANA, mTexto('quiero una billetera'));
+    hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
+    expect(hablar(m, ANA, mTexto('Humano')).avisos.length).toBeGreaterThanOrEqual(1);
+  });
+  it('con el asistente esperando el nombre, una palabra que sí es un nombre se guarda y completa el pedido', () => {
+    const m = crear({ modeloDice: sano() });
+    hablar(m, ANA, mTexto('quiero una billetera'));
+    hablar(m, ANA, mTexto('recojo en tienda'));
+    hablar(m, ANA, mTexto('Mariana'));   // el último mensaje del asistente pidió «a nombre de quién retira»: el estado espera el nombre
+    expect(ficha(m).entrega.nombre ?? '').toBe('Mariana');
   });
 });
 
