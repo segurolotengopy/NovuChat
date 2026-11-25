@@ -122,8 +122,8 @@ describe('negativas de fuente', () => {
     expect(c.match(/httpsCallable</g)).toHaveLength(1);
     expect(c).toMatch(/'enviarAdjuntoComoPersona', \{ timeout: TIEMPO_DE_ESPERA_ADJUNTO_MS \}/);
   });
-  it('turno.ts conserva solo sus tres callables', () => {
-    expect(codigo('web/src/central/lib/turno.ts').match(/httpsCallable</g)).toHaveLength(3);
+  it('turno.ts conserva solo sus cuatro callables (tomar, devolver, enviar y, desde Retomar, retomar)', () => {
+    expect(codigo('web/src/central/lib/turno.ts').match(/httpsCallable</g)).toHaveLength(4);
   });
   it('la página crea la capa real y el hook de la bandera falla cerrado', () => {
     expect(codigo('web/src/central/paginas/ConversacionesNueva.tsx')).toContain('capaAdjuntoReal(funciones)');

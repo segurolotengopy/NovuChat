@@ -6,7 +6,10 @@
       "name": "Error del flujo",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "parameters": {},
       "notes": "Se dispara cuando un flujo con settings.errorWorkflow apuntando a este termina en error (p. ej. «Detener por envío incierto», decisión I4, 03/11/2026). El id de este flujo se asigna al publicar, en settings.errorWorkflow de cada flujo con relé (ver docs/produccion/error-workflow-envio-incierto.md)."
     },
@@ -15,7 +18,10 @@
       "name": "Registrar flujo y hora",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [240, 0],
+      "position": [
+        240,
+        0
+      ],
       "parameters": {
         "jsCode": "// Registra SOLO el nombre del flujo y la hora. Todo lo demas de la entrada del Error Trigger\n// (ids de ejecucion, url, mensaje de error, nodo, datos) se descarta aqui: nunca se copia ni se reenvia.\nconst entrada = $input.first().json || {};\nconst wf = entrada.workflow && typeof entrada.workflow === 'object' ? entrada.workflow : {};\nconst flujo = typeof wf.name === 'string' ? wf.name.replace(/[^\\p{L}\\p{N} ._()\\u00b7\\u2014-]/gu, '_').replace(/\\d(?:[\\s.-]?\\d){5,}/g, '_').slice(0, 80) : 'flujo desconocido';\nconst l = new Date(Date.now() - 4 * 60 * 60 * 1000);\nconst dos = (n) => String(n).padStart(2, '0');\nconst hora = l.getUTCFullYear() + '-' + dos(l.getUTCMonth() + 1) + '-' + dos(l.getUTCDate()) + ' ' + dos(l.getUTCHours()) + ':' + dos(l.getUTCMinutes()) + ':' + dos(l.getUTCSeconds()) + ' (America/La_Paz, UTC-4)';\nreturn [{ json: { flujo, hora } }];"
       },
@@ -26,7 +32,10 @@
       "name": "Armar alerta",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [480, 0],
+      "position": [
+        480,
+        0
+      ],
       "parameters": {
         "jsCode": "// Arma la alerta operativa y su cuerpo FIRMABLE. Todo el texto es CONSTANTE: de la entrada del Error Trigger solo se\n// compara el NOMBRE del ultimo nodo ejecutado (para el nivel); nunca se copia. El flujo ya viene saneado de\n// «Registrar flujo y hora». El cuerpo sale con todo caracter no ASCII escapado (\\uXXXX): los bytes que se firman son\n// exactamente los que viajan, sea cual sea la codificacion que use el envio.\nconst NODO_DETENER = 'Detener por envío incierto';\nconst entrada = $('Error del flujo').first().json || {};\nconst ejec = entrada.execution && typeof entrada.execution === 'object' ? entrada.execution : {};\nconst urgente = ejec.lastNodeExecuted === NODO_DETENER;\nconst reg = $input.first().json || {};\nconst flujo = typeof reg.flujo === 'string' ? reg.flujo : '';\nconst ahora = Date.now();\nconst ocurrido = new Date(ahora).toISOString().slice(0, 19) + 'Z';\nconst tipo = urgente ? 'envio_incierto' : 'error_de_flujo';\nconst alerta = urgente\n  ? {\n      nivel: 'urgente', proyecto: 'novuchat',\n      asunto: 'Envío incierto: un flujo se detuvo',\n      que_paso: 'Un flujo con relé se detuvo: no se sabe si un envío salió o no.\\nNo se reintentó para no duplicar el mensaje.\\nEl detalle no se copia aquí.',\n      que_se_espera_de_andres: 'Revisar en n8n el flujo indicado antes de reintentar; no reenviar a ciegas.',\n    }\n  : {\n      nivel: 'aviso', proyecto: 'novuchat',\n      asunto: 'Error en un flujo de n8n',\n      que_paso: 'Un flujo terminó con error.\\nEl detalle no se copia aquí.',\n      que_se_espera_de_andres: 'Revisar en n8n el flujo indicado cuando haya tiempo.',\n    };\nalerta.enlace = 'https://github.com/segurolotengopy/NovuChat/blob/main/docs/produccion/error-workflow-envio-incierto.md';\nalerta.ocurrido_en = ocurrido;\n// El id incluye un hash de SOLO LETRAS del flujo (sin cifras ni hex): dos flujos distintos en el mismo segundo no se pisan.\nlet h = 5381;\nfor (let i = 0; i < flujo.length; i++) h = (h * 33 + flujo.charCodeAt(i)) % 308915776;\nlet letras = '';\nfor (let i = 0; i < 6; i++) { letras = String.fromCharCode(97 + (h % 26)) + letras; h = Math.floor(h / 26); }\nalerta.id_unico = tipo + '-' + ocurrido.slice(0, -1) + '-' + letras;\nalerta.tipo_error = tipo;\nif (flujo) alerta.flujo = flujo;\nif (urgente) alerta.nodo = NODO_DETENER;\nconst cuerpo = JSON.stringify(alerta).replace(/[^\\x00-\\x7f]/g, (c) => '\\\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));\nconst marca = String(ahora);\n// La direccion de la Function se repone al CARGAR el flujo en n8n (scripts/cargar-alerta-n8n.sh); en el repositorio queda el marcador.\nconst url = 'REEMPLAZAR_URL_ALERTA_OPERATIVA';\nreturn [{ json: { cuerpo, marca, aFirmar: marca + '.' + cuerpo, url } }];"
       },
@@ -37,7 +46,10 @@
       "name": "Firmar alerta (HMAC)",
       "type": "n8n-nodes-base.crypto",
       "typeVersion": 2,
-      "position": [720, 0],
+      "position": [
+        720,
+        0
+      ],
       "parameters": {
         "action": "hmac",
         "binaryData": false,
@@ -59,7 +71,10 @@
       "name": "Enviar alerta operativa",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [960, 0],
+      "position": [
+        960,
+        0
+      ],
       "parameters": {
         "method": "POST",
         "url": "={{ $json.url }}",
