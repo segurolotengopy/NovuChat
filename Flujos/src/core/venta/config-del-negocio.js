@@ -276,9 +276,23 @@ const elPendiente = {
 //
 // UN ITEM SIN PRECIO no entra: no se puede cobrar lo que no tiene precio, asi
 // que simplemente no se ofrece, igual que un item dado de baja.
-const items = (Array.isArray(r.catalogo) ? r.catalogo : [])
+const conPrecio = (Array.isArray(r.catalogo) ? r.catalogo : [])
   .filter((i) => i && typeof i.precio === 'number');
+// LO AGOTADO NO SE OFRECE (reclamo del 24/11/2026: el asistente ofrecio una gaseosa con existencias 0). El servidor marca
+// `agotado: true` (gancho de Inventario) solo en los items CON control de existencias y en cero; aqui ese item sale del catalogo
+// con precio y queda en una linea aparte, sin precio, para que el asistente pueda decir «por ahora no hay» si preguntan.
+const items = conPrecio.filter((i) => i.agotado !== true);
+const agotados = conPrecio.filter((i) => i.agotado === true);
 const moneda = util(op.moneda) === 'USD' ? 'USD' : (util(base.moneda) || 'Bs');
+// LA MONEDA DEL ITEM MANDA SIEMPRE (la del negocio solo si el item no trae una): antes solo valia si era USD, y un item en BOB de un
+// negocio en USD salia como «USD». BOB y Bs se escriben «Bs»; otra moneda escrita se respeta tal cual (acotada).
+const monedaDe = (m) => {
+  const t = util(m);
+  if (t === undefined) return moneda;
+  const u = t.toUpperCase();
+  if (u === 'BOB' || u === 'BS') return 'Bs';
+  return u.slice(0, 8);
+};
 
 // Sin tildes y en minusculas, para poder comparar un area contra un vocabulario
 // sin repetir cada palabra con y sin acento. `normalize` es del lenguaje, no de
@@ -301,10 +315,14 @@ const porArea = new Map();
 for (const i of items) {
   const a = areaDe(i);
   if (!porArea.has(a)) porArea.set(a, []);
-  porArea.get(a).push(`${i.nombre} ${i.precio} ${i.moneda === 'USD' ? 'USD' : moneda}`);
+  porArea.get(a).push(`${i.nombre} ${i.precio} ${monedaDe(i.moneda)}`);
 }
-const catalogoPorArea = Array.from(porArea.entries())
-  .map(([area, l]) => `${area}: ${l.join(' · ')}`).join('\n');
+const lineaAgotados = agotados.length
+  ? 'SIN EXISTENCIAS por ahora (NO se ofrecen ni se cobran; si preguntan, dile que por ahora no hay y ofrece lo que sí hay): '
+    + agotados.map((i) => String(i.nombre == null ? '' : i.nombre)).join(' · ')
+  : '';
+const catalogoPorArea = [Array.from(porArea.entries())
+  .map(([area, l]) => `${area}: ${l.join(' · ')}`).join('\n'), lineaAgotados].filter((x) => x !== '').join('\n');
 const areasDelCatalogo = Array.from(porArea.keys()).join(', ');
 
 // --- QUE REGLAS DE VENTA CORRESPONDEN A ESTE CATALOGO -----------------------
@@ -354,7 +372,7 @@ const resumenDeCatalogo = (v) => {
   if (!total) return undefined;
   const areas = Array.isArray(v.areas)
     ? v.areas.filter((a) => typeof a === 'string' && a.trim() !== '') : [];
-  const mon = v.moneda === 'USD' ? 'USD' : moneda;
+  const mon = monedaDe(v.moneda);
   const partes = [total + ' productos'];
   if (areas.length) partes.push('en ' + areas.join(', '));
   if (typeof v.precioMin === 'number' && typeof v.precioMax === 'number') {

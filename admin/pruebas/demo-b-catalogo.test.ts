@@ -1389,6 +1389,50 @@ describe('El catálogo real llega al prompt, sea cual sea el rubro', () => {
     expect(String(cfg['catalogoPorArea'])).toBe('Otros: Sales Spa 7 USD');
   });
 
+  describe('lo agotado no se ofrece y la moneda del ítem manda (reclamo del 24/11/2026: gaseosa con existencias 0 «a 8 USD»)', () => {
+    const lineas = (cfg: J): string => String(cfg['catalogoPorArea']);
+    it('un ítem con agotado=true NO sale con precio en el catálogo del prompt: queda solo en la línea «sin existencias»', () => {
+      const cfg = fusionar(panel({ catalogo: [
+        { nombre: 'Gaseosa', precio: 8, moneda: 'BOB', area: 'bebidas', agotado: true },
+        { nombre: 'Jugo', precio: 10, moneda: 'BOB', area: 'bebidas' },
+      ] }));
+      const t = lineas(cfg);
+      expect(t).toContain('bebidas: Jugo 10 Bs');
+      expect(t).not.toMatch(/Gaseosa 8/);
+      expect(t).toMatch(/SIN EXISTENCIAS por ahora \(NO se ofrecen ni se cobran[^)]*\): Gaseosa$/);
+      expect(t).not.toMatch(/Gaseosa[^\n]*\d+ (Bs|USD)/);
+    });
+    it('un catálogo sin agotados no cambia: ni línea de existencias; agotado=false y la clave ausente se ofrecen', () => {
+      const cfg = fusionar(panel({ catalogo: [
+        { nombre: 'Café', precio: 12, area: 'bebidas', agotado: false }, { nombre: 'Té', precio: 9, area: 'bebidas' },
+      ] }));
+      expect(lineas(cfg)).toBe('bebidas: Café 12 Bs · Té 9 Bs');
+    });
+    it('si TODO está agotado el catálogo con precio queda vacío y solo hay la línea de existencias', () => {
+      const t = lineas(fusionar(panel({ catalogo: [{ nombre: 'Gaseosa', precio: 8, area: 'bebidas', agotado: true }] })));
+      expect(t).toMatch(/^SIN EXISTENCIAS por ahora/);
+      expect(t).not.toMatch(/\d+ (Bs|USD)/);
+    });
+    it('la moneda del ítem manda: BOB en un negocio en USD sale en Bs, y USD en un negocio en bolivianos sale en USD', () => {
+      const enUsd = fusionar(panel({ operacion: { moneda: 'USD' }, catalogo: [
+        { nombre: 'Gaseosa', precio: 8, moneda: 'BOB', area: 'a' }, { nombre: 'Parlante', precio: 220, moneda: 'USD', area: 'a' },
+        { nombre: 'Sin moneda', precio: 5, area: 'a' },
+      ] }));
+      expect(lineas(enUsd)).toBe('a: Gaseosa 8 Bs · Parlante 220 USD · Sin moneda 5 USD');
+      const enBs = fusionar(panel({ catalogo: [{ nombre: 'Ruana', precio: 300, moneda: 'USD', area: 'a' }, { nombre: 'Café', precio: 12, moneda: 'Bs', area: 'a' }, { nombre: 'Otro', precio: 3, area: 'a' }] }));
+      expect(lineas(enBs)).toBe('a: Ruana 300 USD · Café 12 Bs · Otro 3 Bs');
+    });
+    it('el prompt que llega al modelo trae la línea de existencias y ningún precio del agotado', () => {
+      const cfg = fusionar(panel({ operacion: { moneda: 'USD' }, catalogo: [
+        { nombre: 'Gaseosa', precio: 8, moneda: 'BOB', area: 'bebidas', agotado: true }, { nombre: 'Parlante', precio: 220, moneda: 'USD', area: 'tech' },
+      ] }));
+      const p = prompt(cfg);
+      expect(p).toContain('Parlante 220 USD');
+      expect(p).toContain('SIN EXISTENCIAS por ahora');
+      expect(p).not.toMatch(/Gaseosa \d/);
+    });
+  });
+
   describe('las reglas de venta salen del catálogo, no del rubro cableado', () => {
     it('un catálogo de artesanía NO trae las reglas de restaurante ni las de talla', () => {
       const cfg = conWalisuma();
