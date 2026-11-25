@@ -466,6 +466,31 @@ describe('qué pasa con cada respuesta de NovuTienda', () => {
     }
     expect(h.dormidas).toEqual([]);
   });
+  it('409 pedido-anulado (contrato 25/11/2026): falla cerrado con texto claro, el pedido NO se confirma, vuelve a `recibido` y no se reintenta', async () => {
+    for (const cuerpo of [
+      JSON.stringify({ ok: false, error: 'pedido-anulado', mensaje: 'MENSAJE-AJENO' }),
+      JSON.stringify({ ok: false, error: 'pedido-anulado', mensaje: 'MENSAJE-AJENO', faltantes: [{ productoId: 'sku-1', pedido: 2, disponible: 0 }] }),
+    ]) {
+      await sembrar(); h.respuestas = [respuesta(409, cuerpo)]; const antes = h.llamadas.length;
+      const e = await rechazo(llamar(P(), admin(T)));
+      expect(e.code).toBe('failed-precondition');
+      expect(e.details).toEqual({ motivo: 'pedido_anulado' });
+      expect(e.message).toBe(M.MENSAJES.anulado);
+      expect(M.MENSAJES.anulado).toContain('anulado en la tienda');
+      expect(JSON.stringify(e)).not.toContain('MENSAJE-AJENO');
+      expect(h.llamadas.length - antes).toBe(1);
+      expect((await pedidoCrudo())['estado']).not.toBe('confirmado');
+      await recibidoLimpio();
+    }
+    expect(h.dormidas).toEqual([]);
+  });
+  it('200 con {ok:true, repetida:true} (la tienda ya lo tenía): es éxito y el pedido queda confirmado', async () => {
+    await sembrar();
+    h.respuestas = [respuesta(200, JSON.stringify({ ok: true, operacionId: 'nc-wa_BM1', repetida: true }))];
+    expect(await llamar(P(), admin(T))).toMatchObject({ pedidoId: 'wa_BM1', estado: 'confirmado', yaConfirmado: false });
+    expect(h.llamadas).toHaveLength(1);
+    expect((await pedidoCrudo())['estado']).toBe('confirmado');
+  });
   it('409 stock-insuficiente con lista vacía o solo de ítems ajenos: sigue siendo stock, sin faltantes inventados', async () => {
     for (const faltantes of [[], [{ productoId: 'inventado', pedido: 9, disponible: 0 }]]) {
       await sembrar(); h.respuestas = [respuesta(409, JSON.stringify({ ok: false, error: 'stock-insuficiente', faltantes }))];
