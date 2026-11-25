@@ -33,7 +33,7 @@ import {
 
 // Las cifras de Retomar (topes y precio de la plantilla) son del PLAN y salen de `planes.ts`: la pantalla no escribe ninguna.
 import {
-  PLANTILLA_UTILIDAD_FUENTE, PLANTILLA_UTILIDAD_USD, PLANTILLA_UTILIDAD_VERIFICADA_EL, TARIFA_DE_RESPALDO, limitesDeRetomar, type Tarifa,
+  PLANTILLA_UTILIDAD_USD, TARIFA_DE_RESPALDO, limitesDeRetomar, type Tarifa,
 } from '../../../../functions/src/central/cuenta/planes';
 import { mensajeDeError } from './mensajeServidor';
 import type { Titularidad } from '../../../../functions/src/central/ejes';
@@ -269,12 +269,10 @@ export const esPlantilla = (tipo: unknown): boolean => tipo === 'plantilla';
 
 /**
  * LA CIFRA DEL AVISO, con coma decimal (`0,0113`) y SALIDA DE `planes.ts`: ni este archivo ni la pantalla escriben el precio.
- * D-R5: mientras `PLANTILLA_UTILIDAD_VERIFICADA_EL` sea `null` se dice que es aproximada y que no está verificada.
+ * En pantalla solo «aprox. USD 0,0113 por envío», sin fuente ni fecha (decisión de Andres, 24/11/2026): la fuente oficial y
+ * la fecha de lectura están en el comentario de `PLANTILLA_UTILIDAD_USD` (`planes.ts`) y en `docs/base-comercial.md` §1.
  */
 export const cifraDePlantilla = (): string => String(PLANTILLA_UTILIDAD_USD).replace('.', ',');
-export const fuenteDeLaCifra = (): string => PLANTILLA_UTILIDAD_VERIFICADA_EL === null
-  ? `${PLANTILLA_UTILIDAD_FUENTE}; todavía sin verificar en la tarifa oficial de Meta`
-  : `${PLANTILLA_UTILIDAD_FUENTE}; verificada en la tarifa de Meta el ${PLANTILLA_UTILIDAD_VERIFICADA_EL}`;
 
 /**
  * LO QUE LA PANTALLA SABE PARA DECIR QUIÉN PAGA LA PLANTILLA: la tarifa de la cuenta, la titularidad de la línea y la línea.
@@ -336,7 +334,7 @@ export function quienPagaLaPlantilla(c: Pick<ContextoDeAviso, 'tarifa' | 'titula
 export function textoAvisoRetomar(contexto: ContextoDeAviso = SIN_CONTEXTO_DE_AVISO): string {
   const l = limitesDeRetomar(null, TARIFA_DE_RESPALDO, 'novuchat');
   const linea = contexto.linea ? ` por la línea terminada en ${contexto.linea}` : '';
-  const tarifa = `aprox. USD ${cifraDePlantilla()} por envío (tarifa de Meta para Bolivia, ${fuenteDeLaCifra()})`;
+  const tarifa = `aprox. USD ${cifraDePlantilla()} por envío`;
   const limite = `Es un límite de envío para todos los negocios: hasta ${l.porDia} por día y ${l.porMes} por mes.`;
   const cierre = 'Si el cliente responde, se abre una conversación nueva que cuenta en su plan.';
   switch (quienPagaLaPlantilla(contexto)) {

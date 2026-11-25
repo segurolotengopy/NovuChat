@@ -554,14 +554,17 @@ export function limitesDeRetomar(
  * LO QUE COSTARÍA CADA PLANTILLA DE RETOMAR, para el aviso de la consola (D-R5, Andres, 23/11/2026).
  *
  * `PLANTILLA_UTILIDAD_USD` es el precio de una plantilla de UTILIDAD fuera de la ventana de 24 h para Bolivia (mercado
- * «Rest of Latin America»), tomado de `docs/base-comercial.md` §1. NO está verificado en la tarifa oficial de Meta
- * (fuentes de terceros dan 0,0113 y 0,0130): por eso la consola lo muestra como cifra aproximada, con su fuente, y
- * mientras `PLANTILLA_UTILIDAD_VERIFICADA_EL` sea `null` lo dice. Cuando se verifique, se escribe acá la fecha
- * (texto, p. ej. «2026-12-01») y el aviso deja de decir «sin verificar». La pantalla no escribe la cifra: la lee de acá.
+ * «Rest of Latin America»), igual que `docs/base-comercial.md` §1.
+ *
+ * FUENTE OFICIAL (verificada el 24/11/2026): la tabla «Tarifas en USD» de Meta, «Cost per message in USD on the WhatsApp
+ * Business Platform, effective October 1, 2026», fila «Rest of Latin America», columna Utility: 0.0113. Se baja desde
+ * https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing (Bolivia, +591, está en esa región).
+ * Meta cambia precios solo el 1 de enero, abril, julio u octubre: revisar esta cifra en cada una de esas fechas.
+ *
+ * La consola dice solo «aprox. USD 0,0113 por envío», sin fuente ni fecha en pantalla (decisión de Andres por botón,
+ * 24/11/2026). La pantalla no escribe la cifra: la lee de acá.
  */
 export const PLANTILLA_UTILIDAD_USD = 0.0113;
-export const PLANTILLA_UTILIDAD_FUENTE = 'base comercial de NovuChat, octubre de 2026';
-export const PLANTILLA_UTILIDAD_VERIFICADA_EL: string | null = null;
 
 /**
  * LO QUE NACE EN `cuenta/estado` AL DAR DE ALTA UN COMERCIO: el plan más chico

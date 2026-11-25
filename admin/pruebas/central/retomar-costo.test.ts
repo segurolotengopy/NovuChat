@@ -22,11 +22,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  PLANTILLA_UTILIDAD_FUENTE, PLANTILLA_UTILIDAD_USD, PLANTILLA_UTILIDAD_VERIFICADA_EL, PLANES, TARIFAS, limitesDeRetomar, limitesDePersona,
+  PLANTILLA_UTILIDAD_USD, PLANES, TARIFAS, limitesDeRetomar, limitesDePersona,
 } from '../../functions/src/central/cuenta/planes';
 import {
   ROTULO_PLANTILLA, TEXTO_ESPERANDO_CLIENTE, accionesDeTurno, cifraDePlantilla, contextoDeAviso, ejecutarRetomar, esPlantilla,
-  esperandoRespuestaDelCliente, fuenteDeLaCifra, puedeRetomarDeFicha, quienPagaLaPlantilla, retomadaPendienteDe, retomadoEnDe,
+  esperandoRespuestaDelCliente, puedeRetomarDeFicha, quienPagaLaPlantilla, retomadaPendienteDe, retomadoEnDe,
   textoAvisoRetomar, textoErrorTurno, textoErrorRetomar, textoTope, codigoDeError, type CapaTurno, type ContextoDeAviso, type EntradaAcciones,
 } from '../../web/src/central/lib/turno';
 import { mensajeDeError } from '../../web/src/central/lib/mensajeServidor';
@@ -66,10 +66,8 @@ describe('A. las cifras salen de `planes.ts` (C9, D-R3, D-R5)', () => {
     }
   });
 
-  it('el precio de la plantilla es 0,0113 USD, con fuente, y NO está verificado (D-R5): la fecha es `null`', () => {
+  it('el precio de la plantilla es 0,0113 USD (tarifa oficial de Meta, Rest of Latin America, utility, leída el 24/11/2026)', () => {
     expect(PLANTILLA_UTILIDAD_USD).toBe(0.0113);
-    expect(PLANTILLA_UTILIDAD_FUENTE).toMatch(/base comercial/i);
-    expect(PLANTILLA_UTILIDAD_VERIFICADA_EL).toBeNull();
   });
 
   it('NEGATIVA de fuente: ni la pantalla ni la lógica de la consola escriben la cifra (ni la 0,0113 ni la 100 del tope)', () => {
@@ -137,17 +135,15 @@ describe('B. el aviso de costo depende de la TARIFA y de la línea (D-R2 a)', ()
     expect(textoAvisoRetomar()).toBe(textoAvisoRetomar(ctx(null, null)));
   });
 
-  it('la cifra sale de planes.ts, con su fuente y, sin verificar (D-R5), lo dice', () => {
+  it('la cifra sale de planes.ts y en pantalla va SIN paréntesis, sin fuente ni fecha (decisión de Andres, 24/11)', () => {
     expect(cifraDePlantilla()).toBe(cifra);
     for (const c of [ctx('estandar', 'comercio'), ctx('meta_incluido', 'novuchat'), ctx('estandar', 'novuchat'), ctx(null, null)]) {
       const t = textoAvisoRetomar(c);
-      expect(t).toContain(`aprox. USD ${cifra} por envío`);
-      expect(t).toContain('tarifa de Meta para Bolivia');
-      expect(t).toContain(PLANTILLA_UTILIDAD_FUENTE);
-      expect(t).toContain('todavía sin verificar en la tarifa oficial de Meta');
+      expect(t).toContain(`aprox. USD ${cifra} por envío.`);
+      expect(t).not.toContain('(');
+      expect(t).not.toMatch(/tarifa de Meta para Bolivia|base comercial|sin verificar|verificada/);
       expect(t).toContain('Si el cliente responde, se abre una conversación nueva que cuenta en su plan.');
     }
-    expect(fuenteDeLaCifra()).toContain('sin verificar');
   });
 
   it('los 20 por día y 100 por mes se dicen como límite de envío de TODOS los negocios (también en el del comercio), no como cobro posterior', () => {
