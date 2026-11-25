@@ -121,6 +121,28 @@ describe('C1. argumentos y salvaguarda (puros)', () => {
     return (r.problemas ?? []).join(' | ');
   };
 
+  it('--entorno toma el id de la lista blanca del ENTORNO (no de argv) y lo vuelve a validar', () => {
+    const r = mod.analizarArgumentos(['--entorno', 'staging', '--tenant', 'tienda-prueba', '--monedas', 'BOB'], ENV_REAL);
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    expect(r.cfg?.['proyecto']).toBe(ENV_REAL.GCP_PROJECT_ID_STAGING);
+    expect(r.cfg?.['entorno']).toBe('staging');
+    const p = mod.analizarArgumentos(['--entorno', 'produccion', '--tenant', 'tienda-prueba', '--monedas', 'BOB'], ENV_REAL);
+    expect(p.cfg?.['entorno']).toBe('produccion');
+    // producción con --entorno sigue exigiendo --confirmo-produccion para aplicar
+    expect(problemas(['--entorno', 'produccion', '--tenant', 'tienda-prueba', '--monedas', 'BOB', '--aplicar', '--respaldo', '/tmp/x/r.json'], ENV_REAL))
+      .toMatch(/--confirmo-produccion/);
+  });
+  it('NEGATIVA: --entorno con --proyecto, entorno desconocido o sin su variable', () => {
+    expect(problemas(['--entorno', 'staging', '--proyecto', ENV_REAL.GCP_PROJECT_ID_STAGING, '--tenant', 'tienda-prueba', '--monedas', 'BOB'], ENV_REAL))
+      .toMatch(/no se combina con --proyecto/);
+    expect(problemas(['--entorno', 'emulador', '--tenant', 'tienda-prueba', '--monedas', 'BOB'], ENV_REAL)).toMatch(/solo staging o produccion/);
+    expect(problemas(['--entorno', 'staging', '--tenant', 'tienda-prueba', '--monedas', 'BOB'], { GCP_PROJECT_ID_PROD: 'proyecto-ficticio-prod' }))
+      .toMatch(/falta GCP_PROJECT_ID_STAGING/);
+    // con variables de emulador puestas, el id real que sale del entorno se rechaza igual (comprobarProyecto)
+    expect(problemas(['--entorno', 'staging', '--tenant', 'tienda-prueba', '--monedas', 'BOB'], { ...ENV_REAL, FIRESTORE_EMULATOR_HOST: '127.0.0.1:1' }))
+      .toMatch(/emulador/);
+  });
+
   it('la invocación completa es válida y queda en seco; BOB, ARS y ambas valen; --desactivar escribe activo=false', () => {
     const r = mod.analizarArgumentos(base, ENV_EMU);
     expect(r.ok, JSON.stringify(r)).toBe(true);
