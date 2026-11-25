@@ -4,8 +4,8 @@
     "Armar alerta": "REEMPLAZAR_"
   },
   "codigo": {
-    "Registrar flujo y hora": "barridos/registrar-flujo-y-hora.js",
-    "Armar alerta": "barridos/armar-alerta.js"
+    "Registrar flujo y hora": "core/barridos/registrar-flujo-y-hora.js",
+    "Armar alerta": "core/barridos/armar-alerta.js"
   },
   "prompts": {}
 }
