@@ -44,7 +44,7 @@
  * 10. LOS TOPES, del plan (`limitesDeRetomar`, inyectada) y contados en la MISMA transacción que crea el mensaje, en
  *     `topesDeEnvio/r_{comercio}`: `porDia` (día de La Paz) y `porMes`. `resource-exhausted` con
  *     `details.tope: 'retomarDia' | 'retomarMes'`; un rechazo no consume cupo. Las cifras NO están en core.
- * 10b. EL TOPE POR PERSONA y por minuto (`limites.porMinuto`, 10 si el plan no lo trae): el contador `u_{uid}` que comparte
+ * 10b. EL TOPE POR PERSONA y por minuto (`limites.porMinuto`, del plan; sin él, `noDisponible`): el contador `u_{uid}` que comparte
  *     con `enviarComoPersona`; `resource-exhausted` con `details.tope: 'minuto'`.
  *     UN RECHAZO DE PLANTILLA LIBERA: si el mensaje termina `rechazado` (confirmación, caducidad), `ultimaRetomadaEn` se
  *     borra (solo si es el de ese mensaje: `ultimaRetomadaMensajeId`) y el cupo del día y del mes se devuelve
@@ -66,9 +66,11 @@
  * (`crearRetomarConversacion(deps)`), igual que `limitesDePersona` en `enviarComoPersona.ts`.
  *
  * COSTO por uso efectivo (0 mensajes por conversación del asistente; +1 PLANTILLA de utilidad que cobra Meta, la cifra
- * vive en Central): lecturas, 1 de Auth + 3 previas (la conversación, las rutas del comercio y la cuenta) + 5 de la
- * transacción (ficha, conversación, mensaje, tope, ruta); escrituras, 4 (mensaje, conversación, tope, auditoría); más el
- * POST del timbre. Un reintento con la misma clave: sin escrituras ni timbre.
+ * vive en Central): lecturas, 1 de Auth + 4 previas (la ficha, la conversación, las rutas del comercio y la cuenta) + 6 de
+ * la transacción (ficha, conversación, mensaje, tope del comercio `r_{comercio}`, ruta, tope de la persona `u_{uid}`);
+ * escrituras, 5 (mensaje, conversación, tope del comercio, tope de la persona, auditoría); más el POST del timbre. Un
+ * reintento con la misma clave: sin escrituras ni timbre. Un rechazo posterior de la plantilla agrega, en su confirmación,
+ * 2 escrituras (conversación y tope del comercio) para liberar la retomada y devolver el cupo.
  */
 import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
@@ -102,14 +104,11 @@ export interface LimitesDeRetomar {
   porMes: number;
   /**
    * Retomadas por minuto POR PERSONA (el mismo contador `topesDeEnvio/u_{uid}` de `enviarComoPersona`: un solo tope por
-   * persona para todo lo que escribe en nombre del comercio). Opcional: si el plan no lo trae rige
-   * `RETOMAR_POR_MINUTO_PREDETERMINADO`, nunca «sin tope».
+   * persona para todo lo que escribe en nombre del comercio). Obligatorio: la cifra es del plan (Central); Core no tiene
+   * ninguna. Si falta o es ilegible, `noDisponible` (nunca «sin tope» ni una cifra inventada).
    */
-  porMinuto?: number;
+  porMinuto: number;
 }
-
-/** El mismo valor que `MENSAJES_PERSONA_POR_MINUTO` de Central; solo rige si `limitesDeRetomar` no trae `porMinuto`. */
-export const RETOMAR_POR_MINUTO_PREDETERMINADO = 10;
 
 export interface DependenciasDeRetomar {
   limitesDeRetomar(plan: unknown, tarifa: 'estandar' | 'meta_incluido', titularidad: 'novuchat' | 'comercio'): LimitesDeRetomar;
@@ -254,8 +253,7 @@ export async function crearRetomada(p: Preparado): Promise<CreadoRetomar> {
     const u = tUsuario && tUsuario.exists ? (tUsuario.data() ?? {}) : {};
     const uMin = u['min'] === minuto ? u['n'] : 0;
     if (!numeroValido(uMin)) throw errorDeTurno('noDisponible');
-    const porMinuto = limites.porMinuto ?? RETOMAR_POR_MINUTO_PREDETERMINADO;
-    if (uMin >= porMinuto) throw errorDeEnvio('topeMinuto', { tope: 'minuto', esperaSegundos: esperaHastaElMinuto(ahoraMs) });
+    if (uMin >= limites.porMinuto) throw errorDeEnvio('topeMinuto', { tope: 'minuto', esperaSegundos: esperaHastaElMinuto(ahoraMs) });
 
     // 11. Las escrituras, todas o ninguna.
     const ts = Timestamp.fromMillis(ahoraMs);
@@ -356,7 +354,7 @@ export async function atenderRetomar(
     const limites = deps.limitesDeRetomar(cuenta['plan'], deps.tarifaDe(cuenta), deps.titularidadDe(encontrado.ruta));
     // Cifras ilegibles del plan: cerrado (ni un cupo inventado ni «sin tope»).
     if (!numeroValido(limites.diasEntreRetomadas) || !numeroValido(limites.porDia) || !numeroValido(limites.porMes)
-      || (limites.porMinuto !== undefined && !numeroValido(limites.porMinuto))) {
+      || !numeroValido(limites.porMinuto)) {
       registrar(FUNCION, 'unavailable', { tenantId: t, uid, rol, motivo: 'limites' });
       throw errorDeTurno('noDisponible');
     }
