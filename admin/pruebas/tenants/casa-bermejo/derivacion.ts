@@ -17,6 +17,7 @@ export const TABLA_DE_PLANES: TablaDePlanes = {
   imagen_otra: { clase: 'resuelve' },       // foto o captura que no es un comprobante: pide que cuente por escrito
   anuncio: { clase: 'resuelve' },           // el producto del anuncio con su precio del catálogo
   modelo: { clase: 'resuelve' },            // la conversación: la redacción del modelo, revisada, sin botón
+  ubicacion_tienda: { clase: 'resuelve' }, // UBICACIÓN DE LA TIENDA (25/11/2026): la dirección y el botón «Ver ubicación» (cta_url a Google Maps, NO un botón de derivación); sin dato pasa por `derivar`
   qr: { clase: 'resuelve' },                // el resumen del pedido y el QR del comercio
   qr_pendiente: { clase: 'resuelve' },      // el recordatorio del QR abierto
   comprobante_pedir: { clase: 'resuelve' }, // el comprobante no coincide o no se lee: pide el correcto

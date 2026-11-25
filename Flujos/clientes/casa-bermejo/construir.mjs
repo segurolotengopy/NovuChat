@@ -267,6 +267,8 @@ const FORMAS_LOCALES = {
   // El enlace del catálogo web del comercio (https): sale como botón «Ver catálogo».
   'configBase.enlaceCatalogo': (v) => v === '' || v.length <= 300 && /^https:\/\/[a-z0-9.-]+(\/[^\s"'\\{}]*)?$/.test(v),
   'configBase.horarioTienda': (v) => v.length <= 200,
+  // UBICACIÓN DE LA TIENDA (25/11/2026): el enlace de Google Maps de la tienda (dato del comercio). Solo https a Google Maps (mismos anfitriones que `enlaceDeMapaValido` de la consola); vacío = sin dato.
+  'configBase.mapaTienda': (v) => v === '' || (v.length <= 200 && /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/.test(v)),
   'configBase.nombreNegocio': (v) => v.length >= 2 && v.length <= 80,
 };
 

@@ -246,6 +246,8 @@ const BM_TEXTO_COMPROBANTE_ILEGIBLE = 'No pude leer bien tu comprobante.\n\n¿Me
 const BM_INTROS = {
   modelo_caido: 'Tuve un inconveniente para atender tu consulta en este momento.',
   sin_configuracion: 'En este momento no puedo consultar el catálogo.',
+  // UBICACIÓN DE LA TIENDA (25/11/2026): sin dirección ni mapa cargados no se inventa nada; el único ofrecimiento es pasar con recepción (aviso + botón).
+  ubicacion_sin_dato: 'Por ahora no tengo la dirección de la tienda para dártela: eso lo ve directamente una persona del equipo.',
   quiere_hablar: 'Con gusto: esto lo ve directamente una persona del equipo.',
   corporativo: 'Los pedidos por volumen y los regalos corporativos los coordina directamente una persona del equipo.',
   factura: 'La factura la gestiona directamente recepción.',

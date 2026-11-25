@@ -474,6 +474,61 @@ function bmDatosTienda(base, cfg) {
   return 'DATOS DE LA TIENDA (los declaró el comercio; si preguntan dónde queda o el horario, responde SOLO con esto y no inventes nada más): ' + (ub !== '' ? 'ubicación: ' + ub + '. ' : 'la ubicación aún no está cargada. ')
     + (ho !== '' ? 'horario: ' + ho + '.' : 'el horario aún no está cargado: si lo preguntan, di que lo consultas con una persona del equipo y pon quiereHablar en true.');
 }
+// UBICACIÓN DE LA TIENDA (25/11/2026) ----------------------------------------------------------------------------------------------------------------------------------
+// «¿Dónde están ubicados?» lo contesta el CÓDIGO con el dato del comercio (`ubicacionTienda` en texto, `mapaTienda` con el enlace de Google Maps, `horarioTienda`), sin modelo y en UN solo mensaje (0 agregados).
+// Sin ningún dato cargado NO se inventa nada: pasa con recepción (aviso + botón, motivo `ubicacion_sin_dato`). El enlace: solo https a Google Maps (los mismos anfitriones que `enlaceDeMapaValido` de la consola), ≤200 caracteres,
+// sin espacios ni controles, sin credenciales ni puerto; uno inválido o un marcador es «sin dato».
+const BM_MAPA_RE = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+function bmMapaTienda(base) {
+  const e = cbEsObjeto(base) && typeof base.mapaTienda === 'string' ? base.mapaTienda : '';
+  return e.length > 0 && e.length <= 200 && BM_MAPA_RE.test(e) ? e : '';
+}
+function bmUbicacionTienda(base) {
+  const b = cbEsObjeto(base) ? base : {};
+  const lim = (v) => (typeof v === 'string' && !/^REEMPLAZAR_/.test(v) ? cbLinea(v, 200) : '');
+  const direccion = lim(b.ubicacionTienda);
+  const mapa = bmMapaTienda(b);
+  return { direccion: direccion, mapa: mapa, horario: lim(b.horarioTienda), hayDato: direccion !== '' || mapa !== '' };
+}
+// El cliente pregunta DÓNDE queda la tienda (texto normalizado `n`; `crudo` es el texto original, solo para ver un «dirección:» de datos). ESTRUCTURAL y a propósito estrecho:
+//   «dónde» + un verbo de lugar y, detrás, nada o solo palabras de relleno / la tienda (nunca «dónde está mi pedido» ni «dónde están las billeteras»);  «cómo llego / llegar»;  «dirección» o «ubicación» como pedido (sola o con un verbo de pedir antes);
+//   «mapa»;  «tienda física». NUNCA con cifras, ni con palabras de envío, entrega, pedido o pago, ni con «dirección: …» (son datos que da el cliente), ni «la dirección es …».
+// «¿A qué hora abren?» es del horario, no de la ubicación: no entra aquí.
+const BM_UBI_GUARDA = /\b(mi|mis|pedido|pedidos|envio|envios|enviar|enviarlo|enviarlos|entrega|entregas|entregar|entreguen|domicilio|compra|compras|orden|paquete|encomienda|comprobante|pago|pagar|pague|qr|transferencia|factura|nit|precio|precios|cuesta|cuanto|catalogo|foto|fotos|producto|productos|pieza|piezas|stock|llega|llegan|llegara)\b/;
+const BM_UBI_RELLENO = new Set(['ubicado', 'ubicados', 'ubicada', 'ubicadas', 'situado', 'situados', 'ustedes', 'uds', 'ud', 'usted', 'ahora', 'hoy', 'exactamente', 'exacto', 'realmente', 'en', 'que', 'parte', 'lugar', 'zona', 'ciudad', 'direccion', 'calle', 'avenida', 'barrio',
+  'la', 'el', 'su', 'sus', 'tu', 'tienda', 'tiendas', 'local', 'locales', 'negocio', 'casa', 'bermejo', 'sucursal', 'sucursales', 'oficina', 'oficinas', 'taller', 'por', 'favor', 'porfa', 'gracias', 'para', 'ir', 'visitarlos', 'visitarlas', 'visitar', 'ver', 'verlos', 'conocerlos', 'conocer', 'puedo', 'poder', 'les', 'los', 'a', 'de', 'del', 'hasta', 'alla', 'ahi', 'si', 'pues', 'oye', 'hola', 'disculpe', 'disculpa', 'perdon']);
+function bmUbiCola(cola) { return String(cola || '').split(' ').filter((x) => x !== '').every((w) => BM_UBI_RELLENO.has(w)); }
+const BM_UBI_PIDE = /\b(cual|cuales|pasa|pasas|pasame|pasen|pase|paseme|manda|mandas|mandame|manden|mande|mandeme|envia|envias|enviame|envien|envieme|dame|deme|dime|digame|dices|dice|indica|indicas|indicame|indiqueme|comparte|compartes|compartame|compartime|necesito|quiero|quisiera|queria|saber|conocer|tienen|tiene|tienes|favor|link|enlace)\b/;
+function bmPideUbicacion(n, crudo) {
+  const t = String(n || '');
+  const palabras = t === '' ? [] : t.split(' ');
+  if (palabras.length === 0 || palabras.length > 12 || /\d/.test(t) || BM_UBI_GUARDA.test(t)) return false;
+  // «dirección: calle X», «ubicación = …»: es el cliente dando un dato.
+  if (/\b(direccion|ubicacion|domicilio)\s*[:=]/i.test(String(crudo || '').normalize('NFD').replace(/[̀-ͯ]/g, ''))) return false;
+  // 1. «dónde» + verbo de lugar + nada o relleno.
+  const d = /\bdonde (?:estan ubicad[oa]s?|esta ubicad[oa]|se ubican|se ubica|se encuentran|se encuentra|los puedo encontrar|puedo encontrarlos|los encuentro|les encuentro|los ubico|puedo ir|puedo visitarlos|quedan|queda|esta|estan|es|ubican|atienden|trabajan|funcionan)\b(.*)$/.exec(t);
+  if (d && bmUbiCola(d[1])) return true;
+  const z = /\ben que (?:zona|parte|lugar|ciudad|calle|avenida|barrio|direccion|sector) (?:estan ubicad[oa]s?|se ubican|se encuentran|estan|quedan|queda|atienden|esta|es)\b(.*)$/.exec(t);
+  if (z && bmUbiCola(z[1])) return true;
+  const u = /\bestan ubicad[oa]s?\b(.*)$/.exec(t);
+  if (u && bmUbiCola(u[1])) return true;
+  // 2. «cómo llego / llegar».
+  const l = /\bcomo (?:llego|llegar|se llega|puedo llegar|llegamos|voy|puedo ir|ir|los encuentro|les encuentro|encontrarlos|encuentro la tienda)\b(.*)$/.exec(t);
+  if (l && bmUbiCola(l[1])) return true;
+  // 3. «dirección», «ubicación» o «mapa»: solos, o con un verbo de pedir antes; nunca «la dirección es …» ni «dirección calle …» (datos).
+  const nombre = /\b(?:(direccion|ubicacion)|(mapa|google maps|gmaps|maps))\b(?: (\w+))?/.exec(t);
+  if (nombre) {
+    const antes = t.slice(0, nombre.index);
+    const sig = nombre[3] || '';
+    if (['es', 'seria', 'son', 'calle', 'av', 'avenida', 'zona', 'barrio', 'esquina', 'entre', 'numero', 'nro', 'sobre', 'frente', 'cerca', 'pasaje', 'carretera', 'jr'].includes(sig)) return false;
+    if (nombre[2] && /\b(comprar|quiero un|quiero una|vende|venden|vendes|un mapa|mapamundi|tapiz|mural)\b/.test(t)) return false;
+    const solo = /^(?:(?:hola|buenas|buenos dias|buen dia|buenas tardes|buenas noches|hey|disculpe|disculpa|perdon|oiga|oye) )*(?:la |su |tu |sus |el )?(?:direccion|ubicacion|mapa|google maps|gmaps|maps)(?: exacta| de la tienda| del local| de la casa| de su tienda| del negocio| de su local| de ustedes| de tu tienda)?(?: por favor| porfavor| porfa| gracias| pf)?$/.test(t);
+    if (solo || BM_UBI_PIDE.test(antes)) return true;
+  }
+  // 4. «¿tienen tienda física?».
+  if (/\b(?:tienda|local|sucursal|oficina|showroom) fisic[oa]\b/.test(t) && !/\bno\b/.test(t) && /\b(tienen|tiene|tienes|hay|cuentan)\b/.test(t)) return true;
+  return false;
+}
 function bmPromptTurno(c) {
   const f = c.ficha;
   const ids = vcSeleccion(c.vendibles, c.plan.textoCliente, f, { max: 15, palabras: BM_PALABRAS });
@@ -566,6 +621,8 @@ const BM_MOTIVOS_AVISO = {
   alias_en_revision: 'el pago por alias quedó en revisión: revisa el comprobante a mano',
   alias_problema: 'no se pudo abrir o comparar el pago por alias del pedido',
   comprobante_sin_alias: 'envió un comprobante sin un pago por alias abierto',
+  // UBICACIÓN DE LA TIENDA (25/11/2026)
+  ubicacion_sin_dato: 'el cliente pregunta dónde queda la tienda y el asistente no tiene cargada la dirección ni el mapa: pásale la dirección o el enlace de Google Maps',
   alias_ok: 'pago por alias: el comprobante llegó y los datos coinciden con el pedido; revisa tu cuenta antes de entregar',
 };
 function bmAvisoConsulta(c, clave) {

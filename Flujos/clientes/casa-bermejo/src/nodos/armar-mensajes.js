@@ -76,6 +76,21 @@ if (puerta.ruta === 'sigue') {
     // El catálogo web como BOTÓN; `cmEnlace` solo deja pasar https. El texto fijo no promete nada que el botón no cumpla.
     const cuerpoCat = bmSeguro(conSaludo(BM_TEXTO_CATALOGO_WEB), usted);
     msgs = [cmMensaje('cliente', cmEnlace(cuerpoCat, 'Ver catálogo', String(d.enlace || '')), cuerpoCat, cuerpoCat + '\n\n' + String(d.enlace || ''), { tipoReporte: 'interactive', conBoton: true })];
+  // UBICACIÓN DE LA TIENDA (25/11/2026): la dirección en texto, el enlace de Maps como botón «Ver ubicación» y el horario declarado: UN mensaje, todo del dato del comercio (nada inventado). Un `cmEnlace` solo deja pasar https.
+  } else if (tipoDePlan === 'ubicacion_tienda') {
+    const u = bmUbicacionTienda(c.base);
+    if (!u.hayDato) {
+      // No debería pasar (Decidir turno ya derivó sin dato): jamás una dirección inventada; pasa con recepción.
+      tipoDePlan = 'derivar';
+      msgs = [conRecepcion(conSaludo(bmTextoDerivacion('ubicacion_sin_dato', false)))];
+    } else {
+      const punto = (x) => (/[.!?]$/.test(x) ? x : x + '.');
+      const partes = [u.direccion !== '' ? 'Nos ubicamos en: ' + punto(u.direccion) : 'Aquí está nuestra ubicación.'];
+      if (u.mapa !== '' && u.direccion !== '') partes.push('En el botón puedes abrir el mapa.');
+      if (u.horario !== '') partes.push('Horario: ' + punto(u.horario));
+      const cuerpoUb = bmSeguro(conSaludo(partes.join('\n\n')), usted);
+      msgs = [u.mapa !== '' ? cmMensaje('cliente', cmEnlace(cuerpoUb, 'Ver ubicación', u.mapa), cuerpoUb, cuerpoUb + '\n\n' + u.mapa, { tipoReporte: 'interactive', conBoton: true }) : texto(conSaludo(partes.join('\n\n')))];
+    }
   } else if (tipoDePlan === 'identidad') {
     msgs = [texto(BM_TEXTO_IDENTIDAD.replace('{NEGOCIO}', negocio))];
   } else if (tipoDePlan === 'audio_fijo') {

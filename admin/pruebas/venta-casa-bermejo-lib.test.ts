@@ -22,6 +22,8 @@ const NOMBRES = [
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
   'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_SIN_PIEZA', 'bmEnlaceCatalogo', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmDatosTienda', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
+  // UBICACIÓN DE LA TIENDA (25/11/2026)
+  'bmMapaTienda', 'bmUbicacionTienda', 'bmPideUbicacion',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
 type Fn = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -703,5 +705,39 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       expect(r.tipo).toBe('modelo');
       expect(r.texto).not.toMatch(/bot[oó]n/i);
     });
+  });
+});
+
+// UBICACIÓN DE LA TIENDA (25/11/2026): el dato (dirección, enlace de Maps, horario) y el reconocedor de la pregunta. Pura. Los ejemplos son ficticios.
+describe('ubicación de la tienda: el dato y la pregunta', () => {
+  const M = (v: unknown): string => b('bmMapaTienda')({ mapaTienda: v }) as string;
+  const norm = (t: string): string => b('bmNorm')(t) as string;
+  const pide = (t: string): boolean => b('bmPideUbicacion')(norm(t), t) as boolean;
+  it('el enlace: solo https a Google Maps, hasta 200 caracteres, sin espacios, controles, credenciales ni puerto; lo demás es «sin dato»', () => {
+    for (const ok of ['https://maps.app.goo.gl/AbC123', 'https://goo.gl/maps/AbC123', 'https://www.google.com/maps/place/Ejemplo', 'https://google.com/maps?q=1,2', 'https://maps.google.com/?q=x']) expect(M(ok)).toBe(ok);
+    const largo = 'https://maps.app.goo.gl/' + 'a'.repeat(176);
+    expect(largo.length).toBe(200);
+    expect(M(largo)).toBe(largo);
+    for (const mal of ['', undefined, null, 5, {}, 'http://maps.app.goo.gl/x', 'ftp://maps.app.goo.gl/x', 'javascript:alert(1)', 'https://ejemplo.com/maps', 'https://maps.app.goo.gl.evil.com/x', 'https://evil.com/?https://maps.app.goo.gl/x', 'https://maps.app.goo.gl/a b',
+      ' https://maps.app.goo.gl/x', 'https://maps.app.goo.gl/x\n', 'https://maps.app.goo.gl/x\u0000', 'https://maps.app.goo.gl@evil.com/x', 'https://u:p@maps.app.goo.gl/x', 'https://maps.app.goo.gl:8443/x', 'https://goo.gl/mapsx', 'REEMPLAZAR_MAPA', largo + 'a']) expect(M(mal)).toBe('');
+  });
+  it('el dato: un marcador o un texto vacío es «sin dato»; el horario no cuenta como ubicación', () => {
+    const U = (o: Record<string, unknown>) => b('bmUbicacionTienda')(o) as { direccion: string; mapa: string; horario: string; hayDato: boolean };
+    expect(U({ ubicacionTienda: 'Calle Ejemplo 1', mapaTienda: 'https://maps.app.goo.gl/x', horarioTienda: 'de 9 a 19' })).toMatchObject({ direccion: 'Calle Ejemplo 1', mapa: 'https://maps.app.goo.gl/x', horario: 'de 9 a 19', hayDato: true });
+    expect(U({ ubicacionTienda: 'Calle Ejemplo 1' }).hayDato).toBe(true);
+    expect(U({ mapaTienda: 'https://maps.app.goo.gl/x' }).hayDato).toBe(true);
+    expect(U({ ubicacionTienda: 'REEMPLAZAR_UBICACION', mapaTienda: 'http://x' }).hayDato).toBe(false);
+    expect(U({ horarioTienda: 'de 9 a 19' }).hayDato).toBe(false);
+    expect(U(undefined as never).hayDato).toBe(false);
+  });
+  it('SÍ pide la ubicación: las frases del reclamo y sus variantes, con o sin tildes y sin «?»', () => {
+    for (const f of ['Si quería saber dónde están ubicados', 'dónde queda', 'donde queda?', 'dónde están', 'donde estan ubicados ustedes', 'dónde se ubican', 'dónde se encuentran', 'en qué zona quedan', 'dónde es la tienda', 'dónde queda el local', 'dónde los puedo encontrar',
+      'cual es la direccion', 'cuál es su dirección?', 'direccion', 'la ubicación', 'ubicacion?', 'me pasa la ubicación por favor', 'dame la dirección de la tienda', 'como llego', 'cómo llegar a la tienda', 'mandame el mapa', 'el mapa', 'tienen google maps', 'link de la ubicación', 'hola, dónde están ubicados?', 'tienen tienda física'])
+      expect(pide(f), f).toBe(true);
+  });
+  it('NEGADO: datos de entrega, pedidos, productos, horario y cifras NO son la pregunta', () => {
+    for (const f of ['dirección de envío: calle Falsa', 'direccion: calle falsa', 'Dirección: Av. Busch', 'Ana Pérez 4412345 Cochabamba', 'mi dirección es calle Sucre', 'la dirección es av busch', 'dirección calle bolivar', 'envíenlo a mi dirección', 'cuanto cuesta el envío a esta dirección', 'mi ubicación es el centro',
+      'dónde está mi pedido', 'dónde están las billeteras', 'donde esta la billetera', 'dónde queda mi envío', 'donde estan mis cosas', 'cómo llega mi pedido', 'cómo llego a pagar', 'quiero una billetera', 'a qué hora abren', 'hola', 'quiero un mapa de cuero', 'dirección 123', 'donde es la entrega', 'no tengo tienda física', '',
+      'cual es la direccion 4412345', 'mándame la dirección de envío', 'necesito la dirección de entrega', 'dame la ubicación de mi pedido', 'queria dirección: el centro', 'por favor anote la dirección calle Bolivar', 'dónde estan ubicados ' + 'x '.repeat(14)]) expect(pide(f), f).toBe(false);
   });
 });
