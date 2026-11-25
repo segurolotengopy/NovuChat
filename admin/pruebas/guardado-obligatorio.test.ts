@@ -36,7 +36,7 @@ const leer = (archivo: string): Flujo => JSON.parse(readFileSync(join(FLUJOS, ar
  * ensamblador desde `Flujos/manifiestos/` (otro mecanismo, sin `injertar`), y el flujo de Bellido hasta su commit aparte.
  */
 export const EXCEPCIONES: Record<string, string> = {
-  'demo-a-agendamiento.json': 'Demo A: número de ensayo sin pacientes, armado por el ensamblador; lo cierra pasarlo a la base común',
+  'clientes/demo-a/demo-a-agendamiento.json': 'Demo A: número de ensayo sin pacientes, armado por el ensamblador; lo cierra pasarlo a la base común',
   'novuchat-onboarding.json': 'histórico: el chat de NovuChat corre chat-novuchat (que sí lo trae); queda sin fila en versiones-por-cliente',
   'bellido-agendamiento.json': 'flujo A de Bellido, descartado desde el 01/10 (corre agenda-minima); Andres ordenó no tocarlo',
   // B3 de «envío de medios por consola»: «Subir a Meta» es un POST a `/{número}/media` (SUBE el adjunto que la persona mandó desde la consola), y

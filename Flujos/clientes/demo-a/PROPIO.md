@@ -9,7 +9,7 @@ El Demo A es el número de ensayo de reservas (sin pacientes): el vertical de ag
 | Archivo | Qué es | Cómo se arma |
 |---|---|---|
 | `demo-a-agendamiento.json` | El vertical de reservas (agente «Sofía», agenda, seña y QR) | Ensamblador: `admin/scripts/ensamblar-flujo.mjs verificar --exigir-manifiesto clientes/demo-a/demo-a-agendamiento.json` |
-| `demo-a-recordatorios.json` | Recordatorios de cita (programado; «Citas de mañana») | Ensamblador, igual con `demo-a-recordatorios.json` |
+| `demo-a-recordatorios.json` | Recordatorios de cita (programado; «Citas de mañana») | Ensamblador, igual con `clientes/demo-a/demo-a-recordatorios.json` |
 
 ## Dónde vive el resto (no se movió)
 
