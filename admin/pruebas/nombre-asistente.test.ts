@@ -42,7 +42,7 @@ const panel = (voz: unknown) => ({
 
 const FLUJOS = [
   {
-    archivo: 'demo-a-agendamiento.json', agente: 'AI Agent (Sofía)',
+    archivo: 'clientes/demo-a/demo-a-agendamiento.json', agente: 'AI Agent (Sofía)',
     // La primera frase del prompt de hoy, ya renderizada.
     hoy: 'Eres Sofía, la asistente virtual de Un Negocio.\n',
     conNombre: 'Eres Kenji, el asistente virtual de Un Negocio.'

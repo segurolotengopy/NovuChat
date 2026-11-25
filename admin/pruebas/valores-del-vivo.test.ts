@@ -238,7 +238,7 @@ describe('preparar-import.sh --valores-del-vivo', () => {
     expect(out).not.toContain('no-es-un-numero');
   });
   it('--valores-del-vivo exige el .env como segundo argumento', () => {
-    const r = spawnSync('bash', [PREPARAR, 'Flujos/demo-a-agendamiento.json', '--valores-del-vivo'], { cwd: RAIZ, encoding: 'utf8', env: entornoDelEmulador(undefined, {}) });
+    const r = spawnSync('bash', [PREPARAR, 'Flujos/clientes/demo-a/demo-a-agendamiento.json', '--valores-del-vivo'], { cwd: RAIZ, encoding: 'utf8', env: entornoDelEmulador(undefined, {}) });
     expect(r.status).toBe(1);
     expect(`${r.stdout}${r.stderr}`).toContain('.env');
   });

@@ -28,7 +28,7 @@ import {
 } from './lib/flujo.ts';
 
 const FLUJOS = [
-  { archivo: 'demo-a-agendamiento.json', agente: 'AI Agent (Sofía)', trasElTope: 'AI Agent (Sofía)' },
+  { archivo: 'clientes/demo-a/demo-a-agendamiento.json', agente: 'AI Agent (Sofía)', trasElTope: 'AI Agent (Sofía)' },
   { archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat', trasElTope: '¿Saludo inicial?' },
   // Reservas del Dr. Bellido: mismo prompt, con `instruccionesExtra` y el bloque
   // conversacional, los dos texto fijo del negocio entre turnos.

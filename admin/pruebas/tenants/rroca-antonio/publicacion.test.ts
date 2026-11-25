@@ -206,7 +206,8 @@ describe('publicar-flujo.sh: la guardia y la confirmación del flujo de Antonio'
     copyFileSync(SCRIPT, join(raiz, 'scripts/publicar-flujo.sh'));
     writeFileSync(join(raiz, 'Flujos/clientes/rroca-antonio/construir.mjs'), `process.exit(${codigoSalida});\n`);
     writeFileSync(join(raiz, 'Flujos/clientes/rroca-antonio/rroca-antonio.json'), JSON.stringify({ name: 'rroca-antonio', nodes: [] }));
-    writeFileSync(join(raiz, 'Flujos/demo-a-agendamiento.json'), JSON.stringify({ name: 'Otro cliente', nodes: [] }));
+    mkdirSync(join(raiz, 'Flujos/clientes/demo-a'), { recursive: true });
+    writeFileSync(join(raiz, 'Flujos/clientes/demo-a/demo-a-agendamiento.json'), JSON.stringify({ name: 'Otro cliente', nodes: [] }));
     chmodSync(join(raiz, 'scripts/publicar-flujo.sh'), 0o755);
     return raiz;
   }
@@ -239,7 +240,7 @@ describe('publicar-flujo.sh: la guardia y la confirmación del flujo de Antonio'
     expect(r.stdout + r.stderr).not.toMatch(/NEGADO/);
   });
   it('un flujo de otro cliente NO pasa por la guardia de Antonio', () => {
-    const r = correr(['--flujo', join(REPO, 'Flujos/demo-a-agendamiento.json'), '--aplicar']);
+    const r = correr(['--flujo', join(REPO, 'Flujos/clientes/demo-a/demo-a-agendamiento.json'), '--aplicar']);
     expect(r.stdout + r.stderr).not.toMatch(/Antonio|guardia de publicación|NEGADO: sin terminal/);
   });
   it('--forzar NO salta la guardia ni la confirmación', () => {

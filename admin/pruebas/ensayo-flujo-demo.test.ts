@@ -30,7 +30,7 @@ const ejecutar = promisify(execFile);
 type J = Record<string, any>;
 const leerJson = (ruta: string): J => JSON.parse(readFileSync(ruta, 'utf8')) as J;
 
-const JSON_A = 'demo-a-agendamiento.json';
+const JSON_A = 'clientes/demo-a/demo-a-agendamiento.json';
 const JSON_B = 'demo-b-venta-cobro.json';
 const NOMBRE_A = leerJson(join(REPO, 'Flujos', JSON_A)).name as string;
 const NOMBRE_B = leerJson(join(REPO, 'Flujos', JSON_B)).name as string;
@@ -82,6 +82,7 @@ beforeAll(async () => {
   captura = join(raiz, 'captura.json');
   for (const d of ['scripts', 'Flujos', 'trabajo']) mkdirSync(join(raiz, d));
   copyFileSync(join(REPO, 'scripts', 'ensayo-flujo.sh'), join(raiz, 'scripts', 'ensayo-flujo.sh'));
+  mkdirSync(join(raiz, 'Flujos', 'clientes', 'demo-a'), { recursive: true });
   for (const f of [JSON_A, JSON_B]) copyFileSync(join(REPO, 'Flujos', f), join(raiz, 'Flujos', f));
   // Los dos dobles: anotan cómo los llamaron; el de publicar guarda el flujo que publicaría.
   writeFileSync(join(raiz, 'scripts', 'preparar-import.sh'), '#!/usr/bin/env bash\nset -euo pipefail\necho "preparar $1 $2" >> "$REGISTRO"\ncp "$1" "${1%.json}.local.json"\n');
@@ -235,9 +236,9 @@ describe('--restaurar republica el JSON del demo de destino, nunca el del otro',
   it('sin --demo: demo-a-agendamiento.json con .env, como siempre', async () => {
     const r = await correr(['--restaurar']);
     expect(r.codigo, r.salida).toBe(0);
-    expect(r.salida).toMatch(/Restaurar el Demo A desde el JSON versionado \(Flujos\/demo-a-agendamiento\.json\)/);
+    expect(r.salida).toMatch(/Restaurar el Demo A desde el JSON versionado \(Flujos\/clientes\/demo-a\/demo-a-agendamiento\.json\)/);
     expect(r.llamadas).toEqual([`preparar ${join(raiz, 'Flujos', JSON_A)} .env`,
-      `publicar --env .env --flujo ${join(raiz, 'Flujos', 'demo-a-agendamiento.local.json')}`]);
+      `publicar --env .env --flujo ${join(raiz, 'Flujos', 'clientes', 'demo-a', 'demo-a-agendamiento.local.json')}`]);
     expect(r.llamadas.join('\n')).not.toMatch(/demo-b-venta-cobro|\.env\.demo-b/);
     expect(leerJson(captura).name).toBe(NOMBRE_A);
   });

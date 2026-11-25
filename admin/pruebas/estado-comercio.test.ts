@@ -24,7 +24,7 @@ const flujo = leerFlujo;
 
 /** Los tres flujos, con el nombre de su nodo de fusión y su política ante silencio. */
 const FLUJOS = [
-  { archivo: 'demo-a-agendamiento.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },
+  { archivo: 'clientes/demo-a/demo-a-agendamiento.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },
   { archivo: 'demo-b-venta-cobro.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },
   { archivo: 'demo-a-recordatorios.json', fusion: 'Config del recordatorio', base: 'Config base del recordatorio', cortaSinRespuesta: true },
   // El flujo de captación de NovuChat: si se suspende el tenant `novuchat`, deja
@@ -113,7 +113,7 @@ describe.each(FLUJOS)('$archivo', ({ archivo, fusion, base, cortaSinRespuesta })
 
 describe('La compuerta que aplica el estado', () => {
   it.each([
-    ['demo-a-agendamiento.json'],
+    ['clientes/demo-a/demo-a-agendamiento.json'],
     ['demo-b-venta-cobro.json'],
     ['novuchat-onboarding.json'],
   ])('%s corta ANTES del agente', (archivo) => {
@@ -132,7 +132,7 @@ describe('La compuerta que aplica el estado', () => {
   });
 
   it.each([
-    ['demo-a-agendamiento.json'],
+    ['clientes/demo-a/demo-a-agendamiento.json'],
   ])('%s: el aviso neutro sale por el punto único de salida y se reporta DESPUÉS de enviarlo', (archivo) => {
     // Desde el 17/09/2026 la consola registra lo que el cliente recibió: el
     // aviso de comercio no operativo también pasa por «Mensaje a enviar» y el

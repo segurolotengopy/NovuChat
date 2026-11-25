@@ -35,7 +35,7 @@ const CAMPANAS = [
 ];
 const referral = (extra: J = {}): J => ({ source_id: AD_A, source_type: 'ad', headline: 'Plan Pro', ctwa_clid: 'clid-1', ...extra });
 
-const reservas = leerFlujo('demo-a-agendamiento.json');
+const reservas = leerFlujo('clientes/demo-a/demo-a-agendamiento.json');
 const venta = leerFlujo('demo-b-venta-cobro.json');
 const captacion = leerFlujo('novuchat-onboarding.json');
 

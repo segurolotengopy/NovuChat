@@ -34,7 +34,7 @@ type Flujo = any;
 const leer = (ruta: string): Flujo => JSON.parse(readFileSync(join(RAIZ_FLUJOS, ruta), 'utf8'));
 const ANTONIO = 'clientes/rroca-antonio/rroca-antonio.json';
 const QTACO = 'clientes/venta-minima/venta-minima.qtaco.json';
-const DEMO_A = 'demo-a-agendamiento.json';
+const DEMO_A = 'clientes/demo-a/demo-a-agendamiento.json';
 const DEMO_B = 'demo-b-venta-cobro.json';
 /** Un flujo de cada forma: sin agente de n8n con `¿Conversar con el modelo?`, con `¿Comercio operativo?` y `¿Extraer?`, y los dos demos con agente. */
 const FORMAS = [ANTONIO, QTACO, DEMO_A, DEMO_B, 'clientes/novuchat/chat-novuchat.novuchat.json', 'clientes/agenda-minima/agenda-minima.v0.json'];
@@ -102,7 +102,7 @@ describe('indicador de escritura: la forma de los dos nodos', () => {
 
 describe('indicador de escritura: la credencial es la del envío por Graph, nunca la de ingesta (NEGATIVAS)', () => {
   it('es la MISMA del nodo que envía la respuesta en ese flujo', () => {
-    for (const ruta of FORMAS.filter((r) => !r.startsWith('demo'))) {
+    for (const ruta of FORMAS.filter((r) => !/(^|\/)demo-/.test(r))) {
       const f = leer(ruta);
       expect(nodo(f, NODO_INDICADOR).credentials, ruta).toEqual(nodo(f, 'Enviar a WhatsApp').credentials);
       expect(credencialDeEnvio(f)).toEqual({ tipo: 'httpHeaderAuth', nombre: nodo(f, 'Enviar a WhatsApp').credentials.httpHeaderAuth.name });
