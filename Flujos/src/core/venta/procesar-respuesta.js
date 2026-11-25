@@ -174,20 +174,42 @@ for (let i = 0; i < $input.all().length; i++) {
   // [ENVIAR_QR] o [PEDIDO_CONFIRMADO] y el texto NOMBRA un item agotado, no sale el QR ni se confirma el pedido: se pasa con una persona
   // (politica del 21/09: aviso + boton). Es una red SECUNDARIA y por TEXTO: el cobro por chat sigue tomando el total del texto del modelo
   // (`Preparar QR de cobro`), no de una lista de items; ese hueco de fondo esta anotado en docs/arquitectura/ y no se resuelve aca.
-  // Comparacion normalizada: sin tildes ni mayusculas ni signos, y cada palabra en singular (plural -s / -es); el nombre del item se
-  // busca como secuencia de palabras, completo o sin lo que va entre parentesis. Palabras de menos de 3 letras no se comparan solas.
+  // Comparacion por PALABRAS, normalizada: sin tildes ni mayusculas ni signos. Dos palabras son la misma si comparten alguna variante de
+  // numero (tal cual, sin «s», sin «es», «-ces» -> «z»): «leches»/«leche», «nueces»/«nuez», «gaseosas»/«gaseosa». El nombre del item se busca
+  // como secuencia contigua de palabras, completo o sin lo que va entre parentesis; una palabra corta («Té») se compara entera, nunca como
+  // pedazo de otra. Un agotado que coincide DENTRO de un nombre disponible mas largo presente en el texto («Coca» agotada y «Coca Zero»
+  // disponible) no cuenta. Lo contrario es el lado seguro y se deja asi: «la gaseosa no hay; te cobro el jugo [ENVIAR_QR]» tambien se bloquea.
   let agotadosNombres = [];
   try { agotadosNombres = JSON.parse(String(ent.agotadosNombres || '[]')); } catch (e) { agotadosNombres = []; }
-  const sing = (w) => (w.length > 4 && /es$/.test(w) ? w.slice(0, -2) : (w.length > 3 && /s$/.test(w) ? w.slice(0, -1) : w));
-  const secuencia = (t) => ' ' + String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-    .split(/[^a-z0-9ñ]+/).filter((w) => w !== '').map(sing).join(' ') + ' ';
+  let disponiblesNombres = [];
+  try { disponiblesNombres = JSON.parse(String(ent.disponiblesNombres || '[]')); } catch (e) { disponiblesNombres = []; }
+  const palabrasDe = (t) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z0-9ñ]+/).filter((w) => w !== '');
+  const variantes = (w) => {
+    const v = new Set([w]);
+    if (w.length > 2 && /s$/.test(w)) v.add(w.slice(0, -1));
+    if (w.length > 3 && /es$/.test(w)) v.add(w.slice(0, -2));
+    if (w.length > 4 && /ces$/.test(w)) v.add(w.slice(0, -3) + 'z');
+    return v;
+  };
+  const mismaPalabra = (a, b) => { const va = variantes(a); for (const x of variantes(b)) if (va.has(x)) return true; return false; };
+  const formasDe = (n) => [palabrasDe(n), palabrasDe(String(n ?? '').replace(/\([^)]*\)/g, ' '))].filter((q) => q.length > 0);
+  // Todos los tramos [desde, hasta) del texto donde aparece alguno de los nombres.
+  const tramosDe = (hay, nombres) => {
+    const r = [];
+    for (const n of (Array.isArray(nombres) ? nombres : [])) {
+      for (const q of formasDe(n)) {
+        if (q.join('').length < 2) continue;
+        for (let k = 0; k + q.length <= hay.length; k++) {
+          if (q.every((w, m) => mismaPalabra(w, hay[k + m]))) r.push([k, k + q.length]);
+        }
+      }
+    }
+    return r;
+  };
   const nombraAgotado = (t) => {
-    const hay = secuencia(t);
-    return (Array.isArray(agotadosNombres) ? agotadosNombres : []).some((n) => {
-      const completo = secuencia(n);
-      const sinParentesis = secuencia(String(n ?? '').replace(/\([^)]*\)/g, ' '));
-      return [completo, sinParentesis].some((q) => q.trim().length >= 3 && hay.includes(q));
-    });
+    const hay = palabrasDe(t);
+    const disp = tramosDe(hay, disponiblesNombres);
+    return tramosDe(hay, agotadosNombres).some(([a, b]) => !disp.some(([c, d]) => c <= a && b <= d && (d - c) > (b - a)));
   };
   if ((enviarQr || pedidoConfirmado) && !fallo && nombraAgotado(texto)) {
     enviarQr = false;

@@ -285,13 +285,13 @@ const items = conPrecio.filter((i) => i.agotado !== true);
 const agotados = conPrecio.filter((i) => i.agotado === true);
 const moneda = util(op.moneda) === 'USD' ? 'USD' : (util(base.moneda) || 'Bs');
 // LA MONEDA DEL ITEM MANDA SIEMPRE (la del negocio solo si el item no trae una): antes solo valia si era USD, y un item en BOB de un
-// negocio en USD salia como «USD». BOB y Bs se escriben «Bs»; otra moneda escrita se respeta tal cual (acotada).
+// negocio en USD salia como «USD». BOB y Bs se escriben «Bs»; otro codigo de 3 letras se respeta; cualquier otra cosa («dolares bolivianos») cae a la del negocio.
 const monedaDe = (m) => {
   const t = util(m);
   if (t === undefined) return moneda;
   const u = t.toUpperCase();
   if (u === 'BOB' || u === 'BS') return 'Bs';
-  return u.slice(0, 8);
+  return /^[A-Z]{3}$/.test(u) ? u : moneda;
 };
 
 // Sin tildes y en minusculas, para poder comparar un area contra un vocabulario
@@ -446,6 +446,7 @@ const delCatalogo = {
   moneda,
   catalogoPorArea,
   // Nombres de lo agotado (texto JSON): `Procesar respuesta` los usa como red secundaria para no mandar el QR de un pedido que nombra uno.
+  disponiblesNombres: JSON.stringify(items.map((i) => String(i.nombre == null ? '' : i.nombre).slice(0, 80)).slice(0, 200)),
   agotadosNombres: JSON.stringify(agotados.map((i) => String(i.nombre == null ? '' : i.nombre).slice(0, 80)).slice(0, 50)),
   areasDelCatalogo,
   claseGastronomia,
