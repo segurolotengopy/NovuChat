@@ -30,9 +30,20 @@
  * que ya tiene, y lo audita (mismo criterio que `persistirVencimiento` de H2-1: acción
  * `conversacion_devuelta`, solo `telefono4`, nunca el teléfono ni el id de la conversación).
  * La conversación ya se leyó; esto no agrega ninguna lectura ni ningún mensaje.
+ *
+ * EL PRIMER ENTRANTE TRAS RETOMAR RENUEVA LA ACTIVIDAD (D-R1 ampliada, Principal, 24/11/2026). Retomar
+ * toma el turno con `actividadPersonaEn = retomadoEn`. Si el cliente responde a la plantilla a los 25 min,
+ * a la persona le quedarían 5 min para contestar antes de que vuelva el asistente. Por eso el PRIMER
+ * entrante después de `retomadoEn` (`retomadoEn >= ultimoEntranteEn` de antes de este mensaje), con el
+ * turno todavía de la persona (`tomado`), deja `turno.actividadPersonaEn` = ahora: la persona tiene sus 30
+ * min completos desde que el cliente respondió. Va en la MISMA escritura de la conversación que la
+ * ingesta ya hace (`set` con `merge`, mapa anidado): 0 lecturas, 0 escrituras y 0 mensajes de más. Desde
+ * el entrante siguiente `ultimoEntranteEn` supera a `retomadoEn` y ya no se renueva nada (la actividad
+ * la mueve solo la persona, como siempre). Un turno vencido, devuelto, ilegible o un contacto bloqueado
+ * no renueva.
  */
-import { type DocumentReference, type Firestore, type Transaction } from 'firebase-admin/firestore';
-import { leerTurno, turnoEfectivo, type Turno, type Veredicto } from './turno.js';
+import { Timestamp, type DocumentReference, type Firestore, type Transaction } from 'firebase-admin/firestore';
+import { leerTurno, milisegundosDeMomento, turnoEfectivo, type Turno, type Veredicto } from './turno.js';
 import { escribirDevolucion } from './turnoServidor.js';
 
 /**
@@ -50,6 +61,10 @@ export interface DecisionDePausa {
   veredicto: Veredicto;
   /** El turno ya devuelto por vencimiento, solo si hay que PERSISTIRLO; si no, `null`. */
   porPersistir: Turno | null;
+  /** D-R1: primer entrante tras `retomadoEn` con el turno de la persona vigente: renovar `actividadPersonaEn`. */
+  renovarActividad: boolean;
+  /** Con `renovarActividad`, el valor a escribir: `max(ahora, actividadPersonaEn)` (la actividad nunca retrocede). */
+  actividadRenovadaEn: number | null;
 }
 
 /** Decide la pausa con el campo `turno` y el `ultimoEntranteEn` de ANTES del mensaje que llega. */
@@ -60,7 +75,25 @@ export function decidirPausa(turno: unknown, ultimoEntranteEn: unknown, ahoraMs:
   // Sin `venceEnMs` (turno sin `ultimoEntranteEn`: dato anómalo) no se persiste nada.
   const porPersistir = vencio && veredicto.venceEnMs !== undefined && efectivo !== null && lectura.estado === 'ok' && lectura.turno.responde === 'persona'
     ? efectivo : null;
-  return { pausada: veredicto.responde === 'persona', veredicto, porPersistir };
+  const ultimoMs = milisegundosDeMomento(ultimoEntranteEn);
+  // `ahoraMs >= retomadoEn`: un entrante cuyo reloj (tomado antes de la transacción, fijo al reintentar) es
+  // ANTERIOR a la retomada no es una respuesta a la plantilla; si renovara, la actividad retrocedería y, con
+  // `ultimoEntranteEn` < `retomadoEn`, el entrante siguiente volvería a renovar (revisión del 25/11/2026).
+  const t = lectura.estado === 'ok' ? lectura.turno : null;
+  const renovarActividad = veredicto.motivo === 'tomado' && t !== null && t.responde === 'persona'
+    && t.retomadoEn !== undefined && ultimoMs !== null && t.retomadoEn >= ultimoMs && ahoraMs >= t.retomadoEn;
+  const actividadRenovadaEn = renovarActividad && t !== null ? Math.max(ahoraMs, t.actividadPersonaEn) : null;
+  return { pausada: veredicto.responde === 'persona', veredicto, porPersistir, renovarActividad, actividadRenovadaEn };
+}
+
+/**
+ * Los campos que la ingesta SUMA a la escritura de la conversación que ya hace (`set` con `merge`): con
+ * `renovarActividad`, solo `turno.actividadPersonaEn` (mapa anidado: el resto del turno no se toca). Sin
+ * decisión o sin renovación, nada.
+ */
+export function camposDeRenovacion(decision: DecisionDePausa | null, ahoraMs: number): Record<string, unknown> {
+  if (decision === null || !decision.renovarActividad || decision.actividadRenovadaEn === null) return {};
+  return { turno: { actividadPersonaEn: Timestamp.fromMillis(Math.max(ahoraMs, decision.actividadRenovadaEn)) } };
 }
 
 /**
