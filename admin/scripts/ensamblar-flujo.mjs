@@ -84,8 +84,8 @@
  * con un archivo por nodo bajo esa carpeta; después se edita a mano para
  * apuntar a `core/` lo que se comparte y se vuelve a correr `extraer`.
  */
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve, sep } from 'node:path';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { injertarIndicador, quitarIndicador } from '../../Flujos/src/core/indicador/indicador-escritura.mjs';
 
@@ -129,8 +129,64 @@ export const listarFlujos = (raiz = RAIZ_FLUJOS) => readdirSync(raiz)
   .filter((f) => f.endsWith('.json') && !f.endsWith('.local.json'))
   .sort();
 
+/**
+ * Los flujos de subcarpetas que tienen manifiesto (`manifiestos/<ruta>.json`): rutas relativas a `Flujos/`,
+ * como `clientes/demo-a/x.json`. Los de la raíz los da `listarFlujos`.
+ */
+export function listarFlujosConManifiestoEnSubcarpetas(raiz = RAIZ_FLUJOS) {
+  const base = carpetas(raiz).manifiestos;
+  const salida = [];
+  const recorrer = (dir) => {
+    let entradas;
+    try { entradas = readdirSync(dir, { withFileTypes: true }); } catch (e) { if (e && e.code === 'ENOENT') return; throw e; }
+    for (const e of entradas) {
+      const ruta = join(dir, e.name);
+      if (e.isDirectory()) recorrer(ruta);
+      else if (e.isFile() && e.name.endsWith('.json')) {
+        const rel = relative(base, ruta).split(sep).join('/');
+        if (rel.includes('/')) salida.push(rel);
+      }
+    }
+  };
+  recorrer(base);
+  return salida.sort();
+}
+
+/**
+ * `base` + `rel`, sin salir de `base` (revisión de seguridad del #1103, CWE-22): ni `..`, ni ruta absoluta, ni un
+ * enlace simbólico que apunte afuera. Lo usan la CLI y TODAS las funciones exportadas que leen o escriben por ruta.
+ */
+export function rutaDentroDe(base, rel) {
+  const abs = resolve(base, rel);
+  const sale = (r) => r === '..' || r.startsWith(`..${sep}`) || isAbsolute(r);
+  const r0 = relative(base, abs);
+  if (!r0 || sale(r0)) throw new Error(`ruta fuera de ${base}: ${rel}`);
+  // Un enlace simbólico se juzga por su destino real: el de la carpeta más cercana que exista (la ruta misma, si existe).
+  // Lo que todavía no existe debajo de ella no puede ser un enlace, y `abs` ya no tiene `..`. Sin `join` sobre lo calculado:
+  // así `rutas-escritas.test.ts` no lo toma por una ruta del script que no puede seguir.
+  if (existsSync(base)) {
+    // `lstat`, no `exists`: un enlace roto también cuenta como existente (y `realpathSync` lo rechaza), para no saltarlo.
+    const hay = (r) => { try { lstatSync(r); return true; } catch { return false; } };
+    let real = abs;
+    while (!hay(real) && real !== dirname(real)) real = dirname(real);
+    if (sale(relative(realpathSync(base), realpathSync(real)))) throw new Error(`ruta fuera de ${base} (enlace simbólico): ${rel}`);
+  }
+  return abs;
+}
+
+/**
+ * Una ruta de línea de comandos a ruta relativa a `Flujos/`: quita todo hasta el último componente `Flujos/` (una carpeta
+ * llamada así, no `MisFlujos/`); sin él, se respeta. Nunca fuera de `Flujos/`.
+ */
+export const rutaRelativaAFlujos = (arg, raiz = RAIZ_FLUJOS) => {
+  const m = /(?:^|\/)Flujos\/(?!.*(?:^|\/)Flujos\/)/.exec(arg);
+  const rel = (m ? arg.slice(m.index + m[0].length) : arg).replace(/^\.\//, '');
+  try { rutaDentroDe(raiz, rel); } catch { throw new Error(`ruta fuera de Flujos/: ${arg}`); }
+  return relative(raiz, resolve(raiz, rel)).split(sep).join('/');
+};
+
 export const rutaDeManifiesto = (archivoFlujo, raiz = RAIZ_FLUJOS) =>
-  join(carpetas(raiz).manifiestos, archivoFlujo);
+  rutaDentroDe(carpetas(raiz).manifiestos, archivoFlujo);
 
 export function leerManifiesto(archivoFlujo, raiz = RAIZ_FLUJOS) {
   const ruta = rutaDeManifiesto(archivoFlujo, raiz);
@@ -289,7 +345,7 @@ function recorrer(j, manifiesto, raiz, visitar) {
  * Sin manifiesto devuelve el texto del archivo tal cual (`conManifiesto: false`).
  */
 export function ensamblarEnMemoria(archivoFlujo, raiz = RAIZ_FLUJOS) {
-  const rutaJson = join(carpetas(raiz).flujos, archivoFlujo);
+  const rutaJson = rutaDentroDe(carpetas(raiz).flujos, archivoFlujo);
   const original = readFileSync(rutaJson, 'utf8');
   const manifiesto = leerManifiesto(archivoFlujo, raiz);
   if (!manifiesto) return { archivo: archivoFlujo, texto: original, original, conManifiesto: false };
@@ -332,14 +388,14 @@ export function verificarFlujo(archivoFlujo, raiz = RAIZ_FLUJOS) {
 export function ensamblarFlujo(archivoFlujo, raiz = RAIZ_FLUJOS) {
   const r = ensamblarEnMemoria(archivoFlujo, raiz);
   if (!r.conManifiesto || r.texto === r.original) return false;
-  writeFileSync(join(carpetas(raiz).flujos, archivoFlujo), r.texto);
+  writeFileSync(rutaDentroDe(carpetas(raiz).flujos, archivoFlujo), r.texto);
   return true;
 }
 
 /** El manifiesto inicial de un flujo: un archivo por nodo Code y por campo de agente, bajo `carpeta`. */
 export function manifiestoInicial(archivoFlujo, carpeta, raiz = RAIZ_FLUJOS) {
   carpetaValida(carpeta);
-  const j = JSON.parse(readFileSync(join(carpetas(raiz).flujos, archivoFlujo), 'utf8'));
+  const j = JSON.parse(readFileSync(rutaDentroDe(carpetas(raiz).flujos, archivoFlujo), 'utf8'));
   const m = { flujo: archivoFlujo, conservanMarcadores: {}, codigo: {}, prompts: {} };
   for (const n of j.nodes) {
     if (JSON.stringify(n.parameters).includes('REEMPLAZAR_')) m.conservanMarcadores[n.name] = 'REEMPLAZAR_';
@@ -367,7 +423,7 @@ export function extraerFlujo(archivoFlujo, { raiz = RAIZ_FLUJOS, nuevo = null } 
     if (nuevo === null || nuevo === undefined) throw new Error(`${archivoFlujo} no tiene manifiesto; use --nuevo <carpeta> para crearlo`);
     manifiesto = manifiestoInicial(archivoFlujo, nuevo, raiz);
   }
-  const j = JSON.parse(readFileSync(join(carpetas(raiz).flujos, archivoFlujo), 'utf8'));
+  const j = JSON.parse(readFileSync(rutaDentroDe(carpetas(raiz).flujos, archivoFlujo), 'utf8'));
   const escritos = [];
   const avisos = [];
   recorrer(j, manifiesto, raiz, ({ clave, ruta, leer, anotar, archivo }) => {
@@ -409,18 +465,23 @@ function principal(argv) {
   const [comando, ...resto] = argv;
   const opcion = (n) => { const i = resto.indexOf(`--${n}`); return i >= 0 ? resto[i + 1] : null; };
   const archivos = resto.filter((a, i) => !a.startsWith('--') && resto[i - 1] !== '--nuevo');
-  const lista = archivos.length ? archivos.map((a) => a.replace(/^.*\//, '')) : listarFlujos();
+  const exigir = resto.includes('--exigir-manifiesto');
+  let rutas;
+  try { rutas = archivos.map((a) => rutaRelativaAFlujos(a)); } catch (e) { console.error(`✗ ${e.message}`); return 2; }
+  const lista = archivos.length ? rutas : [...listarFlujos(), ...listarFlujosConManifiestoEnSubcarpetas()];
 
   if (comando === 'verificar') {
-    let fallas = 0;
+    let fallas = 0; let sinManifiesto = 0;
     for (const a of lista) {
       const r = verificarFlujo(a);
-      if (r.estado === 'sin-manifiesto') console.log(`  · ${a}: sin manifiesto, idéntico por definición`);
+      if (r.estado === 'sin-manifiesto' && exigir) { sinManifiesto++; console.log(`  ✗ ${a}: sin manifiesto (se exigía uno)`); }
+      else if (r.estado === 'sin-manifiesto') console.log(`  · ${a}: sin manifiesto, idéntico por definición`);
       else if (r.estado === 'identico') console.log(`  ✓ ${a}: idéntico (${r.inyectados.length} puntos de inyección)`);
       else { fallas++; console.log(`  ✗ ${a}: difiere en ${r.diferencias.join(', ') || 'algo fuera de los puntos de inyección'}`); }
     }
-    console.log(fallas ? `\n${fallas} flujo(s) no coinciden con sus módulos.` : '\nTodos los flujos coinciden con sus módulos.');
-    return fallas ? 1 : 0;
+    console.log(fallas ? `\n${fallas} flujo(s) no coinciden con sus módulos.` : sinManifiesto ? `\n${sinManifiesto} flujo(s) sin manifiesto.` : '\nTodos los flujos coinciden con sus módulos.');
+    // 1 = difiere (manda sobre lo demás); 3 = solo falta el manifiesto exigido: así M2 nombra la causa.
+    return fallas ? 1 : sinManifiesto ? 3 : 0;
   }
   if (comando === 'ensamblar') {
     for (const a of lista) console.log(`  ${ensamblarFlujo(a) ? '✎' : '='} ${a}`);
@@ -433,7 +494,7 @@ function principal(argv) {
     for (const v of r.avisos) console.log(`  ! ${v}`);
     return 0;
   }
-  console.error('Uso: ensamblar-flujo.mjs verificar|ensamblar [flujo.json ...]  |  extraer <flujo.json> [--nuevo <carpeta>]');
+  console.error('Uso: ensamblar-flujo.mjs verificar [--exigir-manifiesto]|ensamblar [ruta/relativa/a/Flujos.json ...]  |  extraer <flujo.json> [--nuevo <carpeta>]');
   return 2;
 }
 

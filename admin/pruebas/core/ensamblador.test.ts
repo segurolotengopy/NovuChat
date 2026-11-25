@@ -32,13 +32,13 @@ import { NODOS_CODE_DEL_GUARDADO, NODOS_DEL_GUARDADO_SALIENTE } from '../../../F
 import { afterAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 import {
-  RAIZ_FLUJOS, carpetas, ensamblarEnMemoria, ensamblarFlujo, extraerFlujo, leerManifiesto, listarFlujos,
+  RAIZ_FLUJOS, carpetas, rutaDentroDe, ensamblarEnMemoria, ensamblarFlujo, extraerFlujo, leerManifiesto, listarFlujos, listarFlujosConManifiestoEnSubcarpetas, rutaRelativaAFlujos,
   manifiestoInicial, rutaDeManifiesto, slug, verificarFlujo,
 } from '../../scripts/ensamblar-flujo.mjs';
 import { entornoDelEmulador } from './entorno-del-hijo.ts';
@@ -67,7 +67,7 @@ const MARCADORES_DECLARADOS_APARTE: Record<string, Record<string, string>> = {
   'salida-de-persona.json': { 'Timbre': 'REEMPLAZAR_' },
 };
 /** El nodo base que conserva los REEMPLAZAR_* cuando no se llama `Config base`. */
-const NODO_BASE_DE: Record<string, string> = { 'demo-a-recordatorios.json': 'Config base del recordatorio' };
+const NODO_BASE_DE: Record<string, string> = { 'demo-a-recordatorios.json': 'Config base del recordatorio', 'error-envio-incierto.json': 'Armar alerta' };
 const nodoBase = (f: string): string => NODO_BASE_DE[f] ?? 'Config base';
 const SIN_MANIFIESTO = FLUJOS.filter((f) => leerManifiesto(f) === null);
 
@@ -94,7 +94,7 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
     expect(CON_MANIFIESTO).toEqual(expect.arrayContaining(['demo-b-venta-cobro.json', 'novuchat-onboarding.json']));
     // Los que todavía no se ensamblan, dichos con nombre: son el bloque B-2.
     expect(SIN_MANIFIESTO).toEqual([
-      'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'bellido-agendamiento.json', 'error-envio-incierto.json',
+      'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'bellido-agendamiento.json',
       'latido-n8n.json',
     ]);
   });
@@ -525,5 +525,78 @@ describe('8. Una lista de módulos mal formada se rechaza con un error claro', (
     const dir = conEntrada(valor);
     expect(() => ensamblarEnMemoria('demo-a-agendamiento.json', dir)).toThrow(/manifiesto/);
     expect(() => extraerFlujo('demo-a-agendamiento.json', { raiz: dir })).toThrow(/manifiesto/);
+  });
+});
+
+describe('10. Flujos en subcarpetas: el manifiesto lleva la ruta relativa a Flujos/', () => {
+  /** Copia de Flujos/ con el Demo B movido a `clientes/zz-prueba/` y su manifiesto en `manifiestos/clientes/zz-prueba/`. */
+  const conFlujoMudado = (): { dir: string; ruta: string } => {
+    const dir = copiaDeFlujos();
+    const ruta = 'clientes/zz-prueba/demo-b-venta-cobro.json';
+    mkdirSync(join(dir, 'clientes/zz-prueba'), { recursive: true });
+    writeFileSync(join(dir, ruta), readFileSync(join(dir, 'demo-b-venta-cobro.json')));
+    const m = JSON.parse(readFileSync(rutaDeManifiesto('demo-b-venta-cobro.json', dir), 'utf8'));
+    m.flujo = ruta;
+    mkdirSync(dirname(rutaDeManifiesto(ruta, dir)), { recursive: true });
+    writeFileSync(rutaDeManifiesto(ruta, dir), JSON.stringify(m, null, 2) + '\n');
+    return { dir, ruta };
+  };
+
+  it('verifica idéntico un flujo de subcarpeta con su manifiesto, y lo lista sin tocar la raíz', () => {
+    const { dir, ruta } = conFlujoMudado();
+    expect(verificarFlujo(ruta, dir).estado).toBe('identico');
+    expect(listarFlujosConManifiestoEnSubcarpetas(dir)).toEqual([ruta]);
+    expect(listarFlujos(dir)).toEqual(listarFlujos());
+  });
+
+  it('negando: un módulo alterado hace fallar el flujo de la subcarpeta, nombrando el punto', () => {
+    const { dir, ruta } = conFlujoMudado();
+    const m = leerManifiesto(ruta, dir) as { codigo: Record<string, string> };
+    const modulo = join(dir, 'src', Object.values(m.codigo).map((e) => (Array.isArray(e) ? e[e.length - 1] : (e as { archivo?: string }).archivo ?? e))[0] as string);
+    writeFileSync(modulo, readFileSync(modulo, 'utf8') + '\n// alterado\n');
+    const r = verificarFlujo(ruta, dir);
+    expect(r.estado).toBe('difiere');
+    expect(r.diferencias.length).toBeGreaterThan(0);
+  });
+
+  it('negando: un manifiesto cuyo "flujo" no es la ruta del archivo se rechaza', () => {
+    const { dir, ruta } = conFlujoMudado();
+    const ruta2 = rutaDeManifiesto(ruta, dir);
+    const m = JSON.parse(readFileSync(ruta2, 'utf8'));
+    m.flujo = 'demo-b-venta-cobro.json';
+    writeFileSync(ruta2, JSON.stringify(m, null, 2) + '\n');
+    expect(() => verificarFlujo(ruta, dir)).toThrow(/declara/);
+  });
+
+  it('la línea de comandos acepta la ruta (con o sin el prefijo Flujos/), y --exigir-manifiesto hace fallar «sin manifiesto»', () => {
+    expect(rutaRelativaAFlujos('Flujos/clientes/x/y.json')).toBe('clientes/x/y.json');
+    expect(rutaRelativaAFlujos('/a/b/Flujos/clientes/x/y.json')).toBe('clientes/x/y.json');
+    expect(rutaRelativaAFlujos('demo-b-venta-cobro.json')).toBe('demo-b-venta-cobro.json');
+    // Negando (revisión de seguridad del #1103): ninguna ruta sale de Flujos/.
+    for (const fuera of ['../admin/package.json', 'Flujos/../../x.json', 'clientes/../../x.json', '/etc/passwd', '.', '..x/../../y.json']) {
+      expect(() => rutaRelativaAFlujos(fuera), fuera).toThrow(/fuera de Flujos/);
+    }
+    // Solo se recorta una carpeta llamada exactamente `Flujos/`: `MisFlujos/` es parte de la ruta, dentro de Flujos/.
+    expect(rutaRelativaAFlujos('MisFlujos/x.json')).toBe('MisFlujos/x.json');
+    expect(rutaRelativaAFlujos('/r/Flujos/MisFlujos/x.json')).toBe('MisFlujos/x.json');
+    // Las funciones exportadas también se niegan a salir (no solo la CLI), y un enlace simbólico se juzga por su destino.
+    const dir = copiaDeFlujos();
+    expect(() => verificarFlujo('../fuera.json', dir)).toThrow(/fuera de/);
+    expect(() => leerManifiesto('../../fuera.json', dir)).toThrow(/fuera de/);
+    const afuera = mkdtempSync(join(tmpdir(), 'novuchat-afuera-'));
+    temporales.push(afuera);
+    writeFileSync(join(afuera, 'x.json'), '{"nodes":[],"connections":{}}');
+    symlinkSync(afuera, join(dir, 'enlace'));
+    expect(() => rutaDentroDe(dir, 'enlace/x.json')).toThrow(/enlace simbólico/);
+    expect(() => verificarFlujo('enlace/x.json', dir)).toThrow(/fuera de/);
+    expect(rutaDentroDe(dir, 'clientes/nuevo/no-existe.json')).toBe(join(dir, 'clientes/nuevo/no-existe.json'));
+    // Un enlace ROTO que apunta afuera tampoco pasa (escribir por él crearía el archivo afuera).
+    symlinkSync(join(afuera, 'no-existe.json'), join(dir, 'roto.json'));
+    expect(() => rutaDentroDe(dir, 'roto.json')).toThrow();
+    expect(() => execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/demo-b-venta-cobro.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8' })).not.toThrow();
+    let codigo = 0;
+    try { execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/latido-n8n.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8', stdio: 'pipe' }); } catch (e) { codigo = (e as { status: number }).status; }
+    expect(codigo, 'un flujo sin manifiesto no cumple si se exige uno (salida 3: la causa, distinta de «difiere»)').toBe(3);
+    expect(() => execFileSync(process.execPath, [SCRIPT, 'verificar', 'Flujos/latido-n8n.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8' })).not.toThrow();
   });
 });
