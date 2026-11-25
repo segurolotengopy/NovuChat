@@ -107,7 +107,7 @@ describe('sin NINGÚN dato: recepción (aviso + botón) y nada inventado', () =>
 describe('un enlace inválido es «sin dato»', () => {
   const MALOS = ['http://maps.app.goo.gl/x', 'https://ejemplo.com/maps', 'javascript:alert(1)', 'https://maps.app.goo.gl/a b', 'https://maps.app.goo.gl@evil.com/x', 'https://maps.app.goo.gl:8080/x', 'https://user:pw@maps.app.goo.gl/x', 'https://goo.gl/mapsevil', 'REEMPLAZAR_MAPA', 'https://maps.app.goo.gl/' + 'a'.repeat(200), 'https://maps.app.goo.gl/x\ny'];
   for (const malo of MALOS) {
-    it(`mapaTienda «${malo.slice(0, 40).replace('\n', '\\n')}» y sin dirección: no sale como botón; pasa con recepción`, () => {
+    it(`mapaTienda «${malo.slice(0, 40).replace(/\n/g, '\\n')}» y sin dirección: no sale como botón; pasa con recepción`, () => {
       const t = hablar(crear({ base: { mapaTienda: malo } }), ANA, mTexto('dónde queda'));
       expect(JSON.stringify(t.mensajes)).not.toMatch(/javascript|evil|goo\.gl\/a b/);
       expect(urlDelBoton(t)).toContain('wa.me/');
