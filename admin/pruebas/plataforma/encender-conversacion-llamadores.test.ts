@@ -42,9 +42,13 @@ describe('encender-conversacion: el 5 no es fallo para quien lo invoca', () => {
       'admin/scripts/plataforma/alta-comercio.mjs', 'admin/scripts/plataforma/asignar-numero.mjs',
       'admin/scripts/plataforma/encender-conversacion.mjs', 'scripts/encender-conversacion.sh',
     ]);
-    // el envoltorio hace exec: propaga el código tal cual al operador, sin `set -e` que lo vuelva fallo del alta
+    // el envoltorio tiene `set -euo pipefail`, pero termina con `exec`: node reemplaza al shell y su código (el 5 incluido)
+    // llega tal cual al operador; no queda ningún paso después que lo tome por fallo
     const sh = leer('scripts/encender-conversacion.sh');
-    expect(sh).toMatch(/^exec node |\nexec node /);
+    expect(sh).toMatch(/^set -euo pipefail$/m);
+    expect(sh).toMatch(/^exec node /m);
+    const lineas = sh.split('\n').map((x) => x.trim()).filter((x) => x && !x.startsWith('#'));
+    expect(lineas.at(-1)).toMatch(/^exec node /);
     // el script documenta que 5 (y 6) es pendiente de Retomar, no corte
     const s = leer('admin/scripts/plataforma/encender-conversacion.mjs');
     expect(s).toMatch(/termina con salida 5/);
