@@ -16,7 +16,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { RAIZ_FLUJOS, leerManifiesto } from '../../scripts/ensamblar-flujo.mjs';
 import { entornoDelEmulador } from './entorno-del-hijo.ts';
 
@@ -116,7 +116,7 @@ describe('verificar-saneo.sh: un JSON adversarial no da verde', () => {
     temporales.push(dir);
     mkdirSync(join(dir, 'scripts')); mkdirSync(join(dir, 'Flujos'));
     copyFileSync(SCRIPT, join(dir, 'scripts', 'verificar-saneo.sh'));
-    for (const [n, c] of Object.entries(flujos)) writeFileSync(join(dir, 'Flujos', n), c);
+    for (const [n, c] of Object.entries(flujos)) { mkdirSync(dirname(join(dir, 'Flujos', n)), { recursive: true }); writeFileSync(join(dir, 'Flujos', n), c); }
     execFileSync('git', ['init', '-q'], { cwd: dir });
     const r = spawnSync('bash', ['scripts/verificar-saneo.sh', '--patrones'], { cwd: dir, encoding: 'utf8', env: entornoDelEmulador(undefined) });
     return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
@@ -143,6 +143,23 @@ describe('verificar-saneo.sh: un JSON adversarial no da verde', () => {
       { name: 'Nodo con id', credentials: { httpHeaderAuth: { id: 'abc', name: 'N' } } }] }) });
     expect(r.codigo).toBe(1);
     expect(r.salida).toMatch(/Nodo con id/);
+  });
+  // Subcarpetas (24/11/2026, revisión de Principal del #1103): un flujo mudado a `clientes/<t>/` CON manifiesto sigue pasando por el chequeo.
+  const conSuelto = JSON.stringify({ nodes: [{ name: 'Config base', parameters: { v: 'REEMPLAZAR_X' } }, { name: 'Nodo suelto', parameters: { v: 'REEMPLAZAR_Y' } }] });
+  const manifiesto = (flujo: string, declarados: Record<string, string>) => JSON.stringify({ flujo, conservanMarcadores: { 'Config base': 'REEMPLAZAR_', ...declarados }, codigo: {}, prompts: {} });
+  it('NEGANDO: un flujo de subcarpeta con manifiesto y un marcador sin declarar es hallazgo y se nombra', () => {
+    const r = sanear({ 'clientes/demo/x.json': conSuelto, 'manifiestos/clientes/demo/x.json': manifiesto('clientes/demo/x.json', {}) });
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/clientes\/demo\/x\.json: nodo «Nodo suelto»/);
+  });
+  it('un flujo de subcarpeta con manifiesto que declara el marcador sale limpio', () => {
+    const r = sanear({ 'clientes/demo/x.json': conSuelto, 'manifiestos/clientes/demo/x.json': manifiesto('clientes/demo/x.json', { 'Nodo suelto': 'REEMPLAZAR_' }) });
+    expect(r.salida).not.toMatch(/no declarado/);
+    expect(r.codigo).toBe(0);
+  });
+  it('un flujo de subcarpeta SIN manifiesto (lo arma su construir.mjs) queda fuera de este chequeo, como antes', () => {
+    const r = sanear({ 'clientes/otro/y.json': conSuelto });
+    expect(r.salida).not.toMatch(/no declarado/);
   });
   it('un nodo «Config base propio» con marcador no queda exento (igualdad exacta)', () => {
     const r = sanear({ 'a.json': JSON.stringify({ nodes: [{ name: 'Config base', parameters: { v: 'REEMPLAZAR_X' } },
