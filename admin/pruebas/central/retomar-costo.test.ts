@@ -5,10 +5,10 @@
  * Lo que se defiende, negando:
  *  A. LAS CIFRAS SON DEL PLAN (C9): `limitesDeRetomar` da 7 días, 20 por día y 100 por mes a TODOS (D-R3), y el precio de la
  *     plantilla (`PLANTILLA_UTILIDAD_USD`) con su fuente salen de `planes.ts`. Ni la pantalla ni `lib/turno.ts` escriben la cifra.
- *  B. EL AVISO DE COSTO afirma quién paga SOLO en los dos casos que `planes.ts` define (`estandar`+`comercio`: Meta cobra aparte
- *     al negocio; `meta_incluido`+`novuchat`: NovuChat absorbe, dentro del límite de envíos). Las combinaciones MIXTAS y todo
- *     lo que no consta (sin tarifa o titularidad ESCRITAS, línea sin identificar con titularidades distintas) dan el texto
- *     neutro, que no afirma quién paga. Mientras la tarifa no esté verificada (D-R5), lo dice con su fuente.
+ *  B. EL AVISO DE COSTO (decisión de Andres por botón, 24/11/2026): SOLO `meta_incluido` + línea `novuchat`, las dos escritas,
+ *     dice que NovuChat absorbe; las otras tres combinaciones dicen que hay un costo aparte para el negocio. Lo que no alcanza
+ *     para decidir (sin tarifa ni titularidad ESCRITAS, `meta_incluido` con la línea sin identificar) da el texto neutro.
+ *     Mientras la tarifa no esté verificada (D-R5), lo dice con su fuente.
  *  C. EL MODAL EXIGE LA CASILLA: sin marcarla no se llama a `retomarConversacion`, ni forzando el clic; marcada, se llama UNA
  *     vez y SOLO con `{ tenantId, conversacionId, claveIdempotencia }`; un reintento sin respuesta usa la MISMA clave.
  *  D. CUÁNDO SE VE «Retomar»: solo con la ventana cerrada, las dos banderas EXACTAS, sin `noContactar` ni bloqueo, con dato de
@@ -85,34 +85,41 @@ describe('B. el aviso de costo depende de la TARIFA y de la línea (D-R2 a)', ()
   const ctx = (tarifa: ContextoDeAviso['tarifa'], titularidad: ContextoDeAviso['titularidad'], linea: string | null = null): ContextoDeAviso => ({ tarifa, titularidad, linea });
   const l = limitesDeRetomar(null, 'meta_incluido', 'novuchat');
 
-  it('SOLO dos combinaciones afirman quién paga: `estandar`+`comercio` (Meta cobra aparte) y `meta_incluido`+`novuchat` (NovuChat absorbe)', () => {
-    expect(quienPagaLaPlantilla(ctx('estandar', 'comercio'))).toBe('comercio');
-    expect(quienPagaLaPlantilla(ctx('meta_incluido', 'novuchat'))).toBe('novuchat');
-    const c = textoAvisoRetomar(ctx('estandar', 'comercio'));
-    expect(c).toContain('Meta cobra aparte a su negocio');
-    expect(c).not.toContain('NovuChat absorbe');
-    const n = textoAvisoRetomar(ctx('meta_incluido', 'novuchat'));
-    expect(n).toContain('NovuChat absorbe ese costo, sin cobrarle a su negocio');
-    expect(n).not.toContain('Meta cobra aparte a su negocio');
+  const COMERCIO = 'con un costo aparte para su negocio';
+  const ABSORBE = 'NovuChat absorbe ese costo, sin cobrarle a su negocio';
+  const NEUTRO = 'el costo lo absorbe NovuChat o Meta se lo cobra a su negocio';
+  const pagaComercio = (c: ContextoDeAviso) => {
+    expect(quienPagaLaPlantilla(c), JSON.stringify(c)).toBe('comercio');
+    const t = textoAvisoRetomar(c);
+    expect(t).toContain(COMERCIO);
+    expect(t).not.toContain(ABSORBE);
+    expect(t).not.toContain(NEUTRO);
+  };
+
+  // Decisión de Andres por botón (24/11/2026): solo `meta_incluido` + línea de NovuChat no tiene costo para el comercio.
+  it('meta_incluido + línea de NovuChat: NovuChat absorbe (la ÚNICA combinación sin costo para el comercio)', () => {
+    const c = ctx('meta_incluido', 'novuchat');
+    expect(quienPagaLaPlantilla(c)).toBe('novuchat');
+    const t = textoAvisoRetomar(c);
+    expect(t).toContain(ABSORBE);
+    expect(t).not.toContain(COMERCIO);
+  });
+  it('estandar + línea del comercio: paga el comercio', () => pagaComercio(ctx('estandar', 'comercio')));
+  it('estandar + línea de NovuChat: paga el comercio (decisión del 24/11)', () => pagaComercio(ctx('estandar', 'novuchat')));
+  it('meta_incluido + línea del comercio: paga el comercio (decisión del 24/11)', () => pagaComercio(ctx('meta_incluido', 'comercio')));
+
+  it('con UN solo dato basta cuando las dos opciones dan lo mismo: `estandar` sin línea, o línea del comercio sin tarifa', () => {
+    pagaComercio(ctx('estandar', null));
+    pagaComercio(ctx(null, 'comercio'));
   });
 
-  it('NEGATIVA: las combinaciones MIXTAS no afirman quién paga (esa decisión no se toma acá)', () => {
-    for (const mixta of [ctx('estandar', 'novuchat'), ctx('meta_incluido', 'comercio')]) {
-      expect(quienPagaLaPlantilla(mixta), JSON.stringify(mixta)).toBeNull();
-      const x = textoAvisoRetomar(mixta);
-      expect(x).toContain('el costo lo absorbe NovuChat o Meta se lo cobra a su negocio');
-      expect(x).not.toContain('NovuChat absorbe ese costo');
-      expect(x).not.toContain('Meta cobra aparte a su negocio');
-    }
-  });
-
-  it('NEGATIVA: sin tarifa o sin titularidad no se afirma quién paga', () => {
-    for (const c of [ctx(null, null), ctx(null, 'novuchat'), ctx(null, 'comercio'), ctx('meta_incluido', null), ctx('estandar', null)]) {
+  it('NEGATIVA: lo que no alcanza para decidir no afirma quién paga (nunca «absorbe» sin las dos cosas escritas)', () => {
+    for (const c of [ctx(null, null), ctx(null, 'novuchat'), ctx('meta_incluido', null)]) {
       expect(quienPagaLaPlantilla(c), JSON.stringify(c)).toBeNull();
       const x = textoAvisoRetomar(c);
-      expect(x).toContain('el costo lo absorbe NovuChat o Meta se lo cobra a su negocio');
-      expect(x).not.toContain('NovuChat absorbe ese costo');
-      expect(x).not.toContain('Meta cobra aparte a su negocio');
+      expect(x).toContain(NEUTRO);
+      expect(x).not.toContain(ABSORBE);
+      expect(x).not.toContain(COMERCIO);
     }
     expect(textoAvisoRetomar()).toBe(textoAvisoRetomar(ctx(null, null)));
   });
@@ -161,9 +168,13 @@ describe('B. el aviso de costo depende de la TARIFA y de la línea (D-R2 a)', ()
   });
 
   it('NEGATIVA (I2): un valor de respaldo, sin `tarifaExplicita` o `titularidadExplicita`, no cuenta: texto neutro', () => {
-    const sinTarifa = { tarifa: 'estandar', tarifaExplicita: false, numeros: [num('A1', 'comercio')] };
-    expect(contextoDeAviso(sinTarifa, 'A1')).toMatchObject({ tarifa: null, titularidad: 'comercio' });
+    // `estandar` solo de respaldo con una línea de NovuChat: sin la tarifa escrita no se sabe si absorbe NovuChat.
+    const sinTarifa = { tarifa: 'estandar', tarifaExplicita: false, numeros: [num('A1', 'novuchat')] };
+    expect(contextoDeAviso(sinTarifa, 'A1')).toMatchObject({ tarifa: null, titularidad: 'novuchat' });
     expect(quienPagaLaPlantilla(contextoDeAviso(sinTarifa, 'A1'))).toBeNull();
+    // Con la línea del comercio escrita, la tarifa no cambia la respuesta (decisión del 24/11): paga el comercio.
+    const sinTarifaComercio = { tarifa: 'estandar', tarifaExplicita: false, numeros: [num('A1', 'comercio')] };
+    expect(quienPagaLaPlantilla(contextoDeAviso(sinTarifaComercio, 'A1'))).toBe('comercio');
     const sinTitular = { tarifa: 'meta_incluido', tarifaExplicita: true, numeros: [num('A1', 'novuchat', false)] };   // `novuchat` es solo el respaldo
     expect(contextoDeAviso(sinTitular, 'A1')).toMatchObject({ tarifa: 'meta_incluido', titularidad: null });
     expect(quienPagaLaPlantilla(contextoDeAviso(sinTitular, 'A1'))).toBeNull();

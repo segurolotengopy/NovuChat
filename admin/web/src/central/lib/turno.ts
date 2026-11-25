@@ -312,20 +312,21 @@ export function contextoDeAviso(
 }
 
 /**
- * QUIÉN PAGA LA PLANTILLA: la MISMA regla de `limitesDePersona` (`planes.ts`): el comercio paga su Meta SOLO con la tarifa
- * `estandar` Y la titularidad `comercio`; NovuChat la absorbe (D-R2 a) con `meta_incluido` Y `novuchat`. Las combinaciones
- * MIXTAS (`estandar`+`novuchat`, `meta_incluido`+`comercio`) y todo lo que no consta devuelven `null`: no se afirma quién paga
- * (cuál es el criterio para las mixtas lo decide Andres aparte). Las cuatro combinaciones se prueban en `retomar-costo.test.ts`.
+ * QUIÉN PAGA LA PLANTILLA (decisión de Andres por botón, 24/11/2026; `planes.ts`, `limitesDeRetomar`): NovuChat la absorbe
+ * (D-R2 a) SOLO con `meta_incluido` Y la línea `novuchat`, las dos escritas. Las otras tres combinaciones las paga el comercio:
+ * con `estandar` (sea cual sea la línea) o con la línea `comercio` (sea cual sea la tarifa) ya se sabe sin el otro dato. Lo que
+ * no alcanza para decidir (`meta_incluido` sin línea conocida, o nada escrito) devuelve `null`: no se afirma quién paga.
+ * Las cuatro combinaciones, una por prueba, en `retomar-costo.test.ts`.
  */
 export function quienPagaLaPlantilla(c: Pick<ContextoDeAviso, 'tarifa' | 'titularidad'>): 'comercio' | 'novuchat' | null {
-  if (c.tarifa === 'estandar' && c.titularidad === 'comercio') return 'comercio';
   if (c.tarifa === 'meta_incluido' && c.titularidad === 'novuchat') return 'novuchat';
+  if (c.tarifa === 'estandar' || c.titularidad === 'comercio') return 'comercio';
   return null;
 }
 
 /**
  * El aviso de costo del modal (§1.8 del plan de Retomar). Es la barrera honesta: no se presenta un costo como algo que no es.
- *  · `comercio`: Meta cobra aparte a su negocio.
+ *  · `comercio`: la plantilla tiene un costo aparte para su negocio (por Meta directo o por NovuChat, según la línea).
  *  · `novuchat` (D-R2 a): NovuChat absorbe la plantilla, sin cobrarle al comercio, dentro del límite de envíos.
  *  · sin dato: no se afirma quién paga.
  * Los 20 por día y 100 por mes (`limitesDeRetomar`, del plan) se dicen SIEMPRE como límite de envío de todos los negocios, no
@@ -339,7 +340,7 @@ export function textoAvisoRetomar(contexto: ContextoDeAviso = SIN_CONTEXTO_DE_AV
   const cierre = 'Si el cliente responde, se abre una conversación nueva que cuenta en su plan.';
   switch (quienPagaLaPlantilla(contexto)) {
     case 'comercio':
-      return `Retomar envía una plantilla de WhatsApp${linea} que Meta cobra aparte a su negocio, ${tarifa}. ${limite} ${cierre}`;
+      return `Retomar envía una plantilla de WhatsApp${linea} con un costo aparte para su negocio, ${tarifa}. ${limite} ${cierre}`;
     case 'novuchat':
       return `Retomar envía una plantilla de WhatsApp${linea} que Meta cobra, ${tarifa}. NovuChat absorbe ese costo, sin cobrarle a su negocio. ${limite} ${cierre}`;
     default:
