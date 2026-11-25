@@ -64,10 +64,14 @@ describe('lo que dice el cliente y lo que se guarda', () => {
     expect(t2.mensajes.some((x) => x.tipo === 'image')).toBe(true);
   });
   it('NEGADO: un NIT o CI en el nombre o la dirección de entrega no entra a la ficha', () => {
-    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: { ...ENTREGA, nombre: 'Ana Pérez CI 4455667', direccion: 'Calle 5 NIT 987654321' } }) });
+    // Rediseño del 25/11/2026: el nombre y la dirección que devuelve el modelo los valida el CÓDIGO (sin cifras, y solo si el asistente pidió el nombre): un CI o NIT ni siquiera entra a la entrega.
+    const m = crear({ sinSembrar: true, modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: { modo: '', nombre: 'Ana Pérez CI 4455667', direccion: 'Calle 5 NIT 987654321' } }) });
     hablar(m, ANA, mTexto('una billetera'));
+    hablar(m, ANA, mTexto('recojo en tienda'));
+    hablar(m, ANA, mTexto('Ana Pérez CI 4455667, Calle 5 NIT 987654321'));
     expect(JSON.stringify(fichas(m)[ANA])).not.toMatch(/4455667|987654321/);
-    expect(fichas(m)[ANA].entrega.nombre).toMatch(/Ana Pérez/);
+    expect(fichas(m)[ANA].entrega.nombre).toBe('');
+    expect(fichas(m)[ANA].entrega.direccion).toBe('');
   });
   it('NEGADO: el modelo no dice totales ni descuentos aunque no escriba la moneda', () => {
     for (const falso of ['El total sería 900 con tu pedido.', 'Con descuento queda en 400, ¿te animas?', 'En total son 1200.']) {

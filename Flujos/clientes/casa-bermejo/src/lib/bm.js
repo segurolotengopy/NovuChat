@@ -209,7 +209,7 @@ const BM_PROMPT_VOZ = [
   'SALIDA. Responde SOLO un objeto JSON, sin texto alrededor:',
   '{"texto": "<tu respuesta al cliente>", "lineas": [{"id": "<id del catálogo>", "cantidad": <entero>, "detalle": "<color o variante que pidió, o vacío>"}], "entrega": {"modo": "", "ciudad": "", "direccion": "", "nombre": "", "documento": "", "cp": "", "provincia": "", "flota": ""}, "quiereHablar": false}',
   '- "lineas" es el pedido COMPLETO después de este mensaje (no solo lo nuevo). Si el cliente no cambió el pedido, repite el pedido actual; si no hay pedido, usa una lista vacía.',
-  '- "entrega": solo lo que el cliente dijo; deja vacío lo que no sabes.',
+  '- "entrega": solo lo que el cliente escribió en ESTE mensaje, tal cual; deja vacío (cadena vacía) lo que no sabes. "modo": déjalo SIEMPRE vacío: lo fija el sistema con los botones. "nombre": solo cuando acabas de pedirlo y el cliente lo responde; nunca una pregunta ni una palabra suelta. "ciudad", "flota" y "documento": solo en un envío y solo si el cliente los dijo. Una pregunta del cliente nunca es un dato de entrega.',
   '- "texto" no lleva totales ni cuenta el pedido en líneas: el sistema agrega el resumen.',
 ].join('\n');
 // Palabras de material o de tipo de pieza que, nombradas por el cliente, traen sus descripciones al prompt (`vcSeleccion`). Dato del negocio.

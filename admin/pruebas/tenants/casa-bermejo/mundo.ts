@@ -65,6 +65,8 @@ export interface Opciones {
   cancelar?: { statusCode: number; body: J } | 'cae';
   /** Cómo contesta Meta al aviso al comercio: 'acepta' (por omisión), 'error' o 'lanza'. */
   aviso?: 'acepta' | 'error' | 'lanza';
+  /** No sembrar en la ficha la `entrega` con `modo` que devuelve el modelo (para probar que el código la ignora). */
+  sinSembrar?: boolean;
   /** Valores de «Config base» que la prueba quiera cambiar. */
   base?: Record<string, unknown>;
   /** Lo que devuelven los medios. */
@@ -109,7 +111,10 @@ export const COMPROBANTE = { categoria: 'comprobante', texto: 'Transferencia', m
 /** Lo que contesta el modelo (JSON de salida): texto, líneas, entrega y quiereHablar. */
 export const modelo = (texto: string, extra: J = {}): J => ({ texto, lineas: [], entrega: {}, facturacion: {}, quiereHablar: false, ...extra });
 export const ENTREGA = { modo: 'Retiro en tienda', ciudad: 'La Paz', direccion: '', nombre: 'Ana Pérez' };
+/** Quién habla en este turno (lo fija `hablar`): la siembra de la entrega previa escribe en SU ficha. */
+const quien: { from: string } = { from: '' };
 export function crear(o: Opciones = {}): Mundo {
+  let mundo: Mundo | undefined;
   const envio = o.envio ?? {};
   const m = o.medio ?? {};
   let nEnvios = 0;
@@ -139,6 +144,13 @@ export function crear(o: Opciones = {}): Mundo {
       if (d === 'cae') return { error: { message: 'servicio no disponible', code: 503 } };
       if (d === null) return {};
       const v = typeof d === 'function' ? d(ll) : d;
+      // ENTREGA PREVIA (rediseño del 25/11/2026): el código ya NO toma el modo que propone el modelo (solo los botones o una frase inequívoca) ni un nombre que el asistente no pidió. Las suites que parten de «el cliente ya eligió
+      // el modo y dio sus datos» lo expresan con una `entrega` COMPLETA del modelo (con `modo`): el mundo la SIEMBRA en la ficha de quien habla, como si esa charla ya hubiera ocurrido. Con `sinSembrar` no se siembra nada.
+      if (!o.sinSembrar && typeof v !== 'string' && v && typeof v['entrega'] === 'object' && v['entrega'] && typeof (v['entrega'] as J)['modo'] === 'string' && (v['entrega'] as J)['modo'] !== '' && quien.from) {
+        const mapa = ((mundo!.sd['casabermejo'] ??= {}) as Record<string, J>);
+        const previa = (mapa[quien.from] ?? {}) as J;
+        mapa[quien.from] = { ...previa, entrega: { modo: '', ciudad: '', direccion: '', nombre: '', documento: '', cp: '', provincia: '', flota: '', ...(previa['entrega'] as J | undefined), ...(v['entrega'] as J) } };
+      }
       return gemini(typeof v === 'string' ? v : JSON.stringify(v));
     },
     'Enviar aviso': (ll) => {
@@ -152,7 +164,7 @@ export function crear(o: Opciones = {}): Mundo {
     'Enviar a WhatsApp': enviar('Enviar a WhatsApp'),
     'Enviar respaldo': enviar('Enviar respaldo'),
   };
-  return crearMundo({
+  mundo = crearMundo({
     flujo: o.flujo ?? PRODUCCION,
     dobles,
     roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Avisar al servidor'] },
@@ -163,9 +175,35 @@ export function crear(o: Opciones = {}): Mundo {
       ...(o.base ?? {}),
     },
   });
+  return mundo;
 }
 export const hablar = (m: Mundo, from: string, msg: J, op: { wamid?: string; entrega?: string; phoneId?: string; contacto?: string; toleraFallo?: boolean } = {}): ResultadoTurno =>
-  m.turno(entrega(valorMeta(msg, from, op), op.entrega), op.toleraFallo ? { tolerarFallo: true } : {});
+  (quien.from = from, m.turno(entrega(valorMeta(msg, from, op), op.entrega), op.toleraFallo ? { tolerarFallo: true } : {}));
 export const textos = (t: ResultadoTurno): string[] => t.mensajes.map((e) => e.cuerpo);
 /** Los nodos de red que llaman a un modelo, a una descarga o al guardado de medios: con la pausa por Tomar, ninguno corre. */
 export const NODOS_DE_MEDIOS_Y_MODELO = ['Obtener URL del medio (general)', 'Descargar medio', 'Transcribir audio', 'Describir imagen', 'Describir documento', 'Guardar comprobante', 'Conversar con el modelo'];
+
+// ------------------------------------------------------------------------------ los modelos de las suites del rediseño de la entrega (25/11/2026)
+/** El último texto del cliente tal como llega al modelo (sin los delimitadores <<< >>>). */
+export const textoAlModelo = (ll: LlamadaDoble): string => {
+  const cs = (ll.cuerpo?.['contents'] ?? []) as { parts?: { text?: string }[] }[];
+  return String(cs[cs.length - 1]?.parts?.[0]?.text ?? '').replace(/^<<<\s*|\s*>>>$/g, '').trim();
+};
+export const BILLETERA = [{ id: 'billetera-cuero', cantidad: 1 }];
+/**
+ * El modelo SANO: en el primer turno agrega la billetera; en los demás repite el pedido y devuelve en `entrega` lo que `entregaDe(texto del cliente)` diga (la extracción que haría un modelo bien portado). Nunca propone `quiereHablar`.
+ * `entregaDe` por omisión no devuelve nada (el modelo «no encontró» datos en el texto).
+ */
+export function modeloSano(entregaDe: (texto: string) => J = () => ({}), texto = 'Listo.'): (ll: LlamadaDoble) => J {
+  let n = 0;
+  return (ll) => { n++; return n === 1 ? modelo('Con gusto, lo anoto.', { lineas: BILLETERA }) : modelo(texto, { lineas: BILLETERA, entrega: entregaDe(textoAlModelo(ll)) }); };
+}
+/** El modelo sano que devuelve como `nombre` el texto entero del cliente (el cliente acaba de responder «¿a nombre de quién?»). */
+export const modeloDeNombre = (): ((ll: LlamadaDoble) => J) => modeloSano((t) => ({ nombre: t }));
+/** El modelo ADVERSO: agrega la billetera en el primer turno; los demás devuelven `lineas: []`, `entrega: {}` y `quiereHablar: true` con la derivación. */
+export function modeloAdverso(): (ll: LlamadaDoble) => J {
+  let n = 0;
+  return () => { n++; return n === 1 ? modelo('Con gusto, lo anoto.', { lineas: BILLETERA }) : modelo('Una persona del equipo se encargará.', { lineas: [], entrega: {}, quiereHablar: true }); };
+}
+/** El toque de un botón de respuesta. */
+export const mToque = (id: string, title: string): J => ({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title } } });

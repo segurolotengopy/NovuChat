@@ -4,16 +4,18 @@
  * un id inventado, un modo que el comercio no ofrece, un pedido vacío, un QR abierto o un modo ya elegido NO cambian nada; y NUNCA se le pide escribir «pagar».
  */
 import { describe, expect, it } from 'vitest';
-import { ANA, crear, hablar, mTexto, modelo, panelConQr, type Opciones } from './mundo';
+import { ANA, BILLETERA, crear, hablar, modeloDeNombre, mTexto, modelo, panelConQr, type Opciones } from './mundo';
 
 const J = (x: unknown): string => JSON.stringify(x);
 type Ficha = { carrito: unknown[]; entrega: { modo: string; nombre: string }; pedidos: number };
 const ficha = (m: ReturnType<typeof crear>): Ficha => (m.sd['casabermejo'] as Record<string, Ficha>)[ANA]!;
 const mToque = (id: string, title: string) => ({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title } } });
+const TITULOS = ['Confirmar pedido', 'Corregir datos'];
 const hayQr = (t: ReturnType<typeof hablar>): boolean => t.mensajes.some((x) => x.tipo === 'image' && /qr/i.test(J(x.payload)));
 const botonesDe = (t: ReturnType<typeof hablar>): { id: string; title: string }[] =>
   t.mensajes.flatMap((x) => ((x.payload['interactive'] as { action?: { buttons?: { reply: { id: string; title: string } }[] } } | undefined)?.action?.buttons ?? []).map((b) => b.reply));
-const SIN_MODO: Opciones = { modeloDice: modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: { nombre: 'Ana Pérez' } }) };
+/** Un mundo con el modelo sano que, cuando el cliente responde «¿a nombre de quién?», devuelve el nombre en `entrega.nombre` (cada mundo, su propio modelo). */
+const sinModo = (extra: Opciones = {}): Opciones => ({ modeloDice: modeloDeNombre(), ...extra });
 const llamadasAlModelo = (m: ReturnType<typeof crear>): { n: number } => {
   const c = { n: 0 };
   const previo = m.dobles['Conversar con el modelo'];
@@ -24,7 +26,7 @@ const TEXTO_PAGAR = /escr[ií]b\w*\s+(?:\w+\s+){0,3}«?"?pagar/i;
 
 describe('cuando solo falta el modo, el mismo mensaje lleva los dos botones', () => {
   it('1 mensaje, con «Recojo en tienda» (entrega:retiro) y «Envío» (entrega:envio), títulos de a lo más 20 y sin «Confirmar pedido»', () => {
-    const m = crear(SIN_MODO);
+    const m = crear(sinModo());
     const t = hablar(m, ANA, mTexto('una billetera'));
     expect(t.mensajes).toHaveLength(1);
     expect(botonesDe(t)).toEqual([{ id: 'entrega:retiro', title: 'Recojo en tienda' }, { id: 'entrega:envio', title: 'Envío' }]);
@@ -39,14 +41,14 @@ describe('cuando solo falta el modo, el mismo mensaje lleva los dos botones', ()
     expect(botonesDe(hablar(m2, ANA, mTexto('una billetera'))).some((b) => b.id.startsWith('entrega:'))).toBe(false);
   });
   it('NEGADO: un comercio que NO ofrece envío solo ofrece el botón que puede cumplir', () => {
-    const m = crear({ ...SIN_MODO, base: { modosDeEntrega: 'Retiro en tienda' } });
+    const m = crear(sinModo({ base: { modosDeEntrega: 'Retiro en tienda' } }));
     expect(botonesDe(hablar(m, ANA, mTexto('una billetera'))).map((b) => b.id)).toEqual(['entrega:retiro']);
   });
 });
 
 describe('el toque de un botón de entrega lo decide el CÓDIGO, sin modelo', () => {
-  it('«Recojo en tienda» escribe el modo (el de la lista del comercio); con el nombre ya dicho, el pedido queda completo: resumen + «Confirmar pedido», 1 mensaje, 0 llamadas al modelo', () => {
-    const m = crear(SIN_MODO);
+  it('«Recojo en tienda» escribe el modo (el de la lista del comercio) y pide el NOMBRE (el pedido aún no está completo): 1 mensaje, 0 llamadas al modelo, sin «Confirmar pedido»', () => {
+    const m = crear(sinModo());
     hablar(m, ANA, mTexto('una billetera'));
     const c = llamadasAlModelo(m);
     const t = hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
@@ -54,24 +56,28 @@ describe('el toque de un botón de entrega lo decide el CÓDIGO, sin modelo', ()
     expect((t as unknown as { resumen: { resumen: { llamadasModelo: number } } }).resumen.resumen.llamadasModelo).toBe(0);
     expect(t.mensajes).toHaveLength(1);
     expect(ficha(m).entrega.modo).toBe('Retiro en tienda');
-    expect(botonesDe(t).map((b) => b.title)).toEqual(['Confirmar pedido']);
-    expect(t.mensajes[0]!.cuerpo).toMatch(/Billetera de cuero/);
+    expect(botonesDe(t)).toEqual([]);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/nombre/i);
     expect(t.mensajes[0]!.cuerpo).not.toMatch(TEXTO_PAGAR);
     expect(hayQr(t)).toBe(false);
   });
-  it('de punta a punta: botón de entrega → «Confirmar pedido» → el QR sale EN EL MISMO TURNO del toque, y ninguno de los dos llama al modelo', () => {
-    const m = crear(SIN_MODO);
+  it('de punta a punta: botón de entrega → nombre (lo devuelve el modelo) → resumen con los datos, «Confirmar pedido» y «Corregir datos» → el QR sale EN EL MISMO TURNO del toque (sin modelo)', () => {
+    const m = crear(sinModo());
     hablar(m, ANA, mTexto('una billetera'));
-    const c = llamadasAlModelo(m);
-    const t1 = hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
+    hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
+    const t1 = hablar(m, ANA, mTexto('Ana Pérez'));
+    expect(botonesDe(t1).map((b) => b.title)).toEqual(TITULOS);
+    expect(t1.mensajes[0]!.cuerpo).toMatch(/Billetera de cuero/);
+    expect(t1.mensajes[0]!.cuerpo).toMatch(/Retira: Ana Pérez/);
     const id = botonesDe(t1)[0]!.id;
     expect(id).toMatch(/^pedido:confirmar:[a-z0-9]+$/);
+    const c = llamadasAlModelo(m);
     const t2 = hablar(m, ANA, mToque(id, 'Confirmar pedido'));
     expect(hayQr(t2)).toBe(true);
     expect(c.n).toBe(0);
   });
   it('«Envío» escribe el modo y pregunta por lo que falta (no completa el pedido): sin «Confirmar pedido» y sin QR', () => {
-    const m = crear(SIN_MODO);
+    const m = crear(sinModo());
     hablar(m, ANA, mTexto('una billetera'));
     const t = hablar(m, ANA, mToque('entrega:envio', 'Envío'));
     expect(ficha(m).entrega.modo).toBe('Envío');
@@ -93,7 +99,7 @@ describe('NEGADO: lo que NO es un botón de entrega de este comercio no cambia n
   };
   it('`entrega:x`, `entrega:`, `ENTREGA:RETIRO` o `entrega:retiro2`: ni el modo ni el pedido cambian, sin QR y sin modelo', () => {
     for (const id of ['entrega:x', 'entrega:', 'entrega:Retiro', 'ENTREGA:RETIRO', 'entrega:retiro2', 'entrega:envio ']) {
-      const m = crear(SIN_MODO);
+      const m = crear(sinModo());
       hablar(m, ANA, mTexto('una billetera'));
       const antes = JSON.parse(J(ficha(m))) as Ficha;
       sinCambio(m, id, antes);
@@ -101,7 +107,7 @@ describe('NEGADO: lo que NO es un botón de entrega de este comercio no cambia n
     }
   });
   it('un modo que el comercio no ofrece (solo retiro): «Envío» no escribe nada', () => {
-    const m = crear({ ...SIN_MODO, base: { modosDeEntrega: 'Retiro en tienda' } });
+    const m = crear(sinModo({ base: { modosDeEntrega: 'Retiro en tienda' } }));
     hablar(m, ANA, mTexto('una billetera'));
     const antes = JSON.parse(J(ficha(m))) as Ficha;
     sinCambio(m, 'entrega:envio', antes);
@@ -118,7 +124,7 @@ describe('NEGADO: lo que NO es un botón de entrega de este comercio no cambia n
     expect(t.mensajes[0]!.cuerpo).toMatch(/pedido anterior que ya no está en curso/);
   });
   it('un modo ya elegido no se pisa con un botón viejo', () => {
-    const m = crear(SIN_MODO);
+    const m = crear(sinModo());
     hablar(m, ANA, mTexto('una billetera'));
     hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
     const antes = JSON.parse(J(ficha(m))) as Ficha;
@@ -126,7 +132,7 @@ describe('NEGADO: lo que NO es un botón de entrega de este comercio no cambia n
     expect(ficha(m).entrega.modo).toBe('Retiro en tienda');
   });
   it('con un QR abierto el botón no cambia la entrega ni abre otro QR', () => {
-    const m = crear(SIN_MODO);
+    const m = crear(sinModo());
     hablar(m, ANA, mTexto('una billetera'));
     m.dobles['Traer configuración'] = () => panelConQr(450);
     const antes = JSON.parse(J(ficha(m))) as Ficha;
@@ -143,7 +149,7 @@ describe('NUNCA se le pide escribir «pagar» (Andres, 23/11/2026), en ningún t
       // La redacción del modelo habla de un «descuento» (prohibido): sale el texto de estado del código.
       const m = crear({ base, modeloDice: modelo('Tenemos un descuento especial.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA_LISTA }) });
       const t1 = hablar(m, ANA, mTexto('una billetera'));
-      expect(botonesDe(t1).map((b) => b.title)).toEqual(['Confirmar pedido']);
+      expect(botonesDe(t1).map((b) => b.title)).toEqual(TITULOS);
       expect(todo(t1)).not.toMatch(TEXTO_PAGAR);
       // El cliente confirma con el botón (el QR sale de verdad y la ficha guarda el carrito del QR); luego el servidor dice que el QR sigue abierto.
       expect(hayQr(hablar(m, ANA, mToque(botonesDe(t1)[0]!.id, 'Confirmar pedido')))).toBe(true);

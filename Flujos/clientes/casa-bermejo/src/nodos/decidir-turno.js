@@ -9,6 +9,7 @@
 //   audio_fijo     una nota de voz demasiado larga o que no se entendió; archivo: un medio demasiado pesado o que no se abrió; imagen_otra: una foto o captura que no es un comprobante;
 //   anuncio        la imagen de un anuncio reconocido por su titular: el producto sale POR CÓDIGO (nunca el modelo), con el precio del catálogo;
 //   comprobante    la imagen de un comprobante con un cobro abierto: ya corrió «Cotejar en el servidor»; «Armar avisos» y «Armar mensajes» interpretan el resultado;
+//   corregir       el toque de «Corregir datos» (`pedido:corregir`): el CÓDIGO borra nombre, CI, ciudad y flota (conserva el modo) y vuelve a pedir lo que falta, SIN modelo; un id inventado no hace nada (`toque_viejo`);
 //   entrega_boton  el toque de «Recojo en tienda» o «Envío» (`entrega:retiro` / `entrega:envio`): el CÓDIGO escribe el modo de entrega, SIN modelo; un id inventado o un modo que el comercio no ofrece no cambia nada (`toque_viejo`);
 //   modelo         la conversación libre: `llamarModelo` y el cuerpo de la llamada (solo con la puerta abierta).
 //
@@ -102,10 +103,14 @@ if (!configLista) return sinConfig();
 // Ya no hay botón «Ver catálogo» (Andres, 24/11/2026, D7): el asistente muestra las piezas por el chat. `bmEnlaceCatalogo` devuelve '' mientras NovuChat no tenga un enlace propio.
 // El toque de «Recojo en tienda» o «Envío»: el modo lo escribe el CÓDIGO, sin modelo. Un id `entrega:` que no es de un botón de este comercio no cambia nada (contesta con el pedido de ahora).
 if (typeof t.seleccionId === 'string' && t.seleccionId.indexOf('entrega:') === 0) return salir({ tipo: bmModoDeBoton(t.seleccionId, bmModos(base)) !== '' ? 'entrega_boton' : 'toque_viejo' });
+// El toque de «Corregir datos» (`pedido:corregir`): el código borra los datos de entrega capturados (conserva el modo) y los vuelve a pedir, SIN modelo. Un id que empieza igual pero no es el exacto no hace nada (`toque_viejo`).
+if (typeof t.seleccionId === 'string' && t.seleccionId.indexOf('pedido:corregir') === 0) return salir({ tipo: t.seleccionId === BM_ID_CORREGIR ? 'corregir' : 'toque_viejo' });
 if (bmPideIdentidad(n)) return salir({ tipo: 'identidad' });
 if (bmCorporativo(n)) return salir({ tipo: 'derivar', motivo: 'corporativo' });
 if (bmPideFactura(n)) return salir({ tipo: 'derivar', motivo: 'factura' });
 if (bmQuiereHablar(n) || bmPideDescuento(n)) return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });
+// Una CONSULTA por la dirección, la ubicación o el horario de la tienda SIN ese dato cargado: no se inventa ni se toma como un dato del pedido; pasa con recepción (aviso + botón), sin modelo. El pedido en curso no se toca.
+if (!t.seleccionId && bmConsultaDeTiendaSinDato(texto, base, cfg)) return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });
 
 // 4b. El toque de «Confirmar pedido» (módulo común Pedidos) con el pedido ya listo: la orden de cierre la da el botón, no el modelo. Sin modelo (0 llamadas); `Resolver` emite el QR en este mismo turno. Sin pedido listo (el botón es de un mensaje viejo) sigue como una conversación normal.
 if (Array.isArray(ficha.carrito) && ficha.carrito.length > 0 && cfEsConfirmacion(t.seleccionId, bmLineasParaHuella(ficha.carrito, vendibles), bmEntregaDeFicha(ficha.entrega), ficha.pedidos) && bmEntregaCompleta(ficha.entrega, ceMercadoDePrefijo(from) || 'BO') && bmCarritoVigente(ficha.carrito, vendibles)) return salir({ tipo: 'confirmar' });

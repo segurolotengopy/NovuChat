@@ -20,7 +20,7 @@ const RUTAS = [
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_FUERA_DE_PAIS', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
-  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_SIN_PIEZA', 'bmEnlaceCatalogo', 'bmModoDeBoton', 'bmBotonesDeEntrega', 'bmOfreceBotonesDeEntrega', 'bmPideAlias', 'bmTextoDeEstado', 'cdTextoComprobanteConDiferencias', 'cdDiferenciaParaElTexto', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmDatosTienda', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmNombreDeRespuesta', 'bmCompletarEntrega', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
+  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_SIN_PIEZA', 'bmEnlaceCatalogo', 'bmModoDeBoton', 'bmBotonesDeEntrega', 'bmOfreceBotonesDeEntrega', 'bmPideAlias', 'bmTextoDeEstado', 'cdTextoComprobanteConDiferencias', 'cdDiferenciaParaElTexto', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmDatosTienda', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmEntregaDeTurno', 'bmEsConsulta', 'bmConsultaDeTiendaSinDato', 'bmDatosResumen', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
 ];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -365,13 +365,14 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
   const carro = [{ id: 'p1', cantidad: 1, detalle: '' }];
   const modeloDice = (entrega: Record<string, string>) => gemini({ texto: 'Con gusto.', lineas: [{ id: 'p1', cantidad: 1 }], entrega });
   it('«lo recojo en tienda» llega HASTA EL QR: la lista del comercio dice «recojo en tienda», el cliente dice «retiro», no pide ciudad y con el nombre sale el QR', () => {
-    const r = b('bmResolver')(ctx({ modos: ['recojo en tienda'], ficha: { carrito: carro }, plan: pagar, modeloResp: modeloDice({ modo: 'retiro en tienda', nombre: 'Ana Rojas' }) }));
+    const r = b('bmResolver')(ctx({ modos: ['recojo en tienda'], ficha: { carrito: carro, entrega: { modo: 'retiro en tienda', nombre: 'Ana Rojas' } }, plan: pagar, modeloResp: modeloDice({}) }));
     expect(r.tipo).toBe('qr');
     expect(r.monto).toBe(120);
   });
   it('NEGADO: en un retiro sin nombre NO sale el QR; en un envío a Bolivia sin CI o sin flota tampoco; con todo, sí', () => {
     const modos = ['recojo en tienda', 'envío'];
-    const R = (entrega: Record<string, string>) => b('bmResolver')(ctx({ modos, ficha: { carrito: carro }, plan: pagar, modeloResp: modeloDice(entrega) }));
+    // La entrega ya está en la ficha (el cliente eligió el modo y dio sus datos en turnos anteriores): el código no toma el modo ni el nombre que PROPONE el modelo.
+    const R = (entrega: Record<string, string>) => b('bmResolver')(ctx({ modos, ficha: { carrito: carro, entrega }, plan: pagar, modeloResp: modeloDice({}) }));
     expect(R({ modo: 'retiro en tienda' }).tipo).toBe('modelo');
     const envio = { modo: 'envío', nombre: 'Ana Rojas', documento: '1234567', ciudad: 'Oruro', flota: 'Trans Copacabana' };
     expect(R(envio).tipo).toBe('qr');
@@ -381,7 +382,7 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
   });
   it('envío a Argentina: pide DNI, dirección, código postal y provincia; con todo el pedido se anota (sin QR de Bolivia)', () => {
     const cat = b('bmCatalogo')(http([item({ moneda: 'ARS', precio: 5000, precioCentavos: 500000 })], { mercado: 'AR', moneda: 'ARS' }), AHORA, base, 'AR');
-    const R = (entrega: Record<string, string>) => b('bmResolver')(ctx({ mercado: 'AR', catalogo: cat, vendibles: cat.vendibles, modos: ['envío'], ficha: { carrito: carro }, plan: pagar, modeloResp: modeloDice(entrega) }));
+    const R = (entrega: Record<string, string>) => b('bmResolver')(ctx({ mercado: 'AR', catalogo: cat, vendibles: cat.vendibles, modos: ['envío'], ficha: { carrito: carro, entrega }, plan: pagar, modeloResp: modeloDice({}) }));
     const ar = { modo: 'envío', nombre: 'Ana Rojas', documento: '30123456', direccion: 'Calle Falsa 123', cp: '5500', provincia: 'Mendoza' };
     expect(R(ar).tipo).toBe('pedido_sin_cobro');
     for (const falta of ['documento', 'direccion', 'cp', 'provincia']) expect(R({ ...ar, [falta]: '' }).tipo).toBe('modelo');
@@ -442,14 +443,14 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
   it('con el pedido LISTO, un «quiereHablar» del modelo no lo desvía: se anota el pedido; sin el pedido listo, sí pasa con una persona', () => {
     const modos = ['recojo en tienda', 'envío'];
     const envio = { modo: 'envío', nombre: 'Ana Rojas', documento: '1234567', ciudad: 'Oruro', flota: 'Trans Copacabana' };
-    const R = (entrega: Record<string, string>, plan = pagar) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro }, plan, modeloResp: gemini({ texto: 'El envío lo cotiza la tienda.', lineas: [{ id: 'p1', cantidad: 1 }], entrega, quiereHablar: true }) }));
+    const R = (entrega: Record<string, string>, plan = pagar) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro, entrega }, plan, modeloResp: gemini({ texto: 'El envío lo cotiza la tienda.', lineas: [{ id: 'p1', cantidad: 1 }], entrega: {}, quiereHablar: true }) }));
     expect(R(envio).tipo).toBe('pedido_sin_cobro');
     // B2 (24/11): el modo que SOLO propuso el modelo no cuenta como «reconocido por el código»: sin el pedido listo, el quiereHablar sigue derivando.
     expect(R({ ...envio, documento: '' }).tipo).toBe('derivar');
     expect(R(envio, { tipo: 'modelo', textoCliente: 'ahí está todo' }).tipo).toBe('derivar');
   });
   it('si la redacción del modelo no pasa, el texto de reemplazo sigue el estado del pedido (nada de «cuénteme más» con un pedido a medias)', () => {
-    const T = (entrega: Record<string, string>, ficha: Record<string, unknown> = { carrito: carro }) => b('bmResolver')(ctx({ modos: ['recojo en tienda', 'envío'], ficha, plan: { tipo: 'modelo', textoCliente: 'ok' }, modeloResp: gemini({ texto: 'Su pedido está pagado y cerrado.', lineas: [{ id: 'p1', cantidad: 1 }], entrega }) }));
+    const T = (entrega: Record<string, string>, ficha: Record<string, unknown> = { carrito: carro }) => b('bmResolver')(ctx({ modos: ['recojo en tienda', 'envío'], ficha: { ...ficha, entrega }, plan: { tipo: 'modelo', textoCliente: 'ok' }, modeloResp: gemini({ texto: 'Su pedido está pagado y cerrado.', lineas: [{ id: 'p1', cantidad: 1 }], entrega: {} }) }));
     expect(T({}).texto).toMatch(/¿Cómo prefiere recibir su pedido: recojo en tienda o envío\?/);
     expect(T({ modo: 'envío' }).texto).toMatch(/indíqueme por favor: nombre completo, carnet de identidad \(CI\), ciudad de destino, empresa de flota o terminal/);
     expect(T({ modo: 'recojo en tienda', nombre: 'Ana' }).texto).toMatch(/¿Quieres confirmar tu pedido\?/);   // trato «tu» del fixture; con «usted» sale «¿Desea confirmar su pedido?»
@@ -544,47 +545,153 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       expect(b('bmFijarPieza')('sí, confirmo', [], [{ id: 'aire-18', cantidad: 1 }], aires.vendibles).lineas).toHaveLength(1);
     });
   });
-  describe('el pedido del carrito no se toma por envío y los datos de un mensaje no se pierden (reclamo de Andres, 24/11/2026)', () => {
+  describe('la entrega del turno (rediseño del 25/11/2026): modo por botón o frase inequívoca, nombre y datos validados por código, la consulta nunca es un dato', () => {
     const modos = ['recojo en tienda', 'envío'];
+    const E = (nueva: unknown, antes: unknown, texto: string, estado: Record<string, unknown> = {}) => b('bmEntregaDeTurno')(nueva, antes, texto, modos, estado);
     const sitio = 'Hola, quiero comprar estos productos: 1 x A/C IKA 18 BTU FRIO CALOR (cód. a-c-ika-18-btu-frio-calor): Bs 4.465 c/u, subtotal Bs 4.465 Total referencial: Bs 9.870 El precio final y el envío se confirman por WhatsApp';
-    it('la leyenda «el envío se confirma» no elige el modo, ni siquiera si el modelo lo devolvió', () => {
-      expect(b('bmCompletarEntrega')({}, {}, sitio, modos).entrega.modo).toBeUndefined();
-      expect(b('bmCompletarEntrega')({ modo: 'envío' }, {}, sitio, modos).entrega.modo).toBeUndefined();
+    it('el pedido del sitio («el envío se confirma») no elige el modo ni captura nada, ni siquiera si el modelo lo devolvió', () => {
+      expect(E({ modo: 'envío', nombre: 'Ana Pérez' }, {}, sitio, { esperaNombre: true, modoPedido: true }).entrega).toEqual({});
       expect(b('bmEntregaFalta')({}, 'BO')).toEqual(['modo de entrega']);
     });
-    it('«Silvana Sasaki, 3456291, recojo en tienda» guarda el retiro y el nombre en un solo turno; «Ya te dije Silvana Sasaki» también', () => {
-      const r = b('bmCompletarEntrega')({}, {}, 'Silvana Sasaki, 3456291, recojo en tienda', modos);
-      expect(r.entrega.modo).toBe('recojo en tienda');
-      expect(r.entrega.nombre).toBe('Silvana Sasaki');
-      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Ya te dije Silvana Sasaki', modos, [], true).entrega.nombre).toBe('Silvana Sasaki');
+    describe('A. el MODO: solo un botón o el mensaje ENTERO como elección', () => {
+      it('las frases inequívocas fijan el modo (de la lista del comercio)', () => {
+        for (const f of ['recojo en tienda', 'Lo recojo', 'retiro', 'Retiro en tienda', 'quiero recoger en tienda', 'recojo en la tienda por favor', 'mejor recojo en tienda']) expect(E({}, {}, f).entrega.modo, f).toBe('recojo en tienda');
+        for (const f of ['envío', 'Envíenlo', 'con envío', 'quiero envío', 'por envío', 'envío por flota', 'Envío a domicilio']) expect(E({}, {}, f).entrega.modo, f).toBe('envío');
+      });
+      it('NEGADO: un texto que solo CONTIENE «tienda» o «envío» NUNCA cambia el modo ni captura datos (es una consulta o una charla)', () => {
+        for (const f of ['Hola, tienen envío a Tarija 70012345', 'La dirección de la tienda, 4412345', 'quiero ver la tienda', 'tienda', 'no quiero envío', 'recojo 2 en tienda', 'el envío a Oruro cuánto cuesta', 'envío gratis?', '¿hacen envío?', 'Necesito el horario de la tienda, 77712345']) {
+          const r = E({ modo: 'envío', nombre: 'Ana Pérez', documento: '4412345', ciudad: 'Tarija' }, { modo: 'recojo en tienda' }, f, { esperaNombre: true, modoPedido: false });
+          expect(r.entrega, f).toEqual({});
+        }
+        for (const f of ['no quiero envío', 'quiero ver la tienda']) expect(E({}, {}, f, { modoPedido: true }).entrega.modo, f).toBeUndefined();
+      });
+      it('el modo que PROPONE el modelo se ignora (y se avisa, para que no hable como si estuviera anotado); el ya elegido solo cambia por frase inequívoca', () => {
+        const r = E({ modo: 'recojo en tienda' }, {}, 'quiero una billetera para mi mamá', { modoPedido: true });
+        expect(r.entrega.modo).toBeUndefined();
+        expect(r.modoRechazado).toBe(true);
+        expect(E({}, { modo: 'envío' }, 'mejor recojo en tienda').entrega.modo).toBe('recojo en tienda');
+        expect(E({}, { modo: 'recojo en tienda' }, 'mejor envíenlo').entrega.modo).toBe('envío');
+        expect(E({}, { modo: 'recojo en tienda' }, 'mejor envíenlo a Cochabamba').entrega.modo).toBeUndefined();   // «a Cochabamba» ya no es la frase entera (sin un mensaje de datos)
+        expect(E({}, { modo: 'recojo en tienda' }, '¿hacen envío?').entrega.modo).toBeUndefined();
+      });
+      it('dentro de un mensaje de DATOS (con comas) un tramo que es la frase fija el modo SOLO si el asistente acababa de pedir la entrega', () => {
+        const msg = 'Ana Pérez, 4412345, envío a Cochabamba, flota Bolivar';
+        expect(E({ nombre: 'Ana Pérez' }, {}, msg, { modoPedido: true }).entrega).toMatchObject({ modo: 'envío', nombre: 'Ana Pérez', documento: '4412345', ciudad: 'Cochabamba', flota: 'Bolivar' });
+        expect(E({ nombre: 'Ana Pérez' }, {}, msg, { modoPedido: false }).entrega.modo).toBeUndefined();   // no estaba pedido: no se fija
+        expect(E({ nombre: 'Ana Pérez' }, {}, 'Ana Pérez, recojo en tienda', { modoPedido: true }).entrega).toMatchObject({ modo: 'recojo en tienda', nombre: 'Ana Pérez' });
+        expect(E({}, { modo: 'recojo en tienda' }, 'Ana, envío a Oruro, 4412345', { modoPedido: false }).entrega.modo).toBeUndefined();   // el modo ya elegido no cambia por un tramo
+      });
     });
-    it('lo que el cliente dice ahora corrige un modo anterior; una pregunta no cambia nada', () => {
-      expect(b('bmCompletarEntrega')({}, { modo: 'envío' }, 'mejor recojo en tienda', modos).entrega.modo).toBe('recojo en tienda');
-      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'mejor envíenlo a Cochabamba', modos).entrega.modo).toBe('envío');
-      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, '¿hacen envío?', modos).entrega.modo).toBeUndefined();
+    describe('B. el NOMBRE lo devuelve el modelo y lo valida el código, solo si el asistente lo pidió', () => {
+      it('con el nombre pedido: «Silvana», «Mariana», «Vale» y «Ana Factura» (2 palabras) se aceptan si el modelo los devuelve', () => {
+        for (const n of ['Silvana', 'Mariana', 'Vale', 'Ana Factura']) expect(E({ nombre: n }, { modo: 'recojo en tienda' }, n, { esperaNombre: true }).entrega.nombre, n).toBe(n);
+      });
+      it('NEGADO: sin que el asistente lo pida no hay nombre; el modelo que no lo devuelve no deja nombre; un nombre inventado, con cifras o largo se rechaza; el envío pide 2 palabras', () => {
+        expect(E({ nombre: 'Silvana Prueba' }, { modo: 'recojo en tienda' }, 'Silvana Prueba', { esperaNombre: false }).entrega.nombre).toBeUndefined();
+        expect(E({}, { modo: 'recojo en tienda' }, 'Silvana', { esperaNombre: true }).entrega.nombre).toBeUndefined();
+        expect(E({ nombre: 'Juan Pérez' }, { modo: 'recojo en tienda' }, 'Silvana', { esperaNombre: true }).entrega.nombre).toBeUndefined();   // el modelo no inventa: cada palabra figura en lo que escribió el cliente
+        expect(E({ nombre: 'Juan Pérez 4567890' }, { modo: 'recojo en tienda' }, 'Juan Pérez 4567890', { esperaNombre: true }).entrega.nombre).toBeUndefined();
+        expect(E({ nombre: 'a b c d e f' }, { modo: 'recojo en tienda' }, 'a b c d e f', { esperaNombre: true }).entrega.nombre).toBeUndefined();
+        expect(E({ nombre: 'Silvana' }, { modo: 'envío' }, 'Silvana', { esperaNombre: true }).entrega.nombre).toBeUndefined();
+        expect(E({ nombre: 'Silvana' }, {}, 'Silvana', { esperaNombre: true }).entrega.nombre).toBeUndefined();   // sin modo elegido
+        expect(E({ nombre: 'Silvana' }, { modo: 'recojo en tienda' }, 'Silvana', { esperaNombre: true }).reconocido).toBe(false);   // un nombre nunca vuelve «reconocido»: no ignora un quiereHablar
+      });
+      it('NEGADO: lo que el modelo devuelva a una CONSULTA con el nombre pedido no se guarda («Horario», «Y el horario», «Aceptan tarjeta», «Tienen stock», «Precios»)', () => {
+        for (const f of ['Horario', 'Y el horario', 'Aceptan tarjeta', 'Tienen stock', 'Precios', 'Cuál es su dirección, 4412345']) {
+          const r = E({ nombre: f, ciudad: f, documento: '4412345' }, { modo: 'recojo en tienda' }, f, { esperaNombre: true });
+          expect(r.consulta, f).toBe(true);
+          expect(r.entrega, f).toEqual({});
+        }
+      });
+    });
+    describe('C. la CONSULTA es estructural y nunca es un dato', () => {
+      it('se reconoce con «?», con un interrogativo o verbo de consulta al inicio (tras un saludo) y con las palabras de consulta', () => {
+        for (const f of ['¿envían a Oruro?', 'tienen envío a Tarija', 'Hola, tienen envío a Tarija 70012345', 'hay stock', 'hacen envíos', 'dónde queda', 'abren los domingos', 'La dirección de la tienda, 4412345', 'Necesito el horario, 77712345', 'Horario', 'cuánto cuesta el envío', 'el envio tiene garantia', 'precio del envio a Oruro', 'Quiero 2, cuánto sale con envío a Oruro']) expect(b('bmEsConsulta')(f), f).toBe(true);
+        for (const f of ['Ana Pérez, 4412345, envío a Cochabamba, flota Bolivar', 'Silvana', 'recojo en tienda', 'Vale', 'Cochabamba', 'flota Bolivar', 'Humano', 'Efectivo', 'Cuero']) expect(b('bmEsConsulta')(f), f).toBe(false);
+      });
+      it('una consulta por la dirección, la ubicación o el horario SIN el dato cargado se deriva por código; con el dato cargado la responde el modelo', () => {
+        const sinDato = b('bmConsultaDeTiendaSinDato');
+        for (const f of ['Horario', 'Y el horario', 'Cuál es su dirección, 4412345', 'La dirección de la tienda, 4412345', 'Necesito el horario, 77712345', '¿dónde queda la tienda?', 'a qué hora abren']) expect(sinDato(f, {}, {}), f).toBe(true);
+        expect(sinDato('Horario', { horarioTienda: 'de 8 a 12' }, {})).toBe(false);
+        expect(sinDato('Horario', {}, { horarioAtencion: 'lunes a viernes' })).toBe(false);
+        expect(sinDato('La dirección de la tienda', { ubicacionTienda: 'Calle Sucre 12' }, {})).toBe(false);
+        expect(sinDato('Hola, tienen envío a Tarija', {}, {})).toBe(false);   // no pregunta por un dato de la tienda: la responde el modelo o la deriva él
+        expect(sinDato('recojo en tienda', {}, {})).toBe(false);
+      });
+    });
+    describe('D. los datos del ENVÍO por código, en cualquier orden (modelo sano o adverso)', () => {
+      const envio = { modo: 'envío', nombre: 'Ana Pérez' };
+      it('CI de 5 a 13 cifras; nunca un celular de 8 cifras (6 o 7 al inicio) sin «CI»; nunca tras «teléfono»; con retiro no hay CI', () => {
+        expect(E({}, envio, '4412345').entrega.documento).toBe('4412345');
+        expect(E({}, envio, 'Ana Pérez, 4412345, envío a Cochabamba').entrega.documento).toBe('4412345');
+        expect(E({}, envio, '12345678').entrega.documento).toBe('12345678');
+        expect(E({}, envio, 'mi CI es 70123456').entrega.documento).toBe('70123456');
+        for (const f of ['70123456', '61234567', 'Andres 70123456', '70123456 yacuiba', 'mi celular es 70123456', 'mi teléfono es 70123456', '1234']) expect(E({}, envio, f).entrega.documento, f).toBeUndefined();
+        expect(E({}, { modo: 'recojo en tienda', nombre: 'Ana' }, '2441214').entrega.documento).toBeUndefined();
+      });
+      it('«Andres 2441214 yacuiba. Flota bolivar» (humo del 23/11) y la ciudad ANTES que la flota, en mensajes separados, no se pierden', () => {
+        expect(E({}, { modo: 'envío', nombre: 'Andres' }, 'Andres 2441214 yacuiba. Flota bolivar').entrega).toMatchObject({ documento: '2441214', ciudad: 'Yacuiba', flota: 'bolivar' });
+        const paso1 = E({}, envio, '4412345 Cochabamba').entrega;
+        expect(paso1).toMatchObject({ documento: '4412345', ciudad: 'Cochabamba' });
+        const ficha2 = { ...envio, ...paso1 };
+        expect(E({}, ficha2, 'flota Bolivar').entrega).toMatchObject({ flota: 'Bolivar' });
+        expect(E({}, ficha2, 'flota Bolivar').entrega.ciudad).toBeUndefined();   // lo capturado no se pisa
+      });
+      it('la ciudad dicha SOLA vale cuando el asistente la pidió y el nombre ya se sabía; sin eso, no', () => {
+        expect(E({}, { ...envio, documento: '4412345' }, 'Cochabamba', { esperaCiudad: true }).entrega.ciudad).toBe('Cochabamba');
+        expect(E({ ciudad: 'Cochabamba' }, { ...envio, documento: '4412345' }, 'cochabamba', { esperaCiudad: false }).entrega.ciudad).toBe('Cochabamba');   // la devuelve el modelo y figura en el texto
+        expect(E({}, { ...envio, documento: '4412345' }, 'Cochabamba', { esperaCiudad: false }).entrega.ciudad).toBeUndefined();
+        expect(E({}, { modo: 'envío' }, 'Ana Pérez', { esperaCiudad: true }).entrega.ciudad).toBeUndefined();   // sin nombre ni CI sabidos, esa respuesta es el nombre
+        expect(E({}, { modo: 'envío', documento: '4412345' }, 'Cochabamba', { esperaCiudad: true }).entrega.ciudad).toBe('Cochabamba');   // con el CI ya dado (el modelo no devolvió el nombre): una palabra
+        expect(E({}, { modo: 'envío', documento: '4412345' }, 'Santa Cruz', { esperaCiudad: true }).entrega.ciudad).toBeUndefined();   // dos palabras sin nombre sabido: se vuelve a pedir
+        expect(E({}, { ...envio, documento: '4412345' }, 'cochabamba', { esperaCiudad: true }).entrega.ciudad).toBeUndefined();   // en minúsculas y sin el modelo no se adivina
+      });
+      it('«Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana» lee CI y flota por código (el nombre, del modelo); «Envíelo a Cochabamba por la terminal de Oruro» da la ciudad', () => {
+        const e = E({ nombre: 'Juan Pérez' }, { modo: 'envío', ciudad: 'Santa Cruz' }, 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana', { esperaNombre: true }).entrega;
+        expect(e).toMatchObject({ nombre: 'Juan Pérez', documento: '4567890', flota: 'Trans Copacabana' });
+        expect(E({}, { modo: 'envío' }, 'Envíelo a Cochabamba por la terminal de Oruro').entrega.ciudad).toBe('Cochabamba');
+        expect(E({}, { modo: 'recojo en tienda' }, 'voy a Santa Cruz').entrega.ciudad).toBeUndefined();
+      });
+      it('reconocido: el modo o un dato del envío leído por código (no el nombre); una consulta nunca', () => {
+        expect(E({}, { modo: 'envío' }, '4412345').reconocido).toBe(true);
+        expect(E({}, {}, 'recojo en tienda').reconocido).toBe(true);
+        expect(E({ nombre: 'Ana Pérez' }, { modo: 'recojo en tienda' }, 'Ana Pérez', { esperaNombre: true }).reconocido).toBe(false);
+        expect(E({}, { modo: 'envío' }, '¿envían a Oruro con CI 4412345?').reconocido).toBe(false);
+      });
+    });
+    it('el resolvedor: «sí, confirmo, quiero pagar» anota el pedido; un nombre capturado NO ignora un quiereHablar (deriva y GUARDA lo capturado); con un modelo sano completa el pedido', () => {
+      const sinEntrega = (textoCliente: string, ficha: Record<string, unknown>, nueva: Record<string, unknown> = {}, quiereHablar = false) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha, plan: { tipo: 'modelo', textoCliente }, modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'p1', cantidad: 1 }], entrega: nueva, quiereHablar }) }));
+      const pidioElNombre = [{ r: 'm', t: 'Para continuar con su pedido, indíqueme por favor: a nombre de quién retira.' }];
+      const t1 = sinEntrega('Lo recojo en tienda', { carrito: carro });
+      expect(t1.entrega.modo).toBe('recojo en tienda');
+      const t2 = sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, hist: pidioElNombre }, { nombre: 'Silvana Prueba' }, true);
+      expect(t2.tipo).toBe('derivar');
+      expect(t2.guardaPedido).toBe(true);
+      expect(t2.entrega.nombre).toBe('Silvana Prueba');
+      expect(sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, hist: pidioElNombre }, { nombre: 'Silvana Prueba' }).tipo).toBe('modelo');
+      expect(b('bmEntregaCompleta')(sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, hist: pidioElNombre }, { nombre: 'Silvana Prueba' }).entrega, 'BO')).toBe(true);
+      // con el modelo que no devuelve nombre, NO se captura y se vuelve a pedir
+      const t4 = sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, hist: pidioElNombre });
+      expect(t4.entrega.nombre).toBe('');
+      expect(t4.texto).toMatch(/nombre/i);
+      const t3 = sinEntrega('Sí, confirmo, quiero pagar', { carrito: carro, entrega: t2.entrega }, {}, true);
+      expect(t3.tipo).toBe('pedido_sin_cobro');
+    });
+    it('el ENVÍO dicho en una frase completa el pedido: nombre (del modelo), CI, flota y ciudad, aunque el modelo no repita lo demás', () => {
+      const ok = b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro, entrega: { modo: 'envío', ciudad: 'Santa Cruz' }, hist: [{ r: 'm', t: 'Indíqueme el nombre completo.' }] }, plan: { tipo: 'modelo', textoCliente: 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana' }, modeloResp: gemini({ texto: 'Gracias.', lineas: [{ id: 'p1', cantidad: 1 }], entrega: { nombre: 'Juan Pérez' } }) }));
+      expect(b('bmEntregaCompleta')(ok.entrega, 'BO')).toBe(true);
+    });
+    it('el resumen muestra los datos capturados (modo, nombre y, en el envío, CI, ciudad y flota); el esquema del modelo EXIGE los campos de `entrega`', () => {
+      const r = b('bmDatosResumen')({ modo: 'envío', nombre: 'Ana Pérez', documento: '4412345', ciudad: 'Cochabamba', flota: 'Bolivar' }, 'BO');
+      for (const x of ['Entrega: envío', 'A nombre de: Ana Pérez', 'CI: 4412345', 'Ciudad: Cochabamba', 'Flota o terminal: Bolivar']) expect(r).toContain(x);
+      expect(b('bmDatosResumen')({ modo: 'recojo en tienda', nombre: 'Ana' }, 'BO')).toBe('Datos de entrega:\n• Entrega: recojo en tienda\n• Retira: Ana');
+      const cuerpoModelo = b('bmCuerpoModelo')(ctx());
+      const esq = cuerpoModelo.generationConfig.responseSchema;
+      expect(esq.required).toEqual(['texto', 'lineas', 'entrega', 'quiereHablar']);
+      expect(esq.properties.entrega.required).toEqual(['modo', 'ciudad', 'direccion', 'nombre', 'documento', 'cp', 'provincia', 'flota']);
     });
   });
-  describe('el código reconoce el modo y el nombre aunque el modelo no los repita (humo de Silvana, paso 3)', () => {
-    const modos = ['recojo en tienda', 'envío'];
-    it('«Silvana Prueba» tras elegir el retiro se guarda como el nombre; frases que son órdenes, cifras o una sola palabra NO', () => {
-      expect(b('bmNombreDeRespuesta')('Silvana Prueba')).toBe('Silvana Prueba');
-      expect(b('bmNombreDeRespuesta')('Mi nombre es Juan Pérez')).toBe('Juan Pérez');
-      for (const no of ['Sí, confirmo, quiero pagar', 'Silvana', '1', 'Hola buenas tardes', 'Lo recojo en tienda', 'Juan Pérez 4567890', 'quiero hablar con una persona', '¿Cuánto cuesta el envío?']) expect(b('bmNombreDeRespuesta')(no)).toBe('');
-    });
-    const catalogoDePrueba = [{ id: 'p1', nombre: 'Billetera de cuero', precioCentavos: 45000, area: '', descripcion: '' }];
-    it('el modo sale del texto («lo recojo en tienda», «envíenlo a Santa Cruz») y el nombre se completa en el turno siguiente, sin que el modelo devuelva `entrega`', () => {
-      const c1 = b('bmCompletarEntrega')({}, {}, 'Lo recojo en tienda', modos);
-      expect(c1.entrega.modo).toBe('recojo en tienda');
-      expect(b('bmCompletarEntrega')({}, {}, 'Envíenlo a Santa Cruz', modos).entrega.modo).toBe('envío');
-      const c2 = b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Silvana Prueba', modos, [], true);   // el asistente acaba de pedir el nombre (esperaNombre)
-      expect(c2).toMatchObject({ capturado: true, entrega: { nombre: 'Silvana Prueba' } });
-      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Sí, confirmo, quiero pagar', modos, [], true).capturado).toBe(false);
-      // REGLA ÚNICA (3.ª revisión): sin que el asistente haya pedido el nombre, ningún texto libre es un nombre
-      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Silvana Prueba', modos).capturado).toBe(false);
-      for (const frase of ['Aceptan tarjeta', 'Tienen stock', 'Otro color', 'Efectivo', 'Transferencia', 'Cancelo', 'Tarjeta', 'Chau', 'Bien', 'Todo', 'Billeteras', 'Cuero', 'Humano', 'Vendedor']) expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, frase, modos, catalogoDePrueba, true).capturado, frase).toBe(false);
-      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Ana Factura', modos, [], true)).toMatchObject({ capturado: true, entrega: { nombre: 'Ana Factura' } });   // «factura» como apellido: se pidió el nombre y vienen 2 palabras
-      expect(b('bmCompletarEntrega')({}, {}, 'Silvana Prueba', modos).capturado).toBe(false);   // sin modo elegido, no se toma por nombre
-    });
+  describe('el horario de la tienda (dato común)', () => {
     it('el horario sale del dato común del comercio cuando «Config base» no lo trae, y el de «Config base» manda si existe', () => {
       const d = b('bmDatosTienda');
       expect(d({ ubicacionTienda: 'Bermejo' }, { horarioAtencion: 'lunes a domingo, de 06:00 a 18:00' })).toContain('horario: lunes a domingo, de 06:00 a 18:00.');
@@ -592,51 +699,6 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       // NEGADO: sin ninguno de los dos no se inventa, se pasa con una persona
       expect(d({}, {})).toContain('el horario aún no está cargado');
       expect(d({ horarioTienda: 'REEMPLAZAR_HORARIO' }, { horarioAtencion: '' })).toContain('el horario aún no está cargado');
-    });
-    it('los MISMOS mensajes de Andres (23/11): «Andres 2441214 yacuiba. Flota bolivar» y luego «2441214» ya no vuelven a pedir CI ni ciudad', () => {
-      const e1 = b('bmCompletarEntrega')({ nombre: 'Andres' }, { modo: 'envío' }, 'Andres 2441214 yacuiba. Flota bolivar', modos).entrega;
-      expect(e1).toMatchObject({ documento: '2441214', ciudad: 'Yacuiba', flota: 'bolivar' });
-      // un turno después, con la ficha ya sin el CI (el modelo no lo devolvió): el número SOLO es el documento
-      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', flota: 'bolivar' }, '2441214', modos).entrega.documento).toBe('2441214');
-      // la ciudad sola, cuando es lo único que falta
-      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', documento: '2441214', flota: 'bolivar' }, 'yacuiba', modos).entrega.ciudad).toBe('Yacuiba');
-      // NEGADO: con otra cosa por faltar (flota), una palabra sola no es la ciudad; un teléfono con su palabra no es el CI; sin envío no se toma nada
-      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', documento: '2441214' }, 'bolivar', modos).entrega.ciudad).toBeUndefined();
-      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres' }, 'mi celular es 70123456', modos).entrega.documento).toBeUndefined();
-      // un número suelto de 8 cifras que empieza con 6 o 7 es un celular: no entra como CI (con la palabra CI sí)
-      for (const cel of ['70123456', '61234567', 'Andres 70123456', '70123456 yacuiba']) expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres' }, cel, modos).entrega.documento).toBeUndefined();
-      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres' }, 'mi CI es 70123456', modos).entrega.documento).toBe('70123456');
-      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres' }, '12345678', modos).entrega.documento).toBe('12345678');
-      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda', nombre: 'Andres' }, '2441214', modos).entrega.documento).toBeUndefined();
-      expect(b('bmCompletarEntrega')({}, { modo: 'envío', nombre: 'Andres', documento: '2441214', flota: 'bolivar' }, 'gracias', modos).entrega.ciudad).toBeUndefined();
-      // el ciclo completo con el resolvedor: tras el segundo mensaje no falta el CI
-      const ok = b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro, entrega: { modo: 'envío', nombre: 'Andres', flota: 'bolivar' } }, plan: { tipo: 'modelo', textoCliente: '2441214 yacuiba' } }), { entrega: {} });
-      expect(b('bmEntregaFalta')(ok.entrega, 'BO')).toEqual([]);
-    });
-    it('el ENVÍO dicho en una frase se lee por código: nombre, CI, flota y ciudad, aunque el modelo no devuelva `entrega`', () => {
-      const e = b('bmCompletarEntrega')({}, { modo: 'envío', ciudad: 'Santa Cruz' }, 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana', modos).entrega;
-      expect(e).toMatchObject({ nombre: 'Juan Pérez', documento: '4567890', flota: 'Trans Copacabana' });
-      const e2 = b('bmCompletarEntrega')({}, { modo: 'envío' }, 'Envíelo a Cochabamba por la terminal de Oruro', modos).entrega;
-      expect(e2.ciudad).toBe('Cochabamba');
-      // NEGADO: sin envío elegido no se inventa ciudad; un CI sin la palabra CI/DNI/carnet no es documento
-      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'voy a Santa Cruz', modos).entrega.ciudad).toBeUndefined();
-      expect(b('bmCompletarEntrega')({}, { modo: 'envío' }, 'mi teléfono es 70123456', modos).entrega.documento).toBeUndefined();
-      const ok = b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro, entrega: { modo: 'envío', ciudad: 'Santa Cruz' } }, plan: { tipo: 'modelo', textoCliente: 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana' }, modeloResp: gemini({ texto: 'Gracias.', lineas: [{ id: 'p1', cantidad: 1 }] }) }));
-      expect(b('bmEntregaCompleta')(ok.entrega, 'BO')).toBe(true);
-    });
-    it('del retiro al pedido: modo + nombre dichos en turnos distintos, SIN `entrega` del modelo, y «sí, confirmo, quiero pagar» anota el pedido', () => {
-      const sinEntrega = (textoCliente: string, ficha: Record<string, unknown>, quiereHablar = false) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha, plan: { tipo: 'modelo', textoCliente }, modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'p1', cantidad: 1 }], quiereHablar }) }));
-      const t1 = sinEntrega('Lo recojo en tienda', { carrito: carro });
-      expect(t1.entrega.modo).toBe('recojo en tienda');
-      const pidioElNombre = [{ r: 'm', t: 'Para continuar con su pedido, indíqueme por favor: a nombre de quién retira.' }];
-      // 3.ª revisión: un nombre capturado NUNCA basta para ignorar el quiereHablar del modelo: deriva, pero GUARDA lo capturado (el cliente no lo repite).
-      const t2 = sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, hist: pidioElNombre }, true);
-      expect(t2.tipo).toBe('derivar');
-      expect(t2.guardaPedido).toBe(true);
-      expect(t2.entrega.nombre).toBe('Silvana Prueba');
-      expect(sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, hist: pidioElNombre }, false).tipo).toBe('modelo');   // con un modelo sano, completa el pedido
-      const t3 = sinEntrega('Sí, confirmo, quiero pagar', { carrito: carro, entrega: t2.entrega }, true);
-      expect(t3.tipo).toBe('pedido_sin_cobro');
     });
   });
   describe('el mensaje del sitio («N x Nombre (cód. id)») lo lee el código (NovuTienda, punto 3)', () => {

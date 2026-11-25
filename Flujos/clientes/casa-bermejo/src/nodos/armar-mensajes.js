@@ -95,9 +95,19 @@ if (puerta.ruta === 'sigue') {
     const cuerpoModelo = conSaludo(d.texto + (d.resumen ? '\n\n' + d.resumen : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : ''));
     // Sin botón «Ver catálogo» (Andres, 24/11/2026, D7): las piezas se muestran por este chat. Lo que el mensaje puede llevar es UN botón de respuesta que el código cumple: «Confirmar pedido» (pedido listo) o los de entrega (solo falta el modo).
     if (d.confirmable === true) {
-      // El pedido está listo: el MISMO mensaje lleva el botón «Confirmar pedido» (0 mensajes más); tocarlo emite el QR en el mismo turno.
-      const cuerpoCf = bmSeguro(cfCuerpo(cuerpoModelo, usted), usted);
-      msgs = [cmMensaje('cliente', cmBotones(cuerpoCf, [cfBoton(d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '', precioCentavos: l.precioCentavos })), bmEntregaDeFicha(d.entrega), fichaAntes.pedidos)]), cuerpoCf, cuerpoCf, { tipoReporte: 'interactive', conBoton: true })];
+      // El pedido está listo: el MISMO mensaje lleva el botón «Confirmar pedido» (0 mensajes más); tocarlo emite el QR en el mismo turno. Antes del QR el cliente VE los datos capturados (modo, nombre y, en el envío, CI, ciudad y flota)
+      // y tiene un segundo botón de respuesta, «Corregir datos» (el mismo mensaje: 0 mensajes agregados): un dato mal leído nunca llega al cobro sin que el cliente lo vea. Si el texto es largo se recorta ÉL, nunca los datos ni las instrucciones.
+      const datos = bmDatosResumen(d.entrega, c.mercado);
+      const lineaCorregir = usted ? 'Si algún dato no está bien, toque «' + BM_TITULO_CORREGIR + '».' : 'Si algún dato no está bien, toca «' + BM_TITULO_CORREGIR + '».';
+      const cola = [d.resumen, datos, lineaCorregir].filter((x) => typeof x === 'string' && x !== '').join('\n\n') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : '');
+      const sitioCabeza = 1024 - cfInstruccion(usted).length - 4 - cola.length;
+      const cabeza = conSaludo(d.texto);
+      const cabezaCorta = cabeza.length > sitioCabeza ? cabeza.slice(0, Math.max(0, sitioCabeza - 1)).trimEnd() + (sitioCabeza > 1 ? '…' : '') : cabeza;
+      const cuerpoCf = bmSeguro(cfCuerpo(cabezaCorta + '\n\n' + cola, usted), usted);
+      // El documento (CI) viaja en el mensaje al cliente, pero el texto que se REPORTA a la conversación del comercio lo lleva enmascarado.
+      const docEntrega = bmEntregaDeFicha(d.entrega).documento;
+      const reportado = docEntrega.length >= 5 ? cuerpoCf.split(docEntrega).join('[CI]') : cuerpoCf;
+      msgs = [cmMensaje('cliente', cmBotones(cuerpoCf, [cfBoton(d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '', precioCentavos: l.precioCentavos })), bmEntregaDeFicha(d.entrega), fichaAntes.pedidos), { id: BM_ID_CORREGIR, title: BM_TITULO_CORREGIR }]), reportado, cuerpoCf, { tipoReporte: 'interactive', conBoton: true })];
     } else if (d.botonesEntrega === true && bmBotonesDeEntrega(c.modos).length > 0) {
       // Lo único que falta es el modo de entrega: el MISMO mensaje lleva «Recojo en tienda» y «Envío» (0 mensajes más); tocar uno lo anota sin modelo. Si el texto no pregunta por la entrega, la pregunta la agrega el código.
       const pregunta = /\b(recib|entrega|retir|recoj|envi)/.test(bmNorm(d.texto)) ? '' : '¿Cómo prefieres recibir tu pedido?';

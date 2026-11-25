@@ -127,98 +127,160 @@ function bmOfreceBotonesDeEntrega(nPiezas, entrega, mercado, modos, qrAbierto) {
   const faltan = bmEntregaFalta(entrega, mercado);
   return faltan.length === 1 && faltan[0] === 'modo de entrega';
 }
-// Lo que el CÓDIGO reconoce de la respuesta del cliente, para no depender de que el modelo lo repita en su JSON (humo de Silvana: «Silvana Prueba» no se guardaba y el pedido no avanzaba):
-// el modo («lo recojo en tienda», «envíenlo a…») y, ya elegido el modo, el nombre de quien retira o recibe (2 a 5 palabras de letras, sin cifras ni órdenes).
-function bmNombreDeRespuesta(texto, minPalabras, permiteFactura) {
-  let t = String(texto || '').replace(/\s+/g, ' ').trim().replace(/^(ya te lo dije|ya te dije|ya dije|ya te lo di|mi nombre es|me llamo|soy|a nombre de|el nombre es)\s+/i, '');
+// -----------------------------------------------------------------------------
+// LO QUE EL CÓDIGO ACEPTA DEL CLIENTE (rediseño del 25/11/2026, tras cuatro rondas de revisión independiente que cayeron en lo mismo: adivinar modo, nombre y datos desde texto libre con LISTAS de palabras).
+// El diseño ya no usa listas de palabras para decidir qué es un nombre ni qué modo eligió el cliente:
+//   A. El MODO de entrega se fija SOLO con un botón (`entrega:retiro` / `entrega:envio`) o con una frase INEQUÍVOCA: el mensaje ENTERO es una elección (anclado: sin cifras, sin «?», 6 palabras o menos). Un texto que solo CONTIENE «tienda» o «envío» nunca cambia el modo.
+//      Lo que el modelo proponga como modo se IGNORA. Excepción acotada: dentro de un mensaje de DATOS (varios tramos separados por coma) un tramo que por sí solo es esa frase («envío a Cochabamba») fija el modo SOLO si el asistente acababa de pedir la entrega (carrito con piezas y modo vacío).
+//   B. El NOMBRE y los demás datos los devuelve el MODELO en `entrega` (como Walisuma: el esquema los exige) y el CÓDIGO los valida: el nombre solo cuenta si el último mensaje del asistente lo PIDIÓ (`esperaNombre`, de `f.hist`), sin cifras, con letras, espacios, apóstrofo o guion,
+//      de 60 caracteres o menos y de 1 a 5 palabras (1 basta para el retiro; el envío pide 2 o más), y cada palabra tiene que figurar en lo que escribió el cliente (el modelo no inventa un nombre).
+//   C. Una CONSULTA (pregunta con «?», interrogativo o verbo de consulta al inicio, o una de las palabras de consulta: dirección, horario, precio…) NUNCA es un dato: no cambia el modo ni captura nada. Se responde o se deriva.
+//   D. Los datos del ENVÍO (CI, ciudad, flota o terminal) los lee el código en cualquier orden y en mensajes separados, y también los valida si los trae el modelo.
+// -----------------------------------------------------------------------------
+const BM_ID_CORREGIR = 'pedido:corregir';
+const BM_TITULO_CORREGIR = 'Corregir datos';
+const BM_LEYENDA_SITIO = /El precio final y el env[ií]o se confirman por WhatsApp|total referencial/gi;
+// ¿Es una CONSULTA? Estructural y chico: una pregunta (con «?» o con un interrogativo o verbo de consulta al inicio, tras un saludo) o una palabra de consulta (dirección, ubicación, horario, costo…).
+function bmEsConsulta(texto) {
+  const crudo = String(texto === undefined || texto === null ? '' : texto).replace(BM_LEYENDA_SITIO, ' ');
+  if (/[?¿]/.test(crudo)) return true;
+  const n = bmNorm(crudo);
+  const sin = n.replace(/^(?:(?:hola|buenas|buenos dias|buenas tardes|buenas noches|disculpa|disculpe|perdon|oye|una consulta|consulta) )+/, '');
+  if (/^(?:que|cual|cuales|cuanto|cuanta|cuantos|cuantas|como|donde|cuando|quien|quienes|por que|porque|puedo|pueden|se puede|es posible|hay|tienen|tiene|tienes|hacen|hace|aceptan|acepta|venden|vende|atienden|abren|cierran)\b/.test(sin)) return true;
+  return /\b(?:direccion|ubicacion|ubican|ubicados|horario|horarios|abren|cierran|cuanto|cuanta|cuantos|cuantas|cuesta|cuestan|costo|costos|precio|precios|tarifa|tarifas|garantia|garantias|plazo|plazos|demora|demoran|tarda|tardan|descuento|descuentos|tienen|hacen|aceptan|donde)\b/.test(n);
+}
+// ¿Pregunta por un dato que el comercio declara de su tienda (dónde queda, a qué hora abre)? `bmDatosDeTienda` dice qué hay cargado.
+function bmPideUbicacion(n) { return /\b(?:direccion|ubicacion|ubican|ubicados|donde (?:queda|quedan|estan|se ubican|se encuentran|los encuentro))\b/.test(String(n || '')); }
+function bmPideHorario(n) { return /\b(?:horario|horarios|abren|cierran|a que hora)\b/.test(String(n || '')); }
+function bmDatosDeTienda(base, cfg) {
+  const b = cbEsObjeto(base) ? base : {};
+  const lim = (v) => (typeof v === 'string' && !/^REEMPLAZAR_/.test(v) ? cbLinea(v, 200) : '');
+  return { ubicacion: lim(b.ubicacionTienda), horario: lim(b.horarioTienda) || lim(cbEsObjeto(cfg) ? cfg.horarioAtencion : '') };
+}
+// Una consulta por la ubicación o el horario de la tienda SIN ese dato cargado: el asistente no inventa, pasa con recepción (aviso + botón). Lo decide el código, antes del modelo. La respuesta por código con el dato cargado es de otro bloque.
+function bmConsultaDeTiendaSinDato(textoCliente, base, cfg) {
+  if (!bmEsConsulta(textoCliente)) return false;
+  const n = bmNorm(String(textoCliente || '').replace(BM_LEYENDA_SITIO, ' '));
+  const d = bmDatosDeTienda(base, cfg);
+  return (bmPideUbicacion(n) && d.ubicacion === '') || (bmPideHorario(n) && d.horario === '');
+}
+// LA FRASE INEQUÍVOCA de elegir el modo: el texto ENTERO (normalizado) es la elección. `conDestino` agrega «a <ciudad>» al final (solo para un tramo de un mensaje de datos).
+const BM_PREFIJO_FRASE = '(?:(?:hola|buenas|buenos dias|buenas tardes|buenas noches|ok|listo|bueno|mejor|entonces|ya) )*';
+const BM_CIERRE_FRASE = '(?: (?:por favor|gracias))?$';
+const BM_RE_RETIRO = new RegExp('^' + BM_PREFIJO_FRASE + '(?:(?:lo|la|los|las|me) )?(?:(?:quiero|quisiera|prefiero|voy a|paso a|pasare a) )?(?:(?:lo|la|los|las|me) )?(?:recojo|recoger|recogerlo|recogerla|recogerlos|recogere|retiro|retirar|retirarlo|retirarla|retirarlos|retirare)(?: (?:en|de|por)(?: (?:la|el))? (?:tienda|local|sucursal|persona))?' + BM_CIERRE_FRASE);
+const BM_NUCLEO_ENVIO = '(?:envio|envios|enviar|enviarlo|envialo|envienlo|enviamelo|enviemelo|enviarmelo|mandalo|mandenlo|mandamelo|mandenmelo|mandarlo|domicilio|delivery|flota|terminal|encomienda)';
+const BM_RE_ENVIO = new RegExp('^' + BM_PREFIJO_FRASE + '(?:(?:quiero|quisiera|prefiero|necesito|pido|con|por|a|en|el|un|mi) )*' + BM_NUCLEO_ENVIO + '(?: (?:por|a|en|de|con))?(?: (?:la |el )?(?:flota|terminal|domicilio|encomienda))?' + BM_CIERRE_FRASE);
+const BM_RE_ENVIO_DESTINO = new RegExp('^' + BM_PREFIJO_FRASE + '(?:(?:quiero|quisiera|prefiero|necesito|pido|con|por|el|un|mi) )*' + BM_NUCLEO_ENVIO + '(?: (?:a|hasta|para|en) [a-z]+(?: [a-z]+)?)?(?: (?:por|con) (?:la |el )?(?:flota|terminal|domicilio|encomienda))?' + BM_CIERRE_FRASE);
+// 'retiro' | 'envio' | '': el texto ENTERO es una elección (sin cifras ni «?», 6 palabras o menos).
+function bmFraseDeModo(texto, conDestino) {
+  const crudo = String(texto === undefined || texto === null ? '' : texto);
+  if (/[?¿\d]/.test(crudo)) return '';
+  const n = bmNorm(crudo);
+  const palabras = n === '' ? 0 : n.split(' ').length;
+  if (palabras === 0 || palabras > (conDestino === true ? 9 : 6)) return '';
+  if (BM_RE_RETIRO.test(n)) return 'retiro';
+  if ((conDestino === true ? BM_RE_ENVIO_DESTINO : BM_RE_ENVIO).test(n)) return 'envio';
+  return '';
+}
+function bmModoDeLista(clase, lista) {
+  if (clase === 'retiro') return lista.find((m) => bmEsRetiro(m)) || '';
+  if (clase === 'envio') return lista.find((m) => bmEsEnvio(m)) || '';
+  return '';
+}
+// El modo que dice el mensaje ENTERO (frase inequívoca) y, si no, el de un tramo de un mensaje de DATOS (varios tramos con coma, con un solo modo dicho). Siempre un modo de la lista del comercio.
+function bmModoDicho(texto, lista, enDatos) {
+  const entera = bmModoDeLista(bmFraseDeModo(texto, false), lista);
+  if (entera !== '' || enDatos !== true) return entera;
+  const tramos = String(texto === undefined || texto === null ? '' : texto).split(/[,;]/).map((x) => x.trim()).filter((x) => x !== '');
+  if (tramos.length < 2) return '';
+  const clases = new Set(tramos.map((x) => bmFraseDeModo(x, true)).filter((x) => x !== ''));
+  return clases.size === 1 ? bmModoDeLista(Array.from(clases)[0], lista) : '';
+}
+// El nombre que devolvió el modelo, validado POR CÓDIGO: solo letras, espacios, apóstrofo, punto y guion (sin cifras), 60 caracteres o menos, 1 a 5 palabras (con `minPalabras`), y cada palabra figura en lo que escribió el cliente.
+function bmNombreValido(valor, textoCliente, minPalabras) {
+  const t = String(valor === undefined || valor === null ? '' : valor).replace(/\s+/g, ' ').trim();
   if (t === '' || t.length > 60 || /[^\p{L} .'-]/u.test(t)) return '';
   const palabras = t.split(' ');
-  const minimo = minPalabras === 1 ? 1 : 2;
-  if (palabras.length < minimo || palabras.length > 5 || (palabras.length === 1 && palabras[0].length < 3)) return '';
-  let n = bmNorm(t);
-  // «Factura» como apellido: vale cuando se pidió el nombre y vienen 2 o más palabras (el que llama lo permite).
-  if (permiteFactura === true && palabras.length >= 2) n = n.replace(/\bfactura\b/g, ' ');
-  if (/\b(si|no|hola|gracias|confirmo|confirmar|pagar|pago|quiero|catalogo|precio|cuanto|cuesta|envio|enviar|tienda|recojo|retiro|persona|hablar|descuento|factura|buenas|buenos|dias|tardes|noches|favor|ok|okey|okay|listo|claro|perfecto|bueno|buena|dale|genial|correcto|entendido|cancelar|cancela|garantia|manana|despues|luego|ahora|nada|humano|humana|vendedor|vendedora|asesor|asesora|agente|operador|operadora|encargado|encargada|alguien|excelente|espera|esperar|precio|precios|costo|costos|tarifa|cuanto|gracia|saludos|disculpa|perdon|ayuda|informacion|consulta|pedido|catalogo|envios|oferta|promocion|cambio|devolucion|reclamo|efectivo|transferencia|transferencias|tarjeta|tarjetas|qr|deposito|cancelo|cancele|cancelado|pagado|chau|chao|adios|hasta|bien|todo|todos|tienen|tienes|tiene|aceptan|aceptas|acepta|stock|otro|otra|otros|otras|color|colores|medida|medidas|talla|tamano|disponible|disponibles|mas|menos|cual|cuales|donde|cuando|como|porque|que|quien)\b/.test(n)) return '';
-  return t;
+  if (palabras.length < (minPalabras === 1 ? 1 : 2) || palabras.length > 5 || (palabras.length === 1 && palabras[0].length < 3)) return '';
+  const dicho = new Set(bmNorm(textoCliente).split(' '));
+  return bmNorm(t).split(' ').every((w) => dicho.has(w)) ? t : '';
 }
-function bmCompletarEntrega(nueva, antes, texto, modos, vendibles, esperaNombre) {
-  const n = Object.assign({}, cbEsObjeto(nueva) ? nueva : {});
-  const delModelo = Object.assign({}, n);   // lo que propuso el modelo: lo que el código agregue o cambie después es lo que el CÓDIGO reconoció
+// Un valor corto del modelo (ciudad, flota, dirección): cada palabra figura en lo que escribió el cliente.
+function bmEnTexto(valor, textoCliente, max) {
+  const t = String(valor === undefined || valor === null ? '' : valor).replace(/\s+/g, ' ').trim();
+  if (t === '' || t.length > max) return '';
+  const dicho = new Set(bmNorm(textoCliente).split(' '));
+  const ws = bmNorm(t).split(' ').filter((w) => w !== '');
+  return ws.length > 0 && ws.every((w) => dicho.has(w)) ? t : '';
+}
+const BM_RE_CALIFICA_NUMERO = /\b(?:tel[eé]fono|tel|celular|cel|whatsapp|nit|bs|monto|cuenta|total|precio)\b\D{0,15}\d/i;
+// El CI (o DNI): una cifra de 5 a 13 dígitos; nunca un celular (8 dígitos que empiezan con 6 o 7) sin la palabra «CI»; nunca con «teléfono», «NIT», «Bs»… antes.
+function bmCiDelTexto(texto) {
+  const crudo = String(texto === undefined || texto === null ? '' : texto);
+  const largo = (s) => { const d = s.replace(/\D/g, ''); return d.length >= 5 && d.length <= 13; };
+  const rotulado = /\b(?:c\.?i\.?|dni|carnet(?: de identidad)?|cedula)\b\D{0,15}(\d[\d.-]{3,14}\d)/i.exec(crudo);
+  if (rotulado && largo(rotulado[1])) return rotulado[1];
+  if (BM_RE_CALIFICA_NUMERO.test(crudo)) return '';
+  const re = /(?<![\d.-])\d[\d.-]{3,14}\d(?![\d.-])/g;
+  let m;
+  while ((m = re.exec(crudo)) !== null) { if (largo(m[0]) && !/^[67]\d{7}$/.test(m[0].replace(/\D/g, ''))) return m[0]; }
+  return '';
+}
+function bmFlotaDelTexto(texto) {
+  const m = /\b(?:flota|terminal|empresa)\s+(?:de\s+)?([\p{L}][\p{L} ]{2,40}?)(?=\s*(?:[,.;]|$|\by\b|\bmi\b|\bciudad\b))/iu.exec(String(texto === undefined || texto === null ? '' : texto));
+  return m ? m[1].trim() : '';
+}
+// La ciudad de destino: «a/en/hasta/para <Ciudad>», «ciudad <Ciudad>», o la que sigue a la cifra del CI («4412345 Cochabamba»). Devuelve { ciudad, suelta }: `suelta` es la respuesta corta a «¿ciudad?» (un solo mensaje que empieza en mayúscula) y solo se admite
+// cuando el asistente la pidió (`sueltaMax` = cuántas palabras admite: 0 ninguna; 1 si ya se sabe el CI; 3 si ya se sabe el nombre; sin eso, esa respuesta bien puede ser el nombre).
+function bmCiudadDelTexto(texto, sueltaMax) {
+  const crudo = String(texto === undefined || texto === null ? '' : texto);
+  const mayus = (t) => t.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+  let m = /\b(?:a|en|para|hasta|ciudad(?: de)?)\s+([A-ZÁÉÍÓÚÑ][\p{L}]+(?: [A-ZÁÉÍÓÚÑ][\p{L}]+)?)/u.exec(crudo);
+  if (m) return { ciudad: m[1], suelta: false };
+  m = /\d[\d.-]{3,14}\d\s+([\p{L}]{3,}(?: [\p{L}]{3,})?)(?=\s*(?:[,.;]|$)|\s+(?:flota|terminal|empresa)\b)/iu.exec(crudo);
+  if (m) return { ciudad: mayus(m[1]), suelta: false };
+  if (sueltaMax > 0) { m = /^\s*([A-ZÁÉÍÓÚÑ][\p{L}]{2,}(?: [A-ZÁÉÍÓÚÑ]?[\p{L}]{2,}){0,2})\s*[.]?\s*$/u.exec(crudo); if (m && m[1].split(' ').length <= sueltaMax) return { ciudad: mayus(m[1]), suelta: true }; }
+  return { ciudad: '', suelta: false };
+}
+// LO QUE ESTE TURNO AGREGA A LA ENTREGA. `nueva` es la `entrega` del modelo (dato no confiable); `estado` = { esperaNombre, esperaCiudad, modoPedido, mercado } sale de `f.hist` y de la ficha.
+// Devuelve { entrega (solo lo aceptado, para `bmMezclarEntrega`), consulta, reconocido, modoRechazado }: `reconocido` es que el CÓDIGO leyó un dato (el modo o un dato del envío) y entonces un `quiereHablar` del modelo no desvía el pedido; un nombre
+// NUNCA lo vuelve reconocido (un nombre capturado no basta para ignorar un `quiereHablar`). `modoRechazado`: el modelo propuso un modo que el código no fijó (su texto ya no es cierto).
+function bmEntregaDeTurno(nueva, antes, texto, modos, estado) {
+  const m = cbEsObjeto(nueva) ? nueva : {};
   const a = bmEntregaDeFicha(antes);
+  const st = cbEsObjeto(estado) ? estado : {};
+  const crudo = String(texto === undefined || texto === null ? '' : texto);
+  const nulo = { entrega: {}, consulta: false, reconocido: false, modoRechazado: false };
+  // El mensaje del SITIO («El precio final y el envío se confirman por WhatsApp»): «envío» ahí no es una elección del cliente.
+  if (crudo.replace(BM_LEYENDA_SITIO, ' ') !== crudo) return nulo;
+  if (bmEsConsulta(crudo)) return Object.assign({}, nulo, { consulta: true });   // una consulta nunca es un dato
   const lista = modos.length ? modos : BM_MODOS_DEFECTO;
-  const norm = bmNorm(texto);
-  // El mensaje del SITIO trae la leyenda «El precio final y el envío se confirman por WhatsApp»: «envío» ahí NO es una elección del cliente (reclamo de Andres, 24/11/2026: el pedido del carrito se tomaba como envío y nunca ofrecía el retiro en tienda).
-  const esSitio = /el precio final y el envio se confirman|total referencial/.test(norm);
-  if (esSitio) delete n.modo;
-  const modoNuevo = (typeof n.modo === 'string' && n.modo.trim() !== '') ? n.modo : '';
-  let modo = a.modo !== '' ? a.modo : modoNuevo;
-  // Lo que el cliente DICE este turno manda sobre lo anterior («recojo en tienda» tras un envío supuesto); una pregunta («¿envío o retiro?») no elige nada.
-  // Una CONSULTA (con o sin «?», con o sin tildes: costo, precio, cuánto, garantía, plazo…) no elige nada ni cuenta como «reconocida»: «cuánto cuesta el envío a Tarija» pregunta, no elige el envío.
-  // Solo lo que ESCRIBIÓ el cliente: la leyenda del mensaje del sitio («El precio final y el envío se confirman por WhatsApp», «total referencial») no es una consulta.
-  const delCliente = norm.replace(/el precio final y el envio se confirman por whatsapp/g, ' ').replace(/total referencial/g, ' ');
-  const textoCliente = String(texto || '').replace(/El precio final y el env[ií]o se confirman por WhatsApp/gi, ' ');
-  const permiteFactura = esperaNombre === true && a.nombre === '' && delCliente.trim().split(/\s+/).length >= 2;   // «Ana Factura» tras pedir el nombre: «factura» es un apellido
-  const consulta = /\?/.test(textoCliente) || new RegExp('\\b(cuanto|cuanta|cuantos|cuantas|cuesta|cuestan|costo|costos|precio|precios|tarifa|tarifas|garantia|garantias|plazo|plazos|demora|demoran|tarda|tardan|descuento|descuentos' + (permiteFactura ? '' : '|factura') + ')\\b').test(delCliente);
-  const dicho = consulta ? '' : norm.replace(/el precio final y el envio se confirman por whatsapp/g, ' ');
-  const hallado = dicho === '' ? '' : (bmEsRetiro(dicho) ? lista.find((m) => bmEsRetiro(m)) : (bmEsEnvio(dicho) ? lista.find((m) => bmEsEnvio(m)) : '')) || '';
-  if (hallado !== '' && !esSitio) modo = hallado;
-  if (modo !== '' && modo !== a.modo && (modoNuevo === '' || hallado !== '')) n.modo = modo;
-  let capturado = false;
-  const nombreNuevo = typeof n.nombre === 'string' && n.nombre.trim() !== '';
-  // REGLA ÚNICA (3.ª revisión independiente, 24/11/2026): un texto libre vale como nombre SOLO si el último mensaje del asistente PIDIÓ el nombre (`esperaNombre`), sea de una o de varias palabras; con el retiro basta una palabra,
-  // con el envío se piden 2 (se pregunta también la ciudad y la flota). Y un nombre capturado NUNCA basta por sí solo para ignorar el `quiereHablar` del modelo. Las listas de palabras solo afinan; decide el ESTADO.
-  // Excepción ESTRUCTURAL (no una lista de palabras): un mensaje de DATOS —varios tramos separados por coma o punto y coma Y una cifra de 5 o más dígitos o el modo de entrega dicho— trae el nombre en su primer tramo, de 2 palabras o más.
-  const mensajeDeDatos = !esSitio && /[,;]/.test(String(texto || '')) && (hallado !== '' || /\d{5,}/.test(String(texto || '')));
-  if (modo !== '' && a.nombre === '' && !nombreNuevo && (esperaNombre === true || mensajeDeDatos)) {
-    const minimo = esperaNombre === true && bmEsRetiro(modo) ? 1 : 2;
-    let nom = bmNombreDeRespuesta(texto, minimo, permiteFactura);
-    // Varios datos en un mensaje («Silvana Sasaki, 3456291, recojo en tienda»): el nombre es el primer tramo, antes de la coma o de la primera cifra.
-    if (nom === '' && !esSitio) nom = bmNombreDeRespuesta(String(texto || '').split(/[,;]/)[0].replace(/\d.*$/, '').trim(), minimo, permiteFactura);
-    // Una sola palabra que es una palabra de CUALQUIER nombre de pieza del catálogo (con su plural: «Billeteras», «Cuero») es el producto, no el nombre de quien retira.
-    if (nom !== '' && nom.indexOf(' ') < 0) {
-      const raiz = (w) => { const x = bmNorm(w); return x.length > 5 && /s$/.test(x) ? x.slice(0, -1) : x; };
-      const palabrasDelCatalogo = new Set();
-      for (const v of (Array.isArray(vendibles) ? vendibles : [])) for (const w of bmNorm(v.nombre).split(' ')) if (w.length >= 3) palabrasDelCatalogo.add(raiz(w));
-      if (palabrasDelCatalogo.has(raiz(nom))) nom = '';
+  const n = {};
+  let porCodigo = false;
+  const dicho = bmModoDicho(crudo, lista, st.modoPedido === true && a.modo === '');
+  let modo = a.modo;
+  if (dicho !== '' && dicho !== a.modo) { modo = dicho; n.modo = dicho; porCodigo = true; }
+  const modoRechazado = typeof m.modo === 'string' && m.modo.trim() !== '' && n.modo === undefined && a.modo === '';
+  const envio = bmEsEnvio(modo);
+  // El nombre: solo si el asistente lo pidió (o, en un mensaje de DATOS con comas, se fijó el modo que el asistente acababa de pedir: el nombre viene en ese mismo mensaje).
+  const pidioNombre = st.esperaNombre === true || (st.modoPedido === true && n.modo !== undefined && /[,;]/.test(crudo));
+  const nombre = pidioNombre && modo !== '' ? bmNombreValido(m.nombre, crudo, bmEsRetiro(modo) ? 1 : 2) : '';
+  if (nombre !== '' && nombre !== a.nombre) n.nombre = nombre;
+  if (envio) {
+    if (a.documento === '') { const d = bmCiDelTexto(crudo); if (d !== '') { n.documento = d; porCodigo = true; } else { const dm = bmCiDelTexto(typeof m.documento === 'string' ? m.documento : ''); const ok = dm !== '' && bmNorm(crudo).replace(/ /g, '').includes(dm.replace(/\D/g, '')) ? dm : ''; if (ok !== '') n.documento = ok; } }
+    if (a.flota === '') { const f = bmFlotaDelTexto(crudo); if (f !== '') { n.flota = f; porCodigo = true; } else { const fm = bmEnTexto(m.flota, crudo, 60); if (fm !== '') n.flota = fm; } }
+    if (a.ciudad === '') {
+      // La respuesta corta a «¿ciudad?» solo cuenta cuando ya se sabía el nombre (3 palabras) o el CI (1 palabra); si no, esa respuesta es el nombre.
+      const c = bmCiudadDelTexto(crudo, st.esperaCiudad !== true ? 0 : (a.nombre !== '' ? 3 : (a.documento !== '' ? 1 : 0)));
+      const cm = bmEnTexto(m.ciudad, crudo, 40);
+      if (c.ciudad !== '') n.ciudad = c.ciudad;
+      else if (cm !== '' && !/\d/.test(cm)) n.ciudad = cm;
     }
-    if (nom !== '') { n.nombre = nom; capturado = true; }
-  }
-  // Datos del ENVÍO dichos dentro de una frase: el modelo a veces no los repite en su JSON (humo: «Mi nombre es Juan Pérez, mi CI es …, flota …» y el pedido volvía a pedirlos).
-  const crudo = String(texto || '');
-  const vacio = (k) => (typeof n[k] !== 'string' || n[k].trim() === '') && a[k] === '';
-  if (vacio('nombre')) { const m = /(?:mi nombre es|me llamo|a nombre de|soy)\s+([\p{L}][\p{L} .'-]{2,40}?)(?=\s*(?:[,.;]|$|\bmi\b|\by\b|\bci\b|\bdni\b|\bcarnet\b|\bcedula\b))/iu.exec(crudo); if (m && bmNombreDeRespuesta(m[1]) !== '') { n.nombre = m[1].trim(); capturado = true; } }
-  if (vacio('documento')) { const m = /\b(?:c\.?i\.?|dni|carnet(?: de identidad)?|cedula)\b\D{0,15}(\d[\d.-]{4,13})/i.exec(crudo); if (m) n.documento = m[1]; }
-  if (vacio('flota')) { const m = /\b(?:flota|terminal|empresa)\s+(?:de\s+)?([\p{L}][\p{L} ]{2,40}?)(?=\s*(?:[,.;]|$|\by\b|\bmi\b|\bciudad\b))/iu.exec(crudo); if (m) n.flota = m[1].trim(); }
-  if (vacio('ciudad') && bmEsEnvio(modo) && !consulta) { const m = /\b(?:a|en|para|hasta)\s+([A-ZÁÉÍÓÚÑ][\p{L}]+(?: [A-ZÁÉÍÓÚÑ][\p{L}]+)?)/u.exec(crudo); if (m && !/^(Gracias|Hola|Buenas|Mi|Sí|Si)$/.test(m[1])) n.ciudad = m[1]; }
-  // Respuestas SIN palabra clave (humo de Andres, 23/11/2026: «Andres 2441214 yacuiba. Flota bolivar» y luego «2441214»: el CI y la ciudad se volvían a pedir cuatro veces).
-  // Con el ENVÍO elegido y el dato todavía vacío, la pregunta que el cliente acaba de leer decide: un número de 5 a 13 cifras SOLO, o tras el nombre, es el documento (nunca con «teléfono», «celular», «NIT» o «Bs» antes);
-  // y la ciudad es la palabra (o las dos) que sigue al documento, o la respuesta corta cuando es lo único que falta.
-  if (bmEsEnvio(modo)) {
-    if (vacio('documento') && !/\b(?:tel[eé]fono|tel|celular|cel|whatsapp|nit|bs|monto|cuenta|total|precio)\b\D{0,15}\d/i.test(crudo)) {
-      const m = /^\s*(\d[\d.-]{3,11}\d)\s*$/.exec(crudo) || /^\s*(\d[\d.-]{3,11}\d)(?=\s+[\p{L}])/u.exec(crudo) || /^[\p{L}][\p{L} .'-]{1,40}?\s+(\d[\d.-]{3,11}\d)(?=\s|[,.;]|$)/u.exec(crudo);
-      // Un número suelto de 8 cifras que empieza con 6 o 7 es, con más probabilidad, un CELULAR: no entra como CI (si es el CI, el cliente lo escribe con «CI»).
-      if (m && !/^[67]\d{7}$/.test(m[1].replace(/\D/g, ''))) n.documento = m[1];
-    }
-    const noCiudad = /^(?:flota|terminal|empresa|gracias|hola|buenas|buenos|si|no|ci|dni|mi|el|la|por|favor|ok|listo|claro|quiero|persona)$/i;
-    const mayus = (t) => t.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-    if (vacio('ciudad') && bmEsEnvio(modo) && !consulta) {
-      let c = '';
-      const d = /\d[\d.-]{3,11}\d\s+([\p{L}]{3,}(?: [\p{L}]{3,})?)(?=\s*(?:[,.;]|$)|\s+(?:flota|terminal|empresa)\b)/iu.exec(crudo);
-      if (d) c = d[1];
-      else {
-        const sola = (typeof n.documento === 'string' && n.documento !== '') || a.documento !== '';
-        const flota = (typeof n.flota === 'string' && n.flota.trim() !== '') || a.flota !== '';
-        const nom = (typeof n.nombre === 'string' && n.nombre.trim() !== '') || a.nombre !== '';
-        const corta = /^\s*([\p{L}]{3,}(?: [\p{L}]{3,})?)\s*[.]?\s*$/u.exec(crudo);
-        if (sola && flota && nom && corta) c = corta[1];
-      }
-      const primera = c.split(' ')[0] || '';
-      if (c !== '' && !noCiudad.test(primera)) n.ciudad = mayus(c);
+    if (st.mercado === 'AR') {
+      for (const [k, max] of [['direccion', 120], ['cp', 10], ['provincia', 40]]) { const v = bmEnTexto(m[k], crudo, max); if (v !== '' && a[k] === '') { n[k] = v; porCodigo = true; } }
     }
   }
-  // ¿El código reconoció algo en ESTE mensaje? El modo dicho (`hallado`), el nombre o cualquier dato de la entrega que el código llenó y el modelo no propuso: un `quiereHablar` del modelo en ese turno no desvía el pedido.
-  const porCodigo = !consulta && ((hallado !== '' && !esSitio && hallado !== a.modo) || ['documento', 'flota', 'direccion', 'cp', 'provincia'].some((k) => typeof n[k] === 'string' && n[k].trim() !== '' && n[k] !== delModelo[k] && a[k] !== n[k]));
-  return { entrega: n, capturado: capturado, reconocido: porCodigo };
+  return { entrega: n, consulta: false, reconocido: porCodigo, modoRechazado: modoRechazado };
 }
 // El mensaje del SITIO («Hola, quiero consultar por estos productos:» con líneas «N x Nombre (cód. id)»): el código lee las líneas y sus códigos contra el catálogo; no depende del modelo.
 function bmLineasDelSitio(texto, vendibles) {
@@ -260,6 +322,22 @@ function bmDireccionPedido(e, mercado) {
   const x = bmEntregaDeFicha(e);
   const partes = bmEsRetiro(x.modo) ? ['Retira ' + x.nombre] : [x.nombre, (mercado === 'AR' ? 'DNI ' : 'CI ') + x.documento, x.flota, x.direccion, x.cp ? 'CP ' + x.cp : '', x.provincia];
   return partes.filter((p) => p !== '' && !/^(CI|DNI) $/.test(p)).join(', ').slice(0, 120);
+}
+// Los DATOS que el cliente ve antes del QR (resumen del pedido listo): el modo, el nombre y, en el envío, CI (DNI en Argentina), ciudad, flota o dirección. Solo lo capturado.
+function bmDatosResumen(e, mercado) {
+  const x = bmEntregaDeFicha(e);
+  const l = [];
+  if (x.modo !== '') l.push('• Entrega: ' + x.modo);
+  if (x.nombre !== '') l.push('• ' + (bmEsRetiro(x.modo) ? 'Retira: ' : 'A nombre de: ') + x.nombre);
+  if (!bmEsRetiro(x.modo)) {
+    if (x.documento !== '') l.push('• ' + (mercado === 'AR' ? 'DNI: ' : 'CI: ') + x.documento);
+    if (x.ciudad !== '') l.push('• Ciudad: ' + x.ciudad);
+    if (x.flota !== '') l.push('• Flota o terminal: ' + x.flota);
+    if (x.direccion !== '') l.push('• Dirección: ' + x.direccion);
+    if (x.cp !== '') l.push('• Código postal: ' + x.cp);
+    if (x.provincia !== '') l.push('• Provincia: ' + x.provincia);
+  }
+  return l.length ? 'Datos de entrega:\n' + l.join('\n') : '';
 }
 function bmEntregaTexto(e) {
   const x = bmEntregaDeFicha(e);
@@ -506,11 +584,8 @@ function bmTextoDeCoincidencias(texto, vendibles, minimo) {
 }
 // Lo que el comercio declaró de su tienda (dato de «Config base»): se dice tal cual; lo que falta NO se inventa (pasa con recepción).
 function bmDatosTienda(base, cfg) {
-  const b = cbEsObjeto(base) ? base : {};
-  const lim = (v) => (typeof v === 'string' && !/^REEMPLAZAR_/.test(v) ? cbLinea(v, 200) : '');
-  const ub = lim(b.ubicacionTienda);
   // El horario: el declarado en «Config base» o, si falta, el DATO COMÚN del comercio (`horarios` de la consola, ya derivado por el servidor como `horarioAtencion`): se carga una sola vez.
-  const ho = lim(b.horarioTienda) || lim(cbEsObjeto(cfg) ? cfg.horarioAtencion : '');
+  const { ubicacion: ub, horario: ho } = bmDatosDeTienda(base, cfg);
   return 'DATOS DE LA TIENDA (los declaró el comercio; si preguntan dónde queda o el horario, responde SOLO con esto y no inventes nada más): ' + (ub !== '' ? 'ubicación: ' + ub + '. ' : 'la ubicación aún no está cargada. ')
     + (ho !== '' ? 'horario: ' + ho + '.' : 'el horario aún no está cargado: si lo preguntan, di que lo consultas con una persona del equipo y pon quiereHablar en true.');
 }
@@ -542,10 +617,12 @@ const BM_ESQUEMA_RESPUESTA = {
   properties: {
     texto: { type: 'STRING' },
     lineas: { type: 'ARRAY', items: { type: 'OBJECT', properties: { id: { type: 'STRING' }, cantidad: { type: 'INTEGER' }, detalle: { type: 'STRING' } }, required: ['id', 'cantidad'] } },
-    entrega: { type: 'OBJECT', properties: { modo: { type: 'STRING' }, ciudad: { type: 'STRING' }, direccion: { type: 'STRING' }, nombre: { type: 'STRING' }, documento: { type: 'STRING' }, cp: { type: 'STRING' }, provincia: { type: 'STRING' }, flota: { type: 'STRING' } } },
+    entrega: { type: 'OBJECT', properties: { modo: { type: 'STRING' }, ciudad: { type: 'STRING' }, direccion: { type: 'STRING' }, nombre: { type: 'STRING' }, documento: { type: 'STRING' }, cp: { type: 'STRING' }, provincia: { type: 'STRING' }, flota: { type: 'STRING' } }, required: ['modo', 'ciudad', 'direccion', 'nombre', 'documento', 'cp', 'provincia', 'flota'] },
     quiereHablar: { type: 'BOOLEAN' },
   },
-  required: ['texto'],
+  // Todos los campos son OBLIGATORIOS (como en Walisuma, 20/11/2026: con `required: ['texto']` el modelo OMITÍA `entrega` y los datos nunca llegaban al código). La cadena vacía es el «no sé» que pide el prompt.
+  required: ['texto', 'lineas', 'entrega', 'quiereHablar'],
+  propertyOrdering: ['texto', 'lineas', 'entrega', 'quiereHablar'],
 };
 function bmCuerpoModelo(c) {
   // Las respuestas anteriores del modelo van en el MISMO formato que se le pide (`{"texto": …}`): con su historial en texto plano imitaba el texto plano y respondía sin JSON (el «inconveniente» de Walisuma, #1032).
@@ -852,14 +929,31 @@ function bmResolverEntregaBoton(c) {
   const modo = bmModoDeBoton(c.t && c.t.seleccionId, c.modos);
   const abierto = c.cobro.modo === 'real' && (c.cobro.pendiente || f.qrHastaMs > c.ahora);
   if (modo === '' || f.carrito.length === 0 || abierto || bmEntregaDeFicha(f.entrega).modo !== '') return bmResolverToqueViejo(c);
-  const resp = { candidates: [{ content: { parts: [{ text: JSON.stringify({ texto: 'Anotado.', lineas: f.carrito.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' })), entrega: { modo: modo } }) }] } }] };
-  const r = bmResolverModelo(Object.assign({}, c, { plan: Object.assign({}, c.plan, { textoCliente: '' }), modeloResp: resp }));
+  const resp = { candidates: [{ content: { parts: [{ text: JSON.stringify({ texto: 'Anotado.', lineas: f.carrito.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' })), entrega: {} }) }] } }] };
+  // El modo lo escribe el CÓDIGO en la ficha de este turno (el modelo no corre y, si corriera, su modo se ignora): `bmResolverModelo` parte de una entrega que ya lo trae.
+  const fichaConModo = Object.assign({}, f, { entrega: Object.assign(bmEntregaDeFicha(f.entrega), { modo: modo }) });
+  const r = bmResolverModelo(Object.assign({}, c, { ficha: fichaConModo, plan: Object.assign({}, c.plan, { textoCliente: '' }), modeloResp: resp }));
   // El texto lo arma el código (nunca el del modelo, que no corrió): qué se anotó y lo que falta, o la confirmación con su botón.
   if (r.tipo === 'modelo') {
     r.texto = 'Anoté la entrega: ' + r.entrega.modo + '. ' + bmTextoDeEstado(r.lineas, r.entrega, false, c, r.confirmable === true);
     r.sinRedaccion = false; r.sinPieza = false; r.resumen = r.lineas.length ? vcResumen(r.lineas) : ''; r.sinModelo = true;
   }
   return r;
+}
+// El toque de «Corregir datos» (`pedido:corregir`): el CÓDIGO borra el nombre, el CI, la ciudad, la flota y lo demás de la entrega (CONSERVA el modo) y vuelve a pedir lo que falta, SIN modelo. Un id inventado, un pedido vacío, un QR abierto o un modo aún sin elegir no hacen nada (`toque_viejo`).
+function bmResolverCorregir(c) {
+  const f = c.ficha;
+  const e = bmEntregaDeFicha(f.entrega);
+  const abierto = c.cobro.modo === 'real' && (c.cobro.pendiente || f.qrHastaMs > c.ahora);
+  if (c.t && c.t.seleccionId !== BM_ID_CORREGIR) return bmResolverToqueViejo(c);
+  if (f.carrito.length === 0 || abierto || e.modo === '') return bmResolverToqueViejo(c);
+  const lineas = vcLineas(f.carrito, c.vendibles).lineas;
+  if (lineas.length === 0) return bmResolverToqueViejo(c);
+  const limpia = Object.assign(bmEntregaBase(), { modo: e.modo });
+  const conBoton = bmOfreceBotonesDeEntrega(lineas.length, limpia, c.mercado, c.modos, false);
+  const usted = !!(c.base && c.base.tratamiento === 'usted');
+  return { tipo: 'modelo', texto: (usted ? 'Listo, borré sus datos de entrega y conservé el modo (' : 'Listo, borré tus datos de entrega y conservé el modo (') + e.modo + '). ' + bmTextoDeEstado(lineas, limpia, false, c, false),
+    lineas: lineas, entrega: limpia, cierre: false, cambio: false, aviso: null, cancelarCobro: false, sinRedaccion: false, sinPieza: false, resumen: vcResumen(lineas), confirmable: false, botonesEntrega: conBoton, sinModelo: true };
 }
 function bmResolverModelo(c) {
   const f = c.ficha;
@@ -892,8 +986,10 @@ function bmResolverModelo(c) {
   }
   const lineas = fijada.lineas;
   const ultimoAsistente = [...f.hist].reverse().find((x) => x && x.r === 'm');
-  const esperaNombre = !!ultimoAsistente && /nombre/i.test(String(ultimoAsistente.t || ''));
-  const comp = bmCompletarEntrega(j.entrega, f.entrega, p.textoCliente, c.modos, c.vendibles, esperaNombre);
+  // El ESTADO decide qué pidió el asistente en su último mensaje (no el texto del cliente): ¿pidió el nombre? ¿la ciudad? ¿está pidiendo la entrega (hay piezas y falta el modo, con los botones a la vista)?
+  const textoAsistente = ultimoAsistente ? String(ultimoAsistente.t || '') : '';
+  const estadoEntrega = { esperaNombre: /nombre/i.test(textoAsistente), esperaCiudad: /ciudad/i.test(textoAsistente), modoPedido: f.carrito.length > 0 && bmEntregaDeFicha(f.entrega).modo === '', mercado: c.mercado };
+  const comp = bmEntregaDeTurno(j.entrega, f.entrega, p.textoCliente, c.modos, estadoEntrega);
   const entrega = bmMezclarEntrega(f.entrega, comp.entrega, c.modos);
   const cierre = f.cierre || bmQuierePagar(bmNorm(p.textoCliente)) || (cfEsConfirmacion(c.t && c.t.seleccionId, bmLineasParaHuella(f.carrito, c.vendibles), bmEntregaDeFicha(f.entrega), f.pedidos) && f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado) && bmCarritoVigente(f.carrito, c.vendibles));   // el botón «Confirmar pedido» es la orden de cierre SOLO con el pedido que ya estaba listo (el de un mensaje viejo no cierra uno nuevo) (módulo común Pedidos)
   // Con el pedido LISTO (piezas, entrega completa y orden de pagar) lo decide el código: un «quiereHablar» del modelo (p. ej. «el envío lo cotiza la tienda») no lo desvía; el pedido se anota y la tienda recibe el aviso.
@@ -938,9 +1034,15 @@ function bmResolverModelo(c) {
   }
   // Conversación: el texto del modelo, revisado; si no pasa, el fijo. El resumen del pedido (calculado por el código) acompaña cada cambio.
   // Si el código quitó una línea que el modelo propuso, su texto («agregué…») ya no es cierto: el texto lo arma el código (las opciones o el estado del pedido).
-  let texto = (ignoraQuiereHablar || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? bmTextoDeEstado(lineas, entrega, cierre, c, conBoton) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
+  let texto = (ignoraQuiereHablar || comp.modoRechazado === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? bmTextoDeEstado(lineas, entrega, cierre, c, conBoton) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
   // Negar una pieza que el catálogo sí tiene («solo disponemos de la de 9 kg» cuando hay de 9, 15 y 17 kg): el texto lo arma el código con las piezas que coinciden.
   if (texto !== '' && /\b(solo|unicamente)\s+(disponemos|tenemos|contamos|hay|ofrecemos)\b/.test(bmNorm(texto))) { const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1); if (coinc !== '') texto = coinc; }
+  // El asistente PIDE lo que falta con palabras que el estado reconoce en el turno siguiente: si el modelo no mencionó el nombre (o la ciudad) que falta, el código lo agrega.
+  if (texto !== '' && lineas.length > 0 && !abierto && !conBoton && bmEntregaDeFicha(entrega).modo !== '') {
+    const faltantes = bmEntregaFalta(entrega, c.mercado);
+    const normTexto = bmNorm(texto);
+    if ((faltantes.some((x) => /nombre/.test(x)) && !/nombre/.test(normTexto)) || (faltantes.some((x) => /ciudad/.test(x)) && !/ciudad/.test(normTexto))) texto = texto + ' ' + 'Para continuar con su pedido, indíqueme por favor: ' + faltantes.join(', ') + '.';
+  }
   const sinRedaccion = texto === '';
   let sinPieza = false;
   if (sinRedaccion && !lineas.length) {
@@ -968,6 +1070,7 @@ function bmResolver(c) {
   // El toque de «Confirmar pedido» con el pedido listo lo decide el CÓDIGO, sin modelo: la respuesta del modelo es la del carrito tal cual está en la ficha y el cierre sale de `cfEsConfirmacion`.
   if (p.tipo === 'toque_viejo') return bmResolverToqueViejo(c);
   if (p.tipo === 'entrega_boton') return bmResolverEntregaBoton(c);
+  if (p.tipo === 'corregir') return bmResolverCorregir(c);
   if (p.tipo === 'confirmar') return bmResolverModelo(Object.assign({}, c, { modeloResp: { candidates: [{ content: { parts: [{ text: JSON.stringify({ texto: 'Revisando su pedido.', lineas: c.ficha.carrito.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' })) }) }] } }] } }));
   return Object.assign({ aviso: null }, p);
 }
