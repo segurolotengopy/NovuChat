@@ -36,7 +36,8 @@ function pcLineasDelCarrito(carrito, vendibles) {
   for (const i of items) {
     const id = typeof i.id === 'string' ? i.id : '';
     const entro = porId.has(id) && (pedido.get(id) || 0) <= porId.get(id);
-    if (!entro) marca(vcLimpiar(i.nombre, 60));
+    // El NOMBRE sale del catálogo vivo (nunca del texto de la carga, que es dato no confiable: «*PAGO ACREDITADO*»); un id que el catálogo no conoce se nombra «una pieza».
+    if (!entro) { const v = (Array.isArray(vendibles) ? vendibles : []).find((x) => vcObjeto(x) && x.id === id); marca(v && typeof v.nombre === 'string' ? vcLimpiar(v.nombre, 60) : ''); }
   }
   // Más de 50 renglones: lo que sobra NO entra (y se dice), nunca se pierde en silencio. Y lo que `vcLineas` descartó sin que un renglón lo explique también cuenta.
   if (todos.length > 50) marca('otras piezas');
@@ -117,7 +118,7 @@ function pcMercadoCoincide(carrito, mercadoDelTelefono, exigeExterno) {
   const moneda = car.moneda === undefined || car.moneda === null || car.moneda === '' ? '' : car.moneda;
   const mercado = car.mercado === undefined || car.mercado === null || car.mercado === '' ? '' : car.mercado;
   // Bolivia: BOB (o sin moneda, como los tenants de Firestore) y mercado BO (o ausente). Argentina solo existe con fuente externa: ARS, mercado AR y catalogo 'externo', los tres presentes.
-  // `exigeExterno === true`: el flujo SOLO acepta cargas de la fuente externa (p. ej. Casa Bermejo, con NovuTienda): también en Bolivia la carga debe traer `catalogo: 'externo'`. Los tenants de Firestore (Walisuma, Q'Taco) no lo traen.
+  // `exigeExterno === true`: el flujo SOLO acepta cargas de la fuente externa: también en Bolivia la carga debe traer `catalogo: 'externo'`. Los flujos con catálogo propio del comercio no lo traen.
   if (exigeExterno === true && car.catalogo !== 'externo') return false;
   if (m === 'BO') return (moneda === '' || moneda === 'BOB') && (mercado === '' || mercado === 'BO');
   return moneda === 'ARS' && mercado === 'AR' && car.catalogo === 'externo';

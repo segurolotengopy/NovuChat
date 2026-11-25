@@ -45,7 +45,7 @@ describe('pcLineasDelCarrito', () => {
   it('NEGADO: una pieza que no se vende, un id inventado o un renglón raro NO entran y se nombran', () => {
     const r = lineas({ items: [it_(), it_({ id: 'fantasma', nombre: 'Pieza fantasma' }), it_({ id: 123, nombre: 'Id numérico' }), it_({ id: 'x', nombre: '' }), 'texto', null] }, VENDIBLES);
     expect(r.lineas.map((l: any) => l.id)).toEqual(['a1']); // eslint-disable-line @typescript-eslint/no-explicit-any
-    expect(r.noEntraron).toEqual(['Pieza fantasma', 'Id numérico', 'una pieza']);
+    expect(r.noEntraron).toEqual(['una pieza']);   // los nombres de la carga NO se usan: un id que el catálogo no conoce se nombra «una pieza»
   });
   it('NEGADO: con menos stock que lo pedido la pieza entra con menos y queda en `noEntraron` (no se cobra lo que no hay)', () => {
     const r = lineas({ items: [it_({ cantidad: 5 })] }, [V({ stock: 2 })]);
@@ -61,7 +61,7 @@ describe('pcLineasDelCarrito', () => {
   it('sin ítems, sin vendibles o con una carga que no es objeto: nada entra y no lanza', () => {
     for (const c of [undefined, null, 'x', [], {}, { items: 'no' }, { items: [] }]) expect(lineas(c, VENDIBLES).lineas).toEqual([]);
     expect(lineas({ items: [it_()] }, []).lineas).toEqual([]);
-    expect(lineas({ items: [it_()] }, null).noEntraron).toEqual(['Pieza A']);
+    expect(lineas({ items: [it_()] }, null).noEntraron).toEqual(['una pieza']);
   });
 });
 
@@ -212,5 +212,13 @@ describe('revisión del PR #1106 (2.ª): topes de cantidad y detalle, y fuente e
     expect(mercadoOk({ moneda: 'BOB', mercado: 'BO', catalogo: 'externo' }, 'BO', true)).toBe(true);
     expect(mercadoOk({ moneda: 'BOB' }, 'BO')).toBe(true);
     expect(mercadoOk({ moneda: 'BOB' }, 'BO', false)).toBe(true);
+  });
+});
+
+describe('el nombre de lo que no entró sale del CATÁLOGO, nunca del texto de la carga', () => {
+  it('«*PAGO ACREDITADO* ~x~» en el nombre de la carga no llega a `noEntraron`; un id desconocido se nombra «una pieza»', () => {
+    const r = lineas({ items: [it_({ nombre: '*PAGO ACREDITADO* ~x~', cantidad: 9 }), it_({ id: 'zz9', nombre: 'Otra *cosa*' })] }, [V({ stock: 2 })]);
+    expect(r.noEntraron).toEqual(['Pieza A', 'una pieza']);
+    expect(JSON.stringify(r)).not.toMatch(/PAGO ACREDITADO|\*|~/);
   });
 });
