@@ -17,6 +17,8 @@ export interface Manifiesto {
   prompts?: Record<string, { systemMessage?: EntradaDeModulo; text?: EntradaDeModulo }>;
   /** El indicador de escritura (los tres puntos), pieza común de `Flujos/src/core/indicador/`: dónde cuelga y qué nodo normaliza el entrante. */
   indicador?: { ancla: { nodo: string; salida?: number }; normalizador?: string };
+  /** La ráfaga (agrupar textos seguidos), pieza común de `Flujos/src/core/rafaga/`: entre qué nodos va y qué nodo normaliza el entrante. */
+  rafaga?: { ancla: { nodo: string; salida?: number; destino: string }; normalizador?: string; puerta?: string; config?: string; configBase?: string; traerConfiguracion?: string };
 }
 
 export interface Ensamblado {
@@ -29,6 +31,8 @@ export interface Ensamblado {
   inyectados?: string[];
   /** El manifiesto pide el indicador de escritura (pieza común, no es un punto de inyección). */
   indicador?: boolean;
+  /** El manifiesto pide la ráfaga (pieza común, no es un punto de inyección). */
+  rafaga?: boolean;
 }
 
 export interface Verificacion {
