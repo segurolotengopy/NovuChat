@@ -129,14 +129,16 @@ function bmOfreceBotonesDeEntrega(nPiezas, entrega, mercado, modos, qrAbierto) {
 }
 // Lo que el CÓDIGO reconoce de la respuesta del cliente, para no depender de que el modelo lo repita en su JSON (humo de Silvana: «Silvana Prueba» no se guardaba y el pedido no avanzaba):
 // el modo («lo recojo en tienda», «envíenlo a…») y, ya elegido el modo, el nombre de quien retira o recibe (2 a 5 palabras de letras, sin cifras ni órdenes).
-function bmNombreDeRespuesta(texto, minPalabras) {
+function bmNombreDeRespuesta(texto, minPalabras, permiteFactura) {
   let t = String(texto || '').replace(/\s+/g, ' ').trim().replace(/^(ya te lo dije|ya te dije|ya dije|ya te lo di|mi nombre es|me llamo|soy|a nombre de|el nombre es)\s+/i, '');
   if (t === '' || t.length > 60 || /[^\p{L} .'-]/u.test(t)) return '';
   const palabras = t.split(' ');
   const minimo = minPalabras === 1 ? 1 : 2;
   if (palabras.length < minimo || palabras.length > 5 || (palabras.length === 1 && palabras[0].length < 3)) return '';
-  const n = bmNorm(t);
-  if (/\b(si|no|hola|gracias|confirmo|confirmar|pagar|pago|quiero|catalogo|precio|cuanto|cuesta|envio|enviar|tienda|recojo|retiro|persona|hablar|descuento|factura|buenas|buenos|dias|tardes|noches|favor|ok|okey|okay|listo|claro|perfecto|bueno|buena|dale|genial|correcto|entendido|cancelar|cancela|garantia|manana|despues|luego|ahora|nada|humano|humana|vendedor|vendedora|asesor|asesora|agente|operador|operadora|encargado|encargada|alguien|excelente|espera|esperar|precio|precios|costo|costos|tarifa|cuanto|gracia|saludos|disculpa|perdon|ayuda|informacion|consulta|pedido|catalogo|envios|oferta|promocion|cambio|devolucion|reclamo)\b/.test(n)) return '';
+  let n = bmNorm(t);
+  // «Factura» como apellido: vale cuando se pidió el nombre y vienen 2 o más palabras (el que llama lo permite).
+  if (permiteFactura === true && palabras.length >= 2) n = n.replace(/\bfactura\b/g, ' ');
+  if (/\b(si|no|hola|gracias|confirmo|confirmar|pagar|pago|quiero|catalogo|precio|cuanto|cuesta|envio|enviar|tienda|recojo|retiro|persona|hablar|descuento|factura|buenas|buenos|dias|tardes|noches|favor|ok|okey|okay|listo|claro|perfecto|bueno|buena|dale|genial|correcto|entendido|cancelar|cancela|garantia|manana|despues|luego|ahora|nada|humano|humana|vendedor|vendedora|asesor|asesora|agente|operador|operadora|encargado|encargada|alguien|excelente|espera|esperar|precio|precios|costo|costos|tarifa|cuanto|gracia|saludos|disculpa|perdon|ayuda|informacion|consulta|pedido|catalogo|envios|oferta|promocion|cambio|devolucion|reclamo|efectivo|transferencia|transferencias|tarjeta|tarjetas|qr|deposito|cancelo|cancele|cancelado|pagado|chau|chao|adios|hasta|bien|todo|todos|tienen|tienes|tiene|aceptan|aceptas|acepta|stock|otro|otra|otros|otras|color|colores|medida|medidas|talla|tamano|disponible|disponibles|mas|menos|cual|cuales|donde|cuando|como|porque|que|quien)\b/.test(n)) return '';
   return t;
 }
 function bmCompletarEntrega(nueva, antes, texto, modos, vendibles, esperaNombre) {
@@ -152,23 +154,34 @@ function bmCompletarEntrega(nueva, antes, texto, modos, vendibles, esperaNombre)
   let modo = a.modo !== '' ? a.modo : modoNuevo;
   // Lo que el cliente DICE este turno manda sobre lo anterior («recojo en tienda» tras un envío supuesto); una pregunta («¿envío o retiro?») no elige nada.
   // Una CONSULTA (con o sin «?», con o sin tildes: costo, precio, cuánto, garantía, plazo…) no elige nada ni cuenta como «reconocida»: «cuánto cuesta el envío a Tarija» pregunta, no elige el envío.
-  const consulta = /\?/.test(String(texto || '')) || /\b(cuanto|cuanta|cuantos|cuantas|cuesta|cuestan|costo|costos|precio|precios|tarifa|tarifas|garantia|garantias|plazo|plazos|demora|demoran|tarda|tardan|descuento|descuentos|factura)\b/.test(norm);
+  // Solo lo que ESCRIBIÓ el cliente: la leyenda del mensaje del sitio («El precio final y el envío se confirman por WhatsApp», «total referencial») no es una consulta.
+  const delCliente = norm.replace(/el precio final y el envio se confirman por whatsapp/g, ' ').replace(/total referencial/g, ' ');
+  const textoCliente = String(texto || '').replace(/El precio final y el env[ií]o se confirman por WhatsApp/gi, ' ');
+  const permiteFactura = esperaNombre === true && a.nombre === '' && delCliente.trim().split(/\s+/).length >= 2;   // «Ana Factura» tras pedir el nombre: «factura» es un apellido
+  const consulta = /\?/.test(textoCliente) || new RegExp('\\b(cuanto|cuanta|cuantos|cuantas|cuesta|cuestan|costo|costos|precio|precios|tarifa|tarifas|garantia|garantias|plazo|plazos|demora|demoran|tarda|tardan|descuento|descuentos' + (permiteFactura ? '' : '|factura') + ')\\b').test(delCliente);
   const dicho = consulta ? '' : norm.replace(/el precio final y el envio se confirman por whatsapp/g, ' ');
   const hallado = dicho === '' ? '' : (bmEsRetiro(dicho) ? lista.find((m) => bmEsRetiro(m)) : (bmEsEnvio(dicho) ? lista.find((m) => bmEsEnvio(m)) : '')) || '';
   if (hallado !== '' && !esSitio) modo = hallado;
   if (modo !== '' && modo !== a.modo && (modoNuevo === '' || hallado !== '')) n.modo = modo;
   let capturado = false;
-  let unaPalabra = false;   // un nombre de UNA palabra se guarda, pero NO cuenta como «reconocido»: si el modelo marcó quiereHablar, el turno deriva
   const nombreNuevo = typeof n.nombre === 'string' && n.nombre.trim() !== '';
-  if (modo !== '' && a.nombre === '' && !nombreNuevo) {
-    // Con el RETIRO el nombre es lo único que se pregunta: una sola palabra («Silvana») vale. Con el envío se pregunta más (ciudad, flota), así que se piden 2 palabras.
-    // y SOLO si el asistente acaba de PEDIR el nombre (`esperaNombre`: su último mensaje lo pedía): sin ese estado, «Humano» o «Excelente» no son un nombre.
-    let nom = bmNombreDeRespuesta(texto, bmEsRetiro(modo) && esperaNombre === true ? 1 : 2);
+  // REGLA ÚNICA (3.ª revisión independiente, 24/11/2026): un texto libre vale como nombre SOLO si el último mensaje del asistente PIDIÓ el nombre (`esperaNombre`), sea de una o de varias palabras; con el retiro basta una palabra,
+  // con el envío se piden 2 (se pregunta también la ciudad y la flota). Y un nombre capturado NUNCA basta por sí solo para ignorar el `quiereHablar` del modelo. Las listas de palabras solo afinan; decide el ESTADO.
+  // Excepción ESTRUCTURAL (no una lista de palabras): un mensaje de DATOS —varios tramos separados por coma o punto y coma Y una cifra de 5 o más dígitos o el modo de entrega dicho— trae el nombre en su primer tramo, de 2 palabras o más.
+  const mensajeDeDatos = !esSitio && /[,;]/.test(String(texto || '')) && (hallado !== '' || /\d{5,}/.test(String(texto || '')));
+  if (modo !== '' && a.nombre === '' && !nombreNuevo && (esperaNombre === true || mensajeDeDatos)) {
+    const minimo = esperaNombre === true && bmEsRetiro(modo) ? 1 : 2;
+    let nom = bmNombreDeRespuesta(texto, minimo, permiteFactura);
     // Varios datos en un mensaje («Silvana Sasaki, 3456291, recojo en tienda»): el nombre es el primer tramo, antes de la coma o de la primera cifra.
-    if (nom === '' && !esSitio) nom = bmNombreDeRespuesta(String(texto || '').split(/[,;]/)[0].replace(/\d.*$/, '').trim());
-    // Una sola palabra que es parte del nombre de una pieza del catálogo («Billetera») es el producto, no el nombre de quien retira.
-    if (nom !== '' && nom.indexOf(' ') < 0 && (Array.isArray(vendibles) ? vendibles : []).some((v) => bmNorm(v.nombre).split(' ')[0] === bmNorm(nom))) nom = '';   // solo el TIPO de pieza (la primera palabra de su nombre): «Rosa» o «Luz» sí pueden ser nombres
-    if (nom !== '') { n.nombre = nom; capturado = true; unaPalabra = nom.indexOf(' ') < 0; }
+    if (nom === '' && !esSitio) nom = bmNombreDeRespuesta(String(texto || '').split(/[,;]/)[0].replace(/\d.*$/, '').trim(), minimo, permiteFactura);
+    // Una sola palabra que es una palabra de CUALQUIER nombre de pieza del catálogo (con su plural: «Billeteras», «Cuero») es el producto, no el nombre de quien retira.
+    if (nom !== '' && nom.indexOf(' ') < 0) {
+      const raiz = (w) => { const x = bmNorm(w); return x.length > 5 && /s$/.test(x) ? x.slice(0, -1) : x; };
+      const palabrasDelCatalogo = new Set();
+      for (const v of (Array.isArray(vendibles) ? vendibles : [])) for (const w of bmNorm(v.nombre).split(' ')) if (w.length >= 3) palabrasDelCatalogo.add(raiz(w));
+      if (palabrasDelCatalogo.has(raiz(nom))) nom = '';
+    }
+    if (nom !== '') { n.nombre = nom; capturado = true; }
   }
   // Datos del ENVÍO dichos dentro de una frase: el modelo a veces no los repite en su JSON (humo: «Mi nombre es Juan Pérez, mi CI es …, flota …» y el pedido volvía a pedirlos).
   const crudo = String(texto || '');
@@ -176,7 +189,7 @@ function bmCompletarEntrega(nueva, antes, texto, modos, vendibles, esperaNombre)
   if (vacio('nombre')) { const m = /(?:mi nombre es|me llamo|a nombre de|soy)\s+([\p{L}][\p{L} .'-]{2,40}?)(?=\s*(?:[,.;]|$|\bmi\b|\by\b|\bci\b|\bdni\b|\bcarnet\b|\bcedula\b))/iu.exec(crudo); if (m && bmNombreDeRespuesta(m[1]) !== '') { n.nombre = m[1].trim(); capturado = true; } }
   if (vacio('documento')) { const m = /\b(?:c\.?i\.?|dni|carnet(?: de identidad)?|cedula)\b\D{0,15}(\d[\d.-]{4,13})/i.exec(crudo); if (m) n.documento = m[1]; }
   if (vacio('flota')) { const m = /\b(?:flota|terminal|empresa)\s+(?:de\s+)?([\p{L}][\p{L} ]{2,40}?)(?=\s*(?:[,.;]|$|\by\b|\bmi\b|\bciudad\b))/iu.exec(crudo); if (m) n.flota = m[1].trim(); }
-  if (vacio('ciudad') && bmEsEnvio(modo)) { const m = /\b(?:a|en|para|hasta)\s+([A-ZÁÉÍÓÚÑ][\p{L}]+(?: [A-ZÁÉÍÓÚÑ][\p{L}]+)?)/u.exec(crudo); if (m && !/^(Gracias|Hola|Buenas|Mi|Sí|Si)$/.test(m[1])) n.ciudad = m[1]; }
+  if (vacio('ciudad') && bmEsEnvio(modo) && !consulta) { const m = /\b(?:a|en|para|hasta)\s+([A-ZÁÉÍÓÚÑ][\p{L}]+(?: [A-ZÁÉÍÓÚÑ][\p{L}]+)?)/u.exec(crudo); if (m && !/^(Gracias|Hola|Buenas|Mi|Sí|Si)$/.test(m[1])) n.ciudad = m[1]; }
   // Respuestas SIN palabra clave (humo de Andres, 23/11/2026: «Andres 2441214 yacuiba. Flota bolivar» y luego «2441214»: el CI y la ciudad se volvían a pedir cuatro veces).
   // Con el ENVÍO elegido y el dato todavía vacío, la pregunta que el cliente acaba de leer decide: un número de 5 a 13 cifras SOLO, o tras el nombre, es el documento (nunca con «teléfono», «celular», «NIT» o «Bs» antes);
   // y la ciudad es la palabra (o las dos) que sigue al documento, o la respuesta corta cuando es lo único que falta.
@@ -188,7 +201,7 @@ function bmCompletarEntrega(nueva, antes, texto, modos, vendibles, esperaNombre)
     }
     const noCiudad = /^(?:flota|terminal|empresa|gracias|hola|buenas|buenos|si|no|ci|dni|mi|el|la|por|favor|ok|listo|claro|quiero|persona)$/i;
     const mayus = (t) => t.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-    if (vacio('ciudad') && bmEsEnvio(modo)) {
+    if (vacio('ciudad') && bmEsEnvio(modo) && !consulta) {
       let c = '';
       const d = /\d[\d.-]{3,11}\d\s+([\p{L}]{3,}(?: [\p{L}]{3,})?)(?=\s*(?:[,.;]|$)|\s+(?:flota|terminal|empresa)\b)/iu.exec(crudo);
       if (d) c = d[1];
@@ -204,7 +217,7 @@ function bmCompletarEntrega(nueva, antes, texto, modos, vendibles, esperaNombre)
     }
   }
   // ¿El código reconoció algo en ESTE mensaje? El modo dicho (`hallado`), el nombre o cualquier dato de la entrega que el código llenó y el modelo no propuso: un `quiereHablar` del modelo en ese turno no desvía el pedido.
-  const porCodigo = !consulta && ((capturado && !unaPalabra) || (hallado !== '' && !esSitio && hallado !== a.modo) || ['nombre', 'documento', 'flota', 'direccion', 'cp', 'provincia'].some((k) => !(k === 'nombre' && unaPalabra) && typeof n[k] === 'string' && n[k].trim() !== '' && n[k] !== delModelo[k] && a[k] !== n[k]));
+  const porCodigo = !consulta && ((hallado !== '' && !esSitio && hallado !== a.modo) || ['documento', 'flota', 'direccion', 'cp', 'provincia'].some((k) => typeof n[k] === 'string' && n[k].trim() !== '' && n[k] !== delModelo[k] && a[k] !== n[k]));
   return { entrega: n, capturado: capturado, reconocido: porCodigo };
 }
 // El mensaje del SITIO («Hola, quiero consultar por estos productos:» con líneas «N x Nombre (cód. id)»): el código lee las líneas y sus códigos contra el catálogo; no depende del modelo.
@@ -888,7 +901,8 @@ function bmResolverModelo(c) {
   // Si ESTE turno el código reconoció la elección del modo de entrega o el nombre (o el pedido está listo), el «quiereHablar» del modelo no lo desvía: elegir el recojo o el envío, o dar el nombre, no es pedir una persona.
   // Lo demás (garantía, costo del envío, una pieza que no existe…) sí deriva aunque haya pedido en curso. Entonces el texto del turno lo arma `bmTextoDeEstado`, nunca la redacción del modelo («lo verá una persona del equipo»).
   const ignoraQuiereHablar = j.quiereHablar === true && (listo || (lineas.length > 0 && comp.reconocido === true));
-  if (j.quiereHablar === true && !ignoraQuiereHablar) return bmDerivar(c, 'quiere_hablar');
+  // Al derivar NO se pierden los datos ya capturados (el cliente no los repite): el pedido y la entrega se guardan igual (`guardaPedido`).
+  if (j.quiereHablar === true && !ignoraQuiereHablar) return Object.assign(bmDerivar(c, 'quiere_hablar'), { guardaPedido: true, lineas: lineas, entrega: entrega });
   const cambio = !vcMismoCarrito(antes, lineas);
   // Un número de otro país se atiende como Bolivia y se avisa UNA vez a la tienda (1 mensaje por caso): el aviso sale si aún no se le avisó de este teléfono.
   const avisoPais = c.t && c.t.fueraDePais === true && f.avisoPaisMs === 0 ? bmAvisoConsulta(c, 'otro_pais') : null;

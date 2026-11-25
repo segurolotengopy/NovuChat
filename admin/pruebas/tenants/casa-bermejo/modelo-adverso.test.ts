@@ -42,8 +42,8 @@ describe('recojo en tienda con el modelo adverso', () => {
     expect(ids(t3).join(' ')).toMatch(/pedido:confirmar:/);
     void t0;
   });
-  it('tocar «Confirmar pedido» emite el QR en el mismo turno', () => {
-    const m = crear({ modeloDice: adverso() });
+  it('tocar «Confirmar pedido» emite el QR en el mismo turno (con el modelo sano: un nombre capturado nunca basta para ignorar un quiereHablar)', () => {
+    const m = crear({ modeloDice: sano() });
     hablar(m, ANA, mTexto('quiero una billetera'));
     hablar(m, ANA, mTexto('recojo en tienda'));
     const t2 = hablar(m, ANA, mTexto('Ana Pérez'));
@@ -133,12 +133,16 @@ describe('envío con los datos en mensajes SEPARADOS y el modelo adverso (el cas
     const m = crear({ modeloDice: adverso() });
     hablar(m, ANA, mTexto('quiero una billetera'));
     hablar(m, ANA, mToque('entrega:envio', 'Envío'));
-    for (const dato of ['Ana Pérez', '4412345 Cochabamba', 'flota Bolivar']) {
+    // El nombre solo NO basta para ignorar el quiereHablar (deriva con aviso) pero se GUARDA: el cliente no lo repite. El CI con la ciudad y la flota son datos reconocidos por el código: no desvían.
+    const tn = hablar(m, ANA, mTexto('Ana Pérez'));
+    expect(tn.avisos.length).toBeGreaterThanOrEqual(1);
+    expect(ficha(m).entrega).toMatchObject({ nombre: 'Ana Pérez' });
+    for (const dato of ['4412345 Cochabamba', 'flota Bolivar']) {
       const t = hablar(m, ANA, mTexto(dato));
       expect(t.avisos, dato).toHaveLength(0);
       expect(t.mensajes.map((x) => x.cuerpo).join(' '), dato).not.toMatch(PERSONA);
     }
-    expect(ficha(m).entrega).toMatchObject({ nombre: 'Ana Pérez' });
+    expect(ficha(m).entrega).toMatchObject({ nombre: 'Ana Pérez', documento: '4412345', flota: 'Bolivar' });
     expect(ficha(m).carrito).toHaveLength(1);
   });
   it('NEGADO: un modo que SOLO propuso el modelo (el cliente no lo dijo) más una pregunta de garantía sigue derivando', () => {
@@ -187,6 +191,39 @@ describe('NEGADO: una palabra suelta no es el nombre de quien retira (decide el 
     hablar(m, ANA, mTexto('Mariana'));   // el último mensaje del asistente pidió «a nombre de quién retira»: el estado espera el nombre
     expect(ficha(m).entrega.nombre ?? '').toBe('Mariana');
   });
+});
+
+describe('NEGADO (regla única por ESTADO, 3.ª revisión): un texto libre es el nombre solo si el asistente lo pidió', () => {
+  it('«Aceptan tarjeta», «Tienen stock» y «Otro color» tras el recojo NO quedan como nombre ni llevan a «Confirmar pedido» (modelo adverso y sano)', () => {
+    for (const frase of ['Aceptan tarjeta', 'Tienen stock', 'Otro color']) {
+      for (const modeloDice of [adverso(), sano()]) {
+        const m = crear({ modeloDice });
+        hablar(m, ANA, mTexto('quiero una billetera'));
+        hablar(m, ANA, mTexto('recojo en tienda'));   // el asistente pide «a nombre de quién retira»
+        const t = hablar(m, ANA, mTexto(frase));
+        expect(ficha(m).entrega.nombre ?? '', frase).not.toMatch(/Aceptan|Tienen|Otro/);
+        expect(ids(t).join(' '), frase).not.toMatch(/pedido:confirmar:/);
+      }
+    }
+  });
+  it('con el nombre pedido, «Efectivo», «Transferencia», «Cancelo», «Tarjeta», «Chau», «Bien», «Todo», «Billeteras» y «Cuero» NO son nombres', () => {
+    for (const palabra of ['Efectivo', 'Transferencia', 'Cancelo', 'Tarjeta', 'Chau', 'Bien', 'Todo', 'Billeteras', 'Cuero']) {
+      const m = crear({ modeloDice: sano() });
+      hablar(m, ANA, mTexto('quiero una billetera'));
+      hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
+      hablar(m, ANA, mTexto(palabra));
+      expect(ficha(m).entrega.nombre ?? '', palabra).toBe('');
+    }
+  });
+  it('un nombre capturado NUNCA basta para ignorar un quiereHablar: deriva y guarda el nombre (no se repite)', () => {
+    const m = crear({ modeloDice: adverso() });
+    hablar(m, ANA, mTexto('quiero una billetera'));
+    hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
+    const t = hablar(m, ANA, mTexto('Ana Pérez'));
+    expect(t.avisos.length).toBeGreaterThanOrEqual(1);
+    expect(ficha(m).entrega.nombre).toBe('Ana Pérez');
+  });
+  // «Ana Factura» (apellido): la regla vive en `bmCompletarEntrega` (prueba en venta-casa-bermejo-lib.test.ts); el desvío por código de «factura» en «Decidir turno» es otra capa.
 });
 
 describe('consultas que SIGUEN derivando aunque nombren el modo ya elegido', () => {

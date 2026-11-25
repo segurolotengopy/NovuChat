@@ -556,7 +556,7 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       const r = b('bmCompletarEntrega')({}, {}, 'Silvana Sasaki, 3456291, recojo en tienda', modos);
       expect(r.entrega.modo).toBe('recojo en tienda');
       expect(r.entrega.nombre).toBe('Silvana Sasaki');
-      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Ya te dije Silvana Sasaki', modos).entrega.nombre).toBe('Silvana Sasaki');
+      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Ya te dije Silvana Sasaki', modos, [], true).entrega.nombre).toBe('Silvana Sasaki');
     });
     it('lo que el cliente dice ahora corrige un modo anterior; una pregunta no cambia nada', () => {
       expect(b('bmCompletarEntrega')({}, { modo: 'envío' }, 'mejor recojo en tienda', modos).entrega.modo).toBe('recojo en tienda');
@@ -571,13 +571,18 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       expect(b('bmNombreDeRespuesta')('Mi nombre es Juan Pérez')).toBe('Juan Pérez');
       for (const no of ['Sí, confirmo, quiero pagar', 'Silvana', '1', 'Hola buenas tardes', 'Lo recojo en tienda', 'Juan Pérez 4567890', 'quiero hablar con una persona', '¿Cuánto cuesta el envío?']) expect(b('bmNombreDeRespuesta')(no)).toBe('');
     });
+    const catalogoDePrueba = [{ id: 'p1', nombre: 'Billetera de cuero', precioCentavos: 45000, area: '', descripcion: '' }];
     it('el modo sale del texto («lo recojo en tienda», «envíenlo a Santa Cruz») y el nombre se completa en el turno siguiente, sin que el modelo devuelva `entrega`', () => {
       const c1 = b('bmCompletarEntrega')({}, {}, 'Lo recojo en tienda', modos);
       expect(c1.entrega.modo).toBe('recojo en tienda');
       expect(b('bmCompletarEntrega')({}, {}, 'Envíenlo a Santa Cruz', modos).entrega.modo).toBe('envío');
-      const c2 = b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Silvana Prueba', modos);
+      const c2 = b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Silvana Prueba', modos, [], true);   // el asistente acaba de pedir el nombre (esperaNombre)
       expect(c2).toMatchObject({ capturado: true, entrega: { nombre: 'Silvana Prueba' } });
-      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Sí, confirmo, quiero pagar', modos).capturado).toBe(false);
+      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Sí, confirmo, quiero pagar', modos, [], true).capturado).toBe(false);
+      // REGLA ÚNICA (3.ª revisión): sin que el asistente haya pedido el nombre, ningún texto libre es un nombre
+      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Silvana Prueba', modos).capturado).toBe(false);
+      for (const frase of ['Aceptan tarjeta', 'Tienen stock', 'Otro color', 'Efectivo', 'Transferencia', 'Cancelo', 'Tarjeta', 'Chau', 'Bien', 'Todo', 'Billeteras', 'Cuero', 'Humano', 'Vendedor']) expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, frase, modos, catalogoDePrueba, true).capturado, frase).toBe(false);
+      expect(b('bmCompletarEntrega')({}, { modo: 'recojo en tienda' }, 'Ana Factura', modos, [], true)).toMatchObject({ capturado: true, entrega: { nombre: 'Ana Factura' } });   // «factura» como apellido: se pidió el nombre y vienen 2 palabras
       expect(b('bmCompletarEntrega')({}, {}, 'Silvana Prueba', modos).capturado).toBe(false);   // sin modo elegido, no se toma por nombre
     });
     it('el horario sale del dato común del comercio cuando «Config base» no lo trae, y el de «Config base» manda si existe', () => {
@@ -623,9 +628,13 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       const sinEntrega = (textoCliente: string, ficha: Record<string, unknown>, quiereHablar = false) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha, plan: { tipo: 'modelo', textoCliente }, modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'p1', cantidad: 1 }], quiereHablar }) }));
       const t1 = sinEntrega('Lo recojo en tienda', { carrito: carro });
       expect(t1.entrega.modo).toBe('recojo en tienda');
-      const t2 = sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega }, true);
-      expect(t2.tipo).toBe('modelo');           // el «quiereHablar» del modelo no lo desvía: era la respuesta con el nombre
+      const pidioElNombre = [{ r: 'm', t: 'Para continuar con su pedido, indíqueme por favor: a nombre de quién retira.' }];
+      // 3.ª revisión: un nombre capturado NUNCA basta para ignorar el quiereHablar del modelo: deriva, pero GUARDA lo capturado (el cliente no lo repite).
+      const t2 = sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, hist: pidioElNombre }, true);
+      expect(t2.tipo).toBe('derivar');
+      expect(t2.guardaPedido).toBe(true);
       expect(t2.entrega.nombre).toBe('Silvana Prueba');
+      expect(sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, hist: pidioElNombre }, false).tipo).toBe('modelo');   // con un modelo sano, completa el pedido
       const t3 = sinEntrega('Sí, confirmo, quiero pagar', { carrito: carro, entrega: t2.entrega }, true);
       expect(t3.tipo).toBe('pedido_sin_cobro');
     });
