@@ -46,10 +46,10 @@
  * ya prueban `flujos-umbrales.test.ts` y la suite de cada flujo.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Flujo, CARPETA_FLUJOS, leerFlujo } from './lib/flujo.ts';
-import { flujosDeProduccion } from './lib/flujos-de-cliente.ts';
+import { flujosDeProduccion, flujosVersionados } from './lib/flujos-de-cliente.ts';
 import { atiendeCliente, incluyeVariante, SRC_CORE } from './core/migracion/comprobaciones.ts';
 import { excepcionesDe, idDeFlujo, problemasDeRegla } from './core/migracion/excepciones.ts';
 
@@ -74,9 +74,8 @@ const PORQUE: Record<string, string> = {
 };
 const exceptuado = (archivo: string, nodo: string): boolean => (EXCEPCIONES[archivo] ?? []).includes(nodo);
 
-const archivos = readdirSync(CARPETA_FLUJOS)
-  .filter((a) => a.endsWith('.json') && !a.endsWith('.local.json'))
-  .sort();
+// La lista única descubre también las subcarpetas (`clientes/<t>/`): un flujo mudado no deja de recorrerse.
+const archivos = flujosVersionados();
 
 export const esConversacional = (f: Flujo): boolean =>
   f.nodes.some((n) => n.type === TRIGGER_WHATSAPP) && f.nodes.some((n) => esAgente(n.type));

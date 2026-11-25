@@ -111,7 +111,7 @@ const sha256 = (ruta: string): string => createHash('sha256').update(readFileSyn
 /**
  * Aplica M1 a M7 a UNA fila. Devuelve lo que falla, con el punto delante (`M3: …`); lista vacía = migrado.
  *  - M1: el flujo vive en `Flujos/clientes/<t>/` y esa carpeta tiene `PROPIO.md`.
- *  - M2: su constructor sale 0 con `--verificar` (o el ensamblador dice «idéntico»); sin constructor no hay mudanza.
+ *  - M2: su constructor sale 0 con `--verificar` (o el ensamblador dice «idéntico» PARA LA RUTA de la fila, y exige que tenga manifiesto: «sin manifiesto» no es verificado); sin constructor no hay mudanza.
  *  - M3: el sha256 del JSON es la huella de su fila (una mudanza no cambia un byte).
  *  - M4: cada nodo común presente incluye una variante declarada de core, o tiene excepción vigente.
  *  - M5: NIEGA_IA sale de core, o tiene excepción vigente (solo si el flujo atiende a un cliente).
@@ -130,7 +130,10 @@ export function problemasDeMigrado(fila: Fila, ctx: Contexto = contextoReal()): 
   const partes = fila.armador.split(/\s+/).filter(Boolean);
   if (fila.armador === 'ninguno' || partes.length === 0) p.push('M2: sin constructor ni ensamblador, el JSON no se puede verificar');
   else if (fila.armador === 'ensamblador') {
-    if (ctx.correr('node', [join(ctx.repo, 'admin', 'scripts', 'ensamblar-flujo.mjs'), 'verificar'], join(ctx.repo, 'admin')) !== 0) p.push('M2: el ensamblador no dice «idéntico»');
+    const c = ctx.correr('node', [join(ctx.repo, 'admin', 'scripts', 'ensamblar-flujo.mjs'), 'verificar', '--exigir-manifiesto', ruta], join(ctx.repo, 'admin'));
+    // 3 = el ensamblador no encontró manifiesto para esa ruta; otro distinto de 0 = el JSON difiere de sus módulos (o la llamada falló).
+    if (c === 3) p.push('M2: sin manifiesto para esa ruta (sin manifiesto no cuenta como verificado)');
+    else if (c !== 0) p.push('M2: el ensamblador no dice «idéntico» para esa ruta');
   } else if (ctx.correr('node', [...partes, '--verificar'], carpeta) !== 0) p.push(`M2: «${fila.armador} --verificar» no sale 0`);
 
   if (sha256(archivo) !== fila.huella.replace(/-/g, '')) p.push(`M3: el sha256 de ${ruta} no es la huella de su fila (una mudanza no cambia un byte)`);

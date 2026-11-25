@@ -74,9 +74,23 @@ export function coordenadasValidas(lat: unknown, lng: unknown): { lat: number; l
   return { lat: la, lng: ln };
 }
 
-/** Precio para mostrar. Sin `Intl` pesado: dos decimales solo si hacen falta. */
+/** `1234000` → `1.234.000` (miles con punto, como se lee en Argentina y Bolivia). */
+function conMiles(entero: number): string {
+  return String(entero).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+/**
+ * Precio para mostrar. Sin `Intl` pesado: dos decimales solo si hacen falta.
+ * USD → «$ 12», ARS → «ARS 1.234.000» (miles con punto, decimales con coma), cualquier otra → «Bs 12».
+ */
 export function precioTexto(precio: number | null, moneda: string): string {
   if (precio === null) return 'A consultar';
+  if (moneda === 'ARS') {
+    const [ent = '0', dec] = (Number.isInteger(precio) ? String(precio) : precio.toFixed(2)).split('.');
+    const signo = ent.startsWith('-') ? '-' : '';
+    const n = conMiles(Math.abs(Number(ent)));
+    return `ARS ${signo}${n}${dec ? `,${dec}` : ''}`;
+  }
   const n = Number.isInteger(precio) ? String(precio) : precio.toFixed(2);
   return `${moneda === 'USD' ? '$' : 'Bs'} ${n}`;
 }
