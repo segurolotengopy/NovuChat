@@ -32,13 +32,13 @@ import { NODOS_CODE_DEL_GUARDADO, NODOS_DEL_GUARDADO_SALIENTE } from '../../../F
 import { afterAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 import {
-  RAIZ_FLUJOS, carpetas, ensamblarEnMemoria, ensamblarFlujo, extraerFlujo, leerManifiesto, listarFlujos, listarFlujosConManifiestoEnSubcarpetas, rutaRelativaAFlujos,
+  RAIZ_FLUJOS, carpetas, rutaDentroDe, ensamblarEnMemoria, ensamblarFlujo, extraerFlujo, leerManifiesto, listarFlujos, listarFlujosConManifiestoEnSubcarpetas, rutaRelativaAFlujos,
   manifiestoInicial, rutaDeManifiesto, slug, verificarFlujo,
 } from '../../scripts/ensamblar-flujo.mjs';
 import { entornoDelEmulador } from './entorno-del-hijo.ts';
@@ -573,13 +573,27 @@ describe('10. Flujos en subcarpetas: el manifiesto lleva la ruta relativa a Fluj
     expect(rutaRelativaAFlujos('/a/b/Flujos/clientes/x/y.json')).toBe('clientes/x/y.json');
     expect(rutaRelativaAFlujos('demo-b-venta-cobro.json')).toBe('demo-b-venta-cobro.json');
     // Negando (revisión de seguridad del #1103): ninguna ruta sale de Flujos/.
-    for (const fuera of ['../admin/package.json', 'Flujos/../../x.json', 'clientes/../../x.json', '/etc/passwd', '.']) {
+    for (const fuera of ['../admin/package.json', 'Flujos/../../x.json', 'clientes/../../x.json', '/etc/passwd', '.', '..x/../../y.json']) {
       expect(() => rutaRelativaAFlujos(fuera), fuera).toThrow(/fuera de Flujos/);
     }
+    // Solo se recorta una carpeta llamada exactamente `Flujos/`: `MisFlujos/` es parte de la ruta, dentro de Flujos/.
+    expect(rutaRelativaAFlujos('MisFlujos/x.json')).toBe('MisFlujos/x.json');
+    expect(rutaRelativaAFlujos('/r/Flujos/MisFlujos/x.json')).toBe('MisFlujos/x.json');
+    // Las funciones exportadas también se niegan a salir (no solo la CLI), y un enlace simbólico se juzga por su destino.
+    const dir = copiaDeFlujos();
+    expect(() => verificarFlujo('../fuera.json', dir)).toThrow(/fuera de/);
+    expect(() => leerManifiesto('../../fuera.json', dir)).toThrow(/fuera de/);
+    const afuera = mkdtempSync(join(tmpdir(), 'novuchat-afuera-'));
+    temporales.push(afuera);
+    writeFileSync(join(afuera, 'x.json'), '{"nodes":[],"connections":{}}');
+    symlinkSync(afuera, join(dir, 'enlace'));
+    expect(() => rutaDentroDe(dir, 'enlace/x.json')).toThrow(/enlace simbólico/);
+    expect(() => verificarFlujo('enlace/x.json', dir)).toThrow(/fuera de/);
+    expect(rutaDentroDe(dir, 'clientes/nuevo/no-existe.json')).toBe(join(dir, 'clientes/nuevo/no-existe.json'));
     expect(() => execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/demo-b-venta-cobro.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8' })).not.toThrow();
     let codigo = 0;
     try { execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/latido-n8n.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8', stdio: 'pipe' }); } catch (e) { codigo = (e as { status: number }).status; }
-    expect(codigo, 'un flujo sin manifiesto no cumple si se exige uno').toBe(1);
+    expect(codigo, 'un flujo sin manifiesto no cumple si se exige uno (salida 3: la causa, distinta de «difiere»)').toBe(3);
     expect(() => execFileSync(process.execPath, [SCRIPT, 'verificar', 'Flujos/latido-n8n.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8' })).not.toThrow();
   });
 });

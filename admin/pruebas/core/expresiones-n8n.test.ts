@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest';
 import { hallazgosDeExpresiones, REGLAS_DE_EXPRESION } from '../../../Flujos/src/core/sin-agente/expresiones.mjs';
 import { crearMundo } from '../lib/n8n-de-mentira';
 import type { Flujo, J } from '../lib/flujo';
-import { flujosDeProduccion, flujosVersionados } from '../lib/flujos-de-cliente';
+import { flujosDeProduccion } from '../lib/flujos-de-cliente';
 import { idDeFlujo } from './migracion/comprobaciones';
 import { problemasDeRegla } from './migracion/excepciones';
 
@@ -29,7 +29,10 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(AQUI, '../../..');
 const versionados = (patron: string): string[] =>
   execFileSync('git', ['ls-files', patron], { cwd: RAIZ, encoding: 'utf8' }).split('\n').filter(Boolean);
-const flujos = flujosVersionados().map((r) => `Flujos/${r}`)
+// `git ls-files 'Flujos/*.json'`: el `*` de git entra en subcarpetas, así que cubre la raíz, `clientes/`, `experimental/` Y LAS
+// PLANTILLAS (`*.plantilla.json`, que la lista única `flujosVersionados()` descarta a propósito). Revisión de Principal del #1103:
+// cambiar esto por la lista única sacaba 13 plantillas con nodos reales de la guardia.
+const flujos = versionados('Flujos/*.json')
   .map((ruta) => { try { return { ruta, flujo: JSON.parse(readFileSync(join(RAIZ, ruta), 'utf8')) as Flujo }; } catch { return null; } })
   .filter((x): x is { ruta: string; flujo: Flujo } => !!x && Array.isArray(x.flujo.nodes));
 const QTACO = JSON.parse(readFileSync(join(RAIZ, 'Flujos/clientes/venta-minima/venta-minima.qtaco.json'), 'utf8')) as Flujo;
@@ -48,6 +51,9 @@ describe('ningún flujo versionado tiene una expresión que el sandbox de n8n re
     expect(flujos.length).toBeGreaterThan(30);
     expect(flujos.some((x) => x.ruta.startsWith('Flujos/clientes/venta-minima/'))).toBe(true);
     expect(flujos.some((x) => x.ruta.startsWith('Flujos/clientes/rroca-ruben/'))).toBe(true);
+    // Las plantillas con nodos también (revisión del #1103): al menos la de la entrada del receptor y una de cliente.
+    expect(flujos.some((x) => x.ruta === 'Flujos/src/core/receptor/entrada-del-receptor.plantilla.json')).toBe(true);
+    expect(flujos.filter((x) => x.ruta.endsWith('.plantilla.json')).length).toBeGreaterThanOrEqual(10);
   });
   for (const { ruta, flujo } of flujos) {
     it(ruta, () => {

@@ -47,6 +47,7 @@ export function slug(nombre: string): string;
 export function listarFlujos(raiz?: string): string[];
 export function listarFlujosConManifiestoEnSubcarpetas(raiz?: string): string[];
 export function rutaRelativaAFlujos(arg: string, raiz?: string): string;
+export function rutaDentroDe(base: string, rel: string): string;
 export function rutaDeManifiesto(archivoFlujo: string, raiz?: string): string;
 export function leerManifiesto(archivoFlujo: string, raiz?: string): Manifiesto | null;
 export function ensamblarEnMemoria(archivoFlujo: string, raiz?: string): Ensamblado;

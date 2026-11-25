@@ -163,9 +163,14 @@ describe('M1 a M7, NEGANDO, en un directorio temporal', () => {
       const ctx = { ...m.ctx, correr: (_c: string, args: string[]) => { llamadas.push(args); return 0; } };
       expect(problemasDeMigrado({ ...m.fila, armador: 'ensamblador' }, ctx)).toEqual([]);
       expect(llamadas[0]?.slice(1)).toEqual(['verificar', '--exigir-manifiesto', 'clientes/x/x.json']);
-      // Con el ensamblador real: esa ruta no existe en el repo (ni tiene manifiesto), y M2 falla.
+      // Con el ensamblador real: esa ruta no existe en el repo, y M2 falla por eso (no por «sin manifiesto»: la causa se nombra bien).
       const real = { ...m.ctx, correr: contextoReal().correr };
-      expect(problemasDeMigrado({ ...m.fila, armador: 'ensamblador' }, real)).toEqual([expect.stringMatching(/^M2:.*sin manifiesto/)]);
+      expect(problemasDeMigrado({ ...m.fila, armador: 'ensamblador' }, real)).toEqual(['M2: el ensamblador no dice «idéntico» para esa ruta']);
+      // Negando: cada causa con su texto. Un JSON que difiere (salida 1) no se confunde con «sin manifiesto» (salida 3).
+      const difiere = { ...m.ctx, correr: () => 1 };
+      expect(problemasDeMigrado({ ...m.fila, armador: 'ensamblador' }, difiere)).toEqual(['M2: el ensamblador no dice «idéntico» para esa ruta']);
+      const sinManifiesto = { ...m.ctx, correr: () => 3 };
+      expect(problemasDeMigrado({ ...m.fila, armador: 'ensamblador' }, sinManifiesto)).toEqual([expect.stringMatching(/^M2: sin manifiesto para esa ruta/)]);
     });
   });
 
