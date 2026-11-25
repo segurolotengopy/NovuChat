@@ -180,6 +180,7 @@ node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --listar
 node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --numero <phone_number_id> --waba <waba_id> --flujo <flujo> --alias <clienteNN>
 # Solo si el comercio vende con catálogo externo (NovuTienda): enciende `config/pedidos.catalogoExterno` (seco primero; luego --aplicar con --respaldo)
 node admin/scripts/plataforma/aplicar-catalogo-externo.mjs --proyecto <proyecto> --tenant <id> --monedas <BOB|ARS|BOB,ARS> [--crear-documento]
+# Sin tener a mano el id del proyecto: `./scripts/catalogo-externo.sh --entorno staging|produccion --tenant <id> --monedas <BOB|ARS|BOB,ARS> [--crear-documento]` (seco por omisión; `--aplicar --confirmo <entorno>` escribe con respaldo en una carpeta 700 fuera del repo; `--revertir <respaldo>`). Saca el proyecto de las credenciales de gcloud y nunca lo imprime.
 # `--crear-documento`: el alta NO crea `config/pedidos`; con esta opción, y solo con --aplicar, el script lo crea con únicamente `catalogoExterno` (create(): falla si ya existe). `--revertir` lo borra solo si sigue idéntico a lo escrito.
 ```
 
