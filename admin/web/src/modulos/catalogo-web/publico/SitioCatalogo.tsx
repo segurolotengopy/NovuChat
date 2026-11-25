@@ -795,15 +795,19 @@ export function cambiarDetalle(carrito: Carrito, clave: string, texto: string): 
   return copia;
 }
 
-interface LineaDelCarrito { clave: string; item: ItemPublico; cantidad: number; detalle: string }
+export interface LineaDelCarrito { clave: string; item: ItemPublico; cantidad: number; detalle: string }
 
-/** Las líneas del carrito que siguen en el catálogo, en el orden del carrito. */
-function lineasDelCarrito(items: ItemPublico[], carrito: Carrito): LineaDelCarrito[] {
-  const porId = new Map(items.map((i) => [i.id, i] as const));
+/**
+ * Las líneas del carrito que siguen en el catálogo, en el ORDEN DEL CATÁLOGO (como antes de B3) y, dentro de cada
+ * ítem, en el orden en que se agregaron sus líneas.
+ */
+export function lineasDelCarrito(items: ItemPublico[], carrito: Carrito): LineaDelCarrito[] {
   const lineas: LineaDelCarrito[] = [];
-  for (const [clave, cantidad] of Object.entries(carrito)) {
-    const item = porId.get(idDeClave(clave));
-    if (item && cantidad > 0) lineas.push({ clave, item, cantidad, detalle: detalleDeClave(clave) });
+  const entradas = Object.entries(carrito);
+  for (const item of items) {
+    for (const [clave, cantidad] of entradas) {
+      if (cantidad > 0 && idDeClave(clave) === item.id) lineas.push({ clave, item, cantidad, detalle: detalleDeClave(clave) });
+    }
   }
   return lineas;
 }

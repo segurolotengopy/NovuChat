@@ -12,7 +12,7 @@ import { Script } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { precioTexto } from '../../../web/src/modulos/catalogo-web/publico/saneo.ts';
 import {
-  cambiarDetalle, cantidadDeItem, ordenarAreas, claveDeLinea, detalleDeClave, detalleLimpio, idDeClave, podarCarrito, sumarItem,
+  cambiarDetalle, cantidadDeItem, lineasDelCarrito, ordenarAreas, claveDeLinea, detalleDeClave, detalleLimpio, idDeClave, podarCarrito, sumarItem,
 } from '../../../web/src/modulos/catalogo-web/publico/SitioCatalogo.tsx';
 import type { ItemPublico } from '../../../web/src/modulos/catalogo-web/publico/tipos.ts';
 import { ejecutar, GLOBALES_FUERA_DEL_SANDBOX } from '../../lib/flujo.ts';
@@ -183,5 +183,18 @@ describe('unirDetalles', () => {
     expect(unirDetalles([])).toBe('');
     expect(unirDetalles(['a'.repeat(50), 'b'.repeat(50)])).toHaveLength(60);
     expect(unirDetalles(['<x> https://m.test [y]'])).not.toMatch(/[<>[\]]|https?:/);
+  });
+});
+
+describe('el pedido se lista en el orden del CATÁLOGO, no en el orden en que se agregó al carrito', () => {
+  const it_ = (id: string): ItemPublico => ({ id, nombre: id, descripcion: '', area: '', precio: 1, moneda: 'BOB', imagenUrl: '' });
+  it('aunque el carrito tenga primero lo último del catálogo', () => {
+    const catalogo = [it_('a'), it_('b'), it_('c')];
+    const carrito = { c: 1, a: 2, [claveDeLinea('b', 'x')]: 1, b: 3 };
+    expect(lineasDelCarrito(catalogo, carrito).map((l) => `${l.item.id}:${l.cantidad}:${l.detalle}`))
+      .toEqual(['a:2:', 'b:1:x', 'b:3:', 'c:1:']); // por ítem del catálogo; dentro de un ítem, por orden de agregado
+  });
+  it('NEGANDO: lo que ya no está en el catálogo o tiene cantidad 0 no aparece', () => {
+    expect(lineasDelCarrito([it_('a')], { fantasma: 1, a: 0 })).toEqual([]);
   });
 });
