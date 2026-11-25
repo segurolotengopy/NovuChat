@@ -18,6 +18,7 @@
   },
   "catalogoUrl": "REEMPLAZAR_URL_CATALOGO",
   "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA",
+  "carritoMarcador": "REEMPLAZAR_RUTA_CARRITO_CASA_BERMEJO",
   "configBase": {
     "waGraphVersion": "v26.0",
     "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_CASA_BERMEJO",
