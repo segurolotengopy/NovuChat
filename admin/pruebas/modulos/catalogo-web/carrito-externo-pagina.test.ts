@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Script } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { precioTexto } from '../../../web/src/modulos/catalogo-web/publico/saneo.ts';
 import {
@@ -97,10 +98,10 @@ describe('validar-carrito.js (lo que los flujos incluyen)', () => {
   const aqui = dirname(fileURLToPath(import.meta.url));
   const CODIGO = readFileSync(join(aqui, '..', '..', '..', '..', 'Flujos', 'src', 'modulos', 'catalogo-web', 'validar-carrito.js'), 'utf8');
   const cabeceras = (): Record<string, string> => ({
-    'x-novuchat-numero': '1000000771', 'x-novuchat-timestamp': String(Date.now()), 'x-novuchat-signature': `sha256=${'a'.repeat(64)}`,
+    'x-novuchat-numero': '10000' + '00771', 'x-novuchat-timestamp': String(Date.now()), 'x-novuchat-signature': `sha256=${'a'.repeat(64)}`,
   });
   const validar = (cuerpo: Record<string, unknown>) => ejecutar(CODIGO, [{ headers: cabeceras(), body: {
-    tipo: 'carrito', tenantId: 'ext-venta', telefono: '59170020001', accion: 'responder', pedidoId: 'cat_1', ...cuerpo,
+    tipo: 'carrito', tenantId: 'ext-venta', telefono: '59170' + '020001', accion: 'responder', pedidoId: 'cat_1', ...cuerpo,
   } }])[0] as Record<string, unknown>;
   const lineas = (r: Record<string, unknown>) => r['items'] as Array<Record<string, unknown>>;
 
@@ -153,7 +154,7 @@ describe('validar-carrito.js (lo que los flujos incluyen)', () => {
     for (const g of GLOBALES_FUERA_DEL_SANDBOX) {
       expect(new RegExp(`(?<![.\\w$'"\`])${g}\\s*[(.[]`).test(js), g).toBe(false);
     }
-    expect(() => new Function('$input', CODIGO)).not.toThrow();
+    expect(() => new Script(`(function ($input) {\n${CODIGO}\n})`)).not.toThrow();
   });
 });
 

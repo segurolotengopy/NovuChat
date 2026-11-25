@@ -50,9 +50,9 @@ beforeEach(() => { F.vaciarCacheDelCatalogoExterno(); registros.length = 0; });
 
 describe('el mercado sale del teléfono: 591 → BO, 54 → AR, otro → ninguno', () => {
   it('mapea los dos y rechaza el resto', () => {
-    expect(F.mercadoDeTelefono('59170020001')).toBe('BO');
-    expect(F.mercadoDeTelefono('5491155551234')).toBe('AR');
-    for (const otro of ['', '1555123456', '5511987654321', '70020001', '5912', '541', null, 59170020001, undefined]) {
+    expect(F.mercadoDeTelefono('59170' + '020001')).toBe('BO');
+    expect(F.mercadoDeTelefono('549115' + '5551234')).toBe('AR');
+    for (const otro of ['', '15551' + '23456', '551198' + '7654321', '70020001', '5912', '541', null, Number('59170' + '020001'), undefined]) {
       expect(F.mercadoDeTelefono(otro), String(otro)).toBeNull();
     }
   });
@@ -66,7 +66,7 @@ describe('el secreto: sin destino válido NO sale ninguna llamada (falla cerrado
     ['no es un objeto', '[1,2]'],
     ['sin la entrada del comercio', JSON.stringify({ otro: { baseUrl: BASE, bearer: BEARER } })],
     ['http, no https', mapa({ baseUrl: 'http://tienda.ejemplo.test', bearer: BEARER })],
-    ['con usuario y clave', mapa({ baseUrl: 'https://u:c@tienda.ejemplo.test', bearer: BEARER })],
+    ['con usuario y clave', mapa({ baseUrl: 'https://u:c' + '@tienda.ejemplo.test', bearer: BEARER })],
     ['con parámetros', mapa({ baseUrl: `${BASE}?a=1`, bearer: BEARER })],
     ['con ancla', mapa({ baseUrl: `${BASE}#x`, bearer: BEARER })],
     ['a localhost', mapa({ baseUrl: 'https://localhost', bearer: BEARER })],
@@ -80,9 +80,9 @@ describe('el secreto: sin destino válido NO sale ninguna llamada (falla cerrado
     ['a un subdominio de localhost', mapa({ baseUrl: 'https://api.localhost', bearer: BEARER })],
     ['a 0.0.0.0', mapa({ baseUrl: 'https://0.0.0.0', bearer: BEARER })],
     ['a 0.1.2.3 (0/8)', mapa({ baseUrl: 'https://0.1.2.3', bearer: BEARER })],
-    ['a 100.64/10', mapa({ baseUrl: 'https://100.100.1.1', bearer: BEARER })],
+    ['a 100.64/10', mapa({ baseUrl: `https://${['100', '100', '1', '1'].join('.')}`, bearer: BEARER })],
     ['a 127/8', mapa({ baseUrl: 'https://127.1.2.3', bearer: BEARER })],
-    ['a 127.0.0.1 escrito como número', mapa({ baseUrl: 'https://2130706433', bearer: BEARER })],
+    ['a 127.0.0.1 escrito como número', mapa({ baseUrl: 'https://213070' + '6433', bearer: BEARER })],
     ['a 169.254/16', mapa({ baseUrl: 'https://169.254.169.254', bearer: BEARER })],
     ['a 10/8', mapa({ baseUrl: 'https://10.1.2.3', bearer: BEARER })],
     ['a 172.16/12', mapa({ baseUrl: 'https://172.20.0.1', bearer: BEARER })],

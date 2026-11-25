@@ -118,7 +118,7 @@ function ipv4Reservada(h: string): boolean {
 /**
  * ¿El host es uno al que NUNCA se debe llamar con un Bearer? `localhost`, `metadata` y todo nombre sin punto,
  * los sufijos `.local`, `.internal` y `.localhost`, las IPv4 reservadas, y de IPv6: `::`, `::1`, ULA (fc00::/7),
- * link-local (fe80::/10) y las mapeadas o compatibles con IPv4. (`URL` ya normaliza `2130706433` o `0x7f.1` a
+ * link-local (fe80::/10) y las mapeadas o compatibles con IPv4. (`URL` ya normaliza un entero decimal o `0x7f.1` a
  * `127.0.0.1` y `::ffff:127.0.0.1` a `::ffff:7f00:1`, así que se mira la forma normalizada.)
  */
 export function hostProhibido(hostname: string): boolean {

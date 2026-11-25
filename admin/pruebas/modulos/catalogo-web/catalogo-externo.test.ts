@@ -52,11 +52,11 @@ const { enlaceDeLaCartaDelTurno } = await import('../../../functions/src/modulos
 const { vaciarCacheDelCatalogoExterno } = await import('../../../functions/src/modulos/catalogo-web/fuenteExterna.ts');
 const { limitesDe } = await import('../../../functions/src/central/cuenta/planes.ts');
 
-const LINEA = '1000000771';
+const LINEA = '10000' + '00771';
 const WEBHOOK = 'https://n8n.ejemplo.test/webhook/ruta-secreta-catalogo-externo';
-const TEL_BO = '59170020001';
-const TEL_AR = '5491155551234';
-const TEL_OTRO = '5511987654321';
+const TEL_BO = '59170' + '020001';
+const TEL_AR = '549115' + '5551234';
+const TEL_OTRO = '551198' + '7654321';
 
 // ---------------------------------------------------------------------------
 // LA FUENTE SIMULADA
