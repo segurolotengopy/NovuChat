@@ -86,8 +86,16 @@ describe('preparar-staging.sh novutienda', () => {
     expect(r.codigo).toBe(0);
     expect(r.salida).toContain('set-iam-policy');
     expect(r.salida).toContain('gcloud secrets create NOVUTIENDA_CONFIRMAR');
+    expect(r.salida).toContain('gcloud secrets create NOVUTIENDA_CATALOGO');
     expect(escrituras()).toEqual([]);
     expect(expresion()).toBe(VIEJA);
+  });
+  it('aplicar crea NOVUTIENDA_CATALOGO con `{}` (sin ningún token) y secretAccessor solo para sa-functions', () => {
+    expect(correr('novutienda', ['--aplicar']).codigo).toBe(0);
+    expect(leer('secreto-NOVUTIENDA_CATALOGO')).toBe('{}');
+    const acc = llamadas().filter((l) => /secrets add-iam-policy-binding NOVUTIENDA_CATALOGO /.test(l));
+    expect(acc).toHaveLength(1);
+    expect(acc[0]).toMatch(/--member=serviceAccount:sa-functions@.*--role=roles\/secretmanager.secretAccessor/);
   });
   it('aplicar: edita la condición en su lugar con el prefijo exacto, sin comodines, y crea el secreto con valor aleatorio', () => {
     const r = correr('novutienda', ['--aplicar']);
