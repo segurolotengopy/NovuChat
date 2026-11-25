@@ -1,3 +1,6 @@
+import { getFirestore } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions';
+import { configExternaDe } from '../pedidos/pedidoDelQr.js';
 import { enlaceParaElFlujo, sePuedeComprar, type EnlaceEmitido } from './catalogoWeb.js';
 
 /**
@@ -27,13 +30,35 @@ export async function enlaceDeLaCartaDelTurno(o: {
   catalogoWebActivo: boolean;
   /** Los documentos del catálogo activo que el turno YA leyó (cero lecturas nuevas). */
   catalogo: readonly { data(): Record<string, unknown> }[];
+  /** Solo para pruebas: sustituye la lectura de `config/pedidos` (devuelve los datos del documento). */
+  leerConfigPedidos?: () => Promise<Record<string, unknown> | undefined>;
 }): Promise<EnlaceDelTurno> {
   try {
+    // FUENTE EXTERNA (B3): un comercio con `config/pedidos.catalogoExterno` no tiene ítems en Firestore que contar.
+    // Por eso `config/pedidos` se lee SOLO cuando el conteo interno de vendibles da 0: un comercio de catálogo
+    // interno (con vendibles) no paga ninguna lectura nueva por turno. El enlace NO llama a la fuente. Si esa
+    // lectura falla, el comercio queda sin catálogo externo (sin vendibles → sin enlace, como antes) y solo se
+    // registra el código del error.
+    const internos = o.catalogo.filter((d) => sePuedeComprar(d.data())).length;
+    let externo = false;
+    if (o.catalogoWebActivo && internos === 0) {
+      try {
+        const doc = o.leerConfigPedidos
+          ? await o.leerConfigPedidos()
+          : (await getFirestore().doc(`tenants/${o.ruta.tenantId}/config/pedidos`).get()).data();
+        externo = configExternaDe(doc) !== null;
+      } catch (e) {
+        const c = (e as { code?: unknown } | null)?.code;
+        logger.warn('catalogoWeb: no se pudo leer config/pedidos; se usa el catálogo interno',
+          { codigo: typeof c === 'string' || typeof c === 'number' ? c : null });
+      }
+    }
     const emitido = await enlaceParaElFlujo({
       ruta: o.ruta,
       telefono: o.telefono,
       catalogoWebActivo: o.catalogoWebActivo,
-      vendibles: o.catalogo.filter((d) => sePuedeComprar(d.data())).length,
+      vendibles: internos,
+      ...(externo ? { catalogoExterno: true } : {}),
     });
     return 'url' in emitido ? { enlace: emitido, motivo: null } : { enlace: null, motivo: emitido.motivo };
   } catch (error) {
