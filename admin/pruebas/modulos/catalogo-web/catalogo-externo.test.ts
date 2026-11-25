@@ -79,7 +79,7 @@ const ITEMS_AR = [
   item({ id: 'buzo', nombre: 'Buzo', moneda: 'ARS', precioCentavos: 5_550_050, stock: 1 }),
 ];
 
-type Comportamiento = 'ok' | 401 | 429 | 503 | 'tiempo' | 'red';
+type Comportamiento = 'ok' | 401 | 429 | 503 | 'tiempo' | 'red' | 'vacio' | 'todo-agotado';
 let comportamiento: Comportamiento = 'ok';
 const llamadasFuente: string[] = [];
 const llamadasWebhook: Array<{ url: string; cuerpo: string; cabeceras: Record<string, string> }> = [];
@@ -94,6 +94,10 @@ function fetchSimulado(url: string | URL | Request, init?: RequestInit): Promise
   if (comportamiento === 'tiempo') return Promise.reject(new DOMException('timeout', 'TimeoutError'));
   if (comportamiento === 'red') return Promise.reject(new TypeError('fetch failed'));
   if (comportamiento !== 'ok') return Promise.resolve(new Response('{}', { status: comportamiento }));
+  if (comportamiento === 'vacio' || comportamiento === 'todo-agotado') {
+    const items = comportamiento === 'vacio' ? [] : ITEMS_BO.map((i) => ({ ...i, disponible: false }));
+    return Promise.resolve(new Response(JSON.stringify({ version: 1, mercado: 'BO', moneda: 'BOB', items }), { status: 200 }));
+  }
   const ar = u.includes('mercado=AR');
   return Promise.resolve(new Response(JSON.stringify(ar
     ? { version: 1, mercado: 'AR', moneda: 'ARS', items: ITEMS_AR }
@@ -250,6 +254,28 @@ describe('la página (catalogoPublico) con fuente externa', () => {
       expect(r.codigo, String(c)).toBe(409);
       expect(r.cuerpo, String(c)).toEqual(NO_DISPONIBLE);
       expect(r.cuerpo).not.toHaveProperty('items');
+    }
+  });
+
+  it('NEGANDO: una fuente con `items:[]` o con TODO `disponible:false` NO es una vitrina vacía: 409 «catálogo no disponible»', async () => {
+    for (const c of ['vacio', 'todo-agotado'] as const) {
+      vaciarCacheDelCatalogoExterno();
+      comportamiento = c;
+      const r = await pagina(await fichaDe(T, TEL_BO));
+      expect(r.codigo, c).toBe(409);
+      expect(r.cuerpo, c).toEqual(NO_DISPONIBLE);
+      expect(r.cuerpo).not.toHaveProperty('items');
+    }
+  });
+
+  it('el checkout con la fuente vacía o agotada tampoco crea nada (409)', async () => {
+    for (const c of ['vacio', 'todo-agotado'] as const) {
+      vaciarCacheDelCatalogoExterno();
+      comportamiento = c;
+      const antes = (await db.collection(`tenants/${T}/pedidos`).get()).size;
+      const r = await checkout(await fichaDe(T, TEL_BO), { items: [{ id: 'polera', cantidad: 1 }], entrega: 'retiro' });
+      expect(r.codigo, c).toBe(409);
+      expect((await db.collection(`tenants/${T}/pedidos`).get()).size, c).toBe(antes);
     }
   });
 
@@ -477,6 +503,24 @@ describe('el enlace del turno: sin contar ítems de Firestore y sin llamar a la 
     const r = await enlaceDeLaCartaDelTurno({ ruta: ruta(T_FS), telefono: '70020003', catalogoWebActivo: true, catalogo: [] });
     expect(r.enlace).toBeNull();
     expect(r.motivo).toBe('sinVendibles');
+  });
+
+  it('NEGANDO: si la lectura de `config/pedidos` FALLA, el comercio de catálogo interno conserva su enlace (como antes) y solo se registra el código', async () => {
+    const vendible = { data: () => ({ nombre: 'x', precio: 10 }) };
+    const lectura = () => Promise.reject(Object.assign(new Error('detalle con datos internos del documento'), { code: 14 }));
+    const r = await enlaceDeLaCartaDelTurno({
+      ruta: ruta(T_FS), telefono: '70020005', catalogoWebActivo: true, catalogo: [vendible], leerConfigPedidos: lectura,
+    });
+    expect(r.motivo).toBeNull();
+    expect(r.enlace?.url).toMatch(/\/c\/[0-9a-f]{32}$/);
+    const registrado = JSON.stringify(registros);
+    expect(registrado).toContain('14');
+    expect(registrado).not.toContain('datos internos');
+    // Y sin ítems vendibles, un fallo de lectura NO inventa enlace: sigue siendo «sin vendibles».
+    const sin = await enlaceDeLaCartaDelTurno({
+      ruta: ruta(T_FS), telefono: '70020006', catalogoWebActivo: true, catalogo: [], leerConfigPedidos: lectura,
+    });
+    expect(sin).toMatchObject({ enlace: null, motivo: 'sinVendibles' });
   });
 
   it('NEGANDO: con el catálogo web apagado no hay enlace aunque sea externo', async () => {

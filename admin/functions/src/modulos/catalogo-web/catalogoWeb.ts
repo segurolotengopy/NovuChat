@@ -49,6 +49,7 @@
  */
 import { onRequest, onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { defineString } from 'firebase-functions/params';
 import { REGION } from '../../core/region.js';
@@ -966,6 +967,15 @@ async function responderCatalogoExterno(
   const fuente = await leerCatalogoExterno(ficha.tenantId, mercado);
   if (!fuente.ok || !monedaAceptada(cfg, fuente.moneda)) { respuesta.status(409).json(SIN_CATALOGO); return; }
 
+  // UNA VITRINA VACÍA NO SE PRESENTA COMO REAL: sin ningún ítem vendible (lista vacía o todo `disponible:false`) la
+  // fuente se trata como no disponible. Un cliente que abre «catálogo» y ve cero productos concluye que no hay
+  // nada; lo honesto es decir que el catálogo no está disponible ahora.
+  const vendibles = fuente.items.filter((i) => hayParaVenderExterno(i));
+  if (vendibles.length === 0) {
+    logger.warn('catalogoExterno', { codigo: 'sin_vendibles' });
+    respuesta.status(409).json(SIN_CATALOGO); return;
+  }
+
   respuesta.set('Cache-Control', 'no-store');
   respuesta.set('X-Content-Type-Options', 'nosniff');
   respuesta.status(200).json({
@@ -987,7 +997,7 @@ async function responderCatalogoExterno(
       aceptaRetiroEnLocal: venta.get('aceptaRetiroEnLocal') !== false,
     },
     ...(venta.get('detallePorLinea') === true ? { detallePorLinea: true } : {}),
-    items: ordenarItemsExternos(fuente.items.filter((i) => hayParaVenderExterno(i)).map(itemPublicoExterno)),
+    items: ordenarItemsExternos(vendibles.map(itemPublicoExterno)),
     caducaEn: ficha.caducaEn.toDate().toISOString(),
   });
 }

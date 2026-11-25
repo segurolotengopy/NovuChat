@@ -338,7 +338,8 @@ valor por defecto de nada.
 3. Con `entrega: 'envio'` el servidor NO inventa costo de envío para un tenant externo (`costoEnvio` = lo de `config/venta`, hoy 0): el envío no se cobra por NovuChat.
 4. `reemplaza`: el flujo, al emitir el QR de este carrito, manda `reemplaza: <pedidoId>` (contrato K2, ya existente en `pedidoDelQr.ts`).
 5. Un carrito con `descartados` no emite QR solo: el flujo ofrece «Confirmar pedido» con el total real (decisión del 23/11).
-6. Costo: 0 mensajes por conversación. Nube: una llamada a la fuente por carga de página y una por checkout.
+6. **Para B4 (precio del QR):** el precio del QR debe salir de «Traer catálogo» EN ESE TURNO, no del caché de 60 s por instancia de `fuenteExterna.ts`; la carga K1 trae `precioCentavos` solo informativo.
+7. Costo: 0 mensajes por conversación. Nube: una llamada a la fuente por carga de página y una por checkout.
 
 ---
 
@@ -361,4 +362,10 @@ valor por defecto de nada.
 
 **Pruebas** (`admin/pruebas/modulos/catalogo-web/`): `fuente-externa.test.ts` (sin red), `catalogo-externo.test.ts` (emulador, `fetch` y secreto simulados) y `carrito-externo-pagina.test.ts`.
 
-**Para despliegue (no hecho aquí).** Crear el secreto `NOVUTIENDA_CATALOGO` y darle acceso a la cuenta de las Functions antes de desplegar: `catalogoPublico` y `checkoutCatalogo` lo declaran en `secrets`. `admin/pruebas/frontera/despliegue.json` cambia (los dos `__endpoint` ganan `secretEnvironmentVariables`): lo regenera la coordinadora con `ACTUALIZAR_DESPLIEGUE=si`. Orden de siempre: primero el flujo que lee los campos nuevos, después Functions y Hosting.
+**Para despliegue.** ORDEN: el secreto `NOVUTIENDA_CATALOGO` y su acceso para `sa-functions` deben existir ANTES de la etiqueta (ya existen, versión 2), porque `catalogoPublico` y `checkoutCatalogo` —Functions de TODOS los comercios— lo declaran en `secrets`: sin él, el despliegue de esas dos falla para todos. `admin/pruebas/frontera/despliegue.json` ya refleja los dos `__endpoint`. Después, el orden de siempre: primero el flujo que lee los campos nuevos, después Functions y Hosting.
+
+**Dos reglas de falla cerrada añadidas.** (a) Una fuente sin ningún ítem vendible (`items:[]` o todo `disponible:false`) NO produce una vitrina vacía: `catalogoPublico` responde 409 `catalogo no disponible` (registra solo `sin_vendibles`); el checkout no crea nada en ese caso. (b) En `enlaceDeLaCartaDelTurno`, si falla la lectura de `config/pedidos` el comercio se trata como de catálogo interno (el comportamiento anterior) y solo se registra el código del error: la lectura nueva no puede quitar el enlace a quien no la necesita.
+
+**Costo de la lectura de `config/pedidos`:** 1 lectura de Firestore por turno de todo comercio con catálogo web encendido (cuando el flujo pide el enlace), y una más por carga de página, checkout y enlace.
+
+**Dependencias del manifiesto.** `registro.ts` ya declara `dependeDe: ['productos', 'pedidos', 'inventario']` para `catalogo-web`; este bloque importa `pedidos/pedidoDelQr` (`configExternaDe`) y `pedidos/comprable`, ambos cubiertos por `pedidos`.
