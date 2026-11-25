@@ -56,7 +56,7 @@ export function accionesDeBloqueo(a: EntradaBloqueo): AccionesBloqueo {
 /** Con el contacto bloqueado no se ofrece tomar ni escribir (devolver sigue permitido: el servidor lo permite siempre). */
 export function accionesSinBloqueadas(acciones: Acciones, bloqueada: boolean): Acciones {
   if (!bloqueada) return acciones;
-  return { ...acciones, sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verEscribir: false };
+  return { ...acciones, sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verRetomar: false, verEscribir: false };
 }
 
 /** El rótulo de la opción del menú: «Teléfonos bloqueados (3)»; sin número todavía, sin paréntesis (no se inventa un cero). */
