@@ -46,7 +46,7 @@ const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
 const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
-const { catalogoPublico, checkoutCatalogo, emitirFicha } =
+const { catalogoPublico, checkoutCatalogo, enlaceCatalogo, emitirFicha } =
   await import('../../../functions/src/modulos/catalogo-web/catalogoWeb.ts');
 const { enlaceDeLaCartaDelTurno } = await import('../../../functions/src/modulos/catalogo-web/alTurno.ts');
 const { vaciarCacheDelCatalogoExterno } = await import('../../../functions/src/modulos/catalogo-web/fuenteExterna.ts');
@@ -505,22 +505,39 @@ describe('el enlace del turno: sin contar ítems de Firestore y sin llamar a la 
     expect(r.motivo).toBe('sinVendibles');
   });
 
-  it('NEGANDO: si la lectura de `config/pedidos` FALLA, el comercio de catálogo interno conserva su enlace (como antes) y solo se registra el código', async () => {
-    const vendible = { data: () => ({ nombre: 'x', precio: 10 }) };
-    const lectura = () => Promise.reject(Object.assign(new Error('detalle con datos internos del documento'), { code: 14 }));
+  const vendible = { data: () => ({ nombre: 'x', precio: 10 }) };
+  const fallida = () => Promise.reject(Object.assign(new Error('detalle con datos internos del documento'), { code: 14 }));
+
+  it('NEGANDO: con vendibles internos la lectura de `config/pedidos` NO ocurre (ni una lectura nueva por turno)', async () => {
+    let lecturas = 0;
     const r = await enlaceDeLaCartaDelTurno({
-      ruta: ruta(T_FS), telefono: '70020005', catalogoWebActivo: true, catalogo: [vendible], leerConfigPedidos: lectura,
+      ruta: ruta(T_FS), telefono: '70020005', catalogoWebActivo: true, catalogo: [vendible],
+      leerConfigPedidos: async () => { lecturas += 1; return undefined; },
     });
     expect(r.motivo).toBeNull();
     expect(r.enlace?.url).toMatch(/\/c\/[0-9a-f]{32}$/);
+    expect(lecturas).toBe(0);
+  });
+
+  it('con 0 vendibles internos se lee UNA vez y, si la fuente es externa, el enlace sale', async () => {
+    let lecturas = 0;
+    const r = await enlaceDeLaCartaDelTurno({
+      ruta: ruta(T), telefono: '70020007', catalogoWebActivo: true, catalogo: [],
+      leerConfigPedidos: async () => { lecturas += 1; return { catalogoExterno: { activo: true, monedas: ['BOB'] } }; },
+    });
+    expect(lecturas).toBe(1);
+    expect(r.enlace?.url).toMatch(/\/c\/[0-9a-f]{32}$/);
+  });
+
+  it('NEGANDO: con 0 vendibles y una lectura que FALLA no hay enlace (sinVendibles) y solo se registra el código', async () => {
+    registros.length = 0;
+    const r = await enlaceDeLaCartaDelTurno({
+      ruta: ruta(T_FS), telefono: '70020006', catalogoWebActivo: true, catalogo: [], leerConfigPedidos: fallida,
+    });
+    expect(r).toMatchObject({ enlace: null, motivo: 'sinVendibles' });
     const registrado = JSON.stringify(registros);
     expect(registrado).toContain('14');
     expect(registrado).not.toContain('datos internos');
-    // Y sin ítems vendibles, un fallo de lectura NO inventa enlace: sigue siendo «sin vendibles».
-    const sin = await enlaceDeLaCartaDelTurno({
-      ruta: ruta(T_FS), telefono: '70020006', catalogoWebActivo: true, catalogo: [], leerConfigPedidos: lectura,
-    });
-    expect(sin).toMatchObject({ enlace: null, motivo: 'sinVendibles' });
   });
 
   it('NEGANDO: con el catálogo web apagado no hay enlace aunque sea externo', async () => {
@@ -615,8 +632,73 @@ describe('el camino de Firestore NO cambió: ni detalle por línea ni consolidac
       const todo = fuente.indexOf('await Promise.all([', desde);
       const cierre = fuente.indexOf(']);', todo);
       expect(todo, marca).toBeGreaterThan(desde);
-      expect(fuente.slice(todo, cierre), marca).toContain('config/pedidos');
+      expect(fuente.slice(todo, cierre), marca).toContain('leerPedidosSeguro');
     }
+  });
+});
+
+// ===========================================================================
+describe('si la lectura NUEVA de `config/pedidos` falla, el comercio de catálogo interno sigue igual (nunca 500)', () => {
+  beforeEach(async () => { await db.doc(`tenants/${T_FS}/catalogo/fs1`).update({ stock: 100 }); });
+
+  /** Hace que SOLO la lectura de `config/pedidos` falle; devuelve cuántas veces se intentó. */
+  function fallarLecturaDePedidos(): { intentos: () => number; restaurar: () => void } {
+    const original = db.doc.bind(db);
+    let n = 0;
+    const espia = vi.spyOn(db, 'doc').mockImplementation(((ruta: string) => {
+      if (String(ruta).endsWith('/config/pedidos')) {
+        return { get: () => { n += 1; return Promise.reject(Object.assign(new Error('detalle interno del documento'), { code: 14 })); } };
+      }
+      return original(ruta);
+    }) as never);
+    return { intentos: () => n, restaurar: () => espia.mockRestore() };
+  }
+
+  it('página: sirve el catálogo de Firestore (200, sin llamar a la fuente) y registra solo el código', async () => {
+    const f = await fichaDe(T_FS, TEL_BO);
+    registros.length = 0;
+    const falla = fallarLecturaDePedidos();
+    try {
+      const r = await pagina(f);
+      expect(r.codigo).toBe(200);
+      expect((r.cuerpo['items'] as Array<{ id: string }>).map((i) => i.id)).toEqual(['fs1']);
+      expect(falla.intentos()).toBeGreaterThan(0);
+      expect(llamadasFuente).toHaveLength(0);
+      expect(JSON.stringify(registros)).not.toContain('detalle interno');
+    } finally { falla.restaurar(); }
+  });
+
+  it('checkout: el pedido entra con el catálogo de Firestore (200), sin 500 y sin marca de externo', async () => {
+    const f = await fichaDe(T_FS, TEL_BO);
+    const falla = fallarLecturaDePedidos();
+    try {
+      const r = await checkout(f, { items: [{ id: 'fs1', cantidad: 1 }], entrega: 'retiro' });
+      expect(r.codigo).toBe(200);
+      expect(await pedidoDe(T_FS, r)).not.toHaveProperty('catalogo');
+      expect(falla.intentos()).toBeGreaterThan(0);
+    } finally { falla.restaurar(); }
+  });
+
+  it('enlace (`enlaceCatalogo`): el enlace sale igual que antes (200 con url y `items` de Firestore)', async () => {
+    const { createHmac } = await import('node:crypto');
+    const cuerpo = { telefono: '70020088' };
+    const crudo = Buffer.from(JSON.stringify(cuerpo));
+    const marca = String(Date.now());
+    const cab: Record<string, string> = {
+      'x-novuchat-numero': LINEA, 'x-novuchat-timestamp': marca,
+      'x-novuchat-signature': `sha256=${createHmac('sha256', ALIAS_VALOR).update(`${marca}.`).update(crudo).digest('hex')}`,
+    };
+    const { r, respuesta } = doble();
+    const falla = fallarLecturaDePedidos();
+    try {
+      await (enlaceCatalogo as unknown as (q: unknown, s: unknown) => Promise<void>)({
+        method: 'POST', body: cuerpo, rawBody: crudo, headers: cab, get: (n: string) => cab[n.toLowerCase()],
+      }, respuesta);
+      expect(r.codigo).toBe(200);
+      expect(String(r.cuerpo['url'])).toMatch(/^https:\/\/catalogo\.ejemplo\.test\/c\/[0-9a-f]{32}$/);
+      expect(r.cuerpo['items']).toBe(1);
+      expect(falla.intentos()).toBeGreaterThan(0);
+    } finally { falla.restaurar(); }
   });
 });
 

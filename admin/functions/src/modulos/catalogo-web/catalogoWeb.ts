@@ -284,8 +284,23 @@ export const fichaVende = (ficha: FichaConCapacidades | null | undefined): boole
  * `activo === true` Y una lista `monedas` con al menos una moneda válida (BOB, ARS). `{activo:true}` sin lista, o con
  * lista vacía, NO es externo en ninguno de los dos lados. Sin el dato, todo el módulo se comporta como siempre.
  */
+/**
+ * Los datos de `config/pedidos`, o `undefined` si la lectura FALLA. Esa lectura es nueva (B3) y no puede tumbar a
+ * los comercios de catálogo interno (500 en la página, el enlace o el checkout): ante un error se trata al comercio
+ * como de catálogo interno —el comportamiento de antes— y se registra SOLO el código del error.
+ */
+const leerPedidosSeguro = (tenantId: string): Promise<Record<string, unknown> | undefined> =>
+  db().doc(`tenants/${tenantId}/config/pedidos`).get().then(
+    (d) => d.data(),
+    (e: unknown) => {
+      const c = (e as { code?: unknown } | null)?.code;
+      logger.warn('catalogoWeb: no se pudo leer config/pedidos; se usa el catálogo interno',
+        { codigo: typeof c === 'string' || typeof c === 'number' ? c : null });
+      return undefined;
+    },
+  );
 const leerFuenteExterna = async (tenantId: string): Promise<ConfigCatalogoExterno | null> =>
-  configExternaDe((await db().doc(`tenants/${tenantId}/config/pedidos`).get()).data());
+  configExternaDe(await leerPedidosSeguro(tenantId));
 
 /** El error que la página y el checkout dan cuando la fuente externa no responde (nunca un catálogo vacío). */
 const SIN_CATALOGO = { error: 'catalogo no disponible' } as const;
@@ -652,9 +667,9 @@ export const enlaceCatalogo = onRequest(
       db().doc(`tenants/${ruta.tenantId}/config/negocio`).get(),
       db().collection(`tenants/${ruta.tenantId}/catalogo`)
         .where('activo', '==', true).limit(501).get(),
-      db().doc(`tenants/${ruta.tenantId}/config/pedidos`).get(),
+      leerPedidosSeguro(ruta.tenantId),
     ]);
-    const catalogo = configExternaDe(pedidosDoc.data()) !== null ? null : catalogoFs;
+    const catalogo = configExternaDe(pedidosDoc) !== null ? null : catalogoFs;
 
     // EL COMERCIO TIENE QUE HABERLO ENCENDIDO. Publicar el catálogo de alguien
     // que no lo pidió es publicar sus precios en una dirección adivinable por
@@ -830,9 +845,9 @@ export const catalogoPublico = onRequest(
       db().collection(`tenants/${ficha.tenantId}/fotosCatalogo`).select().get(),
       numeroPublicoDeLaLinea(ficha),
       // En paralelo con las demás (B3): decide si el catálogo es el de Firestore o el de la fuente externa.
-      db().doc(`tenants/${ficha.tenantId}/config/pedidos`).get(),
+      leerPedidosSeguro(ficha.tenantId),
     ]);
-    const externo = configExternaDe(pedidosDoc.data());
+    const externo = configExternaDe(pedidosDoc);
     if (externo) {
       await responderCatalogoExterno(ficha, externo, { config, venta, marca, whatsapp }, respuesta);
       return;

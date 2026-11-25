@@ -34,12 +34,14 @@ export async function enlaceDeLaCartaDelTurno(o: {
   leerConfigPedidos?: () => Promise<Record<string, unknown> | undefined>;
 }): Promise<EnlaceDelTurno> {
   try {
-    // FUENTE EXTERNA (B3): un comercio con `config/pedidos.catalogoExterno` no tiene ítems en Firestore que contar,
-    // y el enlace NO llama a la fuente (este es el camino caliente de cada turno): una lectura de un documento, y
-    // el enlace sale. Si ESA lectura falla, el comercio se trata como de catálogo interno (el comportamiento de
-    // antes): la lectura nueva no puede quitarle el enlace a quien no la necesita. Solo se registra el código.
+    // FUENTE EXTERNA (B3): un comercio con `config/pedidos.catalogoExterno` no tiene ítems en Firestore que contar.
+    // Por eso `config/pedidos` se lee SOLO cuando el conteo interno de vendibles da 0: un comercio de catálogo
+    // interno (con vendibles) no paga ninguna lectura nueva por turno. El enlace NO llama a la fuente. Si esa
+    // lectura falla, el comercio queda sin catálogo externo (sin vendibles → sin enlace, como antes) y solo se
+    // registra el código del error.
+    const internos = o.catalogo.filter((d) => sePuedeComprar(d.data())).length;
     let externo = false;
-    if (o.catalogoWebActivo) {
+    if (o.catalogoWebActivo && internos === 0) {
       try {
         const doc = o.leerConfigPedidos
           ? await o.leerConfigPedidos()
@@ -55,7 +57,7 @@ export async function enlaceDeLaCartaDelTurno(o: {
       ruta: o.ruta,
       telefono: o.telefono,
       catalogoWebActivo: o.catalogoWebActivo,
-      vendibles: externo ? 0 : o.catalogo.filter((d) => sePuedeComprar(d.data())).length,
+      vendibles: internos,
       ...(externo ? { catalogoExterno: true } : {}),
     });
     return 'url' in emitido ? { enlace: emitido, motivo: null } : { enlace: null, motivo: emitido.motivo };
