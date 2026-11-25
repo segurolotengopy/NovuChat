@@ -67,7 +67,7 @@ let timbreResponde = true;
 const auth = { vigente: true, falla: false };
 const usuarios = new Map<string, Record<string, unknown>>();
 /** Las cifras del plan, inyectadas: core no las conoce. Cada prueba las puede bajar. */
-let limites = { diasEntreRetomadas: 7, porDia: 20, porMes: 100 };
+let limites = { diasEntreRetomadas: 7, porDia: 20, porMes: 100, porMinuto: 10 };
 let llamadasAPlan: Array<[unknown, unknown, unknown]> = [];
 const CALLABLE = crearRetomarConversacion({
   limitesDeRetomar: (plan, tarifa, titularidad) => { llamadasAPlan.push([plan, tarifa, titularidad]); return limites; },
@@ -147,7 +147,7 @@ beforeEach(async () => {
   await ruta();
   await cuenta();
   timbres = []; timbreResponde = true; registros = []; llamadasAPlan = [];
-  limites = { diasEntreRetomadas: 7, porDia: 20, porMes: 100 };
+  limites = { diasEntreRetomadas: 7, porDia: 20, porMes: 100, porMinuto: 10 };
   auth.vigente = true; auth.falla = false; usuarios.clear();
   process.env['SALIDA_PERSONA_RUTAS'] = JSON.stringify({ cliente09: { ruta: URL_TIMBRE, clave: CLAVE_TIMBRE } });
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: { headers: Record<string, string> }) => {
@@ -577,7 +577,7 @@ describe('los topes del plan (D-R3): por día y por mes por comercio, contados e
       limites = malo as typeof limites;
       await rechaza({ code: 'unavailable' });
     }
-    limites = { diasEntreRetomadas: 7, porDia: 20, porMes: 100 };
+    limites = { diasEntreRetomadas: 7, porDia: 20, porMes: 100, porMinuto: 10 };
     await db.doc(`topesDeEnvio/r_${A}`).set({ dia: '2026-11-23', nDia: 'muchos', mes: '2026-11', nMes: 1 });
     const antes = await leerConv();
     expect((await rechazo(retomar(base()))).code).toBe('unavailable');
@@ -803,13 +803,18 @@ describe('el tope por persona y por minuto (revisión R1, punto 3)', () => {
     await conversacion(A, 'wa_591000000304');
     expect(await retomar(base({ conversacionId: 'wa_591000000304', claveIdempotencia: claveN(4) }), ANA, AHORA + MIN)).toMatchObject({ estado: 'pendiente' });
   });
-  it('sin `porMinuto` en el plan rige el predeterminado (10): nunca «sin tope»', async () => {
-    for (let i = 1; i <= 10; i++) {
-      await conversacion(A, `wa_5910000004${String(i).padStart(2, '0')}`);
-      await retomar(base({ conversacionId: `wa_5910000004${String(i).padStart(2, '0')}`, claveIdempotencia: claveN(i) }));
-    }
-    await conversacion(A, 'wa_591000000411');
-    expect(await rechazo(retomar(base({ conversacionId: 'wa_591000000411', claveIdempotencia: claveN(11) })))).toMatchObject({ details: { tope: 'minuto' } });
+  it('NEGATIVA: sin `porMinuto` en el plan, `noDisponible` y sin efectos (Core no tiene cifra propia)', async () => {
+    const { porMinuto: _p, ...sinMinuto } = limites;
+    limites = sinMinuto as typeof limites;
+    const antes = await leerConv();
+    expect(await rechazo(retomar(base()))).toMatchObject({ code: 'unavailable' });
+    expect(await mensajes()).toHaveLength(0);
+    expect(await leerConv()).toEqual(antes);
+    expect(timbres).toHaveLength(0);
+  });
+  it('Core no escribe ninguna cifra de tope por minuto', () => {
+    const f = FUENTE('retomarConversacion.ts');
+    expect(f).not.toMatch(/POR_MINUTO_PREDETERMINADO|porMinuto\s*\?\?/);
   });
   it('NEGATIVA: un contador de persona ilegible falla cerrado', async () => {
     const roto = { min: new Date(AHORA).toISOString().slice(0, 16), n: 'x' };
