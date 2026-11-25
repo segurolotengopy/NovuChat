@@ -507,6 +507,66 @@ export function limitesDePersona(
 }
 
 /**
+ * LOS TOPES DE «RETOMAR CONVERSACIÓN» (C9 de `Analisis` «Retomar», decisión D-R3 de Andres, 23/11/2026).
+ *
+ * Retomar es la plantilla de utilidad que una persona del comercio manda con la ventana de 24 h CERRADA. Cada envío lo
+ * cobra Meta (`PLANTILLA_UTILIDAD_USD`). Quién la paga (decisión de Andres por botón, 24/11/2026): NovuChat la absorbe
+ * (D-R2 a) SOLO con la tarifa `meta_incluido` Y un número `novuchat`, dentro de estos topes; en las otras tres combinaciones
+ * (`estandar`+`comercio`, `estandar`+`novuchat`, `meta_incluido`+`comercio`) la paga el comercio. Es la regla de la PLANTILLA
+ * de Retomar; no cambia la de `limitesDePersona` (el tope de 25 de la conversación tomada). Los topes valen igual para todos como LÍMITE DE ENVÍO:
+ * sin ellos, un comercio podría mandar cientos al mes. De ahí:
+ *
+ *  - `diasEntreRetomadas`: 7. Una sola plantilla por conversación hasta que el cliente responda, y como máximo 7 días:
+ *    pasado ese plazo, sin respuesta, se puede volver a retomar. Protege la calidad del número ante Meta.
+ *  - `porDia`: 20 por comercio y día de La Paz.
+ *  - `porMes`: 100 por comercio y mes.
+ *  - `porMinuto`: el de `limitesDePersona` (10 por minuto), leído de ahí para que no haya dos cifras.
+ *
+ * LAS MISMAS CIFRAS PARA TODOS los planes, tarifas y titularidades: ningún plan del catálogo distingue hoy estos
+ * topes (`limitesDePersona` tampoco distingue por plan) y D-R3 los fijó «por comercio». Los parámetros se aceptan
+ * para que mañana un plan o un BYOC (`estandar` + `comercio`, que paga su Meta) pueda traer los suyos sin cambiar la
+ * firma. Core las recibe por inyección (`crearRetomarConversacion({ limitesDeRetomar, ... })`) y no las escribe.
+ */
+export interface LimitesDeRetomar {
+  diasEntreRetomadas: number;
+  porDia: number;
+  porMes: number;
+  /** Envíos por minuto de una persona: el MISMO valor que `limitesDePersona` (Retomar sale por el mismo carril). Core no tiene cifra propia. */
+  porMinuto: number;
+}
+
+export const RETOMAR_DIAS_ENTRE_RETOMADAS = 7;
+export const RETOMAR_POR_DIA = 20;
+export const RETOMAR_POR_MES = 100;
+
+export function limitesDeRetomar(
+  plan: unknown, tarifa: Tarifa, titularidad: 'novuchat' | 'comercio',
+): LimitesDeRetomar {
+  return {
+    diasEntreRetomadas: RETOMAR_DIAS_ENTRE_RETOMADAS,
+    porDia: RETOMAR_POR_DIA,
+    porMes: RETOMAR_POR_MES,
+    porMinuto: limitesDePersona(plan, tarifa, titularidad).porMinuto,
+  };
+}
+
+/**
+ * LO QUE COSTARÍA CADA PLANTILLA DE RETOMAR, para el aviso de la consola (D-R5, Andres, 23/11/2026).
+ *
+ * `PLANTILLA_UTILIDAD_USD` es el precio de una plantilla de UTILIDAD fuera de la ventana de 24 h para Bolivia (mercado
+ * «Rest of Latin America»), igual que `docs/base-comercial.md` §1.
+ *
+ * FUENTE OFICIAL (verificada el 24/11/2026): la tabla «Tarifas en USD» de Meta, «Cost per message in USD on the WhatsApp
+ * Business Platform, effective October 1, 2026», fila «Rest of Latin America», columna Utility: 0.0113. Se baja desde
+ * https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing (Bolivia, +591, está en esa región).
+ * Meta cambia precios solo el 1 de enero, abril, julio u octubre: revisar esta cifra en cada una de esas fechas.
+ *
+ * La consola dice solo «aprox. USD 0,0113 por envío», sin fuente ni fecha en pantalla (decisión de Andres por botón,
+ * 24/11/2026). La pantalla no escribe la cifra: la lee de acá.
+ */
+export const PLANTILLA_UTILIDAD_USD = 0.0113;
+
+/**
  * LO QUE NACE EN `cuenta/estado` AL DAR DE ALTA UN COMERCIO: el plan más chico
  * con su copia de límites, la versión del catálogo y la TARIFA `estandar`
  * (`TARIFA_DE_ALTA`). Lo usan `altaTenant` (index.ts),

@@ -17,7 +17,7 @@ import {
   ErroresDeTurno, ID_CONVERSACION, INACTIVIDAD_MS, MARGEN_ENVIO_MS, MARGEN_RELOJ_MS, UID_DE_PERSONA, VENTANA_META_MS,
   leerTurno, milisegundosDeMomento, turnoEfectivo, turnoVigente, ventanaDeMetaAbierta,
 } from '../../functions/src/core/conversacion/turno.ts';
-import { personaPuedeEscribirDeFicha } from '../../functions/src/core/conversacion/turno.ts';
+import { personaPuedeEscribirDeFicha, personaPuedeRetomarDeFicha } from '../../functions/src/core/conversacion/turno.ts';
 import {
   TENANTS_EXCLUIDOS, esTenantExcluido, habilitadoParaPersona, nombreExcluido,
 } from '../../functions/src/core/conversacion/accesoPersona.ts';
@@ -226,6 +226,74 @@ describe('turnoVigente: responde la persona o el asistente, y por qué', () => {
 });
 
 // ===========================================================================
+describe('RETOMAR (§1.5 del plan): `retomadoEn` suspende el vencimiento por ventana hasta el siguiente entrante', () => {
+  // El cliente escribió hace 30 h (ventana cerrada); la persona retomó hace 2 min.
+  const ULTIMO = AHORA - 30 * HORA;
+  const retomado = (o: Record<string, unknown> = {}) => guardado({
+    tomadoEn: ts(AHORA - 2 * MIN), actividadPersonaEn: ts(AHORA - 2 * MIN), retomadoEn: ts(AHORA - 2 * MIN), ...o,
+  });
+
+  it('retomado con la ventana cerrada: sigue «tomado»; manda solo la inactividad de 30 min', () => {
+    const v = turnoVigente(retomado(), conv(ULTIMO), AHORA);
+    expect(v).toEqual({ responde: 'persona', motivo: 'tomado', venceEnMs: AHORA - 2 * MIN + INACTIVIDAD_MS });
+  });
+  it('respuesta del cliente DENTRO de 30 min: contesta la persona (D-R1 a); pasados 30 min: el asistente por `inactividad`, no por ventana', () => {
+    expect(turnoVigente(retomado(), conv(ULTIMO), AHORA + 27 * MIN).responde).toBe('persona');
+    const tarde = turnoVigente(retomado(), conv(ULTIMO), AHORA + 28 * MIN);
+    expect(tarde).toMatchObject({ responde: 'asistente', motivo: 'inactividad', venceEnMs: AHORA - 2 * MIN + INACTIVIDAD_MS });
+    expect(turnoEfectivo(retomado(), conv(ULTIMO), AHORA + 28 * MIN).turno).toMatchObject({ responde: 'asistente', motivoDevolucion: 'inactividad' });
+  });
+  it('NEGATIVA (regresión): SIN `retomadoEn`, la misma conversación con la ventana cerrada devuelve por `ventana`', () => {
+    expect(turnoVigente(guardado(), conv(ULTIMO), AHORA)).toMatchObject({ responde: 'asistente', motivo: 'ventana' });
+  });
+  it('`retomadoEn` ANTERIOR al último entrante (el cliente ya respondió después): rige la regla normal', () => {
+    const t = retomado({ retomadoEn: ts(ULTIMO - MIN) });
+    expect(turnoVigente(t, conv(ULTIMO), AHORA)).toMatchObject({ responde: 'asistente', motivo: 'ventana' });
+    // y tras un entrante posterior (hace 2 h), 22 h 30 min después la ventana nueva ya venció y gana la ventana
+    const T = AHORA + 22 * HORA + 30 * MIN;
+    expect(turnoVigente(retomado({ retomadoEn: ts(AHORA - 3 * HORA), actividadPersonaEn: ts(T - MIN) }), conv(AHORA - 2 * HORA), T))
+      .toMatchObject({ responde: 'asistente', motivo: 'ventana' });
+  });
+  it('`retomadoEn` igual al último entrante cuenta como «todavía no hubo un entrante después»', () => {
+    expect(turnoVigente(retomado({ retomadoEn: ts(ULTIMO) }), conv(ULTIMO), AHORA).responde).toBe('persona');
+  });
+  it('`retomadoEn` del futuro a más de 5 min: ilegible (falla hacia el asistente); hasta 5 min se tolera', () => {
+    expect(turnoVigente(retomado({ retomadoEn: ts(AHORA + MARGEN_RELOJ_MS + 1) }), conv(ULTIMO), AHORA)).toEqual({ responde: 'asistente', motivo: 'ilegible' });
+    expect(turnoVigente(retomado({ retomadoEn: ts(AHORA + MARGEN_RELOJ_MS) }), conv(ULTIMO), AHORA).responde).toBe('persona');
+  });
+  it('un `retomadoEn` que no es fecha vuelve ilegible todo el turno', () => {
+    for (const malo of ['ayer', 7, null, {}]) {
+      expect(leerTurno(retomado({ retomadoEn: malo })), String(malo)).toEqual({ estado: 'ilegible' });
+      expect(turnoVigente(retomado({ retomadoEn: malo }), conv(ULTIMO), AHORA)).toEqual({ responde: 'asistente', motivo: 'ilegible' });
+    }
+    expect(leerTurno(retomado())).toMatchObject({ estado: 'ok', turno: { retomadoEn: AHORA - 2 * MIN } });
+  });
+  it('un turno ya `devuelto` no revive por tener `retomadoEn`', () => {
+    expect(turnoVigente(retomado({ responde: 'asistente' }), conv(ULTIMO), AHORA)).toMatchObject({ motivo: 'devuelto' });
+  });
+  it('texto dentro de la ventana (turno normal con la ventana abierta): sin regresión', () => {
+    expect(turnoVigente(guardado(), conv(AHORA - HORA), AHORA)).toMatchObject({ responde: 'persona', motivo: 'tomado' });
+    expect(turnoVigente(guardado({ actividadPersonaEn: ts(AHORA - 31 * MIN) }), conv(AHORA - HORA), AHORA)).toMatchObject({ motivo: 'inactividad' });
+  });
+  it('un `retomadoEn` sin último entrante legible: sigue siendo «sin dato = cerrada»', () => {
+    expect(turnoVigente(retomado(), conv(null), AHORA)).toMatchObject({ responde: 'asistente', motivo: 'ventana' });
+  });
+});
+
+describe('personaPuedeRetomarDeFicha: solo `true` exacto', () => {
+  it('true habilita; todo lo demás no', () => {
+    expect(personaPuedeRetomarDeFicha({ personaPuedeRetomar: true })).toBe(true);
+    for (const v of [false, 'true', 'TRUE', 1, 0, null, undefined, {}, [true]]) {
+      expect(personaPuedeRetomarDeFicha({ personaPuedeRetomar: v }), String(v)).toBe(false);
+    }
+    expect(personaPuedeRetomarDeFicha({})).toBe(false);
+    expect(personaPuedeRetomarDeFicha({ personaPuedeEscribir: true })).toBe(false); // la otra bandera no basta
+    expect(personaPuedeRetomarDeFicha(null)).toBe(false);
+    expect(personaPuedeRetomarDeFicha(undefined)).toBe(false);
+  });
+});
+
+// ===========================================================================
 describe('turnoEfectivo: el turno como está AHORA', () => {
   it('sin turno o ilegible: turno null', () => {
     expect(turnoEfectivo(undefined, conv(), AHORA).turno).toBeNull();
@@ -316,6 +384,13 @@ describe('los errores fijos', () => {
       noExiste: { code: 'not-found', message: 'La conversación no existe.' },
       ocupada: { code: 'failed-precondition', message: 'Esta conversación la atiende otra persona.' },
       noEsSuya: { code: 'failed-precondition', message: 'Solo quien atiende la conversación, o un administrador, puede devolverla.' },
+      sinRetomar: { code: 'permission-denied', message: 'Retomar conversaciones todavía no está activo para su negocio.' },
+      ventanaAbierta: { code: 'failed-precondition', message: 'La ventana de 24 horas está abierta: use Tomar conversación.' },
+      noContactar: { code: 'failed-precondition', message: 'Este cliente pidió que no se le escriba.' },
+      retomadaPendiente: { code: 'failed-precondition', message: 'Ya se envió una plantilla a este cliente; espere su respuesta.' },
+      sinPlantilla: { code: 'failed-precondition', message: 'La plantilla para retomar no está disponible en este número.' },
+      topeRetomarDia: { code: 'resource-exhausted', message: 'El comercio llegó al tope diario de conversaciones retomadas.' },
+      topeRetomarMes: { code: 'resource-exhausted', message: 'El comercio llegó al tope mensual de conversaciones retomadas.' },
       contactoBloqueado: { code: 'failed-precondition', message: 'Este contacto está bloqueado. Desbloquéelo para atenderlo.' },
       turnoVigente: { code: 'failed-precondition', message: 'Devuelva la conversación antes de bloquear el contacto.' },
       ventanaCerrada: { code: 'failed-precondition', message: 'La ventana de 24 horas de esta conversación está cerrada.' },
