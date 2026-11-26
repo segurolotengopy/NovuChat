@@ -124,6 +124,12 @@ export { bloquearContacto, desbloquearContacto } from './core/conversacion/bloqu
 // el invocador público de las tres va tras el despliegue de la etiqueta (`scripts/nube-visor.sh` exige
 // que las Functions ya existan) (detalle en el PR).
 export { enviarComoPersona, enviarAdjuntoComoPersona } from './central/cuenta/enviarComoPersona.js';
+// RETOMAR (R0 de «Retomar», 25/11/2026): la persona reabre una conversación con la ventana de 24 h cerrada mandando la
+// plantilla de utilidad aprobada (0,0113 USD por envío; topes de `limitesDeRetomar` del plan). Agrega UNA Function, callable,
+// que nace APAGADA: sin `personaPuedeRetomar` en ningún comercio responde «no habilitado» sin escribir ni tocar el timbre.
+// Encenderla por comercio es un botón de Andres, después del ensayo en staging y de registrar la plantilla aprobada; el
+// invocador público (`scripts/nube-visor.sh`) va con ese encendido, tras el despliegue de la etiqueta.
+export { retomarConversacion } from './central/cuenta/enviarComoPersona.js';
 export { reclamarSalidaPersona } from './core/conversacion/reclamarSalidaPersona.js';
 // ADJUNTOS DE PERSONA (B2 de «Envío de medios por consola», 11/11/2026). `enviarAdjuntoComoPersona` (callable, 1 GiB, App Check
 // en producción) guarda UN archivo en `tenants/{t}/mediosEnviados/**` y deja el mensaje `pendiente`; `leerAdjuntoPersona` (HTTP)

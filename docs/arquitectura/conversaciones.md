@@ -515,6 +515,35 @@ El asistente deja de responderle del todo a un contacto, y se puede revertir. C�
   fecha con «Desbloquear» por fila, consulta `bloqueada == true` de un campo, ordenada en el cliente,
   sin índice nuevo. Costo en mensajes por conversación: 0 (solo quita).
 
+## 14. Retomar (plan del 23/11/2026; R0 a R4 y D-R1)
+
+Pasadas las 24 h del último mensaje del cliente, Meta solo deja escribirle con una plantilla aprobada.
+«Retomar» deja que una persona del comercio (administrador u operador, nunca el soporte) reabra la
+conversación con la plantilla de UTILIDAD registrada para su número. Cada envío cuesta 0,0113 USD
+(`docs/base-comercial.md`).
+
+- **Core** (`core/conversacion/retomarConversacion.ts`, R1): valida, toma el turno a nombre de la persona
+  (`turno.retomadoEn`) y deja un mensaje `pendiente` de tipo `plantilla`; lo envía el flujo «Salida de
+  persona» del número, por el mismo camino que el texto. No envía a Meta ni crea plantillas: la plantilla
+  la crea y aprueba la sesión de WAM, y se registra por número en `rutasWhatsApp/{n}.plantillas.retomar`.
+- **Central** (`central/cuenta/enviarComoPersona.ts`): inyecta los topes de `limitesDeRetomar` del plan
+  (7 días entre retomadas por conversación, 20 por día, 100 por mes; por minuto, el de la persona) y la
+  tarifa. `index.ts` la exporta (R0).
+- **Consola** (R3): el modal exige marcar la casilla del costo antes de llamar a la callable.
+- **Plataforma** (R4): `aplicar-persona-puede-retomar.mjs` enciende la bandera por comercio y
+  `registrar-plantilla.mjs` registra la plantilla aprobada; los dos, en seco por omisión.
+- **Ingesta** (D-R1): el primer entrante después de Retomar renueva `turno.actividadPersonaEn` una sola
+  vez, así la persona tiene sus 30 minutos desde la respuesta del cliente y no desde la retomada.
+- **Banderas**: hacen falta `personaPuedeEscribir === true` y `personaPuedeRetomar === true` (booleano
+  exacto). Sin la segunda, la callable responde «no habilitado» sin escribir nada ni tocar el timbre.
+- **Puesta en producción**: la Function queda desplegada pero **apagada**, porque ningún comercio
+  tiene la bandera. El orden es: ensayo en staging, republicar «Salida de persona» por número,
+  registrar la plantilla cuando WAM la informe aprobada, invocador público con `scripts/nube-visor.sh`
+  y, por último, encender la bandera por comercio con el botón de Andres.
+- **Pruebas**: `pruebas/core/retomar-conversacion.test.ts` (incluida la de la Function que exporta
+  `index.ts`, que nace apagada), `retomar-reglas.test.ts`, `pausa-ingesta.test.ts` (D-R1),
+  `pruebas/central/retomar-costo.test.ts` y `turno-pantalla.test.ts`.
+
 ## Lo que este documento no afirma
 
 No se puede comprobar desde el repositorio y por eso no se dice:

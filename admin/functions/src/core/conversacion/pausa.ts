@@ -76,9 +76,11 @@ export function decidirPausa(turno: unknown, ultimoEntranteEn: unknown, ahoraMs:
   const porPersistir = vencio && veredicto.venceEnMs !== undefined && efectivo !== null && lectura.estado === 'ok' && lectura.turno.responde === 'persona'
     ? efectivo : null;
   const ultimoMs = milisegundosDeMomento(ultimoEntranteEn);
-  // `ahoraMs >= retomadoEn`: un entrante cuyo reloj (tomado antes de la transacción, fijo al reintentar) es
-  // ANTERIOR a la retomada no es una respuesta a la plantilla; si renovara, la actividad retrocedería y, con
-  // `ultimoEntranteEn` < `retomadoEn`, el entrante siguiente volvería a renovar (revisión del 25/11/2026).
+  // `ahoraMs >= retomadoEn`: con el reloj de la ingesta (tomado antes de la transacción, fijo al reintentar)
+  // ANTERIOR a la retomada, renovar haría retroceder la actividad, así que ese entrante no renueva. Eso NO impide
+  // que renueve el siguiente: si `retomadoEn` va adelantado (hasta ~5 min de desfase entre relojes), este entrante
+  // deja `ultimoEntranteEn` < `retomadoEn` y el próximo cumple las dos condiciones. Sigue siendo UNA sola
+  // renovación, solo que la hace el primer entrante cuyo reloj ya pasó la retomada (revisión del 25/11/2026).
   const t = lectura.estado === 'ok' ? lectura.turno : null;
   const renovarActividad = veredicto.motivo === 'tomado' && t !== null && t.responde === 'persona'
     && t.retomadoEn !== undefined && ultimoMs !== null && t.retomadoEn >= ultimoMs && ahoraMs >= t.retomadoEn;
