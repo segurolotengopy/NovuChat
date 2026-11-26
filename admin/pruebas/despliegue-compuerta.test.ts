@@ -624,6 +624,71 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
     });
   }
 
+  /** El `run: |` de un paso, sin la sangría del YAML. */
+  const runDe = (p: string): string => {
+    const i = p.indexOf('run: |\n');
+    expect(i, 'el paso no tiene run: |').toBeGreaterThan(-1);
+    return p.slice(i + 'run: |\n'.length).split('\n').map((l) => l.replace(/^ {10}/, '')).join('\n');
+  };
+  /** Corre un `run:` real del workflow con `firebase`, `npm` y `gcloud` de mentira que anotan sus llamadas. */
+  const correrPaso = (codigo: string, nombre: string, clonFalla: boolean, extra: Record<string, string>) => {
+    const bin = join(tmp, `bin-previa-${nombre}`);
+    spawnSync('mkdir', ['-p', bin]);
+    const llamadas = join(bin, 'llamadas');
+    writeFileSync(llamadas, '');
+    writeFileSync(join(bin, 'firebase'), `#!/usr/bin/env bash\necho "firebase $*" >> "${llamadas}"\n[[ "$1" == hosting:clone && "${clonFalla ? 'si' : 'no'}" == si ]] && exit 1\nexit 0\n`);
+    writeFileSync(join(bin, 'npm'), '#!/usr/bin/env bash\nexit 0\n');
+    writeFileSync(join(bin, 'gcloud'), '#!/usr/bin/env bash\nexit 1\n');
+    for (const b of ['firebase', 'npm', 'gcloud']) chmodSync(join(bin, b), 0o755);
+    const salida = archivo('');
+    const r = spawnSync('bash', ['-c', codigo], {
+      encoding: 'utf8',
+      env: entornoDelEmulador(undefined, {
+        PATH: `${bin}:${process.env['PATH'] ?? ''}`, GITHUB_OUTPUT: salida, FIREBASE_TOOLS_VERSION: '0.0.0',
+        PROYECTO: 'consola-ficticia', SITIO: 'consola-ficticia', ...extra,
+      }),
+    });
+    return { status: r.status, salidas: leerSalidas(salida), llamadas: readFileSync(llamadas, 'utf8'), texto: `${r.stdout}${r.stderr}` };
+  };
+
+  it('W4c: la copia a «previa» emite previa_ok=true SOLO si el clon de esta corrida salió bien (producción)', () => {
+    const copia = paso(job('desplegar-produccion'), '- name: Conservar copia de la versión actual');
+    expect(copia).toContain('id: copia_previa');
+    const codigo = runDe(copia);
+    const bien = correrPaso(codigo, 'copia-bien', false, {});
+    expect(bien.salidas['previa_ok']).toBe('true');
+    // NEGADA: con el clon fallido el paso sigue sin tumbar el despliegue (continue-on-error), pero NO hay previa_ok.
+    const mal = correrPaso(codigo, 'copia-mal', true, {});
+    expect(mal.status).toBe(0);
+    expect(mal.salidas['previa_ok']).toBeUndefined();
+  });
+
+  it('W4d: el rollback NO clona «previa» sobre live sin previa_ok de esta corrida: falla fuerte y pide el manual', () => {
+    const rollback = paso(job('desplegar-produccion'), '- name: Rollback de hosting');
+    expect(rollback).toContain('PREVIA_OK: ${{ steps.copia_previa.outputs.previa_ok }}');
+    const codigo = runDe(rollback);
+    for (const previa of ['', 'false', 'TRUE']) {
+      const r = correrPaso(codigo, `rollback-sin-${previa || 'vacio'}`, false, { PREVIA_OK: previa });
+      expect(r.status, previa).toBe(1);
+      expect(r.llamadas, previa).not.toContain('hosting:clone');
+      expect(r.texto).toContain('Rollback automático NO ejecutado');
+      expect(r.salidas['rollback'], previa).toBe('no_ejecutado');
+    }
+    // El operador lo ve en post-despliegue: la salida llega por el job y tiene su texto propio (≤ 140).
+    expect(job('desplegar-produccion')).toContain('rollback: ${{ steps.rollback.outputs.rollback }}');
+    expect(paso(job('desplegar-produccion'), '- name: Rollback de hosting')).toContain('id: rollback');
+    const post = job('post-despliegue');
+    expect(post).toContain('ROLLBACK: ${{ needs.desplegar-produccion.outputs.rollback }}');
+    const texto = /'(Health check fallido; rollback NO ejecutado[^']*)'/.exec(post)?.[1] ?? '';
+    expect(texto).not.toBe('');
+    expect(texto.length).toBeLessThanOrEqual(140);
+    // Contraprueba: con la copia de esta corrida, el rollback sí clona previa → live.
+    const ok = correrPaso(codigo, 'rollback-con', false, { PREVIA_OK: 'true' });
+    expect(ok.status, ok.texto).toBe(0);
+    expect(ok.salidas['rollback']).toBeUndefined();
+    expect(ok.llamadas).toContain('firebase hosting:clone consola-ficticia:previa consola-ficticia:live');
+  });
+
   it('W4: en producción el health check corre también tras un despliegue fallido, y el rollback tras él', () => {
     const j = job('desplegar-produccion');
     expect(paso(j, 'id: salud')).toContain(
