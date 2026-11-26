@@ -54,9 +54,13 @@
  *   campos                nombres de campo del item del ancla: { tipo, mensajeId, from, phoneNumberId, texto } (de `fuente` si se da; por defecto los del normalizador común y `userInput`)
  *   config                «Config del negocio»        configBase  «Config base»        traerConfiguracion  «Traer configuración»
  *   puerta                expresión JS booleana sobre `n` (por defecto `true`)
+ *   campos                OBLIGATORIO `campos.texto` (sin valor por defecto); el resto, canónico. Una clave desconocida es error. Se verifican contra el código del productor (acorn).
+ *   consumidor            OBLIGATORIO: nodo(s) que LEEN `textoDelTurno` de «Agrupar ráfaga» (destino o descendientes). Sin él la pieza PIERDE los mensajes agrupados. `null` solo en fixtures.
  * Devuelve el mismo flujo con los cuatro nodos y sus conexiones. Lanza si falta algo: no se arma a medias.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -73,12 +77,22 @@ export const ESPERA_ENTRE_INTENTOS_MS = 300;
 export const ESPERA_POR_DEFECTO_SEG = 2;
 export const NORMALIZADORES = ['Interpretar entrada', 'Normalizar entrada'];
 
-export const CAMPOS_POR_DEFECTO = { tipo: 'tipo', mensajeId: 'mensajeId', from: 'from', phoneNumberId: 'phoneNumberId', texto: 'userInput' };
+/** Los cuatro campos con nombre canónico (los del normalizador común). El del TEXTO no tiene valor por defecto: cada flujo lo declara (`campos.texto`) y se verifica contra el código del productor. */
+export const CAMPOS_CANONICOS = { tipo: 'tipo', mensajeId: 'mensajeId', from: 'from', phoneNumberId: 'phoneNumberId' };
+const CLAVES_DE_CAMPOS = [...Object.keys(CAMPOS_CANONICOS), 'texto'];
 const camposDe = (o) => {
-  const c = { ...CAMPOS_POR_DEFECTO, ...((o && o.campos) || {}) };
+  const dado = (o && o.campos) || {};
+  for (const k of Object.keys(dado)) if (!CLAVES_DE_CAMPOS.includes(k)) throw new Error(`rafaga: \`campos\` tiene una clave desconocida «${k}» (válidas: ${CLAVES_DE_CAMPOS.join(', ')})`);
+  if (typeof dado.texto !== 'string') throw new Error('rafaga: falta `campos.texto` (el nombre del campo con el texto del mensaje: `userInput` en los demos, `texto` en Walisuma y Bellido); no tiene valor por defecto');
+  const c = { ...CAMPOS_CANONICOS, ...dado };
   for (const [k, v] of Object.entries(c)) if (typeof v !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(v)) throw new Error(`rafaga: el campo «${k}» tiene un nombre inválido`);
   return c;
 };
+
+// acorn vive en `admin/` (devDependency fija, como en `guarda-ast.mjs`): `Flujos/` no tiene `node_modules`. Sin acorn la carga falla ruidosamente: no hay guardia en silencio.
+// Se carga la primera vez que se analiza un código (no al importar): el ensamblador y sus copias de prueba no la necesitan si ningún manifiesto declara la ráfaga.
+let acornCargado = null;
+const acornDe = () => (acornCargado ??= createRequire(fileURLToPath(new URL('../../../../admin/package.json', import.meta.url)))('acorn'));
 
 const CODIGO = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'agrupar-rafaga.js'), 'utf8');
 const NOMBRE_CONFIG_BASE_EN_CODIGO = "$('Config base')";
@@ -100,9 +114,9 @@ const destinos = (flujo, de, salida) => listaDe(flujo, de, salida).map((x) => x.
 const normalizadorDe = (flujo) => NORMALIZADORES.find((n) => por(flujo, n)) || null;
 
 /** El cuerpo del nodo Code: el archivo canónico, con el nombre de «Config base» del flujo. */
-export const codigoDeLaRafaga = (configBase = 'Config base', campos = CAMPOS_POR_DEFECTO, fuente = '') => {
+export const codigoDeLaRafaga = (configBase = 'Config base', campos = {}, fuente = '') => {
   if (/['\\\n]/.test(String(fuente))) throw new Error('rafaga: el nombre de la fuente no puede llevar comillas, barras ni saltos de línea');
-  const c = { ...CAMPOS_POR_DEFECTO, ...campos };
+  const c = { ...CAMPOS_CANONICOS, texto: 'userInput', ...campos };
   const sustituido = CODIGO.split(NOMBRE_CONFIG_BASE_EN_CODIGO).join(`$('${configBase}')`)
     .replace("const CAMPO_ID = 'mensajeId';", `const CAMPO_ID = '${c.mensajeId}';`)
     .replace("const CAMPO_TEXTO = 'userInput';", `const CAMPO_TEXTO = '${c.texto}';`)
@@ -226,18 +240,116 @@ function productorDelItem(flujo, ancla, normalizador) {
   return null;
 }
 /**
- * ¿El nodo EMITE el campo? Se mira el código del Code (un campo asignado o en un objeto literal: `campo:`, `campo,`, `campo }`, `.campo =`, `['campo'] =`). `phoneNumberId` también puede
- * llegar copiado con un spread del config (`...config`, los demos): es el único campo que se admite así. Un nodo que no es Code no se puede inspeccionar: no se da por bueno.
+ * NORMALIZADORES VERIFICADOS POR EJECUCIÓN. El análisis del código (acorn) decide las claves de nivel superior de lo que el productor emite; pero los normalizadores de los demos arman
+ * su item con un spread de la entrada (`...config`, `Object.assign({}, cfg, {…})`) y `phoneNumberId` llega por ahí desde «Config base»: no se puede decidir mirando el código. Esos
+ * (y solo esos) se aceptan por la huella SHA-256 de su código, y `rafaga-extremo.test.ts` los EJECUTA con una entrada real y comprueba que `phoneNumberId` sale. Cualquier cambio en
+ * el normalizador cambia la huella: la ráfaga deja de armar hasta que se vuelva a verificar y se actualice esta lista.
  */
-function emiteElCampo(n, campo, nombre) {
-  if (!n || n.type !== 'n8n-nodes-base.code') return false;
-  const codigo = String(((n.parameters) || {}).jsCode || '');
-  const c = campo.replace(/[$]/g, '\\$&');
-  if (new RegExp(`(?<![\\w$.])${c}\\s*[:,}]`).test(codigo) || new RegExp(`\\.${c}\\s*=[^=]`).test(codigo) || new RegExp(`\\[['"]${c}['"]\\]\\s*=[^=]`).test(codigo)) return true;
-  return nombre === 'phoneNumberId' && /\.\.\.\s*[\w$.]+/.test(codigo);
+export const NORMALIZADORES_VERIFICADOS = {
+  // «Normalizar entrada» del Demo A (y de Bellido «agendamiento», que corre el mismo módulo) y del Demo B.
+  '475bc928539bf4ccf659bc8dac370e8bdd93eedce8f669a590feb8a8270a058c': 'Normalizar entrada del Demo A / bellido-agendamiento',
+  'ffdfa73f8c250883760d0b03876c67a2cf212727087bed0027be7f67556b51ea': 'Normalizar entrada del Demo B',
+};
+export const huellaDe = (codigo) => createHash('sha256').update(String(codigo)).digest('hex');
+
+const PARSE = { ecmaVersion: 'latest', sourceType: 'script', allowReturnOutsideFunction: true, allowAwaitOutsideFunction: true };
+/** El nombre de una clave de un literal (`a:`, `'a':`, `['a']:`), o null si no se puede plegar. */
+const claveDe = (p) => (!p.computed && p.key.type === 'Identifier' ? p.key.name : (p.key.type === 'Literal' ? String(p.key.value) : null));
+/**
+ * Las claves de NIVEL SUPERIOR de lo que el Code emite: cada objeto `{ json: … }` (los items que salen) se resuelve a sus claves. Se siguen identificadores declarados en el mismo código,
+ * `Object.assign(…)`, spreads de objetos resolubles, operadores `??`/`||`/`?:` y las asignaciones `x.clave = …` / `x['clave'] = …` / `Object.assign(x, …)` sobre ese identificador.
+ * `abierto` es verdadero si alguna parte no se puede decidir (un spread de la entrada, una clave calculada): entonces las claves son SOLO las explícitas.
+ */
+export function emisionesDelCodigo(codigo) {
+  let ast;
+  const parser = acornDe(); // si acorn no está instalado falla ruidosamente: no hay guardia en silencio
+  try { ast = parser.parse(String(codigo), PARSE); } catch (e) { return { error: `no se pudo analizar el código (${String(e.message).slice(0, 60)})`, emisiones: [] }; }
+  const declaraciones = new Map();
+  const miembros = new Map();
+  const abre = (nombre) => { const m = miembros.get(nombre) || { claves: new Set(), abierto: false }; miembros.set(nombre, m); return m; };
+  const nombreDeObjeto = (n) => (n && n.type === 'Identifier' ? n.name : null);
+  (function recorrer(x) {
+    if (Array.isArray(x)) { x.forEach(recorrer); return; }
+    if (!x || typeof x.type !== 'string') return;
+    if (x.type === 'VariableDeclarator' && x.id.type === 'Identifier' && x.init) (declaraciones.get(x.id.name) || declaraciones.set(x.id.name, []).get(x.id.name)).push(x.init);
+    if (x.type === 'AssignmentExpression' && x.operator === '=' && x.left.type === 'Identifier') (declaraciones.get(x.left.name) || declaraciones.set(x.left.name, []).get(x.left.name)).push(x.right);
+    if (x.type === 'AssignmentExpression' && x.left.type === 'MemberExpression' && nombreDeObjeto(x.left.object)) {
+      const m = abre(x.left.object.name);
+      if (!x.left.computed && x.left.property.type === 'Identifier') m.claves.add(x.left.property.name);
+      else if (x.left.computed && x.left.property.type === 'Literal') m.claves.add(String(x.left.property.value));
+      else m.abierto = true;
+    }
+    if (x.type === 'CallExpression' && x.callee.type === 'MemberExpression' && x.callee.object.name === 'Object' && x.callee.property.name === 'assign' && nombreDeObjeto(x.arguments[0])) {
+      const m = abre(x.arguments[0].name);
+      for (const resto of x.arguments.slice(1)) { const r = clavesDe(resto, new Set()); r.claves.forEach((c) => m.claves.add(c)); if (r.abierto) m.abierto = true; }
+    }
+    for (const k of Object.keys(x)) { const v = x[k]; if (v && typeof v === 'object') recorrer(v); }
+  })(ast);
+
+  function clavesDe(nodo, vistos) {
+    const r = { claves: new Set(), abierto: false };
+    const suma = (o) => { o.claves.forEach((c) => r.claves.add(c)); if (o.abierto) r.abierto = true; };
+    if (!nodo) { r.abierto = true; return r; }
+    switch (nodo.type) {
+      case 'ObjectExpression':
+        for (const p of nodo.properties) {
+          if (p.type === 'SpreadElement') suma(clavesDe(p.argument, vistos));
+          else { const k = claveDe(p); if (k === null) r.abierto = true; else r.claves.add(k); }
+        }
+        return r;
+      case 'Identifier': {
+        if (vistos.has(nodo.name)) { r.abierto = true; return r; }
+        const inits = declaraciones.get(nodo.name);
+        if (!inits) { r.abierto = true; return r; }
+        const con = new Set(vistos).add(nodo.name);
+        for (const init of inits) suma(clavesDe(init, con));
+        const m = miembros.get(nodo.name);
+        if (m) { m.claves.forEach((c) => r.claves.add(c)); if (m.abierto) r.abierto = true; }
+        return r;
+      }
+      case 'CallExpression':
+        if (nodo.callee.type === 'MemberExpression' && nodo.callee.object.name === 'Object' && nodo.callee.property.name === 'assign') { for (const a of nodo.arguments) suma(clavesDe(a, vistos)); return r; }
+        r.abierto = true; return r;
+      case 'LogicalExpression': suma(clavesDe(nodo.left, vistos)); suma(clavesDe(nodo.right, vistos)); return r;
+      case 'ConditionalExpression': suma(clavesDe(nodo.consequent, vistos)); suma(clavesDe(nodo.alternate, vistos)); return r;
+      default: r.abierto = true; return r;
+    }
+  }
+  const emisiones = [];
+  (function buscar(x) {
+    if (Array.isArray(x)) { x.forEach(buscar); return; }
+    if (!x || typeof x.type !== 'string') return;
+    if (x.type === 'ObjectExpression') {
+      for (const p of x.properties) if (p.type === 'Property' && claveDe(p) === 'json') emisiones.push(clavesDe(p.shorthand ? p.key : p.value, new Set()));
+    }
+    for (const k of Object.keys(x)) { const v = x[k]; if (v && typeof v === 'object') buscar(v); }
+  })(ast);
+  return { emisiones };
 }
-/** Los campos de `campos` que el nodo productor del mensaje NO emite (vacío si todos). */
-const camposQueFaltan = (n, campos) => Object.entries(campos).filter(([nombre, campo]) => !emiteElCampo(n, campo, nombre)).map(([nombre, campo]) => `${nombre} («${campo}»)`);
+
+/**
+ * Los campos de `campos` que el nodo productor del mensaje NO emite (vacío si todos): para cada objeto `{json: …}` que el Code produce, el campo tiene que ser una CLAVE de nivel
+ * superior. `phoneNumberId` también vale si el código es un normalizador verificado por ejecución (`NORMALIZADORES_VERIFICADOS`). Un nodo que no es Code, o un código que no se puede
+ * analizar, no se da por bueno.
+ */
+function camposQueFaltan(n, campos) {
+  const todos = (motivo) => Object.entries(campos).map(([nombre, campo]) => `${nombre} («${campo}»)${motivo ? ` [${motivo}]` : ''}`);
+  if (!n || n.type !== 'n8n-nodes-base.code') return todos('no es un nodo Code');
+  const codigo = String(((n.parameters) || {}).jsCode || '');
+  const { emisiones, error } = emisionesDelCodigo(codigo);
+  if (error) return todos(error);
+  if (!emisiones.length) return todos('no se encontró ningún `{ json: … }` que salga');
+  const verificado = Object.prototype.hasOwnProperty.call(NORMALIZADORES_VERIFICADOS, huellaDe(codigo));
+  const faltan = new Set();
+  for (const em of emisiones) {
+    for (const [nombre, campo] of Object.entries(campos)) {
+      if (em.claves.has(campo)) continue;
+      if (nombre === 'phoneNumberId' && em.abierto && verificado) continue;
+      faltan.add(`${nombre} («${campo}»)${nombre === 'phoneNumberId' && em.abierto ? ' [llega por un spread que no se puede resolver: pasar `fuente`, o verificarlo por ejecución]' : ''}`);
+    }
+  }
+  return [...faltan];
+}
 
 /** Los nodos que la `puerta` lee con `$('…')`. */
 const nodosDeLaPuerta = (puerta) => [...String(puerta || '').matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]);
@@ -247,6 +359,39 @@ const noAscendientes = (flujo, ancla, nombres) => {
   const arriba = ascendientes(flujo, ancla);
   return nombres.filter((n) => n !== ancla && !arriba.has(n));
 };
+
+/** Los nodos a los que se llega desde `desde` (incluido él), por cualquier salida. */
+function descendientes(flujo, desde) {
+  const visto = new Set([desde]);
+  const pila = [desde];
+  while (pila.length) {
+    const x = pila.pop();
+    for (const lista of ((((flujo.connections || {})[x] || {}).main) || [])) for (const e of (lista || [])) if (!visto.has(e.node)) { visto.add(e.node); pila.push(e.node); }
+  }
+  return visto;
+}
+/** ¿El nodo LEE `textoDelTurno` de «Agrupar ráfaga»? (su código o cualquier parámetro nombra las dos cosas). */
+const consumeElTexto = (n) => { const t = JSON.stringify((n && n.parameters) || {}); return t.includes('textoDelTurno') && t.includes(NODO_RAFAGA_AGRUPAR); };
+/**
+ * Sin CONSUMIDOR la ráfaga PIERDE mensajes: «Agrupar ráfaga» entrega los textos unidos en `textoDelTurno`, pero si ningún nodo del flujo lo lee, la ejecución que responde ve solo SU
+ * texto y los que las otras callaron nunca se contestan. Por eso `consumidor` es obligatorio: el nombre (o la lista) de los nodos que leen `textoDelTurno`, que tienen que ser el destino o
+ * descender de él. `consumidor: null` existe SOLO para fixtures de prueba (un flujo real nunca lo declara).
+ */
+function problemasDelConsumidor(flujo, consumidor, desde) {
+  if (consumidor === null) return [];
+  if (consumidor === undefined) return ['falta `consumidor`: el nodo (o los nodos) que leen `textoDelTurno` de «Agrupar ráfaga»; sin él la ráfaga PIERDE los mensajes agrupados (`consumidor: null` solo en fixtures de prueba)'];
+  const lista = Array.isArray(consumidor) ? consumidor : [consumidor];
+  if (!lista.length || lista.some((c) => typeof c !== 'string' || !c)) return ['`consumidor` tiene que ser un nombre de nodo o una lista de nombres'];
+  const abajo = descendientes(flujo, desde);
+  const h = [];
+  for (const c of lista) {
+    const n = por(flujo, c);
+    if (!n) { h.push(`el consumidor «${c}» no existe en el flujo`); continue; }
+    if (!abajo.has(c)) h.push(`el consumidor «${c}» tiene que ser el destino («${desde}») o descender de él: si corre antes, no recibe \`textoDelTurno\``);
+    if (!consumeElTexto(n)) h.push(`el consumidor «${c}» no lee \`textoDelTurno\` de «${NODO_RAFAGA_AGRUPAR}» (su código o sus parámetros no lo nombran)`);
+  }
+  return h;
+}
 
 export function injertarRafaga(flujo, opciones) {
   const o = opciones || {};
@@ -279,6 +424,8 @@ export function injertarRafaga(flujo, opciones) {
     const faltan = camposQueFaltan(por(flujo, productor), camposDe(o));
     if (faltan.length) throw new Error(`rafaga: «${productor}» no emite ${faltan.join(', ')}: la ráfaga quedaría apagada en silencio o sin el texto del mensaje. Pasar \`campos\` con los nombres que ese nodo emite, o una \`fuente\` que los emita (el nodo que normaliza el entrante)`);
   }
+  const sinConsumo = problemasDelConsumidor(flujo, o.consumidor, a.destino);
+  if (sinConsumo.length) throw new Error(`rafaga: ${sinConsumo.join('; ')}`);
   const traer = por(flujo, o.traerConfiguracion || 'Traer configuración');
   if (!traer) throw new Error(`rafaga: el flujo no tiene «${o.traerConfiguracion || 'Traer configuración'}» (de donde se toman la URL y la credencial)`);
   const d = por(flujo, a.destino);
@@ -343,9 +490,13 @@ export function hallazgosDeLaRafaga(flujo, opciones = {}) {
   const izquierda = String((((((si.parameters || {}).conditions || {}).conditions || [])[0]) || {}).leftValue || '');
   const puerta = (/\/\*puerta\*\/\((.*)\)\/\*fin\*\//.exec(izquierda) || [])[1];
   const fuente = opciones.fuente !== undefined ? opciones.fuente : ((/const n = \$\('([^']+)'\)\.first\(\)\.json;/.exec(izquierda) || [])[1] || '');
+  // Los nombres de campo: los de `opciones.campos`; el del id y el del texto, si no se dan, los del propio nodo «Agrupar ráfaga».
+  const codigoDelAgrupar = String((agrupar.parameters || {}).jsCode || '');
+  const delCodigo = { mensajeId: (/const CAMPO_ID = '([^']+)'/.exec(codigoDelAgrupar) || [])[1], texto: (/const CAMPO_TEXTO = '([^']+)'/.exec(codigoDelAgrupar) || [])[1] };
+  const campos = { ...CAMPOS_CANONICOS, ...Object.fromEntries(Object.entries(delCodigo).filter(([, v]) => v)), ...(opciones.campos || {}) };
   let canonicos;
   try {
-    canonicos = nodosDeLaRafaga({ traer, fuente, config: opciones.config, configBase: opciones.configBase, campos: opciones.campos, puerta: puerta === undefined ? 'true' : puerta, posicion: si.position });
+    canonicos = nodosDeLaRafaga({ traer, fuente, config: opciones.config, configBase: opciones.configBase, campos, puerta: puerta === undefined ? 'true' : puerta, posicion: si.position });
   } catch (e) { h.push(String(e.message)); return h; }
   for (const real of [si, esperar, consultar, agrupar]) {
     const canonico = canonicos.find((c) => c.name === real.name);
@@ -377,7 +528,7 @@ export function hallazgosDeLaRafaga(flujo, opciones = {}) {
   {
     const productor = fuente || normalizador;
     if (productor && por(flujo, productor)) {
-      const faltan = camposQueFaltan(por(flujo, productor), { ...CAMPOS_POR_DEFECTO, ...(opciones.campos || {}) });
+      const faltan = camposQueFaltan(por(flujo, productor), campos);
       if (faltan.length) h.push(`rafaga: «${productor}» no emite ${faltan.join(', ')}: la ráfaga quedaría apagada en silencio o sin el texto del mensaje`);
     }
   }
@@ -388,5 +539,13 @@ export function hallazgosDeLaRafaga(flujo, opciones = {}) {
   if (lejanos.length) h.push(`rafaga: ${lejanos.map((n) => `«${n}»`).join(', ')} tiene que ser ascendiente de «${padres[0].name}»`);
   if (!por(flujo, ANCLA_REPORTE)) h.push(`rafaga: falta «${ANCLA_REPORTE}»`);
   else if (!reporteCorreAntes(flujo, padres[0].name, noVa[0])) h.push(`rafaga: «${ANCLA_REPORTE}» tiene que correr ANTES de la ráfaga`);
+  // El consumidor de `textoDelTurno`: el declarado, o si no se declara, los nodos del flujo que lo leen. Sin ninguno la ráfaga pierde los mensajes agrupados.
+  const abajo = descendientes(flujo, NODO_RAFAGA_AGRUPAR);
+  if (opciones.consumidor === undefined) {
+    const lectores = nodosDe(flujo).filter((n) => !NODOS_DE_LA_RAFAGA.includes(n.name) && abajo.has(n.name) && consumeElTexto(n));
+    if (!lectores.length) h.push(`rafaga: ningún nodo que descienda de «${NODO_RAFAGA_AGRUPAR}» lee \`textoDelTurno\`: la ejecución que responde vería solo SU texto y los que las otras callaron se perderían`);
+  } else {
+    for (const m of problemasDelConsumidor(flujo, opciones.consumidor, noVa[0])) h.push(`rafaga: ${m}`);
+  }
   return h;
 }

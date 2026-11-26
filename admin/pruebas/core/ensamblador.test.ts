@@ -607,8 +607,8 @@ describe('10. Flujos en subcarpetas: el manifiesto lleva la ruta relativa a Fluj
 
 /** Lo que la guardia necesita saber de un flujo que adoptó la ráfaga con nombres no predeterminados: lo que su manifiesto declara. */
 const opcionesDeAdopcion = (f: string) => {
-  const r = (leerManifiesto(f) as { rafaga?: { fuente?: string; campos?: Record<string, string>; normalizador?: string } } | null)?.rafaga ?? {};
-  return { fuente: r.fuente, campos: r.campos, normalizador: r.normalizador };
+  const r = (leerManifiesto(f) as { rafaga?: { fuente?: string; campos?: Record<string, string>; normalizador?: string; consumidor?: string | string[] | null } } | null)?.rafaga ?? {};
+  return { fuente: r.fuente, campos: r.campos, normalizador: r.normalizador, consumidor: r.consumidor };
 };
 
 describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `indicador`)', () => {
@@ -620,7 +620,7 @@ describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `i
     nodes: [
       { ...nodoSet('Normalizar entrada', [240, 300]), type: 'n8n-nodes-base.code', typeVersion: 2, parameters: { jsCode: "return [{ json: { tipo: 'text', mensajeId: 'x', from: '1', phoneNumberId: '2', userInput: 't' } }];" } }, nodoSet('Config del negocio', [480, 300]), nodoSet('Config base', [480, 100]),
       { id: 'traer', name: 'Traer configuración', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [240, 100], credentials: { httpHeaderAuth: { id: '', name: 'REEMPLAZAR_credencial_ingesta' } }, parameters: { method: 'POST', url: URL_SERVIDOR, authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth', sendHeaders: true, headerParameters: { parameters: [{ name: 'X-NovuChat-Numero', value: '={{ $json.phoneNumberId }}' }] } } },
-      nodoSet('Reportar mensaje (entrante)', [960, 100]), nodoSet('¿Atención normal?', [960, 300]), nodoSet('Agente', [1200, 400]),
+      nodoSet('Reportar mensaje (entrante)', [960, 100]), nodoSet('¿Atención normal?', [960, 300]), { ...nodoSet('Agente', [1200, 400]), parameters: { texto: "={{ $('Agrupar ráfaga').first().json.textoDelTurno }}" } },
     ],
     connections: { 'Normalizar entrada': enlaces('Config base', 'Reportar mensaje (entrante)'), 'Config base': enlaces('Config del negocio'), 'Config del negocio': enlaces('¿Atención normal?'), '¿Atención normal?': enlaces('Agente') },
   });
@@ -633,7 +633,7 @@ describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `i
     }
     return f;
   };
-  const MANIFIESTO = { flujo: 'sintetico-rafaga.json', rafaga: { ancla: { nodo: '¿Atención normal?', salida: 0, destino: 'Agente' } } };
+  const MANIFIESTO = { flujo: 'sintetico-rafaga.json', rafaga: { ancla: { nodo: '¿Atención normal?', salida: 0, destino: 'Agente' }, campos: { texto: 'userInput' }, consumidor: 'Agente' } };
   /** Una raíz temporal con el flujo sintético SIN la pieza y su manifiesto que la pide. */
   function raizConRafaga(): string {
     const dir = copiaDeFlujos();
