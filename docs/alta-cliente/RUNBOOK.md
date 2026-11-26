@@ -187,6 +187,8 @@ node admin/scripts/plataforma/aplicar-catalogo-externo.mjs --proyecto <proyecto>
 
 **Credencial del catálogo de NovuTienda en n8n** (comercio con catálogo externo; el token llega en un archivo de modo 600 que entrega la sesión de NovuTienda, nunca por un chat): `./scripts/cargar-credencial-catalogo.sh --nombre "NovuTienda catálogo (<comercio>)" --archivo <ruta> --env <.env de referencia>` en seco; con `--aplicar --confirmo "<mismo nombre>"` la crea una vez y borra el archivo (`--conservar` lo deja; si falla, se conserva). La de ingesta se crea con `./scripts/rotar-ingesta.sh crear`. El token de WhatsApp (Graph) no se toca desde NovuChat.
 
+**Juego de conversación** (`node admin/scripts/plataforma/encender-conversacion.mjs`, seco por omisión): con `--aplicar` escribe las banderas con infraestructura, y su paso 7 **enciende `personaPuedeRetomar`** («Retomar»: la plantilla de utilidad fuera de la ventana de 24 h, 0,0113 USD por envío). Con `--aplicar` se corre **solo con el botón de Andres, por comercio**. Además, Retomar exige la plantilla aprobada por WAM y registrada, la salida de persona republicada y el invocador público de `retomarConversacion` (`scripts/nube-visor.sh`, después de la etiqueta que despliega la Function). En seco se puede correr siempre: no escribe.
+
 - **El plan y el contador del catálogo.** `alta-comercio.mjs` deja al comercio
   en **Impulso**, con la copia de sus límites en `cuenta/estado.limites` (lo que
   leen las reglas y las Functions) y el contador `contadores/catalogo` en 0. Si
