@@ -2391,7 +2391,7 @@
           "timeout": 3000
         }
       },
-      "notes": "Lee del servidor los ultimos mensajes de este telefono (maximo 6 lecturas, ninguna escritura). Misma URL y credencial que «Traer configuracion». Con Continue on Fail, 3 s de tope y un reintento: si sigue fallando, «Agrupar rafaga» responde solo."
+      "notes": "Lee del servidor los ultimos mensajes de este telefono (11 lecturas en el caso normal y hasta 12 con reintento de Meta, ninguna escritura; el servidor descarta vecinos de mas de 30 s y mi mensaje debe tener 60 s o menos). Misma URL y credencial que «Traer configuracion». Con Continue on Fail, 3 s de tope y un reintento: si sigue fallando, «Agrupar rafaga» responde solo."
     },
     {
       "id": "rafaga-agrupar",
