@@ -12,7 +12,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import type { Firestore } from 'firebase-admin/firestore';
 import {
   fragmentosDeRafaga, leerRafaga, validarRafaga, MAX_LECTURAS, MAX_LECTURAS_DE_LA_RAMA, LECTURAS_DE_LA_RUTA, VENTANA_PROPIA_MS, VENTANA_VECINOS_MS,
-  TOPE_POR_MINUTO, tomarCupoDeRafaga, reiniciarCuposDeRafaga, type MensajeCrudo,
+  TOPE_POR_MINUTO, TOPE_POR_COMERCIO_POR_MINUTO, tomarCupoDeRafaga, reiniciarCuposDeRafaga, type MensajeCrudo,
 } from '../../functions/src/core/conversacion/rafaga.ts';
 
 const TEL = '59100000031';
@@ -240,5 +240,23 @@ describe('tomarCupoDeRafaga: tope por comercio y teléfono, en memoria', () => {
     reiniciarCuposDeRafaga();
     for (let i = 0; i < TOPE_POR_MINUTO; i++) tomarCupoDeRafaga('ta', TEL, T0);
     expect(tomarCupoDeRafaga('ta', TEL, T0 - 5000)).toBe(true);
+  });
+});
+
+describe('tomarCupoDeRafaga: tope por comercio (rotar teléfonos no lo esquiva)', () => {
+  it('21 teléfonos distintos no llegan al tope comercial; el 121.º sí, y otro comercio no se afecta', () => {
+    reiniciarCuposDeRafaga();
+    const tel = (i: number) => `591000${String(i).padStart(5, '0')}`;
+    for (let i = 0; i < TOPE_POR_COMERCIO_POR_MINUTO; i++) expect(tomarCupoDeRafaga('ta', tel(i), T0)).toBe(true);
+    expect(tomarCupoDeRafaga('ta', tel(1000), T0 + 1000)).toBe(false);
+    expect(tomarCupoDeRafaga('tb', tel(0), T0 + 1000)).toBe(true);
+  });
+  it('un rechazo no gasta cupo: tras el tope comercial, el teléfono conserva el suyo', () => {
+    reiniciarCuposDeRafaga();
+    for (let i = 0; i < TOPE_POR_COMERCIO_POR_MINUTO; i++) tomarCupoDeRafaga('ta', `591000${String(i).padStart(5, '0')}`, T0);
+    for (let i = 0; i < 50; i++) expect(tomarCupoDeRafaga('ta', TEL, T0)).toBe(false);
+    expect(tomarCupoDeRafaga('ta', TEL, T0 + 60_000)).toBe(true);
+    for (let i = 0; i < TOPE_POR_MINUTO - 1; i++) expect(tomarCupoDeRafaga('ta', TEL, T0 + 60_000)).toBe(true);
+    expect(tomarCupoDeRafaga('ta', TEL, T0 + 60_000)).toBe(false);
   });
 });

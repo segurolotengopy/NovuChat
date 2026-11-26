@@ -136,9 +136,11 @@ sigue emitiendo el item **del ancla** más `rafaga` y `textoDelTurno`; el flujo 
 
 - La `fuente` tiene que ser **ascendiente del ancla** y correr una vez por mensaje (esto último no se puede verificar sin ejecutar: lo revisa el PR del
   flujo). La `puerta` puede leer otros nodos (`$('Puerta del turno').first().json.ruta === 'sigue'`); el injerto valida que existan y sean ascendientes.
-- **No falla en silencio:** sin `fuente`, `injertarRafaga` (y la guardia sobre un flujo armado) se niega si, subiendo desde el ancla por nodos que dejan
-  pasar el item (IF, Switch, Filter, Wait, NoOp), el primero que lo produce es una llamada HTTP o un Code que ni menciona el id, ni copia la entrada
-  (`...`, `Object.assign`, `return $input.all()`). Con cualquier otro nodo no se objeta (se evita el falso error): ahí manda la revisión del PR.
+- **No falla en silencio (lista blanca):** sin `fuente`, `injertarRafaga` (y la guardia sobre un flujo armado) **solo arma** si todo camino del ancla al normalizador
+  pasa únicamente por nodos que dejan pasar el item (IF, Switch, Filter, Wait, NoOp). Cualquier otro nodo en ese camino (Code, Set, HTTP, Merge…) puede cambiar
+  el item y no se sabe qué emite, aunque su código copie la entrada: se niega y pide `fuente`. En los JSON reales: Walisuma (tras «Puerta del turno») y Bellido
+  (`agenda-minima.v0.json`) necesitan `fuente: 'Normalizar entrada'`; los Demos A y B arman sin `fuente` (el item sale del normalizador por IF). Lo prueban
+  `rafaga-injerto.test.ts` sobre esos cuatro JSON.
 - Las guardias infieren la `fuente` del propio IF; los demás nombres no predeterminados se pasan por opciones.
 
 ### Posiciones en el lienzo y convivencia con el indicador
@@ -151,7 +153,7 @@ así que la ráfaga nunca debe subir por encima del indicador).
 
 ### De dónde lee cada nodo
 
-El IF (`$json`), la consulta y el Code leen el id del mensaje, el teléfono, el número y el texto del **mismo item: el del ancla**, con
+El IF (`$json`), la consulta y el Code leen el id del mensaje, el teléfono, el número y el texto del **mismo item: el del ancla** (o el de la `fuente`, ver arriba), con
 los nombres de campo de `campos` (por defecto `tipo`, `mensajeId`, `from`, `phoneNumberId`, `userInput`, los del normalizador común).
 El normalizador, «Config del negocio» y «Config base» tienen que ser **ascendientes del ancla** (el ensamblador se niega a armar y la
 guardia lo exige en un flujo armado); además, toda lectura fallida da `false` en el IF y espera de 2 s en el Wait y el Code, de modo que

@@ -5,7 +5,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
-  TOPE_POR_MINUTO, reiniciarCuposDeRafaga, type MensajeCrudo,
+  TOPE_POR_MINUTO, TOPE_POR_COMERCIO_POR_MINUTO, reiniciarCuposDeRafaga, type MensajeCrudo,
 } from '../functions/src/core/conversacion/rafaga.ts';
 
 const PROYECTO = 'demo-novuchat-pruebas';
@@ -218,6 +218,33 @@ describe('tope de llamadas de la rama `rafaga` (429)', () => {
       expect((await pedir({ telefono: TEL, rafaga: R() })).codigo).toBe(200);
     } finally { proto.get = original; vi.setSystemTime(T0); reiniciarCuposDeRafaga(); }
   });
+  it('un pedido mal formado (400) no gasta cupo', async () => {
+    reiniciarCuposDeRafaga();
+    for (let i = 0; i < TOPE_POR_MINUTO + 5; i++) {
+      expect((await pedir({ telefono: TEL, rafaga: { v: 1, idMeta: '' } })).codigo).toBe(400);
+      expect((await pedir({ telefono: TEL, rafaga: R(), sesion: { v: 1 } })).codigo).toBe(400);
+    }
+    for (let i = 0; i < TOPE_POR_MINUTO; i++) expect((await pedir({ telefono: TEL, rafaga: R() })).codigo).toBe(200);
+    expect((await pedir({ telefono: TEL, rafaga: R() })).codigo).toBe(429);
+    reiniciarCuposDeRafaga();
+  });
+  it('rotando teléfonos se llega al tope del comercio: 429 sin leer mensajes; otro comercio sigue; la ventana reabre', async () => {
+    reiniciarCuposDeRafaga();
+    const proto = Object.getPrototypeOf(db.collection('x').orderBy('ts')) as { get: (...a: unknown[]) => Promise<unknown> };
+    const original = proto.get;
+    const tel = (i: number) => `591000${String(i).padStart(5, '0')}`;
+    for (let i = 0; i < TOPE_POR_COMERCIO_POR_MINUTO; i++) expect((await pedir({ telefono: tel(i), rafaga: R() })).codigo).toBe(200);
+    let consultas = 0;
+    proto.get = function (this: unknown, ...a: unknown[]) { consultas++; return original.apply(this, a); };
+    try {
+      const r = await pedir({ telefono: tel(5000), rafaga: R() });
+      expect(r.codigo).toBe(429);
+      expect(consultas).toBe(0);
+      expect((await pedir({ telefono: TEL, rafaga: R('b1') }, NUMERO_B, TOKEN_B)).codigo).toBe(200);
+      vi.setSystemTime(T0 + 60_001);
+      expect((await pedir({ telefono: tel(5000), rafaga: R() })).codigo).toBe(200);
+    } finally { proto.get = original; vi.setSystemTime(T0); reiniciarCuposDeRafaga(); }
+  }, 60_000);
   it('sin firma no gasta cupo: 401 y la ventana intacta', async () => {
     reiniciarCuposDeRafaga();
     for (let i = 0; i < TOPE_POR_MINUTO + 3; i++) expect((await pedir({ telefono: TEL, rafaga: R() }, NUMERO_A, null)).codigo).toBe(401);
