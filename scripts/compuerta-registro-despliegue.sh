@@ -15,7 +15,8 @@
 #       crear, actualizar o borrar tiene su «Successful <op> operation.». El
 #       texto «failed to update function» no sirve de veredicto: aparece
 #       también cuando el reintento interno de firebase-tools tiene éxito.
-#   R4  «This deployment is in an unexpected state» (siempre).
+#   R4  «This deployment is in an unexpected state»: fatal, SALVO que el despliegue esté completo y limpio y no haya Functions NUEVAS
+#       (solo actualizaciones: conservan su invoker); entonces es ::warning:: con las Functions candidatas (26/11/2026).
 #   R5  «release complete» por cada sitio de Hosting esperado.
 #   R6  «Functions deploy had errors».
 #   R7  SOLO incluye functions y el registro no trae ni una línea de Functions
@@ -140,9 +141,7 @@ if tiene functions; then
   fi
 fi
 
-# R4 y R6
-grep -Fq 'This deployment is in an unexpected state' <<< "$limpio" \
-  && motivos+=("firebase-tools avisó «This deployment is in an unexpected state»")
+# R6 («Functions deploy had errors»). R4 («unexpected state») se decide MAS ABAJO, cuando ya se sabe si el despliegue quedó completo.
 grep -Fq 'Functions deploy had errors' <<< "$limpio" \
   && motivos+=("firebase-tools avisó «Functions deploy had errors»")
 
@@ -177,6 +176,41 @@ if (( ${#roles[@]} == 0 )); then hosting_publicado=no_aplica
 elif (( publicados == ${#roles[@]} )); then hosting_publicado=todos
 elif (( publicados == 0 )); then hosting_publicado=ninguno
 else hosting_publicado=parcial
+fi
+
+# R4: «Updated function is not associated with a service. This deployment is in an unexpected state». firebase-tools (v15.28.1,
+# fabricator.ts, updateV2Function) lo imprime cuando la API devuelve la actualización SIN el nombre del servicio: NO es fatal para
+# el CLI (la operación sale «Successful update operation»), pero OMITE solo el paso del invoker (IAM) de ESA Function; el aviso
+# no la nombra. Por eso:
+#   · FATAL (como antes) si el despliegue NO está completo y limpio (falta algún «Successful», «Deploy complete!», un sitio de
+#     Hosting, o ya hay otro motivo; el caso del 16/11/2026) o si se CREÓ alguna Function en el registro (un create sin invoker
+#     deja una Function no invocable);
+#   · NO fatal si todo lo demás está completo y TODO fueron actualizaciones: una actualización conserva el IAM que ya tenía. Se
+#     avisa con ::warning:: (cuántos avisos y las Functions candidatas) y se manda a verificar el invoker (DESPLIEGUE-FIREBASE.md).
+avisos_servicio="$(grep -Fc 'This deployment is in an unexpected state' <<< "$limpio" || true)"
+if [[ "${avisos_servicio:-0}" != "0" ]]; then
+  creaciones="$(grep -Ec 'functions: creating ' <<< "$acumulado" || true)"
+  if (( ${#motivos[@]} == 0 )) && [[ "${creaciones:-0}" == "0" ]]; then
+    # Candidatas: las Functions confirmadas entre el primer aviso y la primera confirmación posterior al último (el aviso no dice cuál).
+    candidatas="$(awk '
+      /This deployment is in an unexpected state/ { if (!ini) ini = NR; fin = NR }
+      { l[NR] = $0 }
+      END {
+        if (!ini) exit
+        n = 0
+        for (i = ini; i <= NR; i++) {
+          if (l[i] ~ /Successful (create|update|delete) operation\./) {
+            match(l[i], /functions\[[^]]+\]/); id = substr(l[i], RSTART + 10, RLENGTH - 11)
+            sub(/\(.*$/, "", id); sub(/^.*:/, "", id)
+            if (i > fin) { c[++n] = id; break } else c[++n] = id
+          }
+        }
+        for (i = 1; i <= n; i++) printf "%s%s", (i > 1 ? ", " : ""), c[i]
+      }' <<< "$limpio")"
+    echo "::warning::firebase-tools avisó $avisos_servicio vez/veces «unexpected state» (una actualización sin servicio asociado: se omitió su invoker), con el despliegue completo y sin Functions nuevas. Verificar el invoker de las Functions HTTP. Candidatas (el aviso no nombra la Function): ${candidatas:-no deducibles}."
+  else
+    motivos+=("firebase-tools avisó «This deployment is in an unexpected state»")
+  fi
 fi
 
 # ¿Vale la pena repetir el despliegue? Caso real (25/11/2026, staging, 86 Functions): firebase-tools recibe «Quota Exceeded» en

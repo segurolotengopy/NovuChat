@@ -251,6 +251,21 @@ del proyecto de producción. Lo que hay:
     código fuente); el registro acumulado cubre ese peor caso de todos modos. Si el número de Functions crece mucho más,
     el siguiente paso es desplegar por tandas con `--only functions:…`. Pruebas: `W2b` en
     `admin/pruebas/despliegue-compuerta.test.ts` y las `C16` a `C20` de la compuerta.
+  - **«This deployment is in an unexpected state» (26/11/2026, relajado por orden de Andres con el botón de fusión).** firebase-tools
+    (v15.28.1, `fabricator.ts`, `updateV2Function`) imprime «Updated function is not associated with a service. This deployment is in
+    an unexpected state - please re-deploy your functions» cuando la API devuelve la actualización SIN el nombre del servicio. No es fatal
+    para el CLI (la operación sale «Successful update operation»), pero **omite solo el paso del invoker (IAM) de esa Function**; el aviso
+    no la nombra. El 26/11 pasó 4 veces en un despliegue completo a staging (87 actualizaciones, todas «Successful», Hosting publicado,
+    cero creaciones) y la compuerta lo tumbó. **Regla vigente de la compuerta (R4):** es fatal, como siempre, si el despliegue no está
+    completo y limpio (falta algún «Successful», «Deploy complete!» o un sitio de Hosting) **o si hubo alguna Function CREADA** (un create
+    sin invoker deja una Function no invocable); si todo está completo y fueron solo actualizaciones (conservan el IAM que tenían), pasa
+    con un `::warning::` que cuenta los avisos y nombra las Functions candidatas (las confirmadas junto a los avisos: el aviso no dice
+    cuál). **Cómo verificar el invoker después:** para las Functions de la lista cerrada, `./scripts/nube-visor.sh --servicio <s> --entorno
+    <staging|produccion>` (seco: lee la política IAM y dice «ya concedido: allUsers tiene roles/run.invoker»; sin `--aplicar` no escribe;
+    si falta, con `--aplicar --confirmo <entorno>` lo concede y prueba que el endpoint conteste nuestro código y no el 403 de Google); para
+    el catálogo, `nube-catalogo.sh`. Una Function que no esté en esos scripts se mira con
+    `gcloud run services get-iam-policy <servicio en minúsculas> --region us-east1`. Fixture: `unexpected-state-completo-26-11.registro.txt`;
+    pruebas `C6` y `C23`.
   - **Todo secreto nuevo que una Function declare debe existir en STAGING ANTES de fusionar** (lección del 25/11/2026:
     `NOVUTIENDA_CATALOGO` se creó en producción pero no en staging y `desplegar-staging` falló desde #1096 con
     «In non-interactive mode but have no value for the secret»). Se crea con `scripts/preparar-staging.sh <fase>`

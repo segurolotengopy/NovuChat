@@ -210,6 +210,31 @@ describe('compuerta del registro de `firebase deploy`', () => {
     expect(intento(INICIA('fnX') + OK('fnX') + FIN, INICIA('fnX') + OK('fnX') + FIN).reintentable).toBe('no');
   });
 
+  it('C23: el registro REAL del 26/11 (87 actualizaciones, todas «Successful», Hosting publicado, 4 avisos «unexpected state») pasa con un ::warning:: que cuenta los avisos y nombra candidatas', () => {
+    const real = readFileSync(join(FIX, 'unexpected-state-completo-26-11.registro.txt'), 'utf8');
+    const corre = (reg: string) => compuerta(reg, { SOLO: SOLO_COMPLETO, SITIO_CONSOLA: 'proyecto-ficticio', SITIO_CATALOGO: 'catalogo-ficticio' });
+    const r = corre(real);
+    expect(r.status, r.stdout).toBe(0);
+    expect(r.salidas['completo']).toBe('true');
+    expect(r.stdout).toMatch(/::warning::firebase-tools avisó 4 vez\/veces «unexpected state»/);
+    expect(r.stdout).toContain('Candidatas');
+    expect(r.stdout).toMatch(/Candidatas[^:]*: [A-Za-z]/); // deduce al menos una Function
+    expect(r.stdout).not.toContain('::error::');
+    // NEGANDO: cualquier otra cosa sigue siendo fatal con el MISMO aviso.
+    const sinOk = real.split('\n'); const i = sinOk.findIndex((l) => l.includes('Successful update operation'));
+    sinOk.splice(i, 1);
+    const f1 = corre(sinOk.join('\n')); expect(f1.status).toBe(1); expect(f1.stdout).toContain('unexpected state'); expect(f1.stdout).toContain('Function sin confirmar');
+    const f2 = corre(real.replace('Deploy complete!', 'Deploy terminó')); expect(f2.status).toBe(1);
+    const f3 = corre(real.replace('hosting[catalogo-ficticio]: release complete', 'hosting[catalogo-ficticio]: release pendiente')); expect(f3.status).toBe(1);
+    expect(f3.stdout).toContain('unexpected state');
+    // NEGANDO: una Function NUEVA (create) con el aviso es fatal: su invoker no se fijó y nadie la podría invocar.
+    const conCreate = real.replace('\n', '\ni  functions: creating Node.js 22 (2nd Gen) function admin:fnNueva(us-east1)...\n✔  functions[admin:fnNueva(us-east1)] Successful create operation.\n');
+    const f4 = corre(conCreate); expect(f4.status, f4.stdout).toBe(1); expect(f4.stdout).toContain('unexpected state');
+    // Sin avisos no hay warning ni candidatas.
+    const limpio = corre(real.split('\n').filter((l) => !l.includes('unexpected state')).join('\n'));
+    expect(limpio.status).toBe(0); expect(limpio.stdout).not.toContain('unexpected state');
+  });
+
   it('C21: un id de Function con metacaracteres de expresión regular nunca es reintentable', () => {
     const raro = INICIA('fn.*') + CUOTA('fnAlgo');
     expect(intento(raro, raro).reintentable).toBe('no');
@@ -249,10 +274,19 @@ describe('compuerta del registro de `firebase deploy`', () => {
     expect(r.salidas['functions_pendientes']).toBe('functions:admin:fnSiete');
   });
 
-  it('C6: «unexpected state» falla aunque todo lo demás esté', () => {
-    const r = compuerta(`${EXITOSO}⚠  functions: Updated function is not associated with a service. This deployment is in an unexpected state - please re-deploy your functions.\n`);
-    expect(r.status).toBe(1);
-    expect(r.stdout).toContain('unexpected state');
+  it('C6: «unexpected state» con el despliegue completo y SOLO actualizaciones es un ::warning::; con una Function nueva o un despliegue incompleto falla (relajado el 26/11/2026, ver C23)', () => {
+    const AVISO = '⚠  functions: Updated function is not associated with a service. This deployment is in an unexpected state - please re-deploy your functions.\n';
+    const completo = compuerta(`${EXITOSO}${AVISO}`);
+    expect(completo.status, completo.stdout).toBe(0);
+    expect(completo.stdout).toMatch(/::warning::firebase-tools avisó 1 vez\/veces «unexpected state»/);
+    // NEGANDO: con una Function CREADA el mismo aviso es fatal.
+    const conCreate = compuerta(`${EXITOSO}i  functions: creating Node.js 22 (2nd Gen) function admin:fnNueva(us-east1)...\n✔  functions[admin:fnNueva(us-east1)] Successful create operation.\n${AVISO}`);
+    expect(conCreate.status).toBe(1);
+    expect(conCreate.stdout).toContain('unexpected state');
+    // NEGANDO: con el despliegue a medias (el del 16/11) también.
+    const medias = compuerta(A_MEDIAS);
+    expect(medias.status).toBe(1);
+    expect(medias.stdout).toContain('unexpected state');
   });
 
   it('C7: sin el release del catálogo falla y Hosting queda «parcial»', () => {
