@@ -273,6 +273,72 @@ describe('(4) Medios y botones en ráfaga responden como hoy (son separadores, n
   });
 });
 
+/** Lo que el agente RECIBE de verdad: el mensaje del turno que arma su expresión con el ítem real, sin el contexto del sistema. */
+const mensajeDelModelo = (l: LlamadaDoble): string => String(l.parametros['text']).split('[MENSAJE DEL CLIENTE]\n')[1] ?? '';
+
+describe('(2b) De punta a punta sobre el JSON real: calla, un envío y el MODELO recibe TODOS los textos en orden', () => {
+  const textos = ['quiero una hamburguesa', 'doble por favor', 'sin cebolla'];
+  const correr = (n: 2 | 3, caida: boolean) => {
+    const hilo = textos.slice(0, n).map((t, i) => entrada(`wamid.${'ABC'[i]}`, t, T0 + i * 800));
+    const w = crear({ hilo, consulta: caida ? () => 'cae' : undefined });
+    const rs = hilo.map((e) => w.mundo.turno(texto(e.idMeta, e.texto)));
+    return { w, rs };
+  };
+
+  it.each([2, 3] as const)('ráfaga de %i textos: los anteriores CALLAN, sale UN solo envío y el modelo lee todos los textos EN ORDEN, con el ítem real (`textoDelTurno`) llegando por ¿Es un comprobante? y ¿Trae un medio?', (n) => {
+    const { w, rs } = correr(n, false);
+    const esperado = textos.slice(0, n).join('\n');
+    // (1) callan: ni «Agrupar ráfaga» emite, ni el agente corre, ni sale nada
+    for (const r of rs.slice(0, n - 1)) {
+      expect(r.ejecutados.has('Agrupar ráfaga')).toBe(true);
+      expect(r.porNodo['Agrupar ráfaga'] ?? []).toEqual([]);
+      expect(r.ejecutados.has('AI Agent NovuChat')).toBe(false);
+      expect(envios(r)).toBe(0);
+    }
+    // (2) un solo envío, el del último
+    expect(total(rs, envios)).toBe(1);
+    expect(envios(rs[n - 1]!)).toBe(1);
+    // (3) el modelo recibe TODOS los mensajes en orden, exactamente
+    expect(w.agente.length).toBe(1);
+    expect(w.agente[0]!.item['textoDelTurno']).toBe(esperado);
+    expect(mensajeDelModelo(w.agente[0]!)).toBe(esperado);
+    // y el ítem conservó `textoDelTurno` por cada nodo intermedio hasta el agente
+    for (const nodoIntermedio of ['Agrupar ráfaga', '¿Es un comprobante?', '¿Trae un medio?']) {
+      expect(rs[n - 1]!.porNodo[nodoIntermedio]?.[0]?.['textoDelTurno'], nodoIntermedio).toBe(esperado);
+    }
+    // lo reportado de cada mensaje sigue siendo su texto crudo
+    rs.forEach((r, i) => expect((r.llamadas.ingesta[0] as J)['texto']).toBe(textos[i]));
+  });
+
+  it.each([2, 3] as const)('ráfaga de %i textos con la consulta CAÍDA (falla abierto): cada uno responde solo, con SU texto exacto; nadie queda sin respuesta', (n) => {
+    const { w, rs } = correr(n, true);
+    expect(total(rs, envios)).toBe(n);
+    expect(w.agente.length).toBe(n);
+    w.agente.forEach((l, i) => {
+      expect(mensajeDelModelo(l)).toBe(textos[i]);
+      expect(l.item['textoDelTurno']).toBeUndefined();
+    });
+  });
+
+  it('ráfaga de 3 con [ENVIAR_QR]: UN solo QR y UN solo turno del modelo, con el texto agrupado', () => {
+    const ok = crear({ hilo: hilo3(), modelo: () => 'Perfecto, te envío el QR. [ENVIAR_QR]' });
+    const rs = hilo3().map((e) => ok.mundo.turno(texto(e.idMeta, e.texto)));
+    expect(total(rs, (r) => nodoConteo(r, 'Enviar QR de cobro'))).toBe(1);
+    expect(ok.agente.length).toBe(1); // el modelo corre una sola vez: un solo turno agrupado
+    expect(mensajeDelModelo(ok.agente[0]!)).toBe('quiero una hamburguesa\ndoble por favor\nsin cebolla');
+  });
+
+  it('candado de existencias en una ráfaga de 3, con y sin consulta caída: NUNCA sale el QR ni se confirma; pasa con recepción una vez por respuesta', () => {
+    for (const caida of [false, true]) {
+      const w = crear({ hilo: hilo3(), consulta: caida ? () => 'cae' : undefined, modelo: () => 'Listo, una gaseosa. [ENVIAR_QR] [PEDIDO_CONFIRMADO]' });
+      const rs = hilo3().map((e) => w.mundo.turno(texto(e.idMeta, e.texto)));
+      expect(total(rs, (r) => nodoConteo(r, 'Enviar QR de cobro')), `caida=${caida}`).toBe(0);
+      expect(total(rs, (r) => nodoConteo(r, 'Avisar al dueño')), `caida=${caida}`).toBe(0);
+      expect(total(rs, (r) => nodoConteo(r, 'Avisar al dueño (transferencia)')), `caida=${caida}`).toBe(1); // el aviso a recepción se marca por teléfono: ni con tres respuestas propias se duplica
+    }
+  });
+});
+
 describe('(5) QR, aviso y candado de existencias: ni duplicados ni perdidos en una ráfaga', () => {
   it('[ENVIAR_QR] en una ráfaga de 2: un solo QR', () => {
     const w = crear({ hilo: hilo2(), modelo: () => 'Perfecto, te envío el QR. [ENVIAR_QR]' });
