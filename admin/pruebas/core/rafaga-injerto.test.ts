@@ -24,7 +24,7 @@ type Flujo = any;
 type Nodo = any;
 
 /** Un normalizador que EMITE los campos (los comunes, `texto` y los nombres raros de las pruebas de `campos`): la ráfaga verifica el código del productor. */
-const NORMALIZADOR_SINTETICO = "return [{ json: { tipo: 'text', mensajeId: 'x', from: '1', phoneNumberId: '2', userInput: 't', texto: 't', idEntrante: 'x', textoLimpio: 't', clase: 'text', telefono: '1', numeroId: '2' } }];";
+const NORMALIZADOR_SINTETICO = "return [{ json: { tipo: 'text', mensajeId: 'x', from: '1', phoneNumberId: '2', userInput: 't', texto: 't', idEntrante: 'x', textoLimpio: 't', clase: 'text', telefono: '1', numeroId: '2', esComprobante: false, eleccion: '' } }];";
 const URL_SERVIDOR = 'https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo';
 const un = (name: string, position: [number, number], extra: Record<string, unknown> = {}): Nodo => ({ id: name, name, type: 'n8n-nodes-base.set', typeVersion: 3, position, parameters: {}, ...extra });
 const enl = (...nombres: string[]) => ({ main: [nombres.map((node) => ({ node, type: 'main', index: 0 }))] });
@@ -824,5 +824,98 @@ describe('rafaga: el consumidor LEE `textoDelTurno` de «Agrupar ráfaga» en c�
     expect(arma({ text: "Agrupar ráfaga textoDelTurno {{ $('Agrupar ráfaga').first().json.textoDelTurno }}" })).toThrow(no); // no empieza con `=`: n8n no la evalúa
     expect(arma({ text: "={{ 'Agrupar ráfaga textoDelTurno' }}" })).toThrow(no); // una cadena dentro de la expresión
     expect(arma({ text: "={{ $('Agrupar ráfaga').first().json.rafaga }} y {{ $json.textoDelTurno }}" })).toThrow(no);
+  });
+});
+
+describe('rafaga: la `puerta` no puede apagar la ráfaga en silencio (constante falsa, campo que el productor no emite)', () => {
+  const con = (puerta: string) => () => armado({ puerta });
+  it('control: una puerta que lee campos que el productor SÍ emite arma (y `true`, la de por defecto)', () => {
+    expect(con("n.eleccion === ''")).not.toThrow();
+    expect(con("n['esComprobante'] !== true && n.tipo === 'text'")).not.toThrow();
+    expect(con("n?.eleccion === ''")).not.toThrow();
+    expect(con('true')).not.toThrow();
+    expect(con("$('Config base').first().json.ok === true")).not.toThrow();
+  });
+  it('NEGADA: una puerta constante falsa («false», 0, null, undefined, !1, una comparación constante, `x && false`) es ERROR al armar', () => {
+    for (const p of ['false', '0', 'null', 'undefined', '!1', "''", '1 === 2', "'a' === 'b'", "n.tipo === 'text' && false", '!true']) expect(con(p), p).toThrow(/constante falsa.*apagada en silencio/);
+  });
+  it('NEGADA: un campo que el productor no emite, `n.a.b.c`, `n` entero, `n[clave calculada]` o una expresión que no se analiza', () => {
+    expect(con('n.noExiste === "x"')).toThrow(/la puerta lee n\.noExiste y «Normalizar entrada» no lo emite/);
+    expect(con('n.a.b.c')).toThrow(/la puerta lee n\.a /);
+    expect(con("n['otroInexistente'] === 1")).toThrow(/n\.otroInexistente/);
+    expect(con("n.eleccion === '' && n.fantasma")).toThrow(/n\.fantasma/);
+    expect(con('Object.keys(n).length > 0')).toThrow(/`n` usado entero/);
+    expect(con('n[c] === 1')).toThrow(/clave calculada/);
+    expect(con('n.tipo ===')).toThrow(/no es una expresión JS válida/);
+    expect(con('1); (process')).toThrow(/una sola expresión/);
+  });
+  it('NEGADA con un productor que no declara el campo: lo mismo con `fuente` y con un campo que desaparece del normalizador', () => {
+    const f = armado({ puerta: "n.eleccion === ''" });
+    nodo(f, 'Normalizar entrada').parameters.jsCode = NORMALIZADOR_SINTETICO.replace(", eleccion: ''", '');
+    expect(hallazgosDeLaRafaga(f).join('|')).toMatch(/la puerta lee n\.eleccion y «Normalizar entrada» no lo emite/);
+    const g = sintetico();
+    nodo(g, 'Normalizar entrada').parameters.jsCode = NORMALIZADOR_SINTETICO.replace(", eleccion: ''", '');
+    expect(() => injertar(g, { ancla: ANCLA, fuente: 'Normalizar entrada', puerta: "n.eleccion === ''" })).toThrow(/la puerta lee n\.eleccion/);
+  });
+  it('la guardia sobre un flujo ya armado repite la verificación: una puerta retocada a mano a `false` o a un campo inexistente se ve', () => {
+    for (const [mala, patron] of [['false', /constante falsa/], ['n.noExiste === 1', /la puerta lee n\.noExiste/]] as const) {
+      const f = armado({ puerta: "n.eleccion === ''" });
+      const si = nodo(f, NODO_RAFAGA_SI).parameters.conditions.conditions[0];
+      si.leftValue = si.leftValue.replace("/*puerta*/(n.eleccion === '')/*fin*/", `/*puerta*/(${mala})/*fin*/`);
+      expect(hallazgosDeLaRafaga(f).join('|'), mala).toMatch(patron);
+    }
+  });
+});
+
+describe('rafaga: M1, un retorno que no es un arreglo de `{ json }` resoluble es una emisión ABIERTA y sin claves (se niega); reasignación, homónimas y claves calculadas', () => {
+  const R = "tipo: 'text', from: '1', phoneNumberId: '2', userInput: 't'";
+  const con = (codigo: string) => () => {
+    const f = sintetico();
+    nodo(f, 'Normalizar entrada').parameters.jsCode = codigo;
+    return injertarRafaga(f, { ancla: ANCLA, campos: { texto: 'userInput' }, consumidor: 'Agente' });
+  };
+  const NO_EMITE = /no emite /;
+
+  it('controles: los patrones legítimos siguen armando (arreglo literal, lista con push, map con `{ json }`, retorno vacío, asignaciones de miembro sin reasignar)', () => {
+    expect(con(`if (c) return []; return [{ json: { ${R}, mensajeId: 'x' } }];`)).not.toThrow();
+    expect(con(`const out = []; for (const i of $input.all()) out.push({ json: { ${R}, mensajeId: 'x' } }); return out;`)).not.toThrow();
+    expect(con(`return $input.all().map((i) => ({ json: { ${R}, mensajeId: 'x' } }));`)).not.toThrow();
+    expect(con(`return $input.all().map((i) => { if (c) return { json: { ${R}, mensajeId: 'x' } }; return { json: { ${R}, mensajeId: 'y' } }; });`)).not.toThrow();
+    expect(con(`const o = { ${R} }; o.mensajeId = 'x'; return [{ json: o }];`)).not.toThrow();
+    expect(con(`const o = { ${R} }; o['mensajeId'] = 'x'; if (c) { return []; } return [{ json: o }];`)).not.toThrow();
+  });
+  it('NEGADA: un retorno temprano que pasa la entrada (`$input.all()`, una variable, o items sin envoltura `{ json }`) no se da por emitido', () => {
+    expect(con(`if (c) return $input.all(); return [{ json: { ${R}, mensajeId: 'x' } }];`)).toThrow(NO_EMITE);
+    expect(con(`const items = $input.all(); if (c) return items; return [{ json: { ${R}, mensajeId: 'x' } }];`)).toThrow(NO_EMITE);
+    expect(con(`if (c) return [{ ${R}, mensajeId: 'x' }]; return [{ json: { ${R}, mensajeId: 'x' } }];`)).toThrow(NO_EMITE);
+    expect(con(`if (c) { return [...$input.all()]; } return [{ json: { ${R}, mensajeId: 'x' } }];`)).toThrow(NO_EMITE);
+    expect(con(`const out = []; out.push(...$input.all()); out.push({ json: { ${R}, mensajeId: 'x' } }); return out;`)).toThrow(NO_EMITE);
+    expect(con(`return $input.all().map((i) => i);`)).toThrow(/no se encontró ningún|no emite/);
+    // un retorno dentro de una función anidada es de esa función, no del código: no cuenta como retorno temprano
+    expect(con(`const f = () => { return $input.all(); }; return [{ json: { ${R}, mensajeId: 'x' } }];`)).not.toThrow();
+  });
+  it('NEGADA: un `{ json }` fantasma que no sale (la plantilla existe, lo que se devuelve es la entrada) o que nunca se devuelve', () => {
+    expect(con(`const plantilla = { json: { ${R}, mensajeId: 'x' } }; return $input.all();`)).toThrow(NO_EMITE);
+    expect(con(`const plantilla = { json: { ${R}, mensajeId: 'x' } };`)).toThrow(/no se encontró ningún `\{ json: … \}`/);
+  });
+  it('NEGADA: reasignar el objeto DESPUÉS de una asignación de miembro la deja sin efecto (no se sabe a cuál objeto pertenece)', () => {
+    expect(con(`let o = { ${R} }; o.mensajeId = 'x'; o = { ${R} }; return [{ json: o }];`)).toThrow(/no emite .*mensajeId/);
+    expect(con(`let o = { ${R} }; Object.assign(o, { mensajeId: 'x' }); o = { ${R} }; return [{ json: o }];`)).toThrow(/no emite .*mensajeId/);
+  });
+  it('NEGADA (E5 y bloque): una variable homónima en OTRA función o en un bloque con la asignación de miembro no cuenta para el objeto que sale', () => {
+    expect(con(`function g() { const o = { ${R} }; o.mensajeId = 'x'; return o; } const o = { ${R} }; return [{ json: o }];`)).toThrow(/no emite .*mensajeId/);
+    expect(con(`const g = () => { const o = {}; o.mensajeId = 'x'; return o; }; const o = { ${R} }; return [{ json: o }];`)).toThrow(/no emite .*mensajeId/);
+    expect(con(`const o = { ${R} }; { const o = { ${R} }; o.mensajeId = 'x'; } return [{ json: o }];`)).toThrow(/no emite .*mensajeId/);
+  });
+  it('NEGADA: `delete o[k]` u `o[k] = …` con una clave que no se pliega vacían las claves ya dadas', () => {
+    expect(con(`const k = 'mensajeId'; const o = { ${R}, mensajeId: 'x' }; delete o[k]; return [{ json: o }];`)).toThrow(/no emite .*mensajeId/);
+    expect(con(`const k = 'mensajeId'; const o = { ${R}, mensajeId: 'x' }; o[k] = undefined; return [{ json: o }];`)).toThrow(/no emite .*mensajeId/);
+    expect(con(`const o = { ${R}, mensajeId: 'x' }; for (const k of Object.keys(o)) o[k] = null; return [{ json: o }];`)).toThrow(/no emite .*mensajeId/);
+  });
+  it('`emisionesDelCodigo`: el retorno no resoluble agrega una emisión abierta y sin claves', () => {
+    const e = emisionesDelCodigo('if (c) return $input.all(); return [{ json: { a: 1 } }];').emisiones;
+    expect(e).toHaveLength(2);
+    expect(e[1].abierto).toBe(true);
+    expect([...e[1].claves]).toEqual([]);
   });
 });

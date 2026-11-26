@@ -683,6 +683,20 @@ describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `i
     expect(() => verificarFlujo('sintetico-rafaga.json', dir)).toThrow(/no tiene «No existe»/);
   });
 
+  it('I3 (NEGADA): un manifiesto con `consumidor: null` se rechaza al ensamblar y al verificar (esa excepción es solo de las pruebas que llaman a `injertarRafaga` directo); sin `consumidor` también', () => {
+    const dir = raizConRafaga();
+    for (const rafaga of [{ ...MANIFIESTO.rafaga, consumidor: null }, { ancla: MANIFIESTO.rafaga.ancla, campos: MANIFIESTO.rafaga.campos }]) {
+      writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify({ ...MANIFIESTO, rafaga }));
+      expect(() => verificarFlujo('sintetico-rafaga.json', dir)).toThrow(/consumidor/);
+      expect(() => ensamblarFlujo('sintetico-rafaga.json', dir)).toThrow(/consumidor/);
+    }
+    writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify({ ...MANIFIESTO, rafaga: { ...MANIFIESTO.rafaga, consumidor: null } }));
+    expect(() => ensamblarFlujo('sintetico-rafaga.json', dir)).toThrow(/rafaga\.consumidor: null.*no se admite/);
+    // y el original sin consumidor null sigue ensamblando
+    writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify(MANIFIESTO));
+    expect(ensamblarFlujo('sintetico-rafaga.json', dir)).toBe(true);
+  });
+
   it('indicador + ráfaga en el MISMO manifiesto: ensamblar y verificar son idénticos, idempotentes, y el indicador queda donde queda sin ráfaga', () => {
     const conEnvio = () => {
       const f = sintetico();

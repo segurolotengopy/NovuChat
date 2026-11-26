@@ -155,9 +155,25 @@ sigue emitiendo el item **del ancla** más `rafaga` y `textoDelTurno`; el flujo 
 - **`consumidor` es obligatorio (la pieza sola PIERDE mensajes):** «Agrupar ráfaga» entrega los textos unidos en `textoDelTurno`, pero nada del flujo lo lee si el flujo no
   lo cablea: la ejecución que responde vería solo SU texto y los que las otras callaron nunca se contestarían. `injertarRafaga` y `hallazgosDeLaRafaga` exigen
   `consumidor: '<nodo>'` (o una lista): cada uno tiene que existir, ser el destino o descender de él, y su código o sus parámetros tienen que leer `textoDelTurno` de
-  «Agrupar ráfaga». Sin `consumidor` es ERROR (sin valor por defecto ni opt-out silencioso); `consumidor: null` existe SOLO para fixtures de prueba. Sin declararlo, la
+  «Agrupar ráfaga». Sin `consumidor` es ERROR (sin valor por defecto ni opt-out silencioso); `consumidor: null` existe SOLO para las pruebas que llaman a `injertarRafaga`
+  directo, y **el ensamblador lo rechaza** en un manifiesto (`ensamblarFlujo` y `verificarFlujo` lanzan; lo prueba `ensamblador.test.ts`). Sin declararlo, la
   guardia de un flujo armado busca los nodos descendientes que lo leen y, si no hay ninguno, lo dice. **Los PR de cada flujo ya traen su cableado** (Walisuma: «Decidir
   turno» lee `$('Agrupar ráfaga')` → `textoDelTurno`); en #1117, que no trae flujos, las pruebas lo parchean en memoria (`rafaga-cableado.ts`) con el mismo patrón.
+- **La `puerta` no puede apagar la ráfaga:** al armar (y en la guardia de un flujo armado) se analiza con acorn. Una puerta que no es UNA expresión válida, o que se pliega a una
+  constante falsa (`false`, `0`, `null`, `!1`, `1 === 2`, `x && false`…), es ERROR; y cada `n.<campo>` que lee tiene que ser una clave de nivel superior que el productor emite
+  (la misma verificación y la misma excepción por huella que los `campos`). `n.noExiste`, `n.a.b.c` sobre un campo inexistente, `n` usado entero o `n[clave calculada]` son ERROR.
+  El apagado previsto es `rafagaActiva: false` o `rafagaApagada`, no la puerta.
+- **Emisión de un retorno:** cada `return` del nivel superior del productor tiene que ser un arreglo de `{ json: … }` resoluble (literal, lista con `push`, `.map` con `{ json }`,
+  `return []`). Un `return $input.all()`, `return items` o `return [{ campos }]` (n8n los envuelve) emite items que no se pueden decidir: cuenta como una emisión abierta y sin
+  claves, y se niega. Las asignaciones de miembro (`o.k = …`, `Object.assign(o, …)`) no cuentan si el nombre tiene más de una declaración o reasignación, y `delete o[k]` /
+  `o[k] = …` con una clave que no se pliega vacían las claves ya dadas.
+- **Límites conocidos del análisis (declarados, sin corregir; el PR de cada flujo los cubre con su revisión y `rafaga-extremo.test.ts`):**
+  - **I1, consumidor por nombre sin alcance:** `leeElTextoDe` junta las declaraciones por NOMBRE, sin alcance léxico: una variable homónima en otra función que apunta a «Agrupar ráfaga»
+    hace que cuente como lector un nodo que lee el texto de otra fuente. Menores relacionados: `$` redefinido localmente, una lectura en código muerto (`if (false) { … }`) y una
+    lectura asignada a una variable que nunca se usa también bastan. Un consumidor así pierde los mensajes que las otras ejecuciones callaron: lo revisa el PR del flujo.
+  - **M1, residuales de la emisión:** `delete` por alias (`const p = o; delete p.k;`); un valor nulo por variable (`const u = undefined; … k: u`); un spread de objeto en literal con clave
+    calculada `{ [k]: v }` no vacía las claves; un `.map` cuyo callback delega en otra función o un retorno por `.filter`/`.flatMap` se tratan como no resolubles (se niegan, el lado seguro);
+    una variable `n` redeclarada dentro de la puerta (parámetro de flecha) no se distingue de la `n` del item; `x && algo` con `algo` falsa solo se pliega si `x` no se lee.
 - **Defensa en el nodo:** si el texto propio llega vacío, «Agrupar ráfaga» usa el que el servidor guardó; nunca arma un grupo con el último mensaje en blanco.
 - **`quitarRafaga` solo quita la pieza:** requiere «¿Esperar ráfaga?» → «Esperar ráfaga» → «Consultar ráfaga» → «Agrupar ráfaga»; un flujo con un «Esperar ráfaga» PROPIO
   (el chat de NovuChat) no se toca, y el injerto se niega por choque de nombre.
@@ -206,7 +222,10 @@ fallida: responde solo.
 
 - **Por comercio, sin republicar:** `rafagaApagada === true` en `tenants/{id}` (solo Admin SDK). `configuracionFlujo` lo entrega en su respuesta y el IF lo
   lee de «Config del negocio» (`$('Config del negocio').first().json.rafagaApagada`, la respuesta del servidor ya mezclada por el flujo). Es el único
-  interruptor que se mueve sin tocar el JSON; cada PR de flujo prueba que su «Config del negocio» lo conserva.
+  interruptor que se mueve sin tocar el JSON; cada PR de flujo prueba que su «Config del negocio» lo conserva. **Excepción: NO es un interruptor general hasta que se fusione
+  el #1135.** Hoy solo lo propagan en sus ramas Demo B (#1125, `core/venta/config-del-negocio.js`) y Bellido (#1127, `agenda-minima/src/nodos/config-del-negocio.js`); Walisuma (#1129,
+  `PROPIO.md`) y Demo A (#1128, `PROPIO.md`) NO lo propagan: su «Config del negocio» no emite la clave y en esos comercios el interruptor no llega al IF. El servidor lo entrega
+  solo con `true` exacto, y la pieza NO verifica al armar que «Config del negocio» emita `rafagaApagada` (límite conocido).
 - **Por flujo, exige republicar:** `rafagaActiva` (verdadero si falta; `false` apaga) y `esperaRafagaSeg` (defecto 2, de 1 a 5) viven en «Config base»,
   un nodo del JSON del flujo. Cambiarlos es cambiar el flujo y publicarlo (`publicar-flujo.sh`). Es a propósito: la espera es una propiedad del flujo
   (cuánto tolera su conversación), no del comercio, y un valor en el JSON se revisa y se prueba con el flujo.
