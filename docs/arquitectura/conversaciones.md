@@ -538,11 +538,11 @@ conversación con la plantilla de UTILIDAD registrada para su número. Cada env�
   exacto). Sin la segunda, la callable responde «no habilitado» sin escribir nada ni tocar el timbre.
 - **Puesta en producción**: la Function queda desplegada pero **apagada**, porque ningún comercio
   tiene la bandera. El orden es: ensayo en staging, republicar «Salida de persona» por número,
-  registrar la plantilla cuando WAM la informe aprobada, invocador público con `scripts/nube-visor.sh`
-  y, por último, encender la bandera por comercio con el botón de Andres.
+  registrar la plantilla cuando WAM la informe aprobada, invocador público (`scripts/nube-visor.sh`
+  todavía no lista esta Function: se agrega en un PR aparte; sin invocador, Cloud Run responde 403) y, por último, encender la bandera por comercio con el botón de Andres.
 - **Pruebas**: `pruebas/core/retomar-conversacion.test.ts` (incluida la de la Function que exporta
   `index.ts`, que nace apagada), `retomar-reglas.test.ts`, `pausa-ingesta.test.ts` (D-R1),
-  `pruebas/central/retomar-costo.test.ts` y `turno-pantalla.test.ts`.
+  `pruebas/central/retomar-costo.test.ts` y `pruebas/central/turno-pantalla.test.ts`.
 
 ## Lo que este documento no afirma
 

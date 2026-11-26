@@ -37,9 +37,10 @@
  * entrante después de `retomadoEn` (`retomadoEn >= ultimoEntranteEn` de antes de este mensaje), con el
  * turno todavía de la persona (`tomado`), deja `turno.actividadPersonaEn` = ahora: la persona tiene sus 30
  * min completos desde que el cliente respondió. Va en la MISMA escritura de la conversación que la
- * ingesta ya hace (`set` con `merge`, mapa anidado): 0 lecturas, 0 escrituras y 0 mensajes de más. Desde
- * el entrante siguiente `ultimoEntranteEn` supera a `retomadoEn` y ya no se renueva nada (la actividad
- * la mueve solo la persona, como siempre). Un turno vencido, devuelto, ilegible o un contacto bloqueado
+ * ingesta ya hace (`set` con `merge`, mapa anidado): 0 lecturas, 0 escrituras y 0 mensajes de más. Una vez
+ * que renovó, `ultimoEntranteEn` supera a `retomadoEn` y ya no se renueva nada más (la actividad la mueve
+ * solo la persona, como siempre); con `retomadoEn` adelantado respecto del reloj de la ingesta, la hace el
+ * primer entrante cuyo reloj pasó la retomada (ver `decidirPausa`). Un turno vencido, devuelto, ilegible o un contacto bloqueado
  * no renueva.
  */
 import { Timestamp, type DocumentReference, type Firestore, type Transaction } from 'firebase-admin/firestore';
@@ -79,8 +80,10 @@ export function decidirPausa(turno: unknown, ultimoEntranteEn: unknown, ahoraMs:
   // `ahoraMs >= retomadoEn`: con el reloj de la ingesta (tomado antes de la transacción, fijo al reintentar)
   // ANTERIOR a la retomada, renovar haría retroceder la actividad, así que ese entrante no renueva. Eso NO impide
   // que renueve el siguiente: si `retomadoEn` va adelantado (hasta ~5 min de desfase entre relojes), este entrante
-  // deja `ultimoEntranteEn` < `retomadoEn` y el próximo cumple las dos condiciones. Sigue siendo UNA sola
-  // renovación, solo que la hace el primer entrante cuyo reloj ya pasó la retomada (revisión del 25/11/2026).
+  // deja `ultimoEntranteEn` < `retomadoEn` y renueva el primero cuyo reloj pase la retomada. Sigue siendo UNA
+  // renovación; en el borde de igualdad al milisegundo (`ahoraMs === retomadoEn`, que la prueba de igualdad
+  // inclusiva fija a propósito) pueden ser dos, sin otro efecto que mover la actividad hacia adelante
+  // (revisiones del 25/11/2026).
   const t = lectura.estado === 'ok' ? lectura.turno : null;
   const renovarActividad = veredicto.motivo === 'tomado' && t !== null && t.responde === 'persona'
     && t.retomadoEn !== undefined && ultimoMs !== null && t.retomadoEn >= ultimoMs && ahoraMs >= t.retomadoEn;

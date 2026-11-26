@@ -128,7 +128,8 @@ export { enviarComoPersona, enviarAdjuntoComoPersona } from './central/cuenta/en
 // plantilla de utilidad aprobada (0,0113 USD por envío; topes de `limitesDeRetomar` del plan). Agrega UNA Function, callable,
 // que nace APAGADA: sin `personaPuedeRetomar` en ningún comercio responde «no habilitado» sin escribir ni tocar el timbre.
 // Encenderla por comercio es un botón de Andres, después del ensayo en staging y de registrar la plantilla aprobada; el
-// invocador público (`scripts/nube-visor.sh`) va con ese encendido, tras el despliegue de la etiqueta.
+// invocador público va con ese encendido, tras el despliegue de la etiqueta: `scripts/nube-visor.sh` todavía NO lista
+// `retomarConversacion` y hay que agregarla en un PR aparte antes de encender. Sin invocador, Cloud Run responde 403.
 export { retomarConversacion } from './central/cuenta/enviarComoPersona.js';
 export { reclamarSalidaPersona } from './core/conversacion/reclamarSalidaPersona.js';
 // ADJUNTOS DE PERSONA (B2 de «Envío de medios por consola», 11/11/2026). `enviarAdjuntoComoPersona` (callable, 1 GiB, App Check
