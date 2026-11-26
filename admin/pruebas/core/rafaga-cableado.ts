@@ -21,6 +21,8 @@ const LEE_EL_AGRUPADO = [
 function parchar(flujo: Flujo, nodo: string, cambios: [string, string][]): Flujo {
   const n = flujo.nodes.find((x: { name: string }) => x.name === nodo);
   let codigo: string = n.parameters.jsCode;
+  // Un flujo que YA trae su propio cableado (Bellido, desde su PR de ráfaga) no se parcha otra vez.
+  if (codigo.includes("cnPrimero('Agrupar ráfaga')")) return flujo;
   for (const [de, a] of cambios) {
     if (codigo.split(de).length !== 2) throw new Error(`el cableado de la prueba esperaba UNA aparición de «${de}» en «${nodo}»: el nodo cambió, hay que actualizar rafaga-cableado.ts`);
     codigo = codigo.replace(de, () => a);
