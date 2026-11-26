@@ -1,0 +1,48 @@
+/**
+ * =============================================================================
+ * BAJAS DE LA CAMPAÑA SALIENTE — `tenants/{t}/bajas/{wa_tel}` (CORE, PR-A)
+ * =============================================================================
+ *
+ * Cuando una persona toca «No, gracias» en la plantilla de la campaña saliente, queda una BAJA: el comercio no
+ * le vuelve a mandar una campaña. Es una colección cerrada de Core (`registro.ts`, reglas `allow read, write: if
+ * false`): la escribe SOLO la ingesta, con el SDK Admin, en la MISMA transacción que guarda el mensaje entrante.
+ * Nadie la lee desde el navegador; la lista de una campaña la arma un script del servidor.
+ *
+ *   bajas/{wa_tel} = { canal: 'whatsapp', origen: 'boton_campana', campanaId, desde }
+ *
+ * Idempotente y sin pisar: si la baja ya existe NO se reescribe (`desde` conserva el instante de la primera). Con «sí»
+ * o «no» se anota además `campanaRespuesta: { campanaId, respuesta, en }` en la conversación (la «nota en la ficha»; la
+ * consola no la muestra todavía y ningún cliente puede escribirla: ver `firestore.rules`).
+ *
+ * LECTURAS ANTES QUE ESCRITURAS: `aplicarRespuestaDeCampana` lee la baja y, solo después, escribe; quien la llama tiene
+ * que invocarla antes de su primera escritura de la transacción.
+ */
+import { Timestamp, type DocumentReference, type Transaction } from 'firebase-admin/firestore';
+
+/** El identificador de una campaña saliente: minúsculas, dígitos y guiones, de 3 a 40. */
+export const CAMPANA_ID = /^[a-z0-9-]{3,40}$/;
+export const RESPUESTAS_DE_CAMPANA = ['si', 'no'] as const;
+export type RespuestaDeCampana = (typeof RESPUESTAS_DE_CAMPANA)[number];
+
+export const campanaIdValido = (v: unknown): v is string => typeof v === 'string' && CAMPANA_ID.test(v);
+export const respuestaDeCampanaValida = (v: unknown): v is RespuestaDeCampana =>
+  typeof v === 'string' && (RESPUESTAS_DE_CAMPANA as readonly string[]).includes(v);
+
+/**
+ * Aplica la respuesta a la campaña dentro de la transacción `tx`. Devuelve `'baja'` si creó la baja, `'ya_baja'` si ya
+ * existía (no se toca), `'respuesta'` si solo anotó la respuesta («sí»), o `'invalida'` si `campanaId` o `respuesta`
+ * no cumplen (no se escribe nada).
+ */
+export async function aplicarRespuestaDeCampana(
+  tx: Transaction, refConv: DocumentReference, datos: { campanaId: unknown; respuesta: unknown }, ahora: Timestamp,
+): Promise<'baja' | 'ya_baja' | 'respuesta' | 'invalida'> {
+  const { campanaId, respuesta } = datos;
+  if (!campanaIdValido(campanaId) || !respuestaDeCampanaValida(respuesta)) return 'invalida';
+  const refBaja = refConv.parent.parent!.collection('bajas').doc(refConv.id);
+  const existente = respuesta === 'no' ? await tx.get(refBaja) : null;
+  tx.set(refConv, { campanaRespuesta: { campanaId, respuesta, en: ahora } }, { merge: true });
+  if (existente === null) return 'respuesta';
+  if (existente.exists) return 'ya_baja';
+  tx.create(refBaja, { canal: 'whatsapp', origen: 'boton_campana', campanaId, desde: ahora });
+  return 'baja';
+}

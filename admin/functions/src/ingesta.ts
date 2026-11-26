@@ -52,6 +52,7 @@ export { sigueVigente };
 // Términos de producto registrados (Andres, 24/10/2026): se leen una vez por turno, y solo si lo que
 // va al prompt contiene «prompt»; el sistema los cita entre « » y revalida lo ya aprobado.
 import { citarTerminos } from './central/asistente/terminos.js';
+import { aplicarRespuestaDeCampana, campanaIdValido, respuestaDeCampanaValida } from './core/conversacion/bajas.js';
 import { aplicarEventoDeFactura, codigoDePedidoValido, ultimoPedidoParaElFlujo } from './core/turno/facturaPedido.js';
 
 /**
@@ -161,7 +162,14 @@ interface Entrante {
     // LA FACTURA QUE LLEGA TARDE (PR-F, Walisuma): el cliente dio sus datos de factura (`factura_dada`) o
     // no la quiere (`factura_sin`). Viaja con `codigoPedido` y SIN los datos: la razón social y el NIT van
     // solo en el aviso a la encargada. Marca `ultimoPedido.factura` de ESTA conversación (`facturaPedido.ts`).
-    | 'factura_dada' | 'factura_sin';
+    | 'factura_dada' | 'factura_sin'
+    // LA RESPUESTA A LA CAMPAÑA SALIENTE (PR-A, 26/11/2026): el entrante es el toque de «Sí, contáctenme» / «No, gracias».
+    // Viaja con `campanaEnvioId` y `respuestaCampana`; el «no» crea la baja, el «sí» y el «no» anotan `campanaRespuesta`,
+    // en la MISMA transacción que el mensaje (`core/conversacion/bajas.ts`).
+    | 'campana_respuesta';
+  /** Solo con `campana_respuesta`: la campaña (`^[a-z0-9-]{3,40}$`) y la respuesta (`si` | `no`). */
+  campanaEnvioId?: string;
+  respuestaCampana?: 'si' | 'no';
   /** Solo con `factura_dada` / `factura_sin`: el código del pedido (`<PREFIJO>-AAMMDD-NNN`). */
   codigoPedido?: string;
   /**
@@ -255,7 +263,7 @@ const ORIGENES = new Set(['anuncio', 'directo']);
 /** Los hechos del flujo que la ingesta entiende. Uno desconocido se ignora:
  *  el mensaje se cuenta igual y el campo no se guarda. */
 const EVENTOS = new Set(['qr_enviado', 'horarios_ofrecidos', 'no_contactar', 'cita_cancelada', 'adelanto_aplicado', 'reprogramada',
-  'cobro_cancelado', 'anulacion_avisada', 'pedido_sin_cobro', 'factura_dada', 'factura_sin']);
+  'cobro_cancelado', 'anulacion_avisada', 'pedido_sin_cobro', 'factura_dada', 'factura_sin', 'campana_respuesta']);
 
 /**
  * Normaliza el mensaje entrante. TODO lo de acá es DATO NO CONFIABLE: lo escribió
@@ -307,6 +315,9 @@ function normalizar(cuerpo: unknown): Entrante | null {
   // Solo el código: cualquier otro campo del cuerpo (razón social, NIT) se ignora y no se guarda.
   const codigoPedido = evento === 'factura_dada' || evento === 'factura_sin'
     ? codigoDePedidoValido(c['codigoPedido']) ?? undefined : undefined;
+  // Respuesta a la campaña saliente: ambos campos válidos o ninguno (un `campana_respuesta` mal formado se cuenta como un mensaje cualquiera).
+  const respuestaCampana = evento === 'campana_respuesta' && campanaIdValido(c['campanaEnvioId']) && respuestaDeCampanaValida(c['respuestaCampana'])
+    ? { campanaEnvioId: c['campanaEnvioId'], respuestaCampana: c['respuestaCampana'] } : undefined;
 
   // SIN CONTEO (16/11/2026): solo el booleano exacto `true`, y solo en un saliente de imagen. Cualquier
   // otra combinación o valor se ignora y el mensaje se cuenta como siempre (ante la duda, se cuenta).
@@ -340,6 +351,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
            ...(reglaCobro ? { reglaCobro } : {}),
            ...(riesgo ? { riesgo } : {}),
            ...(codigoPedido ? { codigoPedido } : {}),
+           ...(respuestaCampana ?? {}),
            ...(referencia ? { referencia } : {}),
            ...(calendario ? { calendario } : {}),
            ...(inicio ? { inicio } : {}),
@@ -990,6 +1002,12 @@ export const ingesta = onRequest(
         && (avisoConsumoPendiente(cuenta, periodo) || conModalidad))
         || (conModalidad && corteGuardado !== null));
       const metricasDoc = necesitaMetricas ? await tx.get(refMetricas) : null;
+      // RESPUESTA A LA CAMPAÑA SALIENTE: lee la baja y escribe baja + `campanaRespuesta` en ESTA transacción. Va aquí porque
+      // es la última lectura y la primera escritura de la transacción viene después (Firestore exige lecturas primero).
+      if (mensaje.evento === 'campana_respuesta' && mensaje.direccion === 'entrante') {
+        await aplicarRespuestaDeCampana(tx, refConversacion,
+          { campanaId: mensaje.campanaEnvioId, respuesta: mensaje.respuestaCampana }, Timestamp.fromMillis(ahoraMs));
+      }
       const previasDelMes = Number(metricasDoc?.get('conversaciones'));
       const avisoConsumo = metricasDoc
         ? avisoDeConsumo(cuenta, (Number.isFinite(previasDelMes) ? previasDelMes : 0) + 1, periodo)
