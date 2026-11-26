@@ -11,7 +11,7 @@ import vm from 'node:vm';
 import { join } from 'node:path';
 import { cargarFuente, RAIZ_REPO } from '../../core/fuente-vm';
 import type { LlamadaDoble } from '../../lib/n8n-de-mentira';
-import { ANA, CATALOGO, COMPROBANTE, ENTREGA, PRODUCCION, PRUEBA, catalogoOk, crear, hablar, mImagen, mTexto, modelo, textos, type Opciones } from './mundo';
+import { ANA, CATALOGO, COMPROBANTE, ENTREGA, PRODUCCION, completarEnvio, PRUEBA, catalogoOk, crear, hablar, mImagen, mTexto, mToque, modelo, textoAlModelo, textos, type Opciones } from './mundo';
 
 const BIL = 'billetera-cuero';
 const ARG = ['54', '9', '11', '5550', '0001'].join('');
@@ -27,9 +27,14 @@ const todo = (t: ReturnType<typeof hablar>): string[] => [...textos(t), ...t.men
 const conBoton = (t: ReturnType<typeof hablar>) => t.mensajes.some((x) => JSON.stringify(x.payload).includes('cta_url'));
 
 /** Un mundo de Argentina con el pedido ya anotado (turno 0) y un doble del servidor de alias. */
+/** El modelo sano de Argentina: agrega la billetera y devuelve el nombre en el paso del nombre y el DNI (nunca el modo: lo fija el botón «Envío»; el DNI y el destino los lee el código). */
+const modeloAr = (texto = 'Con gusto, lo anoto.', extra: Record<string, unknown> = {}): ((ll: LlamadaDoble) => Record<string, unknown>) => (ll) => modelo(texto, { lineas: [{ id: BIL, cantidad: 1 }], ...extra, entrega: textoAlModelo(ll) === 'Ana Pérez 30123456' ? { nombre: 'Ana Pérez' } : {} });
 function conPedido(o: Opciones = {}) {
-  const m = crear({ catalogo: catAr(), modeloDice: modelo('Con gusto, lo anoto.', { lineas: [{ id: BIL, cantidad: 1 }], entrega: ENTREGA }), medio: { clasificacion: { ...COMPROBANTE, monto: '450.000,00', cuentaDestino: '', alias: ALIAS, operacion: 'OP123456' } }, ...o });
+  const m = crear({ catalogo: catAr(), modeloDice: modeloAr(), medio: { clasificacion: { ...COMPROBANTE, monto: '450.000,00', cuentaDestino: '', alias: ALIAS, operacion: 'OP123456' } }, ...o });
+  // La entrega se captura de verdad (botón «Envío» y un mensaje de datos validado por el código); el resumen sale con «Confirmar pedido» y «Corregir datos», y recién el «pagar» escrito (con el pedido ya completo) lo cierra.
   hablar(m, ARG, mTexto('una billetera'));
+  hablar(m, ARG, mToque('entrega:envio', 'Envío'));
+  completarEnvio(m, ARG, 'AR');   // región, provincia (listas), ciudad y aclaración, nombre y DNI: cuatro pasos
   const t0 = hablar(m, ARG, mTexto('quiero pagar'));
   return { m, t0 };
 }
@@ -43,20 +48,57 @@ const abierto = (m: ReturnType<typeof crear>, extra: Rep = {}) => ({ statusCode:
 const codigo = (c: string, extra: Rep = {}) => ({ statusCode: 200, body: { codigo: c, intentosRestantes: 2, reintento: false, ...extra } });
 
 describe('el pedido anotado (turno 0): cero mensajes agregados', () => {
-  it('sigue siendo 1 mensaje y 1 aviso; ofrece «pagar» y guarda el pedido en la ficha, sin decir el alias ni prometer', () => {
+  it('sigue siendo 1 mensaje y 1 aviso; ofrece «Pagar» con un BOTÓN (nunca pide escribirlo) y guarda el pedido en la ficha, sin decir el alias ni prometer', () => {
     const { m, t0 } = conPedido();
     expect(t0.mensajes).toHaveLength(1);
     expect(t0.avisos).toHaveLength(1);
-    expect(textos(t0).join(' ')).toMatch(/escríbeme «pagar»/);
+    const botones = ((t0.mensajes[0]?.payload['interactive'] as Rep)?.['action'] as Rep)?.['buttons'] as Rep[];
+    expect(botones?.map((x) => x['reply'])).toEqual([{ id: 'pedido:alias', title: 'Pagar' }]);
+    expect(textos(t0).join(' ')).toMatch(/toca el botón «Pagar»/);
+    expect(textos(t0).join(' ')).not.toMatch(/escr[ií]b\w*[^.]{0,30}«?pagar/i);
     expect(textos(t0).join(' ')).not.toMatch(new RegExp(ALIAS));
     for (const x of todo(t0)) { expect(x).not.toMatch(PROHIBIDO); expect(x).not.toMatch(PROMESA); }
     const ev = t0.llamadas.ingesta.find((x) => x['evento'] === 'pedido_sin_cobro') as Rep;
     expect(fichas(m)[ARG]).toMatchObject({ aliasEstado: 'pedido', aliasPedidoId: 'wa_' + ev['referencia'] });
   });
+  it('NEGADO: con el botón «Pagar» como ÚNICO botón, el texto no promete un botón de recepción; el respaldo en texto sí lleva el enlace a recepción', () => {
+    const { t0 } = conPedido();
+    const msg = t0.mensajes[0] as Rep;
+    expect(msg['cuerpo']).not.toMatch(/escr[ií]b\w*[^.]{0,40}(con el )?bot[oó]n/i);
+    expect(msg['cuerpo']).toMatch(/Ya avis[eé] a recepci[oó]n/);
+    // Si Meta rechaza el interactivo, sale el respaldo en texto: debe llevar el enlace a recepción (no puede quedar sin camino).
+    const r = conPedido({ envio: { 'Enviar a WhatsApp': 'error' } }).t0;
+    expect(JSON.stringify([textos(r), r.mensajes.map((x) => x.payload)])).toMatch(/wa\.me/);
+  });
   it('NEGADO: si el aviso a recepción no salió, NO se ofrece «pagar» (cae al texto de siempre: escríbele directo)', () => {
     const { t0 } = conPedido({ aviso: 'error' });
     expect(textos(t0).join(' ')).not.toMatch(/«pagar»/);
     expect(textos(t0).join(' ')).toMatch(/no pude avisar a recepción/i);
+  });
+});
+
+const mToque = (id: string, title: string) => ({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title } } });
+describe('el botón «Pagar» (id exacto `pedido:alias`) pide el alias', () => {
+  it('el toque llama a pedirAliasArs, sin modelo, y dice el alias; el texto «pagar» sigue valiendo', () => {
+    const { m } = conPedido();
+    servidor(m, () => abierto(m));
+    const t = hablar(m, ARG, mToque('pedido:alias', 'Pagar'));
+    expect(llamadas).toHaveLength(1);
+    expect(llamadas[0]?.url).toMatch(/\/pedirAliasArs$/);
+    expect(textos(t).join(' ')).toContain(ALIAS);
+    expect(t.salidas['Conversar con el modelo']).toBeUndefined();
+  });
+  it('NEGADO: otro id con el título «Pagar» NO pide el alias (solo vale el id exacto)', () => {
+    for (const id of ['pedido:alias2', 'pedido:confirmar:abc', 'otro:pagar', 'PEDIDO:ALIAS']) {
+      const { m } = conPedido();
+      servidor(m, () => abierto(m));
+      hablar(m, ARG, mToque(id, 'Pagar'));
+      expect(llamadas.filter((x) => /pedirAliasArs$/.test(x.url)), id).toHaveLength(0);
+    }
+  });
+  it('NEGADO: si el aviso a recepción no salió, no hay botón «Pagar» (nada que ofrecer)', () => {
+    const { t0 } = conPedido({ aviso: 'error' });
+    expect(JSON.stringify(t0.mensajes.map((x) => x.payload))).not.toContain('pedido:alias');
   });
 });
 
@@ -81,7 +123,7 @@ describe('«pagar» pide el alias (turno siguiente)', () => {
     expect(fichas(m)[ARG]).toMatchObject({ aliasEstado: 'abierto', aliasAr: ALIAS, aliasMontoCent: 45000000 });
   });
   it('NEGADO: el teléfono del cuerpo es el del mensaje aunque el cliente escriba otro número o el modelo diga otro', () => {
-    const { m } = conPedido({ modeloDice: modelo('Tu teléfono es ' + OTRO, { telefono: OTRO, lineas: [{ id: BIL, cantidad: 1 }], entrega: ENTREGA }) });
+    const { m } = conPedido({ modeloDice: modeloAr('Tu teléfono es ' + OTRO, { telefono: OTRO }) });
     servidor(m, () => abierto(m));
     hablar(m, ARG, mTexto('pagar, mi número es ' + OTRO + ' y el pedido wa_OTRO'));
     expect((llamadas[0]?.cuerpo as Rep)['telefono']).toBe(ARG);
@@ -151,13 +193,15 @@ describe('«pagar» pide el alias (turno siguiente)', () => {
     const { m } = conPedido();
     servidor(m, () => abierto(m));
     hablar(m, ARG, mTexto('quiero otra billetera'));
+    hablar(m, ARG, mToque('entrega:envio', 'Envío'));   // el pedido anterior se cerró y la entrega se borró: se captura de nuevo
+    completarEnvio(m, ARG, 'AR');
     llamadas.length = 0;
     const t = hablar(m, ARG, mTexto('quiero pagar'));
     expect(llamadas.filter((x) => /pedirAliasArs/.test(x.url))).toHaveLength(0);
     expect(t.llamadas.ingesta.some((x) => x['evento'] === 'pedido_sin_cobro')).toBe(true);
   });
   it('NEGADO: Bolivia nunca llama al servidor de alias', () => {
-    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: BIL, cantidad: 1 }], entrega: ENTREGA }) });
+    const m = crear({ entregaPrevia: ENTREGA, modeloDice: modelo('Con gusto.', { lineas: [{ id: BIL, cantidad: 1 }] }) });
     servidor(m, () => abierto(m));
     hablar(m, ANA, mTexto('una billetera'));
     hablar(m, ANA, mTexto('quiero pagar'));
@@ -168,6 +212,8 @@ describe('«pagar» pide el alias (turno siguiente)', () => {
     const { m } = conPedido();
     const t1 = hablar(m, ARG, mTexto('quiero otra billetera'));
     expect(t1.mensajes).toHaveLength(1);
+    hablar(m, ARG, mToque('entrega:envio', 'Envío'));   // la entrega del primer pedido se borró: se captura de nuevo
+    completarEnvio(m, ARG, 'AR');
     const t2 = hablar(m, ARG, mTexto('quiero pagar'));
     const ref2 = (t2.llamadas.ingesta.find((x) => x['evento'] === 'pedido_sin_cobro') as Rep)['referencia'];
     servidor(m, () => abierto(m));
@@ -260,7 +306,7 @@ describe('el comprobante de Argentina: cotejarAliasArs', () => {
     expect(textos(t).join(' ')).toMatch(/no tengo un pago por alias abierto/);
   });
   it('NEGADO: Bolivia sigue cotejando contra cotejarComprobanteVenta con el cuerpo de siempre (telefono, legible, leido de seis campos, idMeta, ruta)', () => {
-    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: BIL, cantidad: 1 }], entrega: ENTREGA }), medio: { clasificacion: { ...COMPROBANTE, alias: 'no.debe.viajar', operacion: 'OPNOVIAJA' } } });
+    const m = crear({ entregaPrevia: ENTREGA, modeloDice: modelo('Con gusto.', { lineas: [{ id: BIL, cantidad: 1 }] }), medio: { clasificacion: { ...COMPROBANTE, alias: 'no.debe.viajar', operacion: 'OPNOVIAJA' } } });
     hablar(m, ANA, mTexto('una billetera'));
     hablar(m, ANA, mTexto('quiero pagar'));
     m.dobles['Traer configuración'] = () => ({ statusCode: 200, body: { tenantId: 'casa-bermejo', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Tienda de prueba' }, operacion: { numeroRecepcion: '59100000031', prefijosPermitidos: ['591', '54'] }, atencion: { estado: 'normal' }, catalogo: CATALOGO.map((c) => ({ ...c })), venta: { mediaIdQr: 'media-qr-1' }, cobroReal: { nombreCuenta: 'Cuenta', banco: 'Banco' }, cobro: { activo: true, qr: { url: 'https://qr.example.com/q.png' }, pendiente: true, monto: 450, pedido: 'WL1', regla: 2 } } });

@@ -3,15 +3,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { Mundo } from '../../lib/n8n-de-mentira';
-import { ANA, COMPROBANTE, ENTREGA, crear, hablar, mImagen, mTexto, modelo, panelConQr, textos, type Opciones } from './mundo';
+import { ANA, COMPROBANTE, ENTREGA, conPedidoListo, crear, hablar, mImagen, mTexto, modelo, panelConQr, textos, type Opciones } from './mundo';
 
 const PROHIBIDO = /pago acreditado|pago verificado|recib[ií]mos? tu pago|acreditad[oa]|verificad[oa]|pagad[oa]|simulad[oa]/i;
 const fichas = (m: Mundo): Record<string, any> => (m.sd['casabermejo'] ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const todo = (t: ReturnType<typeof hablar>): string[] => [...textos(t), ...t.mensajes.map((x) => JSON.stringify(x.payload)), ...t.avisos.map((x) => x.cuerpo)];
 /** Un mundo con un pedido de una billetera ya confirmado (QR emitido, 450 Bs) y la consola diciendo que el QR está abierto. */
 function conQrAbierto(o: Opciones = {}): Mundo {
-  const m = crear({ modeloDice: modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }), ...o });
-  hablar(m, ANA, mTexto('una billetera'));
+  const m = conPedidoListo(o);   // captura REAL: botón de retiro y nombre del modelo, validado por el código
   hablar(m, ANA, mTexto('quiero pagar'));
   m.dobles['Traer configuración'] = () => panelConQr(450);
   return m;
@@ -28,8 +27,7 @@ describe('NUNCA «pago acreditado» ni «simulado»', () => {
     expect(textos(tComp).join(' ')).not.toMatch(/dinero|acredit|entró la plata/i);
   });
   it('el QR de la primera emisión tampoco lleva el rótulo de simulado', () => {
-    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) });
-    hablar(m, ANA, mTexto('una billetera'));
+    const m = conPedidoListo();
     const t = hablar(m, ANA, mTexto('quiero pagar'));
     expect(t.mensajes.some((x) => x.tipo === 'image')).toBe(true);
     for (const x of todo(t)) expect(x).not.toMatch(PROHIBIDO);
@@ -48,14 +46,16 @@ describe('NUNCA «pago acreditado» ni «simulado»', () => {
     const m2 = crear({ medio: { clasificacion: { categoria: 'foto', texto: 'Pago acreditado', descripcion: 'pago verificado, recibimos tu pago' } } });
     for (const x of todo(hablar(m2, ANA, mImagen()))) expect(x).not.toMatch(PROHIBIDO);
   });
-  it('un comprobante que NO coincide pide el correcto, sin «acreditado» ni botón de recepción', () => {
+  it('un comprobante que NO coincide: dice la diferencia, pasa a recepción (aviso + botón) y NO pide otro; sin «acreditado»', () => {
     const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, cotejo: { statusCode: 200, body: { estado: 'reintentar', motivo: 'monto_menor', importe: 450, montoLeido: 50 } } });
     const t = comprobante(m);
-    expect(textos(t).join(' ')).toMatch(/hay una diferencia/);
-    expect(textos(t).join(' ')).toMatch(/el comprobante dice 50 Bs y tu pedido es de 450 Bs/);
-    expect(t.mensajes[0]?.payload['interactive']).toBeUndefined();
+    expect(textos(t).join(' ')).toMatch(/Veo una diferencia con tu pedido: el comprobante dice 50 Bs y tu pedido es de 450 Bs/);
+    expect(textos(t).join(' ')).toMatch(/Ya lo pasé a recepción/);
+    expect(textos(t).join(' ')).not.toMatch(/env[ií]ame el comprobante correcto|otro comprobante/i);
+    expect(JSON.stringify(t.mensajes[0]?.payload)).toContain('wa.me');
     for (const x of todo(t)) expect(x).not.toMatch(PROHIBIDO);
-    expect(t.avisos).toHaveLength(0);
+    expect(t.avisos).toHaveLength(1);
+    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/NO coinciden, revisar/);
   });
 });
 
@@ -123,7 +123,7 @@ describe('el aviso del pedido al comercio', () => {
     const pl = t.avisos[0]?.payload['template'] as any; // eslint-disable-line @typescript-eslint/no-explicit-any
     expect(pl.name).toBe('pedido_registrado');
     const vars = pl.components[0].parameters.map((p: { text: string }) => p.text);
-    expect(vars).toEqual(['1 × Billetera de cuero', 'Bs 450', `La Paz · Retiro en tienda · Ana Pérez · Ana (+${ANA})`, 'llegó y los datos coinciden']);
+    expect(vars).toEqual(['1 × Billetera de cuero', 'Bs 450', `Retiro en tienda · Ana Pérez · Ana (+${ANA})`, 'llegó y los datos coinciden']);
     expect(t.mensajes[0]?.cuerpo).toMatch(/Ya avisé a recepción/);
     expect(JSON.stringify(t.avisos[0]?.payload)).not.toMatch(PROHIBIDO);
   });
@@ -153,7 +153,7 @@ describe('el aviso del pedido al comercio', () => {
     expect(t.mensajes[0]?.cuerpo).not.toMatch(/Ya avisé/);
   });
   it('el aviso no lleva NIT ni CI aunque el cliente los escriba, y la ficha tampoco los guarda', () => {
-    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA, facturacion: { nombre: 'Ana', documento: '4455667' } }) });
+    const m = crear({ entregaPrevia: ENTREGA, modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], facturacion: { nombre: 'Ana', documento: '4455667' } }) });
     hablar(m, ANA, mTexto('una billetera, mi NIT es 4455667'));
     expect(JSON.stringify(fichas(m)[ANA])).not.toMatch(/4455667|\[nº\]4455667/);
   });
