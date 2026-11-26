@@ -246,12 +246,13 @@ describe('9. la respuesta de la tienda sale también cuando el resto del mensaje
     expect(sin.mensajes).toHaveLength(2);
     expect(cuerpoDe(sin)).not.toContain(DIR);
   });
-  it('la memoria guarda el turno COMPLETO: lo que escribió el cliente entero y la respuesta de la tienda', () => {
+  it('la memoria guarda el turno COMPLETO: lo que escribió el cliente entero y una MARCA FIJA de la respuesta de la tienda (octava ronda: el texto de la tienda no vuelve al modelo sin <<< >>>)', () => {
     const m = crear({ base: DATOS, modeloDice: modeloSano(() => ({}), 'Con gusto, lo anoto.') });
     hablar(m, ANA, mTexto('¿Dónde están ubicados? Quiero una billetera'));
     const h = ficha(m).hist;
     expect(h.some((x) => x.r === 'u' && /ubicados/.test(x.t) && /billetera/.test(x.t))).toBe(true);
-    expect(h.some((x) => x.r === 'm' && x.t.includes('Calle Ejemplo'))).toBe(true);
+    expect(h.some((x) => x.r === 'm' && /respuesta de la tienda enviada/.test(x.t))).toBe(true);
+    expect(h.some((x) => x.t.includes('Calle Ejemplo'))).toBe(false);
   });
 });
 

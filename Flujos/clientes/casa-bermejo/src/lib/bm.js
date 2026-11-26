@@ -106,8 +106,8 @@ function bmFichaBase() {
     pide: [],
   };
 }
-// QUÉ DATO PIDIÓ EL CÓDIGO en su último mensaje (séptima ronda): `pide` ⊂ nombre, documento, ciudad. Lo escribe el CÓDIGO al armar la pregunta (`bmPideDeEntrega`), nunca se deduce del texto del modelo.
-const BM_DATOS_PEDIBLES = ['nombre', 'documento', 'ciudad'];
+// QUÉ DATO PIDIÓ EL CÓDIGO en su último mensaje (séptima ronda): `pide` ⊂ nombre, documento, ciudad, flota, direccion, cp, provincia (octava ronda). Lo escribe el CÓDIGO al armar la pregunta (`bmPideDeEntrega`), nunca se deduce del texto del modelo.
+const BM_DATOS_PEDIBLES = ['nombre', 'documento', 'ciudad', 'flota', 'direccion', 'cp', 'provincia'];
 function bmNumero(v, tope) {
   return Number.isFinite(v) && v > 0 ? Math.min(Math.floor(v), tope === undefined ? Number.MAX_SAFE_INTEGER : tope) : 0;
 }
