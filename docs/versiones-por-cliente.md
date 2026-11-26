@@ -589,6 +589,8 @@ El texto del pitch del primer contacto («Quiero más información»), que es un
 2. **Cantidad tal cual:** `numero(x) || 1` convertía una cantidad 0 en 1 (vendía lo que el cliente no pidió y terminaba en un QR directo). Ahora 0, negativa, fraccionaria o ausente viajan como están y quien arma las líneas las descarta. El servidor ya no manda cantidades menores que 1, así que en la práctica solo cambia ante una carga alterada.
 3. **Entrega ausente:** deja de convertirse en «retiro»: viaja vacía (solo «envio» y «retiro» pasan). Venta mínima conserva su propio mapeo (`envio` o `retiro`), así que su comportamiento no cambia.
 
+**Demo B además (mensaje del carrito):** una línea con cantidad que no sea un entero ≥ 1 deja de escribirse («0×») y suma a «no pude incluir»; una entrega ausente pregunta «envío o recoger» en vez de dar por hecho «recoger» (0 mensajes: es el mismo mensaje).
+
 **Se regeneran:** `walisuma.json` y `walisuma.prueba.json`; `demo-b-venta-cobro.json`; `venta-minima.qtaco.json`, `venta-minima.qtaco-3727.json`, `venta-minima.prueba.json` y `venta-minima.ensayo-demo-a.json` (la copia literal de `validar-carrito.js` en `carga-de-entrada.js` se resincroniza). **Casa Bermejo no cambia:** su carrito usa su propio código (Aux3). **Nada se publica con este PR.**
 
 **Quién hereda y hay que republicar (cada uno con botón de Andres, tras ensayo):** Walisuma, Demo B, Q'Taco (`qtaco` y `qtaco-3727`). Mientras no se publiquen, los vivos siguen con el comportamiento anterior (cantidad 0 → 1, entrega ausente → retiro); es un atraso DECLARADO, no un defecto.
