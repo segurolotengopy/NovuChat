@@ -483,7 +483,7 @@ describe('riesgos residuales FIJADOS (comportamiento declarado en docs/arquitect
   });
   it('(c) DESVÍO de un número extranjero (filtro de país de «Interpretar entrada»): ninguno de la ráfaga llega a la pieza ni se contesta (no hay huérfano: nadie responde)', () => {
     const m = crear();
-    const rs = rafaga(m, [escrito('12025550100', 'hola'), escrito('12025550100', 'quiero cita')]);
+    const rs = rafaga(m, [escrito('12000000100', 'hola'), escrito('12000000100', 'quiero cita')]);
     expect(rs.every((r) => !corrio(r, '¿Esperar ráfaga?'))).toBe(true);
     expect(envios(rs)).toHaveLength(0);
     expect(m.srv.consultas).toHaveLength(0);
