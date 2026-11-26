@@ -98,7 +98,9 @@ for (const item of $input.all()) {
       const pc = centavos((i ?? {}).precioCentavos);
       return {
         nombre: limpio((i ?? {}).nombre, 80) || 'producto',
-        cantidad: numero((i ?? {}).cantidad) || 1,
+        // La cantidad viaja TAL CUAL (0, negativa o fraccionaria incluidas): quien arma las lineas (`vcLineas`) descarta lo que no
+        // es un entero >= 1. Convertir 0 en 1 vendia lo que el cliente no pidio y terminaba en un QR directo.
+        cantidad: numero((i ?? {}).cantidad),
         subtotal: numero((i ?? {}).subtotal),
         // Solo si hay: sin ellos el item es identico al de antes (compatible hacia atras).
         ...(pc !== null ? { precioCentavos: pc } : {}),
@@ -112,7 +114,8 @@ for (const item of $input.all()) {
     mercado: cuerpo.mercado === 'BO' || cuerpo.mercado === 'AR' ? cuerpo.mercado : '',
     catalogo: cuerpo.catalogo === 'externo' ? 'externo' : '',
     costoEnvio: numero(cuerpo.costoEnvio),
-    entrega: String(cuerpo.entrega ?? '') === 'envio' ? 'envio' : 'retiro',
+    // Una entrega AUSENTE o desconocida NO se convierte en «retiro»: viaja vacia y quien decide pregunta.
+    entrega: (['envio', 'retiro'].includes(String(cuerpo.entrega ?? '')) ? String(cuerpo.entrega) : ''),
     // `direccion` y `nota` viajan SIEMPRE, aunque vengan vacias.
     direccion: limpio(cuerpo.direccion, 200),
     nota: limpio(cuerpo.nota, 200),

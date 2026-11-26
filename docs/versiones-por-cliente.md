@@ -581,3 +581,17 @@ El texto del pitch del primer contacto («Quiero más información»), que es un
 ## Estado al 18/11/2026 (imágenes de catálogo de Evy y Emma, bloque 2b): sin publicar
 
 **Qué cambia.** Las fotos de apoyo que envían Evy y Emma por media id se reportan al hilo de la consola **sin conteo** (`sinConteo: true`, solo en saliente de imagen; la ingesta lo ignora en cualquier otro caso) y se guardan con la pieza común de #1001. Cambian `rroca-evy.json`, `rroca-evy.prueba.json`, `rroca-evy.ensayo-demo-a.json`, `rroca-emma.json` y `rroca-emma.prueba.json`: **53 -> 59 nodos** (+2 del reporte y +4 del guardado), tope aprobado por Andres el 18/11/2026 por botón. **Costo:** 0 mensajes de WhatsApp; la foto no suma a conversaciones, respuestas ni facturación (prueba que lo niega en `ingesta-sin-conteo.test.ts`). **Modo prueba:** la foto no se reporta con `modoPrueba` ni si no se envió de verdad (prueba que lo niega). **Relé:** en la rama con relé el reporte es solo reporte (+2 nodos, sin guardado de la imagen) y no está verificada con teléfono real. **Orden de ramas:** el reporte cuelga debajo de «Armar mensajes» (`executionOrder: v1`), así que en la consola la foto aparece después del texto. **Estado: versionado, SIN PUBLICAR** (se publica con el botón de Andres, tras desplegar la ingesta). **Reversión:** revertir el PR; lo guardado se purga a los 90 días.
+
+## Estado al 26/11/2026 (carrito del catálogo web: reenvío de la carga K1, cantidad tal cual, entrega vacía): sin publicar
+
+**Qué cambia (0 nodos nuevos, 0 mensajes por conversación agregados o quitados).** Las piezas comunes `validar-carrito.js` y `carga-del-carrito.js` (módulo catalogo-web) cambian en tres cosas, todas aditivas o más estrictas:
+1. **Reenvío K1:** la carga que llega al flujo conserva `mercado`, `catalogo` (solo con fuente externa) y, por línea, `precioCentavos` y `detalle`. Sin esos datos el carrito es idéntico al de antes.
+2. **Cantidad tal cual:** `numero(x) || 1` convertía una cantidad 0 en 1 (vendía lo que el cliente no pidió y terminaba en un QR directo). Ahora 0, negativa, fraccionaria o ausente viajan como están y quien arma las líneas las descarta. El servidor ya no manda cantidades menores que 1, así que en la práctica solo cambia ante una carga alterada.
+3. **Entrega ausente:** deja de convertirse en «retiro»: viaja vacía (solo «envio» y «retiro» pasan). Venta mínima conserva su propio mapeo (`envio` o `retiro`), así que su comportamiento no cambia.
+
+**Se regeneran:** `walisuma.json` y `walisuma.prueba.json`; `demo-b-venta-cobro.json`; `venta-minima.qtaco.json`, `venta-minima.qtaco-3727.json`, `venta-minima.prueba.json` y `venta-minima.ensayo-demo-a.json` (la copia literal de `validar-carrito.js` en `carga-de-entrada.js` se resincroniza). **Casa Bermejo no cambia:** su carrito usa su propio código (Aux3). **Nada se publica con este PR.**
+
+**Quién hereda y hay que republicar (cada uno con botón de Andres, tras ensayo):** Walisuma, Demo B, Q'Taco (`qtaco` y `qtaco-3727`). Mientras no se publiquen, los vivos siguen con el comportamiento anterior (cantidad 0 → 1, entrega ausente → retiro); es un atraso DECLARADO, no un defecto.
+
+**Texto «Recojo en tienda» (decisión de Andres, 25/11/2026):** la página del catálogo, la Consola (Pedidos) y el resumen que el cliente ve (`Pedido desde el catálogo web (recojo en tienda)`) usan el mismo nombre. Es código de Functions y de la consola web, no de los flujos: se despliega con la etiqueta.
+

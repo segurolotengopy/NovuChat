@@ -136,7 +136,7 @@ for (const item of $input.all()) {
       const pc = centavos((i ?? {}).precioCentavos);
       return {
         nombre: limpio((i ?? {}).nombre, 80) || 'producto',
-        cantidad: numero((i ?? {}).cantidad) || 1,
+        cantidad: numero((i ?? {}).cantidad),
         subtotal: numero((i ?? {}).subtotal),
         ...(pc !== null ? { precioCentavos: pc } : {}),
         ...(esp !== '' ? { detalle: esp } : {}),
@@ -148,7 +148,7 @@ for (const item of $input.all()) {
     mercado: cuerpo.mercado === 'BO' || cuerpo.mercado === 'AR' ? cuerpo.mercado : '',
     catalogo: cuerpo.catalogo === 'externo' ? 'externo' : '',
     costoEnvio: numero(cuerpo.costoEnvio),
-    entrega: String(cuerpo.entrega ?? '') === 'envio' ? 'envio' : 'retiro',
+    entrega: (['envio', 'retiro'].includes(String(cuerpo.entrega ?? '')) ? String(cuerpo.entrega) : ''),
     direccion: limpio(cuerpo.direccion, 200),
     nota: limpio(cuerpo.nota, 200),
     descartados: descartados.length,

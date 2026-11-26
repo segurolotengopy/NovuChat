@@ -16,6 +16,7 @@ import {
 } from '../../../web/src/modulos/catalogo-web/publico/SitioCatalogo.tsx';
 import type { ItemPublico } from '../../../web/src/modulos/catalogo-web/publico/tipos.ts';
 import { ejecutar, GLOBALES_FUERA_DEL_SANDBOX } from '../../lib/flujo.ts';
+import { cargaConCarrito } from '../../../../Flujos/src/modulos/catalogo-web/carrito-del-catalogo.mjs';
 import { detalleDeLinea, ordenarItemsExternos, unirDetalles } from '../../../functions/src/modulos/catalogo-web/catalogoWeb.ts';
 
 describe('precioTexto', () => {
@@ -144,6 +145,44 @@ describe('validar-carrito.js (lo que los flujos incluyen)', () => {
     expect(ls[1]!['precioCentavos']).toBe(0);
     for (const i of [2, 3, 4]) expect(ls[i], String(i)).not.toHaveProperty('precioCentavos');
     expect(ls[5]).toEqual({ nombre: 'f', cantidad: 2, subtotal: 9 });
+  });
+
+  it('la cantidad viaja TAL CUAL: 0, negativa, fraccionaria o ausente NO se convierten en 1 (quien arma las líneas las descarta)', () => {
+    const ls = lineas(validar({ items: [
+      { nombre: 'a', cantidad: 0 }, { nombre: 'b', cantidad: -2 }, { nombre: 'c', cantidad: 1.5 }, { nombre: 'd' },
+      { nombre: 'e', cantidad: '3' }, { nombre: 'f', cantidad: 3 },
+    ] }));
+    expect(ls.map((l) => l['cantidad'])).toEqual([0, -2, 1.5, 0, 0, 3]);
+    for (const l of ls.slice(0, 5)) expect(l['cantidad'], String(l['nombre'])).not.toBe(1);
+  });
+
+  it('una entrega AUSENTE o desconocida viaja VACÍA (no se convierte en «retiro»); solo «envio» y «retiro» pasan', () => {
+    expect(validar({ items: [{ nombre: 'a' }], entrega: 'envio' })['entrega']).toBe('envio');
+    expect(validar({ items: [{ nombre: 'a' }], entrega: 'retiro' })['entrega']).toBe('retiro');
+    for (const e of [undefined, '', null, 'otra', 'RETIRO', 7]) expect(validar({ items: [{ nombre: 'a' }], entrega: e })['entrega'], String(e)).toBe('');
+  });
+
+  it('la carga del flujo (carga-del-carrito.js) REENVÍA mercado, catalogo, precioCentavos y detalle; sin ellos el carrito es el de siempre y la entrega ausente va vacía', () => {
+    const codigo = cargaConCarrito(`function cnNodo(n) { return n === 'Carrito del catálogo'; }\nfunction cnPrimero() { return { phoneNumberIdEsperado: '1000000771' }; }\nreturn [];`);
+    const correr = (cuerpo: Record<string, unknown>) => {
+      const r = ejecutar(codigo, [{ headers: cabeceras(), body: {
+        tipo: 'carrito', tenantId: 'ext-venta', telefono: '59170' + '020001', accion: 'responder', pedidoId: 'cat_1', ...cuerpo,
+      } }]);
+      return (r[0]?.['messages'] as Array<Record<string, any>> | undefined)?.[0]?.['carrito'] as Record<string, any> | undefined; // eslint-disable-line @typescript-eslint/no-explicit-any
+    };
+    const ext = correr({ mercado: 'AR', catalogo: 'externo', entrega: 'envio', moneda: 'ARS', items: [
+      { id: 'p1', nombre: 'Polera', cantidad: 2, subtotal: 300, precioCentavos: 15000, detalle: 'color: negro' },
+      { id: 'p2', nombre: 'Gorra', cantidad: 0 },
+    ] });
+    expect(ext).toMatchObject({ mercado: 'AR', catalogo: 'externo', entrega: 'envio' });
+    expect(ext!['items'][0]).toMatchObject({ id: 'p1', cantidad: 2, precioCentavos: 15000, detalle: 'color: negro' });
+    expect(ext!['items'][1]!['cantidad']).toBe(0); // la cantidad 0 llega como 0
+    // Sin los datos K1: el carrito es el de siempre (sin claves nuevas) y la entrega ausente va vacía.
+    const normal = correr({ items: [{ id: 'p1', nombre: 'Polera', cantidad: 1, subtotal: 150 }] });
+    expect(normal).not.toHaveProperty('mercado');
+    expect(normal).not.toHaveProperty('catalogo');
+    expect(normal!['items'][0]).toEqual({ id: 'p1', nombre: 'Polera', cantidad: 1, subtotal: 150 });
+    expect(normal!['entrega']).toBe('');
   });
 
   it('sigue exigiendo la forma del carrito (tipo, items, firma) y no usa ningún global de Node', () => {
