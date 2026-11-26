@@ -1507,7 +1507,7 @@ function bmResolverCarrito(c) {
   const lineasFicha = piezas.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' }));
   const fichaCar = Object.assign({}, f, { carrito: lineasFicha, entrega: entrega, cierre: false, pedidoCatalogo: pedidoCatalogo });
   const resp = { candidates: [{ content: { parts: [{ text: JSON.stringify({ texto: 'Revisando su pedido.', lineas: lineasFicha, entrega: {} }) }] } }] };
-  const r = bmResolverModelo(Object.assign({}, c, { ficha: fichaCar, plan: Object.assign({}, c.plan, { tipo: 'carrito', textoCliente: '' }), modeloResp: resp, cierreCarrito: decision === 'qr' }));
+  const r = bmResolverModelo(Object.assign({}, c, { ficha: fichaCar, plan: Object.assign({}, c.plan, { tipo: 'carrito', textoCliente: '' }), modeloResp: resp, cierreCarrito: decision === 'qr', entregaAntes: bmEntregaDeFicha(f.entrega) }));
   r.desdeCatalogo = true;
   if (r.tipo === 'modelo') {
     // El texto lo arma el código: qué entró, qué no, y lo que falta o el botón «Confirmar pedido»; nunca el del modelo, que no corrió.
@@ -1611,7 +1611,7 @@ function bmResolverModelo(c) {
   const qrViejo = bmConNombres(f.qrCarrito, c.vendibles);
   const cambioConQr = abierto && !vcMismoCarrito(qrViejo, lineas);
   // Un cambio de MODO o de DATOS de entrega con el QR abierto es un cambio de piezas: el QR abierto es del pedido anterior. Se cierra el cobro con el mismo mecanismo (`cancelarCobro` + `qrAnulado`) y se vuelve al paso que corresponde con el texto del CÓDIGO.
-  const entregaCambiaConQr = abierto && !cambioConQr && JSON.stringify(bmEntregaDeFicha(f.entrega)) !== JSON.stringify(entrega);
+  const entregaCambiaConQr = abierto && !cambioConQr && JSON.stringify(c.entregaAntes || bmEntregaDeFicha(f.entrega)) !== JSON.stringify(entrega);   // `entregaAntes`: el carrito nuevo de la página arma la ficha con la entrega NUEVA; se compara con la ORIGINAL
   if ((cambioConQr || entregaCambiaConQr) && c.cancelo === false) return Object.assign(base, { tipo: 'derivar', motivo: 'no_cancelo', aviso: null, cancelarCobro: true });
   const completa = bmEntregaCompleta(entrega, c.mercado);
   if (entregaCambiaConQr && lineas.length > 0) {
@@ -1654,7 +1654,7 @@ function bmResolverModelo(c) {
   const enEntrega = lineas.length > 0 && !abierto && (conBoton || pendientes.length > 0);
   let texto = (enEntrega || ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? (fijada.texto !== '' && !ignoraQuiereHablar && comp.modoRechazado !== true && comp.contradice !== true && fijada.delSitio !== true && fijada.ordenada !== true ? fijada.texto : bmTextoDeEstado(lineas, entrega, cierre, c, conBoton)) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
   // Revisión de la ronda 11: en el turno que VACÍA el pedido respondiendo a un paso de datos (nombre, ciudad…: «Ana Pérez, ya no quiero nada»), el texto es FIJO del código; con el pedido vacío `enEntrega` ya no vale y salía el texto del modelo.
-  if (ordenVaciar && antes.length > 0 && lineas.length === 0 && pideAntes.length > 0) texto = (c.base && c.base.tratamiento === 'usted') ? 'Listo, vacié su pedido. Dígame qué pieza le interesa.' : 'Listo, vacié tu pedido. Dime qué pieza te interesa.';
+  if (ordenVaciar && antes.length > 0 && lineas.length === 0 && (pideAntes.length > 0 || bmEntregaCompleta(f.entrega, c.mercado))) texto = (c.base && c.base.tratamiento === 'usted') ? 'Listo, vacié su pedido. Dígame qué pieza le interesa.' : 'Listo, vacié tu pedido. Dime qué pieza te interesa.';
   // Negar una pieza que el catálogo sí tiene («solo disponemos de la de 9 kg» cuando hay de 9, 15 y 17 kg): el texto lo arma el código con las piezas que coinciden.
   if (texto !== '' && /\b(solo|unicamente)\s+(disponemos|tenemos|contamos|hay|ofrecemos)\b/.test(bmNorm(texto))) { const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1); if (coinc !== '') texto = coinc; }
   // El mensaje pegado del sitio con montos DISTINTOS a los del catálogo vivo: se cobra siempre el vivo y se avisa en el mismo mensaje (el resumen trae el total real).
