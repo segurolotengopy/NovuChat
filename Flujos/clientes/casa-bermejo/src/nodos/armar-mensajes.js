@@ -60,6 +60,17 @@ function ajustarResumen(resumen, tope) {
   return total;
 }
 
+// UN texto fijo por un medio (foto, ubicación, sticker, archivo, audio no entendido) EN MEDIO DE LA ENTREGA: lleva además la pregunta fija del paso (y su lista, si el dato es de lista), nunca solo el texto del medio. Mismo mensaje: 0 mensajes más. La ficha no cambia (su `pide` sigue vigente).
+const medioConPaso = (cuerpo) => {
+  const paso = fichaAntes.carrito.length > 0 ?bmPreguntaDelPaso(fichaAntes.entrega, c.mercado) : '';
+  if (paso === '') return [texto(cuerpo)];
+  const pideP = bmPideDeEntrega(fichaAntes.entrega, c.mercado);
+  const it = bmInteractivoDePide(pideP, fichaAntes.entrega);
+  const cuerpoP = bmSeguro(cuerpo + '\n\n' + paso, usted);
+  if (it === null) return [texto(cuerpo + '\n\n' + paso)];
+  const respaldoP = cuerpoP + '\n\nEscríbame el nombre exacto de una opción: ' + it.filas.map((x) => x.title).join(', ') + '.';
+  return [cmMensaje('cliente', cmLista(cuerpoP, it.boton, it.titulo, it.filas), cuerpoP, respaldoP, { tipoReporte: 'interactive', conBoton: true })];
+};
 let tipoDePlan = d.tipo;
 let msgs = [];          // los mensajes de este turno (casi siempre uno)
 let llamadasModelo = 0;
@@ -89,7 +100,7 @@ if (puerta.ruta === 'suspendido') {
 }
 if (puerta.ruta === 'sigue') {
   if (tipoDePlan === 'cortes') {
-    msgs = [texto(conSaludo(BM_TEXTO_CORTES))];
+    msgs = medioConPaso(conSaludo(BM_TEXTO_CORTES));
   } else if (tipoDePlan === 'baja') {
     // La confirmación de la baja: UN texto fijo (sin saludo, sin botón, sin aviso); el `no_contactar` ya viajó con el entrante (si fue una nota de voz, `t.texto` iba vacío: el evento viaja en el reporte de ESTE mensaje saliente). La ficha y el carrito no se tocan.
     msgs = [texto(bjTextoBaja(c.base && c.base.tratamiento === 'usted' ? BM_TEXTO_BAJA_USTED : undefined), d.porVoz === true ? { evento: 'no_contactar' } : undefined)];
@@ -109,11 +120,11 @@ if (puerta.ruta === 'sigue') {
   } else if (tipoDePlan === 'identidad') {
     msgs = [texto(antepone(BM_TEXTO_IDENTIDAD.replace('{NEGOCIO}', negocio)))];
   } else if (tipoDePlan === 'audio_fijo') {
-    msgs = [texto(conSaludo(d.causa === 'largo' ? BM_TEXTO_AUDIO_LARGO : BM_TEXTO_AUDIO_NO_ENTENDIDO))];
+    msgs = medioConPaso(conSaludo(d.causa === 'largo' ? BM_TEXTO_AUDIO_LARGO : BM_TEXTO_AUDIO_NO_ENTENDIDO));
   } else if (tipoDePlan === 'archivo') {
-    msgs = [texto(conSaludo(d.pesado === true ? BM_TEXTO_ARCHIVO_PESADO : BM_TEXTO_ARCHIVO_NO_ABIERTO))];
+    msgs = medioConPaso(conSaludo(d.pesado === true ? BM_TEXTO_ARCHIVO_PESADO : BM_TEXTO_ARCHIVO_NO_ABIERTO));
   } else if (tipoDePlan === 'imagen_otra') {
-    msgs = [texto(conSaludo(d.documento === true ? BM_TEXTO_DOCUMENTO : BM_TEXTO_IMAGEN))];
+    msgs = medioConPaso(conSaludo(d.documento === true ? BM_TEXTO_DOCUMENTO : BM_TEXTO_IMAGEN));
   } else if (tipoDePlan === 'anuncio') {
     // El producto del anuncio sale POR CÓDIGO y su precio, del catálogo: nunca del modelo ni de la imagen.
     const v = c.vendibles.find((x) => x.id === d.producto);

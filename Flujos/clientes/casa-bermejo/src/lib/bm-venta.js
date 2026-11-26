@@ -647,6 +647,8 @@ function bmPideFactura(n) {
   return /\b(factura|facturar|facturacion|nit|razon social)\b/.test(String(n || ''));
 }
 function bmQuiereHablar(n) {
+  // El mensaje ENTERO «vendedor», «humano», «persona», «una persona», «quiero un vendedor»…: deriva por código, sin depender de que el modelo marque `quiereHablar`.
+  if (/^(?:(?:quiero|necesito|busco|pasame con|comunicame con)\s+)?(?:un |una |el |la )?(?:vendedor|vendedora|humano|humana|persona|asesor|asesora)(?: real| humano| humana)?$/.test(String(n || '').trim())) return true;
   return /\b(hablar con (una |un )?(persona|humano|asesor|asesora|encargado|encargada|vendedor|vendedora|alguien|recepcion)|asesor|asesora|encargad[oa]|recepcion|atencion al cliente|que me llamen|llamenme|llamarme)\b/.test(String(n || ''));
 }
 // El enlace del catálogo web de ESTA conversación (R2, B4, 25/11/2026): el catálogo de NovuChat, que la consola manda como `catalogoWeb.enlace` con `catalogoCompleto: true` (activo, https, sin espacios, de largo acotado).
@@ -1604,8 +1606,16 @@ function bmResolverModelo(c) {
   const abierto = c.cobro.modo === 'real' && (c.cobro.pendiente || f.qrHastaMs > c.ahora);
   const qrViejo = bmConNombres(f.qrCarrito, c.vendibles);
   const cambioConQr = abierto && !vcMismoCarrito(qrViejo, lineas);
-  if (cambioConQr && c.cancelo === false) return Object.assign(base, { tipo: 'derivar', motivo: 'no_cancelo', aviso: null, cancelarCobro: true });
+  // Un cambio de MODO o de DATOS de entrega con el QR abierto es un cambio de piezas: el QR abierto es del pedido anterior. Se cierra el cobro con el mismo mecanismo (`cancelarCobro` + `qrAnulado`) y se vuelve al paso que corresponde con el texto del CÓDIGO.
+  const entregaCambiaConQr = abierto && !cambioConQr && JSON.stringify(bmEntregaDeFicha(f.entrega)) !== JSON.stringify(entrega);
+  if ((cambioConQr || entregaCambiaConQr) && c.cancelo === false) return Object.assign(base, { tipo: 'derivar', motivo: 'no_cancelo', aviso: null, cancelarCobro: true });
   const completa = bmEntregaCompleta(entrega, c.mercado);
+  if (entregaCambiaConQr && lineas.length > 0) {
+    // Ni un QR nuevo ni texto del modelo: la pregunta fija del paso que falta o el resumen con «Confirmar pedido» (el cobro anterior ya está cerrado: `abierto` = false para el botón).
+    const conBotonN = cfSeOfrece(lineas.length, completa, false);
+    const textoN = bmTextoDeEstado(lineas, entrega, false, c, conBotonN) + (conBotonN || !bmEsRetiro(entrega.modo) ? '' : bmTextoRetiroEn(c));
+    return Object.assign(base, { tipo: 'modelo', texto: textoN, sinRedaccion: false, sinPieza: false, sinModelo: true, resumen: conBotonN ? vcResumen(lineas) : '', confirmable: conBotonN, botonesEntrega: bmOfreceBotonesDeEntrega(lineas.length, entrega, c.mercado, c.modos, false), pide: conBotonN ? [] : bmPideDeEntrega(entrega, c.mercado), cancelarCobro: true, qrAnulado: true, cierre: false, patch: { qrHastaMs: 0, qrCarrito: [] } });
+  }
   const conBoton = cfSeOfrece(lineas.length, completa, abierto);   // el mensaje del turno lleva «Confirmar pedido» solo si el QR todavía no está abierto
   if (lineas.length > 0 && completa && (cierre || cambioConQr)) {
     const total = vcTotalCentavos(lineas);
