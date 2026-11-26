@@ -48,7 +48,7 @@ function nodosConMarcadorNoDeclarado(flujo: Flujo, declarados: string[]): string
 
 const leer = (f: string): Flujo => JSON.parse(readFileSync(join(RAIZ_FLUJOS, f), 'utf8')) as Flujo;
 const declaradosDe = (f: string): string[] => {
-  if (f.includes('/') || !existsSync(join(RAIZ_FLUJOS, 'manifiestos', f))) return [];
+  if (f.startsWith('experimental/') || !existsSync(join(RAIZ_FLUJOS, 'manifiestos', f))) return [];
   const m = leerManifiesto(f) as { conservanMarcadores?: Record<string, string> } | null;
   return Object.keys(m?.conservanMarcadores ?? {});
 };
@@ -79,8 +79,10 @@ describe('Higiene de los flujos: ningún id de credencial', () => {
 });
 
 describe('Higiene de los flujos: REEMPLAZAR_ solo si el manifiesto lo declara', () => {
-  // Los de experimental/ son bancos de prueba con sus propios nodos de entrada.
-  for (const f of ARCHIVOS.filter((x) => !x.includes('/'))) {
+  // Los de experimental/ son bancos de prueba con sus propios nodos de entrada. Los demos mudados a clientes/ (25/11/2026)
+  // se siguen revisando aquí, como cuando estaban en la raíz.
+  const DEMOS_MUDADOS = ['clientes/demo-a/demo-a-agendamiento.json', 'clientes/demo-b/demo-b-venta-cobro.json'];
+  for (const f of ARCHIVOS.filter((x) => !x.includes('/') || DEMOS_MUDADOS.includes(x))) {
     it(`${f}: todo marcador fuera de Config base está declarado`, () => {
       const hallados = nodosConMarcadorNoDeclarado(leer(f), declaradosDe(f));
       expect(hallados, `${f}: marcador no declarado en ${hallados.join(', ')}`).toEqual([]);
