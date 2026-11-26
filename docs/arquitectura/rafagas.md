@@ -169,6 +169,21 @@ comercio la apagó (campo de `tenants/{id}`, solo Admin SDK).
 - Por negocio (servidor): `rafagaApagada === true` en `tenants/{id}`; el IF lo lee de «Config del negocio».
 - Por flujo: `rafagaActiva` en «Config base» (verdadero si falta; `false` apaga). `esperaRafagaSeg` fija la espera.
 
+## Apagar la ráfaga de un comercio
+
+Script de Plataforma `admin/scripts/plataforma/apagar-rafaga.mjs`: un comercio por corrida, simulacro por omisión («pondría…»).
+`--apagar` escribe `rafagaApagada: true`; `--encender` **borra** el campo (nunca lo pone en `false`). Es idempotente, no toca otros
+campos y deja auditoría `cambiar_rafaga` en `tenants/{id}/auditoria`. Contra un proyecto real, `--aplicar` exige
+`--confirmo-produccion <tenant>` igual a `--tenant`; si el comercio no existe, sale 1 sin escribir. Efecto: la siguiente respuesta de
+`configuracionFlujo` trae `rafagaApagada: true` y el nodo responde cada texto solo, sin republicar el flujo.
+
+```
+node scripts/plataforma/apagar-rafaga.mjs --proyecto <id> --tenant <id> --apagar [--aplicar] [--confirmo-produccion <tenant>]
+node scripts/plataforma/apagar-rafaga.mjs --proyecto <id> --tenant <id> --encender [--aplicar] [--confirmo-produccion <tenant>]
+```
+
+Prueba: `admin/pruebas/plataforma/apagar-rafaga.test.ts` (emulador).
+
 ## Pruebas
 
 `admin/pruebas/core/rafaga-decision.test.ts` (el nodo, ejecutado como el Code de n8n, negando cada regla),
