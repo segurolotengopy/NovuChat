@@ -272,7 +272,9 @@ const MAPA_GOOGLE = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.c
 function mapaGoogleValido(v) {
   if (typeof v !== 'string' || v.length === 0 || v.length > 200 || !MAPA_GOOGLE.test(v) || /%2e|%2f|%5c/i.test(v)) return false;
   const ruta = v.replace(/^https:\/\/[^/?#]+/, '').split(/[?#]/)[0];
-  return !ruta.split('/').some((x) => x === '.' || x === '..') && !/^\/url(?:[/?#]|$)/i.test(ruta);
+  if (ruta.split('/').some((x) => x === '.' || x === '..' || /^(?:local_)?url$/i.test(x)) || ruta.includes('//')) return false;
+  if (/^https:\/\/(?:maps\.google\.com|(?:www\.)?google\.com)(?:[/?#]|$)/.test(v) && !(ruta === '' || ruta === '/' || /^\/maps(?:\/|$)/i.test(ruta))) return false;
+  return true;
 }
 /**
  * La forma de cada valor LOCAL (un marcador siempre es válido: queda sin sustituir y la guardia de publicación lo exige). Es una LISTA BLANCA: un texto libre solo se puede

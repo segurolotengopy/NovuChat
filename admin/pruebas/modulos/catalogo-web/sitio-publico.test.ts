@@ -779,6 +779,13 @@ describe('pedido: referencias para llegar, aviso del delivery y ejemplo de la no
     expect(html).not.toContain('alguna referencia');
   });
 
+  it('R6: con las dos opciones aceptadas la página ofrece «Retiro en el local» y «Envío» (también con fuente externa: sin costo ni mínimo)', () => {
+    const html = pintar({ aceptaRetiroEnLocal: true, aceptaDelivery: true, costoDelivery: null, pedidoMinimo: null });
+    expect(html).toContain('Retiro en el local');
+    expect(html).toMatch(/Envío/);
+    expect(html).not.toContain('(+'); // sin costo de envío inventado
+  });
+
   it('NEGANDO: con retiro elegido no hay campo de referencias, ni dirección, ni aviso', () => {
     const html = pintar({ aceptaRetiroEnLocal: true, aceptaDelivery: true });
     expect(html).not.toContain('Referencias para llegar');

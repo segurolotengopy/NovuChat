@@ -232,10 +232,10 @@ describe('intenciones decididas por código', () => {
   });
   it('ENVÍO en Bolivia: nombre, CI, ciudad y flota; ENVÍO a Argentina: nombre, DNI, dirección, código postal y provincia (decisión de Andres, 20/11/2026)', () => {
     const E = b('bmEntregaCompleta');
-    const bo = { modo: 'envío por flota', ciudad: 'Oruro', direccion: '', nombre: 'Ana', documento: '1234567', cp: '', provincia: '', flota: 'Trans Copacabana' };
+    const bo = { modo: 'envío por flota', ciudad: 'Oruro', direccion: '', nombre: 'Ana Pérez', documento: '1234567', cp: '', provincia: '', flota: 'Trans Copacabana' };
     expect(E(bo, 'BO')).toBe(true);
     for (const falta of ['nombre', 'documento', 'ciudad', 'flota']) expect(E({ ...bo, [falta]: '' }, 'BO')).toBe(false);
-    const ar = { modo: 'envío', ciudad: '', direccion: 'Calle Falsa 123', nombre: 'Ana', documento: '30123456', cp: '5500', provincia: 'Mendoza', flota: '' };
+    const ar = { modo: 'envío', ciudad: '', direccion: 'Calle Falsa 123', nombre: 'Ana Pérez', documento: '30123456', cp: '5500', provincia: 'Mendoza', flota: '' };
     expect(E(ar, 'AR')).toBe(true);
     for (const falta of ['nombre', 'documento', 'direccion', 'cp', 'provincia']) expect(E({ ...ar, [falta]: '' }, 'AR')).toBe(false);
     expect(b('bmEntregaFalta')({ ...bo, documento: '' }, 'BO')).toEqual(['carnet de identidad (CI)']);
@@ -624,7 +624,7 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
         const r = b('bmEntregaDeTurno')({ direccion: 'Av Corrientes 1234' }, { modo: 'envío' }, 'Mi dirección es Av Corrientes 1234', ['recojo en tienda', 'envío'], { mercado: 'AR' });
         expect(r.consulta).toBe(false);
         expect(r.entrega).toEqual({ direccion: 'Av Corrientes 1234' });
-        const bo = E({}, { modo: 'envío', nombre: 'Ana Pérez', documento: '4412345' }, 'Flota Bolívar, donde sale a Tarija');
+        const bo = E({}, { modo: 'envío', nombre: 'Ana Pérez', documento: '4412345' }, 'Flota Bolívar, donde sale a Tarija', { esperaCiudad: true });   // el asistente acababa de pedir la ciudad: «a Tarija» sin eso ya no es una ciudad
         expect(bo.consulta).toBe(false);
         expect(bo.entrega).toMatchObject({ flota: 'Bolívar', ciudad: 'Tarija' });
       });
@@ -668,16 +668,18 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
     describe('D. los datos del ENVÍO por código, en cualquier orden (modelo sano o adverso)', () => {
       const envio = { modo: 'envío', nombre: 'Ana Pérez' };
       it('CI de 5 a 13 cifras; nunca un celular de 8 cifras (6 o 7 al inicio) sin «CI»; nunca tras «teléfono»; con retiro no hay CI', () => {
-        expect(E({}, envio, '4412345').entrega.documento).toBe('4412345');
-        expect(E({}, envio, 'Ana Pérez, 4412345, envío a Cochabamba').entrega.documento).toBe('4412345');
-        expect(E({}, envio, '12345678').entrega.documento).toBe('12345678');
+        expect(E({}, envio, '4412345', { esperaDocumento: true }).entrega.documento).toBe('4412345');
+        expect(E({}, envio, '4412345').entrega.documento).toBeUndefined();   // sin rótulo y sin que el asistente lo pidiera, una cifra no es el CI (cambio de la sexta ronda)
+        expect(E({}, envio, '4412345').reconocido).toBe(false);
+        expect(E({}, envio, 'Ana Pérez, 4412345, envío a Cochabamba', { esperaDocumento: true, esperaCiudad: true }).entrega.documento).toBe('4412345');
+        expect(E({}, envio, '12345678', { esperaDocumento: true }).entrega.documento).toBe('12345678');
         expect(E({}, envio, 'mi CI es 70123456').entrega.documento).toBe('70123456');
-        for (const f of ['70123456', '61234567', 'Andres 70123456', '70123456 yacuiba', 'mi celular es 70123456', 'mi teléfono es 70123456', '1234']) expect(E({}, envio, f).entrega.documento, f).toBeUndefined();
+        for (const f of ['70123456', '61234567', 'Andres 70123456', '70123456 yacuiba', 'mi celular es 70123456', 'mi teléfono es 70123456', '1234']) expect(E({}, envio, f, { esperaDocumento: true }).entrega.documento, f).toBeUndefined();
         expect(E({}, { modo: 'recojo en tienda', nombre: 'Ana' }, '2441214').entrega.documento).toBeUndefined();
       });
       it('«Andres 2441214 yacuiba. Flota bolivar» (humo del 23/11) y la ciudad ANTES que la flota, en mensajes separados, no se pierden', () => {
-        expect(E({}, { modo: 'envío', nombre: 'Andres' }, 'Andres 2441214 yacuiba. Flota bolivar').entrega).toMatchObject({ documento: '2441214', ciudad: 'Yacuiba', flota: 'bolivar' });
-        const paso1 = E({}, envio, '4412345 Cochabamba').entrega;
+        expect(E({}, { modo: 'envío', nombre: 'Andres' }, 'Andres 2441214 yacuiba. Flota bolivar', { esperaDocumento: true, esperaCiudad: true }).entrega).toMatchObject({ documento: '2441214', ciudad: 'Yacuiba', flota: 'bolivar' });
+        const paso1 = E({}, envio, '4412345 Cochabamba', { esperaDocumento: true, esperaCiudad: true }).entrega;
         expect(paso1).toMatchObject({ documento: '4412345', ciudad: 'Cochabamba' });
         const ficha2 = { ...envio, ...paso1 };
         expect(E({}, ficha2, 'flota Bolivar').entrega).toMatchObject({ flota: 'Bolivar' });
@@ -697,13 +699,13 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
         expect(E({}, { ...envio, documento: '4412345' }, 'cochabamba', { esperaCiudad: true }).entrega.ciudad).toBeUndefined();   // en minúsculas y sin el modelo no se adivina
       });
       it('«Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana» lee CI y flota por código (el nombre, del modelo); «Envíelo a Cochabamba por la terminal de Oruro» da la ciudad', () => {
-        const e = E({ nombre: 'Juan Pérez' }, { modo: 'envío', ciudad: 'Santa Cruz' }, 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana', { esperaNombre: true }).entrega;
+        const e = E({ nombre: 'Juan Pérez' }, { modo: 'envío', ciudad: 'Santa Cruz' }, 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana', { esperaNombre: true, esperaCiudad: true }).entrega;
         expect(e).toMatchObject({ nombre: 'Juan Pérez', documento: '4567890', flota: 'Trans Copacabana' });
-        expect(E({}, { modo: 'envío' }, 'Envíelo a Cochabamba por la terminal de Oruro').entrega.ciudad).toBe('Cochabamba');
+        expect(E({}, { modo: 'envío' }, 'Envíelo a Cochabamba por la terminal de Oruro', { esperaCiudad: true }).entrega.ciudad).toBe('Cochabamba');
         expect(E({}, { modo: 'recojo en tienda' }, 'voy a Santa Cruz').entrega.ciudad).toBeUndefined();
       });
       it('reconocido: el modo o un dato del envío leído por código (no el nombre); una consulta nunca', () => {
-        expect(E({}, { modo: 'envío' }, '4412345').reconocido).toBe(true);
+        expect(E({}, { modo: 'envío' }, 'mi CI es 4412345').reconocido).toBe(true);
         expect(E({}, {}, 'recojo en tienda').reconocido).toBe(true);
         expect(E({ nombre: 'Ana Pérez' }, { modo: 'recojo en tienda' }, 'Ana Pérez', { esperaNombre: true }).reconocido).toBe(false);
         expect(E({}, { modo: 'envío' }, '¿envían a Oruro con CI 4412345?').reconocido).toBe(false);
@@ -931,7 +933,7 @@ describe('ubicación de la tienda: el dato y la pregunta', () => {
     expect(largo.length).toBe(200);
     expect(M(largo)).toBe(largo);
     for (const mal of ['', undefined, null, 5, {}, 'http://maps.app.goo.gl/x', 'ftp://maps.app.goo.gl/x', 'javascript:alert(1)', 'https://ejemplo.com/maps', 'https://maps.app.goo.gl.evil.com/x', 'https://evil.com/?https://maps.app.goo.gl/x', 'https://maps.app.goo.gl/a b',
-      ' https://maps.app.goo.gl/x', 'https://maps.app.goo.gl/x\n', 'https://maps.app.goo.gl/x\u0000', 'https://maps.app.goo.gl@evil.com/x', 'https://u:p@maps.app.goo.gl/x', 'https://maps.app.goo.gl:8443/x', 'https://goo.gl/mapsx', 'REEMPLAZAR_MAPA', 'https://maps.app.goo.gl/../x', 'https://maps.app.goo.gl/a/./x', 'https://maps.app.goo.gl/%2e%2e/x', 'https://maps.app.goo.gl/a%2Fb', 'https://maps.app.goo.gl/a%5Cb', 'https://maps.app.goo.gl/a%2E%2e', 'https://maps.google.com/url?q=https://evil.example.com', 'https://maps.google.com/URL?q=x', 'https://www.google.com/url?q=x', largo + 'a']) expect(M(mal)).toBe('');
+      ' https://maps.app.goo.gl/x', 'https://maps.app.goo.gl/x\n', 'https://maps.app.goo.gl/x\u0000', 'https://maps.app.goo.gl@evil.com/x', 'https://u:p@maps.app.goo.gl/x', 'https://maps.app.goo.gl:8443/x', 'https://goo.gl/mapsx', 'REEMPLAZAR_MAPA', 'https://maps.app.goo.gl/../x', 'https://maps.app.goo.gl/a/./x', 'https://maps.app.goo.gl/%2e%2e/x', 'https://maps.app.goo.gl/a%2Fb', 'https://maps.app.goo.gl/a%5Cb', 'https://maps.app.goo.gl/a%2E%2e', 'https://maps.google.com/url?q=https://evil.example.com', 'https://maps.google.com/URL?q=x', 'https://www.google.com/url?q=x', 'https://maps.google.com/local_url?q=https://evil.example', 'https://www.google.com/maps/url?q=x', 'https://maps.google.com//evil.example', 'https://www.google.com/search?q=x', 'https://google.com/imgres', 'https://maps.google.com/maps//x', largo + 'a']) expect(M(mal)).toBe('');
   });
   it('el dato: un marcador o un texto vacío es «sin dato»; el horario no cuenta como ubicación', () => {
     const U = (o: Record<string, unknown>) => b('bmUbicacionTienda')(o) as { direccion: string; mapa: string; horario: string; hayDato: boolean };

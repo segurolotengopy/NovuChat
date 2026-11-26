@@ -145,8 +145,10 @@ const BM_COLA_CONFIRMA = /[,;.]?\s*¿?\s*(?:est[aá] bien|est[aá] correcto|es c
 function bmSinConfirmacion(texto) { return String(texto === undefined || texto === null ? '' : texto).replace(BM_COLA_CONFIRMA, ''); }
 // ¿Es una CONSULTA? Por su FORMA: una pregunta («?», un interrogativo o verbo de consulta al inicio tras un saludo, «dónde queda/están/es…») o una palabra de consulta (horario, costo, garantía…). «Dirección» y «ubicación» son consulta
 // cuando se PIDEN («la dirección de la tienda», «cuál es su dirección»), no cuando el cliente da la suya («mi dirección es…», «dirección: …»): el asistente mismo pide la «dirección exacta» en el envío a Argentina. «Dónde» solo como pregunta, no dentro de una frase («flota Bolívar, donde sale a Tarija»).
+// El nombre que el cliente DICE con su rótulo («Mi nombre es Hacen Torrez»): son palabras de un nombre, no de una consulta («hacen» es un apellido ahí). Se quita antes de mirar las palabras de consulta.
+const BM_RE_NOMBRE_DICHO = /(?:[Mm]i nombre es|[Mm]e llamo|[Ee]l nombre es|[Mm]i nombre|[Aa] nombre de)\s*:?\s+(?:[A-ZÁÉÍÓÚÑ][\p{L}'.-]*\s*){1,4}/u;
 function bmEsConsulta(texto) {
-  const crudo = bmSinConfirmacion(String(texto === undefined || texto === null ? '' : texto).replace(BM_LEYENDA_SITIO, ' '));
+  const crudo = bmSinConfirmacion(String(texto === undefined || texto === null ? '' : texto).replace(BM_LEYENDA_SITIO, ' ')).replace(BM_RE_NOMBRE_DICHO, ' ');
   if (/[?¿]/.test(crudo)) return true;
   const n = bmNorm(crudo);
   const sin = n.replace(/^(?:(?:hola|buenas|buenos dias|buenas tardes|buenas noches|disculpa|disculpe|perdon|oye|una consulta|consulta) )+/, '');
@@ -189,13 +191,21 @@ function bmModoDicho(texto, lista, enDatos) {
   return clases.size === 1 ? bmModoDeLista(Array.from(clases)[0], lista) : '';
 }
 // El nombre que devolvió el modelo, validado POR CÓDIGO: solo letras, espacios, apóstrofo, punto y guion (sin cifras), 60 caracteres o menos, 1 a 5 palabras (con `minPalabras`), y cada palabra figura en lo que escribió el cliente.
+// Una CORTESÍA o una respuesta suelta no es un nombre («Gracias», «Perfecto», «Listo», «Ok»…): lista corta, y además un nombre de UNA palabra tiene que ir con mayúscula inicial en lo que escribió el cliente.
+const BM_NO_NOMBRE = new Set(['gracias', 'perfecto', 'listo', 'lista', 'ok', 'okay', 'bueno', 'buena', 'claro', 'si', 'no', 'hola', 'buenas', 'buenos', 'dias', 'tardes', 'noches', 'bien', 'genial', 'excelente', 'entendido', 'entiendo', 'correcto', 'dale', 'nada', 'muchas', 'mil', 'favor', 'porfa', 'adios', 'chau', 'saludos', 'ya', 'aqui', 'aca', 'ahi', 'ninguno', 'ninguna']);
 function bmNombreValido(valor, textoCliente, minPalabras) {
   const t = String(valor === undefined || valor === null ? '' : valor).replace(/\s+/g, ' ').trim();
   if (t === '' || t.length > 60 || /[^\p{L} .'-]/u.test(t)) return '';
   const palabras = t.split(' ');
   if (palabras.length < (minPalabras === 1 ? 1 : 2) || palabras.length > 5 || (palabras.length === 1 && palabras[0].length < 3)) return '';
+  const normales = bmNorm(t).split(' ').filter((w) => w !== '');
+  if (normales.length > 0 && normales.every((w) => BM_NO_NOMBRE.has(w))) return '';
+  if (palabras.length === 1) {
+    const fichas = String(textoCliente === undefined || textoCliente === null ? '' : textoCliente).split(/[^\p{L}'.-]+/u);
+    if (!fichas.some((x) => bmNorm(x) === normales[0] && x.charAt(0) !== x.charAt(0).toLowerCase())) return '';
+  }
   const dicho = new Set(bmNorm(textoCliente).split(' '));
-  return bmNorm(t).split(' ').every((w) => dicho.has(w)) ? t : '';
+  return normales.every((w) => dicho.has(w)) ? t : '';
 }
 // Un valor corto del modelo (ciudad, flota, dirección): cada palabra figura en lo que escribió el cliente.
 function bmEnTexto(valor, textoCliente, max) {
@@ -207,32 +217,46 @@ function bmEnTexto(valor, textoCliente, max) {
 }
 const BM_RE_CALIFICA_NUMERO = /\b(?:tel[eé]fono|tel|celular|cel|whatsapp|nit|bs|monto|cuenta|total|precio)\b\D{0,15}\d/i;
 // El CI (o DNI): una cifra de 5 a 13 dígitos; nunca un celular (8 dígitos que empiezan con 6 o 7) sin la palabra «CI»; nunca con «teléfono», «NIT», «Bs»… antes.
-function bmCiDelTexto(texto) {
+// Devuelve { valor, rotulado }: `rotulado` es que el cliente lo escribió con su rótulo («CI 4412345», «el DNI es…»). Una cifra SIN rótulo solo vale si el asistente pidió el CI (`aceptaSuelto`): «10500» o «591712345» sin rótulo y sin pregunta no son un CI,
+// y una cifra sin rótulo NUNCA cuenta como «reconocido» (no desvía un `quiereHablar` del modelo).
+function bmCiDelTextoDet(texto, aceptaSuelto) {
   const crudo = String(texto === undefined || texto === null ? '' : texto);
   const largo = (s) => { const d = s.replace(/\D/g, ''); return d.length >= 5 && d.length <= 13; };
   const rotulado = /\b(?:c\.?i\.?|dni|carnet(?: de identidad)?|cedula)\b\D{0,15}(\d[\d.-]{3,14}\d)/i.exec(crudo);
-  if (rotulado && largo(rotulado[1])) return rotulado[1];
-  if (BM_RE_CALIFICA_NUMERO.test(crudo)) return '';
+  if (rotulado && largo(rotulado[1])) return { valor: rotulado[1], rotulado: true };
+  if (aceptaSuelto !== true || BM_RE_CALIFICA_NUMERO.test(crudo)) return { valor: '', rotulado: false };
   const re = /(?<![\d.-])\d[\d.-]{3,14}\d(?![\d.-])/g;
   let m;
-  while ((m = re.exec(crudo)) !== null) { if (largo(m[0]) && !/^[67]\d{7}$/.test(m[0].replace(/\D/g, ''))) return m[0]; }
-  return '';
+  while ((m = re.exec(crudo)) !== null) { if (largo(m[0]) && !/^[67]\d{7}$/.test(m[0].replace(/\D/g, ''))) return { valor: m[0], rotulado: false }; }
+  return { valor: '', rotulado: false };
 }
+function bmCiDelTexto(texto, aceptaSuelto) { return bmCiDelTextoDet(texto, aceptaSuelto).valor; }
+// La flota o terminal: lo que sigue a «flota», «terminal» o «empresa» hasta una coma, un punto, «y», «mi», «ciudad» o la preposición del destino («a», «para», «hasta»): «flota Bolívar a Tarija» es la flota «Bolívar».
 function bmFlotaDelTexto(texto) {
-  const m = /\b(?:flota|terminal|empresa)\s+(?:de\s+)?([\p{L}][\p{L} ]{2,40}?)(?=\s*(?:[,.;]|$|\by\b|\bmi\b|\bciudad\b))/iu.exec(String(texto === undefined || texto === null ? '' : texto));
+  const m = /\b(?:flota|terminal|empresa)\s+(?:de\s+)?([\p{L}][\p{L} ]{2,40}?)(?=\s*(?:[,.;]|$|\by\b|\bmi\b|\bciudad\b|\ba\b|\bpara\b|\bhasta\b))/iu.exec(String(texto === undefined || texto === null ? '' : texto));
   return m ? m[1].trim() : '';
 }
 // La ciudad de destino: «a/en/hasta/para <Ciudad>», «ciudad <Ciudad>», o la que sigue a la cifra del CI («4412345 Cochabamba»). Devuelve { ciudad, suelta }: `suelta` es la respuesta corta a «¿ciudad?» (un solo mensaje que empieza en mayúscula) y solo se admite
 // cuando el asistente la pidió (`sueltaMax` = cuántas palabras admite: 0 ninguna; 1 si ya se sabe el CI; 3 si ya se sabe el nombre; sin eso, esa respuesta bien puede ser el nombre).
-function bmCiudadDelTexto(texto, sueltaMax) {
+// «a», «en» y «para» + un nombre propio solo son la ciudad si el asistente la pidió (`opciones.pidio`) o el cliente escribió «ciudad» («envío para Ana Pérez» no es la ciudad «Ana Pérez»); «hasta» y «ciudad (de) X» siempre. Lo que ya se capturó como nombre o flota (`opciones.excluir`) nunca es la ciudad.
+// Devuelve { ciudad, suelta, rotulada }: `rotulada` es que el cliente escribió «ciudad <X>» (puede corregir una ciudad ya capturada).
+function bmCiudadDelTexto(texto, sueltaMax, opciones) {
   const crudo = String(texto === undefined || texto === null ? '' : texto);
+  const op = cbEsObjeto(opciones) ? opciones : {};
+  const excluidos = (Array.isArray(op.excluir) ? op.excluir : []).map((x) => bmNorm(x)).filter((x) => x !== '');
+  const excluida = (c) => { const n = bmNorm(c); const ws = n.split(' '); return excluidos.some((e) => e === n || ws.every((w) => e.split(' ').includes(w))); };
   const mayus = (t) => t.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-  let m = /\b(?:a|en|para|hasta|ciudad(?: de)?)\s+([A-ZÁÉÍÓÚÑ][\p{L}]+(?: [A-ZÁÉÍÓÚÑ][\p{L}]+)?)/u.exec(crudo);
-  if (m) return { ciudad: m[1], suelta: false };
+  const re = /\b(a|en|para|hasta|ciudad(?: de)?)\s+([A-ZÁÉÍÓÚÑ][\p{L}]+(?: [A-ZÁÉÍÓÚÑ][\p{L}]+)?)/gu;
+  let m;
+  while ((m = re.exec(crudo)) !== null) {
+    const clave = m[1];
+    const vale = clave === 'hasta' || /^ciudad/.test(clave) || op.pidio === true;
+    if (vale && !excluida(m[2])) return { ciudad: m[2], suelta: false, rotulada: /^ciudad/.test(clave) };
+  }
   m = /\d[\d.-]{3,14}\d[\s,;]+(?!(?:flota|terminal|empresa)\b)([\p{L}]{3,}(?: [\p{L}]{3,})?)(?=\s*(?:[,.;]|$)|\s+(?:flota|terminal|empresa)\b)/iu.exec(crudo);
-  if (m) return { ciudad: mayus(m[1]), suelta: false };
-  if (sueltaMax > 0) { m = /^\s*([A-ZÁÉÍÓÚÑ][\p{L}]{2,}(?: [A-ZÁÉÍÓÚÑ]?[\p{L}]{2,}){0,2})\s*[.]?\s*$/u.exec(crudo); if (m && m[1].split(' ').length <= sueltaMax) return { ciudad: mayus(m[1]), suelta: true }; }
-  return { ciudad: '', suelta: false };
+  if (m && !excluida(m[1])) return { ciudad: mayus(m[1]), suelta: false, rotulada: false };
+  if (sueltaMax > 0) { m = /^\s*([A-ZÁÉÍÓÚÑ][\p{L}]{2,}(?: [A-ZÁÉÍÓÚÑ]?[\p{L}]{2,}){0,2})\s*[.]?\s*$/u.exec(crudo); if (m && m[1].split(' ').length <= sueltaMax && !excluida(m[1])) return { ciudad: mayus(m[1]), suelta: true, rotulada: false }; }
+  return { ciudad: '', suelta: false, rotulada: false };
 }
 // LO QUE ESTE TURNO AGREGA A LA ENTREGA. `nueva` es la `entrega` del modelo (dato no confiable); `estado` = { esperaNombre, esperaCiudad, modoPedido, mercado } sale de `f.hist` y de la ficha.
 // Devuelve { entrega (solo lo aceptado, para `bmMezclarEntrega`), consulta, reconocido, modoRechazado }: `reconocido` es que el CÓDIGO leyó un dato (el modo o un dato del envío) y entonces un `quiereHablar` del modelo no desvía el pedido; un nombre
@@ -254,26 +278,57 @@ function bmEntregaDeTurno(nueva, antes, texto, modos, estado) {
   if (dicho !== '' && dicho !== a.modo) { modo = dicho; n.modo = dicho; porCodigo = true; }
   const modoRechazado = typeof m.modo === 'string' && m.modo.trim() !== '' && n.modo === undefined && a.modo === '';
   const envio = bmEsEnvio(modo);
-  // El nombre: solo si el asistente lo pidió (o, en un mensaje de DATOS con comas, se fijó el modo que el asistente acababa de pedir: el nombre viene en ese mismo mensaje).
-  const pidioNombre = st.esperaNombre === true || (st.modoPedido === true && n.modo !== undefined && /[,;]/.test(crudo));
+  // Un mensaje de DATOS (con comas) en el que se fijó el modo que el asistente acababa de pedir: el nombre, el CI y la ciudad vienen en ese mismo mensaje, como si el asistente los hubiera pedido.
+  const enDatos = st.modoPedido === true && n.modo !== undefined && /[,;]/.test(crudo);
+  // El nombre: solo si el asistente lo pidió (o en un mensaje de DATOS).
+  const pidioNombre = st.esperaNombre === true || enDatos;
   const nombre = pidioNombre && modo !== '' ? bmNombreValido(m.nombre, crudo, bmEsRetiro(modo) ? 1 : 2) : '';
   if (nombre !== '' && nombre !== a.nombre) n.nombre = nombre;
   if (envio) {
-    if (a.documento === '') { const d = bmCiDelTexto(crudo); if (d !== '') { n.documento = d; porCodigo = true; } else { const dm = bmCiDelTexto(typeof m.documento === 'string' ? m.documento : ''); const ok = dm !== '' && bmNorm(crudo).replace(/ /g, '').includes(dm.replace(/\D/g, '')) ? dm : ''; if (ok !== '') n.documento = ok; } }
-    if (a.flota === '') { const f = bmFlotaDelTexto(crudo); if (f !== '') { n.flota = f; porCodigo = true; } else { const fm = bmEnTexto(m.flota, crudo, 60); if (fm !== '') n.flota = fm; } }
-    if (a.ciudad === '') {
-      // La respuesta corta a «¿ciudad?» solo cuenta cuando ya se sabía el nombre (3 palabras) o el CI (1 palabra); si no, esa respuesta es el nombre.
-      const c = bmCiudadDelTexto(crudo, st.esperaCiudad !== true ? 0 : (a.nombre !== '' ? 3 : (a.documento !== '' ? 1 : 0)));
-      const cm = bmEnTexto(m.ciudad, crudo, 40);
-      if (c.ciudad !== '') n.ciudad = c.ciudad;
+    // LO YA CAPTURADO no se corrige por texto suelto: solo se sobrescribe si el asistente pidió ese dato o el cliente lo rotula («el CI es…», «flota X», «ciudad X»).
+    const pidioDoc = st.esperaDocumento === true || enDatos;
+    const pidioCiudad = st.esperaCiudad === true || enDatos;
+    const dd = bmCiDelTextoDet(crudo, pidioDoc);
+    if (dd.valor !== '') {
+      if (dd.valor !== a.documento && (a.documento === '' || pidioDoc || dd.rotulado)) { n.documento = dd.valor; if (dd.rotulado) porCodigo = true; }
+    } else if (a.documento === '' && pidioDoc) {
+      const dm = bmCiDelTexto(typeof m.documento === 'string' ? m.documento : '', true);
+      if (dm !== '' && bmNorm(crudo).replace(/ /g, '').includes(dm.replace(/\D/g, ''))) n.documento = dm;
+    }
+    const f = bmFlotaDelTexto(crudo);
+    if (f !== '') { if (f !== a.flota) { n.flota = f; porCodigo = true; } } else if (a.flota === '') { const fm = bmEnTexto(m.flota, crudo, 60); if (fm !== '') n.flota = fm; }
+    // La respuesta corta a «¿ciudad?» solo cuenta cuando ya se sabía el nombre (3 palabras) o el CI (1 palabra); si no, esa respuesta es el nombre.
+    const c = bmCiudadDelTexto(crudo, st.esperaCiudad !== true ? 0 : (a.nombre !== '' ? 3 : (a.documento !== '' ? 1 : 0)), { pidio: pidioCiudad, excluir: [a.nombre, n.nombre, a.flota, n.flota] });
+    if (c.ciudad !== '') { if (c.ciudad !== a.ciudad && (a.ciudad === '' || pidioCiudad || c.rotulada)) n.ciudad = c.ciudad; }
+    else if (a.ciudad === '') {
       // La ciudad que devuelve el modelo solo vale si el asistente la pidió Y es la respuesta entera del cliente («Cochabamba»): con «Juan Perez» no puede quedar «Juan».
-      else if (cm !== '' && !/\d/.test(cm) && st.esperaCiudad === true && bmNorm(cm) === bmNorm(crudo)) n.ciudad = cm;
+      const cm = bmEnTexto(m.ciudad, crudo, 40);
+      if (cm !== '' && !/\d/.test(cm) && st.esperaCiudad === true && bmNorm(cm) === bmNorm(crudo)) n.ciudad = cm;
     }
     if (st.mercado === 'AR') {
-      for (const [k, max] of [['direccion', 120], ['cp', 10], ['provincia', 40]]) { const v = bmEnTexto(m[k], crudo, max); if (v !== '' && a[k] === '') { n[k] = v; porCodigo = true; } }
+      const rotulo = { direccion: /\bdirecci[oó]n\b/i, cp: /\b(?:cp|c[oó]digo postal)\b/i, provincia: /\bprovincia\b/i };
+      for (const [k, max] of [['direccion', 120], ['cp', 10], ['provincia', 40]]) { const v = bmEnTexto(m[k], crudo, max); if (v !== '' && v !== a[k] && (a[k] === '' || rotulo[k].test(crudo))) { n[k] = v; porCodigo = true; } }
     }
   }
-  return { entrega: n, consulta: false, reconocido: porCodigo, modoRechazado: modoRechazado };
+  // Si el modelo propone un valor DISTINTO al que quedó guardado (ya capturado y el código no lo cambió), su texto («cambié su ciudad a…») ya no es cierto: el turno se arma con el estado.
+  const quedo = Object.assign({}, a, n);
+  const clave = (k, v) => (k === 'documento' ? String(v).replace(/\D/g, '') : bmNorm(v));
+  const campos = envio ? ['nombre', 'documento', 'ciudad', 'flota'].concat(st.mercado === 'AR' ? ['direccion', 'cp', 'provincia'] : []) : ['nombre'];
+  const contradice = campos.some((k) => typeof m[k] === 'string' && m[k].trim() !== '' && quedo[k] !== '' && clave(k, m[k]) !== clave(k, quedo[k]));
+  return { entrega: n, consulta: false, reconocido: porCodigo, modoRechazado: modoRechazado, contradice: contradice };
+}
+// ¿El último mensaje del asistente PIDIÓ ese dato (`clase`: nombre, ciudad o documento)? Es la PREGUNTA real: una oración que nombra el dato Y lo pide (con «?» o con un verbo de pedir: «indíqueme», «dime», «necesito»…).
+// Nombrar el dato no basta («a nombre de Ana», «Nombre: Ana» en un resumen no piden nada); el estado «el asistente pidió el nombre» se prueba aquí, no con un /nombre/ sobre todo el texto.
+const BM_RE_DATO_PEDIDO = {
+  nombre: /\b(?:nombre completo|nombre y apellido|a nombre de quien|(?:tu|su|el|un) nombre|como (?:te llamas|se llama)|quien retira)\b/,
+  ciudad: /\bciudad\b/,
+  documento: /\b(?:carnet|ci|dni|cedula|documento)\b/,
+};
+const BM_RE_VERBO_PEDIR = /\b(?:indi\w*|dim\w*|dame|damelo|pas\w+|escrib\w*|necesit\w*|falta\w*|cual|podr\w+|puedes|puede|favor|comparte\w*|envi\w+|mand\w+|quisiera saber)\b/;
+function bmPidioDato(textoAsistente, clase) {
+  const re = BM_RE_DATO_PEDIDO[clase];
+  if (!re) return false;
+  return String(textoAsistente === undefined || textoAsistente === null ? '' : textoAsistente).split(/(?<=[.!?\n])\s+/).some((oracion) => re.test(bmNorm(oracion)) && (/[?¿]/.test(oracion) || BM_RE_VERBO_PEDIR.test(bmNorm(oracion))));
 }
 // El mensaje del SITIO («Hola, quiero consultar por estos productos:» con líneas «N x Nombre (cód. id)»): el código lee las líneas y sus códigos contra el catálogo; no depende del modelo.
 function bmLineasDelSitio(texto, vendibles) {
@@ -322,7 +377,8 @@ function bmEntregaFalta(e, mercado) {
   const f = [];
   if (x.modo === '') return ['modo de entrega'];
   if (bmEsRetiro(x.modo)) { if (x.nombre === '') f.push('a nombre de quién retira'); return f; }
-  if (x.nombre === '') f.push('nombre completo');
+  // El envío pide el nombre COMPLETO (2 palabras o más): el de una palabra que bastaba para el retiro («Ana») no sirve si el cliente pasa al envío.
+  if (x.nombre === '' || x.nombre.split(' ').filter((w) => w !== '').length < 2) f.push('nombre completo');
   if (x.documento === '') f.push(mercado === 'AR' ? 'DNI' : 'carnet de identidad (CI)');
   if (mercado === 'AR') {
     if (x.direccion === '') f.push('dirección exacta');
@@ -648,7 +704,9 @@ function bmMapaValido(v) {
   const e = typeof v === 'string' ? v : '';
   if (e.length === 0 || e.length > 200 || !BM_MAPA_RE.test(e) || /%2e|%2f|%5c/i.test(e)) return false;
   const ruta = e.replace(/^https:\/\/[^/?#]+/, '').split(/[?#]/)[0];
-  if (ruta.split('/').some((s) => s === '.' || s === '..') || /^\/url(?:[/?#]|$)/i.test(ruta)) return false;
+  if (ruta.split('/').some((s) => s === '.' || s === '..' || /^(?:local_)?url$/i.test(s)) || ruta.includes('//')) return false;
+  // En maps.google.com y google.com la ruta es vacía, «/» o empieza en /maps (el resto de Google tiene redirecciones: /local_url, /url, /imgres…).
+  if (/^https:\/\/(?:maps\.google\.com|(?:www\.)?google\.com)(?:[/?#]|$)/.test(e) && !(ruta === '' || ruta === '/' || /^\/maps(?:\/|$)/i.test(ruta))) return false;
   return true;
 }
 function bmMapaTienda(base) { return bmMapaValido(cbEsObjeto(base) ? base.mapaTienda : '') ? base.mapaTienda : ''; }
@@ -701,15 +759,18 @@ function bmUbiCola(cola) {
 const BM_UBI_PIDE = 'cual es|cual seria|cuales son|pasa|pasas|pasame|pasen|pasenme|pase|paseme|pasar|manda|mandas|mandame|manden|mandenme|mande|mandeme|mandar|envia|envias|enviame|envien|envienme|envieme|enviar|dame|deme|dime|digame|dices|dice|decir|dar|indica|indicas|indicame|indiqueme|indicar|comparte|compartes|compartame|compartime|compartir|necesito|quiero|quisiera|queria|saber|conocer|tienen|tiene|tienes|favor|link|enlace|pasan|mandan|envian|dan|pueden pasar|pueden mandar|pueden enviar|pueden dar|podrian pasar|podrian mandar|podrian enviar|podrian dar';
 const BM_UBI_NOMBRE = 'direccion|ubicacion|mapa|google maps|gmaps|maps';
 const BM_UBI_PEGADO = new RegExp('\\b(?:' + BM_UBI_PIDE + ')(?: (?:la|el|su|tu|me|nos|de|del)){0,3} (?:' + BM_UBI_NOMBRE + ')\\b');
-function bmPideUbicacion(n, crudo) {
+// «¿Y dónde está?» sin sujeto de tienda, con un pedido o un QR en curso (`enCurso`), bien puede ser «¿dónde está MI PEDIDO?»: ahí NO se contesta la dirección de la tienda (lo ve el modelo, que tiene el pedido). Con el sujeto («la tienda», «ustedes», «ubicados»…) sí.
+const BM_UBI_SUJETO = /\b(?:tienda|tiendas|local|locales|negocio|sucursal|sucursales|oficina|oficinas|taller|bermejo|ustedes|uds|ud|usted|ubicad[oa]s?|ubican|ubica|encuentran|encuentra)\b/;
+function bmPideUbicacion(n, crudo, enCurso) {
   const t = String(n || '');
   const palabras = t === '' ? [] : t.split(' ');
   if (palabras.length === 0 || palabras.length > 12 || /\d/.test(t) || BM_UBI_GUARDA.test(t)) return false;
   // «dirección: calle X», «ubicación = …»: es el cliente dando un dato.
   if (/\b(direccion|ubicacion|domicilio)\s*[:=]/i.test(String(crudo || '').normalize('NFD').replace(/[̀-ͯ]/g, ''))) return false;
   // 1. «dónde» + verbo de lugar + nada, relleno o «en <ciudad>».
-  const d = /\bdonde (?:estan ubicad[oa]s?|esta ubicad[oa]|se ubican|se ubica|se encuentran|se encuentra|los puedo encontrar|puedo encontrarlos|los encuentro|les encuentro|los ubico|puedo ir|puedo visitarlos|quedan|queda|esta|estan|es|ubican|atienden|trabajan|funcionan)\b(.*)$/.exec(t);
-  if (d && bmUbiCola(d[1])) return true;
+  const d = /\bdonde (estan ubicad[oa]s?|esta ubicad[oa]|se ubican|se ubica|se encuentran|se encuentra|los puedo encontrar|puedo encontrarlos|los encuentro|les encuentro|los ubico|puedo ir|puedo visitarlos|quedan|queda|esta|estan|es|ubican|atienden|trabajan|funcionan)\b(.*)$/.exec(t);
+  const sinSujeto = enCurso === true && ['esta', 'estan', 'es'].includes(d ? d[1] : '') && !BM_UBI_SUJETO.test(t);
+  if (d && !sinSujeto && bmUbiCola(d[2])) return true;
   const z = /\ben que (?:zona|parte|lugar|ciudad|calle|avenida|barrio|direccion|sector) (?:estan ubicad[oa]s?|se ubican|se encuentran|estan|quedan|queda|atienden|esta|es)\b(.*)$/.exec(t);
   if (z && bmUbiCola(z[1])) return true;
   const u = /\bestan ubicad[oa]s?\b(.*)$/.exec(t);
@@ -758,7 +819,7 @@ function bmPideHorario(n, crudo) {
 }
 // Qué pregunta el mensaje sobre la tienda: { ubicacion, horario, resto }. Se parte en frases (puntuación y un « y » seguido de otra pregunta de tienda); `resto` es lo que NO es de la tienda ni relleno («quiero comprar una billetera»).
 // Con `resto` vacío la pregunta se contesta entera por código; con `resto` el turno sigue con el modelo (solo con el resto) y la respuesta de la tienda va ANTEPUESTA, en el MISMO mensaje (0 mensajes agregados).
-function bmPreguntaDeTienda(crudo) {
+function bmPreguntaDeTienda(crudo, enCurso) {
   const base = String(crudo === undefined || crudo === null ? '' : crudo);
   const frases = base.split(/[?¿!.;\n]+|\s+y\s+(?=(?:a qu[eé] hora|hasta qu[eé] hora|qu[eé] horario|el horario|d[oó]nde|c[oó]mo llego|la direcci[oó]n|la ubicaci[oó]n|su direcci[oó]n|su ubicaci[oó]n)\b)/i).map((x) => x.trim()).filter((x) => x !== '');
   let ubicacion = false;
@@ -766,7 +827,7 @@ function bmPreguntaDeTienda(crudo) {
   const resto = [];
   for (const fr of frases) {
     const n = bmNorm(fr);
-    const u = bmPideUbicacion(n, fr);
+    const u = bmPideUbicacion(n, fr, enCurso);
     const h = bmPideHorario(n, fr);
     if (u) ubicacion = true;
     if (h) horario = true;
@@ -1152,7 +1213,6 @@ function bmResolverCorregir(c) {
   const f = c.ficha;
   const e = bmEntregaDeFicha(f.entrega);
   const abierto = c.cobro.modo === 'real' && (c.cobro.pendiente || f.qrHastaMs > c.ahora);
-  if (c.t && c.t.seleccionId !== BM_ID_CORREGIR) return bmResolverToqueViejo(c);
   if (f.carrito.length === 0 || abierto || e.modo === '') return bmResolverToqueViejo(c);
   const lineas = vcLineas(f.carrito, c.vendibles).lineas;
   if (lineas.length === 0) return bmResolverToqueViejo(c);
@@ -1245,7 +1305,7 @@ function bmResolverModelo(c) {
   const ultimoAsistente = [...f.hist].reverse().find((x) => x && x.r === 'm');
   // El ESTADO decide qué pidió el asistente en su último mensaje (no el texto del cliente): ¿pidió el nombre? ¿la ciudad? ¿está pidiendo la entrega (hay piezas y falta el modo, con los botones a la vista)?
   const textoAsistente = ultimoAsistente ? String(ultimoAsistente.t || '') : '';
-  const estadoEntrega = { esperaNombre: /nombre/i.test(textoAsistente), esperaCiudad: /ciudad/i.test(textoAsistente), modoPedido: f.carrito.length > 0 && bmEntregaDeFicha(f.entrega).modo === '', mercado: c.mercado };
+  const estadoEntrega = { esperaNombre: bmPidioDato(textoAsistente, 'nombre'), esperaCiudad: bmPidioDato(textoAsistente, 'ciudad'), esperaDocumento: bmPidioDato(textoAsistente, 'documento'), modoPedido: f.carrito.length > 0 && bmEntregaDeFicha(f.entrega).modo === '', mercado: c.mercado };
   const comp = bmEntregaDeTurno(j.entrega, f.entrega, p.textoCliente, c.modos, estadoEntrega);
   const entrega = bmMezclarEntrega(f.entrega, comp.entrega, c.modos);
   // El «pagar» escrito (y el cierre guardado) solo CIERRAN si el pedido YA estaba completo antes de este turno y este turno no lo cambia: si se completa ahora, el cliente ve primero el resumen con «Confirmar pedido» y «Corregir datos».
@@ -1299,7 +1359,7 @@ function bmResolverModelo(c) {
   // Conversación: el texto del modelo, revisado; si no pasa, el fijo. El resumen del pedido (calculado por el código) acompaña cada cambio.
   // Si el código quitó una línea que el modelo propuso, su texto («agregué…») ya no es cierto: el texto lo arma el código (las opciones o el estado del pedido).
   const sitioConPreciosDistintos = fijada.delSitio === true && bmMontosDelSitioDifieren(p.textoCliente, c.vendibles) === true;
-  let texto = (ignoraQuiereHablar || comp.modoRechazado === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? bmTextoDeEstado(lineas, entrega, cierre, c, conBoton) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
+  let texto = (ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? bmTextoDeEstado(lineas, entrega, cierre, c, conBoton) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
   // Negar una pieza que el catálogo sí tiene («solo disponemos de la de 9 kg» cuando hay de 9, 15 y 17 kg): el texto lo arma el código con las piezas que coinciden.
   if (texto !== '' && /\b(solo|unicamente)\s+(disponemos|tenemos|contamos|hay|ofrecemos)\b/.test(bmNorm(texto))) { const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1); if (coinc !== '') texto = coinc; }
   // El mensaje pegado del sitio con montos DISTINTOS a los del catálogo vivo: se cobra siempre el vivo y se avisa en el mismo mensaje (el resumen trae el total real).
