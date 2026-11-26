@@ -38,6 +38,19 @@ set +x
 # Los nombres que llevan ids no se heredan: se desexportan y se descartan antes de fijarlos aquí.
 export -n P OTRO CUOTA STAGING PROD 2>/dev/null || true
 unset P OTRO CUOTA STAGING PROD
+# El arranque no hereda comportamiento: sin BASH_ENV/ENV (los bash hijos no lo leen) ni funciones exportadas (una función
+# `sha256sum` o `command` falsearía la huella o la búsqueda de node). node y gh se resuelven con el PATH de quien llama
+# (nvm, ~/.local/bin) y desde ahí se usan por RUTA ABSOLUTA; todo lo demás (sha256sum, sed, grep, mkdir, stat, env) sale
+# de un PATH de sistema fijo, también el de Node.
+unset BASH_ENV ENV
+while IFS= read -r f; do builtin unset -f "$f"; done < <(compgen -A function)
+NODO="$(command -v node || true)"
+[[ "$NODO" == /* && -x "$NODO" ]] || { echo "✗ No encuentro node (ruta absoluta y ejecutable)" >&2; exit 2; }
+GH="$(command -v gh || true)"
+[[ -z "$GH" || "$GH" == /* ]] || GH=""
+readonly PATH_SISTEMA="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+PATH="$PATH_SISTEMA"; export PATH
+hash -r
 
 # Huellas de los proyectos (sha256 del id, primeros 12 hex). Cambian solo si cambia el proyecto: entonces, con el «sí» de
 # Andres, se recalculan sin imprimir el id y se actualizan aquí. RIESGO ACEPTADO (revisión del 25/11/2026): en un
@@ -107,12 +120,12 @@ CUOTA="$(grep -o '"quota_project_id": *"[^"]*"' "$ADC" 2>/dev/null | sed 's/.*"\
 [[ "$CUOTA" =~ $FORMA_PROYECTO ]] || { echo "✗ Las credenciales de gcloud no traen un quota_project_id con forma de id: no se puede cruzar el proyecto" >&2; exit 2; }
 
 leer_variable() { # variable del repositorio con gh, solo lectura; vacío si no se puede. El valor nunca se imprime.
-  command -v gh >/dev/null 2>&1 || return 0
+  [[ -n "$GH" ]] || return 0
   # GH_CONFIG_DIR se CONSERVA a propósito (el proyecto lo usa para la segunda cuenta); lo demás que desvía a gh, no. Un
   # valor desviado igual lo rechazan las huellas.
   env -u GH_REPO -u GH_HOST -u GH_ENTERPRISE_TOKEN -u GH_TOKEN -u GITHUB_TOKEN -u GH_DEBUG -u GH_PAGER \
     -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy -u ALL_PROXY -u all_proxy \
-    gh variable get "$1" --repo "$REPO" 2>/dev/null || true
+    "$GH" variable get "$1" --repo "$REPO" 2>/dev/null || true
 }
 # Del entorno o de gh; si están las dos fuentes, tienen que coincidir (un id heredado no reemplaza al del repositorio).
 resolver() { # $1 = nombre de la variable; imprime el valor elegido (a una variable, nunca a la pantalla)
@@ -168,8 +181,7 @@ tapar() {
 }
 
 cd "$RAIZ/admin"
-NODO="$(command -v node)" || { echo "✗ No encuentro node" >&2; exit 2; }
-CAMINO="$PATH"; CASA="$HOME"; IDIOMA="${LANG:-C.UTF-8}"; EXCLUIDOS="${NOVUCHAT_TENANTS_EXCLUIDOS:-}"
+CAMINO="$PATH_SISTEMA"; CASA="$HOME"; IDIOMA="${LANG:-C.UTF-8}"; EXCLUIDOS="${NOVUCHAT_TENANTS_EXCLUIDOS:-}"
 # Node arranca en un subshell que DESEXPORTA todo lo heredado (NODE_OPTIONS, emulador, proyecto, cuota, gRPC…) y exporta
 # solo la lista blanca: los ids nunca pasan por argv (ni por el de `env`). Ctrl-C le llega a Node (avisa en qué punto
 # quedó) y el filtro lo ignora para que ese aviso se vea.

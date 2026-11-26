@@ -11,15 +11,18 @@
  *   · producción agrega --confirmo-produccion <tenant>; el respaldo va en una carpeta 0700 del usuario fuera del repo, y
  *     --revertir solo acepta un respaldo de esa carpeta.
  * Se corre una COPIA del envoltorio con las huellas de los ids de prueba y la carpeta de respaldos en un directorio
- * temporal (nada en /var/tmp); el resto del archivo es idéntico. Ids de prueba, no reales.
+ * temporal (nada en /var/tmp), y la carpeta de gcloud fija en la de mentira; el resto del archivo es idéntico. El hijo
+ * corre con `entornoDelEmulador` (regla de hijos-hermeticos): credenciales inexistentes y sin metadatos, más lo propio
+ * de cada caso. Ids de prueba, no reales.
  */
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const ORIGINAL = join(AQUI, '../../../scripts/catalogo-externo.sh');
@@ -32,55 +35,67 @@ afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true 
 
 interface Opciones {
   cuota?: string | null; env?: Record<string, string | undefined>; ghStg?: string; ghProd?: string; salidaNode?: number;
-  bash?: string[]; nodeReal?: boolean; antes?: (base: string) => void;
+  bash?: string[]; nodeReal?: boolean; antes?: (base: string) => void; nodeEspera?: boolean;
 }
 interface Llamada { argv: string[]; cwd: string; env: Record<string, string | null> }
 
-function correr(args: string[], o: Opciones = {}) {
+function preparar(args: string[], o: Opciones = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'novuchat-catext-')); dirs.push(dir);
   // La copia: huellas de los ids de prueba y carpeta de respaldos dentro de `dir`.
   const repo = join(dir, 'repo'); mkdirSync(join(repo, 'scripts'), { recursive: true });
   symlinkSync(ADMIN, join(repo, 'admin'));
   const base = join(dir, 'respaldos-base'); mkdirSync(base);
   const original = readFileSync(ORIGINAL, 'utf8');
+  const gcloud = join(dir, 'gcloud'); mkdirSync(gcloud);
   const copia = original
     .replace(/^readonly HUELLA_STAGING="[0-9a-f]{12}"$/m, `readonly HUELLA_STAGING="${huella(STG)}"`)
     .replace(/^readonly HUELLA_PROD="[0-9a-f]{12}"$/m, `readonly HUELLA_PROD="${huella(PROD)}"`)
-    .replace(/^readonly BASE_RESPALDOS="\/var\/tmp"$/m, `readonly BASE_RESPALDOS="${base}"`);
-  expect(copia.split('\n').filter((l, i) => l !== original.split('\n')[i])).toHaveLength(3);
+    .replace(/^readonly BASE_RESPALDOS="\/var\/tmp"$/m, `readonly BASE_RESPALDOS="${base}"`)
+    // El entorno hermético fija CLOUDSDK_CONFIG en una ruta inexistente: la copia lee la carpeta de gcloud de mentira.
+    .replace(/^CONFIG_GCLOUD="\$\{CLOUDSDK_CONFIG:-\$HOME\/\.config\/gcloud-novuchat-prod\}"$/m, `CONFIG_GCLOUD="${gcloud}"`);
+  expect(copia.split('\n').filter((l, i) => l !== original.split('\n')[i])).toHaveLength(4);
   writeFileSync(join(repo, 'scripts', 'catalogo-externo.sh'), copia, { mode: 0o755 });
   o.antes?.(base);
 
-  const bin = join(dir, 'bin'); mkdirSync(bin);
-  const gcloud = join(dir, 'gcloud'); mkdirSync(gcloud);
+  const bin = join(dir, 'bin'); mkdirSync(bin, { recursive: true });
   const cuota = o.cuota === undefined ? PROD : o.cuota;
   writeFileSync(join(gcloud, 'application_default_credentials.json'),
     JSON.stringify({ type: 'authorized_user', ...(cuota === null ? {} : { quota_project_id: cuota }) }, null, 1));
   // `node` de mentira: anota argv y el entorno que importa, e imprime los ids, un número largo y una cuenta.
   const vigiladas = ['GCP_PROJECT_ID_STAGING', 'GCP_PROJECT_ID_PROD', 'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT',
-    'CLOUDSDK_CONFIG', 'NODE_OPTIONS', 'FIRESTORE_EMULATOR_HOST', 'GOOGLE_CLOUD_QUOTA_PROJECT', 'NOVUCHAT_TENANTS_EXCLUIDOS', 'P', 'PROD'];
+    'CLOUDSDK_CONFIG', 'NODE_OPTIONS', 'FIRESTORE_EMULATOR_HOST', 'GOOGLE_CLOUD_QUOTA_PROJECT', 'NOVUCHAT_TENANTS_EXCLUIDOS', 'P', 'PROD', 'PATH'];
   writeFileSync(join(bin, 'node'), `#!/usr/bin/env bash
 python3 -I -c 'import json,os,sys; json.dump({"argv": sys.argv[2:], "cwd": os.getcwd(), "env": {k: os.environ.get(k) for k in ${JSON.stringify(vigiladas)}}}, open(sys.argv[1], "w"))' "$(dirname "$0")/../llamada.json" "$@"
 echo "proyecto: $GCP_PROJECT_ID_PROD y $GCP_PROJECT_ID_STAGING"
 echo "error en projects/$GCP_PROJECT_ID_STAGING número 123456789 de alguien@ejemplo.com" >&2
+${o.nodeEspera ? `trap 'sleep 0.3; echo "interrumpido en projects/$GCP_PROJECT_ID_PROD"; exit 130' INT
+echo esperando
+while :; do sleep 0.05; done` : ''}
 exit ${o.salidaNode ?? 1}
 `, { mode: 0o755 });
   writeFileSync(join(bin, 'gh'), `#!/usr/bin/env bash
 case "$3" in GCP_PROJECT_ID_STAGING) printf '%s\\n' "${o.ghStg ?? ''}";; GCP_PROJECT_ID_PROD) printf '%s\\n' "${o.ghProd ?? ''}";; esac
 `, { mode: 0o755 });
   const env: Record<string, string> = {
+    NOVUCHAT_TENANTS_EXCLUIDOS: '',
     PATH: o.nodeReal ? `${join(dir, 'solo-gh')}:${dirname(process.execPath)}:${process.env['PATH']}` : `${bin}:${process.env['PATH']}`,
-    HOME: dir, CLOUDSDK_CONFIG: gcloud, GCP_PROJECT_ID_STAGING: STG, GCP_PROJECT_ID_PROD: PROD,
+    HOME: dir, GCP_PROJECT_ID_STAGING: STG, GCP_PROJECT_ID_PROD: PROD,
     // heredadas que NO deben llegar a Node
     GOOGLE_CLOUD_PROJECT: 'otro-proyecto-heredado', NODE_OPTIONS: '--report-uncaught-exception', FIRESTORE_EMULATOR_HOST: '127.0.0.1:9',
     GOOGLE_CLOUD_QUOTA_PROJECT: 'otra-cuota-heredada', P: 'proyecto-heredado-p', PROD: 'proyecto-heredado-prod',
   };
   if (o.nodeReal) { mkdirSync(join(dir, 'solo-gh')); writeFileSync(join(dir, 'solo-gh', 'gh'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 }); }
-  for (const [k, v] of Object.entries(o.env ?? {})) { if (v === undefined) delete env[k]; else env[k] = v; }
-  const r = spawnSync('bash', [...(o.bash ?? []), join(repo, 'scripts', 'catalogo-externo.sh'), ...args], { encoding: 'utf8', env });
+  // `undefined` = ausente: vacío, que el envoltorio trata igual (`${X:-}`); el entorno heredado no la puede traer.
+  for (const [k, v] of Object.entries(o.env ?? {})) env[k] = v ?? '';
+  const argv = [...(o.bash ?? []), join(repo, 'scripts', 'catalogo-externo.sh'), ...args];
   const registro = join(dir, 'llamada.json');
-  const llamada = existsSync(registro) ? JSON.parse(readFileSync(registro, 'utf8')) as Llamada : null;
-  return { status: r.status, salida: `${r.stdout}${r.stderr}`, llamada, base, dirRespaldos: join(base, `novuchat-respaldos-${process.getuid!()}`) };
+  const leerLlamada = () => (existsSync(registro) ? JSON.parse(readFileSync(registro, 'utf8')) as Llamada : null);
+  return { argv, env, dir, base, leerLlamada, dirRespaldos: join(base, `novuchat-respaldos-${process.getuid!()}`) };
+}
+function correr(args: string[], o: Opciones = {}) {
+  const p = preparar(args, o);
+  const r = spawnSync('bash', p.argv, { encoding: 'utf8', env: entornoDelEmulador(undefined, p.env) });
+  return { status: r.status, salida: `${r.stdout}${r.stderr}`, llamada: p.leerLlamada(), base: p.base, dirRespaldos: p.dirRespaldos, dir: p.dir };
 }
 const valorDe = (argv: string[], op: string) => { const i = argv.indexOf(op); return i < 0 ? undefined : argv[i + 1]; };
 const sinIds = (s: string) => {
@@ -321,4 +336,43 @@ describe('catalogo-externo.sh: de punta a punta con el script de Node REAL (sin 
     expect(r.salida).toMatch(/repetidas/);
     sinIds(r.salida);
   });
+});
+
+describe('catalogo-externo.sh: el arranque no hereda comportamiento (BASH_ENV, funciones, PATH) y Ctrl-C se ve', () => {
+  const SISTEMA = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+  it('NEGADO: BASH_ENV no llega a los bash hijos (el gh y el node de mentira son bash)', () => {
+    const d = mkdtempSync(join(tmpdir(), 'novuchat-catext-bashenv-')); dirs.push(d);
+    const marca = join(d, 'marca'); writeFileSync(join(d, 'rc'), `echo x >> ${marca}\n`);
+    const r = correr(['--entorno', 'staging', ...BASE], { env: { BASH_ENV: join(d, 'rc'), GCP_PROJECT_ID_STAGING: undefined, GCP_PROJECT_ID_PROD: undefined }, ghStg: STG, ghProd: PROD });
+    expect(r.status).toBe(1); expect(r.llamada).not.toBeNull();
+    // Una sola vez: el arranque del envoltorio (eso es de quien lo llama); ni gh (dos veces) ni node la vuelven a leer.
+    expect(readFileSync(marca, 'utf8')).toBe('x\n');
+    sinIds(r.salida);
+  });
+  it('NEGADO: una función exportada `sha256sum` no falsea la huella, ni un sha256sum de mentira en el PATH; Node recibe el PATH de sistema', () => {
+    const conFuncion = correr(['--entorno', 'staging', ...BASE], { env: { 'BASH_FUNC_sha256sum%%': '() { echo 2dedea95e190; }' } });
+    expect(conFuncion.status).toBe(1); expect(conFuncion.llamada).not.toBeNull();
+    const conBinario = correr(['--entorno', 'staging', ...BASE], {
+      antes: (base) => { const b = join(dirname(base), 'bin'); mkdirSync(b, { recursive: true }); writeFileSync(join(b, 'sha256sum'), '#!/bin/sh\necho 000000000000 -\n', { mode: 0o755 }); },
+    });
+    expect(conBinario.status).toBe(1); expect(conBinario.llamada).not.toBeNull();
+    expect(conBinario.llamada!.env['PATH']).toBe(SISTEMA);
+  });
+  // Prueba de comportamiento, no de la trampa: en esta tubería el filtro también sobrevive sin `trap '' INT` (la
+  // contraprueba sin la trampa sigue en verde); lo que fija es la salida 130 y el aviso visible y tapado.
+  it('Ctrl-C: Node recibe la señal, su aviso se ve (tapado) y el envoltorio sale con 130', async () => {
+    const p = preparar(['--entorno', 'staging', ...BASE], { nodeEspera: true });
+    const hijo = spawn('bash', p.argv, { env: entornoDelEmulador(undefined, p.env), detached: true });
+    let salida = '';
+    const listo = new Promise<void>((res) => {
+      const ver = (d: Buffer) => { salida += d.toString(); if (salida.includes('esperando')) res(); };
+      hijo.stdout!.on('data', ver); hijo.stderr!.on('data', ver);
+    });
+    const fin = new Promise<number | null>((res) => { hijo.on('close', (c: number | null) => res(c)); });
+    await listo;
+    process.kill(-hijo.pid!, 'SIGINT');
+    expect(await fin).toBe(130);
+    expect(salida).toContain('interrumpido en projects/<proyecto>');
+    sinIds(salida);
+  }, 15000);
 });
