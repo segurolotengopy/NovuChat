@@ -75,8 +75,8 @@ describe('(a) el prompt del modelo usa la misma fuente: NovuTienda primero', () 
     const vistos: string[] = [];
     const m = crear({ catalogo: catalogoOk(TIENDA), modeloDice: (ll) => { vistos.push(prompt(ll)); return modelo('Con gusto.'); } });
     hablar(m, ANA, mTexto('quiero ver las billeteras'));
-    expect(vistos[0]).toContain('ubicación: ' + DIR);
-    expect(vistos[0]).toContain('horario: ' + HORARIO);
+    expect(vistos[0]).toContain('ubicación: <<<' + DIR + '>>>');   // séptima ronda (LOW de seguridad): texto de un tercero, delimitado como DATO
+    expect(vistos[0]).toContain('horario: <<<' + HORARIO + '>>>');
     expect(vistos[0]).not.toMatch(/aún no está cargad/);
     const vacios: string[] = [];
     const m2 = crear({ modeloDice: (ll) => { vacios.push(prompt(ll)); return modelo('Con gusto.'); } });
