@@ -918,7 +918,7 @@ milisegundos) solo se prueba en la suite con una hoja simulada (`chat-novuchat-f
 | Pieza | Demo A (por defecto) | Demo B |
 |---|---|---|
 | Entorno de n8n | `.env` | `.env.demo-b` |
-| Flujo vivo que se pisa y se restaura | `Flujos/clientes/demo-a/demo-a-agendamiento.json` | `Flujos/demo-b-venta-cobro.json` |
+| Flujo vivo que se pisa y se restaura | `Flujos/clientes/demo-a/demo-a-agendamiento.json` | `Flujos/clientes/demo-b/demo-b-venta-cobro.json` |
 | `flujo-de-prueba.mjs` | `--sobre-demo-a` | `--sobre-demo-b` |
 | `ensayo-flujo.sh` | (sin opción) o `--demo a` | `--demo b` |
 | `ensayo.mjs` | (sin opción) o `--demo a` → comercio `ensayo` | `--demo b` → comercio **`ensayo-b`** |
@@ -951,7 +951,7 @@ el «sí» de Andres). Costo: un comercio más en Plataforma → Negocios y en l
 - **`ensayo-flujo.sh`** (`admin/pruebas/ensayo-flujo-demo.test.ts`): `--demo b` con el entorno
   del Demo A (o al revés) se niega antes de leer nada; el flujo vivo del entorno tiene que
   llamarse como el JSON de ese demo; ninguna credencial que sea solo del otro demo puede quedar;
-  `--restaurar --demo b` republica `demo-b-venta-cobro.json`, nunca el del Demo A.
+  `--restaurar --demo b` republica `clientes/demo-b/demo-b-venta-cobro.json`, nunca el del Demo A.
 - **`flujo-de-prueba.mjs`** (`admin/pruebas/herramienta-sobre-demo-b.test.ts`):
   `--sobre-demo-b` exige que «Demo B» sean palabras del nombre del flujo vivo (y que no diga
   «Demo A»), que el Trigger vivo traiga `WhatsApp OAuth account 2` y que toda credencial

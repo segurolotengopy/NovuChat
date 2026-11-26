@@ -143,7 +143,7 @@ const BM_LEYENDA_SITIO = /El precio final y el env[ií]o se confirman por WhatsA
 const BM_COLA_CONFIRMA = /[,;.]?\s*¿?\s*(?:est[aá] bien|est[aá] correcto|es correcto|correcto|est[aá] ok|ok|verdad|de acuerdo)\s*\?+\s*$/i;
 function bmSinConfirmacion(texto) { return String(texto === undefined || texto === null ? '' : texto).replace(BM_COLA_CONFIRMA, ''); }
 // ¿Es una CONSULTA? Por su FORMA: una pregunta («?», un interrogativo o verbo de consulta al inicio tras un saludo, «dónde queda/están/es…») o una palabra de consulta (horario, costo, garantía…). «Dirección» y «ubicación» son consulta
-// cuando se PIDEN («la dirección de la tienda», «cuál es su dirección»), no cuando el cliente da la suya («mi dirección es…», «dirección: …»): el asistente mismo pide la «dirección exacta» en el envío a Argentina. «Dónde» solo como pregunta, no dentro de una frase («flota Bolívar, donde sale a Tarija»).
+// cuando se PIDEN («la dirección de la tienda», «cuál es su dirección»), no cuando el cliente da la suya («mi dirección es…», «dirección: …»). El asistente NO pide la dirección del cliente (ni en Bolivia ni en Argentina). «Dónde» solo como pregunta, no dentro de una frase («oficina Zona Sur, donde sale a Tarija»).
 // El nombre que el cliente DICE con su rótulo («Mi nombre es Hacen Torrez»): son palabras de un nombre, no de una consulta («hacen» es un apellido ahí). Se quita antes de mirar las palabras de consulta.
 const BM_RE_NOMBRE_DICHO = /(?:[Mm]i nombre es|[Mm]e llamo|[Ee]l nombre es|[Mm]i nombre|[Aa] nombre de)\s*:?\s+(?:[A-ZÁÉÍÓÚÑ][\p{L}'.-]*\s*){1,4}/u;
 function bmEsConsulta(texto) {
@@ -240,17 +240,30 @@ function bmTextoLibreValido(texto, max) {
   return t;
 }
 // LA CIUDAD Y LA ACLARACIÓN OPCIONAL de UN mismo mensaje (decisión de Andres, «Intermedio», 26/11/2026). La aclaración es lo que viene DESPUÉS de la ciudad, separado por coma, punto y coma o salto de línea, o desde la primera palabra «oficina», «agencia» o «sucursal».
-// Si no se puede separar con seguridad (no hay separador ni esas palabras, o antes de ellas no queda una ciudad válida), TODO va como ciudad —el resumen la muestra y el cliente puede corregirla—. Devuelve { ciudad, aclaracion }, ambos '' si el texto no vale como ciudad.
-function bmCiudadYAclaracion(texto) {
+// Si hay separador o «oficina/agencia/sucursal» y ANTES no queda una ciudad válida («oficina Zona Sur», «, agencia Centro»), NO se guarda ciudad ni aclaración y el código repregunta la ciudad. Sin separador, todo el texto va como ciudad (el resumen la muestra con «Corregir datos»).
+// Antes de guardar, el texto pasa por las intenciones que el flujo YA detecta (las del nombre: `bmNombreRechazado`: cancelar, pedir una persona o un vendedor, formas de pago, piezas del catálogo, cortesías de despedida…) y por la palabra del modo de entrega (flota, terminal, encomienda, domicilio…, `BM_NUCLEO_ENVIO`); una ciudad no lleva cifras. El resto se acepta.
+// Devuelve { ciudad, aclaracion }, ambos '' si el texto no vale como ciudad.
+const BM_RE_NUCLEO_ENVIO = new RegExp('\\b' + BM_NUCLEO_ENVIO + '\\b');
+function bmCiudadYAclaracion(texto, vendibles) {
   const crudo = String(texto === undefined || texto === null ? '' : texto).replace(/\r/g, '');
+  const valido = (t, esCiudad) => {
+    const v = bmTextoLibreValido(t, 120);
+    // La aclaración no se cruza con el catálogo («oficina Zona Sur» comparte la palabra «oficina» con un área del catálogo); la ciudad sí.
+    if (v === '' || bmNombreRechazado(v, esCiudad ? vendibles : undefined)) return '';
+    if (!esCiudad) return v;
+    // Una ciudad no lleva cifras ni la palabra del modo de entrega, y una sola palabra que es el rótulo de un dato del flujo («Departamento», «Provincia», «Ciudad:») no es una ciudad (la tabla `BM_RE_DATO_PEDIDO` ya existe).
+    const n = bmNorm(v);
+    if (/\d/.test(v) || BM_RE_NUCLEO_ENVIO.test(n) || (n.indexOf(' ') < 0 && Object.keys(BM_RE_DATO_PEDIDO).some((k) => BM_RE_DATO_PEDIDO[k].test(n)))) return '';
+    return v;
+  };
   const corte = /[,;\n]+/.exec(crudo) || /(?:^|\s)(?=(?:oficina|agencia|sucursal)\b)/i.exec(crudo);
   if (corte) {
-    const ciudad = bmTextoLibreValido(crudo.slice(0, corte.index), 120);
-    const aclaracion = bmTextoLibreValido(crudo.slice(corte.index + corte[0].length), 120);
-    // La parte de antes vale como ciudad: la aclaración se guarda solo si también vale (un número largo, una cortesía o un texto vacío no se guardan).
-    if (ciudad !== '') return { ciudad: ciudad, aclaracion: aclaracion };
+    const ciudad = valido(crudo.slice(0, corte.index), true);
+    // La parte de antes vale como ciudad: la aclaración se guarda solo si también vale (un número largo, una cortesía, una forma de pago o un texto vacío no se guardan).
+    if (ciudad === '') return { ciudad: '', aclaracion: '' };
+    return { ciudad: ciudad, aclaracion: valido(crudo.slice(corte.index + corte[0].length), false) };
   }
-  return { ciudad: bmTextoLibreValido(crudo, 120), aclaracion: '' };
+  return { ciudad: valido(crudo, true), aclaracion: '' };
 }
 // El NOMBRE que devolvió el modelo, validado POR CÓDIGO: solo un TRAMO CONTIGUO de una frase del cliente (lo demás de esa frase es vacío o una ENTRADA conocida: «soy», «me llamo»…), solo letras, espacios, apóstrofo, punto y guion (sin cifras),
 // 60 caracteres o menos, 1 a 5 palabras (`minPalabras` 1 basta para el retiro; el envío pide 2 o más), sin cortesías, intenciones ni piezas del catálogo, sin partículas en los extremos y con mayúscula inicial (una palabra sola siempre).
@@ -268,6 +281,9 @@ function bmNombreValido(valor, textoCliente, minPalabras, vendibles) {
   const normales = bmNorm(t).split(' ').filter((w) => w !== '');
   if (normales.length === 0) return '';
   if (BM_NOMBRE_PARTICULAS.has(normales[0]) || BM_NOMBRE_PARTICULAS.has(normales[normales.length - 1])) return '';
+  // Una palabra TODA en mayúsculas junto a otras con mayúscula inicial y minúsculas («Ana Pérez ABCDEF») es una clave o un documento con letras, no parte del nombre.
+  const gritadas = crudas.filter((w) => w.length >= 2 && w === w.toUpperCase() && w !== w.toLowerCase());
+  if (gritadas.length > 0 && gritadas.length < crudas.length) return '';
   if (bmNombreRechazado(t, vendibles)) return '';
   // Un TRAMO CONTIGUO de una frase del cliente, con lo demás de esa frase vacío o conocido.
   const frases = bmSinConfirmacion(textoCliente).split(/[,;!?¿\n]+|(?<=\p{L}{2})\.(?:\s+|$)/u).map((x) => x.trim()).filter((x) => x !== '');
@@ -302,12 +318,14 @@ const BM_RE_CALIFICA_NUMERO = /\b(?:tel[eé]fono|tel|celular|cel|whatsapp|nit|bs
 function bmCiDelTextoDet(texto, aceptaSuelto) {
   const crudo = String(texto === undefined || texto === null ? '' : texto);
   const largo = (s) => { const d = s.replace(/\D/g, ''); return d.length >= 5 && d.length <= 13; };
-  const rotulado = /\b(?:c\.?i\.?|dni|carnet(?: de identidad)?|cedula)\b\D{0,15}(\d[\d.-]{3,14}\d)/i.exec(crudo);
+  // El documento puede traer letras: una extensión delante («LP4412345») o un complemento detrás («4412345-1A»). Se guarda COMPLETO, tal cual; el largo (5 a 13) se cuenta sobre las cifras.
+  const rotulado = /\b(?:c\.?i\.?|dni|carnet(?: de identidad)?|cedula)\b\D{0,15}?((?:[A-Za-z]{1,3}-?)?\d[\d.-]{3,14}\d(?:-?[A-Za-z]{1,2})?)(?![\dA-Za-z])/i.exec(crudo);
   if (rotulado && largo(rotulado[1])) return { valor: rotulado[1], rotulado: true };
   if (aceptaSuelto !== true || BM_RE_CALIFICA_NUMERO.test(crudo)) return { valor: '', rotulado: false };
-  const re = /(?<![\d.-])\d[\d.-]{3,14}\d(?![\d.-])/g;
+  // Una pieza del mensaje (separada por espacios) con forma de documento: [letras] cifras [-complemento].
+  const re = /(?<![\dA-Za-z.-])(?:[A-Za-z]{1,3}-?)?\d[\d.-]{3,14}\d(?:-?[A-Za-z]{1,2})?(?![\dA-Za-z.-])/g;
   let m;
-  while ((m = re.exec(crudo)) !== null) { if (largo(m[0]) && !/^[67]\d{7}$/.test(m[0].replace(/\D/g, ''))) return { valor: m[0], rotulado: false }; }
+  while ((m = re.exec(crudo)) !== null) { if (largo(m[0]) && (/[A-Za-z]/.test(m[0]) || !/^[67]\d{7}$/.test(m[0].replace(/\D/g, '')))) return { valor: m[0], rotulado: false }; }
   return { valor: '', rotulado: false };
 }
 function bmCiDelTexto(texto, aceptaSuelto) { return bmCiDelTextoDet(texto, aceptaSuelto).valor; }
@@ -375,7 +393,7 @@ function bmEntregaDeTurno(nueva, antes, texto, modos, estado) {
     // La ciudad y la aclaración opcional (en el mismo mensaje): el texto TAL CUAL, solo si el código pidió la ciudad y el mismo mensaje no era un documento rotulado.
     const eraDocumento = n.documento !== undefined && n.documento !== a.documento;
     if (!eraDocumento && st.esperaCiudad === true && a.ciudad === '') {
-      const ca = bmCiudadYAclaracion(crudo);
+      const ca = bmCiudadYAclaracion(crudo, st.vendibles);
       if (ca.ciudad !== '') { n.ciudad = ca.ciudad; if (ca.aclaracion !== '') n.aclaracion = ca.aclaracion; porCodigo = true; }
     }
   }
@@ -740,9 +758,18 @@ function bmNombrarIds(texto, vendibles) {
   }
   return t;
 }
+// FILTRO EN CÓDIGO (el prompt no es barrera): el texto del modelo NO puede PEDIRLE al cliente su dirección, su teléfono, su ubicación ni la flota o empresa de transporte (la flota la define la tienda y esos datos no se piden).
+// Se mira por ORACIÓN: la oración nombra el dato Y lo pide (con «?» o con un verbo de pedir). Describir («nuestra dirección es…») no es pedir. Si alguna oración lo pide, el texto entero no sale: sale la pregunta del paso vigente.
+const BM_RE_DATO_NO_SE_PIDE = /\b(?:su direccion|tu direccion|direccion exacta|direccion de (?:entrega|envio|domicilio|su casa|tu casa)|domicilio|telefono|celular|numero de contacto|numero de telefono|whatsapp de contacto|su ubicacion|tu ubicacion|ubicacion exacta|ubicacion actual|flota|flotas|transporte|empresa de transporte|encomienda|terminal de buses)\b/;
+function bmPideDatoProhibido(texto) {
+  return String(texto === undefined || texto === null ? '' : texto).split(/(?<=[.!?\n])\s+/).some((oracion) => {
+    const n = bmNorm(oracion);
+    return BM_RE_DATO_NO_SE_PIDE.test(n) && (/[?¿]/.test(oracion) || BM_RE_VERBO_PEDIR.test(n) || /\b(?:comparta\w*|mande\w*|pase\w*)\b/.test(n));
+  });
+}
 function bmRedaccion(texto, textoCliente, vendibles) {
   const crudo = typeof texto === 'string' ? bmNombrarIds(texto.trim(), vendibles) : '';
-  if (crudo === '') return '';
+  if (crudo === '' || bmPideDatoProhibido(crudo)) return '';
   const opciones = {
     maximo: 700, permitirMontos: true, sinDatosDePago: true, sinAfirmarCompra: true, sinPromesasDeAviso: true, avisoRespaldado: false,
     quienPromete: ['recepcion', 'el equipo', 'una persona', 'la tienda'], textoDelCliente: textoCliente, prohibidos: [BM_PROHIBIDOS_VOZ], maxOraciones: 6,
@@ -1380,7 +1407,7 @@ function bmResolverEntregaBoton(c) {
   }
   return r;
 }
-// El toque de «Corregir datos» (`pedido:corregir`): el CÓDIGO borra el nombre, el CI, la ciudad, la flota y lo demás de la entrega (CONSERVA el modo) y vuelve a pedir lo que falta, SIN modelo. Un id inventado, un pedido vacío, un QR abierto o un modo aún sin elegir no hacen nada (`toque_viejo`).
+// El toque de «Corregir datos» (`pedido:corregir`): el CÓDIGO borra el departamento o la provincia, la ciudad, la aclaración, el nombre, el documento y lo demás de la entrega (CONSERVA el modo) y vuelve a pedir lo que falta, SIN modelo. Un id inventado, un pedido vacío, un QR abierto o un modo aún sin elegir no hacen nada (`toque_viejo`).
 function bmResolverCorregir(c) {
   const f = c.ficha;
   const e = bmEntregaDeFicha(f.entrega);
@@ -1520,7 +1547,9 @@ function bmResolverModelo(c) {
   const lineas = fijada.lineas;
   // El ESTADO GUARDADO decide qué pidió el asistente en su último mensaje (séptima ronda): la ficha trae `pide`, que escribió el CÓDIGO al armar la pregunta; nunca se deduce del texto del modelo
   // («Listo, ya tengo su nombre» no es una pregunta). ¿Está pidiendo la entrega (hay piezas y falta el modo, con los botones a la vista)? Lo dice la ficha también.
-  const pideAntes = Array.isArray(f.pide) ? f.pide : [];
+  // Una ficha VIVA del diseño anterior puede traer un `pide` que ya no corresponde al estado (p. ej. «ciudad» con el departamento sin elegir): solo vale lo que el estado de la entrega pide AHORA.
+  const pideAhora = bmPideDeEntrega(f.entrega, c.mercado);
+  const pideAntes = (Array.isArray(f.pide) ? f.pide : []).filter((d) => pideAhora.includes(d));
   const estadoEntrega = { esperaNombre: pideAntes.includes('nombre'), esperaCiudad: pideAntes.includes('ciudad'), esperaDocumento: pideAntes.includes('documento'), esperaDepartamento: pideAntes.includes('departamento'), esperaRegion: pideAntes.includes('region'), esperaProvincia: pideAntes.includes('provincia'), esperaAclaracion: pideAntes.includes('aclaracion'), modoPedido: f.carrito.length > 0 && bmEntregaDeFicha(f.entrega).modo === '', mercado: c.mercado, vendibles: c.vendibles };
   const comp = bmEntregaDeTurno(j.entrega, f.entrega, p.textoCliente, c.modos, estadoEntrega);
   const entrega = bmMezclarEntrega(f.entrega, comp.entrega, c.modos);
@@ -1529,7 +1558,8 @@ function bmResolverModelo(c) {
   // B4: un pedido del catálogo web cuya entrega se completa con ESTE mensaje sale con el QR solo (enviar el carrito ya es confirmar, Andres 23/11/2026) si, desde el carrito, nada cambió: mismas piezas, el mismo total vivo, cobro real en Bolivia y sin un «aún no quiero pagar».
   const qrSoloDelCarrito = f.qrSoloCatCent > 0 && p.tipo === 'modelo' && c.mercado === 'BO' && c.cobro.modo === 'real' && f.carrito.length > 0 && vcMismoCarrito(antes, lineas) && fijada.delSitio !== true && fijada.ordenada !== true
     && vcTotalCentavos(lineas) === f.qrSoloCatCent && bmEntregaCompleta(entrega, c.mercado) && !/\b(no|aun no|todavia no)\s+(quiero\s+)?(pagar|confirmar|cerrar)\b/.test(bmNorm(p.textoCliente));
-  const cierre = c.cierreCarrito === true || qrSoloDelCarrito || (completoAntes && (f.cierre || bmQuierePagar(bmNorm(p.textoCliente)))) || (cfEsConfirmacion(c.t && c.t.seleccionId, bmLineasParaHuella(f.carrito, c.vendibles), bmEntregaDeFicha(f.entrega), f.pedidos) && f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado) && bmCarritoVigente(f.carrito, c.vendibles));   // el botón «Confirmar pedido» es la orden de cierre SOLO con el pedido que ya estaba listo (el de un mensaje viejo no cierra uno nuevo) (módulo común Pedidos)
+  const cierre = c.cierreCarrito === true || qrSoloDelCarrito || (completoAntes && bmQuierePagar(bmNorm(p.textoCliente))) || (cfEsConfirmacion(c.t && c.t.seleccionId, bmLineasParaHuella(f.carrito, c.vendibles), bmEntregaDeFicha(f.entrega), f.pedidos) && f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado) && bmCarritoVigente(f.carrito, c.vendibles));   // el botón «Confirmar pedido» es la orden de cierre SOLO con el pedido que ya estaba listo (el de un mensaje viejo no cierra uno nuevo) (módulo común Pedidos)
+  // `f.cierre` (un «pagar» dicho en un turno anterior) NO abre un cobro: el QR sale solo en el turno en que se confirma (el botón, o «confirmo/pagar» con el pedido ya completo), nunca ante un «hola» de una ficha con `cierre: true`.
   // Con el pedido LISTO (piezas, entrega completa y orden de pagar) lo decide el código: un «quiereHablar» del modelo (p. ej. «el envío lo cotiza la tienda») no lo desvía; el pedido se anota y la tienda recibe el aviso.
   const listo = lineas.length > 0 && bmEntregaCompleta(entrega, c.mercado) && cierre;
   // Si ESTE turno el código reconoció la elección del modo de entrega o el nombre (o el pedido está listo), el «quiereHablar» del modelo no lo desvía: elegir el recojo o el envío, o dar el nombre, no es pedir una persona.

@@ -131,7 +131,7 @@ if (puerta.ruta === 'sigue') {
     const cuerpoModelo = conSaludo(textoTurno + (d.resumen ? '\n\n' + d.resumen : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : ''));
     // Sin botón «Ver catálogo» (Andres, 24/11/2026, D7): las piezas se muestran por este chat. Lo que el mensaje puede llevar es UN botón de respuesta que el código cumple: «Confirmar pedido» (pedido listo) o los de entrega (solo falta el modo).
     if (d.confirmable === true) {
-      // El pedido está listo: el MISMO mensaje lleva el botón «Confirmar pedido» (0 mensajes más); tocarlo emite el QR en el mismo turno. Antes del QR el cliente VE los datos capturados (modo, nombre y, en el envío, CI, ciudad y flota)
+      // El pedido está listo: el MISMO mensaje lleva el botón «Confirmar pedido» (0 mensajes más); tocarlo emite el QR en el mismo turno. Antes del QR el cliente VE los datos capturados (modo, nombre y, en el envío, departamento o provincia, ciudad, aclaración y documento)
       // y tiene un segundo botón de respuesta, «Corregir datos» (el mismo mensaje: 0 mensajes agregados): un dato mal leído nunca llega al cobro sin que el cliente lo vea. Si el texto es largo se recorta ÉL, nunca los datos ni las instrucciones.
       const datos = bmDatosResumen(d.entrega, c.mercado, uTienda.direccion, uTienda.mapa);   // R54: con el retiro, la dirección de la tienda va en los datos
       const lineaCorregir = usted ? 'Si algún dato no está bien, toque «' + BM_TITULO_CORREGIR + '».' : 'Si algún dato no está bien, toca «' + BM_TITULO_CORREGIR + '».';

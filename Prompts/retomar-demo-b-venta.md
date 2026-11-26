@@ -49,7 +49,7 @@ que manda la memoria `parametros-de-nodos-n8n-desde-npm`. Con prueba que lo fije
 
 ### 2.2 El Demo B ya NO acepta cualquier imagen como comprobante
 
-**Dónde:** `Normalizar entrada` de `Flujos/demo-b-venta-cobro.json`, y la compuerta
+**Dónde:** `Normalizar entrada` de `Flujos/clientes/demo-b/demo-b-venta-cobro.json`, y la compuerta
 `¿Hay comprobante?`.
 
 **Qué pasa:** desde el port del cobro, una imagen solo se trata como comprobante si el

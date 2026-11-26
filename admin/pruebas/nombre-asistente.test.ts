@@ -50,7 +50,7 @@ const FLUJOS = [
     identidad: ['Eres asistente virtual con inteligencia artificial: si te lo preguntan, no lo niegues'],
   },
   {
-    archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat',
+    archivo: 'clientes/demo-b/demo-b-venta-cobro.json', agente: 'AI Agent NovuChat',
     // Sin «(restaurante y tienda retail)» desde el 23/09/2026: el flujo de venta
     // estaba cableado a esos dos rubros y por eso el asistente de una marca de
     // artesanía ofrecía hamburguesas. NovuChat atiende cualquier rubro.
@@ -157,7 +157,7 @@ describe.each(FLUJOS)('$archivo', ({ archivo, agente, hoy, conNombre, identidad 
 });
 
 describe('demo-b-venta-cobro.json: la bienvenida, un texto fijo que presenta al asistente', () => {
-  const f = flujo('demo-b-venta-cobro.json');
+  const f = flujo('clientes/demo-b/demo-b-venta-cobro.json');
   const HOY = '¡Hola! 👋 Soy el asistente virtual (IA) de ';
   const bienvenida = (voz: unknown, base: Json = {}) => String(fusionar(f, panel(voz), base)['textoBienvenida']);
 
@@ -212,7 +212,7 @@ describe('demo-b-venta-cobro.json: la bienvenida, un texto fijo que presenta al 
 });
 
 describe('demo-b-venta-cobro.json: la corrección de la prohibición 4 dice el nombre', () => {
-  const f = flujo('demo-b-venta-cobro.json');
+  const f = flujo('clientes/demo-b/demo-b-venta-cobro.json');
   const procesar = (salida: string, nombreAsistente?: string) => ejecutar(
     String(nodo(f, 'Procesar respuesta').parameters['jsCode']),
     [{ output: salida }],
@@ -272,7 +272,7 @@ describe('demo-a-recordatorios.json: no presenta al asistente, por eso no cambia
 // no tiene a nadie a quien pasar la conversación: una promesa de consultar o de
 // avisar después no la cumple nadie, y la oración se quita.
 describe('demo-b-venta-cobro.json: una promesa sin respaldo se quita', () => {
-  const f = flujo('demo-b-venta-cobro.json');
+  const f = flujo('clientes/demo-b/demo-b-venta-cobro.json');
   const procesar = (salida: string) => ejecutar(
     String(nodo(f, 'Procesar respuesta').parameters['jsCode']),
     [{ output: salida }],
