@@ -298,7 +298,7 @@ describe('Capacidades comunes: todo flujo conversacional tiene audio, imagen y d
     // Un piso, no una lista cerrada: si mañana nace un sexto flujo con
     // disparador de WhatsApp y agente, entra solo a la prueba de abajo.
     expect(conversacionales).toEqual(expect.arrayContaining([
-      'bellido-agendamiento.json', 'clientes/demo-a/demo-a-agendamiento.json', 'demo-b-venta-cobro.json',
+      'bellido-agendamiento.json', 'clientes/demo-a/demo-a-agendamiento.json', 'clientes/demo-b/demo-b-venta-cobro.json',
       'novuchat-onboarding.json',
     ]));
     // Los programados quedan fuera por lo que son, no por su nombre.
@@ -415,7 +415,7 @@ describe('Sin agente: la prueba no es vacía, un flujo con la rama rota FALLA', 
 });
 
 describe('La prueba no es vacía: un flujo sin medios, o con la rama rota, FALLA', () => {
-  const base = (): Flujo => JSON.parse(JSON.stringify(leerFlujo('demo-b-venta-cobro.json'))) as Flujo;
+  const base = (): Flujo => JSON.parse(JSON.stringify(leerFlujo('clientes/demo-b/demo-b-venta-cobro.json'))) as Flujo;
 
   it('un flujo nuevo con disparador y agente pero sin medios es conversacional y le falta todo', () => {
     const nuevo = {
