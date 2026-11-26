@@ -74,6 +74,10 @@ for (let i = 0; i < entradas.length; i++) {
     responder = false; motivo = 'el carrito no es de este comercio';
   } else if (estadoComercio !== 'operativo') {
     responder = false; motivo = 'comercio no operativo';
+  } else if (String(prev.moneda ?? 'Bs') === 'otra') {
+    // Una moneda que la validacion no reconoce (EUR, GBP...) llega como «otra»: no se escribe ninguna cifra con una moneda inventada
+    // (antes se escribia «Bs»). El pedido ya esta en la consola; aca no se contesta.
+    responder = false; motivo = 'moneda no atendida';
   } else if (atencionEstado === 'bloqueado') {
     // Pasado el umbral de bloqueo no se le manda NADA mas a ese telefono hasta
     // que la ventana se renueve (`Analisis/27` §5). Un carrito no es una
@@ -168,7 +172,8 @@ for (let i = 0; i < entradas.length; i++) {
     respuesta: textoRespuesta,
     // Los dos turnos que «Recordar pedido» inserta en la memoria del agente,
     // con la misma clave de sesion que usa el agente: el telefono.
-    memoriaCliente,
+    // Con una moneda «otra» no se recuerda nada: ninguna cifra con una moneda inventada entra a la memoria del agente.
+    memoriaCliente: moneda === 'otra' ? '' : memoriaCliente,
     memoriaAsistente: textoRespuesta,
     responder,
     motivo,

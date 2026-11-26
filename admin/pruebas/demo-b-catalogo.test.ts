@@ -1162,6 +1162,16 @@ describe('«Mensaje del carrito»: uno solo, y solo cuando se puede', () => {
     expect(retiro).not.toMatch(/Envío:/);
   });
 
+  it('una moneda «otra» (EUR, GBP…) no se contesta ni se escribe con «Bs» ni con la palabra «otra»; USD, ARS y Bs sí', () => {
+    const otra = armar({ moneda: 'otra' });
+    expect(otra['responder']).toBe(false);
+    expect(otra['motivo']).toBe('moneda no atendida');
+    expect(String(otra['respuesta'])).toBe('');
+    expect(String(otra['memoriaCliente'])).toBe('');
+    expect(String(otra['memoriaAsistente'])).toBe('');
+    expect(armar({ moneda: 'Bs' })['responder']).toBe(true);
+  });
+
   it('cantidad 0, negativa o fraccionaria NO se escribe como línea («0×») y suma a lo que no entró; una entrega ausente pregunta en vez de dar por hecho «recoger»', () => {
     const s = armar({ items: [
       { nombre: 'Cero', cantidad: 0, subtotal: 0 }, { nombre: 'Menos', cantidad: -1, subtotal: 5 },
