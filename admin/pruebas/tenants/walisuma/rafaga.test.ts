@@ -78,6 +78,74 @@ describe('el injerto: cuatro nodos, en línea, después del reporte y de la puer
   });
 });
 
+describe('PUNTA A PUNTA: lo que recibe el MODELO (la llamada a Gemini) en una ráfaga, con los mensajes en orden', () => {
+  /** Los turnos del usuario que recibió el modelo en cada llamada (el último es el de ESTE turno). */
+  const conModelo = (hilo: Fr[], extra: Partial<Parameters<typeof crear>[0]> = {}) => {
+    const vistos: string[][] = [];
+    const m = crear({
+      dobles: { 'Consultar ráfaga': servidor(hilo) },
+      modeloDice: (ll) => { vistos.push(((ll.cuerpo?.['contents'] ?? []) as { role?: string; parts: { text: string }[] }[]).filter((c) => c.role !== 'model').map((c) => c.parts.map((p) => p.text).join(' '))); return modelo('Con gusto.'); },
+      ...extra,
+    });
+    return { m, vistos };
+  };
+  const ultimoTurnoDelModelo = (vistos: string[][]): string => { const v = vistos[vistos.length - 1] ?? []; return v[v.length - 1] ?? ''; };
+  const cuerpoModelo = (t: ReturnType<Mundo['turno']>): string => JSON.stringify((t.salidas['Decidir turno']?.[0]?.[0] as J | undefined)?.['cuerpoModelo'] ?? null);
+
+  it('2 textos: el primero CALLA, sale UN envío y el modelo recibe «hola» y «quiero una billetera» EN ORDEN (textoCliente, cuerpoModelo y la llamada real)', () => {
+    const hilo = [txt(1, 'hola', t0), txt(2, 'quiero una billetera', t0 + 800)];
+    const { m, vistos } = conModelo(hilo);
+    const [a, b] = correr(m, [{ n: 1, msg: mTexto('hola') }, { n: 2, msg: mTexto('quiero una billetera') }]) as [ReturnType<Mundo['turno']>, ReturnType<Mundo['turno']>];
+    expect(a.mensajes).toHaveLength(0); // 1) el primero calla
+    expect(a.orden).not.toContain('Conversar con el modelo');
+    expect(envios([a, b])).toBe(1); // 2) UN solo envío
+    expect(vistos).toHaveLength(1); // el modelo se llama UNA vez
+    expect(textoDe(b)).toBe('hola quiero una billetera'); // 3) todos, en orden
+    expect(cuerpoModelo(b)).toContain('hola quiero una billetera');
+    expect(ultimoTurnoDelModelo(vistos)).toContain('hola quiero una billetera');
+  });
+  it('3 textos: el primero y el segundo CALLAN, UN envío y el modelo recibe los tres EN ORDEN', () => {
+    const hilo = [txt(1, 'hola', t0), txt(2, 'quiero una billetera', t0 + 600), txt(3, 'de cuero por favor', t0 + 1200)];
+    const { m, vistos } = conModelo(hilo);
+    const ts = correr(m, [{ n: 1, msg: mTexto('hola') }, { n: 2, msg: mTexto('quiero una billetera') }, { n: 3, msg: mTexto('de cuero por favor') }]);
+    expect(ts[0]!.mensajes).toHaveLength(0);
+    expect(ts[1]!.mensajes).toHaveLength(0);
+    expect(envios(ts)).toBe(1);
+    expect(vistos).toHaveLength(1);
+    expect(textoDe(ts[2]!)).toBe('hola quiero una billetera de cuero por favor');
+    expect(cuerpoModelo(ts[2]!)).toContain('hola quiero una billetera de cuero por favor');
+    expect(ultimoTurnoDelModelo(vistos)).toContain('hola quiero una billetera de cuero por favor');
+  });
+  it('con la consulta caída (falla abierto) el segundo responde SOLO con su texto: el modelo no recibe el primero', () => {
+    const { m, vistos } = conModelo([]);
+    m.dobles['Consultar ráfaga'] = cae;
+    const t = correr(m, [{ n: 2, msg: mTexto('quiero una billetera') }])[0]!;
+    expect(t.mensajes).toHaveLength(1);
+    expect(textoDe(t)).toBe('quiero una billetera');
+    expect(ultimoTurnoDelModelo(vistos)).toContain('quiero una billetera');
+    expect(ultimoTurnoDelModelo(vistos)).not.toContain('hola');
+  });
+  it('con la consulta caída en la ráfaga de 3, el último responde solo y el modelo recibe solo su texto (los otros ya callaron: riesgo declarado)', () => {
+    const hilo = [txt(1, 'hola', t0), txt(2, 'quiero una billetera', t0 + 600), txt(3, 'de cuero por favor', t0 + 1200)];
+    const { m, vistos } = conModelo(hilo);
+    const a = correr(m, [{ n: 1, msg: mTexto('hola') }, { n: 2, msg: mTexto('quiero una billetera') }]);
+    m.dobles['Consultar ráfaga'] = cae;
+    const c = correr(m, [{ n: 3, msg: mTexto('de cuero por favor') }])[0]!;
+    expect(envios(a)).toBe(0);
+    expect(c.mensajes).toHaveLength(1);
+    expect(textoDe(c)).toBe('de cuero por favor');
+    expect(ultimoTurnoDelModelo(vistos)).not.toContain('hola');
+  });
+  it('NEGADO (dientes): sin la pieza (rafagaActiva false) el modelo recibe SOLO el segundo texto en su llamada y el primero se contesta aparte', () => {
+    const hilo = [txt(1, 'hola', t0), txt(2, 'quiero una billetera', t0 + 800)];
+    const { m, vistos } = conModelo(hilo, { base: { rafagaActiva: false } });
+    const ts = correr(m, [{ n: 1, msg: mTexto('hola') }, { n: 2, msg: mTexto('quiero una billetera') }]);
+    expect(envios(ts)).toBe(2);
+    expect(textoDe(ts[1]!)).toBe('quiero una billetera');
+    expect(vistos).toHaveLength(2);
+  });
+});
+
 describe('ráfaga de 2 y de 3 textos: UN solo envío, con todo el texto', () => {
   it('2 textos (hola + quiero una billetera): la primera ejecución calla, la segunda responde UNA vez y el modelo ve los dos', () => {
     const hilo = [txt(1, 'hola', t0), txt(2, 'quiero una billetera', t0 + 800)];
