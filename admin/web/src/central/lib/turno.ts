@@ -28,8 +28,15 @@ import { httpsCallable, type Functions } from 'firebase/functions';
 // La regla del turno es de CORE y la consola usa la MISMA que el servidor (Central → Core, hacia abajo): ni una
 // cifra ni una comparación duplicadas. Un turno vencido por inactividad o por la ventana, o con fechas rotas, es «asistente».
 import {
-  INACTIVIDAD_MS, MARGEN_ENVIO_MS, VENTANA_META_MS, leerTurno, personaPuedeEscribirDeFicha, turnoVigente, ventanaDeMetaAbierta, type Turno,
+  INACTIVIDAD_MS, MARGEN_ENVIO_MS, VENTANA_META_MS, leerTurno, personaPuedeEscribirDeFicha, personaPuedeRetomarDeFicha, turnoVigente, ventanaDeMetaAbierta, type Turno,
 } from '../../../../functions/src/core/conversacion/turno';
+
+// Las cifras de Retomar (topes y precio de la plantilla) son del PLAN y salen de `planes.ts`: la pantalla no escribe ninguna.
+import {
+  PLANTILLA_UTILIDAD_USD, TARIFA_DE_RESPALDO, limitesDeRetomar, type Tarifa,
+} from '../../../../functions/src/central/cuenta/planes';
+import { mensajeDeError } from './mensajeServidor';
+import type { Titularidad } from '../../../../functions/src/central/ejes';
 
 export { INACTIVIDAD_MS, MARGEN_ENVIO_MS, VENTANA_META_MS, leerTurno, turnoVigente, ventanaDeMetaAbierta };
 export type { Turno };
@@ -121,6 +128,22 @@ export interface EntradaAcciones {
    * explícita). Falso = fail closed: sin «Tomar» ni cuadro para escribir. Devolver no la necesita (liberar es seguro).
    */
   puedeIntervenir: boolean;
+  /** `puedeRetomarDeFicha`: las dos banderas de la ficha. Ausente = no (falla cerrada). */
+  puedeRetomar?: boolean;
+  /** Consta cuándo escribió el cliente por última vez: sin ese dato no se retoma lo que el cliente nunca inició. */
+  ventanaConDato?: boolean;
+  /** El cliente pidió que no se le escriba (`noContactar === true`): no se ofrece Retomar. */
+  noContactar?: boolean;
+  /** El contacto está bloqueado (`bloqueada === true`): no se ofrece Retomar. */
+  bloqueada?: boolean;
+  /** Cuándo se mandó la última plantilla (`ultimaRetomadaEn` de la conversación). Con `ultimoEntranteEn` y `ahora`, decide si todavía se espera. */
+  ultimaRetomadaEn?: number | null;
+  /** La hora del último mensaje del cliente (la de la conversación). */
+  ultimoEntranteEn?: number | null;
+  /** El reloj de la pantalla (ms), para el plazo de `diasEntreRetomadas`. */
+  ahora?: number;
+  /** `ultimaRetomadaEn` presente pero ilegible: se trata como retomada pendiente (el servidor la rechaza). */
+  retomadaIlegible?: boolean;
 }
 
 /**
@@ -134,6 +157,17 @@ export function puedeIntervenirDeFicha(
   return !!ficha && ficha.consolaConversaciones === 'nueva' && personaPuedeEscribirDeFicha(ficha);
 }
 
+/**
+ * ¿Puede una persona de este comercio RETOMAR una conversación con la ventana cerrada? Lo de intervenir MÁS
+ * `personaPuedeRetomar === true` exacto (C2 del contrato de Retomar; la enciende solo Plataforma). Ausente, `false`,
+ * `'true'` o `1` = no. La bandera es la MISMA función del servidor (`personaPuedeRetomarDeFicha` de Core), igual que `puedeIntervenirDeFicha`.
+ */
+export function puedeRetomarDeFicha(
+  ficha: { readonly consolaConversaciones?: unknown; readonly personaPuedeEscribir?: unknown; readonly personaPuedeRetomar?: unknown } | null | undefined,
+): boolean {
+  return puedeIntervenirDeFicha(ficha) && personaPuedeRetomarDeFicha(ficha);
+}
+
 export const AVISO_SIN_SALIDA = 'Tomar la conversación y escribir como persona todavía no está activo para su negocio.';
 
 export interface Acciones {
@@ -141,6 +175,10 @@ export interface Acciones {
   sinIntervencion: boolean;
   verTomar: boolean;
   sinTomarPorVentana: boolean;
+  /** Ventana cerrada, responde el asistente y las dos banderas: se ofrece «Retomar conversación» (plantilla). */
+  verRetomar: boolean;
+  /** Ya se mandó una plantilla y el cliente no respondió (dentro de `diasEntreRetomadas`): se dice «Esperando la respuesta del cliente». */
+  esperandoRetomada: boolean;
   verDevolver: boolean;
   verEscribir: boolean;
   /** Los controles que se ven, ¿se pueden pulsar? Falso con el comercio no activo. */
@@ -150,16 +188,39 @@ export interface Acciones {
 /**
  * Los botones que se ofrecen. El propietario y el soporte solo LEEN: sin `puedeGestionar` no se ve ninguno.
  *  · Tomar: solo cuando responde el asistente y la ventana de 24 h está abierta (si no, el servidor lo rechaza).
+ *  · Retomar: lo contrario de Tomar (ventana CERRADA) y además las dos banderas, sin «No contactar» ni bloqueo.
  *  · Devolver: quien la tiene, o un admin.
  *  · Escribir: solo quien la tiene (el servidor exige el turno de ESA persona).
  */
+/**
+ * ¿Ya se mandó una plantilla a este cliente y no respondió? Es la regla `retomadaPendiente` del servidor: `ultimaRetomadaEn`
+ * posterior a `ultimoEntranteEn` y dentro de `diasEntreRetomadas` (de `limitesDeRetomar`, del plan). El servidor la vuelve a
+ * comprobar; acá solo se evita ofrecer lo que va a rechazar.
+ */
+export function retomadaPendienteDe(
+  ultimaRetomadaEn: number | null | undefined, ultimoEntranteEn: number | null | undefined, ahora: number | undefined,
+  ilegible = false,
+): boolean {
+  if (ilegible) return true;   // un `ultimaRetomadaEn` que no es fecha falla cerrado en el servidor: no se ofrece lo que rechazaría
+  if (typeof ultimaRetomadaEn !== 'number' || typeof ultimoEntranteEn !== 'number' || typeof ahora !== 'number') return false;
+  const dias = limitesDeRetomar(null, TARIFA_DE_RESPALDO, 'novuchat').diasEntreRetomadas;
+  return ultimaRetomadaEn > ultimoEntranteEn && ahora < ultimaRetomadaEn + dias * 24 * 3_600_000;
+}
+
 export function accionesDeTurno(a: EntradaAcciones): Acciones {
-  if (!a.puedeGestionar) return { sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verDevolver: false, verEscribir: false, habilitados: false };
+  if (!a.puedeGestionar) return { sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verRetomar: false, esperandoRetomada: false, verDevolver: false, verEscribir: false, habilitados: false };
   return {
     sinIntervencion: a.situacion === 'asistente' && !a.puedeIntervenir,
     verTomar: a.situacion === 'asistente' && a.puedeIntervenir && a.ventanaAbierta,
     // «Tomar» escondido por la ventana: la pantalla lo explica en vez de callar.
     sinTomarPorVentana: a.situacion === 'asistente' && a.puedeIntervenir && !a.ventanaAbierta,
+    // «Retomar» (plantilla): TODAS las condiciones a la vez. El servidor las vuelve a comprobar (esto no es un permiso).
+    verRetomar: a.situacion === 'asistente' && a.puedeIntervenir && a.puedeRetomar === true && a.ventanaConDato === true
+      && !a.ventanaAbierta && a.noContactar !== true && a.bloqueada !== true
+      && !retomadaPendienteDe(a.ultimaRetomadaEn, a.ultimoEntranteEn, a.ahora, a.retomadaIlegible === true),
+    esperandoRetomada: a.situacion === 'asistente' && a.puedeIntervenir && a.puedeRetomar === true && a.ventanaConDato === true
+      && !a.ventanaAbierta && a.noContactar !== true && a.bloqueada !== true
+      && retomadaPendienteDe(a.ultimaRetomadaEn, a.ultimoEntranteEn, a.ahora, a.retomadaIlegible === true),
     verDevolver: a.situacion === 'mio' || (a.situacion === 'ajeno' && a.esAdmin),
     verEscribir: a.situacion === 'mio' && a.puedeIntervenir,
     habilitados: a.comercioActivo,
@@ -173,6 +234,122 @@ export function accionesDeTurno(a: EntradaAcciones): Acciones {
 export function cambioVisible(esperado: 'tomar' | 'devolver', situacion: SituacionTurno): boolean {
   return esperado === 'tomar' ? situacion === 'mio' : situacion === 'asistente';
 }
+
+// ── Retomar: esperar al cliente, el aviso de costo y los textos ──────────────
+
+/** Una marca de tiempo de Firestore (`toMillis`) como milisegundos; `null` si no es una fecha. */
+const milisDe = (v: unknown): number | null => {
+  const f = v && typeof v === 'object' ? (v as { toMillis?: unknown }).toMillis : undefined;
+  if (typeof f !== 'function') return null;
+  const n = (v as { toMillis: () => unknown }).toMillis();
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+};
+
+/** `turno.retomadoEn` tal como vino del documento (lo escribe solo el servidor); `null` si no consta o no es fecha. */
+export function retomadoEnDe(turnoCrudo: unknown): number | null {
+  const t = turnoCrudo && typeof turnoCrudo === 'object' && !Array.isArray(turnoCrudo) ? (turnoCrudo as { retomadoEn?: unknown }) : null;
+  return t ? milisDe(t.retomadoEn) : null;
+}
+
+/**
+ * ¿Se retomó y el cliente todavía no respondió? Con la ventana CERRADA, `retomadoEn` y ningún entrante posterior
+ * (`retomadoEn >= ultimoEntranteEn`, la misma comparación de Core): se dice «Esperando la respuesta del cliente».
+ */
+export function esperandoRespuestaDelCliente(retomadoEn: number | null, ultimoEntranteEn: number | null, ahora: number): boolean {
+  if (retomadoEn === null || ultimoEntranteEn === null) return false;
+  return !ventanaAbiertaParaTomar(ultimoEntranteEn, ahora) && retomadoEn >= ultimoEntranteEn;
+}
+
+export const TEXTO_ESPERANDO_CLIENTE =
+  'Esperando la respuesta del cliente. Podrá escribirle cuando responda: se abre una ventana de 24 h nueva.';
+
+/** El mensaje de plantilla del hilo: «Plantilla para retomar», sin texto propio (el texto lo pone Meta). */
+export const ROTULO_PLANTILLA = 'Plantilla para retomar';
+export const esPlantilla = (tipo: unknown): boolean => tipo === 'plantilla';
+
+/**
+ * LA CIFRA DEL AVISO, con coma decimal (`0,0113`) y SALIDA DE `planes.ts`: ni este archivo ni la pantalla escriben el precio.
+ * En pantalla solo «aprox. USD 0,0113 por envío», sin fuente ni fecha (decisión de Andres, 24/11/2026): la fuente oficial y
+ * la fecha de lectura están en el comentario de `PLANTILLA_UTILIDAD_USD` (`planes.ts`) y en `docs/base-comercial.md` §1.
+ */
+export const cifraDePlantilla = (): string => String(PLANTILLA_UTILIDAD_USD).replace('.', ',');
+
+/**
+ * LO QUE LA PANTALLA SABE PARA DECIR QUIÉN PAGA LA PLANTILLA: la tarifa de la cuenta, la titularidad de la línea y la línea.
+ * Cualquiera puede faltar (`null`): un operador no puede leer `ejesDeCuenta` (es de admin) y no se afirma lo que no consta.
+ */
+export interface ContextoDeAviso {
+  tarifa: Tarifa | null;
+  titularidad: Titularidad | null;
+  /** Los últimos 4 caracteres de la línea de la conversación, o `null` si la ficha no la trae o no se halla entre los números. */
+  linea: string | null;
+}
+export const SIN_CONTEXTO_DE_AVISO: ContextoDeAviso = { tarifa: null, titularidad: null, linea: null };
+
+/**
+ * El contexto del aviso, de la respuesta de `ejesDeCuenta` y la línea de la conversación (`phoneNumberId` de la ficha).
+ * SOLO SE USA LO ESCRITO (`tarifaExplicita`, `titularidadExplicita`): el respaldo por defecto (`meta_incluido`, `novuchat`) no
+ * dice quién paga y afirmarlo sería presentar un costo como algo que no es. Sin dato explícito, `null` y texto neutro.
+ *  · Si la línea se halla entre los números, rige su titularidad (si está escrita).
+ *  · Si no se identifica, rige la del comercio solo cuando TODOS sus números la traen escrita y es la misma; con las dos
+ *    titularidades, o con alguna sin escribir, `null`: no se afirma.
+ */
+export function contextoDeAviso(
+  ejes: { tarifa?: unknown; tarifaExplicita?: unknown; numeros?: readonly { phoneNumberId?: unknown; titularidad?: unknown; titularidadExplicita?: unknown }[] } | null | undefined,
+  phoneNumberId?: string,
+): ContextoDeAviso {
+  const tarifa: Tarifa | null = ejes?.tarifaExplicita === true && (ejes.tarifa === 'estandar' || ejes.tarifa === 'meta_incluido') ? ejes.tarifa : null;
+  const n = ejes?.numeros;
+  if (!Array.isArray(n) || n.length === 0) return { tarifa, titularidad: null, linea: null };
+  const escrita = (x: { titularidad?: unknown; titularidadExplicita?: unknown } | undefined): Titularidad | null =>
+    x?.titularidadExplicita === true && (x.titularidad === 'comercio' || x.titularidad === 'novuchat') ? x.titularidad : null;
+  const suya = phoneNumberId ? n.find((x) => x?.phoneNumberId === phoneNumberId) : undefined;
+  if (suya) return { tarifa, titularidad: escrita(suya), linea: phoneNumberId!.slice(-4) };
+  const todas = n.map((x) => escrita(x));
+  const unica = todas[0] !== null && todas.every((t) => t === todas[0]) ? todas[0]! : null;
+  return { tarifa, titularidad: unica, linea: null };
+}
+
+/**
+ * QUIÉN PAGA LA PLANTILLA (decisión de Andres por botón, 24/11/2026; `planes.ts`, `limitesDeRetomar`): NovuChat la absorbe
+ * (D-R2 a) SOLO con `meta_incluido` Y la línea `novuchat`, las dos escritas. Las otras tres combinaciones las paga el comercio:
+ * con `estandar` (sea cual sea la línea) o con la línea `comercio` (sea cual sea la tarifa) ya se sabe sin el otro dato. Lo que
+ * no alcanza para decidir (`meta_incluido` sin línea conocida, o nada escrito) devuelve `null`: no se afirma quién paga.
+ * Las cuatro combinaciones, una por prueba, en `retomar-costo.test.ts`.
+ */
+export function quienPagaLaPlantilla(c: Pick<ContextoDeAviso, 'tarifa' | 'titularidad'>): 'comercio' | 'novuchat' | null {
+  if (c.tarifa === 'meta_incluido' && c.titularidad === 'novuchat') return 'novuchat';
+  if (c.tarifa === 'estandar' || c.titularidad === 'comercio') return 'comercio';
+  return null;
+}
+
+/**
+ * El aviso de costo del modal (§1.8 del plan de Retomar). Es la barrera honesta: no se presenta un costo como algo que no es.
+ *  · `comercio`: la plantilla tiene un costo aparte para su negocio (por Meta directo o por NovuChat, según la línea).
+ *  · `novuchat` (D-R2 a): NovuChat absorbe la plantilla, sin cobrarle al comercio, dentro del límite de envíos.
+ *  · sin dato: no se afirma quién paga.
+ * Los 20 por día y 100 por mes (`limitesDeRetomar`, del plan) se dicen SIEMPRE como límite de envío de todos los negocios, no
+ * como «después se cobra». Si la ficha trae la línea, el aviso la nombra; si no, el texto es genérico.
+ */
+export function textoAvisoRetomar(contexto: ContextoDeAviso = SIN_CONTEXTO_DE_AVISO): string {
+  const l = limitesDeRetomar(null, TARIFA_DE_RESPALDO, 'novuchat');
+  const linea = contexto.linea ? ` por la línea terminada en ${contexto.linea}` : '';
+  const tarifa = `aprox. USD ${cifraDePlantilla()} por envío`;
+  const limite = `Es un límite de envío para todos los negocios: hasta ${l.porDia} por día y ${l.porMes} por mes.`;
+  const cierre = 'Si el cliente responde, se abre una conversación nueva que cuenta en su plan.';
+  switch (quienPagaLaPlantilla(contexto)) {
+    case 'comercio':
+      return `Retomar envía una plantilla de WhatsApp${linea} con un costo aparte para su negocio, ${tarifa}. ${limite} ${cierre}`;
+    case 'novuchat':
+      return `Retomar envía una plantilla de WhatsApp${linea} que Meta cobra, ${tarifa}. NovuChat absorbe ese costo, sin cobrarle a su negocio. ${limite} ${cierre}`;
+    default:
+      return `Retomar envía una plantilla de WhatsApp${linea} que Meta cobra, ${tarifa}. Según la tarifa y la línea de su negocio, `
+        + `este costo puede estar incluido o cobrarse aparte. ${limite} ${cierre}`;
+  }
+}
+
+/** Lo que dice la casilla que hay que marcar antes de enviar. */
+export const TEXTO_CASILLA_RETOMAR = 'Entiendo el costo y quiero enviar la plantilla.';
 
 // ── La ventana de Meta y su cuenta regresiva ─────────────────────────────────
 
@@ -213,7 +390,7 @@ export function motivoVentana(v: VentanaEnvio): string | null {
     return 'No consta cuándo escribió el cliente por última vez, así que no se puede saber si la ventana de 24 h de WhatsApp sigue abierta. No se puede enviar.';
   }
   if (v.estado === 'cerrada') {
-    return 'La ventana de 24 h de WhatsApp está cerrada: solo se puede escribir cuando el cliente vuelva a escribir. (Las plantillas no están disponibles todavía.)';
+    return 'La ventana de 24 h de WhatsApp está cerrada: solo se puede escribir cuando el cliente vuelva a escribir.';
   }
   return null;
 }
@@ -348,9 +525,9 @@ export function rotuloDeAutor(autor: string, autorUid: string, miUid: string | n
 
 // ── Errores de las callables, por código ─────────────────────────────────────
 
-export type AccionTurno = 'tomar' | 'devolver' | 'enviar';
+export type AccionTurno = 'tomar' | 'devolver' | 'enviar' | 'retomar';
 
-/** El código de un error del SDK sin el prefijo `functions/`. Nunca se lee `message`. */
+/** El código de un error del SDK sin el prefijo `functions/`. Solo Retomar lee `message`, en `mensajeServidor.ts`. */
 export function codigoDeError(e: unknown): string {
   const c = e && typeof e === 'object' ? (e as { code?: unknown }).code : undefined;
   return typeof c === 'string' ? c.replace(/^functions\//, '') : '';
@@ -393,8 +570,25 @@ export function textoTope(detalles: Record<string, unknown>): string {
   }
 }
 
+/** Los códigos que el SDK genera por su cuenta (red, tiempo, interno): su `message` no es del servidor y no se muestra. */
+const CODIGOS_DEL_CLIENTE = ['', 'unauthenticated', 'internal', 'unknown', 'cancelled', 'deadline-exceeded', 'data-loss', 'aborted'];
+
+/**
+ * Los errores de Retomar muestran el TEXTO DEL SERVIDOR tal cual (`ErroresDeTurno` y `ErroresDeEnvio`): no hay una redacción
+ * paralela que se desincronice. El tope por minuto reutiliza `textoTope` (el mismo texto aprobado del envío): el mensaje del
+ * servidor no trae los segundos. Sin mensaje (red, sesión vencida) un texto genérico.
+ */
+export function textoErrorRetomar(codigo: string, detalles: Record<string, unknown> = {}, mensaje = ''): string {
+  if (codigo === 'resource-exhausted' && detalles['tope'] === 'minuto') return textoTope(detalles);
+  if (codigo === 'unauthenticated') return 'Su sesión venció. Vuelva a ingresar.';
+  const m = mensaje.trim();
+  if (m !== '' && !CODIGOS_DEL_CLIENTE.includes(codigo)) return m;
+  return 'No se pudo retomar la conversación. Intente de nuevo.';
+}
+
 /** El texto que ve la persona, según la acción y el código del error. Los códigos y textos son fijos. */
-export function textoErrorTurno(accion: AccionTurno, codigo: string, detalles: Record<string, unknown> = {}): string {
+export function textoErrorTurno(accion: AccionTurno, codigo: string, detalles: Record<string, unknown> = {}, mensaje = ''): string {
+  if (accion === 'retomar') return textoErrorRetomar(codigo, detalles, mensaje);
   if (accion === 'enviar' && resultadoDesconocido(codigo)) {
     return `${TEXTO_INCIERTO}. Revise la conversación. Si vuelve a pulsar «Enviar», se reintenta este mismo envío y no se duplica.`;
   }
@@ -509,18 +703,44 @@ export async function ejecutarEnvio(
   }
 }
 
+/**
+ * Hace UN intento de retomar. `clave` es la del intento anterior que no llegó a confirmarse (reintentar es seguro: el servidor
+ * reconoce la misma clave con la misma huella y no manda otra plantilla) o `null` para una nueva. Devuelve la clave con la que
+ * se llamó y si queda ABIERTA (sin respuesta del servidor: red, tiempo agotado) para reutilizarla. Nunca reintenta solo.
+ * Se llama SOLO tras la confirmación del aviso de costo (la casilla): la pantalla no llega acá sin ella.
+ */
+export async function ejecutarRetomar(
+  capa: CapaTurno, entrada: EntradaTurno, clave: string | null, generar: () => string = nuevaClave,
+): Promise<{ salida: SalidaEnvio; clave: string; abierta: boolean }> {
+  const usada = clave !== null && esClaveValida(clave) ? clave : generar();
+  try {
+    const respuesta = await capa.retomar({ tenantId: entrada.tenantId, conversacionId: entrada.conversacionId, claveIdempotencia: usada });
+    return { salida: { tipo: interpretarEnvio(respuesta) }, clave: usada, abierta: false };
+  } catch (e) {
+    const codigo = codigoDeError(e);
+    const desconocido = resultadoDesconocido(codigo);
+    return {
+      salida: { tipo: 'error', codigo, texto: textoErrorTurno('retomar', codigo, detallesDeError(e), mensajeDeError(e)), desconocido },
+      clave: usada, abierta: desconocido,
+    };
+  }
+}
+
 // ── La capa que habla con el servidor (simulable en las pruebas) ─────────────
 
 export interface EntradaTurno { tenantId: string; conversacionId: string }
 export interface EntradaEnvio extends EntradaTurno { texto: string; claveIdempotencia: string }
+/** Retomar: SOLO estos tres campos (C3). Nunca un teléfono ni un texto: la plantilla y el destinatario los pone el servidor. */
+export interface EntradaRetomar extends EntradaTurno { claveIdempotencia: string }
 
 export interface CapaTurno {
   tomar(e: EntradaTurno): Promise<unknown>;
   devolver(e: EntradaTurno): Promise<unknown>;
   enviar(e: EntradaEnvio): Promise<unknown>;
+  retomar(e: EntradaRetomar): Promise<unknown>;
 }
 
-/** Las tres callables de Core (región us-east1, la de `funciones`). Cada una recibe solo lo del contrato. */
+/** Las callables de Core (tomar, devolver, enviar y retomar) (región us-east1, la de `funciones`). Cada una recibe solo lo del contrato. */
 export function capaTurnoReal(funciones: Functions): CapaTurno {
   return {
     tomar: async (e) => (await httpsCallable<EntradaTurno, unknown>(funciones, 'tomarConversacion')(
@@ -529,5 +749,7 @@ export function capaTurnoReal(funciones: Functions): CapaTurno {
       { tenantId: e.tenantId, conversacionId: e.conversacionId })).data,
     enviar: async (e) => (await httpsCallable<EntradaEnvio, unknown>(funciones, 'enviarComoPersona')(
       { tenantId: e.tenantId, conversacionId: e.conversacionId, texto: e.texto, claveIdempotencia: e.claveIdempotencia })).data,
+    retomar: async (e) => (await httpsCallable<EntradaRetomar, unknown>(funciones, 'retomarConversacion')(
+      { tenantId: e.tenantId, conversacionId: e.conversacionId, claveIdempotencia: e.claveIdempotencia })).data,
   };
 }

@@ -68,7 +68,7 @@ const VACIO: Flujo = { name: '', settings: {}, nodes: [], connections: {} };
 const TEXTO = HAY_JSON ? readFileSync(RUTA, 'utf8') : '';
 const flujo = HAY_JSON ? (JSON.parse(TEXTO) as Flujo) : VACIO;
 const demoA = JSON.parse(
-  readFileSync(join(aqui, '../../Flujos/demo-a-agendamiento.json'), 'utf8'),
+  readFileSync(join(aqui, '../../Flujos/clientes/demo-a/demo-a-agendamiento.json'), 'utf8'),
 ) as Flujo;
 // El indicador de escritura (21/11/2026) es pieza común del Demo A, y Bellido A está congelado (no lo lleva): se lo quita del Demo A antes de compararlos.
 quitarIndicador(demoA);

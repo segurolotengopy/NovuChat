@@ -28,7 +28,7 @@ Lo mismo para los parámetros de texto de las herramientas propias
 se portan como una sola «línea» cada uno, con la sustitución de subcadena.
 
   python3 admin/scripts/portar-prompt-cliente.py \
-      --vertical Flujos/demo-a-agendamiento.json --antes 6e718d7 \
+      --vertical Flujos/clientes/demo-a/demo-a-agendamiento.json --antes 6e718d7 \
       --cliente Flujos/bellido-agendamiento.json [--aplicar]
 
 `--antes` es la referencia de git del vertical ANTES del cambio (un commit, una

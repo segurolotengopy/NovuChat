@@ -16,6 +16,8 @@
  *   7. Tomar / salida de persona         -> `personaPuedeEscribir === true`       (turno.ts, personaPuedeEscribirDeFicha)
  *   8. adjuntos de la persona            -> `personaPuedeEnviarMedios === true`   (turno.ts, personaPuedeEnviarMediosDeFicha)
  *   9. guardado de medios                -> `guardarMedios === true`              (medios/guardarMedio.ts)
+ *  10. Retomar con plantilla            -> `personaPuedeRetomar === true`        (turno.ts, personaPuedeRetomarDeFicha; la escribe
+ *      `aplicar-persona-puede-retomar.mjs` solo con C1 válido en las rutas y la salida con plantillas; sin plantilla queda pendiente)
  *
  * Dos grupos, por orden de escritura:
  *  - JUEGO_DE_FICHA: se escribe en `tenants/{id}` al dar de alta; no depende de nada externo.
@@ -35,6 +37,7 @@ export const JUEGO_DE_FICHA = Object.freeze({
 export const JUEGO_CON_INFRA = Object.freeze({
   personaPuedeEscribir: true,
   personaPuedeEnviarMedios: true,
+  personaPuedeRetomar: true,
 } as const);
 
 /**

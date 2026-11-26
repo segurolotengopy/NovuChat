@@ -29,7 +29,7 @@ import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const HERRAMIENTA = join(aqui, '../../Flujos/clientes/agenda-minima/herramientas/flujo-de-prueba.mjs');
 const VENTA = join(aqui, '../../Flujos/clientes/venta-minima/venta-minima.ensayo-demo-a.json');
-const DEMO_A = join(aqui, '../../Flujos/demo-a-agendamiento.json');
+const DEMO_A = join(aqui, '../../Flujos/clientes/demo-a/demo-a-agendamiento.json');
 const ejecutar = promisify(execFile);
 const PHONE_ID = '100000000000042'; // el del Demo A, sintético
 const RESTAURANTE = '59100000021'; // el teléfono del restaurante en el ensayo, sintético

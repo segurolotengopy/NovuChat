@@ -1,5 +1,5 @@
 {
-  "flujo": "demo-a-agendamiento.json",
+  "flujo": "clientes/demo-a/demo-a-agendamiento.json",
   "conservanMarcadores": {
     "Config base": "REEMPLAZAR_"
   },

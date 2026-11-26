@@ -4135,7 +4135,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
 
 describe('ensayo en el Demo A: la variante `trigger` con las credenciales del Demo A', () => {
   const DEMO_A = leer('venta-minima.ensayo-demo-a.json');
-  const DEMO_A_VIVO = JSON.parse(readFileSync(join(AQUI, '../../Flujos/demo-a-agendamiento.json'), 'utf8')) as Flujo;
+  const DEMO_A_VIVO = JSON.parse(readFileSync(join(AQUI, '../../Flujos/clientes/demo-a/demo-a-agendamiento.json'), 'utf8')) as Flujo;
   const DATOS_DEMO_A = readFileSync(join(AQUI, '../scripts/datos/venta-minima/ensayo-demo-a.json'), 'utf8');
   const AJENA = ['AAB1', 'WA', 'Prod'].join('-'); // el nombre de la credencial que jamás debe usarse
   const nodo = (f: Flujo, nombre: string) => f.nodes.find((n) => n.name === nombre) as NonNullable<(typeof f.nodes)[number]>;

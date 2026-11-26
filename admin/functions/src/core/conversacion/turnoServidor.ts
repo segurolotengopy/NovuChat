@@ -125,7 +125,7 @@ export async function consumirCupoDeTurno(
 
 export type NombreDeCallableDeTurno =
   | 'tomarConversacion' | 'devolverConversacion' | 'enviarComoPersona' | 'bloquearContacto' | 'desbloquearContacto'
-  | 'enviarAdjuntoComoPersona';
+  | 'enviarAdjuntoComoPersona' | 'retomarConversacion';
 
 interface DatosDeRegistro {
   tenantId?: unknown; uid?: string; rol?: RolDePersona; conversacionId?: unknown; motivo?: string;
@@ -182,7 +182,7 @@ export interface SalidaDeTurno {
 /** La acción de auditoría de cada callable (lista cerrada). */
 export type AccionDeTurno =
   | 'conversacion_tomada' | 'conversacion_devuelta' | 'mensaje_persona_creado' | 'bloquear_contacto' | 'desbloquear_contacto'
-  | 'adjunto_persona_creado';
+  | 'adjunto_persona_creado' | 'conversacion_retomada';
 
 export interface ContextoDeTurno {
   db: Firestore;
@@ -258,6 +258,7 @@ export function turnoAFirestore(t: Turno): Record<string, unknown> {
     tomadoEn: Timestamp.fromMillis(t.tomadoEn), actividadPersonaEn: Timestamp.fromMillis(t.actividadPersonaEn),
     ...(t.devueltoEn !== undefined ? { devueltoEn: Timestamp.fromMillis(t.devueltoEn) } : {}),
     ...(t.motivoDevolucion !== undefined ? { motivoDevolucion: t.motivoDevolucion } : {}),
+    ...(t.retomadoEn !== undefined ? { retomadoEn: Timestamp.fromMillis(t.retomadoEn) } : {}),
   };
 }
 

@@ -30,7 +30,10 @@
  * estaba contado (`contado: true`), y uno que pasa a `rechazado` se resta una vez. No toca `salientes`,
  * `mensajesVentana`, el bloque de 25 ni los umbrales: cero mensajes por conversación.
  * El −1 de un `incierto` que resulta `rechazado` cae en el mes de la confirmación, no en el del envío
- * (aceptado). PENDIENTE declarado: ningún cálculo de franquicia lee todavía `mensajesPersona`; lo asume
+ * (aceptado). Un mensaje `tipo: 'plantilla'` (Retomar) suma en `plantillasPersona`, con el mismo criterio y sin tocar
+ * `mensajesPersona`. Un `rechazado` de plantilla además libera la conversación (`ultimaRetomadaEn`, solo si es la de ese
+ * mensaje) y devuelve el cupo del día y del mes en que se contó (`liberarRetomada`); `aceptado` e `incierto` no devuelven nada.
+ * PENDIENTE declarado: ningún cálculo de franquicia lee todavía `mensajesPersona`; lo asume
  * Core bloque 2.
  */
 import { onRequest } from 'firebase-functions/v2/https';
@@ -39,7 +42,9 @@ import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestor
 import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada, type Ruta } from '../seguridad/firma.js';
 import { ID_COMERCIO } from './acceso.js';
-import { CLAVE_DE_ENVIO, CODIGO_DE_ENVIO, ID_META, sumarMensajePersona } from './salidaPersona.js';
+import {
+  CLAVE_DE_ENVIO, CODIGO_DE_ENVIO, ID_META, liberarRetomada, refTopesDeRetomar, sumarMensajePersona, sumarPlantillaPersona,
+} from './salidaPersona.js';
 import { ID_CONVERSACION } from './turno.js';
 
 export type ResultadoDeEnvio = 'aceptado' | 'rechazado' | 'incierto';
@@ -87,6 +92,11 @@ export async function confirmarSalida(
   const ref = db.doc(`tenants/${tenantId}/conversaciones/${c.conversacionId}/mensajes/${c.mensajeId}`);
   return db.runTransaction(async (tx): Promise<SalidaDeConfirmacion> => {
     const s = await tx.get(ref);
+    // Un rechazo de PLANTILLA libera la conversación y el cupo (`liberarRetomada`): sus lecturas van antes de toda escritura.
+    const porLiberar = c.resultado === 'rechazado' && s.exists && s.get('tipo') === 'plantilla';
+    const [convSnap, topesSnap] = porLiberar
+      ? await tx.getAll(db.doc(`tenants/${tenantId}/conversaciones/${c.conversacionId}`), refTopesDeRetomar(db, tenantId))
+      : [null, null];
     if (!s.exists || s.get('tenantId') !== tenantId || s.get('direccion') !== 'saliente' || s.get('autor') !== 'persona') {
       return { codigo: 404 };
     }
@@ -112,12 +122,17 @@ export async function confirmarSalida(
     if (c.resultado === 'aceptado') cambios['idMeta'] = c.idMeta;
     if (c.resultado === 'rechazado') {
       cambios['codigoEnvio'] = c.codigo;
-      if (c.reintentable !== undefined) cambios['reintentable'] = c.reintentable;
+      // `reintentable` no lo lee ningún código del servidor (nadie reenvía un mensaje por él: solo informa a la consola).
+      // En una PLANTILLA nunca promete reintento: tras liberar la conversación, la persona vuelve a pulsar Retomar.
+      if (c.reintentable !== undefined) cambios['reintentable'] = s.get('tipo') === 'plantilla' ? false : c.reintentable;
+      if (porLiberar && convSnap && topesSnap) liberarRetomada(tx, s, convSnap, topesSnap);
     }
     // El conteo: aceptado e incierto cuentan UNA vez; rechazado no (y si ya contaba como incierto, se resta).
     const cuenta = c.resultado !== 'rechazado';
-    if (cuenta && !contado) { cambios['contado'] = true; sumarMensajePersona(tx, db, tenantId, ahoraMs, 1); }
-    if (!cuenta && contado) { cambios['contado'] = false; sumarMensajePersona(tx, db, tenantId, ahoraMs, -1); }
+    // Una PLANTILLA (Retomar) cuenta en su propio contador, `plantillasPersona`, con el mismo criterio.
+    const sumar = s.get('tipo') === 'plantilla' ? sumarPlantillaPersona : sumarMensajePersona;
+    if (cuenta && !contado) { cambios['contado'] = true; sumar(tx, db, tenantId, ahoraMs, 1); }
+    if (!cuenta && contado) { cambios['contado'] = false; sumar(tx, db, tenantId, ahoraMs, -1); }
     tx.update(ref, cambios);
     return { codigo: 200, estado: c.resultado };
   });

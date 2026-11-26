@@ -76,7 +76,7 @@ describe('flujo «Vigilancia del número de los demos»: forma', () => {
       phoneNumberIdB: 'REEMPLAZAR_PHONE_NUMBER_ID_B',
     });
     // Lo mismo que usan los flujos de los demos: la misma versión de Graph y los mismos marcadores.
-    expect(configDe('demo-a-agendamiento.json')).toMatchObject({ waGraphVersion: 'v26.0', phoneNumberId: 'REEMPLAZAR_PHONE_NUMBER_ID' });
+    expect(configDe('clientes/demo-a/demo-a-agendamiento.json')).toMatchObject({ waGraphVersion: 'v26.0', phoneNumberId: 'REEMPLAZAR_PHONE_NUMBER_ID' });
     expect(configDe('demo-b-venta-cobro.json')).toMatchObject({ waGraphVersion: 'v26.0', phoneNumberId: 'REEMPLAZAR_PHONE_NUMBER_ID_B' });
   });
 
@@ -91,7 +91,7 @@ describe('flujo «Vigilancia del número de los demos»: forma', () => {
 });
 
 function configDe(archivo: string): Record<string, string> {
-  const a = nodo(leerFlujo(archivo), archivo.startsWith('demo-a-agendamiento') ? 'Config base' : 'Config base')
+  const a = nodo(leerFlujo(archivo), archivo.endsWith('demo-a-agendamiento.json') ? 'Config base' : 'Config base')
     .parameters.assignments.assignments as Array<{ name: string; value: string }>;
   return Object.fromEntries(a.map((x) => [x.name, x.value]));
 }
@@ -126,7 +126,7 @@ describe('flujo «Vigilancia del número de los demos»: solo lee, con la creden
       leerFlujo(archivo).nodes.some((n: { credentials?: Record<string, { name?: string }> }) => n.credentials?.whatsAppApi?.name === nombre);
     expect(usa('demo-b-venta-cobro.json', 'WhatsApp account 2')).toBe(true);
     // El Demo A deja el nombre vacío (se resuelve por tipo de su flujo de referencia): su nombre vivo es «WhatsApp account».
-    expect(usa('demo-a-agendamiento.json', 'WhatsApp account 2')).toBe(false);
+    expect(usa('clientes/demo-a/demo-a-agendamiento.json', 'WhatsApp account 2')).toBe(false);
   });
 
   it('0 mensajes de WhatsApp: ningún nodo de WhatsApp, ningún envío, y el ÚNICO POST es el aviso al chequeo externo', () => {

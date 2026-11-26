@@ -16,6 +16,9 @@
  *  6. Lo que reporta n8n nunca trae autor `persona` ni campos de turno: se ignoran.
  *  7. Los contadores de facturación y las operaciones de la transacción son los de siempre
  *     (Bellido incluido). Cero mensajes por conversación: esta suite no envía nada.
+ *  8. D-R1 (Principal, 24/11/2026): el PRIMER entrante tras Retomar renueva `turno.actividadPersonaEn`
+ *     en la misma escritura (mismas operaciones de la transacción); el segundo entrante, un turno sin
+ *     retomar, uno vencido, uno devuelto o un contacto bloqueado NO renuevan.
  *
  * Puertos del emulador propios de este PR: 8231 por convención (esta ola la corrió en 8361 / 9281).
  */
@@ -508,5 +511,141 @@ describe('lo que NO cambia: facturación, operaciones y lo que reporta n8n', () 
     const docs = await mensajes(A, tel);
     for (const d of docs) expect(Object.keys(d.data())).not.toContain('autor');
     expect((await conversacion(A, tel))['mensajesVentana']).toBe(1);
+  });
+});
+
+// =============================================================================
+describe('D-R1: el primer entrante tras Retomar renueva actividadPersonaEn en la misma escritura', () => {
+  /** Turno como lo deja Retomar: tomado, actividad y retomadoEn en el mismo instante. */
+  const retomado = (en: number): Datos => ({
+    responde: 'persona', tomadoPor: 'uid-oper-1', tomadoEn: Timestamp.fromMillis(en),
+    actividadPersonaEn: Timestamp.fromMillis(en), retomadoEn: Timestamp.fromMillis(en),
+  });
+
+  it('el cliente responde a los 25 min: pausa y la persona vuelve a tener 30 min desde ahora; el resto del turno intacto', async () => {
+    const tel = '59100000026001';
+    const ahora = Date.now();
+    await sembrar(A, tel, { turno: retomado(ahora - 25 * MIN), ultimoEntrante: ahora - 30 * HORA });
+    const antes = (await conversacion(A, tel))['turno'] as Datos;
+    const r = await entrante(A, tel);
+    expect(r.cuerpo['pausadoPorPersona']).toBe(true);
+    const t = (await conversacion(A, tel))['turno'] as Datos;
+    expect(ms(t['actividadPersonaEn'])).toBeGreaterThanOrEqual(ahora);
+    expect({ ...t, actividadPersonaEn: null }).toEqual({ ...antes, actividadPersonaEn: null });
+    expect(await auditoria(A)).toHaveLength(0);
+    // A los 25 min de la renovación el turno sigue siendo de la persona (sin renovar habrían sobrado 5 min).
+    const { decidirPausa } = await import('../../functions/src/core/conversacion/pausa.ts');
+    const c = await conversacion(A, tel);
+    expect(decidirPausa(c['turno'], c['ultimoEntranteEn'], ahora + 25 * MIN).pausada).toBe(true);
+    expect(decidirPausa(antes, c['ultimoEntranteEn'], ahora + 25 * MIN).pausada).toBe(false);
+  });
+
+  it('NEGATIVA: el SEGUNDO entrante ya no renueva (la actividad solo la mueve la persona)', async () => {
+    const tel = '59100000026002';
+    const ahora = Date.now();
+    await sembrar(A, tel, { turno: retomado(ahora - 25 * MIN), ultimoEntrante: ahora - 30 * HORA });
+    await entrante(A, tel);
+    const fijada = Timestamp.fromMillis(Date.now() - 3 * MIN);
+    await refConv(A, tel).update({ 'turno.actividadPersonaEn': fijada });
+    const r = await entrante(A, tel);
+    expect(r.cuerpo['pausadoPorPersona']).toBe(true);
+    expect(ms(((await conversacion(A, tel))['turno'] as Datos)['actividadPersonaEn'])).toBe(fijada.toMillis());
+  });
+
+  it('NEGATIVA: un turno tomado sin Retomar no renueva', async () => {
+    const tel = '59100000026003';
+    const ahora = Date.now();
+    const turno = turnoDe(ahora, { actividad: ahora - 20 * MIN });
+    await sembrar(A, tel, { turno });
+    await entrante(A, tel);
+    expect(ms(((await conversacion(A, tel))['turno'] as Datos)['actividadPersonaEn'])).toBe(ahora - 20 * MIN);
+  });
+
+  it('NEGATIVA: retomada con la inactividad vencida (31 min) se devuelve y NO se renueva', async () => {
+    const tel = '59100000026004';
+    const ahora = Date.now();
+    await sembrar(A, tel, { turno: retomado(ahora - 31 * MIN), ultimoEntrante: ahora - 30 * HORA });
+    const r = await entrante(A, tel);
+    expect(r.cuerpo['pausadoPorPersona']).toBeUndefined();
+    const t = (await conversacion(A, tel))['turno'] as Datos;
+    expect(t['responde']).toBe('asistente');
+    expect(t['motivoDevolucion']).toBe('inactividad');
+    expect(ms(t['actividadPersonaEn'])).toBe(ahora - 31 * MIN);
+  });
+
+  it('NEGATIVA: retomada ya devuelta a mano no renueva', async () => {
+    const tel = '59100000026005';
+    const ahora = Date.now();
+    await sembrar(A, tel, { turno: { ...retomado(ahora - 10 * MIN), responde: 'asistente' }, ultimoEntrante: ahora - 30 * HORA });
+    await entrante(A, tel);
+    expect(ms(((await conversacion(A, tel))['turno'] as Datos)['actividadPersonaEn'])).toBe(ahora - 10 * MIN);
+  });
+
+  it('NEGATIVA: con el contacto bloqueado no se decide pausa ni se renueva', async () => {
+    const tel = '59100000026006';
+    const ahora = Date.now();
+    await sembrar(A, tel, { turno: retomado(ahora - 10 * MIN), ultimoEntrante: ahora - 30 * HORA, marcas: { bloqueada: true } });
+    await entrante(A, tel);
+    expect(ms(((await conversacion(A, tel))['turno'] as Datos)['actividadPersonaEn'])).toBe(ahora - 10 * MIN);
+  });
+
+  it('en la rama de CORTE también renueva', async () => {
+    const tel = '59100000026007';
+    const ahora = Date.now();
+    await sembrar(A, tel, { turno: retomado(ahora - 25 * MIN), ultimoEntrante: ahora - 30 * HORA });
+    await db.doc('plataforma/prepago').set({ corteActivo: false });
+    await db.doc(`tenants/${A.id}/cuenta/estado`).set({
+      modalidad: 'prepago', plan: 'crecimiento', limites: { conversaciones: 500, productos: 100, agendas: 2, cambiosIncluidos: 10 },
+      periodoPagado: '2020-01', corteActivo: true,
+    });
+    const r = await entrante(A, tel);
+    expect((r.cuerpo['servicio'] as Datos)['estado']).toBe('cortado');
+    expect(ms(((await conversacion(A, tel))['turno'] as Datos)['actividadPersonaEn'])).toBeGreaterThanOrEqual(ahora);
+    await db.doc('plataforma/prepago').delete();
+  });
+
+  it('0 operaciones de más: la transacción con renovación es idéntica a la de un turno vigente sin Retomar', async () => {
+    vi.restoreAllMocks();
+    contarTransacciones();
+    const ahora = Date.now();
+    await sembrar(B, '59100000026008', { turno: turnoDe(ahora), ultimoEntrante: ahora - 2 * HORA });
+    await entrante(B, '59100000026008');
+    const sin = ultimo;
+    await sembrar(B, '59100000026009', { turno: retomado(ahora - 25 * MIN), ultimoEntrante: ahora - 30 * HORA });
+    await entrante(B, '59100000026009');
+    expect(ultimo).toEqual(sin);
+    expect(ms(((await conversacion(B, '59100000026009'))['turno'] as Datos)['actividadPersonaEn'])).toBeGreaterThanOrEqual(ahora);
+  });
+});
+
+describe('D-R1 en decidirPausa (puro)', () => {
+  it('solo renueva con turno tomado, retomadoEn presente y sin entrante posterior', async () => {
+    const { decidirPausa, camposDeRenovacion } = await import('../../functions/src/core/conversacion/pausa.ts');
+    const ahora = Date.now();
+    const ts = (x: number) => Timestamp.fromMillis(x);
+    const base = { responde: 'persona', tomadoPor: 'u', tomadoEn: ts(ahora - 10 * MIN), actividadPersonaEn: ts(ahora - 10 * MIN) };
+    const ret = { ...base, retomadoEn: ts(ahora - 10 * MIN) };
+    expect(decidirPausa(ret, ts(ahora - 30 * HORA), ahora).renovarActividad).toBe(true);
+    expect(camposDeRenovacion(decidirPausa(ret, ts(ahora - 30 * HORA), ahora), ahora)).toEqual({ turno: { actividadPersonaEn: ts(ahora) } });
+    // NEGATIVAS
+    expect(decidirPausa(base, ts(ahora - 2 * HORA), ahora).renovarActividad).toBe(false);
+    expect(decidirPausa(ret, ts(ahora - 5 * MIN), ahora).renovarActividad).toBe(false); // ya respondió después de retomar
+    expect(decidirPausa({ ...ret, actividadPersonaEn: ts(ahora - 31 * MIN) }, ts(ahora - 30 * HORA), ahora).renovarActividad).toBe(false);
+    expect(decidirPausa({ ...ret, responde: 'asistente' }, ts(ahora - 30 * HORA), ahora).renovarActividad).toBe(false);
+    expect(decidirPausa({ ...ret, retomadoEn: 'ayer' }, ts(ahora - 30 * HORA), ahora).renovarActividad).toBe(false);
+    expect(decidirPausa(ret, undefined, ahora).renovarActividad).toBe(false);
+    // Borde inclusivo: retomadoEn === ultimoEntranteEn (la retomada pisa el mismo instante) SÍ renueva.
+    expect(decidirPausa(ret, ts(ahora - 10 * MIN), ahora).renovarActividad).toBe(true);
+    // NEGATIVA: un entrante con reloj ANTERIOR a la retomada (carrera con la transacción) no renueva.
+    const futura = { ...base, tomadoEn: ts(ahora + MIN), actividadPersonaEn: ts(ahora + MIN), retomadoEn: ts(ahora + MIN) };
+    expect(decidirPausa(futura, ts(ahora - 30 * HORA), ahora).renovarActividad).toBe(false);
+    // NEGATIVA: retomadoEn del futuro lejano (más que el margen de 5 min) es ilegible: no pausa ni renueva.
+    const lejana = { ...ret, retomadoEn: ts(ahora + 10 * MIN) };
+    expect(decidirPausa(lejana, ts(ahora - 30 * HORA), ahora)).toMatchObject({ pausada: false, renovarActividad: false });
+    // La actividad nunca retrocede: si la persona escribió después de retomar (reloj adelantado), se conserva la mayor.
+    const escribio = { ...ret, actividadPersonaEn: ts(ahora + 2 * MIN) };
+    expect(camposDeRenovacion(decidirPausa(escribio, ts(ahora - 30 * HORA), ahora), ahora)).toEqual({ turno: { actividadPersonaEn: ts(ahora + 2 * MIN) } });
+    expect(camposDeRenovacion(null, ahora)).toEqual({});
+    expect(camposDeRenovacion(decidirPausa(base, ts(ahora - 2 * HORA), ahora), ahora)).toEqual({});
   });
 });

@@ -10,7 +10,7 @@ const PROHIBIDO = /pago acreditado|pago verificado|recib[ií]mos? tu pago|acredi
 const fichas = (m: Mundo): Record<string, any> => (m.sd['casabermejo'] ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const todo = (t: ReturnType<typeof hablar>): string[] => [...textos(t), ...t.mensajes.map((x) => JSON.stringify(x.payload)), ...t.avisos.map((x) => x.cuerpo)];
 function conQrAbierto(o: Opciones = {}): Mundo {
-  const m = crear({ modeloDice: modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }), ...o });
+  const m = crear({ entregaPrevia: ENTREGA, modeloDice: modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }), ...o });
   hablar(m, ANA, mTexto('una billetera'));
   hablar(m, ANA, mTexto('quiero pagar'));
   m.dobles['Traer configuración'] = () => panelConQr(450);

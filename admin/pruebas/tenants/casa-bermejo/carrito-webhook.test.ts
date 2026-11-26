@@ -23,8 +23,8 @@ const destinos = (f: J, de: string): string[] => ((((f['connections'] as J)[de] 
 const cabeceras = (m: ReturnType<typeof crear>, numero = PID): J => ({ 'x-novuchat-numero': numero, 'x-novuchat-timestamp': String(m.ahora()), 'x-novuchat-signature': `sha256=${'0'.repeat(64)}` });
 const cuerpo = (op: J = {}): J => ({
   tipo: 'carrito', tenantId: 'casa-bermejo', telefono: ANA, accion: 'responder', pedidoId: 'cat_a1', conversacionId: `wa_${ANA}`, ventanaAbierta: true,
-  items: [{ id: 'billetera-cuero', nombre: 'Billetera de cuero', cantidad: 1, subtotal: 450 }],
-  total: 450, moneda: 'Bs', entrega: 'retiro', costoEnvio: 0, direccion: '', nota: '', descartados: [], ...op,
+  items: [{ id: 'billetera-cuero', nombre: 'Billetera de cuero', cantidad: 1, subtotal: 450, precioCentavos: 45000 }],
+  total: 450, moneda: 'BOB', mercado: 'BO', catalogo: 'externo', entrega: 'retiro', costoEnvio: 0, direccion: '', nota: '', descartados: [], ...op,
 });
 const enviar = (m: ReturnType<typeof crear>, body: J, hdr?: J) => m.turno({ headers: hdr ?? cabeceras(m), body }, { via: WEBHOOK_DEL_CARRITO, tolerarFallo: true });
 
@@ -123,12 +123,8 @@ describe('las conexiones: el carrito entra solo a «Config base» y «Carga de e
 });
 
 describe('un carrito en el turno', () => {
-  // PENDIENTE DE B4-b (la lógica de decisión vive en `bm-venta.js`, `decidir-turno.js` y `armar-mensajes.js`, que son de otro agente). HOY «Decidir turno» no conoce `tipo === 'carrito'`, así que el turno sigue
-  // la ruta de un tipo de mensaje no soportado y el cliente recibiría «solo puedo leer texto, notas de voz, fotos y PDF»: NO es seguro publicar el webhook sin B4-b. Lo que B4-b debe cumplir (y al entrar se vuelven tests):
-  it.todo('Decidir turno decide el plan `carrito` (nunca el mensaje de «tipo no soportado»): QR, pedir lo que falta, «Confirmar pedido» o derivar a recepción');
-  it.todo('un carrito de OTRO comercio (`carrito.tenantId` distinto de casa-bermejo) no se contesta (Walisuma lo corta en su Decidir turno; el módulo común solo valida la forma)');
   const PANEL = (): ReturnType<typeof panelOk> => panelOk();
-  it('un carrito válido llega a «Decidir turno» con tipo carrito y el carrito; hoy NO hay decisión sobre él (B4-b)', () => {
+  it('Decidir turno decide el plan `carrito` (nunca el mensaje de «tipo no soportado»): sin el nombre del retiro, pide lo que falta, sin modelo y sin QR', () => {
     const m = crear({ panel: PANEL() });
     const t = enviar(m, cuerpo());
     expect(t.fallo).toBeNull();
@@ -137,10 +133,28 @@ describe('un carrito en el turno', () => {
     expect((norm['carrito'] as J | undefined)?.['pedidoId']).toBe('cat_a1');
     expect(t.ejecutados.has('Decidir turno')).toBe(true);
     const dec = (t.porNodo['Decidir turno'] ?? [])[0] ?? {};
-    expect(JSON.stringify(dec).length).toBeGreaterThan(0);
+    expect((dec['plan'] as J)['tipo']).toBe('carrito');
+    expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Recibí tu pedido del catálogo/);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/solo puedo leer|texto, notas de voz/i);
     expect(t.mensajes.some((e) => e.tipo === 'image')).toBe(false);
-    for (const x of t.mensajes) expect(x.cuerpo).not.toMatch(/acreditad|verificad|recibimos tu pago|qr/i);
+    for (const x of t.mensajes) expect(x.cuerpo).not.toMatch(/acreditad|verificad|recibimos tu pago/i);
     expect(t.ejecutados.has('Reportar mensaje (entrante)')).toBe(false);
+  });
+  it('NEGADO: un carrito de OTRO comercio (`tenantId` distinto de casa-bermejo) no se contesta: ni el plan carrito, ni un mensaje, ni la ficha con su pedido; el sano sí', () => {
+    const m = crear({ panel: PANEL() });
+    const t = enviar(m, cuerpo({ tenantId: 'otro-comercio', pedidoId: 'cat_x1' }));
+    expect(t.mensajes).toHaveLength(0);
+    expect(((t.porNodo['Decidir turno'] ?? [])[0]?.['plan'] as J | undefined)?.['tipo']).toBe('nada');
+    const ficha = ((m.sd['casabermejo'] ?? {}) as Record<string, J>)[ANA] ?? {};
+    expect(ficha['carrito']).toEqual([]);
+    expect(ficha['pedidoCatalogo']).toBe('');
+    // El panel de ESTE número es de casa-bermejo: un carrito que dice ser de casa-bermejo pero cuyo panel es de otro tampoco se contesta.
+    const m2 = crear({ panel: panelOk({ tenantId: 'otro-comercio' }) });
+    expect(enviar(m2, cuerpo({ pedidoId: 'cat_x2' })).mensajes).toHaveLength(0);
+    // Control: el mismo cuerpo sano sí se contesta.
+    expect(enviar(crear({ panel: PANEL() }), cuerpo({ pedidoId: 'cat_x3' })).mensajes).toHaveLength(1);
   });
   it('un webhook para otro phoneNumberId no hace nada', () => {
     const m = crear({ panel: PANEL() });

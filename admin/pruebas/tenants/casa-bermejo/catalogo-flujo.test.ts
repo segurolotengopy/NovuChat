@@ -15,7 +15,7 @@ const PROHIBIDO = /pago acreditado|pago verificado|recib[ií]mos? tu pago|acredi
 
 describe('el precio sale del catálogo del servidor', () => {
   it('el resumen y el monto usan el precio de NovuTienda; si el servidor cambia el precio, cambia el pedido', () => {
-    const m = crear({ catalogo: catalogoOk({}, [item({ precio: 500, precioCentavos: 50000 })]), modeloDice: pide([{ id: BIL, cantidad: 2, precio: 1 }], { entrega: ENTREGA }) });
+    const m = crear({ entregaPrevia: ENTREGA, catalogo: catalogoOk({}, [item({ precio: 500, precioCentavos: 50000 })]), modeloDice: pide([{ id: BIL, cantidad: 2, precio: 1 }], {}) });
     const t = hablar(m, ANA, mTexto('dos billeteras'));
     expect(textos(t).join(' ')).toMatch(/Total: Bs 1\.000/);
     expect(fichas(m)[ANA].carrito).toEqual([{ id: BIL, cantidad: 2, detalle: '' }]);
@@ -60,7 +60,7 @@ describe('stock y disponibilidad', () => {
 
 describe('costo en mensajes por conversación (compuerta del diseño)', () => {
   it('un turno de conversación = 1 mensaje al cliente y ningún aviso; el turno del QR = 2 (resumen + imagen); ninguno dice «acreditado»', () => {
-    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) });
+    const m = crear({ entregaPrevia: ENTREGA, modeloDice: pide([{ id: BIL, cantidad: 1 }], {}) });
     const t1 = hablar(m, ANA, mTexto('una billetera'));
     expect(t1.mensajes).toHaveLength(1);
     expect(t1.avisos).toHaveLength(0);
@@ -120,7 +120,7 @@ describe('Argentina (B4a): catálogo en pesos y pedido anotado; el pago por alia
     expect(textos(t).join(' ')).not.toMatch(/Bs/);
   });
   it('NEGADO: al confirmar el pedido NO se emite un QR de Bolivia: queda anotado, 1 aviso al comercio con el total en ARS y el botón; nada de «acreditado»', () => {
-    const m = crear({ catalogo: catAr(), modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) });
+    const m = crear({ entregaPrevia: ENTREGA, catalogo: catAr(), modeloDice: pide([{ id: BIL, cantidad: 1 }], {}) });
     hablar(m, ARG, mTexto('una billetera'));
     const t = hablar(m, ARG, mTexto('quiero pagar'));
     expect(t.mensajes.every((x) => x.tipo !== 'image')).toBe(true);
@@ -159,7 +159,7 @@ describe('Argentina (B4a): catálogo en pesos y pedido anotado; el pago por alia
     expect(prompt).not.toMatch(/precio en Bs|envía el sistema cuando el cliente confirma/);
   });
   it('NEGADO: si el aviso al comercio no sale, el cliente lee que escriba a recepción con el botón (no que recepción coordina)', () => {
-    const m = crear({ catalogo: catAr(), aviso: 'error', modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) });
+    const m = crear({ entregaPrevia: ENTREGA, catalogo: catAr(), aviso: 'error', modeloDice: pide([{ id: BIL, cantidad: 1 }], {}) });
     hablar(m, ARG, mTexto('una billetera'));
     const t = hablar(m, ARG, mTexto('quiero pagar'));
     expect(textos(t).join(' ')).toMatch(/no pude avisar a recepción/i);

@@ -37,7 +37,7 @@ describe('cuando solo falta el modo, el mismo mensaje lleva los dos botones', ()
   it('NEGADO: si falta algo MÁS que el modo (sin piezas, o sin nombre y sin modo… con modo ya elegido) NO hay botones de entrega', () => {
     const m = crear({ modeloDice: modelo('Hola, ¿qué busca?') });
     expect(botonesDe(hablar(m, ANA, mTexto('hola')))).toEqual([]);
-    const m2 = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: { modo: 'Retiro en tienda' } }) });
+    const m2 = crear({ entregaPrevia: { modo: 'Retiro en tienda' }, modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) });
     expect(botonesDe(hablar(m2, ANA, mTexto('una billetera'))).some((b) => b.id.startsWith('entrega:'))).toBe(false);
   });
   it('NEGADO: un comercio que NO ofrece envío solo ofrece el botón que puede cumplir', () => {
@@ -147,7 +147,7 @@ describe('NUNCA se le pide escribir «pagar» (Andres, 23/11/2026), en ningún t
     const base = { tratamiento: usted ? 'usted' : 'tu' };
     it(`${usted ? 'usted' : 'tuteo'}: pedido listo (redacción del modelo rechazada → texto del código), con el botón y con un QR abierto, ningún texto lo pide`, () => {
       // La redacción del modelo habla de un «descuento» (prohibido): sale el texto de estado del código.
-      const m = crear({ base, modeloDice: modelo('Tenemos un descuento especial.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA_LISTA }) });
+      const m = crear({ entregaPrevia: ENTREGA_LISTA, base, modeloDice: modelo('Tenemos un descuento especial.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) });
       const t1 = hablar(m, ANA, mTexto('una billetera'));
       expect(botonesDe(t1).map((b) => b.title)).toEqual(TITULOS);
       expect(todo(t1)).not.toMatch(TEXTO_PAGAR);

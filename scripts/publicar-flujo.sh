@@ -67,7 +67,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
 
-FLUJO="Flujos/demo-a-agendamiento.json"
+FLUJO="Flujos/clientes/demo-a/demo-a-agendamiento.json"
 APLICAR=0
 FORZAR=0
 REINICIAR=0
@@ -1244,7 +1244,7 @@ if tipos_nuevos and not aplicar:
 # las decide el repositorio, y vaciarlas a proposito tiene que poder hacerse (prohibicion 3: cobros). Nunca se conserva un valor
 # del vivo que empiece con «=» (una expresion). Se informan clave y longitud, nunca el valor.
 NODOS_DE_CONFIG = {"Config base", "Config del negocio"}
-CLAVES_DEL_COMERCIO = {"costoDeEntrega", "enlaceCatalogo", "ubicacionTienda", "horarioTienda", "hostsFoto"}
+CLAVES_DEL_COMERCIO = {"costoDeEntrega", "enlaceCatalogo", "ubicacionTienda", "mapaTienda", "horarioTienda", "hostsFoto"}
 def _del_comercio(clave):
     return clave in CLAVES_DEL_COMERCIO or str(clave).startswith("avisoRespaldo")
 conservados_cfg = []

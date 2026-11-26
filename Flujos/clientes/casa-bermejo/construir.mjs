@@ -40,6 +40,22 @@ import { problemasDeReferencias } from '../../src/core/sin-agente/referencias.mj
 // B4 (24/11/2026): el carrito del catálogo web (módulo catalogo-web, común): el webhook, su guardia y la rama que lo lee en «Carga de entrada».
 import { cargaConCarrito, hallazgosDelCarrito, injertarCarrito, marcadorDeRuta, WEBHOOK_DEL_CARRITO } from '../../src/modulos/catalogo-web/carrito-del-catalogo.mjs';
 
+/**
+ * K1 (B4, 25/11/2026): el carrito que llega a «Normalizar entrada» tiene que traer lo que `validar-carrito.js` YA valida y la rama `carga-del-carrito.js` del módulo catalogo-web hoy DESCARTA: `mercado` y `catalogo: 'externo'`
+ * (con ellos `pcMercadoCoincide` deja salir el QR directo) y, por ítem, `precioCentavos` y `detalle` (con ellos `pcLineasDelCarrito` avisa un precio que no es el vivo). Mientras el módulo no los reenvíe él mismo, este armador los
+ * reenvía con DOS reemplazos de texto exactos sobre el código del módulo (que no se edita). Si el módulo cambia y un ancla ya no está, el armado FALLA (nunca se arma un flujo sin ellos en silencio); si el módulo ya los reenvía,
+ * no se toca nada y esta función se puede borrar.
+ */
+const ANCLA_K1_CARRITO = 'itemsTotal: Number(v.itemsTotal) || 0,';
+const ANCLA_K1_ITEM = "return { id: /^[A-Za-z0-9_.:-]{1,100}$/.test(id) ? id : '', nombre: String(x.nombre), cantidad: x.cantidad, subtotal: x.subtotal };";
+export function conCamposK1(codigo) {
+  if (/\bmercado:\s*String\(v\.mercado/.test(codigo) || /\bprecioCentavos:\s*x\.precioCentavos/.test(codigo)) return codigo; // el módulo ya los reenvía
+  if (codigo.split(ANCLA_K1_CARRITO).length !== 2 || codigo.split(ANCLA_K1_ITEM).length !== 2) throw new Error('casa-bermejo: el módulo catalogo-web cambió «carga-del-carrito.js»: ya no se pueden reenviar `mercado`, `catalogo`, `precioCentavos` y `detalle` (K1); hay que reenviarlos en el módulo');
+  return codigo
+    .replace(ANCLA_K1_CARRITO, () => `${ANCLA_K1_CARRITO} mercado: String(v.mercado || ''), catalogo: String(v.catalogo || ''),`)
+    .replace(ANCLA_K1_ITEM, () => "return { id: /^[A-Za-z0-9_.:-]{1,100}$/.test(id) ? id : '', nombre: String(x.nombre), cantidad: x.cantidad, subtotal: x.subtotal, ...(Number.isSafeInteger(x.precioCentavos) ? { precioCentavos: x.precioCentavos } : {}), ...(typeof x.detalle === 'string' && x.detalle !== '' ? { detalle: x.detalle } : {}) };");
+}
+
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/casa-bermejo/casa-bermejo.json');
 export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../../src/core/receptor/entrada-del-receptor.plantilla.json');
@@ -251,6 +267,13 @@ const CLAVE_DE_SECRETO = /token|secret|secreto|clave|password|contrase|apikey|ap
 const CLAVES_LOCALES = new Set(['nombreFlujo', 'nombreFlujoPrueba', 'credenciales', 'receptor', 'catalogoUrl', 'pruebaRuta', 'configBase']);
 const esMarcador = (v) => typeof v === 'string' && MARCADOR.test(v);
 const esObjeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** El enlace de Google Maps de la tienda (misma regla que `bmMapaValido` de `bm-venta.js`): https a un anfitrión de Maps, ≤200, sin espacios, sin segmentos `.`/`..` ni codificados (`%2e`, `%2f`, `%5c`) y sin el recurso `/url`. */
+const MAPA_GOOGLE = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+function mapaGoogleValido(v) {
+  if (typeof v !== 'string' || v.length === 0 || v.length > 200 || !MAPA_GOOGLE.test(v) || /%2e|%2f|%5c/i.test(v)) return false;
+  const ruta = v.replace(/^https:\/\/[^/?#]+/, '').split(/[?#]/)[0];
+  return !ruta.split('/').some((x) => x === '.' || x === '..') && !/^\/url(?:[/?#]|$)/i.test(ruta);
+}
 /**
  * La forma de cada valor LOCAL (un marcador siempre es válido: queda sin sustituir y la guardia de publicación lo exige). Es una LISTA BLANCA: un texto libre solo se puede
  * poner desde aquí y con un largo máximo; lo que no figura (por ejemplo `mensajeComercioSuspendido`, que dice lo que el asistente le promete al cliente) NO se cambia por un archivo local.
@@ -274,6 +297,8 @@ const FORMAS_LOCALES = {
   // El enlace del catálogo web del comercio (https): sale como botón «Ver catálogo».
   'configBase.enlaceCatalogo': (v) => v === '' || v.length <= 300 && /^https:\/\/[a-z0-9.-]+(\/[^\s"'\\{}]*)?$/.test(v),
   'configBase.horarioTienda': (v) => v.length <= 200,
+  // UBICACIÓN DE LA TIENDA (25/11/2026): el enlace de Google Maps de la tienda (dato del comercio). Solo https a Google Maps (mismos anfitriones que `enlaceDeMapaValido` de la consola); vacío = sin dato.
+  'configBase.mapaTienda': (v) => v === '' || mapaGoogleValido(v),
   'configBase.nombreNegocio': (v) => v.length >= 2 && v.length <= 80,
 };
 
@@ -676,7 +701,7 @@ export function armarCasaBermejo(proyecto, datos, v, origenReceptor = leerRecept
       const fuente = proyecto.paquetes[`vd-${vd[1]}`];
       if (!fuente || fuente.length !== 1) throw new Error(`${donde} · ${n.name}: el config no declara el nodo común «${vd[1]}»`);
       // «Carga de entrada» lleva antepuesta la rama del carrito del catálogo web (módulo catalogo-web; el código común del core no se toca).
-      const codigoNodo = vd[1] === 'carga-de-entrada' ? cargaConCarrito(fuente[0]) : fuente[0];
+      const codigoNodo = vd[1] === 'carga-de-entrada' ? conCamposK1(cargaConCarrito(fuente[0])) : fuente[0];
       n.parameters.jsCode = [...proyecto.librerias, ...proyecto.comun, codigoNodo].join('\n\n') + '\n';
     }
   }

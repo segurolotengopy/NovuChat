@@ -130,12 +130,12 @@ for (let i = 0; i < $input.all().length; i++) {
   const fallo = item.json.error !== undefined
     || (item.json.output === undefined && item.json.text === undefined);
   const bruto = fallo ? '' : String(item.json.output ?? item.json.text ?? '').trim();
-  const enviarQr = /\[ENVIAR_QR\]/i.test(bruto);
-  const pedidoConfirmado = /\[PEDIDO_CONFIRMADO\]/i.test(bruto);
+  let enviarQr = /\[ENVIAR_QR\]/i.test(bruto);
+  let pedidoConfirmado = /\[PEDIDO_CONFIRMADO\]/i.test(bruto);
   // [TRANSFERIR]: el modelo pide pasar con una persona del negocio. La marca la
   // convierte el codigo en aviso al dueno (una vez por telefono y ventana de
   // 24 h) y en un boton para escribirle directo, dentro del mismo mensaje.
-  const pideTransferir = /\[TRANSFERIR\]/i.test(bruto);
+  let pideTransferir = /\[TRANSFERIR\]/i.test(bruto);
   const numeroDuenoLimpio = String(ent.numeroDueno ?? '').replace(/\D/g, '');
   // [ENVIAR_CATALOGO]: el agente pide derivar al catalogo web propio. La marca
   // se obedece SIEMPRE, aunque la configuracion diga que esta apagado: quien
@@ -167,6 +167,61 @@ for (let i = 0; i < $input.all().length; i++) {
   // se ignora, se deja constancia y el texto no promete nada (filtro PROMESA).
   let transferir = pideTransferir && numeroDuenoLimpio !== '';
   if (pideTransferir && !transferir) avisos.push('transferencia_sin_numero');
+
+  // --- CANDADO DE EXISTENCIAS: RED SECUNDARIA (24/11/2026) --------------------
+  // El Demo B ofrecio una gaseosa con existencias 0. `Config del negocio` ya saca lo agotado del catalogo del prompt (`agotadosNombres`,
+  // texto JSON con los nombres que el servidor marco `agotado`), pero el modelo puede nombrar uno igual. Si en el mismo turno sale
+  // [ENVIAR_QR] o [PEDIDO_CONFIRMADO] y el texto NOMBRA un item agotado, no sale el QR ni se confirma el pedido: se pasa con una persona
+  // (politica del 21/09: aviso + boton). Es una red SECUNDARIA y por TEXTO: el cobro por chat sigue tomando el total del texto del modelo
+  // (`Preparar QR de cobro`), no de una lista de items; ese hueco de fondo esta anotado en docs/arquitectura/ y no se resuelve aca.
+  // Comparacion por PALABRAS, normalizada: sin tildes ni mayusculas ni signos. Dos palabras son la misma si comparten alguna variante de
+  // numero (tal cual, sin «s», sin «es», «-ces» -> «z»): «leches»/«leche», «nueces»/«nuez», «gaseosas»/«gaseosa». El nombre del item se busca
+  // como secuencia contigua de palabras, completo o sin lo que va entre parentesis; una palabra corta («Té») se compara entera, nunca como
+  // pedazo de otra. Un agotado que coincide DENTRO de un nombre disponible mas largo presente en el texto («Coca» agotada y «Coca Zero»
+  // disponible) no cuenta. Lo contrario es el lado seguro y se deja asi: «la gaseosa no hay; te cobro el jugo [ENVIAR_QR]» tambien se bloquea.
+  let agotadosNombres = [];
+  try { agotadosNombres = JSON.parse(String(ent.agotadosNombres || '[]')); } catch (e) { agotadosNombres = []; }
+  let disponiblesNombres = [];
+  try { disponiblesNombres = JSON.parse(String(ent.disponiblesNombres || '[]')); } catch (e) { disponiblesNombres = []; }
+  const palabrasDe = (t) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z0-9ñ]+/).filter((w) => w !== '');
+  const variantes = (w) => {
+    const v = new Set([w]);
+    if (w.length > 2 && /s$/.test(w)) v.add(w.slice(0, -1));
+    if (w.length > 3 && /es$/.test(w)) v.add(w.slice(0, -2));
+    if (w.length > 4 && /ces$/.test(w)) v.add(w.slice(0, -3) + 'z');
+    return v;
+  };
+  const mismaPalabra = (a, b) => { const va = variantes(a); for (const x of variantes(b)) if (va.has(x)) return true; return false; };
+  const formasDe = (n) => [palabrasDe(n), palabrasDe(String(n ?? '').replace(/\([^)]*\)/g, ' '))].filter((q) => q.length > 0);
+  // Todos los tramos [desde, hasta) del texto donde aparece alguno de los nombres.
+  const tramosDe = (hay, nombres) => {
+    const r = [];
+    for (const n of (Array.isArray(nombres) ? nombres : [])) {
+      for (const q of formasDe(n)) {
+        if (q.join('').length < 2) continue;
+        for (let k = 0; k + q.length <= hay.length; k++) {
+          if (q.every((w, m) => mismaPalabra(w, hay[k + m]))) r.push([k, k + q.length]);
+        }
+      }
+    }
+    return r;
+  };
+  const nombraAgotado = (t) => {
+    const hay = palabrasDe(t);
+    const disp = tramosDe(hay, disponiblesNombres);
+    return tramosDe(hay, agotadosNombres).some(([a, b]) => !disp.some(([c, d]) => c <= a && b <= d && (d - c) > (b - a)));
+  };
+  if ((enviarQr || pedidoConfirmado) && !fallo && nombraAgotado(texto)) {
+    enviarQr = false;
+    pedidoConfirmado = false;
+    pideTransferir = true;
+    transferir = numeroDuenoLimpio !== '';
+    avisos.push('candado_agotado');
+    const quienAtiende = String(ent.nombreNegocio ?? '').trim() || 'el negocio';
+    texto = transferir
+      ? 'Disculpa, uno de los productos de tu pedido no está disponible por ahora, así que todavía no te envío el QR de pago. Toca el botón y escríbele directo a ' + quienAtiende + ' para revisar tu pedido.'
+      : 'Disculpa, uno de los productos de tu pedido no está disponible por ahora, así que todavía no te envío el QR de pago. Dime qué prefieres cambiar y lo revisamos.';
+  }
 
   // ¿EL TEXTO VA EN EL PIE DE LA IMAGEN, O APARTE? (23/09/2026)
   //

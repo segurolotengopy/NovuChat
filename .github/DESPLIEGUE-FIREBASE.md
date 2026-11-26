@@ -219,6 +219,11 @@ del proyecto de producción. Lo que hay:
     `destinatario`, `enlaceHosts`, `enlaceRepos`, `avisosDenegar`, `topeDiario`) vive en el documento
     `plataforma/alertas` de Firestore, no en el `.env` (el de producción es de dos nombres); se escribe con
     `admin/scripts/plataforma/alertas-config.mjs` (seco por omisión, con respaldo y reversa).
+  - **Todo secreto nuevo que una Function declare debe existir en STAGING ANTES de fusionar** (lección del 25/11/2026:
+    `NOVUTIENDA_CATALOGO` se creó en producción pero no en staging y `desplegar-staging` falló desde #1096 con
+    «In non-interactive mode but have no value for the secret»). Se crea con `scripts/preparar-staging.sh <fase>`
+    (`novutienda` crea `NOVUTIENDA_CONFIRMAR` y `NOVUTIENDA_CATALOGO`, este con `{}` y sin ningún token), en seco y
+    luego con `--aplicar`. El PR que agrega el `defineSecret` declara en su descripción que el secreto ya existe en staging.
   - **Ampliar la reserva de clientes** (más de 20) exige un paso **a mano**:
     dar `secretAccessor` sobre cada secreto nuevo a la cuenta de las Functions,
     **`sa-functions`**, secreto por secreto.

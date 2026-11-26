@@ -271,7 +271,7 @@ describe('4. Los dos «Preparar …» son el MISMO módulo que en reservas, y en
   const manifiesto = JSON.parse(readFileSync(join(CARPETA_FLUJOS, 'manifiestos/demo-b-venta-cobro.json'), 'utf8')) as
     { codigo: Record<string, string> };
   it('el manifiesto los inyecta desde el mismo archivo que el Demo A y Platinum', () => {
-    const a = JSON.parse(readFileSync(join(CARPETA_FLUJOS, 'manifiestos/demo-a-agendamiento.json'), 'utf8')) as
+    const a = JSON.parse(readFileSync(join(CARPETA_FLUJOS, 'manifiestos/clientes/demo-a/demo-a-agendamiento.json'), 'utf8')) as
       { codigo: Record<string, string> };
     for (const n of ['Preparar transcripción', 'Preparar imagen']) {
       expect(manifiesto.codigo[n]).toEqual(a.codigo[n]);

@@ -18,6 +18,8 @@ const BM_TOPE_FICHAS = 1000;
 const BM_TOPE_IDS = 40;
 const BM_VENTANA_FUERA_DE_PAIS_MS = 24 * 60 * 60 * 1000;   // el texto fijo a un número de otro país sale a lo más una vez en 24 h
 const BM_MODELO = 'gemini-3.5-flash-lite';
+// El comercio de ESTE flujo: un carrito del catálogo web de otro `tenantId` no se contesta (B4, K1).
+const BM_TENANT_ID = 'casa-bermejo';
 // El mercado sale del prefijo del remitente (`ceMercadoDePrefijo`: 591 → BO, 54 → AR); otro país no tiene mercado.
 
 // NIEGA_IA (prohibición 4 de CLAUDE.md): ningún texto que ve el cliente puede negar que es una IA. COPIA DECLARADA de la expresión de `rroca-antonio` (`RA_NIEGA_IA`; HUECO en PROPIO.md: no hay fuente común), idéntica salvo el nombre; una prueba de Walisuma la compara con la de Walisuma. Se aplica al texto NORMALIZADO (`bmNorm`).
@@ -26,8 +28,7 @@ const BM_SALUDO_MINIMO = 'Hola, soy el asistente virtual.';
 
 // Lo que el cliente ve cuando manda algo que este canal no lee (sticker, ubicación, contacto, mensaje no soportado o un medio sin id): texto cortés fijo, sin modelo, una sola invitación y ninguna promesa.
 const BM_TEXTO_CORTES = 'Recibí tu mensaje, pero por este chat solo puedo leer texto, notas de voz, fotos y archivos PDF.\n\nCuéntame por escrito o con una nota de voz en qué te puedo ayudar.';
-// Un número de otro país (prefijo no permitido en «Config del negocio»): un texto fijo, sin modelo, sin medios y sin promesas. PROVISIONAL: el texto definitivo lo decide el comercio.
-const BM_TEXTO_FUERA_DE_PAIS = 'Hola, soy el asistente virtual. Por este chat atendemos pedidos de números de Bolivia y de Argentina.\n\nGracias por escribirnos.';
+// Un número de otro país NO tiene texto propio (decisión del 20/11/2026): se atiende como Bolivia y la tienda recibe un aviso (`bmResolver`, `otro_pais`).
 
 function bmTexto(v) {
   return String(v === undefined || v === null ? '' : v).trim();
@@ -101,6 +102,7 @@ function bmFichaBase() {
     v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, fueraDePaisMs: 0, avisoPaisMs: 0,
     carrito: [], entrega: bmEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, avisoNoCuadraMs: 0,
     aliasPedidoId: '', aliasEstado: '', aliasVenceMs: 0, aliasMontoCent: 0, aliasAr: '',
+    catalogoOfrecido: false, pedidoCatalogo: '', qrSoloCatCent: 0, derivadoMs: 0,
   };
 }
 function bmNumero(v, tope) {
@@ -155,6 +157,14 @@ function bmFichaVigente(e, ahoraMs) {
     aliasVenceMs: bmNumero(e.aliasVenceMs),
     aliasMontoCent: bmNumero(e.aliasMontoCent, 100000000),
     aliasAr: typeof e.aliasAr === 'string' && /^[A-Za-z0-9._-]{6,30}$/.test(e.aliasAr) ? e.aliasAr : '',
+    // El botón «Ver catálogo» sale UNA vez por conversación (R2).
+    catalogoOfrecido: e.catalogoOfrecido === true,
+    // El pedido del checkout web (`cat_…`) que el pedido de WhatsApp reemplaza (K2: viaja como `reemplaza` en `qr_enviado`); '' si el cliente no vino del catálogo web.
+    pedidoCatalogo: typeof e.pedidoCatalogo === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(e.pedidoCatalogo) ? e.pedidoCatalogo : '',
+    // El total VIVO (centavos) con el que un carrito del catálogo quedó «listo para pagar en cuanto se complete la entrega» (`pcQrSoloAlCompletar`); 0 = el QR sale solo con el botón «Confirmar pedido».
+    qrSoloCatCent: bmNumero(e.qrSoloCatCent, 100000000),
+    // Cuándo se pasó al cliente con recepción por última vez (R58: tras derivar, el asistente no ofrece sumar piezas).
+    derivadoMs: bmNumero(e.derivadoMs),
   };
 }
 function bmYaVisto(ficha, id) {
@@ -241,11 +251,16 @@ const BM_TEXTO_ARCHIVO_NO_ABIERTO = 'No pude abrir ese archivo.\n\n¿Me lo reenv
 const BM_TEXTO_IMAGEN = 'Recibí tu imagen, pero por aquí no puedo verla con detalle.\n\nCuéntame por escrito qué pieza te interesa y con gusto te ayudo.';
 const BM_TEXTO_DOCUMENTO = 'Recibí tu archivo, pero por aquí no puedo leerlo con detalle.\n\nCuéntame por escrito qué pieza te interesa y con gusto te ayudo.';
 const BM_TEXTO_SIN_PIEZA = 'No encuentro eso en nuestro catálogo. Si busca otra pieza, cuénteme cuál y se la muestro.';
+// R59: los precios se leen del catálogo en CADA turno; esto es lo único que se afirma de ellos.
+const BM_TEXTO_PRECIOS_VIVOS = 'Los precios que te indico son los que figuran en el catálogo en este momento.';
 const BM_TEXTO_MODELO_SIN_REDACCION = 'Cuéntame un poco más de lo que buscas y con gusto te ayudo a encontrar la pieza.';
 const BM_TEXTO_COMPROBANTE_ILEGIBLE = 'No pude leer bien tu comprobante.\n\n¿Me envías una foto más nítida, con el monto, la fecha y la cuenta de destino a la vista?';
 const BM_INTROS = {
   modelo_caido: 'Tuve un inconveniente para atender tu consulta en este momento.',
   sin_configuracion: 'En este momento no puedo consultar el catálogo.',
+  // UBICACIÓN DE LA TIENDA (25/11/2026): sin dirección ni mapa cargados no se inventa nada; el único ofrecimiento es pasar con recepción (aviso + botón).
+  ubicacion_sin_dato: 'Por ahora no tengo la dirección de la tienda para dártela: eso lo ve directamente una persona del equipo.',
+  horario_sin_dato: 'Por ahora no tengo cargado el horario de la tienda: eso lo ve directamente una persona del equipo.',
   quiere_hablar: 'Con gusto: esto lo ve directamente una persona del equipo.',
   corporativo: 'Los pedidos por volumen y los regalos corporativos los coordina directamente una persona del equipo.',
   factura: 'La factura la gestiona directamente recepción.',
@@ -254,6 +269,8 @@ const BM_INTROS = {
   comprobante_sin_cotejo: 'Recibí tu comprobante, pero no pude compararlo con tu pedido desde aquí.',
   comprobante_ya_visto: 'Ya tengo registrado tu comprobante anterior.',
   monto_invalido: 'No pude calcular el monto de tu pedido.',
+  // El carrito del catálogo web llegó pero ninguna pieza se vende hoy (o ninguna se reconoce): no se inventa un pedido; lo ve recepción.
+  carrito_sin_piezas: 'Recibí tu pedido del catálogo, pero ninguna de sus piezas está disponible en este momento.',
   pedido_sin_cobro: 'Anoté tu pedido, pero el pago por QR no está disponible por ahora.',
   pedido_ar: 'Anoté tu pedido en pesos argentinos. El pago por transferencia lo coordina recepción: no hagas ninguna transferencia todavía.',
   // Argentina con el cobro por alias: solo sale si el pedido se reportó al servidor. El botón «Pagar» (id `pedido:alias`) lo atiende el CÓDIGO (pide el alias; si el cobro está apagado, el texto de `alias_cerrado`).

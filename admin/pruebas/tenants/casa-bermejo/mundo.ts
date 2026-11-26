@@ -21,6 +21,7 @@ export const ANA = '59100000011';
 export const BETO = '59100000022';
 export const EXTRANJERO = '5511900000033'; // prefijo 55 (Brasil): fuera de los prefijos permitidos (591 y 54)
 export const REC = '59100000031'; // recepción
+export const ARGENTINO = ['54', '9', '11', '5550', '0001'].join(''); // el teléfono de Argentina de las suites (prefijo 54)
 export const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
 export const SUSPENDIDO = 'En este momento no podemos atenderte por este medio. Gracias por escribirnos.';
 
@@ -65,7 +66,9 @@ export interface Opciones {
   cancelar?: { statusCode: number; body: J } | 'cae';
   /** Cómo contesta Meta al aviso al comercio: 'acepta' (por omisión), 'error' o 'lanza'. */
   aviso?: 'acepta' | 'error' | 'lanza';
-  /** No sembrar en la ficha la `entrega` con `modo` que devuelve el modelo (para probar que el código la ignora). */
+  /** Una entrega que ya estaba en la ficha de ANA, BETO y el argentino ANTES del turno (sembrado EXPLÍCITO; ver `sembrarEntrega`). El modelo ya no puede meter una entrega con modo: el código la ignora. */
+  entregaPrevia?: Record<string, string>;
+  /** Sin efecto (el sembrado desde la respuesta del modelo se quitó el 25/11/2026); se conserva para no tocar las suites que lo declaran. */
   sinSembrar?: boolean;
   /** Valores de «Config base» que la prueba quiera cambiar. */
   base?: Record<string, unknown>;
@@ -76,7 +79,7 @@ export interface Opciones {
 export const CATALOGO = [
   { id: 'bufanda-vicuna', nombre: 'Bufanda de vicuña', descripcion: 'Punto diagonal, 100 % vicuña.', area: 'Accesorios · Bufandas y chales', precio: 7795, moneda: 'BOB', activo: true },
   { id: 'billetera-cuero', nombre: 'Billetera de cuero', descripcion: 'Cuero curtido, tres compartimentos.', area: 'Accesorios · Billeteras', precio: 450, moneda: 'BOB', activo: true },
-  { id: 'llavero-llama', nombre: 'Llavero de llama', descripcion: 'Hilo de alpaca.', area: 'Hogar y oficina · Llaveros', precio: 35.5, moneda: 'BOB', activo: true },
+  { id: 'llavero-llama', nombre: 'Llavero de llama', descripcion: 'Hilo de alpaca.', area: 'Hogar y oficina · Llaveros', precio: 36, moneda: 'BOB', activo: true },
   { id: 'tapiz-mujer-rio', nombre: 'Tapiz mujer río 66 x 31 cm', descripcion: 'Tapiz tejido a mano.', area: 'Hogar y oficina · Tapices', activo: true },
   { id: 'licor-de-coca', nombre: 'Licor de coca 50 ml', descripcion: 'Licor.', area: 'Hogar y oficina · Gourmet', precio: 60, moneda: 'BOB', activo: false },
 ];
@@ -111,8 +114,6 @@ export const COMPROBANTE = { categoria: 'comprobante', texto: 'Transferencia', m
 /** Lo que contesta el modelo (JSON de salida): texto, líneas, entrega y quiereHablar. */
 export const modelo = (texto: string, extra: J = {}): J => ({ texto, lineas: [], entrega: {}, facturacion: {}, quiereHablar: false, ...extra });
 export const ENTREGA = { modo: 'Retiro en tienda', ciudad: 'La Paz', direccion: '', nombre: 'Ana Pérez' };
-/** Quién habla en este turno (lo fija `hablar`): la siembra de la entrega previa escribe en SU ficha. */
-const quien: { from: string } = { from: '' };
 export function crear(o: Opciones = {}): Mundo {
   let mundo: Mundo | undefined;
   const envio = o.envio ?? {};
@@ -144,13 +145,6 @@ export function crear(o: Opciones = {}): Mundo {
       if (d === 'cae') return { error: { message: 'servicio no disponible', code: 503 } };
       if (d === null) return {};
       const v = typeof d === 'function' ? d(ll) : d;
-      // ENTREGA PREVIA (rediseño del 25/11/2026): el código ya NO toma el modo que propone el modelo (solo los botones o una frase inequívoca) ni un nombre que el asistente no pidió. Las suites que parten de «el cliente ya eligió
-      // el modo y dio sus datos» lo expresan con una `entrega` COMPLETA del modelo (con `modo`): el mundo la SIEMBRA en la ficha de quien habla, como si esa charla ya hubiera ocurrido. Con `sinSembrar` no se siembra nada.
-      if (!o.sinSembrar && typeof v !== 'string' && v && typeof v['entrega'] === 'object' && v['entrega'] && typeof (v['entrega'] as J)['modo'] === 'string' && (v['entrega'] as J)['modo'] !== '' && quien.from) {
-        const mapa = ((mundo!.sd['casabermejo'] ??= {}) as Record<string, J>);
-        const previa = (mapa[quien.from] ?? {}) as J;
-        mapa[quien.from] = { ...previa, entrega: { modo: '', ciudad: '', direccion: '', nombre: '', documento: '', cp: '', provincia: '', flota: '', ...(previa['entrega'] as J | undefined), ...(v['entrega'] as J) } };
-      }
       return gemini(typeof v === 'string' ? v : JSON.stringify(v));
     },
     'Enviar aviso': (ll) => {
@@ -175,10 +169,23 @@ export function crear(o: Opciones = {}): Mundo {
       ...(o.base ?? {}),
     },
   });
+  if (o.entregaPrevia) for (const tel of [ANA, BETO, ARGENTINO]) sembrarEntrega(mundo, tel, o.entregaPrevia);
   return mundo;
 }
+/**
+ * SEMBRADO EXPLÍCITO de la entrega de una ficha ANTES del turno («el cliente ya eligió el modo y dio sus datos en una charla anterior»). Solo acepta lo que el código aceptaría de un cliente:
+ * un modo de la lista, un nombre sin cifras y de 60 caracteres o menos, un CI de 5 a 13 dígitos; cualquier otra cosa lanza. NO sale de la respuesta del modelo (el 25/11/2026 se quitó ese atajo: escondía defectos de `bmEntregaDeTurno`).
+ */
+export function sembrarEntrega(m: Mundo, from: string, entrega: Record<string, string>): void {
+  if (entrega['modo'] && !['Retiro en tienda', 'Envío'].includes(entrega['modo'])) throw new Error('sembrarEntrega: modo no válido');
+  if (entrega['nombre'] && (!/^[\p{L} .'-]{1,60}$/u.test(entrega['nombre']))) throw new Error('sembrarEntrega: el nombre no lo aceptaría el código');
+  if (entrega['documento'] && !/^\d{5,13}$/.test(entrega['documento'])) throw new Error('sembrarEntrega: el CI no lo aceptaría el código');
+  const mapa = ((m.sd['casabermejo'] ??= {}) as Record<string, J>);
+  const previa = (mapa[from] ?? {}) as J;
+  mapa[from] = { ultimoMs: AHORA - 1000, ...previa, entrega: { modo: '', ciudad: '', direccion: '', nombre: '', documento: '', cp: '', provincia: '', flota: '', ...(previa['entrega'] as J | undefined), ...entrega } };
+}
 export const hablar = (m: Mundo, from: string, msg: J, op: { wamid?: string; entrega?: string; phoneId?: string; contacto?: string; toleraFallo?: boolean } = {}): ResultadoTurno =>
-  (quien.from = from, m.turno(entrega(valorMeta(msg, from, op), op.entrega), op.toleraFallo ? { tolerarFallo: true } : {}));
+  (m.turno(entrega(valorMeta(msg, from, op), op.entrega), op.toleraFallo ? { tolerarFallo: true } : {}));
 export const textos = (t: ResultadoTurno): string[] => t.mensajes.map((e) => e.cuerpo);
 /** Los nodos de red que llaman a un modelo, a una descarga o al guardado de medios: con la pausa por Tomar, ninguno corre. */
 export const NODOS_DE_MEDIOS_Y_MODELO = ['Obtener URL del medio (general)', 'Descargar medio', 'Transcribir audio', 'Describir imagen', 'Describir documento', 'Guardar comprobante', 'Conversar con el modelo'];
@@ -207,3 +214,15 @@ export function modeloAdverso(): (ll: LlamadaDoble) => J {
 }
 /** El toque de un botón de respuesta. */
 export const mToque = (id: string, title: string): J => ({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title } } });
+
+/**
+ * Un mundo con el pedido LISTO por la CAPTURA REAL: la billetera, el botón «Recojo en tienda» y el nombre que devuelve el modelo (validado por el código). Termina en el resumen con «Confirmar pedido» y «Corregir datos».
+ * El modelo es `modeloDeNombre()` salvo que `o.modeloDice` diga otro.
+ */
+export function conPedidoListo(o: Opciones = {}, from = ANA): Mundo {
+  const m = crear({ modeloDice: modeloDeNombre(), ...o });
+  hablar(m, from, mTexto('quiero una billetera'));
+  hablar(m, from, mToque('entrega:retiro', 'Recojo en tienda'));
+  hablar(m, from, mTexto('Ana Pérez'));
+  return m;
+}
