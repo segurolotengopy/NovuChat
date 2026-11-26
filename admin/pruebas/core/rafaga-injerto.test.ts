@@ -460,3 +460,40 @@ describe('rafaga: `fuente` (el ancla viene tras un nodo que NO trae los campos d
     });
   });
 });
+
+describe('rafaga: referencias a nodos que n8n puede precargar (`problemasDeReferencias`)', () => {
+  const CAMPOS = { texto: 'texto' };
+  const conFuente = (): Flujo => {
+    const f = sintetico();
+    f.nodes.push({ ...un('Puerta del turno', [720, 300]), type: 'n8n-nodes-base.code', typeVersion: 2, parameters: { jsCode: "return $input.all().map(() => ({ json: { ruta: 'sigue' } }));" } });
+    nodo(f, '¿Atención normal?').type = 'n8n-nodes-base.if';
+    f.connections['Config del negocio'] = enl('Puerta del turno');
+    f.connections['Puerta del turno'] = enl('¿Atención normal?');
+    return injertarRafaga(f, { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS });
+  };
+
+  it('sin fuente y con fuente: ninguna referencia dinámica ni a un nodo que no es antecesor', async () => {
+    const { problemasDeReferencias } = await import('../../../Flujos/src/core/sin-agente/referencias.mjs');
+    // `¿Esperar ráfaga?` pregunta `$('Reportar mensaje (entrante)').isExecuted`: en el lienzo el reporte es una rama hermana (corre antes, no es antecesor), y es lo
+    // que la pieza exige a propósito; el verificador lo objeta en ese fixture, y es lo ÚNICO que se tolera aquí.
+    const sinElReporte = (p: string[]) => p.filter((x) => !x.includes('«Reportar mensaje (entrante)», que existe pero NO es su antecesor'));
+    expect(sinElReporte(problemasDeReferencias(armado()))).toEqual([]);
+    expect(sinElReporte(problemasDeReferencias(conFuente()))).toEqual([]);
+  });
+
+  it('con fuente, el Code escribe `$(\'<fuente>\').first().json` LITERAL y sin fuente `mensaje = entrada`', () => {
+    const codigo = nodo(conFuente(), NODO_RAFAGA_AGRUPAR).parameters.jsCode;
+    expect(codigo).toContain("const mensaje = $('Normalizar entrada').first().json;");
+    expect(codigo).not.toContain('$(FUENTE)');
+    expect(nodo(armado(), NODO_RAFAGA_AGRUPAR).parameters.jsCode).toContain('const mensaje = entrada;');
+  });
+
+  it('NEGATIVA: la versión vieja (`$(FUENTE)` dinámico junto a literales) la rechaza el verificador', async () => {
+    const { problemasDeReferencias } = await import('../../../Flujos/src/core/sin-agente/referencias.mjs');
+    const f = conFuente();
+    const code = nodo(f, NODO_RAFAGA_AGRUPAR);
+    code.parameters.jsCode = code.parameters.jsCode.replace("const mensaje = $('Normalizar entrada').first().json;", 'const mensaje = FUENTE !== \'\' ? $(FUENTE).first().json : entrada;');
+    expect(problemasDeReferencias(f).join('|')).toMatch(/Agrupar ráfaga».*mezcla referencias literales con referencias dinámicas/);
+    expect(hallazgosDeLaRafaga(f, { campos: CAMPOS }).join('|')).toMatch(/Agrupar ráfaga».*no es el nodo común/); // y la guardia de la pieza también lo ve
+  });
+});
