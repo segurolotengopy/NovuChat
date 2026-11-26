@@ -532,7 +532,8 @@ describe('rafaga: referencias a nodos que n8n puede precargar (`problemasDeRefer
 });
 
 describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES (lista blanca)', () => {
-  const real = (ruta: string): Flujo => JSON.parse(readFileSync(join(RAIZ_FLUJOS, ruta), 'utf8'));
+  // Se parte del flujo SIN la pieza: los flujos que ya la adoptaron (Bellido, 25/11/2026) la traen puesta y `quitarRafaga` es idempotente.
+  const real = (ruta: string): Flujo => quitarRafaga(JSON.parse(readFileSync(join(RAIZ_FLUJOS, ruta), 'utf8')));
   const REALES: [string, { nodo: string; salida: number; destino: string }][] = [
     ['clientes/walisuma/walisuma.json', { nodo: '¿Bajar medio?', salida: 1, destino: 'Decidir turno' }], // tras «Puerta del turno»
     ['clientes/agenda-minima/agenda-minima.v0.json', { nodo: '¿Atención normal?', salida: 0, destino: '¿Bajar medio?' }], // Bellido
@@ -547,7 +548,7 @@ describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES 
     expect(hallazgosDeLaRafaga(f, { exigir: true })).toEqual([]);
     expect(nodo(f, NODO_RAFAGA_SI).parameters.conditions.conditions[0].leftValue).toContain("const n = $('Normalizar entrada').first().json;");
   });
-  it.each([['demo-a-agendamiento.json'], ['demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF, así que arma sin `fuente`', (ruta) => {
+  it.each([['clientes/demo-a/demo-a-agendamiento.json'], ['demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF, así que arma sin `fuente`', (ruta) => {
     const f = injertarRafaga(real(ruta), { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Es un comprobante?' } });
     expect(hallazgosDeLaRafaga(f)).toEqual([]);
   });
