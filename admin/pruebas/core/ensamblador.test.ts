@@ -41,6 +41,7 @@ import {
   RAIZ_FLUJOS, carpetas, rutaDentroDe, ensamblarEnMemoria, ensamblarFlujo, extraerFlujo, leerManifiesto, listarFlujos, listarFlujosConManifiestoEnSubcarpetas, rutaRelativaAFlujos,
   manifiestoInicial, rutaDeManifiesto, slug, verificarFlujo,
 } from '../../scripts/ensamblar-flujo.mjs';
+import { hallazgosDeLaRafaga } from '../../../Flujos/src/core/rafaga/rafaga.mjs';
 import { entornoDelEmulador } from './entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -604,6 +605,12 @@ describe('10. Flujos en subcarpetas: el manifiesto lleva la ruta relativa a Fluj
   });
 });
 
+/** Lo que la guardia necesita saber de un flujo que adoptó la ráfaga con nombres no predeterminados: lo que su manifiesto declara. */
+const opcionesDeAdopcion = (f: string) => {
+  const r = (leerManifiesto(f) as { rafaga?: { fuente?: string; campos?: Record<string, string>; normalizador?: string } } | null)?.rafaga ?? {};
+  return { fuente: r.fuente, campos: r.campos, normalizador: r.normalizador };
+};
+
 describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `indicador`)', () => {
   const URL_SERVIDOR = 'https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo';
   const nodoSet = (name: string, position: [number, number]) => ({ id: name, name, type: 'n8n-nodes-base.set', typeVersion: 3, position, parameters: {} });
@@ -611,7 +618,7 @@ describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `i
   const sinTipos = () => ({
     name: 'sintetico-rafaga',
     nodes: [
-      nodoSet('Normalizar entrada', [240, 300]), nodoSet('Config del negocio', [480, 300]), nodoSet('Config base', [480, 100]),
+      { ...nodoSet('Normalizar entrada', [240, 300]), type: 'n8n-nodes-base.code', typeVersion: 2, parameters: { jsCode: "return [{ json: { tipo: 'text', mensajeId: 'x', from: '1', phoneNumberId: '2', userInput: 't' } }];" } }, nodoSet('Config del negocio', [480, 300]), nodoSet('Config base', [480, 100]),
       { id: 'traer', name: 'Traer configuración', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [240, 100], credentials: { httpHeaderAuth: { id: '', name: 'REEMPLAZAR_credencial_ingesta' } }, parameters: { method: 'POST', url: URL_SERVIDOR, authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth', sendHeaders: true, headerParameters: { parameters: [{ name: 'X-NovuChat-Numero', value: '={{ $json.phoneNumberId }}' }] } } },
       nodoSet('Reportar mensaje (entrante)', [960, 100]), nodoSet('¿Atención normal?', [960, 300]), nodoSet('Agente', [1200, 400]),
     ],
@@ -636,15 +643,13 @@ describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `i
     return dir;
   }
 
-  // Los flujos que ya adoptaron la ráfaga (cada uno en su PR): el resto no la declara. El Demo B, 25/11/2026.
-  const CON_RAFAGA = ['demo-b-venta-cobro.json'];
-  it('solo los flujos que adoptaron la ráfaga la declaran y verificar sigue diciendo que todo coincide', () => {
+  it('los flujos reales PUEDEN declarar la ráfaga (cada PR de flujo la adopta): los que la declaran la reproducen byte a byte y pasan la guardia; los demás no la llevan', () => {
     for (const f of FLUJOS) {
-      if (CON_RAFAGA.includes(f)) expect(leerManifiesto(f)?.rafaga, f).toBeDefined();
-      else expect(leerManifiesto(f)?.rafaga, f).toBeUndefined();
+      const declara = !!(leerManifiesto(f) as { rafaga?: unknown } | null)?.rafaga;
+      if (CON_MANIFIESTO.includes(f)) expect(ensamblarEnMemoria(f).rafaga, f).toBe(declara);
+      expect(['identico', 'sin-manifiesto'], f).toContain(verificarFlujo(f).estado);
+      if (declara) expect(hallazgosDeLaRafaga(JSON.parse(readFileSync(join(RAIZ_FLUJOS, f), 'utf8')), { exigir: true, ...opcionesDeAdopcion(f) }), f).toEqual([]);
     }
-    for (const f of CON_MANIFIESTO) expect(ensamblarEnMemoria(f).rafaga, f).toBe(CON_RAFAGA.includes(f));
-    for (const f of FLUJOS) expect(['identico', 'sin-manifiesto'], f).toContain(verificarFlujo(f).estado);
   });
 
   it('con el manifiesto que la pide, ensamblar agrega los cuatro nodos y verificar los exige canónicos', () => {

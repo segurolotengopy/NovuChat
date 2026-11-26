@@ -222,6 +222,20 @@ describe('la página (catalogoPublico) con fuente externa', () => {
     }
   });
 
+  it('R6: la página ofrece retiro Y envío en un comercio externo: el dato es `config/venta.aceptaRetiroEnLocal|aceptaDelivery`, que por omisión están ENCENDIDOS y solo `false` estricto apaga cada uno', async () => {
+    const ficha = await fichaDe(T, TEL_BO);
+    const entrega = async () => (await pagina(ficha)).cuerpo['entrega'];
+    try {
+      await db.doc(`tenants/${T}/config/venta`).set({});
+      expect(await entrega()).toMatchObject({ aceptaRetiroEnLocal: true, aceptaDelivery: true });
+      await db.doc(`tenants/${T}/config/venta`).set({ aceptaDelivery: false });
+      expect(await entrega()).toMatchObject({ aceptaRetiroEnLocal: true, aceptaDelivery: false });
+      await db.doc(`tenants/${T}/config/venta`).set({ aceptaRetiroEnLocal: false, aceptaDelivery: 'false' });
+      expect(await entrega()).toMatchObject({ aceptaRetiroEnLocal: false, aceptaDelivery: true }); // «false» como texto NO apaga
+    } finally {
+      await db.doc(`tenants/${T}/config/venta`).set({ costoDelivery: 0 });
+    }
+  });
   it('NEGANDO: `disponible:false` con stock 3 y el agotado NO se publican', async () => {
     const r = await pagina(await fichaDe(T, TEL_BO));
     const ids = (r.cuerpo['items'] as Array<Record<string, unknown>>).map((i) => i['id']);
