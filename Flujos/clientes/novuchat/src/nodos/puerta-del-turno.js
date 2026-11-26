@@ -32,6 +32,10 @@ if (a.estado !== 'normal') {
       : 'llegó a ' + a.respuestas + ' respuestas en su ventana de 24 horas; el asistente no le responde más',
   } }];
 }
+// La respuesta «No, gracias» de la campaña saliente (solo de un botón de Meta): el texto fijo del tenant, sin modelo, sin botones ni aviso. La baja la crea la ingesta con el reporte del entrante.
+const propioCampanaNo = String(((cfg.datos || {}).textos || {}).campanaNo || '').trim();
+const textoCampanaNo = propioCampanaNo !== '' && propioCampanaNo.length <= 500 ? propioCampanaNo : 'Entendido, no le enviaremos más mensajes.';
+if (t.campanaSaliente && t.campanaSaliente.respuesta === 'no') return [{ json: { ruta: 'baja', campana: true, texto: textoCampanaNo, responder: true, transferir: false, motivo: '', from: t.from } }];
 if (bjPideBaja(t.texto)) return [{ json: { ruta: 'baja', texto: bjTextoBaja(cfg.textoBaja), responder: true, transferir: false, motivo: '', from: t.from } }];
 // Sin estado en el servidor (el `leer` falló o no trajo la conversación) no se puede seguir sin arriesgar una ficha falsa: genérico con botón, sin medios, sin modelo y sin compromiso, con el aviso a recepción de la falla (§6).
 if (!cfg.sesion || cfg.sesion.ok !== true) return [{ json: { ruta: 'sin_estado', texto: '', responder: false, transferir: false, motivo: '', from: t.from } }];

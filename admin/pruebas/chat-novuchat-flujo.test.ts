@@ -4155,3 +4155,139 @@ describe('baja por texto: el cliente pide no recibir más mensajes', () => {
     }
   });
 });
+
+// ------------------------------------------------------------------------------ campaña saliente («retomar», PR-B): respuestas «Sí» y «No» de la plantilla
+describe('campaña saliente: la respuesta «Sí, contáctenme» / «No, gracias» de la plantilla', () => {
+  const TX = NOVUCHAT['textos'] as J;
+  const BOTONES = NOVUCHAT['campanaSaliente'] as J;
+  const SI = String(BOTONES['botonSi']);
+  const NO = String(BOTONES['botonNo']);
+  const mBotonPlantilla = (text: string, payload?: string): J => ({ type: 'button', button: { text, ...(payload === undefined ? {} : { payload }) } });
+  const entrantes = (w: W): J[] => w.mundo.llamadas.ingesta.filter((r) => r['direccion'] === 'entrante');
+  const respuestas = (w: W): J[] => w.mundo.llamadas.ingesta.filter((r) => r['evento'] === 'campana_respuesta');
+  const hayBaja = (w: W): boolean => JSON.stringify(w.mundo.llamadas.ingesta).includes('no_contactar');
+
+  it('los textos son dato del tenant, de «usted» y con párrafos separados', () => {
+    for (const c of ['campanaSi', 'campanaNo']) {
+      expect(String(TX[c]).split('\n\n')).toHaveLength(2);
+      expect(String(TX[c])).not.toMatch(/\btú\b|\bte\b|\bcontigo\b|\bllamar|\bllamaremos/i);
+    }
+  });
+  describe('«No»', () => {
+    it('payload con la forma cs:no:<id>: el texto fijo y nada más (sin modelo, sin botones, sin aviso, sin fila) y el reporte lleva campana_respuesta con la campaña', () => {
+      const w = crear();
+      const t = jugar(w, MAMA).crudo(mBotonPlantilla(NO, 'cs:no:retomar-1'), 'campaña no');
+      expect(t.aMi).toHaveLength(1);
+      expect(t.aMi[0]!.cuerpo).toBe(TX['campanaNo']);
+      expect(tipoInter(t.aMi[0]!)).toBe('');
+      expect(w.modelo.llamadas).toHaveLength(0);
+      expect(t.plantillas).toHaveLength(0);
+      expect(t.aRecepcion).toHaveLength(0);
+      expect(w.hoja.filas).toHaveLength(0);
+      const r = respuestas(w);
+      expect(r).toHaveLength(1);
+      expect(r[0]).toMatchObject({ direccion: 'entrante', evento: 'campana_respuesta', respuestaCampana: 'no', campanaEnvioId: 'retomar-1' });
+    });
+    it('Meta devuelve la etiqueta como payload: la respuesta sale del TEXTO EXACTO del botón y el reporte no lleva campanaEnvioId', () => {
+      const w = crear();
+      const t = jugar(w, MAMA).crudo(mBotonPlantilla(NO, NO), 'campaña no por etiqueta');
+      expect(t.aMi.map((e) => e.cuerpo)).toEqual([TX['campanaNo']]);
+      const r = respuestas(w);
+      expect(r).toHaveLength(1);
+      expect(r[0]!['respuestaCampana']).toBe('no');
+      expect(r[0]).not.toHaveProperty('campanaEnvioId');
+      expect(w.modelo.llamadas).toHaveLength(0);
+    });
+    it('sin payload, solo el texto del botón: también es «no», sin id', () => {
+      const w = crear();
+      jugar(w, MAMA).crudo(mBotonPlantilla(NO), 'campaña no sin payload');
+      expect(respuestas(w).map((r) => r['respuestaCampana'])).toEqual(['no']);
+      expect(w.modelo.llamadas).toHaveLength(0);
+    });
+    it('NEGADO: el texto «No, gracias» ESCRITO (type text) no da de baja ni es campaña', () => {
+      const w = crear();
+      w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+      const t = jugar(w, MAMA).texto(NO);
+      expect(respuestas(w)).toHaveLength(0);
+      expect(hayBaja(w)).toBe(false);
+      expect(t.aMi.map((e) => e.cuerpo)).not.toContain(TX['campanaNo']);
+      expect(entrantes(w)[0]!['evento']).toBeUndefined();
+    });
+    it('NEGADO: «cs:no:<id>» escrito como texto tampoco es campaña', () => {
+      const w = crear();
+      w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+      jugar(w, MAMA).texto('cs:no:retomar-1');
+      expect(respuestas(w)).toHaveLength(0);
+    });
+  });
+  describe('«Sí»', () => {
+    it('payload cs:si:<id>: pasa con recepción de siempre (aviso con la plantilla y el botón para escribir directo), con el texto del tenant y sin modelo', () => {
+      const w = crear();
+      const t = jugar(w, MAMA).crudo(mBotonPlantilla(SI, 'cs:si:retomar-1'), 'campaña sí');
+      expect(t.aMi).toHaveLength(1);
+      const e = t.aMi[0]!;
+      expect(tipoInter(e)).toBe('cta_url');
+      expect(urlDe(e)).toMatch(new RegExp(`^https://wa\\.me/${REC}\\?text=`));
+      expect(e.cuerpo).toBe(TX['campanaSi']);
+      expect(t.plantillas).toHaveLength(1);
+      expect(t.plantillas[0]!.a).toBe(REC);
+      expect(w.modelo.llamadas).toHaveLength(0);
+      const r = respuestas(w);
+      expect(r).toHaveLength(1);
+      expect(r[0]).toMatchObject({ direccion: 'entrante', evento: 'campana_respuesta', respuestaCampana: 'si', campanaEnvioId: 'retomar-1' });
+      expect(hayBaja(w)).toBe(false);
+    });
+    it('por la etiqueta del botón: igual, con el botón de recepción y el reporte sin campanaEnvioId', () => {
+      const w = crear();
+      const t = jugar(w, MAMA).crudo(mBotonPlantilla(SI, SI), 'campaña sí por etiqueta');
+      expect(tipoInter(t.aMi[0]!)).toBe('cta_url');
+      expect(t.aMi[0]!.cuerpo).toBe(TX['campanaSi']);
+      expect(t.plantillas).toHaveLength(1);
+      const r = respuestas(w);
+      expect(r[0]!['respuestaCampana']).toBe('si');
+      expect(r[0]).not.toHaveProperty('campanaEnvioId');
+    });
+    it('el prospecto entra al miniCRM con el origen y la etapa de la campaña', () => {
+      const w = crear();
+      jugar(w, MAMA).crudo(mBotonPlantilla(SI, 'cs:si:retomar-1'), 'campaña sí');
+      const fila = filaDe(w, MAMA)!;
+      expect(fila[COL.origen]).toBe('Campaña retomar');
+      expect(Object.values(fila)).toContain('2. Contactado / Calificado');
+    });
+    it('NEGADO: «Sí, contáctenme» ESCRITO no pasa con recepción por campaña (ni lleva campana_respuesta)', () => {
+      const w = crear();
+      w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+      const t = jugar(w, MAMA).texto(SI);
+      expect(respuestas(w)).toHaveLength(0);
+      expect(t.aMi.map((e) => e.cuerpo)).not.toContain(TX['campanaSi']);
+    });
+  });
+  describe('lo que NO es campaña', () => {
+    for (const [nombre, boton] of [
+      ['un payload ajeno con un texto ajeno', mBotonPlantilla('Ver planes', 'planes')],
+      ['un payload ajeno aunque el texto sea «No, gracias» con otro cuerpo', mBotonPlantilla(NO + '.', 'otra-cosa')],
+      ['un payload con la forma pero un id corto', mBotonPlantilla('Otro', 'cs:si:ab')],
+      ['un payload con la forma pero un id con mayúsculas', mBotonPlantilla('Otro', 'cs:no:ABCDE')],
+      ['un botón con otro texto', mBotonPlantilla('Más información')],
+      ['el texto del botón con espacios de más', mBotonPlantilla(' ' + SI)],
+    ] as [string, J][]) {
+      it(`NEGADO: ${nombre} no es campaña: sin campana_respuesta, sin baja y sin el texto de la campaña`, () => {
+        const w = crear();
+        w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+        const t = jugar(w, MAMA).crudo(boton, 'otro botón');
+        expect(respuestas(w)).toHaveLength(0);
+        expect(hayBaja(w)).toBe(false);
+        const dicho = t.aMi.map((e) => e.cuerpo);
+        expect(dicho).not.toContain(TX['campanaSi']);
+        expect(dicho).not.toContain(TX['campanaNo']);
+      });
+    }
+  });
+  it('el reporte del entrante de un mensaje común no cambia (sin campanaEnvioId ni respuestaCampana)', () => {
+    const w = crear();
+    w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+    jugar(w, MAMA).texto('Hola');
+    expect(entrantes(w)[0]).not.toHaveProperty('respuestaCampana');
+    expect(entrantes(w)[0]).not.toHaveProperty('campanaEnvioId');
+  });
+});

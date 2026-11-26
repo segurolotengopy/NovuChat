@@ -71,7 +71,8 @@ if (plan.ruta === 'sin_estado') {
   if (plan.ruta === 'baja') {
     // Baja por texto: UN mensaje de texto fijo, sin botones y sin aviso; el `no_contactar` viajó con el entrante. Baja por NOTA DE VOZ (`plan.porVoz`, decidida en «Armar turno» sobre la transcripción): el entrante del audio
     // no marcó nada, así que el evento viaja en el reporte de ESTE mensaje saliente, y los eventos del turno (el audio) quedan respondidos para que la baja no vuelva como contexto del próximo mensaje.
-    mensajes.push(cmMensaje('cliente', cmTexto(bjTextoBaja(cfg.textoBaja)), bjTextoBaja(cfg.textoBaja), bjTextoBaja(cfg.textoBaja), plan.porVoz === true ? { tipoReporte: 'text', evento: 'no_contactar' } : { tipoReporte: 'text' }));
+    const textoBaja = puerta.campana === true ? puerta.texto : bjTextoBaja(cfg.textoBaja);
+    mensajes.push(cmMensaje('cliente', cmTexto(textoBaja), textoBaja, textoBaja, plan.porVoz === true ? { tipoReporte: 'text', evento: 'no_contactar' } : { tipoReporte: 'text' }));
     if (plan.porVoz === true && Number(plan.hastaBaja) > 0) { nueva.cola = nueva.cola.filter((e) => e.seq > plan.hastaBaja); nueva.hasta = Math.max(nueva.hasta, plan.hastaBaja); }
   } else if (plan.ruta === 'suspendido') {
     if (puerta.texto) mensajes.push(texto(String(puerta.texto)));
@@ -125,7 +126,9 @@ if (plan.ruta === 'sin_estado') {
   else if (plan.ruta === 'equipo') {
     // Si el cliente dio su nombre y su negocio en este mismo turno, el traspaso no los vuelve a pedir: se usan los de la ficha NUEVA (como el aviso).
     const previa = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: '', ahoraMs: ahora, anuncio: !!t.anuncio });
-    m = chMensajeEquipo(cfg, Object.assign({}, antes, { nombre: previa.nombre, empresa: previa.empresa }), from);
+    // Respondió «sí» a la campaña saliente: el texto del tenant en lugar del traspaso de siempre; el botón y el aviso a recepción son los mismos.
+    const campanaSi = t.campanaSaliente && t.campanaSaliente.respuesta === 'si' ? chTexto((chDatos(cfg).textos || {}).campanaSi) : '';
+    m = chMensajeEquipo(cfg, Object.assign({}, antes, { nombre: previa.nombre, empresa: previa.empresa }), from, campanaSi);
   }
   else {
     // R4: en la PRIMERA respuesta del cliente a la explicación, sea cual sea el contexto, se agrega en el MISMO mensaje el pedido cordial del nombre y del negocio (una sola vez).
@@ -137,7 +140,7 @@ if (plan.ruta === 'sin_estado') {
     m = chClienteConSitio(unido.texto, cfg, res.evento, est, antes, ['empresa', 'sin_dato', 'no_documentado'].includes(res.evento));
   }
   mensajes.push(m);
-  nueva = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: m.textoSinSitio || m.texto, sitio: m.sitio === true, ahoraMs: ahora, anuncio: !!t.anuncio,
+  nueva = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: m.textoSinSitio || m.texto, sitio: m.sitio === true, ahoraMs: ahora, anuncio: !!t.anuncio, campanaSaliente: plan.ruta === 'equipo' && !!t.campanaSaliente && t.campanaSaliente.respuesta === 'si',
     sinRecepcion: recepcion.length < 6, ciclo: ciclo, explicacion: plan.ruta === 'modelo' && ['rubro', 'otroRespuesta'].includes(res.contexto), pidioDatos: anexo !== '', complemento: complemento, ordinaria: dec.ordinaria, botones: m.botones });
   // Pedir hablar con el equipo: la plantilla a recepción, UNA vez por ventana (`avisado` cuenta solo lo que Meta aceptó) y nunca al propio número de recepción. Con una empresa DISTINTA a la ya avisada,
   // un aviso nuevo (R5); con la misma, solo se reenvía el botón.

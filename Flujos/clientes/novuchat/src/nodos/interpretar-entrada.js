@@ -47,6 +47,18 @@ let texto = '';
 let textoReporte = '';
 let pie = '';
 let evento = null;
+// La respuesta a la campaña saliente: SOLO de un botón de Meta (`type: button`), nunca del texto que escribe el cliente (`chCampanaSaliente`).
+// El `payload` con la forma `cs:si|no:<id>` trae la respuesta y la campaña; si Meta lo devuelve como la etiqueta del botón (la documentación lo muestra así), vale el TEXTO EXACTO del botón (dato del tenant,
+// `datos.campanaSaliente`) y la campaña queda sin id. Cualquier otro botón no es campaña y sigue como siempre.
+let campanaSaliente = null;
+if (tipo === 'button' && msg.button && typeof msg.button === 'object') {
+  const pl = /^cs:(si|no):([a-z0-9-]{3,40})$/.exec(typeof msg.button.payload === 'string' ? msg.button.payload : '');
+  const bs = cfg.datos && cfg.datos.campanaSaliente && typeof cfg.datos.campanaSaliente === 'object' ? cfg.datos.campanaSaliente : {};
+  const etiqueta = typeof msg.button.text === 'string' ? msg.button.text : '';
+  if (pl) campanaSaliente = { respuesta: pl[1], id: pl[2] };
+  else if (etiqueta !== '' && etiqueta === bs.botonSi) campanaSaliente = { respuesta: 'si', id: '' };
+  else if (etiqueta !== '' && etiqueta === bs.botonNo) campanaSaliente = { respuesta: 'no', id: '' };
+}
 if (tipo === 'text') {
   texto = String((msg.text && msg.text.body) || '').slice(0, 1500);
   textoReporte = texto;
@@ -61,6 +73,8 @@ if (tipo === 'text') {
   textoReporte = 'El cliente tocó el botón: ' + texto;
   // Un botón sin texto no es una imagen: queda como «una respuesta rápida».
   evento = texto.trim() === '' ? chEventoOtro('button') : chEventoTexto(texto);
+  if (campanaSaliente) { textoReporte = 'El cliente respondió a un mensaje de seguimiento: ' + (campanaSaliente.respuesta === 'si' ? 'sí' : 'no'); // El «sí» pasa con recepción por la ruta de siempre (`boton: 'equipo'`); el «no» no llega a la cola: lo cierra la puerta del turno.
+    evento = campanaSaliente.respuesta === 'si' ? { k: 'toque', t: '[Respondió que sí a un mensaje de seguimiento]', c: '', rubro: '', boton: 'equipo' } : chEventoOtro('button'); }
 } else if (tipo === 'audio') {
   textoReporte = '(audio) el cliente envió una nota de voz';
 } else if (tipo === 'image') {
@@ -123,6 +137,7 @@ return [{ json: {
   adId: idDelAnuncio,
   campanaId: campana ? campana.id : '',
   campanaPor: campana ? campana.por : '',
+  campanaSaliente: campanaSaliente,
   origen: ref ? 'anuncio' : 'directo',
   esAudio: esAudio,
   esVisual: esVisual,

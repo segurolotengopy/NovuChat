@@ -587,7 +587,7 @@ function chFichaBase() {
   return {
     v: 1, ultimoMs: 0, rubro: '', nombre: '', empresa: '', necesidad: '', temas: [],
     hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false, interactuo: false, descarte: '' },
-    avisado: false, avisoFalla: '', planesMostrados: false, planesTocado: false, equipoTocado: false, respondidas: 0, soporte: false, anuncio: false,
+    avisado: false, avisoFalla: '', planesMostrados: false, planesTocado: false, equipoTocado: false, respondidas: 0, soporte: false, anuncio: false, campanaSaliente: false,
     // Ajustes del 09/10: el ciclo de un negocio (explicado, nombre pedido, planes pendientes, equipo ya pedido), el primer negocio y los otros para la hoja.
     otroResp: 0, explicado: false, nombrePedido: false, preguntaDatos: false, ofrecio: '', planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, sitiosVentana: 0, sitioUltimo: false, primero: null, otros: [], complementos: 0,
     seq: 0, hasta: 0, cola: [], historial: [], ultimosIds: [],
@@ -621,7 +621,7 @@ function chFichaVigente(e, ahoraMs) {
       pidioEquipo: h.pidioEquipo === true, pidioPlanes: h.pidioPlanes === true, eligioOtro: h.eligioOtro === true, interactuo: h.interactuo === true,
       descarte: CH_DESCARTES.includes(h.descarte) ? h.descarte : '',
     },
-    avisado: e.avisado === true, avisoFalla: chPlano(e.avisoFalla, 200), planesMostrados: e.planesMostrados === true, planesTocado: e.planesTocado === true, equipoTocado: e.equipoTocado === true, otroResp: Math.max(0, Math.min(3, Math.floor(Number(e.otroResp) || 0))), respondidas: Math.max(0, Math.min(3, Math.floor(Number(e.respondidas)) || 0)), soporte: e.soporte === true, anuncio: e.anuncio === true,
+    avisado: e.avisado === true, avisoFalla: chPlano(e.avisoFalla, 200), planesMostrados: e.planesMostrados === true, planesTocado: e.planesTocado === true, equipoTocado: e.equipoTocado === true, otroResp: Math.max(0, Math.min(3, Math.floor(Number(e.otroResp) || 0))), respondidas: Math.max(0, Math.min(3, Math.floor(Number(e.respondidas)) || 0)), soporte: e.soporte === true, anuncio: e.anuncio === true, campanaSaliente: e.campanaSaliente === true,
     explicado: e.explicado === true, nombrePedido: e.nombrePedido === true, preguntaDatos: e.preguntaDatos === true, ofrecio: ['planes', 'equipo', 'ambas', 'ninguna'].includes(e.ofrecio) ? e.ofrecio : (e.ofreceEquipo === true ? (e.ofrecePlanes === true ? 'ambas' : 'equipo') : (e.ofrecePlanes === true ? 'planes' : '')), planesPendientes: e.planesPendientes === true, equipoAhora: e.equipoAhora === true,
     // Las empresas por las que ya se avisó a recepción en la ventana (a lo más 3, normalizadas) y cuántos avisos van: el tope (3) acota la plantilla por segunda empresa.
     empresasAvisadas: Array.from(new Set((Array.isArray(e.empresasAvisadas) ? e.empresasAvisadas : []).concat(typeof e.empresaAvisada === 'string' ? [e.empresaAvisada] : []).filter((x) => typeof x === 'string').map((x) => chNorm(chPlano(x, 60))).filter((x) => x !== ''))).slice(0, CH_TOPE_AVISOS),
@@ -1685,14 +1685,14 @@ function chAnexoDatos(cfg, f, texto, contexto) {
   return chLineas(texto).length + 2 + anexo.length <= CH_MAX_MENSAJE ? anexo : '';
 }
 // «Hablar con el equipo»: el botón que abre el chat de recepción (cta_url) y, si faltan, el pedido del nombre y del negocio (UNA sola vez). Quien escribe DESDE recepción no recibe un botón a sí mismo: «Ya estás en contacto con el equipo» y la lista de rubros (nada oculto). Sin número de recepción, ni botón ni promesa.
-function chMensajeEquipo(cfg, f, from) {
+function chMensajeEquipo(cfg, f, from, cuerpoPropio) {
   const tx = chDatos(cfg).textos || {};
   const numero = chTexto(cfg && cfg.numeroRecepcion).replace(/\D/g, '');
   const desde = chTexto(from).replace(/\D/g, '');
   if (numero.length >= 6 && numero === desde) return chCliente(tx.recepcion, cfg, 'recepcion', { lista: true, planes: true });
   if (numero.length < 6) return chCliente(tx.traspasoSinRecepcion, cfg, 'traspaso', f.equipoAhora === true ? { lista: true } : { botones: [] });
   const completo = chPlano(f.nombre) !== '' && chPlano(f.empresa) !== '';
-  const cuerpo = chEmMensaje(chTexto(f.equipoAhora === true ? tx.traspasoRepite : (completo || f.nombrePedido === true ? tx.traspasoSinPregunta : tx.traspasoConPregunta)), cfg);
+  const cuerpo = chEmMensaje(chTexto(chPlano(cuerpoPropio) !== '' ? cuerpoPropio : f.equipoAhora === true ? tx.traspasoRepite : (completo || f.nombrePedido === true ? tx.traspasoSinPregunta : tx.traspasoConPregunta)), cfg);
   return cmContactoConBoton({ numero: numero, desde: desde, para: 'cliente', evento: 'traspaso', cuerpo: cuerpo, botonTexto: tx.botonTraspaso || 'Escribir ahora', textoDelRespaldo: 'Escríbele aquí:', saludo: chSustituir(tx.saludoWa, cfg) });
 }
 // Las respuestas fijas del documento (consumo, banco, costos de Meta, integraciones, precios distintos): el dato + la invitación al equipo. Ninguna cifra.
@@ -1782,7 +1782,7 @@ function chAplicarTurno(a) {
   if (a.complemento === true) f.complementos = Math.min(3, f.complementos + 1);
   f.sitioUltimo = a.sitio === true; if (a.sitio === true) f.sitiosVentana = Math.min(CH_TOPE_SITIO, f.sitiosVentana + 1); // el sitio NO va en dos mensajes seguidos (la similitud con el anterior cruzaría 0,75)
   if (a.plan.soporte === true) f.soporte = true;
-  if (a.anuncio === true) f.anuncio = true;
+  if (a.anuncio === true) f.anuncio = true; if (a.campanaSaliente === true) f.campanaSaliente = true; // (respondió «sí» a la campaña saliente)
   f.ultimoMs = a.ahoraMs;
   return f;
 }
@@ -1828,7 +1828,7 @@ function chProspecto(f, cfg, entrada) {
     necesidad: chNecesidadValida(f.necesidad),
     temas: chTemasUnidos(f.temas, []),
     estado: h.pidioEquipo ? 'cerrado' : 'en_conversacion',
-    anuncio: f.anuncio === true,
+    anuncio: f.anuncio === true, campanaSaliente: f.campanaSaliente === true, // (el miniCRM usa su origen y su etapa solo al crear la fila)
     // `respondioDolor` es el nombre histórico del hecho «interactuó» que lee la hoja (Media = rubro + interactuó).
     hechos: { pidioAsesor: h.pidioEquipo, pidioPlanes: h.pidioPlanes, eligioOtro: h.eligioOtro, respondioDolor: h.interactuo, descarte: h.descarte },
   };
