@@ -9,10 +9,10 @@
  * Verificación (todas las corridas): nunca un QR; un campo de la entrega que cambia tiene que cambiar AL valor esperado (si el caso no espera ese campo, no puede cambiar);
  * con el modelo sano, además, los campos esperados quedan como se espera; los campos «codigo» (los que el código lee solo) se exigen con los tres modelos.
  */
-import { writeFileSync } from "node:fs";
+// (sin escritura de archivos: el resultado se ve en el informe de la corrida, no en el árbol)
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ANA, ARGENTINO, BILLETERA, CATALOGO, catalogoOk, crear, hablar, modelo, mTexto, mToque, textoAlModelo } from "../tenants/casa-bermejo/mundo";
 
 type Obj = Record<string, unknown>;
@@ -275,4 +275,4 @@ describe("ataque de la revisora: casos propios", () => {
 describe("ataque de la revisora: los 17 casos del sondeo de la cuarta revisión", () => {
   for (const c of SONDEO) for (const mk of MODELOS) it(`${c.n} [${c.estado}] «${c.msg}» — ${mk}`, () => { const r = correr(c, mk); expect(r.problemas).toEqual([]); });
 });
-afterAll(() => { writeFileSync(join(AQUI, "resultados.json"), JSON.stringify(RESULTADOS, null, 1)); });
+// sin afterAll que escriba resultados.json: una prueba no escribe en el árbol (ni en CI)
