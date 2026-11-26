@@ -35,8 +35,9 @@ case "$-" in *x*) echo "✗ xtrace activo (bash -x): imprimiría el id del proye
 # MODO PRIVILEGIADO (-p, en la primera línea): bash NO importa funciones exportadas ni lee BASH_ENV, ENV ni SHELLOPTS, así
 # que una función `compgen`, `command`, `unset` o `builtin` heredada no puede reemplazar la limpieza de abajo (revisión de
 # Rearquitectura del 25/11/2026). Si se lo llama como `bash catalogo-externo.sh` (sin -p), se vuelve a lanzar con -p antes
-# de todo: `case` es palabra reservada y no se reemplaza. Lo único que queda fuera es una función exportada llamada `exec`
-# en esa forma de llamarlo; la forma documentada, `./scripts/catalogo-externo.sh`, no tiene ese resto.
+# de todo: `case` es palabra reservada y no se reemplaza. Lo único que queda fuera, en esa forma de llamarlo, es una función
+# `exec` exportada o definida por BASH_ENV (el primer bash, sin -p, lo lee antes de esta línea); la forma documentada,
+# `./scripts/catalogo-externo.sh`, no tiene ese resto.
 case "$-" in *p*) ;; *) exec /bin/bash -p -- "$0" "$@" ;; esac
 set -euo pipefail
 [[ "${SHELLOPTS:-}" != *xtrace* ]] || { echo "✗ SHELLOPTS=xtrace en el entorno: imprimiría el id del proyecto. No se hizo nada." >&2; exit 2; }
@@ -49,6 +50,9 @@ unset P OTRO CUOTA STAGING PROD
 # (nvm, ~/.local/bin) y desde ahí se usan por RUTA ABSOLUTA; todo lo demás (sha256sum, sed, grep, mkdir, stat, env) sale
 # de un PATH de sistema fijo, también el de Node.
 unset BASH_ENV ENV
+# Tampoco nada que haga cargar código a perl (el filtro de salida, que recibe los ids): PERL5OPT, PERL5LIB, PERLLIB,
+# PERL5DB… (revisión de seguridad del 26/11/2026).
+for v in "${!PERL@}"; do unset "$v"; done
 while IFS= read -r f; do builtin unset -f "$f"; done < <(compgen -A function)
 NODO="$(command -v node || true)"
 [[ "$NODO" == /* && -x "$NODO" ]] || { echo "✗ No encuentro node (ruta absoluta y ejecutable)" >&2; exit 2; }

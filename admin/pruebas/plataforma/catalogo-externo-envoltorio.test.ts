@@ -392,6 +392,14 @@ describe('catalogo-externo.sh: el arranque no hereda comportamiento (BASH_ENV, f
       expect(r.status, nombre).toBe(1); expect(r.llamada, nombre).not.toBeNull();
       sinIds(r.salida);
     }
+    // PERL5OPT/PERL5LIB harían cargar un módulo en el filtro, que tiene los ids en su entorno: se descartan.
+    const d = mkdtempSync(join(tmpdir(), 'novuchat-catext-perl-')); dirs.push(d);
+    const fuga = join(d, 'fuga');
+    writeFileSync(join(d, 'Fuga.pm'), `package Fuga; open(my $f, '>', '${fuga}'); print $f ($ENV{TAPAR_P} // 'sin-id'); close $f; 1;\n`);
+    const conPerl = correr(['--entorno', 'staging', ...BASE], { env: { PERL5OPT: '-MFuga', PERL5LIB: d, PERLLIB: d } });
+    expect(conPerl.status).toBe(1); expect(conPerl.llamada).not.toBeNull();
+    expect(existsSync(fuga)).toBe(false);
+    sinIds(conPerl.salida);
     // El ataque real: `compgen` reemplazada esconde a `command`, que la limpieza ya no ve. Solo -p lo cierra.
     const juntas = correr(['--entorno', 'staging', ...BASE], { env: {
       'BASH_FUNC_compgen%%': '() { :; }', 'BASH_FUNC_command%%': '() { echo /tmp/node-falso; }' } });
