@@ -664,6 +664,50 @@ describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `i
     expect(() => verificarFlujo('sintetico-rafaga.json', dir)).toThrow(/no tiene «No existe»/);
   });
 
+  it('indicador + ráfaga en el MISMO manifiesto: ensamblar y verificar son idénticos, idempotentes, y el indicador queda donde queda sin ráfaga', () => {
+    const conEnvio = () => {
+      const f = sintetico();
+      f.nodes.push({ id: 'envio', name: 'Enviar a WhatsApp', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [1500, 400], credentials: { httpHeaderAuth: { id: '', name: 'REEMPLAZAR_credencial_envio' } }, parameters: { method: 'POST', url: 'https://graph.facebook.com/v26.0/123456789/messages' } } as never);
+      return f;
+    };
+    const indicador = { ancla: { nodo: '¿Atención normal?', salida: 0 }, normalizador: 'Normalizar entrada' };
+    const escribir = (dir: string, manifiesto: Record<string, unknown>) => {
+      writeFileSync(join(dir, 'sintetico-rafaga.json'), JSON.stringify(conEnvio(), null, 2) + '\n');
+      mkdirSync(join(dir, 'manifiestos'), { recursive: true });
+      writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify({ flujo: 'sintetico-rafaga.json', ...manifiesto }, null, 2) + '\n');
+    };
+    const posiciones = (dir: string, nombres: string[]) => {
+      const j = JSON.parse(readFileSync(join(dir, 'sintetico-rafaga.json'), 'utf8')) as { nodes: { name: string; position: number[] }[] };
+      return nombres.map((n) => j.nodes.find((x) => x.name === n)!.position);
+    };
+    const NOMBRES = ['¿Indicador de escritura activo?', 'Indicador de escritura'];
+    const soloIndicador = copiaDeFlujos();
+    escribir(soloIndicador, { indicador });
+    ensamblarFlujo('sintetico-rafaga.json', soloIndicador);
+    const esperadas = posiciones(soloIndicador, NOMBRES);
+
+    const ambos = copiaDeFlujos();
+    escribir(ambos, { indicador, rafaga: MANIFIESTO.rafaga });
+    expect(ensamblarFlujo('sintetico-rafaga.json', ambos)).toBe(true);
+    expect(verificarFlujo('sintetico-rafaga.json', ambos).estado).toBe('identico');
+    expect(ensamblarFlujo('sintetico-rafaga.json', ambos)).toBe(false);
+    expect(posiciones(ambos, NOMBRES)).toEqual(esperadas); // no se corrió por culpa de «¿Esperar ráfaga?»
+    const armado = readFileSync(join(ambos, 'sintetico-rafaga.json'), 'utf8');
+    const nombres = (JSON.parse(armado) as { nodes: { name: string }[] }).nodes.map((n) => n.name);
+    expect(nombres).toEqual(expect.arrayContaining([...NOMBRES, '¿Esperar ráfaga?', 'Agrupar ráfaga']));
+    // El orden del ancla: el indicador primero (rama lateral), luego la ráfaga en línea hacia el destino.
+    const conexiones = (JSON.parse(armado) as { connections: Record<string, { main: { node: string }[][] }> }).connections['¿Atención normal?'].main[0].map((e) => e.node);
+    expect(conexiones).toEqual(['¿Indicador de escritura activo?', '¿Esperar ráfaga?']);
+    // Un retoque a mano en cualquiera de las dos piezas se detecta y se corrige.
+    const alterado = JSON.parse(armado);
+    alterado.nodes.find((n: { name: string }) => n.name === 'Indicador de escritura').parameters.options.timeout = 99999;
+    alterado.nodes.find((n: { name: string }) => n.name === 'Esperar ráfaga').parameters.unit = 'minutes';
+    writeFileSync(join(ambos, 'sintetico-rafaga.json'), JSON.stringify(alterado, null, 2) + '\n');
+    expect(verificarFlujo('sintetico-rafaga.json', ambos).estado).toBe('difiere');
+    ensamblarFlujo('sintetico-rafaga.json', ambos);
+    expect(readFileSync(join(ambos, 'sintetico-rafaga.json'), 'utf8')).toBe(armado);
+  });
+
   it('`core/rafaga/` trae el módulo común (`.mjs`, `.d.mts`) y el nodo Code (`.js`): se revisa en busca de valores reales', () => {
     expect(existsSync(join(carpetas().src, 'core', 'rafaga', 'agrupar-rafaga.js'))).toBe(true);
     expect(existsSync(join(carpetas().src, 'core', 'rafaga', 'rafaga.mjs'))).toBe(true);
