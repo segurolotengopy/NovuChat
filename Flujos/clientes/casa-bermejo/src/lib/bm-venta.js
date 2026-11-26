@@ -1327,11 +1327,25 @@ function bmResolverCorregir(c) {
 //   - `pcDecision`: 'derivar' (ninguna pieza se vende) · 'pedir_faltante' (falta la entrega: se pregunta lo que falta y, al completarse, el QR sale solo si `pcQrSoloAlCompletar`) · 'listo_para_confirmar' (algo no entró, un precio no es el vivo, hubo descartados, el mercado no coincide o no hay cobro real:
 //     el resumen con el total real y el botón «Confirmar pedido») · 'qr' (todo entró, entrega completa, cobro real y mercado coincidente: resumen y QR en este mismo turno, con `reemplaza` = el `cat_…`, K2);
 //   - el QR del carrito pasa por el MISMO cierre que el chat (`bmResolverModelo` con la orden de cerrar): un QR abierto de otro pedido se cierra (`cancelarCobro`) y, si no se puede cerrar, se deriva. Jamás se dice «pago acreditado» (el QR es del comercio).
-const BM_TEXTO_PRECIOS_CAMBIARON = 'Algún precio de tu pedido cambió respecto de la página: vale el total real del resumen.';
+// LOS MISMOS TOPES EN LOS DOS PASOS (revisión del #1130): el módulo común decide con 99 unidades por pieza y 50 renglones, pero el pedido del flujo se recalcula con `vcLineas` (50 por pieza y 30 renglones).
+// Lo que ese recálculo recorta se pasa a «no entró» (el cliente lo ve dicho, sin QR directo ni `reemplaza`) y las líneas son las del recálculo: el resumen y el monto nunca difieren de lo que se dijo.
+function bmPiezasConTopesDelFlujo(piezas, vendibles) {
+  const final = vcLineas(piezas.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' })), vendibles).lineas;
+  const noEntraron = piezas.noEntraron.slice();
+  for (const l of piezas.lineas) {
+    const g = final.find((x) => x.id === l.id && vcNorm(x.detalle || '') === vcNorm(l.detalle || ''));
+    if (!g || g.cantidad < l.cantidad) {
+      const n = vcLimpiar(l.nombre, 60) || 'una pieza';
+      if (!noEntraron.includes(n)) noEntraron.push(n);
+    }
+  }
+  return { lineas: final, noEntraron: noEntraron, distintos: piezas.distintos };
+}
+const BM_TEXTO_PRECIOS_CAMBIARON ='Algún precio de tu pedido cambió respecto de la página: vale el total real del resumen.';
 function bmResolverCarrito(c) {
   const f = c.ficha;
   const car = cbEsObjeto(c.plan.carrito) ? c.plan.carrito : {};
-  const piezas = pcLineasDelCarrito(car, c.vendibles);
+  const piezas = bmPiezasConTopesDelFlujo(pcLineasDelCarrito(car, c.vendibles), c.vendibles);
   if (piezas.lineas.length === 0) return bmDerivar(c, 'carrito_sin_piezas');
   // La carga manda la moneda como 'Bs' (BOB), 'ARS' o 'USD'; K1 la compara como BOB/ARS. El mercado y la marca `catalogo` los pone la carga (`mercado`, `catalogo: 'externo'`): este flujo solo acepta la fuente externa.
   const k1 = Object.assign({}, car, { moneda: car.moneda === 'Bs' ? 'BOB' : car.moneda });

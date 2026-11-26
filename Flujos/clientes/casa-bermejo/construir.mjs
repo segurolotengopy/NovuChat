@@ -48,12 +48,23 @@ import { cargaConCarrito, hallazgosDelCarrito, injertarCarrito, marcadorDeRuta, 
  */
 const ANCLA_K1_CARRITO = 'itemsTotal: Number(v.itemsTotal) || 0,';
 const ANCLA_K1_ITEM = "return { id: /^[A-Za-z0-9_.:-]{1,100}$/.test(id) ? id : '', nombre: String(x.nombre), cantidad: x.cantidad, subtotal: x.subtotal };";
+const ANCLA_K1_ENTREGA = "entrega: v.entrega === 'envio' ? 'envio' : 'retiro',";
+const ANCLA_K1_MONEDA = "moneda: String(v.moneda || 'Bs'),";
+// Los CUATRO campos tienen que estar (un solo reenvío parcial NO basta: se perderían los demás en silencio).
+const CAMPOS_K1 = [/\bmercado:\s*String\(v\.mercado/, /\bcatalogo:\s*String\(v\.catalogo/, /\bprecioCentavos:\s*x\.precioCentavos/, /\bdetalle:\s*x\.detalle/];
+/**
+ * Además (revisión del #1130): `validar-carrito.js` convierte una cantidad 0 o ilegible en 1 y una entrega ausente en «retiro», y con eso el flujo cobraba lo que el cliente no pidió. Este armador reenvía la
+ * cantidad CRUDA del renglón (con ella `vcLineas` descarta 0, negativas y no enteras y el renglón queda como «no entró») y la entrega CRUDA (`retiro`/`envio`, o vacía: se pregunta con botones).
+ */
 export function conCamposK1(codigo) {
-  if (/\bmercado:\s*String\(v\.mercado/.test(codigo) || /\bprecioCentavos:\s*x\.precioCentavos/.test(codigo)) return codigo; // el módulo ya los reenvía
-  if (codigo.split(ANCLA_K1_CARRITO).length !== 2 || codigo.split(ANCLA_K1_ITEM).length !== 2) throw new Error('casa-bermejo: el módulo catalogo-web cambió «carga-del-carrito.js»: ya no se pueden reenviar `mercado`, `catalogo`, `precioCentavos` y `detalle` (K1); hay que reenviarlos en el módulo');
+  if (CAMPOS_K1.every((r) => r.test(codigo))) return codigo; // el módulo ya reenvía los cuatro
+  if (codigo.split(ANCLA_K1_CARRITO).length !== 2 || codigo.split(ANCLA_K1_ITEM).length !== 2 || codigo.split(ANCLA_K1_ENTREGA).length !== 2 || codigo.split(ANCLA_K1_MONEDA).length !== 2) throw new Error('casa-bermejo: el módulo catalogo-web cambió «carga-del-carrito.js»: ya no se pueden reenviar `mercado`, `catalogo`, `precioCentavos` y `detalle` (K1); hay que reenviarlos en el módulo');
   return codigo
     .replace(ANCLA_K1_CARRITO, () => `${ANCLA_K1_CARRITO} mercado: String(v.mercado || ''), catalogo: String(v.catalogo || ''),`)
-    .replace(ANCLA_K1_ITEM, () => "return { id: /^[A-Za-z0-9_.:-]{1,100}$/.test(id) ? id : '', nombre: String(x.nombre), cantidad: x.cantidad, subtotal: x.subtotal, ...(Number.isSafeInteger(x.precioCentavos) ? { precioCentavos: x.precioCentavos } : {}), ...(typeof x.detalle === 'string' && x.detalle !== '' ? { detalle: x.detalle } : {}) };");
+    // La moneda CRUDA: `validar-carrito.js` vuelve «Bs» toda moneda que no es USD ni ARS (EUR incluida). Solo `Bs`/`BOB` (o ausente) pasan por Bs; cualquier otra queda como «otra» y nunca coincide con un teléfono.
+    .replace(ANCLA_K1_MONEDA, () => "moneda: cuerpo.moneda === undefined || cuerpo.moneda === null || cuerpo.moneda === '' || cuerpo.moneda === 'Bs' || cuerpo.moneda === 'BOB' ? 'Bs' : (cuerpo.moneda === 'ARS' || cuerpo.moneda === 'USD' ? cuerpo.moneda : 'otra'),")
+    .replace(ANCLA_K1_ENTREGA, () => "entrega: cuerpo.entrega === 'envio' || cuerpo.entrega === 'retiro' ? cuerpo.entrega : '',")
+    .replace(ANCLA_K1_ITEM, () => "return { id: /^[A-Za-z0-9_.:-]{1,100}$/.test(id) ? id : '', nombre: String(x.nombre), cantidad: crudos[k] ? crudos[k].cantidad : x.cantidad, subtotal: x.subtotal, ...(Number.isSafeInteger(x.precioCentavos) ? { precioCentavos: x.precioCentavos } : {}), ...(typeof x.detalle === 'string' && x.detalle !== '' ? { detalle: x.detalle } : {}) };");
 }
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
