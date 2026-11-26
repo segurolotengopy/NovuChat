@@ -10,7 +10,10 @@ export const ESPERA_ENTRE_INTENTOS_MS: number;
 export const ESPERA_POR_DEFECTO_SEG: number;
 export const NORMALIZADORES: string[];
 export interface CamposDeLaRafaga { tipo: string; mensajeId: string; from: string; phoneNumberId: string; texto: string }
-export const CAMPOS_POR_DEFECTO: CamposDeLaRafaga;
+export const CAMPOS_CANONICOS: Omit<CamposDeLaRafaga, 'texto'>;
+export const NORMALIZADORES_VERIFICADOS: Record<string, string>;
+export function huellaDe(codigo: string): string;
+export function emisionesDelCodigo(codigo: string): { error?: string; emisiones: { claves: Set<string>; abierto: boolean }[] };
 
 export interface OpcionesDeLaRafaga {
   ancla?: { nodo: string; salida?: number; destino: string };
@@ -21,6 +24,8 @@ export interface OpcionesDeLaRafaga {
   campos?: Partial<CamposDeLaRafaga>;
   /** Nodo del que se leen los campos del mensaje (ascendiente del ancla); sin él, se leen del item del ancla. */
   fuente?: string;
+  /** Nodo(s) que LEEN `textoDelTurno` de «Agrupar ráfaga» (destino o descendientes). Obligatorio; `null` solo para fixtures de prueba. */
+  consumidor?: string | string[] | null;
   puerta?: string;
   posicion?: [number, number];
 }
