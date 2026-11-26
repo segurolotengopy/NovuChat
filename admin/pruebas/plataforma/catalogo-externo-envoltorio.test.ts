@@ -35,7 +35,7 @@ afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true 
 
 interface Opciones {
   cuota?: string | null; env?: Record<string, string | undefined>; ghStg?: string; ghProd?: string; salidaNode?: number;
-  bash?: string[]; nodeReal?: boolean; antes?: (base: string) => void; nodeEspera?: boolean;
+  bash?: string[]; nodeReal?: boolean; antes?: (base: string) => void; nodeEspera?: boolean; sinTrampa?: boolean;
 }
 interface Llamada { argv: string[]; cwd: string; env: Record<string, string | null> }
 
@@ -52,8 +52,10 @@ function preparar(args: string[], o: Opciones = {}) {
     .replace(/^readonly HUELLA_PROD="[0-9a-f]{12}"$/m, `readonly HUELLA_PROD="${huella(PROD)}"`)
     .replace(/^readonly BASE_RESPALDOS="\/var\/tmp"$/m, `readonly BASE_RESPALDOS="${base}"`)
     // El entorno hermético fija CLOUDSDK_CONFIG en una ruta inexistente: la copia lee la carpeta de gcloud de mentira.
-    .replace(/^CONFIG_GCLOUD="\$\{CLOUDSDK_CONFIG:-\$HOME\/\.config\/gcloud-novuchat-prod\}"$/m, `CONFIG_GCLOUD="${gcloud}"`);
-  expect(copia.split('\n').filter((l, i) => l !== original.split('\n')[i])).toHaveLength(4);
+    .replace(/^CONFIG_GCLOUD="\$\{CLOUDSDK_CONFIG:-\$HOME\/\.config\/gcloud-novuchat-prod\}"$/m, `CONFIG_GCLOUD="${gcloud}"`)
+    // Solo para la contraprueba de Ctrl-C: la tubería SIN la trampa del filtro.
+    .replace(/^\) 2>&1 \| \{ trap '' INT; tapar; \}$/m, (l) => (o.sinTrampa ? ') 2>&1 | { tapar; }' : l));
+  expect(copia.split('\n').filter((l, i) => l !== original.split('\n')[i])).toHaveLength(o.sinTrampa ? 5 : 4);
   writeFileSync(join(repo, 'scripts', 'catalogo-externo.sh'), copia, { mode: 0o755 });
   o.antes?.(base);
 
@@ -358,10 +360,9 @@ describe('catalogo-externo.sh: el arranque no hereda comportamiento (BASH_ENV, f
     expect(conBinario.status).toBe(1); expect(conBinario.llamada).not.toBeNull();
     expect(conBinario.llamada!.env['PATH']).toBe(SISTEMA);
   });
-  // Prueba de comportamiento, no de la trampa: en esta tubería el filtro también sobrevive sin `trap '' INT` (la
-  // contraprueba sin la trampa sigue en verde); lo que fija es la salida 130 y el aviso visible y tapado.
-  it('Ctrl-C: Node recibe la señal, su aviso se ve (tapado) y el envoltorio sale con 130', async () => {
-    const p = preparar(['--entorno', 'staging', ...BASE], { nodeEspera: true });
+  /** Lanza el envoltorio en su propio grupo, espera «esperando» y manda SIGINT a TODO el grupo (como Ctrl-C en la terminal). */
+  async function conCtrlC(o: Opciones) {
+    const p = preparar(['--entorno', 'staging', ...BASE], { ...o, nodeEspera: true });
     const hijo = spawn('bash', p.argv, { env: entornoDelEmulador(undefined, p.env), detached: true });
     let salida = '';
     const listo = new Promise<void>((res) => {
@@ -371,8 +372,30 @@ describe('catalogo-externo.sh: el arranque no hereda comportamiento (BASH_ENV, f
     const fin = new Promise<number | null>((res) => { hijo.on('close', (c: number | null) => res(c)); });
     await listo;
     process.kill(-hijo.pid!, 'SIGINT');
-    expect(await fin).toBe(130);
+    return { codigo: await fin, salida };
+  }
+  it('Ctrl-C: Node recibe la señal, su aviso (que sale 0,3 s después) se ve tapado y el envoltorio sale con 130', async () => {
+    const { codigo, salida } = await conCtrlC({});
+    expect(codigo).toBe(130);
     expect(salida).toContain('interrumpido en projects/<proyecto>');
     sinIds(salida);
   }, 15000);
+  it('NEGADO (contraprueba de la trampa): sin `trap \'\' INT` el filtro muere con Ctrl-C y el aviso de Node se pierde', async () => {
+    const { salida } = await conCtrlC({ sinTrampa: true });
+    expect(salida).toContain('esperando');
+    expect(salida).not.toContain('interrumpido');
+    sinIds(salida);
+  }, 15000);
+  it('NEGADO: una función exportada `command`, `compgen` o `unset` no reemplaza la limpieza (modo privilegiado -p)', () => {
+    for (const nombre of ['command', 'compgen', 'unset']) {
+      const r = correr(['--entorno', 'staging', ...BASE], { env: { [`BASH_FUNC_${nombre}%%`]: '() { echo /tmp/node-falso; }' } });
+      expect(r.status, nombre).toBe(1); expect(r.llamada, nombre).not.toBeNull();
+      sinIds(r.salida);
+    }
+    // El ataque real: `compgen` reemplazada esconde a `command`, que la limpieza ya no ve. Solo -p lo cierra.
+    const juntas = correr(['--entorno', 'staging', ...BASE], { env: {
+      'BASH_FUNC_compgen%%': '() { :; }', 'BASH_FUNC_command%%': '() { echo /tmp/node-falso; }' } });
+    expect(juntas.status).toBe(1); expect(juntas.llamada).not.toBeNull();
+    sinIds(juntas.salida);
+  });
 });

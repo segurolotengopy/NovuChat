@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # Enciende (o apaga, o revierte) el CATÁLOGO EXTERNO (NovuTienda) de UN comercio, EN SECO por omisión, sin que el id del
 # proyecto pase por la pantalla ni por la línea de comandos. La lógica, el respaldo y la vuelta atrás viven en
 # admin/scripts/plataforma/aplicar-catalogo-externo.mjs; este envoltorio solo resuelve el proyecto y pone las llaves.
@@ -31,15 +31,21 @@
 #
 # COSTO: el del script de Node (seco: 1 lectura; --aplicar: 2 lecturas y 1 escritura de un campo). 0 mensajes.
 # Contra producción: con el «sí» de Andres, staging y seco primero.
-set -euo pipefail
 case "$-" in *x*) echo "✗ xtrace activo (bash -x): imprimiría el id del proyecto. No se hizo nada." >&2; exit 2 ;; esac
+# MODO PRIVILEGIADO (-p, en la primera línea): bash NO importa funciones exportadas ni lee BASH_ENV, ENV ni SHELLOPTS, así
+# que una función `compgen`, `command`, `unset` o `builtin` heredada no puede reemplazar la limpieza de abajo (revisión de
+# Rearquitectura del 25/11/2026). Si se lo llama como `bash catalogo-externo.sh` (sin -p), se vuelve a lanzar con -p antes
+# de todo: `case` es palabra reservada y no se reemplaza. Lo único que queda fuera es una función exportada llamada `exec`
+# en esa forma de llamarlo; la forma documentada, `./scripts/catalogo-externo.sh`, no tiene ese resto.
+case "$-" in *p*) ;; *) exec /bin/bash -p -- "$0" "$@" ;; esac
+set -euo pipefail
 [[ "${SHELLOPTS:-}" != *xtrace* ]] || { echo "✗ SHELLOPTS=xtrace en el entorno: imprimiría el id del proyecto. No se hizo nada." >&2; exit 2; }
 set +x
 # Los nombres que llevan ids no se heredan: se desexportan y se descartan antes de fijarlos aquí.
 export -n P OTRO CUOTA STAGING PROD 2>/dev/null || true
 unset P OTRO CUOTA STAGING PROD
-# El arranque no hereda comportamiento: sin BASH_ENV/ENV (los bash hijos no lo leen) ni funciones exportadas (una función
-# `sha256sum` o `command` falsearía la huella o la búsqueda de node). node y gh se resuelven con el PATH de quien llama
+# El arranque no hereda comportamiento: sin BASH_ENV/ENV (los bash hijos no lo leen) ni funciones (con -p no se importan;
+# el bucle queda como segunda barrera: una función `sha256sum` o `command` falsearía la huella o la búsqueda de node). node y gh se resuelven con el PATH de quien llama
 # (nvm, ~/.local/bin) y desde ahí se usan por RUTA ABSOLUTA; todo lo demás (sha256sum, sed, grep, mkdir, stat, env) sale
 # de un PATH de sistema fijo, también el de Node.
 unset BASH_ENV ENV
@@ -172,12 +178,16 @@ if (( APLICAR )); then echo "Catálogo externo · ${ENTORNO} · ${TENANT} · APL
 if [[ -n "$RESPALDO" ]]; then echo "  respaldo: ${RESPALDO}"; fi
 
 # Lo que imprima Node (y firebase-admin) pasa por aquí: los ids, y cualquier número largo o cuenta, se tapan.
+# UN solo proceso perl (/usr/bin, en toda imagen de Ubuntu): los ids le llegan por su ENTORNO (nunca por argv) y se
+# reemplazan como texto literal (\Q…\E); procesa cada línea al llegar y no guarda nada en un búfer ($| = 1), así que si
+# Node se corta no se pierde lo último.
 tapar() {
-  local linea
-  while IFS= read -r linea || [[ -n "$linea" ]]; do
-    linea="${linea//"$P"/<proyecto>}"; linea="${linea//"$OTRO"/<proyecto>}"
-    printf '%s\n' "$linea" | sed -E 's/[0-9]{9,}/<número>/g; s/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<cuenta>/g'
-  done
+  TAPAR_P="$P" TAPAR_OTRO="$OTRO" perl -pe '
+    BEGIN { $| = 1; ($p, $o) = @ENV{qw(TAPAR_P TAPAR_OTRO)}; }
+    s/\Q$p\E/<proyecto>/g if length $p;
+    s/\Q$o\E/<proyecto>/g if length $o;
+    s/[0-9]{9,}/<número>/g;
+    s/[A-Za-z0-9._%+-]+\@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<cuenta>/g;'
 }
 
 cd "$RAIZ/admin"
