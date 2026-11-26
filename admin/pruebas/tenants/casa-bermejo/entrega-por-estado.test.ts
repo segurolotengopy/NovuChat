@@ -264,9 +264,10 @@ describe('FILAS 16 y 17: el ENVÍO, en un mensaje y en mensajes separados (model
     const m = conEnvio({ modeloDice: modeloAdverso() });
     const t1 = hablar(m, ANA, mTexto('Ana Pérez'));
     expect(t1.avisos.length).toBeGreaterThanOrEqual(1);
-    const t2 = hablar(m, ANA, mTexto('4412345'));
+    // Tras la derivación el asistente ya no está pidiendo datos (la memoria lo registra): una cifra o una ciudad SIN rótulo ya no se toman; con su rótulo sí (sexta ronda, hallazgos 2 y 12).
+    const t2 = hablar(m, ANA, mTexto('CI 4412345'));
     expect(t2.avisos).toHaveLength(0);
-    hablar(m, ANA, mTexto('Cochabamba'));
+    hablar(m, ANA, mTexto('ciudad Cochabamba'));
     const t4 = hablar(m, ANA, mTexto('flota Bolivar'));
     expect(t4.avisos).toHaveLength(0);
     expect(ficha(m).entrega).toMatchObject({ nombre: '', documento: '4412345', ciudad: 'Cochabamba', flota: 'Bolivar' });

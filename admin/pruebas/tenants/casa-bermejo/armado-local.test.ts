@@ -207,7 +207,7 @@ describe('NEGADO: lo que un dato local no puede traer', () => {
   it('UBICACIÓN DE LA TIENDA: `mapaTienda` solo acepta https a Google Maps, sin `..`, sin `%2e/%2f/%5c` y sin el recurso `/url`; vacío sí', () => {
     const ok = (v: string) => { const d = base(); (d['configBase'] as J)['mapaTienda'] = v; return mensaje(() => C.cargarDatosLocal(archivoLocal(d))); };
     for (const bueno of ['', 'https://maps.app.goo.gl/AbC123', 'https://www.google.com/maps/place/Ejemplo']) expect(ok(bueno), bueno).toBe('');
-    for (const malo of ['http://maps.app.goo.gl/x', 'https://evil.example.com/maps', 'https://maps.app.goo.gl/../x', 'https://maps.app.goo.gl/%2E%2e/x', 'https://maps.app.goo.gl/a%2fb', 'https://maps.app.goo.gl/a%5Cb', 'https://maps.google.com/url?q=https://evil.example.com', 'https://maps.app.goo.gl/a b']) {
+    for (const malo of ['http://maps.app.goo.gl/x', 'https://evil.example.com/maps', 'https://maps.app.goo.gl/../x', 'https://maps.app.goo.gl/%2E%2e/x', 'https://maps.app.goo.gl/a%2fb', 'https://maps.app.goo.gl/a%5Cb', 'https://maps.google.com/url?q=https://evil.example.com', 'https://maps.google.com/local_url?q=https://evil.example', 'https://www.google.com/maps/url?q=x', 'https://maps.google.com//evil.example', 'https://www.google.com/search?q=x', 'https://maps.app.goo.gl/a b']) {
       expect(ok(malo), malo).toMatch(/mapaTienda: forma no válida/);
     }
   });
