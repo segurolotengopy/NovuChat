@@ -560,7 +560,7 @@ describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES 
   });
 
   it.each(['Puerta del turno', 'Reportar mensaje (entrante)', 'Config del negocio', 'Traer configuración'])('Walisuma con fuente «%s» (un nodo que NO trae el mensaje): ERROR, no queda apagada en silencio', (fuente) => {
-    const patron = new RegExp(`«${fuente.replace(/[()]/g, '\\$&')}» no emite`);
+    const patron = new RegExp(`«${fuente.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}» no emite`);
     expect(() => injertarRafaga(walisuma(), { ancla: ANCLA_WALISUMA, fuente, campos: TEXTO, consumidor: 'Decidir turno' })).toThrow(patron);
     // la misma guardia sobre un flujo ya armado a mano (sin pasar por el injerto)
     const f = injertarRafaga(walisuma(), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: TEXTO, consumidor: 'Decidir turno' });
