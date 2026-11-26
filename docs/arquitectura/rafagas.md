@@ -160,7 +160,10 @@ sigue emitiendo el item **del ancla** más `rafaga` y `textoDelTurno`; el flujo 
   guardia de un flujo armado busca los nodos descendientes que lo leen y, si no hay ninguno, lo dice. **Los PR de cada flujo ya traen su cableado** (Walisuma: «Decidir
   turno» lee `$('Agrupar ráfaga')` → `textoDelTurno`); en #1117, que no trae flujos, las pruebas lo parchean en memoria (`rafaga-cableado.ts`) con el mismo patrón.
 - **La `puerta` no puede apagar la ráfaga:** al armar (y en la guardia de un flujo armado) se analiza con acorn. Una puerta que no es UNA expresión válida, o que se pliega a una
-  constante falsa (`false`, `0`, `null`, `!1`, `1 === 2`, `x && false`…), es ERROR; y cada `n.<campo>` que lee tiene que ser una clave de nivel superior que el productor emite
+  constante falsa (`false`, `0`, `null`, `!1`, `1 === 2`, `x && false`…), es ERROR. El pliegue es parcial: `plegar` entiende literales, `undefined`/`NaN`/`Infinity`, plantillas
+  sin interpolación, arreglos y objetos literales, los operadores unarios `!`, `-`, `+` y `void`, `&&`/`||`/`??` y las comparaciones (`===`, `!==`, `==`, `!=`, `<`, `>`, `<=`, `>=`).
+  **No pliega** una secuencia (`(true, false)`), un ternario (`true ? false : false`), una llamada (`String(false) === "x"`, `[].length > 0`) ni un acceso a otro nodo: lo que no
+  se pliega se trata como «depende de algo que se lee» y la puerta ARMA, aunque en la práctica sea siempre falsa (declarado como N1 en los límites conocidos); y cada `n.<campo>` que lee tiene que ser una clave de nivel superior que el productor emite
   (la misma verificación y la misma excepción por huella que los `campos`). `n.noExiste`, `n.a.b.c` sobre un campo inexistente, `n` usado entero o `n[clave calculada]` son ERROR.
   El apagado previsto es `rafagaActiva: false` o `rafagaApagada`, no la puerta.
 - **Emisión de un retorno:** cada `return` del nivel superior del productor tiene que ser un arreglo de `{ json: … }` resoluble (literal, lista con `push`, `.map` con `{ json }`,
@@ -171,6 +174,14 @@ sigue emitiendo el item **del ancla** más `rafaga` y `textoDelTurno`; el flujo 
   - **I1, consumidor por nombre sin alcance:** `leeElTextoDe` junta las declaraciones por NOMBRE, sin alcance léxico: una variable homónima en otra función que apunta a «Agrupar ráfaga»
     hace que cuente como lector un nodo que lee el texto de otra fuente. Menores relacionados: `$` redefinido localmente, una lectura en código muerto (`if (false) { … }`) y una
     lectura asignada a una variable que nunca se usa también bastan. Un consumidor así pierde los mensajes que las otras ejecuciones callaron: lo revisa el PR del flujo.
+  - **N1, puertas siempre falsas que arman:** la puerta se verifica con el pliegue parcial descrito arriba y con la lectura de `n.<campo>`. Arman, aunque nunca den «sí»:
+    `(true, false)`, `true ? false : false`, `String(false) === "x"`, `[].length > 0`, `$("Config base").first().json.noExiste === true` (el campo de otro nodo no se verifica),
+    `n.texto.foo.bar` (el campo se emite, pero el acceso profundo lanza y el `catch` del IF da `false`), `typeof n.texto === "number"` y `n.texto === 1 && n.texto === 2`.
+    La puerta es una opción del PR de cada flujo y no sustituye al apagado previsto: lo revisa ese PR. La corrección futura es una lista blanca de la forma de la puerta.
+  - **N2, lista devuelta mutada por miembro:** `resoluble` solo mira la declaración de la lista y `push`/`unshift`. Una lista devuelta que se muta con una asignación de
+    miembro (`out[0] = $input.first()`), con `splice` o con `Object.assign(out, …)` arma la pieza sin deber: las claves emitidas se calculan sobre la declaración, no sobre la
+    mutación. Sin corregir; lo revisa el PR del flujo. La corrección futura es volver no resoluble la lista con cualquier asignación de miembro, método distinto de
+    `push`/`unshift` u `Object.assign` sobre ella.
   - **M1, residuales de la emisión:** `delete` por alias (`const p = o; delete p.k;`); un valor nulo por variable (`const u = undefined; … k: u`); un spread de objeto en literal con clave
     calculada `{ [k]: v }` no vacía las claves; un `.map` cuyo callback delega en otra función o un retorno por `.filter`/`.flatMap` se tratan como no resolubles (se niegan, el lado seguro);
     una variable `n` redeclarada dentro de la puerta (parámetro de flecha) no se distingue de la `n` del item; `x && algo` con `algo` falsa solo se pliega si `x` no se lee.
