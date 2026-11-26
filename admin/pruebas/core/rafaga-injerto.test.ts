@@ -8,6 +8,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import vm from 'node:vm';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { RAIZ_FLUJOS } from '../../scripts/ensamblar-flujo.mjs';
 import { correr } from '../lib/flujo';
 import {
   ANCLA_REPORTE, NODO_RAFAGA_AGRUPAR, NODO_RAFAGA_CONSULTAR, NODO_RAFAGA_ESPERAR, NODO_RAFAGA_SI, NODOS_DE_LA_RAFAGA, TIMEOUT_RAFAGA_MS,
@@ -24,7 +27,7 @@ const un = (name: string, position: [number, number], extra: Record<string, unkn
 const enl = (...nombres: string[]) => ({ main: [nombres.map((node) => ({ node, type: 'main', index: 0 }))] });
 
 /** Un flujo mínimo con la forma de los reales: el reporte del entrante arriba, y la rama del agente más abajo. */
-function sintetico(): Flujo {
+function sinTipos(): Flujo {
   return {
     name: 'sintetico',
     nodes: [
@@ -49,6 +52,16 @@ function sintetico(): Flujo {
       '¿Atención normal?': enl('Agente'),
     },
   };
+}
+/**
+ * Como los flujos reales de los demos, el item del ancla sale del normalizador por nodos que LO DEJAN PASAR (IF, Switch, Filter, Wait, NoOp): aquí las dos
+ * configuraciones y el ancla son NoOp / IF. Un Code, un Set o un HTTP en ese camino exige `fuente` (lista blanca; ver «con un Code o un HTTP» abajo).
+ */
+function sintetico(): Flujo {
+  const f = sinTipos();
+  for (const n of ['Config del negocio', 'Config base']) nodo(f, n).type = 'n8n-nodes-base.noOp';
+  nodo(f, '¿Atención normal?').type = 'n8n-nodes-base.if';
+  return f;
 }
 const ANCLA = { nodo: '¿Atención normal?', salida: 0, destino: 'Agente' };
 const nodo = (f: Flujo, nombre: string): Nodo => f.nodes.find((n: Nodo) => n.name === nombre);
@@ -211,7 +224,7 @@ describe('rafaga: se niega a armar (NEGATIVAS)', () => {
     nodo(f, ANCLA_REPORTE).position = [960, 900];
     f.connections['Config del negocio'] = enl('Reportar mensaje (entrante)');
     f.connections[ANCLA_REPORTE] = enl('¿Atención normal?');
-    expect(() => injertarRafaga(f, { ancla: ANCLA })).not.toThrow();
+    expect(() => injertarRafaga(f, { ancla: ANCLA, fuente: 'Normalizar entrada' })).not.toThrow();
   });
   it('sin normalizador, sin «Config base», sin «Config del negocio» o sin «Traer configuración»', () => {
     for (const [faltante, patron] of [['Normalizar entrada', /normaliza/], ['Config base', /Config base/], ['Config del negocio', /Config del negocio/], ['Traer configuración', /Traer configuración/]] as const) {
@@ -363,16 +376,36 @@ describe('rafaga: `fuente` (el ancla viene tras un nodo que NO trae los campos d
   const CAMPOS = { texto: 'texto' };
 
   it('sin fuente y con un ancla que viene tras un Code o un HTTP que no traen los campos: se niega (no queda apagada en silencio)', () => {
-    expect(() => injertarRafaga(tras('code'), { ancla: ANCLA, campos: CAMPOS }), 'code').toThrow(/viene de «Puerta del turno».*apagada en silencio.*fuente/);
-    expect(() => injertarRafaga(tras('http'), { ancla: ANCLA, campos: CAMPOS }), 'http').toThrow(/viene de «Puerta del turno»/);
-    expect(() => injertarRafaga(tras('http'), { ancla: { nodo: 'Puerta del turno', destino: '¿Atención normal?' }, campos: CAMPOS }), 'ancla http').toThrow(/viene de «Puerta del turno»/);
+    expect(() => injertarRafaga(tras('code'), { ancla: ANCLA, campos: CAMPOS }), 'code').toThrow(/lo impide «Puerta del turno».*apagada en silencio.*fuente/);
+    expect(() => injertarRafaga(tras('http'), { ancla: ANCLA, campos: CAMPOS }), 'http').toThrow(/lo impide «Puerta del turno»/);
+    expect(() => injertarRafaga(tras('http'), { ancla: { nodo: 'Puerta del turno', destino: '¿Atención normal?' }, campos: CAMPOS }), 'ancla http').toThrow(/lo impide «Puerta del turno»/);
   });
 
-  it('SIN falsos errores: un Code que copia la entrada o menciona el id, o un nodo desconocido, no se objeta', () => {
+  it('LISTA BLANCA: sin `fuente` NINGÚN Code, Set, HTTP o Merge entre el normalizador y el ancla se tolera, aunque copie la entrada o mencione el id', () => {
     for (const codigo of ["return $input.all().map((i) => ({ json: { ...i.json, ruta: 'sigue' } }));", "return $input.all().map((i) => ({ json: Object.assign({}, i.json, { ruta: 'sigue' }) }));", "return [{ json: { mensajeId: $('Normalizar entrada').first().json.mensajeId } }];", 'return $input.all();']) {
-      expect(() => injertarRafaga(tras('code', codigo), { ancla: ANCLA }), codigo).not.toThrow();
+      expect(() => injertarRafaga(tras('code', codigo), { ancla: ANCLA }), codigo).toThrow(/lo impide «Puerta del turno».*apagada en silencio/);
+      expect(() => injertarRafaga(tras('code', codigo), { ancla: ANCLA, fuente: 'Normalizar entrada' }), `${codigo} con fuente`).not.toThrow();
+    }
+    for (const tipo of ['n8n-nodes-base.set', 'n8n-nodes-base.merge', 'n8n-nodes-base.httpRequest', 'n8n-nodes-base.code']) {
+      const f = tras('code');
+      nodo(f, 'Puerta del turno').type = tipo;
+      expect(() => injertarRafaga(f, { ancla: ANCLA }), tipo).toThrow(/apagada en silencio/);
+    }
+  });
+
+  it('se arma sin `fuente` solo si TODO camino del ancla al normalizador pasa por IF, Switch, Filter, Wait o NoOp', () => {
+    for (const tipo of ['n8n-nodes-base.if', 'n8n-nodes-base.switch', 'n8n-nodes-base.filter', 'n8n-nodes-base.wait', 'n8n-nodes-base.noOp']) {
+      const f = tras('code');
+      nodo(f, 'Puerta del turno').type = tipo;
+      expect(() => injertarRafaga(f, { ancla: ANCLA }), tipo).not.toThrow();
     }
     expect(() => injertarRafaga(sintetico(), { ancla: ANCLA })).not.toThrow();
+    // Un solo camino con un nodo no transparente basta para negarse (la otra rama sí llega limpia).
+    const f = sintetico();
+    f.nodes.push({ ...un('Desvio', [600, 500]), type: 'n8n-nodes-base.code', typeVersion: 2, parameters: { jsCode: 'return [];' } });
+    f.connections['Normalizar entrada'].main[0].push({ node: 'Desvio', type: 'main', index: 0 });
+    f.connections.Desvio = enl('¿Atención normal?');
+    expect(() => injertarRafaga(f, { ancla: ANCLA })).toThrow(/lo impide «Desvio»/);
   });
 
   it('con fuente, se arma, y el IF, la consulta y el Code leen de ESA fuente; la guardia lo acepta (la infiere del propio nodo)', () => {
@@ -495,5 +528,37 @@ describe('rafaga: referencias a nodos que n8n puede precargar (`problemasDeRefer
     code.parameters.jsCode = code.parameters.jsCode.replace("const mensaje = $('Normalizar entrada').first().json;", 'const mensaje = FUENTE !== \'\' ? $(FUENTE).first().json : entrada;');
     expect(problemasDeReferencias(f).join('|')).toMatch(/Agrupar ráfaga».*mezcla referencias literales con referencias dinámicas/);
     expect(hallazgosDeLaRafaga(f, { campos: CAMPOS }).join('|')).toMatch(/Agrupar ráfaga».*no es el nodo común/); // y la guardia de la pieza también lo ve
+  });
+});
+
+describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES (lista blanca)', () => {
+  const real = (ruta: string): Flujo => JSON.parse(readFileSync(join(RAIZ_FLUJOS, ruta), 'utf8'));
+  const REALES: [string, { nodo: string; salida: number; destino: string }][] = [
+    ['clientes/walisuma/walisuma.json', { nodo: '¿Bajar medio?', salida: 1, destino: 'Decidir turno' }], // tras «Puerta del turno»
+    ['clientes/agenda-minima/agenda-minima.v0.json', { nodo: '¿Atención normal?', salida: 0, destino: '¿Bajar medio?' }], // Bellido
+  ];
+
+  it.each(REALES)('%s: sin `fuente` se NIEGA a armar (el item del ancla no sale del normalizador por nodos transparentes)', (ruta, ancla) => {
+    expect(() => injertarRafaga(real(ruta), { ancla })).toThrow(/apagada en silencio/);
+  });
+  it.each(REALES)('%s: con `fuente: \'Normalizar entrada\'` arma y la guardia queda en verde', (ruta, ancla) => {
+    const f = injertarRafaga(real(ruta), { ancla, fuente: 'Normalizar entrada' });
+    expect(hallazgosDeLaRafaga(f)).toEqual([]);
+    expect(hallazgosDeLaRafaga(f, { exigir: true })).toEqual([]);
+    expect(nodo(f, NODO_RAFAGA_SI).parameters.conditions.conditions[0].leftValue).toContain("const n = $('Normalizar entrada').first().json;");
+  });
+  it.each([['demo-a-agendamiento.json'], ['demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF, así que arma sin `fuente`', (ruta) => {
+    const f = injertarRafaga(real(ruta), { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Es un comprobante?' } });
+    expect(hallazgosDeLaRafaga(f)).toEqual([]);
+  });
+  it('sin fuente, la guardia sobre un flujo ya armado también lo dice (`hallazgosDeLaRafaga`)', () => {
+    const [ruta, ancla] = REALES[0];
+    const f = injertarRafaga(real(ruta), { ancla, fuente: 'Normalizar entrada' });
+    nodo(f, NODO_RAFAGA_SI).parameters.conditions.conditions[0].leftValue = nodo(f, NODO_RAFAGA_SI).parameters.conditions.conditions[0].leftValue.replace("$('Normalizar entrada').first().json", '$json');
+    nodo(f, NODO_RAFAGA_CONSULTAR).parameters.jsonBody = nodo(f, NODO_RAFAGA_CONSULTAR).parameters.jsonBody.split("$('Normalizar entrada').first().json").join("$('¿Esperar ráfaga?').first().json");
+    nodo(f, NODO_RAFAGA_CONSULTAR).parameters.headerParameters.parameters[0].value = nodo(f, NODO_RAFAGA_CONSULTAR).parameters.headerParameters.parameters[0].value.split("$('Normalizar entrada').first().json").join("$('¿Esperar ráfaga?').first().json");
+    nodo(f, NODO_RAFAGA_AGRUPAR).parameters.jsCode = codigoDeLaRafaga('Config base', undefined, '');
+    const h = hallazgosDeLaRafaga(f);
+    expect(h.join('|')).toMatch(/apagada en silencio/);
   });
 });

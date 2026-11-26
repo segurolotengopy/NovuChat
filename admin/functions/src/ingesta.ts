@@ -1674,14 +1674,18 @@ export const configuracionFlujo = onRequest(
       respuesta.status(404).send('numero no asignado'); return;
     }
 
-    // TOPE DE LA RAMA `rafaga` (`core/conversacion/rafaga.ts`): por comercio y teléfono, en memoria, antes de
-    // leer la ficha y antes de cualquier consulta de mensajes. La ruta autenticada ya costó UNA lectura
-    // (`rutasWhatsApp`), y no se puede evitar: el `tenantId` sale de ahí, y sin firma válida (401) ni se
-    // llega. Una llamada de más responde 429 y no lee nada más.
-    const crudoRafaga = (peticion.body as Record<string, unknown> | null | undefined)?.['rafaga'];
-    if (crudoRafaga !== undefined) {
-      const telCrudo = (peticion.body as Record<string, unknown>)['telefono'];
+    // TOPE DE LA RAMA `rafaga` (`core/conversacion/rafaga.ts`): por comercio+teléfono y por comercio, en
+    // memoria, antes de leer la ficha y antes de cualquier consulta de mensajes. Orden: firma (401, no gasta
+    // cupo) -> forma del pedido (400, no gasta cupo) -> cupo (429). La ruta autenticada ya costó UNA lectura
+    // (`rutasWhatsApp`), y no se puede evitar: el `tenantId` sale de ahí. Una llamada de más responde 429 y
+    // no lee nada más.
+    const cuerpoTope = (typeof peticion.body === 'object' && peticion.body !== null ? peticion.body : {}) as Record<string, unknown>;
+    if (cuerpoTope['rafaga'] !== undefined) {
+      const telCrudo = cuerpoTope['telefono'];
       const telTope = typeof telCrudo === 'string' && /^[0-9]{8,15}$/.test(telCrudo.trim()) ? telCrudo.trim() : null;
+      if (cuerpoTope['sesion'] !== undefined) { respuesta.status(400).json({ error: 'rafaga_con_sesion' }); return; }
+      const forma = validarRafaga(cuerpoTope['rafaga'], telTope);
+      if (!forma.ok) { respuesta.status(forma.status).json({ error: forma.error }); return; }
       if (!tomarCupoDeRafaga(ruta.tenantId, telTope, Date.now())) {
         respuesta.status(429).json({ error: 'rafaga_tope' }); return;
       }
