@@ -104,7 +104,7 @@ describe('apagar-rafaga.mjs', () => {
     await db.doc(`tenants/${T}`).update({ estado: 'dado_de_baja' });
     const r = correr('--tenant', T, '--apagar', '--aplicar');
     expect(r.codigo).toBe(1);
-    expect(r.salida).toContain('dado de baja');
+    expect(r.salida).toContain('no está activo ni suspendido');
     expect((await ficha()).get('rafagaApagada')).toBeUndefined();
     expect(await auditorias()).toBe(0);
   });
@@ -131,30 +131,103 @@ describe('apagar-rafaga.mjs', () => {
 });
 
 describe('apagar-rafaga.mjs: salvaguarda de producción (análisis de argumentos, sin tocar Firestore)', () => {
-  const base = ['--proyecto', 'proyecto-real-x1', '--tenant', T, '--apagar'];
-  it('--aplicar sin --confirmo-produccion se rechaza', () => {
-    const r = analizar([...base, '--aplicar']);
-    expect(r.ok).toBe(false);
-    expect(r.problemas.join(' ')).toContain('--confirmo-produccion');
+  // Ids armados al vuelo; ninguno es un proyecto real.
+  const STG = 'proyecto-stg-x1';
+  const PRD = 'proyecto-prd-x1';
+  const ENV = { GCP_PROJECT_ID_STAGING: STG, GCP_PROJECT_ID_PROD: PRD };
+  const con = (proyecto: string, ...mas: string[]) => ['--proyecto', proyecto, '--tenant', T, '--apagar', ...mas];
+
+  it('producción y staging: --aplicar sin --confirmo-produccion se rechaza; con el tenant igual pasa; el simulacro no la exige', () => {
+    for (const p of [PRD, STG]) {
+      const r = analizar(con(p, '--aplicar'), ENV);
+      expect(r.ok).toBe(false);
+      expect(r.problemas.join(' ')).toContain('--confirmo-produccion');
+      expect(analizar(con(p, '--aplicar', '--confirmo-produccion', T), ENV).ok).toBe(true);
+      expect(analizar(con(p), ENV).ok).toBe(true);
+    }
+    expect(analizar(con(PRD), ENV).cfg.entorno).toBe('produccion');
+    expect(analizar(con(STG), ENV).cfg.entorno).toBe('staging');
   });
-  it('--confirmo-produccion que no coincide se rechaza', () => {
-    expect(analizar([...base, '--aplicar', '--confirmo-produccion', OTRO]).ok).toBe(false);
+  it('--confirmo-produccion que no coincide o vacío se rechaza, en cualquier orden de argumentos', () => {
+    expect(analizar(con(PRD, '--aplicar', '--confirmo-produccion', OTRO), ENV).ok).toBe(false);
+    expect(analizar(con(PRD, '--aplicar', '--confirmo-produccion', ''), ENV).ok).toBe(false);
+    expect(analizar(['--confirmo-produccion', '', '--aplicar', ...con(PRD)], ENV).ok).toBe(false);
+    expect(analizar(['--aplicar', '--apagar', '--tenant', T, '--proyecto', PRD], ENV).ok).toBe(false);
+    expect(analizar(['--tenant', T, '--aplicar', '--proyecto', PRD, '--apagar', '--confirmo-produccion', OTRO], ENV).ok).toBe(false);
   });
-  it('--confirmo-produccion vacío se rechaza, en cualquier orden de argumentos', () => {
-    expect(analizar([...base, '--aplicar', '--confirmo-produccion', '']).ok).toBe(false);
-    expect(analizar(['--confirmo-produccion', '', '--aplicar', ...base]).ok).toBe(false);
-    expect(analizar(['--aplicar', '--apagar', '--tenant', T, '--proyecto', 'proyecto-real-x1']).ok).toBe(false);
-    expect(analizar(['--tenant', T, '--aplicar', '--proyecto', 'proyecto-real-x1', '--apagar', '--confirmo-produccion', OTRO]).ok).toBe(false);
+  it('un proyecto real que no es de la lista blanca, o sin lista blanca, se rechaza', () => {
+    expect(analizar(con('proyecto-otro-x1', '--aplicar', '--confirmo-produccion', T), ENV).ok).toBe(false);
+    expect(analizar(con(PRD, '--aplicar', '--confirmo-produccion', T), {}).ok).toBe(false);
+    expect(analizar(con(PRD, '--aplicar', '--confirmo-produccion', T), { ...ENV, GCP_PROJECT_ID_STAGING: PRD }).ok).toBe(false);
   });
-  it('un demo-* sin FIRESTORE_EMULATOR_HOST exige confirmación; con el host local, no', () => {
-    const demo = ['--proyecto', PROYECTO, '--tenant', T, '--apagar', '--aplicar'];
+  it('un proyecto real con FIRESTORE_EMULATOR_HOST sobrante se rechaza (no escribe en el emulador con el nombre de uno real)', () => {
+    for (const extra of [{ FIRESTORE_EMULATOR_HOST: HOST }, { FIRESTORE_EMULATOR_HOST: '' }, { FIREBASE_AUTH_EMULATOR_HOST: HOST }]) {
+      const r = analizar(con(PRD, '--aplicar', '--confirmo-produccion', T), { ...ENV, ...extra });
+      expect(r.ok).toBe(false);
+      expect(r.problemas.join(' ')).toContain('ambiguo');
+    }
+  });
+  it('demo-*: solo con el host local; ids demo con forma rara se rechazan; la confirmación no se usa contra el emulador', () => {
+    const demo = con(PROYECTO, '--aplicar');
     expect(analizar(demo, {}).ok).toBe(false);
     expect(analizar(demo, { FIRESTORE_EMULATOR_HOST: 'ejemplo.com:80' }).ok).toBe(false);
-    expect(analizar([...demo, '--confirmo-produccion', T], {}).ok).toBe(true);
     expect(analizar(demo, { FIRESTORE_EMULATOR_HOST: HOST }).ok).toBe(true);
+    expect(analizar(demo, { FIRESTORE_EMULATOR_HOST: HOST }).cfg.entorno).toBe('emulador');
+    expect(analizar(con('demo-X Y', '--aplicar'), { FIRESTORE_EMULATOR_HOST: HOST }).ok).toBe(false);
+    expect(analizar([...demo, '--confirmo-produccion', T], { FIRESTORE_EMULATOR_HOST: HOST }).ok).toBe(false);
   });
-  it('con la confirmación igual al tenant pasa; el simulacro no la exige', () => {
-    expect(analizar([...base, '--aplicar', '--confirmo-produccion', T]).ok).toBe(true);
-    expect(analizar(base).ok).toBe(true);
+  it('un id de comercio con «/» o «..» se rechaza', () => {
+    for (const t of ['a/b', '../x', 'abc/auditoria/x']) {
+      expect(analizar(['--proyecto', PROYECTO, '--tenant', t, '--apagar'], { FIRESTORE_EMULATOR_HOST: HOST }).ok, t).toBe(false);
+    }
+  });
+});
+
+describe('apagar-rafaga.mjs: estado del comercio, auditoría y atomicidad', () => {
+  it('solo activo y suspendido: dado de baja, ausente, null o raro salen 1 sin escribir ni auditar', async () => {
+    const sinEstado: Record<string, unknown> = { ...FICHA };
+    delete sinEstado['estado'];
+    for (const f of [{ ...FICHA, estado: 'dado_de_baja' }, sinEstado, { ...FICHA, estado: null }, { ...FICHA, estado: 'raro' }]) {
+      await db.doc(`tenants/${T}`).set(f);
+      const r = correr('--tenant', T, '--apagar', '--aplicar');
+      expect(r.codigo, JSON.stringify(f.estado)).toBe(1);
+      expect((await ficha()).data()).toEqual(f);
+      expect(await auditorias()).toBe(0);
+    }
+  });
+  it('un comercio suspendido sí se puede apagar', async () => {
+    await db.doc(`tenants/${T}`).update({ estado: 'suspendido' });
+    expect(correr('--tenant', T, '--apagar', '--aplicar').codigo).toBe(0);
+    expect((await ficha()).get('rafagaApagada')).toBe(true);
+  });
+  it('el contenido de la auditoría: acción, uid del script, hora del servidor, antes y después', async () => {
+    correr('--tenant', T, '--apagar', '--aplicar');
+    correr('--tenant', T, '--encender', '--aplicar');
+    const docs = (await db.collection(`tenants/${T}/auditoria`).where('accion', '==', 'cambiar_rafaga').get()).docs.map((d) => d.data());
+    expect(docs).toHaveLength(2);
+    for (const d of docs) {
+      expect(d['uid']).toBe('apagar-rafaga');
+      expect(typeof d['en'].toDate).toBe('function');
+      expect(Object.keys(d).sort()).toEqual(['accion', 'antes', 'despues', 'en', 'uid']);
+    }
+    expect(docs.find((d) => d['despues'] === true)?.['antes']).toBeNull();
+    expect(docs.find((d) => d['despues'] === null)?.['antes']).toBe(true);
+  });
+  it('atomicidad: si la auditoría falla, la bandera no queda escrita', async () => {
+    const { ejecutar } = await import('../../scripts/plataforma/apagar-rafaga.mjs');
+    const { FieldValue } = await import('firebase-admin/firestore');
+    const dbRota = {
+      doc: (p: string) => db.doc(p),
+      collection: (p: string) => db.collection(p),
+      runTransaction: (fn: (tx: unknown) => Promise<void>) => db.runTransaction((tx) => fn({
+        get: (r: never) => tx.get(r),
+        update: (...a: [never, never]) => tx.update(...a),
+        create: () => { throw new Error('falla simulada'); },
+      })),
+    };
+    await expect(ejecutar({ proyecto: PROYECTO, tenant: T, apagar: true, aplicar: true, entorno: 'emulador' },
+      { db: dbRota, FieldValue, log: () => {} })).rejects.toThrow('falla simulada');
+    expect((await ficha()).data()).toEqual(FICHA);
+    expect(await auditorias()).toBe(0);
   });
 });

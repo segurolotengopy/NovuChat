@@ -173,8 +173,10 @@ comercio la apagó (campo de `tenants/{id}`, solo Admin SDK).
 
 Script de Plataforma `admin/scripts/plataforma/apagar-rafaga.mjs`: un comercio por corrida, simulacro por omisión («pondría…»).
 `--apagar` escribe `rafagaApagada: true`; `--encender` **borra** el campo (nunca lo pone en `false`). Es idempotente, no toca otros
-campos y deja auditoría `cambiar_rafaga` en `tenants/{id}/auditoria`. Contra un proyecto real, `--aplicar` exige
-`--confirmo-produccion <tenant>` igual a `--tenant`; si el comercio no existe, sale 1 sin escribir. Efecto: la siguiente respuesta de
+campos y deja auditoría `cambiar_rafaga` en `tenants/{id}/auditoria`. Usa la lista blanca de proyectos de sus hermanos
+(emulador `demo-*`, `GCP_PROJECT_ID_STAGING`, `GCP_PROJECT_ID_PROD`; un proyecto real con variables de emulador sobrantes se
+rechaza). Contra staging o producción, `--aplicar` exige `--confirmo-produccion <tenant>` igual a `--tenant`; contra el emulador
+esa opción se rechaza. Solo toca comercios `activo` o `suspendido`; si no existe o es otro estado, sale 1 sin escribir. Efecto: la siguiente respuesta de
 `configuracionFlujo` trae `rafagaApagada: true` y el nodo responde cada texto solo, sin republicar el flujo.
 
 ```
