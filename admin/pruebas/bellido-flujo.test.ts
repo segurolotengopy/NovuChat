@@ -43,6 +43,7 @@
  * en las suites comunes, cuando el archivo se agregue a sus listas de flujos.
  */
 import { quitarIndicador } from '../../Flujos/src/core/indicador/indicador-escritura.mjs';
+import { quitarRafaga } from '../../Flujos/src/core/rafaga/rafaga.mjs';
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -72,6 +73,15 @@ const demoA = JSON.parse(
 ) as Flujo;
 // El indicador de escritura (21/11/2026) es pieza común del Demo A, y Bellido A está congelado (no lo lleva): se lo quita del Demo A antes de compararlos.
 quitarIndicador(demoA);
+// Ráfagas (25/11/2026): el Demo A lleva la pieza común (4 nodos) y dos cambios que la acompañan: el prompt del turno lee `textoDelTurno` y «Retomar respuesta»
+// rehace el turno con el texto agrupado. Bellido A está congelado: no lleva nada de eso (lo adopta su propia sesión). Se quita del Demo A antes de compararlos.
+quitarRafaga(demoA);
+{
+  const agente = demoA.nodes.find((n) => n.name === 'AI Agent (Sofía)');
+  if (agente) agente.parameters['text'] = String(agente.parameters['text']).replace('{{ $json.textoDelTurno || $json.userInput }}', '{{ $json.userInput }}');
+  const retomar = demoA.nodes.find((n) => n.name === 'Retomar respuesta');
+  if (retomar) retomar.parameters['jsCode'] = String(retomar.parameters['jsCode']).replace(/\/\/ Si «Agrupar ráfaga» unió[^\n]*\n\/\/ [^\n]*\n\/\/ [^\n]*\n/, '').replace(/try \{\n  const agrupado[\s\S]*?\} catch \(e\) \{ \/\* sin la pieza[^\n]*\n/, '');
+}
 // La rama del guardado de la imagen SALIENTE del asistente (16/11/2026, bloque 2a) es del Demo A: el flujo A de Bellido está descartado desde el 01/10 (corre
 // Agenda mínima, que no manda QR) y Andres ordenó no tocarlo, así que NO la lleva. Se la quita del Demo A antes de compararlos, con su empalme al reporte del QR.
 {

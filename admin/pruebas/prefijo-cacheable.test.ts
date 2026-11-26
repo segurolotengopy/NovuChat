@@ -90,7 +90,8 @@ for (const { archivo, agente, trasElTope } of FLUJOS) {
       // El texto del cliente va DESPUÉS de la marca: nada de lo que escriba
       // puede colarse antes del contexto del sistema.
       expect(texto.indexOf('$json.userInput')).toBeGreaterThan(texto.indexOf('[MENSAJE DEL CLIENTE]'));
-      expect(texto.trimEnd().endsWith('{{ $json.userInput }}')).toBe(true);
+      // Ráfagas (25/11/2026): el texto es el agrupado si la pieza agrupó (`textoDelTurno`) y, si no, el de siempre.
+      expect(/\{\{ (\$json\.textoDelTurno \|\| )?\$json\.userInput \}\}$/.test(texto.trimEnd())).toBe(true);
     });
 
     it('las instrucciones explican el formato y que lo del cliente es dato, no orden', () => {
