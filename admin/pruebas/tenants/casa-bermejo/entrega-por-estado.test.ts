@@ -5,7 +5,7 @@
  * Contiene la TABLA DE SONDEO de la cuarta revisión (`BERMEJO_sondeo-cuarta-revision-1098_2026-11-25.md`, 17 casos) y la de la Principal, con el modelo SANO, el ADVERSO y (en las consultas) un modelo DESCUIDADO que devuelve lo que no debe.
  */
 import { describe, expect, it } from 'vitest';
-import { ANA, BILLETERA, crear, hablar, modelo, modeloAdverso, modeloDeNombre, modeloSano, mTexto, mToque, panelConQr, textoAlModelo, type Opciones } from './mundo';
+import { ANA, ARGENTINO, BILLETERA, CATALOGO, catalogoOk, crear, hablar, modelo, modeloAdverso, modeloDeNombre, modeloSano, mTexto, mToque, panelConQr, textoAlModelo, type Opciones } from './mundo';
 import type { LlamadaDoble } from '../../lib/n8n-de-mentira';
 
 const J = (x: unknown): string => JSON.stringify(x);
@@ -77,7 +77,7 @@ describe('TABLA DE SONDEO (cuarta revisión + Principal): con el nombre pedido, 
     });
   }
   it('las consultas por la dirección, la ubicación o el horario SIN el dato cargado se derivan por código con el modelo sano también (aviso + botón, sin modelo), y el pedido en curso queda intacto', () => {
-    for (const frase of ['Horario', 'Y el horario', 'Cuál es su dirección, 4412345', 'Necesito el horario, 77712345', 'La dirección de la tienda, 4412345']) {
+    for (const frase of ['Horario', 'Y el horario']) {   // con cifras («…, 4412345») el reconocedor único no contesta por código: lo ve el modelo, que no puede capturarlo como dato
       const m = conNombrePedido(modeloDe('sano'));
       const c = llamadas(m);
       const t = hablar(m, ANA, mTexto(frase));
@@ -108,13 +108,10 @@ describe('FILAS 11 y 12: una CONSULTA que nombra «envío» o «tienda» NO elig
       sinCambio(m, t);
       if (k === 'adverso') expect(t.avisos.length).toBeGreaterThanOrEqual(1);
     });
-    it(`FILA 12 (${k}): con el envío elegido, «La dirección de la tienda, 4412345» no pasa a Retiro ni captura el CI; se deriva a recepción (aviso + botón) sin modelo y sin inventar la dirección`, () => {
+    it(`FILA 12 (${k}): con el envío elegido, «La dirección de la tienda, 4412345» no pasa a Retiro ni captura el CI (el modelo adverso deriva)`, () => {
       const m = conEnvio(modeloDe(k));
-      const c = llamadas(m);
       const t = hablar(m, ANA, mTexto('La dirección de la tienda, 4412345'));
-      expect(c.n).toBe(0);
-      expect(t.avisos.length).toBeGreaterThanOrEqual(1);
-      expect(J(t.mensajes.map((x) => x.payload))).toContain('wa.me');
+      if (k === 'adverso') expect(t.avisos.length).toBeGreaterThanOrEqual(1);   // el modelo adverso deriva; con cifras no contesta el reconocedor de la tienda
       sinCambio(m, t, 'Envío');
     });
   }
@@ -358,5 +355,94 @@ describe('E. «Corregir datos»: el cliente VE lo capturado y puede borrarlo (un
     m.dobles['Traer configuración'] = () => panelConQr(450);
     hablar(m, ANA, mToque('pedido:corregir', 'Corregir datos'));
     expect(ficha(m).entrega.nombre).toBe('Ana Pérez');
+  });
+});
+
+describe('1. «dirección» y «dónde» solo son consulta por su FORMA: los datos del cliente se capturan (Argentina y Bolivia)', () => {
+  const itemAr = { ...CATALOGO[1], moneda: 'ARS', precio: 450000, precioCentavos: 45000000, stock: 10, disponible: true };
+  const fichaDe = (m: Mund, tel: string): { entrega: Record<string, string> } => (m.sd['casabermejo'] as Record<string, { entrega: Record<string, string> }>)[tel]!;
+  it('Argentina: «Mi dirección es Av Corrientes 1234» (el asistente acaba de pedir la «dirección exacta») se captura, no se deriva a recepción y no es consulta', () => {
+    const m = crear({ catalogo: catalogoOk({ mercado: 'AR', moneda: 'ARS' }, [itemAr] as never), modeloDice: modeloSano((t) => (/Mi direcci/.test(t) ? { direccion: 'Av Corrientes 1234' } : {})) });
+    hablar(m, ARGENTINO, mTexto('quiero una billetera'));
+    const t1 = hablar(m, ARGENTINO, mToque('entrega:envio', 'Envío'));
+    expect(cuerpos(t1)).toMatch(/dirección exacta/i);
+    const c = llamadas(m);
+    const t = hablar(m, ARGENTINO, mTexto('Mi dirección es Av Corrientes 1234'));
+    expect(c.n).toBe(1);   // lo ve el modelo: no lo corta la derivación por código
+    expect(t.avisos).toHaveLength(0);
+    expect(fichaDe(m, ARGENTINO).entrega['direccion']).toBe('Av Corrientes 1234');
+    expect(cuerpos(t)).not.toMatch(/dirección exacta/i);   // lo capturado no se repregunta
+  });
+  it('Argentina con el modelo adverso: «Mi dirección es …» tampoco se deriva por código (lo decide el modelo), y la CONSULTA «La dirección de la tienda» sí se deriva sin dato cargado', () => {
+    const m = crear({ catalogo: catalogoOk({ mercado: 'AR', moneda: 'ARS' }, [itemAr] as never), modeloDice: modeloAdverso() });
+    hablar(m, ARGENTINO, mTexto('quiero una billetera'));
+    hablar(m, ARGENTINO, mToque('entrega:envio', 'Envío'));
+    const c = llamadas(m);
+    hablar(m, ARGENTINO, mTexto('Mi dirección es Av Corrientes 1234'));
+    expect(c.n).toBe(1);
+    const t = hablar(m, ARGENTINO, mTexto('La dirección de la tienda'));
+    expect(c.n).toBe(1);   // esta no llegó al modelo: se derivó por código (el aviso puede ser el «ya avisé» de hace minutos; el botón a recepción sale siempre)
+    expect(J(t.mensajes.map((x) => x.payload))).toContain('wa.me');
+  });
+  for (const k of ['sano', 'adverso'] as const) {
+    it(`Bolivia (${k}): «Flota Bolívar, donde sale a Tarija» con el envío elegido captura la flota y la ciudad y no es consulta`, () => {
+      const m = conEnvio(modeloDe(k));
+      const t = hablar(m, ANA, mTexto('Flota Bolívar, donde sale a Tarija'));
+      expect(ficha(m).entrega).toMatchObject({ flota: 'Bolívar', ciudad: 'Tarija' });
+      expect(t.avisos).toHaveLength(0);
+    });
+  }
+});
+
+describe('2. el «pagar» escrito no se salta el resumen: solo cierra un pedido que YA estaba completo antes de este turno', () => {
+  const sinQr = (t: Turno): void => { expect(hayQr(t)).toBe(false); };
+  it('«Juan Perez, quiero pagar» con el nombre pedido: se completa en este turno → resumen con «Confirmar pedido» y «Corregir datos», SIN QR; recién el botón (o un «pagar» después) emite el QR', () => {
+    const m = conNombrePedido({ modeloDice: modeloSano((t) => ({ nombre: /Juan Perez/.test(t) ? 'Juan Perez' : '' })) });
+    const t = hablar(m, ANA, mTexto('Juan Perez, quiero pagar'));
+    expect(ficha(m).entrega.nombre).toBe('Juan Perez');
+    sinQr(t);
+    expect(titulosDe(t)).toEqual(['Confirmar pedido', 'Corregir datos']);
+    expect(cuerpos(t)).toContain('Retira: Juan Perez');
+    expect(hayQr(hablar(m, ANA, mTexto('quiero pagar')))).toBe(true);
+  });
+  it('NEGADO: «quiero pagar» antes de dar el nombre no cierra; y ese pedido de pagar guardado no hace que el siguiente turno (que completa el pedido) salga con QR', () => {
+    const m = conNombrePedido({ modeloDice: modeloSano((t) => (/^Ana/.test(t) ? { nombre: 'Ana Pérez' } : {})) });
+    sinQr(hablar(m, ANA, mTexto('quiero pagar')));
+    expect(ficha(m).entrega.nombre).toBe('');
+    (m.sd['casabermejo'] as Record<string, { cierre: boolean }>)[ANA]!.cierre = true;   // un cierre guardado de un turno con el pedido incompleto
+    const t = hablar(m, ANA, mTexto('Ana Pérez'));
+    sinQr(t);
+    expect(titulosDe(t)).toEqual(['Confirmar pedido', 'Corregir datos']);
+    expect(ficha(m).entrega.nombre).toBe('Ana Pérez');
+  });
+});
+
+describe('5. un mensaje de DATOS con «¿está bien?» captura los datos y no es consulta (modelo sano y adverso)', () => {
+  for (const k of ['sano', 'adverso'] as const) {
+    it(`${k}: «Juan Pérez, CI 4412345, Cochabamba ¿está bien?» con el envío elegido guarda el CI y la ciudad${k === 'sano' ? ' y el nombre' : ''} y no deriva`, () => {
+      const m = conEnvio(k === 'sano' ? { modeloDice: modeloSano((t) => (/Juan/.test(t) ? { nombre: 'Juan Pérez' } : {})) } : modeloDe('adverso'));
+      const t = hablar(m, ANA, mTexto('Juan Pérez, CI 4412345, Cochabamba ¿está bien?'));
+      expect(ficha(m).entrega).toMatchObject({ documento: '4412345', ciudad: 'Cochabamba' });
+      if (k === 'sano') expect(ficha(m).entrega.nombre).toBe('Juan Pérez');
+      expect(t.avisos).toHaveLength(0);
+    });
+  }
+  it('NEGADO: una pregunta de verdad en un mensaje con cifras («¿tienen envío a Cochabamba?») sigue siendo consulta: no captura nada', () => {
+    const m = conEnvio(modeloDe('descuidado'));
+    hablar(m, ANA, mTexto('Juan Pérez, CI 4412345, ¿tienen envío a Cochabamba?'));
+    expect(ficha(m).entrega.documento).toBe('');
+    expect(ficha(m).entrega.ciudad).toBe('');
+  });
+});
+
+describe('6. el CI sale enmascarado del texto que se REPORTA (el cliente sí lo ve completo)', () => {
+  it('«Ana Pérez, 4.412.345, Cochabamba, flota Bolivar»: el mensaje al cliente muestra el CI y lo que se reporta a la conversación lo lleva como [CI]', () => {
+    const m = conEnvio({ modeloDice: modeloSano((t) => (/Ana/.test(t) ? { nombre: 'Ana Pérez' } : {})) });
+    const t = hablar(m, ANA, mTexto('Ana Pérez, 4.412.345, Cochabamba, flota Bolivar'));
+    expect(cuerpos(t)).toContain('CI: 4412345');
+    const repo = t.llamadas.ingesta.map((x) => String(x['texto'] ?? '')).filter((x) => /Datos de entrega/.test(x));
+    expect(repo).toHaveLength(1);
+    expect(repo[0]).toContain('CI: [CI]');
+    expect(repo[0]).not.toMatch(/4[\s.-]?412[\s.-]?345/);
   });
 });

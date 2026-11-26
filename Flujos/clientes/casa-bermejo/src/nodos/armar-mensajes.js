@@ -4,7 +4,7 @@
 //   puerta «suspendido»     el texto neutro del comercio (sin revelar el motivo);   «uso_extendido»  el aviso fijo con el botón para escribirle a recepción (y «Armar avisos» avisó);
 //   «bloqueado»             pausa por Tomar: NO SALE NADA (cero envío, cero modelo, cero descarga);
 //   «baja»                  el pedido de no recibir más mensajes: UN texto fijo de confirmación y nada más;
-//   «fuera_de_pais», «cortes», «identidad», «audio_fijo», «archivo», «imagen_otra», «anuncio»   textos fijos (el producto del anuncio y su precio salen del catálogo);
+//   «cortes», «identidad», «audio_fijo», «archivo», «imagen_otra», «anuncio»   textos fijos (el producto del anuncio y su precio salen del catálogo);
 //   «modelo»                la redacción del modelo, revisada, más el resumen del pedido que calcula el código;
 //   «qr»                    el resumen del pedido y el QR REAL del comercio (imagen por id de medio, nunca por enlace) con el monto del carrito; «qr_pendiente» el recordatorio del QR abierto;
 //   «comprobante»           «llegó y los datos coinciden» (NUNCA «acreditado» ni «verificado»), con el botón; si NO coinciden (`no_cuadra`) se nombran TODAS las diferencias y pasa a recepción (aviso + botón), sin pedir otro; «comprobante_pedir» pide una foto más nítida;
@@ -60,18 +60,27 @@ if (puerta.ruta === 'suspendido') {
   }
 } else if (puerta.ruta === 'sigue') {
   if (tipoDePlan === 'nada') tipoDePlan = 'nada';
-  else if (tipoDePlan === 'fuera_pais') tipoDePlan = 'fuera_de_pais';
   else if (tipoDePlan === 'otro') tipoDePlan = 'cortes';
 }
 if (puerta.ruta === 'sigue') {
-  if (tipoDePlan === 'fuera_de_pais') {
-    msgs = [texto(BM_TEXTO_FUERA_DE_PAIS)];
-    nuevos.fueraDePaisMs = ahora; ev.fueraDePaisMs = fichaAntes.fueraDePaisMs;
-  } else if (tipoDePlan === 'cortes') {
+  if (tipoDePlan === 'cortes') {
     msgs = [texto(conSaludo(BM_TEXTO_CORTES))];
   } else if (tipoDePlan === 'baja') {
     // La confirmación de la baja: UN texto fijo (sin saludo, sin botón, sin aviso); el `no_contactar` ya viajó con el entrante (si fue una nota de voz, `t.texto` iba vacío: el evento viaja en el reporte de ESTE mensaje saliente). La ficha y el carrito no se tocan.
     msgs = [texto(bjTextoBaja(c.base && c.base.tratamiento === 'usted' ? BM_TEXTO_BAJA_USTED : undefined), d.porVoz === true ? { evento: 'no_contactar' } : undefined)];
+  // UBICACIÓN Y HORARIO DE LA TIENDA (25/11/2026): la dirección en texto, el enlace de Maps como botón «Ver ubicación» y el horario: UN mensaje, todo del dato del comercio (nada inventado). Un `cmEnlace` solo deja pasar https.
+  } else if (tipoDePlan === 'ubicacion_tienda') {
+    const u = bmUbicacionTienda(c.base, cnPrimero('Traer catálogo'), cfg);
+    const pideU = c.plan.ubicacion === true || (c.plan.ubicacion === undefined && c.plan.horario !== true);
+    const pideH = c.plan.horario === true;
+    if (!bmTiendaTieneDato(u, pideU, pideH)) {
+      // No debería pasar (Decidir turno ya derivó sin dato): jamás una dirección ni un horario inventados; pasa con recepción.
+      tipoDePlan = 'derivar';
+      msgs = [conRecepcion(conSaludo(bmTextoDerivacion(pideU && !u.hayDato ? 'ubicacion_sin_dato' : 'horario_sin_dato', false)))];
+    } else if (pideU && u.mapa !== '') {
+      const cuerpoUb = bmSeguro(conSaludo(bmRespuestaDeTienda(u, pideU, pideH, false)), usted);
+      msgs = [cmMensaje('cliente', cmEnlace(cuerpoUb, 'Ver ubicación', u.mapa), cuerpoUb, cuerpoUb + '\n\n' + u.mapa, { tipoReporte: 'interactive', conBoton: true })];
+    } else msgs = [texto(conSaludo(bmRespuestaDeTienda(u, pideU, pideH, false)))];
   } else if (tipoDePlan === 'identidad') {
     msgs = [texto(BM_TEXTO_IDENTIDAD.replace('{NEGOCIO}', negocio))];
   } else if (tipoDePlan === 'audio_fijo') {
@@ -92,7 +101,10 @@ if (puerta.ruta === 'sigue') {
     }
   } else if (tipoDePlan === 'modelo') {
     llamadasModelo = c.plan.tipo === 'modelo' ? 1 : 0;   // el toque de «Confirmar pedido» o de un botón de entrega lo decide el código: 0 llamadas
-    const cuerpoModelo = conSaludo(d.texto + (d.resumen ? '\n\n' + d.resumen : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : ''));
+    // Una pregunta de la tienda que vino CON otra cosa («¿dónde están ubicados? quiero una billetera»): la respuesta de la tienda (del dato del comercio, por código) va ANTEPUESTA, en este mismo mensaje.
+    const uAntes = c.plan.ubicacion === true || c.plan.horario === true ? bmRespuestaDeTienda(bmUbicacionTienda(c.base, cnPrimero('Traer catálogo'), cfg), c.plan.ubicacion === true, c.plan.horario === true, true) : '';
+    const textoTurno = uAntes !== '' ? uAntes + '\n\n' + d.texto : d.texto;
+    const cuerpoModelo = conSaludo(textoTurno + (d.resumen ? '\n\n' + d.resumen : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : ''));
     // Sin botón «Ver catálogo» (Andres, 24/11/2026, D7): las piezas se muestran por este chat. Lo que el mensaje puede llevar es UN botón de respuesta que el código cumple: «Confirmar pedido» (pedido listo) o los de entrega (solo falta el modo).
     if (d.confirmable === true) {
       // El pedido está listo: el MISMO mensaje lleva el botón «Confirmar pedido» (0 mensajes más); tocarlo emite el QR en el mismo turno. Antes del QR el cliente VE los datos capturados (modo, nombre y, en el envío, CI, ciudad y flota)
@@ -101,12 +113,12 @@ if (puerta.ruta === 'sigue') {
       const lineaCorregir = usted ? 'Si algún dato no está bien, toque «' + BM_TITULO_CORREGIR + '».' : 'Si algún dato no está bien, toca «' + BM_TITULO_CORREGIR + '».';
       const cola = [d.resumen, datos, lineaCorregir].filter((x) => typeof x === 'string' && x !== '').join('\n\n') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : '');
       const sitioCabeza = 1024 - cfInstruccion(usted).length - 4 - cola.length;
-      const cabeza = conSaludo(d.texto);
+      const cabeza = conSaludo(textoTurno);
       const cabezaCorta = cabeza.length > sitioCabeza ? cabeza.slice(0, Math.max(0, sitioCabeza - 1)).trimEnd() + (sitioCabeza > 1 ? '…' : '') : cabeza;
       const cuerpoCf = bmSeguro(cfCuerpo(cabezaCorta + '\n\n' + cola, usted), usted);
       // El documento (CI) viaja en el mensaje al cliente, pero el texto que se REPORTA a la conversación del comercio lo lleva enmascarado.
       const docEntrega = bmEntregaDeFicha(d.entrega).documento;
-      const reportado = docEntrega.length >= 5 ? cuerpoCf.split(docEntrega).join('[CI]') : cuerpoCf;
+      const reportado = bmEnmascararDocumento(cuerpoCf, docEntrega);
       msgs = [cmMensaje('cliente', cmBotones(cuerpoCf, [cfBoton(d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '', precioCentavos: l.precioCentavos })), bmEntregaDeFicha(d.entrega), fichaAntes.pedidos), { id: BM_ID_CORREGIR, title: BM_TITULO_CORREGIR }]), reportado, cuerpoCf, { tipoReporte: 'interactive', conBoton: true })];
     } else if (d.botonesEntrega === true && bmBotonesDeEntrega(c.modos).length > 0) {
       // Lo único que falta es el modo de entrega: el MISMO mensaje lleva «Recojo en tienda» y «Envío» (0 mensajes más); tocar uno lo anota sin modelo. Si el texto no pregunta por la entrega, la pregunta la agrega el código.

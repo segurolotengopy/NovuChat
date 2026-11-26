@@ -244,6 +244,13 @@ const CLAVE_DE_SECRETO = /token|secret|secreto|clave|password|contrase|apikey|ap
 const CLAVES_LOCALES = new Set(['nombreFlujo', 'nombreFlujoPrueba', 'credenciales', 'receptor', 'catalogoUrl', 'pruebaRuta', 'configBase']);
 const esMarcador = (v) => typeof v === 'string' && MARCADOR.test(v);
 const esObjeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** El enlace de Google Maps de la tienda (misma regla que `bmMapaValido` de `bm-venta.js`): https a un anfitrión de Maps, ≤200, sin espacios, sin segmentos `.`/`..` ni codificados (`%2e`, `%2f`, `%5c`) y sin el recurso `/url`. */
+const MAPA_GOOGLE = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+function mapaGoogleValido(v) {
+  if (typeof v !== 'string' || v.length === 0 || v.length > 200 || !MAPA_GOOGLE.test(v) || /%2e|%2f|%5c/i.test(v)) return false;
+  const ruta = v.replace(/^https:\/\/[^/?#]+/, '').split(/[?#]/)[0];
+  return !ruta.split('/').some((x) => x === '.' || x === '..') && !/^\/url(?:[/?#]|$)/i.test(ruta);
+}
 /**
  * La forma de cada valor LOCAL (un marcador siempre es válido: queda sin sustituir y la guardia de publicación lo exige). Es una LISTA BLANCA: un texto libre solo se puede
  * poner desde aquí y con un largo máximo; lo que no figura (por ejemplo `mensajeComercioSuspendido`, que dice lo que el asistente le promete al cliente) NO se cambia por un archivo local.
@@ -267,6 +274,8 @@ const FORMAS_LOCALES = {
   // El enlace del catálogo web del comercio (https): sale como botón «Ver catálogo».
   'configBase.enlaceCatalogo': (v) => v === '' || v.length <= 300 && /^https:\/\/[a-z0-9.-]+(\/[^\s"'\\{}]*)?$/.test(v),
   'configBase.horarioTienda': (v) => v.length <= 200,
+  // UBICACIÓN DE LA TIENDA (25/11/2026): el enlace de Google Maps de la tienda (dato del comercio). Solo https a Google Maps (mismos anfitriones que `enlaceDeMapaValido` de la consola); vacío = sin dato.
+  'configBase.mapaTienda': (v) => v === '' || mapaGoogleValido(v),
   'configBase.nombreNegocio': (v) => v.length >= 2 && v.length <= 80,
 };
 

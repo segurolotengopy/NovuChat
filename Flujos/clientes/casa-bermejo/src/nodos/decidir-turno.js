@@ -97,6 +97,15 @@ if (esAudio ? (texto.length <= BJ_VOZ_MAX && bjPideBaja(texto)) : (!t.seleccionI
 
 // 3a. Argentina, con un pedido anotado y sin un pedido nuevo a medias: el botón «Pagar» (id `pedido:alias`, el único que vale en un toque) o el texto «pagar» pide el alias al servidor (`pedirAliasArs`). No necesita el catálogo.
 if (esAr && (ficha.aliasEstado === 'pedido' || ficha.aliasEstado === 'abierto') && ficha.carrito.length === 0 && bmPideAlias(t.seleccionId, n)) return salir({ tipo: 'alias_pedir' });
+// UBICACIÓN Y HORARIO DE LA TIENDA (25/11/2026): «¿dónde están ubicados?», «¿a qué hora abren?» los contesta el CÓDIGO con el dato del comercio (primero el campo `tienda` del catálogo de NovuTienda; de respaldo, «Config base» y el horario común de la consola), SIN modelo y sin depender del catálogo
+// (por eso va antes). Un SOLO reconocedor (`bmPideUbicacion`, `bmPideHorario`). Sin el dato: recepción (aviso + botón), nunca una dirección ni un horario inventados. Un pedido en curso no se toca. Un toque de lista no es esta pregunta.
+// Si la pregunta de la tienda viene CON otra cosa («¿dónde están ubicados? quiero comprar una billetera») el turno sigue con el modelo, solo con el resto, y la respuesta de la tienda va antepuesta en el MISMO mensaje (más abajo).
+const tiendaResp = cnPrimero('Traer catálogo');
+const dTienda = bmUbicacionTienda(base, tiendaResp, cfg);
+const pTienda = t.seleccionId ? { ubicacion: false, horario: false, resto: texto } : (bmPideUbicacion(n, texto) || bmPideHorario(n, texto) ? { ubicacion: bmPideUbicacion(n, texto), horario: bmPideHorario(n, texto), resto: '' } : bmPreguntaDeTienda(texto));
+const pideTienda = pTienda.ubicacion || pTienda.horario;
+const motivoSinDato = pTienda.ubicacion && !dTienda.hayDato ? 'ubicacion_sin_dato' : 'horario_sin_dato';
+if (pideTienda && pTienda.resto === '') return bmTiendaTieneDato(dTienda, pTienda.ubicacion, pTienda.horario) ? salir({ tipo: 'ubicacion_tienda', ubicacion: pTienda.ubicacion, horario: pTienda.horario }) : salir({ tipo: 'derivar', motivo: motivoSinDato });
 // 3. Sin catálogo no se improvisa: recepción.
 if (!configLista) return sinConfig();
 // 4. Lo que decide el código sobre el texto, ANTES de cualquier modelo.
@@ -109,13 +118,14 @@ if (bmPideIdentidad(n)) return salir({ tipo: 'identidad' });
 if (bmCorporativo(n)) return salir({ tipo: 'derivar', motivo: 'corporativo' });
 if (bmPideFactura(n)) return salir({ tipo: 'derivar', motivo: 'factura' });
 if (bmQuiereHablar(n) || bmPideDescuento(n)) return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });
-// Una CONSULTA por la dirección, la ubicación o el horario de la tienda SIN ese dato cargado: no se inventa ni se toma como un dato del pedido; pasa con recepción (aviso + botón), sin modelo. El pedido en curso no se toca.
-if (!t.seleccionId && bmConsultaDeTiendaSinDato(texto, base, cfg)) return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });
 
 // 4b. El toque de «Confirmar pedido» (módulo común Pedidos) con el pedido ya listo: la orden de cierre la da el botón, no el modelo. Sin modelo (0 llamadas); `Resolver` emite el QR en este mismo turno. Sin pedido listo (el botón es de un mensaje viejo) sigue como una conversación normal.
 if (Array.isArray(ficha.carrito) && ficha.carrito.length > 0 && cfEsConfirmacion(t.seleccionId, bmLineasParaHuella(ficha.carrito, vendibles), bmEntregaDeFicha(ficha.entrega), ficha.pedidos) && bmEntregaCompleta(ficha.entrega, ceMercadoDePrefijo(from) || 'BO') && bmCarritoVigente(ficha.carrito, vendibles)) return salir({ tipo: 'confirmar' });
 // 4c. El toque de un botón «Confirmar pedido» que YA no corresponde (pedido cerrado, o una pieza, un precio o la entrega cambiaron): lo contesta el código con el pedido de ahora, sin modelo y sin cerrar nada.
 if (cfEsToqueDeConfirmar(t.seleccionId)) return salir({ tipo: 'toque_viejo' });
 // 5. La conversación libre: una sola llamada al modelo.
-const contexto = { cfg: cfg, base: base, plan: { textoCliente: texto }, ficha: ficha, vendibles: vendibles, modos: bmModos(base), ahora: ahora, mercado: (ceMercadoDePrefijo(from) || 'BO') };
-return salir({ tipo: 'modelo' }, { llamarModelo: true, cuerpoModelo: bmCuerpoModelo(contexto) });
+// La pregunta de la tienda CON otra cosa: sin el dato, recepción (aviso + botón); con él, el modelo ve SOLO el resto y «Armar mensajes» antepone la respuesta de la tienda al texto normal del turno (el mismo mensaje).
+if (pideTienda && !bmTiendaTieneDato(dTienda, pTienda.ubicacion, pTienda.horario)) return salir({ tipo: 'derivar', motivo: motivoSinDato });
+if (pideTienda) textoDelTurno = pTienda.resto;
+const contexto = { cfg: cfg, base: base, plan: { textoCliente: textoDelTurno }, ficha: ficha, vendibles: vendibles, modos: bmModos(base), ahora: ahora, mercado: (ceMercadoDePrefijo(from) || 'BO'), respCatalogo: tiendaResp };
+return salir(pideTienda ? { tipo: 'modelo', ubicacion: pTienda.ubicacion, horario: pTienda.horario } : { tipo: 'modelo' }, { llamarModelo: true, cuerpoModelo: bmCuerpoModelo(contexto) });

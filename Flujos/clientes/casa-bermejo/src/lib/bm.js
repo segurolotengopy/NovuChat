@@ -26,8 +26,7 @@ const BM_SALUDO_MINIMO = 'Hola, soy el asistente virtual.';
 
 // Lo que el cliente ve cuando manda algo que este canal no lee (sticker, ubicación, contacto, mensaje no soportado o un medio sin id): texto cortés fijo, sin modelo, una sola invitación y ninguna promesa.
 const BM_TEXTO_CORTES = 'Recibí tu mensaje, pero por este chat solo puedo leer texto, notas de voz, fotos y archivos PDF.\n\nCuéntame por escrito o con una nota de voz en qué te puedo ayudar.';
-// Un número de otro país (prefijo no permitido en «Config del negocio»): un texto fijo, sin modelo, sin medios y sin promesas. PROVISIONAL: el texto definitivo lo decide el comercio.
-const BM_TEXTO_FUERA_DE_PAIS = 'Hola, soy el asistente virtual. Por este chat atendemos pedidos de números de Bolivia y de Argentina.\n\nGracias por escribirnos.';
+// Un número de otro país NO tiene texto propio (decisión del 20/11/2026): se atiende como Bolivia y la tienda recibe un aviso (`bmResolver`, `otro_pais`).
 
 function bmTexto(v) {
   return String(v === undefined || v === null ? '' : v).trim();
@@ -246,6 +245,9 @@ const BM_TEXTO_COMPROBANTE_ILEGIBLE = 'No pude leer bien tu comprobante.\n\n¿Me
 const BM_INTROS = {
   modelo_caido: 'Tuve un inconveniente para atender tu consulta en este momento.',
   sin_configuracion: 'En este momento no puedo consultar el catálogo.',
+  // UBICACIÓN DE LA TIENDA (25/11/2026): sin dirección ni mapa cargados no se inventa nada; el único ofrecimiento es pasar con recepción (aviso + botón).
+  ubicacion_sin_dato: 'Por ahora no tengo la dirección de la tienda para dártela: eso lo ve directamente una persona del equipo.',
+  horario_sin_dato: 'Por ahora no tengo cargado el horario de la tienda: eso lo ve directamente una persona del equipo.',
   quiere_hablar: 'Con gusto: esto lo ve directamente una persona del equipo.',
   corporativo: 'Los pedidos por volumen y los regalos corporativos los coordina directamente una persona del equipo.',
   factura: 'La factura la gestiona directamente recepción.',
