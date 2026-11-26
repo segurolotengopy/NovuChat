@@ -56,8 +56,12 @@ if (tipo === 'button' && msg.button && typeof msg.button === 'object') {
   const bs = cfg.datos && cfg.datos.campanaSaliente && typeof cfg.datos.campanaSaliente === 'object' ? cfg.datos.campanaSaliente : {};
   const etiqueta = typeof msg.button.text === 'string' ? msg.button.text : '';
   if (pl) campanaSaliente = { respuesta: pl[1], id: pl[2] };
-  else if (etiqueta !== '' && etiqueta === bs.botonSi) campanaSaliente = { respuesta: 'si', id: '' };
-  else if (etiqueta !== '' && etiqueta === bs.botonNo) campanaSaliente = { respuesta: 'no', id: '' };
+  // El respaldo por etiqueta exige que el entrante RESPONDA a un mensaje (`context.id`), y compara en NFC los dos lados (un «Sí» en NFD es el mismo botón). Riesgo residual: no se verifica que ese id sea el de la campaña (`docs`, DISENO.md).
+  else if (etiqueta !== '' && msg.context && typeof msg.context.id === 'string' && msg.context.id !== '') {
+    const igual = (r) => typeof r === 'string' && r !== '' && etiqueta.normalize('NFC') === r.normalize('NFC');
+    if (igual(bs.botonSi)) campanaSaliente = { respuesta: 'si', id: '' };
+    else if (igual(bs.botonNo)) campanaSaliente = { respuesta: 'no', id: '' };
+  }
 }
 if (tipo === 'text') {
   texto = String((msg.text && msg.text.body) || '').slice(0, 1500);
@@ -74,7 +78,7 @@ if (tipo === 'text') {
   // Un botón sin texto no es una imagen: queda como «una respuesta rápida».
   evento = texto.trim() === '' ? chEventoOtro('button') : chEventoTexto(texto);
   if (campanaSaliente) { textoReporte = 'El cliente respondió a un mensaje de seguimiento: ' + (campanaSaliente.respuesta === 'si' ? 'sí' : 'no'); // El «sí» pasa con recepción por la ruta de siempre (`boton: 'equipo'`); el «no» no llega a la cola: lo cierra la puerta del turno.
-    evento = campanaSaliente.respuesta === 'si' ? { k: 'toque', t: '[Respondió que sí a un mensaje de seguimiento]', c: '', rubro: '', boton: 'equipo' } : chEventoOtro('button'); }
+    evento = campanaSaliente.respuesta === 'si' ? { k: 'toque', t: '[Respondió que sí a un mensaje de seguimiento]', c: '', rubro: '', boton: 'equipo', campanaSaliente: true } : chEventoOtro('button'); }
 } else if (tipo === 'audio') {
   textoReporte = '(audio) el cliente envió una nota de voz';
 } else if (tipo === 'image') {

@@ -4162,7 +4162,8 @@ describe('campaña saliente: la respuesta «Sí, contáctenme» / «No, gracias�
   const BOTONES = NOVUCHAT['campanaSaliente'] as J;
   const SI = String(BOTONES['botonSi']);
   const NO = String(BOTONES['botonNo']);
-  const mBotonPlantilla = (text: string, payload?: string): J => ({ type: 'button', button: { text, ...(payload === undefined ? {} : { payload }) } });
+  // `context.id`: el entrante responde a un mensaje (el de la plantilla). El respaldo por etiqueta lo exige.
+  const mBotonPlantilla = (text: string, payload?: string, context: J | null = { id: 'wamid.PLANTILLA1' }): J => ({ type: 'button', ...(context ? { context } : {}), button: { text, ...(payload === undefined ? {} : { payload }) } });
   const entrantes = (w: W): J[] => w.mundo.llamadas.ingesta.filter((r) => r['direccion'] === 'entrante');
   const respuestas = (w: W): J[] => w.mundo.llamadas.ingesta.filter((r) => r['evento'] === 'campana_respuesta');
   const hayBaja = (w: W): boolean => JSON.stringify(w.mundo.llamadas.ingesta).includes('no_contactar');
@@ -4262,10 +4263,63 @@ describe('campaña saliente: la respuesta «Sí, contáctenme» / «No, gracias�
       expect(t.aMi.map((e) => e.cuerpo)).not.toContain(TX['campanaSi']);
     });
   });
+  describe('el respaldo por etiqueta', () => {
+    it('NEGADO: sin `context.id` (no responde a ningún mensaje) el botón con el texto exacto NO es campaña: ni «sí» ni «no»', () => {
+      for (const [rotulo, otro] of [[SI, NO], [NO, SI]] as [string, string][]) {
+        for (const payload of [rotulo, undefined, otro]) {
+          const w = crear();
+          w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+          const t = jugar(w, MAMA).crudo(mBotonPlantilla(rotulo, payload, null), 'sin context');
+          expect(respuestas(w)).toHaveLength(0);
+          expect(hayBaja(w)).toBe(false);
+          const dicho = t.aMi.map((e) => e.cuerpo);
+          expect(dicho).not.toContain(TX['campanaSi']);
+          expect(dicho).not.toContain(TX['campanaNo']);
+        }
+      }
+      const w = crear();
+      w.modelo.con = dice('Claro, te cuento cómo funciona NovuChat.');
+      jugar(w, MAMA).crudo(mBotonPlantilla(SI, SI, { from: 'otro' }), 'context sin id');
+      expect(respuestas(w)).toHaveLength(0);
+    });
+    it('el payload con la forma cs:… no exige `context.id`', () => {
+      const w = crear();
+      jugar(w, MAMA).crudo(mBotonPlantilla(NO, 'cs:no:retomar-1', null), 'payload sin context');
+      expect(respuestas(w).map((r) => r['campanaEnvioId'])).toEqual(['retomar-1']);
+    });
+    it('Unicode: la etiqueta en NFD («Sí» descompuesta) es el mismo botón que en NFC', () => {
+      expect(SI).toBe(SI.normalize('NFC'));
+      const nfd = SI.normalize('NFD');
+      expect(nfd).not.toBe(SI);
+      const w = crear();
+      const t = jugar(w, MAMA).crudo(mBotonPlantilla(nfd, nfd), 'sí en NFD');
+      expect(respuestas(w).map((r) => r['respuestaCampana'])).toEqual(['si']);
+      expect(t.aMi[0]!.cuerpo).toBe(TX['campanaSi']);
+      const w2 = crear();
+      jugar(w2, MAMA).crudo(mBotonPlantilla(NO.normalize('NFD'), NO.normalize('NFD')), 'no en NFD');
+      expect(respuestas(w2).map((r) => r['respuestaCampana'])).toEqual(['no']);
+    });
+  });
+  it('RÁFAGA: «Sí» seguido de un texto: responde la ejecución del texto y aun así salen `campanaSi`, el botón de recepción, el aviso y la fila con el origen de la campaña', () => {
+    const r = rafaga([valorMeta(mBotonPlantilla(SI, 'cs:si:retomar-1'), MAMA), valorMeta(mTexto('gracias, tengo una pastelería'), MAMA)], MAMA);
+    const textos = r.aMi.map((e) => e.cuerpo);
+    expect(textos).toContain(TX['campanaSi']);
+    expect(r.aMi.filter((e) => tipoInter(e) === 'cta_url')).toHaveLength(1);
+    expect(r.plantillas).toHaveLength(1);
+    const w = r.ws[0]!;
+    expect(filaDe(w, MAMA)![COL.origen]).toBe('Campaña retomar');
+  });
+  it('la marca de campaña no vive en la ficha: una fila nueva posterior no hereda el origen', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.crudo(mBotonPlantilla(SI, 'cs:si:retomar-1'), 'campaña sí');
+    expect(JSON.stringify(fichaDe(w, MAMA))).not.toMatch(/campanaSaliente/);
+  });
   describe('lo que NO es campaña', () => {
     for (const [nombre, boton] of [
       ['un payload ajeno con un texto ajeno', mBotonPlantilla('Ver planes', 'planes')],
       ['un payload ajeno aunque el texto sea «No, gracias» con otro cuerpo', mBotonPlantilla(NO + '.', 'otra-cosa')],
+      ['un payload ajeno con un texto ajeno y con context', mBotonPlantilla('Ver planes', 'planes', { id: 'wamid.X' })],
       ['un payload con la forma pero un id corto', mBotonPlantilla('Otro', 'cs:si:ab')],
       ['un payload con la forma pero un id con mayúsculas', mBotonPlantilla('Otro', 'cs:no:ABCDE')],
       ['un botón con otro texto', mBotonPlantilla('Más información')],

@@ -377,11 +377,16 @@ describe('miniCRM: origen y etapa de la campaña saliente', () => {
     }
     expect(decidirCs(CON_CLAVES_CS, { ...P_CS, anuncio: true })['Origen / Canal']).toBe('Campaña Meta Ads');
   });
-  it('NEGADO: una fila que ya existe no se toca (ni origen ni etapa) aunque `campanaSaliente` sea true', () => {
-    const existente = { row_number: 4, 'ID Lead': 'L-7', Teléfono: "'" + TEL_CS, Nombre: 'Ana', Origen: 'Chatbot', Etapa: '3. Propuesta', Calificación: 'Baja', Resumen: 'x', Empresa: '', Fecha: '', 'Estado Comercial': 'Activo' };
+  it('NEGADO: una fila que ya existe no se toca (ni «Origen / Canal» ni «Etapa Funnel») aunque `campanaSaliente` sea true; y la prueba SÍ detecta el toque', () => {
+    const existente = { row_number: 4, 'ID Lead': 'LEAD-1001', 'Teléfono WhatsApp': "'" + TEL_CS, 'Nombre y Apellido': 'Ana', 'Origen / Canal': 'Chatbot WhatsApp IA', 'Etapa Funnel': '3. Propuesta', 'Calificación IA': 'Baja', 'Resumen Chatbot IA': 'x', 'Empresa / Cliente': '', 'Fecha Registro': '', Rubro: '', 'Estado Comercial': 'Activo' };
     const r = decidirCs(CON_CLAVES_CS, { ...P_CS, campanaSaliente: true }, [existente]);
-    expect(r).not.toHaveProperty('Origen');
-    expect(r).not.toHaveProperty('Etapa');
+    expect(r['accionPlanilla']).not.toBe('agregar'); // encontró la fila: no crea otra
+    expect(r).not.toHaveProperty('Origen / Canal');
+    expect(r).not.toHaveProperty('Etapa Funnel');
+    // control: si la fila no existiera, SÍ escribiría esos dos nombres (así la negación de arriba falla si el módulo llegara a tocarlos)
+    const nueva = decidirCs(CON_CLAVES_CS, { ...P_CS, campanaSaliente: true });
+    expect(nueva).toHaveProperty('Origen / Canal', 'Campaña retomar');
+    expect(nueva).toHaveProperty('Etapa Funnel', '2. Contactado / Calificado');
   });
   it('el validador del mapa: las dos claves van juntas, son texto válido y son opcionales', () => {
     expect(validarMapaCrm(MAPA_CS)).toEqual([]);

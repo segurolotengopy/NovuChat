@@ -127,7 +127,8 @@ if (plan.ruta === 'sin_estado') {
     // Si el cliente dio su nombre y su negocio en este mismo turno, el traspaso no los vuelve a pedir: se usan los de la ficha NUEVA (como el aviso).
     const previa = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: '', ahoraMs: ahora, anuncio: !!t.anuncio });
     // Respondió «sí» a la campaña saliente: el texto del tenant en lugar del traspaso de siempre; el botón y el aviso a recepción son los mismos.
-    const campanaSi = t.campanaSaliente && t.campanaSaliente.respuesta === 'si' ? chTexto((chDatos(cfg).textos || {}).campanaSi) : '';
+    // (la marca va en el EVENTO: en una ráfaga «Sí» + texto responde la ejecución del texto y el «sí» no se pierde)
+    const campanaSi = eventos.some((e) => e && e.campanaSaliente === true) ? chTexto((chDatos(cfg).textos || {}).campanaSi) : '';
     m = chMensajeEquipo(cfg, Object.assign({}, antes, { nombre: previa.nombre, empresa: previa.empresa }), from, campanaSi);
   }
   else {
@@ -140,7 +141,7 @@ if (plan.ruta === 'sin_estado') {
     m = chClienteConSitio(unido.texto, cfg, res.evento, est, antes, ['empresa', 'sin_dato', 'no_documentado'].includes(res.evento));
   }
   mensajes.push(m);
-  nueva = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: m.textoSinSitio || m.texto, sitio: m.sitio === true, ahoraMs: ahora, anuncio: !!t.anuncio, campanaSaliente: plan.ruta === 'equipo' && !!t.campanaSaliente && t.campanaSaliente.respuesta === 'si',
+  nueva = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: m.textoSinSitio || m.texto, sitio: m.sitio === true, ahoraMs: ahora, anuncio: !!t.anuncio, 
     sinRecepcion: recepcion.length < 6, ciclo: ciclo, explicacion: plan.ruta === 'modelo' && ['rubro', 'otroRespuesta'].includes(res.contexto), pidioDatos: anexo !== '', complemento: complemento, ordinaria: dec.ordinaria, botones: m.botones });
   // Pedir hablar con el equipo: la plantilla a recepción, UNA vez por ventana (`avisado` cuenta solo lo que Meta aceptó) y nunca al propio número de recepción. Con una empresa DISTINTA a la ya avisada,
   // un aviso nuevo (R5); con la misma, solo se reenvía el botón.
@@ -216,7 +217,9 @@ if (!prueba && claveOk && plan.ruta !== 'suspendido' && plan.ruta !== 'uso_exten
 // ============================================ el prospecto: solo si la ficha cambió. En modo prueba la planilla NO se escribe (una prueba no llena la hoja de nadie).
 const planillaOk = !prueba && String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';
 const datosDe = { from: from, nombrePerfil: chNombreDelPerfil(t.nombrePerfil) };
-const despues = conversacion ? chProspecto(nueva, cfg, datosDe) : null;
+// «Sí» a la campaña saliente EN ESTE turno (marca del evento, no de la ficha): el miniCRM abre la fila con el origen y la etapa de la campaña; solo cuenta al CREARLA.
+const esCampanaSi = conversacion && plan.ruta === 'equipo' && (pasada === 2 ? antes.cola.filter((e) => e.seq > antes.hasta) : eventosTurno).some((e) => e && e.campanaSaliente === true);
+const despues = conversacion ? chProspecto(nueva, cfg, Object.assign({}, datosDe, { campanaSaliente: esCampanaSi })) : null;
 const primeraVez = antes.historial.length === 0;
 const cambio = despues !== null && (primeraVez || JSON.stringify(despues) !== JSON.stringify(chProspecto(antes, cfg, datosDe)));
 const guardarPlanilla = cambio && planillaOk;

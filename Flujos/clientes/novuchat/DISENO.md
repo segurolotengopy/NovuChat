@@ -130,3 +130,9 @@ baja de N respuestas a UNA. **Llamadas al modelo: 0 o 1 por turno** (2 si una gu
 ## Copias del núcleo en otros flujos (PR-4c2)
 
 Los flujos de Antonio y de Rubén llevan copias declaradas del núcleo de este chat. No adoptan `sesion` en PR-4c2: sus pruebas comparan con el origen CONGELADO previo a PR-4c2 (`admin/pruebas/lib/origen-chat-pre-4c2/`, commit `1fff3d59`) y adoptarán el estado en su propio PR. 0 mensajes por conversación.
+
+## Campaña saliente («retomar»): las respuestas «Sí» y «No» (PR-B, 26/11/2026)
+
+- **Solo un botón de Meta.** La respuesta se reconoce únicamente en un entrante `type: button`, nunca en texto escrito. El `payload` con la forma `cs:si|no:<id>` trae la respuesta y la campaña. Si Meta devuelve el rótulo en lugar del payload (la documentación lo muestra así), vale el texto exacto del botón (dato del tenant, `datos.campanaSaliente`, comparado en NFC por los dos lados) **y solo si el entrante trae `context.id`** (responde a un mensaje); la campaña queda sin id.
+- **«Sí»** pasa con recepción por la ruta de siempre (aviso con la plantilla y botón para escribir directo) con el texto `campanaSi`; la marca viaja en el EVENTO (no en la ficha), así que una ráfaga «Sí» + texto no la pierde, y el miniCRM abre la fila con el origen y la etapa de la campaña solo al crearla. **«No»** lo cierra la puerta del turno con `campanaNo`, sin modelo, y la ingesta crea la baja con el reporte `campana_respuesta`.
+- **Riesgo residual declarado (no implementado):** no se verifica que el `context.id` del entrante sea el wamid del mensaje de la campaña (el `idMeta` que guarda `confirmarSalida`). Un cliente que toque un botón con ese mismo rótulo en otro mensaje de plantilla respondido contaría como respuesta sin id de campaña. Mitigación actual: el rótulo exacto, el `context.id` obligatorio y que el «no» solo da de baja (nunca contacta); el «sí» solo avisa a recepción. Se verifica con la prueba al teléfono de Andres.
