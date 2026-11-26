@@ -177,16 +177,16 @@ test.describe('PED-02: la tarjeta del pedido', () => {
     await expect(tarjeta.locator('.pedido-total')).toHaveText(/165\s*Bs/);
   });
 
-  test('un retiro muestra «Retira en el local»; sin dirección, referencia ni nota no hay líneas de más, y si las trae la consola las muestra', async ({ page }) => {
+  test('un retiro muestra «Recojo en tienda»; sin dirección, referencia ni nota no hay líneas de más, y si las trae la consola las muestra', async ({ page }) => {
     await sembrarPedido(FOGON, { id: 't2', total: 58, entrega: 'retiro', items: [{ nombre: 'Nachos', cantidad: 1 }] });
     await sembrarPedido(FOGON, { id: 't2b', total: 59, entrega: 'retiro', direccion: 'Calle del retiro 7', referencia: 'Pasa a las seis', items: [{ nombre: 'Alitas', cantidad: 1 }] });
     await abrirComoAdmin(page);
     const con = page.locator('li.pedido').filter({ hasText: 'Alitas' });
-    await expect(con).toContainText('Retira en el local');
+    await expect(con).toContainText('Recojo en tienda');
     await expect(con).toContainText('Calle del retiro 7');
     await expect(con).toContainText('Referencia: Pasa a las seis');
     const sin = page.locator('li.pedido').filter({ hasText: 'Nachos' });
-    await expect(sin).toContainText('Retira en el local');
+    await expect(sin).toContainText('Recojo en tienda');
     await expect(sin.locator('p.pedido-direccion')).toHaveCount(0);
     await expect(sin.locator('p.pedido-nota')).toHaveCount(0);
   });

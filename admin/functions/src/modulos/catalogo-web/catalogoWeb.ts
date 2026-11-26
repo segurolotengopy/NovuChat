@@ -1512,7 +1512,7 @@ export function resumenDelPedido(
 ): string {
   const lineas = items.map((i) => `${String(i['cantidad'])}× ${String(i['nombre'])}`
     + (typeof i['detalle'] === 'string' && i['detalle'] !== '' ? ` (${i['detalle']})` : ''));
-  const base = `Pedido desde el catálogo web (${entrega === 'envio' ? 'envío' : 'retiro'}): `
+  const base = `Pedido desde el catálogo web (${entrega === 'envio' ? 'envío' : 'recojo en tienda'}): `
     + `${lineas.join(', ')} — total ${total} ${moneda || 'BOB'}`;
   const limpia = lineaLimpia(
     typeof nota === 'string' ? nota.replace(/[[\]{}«»]/g, ' ') : '', MAX_NOTA);
