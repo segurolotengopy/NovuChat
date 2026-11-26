@@ -100,6 +100,20 @@ describe('apagar-rafaga.mjs', () => {
     expect((await ficha('rafaga-nunca')).exists).toBe(false);
   });
 
+  it('un comercio dado de baja sale 1 y no se le escribe ni audita', async () => {
+    await db.doc(`tenants/${T}`).update({ estado: 'dado_de_baja' });
+    const r = correr('--tenant', T, '--apagar', '--aplicar');
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('dado de baja');
+    expect((await ficha()).get('rafagaApagada')).toBeUndefined();
+    expect(await auditorias()).toBe(0);
+  });
+
+  it('un comercio inexistente no deja auditoría', async () => {
+    correr('--tenant', 'rafaga-nunca', '--apagar', '--aplicar');
+    expect((await db.collection('tenants/rafaga-nunca/auditoria').get()).size).toBe(0);
+  });
+
   it('no toca a otros comercios', async () => {
     correr('--tenant', T, '--apagar', '--aplicar');
     expect((await ficha(OTRO)).data()).toEqual(FICHA);
@@ -125,6 +139,19 @@ describe('apagar-rafaga.mjs: salvaguarda de producción (análisis de argumentos
   });
   it('--confirmo-produccion que no coincide se rechaza', () => {
     expect(analizar([...base, '--aplicar', '--confirmo-produccion', OTRO]).ok).toBe(false);
+  });
+  it('--confirmo-produccion vacío se rechaza, en cualquier orden de argumentos', () => {
+    expect(analizar([...base, '--aplicar', '--confirmo-produccion', '']).ok).toBe(false);
+    expect(analizar(['--confirmo-produccion', '', '--aplicar', ...base]).ok).toBe(false);
+    expect(analizar(['--aplicar', '--apagar', '--tenant', T, '--proyecto', 'proyecto-real-x1']).ok).toBe(false);
+    expect(analizar(['--tenant', T, '--aplicar', '--proyecto', 'proyecto-real-x1', '--apagar', '--confirmo-produccion', OTRO]).ok).toBe(false);
+  });
+  it('un demo-* sin FIRESTORE_EMULATOR_HOST exige confirmación; con el host local, no', () => {
+    const demo = ['--proyecto', PROYECTO, '--tenant', T, '--apagar', '--aplicar'];
+    expect(analizar(demo, {}).ok).toBe(false);
+    expect(analizar(demo, { FIRESTORE_EMULATOR_HOST: 'ejemplo.com:80' }).ok).toBe(false);
+    expect(analizar([...demo, '--confirmo-produccion', T], {}).ok).toBe(true);
+    expect(analizar(demo, { FIRESTORE_EMULATOR_HOST: HOST }).ok).toBe(true);
   });
   it('con la confirmación igual al tenant pasa; el simulacro no la exige', () => {
     expect(analizar([...base, '--aplicar', '--confirmo-produccion', T]).ok).toBe(true);

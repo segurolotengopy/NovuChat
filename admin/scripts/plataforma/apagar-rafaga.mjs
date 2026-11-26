@@ -35,7 +35,9 @@ const ID_PROYECTO = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
 const CON_VALOR = ['proyecto', 'tenant', 'confirmo-produccion'];
 const BANDERAS = ['apagar', 'encender', 'aplicar'];
 
-export function analizar(argv) {
+const HOST_LOCAL = /^(127\.0\.0\.1|localhost|\[::1\]):[0-9]{1,5}$/;
+
+export function analizar(argv, env = process.env) {
   const problemas = [];
   const v = { __proto__: null };
   const b = [];
@@ -62,7 +64,9 @@ export function analizar(argv) {
   if (apagar === encender) problemas.push('pida exactamente una: --apagar o --encender');
   if (proyecto === undefined) problemas.push('falta --proyecto');
   else if (!proyecto.startsWith('demo-') && !ID_PROYECTO.test(proyecto)) problemas.push('--proyecto inválido');
-  const real = proyecto !== undefined && !proyecto.startsWith('demo-');
+  // Un `demo-*` es emulador solo si hay un FIRESTORE_EMULATOR_HOST local; si no, se trata como real.
+  const hayEmulador = HOST_LOCAL.test(String(env['FIRESTORE_EMULATOR_HOST'] ?? '').trim());
+  const real = proyecto !== undefined && !(proyecto.startsWith('demo-') && hayEmulador);
   if (tenant === undefined) problemas.push('falta --tenant');
   else if (tenant.includes(',')) problemas.push('--tenant admite UN solo comercio por corrida');
   else if (!ID_TENANT.test(tenant)) problemas.push('--tenant inválido (minúsculas, dígitos y guiones, de 3 a 60)');
@@ -89,6 +93,7 @@ export async function ejecutar(cfg, deps) {
     const snap = await tx.get(ref);
     if (!snap.exists) { resultado = { codigo: 1, texto: `  ✗ No existe el comercio «${cfg.tenant}».\n` }; return; }
     const d = snap.data() ?? {};
+    if (d['estado'] === 'dado_de_baja') { resultado = { codigo: 1, texto: `  ✗ «${cfg.tenant}» está dado de baja: no se le toca la ráfaga.\n` }; return; }
     const hay = Object.prototype.hasOwnProperty.call(d, CAMPO);
     const hoy = hay ? d[CAMPO] : null;
     const yaEsta = cfg.apagar ? hoy === true : !hay;
