@@ -79,6 +79,10 @@
       "salida": 0,
       "destino": "¿Es un comprobante?"
     },
-    "normalizador": "Normalizar entrada"
+    "normalizador": "Normalizar entrada",
+    "campos": {
+      "texto": "userInput"
+    },
+    "consumidor": "AI Agent NovuChat"
   }
 }

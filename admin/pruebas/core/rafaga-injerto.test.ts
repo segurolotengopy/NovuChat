@@ -12,9 +12,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RAIZ_FLUJOS } from '../../scripts/ensamblar-flujo.mjs';
 import { correr } from '../lib/flujo';
+import { cablearBellido, cablearWalisuma } from './rafaga-cableado';
 import {
   ANCLA_REPORTE, NODO_RAFAGA_AGRUPAR, NODO_RAFAGA_CONSULTAR, NODO_RAFAGA_ESPERAR, NODO_RAFAGA_SI, NODOS_DE_LA_RAFAGA, TIMEOUT_RAFAGA_MS,
-  codigoDeLaRafaga, hallazgosDeLaRafaga, injertarRafaga, quitarRafaga,
+  NORMALIZADORES_VERIFICADOS, codigoDeLaRafaga, emisionesDelCodigo, hallazgosDeLaRafaga, huellaDe, injertarRafaga, quitarRafaga,
 } from '../../../Flujos/src/core/rafaga/rafaga.mjs';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,7 +45,7 @@ function sinTipos(): Flujo {
       },
       un('Reportar mensaje (entrante)', [960, 100]),
       un('¿Atención normal?', [960, 300]),
-      un('Agente', [1200, 400]),
+      un('Agente', [1200, 400], { parameters: { texto: "={{ $('Agrupar ráfaga').first().json.textoDelTurno }}" } }),
     ],
     connections: {
       Webhook: enl('Normalizar entrada'),
@@ -65,9 +66,14 @@ function sintetico(): Flujo {
   nodo(f, '¿Atención normal?').type = 'n8n-nodes-base.if';
   return f;
 }
+/**
+ * El injerto con lo OBLIGATORIO resuelto: el consumidor sintético («Agente» lee `textoDelTurno`) y `campos.texto` explícito (`userInput`, el del normalizador sintético).
+ * Las pruebas que niegan algo de esto llaman a `injertarRafaga` directamente.
+ */
+const injertar = (flujo: Flujo, o: Record<string, unknown>): Flujo => injertarRafaga(flujo, { consumidor: 'Agente', ...o, campos: { texto: 'userInput', ...((o.campos as Record<string, string> | undefined) ?? {}) } });
 const ANCLA = { nodo: '¿Atención normal?', salida: 0, destino: 'Agente' };
 const nodo = (f: Flujo, nombre: string): Nodo => f.nodes.find((n: Nodo) => n.name === nombre);
-const armado = (opciones: Record<string, unknown> = {}): Flujo => injertarRafaga(sintetico(), { ancla: ANCLA, ...opciones });
+const armado = (opciones: Record<string, unknown> = {}): Flujo => injertar(sintetico(), { ancla: ANCLA, ...opciones });
 const destinos = (f: Flujo, de: string, i = 0): string[] => (((f.connections[de] || {}).main || [])[i] || []).map((e: Nodo) => e.node);
 
 describe('rafaga: la forma', () => {
@@ -189,7 +195,7 @@ describe('rafaga: la condición del IF (la expresión, evaluada)', () => {
     f.connections['Interpretar entrada'] = f.connections['Normalizar entrada'];
     delete f.connections['Normalizar entrada'];
     f.connections.Webhook = enl('Interpretar entrada');
-    injertarRafaga(f, { ancla: ANCLA });
+    injertar(f, { ancla: ANCLA });
     expect(hallazgosDeLaRafaga(f)).toEqual([]);
   });
   it('la espera sale de «Config base» y se acota de 1 a 5 s con 2 por defecto', () => {
@@ -201,38 +207,38 @@ describe('rafaga: la condición del IF (la expresión, evaluada)', () => {
 
 describe('rafaga: se niega a armar (NEGATIVAS)', () => {
   it('sin el ancla, sin el destino o con un enlace que no existe', () => {
-    expect(() => injertarRafaga(sintetico(), { ancla: { ...ANCLA, nodo: 'No existe' } })).toThrow(/no tiene «No existe»/);
-    expect(() => injertarRafaga(sintetico(), { ancla: { ...ANCLA, destino: 'No existe' } })).toThrow(/no tiene «No existe»/);
-    expect(() => injertarRafaga(sintetico(), { ancla: { nodo: '¿Atención normal?', destino: 'Config base' } })).toThrow(/no va a/);
-    expect(() => injertarRafaga(sintetico(), { ancla: { ...ANCLA, salida: 1 } })).toThrow(/no va a/);
+    expect(() => injertar(sintetico(), { ancla: { ...ANCLA, nodo: 'No existe' } })).toThrow(/no tiene «No existe»/);
+    expect(() => injertar(sintetico(), { ancla: { ...ANCLA, destino: 'No existe' } })).toThrow(/no tiene «No existe»/);
+    expect(() => injertar(sintetico(), { ancla: { nodo: '¿Atención normal?', destino: 'Config base' } })).toThrow(/no va a/);
+    expect(() => injertar(sintetico(), { ancla: { ...ANCLA, salida: 1 } })).toThrow(/no va a/);
   });
   it('si ya tiene uno de los cuatro nombres (el chat de NovuChat ya tiene «Esperar ráfaga»)', () => {
     const f = sintetico();
     f.nodes.push(un(NODO_RAFAGA_ESPERAR, [0, 0]));
-    expect(() => injertarRafaga(f, { ancla: ANCLA })).toThrow(/ya tiene un nodo «Esperar ráfaga»/);
+    expect(() => injertar(f, { ancla: ANCLA })).toThrow(/ya tiene un nodo «Esperar ráfaga»/);
     const g = armado();
-    expect(() => injertarRafaga(g, { ancla: ANCLA })).toThrow(/ya tiene un nodo/);
+    expect(() => injertar(g, { ancla: ANCLA })).toThrow(/ya tiene un nodo/);
   });
   it('si «Reportar mensaje (entrante)» no existe o no corre antes', () => {
     const sin = sintetico();
     sin.nodes = sin.nodes.filter((n: Nodo) => n.name !== ANCLA_REPORTE);
-    expect(() => injertarRafaga(sin, { ancla: ANCLA })).toThrow(/Reportar mensaje/);
+    expect(() => injertar(sin, { ancla: ANCLA })).toThrow(/Reportar mensaje/);
     const abajo = sintetico();
     nodo(abajo, ANCLA_REPORTE).position = [960, 900]; // más abajo que el destino y sin ser ascendiente: correría DESPUÉS
-    expect(() => injertarRafaga(abajo, { ancla: ANCLA })).toThrow(/ANTES de la ráfaga/);
+    expect(() => injertar(abajo, { ancla: ANCLA })).toThrow(/ANTES de la ráfaga/);
   });
   it('si el reporte es ascendiente del ancla, vale aunque esté más abajo en el lienzo', () => {
     const f = sintetico();
     nodo(f, ANCLA_REPORTE).position = [960, 900];
     f.connections['Config del negocio'] = enl('Reportar mensaje (entrante)');
     f.connections[ANCLA_REPORTE] = enl('¿Atención normal?');
-    expect(() => injertarRafaga(f, { ancla: ANCLA, fuente: 'Normalizar entrada' })).not.toThrow();
+    expect(() => injertar(f, { ancla: ANCLA, fuente: 'Normalizar entrada' })).not.toThrow();
   });
   it('sin normalizador, sin «Config base», sin «Config del negocio» o sin «Traer configuración»', () => {
     for (const [faltante, patron] of [['Normalizar entrada', /normaliza/], ['Config base', /Config base/], ['Config del negocio', /Config del negocio/], ['Traer configuración', /Traer configuración/]] as const) {
       const f = sintetico();
       f.nodes = f.nodes.filter((n: Nodo) => n.name !== faltante);
-      expect(() => injertarRafaga(f, { ancla: ANCLA }), faltante).toThrow(patron);
+      expect(() => injertar(f, { ancla: ANCLA }), faltante).toThrow(patron);
     }
   });
   it('I1: el normalizador, «Config del negocio» y «Config base» tienen que ser ASCENDIENTES del ancla', () => {
@@ -243,7 +249,7 @@ describe('rafaga: se niega a armar (NEGATIVAS)', () => {
       if (aislado === 'Config del negocio') f.connections['Config base'] = enl('¿Atención normal?');
       if (aislado === 'Config base') f.connections['Normalizar entrada'] = enl('Config del negocio', 'Reportar mensaje (entrante)');
       if (aislado === 'Normalizar entrada') { f.connections.Webhook = enl('Config base'); f.connections['Config base'] = enl('Config del negocio'); }
-      expect(() => injertarRafaga(f, { ancla: ANCLA }), aislado).toThrow(new RegExp(`«${aislado}» tiene que ser ascendiente`));
+      expect(() => injertar(f, { ancla: ANCLA }), aislado).toThrow(new RegExp(`«${aislado}» tiene que ser ascendiente`));
     }
     // y la guardia lo vuelve a exigir en un flujo ya armado
     const armadoOk = armado();
@@ -259,7 +265,7 @@ describe('rafaga: se niega a armar (NEGATIVAS)', () => {
     };
     renombrar('Config base', 'Ajustes base'); renombrar('Config del negocio', 'Datos del comercio'); renombrar('Traer configuración', 'Pedir configuración');
     const opciones = { configBase: 'Ajustes base', config: 'Datos del comercio', traerConfiguracion: 'Pedir configuración' };
-    injertarRafaga(f, { ancla: ANCLA, ...opciones });
+    injertar(f, { ancla: ANCLA, ...opciones });
     expect(nodo(f, NODO_RAFAGA_AGRUPAR).parameters.jsCode).toContain("$('Ajustes base')");
     expect(hallazgosDeLaRafaga(f, opciones)).toEqual([]);
     expect(hallazgosDeLaRafaga(f).length).toBeGreaterThan(0); // sin las opciones no puede saber los nombres: lo dice, no lo da por bueno
@@ -273,11 +279,11 @@ describe('rafaga: se niega a armar (NEGATIVAS)', () => {
     ]) {
       const f = sintetico();
       cambio(nodo(f, 'Traer configuración'));
-      expect(() => injertarRafaga(f, { ancla: ANCLA })).toThrow(/X-NovuChat-Numero/);
+      expect(() => injertar(f, { ancla: ANCLA })).toThrow(/X-NovuChat-Numero/);
     }
     const prueba = sintetico();
     nodo(prueba, 'Traer configuración').parameters.headerParameters.parameters[0].value = "={{ $json.prueba && $json.prueba.modoPrueba === true ? String($('Config base').first().json.phoneNumberIdEsperado || '') : String($json.phoneNumberId || '') }}";
-    expect(() => injertarRafaga(prueba, { ancla: ANCLA })).not.toThrow();
+    expect(() => injertar(prueba, { ancla: ANCLA })).not.toThrow();
   });
   it('«Traer configuración» con otra URL, sin credencial o con credencial doble', () => {
     for (const cambio of [
@@ -288,7 +294,7 @@ describe('rafaga: se niega a armar (NEGATIVAS)', () => {
     ]) {
       const f = sintetico();
       cambio(nodo(f, 'Traer configuración'));
-      expect(() => injertarRafaga(f, { ancla: ANCLA })).toThrow(/rafaga:/);
+      expect(() => injertar(f, { ancla: ANCLA })).toThrow(/rafaga:/);
     }
   });
 });
@@ -345,17 +351,17 @@ describe('rafaga: quitar e injertar son idempotentes (lo que el ensamblador nece
     const retocado = armado();
     nodo(retocado, NODO_RAFAGA_AGRUPAR).parameters.jsCode = 'return [];';
     nodo(retocado, NODO_RAFAGA_CONSULTAR).parameters.options.timeout = 99999;
-    expect(JSON.stringify(injertarRafaga(quitarRafaga(retocado), { ancla: ANCLA }), null, 2)).toBe(canonico);
+    expect(JSON.stringify(injertar(quitarRafaga(retocado), { ancla: ANCLA }), null, 2)).toBe(canonico);
   });
   it('con una puerta propia también se reproduce (la lee del propio nodo)', () => {
     const op = { ancla: ANCLA, puerta: 'n.eleccion === ""' };
     const canonico = JSON.stringify(armado(op), null, 2);
-    expect(JSON.stringify(injertarRafaga(quitarRafaga(armado(op)), op), null, 2)).toBe(canonico);
+    expect(JSON.stringify(injertar(quitarRafaga(armado(op)), op), null, 2)).toBe(canonico);
   });
   it('con varias conexiones en la misma salida solo se toca la del destino', () => {
     const f = sintetico();
     f.connections['¿Atención normal?'] = enl('Config base', 'Agente');
-    injertarRafaga(f, { ancla: ANCLA });
+    injertar(f, { ancla: ANCLA });
     expect(destinos(f, '¿Atención normal?')).toEqual(['Config base', NODO_RAFAGA_SI]);
     quitarRafaga(f);
     expect(destinos(f, '¿Atención normal?')).toEqual(['Config base', 'Agente']);
@@ -378,20 +384,20 @@ describe('rafaga: `fuente` (el ancla viene tras un nodo que NO trae los campos d
   const CAMPOS = { texto: 'texto' };
 
   it('sin fuente y con un ancla que viene tras un Code o un HTTP que no traen los campos: se niega (no queda apagada en silencio)', () => {
-    expect(() => injertarRafaga(tras('code'), { ancla: ANCLA, campos: CAMPOS }), 'code').toThrow(/lo impide «Puerta del turno».*apagada en silencio.*fuente/);
-    expect(() => injertarRafaga(tras('http'), { ancla: ANCLA, campos: CAMPOS }), 'http').toThrow(/lo impide «Puerta del turno»/);
-    expect(() => injertarRafaga(tras('http'), { ancla: { nodo: 'Puerta del turno', destino: '¿Atención normal?' }, campos: CAMPOS }), 'ancla http').toThrow(/lo impide «Puerta del turno»/);
+    expect(() => injertar(tras('code'), { ancla: ANCLA, campos: CAMPOS }), 'code').toThrow(/lo impide «Puerta del turno».*apagada en silencio.*fuente/);
+    expect(() => injertar(tras('http'), { ancla: ANCLA, campos: CAMPOS }), 'http').toThrow(/lo impide «Puerta del turno»/);
+    expect(() => injertar(tras('http'), { ancla: { nodo: 'Puerta del turno', destino: '¿Atención normal?' }, campos: CAMPOS }), 'ancla http').toThrow(/lo impide «Puerta del turno»/);
   });
 
   it('LISTA BLANCA: sin `fuente` NINGÚN Code, Set, HTTP o Merge entre el normalizador y el ancla se tolera, aunque copie la entrada o mencione el id', () => {
     for (const codigo of ["return $input.all().map((i) => ({ json: { ...i.json, ruta: 'sigue' } }));", "return $input.all().map((i) => ({ json: Object.assign({}, i.json, { ruta: 'sigue' }) }));", "return [{ json: { mensajeId: $('Normalizar entrada').first().json.mensajeId } }];", 'return $input.all();']) {
-      expect(() => injertarRafaga(tras('code', codigo), { ancla: ANCLA }), codigo).toThrow(/lo impide «Puerta del turno».*apagada en silencio/);
-      expect(() => injertarRafaga(tras('code', codigo), { ancla: ANCLA, fuente: 'Normalizar entrada' }), `${codigo} con fuente`).not.toThrow();
+      expect(() => injertar(tras('code', codigo), { ancla: ANCLA }), codigo).toThrow(/lo impide «Puerta del turno».*apagada en silencio/);
+      expect(() => injertar(tras('code', codigo), { ancla: ANCLA, fuente: 'Normalizar entrada' }), `${codigo} con fuente`).not.toThrow();
     }
     for (const tipo of ['n8n-nodes-base.set', 'n8n-nodes-base.merge', 'n8n-nodes-base.httpRequest', 'n8n-nodes-base.code']) {
       const f = tras('code');
       nodo(f, 'Puerta del turno').type = tipo;
-      expect(() => injertarRafaga(f, { ancla: ANCLA }), tipo).toThrow(/apagada en silencio/);
+      expect(() => injertar(f, { ancla: ANCLA }), tipo).toThrow(/apagada en silencio/);
     }
   });
 
@@ -399,19 +405,19 @@ describe('rafaga: `fuente` (el ancla viene tras un nodo que NO trae los campos d
     for (const tipo of ['n8n-nodes-base.if', 'n8n-nodes-base.switch', 'n8n-nodes-base.filter', 'n8n-nodes-base.wait', 'n8n-nodes-base.noOp']) {
       const f = tras('code');
       nodo(f, 'Puerta del turno').type = tipo;
-      expect(() => injertarRafaga(f, { ancla: ANCLA }), tipo).not.toThrow();
+      expect(() => injertar(f, { ancla: ANCLA }), tipo).not.toThrow();
     }
-    expect(() => injertarRafaga(sintetico(), { ancla: ANCLA })).not.toThrow();
+    expect(() => injertar(sintetico(), { ancla: ANCLA })).not.toThrow();
     // Un solo camino con un nodo no transparente basta para negarse (la otra rama sí llega limpia).
     const f = sintetico();
     f.nodes.push({ ...un('Desvio', [600, 500]), type: 'n8n-nodes-base.code', typeVersion: 2, parameters: { jsCode: 'return [];' } });
     f.connections['Normalizar entrada'].main[0].push({ node: 'Desvio', type: 'main', index: 0 });
     f.connections.Desvio = enl('¿Atención normal?');
-    expect(() => injertarRafaga(f, { ancla: ANCLA })).toThrow(/lo impide «Desvio»/);
+    expect(() => injertar(f, { ancla: ANCLA })).toThrow(/lo impide «Desvio»/);
   });
 
   it('con fuente, se arma, y el IF, la consulta y el Code leen de ESA fuente; la guardia lo acepta (la infiere del propio nodo)', () => {
-    const f = injertarRafaga(tras('code'), { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS });
+    const f = injertar(tras('code'), { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS });
     expect(nodo(f, NODO_RAFAGA_SI).parameters.conditions.conditions[0].leftValue).toContain("const n = $('Normalizar entrada').first().json;");
     const http = nodo(f, NODO_RAFAGA_CONSULTAR).parameters;
     expect(http.jsonBody).toContain("$('Normalizar entrada').first().json.from");
@@ -419,7 +425,7 @@ describe('rafaga: `fuente` (el ancla viene tras un nodo que NO trae los campos d
     expect(http.headerParameters.parameters[0].value).toContain("$('Normalizar entrada').first().json.phoneNumberId");
     expect(nodo(f, NODO_RAFAGA_AGRUPAR).parameters.jsCode).toContain("const FUENTE = 'Normalizar entrada';");
     expect(hallazgosDeLaRafaga(f, { campos: CAMPOS })).toEqual([]);
-    expect(JSON.stringify(injertarRafaga(quitarRafaga(structuredClone(f)), { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS }))).toBe(JSON.stringify(f));
+    expect(JSON.stringify(injertar(quitarRafaga(structuredClone(f)), { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS }))).toBe(JSON.stringify(f));
   });
 
   it('sin `fuente` el comportamiento sigue igual: lee `$json` y `FUENTE` queda vacía', () => {
@@ -429,30 +435,30 @@ describe('rafaga: `fuente` (el ancla viene tras un nodo que NO trae los campos d
   });
 
   it('NEGATIVAS: una fuente que no existe, que no es ascendiente del ancla o con nombre peligroso', () => {
-    expect(() => injertarRafaga(tras(), { ancla: ANCLA, fuente: 'No existe' })).toThrow(/no tiene «No existe»/);
-    expect(() => injertarRafaga(tras(), { ancla: ANCLA, fuente: 'Agente' })).toThrow(/«Agente» tiene que ser ascendiente/);
-    expect(() => injertarRafaga(tras(), { ancla: ANCLA, fuente: 'Traer configuración' })).toThrow(/«Traer configuración» tiene que ser ascendiente/);
-    for (const mala of ["x'); process", 'a\\b', 'a\nb']) expect(() => injertarRafaga(tras(), { ancla: ANCLA, fuente: mala })).toThrow();
+    expect(() => injertar(tras(), { ancla: ANCLA, fuente: 'No existe' })).toThrow(/no tiene «No existe»/);
+    expect(() => injertar(tras(), { ancla: ANCLA, fuente: 'Agente' })).toThrow(/«Agente» tiene que ser ascendiente/);
+    expect(() => injertar(tras(), { ancla: ANCLA, fuente: 'Traer configuración' })).toThrow(/«Traer configuración» tiene que ser ascendiente/);
+    for (const mala of ["x'); process", 'a\\b', 'a\nb']) expect(() => injertar(tras(), { ancla: ANCLA, fuente: mala })).toThrow();
     // armado con una fuente y luego movida a un nodo que no es ascendiente: la guardia lo ve
-    const f = injertarRafaga(tras(), { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS });
+    const f = injertar(tras(), { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS });
     f.connections['Normalizar entrada'] = enl('Reportar mensaje (entrante)');
     expect(hallazgosDeLaRafaga(f, { campos: CAMPOS }).join('|')).toMatch(/tiene que ser ascendiente/);
   });
 
   it('la puerta puede leer OTRO nodo: se valida que exista y sea ascendiente del ancla', () => {
     const puerta = "$('Puerta del turno').first().json.ruta === 'sigue'";
-    const f = injertarRafaga(tras(), { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS, puerta });
+    const f = injertar(tras(), { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS, puerta });
     expect(hallazgosDeLaRafaga(f, { campos: CAMPOS })).toEqual([]);
-    expect(() => injertarRafaga(tras(), { ancla: ANCLA, fuente: 'Normalizar entrada', puerta: "$('Agente').first().json.ruta === 'sigue'" })).toThrow(/«Agente» tiene que ser ascendiente/);
-    expect(() => injertarRafaga(tras(), { ancla: ANCLA, fuente: 'Normalizar entrada', puerta: "$('No existe').first().json.ok" })).toThrow(/la puerta lee «No existe»/);
-    const roto = injertarRafaga(tras(), { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS, puerta });
+    expect(() => injertar(tras(), { ancla: ANCLA, fuente: 'Normalizar entrada', puerta: "$('Agente').first().json.ruta === 'sigue'" })).toThrow(/«Agente» tiene que ser ascendiente/);
+    expect(() => injertar(tras(), { ancla: ANCLA, fuente: 'Normalizar entrada', puerta: "$('No existe').first().json.ok" })).toThrow(/la puerta lee «No existe»/);
+    const roto = injertar(tras(), { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS, puerta });
     roto.nodes = roto.nodes.filter((n: Nodo) => n.name !== 'Puerta del turno');
     expect(hallazgosDeLaRafaga(roto, { campos: CAMPOS }).join('|')).toMatch(/la puerta lee «Puerta del turno»/);
   });
 
   describe('ejecutados con ítems reales', () => {
     const puerta = "$('Puerta del turno').first().json.ruta === 'sigue'";
-    const f = injertarRafaga(tras(), { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS, puerta });
+    const f = injertar(tras(), { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS, puerta });
     const ancla = { ruta: 'sigue', texto: 'hola', responder: false, transferir: false, motivo: '', from: '59170000000' }; // lo que emite «Puerta del turno»: sin tipo, sin mensajeId, sin phoneNumberId
     const mensaje = { tipo: 'text', mensajeId: 'wamid.X', from: '59170000000', phoneNumberId: '123456789', texto: 'hola' };
     const evaluar = (ctx: Record<string, unknown>, item: unknown = ancla, corrio = true): unknown => {
@@ -466,7 +472,7 @@ describe('rafaga: `fuente` (el ancla viene tras un nodo que NO trae los campos d
       expect(evaluar(ctx)).toBe(true);
     });
     it('sin la fuente, esos mismos ítems habrían dado siempre «no» (el caso que se evita)', () => {
-      const sin = injertarRafaga(sintetico(), { ancla: ANCLA });
+      const sin = injertar(sintetico(), { ancla: ANCLA });
       const cuerpo = nodo(sin, NODO_RAFAGA_SI).parameters.conditions.conditions[0].leftValue.replace(/^=\{\{/, '').replace(/\}\}$/, '').trim();
       const $ = (n: string) => ({ first: () => ({ json: (ctx as Record<string, unknown>)[n] }), isExecuted: true });
       expect(vm.compileFunction(`return (${cuerpo});`, ['$', '$json', 'String'])($, ancla, String)).toBe(false);
@@ -504,7 +510,7 @@ describe('rafaga: referencias a nodos que n8n puede precargar (`problemasDeRefer
     nodo(f, '¿Atención normal?').type = 'n8n-nodes-base.if';
     f.connections['Config del negocio'] = enl('Puerta del turno');
     f.connections['Puerta del turno'] = enl('¿Atención normal?');
-    return injertarRafaga(f, { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS });
+    return injertar(f, { ancla: ANCLA, fuente: 'Normalizar entrada', campos: CAMPOS });
   };
 
   it('sin fuente y con fuente: ninguna referencia dinámica ni a un nodo que no es antecesor', async () => {
@@ -542,48 +548,72 @@ describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES 
   const BELLIDO = 'clientes/agenda-minima/agenda-minima.v0.json';
   const ANCLA_WALISUMA = { nodo: '¿Bajar medio?', salida: 1, destino: 'Decidir turno' }; // tras «Puerta del turno» (un Code que solo emite {ruta, texto, from…})
   const ANCLA_BELLIDO = { nodo: '¿Atención normal?', salida: 0, destino: '¿Bajar medio?' };
-  const TEXTO = { texto: 'texto' }; // Walisuma y Bellido emiten `texto`, no `userInput`
+  const ANCLA_DEMO = { nodo: '¿Atención normal?', salida: 0, destino: '¿Es un comprobante?' };
+  const TEXTO = { texto: 'texto' }; // Walisuma y Bellido emiten `texto`
+  const USER_INPUT = { texto: 'userInput' }; // los demos emiten `userInput`
+  const walisuma = (): Flujo => cablearWalisuma(real(WALISUMA));
+  const bellido = (): Flujo => cablearBellido(real(BELLIDO));
 
   it('sin `fuente` se NIEGA a armar en Walisuma y en Bellido, y el que lo impide es «Puerta del turno» / el primer nodo no transparente (nunca un Code aceptado)', () => {
-    expect(() => injertarRafaga(real(WALISUMA), { ancla: ANCLA_WALISUMA, campos: TEXTO })).toThrow(/lo impide «Puerta del turno».*apagada en silencio/);
-    expect(() => injertarRafaga(real(BELLIDO), { ancla: ANCLA_BELLIDO, campos: TEXTO })).toThrow(/apagada en silencio/);
+    expect(() => injertarRafaga(walisuma(), { ancla: ANCLA_WALISUMA, campos: TEXTO, consumidor: 'Decidir turno' })).toThrow(/lo impide «Puerta del turno».*apagada en silencio/);
+    expect(() => injertarRafaga(bellido(), { ancla: ANCLA_BELLIDO, campos: TEXTO, consumidor: 'Decidir turno' })).toThrow(/apagada en silencio/);
   });
 
   it.each(['Puerta del turno', 'Reportar mensaje (entrante)', 'Config del negocio', 'Traer configuración'])('Walisuma con fuente «%s» (un nodo que NO trae el mensaje): ERROR, no queda apagada en silencio', (fuente) => {
-    expect(() => injertarRafaga(real(WALISUMA), { ancla: ANCLA_WALISUMA, fuente, campos: TEXTO })).toThrow(new RegExp(`«${fuente.replace(/[()]/g, '\\$&')}» no emite`));
+    const patron = new RegExp(`«${fuente.replace(/[()]/g, '\\$&')}» no emite`);
+    expect(() => injertarRafaga(walisuma(), { ancla: ANCLA_WALISUMA, fuente, campos: TEXTO, consumidor: 'Decidir turno' })).toThrow(patron);
     // la misma guardia sobre un flujo ya armado a mano (sin pasar por el injerto)
-    const f = injertarRafaga(real(WALISUMA), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: TEXTO });
-    for (const n of [NODO_RAFAGA_SI, NODO_RAFAGA_CONSULTAR, NODO_RAFAGA_AGRUPAR]) nodo(f, n).notes = nodo(f, n).notes; // sin tocar nada
-    expect(hallazgosDeLaRafaga(f, { fuente, campos: TEXTO }).join('|')).toMatch(new RegExp(`«${fuente.replace(/[()]/g, '\\$&')}» no emite`));
+    const f = injertarRafaga(walisuma(), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: TEXTO, consumidor: 'Decidir turno' });
+    expect(hallazgosDeLaRafaga(f, { fuente, campos: TEXTO }).join('|')).toMatch(patron);
   });
 
-  it('Walisuma con fuente «Normalizar entrada» y campos {texto:\'texto\'}: arma y la guardia queda en verde; con el `userInput` por defecto da ERROR nombrando el campo', () => {
-    const f = injertarRafaga(real(WALISUMA), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: TEXTO });
+  it('Walisuma con fuente «Normalizar entrada», campos {texto:\'texto\'} y consumidor «Decidir turno»: arma y la guardia queda en verde; con otro campo de texto da ERROR nombrando el campo', () => {
+    const f = injertarRafaga(walisuma(), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: TEXTO, consumidor: 'Decidir turno' });
     expect(hallazgosDeLaRafaga(f, { campos: TEXTO })).toEqual([]);
+    expect(hallazgosDeLaRafaga(f)).toEqual([]); // sin opciones: infiere campos, fuente y consumidor del propio flujo
     expect(hallazgosDeLaRafaga(f, { campos: TEXTO, exigir: true })).toEqual([]);
     expect(nodo(f, NODO_RAFAGA_SI).parameters.conditions.conditions[0].leftValue).toContain("const n = $('Normalizar entrada').first().json;");
     expect(nodo(f, NODO_RAFAGA_AGRUPAR).parameters.jsCode).toContain("const CAMPO_TEXTO = 'texto';");
-    expect(() => injertarRafaga(real(WALISUMA), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada' })).toThrow(/«Normalizar entrada» no emite texto \(«userInput»\)/);
-    expect(hallazgosDeLaRafaga(f).join('|')).toMatch(/«Normalizar entrada» no emite texto \(«userInput»\)/);
-  });
-
-  it('un campo que el productor no emite (nombre inexistente) es ERROR y nombra cuál falta', () => {
-    for (const campos of [{ texto: 'noExiste' }, { mensajeId: 'idInventado' }, { tipo: 'clase' }, { from: 'celular' }]) {
-      const [nombre, valor] = Object.entries(campos)[0];
-      expect(() => injertarRafaga(real(WALISUMA), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: { texto: 'texto', ...campos } })).toThrow(new RegExp(`no emite .*${nombre} \\(«${valor}»\\)`));
+    // `userInput` y `ruta` NO son claves que emita «Normalizar entrada» de Walisuma (`ruta` es de «Puerta del turno»)
+    for (const campo of ['userInput', 'ruta', 'textoo']) {
+      expect(() => injertarRafaga(walisuma(), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: { texto: campo }, consumidor: 'Decidir turno' }), campo).toThrow(new RegExp(`«Normalizar entrada» no emite texto \\(«${campo}»\\)`));
     }
   });
 
+  it('un campo que el productor no emite (nombre inexistente) es ERROR y nombra cuál falta; una clave desconocida en `campos` también', () => {
+    for (const campos of [{ texto: 'noExiste' }, { mensajeId: 'idInventado' }, { tipo: 'clase' }, { from: 'celular' }]) {
+      const [nombre, valor] = Object.entries(campos)[0];
+      expect(() => injertarRafaga(walisuma(), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: { texto: 'texto', ...campos }, consumidor: 'Decidir turno' })).toThrow(new RegExp(`no emite .*${nombre} \\(«${valor}»\\)`));
+    }
+    expect(() => injertarRafaga(walisuma(), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: { texto: 'texto', textoo: 'texto' }, consumidor: 'Decidir turno' })).toThrow(/clave desconocida «textoo»/);
+    expect(() => injertarRafaga(walisuma(), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', consumidor: 'Decidir turno' })).toThrow(/falta `campos.texto`/);
+  });
+
   it('Bellido: «Normalizar entrada» NO es el que emite el mensaje (lo hace «Interpretar entrada»): con la primera ERROR, con la segunda arma', () => {
-    expect(() => injertarRafaga(real(BELLIDO), { ancla: ANCLA_BELLIDO, fuente: 'Normalizar entrada', campos: TEXTO })).toThrow(/«Normalizar entrada» no emite/);
-    const f = injertarRafaga(real(BELLIDO), { ancla: ANCLA_BELLIDO, fuente: 'Interpretar entrada', campos: TEXTO });
+    expect(() => injertarRafaga(bellido(), { ancla: ANCLA_BELLIDO, fuente: 'Normalizar entrada', campos: TEXTO, consumidor: 'Decidir turno' })).toThrow(/«Normalizar entrada» no emite/);
+    const f = injertarRafaga(bellido(), { ancla: ANCLA_BELLIDO, fuente: 'Interpretar entrada', campos: TEXTO, consumidor: 'Decidir turno' });
     expect(hallazgosDeLaRafaga(f, { campos: TEXTO })).toEqual([]);
   });
 
-  it.each([['demo-a'], ['demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF y este emite `userInput`: arma sin `fuente`', (ruta) => {
+  it.each([['demo-a'], ['demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF; arma con `campos: {texto: \'userInput\'}` (y `consumidor: null`: sin cableado en #1117)', (ruta) => {
     // `quitarRafaga` primero: el flujo que ya adoptó la pieza (el Demo B desde el 25/11/2026) la trae puesta.
-    const f = injertarRafaga(quitarRafaga(real(ruta === 'demo-a' ? demoA : ruta)), { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Es un comprobante?' } });
-    expect(hallazgosDeLaRafaga(f)).toEqual([]);
+    const f = injertarRafaga(quitarRafaga(real(ruta === 'demo-a' ? demoA : ruta)), { ancla: ANCLA_DEMO, campos: USER_INPUT, consumidor: null });
+    expect(hallazgosDeLaRafaga(f, { consumidor: null })).toEqual([]);
+    // Sin consumidor declarado, la guardia lo dice... salvo en el flujo cuyo agente YA lee `textoDelTurno` (el Demo B desde el 25/11/2026).
+    if (ruta !== 'demo-b-venta-cobro.json') expect(hallazgosDeLaRafaga(f).join('|')).toMatch(/ningún nodo .* lee `textoDelTurno`/);
+    else expect(hallazgosDeLaRafaga(f, { consumidor: 'AI Agent NovuChat' })).toEqual([]);
+  });
+
+  it.each([['demo-a'], ['demo-b-venta-cobro.json']])('%s: con `campos: {texto: \'texto\'}` NO arma (su normalizador emite `userInput`, no `texto`)', (ruta) => {
+    expect(() => injertarRafaga(quitarRafaga(real(ruta === 'demo-a' ? demoA : ruta)), { ancla: ANCLA_DEMO, campos: TEXTO, consumidor: null })).toThrow(/«Normalizar entrada» no emite texto \(«texto»\)/);
+    expect(() => injertarRafaga(quitarRafaga(real(ruta === 'demo-a' ? demoA : ruta)), { ancla: ANCLA_DEMO, consumidor: null })).toThrow(/falta `campos.texto`/);
+  });
+
+  it('el `phoneNumberId` de los normalizadores de los demos (un spread de la entrada) solo se acepta por la huella verificada: si el código cambia, deja de armar', () => {
+    const f = quitarRafaga(real('demo-b-venta-cobro.json'));
+    expect(Object.keys(NORMALIZADORES_VERIFICADOS)).toContain(huellaDe(nodo(f, 'Normalizar entrada').parameters.jsCode));
+    nodo(f, 'Normalizar entrada').parameters.jsCode += '\n// retocado';
+    expect(() => injertarRafaga(f, { ancla: ANCLA_DEMO, campos: USER_INPUT, consumidor: null })).toThrow(/phoneNumberId \(«phoneNumberId»\) \[llega por un spread que no se puede resolver/);
   });
 
   it('el chat de NovuChat tiene su PROPIO «Esperar ráfaga»: `quitarRafaga` no toca nada (ni nodos ni aristas) y el injerto se niega por choque de nombre', () => {
@@ -591,9 +621,8 @@ describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES 
     expect(original.nodes.some((n: Nodo) => n.name === 'Esperar ráfaga')).toBe(true);
     const copia = structuredClone(original);
     quitarRafaga(copia);
-    expect(copia).toEqual(original);
     expect(JSON.stringify(copia)).toBe(JSON.stringify(original));
-    expect(() => injertarRafaga(structuredClone(original), { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Bajar medio?' } })).toThrow(/ya tiene un nodo «Esperar ráfaga»|no tiene/);
+    expect(() => injertarRafaga(structuredClone(original), { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Bajar medio?' }, campos: TEXTO, consumidor: null })).toThrow(/ya tiene un nodo «Esperar ráfaga»|no tiene/);
   });
 
   it('`quitarRafaga` quita la pieza solo si el IF lleva a Esperar → Consultar → Agrupar (y deja el resto)', () => {
@@ -603,5 +632,108 @@ describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES 
     const antes = JSON.stringify(f);
     quitarRafaga(f);
     expect(JSON.stringify(f)).toBe(antes); // un «Esperar ráfaga» propio sin la pieza: no se toca
+  });
+});
+
+describe('rafaga: el CONSUMIDOR de `textoDelTurno` es obligatorio y se verifica', () => {
+  const sin = (extra: Record<string, unknown>) => () => injertarRafaga(sintetico(), { ancla: ANCLA, campos: { texto: 'userInput' }, ...extra });
+
+  it('sin `consumidor` se NIEGA a armar: sin él, la ráfaga pierde los mensajes agrupados (no hay valor por defecto ni opt-out silencioso)', () => {
+    expect(sin({})).toThrow(/falta `consumidor`.*PIERDE los mensajes agrupados/);
+    expect(sin({ consumidor: undefined })).toThrow(/falta `consumidor`/);
+  });
+  it('`consumidor: null` es explícito (solo fixtures de prueba) y arma; la guardia del flujo armado SÍ dice que nadie lee `textoDelTurno`', () => {
+    const f = sin({ consumidor: null })();
+    expect(f.nodes.some((n: Nodo) => n.name === NODO_RAFAGA_AGRUPAR)).toBe(true);
+    nodo(f, 'Agente').parameters = {};
+    expect(hallazgosDeLaRafaga(f).join('|')).toMatch(/ningún nodo que descienda de «Agrupar ráfaga» lee `textoDelTurno`/);
+    expect(hallazgosDeLaRafaga(f, { consumidor: null })).toEqual([]);
+  });
+  it('NEGATIVAS: un consumidor que no existe, que no lee `textoDelTurno`, que corre ANTES del destino o mal tipado', () => {
+    expect(sin({ consumidor: 'No existe' })).toThrow(/el consumidor «No existe» no existe/);
+    expect(sin({ consumidor: 'Config base' })).toThrow(/«Config base» tiene que ser el destino \(«Agente»\) o descender de él.*no lee `textoDelTurno`/s);
+    const sinLeer = sintetico();
+    nodo(sinLeer, 'Agente').parameters = { texto: "={{ $('Normalizar entrada').first().json.texto }}" };
+    expect(() => injertarRafaga(sinLeer, { ancla: ANCLA, campos: { texto: 'userInput' }, consumidor: 'Agente' })).toThrow(/«Agente» no lee `textoDelTurno` de «Agrupar ráfaga»/);
+    const soloNombre = sintetico();
+    nodo(soloNombre, 'Agente').parameters = { texto: "={{ $json.textoDelTurno }}" }; // lee un `textoDelTurno` de cualquier cosa, no de la ráfaga
+    expect(() => injertarRafaga(soloNombre, { ancla: ANCLA, campos: { texto: 'userInput' }, consumidor: 'Agente' })).toThrow(/no lee `textoDelTurno` de «Agrupar ráfaga»/);
+    for (const malo of ['', [], [''], 5, {}]) expect(sin({ consumidor: malo }), JSON.stringify(malo)).toThrow(/consumidor/);
+  });
+  it('acepta una lista, y un descendiente del destino (no solo el destino)', () => {
+    const f = sintetico();
+    f.nodes.push(un('Responder', [1400, 400], { parameters: { cuerpo: "={{ $('Agrupar ráfaga').first().json.textoDelTurno }}" } }));
+    f.connections.Agente = enl('Responder');
+    expect(() => injertarRafaga(f, { ancla: ANCLA, campos: { texto: 'userInput' }, consumidor: ['Agente', 'Responder'] })).not.toThrow();
+    expect(hallazgosDeLaRafaga(f, { consumidor: ['Agente', 'Responder'] })).toEqual([]);
+    expect(hallazgosDeLaRafaga(f, { consumidor: ['Agente', 'Responder', 'Config base'] }).join('|')).toMatch(/«Config base» tiene que ser el destino/);
+  });
+  it('los flujos reales, sin el cableado, dan ERROR al armar con la pieza y SIN `consumidor`', () => {
+    for (const [ruta, ancla, campos, fuente] of [
+      ['clientes/walisuma/walisuma.json', { nodo: '¿Bajar medio?', salida: 1, destino: 'Decidir turno' }, { texto: 'texto' }, 'Normalizar entrada'],
+      ['clientes/agenda-minima/agenda-minima.v0.json', { nodo: '¿Atención normal?', salida: 0, destino: '¿Bajar medio?' }, { texto: 'texto' }, 'Interpretar entrada'],
+      ['demo-b-venta-cobro.json', { nodo: '¿Atención normal?', salida: 0, destino: '¿Es un comprobante?' }, { texto: 'userInput' }, undefined],
+    ] as const) {
+      const f = quitarRafaga(JSON.parse(readFileSync(join(RAIZ_FLUJOS, ruta), 'utf8')));
+      expect(() => injertarRafaga(f, { ancla, campos, fuente }), ruta).toThrow(/falta `consumidor`/);
+      // y con un consumidor declarado pero que NO lee el texto agrupado (el flujo sin cablear) también
+      expect(() => injertarRafaga(f, { ancla, campos, fuente, consumidor: ancla.destino }), ruta).toThrow(/no lee `textoDelTurno`/);
+    }
+  });
+});
+
+describe('rafaga: «emite» se decide con el ÁRBOL del código (acorn), no con el texto', () => {
+  /** Un flujo sintético cuyo «Normalizar entrada» lleva este código. */
+  const con = (codigo: string, campos: Record<string, string> = { texto: 'userInput' }) => () => {
+    const f = sintetico();
+    nodo(f, 'Normalizar entrada').parameters.jsCode = codigo;
+    return injertarRafaga(f, { ancla: ANCLA, campos, consumidor: 'Agente' });
+  };
+  const CAMPOS_OK = "tipo: 'text', mensajeId: 'x', from: '1', phoneNumberId: '2', userInput: 't'";
+
+  it('un código que emite los cinco campos como claves de nivel superior arma (literal, identificador resuelto, Object.assign y asignaciones)', () => {
+    expect(con(`return [{ json: { ${CAMPOS_OK} } }];`)).not.toThrow();
+    expect(con(`const o = { ${CAMPOS_OK} }; return [{ json: o }];`)).not.toThrow();
+    expect(con(`const o = {}; o.tipo = 'text'; o['mensajeId'] = 'x'; Object.assign(o, { from: '1', phoneNumberId: '2' }); o.userInput = 't'; return [{ json: o }];`)).not.toThrow();
+    expect(con(`const base = { tipo: 'text', mensajeId: 'x', from: '1', phoneNumberId: '2' }; return [{ json: { ...base, userInput: 't' } }];`)).not.toThrow();
+    expect(con(`const out = []; out.push({ json: Object.assign({}, { ${CAMPOS_OK} }) }); return out;`)).not.toThrow();
+  });
+
+  it('NEGATIVAS: lo que antes pasaba por «aparecer en el texto» ya no cuenta como emitido', () => {
+    const faltaTexto = /no emite texto \(«userInput»\)/;
+    // una desestructuración que solo LEE
+    expect(con(`const { userInput } = $input.first().json; return [{ json: { tipo: 'text', mensajeId: 'x', from: '1', phoneNumberId: '2' } }];`)).toThrow(faltaTexto);
+    // un comentario y una cadena
+    expect(con(`// userInput: 'x'\nreturn [{ json: { tipo: 'text', mensajeId: 'x', from: '1', phoneNumberId: '2' } }];`)).toThrow(faltaTexto);
+    expect(con(`const nota = "userInput: 1, "; return [{ json: { tipo: 'text', mensajeId: 'x', from: '1', phoneNumberId: '2' } }];`)).toThrow(faltaTexto);
+    // un objeto ANIDADO: la clave no es de nivel superior
+    expect(con(`return [{ json: { tipo: 'text', mensajeId: 'x', from: '1', phoneNumberId: '2', extra: { userInput: 't' } } }];`)).toThrow(faltaTexto);
+    // `o.userInput =` sobre OTRO objeto que no es el que sale
+    expect(con(`const o = {}; o.userInput = 't'; return [{ json: { tipo: 'text', mensajeId: 'x', from: '1', phoneNumberId: '2' } }];`)).toThrow(faltaTexto);
+    // un `{ json: … }` que NO es el que sale pero sí otro item sin el campo: TODA emisión tiene que traerlo
+    expect(con(`return [{ json: { ${CAMPOS_OK} } }, { json: { tipo: 'x' } }];`)).toThrow(/no emite mensajeId/);
+  });
+
+  it('NEGATIVAS: `phoneNumberId` solo vale como clave explícita o spread resoluble; cualquier `...x` de la entrada no cuenta', () => {
+    const sinPhone = "tipo: 'text', mensajeId: 'x', from: '1', userInput: 't'";
+    expect(con(`const src = $input.first().json; return [{ json: { ...src, ${sinPhone} } }];`)).toThrow(/phoneNumberId \(«phoneNumberId»\) \[llega por un spread que no se puede resolver/);
+    expect(con(`return [{ json: { ...$input.first().json, ${sinPhone} } }];`)).toThrow(/phoneNumberId/);
+    expect(con(`const c = { phoneNumberId: '2' }; return [{ json: { ...c, ${sinPhone} } }];`)).not.toThrow(); // resoluble: sí vale
+  });
+
+  it('un código que no se puede analizar, un nodo que no es Code o que no emite ningún `{ json }` no se da por bueno', () => {
+    expect(con('return [{ json: { tipo: ')).toThrow(/no emite .*no se pudo analizar/);
+    expect(con('return $input.all();')).toThrow(/no se encontró ningún `\{ json: … \}`/);
+    const f = sintetico();
+    nodo(f, 'Normalizar entrada').type = 'n8n-nodes-base.set';
+    expect(() => injertarRafaga(f, { ancla: ANCLA, campos: { texto: 'userInput' }, consumidor: 'Agente' })).toThrow(/no es un nodo Code/);
+  });
+
+  it('`emisionesDelCodigo` entrega las claves de nivel superior y si la emisión queda abierta', () => {
+    const e = emisionesDelCodigo("const x = $input.first().json; return [{ json: { ...x, a: 1, 'b': 2, ['c']: 3 } }];");
+    expect(e.emisiones).toHaveLength(1);
+    expect([...e.emisiones[0].claves].sort()).toEqual(['a', 'b', 'c']);
+    expect(e.emisiones[0].abierto).toBe(true);
+    expect(emisionesDelCodigo("return [{ json: { a: 1 } }];").emisiones[0].abierto).toBe(false);
   });
 });

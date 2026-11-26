@@ -141,11 +141,23 @@ sigue emitiendo el item **del ancla** más `rafaga` y `textoDelTurno`; el flujo 
   el item y no se sabe qué emite, aunque su código copie la entrada: se niega y pide `fuente`. En los JSON reales: Walisuma (tras «Puerta del turno») y Bellido
   (`agenda-minima.v0.json`) necesitan `fuente` (Walisuma: «Normalizar entrada»; Bellido: «Interpretar entrada», porque su «Normalizar entrada» no emite el mensaje) y `campos: {texto: 'texto'}`; los Demos A y B arman sin `fuente` (el item sale del normalizador por IF). Lo prueban
   `rafaga-injerto.test.ts` sobre esos cuatro JSON.
-- **El productor tiene que EMITIR los campos (con o sin `fuente`):** el nodo del que se leen (la `fuente`, o el normalizador) debe ser un Code cuyo código asigne o
-  emita `tipo`, `mensajeId`, `from`, `phoneNumberId` y el texto con los NOMBRES de `campos` (`phoneNumberId` también se admite copiado con un spread del config, como en
-  los demos). Si falta alguno, el injerto y la guardia se niegan nombrando cuál: una `fuente` que no trae el mensaje («Puerta del turno», «Reportar mensaje (entrante)»,
-  «Config del negocio», «Traer configuración» en Walisuma) o el campo de texto por defecto `userInput` en un flujo que emite `texto` apagarían la ráfaga en silencio o
-  dejarían el último mensaje en blanco. Por eso `campos` se declara siempre por flujo y se verifica contra el código del productor.
+- **El productor tiene que EMITIR los campos (con o sin `fuente`), decidido con el ÁRBOL del código (acorn):** el nodo del que se leen (la `fuente`, o el normalizador) debe ser un
+  Code, y en CADA objeto `{ json: … }` que produce, las claves de NIVEL SUPERIOR deben incluir `tipo`, `mensajeId`, `from`, `phoneNumberId` y el texto, con los nombres de
+  `campos`. Una desestructuración que solo lee, un comentario, una cadena, un objeto anidado, o `otro.mensajeId = …` sobre un objeto que no es el que sale NO cuentan.
+  Se siguen los identificadores del propio código, `Object.assign`, spreads de objetos resolubles y las asignaciones `x.clave = …` al objeto que sale. Si algo no se puede
+  decidir (un spread de la entrada, un código que no se analiza), se niega y pide `fuente`.
+  - `phoneNumberId` es el único campo que los demos arman con un spread de la entrada (`...config`, `Object.assign({}, cfg, …)`), que llega desde «Config base»: no se
+    decide mirando el código. Esos normalizadores (Demo A y Bellido «agendamiento», Demo B) se aceptan por la HUELLA SHA-256 de su código (`NORMALIZADORES_VERIFICADOS`), y
+    `rafaga-extremo.test.ts` los EJECUTA con una entrada real y comprueba que `phoneNumberId` sale. Si el normalizador cambia, la huella cambia: la ráfaga deja de armar
+    hasta que se vuelva a verificar y se actualice la lista.
+  - `campos` no tiene valor por defecto del texto: `campos.texto` es obligatorio (`userInput` en los demos; `texto` en Walisuma y Bellido). Una clave desconocida en
+    `campos` («textoo») es ERROR. Los otros cuatro nombres son los canónicos y se verifican igual.
+- **`consumidor` es obligatorio (la pieza sola PIERDE mensajes):** «Agrupar ráfaga» entrega los textos unidos en `textoDelTurno`, pero nada del flujo lo lee si el flujo no
+  lo cablea: la ejecución que responde vería solo SU texto y los que las otras callaron nunca se contestarían. `injertarRafaga` y `hallazgosDeLaRafaga` exigen
+  `consumidor: '<nodo>'` (o una lista): cada uno tiene que existir, ser el destino o descender de él, y su código o sus parámetros tienen que leer `textoDelTurno` de
+  «Agrupar ráfaga». Sin `consumidor` es ERROR (sin valor por defecto ni opt-out silencioso); `consumidor: null` existe SOLO para fixtures de prueba. Sin declararlo, la
+  guardia de un flujo armado busca los nodos descendientes que lo leen y, si no hay ninguno, lo dice. **Los PR de cada flujo ya traen su cableado** (Walisuma: «Decidir
+  turno» lee `$('Agrupar ráfaga')` → `textoDelTurno`); en #1117, que no trae flujos, las pruebas lo parchean en memoria (`rafaga-cableado.ts`) con el mismo patrón.
 - **Defensa en el nodo:** si el texto propio llega vacío, «Agrupar ráfaga» usa el que el servidor guardó; nunca arma un grupo con el último mensaje en blanco.
 - **`quitarRafaga` solo quita la pieza:** requiere «¿Esperar ráfaga?» → «Esperar ráfaga» → «Consultar ráfaga» → «Agrupar ráfaga»; un flujo con un «Esperar ráfaga» PROPIO
   (el chat de NovuChat) no se toca, y el injerto se niega por choque de nombre.

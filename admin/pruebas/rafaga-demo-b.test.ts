@@ -148,7 +148,9 @@ describe('(1) La pieza está injertada como lo manda el manifiesto: 97 nodos, bi
 
   it('el agente lee el texto del turno agrupado y, si no hay, el texto del mensaje; la memoria sigue por teléfono', () => {
     const t = String(nodo(f, 'AI Agent NovuChat').parameters['text']);
-    expect(t).toContain('$json.textoDelTurno || $json.userInput');
+    expect(t).toContain('$json.textoDelTurno ||');
+    expect(t).toContain("$('Agrupar ráfaga').first().json.textoDelTurno"); // lo exige la guardia del consumidor de la pieza
+    expect(t.trimEnd().endsWith('|| $json.userInput }}')).toBe(true);
     expect(JSON.stringify(nodo(f, 'Memoria por teléfono').parameters)).toContain("$('Normalizar entrada').item.json.from");
   });
 
