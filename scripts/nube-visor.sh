@@ -18,6 +18,9 @@
 #   vermedio                → `verMedio` (callable; el visor de medios en Conversaciones, Core, M3)
 #   bloquearcontacto        → `bloquearContacto` (callable; el asistente deja de responderle a un contacto, Core)
 #   desbloquearcontacto     → `desbloquearContacto` (callable; revierte el bloqueo, Core)
+#   retomarconversacion     → `retomarConversacion` (callable; la persona reabre una conversación con la ventana
+#                              cerrada con la plantilla de utilidad, Core, «Retomar» R0; además exige la bandera
+#                              `personaPuedeRetomar` del comercio)
 #   alertaoperativa         → `alertaOperativa` (HTTP; la llama el errorWorkflow de n8n con la firma HMAC propia de
 #                              las alertas; sin firma contesta 401 «no autorizado», Plataforma)
 #
@@ -113,9 +116,11 @@ readonly SERVICIO_BLOQUEAR="bloquearcontacto"
 readonly FUNCION_BLOQUEAR="bloquearContacto"
 readonly SERVICIO_DESBLOQUEAR="desbloquearcontacto"
 readonly FUNCION_DESBLOQUEAR="desbloquearContacto"
+readonly SERVICIO_RETOMAR="retomarconversacion"
+readonly FUNCION_RETOMAR="retomarConversacion"
 readonly SERVICIO_ALERTAS="alertaoperativa"
 readonly FUNCION_ALERTAS="alertaOperativa"
-readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_ADJUNTO}|${SERVICIO_TOMAR}|${SERVICIO_DEVOLVER}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}|${SERVICIO_GUARDAR}|${SERVICIO_LEER_ADJUNTO}|${SERVICIO_MEDIO}|${SERVICIO_BLOQUEAR}|${SERVICIO_DESBLOQUEAR}|${SERVICIO_RESCATES}|${SERVICIO_ALERTAS}"
+readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_ADJUNTO}|${SERVICIO_TOMAR}|${SERVICIO_DEVOLVER}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}|${SERVICIO_GUARDAR}|${SERVICIO_LEER_ADJUNTO}|${SERVICIO_MEDIO}|${SERVICIO_BLOQUEAR}|${SERVICIO_DESBLOQUEAR}|${SERVICIO_RETOMAR}|${SERVICIO_RESCATES}|${SERVICIO_ALERTAS}"
 readonly ROL="roles/run.invoker"
 readonly MIEMBRO="allUsers"
 readonly REPO="segurolotengopy/NovuChat"
@@ -159,6 +164,7 @@ case "$PEDIDO" in
   "$SERVICIO_MEDIO")     SERVICIO="$SERVICIO_MEDIO";     FUNCION="$FUNCION_MEDIO";     TIPO="callable" ;;
   "$SERVICIO_BLOQUEAR")  SERVICIO="$SERVICIO_BLOQUEAR";  FUNCION="$FUNCION_BLOQUEAR";  TIPO="callable" ;;
   "$SERVICIO_DESBLOQUEAR") SERVICIO="$SERVICIO_DESBLOQUEAR"; FUNCION="$FUNCION_DESBLOQUEAR"; TIPO="callable" ;;
+  "$SERVICIO_RETOMAR")   SERVICIO="$SERVICIO_RETOMAR";   FUNCION="$FUNCION_RETOMAR";   TIPO="callable" ;;
   "$SERVICIO_ALERTAS")   SERVICIO="$SERVICIO_ALERTAS";   FUNCION="$FUNCION_ALERTAS";   TIPO="http" ;;
   "") echo "✗ Falta --servicio ${LISTA_SERVICIOS} (no hay servicio por omisión)" >&2; exit 2 ;;
   *)  echo "✗ --servicio tiene que ser uno de ${LISTA_SERVICIOS}, escrito así (lista cerrada)" >&2; exit 2 ;;

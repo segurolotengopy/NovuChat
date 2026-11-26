@@ -1251,7 +1251,7 @@ jobs:
       github.event_name == 'push' && github.ref == 'refs/heads/main'
       && vars.GCP_PROJECT_ID_STAGING != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 28 # incluye «lo servido es lo construido» (hasta ~370 s)
+    timeout-minutes: 44 # 28 + 16 (así 28 - 4 + 20 del paso desplegar cabe): incluye hasta 2 reintentos por cuota de Cloud Functions (2 x 70 s de espera y 2 despliegues de ~4 min) y «lo servido es lo construido» (hasta ~370 s)
     # Para humo-staging, que corre SIN Environment (necesita las variables del
     # repositorio, es decir las de producción, para comprobar su ausencia).
     outputs:
@@ -1504,6 +1504,9 @@ jobs:
 
       - name: Desplegar hosting + reglas + Functions (staging)
         id: desplegar
+        # Tope PROPIO del paso (hasta 3 despliegues de ~4 min y 2 esperas de 70 s ≈ 15 min), menor que el del job: si el paso se
+        # pasa, falla ÉL y el job sigue vivo para el health check y el rollback (`!cancelled()`); un timeout del job los saltaría.
+        timeout-minutes: 20
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
@@ -1565,14 +1568,37 @@ jobs:
           # consola de staging es el sitio por defecto del proyecto.
           REGISTRO="$RUNNER_TEMP/firebase-deploy.log"
           echo "firebase_corrio=true" >> "$GITHUB_OUTPUT"
-          set +e
-          firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
-            --message "staging ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})" 2>&1 | tee "$REGISTRO"
-          estados=("${PIPESTATUS[@]}")
-          set -e
-          REGISTRO="$REGISTRO" CODIGO_FIREBASE="${estados[0]}" SOLO="$SOLO" \
-            SITIO_CONSOLA="$PROYECTO" SITIO_CATALOGO="${SITIO_CATALOGO:-}" \
-            bash "$GITHUB_WORKSPACE/scripts/compuerta-registro-despliegue.sh"
+          # CUOTA DE ESCRITURAS (25/11/2026): la API de Cloud Functions de 2.ª gen admite 60 escrituras por 60 s por
+          # región (1 por Function, no aumentable; firebase.google.com/docs/functions/quotas) y desplegamos 86 juntas: el
+          # CLI recibe «Quota Exceeded», reintenta y puede terminar a medias. Si la compuerta falla Y el registro trae
+          # «reintentable» (SOLO Functions pendientes y TODAS con su propia línea «Got "Quota Exceeded"» en ese intento), se espera y
+          # se repite el despliegue (hasta 3 intentos): las ya actualizadas salen «Skipped», así que la repetición cubre las que
+          # faltaron y Hosting. Cualquier otro fallo (compilación, arranque, «unexpected state», Hosting solo…) corta de inmediato.
+          # Registro ACUMULADO de todos los intentos: la compuerta mide la cobertura de Functions y Hosting sobre él, para que una
+          # Function que falló en un intento y fue «Skipped» en el siguiente NO pase por buena.
+          ACUMULADO="$RUNNER_TEMP/firebase-deploy-acumulado.log"
+          REINTENTABLE="$RUNNER_TEMP/compuerta-reintentable"
+          : > "$ACUMULADO"
+          for intento in 1 2 3; do
+            set +e
+            firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
+              --message "staging ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})" 2>&1 | tee "$REGISTRO"
+            estados=("${PIPESTATUS[@]}")
+            set -e
+            cat "$REGISTRO" >> "$ACUMULADO"
+            : > "$REINTENTABLE"
+            veredicto=0
+            REGISTRO="$REGISTRO" REGISTRO_ACUMULADO="$ACUMULADO" REINTENTABLE_EN="$REINTENTABLE" CODIGO_FIREBASE="${estados[0]}" SOLO="$SOLO" \
+              SITIO_CONSOLA="$PROYECTO" SITIO_CATALOGO="${SITIO_CATALOGO:-}" \
+              bash "$GITHUB_WORKSPACE/scripts/compuerta-registro-despliegue.sh" || veredicto=$?
+            [[ "$veredicto" -eq 0 ]] && break
+            if [[ "$intento" -lt 3 && "$(cat "$REINTENTABLE")" == si ]]; then
+              echo "::warning::Cuota de escrituras de Cloud Functions excedida (intento $intento de 3): se espera y se repite el despliegue."
+              sleep "${ESPERA_REINTENTO_CUOTA:-70}"
+            else
+              exit "$veredicto"
+            fi
+          done
           # <<< despliegue con compuerta
           # Sin la URL: lleva el ID del proyecto y el registro es público. La URL
           # la muestra el Environment del job.
@@ -1807,7 +1833,7 @@ jobs:
       || (github.event_name == 'workflow_dispatch' && inputs.destino == 'produccion'
             && inputs.confirmar == 'DESPLEGAR')
     runs-on: ubuntu-latest
-    timeout-minutes: 35 # 2.9: incluye el health check (hasta ~450 s) y el rollback; +10 por «lo servido es lo construido» (hasta ~370 s)
+    timeout-minutes: 51 # 35 + 16 por hasta 2 reintentos por cuota (2 x 70 s y 2 despliegues de ~4 min); 2.9: incluye el health check (hasta ~450 s) y el rollback; +10 por «lo servido es lo construido» (hasta ~370 s)
     outputs:
       salud_ok: ${{ steps.salud.outputs.ok }}
       despliegue_completo: ${{ steps.desplegar.outputs.completo }}
@@ -2003,6 +2029,9 @@ jobs:
 
       - name: Desplegar hosting + reglas (producción)
         id: desplegar
+        # Tope PROPIO del paso (hasta 3 despliegues de ~4 min y 2 esperas de 70 s ≈ 15 min), menor que el del job: si el paso se
+        # pasa, falla ÉL y el job sigue vivo para el health check y el rollback (`!cancelled()`); un timeout del job los saltaría.
+        timeout-minutes: 20
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_PROD }}
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
@@ -2165,14 +2194,37 @@ jobs:
           # código de salida no alcanza; se guarda la salida y se revisa.
           REGISTRO="$RUNNER_TEMP/firebase-deploy.log"
           echo "firebase_corrio=true" >> "$GITHUB_OUTPUT"
-          set +e
-          firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
-            --message "producción ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})" 2>&1 | tee "$REGISTRO"
-          estados=("${PIPESTATUS[@]}")
-          set -e
-          REGISTRO="$REGISTRO" CODIGO_FIREBASE="${estados[0]}" SOLO="$SOLO" \
-            SITIO_CONSOLA="$SITIO_CONSOLA" SITIO_CATALOGO="${SITIO_CATALOGO:-}" \
-            bash "$GITHUB_WORKSPACE/scripts/compuerta-registro-despliegue.sh"
+          # CUOTA DE ESCRITURAS (25/11/2026): la API de Cloud Functions de 2.ª gen admite 60 escrituras por 60 s por
+          # región (1 por Function, no aumentable; firebase.google.com/docs/functions/quotas) y desplegamos 86 juntas: el
+          # CLI recibe «Quota Exceeded», reintenta y puede terminar a medias. Si la compuerta falla Y el registro trae
+          # «reintentable» (SOLO Functions pendientes y TODAS con su propia línea «Got "Quota Exceeded"» en ese intento), se espera y
+          # se repite el despliegue (hasta 3 intentos): las ya actualizadas salen «Skipped», así que la repetición cubre las que
+          # faltaron y Hosting. Cualquier otro fallo (compilación, arranque, «unexpected state», Hosting solo…) corta de inmediato.
+          # Registro ACUMULADO de todos los intentos: la compuerta mide la cobertura de Functions y Hosting sobre él, para que una
+          # Function que falló en un intento y fue «Skipped» en el siguiente NO pase por buena.
+          ACUMULADO="$RUNNER_TEMP/firebase-deploy-acumulado.log"
+          REINTENTABLE="$RUNNER_TEMP/compuerta-reintentable"
+          : > "$ACUMULADO"
+          for intento in 1 2 3; do
+            set +e
+            firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
+              --message "producción ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})" 2>&1 | tee "$REGISTRO"
+            estados=("${PIPESTATUS[@]}")
+            set -e
+            cat "$REGISTRO" >> "$ACUMULADO"
+            : > "$REINTENTABLE"
+            veredicto=0
+            REGISTRO="$REGISTRO" REGISTRO_ACUMULADO="$ACUMULADO" REINTENTABLE_EN="$REINTENTABLE" CODIGO_FIREBASE="${estados[0]}" SOLO="$SOLO" \
+              SITIO_CONSOLA="$SITIO_CONSOLA" SITIO_CATALOGO="${SITIO_CATALOGO:-}" \
+              bash "$GITHUB_WORKSPACE/scripts/compuerta-registro-despliegue.sh" || veredicto=$?
+            [[ "$veredicto" -eq 0 ]] && break
+            if [[ "$intento" -lt 3 && "$(cat "$REINTENTABLE")" == si ]]; then
+              echo "::warning::Cuota de escrituras de Cloud Functions excedida (intento $intento de 3): se espera y se repite el despliegue."
+              sleep "${ESPERA_REINTENTO_CUOTA:-70}"
+            else
+              exit "$veredicto"
+            fi
+          done
           # <<< despliegue con compuerta
           echo "### Producción desplegada: $URL_PROD (${GITHUB_REF_NAME})" >> "$GITHUB_STEP_SUMMARY"
 
