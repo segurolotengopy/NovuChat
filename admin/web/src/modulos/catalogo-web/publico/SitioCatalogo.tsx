@@ -425,7 +425,7 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, detalleP
     entrega.aceptaRetiroEnLocal ? 'retiro' : 'envio');
   // Los dos botones solo tienen sentido si el comercio ofrece las dos cosas.
   // Un comercio que solo entrega a domicilio no tiene que ver un botón de
-  // «retiro en el local» que después le va a traer gente a la puerta.
+  // «recojo en tienda» que después le va a traer gente a la puerta.
   const eligeEntrega = entrega.aceptaRetiroEnLocal && entrega.aceptaDelivery;
   const [direccion, setDireccion] = useState('');
   // La ubicación compartida con «Usar mi ubicación actual». Solo vive en esta
@@ -443,7 +443,7 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, detalleP
   const costoEnvio = modo === 'envio' && entrega.costoDelivery !== null ? entrega.costoDelivery : 0;
   const totalConEnvio = total + costoEnvio;
   // SOLO CON ENVÍO. El mínimo es una condición de la entrega a domicilio, y
-  // anunciarlo con «retiro en el local» elegido decía «el pedido mínimo para
+  // anunciarlo con «recojo en tienda» elegido decía «el pedido mínimo para
   // envío es Bs 50» a alguien que no pidió ningún envío: se lee como que su
   // pedido no alcanza para nada. Se vio usando la página.
   const bajoMinimo = modo === 'envio'
@@ -547,7 +547,7 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, detalleP
       {eligeEntrega && (
         <div className="cat-modo">
           <button type="button" aria-pressed={modo === 'retiro'} onClick={() => setModo('retiro')}>
-            Retiro en el local
+            Recojo en tienda
           </button>
           <button type="button" aria-pressed={modo === 'envio'} onClick={() => setModo('envio')}>
             Envío{entrega.costoDelivery ? ` (+${precioTexto(entrega.costoDelivery, moneda)})` : ''}

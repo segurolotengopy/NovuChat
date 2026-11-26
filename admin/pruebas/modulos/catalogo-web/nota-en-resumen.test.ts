@@ -21,7 +21,7 @@ const items = [
   { nombre: 'Tapiz', cantidad: 2 },
   { nombre: 'Cojín', cantidad: 1 },
 ];
-const base = 'Pedido desde el catálogo web (retiro): 2× Tapiz, 1× Cojín — total 100 BOB';
+const base = 'Pedido desde el catálogo web (recojo en tienda): 2× Tapiz, 1× Cojín — total 100 BOB';
 
 describe('nota en el resumen del pedido', () => {
   it('sin nota (o vacía) el resumen es el de siempre', () => {

@@ -332,6 +332,10 @@ valor por defecto de nada.
 | `mercado` | `'BO'` \| `'AR'` | Solo con fuente externa. Ausente en los tenants de Firestore. |
 | `catalogo` | `'externo'` | Solo con fuente externa (también queda en `pedidos/cat_…`). Ausente = catálogo de Firestore. |
 
+### Moneda y cantidad de la carga que llega al flujo (26/11/2026)
+- **La moneda de Bolivia llega como «Bs», no «BOB»** (`validar-carrito.js`); `pcMercadoCoincide` (`pedido-del-carrito.js`) espera BOB o vacío, así que con la carga tal cual Bolivia nunca coincide y no sale el QR directo (falla hacia el lado seguro). Un consumidor nuevo que quiera el QR directo traduce Bs a BOB (hoy lo hace Casa Bermejo en `bm-venta.js`) o se amplía `pcMercadoCoincide`. Una moneda que no sea Bs/BOB, USD o ARS llega como «otra» (el consumidor la rechaza o pasa con recepción); una ausente es Bs.
+- **La cantidad llega tal cual** (0, negativa, fraccionaria, ausente → 0; una «2» en texto → 0). Walisuma, Bermejo y Demo B descartan lo que no es un entero ≥ 1; Q'Taco no (hace `Math.floor`, pendiente del PR de Aux2).
+
 ### Reglas que el flujo puede asumir
 1. `items[].id` es el id de la fuente (NovuTienda: su `id`, de forma `^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$`, la misma de `idDeItemValido`); **un solo renglón por id**: si el navegador manda el mismo id en varias líneas, el servidor las SUMA (tope 99) y valida el stock contra la cantidad acumulada; `descartados` trae los ids que ya no se ofrecen (no existe, `disponible:false`, sin precio, stock insuficiente).
 2. `subtotal` y `total` son decimales en unidades de la moneda (como hoy); `precioCentavos` es el mismo precio sin pérdida.
