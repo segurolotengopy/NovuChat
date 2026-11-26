@@ -90,7 +90,7 @@ describe('PUNTA A PUNTA: lo que recibe el MODELO (la llamada a Gemini) en una r�
     return { m, vistos };
   };
   const ultimoTurnoDelModelo = (vistos: string[][]): string => { const v = vistos[vistos.length - 1] ?? []; return v[v.length - 1] ?? ''; };
-  const cuerpoModelo = (t: ReturnType<Mundo['turno']>): string => JSON.stringify((t.salidas['Decidir turno']?.[0]?.[0] as J | undefined)?.['cuerpoModelo'] ?? null);
+  const cuerpoModelo = (t: ReturnType<Mundo['turno']>): string => JSON.stringify((t.salidas['Decidir turno']?.[0]?.[0] as J | undefined)?.['cuerpoModelo'] ?? null).replace(/\\n/g, '\n'); // el JSON escapa el salto de línea: se deshace para mirar el texto tal cual lo ve el modelo
 
   it('2 textos: el primero CALLA, sale UN envío y el modelo recibe «hola» y «quiero una billetera» EN ORDEN (textoCliente, cuerpoModelo y la llamada real)', () => {
     const hilo = [txt(1, 'hola', t0), txt(2, 'quiero una billetera', t0 + 800)];
@@ -100,9 +100,9 @@ describe('PUNTA A PUNTA: lo que recibe el MODELO (la llamada a Gemini) en una r�
     expect(a.orden).not.toContain('Conversar con el modelo');
     expect(envios([a, b])).toBe(1); // 2) UN solo envío
     expect(vistos).toHaveLength(1); // el modelo se llama UNA vez
-    expect(textoDe(b)).toBe('hola quiero una billetera'); // 3) todos, en orden
-    expect(cuerpoModelo(b)).toContain('hola quiero una billetera');
-    expect(ultimoTurnoDelModelo(vistos)).toContain('hola quiero una billetera');
+    expect(textoDe(b)).toBe('hola\nquiero una billetera'); // 3) todos, en orden
+    expect(cuerpoModelo(b)).toContain('hola\nquiero una billetera');
+    expect(ultimoTurnoDelModelo(vistos)).toContain('hola\nquiero una billetera');
   });
   it('3 textos: el primero y el segundo CALLAN, UN envío y el modelo recibe los tres EN ORDEN', () => {
     const hilo = [txt(1, 'hola', t0), txt(2, 'quiero una billetera', t0 + 600), txt(3, 'de cuero por favor', t0 + 1200)];
@@ -112,9 +112,9 @@ describe('PUNTA A PUNTA: lo que recibe el MODELO (la llamada a Gemini) en una r�
     expect(ts[1]!.mensajes).toHaveLength(0);
     expect(envios(ts)).toBe(1);
     expect(vistos).toHaveLength(1);
-    expect(textoDe(ts[2]!)).toBe('hola quiero una billetera de cuero por favor');
-    expect(cuerpoModelo(ts[2]!)).toContain('hola quiero una billetera de cuero por favor');
-    expect(ultimoTurnoDelModelo(vistos)).toContain('hola quiero una billetera de cuero por favor');
+    expect(textoDe(ts[2]!)).toBe('hola\nquiero una billetera\nde cuero por favor');
+    expect(cuerpoModelo(ts[2]!)).toContain('hola\nquiero una billetera\nde cuero por favor');
+    expect(ultimoTurnoDelModelo(vistos)).toContain('hola\nquiero una billetera\nde cuero por favor');
   });
   it('con la consulta caída (falla abierto) el segundo responde SOLO con su texto: el modelo no recibe el primero', () => {
     const { m, vistos } = conModelo([]);
@@ -155,7 +155,7 @@ describe('ráfaga de 2 y de 3 textos: UN solo envío, con todo el texto', () => 
     expect(a.orden).toContain('Agrupar ráfaga');
     expect(a.orden).not.toContain('Decidir turno');
     expect(b.mensajes).toHaveLength(1);
-    expect(textoDe(b)).toBe('hola quiero una billetera');
+    expect(textoDe(b)).toBe('hola\nquiero una billetera');
     expect(a.esperas).toHaveLength(1);
     expect(a.esperas[0]!.segundos).toBe(2);
   });
@@ -166,7 +166,7 @@ describe('ráfaga de 2 y de 3 textos: UN solo envío, con todo el texto', () => 
     expect(envios(ts)).toBe(1);
     expect(ts[0]!.mensajes).toHaveLength(0);
     expect(ts[1]!.mensajes).toHaveLength(0);
-    expect(textoDe(ts[2]!)).toBe('hola quiero una billetera de cuero por favor');
+    expect(textoDe(ts[2]!)).toBe('hola\nquiero una billetera\nde cuero por favor');
   });
   it('control (la prueba tiene dientes): con `rafagaActiva` en false cada texto responde por su cuenta (2 envíos) y «Esperar ráfaga» no corre', () => {
     const hilo = [txt(1, 'hola', t0), txt(2, 'quiero una billetera', t0 + 800)];
@@ -220,7 +220,7 @@ describe('RIESGOS RESIDUALES declarados (docs/arquitectura/rafagas.md): se FIJA 
     const ts = correr(m, hilo.map((f, i) => ({ n: i + 1, msg: mTexto(f.texto) })));
     expect(envios(ts)).toBe(1);
     const t = textoDe(ts[6]!) as string;
-    expect(t).toBe('mensaje 2 mensaje 3 mensaje 4 mensaje 5 mensaje 6 mensaje 7');
+    expect(t).toBe('mensaje 2\nmensaje 3\nmensaje 4\nmensaje 5\nmensaje 6\nmensaje 7');
     expect(t).not.toContain('mensaje 1');
   });
   it('(a, control) 6 textos seguidos caben: UN envío con los 6', () => {
@@ -240,7 +240,7 @@ describe('RIESGOS RESIDUALES declarados (docs/arquitectura/rafagas.md): se FIJA 
     expect(a.mensajes).toHaveLength(1);
     expect(b.mensajes).toHaveLength(1);
     expect(textoDe(a)).toBe('hola');
-    expect(textoDe(b)).toBe('hola quiero una billetera');
+    expect(textoDe(b)).toBe('hola\nquiero una billetera');
   });
   it('(b2) la consulta de quien debía responder el grupo cae: responde solo y el texto que la otra calló NO se contesta (costo de fallar abierto)', () => {
     const hilo = [txt(1, 'hola', t0), txt(2, 'quiero una billetera', t0 + 800)];

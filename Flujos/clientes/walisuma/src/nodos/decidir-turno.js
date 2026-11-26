@@ -118,7 +118,9 @@ if (esAudio) {
 } else if (t.categoria === 'conversacion') {
   // RÁFAGA (pieza común del core, `Agrupar ráfaga`): si varios textos seguidos del mismo teléfono se agruparon, esta ejecución responde por todos y `textoDelTurno` trae los textos unidos por salto de línea.
   // Un toque de botón o lista (`seleccionId`) nunca se agrupa. El reporte del entrante NO cambia: cada texto se reportó por separado con su propio `idMeta`.
-  texto = t.seleccionId ? cbLinea(t.seleccionTitulo, 100) : cbLinea(agrupado !== '' ? agrupado : t.texto, 1500);
+  // Con la ráfaga, cada texto se sanea POR SEPARADO (mismos saneos de `cbLinea`) y se vuelven a unir con SALTO DE LÍNEA, para que el modelo no pierda el corte entre mensajes; tope total 1.500. Un solo mensaje: igual que siempre.
+  const agrupadoEnLineas = agrupado !== '' ? agrupado.split('\n').map((linea) => cbLinea(linea, 1500)).filter((linea) => linea !== '').join('\n').slice(0, 1500).trimEnd() : '';
+  texto = t.seleccionId ? cbLinea(t.seleccionTitulo, 100) : (agrupadoEnLineas !== '' ? agrupadoEnLineas : cbLinea(t.texto, 1500));
   // El toque de «Confirmar pedido» DE ESTE pedido (id con la huella del carrito y la entrega que el cliente vio) es la orden de cerrar: va a un plan SIN modelo que cierra con las líneas y la entrega de la ficha y emite el QR en este turno.
   // Un botón de otro pedido (huella distinta) no confirma nada: queda como el texto del título.
   if (t.seleccionId && Array.isArray(ficha.carrito) && ficha.carrito.length > 0 && wlEntregaCompleta(ficha.entrega)
