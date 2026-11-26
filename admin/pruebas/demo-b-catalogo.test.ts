@@ -39,7 +39,7 @@ import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 
-const f = leerFlujo('demo-b-venta-cobro.json');
+const f = leerFlujo('clientes/demo-b/demo-b-venta-cobro.json');
 const y = (nombre: string) => nodo(f, nombre).position?.[1] ?? Number.NaN;
 
 /** La configuración que `Normalizar entrada` deja en el item de cada turno. */

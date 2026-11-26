@@ -161,7 +161,7 @@ automática**, y está anotado como pendiente en `DISENO.md` §4octies.7.
 ## 4. Lo que hay en n8n — HECHO en el Demo B el 22/09/2026
 
 > **Esta sección era una lista de pendientes y ahora describe lo construido.**
-> Lo de abajo está en `Flujos/demo-b-venta-cobro.json`, probado en
+> Lo de abajo está en `Flujos/clientes/demo-b/demo-b-venta-cobro.json`, probado en
 > `admin/pruebas/demo-b-catalogo.test.ts` (85 pruebas). Lo que sigue pendiente
 > se dice en su lugar. Para llevarlo a otro cliente de venta, se copia de ahí.
 

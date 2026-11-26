@@ -16,7 +16,7 @@ import {
   type J, codigoDe, configBase, ejecutar, leerFlujo, nodo, plantilla,
 } from '../lib/flujo.ts';
 
-const venta = leerFlujo('demo-b-venta-cobro.json');
+const venta = leerFlujo('clientes/demo-b/demo-b-venta-cobro.json');
 const captacion = leerFlujo('novuchat-onboarding.json');
 const reservas = leerFlujo('clientes/demo-a/demo-a-agendamiento.json');
 
