@@ -31,7 +31,7 @@
 const MARGEN_MS = 500;
 const CAMPO_ID = 'mensajeId';
 const CAMPO_TEXTO = 'userInput';
-const FUENTE = ''; // nodo del que se leen el id y el texto del mensaje; vacío = el item del ancla
+const FUENTE = ''; // nodo del que se leen el id y el texto del mensaje (vacío = el item del ancla): al armar el flujo, `mensaje` se escribe con su nombre como literal
 
 function esAgrupable(f) {
   return f.tipo === 'text' && f.idMeta !== '' && f.texto.trim() !== '' && f.texto.indexOf('[nº]') < 0;
@@ -74,7 +74,7 @@ function decidirRafaga({ idMeta, textoPropio, fragmentos, esperaMs, fallo }) {
 }
 
 const entrada = $('¿Esperar ráfaga?').first().json;
-const mensaje = FUENTE !== '' ? $(FUENTE).first().json : entrada;
+const mensaje = entrada;
 let configuracion = {};
 try { configuracion = $('Config base').first().json || {}; } catch (e) { configuracion = {}; }
 const segundos = Number(configuracion.esperaRafagaSeg);

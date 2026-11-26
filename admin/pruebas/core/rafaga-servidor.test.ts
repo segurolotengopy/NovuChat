@@ -11,7 +11,8 @@ import { describe, expect, it } from 'vitest';
 import { Timestamp } from 'firebase-admin/firestore';
 import type { Firestore } from 'firebase-admin/firestore';
 import {
-  fragmentosDeRafaga, leerRafaga, validarRafaga, MAX_LECTURAS, VENTANA_PROPIA_MS, type MensajeCrudo,
+  fragmentosDeRafaga, leerRafaga, validarRafaga, MAX_LECTURAS, MAX_LECTURAS_DE_LA_RAMA, LECTURAS_DE_LA_RUTA, VENTANA_PROPIA_MS, VENTANA_VECINOS_MS,
+  TOPE_POR_MINUTO, tomarCupoDeRafaga, reiniciarCuposDeRafaga, type MensajeCrudo,
 } from '../../functions/src/core/conversacion/rafaga.ts';
 
 const TEL = '59100000031';
@@ -139,7 +140,7 @@ describe('leerRafaga: relativa a mi mensaje', () => {
     const { db, estado } = firestoreFalso(sem(...docs));
     const r = await leerRafaga(db, 't', TEL, 'yo', T0 + 5000);
     expect(r.fragmentos.map((f) => f.idMeta)).toEqual(['p1', 'p2', 'yo', 'f0', 'f1', 'f2']);
-    expect(estado.leidos).toBeLessThanOrEqual(MAX_LECTURAS);
+    expect(estado.leidos).toBeLessThanOrEqual(MAX_LECTURAS_DE_LA_RAMA);
   });
   it('salientes entran como marca; entrantes sin idMeta con idMeta vacío', async () => {
     const { db } = firestoreFalso(sem(
@@ -156,8 +157,11 @@ describe('leerRafaga: relativa a mi mensaje', () => {
     const { db, estado } = firestoreFalso(sem(...docs));
     const r = await leerRafaga(db, 't', TEL, 'i10', T0 + 2500);
     expect(r.fragmentos.map((f) => f.idMeta)).toEqual(['i5', 'i6', 'i7', 'i8', 'i9', 'i10', 'i11', 'i12', 'i13']);
-    expect(estado.leidos).toBe(9);
-    expect(MAX_LECTURAS).toBe(9);
+    expect(estado.leidos).toBe(9); // caso normal: mi documento + 5 + 3
+    // Total real por consulta: ruta (1) + ficha (1) + mi documento (hasta 2) + 5 + 3 = 12.
+    expect(LECTURAS_DE_LA_RUTA).toBe(2);
+    expect(MAX_LECTURAS_DE_LA_RAMA).toBe(10);
+    expect(MAX_LECTURAS).toBe(12);
   });
   it('wamid ajeno (que la conversación no tiene) -> [] sin leer vecinos', async () => {
     const { db, estado } = firestoreFalso(sem(['d1', ent('a', 'SECRETO', T0)]));
@@ -169,7 +173,7 @@ describe('leerRafaga: relativa a mi mensaje', () => {
     const { db } = firestoreFalso(sem(['s', { ...sal(T0), idMeta: 'wamid.S' }], ['a', ent('a', 'SECRETO', T0 - 10)]));
     expect((await leerRafaga(db, 't', TEL, 'wamid.S', T0 + 1000)).fragmentos).toEqual([]);
   });
-  it('mi mensaje con más de 10 minutos -> []; justo en el borde, sí', async () => {
+  it('mi mensaje con más de 60 s -> []; justo en el borde, sí', async () => {
     const { db } = firestoreFalso(sem(['a', ent('a', 'uno', T0)]));
     expect((await leerRafaga(db, 't', TEL, 'a', T0 + VENTANA_PROPIA_MS + 1)).fragmentos).toEqual([]);
     expect((await leerRafaga(db, 't', TEL, 'a', T0 + VENTANA_PROPIA_MS)).fragmentos).toHaveLength(1);
@@ -189,6 +193,52 @@ describe('leerRafaga: relativa a mi mensaje', () => {
     ));
     const r = await leerRafaga(db, 't', TEL, 'yo', T0 + 1000);
     expect(r.fragmentos.map((f) => [f.idMeta, f.texto])).toEqual([['yo', 'primero'], ['z', 'sig']]);
-    expect(estado.leidos).toBeLessThanOrEqual(MAX_LECTURAS + 1);
+    expect(estado.leidos).toBeLessThanOrEqual(MAX_LECTURAS_DE_LA_RAMA);
+  });
+});
+
+describe('leerRafaga: los vecinos viejos no entran', () => {
+  it('descarta anteriores con más de 30 s de diferencia con MI hora; el borde exacto entra', async () => {
+    const { db } = firestoreFalso(sem(
+      ['v0', ent('v0', 'viejisimo', T0 - 40_000)],
+      ['v1', ent('v1', 'borde', T0 - VENTANA_VECINOS_MS)],
+      ['v2', ent('v2', 'justo fuera', T0 - VENTANA_VECINOS_MS - 1)],
+      ['s', sal(T0 - 20_000)],
+      ['yo', ent('yo', 'mio', T0)],
+    ));
+    const r = await leerRafaga(db, 't', TEL, 'yo', T0 + 1000);
+    expect(r.fragmentos.map((f) => f.idMeta)).toEqual(['v1', '', 'yo']);
+    expect(JSON.stringify(r)).not.toContain('viejisimo');
+  });
+  it('un anterior viejo no esconde a los más nuevos, y yo entro aunque todo lo demás sea viejo', async () => {
+    const { db } = firestoreFalso(sem(['v0', ent('v0', 'viejo', T0 - 90_000)], ['yo', ent('yo', 'mio', T0)]));
+    expect((await leerRafaga(db, 't', TEL, 'yo', T0)).fragmentos.map((f) => f.idMeta)).toEqual(['yo']);
+  });
+  it('mi mensaje con 61 s -> []; con 60 s exactos, entra', async () => {
+    const { db } = firestoreFalso(sem(['yo', ent('yo', 'mio', T0)]));
+    expect(VENTANA_PROPIA_MS).toBe(60_000);
+    expect((await leerRafaga(db, 't', TEL, 'yo', T0 + 60_001)).fragmentos).toEqual([]);
+    expect((await leerRafaga(db, 't', TEL, 'yo', T0 + 60_000)).fragmentos).toHaveLength(1);
+  });
+});
+
+describe('tomarCupoDeRafaga: tope por comercio y teléfono, en memoria', () => {
+  it('la llamada N+1 se rechaza; otro teléfono y otro comercio no se ven afectados', () => {
+    reiniciarCuposDeRafaga();
+    for (let i = 0; i < TOPE_POR_MINUTO; i++) expect(tomarCupoDeRafaga('ta', TEL, T0 + i)).toBe(true);
+    expect(tomarCupoDeRafaga('ta', TEL, T0 + 1000)).toBe(false);
+    expect(tomarCupoDeRafaga('ta', '59100000032', T0 + 1000)).toBe(true);
+    expect(tomarCupoDeRafaga('tb', TEL, T0 + 1000)).toBe(true);
+  });
+  it('la ventana vuelve a abrirse al minuto', () => {
+    reiniciarCuposDeRafaga();
+    for (let i = 0; i < TOPE_POR_MINUTO; i++) tomarCupoDeRafaga('ta', TEL, T0);
+    expect(tomarCupoDeRafaga('ta', TEL, T0 + 59_999)).toBe(false);
+    expect(tomarCupoDeRafaga('ta', TEL, T0 + 60_000)).toBe(true);
+  });
+  it('un reloj que retrocede no deja la ventana trabada', () => {
+    reiniciarCuposDeRafaga();
+    for (let i = 0; i < TOPE_POR_MINUTO; i++) tomarCupoDeRafaga('ta', TEL, T0);
+    expect(tomarCupoDeRafaga('ta', TEL, T0 - 5000)).toBe(true);
   });
 });

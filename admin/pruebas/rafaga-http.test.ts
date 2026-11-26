@@ -4,7 +4,9 @@
  * Teléfonos ficticios (seis ceros seguidos).
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { MensajeCrudo } from '../functions/src/core/conversacion/rafaga.ts';
+import {
+  TOPE_POR_MINUTO, reiniciarCuposDeRafaga, type MensajeCrudo,
+} from '../functions/src/core/conversacion/rafaga.ts';
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -149,7 +151,7 @@ describe('configuracionFlujo con `rafaga`', () => {
     expect(rb.cuerpo['rafaga']).toEqual({ v: 1, fragmentos: [] });
   });
 
-  it('salientes como marca; álbum de 8 fotos después de mi mensaje; mi mensaje de >10 min -> [] (un vecino viejo sí entra)', async () => {
+  it('salientes como marca; álbum de 8 fotos después de mi mensaje; mi mensaje de >10 min -> [] (los vecinos de más de 30 s no entran)', async () => {
     const T = 'rafaga-c';
     const numero = '1000000733';
     await db.doc(`rutasWhatsApp/${numero}`).set({ tenantId: T, flujo: 'agendamiento', aliasSecreto: 'cliente19', estado: 'activo' });
@@ -161,12 +163,15 @@ describe('configuracionFlujo con `rafaga`', () => {
       ent('n1', 'mio', T0 - 1000),
       ...Array.from({ length: 8 }, (_, i) => ({ ...ent(`f${i}`, '', T0 + i * 10), tipo: 'image' })),
       ent('viejo', 'de hace 11 minutos', T0 - 11 * 60_000),
+      ent('viejo2', 'de hace 40 s', T0 - 41_000),
     ]);
     const r = await pedir({ telefono: TEL, rafaga: R('n1') }, numero);
     expect(JSON.stringify(r.cuerpo)).not.toContain('respuesta del bot');
+    expect(JSON.stringify(r.cuerpo)).not.toContain('de hace 11 minutos');
+    expect(JSON.stringify(r.cuerpo)).not.toContain('de hace 40 s');
     expect((r.cuerpo['rafaga'] as { fragmentos: { idMeta: string; tipo: string }[] }).fragmentos
       .map((f) => [f.idMeta, f.tipo])).toEqual([
-      ['viejo', 'text'], ['v1', 'text'], ['', 'saliente'], ['n1', 'text'], ['f0', 'image'], ['f1', 'image'], ['f2', 'image'],
+      ['v1', 'text'], ['', 'saliente'], ['n1', 'text'], ['f0', 'image'], ['f1', 'image'], ['f2', 'image'],
     ]);
     const rv = await pedir({ telefono: TEL, rafaga: R('viejo') }, numero);
     expect(rv.cuerpo['rafaga']).toEqual({ v: 1, fragmentos: [] });
@@ -191,6 +196,32 @@ describe('configuracionFlujo con `rafaga`', () => {
     expect(escrito[0]![1]).toEqual({ evento: 'configuracion_flujo', tenantId: TA, accion: 'rafaga' });
     expect(lineaDeRegistro).not.toContain(TEL);
     expect(lineaDeRegistro).not.toContain('conversaciones');
+  });
+});
+
+describe('tope de llamadas de la rama `rafaga` (429)', () => {
+  it('la llamada N+1 da 429 sin leer mensajes; otro teléfono y otro comercio siguen; la ventana se reabre', async () => {
+    reiniciarCuposDeRafaga();
+    const proto = Object.getPrototypeOf(db.collection('x').orderBy('ts')) as { get: (...a: unknown[]) => Promise<unknown> };
+    const original = proto.get;
+    for (let i = 0; i < TOPE_POR_MINUTO; i++) expect((await pedir({ telefono: TEL, rafaga: R() })).codigo).toBe(200);
+    let consultas = 0;
+    proto.get = function (this: unknown, ...a: unknown[]) { consultas++; return original.apply(this, a); };
+    try {
+      const r = await pedir({ telefono: TEL, rafaga: R() });
+      expect(r.codigo).toBe(429);
+      expect(r.cuerpo).toEqual({ error: 'rafaga_tope' });
+      expect(consultas).toBe(0);
+      expect((await pedir({ telefono: '59100000098', rafaga: R() })).codigo).toBe(200);
+      expect((await pedir({ telefono: TEL, rafaga: R('b1') }, NUMERO_B, TOKEN_B)).codigo).toBe(200);
+      vi.setSystemTime(T0 + 60_001);
+      expect((await pedir({ telefono: TEL, rafaga: R() })).codigo).toBe(200);
+    } finally { proto.get = original; vi.setSystemTime(T0); reiniciarCuposDeRafaga(); }
+  });
+  it('sin firma no gasta cupo: 401 y la ventana intacta', async () => {
+    reiniciarCuposDeRafaga();
+    for (let i = 0; i < TOPE_POR_MINUTO + 3; i++) expect((await pedir({ telefono: TEL, rafaga: R() }, NUMERO_A, null)).codigo).toBe(401);
+    expect((await pedir({ telefono: TEL, rafaga: R() })).codigo).toBe(200);
   });
 });
 
