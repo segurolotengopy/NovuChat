@@ -111,7 +111,7 @@ const BJ_VOZ_MAX = 160;
 if (esAudio ? (texto.length <= BJ_VOZ_MAX && bjPideBaja(texto)) : (!t.seleccionId && bjPideBaja(t.texto))) return salir({ tipo: 'baja', porVoz: esAudio });
 
 // 3a. Argentina, con un pedido anotado y sin un pedido nuevo a medias: el botón «Pagar» (id `pedido:alias`, el único que vale en un toque) o el texto «pagar» pide el alias al servidor (`pedirAliasArs`). No necesita el catálogo.
-if (esAr && (ficha.aliasEstado === 'pedido' || ficha.aliasEstado === 'abierto') && ficha.carrito.length === 0 && bmPideAlias(t.seleccionId, n)) return salir({ tipo: 'alias_pedir' });
+if (esAr && (ficha.aliasEstado === 'pedido' || ficha.aliasEstado === 'abierto') && ficha.carrito.length === 0 && bmPideAlias(t.seleccionId, n, ficha.aliasEstado === 'pedido' || ficha.aliasEstado === 'abierto')) return salir({ tipo: 'alias_pedir' });
 // UBICACIÓN Y HORARIO DE LA TIENDA (25/11/2026): «¿dónde están ubicados?», «¿a qué hora abren?» los contesta el CÓDIGO con el dato del comercio (primero el campo `tienda` del catálogo de NovuTienda; de respaldo, «Config base» y el horario común de la consola), SIN modelo y sin depender del catálogo
 // (por eso va antes). Un SOLO reconocedor (`bmPideUbicacion`, `bmPideHorario`). Sin el dato: recepción (aviso + botón), nunca una dirección ni un horario inventados. Un pedido en curso no se toca. Un toque de lista no es esta pregunta.
 // Si la pregunta de la tienda viene CON otra cosa («¿dónde están ubicados? quiero comprar una billetera») el turno sigue con el modelo, solo con el resto, y la respuesta de la tienda va antepuesta en el MISMO mensaje (más abajo).

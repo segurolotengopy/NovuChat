@@ -49,6 +49,10 @@ const detalle = (v) => typeof v !== 'string' ? '' : limpio(v.replace(/https?:\/\
   .replace(/[<>&\[\]{}«»]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
 // K1: precio unitario en centavos (entero >= 0); informativo, el flujo NO cobra de aca.
 const centavos = (v) => (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0) ? v : null;
+// CONTRATO DE LA MONEDA (para un consumidor nuevo): la carga entrega «Bs» para Bolivia, NO «BOB». `pcMercadoCoincide`
+// (`Flujos/src/modulos/pedidos/pedido-del-carrito.js`) espera BOB o vacio, asi que con la carga tal cual Bolivia nunca coincide y
+// el QR directo no sale (falla hacia el lado seguro); hoy lo traduce Casa Bermejo (`bm-venta.js`, Bs a BOB). Quien consuma esta carga
+// y quiera el QR directo tiene que traducir Bs a BOB (o ampliar `pcMercadoCoincide`).
 // Moneda por IGUALDAD ESTRICTA (no se adivina por prefijo ni por mayusculas): USD, ARS y Bs/BOB se reconocen; una moneda AUSENTE
 // (undefined, null o vacia: un carrito de antes) sigue siendo Bs; CUALQUIER OTRA cosa (EUR, GBP, «bob», un numero...) viaja como
 // «otra» para que quien consume la RECHACE; antes se convertia en Bs y se cobraba en una moneda que el cliente no eligio.
@@ -100,8 +104,10 @@ for (const item of $input.all()) {
       const pc = centavos((i ?? {}).precioCentavos);
       return {
         nombre: limpio((i ?? {}).nombre, 80) || 'producto',
-        // La cantidad viaja TAL CUAL (0, negativa o fraccionaria incluidas): quien arma las lineas (`vcLineas`) descarta lo que no
-        // es un entero >= 1. Convertir 0 en 1 vendia lo que el cliente no pidio y terminaba en un QR directo.
+        // La cantidad viaja TAL CUAL (0, negativa o fraccionaria incluidas). Quien consume decide: Walisuma, Bermejo y Demo B
+        // descartan lo que no es un entero >= 1; Q'TACO NO: su `cantidadDeCarrito` hace Math.floor y acepta n >= 1 (1.5 pasa a 1;
+        // sin cambio con este modulo, pendiente del PR de moneda y cantidad de Aux2). Convertir 0 en 1 vendia lo que el cliente no
+        // pidio y terminaba en un QR directo.
         cantidad: numero((i ?? {}).cantidad),
         subtotal: numero((i ?? {}).subtotal),
         // Solo si hay: sin ellos el item es identico al de antes (compatible hacia atras).

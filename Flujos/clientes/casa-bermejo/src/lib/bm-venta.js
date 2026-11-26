@@ -283,7 +283,8 @@ function bmNombreValido(valor, textoCliente, minPalabras, vendibles) {
   if (BM_NOMBRE_PARTICULAS.has(normales[0]) || BM_NOMBRE_PARTICULAS.has(normales[normales.length - 1])) return '';
   // Una palabra TODA en mayúsculas junto a otras con mayúscula inicial y minúsculas («Ana Pérez ABCDEF») es una clave o un documento con letras, no parte del nombre.
   const gritadas = crudas.filter((w) => w.length >= 2 && w === w.toUpperCase() && w !== w.toLowerCase());
-  if (gritadas.length > 0 && gritadas.length < crudas.length) return '';
+  // Si el mensaje ya trae el documento con cifras, un apellido en mayúsculas («Ana PÉREZ 4412345») es parte del nombre.
+  if (gritadas.length > 0 && gritadas.length < crudas.length && !/\d{5,}/.test(String(textoCliente === undefined || textoCliente === null ? '' : textoCliente).replace(/[.\s-]/g, ''))) return '';
   if (bmNombreRechazado(t, vendibles)) return '';
   // Un TRAMO CONTIGUO de una frase del cliente, con lo demás de esa frase vacío o conocido.
   const frases = bmSinConfirmacion(textoCliente).split(/[,;!?¿\n]+|(?<=\p{L}{2})\.(?:\s+|$)/u).map((x) => x.trim()).filter((x) => x !== '');
@@ -618,18 +619,24 @@ function bmTextoConsumido(texto, entrega, seleccionId) {
   r = r.replace(/\b(ci|dni|cedula|carnet|documento|de|identidad|numero|nro)\b/g, ' ');
   return r.replace(/\s+/g, '') === '';
 }
+const BM_CONFIRMO_A_SECAS = /^(?:si |ok |dale |listo )?(?:confirmo|confirmado)$/;
 function bmQuierePagar(n) {
   const t = String(n || '');
   if (/\b(no|aun no|todavia no)\s+(quiero\s+)?(pagar|confirmar|cerrar)\b|\bno confirmo\b/.test(t)) return false;
   // Una pregunta no es una orden («¿cómo puedo pagar?», «¿se puede pagar con tarjeta?»): el cierre queda fijo en la ficha y dispararía un QR no pedido.
   if (/^(como|que|donde|cuando|cual|cuanto|se puede|puedo|es posible|hay|aceptan|tienen)\b/.test(t) || /\b(se puede|puedo|con tarjeta|aceptan|metodos? de pago|formas? de pago)\b/.test(t)) return false;
   // «Confirmo» a secas (o «sí, confirmo», «confirmado») es la orden de cierre; el llamador solo la honra con el pedido ya completo (`completoAntes`). «Confirmo mi dirección» no cierra: solo el mensaje entero.
-  if (/^(?:si |ok |dale |listo )?(?:confirmo|confirmado)$/.test(t)) return true;
+  if (BM_CONFIRMO_A_SECAS.test(t)) return true;
   return /\b(pagar|pagare|pagamos|(?:mandame|enviame|envia|manda|dame|pasame|quiero|necesito) (?:ya )?el qr|confirmo (el|mi|la) (pedido|compra)|confirmar (el|mi) pedido|cerrar (el|mi) pedido|cerremos (el|mi) pedido|me los? llevo|lo llevo|los llevo|proceder? (con )?(el|mi|la) (pedido|pago|compra))\b/.test(t);
 }
 // El botón «Pagar» de Argentina (alias): su id exacto. Un toque con otro id nunca pide el alias, aunque su título diga «Pagar».
 const BM_ID_PAGAR_ALIAS = 'pedido:alias';
-function bmPideAlias(seleccionId, n) { return seleccionId ? seleccionId === BM_ID_PAGAR_ALIAS : bmQuierePagar(n); }
+// «Confirmo» a secas solo pide el alias con el pedido ya completo (`completoAntes`), igual que el cierre de Bolivia; «pagar» y el botón no lo necesitan.
+function bmPideAlias(seleccionId, n, completoAntes) {
+  if (seleccionId) return seleccionId === BM_ID_PAGAR_ALIAS;
+  if (BM_CONFIRMO_A_SECAS.test(String(n || ''))) return completoAntes === true;
+  return bmQuierePagar(n);
+}
 function bmPideIdentidad(n) {
   return /\b(eres|sos|es|seras)\s+(un |una )?(bot|robot|ia|inteligencia artificial|maquina|programa|persona|humano|humana|real)\b|\b(hablo|estoy hablando|hablando) con (un |una )?(bot|robot|ia|persona|humano|humana|maquina)\b|\bpersona real\b|\bes un bot\b|\bquien eres\b|\bcon quien hablo\b/.test(String(n || ''));
 }
@@ -1627,7 +1634,11 @@ function bmResolverModelo(c) {
   // Conversación: el texto del modelo, revisado; si no pasa, el fijo. El resumen del pedido (calculado por el código) acompaña cada cambio.
   // Si el código quitó una línea que el modelo propuso, su texto («agregué…») ya no es cierto: el texto lo arma el código (las opciones o el estado del pedido).
   const sitioConPreciosDistintos = fijada.delSitio === true && bmMontosDelSitioDifieren(p.textoCliente, c.vendibles) === true;
-  let texto = (ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? bmTextoDeEstado(lineas, entrega, cierre, c, conBoton) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
+  // DECISIÓN DE ANDRES (26/11/2026): en los pasos de DATOS de la entrega (departamento, región, provincia, ciudad y aclaración, nombre y documento, nombre del retiro) y en el RESUMEN con «Confirmar pedido», el mensaje lo escribe SOLO EL CÓDIGO (la pregunta fija del paso o el resumen); el texto del modelo no se envía.
+  // Se decide por ESTADO (qué falta de la entrega, o si el pedido está listo), nunca por palabras. Fuera de esos pasos el modelo conversa como siempre. La red `bmPideDatoProhibido` queda como secundaria fuera de la entrega.
+  const pendientes = lineas.length > 0 && !abierto && !conBoton ? bmPideDeEntrega(entrega, c.mercado) : [];
+  const enEntrega = lineas.length > 0 && !abierto && (conBoton || pendientes.length > 0);
+  let texto = (enEntrega || ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? (fijada.texto !== '' && !ignoraQuiereHablar && comp.modoRechazado !== true && comp.contradice !== true && fijada.delSitio !== true && fijada.ordenada !== true ? fijada.texto : bmTextoDeEstado(lineas, entrega, cierre, c, conBoton)) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
   // Negar una pieza que el catálogo sí tiene («solo disponemos de la de 9 kg» cuando hay de 9, 15 y 17 kg): el texto lo arma el código con las piezas que coinciden.
   if (texto !== '' && /\b(solo|unicamente)\s+(disponemos|tenemos|contamos|hay|ofrecemos)\b/.test(bmNorm(texto))) { const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1); if (coinc !== '') texto = coinc; }
   // El mensaje pegado del sitio con montos DISTINTOS a los del catálogo vivo: se cobra siempre el vivo y se avisa en el mismo mensaje (el resumen trae el total real).
@@ -1637,8 +1648,7 @@ function bmResolverModelo(c) {
   // R58: tras pasar con recepción (hasta 2 h antes), el asistente NO ofrece sumar otra pieza: una oración que lo ofrece se reemplaza por una respuesta corta, salvo que el cliente haya cambiado el pedido en este turno.
   if (texto !== '' && f.derivadoMs > 0 && c.ahora - f.derivadoMs >= 0 && c.ahora - f.derivadoMs < BM_VENTANA_TRAS_DERIVAR_MS && !cambio && bmOfreceSumar(bmNorm(texto))) texto = BM_TEXTO_TRAS_DERIVAR;
   // El asistente PIDE lo que falta con palabras que el estado reconoce en el turno siguiente: si el modelo no mencionó el nombre (o la ciudad) que falta, el código lo agrega.
-  const pendientes = lineas.length > 0 && !abierto && !conBoton ? bmPideDeEntrega(entrega, c.mercado) : [];
-  if (texto !== '' && pendientes.length > 0 && pendientes.some((k) => !bmPidioDato(texto, k))) texto = texto + '\n\n' + bmPreguntaDelPaso(entrega, c.mercado);
+  if (texto !== '' && !enEntrega && pendientes.length > 0 && pendientes.some((k) => !bmPidioDato(texto, k))) texto = texto + '\n\n' + bmPreguntaDelPaso(entrega, c.mercado);
   const sinRedaccion = texto === '';
   let sinPieza = false;
   if (sinRedaccion && !lineas.length) {
