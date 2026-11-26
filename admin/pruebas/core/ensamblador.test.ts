@@ -618,7 +618,7 @@ describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `i
   const sinTipos = () => ({
     name: 'sintetico-rafaga',
     nodes: [
-      nodoSet('Normalizar entrada', [240, 300]), nodoSet('Config del negocio', [480, 300]), nodoSet('Config base', [480, 100]),
+      { ...nodoSet('Normalizar entrada', [240, 300]), type: 'n8n-nodes-base.code', typeVersion: 2, parameters: { jsCode: "return [{ json: { tipo: 'text', mensajeId: 'x', from: '1', phoneNumberId: '2', userInput: 't' } }];" } }, nodoSet('Config del negocio', [480, 300]), nodoSet('Config base', [480, 100]),
       { id: 'traer', name: 'Traer configuración', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [240, 100], credentials: { httpHeaderAuth: { id: '', name: 'REEMPLAZAR_credencial_ingesta' } }, parameters: { method: 'POST', url: URL_SERVIDOR, authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth', sendHeaders: true, headerParameters: { parameters: [{ name: 'X-NovuChat-Numero', value: '={{ $json.phoneNumberId }}' }] } } },
       nodoSet('Reportar mensaje (entrante)', [960, 100]), nodoSet('¿Atención normal?', [960, 300]), nodoSet('Agente', [1200, 400]),
     ],
