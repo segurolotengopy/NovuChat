@@ -434,6 +434,7 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
             SITIO_CONSOLA: 'consola-ficticia',
             SITIO_CATALOGO: 'catalogo-ficticio',
             FORZAR: '',
+            ESPERA_REINTENTO_CUOTA: '0',
           }),
         });
         return { status: r.status, salidas: leerSalidas(salida), stdout: r.stdout + r.stderr };
@@ -447,6 +448,56 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
       expect(exito.salidas['completo']).toBe('true');
       expect(corre('reintento-interno-exitoso.registro.txt', '2').status).not.toBe(0);
     });
+
+    if (t !== 'desplegar-dev') {
+      it(`W2b ${t}: con «Quota Exceeded» se repite el despliegue (hasta 3 intentos); sin esa señal NO se repite`, () => {
+        const bin = join(tmp, `bin-cuota-${t}`);
+        spawnSync('mkdir', ['-p', bin]);
+        // Un firebase falso que cuenta sus llamadas y responde con el registro que toca según INTENTOS_MALOS.
+        writeFileSync(join(bin, 'firebase'), [
+          '#!/usr/bin/env bash',
+          'n=$(( $(cat "$CONTADOR" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$CONTADOR"',
+          'if [ "$n" -le "$INTENTOS_MALOS" ]; then cat "$FIXTURE_MALO"; if [ "$CON_CUOTA" = 1 ]; then echo \'Got "Quota Exceeded" error while trying to update x. Waiting to retry...\'; fi; exit 0; fi',
+          'cat "$FIXTURE_BUENO"; exit 0', '',
+        ].join('\n'));
+        chmodSync(join(bin, 'firebase'), 0o755);
+        // El registro del 16/11 ya trae «Quota Exceeded»: para la negación se usa una copia SIN esas líneas.
+        const sinCuota = archivo(readFileSync(join(FIX, '16-11-a-medias.registro.txt'), 'utf8').split('\n').filter((l) => !l.includes('Quota Exceeded')).join('\n'));
+        const codigo = `set -euo pipefail\n${fragmento(job(t))}`;
+        const corre = (intentosMalos: number, conCuota: boolean) => {
+          const contador = archivo('');
+          const r = spawnSync('bash', ['-c', codigo], {
+            encoding: 'utf8',
+            env: entornoDelEmulador(undefined, {
+              PATH: `${bin}:${process.env['PATH'] ?? ''}`,
+              FIXTURE_MALO: conCuota ? join(FIX, '16-11-a-medias.registro.txt') : sinCuota,
+              FIXTURE_BUENO: join(FIX, 'reintento-interno-exitoso.registro.txt'),
+              CONTADOR: contador, INTENTOS_MALOS: String(intentosMalos), CON_CUOTA: conCuota ? '1' : '0',
+              ESPERA_REINTENTO_CUOTA: '0',
+              RUNNER_TEMP: tmp, GITHUB_OUTPUT: archivo(''), GITHUB_STEP_SUMMARY: archivo(''), GITHUB_WORKSPACE: RAIZ,
+              GITHUB_REF_NAME: 'v0.0.0', GITHUB_RUN_ID: '1', GITHUB_SHA: 'abcdef0abcdef0', FIREBASE_TOOLS_VERSION: '',
+              SOLO: SOLO_COMPLETO, PROYECTO: 'consola-ficticia', SITIO_CONSOLA: 'consola-ficticia', SITIO_CATALOGO: 'catalogo-ficticio', FORZAR: '',
+            }),
+          });
+          return { status: r.status, llamadas: Number(readFileSync(contador, 'utf8').trim() || '0'), salida: r.stdout + r.stderr };
+        };
+        // Un intento a medias con cuota y luego bien: pasa con 2 llamadas.
+        const uno = corre(1, true);
+        expect(uno.status, uno.salida).toBe(0);
+        expect(uno.llamadas).toBe(2);
+        expect(uno.salida).toContain('Cuota de escrituras');
+        // Dos intentos a medias con cuota: pasa con 3.
+        expect(corre(2, true).llamadas).toBe(3);
+        // Tres a medias con cuota: falla tras el tercero (nunca un cuarto).
+        const tres = corre(3, true);
+        expect(tres.status).not.toBe(0);
+        expect(tres.llamadas).toBe(3);
+        // NEGANDO: a medias SIN la señal de cuota: falla de inmediato, una sola llamada.
+        const sin = corre(1, false);
+        expect(sin.status).not.toBe(0);
+        expect(sin.llamadas).toBe(1);
+      });
+    }
 
     it(`W3 ${t}: comprueba la versión servida después del despliegue, sin if`, () => {
       const j = job(t);

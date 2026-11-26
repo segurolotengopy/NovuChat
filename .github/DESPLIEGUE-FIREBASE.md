@@ -219,6 +219,20 @@ del proyecto de producción. Lo que hay:
     `destinatario`, `enlaceHosts`, `enlaceRepos`, `avisosDenegar`, `topeDiario`) vive en el documento
     `plataforma/alertas` de Firestore, no en el `.env` (el de producción es de dos nombres); se escribe con
     `admin/scripts/plataforma/alertas-config.mjs` (seco por omisión, con respaldo y reversa).
+  - **Cuota de escrituras de Cloud Functions (25/11/2026).** La API de Cloud Functions admite
+    **60 escrituras por 60 segundos por región** en 2.ª generación (80 por 100 s por proyecto en 1.ª),
+    **1 por Function**, y **no se puede aumentar** (https://firebase.google.com/docs/functions/quotas;
+    la página no muestra fecha de actualización). Desplegamos **86 Functions** en una sola región (`us-east1`)
+    y firebase-tools las actualiza juntas, así que el despliegue completo pasa del límite: el 25/11 la
+    corrida 45690847325 de staging recibió 14 «Got "Quota Exceeded"… Waiting to retry», confirmó 79 Functions y terminó
+    a los 3 min 43 s sin «Deploy complete!» (7 sin confirmar y Hosting sin publicar); la compuerta lo detectó.
+    **Arreglo:** en `desplegar-staging` y `desplegar-produccion`, si la compuerta falla Y el registro trae «Quota Exceeded»,
+    se espera 70 s (`ESPERA_REINTENTO_CUOTA`) y se repite `firebase deploy` hasta 3 intentos: las Functions ya
+    actualizadas salen como «Skipped (No changes detected)», así que la repetición cubre solo las que faltaron y Hosting.
+    La compuerta no cambia: tras el último intento sigue exigiendo «Deploy complete!», todas las Functions confirmadas y
+    «release complete» de cada sitio. Cualquier otro fallo corta de inmediato, sin reintento. Si el número de Functions
+    crece mucho más, el siguiente paso es desplegar por tandas con `--only functions:…`. Prueba: `W2b` en
+    `admin/pruebas/despliegue-compuerta.test.ts`.
   - **Todo secreto nuevo que una Function declare debe existir en STAGING ANTES de fusionar** (lección del 25/11/2026:
     `NOVUTIENDA_CATALOGO` se creó en producción pero no en staging y `desplegar-staging` falló desde #1096 con
     «In non-interactive mode but have no value for the secret»). Se crea con `scripts/preparar-staging.sh <fase>`
