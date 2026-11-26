@@ -155,7 +155,7 @@ const activo = (atencion: unknown) => ({
  */
 const FLUJOS = [
   {
-    archivo: 'demo-a-agendamiento.json', agente: 'AI Agent (Sofía)',
+    archivo: 'clientes/demo-a/demo-a-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
     campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
     primeroTrasElEnvio: 'Reportar mensaje (saliente)',

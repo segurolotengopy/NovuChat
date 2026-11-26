@@ -304,7 +304,8 @@ describe('publicar-flujo.sh: la guardia y la confirmación de los flujos de las 
     copyFileSync(SCRIPT, join(raiz, 'scripts/publicar-flujo.sh'));
     writeFileSync(join(raiz, 'Flujos/experimental/doctoras/construir.mjs'), `process.exit(${codigoSalida});\n`);
     writeFileSync(join(raiz, 'Flujos/experimental/doctoras/doctoras.rroca-evy.json'), JSON.stringify({ name: 'doctoras', nodes: [] }));
-    writeFileSync(join(raiz, 'Flujos/demo-a-agendamiento.json'), JSON.stringify({ name: 'Otro cliente', nodes: [] }));
+    mkdirSync(join(raiz, 'Flujos/clientes/demo-a'), { recursive: true });
+    writeFileSync(join(raiz, 'Flujos/clientes/demo-a/demo-a-agendamiento.json'), JSON.stringify({ name: 'Otro cliente', nodes: [] }));
     chmodSync(join(raiz, 'scripts/publicar-flujo.sh'), 0o755);
     return raiz;
   }
@@ -340,7 +341,7 @@ describe('publicar-flujo.sh: la guardia y la confirmación de los flujos de las 
     expect(r.stdout + r.stderr).not.toMatch(/NEGADO/);
   });
   it('un flujo de otro cliente NO pasa por la guardia de las doctoras', () => {
-    const r = correr(['--flujo', join(REPO, 'Flujos/demo-a-agendamiento.json'), '--aplicar']);
+    const r = correr(['--flujo', join(REPO, 'Flujos/clientes/demo-a/demo-a-agendamiento.json'), '--aplicar']);
     expect(r.stdout + r.stderr).not.toMatch(/Flujo de las doctoras|NEGADO/);
   });
   it('--forzar contra el flujo VIVO de una doctora con un archivo de otro nombre vuelve a correr la guardia: sale 1 y no escribe', () => {
@@ -398,7 +399,7 @@ describe('publicar-flujo.sh: la guardia y la confirmación de los flujos de las 
     expect(r.stdout).toMatch(/etapa crear/);
     expect(r.stderr).toMatch(/NEGADO/);
     expect(escribio()).toBe(false);
-    const o = correr(['--flujo', join(REPO, 'Flujos/demo-a-agendamiento.json'), '--crear', '--aplicar']);
+    const o = correr(['--flujo', join(REPO, 'Flujos/clientes/demo-a/demo-a-agendamiento.json'), '--crear', '--aplicar']);
     expect(o.stdout + o.stderr).not.toMatch(/Flujo de las doctoras|NEGADO/);
   });
   it('--encender --aplicar sobre el flujo vivo de una doctora: sin confirmación se niega; con la guardia en rojo se niega aunque lleve --confirmo-doctoras; con todo en verde activa', () => {

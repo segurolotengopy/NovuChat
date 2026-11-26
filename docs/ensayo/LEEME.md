@@ -918,7 +918,7 @@ milisegundos) solo se prueba en la suite con una hoja simulada (`chat-novuchat-f
 | Pieza | Demo A (por defecto) | Demo B |
 |---|---|---|
 | Entorno de n8n | `.env` | `.env.demo-b` |
-| Flujo vivo que se pisa y se restaura | `Flujos/demo-a-agendamiento.json` | `Flujos/demo-b-venta-cobro.json` |
+| Flujo vivo que se pisa y se restaura | `Flujos/clientes/demo-a/demo-a-agendamiento.json` | `Flujos/demo-b-venta-cobro.json` |
 | `flujo-de-prueba.mjs` | `--sobre-demo-a` | `--sobre-demo-b` |
 | `ensayo-flujo.sh` | (sin opción) o `--demo a` | `--demo b` |
 | `ensayo.mjs` | (sin opción) o `--demo a` → comercio `ensayo` | `--demo b` → comercio **`ensayo-b`** |

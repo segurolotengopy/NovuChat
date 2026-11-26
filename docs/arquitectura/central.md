@@ -854,7 +854,7 @@ contradice las decisiones de este frente (el comprobante por WhatsApp que NovuCh
 **Lo que se descubrió leyendo y que condiciona el diseño:**
 
 1. **El flujo reporta el entrante aunque el panel conteste 409.** En
-   `Flujos/demo-a-agendamiento.json`, `Normalizar entrada` conecta con `¿Comercio
+   `Flujos/clientes/demo-a/demo-a-agendamiento.json`, `Normalizar entrada` conecta con `¿Comercio
    operativo?` **y** con `Reportar mensaje (entrante)`, y este último está arriba
    (y=120 contra y=280), así que con `executionOrder: v1` corre primero. Si
    `configuracionFlujo` corta con 409, la ingesta **igual recibe el mensaje del

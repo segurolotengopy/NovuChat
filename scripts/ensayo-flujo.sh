@@ -65,7 +65,7 @@ done
 # El demo de destino: su JSON versionado, su entorno por defecto, el marcador de
 # su phone id y las credenciales que son SOLO del otro demo (separadas por «|»).
 case "$LETRA" in
-  a) ETIQUETA="Demo A"; DEMO="$REPO/Flujos/demo-a-agendamiento.json"; ENV_DEFECTO=".env"
+  a) ETIQUETA="Demo A"; DEMO="$REPO/Flujos/clientes/demo-a/demo-a-agendamiento.json"; ENV_DEFECTO=".env"
      MARCA_PHONE="REEMPLAZAR_PHONE_NUMBER_ID"; ENV_AJENO=".env.demo-b"
      AJENAS="Cierres NovuChat B (auto)|WhatsApp account 2|WhatsApp OAuth account 2" ;;
   b) ETIQUETA="Demo B"; DEMO="$REPO/Flujos/demo-b-venta-cobro.json"; ENV_DEFECTO=".env.demo-b"

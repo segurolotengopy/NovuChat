@@ -40,7 +40,7 @@
  * sus dos formas de empalme se recomponen sobre el vertical de hoy.
  *
  *   node scripts/sincronizar-flujo-cliente.mjs \
- *     --vertical ../Flujos/demo-a-agendamiento.json \
+ *     --vertical ../Flujos/clientes/demo-a/demo-a-agendamiento.json \
  *     --cliente ../Flujos/bellido-agendamiento.json \
  *     --base origin/main [--aplicar]
  *

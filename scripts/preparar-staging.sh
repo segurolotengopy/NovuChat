@@ -35,7 +35,8 @@
 #     novutienda  SOLO sobre un staging que ya existe: amplía la condición de
 #                 desplegadorSecretos con NOVUTIENDA_ (confirmar pedidos de catálogo
 #                 externo), crea NOVUTIENDA_CONFIRMAR con valor aleatorio (la Function
-#                 falla cerrado hasta cargar el mapa real) y su secretAccessor. Idempotente
+#                 falla cerrado hasta cargar el mapa real) y NOVUTIENDA_CATALOGO con `{}`
+#                 (sin ningún token), cada uno con su secretAccessor. Idempotente
 #     sitio       el SEGUNDO sitio de Hosting de staging (T-37: la página pública del
 #                 catálogo, otro origen que la consola). Va ANTES de `github`
 #     storage     el rol del agente de Storage (DESPUÉS de crear el bucket a mano)
@@ -234,7 +235,9 @@ PREFIJO_ALERTAS="ALERTAS_"
 SECRETOS_ALERTAS=(ALERTAS_HMAC ALERTAS_RESEND_API_KEY)
 # Confirmar pedidos de catálogo externo (NovuTienda): UN secreto con el mapa por comercio, prefijo EXACTO NOVUTIENDA_.
 PREFIJO_NOVUTIENDA="NOVUTIENDA_"
-SECRETOS_NOVUTIENDA=(NOVUTIENDA_CONFIRMAR)
+SECRETOS_NOVUTIENDA=(NOVUTIENDA_CONFIRMAR NOVUTIENDA_CATALOGO)
+# NOVUTIENDA_CATALOGO (fuente externa del catálogo web: baseUrl y bearer por comercio) nace con `{}`: ningún comercio, falla cerrado.
+SECRETO_NOVUTIENDA_CATALOGO="NOVUTIENDA_CATALOGO"
 
 # Solo lectura. 0 = sa-deploy-staging ya tiene el binding de desplegadorSecretos con la
 # condición «secretos-de-las-functions» · 1 = NO está (la política se leyó bien) ·
@@ -290,7 +293,7 @@ PY
 # timbres nace VACÍO: `{}` es un JSON válido, ningún alias = ningún timbre
 # (destinoDeTimbre devuelve null y no se toca nada). Los demás, 64 hex aleatorios.
 valor_inicial() {
-  if [[ "$1" == "$SECRETO_SALIDA_PERSONA" ]]; then printf '{}'
+  if [[ "$1" == "$SECRETO_SALIDA_PERSONA" || "$1" == "$SECRETO_NOVUTIENDA_CATALOGO" ]]; then printf '{}'
   else openssl rand -hex 32 | tr -d '\n'; fi
 }
 
@@ -300,8 +303,9 @@ asegurar_secreto() { # <nombre>: lo crea si falta y da secretAccessor a sa-funct
   elif (( APLICAR )); then
     valor_inicial "$s" | gc secrets create "$s" --replication-policy=automatic --data-file=- >/dev/null
     if [[ "$s" == "$SECRETO_SALIDA_PERSONA" ]]; then hecho "$s creado (mapa vacío {}: ningún timbre)"
+    elif [[ "$s" == "$SECRETO_NOVUTIENDA_CATALOGO" ]]; then hecho "$s creado (mapa vacío {}: ningún comercio, sin token)"
     else hecho "$s creado (valor aleatorio, no mostrado)"; fi
-  elif [[ "$s" == "$SECRETO_SALIDA_PERSONA" ]]; then
+  elif [[ "$s" == "$SECRETO_SALIDA_PERSONA" || "$s" == "$SECRETO_NOVUTIENDA_CATALOGO" ]]; then
     nota "[seco] printf '{}' | gcloud secrets create $s --data-file=-"
   else
     nota "[seco] openssl rand -hex 32 | gcloud secrets create $s --data-file=-"

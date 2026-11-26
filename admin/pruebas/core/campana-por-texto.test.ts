@@ -18,7 +18,7 @@ import {
 
 const venta = leerFlujo('demo-b-venta-cobro.json');
 const captacion = leerFlujo('novuchat-onboarding.json');
-const reservas = leerFlujo('demo-a-agendamiento.json');
+const reservas = leerFlujo('clientes/demo-a/demo-a-agendamiento.json');
 
 const TEXTO = '¡Hola! Quiero info del plan Pro, por favor';
 const ahora = Date.now();

@@ -1389,6 +1389,129 @@ describe('El catálogo real llega al prompt, sea cual sea el rubro', () => {
     expect(String(cfg['catalogoPorArea'])).toBe('Otros: Sales Spa 7 USD');
   });
 
+  describe('lo agotado no se ofrece y la moneda del ítem manda (reclamo del 24/11/2026: gaseosa con existencias 0 «a 8 USD»)', () => {
+    const lineas = (cfg: J): string => String(cfg['catalogoPorArea']);
+    it('un ítem con agotado=true NO sale con precio en el catálogo del prompt: queda solo en la línea «sin existencias»', () => {
+      const cfg = fusionar(panel({ catalogo: [
+        { nombre: 'Gaseosa', precio: 8, moneda: 'BOB', area: 'bebidas', agotado: true },
+        { nombre: 'Jugo', precio: 10, moneda: 'BOB', area: 'bebidas' },
+      ] }));
+      const t = lineas(cfg);
+      expect(t).toContain('bebidas: Jugo 10 Bs');
+      expect(t).not.toMatch(/Gaseosa 8/);
+      expect(t).toMatch(/SIN EXISTENCIAS por ahora \(NO se ofrecen ni se cobran[^)]*\): Gaseosa$/);
+      expect(t).not.toMatch(/Gaseosa[^\n]*\d+ (Bs|USD)/);
+    });
+    it('un catálogo sin agotados no cambia: ni línea de existencias; agotado=false y la clave ausente se ofrecen', () => {
+      const cfg = fusionar(panel({ catalogo: [
+        { nombre: 'Café', precio: 12, area: 'bebidas', agotado: false }, { nombre: 'Té', precio: 9, area: 'bebidas' },
+      ] }));
+      expect(lineas(cfg)).toBe('bebidas: Café 12 Bs · Té 9 Bs');
+    });
+    it('si TODO está agotado el catálogo con precio queda vacío y solo hay la línea de existencias', () => {
+      const t = lineas(fusionar(panel({ catalogo: [{ nombre: 'Gaseosa', precio: 8, area: 'bebidas', agotado: true }] })));
+      expect(t).toMatch(/^SIN EXISTENCIAS por ahora/);
+      expect(t).not.toMatch(/\d+ (Bs|USD)/);
+    });
+    it('la moneda del ítem manda: BOB en un negocio en USD sale en Bs, y USD en un negocio en bolivianos sale en USD', () => {
+      const enUsd = fusionar(panel({ operacion: { moneda: 'USD' }, catalogo: [
+        { nombre: 'Gaseosa', precio: 8, moneda: 'BOB', area: 'a' }, { nombre: 'Parlante', precio: 220, moneda: 'USD', area: 'a' },
+        { nombre: 'Sin moneda', precio: 5, area: 'a' },
+      ] }));
+      expect(lineas(enUsd)).toBe('a: Gaseosa 8 Bs · Parlante 220 USD · Sin moneda 5 USD');
+      const enBs = fusionar(panel({ catalogo: [{ nombre: 'Ruana', precio: 300, moneda: 'USD', area: 'a' }, { nombre: 'Café', precio: 12, moneda: 'Bs', area: 'a' }, { nombre: 'Otro', precio: 3, area: 'a' }] }));
+      expect(lineas(enBs)).toBe('a: Ruana 300 USD · Café 12 Bs · Otro 3 Bs');
+    });
+    it('el prompt que llega al modelo trae la línea de existencias y ningún precio del agotado', () => {
+      const cfg = fusionar(panel({ operacion: { moneda: 'USD' }, catalogo: [
+        { nombre: 'Gaseosa', precio: 8, moneda: 'BOB', area: 'bebidas', agotado: true }, { nombre: 'Parlante', precio: 220, moneda: 'USD', area: 'tech' },
+      ] }));
+      const p = prompt(cfg);
+      expect(p).toContain('Parlante 220 USD');
+      expect(p).toContain('SIN EXISTENCIAS por ahora');
+      expect(p).not.toMatch(/Gaseosa \d/);
+    });
+  });
+
+  describe('candado de existencias en «Procesar respuesta» (red secundaria, 24/11/2026)', () => {
+    const AGOT = JSON.stringify(['Gaseosa (normal o zero)', 'Parlante bluetooth']);
+    const conEstado = (salida: string, cfg: J): J =>
+      ejecutar(codigoDe(f, 'Procesar respuesta'), [{ output: salida }], { 'Normalizar entrada': [{ ...CONFIG, ...cfg }] }, { $getWorkflowStaticData: () => ({}) })[0] ?? {};
+    const turno = (salida: string, extra: J = {}): J => conEstado(salida, { agotadosNombres: AGOT, nombreNegocio: 'Un Negocio', ...extra });
+    it('Config del negocio entrega los nombres agotados como texto JSON, sin precio', () => {
+      const cfg = fusionar(panel({ catalogo: [{ nombre: 'Gaseosa', precio: 8, agotado: true, area: 'b' }, { nombre: 'Jugo', precio: 5, area: 'b' }] }));
+      expect(JSON.parse(String(cfg['agotadosNombres']))).toEqual(['Gaseosa']);
+      expect(JSON.parse(String(fusionar(panel({ catalogo: [] }))['agotadosNombres']))).toEqual([]);
+    });
+    it('NEGADO: [ENVIAR_QR] con un ítem agotado en el texto no manda el QR y pasa con recepción (aviso + botón), aunque el nombre venga en plural, con otras tildes o mayúsculas', () => {
+      for (const t of ['Tu pedido: 2 gaseosas. Total 16 Bs. [ENVIAR_QR]', 'GASEOSA x1 = 8 Bs [ENVIAR_QR]', 'Un parlante bluetooth, total 220 [ENVIAR_QR]', 'Gaseosa (normal o zero) 8 Bs [ENVIAR_QR]']) {
+        const r = turno(t);
+        expect(r['enviarQr'], t).toBe(false);
+        expect(r['pedidoConfirmado'], t).toBe(false);
+        expect(r['transferir'], t).toBe(true);
+        expect(r['textoEnElQr'], t).toBe(false);
+        expect(r['avisos'], t).toContain('candado_agotado');
+        expect(String(r['respuesta']), t).toMatch(/no está disponible por ahora.*botón/s);
+        expect(String(r['respuesta']), t).not.toMatch(/\d+ ?Bs|Gaseosa|parlante/i);
+      }
+    });
+    it('NEGADO: [PEDIDO_CONFIRMADO] con un agotado tampoco confirma el pedido', () => {
+      const r = turno('Listo, gaseosa y jugo. [PEDIDO_CONFIRMADO]');
+      expect(r['pedidoConfirmado']).toBe(false);
+      expect(r['transferir']).toBe(true);
+    });
+    it('sin número del dueño no hay botón: el QR igual no sale y el texto no promete nada', () => {
+      const r = turno('Gaseosa 8 Bs [ENVIAR_QR]', { numeroDueno: '' });
+      expect(r['enviarQr']).toBe(false);
+      expect(r['transferir']).toBe(false);
+      expect(String(r['respuesta'])).not.toMatch(/botón/);
+    });
+    it('FALSO POSITIVO evitado: «Coca» agotada no bloquea el cobro de «1 Coca Zero» (disponible, nombre más largo)', () => {
+      const cfg = { agotadosNombres: JSON.stringify(['Coca']), disponiblesNombres: JSON.stringify(['Coca Zero', 'Jugo']) };
+      const ok = turno('Tu pedido: 1 Coca Zero. Total 8 Bs. [ENVIAR_QR]', cfg);
+      expect(ok['enviarQr']).toBe(true); expect(ok['avisos']).not.toContain('candado_agotado');
+      const mal = turno('Tu pedido: 1 Coca y 1 Coca Zero. Total 16 Bs. [ENVIAR_QR]', cfg);
+      expect(mal['enviarQr']).toBe(false); expect(mal['avisos']).toContain('candado_agotado');
+      expect(turno('Tu pedido: 1 Coca. Total 8 Bs. [ENVIAR_QR]', cfg)['enviarQr']).toBe(false);
+    });
+    it('plurales irregulares: «leches» → Leche, «nueces» → Nuez, «lápices» → Lápiz; y no confunde palabras distintas', () => {
+      for (const [nombre, texto] of [['Leche', '2 leches, total 10 [ENVIAR_QR]'], ['Nuez', 'Pedido: nueces 20 Bs [ENVIAR_QR]'], ['Lápiz', '3 lápices [ENVIAR_QR]'], ['Gaseosa', 'una gaseosa [ENVIAR_QR]']]) {
+        const r = turno(texto, { agotadosNombres: JSON.stringify([nombre]), disponiblesNombres: '[]' });
+        expect(r['enviarQr'], texto).toBe(false);
+      }
+      const otro = turno('Tu pedido: 1 pan. Total 3 Bs. [ENVIAR_QR]', { agotadosNombres: JSON.stringify(['Pa', 'Leche']), disponiblesNombres: '[]' });
+      expect(otro['enviarQr']).toBe(true);
+    });
+    it('nombres cortos («Té») se comparan por palabra entera: bloquea «1 té» y no «1 tés» de otra palabra ni «tetera»', () => {
+      const cfg = { agotadosNombres: JSON.stringify(['Té']), disponiblesNombres: '[]' };
+      expect(turno('Tu pedido: 1 té. Total 5 Bs. [ENVIAR_QR]', cfg)['enviarQr']).toBe(false);
+      expect(turno('Tu pedido: 1 tetera. Total 50 Bs. [ENVIAR_QR]', cfg)['enviarQr']).toBe(true);
+      expect(turno('Tu pedido: 1 jugo de tomate. Total 5 Bs. [ENVIAR_QR]', cfg)['enviarQr']).toBe(true);
+    });
+    it('LADO SEGURO (documentado): «la gaseosa no hay; te cobro el jugo» + [ENVIAR_QR] también se bloquea y pasa con recepción', () => {
+      const r = turno('La gaseosa no hay; te cobro el jugo, total 10 Bs. [ENVIAR_QR]');
+      expect(r['enviarQr']).toBe(false); expect(r['transferir']).toBe(true); expect(r['avisos']).toContain('candado_agotado');
+    });
+    it('Config del negocio entrega también los nombres disponibles; una moneda que no es un código de 3 letras cae a la del negocio', () => {
+      const cfg = fusionar(panel({ catalogo: [{ nombre: 'Coca Zero', precio: 8, area: 'b', moneda: 'dólares bolivianos' }, { nombre: 'Coca', precio: 8, area: 'b', agotado: true }] }));
+      expect(JSON.parse(String(cfg['disponiblesNombres']))).toEqual(['Coca Zero']);
+      expect(String(cfg['catalogoPorArea'])).toContain('Coca Zero 8 Bs');
+      expect(String(cfg['catalogoPorArea'])).not.toMatch(/DÓLARES|dólares/i);
+    });
+    it('un pedido SIN ítems agotados sigue igual: el QR sale', () => {
+      const r = turno('Tu pedido: 1 jugo. Total 10 Bs. [ENVIAR_QR]');
+      expect(r['enviarQr']).toBe(true);
+      expect(r['avisos']).not.toContain('candado_agotado');
+      const sinLista = conEstado('Gaseosa 8 Bs [ENVIAR_QR]', {});
+      expect(sinLista['enviarQr']).toBe(true);
+    });
+    it('un agotado nombrado SIN marca de cobro no se bloquea (el catálogo ya no lo ofrece; no se corta una conversación)', () => {
+      const r = turno('La gaseosa por ahora no la tenemos.');
+      expect(r['avisos']).not.toContain('candado_agotado');
+      expect(String(r['respuesta'])).toContain('gaseosa');
+    });
+  });
+
   describe('las reglas de venta salen del catálogo, no del rubro cableado', () => {
     it('un catálogo de artesanía NO trae las reglas de restaurante ni las de talla', () => {
       const cfg = conWalisuma();

@@ -712,51 +712,51 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
     porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
     vence: '2027-01-01',
   },
-  'demo-a-agendamiento.json#1#Enviar ubicación': {
+  'clientes/demo-a/demo-a-agendamiento.json#1#Enviar ubicación': {
     porque: '«Enviar contacto/ubicación» (continueErrorOutput) con la salida de error sin conectar: el texto dice «toca el botón» y no hay botón; la cierra PR-5 (Demo A)',
     vence: '2027-01-01',
   },
-  'demo-a-agendamiento.json#2#Enviar ubicación': {
+  'clientes/demo-a/demo-a-agendamiento.json#2#Enviar ubicación': {
     porque: 'el fallo del envío no llega al cliente (el aviso o nada, sin texto de respaldo con botón); la cierra PR-5 (Demo A)',
     vence: '2027-01-01',
   },
-  'demo-a-agendamiento.json#1#Enviar contacto': {
+  'clientes/demo-a/demo-a-agendamiento.json#1#Enviar contacto': {
     porque: '«Enviar contacto/ubicación» (continueErrorOutput) con la salida de error sin conectar: el texto dice «toca el botón» y no hay botón; la cierra PR-5 (Demo A)',
     vence: '2027-01-01',
   },
-  'demo-a-agendamiento.json#2#Enviar contacto': {
+  'clientes/demo-a/demo-a-agendamiento.json#2#Enviar contacto': {
     porque: 'el fallo del envío no llega al cliente (el aviso o nada, sin texto de respaldo con botón); la cierra PR-5 (Demo A)',
     vence: '2027-01-01',
   },
-  'demo-a-agendamiento.json#2#Enviar QR de la seña': {
+  'clientes/demo-a/demo-a-agendamiento.json#2#Enviar QR de la seña': {
     porque: 'el fallo del envío no llega al cliente (el aviso o nada, sin texto de respaldo con botón); la cierra PR-5 (Demo A)',
     vence: '2027-01-01',
   },
-  'demo-a-agendamiento.json#3#Reportar ubicación (saliente)::Enviar ubicación': {
+  'clientes/demo-a/demo-a-agendamiento.json#3#Reportar ubicación (saliente)::Enviar ubicación': {
     porque: 'el reporte saliente cuelga del envío sin puerta que lea el id; la cierra PR-5 (Demo A)',
     vence: '2027-01-01',
   },
-  'demo-a-agendamiento.json#3#Reportar contacto (saliente)::Enviar contacto': {
+  'clientes/demo-a/demo-a-agendamiento.json#3#Reportar contacto (saliente)::Enviar contacto': {
     porque: 'el reporte saliente cuelga del envío sin puerta que lea el id; la cierra PR-5 (Demo A)',
     vence: '2027-01-01',
   },
-  'demo-a-agendamiento.json#5#Procesar respuesta::aviso': {
+  'clientes/demo-a/demo-a-agendamiento.json#5#Procesar respuesta::aviso': {
     porque: '«Un humano tomará el chat» sale antes de que el aviso a recepción salga y no depende de él (R4); la cierra PR-5 (Demo A)',
     vence: '2027-01-01',
   },
-  'demo-a-agendamiento.json#6#AI Agent (Sofía)::a-continuacion-llega': {
+  'clientes/demo-a/demo-a-agendamiento.json#6#AI Agent (Sofía)::a-continuacion-llega': {
     porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
     vence: '2027-01-01',
   },
-  'demo-a-agendamiento.json#6#AI Agent (Sofía)::avisa-que-un-humano': {
+  'clientes/demo-a/demo-a-agendamiento.json#6#AI Agent (Sofía)::avisa-que-un-humano': {
     porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
     vence: '2027-01-01',
   },
-  'demo-a-agendamiento.json#6#AI Agent (Sofía)::le-pasas-el-contacto': {
+  'clientes/demo-a/demo-a-agendamiento.json#6#AI Agent (Sofía)::le-pasas-el-contacto': {
     porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
     vence: '2027-01-01',
   },
-  'demo-a-agendamiento.json#6#AI Agent (Sofía)::se-lo-mandas-de-nuevo': {
+  'clientes/demo-a/demo-a-agendamiento.json#6#AI Agent (Sofía)::se-lo-mandas-de-nuevo': {
     porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
     vence: '2027-01-01',
   },
@@ -846,7 +846,7 @@ describe('Entregas: los flujos del disco', () => {
   it('se descubren del disco: los 8 de Flujos/ y los de experimental/, sin locales, plantillas ni de prueba', () => {
     expect(ARCHIVOS.filter((a) => !a.includes('/')).length).toBeGreaterThanOrEqual(8);
     expect(ARCHIVOS).toEqual(expect.arrayContaining([
-      'bellido-agendamiento.json', 'demo-a-agendamiento.json', 'demo-b-venta-cobro.json', 'novuchat-onboarding.json',
+      'bellido-agendamiento.json', 'clientes/demo-a/demo-a-agendamiento.json', 'demo-b-venta-cobro.json', 'novuchat-onboarding.json',
       'agendamiento-seguimientos.json', 'demo-a-recordatorios.json',
       'clientes/agenda-minima/agenda-minima.v0.json', 'clientes/venta-minima/venta-minima.qtaco.json',
     ]));

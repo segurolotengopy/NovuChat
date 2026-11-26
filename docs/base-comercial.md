@@ -18,6 +18,13 @@ contradice algo de acá, se discute antes de implementarla.**
 Desde el 1 de octubre Meta cobra **cada mensaje que envía el asistente** dentro
 de la ventana de 24 h, a **0,0113 USD** para Bolivia (mercado «Rest of Latin
 America»). Antes eran gratis.
+Fuente oficial, leída el 24/11/2026: la tabla «Tarifas en USD» de Meta («Cost per
+message in USD on the WhatsApp Business Platform, effective October 1, 2026»), fila
+«Rest of Latin America», columna Utility: 0,0113 (misma cifra para Service y
+Authentication; Marketing 0,074). Se baja desde
+`developers.facebook.com/documentation/business-messaging/whatsapp/pricing`. Meta
+cambia precios solo el 1 de enero, abril, julio u octubre. La plantilla de
+utilidad de «Retomar» cuesta lo mismo (0,0113 por envío).
 
 - **Con Meta incluido, Meta es el 94 % del costo del servicio y el modelo de IA el 6 %.** En BYOC el comercio paga Meta: para NovuChat la IA es casi todo el costo variable, y los mensajes se siguen declarando porque son la factura del comercio.
 - **Franquicia: 1.000 mensajes gratis por número de empresa y por mes.** No

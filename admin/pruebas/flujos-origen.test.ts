@@ -37,7 +37,7 @@ interface Flujo { nodes: Nodo[] }
  * tienen entrada de WhatsApp que normalizar ni origen que reportar.
  */
 const FLUJOS = [
-  'demo-a-agendamiento.json',
+  'clientes/demo-a/demo-a-agendamiento.json',
   'bellido-agendamiento.json',
   'demo-b-venta-cobro.json',
   'novuchat-onboarding.json',
@@ -137,7 +137,11 @@ describe('La lista de flujos', () => {
     // fracción medida baja para toda la cartera y nadie lo nota: el número sale
     // más bajo, no sale mal. Esta prueba es la que obliga a agregarlo a la
     // lista —y, al agregarlo, a que pase las cinco de arriba—.
-    const enDisco = readdirSync(join(aqui, '../../Flujos'))
+    // La raíz de `Flujos/` y el Demo A (mudado a `clientes/demo-a/` el 25/11/2026).
+    const enDisco = [
+      ...readdirSync(join(aqui, '../../Flujos')),
+      ...readdirSync(join(aqui, '../../Flujos/clientes/demo-a')).map((f) => `clientes/demo-a/${f}`),
+    ]
       .filter((f) => f.endsWith('.json'))
       .filter((f) => flujo(f).nodes.some((n) => n.name === 'Reportar mensaje (entrante)'));
     expect(enDisco.sort()).toEqual([...FLUJOS].sort());
@@ -273,7 +277,7 @@ describe('Flujos de origen, lista única: cubierto por la lista de arriba o con 
 
   it('contraprueba: un flujo sin el nodo «Normalizar entrada» (o sin «Reportar mensaje (entrante)») no cumple', () => {
     expect(cumpleElOrigen('agendamiento-seguimientos.json')).toBe(false);
-    expect(cumpleElOrigen('demo-a-agendamiento.json')).toBe(true);
+    expect(cumpleElOrigen('clientes/demo-a/demo-a-agendamiento.json')).toBe(true);
   });
 
   describe('sin agente: la prueba no es vacía, un flujo que no reporta el origen FALLA', () => {

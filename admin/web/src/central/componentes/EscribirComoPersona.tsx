@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  TEXTO_INCIERTO, claveDelEnvio, ejecutarEnvio, estadoDelTexto, motivoVentana, textoContador, textoCuentaRegresiva, ventanaDeEnvio,
+  TEXTO_ESPERANDO_CLIENTE, TEXTO_INCIERTO, claveDelEnvio, esperandoRespuestaDelCliente, ejecutarEnvio, estadoDelTexto, motivoVentana, textoContador, textoCuentaRegresiva, ventanaDeEnvio,
   type Borrador, type CapaTurno,
 } from '../lib/turno';
 
@@ -42,6 +42,8 @@ export interface PropsEscribir {
   /** Los controles se ven, ¿se pueden usar? (falso con el comercio no activo). */
   habilitados: boolean;
   capa: CapaTurno;
+  /** `turno.retomadoEn` (ms): se retomó con una plantilla; con la ventana cerrada y sin respuesta, se dice que se espera al cliente. */
+  retomadoEn?: number | null;
 }
 
 export function EscribirComoPersona(p: PropsEscribir) {
@@ -65,7 +67,8 @@ export function EscribirComoPersona(p: PropsEscribir) {
 
   const ventana = ventanaDeEnvio(p.ultimoEntranteEn, ahora);
   const texto = estadoDelTexto(crudo);
-  const motivo = motivoVentana(ventana) ?? (p.habilitados ? null : 'El comercio no está activo: no se puede enviar.');
+  const esperando = esperandoRespuestaDelCliente(p.retomadoEn ?? null, p.ultimoEntranteEn, ahora);
+  const motivo = (esperando ? TEXTO_ESPERANDO_CLIENTE : motivoVentana(ventana)) ?? (p.habilitados ? null : 'El comercio no está activo: no se puede enviar.');
   const puedeEnviar = !enviando && motivo === null && texto.hayTexto && !texto.excede;
   const idAyuda = 'cv-redactor-ayuda';
   const idContador = 'cv-redactor-contador';

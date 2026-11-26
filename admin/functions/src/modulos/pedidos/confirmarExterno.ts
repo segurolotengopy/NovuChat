@@ -91,6 +91,7 @@ export const MENSAJES = {
   noConfigurado: 'La confirmación con NovuTienda no está configurada para este negocio.',
   noDisponible: 'No se pudo completar la confirmación. Intente de nuevo en unos minutos.',
   rechazado: 'NovuTienda rechazó la confirmación. Avise a NovuChat.',
+  anulado: 'Este pedido fue anulado en la tienda: no se puede confirmar.',
   inventarioRechazo: 'NovuTienda no pudo descontar el inventario de este pedido. Avise a NovuChat.',
   faltantes: 'NovuTienda no tiene stock suficiente para este pedido.',
   enCurso: 'Este pedido ya se está confirmando. Espere unos segundos.',
@@ -169,6 +170,7 @@ const entero = (v: unknown): number | undefined =>
 /** Qué significa un 409 de NovuTienda. */
 export type Conflicto409 =
   | { tipo: 'stock'; faltantes: Faltante[] }
+  | { tipo: 'anulado' }
   | { tipo: 'inventario' };
 
 /**
@@ -182,6 +184,8 @@ export type Conflicto409 =
 export function clasificar409(crudo: string, items: unknown): Conflicto409 {
   let r: unknown;
   try { r = JSON.parse(crudo.slice(0, MAX_RESPUESTA_409)); } catch { return { tipo: 'inventario' }; }
+  // `pedido-anulado` (contrato NovuTienda, 25/11/2026): el pedido se anuló en la tienda; definitivo, sin reintento.
+  if (esObjeto(r) && r['error'] === 'pedido-anulado') return { tipo: 'anulado' };
   if (!esObjeto(r) || r['error'] !== 'stock-insuficiente' || !Array.isArray(r['faltantes'])) return { tipo: 'inventario' };
   const nombres = new Map<string, string>();
   for (const i of Array.isArray(items) ? items : []) {
@@ -406,6 +410,9 @@ export async function atenderConfirmacion(p: CallableRequest, d: DependenciasDeC
       if (c.tipo === 'stock') {
         registrar('stock_insuficiente', { estado: 409 });
         fallo = new HttpsError('failed-precondition', MENSAJES.faltantes, { motivo: 'stock_insuficiente', faltantes: c.faltantes });
+      } else if (c.tipo === 'anulado') {
+        registrar('pedido_anulado', { estado: 409 });
+        fallo = new HttpsError('failed-precondition', MENSAJES.anulado, { motivo: 'pedido_anulado' });
       } else {
         // Otro 409 de inventario: definitivo, sin faltantes inventados y sin copiar el texto ajeno.
         registrar('inventario_rechazo', { estado: 409 });

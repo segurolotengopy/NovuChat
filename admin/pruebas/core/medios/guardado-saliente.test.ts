@@ -296,7 +296,7 @@ const CON_RAMA: Array<{ archivo: string; vias: ViaDelGuardadoSaliente[]; reporte
   // Bloque 2b (16/11/2026): las FOTOS de catálogo de Evy y Emma salen por «Enviar aviso» y se reportan SIN CONTEO desde «Reportar foto (saliente)» (reporte-sin-conteo.mjs).
   ...['clientes/rroca-evy/rroca-evy.json', 'clientes/rroca-evy/rroca-evy.prueba.json', 'clientes/rroca-evy/rroca-evy.ensayo-demo-a.json', 'clientes/rroca-emma/rroca-emma.json', 'clientes/rroca-emma/rroca-emma.prueba.json']
     .map((archivo) => ({ archivo, vias: ['media'] as ViaDelGuardadoSaliente[], reportero: 'Reportar foto (saliente)', envio: 'Enviar aviso' })),
-  { archivo: 'demo-a-agendamiento.json', vias: ['enlace'], reportero: 'Reportar QR (saliente)', envio: 'Enviar QR de la seña' },
+  { archivo: 'clientes/demo-a/demo-a-agendamiento.json', vias: ['enlace'], reportero: 'Reportar QR (saliente)', envio: 'Enviar QR de la seña' },
   { archivo: 'demo-b-venta-cobro.json', vias: ['enlace', 'media'], reportero: 'Reportar QR (saliente)', envio: 'Enviar QR de cobro' },
 ];
 const SIN_RAMA = [
@@ -342,7 +342,7 @@ describe('cada flujo versionado que envía una imagen del asistente lleva la ram
     expect(total('clientes/rroca-antonio/rroca-antonio.json')).toBe(70);
     expect(total('clientes/walisuma/walisuma.json')).toBe(71);
     expect(total('clientes/casa-bermejo/casa-bermejo.json')).toBe(63);
-    expect(total('demo-a-agendamiento.json')).toBe(82);
+    expect(total('clientes/demo-a/demo-a-agendamiento.json')).toBe(82);
     expect(total('demo-b-venta-cobro.json')).toBe(93);
   });
   it.each(SIN_RAMA)('%s NO la lleva (bloque 2b o imagen de encabezado: ver el plan)', (archivo) => {

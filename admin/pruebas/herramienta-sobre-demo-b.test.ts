@@ -28,7 +28,7 @@ import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const HERRAMIENTA = join(aqui, '../../Flujos/clientes/agenda-minima/herramientas/flujo-de-prueba.mjs');
 const VENTA = join(aqui, '../../Flujos/clientes/venta-minima/venta-minima.ensayo-demo-a.json');
-const DEMO_A = join(aqui, '../../Flujos/demo-a-agendamiento.json');
+const DEMO_A = join(aqui, '../../Flujos/clientes/demo-a/demo-a-agendamiento.json');
 const DEMO_B = join(aqui, '../../Flujos/demo-b-venta-cobro.json');
 const ejecutar = promisify(execFile);
 const PHONE_ID = '100000000000043'; // el del Demo B, sintético
