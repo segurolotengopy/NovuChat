@@ -77,7 +77,7 @@ describe('flujo «Vigilancia del número de los demos»: forma', () => {
     });
     // Lo mismo que usan los flujos de los demos: la misma versión de Graph y los mismos marcadores.
     expect(configDe('clientes/demo-a/demo-a-agendamiento.json')).toMatchObject({ waGraphVersion: 'v26.0', phoneNumberId: 'REEMPLAZAR_PHONE_NUMBER_ID' });
-    expect(configDe('demo-b-venta-cobro.json')).toMatchObject({ waGraphVersion: 'v26.0', phoneNumberId: 'REEMPLAZAR_PHONE_NUMBER_ID_B' });
+    expect(configDe('clientes/demo-b/demo-b-venta-cobro.json')).toMatchObject({ waGraphVersion: 'v26.0', phoneNumberId: 'REEMPLAZAR_PHONE_NUMBER_ID_B' });
   });
 
   it('ningún valor real en el repositorio: solo marcadores, ningún UUID y solo dos hosts', () => {
@@ -124,7 +124,7 @@ describe('flujo «Vigilancia del número de los demos»: solo lee, con la creden
     // Son las mismas credenciales que ya usan los nodos de envío de cada demo.
     const usa = (archivo: string, nombre: string) =>
       leerFlujo(archivo).nodes.some((n: { credentials?: Record<string, { name?: string }> }) => n.credentials?.whatsAppApi?.name === nombre);
-    expect(usa('demo-b-venta-cobro.json', 'WhatsApp account 2')).toBe(true);
+    expect(usa('clientes/demo-b/demo-b-venta-cobro.json', 'WhatsApp account 2')).toBe(true);
     // El Demo A deja el nombre vacío (se resuelve por tipo de su flujo de referencia): su nombre vivo es «WhatsApp account».
     expect(usa('clientes/demo-a/demo-a-agendamiento.json', 'WhatsApp account 2')).toBe(false);
   });

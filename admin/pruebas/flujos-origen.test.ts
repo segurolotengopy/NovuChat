@@ -39,7 +39,7 @@ interface Flujo { nodes: Nodo[] }
 const FLUJOS = [
   'clientes/demo-a/demo-a-agendamiento.json',
   'bellido-agendamiento.json',
-  'demo-b-venta-cobro.json',
+  'clientes/demo-b/demo-b-venta-cobro.json',
   'novuchat-onboarding.json',
 ];
 
@@ -137,10 +137,11 @@ describe('La lista de flujos', () => {
     // fracción medida baja para toda la cartera y nadie lo nota: el número sale
     // más bajo, no sale mal. Esta prueba es la que obliga a agregarlo a la
     // lista —y, al agregarlo, a que pase las cinco de arriba—.
-    // La raíz de `Flujos/` y el Demo A (mudado a `clientes/demo-a/` el 25/11/2026).
+    // La raíz de `Flujos/` y los demos A y B (mudados a `clientes/demo-a/` y `clientes/demo-b/` el 25/11/2026).
     const enDisco = [
       ...readdirSync(join(aqui, '../../Flujos')),
       ...readdirSync(join(aqui, '../../Flujos/clientes/demo-a')).map((f) => `clientes/demo-a/${f}`),
+      ...readdirSync(join(aqui, '../../Flujos/clientes/demo-b')).map((f) => `clientes/demo-b/${f}`),
     ]
       .filter((f) => f.endsWith('.json'))
       .filter((f) => flujo(f).nodes.some((n) => n.name === 'Reportar mensaje (entrante)'));
