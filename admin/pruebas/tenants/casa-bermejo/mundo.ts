@@ -113,7 +113,10 @@ export const COTEJO_VALIDO = { statusCode: 200, body: { estado: 'valido', import
 export const COMPROBANTE = { categoria: 'comprobante', texto: 'Transferencia', monto: '450.00', cuentaDestino: '1*****9', nombreCuenta: 'TIENDA DE PRUEBA', fecha: '05/10/2026', hora: '10:00', banco: 'Banco' };
 /** Lo que contesta el modelo (JSON de salida): texto, líneas, entrega y quiereHablar. */
 export const modelo = (texto: string, extra: J = {}): J => ({ texto, lineas: [], entrega: {}, facturacion: {}, quiereHablar: false, ...extra });
-export const ENTREGA = { modo: 'Retiro en tienda', ciudad: 'La Paz', direccion: '', nombre: 'Ana Pérez' };
+export const ENTREGA = { modo: 'Retiro en tienda', nombre: 'Ana Pérez' };
+/** Un envío YA completo (sembrado): Bolivia y Argentina. */
+export const ENVIO_BO = { modo: 'Envío', departamento: 'dep:cb', ciudad: 'Cochabamba', aclaracion: 'oficina Zona Sur', nombre: 'Ana Pérez', documento: '4412345' };
+export const ENVIO_AR = { modo: 'Envío', region: 'reg:centro', provincia: 'prov:ar-x', ciudad: 'Córdoba', aclaracion: 'sucursal Palermo', nombre: 'Ana Pérez', documento: '30123456' };
 export function crear(o: Opciones = {}): Mundo {
   let mundo: Mundo | undefined;
   const envio = o.envio ?? {};
@@ -180,9 +183,13 @@ export function sembrarEntrega(m: Mundo, from: string, entrega: Record<string, s
   if (entrega['modo'] && !['Retiro en tienda', 'Envío'].includes(entrega['modo'])) throw new Error('sembrarEntrega: modo no válido');
   if (entrega['nombre'] && (!/^[\p{L} .'-]{1,60}$/u.test(entrega['nombre']))) throw new Error('sembrarEntrega: el nombre no lo aceptaría el código');
   if (entrega['documento'] && !/^\d{5,13}$/.test(entrega['documento'])) throw new Error('sembrarEntrega: el CI no lo aceptaría el código');
+  if (entrega['departamento'] && !/^dep:[a-z]{2}$/.test(entrega['departamento'])) throw new Error('sembrarEntrega: el departamento tiene que ser un id de la lista');
+  if (entrega['region'] && !/^reg:[a-z]+$/.test(entrega['region'])) throw new Error('sembrarEntrega: la región tiene que ser un id de la lista');
+  if (entrega['provincia'] && !/^prov:ar-[a-z]$/.test(entrega['provincia'])) throw new Error('sembrarEntrega: la provincia tiene que ser un id de la lista');
+  for (const k of Object.keys(entrega)) if (!['modo', 'nombre', 'documento', 'departamento', 'region', 'provincia', 'ciudad', 'aclaracion'].includes(k)) throw new Error(`sembrarEntrega: «${k}» ya no es un dato de la entrega (no se pide: dirección, teléfono, ubicación ni flota)`);
   const mapa = ((m.sd['casabermejo'] ??= {}) as Record<string, J>);
   const previa = (mapa[from] ?? {}) as J;
-  mapa[from] = { ultimoMs: AHORA - 1000, ...previa, entrega: { modo: '', ciudad: '', direccion: '', nombre: '', documento: '', cp: '', provincia: '', flota: '', ...(previa['entrega'] as J | undefined), ...entrega } };
+  mapa[from] = { ultimoMs: AHORA - 1000, ...previa, entrega: { modo: '', departamento: '', region: '', provincia: '', ciudad: '', aclaracion: '', nombre: '', documento: '', ...(previa['entrega'] as J | undefined), ...entrega } };
 }
 export const hablar = (m: Mundo, from: string, msg: J, op: { wamid?: string; entrega?: string; phoneId?: string; contacto?: string; toleraFallo?: boolean } = {}): ResultadoTurno =>
   (m.turno(entrega(valorMeta(msg, from, op), op.entrega), op.toleraFallo ? { tolerarFallo: true } : {}));
@@ -214,7 +221,26 @@ export function modeloAdverso(): (ll: LlamadaDoble) => J {
 }
 /** El toque de un botón de respuesta. */
 export const mToque = (id: string, title: string): J => ({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title } } });
+/** La opción tocada de una LISTA interactiva (entrante `list_reply` de Meta: id, title y description). */
+export const mLista = (id: string, title: string): J => ({ type: 'interactive', interactive: { type: 'list_reply', list_reply: { id, title, description: '' } } });
+/** Una ubicación compartida (entrante `location` de Meta): el flujo NO la pide ni la guarda. */
+export const mUbicacion = (): J => ({ type: 'location', location: { latitude: -16.5, longitude: -68.15 } });
 
+/**
+ * COMPLETA LOS DATOS DEL ENVÍO por la captura real, paso a paso, con lo que el cliente tocaría o escribiría («Intermedio», 26/11/2026). Se llama DESPUÉS del toque de «Envío».
+ * Bolivia (3 pasos): departamento (lista) → ciudad y aclaración (un texto) → nombre y cédula (un texto). Argentina (4 pasos): región (lista) → provincia (lista) → ciudad y aclaración → nombre y DNI. Devuelve el último turno (el resumen con «Confirmar pedido»).
+ */
+export function completarEnvio(m: Mundo, from: string, mercado: 'BO' | 'AR' = 'BO'): ResultadoTurno {
+  if (mercado === 'AR') {
+    hablar(m, from, mLista('reg:centro', 'Centro'));
+    hablar(m, from, mLista('prov:ar-x', 'Córdoba'));
+    hablar(m, from, mTexto('Córdoba, sucursal Palermo'));
+    return hablar(m, from, mTexto('Ana Pérez 30123456'));
+  }
+  hablar(m, from, mLista('dep:cb', 'Cochabamba'));
+  hablar(m, from, mTexto('Cochabamba, oficina Zona Sur'));
+  return hablar(m, from, mTexto('Ana Pérez 4412345'));
+}
 /**
  * Un mundo con el pedido LISTO por la CAPTURA REAL: la billetera, el botón «Recojo en tienda» y el nombre que devuelve el modelo (validado por el código). Termina en el resumen con «Confirmar pedido» y «Corregir datos».
  * El modelo es `modeloDeNombre()` salvo que `o.modeloDice` diga otro.

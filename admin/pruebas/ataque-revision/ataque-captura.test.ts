@@ -1,4 +1,8 @@
 /**
+ * ADAPTADO al rediseño «Intermedio» del 26/11/2026 (departamento o provincia por lista; ciudad y aclaración en un mensaje; nombre y cédula en otro; sin dirección, teléfono, ubicación ni flota). Los casos que dependían de leer ciudad, flota, dirección,
+ * código postal o provincia de un TEXTO LIBRE DEJAN DE APLICAR y se declaran en el informe: 44 («Efectivo» como ciudad), 48 a 51 y 54, 55 (dirección, CP y provincia de Argentina por texto), 53 y S17 (la flota), 80 (la ciudad rotulada ya no corrige),
+ * 108, 111 y 112 (flota y piezas como ciudad: no hay listas negras de ciudad), 65 a 67 y S16 (el destino ya no se lee de «envíenlo a Cochabamba»). Se sustituyen por casos del diseño nuevo (49 a 55, 80, 107, 108) y los estados SEN (nombre y cédula) y SE3 (envío completo).
+ *
  * ATAQUE INDEPENDIENTE de la revisora al PR #1098 (Casa Bermejo, captura por estado), séptima ronda, sha 13546e53.
  * Reconstrucción de los 73 casos originales a partir del informe del 25/11 (el archivo original se perdió), completada con variantes de las mismas familias, más los 17 casos del sondeo de la cuarta revisión.
  * Cada caso corre con tres modelos simulados:
@@ -13,11 +17,11 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { ANA, ARGENTINO, BILLETERA, CATALOGO, catalogoOk, crear, hablar, modelo, mTexto, mToque, textoAlModelo } from "../tenants/casa-bermejo/mundo";
+import { ANA, ARGENTINO, BILLETERA, CATALOGO, catalogoOk, crear, hablar, mLista, modelo, mTexto, mToque, textoAlModelo } from "../tenants/casa-bermejo/mundo";
 
 type Obj = Record<string, unknown>;
 type ModeloK = "sano" | "adverso" | "dato" | "datoNombre";
-type Estado = "VACIO" | "S0" | "SR" | "SRC" | "SE" | "SE2" | "SE3" | "SAR";
+type Estado = "VACIO" | "S0" | "SR" | "SRC" | "SE" | "SE2" | "SEN" | "SE3" | "SAR";
 interface Paso { texto?: string; toque?: [string, string]; sano?: Obj }
 interface Esperado {
   entrega?: Record<string, string>;
@@ -38,8 +42,8 @@ const TIENDA = { ubicacionTienda: DIR, horarioTienda: HOR };
 const RET = "Retiro en tienda";
 const ENV = "Envío";
 const LLAVERO = [{ id: "llavero-llama", cantidad: 1 }];
-const CAMPOS = ["modo", "ciudad", "direccion", "nombre", "documento", "cp", "provincia", "flota"];
-const SETUP: Record<string, Obj> = { "Ana Pérez": { nombre: "Ana Pérez" }, "CI 4412345": { documento: "4412345" }, Cochabamba: { ciudad: "Cochabamba" }, "flota Bolivar": { flota: "Bolivar" } };
+const CAMPOS = ["modo", "departamento", "region", "provincia", "ciudad", "aclaracion", "nombre", "documento"];
+const SETUP: Record<string, Obj> = { "Ana Pérez": { nombre: "Ana Pérez" }, "Ana Pérez 4412345": { nombre: "Ana Pérez" } };
 
 // ------------------------------------------------------------------------------------------------ los casos
 const C = (n: string, familia: string, estado: Estado, msg: string, exp: Esperado, sano?: Obj, extra: Partial<Caso> = {}): Caso => ({ n, familia, estado, msg, exp, sano, ...extra });
@@ -77,33 +81,32 @@ const CASOS: Caso[] = [
   C("41", "C celular no es CI", "SE", "70012345", NADA),
   C("42", "C catálogo como dato", "SE", "Cuero", NADA),
   C("43", "C consulta como dato", "SE2", "Muchas gracias", NADA),
-  C("44", "C consulta como dato", "SE2", "Efectivo", NADA),
   C("45", "C consulta como dato", "SE2", "Bien", NADA),
   C("46", "C consulta no cambia modo", "SE", "la dirección de la tienda, 5566778", NADA),
   C("47", "C consulta no cambia modo", "SR", "hola tienen envío a Potosí 71234567", NADA),
   // D. Datos con forma de consulta
-  C("48", "D dirección AR", "SAR", "La dirección de envío es Av Corrientes 1234", { entrega: { direccion: "Av Corrientes 1234" } }, { direccion: "Av Corrientes 1234" }),
-  C("49", "D dirección AR", "SAR", "Dirección Av Corrientes 1234", { entrega: { direccion: "Av Corrientes 1234" } }, { direccion: "Av Corrientes 1234" }),
-  C("50", "D dirección AR", "SAR", "mi dirección es Calle Florida 500", { entrega: { direccion: "Calle Florida 500" } }, { direccion: "Calle Florida 500" }),
-  C("51", "D dirección AR", "SAR", "vivo en Av Corrientes 1234", { entrega: { direccion: "Av Corrientes 1234" } }, { direccion: "Av Corrientes 1234" }),
-  C("52", "D datos con cola ¿está bien?", "SE", "Juan Pérez, CI 4412345, Cochabamba ¿está bien?", { entrega: { nombre: "Juan Pérez", documento: "4412345", ciudad: "Cochabamba" }, codigo: ["documento"] }, { nombre: "Juan Pérez", documento: "4412345", ciudad: "Cochabamba" }),
-  C("53", "D «donde» dentro de dato", "SE2", "flota Bolívar, donde sale a Tarija", { entrega: { flota: "Bolívar", ciudad: "Tarija" }, codigo: ["flota"] }, { flota: "Bolívar", ciudad: "Tarija" }),
-  C("54", "D CP AR", "SAR", "CP 1043", { entrega: { cp: "1043" } }, { cp: "1043" }),
-  C("55", "D provincia AR", "SAR", "Provincia Buenos Aires", { entrega: { provincia: "Buenos Aires" } }, { provincia: "Buenos Aires" }),
+  C("48", "D región AR por nombre exacto", "SAR", "Cuyo", { entrega: { region: "reg:cuyo" }, codigo: ["region"] }, { region: "reg:cuyo" }),
+  C("49", "D provincia antes de región", "SAR", "Mendoza", NADA),
+  C("50", "D texto que contiene una región", "SAR", "vivo en Mendoza, Cuyo", NADA),
+  C("51", "D dirección ya no se pide", "SAR", "La dirección de envío es Av Corrientes 1234", NADA),
+  C("52", "D datos con cola ¿está bien?", "SE", "Juan Pérez, CI 4412345, Cochabamba ¿está bien?", { entrega: { documento: "4412345" }, codigo: ["documento"] }, { documento: "4412345" }),
+  C("53", "D departamento por nombre exacto", "SE", "La Paz", { entrega: { departamento: "dep:lp" }, codigo: ["departamento"] }, { departamento: "dep:lp" }),
+  C("54", "D departamento no sale de un texto que lo contiene", "SE", "vivo en La Paz", NADA),
+  C("55", "D CP ya no se pide", "SAR", "CP 1043", NADA),
   // E. CI frente a número de pedido (envío, CI pedido)
-  C("56", "E no es CI", "SE", "mi número de pedido es 123456", NADA),
-  C("57", "E no es CI", "SE", "pedido 4412345", NADA),
-  C("58", "E no es CI", "SE", "el código es 99887766", NADA),
-  C("59", "E no es CI", "SE", "referencia 5566778", NADA),
-  C("60", "E no es CI", "SE", "nro de operación 12345678", NADA),
-  C("61", "E CI rotulado", "SE", "CI 4412345", { entrega: { documento: "4412345" }, codigo: ["documento"] }, { documento: "4412345" }),
-  C("62", "E CI suelto pedido", "SE", "4412345", { entrega: { documento: "4412345" }, codigo: ["documento"] }, { documento: "4412345" }),
-  C("63", "E CI con puntos", "SE", "mi carnet es 4.412.345", { entrega: { documento: "4412345" }, codigo: ["documento"] }, { documento: "4412345" }),
+  C("56", "E no es CI", "SEN", "mi número de pedido es 123456", NADA),
+  C("57", "E no es CI", "SEN", "pedido 4412345", NADA),
+  C("58", "E no es CI", "SEN", "el código es 99887766", NADA),
+  C("59", "E no es CI", "SEN", "referencia 5566778", NADA),
+  C("60", "E no es CI", "SEN", "nro de operación 12345678", NADA),
+  C("61", "E CI rotulado", "SEN", "CI 4412345", { entrega: { documento: "4412345" }, codigo: ["documento"] }, { documento: "4412345" }),
+  C("62", "E CI suelto pedido", "SEN", "4412345", { entrega: { documento: "4412345" }, codigo: ["documento"] }, { documento: "4412345" }),
+  C("63", "E CI con puntos", "SEN", "mi carnet es 4.412.345", { entrega: { documento: "4412345" }, codigo: ["documento"] }, { documento: "4412345" }),
   // G. Cambio de modo
   C("64", "G cambio de modo", "SRC", "no, mejor envío", { entrega: { modo: ENV }, codigo: ["modo"] }),
-  C("65", "G envío con destino (R27)", "S0", "envíenlo a Cochabamba", { entrega: { modo: ENV, ciudad: "Cochabamba" }, codigo: ["modo", "ciudad"] }, { ciudad: "Cochabamba" }),
-  C("66", "G envío con destino (R27)", "S0", "quiero que me lo envíen a Sucre", { entrega: { modo: ENV, ciudad: "Sucre" }, codigo: ["modo", "ciudad"] }, { ciudad: "Sucre" }),
-  C("67", "G envío con destino (R27)", "S0", "mejor envíenlo a Cochabamba", { entrega: { modo: ENV, ciudad: "Cochabamba" }, codigo: ["modo", "ciudad"] }, { ciudad: "Cochabamba" }),
+  C("65", "G envío con destino (R27)", "S0", "envíenlo a Cochabamba", { entrega: { modo: ENV }, codigo: ["modo"] }),
+  C("66", "G envío con destino (R27)", "S0", "quiero que me lo envíen a Sucre", { entrega: { modo: ENV }, codigo: ["modo"] }),
+  C("67", "G envío con destino (R27)", "S0", "mejor envíenlo a Cochabamba", { entrega: { modo: ENV }, codigo: ["modo"] }),
   C("68", "G cambio de modo", "SE", "mejor recojo en tienda", { entrega: { modo: RET }, codigo: ["modo"] }),
   C("69", "G frase de modo", "S0", "recojo en tienda", { entrega: { modo: RET }, codigo: ["modo"] }),
   C("70", "G frase de modo", "S0", "Retiro", { entrega: { modo: RET }, codigo: ["modo"] }),
@@ -117,7 +120,7 @@ const CASOS: Caso[] = [
   C("77", "H corregir", "SRC", "Rosa Flores", { entrega: { nombre: "Rosa Flores" }, confirma: true, permiteVacio: ["nombre"] }, { nombre: "Rosa Flores" }, { pasos: [{ toque: ["pedido:corregir", "Corregir datos"] }] }),
   C("78", "H corregir y cambiar modo", "SRC", "no, mejor envío", { entrega: { modo: ENV, nombre: "" }, codigo: ["modo"] }, {}, { pasos: [{ toque: ["pedido:corregir", "Corregir datos"] }] }),
   C("79", "H CI rotulado corrige", "SE3", "el CI es 5566778", { entrega: { documento: "5566778" }, codigo: ["documento"] }, { documento: "5566778" }),
-  C("80", "H ciudad rotulada corrige", "SE3", "ciudad Tarija", { entrega: { ciudad: "Tarija" }, codigo: ["ciudad"] }, { ciudad: "Tarija" }),
+  C("80", "H ciudad ya capturada no se pisa", "SE3", "ciudad Tarija", { entrega: {} }),
   C("81", "H no pisar envío", "SE3", "Muchas gracias", { entrega: {} }, {}),
   // I. Ubicación + compra
   C("82", "I ubicación + compra", "VACIO", "quiero un llavero de llama y ¿dónde queda la tienda?", { entrega: {}, tienda: "ub", ids: ["llavero-llama"] }, {}, { lineasSano: LLAVERO }),
@@ -148,13 +151,11 @@ const CASOS: Caso[] = [
   // M. Variantes extra (flota y ciudad que propone el modelo; nombre en envío)
   C("104", "M flota del modelo", "SE2", "Gracias por todo", NADA),
   C("105", "M flota del modelo", "SE2", "Ok perfecto", NADA),
-  C("106", "M nombre completo en envío", "SE", "Ana Pérez", { entrega: { nombre: "Ana Pérez" } }, { nombre: "Ana Pérez" }),
-  C("107", "M ciudad suelta", "SE2", "Cochabamba", { entrega: { ciudad: "Cochabamba" } }, { ciudad: "Cochabamba" }),
-  C("108", "M ciudad suelta con flota ya dada", "SE2", "Muchas gracias", { entrega: { flota: "Bolivar" }, confirma: false }, {}, { pasos: [{ texto: "flota Bolivar", sano: { flota: "Bolivar" } }] }),
+  C("106", "M nombre completo en envío", "SEN", "Ana Pérez", { entrega: { nombre: "Ana Pérez" } }, { nombre: "Ana Pérez" }),
+  C("107", "M ciudad suelta", "SE2", "Cochabamba", { entrega: { ciudad: "Cochabamba" }, codigo: ["ciudad"] }, { ciudad: "Cochabamba" }),
+  C("108", "M ciudad con aclaración", "SE2", "Santa Cruz, oficina Zona Sur", { entrega: { ciudad: "Santa Cruz", aclaracion: "oficina Zona Sur" }, codigo: ["ciudad", "aclaracion"] }, { ciudad: "Santa Cruz", aclaracion: "oficina Zona Sur" }),
   C("109", "M ciudad suelta", "SE2", "Perfecto", NADA),
   C("110", "M ciudad suelta", "SE2", "Gracias", NADA),
-  C("111", "M ciudad suelta", "SE2", "Billetera", NADA),
-  C("112", "M ciudad suelta", "SE2", "Vendedor", NADA),
 ];
 
 const SONDEO: Caso[] = [
@@ -167,9 +168,7 @@ const SONDEO: Caso[] = [
   C("S14b", "sondeo", "SR", "Y el horario", NADA),
   C("S15a", "sondeo", "S0", "Ana Pérez, recojo en tienda", { entrega: { modo: RET, nombre: "Ana Pérez" }, codigo: ["modo"] }, { nombre: "Ana Pérez" }),
   C("S15b", "sondeo", "S0", "Ana", { entrega: { modo: RET, nombre: "Ana" }, codigo: ["modo"] }, { nombre: "Ana" }, { pasos: [{ texto: "recojo en tienda" }] }),
-  C("S16", "sondeo", "S0", "Ana Pérez, 4412345, envío a Cochabamba, flota Bolivar", { entrega: { modo: ENV, nombre: "Ana Pérez", documento: "4412345", ciudad: "Cochabamba", flota: "Bolivar" }, codigo: ["modo", "documento", "flota"] }, { nombre: "Ana Pérez", documento: "4412345", ciudad: "Cochabamba", flota: "Bolivar" }),
-  C("S17", "sondeo", "SE", "flota Bolivar", { entrega: { nombre: "Ana Pérez", documento: "4412345", ciudad: "Cochabamba", flota: "Bolivar" }, codigo: ["flota"] }, { flota: "Bolivar" },
-    { pasos: [{ texto: "Ana Pérez", sano: { nombre: "Ana Pérez" } }, { texto: "4412345", sano: { documento: "4412345" } }, { texto: "Cochabamba", sano: { ciudad: "Cochabamba" } }] }),
+  C("S16", "sondeo", "S0", "Ana Pérez, 4412345, envío a Cochabamba, flota Bolivar", { entrega: { modo: ENV }, codigo: ["modo"] }),
 ];
 
 // ------------------------------------------------------------------------------------------------ el arnés
@@ -205,10 +204,12 @@ function preparar(estado: Estado, ctx: Ctx): { m: Mund; tel: string } {
   if (estado === "VACIO") return { m, tel };
   hablar(m, tel, mTexto("quiero una billetera"));
   if (estado === "SR" || estado === "SRC") hablar(m, tel, mToque("entrega:retiro", "Recojo en tienda"));
-  if (estado === "SE" || estado === "SE2" || estado === "SE3" || estado === "SAR") hablar(m, tel, mToque("entrega:envio", "Envío"));
-  if (estado === "SRC" || estado === "SE2" || estado === "SE3") hablar(m, tel, mTexto("Ana Pérez"));
-  if (estado === "SE2" || estado === "SE3") hablar(m, tel, mTexto("CI 4412345"));
-  if (estado === "SE3") { hablar(m, tel, mTexto("Cochabamba")); hablar(m, tel, mTexto("flota Bolivar")); }
+  if (estado === "SE" || estado === "SE2" || estado === "SEN" || estado === "SE3" || estado === "SAR") hablar(m, tel, mToque("entrega:envio", "Envío"));
+  if (estado === "SRC") hablar(m, tel, mTexto("Ana Pérez"));
+  // El envío es por PASOS (26/11/2026): SE pide el departamento; SE2, la ciudad; SEN, el nombre y la cédula; SE3 está completo.
+  if (estado === "SE2" || estado === "SEN" || estado === "SE3") hablar(m, tel, mLista("dep:cb", "Cochabamba"));
+  if (estado === "SEN" || estado === "SE3") hablar(m, tel, mTexto("Cochabamba, oficina Zona Sur"));
+  if (estado === "SE3") hablar(m, tel, mTexto("Ana Pérez 4412345"));
   return { m, tel };
 }
 

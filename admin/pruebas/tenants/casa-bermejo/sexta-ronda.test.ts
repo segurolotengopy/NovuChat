@@ -16,7 +16,7 @@ const RUTAS = [
   'venta-digital/src/cobro.js', 'venta-digital/src/diferencias.js', '../src/modulos/pedidos/comprobante-diferencias.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js',
   '../src/core/sin-agente/mensajes.js', '../src/core/texto/filtro-redaccion.js', '../src/core/texto/identidad.js', '../src/modulos/pedidos/confirmar-pedido.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
 ].map((r) => join(FLUJOS, r));
-const NOMBRES = ['bmMapaTienda', 'bmCiudadDelTexto', 'bmCiDelTexto', 'bmCiDelTextoDet', 'bmFlotaDelTexto', 'bmNombreValido', 'bmPidioDato', 'bmEntregaDeTurno', 'bmEntregaFalta', 'bmEsConsulta', 'bmPideUbicacion', 'bmPreguntaDeTienda', 'bmNorm', 'bmEsEnvio'];
+const NOMBRES = ['bmMapaTienda', 'bmCiudadYAclaracion', 'bmIdPorNombreExacto', 'bmCiDelTexto', 'bmCiDelTextoDet', 'bmNombreValido', 'bmPidioDato', 'bmEntregaDeTurno', 'bmEntregaFalta', 'bmEsConsulta', 'bmPideUbicacion', 'bmPreguntaDeTienda', 'bmNorm', 'bmEsEnvio'];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
 type Fn = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
 const b = (n: string): Fn => B[n] as Fn;
@@ -33,28 +33,31 @@ describe('S1. el enlace del mapa: en maps.google.com y google.com la ruta es vac
   }
 });
 
-describe('1. la ciudad: «a», «en» y «para» + nombre propio solo si el asistente la pidió; nunca lo ya capturado como nombre o flota', () => {
-  const C = (t: string, s = 0, o: Record<string, unknown> = {}): { ciudad: string; rotulada: boolean } => b('bmCiudadDelTexto')(t, s, o);
-  it('NEGADO: «envío para Ana Pérez» y «envío a Ana Pérez» sin que se haya pedido la ciudad no dejan ciudad', () => {
-    expect(C('envío para Ana Pérez').ciudad).toBe('');
-    expect(C('envío a Ana Pérez').ciudad).toBe('');
-    const r = E({}, { ...ENVIO }, 'envío para Ana Pérez', { esperaCiudad: false });
-    expect(r.entrega.ciudad).toBeUndefined();
-  });
-  it('NEGADO: aunque se haya pedido la ciudad, lo ya capturado como nombre o como flota no es la ciudad', () => {
-    expect(C('para Ana Pérez', 0, { pidio: true, excluir: ['Ana Pérez'] }).ciudad).toBe('');
-    expect(C('a Trans Copacabana', 0, { pidio: true, excluir: ['Trans Copacabana'] }).ciudad).toBe('');
-    expect(E({}, { ...ENVIO, nombre: 'Ana Pérez' }, 'para Ana Pérez', { esperaCiudad: true }).entrega.ciudad).toBeUndefined();
-    expect(E({}, { ...ENVIO, flota: 'Trans Copacabana' }, 'a Trans Copacabana', { esperaCiudad: true }).entrega.ciudad).toBeUndefined();
-  });
-  it('sano: pedida la ciudad, «a Cochabamba» sí; «ciudad Oruro» y «hasta Tarija» siempre; en un mensaje de datos el tramo «envío a Cochabamba» también', () => {
-    expect(C('a Cochabamba', 0, { pidio: true }).ciudad).toBe('Cochabamba');
-    const c = C('ciudad Oruro');
-    expect(c.ciudad).toBe('Oruro');
-    expect(c.rotulada).toBe(true);
-    expect(C('hasta Tarija').ciudad).toBe('Tarija');
+describe('1. la ciudad y la aclaración OPCIONAL: se piden en su paso, se guardan TAL CUAL y no se adivinan (`bmCiudadDelTexto`, `bmFlotaDelTexto` y sus listas se BORRARON el 26/11/2026)', () => {
+  const CA = (t: string): { ciudad: string; aclaracion: string } => b('bmCiudadYAclaracion')(t);
+  it('NEGADO: fuera del paso de la ciudad (`pide` sin ciudad) un texto con «envío para Ana Pérez» o «a Cochabamba» no deja ciudad', () => {
+    expect(E({}, { ...ENVIO }, 'envío para Ana Pérez', { esperaCiudad: false }).entrega.ciudad).toBeUndefined();
+    expect(E({}, { ...ENVIO }, 'a Cochabamba', { esperaCiudad: false }).entrega.ciudad).toBeUndefined();
     expect(E({}, { ...ENVIO }, 'Cochabamba, envío a Cochabamba', { modoPedido: false }).entrega.ciudad).toBeUndefined();
-    expect(E({}, {}, 'Ana Pérez, 4412345, envío a Cochabamba, flota Bolivar', { modoPedido: true }).entrega).toMatchObject({ modo: 'envío', ciudad: 'Cochabamba', documento: '4412345', flota: 'Bolivar' });
+  });
+  it('NEGADO: pedida la ciudad, lo que no vale (cortesía, orden de pagar, solo cifras, vacío, un número largo) no se guarda; y una ciudad ya capturada no se pisa por texto suelto', () => {
+    for (const t of ['Gracias', 'quiero pagar', 'ok', '4412345', '   ', 'x']) expect(E({}, { ...ENVIO }, t, { esperaCiudad: true }).entrega.ciudad, t).toBeUndefined();
+    expect(E({}, { ...ENVIO, ciudad: 'Oruro' }, 'Cochabamba', { esperaCiudad: true }).entrega.ciudad).toBeUndefined();
+  });
+  it('sano: pedida la ciudad, el texto entero se guarda TAL CUAL («a Cochabamba» incluido: no se le quita nada) y la aclaración sale de lo que viene tras una coma, un punto y coma, o «oficina», «agencia» o «sucursal»', () => {
+    expect(E({}, { ...ENVIO }, 'Santa Cruz de la Sierra', { esperaCiudad: true }).entrega.ciudad).toBe('Santa Cruz de la Sierra');
+    expect(CA('Cochabamba')).toEqual({ ciudad: 'Cochabamba', aclaracion: '' });
+    expect(CA('Santa Cruz, oficina Zona Sur')).toEqual({ ciudad: 'Santa Cruz', aclaracion: 'oficina Zona Sur' });
+    expect(CA('Tarija; agencia Centro')).toEqual({ ciudad: 'Tarija', aclaracion: 'agencia Centro' });
+    expect(CA('Sucre sucursal Ravelo')).toEqual({ ciudad: 'Sucre', aclaracion: 'sucursal Ravelo' });
+  });
+  it('NEGADO: lo que no se puede separar con seguridad va TODO como ciudad (se ve en el resumen y se corrige): sin separador ni palabra de oficina, o empezando por «oficina»', () => {
+    expect(CA('Villa Tunari frente a la plaza')).toEqual({ ciudad: 'Villa Tunari frente a la plaza', aclaracion: '' });
+    expect(CA('oficina Zona Sur')).toEqual({ ciudad: 'oficina Zona Sur', aclaracion: '' });
+  });
+  it('NEGADO: un teléfono o un documento dentro del texto libre no se guarda (solo se guarda la parte que sí vale)', () => {
+    expect(CA('Cochabamba, oficina Zona Sur teléfono 70012345')).toEqual({ ciudad: 'Cochabamba', aclaracion: '' });
+    expect(CA('mi CI 4412345')).toEqual({ ciudad: '', aclaracion: '' });
   });
 });
 
@@ -82,37 +85,33 @@ describe('2. el CI: una cifra SIN rótulo solo vale si el asistente pidió el CI
   });
 });
 
-describe('3. lo ya capturado no se corrige por texto suelto: solo si el asistente lo pidió o el cliente lo rotula', () => {
-  const ANT = { ...ENVIO, nombre: 'Ana Pérez', documento: '4412345', ciudad: 'Oruro', flota: 'Bolivar' };
-  it('NEGADO: una cifra, una ciudad o una flota SIN rótulo no sobrescriben el dato guardado', () => {
+describe('3. lo ya capturado no se corrige por texto suelto: solo si el asistente lo pidió o el cliente lo rotula (el documento); el departamento, la ciudad y el nombre solo con «Corregir datos»', () => {
+  const ANT = { ...ENVIO, nombre: 'Ana Pérez', documento: '4412345', departamento: 'dep:or', ciudad: 'Oruro' };
+  it('NEGADO: una cifra SIN rótulo no sobrescribe el documento guardado; una ciudad o un departamento por texto tampoco', () => {
     expect(E({}, ANT, '5512345', { esperaDocumento: false }).entrega.documento).toBeUndefined();
     expect(E({}, ANT, 'Cochabamba', { esperaCiudad: false }).entrega.ciudad).toBeUndefined();
-    expect(E({}, ANT, 'Trans Copacabana', {}).entrega.flota).toBeUndefined();
-    expect(E({}, ANT, 'a Cochabamba', { esperaCiudad: false }).entrega.ciudad).toBeUndefined();
+    expect(E({}, ANT, 'Cochabamba', { esperaCiudad: true }).entrega.ciudad).toBeUndefined();   // ya capturada: solo «Corregir datos» la borra
+    expect(E({}, ANT, 'La Paz', { esperaDepartamento: true }).entrega.departamento).toBeUndefined();
   });
-  it('sano: «el CI es …», «ciudad …» y «flota …» corrigen el dato guardado; una cifra suelta con el CI pedido también', () => {
+  it('sano: «el CI es …» corrige el documento guardado; una cifra suelta con el CI pedido también', () => {
     expect(E({}, ANT, 'el CI es 5512345', {}).entrega.documento).toBe('5512345');
-    expect(E({}, ANT, 'ciudad Cochabamba', {}).entrega.ciudad).toBe('Cochabamba');
-    expect(E({}, ANT, 'flota Trans Copacabana', {}).entrega.flota).toBe('Trans Copacabana');
     expect(E({}, ANT, '5512345', { esperaDocumento: true }).entrega.documento).toBe('5512345');
   });
   it('NEGADO: si el modelo propone un valor DISTINTO al guardado y el código no lo cambió, lo marca (`contradice`): su texto ya no es cierto; el mismo valor no lo marca', () => {
-    expect(E({ ciudad: 'La Paz' }, ANT, 'gracias', {}).contradice).toBe(true);
     expect(E({ documento: '9999999' }, ANT, 'gracias', {}).contradice).toBe(true);
-    expect(E({ flota: 'Otra' }, ANT, 'gracias', {}).contradice).toBe(true);
-    expect(E({ ciudad: 'Oruro', documento: '4.412.345', flota: 'bolivar', nombre: 'Ana Perez' }, ANT, 'gracias', {}).contradice).toBe(false);
+    expect(E({ nombre: 'Otra Persona' }, ANT, 'gracias', {}).contradice).toBe(true);
+    expect(E({ documento: '4.412.345', nombre: 'Ana Perez' }, ANT, 'gracias', {}).contradice).toBe(false);
     expect(E({}, ANT, 'gracias', {}).contradice).toBe(false);
   });
-  it('Argentina: la dirección, el CP y la provincia guardados solo cambian si el cliente los rotula', () => {
-    const ar = { ...ENVIO, nombre: 'Ana Pérez', documento: '30123456', direccion: 'Calle Falsa 123', cp: '5500', provincia: 'Mendoza' };
-    expect(E({ direccion: 'Av Santa Fe 55' }, ar, 'Av Santa Fe 55', { mercado: 'AR' }).entrega.direccion).toBeUndefined();
-    expect(E({ direccion: 'Av Santa Fe 55' }, ar, 'Dirección: Av Santa Fe 55', { mercado: 'AR' }).entrega.direccion).toBe('Av Santa Fe 55');
-    expect(E({ provincia: 'Salta' }, ar, 'Salta', { mercado: 'AR' }).entrega.provincia).toBeUndefined();
+  it('Argentina: la región y la provincia guardadas no cambian por texto, ni siquiera con el nombre exacto de otra', () => {
+    const ar = { ...ENVIO, nombre: 'Ana Pérez', documento: '30123456', region: 'reg:cuyo', provincia: 'prov:ar-m', ciudad: 'Mendoza' };
+    expect(E({}, ar, 'Salta', { mercado: 'AR', esperaProvincia: true }).entrega.provincia).toBeUndefined();
+    expect(E({}, ar, 'Patagonia', { mercado: 'AR', esperaRegion: true }).entrega.region).toBeUndefined();
   });
 });
 
 describe('4. el nombre de UNA palabra que bastaba para el retiro no sirve en el envío', () => {
-  const sin = { modo: 'envío', ciudad: 'Oruro', nombre: 'Ana', documento: '1234567', flota: 'Bolivar' };
+  const sin = { modo: 'envío', departamento: 'dep:or', ciudad: 'Oruro', nombre: 'Ana', documento: '1234567' };
   it('NEGADO: con el envío y «Ana», falta el nombre completo; con «Ana Pérez» no falta nada; el retiro con «Ana» no falta nada', () => {
     expect(b('bmEntregaFalta')(sin, 'BO')).toEqual(['nombre completo']);
     expect(b('bmEntregaFalta')({ ...sin, nombre: 'Ana Pérez' }, 'BO')).toEqual([]);
@@ -137,16 +136,27 @@ describe('5. el nombre: una cortesía suelta no es un nombre, y el de una palabr
   });
 });
 
-describe('6. la flota se corta en la preposición del destino', () => {
-  const F = (t: string): string => b('bmFlotaDelTexto')(t) as string;
-  it('NEGADO: «flota Bolívar a Tarija», «terminal Trans Copacabana para Oruro» y «flota Bolívar hasta Sucre» no meten el destino en la flota', () => {
-    expect(F('flota Bolívar a Tarija')).toBe('Bolívar');
-    expect(F('terminal Trans Copacabana para Oruro')).toBe('Trans Copacabana');
-    expect(F('flota Bolívar hasta Sucre')).toBe('Bolívar');
+describe('6. el departamento, la región y la provincia SOLO salen de la lista (la flota ya no se pide: `bmFlotaDelTexto` se borró)', () => {
+  const ID = (dato: string, t: string, region?: string): string => b('bmIdPorNombreExacto')(dato, t, region) as string;
+  it('NEGADO: un texto que solo CONTIENE el nombre de un departamento («vivo cerca de Cochabamba», «Cochabamba centro») no fija nada; ni siquiera con el departamento pedido', () => {
+    for (const t of ['vivo cerca de Cochabamba', 'Cochabamba centro', 'a Cochabamba', 'cochabamba y santa cruz', '']) {
+      expect(ID('departamento', t), t).toBe('');
+      expect(E({}, { ...ENVIO }, t, { esperaDepartamento: true }).entrega.departamento, t).toBeUndefined();
+    }
   });
-  it('sano: «flota Bolivar» y «flota Bolívar, ciudad Oruro» siguen igual', () => {
-    expect(F('flota Bolivar')).toBe('Bolivar');
-    expect(F('flota Bolívar, ciudad Oruro')).toBe('Bolívar');
+  it('NEGADO: el departamento por texto solo vale si el código lo pidió (`pide`)', () => {
+    expect(E({}, { ...ENVIO }, 'Cochabamba', { esperaDepartamento: false }).entrega.departamento).toBeUndefined();
+  });
+  it('sano: el nombre EXACTO de una opción (sin tildes ni mayúsculas), con el departamento pedido, vale como si la hubiera tocado; los 9 departamentos tienen su id estable', () => {
+    expect(E({}, { ...ENVIO }, 'cochabamba', { esperaDepartamento: true }).entrega.departamento).toBe('dep:cb');
+    expect(E({}, { ...ENVIO }, 'Potosi', { esperaDepartamento: true }).entrega.departamento).toBe('dep:pt');
+    expect(ID('departamento', 'Santa Cruz')).toBe('dep:sc');
+  });
+  it('Argentina: la provincia solo se acepta de la lista de SU región; el nombre de una de otra región no vale', () => {
+    expect(ID('provincia', 'Córdoba', 'reg:centro')).toBe('prov:ar-x');
+    expect(ID('provincia', 'Córdoba', 'reg:cuyo')).toBe('');
+    expect(ID('region', 'Cuyo')).toBe('reg:cuyo');
+    expect(ID('region', 'Cuyo y NOA')).toBe('');
   });
 });
 
@@ -181,7 +191,7 @@ describe('12. el estado «el asistente pidió el dato» sale de la PREGUNTA real
   it('sano: las preguntas y la lista del código piden el nombre, la ciudad y el CI', () => {
     expect(P('¿A nombre de quién retira?', 'nombre')).toBe(true);
     expect(P('¿Me indicas tu nombre?', 'nombre')).toBe(true);
-    const lista = 'Para continuar con su pedido, indíqueme por favor: nombre completo, carnet de identidad (CI), ciudad de destino, empresa de flota o terminal.';
+    const lista = 'Indíqueme el nombre completo y el número de cédula de identidad (CI) de quien recoge el envío en la flota. ¿Cuál es la ciudad de destino? Escríbala, por favor.';
     for (const clase of ['nombre', 'ciudad', 'documento']) expect(P(lista, clase), clase).toBe(true);
     expect(P('¿A qué ciudad lo enviamos?', 'ciudad')).toBe(true);
   });
@@ -293,14 +303,13 @@ describe('7. «¿y dónde está?» con un pedido en curso no contesta la direcci
   });
 });
 
-describe('8. «domicilio» y «delivery» se anotan como envío por flota: piden CI, ciudad y flota o terminal', () => {
+describe('8. «domicilio» y «delivery» se anotan como envío por flota: piden el departamento por la lista', () => {
   it('la frase «delivery» fija el modo de envío y el asistente pide los datos del envío por flota (la lista del comercio es la que decide los modos)', () => {
     const m = crear({ base: { modosDeEntrega: 'Retiro en tienda, Envío a domicilio' }, modeloDice: modeloSano() });
     hablar(m, ANA, mTexto('quiero una billetera'));
     const t = hablar(m, ANA, mTexto('delivery'));
     expect(ficha(m).entrega['modo']).toBe('Envío a domicilio');
-    expect(cuerpoDe(t)).toMatch(/carnet de identidad \(CI\)/);
-    expect(cuerpoDe(t)).toMatch(/empresa de flota o terminal/);
+    expect(cuerpoDe(t)).toMatch(/departamento/i);   // el primer paso del envío: la lista de departamentos
   });
   it('NEGADO: «tienen delivery?» es una consulta: no elige el modo', () => {
     const m = crear({ base: { modosDeEntrega: 'Retiro en tienda, Envío a domicilio' }, modeloDice: modeloSano() });
@@ -317,12 +326,11 @@ describe('12. el estado del asistente: derivar lo deja en la memoria, y «nombre
     hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
     return m;
   };
-  it('NEGADO: tras derivar con recepción (el asistente ya no está pidiendo el nombre) el «Silvana» siguiente no se guarda; el asistente lo vuelve a pedir y con eso sí', () => {
+  it('CAMBIA (26/11/2026, decisión de Andres): tras derivar con recepción el estado `pide` PERSISTE: el dato pedido sigue siendo el MISMO (el nombre) y el «Silvana» siguiente sí se guarda; antes la derivación lo olvidaba', () => {
     const m = conNombrePedido();
     const t = hablar(m, ANA, mTexto('quiero hablar con una persona'));
     expect(plan(t)).toBe('derivar');
-    expect(ficha(m).hist.filter((x) => x.r === 'm').pop()?.t ?? '').not.toMatch(/nombre/i);
-    hablar(m, ANA, mTexto('Silvana'));
+    expect(ficha(m).pide).toEqual(['nombre']);
     expect(ficha(m).entrega['nombre']).toBe('');
     hablar(m, ANA, mTexto('Silvana'));
     expect(ficha(m).entrega['nombre']).toBe('Silvana');

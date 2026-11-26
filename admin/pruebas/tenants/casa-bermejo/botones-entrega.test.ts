@@ -82,7 +82,8 @@ describe('el toque de un botón de entrega lo decide el CÓDIGO, sin modelo', ()
     const t = hablar(m, ANA, mToque('entrega:envio', 'Envío'));
     expect(ficha(m).entrega.modo).toBe('Envío');
     expect(botonesDe(t)).toEqual([]);
-    expect(t.mensajes[0]!.cuerpo).toMatch(/carnet de identidad|ciudad de destino|flota/i);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/departamento/i);   // el primer paso del envío en Bolivia: la lista de departamentos
+    expect((t.mensajes[0]!.payload['interactive'] as { type: string }).type).toBe('list');
     expect(hayQr(t)).toBe(false);
   });
 });

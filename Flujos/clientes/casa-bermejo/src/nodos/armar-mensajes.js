@@ -133,7 +133,7 @@ if (puerta.ruta === 'sigue') {
     if (d.confirmable === true) {
       // El pedido está listo: el MISMO mensaje lleva el botón «Confirmar pedido» (0 mensajes más); tocarlo emite el QR en el mismo turno. Antes del QR el cliente VE los datos capturados (modo, nombre y, en el envío, CI, ciudad y flota)
       // y tiene un segundo botón de respuesta, «Corregir datos» (el mismo mensaje: 0 mensajes agregados): un dato mal leído nunca llega al cobro sin que el cliente lo vea. Si el texto es largo se recorta ÉL, nunca los datos ni las instrucciones.
-      const datos = bmDatosResumen(d.entrega, c.mercado, uTienda.direccion);   // R54: con el retiro, la dirección de la tienda va en los datos
+      const datos = bmDatosResumen(d.entrega, c.mercado, uTienda.direccion, uTienda.mapa);   // R54: con el retiro, la dirección de la tienda va en los datos
       const lineaCorregir = usted ? 'Si algún dato no está bien, toque «' + BM_TITULO_CORREGIR + '».' : 'Si algún dato no está bien, toca «' + BM_TITULO_CORREGIR + '».';
       // El cuerpo cabe en 1.024 caracteres con la instrucción de `cfCuerpo` al final. Orden de sacrificio con un pedido grande: primero el texto del modelo, luego las líneas de piezas del resumen («… y N piezas más», siempre con el total), luego el saludo y la respuesta de la tienda;
       // NUNCA se corta el enlace del mapa ni los datos de entrega ni «Corregir datos» (un dato mal leído no puede llegar al cobro sin que el cliente lo vea).
@@ -164,6 +164,20 @@ if (puerta.ruta === 'sigue') {
       const pregunta = /\b(recib|entrega|retir|recoj|envi)/.test(bmNorm(d.texto)) ? '' : '¿Cómo prefieres recibir tu pedido?';
       const cuerpoBe = bmSeguro(pregunta === '' ? cuerpoModelo : (cuerpoModelo.length > 1024 - pregunta.length - 2 ? cuerpoModelo.slice(0, Math.max(0, 1024 - pregunta.length - 3)).trimEnd() + '…' : cuerpoModelo) + '\n\n' + pregunta, usted);
       msgs = [cmMensaje('cliente', cmBotones(cuerpoBe, bmBotonesDeEntrega(c.modos)), cuerpoBe, cuerpoBe, { tipoReporte: 'interactive', conBoton: true })];
+    } else if (bmInteractivoDePide(d.pide, d.entrega) !== null) {
+      // El dato que pide el código es de una LISTA (departamento, región, provincia): el MISMO mensaje lleva la lista (0 mensajes más); el texto libre nunca fija una opción de lista.
+      // El cuerpo cabe en 1.024: si no cabe se quita el resumen de piezas y, si aún no, se conserva la COLA (la pregunta va al final).
+      const it = bmInteractivoDePide(d.pide, d.entrega);
+      let cuerpoIt = cuerpoModelo;
+      if (cuerpoIt.length > 1024) cuerpoIt = conSaludo(textoTurno);
+      if (cuerpoIt.length > 1024) cuerpoIt = '…' + cuerpoIt.slice(-1020).trimStart();
+      cuerpoIt = bmSeguro(cuerpoIt, usted);
+      const respaldoLista = cuerpoIt + '\n\nEscríbame el nombre exacto de una opción: ' + it.filas.map((x) => x.title).join(', ') + '.';
+      msgs = [cmMensaje('cliente', cmLista(cuerpoIt, it.boton, it.titulo, it.filas), cuerpoIt, respaldoLista, { tipoReporte: 'interactive', conBoton: true })];
+    } else if (bmEsRetiro(bmEntregaDeFicha(d.entrega).modo) && Array.isArray(d.pide) && d.pide.includes('nombre') && uTienda.mapa !== '') {
+      // RECOJO: la pregunta del nombre lleva el botón «Ver ubicación» de la TIENDA (Maps de NovuTienda), en el mismo mensaje (0 más). Sin mapa válido, texto como siempre.
+      const cuerpoR = bmSeguro(cuerpoModelo.length > 1024 ? '…' + cuerpoModelo.slice(-1020).trimStart() : cuerpoModelo, usted);
+      msgs = [cmMensaje('cliente', cmEnlace(cuerpoR, 'Ver ubicación', uTienda.mapa), cuerpoR, cuerpoR + '\n\n' + uTienda.mapa, { tipoReporte: 'interactive', conBoton: true })];
     } else msgs = [texto(cuerpoModelo)];
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
     nuevos.entrega = d.entrega;
@@ -192,7 +206,7 @@ if (puerta.ruta === 'sigue') {
       imagen.evento = 'qr_enviado'; imagen.reglaCobro = 2; imagen.referencia = String(d.pedidoId); imagen.monto = d.monto;
       // Para que el servidor cree el pedido `wa_<referencia>`: el catálogo es externo (NovuTienda) y el servidor no puede recalcularlo, así que viajan el precio y el nombre del CATÁLOGO, calculados aquí.
       // Líneas con la forma CERRADA del catálogo externo (`bmLineasPedido`): id, nombre, cantidad, precio y moneda salen del carrito del código, nunca del modelo.
-      { const ls = bmLineasPedido(d.lineas, from); if (ls) { imagen.lineas = ls; imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO'), ciudad: d.entrega.ciudad }); } }
+      { const ls = bmLineasPedido(d.lineas, from); if (ls) { imagen.lineas = ls; imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO') }); } }
       msgs = [texto(conSaludo(antepone(resumen))), imagen];
       nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
       nuevos.entrega = d.entrega; nuevos.cierre = false; nuevos.pide = []; ev.pide = fichaAntes.pide;
@@ -224,7 +238,7 @@ if (puerta.ruta === 'sigue') {
     } else msgs = [conRecepcion(conSaludo(cabeza + bmTextoDerivacion(d.mercado === 'AR' ? 'pedido_ar' : 'pedido_sin_cobro', salio)))];
     if (ls !== null) {
       msgs[0].evento = 'pedido_sin_cobro'; msgs[0].referencia = String(d.pedidoId); msgs[0].lineas = ls;
-      msgs[0].entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO'), ciudad: d.entrega.ciudad });
+      msgs[0].entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO') });
       nuevos.pedidos = fichaAntes.pedidos + 1; ev.pedidos = fichaAntes.pedidos;
       // «pagar» en el turno siguiente pide el alias de ESTE pedido (`wa_<referencia>`, el id que el servidor le da).
       Object.assign(nuevos, { aliasPedidoId: 'wa_' + String(d.pedidoId), aliasEstado: 'pedido', aliasVenceMs: 0, aliasMontoCent: Number.isSafeInteger(d.total) ? d.total : 0, aliasAr: '' });
@@ -254,7 +268,7 @@ if (puerta.ruta === 'sigue') {
     msgs = [conRecepcion(conSaludo(antepone(cuerpo)))];
     // La memoria también registra la derivación (lo que dijo el cliente, entero, y lo que se le respondió): sin esto, el turno siguiente decidiría con un estado viejo («el asistente pidió el nombre»).
     recordar(typeof c.plan.textoCompleto === 'string' && c.plan.textoCompleto !== '' ? c.plan.textoCompleto : c.plan.textoCliente, cuerpo + (uAntes !== '' ? ' (respuesta de la tienda enviada)' : ''));
-    nuevos.pide = []; ev.pide = fichaAntes.pide;   // al derivar el asistente deja de pedir datos: lo suelto del turno siguiente ya no se toma
+    // `pide` PERSISTE al derivar (26/11/2026): el dato que se estaba pidiendo sigue pedido; la lista o el botón del mensaje anterior siguen valiendo y el turno siguiente vuelve a pedir el MISMO dato.
     if (salio === true && d.aviso && d.aviso.tipo === 'consulta') { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
     // Un pedido cambiado cuyo cobro no se pudo cerrar: el pedido nuevo se conserva (el QR viejo sigue abierto y el cliente ya sabe que no pague con él).
     // Derivar por un `quiereHablar` del modelo NO borra lo que el cliente ya dio: se guardan las piezas y la entrega capturadas (3.ª revisión independiente, 24/11/2026).

@@ -71,7 +71,7 @@ describe('lo que dice el cliente y lo que se guarda', () => {
     hablar(m, ANA, mTexto('Ana Pérez CI 4455667, Calle 5 NIT 987654321'));
     expect(JSON.stringify(fichas(m)[ANA])).not.toMatch(/4455667|987654321/);
     expect(fichas(m)[ANA].entrega.nombre).toBe('');
-    expect(fichas(m)[ANA].entrega.direccion).toBe('');
+    expect(fichas(m)[ANA].entrega.ciudad).toBe('');   // ya no hay «dirección»: la ciudad tampoco se pide en el retiro
   });
   it('NEGADO: el modelo no dice totales ni descuentos aunque no escriba la moneda', () => {
     for (const falso of ['El total sería 900 con tu pedido.', 'Con descuento queda en 400, ¿te animas?', 'En total son 1200.']) {

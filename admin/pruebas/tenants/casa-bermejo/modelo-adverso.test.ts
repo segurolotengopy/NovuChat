@@ -6,7 +6,7 @@
  * El detalle de la tabla de sondeo está en `entrega-por-estado.test.ts`.
  */
 import { describe, expect, it } from 'vitest';
-import { ANA, BILLETERA, crear, hablar, modelo, modeloAdverso, modeloDeNombre, modeloSano, mTexto, mToque } from './mundo';
+import { ANA, BILLETERA, completarEnvio, crear, hablar, mLista, modelo, modeloAdverso, modeloDeNombre, modeloSano, mTexto, mToque } from './mundo';
 
 const J = (x: unknown): string => JSON.stringify(x);
 type Ficha = { carrito: { id: string }[]; entrega: { modo: string; nombre: string; ciudad?: string; flota?: string; documento?: string } };
@@ -66,26 +66,29 @@ describe('recojo en tienda con el modelo adverso', () => {
 });
 
 describe('envío con el modelo adverso', () => {
-  it('«con envío» guarda el modo; el CI, la ciudad y la flota los lee el código en cualquier orden; el nombre (que el modelo no devuelve) se sigue pidiendo y no sale «Confirmar pedido»', () => {
+  it('«con envío» guarda el modo y pide el departamento por la LISTA; el departamento (por la lista) y la ciudad (la lee el código) siguen sin derivar con el modelo adverso; no sale «Confirmar pedido» sin el nombre y la cédula', () => {
     const m = crear({ modeloDice: modeloAdverso() });
     hablar(m, ANA, mTexto('quiero una billetera'));
     const t1 = hablar(m, ANA, mTexto('con envío'));
     expect(ficha(m).entrega.modo).toMatch(/env/i);
     expect(cuerpos(t1)).not.toMatch(PERSONA);
     expect(t1.avisos).toHaveLength(0);
-    const t2 = hablar(m, ANA, mTexto('Ana Pérez 4412345 Cochabamba flota Bolivar'));
+    expect(J(t1.mensajes[0]!.payload)).toContain('"type":"list"');
+    const t1b = hablar(m, ANA, mLista('dep:cb', 'Cochabamba'));
+    expect(t1b.avisos).toHaveLength(0);
+    const t2 = hablar(m, ANA, mTexto('Cochabamba, oficina Zona Sur'));
     expect(cuerpos(t2)).not.toMatch(PERSONA);
     expect(ficha(m).carrito).toHaveLength(1);
-    expect(ficha(m).entrega).toMatchObject({ documento: '4412345', ciudad: 'Cochabamba', flota: 'Bolivar', nombre: '' });
-    expect(cuerpos(t2)).toMatch(/nombre/i);
-    expect(cuerpos(t2)).not.toMatch(/carnet|CI\)|empresa de flota|ciudad de destino/i);   // lo ya capturado no se repregunta
+    expect(ficha(m).entrega).toMatchObject({ departamento: 'dep:cb', ciudad: 'Cochabamba', aclaracion: 'oficina Zona Sur', nombre: '', documento: '' });
+    expect(cuerpos(t2)).toMatch(/nombre completo/i);
+    expect(cuerpos(t2)).not.toMatch(/ciudad de destino/i);   // lo ya capturado no se repregunta
     expect(ids(t2).join(' ')).not.toMatch(CONFIRMA);
   });
-  it('con el modelo sano: «con envío» → «Ana Pérez 4412345 Cochabamba flota Bolivar» completa el pedido y tocar «Confirmar pedido» emite el QR', () => {
+  it('con el modelo sano: «con envío» → departamento por la lista → ciudad → «Ana Pérez 4412345» completa el pedido y tocar «Confirmar pedido» emite el QR', () => {
     const m = crear({ modeloDice: modeloSano((t) => ({ nombre: /Ana/.test(t) ? 'Ana Pérez' : '' })) });
     hablar(m, ANA, mTexto('quiero una billetera'));
     hablar(m, ANA, mTexto('con envío'));
-    const t2 = hablar(m, ANA, mTexto('Ana Pérez 4412345 Cochabamba flota Bolivar'));
+    const t2 = completarEnvio(m, ANA);
     expect(ficha(m).entrega.nombre).toMatch(/Ana/);
     const id = /"id":"(pedido:confirmar:[a-z0-9]+)"/.exec(J(t2.mensajes.map((x) => x.payload)))?.[1] ?? 'sin-boton';
     expect(id).toMatch(/^pedido:confirmar:/);
