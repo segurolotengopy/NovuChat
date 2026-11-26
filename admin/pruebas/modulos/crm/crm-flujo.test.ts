@@ -340,3 +340,55 @@ describe('el código que corre en n8n', () => {
   });
 });
 
+// ------------------------------------------------------------------------------ campaña saliente (PR-B, 26/11/2026)
+// `alCrear.origenCampanaSaliente` y `alCrear.etapaCampanaSaliente` son OPCIONALES y valen solo al CREAR la fila y solo si `p.campanaSaliente === true`. Sin esas claves el módulo queda
+// exactamente igual. Mensajes por conversación: 0.
+const clonarCs = <T,>(o: T): T => JSON.parse(JSON.stringify(o));
+const MAPA_CS = clonarCs(MAPA) as J & { alCrear: J };
+const CON_CLAVES_CS = { ...clonarCs(MAPA_CS), alCrear: { ...MAPA_CS.alCrear, origenCampanaSaliente: 'Campaña retomar', etapaCampanaSaliente: '2. Contactado / Calificado' } };
+const AHORA_CS = Date.UTC(2026, 10, 26, 15, 0, 0);
+const TEL_CS = ['59', '17', '000', '030'].join('');
+const moduloCs = (mapa: J) => compileFunction(`${inyectarMapa(leer('crm/crm.js'), mapa)}\n${leer('crm/adaptador-senales.js')}\nreturn { crmDecidirFila, CRM_ADAPTADOR };`, [])();
+const decidirCs = (mapa: J, p: J, busqueda: J[] = []): J => {
+  const M = moduloCs(mapa);
+  return M.crmDecidirFila({ prospectos: [{ json: p }], busqueda: busqueda.map((j) => ({ json: j })), lecturaIds: [{ json: { row_number: 4, 'ID Lead': 'L-7' } }], mapa: clonarCs(mapa), adaptador: M.CRM_ADAPTADOR, ahoraMs: AHORA_CS })[0].json;
+};
+const P_CS = { telefono: TEL_CS, nombre: 'Ana', senales: { pidioUbicacion: true } };
+
+describe('miniCRM: origen y etapa de la campaña saliente', () => {
+  it('SIN las claves nuevas el resultado es idéntico, con o sin `campanaSaliente` (el oráculo no cambia)', () => {
+    const sin = decidirCs(MAPA_CS, P_CS);
+    expect(sin['accionPlanilla']).toBe('agregar');
+    expect(decidirCs(MAPA_CS, { ...P_CS, campanaSaliente: true })).toEqual(sin);
+    expect(sin['Origen / Canal']).toBe('Chatbot WhatsApp IA');
+    expect(sin['Etapa Funnel']).toBe('1. Nuevo Lead');
+  });
+  it('CON las claves y `campanaSaliente: true`, la fila NUEVA lleva el origen y la etapa de la campaña', () => {
+    const f = decidirCs(CON_CLAVES_CS, { ...P_CS, campanaSaliente: true });
+    expect(f['accionPlanilla']).toBe('agregar');
+    expect(f['Origen / Canal']).toBe('Campaña retomar');
+    expect(f['Etapa Funnel']).toBe('2. Contactado / Calificado');
+  });
+  it('NEGADO: con las claves pero sin `campanaSaliente` (o distinto de true) la fila es la de siempre', () => {
+    for (const p of [P_CS, { ...P_CS, campanaSaliente: false }, { ...P_CS, campanaSaliente: 'true' }, { ...P_CS, campanaSaliente: 1 }]) {
+      const f = decidirCs(CON_CLAVES_CS, p);
+      expect(f['Origen / Canal']).toBe('Chatbot WhatsApp IA');
+      expect(f['Etapa Funnel']).toBe('1. Nuevo Lead');
+    }
+    expect(decidirCs(CON_CLAVES_CS, { ...P_CS, anuncio: true })['Origen / Canal']).toBe('Campaña Meta Ads');
+  });
+  it('NEGADO: una fila que ya existe no se toca (ni origen ni etapa) aunque `campanaSaliente` sea true', () => {
+    const existente = { row_number: 4, 'ID Lead': 'L-7', Teléfono: "'" + TEL_CS, Nombre: 'Ana', Origen: 'Chatbot', Etapa: '3. Propuesta', Calificación: 'Baja', Resumen: 'x', Empresa: '', Fecha: '', 'Estado Comercial': 'Activo' };
+    const r = decidirCs(CON_CLAVES_CS, { ...P_CS, campanaSaliente: true }, [existente]);
+    expect(r).not.toHaveProperty('Origen');
+    expect(r).not.toHaveProperty('Etapa');
+  });
+  it('el validador del mapa: las dos claves van juntas, son texto válido y son opcionales', () => {
+    expect(validarMapaCrm(MAPA_CS)).toEqual([]);
+    expect(validarMapaCrm(CON_CLAVES_CS)).toEqual([]);
+    const soloUna = { ...clonarCs(MAPA_CS), alCrear: { ...MAPA_CS.alCrear, origenCampanaSaliente: 'Campaña retomar' } };
+    expect(validarMapaCrm(soloUna).join(' ')).toMatch(/van juntos o ninguno/);
+    const mala = { ...clonarCs(MAPA_CS), alCrear: { ...MAPA_CS.alCrear, origenCampanaSaliente: '=cmd', etapaCampanaSaliente: '2. Contactado' } };
+    expect(validarMapaCrm(mala).join(' ')).toMatch(/origenCampanaSaliente no es un texto valido/);
+  });
+});

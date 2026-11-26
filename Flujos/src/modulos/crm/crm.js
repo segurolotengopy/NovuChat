@@ -157,6 +157,9 @@ function crmValidarMapa(m) {
   if (!a) e.push('falta alCrear');
   else {
     for (const k of ['etapaInicial', 'origen', 'origenAnuncio']) if (crmElemento(a[k]) === null || crmElemento(a[k]) !== a[k]) e.push('alCrear.' + k + ' no es un texto valido (1 a 40 caracteres, sin empezar por = + - @)');
+    // Opcionales (campaña saliente): origen y etapa de la fila que CREA quien respondió «sí»; van juntos o ninguno.
+    for (const k of ['origenCampanaSaliente', 'etapaCampanaSaliente']) if (a[k] !== undefined && (crmElemento(a[k]) === null || crmElemento(a[k]) !== a[k])) e.push('alCrear.' + k + ' no es un texto valido (1 a 40 caracteres, sin empezar por = + - @)');
+    if ((a.origenCampanaSaliente === undefined) !== (a.etapaCampanaSaliente === undefined)) e.push('alCrear.origenCampanaSaliente y alCrear.etapaCampanaSaliente van juntos o ninguno');
     if (a.estado !== undefined) {
       if (crmElemento(a.estado) === null || crmElemento(a.estado) !== a.estado) e.push('alCrear.estado no es un texto valido');
       if (!eq || !eq.estado) e.push('alCrear.estado exige la columna equipo.estado');
@@ -454,8 +457,9 @@ function crmDecidirFila(a) {
       [T('empresa')]: minima ? '' : crmComoTexto(p.empresa),
       [T('telefono')]: "'" + p.telefono,
       // FILA MINIMA NEUTRA: sin etapa ni origen (no dice etapa ni de donde vino) y sin clasificacion; el estado dice que nadie la sigue.
-      [T('etapaInicial')]: minima ? '' : mapa.alCrear.etapaInicial,
-      [T('origen')]: minima ? '' : (p.anuncio ? mapa.alCrear.origenAnuncio : mapa.alCrear.origen),
+      // Quien respondio «si» a la campana saliente (`p.campanaSaliente === true`) abre la fila con el origen y la etapa propios, SOLO si el mapa del tenant los declara; sin esas claves, todo igual que siempre.
+      [T('etapaInicial')]: minima ? '' : (p.campanaSaliente === true && mapa.alCrear.etapaCampanaSaliente !== undefined ? mapa.alCrear.etapaCampanaSaliente : mapa.alCrear.etapaInicial),
+      [T('origen')]: minima ? '' : (p.campanaSaliente === true && mapa.alCrear.origenCampanaSaliente !== undefined ? mapa.alCrear.origenCampanaSaliente : (p.anuncio ? mapa.alCrear.origenAnuncio : mapa.alCrear.origen)),
       [T('calificacion')]: minima ? '' : calificacion,
       [T('resumen')]: minima ? '' : crmComoTexto(adaptador.resumir(prospecto, true, calificacion)),
     };
