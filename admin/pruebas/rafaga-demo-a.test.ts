@@ -436,3 +436,95 @@ describe('Demo A + ráfaga: candado de reservas y aviso a recepción, sin duplic
     expect(t).toContain('{{ $json.textoDelTurno || $json.userInput }}');
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// DE PUNTA A PUNTA sobre el JSON real: el texto que RECIBE EL MODELO (la expresión del nodo del agente, evaluada por el arnés con el ítem
+// real que llega) lleva TODOS los mensajes EN ORDEN; los anteriores callan; sale UN envío. Los nodos intermedios entre «Agrupar ráfaga» y
+// el agente («¿Es un comprobante?», «¿Trae un medio?») no reconstruyen el ítem: se demuestra mirando el ítem que sale de cada uno.
+// ---------------------------------------------------------------------------------------------------------------------------
+describe('Demo A + ráfaga: lo que recibe el MODELO, de punta a punta', () => {
+  const entradaDelModelo = (m: ReturnType<typeof crear>, i = 0) => (m.textosAlAgente[i] ?? '').split('[MENSAJE DEL CLIENTE]\n')[1] ?? '';
+
+  it('2 textos: el primero calla, el modelo recibe «hola» y «quiero una cita» EN ORDEN y sale UN envío; el ítem llega con textoDelTurno hasta el agente', () => {
+    const hilo = [frag('wamid.A', 'hola', 0), frag('wamid.B', 'quiero una cita', 900)];
+    const m = crear({ hilo });
+    const r1 = turno(m, texto('wamid.A', 'hola'));
+    expect(r1.ejecutados.has('AI Agent (Sofía)')).toBe(false);
+    expect(m.envios).toHaveLength(0);
+    const r2 = turno(m, texto('wamid.B', 'quiero una cita'));
+    for (const nodo of ['Agrupar ráfaga', '¿Es un comprobante?', '¿Trae un medio?']) {
+      expect(r2.porNodo[nodo]?.[0]?.['textoDelTurno'], nodo).toBe('hola\nquiero una cita');
+    }
+    expect(m.textosAlAgente).toHaveLength(1);
+    expect(entradaDelModelo(m)).toBe('hola\nquiero una cita');
+    expect(m.envios).toHaveLength(1);
+  });
+
+  it('3 textos: el primero Y el segundo callan; el modelo recibe los tres EN ORDEN; UN envío', () => {
+    const hilo = [frag('wamid.A', 'hola', 0), frag('wamid.B', 'quiero una cita', 900), frag('wamid.C', 'para mañana', 1800)];
+    const m = crear({ hilo });
+    const r1 = turno(m, texto('wamid.A', 'hola'));
+    const r2 = turno(m, texto('wamid.B', 'quiero una cita'));
+    expect(r1.ejecutados.has('AI Agent (Sofía)')).toBe(false);
+    expect(r2.ejecutados.has('AI Agent (Sofía)')).toBe(false);
+    expect(m.envios).toHaveLength(0);
+    const r3 = turno(m, texto('wamid.C', 'para mañana'));
+    expect(r3.porNodo['¿Trae un medio?']?.[0]?.['textoDelTurno']).toBe('hola\nquiero una cita\npara mañana');
+    expect(entradaDelModelo(m)).toBe('hola\nquiero una cita\npara mañana');
+    expect(m.textosAlAgente).toHaveLength(1);
+    expect(m.envios).toHaveLength(1);
+  });
+
+  it('2 textos con la consulta del ÚLTIMO caída (falla abierto): el primero ya calló y el último responde SOLO con su texto, UN envío (se pierde el primero: riesgo declarado)', () => {
+    const hilo = [frag('wamid.A', 'hola', 0), frag('wamid.B', 'quiero una cita', 900)];
+    const m = crear({ hilo, consultaCae: ['wamid.B'] });
+    turno(m, texto('wamid.A', 'hola'));
+    const r2 = turno(m, texto('wamid.B', 'quiero una cita'));
+    expect(r2.porNodo['Agrupar ráfaga']?.[0]?.['textoDelTurno']).toBeUndefined();
+    expect(entradaDelModelo(m)).toBe('quiero una cita');
+    expect(m.envios).toHaveLength(1);
+  });
+
+  it('2 textos con la consulta del PRIMERO caída (falla abierto): el primero responde solo y el segundo trae ambos: DOS envíos, ninguno pierde texto (lado seguro)', () => {
+    const hilo = [frag('wamid.A', 'hola', 0), frag('wamid.B', 'quiero una cita', 900)];
+    const m = crear({ hilo, consultaCae: ['wamid.A'] });
+    turno(m, texto('wamid.A', 'hola'));
+    turno(m, texto('wamid.B', 'quiero una cita'));
+    expect(entradaDelModelo(m, 0)).toBe('hola');
+    expect(entradaDelModelo(m, 1)).toBe('hola\nquiero una cita');
+    expect(m.envios).toHaveLength(2);
+  });
+
+  it('3 textos con la consulta del último caída: el último responde solo y los dos primeros ya callaron; UN envío', () => {
+    const hilo = [frag('wamid.A', 'hola', 0), frag('wamid.B', 'quiero una cita', 900), frag('wamid.C', 'para mañana', 1800)];
+    const m = crear({ hilo, consultaCae: ['wamid.C'] });
+    for (const f of hilo) turno(m, texto(f.idMeta, f.texto));
+    expect(entradaDelModelo(m)).toBe('para mañana');
+    expect(m.envios).toHaveLength(1);
+  });
+
+  it('EL CANDADO Y EL REINTENTO: tras un cruce de horario el modelo del reintento recibe el texto AGRUPADO (no solo el último mensaje), y sale UN envío', () => {
+    const CAL = 'cal-demo@group.calendar.invalid';
+    const existente = { id: 'viejo', summary: 'Cita Otra — corte', organizer: { email: CAL }, start: { dateTime: '2026-11-26T09:00:00-04:00' }, end: { dateTime: '2026-11-26T10:00:00-04:00' }, created: '2026-11-20T10:00:00.000Z' };
+    const nuevo = { id: 'nuevo', summary: 'Cita Sil — corte', organizer: { email: CAL }, start: { dateTime: '2026-11-26T09:00:00-04:00' }, end: { dateTime: '2026-11-26T10:00:00-04:00' }, created: '2026-11-25T14:59:50.000Z' };
+    const hilo = [frag('wamid.A', 'quiero un corte mañana', 0), frag('wamid.B', 'a las 9 por favor', 900)];
+    const reintentos: string[] = [];
+    const m = crear({
+      hilo,
+      agente: () => ({ output: 'Listo, quedó agendada tu cita mañana a las 9:00.', intermediateSteps: [{ action: { tool: 'agendar_cita', toolInput: {} }, observation: JSON.stringify(nuevo) }] }),
+      extras: {
+        'Verificar en el calendario': () => [existente, nuevo],
+        'Deshacer cita solapada': () => ({ success: true }),
+        'Olvidar turno fallido': () => ({ ok: true }),
+        'Reintento tras cruce': (ll) => { reintentos.push(String(ll.parametros['text'] ?? '')); return { output: 'Ese horario ya estaba ocupado; ¿te sirve a las 10:00?' }; },
+      },
+    });
+    turno(m, texto('wamid.A', 'quiero un corte mañana'));
+    const r2 = turno(m, texto('wamid.B', 'a las 9 por favor'));
+    expect(r2.ejecutados.has('Deshacer cita solapada')).toBe(true);
+    expect(reintentos).toHaveLength(1);
+    expect(reintentos[0]?.endsWith('[MENSAJE DEL CLIENTE]\nquiero un corte mañana\na las 9 por favor')).toBe(true);
+    expect(m.envios).toHaveLength(1);
+    expect(m.envios[0]?.texto).not.toMatch(/quedó agendada/i);
+  });
+});
