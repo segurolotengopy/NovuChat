@@ -60,6 +60,17 @@ function ajustarResumen(resumen, tope) {
   return total;
 }
 
+// UN texto fijo por un medio (foto, ubicación, sticker, archivo, audio no entendido) EN MEDIO DE LA ENTREGA: lleva además la pregunta fija del paso (y su lista, si el dato es de lista), nunca solo el texto del medio. Mismo mensaje: 0 mensajes más. La ficha no cambia (su `pide` sigue vigente).
+const medioConPaso = (cuerpo) => {
+  const paso = fichaAntes.carrito.length > 0 ?bmPreguntaDelPaso(fichaAntes.entrega, c.mercado) : '';
+  if (paso === '') return [texto(cuerpo)];
+  const pideP = bmPideDeEntrega(fichaAntes.entrega, c.mercado);
+  const it = bmInteractivoDePide(pideP, fichaAntes.entrega);
+  const cuerpoP = bmSeguro(cuerpo + '\n\n' + paso, usted);
+  if (it === null) return [texto(cuerpo + '\n\n' + paso)];
+  const respaldoP = cuerpoP + '\n\nEscríbame el nombre exacto de una opción: ' + it.filas.map((x) => x.title).join(', ') + '.';
+  return [cmMensaje('cliente', cmLista(cuerpoP, it.boton, it.titulo, it.filas), cuerpoP, respaldoP, { tipoReporte: 'interactive', conBoton: true })];
+};
 let tipoDePlan = d.tipo;
 let msgs = [];          // los mensajes de este turno (casi siempre uno)
 let llamadasModelo = 0;
@@ -89,7 +100,7 @@ if (puerta.ruta === 'suspendido') {
 }
 if (puerta.ruta === 'sigue') {
   if (tipoDePlan === 'cortes') {
-    msgs = [texto(conSaludo(BM_TEXTO_CORTES))];
+    msgs = medioConPaso(conSaludo(BM_TEXTO_CORTES));
   } else if (tipoDePlan === 'baja') {
     // La confirmación de la baja: UN texto fijo (sin saludo, sin botón, sin aviso); el `no_contactar` ya viajó con el entrante (si fue una nota de voz, `t.texto` iba vacío: el evento viaja en el reporte de ESTE mensaje saliente). La ficha y el carrito no se tocan.
     msgs = [texto(bjTextoBaja(c.base && c.base.tratamiento === 'usted' ? BM_TEXTO_BAJA_USTED : undefined), d.porVoz === true ? { evento: 'no_contactar' } : undefined)];
@@ -109,11 +120,11 @@ if (puerta.ruta === 'sigue') {
   } else if (tipoDePlan === 'identidad') {
     msgs = [texto(antepone(BM_TEXTO_IDENTIDAD.replace('{NEGOCIO}', negocio)))];
   } else if (tipoDePlan === 'audio_fijo') {
-    msgs = [texto(conSaludo(d.causa === 'largo' ? BM_TEXTO_AUDIO_LARGO : BM_TEXTO_AUDIO_NO_ENTENDIDO))];
+    msgs = medioConPaso(conSaludo(d.causa === 'largo' ? BM_TEXTO_AUDIO_LARGO : BM_TEXTO_AUDIO_NO_ENTENDIDO));
   } else if (tipoDePlan === 'archivo') {
-    msgs = [texto(conSaludo(d.pesado === true ? BM_TEXTO_ARCHIVO_PESADO : BM_TEXTO_ARCHIVO_NO_ABIERTO))];
+    msgs = medioConPaso(conSaludo(d.pesado === true ? BM_TEXTO_ARCHIVO_PESADO : BM_TEXTO_ARCHIVO_NO_ABIERTO));
   } else if (tipoDePlan === 'imagen_otra') {
-    msgs = [texto(conSaludo(d.documento === true ? BM_TEXTO_DOCUMENTO : BM_TEXTO_IMAGEN))];
+    msgs = medioConPaso(conSaludo(d.documento === true ? BM_TEXTO_DOCUMENTO : BM_TEXTO_IMAGEN));
   } else if (tipoDePlan === 'anuncio') {
     // El producto del anuncio sale POR CÓDIGO y su precio, del catálogo: nunca del modelo ni de la imagen.
     const v = c.vendibles.find((x) => x.id === d.producto);
@@ -189,7 +200,7 @@ if (puerta.ruta === 'sigue') {
     // El turno COMPLETO: lo que escribió el cliente entero (`textoCompleto`, aunque la tienda haya contestado una parte) y lo que se le respondió, con la respuesta de la tienda.
     recordar(typeof c.plan.textoCompleto === 'string' && c.plan.textoCompleto !== '' ? c.plan.textoCompleto : c.plan.textoCliente, d.texto + (uAntes !== '' ? ' (respuesta de la tienda enviada)' : ''));   // la respuesta de la tienda es dato de otro: a la memoria va una marca fija, nunca su texto (volvería al modelo sin <<< >>>); el texto del asistente primero: la memoria es corta y el estado («pidió el nombre») sale de él
     if (d.patch) Object.assign(nuevos, d.patch);
-    for (const k of ['carrito', 'entrega', 'cierre', 'mostrados', 'hist', 'qrHastaMs', 'qrCarrito', 'pide']) ev[k] = fichaAntes[k];
+    for (const k of ['carrito', 'entrega', 'cierre', 'mostrados', 'hist', 'qrHastaMs', 'qrCarrito', 'pedidoCatalogo', 'pide']) ev[k] = fichaAntes[k];
   } else if (tipoDePlan === 'qr') {
     // Nunca un QR sin monto del carrito, sin id de medio o sin un id de pedido válido: se pasa con recepción (sin decir que se avisó: aquí no hay aviso).
     const lineas = bmConNombres(d.lineas, c.vendibles);
@@ -197,8 +208,8 @@ if (puerta.ruta === 'sigue') {
       tipoDePlan = 'derivar';
       msgs = [conRecepcion(conSaludo(BM_INTROS.monto_invalido + ' Escríbele a recepción con el botón.'))];
     } else {
-      const resumen = (d.cambioDePedido ? 'Actualicé tu pedido.\n\n' : '') + 'Este es el resumen de tu pedido:\n\n' + vcResumen(lineas)
-        + '\n\nEntrega: ' + bmEntregaTexto(d.entrega) + '. El total no incluye el costo de entrega.\n\nAbajo va el QR para pagar.';
+      const resumen = (d.desdeCatalogo === true ? 'Recibí su pedido del catálogo.\n\n' : '') + (d.cambioDePedido ? 'Actualicé tu pedido.\n\n' : '') + 'Este es el resumen de tu pedido:\n\n' + vcResumen(lineas)
+        + '\n\nEntrega: ' + bmEntregaTexto(d.entrega) + '.' + (bmEsRetiro(bmEntregaDeFicha(d.entrega).modo) && uTienda.direccion !== '' ? ' Retira en: ' + (/[.!?]$/.test(uTienda.direccion) ? uTienda.direccion : uTienda.direccion + '.') : '') + ' El total no incluye el costo de entrega.\n\nAbajo va el QR para pagar.';
       const pie = bmSeguro('QR para pagar ' + vcMonto(d.total) + ' (pedido ' + d.pedidoId + '). Cuando pagues, envíame la foto del comprobante por este chat.', usted);
       const respaldo = 'No pude mostrarte el QR en este momento. Escríbeme de nuevo en unos minutos para intentarlo otra vez.';
       const imagen = cmMensaje('cliente', Object.assign(cmBase('image'), { image: { id: d.mediaId, caption: pie } }), pie, respaldo, { tipoReporte: 'image' });
@@ -207,13 +218,16 @@ if (puerta.ruta === 'sigue') {
       // Para que el servidor cree el pedido `wa_<referencia>`: el catálogo es externo (NovuTienda) y el servidor no puede recalcularlo, así que viajan el precio y el nombre del CATÁLOGO, calculados aquí.
       // Líneas con la forma CERRADA del catálogo externo (`bmLineasPedido`): id, nombre, cantidad, precio y moneda salen del carrito del código, nunca del modelo.
       { const ls = bmLineasPedido(d.lineas, from); if (ls) { imagen.lineas = ls; imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO') }); } }
+      // K2: el pedido del checkout web que este QR reemplaza (solo un `cat_…` con su forma); la ficha lo suelta una vez emitido el QR.
+      if (/^cat_[A-Za-z0-9_-]{1,56}$/.test(String(d.reemplaza || '')) && imagen.lineas) imagen.reemplaza = String(d.reemplaza);
       msgs = [texto(conSaludo(antepone(resumen))), imagen];
+      nuevos.pedidoCatalogo = ''; ev.pedidoCatalogo = fichaAntes.pedidoCatalogo;
       nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
       nuevos.entrega = d.entrega; nuevos.cierre = false; nuevos.pide = []; ev.pide = fichaAntes.pide;
       nuevos.pedidos = fichaAntes.pedidos + 1;
       nuevos.qrHastaMs = ahora + BM_MINUTOS_QR * 60 * 1000;
       nuevos.qrCarrito = d.lineas.map((l) => { const o = { id: l.id, cantidad: l.cantidad, precioCentavos: l.precioCentavos, detalle: l.detalle }; if (l.moneda === 'BOB' || l.moneda === 'ARS') o.moneda = l.moneda; return o; }); // con la moneda: `vcMismoCarrito` la compara
-      for (const k of ['carrito', 'entrega', 'cierre', 'pedidos', 'qrHastaMs', 'qrCarrito']) ev[k] = fichaAntes[k];
+      for (const k of ['carrito', 'entrega', 'cierre', 'pedidos', 'qrHastaMs', 'qrCarrito', 'pedidoCatalogo']) ev[k] = fichaAntes[k];
     }
   } else if (tipoDePlan === 'qr_pendiente') {
     msgs = [texto(conSaludo(antepone('Ya tienes un QR abierto por ' + vcMonto(d.total) + '. Cuando pagues, envíame la foto del comprobante por este chat.')))];
@@ -266,6 +280,8 @@ if (puerta.ruta === 'sigue') {
     const cuerpo = d.motivo === 'no_cancelo' ? BM_INTROS.no_cancelo + ' Escríbele a recepción con el botón.'
       : bmTextoDerivacion(d.motivo, salio);
     msgs = [conRecepcion(conSaludo(antepone(cuerpo)))];
+    // R58: desde ahora y por un rato, el asistente no ofrece sumar otra pieza (`bmResolverModelo`).
+    nuevos.derivadoMs = ahora; ev.derivadoMs = fichaAntes.derivadoMs;
     // La memoria también registra la derivación (lo que dijo el cliente, entero, y lo que se le respondió): sin esto, el turno siguiente decidiría con un estado viejo («el asistente pidió el nombre»).
     recordar(typeof c.plan.textoCompleto === 'string' && c.plan.textoCompleto !== '' ? c.plan.textoCompleto : c.plan.textoCliente, cuerpo + (uAntes !== '' ? ' (respuesta de la tienda enviada)' : ''));
     // `pide` PERSISTE al derivar (26/11/2026): el dato que se estaba pidiendo sigue pedido; la lista o el botón del mensaje anterior siguen valiendo y el turno siguiente vuelve a pedir el MISMO dato.
@@ -280,6 +296,14 @@ if (puerta.ruta === 'sigue') {
     // Un plan desconocido jamás deja al cliente sin respuesta: la presentación mínima.
     msgs = [texto(BM_SALUDO_MINIMO)];
   }
+}
+
+// R2 (B4): el botón «Ver catálogo» va en el MISMO mensaje de texto del SALUDO (la primera respuesta de la conversación), UNA vez, sin pedido en curso y solo si la consola mandó el enlace de ESTA conversación (`catalogoWeb.enlace`, activo, https).
+// 0 mensajes más: el texto se vuelve el mismo mensaje con botón. Sin enlace de la consola (o con el dato fijo del sitio en «Config base»), nada.
+if (puerta.ruta === 'sigue' && msgs.length === 1 && fichaAntes.saludado !== true && fichaAntes.catalogoOfrecido !== true && !(Array.isArray(fichaAntes.carrito) && fichaAntes.carrito.length > 0) && !(fichaAntes.qrHastaMs > ahora)
+  && ['modelo', 'cortes', 'anuncio'].indexOf(tipoDePlan) >= 0) {
+  const enlaceCat = bmEnlaceCatalogo(c.panel);
+  if (enlaceCat !== '' && bmConBotonCatalogo(msgs[0], enlaceCat)) nuevos.catalogoOfrecido = true;
 }
 
 // Un número de otro país: el aviso a la tienda sale UNA vez por teléfono; se anota solo si el aviso salió (en prueba sin envío de verdad cuenta como salido).
@@ -319,11 +343,11 @@ const salida = msgs.map((m, i) => {
   if (m.reglaCobro === 2) item.reglaCobro = 2;
   if (m.referencia) item.referencia = m.referencia;
   if (m.monto !== undefined) item.monto = m.monto;
-  if ((m.evento === 'qr_enviado' || m.evento === 'pedido_sin_cobro') && Array.isArray(m.lineas) && m.lineas.length) { item.lineas = m.lineas; if (m.entrega) item.entrega = m.entrega; }
+  if ((m.evento === 'qr_enviado' || m.evento === 'pedido_sin_cobro') && Array.isArray(m.lineas) && m.lineas.length) { item.lineas = m.lineas; if (m.entrega) item.entrega = m.entrega; if (m.evento === 'qr_enviado' && typeof m.reemplaza === 'string' && m.reemplaza !== '') item.reemplaza = m.reemplaza; }
   // «Resumen del turno» lee esto del primer ítem: lo que no salió vuelve a su valor anterior.
   if (i === 0 && Object.keys(ev).length) item.revertirFicha = ev;
   // Solo el ítem del QR (`qr_enviado`) devuelve el cobro a como estaba si SU envío falla: el texto del resumen puede fallar y el QR salir (el servidor ya abrió el cobro).
-  if (tipoDePlan === 'qr' && m.evento === 'qr_enviado') item.revertirSiFalloElPrincipal = { qrHastaMs: ev.qrHastaMs, pedidos: ev.pedidos, qrCarrito: ev.qrCarrito };
+  if (tipoDePlan === 'qr' && m.evento === 'qr_enviado') item.revertirSiFalloElPrincipal = { qrHastaMs: ev.qrHastaMs, pedidos: ev.pedidos, qrCarrito: ev.qrCarrito, pedidoCatalogo: ev.pedidoCatalogo };
   return { json: item };
 });
 return salida;
