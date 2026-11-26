@@ -33,6 +33,7 @@ import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabeza
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../src/core/sin-agente/guardado.mjs';
 import { hallazgosDelIndicador, injertarIndicador } from '../../src/core/indicador/indicador-escritura.mjs';
 import { fuentesDeLaCadenaComun, hallazgosDelGuardadoSaliente, injertarGuardadoSaliente, NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE, URL_DESCARGA_SALIENTE } from '../../src/core/sin-agente/guardado-saliente.mjs';
+import { hallazgosDeLaRafaga, injertarRafaga } from '../../src/core/rafaga/rafaga.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 import { problemasDeReferencias } from '../../src/core/sin-agente/referencias.mjs';
 import { cargaConCarrito, hallazgosDelCarrito, injertarCarrito, WEBHOOK_DEL_CARRITO } from '../../src/modulos/catalogo-web/carrito-del-catalogo.mjs';
@@ -45,7 +46,17 @@ export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../../src/core/receptor/entrada-d
 // 56 + los 8 de la rama del miniCRM (`ramaCrm`, generada por el módulo `crm`): 56 → 64, excepción de tope aprobada por Andres (D2, 10/11/2026) y declarada en docs/versiones-por-cliente.md.
 // +4: la rama del guardado de la IMAGEN SALIENTE del asistente (QR por media id; plan del 16/11/2026, bloque 2a): «Preparar guardado (saliente)», «Pedir imagen a Meta…», «Descargar imagen de Meta…» y «Guardar imagen enviada». 64 → 68: aprobación de Andres pendiente (docs/versiones-por-cliente.md).
 // +1 el webhook «Carrito del catálogo» (módulo catalogo-web; tope 71 autorizado por Andres el 23/11/2026, «común, tope 71»): solo en la variante de producción.
-export const TOPE_DE_NODOS = 71; // +2 el indicador de escritura (21/11/2026, Andres)
+// +4 la RÁFAGA (pieza común `Flujos/src/core/rafaga/`: «¿Esperar ráfaga?», «Esperar ráfaga», «Consultar ráfaga» y «Agrupar ráfaga»): 71 → 75, autorizado por Andres el 25/11/2026 («Sí, +4 nodos por flujo»); docs/versiones-por-cliente.md.
+export const TOPE_DE_NODOS = 75; // +2 el indicador de escritura (21/11/2026, Andres)
+/** La ráfaga: el ancla es «Puerta del turno» (tras ella solo quedan los medios y «Decidir turno»); el item sale de «Normalizar entrada», que emite `texto` (no `userInput`) y corre una vez por mensaje. */
+export const OPCIONES_DE_LA_RAFAGA = {
+  ancla: { nodo: 'Puerta del turno', salida: 0, destino: '¿Bajar medio?' },
+  fuente: 'Normalizar entrada',
+  campos: { texto: 'texto' },
+  puerta: "$('Puerta del turno').first().json.ruta === 'sigue'",
+  // Debajo de todo el flujo de conversación y encima del guardado (el lienzo no se pisa; el orden de ejecución no depende de este dibujo: la ráfaga es una cadena en línea).
+  posicion: [1640, 1000],
+};
 /** Los 8 nodos de la rama del miniCRM (el módulo `crm` los genera). */
 export const NODOS_DE_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
 export const CREDENCIAL_CRM = (tenant) => `Google Sheets miniCRM (crm-${tenant})`;
@@ -328,6 +339,8 @@ export function guardias(variante, flujo, opciones = {}) {
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
   h.push(...hallazgosDelIndicador(flujo || {}, { exigir: true }));
+  // La ráfaga (módulo común): los cuatro nodos canónicos, en línea entre «Puerta del turno» y «¿Bajar medio?», y «Reportar mensaje (entrante)» corriendo antes.
+  h.push(...hallazgosDeLaRafaga(flujo || {}, { exigir: true, campos: OPCIONES_DE_LA_RAFAGA.campos, fuente: OPCIONES_DE_LA_RAFAGA.fuente }));
   // El guardado de la imagen SALIENTE del asistente: la rama común completa (vía media), debajo de todo y sin credencial ajena.
   h.push(...hallazgosDelGuardadoSaliente(flujo || {}, { exigir: true, vias: ['media'] }));
   // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
@@ -360,7 +373,7 @@ export function guardias(variante, flujo, opciones = {}) {
   if (bajar && !/ruta === 'sigue'/.test(JSON.stringify(p(bajar)))) h.push('«¿Bajar medio?» no exige que la puerta diga «sigue» (un cliente bloqueado no descarga medios)');
   // La variante de PRUEBA nunca usa credenciales de producción: ni la de Graph ni la de Gemini.
   if (variante === 'prueba') {
-    const libres = new Set([NODO_PRUEBA, 'Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Guardar comprobante', 'Cotejar en el servidor', 'Avisar al servidor', ...NODOS_DE_INGESTA_DEL_GUARDADO, ...NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE]);
+    const libres = new Set([NODO_PRUEBA, 'Traer configuración', 'Consultar ráfaga', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Guardar comprobante', 'Cotejar en el servidor', 'Avisar al servidor', ...NODOS_DE_INGESTA_DEL_GUARDADO, ...NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE]);
     for (const n of nodos) {
       for (const [tipo, c] of Object.entries(n.credentials || {})) {
         const nombreCred = String((c || {}).name || '');
@@ -604,6 +617,8 @@ export function armarWalisuma(proyecto, datos, v, origenReceptor = leerReceptorD
   injertarGuardadoSaliente(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio`, vias: ['media'], fuentes: fuentesDeLaCadenaComun() });
   // El INDICADOR de escritura (los tres puntos; módulo común, nunca copiado): rama lateral ANTES del modelo, con la credencial del envío por Graph, sin Continue on Fail fuera de ese nodo. Excepción a la prohibición 5 autorizada por Andres el 21/11/2026.
   injertarIndicador(plantilla, { ancla: { nodo: '¿Conversar con el modelo?' } });
+  // La RÁFAGA de textos (módulo común, nunca copiado): agrupa los textos seguidos del mismo teléfono para que responda UNA sola ejecución (quita n-1 mensajes por ráfaga de n, nunca agrega). Va DESPUÉS de «Reportar mensaje (entrante)» y de «Puerta del turno».
+  injertarRafaga(plantilla, OPCIONES_DE_LA_RAFAGA);
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
   // El mapa de columnas del tenant (dato, no código) dentro de los nodos del módulo y los rangos de lectura de los nodos de Google.

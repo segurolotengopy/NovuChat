@@ -98,7 +98,10 @@ export const codigoDeLaRafaga = (configBase = 'Config base', campos = CAMPOS_POR
   const sustituido = CODIGO.split(NOMBRE_CONFIG_BASE_EN_CODIGO).join(`$('${configBase}')`)
     .replace("const CAMPO_ID = 'mensajeId';", `const CAMPO_ID = '${c.mensajeId}';`)
     .replace("const CAMPO_TEXTO = 'userInput';", `const CAMPO_TEXTO = '${c.texto}';`)
-    .replace("const FUENTE = '';", `const FUENTE = '${fuente}';`);
+    .replace("const FUENTE = '';", `const FUENTE = '${fuente}';`)
+    // El task runner de n8n precarga solo los nodos nombrados con literal `$('X')`; un `$(FUENTE)` dinámico junto a los literales de este Code no precarga la fuente y el nodo
+    // fallaría en n8n real (y `problemasDeReferencias` lo rechaza). Se escribe el nombre como literal.
+    .replace('const mensaje = entrada;', () => (fuente ? `const mensaje = $('${fuente}').first().json;` : 'const mensaje = entrada;'));
   return sustituido;
 };
 
