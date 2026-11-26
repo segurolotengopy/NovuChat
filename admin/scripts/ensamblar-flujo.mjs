@@ -359,14 +359,14 @@ export function ensamblarEnMemoria(archivoFlujo, raiz = RAIZ_FLUJOS) {
     escribir(contenidoDeModulo(ruta, saltoFinal));
     inyectados.push(clave);
   });
+  // La ráfaga se QUITA primero y se injerta al final: el indicador calcula su posición desde el nodo que sigue al ancla, y con la ráfaga puesta ese nodo
+  // sería «¿Esperar ráfaga?» (otra posición, y `verificar` diría «difiere en indicador»). Así el resultado no depende de si ya estaban los nodos.
+  if (manifiesto.rafaga) quitarRafaga(j);
   if (manifiesto.indicador) {
     quitarIndicador(j);
     injertarIndicador(j, manifiesto.indicador);
   }
-  if (manifiesto.rafaga) {
-    quitarRafaga(j);
-    injertarRafaga(j, manifiesto.rafaga);
-  }
+  if (manifiesto.rafaga) injertarRafaga(j, manifiesto.rafaga);
   return { archivo: archivoFlujo, texto: JSON.stringify(j, null, 2) + '\n', original, conManifiesto: true, inyectados, indicador: !!manifiesto.indicador, rafaga: !!manifiesto.rafaga };
 }
 
