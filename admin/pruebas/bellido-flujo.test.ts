@@ -78,7 +78,7 @@ quitarIndicador(demoA);
 quitarRafaga(demoA);
 {
   const agente = demoA.nodes.find((n) => n.name === 'AI Agent (Sofía)');
-  if (agente) agente.parameters['text'] = String(agente.parameters['text']).replace('{{ $json.textoDelTurno || $json.userInput }}', '{{ $json.userInput }}');
+  if (agente) agente.parameters['text'] = String(agente.parameters['text']).replace("{{ $json.textoDelTurno || ($('Agrupar ráfaga').isExecuted ? $('Agrupar ráfaga').first().json.textoDelTurno : '') || $json.userInput }}", '{{ $json.userInput }}');
   const retomar = demoA.nodes.find((n) => n.name === 'Retomar respuesta');
   if (retomar) retomar.parameters['jsCode'] = String(retomar.parameters['jsCode']).replace(/\/\/ Si «Agrupar ráfaga» unió[^\n]*\n\/\/ [^\n]*\n\/\/ [^\n]*\n/, '').replace(/try \{\n  const agrupado[\s\S]*?\} catch \(e\) \{ \/\* sin la pieza[^\n]*\n/, '');
 }

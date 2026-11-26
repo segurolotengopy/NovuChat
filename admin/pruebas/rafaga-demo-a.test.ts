@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { crearMundo, type LlamadaDoble, type Doble } from './lib/n8n-de-mentira';
 import { ejecutar, type Flujo, type J } from './lib/flujo';
+import { hallazgosDeLaRafaga } from '../../Flujos/src/core/rafaga/rafaga.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const RUTA = join(aqui, '../../Flujos/clientes/demo-a/demo-a-agendamiento.json');
@@ -433,7 +434,18 @@ describe('Demo A + ráfaga: candado de reservas y aviso a recepción, sin duplic
 
   it('el prompt del turno lee `textoDelTurno` y, sin él, el texto crudo', () => {
     const t = String(FLUJO.nodes.find((n) => n.name === 'AI Agent (Sofía)')?.parameters['text']);
-    expect(t).toContain('{{ $json.textoDelTurno || $json.userInput }}');
+    expect(t).toContain("$json.textoDelTurno || ($('Agrupar ráfaga').isExecuted ? $('Agrupar ráfaga').first().json.textoDelTurno : '') || $json.userInput");
+  });
+
+  it('NEGADA: el consumidor declarado es el agente y «Retomar respuesta»; si el agente deja de leer `textoDelTurno` de «Agrupar ráfaga», la guardia lo dice', () => {
+    const manifiesto = JSON.parse(readFileSync(join(aqui, '../../Flujos/manifiestos/clientes/demo-a/demo-a-agendamiento.json'), 'utf8')) as { rafaga: { consumidor: string[]; campos: Record<string, string>; normalizador: string } };
+    expect(manifiesto.rafaga.consumidor).toEqual(['AI Agent (Sofía)', 'Retomar respuesta']);
+    const opciones = { consumidor: manifiesto.rafaga.consumidor, campos: manifiesto.rafaga.campos, normalizador: manifiesto.rafaga.normalizador };
+    expect(hallazgosDeLaRafaga(JSON.parse(TEXTO), { exigir: true, ...opciones })).toEqual([]);
+    const sinLectura = JSON.parse(TEXTO) as Flujo;
+    const agente = sinLectura.nodes.find((n) => n.name === 'AI Agent (Sofía)')!;
+    agente.parameters['text'] = String(agente.parameters['text']).replace(/\{\{ \$json\.textoDelTurno[^}]*\}\}/, '{{ $json.userInput }}');
+    expect(hallazgosDeLaRafaga(sinLectura, { exigir: true, ...opciones }).join('|')).toMatch(/consumidor «AI Agent \(Sofía\)» no lee `textoDelTurno`/);
   });
 });
 

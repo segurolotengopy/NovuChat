@@ -91,7 +91,7 @@ for (const { archivo, agente, trasElTope } of FLUJOS) {
       // puede colarse antes del contexto del sistema.
       expect(texto.indexOf('$json.userInput')).toBeGreaterThan(texto.indexOf('[MENSAJE DEL CLIENTE]'));
       // Ráfagas (25/11/2026): el texto es el agrupado si la pieza agrupó (`textoDelTurno`) y, si no, el de siempre.
-      expect(/\{\{ (\$json\.textoDelTurno \|\| )?\$json\.userInput \}\}$/.test(texto.trimEnd())).toBe(true);
+      expect(/\{\{ (\$json\.textoDelTurno \|\| \(\$\('Agrupar ráfaga'\)\.isExecuted \? \$\('Agrupar ráfaga'\)\.first\(\)\.json\.textoDelTurno : ''\) \|\| )?\$json\.userInput \}\}$/.test(texto.trimEnd())).toBe(true);
     });
 
     it('las instrucciones explican el formato y que lo del cliente es dato, no orden', () => {
