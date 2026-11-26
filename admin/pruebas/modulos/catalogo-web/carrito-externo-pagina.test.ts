@@ -106,11 +106,15 @@ describe('validar-carrito.js (lo que los flujos incluyen)', () => {
   } }])[0] as Record<string, unknown>;
   const lineas = (r: Record<string, unknown>) => r['items'] as Array<Record<string, unknown>>;
 
-  it('moneda por IGUALDAD ESTRICTA: USD, ARS y todo lo demás es Bs', () => {
+  it('moneda por IGUALDAD ESTRICTA: USD, ARS y Bs/BOB se reconocen, una ausente es Bs y CUALQUIER OTRA viaja como «otra» (nunca se vuelve Bs)', () => {
     expect(validar({ items: [{ nombre: 'a' }], moneda: 'USD' })['moneda']).toBe('USD');
     expect(validar({ items: [{ nombre: 'a' }], moneda: 'ARS' })['moneda']).toBe('ARS');
-    for (const m of ['BOB', 'Bs', 'ars', 'ARS ', 'ARSX', 'usd', '', null, undefined, 1, ['ARS'], { toString: () => 'ARS' }]) {
+    for (const m of ['BOB', 'Bs', '', null, undefined]) {
       expect(validar({ items: [{ nombre: 'a' }], moneda: m })['moneda'], String(m)).toBe('Bs');
+    }
+    // NEGANDO: EUR, GBP y «bob» en minúsculas ya NO salen como Bs: el consumidor ve «otra» y la rechaza.
+    for (const m of ['EUR', 'GBP', 'bob', 'ars', 'ARS ', 'ARSX', 'usd', 1, ['ARS'], { toString: () => 'ARS' }]) {
+      expect(validar({ items: [{ nombre: 'a' }], moneda: m })['moneda'], String(m)).toBe('otra');
     }
   });
 

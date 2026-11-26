@@ -12,7 +12,7 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | bellido-agendamiento.json | . | congelado | ninguno | M1 M2 M6 | por asignar (Principal) | pendiente | 0fc6574f-6e6378e1-1100446e-67de0fe5-aeb46070-88179be6-f2dcaa21-14d2c8d4 |
 | demo-a-agendamiento.json | clientes/demo-a | demo | ensamblador | M6 (excepciones declaradas) | Rearquitectura | mudado | 6feb51cb-72895440-f4ff787c-57159818-fcb97b53-e14eb5c3-b9356e56-de355a19 |
 | demo-a-recordatorios.json | . | demo | ensamblador | M1 | por asignar (Principal) | pendiente | 7d06ea44-1c362f84-bae2afe3-e7a2a521-b2c865cc-a3736245-ae83472d-22988404 |
-| demo-b-venta-cobro.json | . | demo | ensamblador | M1 M6 | por asignar (Principal) | pendiente | 18580ec4-2483477e-ff775ae5-815365c2-2cf23c87-daa065bf-976c4d26-52a71e27 |
+| demo-b-venta-cobro.json | . | demo | ensamblador | M1 M6 | por asignar (Principal) | pendiente | c8e22d2a-b7ff4503-e90c9835-86e7db4f-ec03707f-4effaa4f-e2c70e9a-32d09982 |
 | error-envio-incierto.json | . | barrido | ensamblador | M1 | por asignar (Principal) | pendiente | 2ff4b291-ed46e596-13a95489-8cccdf57-adc9df5b-079cd030-7eb163fa-0c73fe27 |
 | novuchat-onboarding.json | . | congelado | ensamblador | M1 M6 M7 | por asignar (Principal) | pendiente | 01d3388b-eb92e2a3-e8beb89d-4e6a1155-14d01b1a-5e5d8c9b-a8aea1d5-62e941b9 |
 | salida-de-persona.json | . | barrido | ensamblador | M1 M7 | por asignar (Principal) | pendiente | 1d0930d9-e2a56669-2f56a54c-24b389ce-f94185b2-c32df93a-9c58031f-46c99964 |
@@ -32,9 +32,9 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | rroca-emma.json | clientes/rroca-emma | vivo | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 42310705-5a15f119-243b44f4-e2d53ebd-530f4276-0f985f8f-2a59bd30-63431957 |
 | rroca-evy.json | clientes/rroca-evy | vivo | construir.mjs | M4 M6 (excepción declarada) | Rearquitectura | mudado | cb884e7e-ab373aa8-f49129aa-8592cbd8-a5f43b93-e884abfb-1a4406fd-68cf0216 |
 | rroca-ruben.json | clientes/rroca-ruben | vivo | construir.mjs | M1 M4 M5 M6 | Rearquitectura | mudado | c4d17749-e14267ff-1de9bb48-d0d59662-b390c313-b924b9f1-571716dc-0f18fe48 |
-| venta-minima.qtaco-3727.json | clientes/venta-minima | sin publicar | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | ee6c0f62-89016909-be2d18f7-e6505ba1-6ec8fa1a-4e4938eb-13823ccf-b2b195e4 |
-| venta-minima.qtaco.json | clientes/venta-minima | vivo | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | c413eee3-843fa170-299c94de-23e61d52-6c55795a-7ae48196-fce4973c-aef2d246 |
-| walisuma.json | clientes/walisuma | sin publicar | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 38a04a06-f7e779f8-c12e40d4-89c3b4db-a6fc063b-64e49a05-745963ce-534722ac |
+| venta-minima.qtaco-3727.json | clientes/venta-minima | sin publicar | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | 42c4acb5-601c6938-ad19065e-46245d6d-827a6c44-8c396308-18651018-1bf75f10 |
+| venta-minima.qtaco.json | clientes/venta-minima | vivo | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | 919f74f6-9a54e40e-8a12a955-132fd782-e5e759b9-b461913a-6f86c526-b6222837 |
+| walisuma.json | clientes/walisuma | sin publicar | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 5c5e2bb9-c425aa8d-6454f517-52ea60d9-c251a525-b5b64bde-5b188dc7-60df57f7 |
 
 ## Cómo se lee
 

@@ -49,8 +49,10 @@ const detalle = (v) => typeof v !== 'string' ? '' : limpio(v.replace(/https?:\/\
   .replace(/[<>&\[\]{}«»]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
 // K1: precio unitario en centavos (entero >= 0); informativo, el flujo NO cobra de aca.
 const centavos = (v) => (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0) ? v : null;
-// Moneda por IGUALDAD ESTRICTA: lo que no es exactamente USD o ARS es Bs (no se adivina por prefijo).
-const moneda = (v) => v === 'USD' ? 'USD' : (v === 'ARS' ? 'ARS' : 'Bs');
+// Moneda por IGUALDAD ESTRICTA (no se adivina por prefijo ni por mayusculas): USD, ARS y Bs/BOB se reconocen; una moneda AUSENTE
+// (undefined, null o vacia: un carrito de antes) sigue siendo Bs; CUALQUIER OTRA cosa (EUR, GBP, «bob», un numero...) viaja como
+// «otra» para que quien consume la RECHACE; antes se convertia en Bs y se cobraba en una moneda que el cliente no eligio.
+const moneda = (v) => v === 'USD' ? 'USD' : (v === 'ARS' ? 'ARS' : ((v === 'Bs' || v === 'BOB' || v === undefined || v === null || v === '') ? 'Bs' : 'otra'));
 
 const out = [];
 

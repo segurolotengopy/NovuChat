@@ -91,7 +91,7 @@ const numero = (v) => (typeof v === 'number' && Number.isFinite(v)) ? v : 0;
 const detalle = (v) => typeof v !== 'string' ? '' : limpio(v.replace(/https?:\/\/\S+/gi, ' ').replace(/www\.\S+/gi, ' '), 200)
   .replace(/[<>&\[\]{}«»]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
 const centavos = (v) => (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0) ? v : null;
-const moneda = (v) => v === 'USD' ? 'USD' : (v === 'ARS' ? 'ARS' : 'Bs');
+const moneda = (v) => v === 'USD' ? 'USD' : (v === 'ARS' ? 'ARS' : ((v === 'Bs' || v === 'BOB' || v === undefined || v === null || v === '') ? 'Bs' : 'otra'));
 
 const out = [];
 

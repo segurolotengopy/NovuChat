@@ -587,7 +587,8 @@ El texto del pitch del primer contacto («Quiero más información»), que es un
 **Qué cambia (0 nodos nuevos, 0 mensajes por conversación agregados o quitados).** Las piezas comunes `validar-carrito.js` y `carga-del-carrito.js` (módulo catalogo-web) cambian en tres cosas, todas aditivas o más estrictas:
 1. **Reenvío K1:** la carga que llega al flujo conserva `mercado`, `catalogo` (solo con fuente externa) y, por línea, `precioCentavos` y `detalle`. Sin esos datos el carrito es idéntico al de antes.
 2. **Cantidad tal cual:** `numero(x) || 1` convertía una cantidad 0 en 1 (vendía lo que el cliente no pidió y terminaba en un QR directo). Ahora 0, negativa, fraccionaria o ausente viajan como están y quien arma las líneas las descarta. El servidor ya no manda cantidades menores que 1, así que en la práctica solo cambia ante una carga alterada.
-3. **Entrega ausente:** deja de convertirse en «retiro»: viaja vacía (solo «envio» y «retiro» pasan). Venta mínima conserva su propio mapeo (`envio` o `retiro`), así que su comportamiento no cambia.
+3. **Moneda y cantidad en texto (cambios de conducta declarados):** una moneda que no sea Bs/BOB, USD o ARS (EUR, GBP, «bob» en minúsculas…) viaja como «otra» para que el consumidor la rechace, en vez de convertirse en Bs; una moneda ausente sigue siendo Bs. Una cantidad «2» en TEXTO se lee como 0 y el renglón no entra (el servidor siempre manda un número, así que solo cambia ante una carga alterada).
+4. **Entrega ausente:** deja de convertirse en «retiro»: viaja vacía (solo «envio» y «retiro» pasan). Venta mínima conserva su propio mapeo (`envio` o `retiro`), así que su comportamiento no cambia.
 
 **Demo B además (mensaje del carrito):** una línea con cantidad que no sea un entero ≥ 1 deja de escribirse («0×») y suma a «no pude incluir»; una entrega ausente pregunta «envío o recoger» en vez de dar por hecho «recoger» (0 mensajes: es el mismo mensaje).
 
