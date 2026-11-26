@@ -640,7 +640,7 @@ describe('lector de n8n: la lista de flujos espera más y se repite una vez', ()
     const r = await (await import('../../scripts/plataforma/verificar-salida-persona.mjs') as unknown as { chequeoN8n: (c: unknown, n: unknown, r: string | null, p: string | null) => Promise<{ resultados: R[] }> })
       .chequeoN8n({ alias: 'demoA' }, t.lector, null, null);
     expect(r.resultados.every((x) => x.estado !== 'OK')).toBe(true);
-    expect(r.resultados.length).toBe(7); // 4a a 4f y 5a
+    expect(r.resultados.length).toBe(8); // 4a a 4g y 5a
   });
 });
 
@@ -780,5 +780,57 @@ describe('4f · la rama de adjuntos (B5)', () => {
     const base = nodosOk().filter((n) => !['Reclamar', 'Confirmar'].includes(n.name)) as Nodo[];
     const r = await corre(flujo([...base, ...j.nodes.filter((n) => !base.some((b) => b.name === n.name))], j.connections), MEDIOS);
     expect(r.estado('4f')).toBe('OK');
+  });
+});
+
+// ===========================================================================
+describe('4g · la salida publicada admite plantillas (Retomar, contrato C5)', () => {
+  type Nodo = Record<string, unknown> & { name: string };
+  const reclamar = (o: { cabecera?: string | null; sendHeaders?: boolean; disabled?: boolean } = {}): Nodo => ({
+    name: 'Reclamar', credentials: { httpHeaderAuth: { id: 'c2', name: 'Ingesta cred' } },
+    ...(o.disabled ? { disabled: true } : {}),
+    parameters: { sendHeaders: o.sendHeaders ?? true, headerParameters: { parameters: [
+      { name: 'X-NovuChat-Numero', value: '={{ x }}' },
+      ...(o.cabecera === null ? [] : [{ name: 'X-NovuChat-Plantillas', value: o.cabecera ?? '1' }]),
+    ] } },
+  });
+  const flujo = (r: Nodo | null) => ({ workflow: { nodes: [...(nodosOk().filter((n) => n.name !== 'Reclamar') as Nodo[]), ...(r ? [r] : [])], connections: {} } }) as Over;
+  const PLANT = { plantillas: true };
+
+  it('con la cabecera x-novuchat-plantillas: 1 en Reclamar activo, 4g OK con y sin --plantillas', async () => {
+    for (const cfg of [{}, PLANT]) expect((await corre(flujo(reclamar()), cfg)).estado('4g')).toBe('OK');
+  });
+
+  const rotos: Array<[string, Nodo | null]> = [
+    ['falta la cabecera', reclamar({ cabecera: null })],
+    ['cabecera con otro valor (0)', reclamar({ cabecera: '0' })],
+    ['cabecera con otro valor (vacío)', reclamar({ cabecera: '' })],
+    ['sendHeaders:false', reclamar({ sendHeaders: false })],
+    ['Reclamar desactivado', reclamar({ disabled: true })],
+    ['falta el nodo Reclamar', null],
+  ];
+  it.each(rotos)('4g FALLA: %s', async (_n, nodo) => {
+    const r = await corre(flujo(nodo), PLANT);
+    expect(r.estado('4g')).toBe('FALLA');
+    sinSecretos(r.texto);
+  });
+
+  it.each(rotos)('CON --plantillas, 4g fallido hace fallar el veredicto (salida 1): %s', async (_n, nodo) => {
+    expect((await corre(flujo(nodo), PLANT)).codigo).toBe(1);
+  });
+
+  // Sin el nodo Reclamar fallan además 4a y las demás: el veredicto cambia por ELLAS, no por 4g.
+  it.each(rotos.filter(([, n]) => n !== null))('SIN --plantillas, 4g fallido se informa con su nota pero NO cambia el veredicto: %s', async (_n, nodo) => {
+    const r = await corre(flujo(nodo), {});
+    expect(r.estado('4g')).toBe('FALLA');
+    expect(r.texto).toContain('informativo: sin --plantillas no cuenta');
+    expect(r.codigo).toBe(0);
+  });
+
+  it('--plantillas se acepta una sola vez y queda en la configuración', () => {
+    const buenos = ['--proyecto', M.proyProd, '--alias', ALIAS, '--tenant', TENANT];
+    expect(mod.analizarArgumentos([...buenos, '--plantillas'], ENV).cfg?.['plantillas']).toBe(true);
+    expect(mod.analizarArgumentos(buenos, ENV).cfg?.['plantillas']).toBe(false);
+    expect(mod.analizarArgumentos([...buenos, '--plantillas', '--plantillas'], ENV).ok).toBe(false);
   });
 });

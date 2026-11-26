@@ -89,7 +89,7 @@ describe('resolverFuncionarios: el horario que llega a los flujos falla cerrado'
 
 describe('el nodo real «Comprobar reserva» con ese dato: ya NO agenda fuera de horario', () => {
   const flujo = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)),
-    '../../../Flujos/demo-a-agendamiento.json'), 'utf8')) as { nodes: { name: string; parameters: { jsCode?: string } }[] };
+    '../../../Flujos/clientes/demo-a/demo-a-agendamiento.json'), 'utf8')) as { nodes: { name: string; parameters: { jsCode?: string } }[] };
   const codigo = String(flujo.nodes.find((n) => n.name === 'Comprobar reserva')?.parameters.jsCode);
   const CAL = 'aaaa000000aaaa@group.calendar.google.com';
   const AHORA = new Date('2026-09-06T20:16:05.000Z');

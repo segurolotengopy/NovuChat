@@ -132,7 +132,7 @@ export interface Manifiesto {
   readonly herramientas: readonly string[];
   /** Functions exportadas por `index.ts` que son de este módulo. */
   readonly functions: readonly string[];
-  /** Flujos programados de n8n (`Flujos/<nombre>.json`) que son de este módulo. */
+  /** Flujos programados de n8n (ruta relativa a `Flujos/`) que son de este módulo. */
   readonly flujosProgramados: readonly string[];
   readonly ganchos: readonly Gancho[];
   /**

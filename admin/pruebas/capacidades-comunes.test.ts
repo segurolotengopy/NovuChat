@@ -298,7 +298,7 @@ describe('Capacidades comunes: todo flujo conversacional tiene audio, imagen y d
     // Un piso, no una lista cerrada: si mañana nace un sexto flujo con
     // disparador de WhatsApp y agente, entra solo a la prueba de abajo.
     expect(conversacionales).toEqual(expect.arrayContaining([
-      'bellido-agendamiento.json', 'demo-a-agendamiento.json', 'demo-b-venta-cobro.json',
+      'bellido-agendamiento.json', 'clientes/demo-a/demo-a-agendamiento.json', 'demo-b-venta-cobro.json',
       'novuchat-onboarding.json',
     ]));
     // Los programados quedan fuera por lo que son, no por su nombre.

@@ -44,7 +44,7 @@ describe('qué cambios hacen correr las pruebas y cuáles despliegan', () => {
   it('lo que las suites leen fuera de admin/ hace correr calidad', () => {
     // Rutas que alguna suite lee hoy (grep de `join(aqui, '../../…')`).
     for (const ruta of [
-      'Flujos/demo-a-agendamiento.json',
+      'Flujos/clientes/demo-a/demo-a-agendamiento.json',
       'Flujos/src/comun/normalizar-entrada.js',
       'Flujos/prompts/core/base.md',
       'scripts/estado-de-versiones.sh',
@@ -62,7 +62,7 @@ describe('qué cambios hacen correr las pruebas y cuáles despliegan', () => {
   });
 
   it('un cambio solo de Flujos/ no construye ni despliega la consola', () => {
-    expect(admin.test('Flujos/demo-a-agendamiento.json')).toBe(false);
+    expect(admin.test('Flujos/clientes/demo-a/demo-a-agendamiento.json')).toBe(false);
     expect(admin.test('scripts/estado-de-versiones.sh')).toBe(false);
     expect(admin.test('admin/web/src/App.tsx')).toBe(true);
   });
