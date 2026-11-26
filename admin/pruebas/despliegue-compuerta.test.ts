@@ -178,6 +178,9 @@ describe('compuerta del registro de `firebase deploy`', () => {
 
   it('C22: el registro REAL del 25/11 (86 Functions, 8 sin confirmar, 5 que firebase-tools ni intentó) es reintentable y sigue fallando', () => {
     const real = readFileSync(join(FIX, 'cuota-real-25-11.registro.txt'), 'utf8');
+    // El registro real trae «Failed to get the IAM Policy on the Service …/services/sondeocobros» (Cloud Run, nombre en minúsculas):
+    // es parte del mismo choque con la cuota y se tolera A PROPÓSITO como reintentable; si fuera un permiso de verdad, el segundo
+    // intento volvería a fallar y la compuerta final falla igual (costo: tiempo, nunca un despliegue dado por bueno).
     const r = intento(real, real, { SOLO: SOLO_COMPLETO, CODIGO_FIREBASE: '1' });
     expect(r.status).toBe(1);
     expect(r.reintentable).toBe('si');
