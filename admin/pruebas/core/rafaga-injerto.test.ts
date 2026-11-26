@@ -674,7 +674,9 @@ describe('rafaga: el CONSUMIDOR de `textoDelTurno` es obligatorio y se verifica'
       const f = quitarRafaga(JSON.parse(readFileSync(join(RAIZ_FLUJOS, ruta), 'utf8')));
       expect(() => injertarRafaga(f, { ancla, campos, fuente }), ruta).toThrow(/falta `consumidor`/);
       // y con un consumidor declarado pero que NO lee el texto agrupado (el flujo sin cablear) también
-      expect(() => injertarRafaga(f, { ancla, campos, fuente, consumidor: ancla.destino }), ruta).toThrow(/no lee `textoDelTurno`/);
+      // (Walisuma ya trae su cableado desde su PR: «Decidir turno» SÍ lee el texto agrupado, así que ahí el consumidor declarado es válido.)
+      if (ruta.includes('walisuma')) expect(() => injertarRafaga(f, { ancla, campos, fuente, consumidor: ancla.destino }), ruta).not.toThrow();
+      else expect(() => injertarRafaga(f, { ancla, campos, fuente, consumidor: ancla.destino }), ruta).toThrow(/no lee `textoDelTurno`/);
     }
   });
 });

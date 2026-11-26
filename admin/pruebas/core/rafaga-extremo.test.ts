@@ -16,8 +16,8 @@ import { describe, expect, it } from 'vitest';
 import { correr, type J } from '../lib/flujo';
 import { crearMundo } from '../lib/n8n-de-mentira';
 import { RAIZ_FLUJOS } from '../../scripts/ensamblar-flujo.mjs';
-import { NORMALIZADORES_VERIFICADOS, huellaDe, injertarRafaga } from '../../../Flujos/src/core/rafaga/rafaga.mjs';
-import { cablearBellido, cablearWalisuma } from './rafaga-cableado';
+import { NORMALIZADORES_VERIFICADOS, huellaDe, injertarRafaga, quitarRafaga } from '../../../Flujos/src/core/rafaga/rafaga.mjs';
+import { cablearBellido, cablearWalisuma, descablearWalisuma } from './rafaga-cableado';
 import { ANA, PRODUCCION, crear, hablar, mAudio, mTexto, modelo, panelOk, valorMeta } from '../tenants/walisuma/mundo';
 
 const ANCLA_WALISUMA = { nodo: '¿Bajar medio?', salida: 1, destino: 'Decidir turno' };
@@ -30,8 +30,10 @@ const TRES = 'y que sean de cuero';
  * Walisuma con la pieza y el CABLEADO MÍNIMO (`rafaga-cableado.ts`: «Decidir turno» lee `textoDelTurno`, como en el PR del flujo): sin consumidor, la pieza sola PIERDE el primer texto.
  * `consumidor: 'Decidir turno'` es obligatorio y verificado por el injerto.
  */
+/** El JSON de Walisuma SIN la pieza: desde el PR de Walisuma el versionado ya la lleva; se quita para volver a injertarla aquí (quitar es idempotente). */
+const sinPieza = (): J => quitarRafaga(structuredClone(PRODUCCION)) as J;
 function conRafaga(): J {
-  return injertarRafaga(cablearWalisuma(structuredClone(PRODUCCION)), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: { texto: 'texto' }, consumidor: 'Decidir turno' }) as J;
+  return injertarRafaga(cablearWalisuma(sinPieza()), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: { texto: 'texto' }, consumidor: 'Decidir turno' }) as J;
 }
 /** El servidor de mentira: el hilo tal como estaría al terminar la espera de cada ejecución (ya trae lo que llegó dentro de la ventana). */
 const hilo = (...textos: string[]) => ({ rafaga: { v: 1, fragmentos: textos.map((t, i) => frag(`wamid.${'ABC'[i]}`, t, 1000 + i * 800)) } });
@@ -43,7 +45,7 @@ const ordenado = (cuerpo: unknown, ...textos: string[]): boolean => {
 
 describe('rafaga de punta a punta: Walisuma (flujo real + cableado mínimo, pieza injertada en memoria)', () => {
   it('SIN el consumidor la pieza pierde un mensaje: «Decidir turno» solo ve el último texto (por eso el injerto exige el consumidor)', () => {
-    const sinCablear = injertarRafaga(structuredClone(PRODUCCION), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: { texto: 'texto' }, consumidor: null }) as J;
+    const sinCablear = injertarRafaga(descablearWalisuma(sinPieza()), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: { texto: 'texto' }, consumidor: null }) as J;
     const m = crear({ flujo: sinCablear, modeloDice: modelo('Anotado.') });
     m.dobles['Consultar ráfaga'] = () => hilo(UNO, DOS);
     hablar(m, ANA, mTexto(UNO), { wamid: 'wamid.A' });
@@ -134,14 +136,14 @@ describe('rafaga de punta a punta: Walisuma (flujo real + cableado mínimo, piez
   });
 
   it('control: SIN la pieza, los dos textos cuestan dos mensajes (el ahorro es real)', () => {
-    const m = crear({ flujo: PRODUCCION });
+    const m = crear({ flujo: sinPieza() });
     const t1 = hablar(m, ANA, mTexto(UNO), { wamid: 'wamid.A' });
     const t2 = hablar(m, ANA, mTexto(DOS), { wamid: 'wamid.B' });
     expect(t1.mensajes.length + t2.mensajes.length).toBe(2);
   });
 
   it('con un campo de texto que Walisuma no emite (`userInput`) la pieza se NIEGA a armarse: no hay un grupo con el último mensaje en blanco', () => {
-    expect(() => injertarRafaga(cablearWalisuma(structuredClone(PRODUCCION)), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: { texto: 'userInput' }, consumidor: 'Decidir turno' })).toThrow(/no emite texto \(«userInput»\)/);
+    expect(() => injertarRafaga(cablearWalisuma(sinPieza()), { ancla: ANCLA_WALISUMA, fuente: 'Normalizar entrada', campos: { texto: 'userInput' }, consumidor: 'Decidir turno' })).toThrow(/no emite texto \(«userInput»\)/);
   });
 });
 

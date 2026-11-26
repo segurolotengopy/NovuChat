@@ -53,6 +53,8 @@ export const OPCIONES_DE_LA_RAFAGA = {
   ancla: { nodo: 'Puerta del turno', salida: 0, destino: '¿Bajar medio?' },
   fuente: 'Normalizar entrada',
   campos: { texto: 'texto' },
+  // El nodo que lee `textoDelTurno` de «Agrupar ráfaga» (la pieza lo valida por código).
+  consumidor: 'Decidir turno',
   puerta: "$('Puerta del turno').first().json.ruta === 'sigue'",
   // Debajo de todo el flujo de conversación y encima del guardado (el lienzo no se pisa; el orden de ejecución no depende de este dibujo: la ráfaga es una cadena en línea).
   posicion: [1640, 1000],
@@ -340,7 +342,7 @@ export function guardias(variante, flujo, opciones = {}) {
   h.push(...hallazgosDelGuardado(flujo || {}));
   h.push(...hallazgosDelIndicador(flujo || {}, { exigir: true }));
   // La ráfaga (módulo común): los cuatro nodos canónicos, en línea entre «Puerta del turno» y «¿Bajar medio?», y «Reportar mensaje (entrante)» corriendo antes.
-  h.push(...hallazgosDeLaRafaga(flujo || {}, { exigir: true, campos: OPCIONES_DE_LA_RAFAGA.campos, fuente: OPCIONES_DE_LA_RAFAGA.fuente }));
+  h.push(...hallazgosDeLaRafaga(flujo || {}, { exigir: true, campos: OPCIONES_DE_LA_RAFAGA.campos, fuente: OPCIONES_DE_LA_RAFAGA.fuente, consumidor: OPCIONES_DE_LA_RAFAGA.consumidor }));
   // El guardado de la imagen SALIENTE del asistente: la rama común completa (vía media), debajo de todo y sin credencial ajena.
   h.push(...hallazgosDelGuardadoSaliente(flujo || {}, { exigir: true, vias: ['media'] }));
   // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
@@ -617,10 +619,11 @@ export function armarWalisuma(proyecto, datos, v, origenReceptor = leerReceptorD
   injertarGuardadoSaliente(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio`, vias: ['media'], fuentes: fuentesDeLaCadenaComun() });
   // El INDICADOR de escritura (los tres puntos; módulo común, nunca copiado): rama lateral ANTES del modelo, con la credencial del envío por Graph, sin Continue on Fail fuera de ese nodo. Excepción a la prohibición 5 autorizada por Andres el 21/11/2026.
   injertarIndicador(plantilla, { ancla: { nodo: '¿Conversar con el modelo?' } });
-  // La RÁFAGA de textos (módulo común, nunca copiado): agrupa los textos seguidos del mismo teléfono para que responda UNA sola ejecución (quita n-1 mensajes por ráfaga de n, nunca agrega). Va DESPUÉS de «Reportar mensaje (entrante)» y de «Puerta del turno».
-  injertarRafaga(plantilla, OPCIONES_DE_LA_RAFAGA);
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
+  // La RÁFAGA de textos (módulo común, nunca copiado): agrupa los textos seguidos del mismo teléfono para que responda UNA sola ejecución (quita n-1 mensajes por ráfaga de n, nunca agrega). Va DESPUÉS de «Reportar mensaje (entrante)» y de «Puerta del turno».
+  // Se injerta sobre el flujo YA armado: la pieza valida por código que «Decidir turno» (el consumidor) lee `textoDelTurno`, y eso solo se ve con el código incluido (en la plantilla es una marca `@@`).
+  injertarRafaga(flujo, OPCIONES_DE_LA_RAFAGA);
   // El mapa de columnas del tenant (dato, no código) dentro de los nodos del módulo y los rangos de lectura de los nodos de Google.
   injertarCrm(flujo, datos.crm);
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);
