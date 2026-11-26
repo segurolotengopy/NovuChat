@@ -644,6 +644,17 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
     expect(paso(j, './scripts/humo-sitio-publico.sh')).toContain("if: steps.salud.outputs.ok == 'true'");
   });
 
+  it('W4b: antes de CADA intento de despliegue, hosting_publicado vuelve a «desconocido» (staging y producción)', () => {
+    for (const nombre of ['desplegar-staging', 'desplegar-produccion']) {
+      const bucle = /for intento in 1 2 3; do\n([\s\S]*?)\n\s+firebase deploy --only/.exec(job(nombre))?.[1] ?? '';
+      // Dentro del bucle y ANTES de firebase deploy: un valor viejo no puede sobrevivir a un corte del paso.
+      expect(bucle, nombre).toContain('echo "hosting_publicado=desconocido" >> "$GITHUB_OUTPUT"');
+    }
+    // «desconocido» no es «ninguno»: el rollback corre, y post-despliegue tiene su propio texto.
+    expect(paso(job('desplegar-produccion'), '- name: Rollback de hosting')).toContain("hosting_publicado != 'ninguno'");
+    expect(job('post-despliegue')).toContain("process.env.HOSTING === 'desconocido'");
+  });
+
   it('W5: las salidas nuevas llegan a post-despliegue con textos de 140 caracteres o menos', () => {
     const j = job('desplegar-produccion');
     expect(j).toContain('despliegue_completo: ${{ steps.desplegar.outputs.completo }}');
