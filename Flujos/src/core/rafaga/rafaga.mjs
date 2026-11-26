@@ -6,7 +6,15 @@
  *   import { injertarRafaga, quitarRafaga, hallazgosDeLaRafaga, NODOS_DE_LA_RAFAGA } from '<ruta>/core/rafaga/rafaga.mjs';
  *
  * Quien escribe «hola» / «quiero reservar» / «para mañana» en tres mensajes seguidos dispara tres ejecuciones y recibe tres respuestas (tres mensajes que
- * cuestan dinero, 0,0113 USD cada uno). Con la pieza responde UNA ejecución con los tres textos unidos; las otras terminan sin enviar. Aislado = igual que hoy.
+ * cuestan dinero, 0,0113 USD cada uno). Con la pieza responde UNA ejecución con los tres textos unidos; las otras terminan sin enviar. Un texto aislado sale con el mismo contenido de hoy,
+ * pero con LATENCIA AGREGADA: la espera (`esperaRafagaSeg`, 2 s por defecto, acotada de 1 a 5) por cada texto aislado, y hasta ~6,3 s si la consulta falla (3000 ms x 2 intentos + 300 ms)
+ * antes de responder solo. Lecturas en la nube: 11 en el caso normal y hasta 12 por consulta (ruta autenticada 1 + ficha 1 + mi documento hasta 2 + hasta 5 anteriores + hasta 3 siguientes), 0 escrituras.
+ *
+ * INTERRUPTORES (qué se cambia sin republicar y qué no):
+ *   - POR COMERCIO, sin republicar: `rafagaApagada: true` en la ficha del tenant. `configuracionFlujo` lo entrega y el IF lo lee de «Config del negocio» (`$('Config del negocio').first().json.rafagaApagada`,
+ *     la respuesta del servidor ya mezclada por el flujo); es el único que apaga una ráfaga en un comercio sin tocar el JSON.
+ *   - POR FLUJO: `rafagaActiva` y `esperaRafagaSeg` viven en «Config base», que es un nodo del JSON del flujo: cambiarlos exige republicar ese flujo. Es así a propósito: la espera es una
+ *     propiedad del flujo (cuánto tolera su conversación) y no debe variar por comercio dentro de un mismo flujo, y un valor del JSON es revisable y probado con el flujo.
  * Mensajes por conversación: no agrega (solo quita, nunca agrega).
  *
  * ES UNA PIEZA COMÚN, INCLUIDA Y NUNCA COPIADA: la incluyen los `construir.mjs` y el ensamblador (clave `rafaga` del manifiesto). En esta entrega (PR A) NINGÚN
@@ -98,7 +106,10 @@ export const codigoDeLaRafaga = (configBase = 'Config base', campos = CAMPOS_POR
   const sustituido = CODIGO.split(NOMBRE_CONFIG_BASE_EN_CODIGO).join(`$('${configBase}')`)
     .replace("const CAMPO_ID = 'mensajeId';", `const CAMPO_ID = '${c.mensajeId}';`)
     .replace("const CAMPO_TEXTO = 'userInput';", `const CAMPO_TEXTO = '${c.texto}';`)
-    .replace("const FUENTE = '';", `const FUENTE = '${fuente}';`);
+    .replace("const FUENTE = '';", `const FUENTE = '${fuente}';`)
+    // El task runner de n8n precarga solo los nodos nombrados con literal `$('X')`; un `$(FUENTE)` dinámico junto a los literales de este Code no precarga la fuente y el nodo
+    // fallaría en n8n real (y `problemasDeReferencias` lo rechaza). Se escribe el nombre como literal.
+    .replace('const mensaje = entrada;', () => (fuente ? `const mensaje = $('${fuente}').first().json;` : 'const mensaje = entrada;'));
   return sustituido;
 };
 
@@ -160,7 +171,7 @@ export function nodosDeLaRafaga(opciones) {
         jsonBody: `={{ JSON.stringify({ telefono: String(${N}.${k.from} || '').replace(/\\D/g, ''), rafaga: { v: 1, idMeta: String(${N}.${k.mensajeId}) } }) }}`,
         options: { timeout: TIMEOUT_RAFAGA_MS },
       },
-      notes: 'Lee del servidor los ultimos mensajes de este telefono (maximo 6 lecturas, ninguna escritura). Misma URL y credencial que «Traer configuracion». Con Continue on Fail, 3 s de tope y un reintento: si sigue fallando, «Agrupar rafaga» responde solo.',
+      notes: 'Lee del servidor los ultimos mensajes de este telefono (11 lecturas en el caso normal y hasta 12 con reintento de Meta, ninguna escritura; el servidor descarta vecinos de mas de 30 s y mi mensaje debe tener 60 s o menos). Misma URL y credencial que «Traer configuracion». Con Continue on Fail, 3 s de tope y un reintento: si sigue fallando, «Agrupar rafaga» responde solo.',
     },
     {
       id: 'rafaga-agrupar', name: NODO_RAFAGA_AGRUPAR, type: 'n8n-nodes-base.code', typeVersion: 2, position: [x + 720, y],

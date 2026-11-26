@@ -21,7 +21,7 @@ import { vozFija, tratamientoClave, tratamientoEfectivo, quienAtiende } from './
 import { registrar } from './core/turno/bitacora.js';
 import { atenderSesion } from './core/turno/sesionFirestore.js';
 import { validarSesion } from './core/turno/sesion.js';
-import { validarRafaga, leerRafaga } from './core/conversacion/rafaga.js';
+import { validarRafaga, leerRafaga, tomarCupoDeRafaga } from './core/conversacion/rafaga.js';
 // H1-6: los campos derivados de Conversaciones (búsqueda y no leídos). Son más
 // campos en los MISMOS create/set de la transacción: cero lecturas ni escrituras
 // nuevas y cero mensajes. Los escribe el Core para todos los comercios, inertes.
@@ -1674,6 +1674,19 @@ export const configuracionFlujo = onRequest(
       respuesta.status(404).send('numero no asignado'); return;
     }
 
+    // TOPE DE LA RAMA `rafaga` (`core/conversacion/rafaga.ts`): por comercio y teléfono, en memoria, antes de
+    // leer la ficha y antes de cualquier consulta de mensajes. La ruta autenticada ya costó UNA lectura
+    // (`rutasWhatsApp`), y no se puede evitar: el `tenantId` sale de ahí, y sin firma válida (401) ni se
+    // llega. Una llamada de más responde 429 y no lee nada más.
+    const crudoRafaga = (peticion.body as Record<string, unknown> | null | undefined)?.['rafaga'];
+    if (crudoRafaga !== undefined) {
+      const telCrudo = (peticion.body as Record<string, unknown>)['telefono'];
+      const telTope = typeof telCrudo === 'string' && /^[0-9]{8,15}$/.test(telCrudo.trim()) ? telCrudo.trim() : null;
+      if (!tomarCupoDeRafaga(ruta.tenantId, telTope, Date.now())) {
+        respuesta.status(429).json({ error: 'rafaga_tope' }); return;
+      }
+    }
+
     // `flujo` cae en `agendamiento` si la ruta no lo trae. Es el vertical que ya
     // tenían las rutas viejas, escritas antes de que hubiera un segundo: dejarlo
     // vacío haría que el comercio no recibiera NINGUNA configuración de vertical
@@ -1703,8 +1716,8 @@ export const configuracionFlujo = onRequest(
 
     // RÁFAGA DE MENSAJES (`core/conversacion/rafaga.ts`, `docs/arquitectura/rafagas.md`): el flujo pregunta
     // cuáles son los últimos entrantes de ESTE teléfono para decidir si responde o calla. Corta antes de
-    // leer config o negocio: solo la ficha (ya leída) y hasta 6 mensajes de la conversación del tenant de
-    // la ruta. Cero escrituras. Con `sesion` a la vez es un pedido mal formado.
+    // leer config o negocio. Lecturas por consulta, TODAS (`MAX_LECTURAS` = 12): la ruta (1) + la ficha (1) +
+    // mi documento (hasta 2 con un reintento de Meta) + hasta 5 anteriores + hasta 3 posteriores. Cero escrituras. Con `sesion` a la vez es un pedido mal formado.
     if (cuerpo['rafaga'] !== undefined) {
       if (cuerpo['sesion'] !== undefined) { respuesta.status(400).json({ error: 'rafaga_con_sesion' }); return; }
       const vr = validarRafaga(cuerpo['rafaga'], telefono);
