@@ -171,7 +171,7 @@ describe('caché de 60 s por comercio y mercado', () => {
     expect(ar.llamadas).toHaveLength(1);
   });
 
-  it('R78: un cambio de precio en la fuente se ve en menos de 150 s (60 s de caché nuestra + 60 s declarados por NovuTienda), y una falla se recupera en 10 s', async () => {
+  it('R78: un cambio de precio en la fuente se ve en nuestra caché a los 60 s; con los 60 s declarados por NovuTienda el peor caso teórico son 120 s, dentro de la tolerancia acordada de 150 s', async () => {
     const reloj = { t: 9_000_000 };
     let precio = 15000;
     const { d } = entorno({ ahora: reloj, respuesta: () => json(catalogoBo([item({ precioCentavos: precio })])) });
@@ -182,9 +182,13 @@ describe('caché de 60 s por comercio y mercado', () => {
     expect(await precioVisto()).toBe(15000); // dentro de la ventana: aún el viejo
     reloj.t += 2_000; // 61 s después del cambio
     expect(await precioVisto()).toBe(17000);
-    // La cota acordada con NovuTienda: la caché propia más lo que ellos declaran (60 s) no pasa de 150 s, también tras una falla.
-    expect(F.VIDA_DEL_CACHE_MS + 60_000).toBeLessThanOrEqual(150_000);
-    expect(F.VIDA_DEL_CACHE_MS + F.VIDA_DEL_CACHE_NEGATIVO_MS + 60_000).toBeLessThanOrEqual(150_000);
+    // TOLERANCIA ACORDADA con NovuTienda: 150 s. Peor caso TEÓRICO: nuestra caché (60 s) más la que NovuTienda declara en su propia
+    // respuesta (60 s) = 120 s, dentro de la tolerancia. El caché negativo (10 s) NO suma: una falla no guarda ningún precio
+    // viejo (se responde «catálogo no disponible»), solo retrasa hasta 10 s la próxima lectura, que ya lleva el precio nuevo.
+    const TOLERANCIA_ACORDADA_MS = 150_000;
+    const DECLARADO_POR_NOVUTIENDA_MS = 60_000;
+    expect(F.VIDA_DEL_CACHE_MS + DECLARADO_POR_NOVUTIENDA_MS).toBe(120_000);
+    expect(F.VIDA_DEL_CACHE_MS + DECLARADO_POR_NOVUTIENDA_MS).toBeLessThanOrEqual(TOLERANCIA_ACORDADA_MS);
   });
 
   it('una falla se recuerda 10 s (caché negativo) y pasado ese rato se vuelve a llamar', async () => {
