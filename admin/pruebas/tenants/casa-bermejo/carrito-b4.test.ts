@@ -14,7 +14,7 @@ import type { LlamadaDoble } from '../../lib/n8n-de-mentira';
 import { WEBHOOK_DEL_CARRITO } from '../../../../Flujos/src/modulos/catalogo-web/carrito-del-catalogo.mjs';
 // @ts-expect-error — el armador es un módulo .mjs sin tipos
 import * as C from '../../../../Flujos/clientes/casa-bermejo/construir.mjs';
-import { ANA, BILLETERA, CATALOGO, EXTRANJERO, MEDIA_QR, PID, PRODUCCION, catalogoOk, crear, hablar, modelo, mTexto, mToque, panelOk, panelSinCobro, textoAlModelo } from './mundo';
+import { ANA, ARGENTINO, BILLETERA, CATALOGO, EXTRANJERO, MEDIA_QR, PID, PRODUCCION, catalogoOk, crear, hablar, mLista, modelo, mTexto, mToque, panelOk, panelSinCobro, textoAlModelo } from './mundo';
 
 type Mund = ReturnType<typeof crear>;
 type Turno = ReturnType<typeof hablar>;
@@ -66,7 +66,7 @@ describe('R13: el carrito con recojo produce el resumen y el QR REAL en el mismo
     const t1 = enviar(m, cuerpo());
     expect(t1.mensajes).toHaveLength(1);
     expect(hayQr(t1)).toBe(false);
-    expect(t1.mensajes[0]!.cuerpo).toMatch(/a nombre de quién retira/);
+    expect(t1.mensajes[0]!.cuerpo).toMatch(/a nombre de quién retira/i);
     expect(t1.mensajes[0]!.cuerpo).not.toMatch(/pagar/i);
     const t2 = hablar(m, ANA, mTexto('Ana Pérez'));
     expect(t2.mensajes).toHaveLength(2);
@@ -114,39 +114,82 @@ describe('R13: el carrito con recojo produce el resumen y el QR REAL en el mismo
 describe('R14: el carrito con envío pregunta SOLO lo que falta y, al completarse, el QR sale solo', () => {
   const datos = (t: string): J => (/Ana/.test(t) ? { nombre: 'Ana Pérez' } : {});
   const modeloEnvio = (): ((ll: LlamadaDoble) => J) => (ll) => modelo('Listo.', { lineas: BILLETERA, entrega: datos(textoAlModelo(ll)) });
-  it('SANO: pide nombre, CI, ciudad y flota UNA vez (no pregunta el modo: el carrito ya dijo «envío») y, con los cuatro, el QR sale sin otro paso; la dirección del carrito se conserva', () => {
+  // DISEÑO DE ENTREGA DEL 26/11 (BM_PASOS_ENTREGA): envío BO = departamento (lista) → ciudad (+ aclaración) → nombre y cédula; AR = región → provincia → ciudad → nombre y DNI; retiro = nombre. Sin flota, dirección ni CP.
+  // Adaptada del diseño anterior (pedía «nombre, CI, ciudad y flota» juntos; la `direccion` del carrito se conservaba): ahora el carrito conserva solo el MODO y el resto lo pide el código por pasos.
+  it('SANO: carrito con envío y SIN departamento → la LISTA de departamentos (no el modo, no un texto libre), sin QR; luego ciudad, luego nombre y cédula, y con todo el QR sale solo', () => {
     const m = crear({ modeloDice: modeloEnvio() });
     const t1 = enviar(m, cuerpo({ entrega: 'envio', direccion: 'Av. Arce 123' }));
     expect(t1.mensajes).toHaveLength(1);
-    expect(t1.mensajes[0]!.cuerpo).toMatch(/nombre completo, carnet de identidad \(CI\), ciudad de destino, empresa de flota o terminal/);
+    expect(hayQr(t1)).toBe(false);
+    expect(JSON.stringify(t1.mensajes[0]!.payload)).toMatch(/dep:cb/);
+    expect(t1.mensajes[0]!.cuerpo).toMatch(/departamento/i);
     expect(titulos(t1)).not.toContain('Recojo en tienda');
-    expect(ficha(m).entrega).toMatchObject({ modo: 'Envío', direccion: 'Av. Arce 123' });
-    const t2 = hablar(m, ANA, mTexto('Ana Pérez, 4412345, Cochabamba, flota Bolivar'));
-    expect(hayQr(t2)).toBe(true);
-    expect(t2.mensajes).toHaveLength(2);
-    expect(qrEnviado(t2)).toMatchObject({ monto: 450 });
-    expect(cuerpos(t2)).not.toMatch(ACREDITADO);
-  });
-  it('NEGADO: con la flota sin decir NO hay QR, se pide solo la flota (no se repite el nombre ni el CI) y al darla el QR sale', () => {
-    const m = crear({ modeloDice: modeloEnvio() });
-    enviar(m, cuerpo({ entrega: 'envio' }));
-    const t2 = hablar(m, ANA, mTexto('Ana Pérez, 4412345, Cochabamba'));
+    expect(ficha(m).entrega).toMatchObject({ modo: 'Envío' });
+    expect(JSON.stringify(ficha(m).entrega)).not.toMatch(/Arce/);   // la dirección libre de la página no entra a la ficha
+    const t2 = hablar(m, ANA, mLista('dep:cb', 'Cochabamba'));
     expect(hayQr(t2)).toBe(false);
-    expect(cuerpos(t2)).toMatch(/flota/);
-    expect(cuerpos(t2)).not.toMatch(/nombre completo|carnet/);
-    const t3 = hablar(m, ANA, mTexto('flota Bolivar'));
-    expect(hayQr(t3)).toBe(true);
+    expect(cuerpos(t2)).toMatch(/ciudad/i);
+    expect(cuerpos(t2)).not.toMatch(/flota|nombre completo/i);
+    const t3 = hablar(m, ANA, mTexto('Cochabamba, oficina Zona Sur'));
+    expect(hayQr(t3)).toBe(false);
+    expect(cuerpos(t3)).toMatch(/nombre completo/i);
+    const t4 = hablar(m, ANA, mTexto('Ana Pérez 4412345'));
+    expect(hayQr(t4)).toBe(true);
+    expect(t4.mensajes).toHaveLength(2);
+    expect(qrEnviado(t4)).toMatchObject({ monto: 450 });
+    expect(cuerpos(t4)).not.toMatch(ACREDITADO);
+  });
+  it('NEGADO: con el departamento, la ciudad y el nombre ya en la ficha, el carrito con envío pide SOLO la cédula (no repite nada) y sin ella NO hay QR; al darla el QR sale', () => {
+    const m = crear({ modeloDice: modeloEnvio(), entregaPrevia: { departamento: 'dep:cb', ciudad: 'Cochabamba', nombre: 'Ana Pérez' } });
+    const t1 = enviar(m, cuerpo({ entrega: 'envio' }));
+    expect(hayQr(t1)).toBe(false);
+    expect(t1.mensajes).toHaveLength(1);
+    expect(cuerpos(t1)).toMatch(/cédula|CI/i);
+    expect(JSON.stringify(t1.mensajes[0]!.payload)).not.toMatch(/dep:cb|"sections"/);
+    expect(cuerpos(t1)).not.toMatch(/departamento|ciudad|flota/i);
+    const t2 = hablar(m, ANA, mTexto('4412345'));
+    expect(hayQr(t2)).toBe(true);
+  });
+  it('NEGADO: datos ya presentes no se vuelven a pedir: con la entrega COMPLETA en la ficha, el carrito con envío saca el QR directo (2 mensajes) sin preguntar nada', () => {
+    const m = crear({ modeloDice: modeloEnvio(), entregaPrevia: { departamento: 'dep:cb', ciudad: 'Cochabamba', nombre: 'Ana Pérez', documento: '4412345' } });
+    const t = enviar(m, cuerpo({ entrega: 'envio' }));
+    expect(hayQr(t)).toBe(true);
+    expect(t.mensajes).toHaveLength(2);
+    expect(qrEnviado(t)).toMatchObject({ monto: 450 });
+  });
+  it('NEGADO: con departamento y ciudad pero SIN el nombre ni la cédula no hay QR directo: pide nombre y cédula (nunca el QR con la entrega a medias)', () => {
+    const m = crear({ modeloDice: modeloEnvio(), entregaPrevia: { departamento: 'dep:cb', ciudad: 'Cochabamba' } });
+    const t = enviar(m, cuerpo({ entrega: 'envio' }));
+    expect(hayQr(t)).toBe(false);
+    expect(cuerpos(t)).toMatch(/nombre completo/i);
+  });
+  it('NEGADO: carrito con RETIRO y nombre conocido → QR directo sin pedir departamento, ciudad ni cédula; sin el nombre pide solo el nombre', () => {
+    const t = enviar(conNombre({ modeloDice: modeloEnvio() }), cuerpo({ entrega: 'retiro' }));
+    expect(hayQr(t)).toBe(true);
+    expect(cuerpos(t)).not.toMatch(/departamento|ciudad|c[eé]dula/i);
+    const t0 = enviar(crear({ modeloDice: modeloEnvio() }), cuerpo({ entrega: 'retiro' }));
+    expect(hayQr(t0)).toBe(false);
+    expect(cuerpos(t0)).toMatch(/a nombre de quién retira/i);
+    expect(cuerpos(t0)).not.toMatch(/departamento|c[eé]dula/i);
+  });
+  it('NEGADO: carrito de ARGENTINO con envío → la lista de REGIONES (no la de departamentos de Bolivia), sin QR', () => {
+    const itemAr = { ...CATALOGO[1], moneda: 'ARS', precio: 450000, precioCentavos: 45000000, stock: 10, disponible: true };
+    const m = crear({ modeloDice: modeloEnvio(), catalogo: catalogoOk({ mercado: 'AR', moneda: 'ARS' }, [itemAr] as never) });
+    const t = enviar(m, cuerpo({ telefono: ARGENTINO, conversacionId: `wa_${ARGENTINO}`, mercado: 'AR', moneda: 'ARS', entrega: 'envio', items: [{ id: 'billetera-cuero', nombre: 'Billetera de cuero', cantidad: 1, subtotal: 4500, precioCentavos: 45000000 }], total: 4500 }));
+    expect(hayQr(t)).toBe(false);
+    expect(JSON.stringify(t.mensajes.map((x) => x.payload))).toMatch(/reg:centro/);
+    expect(JSON.stringify(t.mensajes.map((x) => x.payload))).not.toMatch(/dep:cb/);
   });
   it('NEGADO: si en el camino el cliente CAMBIA el pedido, el QR no sale solo (sale el resumen con «Confirmar pedido»)', () => {
-    const m = crear({ modeloDice: (ll: LlamadaDoble) => modelo('Listo.', { lineas: [{ id: 'billetera-cuero', cantidad: 2 }], entrega: datos(textoAlModelo(ll)) }) });
+    const m = crear({ modeloDice: (ll: LlamadaDoble) => modelo('Listo.', { lineas: [{ id: 'billetera-cuero', cantidad: 2 }], entrega: datos(textoAlModelo(ll)) }), entregaPrevia: { departamento: 'dep:cb', ciudad: 'Cochabamba' } });
     enviar(m, cuerpo({ entrega: 'envio' }));
-    const t = hablar(m, ANA, mTexto('Ana Pérez, 4412345, Cochabamba, flota Bolivar, ahora quiero dos'));
+    const t = hablar(m, ANA, mTexto('Ana Pérez 4412345, ahora quiero dos'));
     expect(hayQr(t)).toBe(false);
   });
   it('NEGADO: tras «Corregir datos» el QR ya no sale solo al completar: el cliente ve sus datos y confirma', () => {
-    const m = crear({ modeloDice: modeloEnvio() });
+    const m = crear({ modeloDice: modeloEnvio(), entregaPrevia: { departamento: 'dep:cb', ciudad: 'Cochabamba' } });
     enviar(m, cuerpo({ entrega: 'envio' }));
-    const t2 = hablar(m, ANA, mTexto('Ana Pérez, 4412345, Cochabamba, flota Bolivar'));
+    const t2 = hablar(m, ANA, mTexto('Ana Pérez 4412345'));
     expect(hayQr(t2)).toBe(true);
     // Con un pedido nuevo del catálogo que NO puede salir solo (una pieza descartada), el QR del chat tampoco: confirma por botón.
     const t3 = enviar(m, cuerpo({ entrega: 'envio', descartados: ['x'] }));
@@ -214,7 +257,7 @@ describe('R16: el precio del QR sale del catálogo leído en ESE turno, nunca de
   it('un total que ES el real más el costo de envío del servidor no se toma por distinto (el QR cobra los productos)', () => {
     const m = conNombre();
     const t = enviar(m, cuerpo({ entrega: 'envio', costoEnvio: 20, total: 470, direccion: 'Av. Arce 123' }));
-    // Falta la ciudad y la flota (el envío): se pregunta; el total de la carga no genera un aviso de precio cambiado.
+    // Falta el departamento y lo que sigue (el envío): se pregunta; el total de la carga no genera un aviso de precio cambiado.
     expect(cuerpos(t)).not.toMatch(/Algún precio/);
   });
 });

@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { cargarFuente } from '../../core/fuente-vm';
-import { ANA, ARGENTINO, BILLETERA, CATALOGO, catalogoOk, crear, hablar, modelo, modeloAdverso, modeloDeNombre, modeloSano, mTexto, mToque } from './mundo';
+import { ANA, BILLETERA, crear, hablar, mLista, modelo, modeloAdverso, modeloDeNombre, modeloSano, mTexto, mToque } from './mundo';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FLUJOS = join(AQUI, '../../../../Flujos/experimental');
@@ -15,7 +15,7 @@ const RUTAS = [
   'venta-digital/src/cobro.js', 'venta-digital/src/diferencias.js', '../src/modulos/pedidos/comprobante-diferencias.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js',
   '../src/core/sin-agente/mensajes.js', '../src/core/texto/filtro-redaccion.js', '../src/core/texto/identidad.js', '../src/modulos/pedidos/confirmar-pedido.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
 ].map((r) => join(FLUJOS, r));
-const NOMBRES = ['bmNombreValido', 'bmEntregaDeTurno', 'bmEsConsulta', 'bmPideUbicacion', 'bmPideHorario', 'bmPreguntaDeTienda', 'bmCiDelTexto', 'bmCiudadDelTexto', 'bmFraseDeModo', 'bmDatosResumen', 'bmPideDeEntrega', 'bmDatosTienda', 'bmNorm', 'bmFichaVigente', 'bmFichaBase', 'vcMonto', 'vcTotalCentavos'];
+const NOMBRES = ['bmNombreValido', 'bmEntregaDeTurno', 'bmEsConsulta', 'bmPideUbicacion', 'bmPideHorario', 'bmPreguntaDeTienda', 'bmCiDelTexto', 'bmFraseDeModo', 'bmDatosResumen', 'bmPideDeEntrega', 'bmDatosTienda', 'bmNorm', 'bmFichaVigente', 'bmFichaBase', 'vcMonto', 'vcTotalCentavos'];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
 type Fn = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
 const b = (n: string): Fn => B[n] as Fn;
@@ -90,10 +90,11 @@ describe('B1. el NOMBRE: un tramo contiguo de lo que escribió el cliente, y nun
     expect(N('Rosa', 'a nombre de Rosa')).toBe('Rosa');
     expect(N('Luz', 'Hola, soy Luz')).toBe('Luz');
   });
-  it('sano: el nombre dentro de un mensaje de DATOS (frases con coma, o con lo que el código lee: cifra, flota, ciudad)', () => {
+  it('sano: el nombre dentro de un mensaje de DATOS (frases con coma, o con lo que el código lee: la cifra del documento y su rótulo)', () => {
     expect(N('Ana Pérez', 'Ana Pérez, recojo en tienda', 1)).toBe('Ana Pérez');
     expect(N('Juan Perez', 'Juan Perez, quiero pagar')).toBe('Juan Perez');
-    expect(N('Ana Pérez', 'Ana Pérez 4412345 Cochabamba flota Bolivar', 2)).toBe('Ana Pérez');
+    expect(N('Ana Pérez', 'Ana Pérez 4412345', 2)).toBe('Ana Pérez');
+    expect(N('Ana Pérez', 'CI 4412345 Ana Pérez', 2)).toBe('Ana Pérez');
   });
 });
 
@@ -120,26 +121,28 @@ describe('B1. el NOMBRE de punta a punta con un modelo que TOMA LA CONSULTA COMO
   }
   it('sano «soy Ana Pérez» con el envío: se captura «Ana Pérez» sin la entrada', () => {
     const m = conEnvio();
+    hablar(m, ANA, mLista('dep:cb', 'Cochabamba'));
+    hablar(m, ANA, mTexto('Cochabamba'));
     hablar(m, ANA, mTexto('soy Ana Pérez'));
     expect(ficha(m).entrega.nombre).toBe('Ana Pérez');
   });
 });
 
 describe('B2. el estado «qué dato pedí» vive en la FICHA (`pide`), lo escribe el código y un dato capturado no se pisa', () => {
-  it('el código escribe `pide`: tras el botón de retiro pide el nombre; tras el de envío, nombre, documento y ciudad; completo el pedido, nada; al derivar, nada', () => {
+  it('el código escribe `pide`: tras el botón de retiro pide el nombre; tras el de envío, el departamento (un dato por paso); completo el pedido, nada; al derivar, el MISMO dato sigue pedido (26/11/2026: `pide` persiste)', () => {
     const r = conNombrePedido();
     expect(ficha(r).pide).toEqual(['nombre']);
     hablar(r, ANA, mTexto('Ana Pérez'));
     expect(ficha(r).pide).toEqual([]);
     const e = conEnvio();
-    expect(ficha(e).pide).toEqual(['nombre', 'documento', 'ciudad', 'flota']);   // octava ronda: la flota también se pide con `pide`
+    expect(ficha(e).pide).toEqual(['departamento']);
     const d = crear({ modeloDice: modeloAdverso() });
     hablar(d, ANA, mTexto('quiero una billetera'));
     hablar(d, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
     expect(ficha(d).pide).toEqual(['nombre']);
     const t = hablar(d, ANA, mTexto('Ana'));
     expect(t.avisos.length).toBeGreaterThanOrEqual(1);
-    expect(ficha(d).pide).toEqual([]);
+    expect(ficha(d).pide).toEqual(['nombre']);
   });
   it('NEGADO (el caso del informe): con «Retira: Ana Pérez» ya capturado, el modelo dice «Listo, ya tengo su nombre.» y el cliente escribe «Muchas gracias»: el nombre NO se pisa y el pedido sigue con su «Confirmar pedido»', () => {
     const m = crear({ modeloDice: modeloSano((t) => ({ nombre: t }), 'Listo, ya tengo su nombre.') });
@@ -192,8 +195,12 @@ describe('B2. el estado «qué dato pedí» vive en la FICHA (`pide`), lo escrib
     expect(P({}, 'BO')).toEqual([]);
     expect(P({ modo: 'recojo en tienda' }, 'BO')).toEqual(['nombre']);
     expect(P({ modo: 'recojo en tienda', nombre: 'Ana' }, 'BO')).toEqual([]);
-    expect(P({ modo: 'envío', nombre: 'Ana Pérez', documento: '4412345' }, 'BO')).toEqual(['ciudad', 'flota']);   // octava ronda: la flota también se pide con `pide`
-    expect(P({ modo: 'envío', nombre: 'Ana Pérez', documento: '4412345', ciudad: 'Oruro', flota: 'Bolivar' }, 'BO')).toEqual([]);
+    expect(P({ modo: 'envío' }, 'BO')).toEqual(['departamento']);   // el envío pide UN paso por vez: primero el departamento
+    expect(P({ modo: 'envío', nombre: 'Ana Pérez', documento: '4412345' }, 'BO')).toEqual(['departamento']);   // lo ya capturado no se repregunta, pero el orden manda
+    expect(P({ modo: 'envío', departamento: 'dep:or' }, 'BO')).toEqual(['ciudad']);
+    expect(P({ modo: 'envío', departamento: 'dep:or', ciudad: 'Oruro' }, 'BO')).toEqual(['nombre', 'documento']);
+    expect(P({ modo: 'envío', departamento: 'dep:or', ciudad: 'Oruro', nombre: 'Ana Pérez' }, 'BO')).toEqual(['documento']);
+    expect(P({ modo: 'envío', departamento: 'dep:or', ciudad: 'Oruro', nombre: 'Ana Pérez', documento: '4412345' }, 'BO')).toEqual([]);
   });
 });
 
@@ -267,20 +274,7 @@ describe('B6. una dirección que DA el cliente no es una consulta (Argentina)', 
   it('sano: «La dirección de la tienda», «¿cuál es la dirección?», «La dirección de la tienda, 4412345» y «dirección» siguen siendo consulta', () => {
     for (const t of ['La dirección de la tienda', '¿cuál es la dirección?', 'La dirección de la tienda, 4412345', 'dirección', 'Cuál es su dirección, 4412345']) expect(b('bmEsConsulta')(t), t).toBe(true);
   });
-  for (const frase of ['La dirección de envío es Av Corrientes 1234', 'Dirección Av Corrientes 1234']) {
-    it(`de punta a punta (Argentina): «${frase}» se captura (la ve el modelo, no se deriva) y no se repregunta`, () => {
-      const itemAr = { ...CATALOGO[1], moneda: 'ARS', precio: 450000, precioCentavos: 45000000, stock: 10, disponible: true };
-      const m = crear({ catalogo: catalogoOk({ mercado: 'AR', moneda: 'ARS' }, [itemAr] as never), modeloDice: modeloSano((t) => (/Av Corrientes/.test(t) ? { direccion: 'Av Corrientes 1234' } : {})) });
-      hablar(m, ARGENTINO, mTexto('quiero una billetera'));
-      hablar(m, ARGENTINO, mToque('entrega:envio', 'Envío'));
-      const c = llamadas(m);
-      const t = hablar(m, ARGENTINO, mTexto(frase));
-      expect(c.n).toBe(1);
-      expect(t.avisos).toHaveLength(0);
-      expect(ficha(m, ARGENTINO).entrega['direccion']).toBe('Av Corrientes 1234');
-      expect(cuerpos(t)).not.toMatch(/dirección exacta/i);
-    });
-  }
+  // DEJA DE APLICAR (26/11/2026): el caso «de punta a punta (Argentina): "La dirección de envío es Av Corrientes 1234" se captura como dirección» ya no existe: la dirección exacta NO se pide ni se guarda (la cubre «QUEDAN FUERA» en entrega-por-estado.test.ts).
 });
 
 describe('B7. un número de pedido, de código o de referencia NO es un CI', () => {
@@ -310,31 +304,35 @@ describe('B8. cambiar el modo y fijar el envío con su destino', () => {
   it('NEGADO: «no envío», «no quiero envío», «mejor no» y una pregunta no cambian el modo', () => {
     for (const t of ['no envío', 'no quiero envío', 'mejor no', 'no, gracias', '¿mejor envío?', 'el envío a Oruro dice que tarda']) expect(E({}, RET, t).entrega.modo, t).toBeUndefined();
   });
-  it('«envíenlo a Cochabamba» y «quiero que me lo envíen a Sucre» fijan el envío Y la ciudad, sin repreguntar (R27)', () => {
+  it('«envíenlo a Cochabamba» y «quiero que me lo envíen a Sucre» fijan SOLO el envío: el destino NO se lee del texto, lo pide el código por la lista (R27, rediseño 26/11/2026)', () => {
     const a = E({}, {}, 'envíenlo a Cochabamba', { modoPedido: true });
-    expect(a.entrega).toMatchObject({ modo: 'envío', ciudad: 'Cochabamba' });
+    expect(a.entrega).toMatchObject({ modo: 'envío' });
+    expect(a.entrega.ciudad).toBeUndefined();
     const c = E({}, {}, 'quiero que me lo envíen a Sucre', { modoPedido: true });
-    expect(c.entrega).toMatchObject({ modo: 'envío', ciudad: 'Sucre' });
+    expect(c.entrega).toMatchObject({ modo: 'envío' });
+    expect(c.entrega.ciudad).toBeUndefined();
+    expect(c.entrega.departamento).toBeUndefined();
   });
   it('NEGADO: «envío para Ana Pérez» (sustantivo, sin verbo) no inventa una ciudad; «¿me lo envían a Sucre?» es consulta y no fija nada', () => {
     expect(E({}, ENV, 'envío para Ana Pérez').entrega.ciudad).toBeUndefined();
     expect(E({}, {}, '¿me lo envían a Sucre?', { modoPedido: true }).entrega.modo).toBeUndefined();
   });
-  it('de punta a punta: con el retiro listo, «no, mejor envío» cambia a Envío, conserva el nombre y pide lo que falta', () => {
+  it('de punta a punta: con el retiro listo, «no, mejor envío» cambia a Envío, conserva el nombre y pide el primer paso del envío: el departamento por la lista', () => {
     const m = conNombrePedido();
     hablar(m, ANA, mTexto('Ana Pérez'));
     expect(ficha(m).entrega.modo).toBe(RETIRO);
     const t = hablar(m, ANA, mTexto('no, mejor envío'));
     expect(ficha(m).entrega).toMatchObject({ modo: 'Envío', nombre: 'Ana Pérez' });
     expect(confirmaDe(t)).toBeUndefined();
-    expect(cuerpos(t)).toMatch(/carnet|CI/i);
+    expect(cuerpos(t)).toMatch(/departamento/i);
+    expect(J(t.mensajes[0]!.payload)).toContain('"type":"list"');
   });
-  it('de punta a punta: «envíenlo a Cochabamba» sin modo elegido fija Envío y Cochabamba, y no vuelve a preguntar la ciudad', () => {
+  it('de punta a punta: «envíenlo a Cochabamba» sin modo elegido fija Envío y pide el departamento por la lista (NO toma «Cochabamba» del texto)', () => {
     const m = crear({ modeloDice: modeloSano() });
     hablar(m, ANA, mTexto('quiero una billetera'));
     const t = hablar(m, ANA, mTexto('envíenlo a Cochabamba'));
-    expect(ficha(m).entrega).toMatchObject({ modo: 'Envío', ciudad: 'Cochabamba' });
-    expect(cuerpos(t)).not.toMatch(/ciudad de destino/i);
+    expect(ficha(m).entrega).toMatchObject({ modo: 'Envío', ciudad: '', departamento: '' });
+    expect(cuerpos(t)).toMatch(/departamento/i);
   });
   it('R26: «Corregir datos» conserva el modo pero DICE cómo cambiarlo, y lo escrito cambia el modo de verdad', () => {
     const m = conNombrePedido();
@@ -348,13 +346,10 @@ describe('B8. cambiar el modo y fijar el envío con su destino', () => {
 });
 
 describe('Menores', () => {
-  it('«vivo en Av Corrientes 1234» no deja ciudad «Av Corrientes»; una ciudad real sí', () => {
-    const C = b('bmCiudadDelTexto');
-    expect(C('vivo en Av Corrientes 1234', 0, { pidio: true }).ciudad).toBe('');
-    expect(C('vivo en Calle Sucre 45', 0, { pidio: true }).ciudad).toBe('');
-    expect(C('vivo en Corrientes 1234', 0, { pidio: true }).ciudad).toBe('');
-    expect(C('vivo en Cochabamba', 0, { pidio: true }).ciudad).toBe('Cochabamba');
-    expect(E({}, { modo: 'envío' }, 'vivo en Av Corrientes 1234', { esperaCiudad: true }).entrega.ciudad).toBeUndefined();
+  // DEJA DE APLICAR (26/11/2026): «vivo en Av Corrientes 1234» no deja ciudad «Av Corrientes» (`bmCiudadDelTexto` y sus listas de calles se BORRARON): la ciudad ya no se adivina del texto, se guarda TAL CUAL lo que el cliente escribe cuando el código se la pide.
+  it('SIN ADIVINAR: fuera del paso de la ciudad, un texto con «vivo en Cochabamba» no deja ciudad ni departamento', () => {
+    expect(E({}, { modo: 'envío' }, 'vivo en Cochabamba', { esperaCiudad: false }).entrega.ciudad).toBeUndefined();
+    expect(E({}, { modo: 'envío' }, 'vivo en Cochabamba', { esperaCiudad: false, esperaDepartamento: false }).entrega.departamento).toBeUndefined();
   });
   it('R54: al elegir el RETIRO el mismo mensaje trae la dirección de la tienda; en el resumen listo también («Retira en: …»); sin dato cargado nada; con el envío tampoco', () => {
     const m = crear({ base: TIENDA, modeloDice: modeloDeNombre() });

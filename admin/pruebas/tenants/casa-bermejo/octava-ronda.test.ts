@@ -1,15 +1,20 @@
 /**
- * OCTAVA RONDA de Casa Bermejo (26/11/2026), tras la revisión independiente de la séptima (CAMBIOS REQUERIDOS: la validación del nombre no se aplicaba a la ciudad, la flota ni los campos de Argentina).
- * El principio: UNA sola función de validación de dato (`bmDatoValido`: tramo contiguo de lo que escribió el cliente, sin cortesías, intenciones, rótulos de otro dato ni piezas del catálogo) y el código pide cada dato con `pide`.
- * Cada punto trae su caso NEGADO (adverso o cortesía) y su caso sano. Primera parte: la librería pura. Segunda: el JSON versionado con el n8n de mentira, con un modelo que TOMA LA CONSULTA COMO DATO EN TODOS LOS CAMPOS.
- * Mensajes por conversación: 0 agregados. Datos ficticios: ninguna dirección ni teléfono es real.
+ * OCTAVA RONDA de Casa Bermejo (26/11/2026), REESCRITA el 26/11/2026 con el rediseño «Intermedio» de la entrega: una cortesía o una palabra suelta no completa ningún paso, un dato por paso (`pide`), y nada de adivinar texto libre.
+ * Cada punto trae su caso NEGADO (adverso o cortesía) y su caso sano. Primera parte: la librería pura. Segunda: el JSON versionado con el n8n de mentira, con un modelo que TOMA EL TEXTO COMO DATO EN TODOS LOS CAMPOS que todavía existen (nombre y documento).
+ *
+ * DEJAN DE APLICAR (la octava ronda original validaba ciudad, flota y los campos de Argentina con listas de palabras; el 26/11/2026 Andres decidió no adivinar texto libre y esos datos cambiaron):
+ *   - BN1 «la CIUDAD suelta pasa por las exclusiones del nombre» (`bmCiudadDelTexto`, `bmDatoExcluido`, `bmDatoValido`, `bmLugarValido`): las listas negras de ciudad y de flota se BORRARON. Queda la validación mínima (no vacío, no consulta, no palabra de control, largo): aquí se prueba con `bmCiudadYAclaracion`.
+ *   - BN2/BN3 «la CIUDAD y la FLOTA que propone el modelo»: el modelo ya no propone ciudad ni flota (la ciudad la escribe el cliente cuando el código la pide; la flota la define la tienda y no se pide).
+ *   - I1 «Argentina: dirección, código postal y provincia»: ya no se piden (dirección exacta, CP y provincia por texto libre); la provincia sale de la lista de su región (entrega-listas.test.ts).
+ *   - M1 «un rótulo de otro dato no es un nombre» para «Provincia …», «Ciudad …», «Flota …», «Dirección …» y «CP …»: esos rótulos ya no son datos que se pidan; se conserva la parte de los nombres reales (Rosa, Paz, Luz, Mercedes).
+ * Mensajes por conversación: ver entrega-listas.test.ts. Datos ficticios: ninguna dirección ni teléfono es real.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { cargarFuente } from '../../core/fuente-vm';
-import { ANA, ARGENTINO, CATALOGO, catalogoOk, crear, hablar, modeloSano, mTexto, mToque } from './mundo';
+import { ANA, crear, hablar, mLista, modeloSano, mTexto, mToque } from './mundo';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FLUJOS = join(AQUI, '../../../../Flujos/experimental');
@@ -17,107 +22,47 @@ const RUTAS = [
   'venta-digital/src/cobro.js', 'venta-digital/src/diferencias.js', '../src/modulos/pedidos/comprobante-diferencias.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js',
   '../src/core/sin-agente/mensajes.js', '../src/core/texto/filtro-redaccion.js', '../src/core/texto/identidad.js', '../src/modulos/pedidos/confirmar-pedido.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
 ].map((r) => join(FLUJOS, r));
-const NOMBRES = ['bmNombreValido', 'bmDatoValido', 'bmDatoExcluido', 'bmLugarValido', 'bmDireccionValida', 'bmCpValido', 'bmEntregaDeTurno', 'bmCiudadDelTexto', 'bmPideDeEntrega', 'bmNorm'];
+const NOMBRES = ['bmNombreValido', 'bmEntregaDeTurno', 'bmCiudadYAclaracion', 'bmPideDeEntrega', 'bmNorm'];
 const B = cargarFuente<Record<string, any>>(RUTAS, NOMBRES); // eslint-disable-line @typescript-eslint/no-explicit-any
 type Fn = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
 const b = (n: string): Fn => B[n] as Fn;
-const MODOS = ['recojo en tienda', 'envío'];
 const VENDIBLES = [{ id: 'billetera-cuero', nombre: 'Billetera de cuero', area: 'Accesorios · Billeteras' }, { id: 'llavero-llama', nombre: 'Llavero de llama', area: 'Hogar y oficina · Llaveros' }];
-const E = (nueva: unknown, antes: unknown, texto: string, estado: Record<string, unknown> = {}) => b('bmEntregaDeTurno')(nueva, antes, texto, MODOS, { vendibles: VENDIBLES, ...estado });
-const ENVIO = { modo: 'envío' };
-const CORTESIAS = ['Muchas gracias', 'Bien', 'Efectivo', 'Perfecto', 'Gracias', 'Billetera', 'Vendedor', 'Gracias por todo', 'Ok perfecto', 'Transferencia', 'Humano', 'Cuero', 'Otro color'];
+const CORTESIAS = ['Muchas gracias', 'Bien', 'Perfecto', 'Gracias', 'Gracias por todo', 'Ok perfecto', 'Chau', 'quiero pagar', 'quiero hablar con un vendedor'];
 
-describe('BN1. la CIUDAD suelta pasa por las mismas exclusiones que el nombre (unitario, sin modelo)', () => {
+describe('BN1. el paso de la CIUDAD: una cortesía, una orden o una despedida no es una ciudad (unitario, sin modelo)', () => {
   for (const x of CORTESIAS) it(`NEGADO: «${x}» como respuesta a «¿ciudad?» no es una ciudad`, () => {
-    expect(b('bmCiudadDelTexto')(x, 3, { pidio: true, vendibles: VENDIBLES }).ciudad, x).toBe('');
+    expect(b('bmCiudadYAclaracion')(x).ciudad, x).toBe('');
   });
-  for (const x of ['Cochabamba', 'Santa Cruz', 'Oruro', 'Tarija']) it(`sano: «${x}» sigue siendo una ciudad`, () => {
-    expect(b('bmCiudadDelTexto')(x, 3, { pidio: true, vendibles: VENDIBLES }).ciudad).toBe(x);
+  for (const x of ['Cochabamba', 'Santa Cruz', 'Oruro', 'Tarija', 'La Paz']) it(`sano: «${x}» es una ciudad y se guarda TAL CUAL`, () => {
+    expect(b('bmCiudadYAclaracion')(x).ciudad).toBe(x);
   });
-  it('sano: «La Paz» que propone el modelo (la ciudad suelta del código pide palabras de 3 letras) vale: la partícula inicial es de la ciudad', () => {
-    const r = E({ ciudad: 'La Paz' }, { modo: 'envío', nombre: 'Ana Pérez', documento: '4412345' }, 'La Paz', { esperaCiudad: true });
-    expect(r.entrega.ciudad).toBe('La Paz');
-  });
-  it('NEGADO: la cifra del CI seguida de una cortesía tampoco es una ciudad («4412345 Gracias»)', () => {
-    expect(b('bmCiudadDelTexto')('4412345 Gracias', 0, { vendibles: VENDIBLES }).ciudad).toBe('');
-    expect(b('bmCiudadDelTexto')('4412345 Cochabamba', 0, { vendibles: VENDIBLES }).ciudad).toBe('Cochabamba');
+  it('NEGADO: «4412345» (un documento) o «4412345 Gracias» tampoco es una ciudad', () => {
+    expect(b('bmCiudadYAclaracion')('4412345').ciudad).toBe('');
+    expect(b('bmCiudadYAclaracion')('4412345 Gracias').ciudad).toBe('');
   });
 });
 
-describe('BN2/BN3. la CIUDAD y la FLOTA que propone el modelo: validadas, y solo si el código las pidió (`pide`)', () => {
-  const PIDE = { esperaNombre: true, esperaDocumento: true, esperaCiudad: true, esperaFlota: true };
-  for (const x of CORTESIAS.concat(['no, mejor envío', 'ENVÍO POR FAVOR', 'CI 4412345', '70012345', 'mi número de pedido es 123456'])) {
-    it(`NEGADO: el modelo devuelve «${x}» como ciudad y como flota: no queda ninguna de las dos`, () => {
-      const r = E({ ciudad: x, flota: x }, ENVIO, x, PIDE);
-      expect(r.entrega.ciudad, x).toBeUndefined();
-      expect(r.entrega.flota, x).toBeUndefined();
-    });
-  }
-  it('NEGADO: sin `pide` el modelo no puede fijar la flota ni la ciudad aunque el texto sea limpio', () => {
-    const r = E({ ciudad: 'Cochabamba', flota: 'Bolivar' }, ENVIO, 'Bolivar', { esperaNombre: true });
-    expect(r.entrega.flota).toBeUndefined();
-    expect(r.entrega.ciudad).toBeUndefined();
+describe('BN. UN dato por paso: lo que el cliente adelanta no se guarda, y el modelo no puede fijar ciudad, departamento ni flota', () => {
+  const ENV = { modo: 'envío' };
+  it('NEGADO: sin `pide` el modelo no fija nada de la entrega aunque el texto sea limpio (ni el nombre ni el documento)', () => {
+    const r = b('bmEntregaDeTurno')({ nombre: 'Ana Pérez', documento: '4412345', ciudad: 'Oruro', departamento: 'dep:or', flota: 'Bolivar' }, ENV, 'Ana Pérez', ['recojo en tienda', 'envío'], { vendibles: VENDIBLES });
+    expect(r.entrega).toEqual({});
   });
-  it('NEGADO: el nombre ya capturado en el mismo turno no es la ciudad ni la flota («Ana Pérez»)', () => {
-    const r = E({ nombre: 'Ana Pérez', ciudad: 'Ana Pérez', flota: 'Ana Pérez' }, ENVIO, 'Ana Pérez', PIDE);
-    expect(r.entrega.nombre).toBe('Ana Pérez');
-    expect(r.entrega.ciudad).toBeUndefined();
-    expect(r.entrega.flota).toBeUndefined();
+  it('NEGADO: la ciudad, el departamento y la flota que devuelve el modelo se IGNORAN siempre (la ciudad y la aclaración las lee el código del texto del cliente; el departamento sale de la lista; la flota no existe)', () => {
+    const r = b('bmEntregaDeTurno')({ ciudad: 'Trucha', departamento: 'dep:lp', flota: 'Bolivar', provincia: 'prov:ar-x' }, ENV, 'gracias', ['recojo en tienda', 'envío'], { vendibles: VENDIBLES, esperaCiudad: false });
+    expect(r.entrega).toEqual({});
   });
-  it('NEGADO: una sola palabra responde UNA pregunta: si queda como ciudad, la flota del modelo no es la misma palabra', () => {
-    const r = E({ ciudad: 'Cochabamba', flota: 'Cochabamba' }, { modo: 'envío', nombre: 'Ana Pérez', documento: '4412345' }, 'Cochabamba', { esperaCiudad: true, esperaFlota: true });
-    expect(r.entrega.ciudad).toBe('Cochabamba');
-    expect(r.entrega.flota).toBeUndefined();
-  });
-  it('sano: pedida la flota, «Bolivar» (o «la flota Bolivar») la fija; pedida la ciudad, «Cochabamba» la fija', () => {
-    const f = E({ flota: 'Bolivar' }, { modo: 'envío', nombre: 'Ana Pérez', documento: '4412345', ciudad: 'Cochabamba' }, 'Bolivar', { esperaFlota: true });
-    expect(f.entrega.flota).toBe('Bolivar');
-    const c = E({ ciudad: 'Cochabamba' }, { modo: 'envío', nombre: 'Ana Pérez', documento: '4412345' }, 'Cochabamba', { esperaCiudad: true });
-    expect(c.entrega.ciudad).toBe('Cochabamba');
-  });
-  it('R27: el flota contaminado ya no borra la ciudad de «envíenlo a Cochabamba» (la ciudad la lee el código)', () => {
-    const r = E({ flota: 'envíenlo a Cochabamba', ciudad: 'envíenlo a Cochabamba' }, {}, 'envíenlo a Cochabamba', { modoPedido: true });
-    expect(r.entrega.modo).toBe('envío');
-    expect(r.entrega.ciudad).toBe('Cochabamba');
-    expect(r.entrega.flota).toBeUndefined();
+  it('el código pide, por estado, UN paso por vez (lista en pasos): departamento → ciudad → nombre y cédula', () => {
+    const P = b('bmPideDeEntrega');
+    expect(P({ modo: 'envío' }, 'BO')).toEqual(['departamento']);
+    expect(P({ modo: 'envío' }, 'AR')).toEqual(['region']);
+    expect(P({ modo: 'envío', region: 'reg:cuyo' }, 'AR')).toEqual(['provincia']);
+    expect(P({ modo: 'envío', region: 'reg:cuyo', provincia: 'prov:ar-m' }, 'AR')).toEqual(['ciudad']);
+    expect(P({ modo: 'envío', region: 'reg:cuyo', provincia: 'prov:ar-m', ciudad: 'Mendoza' }, 'AR')).toEqual(['nombre', 'documento']);
   });
 });
 
-describe('I1. Argentina: dirección, código postal y provincia, cada uno pedido por el código y validado', () => {
-  const AR = { mercado: 'AR', esperaNombre: true, esperaDocumento: true, esperaDireccion: true, esperaCp: true, esperaProvincia: true };
-  const TODO = (t: string) => ({ direccion: t, cp: t, provincia: t, nombre: t, ciudad: t, flota: t });
-  it('el código pide dirección, código postal y provincia (y nada de ciudad ni flota) en un envío a Argentina', () => {
-    expect(b('bmPideDeEntrega')({ modo: 'envío' }, 'AR')).toEqual(['nombre', 'documento', 'direccion', 'cp', 'provincia']);
-    expect(b('bmPideDeEntrega')({ modo: 'envío' }, 'BO')).toEqual(['nombre', 'documento', 'ciudad', 'flota']);
-  });
-  it('NEGADO: «CP 1043» con un modelo que lo devuelve en todos los campos solo fija el código postal', () => {
-    const r = E(TODO('CP 1043'), ENVIO, 'CP 1043', AR);
-    expect(r.entrega).toEqual({ cp: '1043' });
-  });
-  it('NEGADO: «Dirección Av Corrientes 1234» solo fija la dirección (sin la entrada) y no la provincia', () => {
-    const r = E(TODO('Dirección Av Corrientes 1234'), ENVIO, 'Dirección Av Corrientes 1234', AR);
-    expect(r.entrega).toEqual({ direccion: 'Av Corrientes 1234' });
-  });
-  it('NEGADO: «Provincia Buenos Aires» solo fija la provincia; no es un nombre (M1) ni una dirección', () => {
-    const r = E(TODO('Provincia Buenos Aires'), ENVIO, 'Provincia Buenos Aires', AR);
-    expect(r.entrega).toEqual({ provincia: 'Buenos Aires' });
-    expect(b('bmNombreValido')('Provincia Buenos Aires', 'Provincia Buenos Aires', 1, VENDIBLES)).toBe('');
-  });
-  it('NEGADO: una cortesía no llena ningún campo de Argentina', () => {
-    for (const x of ['Muchas gracias', 'Bien', 'Efectivo', 'Otro color']) expect(E(TODO(x), ENVIO, x, AR).entrega, x).toEqual({});
-  });
-  it('NEGADO: sin `pide` ni rótulo ni mensaje de datos, el modelo no fija nada', () => {
-    expect(E({ direccion: 'Av Corrientes 1234', cp: '1043', provincia: 'Buenos Aires' }, ENVIO, 'Av Corrientes 1234', { mercado: 'AR' }).entrega).toEqual({});
-  });
-  it('sano: «Calle Florida 500», «1043» y «Buenos Aires» pedidos de uno en uno se capturan', () => {
-    expect(E({ direccion: 'Calle Florida 500' }, ENVIO, 'mi dirección es Calle Florida 500', AR).entrega).toEqual({ direccion: 'Calle Florida 500' });
-    expect(E({ cp: '1043' }, ENVIO, '1043', { mercado: 'AR', esperaCp: true }).entrega).toEqual({ cp: '1043' });
-    expect(E({ provincia: 'Buenos Aires' }, ENVIO, 'Buenos Aires', { mercado: 'AR', esperaProvincia: true }).entrega).toEqual({ provincia: 'Buenos Aires' });
-  });
-});
-
-describe('M1. un rótulo de otro dato no es un nombre', () => {
-  for (const x of ['Provincia Buenos Aires', 'Ciudad Cochabamba', 'Flota Bolivar', 'Dirección Calle Sucre', 'CP Mamani']) it(`NEGADO: «${x}» no es un nombre`, () => expect(b('bmNombreValido')(x, x, 2, VENDIBLES), x).toBe(''));
+describe('M1. los nombres reales siguen siéndolo', () => {
   for (const x of ['Rosa', 'Paz', 'Luz', 'Mercedes']) it(`sano: «${x}» sigue siendo un nombre`, () => expect(b('bmNombreValido')(x, x, 1, VENDIBLES)).toBe(x));
 });
 
@@ -130,115 +75,57 @@ const J = (x: unknown): string => JSON.stringify(x);
 const hayQr = (t: Turno): boolean => t.mensajes.some((x) => x.tipo === 'image');
 const idsDe = (t: Turno): string[] => t.mensajes.flatMap((x) => ((x.payload['interactive'] as { action?: { buttons?: { reply: { id: string } }[] } } | undefined)?.action?.buttons ?? []).map((b2) => b2.reply.id));
 const confirmaDe = (t: Turno): string | undefined => idsDe(t).find((i) => i.startsWith('pedido:confirmar:'));
-const CAMPOS = ['nombre', 'documento', 'ciudad', 'flota', 'direccion', 'cp', 'provincia'];
-/** El modelo que TOMA EL TEXTO COMO DATO en todos los campos de la entrega (el más duro de los que ataca la revisora). */
+const CAMPOS = ['nombre', 'documento'];
+/** El modelo que TOMA EL TEXTO COMO DATO en todos los campos que le quedan a la entrega (el más duro de los que ataca la revisora). */
 const modeloTodos = (): ReturnType<typeof modeloSano> => modeloSano((t) => Object.fromEntries(CAMPOS.map((k) => [k, t])));
-/** Envío elegido por el botón, con el nombre y el CI ya capturados: el código pide ciudad y flota. */
-const conNombreYCi = (modeloDice: ReturnType<typeof modeloSano>): Mund => {
+/** El envío por el botón, con el departamento ya elegido por la lista: el código pide la ciudad. */
+const conCiudadPedida = (modeloDice: ReturnType<typeof modeloSano>): Mund => {
   const m = crear({ modeloDice });
   hablar(m, ANA, mTexto('quiero una billetera'));
   hablar(m, ANA, mToque('entrega:envio', 'Envío'));
-  hablar(m, ANA, mTexto('Ana Pérez'));
-  hablar(m, ANA, mTexto('CI 4412345'));
+  hablar(m, ANA, mLista('dep:cb', 'Cochabamba'));
   return m;
 };
-/** El modelo SANO: extrae solo lo que de verdad es un dato (el nombre, el CI, la ciudad o la flota) y nada de lo demás. */
-const sanoSinDatos = (): ReturnType<typeof modeloSano> => modeloSano((t) => (t === 'Ana Pérez' ? { nombre: t } : t === 'CI 4412345' ? { documento: '4412345' } : t === 'Cochabamba' ? { ciudad: t } : t === 'Bolivar' ? { flota: t } : {}));
+/** El modelo SANO: extrae solo lo que de verdad es un dato (el nombre) y nada de lo demás. */
+const sanoSinDatos = (): ReturnType<typeof modeloSano> => modeloSano((t) => (t === 'Ana Pérez' ? { nombre: t } : {}));
 
-describe('BN1/BN2/BN3 de punta a punta: una cortesía o una palabra suelta NO completa el envío ni saca «Confirmar pedido»', () => {
+describe('BN de punta a punta: una cortesía o una palabra suelta NO completa el paso de la ciudad ni saca «Confirmar pedido»', () => {
   for (const [nombreModelo, fabrica] of [['sano (no extrae nada)', sanoSinDatos], ['todos los campos', modeloTodos]] as const) {
-    for (const x of ['Muchas gracias', 'Bien', 'Efectivo', 'Perfecto', 'Gracias', 'Billetera', 'Vendedor', 'Otro color', 'Cuero']) {
-      it(`NEGADO [${nombreModelo}] «${x}» tras pedir la ciudad: ni ciudad ni flota, sin «Confirmar pedido» ni QR`, () => {
-        const m = conNombreYCi(fabrica());
-        expect(ficha(m).pide).toEqual(['ciudad', 'flota']);
+    for (const x of ['Muchas gracias', 'Bien', 'Perfecto', 'Gracias', 'Chau', 'quiero pagar']) {
+      it(`NEGADO [${nombreModelo}] «${x}» tras pedir la ciudad: ninguna ciudad, se repregunta la MISMA, sin «Confirmar pedido» ni QR`, () => {
+        const m = conCiudadPedida(fabrica());
+        expect(ficha(m).pide).toEqual(['ciudad']);
         const t = hablar(m, ANA, mTexto(x));
         expect(ficha(m).entrega['ciudad'], x).toBe('');
-        expect(ficha(m).entrega['flota'], x).toBe('');
+        expect(ficha(m).pide, x).toEqual(['ciudad']);
         expect(confirmaDe(t), x).toBeUndefined();
         expect(hayQr(t), x).toBe(false);
       });
     }
   }
-  it('NEGADO: con la flota ya dada, «Muchas gracias» no completa la entrega ni saca «Confirmar pedido»', () => {
-    const m = conNombreYCi(modeloTodos());
-    hablar(m, ANA, mTexto('flota Bolivar'));
-    expect(ficha(m).entrega['flota']).toBe('Bolivar');
-    const t = hablar(m, ANA, mTexto('Muchas gracias'));
-    expect(ficha(m).entrega['ciudad']).toBe('');
-    expect(confirmaDe(t)).toBeUndefined();
-  });
-  it('NEGADO: «Ana Pérez» no queda como nombre Y como ciudad (los mensajes se separan)', () => {
-    const m = crear({ modeloDice: modeloTodos() });
-    hablar(m, ANA, mTexto('quiero una billetera'));
-    hablar(m, ANA, mToque('entrega:envio', 'Envío'));
+  it('NEGADO: «Ana Pérez» dicho en el paso de la CIUDAD no queda como nombre (un dato por paso): se guarda como ciudad TAL CUAL si el código la pidió, y el nombre se pide después', () => {
+    const m = conCiudadPedida(modeloTodos());
     hablar(m, ANA, mTexto('Ana Pérez'));
-    expect(ficha(m).entrega['nombre']).toBe('Ana Pérez');
-    expect(ficha(m).entrega['ciudad']).toBe('');
-    expect(ficha(m).entrega['flota']).toBe('');
+    expect(ficha(m).entrega['nombre']).toBe('');
+    expect(ficha(m).pide).toEqual(['nombre', 'documento']);
+  });
+  it('NEGADO: con el modelo de todos los campos, «CI 4412345» en el paso de la ciudad solo fija el documento (rotulado) y no deja ciudad', () => {
+    const m = conCiudadPedida(modeloTodos());
     hablar(m, ANA, mTexto('CI 4412345'));
-    hablar(m, ANA, mTexto('Cochabamba'));
-    expect(ficha(m).entrega['ciudad']).toBe('Cochabamba');
-    expect(ficha(m).entrega['flota']).toBe('');
-  });
-  it('NEGADO: «CI 4412345» y «70012345» no dejan flota ni ciudad con el modelo de todos los campos', () => {
-    const m = crear({ modeloDice: modeloTodos() });
-    hablar(m, ANA, mTexto('quiero una billetera'));
-    hablar(m, ANA, mToque('entrega:envio', 'Envío'));
-    hablar(m, ANA, mTexto('CI 4412345'));
-    hablar(m, ANA, mTexto('70012345'));
-    expect(ficha(m).entrega['flota']).toBe('');
+    expect(ficha(m).entrega['documento']).toBe('4412345');
     expect(ficha(m).entrega['ciudad']).toBe('');
+    expect(ficha(m).pide).toEqual(['ciudad']);
   });
-  it('R27: «envíenlo a Cochabamba» fija el envío Y la ciudad con el modelo de todos los campos (la flota no la contamina)', () => {
-    const m = crear({ modeloDice: modeloTodos() });
-    hablar(m, ANA, mTexto('quiero una billetera'));
-    hablar(m, ANA, mTexto('envíenlo a Cochabamba'));
-    expect(ficha(m).entrega['modo']).toBe('Envío');
-    expect(ficha(m).entrega['ciudad']).toBe('Cochabamba');
-    expect(ficha(m).entrega['flota']).toBe('');
-  });
-  it('sano: «Cochabamba» y luego «Bolivar» completan el envío y sale «Confirmar pedido» (sin QR hasta el toque)', () => {
-    const m = conNombreYCi(modeloTodos());
+  it('sano: «Cochabamba» y luego «Ana Pérez 4412345» completan el envío y sale «Confirmar pedido» (sin QR hasta el toque)', () => {
+    const m = conCiudadPedida(modeloTodos());
     const t1 = hablar(m, ANA, mTexto('Cochabamba'));
     expect(ficha(m).entrega['ciudad']).toBe('Cochabamba');
-    expect(ficha(m).entrega['flota']).toBe('');
-    expect(ficha(m).pide).toEqual(['flota']);
+    expect(ficha(m).pide).toEqual(['nombre', 'documento']);
     expect(confirmaDe(t1)).toBeUndefined();
-    const t2 = hablar(m, ANA, mTexto('Bolivar'));
-    expect(ficha(m).entrega['flota']).toBe('Bolivar');
+    const t2 = hablar(m, ANA, mTexto('Ana Pérez 4412345'));
+    expect(ficha(m).entrega['nombre']).toBe('Ana Pérez');
     expect(confirmaDe(t2)).toBeDefined();
     expect(hayQr(t2)).toBe(false);
-  });
-});
-
-describe('I1 de punta a punta: un envío a Argentina con el modelo de todos los campos', () => {
-  const itemAr = { ...CATALOGO[1], moneda: 'ARS', precio: 450000, precioCentavos: 45000000, stock: 10, disponible: true };
-  const conAr = (): Mund => {
-    const m = crear({ modeloDice: modeloTodos(), catalogo: catalogoOk({ mercado: 'AR', moneda: 'ARS' }, [itemAr] as never) });
-    hablar(m, ARGENTINO, mTexto('quiero una billetera'));
-    hablar(m, ARGENTINO, mToque('entrega:envio', 'Envío'));
-    return m;
-  };
-  it('el código pide dirección, código postal y provincia', () => {
-    expect(ficha(conAr(), ARGENTINO).pide).toEqual(['nombre', 'documento', 'direccion', 'cp', 'provincia']);
-  });
-  it('NEGADO: «CP 1043» deja solo el código postal (no la dirección ni la provincia)', () => {
-    const m = conAr();
-    hablar(m, ARGENTINO, mTexto('CP 1043'));
-    const e = ficha(m, ARGENTINO).entrega;
-    expect([e['cp'], e['direccion'], e['provincia'], e['flota']]).toEqual(['1043', '', '', '']);
-  });
-  it('NEGADO: «Dirección Av Corrientes 1234» deja solo la dirección', () => {
-    const m = conAr();
-    hablar(m, ARGENTINO, mTexto('Dirección Av Corrientes 1234'));
-    const e = ficha(m, ARGENTINO).entrega;
-    expect([e['direccion'], e['cp'], e['provincia']]).toEqual(['Av Corrientes 1234', '', '']);
-  });
-  it('NEGADO: «Provincia Buenos Aires» deja solo la provincia y no la toma por nombre', () => {
-    const m = conAr();
-    hablar(m, ARGENTINO, mTexto('Provincia Buenos Aires'));
-    const e = ficha(m, ARGENTINO).entrega;
-    expect([e['provincia'], e['nombre'], e['direccion'], e['cp']]).toEqual(['Buenos Aires', '', '', '']);
   });
 });
 

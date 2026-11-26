@@ -228,9 +228,19 @@ del proyecto de producción. Lo que hay:
     a los 3 min 43 s sin «Deploy complete!» (7 sin confirmar y Hosting sin publicar); la compuerta lo detectó.
     **Arreglo:** en `desplegar-staging` y `desplegar-produccion`, si la compuerta falla y declara el fallo
     REINTENTABLE, se espera 70 s (`ESPERA_REINTENTO_CUOTA`) y se repite `firebase deploy`, hasta 3 intentos.
-    Es reintentable SOLO cuando lo único que falta son Functions y **cada Function pendiente** tiene, en ese intento,
-    su propia línea `Got "Quota Exceeded" error while trying to … /functions/<id>.`; no se repite ante errores de
-    compilación o de arranque, «unexpected state», una Function pendiente sin esa línea, ni si falla solo Hosting.
+    Es reintentable cuando, en el ÚLTIMO intento, quedan Functions pendientes, hubo AL MENOS una señal
+    `Got "Quota Exceeded"` y NINGUNA pendiente tiene un fallo que no sea de cuota. Una pendiente sin ninguna línea cuenta como
+    «no intentada» (caso real del 25/11: firebase-tools se rindió a los ~3 min con 5 Functions que ni intentó, y la primera
+    versión de esta regla, que exigía la línea de cuota en CADA pendiente, nunca reintentaba; el registro real, saneado, es la
+    fixture `cuota-real-25-11.registro.txt`). No se repite ante errores de compilación o de arranque, «unexpected state»,
+    «Functions deploy had errors», un fallo propio de una pendiente, ni si falla solo Hosting. `desplegar-staging` ya tiene
+    `concurrency: deploy-staging` sin cancelar (las corridas de main se serializan; si hay una en curso y varias en espera, solo
+    la última espera), así que dos despliegues a staging no se pisan la cuota a la vez.
+    **Límites conocidos de la regla (revisión del 26/11/2026, no se cambian ahora):** (1) un fallo REAL que firebase-tools solo
+    anuncia con «failed to update function X» (sin un «Deploy error» propio) se repetiría hasta 3 veces junto con una señal de
+    cuota ajena; cuesta tiempo (hasta 2 intentos más) y no da un falso verde, porque la cobertura se mide sobre el acumulado y la
+    compuerta final falla; (2) las caídas por cuota que terminan en «This deployment is in an unexpected state» NO se reintentan,
+    por diseño: ese estado pide revisar a mano, no repetir.
     **La compuerta no se relaja:** mide la cobertura de Functions y de Hosting sobre el registro ACUMULADO de todos los
     intentos (toda Function iniciada en cualquier intento necesita su «Successful» en alguno: un «Skipped (No changes
     detected)» posterior NO la salva), y R1, R2, R4 y R6 sobre el último intento. Tras el tercer intento sigue exigiendo

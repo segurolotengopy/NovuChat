@@ -11,7 +11,7 @@ import vm from 'node:vm';
 import { join } from 'node:path';
 import { cargarFuente, RAIZ_REPO } from '../../core/fuente-vm';
 import type { LlamadaDoble } from '../../lib/n8n-de-mentira';
-import { ANA, CATALOGO, COMPROBANTE, ENTREGA, PRODUCCION, PRUEBA, catalogoOk, crear, hablar, mImagen, mTexto, mToque, modelo, textoAlModelo, textos, type Opciones } from './mundo';
+import { ANA, CATALOGO, COMPROBANTE, ENTREGA, PRODUCCION, completarEnvio, PRUEBA, catalogoOk, crear, hablar, mImagen, mTexto, mToque, modelo, textoAlModelo, textos, type Opciones } from './mundo';
 
 const BIL = 'billetera-cuero';
 const ARG = ['54', '9', '11', '5550', '0001'].join('');
@@ -27,16 +27,14 @@ const todo = (t: ReturnType<typeof hablar>): string[] => [...textos(t), ...t.men
 const conBoton = (t: ReturnType<typeof hablar>) => t.mensajes.some((x) => JSON.stringify(x.payload).includes('cta_url'));
 
 /** Un mundo de Argentina con el pedido ya anotado (turno 0) y un doble del servidor de alias. */
-/** El envío a Argentina que dice el cliente en un mensaje de DATOS: el DNI lo lee el código y lo demás lo devuelve el modelo (el asistente acaba de pedir la entrega). */
-const DATOS_AR = 'Ana Pérez, 30123456, Av Corrientes 1234, 1043, Buenos Aires';
-/** El modelo sano de Argentina: agrega la billetera y, ante el mensaje de datos, devuelve nombre, dirección, código postal y provincia (nunca el modo: lo fija el botón «Envío»). */
-const modeloAr = (texto = 'Con gusto, lo anoto.', extra: Record<string, unknown> = {}): ((ll: LlamadaDoble) => Record<string, unknown>) => (ll) => modelo(texto, { lineas: [{ id: BIL, cantidad: 1 }], ...extra, entrega: textoAlModelo(ll) === DATOS_AR ? { nombre: 'Ana Pérez', direccion: 'Av Corrientes 1234', cp: '1043', provincia: 'Buenos Aires' } : {} });
+/** El modelo sano de Argentina: agrega la billetera y devuelve el nombre en el paso del nombre y el DNI (nunca el modo: lo fija el botón «Envío»; el DNI y el destino los lee el código). */
+const modeloAr = (texto = 'Con gusto, lo anoto.', extra: Record<string, unknown> = {}): ((ll: LlamadaDoble) => Record<string, unknown>) => (ll) => modelo(texto, { lineas: [{ id: BIL, cantidad: 1 }], ...extra, entrega: textoAlModelo(ll) === 'Ana Pérez 30123456' ? { nombre: 'Ana Pérez' } : {} });
 function conPedido(o: Opciones = {}) {
   const m = crear({ catalogo: catAr(), modeloDice: modeloAr(), medio: { clasificacion: { ...COMPROBANTE, monto: '450.000,00', cuentaDestino: '', alias: ALIAS, operacion: 'OP123456' } }, ...o });
   // La entrega se captura de verdad (botón «Envío» y un mensaje de datos validado por el código); el resumen sale con «Confirmar pedido» y «Corregir datos», y recién el «pagar» escrito (con el pedido ya completo) lo cierra.
   hablar(m, ARG, mTexto('una billetera'));
   hablar(m, ARG, mToque('entrega:envio', 'Envío'));
-  hablar(m, ARG, mTexto(DATOS_AR));
+  completarEnvio(m, ARG, 'AR');   // región, provincia (listas), ciudad y aclaración, nombre y DNI: cuatro pasos
   const t0 = hablar(m, ARG, mTexto('quiero pagar'));
   return { m, t0 };
 }
@@ -196,7 +194,7 @@ describe('«pagar» pide el alias (turno siguiente)', () => {
     servidor(m, () => abierto(m));
     hablar(m, ARG, mTexto('quiero otra billetera'));
     hablar(m, ARG, mToque('entrega:envio', 'Envío'));   // el pedido anterior se cerró y la entrega se borró: se captura de nuevo
-    hablar(m, ARG, mTexto(DATOS_AR));
+    completarEnvio(m, ARG, 'AR');
     llamadas.length = 0;
     const t = hablar(m, ARG, mTexto('quiero pagar'));
     expect(llamadas.filter((x) => /pedirAliasArs/.test(x.url))).toHaveLength(0);
@@ -215,7 +213,7 @@ describe('«pagar» pide el alias (turno siguiente)', () => {
     const t1 = hablar(m, ARG, mTexto('quiero otra billetera'));
     expect(t1.mensajes).toHaveLength(1);
     hablar(m, ARG, mToque('entrega:envio', 'Envío'));   // la entrega del primer pedido se borró: se captura de nuevo
-    hablar(m, ARG, mTexto(DATOS_AR));
+    completarEnvio(m, ARG, 'AR');
     const t2 = hablar(m, ARG, mTexto('quiero pagar'));
     const ref2 = (t2.llamadas.ingesta.find((x) => x['evento'] === 'pedido_sin_cobro') as Rep)['referencia'];
     servidor(m, () => abierto(m));

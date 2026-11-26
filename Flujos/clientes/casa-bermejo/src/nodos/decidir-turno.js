@@ -131,6 +131,8 @@ if (!configLista) return sinConfig();
 // Ya no hay botón «Ver catálogo» (Andres, 24/11/2026, D7): el asistente muestra las piezas por el chat. `bmEnlaceCatalogo` devuelve '' mientras NovuChat no tenga un enlace propio.
 // El toque de «Recojo en tienda» o «Envío»: el modo lo escribe el CÓDIGO, sin modelo. Un id `entrega:` que no es de un botón de este comercio no cambia nada (contesta con el pedido de ahora).
 if (typeof t.seleccionId === 'string' && t.seleccionId.indexOf('entrega:') === 0) return salir({ tipo: bmModoDeBoton(t.seleccionId, bmModos(base)) !== '' ? 'entrega_boton' : 'toque_viejo' });
+// El toque de una opción de LISTA (departamento, región, provincia: ids `dep:`, `reg:`, `prov:`): el código escribe el dato SIN modelo si lo había pedido; un id inventado o un dato que no se pidió no cambia nada (`toque_viejo`).
+if (typeof t.seleccionId === 'string' && /^(?:dep|reg|prov):/.test(t.seleccionId)) return salir({ tipo: 'dato_entrega' });
 // El toque de «Corregir datos» (`pedido:corregir`): el código borra los datos de entrega capturados (conserva el modo) y los vuelve a pedir, SIN modelo. Un id que empieza igual pero no es el exacto no hace nada (`toque_viejo`).
 if (typeof t.seleccionId === 'string' && t.seleccionId.indexOf('pedido:corregir') === 0) return salir({ tipo: t.seleccionId === BM_ID_CORREGIR ? 'corregir' : 'toque_viejo' });
 // Si la pregunta de la tienda viene con una de estas, la respuesta de la tienda va antepuesta en el mismo mensaje (`conTienda`); la identidad sin dato de tienda pasa con recepción (la tienda pregunta quedaría sin contestar).
