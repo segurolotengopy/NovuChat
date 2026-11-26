@@ -179,18 +179,30 @@ elif (( publicados == 0 )); then hosting_publicado=ninguno
 else hosting_publicado=parcial
 fi
 
-# ¿Vale la pena repetir el despliegue? SOLO si lo único que falta son Functions y TODAS las pendientes chocaron en el
-# último intento con la cuota de escrituras de Cloud Functions (su propia línea «Got "Quota Exceeded" … /functions/<id>.»).
-# No se repite ante una Function pendiente sin esa línea (p. ej. una omitida por mismo hash tras un fallo real, un error de
-# compilación o de arranque), ante «unexpected state», ni si el código/Hosting fallan sin Functions pendientes.
+# ¿Vale la pena repetir el despliegue? Caso real (25/11/2026, staging, 86 Functions): firebase-tools recibe «Quota Exceeded» en
+# unas Functions, reintenta, y a los ~3 min se rinde con otras que ni siquiera intentó (sin ninguna línea de cuota ni de éxito).
+# Por eso NO se exige que cada pendiente tenga su línea de cuota. Es reintentable cuando, en el ÚLTIMO intento:
+#   · terminó a medias y quedan Functions pendientes;
+#   · hubo AL MENOS una señal de cuota («Got "Quota Exceeded"»);
+#   · NINGUNA pendiente tiene una línea de fallo que no sea de cuota (una pendiente sin ninguna línea es «no intentada»: se repite);
+#   · no hay «unexpected state», «Functions deploy had errors» ni un fallo de compilación o de arranque.
+# El acumulado (R3) sigue mandando: tras repetir, toda Function iniciada en cualquier intento necesita su «Successful».
 reintentable=no
-if (( ${#motivos[@]} > 0 && ${#pendientes[@]} > 0 )); then
+cuota_total="$(grep -c 'Got "Quota Exceeded"' <<< "$limpio")"
+if (( ${#motivos[@]} > 0 && ${#pendientes[@]} > 0 && cuota_total > 0 )); then
   reintentable=si
   grep -Fq 'This deployment is in an unexpected state' <<< "$limpio" && reintentable=no
+  grep -Fq 'Functions deploy had errors' <<< "$limpio" && reintentable=no
+  grep -Eiq 'build failed|healthcheck failed|container failed to start|failed to build' <<< "$limpio" && reintentable=no
   for p in "${pendientes[@]}"; do
     id="${p%%(*}"; id="${id##*:}"
     [[ "$id" =~ ^[A-Za-z0-9_-]+$ ]] || { reintentable=no; continue; }
-    grep -Eq "Got \"Quota Exceeded\" error while trying to (create|update|delete) projects/[^/]+/locations/[^/]+/functions/${id}\. Waiting to retry" <<< "$limpio" || reintentable=no
+    # Las líneas que nombran ESTA Function y que son un fallo distinto del de cuota: ni la de cuota, ni el «HTTP Error: 429» de la
+    # petición, ni el «failed to <op> function» que firebase-tools imprime al reintentar internamente.
+    otras="$(grep -E "(functions/|:)${id}([^A-Za-z0-9_-]|$)" <<< "$limpio" \
+      | grep -Ev 'Quota Exceeded|HTTP Error: 429|failed to (create|update|delete) function' \
+      | grep -Ec '✘|[Ee]rror|[Ff]ailed|denied|[Uu]nable' || true)"
+    [[ "${otras:-0}" == "0" ]] || reintentable=no
   done
 fi
 if [[ -n "${REINTENTABLE_EN:-}" ]]; then printf '%s\n' "$reintentable" > "$REINTENTABLE_EN"; fi

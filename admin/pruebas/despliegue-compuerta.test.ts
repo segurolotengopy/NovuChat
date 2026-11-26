@@ -158,18 +158,38 @@ describe('compuerta del registro de `firebase deploy`', () => {
     expect(r.salidas['functions_pendientes']).toBe('');
   });
 
-  it('C18: reintentable SOLO si TODAS las pendientes tienen su propia línea de cuota en el último intento', () => {
+  it('C18: reintentable con al menos UNA señal de cuota y ninguna pendiente con otro fallo; una pendiente sin ninguna línea es «no intentada»', () => {
     const una = intento(INICIA('fnX') + CUOTA('fnX'), INICIA('fnX') + CUOTA('fnX'));
     expect(una.status).toBe(1);
     expect(una.reintentable).toBe('si');
-    const dos = INICIA('fnX') + INICIA('fnY') + CUOTA('fnX') + CUOTA('fnY');
-    expect(intento(dos, dos).reintentable).toBe('si');
-    // NEGANDO: una de las dos pendientes no tiene su línea de cuota (otro error) → no se repite.
-    const mixto = INICIA('fnX') + INICIA('fnY') + CUOTA('fnX');
-    expect(intento(mixto, mixto).reintentable).toBe('no');
-    // NEGANDO: la cuota nombra a OTRA Function (prefijo del nombre no vale).
-    const otra = INICIA('fnX') + CUOTA('fnXtra');
-    expect(intento(otra, otra).reintentable).toBe('no');
+    // firebase-tools se rindió antes de intentar fnY: sin línea de cuota ni de éxito → sigue siendo reintentable.
+    const noIntentada = INICIA('fnX') + INICIA('fnY') + CUOTA('fnX');
+    expect(intento(noIntentada, noIntentada).reintentable).toBe('si');
+    // NEGANDO: una pendiente con un fallo que NO es de cuota → no se repite.
+    const otroFallo = INICIA('fnX') + INICIA('fnY') + CUOTA('fnX') + '✘  functions[admin:fnY(us-east1)]: Deployment error.\n';
+    expect(intento(otroFallo, otroFallo).reintentable).toBe('no');
+    // NEGANDO: ninguna señal de cuota en todo el intento → no.
+    const sinSenal = INICIA('fnX') + INICIA('fnY');
+    expect(intento(sinSenal, sinSenal).reintentable).toBe('no');
+    // El fallo de OTRA Function que no está pendiente no impide repetir.
+    const ajena = INICIA('fnX') + CUOTA('fnX') + INICIA('fnZ') + '✘  functions[admin:fnZ(us-east1)]: Deployment error.\n' + OK('fnZ');
+    expect(intento(ajena, ajena).reintentable).toBe('si');
+  });
+
+  it('C22: el registro REAL del 25/11 (86 Functions, 8 sin confirmar, 5 que firebase-tools ni intentó) es reintentable y sigue fallando', () => {
+    const real = readFileSync(join(FIX, 'cuota-real-25-11.registro.txt'), 'utf8');
+    // El registro real trae «Failed to get the IAM Policy on the Service …/services/sondeocobros» (Cloud Run, nombre en minúsculas):
+    // es parte del mismo choque con la cuota y se tolera A PROPÓSITO como reintentable; si fuera un permiso de verdad, el segundo
+    // intento volvería a fallar y la compuerta final falla igual (costo: tiempo, nunca un despliegue dado por bueno).
+    const r = intento(real, real, { SOLO: SOLO_COMPLETO, CODIGO_FIREBASE: '1' });
+    expect(r.status).toBe(1);
+    expect(r.reintentable).toBe('si');
+    expect(r.salidas['functions_pendientes']).toBe([
+      'confirmarPedidoExterno', 'enviarAdjuntoComoPersona', 'guardarComprobante', 'guardarMedio', 'leerAdjuntoPersona', 'sondeoCobros', 'verComprobante', 'verMedio',
+    ].map((f) => `functions:admin:${f}`).sort().join(','));
+    // Con «unexpected state» agregado, o con un fallo de compilación, deja de serlo.
+    expect(intento(real + 'This deployment is in an unexpected state - please re-deploy your functions.\n', real, { SOLO: SOLO_COMPLETO, CODIGO_FIREBASE: '1' }).reintentable).toBe('no');
+    expect(intento(real + '⚠  functions: Build failed: error TS2304\n', real, { SOLO: SOLO_COMPLETO, CODIGO_FIREBASE: '1' }).reintentable).toBe('no');
   });
 
   it('C19: no es reintentable con «unexpected state», sin Functions pendientes, ni con un fallo de compilación', () => {
@@ -183,6 +203,9 @@ describe('compuerta del registro de `firebase deploy`', () => {
     // Pendiente sin ninguna línea de cuota (fallo de compilación o de arranque).
     const compilacion = INICIA('fnX') + '⚠  functions: Build failed: error TS2304\n';
     expect(intento(compilacion, compilacion).reintentable).toBe('no');
+    // Con cuota en otra parte, un fallo de compilación igual corta.
+    const mezcla = INICIA('fnX') + INICIA('fnY') + CUOTA('fnY') + '⚠  functions: Build failed: error TS2304\n';
+    expect(intento(mezcla, mezcla).reintentable).toBe('no');
     // Un despliegue completo es «no» (no hay nada que repetir).
     expect(intento(INICIA('fnX') + OK('fnX') + FIN, INICIA('fnX') + OK('fnX') + FIN).reintentable).toBe('no');
   });
@@ -580,6 +603,18 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
         expect(uno.llamadas).toBe(2);
         expect(uno.args[0]).toBe(uno.args[1]);
         expect(uno.salida).toContain('Cuota de escrituras');
+        // 1b) EL CASO REAL del 25/11: el registro verdadero (8 Functions pendientes, 5 que firebase-tools ni intentó) se repite UNA
+        //     vez, y el segundo intento confirma las 8 y publica Hosting: pasa con 2 llamadas. Si el segundo intento NO confirma a
+        //     las 8, la compuerta falla (acumulado).
+        const real = readFileSync(join(FIX, 'cuota-real-25-11.registro.txt'), 'utf8');
+        const pend = ['confirmarPedidoExterno', 'enviarAdjuntoComoPersona', 'guardarComprobante', 'guardarMedio', 'leerAdjuntoPersona', 'sondeoCobros', 'verComprobante', 'verMedio'];
+        const segundo = pend.map((f) => I(f) + OKF(f)).join('') + HOST + FIN;
+        const realOk = corre([real, segundo], ['1', '0']);
+        expect(realOk.status, realOk.salida).toBe(0);
+        expect(realOk.llamadas).toBe(2);
+        const realIncompleto = corre([real, pend.slice(0, 7).map((f) => I(f) + OKF(f)).join('') + HOST + FIN], ['1', '0']);
+        expect(realIncompleto.status).not.toBe(0);
+        expect(realIncompleto.salida).toContain('Function sin confirmar: admin:verMedio(us-east1)');
         // 2) cuota dos veces y luego completo: 3 llamadas.
         expect(corre([A_MEDIAS_CUOTA, A_MEDIAS_CUOTA, COMPLETO]).llamadas).toBe(3);
         // 3) cuota tres veces: falla y NUNCA hay un cuarto intento.
