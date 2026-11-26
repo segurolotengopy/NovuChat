@@ -627,9 +627,11 @@ describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `i
     return dir;
   }
 
-  it('PR A: ningún manifiesto real declara la ráfaga y verificar sigue diciendo que todo coincide', () => {
-    for (const f of FLUJOS) expect(leerManifiesto(f)?.rafaga, f).toBeUndefined();
-    for (const f of CON_MANIFIESTO) expect(ensamblarEnMemoria(f).rafaga, f).toBe(false);
+  // Los flujos que ya adoptaron la pieza (cada PR de flujo agrega el suyo): el resto no la declara.
+  const ADOPTAN_RAFAGA = ['clientes/demo-a/demo-a-agendamiento.json'];
+  it('solo los flujos que adoptaron la ráfaga la declaran, y verificar sigue diciendo que todo coincide', () => {
+    for (const f of FLUJOS) expect(!!leerManifiesto(f)?.rafaga, f).toBe(ADOPTAN_RAFAGA.includes(f));
+    for (const f of CON_MANIFIESTO) expect(ensamblarEnMemoria(f).rafaga, f).toBe(ADOPTAN_RAFAGA.includes(f));
     for (const f of FLUJOS) expect(['identico', 'sin-manifiesto'], f).toContain(verificarFlujo(f).estado);
   });
 
