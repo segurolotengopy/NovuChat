@@ -230,7 +230,7 @@ del proyecto de producción. Lo que hay:
     se espera 70 s (`ESPERA_REINTENTO_CUOTA`) y se repite `firebase deploy` hasta 3 intentos: las Functions ya
     actualizadas salen como «Skipped (No changes detected)», así que la repetición cubre solo las que faltaron y Hosting.
     La compuerta no cambia: tras el último intento sigue exigiendo «Deploy complete!», todas las Functions confirmadas y
-    «release complete» de cada sitio. Cualquier otro fallo corta de inmediato, sin reintento. Si el número de Functions
+    «release complete» de cada sitio. Un fallo SIN esa señal corta de inmediato, sin reintento (con la señal se repite aunque el fallo real fuera otro: no lo oculta, la compuerta lo vuelve a juzgar al final). Los límites del job subieron 11 min (staging 39, producción 46) para caber 2 reintentos. Si el número de Functions
     crece mucho más, el siguiente paso es desplegar por tandas con `--only functions:…`. Prueba: `W2b` en
     `admin/pruebas/despliegue-compuerta.test.ts`.
   - **Todo secreto nuevo que una Function declare debe existir en STAGING ANTES de fusionar** (lección del 25/11/2026:

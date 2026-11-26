@@ -457,19 +457,20 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
         writeFileSync(join(bin, 'firebase'), [
           '#!/usr/bin/env bash',
           'n=$(( $(cat "$CONTADOR" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$CONTADOR"',
-          'if [ "$n" -le "$INTENTOS_MALOS" ]; then cat "$FIXTURE_MALO"; if [ "$CON_CUOTA" = 1 ]; then echo \'Got "Quota Exceeded" error while trying to update x. Waiting to retry...\'; fi; exit 0; fi',
+          'if [ "$n" -le "$INTENTOS_MALOS" ]; then if [ "$n" -ge 2 ] && [ "${SEGUNDO_SIN_CUOTA:-0}" = 1 ]; then cat "$FIXTURE_SIN"; exit 0; fi; cat "$FIXTURE_MALO"; if [ "$CON_CUOTA" = 1 ]; then echo \'Got "Quota Exceeded" error while trying to update x. Waiting to retry...\'; fi; exit 0; fi',
           'cat "$FIXTURE_BUENO"; exit 0', '',
         ].join('\n'));
         chmodSync(join(bin, 'firebase'), 0o755);
         // El registro del 16/11 ya trae «Quota Exceeded»: para la negación se usa una copia SIN esas líneas.
         const sinCuota = archivo(readFileSync(join(FIX, '16-11-a-medias.registro.txt'), 'utf8').split('\n').filter((l) => !l.includes('Quota Exceeded')).join('\n'));
         const codigo = `set -euo pipefail\n${fragmento(job(t))}`;
-        const corre = (intentosMalos: number, conCuota: boolean) => {
+        const corre = (intentosMalos: number, conCuota: boolean, segundoSinCuota = false) => {
           const contador = archivo('');
           const r = spawnSync('bash', ['-c', codigo], {
             encoding: 'utf8',
             env: entornoDelEmulador(undefined, {
               PATH: `${bin}:${process.env['PATH'] ?? ''}`,
+              FIXTURE_SIN: sinCuota, SEGUNDO_SIN_CUOTA: segundoSinCuota ? '1' : '0',
               FIXTURE_MALO: conCuota ? join(FIX, '16-11-a-medias.registro.txt') : sinCuota,
               FIXTURE_BUENO: join(FIX, 'reintento-interno-exitoso.registro.txt'),
               CONTADOR: contador, INTENTOS_MALOS: String(intentosMalos), CON_CUOTA: conCuota ? '1' : '0',
@@ -492,6 +493,10 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
         const tres = corre(3, true);
         expect(tres.status).not.toBe(0);
         expect(tres.llamadas).toBe(3);
+        // NEGANDO: cuota en el primero y un fallo SIN cuota en el segundo: corta con 2 llamadas (no sigue hasta 3).
+        const mixto = corre(3, true, true);
+        expect(mixto.status).not.toBe(0);
+        expect(mixto.llamadas).toBe(2);
         // NEGANDO: a medias SIN la señal de cuota: falla de inmediato, una sola llamada.
         const sin = corre(1, false);
         expect(sin.status).not.toBe(0);
