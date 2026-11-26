@@ -21,6 +21,7 @@ import { vozFija, tratamientoClave, tratamientoEfectivo, quienAtiende } from './
 import { registrar } from './core/turno/bitacora.js';
 import { atenderSesion } from './core/turno/sesionFirestore.js';
 import { validarSesion } from './core/turno/sesion.js';
+import { validarRafaga, leerRafaga } from './core/conversacion/rafaga.js';
 // H1-6: los campos derivados de Conversaciones (búsqueda y no leídos). Son más
 // campos en los MISMOS create/set de la transacción: cero lecturas ni escrituras
 // nuevas y cero mensajes. Los escribe el Core para todos los comercios, inertes.
@@ -1700,6 +1701,28 @@ export const configuracionFlujo = onRequest(
     const telefonoCrudo = typeof cuerpo['telefono'] === 'string' ? cuerpo['telefono'].trim() : '';
     const telefono = /^[0-9]{8,15}$/.test(telefonoCrudo) ? telefonoCrudo : null;
 
+    // RÁFAGA DE MENSAJES (`core/conversacion/rafaga.ts`, `docs/arquitectura/rafagas.md`): el flujo pregunta
+    // cuáles son los últimos entrantes de ESTE teléfono para decidir si responde o calla. Corta antes de
+    // leer config o negocio: solo la ficha (ya leída) y hasta 6 mensajes de la conversación del tenant de
+    // la ruta. Cero escrituras. Con `sesion` a la vez es un pedido mal formado.
+    if (cuerpo['rafaga'] !== undefined) {
+      if (cuerpo['sesion'] !== undefined) { respuesta.status(400).json({ error: 'rafaga_con_sesion' }); return; }
+      const vr = validarRafaga(cuerpo['rafaga'], telefono);
+      if (!vr.ok) { respuesta.status(vr.status).json({ error: vr.error }); return; }
+      if (comercio.estado !== 'activo') { respuesta.status(409).json({ estado: comercio.estado }); return; }
+      try {
+        const leida = await leerRafaga(db, comercio.tenantId, telefono as string, vr.idMeta);
+        respuesta.status(200).json({ rafaga: leida });
+      } catch {
+        // Sin teléfono ni ruta en el registro: solo el comercio y la acción. El flujo falla abierto.
+        logger.warn('configuracionFlujo: lectura de rafaga fallida', {
+          evento: EVENTO_CONFIGURACION, tenantId: comercio.tenantId, accion: 'rafaga',
+        });
+        respuesta.status(500).json({ error: 'rafaga_lectura' });
+      }
+      return;
+    }
+
     // `config/negocio` se lee ANTES de decidir el 409: la cortesía lleva el
     // teléfono de recepción del comercio (`Analisis/36` §3.2), también cuando
     // el comercio está suspendido.
@@ -2058,6 +2081,9 @@ export const configuracionFlujo = onRequest(
       estadoComercio: derivados.estadoComercio,
       phoneNumberId: derivados.phoneNumberId,
       ...(ultimoPedido ? { ultimoPedido } : {}),
+      // Interruptor de ráfagas por comercio (solo Admin SDK). Solo se agrega cuando está apagado: la
+      // respuesta de los demás comercios queda igual, byte a byte.
+      ...(comercio.ficha['rafagaApagada'] === true ? { rafagaApagada: true } : {}),
 
       // Estado de atención del teléfono que escribió (`null` si el flujo no
       // mandó `telefono`). Lo que el flujo tiene que hacer con este turno:

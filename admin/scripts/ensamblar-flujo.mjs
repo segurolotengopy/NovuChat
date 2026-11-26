@@ -58,6 +58,9 @@
  *     (`Flujos/src/core/indicador/indicador-escritura.mjs`, la misma que incluyen los `construir.mjs` de los flujos de cliente; nunca copiada). El valor es
  *     `{ "ancla": { "nodo": "¿Atención normal?", "salida": 0 }, "normalizador": "Normalizar entrada" }`. `ensamblar` los quita y los vuelve a injertar
  *     canónicos (idempotente), así que `verificar` los compara byte a byte como el resto: un indicador alterado a mano en el JSON se detecta.
+ *   - `rafaga` (25/11/2026): la otra pieza que el ensamblador agrega al lienzo, y solo si el manifiesto la pide: los cuatro nodos que agrupan una ráfaga de textos
+ *     (`Flujos/src/core/rafaga/rafaga.mjs`). El valor es `{ "ancla": { "nodo": "...", "salida": 0, "destino": "..." }, "normalizador": "...", "puerta": "..." }`.
+ *     Como el indicador: `ensamblar` los quita y los injerta canónicos, `verificar` los compara byte a byte. Ningún manifiesto la declara todavía.
  *   - Si un nodo del manifiesto no existe en el JSON, error ruidoso con el
  *     nombre: es un nodo renombrado en n8n que hay que renombrar acá.
  *
@@ -88,6 +91,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSy
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { injertarIndicador, quitarIndicador } from '../../Flujos/src/core/indicador/indicador-escritura.mjs';
+import { injertarRafaga, quitarRafaga } from '../../Flujos/src/core/rafaga/rafaga.mjs';
 
 /**
  * Lee un archivo, o `null` si no existe. Un solo acceso al disco: comprobar
@@ -359,7 +363,11 @@ export function ensamblarEnMemoria(archivoFlujo, raiz = RAIZ_FLUJOS) {
     quitarIndicador(j);
     injertarIndicador(j, manifiesto.indicador);
   }
-  return { archivo: archivoFlujo, texto: JSON.stringify(j, null, 2) + '\n', original, conManifiesto: true, inyectados, indicador: !!manifiesto.indicador };
+  if (manifiesto.rafaga) {
+    quitarRafaga(j);
+    injertarRafaga(j, manifiesto.rafaga);
+  }
+  return { archivo: archivoFlujo, texto: JSON.stringify(j, null, 2) + '\n', original, conManifiesto: true, inyectados, indicador: !!manifiesto.indicador, rafaga: !!manifiesto.rafaga };
 }
 
 /**
@@ -381,6 +389,7 @@ export function verificarFlujo(archivoFlujo, raiz = RAIZ_FLUJOS) {
   });
   // Si solo difiere el indicador (los dos nodos del «escribiendo…»), que lo diga en vez de dejar `difiere` sin un solo punto.
   if (r.indicador && diferencias.length === 0) diferencias.push('indicador');
+  if (r.rafaga && diferencias.length === 0) diferencias.push('rafaga');
   return { archivo: archivoFlujo, estado: 'difiere', diferencias, inyectados: r.inyectados };
 }
 

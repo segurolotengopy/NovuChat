@@ -158,3 +158,7 @@ cita sigue resolviéndose.
   Andres sobre guardar los medios entrantes 90 días, los 6 PR del plan y la
   advertencia previa a la bandera. Enmienda la regla 2 de §4terdecies; no mueve
   ninguna sección de `admin/DISENO.md`.
+- `docs/arquitectura/rafagas.md` (25/11/2026): agrupar los textos seguidos de un mismo
+  teléfono en una sola respuesta (pieza común del core, cuatro nodos por flujo, falla abierto,
+  quita n-1 mensajes por ráfaga). PR A: la pieza y la clave `rafaga` del ensamblador; ningún
+  flujo la declara todavía.
