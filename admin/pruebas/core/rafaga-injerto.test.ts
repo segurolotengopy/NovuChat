@@ -734,3 +734,95 @@ describe('rafaga: «emite» se decide con el ÁRBOL del código (acorn), no con 
     expect(emisionesDelCodigo("return [{ json: { a: 1 } }];").emisiones[0].abierto).toBe(false);
   });
 });
+
+describe('rafaga: una clave cuenta como emitida solo si TODAS las rutas la emiten con un valor (intersección, no unión)', () => {
+  const con = (codigo: string) => () => {
+    const f = sintetico();
+    nodo(f, 'Normalizar entrada').parameters.jsCode = codigo;
+    return injertarRafaga(f, { ancla: ANCLA, campos: { texto: 'userInput' }, consumidor: 'Agente' });
+  };
+  const RESTO = "tipo: 'text', from: '1', phoneNumberId: '2', userInput: 't'";
+  const SIN_ID = /no emite .*mensajeId \(«mensajeId»\)/;
+
+  it('control: con `mensajeId` en todas las rutas arma (ternario con la clave en las dos ramas, if/else, `||` con objeto a la izquierda)', () => {
+    expect(con(`const a = c ? { ${RESTO}, mensajeId: 'x' } : { ${RESTO}, mensajeId: 'y' }; return [{ json: a }];`)).not.toThrow();
+    expect(con(`let a; if (c) { a = { ${RESTO}, mensajeId: 'x' }; } else { a = { ${RESTO}, mensajeId: 'y' }; } return [{ json: a }];`)).not.toThrow();
+    expect(con(`const o = { ${RESTO} }; o.mensajeId = 'x'; return [{ json: o }];`)).not.toThrow();
+  });
+  it('NEGADA: un ternario con una rama SIN la clave no arma (antes la unión daba por emitido el campo)', () => {
+    expect(con(`const a = c ? { ${RESTO}, mensajeId: 'x' } : { ${RESTO} }; return [{ json: a }];`)).toThrow(SIN_ID);
+    expect(con(`return [{ json: c ? { ${RESTO}, mensajeId: 'x' } : { ${RESTO} } }];`)).toThrow(/no la emiten TODAS las rutas/);
+    expect(con(`let a = { ${RESTO} }; if (c) { a = { ${RESTO}, mensajeId: 'x' }; } return [{ json: a }];`)).toThrow(SIN_ID);
+  });
+  it('NEGADA: `||` / `??` con un operando que no la emite no arma', () => {
+    // izquierda indecidible: ninguna clave cuenta (se pide `fuente`)
+    expect(con(`const a = $input.first().json || { ${RESTO}, mensajeId: 'x' }; return [{ json: a }];`)).toThrow(SIN_ID);
+    expect(con(`const a = known ?? { ${RESTO} }; return [{ json: a }];`)).toThrow(SIN_ID);
+    // las dos rutas son objetos conocidos y una no la emite
+    expect(con(`const a = x && { ${RESTO}, mensajeId: 'x' } || { ${RESTO} }; return [{ json: a }];`)).toThrow(SIN_ID);
+    expect(con(`const a = { ${RESTO}, mensajeId: 'x' } || { ${RESTO} }; return [{ json: a }];`)).not.toThrow(); // un literal de objeto a la izquierda es siempre verdadero: manda él
+  });
+  it('NEGADA: `delete x.mensajeId` la anula, esté antes, después o dentro de un if', () => {
+    expect(con(`const o = { ${RESTO}, mensajeId: 'x' }; delete o.mensajeId; return [{ json: o }];`)).toThrow(/mensajeId.*la anula/);
+    expect(con(`const o = { ${RESTO}, mensajeId: 'x' }; if (c) { delete o['mensajeId']; } return [{ json: o }];`)).toThrow(SIN_ID);
+  });
+  it('NEGADA: `mensajeId: undefined` / `null` / `void 0`, o asignarlo así, no es emitirlo', () => {
+    expect(con(`return [{ json: { ${RESTO}, mensajeId: undefined } }];`)).toThrow(/mensajeId.*la anula/);
+    expect(con(`return [{ json: { ${RESTO}, mensajeId: null } }];`)).toThrow(SIN_ID);
+    expect(con(`return [{ json: { ${RESTO}, mensajeId: void 0 } }];`)).toThrow(SIN_ID);
+    expect(con(`return [{ json: { ${RESTO}, mensajeId: c ? undefined : 'x' } }];`)).toThrow(SIN_ID);
+    expect(con(`const o = { ${RESTO} }; o.mensajeId = undefined; return [{ json: o }];`)).toThrow(SIN_ID);
+    expect(con(`const o = { ${RESTO}, mensajeId: 'x' }; Object.assign(o, { mensajeId: undefined }); return [{ json: o }];`)).toThrow(SIN_ID);
+  });
+  it('NEGADA: una asignación o un Object.assign condicionales (dentro de if, bucle o función) no cuentan; `||=` tampoco', () => {
+    expect(con(`const o = { ${RESTO} }; if (c) { o.mensajeId = 'x'; } return [{ json: o }];`)).toThrow(SIN_ID);
+    expect(con(`const o = { ${RESTO} }; c && (o.mensajeId = 'x'); return [{ json: o }];`)).toThrow(SIN_ID);
+    expect(con(`const o = { ${RESTO} }; o.mensajeId ||= 'x'; return [{ json: o }];`)).toThrow(SIN_ID);
+    expect(con(`const o = { ${RESTO} }; if (c) { Object.assign(o, { mensajeId: 'x' }); } return [{ json: o }];`)).toThrow(SIN_ID);
+  });
+  it('`emisionesDelCodigo`: intersección en las claves, y `vistas` guarda lo que aparece solo en alguna ruta', () => {
+    const e = emisionesDelCodigo("const a = c ? { x: 1, y: 2 } : { x: 1 }; return [{ json: a }];").emisiones[0];
+    expect([...e.claves]).toEqual(['x']);
+    expect([...e.vistas].sort()).toEqual(['x', 'y']);
+    expect([...emisionesDelCodigo("return [{ json: { x: 1, y: undefined } }];").emisiones[0].claves]).toEqual(['x']);
+  });
+});
+
+describe('rafaga: el consumidor LEE `textoDelTurno` de «Agrupar ráfaga» en código real, no solo lo nombra', () => {
+  const con = (jsCode: string) => () => {
+    const f = sintetico();
+    f.nodes.push(un('Responder', [1400, 400], { type: 'n8n-nodes-base.code', parameters: { jsCode } }));
+    f.connections.Agente = enl('Responder');
+    return injertarRafaga(f, { ancla: ANCLA, campos: { texto: 'userInput' }, consumidor: 'Responder' });
+  };
+  it('lo lee: acceso directo, por una variable, por desestructuración, con `$node` o con el ayudante `cnPrimero`', () => {
+    expect(con("return [{ json: { t: $('Agrupar ráfaga').first().json.textoDelTurno } }];")).not.toThrow();
+    expect(con("const a = $('Agrupar ráfaga').first().json; return [{ json: { t: a['textoDelTurno'] } }];")).not.toThrow();
+    expect(con("const { textoDelTurno } = $('Agrupar ráfaga').item.json; return [{ json: { textoDelTurno } }];")).not.toThrow();
+    expect(con("return [{ json: { t: $node['Agrupar ráfaga'].json.textoDelTurno } }];")).not.toThrow();
+    expect(con("const r = cnPrimero('Agrupar ráfaga') || {}; return [{ json: { t: r.textoDelTurno } }];")).not.toThrow();
+  });
+  it('NEGADA: un Code cuya única mención es un comentario o una cadena NO lo lee', () => {
+    const no = /no lee `textoDelTurno` de «Agrupar ráfaga»/;
+    expect(con("// lee $('Agrupar ráfaga').first().json.textoDelTurno\nreturn [{ json: {} }];")).toThrow(no);
+    expect(con("/* textoDelTurno de Agrupar ráfaga */ return [{ json: {} }];")).toThrow(no);
+    expect(con("const nota = \"$('Agrupar ráfaga').first().json.textoDelTurno\"; return [{ json: { nota } }];")).toThrow(no);
+    expect(con("const a = $('Agrupar ráfaga').first().json; return [{ json: { t: a.rafaga, x: $json.textoDelTurno } }];")).toThrow(no); // lee otra cosa de la ráfaga y `textoDelTurno` de otro lado
+    expect(con("const t = $('Otro nodo').first().json.textoDelTurno; const n = 'Agrupar ráfaga'; return [{ json: { t, n } }];")).toThrow(no);
+    expect(con('return [{ json: { ')).toThrow(no); // no se puede analizar: no se da por bueno
+  });
+  it('en un nodo que no es Code, solo cuenta lo que va dentro de `{{ }}` de una expresión (`=`), no el texto del parámetro', () => {
+    const arma = (parameters: Record<string, unknown>) => () => {
+      const f = sintetico();
+      nodo(f, 'Agente').parameters = parameters;
+      return injertarRafaga(f, { ancla: ANCLA, campos: { texto: 'userInput' }, consumidor: 'Agente' });
+    };
+    const no = /«Agente» no lee `textoDelTurno` de «Agrupar ráfaga»/;
+    expect(arma({ text: "={{ $('Agrupar ráfaga').first().json.textoDelTurno }}" })).not.toThrow();
+    expect(arma({ opciones: { prompt: "=Hola {{ $json.nombre }}, dijo: {{ $('Agrupar ráfaga').item.json.textoDelTurno || '' }}" } })).not.toThrow();
+    expect(arma({ text: "=El texto del turno sale de Agrupar ráfaga: textoDelTurno" })).toThrow(no); // texto del prompt, no expresión
+    expect(arma({ text: "Agrupar ráfaga textoDelTurno {{ $('Agrupar ráfaga').first().json.textoDelTurno }}" })).toThrow(no); // no empieza con `=`: n8n no la evalúa
+    expect(arma({ text: "={{ 'Agrupar ráfaga textoDelTurno' }}" })).toThrow(no); // una cadena dentro de la expresión
+    expect(arma({ text: "={{ $('Agrupar ráfaga').first().json.rafaga }} y {{ $json.textoDelTurno }}" })).toThrow(no);
+  });
+});

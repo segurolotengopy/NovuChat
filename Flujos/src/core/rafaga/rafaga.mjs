@@ -255,6 +255,11 @@ export const NORMALIZADORES_VERIFICADOS = {
 export const huellaDe = (codigo) => createHash('sha256').update(String(codigo)).digest('hex');
 
 const PARSE = { ecmaVersion: 'latest', sourceType: 'script', allowReturnOutsideFunction: true, allowAwaitOutsideFunction: true };
+/** ¿El valor es `undefined`, `null`, `void …` o una rama que puede serlo (ternario, `||`/`??` con ambos lados nulos)? Una clave con ese valor NO es una emisión. */
+const esNulo = (n) => !!n && (
+  (n.type === 'Identifier' && n.name === 'undefined') || (n.type === 'Literal' && n.raw === 'null') || (n.type === 'UnaryExpression' && n.operator === 'void')
+  || (n.type === 'ConditionalExpression' && (esNulo(n.consequent) || esNulo(n.alternate)))
+  || (n.type === 'LogicalExpression' && (n.operator === '&&' ? esNulo(n.right) : esNulo(n.left) && esNulo(n.right))));
 /** El nombre de una clave de un literal (`a:`, `'a':`, `['a']:`), o null si no se puede plegar. */
 const claveDe = (p) => (!p.computed && p.key.type === 'Identifier' ? p.key.name : (p.key.type === 'Literal' ? String(p.key.value) : null));
 /**
@@ -268,35 +273,71 @@ export function emisionesDelCodigo(codigo) {
   try { ast = parser.parse(String(codigo), PARSE); } catch (e) { return { error: `no se pudo analizar el código (${String(e.message).slice(0, 60)})`, emisiones: [] }; }
   const declaraciones = new Map();
   const miembros = new Map();
-  const abre = (nombre) => { const m = miembros.get(nombre) || { claves: new Set(), abierto: false }; miembros.set(nombre, m); return m; };
+  const abre = (nombre) => { const m = miembros.get(nombre) || { claves: new Set(), nulas: new Set(), vistas: new Set(), asigna: [], abierto: false }; miembros.set(nombre, m); return m; };
   const nombreDeObjeto = (n) => (n && n.type === 'Identifier' ? n.name : null);
-  (function recorrer(x) {
-    if (Array.isArray(x)) { x.forEach(recorrer); return; }
+  const esAssign = (c) => c.callee.type === 'MemberExpression' && c.callee.object.name === 'Object' && c.callee.property.name === 'assign';
+  // Un trozo de código que puede no correr (rama de if/ternario, lado derecho de un operador lógico, bucle, try, función): lo que se asigna ahí NO es una emisión segura.
+  const TROZOS = ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression', 'ForStatement', 'ForInStatement', 'ForOfStatement', 'WhileStatement', 'DoWhileStatement', 'SwitchCase', 'TryStatement', 'CatchClause'];
+  const condicionalHijo = (x, k, cond) => cond || TROZOS.includes(x.type) || ((x.type === 'IfStatement' || x.type === 'ConditionalExpression') && k !== 'test') || (x.type === 'LogicalExpression' && k === 'right');
+  const claveDeMiembro = (l) => (!l.computed && l.property.type === 'Identifier' ? l.property.name : (l.computed && l.property.type === 'Literal' ? String(l.property.value) : null));
+  (function recorrer(x, cond) {
+    if (Array.isArray(x)) { x.forEach((e) => recorrer(e, cond)); return; }
     if (!x || typeof x.type !== 'string') return;
     if (x.type === 'VariableDeclarator' && x.id.type === 'Identifier' && x.init) (declaraciones.get(x.id.name) || declaraciones.set(x.id.name, []).get(x.id.name)).push(x.init);
     if (x.type === 'AssignmentExpression' && x.operator === '=' && x.left.type === 'Identifier') (declaraciones.get(x.left.name) || declaraciones.set(x.left.name, []).get(x.left.name)).push(x.right);
     if (x.type === 'AssignmentExpression' && x.left.type === 'MemberExpression' && nombreDeObjeto(x.left.object)) {
       const m = abre(x.left.object.name);
-      if (!x.left.computed && x.left.property.type === 'Identifier') m.claves.add(x.left.property.name);
-      else if (x.left.computed && x.left.property.type === 'Literal') m.claves.add(String(x.left.property.value));
-      else m.abierto = true;
+      const k = claveDeMiembro(x.left);
+      if (k === null) m.abierto = true;
+      else if (x.operator === '=' && esNulo(x.right)) m.nulas.add(k); // `x.k = undefined/null`: no es una emisión
+      else if (x.operator === '=' && !cond) m.claves.add(k);
+      else m.vistas.add(k); // condicional o compuesta (`||=`, `??=`): puede no quedar puesta
     }
-    if (x.type === 'CallExpression' && x.callee.type === 'MemberExpression' && x.callee.object.name === 'Object' && x.callee.property.name === 'assign' && nombreDeObjeto(x.arguments[0])) {
-      const m = abre(x.arguments[0].name);
-      for (const resto of x.arguments.slice(1)) { const r = clavesDe(resto, new Set()); r.claves.forEach((c) => m.claves.add(c)); if (r.abierto) m.abierto = true; }
+    // `delete x.k` ANULA la clave en cualquier parte del código.
+    if (x.type === 'UnaryExpression' && x.operator === 'delete' && x.argument.type === 'MemberExpression' && nombreDeObjeto(x.argument.object)) {
+      const m = abre(x.argument.object.name);
+      const k = claveDeMiembro(x.argument);
+      if (k === null) m.abierto = true; else m.nulas.add(k);
     }
-    for (const k of Object.keys(x)) { const v = x[k]; if (v && typeof v === 'object') recorrer(v); }
-  })(ast);
+    if (x.type === 'CallExpression' && x.callee.type === 'MemberExpression' && esAssign(x) && nombreDeObjeto(x.arguments[0])) {
+      abre(x.arguments[0].name).asigna.push({ args: x.arguments.slice(1), cond });
+    }
+    for (const k of Object.keys(x)) { const v = x[k]; if (v && typeof v === 'object') recorrer(v, condicionalHijo(x, k, cond)); }
+  })(ast, false);
+
+  // Resultado de una resolución: `claves` = emitidas en TODAS las rutas con un valor que no es `undefined`/`null` literal; `vistas` = nombradas en alguna ruta (para el mensaje).
+  const vacio = () => ({ claves: new Set(), nulas: new Set(), vistas: new Set(), abierto: false });
+  /** Superpone `o` sobre `r` (lo que `o` pone gana; lo que `o` anula se quita). */
+  const aplica = (r, o) => {
+    o.claves.forEach((c) => { r.claves.add(c); r.nulas.delete(c); });
+    o.nulas.forEach((c) => { r.claves.delete(c); r.nulas.add(c); });
+    o.vistas.forEach((c) => r.vistas.add(c));
+    if (o.abierto) r.abierto = true;
+    return r;
+  };
+  /** INTERSECCIÓN de rutas: una clave cuenta solo si todas las rutas la emiten; lo anulado en cualquiera queda anulado. */
+  const interseca = (lista) => {
+    const r = vacio();
+    if (!lista.length) { r.abierto = true; return r; }
+    for (const c of lista[0].claves) if (lista.every((o) => o.claves.has(c))) r.claves.add(c);
+    for (const o of lista) { o.nulas.forEach((c) => r.nulas.add(c)); o.vistas.forEach((c) => r.vistas.add(c)); o.claves.forEach((c) => r.vistas.add(c)); if (o.abierto) r.abierto = true; }
+    r.nulas.forEach((c) => r.claves.delete(c));
+    return r;
+  };
 
   function clavesDe(nodo, vistos) {
-    const r = { claves: new Set(), abierto: false };
-    const suma = (o) => { o.claves.forEach((c) => r.claves.add(c)); if (o.abierto) r.abierto = true; };
+    const r = vacio();
     if (!nodo) { r.abierto = true; return r; }
     switch (nodo.type) {
       case 'ObjectExpression':
         for (const p of nodo.properties) {
-          if (p.type === 'SpreadElement') suma(clavesDe(p.argument, vistos));
-          else { const k = claveDe(p); if (k === null) r.abierto = true; else r.claves.add(k); }
+          if (p.type === 'SpreadElement') aplica(r, clavesDe(p.argument, vistos));
+          else {
+            const k = claveDe(p);
+            if (k === null) { r.abierto = true; continue; }
+            r.vistas.add(k);
+            if (p.type === 'Property' && p.kind === 'init' && esNulo(p.value)) { r.claves.delete(k); r.nulas.add(k); } else { r.claves.add(k); r.nulas.delete(k); }
+          }
         }
         return r;
       case 'Identifier': {
@@ -304,16 +345,23 @@ export function emisionesDelCodigo(codigo) {
         const inits = declaraciones.get(nodo.name);
         if (!inits) { r.abierto = true; return r; }
         const con = new Set(vistos).add(nodo.name);
-        for (const init of inits) suma(clavesDe(init, con));
+        const base = interseca(inits.map((init) => clavesDe(init, con)));
         const m = miembros.get(nodo.name);
-        if (m) { m.claves.forEach((c) => r.claves.add(c)); if (m.abierto) r.abierto = true; }
-        return r;
+        if (m) {
+          m.claves.forEach((c) => base.claves.add(c));
+          m.vistas.forEach((c) => base.vistas.add(c));
+          for (const { args, cond } of m.asigna) for (const a of args) { const s = clavesDe(a, con); if (cond) { s.claves.forEach((c) => base.vistas.add(c)); s.vistas.forEach((c) => base.vistas.add(c)); if (s.abierto) base.abierto = true; } else aplica(base, s); }
+          m.nulas.forEach((c) => { base.claves.delete(c); base.nulas.add(c); });
+          if (m.abierto) base.abierto = true;
+        }
+        return base;
       }
       case 'CallExpression':
-        if (nodo.callee.type === 'MemberExpression' && nodo.callee.object.name === 'Object' && nodo.callee.property.name === 'assign') { for (const a of nodo.arguments) suma(clavesDe(a, vistos)); return r; }
+        if (nodo.callee.type === 'MemberExpression' && esAssign(nodo)) { for (const a of nodo.arguments) aplica(r, clavesDe(a, vistos)); return r; }
         r.abierto = true; return r;
-      case 'LogicalExpression': suma(clavesDe(nodo.left, vistos)); suma(clavesDe(nodo.right, vistos)); return r;
-      case 'ConditionalExpression': suma(clavesDe(nodo.consequent, vistos)); suma(clavesDe(nodo.alternate, vistos)); return r;
+      // `a || b`, `a ?? b`, `a && b`: el resultado es una de las dos ramas (salvo un literal de objeto a la izquierda, que siempre es verdadero): se intersecta.
+      case 'LogicalExpression': return nodo.left.type === 'ObjectExpression' && nodo.operator !== '&&' ? clavesDe(nodo.left, vistos) : interseca([clavesDe(nodo.left, vistos), clavesDe(nodo.right, vistos)]);
+      case 'ConditionalExpression': return interseca([clavesDe(nodo.consequent, vistos), clavesDe(nodo.alternate, vistos)]);
       default: r.abierto = true; return r;
     }
   }
@@ -347,7 +395,10 @@ function camposQueFaltan(n, campos) {
     for (const [nombre, campo] of Object.entries(campos)) {
       if (em.claves.has(campo)) continue;
       if (nombre === 'phoneNumberId' && em.abierto && verificado) continue;
-      faltan.add(`${nombre} («${campo}»)${nombre === 'phoneNumberId' && em.abierto ? ' [llega por un spread que no se puede resolver: pasar `fuente`, o verificarlo por ejecución]' : ''}`);
+      const pista = em.nulas.has(campo) ? ' [la anula (`undefined`/`null`/`delete`)]'
+        : em.vistas.has(campo) ? ' [no la emiten TODAS las rutas del código (ternario, if/else, `||`, asignación condicional): no se puede decidir estáticamente; pasar `fuente` o una lista blanca verificada por ejecución]'
+          : (nombre === 'phoneNumberId' && em.abierto ? ' [llega por un spread que no se puede resolver: pasar `fuente`, o verificarlo por ejecución]' : '');
+      faltan.add(`${nombre} («${campo}»)${pista}`);
     }
   }
   return [...faltan];
@@ -372,8 +423,67 @@ function descendientes(flujo, desde) {
   }
   return visto;
 }
-/** ¿El nodo LEE `textoDelTurno` de «Agrupar ráfaga»? (su código o cualquier parámetro nombra las dos cosas). */
-const consumeElTexto = (n) => { const t = JSON.stringify((n && n.parameters) || {}); return t.includes('textoDelTurno') && t.includes(NODO_RAFAGA_AGRUPAR); };
+/**
+ * ¿Este AST LEE `textoDelTurno` de «Agrupar ráfaga»? Código real: un acceso a miembro `.textoDelTurno` (o `['textoDelTurno']`, o la desestructuración `{ textoDelTurno }`) cuyo objeto resuelve a
+ * `$('Agrupar ráfaga')…`, `$items('Agrupar ráfaga')…`, `$node['Agrupar ráfaga']…` o a una variable declarada con eso. Un comentario o una cadena que nombre `textoDelTurno` no cuenta.
+ */
+function leeElTextoDe(ast) {
+  const declaraciones = new Map();
+  const todos = [];
+  (function recorrer(x) {
+    if (Array.isArray(x)) { x.forEach(recorrer); return; }
+    if (!x || typeof x.type !== 'string') return;
+    todos.push(x);
+    if (x.type === 'VariableDeclarator' && x.id.type === 'Identifier' && x.init) (declaraciones.get(x.id.name) || declaraciones.set(x.id.name, []).get(x.id.name)).push(x.init);
+    if (x.type === 'AssignmentExpression' && x.operator === '=' && x.left.type === 'Identifier') (declaraciones.get(x.left.name) || declaraciones.set(x.left.name, []).get(x.left.name)).push(x.right);
+    for (const k of Object.keys(x)) { const v = x[k]; if (v && typeof v === 'object') recorrer(v); }
+  })(ast);
+  const esAgrupar = (n) => n && n.type === 'Literal' && n.value === NODO_RAFAGA_AGRUPAR;
+  const viene = (n, vistos) => {
+    if (!n) return false;
+    switch (n.type) {
+      case 'CallExpression':
+        // `cnNodo`/`cnPrimero` son los ayudantes comunes de los nodos Code del core (`cnPrimero(n)` = `$(n).first().json` solo si el nodo corrió).
+        if (n.callee.type === 'Identifier' && ['$', '$items', 'cnNodo', 'cnPrimero'].includes(n.callee.name)) return esAgrupar(n.arguments[0]);
+        return n.callee.type === 'MemberExpression' && viene(n.callee.object, vistos);
+      case 'MemberExpression':
+        if (n.object.type === 'Identifier' && n.object.name === '$node' && n.computed && esAgrupar(n.property)) return true;
+        return viene(n.object, vistos);
+      case 'Identifier': {
+        if (vistos.has(n.name)) return false;
+        const con = new Set(vistos).add(n.name);
+        return (declaraciones.get(n.name) || []).some((i) => viene(i, con));
+      }
+      case 'AwaitExpression': return viene(n.argument, vistos);
+      case 'ConditionalExpression': return viene(n.consequent, vistos) || viene(n.alternate, vistos);
+      case 'LogicalExpression': return viene(n.left, vistos) || viene(n.right, vistos);
+      default: return false;
+    }
+  };
+  const esTexto = (m) => (!m.computed && m.property.type === 'Identifier' && m.property.name === 'textoDelTurno') || (m.computed && m.property.type === 'Literal' && m.property.value === 'textoDelTurno');
+  return todos.some((x) => (x.type === 'MemberExpression' && esTexto(x) && viene(x.object, new Set()))
+    || (x.type === 'VariableDeclarator' && x.id.type === 'ObjectPattern' && viene(x.init, new Set()) && x.id.properties.some((p) => p.type === 'Property' && claveDe(p) === 'textoDelTurno')));
+}
+const analizaEnLinea = (codigo, expresion) => {
+  try { return acornDe().parse(expresion ? `(${codigo}\n)` : String(codigo), PARSE); } catch (e) { return null; }
+};
+/**
+ * ¿El nodo LEE `textoDelTurno` de «Agrupar ráfaga»? Un nodo Code, por el análisis de su `jsCode`; cualquier otro nodo, por sus parámetros que son expresiones de n8n (`=…{{ … }}`): se
+ * analiza lo que va dentro de cada `{{ }}`. Lo que está fuera (texto del prompt, comentarios, cadenas) no cuenta.
+ */
+const consumeElTexto = (n) => {
+  const p = (n && n.parameters) || {};
+  if (n && n.type === 'n8n-nodes-base.code') { const ast = analizaEnLinea(p.jsCode, false); return !!ast && leeElTextoDe(ast); }
+  let lee = false;
+  (function ver(v) {
+    if (lee) return;
+    if (Array.isArray(v)) { v.forEach(ver); return; }
+    if (v && typeof v === 'object') { Object.values(v).forEach(ver); return; }
+    if (typeof v !== 'string' || !v.startsWith('=')) return;
+    for (const m of v.matchAll(/\{\{([\s\S]*?)\}\}/g)) { const ast = analizaEnLinea(m[1], true); if (ast && leeElTextoDe(ast)) { lee = true; return; } }
+  })(p);
+  return lee;
+};
 /**
  * Sin CONSUMIDOR la ráfaga PIERDE mensajes: «Agrupar ráfaga» entrega los textos unidos en `textoDelTurno`, pero si ningún nodo del flujo lo lee, la ejecución que responde ve solo SU
  * texto y los que las otras callaron nunca se contestan. Por eso `consumidor` es obligatorio: el nombre (o la lista) de los nodos que leen `textoDelTurno`, que tienen que ser el destino o
