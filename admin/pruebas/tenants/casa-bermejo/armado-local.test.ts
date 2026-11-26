@@ -72,7 +72,7 @@ describe('armar con datos locales', () => {
     const s = salidaTemporal();
     const r = armar(base(), s.dir);
     expect(r.map((x) => x.archivo)).toEqual(['casa-bermejo.local.json', 'casa-bermejo.prueba.local.json']);
-    expect(r.map((x) => x.nodos)).toEqual([63, 58]); // el MISMO tamaño que los versionados: ningún nodo ni mensaje agregado
+    expect(r.map((x) => x.nodos)).toEqual([64, 58]); // el MISMO tamaño que los versionados: ningún nodo ni mensaje agregado
     expect(hash(VERSIONADOS)).toEqual(antes);
     const prod = readFileSync(s.prod, 'utf8');
     expect(prod).toContain(WABA);
@@ -96,7 +96,7 @@ describe('armar con datos locales', () => {
     expect(corrida('--local', '--datos', archivoLocal(base()), '--salida', s.dir).status).toBe(0);
     const v = corrida('--verificar');
     expect(v.status).toBe(0);
-    expect(v.stdout).toMatch(/al día \(63 nodos\)/);
+    expect(v.stdout).toMatch(/al día \(64 nodos\)/);
   });
   it('lo local queda ignorado por git, el archivo de datos local también (se comprueba por ruta, sin escribir en la carpeta del cliente)', () => {
     for (const f of ['casa-bermejo.local.json', 'casa-bermejo.prueba.local.json', 'datos.local.json']) {
@@ -111,7 +111,7 @@ describe('armar con datos locales', () => {
     const salida = r.stdout + r.stderr;
     for (const valor of [WABA, PHONE, 'storage.googleapis.com', 'novutienda-sitio-stg']) expect(salida).not.toContain(valor);
     expect(salida).toMatch(/marcadores sin sustituir en lo armado \(REEMPLAZAR_CONTACTO_DESIGNADO_AVISO,/);
-    expect(salida).toMatch(/63 nodos/);
+    expect(salida).toMatch(/64 nodos/);
   });
   it('los marcadores pendientes se calculan sobre lo armado: un marcador sustituido ya no figura', () => {
     const s = salidaTemporal();
@@ -135,7 +135,7 @@ describe('armar con datos locales', () => {
     const d = completo();
     const r = corrida('--local', '--datos', archivoLocal(d), '--salida', s.dir);
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toMatch(/Quedan 1 marcadores sin sustituir en lo armado \(REEMPLAZAR_URL_VERIFICADOR_RECEPTOR\)/);
+    expect(r.stdout).toMatch(/Quedan 2 marcadores sin sustituir en lo armado \(REEMPLAZAR_RUTA_CARRITO_CASA_BERMEJO, REEMPLAZAR_URL_VERIFICADOR_RECEPTOR\)/);
     expect(corrida('--publicable', '--flujo', s.prueba).status).toBe(0);
     const pp = corrida('--publicable', '--flujo', s.prod);
     expect(pp.status).toBe(1);
@@ -256,8 +256,17 @@ describe('NEGADO: lo que un dato local no puede traer', () => {
     (d['receptor'] as J)['urlVerificador'] = C.URL_VERIFICADOR_INTERNO;
     const r = corrida('--local', '--datos', archivoLocal(d), '--salida', s.dir);
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).not.toMatch(/marcadores sin sustituir/);
-    expect(corrida('--publicable', '--flujo', s.prod).status).toBe(0);
+    // Lo ÚNICO que queda es la ruta del webhook del carrito: la sustituye `preparar-import.sh` (una URL de capacidad nunca va en un archivo de datos, ni siquiera el local).
+    expect(r.stdout).toMatch(/Quedan 1 marcadores sin sustituir en lo armado \(REEMPLAZAR_RUTA_CARRITO_CASA_BERMEJO\)/);
+    const pp = corrida('--publicable', '--flujo', s.prod);
+    expect(pp.status).toBe(1);
+    expect(pp.stderr).toMatch(/REEMPLAZAR_RUTA_CARRITO_CASA_BERMEJO/);
+    expect(pp.stderr).not.toMatch(/REEMPLAZAR_URL_VERIFICADOR_RECEPTOR/);
+    // Con la ruta sustituida (lo que hace `preparar-import.sh`) la producción se puede publicar.
+    const sustituido = join(dirname(s.prod), 'sustituido.json');
+    writeFileSync(sustituido, readFileSync(s.prod, 'utf8').replace('REEMPLAZAR_RUTA_CARRITO_CASA_BERMEJO', 'ruta_carrito_de_ensayo_0001'));
+    const ps = corrida('--publicable', '--flujo', sustituido);
+    expect(ps.status, ps.stderr).toBe(0);
     expect(corrida('--publicable', '--flujo', s.prueba).status).toBe(0);
     expect(readFileSync(s.prueba, 'utf8')).not.toContain('receptor-clientes');
     expect(C.hallazgosDelReceptor(JSON.parse(readFileSync(s.prod, 'utf8')), C.cargarDatosLocal(archivoLocal(d)))).toEqual([]);
@@ -271,6 +280,8 @@ describe('NEGADO: lo que un dato local no puede traer', () => {
     (d['receptor'] as J)['urlVerificador'] = C.URL_VERIFICADOR_INTERNO;
     const datos = archivoLocal(d);
     expect(corrida('--local', '--datos', datos, '--salida', s.dir).status).toBe(0);
+    // La ruta del carrito la sustituye `preparar-import.sh`: el flujo «preparado» es el local con esa ruta puesta.
+    writeFileSync(s.prod, readFileSync(s.prod, 'utf8').replace('REEMPLAZAR_RUTA_CARRITO_CASA_BERMEJO', 'ruta_carrito_de_ensayo_0001'));
     const bien = corrida('--publicable', '--flujo', s.prod, '--datos', datos);
     expect(bien.status, bien.stderr).toBe(0);
     const original = JSON.parse(readFileSync(s.prod, 'utf8')) as J;
