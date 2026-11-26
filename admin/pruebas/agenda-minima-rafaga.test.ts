@@ -186,12 +186,12 @@ describe('Bellido (Agenda mínima v0) con la ráfaga: la forma del flujo', () =>
     expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('¿Esperar ráfaga?'));
     expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('Decidir turno'));
   });
-  it('lee el mensaje de «Normalizar entrada» (el item del ancla es la respuesta del reporte, un HTTP en línea) y el texto del campo `texto`', () => {
+  it('lee el mensaje de «Interpretar entrada» (el item del ancla es la respuesta del reporte, un HTTP en línea) y el texto del campo `texto`', () => {
     const si = PRODUCCION.nodes.find((n) => n.name === '¿Esperar ráfaga?')!;
     const izquierda = JSON.stringify(si.parameters);
-    expect(izquierda).toContain("$('Normalizar entrada').first().json");
+    expect(izquierda).toContain("$('Interpretar entrada').first().json");
     const agrupar = String(PRODUCCION.nodes.find((n) => n.name === 'Agrupar ráfaga')!.parameters['jsCode']);
-    expect(agrupar).toContain("const FUENTE = 'Normalizar entrada';");
+    expect(agrupar).toContain("const FUENTE = 'Interpretar entrada';");
     expect(agrupar).toContain("const CAMPO_TEXTO = 'texto';");
   });
   it('«Config del negocio» propaga `rafagaApagada` desde la respuesta de configuracionFlujo (solo con `true`)', () => {

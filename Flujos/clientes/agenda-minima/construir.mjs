@@ -173,10 +173,10 @@ function armar(v) {
   // El INDICADOR de escritura (los tres puntos; módulo común, nunca copiado): rama lateral ANTES del modelo, con la credencial del envío por Graph, sin Continue on Fail fuera de ese nodo. Excepción a la prohibición 5 autorizada por Andres el 21/11/2026.
   injertarIndicador(flujo, { ancla: { nodo: '¿Extraer?' } });
   // La RÁFAGA (módulo común, nunca copiado; 25/11/2026): 2-3 textos seguidos del mismo teléfono se contestan UNA vez. El ancla va DESPUÉS de todos los desvíos que responden por otra rama (comercio no operativo, uso extendido) y de
-  // «Reportar mensaje (entrante)»; el item del ancla es la respuesta del reporte (HTTP en línea), así que el id, el teléfono, el número y el texto se leen de «Normalizar entrada» (`fuente`), que corre una vez por mensaje.
+  // «Reportar mensaje (entrante)»; el item del ancla es la respuesta del reporte (HTTP en línea), así que el id, el teléfono, el número y el texto se leen de «Interpretar entrada» (`fuente`, el que emite el mensaje con `texto`), que corre una vez por mensaje.
   // «Decidir turno» lee `textoDelTurno` de «Agrupar ráfaga». Mensajes por conversación: ninguno agregado; una ráfaga de n textos quita n-1.
-  injertarRafaga(flujo, { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Bajar medio?' }, fuente: 'Normalizar entrada', campos: { texto: 'texto' }, posicion: [2360, 380] });
-  const hallazgosRafaga = hallazgosDeLaRafaga(flujo, { exigir: true, fuente: 'Normalizar entrada', campos: { texto: 'texto' } });
+  injertarRafaga(flujo, { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Bajar medio?' }, fuente: 'Interpretar entrada', campos: { texto: 'texto' }, posicion: [2360, 380] });
+  const hallazgosRafaga = hallazgosDeLaRafaga(flujo, { exigir: true, fuente: 'Interpretar entrada', campos: { texto: 'texto' } });
   if (hallazgosRafaga.length) throw new Error(`${v.archivo}: ráfaga: ${hallazgosRafaga.join('; ')}`);
   if (flujo.nodes.length > TOPE_DE_NODOS) throw new Error(`${v.archivo}: tiene ${flujo.nodes.length} nodos y el tope es ${TOPE_DE_NODOS}`);
   // La misma guardia que la prueba de CI «guardado obligatorio»: nueve nodos, ningún Code que lea el binario, retención en «none» (contrato v2 del 30/10).
