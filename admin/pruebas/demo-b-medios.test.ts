@@ -28,7 +28,7 @@ import {
   nodo, plantilla,
 } from './lib/flujo.ts';
 
-const f = leerFlujo('demo-b-venta-cobro.json');
+const f = leerFlujo('clientes/demo-b/demo-b-venta-cobro.json');
 const AGENTE = 'AI Agent NovuChat';
 const y = (nombre: string) => nodo(f, nombre).position?.[1] ?? Number.NaN;
 
@@ -268,7 +268,7 @@ describe('3. El cableado: el agente recibe TEXTO, nunca un binario', () => {
 
 // ===========================================================================
 describe('4. Los dos «Preparar …» son el MISMO módulo que en reservas, y en este flujo tienen sentido', () => {
-  const manifiesto = JSON.parse(readFileSync(join(CARPETA_FLUJOS, 'manifiestos/demo-b-venta-cobro.json'), 'utf8')) as
+  const manifiesto = JSON.parse(readFileSync(join(CARPETA_FLUJOS, 'manifiestos/clientes/demo-b/demo-b-venta-cobro.json'), 'utf8')) as
     { codigo: Record<string, string> };
   it('el manifiesto los inyecta desde el mismo archivo que el Demo A y Platinum', () => {
     const a = JSON.parse(readFileSync(join(CARPETA_FLUJOS, 'manifiestos/clientes/demo-a/demo-a-agendamiento.json'), 'utf8')) as
