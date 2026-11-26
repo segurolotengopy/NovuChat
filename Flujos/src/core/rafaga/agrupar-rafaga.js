@@ -38,7 +38,7 @@ function esAgrupable(f) {
 }
 
 function decidirRafaga({ idMeta, textoPropio, fragmentos, esperaMs, fallo }) {
-  const propio = String(textoPropio === undefined || textoPropio === null ? '' : textoPropio);
+  let propio = String(textoPropio === undefined || textoPropio === null ? '' : textoPropio);
   const solo = () => ({ accion: 'solo', texto: propio, ids: idMeta ? [idMeta] : [] });
   if (fallo || !idMeta || !Array.isArray(fragmentos)) return solo();
   const espera = Number(esperaMs);
@@ -59,6 +59,8 @@ function decidirRafaga({ idMeta, textoPropio, fragmentos, esperaMs, fallo }) {
   lista.sort((a, b) => (a.ms - b.ms) || (a.idMeta < b.idMeta ? -1 : a.idMeta > b.idMeta ? 1 : 0));
   const yo = lista.findIndex((f) => f.idMeta === idMeta);
   if (yo < 0 || !esAgrupable(lista[yo])) return solo();
+  // Defensa: si el flujo no entrega mi texto (campo mal nombrado), se usa el que el servidor guardó; nunca un grupo con el último mensaje en blanco.
+  if (propio.trim() === '') propio = lista[yo].texto;
 
   const arista = (a, b) => esAgrupable(a) && esAgrupable(b) && b.ms - a.ms <= salto;
   if (yo + 1 < lista.length && arista(lista[yo], lista[yo + 1])) return { accion: 'silencio', texto: '', ids: [] };

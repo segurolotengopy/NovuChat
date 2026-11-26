@@ -225,6 +225,20 @@ function productorDelItem(flujo, ancla, normalizador) {
   }
   return null;
 }
+/**
+ * ¿El nodo EMITE el campo? Se mira el código del Code (un campo asignado o en un objeto literal: `campo:`, `campo,`, `campo }`, `.campo =`, `['campo'] =`). `phoneNumberId` también puede
+ * llegar copiado con un spread del config (`...config`, los demos): es el único campo que se admite así. Un nodo que no es Code no se puede inspeccionar: no se da por bueno.
+ */
+function emiteElCampo(n, campo, nombre) {
+  if (!n || n.type !== 'n8n-nodes-base.code') return false;
+  const codigo = String(((n.parameters) || {}).jsCode || '');
+  const c = campo.replace(/[$]/g, '\\$&');
+  if (new RegExp(`(?<![\\w$.])${c}\\s*[:,}]`).test(codigo) || new RegExp(`\\.${c}\\s*=[^=]`).test(codigo) || new RegExp(`\\[['"]${c}['"]\\]\\s*=[^=]`).test(codigo)) return true;
+  return nombre === 'phoneNumberId' && /\.\.\.\s*[\w$.]+/.test(codigo);
+}
+/** Los campos de `campos` que el nodo productor del mensaje NO emite (vacío si todos). */
+const camposQueFaltan = (n, campos) => Object.entries(campos).filter(([nombre, campo]) => !emiteElCampo(n, campo, nombre)).map(([nombre, campo]) => `${nombre} («${campo}»)`);
+
 /** Los nodos que la `puerta` lee con `$('…')`. */
 const nodosDeLaPuerta = (puerta) => [...String(puerta || '').matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]);
 
@@ -259,6 +273,12 @@ export function injertarRafaga(flujo, opciones) {
     const roto = productorDelItem(flujo, a.nodo, normalizador);
     if (roto) throw new Error(`rafaga: el item que sale de «${a.nodo}» no se puede garantizar que salga de «${normalizador}» por nodos que lo dejan pasar (IF, Switch, Filter, Wait, NoOp): lo impide «${roto}», que puede cambiar el item y dejar sin los campos del mensaje (${camposDe(o).mensajeId}, ${camposDe(o).texto}…): la ráfaga quedaría apagada en silencio. Pasar \`fuente\` (el nodo del que se leen, p. ej. «${normalizador || 'Normalizar entrada'}»)`);
   }
+  {
+    // El productor del mensaje (la `fuente`, o el normalizador) tiene que EMITIR los campos que la ráfaga lee: si no, el IF daría siempre «no» o el texto saldría vacío.
+    const productor = fuente || normalizador;
+    const faltan = camposQueFaltan(por(flujo, productor), camposDe(o));
+    if (faltan.length) throw new Error(`rafaga: «${productor}» no emite ${faltan.join(', ')}: la ráfaga quedaría apagada en silencio o sin el texto del mensaje. Pasar \`campos\` con los nombres que ese nodo emite, o una \`fuente\` que los emita (el nodo que normaliza el entrante)`);
+  }
   const traer = por(flujo, o.traerConfiguracion || 'Traer configuración');
   if (!traer) throw new Error(`rafaga: el flujo no tiene «${o.traerConfiguracion || 'Traer configuración'}» (de donde se toman la URL y la credencial)`);
   const d = por(flujo, a.destino);
@@ -278,6 +298,9 @@ export function injertarRafaga(flujo, opciones) {
 /** Quita los cuatro nodos y vuelve a conectar el ancla con su destino original (lo usa el ensamblador: quitar + injertar es idempotente). */
 export function quitarRafaga(flujo) {
   const con = flujo.connections || {};
+  // Solo se quita la PIEZA: el IF existe y lleva a «Esperar ráfaga» que sigue la cadena. Un flujo con un nodo propio de ese nombre (el chat de NovuChat) no se toca.
+  if (!por(flujo, NODO_RAFAGA_SI) || !destinos(flujo, NODO_RAFAGA_SI, 0).includes(NODO_RAFAGA_ESPERAR)
+    || !destinos(flujo, NODO_RAFAGA_ESPERAR, 0).includes(NODO_RAFAGA_CONSULTAR) || !destinos(flujo, NODO_RAFAGA_CONSULTAR, 0).includes(NODO_RAFAGA_AGRUPAR)) return flujo;
   const original = ((con[NODO_RAFAGA_SI] || {}).main || [])[1] || [];
   for (const salidas of Object.values(con)) {
     for (const tipo of Object.keys(salidas)) {
@@ -351,6 +374,13 @@ export function hallazgosDeLaRafaga(flujo, opciones = {}) {
   const lejanos = noAscendientes(flujo, padres[0].name, [fuente || normalizador, ...referidos.filter((n) => por(flujo, n)), opciones.config || 'Config del negocio', opciones.configBase || 'Config base'].filter(Boolean));
   if (!fuente && (!normalizador || !por(flujo, normalizador))) h.push('rafaga: el flujo no tiene el nodo que normaliza el entrante');
   if (fuente && !por(flujo, fuente)) h.push(`rafaga: el flujo no tiene «${fuente}» (la fuente de los campos del mensaje)`);
+  {
+    const productor = fuente || normalizador;
+    if (productor && por(flujo, productor)) {
+      const faltan = camposQueFaltan(por(flujo, productor), { ...CAMPOS_POR_DEFECTO, ...(opciones.campos || {}) });
+      if (faltan.length) h.push(`rafaga: «${productor}» no emite ${faltan.join(', ')}: la ráfaga quedaría apagada en silencio o sin el texto del mensaje`);
+    }
+  }
   if (!fuente) {
     const roto = normalizador && por(flujo, normalizador) ? productorDelItem(flujo, padres[0].name, normalizador) : null;
     if (roto) h.push(`rafaga: el item que sale de «${padres[0].name}» no se puede garantizar que salga de «${normalizador}» por nodos transparentes: lo impide «${roto}»; la ráfaga quedaría apagada en silencio (hace falta \`fuente\`)`);
