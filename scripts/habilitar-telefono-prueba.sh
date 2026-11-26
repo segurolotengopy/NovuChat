@@ -32,7 +32,7 @@ done
 [[ "$TENANT" =~ ^[a-z0-9][a-z0-9-]{2,59}$ ]] || { echo "✗ --tenant: id de comercio (minúsculas, dígitos y guion)" >&2; exit 2; }
 [[ "$TEL" =~ ^[0-9]{8,15}$ ]] || { echo "✗ --tel: solo dígitos (8 a 15)" >&2; exit 2; }
 RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
-[ -d "$RAIZ/Flujos/clientes/$TENANT" ] || [ -d "$RAIZ/admin/scripts/datos/$TENANT" ] || { echo "✗ --tenant: ese comercio no existe en el repositorio" >&2; exit 1; }
+[ -d "$RAIZ/Flujos/clientes/$TENANT" ] || [ -d "$RAIZ/admin/scripts/datos/$TENANT" ] || compgen -G "$RAIZ/admin/scripts/datos/negocio-$TENANT*.json" >/dev/null || { echo "✗ --tenant: ese comercio no existe en el repositorio" >&2; exit 1; }
 TABLA="${CONFIG_LOCAL_MD:-$HOME/NovuChat/CONFIGURACION.local.md}"
 [ -f "$TABLA" ] || { echo "✗ No existe la tabla local" >&2; exit 1; }
 
