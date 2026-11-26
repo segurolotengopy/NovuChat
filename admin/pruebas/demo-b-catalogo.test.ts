@@ -1162,14 +1162,42 @@ describe('«Mensaje del carrito»: uno solo, y solo cuando se puede', () => {
     expect(retiro).not.toMatch(/Envío:/);
   });
 
-  it('una moneda «otra» (EUR, GBP…) no se contesta ni se escribe con «Bs» ni con la palabra «otra»; USD, ARS y Bs sí', () => {
+  it('una moneda «otra» (EUR, GBP…) PASA CON RECEPCIÓN: UN mensaje fijo sin cifras, con el pedido de botón (transferir), y a la memoria no entra ningún monto', () => {
     const otra = armar({ moneda: 'otra' });
-    expect(otra['responder']).toBe(false);
-    expect(otra['motivo']).toBe('moneda no atendida');
-    expect(String(otra['respuesta'])).toBe('');
-    expect(String(otra['memoriaCliente'])).toBe('');
-    expect(String(otra['memoriaAsistente'])).toBe('');
-    expect(armar({ moneda: 'Bs' })['responder']).toBe(true);
+    expect(otra['responder']).toBe(true);
+    expect(otra['transferir']).toBe(true);
+    const r = String(otra['respuesta']);
+    expect(r).not.toBe('');
+    expect(r).toContain('Escríbele directo al negocio');
+    expect(r).not.toMatch(/\d|Total|otra\b/); // ni cifras, ni «Total», ni la palabra «otra»
+    expect(String(otra['memoriaCliente'])).not.toMatch(/\d|Total/);
+    expect(String(otra['memoriaAsistente'])).toBe(r);
+    expect(otra['plantilla']).toMatchObject({ parametros: ['', expect.any(String), ''] });
+    // USD, ARS y Bs siguen siendo un pedido normal (sin transferir).
+    for (const m of ['Bs', 'ARS', 'USD']) {
+      const n = armar({ moneda: m });
+      expect(n['responder'], m).toBe(true);
+      expect(n['transferir'], m).toBe(false);
+      expect(String(n['respuesta']), m).toContain('Total:');
+    }
+  });
+
+  it('sin NINGÚN renglón válido no se escribe «Total» ni entra un total a la memoria: pasa con recepción; un inválido después del 12.º no cuenta como «y 1 producto más»', () => {
+    const sinValidas = armar({ items: [{ nombre: 'Cero', cantidad: 0, subtotal: 900 }], itemsTotal: 1, total: 900, descartados: 0 });
+    expect(sinValidas['transferir']).toBe(true);
+    expect(String(sinValidas['respuesta'])).not.toMatch(/Total|900|\d/);
+    expect(String(sinValidas['memoriaCliente'])).not.toMatch(/Total|900/);
+    expect(String(sinValidas['memoriaAsistente'])).not.toMatch(/Total|900/);
+    // 13 renglones: los 12 primeros válidos y el 13.º con cantidad 0 → «hay 1 producto que no pude incluir», NO «y 1 producto más».
+    const doce = Array.from({ length: 12 }, (_, k) => ({ nombre: 'P' + k, cantidad: 1, subtotal: 10 }));
+    const m = armar({ items: [...doce, { nombre: 'Cero', cantidad: 0, subtotal: 5 }], itemsTotal: 13, total: 120, descartados: 0 });
+    const r = String(m['respuesta']);
+    expect(r).not.toMatch(/y 1 producto más/);
+    expect(r).toContain('Hay 1 producto que no pude incluir');
+    expect(m['transferir']).toBe(false);
+    // Y un VÁLIDO después del 12.º sí cuenta como «y 1 producto más».
+    const v = armar({ items: [...doce, { nombre: 'Trece', cantidad: 2, subtotal: 5 }], itemsTotal: 13, total: 125, descartados: 0 });
+    expect(String(v['respuesta'])).toContain('y 1 producto más');
   });
 
   it('cantidad 0, negativa o fraccionaria NO se escribe como línea («0×») y suma a lo que no entró; una entrega ausente pregunta en vez de dar por hecho «recoger»', () => {
