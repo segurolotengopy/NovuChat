@@ -91,6 +91,7 @@ function botonesValidos(b) {
   const vistos = new Set();
   for (const x of b) {
     if (x === null || typeof x !== 'object' || Array.isArray(x)) return false;
+    if (Object.keys(x).some((k) => k !== 'indice' && k !== 'payload')) return false;
     if (x.indice !== 0 && x.indice !== 1) return false;
     if (typeof x.payload !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(x.payload)) return false;
     if (vistos.has(x.indice)) return false;

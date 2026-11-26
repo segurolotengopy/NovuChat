@@ -926,6 +926,7 @@ describe('Salida de persona: plantillas (Retomar, C5/C6)', () => {
     ['payload con espacio', { ...CAMPANA, botones: [{ indice: 0, payload: 'cs si' }] }],
     ['payload de 129', { ...CAMPANA, botones: [{ indice: 0, payload: 'a'.repeat(129) }] }],
     ['payload vacío', { ...CAMPANA, botones: [{ indice: 0, payload: '' }] }],
+    ['clave extra en un botón', { ...CAMPANA, botones: [{ indice: 0, payload: 'cs:si:camp-prueba', url: 'x' }] }],
     ['botones no lista', { ...CAMPANA, botones: 'cs:si' }],
   ] as [string, unknown][])('NIEGA: %s no se envía (NV-PLANTILLA-FORMA)', (_n, plantilla) => {
     const s = servidor('graph', [pl(43, plantilla)]);
