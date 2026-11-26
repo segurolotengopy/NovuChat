@@ -44,9 +44,11 @@ describe('(e) el texto del modelo no puede pedir dirección, teléfono, ubicaci�
       expect(cuerpos(u)).toMatch(/a nombre de qui[eé]n/i);
     });
   }
-  it('sano: un texto del modelo que no pide eso sale tal cual', () => {
+  it('decisión del 26/11: en un paso de datos el texto del modelo NO sale, aunque no pida nada prohibido (sale la pregunta fija)', () => {
     const m = conCiudadPedida({ modeloDice: modeloSano(() => ({}), 'Cochabamba es un destino muy querido por nuestros clientes.') as Opciones['modeloDice'] });
-    expect(cuerpos(hablar(m, ANA, mTexto('Cochabamba')))).toContain('destino muy querido');
+    const t = cuerpos(hablar(m, ANA, mTexto('Cochabamba')));
+    expect(t).not.toContain('destino muy querido');
+    expect(t).toMatch(/nombre completo/i);
   });
 });
 

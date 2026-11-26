@@ -175,7 +175,8 @@ describe('NOMBRE: un nombre real se captura solo porque el MODELO lo devuelve y 
     const m = crear({ modeloDice: modeloSano((t) => ({ nombre: t }), 'Con gusto, sigo atento a lo que necesite.') });
     hablar(m, ANA, mTexto('quiero una billetera'));
     const t = hablar(m, ANA, mTexto('recojo en tienda'));
-    expect(cuerpos(t)).toMatch(/sigo atento a lo que necesite\./i);
+    // Decisión del 26/11: en el paso del nombre el texto lo escribe el código; el del modelo no sale.
+    expect(cuerpos(t)).not.toMatch(/sigo atento a lo que necesite\./i);
     expect(cuerpos(t)).toMatch(/nombre/i);
     hablar(m, ANA, mTexto('Silvana'));
     expect(ficha(m).entrega.nombre).toBe('Silvana');

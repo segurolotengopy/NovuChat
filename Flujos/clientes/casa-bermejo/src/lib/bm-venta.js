@@ -283,7 +283,8 @@ function bmNombreValido(valor, textoCliente, minPalabras, vendibles) {
   if (BM_NOMBRE_PARTICULAS.has(normales[0]) || BM_NOMBRE_PARTICULAS.has(normales[normales.length - 1])) return '';
   // Una palabra TODA en mayúsculas junto a otras con mayúscula inicial y minúsculas («Ana Pérez ABCDEF») es una clave o un documento con letras, no parte del nombre.
   const gritadas = crudas.filter((w) => w.length >= 2 && w === w.toUpperCase() && w !== w.toLowerCase());
-  if (gritadas.length > 0 && gritadas.length < crudas.length) return '';
+  // Si el mensaje ya trae el documento con cifras, un apellido en mayúsculas («Ana PÉREZ 4412345») es parte del nombre.
+  if (gritadas.length > 0 && gritadas.length < crudas.length && !/\d{5,}/.test(String(textoCliente === undefined || textoCliente === null ? '' : textoCliente).replace(/[.\s-]/g, ''))) return '';
   if (bmNombreRechazado(t, vendibles)) return '';
   // Un TRAMO CONTIGUO de una frase del cliente, con lo demás de esa frase vacío o conocido.
   const frases = bmSinConfirmacion(textoCliente).split(/[,;!?¿\n]+|(?<=\p{L}{2})\.(?:\s+|$)/u).map((x) => x.trim()).filter((x) => x !== '');
@@ -1506,14 +1507,17 @@ function bmResolverModelo(c) {
   // Conversación: el texto del modelo, revisado; si no pasa, el fijo. El resumen del pedido (calculado por el código) acompaña cada cambio.
   // Si el código quitó una línea que el modelo propuso, su texto («agregué…») ya no es cierto: el texto lo arma el código (las opciones o el estado del pedido).
   const sitioConPreciosDistintos = fijada.delSitio === true && bmMontosDelSitioDifieren(p.textoCliente, c.vendibles) === true;
-  let texto = (ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? bmTextoDeEstado(lineas, entrega, cierre, c, conBoton) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
+  // DECISIÓN DE ANDRES (26/11/2026): en los pasos de DATOS de la entrega (departamento, región, provincia, ciudad y aclaración, nombre y documento, nombre del retiro) y en el RESUMEN con «Confirmar pedido», el mensaje lo escribe SOLO EL CÓDIGO (la pregunta fija del paso o el resumen); el texto del modelo no se envía.
+  // Se decide por ESTADO (qué falta de la entrega, o si el pedido está listo), nunca por palabras. Fuera de esos pasos el modelo conversa como siempre. La red `bmPideDatoProhibido` queda como secundaria fuera de la entrega.
+  const pendientes = lineas.length > 0 && !abierto && !conBoton ? bmPideDeEntrega(entrega, c.mercado) : [];
+  const enEntrega = lineas.length > 0 && !abierto && (conBoton || pendientes.length > 0);
+  let texto = (enEntrega || ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? (fijada.texto !== '' && !ignoraQuiereHablar && comp.modoRechazado !== true && comp.contradice !== true && fijada.delSitio !== true && fijada.ordenada !== true ? fijada.texto : bmTextoDeEstado(lineas, entrega, cierre, c, conBoton)) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
   // Negar una pieza que el catálogo sí tiene («solo disponemos de la de 9 kg» cuando hay de 9, 15 y 17 kg): el texto lo arma el código con las piezas que coinciden.
   if (texto !== '' && /\b(solo|unicamente)\s+(disponemos|tenemos|contamos|hay|ofrecemos)\b/.test(bmNorm(texto))) { const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1); if (coinc !== '') texto = coinc; }
   // El mensaje pegado del sitio con montos DISTINTOS a los del catálogo vivo: se cobra siempre el vivo y se avisa en el mismo mensaje (el resumen trae el total real).
   if (sitioConPreciosDistintos) texto = BM_TEXTO_PRECIOS_DISTINTOS + ' ' + texto;
   // El asistente PIDE lo que falta con palabras que el estado reconoce en el turno siguiente: si el modelo no mencionó el nombre (o la ciudad) que falta, el código lo agrega.
-  const pendientes = lineas.length > 0 && !abierto && !conBoton ? bmPideDeEntrega(entrega, c.mercado) : [];
-  if (texto !== '' && pendientes.length > 0 && pendientes.some((k) => !bmPidioDato(texto, k))) texto = texto + '\n\n' + bmPreguntaDelPaso(entrega, c.mercado);
+  if (texto !== '' && !enEntrega && pendientes.length > 0 && pendientes.some((k) => !bmPidioDato(texto, k))) texto = texto + '\n\n' + bmPreguntaDelPaso(entrega, c.mercado);
   const sinRedaccion = texto === '';
   let sinPieza = false;
   if (sinRedaccion && !lineas.length) {
