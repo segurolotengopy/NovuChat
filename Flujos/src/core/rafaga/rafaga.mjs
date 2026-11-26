@@ -91,8 +91,10 @@ const camposDe = (o) => {
 
 // acorn vive en `admin/` (devDependency fija, como en `guarda-ast.mjs`): `Flujos/` no tiene `node_modules`. Sin acorn la carga falla ruidosamente: no hay guardia en silencio.
 // Se carga la primera vez que se analiza un código (no al importar): el ensamblador y sus copias de prueba no la necesitan si ningún manifiesto declara la ráfaga.
+// `createRequire` no exige que la ruta exista, así que el `const` va a nivel de módulo: es la forma que el lector de fronteras (`pruebas/frontera/frontera.ts`) sabe seguir.
+const requerir = createRequire(fileURLToPath(new URL('../../../../admin/package.json', import.meta.url)));
 let acornCargado = null;
-const acornDe = () => (acornCargado ??= createRequire(fileURLToPath(new URL('../../../../admin/package.json', import.meta.url)))('acorn'));
+const acornDe = () => (acornCargado ??= requerir('acorn'));
 
 const CODIGO = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'agrupar-rafaga.js'), 'utf8');
 const NOMBRE_CONFIG_BASE_EN_CODIGO = "$('Config base')";
