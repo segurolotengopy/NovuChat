@@ -672,10 +672,20 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
       expect(r.status, previa).toBe(1);
       expect(r.llamadas, previa).not.toContain('hosting:clone');
       expect(r.texto).toContain('Rollback automático NO ejecutado');
+      expect(r.salidas['rollback'], previa).toBe('no_ejecutado');
     }
+    // El operador lo ve en post-despliegue: la salida llega por el job y tiene su texto propio (≤ 140).
+    expect(job('desplegar-produccion')).toContain('rollback: ${{ steps.rollback.outputs.rollback }}');
+    expect(paso(job('desplegar-produccion'), '- name: Rollback de hosting')).toContain('id: rollback');
+    const post = job('post-despliegue');
+    expect(post).toContain('ROLLBACK: ${{ needs.desplegar-produccion.outputs.rollback }}');
+    const texto = /'(Health check fallido; rollback NO ejecutado[^']*)'/.exec(post)?.[1] ?? '';
+    expect(texto).not.toBe('');
+    expect(texto.length).toBeLessThanOrEqual(140);
     // Contraprueba: con la copia de esta corrida, el rollback sí clona previa → live.
     const ok = correrPaso(codigo, 'rollback-con', false, { PREVIA_OK: 'true' });
     expect(ok.status, ok.texto).toBe(0);
+    expect(ok.salidas['rollback']).toBeUndefined();
     expect(ok.llamadas).toContain('firebase hosting:clone consola-ficticia:previa consola-ficticia:live');
   });
 
