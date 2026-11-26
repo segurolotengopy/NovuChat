@@ -228,7 +228,7 @@ describe('compuerta del registro de `firebase deploy`', () => {
     const f3 = corre(real.replace('hosting[catalogo-ficticio]: release complete', 'hosting[catalogo-ficticio]: release pendiente')); expect(f3.status).toBe(1);
     expect(f3.stdout).toContain('unexpected state');
     // NEGANDO: una Function NUEVA (create) con el aviso es fatal: su invoker no se fijó y nadie la podría invocar.
-    const conCreate = real.replace('\n', '\ni  functions: creating Node.js 22 (2nd Gen) function admin:fnNueva(us-east1)...\n✔  functions[admin:fnNueva(us-east1)] Successful create operation.\n');
+    const conCreate = 'i  functions: creating Node.js 22 (2nd Gen) function admin:fnNueva(us-east1)...\n✔  functions[admin:fnNueva(us-east1)] Successful create operation.\n' + real;
     const f4 = corre(conCreate); expect(f4.status, f4.stdout).toBe(1); expect(f4.stdout).toContain('unexpected state');
     // NEGANDO: con una versión de firebase-tools que NO es la verificada, el aviso vuelve a ser fatal.
     const otraVersion = compuerta(real, { SOLO: SOLO_COMPLETO, SITIO_CONSOLA: 'proyecto-ficticio', SITIO_CATALOGO: 'catalogo-ficticio', FIREBASE_TOOLS_VERSION: '0.0.1' });
