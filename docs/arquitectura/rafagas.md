@@ -7,9 +7,15 @@ sin enviar nada.
 ## Costo comercial
 
 - **Mensajes por conversación: nunca agrega; en una ráfaga de n textos quita n-1.** Cada mensaje enviado cuesta 0,0113 USD
-  (`docs/base-comercial.md` §1). Un mensaje aislado sale igual que hoy.
-- Lecturas en la nube: unas pocas lecturas por consulta (hasta 9 entradas del hilo, según el servidor) y 0 escrituras (ver «El servidor»). Una llamada HTTP más por texto, que no
-  es un mensaje de WhatsApp.
+  (`docs/base-comercial.md` §1). Un mensaje aislado sale con el mismo contenido que hoy, pero más tarde (ver «Latencia»).
+- Lecturas en la nube: **11 en el caso normal y hasta 12 por consulta** (con reintento de Meta): ruta autenticada 1 + ficha 1 + mi documento 1 o 2 + hasta 5 anteriores + hasta 3 siguientes
+  y 0 escrituras (ver «El servidor»). Una llamada HTTP más por texto, que no es un mensaje de WhatsApp.
+
+## Latencia
+
+La ráfaga **agrega espera**: cada texto aislado responde `esperaRafagaSeg` más tarde (2 s por defecto, acotada de 1 a 5). Si la consulta falla
+responde solo, y eso tarda hasta ≈ +6,3 s más (3000 ms × 2 intentos + 300 ms entre ellos) sobre la espera. Es el precio de ahorrar n-1 mensajes en
+una ráfaga; los medios, botones y los flujos con el interruptor apagado no esperan.
 
 ## Estado de la entrega
 
@@ -130,9 +136,11 @@ sigue emitiendo el item **del ancla** más `rafaga` y `textoDelTurno`; el flujo 
 
 - La `fuente` tiene que ser **ascendiente del ancla** y correr una vez por mensaje (esto último no se puede verificar sin ejecutar: lo revisa el PR del
   flujo). La `puerta` puede leer otros nodos (`$('Puerta del turno').first().json.ruta === 'sigue'`); el injerto valida que existan y sean ascendientes.
-- **No falla en silencio:** sin `fuente`, `injertarRafaga` (y la guardia sobre un flujo armado) se niega si, subiendo desde el ancla por nodos que dejan
-  pasar el item (IF, Switch, Filter, Wait, NoOp), el primero que lo produce es una llamada HTTP o un Code que ni menciona el id, ni copia la entrada
-  (`...`, `Object.assign`, `return $input.all()`). Con cualquier otro nodo no se objeta (se evita el falso error): ahí manda la revisión del PR.
+- **No falla en silencio (lista blanca):** sin `fuente`, `injertarRafaga` (y la guardia sobre un flujo armado) **solo arma** si todo camino del ancla al normalizador
+  pasa únicamente por nodos que dejan pasar el item (IF, Switch, Filter, Wait, NoOp). Cualquier otro nodo en ese camino (Code, Set, HTTP, Merge…) puede cambiar
+  el item y no se sabe qué emite, aunque su código copie la entrada: se niega y pide `fuente`. En los JSON reales: Walisuma (tras «Puerta del turno») y Bellido
+  (`agenda-minima.v0.json`) necesitan `fuente: 'Normalizar entrada'`; los Demos A y B arman sin `fuente` (el item sale del normalizador por IF). Lo prueban
+  `rafaga-injerto.test.ts` sobre esos cuatro JSON.
 - Las guardias infieren la `fuente` del propio IF; los demás nombres no predeterminados se pasan por opciones.
 
 ### Posiciones en el lienzo y convivencia con el indicador
@@ -145,7 +153,7 @@ así que la ráfaga nunca debe subir por encima del indicador).
 
 ### De dónde lee cada nodo
 
-El IF (`$json`), la consulta y el Code leen el id del mensaje, el teléfono, el número y el texto del **mismo item: el del ancla**, con
+El IF (`$json`), la consulta y el Code leen el id del mensaje, el teléfono, el número y el texto del **mismo item: el del ancla** (o el de la `fuente`, ver arriba), con
 los nombres de campo de `campos` (por defecto `tipo`, `mensajeId`, `from`, `phoneNumberId`, `userInput`, los del normalizador común).
 El normalizador, «Config del negocio» y «Config base» tienen que ser **ascendientes del ancla** (el ensamblador se niega a armar y la
 guardia lo exige en un flujo armado); además, toda lectura fallida da `false` en el IF y espera de 2 s en el Wait y el Code, de modo que
@@ -160,14 +168,26 @@ Rama `rafaga` dentro de `configuracionFlujo`, sin endpoint nuevo: pedido `{telef
 del número de siempre; `rafaga` junto con `sesion` es 400. Lee del hilo de ese teléfono, **relativo al mensaje pedido**, hasta 5 predecesores, el propio y hasta 3 sucesores, y responde
 `{rafaga:{v:1, fragmentos:[{idMeta, tipo, texto (máx 1500), ms}]}}` en orden cronológico. Los fragmentos incluyen **también marcas de
 saliente** `{idMeta:'', tipo:'saliente', texto:'', ms}` (ya no se corta en el primer saliente: el nodo las usa como separador); solo los
-entrantes con `idMeta` repetido se deduplican; se descartan los de más de 30 s de antigüedad; y si ninguna entrada leída tiene el `idMeta`
+entrantes con `idMeta` repetido se deduplican; se descartan los **vecinos de más de 30 s** respecto de mi mensaje, y mi propio mensaje se busca en una
+**ventana de 60 s**; y si ninguna entrada leída tiene el `idMeta`
 pedido, devuelve `fragmentos: []` (el nodo responde solo). La respuesta de `configuracionFlujo` agrega `rafagaApagada: true` **solo** si el
 comercio la apagó (campo de `tenants/{id}`, solo Admin SDK).
 
+### Tope de llamadas
+
+20 consultas por minuto por comercio + teléfono, con un contador **en memoria de la instancia** (no lee ni escribe Firestore). Con `maxInstances: 10` el tope
+real llega a 10 × 20 entre instancias: acota el abuso, no es exacto, y un reinicio de instancia lo reinicia. Pasado el tope responde `429 {error:'rafaga_tope'}`
+y cuesta solo 1 lectura (la ruta autenticada, de donde sale el `tenantId`); una firma inválida da 401 y no gasta cupo. Para el nodo, un 429 es una consulta
+fallida: responde solo.
+
 ## Interruptores
 
-- Por negocio (servidor): `rafagaApagada === true` en `tenants/{id}`; el IF lo lee de «Config del negocio».
-- Por flujo: `rafagaActiva` en «Config base» (verdadero si falta; `false` apaga). `esperaRafagaSeg` fija la espera.
+- **Por comercio, sin republicar:** `rafagaApagada === true` en `tenants/{id}` (solo Admin SDK). `configuracionFlujo` lo entrega en su respuesta y el IF lo
+  lee de «Config del negocio» (`$('Config del negocio').first().json.rafagaApagada`, la respuesta del servidor ya mezclada por el flujo). Es el único
+  interruptor que se mueve sin tocar el JSON; cada PR de flujo prueba que su «Config del negocio» lo conserva.
+- **Por flujo, exige republicar:** `rafagaActiva` (verdadero si falta; `false` apaga) y `esperaRafagaSeg` (defecto 2, de 1 a 5) viven en «Config base»,
+  un nodo del JSON del flujo. Cambiarlos es cambiar el flujo y publicarlo (`publicar-flujo.sh`). Es a propósito: la espera es una propiedad del flujo
+  (cuánto tolera su conversación), no del comercio, y un valor en el JSON se revisa y se prueba con el flujo.
 
 ## Apagar la ráfaga de un comercio
 

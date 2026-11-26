@@ -10,7 +10,7 @@
  * pedido, y devolver los fragmentos recientes. La decisión de agrupar NO se toma acá: es del nodo.
  *
  * FALLA ABIERTO. Si la consulta falla o el flujo no encuentra su propio `idMeta` en la lista, responde
- * solo, como hoy. Este módulo no escribe nada (0 escrituras) y lee como mucho `MAX_LECTURAS` documentos
+ * solo, como hoy. Este módulo no escribe nada (0 escrituras) y lee como mucho `MAX_LECTURAS_DE_LA_RAMA` documentos
  * de la conversación `wa_<telefono>` del tenant de la ruta autenticada: el tenant NUNCA sale del cuerpo.
  *
  * Zona Core: sin importaciones de zonas superiores; de Firestore solo tipos.
@@ -22,15 +22,71 @@ export const VERSION_RAFAGA = 1 as const;
 export const MAX_PREDECESORES = 5;
 export const MAX_SUCESORES = 3;
 /**
- * Documentos que se leen como máximo: el propio (1), 5 + 3 vecinos = 9. Con un reintento de Meta
- * (el mismo `idMeta` en dos documentos) se lee uno más: 10.
+ * LECTURAS DE LA RUTA, antes de que esta rama haga nada: `rutasWhatsApp/{numero}` en `rutaAutenticada`
+ * (`core/seguridad/firma.ts`) y la ficha `tenants/{id}` en `estadoDelComercio` (`ingesta.ts`).
+ * Una llamada rechazada con 429 cuesta solo la primera (la ruta): el tope se evalúa antes de la ficha.
  */
-export const MAX_LECTURAS = 1 + MAX_PREDECESORES + MAX_SUCESORES;
-/** El mensaje propio debe ser de los últimos 10 minutos: sin un wamid reciente no se lee nada. */
-export const VENTANA_PROPIA_MS = 10 * 60_000;
-/** Fragmentos que se devuelven como máximo. */
+export const LECTURAS_DE_LA_RUTA = 2;
+/**
+ * LECTURAS DE LA RAMA, como máximo: mi documento (la consulta por `idMeta` trae hasta 2: con un
+ * reintento de Meta hay dos documentos con el mismo `idMeta`) + 5 anteriores + 3 posteriores = 10.
+ * En el caso normal son 9.
+ */
+export const MAX_LECTURAS_DE_LA_RAMA = 2 + MAX_PREDECESORES + MAX_SUCESORES;
+/** EL TOTAL REAL por consulta de ráfaga, ruta incluida: 2 + 10 = 12. Una sola cifra para código, pruebas y docs. */
+export const MAX_LECTURAS = LECTURAS_DE_LA_RUTA + MAX_LECTURAS_DE_LA_RAMA;
+/** El mensaje propio debe ser de los últimos 60 s: sin un wamid reciente no se lee nada. */
+export const VENTANA_PROPIA_MS = 60_000;
+/** Los vecinos más viejos que (mi hora − 30 s) no se entregan: la cadena nunca trae mensajes viejos. */
+export const VENTANA_VECINOS_MS = 30_000;
+/** Tope de consultas de ráfaga por comercio y teléfono, por minuto. Cada texto entrante hace UNA. */
+export const TOPE_POR_MINUTO = 20;
+/**
+ * Tope por COMERCIO, por minuto, sumando todos sus teléfonos: sin él, rotar teléfonos esquivaría el
+ * de arriba. 120/min = 2 consultas por segundo sostenidas, muy por encima del volumen real de un
+ * comercio (cada texto entrante hace una consulta y la ráfaga típica es de 2 o 3).
+ */
+export const TOPE_POR_COMERCIO_POR_MINUTO = 120;
 export const MAX_TEXTO = 1500;
 export const MAX_ID_META = 120;
+const MINUTO_MS = 60_000;
+const MAX_CLAVES = 5_000;
+
+type Ventana = { desde: number; n: number };
+const ventanas = new Map<string, Ventana>();
+
+function vigente(v: Ventana | undefined, ahoraMs: number): v is Ventana {
+  return !!v && ahoraMs - v.desde < MINUTO_MS && ahoraMs >= v.desde;
+}
+
+/**
+ * Límite de llamadas, en la MEMORIA de la instancia (ventana fija de 1 min), por comercio + teléfono
+ * (`TOPE_POR_MINUTO`) Y por comercio (`TOPE_POR_COMERCIO_POR_MINUTO`). No usa Firestore: rechazar no
+ * lee ni escribe nada. Es por instancia (`maxInstances: 10`), así que los topes reales son de hasta 10
+ * veces lo dicho entre todas las instancias: acotan el abuso, no son un contador exacto, y reiniciar
+ * la instancia los reinicia (falla hacia permitir). Se miran los dos antes de gastar cupo: un rechazo
+ * no consume nada. Devuelve `false` si se pasó cualquiera.
+ */
+export function tomarCupoDeRafaga(tenantId: string, telefono: string | null, ahoraMs: number): boolean {
+  const kTel = `t|${tenantId}|${telefono ?? ''}`;
+  const kCom = `c|${tenantId}`;
+  const vTel = ventanas.get(kTel);
+  const vCom = ventanas.get(kCom);
+  if (vigente(vTel, ahoraMs) && vTel.n >= TOPE_POR_MINUTO) return false;
+  if (vigente(vCom, ahoraMs) && vCom.n >= TOPE_POR_COMERCIO_POR_MINUTO) return false;
+  if (ventanas.size >= MAX_CLAVES - 2) {
+    for (const [k, w] of ventanas) if (!vigente(w, ahoraMs)) ventanas.delete(k);
+    if (ventanas.size >= MAX_CLAVES - 2) ventanas.clear();
+  }
+  for (const [k, v] of [[kTel, vTel], [kCom, vCom]] as const) {
+    if (vigente(v, ahoraMs)) v.n += 1;
+    else ventanas.set(k, { desde: ahoraMs, n: 1 });
+  }
+  return true;
+}
+
+/** Solo para las pruebas. */
+export function reiniciarCuposDeRafaga(): void { ventanas.clear(); }
 
 export interface FragmentoDeRafaga {
   idMeta: string;
@@ -122,9 +178,9 @@ export function fragmentosDeRafaga(docsNuevoAViejo: readonly MensajeCrudo[]): Fr
  * RELATIVA A MI MENSAJE, no a «los últimos»: si después del mío llegan muchas entradas (un álbum de
  * fotos, salientes), mi vecindad sigue siendo la misma.
  *  1. Mi documento: `where('idMeta','==',idMeta).limit(2)`. Si hay dos (reintento de Meta) se toma el
- *     de menor `ts` (y, a igual `ts`, el de menor id). Ninguno, o más viejo que 10 min -> `[]`: quien
+ *     de menor `ts` (y, a igual `ts`, el de menor id). Ninguno, o más viejo que 60 s -> `[]`: quien
  *     no conoce un wamid reciente de esta conversación no lee texto ajeno, y el nodo responde solo.
- *  2. Anteriores: `orderBy('ts','desc').startAfter(mi documento).limit(5)`; posteriores:
+ *  2. Anteriores (solo los de los 30 s previos a mi hora): `orderBy('ts','desc').startAfter(mi documento).limit(5)`; posteriores:
  *     `orderBy('ts','asc').startAfter(mi documento).limit(3)`.
  * DESEMPATE: el cursor con el documento usa `ts` y, a igual `ts`, el id del documento (Firestore lo
  * agrega solo, en la misma dirección). Es un orden total y estable: los empates caen de un lado u
@@ -147,6 +203,12 @@ export async function leerRafaga(
     coleccion.orderBy('ts', 'desc').startAfter(mio.d).limit(MAX_PREDECESORES).get(),
     coleccion.orderBy('ts', 'asc').startAfter(mio.d).limit(MAX_SUCESORES).get(),
   ]);
-  const docs = [...antes.docs, mio.d, ...despues.docs].map((d) => d.data() as MensajeCrudo);
+  // Los vecinos anteriores a (mi hora − 30 s) no se entregan; yo siempre entro.
+  const corte = mio.ms - VENTANA_VECINOS_MS;
+  const vecinos = (docs: typeof antes.docs) => docs.filter((d) => {
+    const ms = aMs((d.data() as MensajeCrudo).ts);
+    return ms !== null && ms >= corte;
+  });
+  const docs = [...vecinos(antes.docs), mio.d, ...vecinos(despues.docs)].map((d) => d.data() as MensajeCrudo);
   return { v: VERSION_RAFAGA, fragmentos: fragmentosDeRafaga(docs) };
 }
