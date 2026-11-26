@@ -30,7 +30,7 @@
  *    y teléfono, «Reportar mensaje (entrante)» ya corrió, y la `puerta` del flujo (una expresión JS sobre `n`, el item del ancla; por defecto `true`).
  *    A PRUEBA DE LECTURA FALLIDA: si una lectura de otro nodo lanza, la condición da `false` y el turno sigue como hoy.
  *  - `fuente` (opcional): nombre del nodo del que se leen el id, el teléfono, el número y el texto (IF, consulta y Code usan `$('<fuente>').first().json`). Hace falta cuando el item del
- *    ancla NO trae esos campos (el ancla viene tras una «Puerta del turno» que solo emite {ruta, texto…} o tras una llamada HTTP): sin `fuente`, se niega a armar. Tiene que ser ASCENDIENTE
+ *    ancla NO trae esos campos (el ancla viene tras una «Puerta del turno» que solo emite {ruta, texto…} o tras una llamada HTTP): sin `fuente`, SOLO se arma si el item del ancla sale del normalizador por nodos transparentes (IF, Switch, Filter, Wait, NoOp: lista blanca); con cualquier otro nodo en el camino (Code, Set, HTTP, Merge…) se niega. Tiene que ser ASCENDIENTE
  *    del ancla y correr una vez por mensaje (no se puede verificar sin ejecutar: lo exige la revisión del PR del flujo). La `puerta` puede leer otros nodos con `$('<nodo>')`; se valida que existan y
  *    sean ascendientes del ancla. «Agrupar ráfaga» emite el item del ancla más `rafaga` y `textoDelTurno`: el flujo lee `textoDelTurno` con `$('Agrupar ráfaga')`.
  *  - UN SOLO ORIGEN: el IF (`$json`), la consulta y el Code leen el id, el teléfono, el número y el texto del MISMO item, el del ancla (`$('¿Esperar ráfaga?')`),
@@ -202,17 +202,12 @@ const reporteCorreAntes = (flujo, ancla, destino) => {
 };
 
 const TIPOS_QUE_DEJAN_PASAR = ['n8n-nodes-base.if', 'n8n-nodes-base.switch', 'n8n-nodes-base.filter', 'n8n-nodes-base.wait', 'n8n-nodes-base.noOp'];
-/** ¿Este nodo, con certeza razonable, emite un item SIN los campos del mensaje? (una llamada HTTP, o un Code que no menciona el id ni copia la entrada). */
-function reemplazaElItem(n, campos) {
-  if (n.type === 'n8n-nodes-base.httpRequest') return true;
-  if (n.type === 'n8n-nodes-base.code') {
-    const codigo = String(((n.parameters) || {}).jsCode || '');
-    return !([campos.mensajeId, '...', 'Object.assign'].some((t) => codigo.includes(t)) || /return\s+(\$input\.all\(\)|items)\s*;/.test(codigo));
-  }
-  return false;
-}
-/** Sin `fuente`: el primer nodo que PRODUCE el item del ancla (tras los que lo dejan pasar) en alguna rama, si seguro no trae los campos; si no, null. */
-function productorSinCampos(flujo, ancla, campos) {
+/**
+ * LISTA BLANCA (sin `fuente`): el item del ancla trae los campos del mensaje SOLO si, subiendo desde el ancla, todo camino llega al `normalizador` pasando únicamente por nodos
+ * transparentes (IF, Switch, Filter, Wait, NoOp). Cualquier otro nodo (Code, Set, HTTP, Merge…) puede cambiar el item y no se sabe qué emite: ahí se pide `fuente`.
+ * Devuelve el nombre del primer nodo que lo impide (o «el inicio del flujo»), o null si el item sale del normalizador.
+ */
+function productorDelItem(flujo, ancla, normalizador) {
   const padres = new Map();
   for (const [de, o] of Object.entries(flujo.connections || {})) for (const lista of (o.main || [])) for (const e of (lista || [])) { if (!padres.has(e.node)) padres.set(e.node, new Set()); padres.get(e.node).add(de); }
   const visto = new Set();
@@ -221,10 +216,12 @@ function productorSinCampos(flujo, ancla, campos) {
     const nombre = pila.pop();
     if (visto.has(nombre)) continue;
     visto.add(nombre);
+    if (nombre === normalizador) continue;
     const n = por(flujo, nombre);
-    if (!n) continue;
-    if (TIPOS_QUE_DEJAN_PASAR.includes(n.type)) { for (const p of padres.get(nombre) || []) pila.push(p); continue; }
-    if (reemplazaElItem(n, campos)) return nombre;
+    if (!n || !TIPOS_QUE_DEJAN_PASAR.includes(n.type)) return nombre;
+    const arriba = [...(padres.get(nombre) || [])];
+    if (!arriba.length) return 'el inicio del flujo';
+    pila.push(...arriba);
   }
   return null;
 }
@@ -259,8 +256,8 @@ export function injertarRafaga(flujo, opciones) {
   const lejanos = noAscendientes(flujo, a.nodo, [fuente || normalizador, ...referidos, o.config || 'Config del negocio', o.configBase || 'Config base']);
   if (lejanos.length) throw new Error(`rafaga: ${lejanos.map((n) => `«${n}»`).join(', ')} tiene que ser ascendiente de «${a.nodo}» (el item del ancla y las configuraciones se leen de ahí)`);
   if (!fuente) {
-    const roto = productorSinCampos(flujo, a.nodo, camposDe(o));
-    if (roto) throw new Error(`rafaga: el item que sale de «${a.nodo}» viene de «${roto}», que no trae los campos del mensaje (${camposDe(o).mensajeId}, ${camposDe(o).texto}…): la ráfaga quedaría apagada en silencio. Pasar \`fuente\` (el nodo del que se leen, p. ej. «${normalizador || 'Normalizar entrada'}»)`);
+    const roto = productorDelItem(flujo, a.nodo, normalizador);
+    if (roto) throw new Error(`rafaga: el item que sale de «${a.nodo}» no se puede garantizar que salga de «${normalizador}» por nodos que lo dejan pasar (IF, Switch, Filter, Wait, NoOp): lo impide «${roto}», que puede cambiar el item y dejar sin los campos del mensaje (${camposDe(o).mensajeId}, ${camposDe(o).texto}…): la ráfaga quedaría apagada en silencio. Pasar \`fuente\` (el nodo del que se leen, p. ej. «${normalizador || 'Normalizar entrada'}»)`);
   }
   const traer = por(flujo, o.traerConfiguracion || 'Traer configuración');
   if (!traer) throw new Error(`rafaga: el flujo no tiene «${o.traerConfiguracion || 'Traer configuración'}» (de donde se toman la URL y la credencial)`);
@@ -355,8 +352,8 @@ export function hallazgosDeLaRafaga(flujo, opciones = {}) {
   if (!fuente && (!normalizador || !por(flujo, normalizador))) h.push('rafaga: el flujo no tiene el nodo que normaliza el entrante');
   if (fuente && !por(flujo, fuente)) h.push(`rafaga: el flujo no tiene «${fuente}» (la fuente de los campos del mensaje)`);
   if (!fuente) {
-    const roto = productorSinCampos(flujo, padres[0].name, { ...CAMPOS_POR_DEFECTO, ...(opciones.campos || {}) });
-    if (roto) h.push(`rafaga: el item que sale de «${padres[0].name}» viene de «${roto}», que no trae los campos del mensaje: la ráfaga quedaría apagada en silencio (hace falta \`fuente\`)`);
+    const roto = normalizador && por(flujo, normalizador) ? productorDelItem(flujo, padres[0].name, normalizador) : null;
+    if (roto) h.push(`rafaga: el item que sale de «${padres[0].name}» no se puede garantizar que salga de «${normalizador}» por nodos transparentes: lo impide «${roto}»; la ráfaga quedaría apagada en silencio (hace falta \`fuente\`)`);
   }
   if (lejanos.length) h.push(`rafaga: ${lejanos.map((n) => `«${n}»`).join(', ')} tiene que ser ascendiente de «${padres[0].name}»`);
   if (!por(flujo, ANCLA_REPORTE)) h.push(`rafaga: falta «${ANCLA_REPORTE}»`);

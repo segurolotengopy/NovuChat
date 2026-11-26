@@ -605,7 +605,7 @@ describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `i
   const URL_SERVIDOR = 'https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo';
   const nodoSet = (name: string, position: [number, number]) => ({ id: name, name, type: 'n8n-nodes-base.set', typeVersion: 3, position, parameters: {} });
   const enlaces = (...nombres: string[]) => ({ main: [nombres.map((node) => ({ node, type: 'main', index: 0 }))] });
-  const sintetico = () => ({
+  const sinTipos = () => ({
     name: 'sintetico-rafaga',
     nodes: [
       nodoSet('Normalizar entrada', [240, 300]), nodoSet('Config del negocio', [480, 300]), nodoSet('Config base', [480, 100]),
@@ -614,6 +614,15 @@ describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `i
     ],
     connections: { 'Normalizar entrada': enlaces('Config base', 'Reportar mensaje (entrante)'), 'Config base': enlaces('Config del negocio'), 'Config del negocio': enlaces('¿Atención normal?'), '¿Atención normal?': enlaces('Agente') },
   });
+  /** El item del ancla sale del normalizador por nodos que lo dejan pasar (NoOp / IF): sin esto, la ráfaga exige `fuente`. */
+  const sintetico = () => {
+    const f = sinTipos();
+    for (const n of f.nodes) {
+      if (n.name === 'Config del negocio' || n.name === 'Config base') n.type = 'n8n-nodes-base.noOp';
+      if (n.name === '¿Atención normal?') n.type = 'n8n-nodes-base.if';
+    }
+    return f;
+  };
   const MANIFIESTO = { flujo: 'sintetico-rafaga.json', rafaga: { ancla: { nodo: '¿Atención normal?', salida: 0, destino: 'Agente' } } };
   /** Una raíz temporal con el flujo sintético SIN la pieza y su manifiesto que la pide. */
   function raizConRafaga(): string {
