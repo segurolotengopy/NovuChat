@@ -79,7 +79,6 @@
       "salida": 0,
       "destino": "¿Es un comprobante?"
     },
-    "normalizador": "Normalizar entrada",
-    "fuente": "Normalizar entrada"
+    "normalizador": "Normalizar entrada"
   }
 }

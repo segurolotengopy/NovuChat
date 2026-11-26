@@ -128,7 +128,7 @@ describe('(1) La pieza está injertada como lo manda el manifiesto: 97 nodos, bi
   });
 
   it('el flujo versionado pasa la guardia común y la ráfaga cuelga del ancla ¿Atención normal? (salida 0) → ¿Es un comprobante?', () => {
-    expect(hallazgosDeLaRafaga(f, { exigir: true, fuente: 'Normalizar entrada' })).toEqual([]);
+    expect(hallazgosDeLaRafaga(f, { exigir: true })).toEqual([]);
     const con = f.connections;
     const sal0 = (con['¿Atención normal?']?.['main']?.[0] ?? []).map((e) => e.node);
     expect(sal0).toContain('¿Esperar ráfaga?');

@@ -200,7 +200,7 @@ fallida: responde solo.
 
 ### Demo B (venta y cobro) — 25/11/2026, `rafaga-demo-b.test.ts`
 
-Ancla `¿Atención normal?` salida 0, destino `¿Es un comprobante?`, `fuente: Normalizar entrada`. El flujo pasa de 93 a 97 nodos (+4 autorizado por Andres). El agente lee `{{ $json.textoDelTurno || $json.userInput }}`; `Config del negocio` propaga `rafagaApagada`.
+Ancla `¿Atención normal?` salida 0, destino `¿Es un comprobante?`, sin `fuente` (el item del ancla es el del normalizador y trae todos los campos). El flujo pasa de 93 a 97 nodos (+4 autorizado por Andres). El agente lee `{{ $json.textoDelTurno || $json.userInput }}`; `Config del negocio` propaga `rafagaApagada`.
 Desvíos y qué pasa con el texto anterior (cada uno lo fija una prueba):
 - Comercio no operativo, uso extendido en operador y uso extendido bloqueado cuelgan ANTES del ancla. Si el estado cambia justo entre dos textos de una ráfaga, el primero (que calló esperando al segundo) no se contesta: el segundo recibe el aviso fijo (un mensaje) o nada (bloqueado). Es la excepción declarada de «Requisitos de cada flujo», solo en el instante en que cambia el estado.
 - Imagen, documento, audio, botón y pedido no son `text`: no esperan, no consultan y separan la ráfaga. El texto anterior responde solo.
