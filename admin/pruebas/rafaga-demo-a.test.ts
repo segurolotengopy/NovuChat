@@ -162,6 +162,25 @@ describe('Demo A + ráfaga: lo que se gana', () => {
     expect(r2.ejecutados.has('AI Agent (Sofía)')).toBe(true);
   });
 
+  it('DE PUNTA A PUNTA: ráfaga de dos textos → el primero calla (nada llega al envío) y el turno del segundo lleva AMBOS textos con UN envío al cliente', () => {
+    const hilo = [frag('wamid.A', 'hola', 0), frag('wamid.B', 'quiero una cita', 900)];
+    const m = crear({ hilo });
+    const r1 = turno(m, texto('wamid.A', 'hola'));
+    // El primero: pasó el ancla, esperó, consultó, y «Agrupar ráfaga» no devolvió nada; después de la pieza no corrió ningún nodo.
+    expect(r1.ejecutados.has('Agrupar ráfaga')).toBe(true);
+    expect(r1.porNodo['Agrupar ráfaga'] ?? []).toEqual([]);
+    expect(r1.ejecutados.has('¿Es un comprobante?')).toBe(false);
+    expect(r1.ejecutados.has('Responder al cliente')).toBe(false);
+    expect(m.envios).toHaveLength(0);
+    const r2 = turno(m, texto('wamid.B', 'quiero una cita'));
+    // El segundo: «Agrupar ráfaga» emite textoDelTurno con los dos, el agente lo recibe y sale UN envío.
+    expect(r2.porNodo['Agrupar ráfaga']?.[0]?.['textoDelTurno']).toBe('hola\nquiero una cita');
+    expect(m.textosAlAgente).toHaveLength(1);
+    expect(m.textosAlAgente[0]?.endsWith('[MENSAJE DEL CLIENTE]\nhola\nquiero una cita')).toBe(true);
+    expect(m.envios).toHaveLength(1);
+    expect(m.envios[0]?.a).toBe(TEL);
+  });
+
   it('ráfaga de 3 textos: UN solo envío con los tres', () => {
     const hilo = [frag('wamid.A', 'hola', 0), frag('wamid.B', 'quiero una cita', 900), frag('wamid.C', 'para mañana', 1800)];
     const m = crear({ hilo });

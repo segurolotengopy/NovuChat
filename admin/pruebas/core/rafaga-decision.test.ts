@@ -174,6 +174,16 @@ describe('rafaga: decisión', () => {
     for (const id of ['A', 'B', 'C', 'D', 'E']) expect(como(id, id.toLowerCase(), lista)).toEqual([]);
   });
 
+  it('defensa: si el flujo no entrega mi texto (campo mal nombrado) se usa el que guardó el servidor: nunca un grupo con el último mensaje en blanco', () => {
+    const lista = ok([f('A', 'quiero 2 cajas', 1000), f('B', 'de la grande, para mañana', 1800)]);
+    for (const vacio of ['', '   ', undefined]) {
+      const [s] = como('B', vacio as string, lista);
+      expect(s.textoDelTurno, JSON.stringify(vacio)).toBe('quiero 2 cajas\nde la grande, para mañana');
+    }
+    // y un texto propio que sí llegó manda sobre el guardado
+    expect(como('B', 'crudo', lista)[0].textoDelTurno).toBe('quiero 2 cajas\ncrudo');
+  });
+
   it('mi fragmento no es agrupable ([nº] guardado) → solo, aunque haya vecinos', () => {
     expect(como('B', 'mi cel 70000000', ok([f('A', 'uno', 1000), f('B', 'mi cel es [nº]', 1200)]))[0].rafaga.accion).toBe('solo');
     expect(como('A', 'uno', ok([f('A', 'uno', 1000), f('B', 'mi cel es [nº]', 1200)]))[0].rafaga.accion).toBe('solo');
