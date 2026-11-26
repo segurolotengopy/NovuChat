@@ -1251,7 +1251,7 @@ jobs:
       github.event_name == 'push' && github.ref == 'refs/heads/main'
       && vars.GCP_PROJECT_ID_STAGING != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 39 # 28 + 11: incluye hasta 2 reintentos por cuota de Cloud Functions (2 x 70 s de espera y 2 despliegues de ~4 min) y «lo servido es lo construido» (hasta ~370 s)
+    timeout-minutes: 44 # 28 + 16 (así 28 - 4 + 20 del paso desplegar cabe): incluye hasta 2 reintentos por cuota de Cloud Functions (2 x 70 s de espera y 2 despliegues de ~4 min) y «lo servido es lo construido» (hasta ~370 s)
     # Para humo-staging, que corre SIN Environment (necesita las variables del
     # repositorio, es decir las de producción, para comprobar su ausencia).
     outputs:
@@ -1833,7 +1833,7 @@ jobs:
       || (github.event_name == 'workflow_dispatch' && inputs.destino == 'produccion'
             && inputs.confirmar == 'DESPLEGAR')
     runs-on: ubuntu-latest
-    timeout-minutes: 46 # 35 + 11 por hasta 2 reintentos por cuota (2 x 70 s y 2 despliegues de ~4 min); 2.9: incluye el health check (hasta ~450 s) y el rollback; +10 por «lo servido es lo construido» (hasta ~370 s)
+    timeout-minutes: 51 # 35 + 16 por hasta 2 reintentos por cuota (2 x 70 s y 2 despliegues de ~4 min); 2.9: incluye el health check (hasta ~450 s) y el rollback; +10 por «lo servido es lo construido» (hasta ~370 s)
     outputs:
       salud_ok: ${{ steps.salud.outputs.ok }}
       despliegue_completo: ${{ steps.desplegar.outputs.completo }}

@@ -187,6 +187,13 @@ describe('compuerta del registro de `firebase deploy`', () => {
     expect(intento(INICIA('fnX') + OK('fnX') + FIN, INICIA('fnX') + OK('fnX') + FIN).reintentable).toBe('no');
   });
 
+  it('C21: un id de Function con metacaracteres de expresión regular nunca es reintentable', () => {
+    const raro = INICIA('fn.*') + CUOTA('fnAlgo');
+    expect(intento(raro, raro).reintentable).toBe('no');
+    const barra = INICIA('fnX|fnY') + CUOTA('fnX');
+    expect(intento(barra, barra).reintentable).toBe('no');
+  });
+
   it('C20: un sitio de Hosting publicado en un intento anterior cuenta (el rollback no se salta por el último intento)', () => {
     const a1 = INICIA('fnX') + OK('fnX') + 'i  hosting[consola-ficticia]: beginning deploy...\n✔  hosting[consola-ficticia]: release complete\n';
     const a2 = OMITIDA('fnX') + FIN;

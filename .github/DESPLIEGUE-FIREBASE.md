@@ -235,7 +235,7 @@ del proyecto de producción. Lo que hay:
     intentos (toda Function iniciada en cualquier intento necesita su «Successful» en alguno: un «Skipped (No changes
     detected)» posterior NO la salva), y R1, R2, R4 y R6 sobre el último intento. Tras el tercer intento sigue exigiendo
     «Deploy complete!», todas las Functions confirmadas y «release complete» de cada sitio, o el job falla. El paso
-    `desplegar` tiene su propio `timeout-minutes: 20`, menor que el del job (39 en staging, 46 en producción), para que
+    `desplegar` tiene su propio `timeout-minutes: 20`, menor que el del job (44 en staging, 51 en producción: 28 − 4 + 20 y 35 − 4 + 20), para que
     un exceso falle el paso y no cancele el job (con `!cancelled()` el health check y el rollback siguen corriendo).
     NO verificado: si firebase-tools omite por mismo hash una Function cuya actualización anterior falló (no pude leer su
     código fuente); el registro acumulado cubre ese peor caso de todos modos. Si el número de Functions crece mucho más,

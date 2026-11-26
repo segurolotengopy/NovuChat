@@ -189,6 +189,7 @@ if (( ${#motivos[@]} > 0 && ${#pendientes[@]} > 0 )); then
   grep -Fq 'This deployment is in an unexpected state' <<< "$limpio" && reintentable=no
   for p in "${pendientes[@]}"; do
     id="${p%%(*}"; id="${id##*:}"
+    [[ "$id" =~ ^[A-Za-z0-9_-]+$ ]] || { reintentable=no; continue; }
     grep -Eq "Got \"Quota Exceeded\" error while trying to (create|update|delete) projects/[^/]+/locations/[^/]+/functions/${id}\. Waiting to retry" <<< "$limpio" || reintentable=no
   done
 fi
