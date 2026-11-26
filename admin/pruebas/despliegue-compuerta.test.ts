@@ -125,6 +125,80 @@ describe('compuerta del registro de `firebase deploy`', () => {
     expect(r.salidas).toEqual({ completo: 'true', hosting_publicado: 'todos', functions_pendientes: '' });
   });
 
+  // ---- Varios intentos (el workflow repite `firebase deploy` ante la cuota de escrituras) ----
+  const INICIA = (f: string) => `i  functions: updating Node.js 22 (2nd Gen) function admin:${f}(us-east1)...\n`;
+  const OK = (f: string) => `✔  functions[admin:${f}(us-east1)] Successful update operation.\n`;
+  const CUOTA = (f: string) => `⚠  functions: Got "Quota Exceeded" error while trying to update projects/p/locations/us-east1/functions/${f}. Waiting to retry...\n`;
+  const OMITIDA = (f: string) => `i  functions: Skipped (No changes detected) admin:${f}(us-east1)\n`;
+  const FIN = '\n✔  Deploy complete!\n';
+  const intento = (reg: string, acum: string, extra: Record<string, string> = {}) => {
+    const reintentable = archivo('');
+    const r = compuerta(reg, { SOLO: 'functions', REGISTRO_ACUMULADO: archivo(acum), REINTENTABLE_EN: reintentable, ...extra });
+    return { ...r, reintentable: readFileSync(reintentable, 'utf8').trim() };
+  };
+
+  it('C16: una Function que falló en el intento 1 y fue «Skipped» en el 2 NO pasa: la compuerta mide el ACUMULADO', () => {
+    const a1 = INICIA('fnX') + INICIA('fnY') + CUOTA('fnX') + OK('fnY');
+    const a2 = OMITIDA('fnX') + OMITIDA('fnY') + FIN;
+    const r = intento(a2, a1 + a2);
+    expect(r.status, r.stdout).toBe(1);
+    expect(r.stdout).toContain('Function sin confirmar: admin:fnX(us-east1)');
+    expect(r.stdout).not.toContain('Function sin confirmar: admin:fnY(');
+    expect(r.salidas['functions_pendientes']).toBe('functions:admin:fnX');
+    expect(r.reintentable).toBe('no'); // en el último intento fnX no chocó con la cuota: no se repite, se falla fuerte
+    // Contraste: solo con el último intento (sin acumulado) pasaría por buena, y por eso el workflow pasa el acumulado.
+    expect(compuerta(a2, { SOLO: 'functions' }).status).toBe(0);
+  });
+
+  it('C17: la Function fallida en el intento 1 y CONFIRMADA en el 2 sí pasa', () => {
+    const a1 = INICIA('fnX') + INICIA('fnY') + CUOTA('fnX') + OK('fnY');
+    const a2 = INICIA('fnX') + OK('fnX') + OMITIDA('fnY') + FIN;
+    const r = intento(a2, a1 + a2);
+    expect(r.status, r.stdout).toBe(0);
+    expect(r.salidas['functions_pendientes']).toBe('');
+  });
+
+  it('C18: reintentable SOLO si TODAS las pendientes tienen su propia línea de cuota en el último intento', () => {
+    const una = intento(INICIA('fnX') + CUOTA('fnX'), INICIA('fnX') + CUOTA('fnX'));
+    expect(una.status).toBe(1);
+    expect(una.reintentable).toBe('si');
+    const dos = INICIA('fnX') + INICIA('fnY') + CUOTA('fnX') + CUOTA('fnY');
+    expect(intento(dos, dos).reintentable).toBe('si');
+    // NEGANDO: una de las dos pendientes no tiene su línea de cuota (otro error) → no se repite.
+    const mixto = INICIA('fnX') + INICIA('fnY') + CUOTA('fnX');
+    expect(intento(mixto, mixto).reintentable).toBe('no');
+    // NEGANDO: la cuota nombra a OTRA Function (prefijo del nombre no vale).
+    const otra = INICIA('fnX') + CUOTA('fnXtra');
+    expect(intento(otra, otra).reintentable).toBe('no');
+  });
+
+  it('C19: no es reintentable con «unexpected state», sin Functions pendientes, ni con un fallo de compilación', () => {
+    const base = INICIA('fnX') + CUOTA('fnX');
+    expect(intento(base + 'This deployment is in an unexpected state - please re-deploy your functions.\n', base).reintentable).toBe('no');
+    // Todas confirmadas, pero falta «Deploy complete!»: nada pendiente que reintentar.
+    const sinPendientes = INICIA('fnX') + OK('fnX') + CUOTA('fnX');
+    const r = intento(sinPendientes, sinPendientes);
+    expect(r.status).toBe(1);
+    expect(r.reintentable).toBe('no');
+    // Pendiente sin ninguna línea de cuota (fallo de compilación o de arranque).
+    const compilacion = INICIA('fnX') + '⚠  functions: Build failed: error TS2304\n';
+    expect(intento(compilacion, compilacion).reintentable).toBe('no');
+    // Un despliegue completo es «no» (no hay nada que repetir).
+    expect(intento(INICIA('fnX') + OK('fnX') + FIN, INICIA('fnX') + OK('fnX') + FIN).reintentable).toBe('no');
+  });
+
+  it('C20: un sitio de Hosting publicado en un intento anterior cuenta (el rollback no se salta por el último intento)', () => {
+    const a1 = INICIA('fnX') + OK('fnX') + 'i  hosting[consola-ficticia]: beginning deploy...\n✔  hosting[consola-ficticia]: release complete\n';
+    const a2 = OMITIDA('fnX') + FIN;
+    const solo = 'functions,hosting:consola';
+    const conAcumulado = compuerta(a2, { SOLO: solo, SITIO_CATALOGO: '', REGISTRO_ACUMULADO: archivo(a1 + a2) });
+    expect(conAcumulado.salidas['hosting_publicado']).toBe('todos');
+    expect(conAcumulado.status, conAcumulado.stdout).toBe(0);
+    // Sin el acumulado, el último intento por sí solo no tiene «release complete».
+    const sinAcumulado = compuerta(a2, { SOLO: solo, SITIO_CATALOGO: '' });
+    expect(sinAcumulado.salidas['hosting_publicado']).toBe('ninguno');
+  });
+
   it('C3: el mismo registro con código 2 falla (texto Y código, juntos)', () => {
     const r = compuerta(EXITOSO, { CODIGO_FIREBASE: '2' });
     expect(r.status).toBe(1);
@@ -450,57 +524,83 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
     });
 
     if (t !== 'desplegar-dev') {
-      it(`W2b ${t}: con «Quota Exceeded» se repite el despliegue (hasta 3 intentos); sin esa señal NO se repite`, () => {
+      it(`W2b ${t}: se repite SOLO ante la cuota con TODAS las pendientes; la compuerta mide el acumulado de los intentos`, () => {
         const bin = join(tmp, `bin-cuota-${t}`);
         spawnSync('mkdir', ['-p', bin]);
-        // Un firebase falso que cuenta sus llamadas y responde con el registro que toca según INTENTOS_MALOS.
+        // Un firebase falso: cuenta sus llamadas, guarda sus argumentos y responde con el registro N (REG1, REG2, REG3; el
+        // último se repite) y el código de salida N (COD1, COD2, COD3).
         writeFileSync(join(bin, 'firebase'), [
           '#!/usr/bin/env bash',
           'n=$(( $(cat "$CONTADOR" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$CONTADOR"',
-          'if [ "$n" -le "$INTENTOS_MALOS" ]; then if [ "$n" -ge 2 ] && [ "${SEGUNDO_SIN_CUOTA:-0}" = 1 ]; then cat "$FIXTURE_SIN"; exit 0; fi; cat "$FIXTURE_MALO"; if [ "$CON_CUOTA" = 1 ]; then echo \'Got "Quota Exceeded" error while trying to update x. Waiting to retry...\'; fi; exit 0; fi',
-          'cat "$FIXTURE_BUENO"; exit 0', '',
+          'echo "$*" >> "$ARGUMENTOS"',
+          'k=$n; [ "$k" -gt 3 ] && k=3',
+          'eval "reg=\\$REG$k; cod=\\$COD$k"',
+          'cat "$reg"; exit "${cod:-0}"', '',
         ].join('\n'));
         chmodSync(join(bin, 'firebase'), 0o755);
-        // El registro del 16/11 ya trae «Quota Exceeded»: para la negación se usa una copia SIN esas líneas.
-        const sinCuota = archivo(readFileSync(join(FIX, '16-11-a-medias.registro.txt'), 'utf8').split('\n').filter((l) => !l.includes('Quota Exceeded')).join('\n'));
         const codigo = `set -euo pipefail\n${fragmento(job(t))}`;
-        const corre = (intentosMalos: number, conCuota: boolean, segundoSinCuota = false) => {
-          const contador = archivo('');
+        const I = (f: string) => `i  functions: updating Node.js 22 (2nd Gen) function admin:${f}(us-east1)...\n`;
+        const OKF = (f: string) => `✔  functions[admin:${f}(us-east1)] Successful update operation.\n`;
+        const Q = (f: string) => `⚠  functions: Got "Quota Exceeded" error while trying to update projects/p/locations/us-east1/functions/${f}. Waiting to retry...\n`;
+        const OM = (f: string) => `i  functions: Skipped (No changes detected) admin:${f}(us-east1)\n`;
+        const FIN = '✔  Deploy complete!\n';
+        const HOST = 'i  hosting[consola-ficticia]: beginning deploy...\n✔  hosting[consola-ficticia]: release complete\ni  hosting[catalogo-ficticio]: beginning deploy...\n✔  hosting[catalogo-ficticio]: release complete\n';
+        const COMPLETO = I('fnX') + OKF('fnX') + HOST + FIN;
+        const A_MEDIAS_CUOTA = I('fnX') + Q('fnX'); // iniciada, chocó con la cuota y nada más
+        const SIN_CUOTA = I('fnX') + '⚠  functions: Build failed: error\n';
+        const corre = (registros: string[], codigos: string[] = ['0', '0', '0']) => {
+          const contador = archivo(''); const argumentos = archivo('');
+          const reg = registros.map((r) => archivo(r));
           const r = spawnSync('bash', ['-c', codigo], {
             encoding: 'utf8',
             env: entornoDelEmulador(undefined, {
               PATH: `${bin}:${process.env['PATH'] ?? ''}`,
-              FIXTURE_SIN: sinCuota, SEGUNDO_SIN_CUOTA: segundoSinCuota ? '1' : '0',
-              FIXTURE_MALO: conCuota ? join(FIX, '16-11-a-medias.registro.txt') : sinCuota,
-              FIXTURE_BUENO: join(FIX, 'reintento-interno-exitoso.registro.txt'),
-              CONTADOR: contador, INTENTOS_MALOS: String(intentosMalos), CON_CUOTA: conCuota ? '1' : '0',
+              CONTADOR: contador, ARGUMENTOS: argumentos,
+              REG1: reg[0] ?? reg[reg.length - 1]!, REG2: reg[1] ?? reg[reg.length - 1]!, REG3: reg[2] ?? reg[reg.length - 1]!,
+              COD1: codigos[0] ?? '0', COD2: codigos[1] ?? '0', COD3: codigos[2] ?? '0',
               ESPERA_REINTENTO_CUOTA: '0',
               RUNNER_TEMP: tmp, GITHUB_OUTPUT: archivo(''), GITHUB_STEP_SUMMARY: archivo(''), GITHUB_WORKSPACE: RAIZ,
               GITHUB_REF_NAME: 'v0.0.0', GITHUB_RUN_ID: '1', GITHUB_SHA: 'abcdef0abcdef0', FIREBASE_TOOLS_VERSION: '',
               SOLO: SOLO_COMPLETO, PROYECTO: 'consola-ficticia', SITIO_CONSOLA: 'consola-ficticia', SITIO_CATALOGO: 'catalogo-ficticio', FORZAR: '',
             }),
           });
-          return { status: r.status, llamadas: Number(readFileSync(contador, 'utf8').trim() || '0'), salida: r.stdout + r.stderr };
+          const args = readFileSync(argumentos, 'utf8').split('\n').filter(Boolean);
+          return { status: r.status, llamadas: args.length, args, salida: r.stdout + r.stderr };
         };
-        // Un intento a medias con cuota y luego bien: pasa con 2 llamadas.
-        const uno = corre(1, true);
+        // 1) cuota y luego completo: pasa con 2 llamadas, con los MISMOS argumentos en las dos.
+        const uno = corre([A_MEDIAS_CUOTA, COMPLETO]);
         expect(uno.status, uno.salida).toBe(0);
         expect(uno.llamadas).toBe(2);
+        expect(uno.args[0]).toBe(uno.args[1]);
         expect(uno.salida).toContain('Cuota de escrituras');
-        // Dos intentos a medias con cuota: pasa con 3.
-        expect(corre(2, true).llamadas).toBe(3);
-        // Tres a medias con cuota: falla tras el tercero (nunca un cuarto).
-        const tres = corre(3, true);
+        // 2) cuota dos veces y luego completo: 3 llamadas.
+        expect(corre([A_MEDIAS_CUOTA, A_MEDIAS_CUOTA, COMPLETO]).llamadas).toBe(3);
+        // 3) cuota tres veces: falla y NUNCA hay un cuarto intento.
+        const tres = corre([A_MEDIAS_CUOTA, A_MEDIAS_CUOTA, A_MEDIAS_CUOTA]);
         expect(tres.status).not.toBe(0);
         expect(tres.llamadas).toBe(3);
-        // NEGANDO: cuota en el primero y un fallo SIN cuota en el segundo: corta con 2 llamadas (no sigue hasta 3).
-        const mixto = corre(3, true, true);
+        // 4) EL PELIGRO: fnX chocó con la cuota en el intento 1 y en el 2 firebase la omite («Skipped») y termina «completo»:
+        //    la compuerta mide el ACUMULADO, así que FALLA (no hay un fnX viejo en producción dado por bueno).
+        const omitida = corre([A_MEDIAS_CUOTA, OM('fnX') + HOST + FIN]);
+        expect(omitida.status).not.toBe(0);
+        expect(omitida.llamadas).toBe(2);
+        expect(omitida.salida).toContain('Function sin confirmar: admin:fnX(us-east1)');
+        // 5) cuota en el intento 1 y un fallo SIN cuota en el 2 (aunque el código sea 1): corta con 2 llamadas.
+        const mixto = corre([A_MEDIAS_CUOTA, SIN_CUOTA, A_MEDIAS_CUOTA], ['0', '1', '0']);
         expect(mixto.status).not.toBe(0);
         expect(mixto.llamadas).toBe(2);
-        // NEGANDO: a medias SIN la señal de cuota: falla de inmediato, una sola llamada.
-        const sin = corre(1, false);
+        // 6) NEGANDO: un fallo sin la señal de cuota en el PRIMER intento: una sola llamada, con su código de salida.
+        const sin = corre([SIN_CUOTA, COMPLETO], ['2', '0', '0']);
         expect(sin.status).not.toBe(0);
         expect(sin.llamadas).toBe(1);
+        // 7) «unexpected state» aunque haya cuota: no se repite.
+        const estado = corre([A_MEDIAS_CUOTA + 'This deployment is in an unexpected state - please re-deploy your functions.\n', COMPLETO]);
+        expect(estado.status).not.toBe(0);
+        expect(estado.llamadas).toBe(1);
+        // 8) un código de salida distinto de 0 en el último intento falla aunque el registro diga «completo».
+        const codigoMalo = corre([A_MEDIAS_CUOTA, COMPLETO], ['0', '3', '0']);
+        expect(codigoMalo.status).not.toBe(0);
+        expect(codigoMalo.llamadas).toBe(2);
       });
     }
 

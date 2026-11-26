@@ -1504,6 +1504,9 @@ jobs:
 
       - name: Desplegar hosting + reglas + Functions (staging)
         id: desplegar
+        # Tope PROPIO del paso (hasta 3 despliegues de ~4 min y 2 esperas de 70 s ≈ 15 min), menor que el del job: si el paso se
+        # pasa, falla ÉL y el job sigue vivo para el health check y el rollback (`!cancelled()`); un timeout del job los saltaría.
+        timeout-minutes: 20
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
@@ -1568,20 +1571,28 @@ jobs:
           # CUOTA DE ESCRITURAS (25/11/2026): la API de Cloud Functions de 2.ª gen admite 60 escrituras por 60 s por
           # región (1 por Function, no aumentable; firebase.google.com/docs/functions/quotas) y desplegamos 86 juntas: el
           # CLI recibe «Quota Exceeded», reintenta y puede terminar a medias. Si la compuerta falla Y el registro trae
-          # «Quota Exceeded», se espera y se repite el despliegue (hasta 3 intentos): las Functions ya actualizadas no
-          # cambian, así que la repetición solo cubre las que faltaron y Hosting. Cualquier otro fallo corta de inmediato.
+          # «reintentable» (SOLO Functions pendientes y TODAS con su propia línea «Got "Quota Exceeded"» en ese intento), se espera y
+          # se repite el despliegue (hasta 3 intentos): las ya actualizadas salen «Skipped», así que la repetición cubre las que
+          # faltaron y Hosting. Cualquier otro fallo (compilación, arranque, «unexpected state», Hosting solo…) corta de inmediato.
+          # Registro ACUMULADO de todos los intentos: la compuerta mide la cobertura de Functions y Hosting sobre él, para que una
+          # Function que falló en un intento y fue «Skipped» en el siguiente NO pase por buena.
+          ACUMULADO="$RUNNER_TEMP/firebase-deploy-acumulado.log"
+          REINTENTABLE="$RUNNER_TEMP/compuerta-reintentable"
+          : > "$ACUMULADO"
           for intento in 1 2 3; do
             set +e
             firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
               --message "staging ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})" 2>&1 | tee "$REGISTRO"
             estados=("${PIPESTATUS[@]}")
             set -e
+            cat "$REGISTRO" >> "$ACUMULADO"
+            : > "$REINTENTABLE"
             veredicto=0
-            REGISTRO="$REGISTRO" CODIGO_FIREBASE="${estados[0]}" SOLO="$SOLO" \
+            REGISTRO="$REGISTRO" REGISTRO_ACUMULADO="$ACUMULADO" REINTENTABLE_EN="$REINTENTABLE" CODIGO_FIREBASE="${estados[0]}" SOLO="$SOLO" \
               SITIO_CONSOLA="$PROYECTO" SITIO_CATALOGO="${SITIO_CATALOGO:-}" \
               bash "$GITHUB_WORKSPACE/scripts/compuerta-registro-despliegue.sh" || veredicto=$?
             [[ "$veredicto" -eq 0 ]] && break
-            if [[ "$intento" -lt 3 ]] && grep -q 'Quota Exceeded' "$REGISTRO"; then
+            if [[ "$intento" -lt 3 && "$(cat "$REINTENTABLE")" == si ]]; then
               echo "::warning::Cuota de escrituras de Cloud Functions excedida (intento $intento de 3): se espera y se repite el despliegue."
               sleep "${ESPERA_REINTENTO_CUOTA:-70}"
             else
@@ -2018,6 +2029,9 @@ jobs:
 
       - name: Desplegar hosting + reglas (producción)
         id: desplegar
+        # Tope PROPIO del paso (hasta 3 despliegues de ~4 min y 2 esperas de 70 s ≈ 15 min), menor que el del job: si el paso se
+        # pasa, falla ÉL y el job sigue vivo para el health check y el rollback (`!cancelled()`); un timeout del job los saltaría.
+        timeout-minutes: 20
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_PROD }}
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
@@ -2183,20 +2197,28 @@ jobs:
           # CUOTA DE ESCRITURAS (25/11/2026): la API de Cloud Functions de 2.ª gen admite 60 escrituras por 60 s por
           # región (1 por Function, no aumentable; firebase.google.com/docs/functions/quotas) y desplegamos 86 juntas: el
           # CLI recibe «Quota Exceeded», reintenta y puede terminar a medias. Si la compuerta falla Y el registro trae
-          # «Quota Exceeded», se espera y se repite el despliegue (hasta 3 intentos): las Functions ya actualizadas no
-          # cambian, así que la repetición solo cubre las que faltaron y Hosting. Cualquier otro fallo corta de inmediato.
+          # «reintentable» (SOLO Functions pendientes y TODAS con su propia línea «Got "Quota Exceeded"» en ese intento), se espera y
+          # se repite el despliegue (hasta 3 intentos): las ya actualizadas salen «Skipped», así que la repetición cubre las que
+          # faltaron y Hosting. Cualquier otro fallo (compilación, arranque, «unexpected state», Hosting solo…) corta de inmediato.
+          # Registro ACUMULADO de todos los intentos: la compuerta mide la cobertura de Functions y Hosting sobre él, para que una
+          # Function que falló en un intento y fue «Skipped» en el siguiente NO pase por buena.
+          ACUMULADO="$RUNNER_TEMP/firebase-deploy-acumulado.log"
+          REINTENTABLE="$RUNNER_TEMP/compuerta-reintentable"
+          : > "$ACUMULADO"
           for intento in 1 2 3; do
             set +e
             firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
               --message "producción ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})" 2>&1 | tee "$REGISTRO"
             estados=("${PIPESTATUS[@]}")
             set -e
+            cat "$REGISTRO" >> "$ACUMULADO"
+            : > "$REINTENTABLE"
             veredicto=0
-            REGISTRO="$REGISTRO" CODIGO_FIREBASE="${estados[0]}" SOLO="$SOLO" \
+            REGISTRO="$REGISTRO" REGISTRO_ACUMULADO="$ACUMULADO" REINTENTABLE_EN="$REINTENTABLE" CODIGO_FIREBASE="${estados[0]}" SOLO="$SOLO" \
               SITIO_CONSOLA="$SITIO_CONSOLA" SITIO_CATALOGO="${SITIO_CATALOGO:-}" \
               bash "$GITHUB_WORKSPACE/scripts/compuerta-registro-despliegue.sh" || veredicto=$?
             [[ "$veredicto" -eq 0 ]] && break
-            if [[ "$intento" -lt 3 ]] && grep -q 'Quota Exceeded' "$REGISTRO"; then
+            if [[ "$intento" -lt 3 && "$(cat "$REINTENTABLE")" == si ]]; then
               echo "::warning::Cuota de escrituras de Cloud Functions excedida (intento $intento de 3): se espera y se repite el despliegue."
               sleep "${ESPERA_REINTENTO_CUOTA:-70}"
             else

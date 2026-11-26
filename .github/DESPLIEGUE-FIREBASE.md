@@ -223,16 +223,24 @@ del proyecto de producción. Lo que hay:
     **60 escrituras por 60 segundos por región** en 2.ª generación (80 por 100 s por proyecto en 1.ª),
     **1 por Function**, y **no se puede aumentar** (https://firebase.google.com/docs/functions/quotas;
     la página no muestra fecha de actualización). Desplegamos **86 Functions** en una sola región (`us-east1`)
-    y firebase-tools las actualiza juntas, así que el despliegue completo pasa del límite: el 25/11 la
-    corrida 45690847325 de staging recibió 14 «Got "Quota Exceeded"… Waiting to retry», confirmó 79 Functions y terminó
+    y firebase-tools las actualiza juntas, así que el despliegue completo pasa del límite: el 25/11 el despliegue
+    a staging recibió 14 «Got "Quota Exceeded"… Waiting to retry», confirmó 79 Functions y terminó
     a los 3 min 43 s sin «Deploy complete!» (7 sin confirmar y Hosting sin publicar); la compuerta lo detectó.
-    **Arreglo:** en `desplegar-staging` y `desplegar-produccion`, si la compuerta falla Y el registro trae «Quota Exceeded»,
-    se espera 70 s (`ESPERA_REINTENTO_CUOTA`) y se repite `firebase deploy` hasta 3 intentos: las Functions ya
-    actualizadas salen como «Skipped (No changes detected)», así que la repetición cubre solo las que faltaron y Hosting.
-    La compuerta no cambia: tras el último intento sigue exigiendo «Deploy complete!», todas las Functions confirmadas y
-    «release complete» de cada sitio. Un fallo SIN esa señal corta de inmediato, sin reintento (con la señal se repite aunque el fallo real fuera otro: no lo oculta, la compuerta lo vuelve a juzgar al final). Los límites del job subieron 11 min (staging 39, producción 46) para caber 2 reintentos. Si el número de Functions
-    crece mucho más, el siguiente paso es desplegar por tandas con `--only functions:…`. Prueba: `W2b` en
-    `admin/pruebas/despliegue-compuerta.test.ts`.
+    **Arreglo:** en `desplegar-staging` y `desplegar-produccion`, si la compuerta falla y declara el fallo
+    REINTENTABLE, se espera 70 s (`ESPERA_REINTENTO_CUOTA`) y se repite `firebase deploy`, hasta 3 intentos.
+    Es reintentable SOLO cuando lo único que falta son Functions y **cada Function pendiente** tiene, en ese intento,
+    su propia línea `Got "Quota Exceeded" error while trying to … /functions/<id>.`; no se repite ante errores de
+    compilación o de arranque, «unexpected state», una Function pendiente sin esa línea, ni si falla solo Hosting.
+    **La compuerta no se relaja:** mide la cobertura de Functions y de Hosting sobre el registro ACUMULADO de todos los
+    intentos (toda Function iniciada en cualquier intento necesita su «Successful» en alguno: un «Skipped (No changes
+    detected)» posterior NO la salva), y R1, R2, R4 y R6 sobre el último intento. Tras el tercer intento sigue exigiendo
+    «Deploy complete!», todas las Functions confirmadas y «release complete» de cada sitio, o el job falla. El paso
+    `desplegar` tiene su propio `timeout-minutes: 20`, menor que el del job (39 en staging, 46 en producción), para que
+    un exceso falle el paso y no cancele el job (con `!cancelled()` el health check y el rollback siguen corriendo).
+    NO verificado: si firebase-tools omite por mismo hash una Function cuya actualización anterior falló (no pude leer su
+    código fuente); el registro acumulado cubre ese peor caso de todos modos. Si el número de Functions crece mucho más,
+    el siguiente paso es desplegar por tandas con `--only functions:…`. Pruebas: `W2b` en
+    `admin/pruebas/despliegue-compuerta.test.ts` y las `C16` a `C20` de la compuerta.
   - **Todo secreto nuevo que una Function declare debe existir en STAGING ANTES de fusionar** (lección del 25/11/2026:
     `NOVUTIENDA_CATALOGO` se creó en producción pero no en staging y `desplegar-staging` falló desde #1096 con
     «In non-interactive mode but have no value for the secret»). Se crea con `scripts/preparar-staging.sh <fase>`
