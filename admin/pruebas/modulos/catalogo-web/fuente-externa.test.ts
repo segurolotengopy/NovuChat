@@ -171,6 +171,22 @@ describe('caché de 60 s por comercio y mercado', () => {
     expect(ar.llamadas).toHaveLength(1);
   });
 
+  it('R78: un cambio de precio en la fuente se ve en menos de 150 s (60 s de caché nuestra + 60 s declarados por NovuTienda), y una falla se recupera en 10 s', async () => {
+    const reloj = { t: 9_000_000 };
+    let precio = 15000;
+    const { d } = entorno({ ahora: reloj, respuesta: () => json(catalogoBo([item({ precioCentavos: precio })])) });
+    const precioVisto = async () => { const r = await F.leerCatalogoExterno(T, 'BO', d); return r.ok ? r.items[0]!.precioCentavos : null; };
+    expect(await precioVisto()).toBe(15000);
+    precio = 17000; // NovuTienda cambia el precio
+    reloj.t += 59_000;
+    expect(await precioVisto()).toBe(15000); // dentro de la ventana: aún el viejo
+    reloj.t += 2_000; // 61 s después del cambio
+    expect(await precioVisto()).toBe(17000);
+    // La cota acordada con NovuTienda: la caché propia más lo que ellos declaran (60 s) no pasa de 150 s, también tras una falla.
+    expect(F.VIDA_DEL_CACHE_MS + 60_000).toBeLessThanOrEqual(150_000);
+    expect(F.VIDA_DEL_CACHE_MS + F.VIDA_DEL_CACHE_NEGATIVO_MS + 60_000).toBeLessThanOrEqual(150_000);
+  });
+
   it('una falla se recuerda 10 s (caché negativo) y pasado ese rato se vuelve a llamar', async () => {
     let n = 0;
     const reloj = { t: 7_000_000 };

@@ -59,12 +59,13 @@ const LEER_ADJUNTO = 'leeradjuntopersona';
 const MEDIO = 'vermedio';
 const BLOQUEAR = 'bloquearcontacto';
 const DESBLOQUEAR = 'desbloquearcontacto';
+const RETOMAR = 'retomarconversacion';
 const HTTP = [RECLAMAR, CONFIRMAR, RESCATES, LEER_ADJUNTO] as const;
 const SERVICIOS = [
   [VISOR, 'verComprobante'], [BUSCADOR, 'buscarConversaciones'], [ENVIAR, 'enviarComoPersona'],
   [TOMAR, 'tomarConversacion'], [DEVOLVER, 'devolverConversacion'],
   [RECLAMAR, 'reclamarSalidaPersona'], [CONFIRMAR, 'confirmarSalidaPersona'], [RESCATES, 'reclamarRescates'], [MEDIO, 'verMedio'],
-  [BLOQUEAR, 'bloquearContacto'], [DESBLOQUEAR, 'desbloquearContacto'],
+  [BLOQUEAR, 'bloquearContacto'], [DESBLOQUEAR, 'desbloquearContacto'], [RETOMAR, 'retomarConversacion'],
   [ADJUNTO, 'enviarAdjuntoComoPersona'], [LEER_ADJUNTO, 'leerAdjuntoPersona'],
 ] as const;
 const urlDe = (s: string) => `https://${s}-${NUMERO_FALSO}.us-east1.run.app`;
@@ -238,7 +239,7 @@ describe('nube-visor.sh: uso y salvaguardas (nada se llama a gcloud)', () => {
   it('--help explica los modos y la lista cerrada, y sale 0', () => {
     const r = correr(['--help'], {}, null);
     expect(r.codigo).toBe(0);
-    for (const t of ['--servicio', '--entorno', '--aplicar', '--confirmo', '--revertir', VISOR, BUSCADOR, ENVIAR, ADJUNTO, LEER_ADJUNTO, TOMAR, DEVOLVER, RECLAMAR, CONFIRMAR, RESCATES, MEDIO, BLOQUEAR, DESBLOQUEAR]) expect(r.salida).toContain(t);
+    for (const t of ['--servicio', '--entorno', '--aplicar', '--confirmo', '--revertir', VISOR, BUSCADOR, ENVIAR, ADJUNTO, LEER_ADJUNTO, TOMAR, DEVOLVER, RECLAMAR, CONFIRMAR, RESCATES, MEDIO, BLOQUEAR, DESBLOQUEAR, RETOMAR]) expect(r.salida).toContain(t);
     expect(llamadas()).toEqual([]);
   });
 
@@ -780,7 +781,7 @@ describe('nube-visor.sh: la fuente', () => {
     expect(codigo).not.toMatch(/python3(?! -I )/);
   });
 
-  it('la lista cerrada: quince servicios con sus constantes, sin variable que agregue otro', () => {
+  it('la lista cerrada: dieciséis servicios con sus constantes, sin variable que agregue otro', () => {
     for (const [c, v] of [
       ['SERVICIO_ENVIAR', 'enviarcomopersona'], ['FUNCION_ENVIAR', 'enviarComoPersona'],
       ['SERVICIO_TOMAR', 'tomarconversacion'], ['FUNCION_TOMAR', 'tomarConversacion'],
@@ -794,6 +795,7 @@ describe('nube-visor.sh: la fuente', () => {
       ['SERVICIO_MEDIO', 'vermedio'], ['FUNCION_MEDIO', 'verMedio'],
       ['SERVICIO_BLOQUEAR', 'bloquearcontacto'], ['FUNCION_BLOQUEAR', 'bloquearContacto'],
       ['SERVICIO_DESBLOQUEAR', 'desbloquearcontacto'], ['FUNCION_DESBLOQUEAR', 'desbloquearContacto'],
+      ['SERVICIO_RETOMAR', 'retomarconversacion'], ['FUNCION_RETOMAR', 'retomarConversacion'],
       ['SERVICIO_ALERTAS', 'alertaoperativa'], ['FUNCION_ALERTAS', 'alertaOperativa'],
     ] as const) expect(codigo).toContain(`readonly ${c}="${v}"`);
     expect(codigo).toContain('readonly SERVICIO_VISOR="vercomprobante"');
@@ -801,9 +803,9 @@ describe('nube-visor.sh: la fuente', () => {
     expect(codigo).toContain('readonly SERVICIO_BUSCADOR="buscarconversaciones"');
     expect(codigo).toContain('readonly FUNCION_BUSCADOR="buscarConversaciones"');
     expect(codigo).toContain('readonly SERVICIO FUNCION');
-    // Solo quince asignaciones de SERVICIO, y desde las constantes.
+    // Solo dieciséis asignaciones de SERVICIO, y desde las constantes.
     expect([...codigo.matchAll(/\bSERVICIO="([^"]*)"/g)].map((m) => m[1])).toEqual([
-      '$SERVICIO_VISOR', '$SERVICIO_BUSCADOR', '$SERVICIO_ENVIAR', '$SERVICIO_ADJUNTO', '$SERVICIO_TOMAR', '$SERVICIO_DEVOLVER', '$SERVICIO_RECLAMAR', '$SERVICIO_CONFIRMAR', '$SERVICIO_RESCATES', '$SERVICIO_GUARDAR', '$SERVICIO_LEER_ADJUNTO', '$SERVICIO_MEDIO', '$SERVICIO_BLOQUEAR', '$SERVICIO_DESBLOQUEAR', '$SERVICIO_ALERTAS']);
+      '$SERVICIO_VISOR', '$SERVICIO_BUSCADOR', '$SERVICIO_ENVIAR', '$SERVICIO_ADJUNTO', '$SERVICIO_TOMAR', '$SERVICIO_DEVOLVER', '$SERVICIO_RECLAMAR', '$SERVICIO_CONFIRMAR', '$SERVICIO_RESCATES', '$SERVICIO_GUARDAR', '$SERVICIO_LEER_ADJUNTO', '$SERVICIO_MEDIO', '$SERVICIO_BLOQUEAR', '$SERVICIO_DESBLOQUEAR', '$SERVICIO_RETOMAR', '$SERVICIO_ALERTAS']);
     // Solo las seis HTTP (cinco del flujo n8n con credencial de número y la alerta operativa) son de tipo http.
     expect([...codigo.matchAll(/TIPO="http"/g)]).toHaveLength(6);
     expect(codigo).not.toMatch(/NUBE_VISOR_(SERVICIO|ADC)/);
