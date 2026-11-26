@@ -41,32 +41,47 @@ export const VENTANA_PROPIA_MS = 60_000;
 export const VENTANA_VECINOS_MS = 30_000;
 /** Tope de consultas de ráfaga por comercio y teléfono, por minuto. Cada texto entrante hace UNA. */
 export const TOPE_POR_MINUTO = 20;
+/**
+ * Tope por COMERCIO, por minuto, sumando todos sus teléfonos: sin él, rotar teléfonos esquivaría el
+ * de arriba. 120/min = 2 consultas por segundo sostenidas, muy por encima del volumen real de un
+ * comercio (cada texto entrante hace una consulta y la ráfaga típica es de 2 o 3).
+ */
+export const TOPE_POR_COMERCIO_POR_MINUTO = 120;
 export const MAX_TEXTO = 1500;
 export const MAX_ID_META = 120;
 const MINUTO_MS = 60_000;
 const MAX_CLAVES = 5_000;
 
-const ventanas = new Map<string, { desde: number; n: number }>();
+type Ventana = { desde: number; n: number };
+const ventanas = new Map<string, Ventana>();
+
+function vigente(v: Ventana | undefined, ahoraMs: number): v is Ventana {
+  return !!v && ahoraMs - v.desde < MINUTO_MS && ahoraMs >= v.desde;
+}
 
 /**
- * Límite de llamadas por comercio + teléfono, en la MEMORIA de la instancia (ventana fija de 1 min).
- * No usa Firestore: rechazar no lee ni escribe nada. Es por instancia (`maxInstances: 10`), así que el
- * tope real es de hasta 10 veces `TOPE_POR_MINUTO` entre todas: acota el abuso, no es un contador
- * exacto, y reiniciar la instancia lo reinicia (falla hacia permitir). Devuelve `false` si se pasó.
+ * Límite de llamadas, en la MEMORIA de la instancia (ventana fija de 1 min), por comercio + teléfono
+ * (`TOPE_POR_MINUTO`) Y por comercio (`TOPE_POR_COMERCIO_POR_MINUTO`). No usa Firestore: rechazar no
+ * lee ni escribe nada. Es por instancia (`maxInstances: 10`), así que los topes reales son de hasta 10
+ * veces lo dicho entre todas las instancias: acotan el abuso, no son un contador exacto, y reiniciar
+ * la instancia los reinicia (falla hacia permitir). Se miran los dos antes de gastar cupo: un rechazo
+ * no consume nada. Devuelve `false` si se pasó cualquiera.
  */
 export function tomarCupoDeRafaga(tenantId: string, telefono: string | null, ahoraMs: number): boolean {
-  const clave = `${tenantId}|${telefono ?? ''}`;
-  const v = ventanas.get(clave);
-  if (!v || ahoraMs - v.desde >= MINUTO_MS || ahoraMs < v.desde) {
-    if (ventanas.size >= MAX_CLAVES) {
-      for (const [k, w] of ventanas) if (ahoraMs - w.desde >= MINUTO_MS || ahoraMs < w.desde) ventanas.delete(k);
-      if (ventanas.size >= MAX_CLAVES) ventanas.clear();
-    }
-    ventanas.set(clave, { desde: ahoraMs, n: 1 });
-    return true;
+  const kTel = `t|${tenantId}|${telefono ?? ''}`;
+  const kCom = `c|${tenantId}`;
+  const vTel = ventanas.get(kTel);
+  const vCom = ventanas.get(kCom);
+  if (vigente(vTel, ahoraMs) && vTel.n >= TOPE_POR_MINUTO) return false;
+  if (vigente(vCom, ahoraMs) && vCom.n >= TOPE_POR_COMERCIO_POR_MINUTO) return false;
+  if (ventanas.size >= MAX_CLAVES - 2) {
+    for (const [k, w] of ventanas) if (!vigente(w, ahoraMs)) ventanas.delete(k);
+    if (ventanas.size >= MAX_CLAVES - 2) ventanas.clear();
   }
-  if (v.n >= TOPE_POR_MINUTO) return false;
-  v.n += 1;
+  for (const [k, v] of [[kTel, vTel], [kCom, vCom]] as const) {
+    if (vigente(v, ahoraMs)) v.n += 1;
+    else ventanas.set(k, { desde: ahoraMs, n: 1 });
+  }
   return true;
 }
 
