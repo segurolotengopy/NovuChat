@@ -609,7 +609,8 @@ function bmConBotonCatalogo(m, enlace) {
 // Un texto del modelo que promete un enlace, una página o un botón que el código no pone: se descarta (sale el texto del código).
 const BM_PROMETE_ENLACE = /\b(enlace|enlaces|link|links|pagina web|sitio web|pagina|catalogo web|ver catalogo|boton|botones)\b/;
 // R59 (25/11/2026): el asistente no AFIRMA «precios actualizados» (ni «verifiqué los precios»): el precio se lee del catálogo vivo en cada turno y el sistema no le da al modelo cómo saber qué se actualizó. Se prueba sobre el texto normalizado.
-const BM_AFIRMA_PRECIOS = /\b(?:actualiz\w+|actualic\w+|verific\w+)\b[^.!?]{0,40}\b(?:precios?|catalogo|montos?|costos?)\b|\b(?:precios?|catalogo|montos?|costos?)\b[^.!?]{0,40}\b(?:actualiz\w+|verific\w+|vigentes|al dia|confirmad\w+)\b/;
+// El imperativo («verifica que el monto…», «verifique el total») le pide algo al CLIENTE: no afirma que los precios estén verificados (falso positivo de la ronda 2).
+const BM_AFIRMA_PRECIOS = /\b(?:actualiz\w+|actualic\w+|(?!verific(?:a|que|quen)\b)verific\w+)\b[^.!?]{0,40}\b(?:precios?|catalogo|montos?|costos?)\b|\b(?:precios?|catalogo|montos?|costos?)\b[^.!?]{0,40}\b(?:actualiz\w+|verific\w+|vigentes|al dia|confirmad\w+)\b/;
 // R58 (25/11/2026): tras pasar con recepción, el asistente NO ofrece sumar otra pieza. Una oración que ofrece agregar, sumar, añadir o incluir algo más se detecta por código (el prompt no es una barrera).
 function bmOfreceSumar(textoNorm) {
   return String(textoNorm || '').split(/[.!?¿¡\n]+/).some((o) => /\b(?:sum\w+|agreg\w+|anad\w+|incluir\w*|anadirle\w*)\b/.test(o) && /\b(?:otr[oa]s?|algo mas|alguna? mas|mas piezas?|mas productos?|piezas?|productos?|articulos?)\b/.test(o));
@@ -1074,7 +1075,6 @@ function bmContexto() {
     cfg: cfg, base: base, t: t, puerta: puerta, plan: plan, from: from, ahora: ahora, panel: panel, catalogo: catalogo, mercado: mercado, respCatalogo: cnPrimero('Traer catálogo'),
     vendibles: catalogo.ok === true ? catalogo.vendibles : [], cobro: bmCobro(panel), modos: bmModos(base),
     ficha: CN_TENANT.fichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora),
-    respCatalogo: cnPrimero('Traer catálogo'),
     // Se completa en «Armar mensajes»: ¿el servidor cerró el cobro abierto? (undefined mientras no se llamó)
     cancelo: undefined,
   };
@@ -1388,14 +1388,16 @@ function bmResolverCorregir(c) {
 function bmPiezasConTopesDelFlujo(piezas, vendibles) {
   const final = vcLineas(piezas.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' })), vendibles).lineas;
   const noEntraron = piezas.noEntraron.slice();
+  const recortes = [];   // las que entraron con MENOS unidades que las pedidas: el texto dice cuántas entraron (coherente con el resumen), no «no pude incluir»
   for (const l of piezas.lineas) {
     const g = final.find((x) => x.id === l.id && vcNorm(x.detalle || '') === vcNorm(l.detalle || ''));
     if (!g || g.cantidad < l.cantidad) {
       const n = vcLimpiar(l.nombre, 60) || 'una pieza';
       if (!noEntraron.includes(n)) noEntraron.push(n);
+      if (g && g.cantidad > 0) recortes.push({ nombre: n, incluidas: g.cantidad });
     }
   }
-  return { lineas: final, noEntraron: noEntraron, distintos: piezas.distintos };
+  return { lineas: final, noEntraron: noEntraron, distintos: piezas.distintos, recortes: recortes };
 }
 const BM_TEXTO_PRECIOS_CAMBIARON ='Algún precio de tu pedido cambió respecto de la página: vale el total real del resumen.';
 function bmResolverCarrito(c) {
@@ -1426,8 +1428,12 @@ function bmResolverCarrito(c) {
   if (r.tipo === 'modelo') {
     // El texto lo arma el código: qué entró, qué no, y lo que falta o el botón «Confirmar pedido»; nunca el del modelo, que no corrió.
     const partes = ['Recibí tu pedido del catálogo.'];
-    if (piezas.noEntraron.length) partes.push('No pude incluir: ' + piezas.noEntraron.join(', ') + ' (ya no está disponible o no alcanza la cantidad).');
-    else if (Number(car.descartados) > 0) partes.push('Alguna pieza del pedido no entró porque ya no está disponible.');
+    // Lo recortado por un tope SÍ entró (con menos unidades): se dice cuántas, igual que el resumen; solo lo que no entró nada se dice «No pude incluir».
+    const recortadas = piezas.recortes || [];
+    const sinNada = piezas.noEntraron.filter((n) => !recortadas.some((rc) => rc.nombre === n));
+    if (sinNada.length) partes.push('No pude incluir: ' + sinNada.join(', ') + ' (ya no está disponible o no alcanza la cantidad).');
+    if (recortadas.length) partes.push(recortadas.map((rc) => rc.nombre + ': solo pude incluir ' + rc.incluidas + '.').join(' '));
+    if (piezas.noEntraron.length) { /* ya dicho */ } else if (Number(car.descartados) > 0) partes.push('Alguna pieza del pedido no entró porque ya no está disponible.');
     if (piezas.distintos.length) partes.push(BM_TEXTO_PRECIOS_CAMBIARON);
     partes.push(bmTextoDeEstado(r.lineas, r.entrega, false, c, r.confirmable === true));
     r.texto = partes.join(' ');

@@ -90,6 +90,20 @@ describe('la guardia de `--publicable` con la ruta ya sustituida', () => {
     const f = clonar(PRODUCCION) as J; (nodo(f, WEBHOOK_DEL_CARRITO)['parameters'] as J)['path'] = 'ruta_carrito_de_ensayo_0001';
     expect(C.guardias('produccion', f, { credencialIngesta: ing }).join(' ')).toMatch(/ruta como marcador/);
   });
+  it('NEGADO (LOW de seguridad, ronda 2): ya sustituida la credencial, el webhook del carrito debe usar LA MISMA que «Traer configuración»; cualquier otro nombre, o ninguno, se rechaza', () => {
+    const prep = (cartera: string | null, panel: string): J => {
+      const f = clonar(PRODUCCION) as J;
+      (nodo(f, WEBHOOK_DEL_CARRITO)['parameters'] as J)['path'] = 'ruta_carrito_de_ensayo_0001';
+      ((nodo(f, 'Traer configuración')['credentials'] as J)['httpHeaderAuth'] as J)['name'] = panel;
+      if (cartera === null) delete (nodo(f, WEBHOOK_DEL_CARRITO) as J)['credentials'];
+      else ((nodo(f, WEBHOOK_DEL_CARRITO)['credentials'] as J)['httpHeaderAuth'] as J)['name'] = cartera;
+      return f;
+    };
+    const g = (f: J): string => C.guardias('produccion', f, { credencialIngesta: ing, rutaCarritoSustituida: true }).join(' | ');
+    expect(g(prep('IngestaReal', 'IngestaReal'))).toBe('');                                  // SANO: la misma
+    expect(g(prep('CredencialAjena', 'IngestaReal'))).toMatch(/MISMA credencial.*«Traer configuración».*«CredencialAjena»/);
+    expect(g(prep(null, 'IngestaReal'))).toMatch(/MISMA credencial/);
+  });
 });
 
 describe('las conexiones: el carrito entra solo a «Config base» y «Carga de entrada» corre después', () => {

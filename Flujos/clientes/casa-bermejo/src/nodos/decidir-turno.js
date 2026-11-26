@@ -44,7 +44,7 @@ const categoriaMedio = String(prep.categoriaMedio || '');
 const configLista = catalogo.ok === true && vendibles.length > 0;
 // 0a. EL PEDIDO DEL CATÁLOGO WEB (B4; `t.tipo === 'carrito'`, que solo produce «Normalizar entrada» cuando corrió el Webhook «Carrito del catálogo»): no es un mensaje de WhatsApp y se decide ANTES que todo lo demás (tras la puerta), SIN modelo.
 //   ventana de 24 h cerrada o acción distinta de `responder` (lo calculó el servidor)  NO sale nada (fuera de la ventana Meta solo acepta una plantilla aprobada y no hay una para esto);
-//   el tenant del carrito no es `casa-bermejo` ni el del panel de ESTE número, o una moneda que este flujo no atiende (solo Bs y ARS)  no se contesta;
+//   el tenant del carrito no es `casa-bermejo` ni el del panel de ESTE número  no se contesta; una moneda que este flujo no atiende (solo Bs y ARS)  pasa con recepción (aviso + botón: el cliente confirmó un carrito y no queda sin respuesta);
 //   el panel no contestó o no hay catálogo  pasa con recepción (aviso + botón);  si no, `carrito`: `bmResolverCarrito` arma el pedido (precio SIEMPRE del catálogo vivo, K1).
 if (t.tipo === 'carrito') {
   const car = t.carrito && typeof t.carrito === 'object' && !Array.isArray(t.carrito) ? t.carrito : {};
@@ -53,7 +53,7 @@ if (t.tipo === 'carrito') {
   if (!mismo(car.tenantId, BM_TENANT_ID)) return salir({ tipo: 'nada', motivo: 'carrito_otro_tenant' });
   if (!panel.ok) return salir({ tipo: 'derivar', motivo: 'sin_configuracion' });
   if (!mismo(car.tenantId, panel.cuerpo.tenantId)) return salir({ tipo: 'nada', motivo: 'carrito_otro_tenant' });
-  if (car.moneda !== 'Bs' && car.moneda !== 'ARS') return salir({ tipo: 'nada', motivo: 'carrito_no_atendido' });
+  if (car.moneda !== 'Bs' && car.moneda !== 'ARS') return salir({ tipo: 'derivar', motivo: 'quiere_hablar', causaCarrito: 'carrito_no_atendido' });   // el cliente confirmó un carrito: no queda sin respuesta (aviso + botón), «solo se ofrece lo que se cumple»
   if (!(catalogo.ok === true && vendibles.length > 0)) return salir({ tipo: 'derivar', motivo: 'sin_configuracion' }, { catalogoMotivo: catalogo.ok === true ? '' : catalogo.motivo, catalogoAlerta: catalogo.ok === true ? false : catalogo.alerta === true });
   return salir({ tipo: 'carrito', carrito: car });
 }

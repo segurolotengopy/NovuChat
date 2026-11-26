@@ -264,8 +264,14 @@ describe('R19: la moneda y el mercado de la carga se comprueban contra el país 
     const t = enviar(conNombre(), cuerpo({ mercado: 'AR' }));
     expect(hayQr(t)).toBe(false);
   });
-  it('NEGADO: la moneda USD no se atiende (no sale nada); ARS para un teléfono de Bolivia no saca el QR', () => {
-    expect(enviar(conNombre(), cuerpo({ moneda: 'USD' })).mensajes).toHaveLength(0);
+  it('NEGADO: la moneda USD no se atiende y NO queda en silencio (ronda 2): pasa con recepción (UN mensaje con el botón «Escribir», sin QR); ARS para un teléfono de Bolivia no saca el QR', () => {
+    for (const mon of ['USD', 'EUR', 'otra']) {
+      const t = enviar(conNombre(), cuerpo({ moneda: mon }));
+      expect(hayQr(t), mon).toBe(false);
+      expect(t.mensajes, mon).toHaveLength(1);
+      expect(JSON.stringify(t.mensajes[0]!.payload), mon).toMatch(/cta_url|Escribir/);
+      expect(t.llamadas.ingesta.some((x) => x['evento'] === 'qr_enviado'), mon).toBe(false);
+    }
     expect(hayQr(enviar(conNombre(), cuerpo({ moneda: 'ARS' })))).toBe(false);
   });
   it('NEGADO: un teléfono de un tercer país (prefijo 55) nunca recibe el QR de un carrito', () => {
@@ -339,6 +345,20 @@ describe('R54: al elegir el recojo en tienda el asistente da la dirección', () 
     const t2 = hablar(m2, ANA, mToque('entrega:envio', 'Envío'));
     expect(cuerpos(t2)).not.toContain('Calle Comercio 123');
   });
+  it('SANO (ronda 2): con el recojo elegido EN LA PÁGINA el QR directo sale con «Retira en: <dirección>» en el resumen', () => {
+    const t = enviar(conNombre({ catalogo: catalogoOk(TIENDA) }), cuerpo({ entrega: 'retiro' }));
+    expect(hayQr(t)).toBe(true);
+    expect(cuerpos(t)).toContain('Retira en: Calle Comercio 123, La Paz.');
+  });
+  it('NEGADO (ronda 2): sin dirección en el catálogo, el QR directo NO dice «Retira en» (ni vacío ni inventado); con un ENVÍO tampoco la da; y una dirección con enlace no se muestra', () => {
+    const t = enviar(conNombre({ catalogo: catalogoOk() }), cuerpo({ entrega: 'retiro' }));
+    expect(hayQr(t)).toBe(true);
+    expect(cuerpos(t)).not.toMatch(/Retira en/);
+    const te = enviar(conNombre({ catalogo: catalogoOk(TIENDA) }), cuerpo({ entrega: 'envio', direccion: 'Av. Arce 123' }));
+    expect(cuerpos(te)).not.toMatch(/Retira en|Calle Comercio/);
+    const tm = enviar(conNombre({ catalogo: catalogoOk({ tienda: { direccion: 'Visite https://malo.example/pago ahora' } }) }), cuerpo({ entrega: 'retiro' }));
+    expect(cuerpos(tm)).not.toMatch(/malo\.example|Retira en/);
+  });
   it('NEGADO: una dirección con un enlace o un dominio (dato de un tercero sospechoso) no se muestra', () => {
     const m = pedido(catalogoOk({ tienda: { direccion: 'Visite https://malo.example/pago ahora' } }));
     const t = hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
@@ -381,6 +401,14 @@ describe('R59: el asistente no afirma «precios actualizados» sin respaldo', ()
       expect(cuerpos(t), afirma).toMatch(/catálogo en este momento/);
     }
   });
+  it('NEGADO (falso positivo, ronda 2): pedirle al cliente que verifique el monto NO es afirmar que los precios están verificados: ese texto SÍ sale', () => {
+    for (const pide of ['Por favor verifica que el monto y los datos estén bien.', 'Verifica que el total y tu nombre estén bien.']) {
+      const m = crear({ modeloDice: modelo(pide) });
+      const t = hablar(m, ANA, mTexto('hola, quiero comprar'));
+      expect(cuerpos(t), pide).toMatch(/verifi/i);
+      expect(cuerpos(t), pide).not.toMatch(/catálogo en este momento/);
+    }
+  });
   it('NEGADO (control): un precio dicho tal cual figura en el catálogo SÍ pasa', () => {
     const m = crear({ modeloDice: modelo('La billetera de cuero cuesta Bs 450.') });
     const t = hablar(m, ANA, mTexto('¿cuánto cuesta la billetera?'));
@@ -398,8 +426,16 @@ describe('K1: el armador reenvía `mercado`, `catalogo`, `precioCentavos` y `det
   });
   it('NEGADO: si una ancla del módulo ya no está, el armado FALLA en vez de armar un flujo sin K1; si el módulo ya los reenvía, no toca nada', () => {
     expect(() => C.conCamposK1('function ccCarritos() { return []; }')).toThrow(/catalogo-web/);
-    const yaLosReenvia = 'function x() { return { mercado: String(v.mercado || \'\'), catalogo: String(v.catalogo || \'\'), items: [{ precioCentavos: x.precioCentavos, detalle: x.detalle }] }; }';
-    expect(C.conCamposK1(yaLosReenvia)).toBe(yaLosReenvia);
+    const cuatro = 'mercado: String(v.mercado || \'\'), catalogo: String(v.catalogo || \'\'), items: [{ precioCentavos: x.precioCentavos, detalle: x.detalle }]';
+    // NEGADO (hallazgo 1 de la ronda 2): con los cuatro campos pero SIN la cantidad, la entrega y la moneda crudas, NO se salta en silencio: el armado falla con error claro
+    const sinCrudos = `function x() { return { ${cuatro} }; }`;
+    expect(() => C.conCamposK1(sinCrudos)).toThrow(/NO la cantidad cruda.*la entrega cruda.*la moneda cruda/);
+    // y con solo una de las tres también falla (y nombra la que falta)
+    const conCantidad = `function x() { return { ${cuatro}, cantidad: crudos[k] ? crudos[k].cantidad : x.cantidad, entrega: v.entrega === 'envio' ? 'envio' : 'retiro', moneda: String(v.moneda || 'Bs') }; }`;
+    expect(() => C.conCamposK1(conCantidad)).toThrow(/NO la entrega cruda.*la moneda cruda/);
+    // SANO: el módulo corregido (siete campos, crudos) se deja tal cual
+    const moduloCorregido = `function x() { return { ${cuatro}, cantidad: crudos[k] ? crudos[k].cantidad : x.cantidad, entrega: cuerpo.entrega === 'envio' || cuerpo.entrega === 'retiro' ? cuerpo.entrega : '', moneda: cuerpo.moneda === 'ARS' ? 'ARS' : 'Bs' }; }`;
+    expect(C.conCamposK1(moduloCorregido)).toBe(moduloCorregido);
   });
   it('NEGADO: el puente exige los CUATRO campos: con solo `mercado` (o solo `precioCentavos`) NO se salta; sin anclas falla en vez de perder el resto en silencio', () => {
     expect(() => C.conCamposK1("function x() { return { mercado: String(v.mercado || '') }; }")).toThrow(/catalogo-web/);
@@ -424,7 +460,9 @@ describe('Revisión #1130: los mismos topes en los dos pasos (99 por pieza y 50 
     const t = enviar(m, cuerpo({ items: una(60), total: 27000 }));
     expect(hayQr(t)).toBe(false);
     expect(t.llamadas.ingesta.some((x) => x['evento'] === 'qr_enviado')).toBe(false);
-    expect(cuerpos(t)).toMatch(/No pude incluir: Billetera de cuero/);
+    // ronda 2: el texto es coherente con el resumen (que muestra 50): se dice cuántas entraron, no «No pude incluir» la pieza
+    expect(cuerpos(t)).toMatch(/Billetera de cuero: solo pude incluir 50\./);
+    expect(cuerpos(t)).not.toMatch(/No pude incluir: Billetera de cuero/);
     expect(cuerpos(t)).toMatch(/Total: Bs 22\.500/);
     expect(titulos(t)).toContain('Confirmar pedido');
   });
@@ -432,7 +470,7 @@ describe('Revisión #1130: los mismos topes en los dos pasos (99 por pieza y 50 
     const m = mundoCon(catBilletera());
     const t = enviar(m, cuerpo({ items: una(99), total: 44550 }));
     expect(hayQr(t)).toBe(false);
-    expect(cuerpos(t)).toMatch(/No pude incluir/);
+    expect(cuerpos(t)).toMatch(/solo pude incluir 50/);
     const tc = hablar(m, ANA, mToque(ids(t).find((i) => i.startsWith('pedido:confirmar:'))!, 'Confirmar pedido'));
     expect(qrEnviado(tc)).toMatchObject({ monto: 22500 });
   });

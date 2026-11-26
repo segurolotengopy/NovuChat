@@ -56,8 +56,19 @@ const CAMPOS_K1 = [/\bmercado:\s*String\(v\.mercado/, /\bcatalogo:\s*String\(v\.
  * Además (revisión del #1130): `validar-carrito.js` convierte una cantidad 0 o ilegible en 1 y una entrega ausente en «retiro», y con eso el flujo cobraba lo que el cliente no pidió. Este armador reenvía la
  * cantidad CRUDA del renglón (con ella `vcLineas` descarta 0, negativas y no enteras y el renglón queda como «no entró») y la entrega CRUDA (`retiro`/`envio`, o vacía: se pregunta con botones).
  */
+// PUENTE TEMPORAL (declarado en PROPIO.md y en docs/versiones-por-cliente.md): se salta SOLO si el módulo trae los cuatro campos Y además la cantidad, la entrega y la moneda CRUDAS (sin convertir).
+// Cierre: fusionar el PR del módulo catalogo-web que reenvía los siete campos y borrar `conCamposK1`.
+const CRUDOS_K1 = [
+  { nombre: 'la cantidad cruda del renglón', r: /\bcantidad:\s*crudos\[k\]/ },
+  { nombre: 'la entrega cruda (cuerpo.entrega)', r: /\bentrega:[^\n]*\bcuerpo\.entrega\b/ },
+  { nombre: 'la moneda cruda (cuerpo.moneda)', r: /\bmoneda:[^\n]*\bcuerpo\.moneda\b/ },
+];
 export function conCamposK1(codigo) {
-  if (CAMPOS_K1.every((r) => r.test(codigo))) return codigo; // el módulo ya reenvía los cuatro
+  if (CAMPOS_K1.every((r) => r.test(codigo))) {
+    const faltan = CRUDOS_K1.filter((c) => !c.r.test(codigo)).map((c) => c.nombre);
+    if (faltan.length === 0) return codigo; // el módulo corregido: reenvía los siete campos
+    throw new Error(`casa-bermejo: el módulo catalogo-web reenvía mercado, catalogo, precioCentavos y detalle pero NO ${faltan.join(', ')}: sin ellos vuelven en silencio la cantidad 0 cobrada como 1, la entrega ausente como «retiro» y EUR como Bs; no se arma (catalogo-web)`);
+  }
   if (codigo.split(ANCLA_K1_CARRITO).length !== 2 || codigo.split(ANCLA_K1_ITEM).length !== 2 || codigo.split(ANCLA_K1_ENTREGA).length !== 2 || codigo.split(ANCLA_K1_MONEDA).length !== 2) throw new Error('casa-bermejo: el módulo catalogo-web cambió «carga-del-carrito.js»: ya no se pueden reenviar `mercado`, `catalogo`, `precioCentavos` y `detalle` (K1); hay que reenviarlos en el módulo');
   return codigo
     .replace(ANCLA_K1_CARRITO, () => `${ANCLA_K1_CARRITO} mercado: String(v.mercado || ''), catalogo: String(v.catalogo || ''),`)
@@ -532,6 +543,13 @@ export function guardias(variante, flujo, opciones = {}) {
   const rutaCarrito = (((flujo || {}).nodes || []).find((x) => x && x.name === WEBHOOK_DEL_CARRITO) || {}).parameters;
   const sustituida = opciones.rutaCarritoSustituida === true && variante === 'produccion' && rutaCarrito && /^[A-Za-z0-9_-]{8,120}$/.test(String(rutaCarrito.path || '')) && !/^REEMPLAZAR_/i.test(String(rutaCarrito.path));
   h.push(...(sustituida ? hc.filter((x) => !/ruta como marcador|marcador REEMPLAZAR_RUTA_CARRITO\S* debe aparecer/.test(x) && !(/credencial de cabecera de la ingesta/.test(x) && !/no «ninguna»/.test(x))) : hc));
+  // LOW de seguridad (ronda 2): con la credencial ya sustituida (`--publicable`) el filtro de arriba aceptaba CUALQUIER nombre en el webhook del carrito. La credencial del carrito tiene que ser LA MISMA que usa «Traer configuración» (la de la ingesta del comercio).
+  if (variante === 'produccion' && rutaCarrito) {
+    const credDe = (nombre) => String((((((flujo || {}).nodes || []).find((x) => x && x.name === nombre) || {}).credentials || {}).httpHeaderAuth || {}).name || '');
+    const delCarrito = credDe(WEBHOOK_DEL_CARRITO);
+    const delPanel = credDe('Traer configuración');
+    if (delCarrito === '' || delPanel === '' || delCarrito !== delPanel) h.push(`«${WEBHOOK_DEL_CARRITO}» debe usar la MISMA credencial de cabecera que «Traer configuración» (la de la ingesta del comercio), no «${delCarrito || 'ninguna'}»`);
+  }
   // La URL del verificador interno solo puede estar en «Verificar firma con el receptor»: ni en «Config base» ni en ningún otro nodo (ni en sus notas), en ninguna variante.
   for (const n of nodos) {
     if (n.name === 'Verificar firma con el receptor') continue;
