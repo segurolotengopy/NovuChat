@@ -27,6 +27,14 @@
 #   SOLO             obligatorio: el valor de `--only`.
 #   SITIO_CONSOLA    obligatorio si se publica la consola (id del sitio).
 #   SITIO_CATALOGO   opcional: id del segundo sitio; vacío = no hay catálogo.
+#   REGISTRO_ACUMULADO  opcional: la salida de TODOS los intentos de `firebase deploy` (el workflow repite el despliegue
+#                    hasta 3 veces ante la cuota de escrituras de Cloud Functions). R3 y R5 se miden sobre este acumulado:
+#                    toda Function iniciada en CUALQUIER intento debe tener su «Successful» en alguno, y un «Skipped (No
+#                    changes detected)» posterior NO la salva; un sitio de Hosting publicado en cualquier intento cuenta.
+#                    R1, R2, R4 y R6 se miden sobre REGISTRO (el último intento). Sin esta variable, REGISTRO hace de ambos.
+#   REINTENTABLE_EN  opcional: archivo donde se escribe «si» o «no»: ¿vale la pena repetir el despliegue? Es «si» SOLO cuando
+#                    lo único que falta son Functions y TODAS las pendientes tienen en el último intento su
+#                    «Got "Quota Exceeded" error while trying to <op> …/functions/<id>.», y no hay «unexpected state».
 #
 # SALIDAS en $GITHUB_OUTPUT (si existe):
 #   completo=true|false
@@ -63,6 +71,10 @@ fi
 
 # Sin colores ni retornos de carro: el registro viene de un terminal de CI.
 limpio="$(sed -E $'s/\x1b\\[[0-9;?]*[A-Za-z]//g; s/\r$//' "$REGISTRO")"
+# El acumulado de todos los intentos (o el mismo registro si el workflow no repite).
+REGISTRO_ACUMULADO="${REGISTRO_ACUMULADO:-$REGISTRO}"
+[[ -f "$REGISTRO_ACUMULADO" ]] || uso "el registro acumulado no existe"
+acumulado="$(sed -E $'s/\x1b\\[[0-9;?]*[A-Za-z]//g; s/\r$//' "$REGISTRO_ACUMULADO")"
 
 IFS=',' read -r -a ELEMENTOS <<< "$SOLO"
 tiene() { # ¿SOLO incluye el componente $1 (entero o calificado, p. ej. functions:x)?
@@ -101,9 +113,9 @@ grep -Eq '^[^[:alnum:]]*Deploy complete![[:space:]]*$' <<< "$limpio" \
 
 # R3 y R7: cobertura de Functions
 if tiene functions; then
-  iniciadas="$(sed -nE 's/^.*functions: (creating|updating|deleting) .* function ([^ ]+)\.\.\.$/\2/p' <<< "$limpio" | sort -u)"
-  confirmadas="$(sed -nE 's/^.*functions\[([^]]+)\] Successful (create|update|delete) operation\.$/\1/p' <<< "$limpio" | sort -u)"
-  omitidas="$(grep -c 'Skipped (No changes detected)' <<< "$limpio")"
+  iniciadas="$(sed -nE 's/^.*functions: (creating|updating|deleting) .* function ([^ ]+)\.\.\.$/\2/p' <<< "$acumulado" | sort -u)"
+  confirmadas="$(sed -nE 's/^.*functions\[([^]]+)\] Successful (create|update|delete) operation\.$/\1/p' <<< "$acumulado" | sort -u)"
+  omitidas="$(grep -c 'Skipped (No changes detected)' <<< "$acumulado")"
   if [[ -z "$iniciadas" && "$omitidas" == "0" ]]; then
     motivos+=("el registro no tiene el formato esperado de firebase-tools (ninguna Function iniciada ni omitida)")
   fi
@@ -155,7 +167,7 @@ for rol in "${roles[@]}"; do
   if [[ "$rol" == consola ]]; then sitio="$SITIO_CONSOLA"; nombre="de la consola"
   else sitio="$SITIO_CATALOGO"; nombre="del catálogo"
   fi
-  if grep -Fq "hosting[$sitio]: release complete" <<< "$limpio"; then
+  if grep -Fq "hosting[$sitio]: release complete" <<< "$acumulado"; then
     publicados=$((publicados + 1))
   else
     motivos+=("Hosting no publicó el sitio $nombre (falta «release complete»)")
@@ -166,6 +178,22 @@ elif (( publicados == ${#roles[@]} )); then hosting_publicado=todos
 elif (( publicados == 0 )); then hosting_publicado=ninguno
 else hosting_publicado=parcial
 fi
+
+# ¿Vale la pena repetir el despliegue? SOLO si lo único que falta son Functions y TODAS las pendientes chocaron en el
+# último intento con la cuota de escrituras de Cloud Functions (su propia línea «Got "Quota Exceeded" … /functions/<id>.»).
+# No se repite ante una Function pendiente sin esa línea (p. ej. una omitida por mismo hash tras un fallo real, un error de
+# compilación o de arranque), ante «unexpected state», ni si el código/Hosting fallan sin Functions pendientes.
+reintentable=no
+if (( ${#motivos[@]} > 0 && ${#pendientes[@]} > 0 )); then
+  reintentable=si
+  grep -Fq 'This deployment is in an unexpected state' <<< "$limpio" && reintentable=no
+  for p in "${pendientes[@]}"; do
+    id="${p%%(*}"; id="${id##*:}"
+    [[ "$id" =~ ^[A-Za-z0-9_-]+$ ]] || { reintentable=no; continue; }
+    grep -Eq "Got \"Quota Exceeded\" error while trying to (create|update|delete) projects/[^/]+/locations/[^/]+/functions/${id}\. Waiting to retry" <<< "$limpio" || reintentable=no
+  done
+fi
+if [[ -n "${REINTENTABLE_EN:-}" ]]; then printf '%s\n' "$reintentable" > "$REINTENTABLE_EN"; fi
 
 # Salidas
 lista=""

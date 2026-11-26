@@ -2415,6 +2415,27 @@
       "timeZone": "America/La_Paz"
     }
   },
+  "retomarConversacion": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 5,
+    "ingressSettings": null,
+    "concurrency": 10,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "SALIDA_PERSONA_RUTAS"
+      }
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
   "revocarAccesoSoporte": {
     "availableMemoryMb": null,
     "timeoutSeconds": null,

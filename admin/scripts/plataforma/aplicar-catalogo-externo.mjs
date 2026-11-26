@@ -38,6 +38,10 @@
  *     existe (también si desaparece entre la lectura con máscara y la relectura completa), sale con 0. El respaldo de un
  *     documento creado exige `configActualizadaEn: null` y `previo.presente: false`.
  *
+ * `--entorno staging|produccion` en lugar de `--proyecto <id>`: el id sale de la lista blanca del ENTORNO del proceso
+ * (`GCP_PROJECT_ID_STAGING` o `GCP_PROJECT_ID_PROD`), así no viaja en la línea de comandos (la usa
+ * `scripts/catalogo-externo.sh`). No se combina con `--proyecto`.
+ *
  * SALVAGUARDA DE PROYECTO. Lista blanca por `GCP_PROJECT_ID_STAGING` y `GCP_PROJECT_ID_PROD`; contra
  * PRODUCCIÓN, `--aplicar` exige `--confirmo-produccion <tenant>` igual a `--tenant`. Contra el emulador
  * (`demo-*`) exige `FIRESTORE_EMULATOR_HOST` local. El id de un proyecto real NUNCA se imprime.
@@ -59,10 +63,11 @@ import {
 
 const CAMPO = 'catalogoExterno';
 const MONEDAS_VALIDAS = ['BOB', 'ARS'];
-const CON_VALOR = ['proyecto', 'tenant', 'monedas', 'respaldo', 'confirmo-produccion'];
+const CON_VALOR = ['proyecto', 'entorno', 'tenant', 'monedas', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'revertir', 'desactivar', 'crear-documento'];
 
-export const USO = '  node scripts/plataforma/aplicar-catalogo-externo.mjs --proyecto <id> --tenant <id> --monedas BOB,ARS '
+export const USO = '  (en lugar de --proyecto <id>: --entorno staging|produccion, con el id en GCP_PROJECT_ID_STAGING/_PROD del entorno)\n'
+  + '  node scripts/plataforma/aplicar-catalogo-externo.mjs --proyecto <id> --tenant <id> --monedas BOB,ARS '
   + '[--aplicar] [--respaldo <ruta>] [--confirmo-produccion <tenant>]\n'
   + '  node scripts/plataforma/aplicar-catalogo-externo.mjs --proyecto <id> --tenant <id> --desactivar '
   + '[--aplicar] [--respaldo <ruta>] [--confirmo-produccion <tenant>]\n'
@@ -112,10 +117,22 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   const revertir = banderas.includes('revertir');
   const desactivar = banderas.includes('desactivar');
   const crearDocumento = banderas.includes('crear-documento');
-  const { proyecto, tenant, respaldo } = valores;
+  const { tenant, respaldo } = valores;
   const confirmo = valores['confirmo-produccion'];
+  let { proyecto } = valores;
+  if (valores['entorno'] !== undefined) {
+    // El id sale del ENTORNO del proceso (lista blanca), nunca de argv. `comprobarProyecto` lo vuelve a validar abajo.
+    const VARIABLE = { staging: 'GCP_PROJECT_ID_STAGING', produccion: 'GCP_PROJECT_ID_PROD' }[valores['entorno']];
+    if (proyecto !== undefined) problemas.push('--entorno no se combina con --proyecto');
+    else if (VARIABLE === undefined) problemas.push('--entorno admite solo staging o produccion');
+    else {
+      const id = typeof env[VARIABLE] === 'string' ? env[VARIABLE].trim() : '';
+      if (id === '') problemas.push(`--entorno ${valores['entorno']}: falta ${VARIABLE} en el entorno`);
+      else proyecto = id;
+    }
+  }
 
-  if (proyecto === undefined) problemas.push('falta --proyecto');
+  if (proyecto === undefined && valores['entorno'] === undefined) problemas.push('falta --proyecto (o --entorno)');
   const proy = proyecto === undefined ? { ok: false } : comprobarProyecto(proyecto, env);
   if (proyecto !== undefined && !proy.ok) problemas.push(proy.motivo);
 
