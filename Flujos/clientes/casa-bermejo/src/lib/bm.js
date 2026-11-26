@@ -131,7 +131,7 @@ function bmFichaBase() {
     v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, fueraDePaisMs: 0, avisoPaisMs: 0,
     carrito: [], entrega: bmEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, avisoNoCuadraMs: 0,
     aliasPedidoId: '', aliasEstado: '', aliasVenceMs: 0, aliasMontoCent: 0, aliasAr: '',
-    catalogoOfrecido: false, pedidoCatalogo: '', qrSoloCatCent: 0, derivadoMs: 0,
+    catalogoOfrecido: false, pedidoCatalogo: '', derivadoMs: 0,
     pide: [],
   };
 }
@@ -194,8 +194,6 @@ function bmFichaVigente(e, ahoraMs) {
     catalogoOfrecido: e.catalogoOfrecido === true,
     // El pedido del checkout web (`cat_…`) que el pedido de WhatsApp reemplaza (K2: viaja como `reemplaza` en `qr_enviado`); '' si el cliente no vino del catálogo web.
     pedidoCatalogo: typeof e.pedidoCatalogo === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(e.pedidoCatalogo) ? e.pedidoCatalogo : '',
-    // El total VIVO (centavos) con el que un carrito del catálogo quedó «listo para pagar en cuanto se complete la entrega» (`pcQrSoloAlCompletar`); 0 = el QR sale solo con el botón «Confirmar pedido».
-    qrSoloCatCent: bmNumero(e.qrSoloCatCent, 100000000),
     // Cuándo se pasó al cliente con recepción por última vez (R58: tras derivar, el asistente no ofrece sumar piezas).
     derivadoMs: bmNumero(e.derivadoMs),
     pide: (Array.isArray(e.pide) ? e.pide : []).filter((x, i, a) => BM_DATOS_PEDIBLES.includes(x) && a.indexOf(x) === i),

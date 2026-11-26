@@ -36,6 +36,8 @@ const ACREDITADO = /acreditad|verificad|recibimos tu pago|pago confirmado/i;
 /** El modelo de la charla que sigue: repite el pedido y devuelve el nombre si el cliente escribió «Ana». */
 const modeloNombre = (): ((ll: LlamadaDoble) => J) => (ll) => modelo('Listo.', { lineas: BILLETERA, entrega: /Ana/.test(textoAlModelo(ll)) ? { nombre: 'Ana Pérez' } : {} });
 const conNombre = (o: Parameters<typeof crear>[0] = {}): Mund => crear({ entregaPrevia: { nombre: 'Ana Pérez' }, ...o });
+/** El toque de «Confirmar pedido» tal como lo trae el resumen (el id lleva la huella del pedido). */
+const confirmar = (m: Mund, t: Turno): Turno => { const id = ids(t).find((x) => x.startsWith('pedido:confirmar')); if (!id) throw new Error('el resumen no trae «Confirmar pedido»'); return hablar(m, ANA, mToque(id, 'Confirmar pedido')); };
 const llamadasAlModelo = (m: Mund): { n: number } => {
   const c = { n: 0 };
   const previo = m.dobles['Conversar con el modelo'] as (...x: unknown[]) => unknown;
@@ -61,14 +63,19 @@ describe('R13: el carrito con recojo produce el resumen y el QR REAL en el mismo
     expect(JSON.stringify(t.mensajes.map((x) => x.payload))).not.toMatch(ACREDITADO);
     expect(t.ejecutados.has('Reportar mensaje (entrante)')).toBe(false);
   });
-  it('SANO: sin el nombre, UNA pregunta («a nombre de quién retira») y, al darlo, el QR sale solo (sin que el cliente escriba «pagar»)', () => {
+  it('SANO (decisión de Andres, ronda 11): sin el nombre, UNA pregunta («a nombre de quién retira»); al darlo sale el resumen con «Confirmar pedido» (1 mensaje, sin QR) y el QR sale al tocar el botón (sin que el cliente escriba «pagar»)', () => {
     const m = crear({ modeloDice: modeloNombre() });
     const t1 = enviar(m, cuerpo());
     expect(t1.mensajes).toHaveLength(1);
     expect(hayQr(t1)).toBe(false);
     expect(t1.mensajes[0]!.cuerpo).toMatch(/a nombre de quién retira/i);
     expect(t1.mensajes[0]!.cuerpo).not.toMatch(/pagar/i);
-    const t2 = hablar(m, ANA, mTexto('Ana Pérez'));
+    const t1b = hablar(m, ANA, mTexto('Ana Pérez'));
+    expect(t1b.mensajes).toHaveLength(1);
+    expect(hayQr(t1b)).toBe(false);
+    expect(qrEnviado(t1b)).toBeUndefined();
+    expect(titulos(t1b)).toEqual(expect.arrayContaining(['Confirmar pedido', 'Corregir datos']));
+    const t2 = confirmar(m, t1b);
     expect(t2.mensajes).toHaveLength(2);
     expect(hayQr(t2)).toBe(true);
     expect(qrEnviado(t2)).toMatchObject({ monto: 450, reemplaza: expect.stringMatching(/^cat_b4_/) });
@@ -98,10 +105,12 @@ describe('R13: el carrito con recojo produce el resumen y el QR REAL en el mismo
     expect(titulos(t)).toContain('Confirmar pedido');
     expect(titulos(t)).toContain('Corregir datos');
   });
-  it('SANO (control): solo el nombre con su documento rotulado sigue sacando el QR (el texto queda consumido entero)', () => {
+  it('SANO (control): solo el nombre tampoco saca el QR (es texto libre): sale el resumen', () => {
     const m = crear({ modeloDice: modeloNombre() });
     enviar(m, cuerpo());
-    expect(hayQr(hablar(m, ANA, mTexto('Ana Pérez')))).toBe(true);
+    const t = hablar(m, ANA, mTexto('Ana Pérez'));
+    expect(hayQr(t)).toBe(false);
+    expect(titulos(t)).toContain('Confirmar pedido');
   });
   it('«confirmo» a secas (criterio del 23/11): con el pedido COMPLETO emite el QR; NEGADO: con el pedido incompleto, con «no confirmo» o dentro de otra frase no emite', () => {
     const m = conNombre({ modeloDice: modeloNombre() });
@@ -167,7 +176,11 @@ describe('R14: el carrito con envío pregunta SOLO lo que falta y, al completars
     const t3 = hablar(m, ANA, mTexto('Cochabamba, oficina Zona Sur'));
     expect(hayQr(t3)).toBe(false);
     expect(cuerpos(t3)).toMatch(/nombre completo/i);
-    const t4 = hablar(m, ANA, mTexto('Ana Pérez 4412345'));
+    const t3b = hablar(m, ANA, mTexto('Ana Pérez 4412345'));
+    expect(hayQr(t3b)).toBe(false);   // el último dato es texto libre: resumen, no QR
+    expect(t3b.mensajes).toHaveLength(1);
+    expect(titulos(t3b)).toEqual(expect.arrayContaining(['Confirmar pedido', 'Corregir datos']));
+    const t4 = confirmar(m, t3b);
     expect(hayQr(t4)).toBe(true);
     expect(t4.mensajes).toHaveLength(2);
     expect(qrEnviado(t4)).toMatchObject({ monto: 450 });
@@ -182,7 +195,8 @@ describe('R14: el carrito con envío pregunta SOLO lo que falta y, al completars
     expect(JSON.stringify(t1.mensajes[0]!.payload)).not.toMatch(/dep:cb|"sections"/);
     expect(cuerpos(t1)).not.toMatch(/departamento|ciudad|flota/i);
     const t2 = hablar(m, ANA, mTexto('4412345'));
-    expect(hayQr(t2)).toBe(true);
+    expect(hayQr(t2)).toBe(false);   // la cédula escrita también es texto libre: resumen y botón
+    expect(hayQr(confirmar(m, t2))).toBe(true);
   });
   it('NEGADO: datos ya presentes no se vuelven a pedir: con la entrega COMPLETA en la ficha, el carrito con envío saca el QR directo (2 mensajes) sin preguntar nada', () => {
     const m = crear({ modeloDice: modeloEnvio(), entregaPrevia: { departamento: 'dep:cb', ciudad: 'Cochabamba', nombre: 'Ana Pérez', documento: '4412345' } });
@@ -224,11 +238,11 @@ describe('R14: el carrito con envío pregunta SOLO lo que falta y, al completars
     const m = crear({ modeloDice: modeloEnvio(), entregaPrevia: { departamento: 'dep:cb', ciudad: 'Cochabamba' } });
     enviar(m, cuerpo({ entrega: 'envio' }));
     const t2 = hablar(m, ANA, mTexto('Ana Pérez 4412345'));
-    expect(hayQr(t2)).toBe(true);
+    expect(hayQr(t2)).toBe(false);
+    expect(hayQr(confirmar(m, t2))).toBe(true);
     // Con un pedido nuevo del catálogo que NO puede salir solo (una pieza descartada), el QR del chat tampoco: confirma por botón.
     const t3 = enviar(m, cuerpo({ entrega: 'envio', descartados: ['x'] }));
     expect(hayQr(t3)).toBe(false);
-    expect(ficha(m).qrSoloCatCent).toBe(0);
   });
 });
 

@@ -200,7 +200,7 @@ if (puerta.ruta === 'sigue') {
     // El turno COMPLETO: lo que escribió el cliente entero (`textoCompleto`, aunque la tienda haya contestado una parte) y lo que se le respondió, con la respuesta de la tienda.
     recordar(typeof c.plan.textoCompleto === 'string' && c.plan.textoCompleto !== '' ? c.plan.textoCompleto : c.plan.textoCliente, d.texto + (uAntes !== '' ? ' (respuesta de la tienda enviada)' : ''));   // la respuesta de la tienda es dato de otro: a la memoria va una marca fija, nunca su texto (volvería al modelo sin <<< >>>); el texto del asistente primero: la memoria es corta y el estado («pidió el nombre») sale de él
     if (d.patch) Object.assign(nuevos, d.patch);
-    for (const k of ['carrito', 'entrega', 'cierre', 'mostrados', 'hist', 'qrHastaMs', 'qrCarrito', 'pedidoCatalogo', 'qrSoloCatCent', 'pide']) ev[k] = fichaAntes[k];
+    for (const k of ['carrito', 'entrega', 'cierre', 'mostrados', 'hist', 'qrHastaMs', 'qrCarrito', 'pedidoCatalogo', 'pide']) ev[k] = fichaAntes[k];
   } else if (tipoDePlan === 'qr') {
     // Nunca un QR sin monto del carrito, sin id de medio o sin un id de pedido válido: se pasa con recepción (sin decir que se avisó: aquí no hay aviso).
     const lineas = bmConNombres(d.lineas, c.vendibles);
@@ -221,13 +221,13 @@ if (puerta.ruta === 'sigue') {
       // K2: el pedido del checkout web que este QR reemplaza (solo un `cat_…` con su forma); la ficha lo suelta una vez emitido el QR.
       if (/^cat_[A-Za-z0-9_-]{1,56}$/.test(String(d.reemplaza || '')) && imagen.lineas) imagen.reemplaza = String(d.reemplaza);
       msgs = [texto(conSaludo(antepone(resumen))), imagen];
-      nuevos.pedidoCatalogo = ''; nuevos.qrSoloCatCent = 0; ev.pedidoCatalogo = fichaAntes.pedidoCatalogo; ev.qrSoloCatCent = fichaAntes.qrSoloCatCent;
+      nuevos.pedidoCatalogo = ''; ev.pedidoCatalogo = fichaAntes.pedidoCatalogo;
       nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
       nuevos.entrega = d.entrega; nuevos.cierre = false; nuevos.pide = []; ev.pide = fichaAntes.pide;
       nuevos.pedidos = fichaAntes.pedidos + 1;
       nuevos.qrHastaMs = ahora + BM_MINUTOS_QR * 60 * 1000;
       nuevos.qrCarrito = d.lineas.map((l) => { const o = { id: l.id, cantidad: l.cantidad, precioCentavos: l.precioCentavos, detalle: l.detalle }; if (l.moneda === 'BOB' || l.moneda === 'ARS') o.moneda = l.moneda; return o; }); // con la moneda: `vcMismoCarrito` la compara
-      for (const k of ['carrito', 'entrega', 'cierre', 'pedidos', 'qrHastaMs', 'qrCarrito', 'pedidoCatalogo', 'qrSoloCatCent']) ev[k] = fichaAntes[k];
+      for (const k of ['carrito', 'entrega', 'cierre', 'pedidos', 'qrHastaMs', 'qrCarrito', 'pedidoCatalogo']) ev[k] = fichaAntes[k];
     }
   } else if (tipoDePlan === 'qr_pendiente') {
     msgs = [texto(conSaludo(antepone('Ya tienes un QR abierto por ' + vcMonto(d.total) + '. Cuando pagues, envíame la foto del comprobante por este chat.')))];
@@ -347,7 +347,7 @@ const salida = msgs.map((m, i) => {
   // «Resumen del turno» lee esto del primer ítem: lo que no salió vuelve a su valor anterior.
   if (i === 0 && Object.keys(ev).length) item.revertirFicha = ev;
   // Solo el ítem del QR (`qr_enviado`) devuelve el cobro a como estaba si SU envío falla: el texto del resumen puede fallar y el QR salir (el servidor ya abrió el cobro).
-  if (tipoDePlan === 'qr' && m.evento === 'qr_enviado') item.revertirSiFalloElPrincipal = { qrHastaMs: ev.qrHastaMs, pedidos: ev.pedidos, qrCarrito: ev.qrCarrito, pedidoCatalogo: ev.pedidoCatalogo, qrSoloCatCent: ev.qrSoloCatCent };
+  if (tipoDePlan === 'qr' && m.evento === 'qr_enviado') item.revertirSiFalloElPrincipal = { qrHastaMs: ev.qrHastaMs, pedidos: ev.pedidos, qrCarrito: ev.qrCarrito, pedidoCatalogo: ev.pedidoCatalogo };
   return { json: item };
 });
 return salida;

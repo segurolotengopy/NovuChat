@@ -608,20 +608,12 @@ function bmCarritoVigente(carrito, vendibles) {
   const vigente = vcLineas(guardado, vendibles).lineas;
   return vigente.length === guardado.length && guardado.every((l, i) => vigente[i] && vigente[i].id === l.id && vigente[i].cantidad === l.cantidad);
 }
-// ¿El texto del turno es SOLO los datos de la entrega que se acaban de capturar (nombre, documento con su rótulo, ciudad, departamento…)? Si sobra cualquier palabra o cifra, no: el cliente dijo algo más y no se cobra por él.
-// El toque de una lista o botón (`seleccionId`) no es texto libre: ya es la elección.
-function bmTextoConsumido(texto, entrega, seleccionId) {
-  if (seleccionId) return true;
-  const e = bmEntregaDeFicha(entrega);
-  let r = ' ' + bmNorm(texto) + ' ';
-  const quitar = [e.nombre, e.documento, e.ciudad, String(e.departamento).replace(/_/g, ' '), String(e.region).replace(/_/g, ' '), String(e.provincia).replace(/_/g, ' ')].map((x) => bmNorm(x)).filter((x) => x !== '');
-  for (const x of quitar.sort((a, b) => b.length - a.length)) r = r.split(' ' + x + ' ').join('  ');
-  r = r.replace(/\b(ci|dni|cedula|carnet|documento|de|identidad|numero|nro)\b/g, ' ');
-  return r.replace(/\s+/g, '') === '';
-}
-const BM_CONFIRMO_A_SECAS = /^(?:si |ok |dale |listo )?(?:confirmo|confirmado)$/;
-function bmQuierePagar(n) {
+const BM_CONFIRMO_A_SECAS =/^(?:si |ok |dale |listo )?(?:confirmo|confirmado)$/;
+// Una PREGUNTA no es una orden: se mira el texto CRUDO, porque `bmNorm` quita «¿?» y «¿confirmo?» quedaba igual a «confirmo». `crudo` es opcional (sin él, solo se mira el normalizado, como siempre).
+function bmEsPregunta(crudo) { return /[?¿]/.test(String(crudo === undefined || crudo === null ? '' : crudo)); }
+function bmQuierePagar(n, crudo) {
   const t = String(n || '');
+  if (bmEsPregunta(crudo)) return false;
   if (/\b(no|aun no|todavia no)\s+(quiero\s+)?(pagar|confirmar|cerrar)\b|\bno confirmo\b/.test(t)) return false;
   // Una pregunta no es una orden («¿cómo puedo pagar?», «¿se puede pagar con tarjeta?»): el cierre queda fijo en la ficha y dispararía un QR no pedido.
   if (/^(como|que|donde|cuando|cual|cuanto|se puede|puedo|es posible|hay|aceptan|tienen)\b/.test(t) || /\b(se puede|puedo|con tarjeta|aceptan|metodos? de pago|formas? de pago)\b/.test(t)) return false;
@@ -632,10 +624,11 @@ function bmQuierePagar(n) {
 // El botón «Pagar» de Argentina (alias): su id exacto. Un toque con otro id nunca pide el alias, aunque su título diga «Pagar».
 const BM_ID_PAGAR_ALIAS = 'pedido:alias';
 // «Confirmo» a secas solo pide el alias con el pedido ya completo (`completoAntes`), igual que el cierre de Bolivia; «pagar» y el botón no lo necesitan.
-function bmPideAlias(seleccionId, n, completoAntes) {
+function bmPideAlias(seleccionId, n, completoAntes, crudo) {
   if (seleccionId) return seleccionId === BM_ID_PAGAR_ALIAS;
+  if (bmEsPregunta(crudo)) return false;
   if (BM_CONFIRMO_A_SECAS.test(String(n || ''))) return completoAntes === true;
-  return bmQuierePagar(n);
+  return bmQuierePagar(n, crudo);
 }
 function bmPideIdentidad(n) {
   return /\b(eres|sos|es|seras)\s+(un |una )?(bot|robot|ia|inteligencia artificial|maquina|programa|persona|humano|humana|real)\b|\b(hablo|estoy hablando|hablando) con (un |una )?(bot|robot|ia|persona|humano|humana|maquina)\b|\bpersona real\b|\bes un bot\b|\bquien eres\b|\bcon quien hablo\b/.test(String(n || ''));
@@ -1281,7 +1274,7 @@ function bmResolverComprobante(c) {
   else if (r.resultado === 'ilegible') { d.tipo = 'comprobante_pedir'; }
   else if (r.resultado === 'ya_cotejado') { d.tipo = 'derivar'; d.motivo = 'comprobante_ya_visto'; d.aviso = bmAvisoConsulta(c, 'comprobante_ya_visto'); }
   else { d.tipo = 'derivar'; d.motivo = 'comprobante_sin_cotejo'; d.aviso = pedido('llegó; no se pudo cotejar, revisar'); }
-  d.patch = (d.resultado === 'no_cuadra' || r.resultado === 'ilegible' || r.resultado === 'ya_cotejado') ? {} : { comprobanteMs: c.ahora, qrHastaMs: 0, carrito: [], entrega: bmEntregaBase(), cierre: false, qrCarrito: [], mostrados: [], pedidoCatalogo: '', qrSoloCatCent: 0 };
+  d.patch = (d.resultado === 'no_cuadra' || r.resultado === 'ilegible' || r.resultado === 'ya_cotejado') ? {} : { comprobanteMs: c.ahora, qrHastaMs: 0, carrito: [], entrega: bmEntregaBase(), cierre: false, qrCarrito: [], mostrados: [], pedidoCatalogo: '' };
   return d;
 }
 
@@ -1442,8 +1435,7 @@ function bmResolverCorregir(c) {
   const usted = !!(c.base && c.base.tratamiento === 'usted');
   return { tipo: 'modelo', texto: (usted ? 'Listo, borré sus datos de entrega y conservé el modo (' : 'Listo, borré tus datos de entrega y conservé el modo (') + e.modo + '). ' + bmTextoDeEstado(lineas, limpia, false, c, false) + (usted ? ' Si prefiere cambiar la entrega, escriba «retiro» o «envío».' : ' Si prefieres cambiar la entrega, escribe «retiro» o «envío».'),
     lineas: lineas, entrega: limpia, cierre: false, cambio: false, aviso: null, cancelarCobro: false, sinRedaccion: false, sinPieza: false, resumen: vcResumen(lineas), confirmable: false, botonesEntrega: conBoton, sinModelo: true, pide: bmPideDeEntrega(limpia, c.mercado),
-    // Quien corrige sus datos los ve de nuevo antes del QR: el QR «solo al completar» del carrito del catálogo ya no corre (sale con el botón «Confirmar pedido»).
-    patch: { qrSoloCatCent: 0 } };
+    patch: {} };
 }
 // EL PEDIDO DEL CATÁLOGO WEB (B4, `plan.tipo === 'carrito'`, que decide «Decidir turno» solo si corrió el Webhook «Carrito del catálogo» y el carrito es de este comercio). El servidor ya guardó el pedido `cat_…`; aquí el CÓDIGO arma el pedido del flujo
 // con las piezas del módulo común Pedidos (`pedido-del-carrito.js`, contrato K1) y SIN modelo (0 llamadas):
@@ -1454,7 +1446,7 @@ function bmResolverCorregir(c) {
 //   - el QR del carrito pasa por el MISMO cierre que el chat (`bmResolverModelo` con la orden de cerrar): un QR abierto de otro pedido se cierra (`cancelarCobro`) y, si no se puede cerrar, se deriva. Jamás se dice «pago acreditado» (el QR es del comercio).
 // LOS MISMOS TOPES EN LOS DOS PASOS (revisión del #1130): el módulo común decide con 99 unidades por pieza y 50 renglones, pero el pedido del flujo se recalcula con `vcLineas` (50 por pieza y 30 renglones).
 // Lo que ese recálculo recorta se pasa a «no entró» (el cliente lo ve dicho, sin QR directo ni `reemplaza`) y las líneas son las del recálculo: el resumen y el monto nunca difieren de lo que se dijo.
-function bmPiezasConTopesDelFlujo(piezas, vendibles) {
+function bmPiezasConTopesDelFlujo(piezas, vendibles, car) {
   const final = vcLineas(piezas.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' })), vendibles).lineas;
   const noEntraron = piezas.noEntraron.slice();
   const recortes = [];   // las que entraron con MENOS unidades que las pedidas: el texto dice cuántas entraron (coherente con el resumen), no «no pude incluir»
@@ -1473,14 +1465,29 @@ function bmPiezasConTopesDelFlujo(piezas, vendibles) {
     if (n !== '' && g.cantidad > 0 && noEntraron.includes(n) && !recortes.some((rc) => rc.nombre === n)) recortes.push({ nombre: n, incluidas: g.cantidad });
   }
   // Con algo que no entró, el total de la carga difiere por esas unidades, no por un precio: no se dice «algún precio cambió».
-  const distintos = noEntraron.length > 0 ? piezas.distintos.filter((d) => d !== '_total') : piezas.distintos;
+  // Solo si el total de la carga ES lo pedido a precio vivo (cantidad pedida x precio vivo, más el envío que declara): si además el precio cambió (stock 10, 51 pedidas, carga a 450, vivo a 520), `_total` se conserva y se avisa.
+  let quitaTotal = noEntraron.length > 0;
+  if (quitaTotal && car && Array.isArray(car.items)) {
+    let esperado = 0; let sabe = true;
+    for (const i of car.items.slice(0, 50)) {
+      const q = typeof i.cantidad === 'string' && /^\s*[1-9]\d{0,5}\s*$/.test(i.cantidad) ? Number(i.cantidad) : i.cantidad;
+      if (!i || typeof i.id !== 'string' || !Number.isInteger(q) || q <= 0) continue;
+      const viva = final.find((x) => x.id === i.id);
+      if (!viva || !Number.isSafeInteger(viva.precioCentavos)) { sabe = false; break; }
+      esperado += q * viva.precioCentavos;
+    }
+    const envio = Number.isFinite(Number(car.costoEnvio)) && Number(car.costoEnvio) > 0 ? Math.round(Number(car.costoEnvio) * 100) : 0;
+    const centavos = Math.round(Number(car.total) * 100);
+    if (sabe && Number.isFinite(centavos) && centavos > 0 && centavos !== esperado && centavos !== esperado + envio) quitaTotal = false;
+  }
+  const distintos = quitaTotal ? piezas.distintos.filter((d) => d !== '_total') : piezas.distintos;
   return { lineas: final, noEntraron: noEntraron, distintos: distintos, recortes: recortes };
 }
 const BM_TEXTO_PRECIOS_CAMBIARON ='Algún precio de su pedido cambió respecto de la página: vale el total real del resumen.';
 function bmResolverCarrito(c) {
   const f = c.ficha;
   const car = cbEsObjeto(c.plan.carrito) ? c.plan.carrito : {};
-  const piezas = bmPiezasConTopesDelFlujo(pcLineasDelCarrito(car, c.vendibles), c.vendibles);
+  const piezas = bmPiezasConTopesDelFlujo(pcLineasDelCarrito(car, c.vendibles), c.vendibles, car);
   if (piezas.lineas.length === 0) return bmDerivar(c, 'carrito_sin_piezas');
   // La carga manda la moneda como 'Bs' (BOB), 'ARS' o 'USD'; K1 la compara como BOB/ARS. El mercado y la marca `catalogo` los pone la carga (`mercado`, `catalogo: 'externo'`): este flujo solo acepta la fuente externa.
   const k1 = Object.assign({}, car, { moneda: car.moneda === 'Bs' ? 'BOB' : car.moneda });
@@ -1497,9 +1504,8 @@ function bmResolverCarrito(c) {
   if (decision === 'derivar') return bmDerivar(c, 'carrito_sin_piezas');
   const total = vcTotalCentavos(piezas.lineas);
   const pedidoCatalogo = /^cat_[A-Za-z0-9_-]{1,56}$/.test(String(car.pedidoId)) ? String(car.pedidoId) : '';
-  const qrSolo = pcQrSoloAlCompletar(x) && total !== null && total > 0 ? total : 0;
   const lineasFicha = piezas.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' }));
-  const fichaCar = Object.assign({}, f, { carrito: lineasFicha, entrega: entrega, cierre: false, pedidoCatalogo: pedidoCatalogo, qrSoloCatCent: qrSolo });
+  const fichaCar = Object.assign({}, f, { carrito: lineasFicha, entrega: entrega, cierre: false, pedidoCatalogo: pedidoCatalogo });
   const resp = { candidates: [{ content: { parts: [{ text: JSON.stringify({ texto: 'Revisando su pedido.', lineas: lineasFicha, entrega: {} }) }] } }] };
   const r = bmResolverModelo(Object.assign({}, c, { ficha: fichaCar, plan: Object.assign({}, c.plan, { tipo: 'carrito', textoCliente: '' }), modeloResp: resp, cierreCarrito: decision === 'qr' }));
   r.desdeCatalogo = true;
@@ -1517,7 +1523,7 @@ function bmResolverCarrito(c) {
     r.texto = partes.join(' ');
     r.sinRedaccion = false; r.sinPieza = false; r.sinModelo = true;
     r.resumen = r.lineas.length ? vcResumen(r.lineas) : '';
-    r.patch = Object.assign({}, r.patch, { pedidoCatalogo: pedidoCatalogo, qrSoloCatCent: qrSolo });
+    r.patch = Object.assign({}, r.patch, { pedidoCatalogo: pedidoCatalogo });
     r.decisionCarrito = decision;
   }
   return r;
@@ -1585,11 +1591,9 @@ function bmResolverModelo(c) {
   const entrega = bmMezclarEntrega(f.entrega, comp.entrega, c.modos);
   // El «pagar» escrito (y el cierre guardado) solo CIERRAN si el pedido YA estaba completo antes de este turno y este turno no lo cambia: si se completa ahora, el cliente ve primero el resumen con «Confirmar pedido» y «Corregir datos».
   const completoAntes = f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado) && vcMismoCarrito(antes, lineas) && JSON.stringify(bmEntregaDeFicha(f.entrega)) === JSON.stringify(entrega);
-  // B4: un pedido del catálogo web cuya entrega se completa con ESTE mensaje sale con el QR solo (enviar el carrito ya es confirmar, Andres 23/11/2026) si, desde el carrito, nada cambió: mismas piezas, el mismo total vivo, cobro real en Bolivia y sin un «aún no quiero pagar».
-  // Estructural (revisión de la ronda 10): el QR directo solo sale si el texto del turno quedó CONSUMIDO ENTERO por el dato pedido (nombre, documento…); cualquier texto que sobre («espera, aún no…», «ya no quiero nada») lo impide y sale el resumen con «Confirmar pedido» y «Corregir datos». Sin lista de negaciones.
-  const qrSoloDelCarrito = f.qrSoloCatCent > 0 && p.tipo === 'modelo' && c.mercado === 'BO' && c.cobro.modo === 'real' && f.carrito.length > 0 && vcMismoCarrito(antes, lineas) && fijada.delSitio !== true && fijada.ordenada !== true && !ordenVaciar
-    && vcTotalCentavos(lineas) === f.qrSoloCatCent && bmEntregaCompleta(entrega, c.mercado) && bmTextoConsumido(p.textoCliente, entrega, c.t && c.t.seleccionId) && !/\b(no|aun no|todavia no)\s+(quiero\s+)?(pagar|confirmar|cerrar)\b/.test(bmNorm(p.textoCliente));
-  const cierre = c.cierreCarrito === true || qrSoloDelCarrito || (completoAntes && bmQuierePagar(bmNorm(p.textoCliente))) || (cfEsConfirmacion(c.t && c.t.seleccionId, bmLineasParaHuella(f.carrito, c.vendibles), bmEntregaDeFicha(f.entrega), f.pedidos) && f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado) && bmCarritoVigente(f.carrito, c.vendibles));   // el botón «Confirmar pedido» es la orden de cierre SOLO con el pedido que ya estaba listo (el de un mensaje viejo no cierra uno nuevo) (módulo común Pedidos)
+  // DECISIÓN DE ANDRES (26/11/2026, ronda 11): tras capturar un dato de TEXTO LIBRE (nombre, documento, ciudad, aclaración) NUNCA hay QR directo: sale el resumen con «Confirmar pedido» y «Corregir datos», y el QR sale al tocar el botón (o con «confirmo»/«pagar» y el pedido ya completo).
+  // El único QR sin botón es el del turno del carrito con la entrega YA completa (`bmResolverCarrito`, `cierreCarrito`): ahí no se captura ningún texto. No hay lista de palabras ni texto «consumido» que defender.
+  const cierre = c.cierreCarrito === true || (completoAntes && bmQuierePagar(bmNorm(p.textoCliente), p.textoCliente)) || (cfEsConfirmacion(c.t && c.t.seleccionId, bmLineasParaHuella(f.carrito, c.vendibles), bmEntregaDeFicha(f.entrega), f.pedidos) && f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado) && bmCarritoVigente(f.carrito, c.vendibles));   // el botón «Confirmar pedido» es la orden de cierre SOLO con el pedido que ya estaba listo (el de un mensaje viejo no cierra uno nuevo) (módulo común Pedidos)
   // `f.cierre` (un «pagar» dicho en un turno anterior) NO abre un cobro: el QR sale solo en el turno en que se confirma (el botón, o «confirmo/pagar» con el pedido ya completo), nunca ante un «hola» de una ficha con `cierre: true`.
   // Con el pedido LISTO (piezas, entrega completa y orden de pagar) lo decide el código: un «quiereHablar» del modelo (p. ej. «el envío lo cotiza la tienda») no lo desvía; el pedido se anota y la tienda recibe el aviso.
   const listo = lineas.length > 0 && bmEntregaCompleta(entrega, c.mercado) && cierre;
@@ -1624,7 +1628,7 @@ function bmResolverModelo(c) {
     // Argentina: el cobro por alias lo hace un servidor que aún no existe (B4b). Hasta entonces el pedido queda anotado y el pago lo coordina recepción (aviso + botón); nunca se emite un QR de Bolivia a un cliente de Argentina.
     if (c.mercado !== 'BO' || c.cobro.modo !== 'real') {
       // Sin QR de cobro real: el pedido queda anotado y lo coordina recepción (aviso + botón). El aviso lo manda «Armar avisos» con «sin comprobante aún».
-      return Object.assign(base, { tipo: 'pedido_sin_cobro', mercado: c.mercado === 'BO' ? 'BO' : 'AR', pedidoId: bmIdPedido(c.ahora, f.pedidos + 1, c.from), total: total, resumen: vcResumen(lineas), cierre: false, aviso: { tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: entrega, cotejo: 'sin comprobante aún', repetido: false }, patch: { carrito: [], entrega: bmEntregaBase(), cierre: false, qrCarrito: [], mostrados: [], pedidoCatalogo: '', qrSoloCatCent: 0 } });
+      return Object.assign(base, { tipo: 'pedido_sin_cobro', mercado: c.mercado === 'BO' ? 'BO' : 'AR', pedidoId: bmIdPedido(c.ahora, f.pedidos + 1, c.from), total: total, resumen: vcResumen(lineas), cierre: false, aviso: { tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: entrega, cotejo: 'sin comprobante aún', repetido: false }, patch: { carrito: [], entrega: bmEntregaBase(), cierre: false, qrCarrito: [], mostrados: [], pedidoCatalogo: '' } });
     }
     if (abierto && !cambioConQr) return Object.assign(base, { tipo: 'qr_pendiente', total: total });
     return Object.assign(base, {
@@ -1649,6 +1653,8 @@ function bmResolverModelo(c) {
   const pendientes = lineas.length > 0 && !abierto && !conBoton ? bmPideDeEntrega(entrega, c.mercado) : [];
   const enEntrega = lineas.length > 0 && !abierto && (conBoton || pendientes.length > 0);
   let texto = (enEntrega || ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? (fijada.texto !== '' && !ignoraQuiereHablar && comp.modoRechazado !== true && comp.contradice !== true && fijada.delSitio !== true && fijada.ordenada !== true ? fijada.texto : bmTextoDeEstado(lineas, entrega, cierre, c, conBoton)) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
+  // Revisión de la ronda 11: en el turno que VACÍA el pedido respondiendo a un paso de datos (nombre, ciudad…: «Ana Pérez, ya no quiero nada»), el texto es FIJO del código; con el pedido vacío `enEntrega` ya no vale y salía el texto del modelo.
+  if (ordenVaciar && antes.length > 0 && lineas.length === 0 && pideAntes.length > 0) texto = (c.base && c.base.tratamiento === 'usted') ? 'Listo, vacié su pedido. Dígame qué pieza le interesa.' : 'Listo, vacié tu pedido. Dime qué pieza te interesa.';
   // Negar una pieza que el catálogo sí tiene («solo disponemos de la de 9 kg» cuando hay de 9, 15 y 17 kg): el texto lo arma el código con las piezas que coinciden.
   if (texto !== '' && /\b(solo|unicamente)\s+(disponemos|tenemos|contamos|hay|ofrecemos)\b/.test(bmNorm(texto))) { const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1); if (coinc !== '') texto = coinc; }
   // El mensaje pegado del sitio con montos DISTINTOS a los del catálogo vivo: se cobra siempre el vivo y se avisa en el mismo mensaje (el resumen trae el total real).
