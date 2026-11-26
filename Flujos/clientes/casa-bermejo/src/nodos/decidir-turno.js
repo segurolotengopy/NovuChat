@@ -9,7 +9,7 @@
 //   audio_fijo     una nota de voz demasiado larga o que no se entendió; archivo: un medio demasiado pesado o que no se abrió; imagen_otra: una foto o captura que no es un comprobante;
 //   anuncio        la imagen de un anuncio reconocido por su titular: el producto sale POR CÓDIGO (nunca el modelo), con el precio del catálogo;
 //   comprobante    la imagen de un comprobante con un cobro abierto: ya corrió «Cotejar en el servidor»; «Armar avisos» y «Armar mensajes» interpretan el resultado;
-//   corregir       el toque de «Corregir datos» (`pedido:corregir`): el CÓDIGO borra nombre, CI, ciudad y flota (conserva el modo) y vuelve a pedir lo que falta, SIN modelo; un id inventado no hace nada (`toque_viejo`);
+//   corregir       el toque de «Corregir datos» (`pedido:corregir`): el CÓDIGO borra departamento o provincia, ciudad, aclaración, nombre y documento (conserva el modo) y vuelve a pedir lo que falta, SIN modelo; un id inventado no hace nada (`toque_viejo`);
 //   entrega_boton  el toque de «Recojo en tienda» o «Envío» (`entrega:retiro` / `entrega:envio`): el CÓDIGO escribe el modo de entrega, SIN modelo; un id inventado o un modo que el comercio no ofrece no cambia nada (`toque_viejo`);
 //   modelo         la conversación libre: `llamarModelo` y el cuerpo de la llamada (solo con la puerta abierta).
 //

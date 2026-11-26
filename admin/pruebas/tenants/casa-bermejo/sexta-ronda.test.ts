@@ -51,9 +51,9 @@ describe('1. la ciudad y la aclaración OPCIONAL: se piden en su paso, se guarda
     expect(CA('Tarija; agencia Centro')).toEqual({ ciudad: 'Tarija', aclaracion: 'agencia Centro' });
     expect(CA('Sucre sucursal Ravelo')).toEqual({ ciudad: 'Sucre', aclaracion: 'sucursal Ravelo' });
   });
-  it('NEGADO: lo que no se puede separar con seguridad va TODO como ciudad (se ve en el resumen y se corrige): sin separador ni palabra de oficina, o empezando por «oficina»', () => {
+  it('NEGADO: sin separador va TODO como ciudad (se ve en el resumen y se corrige); empezando por «oficina», «agencia» o «sucursal», o con el separador al inicio, NO hay ciudad y se repregunta', () => {
     expect(CA('Villa Tunari frente a la plaza')).toEqual({ ciudad: 'Villa Tunari frente a la plaza', aclaracion: '' });
-    expect(CA('oficina Zona Sur')).toEqual({ ciudad: 'oficina Zona Sur', aclaracion: '' });
+    for (const t of ['oficina Zona Sur', ', oficina Zona Sur', 'agencia Centro', 'sucursal Terminal']) expect(CA(t), t).toEqual({ ciudad: '', aclaracion: '' });
   });
   it('NEGADO: un teléfono o un documento dentro del texto libre no se guarda (solo se guarda la parte que sí vale)', () => {
     expect(CA('Cochabamba, oficina Zona Sur teléfono 70012345')).toEqual({ ciudad: 'Cochabamba', aclaracion: '' });

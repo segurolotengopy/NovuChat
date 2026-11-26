@@ -310,7 +310,6 @@ describe('FILAS 16 y 17: el ENVÍO por pasos («Intermedio», 26/11/2026): depar
       ['Tarija; agencia Centro', 'Tarija', 'agencia Centro'],
       ['Oruro\nsucursal Terminal', 'Oruro', 'sucursal Terminal'],
       ['Sucre oficina Calle Ravelo', 'Sucre', 'oficina Calle Ravelo'],
-      ['oficina Zona Sur', 'oficina Zona Sur', ''],
       ['Villa Tunari frente a la plaza', 'Villa Tunari frente a la plaza', ''],
     ] as const) {
       it(`«${texto.replace(/\n/g, '⏎')}» → ciudad «${ciudad}» y aclaración «${aclaracion}»`, () => {
@@ -327,6 +326,28 @@ describe('FILAS 16 y 17: el ENVÍO por pasos («Intermedio», 26/11/2026): depar
         expect(ficha(m).entrega.ciudad, frase).toBe('');
         expect(ficha(m).pide, frase).toEqual(['ciudad']);
       }
+    });
+    it('NEGADO (ronda 10): una aclaración SIN ciudad («oficina Zona Sur», «, agencia Centro») no queda como ciudad ni como aclaración: se repregunta la ciudad', () => {
+      for (const frase of ['oficina Zona Sur', ', oficina Zona Sur', 'agencia Centro', 'sucursal Terminal', 'Oficina Palermo']) {
+        const m = conCiudadPedida({ modeloDice: modeloSano() });
+        hablar(m, ANA, mTexto(frase));
+        expect(ficha(m).entrega, frase).toMatchObject({ ciudad: '', aclaracion: '' });
+        expect(ficha(m).pide, frase).toEqual(['ciudad']);
+      }
+    });
+    it('NEGADO (ronda 10): una forma de pago, una pieza del catálogo, «cancelar», un vendedor, la palabra flota o una dirección con número NO se guardan como ciudad, con o sin aclaración (adversa); una ciudad sana con la misma forma sí', () => {
+      for (const frase of ['Efectivo', 'Por QR', 'Transferencia bancaria', 'Cancelar', 'Vendedor', 'Billetera', 'flota Bolívar, donde sale a Tarija', 'Oruro y la flota después te digo', 'La Paz y pago con QR', 'mi dirección es Calle Florida 500', 'Provincia', 'Ciudad:']) {
+        const m = conCiudadPedida({ modeloDice: modeloSano() });
+        hablar(m, ANA, mTexto(frase));
+        expect(ficha(m).entrega.ciudad, frase).toBe('');
+        expect(ficha(m).pide, frase).toEqual(['ciudad']);
+      }
+      const m = conCiudadPedida({ modeloDice: modeloSano() });
+      hablar(m, ANA, mTexto('Tarija, pago por QR'));
+      expect(ficha(m).entrega).toMatchObject({ ciudad: 'Tarija', aclaracion: '' });   // la forma de pago no queda de aclaración
+      const s = conCiudadPedida({ modeloDice: modeloSano() });
+      hablar(s, ANA, mTexto('Ciudad Evita'));
+      expect(ficha(s).entrega.ciudad).toBe('Ciudad Evita');   // una ciudad cuyo nombre trae un rótulo SÍ vale
     });
     it('NEGADO: un teléfono o documento dentro de la aclaración no se guarda en el texto libre', () => {
       const m = conCiudadPedida({ modeloDice: modeloSano() });
