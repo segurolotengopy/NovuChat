@@ -415,6 +415,91 @@ describe('la reserva: el candado y la cita no se duplican ni se pierden con una 
 });
 
 // =================================================================================================
+describe('PUNTA A PUNTA sobre agenda-minima.v0.json REAL: calla, UN envío y el modelo recibe TODOS los textos EN ORDEN', () => {
+  /** Lo que recibió el modelo que ENTIENDE (la extracción), como texto plano. */
+  const delModelo = (m: M): string => JSON.stringify(m.extraidos[m.extraidos.length - 1]);
+  const enOrden = (cuerpo: string, frases: string[]): void => {
+    const pos = frases.map((f) => cuerpo.indexOf(f));
+    for (const [i, p] of pos.entries()) expect(p, `falta «${frases[i]}» en lo que recibió el modelo`).toBeGreaterThanOrEqual(0);
+    expect([...pos].sort((a, b) => a - b), 'fuera de orden').toEqual(pos);
+  };
+  /** La conversación ya pasó el saludo: el siguiente texto libre va al modelo. */
+  const conMenuDado = (opciones: OpcionesMundo = {}): M => { const m = crear(opciones); m.mundo.turno(escrito(MAMA, 'hola'), { avanzarMin: 0 }); return m; };
+
+  it('DOS textos: el primero CALLA, sale UN solo envío y «Decidir turno» y el modelo reciben los DOS textos en orden', () => {
+    const m = conMenuDado();
+    const antes = m.extraidos.length;
+    const rs = rafaga(m, [escrito(MAMA, 'quiero una cita para mi hija'), escrito(MAMA, 'el jueves en la tarde')], { desde: 5_000_000 });
+    expect(rs.every((r) => r.fallo === null)).toBe(true);
+    // (1) calla
+    expect(corrio(rs[0]!, 'Agrupar ráfaga')).toBe(true);
+    expect(corrio(rs[0]!, 'Decidir turno')).toBe(false);
+    expect(rs[0]!.mensajes).toHaveLength(0);
+    expect(rs[0]!.porNodo['Agrupar ráfaga'] ?? []).toHaveLength(0);
+    // (2) UN solo envío en toda la ráfaga
+    expect(rs.flatMap((r) => r.mensajes)).toHaveLength(1);
+    expect(envios(rs)).toHaveLength(1);
+    // (3) «Decidir turno» y el modelo reciben los DOS textos, en orden
+    const decidir = rs[1]!.porNodo['Decidir turno']![0]!;
+    expect(decidir['texto']).toBe('quiero una cita para mi hija\nel jueves en la tarde');
+    expect(decidir['accion']).toBe('extraer');
+    expect(m.extraidos.length).toBe(antes + 1);
+    enOrden(delModelo(m), ['quiero una cita para mi hija', 'el jueves en la tarde']);
+  });
+  it('TRES textos: los dos primeros CALLAN, UN solo envío y el modelo recibe los TRES textos en orden', () => {
+    const m = conMenuDado();
+    const rs = rafaga(m, [escrito(MAMA, 'quiero una cita'), escrito(MAMA, 'para mi hija'), escrito(MAMA, 'el jueves en la tarde')], { desde: 5_000_000 });
+    expect(rs.slice(0, 2).map((r) => corrio(r, 'Decidir turno'))).toEqual([false, false]);
+    expect(rs.slice(0, 2).flatMap((r) => r.mensajes)).toHaveLength(0);
+    expect(rs.flatMap((r) => r.mensajes)).toHaveLength(1);
+    expect(rs[2]!.porNodo['Decidir turno']![0]!['texto']).toBe('quiero una cita\npara mi hija\nel jueves en la tarde');
+    expect(m.extraidos).toHaveLength(1);
+    enOrden(delModelo(m), ['quiero una cita', 'para mi hija', 'el jueves en la tarde']);
+  });
+  it('NIEGA: con la ráfaga apagada el modelo recibe solo CADA texto por separado (dos llamadas, dos envíos): lo que la pieza evita', () => {
+    const m = conMenuDado({ panel: { ...PANEL, rafagaApagada: true } });
+    const rs = rafaga(m, [escrito(MAMA, 'quiero una cita para mi hija'), escrito(MAMA, 'el jueves en la tarde')], { desde: 5_000_000 });
+    expect(rs.flatMap((r) => r.mensajes)).toHaveLength(2);
+    expect(m.extraidos).toHaveLength(2);
+    expect(JSON.stringify(m.extraidos[1])).not.toContain('quiero una cita para mi hija');
+  });
+  it('CONSULTA CAÍDA en la segunda de dos (falla ABIERTO): responde SOLO con su texto, y la primera, que calló por ella, queda sin respuesta (declarado)', () => {
+    const m = conMenuDado();
+    const a = escrito(MAMA, 'quiero una cita para mi hija');
+    const b = escrito(MAMA, 'el jueves en la tarde');
+    m.srv.caen.add(idDe(b));
+    const rs = rafaga(m, [a, b], { desde: 5_000_000 });
+    expect(rs.flatMap((r) => r.mensajes)).toHaveLength(1);
+    expect(rs[1]!.porNodo['Decidir turno']![0]!['texto']).toBe('el jueves en la tarde');
+    expect(rs[1]!.porNodo['Agrupar ráfaga']![0]!['rafaga']).toMatchObject({ accion: 'solo' });
+    expect(rs[1]!.porNodo['Agrupar ráfaga']![0]!['textoDelTurno']).toBeUndefined();
+  });
+  it('CONSULTA CAÍDA en la primera de dos: la primera responde SOLA con su texto y la segunda responde con los DOS (se duplica el primero: lado seguro)', () => {
+    const m = conMenuDado();
+    const a = escrito(MAMA, 'quiero una cita para mi hija');
+    const b = escrito(MAMA, 'el jueves en la tarde');
+    m.srv.caen.add(idDe(a));
+    const rs = rafaga(m, [a, b], { desde: 5_000_000 });
+    expect(rs[0]!.porNodo['Decidir turno']![0]!['texto']).toBe('quiero una cita para mi hija');
+    expect(rs[1]!.porNodo['Decidir turno']![0]!['texto']).toBe('quiero una cita para mi hija\nel jueves en la tarde');
+    expect(rs.flatMap((r) => r.mensajes)).toHaveLength(2);
+  });
+  it('CONSULTA CAÍDA en las tres: cada una responde sola con su texto (tres envíos, como antes de la pieza)', () => {
+    const m = conMenuDado();
+    const es = [escrito(MAMA, 'quiero una cita'), escrito(MAMA, 'para mi hija'), escrito(MAMA, 'el jueves')];
+    for (const e of es) m.srv.caen.add(idDe(e));
+    const rs = rafaga(m, es, { desde: 5_000_000 });
+    expect(rs.map((r) => r.porNodo['Decidir turno']![0]!['texto'])).toEqual(['quiero una cita', 'para mi hija', 'el jueves']);
+    expect(rs.flatMap((r) => r.mensajes)).toHaveLength(3);
+  });
+  it('«Decidir turno» lee `textoDelTurno` de «Agrupar ráfaga» (lectura por el nodo correcto): el código del JSON versionado lo contiene', () => {
+    const codigo = String(PRODUCCION.nodes.find((n) => n.name === 'Decidir turno')!.parameters['jsCode']);
+    expect(codigo).toContain("cnPrimero('Agrupar ráfaga')");
+    expect(codigo).toContain('agrupado.textoDelTurno');
+  });
+});
+
+// =================================================================================================
 describe('riesgos residuales FIJADOS (comportamiento declarado en docs/arquitectura/rafagas.md)', () => {
   it('(a) 7 o más textos seguidos a menos de 1,5 s: responde UNO, con los 6 más nuevos; el más viejo queda SIN respuesta (declarado)', () => {
     const m = crear();
