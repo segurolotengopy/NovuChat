@@ -159,13 +159,17 @@ export async function reclamarSalida(
       const estado: unknown = s.get('estadoEnvio');
       // Una plantilla `pendiente` puede caducar abajo: su cupo se devuelve en la misma transacción (lectura antes de escribir).
       const topesDeRetomar = estado === 'pendiente' && tipoDelMensaje === 'plantilla' && s.get('autor') === 'persona' ? await tx.get(refTopesDeRetomar(db, tenantId)) : null;
+      // UNA CAMPAÑA NO SALE a quien pidió la baja, tiene `noContactar` o está bloqueado: se lee la baja en ESTA transacción (lectura
+      // antes de toda escritura) y, si corresponde, el mensaje se cancela abajo como cualquier otro que no sale (`caducado`).
+      const bajaDeCampana = estado === 'pendiente' && esCampana ? await tx.get(db.doc(`tenants/${tenantId}/bajas/${conversacionId}`)) : null;
+      const noSaleAlContacto = esCampana && (bajaDeCampana?.exists === true || conv.get('noContactar') === true || conv.get('bloqueada') === true);
       // LA CADUCIDAD, antes de mirar de qué línea es: un `pendiente` viejo de otra línea tampoco puede
       // quedarse en la cola ocupando lugar. Sin entregarse, sin contar, reintentable.
       if (estado === 'pendiente') {
         const desde = milisegundosDeMomento(s.get('ts'));
         // Una PLANTILLA existe justamente para la ventana CERRADA: para ella, y solo para ella, la caducidad no mira la
         // ventana; los 2 minutos sí aplican.
-        const vencido = desde === null || ahoraMs - desde >= PENDIENTE_MAXIMO_MS
+        const vencido = desde === null || ahoraMs - desde >= PENDIENTE_MAXIMO_MS || noSaleAlContacto
           || !conv.exists || (tipoDelMensaje !== 'plantilla' && !ventanaDeMetaAbierta(conv.get('ultimoEntranteEn'), ahoraMs));
         if (vencido) {
           tx.update(candidato.ref, {

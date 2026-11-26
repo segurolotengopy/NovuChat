@@ -934,6 +934,34 @@ describe('campaña saliente (PR-A): `autor: campana` solo con plantilla, 0 pará
     expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
   });
 
+  it.each([
+    ['una baja del contacto', () => db.doc(`tenants/${A}/bajas/${CONV1}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: Timestamp.now() })],
+    ['`noContactar`', () => db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ noContactar: true })],
+    ['`bloqueada`', () => db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ bloqueada: true })],
+  ])('NIEGA: una campaña a un contacto con %s no se entrega, se cancela (caducado) y no hay timbre', async (_n, preparar) => {
+    const timbre = vi.fn(async () => true);
+    vi.stubGlobal('fetch', timbre);
+    await preparar();
+    await sembrarCampana(CLAVE(1));
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: false, contado: false });
+    expect(timbre).not.toHaveBeenCalled();
+    expect(await metricas()).toEqual({});
+  });
+
+  it('control: la misma campaña a un contacto sin baja ni marcas SÍ se entrega; y otra baja (otro teléfono) no la frena', async () => {
+    await db.doc(`tenants/${A}/bajas/${CONV2}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: Timestamp.now() });
+    await sembrarCampana(CLAVE(1));
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toHaveLength(1);
+  });
+
+  it('Retomar (autor persona) con `noContactar` o con una baja SIGUE saliendo como hoy', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ noContactar: true });
+    await db.doc(`tenants/${A}/bajas/${CONV1}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: Timestamp.now() });
+    await sembrarCampana(CLAVE(1), { autor: 'persona', plantilla: { nombre: 'retomar_consulta', idioma: 'es', parametros: ['Comercio'] } });
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toHaveLength(1);
+  });
+
   it('un rechazo de campaña NO libera a Retomar ni toca los topes; el conteo va en `plantillasCampana`', async () => {
     const ultima = Timestamp.fromMillis(Date.now() - MIN);
     await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ ultimaRetomadaEn: ultima, ultimaRetomadaMensajeId: CLAVE(1) });
