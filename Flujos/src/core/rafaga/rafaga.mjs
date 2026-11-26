@@ -21,6 +21,10 @@
  *    que el servidor agrega a la respuesta de `configuracionFlujo` solo cuando el comercio la apagó), el entrante es de tipo `text`, tiene `mensajeId`
  *    y teléfono, «Reportar mensaje (entrante)» ya corrió, y la `puerta` del flujo (una expresión JS sobre `n`, el item del ancla; por defecto `true`).
  *    A PRUEBA DE LECTURA FALLIDA: si una lectura de otro nodo lanza, la condición da `false` y el turno sigue como hoy.
+ *  - `fuente` (opcional): nombre del nodo del que se leen el id, el teléfono, el número y el texto (IF, consulta y Code usan `$('<fuente>').first().json`). Hace falta cuando el item del
+ *    ancla NO trae esos campos (el ancla viene tras una «Puerta del turno» que solo emite {ruta, texto…} o tras una llamada HTTP): sin `fuente`, se niega a armar. Tiene que ser ASCENDIENTE
+ *    del ancla y correr una vez por mensaje (no se puede verificar sin ejecutar: lo exige la revisión del PR del flujo). La `puerta` puede leer otros nodos con `$('<nodo>')`; se valida que existan y
+ *    sean ascendientes del ancla. «Agrupar ráfaga» emite el item del ancla más `rafaga` y `textoDelTurno`: el flujo lee `textoDelTurno` con `$('Agrupar ráfaga')`.
  *  - UN SOLO ORIGEN: el IF (`$json`), la consulta y el Code leen el id, el teléfono, el número y el texto del MISMO item, el del ancla (`$('¿Esperar ráfaga?')`),
  *    con los nombres de campo de `campos`. Ese item tiene que ser el que arma el normalizador (o uno que conserve sus campos): por eso el normalizador, «Config del
  *    negocio» y «Config base» tienen que ser ASCENDIENTES del ancla (si no, se niega a armar).
@@ -39,7 +43,7 @@
  * `opciones` de `injertarRafaga`:
  *   ancla                 { nodo, salida?: 0, destino }  (obligatoria: el nodo y la salida cuya conexión a `destino` se reemplaza)
  *   normalizador          nodo que emite el item del ancla (por defecto «Interpretar entrada» o «Normalizar entrada»); debe ser ascendiente del ancla
- *   campos                nombres de campo del item del ancla: { tipo, mensajeId, from, phoneNumberId, texto } (por defecto los del normalizador común y `userInput`)
+ *   campos                nombres de campo del item del ancla: { tipo, mensajeId, from, phoneNumberId, texto } (de `fuente` si se da; por defecto los del normalizador común y `userInput`)
  *   config                «Config del negocio»        configBase  «Config base»        traerConfiguracion  «Traer configuración»
  *   puerta                expresión JS booleana sobre `n` (por defecto `true`)
  * Devuelve el mismo flujo con los cuatro nodos y sus conexiones. Lanza si falta algo: no se arma a medias.
@@ -88,11 +92,13 @@ const destinos = (flujo, de, salida) => listaDe(flujo, de, salida).map((x) => x.
 const normalizadorDe = (flujo) => NORMALIZADORES.find((n) => por(flujo, n)) || null;
 
 /** El cuerpo del nodo Code: el archivo canónico, con el nombre de «Config base» del flujo. */
-export const codigoDeLaRafaga = (configBase = 'Config base', campos = CAMPOS_POR_DEFECTO) => {
+export const codigoDeLaRafaga = (configBase = 'Config base', campos = CAMPOS_POR_DEFECTO, fuente = '') => {
+  if (/['\\\n]/.test(String(fuente))) throw new Error('rafaga: el nombre de la fuente no puede llevar comillas, barras ni saltos de línea');
   const c = { ...CAMPOS_POR_DEFECTO, ...campos };
   const sustituido = CODIGO.split(NOMBRE_CONFIG_BASE_EN_CODIGO).join(`$('${configBase}')`)
     .replace("const CAMPO_ID = 'mensajeId';", `const CAMPO_ID = '${c.mensajeId}';`)
-    .replace("const CAMPO_TEXTO = 'userInput';", `const CAMPO_TEXTO = '${c.texto}';`);
+    .replace("const CAMPO_TEXTO = 'userInput';", `const CAMPO_TEXTO = '${c.texto}';`)
+    .replace("const FUENTE = '';", `const FUENTE = '${fuente}';`);
   return sustituido;
 };
 
@@ -122,7 +128,11 @@ export function nodosDeLaRafaga(opciones) {
   const puerta = o.puerta === undefined ? 'true' : String(o.puerta);
   if (/\*\/|\/\*|\n/.test(puerta)) throw new Error('rafaga: la puerta es una expresión de una línea, sin comentarios');
   const [x, y] = o.posicion || [0, 0];
-  const N = `$('${NODO_RAFAGA_SI}').first().json`;
+  const fuente = o.fuente === undefined || o.fuente === null ? '' : String(o.fuente);
+  if (/['\\\n]/.test(fuente)) throw new Error('rafaga: el nombre de la fuente no puede llevar comillas, barras ni saltos de línea');
+  // Con `fuente`, el id, el teléfono, el número y el texto se leen SIEMPRE de ese nodo (que corre una vez por mensaje); sin ella, del item del ancla.
+  const N = fuente ? `$('${fuente}').first().json` : `$('${NODO_RAFAGA_SI}').first().json`;
+  const origenDelIf = fuente ? `$('${fuente}').first().json` : '$json';
   const C = `$('${config}').first().json`;
   const B = `$('${configBase}').first().json`;
   const autenticacion = { authentication: (traer.parameters || {}).authentication, genericAuthType: (traer.parameters || {}).genericAuthType };
@@ -130,7 +140,7 @@ export function nodosDeLaRafaga(opciones) {
   return [
     {
       id: 'rafaga-si', name: NODO_RAFAGA_SI, type: 'n8n-nodes-base.if', typeVersion: 2.2, position: [x, y],
-      parameters: condicion(`={{ (() => { try { const b = ${B}; const c = ${C}; const n = $json; return String(b.rafagaActiva) !== 'false' && c.rafagaApagada !== true && n.${k.tipo} === 'text' && !!n.${k.mensajeId} && !!n.${k.from} && $('${ANCLA_REPORTE}').isExecuted === true && !!(/*puerta*/(${puerta})/*fin*/); } catch (e) { return false; } })() }}`),
+      parameters: condicion(`={{ (() => { try { const b = ${B}; const c = ${C}; const n = ${origenDelIf}; return String(b.rafagaActiva) !== 'false' && c.rafagaApagada !== true && n.${k.tipo} === 'text' && !!n.${k.mensajeId} && !!n.${k.from} && $('${ANCLA_REPORTE}').isExecuted === true && !!(/*puerta*/(${puerta})/*fin*/); } catch (e) { return false; } })() }}`),
       notes: 'Interruptor por negocio: `rafagaActiva` en «Config base» (verdadero si falta) y `rafagaApagada` que el servidor agrega a la configuracion. Solo textos. Pieza comun Flujos/src/core/rafaga/.',
     },
     {
@@ -154,7 +164,7 @@ export function nodosDeLaRafaga(opciones) {
     },
     {
       id: 'rafaga-agrupar', name: NODO_RAFAGA_AGRUPAR, type: 'n8n-nodes-base.code', typeVersion: 2, position: [x + 720, y],
-      parameters: { jsCode: codigoDeLaRafaga(configBase, k) },
+      parameters: { jsCode: codigoDeLaRafaga(configBase, k, fuente) },
       notes: 'Decide: silencio (devuelve nada), solo (igual que hoy) o agrupado (textoDelTurno con los textos unidos). Falla abierto. Modulo comun Flujos/src/core/rafaga/agrupar-rafaga.js.',
     },
   ];
@@ -180,6 +190,36 @@ const reporteCorreAntes = (flujo, ancla, destino) => {
   return !!rep && (ascendientes(flujo, ancla).has(ANCLA_REPORTE) || y(rep) < y(por(flujo, destino)));
 };
 
+const TIPOS_QUE_DEJAN_PASAR = ['n8n-nodes-base.if', 'n8n-nodes-base.switch', 'n8n-nodes-base.filter', 'n8n-nodes-base.wait', 'n8n-nodes-base.noOp'];
+/** ¿Este nodo, con certeza razonable, emite un item SIN los campos del mensaje? (una llamada HTTP, o un Code que no menciona el id ni copia la entrada). */
+function reemplazaElItem(n, campos) {
+  if (n.type === 'n8n-nodes-base.httpRequest') return true;
+  if (n.type === 'n8n-nodes-base.code') {
+    const codigo = String(((n.parameters) || {}).jsCode || '');
+    return !([campos.mensajeId, '...', 'Object.assign'].some((t) => codigo.includes(t)) || /return\s+(\$input\.all\(\)|items)\s*;/.test(codigo));
+  }
+  return false;
+}
+/** Sin `fuente`: el primer nodo que PRODUCE el item del ancla (tras los que lo dejan pasar) en alguna rama, si seguro no trae los campos; si no, null. */
+function productorSinCampos(flujo, ancla, campos) {
+  const padres = new Map();
+  for (const [de, o] of Object.entries(flujo.connections || {})) for (const lista of (o.main || [])) for (const e of (lista || [])) { if (!padres.has(e.node)) padres.set(e.node, new Set()); padres.get(e.node).add(de); }
+  const visto = new Set();
+  const pila = [ancla];
+  while (pila.length) {
+    const nombre = pila.pop();
+    if (visto.has(nombre)) continue;
+    visto.add(nombre);
+    const n = por(flujo, nombre);
+    if (!n) continue;
+    if (TIPOS_QUE_DEJAN_PASAR.includes(n.type)) { for (const p of padres.get(nombre) || []) pila.push(p); continue; }
+    if (reemplazaElItem(n, campos)) return nombre;
+  }
+  return null;
+}
+/** Los nodos que la `puerta` lee con `$('…')`. */
+const nodosDeLaPuerta = (puerta) => [...String(puerta || '').matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]);
+
 /** Los nodos de `nombres` que NO son ascendientes del ancla (ni el ancla): leerlos desde la ráfaga puede fallar o traer datos de otro turno. */
 const noAscendientes = (flujo, ancla, nombres) => {
   const arriba = ascendientes(flujo, ancla);
@@ -198,16 +238,24 @@ export function injertarRafaga(flujo, opciones) {
   if (posicion < 0) throw new Error(`rafaga: «${a.nodo}» (salida ${salida}) no va a «${a.destino}»`);
   if (!por(flujo, ANCLA_REPORTE)) throw new Error(`rafaga: el flujo no tiene «${ANCLA_REPORTE}»`);
   if (!reporteCorreAntes(flujo, a.nodo, a.destino)) throw new Error(`rafaga: «${ANCLA_REPORTE}» tiene que correr ANTES de la ráfaga (ser ascendiente de «${a.nodo}» o ir más arriba que «${a.destino}» en el lienzo)`);
+  const fuente = o.fuente || '';
   const normalizador = o.normalizador || normalizadorDe(flujo);
-  if (!normalizador || !por(flujo, normalizador)) throw new Error('rafaga: el flujo no tiene el nodo que normaliza el entrante («Interpretar entrada» o «Normalizar entrada»)');
+  if (!fuente && (!normalizador || !por(flujo, normalizador))) throw new Error('rafaga: el flujo no tiene el nodo que normaliza el entrante («Interpretar entrada» o «Normalizar entrada»); si el mensaje se lee de otro nodo, pasar `fuente`');
+  if (fuente && !por(flujo, fuente)) throw new Error(`rafaga: el flujo no tiene «${fuente}» (la fuente de los campos del mensaje)`);
   for (const n of [o.config || 'Config del negocio', o.configBase || 'Config base']) if (!por(flujo, n)) throw new Error(`rafaga: el flujo no tiene «${n}»`);
-  const lejanos = noAscendientes(flujo, a.nodo, [normalizador, o.config || 'Config del negocio', o.configBase || 'Config base']);
+  const referidos = nodosDeLaPuerta(o.puerta);
+  for (const n of referidos) if (!por(flujo, n)) throw new Error(`rafaga: la puerta lee «${n}» y el flujo no lo tiene`);
+  const lejanos = noAscendientes(flujo, a.nodo, [fuente || normalizador, ...referidos, o.config || 'Config del negocio', o.configBase || 'Config base']);
   if (lejanos.length) throw new Error(`rafaga: ${lejanos.map((n) => `«${n}»`).join(', ')} tiene que ser ascendiente de «${a.nodo}» (el item del ancla y las configuraciones se leen de ahí)`);
+  if (!fuente) {
+    const roto = productorSinCampos(flujo, a.nodo, camposDe(o));
+    if (roto) throw new Error(`rafaga: el item que sale de «${a.nodo}» viene de «${roto}», que no trae los campos del mensaje (${camposDe(o).mensajeId}, ${camposDe(o).texto}…): la ráfaga quedaría apagada en silencio. Pasar \`fuente\` (el nodo del que se leen, p. ej. «${normalizador || 'Normalizar entrada'}»)`);
+  }
   const traer = por(flujo, o.traerConfiguracion || 'Traer configuración');
   if (!traer) throw new Error(`rafaga: el flujo no tiene «${o.traerConfiguracion || 'Traer configuración'}» (de donde se toman la URL y la credencial)`);
   const d = por(flujo, a.destino);
   const [dx, dy] = d.position || [0, 0];
-  const nodos = nodosDeLaRafaga({ ...o, normalizador, traer, posicion: [dx - 960, dy] });
+  const nodos = nodosDeLaRafaga({ ...o, normalizador, traer, posicion: o.posicion || [dx - 960, dy] });
   flujo.nodes.push(...nodos);
   const original = lista[posicion];
   lista[posicion] = enlace(NODO_RAFAGA_SI);
@@ -263,9 +311,10 @@ export function hallazgosDeLaRafaga(flujo, opciones = {}) {
   const traer = por(flujo, opciones.traerConfiguracion || 'Traer configuración');
   const izquierda = String((((((si.parameters || {}).conditions || {}).conditions || [])[0]) || {}).leftValue || '');
   const puerta = (/\/\*puerta\*\/\((.*)\)\/\*fin\*\//.exec(izquierda) || [])[1];
+  const fuente = opciones.fuente !== undefined ? opciones.fuente : ((/const n = \$\('([^']+)'\)\.first\(\)\.json;/.exec(izquierda) || [])[1] || '');
   let canonicos;
   try {
-    canonicos = nodosDeLaRafaga({ traer, config: opciones.config, configBase: opciones.configBase, campos: opciones.campos, puerta: puerta === undefined ? 'true' : puerta, posicion: si.position });
+    canonicos = nodosDeLaRafaga({ traer, fuente, config: opciones.config, configBase: opciones.configBase, campos: opciones.campos, puerta: puerta === undefined ? 'true' : puerta, posicion: si.position });
   } catch (e) { h.push(String(e.message)); return h; }
   for (const real of [si, esperar, consultar, agrupar]) {
     const canonico = canonicos.find((c) => c.name === real.name);
@@ -289,8 +338,15 @@ export function hallazgosDeLaRafaga(flujo, opciones = {}) {
   for (const n of [NODO_RAFAGA_ESPERAR, NODO_RAFAGA_CONSULTAR, NODO_RAFAGA_AGRUPAR]) if (destinos(flujo, n, 1).length) h.push(`rafaga: «${n}» no tiene una segunda salida`);
   if (padres.length !== 1 || noVa.length !== 1) return h;
 
-  const lejanos = noAscendientes(flujo, padres[0].name, [normalizador, opciones.config || 'Config del negocio', opciones.configBase || 'Config base'].filter(Boolean));
-  if (!normalizador || !por(flujo, normalizador)) h.push('rafaga: el flujo no tiene el nodo que normaliza el entrante');
+  const referidos = nodosDeLaPuerta(puerta);
+  for (const n of referidos) if (!por(flujo, n)) h.push(`rafaga: la puerta lee «${n}» y el flujo no lo tiene`);
+  const lejanos = noAscendientes(flujo, padres[0].name, [fuente || normalizador, ...referidos.filter((n) => por(flujo, n)), opciones.config || 'Config del negocio', opciones.configBase || 'Config base'].filter(Boolean));
+  if (!fuente && (!normalizador || !por(flujo, normalizador))) h.push('rafaga: el flujo no tiene el nodo que normaliza el entrante');
+  if (fuente && !por(flujo, fuente)) h.push(`rafaga: el flujo no tiene «${fuente}» (la fuente de los campos del mensaje)`);
+  if (!fuente) {
+    const roto = productorSinCampos(flujo, padres[0].name, { ...CAMPOS_POR_DEFECTO, ...(opciones.campos || {}) });
+    if (roto) h.push(`rafaga: el item que sale de «${padres[0].name}» viene de «${roto}», que no trae los campos del mensaje: la ráfaga quedaría apagada en silencio (hace falta \`fuente\`)`);
+  }
   if (lejanos.length) h.push(`rafaga: ${lejanos.map((n) => `«${n}»`).join(', ')} tiene que ser ascendiente de «${padres[0].name}»`);
   if (!por(flujo, ANCLA_REPORTE)) h.push(`rafaga: falta «${ANCLA_REPORTE}»`);
   else if (!reporteCorreAntes(flujo, padres[0].name, noVa[0])) h.push(`rafaga: «${ANCLA_REPORTE}» tiene que correr ANTES de la ráfaga`);

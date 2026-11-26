@@ -19,13 +19,15 @@ export interface OpcionesDeLaRafaga {
   configBase?: string;
   traerConfiguracion?: string;
   campos?: Partial<CamposDeLaRafaga>;
+  /** Nodo del que se leen los campos del mensaje (ascendiente del ancla); sin él, se leen del item del ancla. */
+  fuente?: string;
   puerta?: string;
   posicion?: [number, number];
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type FlujoN8n = any;
 
-export function codigoDeLaRafaga(configBase?: string, campos?: Partial<CamposDeLaRafaga>): string;
+export function codigoDeLaRafaga(configBase?: string, campos?: Partial<CamposDeLaRafaga>, fuente?: string): string;
 export function nodosDeLaRafaga(opciones: OpcionesDeLaRafaga & { traer: FlujoN8n }): FlujoN8n[];
 export function injertarRafaga<T>(flujo: T, opciones: OpcionesDeLaRafaga): T;
 export function quitarRafaga<T>(flujo: T): T;

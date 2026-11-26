@@ -48,7 +48,7 @@ admite (el chat de NovuChat tiene «Esperar ráfaga» para la coalescencia de cl
 "rafaga": { "ancla": { "nodo": "¿Atención normal?", "salida": 0, "destino": "…" }, "normalizador": "Normalizar entrada", "puerta": "n.esComprobante !== true" }
 ```
 
-`normalizador` (por defecto «Interpretar entrada» o «Normalizar entrada»), `config`, `configBase`, `traerConfiguracion` y `puerta`
+`fuente` (ver abajo), `posicion`, `normalizador` (por defecto «Interpretar entrada» o «Normalizar entrada»), `config`, `configBase`, `traerConfiguracion` y `puerta`
 (una expresión JS de una línea sobre `n`, el entrante normalizado; por defecto `true`). `ensamblar` quita los cuatro nodos y los
 vuelve a injertar canónicos (idempotente): `verificar` los compara byte a byte, y uno retocado a mano se detecta.
 
@@ -119,6 +119,29 @@ menú, `puerta` falsa) la ejecución anterior ya calló por él y nadie la conte
    documentado y como parte de la revisión del PR de cada flujo.
 
 El nodo solo entrega `textoDelTurno`; que cada flujo lo use en lugar de `userInput` lo cablea el PR de cada flujo.
+
+### `fuente`: cuando el ancla no trae los campos del mensaje
+
+Si el ancla viene tras un nodo que emite otra cosa (una «Puerta del turno» que solo da `{ruta, texto, responder…}`, o una llamada HTTP como
+«Reportar mensaje (entrante)»), el item del ancla no tiene `tipo`, `mensajeId`, `from` ni `phoneNumberId`, y el IF daría siempre «no»: la ráfaga
+quedaría **apagada en silencio**. Para eso existe la opción `fuente` (nombre del nodo, p. ej. «Normalizar entrada»): el IF, la consulta y el Code
+leen esos campos de `$('<fuente>').first().json` (los nombres de campo, de `campos`; Walisuma emite `texto`, no `userInput`). `Agrupar ráfaga`
+sigue emitiendo el item **del ancla** más `rafaga` y `textoDelTurno`; el flujo lee `textoDelTurno` con `$('Agrupar ráfaga')`.
+
+- La `fuente` tiene que ser **ascendiente del ancla** y correr una vez por mensaje (esto último no se puede verificar sin ejecutar: lo revisa el PR del
+  flujo). La `puerta` puede leer otros nodos (`$('Puerta del turno').first().json.ruta === 'sigue'`); el injerto valida que existan y sean ascendientes.
+- **No falla en silencio:** sin `fuente`, `injertarRafaga` (y la guardia sobre un flujo armado) se niega si, subiendo desde el ancla por nodos que dejan
+  pasar el item (IF, Switch, Filter, Wait, NoOp), el primero que lo produce es una llamada HTTP o un Code que ni menciona el id, ni copia la entrada
+  (`...`, `Object.assign`, `return $input.all()`). Con cualquier otro nodo no se objeta (se evita el falso error): ahí manda la revisión del PR.
+- Las guardias infieren la `fuente` del propio IF; los demás nombres no predeterminados se pasan por opciones.
+
+### Posiciones en el lienzo y convivencia con el indicador
+
+`ensamblar` quita la ráfaga **antes** de tocar el indicador y la injerta al final: el indicador calcula su posición desde el nodo que sigue al ancla,
+y con la ráfaga puesta ese nodo sería «¿Esperar ráfaga?». Así un manifiesto con `indicador` y `rafaga` es idempotente (lo prueba `ensamblador.test.ts`).
+La ráfaga se dibuja en la altura del destino y el indicador entre el reporte y el destino: no se pisan en los flujos de la lista; si un flujo los
+amontona, `injertarRafaga` acepta `posicion: [x, y]` (solo cambia el dibujo; el orden de ejecución lo da la altura relativa al reporte y al indicador,
+así que la ráfaga nunca debe subir por encima del indicador).
 
 ### De dónde lee cada nodo
 
