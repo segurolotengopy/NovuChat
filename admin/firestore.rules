@@ -2073,6 +2073,13 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // /bajas/{wa_tel} — quien tocó «No, gracias» en la campaña saliente (Core, PR-A, 26/11/2026): { canal, origen, campanaId, desde }.
+      // La escribe SOLO la ingesta (SDK Admin), en la misma transacción que el mensaje, y la lee solo el servidor al armar la lista
+      // de una campaña. Ni el administrador, ni el operador, ni el token de ingesta, ni otro comercio la leen ni la escriben.
+      match /bajas/{id} {
+        allow read, write: if false;
+      }
+
       // /mediosEnviados/{objeto} — el metadato de los ADJUNTOS que una persona envió desde la consola (Core, «Envío de
       // medios por consola», B2; Andres 10/11/2026: 30 días). Lo escribe SOLO `enviarAdjuntoComoPersona` (SDK Admin), en la
       // misma transacción que el mensaje; lo leen SOLO `verMedio` y `leerAdjuntoPersona`, también con el SDK Admin. Nadie del
@@ -2107,7 +2114,7 @@ service cloud.firestore {
                       && !request.resource.data.keys().hasAny(['turno', 'envioPersona',
                                                                'ultimoSalientePersonaEn', 'phoneNumberId', 'ultimaRetomadaEn', 'ultimaRetomadaMensajeId',
                                                                'rescate', 'riesgoEn', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn',
-                                                               'ultimoPedido']);
+                                                               'ultimoPedido', 'campanaRespuesta']);
         allow delete: if false;
 
         // Dos ramas de actualización disjuntas:
@@ -2125,7 +2132,7 @@ service cloud.firestore {
                           && !request.resource.data.diff(resource.data).affectedKeys()
                                 .hasAny(['turno', 'envioPersona', 'ultimoSalientePersonaEn', 'phoneNumberId', 'ultimaRetomadaEn', 'ultimaRetomadaMensajeId',
                                          'rescate', 'riesgoEn', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn',
-                                         'ultimoPedido']))
+                                         'ultimoPedido', 'campanaRespuesta']))
                       || (esPersonaDelNegocio(tenantId)
                           && tenantOperativo(tenantId)
                           // `noContactar` es la lista de no molestar (bloque 4): una
@@ -2248,7 +2255,12 @@ service cloud.firestore {
                  // conversación que ya lo tiene no falle la validación; las ramas create/update de arriba le
                  // PROHÍBEN al token de ingesta crearlo o cambiarlo, y la persona del negocio no lo tiene en su
                  // `soloCampos`: nadie lo falsifica desde un SDK cliente.
-                 , 'ultimoPedido'])
+                 , 'ultimoPedido'
+                 // LA RESPUESTA A LA CAMPAÑA SALIENTE (PR-A, 26/11/2026): `campanaRespuesta` = { campanaId, respuesta: si|no, en }
+                 // la escribe SOLO la ingesta (SDK Admin, evento `campana_respuesta`) en la misma transacción que crea la baja. Se tolera
+                 // aquí para que una conversación que ya lo tiene no falle la validación; las ramas create/update de arriba le PROHÍBEN
+                 // al token de ingesta crearlo o cambiarlo, y la persona del negocio no lo tiene en su `soloCampos`.
+                 , 'campanaRespuesta'])
             && (!d.keys().hasAny(['solicitud'])
                 || (d.solicitud is map
                     // `horarios` es la etapa del bloque 4: el asistente ofreció
