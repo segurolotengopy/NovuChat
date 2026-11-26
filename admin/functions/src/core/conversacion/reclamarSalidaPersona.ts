@@ -54,8 +54,8 @@ import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada, type Ruta } from '../seguridad/firma.js';
 import { ID_COMERCIO } from './acceso.js';
 import {
-  CODIGO_CADUCADO, ENVIANDO_MAXIMO_MS, MAXIMO_POR_RECLAMO, PENDIENTE_MAXIMO_MS, IDIOMA_DE_PLANTILLA, NOMBRE_DE_PLANTILLA, PARAMETROS_MAXIMOS, canalDeSalidaDe, claveReleDe, liberarRetomada, parametroDePlantillaValido, refTopesDeRetomar,
-  sumarMensajePersona, sumarPlantillaPersona, type CanalDeSalida,
+  CODIGO_CADUCADO, ENVIANDO_MAXIMO_MS, MAXIMO_POR_RECLAMO, PENDIENTE_MAXIMO_MS, IDIOMA_DE_PLANTILLA, NOMBRE_DE_PLANTILLA, PARAMETROS_MAXIMOS, botonesDePlantillaValidos, canalDeSalidaDe, esAutorDePlantilla, type BotonDePlantilla, claveReleDe, liberarRetomada, parametroDePlantillaValido, refTopesDeRetomar,
+  sumarMensajePersona, sumarPlantillaCampana, sumarPlantillaPersona, type CanalDeSalida,
 } from './salidaPersona.js';
 import { milisegundosDeMomento, ventanaDeMetaAbierta } from './turno.js';
 
@@ -87,7 +87,7 @@ export interface MensajeDeAdjuntoReclamado extends BaseReclamada {
 export interface MensajeDePlantillaReclamado extends BaseReclamada {
   texto: '';
   tipo: 'plantilla';
-  plantilla: { nombre: string; idioma: string; parametros: string[] };
+  plantilla: { nombre: string; idioma: string; parametros: string[]; botones?: BotonDePlantilla[] };
 }
 export type MensajeReclamado = MensajeDeTextoReclamado | MensajeDeAdjuntoReclamado | MensajeDePlantillaReclamado;
 
@@ -153,10 +153,12 @@ export async function reclamarSalida(
       const objeto: unknown = esAdjunto ? s.get('medio.objeto') : undefined;
       const meta = esAdjunto && typeof objeto === 'string' && objeto.length > 0
         ? await tx.get(db.doc(`tenants/${tenantId}/mediosEnviados/${objeto}`)) : null;
-      if (!s.exists || s.get('tenantId') !== tenantId || s.get('direccion') !== 'saliente' || s.get('autor') !== 'persona') return 'nada';
+      if (!s.exists || s.get('tenantId') !== tenantId || s.get('direccion') !== 'saliente'
+          || !esAutorDePlantilla(s.get('autor')) || (s.get('autor') === 'campana' && tipoDelMensaje !== 'plantilla')) return 'nada';
+      const esCampana = s.get('autor') === 'campana';
       const estado: unknown = s.get('estadoEnvio');
       // Una plantilla `pendiente` puede caducar abajo: su cupo se devuelve en la misma transacción (lectura antes de escribir).
-      const topesDeRetomar = estado === 'pendiente' && tipoDelMensaje === 'plantilla' ? await tx.get(refTopesDeRetomar(db, tenantId)) : null;
+      const topesDeRetomar = estado === 'pendiente' && tipoDelMensaje === 'plantilla' && s.get('autor') === 'persona' ? await tx.get(refTopesDeRetomar(db, tenantId)) : null;
       // LA CADUCIDAD, antes de mirar de qué línea es: un `pendiente` viejo de otra línea tampoco puede
       // quedarse en la cola ocupando lugar. Sin entregarse, sin contar, reintentable.
       if (estado === 'pendiente') {
@@ -170,7 +172,8 @@ export async function reclamarSalida(
             estadoEnvio: 'rechazado', codigoEnvio: CODIGO_CADUCADO, reintentable: tipoDelMensaje !== 'plantilla',
             confirmadoEn: Timestamp.fromMillis(ahoraMs), contado: false,
           });
-          if (topesDeRetomar !== null) liberarRetomada(tx, s, conv, topesDeRetomar);
+          // Solo Retomar reserva cupo y bloquea la conversación; la campaña no libera nada (no `topesDeRetomar`).
+          if (topesDeRetomar !== null && !esCampana) liberarRetomada(tx, s, conv, topesDeRetomar);
           return 'caducado';
         }
       }
@@ -184,11 +187,15 @@ export async function reclamarSalida(
           const nombre: unknown = s.get('plantilla.nombre');
           const idioma: unknown = s.get('plantilla.idioma');
           const parametros: unknown = s.get('plantilla.parametros');
+          const botones: unknown = s.get('plantilla.botones');
           // La forma se vuelve a comprobar acá: lo guardado no se fía. Si no es válida, no sale (caduca).
+          // Retomar (`persona`): 1 a 10 parámetros y sin botones. Campaña: 0 a 10 parámetros y botones SOLO de ella.
+          const minimo = esCampana ? 0 : 1;
           if (typeof nombre !== 'string' || !NOMBRE_DE_PLANTILLA.test(nombre) || typeof idioma !== 'string' || !IDIOMA_DE_PLANTILLA.test(idioma)
-              || !Array.isArray(parametros) || parametros.length < 1 || parametros.length > PARAMETROS_MAXIMOS
+              || !Array.isArray(parametros) || parametros.length < minimo || parametros.length > PARAMETROS_MAXIMOS
               || !parametros.every(parametroDePlantillaValido)) return 'nada';
-          plantillaDeLaVuelta = { nombre, idioma, parametros: [...parametros] as string[] };
+          if (botones !== undefined && (!esCampana || !botonesDePlantillaValidos(botones))) return 'nada';
+          plantillaDeLaVuelta = { nombre, idioma, parametros: [...parametros] as string[], ...(botones !== undefined ? { botones: botones as BotonDePlantilla[] } : {}) };
         } else if (esAdjunto) {
           // Sin la cabecera del flujo nuevo, o con un adjunto ya en este lote, NO se entrega: queda `pendiente` y caduca
           // como cualquier pendiente (rechazado, `caducado`, reintentable) si nadie lo reclama a tiempo.
@@ -218,7 +225,7 @@ export async function reclamarSalida(
         // Sin marca legible también se da por incierto: nadie lo va a confirmar.
         if (desde === null || ahoraMs - desde >= ENVIANDO_MAXIMO_MS) {
           tx.update(candidato.ref, { estadoEnvio: 'incierto', confirmadoEn: Timestamp.fromMillis(ahoraMs), contado: true });
-          (tipoDelMensaje === 'plantilla' ? sumarPlantillaPersona : sumarMensajePersona)(tx, db, tenantId, ahoraMs, 1);
+          (tipoDelMensaje !== 'plantilla' ? sumarMensajePersona : esCampana ? sumarPlantillaCampana : sumarPlantillaPersona)(tx, db, tenantId, ahoraMs, 1);
           return 'incierto';
         }
       }
