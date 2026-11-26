@@ -1580,6 +1580,9 @@ jobs:
           REINTENTABLE="$RUNNER_TEMP/compuerta-reintentable"
           : > "$ACUMULADO"
           for intento in 1 2 3; do
+            # Antes de CADA intento: si el tope del paso lo corta entre «release complete» y la compuerta, la salida no queda
+            # con el valor del intento anterior («ninguno»), que saltaría el rollback (revisión de #1122, 25/11/2026).
+            echo "hosting_publicado=desconocido" >> "$GITHUB_OUTPUT"
             set +e
             firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
               --message "staging ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})" 2>&1 | tee "$REGISTRO"
@@ -1839,6 +1842,7 @@ jobs:
       despliegue_completo: ${{ steps.desplegar.outputs.completo }}
       hosting_publicado: ${{ steps.desplegar.outputs.hosting_publicado }}
       version_servida: ${{ steps.version.outputs.ok }}
+      rollback: ${{ steps.rollback.outputs.rollback }}
     environment:
       name: production
       url: ${{ vars.PROD_URL }}
@@ -1965,6 +1969,9 @@ jobs:
         # pruebas-workflows/canal_previa.py (del estándar). Si falla en el primer
         # uso real, el efecto es únicamente el ::warning:: y el canal conserva su
         # plazo.
+        # `previa_ok=true` SOLO si el clon de ESTA corrida salió bien: sin él, el rollback no clona una «previa» vieja (de
+        # hasta 30 días) sobre live; falla y pide el rollback manual (revisión de seguridad de #1132, 25/11/2026).
+        id: copia_previa
         continue-on-error: true
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_PROD }}
@@ -1978,6 +1985,7 @@ jobs:
             echo "::warning::No se pudo guardar la copia para rollback (clone $SITIO:live → previa). Si el sitio '$SITIO' todavía no existe, créelo: firebase hosting:sites:create $SITIO --project $PROYECTO"
             exit 0
           fi
+          echo "previa_ok=true" >> "$GITHUB_OUTPUT"
           # Renueva el plazo del canal: `--expires 30d` solo rige al CREARLO y
           # `hosting:clone` no lo extiende. Sin esto "previa" caduca 30 días
           # después de crearse aunque se clone en cada despliegue. Un fallo
@@ -2206,6 +2214,9 @@ jobs:
           REINTENTABLE="$RUNNER_TEMP/compuerta-reintentable"
           : > "$ACUMULADO"
           for intento in 1 2 3; do
+            # Antes de CADA intento: si el tope del paso lo corta entre «release complete» y la compuerta, la salida no queda
+            # con el valor del intento anterior («ninguno»), que saltaría el rollback (revisión de #1122, 25/11/2026).
+            echo "hosting_publicado=desconocido" >> "$GITHUB_OUTPUT"
             set +e
             firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
               --message "producción ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})" 2>&1 | tee "$REGISTRO"
@@ -2285,6 +2296,7 @@ jobs:
           ./scripts/humo-sitio-publico.sh
 
       - name: Rollback de hosting (clonar canal "previa" sobre live)
+        id: rollback
         # Sin !cancelled() se saltaría tras un paso fallido. Solo si Hosting se
         # publicó (todo o en parte): si no se publicó, live ya es la versión
         # anterior, y clonar «previa» (que puede ser vieja si la copia de esta
@@ -2293,8 +2305,16 @@ jobs:
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_PROD }}
           SITIO: ${{ vars.FIREBASE_SITE_ID || vars.GCP_PROJECT_ID_PROD }}
+          PREVIA_OK: ${{ steps.copia_previa.outputs.previa_ok }}
         run: |
           set -euo pipefail
+          # Sin una copia de ESTA corrida, «previa» puede ser de hasta 30 días atrás: clonarla dejaría live MÁS viejo que lo
+          # que estaba en línea. Se falla fuerte y se pide el rollback manual.
+          if [[ "${PREVIA_OK:-}" != "true" ]]; then
+            echo "rollback=no_ejecutado" >> "$GITHUB_OUTPUT"
+            echo "::error::Rollback automático NO ejecutado: no hay copia a 'previa' de esta corrida (falló o no corrió), y clonar una 'previa' vieja dejaría live más atrasado que antes. Rollback manual: consola Firebase → Hosting → Historial → Revertir a la versión anterior a esta corrida (ver 01-seguridad/06-rollback-e-incidentes.md)."
+            exit 1
+          fi
           npm i -g "firebase-tools@${FIREBASE_TOOLS_VERSION}"
           # Único procedimiento de rollback del estándar (D7): clonar el canal
           # "previa" guardado antes del deploy sobre live. Si el canal no
@@ -2340,6 +2360,7 @@ jobs:
         env:
           RESULTADO: ${{ needs.desplegar-produccion.result }}
           SALUD_OK: ${{ needs.desplegar-produccion.outputs.salud_ok }}
+          ROLLBACK: ${{ needs.desplegar-produccion.outputs.rollback }}
           # La compuerta del registro y la versión servida (16/11/2026): un
           # despliegue a medias tiene su propio texto, no «falló un paso posterior».
           COMPLETO: ${{ needs.desplegar-produccion.outputs.despliegue_completo }}
@@ -2354,11 +2375,15 @@ jobs:
               : process.env.SALUD_OK === 'false'
                 ? process.env.HOSTING === 'ninguno'
                   ? 'Health check fallido tras un despliegue a medias; Hosting no se publicó, sin rollback'
-                  : 'Health check fallido; rollback intentado en desplegar-produccion'
+                  : process.env.ROLLBACK === 'no_ejecutado'
+                    ? 'Health check fallido; rollback NO ejecutado (sin copia previa de esta corrida): revertir Hosting a mano'
+                    : 'Health check fallido; rollback intentado en desplegar-produccion'
                 : process.env.COMPLETO === 'false' && process.env.HOSTING === 'ninguno'
                 ? 'Despliegue a medias: firebase deploy no terminó; Hosting no se publicó (live sigue con la versión anterior)'
                 : process.env.COMPLETO === 'false' && process.env.HOSTING === 'parcial'
                 ? 'Despliegue a medias: solo uno de los sitios de Hosting se publicó; revise desplegar-produccion'
+                : process.env.HOSTING === 'desconocido'
+                ? 'Despliegue cortado durante un intento: estado de Hosting desconocido; revise desplegar-produccion'
                 : process.env.COMPLETO === 'false' && process.env.HOSTING === 'todos'
                 ? 'Despliegue a medias: Hosting publicado, pero firebase deploy no terminó bien; sin rollback'
                 : process.env.COMPLETO === 'false'
