@@ -414,6 +414,8 @@ const deLaConsola = soloLlenos({
   estiloEmojis: util((r.voz ?? {}).emojis),
   nombreAsistente: nombreDelAsistente((r.voz ?? {}).nombreAsistente),
   nivelEmojis: NIVELES_EMOJIS.includes((r.voz ?? {}).nivelEmojis) ? r.voz.nivelEmojis : undefined,
+  // INTERRUPTOR DE LA RAFAGA (25/11/2026): el servidor agrega `rafagaApagada: true` SOLO si el comercio la apago; la lee «¿Esperar ráfaga?».
+  rafagaApagada: r.rafagaApagada === true ? true : undefined,
   // LA DIRECCION Y LO QUE FALTA. Se agrego el 2026-09-07 despues de ver al
   // asistente inventarse una: «Nuestra tienda esta ubicada en la zona central
   // de La Paz», con el campo vacio en el panel. Es EL MISMO incidente del 28 de

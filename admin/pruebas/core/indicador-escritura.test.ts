@@ -262,7 +262,12 @@ describe('indicador de escritura: injertar y quitar', () => {
       const ancla = [...NODOS_DEL_INDICADOR].map((n) => Object.entries(f.connections).find(([, c]) => (c as Nodo).main?.some((l: Nodo[]) => l.some((e) => e.node === n)))![0])[0]!;
       const salida = (f.connections[ancla] as Nodo).main.findIndex((l: Nodo[]) => l.some((e) => e.node === NODO_INDICADOR_ACTIVO));
       // El orden de `nodes` y de las claves de `connections` no es parte del contrato (los constructores injertan en otro momento): se compara canónico.
-      const canonico = (x: Flujo): string => JSON.stringify({ n: [...x.nodes].sort((a: Nodo, b: Nodo) => a.name.localeCompare(b.name)), c: Object.fromEntries(Object.entries(x.connections).sort(([a], [b]) => a.localeCompare(b))) });
+      // El orden de los DESTINOS de una misma salida tampoco lo es: con `executionOrder: v1` n8n ordena las ramas por posición del lienzo, no por el orden de la lista
+      // (un flujo con la ráfaga trae, tras quitar e injertar el indicador, «¿Esperar ráfaga?» antes que el indicador en la misma salida del ancla).
+      const ordenado = (c: Nodo): Nodo => Object.fromEntries(Object.entries(c).map(([tipo, listas]) => [tipo, (listas as Nodo[][]).map((l) => [...l].sort((a, b) => a.node.localeCompare(b.node) || a.index - b.index))]));
+      // La X de los dos nodos del indicador se calcula respecto del destino del ancla: si el destino es «¿Esperar ráfaga?» queda más a la izquierda que con el destino original (la Y, que ordena las ramas, es la misma).
+      const sinX = (n: Nodo): Nodo => (NODOS_DEL_INDICADOR as string[]).includes(n.name) ? { ...n, position: [0, n.position?.[1]] } : n;
+      const canonico = (x: Flujo): string => JSON.stringify({ n: [...x.nodes].map(sinX).sort((a: Nodo, b: Nodo) => a.name.localeCompare(b.name)), c: Object.fromEntries(Object.entries(x.connections).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, ordenado(v)])) });
       const antes = canonico(f);
       quitarIndicador(f);
       expect(JSON.stringify(f), ruta).not.toContain('Indicador de escritura');

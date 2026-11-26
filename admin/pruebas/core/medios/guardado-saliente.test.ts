@@ -343,7 +343,7 @@ describe('cada flujo versionado que envía una imagen del asistente lleva la ram
     expect(total('clientes/walisuma/walisuma.json')).toBe(71);
     expect(total('clientes/casa-bermejo/casa-bermejo.json')).toBe(63);
     expect(total('clientes/demo-a/demo-a-agendamiento.json')).toBe(82);
-    expect(total('demo-b-venta-cobro.json')).toBe(93);
+    expect(total('demo-b-venta-cobro.json')).toBe(97); // 93 + 4 de la ráfaga de textos (+4 autorizado por Andres el 25/11/2026)
   });
   it.each(SIN_RAMA)('%s NO la lleva (bloque 2b o imagen de encabezado: ver el plan)', (archivo) => {
     expect(copia(leer(archivo)).nodes.filter((n: any) => NODOS_DEL_GUARDADO_SALIENTE.includes(n.name))).toEqual([]);
