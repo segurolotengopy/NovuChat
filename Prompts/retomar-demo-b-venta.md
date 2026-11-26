@@ -29,7 +29,7 @@ después (PR #177 a #181) y dejaron el Demo B al día.
 
 ### 2.1 El nodo que debía olvidar un turno BORRA LA MEMORIA ENTERA
 
-**Dónde:** `Olvidar turno fallido`, en `Flujos/demo-a-agendamiento.json`,
+**Dónde:** `Olvidar turno fallido`, en `Flujos/clientes/demo-a/demo-a-agendamiento.json`,
 `platinum-agendamiento.json` y `bellido-agendamiento.json`.
 
 **Qué pasa:** declara `"deleteMode": "lastMessages"`, y en n8n 2.36.5 los únicos

@@ -97,7 +97,7 @@ const COPIA_DECLARADA = 'Ya confirma la baja con una copia propia de la expresi√
 export const EXCEPCIONES_DE_BAJA: Record<string, ExcepcionDeBaja> = {
   'captacion-minima/captacion-minima.novuchat.json': { hechos: ['reporte', 'confirma'], motivo: CONGELADO_CAPTACION, dueno: 'Principal', vence: VENCE },
   'bellido-agendamiento.json': { hechos: ['reporte', 'confirma'], motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
-  'demo-a-agendamiento.json': { hechos: ['reporte', 'confirma'], motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
+  'demo-a/demo-a-agendamiento.json': { hechos: ['reporte', 'confirma'], motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
   'demo-b-venta-cobro.json': { hechos: ['reporte', 'confirma'], motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
   'novuchat-onboarding.json': { hechos: ['reporte', 'confirma'], motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
   'rroca-antonio/rroca-antonio.json': { hechos: ['confirma'], motivo: COPIA_DECLARADA, dueno: 'Rearquitectura (etapa 1)', vence: VENCE },

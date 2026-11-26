@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import vm from 'node:vm';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RAIZ_FLUJOS } from '../../scripts/ensamblar-flujo.mjs';
 import { correr } from '../lib/flujo';
@@ -532,7 +532,10 @@ describe('rafaga: referencias a nodos que n8n puede precargar (`problemasDeRefer
 });
 
 describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES (lista blanca)', () => {
-  const real = (ruta: string): Flujo => JSON.parse(readFileSync(join(RAIZ_FLUJOS, ruta), 'utf8'));
+  /** El JSON real SIN la ráfaga (`quitarRafaga` es idempotente): vale lo mismo antes y después de que cada flujo adopte la pieza. */
+  const real = (ruta: string): Flujo => quitarRafaga(JSON.parse(readFileSync(join(RAIZ_FLUJOS, ruta), 'utf8')));
+  /** Demo A vive en `clientes/demo-a/` desde #1114; se admite también la ubicación antigua. */
+  const demoA = ['clientes/demo-a/demo-a-agendamiento.json', 'demo-a-agendamiento.json'].find((r) => existsSync(join(RAIZ_FLUJOS, r))) as string;
   const REALES: [string, { nodo: string; salida: number; destino: string }][] = [
     ['clientes/walisuma/walisuma.json', { nodo: '¿Bajar medio?', salida: 1, destino: 'Decidir turno' }], // tras «Puerta del turno»
     ['clientes/agenda-minima/agenda-minima.v0.json', { nodo: '¿Atención normal?', salida: 0, destino: '¿Bajar medio?' }], // Bellido
@@ -547,8 +550,8 @@ describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES 
     expect(hallazgosDeLaRafaga(f, { exigir: true })).toEqual([]);
     expect(nodo(f, NODO_RAFAGA_SI).parameters.conditions.conditions[0].leftValue).toContain("const n = $('Normalizar entrada').first().json;");
   });
-  it.each([['demo-a-agendamiento.json'], ['demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF, así que arma sin `fuente`', (ruta) => {
-    const f = injertarRafaga(real(ruta), { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Es un comprobante?' } });
+  it.each([['demo-a'], ['demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF, así que arma sin `fuente`', (ruta) => {
+    const f = injertarRafaga(real(ruta === 'demo-a' ? demoA : ruta), { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Es un comprobante?' } });
     expect(hallazgosDeLaRafaga(f)).toEqual([]);
   });
   it('sin fuente, la guardia sobre un flujo ya armado también lo dice (`hallazgosDeLaRafaga`)', () => {

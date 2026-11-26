@@ -25,7 +25,7 @@ import { validarRafaga, leerRafaga, tomarCupoDeRafaga } from './core/conversacio
 // H1-6: los campos derivados de Conversaciones (búsqueda y no leídos). Son más
 // campos en los MISMOS create/set de la transacción: cero lecturas ni escrituras
 // nuevas y cero mensajes. Los escribe el Core para todos los comercios, inertes.
-import { decidirPausa, persistirVencimientoDeIngesta, conPausa, estaBloqueada } from './core/conversacion/pausa.js';
+import { decidirPausa, persistirVencimientoDeIngesta, conPausa, estaBloqueada, camposDeRenovacion } from './core/conversacion/pausa.js';
 import { camposDeConversacionPorMensaje, camposDeMensajeIndexado } from './core/conversacion/derivados.js';
 import {
   HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
@@ -1103,6 +1103,9 @@ export const ingesta = onRequest(
         ? decidirPausa(conversacion.get('turno'), conversacion.get('ultimoEntranteEn'), ahoraMs) : null;
       if (pausa) persistirVencimientoDeIngesta(tx, db, tenantId, refConversacion, idConversacion, pausa, ahoraMs);
       const pausadaPorPersona = pausa?.pausada === true;
+      // D-R1 (`pausa.ts`): el primer entrante tras Retomar renueva `turno.actividadPersonaEn`. Se suma a la
+      // escritura de la conversación de la rama de corte y de la normal (la del contacto bloqueado no decide pausa).
+      const renovacionDeRetomada = camposDeRenovacion(pausa, ahoraMs);
 
       // EL MENSAJE SE GUARDA SIEMPRE, también cortado: el comercio tiene que
       // ver QUIÉN le escribió mientras el asistente no atendía.
@@ -1205,6 +1208,7 @@ export const ingesta = onRequest(
           // Aunque el corte no cuente nada para la facturación, la persona del
           // negocio sí tiene que ver que le escribieron (no leídos y búsqueda).
           ...derivadosDeConversacion(),
+          ...renovacionDeRetomada,
         }, { merge: true });
         escribirMensaje();
         return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad, pausadaPorPersona, pedidos: null, bloqueadoPorContacto: false,
@@ -1328,6 +1332,7 @@ export const ingesta = onRequest(
         // `derivadosDeConversacion` arriba: la dirección ya viene cerrada por
         // `normalizar`, el reloj no retrocede y un nombre sin palabras borra el viejo.
         ...derivadosDeConversacion(),
+        ...renovacionDeRetomada,
       }, { merge: true });
 
       escribirMensaje();
