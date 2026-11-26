@@ -547,8 +547,9 @@ describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES 
     expect(hallazgosDeLaRafaga(f, { exigir: true })).toEqual([]);
     expect(nodo(f, NODO_RAFAGA_SI).parameters.conditions.conditions[0].leftValue).toContain("const n = $('Normalizar entrada').first().json;");
   });
-  it.each([['demo-a-agendamiento.json'], ['demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF, así que arma sin `fuente`', (ruta) => {
-    const f = injertarRafaga(real(ruta), { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Es un comprobante?' } });
+  // Se quita la pieza antes (si el flujo ya la adoptó, como el Demo A): la prueba es del armado desde cero.
+  it.each([['clientes/demo-a/demo-a-agendamiento.json'], ['demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF, así que arma sin `fuente`', (ruta) => {
+    const f = injertarRafaga(quitarRafaga(real(ruta)), { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Es un comprobante?' } });
     expect(hallazgosDeLaRafaga(f)).toEqual([]);
   });
   it('sin fuente, la guardia sobre un flujo ya armado también lo dice (`hallazgosDeLaRafaga`)', () => {
