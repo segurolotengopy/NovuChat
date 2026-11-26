@@ -419,7 +419,7 @@ export function validarDatos(datos, archivo) {
     if (cs === undefined || cs === null || typeof cs !== 'object' || Array.isArray(cs)) e('datos.campanaSaliente', 'falta: { botonSi, botonNo } (los textos exactos de los dos botones de la plantilla)');
     else {
       for (const c of ['botonSi', 'botonNo']) if (typeof cs[c] !== 'string' || cs[c].trim() === '' || cs[c].length > 25 || CONTROLES.test(cs[c]) || INVISIBLES.test(cs[c])) e(`datos.campanaSaliente.${c}`, 'tiene que ser un texto de una línea de 1 a 25 caracteres (el título de un botón de respuesta rápida)');
-      if (cs.botonSi === cs.botonNo) e('datos.campanaSaliente', 'los dos botones no pueden tener el mismo texto');
+      if (typeof cs.botonSi === 'string' && typeof cs.botonNo === 'string' && cs.botonSi.normalize('NFC') === cs.botonNo.normalize('NFC')) e('datos.campanaSaliente', 'los dos botones no pueden tener el mismo texto');
       for (const c of Object.keys(cs)) if (!['botonSi', 'botonNo'].includes(c)) e(`datos.campanaSaliente.${c}`, 'no es un campo conocido');
     }
     if (typeof tx.botonTraspaso === 'string' && tx.botonTraspaso.length > 20) e('datos.textos.botonTraspaso', 'pasa de 20 caracteres (el título de un botón de enlace)');
