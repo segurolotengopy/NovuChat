@@ -260,7 +260,10 @@ del proyecto de producción. Lo que hay:
     completo y limpio (falta algún «Successful», «Deploy complete!» o un sitio de Hosting) **o si hubo alguna Function CREADA** (un create
     sin invoker deja una Function no invocable); si todo está completo y fueron solo actualizaciones (conservan el IAM que tenían), pasa
     con un `::warning::` que cuenta los avisos y nombra las Functions candidatas (las confirmadas junto a los avisos: el aviso no dice
-    cuál). **Cómo verificar el invoker después:** para las Functions de la lista cerrada, `./scripts/nube-visor.sh --servicio <s> --entorno
+    cuál). **Límites declarados de la relajación:** (a) una actualización sin servicio asociado conserva el IAM ANTERIOR: si el código
+    pidió CAMBIAR un invoker (por ejemplo quitar `allUsers`), ese cambio no se aplicó y la compuerta lo deja pasar con el warning; por eso
+    el warning manda a verificar; (b) los avisos se cuentan sobre el acumulado de los intentos; (c) si la versión de firebase-tools no es la
+    verificada por la compuerta, el aviso vuelve a ser fatal (el texto de «creating» podría haber cambiado). **Cómo verificar el invoker después:** para las Functions de la lista cerrada, `./scripts/nube-visor.sh --servicio <s> --entorno
     <staging|produccion>` (seco: lee la política IAM y dice «ya concedido: allUsers tiene roles/run.invoker»; sin `--aplicar` no escribe;
     si falta, con `--aplicar --confirmo <entorno>` lo concede y prueba que el endpoint conteste nuestro código y no el 403 de Google); para
     el catálogo, `nube-catalogo.sh`. Una Function que no esté en esos scripts se mira con

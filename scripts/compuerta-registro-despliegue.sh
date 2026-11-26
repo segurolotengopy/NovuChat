@@ -187,10 +187,14 @@ fi
 #     deja una Function no invocable);
 #   · NO fatal si todo lo demás está completo y TODO fueron actualizaciones: una actualización conserva el IAM que ya tenía. Se
 #     avisa con ::warning:: (cuántos avisos y las Functions candidatas) y se manda a verificar el invoker (DESPLIEGUE-FIREBASE.md).
-avisos_servicio="$(grep -Fc 'This deployment is in an unexpected state' <<< "$limpio" || true)"
+avisos_servicio="$(grep -Fc 'This deployment is in an unexpected state' <<< "$acumulado" || true)"
 if [[ "${avisos_servicio:-0}" != "0" ]]; then
   creaciones="$(grep -Ec 'functions: creating ' <<< "$acumulado" || true)"
-  if (( ${#motivos[@]} == 0 )) && [[ "${creaciones:-0}" == "0" ]]; then
+  # Con otra versión de firebase-tools que la verificada, el texto de «creating» podría haber cambiado y un create sin invoker pasaría
+  # por actualización: el aviso vuelve a ser fatal (revisión de seguridad de #1137).
+  version_ok=1
+  if [[ -n "${FIREBASE_TOOLS_VERSION:-}" && "$FIREBASE_TOOLS_VERSION" != "$VERSION_VERIFICADA" ]]; then version_ok=0; fi
+  if (( ${#motivos[@]} == 0 )) && [[ "${creaciones:-0}" == "0" ]] && (( version_ok == 1 )); then
     # Candidatas: las Functions confirmadas entre el primer aviso y la primera confirmación posterior al último (el aviso no dice cuál).
     candidatas="$(awk '
       /This deployment is in an unexpected state/ { if (!ini) ini = NR; fin = NR }
@@ -207,7 +211,7 @@ if [[ "${avisos_servicio:-0}" != "0" ]]; then
         }
         for (i = 1; i <= n; i++) printf "%s%s", (i > 1 ? ", " : ""), c[i]
       }' <<< "$limpio")"
-    echo "::warning::firebase-tools avisó $avisos_servicio vez/veces «unexpected state» (una actualización sin servicio asociado: se omitió su invoker), con el despliegue completo y sin Functions nuevas. Verificar el invoker de las Functions HTTP. Candidatas (el aviso no nombra la Function): ${candidatas:-no deducibles}."
+    echo "::warning::firebase-tools avisó $avisos_servicio vez/veces «unexpected state» (una actualización sin servicio asociado: se omitió su invoker), con el despliegue completo y sin Functions nuevas. Verificar el invoker de las Functions HTTP (y que ningún cambio de invoker pedido en el código se haya perdido: una actualización sin servicio asociado conserva el IAM anterior). Candidatas (el aviso no nombra la Function): ${candidatas:-no deducibles}."
   else
     motivos+=("firebase-tools avisó «This deployment is in an unexpected state»")
   fi

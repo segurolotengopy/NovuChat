@@ -230,6 +230,15 @@ describe('compuerta del registro de `firebase deploy`', () => {
     // NEGANDO: una Function NUEVA (create) con el aviso es fatal: su invoker no se fijó y nadie la podría invocar.
     const conCreate = real.replace('\n', '\ni  functions: creating Node.js 22 (2nd Gen) function admin:fnNueva(us-east1)...\n✔  functions[admin:fnNueva(us-east1)] Successful create operation.\n');
     const f4 = corre(conCreate); expect(f4.status, f4.stdout).toBe(1); expect(f4.stdout).toContain('unexpected state');
+    // NEGANDO: con una versión de firebase-tools que NO es la verificada, el aviso vuelve a ser fatal.
+    const otraVersion = compuerta(real, { SOLO: SOLO_COMPLETO, SITIO_CONSOLA: 'proyecto-ficticio', SITIO_CATALOGO: 'catalogo-ficticio', FIREBASE_TOOLS_VERSION: '0.0.1' });
+    expect(otraVersion.status).toBe(1);
+    expect(otraVersion.stdout).toContain('unexpected state');
+    // Los avisos de un intento ANTERIOR (registro acumulado) también cuentan: el último intento limpio no los borra.
+    const anterior = compuerta(real.split('\n').filter((l) => !l.includes('unexpected state')).join('\n'),
+      { SOLO: SOLO_COMPLETO, SITIO_CONSOLA: 'proyecto-ficticio', SITIO_CATALOGO: 'catalogo-ficticio', REGISTRO_ACUMULADO: archivo(real) });
+    expect(anterior.status, anterior.stdout).toBe(0);
+    expect(anterior.stdout).toMatch(/::warning::firebase-tools avisó 4 vez\/veces/);
     // Sin avisos no hay warning ni candidatas.
     const limpio = corre(real.split('\n').filter((l) => !l.includes('unexpected state')).join('\n'));
     expect(limpio.status).toBe(0); expect(limpio.stdout).not.toContain('unexpected state');
