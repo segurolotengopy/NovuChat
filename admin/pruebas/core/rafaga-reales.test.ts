@@ -54,7 +54,7 @@ function limpioHastaElNormalizador(flujo: Flujo, ancla: string, normalizador: st
   return true;
 }
 
-const CAMPOS_POR_DEFECTO: Record<string, string> = { tipo: 'tipo', mensajeId: 'mensajeId', from: 'from', phoneNumberId: 'phoneNumberId', texto: 'userInput' };
+const CANONICOS: Record<string, string> = { tipo: 'tipo', mensajeId: 'mensajeId', from: 'from', phoneNumberId: 'phoneNumberId' };
 
 describe('rafaga: simulación sobre los JSON reales (cada conexión como ancla)', () => {
   it('en toda combinación que arma, los campos llegan al IF y al Code; nada arma «a ciegas»', () => {
@@ -68,12 +68,13 @@ describe('rafaga: simulación sobre los JSON reales (cada conexión como ancla)'
       const nombres = new Set<string>(flujo.nodes.map((n: Nodo) => n.name));
       const normalizador = NORMALIZADORES.find((n) => nombres.has(n));
       const fuentes: (string | undefined)[] = [undefined, ...NORMALIZADORES.filter((n) => nombres.has(n))];
-      for (const ancla of candidatas) for (const fuente of fuentes) for (const campos of [undefined, { texto: 'texto' }]) {
+      for (const ancla of candidatas) for (const fuente of fuentes) for (const campos of [{ texto: 'userInput' }, { texto: 'texto' }]) {
         intentos++;
         const estado = JSON.stringify(flujo.connections).length + flujo.nodes.length;
-        try { injertarRafaga(flujo, { ancla, fuente, campos }); } catch { continue; }
+        // `consumidor: null`: aquí solo se miden los CAMPOS (el consumidor del texto agrupado se prueba en rafaga-injerto y rafaga-extremo, con el cableado real).
+        try { injertarRafaga(flujo, { ancla, fuente, campos, consumidor: null }); } catch { continue; }
         arman++;
-        const usados = { ...CAMPOS_POR_DEFECTO, ...(campos ?? {}) };
+        const usados = { ...CANONICOS, ...campos };
         const productor = fuente ?? normalizador;
         for (const [nombre, campo] of Object.entries(usados)) {
           expect(emite(flujo.nodes.find((n: Nodo) => n.name === productor), campo, nombre), `${archivo} ${ancla.nodo}→${ancla.destino} fuente=${fuente}: «${productor}» no emite ${nombre} («${campo}»)`).toBe(true);
@@ -85,7 +86,7 @@ describe('rafaga: simulación sobre los JSON reales (cada conexión como ancla)'
           sinFuente++;
           expect(limpioHastaElNormalizador(flujo, ancla.nodo, normalizador as string), `${archivo} ${ancla.nodo}: arma sin fuente por un camino que NO es transparente`).toBe(true);
         }
-        expect(hallazgosDeLaRafaga(flujo, { fuente, campos }), `${archivo} ${ancla.nodo}→${ancla.destino}`).toEqual([]);
+        expect(hallazgosDeLaRafaga(flujo, { fuente, campos, consumidor: null }), `${archivo} ${ancla.nodo}→${ancla.destino}`).toEqual([]);
         quitarRafaga(flujo);
         expect(JSON.stringify(flujo.connections).length + flujo.nodes.length, `${archivo}: quitar deja el flujo como estaba`).toBe(estado);
       }

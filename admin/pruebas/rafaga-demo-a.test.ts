@@ -99,7 +99,7 @@ function crear(o: Opciones) {
   const mundo = crearMundo({
     flujo: flujoDePrueba(), dobles, ahoraMs: T0,
     roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)'] },
-    configBase: { phoneNumberIdEsperado: PHONE_ID, phoneNumberId: PHONE_ID, numeroRecepcion: '59170000009', calendarioId: 'cal-demo@group.calendar.invalid', ...(o.configBase ?? {}) },
+    configBase: { phoneNumberIdEsperado: PHONE_ID, phoneNumberId: PHONE_ID, numeroRecepcion: '59170000009', calendarioId: 'calendario-demo-a-prueba', ...(o.configBase ?? {}) },
   });
   return { mundo, envios, avisos, textosAlAgente, consultas, dobles };
 }
@@ -504,7 +504,7 @@ describe('Demo A + ráfaga: lo que recibe el MODELO, de punta a punta', () => {
   });
 
   it('EL CANDADO Y EL REINTENTO: tras un cruce de horario el modelo del reintento recibe el texto AGRUPADO (no solo el último mensaje), y sale UN envío', () => {
-    const CAL = 'cal-demo@group.calendar.invalid';
+    const CAL = 'calendario-demo-a-prueba';
     const existente = { id: 'viejo', summary: 'Cita Otra — corte', organizer: { email: CAL }, start: { dateTime: '2026-11-26T09:00:00-04:00' }, end: { dateTime: '2026-11-26T10:00:00-04:00' }, created: '2026-11-20T10:00:00.000Z' };
     const nuevo = { id: 'nuevo', summary: 'Cita Sil — corte', organizer: { email: CAL }, start: { dateTime: '2026-11-26T09:00:00-04:00' }, end: { dateTime: '2026-11-26T10:00:00-04:00' }, created: '2026-11-25T14:59:50.000Z' };
     const hilo = [frag('wamid.A', 'quiero un corte mañana', 0), frag('wamid.B', 'a las 9 por favor', 900)];
