@@ -313,7 +313,7 @@ describe('FILAS 16 y 17: el ENVÍO por pasos («Intermedio», 26/11/2026): depar
       ['oficina Zona Sur', 'oficina Zona Sur', ''],
       ['Villa Tunari frente a la plaza', 'Villa Tunari frente a la plaza', ''],
     ] as const) {
-      it(`«${texto.replace('\n', '⏎')}» → ciudad «${ciudad}» y aclaración «${aclaracion}»`, () => {
+      it(`«${texto.replace(/\n/g, '⏎')}» → ciudad «${ciudad}» y aclaración «${aclaracion}»`, () => {
         const m = conCiudadPedida({ modeloDice: modeloSano() });
         hablar(m, ANA, mTexto(texto));
         expect(ficha(m).entrega).toMatchObject({ ciudad, aclaracion });
