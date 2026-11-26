@@ -595,19 +595,19 @@ describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES 
     expect(hallazgosDeLaRafaga(f, { campos: TEXTO })).toEqual([]);
   });
 
-  it.each([['demo-a'], ['demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF; arma con `campos: {texto: \'userInput\'}` (y `consumidor: null`: sin cableado en #1117)', (ruta) => {
+  it.each([['demo-a'], ['clientes/demo-b/demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF; arma con `campos: {texto: \'userInput\'}` (y `consumidor: null`: sin cableado en #1117)', (ruta) => {
     const f = injertarRafaga(real(ruta === 'demo-a' ? demoA : ruta), { ancla: ANCLA_DEMO, campos: USER_INPUT, consumidor: null });
     expect(hallazgosDeLaRafaga(f, { consumidor: null })).toEqual([]);
     expect(hallazgosDeLaRafaga(f).join('|')).toMatch(/ningún nodo .* lee `textoDelTurno`/); // sin consumidor declarado, la guardia lo dice
   });
 
-  it.each([['demo-a'], ['demo-b-venta-cobro.json']])('%s: con `campos: {texto: \'texto\'}` NO arma (su normalizador emite `userInput`, no `texto`)', (ruta) => {
+  it.each([['demo-a'], ['clientes/demo-b/demo-b-venta-cobro.json']])('%s: con `campos: {texto: \'texto\'}` NO arma (su normalizador emite `userInput`, no `texto`)', (ruta) => {
     expect(() => injertarRafaga(real(ruta === 'demo-a' ? demoA : ruta), { ancla: ANCLA_DEMO, campos: TEXTO, consumidor: null })).toThrow(/«Normalizar entrada» no emite texto \(«texto»\)/);
     expect(() => injertarRafaga(real(ruta === 'demo-a' ? demoA : ruta), { ancla: ANCLA_DEMO, consumidor: null })).toThrow(/falta `campos.texto`/);
   });
 
   it('el `phoneNumberId` de los normalizadores de los demos (un spread de la entrada) solo se acepta por la huella verificada: si el código cambia, deja de armar', () => {
-    const f = real('demo-b-venta-cobro.json');
+    const f = real('clientes/demo-b/demo-b-venta-cobro.json');
     expect(Object.keys(NORMALIZADORES_VERIFICADOS)).toContain(huellaDe(nodo(f, 'Normalizar entrada').parameters.jsCode));
     nodo(f, 'Normalizar entrada').parameters.jsCode += '\n// retocado';
     expect(() => injertarRafaga(f, { ancla: ANCLA_DEMO, campos: USER_INPUT, consumidor: null })).toThrow(/phoneNumberId \(«phoneNumberId»\) \[llega por un spread que no se puede resolver/);
@@ -669,7 +669,7 @@ describe('rafaga: el CONSUMIDOR de `textoDelTurno` es obligatorio y se verifica'
     for (const [ruta, ancla, campos, fuente] of [
       ['clientes/walisuma/walisuma.json', { nodo: '¿Bajar medio?', salida: 1, destino: 'Decidir turno' }, { texto: 'texto' }, 'Normalizar entrada'],
       ['clientes/agenda-minima/agenda-minima.v0.json', { nodo: '¿Atención normal?', salida: 0, destino: '¿Bajar medio?' }, { texto: 'texto' }, 'Interpretar entrada'],
-      ['demo-b-venta-cobro.json', { nodo: '¿Atención normal?', salida: 0, destino: '¿Es un comprobante?' }, { texto: 'userInput' }, undefined],
+      ['clientes/demo-b/demo-b-venta-cobro.json', { nodo: '¿Atención normal?', salida: 0, destino: '¿Es un comprobante?' }, { texto: 'userInput' }, undefined],
     ] as const) {
       const f = quitarRafaga(JSON.parse(readFileSync(join(RAIZ_FLUJOS, ruta), 'utf8')));
       expect(() => injertarRafaga(f, { ancla, campos, fuente }), ruta).toThrow(/falta `consumidor`/);

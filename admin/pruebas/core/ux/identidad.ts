@@ -76,7 +76,7 @@ export const EXCEPCIONES_DE_IDENTIDAD: Record<string, ExcepcionDeIdentidad> = {
   'captacion-minima/captacion-minima.novuchat.json': { motivo: CONGELADO_CAPTACION, dueno: 'Principal', vence: VENCE },
   'bellido-agendamiento.json': { motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
   'demo-a/demo-a-agendamiento.json': { motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
-  'demo-b-venta-cobro.json': { motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
+  'demo-b/demo-b-venta-cobro.json': { motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
   'novuchat-onboarding.json': { motivo: CON_AGENTE, dueno: 'Principal', vence: VENCE },
   'rroca-antonio/rroca-antonio.json': { motivo: COPIA_DECLARADA, dueno: 'Rearquitectura (etapa 1)', vence: VENCE },
   'rroca-ruben/rroca-ruben.json': { motivo: COPIA_DECLARADA, dueno: 'Rearquitectura (etapa 1)', vence: VENCE },

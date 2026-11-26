@@ -12,7 +12,7 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | bellido-agendamiento.json | . | congelado | ninguno | M1 M2 M6 | por asignar (Principal) | pendiente | e6d07c1a-c6d52035-d43d8b40-7e9c0afc-0811fa87-a4a6db8d-4d021409-3dd3de61 |
 | demo-a-agendamiento.json | clientes/demo-a | demo | ensamblador | M6 (excepciones declaradas) | Rearquitectura | mudado | fd8653ca-251380eb-d04dba59-bca24d2a-420788f3-0615f884-ddd1424c-20c05380 |
 | demo-a-recordatorios.json | . | demo | ensamblador | M1 | por asignar (Principal) | pendiente | 7d06ea44-1c362f84-bae2afe3-e7a2a521-b2c865cc-a3736245-ae83472d-22988404 |
-| demo-b-venta-cobro.json | . | demo | ensamblador | M1 M6 | por asignar (Principal) | pendiente | 5bfc86af-d6b49929-efe587c8-2ea766c8-fbdf93c4-7e7a04bf-ebf32b3d-a3e67dac |
+| demo-b-venta-cobro.json | clientes/demo-b | demo | ensamblador | M6 (excepciones declaradas) | Rearquitectura | mudado | 5bfc86af-d6b49929-efe587c8-2ea766c8-fbdf93c4-7e7a04bf-ebf32b3d-a3e67dac |
 | error-envio-incierto.json | . | barrido | ensamblador | M1 | por asignar (Principal) | pendiente | 2ff4b291-ed46e596-13a95489-8cccdf57-adc9df5b-079cd030-7eb163fa-0c73fe27 |
 | novuchat-onboarding.json | . | congelado | ensamblador | M1 M6 M7 | por asignar (Principal) | pendiente | ce7b93b9-e0a79aaa-cca13b3e-20433796-60caa14b-341bf7f3-89bb14fd-73fc3451 |
 | salida-de-persona.json | . | barrido | ensamblador | M1 M7 | por asignar (Principal) | pendiente | 1d0930d9-e2a56669-2f56a54c-24b389ce-f94185b2-c32df93a-9c58031f-46c99964 |
