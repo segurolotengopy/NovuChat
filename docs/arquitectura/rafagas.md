@@ -139,8 +139,18 @@ sigue emitiendo el item **del ancla** más `rafaga` y `textoDelTurno`; el flujo 
 - **No falla en silencio (lista blanca):** sin `fuente`, `injertarRafaga` (y la guardia sobre un flujo armado) **solo arma** si todo camino del ancla al normalizador
   pasa únicamente por nodos que dejan pasar el item (IF, Switch, Filter, Wait, NoOp). Cualquier otro nodo en ese camino (Code, Set, HTTP, Merge…) puede cambiar
   el item y no se sabe qué emite, aunque su código copie la entrada: se niega y pide `fuente`. En los JSON reales: Walisuma (tras «Puerta del turno») y Bellido
-  (`agenda-minima.v0.json`) necesitan `fuente: 'Normalizar entrada'`; los Demos A y B arman sin `fuente` (el item sale del normalizador por IF). Lo prueban
+  (`agenda-minima.v0.json`) necesitan `fuente` (Walisuma: «Normalizar entrada»; Bellido: «Interpretar entrada», porque su «Normalizar entrada» no emite el mensaje) y `campos: {texto: 'texto'}`; los Demos A y B arman sin `fuente` (el item sale del normalizador por IF). Lo prueban
   `rafaga-injerto.test.ts` sobre esos cuatro JSON.
+- **El productor tiene que EMITIR los campos (con o sin `fuente`):** el nodo del que se leen (la `fuente`, o el normalizador) debe ser un Code cuyo código asigne o
+  emita `tipo`, `mensajeId`, `from`, `phoneNumberId` y el texto con los NOMBRES de `campos` (`phoneNumberId` también se admite copiado con un spread del config, como en
+  los demos). Si falta alguno, el injerto y la guardia se niegan nombrando cuál: una `fuente` que no trae el mensaje («Puerta del turno», «Reportar mensaje (entrante)»,
+  «Config del negocio», «Traer configuración» en Walisuma) o el campo de texto por defecto `userInput` en un flujo que emite `texto` apagarían la ráfaga en silencio o
+  dejarían el último mensaje en blanco. Por eso `campos` se declara siempre por flujo y se verifica contra el código del productor.
+- **Defensa en el nodo:** si el texto propio llega vacío, «Agrupar ráfaga» usa el que el servidor guardó; nunca arma un grupo con el último mensaje en blanco.
+- **`quitarRafaga` solo quita la pieza:** requiere «¿Esperar ráfaga?» → «Esperar ráfaga» → «Consultar ráfaga» → «Agrupar ráfaga»; un flujo con un «Esperar ráfaga» PROPIO
+  (el chat de NovuChat) no se toca, y el injerto se niega por choque de nombre.
+- Las pruebas: `rafaga-reales.test.ts` (cada conexión de cada JSON real como ancla, con y sin `fuente`/`campos`: en lo que arma, los campos llegan al IF y al Code),
+  `rafaga-extremo.test.ts` (Walisuma y Bellido, dos textos de punta a punta con la pieza injertada en memoria) y `rafaga-injerto.test.ts`.
 - Las guardias infieren la `fuente` del propio IF; los demás nombres no predeterminados se pasan por opciones.
 
 ### Posiciones en el lienzo y convivencia con el indicador
