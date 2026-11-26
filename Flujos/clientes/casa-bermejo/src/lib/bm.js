@@ -103,8 +103,11 @@ function bmFichaBase() {
     carrito: [], entrega: bmEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, avisoNoCuadraMs: 0,
     aliasPedidoId: '', aliasEstado: '', aliasVenceMs: 0, aliasMontoCent: 0, aliasAr: '',
     catalogoOfrecido: false, pedidoCatalogo: '', qrSoloCatCent: 0, derivadoMs: 0,
+    pide: [],
   };
 }
+// QUÉ DATO PIDIÓ EL CÓDIGO en su último mensaje (séptima ronda): `pide` ⊂ nombre, documento, ciudad. Lo escribe el CÓDIGO al armar la pregunta (`bmPideDeEntrega`), nunca se deduce del texto del modelo.
+const BM_DATOS_PEDIBLES = ['nombre', 'documento', 'ciudad'];
 function bmNumero(v, tope) {
   return Number.isFinite(v) && v > 0 ? Math.min(Math.floor(v), tope === undefined ? Number.MAX_SAFE_INTEGER : tope) : 0;
 }
@@ -165,6 +168,7 @@ function bmFichaVigente(e, ahoraMs) {
     qrSoloCatCent: bmNumero(e.qrSoloCatCent, 100000000),
     // Cuándo se pasó al cliente con recepción por última vez (R58: tras derivar, el asistente no ofrece sumar piezas).
     derivadoMs: bmNumero(e.derivadoMs),
+    pide: (Array.isArray(e.pide) ? e.pide : []).filter((x, i, a) => BM_DATOS_PEDIBLES.includes(x) && a.indexOf(x) === i),
   };
 }
 function bmYaVisto(ficha, id) {

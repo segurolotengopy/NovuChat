@@ -202,7 +202,7 @@ const DATOS = { ubicacionTienda: DIR, mapaTienda: MAPA, horarioTienda: HORARIO }
 const J = (x: unknown): string => JSON.stringify(x);
 type Mund = ReturnType<typeof crear>;
 type Turno = ReturnType<typeof hablar>;
-type FichaT = { carrito: { id: string }[]; entrega: Record<string, string>; hist: { r: string; t: string }[] };
+type FichaT = { carrito: { id: string }[]; entrega: Record<string, string>; pide: string[]; hist: { r: string; t: string }[] };
 const ficha = (m: Mund): FichaT => (m.sd['casabermejo'] as Record<string, FichaT>)[ANA]!;
 const corridos = (t: Turno): string[] => t.registro.map((r) => r.nodo);
 const llamoAlModelo = (t: Turno): boolean => corridos(t).includes('Conversar con el modelo');
@@ -331,13 +331,15 @@ describe('12. el estado del asistente: derivar lo deja en la memoria, y «nombre
     hablar(m, ANA, mTexto('Silvana'));
     expect(ficha(m).entrega['nombre']).toBe('Silvana');
   });
-  it('NEGADO: un último mensaje del asistente que solo nombra el nombre («anoté tu pedido a nombre de Ana») no es pedirlo; con la pregunta real sí', () => {
+  // Séptima ronda: el estado «qué pidió el asistente» es el campo `pide` de la ficha que escribe el CÓDIGO; el texto de la memoria ya no lo decide (ver `septima-ronda.test.ts`, B2).
+  it('NEGADO: si el asistente solo NOMBRÓ el nombre («anoté tu pedido a nombre de Ana»: la ficha dice que no lo pidió) el «Silvana» siguiente no se guarda; con la pregunta real (la ficha dice que lo pidió) sí', () => {
     const m = conNombrePedido();
+    ficha(m).pide = [];
     for (const h of ficha(m).hist) if (h.r === 'm') h.t = 'Anoté tu pedido a nombre de Ana Pérez.';
     hablar(m, ANA, mTexto('Silvana'));
     expect(ficha(m).entrega['nombre']).toBe('');
     const m2 = conNombrePedido();
-    for (const h of ficha(m2).hist) if (h.r === 'm') h.t = '¿A nombre de quién retira?';
+    expect(ficha(m2).pide).toEqual(['nombre']);
     hablar(m2, ANA, mTexto('Silvana'));
     expect(ficha(m2).entrega['nombre']).toBe('Silvana');
   });

@@ -157,10 +157,12 @@ describe('NOMBRE: un nombre real se captura solo porque el MODELO lo devuelve y 
     expect(t.avisos).toHaveLength(0);
     expect(confirmaDe(t)).toBeUndefined();
   });
-  it('NEGADO: el estado manda: si el último mensaje del asistente NO pidió el nombre, el que devuelve el modelo no se guarda aunque el retiro ya esté elegido', () => {
+  it('NEGADO: el estado manda: si la ficha dice que el código NO pidió el nombre (`pide` vacío), el que devuelve el modelo no se guarda aunque el retiro ya esté elegido, y el texto del asistente en la memoria no lo cambia', () => {
     const m = conNombrePedido({ modeloDice: modeloDeNombre() });
-    const f = (m.sd['casabermejo'] as Record<string, { hist: { r: string; t: string }[] }>)[ANA]!;
-    for (const h of f.hist) if (h.r === 'm') h.t = 'Con gusto, sigo atento a lo que necesite.';
+    const f = (m.sd['casabermejo'] as Record<string, { pide: string[]; hist: { r: string; t: string }[] }>)[ANA]!;
+    expect(f.pide).toEqual(['nombre']);   // lo escribió el CÓDIGO al armar la pregunta
+    f.pide = [];
+    for (const h of f.hist) if (h.r === 'm') h.t = '¿A nombre de quién retira?';   // un texto que «parece» pedir el nombre no basta: manda el estado guardado
     hablar(m, ANA, mTexto('Silvana'));
     expect(ficha(m).entrega.nombre).toBe('');
   });

@@ -436,7 +436,7 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
   });
   it('«¿dónde queda y a qué hora atienden?»: el prompt lleva lo que el comercio declaró y, si falta, dice que no está cargado y manda a recepción (nada inventado)', () => {
     const P = (baseDatos: Record<string, string>) => b('bmCuerpoModelo')(ctx({ base: { ...base, ...baseDatos }, plan: { tipo: 'modelo', textoCliente: 'dónde queda la tienda' } })).systemInstruction.parts[0].text as string;
-    expect(P({ ubicacionTienda: 'Bermejo, Tarija', horarioTienda: 'lunes a sábado de 9 a 19' })).toMatch(/ubicación: Bermejo, Tarija\. horario: lunes a sábado de 9 a 19/);
+    expect(P({ ubicacionTienda: 'Bermejo, Tarija', horarioTienda: 'lunes a sábado de 9 a 19' })).toMatch(/ubicación: <<<Bermejo, Tarija>>>\. horario: <<<lunes a sábado de 9 a 19>>>/);
     const vacio = P({});
     expect(vacio).toMatch(/la ubicación aún no está cargada/);
     expect(vacio).toMatch(/el horario aún no está cargado[^\n]*quiereHablar/);
@@ -573,7 +573,9 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
         expect(r.modoRechazado).toBe(true);
         expect(E({}, { modo: 'envío' }, 'mejor recojo en tienda').entrega.modo).toBe('recojo en tienda');
         expect(E({}, { modo: 'recojo en tienda' }, 'mejor envíenlo').entrega.modo).toBe('envío');
-        expect(E({}, { modo: 'recojo en tienda' }, 'mejor envíenlo a Cochabamba').entrega.modo).toBeUndefined();   // «a Cochabamba» ya no es la frase entera (sin un mensaje de datos)
+        // Séptima ronda (R27): el mensaje ENTERO que elige el envío con su destino («envíenlo a Cochabamba») fija el modo y la ciudad, sin repreguntar; lo que no es la frase entera («envío a Oruro dice que tarda») sigue sin fijar nada.
+        expect(E({}, { modo: 'recojo en tienda' }, 'mejor envíenlo a Cochabamba').entrega).toMatchObject({ modo: 'envío', ciudad: 'Cochabamba' });
+        expect(E({}, { modo: 'recojo en tienda' }, 'el envío a Oruro dice que tarda').entrega.modo).toBeUndefined();
         expect(E({}, { modo: 'recojo en tienda' }, '¿hacen envío?').entrega.modo).toBeUndefined();
       });
       it('dentro de un mensaje de DATOS (con comas) un tramo que es la frase fija el modo SOLO si el asistente acababa de pedir la entrega', () => {
@@ -653,13 +655,13 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       const carro1 = [{ id: 'p1', cantidad: 1, detalle: '' }];
       it('completo antes y sin cambios: «quiero pagar» cierra (QR); si el último dato llega en el mismo turno, se muestra el resumen con el botón', () => {
         expect(R('quiero pagar', { carrito: carro1, entrega: { modo: 'recojo en tienda', nombre: 'Juan Pérez' } }).tipo).toBe('qr');
-        const mismoTurno = R('Juan Perez, quiero pagar', { carrito: carro1, entrega: { modo: 'recojo en tienda' }, hist: [{ r: 'm', t: 'Indíqueme el nombre de quien retira.' }] }, { entrega: { nombre: 'Juan Perez' } });
+        const mismoTurno = R('Juan Perez, quiero pagar', { carrito: carro1, entrega: { modo: 'recojo en tienda' }, pide: ['nombre'] }, { entrega: { nombre: 'Juan Perez' } });
         expect(mismoTurno.tipo).toBe('modelo');
         expect(mismoTurno.confirmable).toBe(true);
         expect(mismoTurno.cierre).toBe(false);
       });
       it('NEGADO: un cierre guardado de un turno con el pedido incompleto no vale; «pagar» antes de completar no cierra; un cambio del pedido en el mismo turno tampoco', () => {
-        expect(R('hola', { carrito: carro1, cierre: true, entrega: { modo: 'recojo en tienda' }, hist: [{ r: 'm', t: 'Indíqueme el nombre.' }] }, { entrega: { nombre: 'Juan Perez' } }).tipo).toBe('modelo');
+        expect(R('hola', { carrito: carro1, cierre: true, entrega: { modo: 'recojo en tienda' }, pide: ['nombre'] }, { entrega: { nombre: 'Juan Perez' } }).tipo).toBe('modelo');
         expect(R('quiero pagar', { carrito: carro1, entrega: { modo: 'recojo en tienda' } }).tipo).toBe('modelo');
         expect(R('quiero pagar y otra', { carrito: carro1, entrega: { modo: 'recojo en tienda', nombre: 'Juan Pérez' } }, { lineas: [{ id: 'p1', cantidad: 2 }] }).tipo).toBe('modelo');
         expect(R('quiero pagar', { carrito: carro1, cierre: true, entrega: { modo: 'recojo en tienda', nombre: 'Juan Pérez' } }).tipo).toBe('qr');
@@ -713,24 +715,24 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
     });
     it('el resolvedor: «sí, confirmo, quiero pagar» anota el pedido; un nombre capturado NO ignora un quiereHablar (deriva y GUARDA lo capturado); con un modelo sano completa el pedido', () => {
       const sinEntrega = (textoCliente: string, ficha: Record<string, unknown>, nueva: Record<string, unknown> = {}, quiereHablar = false) => b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha, plan: { tipo: 'modelo', textoCliente }, modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'p1', cantidad: 1 }], entrega: nueva, quiereHablar }) }));
-      const pidioElNombre = [{ r: 'm', t: 'Para continuar con su pedido, indíqueme por favor: a nombre de quién retira.' }];
+      const pidioElNombre = ['nombre'];   // el estado `pide` de la ficha (séptima ronda): lo escribió el código al preguntar
       const t1 = sinEntrega('Lo recojo en tienda', { carrito: carro });
       expect(t1.entrega.modo).toBe('recojo en tienda');
-      const t2 = sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, hist: pidioElNombre }, { nombre: 'Silvana Prueba' }, true);
+      const t2 = sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, pide: pidioElNombre }, { nombre: 'Silvana Prueba' }, true);
       expect(t2.tipo).toBe('derivar');
       expect(t2.guardaPedido).toBe(true);
       expect(t2.entrega.nombre).toBe('Silvana Prueba');
-      expect(sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, hist: pidioElNombre }, { nombre: 'Silvana Prueba' }).tipo).toBe('modelo');
-      expect(b('bmEntregaCompleta')(sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, hist: pidioElNombre }, { nombre: 'Silvana Prueba' }).entrega, 'BO')).toBe(true);
+      expect(sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, pide: pidioElNombre }, { nombre: 'Silvana Prueba' }).tipo).toBe('modelo');
+      expect(b('bmEntregaCompleta')(sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, pide: pidioElNombre }, { nombre: 'Silvana Prueba' }).entrega, 'BO')).toBe(true);
       // con el modelo que no devuelve nombre, NO se captura y se vuelve a pedir
-      const t4 = sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, hist: pidioElNombre });
+      const t4 = sinEntrega('Silvana Prueba', { carrito: carro, entrega: t1.entrega, pide: pidioElNombre });
       expect(t4.entrega.nombre).toBe('');
       expect(t4.texto).toMatch(/nombre/i);
       const t3 = sinEntrega('Sí, confirmo, quiero pagar', { carrito: carro, entrega: t2.entrega }, {}, true);
       expect(t3.tipo).toBe('pedido_sin_cobro');
     });
     it('el ENVÍO dicho en una frase completa el pedido: nombre (del modelo), CI, flota y ciudad, aunque el modelo no repita lo demás', () => {
-      const ok = b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro, entrega: { modo: 'envío', ciudad: 'Santa Cruz' }, hist: [{ r: 'm', t: 'Indíqueme el nombre completo.' }] }, plan: { tipo: 'modelo', textoCliente: 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana' }, modeloResp: gemini({ texto: 'Gracias.', lineas: [{ id: 'p1', cantidad: 1 }], entrega: { nombre: 'Juan Pérez' } }) }));
+      const ok = b('bmResolver')(ctx({ modos, cobro: { ...COBRO_REAL, modo: 'ninguno', mediaId: '' }, ficha: { carrito: carro, entrega: { modo: 'envío', ciudad: 'Santa Cruz' }, pide: ['nombre'] }, plan: { tipo: 'modelo', textoCliente: 'Mi nombre es Juan Pérez, mi CI es 4567890, flota Trans Copacabana' }, modeloResp: gemini({ texto: 'Gracias.', lineas: [{ id: 'p1', cantidad: 1 }], entrega: { nombre: 'Juan Pérez' } }) }));
       expect(b('bmEntregaCompleta')(ok.entrega, 'BO')).toBe(true);
     });
     it('el resumen muestra los datos capturados (modo, nombre y, en el envío, CI, ciudad y flota); el esquema del modelo EXIGE los campos de `entrega`', () => {
@@ -746,8 +748,8 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
   describe('el horario de la tienda (dato común)', () => {
     it('el horario sale del dato común del comercio cuando «Config base» no lo trae, y el de «Config base» manda si existe', () => {
       const d = b('bmDatosTienda');
-      expect(d({ ubicacionTienda: 'Bermejo' }, { horarioAtencion: 'lunes a domingo, de 06:00 a 18:00' })).toContain('horario: lunes a domingo, de 06:00 a 18:00.');
-      expect(d({ horarioTienda: 'de 8 a 12' }, { horarioAtencion: 'lunes a domingo, de 06:00 a 18:00' })).toContain('horario: de 8 a 12.');
+      expect(d({ ubicacionTienda: 'Bermejo' }, { horarioAtencion: 'lunes a domingo, de 06:00 a 18:00' })).toContain('horario: <<<lunes a domingo, de 06:00 a 18:00>>>.');
+      expect(d({ horarioTienda: 'de 8 a 12' }, { horarioAtencion: 'lunes a domingo, de 06:00 a 18:00' })).toContain('horario: <<<de 8 a 12>>>.');
       // NEGADO: sin ninguno de los dos no se inventa, se pasa con una persona
       expect(d({}, {})).toContain('el horario aún no está cargado');
       expect(d({ horarioTienda: 'REEMPLAZAR_HORARIO' }, { horarioAtencion: '' })).toContain('el horario aún no está cargado');
@@ -1016,8 +1018,8 @@ describe('ubicación y horario de la tienda: un solo reconocedor, el dato primer
   it('(a) el prompt del modelo usa la MISMA fuente: con `tienda` en el catálogo no dice «aún no está cargado»; sin ningún dato, sí', () => {
     const resp = { statusCode: 200, body: { tienda: { direccion: 'Calle Ejemplo 123', horario: 'lunes a sábado de 9 a 19', enlaceMapa: 'https://maps.app.goo.gl/EjemploDePrueba1' } } };
     const conTienda = b('bmDatosTienda')({}, {}, resp) as string;
-    expect(conTienda).toContain('ubicación: Calle Ejemplo 123');
-    expect(conTienda).toContain('horario: lunes a sábado de 9 a 19');
+    expect(conTienda).toContain('ubicación: <<<Calle Ejemplo 123>>>');   // séptima ronda: texto de un tercero, delimitado como DATO
+    expect(conTienda).toContain('horario: <<<lunes a sábado de 9 a 19>>>');
     expect(conTienda).not.toMatch(/aún no está cargad/);
     expect(b('bmDatosTienda')({}, {}, undefined)).toMatch(/la ubicación aún no está cargada.*el horario aún no está cargado/s);
     const soloMapa = b('bmDatosTienda')({}, {}, { statusCode: 200, body: { tienda: { enlaceMapa: 'https://maps.app.goo.gl/EjemploDePrueba1' } } }) as string;

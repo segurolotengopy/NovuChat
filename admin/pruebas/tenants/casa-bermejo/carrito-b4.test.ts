@@ -329,7 +329,7 @@ describe('R54: al elegir el recojo en tienda el asistente da la dirección', () 
     const t = hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
     expect(cuerpos(t)).toContain('Calle Comercio 123, La Paz');
     const t2 = hablar(m, ANA, mTexto('Ana Pérez'));
-    expect(cuerpos(t2)).toContain('Retiro en: Calle Comercio 123, La Paz');
+    expect(cuerpos(t2)).toContain('Retira en: Calle Comercio 123, La Paz');
   });
   it('NEGADO: sin la dirección en el catálogo, ni inventa una ni dice «Retiras en»; el botón «Envío» tampoco la da', () => {
     const m = pedido(catalogoOk());
