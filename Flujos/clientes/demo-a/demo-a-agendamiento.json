@@ -2556,7 +2556,7 @@
       "typeVersion": 2.2,
       "position": [
         780,
-        210
+        180
       ],
       "parameters": {
         "conditions": {
@@ -2591,7 +2591,7 @@
       "typeVersion": 1.1,
       "position": [
         1020,
-        210
+        180
       ],
       "parameters": {
         "resume": "timeInterval",
@@ -2607,7 +2607,7 @@
       "typeVersion": 4.2,
       "position": [
         1260,
-        210
+        180
       ],
       "credentials": {
         "httpHeaderAuth": {
@@ -2649,7 +2649,7 @@
       "typeVersion": 2,
       "position": [
         1500,
-        210
+        180
       ],
       "parameters": {
         "jsCode": "// Agrupar ráfaga (pieza común del core, Flujos/src/core/rafaga/).\n//\n// Quien escribe tres textos seguidos dispara tres ejecuciones; cada una espera\n// («Esperar ráfaga»), consulta al servidor los últimos mensajes de ese\n// teléfono («Consultar ráfaga») y llega acá. Solo UNA responde por grupo, con\n// los textos unidos; las demás terminan sin enviar nada. Ahorra n-1 mensajes.\n//\n// FALLA ABIERTO: sin respuesta del servidor, con un dato mal formado o sin\n// encontrar el propio mensaje, esta ejecución responde SOLA, como hoy.\n//\n// LA REGLA (determinista, sobre datos que no cambian, y RELATIVA A MI POSICIÓN,\n// no a la del mensaje más nuevo: cada ejecución consulta en un momento distinto\n// y ve una lista distinta, pero todas ven igual lo que está antes y a pocos\n// segundos de ellas):\n//   - Se ordenan TODAS las entradas (textos, medios y marcas de saliente) por (ms, idMeta).\n//   - Agrupable: tipo «text», con idMeta, con texto y sin «[nº]» (la copia\n//     guardada ocultó un número). Todo lo demás (audio, imagen, botón, marca\n//     de saliente) es separador.\n//   - Hay ARISTA entre dos entradas adyacentes en el orden si las dos son\n//     agrupables y el salto es <= espera - 500 ms. Un separador entre ellas\n//     las deja de ser adyacentes.\n//   - Si hay arista entre YO y mi vecino SIGUIENTE: silencio (otro cubre mi texto).\n//     Si no: respondo con mi componente hacia atrás (vecinos anteriores\n//     mientras haya arista), en orden cronológico, unidos por salto de línea\n//     (los ajenos como los devuelve el servidor, el mío crudo). Componente de uno: solo.\n//   - Sin fallas, cada texto agrupable cae en exactamente un grupo y cada grupo lo\n//     responde su último texto (lo prueba rafaga-propiedad.test.ts). Con fallas\n//     el error es DUPLICAR (una consulta fallida responde sola), no perder;\n//     la excepción declarada es la consulta fallida de quien debía responder el\n//     grupo y las cadenas de 7 o más textos (docs/arquitectura/rafagas.md).\nconst MARGEN_MS = 500;\nconst CAMPO_ID = 'mensajeId';\nconst CAMPO_TEXTO = 'userInput';\nconst FUENTE = 'Normalizar entrada'; // nodo del que se leen el id y el texto del mensaje (vacío = el item del ancla): al armar el flujo, `mensaje` se escribe con su nombre como literal\n\nfunction esAgrupable(f) {\n  return f.tipo === 'text' && f.idMeta !== '' && f.texto.trim() !== '' && f.texto.indexOf('[nº]') < 0;\n}\n\nfunction decidirRafaga({ idMeta, textoPropio, fragmentos, esperaMs, fallo }) {\n  const propio = String(textoPropio === undefined || textoPropio === null ? '' : textoPropio);\n  const solo = () => ({ accion: 'solo', texto: propio, ids: idMeta ? [idMeta] : [] });\n  if (fallo || !idMeta || !Array.isArray(fragmentos)) return solo();\n  const espera = Number(esperaMs);\n  if (!Number.isFinite(espera) || espera <= 0) return solo();\n  const salto = Math.max(0, espera - MARGEN_MS);\n\n  const vistos = new Set();\n  const lista = [];\n  for (const f of fragmentos) {\n    if (!f || typeof f.idMeta !== 'string' || typeof f.tipo !== 'string'\n      || typeof f.texto !== 'string' || typeof f.ms !== 'number' || !Number.isFinite(f.ms)) return solo();\n    if (f.idMeta !== '') {\n      if (vistos.has(f.idMeta)) continue;\n      vistos.add(f.idMeta);\n    }\n    lista.push(f);\n  }\n  lista.sort((a, b) => (a.ms - b.ms) || (a.idMeta < b.idMeta ? -1 : a.idMeta > b.idMeta ? 1 : 0));\n  const yo = lista.findIndex((f) => f.idMeta === idMeta);\n  if (yo < 0 || !esAgrupable(lista[yo])) return solo();\n\n  const arista = (a, b) => esAgrupable(a) && esAgrupable(b) && b.ms - a.ms <= salto;\n  if (yo + 1 < lista.length && arista(lista[yo], lista[yo + 1])) return { accion: 'silencio', texto: '', ids: [] };\n  let desde = yo;\n  while (desde > 0 && arista(lista[desde - 1], lista[desde])) desde--;\n  if (desde === yo) return solo();\n  const grupo = lista.slice(desde, yo + 1);\n  return {\n    accion: 'agrupado',\n    texto: grupo.map((f) => (f.idMeta === idMeta ? propio : f.texto)).join('\\n'),\n    ids: grupo.map((f) => f.idMeta),\n  };\n}\n\nconst entrada = $('¿Esperar ráfaga?').first().json;\nconst mensaje = $('Normalizar entrada').first().json;\nlet configuracion = {};\ntry { configuracion = $('Config base').first().json || {}; } catch (e) { configuracion = {}; }\nconst segundos = Number(configuracion.esperaRafagaSeg);\nconst esperaMs = (Number.isFinite(segundos) && segundos > 0 ? Math.min(5, Math.max(1, segundos)) : 2) * 1000;\nconst respuesta = ($input.all()[0] || { json: {} }).json || {};\nconst rafaga = respuesta.rafaga;\nconst valida = !!rafaga && rafaga.v === 1 && Array.isArray(rafaga.fragmentos);\n\nconst d = decidirRafaga({\n  idMeta: String(mensaje[CAMPO_ID] || ''),\n  textoPropio: mensaje[CAMPO_TEXTO],\n  fragmentos: valida ? rafaga.fragmentos : null,\n  esperaMs,\n  fallo: !valida,\n});\nif (d.accion === 'silencio') return [];\nconst salida = { ...entrada, rafaga: { accion: d.accion, ids: d.ids } };\nif (d.accion === 'agrupado') salida.textoDelTurno = d.texto;\nreturn [{ json: salida }];\n"
