@@ -32,7 +32,7 @@ import {
 } from '../lib/flujo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const f = leerFlujo('demo-b-venta-cobro.json');
+const f = leerFlujo('clientes/demo-b/demo-b-venta-cobro.json');
 const y = (n: string) => nodo(f, n).position?.[1] ?? Number.NaN;
 
 const DUENO = '59170000009';
