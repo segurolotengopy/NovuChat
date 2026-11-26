@@ -132,7 +132,7 @@ describe('B2. el estado «qué dato pedí» vive en la FICHA (`pide`), lo escrib
     hablar(r, ANA, mTexto('Ana Pérez'));
     expect(ficha(r).pide).toEqual([]);
     const e = conEnvio();
-    expect(ficha(e).pide).toEqual(['nombre', 'documento', 'ciudad']);
+    expect(ficha(e).pide).toEqual(['nombre', 'documento', 'ciudad', 'flota']);   // octava ronda: la flota también se pide con `pide`
     const d = crear({ modeloDice: modeloAdverso() });
     hablar(d, ANA, mTexto('quiero una billetera'));
     hablar(d, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
@@ -192,7 +192,7 @@ describe('B2. el estado «qué dato pedí» vive en la FICHA (`pide`), lo escrib
     expect(P({}, 'BO')).toEqual([]);
     expect(P({ modo: 'recojo en tienda' }, 'BO')).toEqual(['nombre']);
     expect(P({ modo: 'recojo en tienda', nombre: 'Ana' }, 'BO')).toEqual([]);
-    expect(P({ modo: 'envío', nombre: 'Ana Pérez', documento: '4412345' }, 'BO')).toEqual(['ciudad']);
+    expect(P({ modo: 'envío', nombre: 'Ana Pérez', documento: '4412345' }, 'BO')).toEqual(['ciudad', 'flota']);   // octava ronda: la flota también se pide con `pide`
     expect(P({ modo: 'envío', nombre: 'Ana Pérez', documento: '4412345', ciudad: 'Oruro', flota: 'Bolivar' }, 'BO')).toEqual([]);
   });
 });

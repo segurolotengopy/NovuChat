@@ -10,7 +10,7 @@
 //   - el cobro es REAL (el QR del comercio; el dinero va a su cuenta): jamás se dice «pago acreditado», «verificado» ni «recibimos tu pago»;
 //   - lo redactado por el modelo pasa por `cmRevisarRedaccion` y por la revisión de voz, montos y emojis; si falla, sale un texto fijo;
 //   - solo se ofrece lo que se cumple: ante un error, una consulta sin respuesta, una pieza sin precio o un pedido por volumen, lo único que se ofrece es pasar con recepción (aviso al comercio MÁS el botón).
-// NIT/CI: ninguna función de este archivo lo guarda ni lo reporta; la ficha no tiene dónde ponerlo.
+// CI/DNI del envío: va a la entrega y al pedido del servidor (decisión del 20/11/2026), nunca a la memoria de la charla (`bmParaMemoria` lo enmascara). El NIT no se guarda en ninguna parte.
 
 // -----------------------------------------------------------------------------
 // Lo que la consola entrega (`configuracionFlujo`): catálogo, cobro y venta
@@ -203,7 +203,7 @@ const BM_NOMBRE_ENTRADAS = ['mi nombre es', 'el nombre es', 'a nombre de', 'me l
 const BM_NOMBRE_COLAS = ['por favor', 'porfa', 'gracias'];
 const BM_NOMBRE_PARTICULAS = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'y', 'e', 'da', 'di', 'van', 'von', 'san', 'santa', 'en', 'a', 'con', 'para', 'por']);
 // Palabras que, EN CUALQUIER LUGAR del texto, lo vuelven «no es un nombre» (intención, consulta o cortesía de despedida): ningún nombre de persona de esta lista.
-const BM_NO_NOMBRE_FUERTE = new Set(['pagar', 'pago', 'pagos', 'persona', 'personas', 'humano', 'humana', 'vendedor', 'vendedora', 'asesor', 'asesora', 'efectivo', 'tarjeta', 'transferencia', 'qr', 'deposito', 'descuento', 'rebaja', 'envio', 'envios', 'recoger', 'recojo', 'retiro', 'retirar', 'puede', 'pueden', 'tienen', 'tienes', 'tenes', 'tiene', 'hay', 'quiero', 'quisiera', 'necesito', 'otro', 'otra', 'otros', 'otras', 'color', 'colores', 'talla', 'tamano', 'modelo', 'precio', 'precios', 'stock', 'horario', 'gracias', 'chau', 'adios', 'espera', 'esperame', 'momento', 'cancelo', 'cancelar', 'nada', 'todo', 'ninguno', 'ninguna']);
+const BM_NO_NOMBRE_FUERTE = new Set(['pagar', 'pago', 'pagos', 'persona', 'personas', 'humano', 'humana', 'vendedor', 'vendedora', 'asesor', 'asesora', 'efectivo', 'tarjeta', 'transferencia', 'qr', 'deposito', 'descuento', 'rebaja', 'envio', 'envios', 'recoger', 'recojo', 'retiro', 'retirar', 'puede', 'pueden', 'tienen', 'tienes', 'tenes', 'tiene', 'hay', 'quiero', 'quisiera', 'necesito', 'otro', 'otra', 'otros', 'otras', 'color', 'colores', 'talla', 'tamano', 'modelo', 'precio', 'precios', 'stock', 'horario', 'gracias', 'chau', 'adios', 'espera', 'esperame', 'momento', 'cancelo', 'cancelar', 'nada', 'todo', 'ninguno', 'ninguna', 'provincia', 'ciudad', 'direccion', 'cp', 'postal', 'flota', 'terminal', 'ci', 'dni', 'carnet', 'cedula']);   // las últimas: rótulos de OTRO dato («Provincia Buenos Aires» no es un nombre; «CP 1043» no es una dirección)
 function bmQuitarEntradas(tokens, entradas, alFinal) {
   const w = tokens.slice();
   const lista = entradas.slice().sort((a, b) => b.split(' ').length - a.split(' ').length);
@@ -213,25 +213,48 @@ function bmQuitarEntradas(tokens, entradas, alFinal) {
     w.splice(alFinal ? w.length - e.split(' ').length : 0, e.split(' ').length);
   }
 }
-function bmNombreValido(valor, textoCliente, minPalabras, vendibles) {
+// ¿Esto NO es un dato del cliente? Las exclusiones COMUNES a todo dato que propone el modelo (nombre, ciudad, flota, dirección, provincia): cortesías, palabras de rótulo, intenciones (pagar, persona, descuento) y piezas del catálogo.
+function bmDatoExcluido(t, vendibles) {
+  const n = bmNorm(t);
+  const ws = n.split(' ').filter((w) => w !== '');
+  if (ws.length === 0) return true;
+  if (ws.every((w) => BM_NO_NOMBRE.has(w)) || ws.some((w) => BM_NO_NOMBRE_FUERTE.has(w))) return true;
+  if (bmQuierePagar(n) || bmQuiereHablar(n) || bmPideDescuento(n)) return true;
+  if (Array.isArray(vendibles) && vendibles.length > 0) { const co = bmPuntuarCoincidencias(t, vendibles); if (Array.isArray(co) && co.length > 0) return true; }
+  return false;
+}
+const BM_ENTRADAS_LUGAR = ['la ciudad de', 'ciudad de', 'ciudad', 'soy de', 'vivo en', 'estoy en', 'envio a', 'es', 'hasta', 'para', 'en', 'a', 'de'];
+const BM_ENTRADAS_FLOTA = ['mi flota es', 'la flota es', 'flota de', 'flota', 'terminal de', 'terminal', 'empresa de', 'empresa', 'es', 'la', 'de'];
+const BM_ENTRADAS_DIRECCION = ['la direccion de envio es', 'mi direccion de envio es', 'direccion de envio', 'direccion exacta', 'mi direccion es', 'la direccion es', 'direccion', 'mi domicilio es', 'domicilio', 'vivo en', 'envio a', 'es'];
+const BM_ENTRADAS_CP = ['mi codigo postal es', 'el codigo postal es', 'codigo postal', 'mi cp es', 'el cp es', 'cp', 'es'];
+const BM_ENTRADAS_PROVINCIA = ['mi provincia es', 'la provincia es', 'provincia de', 'provincia', 'es', 'de'];
+// LA VALIDACIÓN COMÚN DE UN DATO (octava ronda): el nombre, la ciudad, la flota y los campos de Argentina pasan por esta MISMA función. El valor del modelo vale solo si es un TRAMO CONTIGUO de una frase del cliente, lo demás de esa frase es vacío o una ENTRADA conocida,
+// y no es una cortesía, una intención, un rótulo de otro dato ni una pieza del catálogo. `op`: { tipo: 'nombre' | 'lugar' | 'direccion' | 'cp', min, max (caracteres), maxPal, entradas, vendibles }.
+function bmDatoValido(valor, textoCliente, op) {
   const t0 = String(valor === undefined || valor === null ? '' : valor).replace(/\s+/g, ' ').trim();
-  if (t0 === '' || t0.length > 60 || /[^\p{L} .'-]/u.test(t0)) return '';
-  // La entrada («soy Ana») no es parte del nombre: se quita del valor del modelo.
+  const tipo = op.tipo;
+  const permitido = tipo === 'direccion' ? /[^\p{L}\d .'#°\/-]/u : (tipo === 'cp' ? /[^\p{L}\d -]/u : /[^\p{L} .'-]/u);
+  if (t0 === '' || t0.length > op.max || permitido.test(t0)) return '';
+  // La entrada («soy Ana», «ciudad de», «CP») no es parte del dato: se quita del valor del modelo.
   let crudas = t0.split(' ');
-  const ini = crudas.length - bmQuitarEntradas(crudas.map((x) => bmNorm(x)), BM_NOMBRE_ENTRADAS, false).length;
+  const ini = crudas.length - bmQuitarEntradas(crudas.map((x) => bmNorm(x)), op.entradas, false).length;
   crudas = crudas.slice(ini);
   const fin = crudas.length - bmQuitarEntradas(crudas.map((x) => bmNorm(x)), BM_NOMBRE_COLAS, true).length;
   crudas = crudas.slice(0, crudas.length - fin);
   const t = crudas.join(' ');
-  if (t === '' || crudas.length < (minPalabras === 1 ? 1 : 2) || crudas.length > 5 || (crudas.length === 1 && crudas[0].length < 3)) return '';
+  if (t === '' || crudas.length < op.min || crudas.length > op.maxPal || (tipo === 'nombre' && crudas.length === 1 && crudas[0].length < 3)) return '';
   const normales = bmNorm(t).split(' ').filter((w) => w !== '');
-  if (normales.length === 0 || BM_NOMBRE_PARTICULAS.has(normales[0]) || BM_NOMBRE_PARTICULAS.has(normales[normales.length - 1])) return '';
-  if (normales.every((w) => BM_NO_NOMBRE.has(w)) || normales.some((w) => BM_NO_NOMBRE_FUERTE.has(w))) return '';
-  if (bmQuierePagar(bmNorm(t)) || bmQuiereHablar(bmNorm(t)) || bmPideDescuento(bmNorm(t))) return '';
-  // Lo que es una pieza del catálogo («Cuero», «Billeteras») no es un nombre.
-  if (Array.isArray(vendibles) && vendibles.length > 0) { const co = bmPuntuarCoincidencias(t, vendibles); if (Array.isArray(co) && co.length > 0) return ''; }
-  // Un TRAMO CONTIGUO de una frase del cliente, con lo demás de esa frase vacío o conocido.
-  const frases = bmSinConfirmacion(textoCliente).split(/[,;!?¿\n]+|(?<=\p{L}{2})\.(?:\s+|$)/u).map((x) => x.trim()).filter((x) => x !== '');
+  if (normales.length === 0) return '';
+  if (tipo === 'nombre' && (BM_NOMBRE_PARTICULAS.has(normales[0]) || BM_NOMBRE_PARTICULAS.has(normales[normales.length - 1]))) return '';
+  if (tipo === 'lugar' && BM_NOMBRE_PARTICULAS.has(normales[normales.length - 1])) return '';
+  if (tipo === 'cp') { if (!/^[A-Za-z]?\d{4}(?:[A-Za-z]{3})?$/.test(t)) return ''; }
+  else {
+    if (bmDatoExcluido(t, op.vendibles)) return '';
+    if (tipo === 'direccion' && !/\d|\bs\/n\b|sin numero/i.test(t)) return '';
+  }
+  // Un TRAMO CONTIGUO de una frase del cliente, con lo demás de esa frase vacío o conocido. En una dirección el punto («Av. Corrientes») no separa frases.
+  const corte = tipo === 'direccion' ? /[,;!?¿\n]+/ : /[,;!?¿\n]+|(?<=\p{L}{2})\.(?:\s+|$)/u;
+  const frases = bmSinConfirmacion(textoCliente).split(corte).map((x) => x.trim()).filter((x) => x !== '');
   const palabrasV = crudas.map((x) => bmNorm(x));
   for (const fr of frases) {
     const ws = fr.split(/\s+/).filter((x) => x !== '');
@@ -245,21 +268,31 @@ function bmNombreValido(valor, textoCliente, minPalabras, vendibles) {
     const libre = (lista) => lista.join(' ').split(' ').filter((x) => x !== '' && !/^\d+$/.test(x) && !ign.has(x));
     for (let i = 0; i + crudas.length <= ws.length; i++) {
       if (!palabrasV.every((p, j) => nws[i + j] === p)) continue;
-      const antes = bmQuitarEntradas(libre(nws.slice(0, i)), BM_NOMBRE_ENTRADAS, false);
+      const antes = bmQuitarEntradas(libre(nws.slice(0, i)), op.entradas.concat(BM_NOMBRE_ENTRADAS.filter((x) => x === 'hola' || x === 'buenas' || x === 'buenos dias' || x === 'buenas tardes' || x === 'buenas noches')), false);
       const despues = bmQuitarEntradas(libre(nws.slice(i + crudas.length)), BM_NOMBRE_COLAS, false);
       if (antes.length > 0 || despues.length > 0) continue;
-      // Mayúsculas: cada palabra (salvo partículas) con inicial mayúscula, o todo en minúsculas; un nombre de UNA sola palabra lleva mayúscula inicial.
-      const tramo = ws.slice(i, i + crudas.length);
-      const cap = (x) => x.charAt(0) !== x.charAt(0).toLowerCase();
-      const importantes = tramo.filter((x) => !BM_NOMBRE_PARTICULAS.has(bmNorm(x)));
-      const todasCap = importantes.every(cap);
-      const ningunaCap = importantes.every((x) => !cap(x));
-      if (crudas.length === 1 ? !todasCap : !(todasCap || ningunaCap)) continue;
+      // Mayúsculas (solo el nombre): cada palabra (salvo partículas) con inicial mayúscula, o todo en minúsculas; un nombre de UNA sola palabra lleva mayúscula inicial.
+      if (tipo === 'nombre') {
+        const tramo = ws.slice(i, i + crudas.length);
+        const cap = (x) => x.charAt(0) !== x.charAt(0).toLowerCase();
+        const importantes = tramo.filter((x) => !BM_NOMBRE_PARTICULAS.has(bmNorm(x)));
+        const todasCap = importantes.every(cap);
+        const ningunaCap = importantes.every((x) => !cap(x));
+        if (crudas.length === 1 ? !todasCap : !(todasCap || ningunaCap)) continue;
+      }
       return t;
     }
   }
   return '';
 }
+// El nombre que devolvió el modelo (ver `bmDatoValido`): 1 a 5 palabras (con `minPalabras`), sin cifras, de 60 caracteres o menos.
+function bmNombreValido(valor, textoCliente, minPalabras, vendibles) {
+  return bmDatoValido(valor, textoCliente, { tipo: 'nombre', min: minPalabras === 1 ? 1 : 2, max: 60, maxPal: 5, entradas: BM_NOMBRE_ENTRADAS, vendibles: vendibles });
+}
+// Ciudad, flota o terminal, dirección, código postal y provincia que propone el modelo: la misma validación (`bmDatoValido`), con la entrada propia de cada dato.
+function bmLugarValido(valor, textoCliente, vendibles, entradas, max) { return bmDatoValido(valor, textoCliente, { tipo: 'lugar', min: 1, max: max, maxPal: 4, entradas: entradas, vendibles: vendibles }); }
+function bmDireccionValida(valor, textoCliente, vendibles) { return bmDatoValido(valor, textoCliente, { tipo: 'direccion', min: 2, max: 120, maxPal: 10, entradas: BM_ENTRADAS_DIRECCION, vendibles: vendibles }); }
+function bmCpValido(valor, textoCliente) { return bmDatoValido(valor, textoCliente, { tipo: 'cp', min: 1, max: 10, maxPal: 1, entradas: BM_ENTRADAS_CP, vendibles: [] }); }
 // Un valor corto del modelo (ciudad, flota, dirección): cada palabra figura en lo que escribió el cliente.
 function bmEnTexto(valor, textoCliente, max) {
   const t = String(valor === undefined || valor === null ? '' : valor).replace(/\s+/g, ' ').trim();
@@ -309,8 +342,9 @@ function bmCiudadDelTexto(texto, sueltaMax, opciones) {
     if (vale && !excluida(m[2])) return { ciudad: m[2], suelta: false, rotulada: /^ciudad/.test(clave) };
   }
   m = /\d[\d.-]{3,14}\d[\s,;]+(?!(?:flota|terminal|empresa)\b)([\p{L}]{3,}(?: [\p{L}]{3,})?)(?=\s*(?:[,.;]|$)|\s+(?:flota|terminal|empresa)\b)/iu.exec(crudo);
-  if (m && !excluida(m[1])) return { ciudad: mayus(m[1]), suelta: false, rotulada: false };
-  if (sueltaMax > 0) { m = /^\s*([A-ZÁÉÍÓÚÑ][\p{L}]{2,}(?: [A-ZÁÉÍÓÚÑ]?[\p{L}]{2,}){0,2})\s*[.]?\s*$/u.exec(crudo); if (m && m[1].split(' ').length <= sueltaMax && !excluida(m[1])) return { ciudad: mayus(m[1]), suelta: true, rotulada: false }; }
+  if (m && !excluida(m[1]) && !bmDatoExcluido(m[1], op.vendibles)) return { ciudad: mayus(m[1]), suelta: false, rotulada: false };
+  // La respuesta suelta pasa por las MISMAS exclusiones que el nombre (octava ronda): «Muchas gracias», «Bien», «Efectivo» o «Billetera» no son una ciudad.
+  if (sueltaMax > 0) { m = /^\s*([A-ZÁÉÍÓÚÑ][\p{L}]{2,}(?: [A-ZÁÉÍÓÚÑ]?[\p{L}]{2,}){0,2})\s*[.]?\s*$/u.exec(crudo); if (m && m[1].split(' ').length <= sueltaMax && !excluida(m[1]) && !bmDatoExcluido(m[1], op.vendibles)) return { ciudad: mayus(m[1]), suelta: true, rotulada: false }; }
   return { ciudad: '', suelta: false, rotulada: false };
 }
 // LO QUE ESTE TURNO AGREGA A LA ENTREGA. `nueva` es la `entrega` del modelo (dato no confiable); `estado` = { esperaNombre, esperaCiudad, modoPedido, mercado } sale de `f.hist` y de la ficha.
@@ -354,18 +388,32 @@ function bmEntregaDeTurno(nueva, antes, texto, modos, estado) {
       if (dm !== '' && bmNorm(crudo).replace(/ /g, '').includes(dm.replace(/\D/g, ''))) n.documento = dm;
     }
     const f = bmFlotaDelTexto(crudo);
-    if (f !== '') { if (f !== a.flota) { n.flota = f; porCodigo = true; } } else if (a.flota === '') { const fm = bmEnTexto(m.flota, crudo, 60); if (fm !== '') n.flota = fm; }
-    // La respuesta corta a «¿ciudad?» solo cuenta cuando ya se sabía el nombre (3 palabras) o el CI (1 palabra); si no, esa respuesta es el nombre.
-    const c = bmCiudadDelTexto(crudo, st.esperaCiudad !== true ? 0 : (a.nombre !== '' ? 3 : (a.documento !== '' ? 1 : 0)), { pidio: pidioCiudad, excluir: [a.nombre, n.nombre, a.flota, n.flota] });
+    if (f !== '') { if (f !== a.flota) { n.flota = f; porCodigo = true; } }
+    // La respuesta corta a «¿ciudad?» solo cuenta cuando ya se sabía el nombre (3 palabras) o el CI (1 palabra); si no, esa respuesta es el nombre. Pasa por las exclusiones comunes (`bmDatoExcluido`).
+    const c = bmCiudadDelTexto(crudo, st.esperaCiudad !== true ? 0 : (a.nombre !== '' ? 3 : (a.documento !== '' ? 1 : 0)), { pidio: pidioCiudad, excluir: [a.nombre, n.nombre, a.flota, n.flota], vendibles: st.vendibles });
     if (c.ciudad !== '') { if (c.ciudad !== a.ciudad && (a.ciudad === '' || pidioCiudad || c.rotulada)) n.ciudad = c.ciudad; }
-    else if (a.ciudad === '') {
-      // La ciudad que devuelve el modelo solo vale si el asistente la pidió Y es la respuesta entera del cliente («Cochabamba»): con «Juan Perez» no puede quedar «Juan».
-      const cm = bmEnTexto(m.ciudad, crudo, 40);
-      if (cm !== '' && !/\d/.test(cm) && st.esperaCiudad === true && bmNorm(cm) === bmNorm(crudo)) n.ciudad = cm;
+    // OCTAVA RONDA: lo que el modelo propone como ciudad o flota pasa por la MISMA validación que el nombre (`bmDatoValido`: tramo contiguo, sin cortesías, intenciones, catálogo ni rótulos), solo si el CÓDIGO pidió ese dato (`pide`),
+    // y nunca es lo que ya se capturó como nombre ni lo mismo para los dos campos (una sola palabra responde UNA pregunta: primero la ciudad).
+    const usados = [a.nombre, n.nombre].map((x) => bmNorm(x)).filter((x) => x !== '');
+    const esUsado = (v) => { const x = bmNorm(v); const ws = x.split(' '); return x === '' || usados.some((u) => u === x || ws.every((w) => u.split(' ').includes(w))); };
+    if (c.ciudad === '' && a.ciudad === '' && st.esperaCiudad === true) {
+      const cm = bmLugarValido(m.ciudad, crudo, st.vendibles, BM_ENTRADAS_LUGAR, 40);
+      if (cm !== '' && !esUsado(cm) && bmNorm(cm) !== bmNorm(a.flota) && bmNorm(cm) !== bmNorm(n.flota)) n.ciudad = cm;
+    }
+    if (f === '' && a.flota === '' && st.esperaFlota === true) {
+      const fm = bmLugarValido(m.flota, crudo, st.vendibles, BM_ENTRADAS_FLOTA, 60);
+      if (fm !== '' && !esUsado(fm) && bmNorm(fm) !== bmNorm(a.ciudad) && bmNorm(fm) !== bmNorm(n.ciudad)) n.flota = fm;
     }
     if (st.mercado === 'AR') {
+      // Argentina: dirección, código postal y provincia, cada uno solo si el código lo pidió (o el cliente lo rotula, o es un mensaje de datos) y validado como los demás; nunca el mismo texto para dos campos.
       const rotulo = { direccion: /\bdirecci[oó]n\b/i, cp: /\b(?:cp|c[oó]digo postal)\b/i, provincia: /\bprovincia\b/i };
-      for (const [k, max] of [['direccion', 120], ['cp', 10], ['provincia', 40]]) { const v = bmEnTexto(m[k], crudo, max); if (v !== '' && v !== a[k] && (a[k] === '' || rotulo[k].test(crudo))) { n[k] = v; porCodigo = true; } }
+      const espera = { direccion: st.esperaDireccion === true, cp: st.esperaCp === true, provincia: st.esperaProvincia === true };
+      const valido = { direccion: () => bmDireccionValida(m.direccion, crudo, st.vendibles), cp: () => bmCpValido(m.cp, crudo), provincia: () => bmLugarValido(m.provincia, crudo, st.vendibles, BM_ENTRADAS_PROVINCIA, 40) };
+      for (const k of ['direccion', 'cp', 'provincia']) {
+        if (!(espera[k] || enDatos || rotulo[k].test(crudo))) continue;
+        const v = valido[k]();
+        if (v !== '' && v !== a[k] && !esUsado(v) && (a[k] === '' || rotulo[k].test(crudo))) { n[k] = v; porCodigo = true; }
+      }
     }
   }
   // Si el modelo propone un valor DISTINTO al que quedó guardado (ya capturado y el código no lo cambió), su texto («cambié su ciudad a…») ya no es cierto: el turno se arma con el estado.
@@ -380,6 +428,10 @@ function bmEntregaDeTurno(nueva, antes, texto, modos, estado) {
 const BM_RE_DATO_PEDIDO = {
   nombre: /\b(?:nombre completo|nombre y apellido|a nombre de quien|(?:tu|su|el|un) nombre|como (?:te llamas|se llama)|quien retira)\b/,
   ciudad: /\bciudad\b/,
+  flota: /\b(?:flota|terminal)\b/,
+  direccion: /\bdireccion\b/,
+  cp: /\b(?:codigo postal|cp)\b/,
+  provincia: /\bprovincia\b/,
   documento: /\b(?:carnet|ci|dni|cedula|documento)\b/,
 };
 const BM_RE_VERBO_PEDIR = /\b(?:indi\w*|dim\w*|dame|damelo|pas\w+|escrib\w*|necesit\w*|falta\w*|cual|podr\w+|puedes|puede|favor|comparte\w*|envi\w+|mand\w+|quisiera saber)\b/;
@@ -461,6 +513,10 @@ function bmPideDeEntrega(entrega, mercado) {
   if (f.some((k) => /nombre/.test(k))) p.push('nombre');
   if (f.some((k) => /carnet|DNI/.test(k))) p.push('documento');
   if (f.some((k) => /ciudad/.test(k))) p.push('ciudad');
+  if (f.some((k) => /flota/.test(k))) p.push('flota');
+  if (f.some((k) => /direcci/.test(k))) p.push('direccion');
+  if (f.some((k) => /postal/.test(k))) p.push('cp');
+  if (f.some((k) => /provincia/.test(k))) p.push('provincia');
   return p;
 }
 // La dirección del pedido para el servidor (`pqrEntrega` la recorta a 120): en un retiro, a nombre de quién; en un envío, todos los datos para que la tienda cotice y despache.
@@ -1328,7 +1384,7 @@ function bmResolverModelo(c) {
   // El ESTADO GUARDADO decide qué pidió el asistente en su último mensaje (séptima ronda): la ficha trae `pide`, que escribió el CÓDIGO al armar la pregunta; nunca se deduce del texto del modelo
   // («Listo, ya tengo su nombre» no es una pregunta). ¿Está pidiendo la entrega (hay piezas y falta el modo, con los botones a la vista)? Lo dice la ficha también.
   const pideAntes = Array.isArray(f.pide) ? f.pide : [];
-  const estadoEntrega = { esperaNombre: pideAntes.includes('nombre'), esperaCiudad: pideAntes.includes('ciudad'), esperaDocumento: pideAntes.includes('documento'), modoPedido: f.carrito.length > 0 && bmEntregaDeFicha(f.entrega).modo === '', mercado: c.mercado, vendibles: c.vendibles };
+  const estadoEntrega = { esperaNombre: pideAntes.includes('nombre'), esperaCiudad: pideAntes.includes('ciudad'), esperaDocumento: pideAntes.includes('documento'), esperaFlota: pideAntes.includes('flota'), esperaDireccion: pideAntes.includes('direccion'), esperaCp: pideAntes.includes('cp'), esperaProvincia: pideAntes.includes('provincia'), modoPedido: f.carrito.length > 0 && bmEntregaDeFicha(f.entrega).modo === '', mercado: c.mercado, vendibles: c.vendibles };
   const comp = bmEntregaDeTurno(j.entrega, f.entrega, p.textoCliente, c.modos, estadoEntrega);
   const entrega = bmMezclarEntrega(f.entrega, comp.entrega, c.modos);
   // El «pagar» escrito (y el cierre guardado) solo CIERRAN si el pedido YA estaba completo antes de este turno y este turno no lo cambia: si se completa ahora, el cliente ve primero el resumen con «Confirmar pedido» y «Corregir datos».

@@ -173,7 +173,7 @@ if (puerta.ruta === 'sigue') {
     nuevos.mostrados = d.lineas.map((l) => l.id).concat(fichaAntes.mostrados.filter((x) => !d.lineas.some((l) => l.id === x))).slice(0, 15);
     // La memoria de la charla: sin números largos (NIT, CI, teléfonos).
     // El turno COMPLETO: lo que escribió el cliente entero (`textoCompleto`, aunque la tienda haya contestado una parte) y lo que se le respondió, con la respuesta de la tienda.
-    recordar(typeof c.plan.textoCompleto === 'string' && c.plan.textoCompleto !== '' ? c.plan.textoCompleto : c.plan.textoCliente, d.texto + (uAntes !== '' ? ' ' + uAntes : ''));   // el texto del asistente primero: la memoria es corta y el estado («pidió el nombre») sale de él
+    recordar(typeof c.plan.textoCompleto === 'string' && c.plan.textoCompleto !== '' ? c.plan.textoCompleto : c.plan.textoCliente, d.texto + (uAntes !== '' ? ' (respuesta de la tienda enviada)' : ''));   // la respuesta de la tienda es dato de otro: a la memoria va una marca fija, nunca su texto (volvería al modelo sin <<< >>>); el texto del asistente primero: la memoria es corta y el estado («pidió el nombre») sale de él
     if (d.patch) Object.assign(nuevos, d.patch);
     for (const k of ['carrito', 'entrega', 'cierre', 'mostrados', 'hist', 'qrHastaMs', 'qrCarrito', 'pide']) ev[k] = fichaAntes[k];
   } else if (tipoDePlan === 'qr') {
@@ -253,7 +253,7 @@ if (puerta.ruta === 'sigue') {
       : bmTextoDerivacion(d.motivo, salio);
     msgs = [conRecepcion(conSaludo(antepone(cuerpo)))];
     // La memoria también registra la derivación (lo que dijo el cliente, entero, y lo que se le respondió): sin esto, el turno siguiente decidiría con un estado viejo («el asistente pidió el nombre»).
-    recordar(typeof c.plan.textoCompleto === 'string' && c.plan.textoCompleto !== '' ? c.plan.textoCompleto : c.plan.textoCliente, cuerpo + (uAntes !== '' ? ' ' + uAntes : ''));
+    recordar(typeof c.plan.textoCompleto === 'string' && c.plan.textoCompleto !== '' ? c.plan.textoCompleto : c.plan.textoCliente, cuerpo + (uAntes !== '' ? ' (respuesta de la tienda enviada)' : ''));
     nuevos.pide = []; ev.pide = fichaAntes.pide;   // al derivar el asistente deja de pedir datos: lo suelto del turno siguiente ya no se toma
     if (salio === true && d.aviso && d.aviso.tipo === 'consulta') { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
     // Un pedido cambiado cuyo cobro no se pudo cerrar: el pedido nuevo se conserva (el QR viejo sigue abierto y el cliente ya sabe que no pague con él).
