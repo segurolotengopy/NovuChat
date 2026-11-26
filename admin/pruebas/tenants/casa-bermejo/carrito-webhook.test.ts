@@ -150,7 +150,7 @@ describe('un carrito en el turno', () => {
     expect((dec['plan'] as J)['tipo']).toBe('carrito');
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
     expect(t.mensajes).toHaveLength(1);
-    expect(t.mensajes[0]!.cuerpo).toMatch(/Recibí tu pedido del catálogo/);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Recibí su pedido del catálogo/);
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/solo puedo leer|texto, notas de voz/i);
     expect(t.mensajes.some((e) => e.tipo === 'image')).toBe(false);
     for (const x of t.mensajes) expect(x.cuerpo).not.toMatch(/acreditad|verificad|recibimos tu pago/i);

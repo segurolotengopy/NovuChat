@@ -197,7 +197,7 @@ if (puerta.ruta === 'sigue') {
       tipoDePlan = 'derivar';
       msgs = [conRecepcion(conSaludo(BM_INTROS.monto_invalido + ' Escríbele a recepción con el botón.'))];
     } else {
-      const resumen = (d.desdeCatalogo === true ? 'Recibí tu pedido del catálogo.\n\n' : '') + (d.cambioDePedido ? 'Actualicé tu pedido.\n\n' : '') + 'Este es el resumen de tu pedido:\n\n' + vcResumen(lineas)
+      const resumen = (d.desdeCatalogo === true ? 'Recibí su pedido del catálogo.\n\n' : '') + (d.cambioDePedido ? 'Actualicé tu pedido.\n\n' : '') + 'Este es el resumen de tu pedido:\n\n' + vcResumen(lineas)
         + '\n\nEntrega: ' + bmEntregaTexto(d.entrega) + '.' + (bmEsRetiro(bmEntregaDeFicha(d.entrega).modo) && uTienda.direccion !== '' ? ' Retira en: ' + (/[.!?]$/.test(uTienda.direccion) ? uTienda.direccion : uTienda.direccion + '.') : '') + ' El total no incluye el costo de entrega.\n\nAbajo va el QR para pagar.';
       const pie = bmSeguro('QR para pagar ' + vcMonto(d.total) + ' (pedido ' + d.pedidoId + '). Cuando pagues, envíame la foto del comprobante por este chat.', usted);
       const respaldo = 'No pude mostrarte el QR en este momento. Escríbeme de nuevo en unos minutos para intentarlo otra vez.';
@@ -206,7 +206,7 @@ if (puerta.ruta === 'sigue') {
       imagen.evento = 'qr_enviado'; imagen.reglaCobro = 2; imagen.referencia = String(d.pedidoId); imagen.monto = d.monto;
       // Para que el servidor cree el pedido `wa_<referencia>`: el catálogo es externo (NovuTienda) y el servidor no puede recalcularlo, así que viajan el precio y el nombre del CATÁLOGO, calculados aquí.
       // Líneas con la forma CERRADA del catálogo externo (`bmLineasPedido`): id, nombre, cantidad, precio y moneda salen del carrito del código, nunca del modelo.
-      { const ls = bmLineasPedido(d.lineas, from); if (ls) { imagen.lineas = ls; imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO'), ciudad: d.entrega.ciudad }); } }
+      { const ls = bmLineasPedido(d.lineas, from); if (ls) { imagen.lineas = ls; imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO') }); } }
       // K2: el pedido del checkout web que este QR reemplaza (solo un `cat_…` con su forma); la ficha lo suelta una vez emitido el QR.
       if (/^cat_[A-Za-z0-9_-]{1,56}$/.test(String(d.reemplaza || '')) && imagen.lineas) imagen.reemplaza = String(d.reemplaza);
       msgs = [texto(conSaludo(antepone(resumen))), imagen];

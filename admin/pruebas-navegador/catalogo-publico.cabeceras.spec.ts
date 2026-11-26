@@ -75,7 +75,7 @@ test.describe('Catálogo web público (cabeceras reales)', () => {
     await expect(page.locator('.cat-barra')).toHaveCount(0);
   });
 
-  test('retiro en el local: confirma sin pedir dirección y manda solo identificadores y cantidades', async ({ page }) => {
+  test('recojo en tienda: confirma sin pedir dirección y manda solo identificadores y cantidades', async ({ page }) => {
     await conWhatsApp(page);
     const cuerpos: unknown[] = [];
     page.on('request', (r) => { if (r.method() === 'POST' && r.url().endsWith('/checkout')) cuerpos.push(r.postDataJSON()); });
@@ -83,7 +83,7 @@ test.describe('Catálogo web público (cabeceras reales)', () => {
     await page.getByRole('button', { name: /^Agregar Salchipapa/ }).click();
     await page.locator('.cat-barra').click();
     await expect(page.getByRole('heading', { name: 'Tu pedido' })).toBeVisible();
-    await page.getByRole('button', { name: 'Retiro en el local' }).click();
+    await page.getByRole('button', { name: 'Recojo en tienda' }).click();
     await page.getByRole('button', { name: 'Confirmar el pedido' }).click();
     await expect(page.getByRole('heading', { name: /ya tiene tu pedido/ })).toBeVisible();
     expect(cuerpos).toHaveLength(1);
@@ -113,7 +113,7 @@ test.describe('Catálogo web público (cabeceras reales)', () => {
     await page.goto(RUTA);
     await page.getByRole('button', { name: /^Agregar Salchipapa/ }).click();
     await page.locator('.cat-barra').click();
-    await page.getByRole('button', { name: 'Retiro en el local' }).click();
+    await page.getByRole('button', { name: 'Recojo en tienda' }).click();
     await page.getByRole('button', { name: 'Confirmar el pedido' }).click();
     const volver = page.getByRole('link', { name: 'Volver al chat' });
     await expect(volver).toBeVisible();
@@ -125,7 +125,7 @@ test.describe('Catálogo web público (cabeceras reales)', () => {
     await page.goto(RUTA);
     await page.getByRole('button', { name: /^Agregar Salchipapa/ }).click();
     await page.locator('.cat-barra').click();
-    await page.getByRole('button', { name: 'Retiro en el local' }).click();
+    await page.getByRole('button', { name: 'Recojo en tienda' }).click();
     await page.getByRole('button', { name: 'Confirmar el pedido' }).click();
     await expect(page.getByRole('alert')).toContainText('Ya enviaste varios pedidos con este enlace');
     await expect(page.getByRole('heading', { name: /ya tiene tu pedido/ })).toHaveCount(0);

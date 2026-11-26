@@ -607,11 +607,24 @@ function bmCarritoVigente(carrito, vendibles) {
   const vigente = vcLineas(guardado, vendibles).lineas;
   return vigente.length === guardado.length && guardado.every((l, i) => vigente[i] && vigente[i].id === l.id && vigente[i].cantidad === l.cantidad);
 }
+// ¿El texto del turno es SOLO los datos de la entrega que se acaban de capturar (nombre, documento con su rótulo, ciudad, departamento…)? Si sobra cualquier palabra o cifra, no: el cliente dijo algo más y no se cobra por él.
+// El toque de una lista o botón (`seleccionId`) no es texto libre: ya es la elección.
+function bmTextoConsumido(texto, entrega, seleccionId) {
+  if (seleccionId) return true;
+  const e = bmEntregaDeFicha(entrega);
+  let r = ' ' + bmNorm(texto) + ' ';
+  const quitar = [e.nombre, e.documento, e.ciudad, String(e.departamento).replace(/_/g, ' '), String(e.region).replace(/_/g, ' '), String(e.provincia).replace(/_/g, ' ')].map((x) => bmNorm(x)).filter((x) => x !== '');
+  for (const x of quitar.sort((a, b) => b.length - a.length)) r = r.split(' ' + x + ' ').join('  ');
+  r = r.replace(/\b(ci|dni|cedula|carnet|documento|de|identidad|numero|nro)\b/g, ' ');
+  return r.replace(/\s+/g, '') === '';
+}
 function bmQuierePagar(n) {
   const t = String(n || '');
-  if (/\b(no|aun no|todavia no)\s+(quiero\s+)?(pagar|confirmar|cerrar)\b/.test(t)) return false;
+  if (/\b(no|aun no|todavia no)\s+(quiero\s+)?(pagar|confirmar|cerrar)\b|\bno confirmo\b/.test(t)) return false;
   // Una pregunta no es una orden («¿cómo puedo pagar?», «¿se puede pagar con tarjeta?»): el cierre queda fijo en la ficha y dispararía un QR no pedido.
   if (/^(como|que|donde|cuando|cual|cuanto|se puede|puedo|es posible|hay|aceptan|tienen)\b/.test(t) || /\b(se puede|puedo|con tarjeta|aceptan|metodos? de pago|formas? de pago)\b/.test(t)) return false;
+  // «Confirmo» a secas (o «sí, confirmo», «confirmado») es la orden de cierre; el llamador solo la honra con el pedido ya completo (`completoAntes`). «Confirmo mi dirección» no cierra: solo el mensaje entero.
+  if (/^(?:si |ok |dale |listo )?(?:confirmo|confirmado)$/.test(t)) return true;
   return /\b(pagar|pagare|pagamos|(?:mandame|enviame|envia|manda|dame|pasame|quiero|necesito) (?:ya )?el qr|confirmo (el|mi|la) (pedido|compra)|confirmar (el|mi) pedido|cerrar (el|mi) pedido|cerremos (el|mi) pedido|me los? llevo|lo llevo|los llevo|proceder? (con )?(el|mi|la) (pedido|pago|compra))\b/.test(t);
 }
 // El botón «Pagar» de Argentina (alias): su id exacto. Un toque con otro id nunca pide el alias, aunque su título diga «Pagar».
@@ -1444,9 +1457,17 @@ function bmPiezasConTopesDelFlujo(piezas, vendibles) {
       if (g && g.cantidad > 0) recortes.push({ nombre: n, incluidas: g.cantidad });
     }
   }
-  return { lineas: final, noEntraron: noEntraron, distintos: piezas.distintos, recortes: recortes };
+  // El módulo ya pudo haber recortado por STOCK (pidió 51, hay 10): la pieza figura en `noEntraron` pero SÍ entró con menos unidades; se dice cuántas (igual que el resumen), no «No pude incluir».
+  for (const g of final) {
+    const v = (Array.isArray(vendibles) ? vendibles : []).find((x) => x && x.id === g.id);
+    const n = vcLimpiar(v && typeof v.nombre === 'string' ? v.nombre : '', 60);
+    if (n !== '' && g.cantidad > 0 && noEntraron.includes(n) && !recortes.some((rc) => rc.nombre === n)) recortes.push({ nombre: n, incluidas: g.cantidad });
+  }
+  // Con algo que no entró, el total de la carga difiere por esas unidades, no por un precio: no se dice «algún precio cambió».
+  const distintos = noEntraron.length > 0 ? piezas.distintos.filter((d) => d !== '_total') : piezas.distintos;
+  return { lineas: final, noEntraron: noEntraron, distintos: distintos, recortes: recortes };
 }
-const BM_TEXTO_PRECIOS_CAMBIARON ='Algún precio de tu pedido cambió respecto de la página: vale el total real del resumen.';
+const BM_TEXTO_PRECIOS_CAMBIARON ='Algún precio de su pedido cambió respecto de la página: vale el total real del resumen.';
 function bmResolverCarrito(c) {
   const f = c.ficha;
   const car = cbEsObjeto(c.plan.carrito) ? c.plan.carrito : {};
@@ -1475,7 +1496,7 @@ function bmResolverCarrito(c) {
   r.desdeCatalogo = true;
   if (r.tipo === 'modelo') {
     // El texto lo arma el código: qué entró, qué no, y lo que falta o el botón «Confirmar pedido»; nunca el del modelo, que no corrió.
-    const partes = ['Recibí tu pedido del catálogo.'];
+    const partes = ['Recibí su pedido del catálogo.'];
     // Lo recortado por un tope SÍ entró (con menos unidades): se dice cuántas, igual que el resumen; solo lo que no entró nada se dice «No pude incluir».
     const recortadas = piezas.recortes || [];
     const sinNada = piezas.noEntraron.filter((n) => !recortadas.some((rc) => rc.nombre === n));
@@ -1556,8 +1577,9 @@ function bmResolverModelo(c) {
   // El «pagar» escrito (y el cierre guardado) solo CIERRAN si el pedido YA estaba completo antes de este turno y este turno no lo cambia: si se completa ahora, el cliente ve primero el resumen con «Confirmar pedido» y «Corregir datos».
   const completoAntes = f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado) && vcMismoCarrito(antes, lineas) && JSON.stringify(bmEntregaDeFicha(f.entrega)) === JSON.stringify(entrega);
   // B4: un pedido del catálogo web cuya entrega se completa con ESTE mensaje sale con el QR solo (enviar el carrito ya es confirmar, Andres 23/11/2026) si, desde el carrito, nada cambió: mismas piezas, el mismo total vivo, cobro real en Bolivia y sin un «aún no quiero pagar».
-  const qrSoloDelCarrito = f.qrSoloCatCent > 0 && p.tipo === 'modelo' && c.mercado === 'BO' && c.cobro.modo === 'real' && f.carrito.length > 0 && vcMismoCarrito(antes, lineas) && fijada.delSitio !== true && fijada.ordenada !== true
-    && vcTotalCentavos(lineas) === f.qrSoloCatCent && bmEntregaCompleta(entrega, c.mercado) && !/\b(no|aun no|todavia no)\s+(quiero\s+)?(pagar|confirmar|cerrar)\b/.test(bmNorm(p.textoCliente));
+  // Estructural (revisión de la ronda 10): el QR directo solo sale si el texto del turno quedó CONSUMIDO ENTERO por el dato pedido (nombre, documento…); cualquier texto que sobre («espera, aún no…», «ya no quiero nada») lo impide y sale el resumen con «Confirmar pedido» y «Corregir datos». Sin lista de negaciones.
+  const qrSoloDelCarrito = f.qrSoloCatCent > 0 && p.tipo === 'modelo' && c.mercado === 'BO' && c.cobro.modo === 'real' && f.carrito.length > 0 && vcMismoCarrito(antes, lineas) && fijada.delSitio !== true && fijada.ordenada !== true && !ordenVaciar
+    && vcTotalCentavos(lineas) === f.qrSoloCatCent && bmEntregaCompleta(entrega, c.mercado) && bmTextoConsumido(p.textoCliente, entrega, c.t && c.t.seleccionId) && !/\b(no|aun no|todavia no)\s+(quiero\s+)?(pagar|confirmar|cerrar)\b/.test(bmNorm(p.textoCliente));
   const cierre = c.cierreCarrito === true || qrSoloDelCarrito || (completoAntes && bmQuierePagar(bmNorm(p.textoCliente))) || (cfEsConfirmacion(c.t && c.t.seleccionId, bmLineasParaHuella(f.carrito, c.vendibles), bmEntregaDeFicha(f.entrega), f.pedidos) && f.carrito.length > 0 && bmEntregaCompleta(f.entrega, c.mercado) && bmCarritoVigente(f.carrito, c.vendibles));   // el botón «Confirmar pedido» es la orden de cierre SOLO con el pedido que ya estaba listo (el de un mensaje viejo no cierra uno nuevo) (módulo común Pedidos)
   // `f.cierre` (un «pagar» dicho en un turno anterior) NO abre un cobro: el QR sale solo en el turno en que se confirma (el botón, o «confirmo/pagar» con el pedido ya completo), nunca ante un «hola» de una ficha con `cierre: true`.
   // Con el pedido LISTO (piezas, entrega completa y orden de pagar) lo decide el código: un «quiereHablar» del modelo (p. ej. «el envío lo cotiza la tienda») no lo desvía; el pedido se anota y la tienda recibe el aviso.

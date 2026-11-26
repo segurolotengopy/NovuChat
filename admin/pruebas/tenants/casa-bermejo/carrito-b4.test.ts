@@ -51,7 +51,7 @@ describe('R13: el carrito con recojo produce el resumen y el QR REAL en el mismo
     expect(t.fallo).toBeNull();
     expect(t.mensajes).toHaveLength(2);
     expect(t.mensajes[0]!.tipo).toBe('text');
-    expect(t.mensajes[0]!.cuerpo).toMatch(/Recibí tu pedido del catálogo/);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Recibí su pedido del catálogo/);
     expect(t.mensajes[0]!.cuerpo).toMatch(/Total: Bs 450/);
     expect(t.mensajes[1]!.tipo).toBe('image');
     expect(((t.mensajes[1]!.payload['image']) as J)['id']).toBe(MEDIA_QR);
@@ -79,6 +79,40 @@ describe('R13: el carrito con recojo produce el resumen y el QR REAL en el mismo
     enviar(m, cuerpo());
     const t = hablar(m, ANA, mTexto('Ana Pérez, aún no quiero pagar'));
     expect(hayQr(t)).toBe(false);
+  });
+  it('NEGADO (ronda 10, estructural): si al dar el nombre el cliente dice CUALQUIER cosa más, no hay QR directo: sale el resumen con «Confirmar pedido» y «Corregir datos» (modelo que repite el pedido y modelo que devuelve lineas vacías)', () => {
+    const textos = ['Ana Pérez. Espera, aún no, primero consulto con mi esposo', 'Ana Pérez, ya no quiero nada', 'Ana Pérez, cancela todo', 'Ana Pérez, mañana te confirmo', 'Ana Pérez, ¿y si lo cambio?'];
+    const modeloVacio = (): ((ll: LlamadaDoble) => J) => (ll) => modelo('Listo.', { lineas: [], entrega: /Ana/.test(textoAlModelo(ll)) ? { nombre: 'Ana Pérez' } : {} });
+    for (const dice of [modeloNombre, modeloVacio]) {
+      for (const texto of textos) {
+        const m = crear({ modeloDice: dice() });
+        enviar(m, cuerpo());
+        const t = hablar(m, ANA, mTexto(texto));
+        expect(hayQr(t), texto).toBe(false);
+        expect(qrEnviado(t), texto).toBeUndefined();
+      }
+    }
+    const m = crear({ modeloDice: modeloNombre() });
+    enviar(m, cuerpo());
+    const t = hablar(m, ANA, mTexto('Ana Pérez. Espera, aún no, primero consulto con mi esposo'));
+    expect(titulos(t)).toContain('Confirmar pedido');
+    expect(titulos(t)).toContain('Corregir datos');
+  });
+  it('SANO (control): solo el nombre con su documento rotulado sigue sacando el QR (el texto queda consumido entero)', () => {
+    const m = crear({ modeloDice: modeloNombre() });
+    enviar(m, cuerpo());
+    expect(hayQr(hablar(m, ANA, mTexto('Ana Pérez')))).toBe(true);
+  });
+  it('«confirmo» a secas (criterio del 23/11): con el pedido COMPLETO emite el QR; NEGADO: con el pedido incompleto, con «no confirmo» o dentro de otra frase no emite', () => {
+    const m = conNombre({ modeloDice: modeloNombre() });
+    const t0 = enviar(m, cuerpo({ total: 999 }));   // el total de la página no es el real: sale el resumen con «Confirmar pedido», entrega completa
+    expect(hayQr(t0)).toBe(false);
+    expect(hayQr(hablar(m, ANA, mTexto('no confirmo')))).toBe(false);
+    expect(hayQr(hablar(m, ANA, mTexto('confirmo mi dirección')))).toBe(false);
+    expect(hayQr(hablar(m, ANA, mTexto('confirmo')))).toBe(true);
+    const inc = crear({ modeloDice: modeloNombre() });
+    enviar(inc, cuerpo());   // falta el nombre: pedido incompleto
+    expect(hayQr(hablar(inc, ANA, mTexto('confirmo')))).toBe(false);
   });
   it('NEGADO: sin cobro real del comercio no hay QR (se ofrece «Confirmar pedido») ni se dice nada de un pago', () => {
     const m = conNombre({ panel: panelSinCobro() });
@@ -233,7 +267,7 @@ describe('R16: el precio del QR sale del catálogo leído en ESE turno, nunca de
     const t = enviar(m, cuerpo({ items: [{ id: 'billetera-cuero', nombre: 'Billetera de cuero', cantidad: 1, subtotal: 10, precioCentavos: 1000 }], total: 10 }));
     expect(hayQr(t)).toBe(false);
     expect(cuerpos(t)).toMatch(/Total: Bs 450/);
-    expect(cuerpos(t)).toMatch(/precio de tu pedido cambió|Algún precio/);
+    expect(cuerpos(t)).toMatch(/precio de su pedido cambió|Algún precio/);
     expect(cuerpos(t)).not.toMatch(/Bs 10\b/);
     const tc = hablar(m, ANA, mToque(ids(t).find((i) => i.startsWith('pedido:confirmar:'))!, 'Confirmar pedido'));
     expect(qrEnviado(tc)).toMatchObject({ monto: 450 });
@@ -459,38 +493,6 @@ describe('R59: el asistente no afirma «precios actualizados» sin respaldo', ()
   });
 });
 
-describe('K1: el armador reenvía `mercado`, `catalogo`, `precioCentavos` y `detalle` que la carga del módulo descarta (y falla si el módulo cambia)', () => {
-  it('el código armado reenvía los cuatro campos', () => {
-    const js = String((((PRODUCCION.nodes as J[]).find((n) => n['name'] === 'Carga de entrada') as J)['parameters'] as J)['jsCode']);
-    expect(js).toContain("mercado: String(v.mercado || '')");
-    expect(js).toContain("catalogo: String(v.catalogo || '')");
-    expect(js).toContain('precioCentavos: x.precioCentavos');
-    expect(js).toContain('detalle: x.detalle');
-  });
-  it('NEGADO: si una ancla del módulo ya no está, el armado FALLA en vez de armar un flujo sin K1; si el módulo ya los reenvía, no toca nada', () => {
-    expect(() => C.conCamposK1('function ccCarritos() { return []; }')).toThrow(/catalogo-web/);
-    const cuatro = 'mercado: String(v.mercado || \'\'), catalogo: String(v.catalogo || \'\'), items: [{ precioCentavos: x.precioCentavos, detalle: x.detalle }]';
-    // NEGADO (hallazgo 1 de la ronda 2): con los cuatro campos pero SIN la cantidad, la entrega y la moneda crudas, NO se salta en silencio: el armado falla con error claro
-    const sinCrudos = `function x() { return { ${cuatro} }; }`;
-    expect(() => C.conCamposK1(sinCrudos)).toThrow(/NO la cantidad cruda.*la entrega cruda.*la moneda cruda/);
-    // y con solo una de las tres también falla (y nombra la que falta)
-    const conCantidad = `function x() { return { ${cuatro}, cantidad: crudos[k] ? crudos[k].cantidad : x.cantidad, entrega: v.entrega === 'envio' ? 'envio' : 'retiro', moneda: String(v.moneda || 'Bs') }; }`;
-    expect(() => C.conCamposK1(conCantidad)).toThrow(/NO la entrega cruda.*la moneda cruda/);
-    // SANO: el módulo corregido (siete campos, crudos) se deja tal cual
-    const moduloCorregido = `function x() { return { ${cuatro}, cantidad: crudos[k] ? crudos[k].cantidad : x.cantidad, entrega: cuerpo.entrega === 'envio' || cuerpo.entrega === 'retiro' ? cuerpo.entrega : '', moneda: cuerpo.moneda === 'ARS' ? 'ARS' : 'Bs' }; }`;
-    expect(C.conCamposK1(moduloCorregido)).toBe(moduloCorregido);
-  });
-  it('NEGADO: el puente exige los CUATRO campos: con solo `mercado` (o solo `precioCentavos`) NO se salta; sin anclas falla en vez de perder el resto en silencio', () => {
-    expect(() => C.conCamposK1("function x() { return { mercado: String(v.mercado || '') }; }")).toThrow(/catalogo-web/);
-    expect(() => C.conCamposK1('function x() { return { precioCentavos: x.precioCentavos }; }')).toThrow(/catalogo-web/);
-    expect(() => C.conCamposK1("function x() { return { mercado: String(v.mercado || ''), catalogo: String(v.catalogo || ''), precioCentavos: x.precioCentavos }; }")).toThrow(/catalogo-web/);
-  });
-  it('el código armado reenvía la cantidad y la entrega CRUDAS del carrito (la cantidad 0 y la entrega ausente no se vuelven 1 ni «retiro»)', () => {
-    const js = String((((PRODUCCION.nodes as J[]).find((n) => n['name'] === 'Carga de entrada') as J)['parameters'] as J)['jsCode']);
-    expect(js).toContain('cantidad: crudos[k] ? crudos[k].cantidad : x.cantidad');
-    expect(js).toContain("cuerpo.entrega === 'envio' || cuerpo.entrega === 'retiro' ? cuerpo.entrega : ''");
-  });
-});
 
 describe('Revisión #1130: los mismos topes en los dos pasos (99 por pieza y 50 renglones del módulo contra 50 y 30 del flujo)', () => {
   const grande = (extra: J[] = []): J[] => [...extra];
@@ -550,9 +552,9 @@ describe('Revisión #1130: la cantidad 0, negativa o no entera NUNCA termina en 
     const t = enviar(conNombre(), cuerpo({ items: [{ id: 'billetera-cuero', nombre: 'Billetera de cuero', cantidad: 1, subtotal: 450, precioCentavos: 45000 }, { id: 'billetera-cuero', nombre: 'Billetera de cuero', cantidad: 0, subtotal: 0, precioCentavos: 45000, detalle: 'negra' }], total: 450 }));
     expect(hayQr(t)).toBe(false);
   });
-  it('SANO (control): la cantidad 1 como número y como texto «1» sí salen con QR', () => {
+  it('SANO (control): la cantidad 1 como número sale con QR; NEGADO: como texto «1» el módulo la lleva a 0 y la pieza se descarta (sin QR)', () => {
     expect(hayQr(enviar(conNombre(), con(1)))).toBe(true);
-    expect(hayQr(enviar(conNombre(), cuerpo({ items: [{ id: 'billetera-cuero', nombre: 'Billetera de cuero', cantidad: '1', subtotal: 450, precioCentavos: 45000 }], total: 450 })))).toBe(true);
+    expect(hayQr(enviar(conNombre(), cuerpo({ items: [{ id: 'billetera-cuero', nombre: 'Billetera de cuero', cantidad: '1', subtotal: 450, precioCentavos: 45000 }], total: 450 })))).toBe(false);
   });
 });
 
@@ -580,5 +582,23 @@ describe('Revisión #1130: la entrega ausente se pregunta con botones; la moneda
   });
   it('NEGADO: «bs», «BOB» en minúscula o «bolivianos» tampoco se aceptan como Bs por parecido', () => {
     for (const mon of ['bs', 'bolivianos', 'eur', '$']) expect(hayQr(enviar(conNombre(), cuerpo({ moneda: mon }))), mon).toBe(false);
+  });
+});
+
+describe('Revisión #1130, ronda 10: el stock que recorta se dice igual que el resumen, y la ciudad no viaja dos veces', () => {
+  it('NEGADO: con stock 10 y 51 pedidas el texto dice «solo pude incluir 10» (como el resumen), nunca «No pude incluir» ni «algún precio cambió»; y no sale el QR', () => {
+    const cat = CATALOGO.filter((c) => (c as J)['id'] === 'billetera-cuero').map((c) => ({ ...c, precioCentavos: 45000, stock: 10, disponible: true }));
+    const m = conNombre({ catalogo: catalogoOk({}, cat) });
+    const t = enviar(m, cuerpo({ items: [{ id: 'billetera-cuero', nombre: 'Billetera de cuero', cantidad: 51, subtotal: 22950, precioCentavos: 45000 }], total: 22950 }));
+    expect(hayQr(t)).toBe(false);
+    expect(cuerpos(t)).toMatch(/Billetera de cuero: solo pude incluir 10\./);
+    expect(cuerpos(t)).not.toMatch(/No pude incluir: Billetera/);
+    expect(cuerpos(t)).not.toMatch(/Algún precio/);
+    expect(cuerpos(t)).toMatch(/10 x Billetera de cuero|10 × Billetera de cuero|10 Billetera/);
+  });
+  it('la entrega que viaja al servidor no repite la ciudad: «armar-mensajes» ya no la pasa aparte (bmDireccionPedido la incluye)', () => {
+    const js = String((((PRODUCCION.nodes as J[]).find((n) => n['name'] === 'Armar mensajes') as J)['parameters'] as J)['jsCode']);
+    expect(js).toContain('bmDireccionPedido(d.entrega');
+    expect(js).not.toMatch(/ciudad:\s*d\.entrega\.ciudad/);
   });
 });

@@ -226,7 +226,7 @@ describe('lo incluido es byte a byte igual a su fuente', () => {
     const pares: [string, string][] = [['Carga de entrada', 'carga-de-entrada'], ['Config del negocio', 'config-del-negocio'], ['Normalizar entrada', 'normalizar-entrada'], ['Puerta del turno', 'puerta-del-turno'], ['Resumen del turno', 'resumen-del-turno']];
     for (const f of [PRODUCCION, PRUEBA]) {
       // «Carga de entrada» lleva ANTEPUESTA la rama del carrito del catálogo web (módulo catalogo-web); el código común del core va después, sin una edición.
-      for (const [n, a] of pares) expect(codigo(f, n), n).toBe([...libs, comun, n === 'Carga de entrada' ? C.conCamposK1(cargaConCarrito(fuente(`venta-digital/src/nodos/${a}.js`))) : fuente(`venta-digital/src/nodos/${a}.js`)].join('\n\n') + '\n');
+      for (const [n, a] of pares) expect(codigo(f, n), n).toBe([...libs, comun, n === 'Carga de entrada' ? cargaConCarrito(fuente(`venta-digital/src/nodos/${a}.js`)) : fuente(`venta-digital/src/nodos/${a}.js`)].join('\n\n') + '\n');
     }
   });
   it('«Armar mensajes»: librerías + _comun + los constructores de mensajes comunes + su código', () => {

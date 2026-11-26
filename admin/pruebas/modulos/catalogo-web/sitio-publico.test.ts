@@ -779,11 +779,13 @@ describe('pedido: referencias para llegar, aviso del delivery y ejemplo de la no
     expect(html).not.toContain('alguna referencia');
   });
 
-  it('R6: con las dos opciones aceptadas la página ofrece «Retiro en el local» y «Envío» (también con fuente externa: sin costo ni mínimo)', () => {
+  it('R6: con las dos opciones aceptadas la página ofrece «Recojo en tienda» y «Envío» como BOTONES (también con fuente externa: sin costo ni mínimo)', () => {
     const html = pintar({ aceptaRetiroEnLocal: true, aceptaDelivery: true, costoDelivery: null, pedidoMinimo: null });
-    expect(html).toContain('Retiro en el local');
-    expect(html).toMatch(/Envío/);
-    expect(html).not.toContain('(+'); // sin costo de envío inventado
+    const botones = [...html.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)].map((m) => (m[1] as string).replace(/<[^>]+>/g, '').trim());
+    expect(botones).toContain('Recojo en tienda');
+    expect(botones.some((b) => /^Envío/.test(b))).toBe(true);
+    expect(botones.some((b) => b.includes('(+'))).toBe(false); // sin costo de envío inventado
+    expect(html).not.toContain('Retiro en el local'); // el nombre viejo ya no sale en ningún lado
   });
 
   it('NEGANDO: con retiro elegido no hay campo de referencias, ni dirección, ni aviso', () => {

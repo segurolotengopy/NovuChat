@@ -304,7 +304,7 @@ const BM_INTROS = {
   comprobante_ya_visto: 'Ya tengo registrado tu comprobante anterior.',
   monto_invalido: 'No pude calcular el monto de tu pedido.',
   // El carrito del catálogo web llegó pero ninguna pieza se vende hoy (o ninguna se reconoce): no se inventa un pedido; lo ve recepción.
-  carrito_sin_piezas: 'Recibí tu pedido del catálogo, pero ninguna de sus piezas está disponible en este momento.',
+  carrito_sin_piezas: 'Recibí su pedido del catálogo, pero ninguna de sus piezas está disponible en este momento.',
   pedido_sin_cobro: 'Anoté tu pedido, pero el pago por QR no está disponible por ahora.',
   pedido_ar: 'Anoté tu pedido en pesos argentinos. El pago por transferencia lo coordina recepción: no hagas ninguna transferencia todavía.',
   // Argentina con el cobro por alias: solo sale si el pedido se reportó al servidor. El botón «Pagar» (id `pedido:alias`) lo atiende el CÓDIGO (pide el alias; si el cobro está apagado, el texto de `alias_cerrado`).

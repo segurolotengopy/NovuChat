@@ -96,9 +96,13 @@ for (let i = 0; i < entradas.length; i++) {
   }
 
   const moneda = String(prev.moneda ?? 'Bs');
-  const lineas = (Array.isArray(prev.items) ? prev.items : []).slice(0, MAX_LINEAS)
-    .map((it) => `• ${it.cantidad}× ${it.nombre} — ${monto(it.subtotal, moneda)}`);
-  const sobran = Math.max(0, Number(prev.itemsTotal ?? 0) - lineas.length);
+  // La cantidad llega TAL CUAL desde la validacion (ya no se vuelve 1): una linea con cantidad que no sea un entero >= 1 no se
+  // escribe («0×», «-1×», «1.5×») y se suma a lo que no se pudo incluir.
+  const brutas = (Array.isArray(prev.items) ? prev.items : []).slice(0, MAX_LINEAS);
+  const validas = brutas.filter((it) => Number.isInteger(it.cantidad) && it.cantidad >= 1);
+  const invalidas = brutas.length - validas.length;
+  const lineas = validas.map((it) => `• ${it.cantidad}× ${it.nombre} — ${monto(it.subtotal, moneda)}`);
+  const sobran = Math.max(0, Number(prev.itemsTotal ?? 0) - brutas.length);
   if (sobran > 0) lineas.push(`• y ${sobran} producto${sobran === 1 ? '' : 's'} más`);
 
   // El pedido va en UN bloque -encabezado, lineas, envio y total pegados-, y
@@ -113,11 +117,14 @@ for (let i = 0; i < entradas.length; i++) {
     ? (prev.direccion
       ? `Entrega: envío a ${prev.direccion}.`
       : 'Me falta la dirección de entrega: pásamela por acá y lo cerramos.')
-    : 'Entrega: pasas a recoger.'];
+    : (prev.entrega === 'retiro'
+      ? 'Entrega: pasas a recoger.'
+      // Una entrega AUSENTE ya no se da por «recoger»: se pregunta.
+      : 'Dime si quieres envío a domicilio o pasas a recoger y lo cerramos.')];
   if (prev.nota) entrega.push(`Tu nota: ${prev.nota}`);
   partes.push(entrega.join('\n'));
 
-  const fuera = Number(prev.descartados ?? 0);
+  const fuera = Number(prev.descartados ?? 0) + invalidas;
   if (fuera === 1) {
     partes.push('Hay 1 producto que no pude incluir. Desde acá no puedo ver si se agotó, si lo dieron '
       + 'de baja o si quedó sin precio, así que dime cuál era y lo revisamos.');
@@ -152,7 +159,7 @@ for (let i = 0; i < entradas.length; i++) {
     'Total: ' + monto(prev.total, moneda),
     prev.entrega === 'envio'
       ? (prev.direccion ? 'Quiero envío a ' + prev.direccion : 'Quiero envío y todavía no te di la dirección.')
-      : 'Paso a recoger.',
+      : (prev.entrega === 'retiro' ? 'Paso a recoger.' : 'Todavía no te dije si quiero envío o paso a recoger.'),
     ...(prev.nota ? ['Mi nota: ' + prev.nota] : []),
     ...(fuera > 0 ? [fuera + (fuera === 1 ? ' producto no entró' : ' productos no entraron') + ' en el pedido.'] : []),
   ].filter((t) => t !== '').join('\n');

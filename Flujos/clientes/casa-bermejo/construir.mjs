@@ -40,43 +40,6 @@ import { problemasDeReferencias } from '../../src/core/sin-agente/referencias.mj
 // B4 (24/11/2026): el carrito del catálogo web (módulo catalogo-web, común): el webhook, su guardia y la rama que lo lee en «Carga de entrada».
 import { cargaConCarrito, hallazgosDelCarrito, injertarCarrito, marcadorDeRuta, WEBHOOK_DEL_CARRITO } from '../../src/modulos/catalogo-web/carrito-del-catalogo.mjs';
 
-/**
- * K1 (B4, 25/11/2026): el carrito que llega a «Normalizar entrada» tiene que traer lo que `validar-carrito.js` YA valida y la rama `carga-del-carrito.js` del módulo catalogo-web hoy DESCARTA: `mercado` y `catalogo: 'externo'`
- * (con ellos `pcMercadoCoincide` deja salir el QR directo) y, por ítem, `precioCentavos` y `detalle` (con ellos `pcLineasDelCarrito` avisa un precio que no es el vivo). Mientras el módulo no los reenvíe él mismo, este armador los
- * reenvía con DOS reemplazos de texto exactos sobre el código del módulo (que no se edita). Si el módulo cambia y un ancla ya no está, el armado FALLA (nunca se arma un flujo sin ellos en silencio); si el módulo ya los reenvía,
- * no se toca nada y esta función se puede borrar.
- */
-const ANCLA_K1_CARRITO = 'itemsTotal: Number(v.itemsTotal) || 0,';
-const ANCLA_K1_ITEM = "return { id: /^[A-Za-z0-9_.:-]{1,100}$/.test(id) ? id : '', nombre: String(x.nombre), cantidad: x.cantidad, subtotal: x.subtotal };";
-const ANCLA_K1_ENTREGA = "entrega: v.entrega === 'envio' ? 'envio' : 'retiro',";
-const ANCLA_K1_MONEDA = "moneda: String(v.moneda || 'Bs'),";
-// Los CUATRO campos tienen que estar (un solo reenvío parcial NO basta: se perderían los demás en silencio).
-const CAMPOS_K1 = [/\bmercado:\s*String\(v\.mercado/, /\bcatalogo:\s*String\(v\.catalogo/, /\bprecioCentavos:\s*x\.precioCentavos/, /\bdetalle:\s*x\.detalle/];
-/**
- * Además (revisión del #1130): `validar-carrito.js` convierte una cantidad 0 o ilegible en 1 y una entrega ausente en «retiro», y con eso el flujo cobraba lo que el cliente no pidió. Este armador reenvía la
- * cantidad CRUDA del renglón (con ella `vcLineas` descarta 0, negativas y no enteras y el renglón queda como «no entró») y la entrega CRUDA (`retiro`/`envio`, o vacía: se pregunta con botones).
- */
-// PUENTE TEMPORAL (declarado en PROPIO.md y en docs/versiones-por-cliente.md): se salta SOLO si el módulo trae los cuatro campos Y además la cantidad, la entrega y la moneda CRUDAS (sin convertir).
-// Cierre: fusionar el PR del módulo catalogo-web que reenvía los siete campos y borrar `conCamposK1`.
-const CRUDOS_K1 = [
-  { nombre: 'la cantidad cruda del renglón', r: /\bcantidad:\s*crudos\[k\]/ },
-  { nombre: 'la entrega cruda (cuerpo.entrega)', r: /\bentrega:[^\n]*\bcuerpo\.entrega\b/ },
-  { nombre: 'la moneda cruda (cuerpo.moneda)', r: /\bmoneda:[^\n]*\bcuerpo\.moneda\b/ },
-];
-export function conCamposK1(codigo) {
-  if (CAMPOS_K1.every((r) => r.test(codigo))) {
-    const faltan = CRUDOS_K1.filter((c) => !c.r.test(codigo)).map((c) => c.nombre);
-    if (faltan.length === 0) return codigo; // el módulo corregido: reenvía los siete campos
-    throw new Error(`casa-bermejo: el módulo catalogo-web reenvía mercado, catalogo, precioCentavos y detalle pero NO ${faltan.join(', ')}: sin ellos vuelven en silencio la cantidad 0 cobrada como 1, la entrega ausente como «retiro» y EUR como Bs; no se arma (catalogo-web)`);
-  }
-  if (codigo.split(ANCLA_K1_CARRITO).length !== 2 || codigo.split(ANCLA_K1_ITEM).length !== 2 || codigo.split(ANCLA_K1_ENTREGA).length !== 2 || codigo.split(ANCLA_K1_MONEDA).length !== 2) throw new Error('casa-bermejo: el módulo catalogo-web cambió «carga-del-carrito.js»: ya no se pueden reenviar `mercado`, `catalogo`, `precioCentavos` y `detalle` (K1); hay que reenviarlos en el módulo');
-  return codigo
-    .replace(ANCLA_K1_CARRITO, () => `${ANCLA_K1_CARRITO} mercado: String(v.mercado || ''), catalogo: String(v.catalogo || ''),`)
-    // La moneda CRUDA: `validar-carrito.js` vuelve «Bs» toda moneda que no es USD ni ARS (EUR incluida). Solo `Bs`/`BOB` (o ausente) pasan por Bs; cualquier otra queda como «otra» y nunca coincide con un teléfono.
-    .replace(ANCLA_K1_MONEDA, () => "moneda: cuerpo.moneda === undefined || cuerpo.moneda === null || cuerpo.moneda === '' || cuerpo.moneda === 'Bs' || cuerpo.moneda === 'BOB' ? 'Bs' : (cuerpo.moneda === 'ARS' || cuerpo.moneda === 'USD' ? cuerpo.moneda : 'otra'),")
-    .replace(ANCLA_K1_ENTREGA, () => "entrega: cuerpo.entrega === 'envio' || cuerpo.entrega === 'retiro' ? cuerpo.entrega : '',")
-    .replace(ANCLA_K1_ITEM, () => "return { id: /^[A-Za-z0-9_.:-]{1,100}$/.test(id) ? id : '', nombre: String(x.nombre), cantidad: crudos[k] ? crudos[k].cantidad : x.cantidad, subtotal: x.subtotal, ...(Number.isSafeInteger(x.precioCentavos) ? { precioCentavos: x.precioCentavos } : {}), ...(typeof x.detalle === 'string' && x.detalle !== '' ? { detalle: x.detalle } : {}) };");
-}
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/casa-bermejo/casa-bermejo.json');
@@ -732,7 +695,7 @@ export function armarCasaBermejo(proyecto, datos, v, origenReceptor = leerRecept
       const fuente = proyecto.paquetes[`vd-${vd[1]}`];
       if (!fuente || fuente.length !== 1) throw new Error(`${donde} · ${n.name}: el config no declara el nodo común «${vd[1]}»`);
       // «Carga de entrada» lleva antepuesta la rama del carrito del catálogo web (módulo catalogo-web; el código común del core no se toca).
-      const codigoNodo = vd[1] === 'carga-de-entrada' ? conCamposK1(cargaConCarrito(fuente[0])) : fuente[0];
+      const codigoNodo = vd[1] === 'carga-de-entrada' ? cargaConCarrito(fuente[0]) : fuente[0];
       n.parameters.jsCode = [...proyecto.librerias, ...proyecto.comun, codigoNodo].join('\n\n') + '\n';
     }
   }

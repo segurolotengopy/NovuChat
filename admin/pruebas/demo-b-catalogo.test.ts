@@ -1162,6 +1162,21 @@ describe('«Mensaje del carrito»: uno solo, y solo cuando se puede', () => {
     expect(retiro).not.toMatch(/Envío:/);
   });
 
+  it('cantidad 0, negativa o fraccionaria NO se escribe como línea («0×») y suma a lo que no entró; una entrega ausente pregunta en vez de dar por hecho «recoger»', () => {
+    const s = armar({ items: [
+      { nombre: 'Cero', cantidad: 0, subtotal: 0 }, { nombre: 'Menos', cantidad: -1, subtotal: 5 },
+      { nombre: 'Media', cantidad: 1.5, subtotal: 5 }, { nombre: 'Buena', cantidad: 2, subtotal: 20 },
+    ], itemsTotal: 4, descartados: 0, entrega: '', direccion: '', costoEnvio: 0 });
+    const r = String(s['respuesta']);
+    expect(r).toContain('2× Buena');
+    expect(r).not.toMatch(/0× Cero|-1× Menos|1\.5× Media/);
+    expect(r).toContain('Hay 3 productos que no pude incluir');
+    expect(r).not.toContain('pasas a recoger.');
+    expect(r).toContain('envío a domicilio o pasas a recoger');
+    expect(String(s['memoriaCliente'])).not.toContain('Paso a recoger.');
+    expect(String(s['memoriaCliente'])).toContain('3 productos no entraron');
+  });
+
   it('lo que no entró también se recuerda, para que el asistente pueda retomarlo', () => {
     expect(String(armar({ descartados: 1 })['memoriaCliente'])).toContain('1 producto no entró en el pedido.');
     expect(String(armar({ descartados: 3 })['memoriaCliente'])).toContain('3 productos no entraron en el pedido.');
