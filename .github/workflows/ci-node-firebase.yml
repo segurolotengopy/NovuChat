@@ -1580,6 +1580,9 @@ jobs:
           REINTENTABLE="$RUNNER_TEMP/compuerta-reintentable"
           : > "$ACUMULADO"
           for intento in 1 2 3; do
+            # Antes de CADA intento: si el tope del paso lo corta entre «release complete» y la compuerta, la salida no queda
+            # con el valor del intento anterior («ninguno»), que saltaría el rollback (revisión de #1122, 25/11/2026).
+            echo "hosting_publicado=desconocido" >> "$GITHUB_OUTPUT"
             set +e
             firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
               --message "staging ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})" 2>&1 | tee "$REGISTRO"
@@ -2211,6 +2214,9 @@ jobs:
           REINTENTABLE="$RUNNER_TEMP/compuerta-reintentable"
           : > "$ACUMULADO"
           for intento in 1 2 3; do
+            # Antes de CADA intento: si el tope del paso lo corta entre «release complete» y la compuerta, la salida no queda
+            # con el valor del intento anterior («ninguno»), que saltaría el rollback (revisión de #1122, 25/11/2026).
+            echo "hosting_publicado=desconocido" >> "$GITHUB_OUTPUT"
             set +e
             firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
               --message "producción ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})" 2>&1 | tee "$REGISTRO"
@@ -2376,6 +2382,8 @@ jobs:
                 ? 'Despliegue a medias: firebase deploy no terminó; Hosting no se publicó (live sigue con la versión anterior)'
                 : process.env.COMPLETO === 'false' && process.env.HOSTING === 'parcial'
                 ? 'Despliegue a medias: solo uno de los sitios de Hosting se publicó; revise desplegar-produccion'
+                : process.env.HOSTING === 'desconocido'
+                ? 'Despliegue cortado durante un intento: estado de Hosting desconocido; revise desplegar-produccion'
                 : process.env.COMPLETO === 'false' && process.env.HOSTING === 'todos'
                 ? 'Despliegue a medias: Hosting publicado, pero firebase deploy no terminó bien; sin rollback'
                 : process.env.COMPLETO === 'false'
