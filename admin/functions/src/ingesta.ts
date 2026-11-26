@@ -316,8 +316,9 @@ function normalizar(cuerpo: unknown): Entrante | null {
   const codigoPedido = evento === 'factura_dada' || evento === 'factura_sin'
     ? codigoDePedidoValido(c['codigoPedido']) ?? undefined : undefined;
   // Respuesta a la campaña saliente: ambos campos válidos o ninguno (un `campana_respuesta` mal formado se cuenta como un mensaje cualquiera).
-  const respuestaCampana = evento === 'campana_respuesta' && campanaIdValido(c['campanaEnvioId']) && respuestaDeCampanaValida(c['respuestaCampana'])
-    ? { campanaEnvioId: c['campanaEnvioId'], respuestaCampana: c['respuestaCampana'] } : undefined;
+  // La respuesta válida basta: un «no» con id de campaña faltante o inválido igual crea la baja (`aplicarRespuestaDeCampana`).
+  const respuestaCampana = evento === 'campana_respuesta' && respuestaDeCampanaValida(c['respuestaCampana'])
+    ? { respuestaCampana: c['respuestaCampana'], ...(campanaIdValido(c['campanaEnvioId']) ? { campanaEnvioId: c['campanaEnvioId'] } : {}) } : undefined;
 
   // SIN CONTEO (16/11/2026): solo el booleano exacto `true`, y solo en un saliente de imagen. Cualquier
   // otra combinación o valor se ignora y el mensaje se cuenta como siempre (ante la duda, se cuenta).
@@ -933,7 +934,10 @@ export const ingesta = onRequest(
     const refAuditoria = db.collection(`tenants/${tenantId}/auditoria`);
     const ahoraMs = Date.now();
 
+    // El resultado de la respuesta a la campaña (se reasigna si la transacción se reintenta); se registra abajo, sin teléfono.
+    let resultadoDeCampana: string | null = null;
     const veredicto = await db.runTransaction(async (tx) => {
+      resultadoDeCampana = null;
       // SALIENTE DE IMAGEN SIN CONTEO (16/11/2026, `docs/arquitectura/medios.md`): la foto de catálogo que manda
       // el asistente queda en el hilo (la consola y `guardarMedio` la hallan por `idMeta`) y NADA MÁS. No toca
       // contadores (`mensajesTotal`, `respuestasDelPeriodo`, `mensajesVentana`), ni métricas, ni bloques, ni
@@ -1005,7 +1009,7 @@ export const ingesta = onRequest(
       // RESPUESTA A LA CAMPAÑA SALIENTE: lee la baja y escribe baja + `campanaRespuesta` en ESTA transacción. Va aquí porque
       // es la última lectura y la primera escritura de la transacción viene después (Firestore exige lecturas primero).
       if (mensaje.evento === 'campana_respuesta' && mensaje.direccion === 'entrante') {
-        await aplicarRespuestaDeCampana(tx, refConversacion,
+        resultadoDeCampana = await aplicarRespuestaDeCampana(tx, refConversacion,
           { campanaId: mensaje.campanaEnvioId, respuesta: mensaje.respuestaCampana }, Timestamp.fromMillis(ahoraMs));
       }
       const previasDelMes = Number(metricasDoc?.get('conversaciones'));
@@ -1461,6 +1465,16 @@ export const ingesta = onRequest(
         conversacion: conversacionDelMensaje(marcas, conteo, ahoraMs, mensaje.direccion) };
     });
 
+    if (mensaje.evento === 'campana_respuesta') {
+      // Constancia sin teléfono: qué pasó con la respuesta. Un «no» o un «sí» que no se aplicó (respuesta fuera de la lista, o «sí»
+      // sin id válido) no se ignora en silencio.
+      const r = resultadoDeCampana as string | null;
+      const normal = r === 'baja' || r === 'ya_baja' || r === 'respuesta';
+      (normal && mensaje.campanaEnvioId ? logger.info : logger.warn)('ingesta: respuesta a la campaña saliente', {
+        tenantId, resultado: r ?? (mensaje.direccion === 'entrante' ? 'sin_aplicar' : 'saliente_ignorado'),
+        campanaIdValido: mensaje.campanaEnvioId !== undefined,
+      });
+    }
     if ('sinConteo' in veredicto) {
       // Sin conteo no hay renglón de «mensaje contado» (ese log es lo que se agrupa para costo), ni bitácora de
       // mensaje, ni gancho de pedidos. Solo queda constancia de que se guardó, sin teléfono ni texto.

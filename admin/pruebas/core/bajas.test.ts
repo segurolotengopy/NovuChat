@@ -7,8 +7,9 @@
  * gracias») escribe en la MISMA transacción que el mensaje:
  *   - «no»: `tenants/{t}/bajas/{wa_tel}` = { canal, origen, campanaId, desde } y `campanaRespuesta` en la conversación;
  *   - «sí»: solo `campanaRespuesta`; NUNCA una baja.
- * Se niega: `campanaId` malo, respuesta fuera de la lista, un evento que no es entrante, una baja repetida (no duplica ni
- * pisa `desde`) y un comercio que escribe la baja de otro.
+ * Se niega: un «sí» con `campanaId` malo, respuesta fuera de la lista, un evento saliente, una baja repetida (no duplica ni pisa
+ * `desde`). Un «no» con id malo o ausente igual crea la baja con `campanaId` null, también con la conversación bloqueada o el
+ * servicio cortado. La baja de un comercio no aparece en el otro.
  *
  * Puerto del emulador: 8231 por convención.
  */
@@ -128,15 +129,34 @@ describe('«Sí, contáctenme»: anota la respuesta y NO crea baja', () => {
   });
 });
 
-describe('NIEGA: lo mal formado no escribe ni baja ni respuesta (el mensaje se cuenta como uno cualquiera)', () => {
+const IDS_MALOS: [string, Record<string, unknown>][] = [
+  ['campanaId con mayúsculas', { campanaEnvioId: 'Camp-Prueba' }],
+  ['campanaId de 2', { campanaEnvioId: 'ab' }],
+  ['campanaId de 41', { campanaEnvioId: 'a'.repeat(41) }],
+  ['campanaId con barra', { campanaEnvioId: 'camp/x' }],
+  ['campanaId con espacio', { campanaEnvioId: 'camp x' }],
+  ['campanaId ausente', {}],
+  ['campanaId no texto', { campanaEnvioId: 123 }],
+];
+
+describe('un «No» NUNCA se pierde: sin id de campaña válido igual crea la baja, con `campanaId` null', () => {
+  it.each(IDS_MALOS)('%s', async (_n, id) => {
+    const r = await responder(A, { ...id, respuestaCampana: 'no' });
+    expect(r.codigo).toBe(200);
+    expect(await baja(A)).toEqual({ canal: 'whatsapp', origen: 'boton_campana', campanaId: null, desde: expect.anything() });
+    expect((await conversacion(A))['campanaRespuesta']).toMatchObject({ campanaId: null, respuesta: 'no' });
+  });
+});
+
+describe('NIEGA: lo mal formado que NO es un «No» no escribe ni baja ni respuesta (el mensaje se cuenta como uno cualquiera)', () => {
+  it.each(IDS_MALOS)('un «sí» con %s no escribe nada', async (_n, id) => {
+    const r = await responder(A, { ...id, respuestaCampana: 'si' });
+    expect(r.codigo).toBe(200);
+    expect(await cuantasBajas(A)).toBe(0);
+    expect((await conversacion(A))['campanaRespuesta']).toBeUndefined();
+  });
+
   it.each([
-    ['campanaId con mayúsculas', { campanaEnvioId: 'Camp-Prueba', respuestaCampana: 'no' }],
-    ['campanaId de 2', { campanaEnvioId: 'ab', respuestaCampana: 'no' }],
-    ['campanaId de 41', { campanaEnvioId: 'a'.repeat(41), respuestaCampana: 'no' }],
-    ['campanaId con barra', { campanaEnvioId: 'camp/x', respuestaCampana: 'no' }],
-    ['campanaId con espacio', { campanaEnvioId: 'camp x', respuestaCampana: 'no' }],
-    ['campanaId ausente', { respuestaCampana: 'no' }],
-    ['campanaId no texto', { campanaEnvioId: 123, respuestaCampana: 'no' }],
     ['respuesta fuera de la lista', { campanaEnvioId: CAMPANA, respuestaCampana: 'quizas' }],
     ['respuesta en mayúsculas', { campanaEnvioId: CAMPANA, respuestaCampana: 'NO' }],
     ['respuesta ausente', { campanaEnvioId: CAMPANA }],
@@ -162,6 +182,29 @@ describe('NIEGA: lo mal formado no escribe ni baja ni respuesta (el mensaje se c
   });
 });
 
+describe('un «No» crea la baja IGUAL con la conversación bloqueada y con el servicio cortado', () => {
+  it('conversación `bloqueada`: la baja se crea', async () => {
+    await responder(A, { campanaEnvioId: 'otra-camp', respuestaCampana: 'si' });
+    await db.doc(`tenants/${A.id}/conversaciones/wa_${TEL}`).update({ bloqueada: true, bloqueadaPor: 'u-admin', bloqueadaEn: Timestamp.now() });
+    const r = await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' });
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo['bloqueadoPorContacto']).toBe(true);
+    expect(await baja(A)).toMatchObject({ campanaId: CAMPANA, origen: 'boton_campana' });
+  });
+
+  it('servicio cortado: la baja se crea', async () => {
+    await db.doc('plataforma/prepago').set({ corteActivo: false });
+    await db.doc(`tenants/${A.id}/cuenta/estado`).set({
+      modalidad: 'prepago', plan: 'crecimiento', limites: { conversaciones: 100 },
+      periodoPagado: '2025-01', corteActivo: true,
+    });
+    const r = await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' });
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo['servicio']).toMatchObject({ estado: 'cortado' });
+    expect(await baja(A)).toMatchObject({ campanaId: CAMPANA });
+  });
+});
+
 describe('`aplicarRespuestaDeCampana` directo (la pieza que la ingesta llama dentro de su transacción)', () => {
   const ref = (c: Comercio) => db.doc(`tenants/${c.id}/conversaciones/wa_${TEL}`);
   const aplicar = (datos: { campanaId: unknown; respuesta: unknown }, c: Comercio = A) =>
@@ -171,7 +214,7 @@ describe('`aplicarRespuestaDeCampana` directo (la pieza que la ingesta llama den
     expect(await aplicar({ campanaId: CAMPANA, respuesta: 'si' })).toBe('respuesta');
     expect(await aplicar({ campanaId: CAMPANA, respuesta: 'no' })).toBe('baja');
     expect(await aplicar({ campanaId: CAMPANA, respuesta: 'no' })).toBe('ya_baja');
-    expect(await aplicar({ campanaId: 'MAL', respuesta: 'no' })).toBe('invalida');
+    expect(await aplicar({ campanaId: 'MAL', respuesta: 'si' })).toBe('invalida');
     expect(await aplicar({ campanaId: CAMPANA, respuesta: 'tal vez' })).toBe('invalida');
   });
 });

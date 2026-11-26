@@ -30,19 +30,22 @@ export const respuestaDeCampanaValida = (v: unknown): v is RespuestaDeCampana =>
 
 /**
  * Aplica la respuesta a la campaña dentro de la transacción `tx`. Devuelve `'baja'` si creó la baja, `'ya_baja'` si ya
- * existía (no se toca), `'respuesta'` si solo anotó la respuesta («sí»), o `'invalida'` si `campanaId` o `respuesta`
- * no cumplen (no se escribe nada).
+ * existía (no se toca), `'respuesta'` si solo anotó la respuesta («sí»), o `'invalida'` si la respuesta está fuera de la lista, o es un «sí» sin id
+ * de campaña válido (no se escribe nada). Un «no» con id inválido SÍ crea la baja, con `campanaId: null`.
  */
 export async function aplicarRespuestaDeCampana(
   tx: Transaction, refConv: DocumentReference, datos: { campanaId: unknown; respuesta: unknown }, ahora: Timestamp,
 ): Promise<'baja' | 'ya_baja' | 'respuesta' | 'invalida'> {
   const { campanaId, respuesta } = datos;
-  if (!campanaIdValido(campanaId) || !respuestaDeCampanaValida(respuesta)) return 'invalida';
+  if (!respuestaDeCampanaValida(respuesta)) return 'invalida';
+  // Un «no» NUNCA se pierde: sin un id de campaña válido igual se crea la baja (`campanaId: null`). Un «sí» sin id no escribe nada.
+  const id = campanaIdValido(campanaId) ? campanaId : null;
+  if (id === null && respuesta === 'si') return 'invalida';
   const refBaja = refConv.parent.parent!.collection('bajas').doc(refConv.id);
   const existente = respuesta === 'no' ? await tx.get(refBaja) : null;
-  tx.set(refConv, { campanaRespuesta: { campanaId, respuesta, en: ahora } }, { merge: true });
+  tx.set(refConv, { campanaRespuesta: { campanaId: id, respuesta, en: ahora } }, { merge: true });
   if (existente === null) return 'respuesta';
   if (existente.exists) return 'ya_baja';
-  tx.create(refBaja, { canal: 'whatsapp', origen: 'boton_campana', campanaId, desde: ahora });
+  tx.create(refBaja, { canal: 'whatsapp', origen: 'boton_campana', campanaId: id, desde: ahora });
   return 'baja';
 }
