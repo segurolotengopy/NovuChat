@@ -161,8 +161,17 @@ export async function reclamarSalida(
       const topesDeRetomar = estado === 'pendiente' && tipoDelMensaje === 'plantilla' && s.get('autor') === 'persona' ? await tx.get(refTopesDeRetomar(db, tenantId)) : null;
       // UNA CAMPAÑA NO SALE a quien pidió la baja, tiene `noContactar` o está bloqueado: se lee la baja en ESTA transacción (lectura
       // antes de toda escritura) y, si corresponde, el mensaje se cancela abajo como cualquier otro que no sale (`caducado`).
-      const bajaDeCampana = estado === 'pendiente' && esCampana ? await tx.get(db.doc(`tenants/${tenantId}/bajas/${conversacionId}`)) : null;
-      const noSaleAlContacto = esCampana && (bajaDeCampana?.exists === true || conv.get('noContactar') === true || conv.get('bloqueada') === true);
+      // M3: la baja frena TAMBIÉN cualquier plantilla de persona (Retomar): el pie de la plantilla promete «no le escribiremos más».
+      // Un texto de persona dentro de la ventana sigue saliendo (la persona escribió primero).
+      const bajaDeCampana = estado === 'pendiente' && (esCampana || tipoDelMensaje === 'plantilla') ? await tx.get(db.doc(`tenants/${tenantId}/bajas/${conversacionId}`)) : null;
+      // M1: la campaña CIERRA ANTE LA DUDA (como `rescates.ts`): cualquier valor de `noContactar` o `bloqueada` distinto de
+      // ausente o `false` (`'true'`, `1`, `null`…) la frena.
+      const marcado = (v: unknown): boolean => v !== undefined && v !== false;
+      const noSaleAlContacto = bajaDeCampana?.exists === true
+        || (esCampana && (marcado(conv.get('noContactar')) || marcado(conv.get('bloqueada'))));
+      // O1 (declarado, es del PR-C): la campaña NO tiene tope propio en el servidor (ni por día ni por tanda ni uno por
+      // contacto) y COMPARTE esta cola (limit MAXIMO_POR_RECLAMO*2, orden por `ts`, caducidad de 2 min) con los textos y los
+      // Retomar de las personas: una tanda grande puede dejar caducar mensajes de personas del mismo comercio.
       // LA CADUCIDAD, antes de mirar de qué línea es: un `pendiente` viejo de otra línea tampoco puede
       // quedarse en la cola ocupando lugar. Sin entregarse, sin contar, reintentable.
       if (estado === 'pendiente') {
