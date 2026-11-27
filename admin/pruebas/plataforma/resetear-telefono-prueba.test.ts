@@ -793,7 +793,7 @@ describe('E9. UN solo reseteo para todos los flujos (09/11/2026)', () => {
   const TENANTS = ['qtaco', 'rroca-ruben', 'rroca-evy', 'rroca-antonio', 'rroca-emma', 'bellido', 'walisuma'];
   it('admite CUALQUIER tenant con id válido (sin lista fija) y rechaza los reservados y los mal formados', () => {
     for (const t of [...TENANTS, 'platinum', 'casa-bermejo', 'tienda-nueva']) expect(m.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--tel', TEL], ENV).ok, t).toBe(true);
-    for (const t of ['novuchat', 'ensayo', 'demo-venta', 'demo-agendamiento', 'RROCA-RUBEN', 'a', '../x']) {
+    for (const t of ['novuchat', 'ensayo', 'demo-venta', 'demo-agendamiento', 'demo-a', 'demo-b', 'novuchat-prueba', 'RROCA-RUBEN', 'a', '../x']) {
       expect(problemas(m.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--tel', TEL], ENV)), t).toContain('--tenant');
     }
   });

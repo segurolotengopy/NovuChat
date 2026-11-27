@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # Fija (o quita) a dónde avisa NovuChat cuando llega un carrito del catálogo web de UN comercio: `rutasWhatsApp/<phoneNumberId>.webhookCarrito`.
 # Envoltorio de `admin/scripts/plataforma/fijar-webhook-carrito.mjs` SIN que nadie escriba, vea ni pegue el proyecto, el phone_number_id, la
 # ruta secreta del carrito ni el host de n8n: todo se lee DENTRO del proceso (ver `scripts/lib/valores-del-comercio.sh`) y nada se imprime.
@@ -17,6 +17,15 @@
 #   · host de n8n     → `N8N_BASE_URL` del `.env` del comercio (ENV_N8N, o ~/NovuChat/.env.<comercio>-prod).
 #   La URL es https://<host>/webhook/<ruta> y llega al script de nodo por una variable de entorno de ESE proceso.
 # Salida: la del script de nodo; 2 uso o salvaguarda (nada escrito); 3 falta un valor local o no se pudo leer.
+case "$-" in *p*) ;; *) exec /bin/bash -p -- "$0" "$@" ;; esac
+# H4 (revisión de #1141): el arranque no hereda comportamiento del entorno de quien llama: modo privilegiado (-p: ni BASH_ENV ni funciones importadas),
+# sin BASH_ENV/ENV, sin funciones, y un PATH de sistema fijo. Los ejecutables que hacen falta se resuelven ANTES por ruta absoluta.
+unset BASH_ENV ENV
+while IFS= read -r f; do builtin unset -f "$f"; done < <(compgen -A function)
+NODO="$(command -v node || true)"
+[[ "$NODO" == /* && -x "$NODO" ]] || { echo "✗ No encuentro node (ruta absoluta y ejecutable)" >&2; exit 2; }
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; export PATH
+hash -r
 set -euo pipefail
 case "$-" in *x*) echo "✗ xtrace activo: no se escribió nada." >&2; exit 2 ;; esac
 [[ "${SHELLOPTS:-}" != *xtrace* ]] || { echo "✗ SHELLOPTS=xtrace en el entorno: no se escribió nada." >&2; exit 2; }
@@ -72,7 +81,7 @@ OTRO="$ID_PROD"; if [[ "$ENTORNO" == produccion ]]; then OTRO="$ID_STG"; fi
 
 # El script de nodo vive en admin/ (ahí está firebase-admin). Su salida pasa por el filtro que oculta cualquier valor real.
 set +e
-( cd admin && node scripts/plataforma/fijar-webhook-carrito.mjs "${ARGS[@]}" 2>&1 ) | filtrar_valores "$FIJAR_PROYECTO" "$RUTA" "$BASE" "${BASE#https://}" "$OTRO"
+( cd admin && "$NODO" scripts/plataforma/fijar-webhook-carrito.mjs "${ARGS[@]}" 2>&1 ) | filtrar_valores "$FIJAR_PROYECTO" "$RUTA" "$BASE" "${BASE#https://}" "$OTRO"
 ESTADOS=("${PIPESTATUS[@]}")
 set -e
 exit "${ESTADOS[0]}"
