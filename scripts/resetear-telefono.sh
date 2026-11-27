@@ -73,8 +73,13 @@ fi
 case ",$TELEFONOS_PRUEBA," in *",$TEL,"*) ;; *) echo "✗ Ese teléfono NO está en la lista blanca de teléfonos de prueba: no se resetea" >&2; exit 1 ;; esac
 if [ "${RESETEAR_SOLO_LISTA:-0}" = 1 ]; then echo "✓ el teléfono está en la lista blanca (${TENANT})"; exit 0; fi
 
-ENV_N8N="${ENV_N8N:-.env}"
-[ -f "$ENV_N8N" ] || ENV_N8N="$HOME/NovuChat/.env"
+# H1: si ENV_N8N viene definida, se usa ESA y, si no existe, se sale; no se cae al .env real.
+if [ -n "${ENV_N8N:-}" ]; then
+  [ -f "$ENV_N8N" ] || { echo "✗ ENV_N8N apunta a un archivo que no existe" >&2; exit 3; }
+else
+  ENV_N8N="$HOME/NovuChat/.env"
+  [ -f "$ENV_N8N" ] || { echo "✗ No hay .env de n8n" >&2; exit 3; }
+fi
 # Del .env se toman SOLO la dirección y la clave de n8n (no se carga el archivo entero); no se imprimen.
 valor_env() { grep -E "^$1=" "$ENV_N8N" 2>/dev/null | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"; }
 N8N_BASE_URL="$(valor_env N8N_BASE_URL)"; N8N_API_KEY="$(valor_env N8N_API_KEY)"

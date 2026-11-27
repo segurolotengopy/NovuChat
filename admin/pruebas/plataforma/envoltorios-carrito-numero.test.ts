@@ -233,6 +233,16 @@ describe('resetear-telefono.sh --quien', () => {
     }
   });
 
+  it('NEGANDO (H1): ENV_N8N definida que no existe sale 3 y no cae al .env real; sin ENV_N8N y sin .env también', () => {
+    const l = `${ANDRES},${SILVANA}`;
+    const r = correr(RESET, ['--tenant', 'walisuma', '--quien', 'andres'], { CONFIG_LOCAL_MD: tabla(filas(l)), ENV_N8N: join(dir, 'no-existe') });
+    expect(r.codigo, r.salida).toBe(3);
+    expect(llamadas()).toBe(0);
+    const r2 = correr(RESET, ['--tenant', 'walisuma', '--quien', 'andres'], { CONFIG_LOCAL_MD: tabla(filas(l)) });
+    expect(r2.codigo, r2.salida).toBe(3);
+    expect(llamadas()).toBe(0);
+  });
+
   it('--tel sigue funcionando como antes', () => {
     expect(reset(`${ANDRES}`, ['--tenant', 'walisuma', '--tel', ANDRES]).codigo).toBe(0);
   });

@@ -175,6 +175,11 @@ if (!actual.exists) salir(`El número ${ocultar(NUMERO)} no está asignado a nin
 const tenant = actual.get('tenantId');
 const antes = actual.get('webhookCarrito');
 
+// H3: la ficha del número tiene que ser de ESE comercio; si apunta a otro, no se le escribe ni se le quita su ruta.
+if (TENANT_ID && tenant !== TENANT_ID) {
+  salir('El número pertenece a otro comercio que el pedido (--tenant). No se escribe nada.');
+}
+
 console.log(`\n  Proyecto : ${NOMBRE_PROYECTO_ENV ? '(del entorno)' : PROYECTO}`);
 console.log(`  Número   : ${ocultar(NUMERO)}  →  comercio ${tenant}`);
 console.log(`  Estado   : ${actual.get('estado')}`);
