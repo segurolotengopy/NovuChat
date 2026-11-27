@@ -16,7 +16,7 @@
 #   ./scripts/publicar-flujo.sh --aplicar    # actualiza el flujo
 #   ./scripts/publicar-flujo.sh --env .env.novuchat --reiniciar-estado [--aplicar]
 #       borra el estado por telefono que guarda n8n (etapa, bienvenida, aviso)
-#   ./scripts/publicar-flujo.sh --flujo Flujos/demo-b-venta-cobro.json --aplicar
+#   ./scripts/publicar-flujo.sh --flujo Flujos/clientes/demo-b/demo-b-venta-cobro.json --aplicar
 #   ./scripts/publicar-flujo.sh --env .env.<cliente>-seguimientos --encender [--aplicar]
 #       ENCIENDE (o --apagar) un flujo QUE YA EXISTE, el de N8N_WORKFLOW_ID.
 #       No toca el contenido. Muestra el nombre antes de escribir, porque el id
@@ -1029,7 +1029,7 @@ print(f"Origen     : {os.environ.get('FLUJO_MOSTRAR') or flujo}   nodos: {len(nu
 # --- CERROJO: el archivo y el flujo vivo tienen que ser EL MISMO flujo --------
 # El id del flujo sale de N8N_WORKFLOW_ID, que vive en `.env`, y el archivo se
 # elige con --flujo. Son dos fuentes distintas, asi que nada impedia pedir
-# `--flujo Flujos/demo-b-venta-cobro.json` contra el `.env` del Demo A y
+# `--flujo Flujos/clientes/demo-b/demo-b-venta-cobro.json` contra el `.env` del Demo A y
 # ESCRIBIR EL DEMO B ENCIMA DEL DEMO A. El diagnostico lo mostraba —«nodo del
 # flujo vivo que ya no existe: agendar_cita», veinte veces— pero en una lista de
 # cuarenta lineas de color, arriba del todo, y con --aplicar no habria hecho
@@ -1244,7 +1244,7 @@ if tipos_nuevos and not aplicar:
 # las decide el repositorio, y vaciarlas a proposito tiene que poder hacerse (prohibicion 3: cobros). Nunca se conserva un valor
 # del vivo que empiece con «=» (una expresion). Se informan clave y longitud, nunca el valor.
 NODOS_DE_CONFIG = {"Config base", "Config del negocio"}
-CLAVES_DEL_COMERCIO = {"costoDeEntrega", "enlaceCatalogo", "ubicacionTienda", "horarioTienda", "hostsFoto"}
+CLAVES_DEL_COMERCIO = {"costoDeEntrega", "enlaceCatalogo", "ubicacionTienda", "mapaTienda", "horarioTienda", "hostsFoto"}
 def _del_comercio(clave):
     return clave in CLAVES_DEL_COMERCIO or str(clave).startswith("avisoRespaldo")
 conservados_cfg = []

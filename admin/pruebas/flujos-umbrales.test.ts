@@ -163,7 +163,7 @@ const FLUJOS = [
     entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen'],
   },
   {
-    archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat',
+    archivo: 'clientes/demo-b/demo-b-venta-cobro.json', agente: 'AI Agent NovuChat',
     compuertaAviso: '¿Avisar uso extendido?', campoAviso: 'avisar', envioAviso: 'Avisar al dueño',
     campoTexto: 'textoAviso', salidaAlCliente: null, primeroTrasElEnvio: 'Texto enviado',
     // Desde el 23/09/2026 la venta también desvía el comprobante ANTES del
@@ -379,7 +379,7 @@ describe.each(FLUJOS)('$archivo', (entrada) => {
       // Demo B (F3a, 02/10/2026): el embudo único es «Mensaje a enviar», que desde
       // ahora decide si el mensaje lleva botón; el envío sigue más abajo.
       expect(destinos(f, '¿Responder uso extendido?', 0)).toEqual([
-        salidaAlCliente ?? (archivo === 'demo-b-venta-cobro.json' ? 'Mensaje a enviar' : 'Responder al cliente')]);
+        salidaAlCliente ?? (archivo === 'clientes/demo-b/demo-b-venta-cobro.json' ? 'Mensaje a enviar' : 'Responder al cliente')]);
       if (salidaAlCliente) expect(destinos(f, salidaAlCliente)).toEqual(['Responder al cliente']);
       // Del envío cuelgan, PRIMERO, el reporte del texto —o el nodo que lo
       // alimenta— y, DEBAJO, lo que cada flujo agregue: la compuerta del pin
@@ -420,7 +420,7 @@ describe.each(FLUJOS)('$archivo', (entrada) => {
       const s = cadena({ estado: 'operador', avisarRecepcion: 'operador', respuestasEnVentana: 50 });
       expect(s).toMatchObject({ from: '59170000001', nombrePerfil: 'Ana', responder: true, [campoAviso]: true });
       expect(s['respuesta']).toBe(MENSAJE_USO_EXTENDIDO);
-      if (archivo === 'demo-b-venta-cobro.json') {
+      if (archivo === 'clientes/demo-b/demo-b-venta-cobro.json') {
         // `Responder al cliente` y `Avisar al dueño` de B leen estos dos del item.
         expect(s['phoneNumberId']).toBe('1000000001');
         expect(String(s['numeroDueno'] ?? '')).not.toBe('');
@@ -498,7 +498,7 @@ describe.each(FLUJOS)('$archivo', (entrada) => {
 });
 
 describe('demo-b-venta-cobro.json: «Avisar al dueño» sirve a los dos avisos', () => {
-  const f = flujo('demo-b-venta-cobro.json');
+  const f = flujo('clientes/demo-b/demo-b-venta-cobro.json');
   const texto = nodo(f, 'Avisar al dueño').parameters['textBody'];
 
   it('con `textoAviso` manda el aviso de uso extendido', () => {

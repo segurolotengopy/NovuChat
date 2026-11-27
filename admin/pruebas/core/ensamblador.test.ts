@@ -66,7 +66,7 @@ const moduloDe = (nodo: string): string => {
 };
 /** Marcadores declarados además de `Config base` (F3a, higiene). */
 const MARCADORES_DECLARADOS_APARTE: Record<string, Record<string, string>> = {
-  'demo-b-venta-cobro.json': { 'Carrito del catálogo': 'REEMPLAZAR_' },
+  'clientes/demo-b/demo-b-venta-cobro.json': { 'Carrito del catálogo': 'REEMPLAZAR_' },
   'novuchat-onboarding.json': { '¿Es un mensaje?': 'REEMPLAZAR_' },
   'salida-de-persona.json': { 'Timbre': 'REEMPLAZAR_' },
 };
@@ -95,7 +95,7 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
     // SOLO para los dos nodos de medios entrantes («Preparar transcripción» y
     // «Preparar imagen»): son el mismo módulo que en reservas, inyectado, no
     // una copia. El resto de su código sigue en el JSON (FL2).
-    expect(CON_MANIFIESTO).toEqual(expect.arrayContaining(['demo-b-venta-cobro.json', 'novuchat-onboarding.json']));
+    expect(CON_MANIFIESTO).toEqual(expect.arrayContaining(['clientes/demo-b/demo-b-venta-cobro.json', 'novuchat-onboarding.json']));
     // Los que todavía no se ensamblan, dichos con nombre: son el bloque B-2.
     expect(SIN_MANIFIESTO).toEqual([
       'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'bellido-agendamiento.json',
@@ -104,7 +104,7 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
   });
 
   it('el Demo B y la captación inyectan TODOS sus nodos Code (FL2), sin prompts todavía', () => {
-    for (const f of ['demo-b-venta-cobro.json', 'novuchat-onboarding.json']) {
+    for (const f of ['clientes/demo-b/demo-b-venta-cobro.json', 'novuchat-onboarding.json']) {
       const m = leerManifiesto(f) as Record<string, any>;
       const a = leerManifiesto(DEMO_A) as Record<string, any>;
       const j = JSON.parse(readFileSync(join(RAIZ_FLUJOS, f), 'utf8')) as { nodes: { name: string; type: string }[] };
@@ -244,7 +244,7 @@ describe('4. Un módulo modificado hace fallar `verificar`, y la falla nombra el
     expect(verificarFlujo(DEMO_A, dir)).toMatchObject({
       estado: 'difiere', diferencias: ['prompts/AI Agent (Sofía).systemMessage'],
     });
-    expect(verificarFlujo('demo-b-venta-cobro.json', dir).estado).toBe('identico');
+    expect(verificarFlujo('clientes/demo-b/demo-b-venta-cobro.json', dir).estado).toBe('identico');
   });
 
   it('un módulo que falta es un error con la ruta, no un JSON vacío', () => {
@@ -295,7 +295,7 @@ describe('5. Un nodo renombrado hace fallar con un mensaje claro', () => {
   });
 
   it('un manifiesto que declara otro flujo se rechaza', () => {
-    const dir = conManifiestoCambiado((m) => { m.flujo = 'demo-b-venta-cobro.json'; });
+    const dir = conManifiestoCambiado((m) => { m.flujo = 'clientes/demo-b/demo-b-venta-cobro.json'; });
     expect(() => verificarFlujo(DEMO_A, dir)).toThrow(/declara "flujo"/);
   });
 
@@ -327,13 +327,13 @@ describe('5. Un nodo renombrado hace fallar con un mensaje claro', () => {
     // Desde el 28/09 el Demo B tiene manifiesto (sus dos nodos de medios), y
     // con manifiesto `extraer` no crea otro: en la copia se le quita, para
     // seguir probando la creación con un flujo real.
-    rmSync(rutaDeManifiesto('demo-b-venta-cobro.json', dir));
+    rmSync(rutaDeManifiesto('clientes/demo-b/demo-b-venta-cobro.json', dir));
     for (const mala of ['../fuera', 'a/b', '/tmp', 'Reservas', 'con espacio', '']) {
-      expect(() => manifiestoInicial('demo-b-venta-cobro.json', mala, dir), mala).toThrow(/no es válida: solo minúsculas/);
-      expect(() => extraerFlujo('demo-b-venta-cobro.json', { raiz: dir, nuevo: mala }), mala).toThrow(/no es válida: solo minúsculas/);
+      expect(() => manifiestoInicial('clientes/demo-b/demo-b-venta-cobro.json', mala, dir), mala).toThrow(/no es válida: solo minúsculas/);
+      expect(() => extraerFlujo('clientes/demo-b/demo-b-venta-cobro.json', { raiz: dir, nuevo: mala }), mala).toThrow(/no es válida: solo minúsculas/);
     }
     // Una válida crea el manifiesto bajo esa carpeta, y todo queda dentro de la copia.
-    const r = extraerFlujo('demo-b-venta-cobro.json', { raiz: dir, nuevo: 'venta' });
+    const r = extraerFlujo('clientes/demo-b/demo-b-venta-cobro.json', { raiz: dir, nuevo: 'venta' });
     expect(r.escritos.every((e) => e.startsWith(dir + '/'))).toBe(true);
     expect(Object.values(r.manifiesto.codigo!).every((v) => (rutaDe(v)).startsWith('venta/'))).toBe(true);
   });
@@ -418,7 +418,7 @@ describe('7. Los módulos del Demo A', () => {
     expect(rutas.filter((r) => /^(reservas|modulos\/[a-z-]+|core\/medios)\/[^/]+\.js$/.test(r))).toHaveLength(13);
     // Los comunes existen con el mismo nombre en el Demo B y en la captación,
     // aunque su código todavía diverja: es lo que el bloque B-2 tiene que mirar.
-    const otros = ['demo-b-venta-cobro.json', 'novuchat-onboarding.json']
+    const otros = ['clientes/demo-b/demo-b-venta-cobro.json', 'novuchat-onboarding.json']
       .map((f) => JSON.parse(readFileSync(join(RAIZ_FLUJOS, f), 'utf8')) as { nodes: { name: string }[] });
     // LOS DOS DE MEDIOS ENTRANTES son la excepción, y a propósito (28/09/2026):
     // son una capacidad GENERAL (Andres, 25/09) que todavía vive en la carpeta
@@ -430,7 +430,7 @@ describe('7. Los módulos del Demo A', () => {
       const enOtros = otros.every((o) => o.nodes.some((n) => n.name === nombre));
       if (MEDIOS.includes(nombre)) {
         expect(enOtros, nombre).toBe(true);
-        for (const f of ['demo-b-venta-cobro.json', 'novuchat-onboarding.json']) {
+        for (const f of ['clientes/demo-b/demo-b-venta-cobro.json', 'novuchat-onboarding.json']) {
           expect((leerManifiesto(f) as { codigo: Record<string, unknown> }).codigo[nombre], `${f}: ${nombre}`).toEqual(v);
         }
         continue;
@@ -540,8 +540,8 @@ describe('10. Flujos en subcarpetas: el manifiesto lleva la ruta relativa a Fluj
     const dir = copiaDeFlujos();
     const ruta = 'clientes/zz-prueba/demo-b-venta-cobro.json';
     mkdirSync(join(dir, 'clientes/zz-prueba'), { recursive: true });
-    writeFileSync(join(dir, ruta), readFileSync(join(dir, 'demo-b-venta-cobro.json')));
-    const m = JSON.parse(readFileSync(rutaDeManifiesto('demo-b-venta-cobro.json', dir), 'utf8'));
+    writeFileSync(join(dir, ruta), readFileSync(join(dir, 'clientes/demo-b/demo-b-venta-cobro.json')));
+    const m = JSON.parse(readFileSync(rutaDeManifiesto('clientes/demo-b/demo-b-venta-cobro.json', dir), 'utf8'));
     m.flujo = ruta;
     mkdirSync(dirname(rutaDeManifiesto(ruta, dir)), { recursive: true });
     writeFileSync(rutaDeManifiesto(ruta, dir), JSON.stringify(m, null, 2) + '\n');
@@ -570,7 +570,7 @@ describe('10. Flujos en subcarpetas: el manifiesto lleva la ruta relativa a Fluj
     const { dir, ruta } = conFlujoMudado();
     const ruta2 = rutaDeManifiesto(ruta, dir);
     const m = JSON.parse(readFileSync(ruta2, 'utf8'));
-    m.flujo = 'demo-b-venta-cobro.json';
+    m.flujo = 'clientes/demo-b/demo-b-venta-cobro.json';
     writeFileSync(ruta2, JSON.stringify(m, null, 2) + '\n');
     expect(() => verificarFlujo(ruta, dir)).toThrow(/declara/);
   });
@@ -578,7 +578,8 @@ describe('10. Flujos en subcarpetas: el manifiesto lleva la ruta relativa a Fluj
   it('la línea de comandos acepta la ruta (con o sin el prefijo Flujos/), y --exigir-manifiesto hace fallar «sin manifiesto»', () => {
     expect(rutaRelativaAFlujos('Flujos/clientes/x/y.json')).toBe('clientes/x/y.json');
     expect(rutaRelativaAFlujos('/a/b/Flujos/clientes/x/y.json')).toBe('clientes/x/y.json');
-    expect(rutaRelativaAFlujos('demo-b-venta-cobro.json')).toBe('demo-b-venta-cobro.json');
+    expect(rutaRelativaAFlujos('clientes/demo-b/demo-b-venta-cobro.json')).toBe('clientes/demo-b/demo-b-venta-cobro.json');
+    expect(rutaRelativaAFlujos('latido-n8n.json')).toBe('latido-n8n.json');
     // Negando (revisión de seguridad del #1103): ninguna ruta sale de Flujos/.
     for (const fuera of ['../admin/package.json', 'Flujos/../../x.json', 'clientes/../../x.json', '/etc/passwd', '.', '..x/../../y.json']) {
       expect(() => rutaRelativaAFlujos(fuera), fuera).toThrow(/fuera de Flujos/);
@@ -600,7 +601,7 @@ describe('10. Flujos en subcarpetas: el manifiesto lleva la ruta relativa a Fluj
     // Un enlace ROTO que apunta afuera tampoco pasa (escribir por él crearía el archivo afuera).
     symlinkSync(join(afuera, 'no-existe.json'), join(dir, 'roto.json'));
     expect(() => rutaDentroDe(dir, 'roto.json')).toThrow();
-    expect(() => execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/demo-b-venta-cobro.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8' })).not.toThrow();
+    expect(() => execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/clientes/demo-b/demo-b-venta-cobro.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8' })).not.toThrow();
     let codigo = 0;
     try { execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/latido-n8n.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8', stdio: 'pipe' }); } catch (e) { codigo = (e as { status: number }).status; }
     expect(codigo, 'un flujo sin manifiesto no cumple si se exige uno (salida 3: la causa, distinta de «difiere»)').toBe(3);
@@ -684,6 +685,20 @@ describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `i
     const dir = raizConRafaga();
     writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify({ ...MANIFIESTO, rafaga: { ancla: { nodo: 'No existe', salida: 0, destino: 'Agente' } } }));
     expect(() => verificarFlujo('sintetico-rafaga.json', dir)).toThrow(/no tiene «No existe»/);
+  });
+
+  it('I3 (NEGADA): un manifiesto con `consumidor: null` se rechaza al ensamblar y al verificar (esa excepción es solo de las pruebas que llaman a `injertarRafaga` directo); sin `consumidor` también', () => {
+    const dir = raizConRafaga();
+    for (const rafaga of [{ ...MANIFIESTO.rafaga, consumidor: null }, { ancla: MANIFIESTO.rafaga.ancla, campos: MANIFIESTO.rafaga.campos }]) {
+      writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify({ ...MANIFIESTO, rafaga }));
+      expect(() => verificarFlujo('sintetico-rafaga.json', dir)).toThrow(/consumidor/);
+      expect(() => ensamblarFlujo('sintetico-rafaga.json', dir)).toThrow(/consumidor/);
+    }
+    writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify({ ...MANIFIESTO, rafaga: { ...MANIFIESTO.rafaga, consumidor: null } }));
+    expect(() => ensamblarFlujo('sintetico-rafaga.json', dir)).toThrow(/rafaga\.consumidor: null.*no se admite/);
+    // y el original sin consumidor null sigue ensamblando
+    writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify(MANIFIESTO));
+    expect(ensamblarFlujo('sintetico-rafaga.json', dir)).toBe(true);
   });
 
   it('indicador + ráfaga en el MISMO manifiesto: ensamblar y verificar son idénticos, idempotentes, y el indicador queda donde queda sin ráfaga', () => {

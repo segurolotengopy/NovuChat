@@ -188,6 +188,8 @@ describe('el flujo nuevo de Evy tiene su guardia, distinta de la de las doctoras
 
 // Mudanza del Demo A (25/11/2026): la ruta por defecto pasa a Flujos/clientes/demo-a/; al script de origin/main se le aplica SOLO esa sustitución (sin efecto cuando main ya la tenga).
 const aMudanzaDemoA = (s: string): string => s.split('Flujos/demo-a-agendamiento.json').join('Flujos/clientes/demo-a/demo-a-agendamiento.json');
+// Mudanza del Demo B (25/11/2026): ídem para Flujos/demo-b-venta-cobro.json (solo aparece en comentarios del script).
+const aMudanzaDemoB = (s: string): string => s.split('Flujos/demo-b-venta-cobro.json').join('Flujos/clientes/demo-b/demo-b-venta-cobro.json');
 describe('ADITIVO: contra el script de origin/main, todo lo que no es el flujo nuevo de Evy se comporta igual', () => {
   const base = ['origin/main', 'main'].map((r) => spawnSync('git', ['show', `${r}:scripts/publicar-flujo.sh`], { cwd: REPO, encoding: 'utf8' })).find((r) => r.status === 0);
   const CASOS: string[][] = [
@@ -199,7 +201,7 @@ describe('ADITIVO: contra el script de origin/main, todo lo que no es el flujo n
   it.skipIf(!base)('actualizar en su lugar, encender, apagar y crear con el flujo viejo, el de Emma y otro cliente: misma salida, error, código, llamadas y guardias que origin/main', () => {
     for (const doctoras of [0, 1]) {
       const a = raizCon(`propio-${doctoras}`, propio, { doctoras });
-      const b = raizCon(`origen-${doctoras}`, aMudanzaDemoA(base!.stdout), { doctoras });
+      const b = raizCon(`origen-${doctoras}`, aMudanzaDemoB(aMudanzaDemoA(base!.stdout)), { doctoras });
       for (const vivo of [vivoViejo, vivoOtro]) {
         for (const args of CASOS) expect(correrEn(a, args, vivo), `doctoras ${doctoras}: ${args.join(' ')}`).toEqual(correrEn(b, args, vivo));
       }

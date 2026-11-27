@@ -1,7 +1,7 @@
 /**
  * RÁFAGAS EN EL DEMO B (venta y cobro): varios textos seguidos de un teléfono = UNA respuesta (25/11/2026).
  *
- * Corre el JSON VERSIONADO (`Flujos/demo-b-venta-cobro.json`) con el n8n de mentira: el código y las condiciones son los reales;
+ * Corre el JSON VERSIONADO (`Flujos/clientes/demo-b/demo-b-venta-cobro.json`) con el n8n de mentira: el código y las condiciones son los reales;
  * la red (panel, ingesta, Meta, modelo, servidor de ráfagas) son dobles. La lógica de la decisión está probada en
  * `core/rafaga-*.test.ts`; acá se prueba el INJERTO en este flujo: dónde cuelga, qué desvíos quedan antes, qué ve el agente, que el
  * QR, el aviso y el candado de existencias no se dupliquen ni se pierdan, y los riesgos residuales FIJADOS (se escriben negando).
@@ -21,7 +21,7 @@ import { hallazgosDeLaRafaga, NODOS_DE_LA_RAFAGA } from '../../Flujos/src/core/r
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira.ts';
 import { codigoDe, ejecutar, leerFlujo, nodo, textoDeFlujo, type J } from './lib/flujo.ts';
 
-const f = leerFlujo('demo-b-venta-cobro.json');
+const f = leerFlujo('clientes/demo-b/demo-b-venta-cobro.json');
 const AHORA = Date.UTC(2026, 10, 25, 15, 0, 0);
 const PID = '1000000001';
 const TEL = '59100000011';
@@ -163,7 +163,7 @@ describe('(1) La pieza está injertada como lo manda el manifiesto: 97 nodos, bi
   });
 
   it('el JSON versionado no lleva datos de ejecución ni credenciales en claro', () => {
-    expect(textoDeFlujo('demo-b-venta-cobro.json')).not.toMatch(/Bearer [A-Za-z0-9]{10,}/);
+    expect(textoDeFlujo('clientes/demo-b/demo-b-venta-cobro.json')).not.toMatch(/Bearer [A-Za-z0-9]{10,}/);
     expect(f.settings?.['saveDataSuccessExecution']).toBe('none');
   });
 });

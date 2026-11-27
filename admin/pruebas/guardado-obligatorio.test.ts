@@ -52,7 +52,7 @@ export const EXCEPCIONES: Record<string, string> = {
 export const exigeGuardado = (f: Flujo): boolean => manejaMedios(f) || f.nodes.some((n) => n.name === 'Reportar mensaje (entrante)');
 
 /** Los únicos flujos cuya ancla es una hoja HERMANA de la rama que responde (Demo B: «Normalizar entrada» alimenta a las dos). Lista cerrada. */
-export const ANCLA_HERMANA = ['demo-b-venta-cobro.json'];
+export const ANCLA_HERMANA = ['clientes/demo-b/demo-b-venta-cobro.json'];
 
 /** Revisa una lista de flujos y devuelve, por archivo, lo que falla. La usa la prueba sobre el repositorio y la prueba negada. */
 export function revisar(lista: { archivo: string; flujo: Flujo }[], excepciones: Record<string, string>): Record<string, string[]> {
@@ -108,7 +108,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
     'clientes/walisuma/walisuma.json', 'clientes/walisuma/walisuma.prueba.json',
     'clientes/casa-bermejo/casa-bermejo.json', 'clientes/casa-bermejo/casa-bermejo.prueba.json',
     // Demo B (11/11/2026): la rama común injertada en el JSON versionado; deja de ser excepción.
-    'demo-b-venta-cobro.json',
+    'clientes/demo-b/demo-b-venta-cobro.json',
   ].map((a) => [a, NADA]));
   it('la retención de ejecuciones de cada flujo cubierto es la de la tabla cerrada: nada guardado (el binario del medio quedaría en la ejecución)', () => {
     expect(Object.keys(RETENCION).sort()).toEqual([...CUBIERTOS].sort());
@@ -295,7 +295,7 @@ describe('guardado obligatorio, NEGANDO: cada regla tiene la mutación que la ro
 });
 
 describe('guardado obligatorio, forma HERMANA (Demo B): la ancla es una hoja y la rama que responde cuelga del mismo padre', () => {
-  const DEMO_B = 'demo-b-venta-cobro.json';
+  const DEMO_B = 'clientes/demo-b/demo-b-venta-cobro.json';
   it('el Demo B trae la rama y pasa la revisión', () => {
     const f = leer(DEMO_B);
     expect(f.nodes.some((n) => n.name === 'Preparar guardado')).toBe(true);

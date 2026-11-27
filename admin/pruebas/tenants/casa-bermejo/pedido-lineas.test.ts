@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { join } from 'node:path';
 import { cargarFuente, RAIZ_REPO } from '../../core/fuente-vm';
-import { ANA, CATALOGO, ENTREGA, catalogoOk, crear, hablar, mTexto, modelo, panelSinCobro, textos } from './mundo';
+import { ANA, CATALOGO, ENTREGA, catalogoOk, crear, sembrarEntrega, hablar, mTexto, modelo, panelSinCobro, textos } from './mundo';
 
 const BIL = 'billetera-cuero'; // Bs 450
 const BUF = 'bufanda-vicuna'; // Bs 7.795
@@ -17,29 +17,29 @@ const itemAr = (o: Record<string, unknown> = {}) => ({ ...CATALOGO[1], moneda: '
 const catAr = (items: unknown[] = [itemAr()]) => catalogoOk({ mercado: 'AR', moneda: 'ARS' }, items as never);
 type Rep = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const evento = (t: { llamadas: { ingesta: Record<string, unknown>[] } }, e: string): Rep | undefined => t.llamadas.ingesta.find((x) => x['evento'] === e) as Rep | undefined;
-const confirmar = (m: ReturnType<typeof crear>, tel: string) => { hablar(m, tel, mTexto('quiero una billetera')); return hablar(m, tel, mTexto('quiero pagar')); };
+const confirmar = (m: ReturnType<typeof crear>, tel: string, pedido = 'quiero una billetera') => { hablar(m, tel, mTexto(pedido)); return hablar(m, tel, mTexto('quiero pagar')); };
 
 describe('Bolivia: `qr_enviado` lleva la línea completa', () => {
   it('forma cerrada, precio del catálogo y moneda BOB', () => {
-    const t = confirmar(crear({ modeloDice: pide([{ id: BIL, cantidad: 2 }], { entrega: ENTREGA }) }), ANA);
+    const t = confirmar(crear({ entregaPrevia: ENTREGA, modeloDice: pide([{ id: BIL, cantidad: 2 }], {}) }), ANA);
     const l = evento(t, 'qr_enviado')?.['lineas'] as Rep[];
     expect(l).toEqual([{ externa: true, id: BIL, nombre: 'Billetera de cuero', cantidad: 2, precioCentavos: 45000, moneda: 'BOB', subtotalCentavos: 90000 }]);
     for (const x of l) for (const k of Object.keys(x)) expect(CLAVES).toContain(k);
   });
   it('NEGADO: precio, nombre, moneda, subtotal y claves extra del modelo no llegan al servidor', () => {
-    const t = confirmar(crear({ modeloDice: pide([{ id: BIL, cantidad: 1, precio: 1, precioCentavos: 1, subtotalCentavos: 1, nombre: 'Regalo', moneda: 'ARS', externa: false, sku: 'X' }], { entrega: ENTREGA }) }), ANA);
+    const t = confirmar(crear({ entregaPrevia: ENTREGA, modeloDice: pide([{ id: BIL, cantidad: 1, precio: 1, precioCentavos: 1, subtotalCentavos: 1, nombre: 'Regalo', moneda: 'ARS', externa: false, sku: 'X' }], {}) }), ANA);
     const l = evento(t, 'qr_enviado')?.['lineas'] as Rep[];
     expect(l).toEqual([{ externa: true, id: BIL, nombre: 'Billetera de cuero', cantidad: 1, precioCentavos: 45000, moneda: 'BOB', subtotalCentavos: 45000 }]);
     expect(JSON.stringify(t.llamadas.ingesta)).not.toMatch(/Regalo|"sku"/);
   });
   it('si el servidor de la tienda cambia el precio, la línea sale con el precio nuevo', () => {
-    const m = crear({ catalogo: catalogoOk({}, [{ ...CATALOGO[1], precioCentavos: 50000, precio: 500, stock: 10, disponible: true }]), modeloDice: pide([{ id: BIL, cantidad: 2, precio: 1 }], { entrega: ENTREGA }) });
+    const m = crear({ entregaPrevia: ENTREGA, catalogo: catalogoOk({}, [{ ...CATALOGO[1], precioCentavos: 50000, precio: 500, stock: 10, disponible: true }]), modeloDice: pide([{ id: BIL, cantidad: 2, precio: 1 }], {}) });
     const l = evento(confirmar(m, ANA), 'qr_enviado')?.['lineas'] as Rep[];
     expect(l[0]).toMatchObject({ precioCentavos: 50000, subtotalCentavos: 100000 });
   });
   it('ids repetidos con distinto detalle se fusionan: UNA línea por id, con la cantidad sumada', () => {
-    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 1, detalle: 'azul' }, { id: BUF, cantidad: 1 }, { id: BIL, cantidad: 2, detalle: 'negra' }], { entrega: ENTREGA }) });
-    const l = evento(confirmar(m, ANA), 'qr_enviado')?.['lineas'] as Rep[];
+    const m = crear({ entregaPrevia: ENTREGA, modeloDice: pide([{ id: BIL, cantidad: 1, detalle: 'azul' }, { id: BUF, cantidad: 1 }, { id: BIL, cantidad: 2, detalle: 'negra' }], {}) });
+    const l = evento(confirmar(m, ANA, 'quiero una billetera y una bufanda'), 'qr_enviado')?.['lineas'] as Rep[];
     expect(l.map((x) => x['id'])).toEqual([BIL, BUF]);
     expect(l[0]).toMatchObject({ cantidad: 3, subtotalCentavos: 135000 });
     expect(l[0]?.['detalle']).toBe('1 azul · 2 negra');
@@ -47,14 +47,14 @@ describe('Bolivia: `qr_enviado` lleva la línea completa', () => {
     expect(new Set(l.map((x) => x['id'])).size).toBe(l.length);
   });
   it('la suma de las líneas coincide con el monto del QR', () => {
-    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 2 }, { id: BUF, cantidad: 1 }], { entrega: ENTREGA }) });
-    const rep = evento(confirmar(m, ANA), 'qr_enviado') as Rep;
+    const m = crear({ entregaPrevia: ENTREGA, modeloDice: pide([{ id: BIL, cantidad: 2 }, { id: BUF, cantidad: 1 }], {}) });
+    const rep = evento(confirmar(m, ANA, 'quiero una billetera y una bufanda'), 'qr_enviado') as Rep;
     expect((rep['lineas'] as Rep[]).reduce((a, x) => a + x['subtotalCentavos'], 0)).toBe(rep['monto'] * 100);
   });
 });
 
 describe('Argentina: `pedido_sin_cobro` lleva la línea en pesos', () => {
-  const armar = () => crear({ catalogo: catAr(), modeloDice: pide([{ id: BIL, cantidad: 1, precio: 1, moneda: 'BOB' }], { entrega: ENTREGA }) });
+  const armar = () => crear({ entregaPrevia: ENTREGA, catalogo: catAr(), modeloDice: pide([{ id: BIL, cantidad: 1, precio: 1, moneda: 'BOB' }], {}) });
   it('se emite una vez, con referencia, entrega y líneas ARS de forma cerrada; sin monto ni regla de cobro', () => {
     const t = confirmar(armar(), ARG);
     const rep = evento(t, 'pedido_sin_cobro') as Rep;
@@ -76,11 +76,12 @@ describe('Argentina: `pedido_sin_cobro` lleva la línea en pesos', () => {
   it('dos pedidos seguidos no repiten la referencia', () => {
     const m = armar();
     const a = evento(confirmar(m, ARG), 'pedido_sin_cobro') as Rep;
+    sembrarEntrega(m, ARG, ENTREGA);   // el primer pedido borró la entrega: la del segundo se siembra de nuevo
     const b = evento(confirmar(m, ARG), 'pedido_sin_cobro') as Rep;
     expect(a['referencia']).not.toBe(b['referencia']);
   });
   it('NEGADO: si Meta no aceptó el mensaje, el evento no viaja (no hay pedido de algo que el cliente no leyó)', () => {
-    const m = crear({ catalogo: catAr(), envio: { 'Enviar a WhatsApp': 'error' }, modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) });
+    const m = crear({ entregaPrevia: ENTREGA, catalogo: catAr(), envio: { 'Enviar a WhatsApp': 'error' }, modeloDice: pide([{ id: BIL, cantidad: 1 }], {}) });
     hablar(m, ARG, mTexto('una billetera'));
     const t = hablar(m, ARG, mTexto('quiero pagar'), { toleraFallo: true });
     expect(evento(t, 'pedido_sin_cobro')).toBeUndefined();
@@ -99,7 +100,7 @@ describe('Argentina: `pedido_sin_cobro` lleva la línea en pesos', () => {
 
 describe('Bolivia sin QR configurado: no emite `pedido_sin_cobro` (el evento es de Argentina)', () => {
   it('el pedido queda anotado y no se reporta como pedido sin cobro', () => {
-    const t = confirmar(crear({ panel: panelSinCobro(), modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) }), ANA);
+    const t = confirmar(crear({ entregaPrevia: ENTREGA, panel: panelSinCobro(), modeloDice: pide([{ id: BIL, cantidad: 1 }], {}) }), ANA);
     expect(evento(t, 'pedido_sin_cobro')).toBeUndefined();
     expect(evento(t, 'qr_enviado')).toBeUndefined();
   });

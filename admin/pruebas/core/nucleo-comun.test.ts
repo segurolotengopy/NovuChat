@@ -275,7 +275,7 @@ const esCongelado = (ruta: string): boolean => CONGELADOS.some((r) => r.test(rut
 const CON_INDICADOR = [
   'clientes/agenda-minima/agenda-minima.prueba.json', 'clientes/agenda-minima/agenda-minima.v0.json',
   'clientes/casa-bermejo/casa-bermejo.json', 'clientes/casa-bermejo/casa-bermejo.prueba.json',
-  'clientes/demo-a/demo-a-agendamiento.json',
+  'clientes/demo-a/demo-a-agendamiento.json', 'clientes/demo-b/demo-b-venta-cobro.json',
   'clientes/novuchat/chat-novuchat.ensayo-demo-a.json', 'clientes/novuchat/chat-novuchat.novuchat.json', 'clientes/novuchat/chat-novuchat.prueba.json',
   'clientes/rroca-antonio/rroca-antonio.json', 'clientes/rroca-antonio/rroca-antonio.prueba.json',
   'clientes/rroca-emma/rroca-emma.json', 'clientes/rroca-emma/rroca-emma.prueba.json',
@@ -284,7 +284,6 @@ const CON_INDICADOR = [
   'clientes/venta-minima/venta-minima.ensayo-demo-a.json', 'clientes/venta-minima/venta-minima.prueba.json',
   'clientes/venta-minima/venta-minima.qtaco-3727.json', 'clientes/venta-minima/venta-minima.qtaco.json',
   'clientes/walisuma/walisuma.json', 'clientes/walisuma/walisuma.prueba.json',
-  'demo-b-venta-cobro.json',
 ];
 const leerVersionado = (ruta: string): Flujo => JSON.parse(readFileSync(join(RAIZ_FLUJOS, ruta), 'utf8')) as Flujo;
 
@@ -314,7 +313,7 @@ describe('núcleo común: el indicador de escritura es obligatorio en todo flujo
   });
 
   it('contraprueba: sin los nodos, con uno alterado o con la credencial de ingesta, el flujo con agente falla nombrando el nodo', () => {
-    for (const r of ['clientes/rroca-ruben/rroca-ruben.json', 'demo-b-venta-cobro.json', 'clientes/venta-minima/venta-minima.qtaco-3727.json']) {
+    for (const r of ['clientes/rroca-ruben/rroca-ruben.json', 'clientes/demo-b/demo-b-venta-cobro.json', 'clientes/venta-minima/venta-minima.qtaco-3727.json']) {
       const sin = structuredClone(leerVersionado(r));
       quitarIndicador(sin);
       expect(hallazgosDelIndicador(sin), r).toEqual([expect.stringContaining('falta el nodo'), expect.stringContaining('falta el nodo')]);
