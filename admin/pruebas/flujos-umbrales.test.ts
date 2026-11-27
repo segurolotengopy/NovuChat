@@ -267,8 +267,18 @@ describe.each(FLUJOS)('$archivo', (entrada) => {
       const antes = ('antesDelAgente' in entrada ? entrada.antesDelAgente : null) as readonly string[] | null;
       if (antes) {
         const cadena = [...antes, agente];
-        expect(destinos(f, '¿Atención normal?', 0)).toEqual([cadena[0]]);
-        expect(origenes(f, cadena[0]!)).toEqual(['¿Atención normal?']);
+        if (destinos(f, '¿Atención normal?', 0)[0] === '¿Esperar ráfaga?') {
+          // Con la pieza de ráfagas EN LÍNEA (25/11/2026): «¿Atención normal?» -> «¿Esperar ráfaga?» -> («Agrupar ráfaga») -> primer eslabón.
+          // La cadena sigue arrancando en la rama verdadera; solo se intercala la pieza, y no hay otra entrada al primer eslabón.
+          expect(destinos(f, '¿Atención normal?', 0)).toEqual(['¿Esperar ráfaga?']);
+          expect(destinos(f, '¿Esperar ráfaga?', 1)).toEqual([cadena[0]]);
+          expect(destinos(f, 'Agrupar ráfaga', 0)).toEqual([cadena[0]]);
+          expect(origenes(f, cadena[0]!).sort()).toEqual(['Agrupar ráfaga', '¿Esperar ráfaga?']);
+          expect(origenes(f, '¿Esperar ráfaga?')).toEqual(['¿Atención normal?']);
+        } else {
+          expect(destinos(f, '¿Atención normal?', 0)).toEqual([cadena[0]]);
+          expect(origenes(f, cadena[0]!)).toEqual(['¿Atención normal?']);
+        }
         for (let i = 0; i < cadena.length - 1; i++) {
           expect(alcanzables(f, cadena[i]!).has(cadena[i + 1]!), `${cadena[i]} → ${cadena[i + 1]}`).toBe(true);
         }

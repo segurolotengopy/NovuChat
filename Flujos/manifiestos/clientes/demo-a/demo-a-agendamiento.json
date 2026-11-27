@@ -48,5 +48,24 @@
       "salida": 0
     },
     "normalizador": "Normalizar entrada"
+  },
+  "rafaga": {
+    "ancla": {
+      "nodo": "¿Atención normal?",
+      "salida": 0,
+      "destino": "¿Es un comprobante?"
+    },
+    "normalizador": "Normalizar entrada",
+    "campos": {
+      "texto": "userInput"
+    },
+    "consumidor": [
+      "AI Agent (Sofía)",
+      "Retomar respuesta"
+    ],
+    "posicion": [
+      780,
+      180
+    ]
   }
 }

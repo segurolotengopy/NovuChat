@@ -85,6 +85,20 @@ describe('habilitar-telefono-prueba.sh', () => {
     }
     expect(readFileSync(t, 'utf8')).toBe(antes);
   });
+  it('NEGADO: los demos, el ensayo y la cuenta de NovuChat (no se reinician): ni agregar, ni quitar, ni simular; la tabla queda igual y no se imprime el número', () => {
+    const t = armar([...BASE.slice(0, 7), '| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_NOVUCHAT` | 59100000009 | no debería tocarse |', ...BASE.slice(7)]); const antes = readFileSync(t, 'utf8');
+    for (const tenant of ['novuchat', 'ensayo', 'demo-venta', 'demo-agendamiento', 'demo-a', 'demo-b']) {
+      for (const extra of [[], ['--quitar'], ['--simular']]) {
+        const r = correr(t, ['--tenant', tenant, '--tel', TEL, ...extra]);
+        expect(r.status, tenant + ' ' + extra.join(' ')).toBe(2);
+        expect(r.stderr).toMatch(/no se reinician/);
+        expect(r.stdout + r.stderr).not.toMatch(new RegExp(TEL + '|59100000009'));
+      }
+    }
+    expect(readFileSync(t, 'utf8')).toBe(antes);
+    // Un comercio real cuyo id solo se parece (no empieza por demo ni novuchat) sigue pasando.
+    expect(correr(t, ['--tenant', 'walisuma', '--tel', TEL, '--simular']).status).toBe(0);
+  });
   it('NEGADO: una fila del comercio marcada «pendiente» no se toca; sin tabla o sin filas REEMPLAZAR_* no escribe', () => {
     const t = armar([...BASE.slice(0, 6), '| `REEMPLAZAR_TELEFONOS_DE_PRUEBA_WALISUMA` | 59100000009 (pendiente) | x |']);
     const antes = readFileSync(t, 'utf8');
