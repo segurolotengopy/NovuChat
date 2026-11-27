@@ -4207,6 +4207,7 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
       await setDoc(doc(db, 'topesDeMedios/u-admin-a'), { hora: '2026-10-23T10', n: 1 });
       await setDoc(doc(db, `tenants/${A}/cuposDeMedios/2026-10-23`), { n: 1, bytes: 10, vence: Timestamp.now() });
       await setDoc(doc(db, `tenants/${A}/mediosEnviados/objeto-de-prueba`), { estado: 'guardado', vence: Timestamp.now() });
+      await setDoc(doc(db, `tenants/${A}/bajas/wa_59170000001`), { canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: Timestamp.now() });
       await setDoc(doc(db, `topesDeEnvio/a_${A}`), { dia: '2026-11-11', n: 1, bytes: 10, actualizadoEn: Timestamp.now() });
       await setDoc(doc(db, `tenants/${A}/salida/clave-0000000000001`), {
         estado: 'pendiente', creadoEn: Timestamp.now(), actualizadoEn: Timestamp.now(),
@@ -4225,6 +4226,7 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
       `tenants/${A}/cuposDeMedios/2026-10-23`, `tenants/${A}/cuposDeMedios/2026-10-24`,
       `tenants/${A}/mediosEnviados/objeto-de-prueba`, `tenants/${A}/mediosEnviados/objeto-nuevo`,
       `topesDeEnvio/a_${A}`, 'topesDeEnvio/a_nuevo-comercio',
+      `tenants/${A}/bajas/wa_59170000001`, `tenants/${A}/bajas/wa_59170000002`,
       `tenants/${A}/salida/clave-0000000000001`, `tenants/${A}/salida/clave-nueva-0000001`,
     ];
     const quienes: Array<[string, () => ReturnType<typeof adminA>]> = [
@@ -4257,6 +4259,9 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
       await assertFails(getDocs(collection(adminA(), `tenants/${A}/mediosEnviados`)));
       await assertFails(getDocs(collection(propietarioConSoporte(), `tenants/${A}/mediosEnviados`)));
       await assertFails(getDocs(collection(adminA(), 'topesDeEnvio')));
+      await assertFails(getDocs(collection(adminA(), `tenants/${A}/bajas`)));
+      await assertFails(getDocs(collection(operA(), `tenants/${A}/bajas`)));
+      await assertFails(getDocs(collection(ingestaA(), `tenants/${A}/bajas`)));
       await assertFails(getDocs(collectionGroup(adminA(), 'salida')));
     });
 
@@ -4345,6 +4350,23 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
       await assertSucceeds(updateDoc(doc(operA(), c1()), { noContactar: false }));
       await assertFails(updateDoc(doc(operA(), c1()), { noContactar: false, riesgoEn: deleteField() }));
       await assertFails(updateDoc(doc(adminB(), c1()), { riesgoEn }));
+    });
+
+    it('campanaRespuesta: ni la ingesta por SDK cliente ni una persona del negocio la crean, cambian ni borran', async () => {
+      const campanaRespuesta = { campanaId: 'camp-prueba', respuesta: 'no', en: Timestamp.now() };
+      const base = { telefono: '59170000009', ultimoMensaje: 'Hola', canal: 'whatsapp', ultimoEn: Timestamp.now(), mensajesTotal: 1 };
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c-camp`), { ...base, campanaRespuesta }));
+      await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c-camp`), base));
+      for (const fs of [ingestaA(), operA(), adminA(), adminB()]) {
+        await assertFails(updateDoc(doc(fs, c1()), { campanaRespuesta }));
+      }
+      await entorno.withSecurityRulesDisabled(async (ctx) => { await updateDoc(doc(ctx.firestore(), c1()), { campanaRespuesta }); });
+      for (const fs of [ingestaA(), operA(), adminA()]) {
+        await assertFails(updateDoc(doc(fs, c1()), { campanaRespuesta: deleteField() }));
+        await assertFails(updateDoc(doc(fs, c1()), { 'campanaRespuesta.respuesta': 'si' }));
+      }
+      // Control positivo: la ingesta sigue actualizando el resumen de una conversación que ya la tiene.
+      await assertSucceeds(updateDoc(doc(ingestaA(), c1()), { ultimoMensaje: 'Otro', mensajesTotal: 3 }));
     });
 
     it('otro comercio no escribe el turno de A', async () => {

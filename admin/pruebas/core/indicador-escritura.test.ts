@@ -24,6 +24,7 @@ import {
   ANCLA_REPORTE, NODO_INDICADOR, NODO_INDICADOR_ACTIVO, NODOS_DEL_INDICADOR, TIMEOUT_INDICADOR_MS,
   credencialDeEnvio, esNodoIndicador, hallazgosDelIndicador, injertarIndicador, nodosDelIndicador, quitarIndicador, tieneAgente,
 } from '../../../Flujos/src/core/indicador/indicador-escritura.mjs';
+import { injertarRafaga, quitarRafaga } from '../../../Flujos/src/core/rafaga/rafaga.mjs';
 import { RAIZ_FLUJOS, ensamblarEnMemoria, leerManifiesto } from '../../scripts/ensamblar-flujo.mjs';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -350,8 +351,12 @@ describe('indicador de escritura: el ensamblador lo agrega a los demos que lo pi
     const alterado = JSON.parse(e.texto) as Flujo;
     nodo(alterado, NODO_INDICADOR).parameters.options.timeout = 60000;
     expect(hallazgosDelIndicador(alterado).length).toBeGreaterThan(0);
+    // Como el ensamblador: la ráfaga (si el manifiesto la pide) se quita ANTES del indicador y se injerta al final.
+    const rafaga = (leerManifiesto(DEMO_A) as { rafaga?: Nodo }).rafaga;
+    if (rafaga) quitarRafaga(alterado);
     quitarIndicador(alterado);
     injertarIndicador(alterado, { ancla: { nodo: '¿Atención normal?', salida: 0 }, normalizador: 'Normalizar entrada' });
+    if (rafaga) injertarRafaga(alterado, rafaga);
     expect(JSON.stringify(alterado, null, 2) + '\n').toBe(e.texto);
   });
 });

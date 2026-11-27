@@ -596,11 +596,11 @@ describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES 
   });
 
   it.each([['demo-a'], ['clientes/demo-b/demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF; arma con `campos: {texto: \'userInput\'}` (y `consumidor: null`: sin cableado en #1117)', (ruta) => {
-    // `quitarRafaga` primero: el flujo que ya adoptó la pieza (el Demo B desde el 25/11/2026) la trae puesta.
+    // Se quita la pieza antes: si el flujo ya la adoptó (el Demo A y el Demo B), la prueba es del armado desde cero.
     const f = injertarRafaga(quitarRafaga(real(ruta === 'demo-a' ? demoA : ruta)), { ancla: ANCLA_DEMO, campos: USER_INPUT, consumidor: null });
     expect(hallazgosDeLaRafaga(f, { consumidor: null })).toEqual([]);
-    // Sin consumidor declarado, la guardia lo dice... salvo en el flujo cuyo agente YA lee `textoDelTurno` (el Demo B desde el 25/11/2026).
-    if (ruta !== 'clientes/demo-b/demo-b-venta-cobro.json') expect(hallazgosDeLaRafaga(f).join('|')).toMatch(/ningún nodo .* lee `textoDelTurno`/);
+    // Sin consumidor declarado, la guardia lo dice... salvo en los flujos cuyo agente YA lee `textoDelTurno` (el Demo A, por el prompt del agente y «Retomar respuesta»; el Demo B desde el 25/11/2026).
+    if (ruta === 'demo-a') expect(hallazgosDeLaRafaga(f)).toEqual([]);
     else expect(hallazgosDeLaRafaga(f, { consumidor: 'AI Agent NovuChat' })).toEqual([]);
   });
 

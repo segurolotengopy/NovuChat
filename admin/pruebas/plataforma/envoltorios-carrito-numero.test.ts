@@ -30,7 +30,7 @@ const T = 'comercio-uno';
 const NODE_FALSO = `#!/usr/bin/env bash
 printf '%s\\n' "$@" >> "$FAKE_DIR/argv"
 echo "PROYECTO_RESETEO=\${PROYECTO_RESETEO:-}|TEL_PRUEBA=\${TEL_PRUEBA:-}|FIJAR_PROYECTO=\${FIJAR_PROYECTO:-}|CARRITO_URL_N8N=\${CARRITO_URL_N8N:-}|NUMERO_PUBLICO_LINEA=\${NUMERO_PUBLICO_LINEA:-}|NUMERO_OPERADOR=\${NUMERO_OPERADOR:-}" >> "$FAKE_DIR/entorno"
-echo "nodo imprime: \${FIJAR_PROYECTO:-} \${PROYECTO_RESETEO:-} \${TEL_PRUEBA:-} \${CARRITO_URL_N8N:-} \${NUMERO_PUBLICO_LINEA:-} \${NUMERO_OPERADOR:-}"
+echo "nodo imprime: \${FIJAR_PROYECTO:-} \${PROYECTO_RESETEO:-} \${TEL_PRUEBA:-} \${CARRITO_URL_N8N:-} \${NUMERO_PUBLICO_LINEA:-} \${NUMERO_OPERADOR:-} \${N8N_BASE_URL:-} \${N8N_API_KEY:-} \${TELEFONOS_PRUEBA:-}"
 exit "\${FAKE_SALIDA:-0}"
 `;
 
@@ -241,6 +241,46 @@ describe('resetear-telefono.sh --quien', () => {
     const r2 = correr(RESET, ['--tenant', 'walisuma', '--quien', 'andres'], { CONFIG_LOCAL_MD: tabla(filas(l)) });
     expect(r2.codigo, r2.salida).toBe(3);
     expect(llamadas()).toBe(0);
+  });
+
+  it('NEGANDO (H2, L1): el host y la clave de n8n no van en la línea de comandos de curl, y si el nodo los imprime (o la lista de teléfonos) el filtro los oculta', () => {
+    // El host y la clave entran a la consulta por el ENTORNO de python, nunca por la línea de comandos de un programa.
+    const fuente = readFileSync(RESET, 'utf8');
+    expect(fuente).not.toMatch(/\bcurl\b[^\n]*(N8N_BASE_URL|N8N_API_KEY)/);
+    expect(fuente).toMatch(/N8N_BASE_URL="\$N8N_BASE_URL" N8N_API_KEY="\$N8N_API_KEY" python3 -I/);
+    const l = `${ANDRES},${SILVANA}`;
+    const r = correr(RESET, ['--tenant', 'walisuma', '--quien', 'andres'], { CONFIG_LOCAL_MD: tabla(filas(l)), ENV_N8N: envN8n(`N8N_BASE_URL=https://${HOST}\nN8N_API_KEY=clave-que-no-debe-salir\n`) });
+    expect(r.codigo, r.salida).toBe(0);
+    for (const v of [HOST, 'clave-que-no-debe-salir', ANDRES, SILVANA]) expect(r.salida).not.toContain(v);
+  });
+
+  it('NEGANDO (L2): --aplicar sin --confirmo igual al comercio no llama a nada; --confirmo sin --aplicar tampoco', () => {
+    const l = `${ANDRES},${SILVANA}`;
+    const env = { CONFIG_LOCAL_MD: tabla(filas(l)), ENV_N8N: envN8n('N8N_BASE_URL=http://127.0.0.1:9\nN8N_API_KEY=clave-falsa\n') };
+    expect(correr(RESET, ['--tenant', 'walisuma', '--quien', 'andres', '--aplicar'], env).codigo).toBe(2);
+    expect(correr(RESET, ['--tenant', 'walisuma', '--quien', 'andres', '--aplicar', '--confirmo', 'otro-comercio'], env).codigo).toBe(2);
+    expect(correr(RESET, ['--tenant', 'walisuma', '--quien', 'andres', '--confirmo', 'walisuma'], env).codigo).toBe(2);
+    expect(llamadas()).toBe(0);
+    expect(correr(RESET, ['--tenant', 'walisuma', '--quien', 'andres', '--aplicar', '--confirmo', 'walisuma'], env).codigo).toBe(0);
+    expect(leer('argv')).toContain('--aplicar');
+  });
+
+  it('NEGANDO (H4): un BASH_ENV, una función exportada o un python3/node falsos en el PATH de quien llama no reciben ningún valor, en los tres envoltorios', () => {
+    writeFileSync(join(dir, 'bash_env'), 'python3() { printf "FUGA\\n" >> "$FAKE_DIR/fuga"; command python3 "$@"; }\n');
+    writeFileSync(join(dir, 'bin', 'python3'), '#!/usr/bin/env bash\nprintf "FUGA\\n" >> "$FAKE_DIR/fuga"\nexec /usr/bin/python3 "$@"\n'); chmodSync(join(dir, 'bin', 'python3'), 0o755);
+    const hostil = { BASH_ENV: join(dir, 'bash_env'), 'BASH_FUNC_sed%%': '() { printf "FUGA\\n" >> "$FAKE_DIR/fuga"; command sed "$@"; }' };
+    const l = `${ANDRES},${SILVANA}`;
+    const envs: Array<[string, () => { script: string; args: string[]; extra: Record<string, string> }]> = [
+      ['carrito', () => ({ script: CARRITO, args: ['--tenant', T, '--entorno', 'produccion'], extra: { CONFIG_LOCAL_MD: tabla([`| \`REEMPLAZAR_RUTA_CARRITO_COMERCIO_UNO\` | ${RUTA} |`]), ENV_N8N: envN8n(`N8N_BASE_URL=https://${HOST}/\n`) } })],
+      ['numero', () => ({ script: NUMERO, args: ['--tenant', T, '--entorno', 'produccion'], extra: { CONFIG_LOCAL_MD: tabla([`| \`REEMPLAZAR_NUMERO_PUBLICO_COMERCIO_UNO\` | ${PUBLICO} |`]), NOVUCHAT_OPERADOR: CORREO } })],
+      ['reset', () => ({ script: RESET, args: ['--tenant', 'walisuma', '--quien', 'andres'], extra: { CONFIG_LOCAL_MD: tabla(filas(l)), ENV_N8N: envN8n('N8N_BASE_URL=http://127.0.0.1:9\n'), RESETEAR_SOLO_LISTA: '1' } })],
+    ];
+    for (const [nombre, f] of envs) {
+      const e = f();
+      const r = correr(e.script, e.args, { ...hostil, ...e.extra });
+      expect(r.codigo, `${nombre}: ${r.salida}`).toBe(0);
+      expect(leer('fuga'), nombre).toBe('');
+    }
   });
 
   it('--tel sigue funcionando como antes', () => {

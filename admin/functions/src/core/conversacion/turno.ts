@@ -329,6 +329,8 @@ export const ErroresDeTurno = {
   /** RETOMAR solo sirve con la ventana cerrada: con la abierta se usa Tomar. */
   ventanaAbierta: { code: 'failed-precondition', message: 'La ventana de 24 horas está abierta: use Tomar conversación.' },
   noContactar: { code: 'failed-precondition', message: 'Este cliente pidió que no se le escriba.' },
+  /** Hay una baja (pidió no recibir más mensajes): ni Retomar ni nada que inicie el negocio; solo se le responde si escribe. */
+  conBaja: { code: 'failed-precondition', message: 'Este contacto pidió no recibir más mensajes.' },
   /** Ya se envió una plantilla y el cliente no respondió (un solo Retomar hasta que responda, con plazo máximo). */
   retomadaPendiente: { code: 'failed-precondition', message: 'Ya se envió una plantilla a este cliente; espere su respuesta.' },
   sinPlantilla: { code: 'failed-precondition', message: 'La plantilla para retomar no está disponible en este número.' },
