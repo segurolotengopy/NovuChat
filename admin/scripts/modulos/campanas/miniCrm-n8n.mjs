@@ -75,10 +75,10 @@ export function extraerConfigDelFlujo(flujo) {
 }
 
 /** El flujo temporal: webhook -> GET a la API de Sheets. Solo lee. Sin ejecuciones guardadas. */
-export function flujoTemporal({ camino, webhookId, planillaId, hoja, credencial, fila, ultima }) {
+export function flujoTemporal({ camino, webhookId, planillaId, hoja, credencial, fila, ultima, nombre = NOMBRE_TEMPORAL }) {
   const rango = encodeURIComponent(`'${hoja}'!A${fila}:${ultima}`);
   return {
-    name: NOMBRE_TEMPORAL,
+    name: nombre,
     nodes: [
       {
         id: 'entrada', name: 'Entrada', type: 'n8n-nodes-base.webhook', typeVersion: 2, position: [0, 0], webhookId,
@@ -159,26 +159,51 @@ export function crearLectorDeMiniCrmN8n({ envFile, nombreFlujo, crm }, deps = {}
 
     // 2. El flujo temporal: se crea, se activa, se llama una vez y se borra pase lo que pase.
     const camino = `lectura-${aleatorio(16)}`;
-    const flujo = flujoTemporal({ camino, webhookId: aleatorio(8), ...config, fila, ultima });
+    // El nombre es ÚNICO por corrida: si la creación queda en duda (la señal llegó durante el POST), se borra por nombre.
+    const nombreTemporal = `${NOMBRE_TEMPORAL} ${camino}`;
+    const flujo = flujoTemporal({ camino, webhookId: aleatorio(8), ...config, fila, ultima, nombre: nombreTemporal });
     let id = null;
-    const limpiar = async () => {
-      if (!id) return;
-      const idLocal = id; id = null;
+    let creacion = null;
+    let creacionIncierta = false;
+    let interrumpido = false;
+    const borrar = async (idLocal) => {
       try { await api('POST', `/workflows/${idLocal}/deactivate`); } catch { /* se intenta borrar igual */ }
-      let borrado = false;
-      try { borrado = (await api('DELETE', `/workflows/${idLocal}`)).ok; } catch { /* se avisa abajo */ }
+      try { return (await api('DELETE', `/workflows/${idLocal}`)).ok; } catch { return false; }
+    };
+    const borrarPorNombre = async () => {
+      let todos = true;
+      let cursor = null;
+      for (let pagina = 0; pagina < 50; pagina++) {
+        let r;
+        try { r = await api('GET', `/workflows?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`); } catch { return false; }
+        if (!r.ok) return false;
+        for (const w of r.j?.data ?? []) if (w?.name === nombreTemporal && typeof w?.id === 'string') todos = (await borrar(w.id)) && todos;
+        cursor = r.j?.nextCursor ?? null;
+        if (!cursor) break;
+      }
+      return todos;
+    };
+    const hacerLimpieza = async () => {
+      if (creacion) await creacion.catch(() => {}); // una creación en vuelo termina antes de limpiar: así no queda un flujo sin borrar
+      let borrado = true;
+      if (id) { const idLocal = id; id = null; borrado = await borrar(idLocal); } else if (creacionIncierta) borrado = await borrarPorNombre();
       if (!borrado) {
         estado.limpiezaFallida = true;
         aviso(`NO se pudo borrar el flujo temporal «${NOMBRE_TEMPORAL}»: bórrelo a mano en n8n (el webhook sigue vivo).`);
       }
     };
-    const alSenal = () => { void limpiar().finally(() => proceso.exit(130)); };
+    // Una sola limpieza por lectura: el oyente de la corrida, el de este lector y el `finally` esperan la MISMA.
+    let limpieza = null;
+    const limpiar = () => { limpieza ??= hacerLimpieza(); return limpieza; };
+    leerFilasDelMiniCrm.limpiar = () => { interrumpido = true; return limpiar(); };
+    const alSenal = () => { interrumpido = true; void limpiar().finally(() => proceso.exit(130)); };
     proceso.once('SIGINT', alSenal);
     proceso.once('SIGTERM', alSenal);
     try {
-      const c = await api('POST', '/workflows', flujo);
+      creacion = api('POST', '/workflows', flujo).then((c) => { if (c.ok && typeof c.j?.id === 'string') id = c.j.id; return c; }, (e) => { creacionIncierta = true; throw e; });
+      const c = await creacion;
       if (!c.ok || typeof c.j?.id !== 'string') throw falla(`n8n-crear-${c.estado}`, 'no se pudo crear el flujo temporal');
-      id = c.j.id;
+      if (interrumpido) throw falla('interrumpido', 'interrumpido por el operador');
       const a = await api('POST', `/workflows/${id}/activate`);
       if (!a.ok) throw falla(`n8n-activar-${a.estado}`, 'no se pudo activar el flujo temporal');
       await esperar(4000);
@@ -192,8 +217,10 @@ export function crearLectorDeMiniCrmN8n({ envFile, nombreFlujo, crm }, deps = {}
       proceso.off('SIGINT', alSenal);
       proceso.off('SIGTERM', alSenal);
       await limpiar();
+      limpieza = null;
     }
   }
   leerFilasDelMiniCrm.estado = estado;
+  leerFilasDelMiniCrm.limpiar = () => Promise.resolve();
   return leerFilasDelMiniCrm;
 }

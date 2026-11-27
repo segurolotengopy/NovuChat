@@ -2,12 +2,17 @@
  * La lectura del miniCRM por la API de n8n (campaña saliente, PR-C), contra un n8n de mentira: ningún fetch real, ningún .env.
  * Todos los ids, nombres y credenciales de aquí son ficticios.
  */
+import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 
 type Pedido = { metodo: string; ruta: string; cuerpo: unknown };
 const M = await import('../../../scripts/modulos/campanas/miniCrm-n8n.mjs') as unknown as {
   crearLectorDeMiniCrmN8n: (o: Record<string, unknown>, d?: Record<string, unknown>) => (() => Promise<Array<Record<string, string>>>) & { estado: { limpiezaFallida: boolean } };
   extraerConfigDelFlujo: (f: unknown) => { planillaId: string; hoja: string; credencial: { id: string; name: string } };
+};
+
+const C = await import('../../../scripts/modulos/campanas/campana-saliente.mjs') as unknown as {
+  instalarInterrupcion: (p: unknown, e: { estado: string }, l: unknown, escribir?: (t: string) => void) => void;
 };
 
 const PLANILLA = 'planilla-ficticia-0001';
@@ -200,3 +205,79 @@ describe('lectura del miniCRM por n8n', () => {
     expect(() => M.crearLectorDeMiniCrmN8n({ envFile: 'x', nombreFlujo: '', crm: CRM })).toThrow();
   });
 });
+
+// Ctrl-C y SIGTERM con los DOS oyentes reales (el de la corrida, `instalarInterrupcion`, y el del lector) sobre un `proceso` compartido.
+describe('interrupción: el flujo temporal se borra ANTES de salir', () => {
+  const compuerta = () => { let abrir!: () => void; const espera = new Promise<void>((r) => { abrir = r; }); return { espera, abrir }; };
+
+  /** n8n de mentira con compuertas en el POST de creación y en el DELETE, y el proceso compartido con los dos oyentes reales. */
+  function montaje(o: Opciones & { retenerPost?: boolean; retenerDelete?: boolean; falloPost?: boolean; existentes?: Array<{ id: string; name: string; active: boolean }> } = {}) {
+    const postG = compuerta(); const delG = compuerta();
+    const n8n = n8nDeMentira(o);
+    const llamadas: string[] = [];
+    const fetch = vi.fn(async (url: string, init: { method: string; body?: string }) => {
+      const u = new URL(url);
+      llamadas.push(`${init.method} ${u.pathname}`);
+      if (init.method === 'POST' && u.pathname === '/api/v1/workflows') {
+        if (o.falloPost) { await n8n.fetch(url, init); throw new Error('red caída'); }
+        if (o.retenerPost) await postG.espera;
+      }
+      if (init.method === 'DELETE' && o.retenerDelete) await delG.espera;
+      if (init.method === 'GET' && u.pathname === '/api/v1/workflows' && o.existentes && n8n.pedidos.some((q) => q.metodo === 'POST' && q.ruta === '/api/v1/workflows')) {
+        const creado = n8n.pedidos.find((q) => q.metodo === 'POST' && q.ruta === '/api/v1/workflows')?.cuerpo as { name: string };
+        return { ok: true, status: 200, text: async () => JSON.stringify({ data: [{ id: 'huerfano-ficticio', name: creado.name, active: true }, ...o.existentes!], nextCursor: null }) };
+      }
+      return n8n.fetch(url, init);
+    });
+    const proceso = Object.assign(new EventEmitter(), { exit: vi.fn(), off: undefined as unknown });
+    proceso.off = (e: string, f: (...a: unknown[]) => void) => proceso.removeListener(e, f);
+    const avisos: string[] = [];
+    const leer = M.crearLectorDeMiniCrmN8n({ envFile: 'no-se-lee', nombreFlujo: NOMBRE, crm: CRM }, {
+      fetch, leerEnv: () => ({ N8N_BASE_URL: 'https://n8n.ejemplo.invalid', N8N_API_KEY: CLAVE_N8N }), aleatorio: (n: number) => 'a'.repeat(n * 2), esperar: async () => {}, aviso: (t: string) => avisos.push(t), proceso,
+    });
+    // El oyente de la corrida se instala ANTES que el del lector (como en `principal`): es el orden que dejaba salir antes de limpiar.
+    C.instalarInterrupcion(proceso, { estado: 'antes' }, leer, () => {});
+    return { leer, proceso, n8n, postG, delG, llamadas, avisos };
+  }
+  const borrados = (m: { n8n: { pedidos: Pedido[] } }) => m.n8n.pedidos.filter((q) => q.metodo === 'DELETE').length;
+
+  for (const senal of ['SIGINT', 'SIGTERM']) {
+    it(`NEGATIVA: ${senal} durante la llamada NO sale hasta que el flujo temporal se borró (una sola vez)`, async () => {
+      const m = montaje({ retenerDelete: true });
+      const p = m.leer().catch(() => null);
+      await vi.waitFor(() => expect(m.llamadas.some((l) => l.startsWith('POST /webhook/'))).toBe(true));
+      m.proceso.emit(senal);
+      await vi.waitFor(() => expect(m.llamadas).toContain('DELETE /api/v1/workflows/tmp-ficticio'));
+      expect(m.proceso.exit).not.toHaveBeenCalled(); // con el borrado en vuelo, salir sería dejar el webhook vivo
+      m.delG.abrir();
+      await vi.waitFor(() => expect(m.proceso.exit).toHaveBeenCalledWith(130));
+      await p;
+      expect(m.llamadas.filter((l) => l.startsWith('DELETE'))).toHaveLength(1);
+      expect(m.proceso.listenerCount(senal)).toBe(0); // los dos oyentes de esa señal se quitaron
+    });
+  }
+
+  it('NEGATIVA: la señal durante el POST /workflows espera la creación, borra el flujo creado y no lo activa', async () => {
+    const m = montaje({ retenerPost: true });
+    const p = m.leer().catch(() => null);
+    await vi.waitFor(() => expect(m.llamadas).toContain('POST /api/v1/workflows'));
+    m.proceso.emit('SIGINT');
+    m.postG.abrir();
+    await vi.waitFor(() => expect(m.proceso.exit).toHaveBeenCalledWith(130));
+    await p;
+    expect(m.llamadas).toContain('DELETE /api/v1/workflows/tmp-ficticio');
+    expect(m.llamadas.some((l) => l.includes('/activate'))).toBe(false);
+    expect(m.llamadas.some((l) => l.startsWith('POST /webhook/'))).toBe(false);
+  });
+
+  it('NEGATIVA: si la creación queda en duda (sin respuesta), se borra POR NOMBRE, que es único por corrida', async () => {
+    const m = montaje({ falloPost: true, existentes: [{ id: 'otro-ficticio', name: 'otro flujo', active: true }] });
+    const e = await rechazo(m.leer);
+    expect(e.message).toBe('red caída');
+    const creado = m.n8n.pedidos.find((q) => q.metodo === 'POST' && q.ruta === '/api/v1/workflows')?.cuerpo as { name: string };
+    expect(creado.name).toMatch(/^TEMPORAL lectura miniCRM campaña \(borrar\) lectura-[a-f0-9]+$/);
+    expect(m.llamadas).toContain('DELETE /api/v1/workflows/huerfano-ficticio');
+    expect(m.llamadas).not.toContain('DELETE /api/v1/workflows/otro-ficticio');
+  });
+});
+

@@ -478,6 +478,22 @@ export async function ejecutar(cfg, deps) {
 // ===========================================================================
 const corrida = { estado: 'antes' };
 
+/**
+ * Ctrl-C (SIGINT) y SIGTERM: ESPERA a que el lector borre el flujo temporal de n8n y recién entonces sale con 130. Si saliera antes,
+ * quedaría vivo un webhook sin autenticación que devuelve la hoja. `proceso` y `lector` se inyectan en las pruebas.
+ */
+export function instalarInterrupcion(proceso, estadoCorrida, lector, escribir = (t) => console.error(t)) {
+  let atendida = false;
+  const alSenal = () => {
+    if (atendida) return;
+    atendida = true;
+    escribir(mensajeDeInterrupcion(estadoCorrida.estado));
+    Promise.resolve().then(() => lector?.limpiar?.()).catch(() => {}).finally(() => proceso.exit(130));
+  };
+  proceso.once('SIGINT', alSenal);
+  proceso.once('SIGTERM', alSenal);
+}
+
 function leerJsonBajo(ruta, base) {
   const real = realpathSync(ruta);
   if (!real.startsWith(`${realpathSync(base)}${sep}`)) throw Object.assign(new Error('ruta fuera de su carpeta'), { code: 'ruta-fuera' });
@@ -504,7 +520,6 @@ async function principal() {
   }
   initializeApp({ projectId: cfg.proyecto });
   const db = getFirestore();
-  process.on('SIGINT', () => { console.error(mensajeDeInterrupcion(corrida.estado)); process.exit(130); });
   let leerFilasDelMiniCrm;
   if (cfg.mapaCrm !== null) {
     if (!process.env.ENV_FILE) { console.error('\n  ✗ falta ENV_FILE en el entorno (el .env de n8n)\n'); process.exit(2); }
@@ -512,6 +527,7 @@ async function principal() {
     const nombreFlujo = leerJsonBajo(cfg.flujoVersionado, FLUJOS_CLIENTES).name;
     leerFilasDelMiniCrm = crearLectorDeMiniCrmN8n({ envFile: process.env.ENV_FILE, nombreFlujo, crm }, { aviso: (t) => console.error(`\n  ⚠ ${t}\n`) });
   }
+  instalarInterrupcion(process, corrida, leerFilasDelMiniCrm);
   const codigo = await ejecutar(cfg, { db, Timestamp, FieldValue, leerFilasDelMiniCrm, leerConfigCampana, marcarEscritura: (v) => { corrida.estado = v; } });
   await db.terminate().catch(() => {});
   process.exit(leerFilasDelMiniCrm?.estado?.limpiezaFallida ? 3 : codigo);
