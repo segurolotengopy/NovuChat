@@ -53,6 +53,7 @@ export { sigueVigente };
 // Términos de producto registrados (Andres, 24/10/2026): se leen una vez por turno, y solo si lo que
 // va al prompt contiene «prompt»; el sistema los cita entre « » y revalida lo ya aprobado.
 import { citarTerminos } from './central/asistente/terminos.js';
+import { aplicarRespuestaDeCampana, campanaIdValido, normalizarRespuestaDeCampana } from './core/conversacion/bajas.js';
 import { aplicarEventoDeFactura, codigoDePedidoValido, ultimoPedidoParaElFlujo } from './core/turno/facturaPedido.js';
 
 /**
@@ -162,7 +163,14 @@ interface Entrante {
     // LA FACTURA QUE LLEGA TARDE (PR-F, Walisuma): el cliente dio sus datos de factura (`factura_dada`) o
     // no la quiere (`factura_sin`). Viaja con `codigoPedido` y SIN los datos: la razón social y el NIT van
     // solo en el aviso a la encargada. Marca `ultimoPedido.factura` de ESTA conversación (`facturaPedido.ts`).
-    | 'factura_dada' | 'factura_sin';
+    | 'factura_dada' | 'factura_sin'
+    // LA RESPUESTA A LA CAMPAÑA SALIENTE (PR-A, 26/11/2026): el entrante es el toque de «Sí, contáctenme» / «No, gracias».
+    // Viaja con `campanaEnvioId` y `respuestaCampana`; el «no» crea la baja, el «sí» y el «no» anotan `campanaRespuesta`,
+    // en la MISMA transacción que el mensaje (`core/conversacion/bajas.ts`).
+    | 'campana_respuesta';
+  /** Solo con `campana_respuesta`: la campaña (`^[a-z0-9-]{3,40}$`) y la respuesta (`si` | `no`). */
+  campanaEnvioId?: string;
+  respuestaCampana?: 'si' | 'no';
   /** Solo con `factura_dada` / `factura_sin`: el código del pedido (`<PREFIJO>-AAMMDD-NNN`). */
   codigoPedido?: string;
   /**
@@ -256,7 +264,7 @@ const ORIGENES = new Set(['anuncio', 'directo']);
 /** Los hechos del flujo que la ingesta entiende. Uno desconocido se ignora:
  *  el mensaje se cuenta igual y el campo no se guarda. */
 const EVENTOS = new Set(['qr_enviado', 'horarios_ofrecidos', 'no_contactar', 'cita_cancelada', 'adelanto_aplicado', 'reprogramada',
-  'cobro_cancelado', 'anulacion_avisada', 'pedido_sin_cobro', 'factura_dada', 'factura_sin']);
+  'cobro_cancelado', 'anulacion_avisada', 'pedido_sin_cobro', 'factura_dada', 'factura_sin', 'campana_respuesta']);
 
 /**
  * Normaliza el mensaje entrante. TODO lo de acá es DATO NO CONFIABLE: lo escribió
@@ -308,6 +316,11 @@ function normalizar(cuerpo: unknown): Entrante | null {
   // Solo el código: cualquier otro campo del cuerpo (razón social, NIT) se ignora y no se guarda.
   const codigoPedido = evento === 'factura_dada' || evento === 'factura_sin'
     ? codigoDePedidoValido(c['codigoPedido']) ?? undefined : undefined;
+  // Respuesta a la campaña saliente: ambos campos válidos o ninguno (un `campana_respuesta` mal formado se cuenta como un mensaje cualquiera).
+  // La respuesta válida basta: un «no» con id de campaña faltante o inválido igual crea la baja (`aplicarRespuestaDeCampana`).
+  const respuestaNormal = evento === 'campana_respuesta' ? normalizarRespuestaDeCampana(c['respuestaCampana']) : null;
+  const respuestaCampana = respuestaNormal !== null
+    ? { respuestaCampana: respuestaNormal, ...(campanaIdValido(c['campanaEnvioId']) ? { campanaEnvioId: c['campanaEnvioId'] } : {}) } : undefined;
 
   // SIN CONTEO (16/11/2026): solo el booleano exacto `true`, y solo en un saliente de imagen. Cualquier
   // otra combinación o valor se ignora y el mensaje se cuenta como siempre (ante la duda, se cuenta).
@@ -341,6 +354,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
            ...(reglaCobro ? { reglaCobro } : {}),
            ...(riesgo ? { riesgo } : {}),
            ...(codigoPedido ? { codigoPedido } : {}),
+           ...(respuestaCampana ?? {}),
            ...(referencia ? { referencia } : {}),
            ...(calendario ? { calendario } : {}),
            ...(inicio ? { inicio } : {}),
@@ -796,6 +810,22 @@ export const ingesta = onRequest(
     // comercial— y corte el turno.
     const { estado, ficha } = await estadoDelComercio(tenantId);
     if (estado !== 'activo') {
+      // UN «NO» A LA CAMPAÑA NUNCA SE PIERDE, ni con el comercio suspendido: la baja es un derecho de la persona y, si se
+      // descartara, al reactivarse el comercio le seguirían llegando campañas. SOLO con el comercio `suspendido` (reversible);
+      // en `baja` o `desconocido` no se escribe nada. Escribe ÚNICAMENTE `bajas/{wa_tel}` (`soloBaja`): ni conversación, ni
+      // mensaje, ni conteo. Un «sí» no escribe nada. Un fallo de la transacción no cambia la respuesta: sigue el 409.
+      if (estado === 'suspendido' && mensaje.evento === 'campana_respuesta' && mensaje.direccion === 'entrante'
+          && mensaje.respuestaCampana === 'no') {
+        const refConv = db.doc(`tenants/${tenantId}/conversaciones/wa_${mensaje.telefono}`);
+        try {
+          const resultado = await db.runTransaction((tx) => aplicarRespuestaDeCampana(tx, refConv,
+            { campanaId: mensaje.campanaEnvioId, respuesta: 'no' }, Timestamp.now(), { soloBaja: true }));
+          logger.info('ingesta: baja de campaña con el comercio suspendido', { tenantId, resultado });
+        } catch {
+          // Sin el teléfono ni el texto del error: solo el hecho.
+          await registrar(tenantId, { tipo: 'error_flujo', resultado: 'fallo', codigo: 'campana_baja_fallida' });
+        }
+      }
       // SE REGISTRA IGUAL. La bitácora admite escrituras con el comercio
       // suspendido justamente para esto: el tramo del corte de servicio es el
       // más conflictivo y es donde la evidencia no puede tener agujeros.
@@ -922,7 +952,10 @@ export const ingesta = onRequest(
     const refAuditoria = db.collection(`tenants/${tenantId}/auditoria`);
     const ahoraMs = Date.now();
 
+    // El resultado de la respuesta a la campaña (se reasigna si la transacción se reintenta); se registra abajo, sin teléfono.
+    let resultadoDeCampana: string | null = null;
     const veredicto = await db.runTransaction(async (tx) => {
+      resultadoDeCampana = null;
       // SALIENTE DE IMAGEN SIN CONTEO (16/11/2026, `docs/arquitectura/medios.md`): la foto de catálogo que manda
       // el asistente queda en el hilo (la consola y `guardarMedio` la hallan por `idMeta`) y NADA MÁS. No toca
       // contadores (`mensajesTotal`, `respuestasDelPeriodo`, `mensajesVentana`), ni métricas, ni bloques, ni
@@ -991,6 +1024,12 @@ export const ingesta = onRequest(
         && (avisoConsumoPendiente(cuenta, periodo) || conModalidad))
         || (conModalidad && corteGuardado !== null));
       const metricasDoc = necesitaMetricas ? await tx.get(refMetricas) : null;
+      // RESPUESTA A LA CAMPAÑA SALIENTE: lee la baja y escribe baja + `campanaRespuesta` en ESTA transacción. Va aquí porque
+      // es la última lectura y la primera escritura de la transacción viene después (Firestore exige lecturas primero).
+      if (mensaje.evento === 'campana_respuesta' && mensaje.direccion === 'entrante') {
+        resultadoDeCampana = await aplicarRespuestaDeCampana(tx, refConversacion,
+          { campanaId: mensaje.campanaEnvioId, respuesta: mensaje.respuestaCampana }, Timestamp.fromMillis(ahoraMs));
+      }
       const previasDelMes = Number(metricasDoc?.get('conversaciones'));
       const avisoConsumo = metricasDoc
         ? avisoDeConsumo(cuenta, (Number.isFinite(previasDelMes) ? previasDelMes : 0) + 1, periodo)
@@ -1444,6 +1483,16 @@ export const ingesta = onRequest(
         conversacion: conversacionDelMensaje(marcas, conteo, ahoraMs, mensaje.direccion) };
     });
 
+    if (mensaje.evento === 'campana_respuesta') {
+      // Constancia sin teléfono: qué pasó con la respuesta. Un «no» o un «sí» que no se aplicó (respuesta fuera de la lista, o «sí»
+      // sin id válido) no se ignora en silencio.
+      const r = resultadoDeCampana as string | null;
+      const normal = r === 'baja' || r === 'ya_baja' || r === 'respuesta';
+      (normal && mensaje.campanaEnvioId ? logger.info : logger.warn)('ingesta: respuesta a la campaña saliente', {
+        tenantId, resultado: r ?? (mensaje.direccion === 'entrante' ? 'sin_aplicar' : 'saliente_ignorado'),
+        campanaIdValido: mensaje.campanaEnvioId !== undefined,
+      });
+    }
     if ('sinConteo' in veredicto) {
       // Sin conteo no hay renglón de «mensaje contado» (ese log es lo que se agrupa para costo), ni bitácora de
       // mensaje, ni gancho de pedidos. Solo queda constancia de que se guardó, sin teléfono ni texto.

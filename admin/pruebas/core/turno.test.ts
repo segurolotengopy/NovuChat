@@ -387,6 +387,7 @@ describe('los errores fijos', () => {
       sinRetomar: { code: 'permission-denied', message: 'Retomar conversaciones todavía no está activo para su negocio.' },
       ventanaAbierta: { code: 'failed-precondition', message: 'La ventana de 24 horas está abierta: use Tomar conversación.' },
       noContactar: { code: 'failed-precondition', message: 'Este cliente pidió que no se le escriba.' },
+      conBaja: { code: 'failed-precondition', message: 'Este contacto pidió no recibir más mensajes.' },
       retomadaPendiente: { code: 'failed-precondition', message: 'Ya se envió una plantilla a este cliente; espere su respuesta.' },
       sinPlantilla: { code: 'failed-precondition', message: 'La plantilla para retomar no está disponible en este número.' },
       topeRetomarDia: { code: 'resource-exhausted', message: 'El comercio llegó al tope diario de conversaciones retomadas.' },

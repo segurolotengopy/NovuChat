@@ -497,7 +497,7 @@ export const REGISTRO = [
  */
 export const COLECCIONES_CERRADAS_DEL_CORE = {
   raiz: ['topesDeBusqueda', 'topesDeTurno', 'topesDeMedios'],
-  tenant: ['salida', 'cuposDeMedios', 'mediosEnviados'],
+  tenant: ['salida', 'cuposDeMedios', 'mediosEnviados', 'bajas'],
 } as const;
 
 /**

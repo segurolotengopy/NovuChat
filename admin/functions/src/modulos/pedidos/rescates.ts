@@ -373,6 +373,11 @@ export const reclamarRescates = onRequest(
           if (ultimoMs === null) continue;
           const telefono = datos['telefono'] as string;
 
+          // M3: quien pidió la baja de la campaña (`tenants/{t}/bajas/{wa_tel}`) no recibe NINGÚN mensaje iniciado por el
+          // negocio, tampoco un rescate. Cualquier existencia del documento frena.
+          const bajaPrevia = await db.doc(`tenants/${tenantId}/bajas/${doc.id}`).get();
+          if (bajaPrevia.exists) continue;
+
           const recientes = await doc.ref.collection('mensajes')
             .where('ts', '>=', Timestamp.fromMillis(ultimoMs - 24 * HORA))
             .orderBy('ts', 'desc').limit(MENSAJES_A_LEER).get();
@@ -392,8 +397,8 @@ export const reclamarRescates = onRequest(
           // LA MARCA, ANTES DE ENVIAR: se relee y se vuelve a decidir dentro de la
           // transacción; dos corridas simultáneas no pueden marcar la misma.
           const marcada = await db.runTransaction(async (tx) => {
-            const fresco = await tx.get(doc.ref);
-            if (!fresco.exists || motivoParaNoRescatar(fresco.data(), ctx, ahoraMs) !== '') return false;
+            const [fresco, bajaFresca] = await tx.getAll(doc.ref, db.doc(`tenants/${tenantId}/bajas/${doc.id}`));
+            if (!fresco!.exists || bajaFresca!.exists || motivoParaNoRescatar(fresco!.data(), ctx, ahoraMs) !== '') return false;
             tx.set(doc.ref, {
               rescate: {
                 enviadoEn: Timestamp.fromMillis(ahoraMs),

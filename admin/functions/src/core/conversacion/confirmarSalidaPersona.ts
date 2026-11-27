@@ -43,7 +43,7 @@ import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada, type Ruta } from '../seguridad/firma.js';
 import { ID_COMERCIO } from './acceso.js';
 import {
-  CLAVE_DE_ENVIO, CODIGO_DE_ENVIO, ID_META, liberarRetomada, refTopesDeRetomar, sumarMensajePersona, sumarPlantillaPersona,
+  CLAVE_DE_ENVIO, CODIGO_DE_ENVIO, ID_META, esAutorDePlantilla, liberarRetomada, refTopesDeRetomar, sumarMensajePersona, sumarPlantillaCampana, sumarPlantillaPersona,
 } from './salidaPersona.js';
 import { ID_CONVERSACION } from './turno.js';
 
@@ -93,11 +93,13 @@ export async function confirmarSalida(
   return db.runTransaction(async (tx): Promise<SalidaDeConfirmacion> => {
     const s = await tx.get(ref);
     // Un rechazo de PLANTILLA libera la conversación y el cupo (`liberarRetomada`): sus lecturas van antes de toda escritura.
-    const porLiberar = c.resultado === 'rechazado' && s.exists && s.get('tipo') === 'plantilla';
+    // La campaña NO reserva cupo ni bloquea la conversación de Retomar: no libera nada.
+    const porLiberar = c.resultado === 'rechazado' && s.exists && s.get('tipo') === 'plantilla' && s.get('autor') === 'persona';
     const [convSnap, topesSnap] = porLiberar
       ? await tx.getAll(db.doc(`tenants/${tenantId}/conversaciones/${c.conversacionId}`), refTopesDeRetomar(db, tenantId))
       : [null, null];
-    if (!s.exists || s.get('tenantId') !== tenantId || s.get('direccion') !== 'saliente' || s.get('autor') !== 'persona') {
+    if (!s.exists || s.get('tenantId') !== tenantId || s.get('direccion') !== 'saliente'
+        || !esAutorDePlantilla(s.get('autor')) || (s.get('autor') === 'campana' && s.get('tipo') !== 'plantilla')) {
       return { codigo: 404 };
     }
     const de: unknown = s.get('phoneNumberId');
@@ -130,7 +132,7 @@ export async function confirmarSalida(
     // El conteo: aceptado e incierto cuentan UNA vez; rechazado no (y si ya contaba como incierto, se resta).
     const cuenta = c.resultado !== 'rechazado';
     // Una PLANTILLA (Retomar) cuenta en su propio contador, `plantillasPersona`, con el mismo criterio.
-    const sumar = s.get('tipo') === 'plantilla' ? sumarPlantillaPersona : sumarMensajePersona;
+    const sumar = s.get('tipo') === 'plantilla' ? (s.get('autor') === 'campana' ? sumarPlantillaCampana : sumarPlantillaPersona) : sumarMensajePersona;
     if (cuenta && !contado) { cambios['contado'] = true; sumar(tx, db, tenantId, ahoraMs, 1); }
     if (!cuenta && contado) { cambios['contado'] = false; sumar(tx, db, tenantId, ahoraMs, -1); }
     tx.update(ref, cambios);
