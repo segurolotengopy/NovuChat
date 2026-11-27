@@ -650,6 +650,7 @@ CONFIRMAR = [
     (r"verificar-meta\.sh\b.*--(de)?suscribir", "Escribe en Meta: suscribe o desuscribe la app de la WABA."),
     (r"webhook-meta\.sh\b.*--(alta-meta|alta-waba|preparar|cerrar)\b", "Escribe en Meta o en n8n: el webhook de la app o de la WABA, o el flujo temporal."),
     (r"\bgh\s+pr\s+(merge|close)\b|\bgh\s+workflow\s+run\b", "Cambia GitHub: fusión, cierre o ejecución de un workflow."),
+    (r"\bgh\s+pr\s+review\b", "Cambia GitHub: aprobación o revisión de un PR."),
     (empuja, "Publica en GitHub."),
     (r"\bfirebase\s+deploy\b|\bdeploy\.sh\b", "Despliega."),
 ]
