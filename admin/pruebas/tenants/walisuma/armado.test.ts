@@ -16,6 +16,7 @@ import { cargaConCarrito } from '../../../../Flujos/src/modulos/catalogo-web/car
 // La rama del guardado de la imagen SALIENTE del asistente (16/11/2026): por media id son estos 4 nodos.
 const SALIENTE = ['Preparar guardado (saliente)', 'Pedir imagen a Meta (guardado saliente)', 'Descargar imagen de Meta (guardado saliente)', 'Guardar imagen enviada'];
 const INDICADOR = ['¿Indicador de escritura activo?', 'Indicador de escritura']; // el indicador de escritura (21/11/2026), común a todo flujo con agente
+const RAFAGA = ['¿Esperar ráfaga?', 'Esperar ráfaga', 'Consultar ráfaga', 'Agrupar ráfaga']; // la ráfaga de textos (25/11/2026), pieza común del core
 import type { Flujo, J } from '../../lib/flujo';
 import { PRODUCCION, PRUEBA } from './mundo';
 
@@ -32,18 +33,19 @@ const corrida = (...args: string[]) => spawnSync(process.execPath, [join(CARPETA
 
 describe('tamaño y composición', () => {
   it('como máximo 64 nodos (47 + los 9 del guardado de medios, excepción del 29/10/2026, + los 8 del miniCRM, D2 de Andres del 10/11/2026): producción 71 exactos con el indicador y el webhook del carrito del catálogo web, prueba 65 (antes 64 y 59), y +4 de la rama del guardado de la imagen saliente (16/11/2026): producción 68, prueba 63', () => {
-    expect(PRODUCCION.nodes.length).toBe(71);
-    expect(PRUEBA.nodes.length).toBe(65);
-    expect(C.TOPE_DE_NODOS).toBe(71);
+    // +4 de la ráfaga (pieza común; tope autorizado por Andres el 25/11/2026, «Sí, +4 nodos por flujo»): producción 75, prueba 69.
+    expect(PRODUCCION.nodes.length).toBe(75);
+    expect(PRUEBA.nodes.length).toBe(69);
+    expect(C.TOPE_DE_NODOS).toBe(75);
   });
   it('los 11 nodos del PR-3 están (el esqueleto de 36 más 11), sin repetirse', () => {
     for (const n of C.NODOS_DEL_PR3 as string[]) { expect(nombres(PRODUCCION)).toContain(n); expect(nombres(PRUEBA)).toContain(n); }
     expect(new Set(C.NODOS_DEL_PR3).size).toBe(11);
   });
-  it('NEGADO: un flujo con más de 71 nodos viola la guardia', () => {
+  it('NEGADO: un flujo con más de 75 nodos viola la guardia', () => {
     const f = clonar(PRODUCCION);
     for (let i = 0; i < 1; i++) f.nodes.push({ id: `extra-${i}`, name: `Extra ${i}`, type: 'n8n-nodes-base.noOp', typeVersion: 1, position: [0, 0], parameters: {} } as never);
-    expect(C.guardias('produccion', f).join(' ')).toMatch(/tiene 72 nodos y el tope es 71/);
+    expect(C.guardias('produccion', f).join(' ')).toMatch(/tiene 76 nodos y el tope es 75/);
   });
   it('los id de nodo son nombres cortos (nunca UUID) y los nombres y los id no se repiten', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
@@ -58,12 +60,12 @@ describe('tamaño y composición', () => {
     expect(nombres(PRUEBA)).toContain('Entrada de prueba');
     for (const n of C.NODOS_DEL_RECEPTOR as string[]) { expect(nombres(PRODUCCION)).toContain(n); expect(nombres(PRUEBA)).not.toContain(n); }
   });
-  it('las medidas: 2 del indicador de escritura, 6 del receptor, 7 de entrada, 1 de puerta, 13 de medios, 9 de salida, 11 de la venta, 9 del guardado, 8 del miniCRM y 4 del guardado de la imagen saliente', () => {
+  it('las medidas: 4 de la ráfaga, 2 del indicador de escritura, 6 del receptor, 7 de entrada, 1 de puerta, 13 de medios, 9 de salida, 11 de la venta, 9 del guardado, 8 del miniCRM y 4 del guardado de la imagen saliente', () => {
     const MEDIOS = ['¿Bajar medio?', 'Obtener URL del medio (general)', '¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', 'Transcribir audio', 'Preparar transcripción', 'Guardar comprobante', '¿Es un documento?', 'Describir documento', 'Describir imagen', 'Preparar imagen', 'Medio no aceptado'];
     const ENTRADA = ['Config base', 'Carga de entrada', 'Traer configuración', 'Config del negocio', 'Normalizar entrada', '¿Reportar? (entrante)', 'Reportar mensaje (entrante)'];
     const SALIDA = ['Armar mensajes', '¿Meta aceptó?', '¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)', 'Reportar mensaje (saliente)', 'Resumen del turno'];
-    const todos = [...C.NODOS_DEL_RECEPTOR, 'Carrito del catálogo', ...ENTRADA, 'Puerta del turno', ...MEDIOS, ...SALIDA, ...C.NODOS_DEL_PR3, ...GUARDADO, ...C.NODOS_DE_CRM, ...SALIENTE, ...INDICADOR];
-    expect(new Set(todos).size).toBe(71);
+    const todos = [...C.NODOS_DEL_RECEPTOR, 'Carrito del catálogo', ...ENTRADA, 'Puerta del turno', ...MEDIOS, ...SALIDA, ...C.NODOS_DEL_PR3, ...GUARDADO, ...C.NODOS_DE_CRM, ...SALIENTE, ...INDICADOR, ...RAFAGA];
+    expect(new Set(todos).size).toBe(75);
     expect([...nombres(PRODUCCION)].sort()).toEqual([...todos].sort());
   });
 });
@@ -266,8 +268,8 @@ describe('versionado, no publicable y datos', () => {
   it('`--verificar` sale 0: los dos JSON versionados son lo que arma la plantilla', () => {
     const r = corrida('--verificar');
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toMatch(/walisuma\.json al día \(71 nodos\)/);
-    expect(r.stdout).toMatch(/walisuma\.prueba\.json al día \(65 nodos\)/);
+    expect(r.stdout).toMatch(/walisuma\.json al día \(75 nodos\)/);
+    expect(r.stdout).toMatch(/walisuma\.prueba\.json al día \(69 nodos\)/);
   });
   it('`--publicable` FALLA hoy, con un mensaje claro: quedan marcadores REEMPLAZAR_*, la plantilla sin aprobar y el umbral de envío gratis sin declarar', () => {
     const r = corrida('--publicable');

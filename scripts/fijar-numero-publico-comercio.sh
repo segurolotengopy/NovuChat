@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # Fija (o quita) el NÚMERO PÚBLICO de la línea de UN comercio (`rutasWhatsApp/<phoneNumberId>.numeroPublico`, el de «Volver al chat» del
 # catálogo web). Envoltorio de `admin/scripts/modulos/catalogo-web/fijar-numero-publico.mjs` SIN que nadie escriba, vea ni pegue el
 # proyecto, el phone_number_id ni el número: todo se lee DENTRO del proceso (ver `scripts/lib/valores-del-comercio.sh`) y nada se imprime.
@@ -17,6 +17,17 @@
 #                       prefijo del país, sin «+» (8 a 15; si empieza por 591, 11); la fila se agrega con `scripts/marcador-local.sh`;
 #   · operador        → NOVUCHAT_OPERADOR, o la cuenta de gcloud del entorno (queda en la auditoría; no se imprime).
 # Salida: la del script de nodo; 2 uso o salvaguarda (nada escrito); 3 falta un valor local o no se pudo leer.
+case "$-" in *p*) ;; *) exec /bin/bash -p -- "$0" "$@" ;; esac
+# H4 (revisión de #1141): el arranque no hereda comportamiento del entorno de quien llama: modo privilegiado (-p: ni BASH_ENV ni funciones importadas),
+# sin BASH_ENV/ENV, sin funciones, y un PATH de sistema fijo. Los ejecutables que hacen falta se resuelven ANTES por ruta absoluta.
+unset BASH_ENV ENV
+while IFS= read -r f; do builtin unset -f "$f"; done < <(compgen -A function)
+NODO="$(command -v node || true)"
+[[ "$NODO" == /* && -x "$NODO" ]] || { echo "✗ No encuentro node (ruta absoluta y ejecutable)" >&2; exit 2; }
+GCLOUD="$(command -v gcloud || true)"
+[[ -z "$GCLOUD" || "$GCLOUD" == /* ]] || GCLOUD=""
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; export PATH
+hash -r
 set -euo pipefail
 case "$-" in *x*) echo "✗ xtrace activo: no se escribió nada." >&2; exit 2 ;; esac
 [[ "${SHELLOPTS:-}" != *xtrace* ]] || { echo "✗ SHELLOPTS=xtrace en el entorno: no se escribió nada." >&2; exit 2; }
@@ -53,8 +64,8 @@ resolver_proyecto "$ENTORNO"
 
 # El operador: queda en la auditoría de la ruta. Sale del entorno o de la cuenta de gcloud; nunca se imprime.
 OPERADOR_CORREO="${NOVUCHAT_OPERADOR:-}"
-if [[ -z "$OPERADOR_CORREO" ]] && command -v gcloud >/dev/null 2>&1; then
-  OPERADOR_CORREO="$(CLOUDSDK_CONFIG="${NOVUCHAT_GCLOUD_PROD:-$HOME/.config/gcloud-novuchat-prod}" gcloud config list account --format='value(core.account)' 2>/dev/null || true)"
+if [[ -z "$OPERADOR_CORREO" ]] && [[ -n "$GCLOUD" ]]; then
+  OPERADOR_CORREO="$(CLOUDSDK_CONFIG="${NOVUCHAT_GCLOUD_PROD:-$HOME/.config/gcloud-novuchat-prod}" "$GCLOUD" config list account --format='value(core.account)' 2>/dev/null || true)"
 fi
 [[ "$OPERADOR_CORREO" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || { echo "✗ no se pudo determinar el operador (NOVUCHAT_OPERADOR o la cuenta de gcloud)" >&2; exit 3; }
 export NUMERO_OPERADOR="$OPERADOR_CORREO"
@@ -77,7 +88,7 @@ if (( APLICAR )); then ARGS+=(--aplicar); fi
 OTRO="$ID_PROD"; if [[ "$ENTORNO" == produccion ]]; then OTRO="$ID_STG"; fi
 
 set +e
-( cd admin && node scripts/modulos/catalogo-web/fijar-numero-publico.mjs "${ARGS[@]}" 2>&1 ) | filtrar_valores "$FIJAR_PROYECTO" "$NUMERO" "$OPERADOR_CORREO" "$OTRO"
+( cd admin && "$NODO" scripts/modulos/catalogo-web/fijar-numero-publico.mjs "${ARGS[@]}" 2>&1 ) | filtrar_valores "$FIJAR_PROYECTO" "$NUMERO" "$OPERADOR_CORREO" "$OTRO"
 ESTADOS=("${PIPESTATUS[@]}")
 set -e
 exit "${ESTADOS[0]}"
