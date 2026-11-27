@@ -287,6 +287,14 @@ describe('compuerta del registro de `firebase deploy`', () => {
     const ok = compuerta(real, STG);
     expect(ok.salidas['candidatas']).toMatch(/^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$/);
     expect(ok.salidas['completo']).toBe('true');
+    // M-D (revisión de #1137) NEGANDO: una confirmada con un id de forma inesperada, después del aviso, no se omite en silencio: es fatal.
+    const tras = real.split('\n').slice(real.split('\n').findIndex((l) => l.includes('unexpected state')));
+    const idMalo = /functions\[[^:\]]*:?([A-Za-z0-9_-]+)\(/.exec(tras.find((l) => /Successful update operation\./.test(l)) ?? '')?.[1] ?? '';
+    expect(idMalo).not.toBe('');
+    const raro = compuerta(real.split(`${idMalo}(`).join('fn.rara('), STG);
+    expect(raro.status, raro.stdout).toBe(1);
+    expect(raro.stdout).toContain('id con forma inesperada');
+    expect(raro.salidas['candidatas']).toBe('');
   });
 
   it('C21: un id de Function con metacaracteres de expresión regular nunca es reintentable', () => {
@@ -838,9 +846,12 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
     writeFileSync(join(bin, 'gcloud'), [
       '#!/usr/bin/env bash',
       'echo "$*" >> "$LLAMADAS_GCLOUD"',
-      'servicio="$4"',
-      'case "$1 $2 $3" in "run services get-iam-policy") ;; *) echo "solo lectura" >&2; exit 9 ;; esac',
-      'f="$POLITICAS/$servicio"; [ -f "$f" ] || exit 1; cat "$f"', '',
+      'case "$1 $2 $3" in',
+      '  "run services get-iam-policy") f="$POLITICAS/$4" ;;',
+      '  "functions describe "*) f="$POLITICAS/describe-$3" ;;',
+      '  *) echo "solo lectura" >&2; exit 9 ;;',
+      'esac',
+      '[ -f "$f" ] || exit 1; cat "$f"', '',
     ].join('\n'));
     chmodSync(join(bin, 'gcloud'), 0o755);
     const politicas = join(tmp, 'politicas'); spawnSync('mkdir', ['-p', politicas]);
@@ -849,6 +860,18 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
     writeFileSync(join(politicas, 'fnsinrol'), JSON.stringify({ bindings: [{ role: 'roles/otro', members: ['allUsers'] }] }));
     writeFileSync(join(politicas, 'fnvacia'), JSON.stringify({ bindings: [{ role: 'roles/run.invoker', members: [] }] }));
     writeFileSync(join(politicas, 'fnbasura'), 'esto no es json');
+    // I-A (revisión de #1137): una Function de EVENTOS no lleva invocador en su servicio (Eventarc lo tiene a nivel de proyecto).
+    const sinInvocador = JSON.stringify({ bindings: [] });
+    writeFileSync(join(politicas, 'fnevento'), sinInvocador);
+    writeFileSync(join(politicas, 'describe-fnEvento'), JSON.stringify({ eventTrigger: { eventType: 'google.cloud.firestore.document.v1.written' } }));
+    writeFileSync(join(politicas, 'fnhttpsininvocador'), sinInvocador);
+    writeFileSync(join(politicas, 'describe-fnHttpSinInvocador'), JSON.stringify({ serviceConfig: { uri: 'https://ejemplo.invalid' } }));
+    writeFileSync(join(politicas, 'fneventovacio'), sinInvocador);
+    writeFileSync(join(politicas, 'describe-fnEventoVacio'), JSON.stringify({ eventTrigger: { eventType: '' } }));
+    writeFileSync(join(politicas, 'fnsindescribir'), sinInvocador);
+    writeFileSync(join(politicas, 'fndescribebasura'), sinInvocador);
+    writeFileSync(join(politicas, 'describe-fnDescribeBasura'), 'esto no es json');
+    writeFileSync(join(politicas, 'fn-con-guion'), JSON.stringify({ bindings: [{ role: 'roles/run.invoker', members: ['allUsers'] }] }));
     const llamadas = archivo('');
     const corre = (candidatas: string, extra: Record<string, string> = {}) => {
       const r = spawnSync('bash', [join(RAIZ, 'scripts', 'verificar-invocadores-candidatas.sh')], {
@@ -868,6 +891,22 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
       expect(r.salida).toContain(f);
       expect(r.salida).toContain('nube-visor.sh');
     }
+    // De eventos y sin invocador en el servicio: pasa, y lo dice; la lectura del disparador es de solo lectura y solo se hace si falta el invocador.
+    const evento = corre('fnPublica,fnEvento');
+    expect(evento.status, evento.salida).toBe(0);
+    expect(evento.salida).toContain('fnEvento: es de eventos');
+    expect(readFileSync(llamadas, 'utf8')).toContain('functions describe fnEvento --gen2 --region us-east1 --project proyecto-ficticio');
+    expect(readFileSync(llamadas, 'utf8')).not.toContain('functions describe fnPublica');
+    expect(readFileSync(llamadas, 'utf8')).not.toMatch(/add-iam|set-iam|remove-iam|functions (deploy|delete|call)/);
+    // NEGANDO: sin invocador y sin disparador de eventos comprobado (HTTP, eventType vacío, sin poder describirla, respuesta ilegible) sigue fallando.
+    for (const f of ['fnHttpSinInvocador', 'fnEventoVacio', 'fnSinDescribir', 'fnDescribeBasura']) {
+      const r = corre(`fnPublica,fnEvento,${f}`);
+      expect(r.status, f).toBe(1);
+      expect(r.salida).toContain(`${f}: SIN invocador`);
+    }
+    // M-C: el servicio de una Function con «_» lleva «-».
+    expect(corre('fn_Con_Guion').status).toBe(0);
+    expect(readFileSync(llamadas, 'utf8')).toContain('run services get-iam-policy fn-con-guion ');
     expect(corre('').status).toBe(0);
     expect(corre('fnPublica,../x').status).toBe(1);
     expect(corre('fnPublica', { PROYECTO: '' }).status).toBe(2);

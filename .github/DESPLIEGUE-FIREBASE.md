@@ -270,6 +270,10 @@ del proyecto de producción. Lo que hay:
     Function por dentro (`deleteAndRecreate`), imprime «updating»: una recreación así es indistinguible de una actualización en el registro y no se
     detecta como creación (por eso es solo staging y con la verificación del invoker); (c) el invocador de una Function PROGRAMADA (schedule) no es
     `allUsers` sino la cuenta de servicio del planificador: la verificación acepta cualquier miembro con `roles/run.invoker`, no exige `allUsers`;
+    (c bis) una Function de EVENTOS (Firestore, por Eventarc) no lleva invocador en su servicio: firebase-tools no se lo pone y el permiso de
+    Eventarc es de proyecto; por eso, solo cuando el servicio no trae invocador, el verificador lee `gcloud functions describe <función> --gen2`
+    (solo lectura) y la da por buena si tiene `eventTrigger` con su `eventType`; si esa lectura falla, sigue siendo «SIN invocador». El IAM vivo
+    de esas Functions en staging no se leyó al escribir esto: lo confirma la primera corrida de staging que traiga el aviso;
     (d) **al subir `FIREBASE_TOOLS_VERSION`** hay que volver a verificar estos textos contra `fabricator.ts` de la versión nueva y actualizar
     `VERSION_VERIFICADA` de la compuerta. **Cómo verificar el invoker a mano:** `./scripts/nube-visor.sh --servicio <s> --entorno <staging|produccion>`
     (seco: lee la política IAM y dice «ya concedido: allUsers tiene roles/run.invoker»; sin `--aplicar` no escribe; si falta, con

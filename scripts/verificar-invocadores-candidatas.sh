@@ -8,6 +8,10 @@
 # Para cada candidata lee `gcloud run services get-iam-policy <función en minúsculas> --region <región> --project <id>`; no escribe nada.
 #   · Una HTTP o callable pública tiene `allUsers`; una programada (schedule) tiene la cuenta de servicio del planificador: por eso se acepta
 #     CUALQUIER miembro con roles/run.invoker; lo que NO se acepta es un servicio SIN ninguno.
+#   · Una Function de EVENTOS (Firestore, Storage, Pub/Sub por Eventarc) NO lleva invocador en su servicio: firebase-tools no se lo pone ni
+#     al crearla ni al actualizarla, y a Eventarc le da el permiso a nivel de PROYECTO; el aviso no le quita nada. Por eso, SOLO cuando el
+#     servicio no trae invocador, se lee `gcloud functions describe <función> --gen2` (solo lectura) y se da por buena si tiene `eventTrigger`
+#     con su `eventType`. Si esa lectura falla o no hay disparador de eventos, sigue siendo «SIN invocador» (I-A de la revisión de #1137).
 #   · Si la política no se puede leer (sin permiso, sin sesión, servicio inexistente) también FALLA: no se da por bueno lo que no se verificó.
 # Salida: 0 todas con invocador · 1 alguna sin invocador o sin poder leerla · 2 uso. Imprime solo nombres de Functions (no secretos).
 set -euo pipefail
@@ -20,7 +24,8 @@ IFS=',' read -r -a IDS <<< "$CANDIDATAS"
 FALLAS=()
 for id in "${IDS[@]}"; do
   [[ "$id" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "::error::candidata con forma inválida (se rechaza)"; FALLAS+=("(nombre inválido)"); continue; }
-  servicio="$(printf '%s' "$id" | tr 'A-Z' 'a-z')"
+  # El servicio de Cloud Run de una Function: su id en minúsculas y con «-» en lugar de «_» (M-C de la revisión de #1137).
+  servicio="$(printf '%s' "$id" | tr '[:upper:]_' '[:lower:]-')"
   if politica="$(gcloud run services get-iam-policy "$servicio" --region "$REGION" --project "$PROYECTO" --format=json 2>/dev/null)"; then
     if printf '%s' "$politica" | python3 -I -c '
 import sys, json
@@ -31,6 +36,15 @@ except Exception:
 ok = any(b.get("role") == "roles/run.invoker" and b.get("members") for b in d.get("bindings", []))
 sys.exit(0 if ok else 1)'; then
       echo "✓ $id: tiene invocador"
+    elif gcloud functions describe "$id" --gen2 --region "$REGION" --project "$PROYECTO" --format=json 2>/dev/null | python3 -I -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+ev = d.get("eventTrigger") if isinstance(d, dict) else None
+sys.exit(0 if isinstance(ev, dict) and isinstance(ev.get("eventType"), str) and ev["eventType"] else 1)'; then
+      echo "✓ $id: es de eventos (su permiso de invocación es de proyecto, no del servicio)"
     else
       echo "::error::✗ $id: SIN invocador (roles/run.invoker)"; FALLAS+=("$id")
     fi

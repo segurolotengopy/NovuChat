@@ -222,13 +222,18 @@ if [[ "${avisos_servicio:-0}" != "0" ]]; then
           if (l[i] ~ /Successful (create|update|delete) operation\./) {
             match(l[i], /functions\[[^]]+\]/); id = substr(l[i], RSTART + 10, RLENGTH - 11)
             sub(/\(.*$/, "", id); sub(/^.*:/, "", id)
-            if (id !~ /^[A-Za-z0-9_-]+$/) continue
+            if (id !~ /^[A-Za-z0-9_-]+$/) { malas++; continue }
             c[++n] = id
           }
         }
         for (i = 1; i <= n; i++) printf "%s%s", (i > 1 ? "," : ""), c[i]
+        if (malas) printf "%s!", (n ? "," : "")
       }' <<< "$limpio")"
-    if [[ -z "$candidatas_ids" ]]; then
+    if [[ "$candidatas_ids" == *'!'* ]]; then
+      # M-D (revisión de #1137): una confirmada con un id de forma inesperada no se puede verificar; omitirla en silencio dejaría un invoker sin comprobar.
+      candidatas_ids=""
+      motivos+=("firebase-tools avisó «This deployment is in an unexpected state» y una Function confirmada tiene un id con forma inesperada: no se puede verificar su invoker")
+    elif [[ -z "$candidatas_ids" ]]; then
       # Un aviso sin ninguna candidata que verificar sería un warning sin comprobación del invoker: es fatal.
       motivos+=("firebase-tools avisó «This deployment is in an unexpected state» y no hay Function confirmada que verificar")
     else
@@ -251,6 +256,8 @@ reintentable=no
 cuota_total="$(grep -c 'Got "Quota Exceeded"' <<< "$limpio")"
 if (( ${#motivos[@]} > 0 && ${#pendientes[@]} > 0 && cuota_total > 0 )); then
   reintentable=si
+  # M-A (revisión de #1137): las candidatas del aviso salen SOLO del último intento (arriba). Vale porque un intento con el aviso nunca se
+  # repite (esta línea). Si esta regla cambia, las candidatas deben salir de TODOS los intentos desde el primer aviso del acumulado.
   grep -Fq 'This deployment is in an unexpected state' <<< "$limpio" && reintentable=no
   grep -Fq 'Functions deploy had errors' <<< "$limpio" && reintentable=no
   grep -Eiq 'build failed|healthcheck failed|container failed to start|failed to build' <<< "$limpio" && reintentable=no
