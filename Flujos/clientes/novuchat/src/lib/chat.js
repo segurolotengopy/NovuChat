@@ -590,7 +590,7 @@ function chFichaBase() {
     avisado: false, avisoFalla: '', planesMostrados: false, planesTocado: false, equipoTocado: false, respondidas: 0, soporte: false, anuncio: false,
     // Ajustes del 09/10: el ciclo de un negocio (explicado, nombre pedido, planes pendientes, equipo ya pedido), el primer negocio y los otros para la hoja.
     otroResp: 0, explicado: false, nombrePedido: false, preguntaDatos: false, ofrecio: '', planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, sitiosVentana: 0, sitioUltimo: false, primero: null, otros: [], complementos: 0,
-    seq: 0, hasta: 0, cola: [], historial: [], ultimosIds: [],
+    seq: 0, hasta: 0, cola: [], historial: [], ultimosIds: [], campanaNoMs: 0, // (campanaNoMs: el instante del «No» de la campaña saliente; 0 = sin marca; ver `cnSilencioPorCampana`)
   };
 }
 function chEventoSaneado(e) {
@@ -632,9 +632,9 @@ function chFichaVigente(e, ahoraMs) {
     cola: (Array.isArray(e.cola) ? e.cola : []).map(chEventoSaneado).filter(Boolean).slice(-CH_TOPE_COLA),
     historial: (Array.isArray(e.historial) ? e.historial : []).filter((x) => x && typeof x === 'object' && (x.r === 'u' || x.r === 'a') && chLinea(x.t, CH_TOPE_TEXTO) !== '')
       .map((x) => ({ r: x.r, t: chLinea(x.t, CH_TOPE_TEXTO) })).slice(-CH_TOPE_HISTORIAL),
-    ultimosIds: (Array.isArray(e.ultimosIds) ? e.ultimosIds : []).filter((x) => typeof x === 'string' && x !== '' && x.length <= 200).slice(-CH_TOPE_IDS),
+    ultimosIds: (Array.isArray(e.ultimosIds) ? e.ultimosIds : []).filter((x) => typeof x === 'string' && x !== '' && x.length <= 200).slice(-CH_TOPE_IDS), campanaNoMs: Number.isSafeInteger(e.campanaNoMs) && e.campanaNoMs > 0 && e.campanaNoMs <= 1e14 ? e.campanaNoMs : 0,
   };
-  if (s.hasta > s.seq) s.hasta = s.seq;
+  if (s.hasta > s.seq) s.hasta = s.seq; if (s.campanaNoMs > 0 && (ahoraMs - s.campanaNoMs > CH_VENTANA_MS || s.campanaNoMs > ahoraMs + CH_VENTANA_MS)) s.campanaNoMs = 0; // la marca del «No» vence a las 24 h (inclusive); una del futuro no cuenta
   if (ultimo && ahoraMs - ultimo >= CH_VENTANA_MS) { s.avisado = false; s.planesMostrados = false; s.planesTocado = false; s.equipoTocado = false; s.respondidas = 0; s.soporte = false; s.equipoAhora = false; s.planesPendientes = false; s.empresasAvisadas = []; s.avisosVentana = 0; s.sitiosVentana = 0; s.sitioUltimo = false; }
   return s;
 }

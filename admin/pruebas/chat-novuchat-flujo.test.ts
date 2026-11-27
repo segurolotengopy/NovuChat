@@ -136,8 +136,13 @@ interface W {
   compromisos: { nodo: string; cuerpo: J }[];
   /** El estado de la conversación en el servidor (la rama `sesion` de `configuracionFlujo`, de mentira): el MISMO para todos los mundos de una ráfaga. */
   servidor: ServidorDeSesion;
+  /**
+   * La campaña saliente, de mentira. `srv`: lo que `configuracionFlujo` contesta en `campanaSaliente` cuando el cuerpo trae `campana` (por defecto, `citada` solo si el `context.id` es el de la plantilla de ejemplo; `primeraEnVentana` falso).
+   * `resultado`: lo que la ingesta contesta en `campanaSaliente.resultado` al reporte `campana_respuesta` (por defecto `baja` para «no» y `respuesta` para «sí»). `ingestaCaida`: la ingesta no responde (error HTTP).
+   */
+  campana: { srv: J | ((cuerpo: J) => J) | null; resultado: ((cuerpo: J) => string | null) | null; ingestaCaida: boolean };
 }
-type T = ResultadoTurno & { aMi: Enviado[]; aRecepcion: Enviado[]; plantillas: Enviado[]; modeloLlamadas: Llamada[] };
+type T =ResultadoTurno & { aMi: Enviado[]; aRecepcion: Enviado[]; plantillas: Enviado[]; modeloLlamadas: Llamada[] };
 
 const MODELO_BASE: J = { mensaje: '', accion: 'ninguna', rubro: 'ninguno', necesidad: '', nombre: '', empresa: '', descarte: 'ninguno' };
 const respuestaDeGemini = (texto: string): J => ({ candidates: [{ content: { parts: [{ text: texto }] } }] });
@@ -171,11 +176,23 @@ function crear(op: OpcionesDelMundo = {}): W {
     hoja: { filas: [], formulas: [], llamadas: [], falla: false },
     config: [], malFormado: [], turnos: [], seqSalida: 0, alEsperar: null, esperas: [], compromisos: [],
     servidor: op.servidor ?? crearServidorDeSesion({ ahoraMs: () => w.mundo.ahora() }),
+    campana: { srv: null, resultado: null, ingestaCaida: false },
   };
   const reporte = (ll: LlamadaDoble): J => {
     if (ll.encabezados['X-NovuChat-Numero'] !== PID) w.malFormado.push(`${ll.nodo}: falta X-NovuChat-Numero (${String(ll.encabezados['X-NovuChat-Numero'])})`);
     if (!/cloudfunctions\.net\/ingesta$/.test(ll.url)) w.malFormado.push(`${ll.nodo}: URL inesperada ${ll.url}`);
-    return Object.assign({ atencion: { estado: 'normal' }, servicio: { estado: 'activo' } }, w.ingesta ?? {});
+    const cuerpo = (ll.cuerpo ?? {}) as J;
+    if (w.campana.ingestaCaida && cuerpo['evento'] === 'campana_respuesta') return { error: { message: 'The service is currently unavailable.', httpCode: '503' } };
+    const resultado = cuerpo['evento'] === 'campana_respuesta' ? (w.campana.resultado ? w.campana.resultado(cuerpo) : (cuerpo['respuestaCampana'] === 'no' ? 'baja' : 'respuesta')) : null;
+    return Object.assign({ atencion: { estado: 'normal' }, servicio: { estado: 'activo' } }, w.ingesta ?? {}, resultado === null ? {} : { campanaSaliente: { resultado } });
+  };
+  // Lo que `configuracionFlujo` agrega cuando el cuerpo trae `campana` (E1, híbrido): nunca el idMeta.
+  const campanaDe = (cuerpo: J | undefined): J | null => {
+    const c = cuerpo?.['campana'] as J | undefined;
+    if (!c) return null;
+    const s = w.campana.srv;
+    if (typeof s === 'function') return s(cuerpo as J);
+    return s ?? { citada: c['contextoId'] === 'wamid.PLANTILLA1', primeraEnVentana: false, campanaId: 'retomar-1' };
   };
   const envio = (nodo: string): Doble => (ll) => {
     const payload = (ll.cuerpo ?? {}) as J;
@@ -207,7 +224,11 @@ function crear(op: OpcionesDelMundo = {}): W {
       // La rama `sesion` (leer): el estado de la conversación viaja en la misma respuesta de configuración; un fallo del servidor se devuelve tal cual.
       const sesion = ll.cuerpo && ll.cuerpo['sesion'] ? w.servidor.atender(PID, ll.cuerpo) : null;
       if (sesion && sesion.statusCode !== 200) return { statusCode: sesion.statusCode, body: sesion.body };
-      const conEstado = (r: J): J => (sesion && r['statusCode'] === 200 && r['body'] && typeof r['body'] === 'object' ? { ...r, body: { ...(r['body'] as J), conversacion: sesion.body['conversacion'], visto: sesion.body['visto'] } } : r);
+      const camp = campanaDe(ll.cuerpo as J | undefined);
+      const conEstado = (r: J): J => {
+        const con = sesion && r['statusCode'] === 200 && r['body'] && typeof r['body'] === 'object' ? { ...r, body: { ...(r['body'] as J), conversacion: sesion.body['conversacion'], visto: sesion.body['visto'] } } : r;
+        return camp && con['statusCode'] === 200 && con['body'] && typeof con['body'] === 'object' ? { ...con, body: { ...(con['body'] as J), campanaSaliente: camp } } : con;
+      };
       if (w.respuestaPanel) return conEstado(w.respuestaPanel);
       return w.panel === false ? { statusCode: 500, body: { error: 'sin panel' } } : conEstado({ statusCode: 200, body: w.panel });
     },
@@ -420,7 +441,7 @@ function jugar(w: W, from: string, opc: { perfil?: string; referral?: J; sinProp
     imagen: (pie?: string) => turno(mImagen(pie), `[imagen ${pie ?? ''}]`),
     audio: () => turno(mAudio(), '[audio]'),
     documento: () => turno(mDocumento(), '[documento]'),
-    crudo: (msg: J, nombre: string) => turno(msg, nombre),
+    crudo: (msg: J, nombre: string, min?: number) => turno(msg, nombre, min),
   };
 }
 
@@ -4343,5 +4364,412 @@ describe('campaña saliente: la respuesta «Sí, contáctenme» / «No, gracias�
     jugar(w, MAMA).texto('Hola');
     expect(entrantes(w)[0]).not.toHaveProperty('respuestaCampana');
     expect(entrantes(w)[0]).not.toHaveProperty('campanaEnvioId');
+  });
+});
+
+// ------------------------------------------------------------------------------ campaña saliente, correcciones del #1140 (I-B1, I-B2, I-B3, D1, M-B1, M-B2; plan E1, E3, E4, E5, E8)
+describe('campaña saliente: correcciones de la revisión del #1140 (el servidor confirma; el «No» cierra y deja silencio)', () => {
+  const TX = NOVUCHAT['textos'] as J;
+  const BOTONES = NOVUCHAT['campanaSaliente'] as J;
+  const SI = String(BOTONES['botonSi']);
+  const NO = String(BOTONES['botonNo']);
+  const CITADA: J = { citada: true, primeraEnVentana: false, campanaId: 'retomar-1' };
+  const PRIMERA: J = { citada: false, primeraEnVentana: true, campanaId: 'retomar-1' };
+  const NADA: J = { citada: false, primeraEnVentana: false, campanaId: '' };
+  const mBotonPlantilla = (text: string, payload?: string, context: J | null = { id: 'wamid.PLANTILLA1' }): J => ({ type: 'button', ...(context ? { context } : {}), button: { text, ...(payload === undefined ? {} : { payload }) } });
+  const mTextoCitado = (body: string, context: J | null = { id: 'wamid.PLANTILLA1' }): J => ({ type: 'text', ...(context ? { context } : {}), text: { body } });
+  const respuestas = (w: W): J[] => w.mundo.llamadas.ingesta.filter((r) => r['evento'] === 'campana_respuesta');
+  const hayBaja = (w: W): boolean => JSON.stringify(w.mundo.llamadas.ingesta).includes('no_contactar');
+  const dicho = (t: { aMi: Enviado[] }): string[] => t.aMi.map((e) => e.cuerpo);
+  const conServidor = (srv: J, op: OpcionesDelMundo = {}): W => { const w = crear(op); w.campana.srv = srv; return w; };
+  const CONVERSA = 'Claro, te cuento cómo funciona NovuChat.';
+  const NO_CP = 'cs:no:retomar-1';
+  const SI_CP = 'cs:si:retomar-1';
+  const marca = (w: W, tel = MAMA): number => Number(fichaDe(w, tel)?.['campanaNoMs'] ?? 0);
+
+  describe('los textos (I-B1, E5)', () => {
+    it('campanaSi NO afirma ningún aviso: lo único que ofrece es el botón (sale ANTES de intentar el aviso a recepción)', () => {
+      expect(TX['campanaSi']).toBe('Gracias por su respuesta.\n\nToque el botón de abajo para escribirle directamente a alguien de nuestro equipo.');
+      expect(String(TX['campanaSi'])).not.toMatch(/avis|notific|informad|enter|comunic/i);
+    });
+    it('campanaNoSinConfirmar es el cierre que no promete nada (la baja no se confirmó)', () => {
+      expect(TX['campanaNoSinConfirmar']).toBe('Entendido, gracias por su respuesta.');
+      expect(String(TX['campanaNoSinConfirmar'])).not.toMatch(/m[aá]s mensajes|enviaremos|baja|nunca|ya no/i);
+    });
+    it('«No» con baja confirmada sigue siendo campanaNo («no le enviaremos más mensajes»: solo con la baja escrita)', () => {
+      expect(TX['campanaNo']).toMatch(/no le enviaremos m[aá]s mensajes/);
+    });
+    it('P07 (I-B1): con la plantilla Y el respaldo a recepción rechazados por Meta, el cliente NO recibe un «ya le avisamos» (el texto no lo afirma)', () => {
+      const w = crear();
+      w.graph.falla = (p) => String(p['to']) === REC;
+      const t = jugar(w, MAMA, { sinPropiedades: true }).crudo(mBotonPlantilla(SI, SI_CP), 'sí con el aviso rechazado');
+      expect(dicho(t)).toEqual([TX['campanaSi']]);
+      expect(dicho(t).join(' ')).not.toMatch(/avis/i);
+    });
+  });
+
+  describe('I-B3: el candidato exige que el entrante CITE la campaña (salvo el payload cs:no)', () => {
+    it('C09: un botón de OTRA plantilla con el rótulo exacto «No, gracias» y un payload ajeno NO es un «no» de campaña', () => {
+      for (const ctx of [{ id: 'wamid.AJENA' }, null, { from: 'otro' }] as (J | null)[]) {
+        const w = crear();
+        w.modelo.con = dice(CONVERSA);
+        const t = jugar(w, MAMA).crudo(mBotonPlantilla(NO, 'OTRA', ctx), 'otra plantilla');
+        expect(respuestas(w)).toHaveLength(0);
+        expect(hayBaja(w)).toBe(false);
+        expect(dicho(t)).not.toContain(TX['campanaNo']);
+        expect(dicho(t)).not.toContain(TX['campanaNoSinConfirmar']);
+      }
+    });
+    it('la etiqueta exacta sin cita (aunque traiga un context.id de otro mensaje) NO es campaña, ni «sí» ni «no»', () => {
+      for (const rotulo of [SI, NO]) {
+        const w = crear();
+        w.modelo.con = dice(CONVERSA);
+        const t = jugar(w, MAMA).crudo(mBotonPlantilla(rotulo, rotulo, { id: 'wamid.AJENA' }), 'etiqueta sin cita');
+        expect(respuestas(w)).toHaveLength(0);
+        expect(dicho(t)).not.toContain(TX['campanaSi']);
+        expect(dicho(t)).not.toContain(TX['campanaNo']);
+      }
+    });
+    it('el cuerpo de «Traer configuración» lleva campana.contextoId con el context.id del entrante (y solo en botones y «no» escritos)', () => {
+      const w = crear();
+      jugar(w, MAMA).crudo(mBotonPlantilla(NO, NO), 'botón');
+      expect(w.config[0]!.cuerpo['campana']).toEqual({ contextoId: 'wamid.PLANTILLA1' });
+      const w2 = crear();
+      jugar(w2, MAMA).texto('Hola');
+      expect(w2.config[0]!.cuerpo).not.toHaveProperty('campana');
+      const w3 = crear();
+      jugar(w3, MAMA).texto('no');
+      expect(w3.config[0]!.cuerpo['campana']).toEqual({});
+    });
+    it('con la cita (la plantilla de la campaña), la etiqueta es «sí» o «no» y el reporte lleva respuestaPor «etiqueta» y el contextoId', () => {
+      const w = crear();
+      const t = jugar(w, MAMA).crudo(mBotonPlantilla(NO, NO), 'no por etiqueta citada');
+      expect(dicho(t)).toEqual([TX['campanaNo']]);
+      expect(respuestas(w)[0]).toMatchObject({ respuestaCampana: 'no', respuestaPor: 'etiqueta', contextoId: 'wamid.PLANTILLA1' });
+      const w2 = crear();
+      const t2 = jugar(w2, MAMA).crudo(mBotonPlantilla(SI, SI), 'sí por etiqueta citada');
+      expect(dicho(t2)).toEqual([TX['campanaSi']]);
+      expect(respuestas(w2)[0]).toMatchObject({ respuestaCampana: 'si', respuestaPor: 'etiqueta' });
+    });
+    it('el payload cs:si de una campaña que NO se cita no es «sí» (sin plantilla al equipo)', () => {
+      const w = crear();
+      w.modelo.con = dice(CONVERSA);
+      const t = jugar(w, MAMA).crudo(mBotonPlantilla(SI, SI_CP, { id: 'wamid.AJENA' }), 'cs:si sin cita');
+      expect(respuestas(w)).toHaveLength(0);
+      expect(dicho(t)).not.toContain(TX['campanaSi']);
+    });
+    it('E3: el payload cs:no:<id> de una campaña ANTERIOR (context.id que no coincide) da de baja igual: un «No» nunca se pierde', () => {
+      const w = crear();
+      const t = jugar(w, MAMA).crudo(mBotonPlantilla(NO, 'cs:no:vieja-7', { id: 'wamid.DE-OTRA-CAMPANA' }), 'cs:no de una campaña anterior');
+      expect(dicho(t)).toEqual([TX['campanaNo']]);
+      expect(respuestas(w)[0]).toMatchObject({ respuestaCampana: 'no', respuestaPor: 'payload', campanaEnvioId: 'vieja-7', contextoId: 'wamid.DE-OTRA-CAMPANA' });
+    });
+    it('el reporte del payload lleva respuestaPor «payload»', () => {
+      const w = crear();
+      jugar(w, MAMA).crudo(mBotonPlantilla(SI, SI_CP), 'cs:si');
+      expect(respuestas(w)[0]).toMatchObject({ respuestaCampana: 'si', respuestaPor: 'payload', campanaEnvioId: 'retomar-1' });
+    });
+    it('M-B2: un id con mayúsculas en el payload no se reconoce (el PR-C genera los ids en minúsculas)', () => {
+      const w = crear();
+      w.modelo.con = dice(CONVERSA);
+      jugar(w, MAMA).crudo(mBotonPlantilla('Otro', 'cs:no:Retomar-1', null), 'id con mayúsculas');
+      expect(respuestas(w)).toHaveLength(0);
+    });
+  });
+
+  describe('D1 y E8: el «no» ESCRITO cuenta si cita la campaña o es la primera respuesta de la ventana, y el servidor confirma', () => {
+    const CUENTAN = ['no', 'No', ' no', 'NO', 'No.', 'No!', 'no!!', 'No, gracias', 'No gracias.', 'NO GRACIAS!', 'nó', 'no,gracias', 'No  gracias'];
+    const NO_CUENTAN = ['no gracias, no me interesa', 'no sé', 'no quiero', 'no me interesa', 'nop', 'no?', 'no, por ahora no', 'no gracias, luego', 'sí', 'si no', 'no no', 'no gracias gracias', '¿no?', 'no.. gracias'];
+    for (const texto of CUENTAN) {
+      it(`T: «${texto}» (citando la campaña) es un «no»: campanaNo sin modelo, y el reporte lleva respuestaPor «texto»`, () => {
+        const w = conServidor(CITADA);
+        const t = jugar(w, MAMA).crudo(mTextoCitado(texto), 'no escrito');
+        expect(dicho(t)).toEqual([TX['campanaNo']]);
+        expect(w.modelo.llamadas).toHaveLength(0);
+        expect(t.aRecepcion).toHaveLength(0);
+        expect(respuestas(w)[0]).toMatchObject({ respuestaCampana: 'no', respuestaPor: 'texto', contextoId: 'wamid.PLANTILLA1' });
+      });
+    }
+    for (const texto of NO_CUENTAN) {
+      it(`NEGADO: «${texto}» NO es un «no» de campaña: sin campana_respuesta ni campanaNo (conversación normal)`, () => {
+        const w = conServidor(CITADA);
+        w.modelo.con = dice(CONVERSA);
+        const t = jugar(w, MAMA).crudo(mTextoCitado(texto), 'no que no es');
+        expect(respuestas(w)).toHaveLength(0);
+        expect(dicho(t)).not.toContain(TX['campanaNo']);
+        expect(dicho(t)).not.toContain(TX['campanaNoSinConfirmar']);
+      });
+    }
+    it('sin cita pero con la PRIMERA respuesta de la ventana: «no» y «No, gracias» cuentan (D1)', () => {
+      for (const texto of ['no', 'No, gracias']) {
+        const w = conServidor(PRIMERA);
+        const t = jugar(w, MAMA).texto(texto);
+        expect(dicho(t)).toEqual([TX['campanaNo']]);
+        expect(respuestas(w)[0]).toMatchObject({ respuestaCampana: 'no', respuestaPor: 'texto' });
+        expect(respuestas(w)[0]).not.toHaveProperty('contextoId');
+      }
+    });
+    it('NEGADO: sin cita y sin primera respuesta de la ventana, un «no» suelto NO es de campaña (ni se reporta como tal)', () => {
+      const w = conServidor(NADA);
+      w.modelo.con = dice(CONVERSA);
+      const t = jugar(w, MAMA).texto('no');
+      expect(respuestas(w)).toHaveLength(0);
+      expect(dicho(t)).not.toContain(TX['campanaNo']);
+    });
+    it('NEGADO: el servidor sin campaña (el cuerpo no trae campanaSaliente) tampoco: un «no» es conversación', () => {
+      const w = crear();
+      w.campana.srv = (): J => ({});
+      w.modelo.con = dice(CONVERSA);
+      const t = jugar(w, MAMA).texto('no');
+      expect(respuestas(w)).toHaveLength(0);
+      expect(dicho(t)).not.toContain(TX['campanaNo']);
+    });
+    it('el servidor decide: con resultado «no_aplica», «invalida» o «respuesta» el «no» escrito sigue como conversación y NO sale campanaNo', () => {
+      for (const resultado of ['no_aplica', 'invalida', 'respuesta']) {
+        const w = conServidor(CITADA);
+        w.campana.resultado = () => resultado;
+        w.modelo.con = dice(CONVERSA);
+        const t = jugar(w, MAMA).texto('no');
+        expect(respuestas(w)).toHaveLength(1);
+        expect(dicho(t), resultado).not.toContain(TX['campanaNo']);
+        expect(dicho(t), resultado).not.toContain(TX['campanaNoSinConfirmar']);
+        expect(marca(w), resultado).toBe(0);
+      }
+    });
+    it('«ya_baja» (la baja ya estaba) también cierra con campanaNo', () => {
+      const w = conServidor(CITADA);
+      w.campana.resultado = () => 'ya_baja';
+      expect(dicho(jugar(w, MAMA).texto('no'))).toEqual([TX['campanaNo']]);
+    });
+    it('un «no» escrito NO se normaliza como baja general: «no me interesa» sin cita sigue su camino y no marca no_contactar', () => {
+      const w = conServidor(NADA);
+      w.modelo.con = dice(CONVERSA);
+      jugar(w, MAMA).texto('no me interesa');
+      expect(hayBaja(w)).toBe(false);
+    });
+  });
+
+  describe('E1: la ingesta confirma; si no responde, campanaNoSinConfirmar (no promete)', () => {
+    it('ingesta caída: el «No» recibe campanaNoSinConfirmar y NUNCA «no le enviaremos más mensajes»; la marca queda igual', () => {
+      for (const entrada of [mBotonPlantilla(NO, NO_CP), mTextoCitado('no')]) {
+        const w = conServidor(CITADA);
+        w.campana.ingestaCaida = true;
+        const t = jugar(w, MAMA).crudo(entrada, 'ingesta caída');
+        expect(dicho(t)).toEqual([TX['campanaNoSinConfirmar']]);
+        expect(dicho(t)).not.toContain(TX['campanaNo']);
+        expect(w.modelo.llamadas).toHaveLength(0);
+        expect(t.aRecepcion).toHaveLength(0);
+        expect(marca(w)).toBeGreaterThan(0);
+      }
+    });
+    it('con la baja confirmada: campanaNo y la marca en la ficha con la hora del «No»', () => {
+      const w = crear();
+      const t = jugar(w, MAMA).crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      expect(dicho(t)).toEqual([TX['campanaNo']]);
+      expect(marca(w)).toBe(AHORA);
+      const f = fichaDe(w, MAMA)!;
+      expect(f['hasta']).toBe(f['seq']);
+      expect(f.cola).toHaveLength(0);
+    });
+    it('variante de PRUEBA: la ingesta no se llama; el «No» va al teléfono de prueba con campanaNo', () => {
+      const PRUEBA_TEL = '59100000044';
+      const w = crear({ flujo: PRUEBA, config: { telefonosDePrueba: MAMA + ',' + PRUEBA_TEL } });
+      const j = jugar(w, MAMA, { prueba: { modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true }, sinPropiedades: true });
+      const t = j.crudo(mBotonPlantilla(NO, NO_CP), 'no en la variante de prueba');
+      expect(t.mensajes.map((e) => [e.a, e.cuerpo])).toEqual([[PRUEBA_TEL, TX['campanaNo']]]);
+      expect(w.mundo.llamadas.ingesta).toHaveLength(0);
+      expect(w.modelo.llamadas).toHaveLength(0);
+    });
+  });
+
+  describe('M-B1: el «No» se evalúa antes del uso extendido (salvo bloqueado)', () => {
+    const OPERADOR: J = { atencion: { estado: 'operador', mensajeFijo: 'Gracias por tu paciencia. Una persona del equipo seguirá con tu consulta.', avisarRecepcion: 'operador', respuestasEnVentana: 30 } };
+    it('P04: en «operador» el «No» recibe campanaNo, sin el mensaje de operador y sin aviso a recepción', () => {
+      const w = crear({ ingesta: OPERADOR });
+      const t = jugar(w, MAMA, { sinPropiedades: true }).crudo(mBotonPlantilla(NO, NO_CP), 'no con el contacto en operador');
+      expect(dicho(t)).toEqual([TX['campanaNo']]);
+      expect(t.aRecepcion).toHaveLength(0);
+      expect(t.plantillas).toHaveLength(0);
+      expect(respuestas(w)).toHaveLength(1);
+    });
+    it('NEGADO: en «operador» un mensaje común SIGUE recibiendo el aviso fijo de operador (el cambio no abre la puerta)', () => {
+      const w = crear({ ingesta: OPERADOR });
+      const t = jugar(w, MAMA, { sinPropiedades: true }).texto('Hola');
+      expect(dicho(t)).toEqual(['Gracias por tu paciencia. Una persona del equipo seguirá con tu consulta.']);
+    });
+    it('«bloqueado» sigue en silencio: ni campanaNo ni mensaje al cliente (la baja sí se reporta)', () => {
+      const w = crear({ ingesta: { atencion: { estado: 'bloqueado', avisarRecepcion: 'bloqueado', respuestasEnVentana: 80 } } });
+      const t = jugar(w, MAMA, { sinPropiedades: true }).crudo(mBotonPlantilla(NO, NO_CP), 'no con el contacto bloqueado');
+      expect(t.aMi).toHaveLength(0);
+      expect(respuestas(w)).toHaveLength(1);
+    });
+    it('comercio SUSPENDIDO (el servidor responde 409 sin campanaSaliente): el «No» recibe el texto de suspensión y NUNCA campanaNo; el reporte con la baja sale igual', () => {
+      const w = crear();
+      w.respuestaPanel = { statusCode: 409, body: { error: 'suspendido', mensajeCortesia: SUSPENDIDO } };
+      const t = jugar(w, MAMA, { sinPropiedades: true }).crudo(mBotonPlantilla(NO, NO_CP), 'no con el comercio suspendido');
+      expect(dicho(t)).toEqual([SUSPENDIDO]);
+      expect(dicho(t)).not.toContain(TX['campanaNo']);
+      expect(respuestas(w)).toHaveLength(1);
+    });
+    it('el comercio suspendido o cortado manda sobre el «No»: texto de suspensión, baja reportada', () => {
+      const w = crear({ ingesta: { servicio: { estado: 'cortado' } } });
+      const t = jugar(w, MAMA, { sinPropiedades: true }).crudo(mBotonPlantilla(NO, NO_CP), 'no con el servicio cortado');
+      expect(dicho(t)).toEqual([SUSPENDIDO]);
+      expect(respuestas(w)).toHaveLength(1);
+    });
+  });
+
+  describe('E4 / I-B2: la marca campanaNoMs: silencio tras el «No», cortesías hasta las 24 h y vencimiento', () => {
+    const cierraNo = (w: W): ReturnType<ReturnType<typeof jugar>['crudo']> => jugar(w, MAMA).crudo(mBotonPlantilla(NO, NO_CP), 'no');
+    it('R01: «No» y enseguida «ok» (dentro de los 120 s): 0 mensajes, 0 modelo, sin aviso', () => {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      w.modelo.con = dice('¿Te gustaría hablar con alguien de nuestro equipo?');
+      const t = j.texto('ok', 1);
+      expect(t.mensajes).toHaveLength(0);
+      expect(w.modelo.llamadas).toHaveLength(0);
+      expect(marca(w)).toBe(AHORA);
+    });
+    it('dentro de los 120 s TODO cae en silencio, también un pedido concreto, una imagen y un audio (0 mensajes)', () => {
+      // (cada turno avanza 1 min por omisión: un mundo por mensaje para que todos caigan dentro de los 120 s)
+      const casos: ((j: ReturnType<typeof jugar>) => T)[] = [(j) => j.texto('quiero ver los planes', 1), (j) => j.imagen(), (j) => j.audio(), (j) => j.boton('planes'), (j) => j.lista('rubro:salud')];
+      for (const [i, caso] of casos.entries()) {
+        const w = crear();
+        const j = jugar(w, MAMA);
+        j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
+        w.modelo.con = dice(CONVERSA);
+        expect(caso(j).mensajes, `caso ${i}`).toHaveLength(0);
+        expect(w.modelo.llamadas, `caso ${i}`).toHaveLength(0);
+      }
+    });
+    it('NEGADO: a los 121 s el mismo texto («quiero ver los planes») ya NO es silencio', () => {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      w.modelo.con = dice(CONVERSA);
+      expect(j.texto('quiero ver los planes', 121 / 60).aMi).toHaveLength(1);
+    });
+    it('pasada la ráfaga y hasta las 24 h: las cortesías cortas y un «no» repetido siguen en silencio', () => {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      w.modelo.con = dice(CONVERSA);
+      for (const c of ['ok', 'Gracias', 'gracias!', 'Vale.', 'listo', 'Entendido', 'perfecto', 'dale', '👍', '🙏', 'Muchas gracias', 'no', 'No, gracias']) {
+        const t = j.texto(c, 3);
+        expect(t.mensajes, c).toHaveLength(0);
+      }
+      expect(w.modelo.llamadas).toHaveLength(0);
+      expect(marca(w)).toBe(AHORA);
+    });
+    it('un SEGUNDO toque del «No» (el mismo botón) también cae en silencio: no hay un segundo cierre', () => {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      const t = j.crudo(mBotonPlantilla(NO, NO_CP), 'no otra vez', 5);
+      expect(t.mensajes).toHaveLength(0);
+    });
+    it('NEGADO: después de las 120 s cualquier otra cosa es una intención clara: conversación normal, y la marca se borra', () => {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      w.modelo.con = dice(CONVERSA);
+      const t = j.texto('quiero ver los planes', 3);
+      expect(t.aMi).toHaveLength(1);
+      expect(marca(w)).toBe(0);
+      // con la marca borrada, una cortesía ya no cae en silencio
+      const t2 = j.texto('ok', 1);
+      expect(t2.aMi).toHaveLength(1);
+    });
+    it('NEGADO: una cortesía MEZCLADA con una intención («gracias, ¿cuánto cuesta?») no es cortesía', () => {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      w.modelo.con = dice(CONVERSA);
+      const t = j.texto('gracias, ¿cuánto cuesta?', 3);
+      expect(t.aMi).toHaveLength(1);
+    });
+    it('un pedido de baja escrito tras el «No» se confirma como siempre (no se traga en silencio)', () => {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      const t = j.texto('no me escriban más', 1);
+      expect(t.aMi).toHaveLength(1);
+      expect(hayBaja(w)).toBe(true);
+    });
+    it('vencimiento a las 24 h: a las 23 h una cortesía sigue en silencio; a las 25 h ya se responde normal y la marca no sobrevive', () => {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      w.modelo.con = dice(CONVERSA);
+      expect(j.texto('ok', 23 * 60).mensajes).toHaveLength(0);
+      const t = j.texto('ok', 2 * 60);
+      expect(t.aMi).toHaveLength(1);
+      expect(marca(w)).toBe(0);
+    });
+    it('aislamiento entre teléfonos: el «No» de uno no silencia a otro, ni su ficha lleva la marca', () => {
+      const w = crear();
+      jugar(w, MAMA).crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      w.modelo.con = dice(CONVERSA);
+      const t = jugar(w, OTRA).texto('ok', 1);
+      expect(t.aMi).toHaveLength(1);
+      expect(marca(w, OTRA)).toBe(0);
+      expect(marca(w, MAMA)).toBe(AHORA);
+    });
+    it('la marca sobrevive a la ficha vigente sin ser una cola: la ficha del «No» no trae eventos pendientes', () => {
+      const w = crear();
+      cierraNo(w);
+      expect(fichaDe(w, MAMA)!.cola).toEqual([]);
+    });
+    it('sin «No» no hay silencio: «ok» como primer mensaje recibe la respuesta de siempre', () => {
+      const w = crear();
+      w.modelo.con = dice(CONVERSA);
+      expect(jugar(w, MAMA).texto('ok').aMi).toHaveLength(1);
+    });
+  });
+
+  describe('R02 y R01 en ráfaga: en los dos órdenes, nada se vende después del cierre', () => {
+    it('R02: un texto y luego el «No» en la misma ráfaga: SOLO campanaNo (ni saludo del modelo ni «¿de qué rubro?»)', () => {
+      const r = rafaga([valorMeta(mTexto('tengo una pastelería'), MAMA), valorMeta(mBotonPlantilla(NO, NO_CP), MAMA)], MAMA, (w0) => { w0.modelo.con = dice('¡Hola! ¿De qué rubro es tu negocio?'); });
+      expect(r.aMi.map((e) => e.cuerpo)).toEqual([TX['campanaNo']]);
+      expect(r.plantillas).toHaveLength(0);
+      expect(marca(r.ws[0]!)).toBeGreaterThan(0);
+    });
+    it('R01: el «No» y, en el mismo instante (0 min), un texto: SOLO campanaNo (el texto cae en silencio: la marca ya está comprometida)', () => {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      w.modelo.con = dice('¿Te gustaría hablar con alguien de nuestro equipo?');
+      const a = j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      const b = j.texto('ok', 0);
+      const c = j.texto('quiero ver los planes', 0);
+      expect(dicho(a)).toEqual([TX['campanaNo']]);
+      expect(b.mensajes).toHaveLength(0);
+      expect(c.mensajes).toHaveLength(0);
+      expect(w.modelo.llamadas).toHaveLength(0);
+    });
+    it('R02 con un «No» escrito: un texto y luego «no» (citando la campaña): SOLO campanaNo', () => {
+      const r = rafaga([valorMeta(mTexto('tengo una pastelería'), MAMA), valorMeta(mTextoCitado('no'), MAMA)], MAMA, (w0) => { w0.modelo.con = dice('¡Hola! ¿De qué rubro es tu negocio?'); w0.campana.srv = CITADA; });
+      expect(r.aMi.map((e) => e.cuerpo)).toEqual([TX['campanaNo']]);
+    });
+    it('contraprueba: SIN «No», la misma ráfaga de dos textos responde con el modelo (el silencio solo existe tras el «No»)', () => {
+      const r = rafaga([valorMeta(mTexto('hola'), MAMA), valorMeta(mTexto('tengo una pastelería'), MAMA)], MAMA, (w0) => { w0.modelo.con = dice('¡Hola! ¿De qué rubro es tu negocio?'); });
+      expect(r.aMi.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('«Sí» con la cita y el costo', () => {
+    it('«Sí» sigue siendo 1 mensaje al cliente y 1 aviso a recepción (sin mensajes de más)', () => {
+      const w = crear();
+      const t = jugar(w, MAMA).crudo(mBotonPlantilla(SI, SI_CP), 'sí');
+      expect(t.aMi).toHaveLength(1);
+      expect(t.plantillas).toHaveLength(1);
+      expect(marca(w)).toBe(0);
+    });
+    it('«No»: 1 solo mensaje (el cierre), y ninguna fila de la hoja', () => {
+      const w = crear();
+      const t = jugar(w, MAMA).crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      expect(t.mensajes).toHaveLength(1);
+      expect(w.hoja.filas).toHaveLength(0);
+    });
   });
 });

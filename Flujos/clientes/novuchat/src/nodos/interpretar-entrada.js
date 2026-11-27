@@ -47,21 +47,30 @@ let texto = '';
 let textoReporte = '';
 let pie = '';
 let evento = null;
-// La respuesta a la campaña saliente: SOLO de un botón de Meta (`type: button`), nunca del texto que escribe el cliente (`chCampanaSaliente`).
-// El `payload` con la forma `cs:si|no:<id>` trae la respuesta y la campaña; si Meta lo devuelve como la etiqueta del botón (la documentación lo muestra así), vale el TEXTO EXACTO del botón (dato del tenant,
-// `datos.campanaSaliente`) y la campaña queda sin id. Cualquier otro botón no es campaña y sigue como siempre.
+// La respuesta a la campaña saliente (E1 híbrido: el servidor dijo en «Traer configuración» si el entrante CITA la última campaña, `cfg.campanaSaliente.citada`, y si es la primera respuesta de la ventana de 24 h, `primeraEnVentana`).
+// El candidato es `{ respuesta, id, por, contextoId, probable }`; `probable` = no lo identificó un payload nuestro: lo confirma el servidor (la ingesta, «Reportar mensaje (entrante)») y la puerta del turno lo obedece.
+//   - payload `cs:no:<id>` (de un botón): SIEMPRE cuenta, aunque su `context.id` no sea el de la última campaña (E3: solo lo generan nuestras plantillas; un «No» nunca se pierde).
+//   - payload `cs:si:<id>`: solo si el entrante CITA la campaña (I-B3).
+//   - la etiqueta exacta del botón (dato del tenant, `datos.campanaSaliente`; NFC en los dos lados; Meta a veces devuelve la etiqueta como payload): solo si CITA la campaña (I-B3).
+//   - un «no» o «no gracias» ESCRITO (`cnNoEscritoDeCampana`, E8: acepta «.» y «!» finales): solo si CITA la campaña o es la primera respuesta de la ventana (D1); la ingesta confirma.
+// El id del payload es en MINÚSCULAS (igual que `CAMPANA_ID` del servidor): la campaña saliente (PR-C) tiene que generarlos así (`docs/arquitectura/modulos/campanas.md`). Cualquier otro botón no es campaña.
 let campanaSaliente = null;
+const csrv = cfg.campanaSaliente && typeof cfg.campanaSaliente === 'object' ? cfg.campanaSaliente : {};
+const citada = csrv.citada === true;
+const contextoId = msg.context && typeof msg.context.id === 'string' ? msg.context.id.slice(0, 200) : '';
 if (tipo === 'button' && msg.button && typeof msg.button === 'object') {
   const pl = /^cs:(si|no):([a-z0-9-]{3,40})$/.exec(typeof msg.button.payload === 'string' ? msg.button.payload : '');
   const bs = cfg.datos && cfg.datos.campanaSaliente && typeof cfg.datos.campanaSaliente === 'object' ? cfg.datos.campanaSaliente : {};
   const etiqueta = typeof msg.button.text === 'string' ? msg.button.text : '';
-  if (pl) campanaSaliente = { respuesta: pl[1], id: pl[2] };
-  // El respaldo por etiqueta exige que el entrante RESPONDA a un mensaje (`context.id`), y compara en NFC los dos lados (un «Sí» en NFD es el mismo botón). Riesgo residual: no se verifica que ese id sea el de la campaña (`docs`, DISENO.md).
-  else if (etiqueta !== '' && msg.context && typeof msg.context.id === 'string' && msg.context.id !== '') {
+  if (pl) {
+    if (pl[1] === 'no' || citada) campanaSaliente = { respuesta: pl[1], id: pl[2], por: 'payload', contextoId: contextoId, probable: false };
+  } else if (etiqueta !== '' && citada) {
     const igual = (r) => typeof r === 'string' && r !== '' && etiqueta.normalize('NFC') === r.normalize('NFC');
-    if (igual(bs.botonSi)) campanaSaliente = { respuesta: 'si', id: '' };
-    else if (igual(bs.botonNo)) campanaSaliente = { respuesta: 'no', id: '' };
+    if (igual(bs.botonSi)) campanaSaliente = { respuesta: 'si', id: '', por: 'etiqueta', contextoId: contextoId, probable: true };
+    else if (igual(bs.botonNo)) campanaSaliente = { respuesta: 'no', id: '', por: 'etiqueta', contextoId: contextoId, probable: true };
   }
+} else if (tipo === 'text' && cnNoEscritoDeCampana(msg.text && msg.text.body) && (citada || csrv.primeraEnVentana === true)) {
+  campanaSaliente = { respuesta: 'no', id: '', por: 'texto', contextoId: contextoId, probable: true };
 }
 if (tipo === 'text') {
   texto = String((msg.text && msg.text.body) || '').slice(0, 1500);

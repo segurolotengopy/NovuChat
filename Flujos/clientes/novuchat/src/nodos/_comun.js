@@ -92,6 +92,41 @@ function cnMapaDeFichas(escribir) {
 function cnFichaDe(mapa, from) {
   return cnClaveValida(from) && Object.prototype.hasOwnProperty.call(mapa, from) ? mapa[from] : null;
 }
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// LA CAMPAÑA SALIENTE: el «No» escrito, las cortesías y el silencio tras el «No» (E4, E8 del plan de correcciones del #1140).
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// El «no» ESCRITO se normaliza IGUAL que en el servidor (`esNoEscritoDeCampana`, `bajas.ts`): NFD, sin tildes, minúsculas, la coma pasa a espacio, se quitan «.» y «!» finales y se colapsan los espacios.
+// Tiene que quedar EXACTAMENTE «no» o «no gracias». Nada más cuenta («no me interesa», «no sé», «no quiero»): ante la duda, conversación normal.
+function cnNoEscritoDeCampana(texto) {
+  const s = String(texto === undefined || texto === null ? '' : texto).slice(0, 200).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/,/g, ' ').replace(/\s+/g, ' ').trim().replace(/[\s.!]+$/, '').replace(/\s+/g, ' ').trim();
+  return s === 'no' || s === 'no gracias';
+}
+// Las cortesías cortas que NO reabren la conversación tras el «No» (lista CERRADA): se quitan la puntuación, los signos de apertura y los acentos; los emojis 👍 y 🙏 (con su tono de piel) cuentan solos.
+const CN_CORTESIAS = ['ok', 'okey', 'okay', 'vale', 'gracias', 'muchas gracias', 'listo', 'entendido', 'perfecto', 'dale', 'de acuerdo', 'bien', 'bueno', 'genial', 'excelente', 'ok gracias', 'vale gracias', 'gracias ok', 'ok listo', 'ok entendido'];
+function cnCortesiaCorta(texto) {
+  const crudo = String(texto === undefined || texto === null ? '' : texto).slice(0, 200);
+  const solo = crudo.replace(/[\u{1F3FB}-\u{1F3FF}️\s]/gu, '');
+  if (solo !== '' && /^[\u{1F44D}\u{1F64F}]+$/u.test(solo)) return true;
+  const s = crudo.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[.,!¡?¿…]/g, ' ').replace(/\s+/g, ' ').trim();
+  return CN_CORTESIAS.indexOf(s) >= 0;
+}
+// La marca `campanaNoMs` de la ficha (el instante del «No», ya con su vencimiento de 24 h en `chFichaVigente`): `rafaga` = dentro de los 120 s en que TODO cae en silencio.
+const CN_CAMPANA_RAFAGA_MS = 120 * 1000; // tras el «No»: 120 s en que NADA se responde (la ráfaga del «No» y lo que se escriba enseguida)
+function cnMarcaCampanaNo(ficha, ahoraMs) {
+  const ms = ficha && Number.isFinite(ficha.campanaNoMs) ? ficha.campanaNoMs : 0;
+  if (!(ms > 0)) return { activa: false, rafaga: false, ms: 0 };
+  const edad = Number(ahoraMs) - ms;
+  if (edad > CH_VENTANA_MS) return { activa: false, rafaga: false, ms: 0 };
+  return { activa: true, rafaga: edad <= CN_CAMPANA_RAFAGA_MS, ms: ms };
+}
+// ¿Cae en silencio TODO lo que llegó? `escritos`: un elemento por mensaje; el texto que escribió el cliente, o null si no es un texto escrito (audio, imagen, un toque). Sin marca: nunca.
+// Dentro de la ráfaga (120 s) todo es silencio. Pasada la ráfaga y hasta las 24 h: solo las cortesías cortas y un «no» / «no gracias» repetido; cualquier otra cosa es una intención clara (conversación normal).
+function cnSilencioPorCampana(ficha, ahoraMs, escritos) {
+  const m = cnMarcaCampanaNo(ficha, ahoraMs);
+  if (!m.activa || !Array.isArray(escritos) || escritos.length === 0) return false;
+  if (m.rafaga) return true;
+  return escritos.every((x) => typeof x === 'string' && (cnNoEscritoDeCampana(x) || cnCortesiaCorta(x)));
+}
 // La atención del teléfono: lo que devolvió la ingesta del entrante si lo trae, y si no, lo que dijo `configuracionFlujo`. Ante la duda, normal.
 function cnAtencion(rIngesta, cfg) {
   const a = rIngesta && typeof rIngesta === 'object' && rIngesta.atencion && typeof rIngesta.atencion === 'object'
