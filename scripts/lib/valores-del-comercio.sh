@@ -76,7 +76,12 @@ filtrar_valores() {
   VALORES_A_OCULTAR="$(printf '%s\n' "$@")" python3 -I -c '
 import sys, os, re
 t = sys.stdin.read()
-for v in os.environ.get("VALORES_A_OCULTAR", "").split("\n"):
+valores = os.environ.get("VALORES_A_OCULTAR", "").split("\n")
+# FILTRAR_VARS: nombres de variables del entorno cuyo valor también se oculta (así la clave nunca se nombra en la línea de comandos); de las direcciones se oculta además el host sin el esquema.
+for nombre in os.environ.get("FILTRAR_VARS", "").split():
+    x = os.environ.get(nombre, "")
+    valores += [x, re.sub(r"^https?://", "", x).rstrip("/")]
+for v in valores:
     if len(v) >= 4:
         t = re.sub(re.escape(v), "<valor>", t, flags=re.I)
 # Una ruta de Firestore con el phone_number_id (errores del SDK) tampoco se escribe.
