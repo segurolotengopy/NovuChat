@@ -21,6 +21,7 @@ import { vozFija, tratamientoClave, tratamientoEfectivo, quienAtiende } from './
 import { registrar } from './core/turno/bitacora.js';
 import { atenderSesion } from './core/turno/sesionFirestore.js';
 import { validarSesion } from './core/turno/sesion.js';
+import { validarRafaga, leerRafaga, tomarCupoDeRafaga } from './core/conversacion/rafaga.js';
 // H1-6: los campos derivados de Conversaciones (búsqueda y no leídos). Son más
 // campos en los MISMOS create/set de la transacción: cero lecturas ni escrituras
 // nuevas y cero mensajes. Los escribe el Core para todos los comercios, inertes.
@@ -52,7 +53,9 @@ export { sigueVigente };
 // Términos de producto registrados (Andres, 24/10/2026): se leen una vez por turno, y solo si lo que
 // va al prompt contiene «prompt»; el sistema los cita entre « » y revalida lo ya aprobado.
 import { citarTerminos } from './central/asistente/terminos.js';
-import { aplicarRespuestaDeCampana, campanaIdValido, respuestaDeCampanaValida } from './core/conversacion/bajas.js';
+import {
+  aplicarRespuestaDeCampana, campanaIdValido, contextoIdValido, hechosDeCampana, normalizarRespuestaDeCampana, respuestaPorValida,
+} from './core/conversacion/bajas.js';
 import { aplicarEventoDeFactura, codigoDePedidoValido, ultimoPedidoParaElFlujo } from './core/turno/facturaPedido.js';
 
 /**
@@ -170,6 +173,9 @@ interface Entrante {
   /** Solo con `campana_respuesta`: la campaña (`^[a-z0-9-]{3,40}$`) y la respuesta (`si` | `no`). */
   campanaEnvioId?: string;
   respuestaCampana?: 'si' | 'no';
+  /** Solo con `campana_respuesta` (PR-B): cómo llegó (`payload` del botón, su `etiqueta` o `texto` escrito; sin él, `texto`) y el `context.id` de Meta. */
+  respuestaPor?: 'payload' | 'etiqueta' | 'texto';
+  contextoId?: string;
   /** Solo con `factura_dada` / `factura_sin`: el código del pedido (`<PREFIJO>-AAMMDD-NNN`). */
   codigoPedido?: string;
   /**
@@ -317,8 +323,12 @@ function normalizar(cuerpo: unknown): Entrante | null {
     ? codigoDePedidoValido(c['codigoPedido']) ?? undefined : undefined;
   // Respuesta a la campaña saliente: ambos campos válidos o ninguno (un `campana_respuesta` mal formado se cuenta como un mensaje cualquiera).
   // La respuesta válida basta: un «no» con id de campaña faltante o inválido igual crea la baja (`aplicarRespuestaDeCampana`).
-  const respuestaCampana = evento === 'campana_respuesta' && respuestaDeCampanaValida(c['respuestaCampana'])
-    ? { respuestaCampana: c['respuestaCampana'], ...(campanaIdValido(c['campanaEnvioId']) ? { campanaEnvioId: c['campanaEnvioId'] } : {}) } : undefined;
+  const respuestaNormal = evento === 'campana_respuesta' ? normalizarRespuestaDeCampana(c['respuestaCampana']) : null;
+  const respuestaCampana = respuestaNormal !== null
+    ? { respuestaCampana: respuestaNormal,
+        ...(campanaIdValido(c['campanaEnvioId']) ? { campanaEnvioId: c['campanaEnvioId'] } : {}),
+        ...(respuestaPorValida(c['respuestaPor']) ? { respuestaPor: c['respuestaPor'] } : {}),
+        ...(contextoIdValido(c['contextoId']) ? { contextoId: c['contextoId'] } : {}) } : undefined;
 
   // SIN CONTEO (16/11/2026): solo el booleano exacto `true`, y solo en un saliente de imagen. Cualquier
   // otra combinación o valor se ignora y el mensaje se cuenta como siempre (ante la duda, se cuenta).
@@ -808,6 +818,24 @@ export const ingesta = onRequest(
     // comercial— y corte el turno.
     const { estado, ficha } = await estadoDelComercio(tenantId);
     if (estado !== 'activo') {
+      // UN «NO» A LA CAMPAÑA NUNCA SE PIERDE, ni con el comercio suspendido: la baja es un derecho de la persona y, si se
+      // descartara, al reactivarse el comercio le seguirían llegando campañas. SOLO con el comercio `suspendido` (reversible);
+      // en `baja` o `desconocido` no se escribe nada. Escribe ÚNICAMENTE `bajas/{wa_tel}` (`soloBaja`): ni conversación, ni
+      // mensaje, ni conteo. Un «sí» no escribe nada. Un fallo de la transacción no cambia la respuesta: sigue el 409.
+      if (estado === 'suspendido' && mensaje.evento === 'campana_respuesta' && mensaje.direccion === 'entrante'
+          && mensaje.respuestaCampana === 'no') {
+        const refConv = db.doc(`tenants/${tenantId}/conversaciones/wa_${mensaje.telefono}`);
+        try {
+          const resultado = await db.runTransaction((tx) => aplicarRespuestaDeCampana(tx, refConv,
+            { campanaId: mensaje.campanaEnvioId, respuesta: 'no', por: mensaje.respuestaPor, contextoId: mensaje.contextoId,
+              texto: mensaje.texto, idMetaEntrante: mensaje.idMeta },
+            Timestamp.now(), { soloBaja: true }));
+          logger.info('ingesta: baja de campaña con el comercio suspendido', { tenantId, resultado });
+        } catch {
+          // Sin el teléfono ni el texto del error: solo el hecho.
+          await registrar(tenantId, { tipo: 'error_flujo', resultado: 'fallo', codigo: 'campana_baja_fallida' });
+        }
+      }
       // SE REGISTRA IGUAL. La bitácora admite escrituras con el comercio
       // suspendido justamente para esto: el tramo del corte de servicio es el
       // más conflictivo y es donde la evidencia no puede tener agujeros.
@@ -1010,7 +1038,9 @@ export const ingesta = onRequest(
       // es la última lectura y la primera escritura de la transacción viene después (Firestore exige lecturas primero).
       if (mensaje.evento === 'campana_respuesta' && mensaje.direccion === 'entrante') {
         resultadoDeCampana = await aplicarRespuestaDeCampana(tx, refConversacion,
-          { campanaId: mensaje.campanaEnvioId, respuesta: mensaje.respuestaCampana }, Timestamp.fromMillis(ahoraMs));
+          { campanaId: mensaje.campanaEnvioId, respuesta: mensaje.respuestaCampana, por: mensaje.respuestaPor,
+            contextoId: mensaje.contextoId, texto: mensaje.texto, idMetaEntrante: mensaje.idMeta },
+          Timestamp.fromMillis(ahoraMs), { conversacion: conversacion.data() });
       }
       const previasDelMes = Number(metricasDoc?.get('conversaciones'));
       const avisoConsumo = metricasDoc
@@ -1621,6 +1651,10 @@ export const ingesta = onRequest(
       ...(veredicto.pausadaPorPersona ? { pausadoPorPersona: true } : {}),
       // Contacto bloqueado (31/10/2026): silencio total. Solo la clave se agrega, y solo con bloqueo.
       ...(veredicto.bloqueadoPorContacto ? { bloqueadoPorContacto: true } : {}),
+      // PR-B (E1): lo que la ingesta decidió de la respuesta a la campaña. Solo con `campana_respuesta` entrante; sin él, la respuesta
+      // es la de siempre. El flujo manda `campanaNo` («no le enviaremos más») solo si el resultado es `baja` o `ya_baja`.
+      ...(mensaje.evento === 'campana_respuesta' && mensaje.direccion === 'entrante'
+        ? { campanaSaliente: { resultado: (resultadoDeCampana as string | null) ?? 'no_aplica' } } : {}),
       // El prepago (bloque A-0): `cortado` si este mensaje no se atendió. El
       // flujo vivo ignora el cuerpo; el corte real entra por el 409 de
       // `configuracionFlujo`, que los tres flujos ya obedecen. SOLO con
@@ -1705,6 +1739,23 @@ export const configuracionFlujo = onRequest(
       respuesta.status(404).send('numero no asignado'); return;
     }
 
+    // TOPE DE LA RAMA `rafaga` (`core/conversacion/rafaga.ts`): por comercio+teléfono y por comercio, en
+    // memoria, antes de leer la ficha y antes de cualquier consulta de mensajes. Orden: firma (401, no gasta
+    // cupo) -> forma del pedido (400, no gasta cupo) -> cupo (429). La ruta autenticada ya costó UNA lectura
+    // (`rutasWhatsApp`), y no se puede evitar: el `tenantId` sale de ahí. Una llamada de más responde 429 y
+    // no lee nada más.
+    const cuerpoTope = (typeof peticion.body === 'object' && peticion.body !== null ? peticion.body : {}) as Record<string, unknown>;
+    if (cuerpoTope['rafaga'] !== undefined) {
+      const telCrudo = cuerpoTope['telefono'];
+      const telTope = typeof telCrudo === 'string' && /^[0-9]{8,15}$/.test(telCrudo.trim()) ? telCrudo.trim() : null;
+      if (cuerpoTope['sesion'] !== undefined) { respuesta.status(400).json({ error: 'rafaga_con_sesion' }); return; }
+      const forma = validarRafaga(cuerpoTope['rafaga'], telTope);
+      if (!forma.ok) { respuesta.status(forma.status).json({ error: forma.error }); return; }
+      if (!tomarCupoDeRafaga(ruta.tenantId, telTope, Date.now())) {
+        respuesta.status(429).json({ error: 'rafaga_tope' }); return;
+      }
+    }
+
     // `flujo` cae en `agendamiento` si la ruta no lo trae. Es el vertical que ya
     // tenían las rutas viejas, escritas antes de que hubiera un segundo: dejarlo
     // vacío haría que el comercio no recibiera NINGUNA configuración de vertical
@@ -1731,6 +1782,28 @@ export const configuracionFlujo = onRequest(
       ? peticion.body : {}) as Record<string, unknown>;
     const telefonoCrudo = typeof cuerpo['telefono'] === 'string' ? cuerpo['telefono'].trim() : '';
     const telefono = /^[0-9]{8,15}$/.test(telefonoCrudo) ? telefonoCrudo : null;
+
+    // RÁFAGA DE MENSAJES (`core/conversacion/rafaga.ts`, `docs/arquitectura/rafagas.md`): el flujo pregunta
+    // cuáles son los últimos entrantes de ESTE teléfono para decidir si responde o calla. Corta antes de
+    // leer config o negocio. Lecturas por consulta, TODAS (`MAX_LECTURAS` = 12): la ruta (1) + la ficha (1) +
+    // mi documento (hasta 2 con un reintento de Meta) + hasta 5 anteriores + hasta 3 posteriores. Cero escrituras. Con `sesion` a la vez es un pedido mal formado.
+    if (cuerpo['rafaga'] !== undefined) {
+      if (cuerpo['sesion'] !== undefined) { respuesta.status(400).json({ error: 'rafaga_con_sesion' }); return; }
+      const vr = validarRafaga(cuerpo['rafaga'], telefono);
+      if (!vr.ok) { respuesta.status(vr.status).json({ error: vr.error }); return; }
+      if (comercio.estado !== 'activo') { respuesta.status(409).json({ estado: comercio.estado }); return; }
+      try {
+        const leida = await leerRafaga(db, comercio.tenantId, telefono as string, vr.idMeta);
+        respuesta.status(200).json({ rafaga: leida });
+      } catch {
+        // Sin teléfono ni ruta en el registro: solo el comercio y la acción. El flujo falla abierto.
+        logger.warn('configuracionFlujo: lectura de rafaga fallida', {
+          evento: EVENTO_CONFIGURACION, tenantId: comercio.tenantId, accion: 'rafaga',
+        });
+        respuesta.status(500).json({ error: 'rafaga_lectura' });
+      }
+      return;
+    }
 
     // `config/negocio` se lee ANTES de decidir el 409: la cortesía lleva el
     // teléfono de recepción del comercio (`Analisis/36` §3.2), también cuando
@@ -2083,6 +2156,10 @@ export const configuracionFlujo = onRequest(
     // `codigo`, `factura` y `desdeMs`: sin razón social ni NIT. Sin él, la respuesta es la de siempre.
     const ultimoPedido = docConversacion ? ultimoPedidoParaElFlujo(docConversacion.get('ultimoPedido'), ahoraMs) : null;
 
+    const campanaPedida = cuerpo['campana'];
+    const campanaSaliente = typeof campanaPedida === 'object' && campanaPedida !== null && !Array.isArray(campanaPedida)
+      ? hechosDeCampana(docConversacion?.data(), (campanaPedida as Record<string, unknown>)['contextoId'], ahoraMs) : null;
+
     respuesta.status(200).json({
       ...sesionLeida,
       tenantId: comercio.tenantId,
@@ -2090,6 +2167,12 @@ export const configuracionFlujo = onRequest(
       estadoComercio: derivados.estadoComercio,
       phoneNumberId: derivados.phoneNumberId,
       ...(ultimoPedido ? { ultimoPedido } : {}),
+      // PR-B (E1): con `campana: { contextoId }` en el cuerpo, lo que el flujo necesita para decidir un «No»/«Sí» (cero lecturas nuevas:
+      // sale de la conversación que este turno ya leyó). NUNCA lleva el idMeta. Sin la clave, la respuesta es la de siempre.
+      ...(campanaSaliente ? { campanaSaliente } : {}),
+      // Interruptor de ráfagas por comercio (solo Admin SDK). Solo se agrega cuando está apagado: la
+      // respuesta de los demás comercios queda igual, byte a byte.
+      ...(comercio.ficha['rafagaApagada'] === true ? { rafagaApagada: true } : {}),
 
       // Estado de atención del teléfono que escribió (`null` si el flujo no
       // mandó `telefono`). Lo que el flujo tiene que hacer con este turno:

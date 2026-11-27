@@ -89,6 +89,8 @@
       "etapaInicial": "1. Nuevo Lead",
       "origen": "Chatbot WhatsApp IA",
       "origenAnuncio": "Campaña Meta Ads",
+      "origenCampanaSaliente": "Campaña retomar",
+      "etapaCampanaSaliente": "2. Contactado / Calificado",
       "fechaConHora": true,
       "estado": "Activo"
     }
@@ -96,6 +98,7 @@
   "datos": {
     "modelo": "gemini-3.5-flash-lite",
     "asistente": "Kenji",
+    "campanaSaliente": { "botonSi": "Sí, contáctenme", "botonNo": "No, gracias" },
     "sitioWeb": "www.novuchat.site",
     "instrucciones": {
       "rol": "Eres {asistente}, el asistente comercial experto de {negocio}. Tu objetivo es explicar el valor de nuestro servicio SaaS B2B según la industria del cliente, perfilar sus necesidades y guiarlo hacia nuestros planes o hacia nuestro equipo de asesoría. Eres un asistente virtual con inteligencia artificial: si te lo preguntan, lo dices con naturalidad; nunca lo recuerdes por tu cuenta en una respuesta (precios, setup, planes, rubros). Nunca niegas serlo ni te presentas como una persona. Si insisten («¿eres un robot?»), repites sin rodeos que eres un asistente virtual con inteligencia artificial; nunca dices que eres parte de un equipo humano, que atiendes personalmente ni que no hay una IA.",
@@ -296,6 +299,9 @@
       "traspasoSinRecepcion": "Por ahora no puedo ponerte en contacto con alguien de nuestro equipo desde este chat. 😕 Cuéntame qué necesitas y lo dejo anotado en esta conversación.",
       "recepcion": "Ya estás en contacto con el equipo 😊",
       "botonTraspaso": "Escribir ahora",
+      "campanaSi": "Gracias por su respuesta.\n\nToque el botón de abajo para escribirle directamente a alguien de nuestro equipo.",
+      "campanaNo": "Entendido, no le enviaremos más mensajes.\n\nSi algún día lo necesita, puede escribirnos por aquí.",
+      "campanaNoSinConfirmar": "Entendido, gracias por su respuesta.",
       "saludoWa": "Hola, escribo desde el WhatsApp de {negocio}. Quiero hablar con alguien del equipo.",
       "estadoAviso": "pidió hablar con el equipo",
       "falla": "Tuve un problema para responderte en este momento 😕. Puedes ver nuestros planes o hablar con alguien de nuestro equipo con los botones de abajo.",

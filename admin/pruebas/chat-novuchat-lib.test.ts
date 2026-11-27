@@ -2911,3 +2911,71 @@ describe('«Otro / a medida» no ofrece al equipo hasta dos respuestas del clien
     expect(sit({ rubro: 'salud', texto: 'hola', ev: 'sin_dato' }).equipo).toBe(true);
   });
 });
+
+// ================================================================================================
+// La campaña saliente tras el «No» (E4, E8): la marca `campanaNoMs` de la ficha y los ayudantes `cn*` de `_comun.js`.
+describe('campaña saliente: la marca campanaNoMs y el «no» escrito (plan de correcciones del #1140)', () => {
+  const COMUN = readFileSync(join(CARPETA, 'src/nodos/_comun.js'), 'utf8');
+  const C = ejecutar(`${LIB}\n${COMUN}\nreturn [{ json: { cnNoEscritoDeCampana, cnCortesiaCorta, cnMarcaCampanaNo, cnSilencioPorCampana } }];`, [{}])[0] as J;
+  const VEINTICUATRO = 24 * H;
+  const fichaConMarca = (ms: number): J => ({ ...fichaBase(), campanaNoMs: ms, ultimoMs: ms });
+
+  it('la ficha base trae la marca en 0 y la ficha vigente la conserva', () => {
+    expect(fichaBase()['campanaNoMs']).toBe(0);
+    expect(f('chFichaVigente')(fichaConMarca(AHORA), AHORA + 1000)['campanaNoMs']).toBe(AHORA);
+  });
+  it('NEGADO: una marca que no es un entero positivo se descarta (texto, negativo, decimal, NaN, objeto)', () => {
+    for (const x of ['abc', -5, 1.5, NaN, {}, [], null, true]) expect(f('chFichaVigente')(fichaConMarca(x as number), AHORA)['campanaNoMs'], String(x)).toBe(0);
+  });
+  it('vence a las 24 h: exactamente a las 24 h todavía vale; un instante después, no', () => {
+    expect(f('chFichaVigente')(fichaConMarca(AHORA), AHORA + VEINTICUATRO)['campanaNoMs']).toBe(AHORA);
+    expect(f('chFichaVigente')(fichaConMarca(AHORA), AHORA + VEINTICUATRO + 1)['campanaNoMs']).toBe(0);
+  });
+  it('una marca del futuro (reloj desfasado más de 24 h) no cuenta', () => {
+    expect(f('chFichaVigente')(fichaConMarca(AHORA + 2 * VEINTICUATRO), AHORA)['campanaNoMs']).toBe(0);
+  });
+  it('cnMarcaCampanaNo: activa hasta las 24 h inclusive, y sin marca nada', () => {
+    expect(C['cnMarcaCampanaNo'](fichaConMarca(AHORA), AHORA + 1000)).toMatchObject({ activa: true });
+    expect(C['cnMarcaCampanaNo'](fichaConMarca(AHORA), AHORA + VEINTICUATRO)).toMatchObject({ activa: true });
+    expect(C['cnMarcaCampanaNo'](fichaConMarca(AHORA), AHORA + VEINTICUATRO + 1)).toMatchObject({ activa: false });
+    expect(C['cnMarcaCampanaNo'](fichaBase(), AHORA)).toMatchObject({ activa: false });
+    expect(C['cnMarcaCampanaNo'](null, AHORA)).toMatchObject({ activa: false });
+  });
+  it('cnSilencioPorCampana (H2): sin marca nunca; con marca, SOLO cortesías y «no» (también a los 30 s); un pedido, un audio o un no-texto rompen el silencio', () => {
+    const s = (ficha: J, desde: number, escritos: (string | null)[]): boolean => C['cnSilencioPorCampana'](ficha, AHORA + desde, escritos);
+    expect(s(fichaBase(), 0, ['ok'])).toBe(false);
+    expect(s(fichaConMarca(AHORA), 30_000, ['quiero planes'])).toBe(false);
+    expect(s(fichaConMarca(AHORA), 30_000, [null])).toBe(false);
+    expect(s(fichaConMarca(AHORA), 30_000, ['ok', 'gracias', 'no'])).toBe(true);
+    expect(s(fichaConMarca(AHORA), VEINTICUATRO, ['ok', 'gracias', 'no'])).toBe(true);
+    expect(s(fichaConMarca(AHORA), 3 * 60_000, ['ok', 'quiero planes'])).toBe(false);
+    expect(s(fichaConMarca(AHORA), 3 * 60_000, ['ok', null])).toBe(false);
+    expect(s(fichaConMarca(AHORA), 3 * 60_000, [])).toBe(false);
+    expect(s(fichaConMarca(AHORA), VEINTICUATRO + 1, ['ok'])).toBe(false);
+  });
+  it('cortesías: la lista cerrada (con tildes, mayúsculas, puntuación y emojis con tono) sí; una frase con intención no', () => {
+    for (const x of ['ok', 'OK', 'Ok!', 'gracias', 'Gracias.', 'muchas gracias', 'Vale', 'listo', 'Entendido', 'perfecto', 'dale', '👍', '👍🏽', '🙏', '👍 🙏', 'de acuerdo']) expect(C['cnCortesiaCorta'](x), x).toBe(true);
+    for (const x of ['', ' ', 'ok quiero planes', 'gracias, ¿cuánto cuesta?', 'hola', 'sí', 'planes', '😀', 'ok?? y los precios', 'gracias por nada', 'bien', 'genial', 'excelente']) expect(C['cnCortesiaCorta'](x), x).toBe(false);
+  });
+  it('el «no» escrito recorre la TABLA COMPARTIDA con el servidor (casos-campana-no-escrito.ts): lo que el servidor acepta, el chat lo acepta, y al revés', async () => {
+    const { NO_ESCRITO_SI, NO_ESCRITO_NO } = await import('./lib/casos-campana-no-escrito');
+    for (const x of NO_ESCRITO_SI) expect(C['cnNoEscritoDeCampana'](x), JSON.stringify(x)).toBe(true);
+    for (const x of NO_ESCRITO_NO) expect(C['cnNoEscritoDeCampana'](x), JSON.stringify(x)).toBe(false);
+    expect(C['cnNoEscritoDeCampana'](undefined)).toBe(false);
+    expect(C['cnNoEscritoDeCampana'](null)).toBe(false);
+  });
+  it('I-B1: construir.mjs RECHAZA un campanaSi que afirme un aviso, y un campanaNoSinConfirmar que prometa o falte; acepta los textos vigentes', async () => {
+    const { validarDatos } = (await import(/* @vite-ignore */ join(CARPETA, 'construir.mjs'))) as { validarDatos: Fn };
+    const base = clonar(DATOS_BRUTOS) as J;
+    const ok = (mod: (d: J) => void): string => { const d = clonar(base); mod(d); try { validarDatos(d, 'novuchat.json'); return ''; } catch (e) { return (e as Error).message; } };
+    expect(ok(() => undefined)).toBe('');
+    for (const malo of ['Gracias. Ya le avisamos a nuestro equipo.\n\nToque el botón de abajo.', 'Gracias.\n\nNuestro equipo ya fue notificado; toque el botón de abajo.', 'Gracias.\n\nYa estamos informados de su respuesta.', 'Gracias.\n\nLe avisaremos a nuestro equipo.', 'Gracias.\n\nNuestro equipo está enterado.']) {
+      expect(ok((d) => { d.datos.textos.campanaSi = malo; }), malo).toMatch(/campanaSi/);
+    }
+    for (const malo of ['Entendido, no le enviaremos más mensajes.', 'Entendido. Ya no recibirá mensajes.', 'Entendido, quedó dada de baja.', 'Entendido.\n\nGracias por su respuesta.', 'Entendido, nunca más le escribiremos.']) {
+      expect(ok((d) => { d.datos.textos.campanaNoSinConfirmar = malo; }), malo).toMatch(/campanaNoSinConfirmar/);
+    }
+    expect(ok((d) => { delete d.datos.textos.campanaNoSinConfirmar; })).toMatch(/campanaNoSinConfirmar/);
+    expect(ok((d) => { d.datos.textos.campanaNoSinConfirmar = 'Gracias por su respuesta, lo tenemos presente.'; })).toBe('');
+  });
+});

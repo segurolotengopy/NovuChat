@@ -173,7 +173,7 @@ const CLAVES_CIERRES = ['rubro', 'precios', 'equipo', 'costoMeta', 'integracion'
 const CLAVES_RESPUESTAS = ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad', 'numeroActual', 'coexistencia'];
 const CLAVES_RESPALDOS = ['multiple', 'otroElegido', 'otroLibre', 'fuera', 'equipo', 'generico', 'identidad', 'cortesia', 'datosAmbos', 'datosSoloNombre', 'datosSoloEmpresa', 'datosNinguno', 'empresa', 'complemento', 'noDocumentado', 'sinDato'];
 const CLAVES_TEXTOS = ['saludo', 'listaBoton', 'listaTitulo', 'planesIntro', 'planesIntroRepite', 'planesIntroTopes', 'planesSinPrecios', 'traspasoConPregunta', 'traspasoSinPregunta',
-  'traspasoRepite', 'traspasoSinRecepcion', 'recepcion', 'botonTraspaso', 'saludoWa', 'estadoAviso', 'falla', 'medioIlegible', 'invitaOtroRubro', 'invitaRubro', 'listaPedida', 'planesAgotado'];
+  'traspasoRepite', 'traspasoSinRecepcion', 'recepcion', 'botonTraspaso', 'saludoWa', 'estadoAviso', 'falla', 'medioIlegible', 'invitaOtroRubro', 'invitaRubro', 'listaPedida', 'planesAgotado', 'campanaSi', 'campanaNo', 'campanaNoSinConfirmar'];
 const DESCARTES = ['numero_equivocado', 'vende_o_busca_trabajo', 'sin_negocio', 'spam_o_prueba'];
 
 // EL ENSAYO EN EL DEMO A (`ensayo-demo-a.json` → `chat-novuchat.ensayo-demo-a.json`): el mismo flujo, con el miniCRM CONECTADO, pero contra una HOJA DE PRUEBA y con los marcadores PROPIOS del ensayo.
@@ -413,6 +413,20 @@ export function validarDatos(datos, archivo) {
     for (const c of CLAVES_TEXTOS) { const m = errorDeTextoDelCliente(chSust(tx[c]), { sinAcredita: true }); if (m) e(`datos.textos.${c}`, m); }
     if (typeof tx.listaBoton === 'string' && tx.listaBoton.length > 20) e('datos.textos.listaBoton', 'pasa de 20 caracteres (el botón de una lista)');
     if (typeof tx.listaTitulo === 'string' && tx.listaTitulo.length > 24) e('datos.textos.listaTitulo', 'pasa de 24 caracteres');
+    // La campaña saliente («retomar»): las dos respuestas fijas (con párrafos, tuteo o «usted» según el tenant) y los textos EXACTOS de los dos botones de la plantilla, que reconocen la respuesta si Meta devuelve la etiqueta en lugar del payload.
+    for (const c of ['campanaSi', 'campanaNo']) if (typeof tx[c] === 'string' && (tx[c].length > 500 || !/\n\n/.test(tx[c]))) e(`datos.textos.${c}`, 'tiene que tener párrafos separados por una línea en blanco y no pasar de 500 caracteres');
+    // I-B1 («solo se ofrece lo que se cumple»): `campanaSi` sale ANTES de intentar el aviso a recepción, así que NO puede afirmar que se avisó ni que alguien lo sabe; el botón es la acción. `campanaNoSinConfirmar` sale cuando la ingesta
+    // no confirmó la baja: no puede prometer que no habrá más mensajes ni mencionar la baja (solo `campanaNo`, respaldada por la baja escrita, lo dice).
+    const plano = (v) => String(v === undefined || v === null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (typeof tx.campanaSi === 'string' && /\b(avis\w*|notific\w*|informad\w*|inform\w*|enter\w*|comunic\w*|le llegar\w*|hicimos saber|hemos hecho)\b/.test(plano(tx.campanaSi))) e('datos.textos.campanaSi', 'afirma o promete un aviso a recepción (sale antes de intentarlo): el botón es la acción, el texto no afirma ningún aviso');
+    if (typeof tx.campanaNoSinConfirmar === 'string' && (/\b(no (le |lo |te )?(enviar|escribir|mandar|contactar|molestar|llamar)\w*|ya no|nunca|baja|lista|desuscrib\w*|eliminar\w*|borrar\w*|dejar\w*|mas mensajes|recibir\w*)\b/.test(plano(tx.campanaNoSinConfirmar)) || /\n\n/.test(tx.campanaNoSinConfirmar) || tx.campanaNoSinConfirmar.length > 200)) e('datos.textos.campanaNoSinConfirmar', 'promete algo (que no habrá más mensajes, una baja) o es largo: sale cuando la baja NO se confirmó, así que solo agradece la respuesta');
+    const cs = k.campanaSaliente;
+    if (cs === undefined || cs === null || typeof cs !== 'object' || Array.isArray(cs)) e('datos.campanaSaliente', 'falta: { botonSi, botonNo } (los textos exactos de los dos botones de la plantilla)');
+    else {
+      for (const c of ['botonSi', 'botonNo']) if (typeof cs[c] !== 'string' || cs[c].trim() === '' || cs[c].length > 25 || CONTROLES.test(cs[c]) || INVISIBLES.test(cs[c])) e(`datos.campanaSaliente.${c}`, 'tiene que ser un texto de una línea de 1 a 25 caracteres (el título de un botón de respuesta rápida)');
+      if (typeof cs.botonSi === 'string' && typeof cs.botonNo === 'string' && cs.botonSi.normalize('NFC') === cs.botonNo.normalize('NFC')) e('datos.campanaSaliente', 'los dos botones no pueden tener el mismo texto');
+      for (const c of Object.keys(cs)) if (!['botonSi', 'botonNo'].includes(c)) e(`datos.campanaSaliente.${c}`, 'no es un campo conocido');
+    }
     if (typeof tx.botonTraspaso === 'string' && tx.botonTraspaso.length > 20) e('datos.textos.botonTraspaso', 'pasa de 20 caracteres (el título de un botón de enlace)');
     if (typeof tx.saludo === 'string' && !/inteligencia artificial/i.test(tx.saludo)) e('datos.textos.saludo', 'tiene que decir que es un asistente con inteligencia artificial (prohibición 4)');
     for (const c of Object.keys(tx)) if (!CLAVES_TEXTOS.includes(c) && c !== 'sitioFrase') e(`datos.textos.${c}`, 'no es un texto conocido');

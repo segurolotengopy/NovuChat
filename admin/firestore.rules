@@ -2114,7 +2114,7 @@ service cloud.firestore {
                       && !request.resource.data.keys().hasAny(['turno', 'envioPersona',
                                                                'ultimoSalientePersonaEn', 'phoneNumberId', 'ultimaRetomadaEn', 'ultimaRetomadaMensajeId',
                                                                'rescate', 'riesgoEn', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn',
-                                                               'ultimoPedido', 'campanaRespuesta']);
+                                                               'ultimoPedido', 'campanaRespuesta', 'campanaEnviada']);
         allow delete: if false;
 
         // Dos ramas de actualización disjuntas:
@@ -2132,7 +2132,7 @@ service cloud.firestore {
                           && !request.resource.data.diff(resource.data).affectedKeys()
                                 .hasAny(['turno', 'envioPersona', 'ultimoSalientePersonaEn', 'phoneNumberId', 'ultimaRetomadaEn', 'ultimaRetomadaMensajeId',
                                          'rescate', 'riesgoEn', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn',
-                                         'ultimoPedido', 'campanaRespuesta']))
+                                         'ultimoPedido', 'campanaRespuesta', 'campanaEnviada']))
                       || (esPersonaDelNegocio(tenantId)
                           && tenantOperativo(tenantId)
                           // `noContactar` es la lista de no molestar (bloque 4): una
@@ -2260,7 +2260,11 @@ service cloud.firestore {
                  // la escribe SOLO la ingesta (SDK Admin, evento `campana_respuesta`) en la misma transacción que crea la baja. Se tolera
                  // aquí para que una conversación que ya lo tiene no falle la validación; las ramas create/update de arriba le PROHÍBEN
                  // al token de ingesta crearlo o cambiarlo, y la persona del negocio no lo tiene en su `soloCampos`.
-                 , 'campanaRespuesta'])
+                 , 'campanaRespuesta'
+                 // LA CAMPAÑA ENVIADA (PR-B, 27/11/2026): `campanaEnviada` = { idMeta, campanaId, en } la escribe SOLO `confirmarSalida`
+                 // (SDK Admin) al aceptar la plantilla de campaña; con ella la ingesta decide si un «No» o «Sí» responde a la última
+                 // campaña. Mismo trato que `campanaRespuesta`: se tolera aquí y se prohíbe al token de ingesta arriba.
+                 , 'campanaEnviada'])
             && (!d.keys().hasAny(['solicitud'])
                 || (d.solicitud is map
                     // `horarios` es la etapa del bloque 4: el asistente ofreció

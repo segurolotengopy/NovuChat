@@ -63,7 +63,7 @@ const aviso = (estado, marca, yaAvisado) => {
 const generico = () => chMensajeEquipo(cfg, Object.assign({}, chFichaVigente(null, ahora), { nombrePedido: true }), from);
 if (plan.ruta === 'sin_estado') {
   mensajes.push(generico());
-} else if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido' || plan.ruta === 'baja') {
+} else if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido' || plan.ruta === 'baja' || plan.ruta === 'silencio') {
   // La puerta cerró el turno: nada de modelo, planilla ni historial. Solo se recuerda el id (los repetidos de Meta no se vuelven a contar).
   nueva = chClon(antes);
   chRecordarIds(nueva, [t.mensajeId]);
@@ -71,8 +71,16 @@ if (plan.ruta === 'sin_estado') {
   if (plan.ruta === 'baja') {
     // Baja por texto: UN mensaje de texto fijo, sin botones y sin aviso; el `no_contactar` viajó con el entrante. Baja por NOTA DE VOZ (`plan.porVoz`, decidida en «Armar turno» sobre la transcripción): el entrante del audio
     // no marcó nada, así que el evento viaja en el reporte de ESTE mensaje saliente, y los eventos del turno (el audio) quedan respondidos para que la baja no vuelva como contexto del próximo mensaje.
-    mensajes.push(cmMensaje('cliente', cmTexto(bjTextoBaja(cfg.textoBaja)), bjTextoBaja(cfg.textoBaja), bjTextoBaja(cfg.textoBaja), plan.porVoz === true ? { tipoReporte: 'text', evento: 'no_contactar' } : { tipoReporte: 'text' }));
+    const textoBaja = puerta.campana === true ? puerta.texto : bjTextoBaja(cfg.textoBaja);
+    mensajes.push(cmMensaje('cliente', cmTexto(textoBaja), textoBaja, textoBaja, plan.porVoz === true ? { tipoReporte: 'text', evento: 'no_contactar' } : { tipoReporte: 'text' }));
     if (plan.porVoz === true && Number(plan.hastaBaja) > 0) { nueva.cola = nueva.cola.filter((e) => e.seq > plan.hastaBaja); nueva.hasta = Math.max(nueva.hasta, plan.hastaBaja); }
+    // El «No» de la campaña saliente (I-B2, R02): deja la MARCA en la ficha (`campanaNoMs`) y fija `hasta = seq`: todo lo que la persona escribió en esta ráfaga ANTES del «No» queda respondido (cierra el turno de esa ejecución sin vender
+    // después del cierre), y lo que escriba enseguida cae en silencio (`cnSilencioPorCampana`, E4).
+    if (puerta.campana === true) { nueva.campanaNoMs = ahora; nueva.cola = nueva.cola.filter((e) => e.seq > nueva.seq); nueva.hasta = Math.max(nueva.hasta, nueva.seq); }
+  } else if (plan.ruta === 'silencio') {
+    // Tras el «No» de la campaña: CERO mensajes. Los eventos de la ráfaga (si los hay) quedan respondidos y la marca sigue; solo se recuerda el id.
+    const hs = Number(turno.hasta) || 0;
+    if (hs > 0) { nueva.cola = nueva.cola.filter((e) => e.seq > hs); nueva.hasta = Math.max(nueva.hasta, hs); }
   } else if (plan.ruta === 'suspendido') {
     if (puerta.texto) mensajes.push(texto(String(puerta.texto)));
   } else {
@@ -125,7 +133,10 @@ if (plan.ruta === 'sin_estado') {
   else if (plan.ruta === 'equipo') {
     // Si el cliente dio su nombre y su negocio en este mismo turno, el traspaso no los vuelve a pedir: se usan los de la ficha NUEVA (como el aviso).
     const previa = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: '', ahoraMs: ahora, anuncio: !!t.anuncio });
-    m = chMensajeEquipo(cfg, Object.assign({}, antes, { nombre: previa.nombre, empresa: previa.empresa }), from);
+    // Respondió «sí» a la campaña saliente: el texto del tenant en lugar del traspaso de siempre; el botón y el aviso a recepción son los mismos. (I-B1: ese texto no afirma ningún aviso, porque sale antes de intentarlo.)
+    // (la marca va en el EVENTO: en una ráfaga «Sí» + texto responde la ejecución del texto y el «sí» no se pierde)
+    const campanaSi = eventos.some((e) => e && e.campanaSaliente === true) ? chTexto((chDatos(cfg).textos || {}).campanaSi) : '';
+    m = chMensajeEquipo(cfg, Object.assign({}, antes, { nombre: previa.nombre, empresa: previa.empresa }), from, campanaSi);
   }
   else {
     // R4: en la PRIMERA respuesta del cliente a la explicación, sea cual sea el contexto, se agrega en el MISMO mensaje el pedido cordial del nombre y del negocio (una sola vez).
@@ -137,8 +148,10 @@ if (plan.ruta === 'sin_estado') {
     m = chClienteConSitio(unido.texto, cfg, res.evento, est, antes, ['empresa', 'sin_dato', 'no_documentado'].includes(res.evento));
   }
   mensajes.push(m);
-  nueva = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: m.textoSinSitio || m.texto, sitio: m.sitio === true, ahoraMs: ahora, anuncio: !!t.anuncio,
+  nueva = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: m.textoSinSitio || m.texto, sitio: m.sitio === true, ahoraMs: ahora, anuncio: !!t.anuncio, 
     sinRecepcion: recepcion.length < 6, ciclo: ciclo, explicacion: plan.ruta === 'modelo' && ['rubro', 'otroRespuesta'].includes(res.contexto), pidioDatos: anexo !== '', complemento: complemento, ordinaria: dec.ordinaria, botones: m.botones });
+  // Una intención clara tras el «No» de la campaña (no cayó en silencio): conversación normal y la marca se borra (E4).
+  nueva.campanaNoMs = 0;
   // Pedir hablar con el equipo: la plantilla a recepción, UNA vez por ventana (`avisado` cuenta solo lo que Meta aceptó) y nunca al propio número de recepción. Con una empresa DISTINTA a la ya avisada,
   // un aviso nuevo (R5); con la misma, solo se reenvía el botón.
   if (plan.ruta === 'equipo') {
@@ -190,7 +203,7 @@ const salidaFalla = aItems([generico()]);
 // `CH_TOPE_AVISO_FALLA_HORA` veces por hora y por teléfono (las marcas viven en `staticData.chatNovuchatAvisoFalla`; las anota «Soltar mensajes» solo si salió el genérico). El aviso no marca `avisado`
 // de la ficha (no hay compromiso), no cuenta como `marcaAvisado` para «Confirmar envío» (un rechazo de Meta no corta el turno ni compensa) y no es una respuesta más al cliente (0 mensajes más).
 let avisoFalla = false;
-if (!prueba && claveOk && plan.ruta !== 'suspendido' && plan.ruta !== 'uso_extendido' && plan.ruta !== 'baja' && recepcion.length >= 6) {
+if (!prueba && claveOk && plan.ruta !== 'suspendido' && plan.ruta !== 'uso_extendido' && plan.ruta !== 'baja' && plan.ruta !== 'silencio' && recepcion.length >= 6) {
   let marcasFalla = [];
   try {
     const sd = $getWorkflowStaticData('global');
@@ -213,7 +226,9 @@ if (!prueba && claveOk && plan.ruta !== 'suspendido' && plan.ruta !== 'uso_exten
 // ============================================ el prospecto: solo si la ficha cambió. En modo prueba la planilla NO se escribe (una prueba no llena la hoja de nadie).
 const planillaOk = !prueba && String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';
 const datosDe = { from: from, nombrePerfil: chNombreDelPerfil(t.nombrePerfil) };
-const despues = conversacion ? chProspecto(nueva, cfg, datosDe) : null;
+// «Sí» a la campaña saliente EN ESTE turno (marca del evento, no de la ficha): el miniCRM abre la fila con el origen y la etapa de la campaña; solo cuenta al CREARLA.
+const esCampanaSi = conversacion && plan.ruta === 'equipo' && (pasada === 2 ? antes.cola.filter((e) => e.seq > antes.hasta) : eventosTurno).some((e) => e && e.campanaSaliente === true);
+const despues = conversacion ? chProspecto(nueva, cfg, Object.assign({}, datosDe, { campanaSaliente: esCampanaSi })) : null;
 const primeraVez = antes.historial.length === 0;
 const cambio = despues !== null && (primeraVez || JSON.stringify(despues) !== JSON.stringify(chProspecto(antes, cfg, datosDe)));
 const guardarPlanilla = cambio && planillaOk;
@@ -234,6 +249,6 @@ return [{ json: {
   from: from, ahoraMs: ahora, pasada: pasada, plan: accion, resumen: resumen, salida: salida, salidaFalla: salidaFalla, avisoFalla: avisoFalla, nueva: nueva, fichaAntes: fichaAntes, conversacion: conversacion,
   comprometer: compromiso !== null, compromiso: compromiso, numero: ssNumeroHeader(), fallaEstado: sinEstado || compromiso === null,
   // Las puertas cerradas (suspendido, uso extendido, bloqueado) comprometen solo para guardar los ids: si falla, sale lo suyo igual (bloqueado: nada), nunca el genérico. `seqs`: los eventos de este turno.
-  mejorEsfuerzo: plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido' || plan.ruta === 'baja', seqs: eventosTurno.map((e) => e.seq),
+  mejorEsfuerzo: plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido' || plan.ruta === 'baja' || plan.ruta === 'silencio', seqs: eventosTurno.map((e) => e.seq),
   despues: despues, primeraVez: primeraVez, guardarPlanilla: guardarPlanilla,
 } }];

@@ -590,7 +590,7 @@ function chFichaBase() {
     avisado: false, avisoFalla: '', planesMostrados: false, planesTocado: false, equipoTocado: false, respondidas: 0, soporte: false, anuncio: false,
     // Ajustes del 09/10: el ciclo de un negocio (explicado, nombre pedido, planes pendientes, equipo ya pedido), el primer negocio y los otros para la hoja.
     otroResp: 0, explicado: false, nombrePedido: false, preguntaDatos: false, ofrecio: '', planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, sitiosVentana: 0, sitioUltimo: false, primero: null, otros: [], complementos: 0,
-    seq: 0, hasta: 0, cola: [], historial: [], ultimosIds: [],
+    seq: 0, hasta: 0, cola: [], historial: [], ultimosIds: [], campanaNoMs: 0, // (campanaNoMs: el instante del «No» de la campaña saliente; 0 = sin marca; ver `cnSilencioPorCampana`)
   };
 }
 function chEventoSaneado(e) {
@@ -600,7 +600,7 @@ function chEventoSaneado(e) {
   if (t === '' || seq === 0) return null;
   return {
     seq: seq, id: chPlano(e.id, 200), k: CH_KINDS.includes(e.k) ? e.k : 'otro', t: t, c: chLinea(e.c, CH_TOPE_EVENTO),
-    ms: Number.isFinite(e.ms) ? e.ms : 0, rubro: CH_ID_RUBRO.test(chTexto(e.rubro)) ? e.rubro : '', boton: CH_BOTONES.includes(e.boton) ? e.boton : '',
+    ms: Number.isFinite(e.ms) ? e.ms : 0, rubro: CH_ID_RUBRO.test(chTexto(e.rubro)) ? e.rubro : '', boton: CH_BOTONES.includes(e.boton) ? e.boton : '', campanaSaliente: e.campanaSaliente === true,
   };
 }
 // La ficha tal como queda vigente en `ahoraMs`, SIN tocar la que se pasa. A las 24 h vencen `avisado`, `planesMostrados` y `soporte`; a las 48 h se olvida entera.
@@ -632,9 +632,9 @@ function chFichaVigente(e, ahoraMs) {
     cola: (Array.isArray(e.cola) ? e.cola : []).map(chEventoSaneado).filter(Boolean).slice(-CH_TOPE_COLA),
     historial: (Array.isArray(e.historial) ? e.historial : []).filter((x) => x && typeof x === 'object' && (x.r === 'u' || x.r === 'a') && chLinea(x.t, CH_TOPE_TEXTO) !== '')
       .map((x) => ({ r: x.r, t: chLinea(x.t, CH_TOPE_TEXTO) })).slice(-CH_TOPE_HISTORIAL),
-    ultimosIds: (Array.isArray(e.ultimosIds) ? e.ultimosIds : []).filter((x) => typeof x === 'string' && x !== '' && x.length <= 200).slice(-CH_TOPE_IDS),
+    ultimosIds: (Array.isArray(e.ultimosIds) ? e.ultimosIds : []).filter((x) => typeof x === 'string' && x !== '' && x.length <= 200).slice(-CH_TOPE_IDS), campanaNoMs: Number.isSafeInteger(e.campanaNoMs) && e.campanaNoMs > 0 && e.campanaNoMs <= 1e14 ? e.campanaNoMs : 0,
   };
-  if (s.hasta > s.seq) s.hasta = s.seq;
+  if (s.hasta > s.seq) s.hasta = s.seq; if (s.campanaNoMs > 0 && (ahoraMs - s.campanaNoMs > CH_VENTANA_MS || s.campanaNoMs > ahoraMs + CH_VENTANA_MS)) s.campanaNoMs = 0; // la marca del «No» vence a las 24 h (inclusive); una del futuro no cuenta
   if (ultimo && ahoraMs - ultimo >= CH_VENTANA_MS) { s.avisado = false; s.planesMostrados = false; s.planesTocado = false; s.equipoTocado = false; s.respondidas = 0; s.soporte = false; s.equipoAhora = false; s.planesPendientes = false; s.empresasAvisadas = []; s.avisosVentana = 0; s.sitiosVentana = 0; s.sitioUltimo = false; }
   return s;
 }
@@ -1685,14 +1685,14 @@ function chAnexoDatos(cfg, f, texto, contexto) {
   return chLineas(texto).length + 2 + anexo.length <= CH_MAX_MENSAJE ? anexo : '';
 }
 // «Hablar con el equipo»: el botón que abre el chat de recepción (cta_url) y, si faltan, el pedido del nombre y del negocio (UNA sola vez). Quien escribe DESDE recepción no recibe un botón a sí mismo: «Ya estás en contacto con el equipo» y la lista de rubros (nada oculto). Sin número de recepción, ni botón ni promesa.
-function chMensajeEquipo(cfg, f, from) {
+function chMensajeEquipo(cfg, f, from, cuerpoPropio) {
   const tx = chDatos(cfg).textos || {};
   const numero = chTexto(cfg && cfg.numeroRecepcion).replace(/\D/g, '');
   const desde = chTexto(from).replace(/\D/g, '');
   if (numero.length >= 6 && numero === desde) return chCliente(tx.recepcion, cfg, 'recepcion', { lista: true, planes: true });
   if (numero.length < 6) return chCliente(tx.traspasoSinRecepcion, cfg, 'traspaso', f.equipoAhora === true ? { lista: true } : { botones: [] });
   const completo = chPlano(f.nombre) !== '' && chPlano(f.empresa) !== '';
-  const cuerpo = chEmMensaje(chTexto(f.equipoAhora === true ? tx.traspasoRepite : (completo || f.nombrePedido === true ? tx.traspasoSinPregunta : tx.traspasoConPregunta)), cfg);
+  const cuerpo = chEmMensaje(chTexto(chPlano(cuerpoPropio) !== '' ? cuerpoPropio : f.equipoAhora === true ? tx.traspasoRepite : (completo || f.nombrePedido === true ? tx.traspasoSinPregunta : tx.traspasoConPregunta)), cfg);
   return cmContactoConBoton({ numero: numero, desde: desde, para: 'cliente', evento: 'traspaso', cuerpo: cuerpo, botonTexto: tx.botonTraspaso || 'Escribir ahora', textoDelRespaldo: 'Escríbele aquí:', saludo: chSustituir(tx.saludoWa, cfg) });
 }
 // Las respuestas fijas del documento (consumo, banco, costos de Meta, integraciones, precios distintos): el dato + la invitación al equipo. Ninguna cifra.
@@ -1828,7 +1828,7 @@ function chProspecto(f, cfg, entrada) {
     necesidad: chNecesidadValida(f.necesidad),
     temas: chTemasUnidos(f.temas, []),
     estado: h.pidioEquipo ? 'cerrado' : 'en_conversacion',
-    anuncio: f.anuncio === true,
+    anuncio: f.anuncio === true, campanaSaliente: x.campanaSaliente === true, // (respondió «sí» a la campaña saliente EN ESTE turno: la marca no vive en la ficha; el miniCRM la usa solo al crear la fila)
     // `respondioDolor` es el nombre histórico del hecho «interactuó» que lee la hoja (Media = rubro + interactuó).
     hechos: { pidioAsesor: h.pidioEquipo, pidioPlanes: h.pidioPlanes, eligioOtro: h.eligioOtro, respondioDolor: h.interactuo, descarte: h.descarte },
   };

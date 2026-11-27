@@ -105,6 +105,12 @@ export async function confirmarSalida(
     const de: unknown = s.get('phoneNumberId');
     if (typeof de === 'string' && de !== phoneNumberId) return { codigo: 404 };
 
+    // LA CAMPAÑA ENVIADA (PR-B): al aceptar la plantilla de una campaña, la conversación recuerda cuál fue (`campanaEnviada`), para que
+    // la ingesta decida si un «No» o un «Sí» le responde. Se lee aquí (antes de toda escritura) y solo si aplica.
+    const marcaCampana = c.resultado === 'aceptado' && s.get('tipo') === 'plantilla' && s.get('autor') === 'campana';
+    const refConversacion = db.doc(`tenants/${tenantId}/conversaciones/${c.conversacionId}`);
+    const convParaCampana = marcaCampana ? await tx.get(refConversacion) : null;
+
     const estado: unknown = s.get('estadoEnvio');
     // El mismo resultado, repetido con los mismos datos: inofensivo.
     if (estado === c.resultado) {
@@ -136,6 +142,26 @@ export async function confirmarSalida(
     if (cuenta && !contado) { cambios['contado'] = true; sumar(tx, db, tenantId, ahoraMs, 1); }
     if (!cuenta && contado) { cambios['contado'] = false; sumar(tx, db, tenantId, ahoraMs, -1); }
     tx.update(ref, cambios);
+    if (convParaCampana !== null && convParaCampana.exists && c.idMeta !== undefined) {
+      // `campanaId` sale del payload de los botones (`cs:si:<id>` / `cs:no:<id>`); sin uno válido queda `null`.
+      const botones: unknown = s.get('plantilla.botones');
+      let campanaId: string | null = null;
+      if (Array.isArray(botones)) {
+        for (const b of botones as Array<Record<string, unknown>>) {
+          const m = typeof b?.['payload'] === 'string' ? /^cs:(?:si|no):([a-z0-9-]{3,40})$/.exec(b['payload']) : null;
+          if (m) { campanaId = m[1]!; break; }
+        }
+      }
+      // `en` es la hora del mensaje (cuando se encoló), no la de la confirmación: dos confirmaciones fuera de orden no pisan la más nueva.
+      const tsMensaje: unknown = s.get('ts');
+      const enMs = typeof (tsMensaje as { toMillis?: unknown } | null)?.toMillis === 'function' ? (tsMensaje as Timestamp).toMillis() : ahoraMs;
+      const previa: unknown = convParaCampana.get('campanaEnviada.en');
+      const previaMs = typeof (previa as { toMillis?: unknown } | null)?.toMillis === 'function' ? (previa as Timestamp).toMillis() : null;
+      // Solo si la conversación existe (no se crea) y no tiene ya una campaña más nueva.
+      if (previaMs === null || previaMs <= enMs) {
+        tx.update(refConversacion, { campanaEnviada: { idMeta: c.idMeta, campanaId, en: Timestamp.fromMillis(enMs) } });
+      }
+    }
     return { codigo: 200, estado: c.resultado };
   });
 }
