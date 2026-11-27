@@ -472,7 +472,10 @@ describe('(f) Obedece los umbrales del servidor antes del modelo', () => {
 
   it('«¿Atención normal?» está antes del agente, y su rama verdadera es la ÚNICA entrada (por las dos compuertas de medios)', () => {
     expect(destinos('¿Comercio operativo?', 0)).toEqual(['¿Atención normal?']);
-    expect(destinos('¿Atención normal?', 0)).toEqual(['¿Es un comprobante?']);
+    // Ráfagas (25/11/2026): la pieza común va EN LÍNEA entre la salida normal y «¿Es un comprobante?» (ambas salidas de «¿Esperar ráfaga?» llegan a él).
+    expect(destinos('¿Atención normal?', 0)).toEqual(['¿Esperar ráfaga?']);
+    expect(destinos('¿Esperar ráfaga?', 1)).toEqual(['¿Es un comprobante?']);
+    expect(destinos('Agrupar ráfaga', 0)).toEqual(['¿Es un comprobante?']);
     // Dos compuertas en cadena antes del agente: el comprobante (bloque 2) y
     // cualquier otro medio (bloque 3). Las dos SACAN trabajo del agente; las
     // dos entradas que quedan traen TEXTO, nunca un binario.
@@ -2045,8 +2048,9 @@ describe.each([
       'Confirmar cita retenida', 'Mensaje de la seña'];
 
     it('«¿Es un comprobante?» está entre «¿Atención normal?» y el agente, y solo pasa con true', () => {
-      expect(destinos('¿Atención normal?', 0)).toEqual(['¿Es un comprobante?']);
-      expect(origenes('¿Es un comprobante?')).toEqual(['¿Atención normal?']);
+      // Con la pieza de ráfagas en línea (25/11/2026): «¿Atención normal?» -> «¿Esperar ráfaga?» -> («Agrupar ráfaga») -> «¿Es un comprobante?».
+      expect(destinos('¿Atención normal?', 0)).toEqual(['¿Esperar ráfaga?']);
+      expect(origenes('¿Es un comprobante?').sort()).toEqual(['Agrupar ráfaga', '¿Esperar ráfaga?']);
       expect(destinos('¿Es un comprobante?', 0)).toEqual(['Obtener URL del medio']);
       // Por la salida falsa ya no se entra directo al agente: se pasa por la
       // compuerta de los demás medios (bloque 3), que lo convierte en texto.
