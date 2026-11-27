@@ -211,7 +211,7 @@ if [[ "${avisos_servicio:-0}" != "0" ]]; then
   version_ok=0
   if [[ -n "${FIREBASE_TOOLS_VERSION:-}" && "$FIREBASE_TOOLS_VERSION" == "$VERSION_VERIFICADA" ]]; then version_ok=1; fi
   if [[ "${AVISO_SERVICIO_NO_FATAL:-0}" == "1" ]] && (( ${#motivos[@]} == 0 && creaciones == 0 && version_ok == 1 )); then
-    # Candidatas: las Functions confirmadas entre el primer aviso y la primera confirmación posterior al último (el aviso no dice cuál).
+    # Candidatas: TODAS las Functions confirmadas desde el primer aviso hasta el final del último intento (el aviso no dice cuál; dos avisos seguidos y una sola confirmación no deben dejar a una fuera).
     candidatas_ids="$(awk '
       /This deployment is in an unexpected state/ { if (!ini) ini = NR; fin = NR }
       { l[NR] = $0 }
@@ -223,12 +223,17 @@ if [[ "${avisos_servicio:-0}" != "0" ]]; then
             match(l[i], /functions\[[^]]+\]/); id = substr(l[i], RSTART + 10, RLENGTH - 11)
             sub(/\(.*$/, "", id); sub(/^.*:/, "", id)
             if (id !~ /^[A-Za-z0-9_-]+$/) continue
-            if (i > fin) { c[++n] = id; break } else c[++n] = id
+            c[++n] = id
           }
         }
         for (i = 1; i <= n; i++) printf "%s%s", (i > 1 ? "," : ""), c[i]
       }' <<< "$limpio")"
+    if [[ -z "$candidatas_ids" ]]; then
+      # Un aviso sin ninguna candidata que verificar sería un warning sin comprobación del invoker: es fatal.
+      motivos+=("firebase-tools avisó «This deployment is in an unexpected state» y no hay Function confirmada que verificar")
+    else
     echo "::warning::firebase-tools avisó $avisos_servicio vez/veces «unexpected state» (una actualización sin servicio asociado: se omitió su invoker), con el despliegue completo y sin Functions nuevas (solo staging). El workflow verifica el invoker de las candidatas (el aviso no nombra la Function): ${candidatas_ids//,/, }."
+    fi
   else
     motivos+=("firebase-tools avisó «This deployment is in an unexpected state»")
   fi

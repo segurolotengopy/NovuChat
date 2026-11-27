@@ -237,8 +237,16 @@ describe('compuerta del registro de `firebase deploy`', () => {
     // Los avisos de un intento ANTERIOR (registro acumulado) también cuentan: el último intento limpio no los borra.
     const anterior = compuerta(real.split('\n').filter((l) => !l.includes('unexpected state')).join('\n'),
       { SOLO: SOLO_COMPLETO, SITIO_CONSOLA: 'proyecto-ficticio', SITIO_CATALOGO: 'catalogo-ficticio', REGISTRO_ACUMULADO: archivo(real), ...STG23 });
-    expect(anterior.status, anterior.stdout).toBe(0);
-    expect(anterior.stdout).toMatch(/::warning::firebase-tools avisó 4 vez\/veces/);
+    // (revisión de seguridad 27/11) Aviso solo en el acumulado y ninguna candidata en el último intento: nada que verificar → fatal.
+    expect(anterior.status, anterior.stdout).toBe(1);
+    expect(anterior.stdout).toContain('no hay Function confirmada que verificar');
+    // Dos avisos seguidos y UNA sola confirmación después: las dos confirmadas desde el primer aviso son candidatas.
+    const dos = compuerta(real, { SOLO: SOLO_COMPLETO, SITIO_CONSOLA: 'proyecto-ficticio', SITIO_CATALOGO: 'catalogo-ficticio', ...STG23 });
+    const cand = (dos.salidas['candidatas'] ?? '').split(',').filter(Boolean);
+    const lineas = real.split('\n');
+    const primer = lineas.findIndex((l) => l.includes('unexpected state'));
+    const esperadas = lineas.slice(primer).filter((l) => /Successful (create|update|delete) operation\./.test(l)).length;
+    expect(cand.length, dos.stdout).toBe(esperadas);
     // Sin avisos no hay warning ni candidatas.
     const limpio = corre(real.split('\n').filter((l) => !l.includes('unexpected state')).join('\n'));
     expect(limpio.status).toBe(0); expect(limpio.stdout).not.toContain('unexpected state');
@@ -328,9 +336,13 @@ describe('compuerta del registro de `firebase deploy`', () => {
     expect(prod.status).toBe(1);
     expect(prod.stdout).toContain('unexpected state');
     // STAGING completo: warning.
-    const stg = compuerta(`${EXITOSO}${AVISO}`, STG);
+    const stg = compuerta(`${AVISO}${EXITOSO}`, STG);
     expect(stg.status, stg.stdout).toBe(0);
     expect(stg.stdout).toMatch(/::warning::firebase-tools avisó 1 vez\/veces «unexpected state»/);
+    // NEGANDO (seguridad 27/11): aviso sin NINGUNA confirmación posterior = nada que verificar = fatal.
+    const sinCand = compuerta(`${EXITOSO}${AVISO}`, STG);
+    expect(sinCand.status).toBe(1);
+    expect(sinCand.stdout).toContain('no hay Function confirmada');
     // NEGANDO en staging: una Function CREADA, o el despliegue a medias, sigue siendo fatal.
     const conCreate = compuerta(`${EXITOSO}i  functions: creating Node.js 22 (2nd Gen) function admin:fnNueva(us-east1)...\n✔  functions[admin:fnNueva(us-east1)] Successful create operation.\n${AVISO}`, STG);
     expect(conCreate.status).toBe(1);

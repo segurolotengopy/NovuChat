@@ -263,7 +263,7 @@ del proyecto de producción. Lo que hay:
     «Successful create operation», «failed to create function», «while trying to create»). Los anclajes son de **línea entera**: «Deploy complete!»
     del propio proceso, «release complete» de cada sitio, y toda Function iniciada (aunque tenga espacios o un resto de spinner tras «...») tiene su
     «Successful» en el ÚLTIMO intento (el de un intento anterior no la tapa). **Verificación automática:** el warning entrega las Functions
-    candidatas (`candidatas` en la salida del paso; el aviso no nombra la Function, así que son las confirmadas junto a él) y el paso siguiente de
+    candidatas (`candidatas` en la salida del paso; el aviso no nombra la Function, así que son TODAS las confirmadas del último intento desde el primer aviso; si hay aviso y ninguna candidata, la compuerta falla) y el paso siguiente de
     staging corre `scripts/verificar-invocadores-candidatas.sh`, que lee (solo lectura) el IAM del servicio de cada una y **falla el job** si alguna
     no tiene `roles/run.invoker` o no se puede leer. **Límites declarados:** (a) una actualización sin servicio asociado conserva el IAM ANTERIOR:
     un cambio de invoker pedido en el código no se aplicó y solo se detecta si deja el servicio sin invocador; (b) firebase-tools, al recrear una
