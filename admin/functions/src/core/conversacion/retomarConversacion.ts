@@ -32,7 +32,8 @@
  *     mismo margen de 60 s con el que `enviarComoPersona` la da por cerrada: en cada instante exactamente una de las dos
  *     vías (escribir o retomar) está disponible. Sin `ultimoEntranteEn` legible, `noExiste`: no se retoma lo que el
  *     cliente nunca inició; un `ultimoEntranteEn` del futuro lejano es un dato malo (`noDisponible`).
- *  5. Contacto bloqueado (`contactoBloqueado`) o `noContactar === true` (`noContactar`).
+ *  5. Contacto bloqueado (`contactoBloqueado`), `noContactar === true` (`noContactar`) o con una baja de la campaña
+ *     saliente, `tenants/{id}/bajas/{conversacionId}` (`conBaja`, M3: la plantilla promete «no le escribiremos más»).
  *  6. Un turno vigente de OTRA persona (`ocupada`).
  *  7. Un solo Retomar hasta que el cliente responda (D-R3): si `ultimaRetomadaEn` es posterior a `ultimoEntranteEn` y
  *     cae dentro de `diasEntreRetomadas` (7), `retomadaPendiente`. Un `ultimaRetomadaEn` ilegible falla cerrado.

@@ -968,6 +968,24 @@ describe('campaña saliente (PR-A): `autor: campana` solo con plantilla, 0 pará
     expect(timbre).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['una marca de tiempo', () => Timestamp.now()], ['`true`', () => true], ['`null`', () => null],
+  ])('RIESGO, NIEGA: `riesgoEn` (%s) frena la campaña aunque `noContactar` esté ausente o en false', async (_n, valor) => {
+    const timbre = vi.fn(async () => true);
+    vi.stubGlobal('fetch', timbre);
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ noContactar: false, riesgoEn: valor() });
+    await sembrarCampana(CLAVE(1));
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', contado: false });
+    expect(timbre).not.toHaveBeenCalled();
+  });
+
+  it('RIESGO, control: `riesgoEn` solo frena a la campaña; un Retomar de persona con `riesgoEn` sigue como hoy', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ riesgoEn: Timestamp.now() });
+    await sembrarCampana(CLAVE(1), { autor: 'persona', plantilla: RETOMAR });
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toHaveLength(1);
+  });
+
   it('M1, control: `false` en `noContactar` y `bloqueada` NO frena la campaña', async () => {
     await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ noContactar: false, bloqueada: false });
     await sembrarCampana(CLAVE(1));

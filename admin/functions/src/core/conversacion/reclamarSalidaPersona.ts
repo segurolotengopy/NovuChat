@@ -167,8 +167,9 @@ export async function reclamarSalida(
       // M1: la campaña CIERRA ANTE LA DUDA (como `rescates.ts`): cualquier valor de `noContactar` o `bloqueada` distinto de
       // ausente o `false` (`'true'`, `1`, `null`…) la frena.
       const marcado = (v: unknown): boolean => v !== undefined && v !== false;
+      // `riesgoEn` (persona en crisis, lo escribe solo el servidor) frena la campaña igual que en `rescates.ts`.
       const noSaleAlContacto = bajaDeCampana?.exists === true
-        || (esCampana && (marcado(conv.get('noContactar')) || marcado(conv.get('bloqueada'))));
+        || (esCampana && (marcado(conv.get('noContactar')) || marcado(conv.get('bloqueada')) || marcado(conv.get('riesgoEn'))));
       // O1 (declarado, es del PR-C): la campaña NO tiene tope propio en el servidor (ni por día ni por tanda ni uno por
       // contacto) y COMPARTE esta cola (limit MAXIMO_POR_RECLAMO*2, orden por `ts`, caducidad de 2 min) con los textos y los
       // Retomar de las personas: una tanda grande puede dejar caducar mensajes de personas del mismo comercio.
