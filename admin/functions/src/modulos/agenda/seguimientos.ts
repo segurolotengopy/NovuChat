@@ -288,7 +288,7 @@ export const seguimientoEnviado = onRequest(
     const idConversacion = `wa_${telefono}`;
     const refConversacion = db.doc(`tenants/${tenantId}/conversaciones/${idConversacion}`);
     const refBaja = db.doc(`tenants/${tenantId}/bajas/${idConversacion}`);
-    const refMetricas =db.doc(`tenants/${tenantId}/metricas/${periodoDe()}`);
+    const refMetricas = db.doc(`tenants/${tenantId}/metricas/${periodoDe()}`);
     const ahoraMs = Date.now();
 
     // IDEMPOTENTE POR CONSTRUCCIÓN, y es la mitad del candado: el barrido corre
