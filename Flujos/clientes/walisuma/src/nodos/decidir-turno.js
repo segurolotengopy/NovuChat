@@ -24,6 +24,9 @@ const base = cnPrimero('Config base') || {};
 const from = String(t.from || '');
 const ahora = Number(t.ahoraMs) || Date.now();
 let textoDelTurno = '';
+// Los textos agrupados de la ráfaga (solo si «Agrupar ráfaga» agrupó; en cualquier otro turno el nodo no corrió o no trae `textoDelTurno`).
+const rafagaDelTurno = cnPrimero('Agrupar ráfaga') || {};
+const agrupado = typeof rafagaDelTurno.textoDelTurno === 'string' && rafagaDelTurno.textoDelTurno.trim() !== '' ? rafagaDelTurno.textoDelTurno : '';
 const panel = wlPanelDe(cnPrimero('Traer configuración'));
 const vendibles = wlVendibles(panel);
 const cobro = wlCobro(panel);
@@ -113,7 +116,11 @@ if (esAudio) {
   if (!m || String(m[1]).trim() === '') return salir({ tipo: 'audio_fijo', causa: /más de cinco minutos/.test(entradaMedio) ? 'largo' : 'no_entendido' });
   texto = cbLinea(m[1], 1500);
 } else if (t.categoria === 'conversacion') {
-  texto = t.seleccionId ? cbLinea(t.seleccionTitulo, 100) : cbLinea(t.texto, 1500);
+  // RÁFAGA (pieza común del core, `Agrupar ráfaga`): si varios textos seguidos del mismo teléfono se agruparon, esta ejecución responde por todos y `textoDelTurno` trae los textos unidos por salto de línea.
+  // Un toque de botón o lista (`seleccionId`) nunca se agrupa. El reporte del entrante NO cambia: cada texto se reportó por separado con su propio `idMeta`.
+  // Con la ráfaga, cada texto se sanea POR SEPARADO (mismos saneos de `cbLinea`) y se vuelven a unir con SALTO DE LÍNEA, para que el modelo no pierda el corte entre mensajes; tope total 1.500. Un solo mensaje: igual que siempre.
+  const agrupadoEnLineas = agrupado !== '' ? agrupado.split('\n').map((linea) => cbLinea(linea, 1500)).filter((linea) => linea !== '').join('\n').slice(0, 1500).trimEnd() : '';
+  texto = t.seleccionId ? cbLinea(t.seleccionTitulo, 100) : (agrupadoEnLineas !== '' ? agrupadoEnLineas : cbLinea(t.texto, 1500));
   // El toque de «Confirmar pedido» DE ESTE pedido (id con la huella del carrito y la entrega que el cliente vio) es la orden de cerrar: va a un plan SIN modelo que cierra con las líneas y la entrega de la ficha y emite el QR en este turno.
   // Un botón de otro pedido (huella distinta) no confirma nada: queda como el texto del título.
   if (t.seleccionId && Array.isArray(ficha.carrito) && ficha.carrito.length > 0 && wlEntregaCompleta(ficha.entrega)
@@ -130,7 +137,9 @@ if (n === '') return salir({ tipo: 'otro' });
 // confirmar una baja que el servidor no registró sería prometer lo que no se cumple. Un audio no entendido o vacío ya salió arriba (`audio_fijo`). Un toque de lista no es una baja; una foto con pie de baja queda marcada sin confirmación (el lado seguro).
 // TOPE (decisión de Andres, segunda pasada 16/11/2026): solo una transcripción CORTA (hasta `BJ_VOZ_MAX` caracteres) es una baja; un audio largo sigue su camino normal.
 const BJ_VOZ_MAX = 160;
-if (esAudio ? (texto.length <= BJ_VOZ_MAX && bjPideBaja(texto)) : (!t.seleccionId && bjPideBaja(t.texto))) return salir({ tipo: 'baja', porVoz: esAudio });
+// Con textos agrupados (ráfaga) la baja se evalúa LÍNEA POR LÍNEA sobre el texto agrupado: un «no me escribas más» dicho antes del último texto no se pierde (la regla de baja mira un mensaje a la vez).
+const pideBajaEscrita = agrupado !== '' ? agrupado.split('\n').some((linea) => bjPideBaja(linea)) : bjPideBaja(t.texto);
+if (esAudio ? (texto.length <= BJ_VOZ_MAX && bjPideBaja(texto)) : (!t.seleccionId && pideBajaEscrita)) return salir({ tipo: 'baja', porVoz: esAudio });
 
 // 3. Sin catálogo no se improvisa: recepción.
 if (!configLista) return sinConfig();
