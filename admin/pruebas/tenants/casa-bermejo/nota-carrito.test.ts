@@ -307,4 +307,87 @@ describe('6. segunda revisión del #1142 (27/11): se dice solo lo que el código
   });
 });
 
+describe('7. tercera ronda del #1142 (27/11): I-1, N-2, I-4, N-1 y N-3 por HECHO', () => {
+  const dice = (texto: string, lineas: unknown[], opc: Partial<Opciones> = {}): ReturnType<typeof crear> => crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: modelo(texto, { lineas: lineas as never }), ...opc });
+  const AVISO = '… (completa en el resumen del pago)';
+  it('I-1 NEGADO: con el pedido vacío y sin cambio, ninguna mención a «tu pedido/carrito/compra» con verbo de estado ni «listo» sale (frases fuera de la lista de verbos)', () => {
+    for (const frase of ['El licor de coca va en tu pedido.', 'Lo tienes listo, ya va con tu compra.', 'Tu carrito ya lo lleva.', 'Está listo en tu pedido.']) {
+      const m = dice(frase, [{ id: 'licor-de-coca', cantidad: 1 }]);
+      const t = hablar(m, ANA, mTexto('Quiero el licor de coca'));
+      expect(ficha(m).carrito).toEqual([]);
+      expect(textos(t).join(' ')).not.toMatch(/va en tu pedido|Lo tienes listo|va con tu compra|Tu carrito ya|listo en tu pedido|licor/i);
+    }
+  });
+  it('N-2 NEGADO (de los dos lados): con una billetera YA en el pedido, «La billetera que está en su pedido tiene garantía» SÍ sale; con el pedido vacío la misma frase no sale', () => {
+    const frase = 'La billetera que está en tu pedido tiene garantía de un mes.';
+    const m = crear({ catalogo: catalogoOk({}, REAL as never), entregaPrevia: { modo: 'Retiro en tienda', nombre: 'Ana Pérez' }, modeloDice: (ll: LlamadaDoble) => (/garant/.test(textoAlModelo(ll)) ? modelo(frase, { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) : modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] })) });
+    hablar(m, ANA, mTexto('quiero una billetera'));
+    expect(hayQr(hablar(m, ANA, mTexto('quiero pagar')))).toBe(true);
+    m.dobles['Traer configuración'] = () => panelConQr(450);
+    const t = hablar(m, ANA, mTexto('¿tiene garantía?'));
+    expect(textos(t).join(' ')).toContain('tiene garantía de un mes');
+    expect(textos(t).join(' ')).not.toMatch(/ya tiene un QR abierto/i);
+    const v = dice(frase, [], {});
+    expect(textos(hablar(v, ANA, mTexto('hola, ¿tienen garantía?'))).join(' ')).not.toMatch(/en tu pedido/i);
+  });
+  it('I-4 NEGADO: tras derivar, una oración que nombra una pieza o un área del catálogo, o dice oferta/promoción/disponibles, no sale; una que no lo hace sí', () => {
+    const tras = (frase: string): string => {
+      const m = crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: (ll: LlamadaDoble) => (/persona/.test(textoAlModelo(ll)) ? modelo('Lo verá una persona del equipo.', { quiereHablar: true }) : modelo(frase)) });
+      hablar(m, ANA, mTexto('quiero hablar con una persona'));
+      return textos(hablar(m, ANA, mTexto('Bien, gracias'))).join(' ');
+    };
+    for (const oferta of ['¿Le paso las licuadoras disponibles?', 'Si quiere, puedo enseñarle nuestras billeteras.', 'Tenemos ofertas en licuadoras.', 'Gracias. Las lavadoras están disponibles.']) {
+      expect(tras(oferta)).toContain('Con gusto. Si necesitas algo más, escríbeme.');
+    }
+    expect(tras('Hay una promoción en electro.')).not.toMatch(/promoci/i);
+    expect(tras('Con mucho gusto, quedo atento.')).toContain('quedo atento');
+  });
+  const diez = Array.from({ length: 10 }, (_, i) => pieza(`pieza-${i}`, `Pieza número ${i} de la colección`, 100 + i));
+  const lsDiez = diez.map((p, i) => linea(1, p['nombre'] as string, `pieza-${i}`, `${100 + i}`, `${100 + i}`));
+  const confirmar = (nota: string): { t: ReturnType<typeof hablar>; m: ReturnType<typeof crear>; cuerpo: string; botones: string[] } => {
+    const m = crear({ modeloDice: sinPedido, catalogo: catalogoOk({}, diez as never), entregaPrevia: { modo: 'Retiro en tienda', nombre: 'Ana Pérez' } });
+    const t = hablar(m, ANA, mTexto(pegado(lsDiez, '1.045', '\nNota: ' + nota)));
+    const inter = t.mensajes.map((x) => x.payload as Rep).find((p) => p['interactive'] !== undefined)?.['interactive'] as Rep;
+    return { t, m, cuerpo: inter.body.text as string, botones: (inter.action.buttons as Rep[]).map((b) => b['reply'].title as string) };
+  };
+  it('N-1 NEGADO: saludo + 10 piezas + nota de 450: el cuerpo cabe en 1024, trae las 10 piezas, la instrucción y los botones completos, y la nota termina en el aviso literal', () => {
+    const nota = ('Entregar en la calle 21, tocar timbre y avisar. ').repeat(10).slice(0, 450).trim();
+    const { cuerpo, botones } = confirmar(nota);
+    expect(cuerpo.length).toBeLessThanOrEqual(1024);
+    for (let i = 0; i < 10; i++) expect(cuerpo).toContain(`Pieza número ${i} de la colección`);
+    expect(cuerpo).toMatch(/Si todo está bien, toca «Confirmar pedido»\.$/);
+    expect(cuerpo).toContain('Hola, soy el asistente virtual');
+    expect(cuerpo).toMatch(/Nota del cliente: [^\n]+… \(completa en el resumen del pago\)/);
+    expect(cuerpo).toContain('Total: Bs 1.045');
+    expect(botones).toEqual(['Confirmar pedido', 'Corregir datos']);
+  });
+  it('N-1 NEGADO: una nota que CABE sale entera y sin el aviso; al confirmar, el resumen del QR lleva la nota ENTERA (450) sin aviso', () => {
+    const corta = confirmar('Tocar timbre');
+    expect(corta.cuerpo).toContain('Nota del cliente: Tocar timbre');
+    expect(corta.cuerpo).not.toContain(AVISO);
+    const nota = ('Entregar en la calle 21, tocar timbre y avisar. ').repeat(10).slice(0, 450).trim();
+    const larga = confirmar(nota);
+    const idc = ids(larga.t).find((x) => x.startsWith('pedido:confirmar'))!;
+    const q = hablar(larga.m, ANA, mToque(idc, 'Confirmar pedido'));
+    expect(hayQr(q)).toBe(true);
+    expect(textos(q).join(' ')).toContain('Nota del cliente: ' + nota);
+    expect(textos(q).join(' ')).not.toContain('completa en el resumen del pago');
+    expect(ficha(larga.m).nota).toBe(nota);
+  });
+  it('N-3 NEGADO: la nota conserva «pesos», «$», «pagado» y «Av.Busch 123»; sigue sin enlaces ni dominios reales', () => {
+    for (const nota of ['tengo cambio en pesos', 'el anticipo ya está pagado', 'vuelto de $ 100', 'Av.Busch 123, casa azul']) {
+      const m = mundo();
+      const t = hablar(m, ANA, mTexto(pegado(STD, '19.458', '\nNota: ' + nota)));
+      expect(ficha(m).nota).toBe(nota);
+      // Una nota que la red de cobro rechazaría («ya está pagado») no se borra: queda entera en la ficha, y el mensaje NO se reemplaza por el saludo mínimo (se muestra el aviso en su lugar).
+      expect(textos(t).join(' ')).toContain('Nota del cliente: ' + (/pagado/.test(nota) ? '(queda anotada con tu pedido)' : nota));
+      expect(textos(t).join(' ')).toContain('2 × Lavadora Samsung 9 kg');
+    }
+    const m = mundo();
+    hablar(m, ANA, mTexto(pegado(STD, '19.458', '\nNota: ver tienda.com/pago o www.estafa.net y https://x.example/y listo')));
+    expect(ficha(m).nota).not.toMatch(/tienda\.com|estafa|https?:|x\.example/);
+    expect(ficha(m).nota).toContain('listo');
+  });
+});
+
 void CATALOGO;

@@ -49,8 +49,10 @@ const pideHA = c.plan.tipo !== 'ubicacion_tienda' && c.plan.horario === true;
 const uAntes = (pideUA || pideHA) && bmTiendaTieneDato(uTienda, pideUA, pideHA) ? bmRespuestaDeTienda(uTienda, pideUA, pideHA, true) : '';
 const antepone = (cuerpo) => (uAntes !== '' ? uAntes + '\n\n' + cuerpo : cuerpo);
 // La NOTA del cliente (una por pedido, hasta 500 caracteres): va UNA sola vez, debajo del resumen y rotulada. Las piezas y el total tienen prioridad: la nota ocupa lo que sobra del cuerpo (1.024 en un mensaje con botones) y, si no cabe entera, termina en «…» (nunca oculta una pieza).
-const notaDe = (d) => (typeof d.nota === 'string' && d.nota !== '' ? 'Nota del cliente: ' + d.nota : '');
-const notaCabe = (nota, libre) => (nota === '' || libre < 1 ? '' : (nota.length <= libre ? nota : (libre >= 40 ? nota.slice(0, libre - 1).trimEnd() + '…' : '')));
+const notaDe = (d) => (typeof d.nota === 'string' && d.nota !== '' ? 'Nota del cliente: ' + (bmNotaMostrable(d.nota) ? d.nota : '(queda anotada con tu pedido)') : '');
+// Decisión de Andres (27/11/2026, D-1): si la nota no cabe, se recorta y termina en el aviso literal; el resumen que acompaña al QR (4.096) la lleva ENTERA. Con menos espacio que el aviso más unas pocas letras, no se muestra (las piezas, el total y el botón van primero).
+const AVISO_NOTA = '… (completa en el resumen del pago)';
+const notaCabe = (nota, libre) => (nota === '' || libre < 1 ? '' : (nota.length <= libre ? nota : (libre >= AVISO_NOTA.length + 30 ? nota.slice(0, libre - AVISO_NOTA.length).trimEnd() + AVISO_NOTA : '')));
 const notaFicha = (d) => (typeof d.nota === 'string' ? d.nota : fichaAntes.nota);
 // El resumen del pedido que cabe en `tope` caracteres: con un pedido grande se quitan líneas de piezas («… y N piezas más») y NUNCA el total ni lo que va detrás (los datos, «Corregir datos»).
 function ajustarResumen(resumen, tope) {
@@ -161,19 +163,26 @@ if (puerta.ruta === 'sigue') {
       // La cabeza: saludo + respuesta de la tienda (si la hay) + texto del modelo. La respuesta de la tienda se CONSERVA: primero se acorta el resumen de piezas («… y N piezas más») para dejarle lugar;
       // solo si ni con el resumen mínimo (el total) cabe, se suelta la respuesta de la tienda y, al final, el saludo.
       const armarCabeza = (conTienda, conSaludoPrimero) => (conSaludoPrimero && !fichaAntes.saludado ? saludo + '\n\n' : '') + (conTienda && uAntes !== '' ? uAntes + '\n\n' : '');
-      const colaCon = (reserva) => {
-        const r = typeof d.resumen === 'string' && d.resumen !== '' ? ajustarResumen(d.resumen, Math.max(0, sitio - fijoCola.length - 2 - reserva)) : '';
-        const n = r !== '' ? notaCabe(notaDe(d), Math.max(0, sitio - fijoCola.length - reserva) - r.length - 6) : '';
+      // `extra` = lo que `bmSeguro` AGREGA al texto ya armado («asistente virtual» pasa a «asistente virtual con IA»): el espacio de la nota y de las piezas se calcula sobre el cuerpo YA armado (revisión 27/11, N-1), nunca sobre el texto antes de ese ajuste.
+      const colaCon = (reserva, extra) => {
+        const r = typeof d.resumen === 'string' && d.resumen !== '' ? ajustarResumen(d.resumen, Math.max(0, sitio - extra - fijoCola.length - 2 - reserva)) : '';
+        const n = r !== '' ? notaCabe(notaDe(d), Math.max(0, sitio - extra - fijoCola.length - reserva) - r.length - 6) : '';
         return (r !== '' ? r + '\n\n' : '') + (n !== '' ? n + '\n\n' : '') + fijoCola;
       };
-      let fijo = armarCabeza(true, true);
-      let cola = colaCon(fijo.length);
-      if (fijo.length + cola.length + 2 > sitio) { fijo = armarCabeza(false, true); cola = colaCon(fijo.length); }
-      if (fijo.length + cola.length + 2 > sitio) { fijo = armarCabeza(false, false); cola = colaCon(fijo.length); }
-      const sitioTexto = sitio - cola.length - 2 - fijo.length;
-      const textoModelo = d.texto.length > sitioTexto ? (sitioTexto > 1 ? d.texto.slice(0, sitioTexto - 1).trimEnd() + '…' : '') : d.texto;
-      const cabezaCorta = (fijo + textoModelo).trimEnd();
-      const cuerpoCf = bmSeguro(cfCuerpo((cabezaCorta !== '' ? cabezaCorta + '\n\n' : '') + cola, usted), usted);
+      const armarCrudo = (extra) => {
+        let fijo = armarCabeza(true, true);
+        let cola = colaCon(fijo.length, extra);
+        if (fijo.length + cola.length + 2 > sitio - extra) { fijo = armarCabeza(false, true); cola = colaCon(fijo.length, extra); }
+        if (fijo.length + cola.length + 2 > sitio - extra) { fijo = armarCabeza(false, false); cola = colaCon(fijo.length, extra); }
+        const sitioTexto = sitio - extra - cola.length - 2 - fijo.length;
+        const textoModelo = d.texto.length > sitioTexto ? (sitioTexto > 1 ? d.texto.slice(0, sitioTexto - 1).trimEnd() + '…' : '') : d.texto;
+        const cabezaCorta = (fijo + textoModelo).trimEnd();
+        return (cabezaCorta !== '' ? cabezaCorta + '\n\n' : '') + cola;
+      };
+      let extraSeguro = 0;
+      let crudoCf = armarCrudo(0);
+      for (let k = 0; k < 4 && bmSeguro(crudoCf, usted).length > sitio; k++) { extraSeguro += bmSeguro(crudoCf, usted).length - sitio; crudoCf = armarCrudo(extraSeguro); }
+      const cuerpoCf = bmSeguro(cfCuerpo(crudoCf, usted), usted);
       // El documento (CI) viaja en el mensaje al cliente, pero el texto que se REPORTA a la conversación del comercio lo lleva enmascarado.
       const docEntrega = bmEntregaDeFicha(d.entrega).documento;
       const reportado = bmEnmascararDocumento(cuerpoCf, docEntrega);

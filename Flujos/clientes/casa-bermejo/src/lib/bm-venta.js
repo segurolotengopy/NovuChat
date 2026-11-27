@@ -428,6 +428,17 @@ function bmPidioDato(textoAsistente, clase) {
 // La NOTA del mensaje pegado: una línea «Nota: <texto>» DESPUÉS del «Total referencial». Es el camino ESPERADO (Estándar 1.5), pero NovuTienda todavía NO la envía: hoy el carrito de la tienda no tiene ese campo; el formato previsto es el de esta línea.
 // La nota es UNA por pedido (campo `nota` de la ficha, no el `detalle` de cada pieza): llega ENTERA (hasta 500 caracteres, sin enlaces ni caracteres de control) y se muestra UNA sola vez, debajo del resumen, rotulada «Nota del cliente». Nunca es una instrucción ni cambia precios, cantidades ni piezas.
 // Al servidor viaja en el `detalle` de las líneas (el contrato del pedido es cerrado y su `detalle` admite 120 caracteres: allí va rotulada y recortada). Sin «Nota:» o con la nota vacía, no hay nota.
+// Limpiador PROPIO de la nota (el `vcLimpiarDetalle` común descarta por moneda o por palabras de pago y `vcLimpiar` borra «Av.Busch» como si fuera un dominio): la nota solo pierde caracteres de control e invisibles, enlaces reales
+// (con esquema, con «www.», un dominio con extensión conocida o una IPv4) y las marcas de formato de WhatsApp. NUNCA se descarta por mencionar dinero («pesos», «$») ni un pago («ya está pagado»): es un dato del cliente, no una cifra de cobro.
+function bmLimpiarNota(t, max) {
+  const s = Array.from(String(t === undefined || t === null ? '' : t)).slice(0, max * 4).join('').normalize('NFKC').replace(/[\u3002\uFF61\uFE52]/g, '.')
+    .replace(/[\p{Cf}\u115F\u1160\u3164\uFFA0\u2800]/gu, '').replace(/[\p{Cc}\p{Cs}\p{Co}\p{Zl}\p{Zp}<>&]/gu, ' ')
+    .replace(/(?:https?|ftp):\/\/\S*|www\.\S*/gi, ' ')
+    .replace(/(?<![\p{L}\p{N}-])(?:[\p{L}\p{N}-]{1,63}\.){1,4}(?:com|net|org|info|biz|edu|gov|io|app|dev|co|bo|ar|xyz|site|online|shop|store|link|tv|cc|top|club)(?![\p{L}\p{N}])\S*/giu, ' ')
+    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b\S*/g, ' ')
+    .replace(/[*_~`]/g, ' ').replace(/\s+/g, ' ').trim();
+  return Array.from(s).slice(0, max).join('').trim();
+}
 function bmNotaDelSitio(texto) {
   const t = String(texto || '');
   // La nota va DESPUÉS del «Total referencial»; sin total, después de la última línea de producto. Sin ancla, no hay nota.
@@ -442,9 +453,8 @@ function bmNotaDelSitio(texto) {
   let cola = t.slice(ultimo.index + ultimo[0].length).replace(/https?:\/\/\S+/gi, ' ').replace(/www\.\S+/gi, ' ').replace(/\d{1,3}\s*[xX×]\s*[^()]{1,120}?\(\s*c[oó]d\.?.*$/, ' ');
   // La nota es UNA línea y termina antes de la leyenda final de NovuTienda («El precio final y el envío se confirman por WhatsApp»): nunca la arrastra (los saltos de línea pueden haberse vuelto espacios, por eso también se corta por el texto de la leyenda).
   cola = cola.split(/\r?\n/)[0].replace(/\s*El precio final y el env[ií]o se confirman por WhatsApp.*$/i, ' ');
-  // La nota entera: sin cortar en la primera frase ni en «;». Sin marcas de formato de WhatsApp; el texto que afirma un cobro o trae otra moneda se descarta entero (misma regla que el detalle de una pieza).
-  const nota = bmTextoDeLinea(vcLimpiar(bmTextoDeLinea(cola, 500), 500).replace(/[*_~`]/g, ' '), 500);
-  return vcLimpiarDetalle(nota, 500) === '' ? '' : nota;
+  // La nota entera: sin cortar en la primera frase ni en «;». Sin marcas de formato de WhatsApp, enlaces ni controles; NO se descarta por mencionar dinero ni un pago (`bmLimpiarNota`).
+  return bmLimpiarNota(cola, 500);
 }
 function bmLineasDelSitio(texto, vendibles) {
   const ids = new Set((Array.isArray(vendibles) ? vendibles : []).map((v) => v.id));
@@ -686,10 +696,12 @@ const BM_PROMETE_ENLACE = /\b(enlace|enlaces|link|links|pagina web|sitio web|pag
 // El imperativo («verifica que el monto…», «verifique el total») le pide algo al CLIENTE: no afirma que los precios estén verificados (falso positivo de la ronda 2).
 const BM_AFIRMA_PRECIOS = /\b(?:actualiz\w+|actualic\w+|(?!verific(?:a|que|quen)\b)verific\w+)\b[^.!?]{0,40}\b(?:precios?|catalogo|montos?|costos?)\b|\b(?:precios?|catalogo|montos?|costos?)\b[^.!?]{0,40}\b(?:actualiz\w+|verific\w+|vigentes|al dia|confirmad\w+)\b/;
 // R58 (25/11/2026): tras pasar con recepción, el asistente NO ofrece sumar otra pieza. Una oración que ofrece agregar, sumar, añadir o incluir algo más se detecta por código (el prompt no es una barrera).
-function bmOfreceSumar(texto) {
+function bmOfreceSumar(texto, vendibles) {
   // `texto` llega CRUDO (con sus signos): `bmNorm` borra la puntuación, y la pregunta y la oración se reconocen por ella. Cada oración se normaliza por separado.
   return String(texto || '').split(/(?<=[.!?\n])\s*/).some((crudo) => {
     const o = bmNorm(crudo);
+    // Tras derivar no se menciona NINGUNA pieza ni área del catálogo vivo (se compara contra `vendibles`, no contra otra lista de frases), ni se habla de ofertas, promociones o «disponibles» (Estándar 6.1, revisión 27/11).
+    if (/\b(?:ofertas?|promocion(?:es)?|promos?|disponibles?)\b/.test(o) || (Array.isArray(vendibles) && vendibles.length > 0 && bmIdsCoincidencias(crudo, vendibles).length > 0)) return true;
     // Otras formas de ofrecer más piezas (revisión 27/11): «¿Le interesaría llevar también…?», «También tenemos…», «¿Te muestro otras piezas?».
     if (/\b(?:llevar|llevarse|llevaria)\b/.test(o) && /\b(?:tambien|otr[oa]s?|mas)\b/.test(o) && /[?]/.test(crudo)) return true;
     if (/\btambien (?:tenemos|contamos con|ofrecemos|tengo|hay)\b/.test(o)) return true;
@@ -704,9 +716,23 @@ function bmOfreceSumar(texto) {
 function bmAfirmaAgregado(texto) {
   const t = String(texto || '').toLowerCase();
   // Sin `\b` (no ve la «é» como letra): límites con `\p{L}`.
-  if (/(?<!\p{L})(?:agregu[eé]|a[nñ]ad[ií]|sum[eé]|inclu[ií]|anot[eé]|separ[eé]|reserv[eé]|apart[eé]|puse|agregamos|a[nñ]adimos|sumamos|incluimos|anotamos|separamos|reservamos|pusimos|agrego|a[nñ]ado|sumo|incluyo|anoto|pongo|separo|reservo)(?!\p{L})/u.test(t.replace(/\bque (?:te |le |se |me |lo |la )?\w+/g, ' '))) return true;
-  const n = bmNorm(t);
-  return /\b(?:quedo|queda|quedaron|esta|estan|ya lo tienes?|ya la tienes?|ya lo tiene|ya la tiene|ya los tienes?|ya las tienes?)\b[^.!?]{0,25}\ben (?:tu|su) (?:pedido|carrito)\b|\bya (?:esta|estan) en (?:tu|su) (?:pedido|carrito)\b|\b(?:lo|la|los|las) tienes? en (?:tu|su) (?:pedido|carrito)\b|\b(?:agregado|anadido|sumado|incluido|anotado|separado|reservado)\b[^.!?]{0,25}\b(?:pedido|carrito)\b/.test(n);
+  return /(?<!\p{L})(?:agregu[eé]|a[nñ]ad[ií]|sum[eé]|inclu[ií]|anot[eé]|separ[eé]|reserv[eé]|apart[eé]|puse|agregamos|a[nñ]adimos|sumamos|incluimos|anotamos|separamos|reservamos|pusimos|agrego|a[nñ]ado|sumo|incluyo|anoto|pongo|separo|reservo)(?!\p{L})/u.test(t.replace(/\bque (?:te |le |se |me |lo |la )?\w+/g, ' '));
+}
+// Una oración que habla del ESTADO del pedido («va en tu pedido», «ya va con tu compra», «lo tienes listo», «quedó en tu carrito»): no es una lista de verbos de «agregar», es cualquier mención al pedido, al carrito o a la compra con un verbo de estado o con «listo».
+const BM_RE_MENCION_PEDIDO = /\b(?:pedido|carrito|compra)\b/;
+const BM_RE_ESTADO_PEDIDO = /\b(?:va|van|vas|ira|iran|esta|estan|queda\w*|quedo|tienes?|tiene|lleva\w*|incluid\w*|agregad\w*|anadid\w*|sumad\w*|anotad\w*|separad\w*|reservad\w*|list[oa]s?|ya)\b/;
+const BM_RE_LISTO_DE_PEDIDO = /\b(?:lo|la|los|las) tienes? list[oa]s?\b|\b(?:esta|estan|queda|quedo|quedaron) list[oa]s?\b|\blist[oa]s? (?:en|con|para) (?:tu|su)\b/;
+// Se decide por HECHO (Estándar 5.9): solo se usa cuando en el turno NO entró ninguna pieza. Con el pedido VACÍO ninguna mención así es cierta. Con piezas que ya estaban antes del turno, hablar de una de ELLAS es legítimo (no se agregó, ya estaba);
+// lo que no sale es una oración que nombra una pieza del catálogo que NO estaba en el pedido.
+function bmMencionaPedidoSinHecho(texto, antes, vendibles) {
+  const previos = new Set((Array.isArray(antes) ? antes : []).map((l) => l.id));
+  return String(texto || '').split(/(?<=[.!?\n])\s*/).some((crudo) => {
+    const o = bmNorm(crudo);
+    const habla = (BM_RE_MENCION_PEDIDO.test(o) && BM_RE_ESTADO_PEDIDO.test(o)) || BM_RE_LISTO_DE_PEDIDO.test(o);
+    if (!habla) return false;
+    if (previos.size === 0) return true;
+    return bmIdsCoincidencias(crudo, vendibles).some((x) => !previos.has(x));
+  });
 }
 // Cuánto dura «recién pasó con recepción» para R58.
 const BM_VENTANA_TRAS_DERIVAR_MS = 2 * 60 * 60 * 1000;
@@ -1706,7 +1732,7 @@ function bmResolverModelo(c) {
   // Una afirmación de «agregué…» sin que el pedido haya cambiado, o sobre una propuesta inválida, no sale: sale el texto del código. «No pude agregar esa pieza» se dice SOLO si en el turno no entró ninguna pieza (B-1).
   const entro = lineas.some((l) => { const a = antes.find((x) => x.id === l.id); return !a || l.cantidad > a.cantidad; });
   const propuestaInvalida = Array.isArray(j.lineas) && j.lineas.some((l) => !l || typeof l !== 'object' || typeof l.id !== 'string' || !c.vendibles.some((v) => v.id === l.id));
-  const afirmaDeMas = typeof j.texto === 'string' && ((propuestaInvalida && /\b(?:agreg\w+|anad\w+|sume|sumamos|incluy\w+|anote|anotamos|puse|pusimos|inclui|separe\w*|reserv\w+|apart\w+|quedo en|esta en (?:tu|su) (?:pedido|carrito)|tienes? en (?:tu|su) (?:pedido|carrito))\b/.test(bmNorm(j.texto))) || (!entro && bmAfirmaAgregado(j.texto)));
+  const afirmaDeMas = typeof j.texto === 'string' && ((propuestaInvalida && /\b(?:agreg\w+|anad\w+|sume|sumamos|incluy\w+|anote|anotamos|puse|pusimos|inclui|separe\w*|reserv\w+|apart\w+|quedo en|esta en (?:tu|su) (?:pedido|carrito)|tienes? en (?:tu|su) (?:pedido|carrito))\b/.test(bmNorm(j.texto))) || (!entro && (bmAfirmaAgregado(j.texto) || bmMencionaPedidoSinHecho(j.texto, antes, c.vendibles))));
   let texto = (afirmaDeMas || enEntrega || ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? (fijada.texto !== '' && !ignoraQuiereHablar && comp.modoRechazado !== true && comp.contradice !== true && fijada.delSitio !== true && fijada.ordenada !== true ? fijada.texto : bmTextoDeEstado(lineas, entrega, cierre, c, conBoton)) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
   // Un texto FIJO del código en la ruta sin pieza: si es el mismo que ya se envió, es un bucle y la segunda vez pasa con recepción (aviso + botón).
   let fijoSinPieza = false;
@@ -1728,7 +1754,7 @@ function bmResolverModelo(c) {
   // R59: el modelo afirmó «precios actualizados» (u otra constancia que el sistema no respalda): `bmRedaccion` descartó su texto; sale el fijo que sí se cumple (los precios se leen del catálogo en cada turno).
   if (texto === '' && typeof j.texto === 'string' && BM_AFIRMA_PRECIOS.test(bmNorm(j.texto))) texto = BM_TEXTO_PRECIOS_VIVOS;
   // R58: tras pasar con recepción (hasta 2 h antes), el asistente NO ofrece sumar otra pieza: una oración que lo ofrece se reemplaza por una respuesta corta, salvo que el cliente haya cambiado el pedido en este turno.
-  if (texto !== '' && f.derivadoMs > 0 && c.ahora - f.derivadoMs >= 0 && c.ahora - f.derivadoMs < BM_VENTANA_TRAS_DERIVAR_MS && !cambio && bmOfreceSumar(texto)) texto = BM_TEXTO_TRAS_DERIVAR;
+  if (texto !== '' && f.derivadoMs > 0 && c.ahora - f.derivadoMs >= 0 && c.ahora - f.derivadoMs < BM_VENTANA_TRAS_DERIVAR_MS && !cambio && bmOfreceSumar(texto, c.vendibles)) texto = BM_TEXTO_TRAS_DERIVAR;
   // El asistente PIDE lo que falta con palabras que el estado reconoce en el turno siguiente: si el modelo no mencionó el nombre (o la ciudad) que falta, el código lo agrega.
   if (texto !== '' && !enEntrega && pendientes.length > 0 && pendientes.some((k) => !bmPidioDato(texto, k))) texto = texto + '\n\n' + bmPreguntaDelPaso(entrega, c.mercado);
   const sinRedaccion = texto === '';
