@@ -12,13 +12,24 @@ import type { J } from '../../lib/flujo';
 import type { Enviado, Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
 import * as bermejo from '../../tenants/casa-bermejo/mundo';
 import * as walisuma from '../../tenants/walisuma/mundo';
+import { flujosDeProduccion } from '../../lib/flujos-de-cliente';
+import { leerFlujo } from '../../lib/flujo';
+import { atiendeCliente, idDeFlujo } from '../migracion/comprobaciones';
 import { parrafosLargos, problemasDeMensaje } from './catalogo';
+import { DADOS_DE_BAJA, VENCE_MAXIMO, type ExcepcionConVencimiento } from './piezas-de-catalogo';
 import { problemasDeLimites } from './vigilante';
 
-/** Los flujos de venta (nombre del JSON): los que el estándar cubre. Se descubren de la lista única; este arreglo los NOMBRA para que uno nuevo no pase inadvertido. */
-export const FLUJOS_DE_VENTA = [
-  'casa-bermejo.json', 'walisuma.json', 'demo-b-venta-cobro.json', 'venta-minima.qtaco.json', 'venta-minima.qtaco-3727.json', 'rroca-antonio.json', 'rroca-ruben.json', 'chat-novuchat.novuchat.json',
-] as const;
+/**
+ * Los flujos de venta (nombre del JSON), DESCUBIERTOS del registro de flujos de producción (`flujosDeProduccion`): los que atienden a un cliente y cobran
+ * («Cotejar en el servidor»), menos los declarados como «no es de venta» y los dados de baja. Un flujo nuevo entra solo; nunca una lista escrita a mano.
+ */
+export function flujosDeVenta(): string[] {
+  return flujosDeProduccion()
+    .filter((r) => { const f = leerFlujo(r); return f.nodes.some((n) => n.name === 'Cotejar en el servidor') && atiendeCliente(f); })
+    .map((r) => idDeFlujo(r).split('/').pop()!)
+    .filter((n) => !(n in NO_SON_DE_VENTA) && !(n in DADOS_DE_BAJA))
+    .sort();
+}
 
 /** Flujos de producción con cobro que NO son de venta de productos (agenda con seña): el estándar de venta no los cubre. */
 export const NO_SON_DE_VENTA: Record<string, string> = {
@@ -57,14 +68,14 @@ export const ADAPTADORES: Record<string, Adaptador> = {
   })),
 };
 
-/** Los flujos de venta sin conversación simulada común: se miden con su suite propia y quedan DECLARADOS aquí con su porqué. Solo puede achicarse. */
-export const SIN_ADAPTADOR: Record<string, string> = {
-  'demo-b-venta-cobro.json': 'Su mundo de pruebas es el de venta-minima-flujo.test.ts (con sesión de mentira propia); aún no se envuelve en un adaptador común.',
-  'venta-minima.qtaco.json': 'Su mundo de pruebas es el de venta-minima-flujo.test.ts (con sesión de mentira propia); aún no se envuelve en un adaptador común. Q\'Taco tiene su propia sesión.',
-  'venta-minima.qtaco-3727.json': 'Misma base que venta-minima.qtaco.json: sin adaptador común todavía.',
-  'rroca-antonio.json': 'Su mundo vive en tenants/rroca-antonio/mundo.ts y vende un producto digital sin catálogo por categorías; sin adaptador común todavía.',
-  'rroca-ruben.json': 'Rubén y sus subcuentas están dadas de baja (23/11/2026): no se mide.',
-  'chat-novuchat.novuchat.json': 'Es el chat de captación, no un comercio con catálogo: el estándar aplica «en lo que aplique» y lo mide su batería.',
+/**
+ * Los flujos de venta sin conversación simulada común: se miden con su suite propia y quedan DECLARADOS aquí con su porqué y su vencimiento. Solo puede achicarse.
+ * (El chat de captación no es un comercio con catálogo: no entra en `flujosDeVenta()`. Los rroca-* están en `DADOS_DE_BAJA`.)
+ */
+export const SIN_ADAPTADOR: Record<string, ExcepcionConVencimiento> = {
+  'demo-b-venta-cobro.json': { vence: VENCE_MAXIMO, motivo: 'Su mundo de pruebas es el de venta-minima-flujo.test.ts (con sesión de mentira propia); aún no se envuelve en un adaptador común. Queda como excepción declarada, no fuera del estándar.' },
+  'venta-minima.qtaco.json': { vence: VENCE_MAXIMO, motivo: 'Su mundo de pruebas es el de venta-minima-flujo.test.ts (con sesión de mentira propia); aún no se envuelve en un adaptador común. Q\'Taco tiene su propia sesión.' },
+  'venta-minima.qtaco-3727.json': { vence: VENCE_MAXIMO, motivo: 'Misma base que venta-minima.qtaco.json: sin adaptador común todavía.' },
 };
 
 // ----------------------------------------------------------------------------- la conversación

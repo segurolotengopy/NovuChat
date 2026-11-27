@@ -20,14 +20,57 @@ function cwEnlaceCatalogo(panel) {
   var w = c && typeof c === 'object' && !Array.isArray(c) ? c : null;
   return w && w.activo === true ? cwUrlValida(w.enlace) : '';
 }
-// Convierte el mensaje `m` ({ payload, texto, respaldo }) en un boton con el catalogo, en el mismo mensaje. Solo si es un
-// texto simple que cabe en el cuerpo del boton y hay enlace valido; devuelve si lo hizo.
+// Acorta `texto` a `max` caracteres por LÍNEAS enteras y NUNCA en silencio (estándar 2.2): al final dice cuántos productos (líneas con
+// viñeta) quedaron fuera y remite al catálogo. Un texto que cabe vuelve igual.
+function cwAcortarConRemision(texto, max) {
+  var t = String(texto === undefined || texto === null ? '' : texto);
+  if (t.length <= max) return t;
+  var reserva = 70;
+  var lineas = t.split('\n');
+  var quedan = [];
+  var largo = 0;
+  var i = 0;
+  for (; i < lineas.length; i++) {
+    var suma = (quedan.length ? 1 : 0) + lineas[i].length;
+    if (largo + suma > max - reserva) break;
+    quedan.push(lineas[i]);
+    largo += suma;
+  }
+  if (!quedan.length) quedan.push(cmRecorte(lineas[0], max - reserva));
+  var fuera = lineas.slice(i).filter(function (l) { return /^\s*[•\-*–]/.test(l); }).length;
+  var remision = fuera > 0 ? (fuera === 1 ? 'Hay 1 producto más; míralo en el catálogo.' : 'Hay ' + fuera + ' productos más; míralos en el catálogo.') : 'Hay más en el catálogo.';
+  return quedan.join('\n').trimEnd() + '\n\n' + remision;
+}
+// Pone el catálogo en el mensaje `m` ({ payload, texto, respaldo }), SIEMPRE que haya un enlace https válido y sin agregar mensajes
+// (Andres, 27/11/2026: el botón sale siempre):
+//   - texto simple: botón «Ver catálogo» (cta_url); si el cuerpo pasa de 1000 caracteres se acorta por líneas con la remisión
+//     «Hay N productos más; míralos en el catálogo.» (el respaldo conserva el texto entero);
+//   - mensaje que ya es interactivo (botones de respuesta o lista; WhatsApp no junta dos acciones): el enlace va como texto al final
+//     del cuerpo («Ver catálogo: <url>»), con el cuerpo acortado si hace falta para caber en 1024; botones y filas quedan intactos;
+//   - cualquier otro tipo (imagen, documento…): no se toca y devuelve false.
+// Devuelve si lo hizo.
 function cwConBotonCatalogo(m, enlace) {
   var url = cwUrlValida(enlace);
-  if (!url || !m || !m.payload || m.payload.type !== 'text' || typeof m.texto !== 'string' || m.texto.length > 1000) return false;
-  m.payload = cmEnlace(m.texto, 'Ver catálogo', url);
-  m.respaldo = m.texto + '\n\n' + url;
-  m.tipoReporte = 'interactive';
-  m.conBoton = true;
-  return true;
+  if (!url || !m || !m.payload || typeof m.texto !== 'string') return false;
+  if (m.payload.type === 'text') {
+    var cuerpo = cwAcortarConRemision(m.texto, 1000);
+    m.payload = cmEnlace(cuerpo, 'Ver catálogo', url);
+    m.respaldo = cmRecorte(m.texto, 4000 - url.length - 2) + '\n\n' + url;
+    m.texto = cuerpo;
+    m.tipoReporte = 'interactive';
+    m.conBoton = true;
+    return true;
+  }
+  var it = m.payload.type === 'interactive' ? m.payload.interactive : null;
+  if (it && (it.type === 'button' || it.type === 'list') && it.body && typeof it.body.text === 'string') {
+    if (it.body.text.indexOf(url) < 0) {
+      var pie = '\n\nVer catálogo: ' + url;
+      it.body.text = cwAcortarConRemision(it.body.text, 1024 - pie.length) + pie;
+    }
+    m.texto = it.body.text;
+    m.respaldo = (String(m.respaldo || '').indexOf(url) < 0 ? cmRecorte(String(m.respaldo || m.texto), 4000 - url.length - 2) + '\n\n' + url : m.respaldo);
+    m.conEnlaceEnTexto = true;
+    return true;
+  }
+  return false;
 }

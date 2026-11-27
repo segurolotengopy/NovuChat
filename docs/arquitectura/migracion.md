@@ -21,20 +21,20 @@ estado `mudado`. Una mudanza **nunca publica**: mueve la carpeta con `git mv` y 
 | qtaco-redireccion.qtaco.json | clientes/qtaco-redireccion | vivo | construir.mjs | M4 (excepción declarada) | Rearquitectura | mudado | fc15d011-187bf6ca-061f3cf1-bff34e5e-bc264f32-1386e9c9-a727f0d8-71cae22d |
 | qtaco-redireccion.qtaco-ruta-nueva.json | clientes/qtaco-redireccion | sin publicar | construir.mjs | M4 (excepción declarada) | Rearquitectura | mudado | f3765615-bf165adb-f4a40bf9-dd4a6f3b-e95d6594-45ddfb9d-7aad41ae-9699709a |
 | agenda-minima.v0.json | clientes/agenda-minima | vivo | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | dab9593a-8b3a5a90-3acbfe50-40dc6a6e-e42bc6d3-0f08db09-4ec829e7-4418fc8a |
-| captacion-minima.novuchat.json | experimental/captacion-minima | congelado | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 09014774-c4be6b23-d00b5afb-5ea002c7-5c769dcd-e068f337-73affbfc-866e5dc8 |
-| casa-bermejo.json | clientes/casa-bermejo | sin publicar | construir.mjs | M4 M5 (excepción declarada) | por asignar (Principal) | mudado | f5aeb9c1-5bd580b9-fff6d32f-584a7170-7d711fd0-5dab12c7-dc3da6f9-bafe4e46 |
-| chat-novuchat.novuchat.json | clientes/novuchat | vivo | construir.mjs | M4 M6 (excepción declarada) | Rearquitectura | mudado | e4264c67-a1122fe4-dd6079c1-cffcf5d8-794fe8a0-cd9c2462-ecc1d237-e492e8fd |
-| doctoras.rroca-emma.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | bd35706a-ac11978c-2b28d5af-0c7d7519-b0d97c11-82a149c0-1678bf22-3fc27788 |
-| doctoras.rroca-evy.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | f45dfddb-c0da538b-4b5c02b7-8f80cb95-efe5b115-4b5525a0-bdfce3bd-cfefe32a |
+| captacion-minima.novuchat.json | experimental/captacion-minima | congelado | construir.mjs | M1 M4 M5 M6 | por asignar (Principal) | pendiente | 1adcafe1-2b9e7a57-10630a48-394c1517-39d71591-b09f88dc-7ab59aec-18e3f98c |
+| casa-bermejo.json | clientes/casa-bermejo | sin publicar | construir.mjs | M4 M5 (excepción declarada) | por asignar (Principal) | mudado | d21ca01d-d2ae4ae3-49477d82-7346be7e-3380ed05-c7e09ce5-68305184-6dbc9751 |
+| chat-novuchat.novuchat.json | clientes/novuchat | vivo | construir.mjs | M4 M6 (excepción declarada) | Rearquitectura | mudado | b86510a6-205fb3a6-30b88e3d-f423d067-e5141541-6e8a698e-b9df70b1-06a0e20b |
+| doctoras.rroca-emma.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | 047fd904-cafadc98-36d01b32-d38973b9-1163c4fb-a634659f-020160ec-e845ae5b |
+| doctoras.rroca-evy.json | experimental/doctoras | congelado | construir.mjs | M1 M4 M5 M6 M7 | por asignar (Principal) | pendiente | e06cf8b9-64319e19-e43e6814-218f0d0b-b05b2e6f-442ef7a5-6c0d6b1b-259fe59c |
 | recordatorio-bellido.v1.json | experimental/recordatorio-bellido | demo | ninguno | M1 M2 M7 | por asignar (Principal) | pendiente | 64289535-4c20a3b1-19b0ab05-b8f97460-a209e62a-b87b132a-ae0d06ff-3c9bb15a |
-| rescate-22h.rroca-ruben.json | experimental/rescate-22h | sin publicar | construir.mjs --todos | M1 | por asignar (Principal) | pendiente | 5c391a85-95638b32-66af99e3-3101f10a-3bffced3-668af1cd-da89c049-0b1f3be9 |
-| rroca-antonio.json | clientes/rroca-antonio | vivo | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | 586db5a8-57d6c56a-9116a1db-c2690c3d-6d7e4b20-a13d3bc6-c7dab57f-d33377f2 |
-| rroca-emma.json | clientes/rroca-emma | vivo | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | a7f4a80e-a3ba1085-a7ee28ff-ecfa7b6d-24804b84-55403610-6e22d619-5a1c4c1b |
-| rroca-evy.json | clientes/rroca-evy | vivo | construir.mjs | M4 M6 (excepción declarada) | Rearquitectura | mudado | 38709581-e1b9adf9-6b12c969-a3d38cef-1131ab32-cdbd0c2d-8c1113d8-d7f1746d |
-| rroca-ruben.json | clientes/rroca-ruben | vivo | construir.mjs | M1 M4 M5 M6 | Rearquitectura | mudado | f2313a8b-7388df68-d29d1562-90115742-a0d0c54d-57ffbf1c-4e0c3b45-710dcfec |
+| rescate-22h.rroca-ruben.json | experimental/rescate-22h | sin publicar | construir.mjs --todos | M1 | por asignar (Principal) | pendiente | cc962e2f-0b2ab2e4-da77d2de-f1f7adbb-60a7b8a9-e0cf0995-64b8e1d1-e0d60e93 |
+| rroca-antonio.json | clientes/rroca-antonio | vivo | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | 7f2175e0-edf21ec7-ac3a13a4-7560e106-0e063447-7f12c8ce-60daaa91-9a4327ef |
+| rroca-emma.json | clientes/rroca-emma | vivo | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 0e6a2f0c-828c7ed4-4154a41c-31c796e8-7b48363b-cc7be377-2d793d13-6bbb923b |
+| rroca-evy.json | clientes/rroca-evy | vivo | construir.mjs | M4 M6 (excepción declarada) | Rearquitectura | mudado | 7800e54d-cd7311f8-7a001492-9bf97980-c60a6a3e-c98343c3-84c900c3-89d1d537 |
+| rroca-ruben.json | clientes/rroca-ruben | vivo | construir.mjs | M1 M4 M5 M6 | Rearquitectura | mudado | f38145c5-d2536b6a-7dfb9c63-b79d90ab-f031653e-cd2c64da-e6e056d0-2d7b7cda |
 | venta-minima.qtaco-3727.json | clientes/venta-minima | sin publicar | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | 42c4acb5-601c6938-ad19065e-46245d6d-827a6c44-8c396308-18651018-1bf75f10 |
 | venta-minima.qtaco.json | clientes/venta-minima | vivo | construir.mjs | M4 M5 M6 (excepciones declaradas) | Rearquitectura | mudado | 919f74f6-9a54e40e-8a12a955-132fd782-e5e759b9-b461913a-6f86c526-b6222837 |
-| walisuma.json | clientes/walisuma | sin publicar | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 9b91908b-8239e037-c87eed3f-86f22f0d-2104969e-67ea0a69-c0ba481a-26a96d89 |
+| walisuma.json | clientes/walisuma | sin publicar | construir.mjs | M4 M5 (excepción declarada) | Rearquitectura | mudado | 1fff8da6-44d9ed26-2f358432-9551b880-0e55665d-66aa9e2c-e46293a0-638aa602 |
 
 ## Cómo se lee
 
