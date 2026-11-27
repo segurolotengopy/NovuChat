@@ -129,7 +129,7 @@ function bmFilasDeLista(dato, region) {
 function bmFichaBase() {
   return {
     v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, fueraDePaisMs: 0, avisoPaisMs: 0,
-    carrito: [], entrega: bmEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, avisoNoCuadraMs: 0,
+    carrito: [], nota: '', entrega: bmEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, avisoNoCuadraMs: 0,
     aliasPedidoId: '', aliasEstado: '', aliasVenceMs: 0, aliasMontoCent: 0, aliasAr: '',
     catalogoOfrecido: false, pedidoCatalogo: '', derivadoMs: 0,
     pide: [],
@@ -174,6 +174,8 @@ function bmFichaVigente(e, ahoraMs) {
     fueraDePaisMs: bmNumero(e.fueraDePaisMs),
     avisoPaisMs: bmNumero(e.avisoPaisMs),   // cuándo se avisó a la tienda de que este teléfono es de otro país (una vez); NO se usa `fueraDePaisMs`, que la entrada común usa para callar al número
     carrito: bmCarritoDeFicha(e.carrito),
+    // La nota del cliente del mensaje pegado (UNA por pedido, hasta 500 caracteres; se vacía con el pedido).
+    nota: typeof e.nota === 'string' ? cbLinea(e.nota, 500) : '',
     entrega: bmEntregaDeFicha(e.entrega),
     cierre: e.cierre === true,
     pedidos: bmNumero(e.pedidos, 100000),
@@ -282,7 +284,9 @@ const BM_TEXTO_ARCHIVO_PESADO = 'Ese archivo es demasiado pesado para abrirlo.\n
 const BM_TEXTO_ARCHIVO_NO_ABIERTO = 'No pude abrir ese archivo.\n\n¿Me lo reenvías o me cuentas por escrito qué necesitas?';
 const BM_TEXTO_IMAGEN = 'Recibí tu imagen, pero por aquí no puedo verla con detalle.\n\nCuéntame por escrito qué pieza te interesa y con gusto te ayudo.';
 const BM_TEXTO_DOCUMENTO = 'Recibí tu archivo, pero por aquí no puedo leerlo con detalle.\n\nCuéntame por escrito qué pieza te interesa y con gusto te ayudo.';
-const BM_TEXTO_SIN_PIEZA = 'No encuentro eso en nuestro catálogo. Si busca otra pieza, cuénteme cuál y se la muestro.';
+// Sin piezas y sin texto del modelo: NO se niega el catálogo («No encuentro eso en nuestro catálogo» era falso cuando el modelo solo usaba un verbo fuera de la lista; Estándar 1.1). Se pide la pieza.
+// El botón «Ver catálogo» de este mensaje llega con el PR del catálogo (B2): hoy el texto no lo promete.
+const BM_TEXTO_SIN_PIEZA = 'Aún no tengo claro qué pieza busca. Cuénteme cuál le interesa y se la muestro.';
 // R59: los precios se leen del catálogo en CADA turno; esto es lo único que se afirma de ellos.
 const BM_TEXTO_PRECIOS_VIVOS = 'Los precios que te indico son los que figuran en el catálogo en este momento.';
 const BM_TEXTO_MODELO_SIN_REDACCION = 'Cuéntame un poco más de lo que buscas y con gusto te ayudo a encontrar la pieza.';

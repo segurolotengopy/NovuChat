@@ -48,6 +48,10 @@ const pideUA = c.plan.tipo !== 'ubicacion_tienda' && c.plan.ubicacion === true;
 const pideHA = c.plan.tipo !== 'ubicacion_tienda' && c.plan.horario === true;
 const uAntes = (pideUA || pideHA) && bmTiendaTieneDato(uTienda, pideUA, pideHA) ? bmRespuestaDeTienda(uTienda, pideUA, pideHA, true) : '';
 const antepone = (cuerpo) => (uAntes !== '' ? uAntes + '\n\n' + cuerpo : cuerpo);
+// La NOTA del cliente (una por pedido, hasta 500 caracteres): va UNA sola vez, debajo del resumen y rotulada. Las piezas y el total tienen prioridad: la nota ocupa lo que sobra del cuerpo (1.024 en un mensaje con botones) y, si no cabe entera, termina en «…» (nunca oculta una pieza).
+const notaDe = (d) => (typeof d.nota === 'string' && d.nota !== '' ? 'Nota del cliente: ' + d.nota : '');
+const notaCabe = (nota, libre) => (nota === '' || libre < 1 ? '' : (nota.length <= libre ? nota : (libre >= 40 ? nota.slice(0, libre - 1).trimEnd() + '…' : '')));
+const notaFicha = (d) => (typeof d.nota === 'string' ? d.nota : fichaAntes.nota);
 // El resumen del pedido que cabe en `tope` caracteres: con un pedido grande se quitan líneas de piezas («… y N piezas más») y NUNCA el total ni lo que va detrás (los datos, «Corregir datos»).
 function ajustarResumen(resumen, tope) {
   if (resumen.length <= tope) return resumen;
@@ -139,7 +143,10 @@ if (puerta.ruta === 'sigue') {
     llamadasModelo = c.plan.tipo === 'modelo' ? 1 : 0;   // el toque de «Confirmar pedido» o de un botón de entrega lo decide el código: 0 llamadas
     // Una pregunta de la tienda que vino CON otra cosa («¿dónde están ubicados? quiero una billetera»): la respuesta de la tienda va ANTEPUESTA, en este mismo mensaje (`antepone`).
     const textoTurno = antepone(d.texto);
-    const cuerpoModelo = conSaludo(textoTurno + (d.resumen ? '\n\n' + d.resumen : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : ''));
+    const baseModelo = textoTurno + (d.resumen ? '\n\n' + d.resumen : '');
+    const anuladoModelo = d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : '';
+    const notaModelo = d.resumen ? notaCabe(notaDe(d), 1000 - conSaludo(baseModelo + anuladoModelo).length - 2) : '';
+    const cuerpoModelo = conSaludo(textoTurno + (d.resumen ? '\n\n' + d.resumen : '') + (notaModelo !== '' ? '\n\n' + notaModelo : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : ''));
     // Sin botón «Ver catálogo» (Andres, 24/11/2026, D7): las piezas se muestran por este chat. Lo que el mensaje puede llevar es UN botón de respuesta que el código cumple: «Confirmar pedido» (pedido listo) o los de entrega (solo falta el modo).
     if (d.confirmable === true) {
       // El pedido está listo: el MISMO mensaje lleva el botón «Confirmar pedido» (0 mensajes más); tocarlo emite el QR en el mismo turno. Antes del QR el cliente VE los datos capturados (modo, nombre y, en el envío, departamento o provincia, ciudad, aclaración y documento)
@@ -156,7 +163,8 @@ if (puerta.ruta === 'sigue') {
       const armarCabeza = (conTienda, conSaludoPrimero) => (conSaludoPrimero && !fichaAntes.saludado ? saludo + '\n\n' : '') + (conTienda && uAntes !== '' ? uAntes + '\n\n' : '');
       const colaCon = (reserva) => {
         const r = typeof d.resumen === 'string' && d.resumen !== '' ? ajustarResumen(d.resumen, Math.max(0, sitio - fijoCola.length - 2 - reserva)) : '';
-        return (r !== '' ? r + '\n\n' : '') + fijoCola;
+        const n = r !== '' ? notaCabe(notaDe(d), Math.max(0, sitio - fijoCola.length - reserva) - r.length - 6) : '';
+        return (r !== '' ? r + '\n\n' : '') + (n !== '' ? n + '\n\n' : '') + fijoCola;
       };
       let fijo = armarCabeza(true, true);
       let cola = colaCon(fijo.length);
@@ -191,6 +199,7 @@ if (puerta.ruta === 'sigue') {
       msgs = [cmMensaje('cliente', cmEnlace(cuerpoR, 'Ver ubicación', uTienda.mapa), cuerpoR, cuerpoR + '\n\n' + uTienda.mapa, { tipoReporte: 'interactive', conBoton: true })];
     } else msgs = [texto(cuerpoModelo)];
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
+    nuevos.nota = notaFicha(d); ev.nota = fichaAntes.nota;
     nuevos.entrega = d.entrega;
     nuevos.cierre = d.cierre === true;
     // QUÉ DATO PIDIÓ EL CÓDIGO en este mensaje (séptima ronda): lo decide `bmResolverModelo` del estado de la entrega y garantiza que la pregunta sale en el texto; el turno siguiente decide por esto, no por el texto del modelo.
@@ -208,7 +217,7 @@ if (puerta.ruta === 'sigue') {
       tipoDePlan = 'derivar';
       msgs = [conRecepcion(conSaludo(BM_INTROS.monto_invalido + ' Escríbele a recepción con el botón.'))];
     } else {
-      const resumen = (d.desdeCatalogo === true ? 'Recibí su pedido del catálogo.\n\n' : '') + (d.cambioDePedido ? 'Actualicé tu pedido.\n\n' : '') + 'Este es el resumen de tu pedido:\n\n' + vcResumen(lineas)
+      const resumen = (d.desdeCatalogo === true ? 'Recibí su pedido del catálogo.\n\n' : '') + (d.cambioDePedido ? (d.cancelarCobro === true ? (usted || d.desdeCatalogo === true ? 'Actualicé su pedido. El QR anterior quedó anulado: no pague con él; el nuevo va abajo.\n\n' : 'Actualicé tu pedido. El QR anterior quedó anulado: no pagues con él; el nuevo va abajo.\n\n') : 'Actualicé tu pedido.\n\n') : '') + 'Este es el resumen de tu pedido:\n\n' + vcResumen(lineas) + (notaDe(d) !== '' ? '\n\n' + notaDe(d) : '')
         + '\n\nEntrega: ' + bmEntregaTexto(d.entrega) + '.' + (bmEsRetiro(bmEntregaDeFicha(d.entrega).modo) && uTienda.direccion !== '' ? ' Retira en: ' + (/[.!?]$/.test(uTienda.direccion) ? uTienda.direccion : uTienda.direccion + '.') : '') + ' El total no incluye el costo de entrega.\n\nAbajo va el QR para pagar.';
       const pie = bmSeguro('QR para pagar ' + vcMonto(d.total) + ' (pedido ' + d.pedidoId + '). Cuando pagues, envíame la foto del comprobante por este chat.', usted);
       const respaldo = 'No pude mostrarte el QR en este momento. Escríbeme de nuevo en unos minutos para intentarlo otra vez.';
@@ -217,12 +226,13 @@ if (puerta.ruta === 'sigue') {
       imagen.evento = 'qr_enviado'; imagen.reglaCobro = 2; imagen.referencia = String(d.pedidoId); imagen.monto = d.monto;
       // Para que el servidor cree el pedido `wa_<referencia>`: el catálogo es externo (NovuTienda) y el servidor no puede recalcularlo, así que viajan el precio y el nombre del CATÁLOGO, calculados aquí.
       // Líneas con la forma CERRADA del catálogo externo (`bmLineasPedido`): id, nombre, cantidad, precio y moneda salen del carrito del código, nunca del modelo.
-      { const ls = bmLineasPedido(d.lineas, from); if (ls) { imagen.lineas = ls; imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO') }); } }
+      { const ls = bmLineasPedido(d.lineas, from, d.nota); if (ls) { imagen.lineas = ls; imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO') }); } }
       // K2: el pedido del checkout web que este QR reemplaza (solo un `cat_…` con su forma); la ficha lo suelta una vez emitido el QR.
       if (/^cat_[A-Za-z0-9_-]{1,56}$/.test(String(d.reemplaza || '')) && imagen.lineas) imagen.reemplaza = String(d.reemplaza);
       msgs = [texto(conSaludo(antepone(resumen))), imagen];
       nuevos.pedidoCatalogo = ''; ev.pedidoCatalogo = fichaAntes.pedidoCatalogo;
       nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
+      nuevos.nota = notaFicha(d); ev.nota = fichaAntes.nota;
       nuevos.entrega = d.entrega; nuevos.cierre = false; nuevos.pide = []; ev.pide = fichaAntes.pide;
       nuevos.pedidos = fichaAntes.pedidos + 1;
       nuevos.qrHastaMs = ahora + BM_MINUTOS_QR * 60 * 1000;
@@ -231,16 +241,16 @@ if (puerta.ruta === 'sigue') {
     }
   } else if (tipoDePlan === 'qr_pendiente') {
     msgs = [texto(conSaludo(antepone('Ya tienes un QR abierto por ' + vcMonto(d.total) + '. Cuando pagues, envíame la foto del comprobante por este chat.')))];
-    nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega;
+    nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.nota = notaFicha(d); ev.nota = fichaAntes.nota; nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega;
   } else if (tipoDePlan === 'pedido_sin_cobro') {
     const lineas = bmConNombres(d.lineas, c.vendibles);
     Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
     // Argentina: el pedido se crea en el servidor con `pedido_sin_cobro` (sin QR, sin monto): mismas líneas de forma cerrada y la entrega. Solo viaja si el envío fue aceptado (lo decide el reporte saliente).
     // Bolivia sin QR configurado no lo emite (el evento es de Argentina). El contador sube para que dos pedidos seguidos no repitan la referencia.
-    const ls = d.mercado === 'AR' && /^[A-Za-z0-9]{3,40}$/.test(String(d.pedidoId || '')) ? bmLineasPedido(d.lineas, from) : null;
+    const ls = d.mercado === 'AR' && /^[A-Za-z0-9]{3,40}$/.test(String(d.pedidoId || '')) ? bmLineasPedido(d.lineas, from, d.nota) : null;
     // El texto que ofrece «pagar» (el alias llega en el turno siguiente) solo sale si el pedido se reportó Y el aviso a recepción salió; si no, sigue el de siempre (el pago lo coordina recepción) sin prometer nada.
     const ofreceAlias = ls !== null && (salio === true || salio === 'repetido');
-    const cabeza = antepone('Anoté tu pedido:\n\n' + vcResumen(lineas)) + '\n\n';
+    const cabeza = antepone('Anoté tu pedido:\n\n' + vcResumen(lineas) + (notaDe(d) !== '' ? '\n\n' + notaDe(d) : '')) + '\n\n';
     if (ofreceAlias) {
       // Argentina: el ofrecimiento de pagar es un BOTÓN de respuesta (`pedido:alias`, «Pagar»): nunca se le pide escribir «pagar». Un mensaje no puede llevar a la vez un botón de respuesta y el enlace a recepción: el aviso a recepción ya salió.
       // Si el botón no sale, el respaldo es el texto de siempre (el pago lo coordina recepción), sin prometer nada.
@@ -288,8 +298,8 @@ if (puerta.ruta === 'sigue') {
     if (salio === true && d.aviso && d.aviso.tipo === 'consulta') { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
     // Un pedido cambiado cuyo cobro no se pudo cerrar: el pedido nuevo se conserva (el QR viejo sigue abierto y el cliente ya sabe que no pague con él).
     // Derivar por un `quiereHablar` del modelo NO borra lo que el cliente ya dio: se guardan las piezas y la entrega capturadas (3.ª revisión independiente, 24/11/2026).
-    if (d.guardaPedido === true && Array.isArray(d.lineas) && d.entrega) { nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega; }
-    if (d.motivo === 'no_cancelo' && Array.isArray(d.lineas)) { nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega; }
+    if (d.guardaPedido === true && Array.isArray(d.lineas) && d.entrega) { nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.nota = notaFicha(d); ev.nota = fichaAntes.nota; nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega; }
+    if (d.motivo === 'no_cancelo' && Array.isArray(d.lineas)) { nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.nota = notaFicha(d); ev.nota = fichaAntes.nota; nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega; }
     if (d.motivo === 'comprobante_sin_cotejo' && d.patch) { /* sin cotejo: el comprobante llegó; recepción lo ve */ }
     if (d.patch && typeof d.patch === 'object') { Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k]; }
   } else if (tipoDePlan !== 'nada') {
