@@ -6,7 +6,7 @@
  * negando: cada caso en que NO debe escribir, y luego los dos en que SÍ. Números ficticios.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { numeroPublicoDesdeMeta, numeroPublicoValido } from '../../functions/src/core/conversacion/numeroPublico.ts';
+import { numeroPublicoDesdeMeta, numeroPublicoValido } from '../functions/src/core/conversacion/numeroPublico.ts';
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -20,7 +20,7 @@ const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
 const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
-const { configuracionFlujo } = await import('../../functions/src/ingesta.ts');
+const { configuracionFlujo } = await import('../functions/src/ingesta.ts');
 
 const TA = 'numero-meta-a';
 const TB = 'numero-meta-b';
