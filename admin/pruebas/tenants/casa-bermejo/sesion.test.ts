@@ -2,7 +2,7 @@
  * LA CLAVE DE LA SESIÓN en el esqueleto de Casa Bermejo: es `messages[0].from`, nunca otro dato. Dos clientes jamás comparten ficha.
  */
 import { describe, expect, it } from 'vitest';
-import { ANA, BETO, ENTREGA, EXTRANJERO, crear, entrega, hablar, mSticker, mTexto, modelo, panelConQr, valorMeta } from './mundo';
+import { ANA, BETO, ENTREGA, EXTRANJERO, crear, entrega, sembrarEntrega, hablar, mSticker, mTexto, modelo, panelConQr, valorMeta } from './mundo';
 
 const fichas = (m: ReturnType<typeof crear>): Record<string, any> => (m.sd['casabermejo'] ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -63,7 +63,9 @@ describe('«Resumen del turno» devuelve a la ficha lo que no salió (reversión
 describe('el carrito, la ficha y el QR no se comparten entre teléfonos', () => {
   const ultimo = (ll: { cuerpo?: Record<string, any> }): string => { const c = (ll.cuerpo?.['contents'] ?? []) as { parts: { text: string }[] }[]; return c[c.length - 1]?.parts[0]?.text ?? ''; }; // eslint-disable-line @typescript-eslint/no-explicit-any
   it('dos teléfonos intercalados: cada uno con su carrito, su entrega y su QR; el QR de uno no abre ni cierra el del otro', () => {
-    const m = crear({ modeloDice: (ll) => modelo('Con gusto.', { lineas: [{ id: /ana/.test(ultimo(ll)) ? 'billetera-cuero' : 'bufanda-vicuna', cantidad: 1 }], entrega: { ...ENTREGA, nombre: /ana/.test(ultimo(ll)) ? 'Ana' : 'Beto' } }) });
+    const m = crear({ modeloDice: (ll) => modelo('Con gusto.', { lineas: [{ id: /ana/.test(ultimo(ll)) ? 'billetera-cuero' : 'bufanda-vicuna', cantidad: 1 }] }) });
+    sembrarEntrega(m, ANA, { ...ENTREGA, nombre: 'Ana' });
+    sembrarEntrega(m, BETO, { ...ENTREGA, nombre: 'Beto' });
     hablar(m, ANA, mTexto('soy ana, una pieza'));
     hablar(m, BETO, mTexto('soy beto, una pieza'));
     const tAna = hablar(m, ANA, mTexto('ana quiere pagar'));
@@ -85,7 +87,7 @@ describe('el carrito, la ficha y el QR no se comparten entre teléfonos', () => 
 
 describe('«Resumen del turno»: solo el ítem del QR revierte el cobro', () => {
   it('NEGADO: el texto del resumen falla (sale el respaldo) y el QR SALE: el servidor ya abrió el cobro, así que `qrHastaMs`, `pedidos` y `qrCarrito` NO se revierten', () => {
-    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) });
+    const m = crear({ entregaPrevia: ENTREGA, modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) });
     hablar(m, ANA, mTexto('una billetera'));
     m.dobles['Enviar a WhatsApp'] = (ll) => (ll.cuerpo?.['type'] === 'text' ? { error: { message: '(#131053) error', code: 131053 } } : { messaging_product: 'whatsapp', messages: [{ id: `wamid.OUT${ll.n}` }] });
     const t = hablar(m, ANA, mTexto('quiero pagar'));
@@ -98,7 +100,7 @@ describe('«Resumen del turno»: solo el ítem del QR revierte el cobro', () => 
 
 describe('«Resumen del turno»: si el principal falla y el respaldo sale, el QR no queda abierto', () => {
   it('con un QR abierto, un pedido cambiado cuyo envío principal falla (y el respaldo sale): `qrHastaMs`, `pedidos` y `qrCarrito` vuelven a su valor anterior', () => {
-    const m = crear({ modeloDice: (ll) => modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: /mejor dos/.test(String(ll.cuerpo?.['contents']).slice(-120)) ? 2 : 1 }], entrega: ENTREGA }) });
+    const m = crear({ entregaPrevia: ENTREGA, modeloDice: (ll) => modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: /mejor dos/.test(String(ll.cuerpo?.['contents']).slice(-120)) ? 2 : 1 }] }) });
     hablar(m, ANA, mTexto('una billetera'));
     hablar(m, ANA, mTexto('quiero pagar'));
     const antes = JSON.parse(JSON.stringify(fichas(m)[ANA]));

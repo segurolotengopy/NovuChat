@@ -64,8 +64,8 @@ interface Pedido {
 const ENTREGA: Record<string, string> = {
   envio: '🛵 Enviar a domicilio', // lo que guarda el catálogo web
   delivery: '🛵 Enviar a domicilio',
-  retiro: '🏪 Retira en el local',
-  local: '🏪 Retira en el local',
+  retiro: '🏪 Recojo en tienda',
+  local: '🏪 Recojo en tienda',
 };
 
 /** Lo que el cliente pidió distinto: sale del ítem, del campo que venga. */

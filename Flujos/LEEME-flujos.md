@@ -1,7 +1,7 @@
 # Flujos n8n de los demos NovuChat — guía de importación y puesta en marcha
 
 > **Archivos:** `clientes/demo-a/demo-a-agendamiento.json` (reservas, con Google Calendar
-> real) y `demo-b-venta-cobro.json` (venta con cobro por QR —simulado o real,
+> real) y `clientes/demo-b/demo-b-venta-cobro.json` (venta con cobro por QR —simulado o real,
 > nunca los dos: lo decide el servidor— y alerta al dueño), más los que se
 > fueron sumando: la captación de NovuChat (§7), los
 > clientes de reservas (§8) y los flujos programados de recordatorios,

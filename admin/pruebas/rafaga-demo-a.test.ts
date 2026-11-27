@@ -226,24 +226,14 @@ describe('Demo A + ráfaga: lo que se gana', () => {
     for (const r of rs) expect(r.esperas).toEqual([]);
   });
 
-  it('el interruptor por comercio (`rafagaApagada` que el servidor pone en la configuración) apaga la pieza cuando «Config del negocio» la trae', () => {
+  it('el interruptor por comercio (`rafagaApagada` que el servidor pone en la configuración) apaga la pieza: «Config del negocio» común la propaga (#1135)', () => {
     const hilo = [frag('wamid.A', 'hola', 0), frag('wamid.B', 'quiero una cita', 900)];
-    // «Config del negocio» es del core y hoy no copia `rafagaApagada` de la respuesta (ver la prueba siguiente): acá se la agrega al item
-    // para demostrar que el IF de la pieza SÍ la obedece cuando llega.
-    const m = crear({ hilo });
-    const nodo = m.mundo.flujo.nodes.find((n) => n.name === 'Config del negocio');
-    (nodo!.parameters as J)['jsCode'] = String((nodo!.parameters as J)['jsCode']).replace(/return \[\{ json: \{ \.\.\.base, \.\.\.atencion, diasProximos, \.\.\.laCancelacion, \.\.\.deLaConsola/, 'return [{ json: { rafagaApagada: true, ...base, ...atencion, diasProximos, ...laCancelacion, ...deLaConsola');
+    const m = crear({ hilo, extras: { 'Traer configuración': () => ({ statusCode: 200, body: { tenantId: 'demo-a', estadoComercio: 'activo', rafagaApagada: true } }) } });
     const rs = hilo.map((f) => turno(m, texto(f.idMeta, f.texto)));
+    expect(rs[0].porNodo['Config del negocio']?.[0]?.['rafagaApagada']).toBe(true);
     expect(m.envios).toHaveLength(2);
     expect(m.consultas).toEqual([]);
     for (const r of rs) expect(r.esperas).toEqual([]);
-  });
-
-  it('LIMITACIÓN VIVA: el «Config del negocio» común (core) hoy NO propaga `rafagaApagada` de la respuesta del servidor; sin eso la bandera por comercio no apaga nada', () => {
-    const m = crear({ hilo: [frag('wamid.A', 'hola', 0)], extras: { 'Traer configuración': () => ({ statusCode: 200, body: { tenantId: 'demo-a', estadoComercio: 'activo', rafagaApagada: true } }) } });
-    const r = turno(m, texto('wamid.A', 'hola'));
-    expect(r.porNodo['Config del negocio']?.[0]?.['rafagaApagada']).toBeUndefined();
-    expect(r.ejecutados.has('Consultar ráfaga')).toBe(true);
   });
 });
 

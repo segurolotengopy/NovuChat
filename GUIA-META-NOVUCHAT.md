@@ -438,7 +438,7 @@ productivo).
 ### 8.1 Importar primero
 
 **Workflows → ⋯ (tres puntos, arriba a la derecha) → Import from File** →
-`NovuChat/Flujos/demo-b-venta-cobro.json`.
+`NovuChat/Flujos/clientes/demo-b/demo-b-venta-cobro.json`.
 
 Los avisos rojos de "credencial no seleccionada" son esperables: se resuelven
 abajo. Guarde (**Save**) pero **no publique todavía**.

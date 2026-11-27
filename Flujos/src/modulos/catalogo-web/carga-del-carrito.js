@@ -50,7 +50,9 @@ function ccCarritos(entradas) {
       carrito: {
         pedidoId: pedidoId, tenantId: String(v.tenantId || ''), accion: String(v.accion || ''), ventanaAbierta: v.ventanaAbierta === true,
         fichaCompartida: v.fichaCompartida === true, moneda: String(v.moneda || 'Bs'), total: Number(v.total) || 0,
-        costoEnvio: Number(v.costoEnvio) || 0, entrega: v.entrega === 'envio' ? 'envio' : 'retiro',
+        costoEnvio: Number(v.costoEnvio) || 0, entrega: v.entrega === 'envio' || v.entrega === 'retiro' ? v.entrega : '',
+        // K1 (solo con fuente externa): se reenvian tal cual los dejo `validar-carrito.js`; sin ellos el carrito es el de siempre.
+        ...(v.mercado ? { mercado: String(v.mercado) } : {}), ...(v.catalogo ? { catalogo: String(v.catalogo) } : {}),
         direccion: ccTextoLibre(v.direccion), nota: ccTextoLibre(v.nota), descartados: Number(v.descartados) || 0,
         // La referencia y la ubicación (opcionales) las manda la página nueva; van FUERA de la validación incluida.
         referencia: ccLinea(String(cuerpo.referencia || ''), 150),
@@ -58,7 +60,10 @@ function ccCarritos(entradas) {
         itemsTotal: Number(v.itemsTotal) || 0,
         items: (Array.isArray(v.items) ? v.items : []).map((x, k) => {
           const id = crudos[k] && typeof crudos[k].id === 'string' ? crudos[k].id : '';
-          return { id: /^[A-Za-z0-9_.:-]{1,100}$/.test(id) ? id : '', nombre: String(x.nombre), cantidad: x.cantidad, subtotal: x.subtotal };
+          return {
+            id: /^[A-Za-z0-9_.:-]{1,100}$/.test(id) ? id : '', nombre: String(x.nombre), cantidad: x.cantidad, subtotal: x.subtotal,
+            ...(Number.isSafeInteger(x.precioCentavos) ? { precioCentavos: x.precioCentavos } : {}), ...(typeof x.detalle === 'string' && x.detalle !== '' ? { detalle: x.detalle } : {}),
+          };
         }),
       },
     });

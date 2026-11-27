@@ -42,6 +42,7 @@ export const SUITES_PURAS = [
   'pruebas/modulos/pedidos/confirmar-pedido.test.ts',
   'pruebas/modulos/pedidos/pedido-del-carrito.test.ts',
   'pruebas/modulos/pedidos/leer-imagen.test.ts',
+  'pruebas/modulos/pedidos/comprobante-diferencias.test.ts',
   'pruebas/modulos/agenda/omitir-contactos-bloqueados.test.ts',
   'pruebas/modulos/agenda/solicitud-del-turno-metricas.test.ts',
   'pruebas/core/ingesta-solo-puertos.test.ts',
@@ -182,6 +183,7 @@ export const SUITES_PURAS = [
   'pruebas/plataforma/resetear-telefono-prueba.test.ts',
   'pruebas/plataforma/aplicar-consola-conversaciones.test.ts',
   'pruebas/plataforma/aplicar-catalogo-externo.test.ts',
+  'pruebas/plataforma/catalogo-externo-envoltorio.test.ts',
   'pruebas/plataforma/rellenar-conversaciones.test.ts',
   'pruebas/plataforma/planilla-u-a-x-bellido.test.ts',
   // Conversaciones (H1-7, 16/10/2026): comprobadas una por una con FIRESTORE_EMULATOR_HOST=127.0.0.1:1

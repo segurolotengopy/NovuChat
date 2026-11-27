@@ -254,6 +254,8 @@ describe('NEGADAS: el flujo nuevo de Emma NUNCA reemplaza un flujo vivo que no e
 
 // Mudanza del Demo A (25/11/2026): la ruta por defecto pasa a Flujos/clientes/demo-a/; al script de origin/main se le aplica SOLO esa sustitución (sin efecto cuando main ya la tenga).
 const aMudanzaDemoA = (s: string): string => s.split('Flujos/demo-a-agendamiento.json').join('Flujos/clientes/demo-a/demo-a-agendamiento.json');
+// Mudanza del Demo B (25/11/2026): ídem para Flujos/demo-b-venta-cobro.json (solo aparece en comentarios del script).
+const aMudanzaDemoB = (s: string): string => s.split('Flujos/demo-b-venta-cobro.json').join('Flujos/clientes/demo-b/demo-b-venta-cobro.json');
 describe('ADITIVO: contra el script de origin/main, todo lo que no es el flujo nuevo de Emma se comporta igual', () => {
   const base = ['origin/main', 'main'].map((r) => spawnSync('git', ['show', `${r}:scripts/publicar-flujo.sh`], { cwd: REPO, encoding: 'utf8' })).find((r) => r.status === 0);
   const CASOS: string[][] = [
@@ -265,7 +267,7 @@ describe('ADITIVO: contra el script de origin/main, todo lo que no es el flujo n
   ];
   it.skipIf(!base)('actualizar en su lugar, encender, apagar y crear con los flujos de las doctoras, el de Evy y otro cliente: misma salida, error, código, llamadas y guardias que origin/main', () => {
     const a = raizCon('aditivo-propio', propio, { emma: 'prueba', evy: 'prueba' });
-    const b = raizCon('aditivo-origen', aMudanzaDemoA(base!.stdout), { emma: 'prueba', evy: 'prueba' });
+    const b = raizCon('aditivo-origen', aMudanzaDemoB(aMudanzaDemoA(base!.stdout)), { emma: 'prueba', evy: 'prueba' });
     // Los vivos de Evy y de otro cliente: el cambio no debe notarse. (Los vivos de Emma son justo lo que cambia y se prueban arriba.)
     for (const vivo of [vivoEvyViejo, vivoEvyNuevo, vivoOtro]) {
       for (const args of CASOS) expect(correrEn(a, args, vivo), `${args.join(' ')}`).toEqual(correrEn(b, args, vivo));

@@ -96,10 +96,28 @@ for (let i = 0; i < entradas.length; i++) {
   }
 
   const moneda = String(prev.moneda ?? 'Bs');
-  const lineas = (Array.isArray(prev.items) ? prev.items : []).slice(0, MAX_LINEAS)
-    .map((it) => `• ${it.cantidad}× ${it.nombre} — ${monto(it.subtotal, moneda)}`);
-  const sobran = Math.max(0, Number(prev.itemsTotal ?? 0) - lineas.length);
+  // La cantidad llega TAL CUAL desde la validacion (ya no se vuelve 1): una linea con cantidad que no sea un entero >= 1 no se
+  // escribe («0×», «-1×», «1.5×») y se suma a lo que no se pudo incluir. Los renglones validos e invalidos se cuentan sobre TODOS los
+  // items de la carga (no solo sobre los MAX_LINEAS que se escriben): un invalido despues del 12.º no es «un producto mas».
+  const todos = Array.isArray(prev.items) ? prev.items : [];
+  const esValida = (it) => Number.isInteger((it ?? {}).cantidad) && it.cantidad >= 1;
+  const validasTodas = todos.filter(esValida).length;
+  const invalidas = todos.length - validasTodas;
+  const validas = todos.slice(0, MAX_LINEAS).filter(esValida);
+  const lineas = validas.map((it) => `• ${it.cantidad}× ${it.nombre} — ${monto(it.subtotal, moneda)}`);
+  // Los validos que no caben en las MAX_LINEAS escritas, mas los items que la carga declara y no trajo (tope de la validacion).
+  const sobran = Math.max(0, validasTodas - validas.length) + Math.max(0, Number(prev.itemsTotal ?? 0) - todos.length);
   if (sobran > 0) lineas.push(`• y ${sobran} producto${sobran === 1 ? '' : 's'} más`);
+
+  // PASAR CON RECEPCION, sin cifras: con una moneda que la validacion no reconoce («otra»: EUR, GBP...) o sin ningun renglon valido el
+  // pedido NO se da por armado, ni se escribe «Total», ni entra monto alguno a la memoria de la que sale el QR. Se contesta UN mensaje
+  // fijo que manda `transferir: true`: `Mensaje a enviar` le pone el boton para escribirle directo al negocio. Nunca se responde vacio.
+  const aDerivar = moneda === 'otra' || validasTodas === 0;
+  const textoDeriva = moneda === 'otra'
+    ? 'Recibí tu pedido del catálogo, pero viene en una moneda que no puedo atender por acá, así que no lo di por armado. '
+      + 'Escríbele directo al negocio y te ayudan a cerrarlo.'
+    : 'Recibí tu pedido del catálogo, pero no pude incluir ninguno de sus productos, así que no lo di por armado. '
+      + 'Escríbele directo al negocio y te ayudan a revisarlo.';
 
   // El pedido va en UN bloque -encabezado, lineas, envio y total pegados-, y
   // cada cosa distinta en el suyo. Con una linea en blanco entre cada renglon
@@ -113,11 +131,14 @@ for (let i = 0; i < entradas.length; i++) {
     ? (prev.direccion
       ? `Entrega: envío a ${prev.direccion}.`
       : 'Me falta la dirección de entrega: pásamela por acá y lo cerramos.')
-    : 'Entrega: pasas a recoger.'];
+    : (prev.entrega === 'retiro'
+      ? 'Entrega: pasas a recoger.'
+      // Una entrega AUSENTE ya no se da por «recoger»: se pregunta.
+      : 'Dime si quieres envío a domicilio o pasas a recoger y lo cerramos.')];
   if (prev.nota) entrega.push(`Tu nota: ${prev.nota}`);
   partes.push(entrega.join('\n'));
 
-  const fuera = Number(prev.descartados ?? 0);
+  const fuera = Number(prev.descartados ?? 0) + invalidas;
   if (fuera === 1) {
     partes.push('Hay 1 producto que no pude incluir. Desde acá no puedo ver si se agotó, si lo dieron '
       + 'de baja o si quedó sin precio, así que dime cuál era y lo revisamos.');
@@ -129,7 +150,7 @@ for (let i = 0; i < entradas.length; i++) {
     partes.push('Este enlace se puede compartir, así que confírmame que el pedido es tuyo.');
   }
   partes.push('Cualquier cambio, escríbeme por acá.');
-  const textoRespuesta = responder ? partes.filter((t) => t !== '').join('\n\n') : '';
+  const textoRespuesta = responder ? (aDerivar ? textoDeriva : partes.filter((t) => t !== '').join('\n\n')) : '';
 
   // EL PEDIDO TIENE QUE ENTRAR EN LA MEMORIA DEL AGENTE (23/09/2026). Esta rama
   // arma y manda el mensaje FUERA del agente: el modelo nunca lo ve. El 23/09,
@@ -152,7 +173,7 @@ for (let i = 0; i < entradas.length; i++) {
     'Total: ' + monto(prev.total, moneda),
     prev.entrega === 'envio'
       ? (prev.direccion ? 'Quiero envío a ' + prev.direccion : 'Quiero envío y todavía no te di la dirección.')
-      : 'Paso a recoger.',
+      : (prev.entrega === 'retiro' ? 'Paso a recoger.' : 'Todavía no te dije si quiero envío o paso a recoger.'),
     ...(prev.nota ? ['Mi nota: ' + prev.nota] : []),
     ...(fuera > 0 ? [fuera + (fuera === 1 ? ' producto no entró' : ' productos no entraron') + ' en el pedido.'] : []),
   ].filter((t) => t !== '').join('\n');
@@ -161,7 +182,10 @@ for (let i = 0; i < entradas.length; i++) {
     respuesta: textoRespuesta,
     // Los dos turnos que «Recordar pedido» inserta en la memoria del agente,
     // con la misma clave de sesion que usa el agente: el telefono.
-    memoriaCliente,
+    // Al derivar (moneda «otra» o ningun renglon valido) a la memoria del agente NO entra ninguna cifra: de ahi sale el monto del QR.
+    memoriaCliente: aDerivar ? 'Acabo de enviar un pedido desde el catálogo web, pero no se pudo armar.' : memoriaCliente,
+    // Una transferencia: `Mensaje a enviar` la sale con el boton para escribirle al negocio.
+    transferir: aDerivar && responder,
     memoriaAsistente: textoRespuesta,
     responder,
     motivo,
@@ -179,7 +203,7 @@ for (let i = 0; i < entradas.length; i++) {
     plantilla: {
       nombre: 'carrito_te_espera',
       idioma: 'es',
-      parametros: ['', String(prev.itemsTotal ?? 0), monto(prev.total, moneda)],
+      parametros: ['', String(prev.itemsTotal ?? 0), aDerivar ? '' : monto(prev.total, moneda)],
     },
   } });
 }

@@ -125,6 +125,110 @@ describe('compuerta del registro de `firebase deploy`', () => {
     expect(r.salidas).toEqual({ completo: 'true', hosting_publicado: 'todos', functions_pendientes: '' });
   });
 
+  // ---- Varios intentos (el workflow repite `firebase deploy` ante la cuota de escrituras) ----
+  const INICIA = (f: string) => `i  functions: updating Node.js 22 (2nd Gen) function admin:${f}(us-east1)...\n`;
+  const OK = (f: string) => `✔  functions[admin:${f}(us-east1)] Successful update operation.\n`;
+  const CUOTA = (f: string) => `⚠  functions: Got "Quota Exceeded" error while trying to update projects/p/locations/us-east1/functions/${f}. Waiting to retry...\n`;
+  const OMITIDA = (f: string) => `i  functions: Skipped (No changes detected) admin:${f}(us-east1)\n`;
+  const FIN = '\n✔  Deploy complete!\n';
+  const intento = (reg: string, acum: string, extra: Record<string, string> = {}) => {
+    const reintentable = archivo('');
+    const r = compuerta(reg, { SOLO: 'functions', REGISTRO_ACUMULADO: archivo(acum), REINTENTABLE_EN: reintentable, ...extra });
+    return { ...r, reintentable: readFileSync(reintentable, 'utf8').trim() };
+  };
+
+  it('C16: una Function que falló en el intento 1 y fue «Skipped» en el 2 NO pasa: la compuerta mide el ACUMULADO', () => {
+    const a1 = INICIA('fnX') + INICIA('fnY') + CUOTA('fnX') + OK('fnY');
+    const a2 = OMITIDA('fnX') + OMITIDA('fnY') + FIN;
+    const r = intento(a2, a1 + a2);
+    expect(r.status, r.stdout).toBe(1);
+    expect(r.stdout).toContain('Function sin confirmar: admin:fnX(us-east1)');
+    expect(r.stdout).not.toContain('Function sin confirmar: admin:fnY(');
+    expect(r.salidas['functions_pendientes']).toBe('functions:admin:fnX');
+    expect(r.reintentable).toBe('no'); // en el último intento fnX no chocó con la cuota: no se repite, se falla fuerte
+    // Contraste: solo con el último intento (sin acumulado) pasaría por buena, y por eso el workflow pasa el acumulado.
+    expect(compuerta(a2, { SOLO: 'functions' }).status).toBe(0);
+  });
+
+  it('C17: la Function fallida en el intento 1 y CONFIRMADA en el 2 sí pasa', () => {
+    const a1 = INICIA('fnX') + INICIA('fnY') + CUOTA('fnX') + OK('fnY');
+    const a2 = INICIA('fnX') + OK('fnX') + OMITIDA('fnY') + FIN;
+    const r = intento(a2, a1 + a2);
+    expect(r.status, r.stdout).toBe(0);
+    expect(r.salidas['functions_pendientes']).toBe('');
+  });
+
+  it('C18: reintentable con al menos UNA señal de cuota y ninguna pendiente con otro fallo; una pendiente sin ninguna línea es «no intentada»', () => {
+    const una = intento(INICIA('fnX') + CUOTA('fnX'), INICIA('fnX') + CUOTA('fnX'));
+    expect(una.status).toBe(1);
+    expect(una.reintentable).toBe('si');
+    // firebase-tools se rindió antes de intentar fnY: sin línea de cuota ni de éxito → sigue siendo reintentable.
+    const noIntentada = INICIA('fnX') + INICIA('fnY') + CUOTA('fnX');
+    expect(intento(noIntentada, noIntentada).reintentable).toBe('si');
+    // NEGANDO: una pendiente con un fallo que NO es de cuota → no se repite.
+    const otroFallo = INICIA('fnX') + INICIA('fnY') + CUOTA('fnX') + '✘  functions[admin:fnY(us-east1)]: Deployment error.\n';
+    expect(intento(otroFallo, otroFallo).reintentable).toBe('no');
+    // NEGANDO: ninguna señal de cuota en todo el intento → no.
+    const sinSenal = INICIA('fnX') + INICIA('fnY');
+    expect(intento(sinSenal, sinSenal).reintentable).toBe('no');
+    // El fallo de OTRA Function que no está pendiente no impide repetir.
+    const ajena = INICIA('fnX') + CUOTA('fnX') + INICIA('fnZ') + '✘  functions[admin:fnZ(us-east1)]: Deployment error.\n' + OK('fnZ');
+    expect(intento(ajena, ajena).reintentable).toBe('si');
+  });
+
+  it('C22: el registro REAL del 25/11 (86 Functions, 8 sin confirmar, 5 que firebase-tools ni intentó) es reintentable y sigue fallando', () => {
+    const real = readFileSync(join(FIX, 'cuota-real-25-11.registro.txt'), 'utf8');
+    // El registro real trae «Failed to get the IAM Policy on the Service …/services/sondeocobros» (Cloud Run, nombre en minúsculas):
+    // es parte del mismo choque con la cuota y se tolera A PROPÓSITO como reintentable; si fuera un permiso de verdad, el segundo
+    // intento volvería a fallar y la compuerta final falla igual (costo: tiempo, nunca un despliegue dado por bueno).
+    const r = intento(real, real, { SOLO: SOLO_COMPLETO, CODIGO_FIREBASE: '1' });
+    expect(r.status).toBe(1);
+    expect(r.reintentable).toBe('si');
+    expect(r.salidas['functions_pendientes']).toBe([
+      'confirmarPedidoExterno', 'enviarAdjuntoComoPersona', 'guardarComprobante', 'guardarMedio', 'leerAdjuntoPersona', 'sondeoCobros', 'verComprobante', 'verMedio',
+    ].map((f) => `functions:admin:${f}`).sort().join(','));
+    // Con «unexpected state» agregado, o con un fallo de compilación, deja de serlo.
+    expect(intento(real + 'This deployment is in an unexpected state - please re-deploy your functions.\n', real, { SOLO: SOLO_COMPLETO, CODIGO_FIREBASE: '1' }).reintentable).toBe('no');
+    expect(intento(real + '⚠  functions: Build failed: error TS2304\n', real, { SOLO: SOLO_COMPLETO, CODIGO_FIREBASE: '1' }).reintentable).toBe('no');
+  });
+
+  it('C19: no es reintentable con «unexpected state», sin Functions pendientes, ni con un fallo de compilación', () => {
+    const base = INICIA('fnX') + CUOTA('fnX');
+    expect(intento(base + 'This deployment is in an unexpected state - please re-deploy your functions.\n', base).reintentable).toBe('no');
+    // Todas confirmadas, pero falta «Deploy complete!»: nada pendiente que reintentar.
+    const sinPendientes = INICIA('fnX') + OK('fnX') + CUOTA('fnX');
+    const r = intento(sinPendientes, sinPendientes);
+    expect(r.status).toBe(1);
+    expect(r.reintentable).toBe('no');
+    // Pendiente sin ninguna línea de cuota (fallo de compilación o de arranque).
+    const compilacion = INICIA('fnX') + '⚠  functions: Build failed: error TS2304\n';
+    expect(intento(compilacion, compilacion).reintentable).toBe('no');
+    // Con cuota en otra parte, un fallo de compilación igual corta.
+    const mezcla = INICIA('fnX') + INICIA('fnY') + CUOTA('fnY') + '⚠  functions: Build failed: error TS2304\n';
+    expect(intento(mezcla, mezcla).reintentable).toBe('no');
+    // Un despliegue completo es «no» (no hay nada que repetir).
+    expect(intento(INICIA('fnX') + OK('fnX') + FIN, INICIA('fnX') + OK('fnX') + FIN).reintentable).toBe('no');
+  });
+
+  it('C21: un id de Function con metacaracteres de expresión regular nunca es reintentable', () => {
+    const raro = INICIA('fn.*') + CUOTA('fnAlgo');
+    expect(intento(raro, raro).reintentable).toBe('no');
+    const barra = INICIA('fnX|fnY') + CUOTA('fnX');
+    expect(intento(barra, barra).reintentable).toBe('no');
+  });
+
+  it('C20: un sitio de Hosting publicado en un intento anterior cuenta (el rollback no se salta por el último intento)', () => {
+    const a1 = INICIA('fnX') + OK('fnX') + 'i  hosting[consola-ficticia]: beginning deploy...\n✔  hosting[consola-ficticia]: release complete\n';
+    const a2 = OMITIDA('fnX') + FIN;
+    const solo = 'functions,hosting:consola';
+    const conAcumulado = compuerta(a2, { SOLO: solo, SITIO_CATALOGO: '', REGISTRO_ACUMULADO: archivo(a1 + a2) });
+    expect(conAcumulado.salidas['hosting_publicado']).toBe('todos');
+    expect(conAcumulado.status, conAcumulado.stdout).toBe(0);
+    // Sin el acumulado, el último intento por sí solo no tiene «release complete».
+    const sinAcumulado = compuerta(a2, { SOLO: solo, SITIO_CATALOGO: '' });
+    expect(sinAcumulado.salidas['hosting_publicado']).toBe('ninguno');
+  });
+
   it('C3: el mismo registro con código 2 falla (texto Y código, juntos)', () => {
     const r = compuerta(EXITOSO, { CODIGO_FIREBASE: '2' });
     expect(r.status).toBe(1);
@@ -434,6 +538,7 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
             SITIO_CONSOLA: 'consola-ficticia',
             SITIO_CATALOGO: 'catalogo-ficticio',
             FORZAR: '',
+            ESPERA_REINTENTO_CUOTA: '0',
           }),
         });
         return { status: r.status, salidas: leerSalidas(salida), stdout: r.stdout + r.stderr };
@@ -448,6 +553,99 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
       expect(corre('reintento-interno-exitoso.registro.txt', '2').status).not.toBe(0);
     });
 
+    if (t !== 'desplegar-dev') {
+      it(`W2b ${t}: se repite SOLO ante la cuota con TODAS las pendientes; la compuerta mide el acumulado de los intentos`, () => {
+        const bin = join(tmp, `bin-cuota-${t}`);
+        spawnSync('mkdir', ['-p', bin]);
+        // Un firebase falso: cuenta sus llamadas, guarda sus argumentos y responde con el registro N (REG1, REG2, REG3; el
+        // último se repite) y el código de salida N (COD1, COD2, COD3).
+        writeFileSync(join(bin, 'firebase'), [
+          '#!/usr/bin/env bash',
+          'n=$(( $(cat "$CONTADOR" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$CONTADOR"',
+          'echo "$*" >> "$ARGUMENTOS"',
+          'k=$n; [ "$k" -gt 3 ] && k=3',
+          'eval "reg=\\$REG$k; cod=\\$COD$k"',
+          'cat "$reg"; exit "${cod:-0}"', '',
+        ].join('\n'));
+        chmodSync(join(bin, 'firebase'), 0o755);
+        const codigo = `set -euo pipefail\n${fragmento(job(t))}`;
+        const I = (f: string) => `i  functions: updating Node.js 22 (2nd Gen) function admin:${f}(us-east1)...\n`;
+        const OKF = (f: string) => `✔  functions[admin:${f}(us-east1)] Successful update operation.\n`;
+        const Q = (f: string) => `⚠  functions: Got "Quota Exceeded" error while trying to update projects/p/locations/us-east1/functions/${f}. Waiting to retry...\n`;
+        const OM = (f: string) => `i  functions: Skipped (No changes detected) admin:${f}(us-east1)\n`;
+        const FIN = '✔  Deploy complete!\n';
+        const HOST = 'i  hosting[consola-ficticia]: beginning deploy...\n✔  hosting[consola-ficticia]: release complete\ni  hosting[catalogo-ficticio]: beginning deploy...\n✔  hosting[catalogo-ficticio]: release complete\n';
+        const COMPLETO = I('fnX') + OKF('fnX') + HOST + FIN;
+        const A_MEDIAS_CUOTA = I('fnX') + Q('fnX'); // iniciada, chocó con la cuota y nada más
+        const SIN_CUOTA = I('fnX') + '⚠  functions: Build failed: error\n';
+        const corre = (registros: string[], codigos: string[] = ['0', '0', '0']) => {
+          const contador = archivo(''); const argumentos = archivo('');
+          const reg = registros.map((r) => archivo(r));
+          const r = spawnSync('bash', ['-c', codigo], {
+            encoding: 'utf8',
+            env: entornoDelEmulador(undefined, {
+              PATH: `${bin}:${process.env['PATH'] ?? ''}`,
+              CONTADOR: contador, ARGUMENTOS: argumentos,
+              REG1: reg[0] ?? reg[reg.length - 1]!, REG2: reg[1] ?? reg[reg.length - 1]!, REG3: reg[2] ?? reg[reg.length - 1]!,
+              COD1: codigos[0] ?? '0', COD2: codigos[1] ?? '0', COD3: codigos[2] ?? '0',
+              ESPERA_REINTENTO_CUOTA: '0',
+              RUNNER_TEMP: tmp, GITHUB_OUTPUT: archivo(''), GITHUB_STEP_SUMMARY: archivo(''), GITHUB_WORKSPACE: RAIZ,
+              GITHUB_REF_NAME: 'v0.0.0', GITHUB_RUN_ID: '1', GITHUB_SHA: 'abcdef0abcdef0', FIREBASE_TOOLS_VERSION: '',
+              SOLO: SOLO_COMPLETO, PROYECTO: 'consola-ficticia', SITIO_CONSOLA: 'consola-ficticia', SITIO_CATALOGO: 'catalogo-ficticio', FORZAR: '',
+            }),
+          });
+          const args = readFileSync(argumentos, 'utf8').split('\n').filter(Boolean);
+          return { status: r.status, llamadas: args.length, args, salida: r.stdout + r.stderr };
+        };
+        // 1) cuota y luego completo: pasa con 2 llamadas, con los MISMOS argumentos en las dos.
+        const uno = corre([A_MEDIAS_CUOTA, COMPLETO]);
+        expect(uno.status, uno.salida).toBe(0);
+        expect(uno.llamadas).toBe(2);
+        expect(uno.args[0]).toBe(uno.args[1]);
+        expect(uno.salida).toContain('Cuota de escrituras');
+        // 1b) EL CASO REAL del 25/11: el registro verdadero (8 Functions pendientes, 5 que firebase-tools ni intentó) se repite UNA
+        //     vez, y el segundo intento confirma las 8 y publica Hosting: pasa con 2 llamadas. Si el segundo intento NO confirma a
+        //     las 8, la compuerta falla (acumulado).
+        const real = readFileSync(join(FIX, 'cuota-real-25-11.registro.txt'), 'utf8');
+        const pend = ['confirmarPedidoExterno', 'enviarAdjuntoComoPersona', 'guardarComprobante', 'guardarMedio', 'leerAdjuntoPersona', 'sondeoCobros', 'verComprobante', 'verMedio'];
+        const segundo = pend.map((f) => I(f) + OKF(f)).join('') + HOST + FIN;
+        const realOk = corre([real, segundo], ['1', '0']);
+        expect(realOk.status, realOk.salida).toBe(0);
+        expect(realOk.llamadas).toBe(2);
+        const realIncompleto = corre([real, pend.slice(0, 7).map((f) => I(f) + OKF(f)).join('') + HOST + FIN], ['1', '0']);
+        expect(realIncompleto.status).not.toBe(0);
+        expect(realIncompleto.salida).toContain('Function sin confirmar: admin:verMedio(us-east1)');
+        // 2) cuota dos veces y luego completo: 3 llamadas.
+        expect(corre([A_MEDIAS_CUOTA, A_MEDIAS_CUOTA, COMPLETO]).llamadas).toBe(3);
+        // 3) cuota tres veces: falla y NUNCA hay un cuarto intento.
+        const tres = corre([A_MEDIAS_CUOTA, A_MEDIAS_CUOTA, A_MEDIAS_CUOTA]);
+        expect(tres.status).not.toBe(0);
+        expect(tres.llamadas).toBe(3);
+        // 4) EL PELIGRO: fnX chocó con la cuota en el intento 1 y en el 2 firebase la omite («Skipped») y termina «completo»:
+        //    la compuerta mide el ACUMULADO, así que FALLA (no hay un fnX viejo en producción dado por bueno).
+        const omitida = corre([A_MEDIAS_CUOTA, OM('fnX') + HOST + FIN]);
+        expect(omitida.status).not.toBe(0);
+        expect(omitida.llamadas).toBe(2);
+        expect(omitida.salida).toContain('Function sin confirmar: admin:fnX(us-east1)');
+        // 5) cuota en el intento 1 y un fallo SIN cuota en el 2 (aunque el código sea 1): corta con 2 llamadas.
+        const mixto = corre([A_MEDIAS_CUOTA, SIN_CUOTA, A_MEDIAS_CUOTA], ['0', '1', '0']);
+        expect(mixto.status).not.toBe(0);
+        expect(mixto.llamadas).toBe(2);
+        // 6) NEGANDO: un fallo sin la señal de cuota en el PRIMER intento: una sola llamada, con su código de salida.
+        const sin = corre([SIN_CUOTA, COMPLETO], ['2', '0', '0']);
+        expect(sin.status).not.toBe(0);
+        expect(sin.llamadas).toBe(1);
+        // 7) «unexpected state» aunque haya cuota: no se repite.
+        const estado = corre([A_MEDIAS_CUOTA + 'This deployment is in an unexpected state - please re-deploy your functions.\n', COMPLETO]);
+        expect(estado.status).not.toBe(0);
+        expect(estado.llamadas).toBe(1);
+        // 8) un código de salida distinto de 0 en el último intento falla aunque el registro diga «completo».
+        const codigoMalo = corre([A_MEDIAS_CUOTA, COMPLETO], ['0', '3', '0']);
+        expect(codigoMalo.status).not.toBe(0);
+        expect(codigoMalo.llamadas).toBe(2);
+      });
+    }
+
     it(`W3 ${t}: comprueba la versión servida después del despliegue, sin if`, () => {
       const j = job(t);
       const v = j.indexOf('id: version');
@@ -460,6 +658,71 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
       if (t === 'desplegar-produccion') expect(v).toBeLessThan(j.indexOf('id: salud'));
     });
   }
+
+  /** El `run: |` de un paso, sin la sangría del YAML. */
+  const runDe = (p: string): string => {
+    const i = p.indexOf('run: |\n');
+    expect(i, 'el paso no tiene run: |').toBeGreaterThan(-1);
+    return p.slice(i + 'run: |\n'.length).split('\n').map((l) => l.replace(/^ {10}/, '')).join('\n');
+  };
+  /** Corre un `run:` real del workflow con `firebase`, `npm` y `gcloud` de mentira que anotan sus llamadas. */
+  const correrPaso = (codigo: string, nombre: string, clonFalla: boolean, extra: Record<string, string>) => {
+    const bin = join(tmp, `bin-previa-${nombre}`);
+    spawnSync('mkdir', ['-p', bin]);
+    const llamadas = join(bin, 'llamadas');
+    writeFileSync(llamadas, '');
+    writeFileSync(join(bin, 'firebase'), `#!/usr/bin/env bash\necho "firebase $*" >> "${llamadas}"\n[[ "$1" == hosting:clone && "${clonFalla ? 'si' : 'no'}" == si ]] && exit 1\nexit 0\n`);
+    writeFileSync(join(bin, 'npm'), '#!/usr/bin/env bash\nexit 0\n');
+    writeFileSync(join(bin, 'gcloud'), '#!/usr/bin/env bash\nexit 1\n');
+    for (const b of ['firebase', 'npm', 'gcloud']) chmodSync(join(bin, b), 0o755);
+    const salida = archivo('');
+    const r = spawnSync('bash', ['-c', codigo], {
+      encoding: 'utf8',
+      env: entornoDelEmulador(undefined, {
+        PATH: `${bin}:${process.env['PATH'] ?? ''}`, GITHUB_OUTPUT: salida, FIREBASE_TOOLS_VERSION: '0.0.0',
+        PROYECTO: 'consola-ficticia', SITIO: 'consola-ficticia', ...extra,
+      }),
+    });
+    return { status: r.status, salidas: leerSalidas(salida), llamadas: readFileSync(llamadas, 'utf8'), texto: `${r.stdout}${r.stderr}` };
+  };
+
+  it('W4c: la copia a «previa» emite previa_ok=true SOLO si el clon de esta corrida salió bien (producción)', () => {
+    const copia = paso(job('desplegar-produccion'), '- name: Conservar copia de la versión actual');
+    expect(copia).toContain('id: copia_previa');
+    const codigo = runDe(copia);
+    const bien = correrPaso(codigo, 'copia-bien', false, {});
+    expect(bien.salidas['previa_ok']).toBe('true');
+    // NEGADA: con el clon fallido el paso sigue sin tumbar el despliegue (continue-on-error), pero NO hay previa_ok.
+    const mal = correrPaso(codigo, 'copia-mal', true, {});
+    expect(mal.status).toBe(0);
+    expect(mal.salidas['previa_ok']).toBeUndefined();
+  });
+
+  it('W4d: el rollback NO clona «previa» sobre live sin previa_ok de esta corrida: falla fuerte y pide el manual', () => {
+    const rollback = paso(job('desplegar-produccion'), '- name: Rollback de hosting');
+    expect(rollback).toContain('PREVIA_OK: ${{ steps.copia_previa.outputs.previa_ok }}');
+    const codigo = runDe(rollback);
+    for (const previa of ['', 'false', 'TRUE']) {
+      const r = correrPaso(codigo, `rollback-sin-${previa || 'vacio'}`, false, { PREVIA_OK: previa });
+      expect(r.status, previa).toBe(1);
+      expect(r.llamadas, previa).not.toContain('hosting:clone');
+      expect(r.texto).toContain('Rollback automático NO ejecutado');
+      expect(r.salidas['rollback'], previa).toBe('no_ejecutado');
+    }
+    // El operador lo ve en post-despliegue: la salida llega por el job y tiene su texto propio (≤ 140).
+    expect(job('desplegar-produccion')).toContain('rollback: ${{ steps.rollback.outputs.rollback }}');
+    expect(paso(job('desplegar-produccion'), '- name: Rollback de hosting')).toContain('id: rollback');
+    const post = job('post-despliegue');
+    expect(post).toContain('ROLLBACK: ${{ needs.desplegar-produccion.outputs.rollback }}');
+    const texto = /'(Health check fallido; rollback NO ejecutado[^']*)'/.exec(post)?.[1] ?? '';
+    expect(texto).not.toBe('');
+    expect(texto.length).toBeLessThanOrEqual(140);
+    // Contraprueba: con la copia de esta corrida, el rollback sí clona previa → live.
+    const ok = correrPaso(codigo, 'rollback-con', false, { PREVIA_OK: 'true' });
+    expect(ok.status, ok.texto).toBe(0);
+    expect(ok.salidas['rollback']).toBeUndefined();
+    expect(ok.llamadas).toContain('firebase hosting:clone consola-ficticia:previa consola-ficticia:live');
+  });
 
   it('W4: en producción el health check corre también tras un despliegue fallido, y el rollback tras él', () => {
     const j = job('desplegar-produccion');
@@ -479,6 +742,17 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
       "if: ${{ !cancelled() && steps.salud.outputs.ok == 'false' }}");
     // El humo del catálogo sigue atado a una consola sana.
     expect(paso(j, './scripts/humo-sitio-publico.sh')).toContain("if: steps.salud.outputs.ok == 'true'");
+  });
+
+  it('W4b: antes de CADA intento de despliegue, hosting_publicado vuelve a «desconocido» (staging y producción)', () => {
+    for (const nombre of ['desplegar-staging', 'desplegar-produccion']) {
+      const bucle = /for intento in 1 2 3; do\n([\s\S]*?)\n\s+firebase deploy --only/.exec(job(nombre))?.[1] ?? '';
+      // Dentro del bucle y ANTES de firebase deploy: un valor viejo no puede sobrevivir a un corte del paso.
+      expect(bucle, nombre).toContain('echo "hosting_publicado=desconocido" >> "$GITHUB_OUTPUT"');
+    }
+    // «desconocido» no es «ninguno»: el rollback corre, y post-despliegue tiene su propio texto.
+    expect(paso(job('desplegar-produccion'), '- name: Rollback de hosting')).toContain("hosting_publicado != 'ninguno'");
+    expect(job('post-despliegue')).toContain("process.env.HOSTING === 'desconocido'");
   });
 
   it('W5: las salidas nuevas llegan a post-despliegue con textos de 140 caracteres o menos', () => {

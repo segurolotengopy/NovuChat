@@ -19,7 +19,7 @@
 import { describe, expect, it } from 'vitest';
 import { codigoDe, configBase, destinos, ejecutar, entradas, expresion, leerFlujo, nodo, plantilla, type J } from '../lib/flujo.ts';
 
-const f = leerFlujo('demo-b-venta-cobro.json');
+const f = leerFlujo('clientes/demo-b/demo-b-venta-cobro.json');
 const DUENO = '59170000009';
 const CLIENTE = '59170000001';
 const ENT: J = {

@@ -77,7 +77,7 @@ test.describe('PED-04: exportar pedidos a CSV', () => {
     expect(a['Cuándo']).not.toBe('');
 
     const b = fila(csv, '*** 0102');
-    expect(b['Entrega']).toBe('🏪 Retira en el local');
+    expect(b['Entrega']).toBe('🏪 Recojo en tienda');
     expect(b['Dirección']).toBe('');
     expect(b['Referencia']).toBe('');
     expect(b['Nota']).toBe('');

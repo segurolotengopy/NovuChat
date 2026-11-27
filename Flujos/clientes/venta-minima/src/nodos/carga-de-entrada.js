@@ -91,7 +91,7 @@ const numero = (v) => (typeof v === 'number' && Number.isFinite(v)) ? v : 0;
 const detalle = (v) => typeof v !== 'string' ? '' : limpio(v.replace(/https?:\/\/\S+/gi, ' ').replace(/www\.\S+/gi, ' '), 200)
   .replace(/[<>&\[\]{}«»]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
 const centavos = (v) => (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0) ? v : null;
-const moneda = (v) => v === 'USD' ? 'USD' : (v === 'ARS' ? 'ARS' : 'Bs');
+const moneda = (v) => v === 'USD' ? 'USD' : (v === 'ARS' ? 'ARS' : ((v === 'Bs' || v === 'BOB' || v === undefined || v === null || v === '') ? 'Bs' : 'otra'));
 
 const out = [];
 
@@ -136,7 +136,7 @@ for (const item of $input.all()) {
       const pc = centavos((i ?? {}).precioCentavos);
       return {
         nombre: limpio((i ?? {}).nombre, 80) || 'producto',
-        cantidad: numero((i ?? {}).cantidad) || 1,
+        cantidad: numero((i ?? {}).cantidad),
         subtotal: numero((i ?? {}).subtotal),
         ...(pc !== null ? { precioCentavos: pc } : {}),
         ...(esp !== '' ? { detalle: esp } : {}),
@@ -148,7 +148,7 @@ for (const item of $input.all()) {
     mercado: cuerpo.mercado === 'BO' || cuerpo.mercado === 'AR' ? cuerpo.mercado : '',
     catalogo: cuerpo.catalogo === 'externo' ? 'externo' : '',
     costoEnvio: numero(cuerpo.costoEnvio),
-    entrega: String(cuerpo.entrega ?? '') === 'envio' ? 'envio' : 'retiro',
+    entrega: (['envio', 'retiro'].includes(String(cuerpo.entrega ?? '')) ? String(cuerpo.entrega) : ''),
     direccion: limpio(cuerpo.direccion, 200),
     nota: limpio(cuerpo.nota, 200),
     descartados: descartados.length,

@@ -37,6 +37,9 @@ import { hallazgosDelIndicador, injertarIndicador } from '../../src/core/indicad
 import { fuentesDeLaCadenaComun, hallazgosDelGuardadoSaliente, injertarGuardadoSaliente, NODOS_DE_INGESTA_DEL_GUARDADO_SALIENTE, URL_DESCARGA_SALIENTE } from '../../src/core/sin-agente/guardado-saliente.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 import { problemasDeReferencias } from '../../src/core/sin-agente/referencias.mjs';
+// B4 (24/11/2026): el carrito del catálogo web (módulo catalogo-web, común): el webhook, su guardia y la rama que lo lee en «Carga de entrada».
+import { cargaConCarrito, hallazgosDelCarrito, injertarCarrito, marcadorDeRuta, WEBHOOK_DEL_CARRITO } from '../../src/modulos/catalogo-web/carrito-del-catalogo.mjs';
+
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/casa-bermejo/casa-bermejo.json');
@@ -44,7 +47,10 @@ export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../../src/core/receptor/entrada-d
 // 47 + los 9 de la rama común del GUARDADO de medios (Flujos/src/core/sin-agente/guardado.mjs, contrato M1↔M2 del 29/10/2026 y v2 del 30/10):
 // +1 nodo (`Traer catálogo`, 57): excepción APROBADA por Andres el 12/11/2026 (docs/versiones-por-cliente.md, «Estado al 12/11/2026 (Casa Bermejo)»). Excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 // +4: la rama del guardado de la IMAGEN SALIENTE del asistente (QR por media id; plan del 16/11/2026, bloque 2a): «Preparar guardado (saliente)», «Pedir imagen a Meta…», «Descargar imagen de Meta…» y «Guardar imagen enviada». 57 → 61: aprobación de Andres pendiente (docs/versiones-por-cliente.md).
-export const TOPE_DE_NODOS = 63; // +2 el indicador de escritura (21/11/2026, Andres)
+// +1 el webhook «Carrito del catálogo» (B4; excepción de tope aprobada por Andres, D9-a, 24/11/2026: 63 → 64): solo en la variante de producción (la de prueba queda en 58). docs/versiones-por-cliente.md.
+export const TOPE_DE_NODOS = 64; // +2 el indicador de escritura (21/11/2026, Andres)
+// El tenant de este flujo para el marcador de la ruta del webhook del carrito (`REEMPLAZAR_RUTA_CARRITO_CASA_BERMEJO`).
+export const TENANT = 'casa-bermejo';
 export const FLUJO_PRODUCCION = 'casa-bermejo.json';
 export const FLUJO_PRUEBA = 'casa-bermejo.prueba.json';
 
@@ -78,7 +84,7 @@ export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   // La base común de las ventas digitales (cobro, avisos, el motor de la conversación y el carrito: prefijos `cb`, `av`, `vd` y `vc`) y, al final, lo PROPIO de Casa Bermejo (`bm.js`: datos, textos y `CN_TENANT`; `bm-venta.js`: la decisión de la venta).
-  librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/carrito.js', '../../experimental/venta-digital/src/catalogo-externo.js', '../../src/modulos/pedidos/confirmar-pedido.js', 'src/lib/bm.js', 'src/lib/bm-venta.js'],
+  librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/diferencias.js', '../../src/modulos/pedidos/comprobante-diferencias.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/carrito.js', '../../experimental/venta-digital/src/catalogo-externo.js', '../../src/modulos/pedidos/confirmar-pedido.js', '../../src/modulos/pedidos/pedido-del-carrito.js', 'src/lib/bm.js', 'src/lib/bm-venta.js'],
   comun: ['../../experimental/venta-digital/src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],
@@ -217,6 +223,8 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
     if (typeof v === 'string' && !MARCADOR.test(v) && !(c === 'wabaIdEsperado' && /^\d{6,25}$/.test(v))) errores.push(`receptor.${c}: tiene que ser un marcador REEMPLAZAR_*`);
   }
   if (typeof d.pruebaRuta !== 'string' || !MARCADOR.test(d.pruebaRuta)) errores.push('pruebaRuta: tiene que ser un marcador REEMPLAZAR_*');
+  // La ruta del webhook del carrito es una URL de capacidad: en los datos versionados va SOLO su marcador (lo reemplaza `preparar-import.sh`); declararlo aquí lo hace exigible a `--publicable`.
+  if (d.carritoMarcador !== marcadorDeRuta(TENANT)) errores.push(`carritoMarcador: tiene que ser exactamente ${marcadorDeRuta(TENANT)}`);
   if (d.catalogoUrl !== 'REEMPLAZAR_URL_CATALOGO') errores.push('catalogoUrl: tiene que ser exactamente REEMPLAZAR_URL_CATALOGO (la dirección base de NovuTienda la pone quien publica y la guardia la valida contra ANFITRIONES_TIENDA)');
   const cb = d.configBase && typeof d.configBase === 'object' && !Array.isArray(d.configBase) ? d.configBase : null;
   if (!cb) errores.push('configBase: falta');
@@ -244,6 +252,15 @@ const CLAVE_DE_SECRETO = /token|secret|secreto|clave|password|contrase|apikey|ap
 const CLAVES_LOCALES = new Set(['nombreFlujo', 'nombreFlujoPrueba', 'credenciales', 'receptor', 'catalogoUrl', 'pruebaRuta', 'configBase']);
 const esMarcador = (v) => typeof v === 'string' && MARCADOR.test(v);
 const esObjeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** El enlace de Google Maps de la tienda (misma regla que `bmMapaValido` de `bm-venta.js`): https a un anfitrión de Maps, ≤200, sin espacios, sin segmentos `.`/`..` ni codificados (`%2e`, `%2f`, `%5c`) y sin el recurso `/url`. */
+const MAPA_GOOGLE = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+function mapaGoogleValido(v) {
+  if (typeof v !== 'string' || v.length === 0 || v.length > 200 || !MAPA_GOOGLE.test(v) || /%2e|%2f|%5c/i.test(v)) return false;
+  const ruta = v.replace(/^https:\/\/[^/?#]+/, '').split(/[?#]/)[0];
+  if (ruta.split('/').some((x) => x === '.' || x === '..' || /^(?:local_)?url$/i.test(x)) || ruta.includes('//')) return false;
+  if (/^https:\/\/(?:maps\.google\.com|(?:www\.)?google\.com)(?:[/?#]|$)/.test(v) && !(ruta === '' || ruta === '/' || /^\/maps(?:\/|$)/i.test(ruta))) return false;
+  return true;
+}
 /**
  * La forma de cada valor LOCAL (un marcador siempre es válido: queda sin sustituir y la guardia de publicación lo exige). Es una LISTA BLANCA: un texto libre solo se puede
  * poner desde aquí y con un largo máximo; lo que no figura (por ejemplo `mensajeComercioSuspendido`, que dice lo que el asistente le promete al cliente) NO se cambia por un archivo local.
@@ -267,6 +284,8 @@ const FORMAS_LOCALES = {
   // El enlace del catálogo web del comercio (https): sale como botón «Ver catálogo».
   'configBase.enlaceCatalogo': (v) => v === '' || v.length <= 300 && /^https:\/\/[a-z0-9.-]+(\/[^\s"'\\{}]*)?$/.test(v),
   'configBase.horarioTienda': (v) => v.length <= 200,
+  // UBICACIÓN DE LA TIENDA (25/11/2026): el enlace de Google Maps de la tienda (dato del comercio). Solo https a Google Maps (mismos anfitriones que `enlaceDeMapaValido` de la consola); vacío = sin dato.
+  'configBase.mapaTienda': (v) => v === '' || mapaGoogleValido(v),
   'configBase.nombreNegocio': (v) => v.length >= 2 && v.length <= 80,
 };
 
@@ -478,7 +497,21 @@ export function guardias(variante, flujo, opciones = {}) {
   }
   // Webhooks: en producción solo el del receptor; en la prueba solo la entrada de prueba.
   for (const n of nodos.filter((x) => x.type === 'n8n-nodes-base.webhook')) {
+    if (variante === 'produccion' && n.name === WEBHOOK_DEL_CARRITO) continue; // su forma exacta la valida `hallazgosDelCarrito`
     if (n.name !== (variante === 'produccion' ? NODO_RECEPTOR : NODO_PRUEBA)) h.push(`el webhook «${n.name}» no corresponde a esta variante`);
+  }
+  // El carrito del catálogo web (módulo catalogo-web): solo en producción y con su forma exacta (POST, headerAuth de la ingesta, ruta como marcador, conectado solo a «Config base»).
+  // Con `rutaCarritoSustituida` (solo `--publicable`, que mira un flujo YA preparado por `preparar-import.sh`) se acepta que la ruta ya no sea el marcador, siempre que tenga la forma de una ruta (nunca otra cosa); y, con la credencial ya sustituida por su nombre real, que haya una (que falte sigue siendo un hallazgo).
+  const hc = hallazgosDelCarrito(flujo || {}, { tenant: TENANT, credencialIngesta: opciones.credencialIngesta, variante });
+  const rutaCarrito = (((flujo || {}).nodes || []).find((x) => x && x.name === WEBHOOK_DEL_CARRITO) || {}).parameters;
+  const sustituida = opciones.rutaCarritoSustituida === true && variante === 'produccion' && rutaCarrito && /^[A-Za-z0-9_-]{8,120}$/.test(String(rutaCarrito.path || '')) && !/^REEMPLAZAR_/i.test(String(rutaCarrito.path));
+  h.push(...(sustituida ? hc.filter((x) => !/ruta como marcador|marcador REEMPLAZAR_RUTA_CARRITO\S* debe aparecer/.test(x) && !(/credencial de cabecera de la ingesta/.test(x) && !/no «ninguna»/.test(x))) : hc));
+  // LOW de seguridad (ronda 2): con la credencial ya sustituida (`--publicable`) el filtro de arriba aceptaba CUALQUIER nombre en el webhook del carrito. La credencial del carrito tiene que ser LA MISMA que usa «Traer configuración» (la de la ingesta del comercio).
+  if (variante === 'produccion' && rutaCarrito) {
+    const credDe = (nombre) => String((((((flujo || {}).nodes || []).find((x) => x && x.name === nombre) || {}).credentials || {}).httpHeaderAuth || {}).name || '');
+    const delCarrito = credDe(WEBHOOK_DEL_CARRITO);
+    const delPanel = credDe('Traer configuración');
+    if (delCarrito === '' || delPanel === '' || delCarrito !== delPanel) h.push(`«${WEBHOOK_DEL_CARRITO}» debe usar la MISMA credencial de cabecera que «Traer configuración» (la de la ingesta del comercio), no «${delCarrito || 'ninguna'}»`);
   }
   // La URL del verificador interno solo puede estar en «Verificar firma con el receptor»: ni en «Config base» ni en ningún otro nodo (ni en sus notas), en ninguna variante.
   for (const n of nodos) {
@@ -506,7 +539,9 @@ export function guardias(variante, flujo, opciones = {}) {
     if (!destinosDe('Descartar repetidos', 0).includes('Config base')) h.push('«Descartar repetidos» no sigue a «Config base»');
     // «Config base» solo se alcanza después de verificar la firma y descartar repetidos; «Entrega del receptor» solo sale hacia el verificador.
     const entradasDeConfigBase = Object.entries(conex).filter(([, s]) => ((s && s.main) || []).some((o) => (o || []).some((x) => x.node === 'Config base'))).map(([de]) => de);
-    if (entradasDeConfigBase.length !== 1 || entradasDeConfigBase[0] !== 'Descartar repetidos') h.push(`«Config base» tiene que tener como única entrada a «Descartar repetidos» (hoy: ${entradasDeConfigBase.join(', ') || 'ninguna'})`);
+    // La segunda entrada es el carrito del catálogo web (autenticado por su propio nodo): «Config base» tiene que correr antes que «Carga de entrada», que lee su `phoneNumberIdEsperado`.
+    const esperadas = ['Descartar repetidos', WEBHOOK_DEL_CARRITO];
+    if (entradasDeConfigBase.length !== 2 || !esperadas.every((e) => entradasDeConfigBase.includes(e))) h.push(`«Config base» tiene que tener como únicas entradas a «Descartar repetidos» y «${WEBHOOK_DEL_CARRITO}» (hoy: ${entradasDeConfigBase.join(', ') || 'ninguna'})`);
     const salidasDeEntrega = [...new Set((((conex[NODO_RECEPTOR] || {}).main) || []).flat().map((x) => x.node))];
     if (salidasDeEntrega.length !== 1 || salidasDeEntrega[0] !== 'Verificar firma con el receptor') h.push('«Entrega del receptor» tiene que salir solo hacia «Verificar firma con el receptor»');
     if (!destinosDe('¿Firma válida?', 1).includes('Rechazar (401)')) h.push('«¿Firma válida?» no manda la firma inválida a «Rechazar (401)»');
@@ -518,8 +553,9 @@ export function guardias(variante, flujo, opciones = {}) {
   const conEntrada = new Set();
   for (const s of Object.values(conex)) for (const o of ((s && s.main) || [])) for (const x of (o || [])) conEntrada.add(x.node);
   const sinEntradas = nodos.filter((n) => !conEntrada.has(n.name)).map((n) => n.name);
-  const unica = variante === 'produccion' ? NODO_RECEPTOR : NODO_PRUEBA;
-  if (sinEntradas.length !== 1 || sinEntradas[0] !== unica) h.push(`el único nodo sin entradas tiene que ser «${unica}» (hoy: ${sinEntradas.join(', ') || 'ninguno'})`);
+  // En producción, además del receptor, el webhook del carrito del catálogo web (la segunda y última entrada).
+  const sinEntradasEsperadas = variante === 'produccion' ? [NODO_RECEPTOR, WEBHOOK_DEL_CARRITO].sort() : [NODO_PRUEBA];
+  if (JSON.stringify([...sinEntradas].sort()) !== JSON.stringify(sinEntradasEsperadas)) h.push(`los únicos nodos sin entradas tienen que ser «${sinEntradasEsperadas.join('», «')}» (hoy: ${sinEntradas.join(', ') || 'ninguno'})`);
   for (const n of NODOS_DEL_PR3) if (!nombres.has(n)) h.push(`falta el nodo «${n}» de la conversación, el cotejo y los avisos`);
   for (const [de, a] of EMPALMES_DEL_PR3) {
     if (nombres.has(de) && nombres.has(a) && !(((conex[de] || {}).main) || []).some((o) => (o || []).some((x) => x.node === a))) h.push(`«${de}» no está conectado a «${a}»`);
@@ -566,7 +602,7 @@ export function guardias(variante, flujo, opciones = {}) {
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
   // `REEMPLAZAR_` solo en «Config base», en el receptor, en la ruta de la entrada de prueba y en los NOMBRES de credencial (`credentials`).
-  const conMarcador = new Set(['Config base', NODO_RECEPTOR, 'Verificar firma con el receptor', NODO_PRUEBA, 'Traer catálogo']);
+  const conMarcador = new Set(['Config base', NODO_RECEPTOR, 'Verificar firma con el receptor', NODO_PRUEBA, 'Traer catálogo', WEBHOOK_DEL_CARRITO]);
   for (const n of nodos) {
     if (conMarcador.has(n.name)) continue;
     const { credentials: _c, ...sinCredenciales } = n;
@@ -633,6 +669,8 @@ export function armarCasaBermejo(proyecto, datos, v, origenReceptor = leerRecept
     plantilla.nodes.unshift(...JSON.parse(JSON.stringify(origenReceptor.nodes)));
     Object.assign(plantilla.connections, JSON.parse(JSON.stringify(origenReceptor.conexiones)));
     plantilla.connections['Descartar repetidos'] = { main: [[{ node: 'Config base', type: 'main', index: 0 }]] };
+    // El carrito del catálogo web (módulo catalogo-web): el webhook y su conexión; el código de «Carga de entrada» lo incluye más abajo. La variante de prueba no lo lleva.
+    injertarCarrito(plantilla, { tenant: TENANT, credencialIngesta: dato(datos, 'credenciales.ingesta', donde), prueba });
   }
   for (const n of plantilla.nodes) {
     n.parameters = reemplazarTextos(n.parameters, datos, `${donde} · ${n.name}`);
@@ -656,7 +694,9 @@ export function armarCasaBermejo(proyecto, datos, v, origenReceptor = leerRecept
     if (vd) {
       const fuente = proyecto.paquetes[`vd-${vd[1]}`];
       if (!fuente || fuente.length !== 1) throw new Error(`${donde} · ${n.name}: el config no declara el nodo común «${vd[1]}»`);
-      n.parameters.jsCode = [...proyecto.librerias, ...proyecto.comun, fuente[0]].join('\n\n') + '\n';
+      // «Carga de entrada» lleva antepuesta la rama del carrito del catálogo web (módulo catalogo-web; el código común del core no se toca).
+      const codigoNodo = vd[1] === 'carga-de-entrada' ? cargaConCarrito(fuente[0]) : fuente[0];
+      n.parameters.jsCode = [...proyecto.librerias, ...proyecto.comun, codigoNodo].join('\n\n') + '\n';
     }
   }
   // La cadena de envío común (no se copia), con las credenciales por NOMBRE. Cuelga de «Armar mensajes»; el resumen cuelga aparte y corre al final.
@@ -674,7 +714,7 @@ export function armarCasaBermejo(proyecto, datos, v, origenReceptor = leerRecept
   // contra ese número coteja el servidor, y solo viaja si el envío de la imagen fue aceptado. `no_contactar` viaja SIEMPRE.
   const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
   if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes('evento: m.evento')) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
-  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; if ((m.evento === 'qr_enviado' || m.evento === 'pedido_sin_cobro') && Array.isArray(m.lineas) && m.lineas.length) { r.lineas = m.lineas; if (m.entrega) r.entrega = m.entrega; } } return JSON.stringify(r); })() }}";
+  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; if ((m.evento === 'qr_enviado' || m.evento === 'pedido_sin_cobro') && Array.isArray(m.lineas) && m.lineas.length) { r.lineas = m.lineas; if (m.entrega) r.entrega = m.entrega; if (m.evento === 'qr_enviado' && typeof m.reemplaza === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(m.reemplaza)) r.reemplaza = m.reemplaza; } } return JSON.stringify(r); })() }}";
   // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
   injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   // El GUARDADO de la imagen que el asistente ENVÍA (QR por media id): módulo común, cuelga de «Reportar mensaje (saliente)» y va debajo de todo (plan del 16/11/2026, bloque 2a).
@@ -699,7 +739,7 @@ export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS,
     const texto = armarCasaBermejo(proyecto, datos, v, origen);
     const variante = v.archivo === FLUJO_PRUEBA ? 'prueba' : 'produccion';
     const armado = JSON.parse(texto);
-    const propios = [...guardias(variante, armado), ...(variante === 'produccion' ? hallazgosDelReceptor(armado, datos, origen) : [])];
+    const propios = [...guardias(variante, armado, { credencialIngesta: datos.credenciales.ingesta }), ...(variante === 'produccion' ? hallazgosDelReceptor(armado, datos, origen) : [])];
     if (propios.length) throw new Error(`${v.archivo}: ${propios.join('; ')}`);
     const ruta = join(carpeta, v.archivo);
     const actual = leerSiExiste(ruta, v.archivo);
@@ -708,7 +748,7 @@ export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS,
     if (actual !== null) {
       try {
         const j = JSON.parse(actual);
-        versionado = [...guardias(variante, j), ...(variante === 'produccion' ? hallazgosDelReceptor(j, datos, origen) : [])];
+        versionado = [...guardias(variante, j, { credencialIngesta: datos.credenciales.ingesta }), ...(variante === 'produccion' ? hallazgosDelReceptor(j, datos, origen) : [])];
       } catch (x) { versionado = ['no es un JSON válido']; }
     }
     if (!verificar) escribirSinSeguirEnlaces(ruta, texto, v.archivo);
@@ -730,7 +770,7 @@ export function construirLocal({ carpeta = AQUI, salida = carpeta, datosLocal, v
     const texto = armarCasaBermejo(proyecto, datos, v, origen);
     const variante = v.archivo === FLUJO_PRUEBA ? 'prueba' : 'produccion';
     const armado = JSON.parse(texto);
-    const propios = [...guardias(variante, armado), ...(variante === 'produccion' ? hallazgosDelReceptor(armado, datos, origen) : [])];
+    const propios = [...guardias(variante, armado, { credencialIngesta: datos.credenciales.ingesta }), ...(variante === 'produccion' ? hallazgosDelReceptor(armado, datos, origen) : [])];
     if (propios.length) throw new Error(`${v.archivo}: ${propios.join('; ')}`);
     return { texto, armado, archivo: variante === 'prueba' ? FLUJO_PRUEBA_LOCAL : FLUJO_PRODUCCION_LOCAL };
   });
@@ -767,7 +807,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       // un `wabaIdEsperado` como expresión) no pasa. La variante sale de «Entrada de prueba» (solo la de prueba la tiene). La comparación de la entrada del receptor con su origen necesita los datos
       // con los que se armó (`--datos <archivo>.local.json`) o el flujo versionado con los datos versionados; sin ellos el valor armado no se puede cotejar y solo corren las guardias.
       const variante = Array.isArray(flujoJson && flujoJson.nodes) && flujoJson.nodes.some((n) => n && n.name === NODO_PRUEBA) ? 'prueba' : 'produccion';
-      hallazgos.push(...guardias(variante, flujoJson));
+      hallazgos.push(...guardias(variante, flujoJson, { credencialIngesta: datos.credenciales.ingesta, rutaCarritoSustituida: true }));
       if (variante === 'produccion' && (datosLocales || !opcion('--flujo'))) hallazgos.push(...hallazgosDelReceptor(flujoJson, datos));
       if (hallazgos.length) {
         console.error('✗ El flujo de Casa Bermejo NO se puede publicar todavía:');

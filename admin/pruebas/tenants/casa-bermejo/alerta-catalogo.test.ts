@@ -170,8 +170,8 @@ describe('un defecto del catálogo lleva su causa en el aviso que ya sale', () =
     expect(t.fallo).toBeNull();
     expect(w.sd['casabermejoAlertas']).toBeUndefined();
   });
-  it('el flujo no crece: 63 nodos en producción y 58 en prueba (57 y 52 más los 2 del indicador de escritura (21/11/2026) y los 4 de la rama del guardado de la imagen saliente)', () => {
-    expect(PRODUCCION.nodes).toHaveLength(63);
+  it('el flujo no crece: 64 nodos en producción y 58 en prueba (el webhook del carrito, D9-a; 57 y 52 más los 2 del indicador de escritura (21/11/2026) y los 4 de la rama del guardado de la imagen saliente)', () => {
+    expect(PRODUCCION.nodes).toHaveLength(64);
     expect(PRUEBA.nodes).toHaveLength(58);
   });
 });
