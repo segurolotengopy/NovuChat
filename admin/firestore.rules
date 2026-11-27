@@ -2080,6 +2080,17 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // /campanasSalientes/{campanaId} (+ /destinatarios/{wa_tel}) — la cola propia de la campaña saliente del chat (Core, PR-C,
+      // 27/11/2026): la campaña (estado, tanda, conteos) y un destinatario por contacto. La escribe SOLO el servidor (Admin SDK:
+      // los scripts de NovuChat, `reclamarSalidaPersona` y `confirmarSalidaPersona`). Ni el administrador, ni el operador, ni el
+      // token de ingesta, ni otro comercio la leen ni la escriben.
+      match /campanasSalientes/{campanaId} {
+        allow read, write: if false;
+        match /destinatarios/{destinatarioId} {
+          allow read, write: if false;
+        }
+      }
+
       // /mediosEnviados/{objeto} — el metadato de los ADJUNTOS que una persona envió desde la consola (Core, «Envío de
       // medios por consola», B2; Andres 10/11/2026: 30 días). Lo escribe SOLO `enviarAdjuntoComoPersona` (SDK Admin), en la
       // misma transacción que el mensaje; lo leen SOLO `verMedio` y `leerAdjuntoPersona`, también con el SDK Admin. Nadie del

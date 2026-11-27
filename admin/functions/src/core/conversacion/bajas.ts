@@ -11,6 +11,7 @@
  *
  * CLAVE DE LA BAJA (declarada, M2): `wa_` seguido de los dígitos de `messages[0].from`, tal cual llegan (sin `+` ni espacios
  * internos). Una variante sin el 591 sería OTRA clave. La lista que arme el PR-C debe usar exactamente ese formato.
+ * La lista del PR-C usa `claveDeContacto` (`wa_<dígitos>`) para la baja y para la conversación (M2).
  *
  * QUÉ CUENTA COMO RESPUESTA A LA CAMPAÑA (PR-B, 27/11/2026, decisiones E3 y E8 de `NOVUCHAT_plan-correcciones-1140`).
  * El servidor sabe qué campaña se le envió a cada persona: `confirmarSalida` escribe `conversaciones/{wa_tel}.campanaEnviada

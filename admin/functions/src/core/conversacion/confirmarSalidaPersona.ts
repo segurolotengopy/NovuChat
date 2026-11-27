@@ -42,6 +42,8 @@ import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestor
 import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada, type Ruta } from '../seguridad/firma.js';
 import { ID_COMERCIO } from './acceso.js';
+import { CAMPANA_ID } from './bajas.js';
+import { cambiosDeCampana, cuentaDeTransicion, leerConfigCampana, refCampana, refConfigCampana } from './salidaCampana.js';
 import {
   CLAVE_DE_ENVIO, CODIGO_DE_ENVIO, ID_META, esAutorDePlantilla, liberarRetomada, refTopesDeRetomar, sumarMensajePersona, sumarPlantillaCampana, sumarPlantillaPersona,
 } from './salidaPersona.js';
@@ -123,6 +125,12 @@ export async function confirmarSalida(
     if (!desdeEnviando && !desdeIncierto) return { codigo: 409 };
     if (desdeIncierto && c.resultado === 'incierto') return { codigo: 409 }; // inalcanzable (arriba), por claridad
 
+    // LA CAMPAÑA (PR-C): un mensaje suyo lleva `campanaId`; sus contadores (`aceptados`, `rechazados`, `inciertos`) y la pausa por
+    // errores se deciden AQUÍ, en el servidor, en la misma transacción. Lecturas antes de toda escritura. Una transición no válida
+    // (o el mismo resultado repetido, que ya salió arriba) no cuenta dos veces.
+    const idDeCampana: unknown = s.get('autor') === 'campana' ? s.get('campanaId') : undefined;
+    const [campanaSnap, configSnap] = typeof idDeCampana === 'string' && CAMPANA_ID.test(idDeCampana)
+      ? await tx.getAll(refCampana(db, tenantId, idDeCampana), refConfigCampana(db, tenantId)) : [null, null];
     const contado = s.get('contado') === true;
     const ts = Timestamp.fromMillis(ahoraMs);
     const cambios: Record<string, unknown> = { estadoEnvio: c.resultado, confirmadoEn: ts };
@@ -142,6 +150,11 @@ export async function confirmarSalida(
     if (cuenta && !contado) { cambios['contado'] = true; sumar(tx, db, tenantId, ahoraMs, 1); }
     if (!cuenta && contado) { cambios['contado'] = false; sumar(tx, db, tenantId, ahoraMs, -1); }
     tx.update(ref, cambios);
+    const cuentaDeCampana = cuentaDeTransicion(estado, c.resultado);
+    if (campanaSnap?.exists && cuentaDeCampana) {
+      const delta = cambiosDeCampana(campanaSnap.data(), cuentaDeCampana, leerConfigCampana(configSnap?.data()));
+      if (delta) tx.update(campanaSnap.ref, delta);
+    }
     if (convParaCampana !== null && convParaCampana.exists && c.idMeta !== undefined) {
       // `campanaId` sale del payload de los botones (`cs:si:<id>` / `cs:no:<id>`); sin uno válido queda `null`.
       const botones: unknown = s.get('plantilla.botones');

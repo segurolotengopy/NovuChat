@@ -40,6 +40,11 @@
  * Para este tipo la caducidad NO mira la ventana de Meta (existe para la ventana cerrada); los 2 min sí aplican. Entrega
  * `{texto:'', tipo:'plantilla', plantilla:{nombre, idioma, parametros}}` con la forma ya comprobada.
  *
+ * LA CAMPAÑA SALIENTE (PR-C). Tiene cola propia (`salidaCampana.ts`): después de los mensajes de las personas, y solo con los
+ * lugares que dejaron libres, `materializarCampana` crea hasta `porReclamo` mensajes de la campaña en `enviando` (con la cabecera de
+ * plantillas). Un `pendiente` de campaña escrito a mano nunca sale: pasa a `rechazado/fueraDeCola`. Si la materialización falla, las
+ * personas salen igual. Sin `campanaSalienteEnCurso` en la ruta no hay ninguna lectura de más.
+ *
  * LA LIMPIEZA. Un mensaje `enviando` por más de 2 minutos (el flujo cayó antes de confirmar) pasa a
  * `incierto` y se cuenta (puede haber llegado). Nunca se vuelve a `pendiente` ni se reenvía solo.
  *
@@ -53,8 +58,10 @@ import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestor
 import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada, type Ruta } from '../seguridad/firma.js';
 import { ID_COMERCIO } from './acceso.js';
+import { CAMPANA_ID } from './bajas.js';
+import { cuentaDeTransicion, materializarCampana, refCampana, sumarConteosDeCampana } from './salidaCampana.js';
 import {
-  CODIGO_CADUCADO, ENVIANDO_MAXIMO_MS, MAXIMO_POR_RECLAMO, PENDIENTE_MAXIMO_MS, IDIOMA_DE_PLANTILLA, NOMBRE_DE_PLANTILLA, PARAMETROS_MAXIMOS, botonesDePlantillaValidos, canalDeSalidaDe, esAutorDePlantilla, type BotonDePlantilla, claveReleDe, liberarRetomada, parametroDePlantillaValido, refTopesDeRetomar,
+  CODIGO_CADUCADO, CODIGO_FUERA_DE_COLA, ENVIANDO_MAXIMO_MS, MAXIMO_POR_RECLAMO, PENDIENTE_MAXIMO_MS, IDIOMA_DE_PLANTILLA, NOMBRE_DE_PLANTILLA, PARAMETROS_MAXIMOS, canalDeSalidaDe, esAutorDePlantilla, type BotonDePlantilla, claveReleDe, liberarRetomada, parametroDePlantillaValido, refTopesDeRetomar,
   sumarMensajePersona, sumarPlantillaCampana, sumarPlantillaPersona, type CanalDeSalida,
 } from './salidaPersona.js';
 import { milisegundosDeMomento, ventanaDeMetaAbierta } from './turno.js';
@@ -159,20 +166,26 @@ export async function reclamarSalida(
       const estado: unknown = s.get('estadoEnvio');
       // Una plantilla `pendiente` puede caducar abajo: su cupo se devuelve en la misma transacción (lectura antes de escribir).
       const topesDeRetomar = estado === 'pendiente' && tipoDelMensaje === 'plantilla' && s.get('autor') === 'persona' ? await tx.get(refTopesDeRetomar(db, tenantId)) : null;
-      // UNA CAMPAÑA NO SALE a quien pidió la baja, tiene `noContactar` o está bloqueado: se lee la baja en ESTA transacción (lectura
-      // antes de toda escritura) y, si corresponde, el mensaje se cancela abajo como cualquier otro que no sale (`caducado`).
-      // M3: la baja frena TAMBIÉN cualquier plantilla de persona (Retomar): el pie de la plantilla promete «no le escribiremos más».
-      // Un texto de persona dentro de la ventana sigue saliendo (la persona escribió primero).
-      const bajaDeCampana = estado === 'pendiente' && (esCampana || tipoDelMensaje === 'plantilla') ? await tx.get(db.doc(`tenants/${tenantId}/bajas/${conversacionId}`)) : null;
-      // M1: la campaña CIERRA ANTE LA DUDA (como `rescates.ts`): cualquier valor de `noContactar` o `bloqueada` distinto de
-      // ausente o `false` (`'true'`, `1`, `null`…) la frena.
-      const marcado = (v: unknown): boolean => v !== undefined && v !== false;
-      // `riesgoEn` (persona en crisis, lo escribe solo el servidor) frena la campaña igual que en `rescates.ts`.
-      const noSaleAlContacto = bajaDeCampana?.exists === true
-        || (esCampana && (marcado(conv.get('noContactar')) || marcado(conv.get('bloqueada')) || marcado(conv.get('riesgoEn'))));
-      // O1 (declarado, es del PR-C): la campaña NO tiene tope propio en el servidor (ni por día ni por tanda ni uno por
-      // contacto) y COMPARTE esta cola (limit MAXIMO_POR_RECLAMO*2, orden por `ts`, caducidad de 2 min) con los textos y los
-      // Retomar de las personas: una tanda grande puede dejar caducar mensajes de personas del mismo comercio.
+      // M3: la baja frena TAMBIÉN cualquier plantilla de PERSONA (Retomar): el pie de la plantilla promete «no le escribiremos más».
+      // Se lee en ESTA transacción (lectura antes de toda escritura) y, si existe, el mensaje se cancela abajo como cualquier otro
+      // que no sale (`caducado`). Un texto de persona dentro de la ventana sigue saliendo (la persona escribió primero).
+      // La campaña NO pasa por acá: sus mensajes nacen `enviando` en `materializarCampana`, que ya aplicó baja y marcas.
+      const bajaDeCampana = estado === 'pendiente' && !esCampana && tipoDelMensaje === 'plantilla' ? await tx.get(db.doc(`tenants/${tenantId}/bajas/${conversacionId}`)) : null;
+      const noSaleAlContacto = bajaDeCampana?.exists === true;
+      // Un `enviando` de campaña que va a pasar a `incierto` también suma a `inciertos` de su campaña (lectura antes de escribir).
+      const idDeCampana: unknown = esCampana ? s.get('campanaId') : undefined;
+      const campanaDelMensaje = estado === 'enviando' && typeof idDeCampana === 'string' && CAMPANA_ID.test(idDeCampana)
+        ? await tx.get(refCampana(db, tenantId, idDeCampana)) : null;
+      // UN `pendiente` DE CAMPAÑA NO SALE NUNCA (PR-C): la campaña tiene su cola propia (`salidaCampana.ts`) y sus mensajes nacen
+      // `enviando`. Uno escrito a mano en `pendiente` se cancela (`fueraDeCola`): así no ocupa la cola de las personas ni sale
+      // sin pasar por los topes del servidor.
+      if (estado === 'pendiente' && esCampana) {
+        tx.update(candidato.ref, {
+          estadoEnvio: 'rechazado', codigoEnvio: CODIGO_FUERA_DE_COLA, reintentable: false,
+          confirmadoEn: Timestamp.fromMillis(ahoraMs), contado: false,
+        });
+        return 'caducado';
+      }
       // LA CADUCIDAD, antes de mirar de qué línea es: un `pendiente` viejo de otra línea tampoco puede
       // quedarse en la cola ocupando lugar. Sin entregarse, sin contar, reintentable.
       if (estado === 'pendiente') {
@@ -186,8 +199,7 @@ export async function reclamarSalida(
             estadoEnvio: 'rechazado', codigoEnvio: CODIGO_CADUCADO, reintentable: tipoDelMensaje !== 'plantilla',
             confirmadoEn: Timestamp.fromMillis(ahoraMs), contado: false,
           });
-          // Solo Retomar reserva cupo y bloquea la conversación; la campaña no libera nada (no `topesDeRetomar`).
-          if (topesDeRetomar !== null && !esCampana) liberarRetomada(tx, s, conv, topesDeRetomar);
+          if (topesDeRetomar !== null) liberarRetomada(tx, s, conv, topesDeRetomar);
           return 'caducado';
         }
       }
@@ -203,13 +215,13 @@ export async function reclamarSalida(
           const parametros: unknown = s.get('plantilla.parametros');
           const botones: unknown = s.get('plantilla.botones');
           // La forma se vuelve a comprobar acá: lo guardado no se fía. Si no es válida, no sale (caduca).
-          // Retomar (`persona`): 1 a 10 parámetros y sin botones. Campaña: 0 a 10 parámetros y botones SOLO de ella.
-          const minimo = esCampana ? 0 : 1;
+          // Retomar (`persona`): 1 a 10 parámetros y sin botones (los botones son solo de la campaña, que no pasa por acá).
+          const minimo = 1;
           if (typeof nombre !== 'string' || !NOMBRE_DE_PLANTILLA.test(nombre) || typeof idioma !== 'string' || !IDIOMA_DE_PLANTILLA.test(idioma)
               || !Array.isArray(parametros) || parametros.length < minimo || parametros.length > PARAMETROS_MAXIMOS
               || !parametros.every(parametroDePlantillaValido)) return 'nada';
-          if (botones !== undefined && (!esCampana || !botonesDePlantillaValidos(botones))) return 'nada';
-          plantillaDeLaVuelta = { nombre, idioma, parametros: [...parametros] as string[], ...(botones !== undefined ? { botones: botones as BotonDePlantilla[] } : {}) };
+          if (botones !== undefined) return 'nada';
+          plantillaDeLaVuelta = { nombre, idioma, parametros: [...parametros] as string[] };
         } else if (esAdjunto) {
           // Sin la cabecera del flujo nuevo, o con un adjunto ya en este lote, NO se entrega: queda `pendiente` y caduca
           // como cualquier pendiente (rechazado, `caducado`, reintentable) si nadie lo reclama a tiempo.
@@ -240,6 +252,8 @@ export async function reclamarSalida(
         if (desde === null || ahoraMs - desde >= ENVIANDO_MAXIMO_MS) {
           tx.update(candidato.ref, { estadoEnvio: 'incierto', confirmadoEn: Timestamp.fromMillis(ahoraMs), contado: true });
           (tipoDelMensaje !== 'plantilla' ? sumarMensajePersona : esCampana ? sumarPlantillaCampana : sumarPlantillaPersona)(tx, db, tenantId, ahoraMs, 1);
+          const cuenta = cuentaDeTransicion('enviando', 'incierto');
+          if (esCampana && campanaDelMensaje?.exists === true && cuenta) sumarConteosDeCampana(tx, campanaDelMensaje.ref, cuenta);
           return 'incierto';
         }
       }
@@ -260,6 +274,16 @@ export async function reclamarSalida(
       mensajes.push({ ...base, texto: '', tipo: datos['tipo'] as MensajeDeAdjuntoReclamado['tipo'], adjunto: dellevado });
     } else {
       mensajes.push({ ...base, texto: String(datos['texto'] ?? ''), tipo: 'text' });
+    }
+  }
+  // LA CAMPAÑA SALIENTE: DESPUÉS de las personas y solo con los lugares que ellas dejaron libres. Un error acá NUNCA tumba el reclamo:
+  // las personas salen igual (y queda un registro sin teléfonos ni textos).
+  if (conPlantillas && mensajes.length < MAXIMO_POR_RECLAMO) {
+    try {
+      mensajes.push(...await materializarCampana(ruta, rutaDoc.data(), db, ahoraMs, MAXIMO_POR_RECLAMO - mensajes.length));
+    } catch (e) {
+      const c = (e as { code?: unknown } | null)?.code;
+      logger.error('reclamarSalidaPersona: la campaña falló', { tenantId, codigo: typeof c === 'string' || typeof c === 'number' ? String(c) : 'desconocido' });
     }
   }
   return { mensajes, inciertos, caducados };

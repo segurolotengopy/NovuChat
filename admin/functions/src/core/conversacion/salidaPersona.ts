@@ -70,6 +70,8 @@ export const ENVIANDO_MAXIMO_MS = 2 * 60_000;
  */
 export const PENDIENTE_MAXIMO_MS = 2 * 60_000;
 export const CODIGO_CADUCADO = 'caducado';
+/** El código de un `pendiente` de campaña: la campaña tiene su cola propia (`salidaCampana.ts`) y un `pendiente` suyo nunca sale. */
+export const CODIGO_FUERA_DE_COLA = 'fueraDeCola';
 /** Cuántos mensajes entrega un reclamo, como máximo. */
 export const MAXIMO_POR_RECLAMO = 10;
 /** Cuánto espera la Function al webhook del timbre (el flujo responde de inmediato). */
