@@ -12,6 +12,12 @@
  *   --apagar    escribe `rafagaApagada: true` (el valor exacto).
  *   --encender  BORRA el campo (FieldValue.delete()); nunca lo pone en false.
  *
+ * ALCANCE. La bandera llega al IF de la pieza solo en los flujos cuyo «Config del negocio» la propaga: los
+ * config comunes de core (#1135: Demo A, Walisuma, Casa Bermejo, Bellido, captación y onboarding), más Demo B y
+ * Bellido Agenda mínima. PENDIENTES (tienen su propio «Config del negocio», que no la emite): Q'Taco
+ * (venta-minima) y el chat de NovuChat; en ellos este script escribe el campo pero no surte efecto todavía.
+ * Detalle en `docs/arquitectura/rafagas.md`.
+ *
  * Un comercio por corrida (sin modo «todos»). Idempotente: si ya está así, no escribe. No toca ningún otro campo.
  * Deja auditoría `cambiar_rafaga` en `tenants/{id}/auditoria` (accion, uid del script, hora, antes y después).
  *
