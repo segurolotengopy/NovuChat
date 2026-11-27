@@ -16,6 +16,12 @@
  *        --nombre <nombre> --idioma <es> --categoria UTILITY --estado APPROVED [--variables 1] \
  *        [--aplicar --respaldo <ruta> [--confirmo-produccion <phoneNumberId>]]
  *
+ * USO `campana` (PR-C de la campaña saliente del chat, 26/11/2026): la plantilla de la campaña saliente, también por número,
+ * en `rutasWhatsApp/{n}.plantillas.campana = { nombre, idioma, categoria, estado, variables, cabecera, botones, registradaEn }`.
+ * Se registra SOLO si es UTILITY o MARKETING (Meta puede reclasificarla), APPROVED, `--variables 0`, `--cabecera ninguna` y
+ * `--botones 2` (dos respuestas rápidas). Aquí no hay modo «apagar»: un estado distinto de APPROVED no se registra; una campaña en
+ * marcha se detiene con `campana-saliente.mjs pausar`. El nombre de la plantilla es DATO del número, nunca del código.
+ *
  * REGLAS.
  *   · Con `--estado APPROVED` se exige UTILITY y `--variables 1` (lo contrario no se registra: el servidor no la usaría
  *     y dejaría una plantilla «buena» que no lo es).
@@ -49,17 +55,19 @@ import {
   rutaDelRespaldoSigueIgual,
 } from './aplicar-consola-conversaciones.mjs';
 
-const USOS = ['retomar'];
+const USOS = ['retomar', 'campana'];
 const PATRON_NOMBRE = /^[a-z0-9_]{1,100}$/;
 const PATRON_IDIOMA = /^[a-z]{2,3}(_[A-Z]{2})?$/;
 const PATRON_ESTADO = /^[A-Z][A-Z_]{2,29}$/;
 const CATEGORIAS = ['UTILITY', 'MARKETING', 'AUTHENTICATION'];
 const PATRON_NUMERO = /^[0-9]{6,20}$/;
-const CON_VALOR = ['proyecto', 'numero', 'uso', 'nombre', 'idioma', 'categoria', 'estado', 'variables', 'respaldo', 'confirmo-produccion'];
+const CON_VALOR = ['proyecto', 'numero', 'uso', 'nombre', 'idioma', 'categoria', 'estado', 'variables', 'cabecera', 'botones', 'respaldo', 'confirmo-produccion'];
+/** Lo que la plantilla de campaña lleva de más que la de Retomar: la cabecera (solo `ninguna`) y los botones de respuesta rápida (exactamente 2). */
+const CABECERAS = ['ninguna', 'imagen', 'video', 'documento', 'texto', 'ubicacion'];
 const BANDERAS = ['aplicar'];
 
-export const USO = '  node scripts/plataforma/registrar-plantilla.mjs --proyecto <id> --numero <phoneNumberId> --uso retomar '
-  + '--nombre <nombre> --idioma <es> --categoria UTILITY --estado APPROVED [--variables 1] [--aplicar --respaldo <ruta> [--confirmo-produccion <phoneNumberId>]]';
+export const USO = '  node scripts/plataforma/registrar-plantilla.mjs --proyecto <id> --numero <phoneNumberId> --uso retomar|campana '
+  + '--nombre <nombre> --idioma <es> --categoria UTILITY --estado APPROVED [--variables 1] [--cabecera ninguna --botones 2 (solo campana; --variables 0)] [--aplicar --respaldo <ruta> [--confirmo-produccion <phoneNumberId>]]';
 
 const cola = (n) => `…${String(n).slice(-4)}`;
 
@@ -78,7 +86,7 @@ export function plantillaRetomarValida(p) {
  * Problemas para REGISTRAR (puro). Vacío = se puede escribir. Con APPROVED exige lo mismo que C1; con otro estado
  * permite cualquier categoría y cualquier cantidad de variables entera (para poder apagar).
  */
-export function problemasDeLaPlantilla(p) {
+export function problemasDeLaPlantilla(p, uso = 'retomar') {
   const problemas = [];
   if (typeof p !== 'object' || p === null) return ['no hay datos de la plantilla'];
   if (typeof p.nombre !== 'string' || !PATRON_NOMBRE.test(p.nombre)) problemas.push('--nombre inválido (minúsculas, dígitos y guion bajo, de 1 a 100)');
@@ -86,11 +94,32 @@ export function problemasDeLaPlantilla(p) {
   if (typeof p.categoria !== 'string' || !CATEGORIAS.includes(p.categoria)) problemas.push(`--categoria tiene que ser una de ${CATEGORIAS.join(', ')}`);
   if (typeof p.estado !== 'string' || !PATRON_ESTADO.test(p.estado)) problemas.push('--estado inválido (en mayúsculas, como lo informa WAM: APPROVED, PAUSED…)');
   if (!Number.isInteger(p.variables) || p.variables < 0 || p.variables > 10) problemas.push('--variables tiene que ser un entero de 0 a 10');
+  if (uso === 'campana') {
+    // La campaña no tiene modo «apagar»: solo se registra lo que el servidor puede enviar.
+    if (p.estado !== 'APPROVED') problemas.push('la plantilla de campaña se registra solo APPROVED (para detener una campaña use campana-saliente.mjs pausar)');
+    if (p.categoria !== 'UTILITY' && p.categoria !== 'MARKETING') problemas.push('la plantilla de campaña tiene que ser UTILITY o MARKETING');
+    if (p.variables !== 0) problemas.push('la plantilla de campaña no lleva variables: --variables 0');
+    if (p.cabecera !== 'ninguna') problemas.push('la plantilla de campaña no lleva cabecera: --cabecera ninguna');
+    if (p.botones !== 2) problemas.push('la plantilla de campaña lleva exactamente 2 botones de respuesta rápida: --botones 2');
+    return problemas;
+  }
   if (p.estado === 'APPROVED') {
     if (p.categoria !== 'UTILITY') problemas.push('una plantilla APPROVED tiene que ser UTILITY (Meta la tomó como otra categoría: el servidor no la enviaría; registre el estado real, no APPROVED)');
     if (p.variables !== 1) problemas.push('Retomar usa exactamente UNA variable (el nombre del comercio): --variables 1');
   }
   return problemas;
+}
+
+/**
+ * El contrato de la plantilla de CAMPAÑA, puro y exacto (todo `===`): lo que el envío de la campaña exige antes de crear un
+ * mensaje. `registradaEn` no cuenta.
+ */
+export function plantillaCampanaValida(p) {
+  return typeof p === 'object' && p !== null
+    && typeof p.nombre === 'string' && PATRON_NOMBRE.test(p.nombre)
+    && typeof p.idioma === 'string' && PATRON_IDIOMA.test(p.idioma)
+    && (p.categoria === 'UTILITY' || p.categoria === 'MARKETING') && p.estado === 'APPROVED'
+    && p.variables === 0 && p.cabecera === 'ninguna' && p.botones === 2;
 }
 
 // ===========================================================================
@@ -130,13 +159,24 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   else if (!USOS.includes(uso)) problemas.push(`--uso tiene que ser uno de: ${USOS.join(', ')}`);
   for (const k of ['nombre', 'idioma', 'categoria', 'estado']) if (!(k in valores)) problemas.push(`falta --${k}`);
 
-  let variables = 1;
+  const esCampana = uso === 'campana';
+  if (!esCampana && ('cabecera' in valores || 'botones' in valores)) problemas.push('--cabecera y --botones solo valen con --uso campana');
+  let variables = esCampana ? 0 : 1;
   if ('variables' in valores) {
     if (!/^[0-9]{1,2}$/.test(valores['variables'])) problemas.push('--variables tiene que ser un entero de 0 a 10');
     else variables = Number(valores['variables']);
   }
   const plantilla = { nombre: valores['nombre'], idioma: valores['idioma'], categoria: valores['categoria'], estado: valores['estado'], variables };
-  if (['nombre', 'idioma', 'categoria', 'estado'].every((k) => k in valores)) problemas.push(...problemasDeLaPlantilla(plantilla));
+  if (esCampana) {
+    // La cabecera y los botones se informan siempre: lo que WAM no declara no se da por bueno.
+    if (!('cabecera' in valores)) problemas.push('falta --cabecera (ninguna, imagen, video, documento, texto o ubicacion)');
+    else if (!CABECERAS.includes(valores['cabecera'])) problemas.push(`--cabecera tiene que ser una de ${CABECERAS.join(', ')}`);
+    else plantilla.cabecera = valores['cabecera'];
+    if (!('botones' in valores)) problemas.push('falta --botones (cuántos botones de respuesta rápida lleva)');
+    else if (!/^[0-9]{1,2}$/.test(valores['botones'])) problemas.push('--botones tiene que ser un entero');
+    else plantilla.botones = Number(valores['botones']);
+  }
+  if (['nombre', 'idioma', 'categoria', 'estado'].every((k) => k in valores)) problemas.push(...problemasDeLaPlantilla(plantilla, uso));
 
   const confirmo = valores['confirmo-produccion'];
   if (confirmo !== undefined) {
@@ -163,13 +203,16 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
 // EJECUCIÓN
 // ===========================================================================
 const esPrecondicion = (e) => e?.code === 9 || e?.code === 'failed-precondition' || e?.code === 'FAILED_PRECONDITION';
-const CLAVES = ['nombre', 'idioma', 'categoria', 'estado', 'variables'];
+const CLAVES = ['nombre', 'idioma', 'categoria', 'estado', 'variables', 'cabecera', 'botones'];
+// `cabecera` y `botones` solo existen en la plantilla de campaña; en la de Retomar ambos son `undefined` a los dos lados.
 const igual = (a, b) => typeof a === 'object' && a !== null && CLAVES.every((k) => a[k] === b[k]);
-const linea = (p) => (p ? `${p.nombre} · ${p.idioma} · ${p.categoria} · ${p.estado} · ${p.variables} variable(s)` : 'AUSENTE');
+const linea = (p) => (p ? `${p.nombre} · ${p.idioma} · ${p.categoria} · ${p.estado} · ${p.variables} variable(s)${p.botones === undefined ? '' : ` · cabecera ${p.cabecera} · ${p.botones} botón(es)`}` : 'AUSENTE');
 
 const iso = (t) => (t && typeof t.toDate === 'function' ? t.toDate().toISOString() : null);
 /** Solo lo que importa de un registro (sin `registradaEn`), para el respaldo y la auditoría. */
-const resumen = (p) => (typeof p === 'object' && p !== null ? { nombre: p.nombre ?? null, idioma: p.idioma ?? null, categoria: p.categoria ?? null, estado: p.estado ?? null, variables: p.variables ?? null } : null);
+const resumen = (p) => (typeof p === 'object' && p !== null
+  ? { nombre: p.nombre ?? null, idioma: p.idioma ?? null, categoria: p.categoria ?? null, estado: p.estado ?? null, variables: p.variables ?? null,
+    ...(p.botones !== undefined || p.cabecera !== undefined ? { cabecera: p.cabecera ?? null, botones: p.botones ?? null } : {}) } : null);
 
 /**
  * LA ÚNICA ESCRITURA DEL ARCHIVO: UN lote atómico con (1) `update` de solo `plantillas.<uso>` con la precondición de la hora
@@ -206,7 +249,7 @@ export async function ejecutar(cfg, deps) {
   const hoy = snap.get(`plantillas.${cfg.uso}`);
   log(`  hoy      : ${linea(hoy)}`);
   log(`  después  : ${linea(cfg.plantilla)}`);
-  if (cfg.plantilla.estado !== 'APPROVED') {
+  if (cfg.uso === 'retomar' && cfg.plantilla.estado !== 'APPROVED') {
     log('\n  AVISO: el estado no es APPROVED, así que el servidor dejará de enviar esta plantilla. Registrarlo NO apaga la bandera del comercio: '
       + 'apagar personaPuedeRetomar es un paso aparte (aplicar-persona-puede-retomar.mjs --valor false).');
   }
@@ -241,6 +284,12 @@ export async function ejecutar(cfg, deps) {
   const despues = (await ref.get()).get(`plantillas.${cfg.uso}`);
   if (!igual(despues, cfg.plantilla)) { log('\n  ✗ La relectura no coincide con lo escrito. Revise la ruta con el seco.\n'); return 3; }
   log(`\n  ✓ Escrito y releído: ${linea(despues)}.`);
+  if (cfg.uso === 'campana') {
+    log(plantillaCampanaValida(despues)
+      ? '  Cumple el contrato de la campaña: el envío puede usarla (campana-saliente.mjs).\n'
+      : '  NO cumple el contrato de la campaña: el envío no la usará.\n');
+    return 0;
+  }
   log(plantillaRetomarValida(despues)
     ? '  Cumple C1: el servidor puede enviarla. Falta encender la bandera (aplicar-persona-puede-retomar.mjs).\n'
     : '  NO cumple C1 (no es APPROVED/UTILITY/1 variable): el servidor no la enviará. La bandera del comercio sigue como estaba: apáguela aparte con aplicar-persona-puede-retomar.mjs --valor false.\n');

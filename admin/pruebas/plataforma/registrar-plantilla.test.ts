@@ -323,3 +323,70 @@ describe('ejecutar contra el emulador', () => {
     expect((await leer(n2)).data()).not.toHaveProperty('plantillas');
   });
 });
+
+describe('uso campana (PR-C de la campaña saliente)', () => {
+  const NOMBRE_DE_PRUEBA = 'consulta_de_prueba';
+  const campana = (n: string, o: { categoria?: string; estado?: string; variables?: string; cabecera?: string; botones?: string } = {}, extra: string[] = []) => [
+    '--proyecto', PROYECTO, '--numero', n, '--uso', 'campana', '--nombre', NOMBRE_DE_PRUEBA, '--idioma', 'es',
+    '--categoria', o.categoria ?? 'UTILITY', '--estado', o.estado ?? 'APPROVED', '--variables', o.variables ?? '0',
+    '--cabecera', o.cabecera ?? 'ninguna', '--botones', o.botones ?? '2', ...extra,
+  ];
+  const problemas = (a: string[]) => {
+    const r = mod.analizarArgumentos(a, ENV_EMU);
+    expect(r.ok, JSON.stringify(r)).toBe(false);
+    return (r.problemas ?? []).join(' | ');
+  };
+
+  it('la invocación válida (UTILITY o MARKETING, 0 variables, sin cabecera, 2 botones) queda en seco', () => {
+    for (const categoria of ['UTILITY', 'MARKETING']) {
+      const r = mod.analizarArgumentos(campana('59170000001', { categoria }), ENV_EMU);
+      expect(r.ok, JSON.stringify(r)).toBe(true);
+      expect(r.cfg).toMatchObject({ uso: 'campana', aplicar: false, plantilla: { categoria, variables: 0, cabecera: 'ninguna', botones: 2 } });
+    }
+  });
+
+  it('NEGATIVA: con 1 variable no se registra', () => {
+    expect(problemas(campana('59170000001', { variables: '1' }))).toContain('no lleva variables');
+  });
+  it('NEGATIVA: con cabecera (imagen, texto…) no se registra', () => {
+    for (const cabecera of ['imagen', 'texto', 'documento']) expect(problemas(campana('59170000001', { cabecera }))).toContain('no lleva cabecera');
+  });
+  it('NEGATIVA: con 3 botones (o 1, o 0) no se registra', () => {
+    for (const botones of ['3', '1', '0']) expect(problemas(campana('59170000001', { botones }))).toContain('exactamente 2 botones');
+  });
+  it('NEGATIVA: en estado PENDING (o PAUSED) no se registra', () => {
+    for (const estado of ['PENDING', 'PAUSED']) expect(problemas(campana('59170000001', { estado }))).toContain('solo APPROVED');
+  });
+  it('NEGATIVA: AUTHENTICATION no se registra', () => {
+    expect(problemas(campana('59170000001', { categoria: 'AUTHENTICATION' }))).toContain('UTILITY o MARKETING');
+  });
+  it('NEGATIVA: sin --cabecera o sin --botones no se da nada por bueno', () => {
+    const sin = (k: string) => { const a = campana('59170000001'); const i = a.indexOf(k); a.splice(i, 2); return a; };
+    expect(problemas(sin('--cabecera'))).toContain('falta --cabecera');
+    expect(problemas(sin('--botones'))).toContain('falta --botones');
+  });
+  it('NEGATIVA: --cabecera y --botones no valen con Retomar', () => {
+    expect(problemas(argv('59170000001', {}, ['--cabecera', 'ninguna']))).toContain('solo valen con --uso campana');
+  });
+  it('NEGATIVA: Retomar sigue exigiendo UTILITY con APPROVED (MARKETING no)', () => {
+    expect(problemas(argv('59170000001', { categoria: 'MARKETING' }))).toContain('UTILITY');
+    expect(mod.plantillaRetomarValida({ ...BUENA, categoria: 'MARKETING' })).toBe(false);
+  });
+  it('NEGATIVA: --uso desconocido', () => {
+    expect(problemas(campana('59170000001').map((x) => (x === 'campana' ? 'masivo' : x)))).toContain('--uso tiene que ser uno de');
+  });
+
+  it('escribe SOLO plantillas.campana (conserva la de Retomar), idempotente, y cumple el contrato', async () => {
+    const n = nuevoNumero();
+    await ruta(n, { plantillas: { retomar: { ...BUENA, registradaEn: 'x' } } });
+    const r = await corre(campana(n, { categoria: 'MARKETING' }, ['--aplicar', '--respaldo', rutaRespaldo()]));
+    expect(r.codigo, r.texto).toBe(0);
+    expect(r.texto).toContain('Cumple el contrato de la campaña');
+    const d = (await leer(n)).data() as { plantillas: Record<string, Record<string, unknown>> };
+    expect(d.plantillas['campana']).toMatchObject({ nombre: NOMBRE_DE_PRUEBA, categoria: 'MARKETING', estado: 'APPROVED', variables: 0, cabecera: 'ninguna', botones: 2 });
+    expect(d.plantillas['retomar']).toMatchObject(BUENA);
+    const otra = await corre(campana(n, { categoria: 'MARKETING' }, ['--aplicar', '--respaldo', rutaRespaldo()]));
+    expect(otra.codigo).toBe(0);
+    expect(otra.texto).toContain('Ya está registrada así');
+  });
+});
