@@ -911,7 +911,7 @@ describe('campaña saliente (PR-A): `autor: campana` solo con plantilla, 0 pará
     });
     for (const d of destinatarios) {
       await db.doc(`tenants/${A}/conversaciones/${d}`).update({ ultimoEntranteEn: Timestamp.fromMillis(Date.now() - 30 * 3_600_000) });
-      await db.doc(`tenants/${A}/campanasSalientes/${CAMPANA}/destinatarios/${d}`).set({ estado: 'pendiente' });
+      await db.doc(`tenants/${A}/campanasSalientes/${CAMPANA}/destinatarios/${d}`).set({ estado: 'pendiente', fechaBase: Timestamp.fromMillis(Date.now() - 2 * 86_400_000) });
     }
   };
   const destino = async (conv: string) => (await db.doc(`tenants/${A}/campanasSalientes/${CAMPANA}/destinatarios/${conv}`).get()).data() ?? {};
