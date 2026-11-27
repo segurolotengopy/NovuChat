@@ -116,6 +116,21 @@ describe('debePausar: por encima del porcentaje y con el mínimo de resueltos', 
   it('5 rechazos de 10 pausan', () => {
     expect(M.debePausar({ aceptados: 5, rechazados: 5 }, CFG)).toBe(true);
   });
+  it('los INCIERTOS cuentan como no confirmados: 8 aceptados y 2 inciertos pausan; 9 y 1 (exactamente 10 %) no; sin inciertos nada cambia', () => {
+    expect(M.debePausar({ aceptados: 8, rechazados: 0, inciertos: 2 }, CFG)).toBe(true);
+    expect(M.debePausar({ aceptados: 9, rechazados: 0, inciertos: 1 }, CFG)).toBe(false);
+    expect(M.debePausar({ aceptados: 7, rechazados: 1, inciertos: 2 }, CFG)).toBe(true);
+    expect(M.debePausar({ aceptados: 0, rechazados: 0, inciertos: 10 }, CFG)).toBe(true);
+    expect(M.debePausar({ aceptados: 0, rechazados: 0, inciertos: 9 }, CFG)).toBe(false);
+  });
+  it('NIEGA: inciertos rotos (negativos, decimales) no pausan', () => {
+    expect(M.debePausar({ aceptados: 1, rechazados: 0, inciertos: -3 }, CFG)).toBe(false);
+    expect(M.debePausar({ aceptados: 0, rechazados: 0, inciertos: 10.5 }, CFG)).toBe(false);
+  });
+  it('cambiosDeCampana: una transición a incierto que pasa el porcentaje pausa la campaña', () => {
+    const d = { estado: 'enCurso', aceptados: 8, rechazados: 0, inciertos: 1 };
+    expect(M.cambiosDeCampana(d, { aceptados: 0, rechazados: 0, inciertos: 1 }, CFG)).toEqual({ aceptados: 8, rechazados: 0, inciertos: 2, estado: 'pausada', motivoPausa: 'errores' });
+  });
   it('NIEGA: contadores rotos (negativos, decimales) no pausan', () => {
     expect(M.debePausar({ aceptados: -5, rechazados: 20 }, CFG)).toBe(false);
     expect(M.debePausar({ aceptados: 10, rechazados: 1.5 }, CFG)).toBe(false);

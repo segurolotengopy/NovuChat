@@ -145,13 +145,15 @@ export function cuentaDeTransicion(de: unknown, a: unknown): Conteos | null {
 }
 
 /**
- * ¿Hay que pausar por errores? Con al menos `pausaMinimoEnviados` resueltos (aceptados + rechazados) y los rechazados por
- * ENCIMA de `pausaErroresPct` %: `rechazados*100 > pausaErroresPct*(aceptados+rechazados)`. Exactamente el porcentaje no pausa.
+ * ¿Hay que pausar por errores? Con al menos `pausaMinimoEnviados` desenlaces (aceptados + rechazados + inciertos) y los que NO se
+ * confirmaron (rechazados + inciertos) por ENCIMA de `pausaErroresPct` %: `(rechazados+inciertos)*100 > pausaErroresPct*total`.
+ * Un incierto cuenta como falla: no se sabe si salió. Exactamente el porcentaje no pausa. `inciertos` ausente vale 0.
  */
-export function debePausar(c: { aceptados: number; rechazados: number }, cfg: ConfigCampana): boolean {
-  const total = c.aceptados + c.rechazados;
-  if (!contador(c.aceptados) || !contador(c.rechazados)) return false;
-  return total >= cfg.pausaMinimoEnviados && c.rechazados * 100 > cfg.pausaErroresPct * total;
+export function debePausar(c: { aceptados: number; rechazados: number; inciertos?: number }, cfg: ConfigCampana): boolean {
+  const inciertos = c.inciertos ?? 0;
+  if (!contador(c.aceptados) || !contador(c.rechazados) || !contador(inciertos)) return false;
+  const total = c.aceptados + c.rechazados + inciertos;
+  return total >= cfg.pausaMinimoEnviados && (c.rechazados + inciertos) * 100 > cfg.pausaErroresPct * total;
 }
 
 /** Lo que el servidor exige de la plantilla de campaña registrada en la ruta (copia de `plantillaCampanaValida` del script; hay una prueba de paridad). */
