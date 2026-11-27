@@ -809,6 +809,59 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
     expect(ok.llamadas).toContain('firebase hosting:clone consola-ficticia:previa consola-ficticia:live');
   });
 
+  it('W7: el aviso «unexpected state» solo baja a warning en STAGING (producción no define la variable) y staging verifica el invoker de las candidatas', () => {
+    const prod = job('desplegar-produccion');
+    const stg = job('desplegar-staging');
+    expect(prod).not.toContain('AVISO_SERVICIO_NO_FATAL');
+    expect(job('desplegar-dev')).not.toContain('AVISO_SERVICIO_NO_FATAL');
+    expect(stg).toContain("AVISO_SERVICIO_NO_FATAL: '1'");
+    expect(stg).toContain('scripts/verificar-invocadores-candidatas.sh');
+    expect(stg).toContain("if: steps.desplegar.outputs.candidatas != ''");
+    expect(prod).not.toContain('verificar-invocadores-candidatas');
+  });
+
+  it('W8: el script que verifica los invocadores lee la política (solo lectura), acepta cualquier miembro con run.invoker y FALLA si falta o no se puede leer', () => {
+    const bin = join(tmp, 'bin-invocadores');
+    spawnSync('mkdir', ['-p', bin]);
+    writeFileSync(join(bin, 'gcloud'), [
+      '#!/usr/bin/env bash',
+      'echo "$*" >> "$LLAMADAS_GCLOUD"',
+      'servicio="$4"',
+      'case "$1 $2 $3" in "run services get-iam-policy") ;; *) echo "solo lectura" >&2; exit 9 ;; esac',
+      'f="$POLITICAS/$servicio"; [ -f "$f" ] || exit 1; cat "$f"', '',
+    ].join('\n'));
+    chmodSync(join(bin, 'gcloud'), 0o755);
+    const politicas = join(tmp, 'politicas'); spawnSync('mkdir', ['-p', politicas]);
+    writeFileSync(join(politicas, 'fnpublica'), JSON.stringify({ bindings: [{ role: 'roles/run.invoker', members: ['allUsers'] }] }));
+    writeFileSync(join(politicas, 'fnprogramada'), JSON.stringify({ bindings: [{ role: 'roles/run.invoker', members: ['serviceAccount:planificador@p.iam.gserviceaccount.com'] }] }));
+    writeFileSync(join(politicas, 'fnsinrol'), JSON.stringify({ bindings: [{ role: 'roles/otro', members: ['allUsers'] }] }));
+    writeFileSync(join(politicas, 'fnvacia'), JSON.stringify({ bindings: [{ role: 'roles/run.invoker', members: [] }] }));
+    writeFileSync(join(politicas, 'fnbasura'), 'esto no es json');
+    const llamadas = archivo('');
+    const corre = (candidatas: string, extra: Record<string, string> = {}) => {
+      const r = spawnSync('bash', [join(RAIZ, 'scripts', 'verificar-invocadores-candidatas.sh')], {
+        encoding: 'utf8',
+        env: entornoDelEmulador(undefined, { PATH: `${bin}:${process.env['PATH'] ?? ''}`, PROYECTO: 'proyecto-ficticio', CANDIDATAS: candidatas, POLITICAS: politicas, LLAMADAS_GCLOUD: llamadas, ...extra }),
+      });
+      return { status: r.status, salida: r.stdout + r.stderr };
+    };
+    const ok = corre('fnPublica,fnProgramada');
+    expect(ok.status, ok.salida).toBe(0);
+    expect(readFileSync(llamadas, 'utf8')).toContain('run services get-iam-policy fnpublica --region us-east1 --project proyecto-ficticio');
+    expect(readFileSync(llamadas, 'utf8')).not.toMatch(/add-iam|set-iam|remove-iam/);
+    // NEGANDO: sin el rol, con el rol vacío, ilegible o inexistente: falla y nombra la Function.
+    for (const f of ['fnSinRol', 'fnVacia', 'fnBasura', 'fnInexistente']) {
+      const r = corre(`fnPublica,${f}`);
+      expect(r.status, f).toBe(1);
+      expect(r.salida).toContain(f);
+      expect(r.salida).toContain('nube-visor.sh');
+    }
+    expect(corre('').status).toBe(0);
+    expect(corre('fnPublica,../x').status).toBe(1);
+    expect(corre('fnPublica', { PROYECTO: '' }).status).toBe(2);
+    expect(corre('fnPublica', { REGION: 'x;y' }).status).toBe(2);
+  });
+
   it('W4: en producción el health check corre también tras un despliegue fallido, y el rollback tras él', () => {
     const j = job('desplegar-produccion');
     expect(paso(j, 'id: salud')).toContain(
