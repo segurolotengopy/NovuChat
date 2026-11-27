@@ -184,3 +184,28 @@ describe('plantillaDeCampanaValida (el contrato de la plantilla de campaña)', (
     expect(M.plantillaDeCampanaValida(p)).toBe(false);
   });
 });
+
+describe('la excepción de la prueba: leerTelefonosDePrueba y motivoDePruebaRechazada (números ficticios)', () => {
+  const T1 = '59170000001';
+  const T2 = '59170000002';
+  it('lee una lista válida de 1 a 5 y no la confunde con las cifras (leerConfigCampana no la devuelve)', () => {
+    expect(M.leerTelefonosDePrueba({ ...CFG, telefonosDePrueba: [T1, T2] })).toEqual([T1, T2]);
+    expect(M.leerTelefonosDePrueba({ telefonosDePrueba: [T1, T2, '59170000003', '59170000004', '59170000005'] })).toHaveLength(5);
+    expect(M.leerConfigCampana({ ...CFG, telefonosDePrueba: [T1] })).toEqual(CFG);
+  });
+  it.each([
+    ['nulo', null], ['sin el campo', CFG], ['vacía', { telefonosDePrueba: [] }], ['no es lista', { telefonosDePrueba: T1 }],
+    ['6 números', { telefonosDePrueba: [T1, T2, '59170000003', '59170000004', '59170000005', '59170000006'] }],
+    ['con +', { telefonosDePrueba: ['+59170000001'] }], ['corto', { telefonosDePrueba: ['1234567'] }], ['numérico', { telefonosDePrueba: [59170000001] }],
+    ['con espacio', { telefonosDePrueba: ['59170000001 '] }], ['repetidos', { telefonosDePrueba: [T1, T1] }],
+  ])('NIEGA: %s da [] (falla cerrada)', (_n, d) => {
+    expect(M.leerTelefonosDePrueba(d)).toEqual([]);
+  });
+  it('motivoDePruebaRechazada: uno y en la lista pasa; varios, sin lista o fuera de la lista se rechazan; sin destinatarios no hay nada que decidir', () => {
+    expect(M.motivoDePruebaRechazada([`wa_${T1}`], [T1, T2])).toBeNull();
+    expect(M.motivoDePruebaRechazada([`wa_${T1}`, `wa_${T2}`], [T1, T2])).toBe('pruebaVariosDestinatarios');
+    expect(M.motivoDePruebaRechazada([`wa_${T1}`], [])).toBe('pruebaSinLista');
+    expect(M.motivoDePruebaRechazada([`wa_${T1}`], [T2])).toBe('pruebaFueraDeLista');
+    expect(M.motivoDePruebaRechazada([], [T1])).toBeNull();
+  });
+});

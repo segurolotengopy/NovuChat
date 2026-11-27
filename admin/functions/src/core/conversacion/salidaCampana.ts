@@ -24,6 +24,12 @@
  * materializa si `materializados - aceptados - rechazados - inciertos` es 0. Con `porReclamo` ≤ 10 siempre quedan lugares
  * para las personas.
  *
+ * LA EXCEPCIÓN DE LA PRUEBA (PR-C, 27/11/2026): una campaña `prueba: true` con UN solo destinatario, cuyo número esté en
+ * `config/campanaSaliente.telefonosDePrueba` (lista de a lo sumo 5, solo la escribe `campana-saliente-config.mjs`), levanta SOLO
+ * las omisiones `reciente`, `sinConversacion` y de ventana/fecha base. Sigue rigiendo todo lo demás: baja, marcas, otra línea y
+ * todos los topes y pausas. Si la campaña de prueba tiene más de un destinatario, o su número no está en la lista, o la lista
+ * falta o está vacía, la campaña se pausa ENTERA (`motivoPausa` propio) y no sale nada. Una campaña real no cambia en nada.
+ *
  * Costo: 0 mensajes por conversación (la campaña es un envío aparte, cuenta en `plantillasCampana`).
  */
 import { FieldValue, Timestamp, type DocumentReference, type DocumentSnapshot, type Firestore, type Transaction } from 'firebase-admin/firestore';
@@ -94,6 +100,38 @@ export function leerConfigCampana(d: unknown): ConfigCampana | null {
   }
   if ((r['porReclamo'] as number) > MAXIMO_POR_RECLAMO_DE_CAMPANA) return null;
   return r as unknown as ConfigCampana;
+}
+
+/** Cuántos teléfonos de prueba admite la lista de la configuración. */
+export const MAXIMO_TELEFONOS_DE_PRUEBA = 5;
+const TELEFONO_DE_PRUEBA = /^[0-9]{8,15}$/;
+
+/**
+ * La lista `telefonosDePrueba` del documento de cifras, o `[]` si falta, está vacía o algo no es exactamente lo esperado (más de 5,
+ * un elemento que no sea una cadena de 8 a 15 dígitos —el formato de `wa_<dígitos>` sin el prefijo—, o repetidos). Vacía = ninguna
+ * prueba puede salir (falla cerrada). No forma parte de `ConfigCampana`: una campaña real nunca la consulta.
+ */
+export function leerTelefonosDePrueba(d: unknown): string[] {
+  if (typeof d !== 'object' || d === null || Array.isArray(d)) return [];
+  const v = (d as Record<string, unknown>)['telefonosDePrueba'];
+  if (!Array.isArray(v) || v.length < 1 || v.length > MAXIMO_TELEFONOS_DE_PRUEBA) return [];
+  if (!v.every((t) => typeof t === 'string' && TELEFONO_DE_PRUEBA.test(t))) return [];
+  if (new Set(v).size !== v.length) return [];
+  return [...(v as string[])];
+}
+
+/** Por qué se rechaza ENTERA una campaña de prueba (el valor de `motivoPausa`). */
+export type MotivoDePruebaRechazada = 'pruebaVariosDestinatarios' | 'pruebaSinLista' | 'pruebaFueraDeLista';
+
+/**
+ * ¿La campaña `prueba: true` cumple la excepción? `ids` son TODOS los destinatarios de la campaña (en cualquier estado). `null` si
+ * cumple (exactamente uno y en la lista); si no, el motivo. Sin destinatarios no hay nada que decidir (`null`: no sale nada igual).
+ */
+export function motivoDePruebaRechazada(ids: readonly string[], lista: readonly string[]): MotivoDePruebaRechazada | null {
+  if (ids.length === 0) return null;
+  if (ids.length > 1) return 'pruebaVariosDestinatarios';
+  if (lista.length === 0) return 'pruebaSinLista';
+  return lista.some((t) => `wa_${t}` === ids[0]) ? null : 'pruebaFueraDeLista';
 }
 
 // ---------------------------------------------------------------------------
@@ -250,10 +288,24 @@ export async function materializarCampana(
     const config = leerConfigCampana(configSnap?.data());
     const campana = leerCampanaEnCurso(puntero, campanaSnap?.data(), phoneNumberId);
     if (!config || !campana) return [];
+    // `prueba` ausente o `false` = campaña real; `true` = la excepción de la prueba; cualquier otro valor, ilegible: cerrada.
+    const pruebaCruda: unknown = campanaSnap?.get('prueba');
+    if (pruebaCruda !== undefined && typeof pruebaCruda !== 'boolean') return [];
+    const esPrueba = pruebaCruda === true;
     const nDiaLeido: unknown = contadorSnap?.get('dia') === dia ? contadorSnap.get('nDia') : 0;
     if (!contador(nDiaLeido)) return [];
     const cupo = cupoDeLaVuelta({ libres, config, tanda: campana.tanda, nDia: nDiaLeido, enVuelo: campana.enVuelo });
     if (cupo < 1) return [];
+
+    // La prueba se valida ENTERA antes de tocar un destinatario: exactamente uno, y en la lista de la configuración.
+    if (esPrueba) {
+      const todos = await tx.get(refC.collection('destinatarios').limit(2));
+      const motivoDePrueba = motivoDePruebaRechazada(todos.docs.map((x) => x.id), leerTelefonosDePrueba(configSnap?.data()));
+      if (motivoDePrueba !== null) {
+        tx.update(refC, { estado: 'pausada', motivoPausa: motivoDePrueba });
+        return [];
+      }
+    }
 
     const pendientes = await tx.get(refC.collection('destinatarios').where('estado', '==', 'pendiente').limit(cupo * 2));
     if (pendientes.empty) return [];
@@ -279,13 +331,15 @@ export async function materializarCampana(
       const [conv, baja, existente] = l;
       const entrante = conv.exists ? milisegundosDeMomento(conv.get('ultimoEntranteEn')) : null;
       const linea: unknown = conv.exists ? conv.get('phoneNumberId') : undefined;
-      if (entrante === null) { omitir('sinConversacion'); continue; }
+      if (!esPrueba && entrante === null) { omitir('sinConversacion'); continue; }
       if (linea !== undefined && linea !== phoneNumberId) { omitir('otraLinea'); continue; }
       if (baja.exists) { omitir('baja'); continue; }
       if (marcado(conv.get('noContactar')) || marcado(conv.get('bloqueada')) || marcado(conv.get('riesgoEn'))) { omitir('marcas'); continue; }
-      const ventana = motivoDeVentana(p.get('fechaBase'), ahoraMs, config.ventanaDias);
-      if (ventana !== null) { omitir(ventana); continue; }
-      if (ahoraMs - entrante < RECIENTE_MS) { omitir('reciente'); continue; }
+      if (!esPrueba) {
+        const ventana = motivoDeVentana(p.get('fechaBase'), ahoraMs, config.ventanaDias);
+        if (ventana !== null) { omitir(ventana); continue; }
+        if (entrante !== null && ahoraMs - entrante < RECIENTE_MS) { omitir('reciente'); continue; }
+      }
       if (existente.exists) { omitir('repetido'); continue; }
       const clave = claveDeMensajeCampana(puntero, p.id);
       const botones: BotonDePlantilla[] = [{ indice: 0, payload: `cs:si:${puntero}` }, { indice: 1, payload: `cs:no:${puntero}` }];

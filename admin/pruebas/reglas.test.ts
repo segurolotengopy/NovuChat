@@ -4213,7 +4213,7 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
       await setDoc(doc(db, `topesDeEnvio/c_${A}`), { dia: '2026-11-27', nDia: 1, actualizadoEn: Timestamp.now() });
       await setDoc(doc(db, `tenants/${A}/campanasSalientes/camp-prueba`), { estado: 'enCurso', phoneNumberId: '1000', materializados: 0 });
       await setDoc(doc(db, `tenants/${A}/campanasSalientes/camp-prueba/destinatarios/wa_59170000001`), { estado: 'pendiente' });
-      await setDoc(doc(db, `tenants/${A}/config/campanaSaliente`), { porTanda: 45, porDia: 200, porReclamo: 3, ventanaDias: 60, pausaErroresPct: 10, pausaMinimoEnviados: 10, pausaNoPct: 25 });
+      await setDoc(doc(db, `tenants/${A}/config/campanaSaliente`), { porTanda: 45, porDia: 200, porReclamo: 3, ventanaDias: 60, pausaErroresPct: 10, pausaMinimoEnviados: 10, pausaNoPct: 25, telefonosDePrueba: ['59170000001'] });
       await setDoc(doc(db, `tenants/${A}/salida/clave-0000000000001`), {
         estado: 'pendiente', creadoEn: Timestamp.now(), actualizadoEn: Timestamp.now(),
       });
@@ -4288,6 +4288,20 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
         await assertFails(updateDoc(doc(cliente(), `tenants/${A}/config/campanaSaliente`), { porDia: 100000 }), `${nombre} actualiza config/campanaSaliente`);
         await assertFails(deleteDoc(doc(cliente(), `tenants/${A}/config/campanaSaliente`)), `${nombre} borra config/campanaSaliente`);
         await assertFails(setDoc(doc(cliente(), `tenants/${B}/config/campanaSaliente`), cifras), `${nombre} crea config/campanaSaliente en B`);
+      }
+    });
+
+    it('la excepción de la prueba no se puede armar desde un cliente: ni la lista `telefonosDePrueba` ni una campaña `prueba: true` se escriben', async () => {
+      await sembrarCerradas();
+      // Lo que SÍ pasa, declarado en `campanas.md`: un miembro del comercio puede LEER el documento (y con él la lista); otro comercio no.
+      await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/config/campanaSaliente`)));
+      await assertFails(getDoc(doc(adminB(), `tenants/${A}/config/campanaSaliente`)));
+      for (const [nombre, cliente] of quienes) {
+        await assertFails(updateDoc(doc(cliente(), `tenants/${A}/config/campanaSaliente`), { telefonosDePrueba: ['59170000002'] }), `${nombre} cambia la lista de prueba`);
+        await assertFails(setDoc(doc(cliente(), `tenants/${A}/config/campanaSaliente`), { telefonosDePrueba: ['59170000002'] }, { merge: true }), `${nombre} fusiona la lista de prueba`);
+        await assertFails(setDoc(doc(cliente(), `tenants/${A}/campanasSalientes/camp-nueva`), { estado: 'enCurso', prueba: true, phoneNumberId: '1000' }), `${nombre} crea una campaña de prueba`);
+        await assertFails(updateDoc(doc(cliente(), `tenants/${A}/campanasSalientes/camp-prueba`), { prueba: true }), `${nombre} marca prueba: true`);
+        await assertFails(setDoc(doc(cliente(), `tenants/${A}/campanasSalientes/camp-prueba/destinatarios/wa_59170000009`), { estado: 'pendiente' }), `${nombre} agrega un destinatario`);
       }
     });
 

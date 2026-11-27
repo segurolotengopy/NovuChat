@@ -686,3 +686,144 @@ describe('clave de la baja y omisiones del servidor (no consumen cupo)', () => {
     expect(await dest(CONV(0))).toEqual(antes);
   });
 });
+
+// ===========================================================================
+describe('la excepción de la prueba (PR-C, 27/11/2026): solo `prueba: true`, UN destinatario, y su número en `telefonosDePrueba`', () => {
+  // Números ficticios evidentes (CONV(0) = wa_59171001000).
+  const TEL0 = CONV(0).slice(3);
+  const OTRO = '59170000999';
+  const CON_LISTA = { ...CONFIG, telefonosDePrueba: [TEL0, OTRO] };
+  const omitido = async (conv: string, motivo: string) => expect(await dest(conv)).toMatchObject({ estado: 'omitido', motivo });
+  const prueba = (o: Opciones = {}): Opciones => ({ n: 1, config: CON_LISTA, ...o, campana: { prueba: true, total: 1, ...(o.campana ?? {}) } });
+  const rechazada = async (motivo: string) => {
+    expect(delaCampana(await reclamar())).toEqual([]);
+    expect(await campana()).toMatchObject({ estado: 'pausada', motivoPausa: motivo, materializados: 0 });
+    expect(await todosLosMensajes()).toBe(0);
+    expect(await dest(CONV(0))).toMatchObject({ estado: 'pendiente' });
+    expect((await refContador().get()).exists).toBe(false);
+    expect(delaCampana(await reclamar())).toEqual([]); // ya pausada: no vuelve a salir ni a escribir
+  };
+
+  it('PRUEBA: quien escribió hace 1 minuto (24 h) y tiene la fecha base fuera de la ventana SALE, y el mensaje queda registrado', async () => {
+    await preparar(prueba({ ultimoEntrante: MIN }));
+    await refDest(CONV(0)).update({ fechaBase: Timestamp.fromMillis(Date.now() - 400 * DIA) });
+    const m = delaCampana(await reclamar());
+    expect(m.map((x) => x.conversacionId)).toEqual([CONV(0)]);
+    expect(await dest(CONV(0))).toMatchObject({ estado: 'enviado' });
+    expect(await mensaje(CONV(0), claveDe(CONV(0)))).toMatchObject({ autor: 'campana', estadoEnvio: 'enviando', campanaId: CAMPANA });
+    expect(await campana()).toMatchObject({ materializados: 1, tanda: { usados: 1 } });
+  });
+
+  it('PRUEBA: SIN conversación y SIN fecha base sale igual (el servidor no crea la conversación) y su confirmación se cuenta', async () => {
+    await preparar(prueba());
+    await db.doc(`tenants/${A}/conversaciones/${CONV(0)}`).delete();
+    await refDest(CONV(0)).set({ estado: 'pendiente' });
+    const m = delaCampana(await reclamar());
+    expect(m.map((x) => x.conversacionId)).toEqual([CONV(0)]);
+    expect((await db.doc(`tenants/${A}/conversaciones/${CONV(0)}`).get()).exists).toBe(false);
+    expect((await resolver(m[0]!)).codigo).toBe(200);
+    expect(await campana()).toMatchObject({ aceptados: 1 });
+  });
+
+  it('NIEGA: la excepción NO levanta la baja, las marcas, la otra línea ni los topes', async () => {
+    await preparar(prueba());
+    await db.doc(`tenants/${A}/bajas/${CONV(0)}`).set({ canal: 'whatsapp', desde: Timestamp.now() });
+    expect(delaCampana(await reclamar())).toEqual([]);
+    await omitido(CONV(0), 'baja');
+    for (const [marca, valor, motivo] of [['noContactar', true, 'marcas'], ['bloqueada', true, 'marcas'], ['riesgoEn', Timestamp.now(), 'marcas'], ['phoneNumberId', '1000009999', 'otraLinea']] as const) {
+      await db.recursiveDelete(db.doc(`tenants/${A}/bajas/${CONV(0)}`));
+      await refDest(CONV(0)).set({ estado: 'pendiente' });
+      await db.doc(`tenants/${A}/conversaciones/${CONV(0)}`).set({ telefono: TEL0, canal: 'whatsapp', ultimoEntranteEn: Timestamp.fromMillis(Date.now() - MIN), [marca]: valor });
+      expect(delaCampana(await reclamar())).toEqual([]);
+      await omitido(CONV(0), motivo);
+    }
+    expect(await todosLosMensajes()).toBe(0);
+  });
+
+  it('NIEGA: el tope diario, la tanda agotada y un mensaje en vuelo siguen frenando la prueba', async () => {
+    await preparar(prueba());
+    await refContador().set({ dia: hoy(), nDia: CONFIG.porDia, actualizadoEn: Timestamp.now() });
+    expect(delaCampana(await reclamar())).toEqual([]);
+    await refContador().delete();
+    await refCampana().update({ tanda: { id: 't1', cupo: 1, usados: 1, calidad: 'VERDE' } });
+    expect(delaCampana(await reclamar())).toEqual([]);
+    await refCampana().update({ tanda: { id: 't1', cupo: 5, usados: 0, calidad: 'VERDE' }, materializados: 1 });
+    expect(delaCampana(await reclamar())).toEqual([]);
+    expect(await todosLosMensajes()).toBe(0);
+  });
+
+  it('NIEGA: más de un destinatario rechaza la campaña ENTERA (pausada, motivo propio) aunque todos estén en la lista', async () => {
+    await preparar(prueba({ n: 2, config: { ...CONFIG, telefonosDePrueba: [TEL0, CONV(1).slice(3)] }, campana: { total: 2 } }));
+    expect(delaCampana(await reclamar())).toEqual([]);
+    expect(await campana()).toMatchObject({ estado: 'pausada', motivoPausa: 'pruebaVariosDestinatarios', materializados: 0 });
+    expect(await todosLosMensajes()).toBe(0);
+    expect(await dest(CONV(0))).toMatchObject({ estado: 'pendiente' });
+    expect(await dest(CONV(1))).toMatchObject({ estado: 'pendiente' });
+  });
+
+  it('NIEGA: un destinatario ya enviado cuenta: una campaña de prueba con 2 destinatarios, uno ya `enviado`, sigue rechazada', async () => {
+    await preparar(prueba({ n: 2, campana: { total: 2 } }));
+    await refDest(CONV(1)).update({ estado: 'enviado' });
+    expect(delaCampana(await reclamar())).toEqual([]);
+    expect(await campana()).toMatchObject({ estado: 'pausada', motivoPausa: 'pruebaVariosDestinatarios' });
+  });
+
+  it('NIEGA: el número no está en la lista -> rechazada entera', async () => {
+    await preparar(prueba({ config: { ...CONFIG, telefonosDePrueba: [OTRO] } }));
+    await rechazada('pruebaFueraDeLista');
+  });
+
+  it.each([
+    ['sin el campo', CONFIG], ['lista vacía', { ...CONFIG, telefonosDePrueba: [] }], ['no es una lista', { ...CONFIG, telefonosDePrueba: TEL0 }],
+    ['con más de 5', { ...CONFIG, telefonosDePrueba: [TEL0, '59170000001', '59170000002', '59170000003', '59170000004', '59170000005'] }],
+    ['con un elemento que no son dígitos', { ...CONFIG, telefonosDePrueba: [TEL0, '+59170000001'] }],
+    ['con un elemento numérico', { ...CONFIG, telefonosDePrueba: [Number(TEL0)] }],
+    ['con repetidos', { ...CONFIG, telefonosDePrueba: [TEL0, TEL0] }],
+  ])('NIEGA: la lista %s -> rechazada entera (falla cerrada)', async (_n, config) => {
+    await preparar(prueba({ config: JSON.parse(JSON.stringify(config)) }));
+    await rechazada('pruebaSinLista');
+  });
+
+  it('NIEGA: `prueba` que no es un booleano (la cadena «true») no sale ni escribe: ilegible = cerrada', async () => {
+    await preparar(prueba({ campana: { prueba: 'true' } }));
+    const antes = await campana();
+    expect(delaCampana(await reclamar())).toEqual([]);
+    expect(await campana()).toEqual(antes);
+    expect(await todosLosMensajes()).toBe(0);
+  });
+
+  it.each([['`prueba: false`', true], ['sin el campo `prueba`', false]])(
+    'REAL (%s): con el número EN la lista, las exclusiones de 24 h, sin conversación, ventana y fecha base siguen rigiendo', async (_n, conFalse) => {
+      await preparar({ n: 4, config: { ...CONFIG, telefonosDePrueba: [CONV(0).slice(3), CONV(1).slice(3), CONV(2).slice(3), CONV(3).slice(3)] } });
+      if (!conFalse) await refCampana().update({ prueba: FieldValue.delete() });
+      await db.doc(`tenants/${A}/conversaciones/${CONV(0)}`).update({ ultimoEntranteEn: Timestamp.fromMillis(Date.now() - MIN) });
+      await db.doc(`tenants/${A}/conversaciones/${CONV(1)}`).delete();
+      await refDest(CONV(2)).update({ fechaBase: Timestamp.fromMillis(Date.now() - 400 * DIA) });
+      await refDest(CONV(3)).update({ fechaBase: FieldValue.delete() });
+      expect(delaCampana(await reclamar())).toEqual([]);
+      await omitido(CONV(0), 'reciente');
+      await omitido(CONV(1), 'sinConversacion');
+      await omitido(CONV(2), 'fueraDeVentana');
+      await omitido(CONV(3), 'sinFechaBase');
+      expect(await campana()).toMatchObject({ estado: 'enCurso', materializados: 0 });
+      expect(await todosLosMensajes()).toBe(0);
+    });
+
+  it('REAL: con varios destinatarios y la lista cargada NO se pausa ni se rechaza: la regla de «un solo destinatario» es solo de la prueba', async () => {
+    await preparar({ n: 4, config: { ...CONFIG, telefonosDePrueba: [CONV(0).slice(3)] } });
+    expect(delaCampana(await reclamar())).toHaveLength(3);
+    expect(await campana()).toMatchObject({ estado: 'enCurso' });
+  });
+
+  it('REAL: sin `telefonosDePrueba` en la configuración nada cambia (el control de las negativas anteriores)', async () => {
+    await preparar({ n: 2 });
+    expect(delaCampana(await reclamar())).toHaveLength(2);
+  });
+
+  it('el motivo de la pausa y el resto de lo que escribe el servidor no contienen el teléfono completo', async () => {
+    await preparar(prueba({ config: { ...CONFIG, telefonosDePrueba: [OTRO] } }));
+    await reclamar();
+    expect(JSON.stringify(await campana())).not.toContain(TEL0);
+    expect(JSON.stringify(await campana())).not.toContain(OTRO);
+  });
+});
