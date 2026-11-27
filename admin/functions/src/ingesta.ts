@@ -322,12 +322,14 @@ function normalizar(cuerpo: unknown): Entrante | null {
   const codigoPedido = evento === 'factura_dada' || evento === 'factura_sin'
     ? codigoDePedidoValido(c['codigoPedido']) ?? undefined : undefined;
   // Respuesta a la campaña saliente: ambos campos válidos o ninguno (un `campana_respuesta` mal formado se cuenta como un mensaje cualquiera).
-  // La respuesta válida basta: un «no» con id de campaña faltante o inválido igual crea la baja (`aplicarRespuestaDeCampana`).
+  // El id de campaña no es obligatorio, pero lo que decide si hay baja es `respuestaPor` (`resolverRespuestaDeCampana`): un «no» con
+  // `respuestaPor` AUSENTE (el chat vivo, solo botones) o 'payload' da de baja siempre; con 'etiqueta' o 'texto', solo con cita o como
+  // primera respuesta; y un `respuestaPor` PRESENTE pero inválido se trata como 'texto' (el camino estricto), nunca como ausente.
   const respuestaNormal = evento === 'campana_respuesta' ? normalizarRespuestaDeCampana(c['respuestaCampana']) : null;
   const respuestaCampana = respuestaNormal !== null
     ? { respuestaCampana: respuestaNormal,
         ...(campanaIdValido(c['campanaEnvioId']) ? { campanaEnvioId: c['campanaEnvioId'] } : {}),
-        ...(respuestaPorValida(c['respuestaPor']) ? { respuestaPor: c['respuestaPor'] } : {}),
+        ...(respuestaPorValida(c['respuestaPor']) ? { respuestaPor: c['respuestaPor'] } : c['respuestaPor'] !== undefined ? { respuestaPor: 'texto' as const } : {}),
         ...(contextoIdValido(c['contextoId']) ? { contextoId: c['contextoId'] } : {}) } : undefined;
 
   // SIN CONTEO (16/11/2026): solo el booleano exacto `true`, y solo en un saliente de imagen. Cualquier

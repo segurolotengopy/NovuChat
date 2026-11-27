@@ -292,6 +292,17 @@ describe('E3/E8, NIEGA: sin cita, solo el payload «no» da de baja; etiqueta y 
       expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'baja' });
       expect(await baja(A)).toMatchObject({ campanaId: CAMPANA, origen: 'boton_campana' });
     });
+    it('M2, NIEGA: un `respuestaPor` PRESENTE pero inválido NO cuenta como baja (se trata como texto); ausente sí', async () => {
+      for (const por of ['boton', 'PAYLOAD', 7, null, '', {}]) {
+        const r = await sinPor({ campanaEnvioId: CAMPANA, respuestaCampana: 'no', respuestaPor: por });
+        expect(r.cuerpo['campanaSaliente'], String(por)).toEqual({ resultado: 'no_aplica' });
+      }
+      expect(await cuantasBajas(A)).toBe(0);
+      // El resolutor, puro, hace lo mismo con lo que le llegue; con `por` ausente el «no» es payload y da de baja.
+      const conv = { telefono: TEL };
+      expect(BAJAS.resolverRespuestaDeCampana(conv, { respuesta: 'no', por: 'raro', campanaId: CAMPANA }, Date.now())).toEqual({ decision: 'no_aplica' });
+      expect(BAJAS.resolverRespuestaDeCampana(conv, { respuesta: 'no', por: undefined, campanaId: CAMPANA }, Date.now())).toMatchObject({ decision: 'baja' });
+    });
     it('NIEGA: un «sí» SIN `respuestaPor` nunca responde a la campaña, ni con cita y campaña vigente', async () => {
       await sembrarEnviada(A);
       const r = await sinPor({ ...SI });

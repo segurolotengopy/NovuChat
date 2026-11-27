@@ -25,7 +25,8 @@
  *   5. «no» escrito (`esNoEscritoDeCampana`): con cita, o como primera respuesta dentro de las 24 h del envío;
  *   6. nada de lo anterior: `no_aplica` y no se escribe nada.
  * Un `campana_respuesta` SIN `respuestaPor` (el flujo vivo, que solo lo emite desde un botón) se trata, si es «no», como payload
- * (nunca se pierde mientras el chat no se republique) y, si es «sí», como «texto» (la lectura estricta: nunca responde).
+ * (nunca se pierde mientras el chat no se republique) y, si es «sí», como «texto» (la lectura estricta: nunca responde). Un
+ * `respuestaPor` presente pero fuera de la lista NO es «ausente»: se trata como «texto».
  *
  * Idempotente y sin pisar: si la baja ya existe NO se reescribe (`desde` conserva el instante de la primera). Con una
  * respuesta aplicada se anota además `campanaRespuesta: { campanaId, respuesta, en, idMetaEntrante? }` en la conversación (la
@@ -138,7 +139,8 @@ export function resolverRespuestaDeCampana(
   }
   // Sin `respuestaPor` (el flujo vivo, que solo emite `campana_respuesta` desde un botón de Meta): un «no» vale como payload, para
   // que nunca se pierda entre el despliegue de las Functions y la republicación del chat; un «sí» sigue estricto (texto).
-  const por: RespuestaPor = respuestaPorValida(e.por) ? e.por : (respuesta === 'no' ? 'payload' : 'texto');
+  // Un `respuestaPor` PRESENTE pero inválido NO es «ausente»: cae en el camino estricto ('texto'), nunca en el de la baja segura.
+  const por: RespuestaPor = respuestaPorValida(e.por) ? e.por : (e.por === undefined && respuesta === 'no' ? 'payload' : 'texto');
   const h = hechosDeCampana(conv, e.contextoId, ahoraMs);
   const propio = campanaIdValido(e.campanaId) ? e.campanaId : null;
   const id = propio ?? h.campanaId;
