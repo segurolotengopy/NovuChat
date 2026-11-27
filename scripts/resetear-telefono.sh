@@ -38,7 +38,7 @@ done
 [[ "$TENANT" =~ ^[a-z0-9][a-z0-9-]{2,59}$ ]] || { echo "✗ --tenant: id de comercio (minúsculas, dígitos y guion)" >&2; exit 2; }
 [[ -z "$TEL" || -z "$QUIEN" ]] || { echo "✗ --tel y --quien son excluyentes" >&2; exit 2; }
 # Los demos, el ensayo y la cuenta de NovuChat no se resetean (lo repite el .mjs; acá se corta antes de leer nada).
-[[ ! "$TENANT" =~ ^(novuchat|ensayo|demo-.*)$ ]] || { echo "✗ --tenant: los demos y NovuChat no se resetean" >&2; exit 2; }
+[[ ! "$TENANT" =~ ^(novuchat.*|ensayo|demo(-.*)?)$ ]] || { echo "✗ --tenant: los demos y NovuChat no se resetean" >&2; exit 2; }
 case "$QUIEN" in
   "") [[ "$TEL" =~ ^[0-9]{8,15}$ ]] || { echo "✗ --tel: solo dígitos (8 a 15), o --quien andres|silvana" >&2; exit 2; } ;;
   andres) FIN_QUIEN="7339" ;;
@@ -96,10 +96,19 @@ export GCP_PROJECT_ID_PROD="${GCP_PROJECT_ID_PROD:-novuchat-demo}"
 export GCP_PROJECT_ID_STAGING="${GCP_PROJECT_ID_STAGING:-novuchat-staging}"
 export CLOUDSDK_CONFIG="${CLOUDSDK_CONFIG:-$HOME/.config/gcloud-novuchat-prod}"
 
-ARGS=(--proyecto "$GCP_PROJECT_ID_PROD" --tenant "$TENANT" --tel "$TEL")
+# El proyecto y el teléfono van por VARIABLES DE ENTORNO del proceso de nodo, no por la línea de comandos (ps, historial).
+export PROYECTO_RESETEO="$GCP_PROJECT_ID_PROD" TEL_PRUEBA="$TEL"
+ARGS=(--proyecto-env PROYECTO_RESETEO --tenant "$TENANT" --tel-env TEL_PRUEBA)
 if [ "$APLICAR" = 1 ]; then
   DIR="$(mktemp -d)"; chmod 700 "$DIR"
   ARGS+=(--aplicar --respaldo "$DIR/respaldo.json" --confirmo-produccion "$TENANT")
   echo "• Respaldo (datos de persona): $DIR/respaldo.json — bórrelo al cerrar la prueba (sirve para --revertir)."
 fi
-( cd admin && node scripts/plataforma/resetear-telefono-prueba.mjs "${ARGS[@]}" )
+# La salida pasa por un filtro: ni el teléfono ni el proyecto pueden quedar escritos aunque una traza de error los nombre.
+# shellcheck source=lib/valores-del-comercio.sh
+source "scripts/lib/valores-del-comercio.sh"
+set +e
+( cd admin && node scripts/plataforma/resetear-telefono-prueba.mjs "${ARGS[@]}" 2>&1 ) | filtrar_valores "$TEL" "$GCP_PROJECT_ID_PROD" "$GCP_PROJECT_ID_STAGING"
+ESTADOS=("${PIPESTATUS[@]}")
+set -e
+exit "${ESTADOS[0]}"

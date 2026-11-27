@@ -47,7 +47,7 @@ if (( APLICAR )); then
 elif [[ -n "$CONFIRMO" ]]; then
   echo "✗ --confirmo solo va con --aplicar" >&2; exit 2
 fi
-[[ ! "$TENANT" =~ ^(novuchat|ensayo|demo-.*)$ ]] || { echo "✗ --tenant: los demos y NovuChat no se tocan con este envoltorio" >&2; exit 2; }
+[[ ! "$TENANT" =~ ^(novuchat.*|ensayo|demo(-.*)?)$ ]] || { echo "✗ --tenant: los demos y NovuChat no se tocan con este envoltorio" >&2; exit 2; }
 
 resolver_proyecto "$ENTORNO"
 

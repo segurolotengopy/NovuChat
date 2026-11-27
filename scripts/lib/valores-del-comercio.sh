@@ -72,13 +72,14 @@ valor_del_env() {
 # Pasa por un filtro la salida de un script de nodo: cada valor real que hubiera quedado escrito sale como «<valor>». Los valores llegan
 # por variables de entorno SOLO de ese proceso (nunca como argumentos).
 filtrar_valores() {
-  VAL_A="${1:-}" VAL_B="${2:-}" VAL_C="${3:-}" VAL_D="${4:-}" python3 -I -c '
-import sys, os
+  VALORES_A_OCULTAR="$(printf '%s\n' "$@")" python3 -I -c '
+import sys, os, re
 t = sys.stdin.read()
-for k in ("VAL_A", "VAL_B", "VAL_C", "VAL_D"):
-    v = os.environ.get(k, "")
+for v in os.environ.get("VALORES_A_OCULTAR", "").split("\n"):
     if len(v) >= 4:
-        t = t.replace(v, "<valor>")
+        t = re.sub(re.escape(v), "<valor>", t, flags=re.I)
+# Una ruta de Firestore con el phone_number_id (errores del SDK) tampoco se escribe.
+t = re.sub(r"rutasWhatsApp/[0-9]{6,25}", "rutasWhatsApp/<id>", t)
 sys.stdout.write(t)
 '
 }

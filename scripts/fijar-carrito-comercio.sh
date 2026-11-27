@@ -47,7 +47,7 @@ if (( APLICAR )); then
 elif [[ -n "$CONFIRMO" ]]; then
   echo "✗ --confirmo solo va con --aplicar" >&2; exit 2
 fi
-[[ ! "$TENANT" =~ ^(novuchat|ensayo|demo-.*)$ ]] || { echo "✗ --tenant: los demos y NovuChat no se tocan con este envoltorio" >&2; exit 2; }
+[[ ! "$TENANT" =~ ^(novuchat.*|ensayo|demo(-.*)?)$ ]] || { echo "✗ --tenant: los demos y NovuChat no se tocan con este envoltorio" >&2; exit 2; }
 
 resolver_proyecto "$ENTORNO"
 
@@ -72,7 +72,7 @@ OTRO="$ID_PROD"; if [[ "$ENTORNO" == produccion ]]; then OTRO="$ID_STG"; fi
 
 # El script de nodo vive en admin/ (ahí está firebase-admin). Su salida pasa por el filtro que oculta cualquier valor real.
 set +e
-( cd admin && node scripts/plataforma/fijar-webhook-carrito.mjs "${ARGS[@]}" 2>&1 ) | filtrar_valores "$FIJAR_PROYECTO" "$RUTA" "$BASE" "$OTRO"
+( cd admin && node scripts/plataforma/fijar-webhook-carrito.mjs "${ARGS[@]}" 2>&1 ) | filtrar_valores "$FIJAR_PROYECTO" "$RUTA" "$BASE" "${BASE#https://}" "$OTRO"
 ESTADOS=("${PIPESTATUS[@]}")
 set -e
 exit "${ESTADOS[0]}"

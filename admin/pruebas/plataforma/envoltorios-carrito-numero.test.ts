@@ -29,8 +29,8 @@ const T = 'comercio-uno';
 
 const NODE_FALSO = `#!/usr/bin/env bash
 printf '%s\\n' "$@" >> "$FAKE_DIR/argv"
-echo "FIJAR_PROYECTO=$FIJAR_PROYECTO|CARRITO_URL_N8N=\${CARRITO_URL_N8N:-}|NUMERO_PUBLICO_LINEA=\${NUMERO_PUBLICO_LINEA:-}|NUMERO_OPERADOR=\${NUMERO_OPERADOR:-}" >> "$FAKE_DIR/entorno"
-echo "nodo imprime: $FIJAR_PROYECTO \${CARRITO_URL_N8N:-} \${NUMERO_PUBLICO_LINEA:-} \${NUMERO_OPERADOR:-}"
+echo "PROYECTO_RESETEO=\${PROYECTO_RESETEO:-}|TEL_PRUEBA=\${TEL_PRUEBA:-}|FIJAR_PROYECTO=\${FIJAR_PROYECTO:-}|CARRITO_URL_N8N=\${CARRITO_URL_N8N:-}|NUMERO_PUBLICO_LINEA=\${NUMERO_PUBLICO_LINEA:-}|NUMERO_OPERADOR=\${NUMERO_OPERADOR:-}" >> "$FAKE_DIR/entorno"
+echo "nodo imprime: \${FIJAR_PROYECTO:-} \${PROYECTO_RESETEO:-} \${TEL_PRUEBA:-} \${CARRITO_URL_N8N:-} \${NUMERO_PUBLICO_LINEA:-} \${NUMERO_OPERADOR:-}"
 exit "\${FAKE_SALIDA:-0}"
 `;
 
@@ -211,6 +211,26 @@ describe('resetear-telefono.sh --quien', () => {
     expect(reset(l, ['--tenant', 'demo-venta', '--quien', 'andres']).codigo).toBe(2);
     expect(reset(l, ['--tenant', 'novuchat', '--quien', 'silvana']).codigo).toBe(2);
     expect(reset(l, ['--tenant', 'ensayo', '--quien', 'silvana']).codigo).toBe(2);
+  });
+
+  it('el teléfono y el proyecto NO van en la línea de comandos del script de nodo: llegan por entorno, y la salida no los escribe (ni en mayúsculas)', () => {
+    const sinSolo = (tels: string) => correr(RESET, ['--tenant', 'walisuma', '--quien', 'andres'], {
+      CONFIG_LOCAL_MD: tabla(filas(tels)), ENV_N8N: envN8n('N8N_BASE_URL=http://127.0.0.1:9\nN8N_API_KEY=clave-falsa\n'), GCP_PROJECT_ID_PROD: 'proy-reset-prod', GCP_PROJECT_ID_STAGING: 'proy-reset-stg',
+    });
+    const r = sinSolo(`${ANDRES},${SILVANA}`);
+    expect(r.codigo, r.salida).toBe(0);
+    const argv = leer('argv');
+    expect(argv).toContain('--tel-env'); expect(argv).toContain('--proyecto-env');
+    expect(argv).not.toContain(ANDRES); expect(argv).not.toContain('proy-reset-prod');
+    expect(leer('entorno')).toContain('PROYECTO_RESETEO=proy-reset-prod|TEL_PRUEBA=' + ANDRES);
+    expect(r.salida.toLowerCase()).not.toContain(ANDRES);
+    expect(r.salida.toLowerCase()).not.toContain('proy-reset-prod');
+  });
+
+  it('NEGANDO: demo, demo-venta, novuchat y novuchat-algo se rechazan en el reinicio', () => {
+    for (const t of ['demo', 'demo-venta', 'novuchat', 'novuchat-onboarding', 'ensayo']) {
+      expect(reset(`${ANDRES},${SILVANA}`, ['--tenant', t, '--quien', 'andres']).codigo, t).toBe(2);
+    }
   });
 
   it('--tel sigue funcionando como antes', () => {
