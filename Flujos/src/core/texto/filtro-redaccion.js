@@ -285,12 +285,21 @@ function cmNormEnlace(e) {
 }
 
 function cmOraciones(t, estricto) {
+  return cmOracionesSep(t, estricto).map((o) => o.t);
+}
+// Igual que cmOraciones, pero cada oración lleva `sep`: lo que la separaba de la anterior en el ORIGEN
+// (' ' si solo había espacios; '\n' si había un salto; '\n\n' si había una línea en blanco o más). La primera lleva ''.
+function cmOracionesSep(t, estricto) {
   // `estricto` (maxOraciones): el salto de línea y un emoji cierran oración; «1.» no.
   const ABREV = estricto ? /(?:\b(?:Dr|Dra|Sr|Sra|Srta|Lic|Ing|Prof|Esp|Av|Edif|Of|No|Nro)|(?:^|\s)\d{1,2})\.$/i : /\b(Dr|Dra|Sr|Sra|Srta|Lic|Ing|Prof|Esp|Av|Edif|Of|No|Nro)\.$/i;
   const oraciones = [];
-  for (const x of String(t).split(estricto ? /(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic})\s+|\s*\n+\s*/u : /(?<=[.!?…])\s+/)) {
-    if (oraciones.length && ABREV.test(oraciones[oraciones.length - 1])) oraciones[oraciones.length - 1] += ' ' + x;
-    else oraciones.push(x);
+  const partes = String(t).split(estricto ? /((?<=[.!?…])\s+|(?<=\p{Extended_Pictographic})\s+|\s*\n+\s*)/u : /((?<=[.!?…])\s+)/);
+  for (let i = 0; i < partes.length; i += 2) {
+    const x = partes[i];
+    const saltos = i ? (partes[i - 1].match(/\n/g) || []).length : 0;
+    const sep = !i ? '' : saltos >= 2 ? '\n\n' : saltos === 1 ? '\n' : ' ';
+    if (oraciones.length && ABREV.test(oraciones[oraciones.length - 1].t)) oraciones[oraciones.length - 1].t += ' ' + x;
+    else oraciones.push({ t: x, sep });
   }
   return oraciones;
 }
@@ -404,22 +413,23 @@ function cmRedaccionValida(texto, opciones) {
 function cmPulirRedaccion(texto, opciones) {
   const o = opciones || {};
   // Tope de largo: el pulido parte por oraciones y un texto enorme lo volvía cuadrático. Una redacción válida mide ≤ 900.
-  const oraciones = cmOraciones(String(texto || '').slice(0, 5000).trim(), o.maxOraciones >= 1);
+  const oraciones = cmOracionesSep(String(texto || '').slice(0, 5000).trim(), o.maxOraciones >= 1);
   const SALUDO = /^[¡!]?\s*(hola|buen[oa]s?\s+(d[ií]as|tardes|noches)|qu[eé] tal)\b/i;
   const PRESENTA = /\b(soy|somos)\s+(la|el|una|un|tu)\s+(asistente|secretaria|recepcionista)\b|\bestoy aqu[ií] para\b|\best(oy|amos) para (ayudarte|servirte)\b/i;
-  while (oraciones.length > 1 && (SALUDO.test(oraciones[0]) || PRESENTA.test(oraciones[0]))) oraciones.shift();
-  if (oraciones.length) oraciones[0] = oraciones[0].replace(/^[¡!]?\s*(claro que s[ií]|claro|por supuesto|con gusto|perfecto|listo|dale|genial)\s*[!,.:]+\s*/i, '');
-  if (oraciones.length) oraciones[0] = oraciones[0].replace(/^[¡!]?\s*hola\s*[!.,]\s*/i, '');
+  while (oraciones.length > 1 && (SALUDO.test(oraciones[0].t) || PRESENTA.test(oraciones[0].t))) oraciones.shift();
+  if (oraciones.length) oraciones[0].t = oraciones[0].t.replace(/^[¡!]?\s*(claro que s[ií]|claro|por supuesto|con gusto|perfecto|listo|dale|genial)\s*[!,.:]+\s*/i, '');
+  if (oraciones.length) oraciones[0].t = oraciones[0].t.replace(/^[¡!]?\s*hola\s*[!.,]\s*/i, '');
   // Tope de oraciones (opt-in): se conservan las primeras y, si la última era una pregunta, esa pregunta.
   const tope = Number(o.maxOraciones);
   if (tope >= 1 && oraciones.length > tope) {
     const ultima = oraciones[oraciones.length - 1];
     const corte = oraciones.slice(0, tope);
-    if (/\?[^\p{L}\p{N}]*$/u.test(ultima) && !/\?[^\p{L}\p{N}]*$/u.test(corte[tope - 1])) corte[tope - 1] = ultima;
+    if (/\?[^\p{L}\p{N}]*$/u.test(ultima.t) && !/\?[^\p{L}\p{N}]*$/u.test(corte[tope - 1].t)) corte[tope - 1] = ultima;
     oraciones.length = 0;
     oraciones.push(...corte);
   }
-  let t = oraciones.join(' ').trim();
+  // Se une con el separador del ORIGEN: espacio dentro de una línea; salto o línea en blanco entre líneas o párrafos (viñetas, listas).
+  let t = oraciones.map((x, i) => (i ? x.sep : '') + x.t).join('').trim();
   const sinTilde = (w) => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const palabras = String(o.nombreNegocio || '').split(/[^A-Za-zÀ-ÿ]+/).filter((w) => w.length >= 4);
   for (const w of palabras) {
