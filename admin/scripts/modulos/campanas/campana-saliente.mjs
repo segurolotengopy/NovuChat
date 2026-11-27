@@ -1,68 +1,84 @@
 /**
- * CAMPAÑA SALIENTE DEL CHAT DE NOVUCHAT — el envío (módulo `campanas` v2, PR-C, 26/11/2026).
+ * CAMPAÑA SALIENTE DEL CHAT — el envío (módulo `campanas` v2, PR-C, 27/11/2026).
  *
- *   node scripts/modulos/campanas/campana-saliente.mjs <subcomando> --proyecto <id> --tenant <id> [opciones]
+ *   node scripts/modulos/campanas/campana-saliente.mjs <subcomando> --proyecto <id> --tenant <id> --linea <4 dígitos> [opciones]
  *
- *   simular       --workflow <id>                       SOLO conteos (nada de teléfonos); no escribe en Firestore.
- *   crear         --workflow <id> --numero <n> --campana <id> [--aplicar --confirmo-produccion <tenant>]
- *                 arma la lista y crea `campanasSalientes/{id}` con sus `destinatarios` (no envía nada).
- *   prueba        --numero <n> --campana <id> [--aplicar ...]   solo a TELEFONOS_DE_PRUEBA del entorno (sin él, sale con 2).
- *   enviar-tanda  --campana <id> --calidad VERDE [--tamano 40..50] [--aplicar ...]
- *   pausar        --campana <id> [--aplicar ...]
- *   estado        --campana <id>                        conteos, respuestas conciliadas y `plantillasCampana`; solo lectura.
+ *   simular          --mapa-crm <ruta> --flujo-versionado <ruta>      SOLO conteos (nunca teléfonos); no escribe.
+ *   crear            --campana <id> (--mapa-crm … --flujo-versionado … | --solo-prueba --telefono-prueba <4 dígitos>) [--aplicar …]
+ *                    arma la lista y crea la campaña (`creada`) con sus destinatarios `pendiente`. NO envía nada.
+ *   autorizar-tanda  --campana <id> --tanda <id> --cupo <n> --calidad VERDE [--aplicar …]   UNA tanda por corrida (un botón de Andres).
+ *   cerrar-tanda     --campana <id> --tanda <id> [--aplicar …]
+ *   pausar           --campana <id> [--aplicar …]
+ *   estado           --campana <id>                         conteos, «Sí» y «No» conciliados y `plantillasCampana`; solo lectura.
  *
- * SIN `--aplicar --confirmo-produccion <tenant>` (la confirmación, solo contra producción) NO SE ESCRIBE NADA. El proyecto se valida
- * contra la lista blanca de los demás scripts (`comprobarProyecto`). El tenant es UNO por corrida.
+ * QUÉ HACE Y QUÉ NO. Este script NO escribe mensajes. Escribe destinatarios en `tenants/{t}/campanasSalientes/{c}/destinatarios` y
+ * AUTORIZA una tanda (la tanda en la campaña y el puntero `rutasWhatsApp/{n}.campanaSalienteEnCurso`). Quien arma y envía los
+ * mensajes, con los topes, es el servidor (Core): en cada reclamo de la cola de salida, después de las personas y con los lugares
+ * que queden, materializa como máximo `porReclamo` mensajes. Sin tanda autorizada no sale nada.
  *
- * CÓMO SALE UN MENSAJE. Se copia el contrato de `retomarConversacion`: un mensaje `pendiente` de tipo `plantilla` con `autor: 'campana'`,
- * `plantilla {nombre, idioma, parametros: [], botones: [{indice, payload}]}` en `tenants/{t}/conversaciones/wa_<tel>/mensajes/camp_<campana>_<tel>`.
- * Lo envía el flujo «Salida de persona» (su barrido corre cada 15 s: este script NO toca el timbre) y lo confirma `confirmarSalidaPersona`,
- * que suma `plantillasCampana`. Cada mensaje se crea en UNA transacción que vuelve a comprobar: baja, bloqueada, noContactar, las 24 h,
- * que la conversación exista (y sea de esa línea), que la campaña no esté pausada y el tope diario (`topesDeEnvio/c_{tenant}`, 200).
- * Se escribe en sub-lotes de 10 y se espera a que salgan de `pendiente` antes del siguiente (ninguno caduca por los 2 min del reclamo).
+ * LAS CIFRAS (porTanda, porDia, porReclamo, ventanaDias, pausaErroresPct, pausaMinimoEnviados, pausaNoPct) se leen de
+ * `tenants/{t}/config/campanaSaliente` con `leerConfigCampana` (la misma validación del servidor); aquí no hay ninguna.
  *
- * EL NOMBRE DE LA PLANTILLA es dato del número (`rutasWhatsApp/{n}.plantillas.campana`, `registrar-plantilla.mjs --uso campana`): nunca va aquí.
- * `CAMPANA_ID` y los payloads repiten a Core; `salientes.test.ts` los compara contra sus exports.
+ * SIN `--aplicar` NO SE ESCRIBE NADA. Contra producción, `--aplicar` exige `--confirmo-produccion <tenant>`. Nada se ejecuta contra
+ * n8n sin que el subcomando lo pida (solo `simular` y `crear` sin `--solo-prueba` leen el miniCRM, por la API de n8n).
+ * La salida nunca trae un teléfono, un id de hoja, una ruta de webhook ni un id de flujo.
  *
- * SALIDA. 0: hecho (o seco sin diferencias). 1: seco, queda algo por aplicar. 2: uso, salvaguarda o precondición (nada escrito).
- * 3: error de ejecución. 4: la campaña se pausó o la tanda se rechazó por el 25 % de «No». 130: Ctrl-C.
- * COSTO. Por entrega, 1 plantilla (cifra en Central). 0 mensajes por conversación de los flujos. Escrituras: crear ≈ 1 + una por destinatario;
- * cada envío ≈ 4 (mensaje, destinatario, tope, y la actualización del estado final).
+ * ENTORNO: `ENV_FILE` (el .env de n8n; se lee, nunca se imprime) y `TELEFONOS_DE_PRUEBA` (separados por coma; nunca se imprimen).
+ * La línea (`--linea`) se resuelve en `rutasWhatsApp` (`tenantId == tenant`, `estado == 'activo'`, exactamente 1 coincidencia).
+ *
+ * SALIDA. 0: terminó. 1: en seco, queda algo por hacer. 2: uso, salvaguarda o precondición (nada escrito). 3: error de ejecución.
+ * 4: rechazado por la proporción de «No». 130: Ctrl-C.
+ * COSTO. Por entrega 1 plantilla (UTILITY: 0,0113 USD). 0 mensajes por conversación. Escrituras: crear ≈ 1 + una por destinatario;
+ * autorizar y cerrar, 2 cada una; n8n: 4 por `simular` o `crear`.
  */
-import { realpathSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { comprobarProyecto, ID_TENANT, esTenantExcluidoDeBandera, mensajeDeInterrupcion } from '../../plataforma/aplicar-consola-conversaciones.mjs';
 import { plantillaCampanaValida } from '../../plataforma/registrar-plantilla.mjs';
 import { crearLectorDeMiniCrmN8n } from './miniCrm-n8n.mjs';
 import {
-  TAMANO_DE_SUBLOTE, TANDA_MAXIMA, TANDA_MINIMA, TOPE_DIARIO, armarLista, evaluarPausa, milisegundosDe, partirEnLotes, telefonoValido,
+  armarLista, claveDeContacto, partirEnLotes, partirEnTandas, superaNo, telefonoValido,
 } from './salientes-logica.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-export const SUBCOMANDOS = ['simular', 'crear', 'prueba', 'enviar-tanda', 'pausar', 'estado'];
-const ESCRIBEN = ['crear', 'prueba', 'enviar-tanda', 'pausar'];
-const CON_VALOR = ['proyecto', 'tenant', 'numero', 'campana', 'calidad', 'tamano', 'workflow', 'confirmo-produccion'];
-const BANDERAS = ['aplicar'];
-/** Repetido de Core (`bajas.ts`: CAMPANA_ID) y de `PAYLOAD_DE_BOTON`: la prueba los compara. */
-export const CAMPANA_ID = /^[a-z0-9-]{3,40}$/;
-export const NUMERO_ID = /^[0-9]{6,25}$/;
-export const payloadsDe = (campanaId) => ({ si: `cs:si:${campanaId}`, no: `cs:no:${campanaId}` });
-/** El id del mensaje: cumple `CLAVE_DE_ENVIO` de Core (16 a 128 caracteres). */
-export const claveDeMensaje = (campanaId, telefono) => `camp_${campanaId}_${telefono}`;
-export const ESPERA_SUBLOTE_MS = 180_000;
-const SONDEO_MS = 3_000;
+const DATOS = resolve(AQUI, '..', '..', 'datos');
+const FLUJOS_CLIENTES = resolve(AQUI, '..', '..', '..', '..', 'Flujos', 'clientes');
 
-export const USO = '  node scripts/modulos/campanas/campana-saliente.mjs simular|crear|prueba|enviar-tanda|pausar|estado --proyecto <id> --tenant <id> '
-  + '[--workflow <id>] [--numero <phoneNumberId>] [--campana <id>] [--calidad VERDE] [--tamano 40..50] [--aplicar --confirmo-produccion <tenant>]';
+export const SUBCOMANDOS = ['simular', 'crear', 'autorizar-tanda', 'cerrar-tanda', 'pausar', 'estado'];
+const ESCRIBEN = ['crear', 'autorizar-tanda', 'cerrar-tanda', 'pausar'];
+const CON_VALOR = ['proyecto', 'tenant', 'linea', 'campana', 'tanda', 'cupo', 'calidad', 'mapa-crm', 'flujo-versionado', 'telefono-prueba', 'confirmo-produccion'];
+const BANDERAS = ['aplicar', 'solo-prueba'];
+/** Copias de Core (`salidaCampana.ts`): `salientes.test.ts` las compara contra lo compilado cuando existe. */
+export const CAMPANA_ID = /^[a-z0-9-]{3,40}$/;
+export const TANDA_ID = /^[a-z0-9-]{1,20}$/;
+/** Costo de una plantilla UTILITY entregada (USD), de `docs/base-comercial.md`. */
+export const PLANTILLA_UTILIDAD_USD = 0.0113;
+const TAMANO_DE_LOTE = 400;
+
+export const USO = '  node scripts/modulos/campanas/campana-saliente.mjs simular|crear|autorizar-tanda|cerrar-tanda|pausar|estado --proyecto <id> --tenant <id> --linea <4 dígitos> '
+  + '[--campana <id>] [--tanda <id> --cupo <n> --calidad VERDE] [--mapa-crm <ruta> --flujo-versionado <ruta>] [--solo-prueba --telefono-prueba <4 dígitos>] [--aplicar --confirmo-produccion <tenant>]';
 
 // ===========================================================================
 // ARGUMENTOS (puro)
 // ===========================================================================
+/** Los teléfonos de prueba del entorno (solo los válidos); nunca se imprimen. */
+export function telefonosDePruebaDe(env) {
+  const lista = typeof env.TELEFONOS_DE_PRUEBA === 'string' ? env.TELEFONOS_DE_PRUEBA.split(',').map((x) => telefonoValido(x.trim())).filter(Boolean) : [];
+  return new Set(lista);
+}
+
+/** La ruta absoluta de `ruta` si cae DENTRO de `base` y termina en .json; si no, `null`. */
+export function rutaBajo(ruta, base) {
+  if (typeof ruta !== 'string' || ruta === '' || ruta.includes('\u0000')) return null;
+  const r = resolve(ruta);
+  return r.startsWith(base + sep) && r.endsWith('.json') ? r : null;
+}
+
 export function analizarArgumentos(argv, env = process.env) {
   const problemas = [];
   const sub = argv[0];
-  if (!SUBCOMANDOS.includes(sub)) return { ok: false, problemas: [`el subcomando tiene que ser uno de: ${SUBCOMANDOS.join(', ')}`] };
+  if (!SUBCOMANDOS.includes(sub)) return { ok: false, codigo: 2, problemas: [`el subcomando tiene que ser uno de: ${SUBCOMANDOS.join(', ')}`] };
   const valores = { __proto__: null };
   const banderas = [];
   for (let i = 1; i < argv.length; i++) {
@@ -77,12 +93,13 @@ export function analizarArgumentos(argv, env = process.env) {
       const v = argv[i + 1];
       if (v === undefined || v.startsWith('--')) { problemas.push(`--${nombre} sin valor`); continue; }
       valores[nombre] = v; i += 1;
-    } else problemas.push(`opción desconocida: ${a.split('=')[0].slice(0, 40)}`);
+    } else problemas.push(`opción desconocida: ${a.split('=')[0].slice(0, 40).replace(/[^\w-]/g, '?')}`);
   }
-  const escribe = ESCRIBEN.includes(sub);
   const aplicar = banderas.includes('aplicar');
-  if (aplicar && !escribe) problemas.push(`${sub} no escribe: no admite --aplicar`);
-  const { proyecto, tenant, numero, campana, calidad, tamano, workflow } = valores;
+  const soloPrueba = banderas.includes('solo-prueba');
+  if (aplicar && !ESCRIBEN.includes(sub)) problemas.push(`${sub} no escribe: no admite --aplicar`);
+  if (soloPrueba && sub !== 'crear') problemas.push('--solo-prueba solo vale con crear');
+  const { proyecto, tenant, linea, campana, tanda, cupo, calidad } = valores;
   const confirmo = valores['confirmo-produccion'];
 
   if (proyecto === undefined) problemas.push('falta --proyecto');
@@ -91,148 +108,137 @@ export function analizarArgumentos(argv, env = process.env) {
   if (tenant === undefined) problemas.push('falta --tenant');
   else if (!ID_TENANT.test(tenant)) problemas.push('--tenant inválido (UN comercio por corrida)');
   else if (esTenantExcluidoDeBandera(tenant, env)) problemas.push('este comercio está EXCLUIDO (NOVUCHAT_TENANTS_EXCLUIDOS)');
+  if (linea === undefined) problemas.push('falta --linea (los 4 últimos dígitos del número del comercio)');
+  else if (!/^[0-9]{4}$/.test(linea)) problemas.push('--linea tiene que ser de exactamente 4 dígitos');
   if (confirmo !== undefined) {
-    if (proy.ok && proy.entorno !== 'produccion') problemas.push('--confirmo-produccion solo se usa contra producción');
+    if (!aplicar) problemas.push('--confirmo-produccion solo acompaña a --aplicar');
+    else if (proy.ok && proy.entorno !== 'produccion') problemas.push('--confirmo-produccion solo se usa contra producción');
     else if (proy.ok && confirmo !== tenant) problemas.push('--confirmo-produccion no coincide con --tenant');
   } else if (proy.ok && proy.entorno === 'produccion' && aplicar) problemas.push('contra producción, --aplicar exige --confirmo-produccion <tenant> (igual a --tenant)');
 
   if (sub !== 'simular') {
     if (campana === undefined) problemas.push('falta --campana');
     else if (!CAMPANA_ID.test(campana)) problemas.push('--campana inválida (minúsculas, dígitos y guiones, de 3 a 40)');
+  } else if (campana !== undefined) problemas.push('simular no admite --campana');
+
+  // La tanda: un botón por tanda. Sin tanda, cupo y calidad no se autoriza nada.
+  if (sub === 'autorizar-tanda') {
+    if (tanda === undefined) problemas.push('falta --tanda'); else if (!TANDA_ID.test(tanda)) problemas.push('--tanda inválida (minúsculas, dígitos y guiones, hasta 20)');
+    if (cupo === undefined) problemas.push('falta --cupo'); else if (!/^[0-9]{1,4}$/.test(cupo) || Number(cupo) < 1) problemas.push('--cupo tiene que ser un entero positivo');
+    if (calidad === undefined) problemas.push('falta --calidad (la informa WAM antes de cada tanda)');
+    else if (calidad !== 'VERDE') problemas.push('autorizar-tanda exige --calidad VERDE (sin ella no se autoriza)');
+  } else if (sub === 'cerrar-tanda') {
+    if (tanda === undefined) problemas.push('falta --tanda'); else if (!TANDA_ID.test(tanda)) problemas.push('--tanda inválida');
+    if (cupo !== undefined) problemas.push(`${sub} no admite --cupo`);
+    if (calidad !== undefined) problemas.push(`${sub} no admite --calidad`);
+  } else {
+    for (const [k, v] of [['tanda', tanda], ['cupo', cupo], ['calidad', calidad]]) if (v !== undefined) problemas.push(`${sub} no admite --${k}`);
   }
-  if (['crear', 'prueba'].includes(sub)) {
-    if (numero === undefined) problemas.push('falta --numero');
-    else if (!NUMERO_ID.test(numero)) problemas.push('--numero inválido');
-  } else if (numero !== undefined && sub !== 'simular') problemas.push(`${sub} no admite --numero (sale de la campaña)`);
-  if (['simular', 'crear'].includes(sub)) {
-    const permitidos = typeof env.N8N_WORKFLOWS_PERMITIDOS === 'string' ? env.N8N_WORKFLOWS_PERMITIDOS.split(',').map((x) => x.trim()).filter(Boolean) : [];
-    if (workflow === undefined) problemas.push('falta --workflow (el flujo vivo del chat, de donde sale la hoja del miniCRM)');
-    else if (!permitidos.includes(workflow)) problemas.push('--workflow no está en la lista cerrada N8N_WORKFLOWS_PERMITIDOS');
-  } else if (workflow !== undefined) problemas.push(`${sub} no admite --workflow`);
-  if (sub === 'enviar-tanda') {
-    if (calidad !== 'VERDE') problemas.push('enviar-tanda exige --calidad VERDE (la informa WAM antes de cada tanda; sin ella no se envía)');
-  } else if (calidad !== undefined) problemas.push(`${sub} no admite --calidad`);
-  let tamanoTanda = TANDA_MAXIMA;
-  if (tamano !== undefined) {
-    if (sub !== 'enviar-tanda') problemas.push(`${sub} no admite --tamano`);
-    else if (!/^[0-9]{2}$/.test(tamano) || Number(tamano) < TANDA_MINIMA || Number(tamano) > TANDA_MAXIMA) problemas.push(`--tamano va de ${TANDA_MINIMA} a ${TANDA_MAXIMA}`);
-    else tamanoTanda = Number(tamano);
+
+  // La lista: del miniCRM (mapa de columnas y flujo versionado, solo bajo sus carpetas) o, con --solo-prueba, de UN teléfono de prueba.
+  const conMiniCrm = sub === 'simular' || (sub === 'crear' && !soloPrueba);
+  let mapaCrm = null; let flujoVersionado = null;
+  if (conMiniCrm) {
+    mapaCrm = rutaBajo(valores['mapa-crm'], DATOS);
+    if (valores['mapa-crm'] === undefined) problemas.push('falta --mapa-crm'); else if (mapaCrm === null) problemas.push('--mapa-crm tiene que ser un .json bajo admin/scripts/datos/');
+    flujoVersionado = rutaBajo(valores['flujo-versionado'], FLUJOS_CLIENTES);
+    if (valores['flujo-versionado'] === undefined) problemas.push('falta --flujo-versionado'); else if (flujoVersionado === null) problemas.push('--flujo-versionado tiene que ser un .json bajo Flujos/clientes/');
+  } else {
+    for (const k of ['mapa-crm', 'flujo-versionado']) if (valores[k] !== undefined && !(sub === 'crear' && soloPrueba)) problemas.push(`${sub} no admite --${k}`);
   }
+
   const telefonosDePrueba = telefonosDePruebaDe(env);
-  if (sub === 'prueba' && telefonosDePrueba.size === 0) return { ok: false, codigo: 2, problemas: [...problemas, 'prueba exige TELEFONOS_DE_PRUEBA en el entorno (teléfonos válidos separados por coma)'] };
-  if (problemas.length) return { ok: false, problemas };
-  return { ok: true, cfg: { sub, proyecto, entorno: proy.entorno, tenant, numero: numero ?? null, campana: campana ?? null, workflow: workflow ?? null, tamano: tamanoTanda, aplicar, telefonosDePrueba } };
-}
-
-/** Los teléfonos de prueba del entorno (solo los válidos); nunca se imprimen. */
-export function telefonosDePruebaDe(env) {
-  const lista = typeof env.TELEFONOS_DE_PRUEBA === 'string' ? env.TELEFONOS_DE_PRUEBA.split(',').map((x) => telefonoValido(x.trim())).filter(Boolean) : [];
-  return new Set(lista);
-}
-
-// ===========================================================================
-// EL MENSAJE Y SU TRANSACCIÓN
-// ===========================================================================
-const diaDe = (ms) => new Date(ms - 4 * 3_600_000).toISOString().slice(0, 10);
-const HORA_MS = 3_600_000;
-
-/** El documento del mensaje: el contrato de `retomarConversacion`, con `autor: 'campana'`, sin parámetros y con 2 botones. */
-export function documentoDelMensaje({ campanaId, telefono, numero, tenant, plantilla, ts }) {
-  const p = payloadsDe(campanaId);
-  return {
-    direccion: 'saliente', tipo: 'plantilla', texto: '', ts, autor: 'campana', estadoEnvio: 'pendiente',
-    to: telefono, phoneNumberId: numero, tenantId: tenant,
-    plantilla: { nombre: plantilla.nombre, idioma: plantilla.idioma, parametros: [], botones: [{ indice: 0, payload: p.si }, { indice: 1, payload: p.no }] },
-  };
-}
-
-/**
- * Crea UN mensaje en UNA transacción que vuelve a comprobar todo. `{ ok: true }` o `{ ok: false, motivo }` (nada escrito).
- * `ctx`: { db, Timestamp, tenant, numero, campanaId, plantilla, ahoraMs, conCampana }.
- */
-export async function crearMensaje(ctx, telefono) {
-  const { db, Timestamp, tenant, numero, campanaId, plantilla, ahoraMs, conCampana } = ctx;
-  const refConv = db.doc(`tenants/${tenant}/conversaciones/wa_${telefono}`);
-  const refMsg = refConv.collection('mensajes').doc(claveDeMensaje(campanaId, telefono));
-  const refBaja = db.doc(`tenants/${tenant}/bajas/wa_${telefono}`);
-  const refTope = db.doc(`topesDeEnvio/c_${tenant}`);
-  const refCamp = db.doc(`tenants/${tenant}/campanasSalientes/${campanaId}`);
-  const refDest = refCamp.collection('destinatarios').doc(`wa_${telefono}`);
-  return db.runTransaction(async (tx) => {
-    const [conv, msg, baja, tope, camp, dest] = await tx.getAll(refConv, refMsg, refBaja, refTope, refCamp, refDest);
-    if (msg.exists) return { ok: false, motivo: 'repetido' };
-    if (conCampana) {
-      if (!camp.exists) return { ok: false, motivo: 'sinCampana' };
-      if (camp.get('estado') !== 'activa') return { ok: false, motivo: 'pausada' };
-      if (!dest.exists || dest.get('estado') !== 'pendiente') return { ok: false, motivo: 'noPendiente' };
+  let telefonoPrueba = null;
+  const filtro = valores['telefono-prueba'];
+  if (soloPrueba && sub === 'crear') {
+    // La prueba va SOLO a un teléfono: el que termina en esos 4 dígitos, y tiene que ser exactamente uno. Nunca se imprime ni el número ni el filtro.
+    if (filtro === undefined) problemas.push('--solo-prueba exige --telefono-prueba <4 dígitos>: nunca se envía a la lista de prueba completa');
+    else if (!/^[0-9]{4}$/.test(filtro)) problemas.push('--telefono-prueba tiene que ser de exactamente 4 dígitos');
+    else {
+      const coinciden = [...telefonosDePrueba].filter((t) => t.endsWith(filtro));
+      if (coinciden.length !== 1) problemas.push(`--telefono-prueba tiene que coincidir con exactamente 1 teléfono de TELEFONOS_DE_PRUEBA (coinciden ${coinciden.length})`);
+      else telefonoPrueba = new Set(coinciden);
     }
-    if (!conv.exists) return { ok: false, motivo: 'sinConversacion' };
-    const linea = conv.get('phoneNumberId');
-    if (linea !== undefined && linea !== numero) return { ok: false, motivo: 'otraLinea' };
-    if (baja.exists) return { ok: false, motivo: 'baja' };
-    if (conv.get('bloqueada') === true) return { ok: false, motivo: 'bloqueada' };
-    if (conv.get('noContactar') === true) return { ok: false, motivo: 'noContactar' };
-    const entrante = milisegundosDe(conv.get('ultimoEntranteEn'));
-    if (entrante === null) return { ok: false, motivo: 'sinConversacion' };
-    if (ahoraMs - entrante < 24 * HORA_MS) return { ok: false, motivo: 'reciente' };
-    const dia = diaDe(ahoraMs);
-    const n = tope.exists && tope.get('dia') === dia ? tope.get('nDia') : 0;
-    if (!Number.isInteger(n) || n < 0) return { ok: false, motivo: 'topeIlegible' };
-    if (n >= TOPE_DIARIO) return { ok: false, motivo: 'tope' };
-    const ts = Timestamp.fromMillis(ahoraMs);
-    tx.create(refMsg, documentoDelMensaje({ campanaId, telefono, numero, tenant, plantilla, ts }));
-    tx.set(refTope, { dia, nDia: n + 1, actualizadoEn: ts }, { merge: true });
-    if (conCampana) tx.update(refDest, { estado: 'creado', mensajeId: refMsg.id, creadoEn: ts });
-    return { ok: true };
-  });
+  } else if (filtro !== undefined) problemas.push('--telefono-prueba solo vale con crear --solo-prueba');
+
+  if (problemas.length) return { ok: false, codigo: 2, problemas };
+  return {
+    ok: true,
+    cfg: {
+      sub, proyecto, entorno: proy.entorno, tenant, linea, campana: campana ?? null, tanda: tanda ?? null, cupo: cupo === undefined ? null : Number(cupo),
+      calidad: calidad ?? null, mapaCrm, flujoVersionado, soloPrueba, telefonoPrueba, telefonosDePrueba, aplicar,
+    },
+  };
 }
 
 // ===========================================================================
 // LECTURAS
 // ===========================================================================
 const lotesDe = (refs, n = 300) => partirEnLotes(refs, n);
+const diaDeLaPaz = (ms) => new Date(ms - 4 * 3_600_000).toISOString().slice(0, 10);
+const refCampana = (db, tenant, campana) => db.doc(`tenants/${tenant}/campanasSalientes/${campana}`);
 
-/** Las conversaciones que EXISTEN (con lo mínimo) y las bajas, de una lista de teléfonos. */
-async function leerContexto(db, tenant, telefonos, numero) {
+/** `{ ok, numero, ruta }`: la ruta ACTIVA del comercio que termina en `linea`, exactamente una (DP4). Nunca se imprime el número. */
+export async function resolverLinea(db, tenant, linea) {
+  const q = await db.collection('rutasWhatsApp').where('tenantId', '==', tenant).where('estado', '==', 'activo').get();
+  const coinciden = q.docs.filter((d) => d.id.endsWith(linea));
+  if (coinciden.length !== 1) return { ok: false, motivo: `con --tenant y --linea se esperaba exactamente 1 ruta activa y hay ${coinciden.length}` };
+  return { ok: true, numero: coinciden[0].id, ruta: coinciden[0] };
+}
+
+/** La configuración de la campaña, validada por `leerConfigCampana` (la del servidor). `null` si falta o es ilegible. */
+async function leerConfig(db, tenant, deps) {
+  const s = await db.doc(`tenants/${tenant}/config/campanaSaliente`).get();
+  return s.exists ? deps.leerConfigCampana(s.data()) : null;
+}
+
+/** `plantillas.campana` de la ruta, con el contrato exacto del registro. */
+function plantillaDeLaRuta(ruta) {
+  const p = ruta.get('plantillas.campana');
+  if (!plantillaCampanaValida(p)) return null;
+  return { nombre: p.nombre, idioma: p.idioma, categoria: p.categoria };
+}
+
+/** Las conversaciones que EXISTEN y las bajas de una lista de teléfonos, por `claveDeContacto`. */
+async function leerContexto(db, tenant, telefonos) {
   const conversaciones = new Map();
   const bajas = new Set();
   for (const lote of lotesDe(telefonos)) {
-    const snaps = await db.getAll(...lote.map((t) => db.doc(`tenants/${tenant}/conversaciones/wa_${t}`)), { fieldMask: ['ultimoEntranteEn', 'bloqueada', 'noContactar', 'phoneNumberId'] });
+    const claves = lote.map(claveDeContacto);
+    const snaps = await db.getAll(...claves.map((c) => db.doc(`tenants/${tenant}/conversaciones/${c}`)), { fieldMask: ['ultimoEntranteEn', 'bloqueada', 'noContactar', 'riesgoEn', 'phoneNumberId'] });
     snaps.forEach((s, i) => {
       if (!s.exists) return;
-      const linea = s.get('phoneNumberId');
-      if (numero && linea !== undefined && linea !== numero) return; // de otra línea: no se le escribe por esta
-      conversaciones.set(lote[i], { ultimoEntranteEn: s.get('ultimoEntranteEn'), bloqueada: s.get('bloqueada'), noContactar: s.get('noContactar') });
+      conversaciones.set(claves[i], {
+        ultimoEntranteEn: s.get('ultimoEntranteEn'), bloqueada: s.get('bloqueada'), noContactar: s.get('noContactar'), riesgoEn: s.get('riesgoEn'), phoneNumberId: s.get('phoneNumberId'),
+      });
     });
-    const sb = await db.getAll(...lote.map((t) => db.doc(`tenants/${tenant}/bajas/wa_${t}`)), { fieldMask: ['canal'] });
-    sb.forEach((s, i) => { if (s.exists) bajas.add(lote[i]); });
+    const sb = await db.getAll(...claves.map((c) => db.doc(`tenants/${tenant}/bajas/${c}`)), { fieldMask: ['canal'] });
+    sb.forEach((s, i) => { if (s.exists) bajas.add(claves[i]); });
   }
   return { conversaciones, bajas };
 }
 
-async function construirLista(cfg, deps) {
-  const filas = await deps.leerFilasDelMiniCrm();
+async function construirLista(cfg, deps, numero, config) {
+  let filas;
+  let telefonosDePrueba = cfg.telefonosDePrueba;
+  if (cfg.soloPrueba) {
+    // La prueba: UN teléfono; pasa por las mismas exclusiones de Firestore (baja, marcas, otra línea, 24 h) y su fecha vale hoy.
+    const hoy = diaDeLaPaz(deps.ahoraMs());
+    filas = [...cfg.telefonoPrueba].map((telefono) => ({ telefono, fecha: hoy, etapa: '' }));
+    telefonosDePrueba = new Set();
+  } else filas = await deps.leerFilasDelMiniCrm();
   const telefonos = [...new Set(filas.map((f) => telefonoValido(String(f.telefono ?? '').trim())).filter(Boolean))];
-  const { conversaciones, bajas } = await leerContexto(deps.db, cfg.tenant, telefonos, cfg.numero);
-  return armarLista({ filas, conversaciones, bajas, telefonosDePrueba: cfg.telefonosDePrueba, ahoraMs: deps.ahoraMs() });
+  const { conversaciones, bajas } = await leerContexto(deps.db, cfg.tenant, telefonos);
+  return armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ahoraMs: deps.ahoraMs(), ventanaDias: config.ventanaDias, numero });
 }
 
 const ROTULOS = {
   filas: 'filas del miniCRM', telefonos: 'teléfonos distintos', filasRepetidas: 'filas repetidas (un solo envío)', invalido: 'excluidos: teléfono inválido',
   cerrada: 'excluidos: Ganado o Perdido', fechaIlegible: 'excluidos: fecha ilegible', prueba: 'excluidos: teléfono de prueba', baja: 'excluidos: con baja',
-  bloqueada: 'excluidos: bloqueada', noContactar: 'excluidos: no contactar', fueraDeVentana: 'excluidos: fuera de los 60 días',
-  sinConversacion: 'excluidos: sin conversación', reciente: 'excluidos: escribió en las últimas 24 h', destinatarios: 'DESTINATARIOS',
+  bloqueada: 'excluidos: bloqueada', noContactar: 'excluidos: no contactar', riesgo: 'excluidos: con marca de riesgo', fueraDeVentana: 'excluidos: fuera de la ventana de días',
+  sinConversacion: 'excluidos: sin conversación', otraLinea: 'excluidos: conversación de otra línea', reciente: 'excluidos: escribió en las últimas 24 h', destinatarios: 'DESTINATARIOS',
 };
 function imprimirConteos(log, conteos) { for (const [k, r] of Object.entries(ROTULOS)) log(`  ${r.padEnd(44)} ${conteos[k]}`); }
-
-/** `plantillas.campana` de la ruta, validada por el mismo contrato que `registrar-plantilla.mjs`. */
-async function leerPlantilla(db, tenant, numero) {
-  const ruta = await db.doc(`rutasWhatsApp/${numero}`).get();
-  if (!ruta.exists || ruta.get('tenantId') !== tenant || ruta.get('estado') !== 'activo') return { ok: false, motivo: 'la ruta no existe, no es de este comercio o no está activa' };
-  const p = ruta.get('plantillas.campana');
-  if (!plantillaCampanaValida(p)) return { ok: false, motivo: 'la ruta no tiene una plantilla de campaña válida (registrar-plantilla.mjs --uso campana)' };
-  return { ok: true, plantilla: { nombre: p.nombre, idioma: p.idioma } };
-}
 
 /** Respuestas conciliadas desde `campanaRespuesta` de las conversaciones. */
 export async function conciliarRespuestas(db, tenant, campanaId) {
@@ -245,187 +251,213 @@ export async function conciliarRespuestas(db, tenant, campanaId) {
 // ===========================================================================
 // SUBCOMANDOS
 // ===========================================================================
-const dormirReal = (ms) => new Promise((r) => { setTimeout(r, ms); });
-
-async function crear(cfg, deps, log) {
-  const { db, Timestamp } = deps;
-  const pl = await leerPlantilla(db, cfg.tenant, cfg.numero);
-  if (!pl.ok) { log(`\n  ✗ ${pl.motivo}. No se escribió nada.\n`); return 2; }
-  const ref = db.doc(`tenants/${cfg.tenant}/campanasSalientes/${cfg.campana}`);
-  if ((await ref.get()).exists) { log('\n  ✗ Ya existe una campaña con ese id: use otro. No se escribió nada.\n'); return 2; }
-  const { destinatarios, conteos } = await construirLista(cfg, deps);
-  log(`\n  ${cfg.aplicar ? 'CREAR' : 'SECO (solo lecturas)'} · campaña ${cfg.campana}\n`);
-  imprimirConteos(log, conteos);
-  if (destinatarios.length === 0) { log('\n  ✗ No quedó ningún destinatario: no se crea la campaña.\n'); return 2; }
-  if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar para crear la campaña.\n'); return 1; }
-  deps.marcarEscritura?.('escribiendo');
-  const ahora = Timestamp.fromMillis(deps.ahoraMs());
-  await ref.create({
-    estado: 'activa', phoneNumberId: cfg.numero, plantilla: pl.plantilla, creadaEn: ahora, total: destinatarios.length, conteos,
-    enviados: 0, errores: 0, inciertos: 0, omitidos: 0, tandas: 0, respondioSi: 0, respondioNo: 0, ultimaTanda: null,
-  });
-  for (const lote of partirEnLotes(destinatarios, 400)) {
-    const b = db.batch();
-    for (const d of lote) b.create(ref.collection('destinatarios').doc(`wa_${d.telefono}`), { estado: 'pendiente', fechaMax: Timestamp.fromMillis(d.fechaMaxMs) });
-    await b.commit();
+async function contexto(cfg, deps, log, { conConfig }) {
+  const lin = await resolverLinea(deps.db, cfg.tenant, cfg.linea);
+  if (!lin.ok) { log(`\n  ✗ ${lin.motivo}. No se escribió nada.\n`); return { codigo: 2 }; }
+  let config = null;
+  if (conConfig) {
+    config = await leerConfig(deps.db, cfg.tenant, deps);
+    if (config === null) { log('\n  ✗ Falta `config/campanaSaliente` del comercio o es ilegible (campana-saliente-config.mjs): la campaña queda cerrada. No se escribió nada.\n'); return { codigo: 2 }; }
   }
-  deps.marcarEscritura?.('escrito');
-  log(`\n  ✓ Campaña creada con ${destinatarios.length} destinatarios. Falta enviar-tanda (con --calidad VERDE).\n`);
-  return 0;
+  return { numero: lin.numero, ruta: lin.ruta, config };
 }
 
 async function simular(cfg, deps, log) {
-  const { conteos } = await construirLista(cfg, deps);
+  const c = await contexto(cfg, deps, log, { conConfig: true });
+  if (c.codigo) return c.codigo;
+  const { destinatarios, conteos } = await construirLista(cfg, deps, c.numero, c.config);
+  const tandas = partirEnTandas(destinatarios.length, c.config.porTanda);
   log('\n  SIMULACRO (solo conteos; no escribe en Firestore)\n');
   imprimirConteos(log, conteos);
+  log(`  ${'tandas'.padEnd(44)} ${tandas.length} (de hasta ${c.config.porTanda})`);
+  log(`  ${'días que lleva (tope diario)'.padEnd(44)} ${Math.ceil(destinatarios.length / c.config.porDia)} (hasta ${c.config.porDia} por día)`);
   log('');
   return 0;
 }
 
-/** Espera a que ningún mensaje del sub-lote siga `pendiente` ni `enviando`; devuelve el estado de cada uno. */
-async function esperarSubLote(db, refs, deps) {
-  const limite = deps.ahoraMs() + (deps.esperaMs ?? ESPERA_SUBLOTE_MS);
-  for (;;) {
-    const snaps = await db.getAll(...refs);
-    const estados = snaps.map((s) => (s.exists ? s.get('estadoEnvio') : 'desaparecido'));
-    if (!estados.some((e) => e === 'pendiente' || e === 'enviando') || deps.ahoraMs() >= limite) return estados;
-    await (deps.dormir ?? dormirReal)(deps.sondeoMs ?? SONDEO_MS);
+async function crear(cfg, deps, log) {
+  const { db, Timestamp } = deps;
+  const c = await contexto(cfg, deps, log, { conConfig: true });
+  if (c.codigo) return c.codigo;
+  const plantilla = plantillaDeLaRuta(c.ruta);
+  if (plantilla === null) { log('\n  ✗ La ruta no tiene una plantilla de campaña válida (registrar-plantilla.mjs --uso campana). No se escribió nada.\n'); return 2; }
+  const ref = refCampana(db, cfg.tenant, cfg.campana);
+  if ((await ref.get()).exists) { log('\n  ✗ Ya existe una campaña con ese id: use otro. No se escribió nada.\n'); return 2; }
+  const { destinatarios, conteos } = await construirLista(cfg, deps, c.numero, c.config);
+  log(`\n  ${cfg.aplicar ? 'CREAR' : 'SECO (solo lecturas)'}${cfg.soloPrueba ? ' · PRUEBA (un solo teléfono)' : ''}\n`);
+  imprimirConteos(log, conteos);
+  if (destinatarios.length === 0) { log('\n  ✗ No quedó ningún destinatario: no se crea la campaña.\n'); return 2; }
+  if (cfg.soloPrueba && destinatarios.length !== 1) { log('\n  ✗ La prueba tiene que quedar con exactamente 1 destinatario. No se escribió nada.\n'); return 2; }
+  if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar para crear la campaña.\n'); return 1; }
+  deps.marcarEscritura?.('escribiendo');
+  await ref.create({
+    estado: 'creada', phoneNumberId: c.numero, plantilla, prueba: cfg.soloPrueba, creadaEn: Timestamp.fromMillis(deps.ahoraMs()), total: destinatarios.length, conteos,
+    tanda: null, tandasHechas: [], materializados: 0, aceptados: 0, rechazados: 0, inciertos: 0,
+  });
+  for (const lote of partirEnLotes(destinatarios, TAMANO_DE_LOTE)) {
+    const b = db.batch();
+    for (const d of lote) b.create(ref.collection('destinatarios').doc(claveDeContacto(d.telefono)), { estado: 'pendiente' });
+    await b.commit();
   }
+  deps.marcarEscritura?.('escrito');
+  log(`\n  ✓ Campaña creada con ${destinatarios.length} destinatario(s). No sale nada hasta autorizar una tanda (autorizar-tanda).\n`);
+  return 0;
 }
 
-async function enviarTanda(cfg, deps, log) {
-  const { db, Timestamp } = deps;
-  const refCamp = db.doc(`tenants/${cfg.tenant}/campanasSalientes/${cfg.campana}`);
-  const camp = await refCamp.get();
-  if (!camp.exists) { log('\n  ✗ La campaña no existe. No se escribió nada.\n'); return 2; }
-  if (camp.get('estado') !== 'activa') { log(`\n  ✗ La campaña está ${camp.get('estado')}: no se envía. No se escribió nada.\n`); return 2; }
-  const numero = camp.get('phoneNumberId');
-  const pl = await leerPlantilla(db, cfg.tenant, numero);
-  if (!pl.ok) { log(`\n  ✗ ${pl.motivo}. No se escribió nada.\n`); return 2; }
-  const previa = camp.get('ultimaTanda');
-  if (previa) {
-    const { no } = await conciliarRespuestas(db, cfg.tenant, cfg.campana);
-    const v = evaluarPausa({ enviados: previa.enviados, errores: 0, no: Math.min(no, previa.enviados) });
-    if (v.pausar) { log(`\n  ✗ La tanda anterior superó el límite de respuestas «No» (${no} de ${previa.enviados}): la siguiente se rechaza. Revise el mensaje con Andres. No se escribió nada.\n`); return 4; }
-  }
-  const pendientes = await refCamp.collection('destinatarios').where('estado', '==', 'pendiente').limit(cfg.tamano).get();
-  log(`\n  ${cfg.aplicar ? 'ENVIAR TANDA' : 'SECO (solo lecturas)'} · campaña ${cfg.campana} · ${pendientes.size} destinatario(s) en esta tanda (tamaño ${cfg.tamano}, tope diario ${TOPE_DIARIO})`);
-  if (pendientes.empty) { log('\n  ✓ No quedan destinatarios pendientes: la campaña terminó.\n'); return 0; }
-  if (!cfg.aplicar) { log('\n  Seco: no se envió nada. Agregue --aplicar con la calidad confirmada por WAM.\n'); return 1; }
+const yaHecha = (hechas, id) => Array.isArray(hechas) && hechas.some((t) => t === id || t?.id === id);
+const enVuelo = (camp) => (camp.get('materializados') ?? 0) - (camp.get('aceptados') ?? 0) - (camp.get('rechazados') ?? 0) - (camp.get('inciertos') ?? 0);
 
-  const telefonos = pendientes.docs.map((d) => d.id.slice(3));
-  const t = { enviados: 0, errores: 0, inciertos: 0, omitidos: {} };
-  let corte = null;
-  deps.marcarEscritura?.('escribiendo');
-  for (const lote of partirEnLotes(telefonos, TAMANO_DE_SUBLOTE)) {
-    const ctx = { db, Timestamp, tenant: cfg.tenant, numero, campanaId: cfg.campana, plantilla: pl.plantilla, ahoraMs: deps.ahoraMs(), conCampana: true };
-    const creados = [];
-    for (const tel of lote) {
-      const r = await crearMensaje({ ...ctx, ahoraMs: deps.ahoraMs() }, tel);
-      if (r.ok) { creados.push(tel); continue; }
-      t.omitidos[r.motivo] = (t.omitidos[r.motivo] ?? 0) + 1;
-      if (r.motivo === 'tope') { corte = 'tope'; break; }
-      if (r.motivo === 'pausada' || r.motivo === 'sinCampana') { corte = 'pausada'; break; }
-      if (!['repetido', 'noPendiente', 'topeIlegible'].includes(r.motivo)) {
-        await db.doc(`tenants/${cfg.tenant}/campanasSalientes/${cfg.campana}/destinatarios/wa_${tel}`).update({ estado: 'omitido', motivo: r.motivo });
-      }
-    }
-    if (creados.length > 0) {
-      const refs = creados.map((tel) => db.doc(`tenants/${cfg.tenant}/conversaciones/wa_${tel}/mensajes/${claveDeMensaje(cfg.campana, tel)}`));
-      const estados = await esperarSubLote(db, refs, deps);
-      let atascado = false;
-      const marcas = [];
-      estados.forEach((e, i) => {
-        t.enviados += 1;
-        let final = e;
-        if (e === 'rechazado' || e === 'desaparecido') t.errores += 1;
-        else if (e === 'incierto' || e === 'enviando') { t.inciertos += 1; final = 'incierto'; }
-        else if (e === 'pendiente') { atascado = true; t.errores += 1; }
-        marcas.push(db.doc(`tenants/${cfg.tenant}/campanasSalientes/${cfg.campana}/destinatarios/wa_${creados[i]}`).update({ estado: final }));
-      });
-      await Promise.all(marcas);
-      const v = atascado ? { pausar: true, motivo: 'salida' } : evaluarPausa({ enviados: t.enviados, errores: t.errores });
-      if (v.pausar) { corte = `pausa:${v.motivo}`; break; }
-    }
-    if (corte !== null) break;
+/** Lo que se comprueba antes de autorizar una tanda: `{ codigo, motivo }` si no se puede, `null` si sí. Puro sobre los datos leídos. */
+export function motivoDeRechazoDeTanda({ camp, numero, ruta, cfg, config, pendientes, destinatariosTotal, no }) {
+  if (!camp.exists) return { codigo: 2, motivo: 'la campaña no existe' };
+  if (camp.get('phoneNumberId') !== numero) return { codigo: 2, motivo: 'la campaña es de otra línea' };
+  const estado = camp.get('estado');
+  if (estado !== 'creada' && estado !== 'enCurso') return { codigo: 2, motivo: `la campaña está ${estado}: no se autoriza una tanda` };
+  if (camp.get('tanda') !== null && camp.get('tanda') !== undefined) return { codigo: 2, motivo: 'la tanda anterior no se cerró (cerrar-tanda)' };
+  if (yaHecha(camp.get('tandasHechas'), cfg.tanda)) return { codigo: 2, motivo: 'esa tanda ya se hizo: use otro id' };
+  if (cfg.cupo > config.porTanda) return { codigo: 2, motivo: 'el cupo supera porTanda de la configuración' };
+  if (plantillaDeLaRuta(ruta) === null) return { codigo: 2, motivo: 'la ruta no tiene una plantilla de campaña válida' };
+  const otra = ruta.get('campanaSalienteEnCurso');
+  if (otra !== undefined && otra !== null && otra !== cfg.campana) return { codigo: 2, motivo: 'otra campaña está en curso en este número' };
+  if (destinatariosTotal !== camp.get('total')) return { codigo: 2, motivo: 'la campaña está incompleta (faltan destinatarios): no se autoriza' };
+  if (pendientes === 0) return { codigo: 2, motivo: 'no quedan destinatarios pendientes' };
+  if ((camp.get('tandasHechas') ?? []).length > 0) { // desde la segunda tanda, la proporción de «No» de las anteriores decide
+    const enviados = (camp.get('aceptados') ?? 0) + (camp.get('inciertos') ?? 0);
+    if (superaNo({ no, enviados, pausaNoPct: config.pausaNoPct })) return { codigo: 4, motivo: 'la proporción de «No» supera el límite: no se autoriza la tanda siguiente (revise el mensaje con Andres)' };
   }
-  const resp = await conciliarRespuestas(db, cfg.tenant, cfg.campana);
-  const base = camp.data();
-  const cambios = {
-    enviados: base.enviados + t.enviados, errores: base.errores + t.errores, inciertos: base.inciertos + t.inciertos,
-    omitidos: base.omitidos + Object.values(t.omitidos).reduce((a, b) => a + b, 0), tandas: base.tandas + 1,
-    respondioSi: resp.si, respondioNo: resp.no, ultimaTanda: { enviados: t.enviados, errores: t.errores, inciertos: t.inciertos, en: Timestamp.fromMillis(deps.ahoraMs()) },
-    ...(corte && corte.startsWith('pausa:') ? { estado: 'pausada', motivoPausa: corte.slice(6), pausadaEn: Timestamp.fromMillis(deps.ahoraMs()) } : {}),
+  return null;
+}
+
+async function autorizarTanda(cfg, deps, log) {
+  const { db, Timestamp } = deps;
+  const c = await contexto(cfg, deps, log, { conConfig: true });
+  if (c.codigo) return c.codigo;
+  const ref = refCampana(db, cfg.tenant, cfg.campana);
+  const leer = async () => {
+    const camp = await ref.get();
+    const ruta = await db.doc(`rutasWhatsApp/${c.numero}`).get();
+    if (!camp.exists) return { camp, ruta, pendientes: 0, destinatariosTotal: 0, no: 0 };
+    const pend = await ref.collection('destinatarios').where('estado', '==', 'pendiente').limit(1).get();
+    const total = await ref.collection('destinatarios').count().get();
+    const { no } = await conciliarRespuestas(db, cfg.tenant, cfg.campana);
+    return { camp, ruta, pendientes: pend.size, destinatariosTotal: total.data().count, no };
   };
-  await refCamp.update(cambios);
+  const previo = await leer();
+  const rechazo = motivoDeRechazoDeTanda({ ...previo, numero: c.numero, cfg, config: c.config });
+  log(`\n  ${cfg.aplicar ? 'AUTORIZAR TANDA' : 'SECO (solo lecturas)'} · cupo ${cfg.cupo} de ${c.config.porTanda} · calidad ${cfg.calidad}`);
+  if (rechazo) { log(`\n  ✗ ${rechazo.motivo}. No se escribió nada.\n`); return rechazo.codigo; }
+  if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar para autorizar esta tanda.\n'); return 1; }
+  deps.marcarEscritura?.('escribiendo');
+  const hecho = await db.runTransaction(async (tx) => {
+    // Precondición: nada cambió desde la lectura (la campaña y la ruta se vuelven a leer dentro de la transacción).
+    const camp = await tx.get(ref);
+    const refRuta = db.doc(`rutasWhatsApp/${c.numero}`);
+    const ruta = await tx.get(refRuta);
+    const r = motivoDeRechazoDeTanda({ camp, numero: c.numero, ruta, cfg, config: c.config, pendientes: previo.pendientes, destinatariosTotal: previo.destinatariosTotal, no: previo.no });
+    if (r) return r;
+    tx.update(ref, { estado: 'enCurso', tanda: { id: cfg.tanda, cupo: cfg.cupo, usados: 0, calidad: cfg.calidad, autorizadaEn: Timestamp.fromMillis(deps.ahoraMs()) } });
+    tx.update(refRuta, { campanaSalienteEnCurso: cfg.campana });
+    return null;
+  });
+  if (hecho) { log(`\n  ✗ ${hecho.motivo}. No se escribió nada.\n`); return hecho.codigo; }
   deps.marcarEscritura?.('escrito');
-  log(`\n  Tanda: ${t.enviados} enviados · ${t.errores} con error · ${t.inciertos} inciertos · omitidos ${JSON.stringify(t.omitidos)}`);
-  log(`  Respuestas hasta ahora: ${resp.si} «Sí» y ${resp.no} «No».`);
-  if (corte && corte.startsWith('pausa:')) { log(`\n  ⏸ La campaña SE PAUSÓ (${corte.slice(6)}). Revise antes de continuar.\n`); return 4; }
-  if (corte === 'tope') log(`\n  Se llegó al tope diario de ${TOPE_DIARIO}: la tanda se corta; siga mañana (día de La Paz).`);
-  if (corte === 'pausada') log('\n  La campaña se pausó mientras corría la tanda: se cortó.');
-  log('');
+  log('\n  ✓ Tanda autorizada. El servidor la materializa de a pocos mensajes por reclamo; siga con `estado` y cierre con cerrar-tanda.\n');
+  return 0;
+}
+
+async function cerrarTanda(cfg, deps, log) {
+  const { db, FieldValue, Timestamp } = deps;
+  const lin = await resolverLinea(db, cfg.tenant, cfg.linea);
+  if (!lin.ok) { log(`\n  ✗ ${lin.motivo}. No se escribió nada.\n`); return 2; }
+  const ref = refCampana(db, cfg.tenant, cfg.campana);
+  const refRuta = db.doc(`rutasWhatsApp/${lin.numero}`);
+  const camp = await ref.get();
+  const malo = (m) => { log(`\n  ✗ ${m}. No se escribió nada.\n`); return 2; };
+  if (!camp.exists) return malo('la campaña no existe');
+  if (camp.get('phoneNumberId') !== lin.numero) return malo('la campaña es de otra línea');
+  const tanda = camp.get('tanda');
+  if (!tanda || tanda.id !== cfg.tanda) return malo('esa no es la tanda abierta de la campaña');
+  if (enVuelo(camp) > 0) return malo('todavía hay mensajes en vuelo: espere a que el servidor los confirme');
+  const pend = await ref.collection('destinatarios').where('estado', '==', 'pendiente').limit(1).get();
+  log(`\n  ${cfg.aplicar ? 'CERRAR TANDA' : 'SECO (solo lecturas)'} · ${tanda.usados} de ${tanda.cupo} usados · ${pend.empty ? 'no quedan pendientes: la campaña terminaría' : 'quedan pendientes'}`);
+  if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar para cerrar la tanda.\n'); return 1; }
+  deps.marcarEscritura?.('escribiendo');
+  const r = await db.runTransaction(async (tx) => {
+    const c2 = await tx.get(ref);
+    const ruta = await tx.get(refRuta);
+    const t = c2.get('tanda');
+    if (!t || t.id !== cfg.tanda || enVuelo(c2) > 0) return false;
+    tx.update(ref, {
+      tanda: null, tandasHechas: [...(c2.get('tandasHechas') ?? []), { ...t, cerradaEn: Timestamp.fromMillis(deps.ahoraMs()) }],
+      ...(pend.empty ? { estado: 'terminada' } : {}),
+    });
+    if (ruta.get('campanaSalienteEnCurso') === cfg.campana) tx.update(refRuta, { campanaSalienteEnCurso: FieldValue.delete() });
+    return true;
+  });
+  if (!r) return malo('la campaña cambió durante el cierre');
+  deps.marcarEscritura?.('escrito');
+  log(pend.empty ? '\n  ✓ Tanda cerrada y campaña TERMINADA.\n' : '\n  ✓ Tanda cerrada. Para la siguiente: calidad de WAM y autorizar-tanda.\n');
   return 0;
 }
 
 async function pausar(cfg, deps, log) {
-  const { db, Timestamp } = deps;
-  const ref = db.doc(`tenants/${cfg.tenant}/campanasSalientes/${cfg.campana}`);
+  const { db, FieldValue } = deps;
+  const lin = await resolverLinea(db, cfg.tenant, cfg.linea);
+  if (!lin.ok) { log(`\n  ✗ ${lin.motivo}. No se escribió nada.\n`); return 2; }
+  const ref = refCampana(db, cfg.tenant, cfg.campana);
+  const refRuta = db.doc(`rutasWhatsApp/${lin.numero}`);
   const camp = await ref.get();
   if (!camp.exists) { log('\n  ✗ La campaña no existe. No se escribió nada.\n'); return 2; }
-  if (camp.get('estado') === 'pausada') { log('\n  ✓ La campaña ya está pausada: nada que hacer.\n'); return 0; }
-  if (!cfg.aplicar) { log(`\n  SECO: la campaña está ${camp.get('estado')}. Agregue --aplicar para pausarla.\n`); return 1; }
+  if (camp.get('phoneNumberId') !== lin.numero) { log('\n  ✗ La campaña es de otra línea. No se escribió nada.\n'); return 2; }
+  const estado = camp.get('estado');
+  if (estado === 'terminada') { log('\n  ✗ La campaña ya terminó. No se escribió nada.\n'); return 2; }
+  const punteroAqui = (await refRuta.get()).get('campanaSalienteEnCurso') === cfg.campana;
+  if (estado === 'pausada' && !punteroAqui) { log('\n  ✓ La campaña ya está pausada: nada que hacer.\n'); return 0; }
+  if (!cfg.aplicar) { log(`\n  SECO: la campaña está ${estado}. Agregue --aplicar para pausarla.\n`); return 1; }
   deps.marcarEscritura?.('escribiendo');
   await db.runTransaction(async (tx) => {
-    const c = await tx.get(ref);
-    if (c.get('estado') !== 'pausada') tx.update(ref, { estado: 'pausada', motivoPausa: 'manual', pausadaEn: Timestamp.fromMillis(deps.ahoraMs()) });
+    const c2 = await tx.get(ref);
+    const ruta = await tx.get(refRuta);
+    if (c2.get('estado') !== 'pausada') tx.update(ref, { estado: 'pausada', motivoPausa: 'manual' });
+    if (ruta.get('campanaSalienteEnCurso') === cfg.campana) tx.update(refRuta, { campanaSalienteEnCurso: FieldValue.delete() });
   });
   deps.marcarEscritura?.('escrito');
-  log('\n  ✓ Campaña pausada. Los mensajes ya creados (hasta 10) salen igual en el siguiente barrido; no se crea ninguno nuevo.\n');
+  log('\n  ✓ Campaña pausada y puntero quitado. Lo que ya estaba en vuelo termina de confirmarse; no se materializa nada más.\n');
   return 0;
 }
 
 async function estado(cfg, deps, log) {
   const { db } = deps;
-  const ref = db.doc(`tenants/${cfg.tenant}/campanasSalientes/${cfg.campana}`);
+  const lin = await resolverLinea(db, cfg.tenant, cfg.linea);
+  if (!lin.ok) { log(`\n  ✗ ${lin.motivo}.\n`); return 2; }
+  const ref = refCampana(db, cfg.tenant, cfg.campana);
   const camp = await ref.get();
   if (!camp.exists) { log('\n  ✗ La campaña no existe.\n'); return 2; }
+  if (camp.get('phoneNumberId') !== lin.numero) { log('\n  ✗ La campaña es de otra línea.\n'); return 2; }
   const dest = await ref.collection('destinatarios').select('estado').get();
   const porEstado = {};
   for (const d of dest.docs) { const e = d.get('estado'); porEstado[e] = (porEstado[e] ?? 0) + 1; }
   const resp = await conciliarRespuestas(db, cfg.tenant, cfg.campana);
   const periodo = new Date(deps.ahoraMs()).toISOString().slice(0, 7);
   const metricas = await db.doc(`tenants/${cfg.tenant}/metricas/${periodo}`).get();
-  log(`\n  ESTADO · campaña ${cfg.campana} · ${camp.get('estado')}${camp.get('motivoPausa') ? ` (${camp.get('motivoPausa')})` : ''}`);
-  log(`  destinatarios: total ${camp.get('total')} · ${JSON.stringify(porEstado)}`);
-  log(`  tandas ${camp.get('tandas')} · enviados ${camp.get('enviados')} · errores ${camp.get('errores')} · inciertos ${camp.get('inciertos')} · omitidos ${camp.get('omitidos')}`);
+  const n = (k) => camp.get(k) ?? 0;
+  const tanda = camp.get('tanda');
+  log(`\n  ESTADO · ${camp.get('estado')}${camp.get('motivoPausa') ? ` (${camp.get('motivoPausa')})` : ''}${camp.get('prueba') ? ' · PRUEBA' : ''}`);
+  log(`  destinatarios: total ${n('total')} · ${JSON.stringify(porEstado)}`);
+  log(`  materializados ${n('materializados')} · aceptados ${n('aceptados')} · rechazados ${n('rechazados')} · inciertos ${n('inciertos')} · en vuelo ${enVuelo(camp)}`);
+  log(`  tanda abierta: ${tanda ? `${tanda.usados} de ${tanda.cupo}` : 'ninguna'} · tandas hechas ${(camp.get('tandasHechas') ?? []).length}`);
   log(`  respuestas conciliadas: ${resp.si} «Sí» · ${resp.no} «No»`);
-  log(`  plantillasCampana del mes (costo; la consola aún no lo lee): ${metricas.get('plantillasCampana') ?? 0}\n`);
-  return 0;
-}
-
-/** Los teléfonos de prueba: solo a ellos, sin campaña ni lista. */
-async function prueba(cfg, deps, log) {
-  const { db, Timestamp } = deps;
-  const pl = await leerPlantilla(db, cfg.tenant, cfg.numero);
-  if (!pl.ok) { log(`\n  ✗ ${pl.motivo}. No se escribió nada.\n`); return 2; }
-  const telefonos = [...cfg.telefonosDePrueba];
-  log(`\n  ${cfg.aplicar ? 'PRUEBA' : 'SECO (solo lecturas)'} · ${telefonos.length} teléfono(s) de prueba · campaña de prueba ${cfg.campana}`);
-  if (!cfg.aplicar) { log('\n  Seco: no se envió nada. Agregue --aplicar.\n'); return 1; }
-  deps.marcarEscritura?.('escribiendo');
-  const omitidos = {};
-  let creados = 0;
-  for (const tel of telefonos) {
-    const r = await crearMensaje({ db, Timestamp, tenant: cfg.tenant, numero: cfg.numero, campanaId: cfg.campana, plantilla: pl.plantilla, ahoraMs: deps.ahoraMs(), conCampana: false }, tel);
-    if (r.ok) creados += 1; else omitidos[r.motivo] = (omitidos[r.motivo] ?? 0) + 1;
-  }
-  deps.marcarEscritura?.('escrito');
-  log(`\n  ✓ ${creados} mensaje(s) creado(s); omitidos ${JSON.stringify(omitidos)}. Salen en el siguiente barrido (≤ 15 s).\n`);
+  log(`  plantillasCampana del mes (${periodo}, UTC): ${metricas.get('plantillasCampana') ?? 0}`);
+  const categoria = camp.get('plantilla.categoria');
+  const entregas = n('aceptados') + n('inciertos');
+  if (categoria === 'UTILITY') log(`  categoría UTILITY · costo estimado: ${entregas} × ${PLANTILLA_UTILIDAD_USD} USD = ${(entregas * PLANTILLA_UTILIDAD_USD).toFixed(4)} USD`);
+  else log(`  categoría ${categoria ?? 'desconocida'}: el costo por entrega es mayor que el de UTILITY; no se estima aquí (ver docs/base-comercial.md).`);
+  log('');
   return 0;
 }
 
 /**
- * Corre el subcomando ya validado. `deps`: { db, Timestamp, log, ahoraMs, leerFilasDelMiniCrm, dormir, marcarEscritura, esperaMs, sondeoMs }.
+ * Corre el subcomando ya validado. `deps`: { db, Timestamp, FieldValue, log, ahoraMs, leerFilasDelMiniCrm, leerConfigCampana, marcarEscritura }.
  */
 export async function ejecutar(cfg, deps) {
   const log = deps.log ?? ((t) => console.log(t));
@@ -433,8 +465,8 @@ export async function ejecutar(cfg, deps) {
   switch (cfg.sub) {
     case 'simular': return simular(cfg, d, log);
     case 'crear': return crear(cfg, d, log);
-    case 'prueba': return prueba(cfg, d, log);
-    case 'enviar-tanda': return enviarTanda(cfg, d, log);
+    case 'autorizar-tanda': return autorizarTanda(cfg, d, log);
+    case 'cerrar-tanda': return cerrarTanda(cfg, d, log);
     case 'pausar': return pausar(cfg, d, log);
     case 'estado': return estado(cfg, d, log);
     default: return 2;
@@ -446,6 +478,12 @@ export async function ejecutar(cfg, deps) {
 // ===========================================================================
 const corrida = { estado: 'antes' };
 
+function leerJsonBajo(ruta, base) {
+  const real = realpathSync(ruta);
+  if (!real.startsWith(`${realpathSync(base)}${sep}`)) throw Object.assign(new Error('ruta fuera de su carpeta'), { code: 'ruta-fuera' });
+  return JSON.parse(readFileSync(real, 'utf8'));
+}
+
 async function principal() {
   const analisis = analizarArgumentos(process.argv.slice(2));
   if (!analisis.ok) {
@@ -454,20 +492,29 @@ async function principal() {
   }
   const { cfg } = analisis;
   const { initializeApp } = await import('firebase-admin/app');
-  const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
+  const { getFirestore, Timestamp, FieldValue } = await import('firebase-admin/firestore');
+  // La validación de la configuración es la del servidor, compilada (como en migrar-prepago.mjs): si falta, se pide compilar.
+  let leerConfigCampana;
+  try {
+    ({ leerConfigCampana } = await import('../../../functions/lib/core/conversacion/salidaCampana.js'));
+  } catch (e) {
+    const falta = !existsSync(new URL('../../../functions/lib/core/conversacion/salidaCampana.js', import.meta.url));
+    console.error(falta ? '\n  ✗ No se encuentra functions/lib/core/conversacion/salidaCampana.js. Compile primero: pnpm functions:build\n' : `\n  ✗ No se pudo cargar salidaCampana.js: ${e?.code ?? e?.name ?? 'error'}\n`);
+    process.exit(2);
+  }
   initializeApp({ projectId: cfg.proyecto });
   const db = getFirestore();
   process.on('SIGINT', () => { console.error(mensajeDeInterrupcion(corrida.estado)); process.exit(130); });
   let leerFilasDelMiniCrm;
-  if (['simular', 'crear'].includes(cfg.sub)) {
-    const { N8N_BASE_URL, N8N_API_KEY } = process.env;
-    if (!N8N_BASE_URL || !N8N_API_KEY) { console.error('\n  ✗ faltan N8N_BASE_URL o N8N_API_KEY en el entorno\n'); process.exit(2); }
-    const crm = JSON.parse(readFileSync(join(AQUI, '..', '..', 'datos', 'chat-novuchat', 'novuchat.json'), 'utf8')).crm;
-    leerFilasDelMiniCrm = crearLectorDeMiniCrmN8n({ baseUrl: N8N_BASE_URL, apiKey: N8N_API_KEY, workflowId: cfg.workflow, crm }, { aviso: (t) => console.error(`\n  ⚠ ${t}\n`) });
+  if (cfg.mapaCrm !== null) {
+    if (!process.env.ENV_FILE) { console.error('\n  ✗ falta ENV_FILE en el entorno (el .env de n8n)\n'); process.exit(2); }
+    const crm = leerJsonBajo(cfg.mapaCrm, DATOS).crm;
+    const nombreFlujo = leerJsonBajo(cfg.flujoVersionado, FLUJOS_CLIENTES).name;
+    leerFilasDelMiniCrm = crearLectorDeMiniCrmN8n({ envFile: process.env.ENV_FILE, nombreFlujo, crm }, { aviso: (t) => console.error(`\n  ⚠ ${t}\n`) });
   }
-  const codigo = await ejecutar(cfg, { db, Timestamp, leerFilasDelMiniCrm, marcarEscritura: (v) => { corrida.estado = v; } });
+  const codigo = await ejecutar(cfg, { db, Timestamp, FieldValue, leerFilasDelMiniCrm, leerConfigCampana, marcarEscritura: (v) => { corrida.estado = v; } });
   await db.terminate().catch(() => {});
-  process.exit(codigo);
+  process.exit(leerFilasDelMiniCrm?.estado?.limpiezaFallida ? 3 : codigo);
 }
 
 function seEjecutaDirecto() {

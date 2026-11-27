@@ -198,3 +198,30 @@ Lo que el PR-C (la plantilla y el envío de la campaña saliente) tiene que cump
 - **El `idMeta` se guarda al aceptar la plantilla** (`conversacion.campanaEnviada { idMeta, campanaId, en }`): sin él no hay cita, y sin cita solo el payload `cs:no` cuenta (E3: un «No» nunca se pierde); la etiqueta, el «sí» y el «no» escrito exigen cita (el «no» escrito también vale como primera respuesta dentro de las 24 h).
 - **Respuestas del chat:** `campanaSi` no afirma ningún aviso (sale antes de intentarlo); `campanaNo` solo sale con la baja confirmada por la ingesta (`baja` o `ya_baja`); sin respuesta de la ingesta sale `campanaNoSinConfirmar`. Tras el «No» la persona no recibe nada que el negocio inicie, y cuando escribe algo que no es una cortesía ni un «no» la conversación es normal.
 - **Mensajes:** «No» 1 cierre; cada mensaje que cae en silencio −1; «Sí» 1 más 1 aviso, como antes.
+
+### Envío (PR-C, 27/11/2026)
+
+La campaña sale solo por una **cola propia que arma el servidor (Core)**; el script del módulo no escribe mensajes. Plan: `NOVUCHAT_plan-pr-c-campana_2026-11-27.md` (DP1 a DP4).
+
+**Qué hace el script** (`admin/scripts/modulos/campanas/campana-saliente.mjs`, con `salientes-logica.mjs` y `miniCrm-n8n.mjs`). Opciones comunes: `--proyecto`, `--tenant` y `--linea <4 últimos dígitos>`; la línea se resuelve en `rutasWhatsApp` (`tenantId == t`, `estado == 'activo'`, exactamente 1 coincidencia), nunca se pasa ni se imprime un id. No hay `--numero` ni `--workflow`: el flujo vivo se busca por nombre y el nombre sale del flujo versionado (`--flujo-versionado`, solo bajo `Flujos/clientes/`); el mapa de columnas (`--mapa-crm`, solo bajo `admin/scripts/datos/`) se compara por TÍTULO con la hoja.
+
+| Subcomando | Qué hace |
+|---|---|
+| `simular` | Solo lectura. Imprime solo conteos: filas, teléfonos, cuántos por motivo y destinatarios, el reparto en tandas y los días que lleva. |
+| `crear --campana <id>` | Crea `tenants/{t}/campanasSalientes/{c}` (`estado:'creada'`, plantilla con su categoría, `tanda:null`, `tandasHechas:[]`, contadores en 0) y sus `destinatarios/wa_<dígitos>` en `pendiente`, en lotes de 400. **No autoriza nada.** |
+| `autorizar-tanda --campana --tanda --cupo --calidad VERDE` | UNA tanda por corrida y por botón de Andres. Escribe `tanda {id, cupo, usados:0, calidad, autorizadaEn}` y el puntero `rutasWhatsApp/{n}.campanaSalienteEnCurso`. Se niega (2) si falta `--tanda`, `--cupo` o `--calidad`, si `cupo > porTanda`, si la tanda ya se hizo, si la anterior no se cerró, si la campaña no está `creada`/`enCurso`, si otra campaña ocupa el número, si la plantilla no cumple el contrato o si la campaña está incompleta; y con 4 si los «No» superan `pausaNoPct` de lo enviado. |
+| `cerrar-tanda --campana --tanda` | Mueve la tanda a `tandasHechas`, deja `tanda:null`, borra el puntero y, si ya no quedan pendientes, deja la campaña `terminada`. Se niega con mensajes en vuelo. |
+| `pausar --campana` | `estado:'pausada'`, `motivoPausa:'manual'` y borra el puntero (también si el servidor ya la había pausado por errores). |
+| `estado --campana` | Conteos por estado, conciliación de «Sí» y «No» contra `campanaRespuesta.campanaId`, la línea `plantillasCampana del mes (AAAA-MM, UTC): <n>` y el costo: `(aceptados + inciertos) × 0,0113 USD` si es UTILITY, o una nota si es MARKETING. |
+
+Sin `--aplicar` no se escribe nada; contra producción, `--aplicar` exige `--confirmo-produccion <tenant>`. Códigos de salida: 0 terminó, 1 en seco con algo por hacer, 2 uso o precondición, 3 error, 4 rechazo por proporción de «No», 130 Ctrl-C.
+
+**La lista** (`armarLista`). Cada teléfono cae en UN motivo, el primero que le toca, en este orden: `invalido`, `cerrada` (Ganado o Perdido, **solo la columna G «Etapa Funnel»**), `fechaIlegible`, `prueba` (`TELEFONOS_DE_PRUEBA`), `baja`, `bloqueada`, `noContactar`, `riesgo`, `fueraDeVentana` (`ventanaDias` de la config, por la fecha máxima de sus filas), `sinConversacion`, `otraLinea` y `reciente` (escribió en las últimas 24 h). La conversación y la baja se buscan con la MISMA clave, `claveDeContacto(tel)` = `wa_<dígitos>` (M2: la lista del PR-C usa `claveDeContacto`, igual que `bajas.ts`). Los conteos suman exactamente los teléfonos distintos.
+
+**La prueba va solo a un teléfono (Andres, 27/11).** `crear --solo-prueba` exige `--telefono-prueba <últimos 4 dígitos>`: la lista sale de `TELEFONOS_DE_PRUEBA` filtrado por esos dígitos y tiene que quedar EXACTAMENTE 1; con 0, con 2 o más o sin el filtro, sale con 2 y no escribe. Nunca se envía a la lista de prueba completa. El destinatario pasa por las mismas exclusiones de Firestore (baja, marcas, otra línea, 24 h). La salida no imprime ni el número ni los 4 dígitos.
+
+**Topes y cifras.** Ninguna cifra vive en el código ni en el plan: `porTanda` 45, `porDia` 200, `porReclamo` 3, `ventanaDias` 60, `pausaErroresPct` 10, `pausaMinimoEnviados` 10 y `pausaNoPct` 25 se leen de `tenants/{t}/config/campanaSaliente` con `leerConfigCampana` (la validación del servidor, compilada). La pausa por errores la hace el servidor en `confirmarSalida`; la de «No» la revisa el script antes de autorizar la tanda siguiente. Fila de topes: `limites.md`.
+
+**Mensajes por conversación: 0** (la campaña sale como plantilla fuera de la conversación; cada entrega cuesta 0,0113 USD en UTILITY). Lo demuestran `pruebas/modulos/campanas/campana-saliente.test.ts` (el script no escribe ningún mensaje: solo destinatarios, tanda y puntero) y `pruebas/core/salida-campana.test.ts` (el servidor).
+
+**Pruebas del módulo:** `salientes.test.ts` (la lista, tandas y «No», puras), `minicrm-n8n.test.ts` (n8n de mentira: `saveData none`, borrado ante fallo y ante SIGINT, `credencial-ambigua`, 0 o 2 flujos, encabezados, errores sin ids) y `campana-saliente.test.ts` (argumentos, simulacro sin escrituras, crear, una tanda por botón, cerrar, pausar y estado, contra el emulador).

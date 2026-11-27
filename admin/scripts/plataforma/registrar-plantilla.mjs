@@ -22,6 +22,10 @@
  * `--botones 2` (dos respuestas rápidas). Aquí no hay modo «apagar»: un estado distinto de APPROVED no se registra; una campaña en
  * marcha se detiene con `campana-saliente.mjs pausar`. El nombre de la plantilla es DATO del número, nunca del código.
  *
+ * DP4 (PR-C): en lugar de `--numero` se puede dar `--tenant <id> --linea <4 últimos dígitos>`: el número se resuelve desde
+ * `rutasWhatsApp` (`tenantId == tenant`, `estado == 'activo'`, exactamente 1 coincidencia; 0 o 2 salen con 2 sin escribir). Con esa
+ * forma, `--confirmo-produccion` es la línea. Nunca se pasa ni se imprime el id completo.
+ *
  * REGLAS.
  *   · Con `--estado APPROVED` se exige UTILITY y `--variables 1` (lo contrario no se registra: el servidor no la usaría
  *     y dejaría una plantilla «buena» que no lo es).
@@ -61,12 +65,13 @@ const PATRON_IDIOMA = /^[a-z]{2,3}(_[A-Z]{2})?$/;
 const PATRON_ESTADO = /^[A-Z][A-Z_]{2,29}$/;
 const CATEGORIAS = ['UTILITY', 'MARKETING', 'AUTHENTICATION'];
 const PATRON_NUMERO = /^[0-9]{6,20}$/;
-const CON_VALOR = ['proyecto', 'numero', 'uso', 'nombre', 'idioma', 'categoria', 'estado', 'variables', 'cabecera', 'botones', 'respaldo', 'confirmo-produccion'];
+const PATRON_LINEA = /^[0-9]{4}$/;
+const CON_VALOR = ['proyecto', 'numero', 'tenant', 'linea', 'uso', 'nombre', 'idioma', 'categoria', 'estado', 'variables', 'cabecera', 'botones', 'respaldo', 'confirmo-produccion'];
 /** Lo que la plantilla de campaña lleva de más que la de Retomar: la cabecera (solo `ninguna`) y los botones de respuesta rápida (exactamente 2). */
 const CABECERAS = ['ninguna', 'imagen', 'video', 'documento', 'texto', 'ubicacion'];
 const BANDERAS = ['aplicar'];
 
-export const USO = '  node scripts/plataforma/registrar-plantilla.mjs --proyecto <id> --numero <phoneNumberId> --uso retomar|campana '
+export const USO = '  node scripts/plataforma/registrar-plantilla.mjs --proyecto <id> (--numero <phoneNumberId> | --tenant <id> --linea <4 dígitos>) --uso retomar|campana '
   + '--nombre <nombre> --idioma <es> --categoria UTILITY --estado APPROVED [--variables 1] [--cabecera ninguna --botones 2 (solo campana; --variables 0)] [--aplicar --respaldo <ruta> [--confirmo-produccion <phoneNumberId>]]';
 
 const cola = (n) => `…${String(n).slice(-4)}`;
@@ -147,13 +152,21 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     }
   }
   const aplicar = banderas.includes('aplicar');
-  const { proyecto, numero, uso } = valores;
+  const { proyecto, numero, uso, tenant, linea } = valores;
 
   if (proyecto === undefined) problemas.push('falta --proyecto');
   const proy = proyecto === undefined ? { ok: false } : comprobarProyecto(proyecto, env);
   if (proyecto !== undefined && !proy.ok) problemas.push(proy.motivo);
 
-  if (numero === undefined) problemas.push('falta --numero');
+  // DP4: el número se da entero (--numero) o se resuelve desde rutasWhatsApp con --tenant + --linea <4 últimos dígitos>. Nunca las dos.
+  const porLinea = tenant !== undefined || linea !== undefined;
+  if (porLinea) {
+    if (numero !== undefined) problemas.push('use --numero o --tenant con --linea, no ambos');
+    if (tenant === undefined) problemas.push('--linea exige --tenant');
+    else if (!ID_TENANT.test(tenant)) problemas.push('--tenant inválido');
+    if (linea === undefined) problemas.push('--tenant exige --linea <4 últimos dígitos>');
+    else if (!PATRON_LINEA.test(linea)) problemas.push('--linea tiene que ser de exactamente 4 dígitos');
+  } else if (numero === undefined) problemas.push('falta --numero (o --tenant con --linea)');
   else if (!PATRON_NUMERO.test(numero)) problemas.push('--numero inválido (el phoneNumberId: solo dígitos)');
   if (uso === undefined) problemas.push('falta --uso');
   else if (!USOS.includes(uso)) problemas.push(`--uso tiene que ser uno de: ${USOS.join(', ')}`);
@@ -182,9 +195,9 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   if (confirmo !== undefined) {
     if (!aplicar) problemas.push('--confirmo-produccion solo acompaña a --aplicar');
     else if (proy.ok && proy.entorno !== 'produccion') problemas.push('--confirmo-produccion solo se usa contra producción');
-    else if (confirmo !== numero) problemas.push('--confirmo-produccion no coincide con --numero (escriba el phoneNumberId)');
+    else if (confirmo !== (porLinea ? linea : numero)) problemas.push(porLinea ? '--confirmo-produccion no coincide con --linea' : '--confirmo-produccion no coincide con --numero (escriba el phoneNumberId)');
   } else if (aplicar && proy.ok && proy.entorno === 'produccion') {
-    problemas.push('contra producción, --aplicar exige --confirmo-produccion <phoneNumberId> (igual a --numero)');
+    problemas.push(porLinea ? 'contra producción, --aplicar exige --confirmo-produccion <linea> (igual a --linea)' : 'contra producción, --aplicar exige --confirmo-produccion <phoneNumberId> (igual a --numero)');
   }
 
   const { respaldo } = valores;
@@ -196,7 +209,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     if (r.ok) { respaldoReal = respaldo; respaldoResuelto = r.real; } else problemas.push(r.motivo);
   }
   if (problemas.length) return { ok: false, problemas };
-  return { ok: true, cfg: { proyecto, entorno: proy.entorno, numero, uso, plantilla, aplicar, respaldo: respaldoReal, respaldoResuelto } };
+  return { ok: true, cfg: { proyecto, entorno: proy.entorno, numero: numero ?? null, tenant: tenant ?? null, linea: linea ?? null, uso, plantilla, aplicar, respaldo: respaldoReal, respaldoResuelto } };
 }
 
 // ===========================================================================
@@ -229,9 +242,20 @@ async function escribir(db, ref, tenantId, cfg, anterior, ultimaActualizacion, F
 }
 
 /** `deps`: `{ db, FieldValue, log, env }`. Devuelve el código de salida. */
-export async function ejecutar(cfg, deps) {
+export async function ejecutar(cfgEntrada, deps) {
   const { db, FieldValue } = deps;
   const log = deps.log ?? ((t) => console.log(t));
+  let cfg = cfgEntrada;
+  if (cfg.numero === null || cfg.numero === undefined) {
+    // DP4: la ruta del comercio con esa terminación, activa y única. Nunca se pasa un id; nunca se imprime el número.
+    const q = await db.collection('rutasWhatsApp').where('tenantId', '==', cfg.tenant).where('estado', '==', 'activo').get();
+    const coinciden = q.docs.filter((d) => d.id.endsWith(cfg.linea));
+    if (coinciden.length !== 1) {
+      log(`\n  ✗ Con --tenant y --linea se esperaba exactamente 1 ruta activa y hay ${coinciden.length}. No se escribió nada.\n`);
+      return 2;
+    }
+    cfg = { ...cfg, numero: coinciden[0].id };
+  }
   const ref = db.doc(`rutasWhatsApp/${cfg.numero}`);
   const snap = await ref.get();
   const rotulo = `${cfg.entorno} · número ${cola(cfg.numero)} · uso ${cfg.uso}`;

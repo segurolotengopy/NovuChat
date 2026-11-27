@@ -5,31 +5,25 @@
  * campaña y cómo se parte el envío. `campana-saliente.mjs` solo la usa; cada regla de aquí tiene su prueba negativa en
  * `pruebas/modulos/campanas/salientes.test.ts`.
  *
- * LA LISTA sale del miniCRM del chat (filas con teléfono, fecha de registro, etapa y estado). Un teléfono puede estar en varias filas
+ * LA LISTA sale del miniCRM del chat (filas con teléfono, fecha de registro y etapa del funnel, columna G). Un teléfono puede estar en varias filas
  * (una por conversación de 24 h): se decide POR TELÉFONO y sale UNA sola vez. Cada teléfono excluido cae en UN motivo, el primero de
  * `MOTIVOS` que le toca, así los conteos suman exactamente los teléfonos distintos y nunca se muestra un teléfono.
  */
 
 /** El teléfono de Bolivia sin espacios: 591, un 6 o un 7 y siete dígitos. Lo demás no se escribe. */
 export const TELEFONO_VALIDO = /^591[67][0-9]{7}$/;
-/** Cuántos días hacia atrás cuenta una fila (por la fecha MÁXIMA de las filas del teléfono). */
-export const VENTANA_DIAS = 60;
 /** Quien escribió en las últimas 24 h tiene la ventana de Meta abierta: no es para una plantilla. */
 export const HORAS_DE_VENTANA = 24;
-/** El tope duro de mensajes de campaña por día de La Paz (el contador `topesDeEnvio/c_{tenant}`). */
-export const TOPE_DIARIO = 200;
-/** El tamaño de una tanda (cada una con su botón de Andres) y su rango permitido. */
-export const TANDA_MINIMA = 40;
-export const TANDA_MAXIMA = 50;
-/** El sub-lote: igual que `MAXIMO_POR_RECLAMO` de Core, para que ningún mensaje caduque esperando su reclamo. */
-export const TAMANO_DE_SUBLOTE = 10;
-/** Pausa: errores por encima del 10 % (con al menos 10 enviados) o «No» por encima del 25 %. */
-export const MINIMO_PARA_JUZGAR_ERRORES = 10;
+// Ninguna cifra de topes vive aquí: porTanda, porDia, porReclamo, ventanaDias y los porcentajes se leen de `tenants/{t}/config/campanaSaliente`.
 
 /** Los motivos de exclusión, en el orden en que se aplican (el primero que le toca a un teléfono es el suyo). */
 export const MOTIVOS = Object.freeze([
-  'invalido', 'cerrada', 'fechaIlegible', 'prueba', 'baja', 'bloqueada', 'noContactar', 'fueraDeVentana', 'sinConversacion', 'reciente',
+  'invalido', 'cerrada', 'fechaIlegible', 'prueba', 'baja', 'bloqueada', 'noContactar', 'riesgo', 'fueraDeVentana', 'sinConversacion',
+  'otraLinea', 'reciente',
 ]);
+
+/** La clave de un contacto: la MISMA para su conversación, su baja y su destinatario (`wa_<dígitos>`). */
+export const claveDeContacto = (telefono) => `wa_${telefono}`;
 
 const DIA_MS = 86_400_000;
 const HORA_MS = 3_600_000;
@@ -43,7 +37,7 @@ export function telefonoValido(valor) {
   return TELEFONO_VALIDO.test(t) ? t : null;
 }
 
-/** ¿La etapa o el estado de la fila es «Ganado» o «Perdido»? Sin tildes, sin mayúsculas, sin el número inicial («5. Ganado»). */
+/** ¿La etapa (columna G, «Etapa Funnel», y solo ella) es «Ganado» o «Perdido»? Sin tildes, sin mayúsculas, sin el número inicial («5. Ganado»). */
 export function etapaCerrada(texto) {
   if (typeof texto !== 'string') return false;
   const t = texto.normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase().trim().replace(/^\d+\.\s*/, '');
@@ -89,17 +83,21 @@ export function milisegundosDe(v) {
 /**
  * LA LISTA. Devuelve `{ destinatarios, conteos }`; nunca teléfonos en los conteos.
  *
- *   filas          [{ telefono, fecha, etapa, estado }] tal como las lee el miniCRM (texto).
- *   conversaciones Map<teléfono, { ultimoEntranteEn, bloqueada, noContactar }> de las conversaciones que EXISTEN en Firestore.
- *   bajas          Set<teléfono> de `tenants/{t}/bajas`.
+ *   filas          [{ telefono, fecha, etapa }] tal como las lee el miniCRM (texto).
+ *   conversaciones Map<claveDeContacto, { ultimoEntranteEn, bloqueada, noContactar, riesgoEn, phoneNumberId }> de las conversaciones que EXISTEN.
+ *   bajas          Set<claveDeContacto> de `tenants/{t}/bajas` (M2: la misma clave `wa_<dígitos>`).
  *   telefonosDePrueba  Set<teléfono> que nunca reciben la campaña.
  *   ahoraMs        la hora de la corrida.
+ *   ventanaDias    OBLIGATORIO: sale de `config/campanaSaliente`; sin él no hay lista.
+ *   numero         el phoneNumberId de la campaña: una conversación de otra línea es `otraLinea`.
  *
- * Excluye, con su conteo: teléfono inválido; Ganado o Perdido en CUALQUIER fila del teléfono; fecha ilegible en alguna fila; teléfono de
- * prueba; baja; conversación bloqueada; `noContactar`; fuera de los 60 días (por la fecha MÁXIMA de sus filas); sin conversación (o sin
- * un entrante legible); y entrante en las últimas 24 h. Los duplicados salen como UN envío (`filasRepetidas` cuenta las filas de más).
+ * Excluye, con su conteo: teléfono inválido; Ganado o Perdido (columna G) en CUALQUIER fila del teléfono; fecha ilegible en alguna fila;
+ * teléfono de prueba; baja; conversación bloqueada; `noContactar`; `riesgoEn` con valor; fuera de la ventana (por la fecha MÁXIMA de sus
+ * filas); sin conversación (o sin un entrante legible); conversación de otra línea; y entrante en las últimas 24 h. Los duplicados salen
+ * como UN envío (`filasRepetidas` cuenta las filas de más).
  */
-export function armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ahoraMs, ventanaDias = VENTANA_DIAS }) {
+export function armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ahoraMs, ventanaDias, numero }) {
+  if (!Number.isInteger(ventanaDias) || ventanaDias < 1) throw new RangeError('ventanaDias es obligatorio (entero de 1 en adelante)');
   const conteos = Object.fromEntries(MOTIVOS.map((m) => [m, 0]));
   conteos.filas = Array.isArray(filas) ? filas.length : 0;
   conteos.telefonos = 0;
@@ -113,7 +111,7 @@ export function armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ah
     const clave = valido ?? `\u0000${crudo}`; // los inválidos también se cuentan UNA vez por valor
     let t = porTelefono.get(clave);
     if (!t) { t = { valido, cerrada: false, ilegible: false, max: null }; porTelefono.set(clave, t); } else conteos.filasRepetidas += 1;
-    if (etapaCerrada(f?.etapa) || etapaCerrada(f?.estado)) t.cerrada = true;
+    if (etapaCerrada(f?.etapa)) t.cerrada = true; // solo la columna G; el estado comercial (M) no decide
     const fecha = fechaDeFila(f?.fecha);
     if (fecha === null) t.ilegible = true;
     else if (t.max === null || fecha > t.max) t.max = fecha;
@@ -123,16 +121,19 @@ export function armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ah
   const destinatarios = [];
   for (const t of porTelefono.values()) {
     let motivo = null;
-    const conv = t.valido === null ? null : conversaciones?.get?.(t.valido) ?? null;
+    const clave = t.valido === null ? null : claveDeContacto(t.valido);
+    const conv = clave === null ? null : conversaciones?.get?.(clave) ?? null;
     if (t.valido === null) motivo = 'invalido';
     else if (t.cerrada) motivo = 'cerrada';
     else if (t.ilegible || t.max === null || diasDesde(t.max, ahoraMs) < 0) motivo = 'fechaIlegible';
     else if (telefonosDePrueba?.has?.(t.valido)) motivo = 'prueba';
-    else if (bajas?.has?.(t.valido)) motivo = 'baja';
+    else if (bajas?.has?.(clave)) motivo = 'baja';
     else if (conv?.bloqueada === true) motivo = 'bloqueada';
     else if (conv?.noContactar === true) motivo = 'noContactar';
+    else if (conv && conv.riesgoEn !== undefined && conv.riesgoEn !== false) motivo = 'riesgo';
     else if (diasDesde(t.max, ahoraMs) > ventanaDias) motivo = 'fueraDeVentana';
     else if (conv === null || milisegundosDe(conv.ultimoEntranteEn) === null) motivo = 'sinConversacion';
+    else if (conv.phoneNumberId !== undefined && conv.phoneNumberId !== numero) motivo = 'otraLinea';
     else if (ahoraMs - milisegundosDe(conv.ultimoEntranteEn) < HORAS_DE_VENTANA * HORA_MS) motivo = 'reciente';
     if (motivo !== null) { conteos[motivo] += 1; continue; }
     destinatarios.push({ telefono: t.valido, fechaMaxMs: t.max });
@@ -142,21 +143,19 @@ export function armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ah
 }
 
 /**
- * Parte `n` envíos en tandas de `tamano` (de 40 a 50); la última lleva lo que sobre. Devuelve los tamaños: `[50, 50, 12]`.
- * Un tamaño fuera de 40..50 o un `n` negativo no se parte (error): una tanda de 200 no existe.
+ * Parte `n` envíos en tandas de `porTanda` (de `config/campanaSaliente`); la última lleva lo que sobre. Devuelve los tamaños: `[45, 45, 12]`.
+ * Un `porTanda` que no sea entero positivo o un `n` negativo no se parte (error).
  */
-export function partirEnTandas(n, tamano = TANDA_MAXIMA) {
+export function partirEnTandas(n, porTanda) {
   if (!Number.isInteger(n) || n < 0) throw new RangeError('n tiene que ser un entero de 0 en adelante');
-  if (!Number.isInteger(tamano) || tamano < TANDA_MINIMA || tamano > TANDA_MAXIMA) {
-    throw new RangeError(`el tamaño de la tanda va de ${TANDA_MINIMA} a ${TANDA_MAXIMA}`);
-  }
+  if (!Number.isInteger(porTanda) || porTanda < 1) throw new RangeError('porTanda tiene que ser un entero positivo');
   const tandas = [];
-  for (let resto = n; resto > 0; resto -= tamano) tandas.push(Math.min(tamano, resto));
+  for (let resto = n; resto > 0; resto -= porTanda) tandas.push(Math.min(porTanda, resto));
   return tandas;
 }
 
-/** Parte una lista en sub-lotes (de 10 por omisión). */
-export function partirEnLotes(lista, tamano = TAMANO_DE_SUBLOTE) {
+/** Parte una lista en lotes de `tamano` (por ejemplo, de 400 escrituras). */
+export function partirEnLotes(lista, tamano) {
   if (!Number.isInteger(tamano) || tamano < 1) throw new RangeError('el tamaño del lote tiene que ser un entero positivo');
   const lotes = [];
   for (let i = 0; i < lista.length; i += tamano) lotes.push(lista.slice(i, i + tamano));
@@ -164,14 +163,13 @@ export function partirEnLotes(lista, tamano = TAMANO_DE_SUBLOTE) {
 }
 
 /**
- * ¿Se pausa la campaña? `enviados` = mensajes que se intentaron, `errores` = rechazados, `no` = respuestas «No».
- * Errores por ENCIMA del 10 % con al menos 10 enviados, o «No» por ENCIMA del 25 %. Exactamente 10 % (o 25 %) no pausa: aritmética
- * entera, sin decimales.
+ * ¿La proporción de «No» supera `pausaNoPct`? Estrictamente por ENCIMA (exactamente el porcentaje no supera): aritmética entera.
+ * Datos ilegibles (negativos, no enteros, `no > enviados`, porcentaje fuera de 1..100) cuentan como «supera»: ante la duda no se autoriza.
+ * La pausa por ERRORES vive en el servidor (`confirmarSalida`); esta solo la revisa el script antes de autorizar la tanda siguiente.
  */
-export function evaluarPausa({ enviados, errores, no = 0 }) {
-  for (const v of [enviados, errores, no]) if (!Number.isInteger(v) || v < 0) return { pausar: true, motivo: 'datos' };
-  if (errores > enviados || no > enviados) return { pausar: true, motivo: 'datos' };
-  if (enviados >= MINIMO_PARA_JUZGAR_ERRORES && errores * 10 > enviados) return { pausar: true, motivo: 'errores' };
-  if (enviados > 0 && no * 4 > enviados) return { pausar: true, motivo: 'no' };
-  return { pausar: false, motivo: null };
+export function superaNo({ no, enviados, pausaNoPct }) {
+  for (const v of [no, enviados]) if (!Number.isInteger(v) || v < 0) return true;
+  if (!Number.isInteger(pausaNoPct) || pausaNoPct < 1 || pausaNoPct > 100) return true;
+  if (no > enviados) return true;
+  return enviados > 0 && no * 100 > pausaNoPct * enviados;
 }

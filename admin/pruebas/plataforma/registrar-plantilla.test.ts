@@ -389,4 +389,68 @@ describe('uso campana (PR-C de la campaña saliente)', () => {
     expect(otra.codigo).toBe(0);
     expect(otra.texto).toContain('Ya está registrada así');
   });
+
+  describe('DP4: --tenant + --linea resueltos desde rutasWhatsApp', () => {
+    const porLinea = (tenant: string, linea: string, extra: string[] = []) => [
+      '--proyecto', PROYECTO, '--tenant', tenant, '--linea', linea, '--uso', 'campana', '--nombre', NOMBRE_DE_PRUEBA, '--idioma', 'es',
+      '--categoria', 'UTILITY', '--estado', 'APPROVED', '--variables', '0', '--cabecera', 'ninguna', '--botones', '2', ...extra,
+    ];
+    let k = 0;
+    const tenantNuevo = () => `tienda-linea-${Date.now()}-${k++}`;
+
+    it('NEGATIVA: --numero junto con --tenant/--linea, --tenant sin --linea y --linea de 3 o 5 dígitos no pasan', () => {
+      expect(problemas([...porLinea('t-uno', '1234'), '--numero', '59170000001'])).toContain('no ambos');
+      expect(problemas(porLinea('t-uno', '1234').filter((x, i, a) => x !== '--linea' && a[i - 1] !== '--linea'))).toContain('--tenant exige --linea');
+      expect(problemas(porLinea('t-uno', '123'))).toContain('exactamente 4 dígitos');
+      expect(problemas(porLinea('t-uno', '12345'))).toContain('exactamente 4 dígitos');
+    });
+
+    it('resuelve la única ruta activa del comercio con esa terminación y escribe solo ahí', async () => {
+      const t = tenantNuevo();
+      const n = nuevoNumero();
+      const otra = nuevoNumero();
+      await ruta(n, { tenantId: t });
+      await ruta(otra, { tenantId: t, estado: 'inactivo' });
+      const r = await corre(porLinea(t, n.slice(-4), ['--aplicar', '--respaldo', rutaRespaldo()]));
+      expect(r.codigo, r.texto).toBe(0);
+      expect(r.texto).not.toContain(n);
+      expect(((await leer(n)).data() as { plantillas: Record<string, unknown> }).plantillas['campana']).toMatchObject({ nombre: NOMBRE_DE_PRUEBA });
+      expect((await leer(otra)).data()).not.toHaveProperty('plantillas');
+    });
+
+    it('NEGATIVA: 0 coincidencias (otra terminación, otro comercio o ruta inactiva) sale con 2 y no escribe', async () => {
+      const t = tenantNuevo();
+      const n = nuevoNumero();
+      await ruta(n, { tenantId: t, estado: 'inactivo' });
+      const ajena = nuevoNumero();
+      await ruta(ajena, { tenantId: 'otro-comercio' });
+      for (const [tenant, linea] of [[t, n.slice(-4)], [t, ajena.slice(-4)], ['otro-comercio', n.slice(-4)]]) {
+        const r = await corre(porLinea(tenant, linea, ['--aplicar', '--respaldo', rutaRespaldo()]));
+        expect(r.codigo, r.texto).toBe(2);
+      }
+      expect((await leer(n)).data()).not.toHaveProperty('plantillas');
+      expect((await leer(ajena)).data()).not.toHaveProperty('plantillas');
+    });
+
+    it('NEGATIVA: 2 coincidencias activas con la misma terminación salen con 2 y no escriben', async () => {
+      const t = tenantNuevo();
+      const a = `59171${String(Date.now()).slice(-5)}7777`;
+      const b = `59172${String(Date.now()).slice(-5)}7777`;
+      await ruta(a, { tenantId: t });
+      await ruta(b, { tenantId: t });
+      const r = await corre(porLinea(t, '7777', ['--aplicar', '--respaldo', rutaRespaldo()]));
+      expect(r.codigo, r.texto).toBe(2);
+      expect(r.texto).toContain('hay 2');
+      expect((await leer(a)).data()).not.toHaveProperty('plantillas');
+      expect((await leer(b)).data()).not.toHaveProperty('plantillas');
+    });
+
+    it('NEGATIVA: contra producción, --confirmo-produccion tiene que ser la línea', () => {
+      const env = { ...ENV_REAL };
+      const a = (c: string) => mod.analizarArgumentos(porLinea('t-uno', '1234', ['--aplicar', '--respaldo', rutaRespaldo(), ...(c ? ['--confirmo-produccion', c] : [])]).map((x) => (x === PROYECTO ? 'proyecto-ficticio-prod' : x)), env);
+      expect(a('').ok).toBe(false);
+      expect(a('9999').ok).toBe(false);
+      expect(a('1234').ok, JSON.stringify(a('1234'))).toBe(true);
+    });
+  });
 });
