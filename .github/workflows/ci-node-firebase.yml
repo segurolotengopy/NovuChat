@@ -1515,6 +1515,9 @@ jobs:
           SITIO_CATALOGO: ${{ vars.HOSTING_SITIO_CATALOGO }}
           FORZAR_FACTURA: ${{ vars.FIREBASE_DEPLOY_FORCE }}
           BUCKET_STORAGE: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          # SOLO STAGING: el aviso «unexpected state» baja a warning si el despliegue quedó completo y sin Functions nuevas (compuerta, R4);
+          # el paso siguiente verifica el invoker de las candidatas. Producción NO define esta variable: allí el aviso es fatal.
+          AVISO_SERVICIO_NO_FATAL: '1'
         run: |
           set -euo pipefail
           # Los parámetros de las Functions (`defineString`) se leen de
@@ -1606,6 +1609,16 @@ jobs:
           # Sin la URL: lleva el ID del proyecto y el registro es público. La URL
           # la muestra el Environment del job.
           echo "### Staging desplegado (${GITHUB_SHA::7})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Invocadores de las Functions con el aviso «unexpected state» (staging)
+        # Solo si la compuerta bajó el aviso a warning: lee (sin escribir) el IAM del servicio de cada candidata y falla si alguna no tiene
+        # invocador o no se puede leer. El aviso no nombra la Function, así que se verifican todas las confirmadas junto a él.
+        if: steps.desplegar.outputs.candidatas != ''
+        timeout-minutes: 5
+        env:
+          PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
+          CANDIDATAS: ${{ steps.desplegar.outputs.candidatas }}
+        run: bash "$GITHUB_WORKSPACE/scripts/verificar-invocadores-candidatas.sh"
 
       - name: Lo servido es lo construido (consola y catálogo)
         # El sitio viejo también responde 200: se compara lo servido con el
