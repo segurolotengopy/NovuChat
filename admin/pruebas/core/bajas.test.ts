@@ -13,7 +13,7 @@
  *
  * Puerto del emulador: 8231 por convención.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -155,7 +155,7 @@ describe('I2: la respuesta se normaliza (trim y minúsculas) antes de validar', 
     expect(await baja(A)).toMatchObject({ campanaId: CAMPANA, origen: 'boton_campana' });
     expect((await conversacion(A))['campanaRespuesta']).toMatchObject({ respuesta: 'no' });
   });
-  it.each(['Sí', 'si', ' SI ', 'sí'])('«%s» vale como «sí»: anota y no crea baja', async (v) => {
+  it.each(['Sí', 'si', ' SI ', 'sí', 'sí'])('«%s» vale como «sí»: anota y no crea baja', async (v) => {
     await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: v });
     expect(await baja(A)).toBeNull();
     expect((await conversacion(A))['campanaRespuesta']).toMatchObject({ respuesta: 'si' });
@@ -164,6 +164,10 @@ describe('I2: la respuesta se normaliza (trim y minúsculas) antes de validar', 
     expect(BAJAS.normalizarRespuestaDeCampana(' No ')).toBe('no');
     expect(BAJAS.normalizarRespuestaDeCampana('nop')).toBeNull();
     expect(BAJAS.normalizarRespuestaDeCampana(null)).toBeNull();
+    // «sí» con la tilde DESCOMPUESTA (i + U+0301): vale como «sí» (NFC antes de comparar).
+    expect(BAJAS.normalizarRespuestaDeCampana('sí')).toBe('si');
+    expect(BAJAS.normalizarRespuestaDeCampana(' Sí ')).toBe('si');
+    expect(BAJAS.respuestaDeCampanaValida('sí')).toBe(true);
     expect(BAJAS.respuestaDeCampanaValida('SÍ')).toBe(true);
     expect(BAJAS.respuestaDeCampanaValida('nop')).toBe(false);
   });
@@ -173,15 +177,50 @@ describe('I1: con el comercio NO activo, un «No» igual crea la baja (y la resp
   const mensajes = async () => (await db.collection(`tenants/${A.id}/conversaciones/wa_${TEL}/mensajes`).get()).size;
   afterEach(async () => { await db.doc(`tenants/${A.id}`).update({ estado: 'activo' }); });
 
-  it.each(['suspendido', 'baja'])('estado «%s»: «no» crea bajas/wa_tel, responde 409, sin mensaje ni conteo', async (estado) => {
-    await db.doc(`tenants/${A.id}`).update({ estado });
+  const convExiste = async () => (await db.doc(`tenants/${A.id}/conversaciones/wa_${TEL}`).get()).exists;
+
+  it('suspendido: «no» crea SOLO bajas/wa_tel, responde 409, sin conversación, mensaje ni conteo', async () => {
+    await db.doc(`tenants/${A.id}`).update({ estado: 'suspendido' });
     const r = await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' });
     expect(r.codigo).toBe(409);
     expect(await baja(A)).toEqual({ canal: 'whatsapp', origen: 'boton_campana', campanaId: CAMPANA, desde: expect.anything() });
+    expect(await convExiste()).toBe(false);
     expect(await mensajes()).toBe(0);
     expect((await db.collection(`tenants/${A.id}/metricas`).get()).size).toBe(0);
-    const conv = await conversacion(A);
-    expect(Object.keys(conv).sort()).toEqual(['campanaRespuesta']);
+  });
+  it('suspendido con la ficha ya existente: la baja se crea y la conversación NO se toca', async () => {
+    const ref = db.doc(`tenants/${A.id}/conversaciones/wa_${TEL}`);
+    await ref.set({ telefono: TEL, nombreContacto: 'Ficha previa' });
+    await db.doc(`tenants/${A.id}`).update({ estado: 'suspendido' });
+    expect((await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' })).codigo).toBe(409);
+    expect(await baja(A)).not.toBeNull();
+    expect(await conversacion(A)).toEqual({ telefono: TEL, nombreContacto: 'Ficha previa' });
+  });
+  it.each(['baja', 'desconocido'])('NIEGA: con el comercio en estado «%s» (o sin ficha) no se escribe NADA, y responde 409', async (estado) => {
+    if (estado === 'baja') await db.doc(`tenants/${A.id}`).update({ estado });
+    else await db.doc(`tenants/${A.id}`).delete();
+    try {
+      const r = await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' });
+      expect(r.codigo).toBe(409);
+      expect(await cuantasBajas(A)).toBe(0);
+      expect(await convExiste()).toBe(false);
+      expect(await mensajes()).toBe(0);
+    } finally {
+      await db.doc(`tenants/${A.id}`).set({ nombre: `Comercio ${A.id}`, estado: 'activo', plan: 'pro' });
+    }
+  });
+  it('NIEGA: si la transacción de la baja falla, la respuesta sigue siendo 409 y se registra `campana_baja_fallida` sin el teléfono', async () => {
+    await db.doc(`tenants/${A.id}`).update({ estado: 'suspendido' });
+    const espia = vi.spyOn(db, 'runTransaction').mockRejectedValue(new Error('falla simulada'));
+    try {
+      const r = await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' });
+      expect(r.codigo).toBe(409);
+      expect(espia).toHaveBeenCalled();
+    } finally { espia.mockRestore(); }
+    expect(await cuantasBajas(A)).toBe(0);
+    const fallidas = (await db.collection(`tenants/${A.id}/bitacora`).where('codigo', '==', 'campana_baja_fallida').get()).docs;
+    expect(fallidas).toHaveLength(1);
+    expect(JSON.stringify(fallidas[0]!.data())).not.toContain(TEL);
   });
   it('«No» en mayúscula, sin id de campaña, también; y repetido no pisa `desde`', async () => {
     await db.doc(`tenants/${A.id}`).update({ estado: 'suspendido' });

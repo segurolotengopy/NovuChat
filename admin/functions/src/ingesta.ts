@@ -810,12 +810,20 @@ export const ingesta = onRequest(
     const { estado, ficha } = await estadoDelComercio(tenantId);
     if (estado !== 'activo') {
       // UN «NO» A LA CAMPAÑA NUNCA SE PIERDE, ni con el comercio suspendido: la baja es un derecho de la persona y, si se
-      // descartara, al reactivarse el comercio le seguirían llegando campañas. Solo la baja (y la nota mínima de bajas.ts):
-      // sin mensaje, sin conteo, sin tocar nada más. Un «sí» no escribe nada. La respuesta sigue siendo el 409 de siempre.
-      if (mensaje.evento === 'campana_respuesta' && mensaje.direccion === 'entrante' && mensaje.respuestaCampana === 'no') {
+      // descartara, al reactivarse el comercio le seguirían llegando campañas. SOLO con el comercio `suspendido` (reversible);
+      // en `baja` o `desconocido` no se escribe nada. Escribe ÚNICAMENTE `bajas/{wa_tel}` (`soloBaja`): ni conversación, ni
+      // mensaje, ni conteo. Un «sí» no escribe nada. Un fallo de la transacción no cambia la respuesta: sigue el 409.
+      if (estado === 'suspendido' && mensaje.evento === 'campana_respuesta' && mensaje.direccion === 'entrante'
+          && mensaje.respuestaCampana === 'no') {
         const refConv = db.doc(`tenants/${tenantId}/conversaciones/wa_${mensaje.telefono}`);
-        await db.runTransaction((tx) => aplicarRespuestaDeCampana(tx, refConv,
-          { campanaId: mensaje.campanaEnvioId, respuesta: 'no' }, Timestamp.now()));
+        try {
+          const resultado = await db.runTransaction((tx) => aplicarRespuestaDeCampana(tx, refConv,
+            { campanaId: mensaje.campanaEnvioId, respuesta: 'no' }, Timestamp.now(), { soloBaja: true }));
+          logger.info('ingesta: baja de campaña con el comercio suspendido', { tenantId, resultado });
+        } catch {
+          // Sin el teléfono ni el texto del error: solo el hecho.
+          await registrar(tenantId, { tipo: 'error_flujo', resultado: 'fallo', codigo: 'campana_baja_fallida' });
+        }
       }
       // SE REGISTRA IGUAL. La bitácora admite escrituras con el comercio
       // suspendido justamente para esto: el tramo del corte de servicio es el
