@@ -9,6 +9,9 @@
  *   autorizar-tanda  --campana <id> --tanda <id> --cupo <n> --calidad VERDE [--aplicar …]   UNA tanda por corrida (un botón de Andres).
  *   cerrar-tanda     --campana <id> --tanda <id> [--aplicar …]
  *   pausar           --campana <id> [--aplicar …]
+ *   reanudar         --campana <id> [--aplicar …]           una campaña PAUSADA (manual, por errores o por «No»): muestra por qué se pausó y las cifras,
+ *                    la deja sin pausa y quita el puntero, y deja la auditoría. NO autoriza ninguna tanda: la siguiente sigue pidiendo `autorizar-tanda`
+ *                    (si había una tanda abierta, antes `cerrar-tanda`). No reanuda una campaña terminada ni cancelada.
  *   estado           --campana <id>                         conteos, «Sí» y «No» conciliados y `plantillasCampana`; solo lectura.
  *
  * QUÉ HACE Y QUÉ NO. Este script NO escribe mensajes. Escribe destinatarios en `tenants/{t}/campanasSalientes/{c}/destinatarios` y
@@ -32,7 +35,7 @@
  * SALIDA. 0: terminó. 1: en seco, queda algo por hacer. 2: uso, salvaguarda o precondición (nada escrito). 3: error de ejecución.
  * 4: rechazado por la proporción de «No». 130: Ctrl-C.
  * COSTO. Por entrega 1 plantilla (UTILITY: 0,0113 USD). 0 mensajes por conversación. Escrituras: crear ≈ 1 + una por destinatario;
- * autorizar y cerrar, 2 cada una; n8n: 4 por `simular` o `crear`.
+ * autorizar, cerrar y reanudar, 2 cada una; n8n: 4 por `simular` o `crear`.
  */
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
@@ -49,8 +52,8 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const DATOS = resolve(AQUI, '..', '..', 'datos');
 const FLUJOS_CLIENTES = resolve(AQUI, '..', '..', '..', '..', 'Flujos', 'clientes');
 
-export const SUBCOMANDOS = ['simular', 'crear', 'autorizar-tanda', 'cerrar-tanda', 'pausar', 'estado'];
-const ESCRIBEN = ['crear', 'autorizar-tanda', 'cerrar-tanda', 'pausar'];
+export const SUBCOMANDOS = ['simular', 'crear', 'autorizar-tanda', 'cerrar-tanda', 'pausar', 'reanudar', 'estado'];
+const ESCRIBEN = ['crear', 'autorizar-tanda', 'cerrar-tanda', 'pausar', 'reanudar'];
 const CON_VALOR = ['proyecto', 'tenant', 'linea', 'campana', 'tanda', 'cupo', 'calidad', 'mapa-crm', 'flujo-versionado', 'telefono-prueba', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'solo-prueba'];
 /** Copias de Core (`salidaCampana.ts`): `salientes.test.ts` las compara contra lo compilado cuando existe. */
@@ -60,7 +63,7 @@ export const TANDA_ID = /^[a-z0-9-]{1,20}$/;
 export const PLANTILLA_UTILIDAD_USD = 0.0113;
 const TAMANO_DE_LOTE = 400;
 
-export const USO = '  node scripts/modulos/campanas/campana-saliente.mjs simular|crear|autorizar-tanda|cerrar-tanda|pausar|estado --proyecto <id|prod> --tenant <id> --linea <4 dígitos> '
+export const USO = '  node scripts/modulos/campanas/campana-saliente.mjs simular|crear|autorizar-tanda|cerrar-tanda|pausar|reanudar|estado --proyecto <id|prod> --tenant <id> --linea <4 dígitos> '
   + '[--campana <id>] [--tanda <id> --cupo <n> --calidad VERDE] [--mapa-crm <ruta> --flujo-versionado <ruta>] [--solo-prueba --telefono-prueba <4 dígitos>] [--aplicar --confirmo-produccion <tenant>]\n  (--confirmo-produccion es el id del COMERCIO, igual a --tenant; en registrar-plantilla.mjs es la línea de 4 dígitos o el phoneNumberId)';
 
 // ===========================================================================
@@ -443,6 +446,52 @@ async function pausar(cfg, deps, log) {
   return 0;
 }
 
+/** Lo que se comprueba antes de reanudar: `{ codigo, motivo }` si no se puede, `null` si sí. Puro sobre los datos leídos. */
+export function motivoDeRechazoDeReanudar({ camp, numero }) {
+  if (!camp.exists) return { codigo: 2, motivo: 'la campaña no existe' };
+  if (camp.get('phoneNumberId') !== numero) return { codigo: 2, motivo: 'la campaña es de otra línea' };
+  const estado = camp.get('estado');
+  if (estado === 'terminada' || estado === 'cancelada') return { codigo: 2, motivo: `la campaña está ${estado}: no se reanuda` };
+  if (estado !== 'pausada') return { codigo: 2, motivo: `la campaña no está pausada (está ${estado})` };
+  return null;
+}
+
+async function reanudar(cfg, deps, log) {
+  const { db, FieldValue, Timestamp } = deps;
+  const lin = await resolverLinea(db, cfg.tenant, cfg.linea);
+  if (!lin.ok) { log(`\n  ✗ ${lin.motivo}. No se escribió nada.\n`); return 2; }
+  const ref = refCampana(db, cfg.tenant, cfg.campana);
+  const refRuta = db.doc(`rutasWhatsApp/${lin.numero}`);
+  const camp = await ref.get();
+  const rechazo = motivoDeRechazoDeReanudar({ camp, numero: lin.numero });
+  if (rechazo) { log(`\n  ✗ ${rechazo.motivo}. No se escribió nada.\n`); return rechazo.codigo; }
+  const n = (k) => camp.get(k) ?? 0;
+  const tanda = camp.get('tanda');
+  log(`\n  ${cfg.aplicar ? 'REANUDAR' : 'SECO (solo lecturas)'} · pausada por: ${camp.get('motivoPausa') ?? 'motivo no registrado'}${camp.get('prueba') ? ' · PRUEBA' : ''}`);
+  log(`  materializados ${n('materializados')} · aceptados ${n('aceptados')} · rechazados ${n('rechazados')} · inciertos ${n('inciertos')} · en vuelo ${enVuelo(camp)} de ${n('total')} destinatarios`);
+  log(`  tanda abierta: ${tanda ? `${tanda.usados} de ${tanda.cupo} (hay que cerrarla con cerrar-tanda antes de autorizar otra)` : 'ninguna'} · tandas hechas ${(camp.get('tandasHechas') ?? []).length}`);
+  if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar para reanudar (no autoriza ninguna tanda).\n'); return 1; }
+  deps.marcarEscritura?.('escribiendo');
+  const r = await db.runTransaction(async (tx) => {
+    const c2 = await tx.get(ref);
+    const ruta = await tx.get(refRuta);
+    const otra = motivoDeRechazoDeReanudar({ camp: c2, numero: lin.numero });
+    if (otra) return otra;
+    const arrancada = (c2.get('materializados') ?? 0) > 0 || c2.get('tanda') != null || (c2.get('tandasHechas') ?? []).length > 0;
+    tx.update(ref, {
+      estado: arrancada ? 'enCurso' : 'creada', motivoPausa: FieldValue.delete(),
+      reanudaciones: [...(c2.get('reanudaciones') ?? []), { en: Timestamp.fromMillis(deps.ahoraMs()), motivoPausa: c2.get('motivoPausa') ?? null }],
+    });
+    // Sin puntero el servidor no materializa nada: reanudar nunca autoriza. Una pausa por errores lo deja puesto (solo cambia el estado), por eso se quita aquí.
+    if (ruta.get('campanaSalienteEnCurso') === cfg.campana) tx.update(refRuta, { campanaSalienteEnCurso: FieldValue.delete() });
+    return null;
+  });
+  if (r) { log(`\n  ✗ ${r.motivo}. No se escribió nada.\n`); return r.codigo; }
+  deps.marcarEscritura?.('escrito');
+  log('\n  ✓ Campaña reanudada (sin pausa, sin puntero, con auditoría). NO se autorizó ninguna tanda: la siguiente pide cerrar-tanda (si había una abierta) y autorizar-tanda.\n');
+  return 0;
+}
+
 async function estado(cfg, deps, log) {
   const { db } = deps;
   const lin = await resolverLinea(db, cfg.tenant, cfg.linea);
@@ -485,6 +534,7 @@ export async function ejecutar(cfg, deps) {
     case 'autorizar-tanda': return autorizarTanda(cfg, d, log);
     case 'cerrar-tanda': return cerrarTanda(cfg, d, log);
     case 'pausar': return pausar(cfg, d, log);
+    case 'reanudar': return reanudar(cfg, d, log);
     case 'estado': return estado(cfg, d, log);
     default: return 2;
   }

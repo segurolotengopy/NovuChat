@@ -530,6 +530,66 @@ describe('cerrar-tanda y pausar', () => {
     await refC(m, 'cmp-uno').update({ estado: 'enCurso', phoneNumberId: 'otra-linea' });
     expect((await correr(base(m, 'pausar', ['--campana', 'cmp-uno', '--aplicar']))).codigo).toBe(2);
   });
+  const reanudarArgs = (m: Montaje, extra: string[] = []) => base(m, 'reanudar', ['--campana', 'cmp-uno', ...extra]);
+  it('reanudar: muestra el motivo y las cifras, en seco no escribe, con --aplicar deja la campaña sin pausa, quita el puntero y registra la auditoría', async () => {
+    const m = await enCurso();
+    await refC(m, 'cmp-uno').update({ estado: 'pausada', motivoPausa: 'errores', materializados: 4, aceptados: 1, rechazados: 3 });
+    const antes = await foto(m);
+    const seco = await correr(reanudarArgs(m));
+    expect(seco.codigo, seco.texto).toBe(1);
+    expect(seco.texto).toContain('errores');
+    expect(seco.texto).toContain('rechazados 3');
+    expect(await foto(m)).toBe(antes);
+    const r = await correr(reanudarArgs(m, ['--aplicar']));
+    expect(r.codigo, r.texto).toBe(0);
+    for (const l of r.texto.split('\n')) expect(l).not.toMatch(/\d{7,}/);
+    const c = (await refC(m, 'cmp-uno').get()).data() as Record<string, unknown>;
+    expect(c).toMatchObject({ estado: 'enCurso' });
+    expect(c).not.toHaveProperty('motivoPausa');
+    expect(c['reanudaciones']).toEqual([{ en: expect.anything(), motivoPausa: 'errores' }]);
+    expect(await rutaDe(m)).not.toHaveProperty('campanaSalienteEnCurso');
+  });
+  it('NEGATIVA: reanudar NO autoriza ninguna tanda: la tanda abierta queda igual, no hay puntero y autorizar-tanda sigue pidiendo cerrarla', async () => {
+    const m = await enCurso();
+    await correr(base(m, 'pausar', ['--campana', 'cmp-uno', '--aplicar']));
+    const tandaAntes = (await refC(m, 'cmp-uno').get()).get('tanda');
+    expect((await correr(reanudarArgs(m, ['--aplicar']))).codigo).toBe(0);
+    expect((await refC(m, 'cmp-uno').get()).get('tanda')).toEqual(tandaAntes);
+    expect(await rutaDe(m)).not.toHaveProperty('campanaSalienteEnCurso');
+    const a = await correr(autorizarArgs(m, 'cmp-uno', 't2', ['--aplicar']));
+    expect(a.codigo).toBe(2);
+    expect(a.texto).toContain('no se cerró');
+    expect(await rutaDe(m)).not.toHaveProperty('campanaSalienteEnCurso');
+  });
+  it('NEGATIVA: una pausa por errores deja el puntero puesto; reanudar lo quita para que no salga nada sin autorizar-tanda', async () => {
+    const m = await enCurso();
+    await refC(m, 'cmp-uno').update({ estado: 'pausada', motivoPausa: 'errores' });
+    expect(await rutaDe(m)).toHaveProperty('campanaSalienteEnCurso', 'cmp-uno');
+    expect((await correr(reanudarArgs(m, ['--aplicar']))).codigo).toBe(0);
+    expect(await rutaDe(m)).not.toHaveProperty('campanaSalienteEnCurso');
+  });
+  it('NEGATIVA: no reanuda una campaña terminada, cancelada, que no está pausada, inexistente o de otra línea', async () => {
+    const m = await enCurso();
+    const intentar = async () => { const antes = await foto(m); const r = await correr(reanudarArgs(m, ['--aplicar'])); expect(await foto(m)).toBe(antes); return r.codigo; };
+    expect(await intentar()).toBe(2); // enCurso: no está pausada
+    for (const e of ['terminada', 'cancelada']) {
+      await refC(m, 'cmp-uno').update({ estado: e });
+      expect(await intentar()).toBe(2);
+    }
+    await refC(m, 'cmp-uno').update({ estado: 'pausada', phoneNumberId: 'otra-linea' });
+    expect(await intentar()).toBe(2);
+    expect((await correr(base(m, 'reanudar', ['--campana', 'cmp-nada', '--aplicar']))).codigo).toBe(2);
+  });
+  it('NEGATIVA: reanudar exige --campana y, contra producción, --confirmo-produccion <tenant>; no admite --tanda, --cupo ni --calidad', () => {
+    const m0 = { tenant: 't-uno', numero: '1', linea: '1234' };
+    expect(problemas(base(m0, 'reanudar'))).toContain('falta --campana');
+    expect(problemas(reanudarArgs(m0, ['--cupo', '5']))).toContain('no admite --cupo');
+    expect(problemas(reanudarArgs(m0, ['--tanda', 't1']))).toContain('no admite --tanda');
+    const prod = (extra: string[]) => reanudarArgs(m0, ['--aplicar', ...extra]).map((x) => (x === PROYECTO ? 'proyecto-ficticio-prod' : x));
+    expect(S.analizarArgumentos(prod([]), ENV_REAL).ok).toBe(false);
+    expect(S.analizarArgumentos(prod(['--confirmo-produccion', 'otro']), ENV_REAL).ok).toBe(false);
+    expect(S.analizarArgumentos(prod(['--confirmo-produccion', 't-uno']), ENV_REAL).ok).toBe(true);
+  });
 });
 
 describe('estado', () => {
