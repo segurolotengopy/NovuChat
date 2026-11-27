@@ -16,12 +16,12 @@ describe('PROPIO.md y DISENO.md', () => {
       expect(t, f).toMatch(/20\/11\/2026/);
     }
   });
-  it('NEGADO: no dicen que otro país recibe un texto fijo; la cuenta de nodos vigente (63 y 58) figura y es la del flujo armado', () => {
+  it('NEGADO: no dicen que otro país recibe un texto fijo; la cuenta de nodos vigente (64 y 58: el webhook del carrito, B4, solo en producción) figura y es la del flujo armado', () => {
     for (const f of ['PROPIO.md', 'DISENO.md']) expect(leer(f), f).not.toMatch(/otro país recibe el texto fijo|AR\/otro → texto fijo/);
-    expect(PRODUCCION.nodes).toHaveLength(63);
+    expect(PRODUCCION.nodes).toHaveLength(64);
     expect(PRUEBA.nodes).toHaveLength(58);
-    expect(leer('PROPIO.md')).toMatch(/63 nodos/);
+    expect(leer('PROPIO.md')).toMatch(/64 nodos/);
     expect(leer('PROPIO.md')).toMatch(/\(58;/);
-    expect(leer('DISENO.md')).toMatch(/hoy el armador da 63 y 58/);
+    expect(leer('DISENO.md')).toMatch(/hoy el armador da 64 y 58/);
   });
 });
