@@ -147,6 +147,35 @@ describe('armarLista: la lista y sus exclusiones', () => {
   });
 });
 
+describe('armarLista con la excepción de la prueba: levanta SOLO 24 h, sin conversación, ventana y teléfono de prueba', () => {
+  const conExcepcion = (filas: Fila[], opts: { convs?: Array<[number, Conv]>; bajas?: number[]; prueba?: number[]; excepcion?: boolean } = {}) => {
+    const conversaciones = new Map<string, Conv>((opts.convs ?? []).map(([n, c]) => [L.claveDeContacto(TEL(n)), c] as [string, Conv]));
+    return L.armarLista({
+      filas, conversaciones, bajas: new Set((opts.bajas ?? []).map((n) => L.claveDeContacto(TEL(n)))), telefonosDePrueba: new Set((opts.prueba ?? []).map(TEL)),
+      ahoraMs: AHORA, ventanaDias: 60, numero: NUMERO, excepcionPrueba: opts.excepcion ?? true,
+    });
+  };
+  it('con la excepción: escribió hace 1 h, sin conversación, fecha fuera de la ventana y en la lista de prueba, SALE', () => {
+    const r = conExcepcion([fila(1, { fecha: '2025-01-01' })], { convs: [[1, conv({ ultimoEntranteEn: HACE(1) })]], prueba: [1] });
+    expect(aptos(r)).toEqual([TEL(1)]);
+    expect(aptos(conExcepcion([fila(2)], { prueba: [2] }))).toEqual([TEL(2)]); // sin conversación
+  });
+  it('NIEGA: la misma lista SIN la excepción (campaña real) sigue excluyendo por 24 h, sin conversación, ventana y teléfono de prueba', () => {
+    const r = conExcepcion([fila(1), fila(2), fila(3, { fecha: '2025-01-01' }), fila(4)], {
+      excepcion: false, prueba: [4], convs: [[1, conv({ ultimoEntranteEn: HACE(1) })], [3, conv()], [4, conv()]],
+    });
+    expect(aptos(r)).toEqual([]);
+    expect(r.conteos).toMatchObject({ reciente: 1, sinConversacion: 1, fueraDeVentana: 1, prueba: 1 });
+  });
+  it('NIEGA: con la excepción siguen rigiendo baja, bloqueada, noContactar, riesgo, otra línea, cerrada, fecha ilegible y teléfono inválido', () => {
+    const r = conExcepcion([fila(1), fila(2), fila(3), fila(4), fila(5), fila(6, { etapa: 'Ganado' }), fila(7, { fecha: 'x' }), { telefono: '123', fecha: '2026-11-10', etapa: '' }], {
+      bajas: [1], convs: [[2, conv({ bloqueada: true })], [3, conv({ noContactar: true })], [4, conv({ riesgoEn: 'x' })], [5, conv({ phoneNumberId: 'otra' })], [6, conv()], [7, conv()]],
+    });
+    expect(aptos(r)).toEqual([]);
+    expect(r.conteos).toMatchObject({ baja: 1, bloqueada: 1, noContactar: 1, riesgo: 1, otraLinea: 1, cerrada: 1, fechaIlegible: 1, invalido: 1 });
+  });
+});
+
 describe('partirEnTandas y superaNo', () => {
   it('parte en tandas de porTanda (el de la config), la última con lo que sobra', () => {
     expect(L.partirEnTandas(169, 45)).toEqual([45, 45, 45, 34]);
@@ -190,5 +219,20 @@ describe.skipIf(!existsSync(FUENTE('salidaCampana.ts')))('paridad con Core (fuen
     expect(s.CAMPANA_ID.source).toBe(patron('bajas.ts', 'CAMPANA_ID'));
     expect(patron('salidaCampana.ts', 'TANDA_ID')).toBeDefined();
     expect(s.TANDA_ID.source).toBe(patron('salidaCampana.ts', 'TANDA_ID'));
+  });
+});
+
+describe('paridad de la lista de teléfonos de prueba con Core (números ficticios)', () => {
+  it('el script y el servidor leen la misma lista de la misma manera', async () => {
+    const SERVIDOR = await import('../../../functions/src/core/conversacion/salidaCampana.ts') as unknown as { leerTelefonosDePrueba: (d: unknown) => string[]; MAXIMO_TELEFONOS_DE_PRUEBA: number };
+    const S = L as unknown as { leerTelefonosDePrueba: (d: unknown) => string[]; MAXIMO_TELEFONOS_DE_PRUEBA: number };
+    const [T1, T2] = ['59170000001', '59170000002'];
+    expect(S.MAXIMO_TELEFONOS_DE_PRUEBA).toBe(SERVIDOR.MAXIMO_TELEFONOS_DE_PRUEBA);
+    const casos = [null, undefined, [], 'x', {}, { telefonosDePrueba: [] }, { telefonosDePrueba: [T1] }, { telefonosDePrueba: [T1, T2] }, { telefonosDePrueba: [T1, T1] },
+      { telefonosDePrueba: ['+59170000001'] }, { telefonosDePrueba: [T1, T2, '59170000003', '59170000004', '59170000005'] },
+      { telefonosDePrueba: [T1, T2, '59170000003', '59170000004', '59170000005', '59170000006'] }, { telefonosDePrueba: [59170000001] }, { telefonosDePrueba: ['1234567'] },
+      { telefonosDePrueba: T1 }];
+    for (const d of casos) expect(S.leerTelefonosDePrueba(d), JSON.stringify(d)).toEqual(SERVIDOR.leerTelefonosDePrueba(d));
+    expect(S.leerTelefonosDePrueba({ telefonosDePrueba: [T1] })).toEqual([T1]); // control: no es «todo vacío»
   });
 });

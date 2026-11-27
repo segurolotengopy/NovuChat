@@ -29,6 +29,14 @@
  * n8n sin que el subcomando lo pida (solo `simular` y `crear` sin `--solo-prueba` leen el miniCRM, por la API de n8n).
  * La salida nunca trae un teléfono, un id de hoja, una ruta de webhook ni un id de flujo.
  *
+ * LA PRUEBA (`crear --solo-prueba --telefono-prueba <4 dígitos>`). Va a UN teléfono, que tiene que estar en `telefonosDePrueba` de
+ * `config/campanaSaliente` (se carga ANTES con `plataforma/campana-saliente-config.mjs --telefonos-de-prueba`; si no está, sale con 2).
+ * La campaña queda `prueba: true` y el SERVIDOR (no este script) levanta, solo para ella, las omisiones de 24 h, sin conversación,
+ * teléfono de prueba y ventana: el teléfono puede haber escrito hoy o no tener conversación. Siguen rigiendo baja, `noContactar`,
+ * bloqueada, riesgo, otra línea y todos los topes y pausas. Una campaña de prueba con más de un destinatario, o con un número fuera de
+ * la lista, el servidor la pausa ENTERA (`motivoPausa: pruebaVariosDestinatarios | pruebaSinLista | pruebaFueraDeLista`).
+ * El seco de `crear --solo-prueba` (sin `--aplicar`) es el simulacro de la prueba: `simular` no admite `--solo-prueba`.
+ *
  * ENTORNO: `ENV_FILE` (el .env de n8n; se lee, nunca se imprime) y `TELEFONOS_DE_PRUEBA` (separados por coma; nunca se imprimen).
  * La línea (`--linea`) se resuelve en `rutasWhatsApp` (`tenantId == tenant`, `estado == 'activo'`, exactamente 1 coincidencia).
  *
@@ -45,7 +53,7 @@ import { plantillaCampanaValida } from '../../plataforma/registrar-plantilla.mjs
 import { entornoDeCredenciales, proyectoDesdeCredenciales } from '../../plataforma/respuesta-libre.mjs';
 import { crearLectorDeMiniCrmN8n } from './miniCrm-n8n.mjs';
 import {
-  armarLista, claveDeContacto, partirEnLotes, partirEnTandas, superaNo, telefonoValido,
+  armarLista, claveDeContacto, leerTelefonosDePrueba, partirEnLotes, partirEnTandas, superaNo, telefonoValido,
 } from './salientes-logica.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -212,6 +220,12 @@ async function leerConfig(db, tenant, deps) {
   return s.exists ? deps.leerConfigCampana(s.data()) : null;
 }
 
+/** La lista `telefonosDePrueba` de `config/campanaSaliente`, leída como la lee el servidor; `[]` si falta o es ilegible. Nunca se imprime. */
+async function leerListaDePrueba(db, tenant) {
+  const s = await db.doc(`tenants/${tenant}/config/campanaSaliente`).get();
+  return s.exists ? leerTelefonosDePrueba(s.data()) : [];
+}
+
 /** `plantillas.campana` de la ruta, con el contrato exacto del registro. */
 function plantillaDeLaRuta(ruta) {
   const p = ruta.get('plantillas.campana');
@@ -242,14 +256,15 @@ async function construirLista(cfg, deps, numero, config) {
   let filas;
   let telefonosDePrueba = cfg.telefonosDePrueba;
   if (cfg.soloPrueba) {
-    // La prueba: UN teléfono; pasa por las mismas exclusiones de Firestore (baja, marcas, otra línea, 24 h) y su fecha vale hoy.
+    // La prueba: UN teléfono; pasa por las exclusiones de Firestore que el servidor SIGUE aplicando (baja, marcas, otra línea) y
+    // levanta las que el servidor levanta para una campaña `prueba: true` (24 h, sin conversación, ventana, teléfono de prueba).
     const hoy = diaDeLaPaz(deps.ahoraMs());
     filas = [...cfg.telefonoPrueba].map((telefono) => ({ telefono, fecha: hoy, etapa: '' }));
     telefonosDePrueba = new Set();
   } else filas = await deps.leerFilasDelMiniCrm();
   const telefonos = [...new Set(filas.map((f) => telefonoValido(String(f.telefono ?? '').trim())).filter(Boolean))];
   const { conversaciones, bajas } = await leerContexto(deps.db, cfg.tenant, telefonos);
-  return armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ahoraMs: deps.ahoraMs(), ventanaDias: config.ventanaDias, numero });
+  return armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ahoraMs: deps.ahoraMs(), ventanaDias: config.ventanaDias, numero, excepcionPrueba: cfg.soloPrueba });
 }
 
 const ROTULOS = {
@@ -303,6 +318,15 @@ async function crear(cfg, deps, log) {
   if (plantilla === null) { log('\n  ✗ La ruta no tiene una plantilla de campaña válida (registrar-plantilla.mjs --uso campana). No se escribió nada.\n'); return 2; }
   const ref = refCampana(db, cfg.tenant, cfg.campana);
   if ((await ref.get()).exists) { log('\n  ✗ Ya existe una campaña con ese id: use otro. No se escribió nada.\n'); return 2; }
+  if (cfg.soloPrueba) {
+    // La excepción de la prueba la hace cumplir el servidor con esta misma lista: si el teléfono no está, la campaña saldría pausada.
+    const lista = await leerListaDePrueba(db, cfg.tenant);
+    const esta = [...cfg.telefonoPrueba].every((t) => lista.includes(t));
+    if (!esta) {
+      log('\n  ✗ El teléfono de prueba no está en `telefonosDePrueba` de config/campanaSaliente (o la lista falta o es ilegible): cárguela con campana-saliente-config.mjs --telefonos-de-prueba antes de la prueba. No se escribió nada.\n');
+      return 2;
+    }
+  }
   const { destinatarios, conteos } = await construirLista(cfg, deps, c.numero, c.config);
   log(`\n  ${cfg.aplicar ? 'CREAR' : 'SECO (solo lecturas)'}${cfg.soloPrueba ? ' · PRUEBA (un solo teléfono)' : ''}\n`);
   imprimirConteos(log, conteos);

@@ -98,6 +98,8 @@ async function foto(m: Montaje) {
   return JSON.stringify(partes);
 }
 const ENV_PRUEBA = { TELEFONOS_DE_PRUEBA: `${TEL(9001)},${TEL(9002)}` };
+/** La configuración con la lista de teléfonos de prueba cargada (la fuente del servidor para la excepción de la prueba). */
+const CONFIG_CON_LISTA = { ...CONFIG, telefonosDePrueba: [TEL(9001), TEL(9002)] };
 
 describe('argumentos (puros): un botón por tanda', () => {
   const m = { tenant: 't-uno', numero: 'x', linea: '1234' };
@@ -323,7 +325,7 @@ describe('crear', () => {
   });
 
   it('--solo-prueba con el filtro: UN destinatario, prueba:true, sin leer el miniCRM, y la salida no trae ni el número ni los 4 dígitos', async () => {
-    const m = await montar({ telefonos: [9001, 9002] });
+    const m = await montar({ telefonos: [9001, 9002], config: CONFIG_CON_LISTA });
     let leyoElCrm = false;
     const argv = base(m, 'crear', ['--campana', 'cmp-prueba', '--solo-prueba', '--telefono-prueba', '9002', '--aplicar']);
     const r = await correr(argv, { env: ENV_PRUEBA, deps: { leerFilasDelMiniCrm: async () => { leyoElCrm = true; return []; } } });
@@ -338,13 +340,54 @@ describe('crear', () => {
     expect(r.texto).not.toContain(TEL(9001));
     expect(r.texto).not.toMatch(/\d{7,}/);
   });
-  it('NEGATIVA: la prueba pasa por las mismas exclusiones de Firestore: con baja o escribió hace menos de 24 h no se crea', async () => {
-    const m = await montar({ telefonos: [9002] });
-    await db.doc(`tenants/${m.tenant}/bajas/wa_${TEL(9002)}`).set({ canal: 'x' });
+  it('NEGATIVA: la prueba sigue pasando por las exclusiones que el servidor mantiene: con baja, marca o conversación de otra línea no se crea', async () => {
+    const m = await montar({ telefonos: [9002], config: CONFIG_CON_LISTA });
     const argv = base(m, 'crear', ['--campana', 'cmp-prueba', '--solo-prueba', '--telefono-prueba', '9002', '--aplicar']);
-    const r = await correr(argv, { env: ENV_PRUEBA });
-    expect(r.codigo).toBe(2);
+    await db.doc(`tenants/${m.tenant}/bajas/wa_${TEL(9002)}`).set({ canal: 'x' });
+    expect((await correr(argv, { env: ENV_PRUEBA })).codigo).toBe(2);
+    await db.doc(`tenants/${m.tenant}/bajas/wa_${TEL(9002)}`).delete();
+    for (const marca of [{ bloqueada: true }, { noContactar: true }, { riesgoEn: Timestamp.now() }, { phoneNumberId: 'otra-linea' }]) {
+      await db.doc(`tenants/${m.tenant}/conversaciones/wa_${TEL(9002)}`).set({ phoneNumberId: m.numero, ultimoEntranteEn: Timestamp.fromMillis(AHORA - 72 * 3_600_000), ...marca });
+      expect((await correr(argv, { env: ENV_PRUEBA })).codigo).toBe(2);
+    }
     expect((await refC(m, 'cmp-prueba').get()).exists).toBe(false);
+  });
+  it('--solo-prueba llega al teléfono de prueba aunque haya escrito hace 1 hora o no tenga conversación, y el seco muestra lo mismo que el servidor', async () => {
+    const m = await montar({ telefonos: [9002], config: CONFIG_CON_LISTA });
+    await db.doc(`tenants/${m.tenant}/conversaciones/wa_${TEL(9002)}`).update({ ultimoEntranteEn: Timestamp.fromMillis(AHORA - 3_600_000) });
+    const argv = base(m, 'crear', ['--campana', 'cmp-prueba', '--solo-prueba', '--telefono-prueba', '9002']);
+    const seco = await correr(argv, { env: ENV_PRUEBA });
+    expect(seco.codigo, seco.texto).toBe(1);
+    expect(seco.texto).toMatch(/DESTINATARIOS\s+1/);
+    expect(seco.texto).toMatch(/escribió en las últimas 24 h\s+0/);
+    const r = await correr([...argv, '--aplicar'], { env: ENV_PRUEBA });
+    expect(r.codigo, r.texto).toBe(0);
+    expect((await refC(m, 'cmp-prueba').get()).get('prueba')).toBe(true);
+    const sin = await montar({ telefonos: [], config: CONFIG_CON_LISTA }); // sin conversación
+    const r2 = await correr(base(sin, 'crear', ['--campana', 'cmp-prueba', '--solo-prueba', '--telefono-prueba', '9002', '--aplicar']), { env: ENV_PRUEBA });
+    expect(r2.codigo, r2.texto).toBe(0);
+    expect(r2.texto).not.toMatch(/\d{7,}/);
+  });
+  it('NEGATIVA: si el teléfono no está en `telefonosDePrueba` de la configuración (lista ausente, vacía u otra) sale con 2, con mensaje claro, sin escribir ni mostrar el número', async () => {
+    for (const config of [CONFIG, { ...CONFIG, telefonosDePrueba: [] }, { ...CONFIG, telefonosDePrueba: [TEL(9001)] }, { ...CONFIG, telefonosDePrueba: [TEL(9002), TEL(9002)] }]) {
+      const m = await montar({ telefonos: [9002], config });
+      const argv = base(m, 'crear', ['--campana', 'cmp-prueba', '--solo-prueba', '--telefono-prueba', '9002', '--aplicar']);
+      const antes = await foto(m);
+      const r = await correr(argv, { env: ENV_PRUEBA });
+      expect(r.codigo, r.texto).toBe(2);
+      expect(r.texto).toContain('no está en `telefonosDePrueba`');
+      expect(r.texto).not.toContain(TEL(9002));
+      expect(r.texto).not.toContain('9002');
+      expect(await foto(m)).toBe(antes);
+    }
+  });
+  it('NEGATIVA: una campaña real (sin --solo-prueba) NO usa la lista: el teléfono de prueba sigue excluido por «teléfono de prueba» y por las 24 h', async () => {
+    const m = await montar({ telefonos: [1, 9002], config: CONFIG_CON_LISTA });
+    await db.doc(`tenants/${m.tenant}/conversaciones/wa_${TEL(9002)}`).update({ ultimoEntranteEn: Timestamp.fromMillis(AHORA - 3_600_000) });
+    const r = await correr(crearArgs(m, 'cmp-real', ['--aplicar']), { env: ENV_PRUEBA, filas: filasDe([1, 9002]) });
+    expect(r.codigo, r.texto).toBe(0);
+    expect((await refC(m, 'cmp-real').collection('destinatarios').get()).docs.map((x) => x.id)).toEqual([`wa_${TEL(1)}`]);
+    expect((await refC(m, 'cmp-real').get()).get('prueba')).toBe(false);
   });
 });
 

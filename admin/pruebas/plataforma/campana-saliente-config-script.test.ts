@@ -158,6 +158,56 @@ describe('el script de Plataforma', () => {
     await mod.ejecutar(cfg({ aplicar: true, respaldo: r }), { db: b.db, ...callar });
     expect(JSON.parse(readFileSync(r, 'utf8'))).toMatchObject({ tenant: 'comercio-x', previo: { presente: false, valor: null } });
   });
+  describe('--telefonos-de-prueba: la lista que usa el servidor para la excepción de la prueba (números ficticios)', () => {
+    const T = ['59170000001', '59170000002'];
+    const con = (valor: string, env: Record<string, string> = ENV_EMU) => mod.analizarArgumentos([...base, '--datos', 'novuchat', '--telefonos-de-prueba', valor], env);
+    it('llega por argumento o, con «entorno», por TELEFONOS_DE_PRUEBA; sin la opción el valor del documento no se toca', () => {
+      expect(con(T.join(',')).cfg).toMatchObject({ deseado: { ...deseado, telefonosDePrueba: T } });
+      expect(con('entorno', { ...ENV_EMU, TELEFONOS_DE_PRUEBA: T.join(',') }).cfg).toMatchObject({ deseado: { ...deseado, telefonosDePrueba: T } });
+      expect(mod.analizarArgumentos([...base, '--datos', 'novuchat'], ENV_EMU).cfg?.['deseado']).not.toHaveProperty('telefonosDePrueba');
+    });
+    it('NIEGA: vacía, «entorno» sin variable, número inválido, repetidos, más de 5; el mensaje nunca trae el número', () => {
+      for (const [valor, env] of [['entorno', ENV_EMU], ['59170000001,+59170000002', ENV_EMU], ['59170000001,59170000001', ENV_EMU], ['12345', ENV_EMU],
+        ['59170000001,59170000002,59170000003,59170000004,59170000005,59170000006', ENV_EMU]] as const) {
+        const r = con(valor, { ...env });
+        expect(r.ok, valor).toBe(false);
+        expect(JSON.stringify(r.problemas)).not.toMatch(/\d{7,}/);
+      }
+    });
+    it('NIEGA: la lista NO puede ir en el archivo versionado de cifras (--datos la rechaza)', () => {
+      expect(mod.validarDatos({ ...DP2, telefonosDePrueba: T }).ok).toBe(false);
+    });
+    it('escribe la lista junto a las cifras, relee, es idempotente y, sin la opción, conserva la lista que ya había', async () => {
+      const b = baseDe(null);
+      const conLista = cfg({ deseado: { ...deseado, telefonosDePrueba: T }, aplicar: true, respaldo: rutaRespaldo() });
+      expect(await mod.ejecutar(conLista, { db: b.db, ...callar })).toBe(0);
+      expect(b.actual()).toEqual({ ...deseado, telefonosDePrueba: T });
+      expect(await mod.ejecutar({ ...conLista, respaldo: rutaRespaldo() }, { db: b.db, ...callar })).toBe(0);
+      expect(b.escrituras).toEqual(['create']);
+      const c = baseDe({ ...deseado, porDia: 100, telefonosDePrueba: T });
+      expect(await mod.ejecutar(cfg({ aplicar: true, respaldo: rutaRespaldo() }), { db: c.db, ...callar })).toBe(0);
+      expect(c.actual()).toEqual({ ...deseado, telefonosDePrueba: T });
+    });
+    it('un cambio SOLO de la lista se detecta (el seco sale 1) y se escribe', async () => {
+      const b = baseDe({ ...deseado, telefonosDePrueba: [T[0]] });
+      const nueva = cfg({ deseado: { ...deseado, telefonosDePrueba: T } });
+      expect(await mod.ejecutar(nueva, { db: b.db, ...callar })).toBe(1);
+      expect(await mod.ejecutar({ ...nueva, aplicar: true, respaldo: rutaRespaldo() }, { db: b.db, ...callar })).toBe(0);
+      expect(b.actual()).toEqual({ ...deseado, telefonosDePrueba: T });
+    });
+    it('la salida muestra SOLO los últimos 4 dígitos y la cantidad; nunca un teléfono completo', async () => {
+      const salida: string[] = [];
+      const b = baseDe({ ...deseado, telefonosDePrueba: ['59170000009'] });
+      const c = cfg({ deseado: { ...deseado, telefonosDePrueba: T }, aplicar: true, respaldo: rutaRespaldo() });
+      expect(await mod.ejecutar(c, { db: b.db, log: (t: string) => salida.push(t) })).toBe(0);
+      const texto = salida.join('\n');
+      expect(texto).toContain('2[…0001 …0002]');
+      expect(texto).toContain('1[…0009]');
+      expect(texto).not.toMatch(/5917000\d{4}/);
+      expect(texto).not.toMatch(/\d{7,}/);
+    });
+  });
+
   it('el script escribe SOLO config/campanaSaliente y no contiene secretos', () => {
     const c = sinComentarios(leer('scripts/plataforma/campana-saliente-config.mjs'));
     expect([...c.matchAll(/\bdb\.doc\(`([^`]+)`\)/g)].map((m) => m[1])).toEqual(['tenants/${cfg.tenant}', 'tenants/${cfg.tenant}/config/campanaSaliente']);

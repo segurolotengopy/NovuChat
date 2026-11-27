@@ -72,6 +72,23 @@ const diaDeLaPaz = (ms) => Math.floor((ms - DESFASE_LA_PAZ_MS) / DIA_MS);
 /** Cuántos días de La Paz pasaron entre la fecha de la fila y ahora (0 = hoy). */
 export const diasDesde = (fechaMs, ahoraMs) => diaDeLaPaz(ahoraMs) - diaDeLaPaz(fechaMs);
 
+/** Cuántos teléfonos admite la lista `telefonosDePrueba` de la configuración (copia de `MAXIMO_TELEFONOS_DE_PRUEBA` del servidor). */
+export const MAXIMO_TELEFONOS_DE_PRUEBA = 5;
+
+/**
+ * La lista `telefonosDePrueba` del documento `config/campanaSaliente`, o `[]` si falta, está vacía o no es exactamente lo esperado
+ * (más de 5, algo que no sea una cadena de 8 a 15 dígitos, o repetidos). Copia de `leerTelefonosDePrueba` de `salidaCampana.ts`
+ * (hay una prueba de paridad): el script y el servidor leen la misma lista de la misma manera.
+ */
+export function leerTelefonosDePrueba(d) {
+  if (typeof d !== 'object' || d === null || Array.isArray(d)) return [];
+  const v = d.telefonosDePrueba;
+  if (!Array.isArray(v) || v.length < 1 || v.length > MAXIMO_TELEFONOS_DE_PRUEBA) return [];
+  if (!v.every((t) => typeof t === 'string' && /^[0-9]{8,15}$/.test(t))) return [];
+  if (new Set(v).size !== v.length) return [];
+  return [...v];
+}
+
 /** Un `Timestamp` de Firestore, una fecha o milisegundos, como milisegundos; `null` si no se puede leer. */
 export function milisegundosDe(v) {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
@@ -93,13 +110,16 @@ const marcada = (v) => v !== undefined && v !== false;
  *   ahoraMs        la hora de la corrida.
  *   ventanaDias    OBLIGATORIO: sale de `config/campanaSaliente`; sin él no hay lista.
  *   numero         el phoneNumberId de la campaña: una conversación de otra línea es `otraLinea`.
+ *   excepcionPrueba  `true` SOLO para `crear --solo-prueba` (campaña `prueba: true`, un teléfono que ya está en la lista de la configuración):
+ *                  levanta `prueba`, `fueraDeVentana`, `sinConversacion` y `reciente`, igual que el servidor al materializar. Siguen
+ *                  rigiendo `invalido`, `cerrada`, `fechaIlegible`, `baja`, `bloqueada`, `noContactar`, `riesgo` y `otraLinea`.
  *
  * Excluye, con su conteo: teléfono inválido; Ganado o Perdido (columna G) en CUALQUIER fila del teléfono; fecha ilegible en alguna fila;
  * teléfono de prueba; baja; conversación bloqueada; `noContactar`; `riesgoEn` con valor; fuera de la ventana (por la fecha MÁXIMA de sus
  * filas); sin conversación (o sin un entrante legible); conversación de otra línea; y entrante en las últimas 24 h. Los duplicados salen
  * como UN envío (`filasRepetidas` cuenta las filas de más).
  */
-export function armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ahoraMs, ventanaDias, numero }) {
+export function armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ahoraMs, ventanaDias, numero, excepcionPrueba = false }) {
   if (!Number.isInteger(ventanaDias) || ventanaDias < 1) throw new RangeError('ventanaDias es obligatorio (entero de 1 en adelante)');
   const conteos = Object.fromEntries(MOTIVOS.map((m) => [m, 0]));
   conteos.filas = Array.isArray(filas) ? filas.length : 0;
@@ -129,15 +149,15 @@ export function armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ah
     if (t.valido === null) motivo = 'invalido';
     else if (t.cerrada) motivo = 'cerrada';
     else if (t.ilegible || t.max === null || diasDesde(t.max, ahoraMs) < 0) motivo = 'fechaIlegible';
-    else if (telefonosDePrueba?.has?.(t.valido)) motivo = 'prueba';
+    else if (!excepcionPrueba && telefonosDePrueba?.has?.(t.valido)) motivo = 'prueba';
     else if (bajas?.has?.(clave)) motivo = 'baja';
     else if (marcada(conv?.bloqueada)) motivo = 'bloqueada';
     else if (marcada(conv?.noContactar)) motivo = 'noContactar';
     else if (marcada(conv?.riesgoEn)) motivo = 'riesgo';
-    else if (diasDesde(t.max, ahoraMs) > ventanaDias) motivo = 'fueraDeVentana';
-    else if (conv === null || milisegundosDe(conv.ultimoEntranteEn) === null) motivo = 'sinConversacion';
-    else if (conv.phoneNumberId !== undefined && conv.phoneNumberId !== numero) motivo = 'otraLinea';
-    else if (ahoraMs - milisegundosDe(conv.ultimoEntranteEn) < HORAS_DE_VENTANA * HORA_MS) motivo = 'reciente';
+    else if (!excepcionPrueba && diasDesde(t.max, ahoraMs) > ventanaDias) motivo = 'fueraDeVentana';
+    else if (!excepcionPrueba && (conv === null || milisegundosDe(conv.ultimoEntranteEn) === null)) motivo = 'sinConversacion';
+    else if (conv?.phoneNumberId !== undefined && conv.phoneNumberId !== numero) motivo = 'otraLinea';
+    else if (!excepcionPrueba && ahoraMs - milisegundosDe(conv.ultimoEntranteEn) < HORAS_DE_VENTANA * HORA_MS) motivo = 'reciente';
     if (motivo !== null) { conteos[motivo] += 1; continue; }
     destinatarios.push({ telefono: t.valido, fechaMaxMs: t.max });
   }

@@ -10,7 +10,18 @@
  * Los valores viven versionados en `scripts/datos/campana-saliente/<nombre>.json` (cifras; sin identificadores).
  *
  *   node scripts/plataforma/campana-saliente-config.mjs --proyecto <id|prod> --tenant <id> --datos <nombre> \
- *        [--aplicar] [--respaldo <ruta>] [--confirmo-produccion <tenant>]
+ *        [--telefonos-de-prueba <lista|entorno>] [--aplicar] [--respaldo <ruta>] [--confirmo-produccion <tenant>]
+ *
+ * LA LISTA DE TELÉFONOS DE PRUEBA (`telefonosDePrueba`, campo opcional del mismo documento). Es la única fuente que usa el SERVIDOR para
+ * la excepción de `crear --solo-prueba` de `campana-saliente.mjs`: una campaña `prueba: true` con UN destinatario cuyo número esté aquí
+ * puede llegar aunque haya escrito en las últimas 24 h o no tenga conversación. Hasta 5 números de Bolivia, en el mismo formato en que el
+ * servidor identifica al destinatario (591…, sin `+`). Va por `--telefonos-de-prueba 591…,591…` o, con el valor literal `entorno`, de
+ * la variable `TELEFONOS_DE_PRUEBA` (la misma de `campana-saliente.mjs`): así no queda en el historial del terminal. NUNCA va en un archivo
+ * versionado (`--datos` la rechaza) y NUNCA se imprime completa: la salida muestra solo los últimos 4 dígitos de cada número. Sin la
+ * opción, el valor que tenga el documento no se toca. Para dejarla vacía se borra el campo a mano o se restaura el respaldo; vacía o
+ * ausente, ninguna prueba puede salir. ORDEN: este script va ANTES de `crear --solo-prueba`. El documento lo pueden LEER los
+ * miembros del comercio (como todo `config/{documento}`): la lista no es un secreto de acceso, pero tampoco se publica; ninguno la escribe.
+ * El respaldo (fuera del repositorio, 0600) sí guarda el valor previo completo, para poder restaurarlo.
  *
  * QUÉ HACE (mismo patrón que `respuesta-libre.mjs`).
  *   · SECO (sin `--aplicar`): lee el comercio y el documento, imprime qué cambiaría y no escribe.
@@ -50,13 +61,34 @@ try {
 export { entornoDeCredenciales };
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const ID_DATOS = /^[a-z0-9][a-z0-9-]{1,40}$/;
-const CON_VALOR = ['proyecto', 'tenant', 'datos', 'respaldo', 'confirmo-produccion'];
+const CON_VALOR = ['proyecto', 'tenant', 'datos', 'respaldo', 'confirmo-produccion', 'telefonos-de-prueba'];
 const BANDERAS = ['aplicar'];
 export const CAMPOS = ['porTanda', 'porDia', 'porReclamo', 'ventanaDias', 'pausaErroresPct', 'pausaMinimoEnviados', 'pausaNoPct'];
+/** Los campos que este script puede escribir: las cifras y, si se pide, la lista de teléfonos de prueba. */
+const CAMPOS_ESCRIBIBLES = [...CAMPOS, 'telefonosDePrueba'];
+const TELEFONO_DE_PRUEBA = /^591[67][0-9]{7}$/;
+const MAXIMO_TELEFONOS = 5;
 const DIRECTORIO_DATOS = join(dirname(fileURLToPath(import.meta.url)), '..', 'datos', 'campana-saliente');
 
 export const USO = '  node scripts/plataforma/campana-saliente-config.mjs --proyecto <id|prod> --tenant <id> --datos <nombre> '
-  + '[--aplicar] [--respaldo <ruta>] [--confirmo-produccion <tenant>]';
+  + '[--telefonos-de-prueba <591…,591…|entorno>] [--aplicar] [--respaldo <ruta>] [--confirmo-produccion <tenant>]';
+
+/** Los 4 últimos dígitos de un teléfono: lo único que esta salida muestra de él. */
+const cola = (t) => `…${String(t).slice(-4)}`;
+
+/**
+ * La lista de `--telefonos-de-prueba` como arreglo, o `{ motivo }` (sin repetir ningún número). El valor literal `entorno` lee
+ * `TELEFONOS_DE_PRUEBA` del entorno.
+ */
+export function leerTelefonosDeArgumento(valor, env = process.env) {
+  const crudo = valor === 'entorno' ? env.TELEFONOS_DE_PRUEBA : valor;
+  if (typeof crudo !== 'string' || crudo.trim() === '') return { motivo: valor === 'entorno' ? 'TELEFONOS_DE_PRUEBA está vacía o no existe en el entorno' : '--telefonos-de-prueba está vacío' };
+  const lista = crudo.split(',').map((x) => x.trim());
+  if (!lista.every((t) => TELEFONO_DE_PRUEBA.test(t))) return { motivo: 'la lista de teléfonos de prueba tiene un número inválido (591 + 6 o 7 + 7 dígitos, sin + ni espacios, separados por coma)' };
+  if (new Set(lista).size !== lista.length) return { motivo: 'la lista de teléfonos de prueba tiene números repetidos' };
+  if (lista.length > MAXIMO_TELEFONOS) return { motivo: `la lista de teléfonos de prueba admite hasta ${MAXIMO_TELEFONOS} números` };
+  return { lista };
+}
 
 /** Lee `datos/campana-saliente/<nombre>.json` y exige que el servidor lo lea sin cambios. Devuelve `{ok, valor|motivo}`. */
 export function cargarDatos(nombre, directorio = DIRECTORIO_DATOS) {
@@ -139,6 +171,11 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     if (c.ok) deseado = c.valor; else problemas.push(c.motivo);
   }
 
+  if (deseado !== null && valores['telefonos-de-prueba'] !== undefined) {
+    const t = leerTelefonosDeArgumento(valores['telefonos-de-prueba'], env);
+    if (t.lista) deseado = { ...deseado, telefonosDePrueba: t.lista }; else problemas.push(t.motivo);
+  }
+
   if (aplicar && respaldo === undefined) problemas.push('--aplicar exige --respaldo <ruta> (por omisión no hay respaldo)');
   let respaldoReal = null;
   if (respaldo !== undefined) {
@@ -155,13 +192,19 @@ const esPrecondicion = (e) => e?.code === 9 || e?.code === 'failed-precondition'
 const extraer = (snap) => {
   if (!snap.exists) return null;
   const o = {};
-  for (const k of CAMPOS) { const v = snap.get(k); if (v !== undefined) o[k] = v; }
+  for (const k of CAMPOS_ESCRIBIBLES) { const v = snap.get(k); if (v !== undefined) o[k] = v; }
   return o;
 };
-const igualA = (actual, deseado) => actual !== null && CAMPOS.every((k) => actual[k] === deseado[k]);
+/** Solo se compara lo que se quiere escribir: la lista, si no se pidió, no cuenta. */
+const igualA = (actual, deseado) => actual !== null
+  && CAMPOS.every((k) => actual[k] === deseado[k])
+  && (deseado.telefonosDePrueba === undefined || JSON.stringify(actual.telefonosDePrueba) === JSON.stringify(deseado.telefonosDePrueba));
 
-/** Para imprimir: son cifras, no secretos. */
-export const resumen = (v) => (v === null ? 'AUSENTE' : CAMPOS.filter((k) => v[k] !== undefined).map((k) => `${k}=${v[k]}`).join(', '));
+/** Para imprimir: las cifras, y de la lista solo la cantidad y los últimos 4 dígitos de cada número. */
+export const resumen = (v) => (v === null ? 'AUSENTE' : [
+  ...CAMPOS.filter((k) => v[k] !== undefined).map((k) => `${k}=${v[k]}`),
+  ...(v.telefonosDePrueba === undefined ? [] : [`telefonosDePrueba=${Array.isArray(v.telefonosDePrueba) ? `${v.telefonosDePrueba.length}[${v.telefonosDePrueba.map(cola).join(' ')}]` : 'ILEGIBLE'}`]),
+].join(', '));
 
 /** Devuelve el código de salida. `deps`: `{ db, log }`. Importable para probar con una base en memoria. */
 export async function ejecutar(cfg, deps) {
@@ -173,7 +216,7 @@ export async function ejecutar(cfg, deps) {
 
   const [fsnap] = await db.getAll(ficha, { fieldMask: ['estado'] });
   if (!fsnap.exists) { log(`\n  ✗ ${cfg.tenant}: no existe el comercio (${cfg.entorno})\n`); return 1; }
-  const [snap] = await db.getAll(ref, { fieldMask: CAMPOS });
+  const [snap] = await db.getAll(ref, { fieldMask: CAMPOS_ESCRIBIBLES });
   const hoy = extraer(snap);
 
   log(`\n  ${cfg.aplicar ? 'APLICAR' : 'SECO (solo lecturas)'} · ${rotulo}\n`);
@@ -204,7 +247,7 @@ export async function ejecutar(cfg, deps) {
     }
     throw e;
   }
-  const [despues] = await db.getAll(ref, { fieldMask: CAMPOS });
+  const [despues] = await db.getAll(ref, { fieldMask: CAMPOS_ESCRIBIBLES });
   if (!igualA(extraer(despues), cfg.deseado)) { log('\n  ✗ La relectura no coincide con lo escrito. Revise con el seco; el respaldo guarda el valor previo.\n'); return 3; }
   log(`\n  ✓ Escrito y releído: ${resumen(cfg.deseado)}.\n`);
   return 0;
