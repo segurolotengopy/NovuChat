@@ -72,7 +72,7 @@ const CABECERAS = ['ninguna', 'imagen', 'video', 'documento', 'texto', 'ubicacio
 const BANDERAS = ['aplicar'];
 
 export const USO = '  node scripts/plataforma/registrar-plantilla.mjs --proyecto <id> (--numero <phoneNumberId> | --tenant <id> --linea <4 dígitos>) --uso retomar|campana '
-  + '--nombre <nombre> --idioma <es> --categoria UTILITY --estado APPROVED [--variables 1] [--cabecera ninguna --botones 2 (solo campana; --variables 0)] [--aplicar --respaldo <ruta> [--confirmo-produccion <phoneNumberId>]]';
+  + '--nombre <nombre> --idioma <es> --categoria UTILITY --estado APPROVED [--variables 1] [--cabecera ninguna --botones 2 (solo campana; --variables 0)] [--aplicar --respaldo <ruta> [--confirmo-produccion <phoneNumberId>]]\n  (con --tenant y --linea, --confirmo-produccion es la línea de 4 dígitos; en campana-saliente.mjs es el id del comercio, igual a --tenant)';
 
 const cola = (n) => `…${String(n).slice(-4)}`;
 

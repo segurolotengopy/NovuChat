@@ -1,7 +1,7 @@
 /**
  * CAMPAÑA SALIENTE DEL CHAT — el envío (módulo `campanas` v2, PR-C, 27/11/2026).
  *
- *   node scripts/modulos/campanas/campana-saliente.mjs <subcomando> --proyecto <id> --tenant <id> --linea <4 dígitos> [opciones]
+ *   node scripts/modulos/campanas/campana-saliente.mjs <subcomando> --proyecto <id|prod> --tenant <id> --linea <4 dígitos> [opciones]
  *
  *   simular          --mapa-crm <ruta> --flujo-versionado <ruta>      SOLO conteos (nunca teléfonos); no escribe.
  *   crear            --campana <id> (--mapa-crm … --flujo-versionado … | --solo-prueba --telefono-prueba <4 dígitos>) [--aplicar …]
@@ -19,7 +19,10 @@
  * LAS CIFRAS (porTanda, porDia, porReclamo, ventanaDias, pausaErroresPct, pausaMinimoEnviados, pausaNoPct) se leen de
  * `tenants/{t}/config/campanaSaliente` con `leerConfigCampana` (la misma validación del servidor); aquí no hay ninguna.
  *
- * SIN `--aplicar` NO SE ESCRIBE NADA. Contra producción, `--aplicar` exige `--confirmo-produccion <tenant>`. Nada se ejecuta contra
+ * `--proyecto prod` toma el id de las credenciales de gcloud (como `respuesta-libre.mjs`) y nunca lo imprime.
+ *
+ * SIN `--aplicar` NO SE ESCRIBE NADA. Contra producción, `--aplicar` exige `--confirmo-produccion <tenant>` (el id del COMERCIO, igual a
+ * `--tenant`; en `registrar-plantilla.mjs` esa misma opción es OTRA cosa: la línea de 4 dígitos o el `phoneNumberId`). Nada se ejecuta contra
  * n8n sin que el subcomando lo pida (solo `simular` y `crear` sin `--solo-prueba` leen el miniCRM, por la API de n8n).
  * La salida nunca trae un teléfono, un id de hoja, una ruta de webhook ni un id de flujo.
  *
@@ -36,6 +39,7 @@ import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { comprobarProyecto, ID_TENANT, esTenantExcluidoDeBandera, mensajeDeInterrupcion } from '../../plataforma/aplicar-consola-conversaciones.mjs';
 import { plantillaCampanaValida } from '../../plataforma/registrar-plantilla.mjs';
+import { entornoDeCredenciales, proyectoDesdeCredenciales } from '../../plataforma/respuesta-libre.mjs';
 import { crearLectorDeMiniCrmN8n } from './miniCrm-n8n.mjs';
 import {
   armarLista, claveDeContacto, partirEnLotes, partirEnTandas, superaNo, telefonoValido,
@@ -56,8 +60,8 @@ export const TANDA_ID = /^[a-z0-9-]{1,20}$/;
 export const PLANTILLA_UTILIDAD_USD = 0.0113;
 const TAMANO_DE_LOTE = 400;
 
-export const USO = '  node scripts/modulos/campanas/campana-saliente.mjs simular|crear|autorizar-tanda|cerrar-tanda|pausar|estado --proyecto <id> --tenant <id> --linea <4 dígitos> '
-  + '[--campana <id>] [--tanda <id> --cupo <n> --calidad VERDE] [--mapa-crm <ruta> --flujo-versionado <ruta>] [--solo-prueba --telefono-prueba <4 dígitos>] [--aplicar --confirmo-produccion <tenant>]';
+export const USO = '  node scripts/modulos/campanas/campana-saliente.mjs simular|crear|autorizar-tanda|cerrar-tanda|pausar|estado --proyecto <id|prod> --tenant <id> --linea <4 dígitos> '
+  + '[--campana <id>] [--tanda <id> --cupo <n> --calidad VERDE] [--mapa-crm <ruta> --flujo-versionado <ruta>] [--solo-prueba --telefono-prueba <4 dígitos>] [--aplicar --confirmo-produccion <tenant>]\n  (--confirmo-produccion es el id del COMERCIO, igual a --tenant; en registrar-plantilla.mjs es la línea de 4 dígitos o el phoneNumberId)';
 
 // ===========================================================================
 // ARGUMENTOS (puro)
@@ -103,8 +107,21 @@ export function analizarArgumentos(argv, env = process.env) {
   const confirmo = valores['confirmo-produccion'];
 
   if (proyecto === undefined) problemas.push('falta --proyecto');
-  const proy = proyecto === undefined ? { ok: false } : comprobarProyecto(proyecto, env);
-  if (proyecto !== undefined && !proy.ok) problemas.push(proy.motivo);
+  let proy = { ok: false };
+  let dirCredenciales = null;
+  let proyectoReal = proyecto;
+  if (proyecto === 'prod') {
+    const c = proyectoDesdeCredenciales(env);
+    if (!c.ok) problemas.push(c.motivo);
+    else {
+      proyectoReal = c.id; dirCredenciales = c.dir;
+      proy = comprobarProyecto(c.id, c.env);
+      if (!proy.ok) problemas.push(proy.motivo);
+    }
+  } else if (proyecto !== undefined) {
+    proy = comprobarProyecto(proyecto, env);
+    if (!proy.ok) problemas.push(proy.motivo);
+  }
   if (tenant === undefined) problemas.push('falta --tenant');
   else if (!ID_TENANT.test(tenant)) problemas.push('--tenant inválido (UN comercio por corrida)');
   else if (esTenantExcluidoDeBandera(tenant, env)) problemas.push('este comercio está EXCLUIDO (NOVUCHAT_TENANTS_EXCLUIDOS)');
@@ -165,7 +182,7 @@ export function analizarArgumentos(argv, env = process.env) {
   return {
     ok: true,
     cfg: {
-      sub, proyecto, entorno: proy.entorno, tenant, linea, campana: campana ?? null, tanda: tanda ?? null, cupo: cupo === undefined ? null : Number(cupo),
+      sub, proyecto: proyectoReal, dirCredenciales, entorno: proy.entorno, tenant, linea, campana: campana ?? null, tanda: tanda ?? null, cupo: cupo === undefined ? null : Number(cupo),
       calidad: calidad ?? null, mapaCrm, flujoVersionado, soloPrueba, telefonoPrueba, telefonosDePrueba, aplicar,
     },
   };
@@ -518,6 +535,7 @@ async function principal() {
     console.error(falta ? '\n  ✗ No se encuentra functions/lib/core/conversacion/salidaCampana.js. Compile primero: pnpm functions:build\n' : `\n  ✗ No se pudo cargar salidaCampana.js: ${e?.code ?? e?.name ?? 'error'}\n`);
     process.exit(2);
   }
+  Object.assign(process.env, entornoDeCredenciales(cfg));
   initializeApp({ projectId: cfg.proyecto });
   const db = getFirestore();
   let leerFilasDelMiniCrm;

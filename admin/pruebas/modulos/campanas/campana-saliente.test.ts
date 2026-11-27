@@ -6,6 +6,9 @@
  * los argumentos (un botón por tanda), la lista, lo que escribe y lo que se niega a escribir. Teléfonos y ids ficticios.
  */
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8281'}`;
@@ -19,6 +22,7 @@ const db = getFirestore(app);
 
 type Cfg = Record<string, unknown>;
 const S = await import('../../../scripts/modulos/campanas/campana-saliente.mjs') as unknown as {
+  USO: string;
   analizarArgumentos: (argv: string[], env?: Record<string, string>) => { ok: boolean; codigo?: number; problemas?: string[]; cfg?: Cfg };
   ejecutar: (cfg: Cfg, deps: Record<string, unknown>) => Promise<number>;
   motivoDeRechazoDeTanda: (p: Record<string, unknown>) => { codigo: number; motivo: string } | null;
@@ -126,6 +130,25 @@ describe('argumentos (puros): un botón por tanda', () => {
     expect(p(['--confirmo-produccion', 'otro']).ok).toBe(false);
     expect(p(['--confirmo-produccion', 't-uno']).ok).toBe(true);
     expect(p([]).problemas?.join(' ')).toContain('--confirmo-produccion');
+  });
+  it('--proyecto prod toma el id de las credenciales de gcloud (como respuesta-libre.mjs) (con las salvaguardas de respuesta-libre.mjs)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gcloud-ficticio-'));
+    writeFileSync(join(dir, 'application_default_credentials.json'), JSON.stringify({ quota_project_id: 'proyecto-ficticio-prod' }));
+    const env = { ...ENV_REAL, CLOUDSDK_CONFIG: dir };
+    const argv = (extra: string[]) => ['pausar', '--proyecto', 'prod', '--tenant', 't-uno', '--linea', '1234', '--campana', 'cmp-uno', ...extra];
+    const r = S.analizarArgumentos(argv(['--aplicar', '--confirmo-produccion', 't-uno']), env);
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    expect(r.cfg).toMatchObject({ proyecto: 'proyecto-ficticio-prod', entorno: 'produccion', dirCredenciales: dir });
+    // NEGATIVAS: sin la confirmación no se aplica; sin credenciales, o con GOOGLE_APPLICATION_CREDENTIALS puesto, no se resuelve.
+    expect(S.analizarArgumentos(argv(['--aplicar']), env).ok).toBe(false);
+    expect(S.analizarArgumentos(argv([]), { ...ENV_REAL, CLOUDSDK_CONFIG: join(dir, 'no-existe') }).ok).toBe(false);
+    expect(S.analizarArgumentos(argv([]), { ...env, GOOGLE_APPLICATION_CREDENTIALS: '/x.json' }).ok).toBe(false);
+    expect(S.analizarArgumentos(argv([]), { ...ENV_REAL, GCP_PROJECT_ID_PROD: 'otro-proyecto-prod', CLOUDSDK_CONFIG: dir }).ok).toBe(false);
+  });
+  it('la ayuda aclara que --confirmo-produccion es el COMERCIO aquí y otra cosa en registrar-plantilla.mjs', async () => {
+    expect(S.USO).toContain('--confirmo-produccion es el id del COMERCIO');
+    const R = await import('../../../scripts/plataforma/registrar-plantilla.mjs') as unknown as { USO: string };
+    expect(R.USO).toContain('es la línea de 4 dígitos');
   });
   it('NEGATIVA: --mapa-crm solo bajo scripts/datos y --flujo-versionado solo bajo Flujos/clientes (y .json)', () => {
     expect(problemas(crearArgs(m, 'cmp-uno').map((x) => (x === MAPA ? '/etc/passwd' : x)))).toContain('--mapa-crm');
