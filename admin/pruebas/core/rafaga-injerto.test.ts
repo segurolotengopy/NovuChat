@@ -596,14 +596,17 @@ describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES 
   });
 
   it.each([['demo-a'], ['clientes/demo-b/demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF; arma con `campos: {texto: \'userInput\'}` (y `consumidor: null`: sin cableado en #1117)', (ruta) => {
-    const f = injertarRafaga(real(ruta === 'demo-a' ? demoA : ruta), { ancla: ANCLA_DEMO, campos: USER_INPUT, consumidor: null });
+    // Se quita la pieza antes (si el flujo ya la adoptó, como el Demo A): la prueba es del armado desde cero.
+    const f = injertarRafaga(quitarRafaga(real(ruta === 'demo-a' ? demoA : ruta)), { ancla: ANCLA_DEMO, campos: USER_INPUT, consumidor: null });
     expect(hallazgosDeLaRafaga(f, { consumidor: null })).toEqual([]);
-    expect(hallazgosDeLaRafaga(f).join('|')).toMatch(/ningún nodo .* lee `textoDelTurno`/); // sin consumidor declarado, la guardia lo dice
+    // Sin consumidor declarado, la guardia lo dice; el Demo A ya tiene lectores de `textoDelTurno` (prompt del agente y «Retomar respuesta»), el Demo B todavía no.
+    if (ruta === 'demo-a') expect(hallazgosDeLaRafaga(f)).toEqual([]);
+    else expect(hallazgosDeLaRafaga(f).join('|')).toMatch(/ningún nodo .* lee `textoDelTurno`/);
   });
 
   it.each([['demo-a'], ['clientes/demo-b/demo-b-venta-cobro.json']])('%s: con `campos: {texto: \'texto\'}` NO arma (su normalizador emite `userInput`, no `texto`)', (ruta) => {
-    expect(() => injertarRafaga(real(ruta === 'demo-a' ? demoA : ruta), { ancla: ANCLA_DEMO, campos: TEXTO, consumidor: null })).toThrow(/«Normalizar entrada» no emite texto \(«texto»\)/);
-    expect(() => injertarRafaga(real(ruta === 'demo-a' ? demoA : ruta), { ancla: ANCLA_DEMO, consumidor: null })).toThrow(/falta `campos.texto`/);
+    expect(() => injertarRafaga(quitarRafaga(real(ruta === 'demo-a' ? demoA : ruta)), { ancla: ANCLA_DEMO, campos: TEXTO, consumidor: null })).toThrow(/«Normalizar entrada» no emite texto \(«texto»\)/);
+    expect(() => injertarRafaga(quitarRafaga(real(ruta === 'demo-a' ? demoA : ruta)), { ancla: ANCLA_DEMO, consumidor: null })).toThrow(/falta `campos.texto`/);
   });
 
   it('el `phoneNumberId` de los normalizadores de los demos (un spread de la entrada) solo se acepta por la huella verificada: si el código cambia, deja de armar', () => {
