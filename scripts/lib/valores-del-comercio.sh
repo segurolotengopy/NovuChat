@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Funciones comunes de los envoltorios `fijar-carrito-comercio.sh` y `fijar-numero-publico-comercio.sh` (se hace `source`, no se ejecuta).
 #
 # La regla (Andres, 26/11/2026): los VALORES REALES —el id del proyecto, la ruta secreta del carrito, el host de n8n, el número público
