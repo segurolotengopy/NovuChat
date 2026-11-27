@@ -1229,13 +1229,31 @@ describe('documentos de enlaces solo del servidor y de lectura admin (03/11/2026
 
 describe('documentos de config del core que solo escribe el servidor (12/11/2026, respuestaLibre)', () => {
   const nombres = Object.keys(DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR);
-  const PRUEBA_REGLAS = leer('admin/pruebas/core/respuesta-libre-reglas.test.ts');
+  /** La suite de reglas que prueba, negando, cada documento (una por documento). */
+  const PRUEBA_DE: Record<string, string> = {
+    respuestaLibre: 'admin/pruebas/core/respuesta-libre-reglas.test.ts',
+    campanaSaliente: 'admin/pruebas/reglas.test.ts',
+  };
 
-  it('declara respuestaLibre con sus seis campos', () => {
-    expect(nombres).toEqual(['respuestaLibre']);
+  it('declara respuestaLibre con sus seis campos y campanaSaliente (PR-C) con sus siete cifras', () => {
+    expect(nombres).toEqual(['respuestaLibre', 'campanaSaliente']);
     expect([...DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR.respuestaLibre.camposDelServidor]).toEqual(
       ['activo', 'acuse', 'textoSeguimiento', 'textoRechazo', 'textoHumor', 'textoQueja'],
     );
+    expect([...DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR.campanaSaliente.camposDelServidor]).toEqual(
+      ['porTanda', 'porDia', 'porReclamo', 'ventanaDias', 'pausaErroresPct', 'pausaMinimoEnviados', 'pausaNoPct'],
+    );
+    expect(Object.keys(PRUEBA_DE)).toEqual(nombres);
+  });
+  it('campanaSaliente: los campos que declara son exactamente los que lee `leerConfigCampana` (el registro y el servidor no se desfasan)', async () => {
+    const { leerConfigCampana } = await import('../../functions/src/core/conversacion/salidaCampana.ts');
+    const declarados = [...DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR.campanaSaliente.camposDelServidor];
+    const cifras = Object.fromEntries(declarados.map((k) => [k, 5]));
+    expect(leerConfigCampana(cifras)).not.toBeNull();
+    for (const k of declarados) expect(leerConfigCampana({ ...cifras, [k]: undefined }), `sin ${k}`).toBeNull();
+  });
+  it('campanasSalientes y su subcolección destinatarios están entre las colecciones cerradas del core (match explícito `if false` y prueba negativa; ver arriba)', () => {
+    expect(COLECCIONES_CERRADAS_DEL_CORE.tenant).toEqual(expect.arrayContaining(['campanasSalientes', 'campanasSalientes/destinatarios']));
   });
   it('NEGADO: ninguna regla de las reglas (escritura ni lectura aparte) nombra el documento', () => {
     for (const n of nombres) expect(REGLAS, `${n}: alguna regla lo nombra`).not.toContain(n);
@@ -1252,8 +1270,9 @@ describe('documentos de config del core que solo escribe el servidor (12/11/2026
   });
   it('cada uno tiene su prueba negativa en el emulador («sin módulo no puede»: nadie crea, actualiza ni borra)', () => {
     for (const n of nombres) {
-      expect(PRUEBA_REGLAS, `${n}: sin prueba de reglas`).toContain(`config/${n}`);
-      for (const verbo of ['setDoc', 'updateDoc', 'deleteDoc']) expect(PRUEBA_REGLAS, verbo).toContain(verbo);
+      const prueba = leer(PRUEBA_DE[n] as string);
+      expect(prueba, `${n}: sin prueba de reglas`).toContain(`config/${n}`);
+      for (const verbo of ['setDoc', 'updateDoc', 'deleteDoc']) expect(prueba, `${n}: ${verbo}`).toContain(verbo);
     }
   });
 });

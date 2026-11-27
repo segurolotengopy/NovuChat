@@ -891,12 +891,37 @@ describe('campaña saliente (PR-A): `autor: campana` solo con plantilla, 0 pará
   const libres = (r: Respuesta) => entregados(r) as unknown as Array<Record<string, unknown>>;
   const cerrarVentana = () => db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ ultimoEntranteEn: Timestamp.fromMillis(Date.now() - 30 * 3_600_000) });
 
-  it('se entrega con sus botones y 0 parámetros, con la ventana cerrada, y pasa a `enviando`', async () => {
-    await cerrarVentana();
-    await sembrarCampana(CLAVE(1));
+  // PR-C: la campaña ya NO pasa por un `pendiente` en la cola de las personas. El script escribe DESTINATARIOS y autoriza una tanda; el
+  // reclamo materializa el mensaje directamente en `enviando` (`salidaCampana.ts`). Estas pruebas (baja, marcas, botones, conteo) corren
+  // ahora sobre esa materialización; los topes y la cola propia están en `salida-campana.test.ts`.
+  const CAMPANA = 'camp-prueba';
+  const CONFIG = { porTanda: 45, porDia: 200, porReclamo: 3, ventanaDias: 60, pausaErroresPct: 10, pausaMinimoEnviados: 10, pausaNoPct: 25 };
+  const CLAVE_CAMPANA = (conv: string) => `camp_${CAMPANA}_${conv.slice(3)}`;
+  /** Ruta con puntero y plantilla, cifras, campaña `enCurso` y los destinatarios, con la ventana de las conversaciones CERRADA (30 h). */
+  const prepararCampana = async (destinatarios: string[] = [CONV1]) => {
+    await db.doc(`rutasWhatsApp/${NUM_A}`).update({
+      campanaSalienteEnCurso: CAMPANA,
+      plantillas: { campana: { nombre: 'campana_prueba', idioma: 'es', categoria: 'UTILITY', estado: 'APPROVED', variables: 0, cabecera: 'ninguna', botones: 2 } },
+    });
+    await db.doc(`tenants/${A}/config/campanaSaliente`).set(CONFIG);
+    await db.doc(`tenants/${A}/campanasSalientes/${CAMPANA}`).set({
+      estado: 'enCurso', phoneNumberId: NUM_A, plantilla: { nombre: 'campana_prueba', idioma: 'es', categoria: 'UTILITY' }, prueba: false, creadaEn: Timestamp.now(),
+      total: destinatarios.length, conteos: {}, tanda: { id: 't1', cupo: 45, usados: 0, calidad: 'VERDE', autorizadaEn: Timestamp.now() }, tandasHechas: [],
+      materializados: 0, aceptados: 0, rechazados: 0, inciertos: 0,
+    });
+    for (const d of destinatarios) {
+      await db.doc(`tenants/${A}/conversaciones/${d}`).update({ ultimoEntranteEn: Timestamp.fromMillis(Date.now() - 30 * 3_600_000) });
+      await db.doc(`tenants/${A}/campanasSalientes/${CAMPANA}/destinatarios/${d}`).set({ estado: 'pendiente' });
+    }
+  };
+  const destino = async (conv: string) => (await db.doc(`tenants/${A}/campanasSalientes/${CAMPANA}/destinatarios/${conv}`).get()).data() ?? {};
+
+  it('se materializa con sus botones y 0 parámetros, con la ventana cerrada, directamente en `enviando`', async () => {
+    await prepararCampana();
     const [m] = libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS));
-    expect(m).toMatchObject({ tipo: 'plantilla', texto: '', plantilla: { nombre: 'campana_prueba', idioma: 'es', parametros: [], botones: BOTONES } });
-    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('enviando');
+    expect(m).toMatchObject({ mensajeId: CLAVE_CAMPANA(CONV1), tipo: 'plantilla', texto: '', plantilla: { nombre: 'campana_prueba', idioma: 'es', parametros: [], botones: BOTONES } });
+    expect(await msg(CLAVE_CAMPANA(CONV1))).toMatchObject({ estadoEnvio: 'enviando', autor: 'campana', contado: false });
+    expect(await destino(CONV1)).toMatchObject({ estado: 'enviado', mensajeId: CLAVE_CAMPANA(CONV1) });
   });
 
   it('NIEGA: campaña con tipo TEXTO no se entrega (autor campana solo con plantilla)', async () => {
@@ -928,30 +953,41 @@ describe('campaña saliente (PR-A): `autor: campana` solo con plantilla, 0 pará
     ['botones vacíos', { ...PLANTILLA, botones: [] }],
     ['campo extra en un botón', { ...PLANTILLA, botones: [{ indice: 0, payload: 'cs:si:camp-prueba', url: 'x' }] }],
     ['11 parámetros', { ...PLANTILLA, parametros: Array(11).fill('x') }],
-  ])('NIEGA: campaña con %s no sale', async (_n, plantilla) => {
+  ])('NIEGA (PR-C): un `pendiente` de campaña a mano con %s no sale: se cancela `fueraDeCola` (la campaña solo sale por su cola)', async (_n, plantilla) => {
     await sembrarCampana(CLAVE(1), { plantilla });
     expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
-    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'fueraDeCola', reintentable: false, contado: false });
   });
 
-  it.each([
-    ['una baja del contacto', () => db.doc(`tenants/${A}/bajas/${CONV1}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: Timestamp.now() })],
-    ['`noContactar`', () => db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ noContactar: true })],
-    ['`bloqueada`', () => db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ bloqueada: true })],
-  ])('NIEGA: una campaña a un contacto con %s no se entrega, se cancela (caducado) y no hay timbre', async (_n, preparar) => {
+  it('NIEGA (PR-C): un `pendiente` de campaña válido y reciente, a mano, tampoco sale (antes sí salía): `fueraDeCola`, sin timbre ni conteo', async () => {
     const timbre = vi.fn(async () => true);
     vi.stubGlobal('fetch', timbre);
-    await preparar();
     await sembrarCampana(CLAVE(1));
     expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
-    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: false, contado: false });
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'fueraDeCola' });
     expect(timbre).not.toHaveBeenCalled();
     expect(await metricas()).toEqual({});
   });
 
-  it('control: la misma campaña a un contacto sin baja ni marcas SÍ se entrega; y otra baja (otro teléfono) no la frena', async () => {
+  it.each([
+    ['una baja del contacto (`bajas/wa_591…`)', 'baja', () => db.doc(`tenants/${A}/bajas/${CONV1}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: Timestamp.now() })],
+    ['`noContactar`', 'marcas', () => db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ noContactar: true })],
+    ['`bloqueada`', 'marcas', () => db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ bloqueada: true })],
+  ])('NIEGA: una campaña a un contacto con %s no se materializa: queda `omitido/%s`, sin mensaje, sin timbre', async (_n, motivo, marcar) => {
+    const timbre = vi.fn(async () => true);
+    vi.stubGlobal('fetch', timbre);
+    await prepararCampana();
+    await marcar();
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+    expect(await destino(CONV1)).toMatchObject({ estado: 'omitido', motivo });
+    expect((await refMsg(CLAVE_CAMPANA(CONV1)).get()).exists).toBe(false);
+    expect(timbre).not.toHaveBeenCalled();
+    expect(await metricas()).toEqual({});
+  });
+
+  it('control: la misma campaña a un contacto sin baja ni marcas SÍ se materializa; y otra baja (otro teléfono) no la frena', async () => {
+    await prepararCampana();
     await db.doc(`tenants/${A}/bajas/${CONV2}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: Timestamp.now() });
-    await sembrarCampana(CLAVE(1));
     expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toHaveLength(1);
   });
 
@@ -961,10 +997,10 @@ describe('campaña saliente (PR-A): `autor: campana` solo con plantilla, 0 pará
   ])('M1, NIEGA: la campaña cierra ante la duda: `%s` en `%s` frena (no solo `true`)', async (_n, campo, valor) => {
     const timbre = vi.fn(async () => true);
     vi.stubGlobal('fetch', timbre);
+    await prepararCampana();
     await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ [campo]: valor });
-    await sembrarCampana(CLAVE(1));
     expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
-    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', contado: false });
+    expect(await destino(CONV1)).toMatchObject({ estado: 'omitido', motivo: 'marcas' });
     expect(timbre).not.toHaveBeenCalled();
   });
 
@@ -973,10 +1009,10 @@ describe('campaña saliente (PR-A): `autor: campana` solo con plantilla, 0 pará
   ])('RIESGO, NIEGA: `riesgoEn` (%s) frena la campaña aunque `noContactar` esté ausente o en false', async (_n, valor) => {
     const timbre = vi.fn(async () => true);
     vi.stubGlobal('fetch', timbre);
+    await prepararCampana();
     await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ noContactar: false, riesgoEn: valor() });
-    await sembrarCampana(CLAVE(1));
     expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
-    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', contado: false });
+    expect(await destino(CONV1)).toMatchObject({ estado: 'omitido', motivo: 'marcas' });
     expect(timbre).not.toHaveBeenCalled();
   });
 
@@ -987,9 +1023,17 @@ describe('campaña saliente (PR-A): `autor: campana` solo con plantilla, 0 pará
   });
 
   it('M1, control: `false` en `noContactar` y `bloqueada` NO frena la campaña', async () => {
+    await prepararCampana();
     await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ noContactar: false, bloqueada: false });
-    await sembrarCampana(CLAVE(1));
     expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toHaveLength(1);
+  });
+
+  it('el conteo de la campaña materializada va en `plantillasCampana` (no en `plantillasPersona` ni `mensajesPersona`) y suma `aceptados` en la campaña', async () => {
+    await prepararCampana();
+    const [m] = libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS));
+    expect((await confirmar({ mensajeId: m!['mensajeId'], conversacionId: CONV1, resultado: 'aceptado', idMeta: 'wamid.MAT-1' })).codigo).toBe(200);
+    expect(await metricas()).toEqual({ plantillasCampana: 1 });
+    expect((await db.doc(`tenants/${A}/campanasSalientes/${CAMPANA}`).get()).data()).toMatchObject({ materializados: 1, aceptados: 1 });
   });
 
   const BAJA = () => db.doc(`tenants/${A}/bajas/${CONV1}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: Timestamp.now() });

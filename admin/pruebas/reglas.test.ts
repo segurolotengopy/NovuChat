@@ -4209,6 +4209,11 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
       await setDoc(doc(db, `tenants/${A}/mediosEnviados/objeto-de-prueba`), { estado: 'guardado', vence: Timestamp.now() });
       await setDoc(doc(db, `tenants/${A}/bajas/wa_59170000001`), { canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: Timestamp.now() });
       await setDoc(doc(db, `topesDeEnvio/a_${A}`), { dia: '2026-11-11', n: 1, bytes: 10, actualizadoEn: Timestamp.now() });
+      // La campaña saliente del chat (PR-C): la campaña, su destinatario, el contador diario y las cifras (solo las escribe el servidor).
+      await setDoc(doc(db, `topesDeEnvio/c_${A}`), { dia: '2026-11-27', nDia: 1, actualizadoEn: Timestamp.now() });
+      await setDoc(doc(db, `tenants/${A}/campanasSalientes/camp-prueba`), { estado: 'enCurso', phoneNumberId: '1000', materializados: 0 });
+      await setDoc(doc(db, `tenants/${A}/campanasSalientes/camp-prueba/destinatarios/wa_59170000001`), { estado: 'pendiente' });
+      await setDoc(doc(db, `tenants/${A}/config/campanaSaliente`), { porTanda: 45, porDia: 200, porReclamo: 3, ventanaDias: 60, pausaErroresPct: 10, pausaMinimoEnviados: 10, pausaNoPct: 25 });
       await setDoc(doc(db, `tenants/${A}/salida/clave-0000000000001`), {
         estado: 'pendiente', creadoEn: Timestamp.now(), actualizadoEn: Timestamp.now(),
       });
@@ -4228,6 +4233,10 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
       `topesDeEnvio/a_${A}`, 'topesDeEnvio/a_nuevo-comercio',
       `tenants/${A}/bajas/wa_59170000001`, `tenants/${A}/bajas/wa_59170000002`,
       `tenants/${A}/salida/clave-0000000000001`, `tenants/${A}/salida/clave-nueva-0000001`,
+      // La campaña saliente del chat (PR-C): `campanasSalientes/` y `campanasSalientes/destinatarios/`, y su contador diario.
+      `tenants/${A}/campanasSalientes/camp-prueba`, `tenants/${A}/campanasSalientes/camp-nueva`,
+      `tenants/${A}/campanasSalientes/camp-prueba/destinatarios/wa_59170000001`, `tenants/${A}/campanasSalientes/camp-prueba/destinatarios/wa_59170000002`,
+      `topesDeEnvio/c_${A}`, 'topesDeEnvio/c_nuevo-comercio',
     ];
     const quienes: Array<[string, () => ReturnType<typeof adminA>]> = [
       ['administrador', adminA], ['operador', operA], ['administrador de otro comercio', adminB],
@@ -4263,6 +4272,23 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
       await assertFails(getDocs(collection(operA(), `tenants/${A}/bajas`)));
       await assertFails(getDocs(collection(ingestaA(), `tenants/${A}/bajas`)));
       await assertFails(getDocs(collectionGroup(adminA(), 'salida')));
+      // PR-C: ni la lista de campañas ni la de destinatarios, ni por el grupo de colecciones.
+      for (const [nombre, cliente] of quienes) {
+        await assertFails(getDocs(collection(cliente(), `tenants/${A}/campanasSalientes`)), `${nombre} lista campanasSalientes`);
+        await assertFails(getDocs(collection(cliente(), `tenants/${A}/campanasSalientes/camp-prueba/destinatarios`)), `${nombre} lista destinatarios`);
+        await assertFails(getDocs(collectionGroup(cliente(), 'destinatarios')), `${nombre} lista el grupo destinatarios`);
+      }
+    });
+
+    it('config/campanaSaliente (los topes de la campaña): se lee, pero NADIE la crea, actualiza ni borra desde un cliente', async () => {
+      await sembrarCerradas();
+      const cifras = { porTanda: 45, porDia: 200, porReclamo: 3, ventanaDias: 60, pausaErroresPct: 10, pausaMinimoEnviados: 10, pausaNoPct: 25 };
+      for (const [nombre, cliente] of quienes) {
+        await assertFails(setDoc(doc(cliente(), `tenants/${A}/config/campanaSaliente`), cifras), `${nombre} sobrescribe config/campanaSaliente`);
+        await assertFails(updateDoc(doc(cliente(), `tenants/${A}/config/campanaSaliente`), { porDia: 100000 }), `${nombre} actualiza config/campanaSaliente`);
+        await assertFails(deleteDoc(doc(cliente(), `tenants/${A}/config/campanaSaliente`)), `${nombre} borra config/campanaSaliente`);
+        await assertFails(setDoc(doc(cliente(), `tenants/${B}/config/campanaSaliente`), cifras), `${nombre} crea config/campanaSaliente en B`);
+      }
     });
 
     it('otro comercio no lee ni escribe la salida de A', async () => {

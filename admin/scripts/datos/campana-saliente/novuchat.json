@@ -1,0 +1,9 @@
+{
+  "porTanda": 45,
+  "porDia": 200,
+  "porReclamo": 3,
+  "ventanaDias": 60,
+  "pausaErroresPct": 10,
+  "pausaMinimoEnviados": 10,
+  "pausaNoPct": 25
+}
