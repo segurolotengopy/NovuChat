@@ -103,9 +103,13 @@ export function hechosDeCampana(conv: Datos, contextoId: unknown, ahoraMs: numbe
   const e = campanaEnviadaDe(conv, ahoraMs);
   if (e === null) return { citada: false, primeraEnVentana: false, campanaId: null };
   const previa = aMs((conv?.['campanaRespuesta'] as Record<string, unknown> | undefined)?.['en']);
+  // Ningún entrante después del envío: si la persona ya conversó (p. ej. el modelo le preguntó y respondió «no»), ese «no» es
+  // conversación, no la respuesta a la campaña. `ultimoEntranteEn` es el valor ANTES del entrante actual: la transacción de la
+  // ingesta lee la conversación antes de escribirlo y `configuracionFlujo` corre antes de que el flujo reporte el entrante.
+  const entrante = aMs(conv?.['ultimoEntranteEn']);
   return {
     citada: contextoIdValido(contextoId) && contextoId === e.idMeta,
-    primeraEnVentana: previa === null || previa < e.enMs,
+    primeraEnVentana: (previa === null || previa < e.enMs) && (entrante === null || entrante < e.enMs),
     campanaId: e.campanaId,
   };
 }

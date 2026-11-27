@@ -69,6 +69,7 @@ const sembrarEnviada = async (c: Comercio, haceMs = 3_600_000, extra: Record<str
     telefono: tel, campanaEnviada: { idMeta: CTX, campanaId: CAMPANA, en: Timestamp.fromMillis(Date.now() - haceMs), ...extra },
   }, { merge: true });
 };
+const conv = (c: Comercio, tel = TEL) => db.doc(`tenants/${c.id}/conversaciones/wa_${tel}`);
 /** Un «sí» con cita: es el que responde a la campaña enviada. */
 const SI = { campanaEnvioId: CAMPANA, respuestaCampana: 'si', texto: 'Sí, contáctenme', contextoId: CTX };
 
@@ -245,6 +246,22 @@ describe('E3/E8, NIEGA: sin cita, solo el payload «no» da de baja; etiqueta y 
     it('sin cita pero PRIMERA respuesta dentro de las 24 h del envío: da de baja', async () => {
       await sembrarEnviada(A);
       expect((await escrito('No gracias')).cuerpo['campanaSaliente']).toEqual({ resultado: 'baja' });
+    });
+    it('H1, NIEGA: si la persona escribió DESPUÉS del envío (ultimoEntranteEn posterior), su «no» sin cita es conversación y no da de baja', async () => {
+      await sembrarEnviada(A);
+      await conv(A).update({ ultimoEntranteEn: Timestamp.fromMillis(Date.now() - 1_800_000) });
+      const r = await escrito('no');
+      expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
+      expect(await cuantasBajas(A)).toBe(0);
+    });
+    it('H1, control: con la cita sí da de baja aunque haya conversado; y un entrante ANTERIOR al envío no impide la baja', async () => {
+      await sembrarEnviada(A);
+      await conv(A).update({ ultimoEntranteEn: Timestamp.fromMillis(Date.now() - 1_800_000) });
+      expect((await escrito('no', { contextoId: CTX })).cuerpo['campanaSaliente']).toEqual({ resultado: 'baja' });
+      await db.recursiveDelete(db.doc(`tenants/${B.id}/bajas/wa_${TEL}`));
+      await sembrarEnviada(B);
+      await conv(B).update({ ultimoEntranteEn: Timestamp.fromMillis(Date.now() - 2 * 3_600_000) });
+      expect((await responder(B, { campanaEnvioId: CAMPANA, respuestaCampana: 'no', respuestaPor: 'texto', texto: 'no' })).cuerpo['campanaSaliente']).toEqual({ resultado: 'baja' });
     });
     it('NIEGA: sin cita y con una respuesta ya registrada después del envío, el «no» escrito NO da de baja', async () => {
       await sembrarEnviada(A);

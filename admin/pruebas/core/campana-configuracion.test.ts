@@ -130,6 +130,17 @@ describe('`campanaSaliente` solo con `campana` en el cuerpo', () => {
       .toEqual({ citada: true, primeraEnVentana: true, campanaId: CAMPANA });
   });
 
+  it('H1: `primeraEnVentana` es falso si la persona escribió DESPUÉS del envío; un entrante anterior no cuenta; la cita sigue valiendo', async () => {
+    await sembrar(A, HORA, { ultimoEntranteEn: Timestamp.fromMillis(Date.now() - HORA / 2) });
+    expect(hechos(await configuracion(A, { telefono: TEL, campana: { contextoId: CTX } })))
+      .toEqual({ citada: true, primeraEnVentana: false, campanaId: CAMPANA });
+    expect(hechos(await configuracion(A, { telefono: TEL, campana: { contextoId: 'wamid.OTRA' } })))
+      .toEqual({ citada: false, primeraEnVentana: false, campanaId: CAMPANA });
+    await sembrar(A, HORA, { ultimoEntranteEn: Timestamp.fromMillis(Date.now() - 2 * HORA) });
+    expect(hechos(await configuracion(A, { telefono: TEL, campana: { contextoId: CTX } })))
+      .toEqual({ citada: true, primeraEnVentana: true, campanaId: CAMPANA });
+  });
+
   it('NIEGA: pasadas las 24 h no hay campaña vigente: ni cita ni primera respuesta ni id', async () => {
     await sembrar(A, 25 * HORA);
     expect(hechos(await configuracion(A, { telefono: TEL, campana: { contextoId: CTX } }))).toEqual(SIN_CAMPANA);
