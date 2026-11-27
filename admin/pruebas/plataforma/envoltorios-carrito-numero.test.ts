@@ -244,10 +244,10 @@ describe('resetear-telefono.sh --quien', () => {
   });
 
   it('NEGANDO (H2, L1): el host y la clave de n8n no van en la línea de comandos de curl, y si el nodo los imprime (o la lista de teléfonos) el filtro los oculta', () => {
-    // curl se resuelve del PATH de sistema (H4), así que no se lo puede reemplazar: se comprueba la línea del script.
-    const linea = readFileSync(RESET, 'utf8').split('\n').find((x) => /\bcurl -s\b/.test(x)) ?? '';
-    const orden = linea.split('| curl')[1]?.split('|')[0] ?? '';
-    expect(orden).toContain('-K -'); expect(orden).not.toMatch(/N8N_BASE_URL|N8N_API_KEY|-H /);
+    // El host y la clave entran a la consulta por el ENTORNO de python, nunca por la línea de comandos de un programa.
+    const fuente = readFileSync(RESET, 'utf8');
+    expect(fuente).not.toMatch(/\bcurl\b[^\n]*(N8N_BASE_URL|N8N_API_KEY)/);
+    expect(fuente).toMatch(/N8N_BASE_URL="\$N8N_BASE_URL" N8N_API_KEY="\$N8N_API_KEY" python3 -I/);
     const l = `${ANDRES},${SILVANA}`;
     const r = correr(RESET, ['--tenant', 'walisuma', '--quien', 'andres'], { CONFIG_LOCAL_MD: tabla(filas(l)), ENV_N8N: envN8n(`N8N_BASE_URL=https://${HOST}\nN8N_API_KEY=clave-que-no-debe-salir\n`) });
     expect(r.codigo, r.salida).toBe(0);

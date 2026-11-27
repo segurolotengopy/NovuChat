@@ -99,15 +99,17 @@ export N8N_BASE_URL N8N_API_KEY
 # La lista cerrada de flujos que el reseteo puede reescribir: SOLO flujos de NovuChat (nombre que empieza por «NovuChat»). El .mjs elige UNO por el nombre del comercio
 # («(<comercio>)» o el nombre fijo de su tabla) y exige que esté en esta lista. Los ids no se imprimen.
 if [ -n "$N8N_BASE_URL" ]; then
-  # H2 (revisión de #1141): ni el host ni la clave van en la línea de comandos de curl (ps, registros de procesos): la configuración entra por stdin (-K -) armada con `printf`, que es un builtin.
-  if [[ "$N8N_BASE_URL$N8N_API_KEY" == *[\"\\]* ]]; then N8N_WORKFLOWS_PERMITIDOS=""
-  else N8N_WORKFLOWS_PERMITIDOS="$(printf 'url = "%s"\nheader = "X-N8N-API-KEY: %s"\n' "${N8N_BASE_URL%/}/api/v1/workflows?limit=250" "$N8N_API_KEY" | curl -s --compressed --max-time 150 -K - | TENANT="$TENANT" python3 -c '
-import json, os, sys
-t = os.environ["TENANT"]
-try: d = json.load(sys.stdin).get("data", [])
-except Exception: d = []
+  # H2 (revisión de #1141): ni el host ni la clave van en la línea de comandos de ningún programa (ps, registros de procesos): la consulta la hace python con ambos por el ENTORNO de ese proceso.
+  N8N_WORKFLOWS_PERMITIDOS="$(N8N_BASE_URL="$N8N_BASE_URL" N8N_API_KEY="$N8N_API_KEY" python3 -I -c '
+import json, os, urllib.request
+try:
+    url = os.environ["N8N_BASE_URL"].rstrip("/") + "/api/v1/workflows?limit=250"
+    if not url.startswith(("https://", "http://")): raise ValueError
+    req = urllib.request.Request(url, headers={"X-N8N-API-KEY": os.environ["N8N_API_KEY"], "Accept": "application/json"})
+    d = json.load(urllib.request.urlopen(req, timeout=150)).get("data", [])
+except Exception:
+    d = []
 print(",".join(w["id"] for w in d if str(w.get("name", "")).startswith("NovuChat")))' || true)"
-  fi
   export N8N_WORKFLOWS_PERMITIDOS
   echo "• flujos de NovuChat en la lista cerrada: $(printf '%s' "$N8N_WORKFLOWS_PERMITIDOS" | tr ',' '\n' | grep -c .)"
 fi
@@ -129,7 +131,7 @@ fi
 source "scripts/lib/valores-del-comercio.sh"
 IFS=, read -r -a LISTA_TELS <<< "$TELEFONOS_PRUEBA"
 set +e
-( cd admin && "$NODO" scripts/plataforma/resetear-telefono-prueba.mjs "${ARGS[@]}" 2>&1 ) | filtrar_valores "$TEL" "$GCP_PROJECT_ID_PROD" "$GCP_PROJECT_ID_STAGING" "${N8N_BASE_URL:-}" "${N8N_BASE_URL#https://}" "${N8N_API_KEY:-}" "${LISTA_TELS[@]}"
+( cd admin && "$NODO" scripts/plataforma/resetear-telefono-prueba.mjs "${ARGS[@]}" 2>&1 ) | FILTRAR_VARS="N8N_BASE_URL N8N_API_KEY" filtrar_valores "$TEL" "$GCP_PROJECT_ID_PROD" "$GCP_PROJECT_ID_STAGING" "${LISTA_TELS[@]}"
 ESTADOS=("${PIPESTATUS[@]}")
 set -e
 exit "${ESTADOS[0]}"
