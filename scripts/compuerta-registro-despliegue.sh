@@ -104,24 +104,35 @@ for x in "${ELEMENTOS[@]}"; do
   esac
 done
 
+# Cada línea sin sangría ni ícono (✔/✓) al inicio y sin espacios al final: los anclajes de abajo comparan la LÍNEA ENTERA (no una subcadena).
+normalizar() { sed -E 's/^([[:space:]]|✔|✓)*//; s/[[:space:]]*$//' <<< "$1"; }
+limpio_norm="$(normalizar "$limpio")"
+acumulado_norm="$(normalizar "$acumulado")"
+
 motivos=()
 pendientes=()
 
 # R1 y R2
 [[ "$CODIGO_FIREBASE" == "0" ]] || motivos+=("firebase deploy salió con código $CODIGO_FIREBASE")
-grep -Eq '^[^[:alnum:]]*Deploy complete![[:space:]]*$' <<< "$limpio" \
+grep -Fxq 'Deploy complete!' <<< "$limpio_norm" \
   || motivos+=("no llegó a «Deploy complete!»: terminó a medias")
 
 # R3 y R7: cobertura de Functions
 if tiene functions; then
-  iniciadas="$(sed -nE 's/^.*functions: (creating|updating|deleting) .* function ([^ ]+)\.\.\.$/\2/p' <<< "$acumulado" | sort -u)"
-  confirmadas="$(sed -nE 's/^.*functions\[([^]]+)\] Successful (create|update|delete) operation\.$/\1/p' <<< "$acumulado" | sort -u)"
+  # Sin ancla al final de la línea: un espacio o un resto de spinner tras «...» no puede esconder una Function iniciada.
+  iniciadas="$(sed -nE 's/^.*functions: (creating|updating|deleting) .* function ([^ ]+)\.\.\..*$/\2/p' <<< "$acumulado" | sort -u)"
+  confirmadas="$(sed -nE 's/^.*functions\[([^]]+)\] Successful (create|update|delete) operation\.[[:space:]]*$/\1/p' <<< "$acumulado" | sort -u)"
+  # Y las del ÚLTIMO intento: una Function que se vuelve a iniciar en el último intento tiene que confirmarse en ESE intento; el «Successful» de un
+  # intento anterior no la tapa.
+  iniciadas_ult="$(sed -nE 's/^.*functions: (creating|updating|deleting) .* function ([^ ]+)\.\.\..*$/\2/p' <<< "$limpio" | sort -u)"
+  confirmadas_ult="$(sed -nE 's/^.*functions\[([^]]+)\] Successful (create|update|delete) operation\.[[:space:]]*$/\1/p' <<< "$limpio" | sort -u)"
   omitidas="$(grep -c 'Skipped (No changes detected)' <<< "$acumulado")"
   if [[ -z "$iniciadas" && "$omitidas" == "0" ]]; then
     motivos+=("el registro no tiene el formato esperado de firebase-tools (ninguna Function iniciada ni omitida)")
   fi
   if [[ -n "$iniciadas" ]]; then
-    mapfile -t pendientes < <(comm -23 <(printf '%s\n' "$iniciadas") <(printf '%s\n' "$confirmadas"))
+    mapfile -t pendientes < <(sort -u <(comm -23 <(printf '%s\n' "$iniciadas") <(printf '%s\n' "$confirmadas")) \
+      <(comm -23 <(printf '%s\n' "$iniciadas_ult") <(printf '%s\n' "$confirmadas_ult")) | sed '/^$/d')
   fi
   if (( ${#pendientes[@]} > 0 )); then
     motivos+=("${#pendientes[@]} Function(s) sin confirmar")
@@ -166,7 +177,7 @@ for rol in "${roles[@]}"; do
   if [[ "$rol" == consola ]]; then sitio="$SITIO_CONSOLA"; nombre="de la consola"
   else sitio="$SITIO_CATALOGO"; nombre="del catálogo"
   fi
-  if grep -Fq "hosting[$sitio]: release complete" <<< "$acumulado"; then
+  if grep -Fxq "hosting[$sitio]: release complete" <<< "$acumulado_norm"; then
     publicados=$((publicados + 1))
   else
     motivos+=("Hosting no publicó el sitio $nombre (falta «release complete»)")
@@ -182,21 +193,26 @@ fi
 # fabricator.ts, updateV2Function) lo imprime cuando la API devuelve la actualización SIN el nombre del servicio: NO es fatal para
 # el CLI (la operación sale «Successful update operation»), pero OMITE solo el paso del invoker (IAM) de ESA Function; el aviso
 # no la nombra. Por eso:
-#   · FATAL (como antes) si el despliegue NO está completo y limpio (falta algún «Successful», «Deploy complete!», un sitio de
-#     Hosting, o ya hay otro motivo; el caso del 16/11/2026) o si se CREÓ alguna Function en el registro (un create sin invoker
-#     deja una Function no invocable);
-#   · NO fatal si todo lo demás está completo y TODO fueron actualizaciones: una actualización conserva el IAM que ya tenía. Se
-#     avisa con ::warning:: (cuántos avisos y las Functions candidatas) y se manda a verificar el invoker (DESPLIEGUE-FIREBASE.md).
+#   · FATAL, siempre y por omisión (PRODUCCIÓN: el job de producción no define AVISO_SERVICIO_NO_FATAL);
+#   · SOLO EN STAGING (el job de staging define AVISO_SERVICIO_NO_FATAL=1) deja de ser fatal si TODO lo demás está completo y limpio
+#     (sin ningún otro motivo), FIREBASE_TOOLS_VERSION es EXACTAMENTE la verificada (vacía o distinta = fatal) y no hubo ninguna
+#     creación. Entonces avisa con ::warning:: y entrega las Functions candidatas (`candidatas` en GITHUB_OUTPUT) para que el workflow
+#     verifique su invoker (scripts/verificar-invocadores-candidatas.sh); si esa verificación falla, el job falla.
+#   · CREACIÓN: se busca SIN distinguir mayúsculas y en TODO el acumulado: «functions: creat…», «Successful create operation»,
+#     «failed to create function», «while trying to create». LÍMITE CONOCIDO (B1 de la revisión de #1137): firebase-tools, al
+#     recrear por dentro una Function (deleteAndRecreate), imprime «updating»; una recreación así es indistinguible de una
+#     actualización en el registro y NO se detecta; por eso es solo staging y con la verificación del invoker.
+#   AL SUBIR FIREBASE_TOOLS_VERSION: volver a verificar estos textos contra fabricator.ts de la versión nueva y actualizar VERSION_VERIFICADA.
 avisos_servicio="$(grep -Fc 'This deployment is in an unexpected state' <<< "$acumulado" || true)"
+candidatas_ids=""
 if [[ "${avisos_servicio:-0}" != "0" ]]; then
-  creaciones="$(grep -Ec 'functions: creating ' <<< "$acumulado" || true)"
-  # Con otra versión de firebase-tools que la verificada, el texto de «creating» podría haber cambiado y un create sin invoker pasaría
-  # por actualización: el aviso vuelve a ser fatal (revisión de seguridad de #1137).
-  version_ok=1
-  if [[ -n "${FIREBASE_TOOLS_VERSION:-}" && "$FIREBASE_TOOLS_VERSION" != "$VERSION_VERIFICADA" ]]; then version_ok=0; fi
-  if (( ${#motivos[@]} == 0 )) && [[ "${creaciones:-0}" == "0" ]] && (( version_ok == 1 )); then
+  creaciones=0
+  grep -Eiq 'functions:[[:space:]]+creat|Successful create operation|failed to create function|while trying to create' <<< "$acumulado" && creaciones=1
+  version_ok=0
+  if [[ -n "${FIREBASE_TOOLS_VERSION:-}" && "$FIREBASE_TOOLS_VERSION" == "$VERSION_VERIFICADA" ]]; then version_ok=1; fi
+  if [[ "${AVISO_SERVICIO_NO_FATAL:-0}" == "1" ]] && (( ${#motivos[@]} == 0 && creaciones == 0 && version_ok == 1 )); then
     # Candidatas: las Functions confirmadas entre el primer aviso y la primera confirmación posterior al último (el aviso no dice cuál).
-    candidatas="$(awk '
+    candidatas_ids="$(awk '
       /This deployment is in an unexpected state/ { if (!ini) ini = NR; fin = NR }
       { l[NR] = $0 }
       END {
@@ -206,12 +222,13 @@ if [[ "${avisos_servicio:-0}" != "0" ]]; then
           if (l[i] ~ /Successful (create|update|delete) operation\./) {
             match(l[i], /functions\[[^]]+\]/); id = substr(l[i], RSTART + 10, RLENGTH - 11)
             sub(/\(.*$/, "", id); sub(/^.*:/, "", id)
+            if (id !~ /^[A-Za-z0-9_-]+$/) continue
             if (i > fin) { c[++n] = id; break } else c[++n] = id
           }
         }
-        for (i = 1; i <= n; i++) printf "%s%s", (i > 1 ? ", " : ""), c[i]
+        for (i = 1; i <= n; i++) printf "%s%s", (i > 1 ? "," : ""), c[i]
       }' <<< "$limpio")"
-    echo "::warning::firebase-tools avisó $avisos_servicio vez/veces «unexpected state» (una actualización sin servicio asociado: se omitió su invoker), con el despliegue completo y sin Functions nuevas. Verificar el invoker de las Functions HTTP (y que ningún cambio de invoker pedido en el código se haya perdido: una actualización sin servicio asociado conserva el IAM anterior). Candidatas (el aviso no nombra la Function): ${candidatas:-no deducibles}."
+    echo "::warning::firebase-tools avisó $avisos_servicio vez/veces «unexpected state» (una actualización sin servicio asociado: se omitió su invoker), con el despliegue completo y sin Functions nuevas (solo staging). El workflow verifica el invoker de las candidatas (el aviso no nombra la Function): ${candidatas_ids//,/, }."
   else
     motivos+=("firebase-tools avisó «This deployment is in an unexpected state»")
   fi
@@ -252,7 +269,7 @@ for p in "${pendientes[@]}"; do
 done
 completo=true; (( ${#motivos[@]} == 0 )) || completo=false
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-  { echo "completo=$completo"; echo "hosting_publicado=$hosting_publicado"; echo "functions_pendientes=$lista"; } >> "$GITHUB_OUTPUT"
+  { echo "completo=$completo"; echo "hosting_publicado=$hosting_publicado"; echo "functions_pendientes=$lista"; echo "candidatas=$candidatas_ids"; } >> "$GITHUB_OUTPUT"
 fi
 
 if [[ "$completo" == "true" ]]; then
