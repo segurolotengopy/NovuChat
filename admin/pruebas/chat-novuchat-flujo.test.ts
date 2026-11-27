@@ -17,6 +17,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from './lib/flujo';
 import { crearMundo, type Doble, type Enviado, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
@@ -4543,8 +4544,7 @@ describe('campaña saliente: correcciones de la revisión del #1140 (el servidor
       const cuerpoDe = (texto: string): J => {
         const json = { messages: [{ from: MAMA, type: 'text', text: { body: texto } }] };
         const base = { first: () => ({ json: { telefonosDePrueba: '' } }) };
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval
-        const f = new Function('$json', '$', '$execution', `return ${expr};`) as (a: J, b: () => J, c: J) => string;
+        const f = vm.compileFunction(`return ${expr};`, ['$json', '$', '$execution']) as (a: J, b: () => J, c: J) => string;
         return JSON.parse(f(json, () => base, { id: 'x' })) as J;
       };
       for (const x of NO_ESCRITO_SI) expect(cuerpoDe(x), JSON.stringify(x)).toHaveProperty('campana');
