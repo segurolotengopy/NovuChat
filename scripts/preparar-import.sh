@@ -12,7 +12,7 @@
 # La salida por pantalla informa NOMBRES de marcador y estado, nunca valores.
 #
 #   ./scripts/preparar-import.sh                                  # Demo A
-#   ./scripts/preparar-import.sh Flujos/demo-b-venta-cobro.json   # Demo B
+#   ./scripts/preparar-import.sh Flujos/clientes/demo-b/demo-b-venta-cobro.json   # Demo B
 #   ./scripts/preparar-import.sh Flujos/novuchat-onboarding.json .env.novuchat
 #
 # EL SEGUNDO ARGUMENTO ES EL ENTORNO, y para un flujo que no es el Demo A hay

@@ -148,7 +148,10 @@ describe('--aplicar', () => {
     const auditoriaA = await auditorias(A);
     expect(auditoriaA).toHaveLength(1);
     expect(auditoriaA[0]?.data()).toMatchObject({ uid: 'operador@ejemplo.com', origen: 'script', creados: 3, saltados: 0 });
-    expect(JSON.stringify(auditoriaA[0]?.data())).not.toMatch(/5917|wa_/);
+    // La constancia no lleva teléfonos ni ids de conversación. DETERMINISTA: se busca la FORMA de lo que sería un teléfono de estas
+    // filas (59173000nnn) o un id de conversación (wa_ + dígitos), no «5917» suelto: una marca de tiempo o un id al azar puede
+    // contener esos cuatro dígitos o «wa_» y volvía la prueba intermitente (tumbó `calidad` del PR #1122).
+    expect(JSON.stringify(auditoriaA[0]?.data())).not.toMatch(/59173000\d{3}|wa_\d{6,}/);
   });
 
   it('una segunda pasada crea 0: en seco dice «a crear 0» y con --aplicar no escribe ni deja constancia nueva', async () => {

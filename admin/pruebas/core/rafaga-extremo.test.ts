@@ -229,7 +229,7 @@ describe('rafaga: los normalizadores de los demos que se aceptan por huella, EJE
     const salida = correr(nodo.parameters.jsCode, [entrada]);
     return { codigo: nodo.parameters.jsCode as string, item: salida[0].json };
   };
-  it.each(['clientes/demo-a/demo-a-agendamiento.json', 'demo-b-venta-cobro.json'])('%s: «Normalizar entrada» está verificado y SÍ emite tipo, mensajeId, from, phoneNumberId y userInput', (ruta) => {
+  it.each(['clientes/demo-a/demo-a-agendamiento.json', 'clientes/demo-b/demo-b-venta-cobro.json'])('%s: «Normalizar entrada» está verificado y SÍ emite tipo, mensajeId, from, phoneNumberId y userInput', (ruta) => {
     const { codigo, item } = ejecutar(ruta);
     expect(Object.keys(NORMALIZADORES_VERIFICADOS), 'la huella del código actual tiene que estar en NORMALIZADORES_VERIFICADOS (si el normalizador cambió, se vuelve a verificar y se actualiza)').toContain(huellaDe(codigo));
     expect(item).toMatchObject({ tipo: 'text', mensajeId: 'wamid.X', from: '59100000011', userInput: 'hola' });

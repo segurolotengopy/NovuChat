@@ -9,7 +9,7 @@ import { ANA, CATALOGO, ENTREGA, catalogoOk, crear, hablar, mTexto, modelo, pane
 
 const J = (x: unknown): string => JSON.stringify(x);
 const mToque = (id: string, title = 'Confirmar pedido') => ({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title } } });
-const LISTO: Opciones = { modeloDice: modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) };
+const LISTO: Opciones = { entregaPrevia: ENTREGA, modeloDice: modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) };
 const hayQr = (t: ReturnType<typeof hablar>): boolean => t.mensajes.some((x) => x.tipo === 'image' && /qr/i.test(J(x.payload)));
 const botones = (t: ReturnType<typeof hablar>): string[] => t.mensajes.flatMap((x) => (J(x.payload).match(/"id":"[^"]+"/g) ?? []));
 /** El id del botón que el cliente vio en el mensaje (lleva la huella de su carrito). */
@@ -94,7 +94,7 @@ describe('NEGADO: el botón de un mensaje con OTRO carrito no confirma, y un seg
 describe('el texto y el botón dicen lo mismo (solo se ofrece lo que se cumple)', () => {
   const cuerpo = (t: ReturnType<typeof hablar>): string => t.mensajes.map((x) => x.cuerpo).join('\n');
   it('la instrucción de «Confirmar pedido» sale UNA sola vez y en un solo trato, también cuando el texto lo arma el código (pieza por orden)', () => {
-    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [], entrega: ENTREGA }) });
+    const m = crear({ entregaPrevia: ENTREGA, modeloDice: modelo('Con gusto.', { lineas: [] }) });
     const t = hablar(m, ANA, mTexto('agrega una billetera de cuero'));
     const c = cuerpo(t);
     expect((c.match(/Confirmar pedido/g) ?? []).length).toBeLessThanOrEqual(1);
@@ -113,7 +113,7 @@ describe('el texto y el botón dicen lo mismo (solo se ofrece lo que se cumple)'
 
 describe('NEGADO: si el catálogo cambió entre el resumen y el toque, el botón NO cierra otro pedido', () => {
   it('una pieza que se agotó: el toque no emite el QR del pedido más chico', () => {
-    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }, { id: 'llavero-llama', cantidad: 1 }], entrega: ENTREGA }) });
+    const m = crear({ entregaPrevia: ENTREGA, modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }, { id: 'llavero-llama', cantidad: 1 }] }) });
     const id = idDelBoton(hablar(m, ANA, mTexto('una billetera y un llavero')));
     // La billetera se agota (stock 0, no disponible): el resto del catálogo sigue igual.
     const items = CATALOGO.filter((c) => c.activo && typeof (c as Record<string, unknown>)['precio'] === 'number').map((c) => ({ ...c, precioCentavos: Math.round(((c as Record<string, unknown>)['precio'] as number) * 100), stock: c.id === 'billetera-cuero' ? 0 : 10, disponible: c.id !== 'billetera-cuero' }));
@@ -165,3 +165,17 @@ describe('NEGADO: si el catálogo cambió entre el resumen y el toque, el botón
   });
 });
 
+
+describe('Bolivia sin QR de cobro: el pedido se anota y pasa a recepción con aviso + botón (invariante que sostiene la tabla de derivación)', () => {
+  it('el pedido completo sin cobro real: aviso a recepción y el mensaje lleva el botón/enlace a recepción; nunca un QR ni «acreditado»', async () => {
+    const { panelSinCobro } = await import('./mundo');
+    const m = crear({ ...LISTO, panel: panelSinCobro() });
+    const t = hablar(m, ANA, mTexto('una billetera'));
+    const t2 = hablar(m, ANA, mTexto('pagar'));
+    const todo = [...t.mensajes, ...t2.mensajes].map((x) => J(x.payload)).join(' ');
+    expect(hayQr(t) || hayQr(t2)).toBe(false);
+    expect([...t.avisos, ...t2.avisos].length).toBeGreaterThanOrEqual(1);
+    expect(todo).toMatch(/wa\.me/);
+    expect(todo).not.toMatch(/acreditad|verificad/i);
+  });
+});

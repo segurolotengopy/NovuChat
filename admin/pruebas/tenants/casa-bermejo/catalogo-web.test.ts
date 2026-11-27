@@ -1,54 +1,32 @@
 /**
- * «¿PUEDO VER SU CATÁLOGO?» en Casa Bermejo (humo de Silvana, 20/11/2026): pedir el catálogo, la página o las fotos da el botón «Ver catálogo» con el enlace del comercio POR CÓDIGO, sin modelo.
- * Derivado de `wlPideCatalogo` (#1033 de Walisuma; la suite de Walisuma no se toca). Se prueba NEGANDO: sin enlace cargado, con un pedido en curso, con un pago, con cifras o con un enlace que no es https, no sale.
+ * SIN BOTÓN «VER CATÁLOGO» en Casa Bermejo (Andres, 24/11/2026, D7): el botón abría el sitio completo de NovuTienda y se retira mientras NovuChat no tenga un enlace propio. El asistente muestra las piezas por el chat.
+ * «Solo se ofrece lo que se cumple»: ningún texto ni botón promete un enlace que no sale, ni siquiera con el dato `enlaceCatalogo` cargado (la regla es del código, no del dato). Se prueba NEGANDO.
  */
 import { describe, expect, it } from 'vitest';
 import { ANA, crear, hablar, modelo, mTexto, textos } from './mundo';
 
 const ENLACE = 'https://catalogo.example.com';
-type Ficha = { carrito: unknown[] };
-const interactivo = (t: ReturnType<typeof hablar>) => t.mensajes[0]?.payload['interactive'] as { type?: string; action?: { parameters?: { url?: string; display_text?: string } } } | undefined;
+const hayEnlace = (t: ReturnType<typeof hablar>): boolean => /cta_url|Ver catálogo|catalogo\.example/.test(JSON.stringify(t.mensajes.map((m) => m.payload)) + textos(t).join(' '));
 const llamoAlModelo = (t: ReturnType<typeof hablar>): boolean => t.registro.map((r) => r.nodo).includes('Conversar con el modelo');
 
-describe('el catálogo web sale como botón y sin modelo', () => {
-  for (const frase of ['¿puedo ver su catálogo?', 'Puedo ver tu catalogo?', 'catálogo', 'quiero ver las fotos', '¿tienen página web o catálogo con fotos?', 'mándeme su catálogo por favor']) {
-    it(`«${frase}» da el botón «Ver catálogo» con el enlace, sin llamar al modelo`, () => {
-      const m = crear({ enlaceCatalogo: ENLACE });
+describe('NEGADO: pedir el catálogo, la página o las fotos NO da un botón con enlace', () => {
+  for (const frase of ['¿puedo ver su catálogo?', 'Puedo ver tu catalogo?', 'catálogo', 'quiero ver las fotos', '¿tienen página web o catálogo con fotos?', 'mándeme su catálogo por favor', 'hola']) {
+    it(`«${frase}»: sin enlace (aunque el dato esté cargado); lo atiende el modelo y muestra piezas por el chat`, () => {
+      const m = crear({ enlaceCatalogo: ENLACE, modeloDice: modelo('Con gusto, le muestro las piezas.') });
       const t = hablar(m, ANA, mTexto(frase));
-      expect(t.mensajes).toHaveLength(1);
-      const i = interactivo(t);
-      expect(i?.type).toBe('cta_url');
-      expect(i?.action?.parameters).toMatchObject({ url: ENLACE, display_text: 'Ver catálogo' });
-      expect(textos(t).join(' ')).toMatch(/puede ver nuestro catálogo con fotos y precios/);   // de usted
-      expect(llamoAlModelo(t)).toBe(false);
+      expect(hayEnlace(t)).toBe(false);
+      expect(llamoAlModelo(t)).toBe(true);
     });
   }
-  it('NEGADO: sin enlace cargado NO hay botón: sigue al modelo como hoy', () => {
-    const m = crear({ modeloDice: modelo('Con gusto, le muestro piezas.') });
-    const t = hablar(m, ANA, mTexto('¿puedo ver su catálogo?'));
-    expect(interactivo(t)?.type).toBeUndefined();
-    expect(llamoAlModelo(t)).toBe(true);
-  });
-  it('NEGADO: un enlace que no es https (o con un esquema peligroso) no sale como botón', () => {
-    for (const malo of ['http://catalogo.example.com', 'javascript:alert(1)', 'https://a b.com']) {
-      const m = crear({ enlaceCatalogo: malo, modeloDice: modelo('Con gusto.') });
-      const t = hablar(m, ANA, mTexto('¿puedo ver su catálogo?'));
-      expect(interactivo(t)?.type).toBeUndefined();
-      expect(JSON.stringify(t.mensajes)).not.toMatch(/javascript:/);
-    }
-  });
-  it('NEGADO: con cifras, un pago, un comprobante o una negación NO es «ver el catálogo»; el mensaje sigue su camino', () => {
-    for (const frase of ['quiero 2 del catálogo', 'ya pagué, mándeme el catálogo del comprobante', 'no quiero ver el catálogo', 'ya vi el catálogo']) {
-      const m = crear({ enlaceCatalogo: ENLACE, modeloDice: modelo('Con gusto.') });
-      const t = hablar(m, ANA, mTexto(frase));
-      expect(interactivo(t)?.type).toBeUndefined();
-    }
-  });
-  it('NEGADO: con un pedido en curso el catálogo no interrumpe el pedido', () => {
-    const m = crear({ enlaceCatalogo: ENLACE, modeloDice: modelo('Anotado.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) });
-    hablar(m, ANA, mTexto('quiero la billetera'));
-    expect(((m.sd['casabermejo'] as Record<string, Ficha>)[ANA]).carrito.length).toBeGreaterThan(0);
-    const t = hablar(m, ANA, mTexto('¿puedo ver su catálogo?'));
-    expect(interactivo(t)?.type).toBeUndefined();
-  });
+});
+
+describe('NEGADO: el modelo no puede prometer una página, un enlace ni un botón que el código no pone', () => {
+  for (const promesa of ['Puede ver todo en nuestro sitio web.', 'Le dejo el enlace al catálogo.', 'Toque el botón Ver catálogo para ver las fotos.', 'Visite nuestra página con las fotos.']) {
+    it(`«${promesa}» no sale tal cual`, () => {
+      const m = crear({ enlaceCatalogo: ENLACE, modeloDice: modelo(promesa) });
+      const t = hablar(m, ANA, mTexto('hola, ¿qué tienen?'));
+      expect(textos(t).join(' ')).not.toMatch(/sitio web|enlace|bot[oó]n|p[aá]gina|Ver cat[aá]logo/i);
+      expect(hayEnlace(t)).toBe(false);
+    });
+  }
 });

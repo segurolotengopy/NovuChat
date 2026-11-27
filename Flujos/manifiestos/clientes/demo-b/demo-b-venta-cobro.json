@@ -1,5 +1,5 @@
 {
-  "flujo": "demo-b-venta-cobro.json",
+  "flujo": "clientes/demo-b/demo-b-venta-cobro.json",
   "conservanMarcadores": {
     "Config base": "REEMPLAZAR_",
     "Carrito del catálogo": "REEMPLAZAR_"

@@ -83,7 +83,7 @@ test.describe('PED-03: ubicación compartida', () => {
     await sembrarPedido(FOGON, { id: 'u6', total: 6, entrega: LOCAL, ubicacion: { lat: -17.78346, lng: -63.18212 }, items: [{ nombre: 'Taco de local', cantidad: 1 }] });
     await abrirPedidos(page);
     await expect(page.locator('li.pedido')).toHaveCount(2);
-    await expect(page.getByText('Retira en el local')).toHaveCount(2);
+    await expect(page.getByText('Recojo en tienda')).toHaveCount(2);
     await expect(page.getByRole('link', { name: 'Abrir en Maps' })).toHaveCount(0);
     await expect(page.getByText('Ubicación compartida')).toHaveCount(0);
   });
