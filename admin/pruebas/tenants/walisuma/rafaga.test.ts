@@ -177,10 +177,8 @@ describe('ráfaga de 2 y de 3 textos: UN solo envío, con todo el texto', () => 
   });
   it('el interruptor por comercio (`rafagaApagada`, que el servidor agrega a la configuración) apaga la pieza: el IF da «no»', () => {
     const hilo = [txt(1, 'hola', t0), txt(2, 'quiero una billetera', t0 + 800)];
-    // Se simula la salida de «Config del negocio» con la bandera que dice la respuesta de configuracionFlujo. OJO: el nodo común `config-del-negocio.js` (core) todavía NO propaga `rafagaApagada` (ver el PR).
-    const apagado = crear({ base: { rafagaActiva: true }, dobles: { 'Consultar ráfaga': servidor(hilo) } });
-    const nodo = apagado.flujo.nodes.find((x) => x['name'] === 'Config del negocio') as J;
-    (nodo['parameters'] as J)['jsCode'] = String((nodo['parameters'] as J)['jsCode']).replace('return [{ json: {', 'return [{ json: { rafagaApagada: true,');
+    // La respuesta de configuracionFlujo trae la bandera y el nodo común «Config del negocio» (venta-digital) la propaga (#1135): ya no se parchea el código del nodo.
+    const apagado = crear({ base: { rafagaActiva: true }, panel: panelOk({ rafagaApagada: true }), dobles: { 'Consultar ráfaga': servidor(hilo) } });
     const ts = correr(apagado, [{ n: 1, msg: mTexto('hola') }, { n: 2, msg: mTexto('quiero una billetera') }]);
     expect(envios(ts)).toBe(2);
     for (const t of ts) expect(t.orden).not.toContain('Esperar ráfaga');

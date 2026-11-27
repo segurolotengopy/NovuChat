@@ -33,7 +33,7 @@ describe('batería de turnos: la voz se cumple en código', () => {
       expect(cuerpo).not.toMatch(PRESION);
       expect(cuerpo).not.toMatch(NIEGA);
       // Todo importe que aparezca es el precio de una pieza del catálogo de prueba.
-      for (const m of cuerpo.matchAll(/Bs\s*(\d[\d.,]*\d|\d)/g)) expect(['450', '7.795', '35,50']).toContain(m[1]);
+      for (const m of cuerpo.matchAll(/Bs\s*(\d[\d.,]*\d|\d)/g)) expect(['450', '7.795', '36']).toContain(m[1]);
     });
   });
   it('la salida legítima SÍ sale (la prueba tiene dientes): precio del catálogo y mensaje madre', () => {

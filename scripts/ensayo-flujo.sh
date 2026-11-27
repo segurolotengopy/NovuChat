@@ -38,7 +38,7 @@
 # es como siempre. Con `--demo b` el ensayo va sobre el Demo B, el segundo
 # número de ensayo: entorno `.env.demo-b`, nombre y credenciales del Demo B
 # VIVO, el phone id del cliente pasa a `REEMPLAZAR_PHONE_NUMBER_ID_B`, y
-# `--restaurar` republica `Flujos/demo-b-venta-cobro.json`. Cerrojos propios:
+# `--restaurar` republica `Flujos/clientes/demo-b/demo-b-venta-cobro.json`. Cerrojos propios:
 #   - `--demo b` con el entorno del Demo A (o al revés) se niega antes de leer nada;
 #   - el flujo vivo del entorno tiene que llamarse como el JSON de ESE demo;
 #   - ninguna credencial que sea solo del otro demo puede quedar en el flujo.
@@ -68,7 +68,7 @@ case "$LETRA" in
   a) ETIQUETA="Demo A"; DEMO="$REPO/Flujos/clientes/demo-a/demo-a-agendamiento.json"; ENV_DEFECTO=".env"
      MARCA_PHONE="REEMPLAZAR_PHONE_NUMBER_ID"; ENV_AJENO=".env.demo-b"
      AJENAS="Cierres NovuChat B (auto)|WhatsApp account 2|WhatsApp OAuth account 2" ;;
-  b) ETIQUETA="Demo B"; DEMO="$REPO/Flujos/demo-b-venta-cobro.json"; ENV_DEFECTO=".env.demo-b"
+  b) ETIQUETA="Demo B"; DEMO="$REPO/Flujos/clientes/demo-b/demo-b-venta-cobro.json"; ENV_DEFECTO=".env.demo-b"
      MARCA_PHONE="REEMPLAZAR_PHONE_NUMBER_ID_B"; ENV_AJENO=".env"
      AJENAS="Cierres NovuChat A (auto)|WhatsApp account|WhatsApp OAuth account|Google Calendar account" ;;
   *) echo "✗ --demo es a o b" >&2; exit 2 ;;

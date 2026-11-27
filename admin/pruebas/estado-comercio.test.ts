@@ -25,7 +25,7 @@ const flujo = leerFlujo;
 /** Los tres flujos, con el nombre de su nodo de fusión y su política ante silencio. */
 const FLUJOS = [
   { archivo: 'clientes/demo-a/demo-a-agendamiento.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },
-  { archivo: 'demo-b-venta-cobro.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },
+  { archivo: 'clientes/demo-b/demo-b-venta-cobro.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },
   { archivo: 'demo-a-recordatorios.json', fusion: 'Config del recordatorio', base: 'Config base del recordatorio', cortaSinRespuesta: true },
   // El flujo de captación de NovuChat: si se suspende el tenant `novuchat`, deja
   // de atender igual que el de cualquier cliente.
@@ -114,7 +114,7 @@ describe.each(FLUJOS)('$archivo', ({ archivo, fusion, base, cortaSinRespuesta })
 describe('La compuerta que aplica el estado', () => {
   it.each([
     ['clientes/demo-a/demo-a-agendamiento.json'],
-    ['demo-b-venta-cobro.json'],
+    ['clientes/demo-b/demo-b-venta-cobro.json'],
     ['novuchat-onboarding.json'],
   ])('%s corta ANTES del agente', (archivo) => {
     // El Demo B no tenía ninguna compuerta: atendía siempre, cobrara o no el
@@ -160,7 +160,7 @@ describe('La compuerta que aplica el estado', () => {
     // armó lo que salió. Antes el aviso neutro no se reportaba nunca, porque
     // el reporte colgaba de «Procesar respuesta» y en este camino el agente
     // ni siquiera corre.
-    const conexiones = flujo('demo-b-venta-cobro.json').connections;
+    const conexiones = flujo('clientes/demo-b/demo-b-venta-cobro.json').connections;
     const destinos = (n: string) => (conexiones[n]?.main?.[0] ?? []).map((x) => x.node);
     // F3a (02/10/2026): el aviso entra por el embudo «Mensaje a enviar», que solo
     // decide si lleva botón; el aviso neutro no lo lleva.

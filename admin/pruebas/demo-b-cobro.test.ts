@@ -39,7 +39,7 @@ import {
   type J, codigoDe, configBase, destinos, ejecutar, entradas, expresion, leerFlujo, nodo, plantilla,
 } from './lib/flujo.ts';
 
-const f = leerFlujo('demo-b-venta-cobro.json');
+const f = leerFlujo('clientes/demo-b/demo-b-venta-cobro.json');
 const y = (nombre: string) => nodo(f, nombre).position?.[1] ?? Number.NaN;
 
 /** Nada de lo que sale al cliente puede afirmar que un pago entró. */

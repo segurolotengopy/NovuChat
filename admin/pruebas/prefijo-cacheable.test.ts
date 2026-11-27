@@ -29,7 +29,7 @@ import {
 
 const FLUJOS = [
   { archivo: 'clientes/demo-a/demo-a-agendamiento.json', agente: 'AI Agent (Sofía)', trasElTope: 'AI Agent (Sofía)' },
-  { archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat', trasElTope: '¿Saludo inicial?' },
+  { archivo: 'clientes/demo-b/demo-b-venta-cobro.json', agente: 'AI Agent NovuChat', trasElTope: '¿Saludo inicial?' },
   // Reservas del Dr. Bellido: mismo prompt, con `instruccionesExtra` y el bloque
   // conversacional, los dos texto fijo del negocio entre turnos.
   { archivo: 'bellido-agendamiento.json', agente: 'AI Agent (Sofía)', trasElTope: 'AI Agent (Sofía)' },
@@ -170,7 +170,7 @@ for (const { archivo, agente, trasElTope } of FLUJOS) {
  * UNA llamada al modelo (el 6 % del costo) y CERO mensajes de WhatsApp: el
  * cliente recibe un solo mensaje, con alternativas en vez de un texto fijo.
  */
-for (const { archivo } of FLUJOS.filter((x) => x.archivo !== 'demo-b-venta-cobro.json')) {
+for (const { archivo } of FLUJOS.filter((x) => x.archivo !== 'clientes/demo-b/demo-b-venta-cobro.json')) {
   describe(`${archivo} · el reintento tras cruce también es cacheable`, () => {
     const f = flujo(archivo);
     const n = nodo(f, 'Reintento tras cruce');
@@ -216,7 +216,7 @@ for (const { archivo } of FLUJOS.filter((x) => x.archivo !== 'demo-b-venta-cobro
  */
 
 describe('demo-b-venta-cobro.json · a nadie se le avisa de su propio mensaje', () => {
-  const f = flujo('demo-b-venta-cobro.json');
+  const f = flujo('clientes/demo-b/demo-b-venta-cobro.json');
 
   /**
    * EL AVISO AL DUEÑO REPETÍA EL MENSAJE QUE EL CLIENTE ACABABA DE RECIBIR.

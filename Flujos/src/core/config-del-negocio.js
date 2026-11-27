@@ -403,4 +403,6 @@ const campanasActivas = JSON.stringify((Array.isArray(r.campanas) ? r.campanas :
   .slice(0, 10)
   .map((x) => ({ id: String(x.k.id || '').slice(0, 60), texto: x.texto, adIds: x.adIds })));
 
-return [{ json: { ...base, ...atencion, diasProximos, ...laCancelacion, ...deLaConsola, ...reglasDeAgenda, ...laSena, campanasActivas, estadoComercio, configDeLaConsola: true } }];
+return [{ json: { ...base, ...atencion, diasProximos, ...laCancelacion, ...deLaConsola, ...reglasDeAgenda, ...laSena, campanasActivas, estadoComercio, configDeLaConsola: true,
+  // INTERRUPTOR DE LA RAFAGA: el servidor agrega `rafagaApagada: true` SOLO si el comercio la apago; la lee «¿Esperar ráfaga?».
+  rafagaApagada: r.rafagaApagada === true ? true : undefined } }];

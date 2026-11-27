@@ -54,7 +54,7 @@ export function enlaceAMaps(valor: unknown): string | null {
  * El enlace de un pedido, o `null`. La ubicación solo importa cuando el pedido
  * va a domicilio. El servidor guarda `entrega: 'envio' | 'retiro'`
  * (`checkoutCatalogo`); `'delivery'` es el nombre que usan otras partes y se
- * acepta también. Un retiro en el local nunca muestra el enlace, aunque traiga
+ * acepta también. Un recojo en tienda nunca muestra el enlace, aunque traiga
  * ubicación.
  */
 export function enlaceDelPedido(p: { entrega?: unknown; ubicacion?: unknown }): string | null {

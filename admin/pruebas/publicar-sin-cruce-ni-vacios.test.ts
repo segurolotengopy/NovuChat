@@ -175,11 +175,11 @@ describe('credenciales: nodos sin credencial en el vivo, propositos y tipos nuev
 
 describe('Config: ningun valor vivo no vacio queda vacio', () => {
   const vivo = flujo([set('Config base', {
-    costoDeEntrega: 'Bs 10 dentro de la ciudad', enlaceCatalogo: 'https://tienda.ejemplo.bo/catalogo', ubicacionTienda: 'Calle Falsa 123',
+    costoDeEntrega: 'Bs 10 dentro de la ciudad', enlaceCatalogo: 'https://tienda.ejemplo.bo/catalogo', ubicacionTienda: 'Calle Falsa 123', mapaTienda: 'https://maps.app.goo.gl/Ejemplo1',
     hostsFoto: 'fotos.ejemplo.bo', avisoRespaldoPlantilla: 'plantilla_respaldo', telefonosDePrueba: '500000000001', etapaPrueba: 'si', nombreNegocio: 'Tienda Vieja',
   })]);
   const origen = flujo([set('Config base', {
-    costoDeEntrega: '', enlaceCatalogo: '', ubicacionTienda: '', hostsFoto: '', avisoRespaldoPlantilla: '', telefonosDePrueba: '', etapaPrueba: '', nombreNegocio: 'Tienda Nueva',
+    costoDeEntrega: '', enlaceCatalogo: '', ubicacionTienda: '', mapaTienda: '', hostsFoto: '', avisoRespaldoPlantilla: '', telefonosDePrueba: '', etapaPrueba: '', nombreNegocio: 'Tienda Nueva',
   })]);
   const valores = (f: ReturnType<typeof flujo> | null) => {
     const a = (f?.nodes[0]?.parameters as { assignments: { assignments: Array<{ name: string; value: string }> } }).assignments.assignments;
@@ -190,7 +190,7 @@ describe('Config: ningun valor vivo no vacio queda vacio', () => {
     const { r, out, enviado } = publicar(vivo, [], origen, ['--aplicar']);
     expect(r.status, out).toBe(0);
     const v = valores(enviado);
-    for (const clave of ['costoDeEntrega', 'enlaceCatalogo', 'ubicacionTienda', 'hostsFoto', 'avisoRespaldoPlantilla']) {
+    for (const clave of ['costoDeEntrega', 'enlaceCatalogo', 'ubicacionTienda', 'mapaTienda', 'hostsFoto', 'avisoRespaldoPlantilla']) {
       expect(v[clave], clave).not.toBe('');
       expect(out).toContain(`Config base · ${clave}: el origen lo trae vacio`);
     }
