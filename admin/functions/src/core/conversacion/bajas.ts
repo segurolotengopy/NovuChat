@@ -23,7 +23,8 @@
  *   4. etiqueta del botón («No, gracias» / «Sí, contáctenme»): solo con cita;
  *   5. «no» escrito (`esNoEscritoDeCampana`): con cita, o como primera respuesta dentro de las 24 h del envío;
  *   6. nada de lo anterior: `no_aplica` y no se escribe nada.
- * Un `campana_respuesta` SIN `respuestaPor` se trata como «texto» (la lectura más estricta): ningún flujo vivo lo manda así.
+ * Un `campana_respuesta` SIN `respuestaPor` (el flujo vivo, que solo lo emite desde un botón) se trata, si es «no», como payload
+ * (nunca se pierde mientras el chat no se republique) y, si es «sí», como «texto» (la lectura estricta: nunca responde).
  *
  * Idempotente y sin pisar: si la baja ya existe NO se reescribe (`desde` conserva el instante de la primera). Con una
  * respuesta aplicada se anota además `campanaRespuesta: { campanaId, respuesta, en, idMetaEntrante? }` en la conversación (la
@@ -127,10 +128,12 @@ export function resolverRespuestaDeCampana(
   if (respuesta === null) return { decision: 'invalida' };
   // 1. Reintento de Meta: la misma entrega ya se aplicó.
   const previa = conv?.['campanaRespuesta'] as Record<string, unknown> | undefined;
-  if (typeof e.idMetaEntrante === 'string' && e.idMetaEntrante !== '' && previa?.['idMetaEntrante'] === e.idMetaEntrante) {
+  if (contextoIdValido(e.idMetaEntrante) && previa?.['idMetaEntrante'] === e.idMetaEntrante) {
     return { decision: 'reintento', respuesta: normalizarRespuestaDeCampana(previa['respuesta']) };
   }
-  const por: RespuestaPor = respuestaPorValida(e.por) ? e.por : 'texto';
+  // Sin `respuestaPor` (el flujo vivo, que solo emite `campana_respuesta` desde un botón de Meta): un «no» vale como payload, para
+  // que nunca se pierda entre el despliegue de las Functions y la republicación del chat; un «sí» sigue estricto (texto).
+  const por: RespuestaPor = respuestaPorValida(e.por) ? e.por : (respuesta === 'no' ? 'payload' : 'texto');
   const h = hechosDeCampana(conv, e.contextoId, ahoraMs);
   const propio = campanaIdValido(e.campanaId) ? e.campanaId : null;
   const id = propio ?? h.campanaId;
@@ -173,7 +176,7 @@ export async function aplicarRespuestaDeCampana(
   if (d.decision === 'reintento') return d.respuesta === 'no' ? 'ya_baja' : 'respuesta';
   const existente = d.respuesta === 'no' ? await tx.get(refBaja) : null;
   if (opciones.soloBaja !== true) {
-    const idMetaEntrante = typeof datos.idMetaEntrante === 'string' && datos.idMetaEntrante !== '' ? { idMetaEntrante: datos.idMetaEntrante } : {};
+    const idMetaEntrante = contextoIdValido(datos.idMetaEntrante) ? { idMetaEntrante: datos.idMetaEntrante } : {};
     tx.set(refConv, { campanaRespuesta: { campanaId: d.campanaId, respuesta: d.respuesta, en: ahora, ...idMetaEntrante } }, { merge: true });
   }
   if (existente === null) return 'respuesta';

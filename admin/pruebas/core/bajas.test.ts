@@ -11,6 +11,13 @@
  * `desde`). Un «no» con id malo o ausente igual crea la baja con `campanaId` null, también con la conversación bloqueada o el
  * servicio cortado. La baja de un comercio no aparece en el otro.
  *
+ * PR-B (27/11/2026, E1/E3/E8): la ingesta decide con la campaña enviada (`conversacion.campanaEnviada`) y responde
+ * `campanaSaliente.resultado` (baja, ya_baja, respuesta, invalida, no_aplica). Solo el «no» por PAYLOAD (`respuestaPor: 'payload'`)
+ * da de baja sin cita; la etiqueta y el «no» escrito (exactamente «no» o «no gracias», con «.» o «!» finales) exigen la cita del
+ * context.id o, el escrito, ser la primera respuesta dentro de las 24 h del envío; un «sí» solo con cita. Sin `respuestaPor` un
+ * «no» vale como payload (compatibilidad con el flujo vivo) y un «sí» como texto (nunca responde). El `idMeta` entrante solo se
+ * guarda y se compara si tiene la forma de un id de Meta.
+ *
  * Puerto del emulador: 8231 por convención.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -261,10 +268,30 @@ describe('E3/E8, NIEGA: sin cita, solo el payload «no» da de baja; etiqueta y 
       expect((await escrito('no me interesa', { contextoId: CTX })).cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
       expect(await cuantasBajas(A)).toBe(0);
     });
-    it('NIEGA: un `campana_respuesta` sin `respuestaPor` se trata como texto (la lectura estricta): sin cita ni ventana no da de baja', async () => {
-      const r = await llamar(A, { telefono: TEL, direccion: 'entrante', tipo: 'text', texto: 'No, gracias', evento: 'campana_respuesta', campanaEnvioId: CAMPANA, respuestaCampana: 'no' });
-      expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
+    const sinPor = (extra: Record<string, unknown>) =>
+      llamar(A, { telefono: TEL, direccion: 'entrante', tipo: 'text', texto: 'No, gracias', evento: 'campana_respuesta', ...extra });
+    it('compatibilidad con el flujo vivo: un «no» SIN `respuestaPor` vale como payload y da de baja (aun sin campaña ni cita)', async () => {
+      const r = await sinPor({ campanaEnvioId: CAMPANA, respuestaCampana: 'no' });
+      expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'baja' });
+      expect(await baja(A)).toMatchObject({ campanaId: CAMPANA, origen: 'boton_campana' });
+    });
+    it('NIEGA: un «sí» SIN `respuestaPor` nunca responde a la campaña, ni con cita y campaña vigente', async () => {
+      await sembrarEnviada(A);
+      const r = await sinPor({ ...SI });
+      expect(['no_aplica', 'invalida']).toContain((r.cuerpo['campanaSaliente'] as Datos)['resultado']);
+      expect((await conversacion(A))['campanaRespuesta']).toBeUndefined();
       expect(await cuantasBajas(A)).toBe(0);
+    });
+    it('LOW, NIEGA: un `idMeta` entrante mal formado no se guarda ni sirve de reintento', async () => {
+      const malo = 'con espacio y ' + 'x'.repeat(5);
+      const e = { campanaEnvioId: CAMPANA, respuestaCampana: 'no', idMeta: malo };
+      await responder(A, e);
+      expect((await conversacion(A))['campanaRespuesta']).not.toHaveProperty('idMetaEntrante');
+      // Un reintento con el mismo valor malo NO se toma por la misma entrega: se aplica de nuevo (ya_baja, con la baja existente).
+      await db.doc(`tenants/${A.id}/conversaciones/wa_${TEL}`).update({ 'campanaRespuesta.idMetaEntrante': malo });
+      expect((await responder(A, e)).cuerpo['campanaSaliente']).toEqual({ resultado: 'ya_baja' });
+      expect(BAJAS.resolverRespuestaDeCampana({ campanaRespuesta: { respuesta: 'si', idMetaEntrante: malo } },
+        { respuesta: 'no', por: 'payload', idMetaEntrante: malo }, Date.now())).toMatchObject({ decision: 'baja' });
     });
   });
 });
