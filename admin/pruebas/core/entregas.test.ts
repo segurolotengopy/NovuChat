@@ -846,7 +846,7 @@ describe('Entregas: los flujos del disco', () => {
   it('se descubren del disco: los 8 de Flujos/ y los de experimental/, sin locales, plantillas ni de prueba', () => {
     expect(ARCHIVOS.filter((a) => !a.includes('/')).length).toBeGreaterThanOrEqual(8);
     expect(ARCHIVOS).toEqual(expect.arrayContaining([
-      'bellido-agendamiento.json', 'clientes/demo-a/demo-a-agendamiento.json', 'demo-b-venta-cobro.json', 'novuchat-onboarding.json',
+      'bellido-agendamiento.json', 'clientes/demo-a/demo-a-agendamiento.json', 'clientes/demo-b/demo-b-venta-cobro.json', 'novuchat-onboarding.json',
       'agendamiento-seguimientos.json', 'demo-a-recordatorios.json',
       'clientes/agenda-minima/agenda-minima.v0.json', 'clientes/venta-minima/venta-minima.qtaco.json',
     ]));
@@ -857,7 +857,7 @@ describe('Entregas: los flujos del disco', () => {
     for (const a of ['agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'demo-a-recordatorios.json']) {
       expect(esProgramado(FLUJOS.get(a) as Flujo), a).toBe(true);
     }
-    for (const a of ['demo-b-venta-cobro.json', 'novuchat-onboarding.json']) expect(esProgramado(FLUJOS.get(a) as Flujo), a).toBe(false);
+    for (const a of ['clientes/demo-b/demo-b-venta-cobro.json', 'novuchat-onboarding.json']) expect(esProgramado(FLUJOS.get(a) as Flujo), a).toBe(false);
   });
 
   it.each(ARCHIVOS)('%s: no tiene violaciones fuera de las excepciones declaradas', (archivo) => {

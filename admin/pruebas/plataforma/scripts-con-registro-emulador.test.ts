@@ -32,7 +32,7 @@ const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['FIRESTORE_EMULATOR_HOST'] = HOST;
 
 const { initializeApp, getApps } = await import('firebase-admin/app');
-const { getFirestore } = await import('firebase-admin/firestore');
+const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
 const app = getApps().find((a) => a.name === 'scripts-registro') ?? initializeApp({ projectId: PROYECTO }, 'scripts-registro');
 const db = getFirestore(app);
 
@@ -167,6 +167,20 @@ describe('fijar-webhook-carrito.mjs: solo un comercio con catálogo web (venta) 
     expect(r.codigo).toBe(1);
     expect(r.salida).toMatch(/no tiene el flujo «venta»/);
     expect(r.salida).not.toMatch(/Seco: no se escribió nada/);
+  });
+
+  it('NEGATIVA (H3): con --tenant, si la ficha apunta a la ruta de OTRO comercio, no se escribe ni se quita nada', async () => {
+    await db.doc(`tenants/${VENTA}`).update({ waPhoneNumberId: NUMEROS[DOS]! });
+    try {
+      for (const extra of [['--url', 'https://n8n.ejemplo.com/webhook/prueba'], ['--quitar']]) {
+        const r = correr('plataforma/fijar-webhook-carrito.mjs', '--tenant', VENTA, ...extra, '--aplicar');
+        expect(r.codigo, r.salida).toBe(1);
+        expect(r.salida).toMatch(/pertenece a otro comercio/);
+      }
+      expect((await db.doc(`rutasWhatsApp/${NUMEROS[DOS]}`).get()).get('webhookCarrito')).toBeUndefined();
+    } finally {
+      await db.doc(`tenants/${VENTA}`).update({ waPhoneNumberId: FieldValue.delete() });
+    }
   });
 
   it.each([['agendamiento', AGENDA, 'agendamiento'], ['captación', CAPTACION, 'onboarding'], ['un flujo desconocido', RARO, '']])(

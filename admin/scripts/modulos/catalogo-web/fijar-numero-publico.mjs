@@ -61,10 +61,24 @@ const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : undefined; };
 const APLICAR = args.includes('--aplicar');
 const QUITAR = args.includes('--quitar');
-const PROYECTO = (opcion('proyecto') ?? '').trim();
+// `--proyecto-env <NOMBRE>`: el id del proyecto sale de una variable de entorno del proceso (no queda en la línea de comandos).
+const NOMBRE_PROYECTO_ENV = (opcion('proyecto-env') ?? '').trim();
+if (NOMBRE_PROYECTO_ENV && !/^[A-Z][A-Z0-9_]{2,40}$/.test(NOMBRE_PROYECTO_ENV)) { console.error('  ✗ --proyecto-env: nombre de variable inválido'); process.exit(2); }
+const PROYECTO = (NOMBRE_PROYECTO_ENV ? String(process.env[NOMBRE_PROYECTO_ENV] ?? '') : (opcion('proyecto') ?? '')).trim();
 const TENANT = (opcion('tenant') ?? '').trim();
-const NUMERO = (opcion('numero') ?? '').trim();
-const OPERADOR = (opcion('operador') ?? '').trim().toLowerCase();
+// SIN VALORES EN LA LÍNEA DE COMANDOS (26/11/2026; lo usa `scripts/fijar-numero-publico-comercio.sh`): `--numero-env <NOMBRE>` y
+// `--operador-env <NOMBRE>` toman el número público y el correo de variables de entorno del proceso. Con `--numero-env` el número
+// público tampoco se imprime entero (solo sus últimas cuatro cifras).
+const nombreEnv = (o) => {
+  const n = (opcion(o) ?? '').trim();
+  if (n === '') return '';
+  if (!/^[A-Z][A-Z0-9_]{2,40}$/.test(n)) { console.error(`  ✗ --${o}: nombre de variable inválido`); process.exit(2); }
+  return String(process.env[n] ?? '').trim();
+};
+const OCULTAR_NUMERO = args.includes('--numero-env');
+const NUMERO = args.includes('--numero-env') ? nombreEnv('numero-env') : (opcion('numero') ?? '').trim();
+const OPERADOR = (args.includes('--operador-env') ? nombreEnv('operador-env') : (opcion('operador') ?? '')).trim().toLowerCase();
+const verNum = (v) => (OCULTAR_NUMERO && v !== '' ? ult4(v) : v);
 
 const rojo = (t) => console.error(`\x1b[1;31m${t}\x1b[0m`);
 const verde = (t) => console.log(`\x1b[1;32m${t}\x1b[0m`);
@@ -84,7 +98,7 @@ if (!ID_TENANT.test(TENANT)) problemas.push('--tenant no es un identificador vá
 if (!CORREO.test(OPERADOR)) problemas.push('--operador <correo> es obligatorio: es quien queda en la auditoría');
 if (QUITAR) {
   // Excluyente con `--numero`: o se fija, o se quita; nunca las dos cosas.
-  if (args.includes('--numero')) problemas.push('--quitar y --numero son excluyentes');
+  if (args.includes('--numero') || args.includes('--numero-env')) problemas.push('--quitar y --numero son excluyentes');
 } else if (!NUMERO_PUBLICO.test(NUMERO)) {
   problemas.push('--numero tiene que ser solo dígitos, de 8 a 15, con el prefijo del país '
     + '(sin +, sin espacios, sin cero inicial)');
@@ -162,11 +176,11 @@ if (plan[NEGADO]) {
 }
 
 console.log();
-console.log(`  Proyecto : ${PROYECTO}`);
+console.log(`  Proyecto : ${NOMBRE_PROYECTO_ENV ? '(del entorno)' : PROYECTO}`);
 console.log(`  Comercio : ${TENANT}  ·  línea ${ult4(plan.phoneNumberId)}`);
-console.log(`  Operador : ${OPERADOR}`);
-console.log(`  Antes    : ${plan.antes === '' ? '(sin número público)' : plan.antes}`);
-console.log(`  Después  : ${QUITAR ? '(sin número público)' : NUMERO}`);
+console.log(`  Operador : ${args.includes('--operador-env') ? '(del entorno)' : OPERADOR}`);
+console.log(`  Antes    : ${plan.antes === '' ? '(sin número público)' : verNum(plan.antes)}`);
+console.log(`  Después  : ${QUITAR ? '(sin número público)' : verNum(NUMERO)}`);
 console.log();
 
 if (plan.igual) {

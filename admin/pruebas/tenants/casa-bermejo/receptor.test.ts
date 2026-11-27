@@ -1,8 +1,10 @@
 /**
  * LA ENTRADA VERIFICADA DEL RECEPTOR en el esqueleto de Casa Bermejo, con el n8n de mentira. Se prueba NEGANDO: una firma inválida, un repetido o un campo que no es `messages` no llegan a nada.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ANA, EXTRANJERO, crear, entrega, hablar, mSticker, mTexto, valorMeta } from './mundo';
+import { ANA, CARPETA, EXTRANJERO, crear, entrega, hablar, modelo, mSticker, mTexto, valorMeta } from './mundo';
 
 const sinRastro = (t: ReturnType<typeof hablar>): void => {
   expect(t.mensajes).toHaveLength(0);
@@ -83,5 +85,17 @@ describe('receptor: camino feliz del esqueleto', () => {
     const t2 = hablar(m, EXTRANJERO, mTexto('hello again'));
     expect(t2.mensajes).toHaveLength(1);
     expect(t2.avisos).toHaveLength(0);
+  });
+  it('D5: el texto de «fuera de país» YA NO EXISTE en el código, en el flujo armado ni en sus variantes; un tercer país (prefijo 55) se atiende como Bolivia con aviso a la tienda, con el catálogo y el modelo de siempre', () => {
+    const TEXTO = /atendemos pedidos de n[uú]meros de Bolivia y de Argentina|BM_TEXTO_FUERA_DE_PAIS|fuera_de_pais/;
+    for (const f of ['src/lib/bm.js', 'src/nodos/armar-mensajes.js', 'src/nodos/decidir-turno.js', 'casa-bermejo.json', 'casa-bermejo.prueba.json']) expect(readFileSync(join(CARPETA, f), 'utf8'), f).not.toMatch(TEXTO);
+    for (const hola of ['hello', 'hola, quiero una billetera', 'oi, tudo bem?']) {
+      const m = crear({ modeloDice: modelo('Con gusto. ¿Qué pieza le interesa?') });
+      const t = hablar(m, EXTRANJERO, mTexto(hola));
+      expect(t.mensajes, hola).toHaveLength(1);
+      expect(t.mensajes[0]?.cuerpo ?? '', hola).not.toMatch(TEXTO);
+      expect(t.mensajes[0]?.cuerpo ?? '', hola).toMatch(/pieza/);
+      expect(t.avisos, hola).toHaveLength(1);
+    }
   });
 });

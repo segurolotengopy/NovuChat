@@ -354,6 +354,8 @@ export function ensamblarEnMemoria(archivoFlujo, raiz = RAIZ_FLUJOS) {
   const manifiesto = leerManifiesto(archivoFlujo, raiz);
   if (!manifiesto) return { archivo: archivoFlujo, texto: original, original, conManifiesto: false };
   const j = JSON.parse(original);
+  // `consumidor: null` es la excepción de las pruebas que llaman a `injertarRafaga` directo: un flujo real nunca la declara (sin consumidor la ráfaga PIERDE los mensajes agrupados).
+  if (manifiesto.rafaga && manifiesto.rafaga.consumidor === null) throw new Error(`${archivoFlujo}: el manifiesto declara \`rafaga.consumidor: null\`, que no se admite en un flujo real: nombra el nodo (o la lista) que lee \`textoDelTurno\` de «Agrupar ráfaga»`);
   const inyectados = [];
   recorrer(j, manifiesto, raiz, ({ clave, ruta, saltoFinal, escribir }) => {
     escribir(contenidoDeModulo(ruta, saltoFinal));

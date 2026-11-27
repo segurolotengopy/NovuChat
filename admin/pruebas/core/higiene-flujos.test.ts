@@ -48,7 +48,7 @@ function nodosConMarcadorNoDeclarado(flujo: Flujo, declarados: string[]): string
 
 const leer = (f: string): Flujo => JSON.parse(readFileSync(join(RAIZ_FLUJOS, f), 'utf8')) as Flujo;
 const declaradosDe = (f: string): string[] => {
-  if (f.includes('/') || !existsSync(join(RAIZ_FLUJOS, 'manifiestos', f))) return [];
+  if (f.startsWith('experimental/') || !existsSync(join(RAIZ_FLUJOS, 'manifiestos', f))) return [];
   const m = leerManifiesto(f) as { conservanMarcadores?: Record<string, string> } | null;
   return Object.keys(m?.conservanMarcadores ?? {});
 };
@@ -56,10 +56,11 @@ const declaradosDe = (f: string): string[] => {
 const ARCHIVOS = jsonDeFlujos();
 
 describe('Higiene de los flujos: ningún id de credencial', () => {
-  it('el inventario incluye los 10 flujos de la raíz, el del Demo A en clientes/ y los de experimental/', () => {
+  it('el inventario incluye los 9 flujos de la raíz, los de los Demo A y B en clientes/ y los de experimental/', () => {
     // Mudanza del Demo A (25/11/2026): el agendamiento salió de la raíz (11 → 10) y se sigue revisando desde clientes/demo-a/; los recordatorios siguen en la raíz.
-    expect(ARCHIVOS.filter((f) => !f.includes('/')).length).toBe(10);
-    expect(ARCHIVOS).toEqual(expect.arrayContaining(['clientes/demo-a/demo-a-agendamiento.json', 'demo-a-recordatorios.json']));
+    // Mudanza del Demo B (25/11/2026): la venta con cobro salió de la raíz (10 → 9) y se sigue revisando desde clientes/demo-b/.
+    expect(ARCHIVOS.filter((f) => !f.includes('/')).length).toBe(9);
+    expect(ARCHIVOS).toEqual(expect.arrayContaining(['clientes/demo-a/demo-a-agendamiento.json', 'clientes/demo-b/demo-b-venta-cobro.json', 'demo-a-recordatorios.json']));
     expect(ARCHIVOS.some((f) => f.startsWith('experimental/'))).toBe(true);
   });
 
@@ -78,8 +79,10 @@ describe('Higiene de los flujos: ningún id de credencial', () => {
 });
 
 describe('Higiene de los flujos: REEMPLAZAR_ solo si el manifiesto lo declara', () => {
-  // Los de experimental/ son bancos de prueba con sus propios nodos de entrada.
-  for (const f of ARCHIVOS.filter((x) => !x.includes('/'))) {
+  // Los de experimental/ son bancos de prueba con sus propios nodos de entrada. Los demos mudados a clientes/ (25/11/2026)
+  // se siguen revisando aquí, como cuando estaban en la raíz.
+  const DEMOS_MUDADOS = ['clientes/demo-a/demo-a-agendamiento.json', 'clientes/demo-b/demo-b-venta-cobro.json'];
+  for (const f of ARCHIVOS.filter((x) => !x.includes('/') || DEMOS_MUDADOS.includes(x))) {
     it(`${f}: todo marcador fuera de Config base está declarado`, () => {
       const hallados = nodosConMarcadorNoDeclarado(leer(f), declaradosDe(f));
       expect(hallados, `${f}: marcador no declarado en ${hallados.join(', ')}`).toEqual([]);
@@ -87,7 +90,7 @@ describe('Higiene de los flujos: REEMPLAZAR_ solo si el manifiesto lo declara', 
   }
 
   it('el carrito del Demo B y «¿Es un mensaje?» de la captación están declarados', () => {
-    expect(declaradosDe('demo-b-venta-cobro.json')).toContain('Carrito del catálogo');
+    expect(declaradosDe('clientes/demo-b/demo-b-venta-cobro.json')).toContain('Carrito del catálogo');
     expect(declaradosDe('novuchat-onboarding.json')).toContain('¿Es un mensaje?');
   });
 

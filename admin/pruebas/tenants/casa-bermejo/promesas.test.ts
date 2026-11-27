@@ -93,7 +93,7 @@ describe('el modelo no promete lo que no se cumple', () => {
   });
   it('sin QR de cobro real, el pedido queda anotado y recepción lo coordina: aviso con «sin comprobante aún» y el botón', async () => {
     const { panelSinCobro, ENTREGA } = await import('./mundo');
-    const m = crear({ panel: panelSinCobro(), modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) });
+    const m = crear({ entregaPrevia: ENTREGA, panel: panelSinCobro(), modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) });
     hablar(m, ANA, mTexto('una billetera'));
     const t = hablar(m, ANA, mTexto('quiero pagar'));
     expect(t.mensajes.every((x) => x.tipo !== 'image')).toBe(true);

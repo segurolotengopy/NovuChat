@@ -20,7 +20,7 @@ vi.mock('firebase-admin/auth', async (importOriginal) => {
   const original = await importOriginal<typeof import('firebase-admin/auth')>();
   return { ...original, getAuth: (...a: unknown[]) => h.getAuth(...a) };
 });
-await import('../../functions/src/index.ts'); // inicializa la app de Admin
+const { retomarConversacion: DESPLEGADA } = await import('../../functions/src/index.ts'); // inicializa la app de Admin
 const { crearRetomarConversacion, nombreComoParametro, plantillaDeRetomarDe } = await import('../../functions/src/core/conversacion/retomarConversacion.ts');
 const { confirmarSalida } = await import('../../functions/src/core/conversacion/confirmarSalidaPersona.ts');
 const { reclamarSalida } = await import('../../functions/src/core/conversacion/reclamarSalidaPersona.ts');
@@ -317,6 +317,16 @@ describe('las banderas de la ficha, exactas', () => {
       await db.doc(`tenants/${A}`).update({ personaPuedeRetomar: valor });
       await rechaza(mensajeFijo);
     }
+  });
+  it('R0: la Function que exporta index.ts (la desplegada, con el plan real) nace APAGADA: sin la bandera rechaza sin efectos', async () => {
+    expect(DESPLEGADA).toBeDefined();
+    await db.doc(`tenants/${A}`).update({ personaPuedeRetomar: FieldValueBorrar() });
+    const antes = await leerConv();
+    auth.vigente = true; usuarios.set(ANA.uid, ANA.token['nc'] as Record<string, unknown>); vi.setSystemTime(new Date(AHORA));
+    const e = await rechazo((DESPLEGADA as unknown as { run: (r: unknown) => Promise<unknown> })
+      .run({ data: base(), auth: { uid: ANA.uid, token: ANA.token }, rawRequest: {} }));
+    expect(e).toMatchObject({ code: 'permission-denied', message: 'Retomar conversaciones todavía no está activo para su negocio.' });
+    await sinEfectos(antes);
   });
   it('NEGATIVA (orden de §1.4): un comercio sin bandera Y sin ruta recibe `sinRetomar` / `sinSalida`, no un error de canal', async () => {
     for (const d of await db.collection('rutasWhatsApp').listDocuments()) await d.delete();

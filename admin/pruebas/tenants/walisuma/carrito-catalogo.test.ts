@@ -1,6 +1,6 @@
 /**
  * EL PEDIDO QUE EL CLIENTE CONFIRMA EN EL CATÁLOGO WEB (módulo catalogo-web), en el flujo de Walisuma, con el n8n de mentira. Se prueba NEGANDO.
- * El caso real: «Pedido desde el catálogo web (retiro): 1× Billetera clásica, 1× Bufanda Dennis — total 1330 BOB, nota «Bufanda roja»» (Silvana).
+ * El caso real: «Pedido desde el catálogo web (recojo en tienda): 1× Billetera clásica, 1× Bufanda Dennis — total 1330 BOB, nota «Bufanda roja»» (Silvana).
  * Costo: UN mensaje por pedido del catálogo (el resumen con lo que falta). Con la entrega completa el paso final es `wlCarritoListoParaConfirmar` (sin QR: el QR espera el botón común «Confirmar pedido»).
  */
 import { describe, expect, it } from 'vitest';

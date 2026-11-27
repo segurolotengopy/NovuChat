@@ -26,7 +26,8 @@ const HUELLAS: [string, string, string][] = [
   ['carga-de-entrada.js', '2562bb2b56c2ea23', '2562bb2b56c2ea23'],
   // Antonio ganó la ubicación (02/11/2026: `direccion` y `direccionMaps` de la Consola); el neutro queda como estaba. Su diferencia se declara abajo.
   // El miniCRM (la planilla del negocio) sí está en el neutro desde Walisuma: lo usan los dos tenants.
-  ['config-del-negocio.js', '5eeed2b728e05a24', '852cce1e9ff6a138'],
+  // Interruptor de la ráfaga (26/11/2026): `rafagaApagada` entró SOLO en el neutro (lo exige `nucleo-comun.test.ts`: idéntico a core). El origen de Antonio no cambia (otras pruebas lo fijan contra su origen); la diferencia se declara abajo.
+  ['config-del-negocio.js', '5eeed2b728e05a24', 'b56f4331b34d02de'],
   // El Gmail tras una venta confirmada (10/11/2026) es SOLO de Antonio y de Rubén: cambió el origen de `normalizar-entrada` (el reporte a la consola no lleva correos) y de `resumen-del-turno` (restaura `gmailPedidoMs`). Los neutros NO lo adoptan:
   // Ad ID (17/11/2026): `config-del-negocio` y `normalizar-entrada` ganaron la campaña por Ad ID en el origen y en el neutro; las huellas se actualizaron.
   // Carrito del catálogo web (23/11/2026, módulo catalogo-web): el neutro reconoce `type: 'carrito'` solo con `carritoWeb: true`; huella actualizada.
@@ -49,7 +50,11 @@ describe('huellas: lo que se subió y de dónde', () => {
     const antonio = leer(join(ANTONIO, 'config-del-negocio.js'))
       .replace(/\/\/ El enlace de Google Maps de la Consola[^\n]*\nconst ENLACE_DE_MAPA[^\n]*\nconst enlaceDeMapa[^\n]*\n\n/, '')
       .replace(/    \/\/ La ubicación \(02\/11\/2026\)[^\n]*\n    direccion:[^\n]*\n    direccionMaps:[^\n]*\n/, '')
-    expect(leer(join(NEUTROS, 'config-del-negocio.js'))).toBe(antonio);
+    // El neutro gana el interruptor de la ráfaga (26/11/2026); se quita para comparar con el origen.
+    const neutro = leer(join(NEUTROS, 'config-del-negocio.js'))
+      .replace(/    \/\/ INTERRUPTOR DE LA RAFAGA:[^\n]*\n    rafagaApagada: cuerpo\.rafagaApagada === true \? true : undefined,\n/, '')
+    expect(neutro).toBe(antonio);
+    expect(leer(join(NEUTROS, 'config-del-negocio.js'))).toContain('rafagaApagada: cuerpo.rafagaApagada === true ? true : undefined');
   });
 });
 
