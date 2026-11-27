@@ -135,6 +135,8 @@ export interface Ruta {
   tenantId: string;
   flujo: string;
   estado: string;
+  /** La ruta ya trae un `numeroPublico` (cadena). Sale del mismo documento: sin lectura nueva. */
+  tieneNumeroPublico: boolean;
 }
 
 /**
@@ -222,6 +224,7 @@ export async function rutaAutenticada(peticion: {
     tenantId: String(doc.get('tenantId') ?? ''),
     flujo: String(doc.get('flujo') ?? ''),
     estado: String(doc.get('estado') ?? ''),
+    tieneNumeroPublico: typeof doc.get('numeroPublico') === 'string',
   };
 }
 

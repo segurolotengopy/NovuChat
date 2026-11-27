@@ -19,6 +19,7 @@ import { defineInt } from 'firebase-functions/params';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
 import { vozFija, tratamientoClave, tratamientoEfectivo, quienAtiende } from './core/prompt/prompt.js';
 import { registrar } from './core/turno/bitacora.js';
+import { numeroPublicoDesdeMeta } from './core/conversacion/numeroPublico.js';
 import { atenderSesion } from './core/turno/sesionFirestore.js';
 import { validarSesion } from './core/turno/sesion.js';
 import { validarRafaga, leerRafaga, tomarCupoDeRafaga } from './core/conversacion/rafaga.js';
@@ -1697,6 +1698,51 @@ function registrarAnomaliaDeSesion(
   });
 }
 
+/**
+ * Fija `rutasWhatsApp/<phoneNumberId>.numeroPublico` con el número que Meta informa para la línea
+ * (`lineaVisible = {id, numero}` en el cuerpo). Solo si la ruta autenticada no lo tiene, el `id` coincide con
+ * la cabecera firmada y el número cumple las reglas del script de fijado a mano. La transacción RELEE la ruta
+ * y escribe solo si sigue sin campo, es del mismo comercio y no fue quitado a mano. Todo en try/catch: un
+ * fallo se registra y el turno sigue igual.
+ */
+async function fijarNumeroPublicoDesdeMeta(
+  ruta: { phoneNumberId: string; tenantId: string; tieneNumeroPublico: boolean },
+  lineaVisible: unknown,
+): Promise<void> {
+  try {
+    if (ruta.tieneNumeroPublico) return;
+    if (typeof lineaVisible !== 'object' || lineaVisible === null) return;
+    const { id, numero } = lineaVisible as Record<string, unknown>;
+    if (typeof id !== 'string' || id !== ruta.phoneNumberId) return;
+    const publico = numeroPublicoDesdeMeta(numero);
+    if (publico === '') return;
+
+    const db = getFirestore();
+    const refRuta = db.doc(`rutasWhatsApp/${ruta.phoneNumberId}`);
+    await db.runTransaction(async (tx) => {
+      const actual = await tx.get(refRuta);
+      if (!actual.exists) return;
+      if (actual.get('tenantId') !== ruta.tenantId) return;
+      if (actual.get('numeroPublico') !== undefined) return;
+      if (actual.get('numeroPublicoAuto') === false) return;
+      tx.update(refRuta, {
+        numeroPublico: publico,
+        actualizadoPor: 'meta:ingesta',
+        actualizadoEn: Timestamp.now(),
+      });
+      tx.create(db.collection(`tenants/${ruta.tenantId}/auditoria`).doc(), {
+        accion: 'fijar_numero_publico_auto', uid: 'ingesta', origen: 'ingesta',
+        en: Timestamp.now(), phoneNumberId: `…${ruta.phoneNumberId.slice(-4)}`,
+        despues: `…${publico.slice(-4)}`,
+      });
+    });
+  } catch (e) {
+    logger.warn('configuracionFlujo: no se pudo fijar el numero publico', {
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
 export const configuracionFlujo = onRequest(
   {
     region: REGION,
@@ -1766,6 +1812,11 @@ export const configuracionFlujo = onRequest(
       ? peticion.body : {}) as Record<string, unknown>;
     const telefonoCrudo = typeof cuerpo['telefono'] === 'string' ? cuerpo['telefono'].trim() : '';
     const telefono = /^[0-9]{8,15}$/.test(telefonoCrudo) ? telefonoCrudo : null;
+
+    // NÚMERO PÚBLICO DESDE META (27/11/2026): la primera vez que llega un mensaje verificado a una línea
+    // sin `numeroPublico`, se fija con el que Meta informa. Una sola vez por línea; nunca pisa uno fijado ni
+    // uno quitado a mano (`numeroPublicoAuto: false`). Nunca cambia la respuesta del turno.
+    await fijarNumeroPublicoDesdeMeta(ruta, cuerpo['lineaVisible']);
 
     // RÁFAGA DE MENSAJES (`core/conversacion/rafaga.ts`, `docs/arquitectura/rafagas.md`): el flujo pregunta
     // cuáles son los últimos entrantes de ESTE teléfono para decidir si responde o calla. Corta antes de

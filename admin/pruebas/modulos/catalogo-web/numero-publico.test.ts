@@ -482,8 +482,10 @@ describe('fijar-numero-publico.mjs --quitar: el caso bueno', () => {
     expect(despues).not.toHaveProperty('numeroPublico');
     const cambiaron = Object.keys({ ...antes, ...despues })
       .filter((k) => JSON.stringify(antes[k]) !== JSON.stringify(despues[k])).sort();
-    expect(cambiaron).toEqual(['actualizadoEn', 'actualizadoPor', 'numeroPublico']);
+    expect(cambiaron).toEqual(['actualizadoEn', 'actualizadoPor', 'numeroPublico', 'numeroPublicoAuto']);
     expect(despues['actualizadoPor']).toBe(OPERADOR);
+    // La marca que impide que la plataforma lo vuelva a fijar sola desde Meta.
+    expect(despues['numeroPublicoAuto']).toBe(false);
     // No toca el alias, la WABA, el webhook, la titularidad ni el resto de la ruta.
     for (const k of ['tenantId', 'flujo', 'wabaId', 'aliasSecreto', 'titularidad', 'estado', 'webhookCarrito']) {
       expect(despues[k], k).toEqual(antes[k]);
@@ -531,5 +533,13 @@ describe('fijar-numero-publico.mjs --quitar: el caso bueno', () => {
       return { ...resto, negocio };
     };
     expect(sinWhatsapp(sin)).toEqual(sinWhatsapp(con));
+  });
+  it('fijar a mano después de quitar borra la marca `numeroPublicoAuto`', async () => {
+    await db.doc(`rutasWhatsApp/${LINEA}`).update({ numeroPublicoAuto: false });
+    const r = correr('--proyecto', PROYECTO, '--tenant', T, '--numero', PUBLICO, '--operador', OPERADOR, '--aplicar');
+    expect(r.codigo).toBe(0);
+    const despues = await ruta(LINEA);
+    expect(despues['numeroPublico']).toBe(PUBLICO);
+    expect(despues).not.toHaveProperty('numeroPublicoAuto');
   });
 });

@@ -46,8 +46,9 @@
  * ruta (sin el campo la página no ofrece «Volver al chat»), con los mismos
  * negados que fijar. Es excluyente con `--numero`. Deja `actualizadoPor` = el
  * operador y una entrada de auditoría `quitar_numero_publico` con el valor
- * anterior y los últimos cuatro de la línea. Si ya no hay campo, dice «Ya estaba
- * así» y no escribe ni audita. No toca el alias, la WABA ni el webhook.
+ * anterior y los últimos cuatro de la línea, y deja `numeroPublicoAuto: false` para que la
+ * plataforma NO vuelva a fijarlo sola desde Meta (`configuracionFlujo`); fijar a mano borra esa marca.
+ * Si ya no hay campo y la marca ya está, dice «Ya estaba así» y no escribe ni audita. No toca el alias, la WABA ni el webhook.
  *
  * `--operador` es obligatorio (la misma validación que `asignar-numero.mjs`): es
  * quien queda como `actualizadoPor` de la ruta y como `uid` de la auditoría.
@@ -148,12 +149,18 @@ try {
       phoneNumberId,
       antes: typeof antes === 'string' ? antes : '',
       // Quitar: ya está si el campo no existe (aunque hubiera basura, se quita).
-      igual: QUITAR ? antes === undefined : antes === NUMERO,
+      // Quitar también exige la marca `numeroPublicoAuto: false`: sin ella la plataforma volvería a fijarlo sola.
+      // Fijar a mano exige que no quede la marca.
+      igual: QUITAR
+        ? antes === undefined && ruta.get('numeroPublicoAuto') === false
+        : antes === NUMERO && ruta.get('numeroPublicoAuto') === undefined,
     };
     if (!APLICAR || resumen.igual) return resumen;
 
     tx.update(refRuta, {
       numeroPublico: QUITAR ? FieldValue.delete() : NUMERO,
+      // Quitar a mano apaga el fijado automático desde Meta; fijar a mano borra esa marca.
+      numeroPublicoAuto: QUITAR ? false : FieldValue.delete(),
       actualizadoPor: OPERADOR,
       actualizadoEn: Timestamp.now(),
     });
