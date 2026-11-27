@@ -90,6 +90,8 @@ if (codigo === 409) {
     ...deBase, ...deLaConsola, ...atencion, anuncios, campanasActivas,
     estadoComercio: estadoDeLaConsola === 'activo' ? 'operativo' : (estadoDeLaConsola ? 'suspendido' : 'operativo'),
     configDeLaConsola: true,
+    // INTERRUPTOR DE LA RAFAGA: el servidor agrega `rafagaApagada: true` SOLO si el comercio la apago; la lee «¿Esperar ráfaga?».
+    rafagaApagada: cuerpo.rafagaApagada === true ? true : undefined,
   };
 }
 

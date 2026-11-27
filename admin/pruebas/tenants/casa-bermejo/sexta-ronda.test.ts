@@ -254,7 +254,11 @@ describe('9. la respuesta de la tienda sale también cuando el resto del mensaje
     expect(cuerpoDe(t)).toContain(DIR);
     const sin = hablar(conPedidoListo({ base: DATOS }), ANA, mTexto('Quiero pagar'));
     expect(sin.mensajes).toHaveLength(2);
-    expect(cuerpoDe(sin)).not.toContain(DIR);
+    // Desde la ronda 2 de #1130 (R54) el QR con RECOJO lleva «Retira en: <dirección>» aunque no se pregunte: la dirección sale UNA vez sin la pregunta y la respuesta de la tienda la agrega delante (dos veces con ella).
+    const veces = (s: string): number => s.split(DIR).length - 1;
+    expect(cuerpoDe(sin)).toContain('Retira en: ' + DIR);
+    expect(veces(cuerpoDe(sin))).toBe(1);
+    expect(veces(cuerpoDe(t))).toBe(2);
   });
   it('la memoria guarda el turno COMPLETO: lo que escribió el cliente entero y una MARCA FIJA de la respuesta de la tienda (octava ronda: el texto de la tienda no vuelve al modelo sin <<< >>>)', () => {
     const m = crear({ base: DATOS, modeloDice: modeloSano(() => ({}), 'Con gusto, lo anoto.') });
