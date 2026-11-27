@@ -39,6 +39,10 @@
  *   node scripts/plataforma/fijar-webhook-carrito.mjs --proyecto <id> --numero <phone_number_id> \
  *     --quitar [--aplicar]
  *
+ * SIN VALORES EN LA LÍNEA DE COMANDOS (26/11/2026; lo usa `scripts/fijar-carrito-comercio.sh`): `--tenant <id>` en lugar de
+ * `--numero` (el phone_number_id sale de `tenants/<id>.waPhoneNumberId`, del comercio ACTIVO) y `--url-env <NOMBRE>` en lugar
+ * de `--url` (la URL sale de esa variable de entorno del proceso). Así ni el número ni la ruta secreta pasan por argv.
+ *
  * Seco por defecto: sin `--aplicar` no escribe nada.
  */
 import { initializeApp, applicationDefault } from 'firebase-admin/app';
@@ -54,9 +58,14 @@ const leer = (bandera) => {
 };
 const hay = (bandera) => args.includes(bandera);
 
-const PROYECTO = leer('--proyecto');
-const NUMERO = leer('--numero');
-const URL_DESTINO = leer('--url');
+// `--proyecto-env <NOMBRE>`: el id del proyecto sale de una variable de entorno del proceso (no queda en la línea de comandos).
+const NOMBRE_PROYECTO_ENV = leer('--proyecto-env');
+if (NOMBRE_PROYECTO_ENV && !/^[A-Z][A-Z0-9_]{2,40}$/.test(NOMBRE_PROYECTO_ENV)) { console.error('✗ --proyecto-env: nombre de variable inválido.'); process.exit(1); }
+const PROYECTO = NOMBRE_PROYECTO_ENV ? String(process.env[NOMBRE_PROYECTO_ENV] ?? '').trim() : leer('--proyecto');
+let NUMERO = leer('--numero');
+const TENANT_ID = leer('--tenant');
+const NOMBRE_URL_ENV = leer('--url-env');
+let URL_DESTINO = leer('--url');
 const LISTAR = hay('--listar');
 const QUITAR = hay('--quitar');
 const APLICAR = hay('--aplicar');
@@ -64,8 +73,15 @@ const APLICAR = hay('--aplicar');
 const V = '\x1b[32m'; const A = '\x1b[33m'; const R = '\x1b[31m'; const G = '\x1b[90m'; const F = '\x1b[0m';
 const salir = (mensaje) => { console.error(`${R}✗${F} ${mensaje}`); process.exit(1); };
 
+if (NOMBRE_URL_ENV) {
+  if (URL_DESTINO) salir('--url y --url-env son excluyentes.');
+  if (!/^[A-Z][A-Z0-9_]{2,40}$/.test(NOMBRE_URL_ENV)) salir('--url-env: nombre de variable inválido.');
+  URL_DESTINO = String(process.env[NOMBRE_URL_ENV] ?? '').trim();
+}
+if (TENANT_ID && NUMERO) salir('--tenant y --numero son excluyentes.');
+if (TENANT_ID && !/^[a-z0-9][a-z0-9-]{2,59}$/.test(TENANT_ID)) salir('--tenant: id de comercio inválido.');
 if (!PROYECTO) salir('Falta --proyecto.');
-if (!LISTAR && !NUMERO) salir('Falta --numero (o --listar).');
+if (!LISTAR && !NUMERO && !TENANT_ID) salir('Falta --numero o --tenant (o --listar).');
 if (!LISTAR && !QUITAR && !URL_DESTINO) salir('Falta --url (o --quitar).');
 if (QUITAR && URL_DESTINO) salir('--quitar y --url son excluyentes.');
 
@@ -127,7 +143,7 @@ const ocultarUrl = (valor) => {
 const rutas = await db.collection('rutasWhatsApp').get();
 
 if (LISTAR) {
-  console.log(`\n  Rutas de ${PROYECTO}  ${G}(webhook del carrito)${F}\n`);
+  console.log(`\n  Rutas de ${NOMBRE_PROYECTO_ENV ? '(el proyecto del entorno)' : PROYECTO}  ${G}(webhook del carrito)${F}\n`);
   for (const r of rutas.docs) {
     const w = r.get('webhookCarrito');
     console.log(`  ${ocultar(r.id).padEnd(8)} ${String(r.get('tenantId')).padEnd(20)}`
@@ -137,6 +153,14 @@ if (LISTAR) {
   process.exit(0);
 }
 
+if (TENANT_ID) {
+  // El número del comercio, sin que nadie lo escriba: de su ficha, y solo si el comercio está activo.
+  const f = await db.doc(`tenants/${TENANT_ID}`).get();
+  if (!f.exists) salir(`No existe el comercio ${TENANT_ID}.`);
+  if (f.get('estado') !== 'activo') salir(`El comercio ${TENANT_ID} no está activo.`);
+  NUMERO = String(f.get('waPhoneNumberId') ?? '');
+  if (!/^[0-9]{6,25}$/.test(NUMERO)) salir(`El comercio ${TENANT_ID} no tiene un número de WhatsApp asignado (waPhoneNumberId).`);
+}
 if (!/^[0-9]{6,25}$/.test(NUMERO)) salir('El phone_number_id tiene que ser de 6 a 25 dígitos.');
 
 if (!QUITAR) {
@@ -151,7 +175,7 @@ if (!actual.exists) salir(`El número ${ocultar(NUMERO)} no está asignado a nin
 const tenant = actual.get('tenantId');
 const antes = actual.get('webhookCarrito');
 
-console.log(`\n  Proyecto : ${PROYECTO}`);
+console.log(`\n  Proyecto : ${NOMBRE_PROYECTO_ENV ? '(del entorno)' : PROYECTO}`);
 console.log(`  Número   : ${ocultar(NUMERO)}  →  comercio ${tenant}`);
 console.log(`  Estado   : ${actual.get('estado')}`);
 console.log(`  Antes    : ${antes ? ocultarUrl(antes) : `${G}(sin webhook)${F}`}`);

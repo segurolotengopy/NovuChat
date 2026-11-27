@@ -4,6 +4,7 @@
 #
 #   ./scripts/resetear-telefono.sh --tenant <comercio> --tel <dígitos>            # seco: solo lee y dice qué limpiaría
 #   ./scripts/resetear-telefono.sh --tenant <comercio> --tel <dígitos> --aplicar  # limpia, con respaldo y relectura
+#   ./scripts/resetear-telefono.sh --tenant <comercio> --quien andres|silvana [--aplicar]   # el número sale de la lista cerrada local
 #
 # QUÉ HACE POR USTED (Andres, 20/11/2026: «debería ser UN solo reinicio, unificado»): arma el entorno que antes había que
 # preparar a mano y llama a `admin/scripts/plataforma/resetear-telefono-prueba.mjs`, que limpia en una pasada la sesión y los cupos del
@@ -14,6 +15,8 @@
 #   - el respaldo (datos de persona) va a una carpeta temporal 0700 fuera del repositorio; BÓRRELO al cerrar la prueba (sirve para deshacer con --revertir);
 #   - `--aplicar` ya trae la confirmación de producción del comercio.
 # Vale para CUALQUIER comercio con flujo en su ficha (no hay lista fija); los demos y NovuChat se rechazan.
+# `--quien andres|silvana` (26/11/2026) en lugar de `--tel`: el número NO se escribe ni se imprime; se toma de la lista cerrada local por su
+# TERMINACIÓN (Andres …7339, Silvana …1250; solo esas cuatro cifras viven en el script) y tiene que haber EXACTAMENTE uno en la lista.
 # Variables opcionales: CONFIG_LOCAL_MD (otra tabla), ENV_N8N (otro .env), CLOUDSDK_CONFIG.
 # RESETEAR_SOLO_LISTA=1 solo comprueba que el teléfono esté en la lista blanca (para las pruebas).
 # =============================================================================
@@ -21,18 +24,27 @@ set -euo pipefail
 set +x
 cd "$(dirname "$0")/.." || exit 1
 
-TENANT=""; TEL=""; APLICAR=0
+TENANT=""; TEL=""; QUIEN=""; APLICAR=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --tenant)  TENANT="${2:?}"; shift 2 ;;
     --tel)     TEL="${2:?}"; shift 2 ;;
+    --quien)   QUIEN="${2:?}"; shift 2 ;;
     --aplicar) APLICAR=1; shift ;;
     -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "✗ Opción desconocida: $1" >&2; exit 2 ;;
   esac
 done
 [[ "$TENANT" =~ ^[a-z0-9][a-z0-9-]{2,59}$ ]] || { echo "✗ --tenant: id de comercio (minúsculas, dígitos y guion)" >&2; exit 2; }
-[[ "$TEL" =~ ^[0-9]{8,15}$ ]] || { echo "✗ --tel: solo dígitos (8 a 15)" >&2; exit 2; }
+[[ -z "$TEL" || -z "$QUIEN" ]] || { echo "✗ --tel y --quien son excluyentes" >&2; exit 2; }
+# Los demos, el ensayo y la cuenta de NovuChat no se resetean (lo repite el .mjs; acá se corta antes de leer nada).
+[[ ! "$TENANT" =~ ^(novuchat|ensayo|demo-.*)$ ]] || { echo "✗ --tenant: los demos y NovuChat no se resetean" >&2; exit 2; }
+case "$QUIEN" in
+  "") [[ "$TEL" =~ ^[0-9]{8,15}$ ]] || { echo "✗ --tel: solo dígitos (8 a 15), o --quien andres|silvana" >&2; exit 2; } ;;
+  andres) FIN_QUIEN="7339" ;;
+  silvana) FIN_QUIEN="1250" ;;
+  *) echo "✗ --quien: andres o silvana" >&2; exit 2 ;;
+esac
 
 TABLA="${CONFIG_LOCAL_MD:-$HOME/NovuChat/CONFIGURACION.local.md}"
 [ -f "$TABLA" ] || { echo "✗ No existe la tabla local: sin ella no hay lista blanca de teléfonos de prueba" >&2; exit 1; }
@@ -52,6 +64,12 @@ print(",".join(dict.fromkeys(tels)))
 PY
 )"
 [ -n "$TELEFONOS_PRUEBA" ] || { echo "✗ La tabla local no tiene teléfonos de prueba para este comercio (fila REEMPLAZAR_TELEFONOS_DE_PRUEBA)" >&2; exit 1; }
+if [ -n "$QUIEN" ]; then
+  # El número de esa persona: el ÚNICO de la lista cerrada que termina en su terminación. Ni se imprime ni se acepta ambiguo.
+  CANDIDATOS="$(printf '%s' "$TELEFONOS_PRUEBA" | tr ',' '\n' | grep -E "^[0-9]{8,15}$" | grep -E "${FIN_QUIEN}\$" || true)"
+  [ "$(printf '%s\n' "$CANDIDATOS" | grep -c .)" = 1 ] || { echo "✗ La lista de teléfonos de prueba no tiene EXACTAMENTE un número de $QUIEN para este comercio" >&2; exit 1; }
+  TEL="$CANDIDATOS"
+fi
 case ",$TELEFONOS_PRUEBA," in *",$TEL,"*) ;; *) echo "✗ Ese teléfono NO está en la lista blanca de teléfonos de prueba: no se resetea" >&2; exit 1 ;; esac
 if [ "${RESETEAR_SOLO_LISTA:-0}" = 1 ]; then echo "✓ el teléfono está en la lista blanca (${TENANT})"; exit 0; fi
 
