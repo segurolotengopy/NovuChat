@@ -237,11 +237,10 @@ fallida: responde solo.
   respuesta del servidor, solo con `true` exacto y respuesta 200: `core/config-del-negocio.js` (Demo A, `novuchat-onboarding` y la variante de `bellido-agendamiento`),
   `core/captacion/config-del-negocio.js` y `core/sin-agente/venta-digital/config-del-negocio.js` (Walisuma y Casa Bermejo, con su copia en `experimental/venta-digital`). Demo B
   (#1125, `core/venta/config-del-negocio.js`) y Bellido Agenda mínima (#1127, `agenda-minima/src/nodos/config-del-negocio.js`) lo propagan en sus ramas.
-  **PENDIENTE, fuera de #1135:** Q'Taco (`Flujos/clientes/venta-minima/src/nodos/config-del-negocio.js`) y el chat de NovuChat (`Flujos/clientes/novuchat/src/nodos/config-del-negocio.js`)
-  tienen su PROPIO «Config del negocio», que no emite `rafagaApagada`: en esos dos comercios el interruptor por comercio no llegaría al IF de la pieza. Se cierra en un
-  PR por definir, aparte de #1135; hasta entonces no son «todos». El chat de NovuChat tiene además un «Esperar ráfaga» propio (no es la pieza común); si debe obedecer
-  `rafagaApagada` queda por verificar en ese PR. El servidor lo entrega solo con `true` exacto, y la pieza NO verifica al armar que «Config del negocio» emita
-  `rafagaApagada` (límite conocido).
+  **Q'Taco y el chat de NovuChat (PR `flujos/rafaga-apagada-qtaco-chat`, sin publicar):** sus «Config del negocio» PROPIAS (`Flujos/clientes/venta-minima/src/nodos/config-del-negocio.js` y `Flujos/clientes/novuchat/src/nodos/config-del-negocio.js`)
+  ahora copian `rafagaApagada`, solo con `true` exacto y respuesta 200 (`admin/pruebas/core/rafaga-apagada-qtaco-chat.test.ts`, con mutación). **Q'Taco todavía no lleva la pieza de ráfagas** (ningún nodo de ráfaga en sus JSON): la clave queda lista para cuando la adopte; adoptarla
+  (+4 nodos) es otro PR con su autorización. **El chat de NovuChat** tiene su propio «Esperar ráfaga» (coalescencia de clics, no es la pieza común) y, por decisión de Andres del 27/11/2026, OBEDECE `rafagaApagada`: `Registrar evento` deja `esperarSeg` en el mínimo de 0,1 s
+  (el evento se registra igual y la última ejecución sigue respondiendo con todos los eventos; lo que se apaga es la espera). El servidor lo entrega solo con `true` exacto, y la pieza NO verifica al armar que «Config del negocio» emita `rafagaApagada` (límite conocido).
 - **Por flujo, exige republicar:** `rafagaActiva` (verdadero si falta; `false` apaga) y `esperaRafagaSeg` (defecto 2, de 1 a 5) viven en «Config base»,
   un nodo del JSON del flujo. Cambiarlos es cambiar el flujo y publicarlo (`publicar-flujo.sh`). Es a propósito: la espera es una propiedad del flujo
   (cuánto tolera su conversación), no del comercio, y un valor en el JSON se revisa y se prueba con el flujo.
