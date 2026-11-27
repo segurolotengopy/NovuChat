@@ -232,6 +232,11 @@ export const SUITES_PURAS = [
   'pruebas/core/medios/salientes.test.ts',
   'pruebas/core/medios/guardado-saliente.test.ts',
   'pruebas/core/salida-persona-flujo.test.ts',
+  // Campaña saliente (PR-C): lógica pura de los topes, script de config y módulo campanas (sin Firestore).
+  'pruebas/core/salida-campana-logica.test.ts',
+  'pruebas/plataforma/campana-saliente-config-script.test.ts',
+  'pruebas/modulos/campanas/salientes.test.ts',
+  'pruebas/modulos/campanas/minicrm-n8n.test.ts',
   'pruebas/core/niega-ia.test.ts',
   'pruebas/core/texto-pregunta-pendiente.test.ts',
   'pruebas/core/venta-salida.test.ts',
