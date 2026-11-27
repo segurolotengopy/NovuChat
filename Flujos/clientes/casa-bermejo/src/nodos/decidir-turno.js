@@ -132,7 +132,7 @@ if (!configLista) return sinConfig();
 // 4. Lo que decide el código sobre el texto, ANTES de cualquier modelo.
 // El catálogo por CÓDIGO (B2): la «D7» del 24/11/2026 quedó derogada (Andres, 27/11/2026): el botón «Ver catálogo» sale del dato `enlaceCatalogo` del comercio, siempre que el cliente lo pida, también con un pedido o un QR en curso.
 // El toque de una fila de lista (`cat:`, `mas:`, `pro:`) lo resuelve el CÓDIGO y NUNCA llega al modelo; un toque viejo o inventado recibe una respuesta clara (las categorías de hoy).
-if (typeof t.seleccionId === 'string' && /^(?:cat|pro|mas):/.test(t.seleccionId)) {
+if (typeof t.seleccionId === 'string' && /^(?:cat|pro|mas):/i.test(t.seleccionId)) {
   const fila = lcResolverId(t.seleccionId, vendibles);
   if (fila.tipo === 'cat') return salir({ tipo: 'catalogo', vista: 'categoria', cats: [fila.cat], faltan: [], continuar: false });
   if (fila.tipo === 'mas') return salir(fila.cat === 'cats' ? { tipo: 'catalogo', vista: 'categorias', cats: [], faltan: [], pag: fila.pag } : { tipo: 'catalogo', vista: 'productos_pag', cats: [fila.cat], faltan: [], pag: fila.pag });

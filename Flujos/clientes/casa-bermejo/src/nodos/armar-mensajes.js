@@ -201,7 +201,7 @@ if (puerta.ruta === 'sigue') {
     const anuladoModelo = d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : '';
     const notaModelo = d.resumen ? notaCabe(notaDe(d), 1000 - conSaludo(baseModelo + anuladoModelo).length - 2) : '';
     const cuerpoModelo = conSaludo(textoTurno + (d.resumen ? '\n\n' + d.resumen : '') + (notaModelo !== '' ? '\n\n' + notaModelo : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : ''));
-    // Sin botón «Ver catálogo» (Andres, 24/11/2026, D7): las piezas se muestran por este chat. Lo que el mensaje puede llevar es UN botón de respuesta que el código cumple: «Confirmar pedido» (pedido listo) o los de entrega (solo falta el modo).
+    // El botón «Ver catálogo» (B2; la «D7» del 24/11/2026 está derogada) lo pone, al final del turno, el bloque del enlace (más abajo). Lo que el mensaje puede llevar aquí es UN botón de respuesta que el código cumple: «Confirmar pedido» (pedido listo) o los de entrega (solo falta el modo).
     // B2: un pedido CON una cláusula de lista («quiero la heladera y mándenme la lista de aires»): el MISMO mensaje lleva lo del pedido y la lista completa (o con remisión); los botones de entrega vuelven en el turno siguiente (no tapan la lista).
     const adjunto = c.plan.adjunto && Array.isArray(c.plan.adjunto.cats) && c.plan.adjunto.cats.length ? adjuntoDeCatalogo(c.plan.adjunto.cats.map((x) => 'cat:' + x)) : '';
     if (adjunto !== '') {

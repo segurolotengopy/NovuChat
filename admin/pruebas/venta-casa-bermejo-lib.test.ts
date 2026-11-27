@@ -15,7 +15,7 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const FLUJOS = join(AQUI, '../../Flujos/experimental');
 const RUTAS = [
   'venta-digital/src/cobro.js', 'venta-digital/src/diferencias.js', '../src/modulos/pedidos/comprobante-diferencias.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js',
-  '../src/core/sin-agente/mensajes.js', '../src/core/texto/filtro-redaccion.js', '../src/core/texto/identidad.js', '../src/modulos/pedidos/confirmar-pedido.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
+  '../src/core/sin-agente/mensajes.js', '../src/core/texto/filtro-redaccion.js', '../src/core/texto/identidad.js', '../src/modulos/pedidos/confirmar-pedido.js', '../src/modulos/catalogo-web/boton-del-catalogo.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
 ].map((r) => join(FLUJOS, r));
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
@@ -888,17 +888,24 @@ describe('B2 (24/11/2026): botones de entrega, sin «escribe pagar», alias con 
   });
 
   describe('sin enlace al sitio de NovuTienda', () => {
-    it('`bmEnlaceCatalogo` devuelve \'\' aunque el dato esté cargado (ni https válido lo trae de vuelta)', () => {
-      for (const e of ['https://sitio.example', 'https://novutienda.example/catalogo', '', 'http://x.y']) expect(b('bmEnlaceCatalogo')({ enlaceCatalogo: e }), e).toBe('');
+    it('B2 (27/11/2026, D7 derogada): `bmEnlaceCatalogo` devuelve la dirección del DATO `enlaceCatalogo` si es https válido; NEGADO: vacío, http, con espacios, de Wegic o sin dato dan \'\'', () => {
+      expect(b('bmEnlaceCatalogo')({ enlaceCatalogo: 'https://sitio.example' })).toBe('https://sitio.example');
+      expect(b('bmEnlaceCatalogo')({ enlaceCatalogo: ' https://novutienda.example/catalogo ' })).toBe('https://novutienda.example/catalogo');
+      for (const e of ['', 'http://x.y', 'https://a b', 'ftp://x.y', 'https://wegic.ai/tienda', 'javascript:alert(1)']) expect(b('bmEnlaceCatalogo')({ enlaceCatalogo: e }), e).toBe('');
+      expect(b('bmEnlaceCatalogo')({})).toBe('');
+      expect(b('bmEnlaceCatalogo')(undefined)).toBe('');
     });
-    it('NEGADO: una redacción del modelo que promete un enlace, una página, un sitio o un botón no pasa (sale el texto del código)', () => {
+    it('NEGADO: SIN enlace del comercio, una redacción del modelo que promete un enlace, una página, un sitio o un botón no pasa (sale el texto del código); CON enlace sí pasa (el código lo pone)', () => {
       const cat = catalogo();
       for (const t of ['Puede ver todo en nuestro sitio web.', 'Le dejo el enlace al catálogo.', 'Toque el botón para ver las fotos.', 'Visite nuestra página.', 'Mire el link del catálogo.']) expect(b('bmRedaccion')(t, 'hola', cat.vendibles), t).toBe('');
       expect(b('bmRedaccion')('Con gusto, ¿qué pieza busca?', 'hola', cat.vendibles)).not.toBe('');
+      for (const t of ['Le dejo el enlace al catálogo.', 'Toque el botón para ver las fotos.']) expect(b('bmRedaccion')(t, 'hola', cat.vendibles, true), t).not.toBe('');
     });
-    it('el prompt del modelo ya no ofrece la página, el enlace ni un botón', () => {
+    it('el prompt del modelo no le deja armar listas ni escribir direcciones: la lista y el botón los pone el sistema', () => {
       expect(B['BM_PROMPT_VOZ']).not.toMatch(/ver cat[aá]logo|sitio web|p[aá]gina web.*(ofrece|puedes ver)/i);
-      expect(B['BM_PROMPT_VOZ']).toMatch(/No ofreces ni mencionas enlaces, páginas web ni botones/);
+      expect(B['BM_PROMPT_VOZ']).toMatch(/NO armas listas de productos ni de categorías/);
+      expect(B['BM_PROMPT_VOZ']).toMatch(/No escribes enlaces \(direcciones web\)/);
+      expect(B['BM_PROMPT_VOZ']).not.toMatch(/a lo más 5/);
     });
   });
 

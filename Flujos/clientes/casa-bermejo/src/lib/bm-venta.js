@@ -458,6 +458,24 @@ function bmLineasDelSitio(texto, vendibles) {
   }
   return salida;
 }
+// LO QUE EL MENSAJE PEGADO DEL SITIO DICE Y NO ENTRÓ (B2, formatos reales de NovuTienda del 27/11/2026): «… y N productos más (se detallan por WhatsApp)» (el sitio recortó el mensaje a 1500 caracteres) y las piezas cuyo código el catálogo de hoy no vende (sin precio —«precio a consultar»—, apagadas o desconocidas).
+// El asistente solo promete lo que cumple: lo dice en el MISMO mensaje del turno (0 más), con lo que el cliente debe hacer, y nunca finge que el pedido está completo. Devuelve '' si no hay nada que avisar.
+function bmAvisoDelSitio(texto, vendibles, usted) {
+  const t = String(texto || '');
+  const ids = new Set((Array.isArray(vendibles) ? vendibles : []).map((v) => v.id));
+  const codigos = [];
+  const re = /(?:^|[\s:])(\d{1,3})\s*[xX×]\s*[^()]{1,120}?\(\s*c[oó]d\.?\s*:?\s*([A-Za-z0-9][A-Za-z0-9_-]{0,99})\s*\)/g;
+  let m;
+  while ((m = re.exec(t)) !== null && codigos.length < 60) if (!codigos.includes(m[2])) codigos.push(m[2]);
+  const sinEntrar = codigos.filter((x) => !ids.has(x)).length;
+  const mas = /\by\s+(\d{1,4})\s+productos?\s+m[aá]s\b/i.exec(t);
+  const nMas = mas ? Number(mas[1]) : 0;
+  const partes = [];
+  if (sinEntrar > 0) partes.push(sinEntrar === 1 ? 'Una pieza de su mensaje no se pudo incluir porque no tiene precio o no está disponible.' : sinEntrar + ' piezas de su mensaje no se pudieron incluir porque no tienen precio o no están disponibles.');
+  if (nMas > 0) partes.push((nMas === 1 ? 'Su mensaje decía que faltaba 1 producto más que no llegó completo' : 'Su mensaje decía que faltaban ' + nMas + ' productos más que no llegaron completos') + ': dígame cuáles son para sumarlos.');
+  const x = partes.join(' ');
+  return usted === true ? x : x.replace(/\bSu mensaje\b/g, 'Tu mensaje').replace(/\bsu mensaje\b/g, 'tu mensaje').replace(/\bdígame\b/g, 'dime');
+}
 // Los MONTOS que escribió el mensaje pegado del sitio, en sus dos formatos: el viejo (solo «N x Nombre (cód. id)») no trae montos; el nuevo trae «(cód. id): Bs 4.465 c/u, subtotal Bs 4.465» por línea y «Total referencial: Bs 9.870» al final (en pesos, «ARS …»).
 // Los montos del mensaje NUNCA se cobran: el precio y el total son siempre los del catálogo vivo. Esta función solo dice si el mensaje los trae DISTINTOS (true), iguales (false) o no los trae (null), para avisarlo y mostrar el total real.
 const BM_RE_LINEA_SITIO_MONTO = /(?:^|[\s:])(\d{1,3})\s*[xX×]\s*[^()]{1,120}?\(\s*c[oó]d\.?\s*:?\s*([A-Za-z0-9][A-Za-z0-9_-]{0,99})\s*\)\s*:?\s*(?:Bs\.?|ARS|\$)\s*(\d[\d.,]*)\s*c\/u(?:\s*,?\s*subtotal\s*:?\s*(?:Bs\.?|ARS|\$)\s*(\d[\d.,]*))?/gi;
@@ -1718,7 +1736,7 @@ function bmResolverModelo(c) {
   let fijoSinPieza = false;
   if (afirmaDeMas && fijada.texto === '' && !entro && lineas.length === 0) {
     // Pedido vacío y nada entró: primero lo que SÍ coincide con lo que pidió el cliente (un id inventado no tapa «Billetera de cuero»); si nada coincide, se dice que esa pieza no se pudo agregar y se pregunta cuál quiere (no se niega el catálogo).
-    // Sin una propuesta inválida (el modelo solo usó un verbo distinto), el texto queda vacío y sigue la ruta de abajo (coincidencias o la pregunta fija, sin negar el catálogo; el botón «Ver catálogo» llega con el PR del catálogo, B2).
+    // Sin una propuesta inválida (el modelo solo usó un verbo distinto), el texto queda vacío y sigue la ruta de abajo (coincidencias o la pregunta fija, sin negar el catálogo; el botón «Ver catálogo» lo agrega «Armar mensajes», B2).
     if (propuestaInvalida) {
       const coincidencias = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1);
       texto = coincidencias !== '' ? coincidencias : 'No pude agregar esa pieza al pedido.\n\n' + ((c.base && c.base.tratamiento === 'usted') ? '¿Cuál de nuestras piezas le interesa?' : '¿Cuál de nuestras piezas te interesa?');
@@ -1731,6 +1749,8 @@ function bmResolverModelo(c) {
   if (texto !== '' && /\b(solo|unicamente)\s+(disponemos|tenemos|contamos|hay|ofrecemos)\b/.test(bmNorm(texto))) { const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1); if (coinc !== '') texto = coinc; }
   // El mensaje pegado del sitio con montos DISTINTOS a los del catálogo vivo: se cobra siempre el vivo y se avisa en el mismo mensaje (el resumen trae el total real).
   if (sitioConPreciosDistintos) texto = BM_TEXTO_PRECIOS_DISTINTOS + ' ' + texto;
+  // B2: lo que el mensaje del sitio decía y no entró («… y N productos más», una pieza sin precio) se dice en el mismo mensaje.
+  if (fijada.delSitio === true) { const avisoSitio = bmAvisoDelSitio(p.textoCliente, c.vendibles, !!(c.base && c.base.tratamiento === 'usted')); if (avisoSitio !== '') texto = (texto !== '' ? texto + '\n\n' : '') + avisoSitio; }
   // R59: el modelo afirmó «precios actualizados» (u otra constancia que el sistema no respalda): `bmRedaccion` descartó su texto; sale el fijo que sí se cumple (los precios se leen del catálogo en cada turno).
   if (texto === '' && typeof j.texto === 'string' && BM_AFIRMA_PRECIOS.test(bmNorm(j.texto))) texto = BM_TEXTO_PRECIOS_VIVOS;
   // R58: tras pasar con recepción (hasta 2 h antes), el asistente NO ofrece sumar otra pieza: una oración que lo ofrece se reemplaza por una respuesta corta, salvo que el cliente haya cambiado el pedido en este turno.
@@ -1742,7 +1762,7 @@ function bmResolverModelo(c) {
   const sinRedaccion = texto === '';
   let sinPieza = false;
   if (sinRedaccion && !lineas.length) {
-    // Sin piezas y sin texto del modelo: NUNCA el «cuéntame más» genérico. Las piezas que coinciden con lo que pidió (con sus precios) o «no lo encuentro» (sin prometer un botón: el botón sale solo con piezas o con un «no tenemos» del modelo).
+    // Sin piezas y sin texto del modelo: NUNCA el «cuéntame más» genérico. Las piezas que coinciden con lo que pidió (con sus precios) o «no lo encuentro» (sin prometer un botón: el botón y las categorías los agrega «Armar mensajes»).
     const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1);
     texto = coinc !== '' ? coinc : BM_TEXTO_SIN_PIEZA;
     sinPieza = coinc === '';
