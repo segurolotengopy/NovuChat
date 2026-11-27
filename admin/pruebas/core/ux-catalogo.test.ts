@@ -24,17 +24,11 @@ const SIN_PIEZA = 'No usa las piezas comunes del catálogo (`lista-de-catalogo.j
 const SIN_PARTIDOR = 'No parte los párrafos del modelo con la pieza común (`ctParrafos`); su texto largo llega tal cual.';
 /** Excepciones declaradas: `<punto>|<flujo>` → porqué. SOLO BAJA. */
 export const EXCEPCIONES: Record<string, string> = {
-  'casa-bermejo.json|1.1': 'Una pregunta de listado la contesta el modelo y puede salir «No encuentro eso en nuestro catálogo» tras el saludo; sin reconocedor por código. ' + SIN_PIEZA + ' (Casa Bermejo la adopta en su rama.)',
-  'casa-bermejo.json|1.2': 'El botón «Ver catálogo» no sale en el saludo ni al pedirlo ni cuando no se encuentra lo nombrado: no usa `cwConBotonCatalogo`. ' + SIN_PIEZA,
-  'casa-bermejo.json|2.2': 'Una categoría pedida no sale completa ni remite expresamente al catálogo. ' + SIN_PIEZA,
-  'casa-bermejo.json|2.3': 'No manda lista interactiva de catálogo; un toque de fila viejo llega al modelo. ' + SIN_PIEZA,
-  'casa-bermejo.json|3.1': SIN_PARTIDOR,
-  'casa-bermejo.json|4.2': 'El saludo sale solo como texto, sin botones ni lista. ' + SIN_PIEZA,
   'walisuma.json|1.1': 'El listado lo contesta el modelo tras el saludo y puede negar el catálogo. ' + SIN_PIEZA + ' (Walisuma tiene el PR #1129 abierto.)',
   'walisuma.json|2.3': 'No manda lista interactiva de catálogo; un toque de fila viejo llega al modelo. ' + SIN_PIEZA + ' (Walisuma tiene el PR #1129 abierto.)',
   'walisuma.json|3.1': SIN_PARTIDOR + ' (Walisuma tiene el PR #1129 abierto.)',
 };
-export const TOPE_EXCEPCIONES = 9;
+export const TOPE_EXCEPCIONES = 3;
 export const TOPE_SIN_ADAPTADOR = 6;
 
 const TEXTO = (t: string) => ({ texto: t, payload: { type: 'text' } });
