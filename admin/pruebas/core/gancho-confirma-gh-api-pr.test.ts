@@ -55,7 +55,21 @@ describe('gh api que escribe revisiones o fusiones de un PR pide confirmación h
     }
   });
 
+  it('un GET explícito no exime a otro gh api encadenado, en cualquier orden', () => {
+    const lee = 'gh api -X GET repos/x/y/pulls/1/reviews';
+    const escribe = 'gh api repos/x/y/pulls/2/merge -f merge_method=squash';
+    for (const sep of [' && ', ' ; ', ' | ', ' || ', '\n']) {
+      for (const c of [lee + sep + escribe, escribe + sep + lee]) {
+        const r = salida(c);
+        expect(r.decision, c).toBe('ask');
+        expect(r.motivo, c).toContain(MOTIVO);
+      }
+    }
+    expect(salida(lee + ' && gh api -X PUT repos/x/y/pulls/2/merge').motivo).toContain(MOTIVO);
+  });
+
   it('no aplica esta regla a lecturas', () => {
+    expect(salida('gh api -X GET repos/x/y/pulls/1/reviews | head').motivo).not.toContain(MOTIVO);
     for (const c of [
       'gh api repos/x/y/pulls/1/reviews',
       'gh api repos/x/y/pulls/1/merge',

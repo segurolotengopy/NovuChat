@@ -640,18 +640,28 @@ API_MUTACION = re.compile(r"addPullRequestReview|submitPullRequestReview|mergePu
 API_METODO = re.compile(r"(?:^|\s)(?:-X|--method)(?:\s+|=)?[\"\x27]?([A-Za-z]+)", re.I)
 API_CAMPOS = re.compile(r"(?:^|\s)(?:-[fF]\S*|--field\b|--raw-field\b|--input\b)", re.I)
 
-def api_escribe_pr(c):
-    t = UNIDO.sub(r"\1", c)
-    if API_GRAPHQL.search(t) and (API_MUTACION.search(t) or re.search(r"query=@|--input\b", t)):
-        return True
+def _api_segmento(t, unico):
     if not API_PR.search(t):
         return False
     metodos = [m.upper() for m in API_METODO.findall(t)]
     if any(m != "GET" for m in metodos):
         return True
-    if metodos:
+    if metodos and unico:
         return False
     return bool(API_CAMPOS.search(t))
+
+def api_escribe_pr(c):
+    t = UNIDO.sub(r"\1", c)
+    if API_GRAPHQL.search(t) and (API_MUTACION.search(t) or re.search(r"query=@|--input\b", t)):
+        return True
+    # Un GET explícito solo exime si es el ÚNICO `gh api` del comando: con
+    # `gh api -X GET …/reviews && gh api …/merge -f …` el GET no cubre al otro
+    # (revisión de seguridad). Cada segmento (&&, ||, ;, |, salto) se evalúa
+    # por separado y, además, el comando entero, con la misma regla.
+    unico = len(re.findall(r"\bgh\s+api\b", t)) <= 1
+    if _api_segmento(t, unico):
+        return True
+    return any(_api_segmento(g, unico) for g in re.split(r"&&|\|\||[;|\n]", t))
 
 NUNCA = [
     (lambda c: nombra_y_actua(SISTEMA_AJENO, c, ACTUA_AJENO),
