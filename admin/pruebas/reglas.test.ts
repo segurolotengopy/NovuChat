@@ -4369,6 +4369,23 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
       await assertSucceeds(updateDoc(doc(ingestaA(), c1()), { ultimoMensaje: 'Otro', mensajesTotal: 3 }));
     });
 
+    it('campanaEnviada: ni la ingesta por SDK cliente ni una persona del negocio la crean, cambian ni borran', async () => {
+      const campanaEnviada = { idMeta: 'wamid.PLANTILLA1', campanaId: 'camp-prueba', en: Timestamp.now() };
+      const base = { telefono: '59170000008', ultimoMensaje: 'Hola', canal: 'whatsapp', ultimoEn: Timestamp.now(), mensajesTotal: 1 };
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c-camp-env`), { ...base, campanaEnviada }));
+      await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c-camp-env`), base));
+      for (const fs of [ingestaA(), operA(), adminA(), adminB()]) {
+        await assertFails(updateDoc(doc(fs, c1()), { campanaEnviada }));
+      }
+      await entorno.withSecurityRulesDisabled(async (ctx) => { await updateDoc(doc(ctx.firestore(), c1()), { campanaEnviada }); });
+      for (const fs of [ingestaA(), operA(), adminA()]) {
+        await assertFails(updateDoc(doc(fs, c1()), { campanaEnviada: deleteField() }));
+        await assertFails(updateDoc(doc(fs, c1()), { 'campanaEnviada.idMeta': 'otro' }));
+      }
+      // Control positivo: con la marca puesta, la ingesta sigue actualizando el resumen.
+      await assertSucceeds(updateDoc(doc(ingestaA(), c1()), { ultimoMensaje: 'Otro', mensajesTotal: 3 }));
+    });
+
     it('otro comercio no escribe el turno de A', async () => {
       await assertFails(updateDoc(doc(adminB(), c1()), { turno: turnoOk }));
       await assertFails(updateDoc(doc(ingestaA(), c1(B)), { turno: turnoOk }));

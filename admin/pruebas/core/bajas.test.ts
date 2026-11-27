@@ -52,8 +52,18 @@ async function llamar(c: Comercio, cuerpo: Record<string, unknown>): Promise<Res
 }
 const TEL = '59100000001';
 const CAMPANA = 'camp-prueba-01';
+const CTX = 'wamid.CAMPANA-ENVIADA-01';
+// Por defecto llega «por payload» (el toque del botón `cs:no:<id>`): E3, el único «no» que da de baja sin cita.
 const responder = (c: Comercio, extra: Record<string, unknown>, tel = TEL, direccion = 'entrante') =>
-  llamar(c, { telefono: tel, direccion, tipo: 'text', texto: 'No, gracias', evento: 'campana_respuesta', ...extra });
+  llamar(c, { telefono: tel, direccion, tipo: 'text', texto: 'No, gracias', evento: 'campana_respuesta', respuestaPor: 'payload', ...extra });
+/** La conversación con una campaña enviada hace `haceMs` (lo que escribe `confirmarSalida` al aceptar la plantilla). */
+const sembrarEnviada = async (c: Comercio, haceMs = 3_600_000, extra: Record<string, unknown> = {}, tel = TEL) => {
+  await db.doc(`tenants/${c.id}/conversaciones/wa_${tel}`).set({
+    telefono: tel, campanaEnviada: { idMeta: CTX, campanaId: CAMPANA, en: Timestamp.fromMillis(Date.now() - haceMs), ...extra },
+  }, { merge: true });
+};
+/** Un «sí» con cita: es el que responde a la campaña enviada. */
+const SI = { campanaEnvioId: CAMPANA, respuestaCampana: 'si', texto: 'Sí, contáctenme', contextoId: CTX };
 
 type Datos = Record<string, unknown>;
 const refBaja = (c: Comercio, tel = TEL) => db.doc(`tenants/${c.id}/bajas/wa_${tel}`);
@@ -114,18 +124,148 @@ describe('«No, gracias»: crea la baja y anota la respuesta, en la misma transa
 });
 
 describe('«Sí, contáctenme»: anota la respuesta y NO crea baja', () => {
-  it('NIEGA: «sí» no crea baja y deja `campanaRespuesta`', async () => {
-    const r = await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'si', texto: 'Sí, contáctenme' });
+  it('NIEGA: «sí» con cita no crea baja y deja `campanaRespuesta`; responde `respuesta`', async () => {
+    await sembrarEnviada(A);
+    const r = await responder(A, SI);
     expect(r.codigo).toBe(200);
+    expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'respuesta' });
     expect(await baja(A)).toBeNull();
     expect(await cuantasBajas(A)).toBe(0);
     expect((await conversacion(A))['campanaRespuesta']).toMatchObject({ campanaId: CAMPANA, respuesta: 'si' });
   });
 
   it('un «sí» no borra una baja anterior de la misma persona', async () => {
+    await sembrarEnviada(A);
     await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' });
-    await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'si' });
+    await responder(A, SI);
     expect(await baja(A)).not.toBeNull();
+  });
+});
+
+describe('E1/E3: lo que responde la ingesta (`campanaSaliente.resultado`) y el payload «no» que nunca se pierde', () => {
+  it('«no» por payload: `baja`; repetido con OTRO id de mensaje: `ya_baja`', async () => {
+    expect((await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no', idMeta: 'wamid.A1' })).cuerpo['campanaSaliente']).toEqual({ resultado: 'baja' });
+    expect((await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no', idMeta: 'wamid.A2' })).cuerpo['campanaSaliente']).toEqual({ resultado: 'ya_baja' });
+  });
+  it('E3: el payload «no» de una campaña ANTERIOR (context.id distinto de la última) da de baja igual', async () => {
+    await sembrarEnviada(A);
+    const r = await responder(A, { campanaEnvioId: 'campana-vieja', respuestaCampana: 'no', contextoId: 'wamid.DE-OTRA-CAMPANA' });
+    expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'baja' });
+    expect(await baja(A)).toMatchObject({ campanaId: 'campana-vieja', origen: 'boton_campana' });
+  });
+  it('E3: el payload «no» sin conversación ni campaña enviada da de baja (nunca se pierde)', async () => {
+    expect((await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' })).cuerpo['campanaSaliente']).toEqual({ resultado: 'baja' });
+  });
+  it('sin el evento `campana_respuesta` la respuesta NO trae `campanaSaliente` (byte a byte la de siempre)', async () => {
+    const r = await llamar(A, { telefono: TEL, direccion: 'entrante', tipo: 'text', texto: 'hola' });
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo['campanaSaliente']).toBeUndefined();
+  });
+  it('un `campana_respuesta` SALIENTE no trae `campanaSaliente`', async () => {
+    const r = await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' }, TEL, 'saliente');
+    expect(r.cuerpo['campanaSaliente']).toBeUndefined();
+  });
+  it('reintento de Meta (mismo idMeta): no reescribe `campanaRespuesta.en` ni crea otra baja; responde `ya_baja`', async () => {
+    const e = { campanaEnvioId: CAMPANA, respuestaCampana: 'no', idMeta: 'wamid.REINTENTO-1' };
+    await responder(A, e);
+    const antes = (await conversacion(A))['campanaRespuesta'] as Datos;
+    expect(antes['idMetaEntrante']).toBe('wamid.REINTENTO-1');
+    const r = await responder(A, e);
+    expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'ya_baja' });
+    expect((await conversacion(A))['campanaRespuesta']).toEqual(antes);
+    expect(await cuantasBajas(A)).toBe(1);
+  });
+  it('reintento de un «sí»: responde `respuesta` y no reescribe', async () => {
+    await sembrarEnviada(A);
+    const e = { ...SI, idMeta: 'wamid.REINTENTO-2' };
+    await responder(A, e);
+    const antes = (await conversacion(A))['campanaRespuesta'] as Datos;
+    expect((await responder(A, e)).cuerpo['campanaSaliente']).toEqual({ resultado: 'respuesta' });
+    expect((await conversacion(A))['campanaRespuesta']).toEqual(antes);
+  });
+});
+
+describe('E3/E8, NIEGA: sin cita, solo el payload «no» da de baja; etiqueta y texto exigen coincidencia', () => {
+  const NO = { campanaEnvioId: CAMPANA, respuestaCampana: 'no' };
+  it('I-B3: la etiqueta «No, gracias» de OTRA plantilla (context.id ajeno) NO da de baja, y responde `no_aplica`', async () => {
+    await sembrarEnviada(A);
+    const r = await responder(A, { ...NO, respuestaPor: 'etiqueta', contextoId: 'wamid.OTRA-PLANTILLA' });
+    expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
+    expect(await cuantasBajas(A)).toBe(0);
+    expect((await conversacion(A))['campanaRespuesta']).toBeUndefined();
+  });
+  it('la etiqueta con cita sí da de baja (y toma el id de la campaña enviada)', async () => {
+    await sembrarEnviada(A);
+    const r = await responder(A, { respuestaCampana: 'no', respuestaPor: 'etiqueta', contextoId: CTX });
+    expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'baja' });
+    expect(await baja(A)).toMatchObject({ campanaId: CAMPANA });
+  });
+  it('la etiqueta sin NINGUNA campaña enviada no da de baja', async () => {
+    const r = await responder(A, { ...NO, respuestaPor: 'etiqueta', contextoId: CTX });
+    expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
+    expect(await cuantasBajas(A)).toBe(0);
+  });
+  it('un «sí» por payload SIN cita (o con la cita de otra campaña) no anota nada: `no_aplica`', async () => {
+    await sembrarEnviada(A);
+    for (const contextoId of [undefined, 'wamid.AJENO']) {
+      const r = await responder(A, { ...SI, contextoId });
+      expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
+    }
+    expect((await conversacion(A))['campanaRespuesta']).toBeUndefined();
+  });
+  it('un «sí» por etiqueta con cita anota la respuesta; sin cita no', async () => {
+    await sembrarEnviada(A);
+    expect((await responder(A, { ...SI, respuestaPor: 'etiqueta', campanaEnvioId: undefined, contextoId: 'wamid.AJENO' })).cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
+    expect((await responder(A, { ...SI, respuestaPor: 'etiqueta', campanaEnvioId: undefined })).cuerpo['campanaSaliente']).toEqual({ resultado: 'respuesta' });
+    expect((await conversacion(A))['campanaRespuesta']).toMatchObject({ campanaId: CAMPANA, respuesta: 'si' });
+  });
+  it('un «sí» escrito nunca es una respuesta a la campaña', async () => {
+    await sembrarEnviada(A);
+    const r = await responder(A, { ...SI, respuestaPor: 'texto' });
+    expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
+    expect((await conversacion(A))['campanaRespuesta']).toBeUndefined();
+  });
+
+  describe('el «no» escrito', () => {
+    const escrito = (texto: string, extra: Record<string, unknown> = {}) =>
+      responder(A, { ...NO, respuestaPor: 'texto', texto, ...extra });
+    it.each(['no', 'No', 'NO', 'No.', 'No!', 'no gracias', 'No, gracias', 'No gracias!', 'No, gracias.'])('«%s» con cita: da de baja', async (t) => {
+      await sembrarEnviada(A);
+      const r = await escrito(t, { contextoId: CTX });
+      expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'baja' });
+      expect(await baja(A)).toMatchObject({ campanaId: CAMPANA });
+    });
+    it('sin cita pero PRIMERA respuesta dentro de las 24 h del envío: da de baja', async () => {
+      await sembrarEnviada(A);
+      expect((await escrito('No gracias')).cuerpo['campanaSaliente']).toEqual({ resultado: 'baja' });
+    });
+    it('NIEGA: sin cita y con una respuesta ya registrada después del envío, el «no» escrito NO da de baja', async () => {
+      await sembrarEnviada(A);
+      await responder(A, { ...SI, idMeta: 'wamid.PRIMERA' }); // la primera respuesta (un «sí»)
+      const r = await escrito('no');
+      expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
+      expect(await cuantasBajas(A)).toBe(0);
+    });
+    it('NIEGA: pasadas las 24 h del envío no hay campaña vigente: ni con cita ni sin ella', async () => {
+      await sembrarEnviada(A, 25 * 3_600_000);
+      expect((await escrito('no')).cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
+      expect((await escrito('no', { contextoId: CTX })).cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
+      expect(await cuantasBajas(A)).toBe(0);
+    });
+    it('NIEGA: sin ninguna campaña enviada, el «no» escrito no da de baja', async () => {
+      expect((await escrito('no')).cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
+      expect(await cuantasBajas(A)).toBe(0);
+    });
+    it('NIEGA: el «no» escrito que SOBRA («no me interesa») es conversación, no una baja', async () => {
+      await sembrarEnviada(A);
+      expect((await escrito('no me interesa', { contextoId: CTX })).cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
+      expect(await cuantasBajas(A)).toBe(0);
+    });
+    it('NIEGA: un `campana_respuesta` sin `respuestaPor` se trata como texto (la lectura estricta): sin cita ni ventana no da de baja', async () => {
+      const r = await llamar(A, { telefono: TEL, direccion: 'entrante', tipo: 'text', texto: 'No, gracias', evento: 'campana_respuesta', campanaEnvioId: CAMPANA, respuestaCampana: 'no' });
+      expect(r.cuerpo['campanaSaliente']).toEqual({ resultado: 'no_aplica' });
+      expect(await cuantasBajas(A)).toBe(0);
+    });
   });
 });
 
@@ -156,7 +296,8 @@ describe('I2: la respuesta se normaliza (trim y minúsculas) antes de validar', 
     expect((await conversacion(A))['campanaRespuesta']).toMatchObject({ respuesta: 'no' });
   });
   it.each(['Sí', 'si', ' SI ', 'sí', 'sí'])('«%s» vale como «sí»: anota y no crea baja', async (v) => {
-    await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: v });
+    await sembrarEnviada(A);
+    await responder(A, { ...SI, respuestaCampana: v });
     expect(await baja(A)).toBeNull();
     expect((await conversacion(A))['campanaRespuesta']).toMatchObject({ respuesta: 'si' });
   });
@@ -230,6 +371,18 @@ describe('I1: con el comercio NO activo, un «No» igual crea la baja (y la resp
     await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' });
     expect(await baja(A)).toEqual(primera);
   });
+  it('E3 con el comercio suspendido: la etiqueta o el texto SIN cita no dan de baja; con cita sí; el reintento no repite', async () => {
+    await db.doc(`tenants/${A.id}`).update({ estado: 'suspendido' });
+    await sembrarEnviada(A);
+    const antes = await conversacion(A);
+    for (const [por, texto] of [['etiqueta', 'No, gracias'], ['texto', 'no me interesa']]) {
+      expect((await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no', respuestaPor: por, texto, contextoId: 'wamid.AJENO' })).codigo).toBe(409);
+    }
+    expect(await cuantasBajas(A)).toBe(0);
+    expect((await responder(A, { respuestaCampana: 'no', respuestaPor: 'etiqueta', contextoId: CTX })).codigo).toBe(409);
+    expect(await baja(A)).toMatchObject({ campanaId: CAMPANA });
+    expect(await conversacion(A)).toEqual(antes); // la conversación no se toca con el comercio suspendido
+  });
   it('NIEGA: «sí» con el comercio suspendido no escribe nada', async () => {
     await db.doc(`tenants/${A.id}`).update({ estado: 'suspendido' });
     const r = await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'si' });
@@ -284,7 +437,7 @@ describe('NIEGA: lo mal formado que NO es un «No» no escribe ni baja ni respue
 
 describe('un «No» crea la baja IGUAL con la conversación bloqueada y con el servicio cortado', () => {
   it('conversación `bloqueada`: la baja se crea', async () => {
-    await responder(A, { campanaEnvioId: 'otra-camp', respuestaCampana: 'si' });
+    await sembrarEnviada(A);
     await db.doc(`tenants/${A.id}/conversaciones/wa_${TEL}`).update({ bloqueada: true, bloqueadaPor: 'u-admin', bloqueadaEn: Timestamp.now() });
     const r = await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' });
     expect(r.codigo).toBe(200);
@@ -310,11 +463,41 @@ describe('`aplicarRespuestaDeCampana` directo (la pieza que la ingesta llama den
   const aplicar = (datos: { campanaId: unknown; respuesta: unknown }, c: Comercio = A) =>
     db.runTransaction((tx) => BAJAS.aplicarRespuestaDeCampana(tx, ref(c), datos, Timestamp.now()));
 
-  it('devuelve baja, ya_baja, respuesta e invalida según el caso', async () => {
-    expect(await aplicar({ campanaId: CAMPANA, respuesta: 'si' })).toBe('respuesta');
-    expect(await aplicar({ campanaId: CAMPANA, respuesta: 'no' })).toBe('baja');
-    expect(await aplicar({ campanaId: CAMPANA, respuesta: 'no' })).toBe('ya_baja');
-    expect(await aplicar({ campanaId: 'MAL', respuesta: 'si' })).toBe('invalida');
+  it('devuelve baja, ya_baja, respuesta, invalida y no_aplica según el caso', async () => {
+    await sembrarEnviada(A);
+    expect(await aplicar({ campanaId: CAMPANA, respuesta: 'si', por: 'payload', contextoId: CTX })).toBe('respuesta');
+    expect(await aplicar({ campanaId: CAMPANA, respuesta: 'no', por: 'payload' })).toBe('baja');
+    expect(await aplicar({ campanaId: CAMPANA, respuesta: 'no', por: 'payload' })).toBe('ya_baja');
+    expect(await aplicar({ campanaId: 'MAL', respuesta: 'si', por: 'payload', contextoId: CTX })).toBe('invalida');
     expect(await aplicar({ campanaId: CAMPANA, respuesta: 'tal vez' })).toBe('invalida');
+    expect(await aplicar({ campanaId: CAMPANA, respuesta: 'si', por: 'payload' })).toBe('no_aplica');
+  });
+});
+
+describe('funciones puras: `esNoEscritoDeCampana`, `hechosDeCampana` y `resolverRespuestaDeCampana`', () => {
+  const ahora = 1_800_000_000_000;
+  const conv = (haceMs: number, extra: Record<string, unknown> = {}) => ({
+    campanaEnviada: { idMeta: CTX, campanaId: CAMPANA, en: Timestamp.fromMillis(ahora - haceMs) }, ...extra,
+  });
+  it('la tabla compartida del «no» escrito (la misma que recorre el chat)', async () => {
+    const { NO_ESCRITO_SI, NO_ESCRITO_NO } = await import('../lib/casos-campana-no-escrito.ts');
+    for (const t of NO_ESCRITO_SI) expect(BAJAS.esNoEscritoDeCampana(t), JSON.stringify(t)).toBe(true);
+    for (const t of NO_ESCRITO_NO) expect(BAJAS.esNoEscritoDeCampana(t), JSON.stringify(t)).toBe(false);
+    expect(BAJAS.esNoEscritoDeCampana(null)).toBe(false);
+  });
+  it('`hechosDeCampana` nunca incluye el idMeta; la ventana es de 24 h', () => {
+    const h = BAJAS.hechosDeCampana(conv(3_600_000), CTX, ahora);
+    expect(h).toEqual({ citada: true, primeraEnVentana: true, campanaId: CAMPANA });
+    expect(JSON.stringify(h)).not.toContain(CTX);
+    expect(BAJAS.hechosDeCampana(conv(3_600_000), 'otro', ahora).citada).toBe(false);
+    expect(BAJAS.hechosDeCampana(conv(BAJAS.VENTANA_CAMPANA_MS), CTX, ahora).citada).toBe(true);
+    expect(BAJAS.hechosDeCampana(conv(BAJAS.VENTANA_CAMPANA_MS + 1), CTX, ahora)).toEqual({ citada: false, primeraEnVentana: false, campanaId: null });
+    expect(BAJAS.hechosDeCampana(undefined, CTX, ahora)).toEqual({ citada: false, primeraEnVentana: false, campanaId: null });
+  });
+  it('orden: el reintento va antes que todo; el payload «no» antes que la cita', () => {
+    const c = conv(1000, { campanaRespuesta: { respuesta: 'no', en: Timestamp.fromMillis(ahora - 500), idMetaEntrante: 'wamid.X' } });
+    expect(BAJAS.resolverRespuestaDeCampana(c, { respuesta: 'no', por: 'payload', idMetaEntrante: 'wamid.X' }, ahora)).toEqual({ decision: 'reintento', respuesta: 'no' });
+    expect(BAJAS.resolverRespuestaDeCampana(undefined, { respuesta: 'no', por: 'payload', campanaId: CAMPANA }, ahora)).toMatchObject({ decision: 'baja' });
+    expect(BAJAS.resolverRespuestaDeCampana(undefined, { respuesta: 'no', por: 'texto', texto: 'no' }, ahora)).toEqual({ decision: 'no_aplica' });
   });
 });
