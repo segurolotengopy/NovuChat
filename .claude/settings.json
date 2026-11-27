@@ -16,7 +16,6 @@
       "Bash(git push --force*)",
       "Bash(git push -f*)",
       "Bash(gh repo edit*)",
-      "Bash(gh pr review*)",
       "Bash(gh release create*)",
       "Bash(gh secret set*)",
       "Bash(gh auth token*)",
