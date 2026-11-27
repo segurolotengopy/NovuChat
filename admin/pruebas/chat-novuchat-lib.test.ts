@@ -2917,7 +2917,6 @@ describe('«Otro / a medida» no ofrece al equipo hasta dos respuestas del clien
 describe('campaña saliente: la marca campanaNoMs y el «no» escrito (plan de correcciones del #1140)', () => {
   const COMUN = readFileSync(join(CARPETA, 'src/nodos/_comun.js'), 'utf8');
   const C = ejecutar(`${LIB}\n${COMUN}\nreturn [{ json: { cnNoEscritoDeCampana, cnCortesiaCorta, cnMarcaCampanaNo, cnSilencioPorCampana } }];`, [{}])[0] as J;
-  const RAFAGA = 120 * 1000;
   const VEINTICUATRO = 24 * H;
   const fichaConMarca = (ms: number): J => ({ ...fichaBase(), campanaNoMs: ms, ultimoMs: ms });
 
@@ -2935,27 +2934,28 @@ describe('campaña saliente: la marca campanaNoMs y el «no» escrito (plan de c
   it('una marca del futuro (reloj desfasado más de 24 h) no cuenta', () => {
     expect(f('chFichaVigente')(fichaConMarca(AHORA + 2 * VEINTICUATRO), AHORA)['campanaNoMs']).toBe(0);
   });
-  it('cnMarcaCampanaNo: ráfaga hasta 120 s inclusive, activa hasta 24 h, y sin marca nada', () => {
-    expect(C['cnMarcaCampanaNo'](fichaConMarca(AHORA), AHORA + RAFAGA)).toMatchObject({ activa: true, rafaga: true });
-    expect(C['cnMarcaCampanaNo'](fichaConMarca(AHORA), AHORA + RAFAGA + 1)).toMatchObject({ activa: true, rafaga: false });
-    expect(C['cnMarcaCampanaNo'](fichaConMarca(AHORA), AHORA + VEINTICUATRO + 1)).toMatchObject({ activa: false, rafaga: false });
+  it('cnMarcaCampanaNo: activa hasta las 24 h inclusive, y sin marca nada', () => {
+    expect(C['cnMarcaCampanaNo'](fichaConMarca(AHORA), AHORA + 1000)).toMatchObject({ activa: true });
+    expect(C['cnMarcaCampanaNo'](fichaConMarca(AHORA), AHORA + VEINTICUATRO)).toMatchObject({ activa: true });
+    expect(C['cnMarcaCampanaNo'](fichaConMarca(AHORA), AHORA + VEINTICUATRO + 1)).toMatchObject({ activa: false });
     expect(C['cnMarcaCampanaNo'](fichaBase(), AHORA)).toMatchObject({ activa: false });
     expect(C['cnMarcaCampanaNo'](null, AHORA)).toMatchObject({ activa: false });
   });
-  it('cnSilencioPorCampana: sin marca nunca; en la ráfaga todo; después, solo cortesías y «no»; un texto no cortés o un no-texto rompe el silencio', () => {
+  it('cnSilencioPorCampana (H2): sin marca nunca; con marca, SOLO cortesías y «no» (también a los 30 s); un pedido, un audio o un no-texto rompen el silencio', () => {
     const s = (ficha: J, desde: number, escritos: (string | null)[]): boolean => C['cnSilencioPorCampana'](ficha, AHORA + desde, escritos);
     expect(s(fichaBase(), 0, ['ok'])).toBe(false);
-    expect(s(fichaConMarca(AHORA), 1000, ['quiero planes'])).toBe(true);
-    expect(s(fichaConMarca(AHORA), 1000, [null])).toBe(true);
-    expect(s(fichaConMarca(AHORA), RAFAGA + 1, ['ok', 'gracias', 'no'])).toBe(true);
-    expect(s(fichaConMarca(AHORA), RAFAGA + 1, ['ok', 'quiero planes'])).toBe(false);
-    expect(s(fichaConMarca(AHORA), RAFAGA + 1, ['ok', null])).toBe(false);
-    expect(s(fichaConMarca(AHORA), RAFAGA + 1, [])).toBe(false);
+    expect(s(fichaConMarca(AHORA), 30_000, ['quiero planes'])).toBe(false);
+    expect(s(fichaConMarca(AHORA), 30_000, [null])).toBe(false);
+    expect(s(fichaConMarca(AHORA), 30_000, ['ok', 'gracias', 'no'])).toBe(true);
+    expect(s(fichaConMarca(AHORA), VEINTICUATRO, ['ok', 'gracias', 'no'])).toBe(true);
+    expect(s(fichaConMarca(AHORA), 3 * 60_000, ['ok', 'quiero planes'])).toBe(false);
+    expect(s(fichaConMarca(AHORA), 3 * 60_000, ['ok', null])).toBe(false);
+    expect(s(fichaConMarca(AHORA), 3 * 60_000, [])).toBe(false);
     expect(s(fichaConMarca(AHORA), VEINTICUATRO + 1, ['ok'])).toBe(false);
   });
   it('cortesías: la lista cerrada (con tildes, mayúsculas, puntuación y emojis con tono) sí; una frase con intención no', () => {
     for (const x of ['ok', 'OK', 'Ok!', 'gracias', 'Gracias.', 'muchas gracias', 'Vale', 'listo', 'Entendido', 'perfecto', 'dale', '👍', '👍🏽', '🙏', '👍 🙏', 'de acuerdo']) expect(C['cnCortesiaCorta'](x), x).toBe(true);
-    for (const x of ['', ' ', 'ok quiero planes', 'gracias, ¿cuánto cuesta?', 'hola', 'sí', 'planes', '😀', 'ok?? y los precios', 'gracias por nada']) expect(C['cnCortesiaCorta'](x), x).toBe(false);
+    for (const x of ['', ' ', 'ok quiero planes', 'gracias, ¿cuánto cuesta?', 'hola', 'sí', 'planes', '😀', 'ok?? y los precios', 'gracias por nada', 'bien', 'genial', 'excelente']) expect(C['cnCortesiaCorta'](x), x).toBe(false);
   });
   it('el «no» escrito recorre la TABLA COMPARTIDA con el servidor (casos-campana-no-escrito.ts): lo que el servidor acepta, el chat lo acepta, y al revés', async () => {
     const { NO_ESCRITO_SI, NO_ESCRITO_NO } = await import('./lib/casos-campana-no-escrito');

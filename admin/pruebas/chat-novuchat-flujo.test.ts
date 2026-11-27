@@ -4524,6 +4524,32 @@ describe('campaña saliente: correcciones de la revisión del #1140 (el servidor
       expect(respuestas(w)).toHaveLength(0);
       expect(dicho(t)).not.toContain(TX['campanaNo']);
     });
+    it('H1: con `primeraEnVentana: false` y `citada: false`, un «no» escrito va al modelo como conversación normal: sin campanaNo, sin reporte de campaña y sin marca', () => {
+      for (const texto of ['no', 'No, gracias', 'no gracias.']) {
+        const w = conServidor({ citada: false, primeraEnVentana: false, campanaId: 'retomar-1' });
+        w.modelo.con = dice(CONVERSA);
+        const t = jugar(w, MAMA).crudo(mTextoCitado(texto, null), 'no sin campaña');
+        expect(w.modelo.llamadas.length, texto).toBeGreaterThan(0);
+        expect(dicho(t), texto).not.toContain(TX['campanaNo']);
+        expect(dicho(t), texto).not.toContain(TX['campanaNoSinConfirmar']);
+        expect(respuestas(w), texto).toHaveLength(0);
+        expect(marca(w), texto).toBe(0);
+      }
+    });
+    it('H3: las TRES copias de la regla del «no» escrito no divergen: la expresión de «Traer configuración» pide `campana` para TODO lo de la tabla compartida del servidor y solo para eso', async () => {
+      const { NO_ESCRITO_SI, NO_ESCRITO_NO } = await import('./lib/casos-campana-no-escrito');
+      const nodo = PRODUCCION.nodes.find((n) => n.name === 'Traer configuración')!;
+      const expr = String((nodo.parameters as J)['jsonBody']).replace(/^=\s*\{\{/, '').replace(/\}\}\s*$/, '');
+      const cuerpoDe = (texto: string): J => {
+        const json = { messages: [{ from: MAMA, type: 'text', text: { body: texto } }] };
+        const base = { first: () => ({ json: { telefonosDePrueba: '' } }) };
+        // eslint-disable-next-line @typescript-eslint/no-implied-eval
+        const f = new Function('$json', '$', '$execution', `return ${expr};`) as (a: J, b: () => J, c: J) => string;
+        return JSON.parse(f(json, () => base, { id: 'x' })) as J;
+      };
+      for (const x of NO_ESCRITO_SI) expect(cuerpoDe(x), JSON.stringify(x)).toHaveProperty('campana');
+      for (const x of NO_ESCRITO_NO) expect(cuerpoDe(x), JSON.stringify(x)).not.toHaveProperty('campana');
+    });
     it('el servidor decide: con resultado «no_aplica», «invalida» o «respuesta» el «no» escrito sigue como conversación y NO sale campanaNo', () => {
       for (const resultado of ['no_aplica', 'invalida', 'respuesta']) {
         const w = conServidor(CITADA);
@@ -4621,7 +4647,7 @@ describe('campaña saliente: correcciones de la revisión del #1140 (el servidor
 
   describe('E4 / I-B2: la marca campanaNoMs: silencio tras el «No», cortesías hasta las 24 h y vencimiento', () => {
     const cierraNo = (w: W): ReturnType<ReturnType<typeof jugar>['crudo']> => jugar(w, MAMA).crudo(mBotonPlantilla(NO, NO_CP), 'no');
-    it('R01: «No» y enseguida «ok» (dentro de los 120 s): 0 mensajes, 0 modelo, sin aviso', () => {
+    it('R01: «No» y enseguida «ok» (cortesía): 0 mensajes, 0 modelo, sin aviso', () => {
       const w = crear();
       const j = jugar(w, MAMA);
       j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
@@ -4631,26 +4657,52 @@ describe('campaña saliente: correcciones de la revisión del #1140 (el servidor
       expect(w.modelo.llamadas).toHaveLength(0);
       expect(marca(w)).toBe(AHORA);
     });
-    it('dentro de los 120 s TODO cae en silencio, también un pedido concreto, una imagen y un audio (0 mensajes)', () => {
-      // (cada turno avanza 1 min por omisión: un mundo por mensaje para que todos caigan dentro de los 120 s)
-      const casos: ((j: ReturnType<typeof jugar>) => T)[] = [(j) => j.texto('quiero ver los planes', 1), (j) => j.imagen(), (j) => j.audio(), (j) => j.boton('planes'), (j) => j.lista('rubro:salud')];
+    it('H2: NO hay silencio total: a los 30 s un pedido claro («quiero ver los planes») recibe respuesta normal (lo escribió la persona) y borra la marca', () => {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      w.modelo.con = dice(CONVERSA);
+      const t = j.texto('quiero ver los planes', 0.5);
+      expect(t.aMi).toHaveLength(1);
+      expect(marca(w)).toBe(0);
+    });
+    it('H2: a los 30 s un audio, una imagen, un toque de botón y un «Sí» de campaña citado NO quedan en silencio y borran la marca', () => {
+      const casos: ((j: ReturnType<typeof jugar>) => T)[] = [(j) => j.imagen(), (j) => j.audio(), (j) => j.boton('planes', 0.5), (j) => j.lista('rubro:salud', 0.5), (j) => j.crudo(mBotonPlantilla(SI, SI_CP), 'sí tras el no', 0.5)];
       for (const [i, caso] of casos.entries()) {
         const w = crear();
         const j = jugar(w, MAMA);
         j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
         w.modelo.con = dice(CONVERSA);
-        expect(caso(j).mensajes, `caso ${i}`).toHaveLength(0);
-        expect(w.modelo.llamadas, `caso ${i}`).toHaveLength(0);
+        expect(caso(j).mensajes.length, `caso ${i}`).toBeGreaterThan(0);
+        expect(marca(w), `caso ${i}`).toBe(0);
       }
     });
-    it('NEGADO: a los 121 s el mismo texto («quiero ver los planes») ya NO es silencio', () => {
+    it('H2: un «Sí» de campaña citado después del «No» recibe campanaSi y el aviso a recepción (no queda en silencio)', () => {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
+      const t = j.crudo(mBotonPlantilla(SI, SI_CP), 'sí', 0.5);
+      expect(dicho(t)).toEqual([TX['campanaSi']]);
+      expect(t.plantillas).toHaveLength(1);
+    });
+    it('H2: a los 30 s las cortesías y el «no» repetido SÍ siguen en silencio (lo único que calla la marca)', () => {
       const w = crear();
       const j = jugar(w, MAMA);
       j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
       w.modelo.con = dice(CONVERSA);
-      expect(j.texto('quiero ver los planes', 121 / 60).aMi).toHaveLength(1);
+      for (const c of ['ok', 'gracias', '👍', 'no', 'No, gracias']) expect(j.texto(c, 0.5).mensajes, c).toHaveLength(0);
+      expect(w.modelo.llamadas).toHaveLength(0);
     });
-    it('pasada la ráfaga y hasta las 24 h: las cortesías cortas y un «no» repetido siguen en silencio', () => {
+    it('H4: «bien», «genial» y «excelente» NO son cortesías de la lista: se responden (la persona escribió)', () => {
+      for (const c of ['bien', 'genial', 'excelente']) {
+        const w = crear();
+        const j = jugar(w, MAMA);
+        j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
+        w.modelo.con = dice(CONVERSA);
+        expect(j.texto(c, 3).aMi, c).toHaveLength(1);
+      }
+    });
+    it('hasta las 24 h: las cortesías cortas y un «no» repetido siguen en silencio', () => {
       const w = crear();
       const j = jugar(w, MAMA);
       j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
@@ -4669,7 +4721,7 @@ describe('campaña saliente: correcciones de la revisión del #1140 (el servidor
       const t = j.crudo(mBotonPlantilla(NO, NO_CP), 'no otra vez', 5);
       expect(t.mensajes).toHaveLength(0);
     });
-    it('NEGADO: después de las 120 s cualquier otra cosa es una intención clara: conversación normal, y la marca se borra', () => {
+    it('NEGADO: cualquier otra cosa es una intención clara: conversación normal, y la marca se borra', () => {
       const w = crear();
       const j = jugar(w, MAMA);
       j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
@@ -4735,13 +4787,13 @@ describe('campaña saliente: correcciones de la revisión del #1140 (el servidor
       expect(r.plantillas).toHaveLength(0);
       expect(marca(r.ws[0]!)).toBeGreaterThan(0);
     });
-    it('R01: el «No» y, en el mismo instante (0 min), un texto: SOLO campanaNo (el texto cae en silencio: la marca ya está comprometida)', () => {
+    it('R01: el «No» y, en el mismo instante (0 min), una cortesía: SOLO campanaNo (la cortesía cae en silencio: la marca ya está comprometida)', () => {
       const w = crear();
       const j = jugar(w, MAMA);
       w.modelo.con = dice('¿Te gustaría hablar con alguien de nuestro equipo?');
       const a = j.crudo(mBotonPlantilla(NO, NO_CP), 'no');
       const b = j.texto('ok', 0);
-      const c = j.texto('quiero ver los planes', 0);
+      const c = j.texto('gracias', 0);
       expect(dicho(a)).toEqual([TX['campanaNo']]);
       expect(b.mensajes).toHaveLength(0);
       expect(c.mensajes).toHaveLength(0);

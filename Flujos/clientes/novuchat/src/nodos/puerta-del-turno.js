@@ -42,7 +42,7 @@ if (a.estado !== 'bloqueado') {
     const textoCampana = String((noDeCampana === 'confirmado' ? tx.campanaNo : tx.campanaNoSinConfirmar) || '').trim(); // (`validarDatos` exige los dos: sin texto de respaldo)
     return [{ json: { ruta: 'baja', campana: true, sinConfirmar: noDeCampana === 'sinConfirmar', texto: textoCampana, responder: true, transferir: false, motivo: '', from: t.from } }];
   }
-  // Con la marca viva (E4): dentro de los 120 s del «No» todo cae en silencio; hasta las 24 h, solo las cortesías cortas y un «no» repetido. Un pedido de baja escrito sigue su camino (se confirma). Lo demás es una intención clara
+  // Con la marca viva (E4): hasta las 24 h del «No» callan SOLO las cortesías cortas y un «no» repetido (después de la baja el negocio nunca inicia un mensaje, pero lo que la persona escribe se responde). Un pedido de baja escrito sigue su camino (se confirma). Lo demás es una intención clara
   // y sigue como conversación (la marca se borra al responder, en «Armar mensajes»).
   if (!bjPideBaja(t.texto) && cnSilencioPorCampana(ficha, t.ahoraMs, [t.tipo === 'text' ? t.texto : null])) return [{ json: SILENCIO }];
 }

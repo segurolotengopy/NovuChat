@@ -25,7 +25,7 @@ if (!r.ok) return cerrado('sin_estado');
 const f = chFichaVigente(r.ficha, t.ahoraMs);
 const eventos = f.cola.filter((e) => e.seq > f.hasta);
 if (!eventos.length) return [];
-// EL SILENCIO TRAS EL «NO» (E4): si TODA la ráfaga cae en silencio (dentro de los 120 s del «No», o solo cortesías y «no» repetidos dentro de las 24 h), no se llama al modelo ni se responde nada (R01: «No» y enseguida «ok»).
+// EL SILENCIO TRAS EL «NO» (E4): si TODA la ráfaga cae en silencio (solo cortesías y «no» repetidos mientras la marca del «No» vive, hasta 24 h), no se llama al modelo ni se responde nada (R01: «No» y enseguida «ok»).
 // «Armar mensajes» deja esos eventos como respondidos. Cualquier otra cosa es una intención clara: sigue la conversación normal.
 const ultimaSeq = eventos[eventos.length - 1].seq;
 if (cnSilencioPorCampana(f, t.ahoraMs, eventos.map((e) => (e && e.k === 'texto' ? e.c : null)))) {
