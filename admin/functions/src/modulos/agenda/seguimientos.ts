@@ -218,9 +218,18 @@ export const seguimientosPendientes = onRequest(
       .limit(TOPE_DE_LECTURA)
       .get();
 
+    // M3: quien tiene una baja de la campaña saliente (`bajas/{wa_tel}`) no recibe NINGÚN mensaje iniciado por el negocio,
+    // ni el recordatorio en texto ni la plantilla. Una sola lectura por lote (`getAll`).
+    const conBaja = new Set<string>();
+    if (candidatas.docs.length > 0) {
+      const bajas = await db.getAll(...candidatas.docs.map((d) => db.doc(`tenants/${tenantId}/bajas/${d.id}`)));
+      for (const b of bajas) if (b.exists) conBaja.add(b.id);
+    }
+
     const pendientes: Record<string, unknown>[] = [];
     for (const doc of candidatas.docs) {
       if (pendientes.length >= TOPE_POR_CORRIDA) break;
+      if (conBaja.has(doc.id)) continue;
       const datos = doc.data() as ConversacionParaSeguimiento & Record<string, unknown>;
       const modo = esPendienteDeSeguimiento(datos, ahoraMs);
       if (!modo) continue;
@@ -278,6 +287,7 @@ export const seguimientoEnviado = onRequest(
     const { tenantId } = ruta;
     const idConversacion = `wa_${telefono}`;
     const refConversacion = db.doc(`tenants/${tenantId}/conversaciones/${idConversacion}`);
+    const refBaja = db.doc(`tenants/${tenantId}/bajas/${idConversacion}`);
     const refMetricas = db.doc(`tenants/${tenantId}/metricas/${periodoDe()}`);
     const ahoraMs = Date.now();
 
@@ -286,15 +296,19 @@ export const seguimientoEnviado = onRequest(
     // marca mueve algo; la segunda ve `seguimientos` distinto de cero y
     // contesta `repetido`, sin contar de nuevo y sin dejar mandar otra vez.
     const salida = await db.runTransaction(async (tx) => {
-      const conversacion = await tx.get(refConversacion);
-      const s = conversacion.get('solicitud');
+      const [conversacion, baja] = await tx.getAll(refConversacion, refBaja);
+      if (baja!.exists) {
+        // M3: la baja se pudo pedir entre el armado de la lista y este aviso. No se marca ni se manda.
+        return { marcado: false, repetido: false, motivo: 'conBaja' as const };
+      }
+      const s = conversacion!.get('solicitud');
       const solicitud = typeof s === 'object' && s !== null ? (s as Partial<Solicitud>) : null;
-      if (!conversacion.exists || !solicitud) {
+      if (!conversacion!.exists || !solicitud) {
         return { marcado: false, repetido: false, motivo: 'sin_solicitud' as const };
       }
       // Segunda compuerta, al momento de enviar: se pudo bloquear entre el armado de la lista y
       // este aviso. El flujo manda solo si `marcado === true`; bloqueado no se marca ni se manda.
-      if (estaBloqueada(conversacion.get('bloqueada'))) {
+      if (estaBloqueada(conversacion!.get('bloqueada'))) {
         return { marcado: false, repetido: false, motivo: 'bloqueado' as const };
       }
       const previos = typeof solicitud.seguimientos === 'number' ? solicitud.seguimientos : 0;

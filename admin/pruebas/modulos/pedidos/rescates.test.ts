@@ -91,7 +91,7 @@ async function sembrar(
 }
 
 async function borrarTodo(t: string) {
-  for (const c of ['conversaciones', 'bitacora', 'pedidos']) {
+  for (const c of ['conversaciones', 'bitacora', 'pedidos', 'bajas']) {
     for (const d of (await db.collection(`tenants/${t}/${c}`).get()).docs) {
       await db.recursiveDelete(d.ref);
     }
@@ -248,6 +248,19 @@ describe('módulo y compra', () => {
     const r = await llamar();
     expect(r.cuerpo.rescates.map((x: { telefono: string }) => x.telefono)).toEqual([tel(56)]);
     expect(await marca(X, tel(55))).toBeUndefined();
+  });
+
+  it('M3: quien tiene una baja de la campaña (`bajas/wa_tel`) no recibe el rescate y no se marca; la baja es del comercio', async () => {
+    await sembrar(X, tel(57));
+    await sembrar(X, tel(58));
+    await sembrar(Y, tel(57));
+    await db.doc(`tenants/${X}/bajas/wa_${tel(57)}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: null, desde: Timestamp.now() });
+    const r = await llamar();
+    expect(r.cuerpo.rescates.map((x: { telefono: string }) => x.telefono)).toEqual([tel(58)]);
+    expect(await marca(X, tel(57))).toBeUndefined();
+    // La baja de X no frena el mismo teléfono en Y.
+    const ry = await llamar({ numero: NUM_Y, token: TOKEN_Y });
+    expect(ry.cuerpo.rescates.map((x: { telefono: string }) => x.telefono)).toEqual([tel(57)]);
   });
 });
 

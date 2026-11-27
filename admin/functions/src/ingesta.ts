@@ -52,7 +52,7 @@ export { sigueVigente };
 // Términos de producto registrados (Andres, 24/10/2026): se leen una vez por turno, y solo si lo que
 // va al prompt contiene «prompt»; el sistema los cita entre « » y revalida lo ya aprobado.
 import { citarTerminos } from './central/asistente/terminos.js';
-import { aplicarRespuestaDeCampana, campanaIdValido, respuestaDeCampanaValida } from './core/conversacion/bajas.js';
+import { aplicarRespuestaDeCampana, campanaIdValido, normalizarRespuestaDeCampana } from './core/conversacion/bajas.js';
 import { aplicarEventoDeFactura, codigoDePedidoValido, ultimoPedidoParaElFlujo } from './core/turno/facturaPedido.js';
 
 /**
@@ -317,8 +317,9 @@ function normalizar(cuerpo: unknown): Entrante | null {
     ? codigoDePedidoValido(c['codigoPedido']) ?? undefined : undefined;
   // Respuesta a la campaña saliente: ambos campos válidos o ninguno (un `campana_respuesta` mal formado se cuenta como un mensaje cualquiera).
   // La respuesta válida basta: un «no» con id de campaña faltante o inválido igual crea la baja (`aplicarRespuestaDeCampana`).
-  const respuestaCampana = evento === 'campana_respuesta' && respuestaDeCampanaValida(c['respuestaCampana'])
-    ? { respuestaCampana: c['respuestaCampana'], ...(campanaIdValido(c['campanaEnvioId']) ? { campanaEnvioId: c['campanaEnvioId'] } : {}) } : undefined;
+  const respuestaNormal = evento === 'campana_respuesta' ? normalizarRespuestaDeCampana(c['respuestaCampana']) : null;
+  const respuestaCampana = respuestaNormal !== null
+    ? { respuestaCampana: respuestaNormal, ...(campanaIdValido(c['campanaEnvioId']) ? { campanaEnvioId: c['campanaEnvioId'] } : {}) } : undefined;
 
   // SIN CONTEO (16/11/2026): solo el booleano exacto `true`, y solo en un saliente de imagen. Cualquier
   // otra combinación o valor se ignora y el mensaje se cuenta como siempre (ante la duda, se cuenta).
@@ -808,6 +809,22 @@ export const ingesta = onRequest(
     // comercial— y corte el turno.
     const { estado, ficha } = await estadoDelComercio(tenantId);
     if (estado !== 'activo') {
+      // UN «NO» A LA CAMPAÑA NUNCA SE PIERDE, ni con el comercio suspendido: la baja es un derecho de la persona y, si se
+      // descartara, al reactivarse el comercio le seguirían llegando campañas. SOLO con el comercio `suspendido` (reversible);
+      // en `baja` o `desconocido` no se escribe nada. Escribe ÚNICAMENTE `bajas/{wa_tel}` (`soloBaja`): ni conversación, ni
+      // mensaje, ni conteo. Un «sí» no escribe nada. Un fallo de la transacción no cambia la respuesta: sigue el 409.
+      if (estado === 'suspendido' && mensaje.evento === 'campana_respuesta' && mensaje.direccion === 'entrante'
+          && mensaje.respuestaCampana === 'no') {
+        const refConv = db.doc(`tenants/${tenantId}/conversaciones/wa_${mensaje.telefono}`);
+        try {
+          const resultado = await db.runTransaction((tx) => aplicarRespuestaDeCampana(tx, refConv,
+            { campanaId: mensaje.campanaEnvioId, respuesta: 'no' }, Timestamp.now(), { soloBaja: true }));
+          logger.info('ingesta: baja de campaña con el comercio suspendido', { tenantId, resultado });
+        } catch {
+          // Sin el teléfono ni el texto del error: solo el hecho.
+          await registrar(tenantId, { tipo: 'error_flujo', resultado: 'fallo', codigo: 'campana_baja_fallida' });
+        }
+      }
       // SE REGISTRA IGUAL. La bitácora admite escrituras con el comercio
       // suspendido justamente para esto: el tramo del corte de servicio es el
       // más conflictivo y es donde la evidencia no puede tener agujeros.
