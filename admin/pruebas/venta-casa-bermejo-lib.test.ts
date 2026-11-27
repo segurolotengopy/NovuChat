@@ -877,6 +877,13 @@ describe('B2 (24/11/2026): botones de entrega, sin «escribe pagar», alias con 
       for (const id of ['pedido:alias2', 'otro', 'PEDIDO:ALIAS', 'pedido:confirmar:abc']) expect(b('bmPideAlias')(id, 'pagar'), id).toBe(false);
       expect(b('bmPideAlias')(undefined, 'pagar')).toBe(true);
       expect(b('bmPideAlias')('', 'hola')).toBe(false);
+      // «Confirmo» a secas vale SOLO con el pedido completo (completoAntes); «pagar» no lo necesita.
+      for (const t of ['confirmo', 'si confirmo', 'confirmado']) {
+        expect(b('bmPideAlias')(undefined, t, false), t).toBe(false);
+        expect(b('bmPideAlias')(undefined, t), t).toBe(false);
+        expect(b('bmPideAlias')(undefined, t, true), t).toBe(true);
+      }
+      expect(b('bmPideAlias')(undefined, 'pagar', false)).toBe(true);
     });
   });
 

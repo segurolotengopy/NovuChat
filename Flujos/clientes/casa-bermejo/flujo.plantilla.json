@@ -94,7 +94,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ telefono: String(((($json.messages || [])[0]) || {}).from || '') }) }}",
+        "jsonBody": "={{ JSON.stringify({ telefono: String(((($json.messages || [])[0]) || {}).from || ''), catalogoCompleto: true }) }}",
         "options": {
           "timeout": 4000,
           "response": {
@@ -166,7 +166,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true }}",
+              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true && $('Normalizar entrada').first().json.tipo !== 'carrito' }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
