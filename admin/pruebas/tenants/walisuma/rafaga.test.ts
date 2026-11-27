@@ -116,6 +116,17 @@ describe('PUNTA A PUNTA: lo que recibe el MODELO (la llamada a Gemini) en una r�
     expect(cuerpoModelo(ts[2]!)).toContain('hola\nquiero una billetera\nde cuero por favor');
     expect(ultimoTurnoDelModelo(vistos)).toContain('hola\nquiero una billetera\nde cuero por favor');
   });
+  it('NEGADO (tope de 1.500 caracteres): un grupo que lo supera conserva el FINAL (lo más reciente) y descarta el principio, en «Decidir turno» y en lo que ve el modelo', () => {
+    const hilo = [txt(1, `INICIO ${'a'.repeat(900)}`, t0), txt(2, `${'b'.repeat(900)} FINAL`, t0 + 800)];
+    const { m, vistos } = conModelo(hilo);
+    const ts = correr(m, [{ n: 1, msg: mTexto(hilo[0]!.texto) }, { n: 2, msg: mTexto(hilo[1]!.texto) }]);
+    const t = textoDe(ts[1]!) as string;
+    expect(t.length).toBeLessThanOrEqual(1500);
+    expect(t.endsWith('FINAL')).toBe(true);
+    expect(t).not.toContain('INICIO');
+    expect(ultimoTurnoDelModelo(vistos)).toContain('FINAL');
+    expect(ultimoTurnoDelModelo(vistos)).not.toContain('INICIO');
+  });
   it('con la consulta caída (falla abierto) el segundo responde SOLO con su texto: el modelo no recibe el primero', () => {
     const { m, vistos } = conModelo([]);
     m.dobles['Consultar ráfaga'] = cae;

@@ -20,7 +20,7 @@ import { NORMALIZADORES_VERIFICADOS, huellaDe, injertarRafaga, quitarRafaga } fr
 import { cablearBellido, cablearWalisuma, descablearWalisuma } from './rafaga-cableado';
 import { ANA, PRODUCCION, crear, hablar, mAudio, mTexto, modelo, panelOk, valorMeta } from '../tenants/walisuma/mundo';
 
-const ANCLA_WALISUMA = { nodo: '¿Bajar medio?', salida: 1, destino: 'Decidir turno' };
+const ANCLA_WALISUMA = { nodo: 'Puerta del turno', salida: 0, destino: '¿Bajar medio?' }; // el cableado real de Walisuma (`construir.mjs`, `RAFAGA`)
 const frag = (idMeta: string, texto: string, ms: number, tipo = 'text') => ({ idMeta, tipo, texto, ms });
 const UNO = 'quiero 2 cajas';
 const DOS = 'de la grande, para mañana';
