@@ -14,7 +14,13 @@ import { fileURLToPath } from 'node:url';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8281'}`;
 process.env['FIRESTORE_EMULATOR_HOST'] = HOST;
 const PROYECTO = 'demo-novuchat-pruebas';
+process.env['GCLOUD_PROJECT'] = PROYECTO;
+// Valor de prueba, no secreto (alias 08, como `salida-campana.test.ts`): para llamar a las Functions reales de la cola de salida.
+const TOKEN_FUNCIONES = 'valor-de-prueba-integracion-script';
+process.env['INGESTA_CLIENTE08'] = TOKEN_FUNCIONES;
 
+const INDICE = await import('../../../functions/src/index.ts') as unknown as Record<string, unknown>;
+const CAMP = await import('../../../functions/src/core/conversacion/salidaCampana.ts') as unknown as { leerConfigCampana: (d: unknown) => unknown };
 const { initializeApp, getApps } = await import('firebase-admin/app');
 const { getFirestore, Timestamp, FieldValue } = await import('firebase-admin/firestore');
 const app = getApps().find((a) => a.name === 'campana-saliente') ?? initializeApp({ projectId: PROYECTO }, 'campana-saliente');
@@ -544,3 +550,82 @@ describe('estado', () => {
     expect((await correr(base(m, 'estado', ['--campana', 'cmp-uno']))).codigo).toBe(2);
   });
 });
+
+// ===========================================================================
+describe('integración script -> servidor: el `ejecutar()` real de cada subcomando y el `reclamarSalida` real', () => {
+
+  async function llamarFuncion(nombre: string, numero: string, cuerpo: unknown, extra: Record<string, string> = {}) {
+    const cab: Record<string, string> = { 'content-type': 'application/json', 'x-novuchat-numero': numero, authorization: `Bearer ${TOKEN_FUNCIONES}`, ...extra };
+    const leer = (n: string) => cab[n.toLowerCase()];
+    const peticion = { method: 'POST', body: cuerpo, rawBody: Buffer.from(JSON.stringify(cuerpo ?? {})), headers: cab, get: leer, header: leer };
+    const r: { codigo: number; cuerpo: unknown } = { codigo: 0, cuerpo: undefined };
+    const respuesta = {
+      status(c: number) { r.codigo = c; return respuesta; }, send(b: unknown) { r.cuerpo = b; return respuesta; }, json(b: unknown) { r.cuerpo = b; return respuesta; },
+      setHeader() { return respuesta; }, getHeader() { return undefined; }, set() { return respuesta; }, on() { return respuesta; },
+      end(b: unknown) { if (b !== undefined) r.cuerpo = b; return respuesta; },
+    };
+    await (INDICE[nombre] as (q: unknown, s: unknown) => Promise<void>)(peticion, respuesta);
+    return r;
+  }
+  type Entregado = { mensajeId: string; conversacionId: string };
+  const reclamarCampana = async (numero: string) => {
+    const r = await llamarFuncion('reclamarSalidaPersona', numero, {}, { 'x-novuchat-plantillas': '1' });
+    expect(r.codigo).toBe(200);
+    return ((r.cuerpo as { mensajes: Entregado[] }).mensajes).filter((x) => x.mensajeId.startsWith('camp_'));
+  };
+  const aceptar = async (numero: string, x: Entregado) => {
+    const r = await llamarFuncion('confirmarSalidaPersona', numero, { mensajeId: x.mensajeId, conversacionId: x.conversacionId, resultado: 'aceptado', idMeta: `wamid.${x.mensajeId}` });
+    expect(r.codigo).toBe(200);
+  };
+  const real = { leerConfigCampana: CAMP.leerConfigCampana };
+
+  it('crear no hace salir nada; autorizar-tanda sale dentro de los topes; cerrar-tanda lo detiene; y SIN autorizar el servidor no escribe', async () => {
+    const m = await montar({ telefonos: [1, 2, 3, 4, 5], ruta: { aliasSecreto: 'cliente08', flujo: 'agendamiento' } });
+    await db.doc(`tenants/${m.tenant}`).set({ nombre: 'Integración', estado: 'activo' });
+    const mensajes = async () => (await db.collectionGroup('mensajes').where('tenantId', '==', m.tenant).get()).size;
+
+    // ANTES de crear: no hay campaña ni puntero.
+    expect(await reclamarCampana(m.numero)).toEqual([]);
+
+    // `crear` (el ejecutar() real): la campaña `creada` y 5 destinatarios `pendiente`, sin puntero ni tanda.
+    const c = await correr(crearArgs(m, 'cmp-int', ['--aplicar']), { deps: real });
+    expect(c.codigo, c.texto).toBe(0);
+    expect((await rutaDe(m))['campanaSalienteEnCurso']).toBeUndefined();
+    expect(await reclamarCampana(m.numero)).toEqual([]);
+    expect(await mensajes()).toBe(0);
+
+    // `autorizar-tanda` (cupo 4; el ejecutar() real): el servidor materializa de a porReclamo (3) y luego el resto del cupo (1), nunca más.
+    const a = await correr(autorizarArgs(m, 'cmp-int', 't1', ['--aplicar']).map((x) => (x === '10' ? '4' : x)), { deps: real });
+    expect(a.codigo, a.texto).toBe(0);
+    const primero = await reclamarCampana(m.numero);
+    expect(primero).toHaveLength(3);
+    expect(await reclamarCampana(m.numero)).toEqual([]); // con mensajes en vuelo no sale más
+    for (const x of primero) await aceptar(m.numero, x);
+    const segundo = await reclamarCampana(m.numero);
+    expect(segundo).toHaveLength(1);
+    for (const x of segundo) await aceptar(m.numero, x);
+    expect(await reclamarCampana(m.numero)).toEqual([]); // cupo agotado
+    expect((await refC(m, 'cmp-int').get()).data()).toMatchObject({ materializados: 4, aceptados: 4, tanda: { id: 't1', usados: 4, cupo: 4 } });
+    expect(await mensajes()).toBe(4);
+
+    // `cerrar-tanda` (el ejecutar() real): sin puntero ni tanda, el servidor no materializa el quinto aunque siga pendiente.
+    const z = await correr(base(m, 'cerrar-tanda', ['--campana', 'cmp-int', '--tanda', 't1', '--aplicar']), { deps: real });
+    expect(z.codigo, z.texto).toBe(0);
+    expect((await rutaDe(m))['campanaSalienteEnCurso']).toBeUndefined();
+    expect(await reclamarCampana(m.numero)).toEqual([]);
+    expect(await mensajes()).toBe(4);
+  });
+
+  it('NEGATIVA: pausar (ejecutar() real) detiene al servidor aunque la tanda siga abierta', async () => {
+    const m = await montar({ telefonos: [1, 2, 3], ruta: { aliasSecreto: 'cliente08', flujo: 'agendamiento' } });
+    await db.doc(`tenants/${m.tenant}`).set({ nombre: 'Integración', estado: 'activo' });
+    expect((await correr(crearArgs(m, 'cmp-int', ['--aplicar']), { deps: real })).codigo).toBe(0);
+    expect((await correr(autorizarArgs(m, 'cmp-int', 't1', ['--aplicar']), { deps: real })).codigo).toBe(0);
+    const lote = await reclamarCampana(m.numero);
+    expect(lote).toHaveLength(3);
+    for (const x of lote) await aceptar(m.numero, x);
+    expect((await correr(base(m, 'pausar', ['--campana', 'cmp-int', '--aplicar']), { deps: real })).codigo).toBe(0);
+    expect(await reclamarCampana(m.numero)).toEqual([]);
+  });
+});
+
