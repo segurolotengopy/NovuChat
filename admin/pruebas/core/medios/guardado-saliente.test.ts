@@ -342,7 +342,7 @@ describe('cada flujo versionado que envía una imagen del asistente lleva la ram
     expect(total('clientes/rroca-antonio/rroca-antonio.json')).toBe(70);
     expect(total('clientes/walisuma/walisuma.json')).toBe(71);
     expect(total('clientes/casa-bermejo/casa-bermejo.json')).toBe(64);   // 63 + «Carrito del catálogo» (webhook, módulo catalogo-web; excepción de tope aprobada 24/11/2026): un disparador, no envía imágenes ni lleva rama de guardado
-    expect(total('clientes/demo-a/demo-a-agendamiento.json')).toBe(82);
+    expect(total('clientes/demo-a/demo-a-agendamiento.json')).toBe(86);   // 82 + 4 de la ráfaga (autorizados por Andres; sin publicar)
     expect(total('clientes/demo-b/demo-b-venta-cobro.json')).toBe(93);
   });
   it.each(SIN_RAMA)('%s NO la lleva (bloque 2b o imagen de encabezado: ver el plan)', (archivo) => {
