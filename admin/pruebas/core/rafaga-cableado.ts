@@ -29,11 +29,23 @@ function parchar(flujo: Flujo, nodo: string, cambios: [string, string][]): Flujo
   return flujo;
 }
 
-/** Walisuma: «Decidir turno» lee el texto agrupado en lugar de `t.texto` (la rama `conversacion`). Consumidor: «Decidir turno». */
-export const cablearWalisuma = (flujo: Flujo): Flujo => parchar(flujo, 'Decidir turno', [
+const yaLeeElAgrupado = (flujo: Flujo, nodo: string): boolean => String(flujo.nodes.find((x: { name: string }) => x.name === nodo)?.parameters?.jsCode ?? '').includes("cnPrimero('Agrupar ráfaga')");
+
+/**
+ * Walisuma: «Decidir turno» lee el texto agrupado en lugar de `t.texto` (la rama `conversacion`). Consumidor: «Decidir turno».
+ * Idempotente: desde el PR de Walisuma el JSON versionado YA trae este cableado (y la baja línea por línea); entonces no se toca.
+ */
+export const cablearWalisuma = (flujo: Flujo): Flujo => yaLeeElAgrupado(flujo, 'Decidir turno') ? flujo : parchar(flujo, 'Decidir turno', [
   ["let textoDelTurno = '';", `let textoDelTurno = '';\n${LEE_EL_AGRUPADO}`],
   ['cbLinea(t.texto, 1500)', "cbLinea(agrupado !== '' ? agrupado : t.texto, 1500)"],
 ]);
+
+/** Walisuma SIN el cableado: «Decidir turno» vuelve a leer solo `t.texto` (para probar que sin consumidor la pieza pierde un mensaje). */
+export const descablearWalisuma = (flujo: Flujo): Flujo => {
+  const n = flujo.nodes.find((x: { name: string }) => x.name === 'Decidir turno');
+  n.parameters.jsCode = String(n.parameters.jsCode).split("agrupado !== '' ? agrupado : t.texto").join('t.texto').replace(/const agrupado = [^\n]*\n/, "const agrupado = '';\n");
+  return flujo;
+};
 
 /** Bellido (agenda-minima.v0): «Decidir turno» parte del texto agrupado. Consumidor: «Decidir turno». */
 export const cablearBellido = (flujo: Flujo): Flujo => parchar(flujo, 'Decidir turno', [

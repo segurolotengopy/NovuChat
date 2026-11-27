@@ -70,6 +70,8 @@ export interface Opciones {
   medio?: { bytes?: number; url?: string; mime?: string; transcripcion?: string | null; clasificacion?: J | null };
   /** El reloj del mundo (por omisión AHORA: lunes 05/10/2026, 10:00 en La Paz). */
   ahoraMs?: number;
+  /** Dobles adicionales o que pisan a los de siempre (p. ej. `Consultar ráfaga`). */
+  dobles?: Record<string, Doble>;
 }
 /** El catálogo de PRUEBA (no es el real): piezas con precio, un tapiz SIN precio (a consultar) y un licor apagado. */
 export const CATALOGO = [
@@ -166,6 +168,9 @@ export function crear(o: Opciones = {}): Mundo {
     'Describir documento': clasificar,
     'Enviar a WhatsApp': enviar('Enviar a WhatsApp'),
     'Enviar respaldo': enviar('Enviar respaldo'),
+    // La ráfaga (pieza común): por omisión el servidor no ve ningún otro texto del hilo (`fragmentos: []`) y cada texto responde solo, como antes de la pieza. `rafaga.test.ts` pone su propio servidor.
+    'Consultar ráfaga': () => ({ rafaga: { v: 1, fragmentos: [] } }),
+    ...(o.dobles ?? {}),
   };
   return crearMundo({
     flujo: o.flujo ?? CON_CONTRATOS,
