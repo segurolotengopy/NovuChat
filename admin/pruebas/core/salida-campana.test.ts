@@ -31,6 +31,8 @@ const CONV = (i: number) => `wa_5917100${String(1000 + i)}`;
 const CLAVE_P = (n: number) => `clave-de-persona-${String(n).padStart(4, '0')}`;
 const periodo = () => new Date().toISOString().slice(0, 7);
 const hoy = () => CAMP.diaDeLaPaz(Date.now());
+/** La fecha base de la ventana de un destinatario: hace 2 días (dentro de los 60 de CONFIG). */
+const baseDentro = () => Timestamp.fromMillis(Date.now() - 2 * DIA);
 
 type Datos = Record<string, unknown>;
 interface Respuesta { codigo: number; cuerpo: unknown }
@@ -85,7 +87,7 @@ async function preparar(o: Opciones = {}) {
     await db.doc(`tenants/${A}/conversaciones/${CONV(i)}`).set({
       telefono: CONV(i).slice(3), canal: 'whatsapp', ultimoEntranteEn: Timestamp.fromMillis(Date.now() - (o.ultimoEntrante ?? 3 * DIA)),
     });
-    await refDest(CONV(i)).set({ estado: 'pendiente' });
+    await refDest(CONV(i)).set({ estado: 'pendiente', fechaBase: baseDentro() });
   }
 }
 /** Un mensaje de PERSONA `pendiente` dentro de la ventana de Meta, de una conversación que no es de la campaña. */
@@ -327,7 +329,7 @@ describe('uno por contacto, por estructura', () => {
     const [m] = delaCampana(await reclamar());
     await resolver(m!);
     const antes = await mensaje(CONV(0), claveDe(CONV(0)));
-    await refDest(CONV(0)).set({ estado: 'pendiente' });
+    await refDest(CONV(0)).set({ estado: 'pendiente', fechaBase: baseDentro() });
     expect(delaCampana(await reclamar())).toEqual([]);
     expect(await dest(CONV(0))).toMatchObject({ estado: 'omitido', motivo: 'repetido' });
     expect(await mensaje(CONV(0), claveDe(CONV(0)))).toEqual(antes);
@@ -418,7 +420,7 @@ describe('camino feliz', () => {
       campanaId: CAMPANA, tandaId: 't1', contado: false,
     });
     expect(await dest(CONV(0))).toMatchObject({ estado: 'enviado', tandaId: 't1', mensajeId: claveDe(CONV(0)) });
-    expect(await dest(CONV(3))).toEqual({ estado: 'pendiente' });
+    expect(await dest(CONV(3))).toEqual({ estado: 'pendiente', fechaBase: expect.anything() });
     expect(await campana()).toMatchObject({ materializados: 3, aceptados: 0, tanda: { id: 't1', cupo: 45, usados: 3 } });
     expect((await refContador().get()).data()).toMatchObject({ dia: hoy(), nDia: 3 });
     expect(await metricas()).toEqual({});
@@ -512,7 +514,7 @@ describe('cola de personas: la campaña nunca las hace caducar', () => {
     expect(entregados(r).map((m) => m.mensajeId)).toEqual([CLAVE_P(1)]);
     vi.restoreAllMocks();
     expect(await campana()).toMatchObject({ materializados: 0 });
-    expect(await dest(CONV(0))).toEqual({ estado: 'pendiente' });
+    expect(await dest(CONV(0))).toEqual({ estado: 'pendiente', fechaBase: expect.anything() });
   });
 
   it('un `pendiente` de campaña escrito a mano queda `rechazado/fueraDeCola`, no sale y no cuenta', async () => {
@@ -605,6 +607,39 @@ describe('clave de la baja y omisiones del servidor (no consumen cupo)', () => {
     await omitido(CONV(0), 'reciente');
   });
 
+  it('NIEGA: la ventana la aplica el SERVIDOR con `ventanaDias` de la configuración: fuera de ella queda `omitido/fueraDeVentana`, dentro sale', async () => {
+    await preparar({ n: 3 });
+    await refDest(CONV(0)).update({ fechaBase: Timestamp.fromMillis(Date.now() - 61 * DIA) });
+    await refDest(CONV(1)).update({ fechaBase: Timestamp.fromMillis(Date.now() - 59 * DIA) });
+    await refDest(CONV(2)).update({ fechaBase: Timestamp.fromMillis(Date.now() - 62 * DIA) });
+    expect(delaCampana(await reclamar()).map((x) => x.conversacionId)).toEqual([CONV(1)]);
+    await omitido(CONV(0), 'fueraDeVentana');
+    await omitido(CONV(2), 'fueraDeVentana');
+  });
+
+  it('NIEGA: la cifra sale de la configuración, no de un literal: con `ventanaDias` 1 una fecha de hace 2 días queda `fueraDeVentana`', async () => {
+    await preparar({ n: 1, config: { ...CONFIG, ventanaDias: 1 } });
+    expect(delaCampana(await reclamar())).toEqual([]);
+    await omitido(CONV(0), 'fueraDeVentana');
+  });
+
+  it('NIEGA: un destinatario SIN fecha base, con una ilegible o futura queda `omitido/sinFechaBase` (falla cerrada)', async () => {
+    await preparar({ n: 4 });
+    await refDest(CONV(0)).set({ estado: 'pendiente' });
+    await refDest(CONV(1)).set({ estado: 'pendiente', fechaBase: 'ayer' });
+    await refDest(CONV(2)).set({ estado: 'pendiente', fechaBase: Timestamp.fromMillis(Date.now() + 3 * DIA) });
+    expect(delaCampana(await reclamar()).map((x) => x.conversacionId)).toEqual([CONV(3)]);
+    for (const i of [0, 1, 2]) await omitido(CONV(i), 'sinFechaBase');
+  });
+
+  it('las omisiones por la ventana no consumen cupo ni cuentan', async () => {
+    await preparar({ n: 5 });
+    for (let i = 0; i < 2; i++) await refDest(CONV(i)).update({ fechaBase: Timestamp.fromMillis(Date.now() - 100 * DIA) });
+    const m = delaCampana(await reclamar());
+    expect(m.map((x) => x.conversacionId)).toEqual([CONV(2), CONV(3), CONV(4)]);
+    expect(await campana()).toMatchObject({ materializados: 3, tanda: { usados: 3 } });
+  });
+
   it('NIEGA: sin conversación, o sin `ultimoEntranteEn` legible, queda `omitido/sinConversacion`', async () => {
     await preparar({ n: 3 });
     await db.doc(`tenants/${A}/conversaciones/${CONV(0)}`).delete();
@@ -624,9 +659,9 @@ describe('clave de la baja y omisiones del servidor (no consumen cupo)', () => {
 
   it('NIEGA: los ids `wa_+591…` y `591…` (sin la forma `wa_<dígitos>`) quedan `omitido/idInvalido` y no se leen conversaciones con ellos', async () => {
     await preparar({ n: 1 });
-    await refDest('wa_+59171234567').set({ estado: 'pendiente' });
-    await refDest('59171234567').set({ estado: 'pendiente' });
-    await refDest('wa_5917123').set({ estado: 'pendiente' });
+    await refDest('wa_+59171234567').set({ estado: 'pendiente', fechaBase: baseDentro() });
+    await refDest('59171234567').set({ estado: 'pendiente', fechaBase: baseDentro() });
+    await refDest('wa_5917123').set({ estado: 'pendiente', fechaBase: baseDentro() });
     const m = delaCampana(await reclamar());
     expect(m.map((x) => x.conversacionId)).toEqual([CONV(0)]);
     for (const id of ['wa_+59171234567', '59171234567', 'wa_5917123']) expect(await dest(id)).toMatchObject({ estado: 'omitido', motivo: 'idInvalido' });

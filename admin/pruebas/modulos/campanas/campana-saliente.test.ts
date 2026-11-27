@@ -256,8 +256,25 @@ describe('crear', () => {
     expect(c['conteos']).toMatchObject({ destinatarios: 5 });
     const d = await refC(m, 'cmp-uno').collection('destinatarios').get();
     expect(d.docs.map((x) => x.id).sort()).toEqual([1, 2, 3, 4, 5].map((n) => `wa_${TEL(n)}`));
-    for (const x of d.docs) expect(x.data()).toEqual({ estado: 'pendiente' });
+    // La fecha base de la ventana es la que ya usa el script (la fecha de la fila, medianoche de La Paz): el servidor la aplica con `ventanaDias`.
+    const medianocheDeLaFila = Date.parse(`${diaLaPaz(AHORA - 5 * 86_400_000)}T00:00:00Z`) + 4 * 3_600_000;
+    for (const x of d.docs) {
+      expect(Object.keys(x.data()).sort()).toEqual(['estado', 'fechaBase']);
+      expect(x.get('estado')).toBe('pendiente');
+      expect((x.get('fechaBase') as { toMillis: () => number }).toMillis()).toBe(medianocheDeLaFila);
+    }
     expect(await rutaDe(m)).not.toHaveProperty('campanaSalienteEnCurso');
+  });
+  it('NEGATIVA: la fecha base de un teléfono con varias filas es la MÁXIMA (la misma que decide la ventana en el script)', async () => {
+    const m = await montar({ telefonos: [1] });
+    const filas = [
+      { telefono: TEL(1), fecha: diaLaPaz(AHORA - 30 * 86_400_000), etapa: 'Nuevo' },
+      { telefono: TEL(1), fecha: diaLaPaz(AHORA - 3 * 86_400_000), etapa: 'Nuevo' },
+    ];
+    const r = await correr(crearArgs(m, 'cmp-max', ['--aplicar']), { filas });
+    expect(r.codigo, r.texto).toBe(0);
+    const d = await refC(m, 'cmp-max').collection('destinatarios').doc(`wa_${TEL(1)}`).get();
+    expect((d.get('fechaBase') as { toMillis: () => number }).toMillis()).toBe(Date.parse(`${diaLaPaz(AHORA - 3 * 86_400_000)}T00:00:00Z`) + 4 * 3_600_000);
   });
   it('NEGATIVA: crear solo no autoriza ninguna tanda: sin tanda ni puntero el servidor no materializa nada', async () => {
     const m = await montar();

@@ -313,7 +313,7 @@ async function crear(cfg, deps, log) {
   });
   for (const lote of partirEnLotes(destinatarios, TAMANO_DE_LOTE)) {
     const b = db.batch();
-    for (const d of lote) b.create(ref.collection('destinatarios').doc(claveDeContacto(d.telefono)), { estado: 'pendiente' });
+    for (const d of lote) b.create(ref.collection('destinatarios').doc(claveDeContacto(d.telefono)), { estado: 'pendiente', fechaBase: Timestamp.fromMillis(d.fechaMaxMs) });
     await b.commit();
   }
   deps.marcarEscritura?.('escrito');

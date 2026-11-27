@@ -54,7 +54,7 @@ export const refCampana = (db: Firestore, tenantId: string, campanaId: string): 
 export const refContadorCampana = (db: Firestore, tenantId: string): DocumentReference => db.doc(`topesDeEnvio/c_${tenantId}`);
 
 /** Los motivos por los que el servidor omite a un destinatario (no consume cupo). */
-export const MOTIVOS_DE_OMISION = ['idInvalido', 'sinConversacion', 'otraLinea', 'baja', 'marcas', 'reciente', 'repetido'] as const;
+export const MOTIVOS_DE_OMISION = ['idInvalido', 'sinConversacion', 'otraLinea', 'baja', 'marcas', 'sinFechaBase', 'fueraDeVentana', 'reciente', 'repetido'] as const;
 export type MotivoDeOmision = (typeof MOTIVOS_DE_OMISION)[number];
 
 // ---------------------------------------------------------------------------
@@ -105,6 +105,25 @@ export const claveDeMensajeCampana = (campanaId: string, destinatario: string): 
 
 /** El día en hora de La Paz (UTC-4 fijo), `AAAA-MM-DD`, como en `retomarConversacion`. */
 export const diaDeLaPaz = (ms: number): string => new Date(ms - 4 * 3_600_000).toISOString().slice(0, 10);
+
+/**
+ * Cuántos días de La Paz pasaron entre la fecha base de la ventana (la fecha MÁXIMA de las filas del miniCRM del contacto, que el
+ * script guarda en el destinatario como `fechaBase`) y ahora (0 = hoy). Es la misma cuenta de `diasDesde` del script.
+ */
+export const diasDesdeFechaBase = (fechaMs: number, ahoraMs: number): number =>
+  Math.floor((ahoraMs - 4 * 3_600_000) / 86_400_000) - Math.floor((fechaMs - 4 * 3_600_000) / 86_400_000);
+
+/**
+ * El veredicto de la ventana de un destinatario: `null` si está dentro; `'sinFechaBase'` si no tiene fecha base legible o es futura
+ * (falla cerrada); `'fueraDeVentana'` si pasaron más de `ventanaDias` días. `ventanaDias` sale de la configuración, nunca de un literal.
+ */
+export function motivoDeVentana(fechaBase: unknown, ahoraMs: number, ventanaDias: number): 'sinFechaBase' | 'fueraDeVentana' | null {
+  const f = milisegundosDeMomento(fechaBase);
+  if (f === null) return 'sinFechaBase';
+  const dias = diasDesdeFechaBase(f, ahoraMs);
+  if (dias < 0) return 'sinFechaBase';
+  return dias > ventanaDias ? 'fueraDeVentana' : null;
+}
 
 export interface EntradaDeCupo {
   libres: number;
@@ -264,6 +283,8 @@ export async function materializarCampana(
       if (linea !== undefined && linea !== phoneNumberId) { omitir('otraLinea'); continue; }
       if (baja.exists) { omitir('baja'); continue; }
       if (marcado(conv.get('noContactar')) || marcado(conv.get('bloqueada')) || marcado(conv.get('riesgoEn'))) { omitir('marcas'); continue; }
+      const ventana = motivoDeVentana(p.get('fechaBase'), ahoraMs, config.ventanaDias);
+      if (ventana !== null) { omitir(ventana); continue; }
       if (ahoraMs - entrante < RECIENTE_MS) { omitir('reciente'); continue; }
       if (existente.exists) { omitir('repetido'); continue; }
       const clave = claveDeMensajeCampana(puntero, p.id);
