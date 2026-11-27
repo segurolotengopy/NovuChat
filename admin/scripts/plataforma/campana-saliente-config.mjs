@@ -3,8 +3,9 @@
  *
  * QUÉ ES. Los topes de la campaña saliente del chat (PR-C, 27/11/2026): `porTanda`, `porDia`, `porReclamo`, `ventanaDias`,
  * `pausaErroresPct`, `pausaMinimoEnviados` y `pausaNoPct`. Dependen de la calidad del número, no de lo que se vende, por eso son
- * de Core y no del plan. Los lee SOLO el servidor (`salidaCampana.ts`, con el SDK Admin) y los escribe NovuChat desde
- * Plataforma: `firestore.rules` no deja que ningún navegador escriba (ni lea de forma especial) este documento. Sin el documento,
+ * de Core y no del plan. Las aplica SOLO el servidor (`salidaCampana.ts`, con el SDK Admin) y las escribe NovuChat desde
+ * Plataforma: `firestore.rules` no deja que ningún navegador lo ESCRIBA; en cambio, como todo documento de `config/{documento}`, lo pueden
+ * LEER los miembros del comercio (`esMiembro`): son cifras de envío, no secretos. Sin el documento,
  * o con un valor ilegible, la campaña queda CERRADA: no sale ningún mensaje.
  * Los valores viven versionados en `scripts/datos/campana-saliente/<nombre>.json` (cifras; sin identificadores).
  *
