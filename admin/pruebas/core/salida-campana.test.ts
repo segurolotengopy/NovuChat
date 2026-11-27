@@ -334,6 +334,18 @@ describe('uno por contacto, por estructura', () => {
     expect(await campana()).toMatchObject({ materializados: 1 });
   });
 
+  it('NIEGA: el mensaje `camp_…` se escribe con `tx.create` (falla si ya existe), nunca con `set`: se fija con un espía', async () => {
+    await preparar({ n: 3 });
+    const crea = vi.spyOn(Transaction.prototype, 'create');
+    const pone = vi.spyOn(Transaction.prototype, 'set');
+    const m = delaCampana(await reclamar());
+    expect(m).toHaveLength(3);
+    const rutas = crea.mock.calls.map((c) => (c[0] as { path: string }).path).sort();
+    expect(rutas).toEqual(m.map((x) => `tenants/${A}/conversaciones/${x.conversacionId}/mensajes/${x.mensajeId}`).sort());
+    // `set` solo puede tocar el contador del día: ningún mensaje de la campaña se escribe con él.
+    for (const c of pone.mock.calls) expect((c[0] as { path: string }).path).not.toContain('/mensajes/');
+  });
+
   it('NIEGA: dos reclamos a la vez no envían dos veces (3 en total, cada contacto una vez)', async () => {
     await preparar({ n: 8 });
     const [r1, r2] = await Promise.all([reclamar(), reclamar()]);
