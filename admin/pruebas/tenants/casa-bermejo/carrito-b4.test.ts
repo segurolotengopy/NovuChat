@@ -403,10 +403,20 @@ describe('R2: el saludo lleva el botón «Ver catálogo» con el catálogo de No
       expect(JSON.stringify(t.mensajes[0]!.payload), JSON.stringify(web)).not.toMatch(/cta_url|Ver catálogo/);
     }
   });
-  it('NEGADO (D7): el dato fijo `enlaceCatalogo` de «Config base» (el sitio) NO produce el botón aunque esté cargado', () => {
+  it('B2 (D7 DEROGADA, Andres 27/11/2026): el dato `enlaceCatalogo` de «Config base» SÍ produce el botón «Ver catálogo» en el saludo, con la dirección del dato (nunca una fija)', () => {
     const m = crear({ enlaceCatalogo: 'https://sitio.example/catalogo', modeloDice: modelo('Con gusto. ¿Qué pieza te interesa?') });
     const t = hablar(m, ANA, mTexto('Hola'));
-    expect(JSON.stringify(t.mensajes.map((x) => x.payload))).not.toMatch(/cta_url|Ver catálogo|sitio\.example/);
+    expect(t.mensajes).toHaveLength(1);
+    const p = JSON.stringify(t.mensajes[0]!.payload);
+    expect(p).toMatch(/cta_url/);
+    expect(p).toContain('https://sitio.example/catalogo');
+  });
+  it('NEGADO: un enlace del dato que no es https, o que es del sitio Wegic, no produce botón ni se promete', () => {
+    for (const e of ['http://sitio.example/catalogo', 'https://wegic.ai/catalogo', 'ftp://x.y', 'https://a b']) {
+      const m = crear({ enlaceCatalogo: e, modeloDice: modelo('Con gusto. ¿Qué pieza te interesa?') });
+      const t = hablar(m, ANA, mTexto('Hola'));
+      expect(JSON.stringify(t.mensajes.map((x) => x.payload)), e).not.toMatch(/cta_url|Ver catálogo|wegic/);
+    }
   });
   it('NEGADO: con un pedido en curso (ya hay piezas) no se ofrece el catálogo', () => {
     const m = crear({ panel: panelOk({ catalogoWeb: { activo: true, enlace: ENLACE } }), modeloDice: modelo('Con gusto.', { lineas: BILLETERA }) });

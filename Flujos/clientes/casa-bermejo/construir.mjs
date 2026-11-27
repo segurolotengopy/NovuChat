@@ -84,7 +84,7 @@ export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   // La base común de las ventas digitales (cobro, avisos, el motor de la conversación y el carrito: prefijos `cb`, `av`, `vd` y `vc`) y, al final, lo PROPIO de Casa Bermejo (`bm.js`: datos, textos y `CN_TENANT`; `bm-venta.js`: la decisión de la venta).
-  librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/diferencias.js', '../../src/modulos/pedidos/comprobante-diferencias.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/carrito.js', '../../experimental/venta-digital/src/catalogo-externo.js', '../../src/modulos/pedidos/confirmar-pedido.js', '../../src/modulos/pedidos/pedido-del-carrito.js', 'src/lib/bm.js', 'src/lib/bm-venta.js'],
+  librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/diferencias.js', '../../src/modulos/pedidos/comprobante-diferencias.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/carrito.js', '../../experimental/venta-digital/src/catalogo-externo.js', '../../src/modulos/pedidos/confirmar-pedido.js', '../../src/modulos/pedidos/pedido-del-carrito.js', '../../src/modulos/catalogo-web/boton-del-catalogo.js', 'src/lib/bm.js', 'src/lib/bm-venta.js'],
   comun: ['../../experimental/venta-digital/src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],
@@ -93,6 +93,8 @@ export const CONFIG = {
     baja: ['../../src/core/conversacion/baja.js'],
     // «Asistente virtual con IA» en todo texto que lo nombra (pieza común del core): lo usa `bmSeguro` en «Armar mensajes».
     identidad: ['../../src/core/texto/identidad.js'],
+    // El catálogo por código (B2, comunes del módulo Productos y del core de texto): la lista de categorías y productos con «Ver más» (`lc*`, `ic*`) y los párrafos (`ctParrafos`). El botón «Ver catálogo» (`cw*`) va con las librerías (lo usa `bmEnlaceCatalogo` en todo nodo).
+    'lista-catalogo': ['../../src/core/texto/parrafos.js', '../../src/modulos/productos/lista-de-catalogo.js', '../../src/modulos/productos/intencion-de-catalogo.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],

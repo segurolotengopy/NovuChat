@@ -665,23 +665,22 @@ function bmQuiereHablar(n) {
   if (/^(?:(?:quiero|necesito|busco|pasame con|comunicame con)\s+)?(?:un |una |el |la )?(?:vendedor|vendedora|humano|humana|persona|asesor|asesora)(?: real| humano| humana)?$/.test(String(n || '').trim())) return true;
   return /\b(hablar con (una |un )?(persona|humano|asesor|asesora|encargado|encargada|vendedor|vendedora|alguien|recepcion)|asesor|asesora|encargad[oa]|recepcion|atencion al cliente|que me llamen|llamenme|llamarme)\b/.test(String(n || ''));
 }
-// El enlace del catálogo web de ESTA conversación (R2, B4, 25/11/2026): el catálogo de NovuChat, que la consola manda como `catalogoWeb.enlace` con `catalogoCompleto: true` (activo, https, sin espacios, de largo acotado).
-// NUNCA el sitio de NovuTienda ni el dato `enlaceCatalogo` de «Config base» (D7, 24/11/2026: ese sitio no se ofrece, aunque alguien lo cargue). Sin enlace de la consola, '' y ningún texto ni botón lo promete («solo se ofrece lo que se cumple»).
-function bmEnlaceCatalogo(panel) {
+// EL ENLACE DEL CATÁLOGO (B2, 27/11/2026; la «D7» del 24/11 queda DEROGADA por Andres: el catálogo devuelve el pedido al chat para pagar y el enlace sale SIEMPRE que el cliente lo pida, también con un pedido o un QR en curso).
+// Sale del DATO del comercio `enlaceCatalogo` de «Config base» (https validado por la pieza común `cwUrlValida`; NUNCA una dirección fija en el código). De respaldo, el `catalogoWeb.enlace` que manda la consola para ESTA conversación.
+// El dato tiene que apuntar al catálogo simple (solo productos, descripciones y precios), no a la portada del sitio: el código no puede distinguirlo, lo garantiza quien carga el dato. El sitio Wegic nunca se ofrece (no es del comercio).
+const BM_ENLACE_AJENO = /wegic/i;
+function bmEnlaceCatalogo(base, panel) {
+  const url = (v) => { const u = cwUrlValida(v); return u !== '' && !BM_ENLACE_AJENO.test(u) ? u : ''; };
+  const dato = url(base && typeof base === 'object' ? base.enlaceCatalogo : '');
+  if (dato !== '') return dato;
   const w = panel && panel.ok && cbEsObjeto(panel.cuerpo.catalogoWeb) ? panel.cuerpo.catalogoWeb : null;
-  const e = w && w.activo === true && typeof w.enlace === 'string' ? w.enlace.trim() : '';
-  return /^https:\/\/[^\s]+$/.test(e) && e.length <= 500 ? e : '';
-}
-// El catálogo como BOTÓN «Ver catálogo» en el MISMO mensaje de texto del turno (0 mensajes más): solo si el mensaje es un texto simple que cabe en el cuerpo del botón y hay enlace.
-function bmConBotonCatalogo(m, enlace) {
-  if (!m || !m.payload || m.payload.type !== 'text' || typeof m.texto !== 'string' || m.texto.length > 1000 || !/^https:\/\/[^\s]+$/.test(String(enlace))) return false;
-  m.payload = cmEnlace(m.texto, 'Ver catálogo', String(enlace));
-  m.respaldo = m.texto + '\n\n' + String(enlace);
-  m.tipoReporte = 'interactive'; m.conBoton = true;
-  return true;
+  return w && w.activo === true ? url(w.enlace) : '';
 }
 // Un texto del modelo que promete un enlace, una página o un botón que el código no pone: se descarta (sale el texto del código).
 const BM_PROMETE_ENLACE = /\b(enlace|enlaces|link|links|pagina web|sitio web|pagina|catalogo web|ver catalogo|boton|botones)\b/;
+// B2 (Estándar 1.1): con catálogo, NUNCA se niega el catálogo ni se dice «no encuentro eso» a secas. El texto del modelo que lo hace se descarta (sale la ruta sin pieza: coincidencias o categorías con el botón). Se prueba sobre el texto normalizado.
+const BM_NIEGA_CATALOGO = /\bno (?:lo |la |los |las )?(?:encuentro|encontre|encontramos)\b[^.!?\n]{0,40}\b(?:catalogo|eso|esa|ese|nada)\b|\bno (?:tenemos|tengo|contamos con|disponemos de|manejamos|hay) (?:un |ningun |el )?catalogo\b|\bno puedo (?:mostrar|mostrarle|mostrarte|compartir|enviar|pasar)\w*\b[^.!?\n]{0,30}\bcatalogo\b|\bno cuento con (?:un |ningun |el )?catalogo\b/;
+function bmNiegaCatalogo(texto) { return BM_NIEGA_CATALOGO.test(bmNorm(texto)); }
 // R59 (25/11/2026): el asistente no AFIRMA «precios actualizados» (ni «verifiqué los precios»): el precio se lee del catálogo vivo en cada turno y el sistema no le da al modelo cómo saber qué se actualizó. Se prueba sobre el texto normalizado.
 // El imperativo («verifica que el monto…», «verifique el total») le pide algo al CLIENTE: no afirma que los precios estén verificados (falso positivo de la ronda 2).
 const BM_AFIRMA_PRECIOS = /\b(?:actualiz\w+|actualic\w+|(?!verific(?:a|que|quen)\b)verific\w+)\b[^.!?]{0,40}\b(?:precios?|catalogo|montos?|costos?)\b|\b(?:precios?|catalogo|montos?|costos?)\b[^.!?]{0,40}\b(?:actualiz\w+|verific\w+|vigentes|al dia|confirmad\w+)\b/;
@@ -822,16 +821,18 @@ function bmPideDatoProhibido(texto) {
     return BM_RE_DATO_NO_SE_PIDE.test(n) && (/[?¿]/.test(oracion) || BM_RE_VERBO_PEDIR.test(n) || /\b(?:comparta\w*|mande\w*|pase\w*)\b/.test(n));
   });
 }
-function bmRedaccion(texto, textoCliente, vendibles) {
+// `conEnlace`: el comercio tiene un enlace de catálogo válido y el CÓDIGO lo pone (botón o línea al final) en cualquier turno que lo mencione; entonces mencionarlo no descarta el texto. Sin enlace, prometerlo sigue descartándolo («solo se ofrece lo que se cumple»).
+// Tope de 900 caracteres y 8 oraciones: las LISTAS no las escribe el modelo (las arma el código, `bmIntencionCatalogo`), el modelo conversa.
+function bmRedaccion(texto, textoCliente, vendibles, conEnlace) {
   const crudo = typeof texto === 'string' ? bmNombrarIds(texto.trim(), vendibles) : '';
   if (crudo === '' || bmPideDatoProhibido(crudo)) return '';
   const opciones = {
-    maximo: 700, permitirMontos: true, sinDatosDePago: true, sinAfirmarCompra: true, sinPromesasDeAviso: true, avisoRespaldado: false,
-    quienPromete: ['recepcion', 'el equipo', 'una persona', 'la tienda'], textoDelCliente: textoCliente, prohibidos: [BM_PROHIBIDOS_VOZ], maxOraciones: 6,
+    maximo: 900, permitirMontos: true, sinDatosDePago: true, sinAfirmarCompra: true, sinPromesasDeAviso: true, avisoRespaldado: false,
+    quienPromete: ['recepcion', 'el equipo', 'una persona', 'la tienda'], textoDelCliente: textoCliente, prohibidos: [BM_PROHIBIDOS_VOZ], maxOraciones: 8,
   };
   const pulido = cmPulirRedaccion(crudo, opciones);
   // Un producto llamado «billetera» no debe confundirse con una billetera digital: la palabra se enmascara SOLO para esta revisión (el texto que sale es el pulido). La billetera digital sí queda prohibida.
-  if (pulido === '' || BM_AFIRMA_PRECIOS.test(bmNorm(pulido)) || BM_PROMETE_ENLACE.test(bmNorm(pulido)) || BM_PORCENTAJE.test(pulido) || BM_PROHIBIDOS_VOZ.test(bmNorm(pulido)) || cmMotivoDeRechazo(pulido.replace(/billeteras?(?! (?:digital|digitales|movil|moviles|electronica|electronicas|virtual|virtuales)\b)/gi, 'pieza'), opciones) !== '') return '';
+  if (pulido === '' || BM_AFIRMA_PRECIOS.test(bmNorm(pulido)) || (conEnlace !== true && BM_PROMETE_ENLACE.test(bmNorm(pulido))) || BM_PORCENTAJE.test(pulido) || BM_PROHIBIDOS_VOZ.test(bmNorm(pulido)) || cmMotivoDeRechazo(pulido.replace(/billeteras?(?! (?:digital|digitales|movil|moviles|electronica|electronicas|virtual|virtuales)\b)/gi, 'pieza'), opciones) !== '') return '';
   if (!bmMontosValidos(pulido, vendibles)) return '';
   return bmFormatearMontos(bmConPrecios(bmLimitarEmojis(pulido), vendibles), vendibles);
 }
@@ -876,6 +877,11 @@ function bmFijarPieza(textoCliente, lineasAntes, lineasNuevas, vendibles) {
   }
   const habia = new Set((Array.isArray(lineasAntes) ? lineasAntes : []).map((l) => l.id));
   // «el normal», «el común», «sin inverter»: entre piezas empatadas con las mismas palabras, el cliente pide la básica (la de nombre más corto).
+  // «la más barata»: entre piezas empatadas con las mismas palabras, la de menor precio (el precio sale del catálogo).
+  if (/\bmas (?:barat[oa]s?|economic[oa]s?)\b/.test(bmNorm(textoCliente))) {
+    const ambig = p.filter((x) => veredicto.get(x.v.id) === 'ambigua');
+    if (ambig.length) { ambig.sort((a, b) => a.v.precioCentavos - b.v.precioCentavos); veredicto.set(ambig[0].v.id, 'si'); for (const x of ambig.slice(1)) veredicto.set(x.v.id, 'no'); }
+  }
   if (/\b(normal|comun|basico|basica|estandar|simple|sin inverter)\b/.test(bmNorm(textoCliente))) {
     const ambig = p.filter((x) => veredicto.get(x.v.id) === 'ambigua');
     if (ambig.length) { ambig.sort((a, b) => a.v.nombre.length - b.v.nombre.length); veredicto.set(ambig[0].v.id, 'si'); for (const x of ambig.slice(1)) veredicto.set(x.v.id, 'no'); }
@@ -1176,7 +1182,7 @@ function bmContexto() {
   const catalogo = bmCatalogo(cnPrimero('Traer catálogo'), ahora, base, mercado);
   return {
     cfg: cfg, base: base, t: t, puerta: puerta, plan: plan, from: from, ahora: ahora, panel: panel, catalogo: catalogo, mercado: mercado, respCatalogo: cnPrimero('Traer catálogo'),
-    vendibles: catalogo.ok === true ? catalogo.vendibles : [], cobro: bmCobro(panel), modos: bmModos(base),
+    vendibles: catalogo.ok === true ? catalogo.vendibles : [], cobro: bmCobro(panel), modos: bmModos(base), enlace: bmEnlaceCatalogo(base, panel),
     ficha: CN_TENANT.fichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora),
     // Se completa en «Armar mensajes»: ¿el servidor cerró el cobro abierto? (undefined mientras no se llamó)
     cancelo: undefined,
@@ -1688,7 +1694,7 @@ function bmResolverModelo(c) {
   }
   // El pedido cambió con un QR abierto pero todavía no se puede emitir otro (falta la entrega o se vació el carrito): se cierra el cobro y se avisa que el QR anterior quedó anulado.
   if (cambioConQr) {
-    let texto0 = bmRedaccion(j.texto, p.textoCliente, c.vendibles);
+    let texto0 = bmRedaccion(j.texto, p.textoCliente, c.vendibles, c.enlace !== undefined && c.enlace !== '');
     const sinRed = texto0 === '';
     if (sinRed) texto0 = bmTextoDeEstado(lineas, entrega, cierre, c, conBoton);
     return Object.assign(base, { tipo: 'modelo', texto: texto0, sinRedaccion: sinRed, resumen: lineas.length ? vcResumen(lineas) : '', cancelarCobro: true, qrAnulado: true, patch: { qrHastaMs: 0, qrCarrito: [] } });
@@ -1707,7 +1713,7 @@ function bmResolverModelo(c) {
   const entro = lineas.some((l) => { const a = antes.find((x) => x.id === l.id); return !a || l.cantidad > a.cantidad; });
   const propuestaInvalida = Array.isArray(j.lineas) && j.lineas.some((l) => !l || typeof l !== 'object' || typeof l.id !== 'string' || !c.vendibles.some((v) => v.id === l.id));
   const afirmaDeMas = typeof j.texto === 'string' && ((propuestaInvalida && /\b(?:agreg\w+|anad\w+|sume|sumamos|incluy\w+|anote|anotamos|puse|pusimos|inclui|separe\w*|reserv\w+|apart\w+|quedo en|esta en (?:tu|su) (?:pedido|carrito)|tienes? en (?:tu|su) (?:pedido|carrito))\b/.test(bmNorm(j.texto))) || (!entro && bmAfirmaAgregado(j.texto)));
-  let texto = (afirmaDeMas || enEntrega || ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? (fijada.texto !== '' && !ignoraQuiereHablar && comp.modoRechazado !== true && comp.contradice !== true && fijada.delSitio !== true && fijada.ordenada !== true ? fijada.texto : bmTextoDeEstado(lineas, entrega, cierre, c, conBoton)) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
+  let texto = (afirmaDeMas || enEntrega || ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? (fijada.texto !== '' && !ignoraQuiereHablar && comp.modoRechazado !== true && comp.contradice !== true && fijada.delSitio !== true && fijada.ordenada !== true ? fijada.texto : bmTextoDeEstado(lineas, entrega, cierre, c, conBoton)) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles, c.enlace !== undefined && c.enlace !== ''));
   // Un texto FIJO del código en la ruta sin pieza: si es el mismo que ya se envió, es un bucle y la segunda vez pasa con recepción (aviso + botón).
   let fijoSinPieza = false;
   if (afirmaDeMas && fijada.texto === '' && !entro && lineas.length === 0) {
@@ -1731,6 +1737,8 @@ function bmResolverModelo(c) {
   if (texto !== '' && f.derivadoMs > 0 && c.ahora - f.derivadoMs >= 0 && c.ahora - f.derivadoMs < BM_VENTANA_TRAS_DERIVAR_MS && !cambio && bmOfreceSumar(texto)) texto = BM_TEXTO_TRAS_DERIVAR;
   // El asistente PIDE lo que falta con palabras que el estado reconoce en el turno siguiente: si el modelo no mencionó el nombre (o la ciudad) que falta, el código lo agrega.
   if (texto !== '' && !enEntrega && pendientes.length > 0 && pendientes.some((k) => !bmPidioDato(texto, k))) texto = texto + '\n\n' + bmPreguntaDelPaso(entrega, c.mercado);
+  // B2: un texto del modelo que niega el catálogo no sale (con el pedido vacío): sale la ruta sin pieza.
+  if (texto !== '' && !lineas.length && bmNiegaCatalogo(texto)) texto = '';
   const sinRedaccion = texto === '';
   let sinPieza = false;
   if (sinRedaccion && !lineas.length) {
@@ -1750,6 +1758,156 @@ function bmResolverModelo(c) {
   return Object.assign(base, { tipo: 'modelo', precioDistinto: sitioConPreciosDistintos, texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: (cambio || conBoton) && lineas.length ? vcResumen(lineas) : '', confirmable: conBoton, botonesEntrega: bmOfreceBotonesDeEntrega(lineas.length, entrega, c.mercado, c.modos, abierto), pide: texto !== '' ? pendientes : [] });
 }
 
+// -----------------------------------------------------------------------------
+// EL CATÁLOGO POR CÓDIGO (B2, 27/11/2026; Estándar 1.1, 1.7, 2.2 a 2.5): «¿qué tienen?», «catálogo», «¿qué televisores tienen?», «¿tienen bicicletas?» las contesta el CÓDIGO con las piezas comunes (`lc*`, `ic*`, `cw*`), SIN modelo.
+// Una consulta de catálogo nunca se niega, nunca se recorta en silencio y nunca la arma el modelo (el filtro de redacción aplanaba las listas). Categorías = `area` del catálogo vivo (la parte antes de « · »), sin normalizarla.
+// -----------------------------------------------------------------------------
+// Palabras que no dicen QUÉ se busca (saludos, verbos de preguntar o pedir, artículos, relleno).
+const BM_CAT_RELLENO = new Set(['hola', 'buenas', 'buenos', 'dias', 'tardes', 'noches', 'buen', 'dia', 'tarde', 'noche', 'que', 'q', 'ke', 'cual', 'cuales', 'cuantos', 'cuantas', 'tienen', 'tiene', 'tienes', 'venden', 'vende', 'manejan', 'maneja', 'hay', 'ofrecen', 'ofrece', 'cuentan', 'disponen', 'existen', 'quiero', 'quisiera', 'necesito', 'busco', 'ver', 'veo', 'verlo', 'verlos', 'me', 'mi', 'mis', 'nos', 'les', 'le', 'te', 'se', 'lo', 'los', 'la', 'las', 'el', 'de', 'del', 'un', 'una', 'unos', 'unas', 'y', 'e', 'o', 'u', 'a', 'al', 'en', 'con', 'sin', 'por', 'para', 'favor', 'gracias', 'porfa', 'pueden', 'puedes', 'puede', 'podrian', 'podria', 'podrias', 'puedo', 'mandame', 'mandenme', 'mandeme', 'manda', 'manden', 'mande', 'envia', 'enviame', 'envienme', 'muestra', 'muestrame', 'muestren', 'muestrenme', 'pasa', 'pasas', 'pasame', 'pasen', 'pasenme', 'dame', 'deme', 'dime', 'otros', 'otras', 'otro', 'otra', 'demas', 'mas', 'tambien', 'ahora', 'ya', 'solo', 'son', 'es', 'esta', 'estan', 'eso', 'esos', 'esa', 'esas', 'esto', 'estos', 'estas', 'su', 'sus', 'tu', 'tus', 'como', 'cuanto', 'cuesta', 'cuestan', 'costo', 'valor', 'sale', 'salen', 'alguno', 'alguna', 'algunos', 'algunas', 'si', 'muy', 'ustedes', 'uds', 'usted', 'tienda', 'negocio', 'completo', 'completa', 'completos', 'precios', 'opciones', 'disponibles', 'disponible', 'barato', 'baratos', 'barata', 'baratas', 'economico', 'economicos', 'mejor', 'mejores', 'precio', 'gustaria']);
+// Las palabras que piden VER lo que se vende (lista, catálogo, todo…): sin una categoría, son «mostrar el catálogo».
+const BM_CAT_OBJETO = new Set(['lista', 'listas', 'listado', 'catalogo', 'catalogos', 'productos', 'todo', 'todos', 'todas', 'carta', 'link', 'enlace', 'pagina', 'web', 'sitio', 'inventario']);
+// Pedir el ENLACE del catálogo (no la lista): «catálogo», «carta», «el link del catálogo».
+const BM_CAT_PIDE_ENLACE = /\b(?:catalogos?|carta|link|enlace|pagina|sitio|web)\b/;
+const BM_CAT_PIDE_LISTA = /\b(?:lista|listas|listado|productos|todo|todos|todas|inventario)\b|\b(?:que|q|ke) (?:tienen|tiene|venden|vende|ofrecen|manejan|hay)\b/;
+const BM_CAT_ORDEN = /\b(?:quiero|quisiera|necesito|busco|dame|deme|llevo|llevar|llevarme|compro|comprar|pido|pedir|ordenar|encargar|reservar|agrega\w*|anade\w*|suma\w*|pon|ponme|separa\w*)\b/;
+const BM_CAT_QUIERO_VER = /\b(?:quiero|quisiera|me gustaria|puedo|podria|podrian|podemos|queremos)\s+ver\b/;
+const BM_CAT_QUEJA = /\b(?:roto|rota|rotos|falla\w*|fallo|garantia|reclamo|devolver|devolucion|cambiar|cambio|problema\w*|llego|llegaron|danad\w*|defectuos\w*|reparar|reparacion|instalar|instalacion|servicio tecnico)\b/;
+const BM_CAT_PREGUNTA = /\b(?:tienen|tiene|tienes|venden|vende|manejan|maneja|hay|ofrecen|ofrece|cuentan|disponen|existen)\b/;
+const BM_CAT_CONTINUA = /\b(?:otros|otras|otro|otra|demas|restantes|siguientes|resto|mas)\b/;
+// Cosas que se preguntan con «¿tienen…?» y no son una pieza (servicios, pagos, datos de la tienda): no son «una pieza que no tenemos».
+const BM_CAT_NO_PIEZA = new Set(['delivery', 'envio', 'envios', 'factura', 'facturas', 'descuento', 'descuentos', 'garantia', 'tarjeta', 'tarjetas', 'cuotas', 'credito', 'ofertas', 'oferta', 'promocion', 'promociones', 'stock', 'horario', 'horarios', 'ubicacion', 'direccion', 'sucursal', 'sucursales', 'whatsapp', 'telefono', 'numero', 'pago', 'pagos', 'qr', 'efectivo', 'transferencia', 'recojo', 'retiro', 'servicio', 'servicios', 'instagram', 'facebook', 'tiktok', 'mapa', 'wifi', 'estacionamiento', 'parqueo', 'baño', 'bano', 'atencion', 'cambios', 'devoluciones', 'reserva', 'apartado']);
+// Sinónimos usuales («tele», «refri»): cada uno se lee como la palabra de la categoría.
+const BM_CAT_SINONIMOS = { tele: 'televisor', teles: 'televisor', tv: 'televisor', tvs: 'televisor', television: 'televisor', televisiones: 'televisor', pantalla: 'televisor', pantallas: 'televisor', refri: 'heladera', refris: 'heladera', refrigerador: 'heladera', refrigeradora: 'heladera', refrigeradores: 'heladera', refrigeradoras: 'heladera', nevera: 'heladera', neveras: 'heladera', lavarropas: 'lavadora', lavarropa: 'lavadora', microonda: 'microondas', micro: 'microondas', micros: 'microondas', altavoz: 'parlante', altavoces: 'parlante', bocina: 'parlante', bocinas: 'parlante', bafle: 'parlante', bafles: 'parlante', congelador: 'freezer', congeladores: 'freezer', aire: 'aire', aires: 'aire', split: 'aire' };
+function bmCatCanon(w) { return Object.prototype.hasOwnProperty.call(BM_CAT_SINONIMOS, w) ? BM_CAT_SINONIMOS[w] : w; }
+// Singular y plural en «s» y en «es» («televisores» ~ «televisor», «aires» ~ «aire»).
+function bmCatFormas(w) {
+  const c = bmCatCanon(w);
+  const f = [c];
+  if (c.length > 3 && /es$/.test(c)) f.push(c.slice(0, -2));
+  if (c.length > 3 && /s$/.test(c)) f.push(c.slice(0, -1));
+  return f;
+}
+// ¿Difieren en una letra como máximo? (una errata: «telebisores», «acondisionado»)
+function bmCatUnaLetra(a, b) {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
+}
+function bmCatCoincide(palabra, palabrasCat) {
+  const fw = bmCatFormas(palabra);
+  return palabrasCat.some((pc) => {
+    const fc = bmCatFormas(pc);
+    return fw.some((a) => fc.some((b) => a === b || (a.length >= 6 && b.length >= 6 && bmCatUnaLetra(a, b))));
+  });
+}
+function bmCatPalabras(nombre) {
+  return bmNorm(nombre).split(' ').filter((w) => w.length >= 2 && !BM_CAT_RELLENO.has(w));
+}
+// La cláusula que PIDE una lista dentro de un mensaje que además hace un pedido («quiero la heladera y mándenme la lista de aires»): la cláusula y el resto.
+const BM_CAT_CLAUSULA_LISTA = /[\s,;]*(?:y\s+)?(?:m[aá]nd\w*|env[ií]\w*|p[aá]s\w*|mu[eé]str\w*|d[aá]me|deme|dime|quiero ver|quisiera ver)\b[^.?!]*?\b(?:lista|listado|cat[aá]logo|precios)\b[^.?!]*/i;
+// ¿Qué pide el cliente del catálogo? null = nada que decida el código (sigue como siempre). Si no, { vista, cats, faltan, continuar, resto }:
+//   vista 'enlace'     el enlace del catálogo («catálogo», «carta», «el link»);   'categorias'  la lista de categorías («¿qué tienen?», «lista», «todo», «productos»);
+//   vista 'categoria'  los productos de `cats` (slugs), completos o con remisión; `continuar` = los que faltan de la última lista;
+//   vista 'sin_pieza'  pregunta por algo que no es una categoría ni una pieza («¿tienen bicicletas?»): `faltan` lo nombra y salen las categorías.
+// `resto`: lo que queda del mensaje cuando una cláusula de lista vino CON un pedido (sigue al modelo; la lista se adjunta en el mismo mensaje).
+function bmIntencionCatalogo(texto, vendibles, ficha) {
+  const crudo = String(texto === undefined || texto === null ? '' : texto);
+  const n = bmNorm(crudo);
+  if (n === '' || n.length > 160 || /\d/.test(n)) return null;
+  if (/\b(?:no|ya vi|ya vio|ya tengo|comprobante|pago|pagar|pague|qr|transferencia|deposito|captura|recibo|factura|nit|confirmo|confirmar)\b/.test(n) || BM_CAT_QUEJA.test(n)) return null;
+  const cats = lcCategorias(vendibles);
+  if (!cats.length) return null;
+  const palabras = n.split(' ').filter((w) => w !== '');
+  // Una sola palabra que responde a un dato que el código acaba de pedir (nombre, ciudad…) no es una consulta de catálogo.
+  if (palabras.length <= 1 && ficha && Array.isArray(ficha.pide) && ficha.pide.length > 0) return null;
+  const sig = palabras.filter((w) => !BM_CAT_RELLENO.has(w) && !BM_CAT_OBJETO.has(w));
+  const catsDe = (ws) => cats.filter((ct) => ws.some((w) => bmCatCoincide(w, bmCatPalabras(ct.nombre))));
+  const slug = (ct) => ct.id.slice(4);
+  const ultima = ficha && ficha.lista && typeof ficha.lista.cat === 'string' ? ficha.lista.cat : '';
+  // Sin nada que nombre una categoría: «los demás», «¿y otros?» siguen la última lista.
+  if (!sig.length && BM_CAT_CONTINUA.test(n) && ultima !== '' && cats.some((ct) => slug(ct) === ultima)) return { vista: 'categoria', cats: [ultima], faltan: [], continuar: true, resto: '' };
+  const hayObjeto = palabras.some((w) => BM_CAT_OBJETO.has(w)) || /\b(?:que|q|ke) (?:tienen|tiene|venden|vende|ofrecen|manejan|hay)\b/.test(n);
+  if (!sig.length) {
+    if (!hayObjeto) return null;
+    // «quiero todo», «dame todo» es un PEDIDO (comprar todo), no «mostrar el catálogo»: solo cuentan las palabras que piden ver (lista, catálogo, carta, link…).
+    if (BM_CAT_ORDEN.test(n) && !BM_CAT_QUIERO_VER.test(n) && !/\b(?:lista|listas|listado|catalogos?|carta|link|enlace|pagina|sitio|web)\b/.test(n)) return null;
+    return { vista: BM_CAT_PIDE_ENLACE.test(n) && !BM_CAT_PIDE_LISTA.test(n) ? 'enlace' : 'categorias', cats: [], faltan: [], continuar: false, resto: '' };
+  }
+  const ordena = BM_CAT_ORDEN.test(n) && !BM_CAT_QUIERO_VER.test(n);
+  if (ordena) {
+    // Un pedido CON una cláusula de lista: el modelo sigue con el pedido y el código adjunta la lista en el mismo mensaje.
+    const m = BM_CAT_CLAUSULA_LISTA.exec(crudo);
+    if (!m) return null;
+    const clausula = bmNorm(m[0]).split(' ').filter((w) => !BM_CAT_RELLENO.has(w) && !BM_CAT_OBJETO.has(w));
+    const pedidas = catsDe(clausula);
+    const resto = (crudo.slice(0, m.index) + ' ' + crudo.slice(m.index + m[0].length)).replace(/\s+/g, ' ').replace(/[\s,;y]+$/i, '').trim();
+    if (!pedidas.length || bmNorm(resto) === '') return null;
+    return { vista: 'categoria', cats: pedidas.map(slug), faltan: [], continuar: false, resto: resto };
+  }
+  const halladas = catsDe(sig);
+  const pregunta = BM_CAT_PREGUNTA.test(n);
+  if (halladas.length) {
+    if (!(pregunta || hayObjeto || sig.length <= 3)) return null;
+    // «bicis y teles»: cada tramo sin categoría ni pieza se dice («No tenemos bicis»).
+    const faltan = [];
+    const tramos = crudo.split(/,|;|\s[yeou]\s/i).map((x) => bmNorm(x)).filter((x) => x !== '');
+    if (tramos.length >= 2) {
+      for (const tr of tramos) {
+        const ws = tr.split(' ').filter((w) => !BM_CAT_RELLENO.has(w) && !BM_CAT_OBJETO.has(w));
+        if (ws.length >= 1 && ws.length <= 2 && catsDe(ws).length === 0 && !ws.some((w) => BM_CAT_NO_PIEZA.has(w)) && !(bmPuntuarCoincidencias(ws.join(' '), vendibles) || []).length) faltan.push(ws.join(' '));
+      }
+    }
+    const seguir = ultima !== '' && halladas.some((ct) => slug(ct) === ultima) && BM_CAT_CONTINUA.test(n);
+    return { vista: 'categoria', cats: halladas.map(slug), faltan: faltan, continuar: seguir, resto: '' };
+  }
+  // Ninguna categoría: «¿tienen bicicletas?» (algo que no figura). Si coincide con una pieza concreta del catálogo, sigue como siempre (lo atiende el modelo con las coincidencias).
+  // Con un pedido en curso, una pieza que no existe sigue pasando con recepción como siempre (decisión previa, pendiente de revisar con Andres: la batería A14 pide categorías + enlace).
+  const hayPedido = !!(ficha && Array.isArray(ficha.carrito) && ficha.carrito.length > 0);
+  if (!hayPedido && pregunta && sig.length >= 1 && sig.length <= 3 && !sig.some((w) => BM_CAT_NO_PIEZA.has(w)) && !(bmPuntuarCoincidencias(sig.join(' '), vendibles) || []).length) return { vista: 'sin_pieza', cats: [], faltan: [sig.join(' ')], continuar: false, resto: '' };
+  return null;
+}
+// El bloque de UNA categoría desde el producto `desde` (0 = el primero), una viñeta por producto, con líneas enteras y sin pasar de `limite` caracteres. { texto, hasta, total, nombre }.
+function bmBloqueCategoria(vendibles, slug, desde, monto, limite) {
+  const validos = lcValidos(vendibles).filter((v) => v.slug === slug);
+  const total = validos.length;
+  const nombre = total ? validos[0].cat : '';
+  const ini = Number.isInteger(desde) && desde > 0 ? Math.min(desde, total) : 0;
+  const encabezado = (a, b) => '*' + nombre + '* (' + (a === 0 && b === total ? total : (a + 1) + ' a ' + b + ' de ' + total) + ')';
+  let k = ini;
+  let texto = '';
+  while (k < total) {
+    const cand = encabezado(ini, k + 1) + '\n' + validos.slice(ini, k + 1).map((v) => lcLineaProducto(v, monto)).join('\n');
+    if (cand.length > limite) break;
+    texto = cand;
+    k++;
+  }
+  return { texto: texto, hasta: k, total: total, nombre: nombre };
+}
+// El toque de «Agregar» una pieza de una lista (`pro:<id>`): la pieza entra al pedido POR CÓDIGO (una unidad), sin modelo. Una pieza que ya estaba no se duplica: se dice. El texto lo arma el código.
+function bmResolverProducto(c) {
+  const f = c.ficha;
+  const id = c.plan && typeof c.plan.producto === 'string' ? c.plan.producto : '';
+  const v = c.vendibles.find((x) => x.id === id);
+  const usted = !!(c.base && c.base.tratamiento === 'usted');
+  if (!v) return { aviso: null, tipo: 'catalogo', vista: 'toque_viejo', cats: [], faltan: [], continuar: false };
+  const antes = vcLineas(f.carrito, c.vendibles).lineas;
+  const yaEstaba = antes.some((l) => l.id === id);
+  const lineas = yaEstaba ? antes.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' })) : antes.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle || '' })).concat([{ id: id, cantidad: 1, detalle: '' }]);
+  const resp = { candidates: [{ content: { parts: [{ text: JSON.stringify({ texto: 'Anotado.', lineas: lineas, entrega: {} }) }] } }] };
+  const r = bmResolverModelo(Object.assign({}, c, { plan: Object.assign({}, c.plan, { tipo: 'modelo', textoCliente: '' }), modeloResp: resp }));
+  if (r.tipo === 'modelo') {
+    const dicho = yaEstaba ? (usted ? v.nombre + ' ya está en su pedido.' : v.nombre + ' ya está en tu pedido.') : (usted ? 'Anoté ' + v.nombre + ' en su pedido.' : 'Anoté ' + v.nombre + ' en tu pedido.');
+    r.texto = dicho + '\n\n' + bmTextoDeEstado(r.lineas, r.entrega, false, c, r.confirmable === true);
+    r.sinRedaccion = false; r.sinPieza = false; r.sinModelo = true;
+    r.resumen = r.lineas.length ? vcResumen(r.lineas) : '';
+    r.pide = r.confirmable === true ? [] : bmPideDeEntrega(r.entrega, c.mercado);
+  }
+  return r;
+}
+
 // La decisión del turno. `c` viene de `bmContexto()` (+ `modeloResp` y `cancelo`, que completa cada nodo). Devuelve { tipo, ... } con `aviso` (o null) y, cuando cambia la ficha, `patch`.
 function bmResolver(c) {
   const p = c.plan;
@@ -1763,6 +1921,7 @@ function bmResolver(c) {
   // El toque de «Confirmar pedido» con el pedido listo lo decide el CÓDIGO, sin modelo: la respuesta del modelo es la del carrito tal cual está en la ficha y el cierre sale de `cfEsConfirmacion`.
   if (p.tipo === 'carrito') return bmResolverCarrito(c);
   if (p.tipo === 'toque_viejo') return bmResolverToqueViejo(c);
+  if (p.tipo === 'producto') return bmResolverProducto(c);
   if (p.tipo === 'entrega_boton') return bmResolverEntregaBoton(c);
   if (p.tipo === 'dato_entrega') return bmResolverDato(c);
   if (p.tipo === 'corregir') return bmResolverCorregir(c);

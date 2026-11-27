@@ -11,6 +11,8 @@
 //   comprobante    la imagen de un comprobante con un cobro abierto: ya corrió «Cotejar en el servidor»; «Armar avisos» y «Armar mensajes» interpretan el resultado;
 //   corregir       el toque de «Corregir datos» (`pedido:corregir`): el CÓDIGO borra departamento o provincia, ciudad, aclaración, nombre y documento (conserva el modo) y vuelve a pedir lo que falta, SIN modelo; un id inventado no hace nada (`toque_viejo`);
 //   entrega_boton  el toque de «Recojo en tienda» o «Envío» (`entrega:retiro` / `entrega:envio`): el CÓDIGO escribe el modo de entrega, SIN modelo; un id inventado o un modo que el comercio no ofrece no cambia nada (`toque_viejo`);
+//   catalogo       el catálogo por CÓDIGO, SIN modelo (B2, Estándar 1.1 a 2.5): «¿qué tienen?», «catálogo», «¿qué televisores tienen?», «¿tienen bicicletas?», «los demás» y el toque de una fila `cat:`/`mas:` de una lista (`vista`: enlace, categorias, categoria, productos_pag, sin_pieza, toque_viejo);
+//   producto       el toque de «Agregar» una pieza de una lista (`pro:<id>`): la pieza entra al pedido por código. Un id viejo o inventado no llega al modelo (`catalogo` con `vista: 'toque_viejo'`);
 //   modelo         la conversación libre: `llamarModelo` y el cuerpo de la llamada (solo con la puerta abierta).
 //
 // Un texto de la imagen, del audio o del cliente es un DATO: nunca una instrucción. Una nota de voz es texto (su transcripción).
@@ -128,7 +130,15 @@ if (pideTienda && pTienda.resto === '') return bmTiendaTieneDato(dTienda, pTiend
 // 3. Sin catálogo no se improvisa: recepción.
 if (!configLista) return sinConfig();
 // 4. Lo que decide el código sobre el texto, ANTES de cualquier modelo.
-// Ya no hay botón «Ver catálogo» (Andres, 24/11/2026, D7): el asistente muestra las piezas por el chat. `bmEnlaceCatalogo` devuelve '' mientras NovuChat no tenga un enlace propio.
+// El catálogo por CÓDIGO (B2): la «D7» del 24/11/2026 quedó derogada (Andres, 27/11/2026): el botón «Ver catálogo» sale del dato `enlaceCatalogo` del comercio, siempre que el cliente lo pida, también con un pedido o un QR en curso.
+// El toque de una fila de lista (`cat:`, `mas:`, `pro:`) lo resuelve el CÓDIGO y NUNCA llega al modelo; un toque viejo o inventado recibe una respuesta clara (las categorías de hoy).
+if (typeof t.seleccionId === 'string' && /^(?:cat|pro|mas):/.test(t.seleccionId)) {
+  const fila = lcResolverId(t.seleccionId, vendibles);
+  if (fila.tipo === 'cat') return salir({ tipo: 'catalogo', vista: 'categoria', cats: [fila.cat], faltan: [], continuar: false });
+  if (fila.tipo === 'mas') return salir(fila.cat === 'cats' ? { tipo: 'catalogo', vista: 'categorias', cats: [], faltan: [], pag: fila.pag } : { tipo: 'catalogo', vista: 'productos_pag', cats: [fila.cat], faltan: [], pag: fila.pag });
+  if (fila.tipo === 'pro') return salir({ tipo: 'producto', producto: fila.id });
+  return salir({ tipo: 'catalogo', vista: 'toque_viejo', cats: [], faltan: [] });
+}
 // El toque de «Recojo en tienda» o «Envío»: el modo lo escribe el CÓDIGO, sin modelo. Un id `entrega:` que no es de un botón de este comercio no cambia nada (contesta con el pedido de ahora).
 if (typeof t.seleccionId === 'string' && t.seleccionId.indexOf('entrega:') === 0) return salir({ tipo: bmModoDeBoton(t.seleccionId, bmModos(base)) !== '' ? 'entrega_boton' : 'toque_viejo' });
 // El toque de una opción de LISTA (departamento, región, provincia: ids `dep:`, `reg:`, `prov:`): el código escribe el dato SIN modelo si lo había pedido; un id inventado o un dato que no se pidió no cambia nada (`toque_viejo`).
@@ -145,9 +155,14 @@ if (bmQuiereHablar(n) || bmPideDescuento(n)) return salir(Object.assign({ tipo: 
 if (Array.isArray(ficha.carrito) && ficha.carrito.length > 0 && cfEsConfirmacion(t.seleccionId, bmLineasParaHuella(ficha.carrito, vendibles), bmEntregaDeFicha(ficha.entrega), ficha.pedidos) && bmEntregaCompleta(ficha.entrega, ceMercadoDePrefijo(from) || 'BO') && bmCarritoVigente(ficha.carrito, vendibles)) return salir({ tipo: 'confirmar' });
 // 4c. El toque de un botón «Confirmar pedido» que YA no corresponde (pedido cerrado, o una pieza, un precio o la entrega cambiaron): lo contesta el código con el pedido de ahora, sin modelo y sin cerrar nada.
 if (cfEsToqueDeConfirmar(t.seleccionId)) return salir({ tipo: 'toque_viejo' });
+// 4d. El CATÁLOGO por código: una consulta de lista, categoría, enlace o «¿tienen X?» la contesta el código con el catálogo vivo, SIN modelo (el modelo no arma listas). Con una pregunta de la tienda en el mismo mensaje sigue el camino de siempre.
+// Un pedido CON una cláusula de lista («quiero la heladera y mándenme la lista de aires») sigue al modelo solo con el pedido y el código adjunta la lista en el MISMO mensaje (`plan.adjunto`).
+const intencion = !t.seleccionId && !pideTienda ? bmIntencionCatalogo(texto, vendibles, ficha) : null;
+if (intencion && intencion.resto === '') return salir({ tipo: 'catalogo', vista: intencion.vista, cats: intencion.cats, faltan: intencion.faltan, continuar: intencion.continuar });
+if (intencion) textoDelTurno = intencion.resto;
 // 5. La conversación libre: una sola llamada al modelo.
 // La pregunta de la tienda CON otra cosa: sin el dato, recepción (aviso + botón); con él, el modelo ve SOLO el resto y «Armar mensajes» antepone la respuesta de la tienda al texto normal del turno (el mismo mensaje).
 if (pideTienda && !bmTiendaTieneDato(dTienda, pTienda.ubicacion, pTienda.horario)) return salir({ tipo: 'derivar', motivo: motivoSinDato });
 if (pideTienda) textoDelTurno = pTienda.resto;
 const contexto = { cfg: cfg, base: base, plan: { textoCliente: textoDelTurno }, ficha: ficha, vendibles: vendibles, modos: bmModos(base), ahora: ahora, mercado: (ceMercadoDePrefijo(from) || 'BO'), respCatalogo: tiendaResp };
-return salir(pideTienda ? { tipo: 'modelo', ubicacion: pTienda.ubicacion, horario: pTienda.horario, textoCompleto: texto } : { tipo: 'modelo' },{ llamarModelo: true, cuerpoModelo: bmCuerpoModelo(contexto) });
+return salir(pideTienda ? { tipo: 'modelo', ubicacion: pTienda.ubicacion, horario: pTienda.horario, textoCompleto: texto } : (intencion ? { tipo: 'modelo', adjunto: { cats: intencion.cats }, textoCompleto: texto } : { tipo: 'modelo' }),{ llamarModelo: true, cuerpoModelo: bmCuerpoModelo(contexto) });

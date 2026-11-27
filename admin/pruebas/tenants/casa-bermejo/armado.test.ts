@@ -213,7 +213,7 @@ describe('prohibición 7 y rutas de webhook', () => {
 describe('lo incluido es byte a byte igual a su fuente', () => {
   const codigo = (f: Flujo, n: string): string => String((nodo(f, n)['parameters'] as J)['jsCode']);
   const fuente = (r: string): string => leer(join(FLUJOS, r)).trimEnd();
-  const LIBS = ['venta-digital/src/cobro.js', 'venta-digital/src/diferencias.js', '../src/modulos/pedidos/comprobante-diferencias.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js', '../src/modulos/pedidos/confirmar-pedido.js', '../src/modulos/pedidos/pedido-del-carrito.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js'];
+  const LIBS = ['venta-digital/src/cobro.js', 'venta-digital/src/diferencias.js', '../src/modulos/pedidos/comprobante-diferencias.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js', '../src/modulos/pedidos/confirmar-pedido.js', '../src/modulos/pedidos/pedido-del-carrito.js', '../src/modulos/catalogo-web/boton-del-catalogo.js', '../clientes/casa-bermejo/src/lib/bm.js', '../clientes/casa-bermejo/src/lib/bm-venta.js'];
   it('los módulos comunes de medios, tal cual de Flujos/src/core/medios', () => {
     const medios = join(RAIZ, 'Flujos/src/core/medios');
     expect(codigo(PRODUCCION, 'Preparar transcripción')).toBe(leer(join(medios, 'preparar-transcripcion.js')).trimEnd() + '\n');
@@ -229,13 +229,15 @@ describe('lo incluido es byte a byte igual a su fuente', () => {
       for (const [n, a] of pares) expect(codigo(f, n), n).toBe([...libs, comun, n === 'Carga de entrada' ? cargaConCarrito(fuente(`venta-digital/src/nodos/${a}.js`)) : fuente(`venta-digital/src/nodos/${a}.js`)].join('\n\n') + '\n');
     }
   });
+  // El catálogo por código (B2): los párrafos del core y las piezas comunes del módulo Productos (lista y intención), incluidos y nunca copiados.
+  const LISTA_CATALOGO = ['../src/core/texto/parrafos.js', '../src/modulos/productos/lista-de-catalogo.js', '../src/modulos/productos/intencion-de-catalogo.js'].map(fuente);
   it('«Armar mensajes»: librerías + _comun + los constructores de mensajes comunes + su código', () => {
     const libs = LIBS.map(fuente);
-    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/sin-agente/mensajes.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../src/modulos/pedidos/qr-del-pedido.js'), fuente('../src/core/conversacion/baja.js'), fuente('../src/core/texto/identidad.js'), fuente('../clientes/casa-bermejo/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
+    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/sin-agente/mensajes.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../src/modulos/pedidos/qr-del-pedido.js'), fuente('../src/core/conversacion/baja.js'), fuente('../src/core/texto/identidad.js'), ...LISTA_CATALOGO, fuente('../clientes/casa-bermejo/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar mensajes')).toBe(esperado);
     const avisos = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('../src/core/texto/filtro-redaccion.js'), fuente('../src/modulos/pedidos/aviso-plantilla.js'), fuente('../clientes/casa-bermejo/src/nodos/armar-avisos.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar avisos')).toBe(avisos);
-    for (const [n, a] of [['Decidir turno', 'decidir-turno'], ['Interpretar lectura', 'interpretar-lectura']]) expect(codigo(PRODUCCION, n), n).toBe([...libs, fuente('venta-digital/src/nodos/_comun.js'), ...(n === 'Decidir turno' ? [fuente('../src/core/conversacion/baja.js')] : []), fuente(`../clientes/casa-bermejo/src/nodos/${a}.js`)].join('\n\n') + '\n');
+    for (const [n, a] of [['Decidir turno', 'decidir-turno'], ['Interpretar lectura', 'interpretar-lectura']]) expect(codigo(PRODUCCION, n), n).toBe([...libs, fuente('venta-digital/src/nodos/_comun.js'), ...(n === 'Decidir turno' ? [fuente('../src/core/conversacion/baja.js'), ...LISTA_CATALOGO] : []), fuente(`../clientes/casa-bermejo/src/nodos/${a}.js`)].join('\n\n') + '\n');
   });
   it('«Guardar comprobante» es el de Antonio (commit 7188637c), tal cual: huella fijada del nodo entero', () => {
     // La plantilla lleva la credencial como `@@cred:ingesta`; el armado la sustituye por el nombre del dato. Se vuelve a la forma de la plantilla antes de la huella.

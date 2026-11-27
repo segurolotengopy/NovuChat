@@ -271,13 +271,13 @@ describe('6. segunda revisión del #1142 (27/11): se dice solo lo que el código
   it('I-1 NEGADO: con el carrito sin cambios, ninguna afirmación de agregado sale (lineas vacías, id numérico, «ya está en tu pedido», «quedó en tu pedido»)', () => {
     for (const [frase, lineas] of [['Ya está en tu pedido, quedó listo.', []], ['Agregué la lavadora.', []], ['La lavadora quedó en tu pedido.', [{ id: 7, cantidad: 1 }]], ['Listo, añadí la lavadora a tu carrito.', [{ id: 12345, cantidad: 1 }]]] as [string, unknown[]][]) {
       const m = dice(frase, lineas);
-      const t = hablar(m, ANA, mTexto('hola, ¿qué venden?'));
+      const t = hablar(m, ANA, mTexto('hola, necesito información de las piezas'));
       expect(ficha(m).carrito).toEqual([]);
       expect(textos(t).join(' ')).not.toMatch(/Ya está en tu pedido|quedó en tu pedido|Agregué|añadí|quedó listo/);
     }
   });
   it('I-1 control: una oferta («puedo agregar», «¿desea que agregue…?») sin afirmar nada sí pasa su revisión normal', () => {
-    const t = hablar(dice('Con gusto, puedo agregar la billetera cuando guste.', []), ANA, mTexto('hola, ¿qué venden?'));
+    const t = hablar(dice('Con gusto, puedo agregar la billetera cuando guste.', []), ANA, mTexto('hola, necesito información de las piezas'));
     expect(textos(t).join(' ')).toMatch(/puedo agregar/i);
   });
   it('I-2 NEGADO: «No pude agregar esa pieza» tres veces seguidas: la segunda vez pasa con recepción (aviso + botón), no repite la frase', () => {
