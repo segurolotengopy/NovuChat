@@ -142,13 +142,19 @@ describe('4. si el modelo dice que agregó una pieza que el código no agregó, 
 });
 
 describe('5. correcciones de la revisión independiente (27/11)', () => {
-  it('NEGADO: «Agregué el licor» con el pedido VACÍO sale «No encuentro eso en nuestro catálogo» (nunca el «cuéntame más» genérico) y la segunda vez igual pasa con recepción', () => {
+  it('NEGADO: «Agregué el licor» con el pedido VACÍO sale «No pude agregar esa pieza… ¿cuál le interesa?» (nunca «No encuentro eso» ni el «cuéntame más» genérico)', () => {
     const m = crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: modelo('Agregué el licor de coca.', { lineas: [{ id: 'licor-de-coca', cantidad: 1 }] }) });
     const t = hablar(m, ANA, mTexto('Quiero el licor de coca'));
-    expect(textos(t).join(' ')).toMatch(/No encuentro eso en nuestro cat/);
-    expect(textos(t).join(' ')).not.toMatch(/Cuéntame un poco más/);
-    const t2 = hablar(m, ANA, mTexto('Quiero el licor de coca'));
-    expect(t2.avisos.length).toBe(1);
+    expect(textos(t).join(' ')).toMatch(/No pude agregar esa pieza al pedido\. ¿Cuál de nuestras piezas/);
+    expect(textos(t).join(' ')).not.toMatch(/No encuentro eso|Cuéntame un poco más|no tenemos catálogo/i);
+  });
+  it('NEGADO: con un pedido en curso, «Agregué el licor» antepone «No pude agregar esa pieza» y conserva el pedido, sin negar el catálogo', () => {
+    const m = crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: (ll: LlamadaDoble) => (/licor/.test(textoAlModelo(ll)) ? modelo('Agregué el licor de coca.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }, { id: 'licor-de-coca', cantidad: 1 }] }) : modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] })) });
+    hablar(m, ANA, mTexto('quiero una billetera'));
+    const t = hablar(m, ANA, mTexto('agrega el licor de coca'));
+    expect(textos(t).join(' ')).toMatch(/^No pude agregar esa pieza al pedido\./);
+    expect(textos(t).join(' ')).not.toMatch(/No encuentro eso|licor/i);
+    expect(ficha(m).carrito.map((l: Rep) => l.id)).toEqual(['billetera-cuero']);
   });
   it('NEGADO: la nota va al modelo como DATO entre <<< >>> y no dentro del resumen del pedido', () => {
     let prompt = '';
