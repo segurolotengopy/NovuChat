@@ -89,6 +89,13 @@ describe('armarLista: la lista y sus exclusiones', () => {
     expect(r.conteos['baja']).toBe(0);
     expect(r.destinatarios).toHaveLength(1);
   });
+  it('NEGATIVA: bloqueada y noContactar con CUALQUIER valor distinto de ausente o false excluyen, igual que el servidor (marcado)', () => {
+    const r = lista([fila(1), fila(2), fila(3), fila(4), fila(5), fila(6)], {
+      convs: [[1, conv({ bloqueada: 'si' as unknown as boolean })], [2, conv({ noContactar: 1 as unknown as boolean })], [3, conv({ bloqueada: null as unknown as boolean })], [4, conv({ noContactar: 'false' as unknown as boolean })], [5, conv({ bloqueada: false, noContactar: false })], [6, conv({ bloqueada: undefined })]],
+    });
+    expect(r.conteos).toMatchObject({ bloqueada: 2, noContactar: 2 });
+    expect(aptos(r).sort()).toEqual([TEL(5), TEL(6)]);
+  });
   it('NEGATIVA: bloqueada, noContactar y riesgoEn con valor (no undefined ni false) excluyen', () => {
     const r = lista([fila(1), fila(2), fila(3), fila(4), fila(5), fila(6), fila(7)], {
       convs: [[1, conv({ bloqueada: true })], [2, conv({ noContactar: true })], [3, conv({ riesgoEn: 123 })], [4, conv({ riesgoEn: 'x' })], [5, conv({ riesgoEn: false })], [6, conv({ riesgoEn: undefined })], [7, conv({ bloqueada: false, noContactar: false })]],

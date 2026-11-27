@@ -80,6 +80,9 @@ export function milisegundosDe(v) {
   return null;
 }
 
+/** Como `marcado` del servidor (`salidaCampana.ts`): cualquier valor distinto de ausente o `false` frena. */
+const marcada = (v) => v !== undefined && v !== false;
+
 /**
  * LA LISTA. Devuelve `{ destinatarios, conteos }`; nunca teléfonos en los conteos.
  *
@@ -128,9 +131,9 @@ export function armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ah
     else if (t.ilegible || t.max === null || diasDesde(t.max, ahoraMs) < 0) motivo = 'fechaIlegible';
     else if (telefonosDePrueba?.has?.(t.valido)) motivo = 'prueba';
     else if (bajas?.has?.(clave)) motivo = 'baja';
-    else if (conv?.bloqueada === true) motivo = 'bloqueada';
-    else if (conv?.noContactar === true) motivo = 'noContactar';
-    else if (conv && conv.riesgoEn !== undefined && conv.riesgoEn !== false) motivo = 'riesgo';
+    else if (marcada(conv?.bloqueada)) motivo = 'bloqueada';
+    else if (marcada(conv?.noContactar)) motivo = 'noContactar';
+    else if (marcada(conv?.riesgoEn)) motivo = 'riesgo';
     else if (diasDesde(t.max, ahoraMs) > ventanaDias) motivo = 'fueraDeVentana';
     else if (conv === null || milisegundosDe(conv.ultimoEntranteEn) === null) motivo = 'sinConversacion';
     else if (conv.phoneNumberId !== undefined && conv.phoneNumberId !== numero) motivo = 'otraLinea';
