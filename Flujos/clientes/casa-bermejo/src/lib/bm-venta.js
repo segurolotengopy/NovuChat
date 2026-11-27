@@ -425,15 +425,29 @@ function bmPidioDato(textoAsistente, clase) {
   return String(textoAsistente === undefined || textoAsistente === null ? '' : textoAsistente).split(/(?<=[.!?\n])\s+/).some((oracion) => re.test(bmNorm(oracion)) && (/[?¿]/.test(oracion) || BM_RE_VERBO_PEDIR.test(bmNorm(oracion))));
 }
 // El mensaje del SITIO («Hola, quiero consultar por estos productos:» con líneas «N x Nombre (cód. id)»): el código lee las líneas y sus códigos contra el catálogo; no depende del modelo.
+// La NOTA del mensaje pegado («Nota: color negro», al final, después del «Total referencial»): es un dato del cliente. Viaja como `detalle` de cada pieza del pedido (la misma ruta de la especificación del carrito de la página): se muestra en el resumen, se guarda en el pedido y va en la línea que se manda al servidor.
+// Se limpia (sin enlaces, sin controles, hasta 120 caracteres) y nunca es una instrucción. Sin «Nota:» o con la nota vacía, no hay detalle.
+function bmNotaDelSitio(texto) {
+  const t = String(texto || '');
+  const total = t.search(/total referencial/i);
+  const re = /(?:^|[\s.;])(?:nota|especificaci[oó]n|observaci[oó]n(?:es)?)\s*:\s*/gi;
+  let ultimo = null;
+  let m;
+  while ((m = re.exec(t)) !== null) { if (m.index >= (total < 0 ? 0 : total)) ultimo = m; }
+  if (!ultimo) return '';
+  const cola = t.slice(ultimo.index + ultimo[0].length).replace(/https?:\/\/\S+/gi, ' ').replace(/www\.\S+/gi, ' ').replace(/\d{1,3}\s*[xX×]\s*[^()]{1,120}?\(\s*c[oó]d\..*$/, ' ');
+  return bmTextoDeLinea(cola, 120);
+}
 function bmLineasDelSitio(texto, vendibles) {
   const ids = new Set((Array.isArray(vendibles) ? vendibles : []).map((v) => v.id));
+  const nota = bmNotaDelSitio(texto);
   const salida = [];
   // Los saltos de línea ya se perdieron (`cbLinea` los vuelve espacios): se leen «N x nombre (cód. id)» seguidos.
   const re = /(?:^|[\s:])(\d{1,3})\s*[xX×]\s*[^()]{1,120}?\(\s*c[oó]d\.?\s*:?\s*([A-Za-z0-9][A-Za-z0-9_-]{0,99})\s*\)/g;
   let m;
   while ((m = re.exec(String(texto || ''))) !== null && salida.length < 30) {
     const cantidad = Math.min(Number(m[1]), 50);
-    if (cantidad >= 1 && ids.has(m[2]) && !salida.some((l) => l.id === m[2])) salida.push({ id: m[2], cantidad: cantidad, detalle: '' });
+    if (cantidad >= 1 && ids.has(m[2]) && !salida.some((l) => l.id === m[2])) salida.push({ id: m[2], cantidad: cantidad, detalle: nota });
   }
   return salida;
 }
@@ -665,8 +679,12 @@ const BM_PROMETE_ENLACE = /\b(enlace|enlaces|link|links|pagina web|sitio web|pag
 // El imperativo («verifica que el monto…», «verifique el total») le pide algo al CLIENTE: no afirma que los precios estén verificados (falso positivo de la ronda 2).
 const BM_AFIRMA_PRECIOS = /\b(?:actualiz\w+|actualic\w+|(?!verific(?:a|que|quen)\b)verific\w+)\b[^.!?]{0,40}\b(?:precios?|catalogo|montos?|costos?)\b|\b(?:precios?|catalogo|montos?|costos?)\b[^.!?]{0,40}\b(?:actualiz\w+|verific\w+|vigentes|al dia|confirmad\w+)\b/;
 // R58 (25/11/2026): tras pasar con recepción, el asistente NO ofrece sumar otra pieza. Una oración que ofrece agregar, sumar, añadir o incluir algo más se detecta por código (el prompt no es una barrera).
-function bmOfreceSumar(textoNorm) {
-  return String(textoNorm || '').split(/[.!?¿¡\n]+/).some((o) => /\b(?:sum\w+|agreg\w+|anad\w+|incluir\w*|anadirle\w*)\b/.test(o) && /\b(?:otr[oa]s?|algo mas|alguna? mas|mas piezas?|mas productos?|piezas?|productos?|articulos?)\b/.test(o));
+function bmOfreceSumar(texto) {
+  // `texto` llega CRUDO (con sus signos): `bmNorm` borra la puntuación, y la pregunta y la oración se reconocen por ella. Cada oración se normaliza por separado.
+  return String(texto || '').split(/(?<=[.!?\n])\s*/).some((crudo) => {
+    const o = bmNorm(crudo);
+    return /\b(?:sum\w+|agreg\w+|anad\w+|incluir\w*|anadirle\w*)\b/.test(o) && (/\b(?:otr[oa]s?|algo mas|alguna? mas|mas piezas?|mas productos?|piezas?|productos?|articulos?)\b/.test(o) || (/[?]/.test(crudo) && /\b(?:gustaria|gustaria\w*|desea|desean|quiere|quieres|quisiera|interesa|interesaria|prefiere|prefieres)\b/.test(o)));
+  });
 }
 // Cuánto dura «recién pasó con recepción» para R58.
 const BM_VENTANA_TRAS_DERIVAR_MS = 2 * 60 * 60 * 1000;
@@ -1652,7 +1670,10 @@ function bmResolverModelo(c) {
   // Se decide por ESTADO (qué falta de la entrega, o si el pedido está listo), nunca por palabras. Fuera de esos pasos el modelo conversa como siempre. La red `bmPideDatoProhibido` queda como secundaria fuera de la entrega.
   const pendientes = lineas.length > 0 && !abierto && !conBoton ? bmPideDeEntrega(entrega, c.mercado) : [];
   const enEntrega = lineas.length > 0 && !abierto && (conBoton || pendientes.length > 0);
-  let texto = (enEntrega || ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? (fijada.texto !== '' && !ignoraQuiereHablar && comp.modoRechazado !== true && comp.contradice !== true && fijada.delSitio !== true && fijada.ordenada !== true ? fijada.texto : bmTextoDeEstado(lineas, entrega, cierre, c, conBoton)) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
+  // El modelo propuso una pieza que NO está en el catálogo vendible (apagada, sin precio o inventada) y su texto dice que la agregó: el código no la agregó, así que esa frase no sale (sale el texto del código).
+  const modeloProponeInexistente = Array.isArray(j.lineas) && j.lineas.some((l) => l && typeof l === 'object' && typeof l.id === 'string' && !c.vendibles.some((v) => v.id === l.id));
+  const afirmaDeMas = modeloProponeInexistente && typeof j.texto === 'string' && /\b(?:agreg\w+|anad\w+|sume|sumamos|incluy\w+|anote|anotamos|puse|pusimos|inclui)\b/.test(bmNorm(j.texto));
+  let texto = (afirmaDeMas || enEntrega || ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? (fijada.texto !== '' && !ignoraQuiereHablar && comp.modoRechazado !== true && comp.contradice !== true && fijada.delSitio !== true && fijada.ordenada !== true ? fijada.texto : bmTextoDeEstado(lineas, entrega, cierre, c, conBoton)) : (fijada.texto !== '' ? fijada.texto : bmRedaccion(j.texto, p.textoCliente, c.vendibles));
   // Revisión de la ronda 11: en el turno que VACÍA el pedido respondiendo a un paso de datos (nombre, ciudad…: «Ana Pérez, ya no quiero nada»), el texto es FIJO del código; con el pedido vacío `enEntrega` ya no vale y salía el texto del modelo.
   if (ordenVaciar && antes.length > 0 && lineas.length === 0 && (pideAntes.length > 0 || bmEntregaCompleta(f.entrega, c.mercado))) texto = (c.base && c.base.tratamiento === 'usted') ? 'Listo, vacié su pedido. Dígame qué pieza le interesa.' : 'Listo, vacié tu pedido. Dime qué pieza te interesa.';
   // Negar una pieza que el catálogo sí tiene («solo disponemos de la de 9 kg» cuando hay de 9, 15 y 17 kg): el texto lo arma el código con las piezas que coinciden.
@@ -1662,7 +1683,7 @@ function bmResolverModelo(c) {
   // R59: el modelo afirmó «precios actualizados» (u otra constancia que el sistema no respalda): `bmRedaccion` descartó su texto; sale el fijo que sí se cumple (los precios se leen del catálogo en cada turno).
   if (texto === '' && typeof j.texto === 'string' && BM_AFIRMA_PRECIOS.test(bmNorm(j.texto))) texto = BM_TEXTO_PRECIOS_VIVOS;
   // R58: tras pasar con recepción (hasta 2 h antes), el asistente NO ofrece sumar otra pieza: una oración que lo ofrece se reemplaza por una respuesta corta, salvo que el cliente haya cambiado el pedido en este turno.
-  if (texto !== '' && f.derivadoMs > 0 && c.ahora - f.derivadoMs >= 0 && c.ahora - f.derivadoMs < BM_VENTANA_TRAS_DERIVAR_MS && !cambio && bmOfreceSumar(bmNorm(texto))) texto = BM_TEXTO_TRAS_DERIVAR;
+  if (texto !== '' && f.derivadoMs > 0 && c.ahora - f.derivadoMs >= 0 && c.ahora - f.derivadoMs < BM_VENTANA_TRAS_DERIVAR_MS && !cambio && bmOfreceSumar(texto)) texto = BM_TEXTO_TRAS_DERIVAR;
   // El asistente PIDE lo que falta con palabras que el estado reconoce en el turno siguiente: si el modelo no mencionó el nombre (o la ciudad) que falta, el código lo agrega.
   if (texto !== '' && !enEntrega && pendientes.length > 0 && pendientes.some((k) => !bmPidioDato(texto, k))) texto = texto + '\n\n' + bmPreguntaDelPaso(entrega, c.mercado);
   const sinRedaccion = texto === '';
