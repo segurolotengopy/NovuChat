@@ -222,7 +222,7 @@ if [[ "${avisos_servicio:-0}" != "0" ]]; then
           if (l[i] ~ /Successful (create|update|delete) operation\./) {
             match(l[i], /functions\[[^]]+\]/); id = substr(l[i], RSTART + 10, RLENGTH - 11)
             sub(/\(.*$/, "", id); sub(/^.*:/, "", id)
-            if (id !~ /^[A-Za-z0-9_-]+$/) { malas++; continue }
+            if (id !~ /^[A-Za-z][A-Za-z0-9_-]*$/) { malas++; continue }
             c[++n] = id
           }
         }

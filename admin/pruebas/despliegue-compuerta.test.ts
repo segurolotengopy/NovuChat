@@ -289,12 +289,16 @@ describe('compuerta del registro de `firebase deploy`', () => {
     expect(ok.salidas['completo']).toBe('true');
     // M-D (revisión de #1137) NEGANDO: una confirmada con un id de forma inesperada, después del aviso, no se omite en silencio: es fatal.
     const tras = real.split('\n').slice(real.split('\n').findIndex((l) => l.includes('unexpected state')));
-    const idMalo = /functions\[[^:\]]*:?([A-Za-z0-9_-]+)\(/.exec(tras.find((l) => /Successful update operation\./.test(l)) ?? '')?.[1] ?? '';
+    const idMalo = /functions\[(?:[^:\]]*:)?([A-Za-z0-9_-]+)\(/.exec(tras.find((l) => /Successful update operation\./.test(l)) ?? '')?.[1] ?? '';
     expect(idMalo).not.toBe('');
     const raro = compuerta(real.split(`${idMalo}(`).join('fn.rara('), STG);
     expect(raro.status, raro.stdout).toBe(1);
     expect(raro.stdout).toContain('id con forma inesperada');
     expect(raro.salidas['candidatas']).toBe('');
+    // Un id que empieza por «-» llegaría a gcloud como opción: tampoco es candidata, es fatal.
+    const guion = compuerta(real.split(`${idMalo}(`).join('--help('), STG);
+    expect(guion.status, guion.stdout).toBe(1);
+    expect(guion.salidas['candidatas']).toBe('');
   });
 
   it('C21: un id de Function con metacaracteres de expresión regular nunca es reintentable', () => {
@@ -902,8 +906,14 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
     for (const f of ['fnHttpSinInvocador', 'fnEventoVacio', 'fnSinDescribir', 'fnDescribeBasura']) {
       const r = corre(`fnPublica,fnEvento,${f}`);
       expect(r.status, f).toBe(1);
-      expect(r.salida).toContain(`${f}: SIN invocador`);
+      // Sin poder describirla no se afirma «SIN invocador» (nadie debe concederlo a ciegas); en los demás casos sí.
+      expect(r.salida).toContain(f === 'fnSinDescribir' ? `${f}: su servicio no trae invocador y no se pudo leer su disparador` : `${f}: SIN invocador`);
+      expect(r.salida).toContain('NUNCA se le pone allUsers');
     }
+    // Un id que empieza por «-» se rechaza antes de llegar a gcloud.
+    const antes = readFileSync(llamadas, 'utf8');
+    expect(corre('--help').status).toBe(1);
+    expect(readFileSync(llamadas, 'utf8')).toBe(antes);
     // M-C: el servicio de una Function con «_» lleva «-».
     expect(corre('fn_Con_Guion').status).toBe(0);
     expect(readFileSync(llamadas, 'utf8')).toContain('run services get-iam-policy fn-con-guion ');
