@@ -41,6 +41,7 @@ import {
   RAIZ_FLUJOS, carpetas, rutaDentroDe, ensamblarEnMemoria, ensamblarFlujo, extraerFlujo, leerManifiesto, listarFlujos, listarFlujosConManifiestoEnSubcarpetas, rutaRelativaAFlujos,
   manifiestoInicial, rutaDeManifiesto, slug, verificarFlujo,
 } from '../../scripts/ensamblar-flujo.mjs';
+import { hallazgosDeLaRafaga } from '../../../Flujos/src/core/rafaga/rafaga.mjs';
 import { entornoDelEmulador } from './entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -365,10 +366,10 @@ describe('6. Ningún módulo, prompt ni manifiesto contiene un valor real', () =
 
   it('hay módulos que revisar, y están donde el ensamblador los busca', () => {
     expect(TODOS.length).toBeGreaterThanOrEqual(18 + 5 + 2);
-    // `core/indicador/` trae el módulo común del «escribiendo…» (`.mjs`, `.d.mts`): tampoco es un módulo inyectable y SÍ se revisa.
+    // `core/indicador/` trae el módulo común del «escribiendo…» (`.mjs`, `.d.mts`): tampoco es un módulo inyectable y SÍ se revisa. Igual `core/rafaga/` (la ráfaga: `.mjs`, `.d.mts` y su nodo `.js`).
     // `modulos/catalogo-web/carrito-del-catalogo.mjs` es el ayudante del `construir.mjs` de cada flujo con catálogo web (nodo Webhook, inclusión de la validación y guardia): no es un módulo inyectable y SÍ se revisa.
     // `core/sin-agente/` trae también el armador de los flujos sin agente (`.mjs`, `.d.mts`): no son módulos inyectables, pero SÍ se revisan en busca de valores reales.
-    expect(TODOS.filter((p) => !p.includes('/core/sin-agente/') && !p.includes('/core/indicador/') && !p.includes('/modulos/catalogo-web/carrito-del-catalogo.mjs')).every((p) => /\.(js|md|json)$/.test(p))).toBe(true);
+    expect(TODOS.filter((p) => !p.includes('/core/sin-agente/') && !p.includes('/core/indicador/') && !p.includes('/core/rafaga/') && !p.includes('/modulos/catalogo-web/carrito-del-catalogo.mjs')).every((p) => /\.(js|md|json)$/.test(p))).toBe(true);
   });
 
   it.each(REGLAS)('%s', (_nombre, regla) => {
@@ -471,7 +472,10 @@ describe('8. La línea de comandos', () => {
     cpSync(RAIZ_FLUJOS, join(raizFalsa, 'Flujos'), { recursive: true, filter: (src) => !src.endsWith('.local.json') });
     mkdirSync(join(raizFalsa, 'admin/scripts'), { recursive: true });
     cpSync(SCRIPT, join(raizFalsa, 'admin/scripts/ensamblar-flujo.mjs'));
-    const ruta = join(raizFalsa, 'Flujos/src/core/normalizar-entrada.js');
+    // La guardia de la ráfaga (si el flujo la lleva) analiza el normalizador con `acorn`, que vive en `admin/node_modules`: el repositorio falso lo enlaza.
+    symlinkSync(join(RAIZ_FLUJOS, '../admin/node_modules'), join(raizFalsa, 'admin/node_modules'));
+    // Un módulo que NO es el normalizador: la ráfaga (si el flujo la lleva) solo arma con la huella verificada del normalizador, y cambiarlo la hace negarse a armar.
+    const ruta = join(raizFalsa, 'Flujos/src/core/comercio-no-operativo.js');
     writeFileSync(ruta, readFileSync(ruta, 'utf8') + '// cambio\n');
     let codigo = 0; let salida = '';
     try {
@@ -480,7 +484,7 @@ describe('8. La línea de comandos', () => {
       codigo = (e as { status: number }).status; salida = (e as { stdout: string }).stdout;
     }
     expect(codigo).toBe(1);
-    expect(salida).toContain(`✗ ${DEMO_A}: difiere en codigo/Normalizar entrada`);
+    expect(salida).toContain(`✗ ${DEMO_A}: difiere en codigo/Comercio no operativo`);
     expect(salida).toContain('1 flujo(s) no coinciden con sus módulos.');
   });
 });
@@ -602,5 +606,147 @@ describe('10. Flujos en subcarpetas: el manifiesto lleva la ruta relativa a Fluj
     try { execFileSync(process.execPath, [SCRIPT, 'verificar', '--exigir-manifiesto', 'Flujos/latido-n8n.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8', stdio: 'pipe' }); } catch (e) { codigo = (e as { status: number }).status; }
     expect(codigo, 'un flujo sin manifiesto no cumple si se exige uno (salida 3: la causa, distinta de «difiere»)').toBe(3);
     expect(() => execFileSync(process.execPath, [SCRIPT, 'verificar', 'Flujos/latido-n8n.json'], { env: entornoDelEmulador(undefined), encoding: 'utf8' })).not.toThrow();
+  });
+});
+
+/** Lo que la guardia necesita saber de un flujo que adoptó la ráfaga con nombres no predeterminados: lo que su manifiesto declara. */
+const opcionesDeAdopcion = (f: string) => {
+  const r = (leerManifiesto(f) as { rafaga?: { fuente?: string; campos?: Record<string, string>; normalizador?: string; consumidor?: string | string[] | null } } | null)?.rafaga ?? {};
+  return { fuente: r.fuente, campos: r.campos, normalizador: r.normalizador, consumidor: r.consumidor };
+};
+
+describe('9. La ráfaga: la clave `rafaga` del manifiesto (pieza común, como `indicador`)', () => {
+  const URL_SERVIDOR = 'https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo';
+  const nodoSet = (name: string, position: [number, number]) => ({ id: name, name, type: 'n8n-nodes-base.set', typeVersion: 3, position, parameters: {} });
+  const enlaces = (...nombres: string[]) => ({ main: [nombres.map((node) => ({ node, type: 'main', index: 0 }))] });
+  const sinTipos = () => ({
+    name: 'sintetico-rafaga',
+    nodes: [
+      { ...nodoSet('Normalizar entrada', [240, 300]), type: 'n8n-nodes-base.code', typeVersion: 2, parameters: { jsCode: "return [{ json: { tipo: 'text', mensajeId: 'x', from: '1', phoneNumberId: '2', userInput: 't' } }];" } }, nodoSet('Config del negocio', [480, 300]), nodoSet('Config base', [480, 100]),
+      { id: 'traer', name: 'Traer configuración', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [240, 100], credentials: { httpHeaderAuth: { id: '', name: 'REEMPLAZAR_credencial_ingesta' } }, parameters: { method: 'POST', url: URL_SERVIDOR, authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth', sendHeaders: true, headerParameters: { parameters: [{ name: 'X-NovuChat-Numero', value: '={{ $json.phoneNumberId }}' }] } } },
+      nodoSet('Reportar mensaje (entrante)', [960, 100]), nodoSet('¿Atención normal?', [960, 300]), { ...nodoSet('Agente', [1200, 400]), parameters: { texto: "={{ $('Agrupar ráfaga').first().json.textoDelTurno }}" } },
+    ],
+    connections: { 'Normalizar entrada': enlaces('Config base', 'Reportar mensaje (entrante)'), 'Config base': enlaces('Config del negocio'), 'Config del negocio': enlaces('¿Atención normal?'), '¿Atención normal?': enlaces('Agente') },
+  });
+  /** El item del ancla sale del normalizador por nodos que lo dejan pasar (NoOp / IF): sin esto, la ráfaga exige `fuente`. */
+  const sintetico = () => {
+    const f = sinTipos();
+    for (const n of f.nodes) {
+      if (n.name === 'Config del negocio' || n.name === 'Config base') n.type = 'n8n-nodes-base.noOp';
+      if (n.name === '¿Atención normal?') n.type = 'n8n-nodes-base.if';
+    }
+    return f;
+  };
+  const MANIFIESTO = { flujo: 'sintetico-rafaga.json', rafaga: { ancla: { nodo: '¿Atención normal?', salida: 0, destino: 'Agente' }, campos: { texto: 'userInput' }, consumidor: 'Agente' } };
+  /** Una raíz temporal con el flujo sintético SIN la pieza y su manifiesto que la pide. */
+  function raizConRafaga(): string {
+    const dir = copiaDeFlujos();
+    writeFileSync(join(dir, 'sintetico-rafaga.json'), JSON.stringify(sintetico(), null, 2) + '\n');
+    mkdirSync(join(dir, 'manifiestos'), { recursive: true });
+    writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify(MANIFIESTO, null, 2) + '\n');
+    return dir;
+  }
+
+  it('los flujos reales PUEDEN declarar la ráfaga (cada PR de flujo la adopta): los que la declaran la reproducen byte a byte y pasan la guardia; los demás no la llevan', () => {
+    for (const f of FLUJOS) {
+      const declara = !!(leerManifiesto(f) as { rafaga?: unknown } | null)?.rafaga;
+      if (CON_MANIFIESTO.includes(f)) expect(ensamblarEnMemoria(f).rafaga, f).toBe(declara);
+      expect(['identico', 'sin-manifiesto'], f).toContain(verificarFlujo(f).estado);
+      if (declara) expect(hallazgosDeLaRafaga(JSON.parse(readFileSync(join(RAIZ_FLUJOS, f), 'utf8')), { exigir: true, ...opcionesDeAdopcion(f) }), f).toEqual([]);
+    }
+  });
+
+  it('con el manifiesto que la pide, ensamblar agrega los cuatro nodos y verificar los exige canónicos', () => {
+    const dir = raizConRafaga();
+    expect(verificarFlujo('sintetico-rafaga.json', dir)).toMatchObject({ estado: 'difiere', diferencias: ['rafaga'] });
+    expect(ensamblarFlujo('sintetico-rafaga.json', dir)).toBe(true);
+    const armado = JSON.parse(readFileSync(join(dir, 'sintetico-rafaga.json'), 'utf8'));
+    expect(armado.nodes.map((n: { name: string }) => n.name)).toEqual(expect.arrayContaining(['¿Esperar ráfaga?', 'Esperar ráfaga', 'Consultar ráfaga', 'Agrupar ráfaga']));
+    expect(armado.nodes).toHaveLength(sintetico().nodes.length + 4);
+    expect(verificarFlujo('sintetico-rafaga.json', dir).estado).toBe('identico');
+    expect(ensamblarFlujo('sintetico-rafaga.json', dir)).toBe(false);
+  });
+
+  it('un nodo de la ráfaga retocado a mano en el JSON no pasa: verificar difiere y ensamblar lo deja canónico', () => {
+    const dir = raizConRafaga();
+    ensamblarFlujo('sintetico-rafaga.json', dir);
+    const ruta = join(dir, 'sintetico-rafaga.json');
+    const canonico = readFileSync(ruta, 'utf8');
+    const alterado = JSON.parse(canonico);
+    alterado.nodes.find((n: { name: string }) => n.name === 'Consultar ráfaga').parameters.options.timeout = 60000;
+    alterado.nodes.find((n: { name: string }) => n.name === 'Agrupar ráfaga').parameters.jsCode = 'return [];';
+    writeFileSync(ruta, JSON.stringify(alterado, null, 2) + '\n');
+    expect(verificarFlujo('sintetico-rafaga.json', dir).estado).toBe('difiere');
+    expect(ensamblarFlujo('sintetico-rafaga.json', dir)).toBe(true);
+    expect(readFileSync(ruta, 'utf8')).toBe(canonico);
+  });
+
+  it('un manifiesto cuya ancla no existe falla ruidoso, nombrando el nodo', () => {
+    const dir = raizConRafaga();
+    writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify({ ...MANIFIESTO, rafaga: { ancla: { nodo: 'No existe', salida: 0, destino: 'Agente' } } }));
+    expect(() => verificarFlujo('sintetico-rafaga.json', dir)).toThrow(/no tiene «No existe»/);
+  });
+
+  it('I3 (NEGADA): un manifiesto con `consumidor: null` se rechaza al ensamblar y al verificar (esa excepción es solo de las pruebas que llaman a `injertarRafaga` directo); sin `consumidor` también', () => {
+    const dir = raizConRafaga();
+    for (const rafaga of [{ ...MANIFIESTO.rafaga, consumidor: null }, { ancla: MANIFIESTO.rafaga.ancla, campos: MANIFIESTO.rafaga.campos }]) {
+      writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify({ ...MANIFIESTO, rafaga }));
+      expect(() => verificarFlujo('sintetico-rafaga.json', dir)).toThrow(/consumidor/);
+      expect(() => ensamblarFlujo('sintetico-rafaga.json', dir)).toThrow(/consumidor/);
+    }
+    writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify({ ...MANIFIESTO, rafaga: { ...MANIFIESTO.rafaga, consumidor: null } }));
+    expect(() => ensamblarFlujo('sintetico-rafaga.json', dir)).toThrow(/rafaga\.consumidor: null.*no se admite/);
+    // y el original sin consumidor null sigue ensamblando
+    writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify(MANIFIESTO));
+    expect(ensamblarFlujo('sintetico-rafaga.json', dir)).toBe(true);
+  });
+
+  it('indicador + ráfaga en el MISMO manifiesto: ensamblar y verificar son idénticos, idempotentes, y el indicador queda donde queda sin ráfaga', () => {
+    const conEnvio = () => {
+      const f = sintetico();
+      f.nodes.push({ id: 'envio', name: 'Enviar a WhatsApp', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [1500, 400], credentials: { httpHeaderAuth: { id: '', name: 'REEMPLAZAR_credencial_envio' } }, parameters: { method: 'POST', url: 'https://graph.facebook.com/v26.0/123456789/messages' } } as never);
+      return f;
+    };
+    const indicador = { ancla: { nodo: '¿Atención normal?', salida: 0 }, normalizador: 'Normalizar entrada' };
+    const escribir = (dir: string, manifiesto: Record<string, unknown>) => {
+      writeFileSync(join(dir, 'sintetico-rafaga.json'), JSON.stringify(conEnvio(), null, 2) + '\n');
+      mkdirSync(join(dir, 'manifiestos'), { recursive: true });
+      writeFileSync(join(dir, 'manifiestos', 'sintetico-rafaga.json'), JSON.stringify({ flujo: 'sintetico-rafaga.json', ...manifiesto }, null, 2) + '\n');
+    };
+    const posiciones = (dir: string, nombres: string[]) => {
+      const j = JSON.parse(readFileSync(join(dir, 'sintetico-rafaga.json'), 'utf8')) as { nodes: { name: string; position: number[] }[] };
+      return nombres.map((n) => j.nodes.find((x) => x.name === n)!.position);
+    };
+    const NOMBRES = ['¿Indicador de escritura activo?', 'Indicador de escritura'];
+    const soloIndicador = copiaDeFlujos();
+    escribir(soloIndicador, { indicador });
+    ensamblarFlujo('sintetico-rafaga.json', soloIndicador);
+    const esperadas = posiciones(soloIndicador, NOMBRES);
+
+    const ambos = copiaDeFlujos();
+    escribir(ambos, { indicador, rafaga: MANIFIESTO.rafaga });
+    expect(ensamblarFlujo('sintetico-rafaga.json', ambos)).toBe(true);
+    expect(verificarFlujo('sintetico-rafaga.json', ambos).estado).toBe('identico');
+    expect(ensamblarFlujo('sintetico-rafaga.json', ambos)).toBe(false);
+    expect(posiciones(ambos, NOMBRES)).toEqual(esperadas); // no se corrió por culpa de «¿Esperar ráfaga?»
+    const armado = readFileSync(join(ambos, 'sintetico-rafaga.json'), 'utf8');
+    const nombres = (JSON.parse(armado) as { nodes: { name: string }[] }).nodes.map((n) => n.name);
+    expect(nombres).toEqual(expect.arrayContaining([...NOMBRES, '¿Esperar ráfaga?', 'Agrupar ráfaga']));
+    // El orden del ancla: el indicador primero (rama lateral), luego la ráfaga en línea hacia el destino.
+    const conexiones = (JSON.parse(armado) as { connections: Record<string, { main: { node: string }[][] }> }).connections['¿Atención normal?'].main[0].map((e) => e.node);
+    expect(conexiones).toEqual(['¿Indicador de escritura activo?', '¿Esperar ráfaga?']);
+    // Un retoque a mano en cualquiera de las dos piezas se detecta y se corrige.
+    const alterado = JSON.parse(armado);
+    alterado.nodes.find((n: { name: string }) => n.name === 'Indicador de escritura').parameters.options.timeout = 99999;
+    alterado.nodes.find((n: { name: string }) => n.name === 'Esperar ráfaga').parameters.unit = 'minutes';
+    writeFileSync(join(ambos, 'sintetico-rafaga.json'), JSON.stringify(alterado, null, 2) + '\n');
+    expect(verificarFlujo('sintetico-rafaga.json', ambos).estado).toBe('difiere');
+    ensamblarFlujo('sintetico-rafaga.json', ambos);
+    expect(readFileSync(join(ambos, 'sintetico-rafaga.json'), 'utf8')).toBe(armado);
+  });
+
+  it('`core/rafaga/` trae el módulo común (`.mjs`, `.d.mts`) y el nodo Code (`.js`): se revisa en busca de valores reales', () => {
+    expect(existsSync(join(carpetas().src, 'core', 'rafaga', 'agrupar-rafaga.js'))).toBe(true);
+    expect(existsSync(join(carpetas().src, 'core', 'rafaga', 'rafaga.mjs'))).toBe(true);
   });
 });

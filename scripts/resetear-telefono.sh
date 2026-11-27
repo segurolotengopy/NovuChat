@@ -1,9 +1,10 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # =============================================================================
 # resetear-telefono.sh — EL ÚNICO REINICIO de un teléfono de prueba en un comercio, SIN variables a mano.
 #
 #   ./scripts/resetear-telefono.sh --tenant <comercio> --tel <dígitos>            # seco: solo lee y dice qué limpiaría
-#   ./scripts/resetear-telefono.sh --tenant <comercio> --tel <dígitos> --aplicar  # limpia, con respaldo y relectura
+#   ./scripts/resetear-telefono.sh --tenant <comercio> --tel <dígitos> --aplicar --confirmo <comercio>  # limpia, con respaldo y relectura
+#   ./scripts/resetear-telefono.sh --tenant <comercio> --quien andres|silvana [--aplicar --confirmo <comercio>]   # el número sale de la lista cerrada local
 #
 # QUÉ HACE POR USTED (Andres, 20/11/2026: «debería ser UN solo reinicio, unificado»): arma el entorno que antes había que
 # preparar a mano y llama a `admin/scripts/plataforma/resetear-telefono-prueba.mjs`, que limpia en una pasada la sesión y los cupos del
@@ -14,25 +15,48 @@
 #   - el respaldo (datos de persona) va a una carpeta temporal 0700 fuera del repositorio; BÓRRELO al cerrar la prueba (sirve para deshacer con --revertir);
 #   - `--aplicar` ya trae la confirmación de producción del comercio.
 # Vale para CUALQUIER comercio con flujo en su ficha (no hay lista fija); los demos y NovuChat se rechazan.
+# `--quien andres|silvana` (26/11/2026) en lugar de `--tel`: el número NO se escribe ni se imprime; se toma de la lista cerrada local por su
+# TERMINACIÓN (Andres …7339, Silvana …1250; solo esas cuatro cifras viven en el script) y tiene que haber EXACTAMENTE uno en la lista.
 # Variables opcionales: CONFIG_LOCAL_MD (otra tabla), ENV_N8N (otro .env), CLOUDSDK_CONFIG.
 # RESETEAR_SOLO_LISTA=1 solo comprueba que el teléfono esté en la lista blanca (para las pruebas).
 # =============================================================================
+case "$-" in *p*) ;; *) exec /bin/bash -p -- "$0" "$@" ;; esac
+# H4 (revisión de #1141): el arranque no hereda comportamiento del entorno de quien llama: modo privilegiado (-p: ni BASH_ENV ni funciones importadas),
+# sin BASH_ENV/ENV, sin funciones, y un PATH de sistema fijo. Los ejecutables que hacen falta se resuelven ANTES por ruta absoluta.
+unset BASH_ENV ENV
+while IFS= read -r f; do builtin unset -f "$f"; done < <(compgen -A function)
+NODO="$(command -v node || true)"
+[[ "$NODO" == /* && -x "$NODO" ]] || { echo "✗ No encuentro node (ruta absoluta y ejecutable)" >&2; exit 2; }
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; export PATH
+hash -r
 set -euo pipefail
 set +x
 cd "$(dirname "$0")/.." || exit 1
 
-TENANT=""; TEL=""; APLICAR=0
+TENANT=""; TEL=""; QUIEN=""; APLICAR=0; CONFIRMO=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --tenant)  TENANT="${2:?}"; shift 2 ;;
     --tel)     TEL="${2:?}"; shift 2 ;;
+    --quien)   QUIEN="${2:?}"; shift 2 ;;
     --aplicar) APLICAR=1; shift ;;
+    --confirmo) CONFIRMO="${2:?}"; shift 2 ;;
     -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "✗ Opción desconocida: $1" >&2; exit 2 ;;
   esac
 done
 [[ "$TENANT" =~ ^[a-z0-9][a-z0-9-]{2,59}$ ]] || { echo "✗ --tenant: id de comercio (minúsculas, dígitos y guion)" >&2; exit 2; }
-[[ "$TEL" =~ ^[0-9]{8,15}$ ]] || { echo "✗ --tel: solo dígitos (8 a 15)" >&2; exit 2; }
+[[ -z "$CONFIRMO" || "$APLICAR" = 1 ]] || { echo "✗ --confirmo solo va con --aplicar" >&2; exit 2; }
+[[ "$APLICAR" = 0 || "$CONFIRMO" == "$TENANT" ]] || { echo "✗ --aplicar exige --confirmo <el mismo comercio>" >&2; exit 2; }
+[[ -z "$TEL" || -z "$QUIEN" ]] || { echo "✗ --tel y --quien son excluyentes" >&2; exit 2; }
+# Los demos, el ensayo y la cuenta de NovuChat no se resetean (lo repite el .mjs; acá se corta antes de leer nada).
+[[ ! "$TENANT" =~ ^(novuchat.*|ensayo|demo(-.*)?)$ ]] || { echo "✗ --tenant: los demos y NovuChat no se resetean" >&2; exit 2; }
+case "$QUIEN" in
+  "") [[ "$TEL" =~ ^[0-9]{8,15}$ ]] || { echo "✗ --tel: solo dígitos (8 a 15), o --quien andres|silvana" >&2; exit 2; } ;;
+  andres) FIN_QUIEN="7339" ;;
+  silvana) FIN_QUIEN="1250" ;;
+  *) echo "✗ --quien: andres o silvana" >&2; exit 2 ;;
+esac
 
 TABLA="${CONFIG_LOCAL_MD:-$HOME/NovuChat/CONFIGURACION.local.md}"
 [ -f "$TABLA" ] || { echo "✗ No existe la tabla local: sin ella no hay lista blanca de teléfonos de prueba" >&2; exit 1; }
@@ -52,11 +76,22 @@ print(",".join(dict.fromkeys(tels)))
 PY
 )"
 [ -n "$TELEFONOS_PRUEBA" ] || { echo "✗ La tabla local no tiene teléfonos de prueba para este comercio (fila REEMPLAZAR_TELEFONOS_DE_PRUEBA)" >&2; exit 1; }
+if [ -n "$QUIEN" ]; then
+  # El número de esa persona: el ÚNICO de la lista cerrada que termina en su terminación. Ni se imprime ni se acepta ambiguo.
+  CANDIDATOS="$(printf '%s' "$TELEFONOS_PRUEBA" | tr ',' '\n' | grep -E "^[0-9]{8,15}$" | grep -E "${FIN_QUIEN}\$" || true)"
+  [ "$(printf '%s\n' "$CANDIDATOS" | grep -c .)" = 1 ] || { echo "✗ La lista de teléfonos de prueba no tiene EXACTAMENTE un número de $QUIEN para este comercio" >&2; exit 1; }
+  TEL="$CANDIDATOS"
+fi
 case ",$TELEFONOS_PRUEBA," in *",$TEL,"*) ;; *) echo "✗ Ese teléfono NO está en la lista blanca de teléfonos de prueba: no se resetea" >&2; exit 1 ;; esac
 if [ "${RESETEAR_SOLO_LISTA:-0}" = 1 ]; then echo "✓ el teléfono está en la lista blanca (${TENANT})"; exit 0; fi
 
-ENV_N8N="${ENV_N8N:-.env}"
-[ -f "$ENV_N8N" ] || ENV_N8N="$HOME/NovuChat/.env"
+# H1: si ENV_N8N viene definida, se usa ESA y, si no existe, se sale; no se cae al .env real.
+if [ -n "${ENV_N8N:-}" ]; then
+  [ -f "$ENV_N8N" ] || { echo "✗ ENV_N8N apunta a un archivo que no existe" >&2; exit 3; }
+else
+  ENV_N8N="$HOME/NovuChat/.env"
+  [ -f "$ENV_N8N" ] || { echo "✗ No hay .env de n8n" >&2; exit 3; }
+fi
 # Del .env se toman SOLO la dirección y la clave de n8n (no se carga el archivo entero); no se imprimen.
 valor_env() { grep -E "^$1=" "$ENV_N8N" 2>/dev/null | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"; }
 N8N_BASE_URL="$(valor_env N8N_BASE_URL)"; N8N_API_KEY="$(valor_env N8N_API_KEY)"
@@ -64,11 +99,16 @@ export N8N_BASE_URL N8N_API_KEY
 # La lista cerrada de flujos que el reseteo puede reescribir: SOLO flujos de NovuChat (nombre que empieza por «NovuChat»). El .mjs elige UNO por el nombre del comercio
 # («(<comercio>)» o el nombre fijo de su tabla) y exige que esté en esta lista. Los ids no se imprimen.
 if [ -n "$N8N_BASE_URL" ]; then
-  N8N_WORKFLOWS_PERMITIDOS="$(curl -s --compressed --max-time 150 -H @- "${N8N_BASE_URL%/}/api/v1/workflows?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" | TENANT="$TENANT" python3 -c '
-import json, os, sys
-t = os.environ["TENANT"]
-try: d = json.load(sys.stdin).get("data", [])
-except Exception: d = []
+  # H2 (revisión de #1141): ni el host ni la clave van en la línea de comandos de ningún programa (ps, registros de procesos): la consulta la hace python con ambos por el ENTORNO de ese proceso.
+  N8N_WORKFLOWS_PERMITIDOS="$(N8N_BASE_URL="$N8N_BASE_URL" N8N_API_KEY="$N8N_API_KEY" python3 -I -c '
+import json, os, urllib.request
+try:
+    url = os.environ["N8N_BASE_URL"].rstrip("/") + "/api/v1/workflows?limit=250"
+    if not url.startswith(("https://", "http://")): raise ValueError
+    req = urllib.request.Request(url, headers={"X-N8N-API-KEY": os.environ["N8N_API_KEY"], "Accept": "application/json"})
+    d = json.load(urllib.request.urlopen(req, timeout=150)).get("data", [])
+except Exception:
+    d = []
 print(",".join(w["id"] for w in d if str(w.get("name", "")).startswith("NovuChat")))' || true)"
   export N8N_WORKFLOWS_PERMITIDOS
   echo "• flujos de NovuChat en la lista cerrada: $(printf '%s' "$N8N_WORKFLOWS_PERMITIDOS" | tr ',' '\n' | grep -c .)"
@@ -78,10 +118,20 @@ export GCP_PROJECT_ID_PROD="${GCP_PROJECT_ID_PROD:-novuchat-demo}"
 export GCP_PROJECT_ID_STAGING="${GCP_PROJECT_ID_STAGING:-novuchat-staging}"
 export CLOUDSDK_CONFIG="${CLOUDSDK_CONFIG:-$HOME/.config/gcloud-novuchat-prod}"
 
-ARGS=(--proyecto "$GCP_PROJECT_ID_PROD" --tenant "$TENANT" --tel "$TEL")
+# El proyecto y el teléfono van por VARIABLES DE ENTORNO del proceso de nodo, no por la línea de comandos (ps, historial).
+export PROYECTO_RESETEO="$GCP_PROJECT_ID_PROD" TEL_PRUEBA="$TEL"
+ARGS=(--proyecto-env PROYECTO_RESETEO --tenant "$TENANT" --tel-env TEL_PRUEBA)
 if [ "$APLICAR" = 1 ]; then
   DIR="$(mktemp -d)"; chmod 700 "$DIR"
   ARGS+=(--aplicar --respaldo "$DIR/respaldo.json" --confirmo-produccion "$TENANT")
   echo "• Respaldo (datos de persona): $DIR/respaldo.json — bórrelo al cerrar la prueba (sirve para --revertir)."
 fi
-( cd admin && node scripts/plataforma/resetear-telefono-prueba.mjs "${ARGS[@]}" )
+# La salida pasa por un filtro: ni el teléfono ni el proyecto pueden quedar escritos aunque una traza de error los nombre.
+# shellcheck source=lib/valores-del-comercio.sh
+source "scripts/lib/valores-del-comercio.sh"
+IFS=, read -r -a LISTA_TELS <<< "$TELEFONOS_PRUEBA"
+set +e
+( cd admin && "$NODO" scripts/plataforma/resetear-telefono-prueba.mjs "${ARGS[@]}" 2>&1 ) | FILTRAR_VARS="N8N_BASE_URL N8N_API_KEY" filtrar_valores "$TEL" "$GCP_PROJECT_ID_PROD" "$GCP_PROJECT_ID_STAGING" "${LISTA_TELS[@]}"
+ESTADOS=("${PIPESTATUS[@]}")
+set -e
+exit "${ESTADOS[0]}"

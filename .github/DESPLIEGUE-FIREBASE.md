@@ -251,6 +251,36 @@ del proyecto de producción. Lo que hay:
     código fuente); el registro acumulado cubre ese peor caso de todos modos. Si el número de Functions crece mucho más,
     el siguiente paso es desplegar por tandas con `--only functions:…`. Pruebas: `W2b` en
     `admin/pruebas/despliegue-compuerta.test.ts` y las `C16` a `C20` de la compuerta.
+  - **«This deployment is in an unexpected state» (26/11/2026; criterio conservador, la decisión final es del botón de fusión de Andres).**
+    firebase-tools (v15.28.1, `fabricator.ts`, `updateV2Function`) imprime «Updated function is not associated with a service. This deployment
+    is in an unexpected state - please re-deploy your functions» cuando la API devuelve la actualización SIN el nombre del servicio. No es fatal
+    para el CLI (la operación sale «Successful update operation»), pero **omite solo el paso del invoker (IAM) de esa Function**; el aviso no la
+    nombra. El 26/11 pasó 4 veces en un despliegue completo a staging (87 actualizaciones, todas «Successful», Hosting publicado, cero
+    creaciones) y la compuerta lo tumbó. **Regla vigente (R4):** el aviso es **FATAL por omisión y en PRODUCCIÓN** (el job de producción no define
+    `AVISO_SERVICIO_NO_FATAL`). **Solo en STAGING** (`AVISO_SERVICIO_NO_FATAL=1`) baja a `::warning::` si se cumplen TODAS: no hay ningún otro
+    motivo (despliegue completo y limpio sobre el registro acumulado), `FIREBASE_TOOLS_VERSION` es **exactamente** la verificada (vacía, ausente o
+    distinta = fatal) y no hubo **ninguna forma de creación** (sin distinguir mayúsculas y en todo el acumulado: «functions: creat…»,
+    «Successful create operation», «failed to create function», «while trying to create»). Los anclajes son de **línea entera**: «Deploy complete!»
+    del propio proceso, «release complete» de cada sitio, y toda Function iniciada (aunque tenga espacios o un resto de spinner tras «...») tiene su
+    «Successful» en el ÚLTIMO intento (el de un intento anterior no la tapa). **Verificación automática:** el warning entrega las Functions
+    candidatas (`candidatas` en la salida del paso; el aviso no nombra la Function, así que son TODAS las confirmadas del último intento desde el primer aviso; si hay aviso y ninguna candidata, la compuerta falla) y el paso siguiente de
+    staging corre `scripts/verificar-invocadores-candidatas.sh`, que lee (solo lectura) el IAM del servicio de cada una y **falla el job** si alguna
+    no tiene `roles/run.invoker` o no se puede leer. **Límites declarados:** (a) una actualización sin servicio asociado conserva el IAM ANTERIOR:
+    un cambio de invoker pedido en el código no se aplicó y solo se detecta si deja el servicio sin invocador; (b) firebase-tools, al recrear una
+    Function por dentro (`deleteAndRecreate`), imprime «updating»: una recreación así es indistinguible de una actualización en el registro y no se
+    detecta como creación (por eso es solo staging y con la verificación del invoker); (c) el invocador de una Function PROGRAMADA (schedule) no es
+    `allUsers` sino la cuenta de servicio del planificador: la verificación acepta cualquier miembro con `roles/run.invoker`, no exige `allUsers`;
+    (c bis) una Function de EVENTOS (Firestore, por Eventarc) no lleva invocador en su servicio: firebase-tools no se lo pone y el permiso de
+    Eventarc es de proyecto; por eso, solo cuando el servicio no trae invocador, el verificador lee `gcloud functions describe <función> --gen2`
+    (solo lectura) y la da por buena si tiene `eventTrigger` con su `eventType`; si esa lectura falla, el job falla diciendo que no pudo leer el disparador. **A una Function de eventos nunca se le concede `allUsers`** (quedaría abierta a peticiones HTTP falsificadas): el «cómo verificar a mano» de abajo vale solo para las HTTP de la lista cerrada de `nube-visor.sh`. El IAM vivo
+    de esas Functions en staging no se leyó al escribir esto: lo confirma la primera corrida de staging que traiga el aviso;
+    (d) **al subir `FIREBASE_TOOLS_VERSION`** hay que volver a verificar estos textos contra `fabricator.ts` de la versión nueva y actualizar
+    `VERSION_VERIFICADA` de la compuerta. **Cómo verificar el invoker a mano:** `./scripts/nube-visor.sh --servicio <s> --entorno <staging|produccion>`
+    (seco: lee la política IAM y dice «ya concedido: allUsers tiene roles/run.invoker»; sin `--aplicar` no escribe; si falta, con
+    `--aplicar --confirmo <entorno>` lo concede y prueba que el endpoint conteste nuestro código y no el 403 de Google) para su lista cerrada;
+    para el catálogo, `nube-catalogo.sh`; para cualquier otra, `gcloud run services get-iam-policy <servicio en minúsculas> --region us-east1
+    --project <proyecto del entorno>` (siempre con `--project`). Fixture: `unexpected-state-completo-26-11.registro.txt`; pruebas `C6`, `C23`, `C24`,
+    `W7` y `W8`.
   - **Todo secreto nuevo que una Function declare debe existir en STAGING ANTES de fusionar** (lección del 25/11/2026:
     `NOVUTIENDA_CATALOGO` se creó en producción pero no en staging y `desplegar-staging` falló desde #1096 con
     «In non-interactive mode but have no value for the secret»). Se crea con `scripts/preparar-staging.sh <fase>`

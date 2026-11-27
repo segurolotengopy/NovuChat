@@ -395,6 +395,14 @@ describe('el cliente, el turno y la retomada previa', () => {
     await conversacion(A, CONV1, { noContactar: true });
     await rechaza({ code: 'failed-precondition', message: 'Este cliente pidió que no se le escriba.' });
   });
+  it('M3, NEGATIVA: un contacto con baja (pidió no recibir más mensajes) no se retoma: 0 escrituras y 0 timbres', async () => {
+    await db.doc(`tenants/${A}/bajas/${CONV1}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: ts(AHORA - MIN) });
+    await rechaza({ code: 'failed-precondition', message: 'Este contacto pidió no recibir más mensajes.' });
+  });
+  it('M3, control: la baja de OTRO teléfono no impide retomar', async () => {
+    await db.doc(`tenants/${A}/bajas/wa_59100000099`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: ts(AHORA - MIN) });
+    expect(await retomar(base())).toMatchObject({ estado: 'pendiente' });
+  });
   it('un `noContactar` que no es `true` exacto no bloquea (contraprueba de la regla anterior)', async () => {
     await conversacion(A, CONV1, { noContactar: 'false' });
     expect(await retomar(base())).toMatchObject({ estado: 'pendiente' });

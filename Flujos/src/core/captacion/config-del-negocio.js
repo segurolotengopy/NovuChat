@@ -294,4 +294,6 @@ return [{ json: derivar({
   campanasActivas,
   estadoComercio,
   configDeLaConsola: true,
+  // INTERRUPTOR DE LA RAFAGA: el servidor agrega `rafagaApagada: true` SOLO si el comercio la apago; la lee «¿Esperar ráfaga?».
+  rafagaApagada: r.rafagaApagada === true ? true : undefined,
 }) }];

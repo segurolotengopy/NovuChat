@@ -890,6 +890,54 @@ describe('Salida de persona: plantillas (Retomar, C5/C6)', () => {
     expect(s.docs[0]).toMatchObject({ estado: 'aceptado', idMeta: 'wamid.PL1' });
   });
 
+  // CAMPAÑA SALIENTE (PR-A): plantilla de 0 parámetros con 2 botones de respuesta rápida, SOLO por Graph.
+  const BOTONES = [{ indice: 0, payload: 'cs:si:camp-prueba' }, { indice: 1, payload: 'cs:no:camp-prueba' }];
+  const CAMPANA: J = { nombre: 'campana_prueba', idioma: 'es', parametros: [], botones: BOTONES };
+  it('campaña por Graph: sin `body` y con un componente quick_reply por botón, `index` como texto', () => {
+    const d = pl(40, CAMPANA);
+    const s = servidor('graph', [d]);
+    const r = ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.C1') });
+    expect(r.llamadas).toHaveLength(1);
+    expect(r.llamadas[0]!.cuerpo).toEqual({
+      messaging_product: 'whatsapp', to: d.conversacionId.slice(3), type: 'template',
+      template: { name: 'campana_prueba', language: { code: 'es' }, components: [
+        { type: 'button', sub_type: 'quick_reply', index: '0', parameters: [{ type: 'payload', payload: 'cs:si:camp-prueba' }] },
+        { type: 'button', sub_type: 'quick_reply', index: '1', parameters: [{ type: 'payload', payload: 'cs:no:camp-prueba' }] },
+      ] },
+    });
+    expect(s.docs[0]).toMatchObject({ estado: 'aceptado', idMeta: 'wamid.C1' });
+  });
+  it('campaña con un parámetro: `body` primero y los botones después', () => {
+    const s = servidor('graph', [pl(41, { ...CAMPANA, parametros: ['Casa Demo'] })]);
+    const c = (ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.C2') }).llamadas[0]!.cuerpo['template'] as { components: { type: string }[] }).components;
+    expect(c.map((x) => x.type)).toEqual(['body', 'button', 'button']);
+  });
+  it('NIEGA: una plantilla con botones por el relé se rechaza con NV-PLANTILLA-FORMA y no se envía', () => {
+    const s = servidor('rele', [pl(42, CAMPANA)]);
+    expect(ejecutarFlujo({ servidor: s, enviar: sinEnviar }).llamadas).toHaveLength(0);
+    expect(s.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-PLANTILLA-FORMA' });
+  });
+  it.each([
+    ['0 parámetros SIN botones (Retomar)', { ...BUENA, parametros: [] }],
+    ['botones vacíos', { ...CAMPANA, botones: [] }],
+    ['3 botones', { ...CAMPANA, botones: [...BOTONES, { indice: 1, payload: 'cs:x:camp-prueba' }] }],
+    ['índice repetido', { ...CAMPANA, botones: [BOTONES[0], { indice: 0, payload: 'cs:no:camp-prueba' }] }],
+    ['índice 2', { ...CAMPANA, botones: [{ indice: 2, payload: 'cs:si:camp-prueba' }] }],
+    ['payload con espacio', { ...CAMPANA, botones: [{ indice: 0, payload: 'cs si' }] }],
+    ['payload de 129', { ...CAMPANA, botones: [{ indice: 0, payload: 'a'.repeat(129) }] }],
+    ['payload vacío', { ...CAMPANA, botones: [{ indice: 0, payload: '' }] }],
+    ['clave extra en un botón', { ...CAMPANA, botones: [{ indice: 0, payload: 'cs:si:camp-prueba', url: 'x' }] }],
+    ['botones no lista', { ...CAMPANA, botones: 'cs:si' }],
+  ] as [string, unknown][])('NIEGA: %s no se envía (NV-PLANTILLA-FORMA)', (_n, plantilla) => {
+    const s = servidor('graph', [pl(43, plantilla)]);
+    expect(ejecutarFlujo({ servidor: s, enviar: sinEnviar }).llamadas).toHaveLength(0);
+    expect(s.docs[0]).toMatchObject({ estado: 'rechazado', codigo: 'NV-PLANTILLA-FORMA' });
+  });
+  it('un payload de 128 caracteres es el límite y pasa', () => {
+    const s = servidor('graph', [pl(44, { ...CAMPANA, botones: [{ indice: 1, payload: 'a'.repeat(128) }] })]);
+    expect(ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.C3') }).llamadas).toHaveLength(1);
+  });
+
   it('el cuerpo es identico por rele y por Graph', () => {
     const cuerpos = ['rele', 'graph'].map((canal) => {
       const s = servidor(canal, [pl(2, { nombre: 'a_b1', idioma: 'es_BO', parametros: ['uno', 'dos'] })]);

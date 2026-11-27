@@ -122,7 +122,7 @@ describe('compuerta del registro de `firebase deploy`', () => {
     expect(r.status, r.stdout).toBe(0);
     expect(r.stdout).toContain('reintento interno resuelto: fnDos');
     expect(r.stdout).toMatch(/::warning::.*cuota/);
-    expect(r.salidas).toEqual({ completo: 'true', hosting_publicado: 'todos', functions_pendientes: '' });
+    expect(r.salidas).toEqual({ completo: 'true', hosting_publicado: 'todos', functions_pendientes: '', candidatas: '' });
   });
 
   // ---- Varios intentos (el workflow repite `firebase deploy` ante la cuota de escrituras) ----
@@ -210,6 +210,97 @@ describe('compuerta del registro de `firebase deploy`', () => {
     expect(intento(INICIA('fnX') + OK('fnX') + FIN, INICIA('fnX') + OK('fnX') + FIN).reintentable).toBe('no');
   });
 
+  it('C23: el registro REAL del 26/11 (87 actualizaciones, todas «Successful», Hosting publicado, 4 avisos «unexpected state») pasa con un ::warning:: que cuenta los avisos y nombra candidatas', () => {
+    const real = readFileSync(join(FIX, 'unexpected-state-completo-26-11.registro.txt'), 'utf8');
+    const STG23 = { AVISO_SERVICIO_NO_FATAL: '1', FIREBASE_TOOLS_VERSION: '15.28.1' };
+    const corre = (reg: string) => compuerta(reg, { SOLO: SOLO_COMPLETO, SITIO_CONSOLA: 'proyecto-ficticio', SITIO_CATALOGO: 'catalogo-ficticio', ...STG23 });
+    const r = corre(real);
+    expect(r.status, r.stdout).toBe(0);
+    expect(r.salidas['completo']).toBe('true');
+    expect(r.stdout).toMatch(/::warning::firebase-tools avisó 4 vez\/veces «unexpected state»/);
+    expect(r.stdout).toMatch(/candidatas \(el aviso no nombra la Function\): [A-Za-z]/); // deduce al menos una Function
+    expect(r.stdout).not.toContain('::error::');
+    // NEGANDO: cualquier otra cosa sigue siendo fatal con el MISMO aviso.
+    const sinOk = real.split('\n'); const i = sinOk.findIndex((l) => l.includes('Successful update operation'));
+    sinOk.splice(i, 1);
+    const f1 = corre(sinOk.join('\n')); expect(f1.status).toBe(1); expect(f1.stdout).toContain('unexpected state'); expect(f1.stdout).toContain('Function sin confirmar');
+    const f2 = corre(real.replace('Deploy complete!', 'Deploy terminó')); expect(f2.status).toBe(1);
+    const f3 = corre(real.replace('hosting[catalogo-ficticio]: release complete', 'hosting[catalogo-ficticio]: release pendiente')); expect(f3.status).toBe(1);
+    expect(f3.stdout).toContain('unexpected state');
+    // NEGANDO: una Function NUEVA (create) con el aviso es fatal: su invoker no se fijó y nadie la podría invocar.
+    const conCreate = 'i  functions: creating Node.js 22 (2nd Gen) function admin:fnNueva(us-east1)...\n✔  functions[admin:fnNueva(us-east1)] Successful create operation.\n' + real;
+    const f4 = corre(conCreate); expect(f4.status, f4.stdout).toBe(1); expect(f4.stdout).toContain('unexpected state');
+    // NEGANDO: con una versión de firebase-tools que NO es la verificada, el aviso vuelve a ser fatal.
+    const otraVersion = compuerta(real, { SOLO: SOLO_COMPLETO, SITIO_CONSOLA: 'proyecto-ficticio', SITIO_CATALOGO: 'catalogo-ficticio', AVISO_SERVICIO_NO_FATAL: '1' });
+    expect(otraVersion.status).toBe(1);
+    expect(otraVersion.stdout).toContain('unexpected state');
+    // Los avisos de un intento ANTERIOR (registro acumulado) también cuentan: el último intento limpio no los borra.
+    const anterior = compuerta(real.split('\n').filter((l) => !l.includes('unexpected state')).join('\n'),
+      { SOLO: SOLO_COMPLETO, SITIO_CONSOLA: 'proyecto-ficticio', SITIO_CATALOGO: 'catalogo-ficticio', REGISTRO_ACUMULADO: archivo(real), ...STG23 });
+    // (revisión de seguridad 27/11) Aviso solo en el acumulado y ninguna candidata en el último intento: nada que verificar → fatal.
+    expect(anterior.status, anterior.stdout).toBe(1);
+    expect(anterior.stdout).toContain('no hay Function confirmada que verificar');
+    // Dos avisos seguidos y UNA sola confirmación después: las dos confirmadas desde el primer aviso son candidatas.
+    const dos = compuerta(real, { SOLO: SOLO_COMPLETO, SITIO_CONSOLA: 'proyecto-ficticio', SITIO_CATALOGO: 'catalogo-ficticio', ...STG23 });
+    const cand = (dos.salidas['candidatas'] ?? '').split(',').filter(Boolean);
+    const lineas = real.split('\n');
+    const primer = lineas.findIndex((l) => l.includes('unexpected state'));
+    const esperadas = lineas.slice(primer).filter((l) => /Successful (create|update|delete) operation\./.test(l)).length;
+    expect(cand.length, dos.stdout).toBe(esperadas);
+    // Sin avisos no hay warning ni candidatas.
+    const limpio = corre(real.split('\n').filter((l) => !l.includes('unexpected state')).join('\n'));
+    expect(limpio.status).toBe(0); expect(limpio.stdout).not.toContain('unexpected state');
+  });
+
+  it('C24 (revisión de #1137): el aviso solo baja a warning en staging, con versión explícita, sin ninguna forma de creación, y con anclajes de línea entera', () => {
+    const real = readFileSync(join(FIX, 'unexpected-state-completo-26-11.registro.txt'), 'utf8');
+    const base = { SOLO: SOLO_COMPLETO, SITIO_CONSOLA: 'proyecto-ficticio', SITIO_CATALOGO: 'catalogo-ficticio' };
+    const STG = { ...base, AVISO_SERVICIO_NO_FATAL: '1', FIREBASE_TOOLS_VERSION: '15.28.1' };
+    const fatal = (reg: string, env: Record<string, string> = STG, etiqueta = '') => { const r = compuerta(reg, env); expect(r.status, `${etiqueta}\n${r.stdout}`).toBe(1); return r; };
+    expect(compuerta(real, STG).status).toBe(0);
+    // PRODUCCIÓN: sin AVISO_SERVICIO_NO_FATAL es fatal aunque la versión sea la verificada.
+    fatal(real, { ...base, FIREBASE_TOOLS_VERSION: '15.28.1' }, 'producción');
+    // Versión ausente, vacía, distinta o con sufijo: fatal.
+    for (const v of ['', '15.29.0', '15.28.1-beta', 'v15.28.1', '15.28.1 ']) fatal(real, { ...STG, FIREBASE_TOOLS_VERSION: v }, `versión «${v}»`);
+    // Creación escrita de cualquier forma, en el acumulado: fatal.
+    const NUEVA = '✔  functions[admin:fnNueva(us-east1)] Successful create operation.\n';
+    for (const extra of [
+      'i  functions: Creating Node.js 22 (2nd Gen) function admin:fnNueva(us-east1)...\n' + NUEVA,
+      'i  functions:   creating Node.js 22 (2nd Gen) function admin:fnNueva(us-east1)...\n' + NUEVA,
+      NUEVA,
+      '⚠  functions:  failed to create function projects/p/locations/us-east1/functions/fnNueva\n',
+      '⚠  functions: Got "Quota Exceeded" error while trying to create projects/p/locations/us-east1/functions/fnNueva. Waiting to retry...\n',
+    ]) fatal(extra + real, STG, `creación: ${extra.slice(0, 40)}`);
+    // Anclajes: una Function iniciada con espacio final o resto de spinner y SIN Successful es pendiente.
+    fatal(real + 'i  functions: updating Node.js 22 (2nd Gen) function admin:fnHuerfana(us-east1)... \n', STG, 'updating con espacio final');
+    fatal(real + 'i  functions: updating Node.js 22 (2nd Gen) function admin:fnHuerfana(us-east1)... ⠋ trabajando\n', STG, 'updating con spinner');
+    // «release complete» y «Deploy complete!» tienen que ser la LÍNEA ENTERA (no una subcadena de otra línea ni de otro proceso).
+    fatal(real.replace('✔  hosting[catalogo-ficticio]: release complete', 'nota: hosting[catalogo-ficticio]: release complete'), STG, 'release dentro de otra línea');
+    fatal(real.replace('✔  Deploy complete!', '> Deploy complete!'), STG, 'Deploy complete de otro proceso');
+    // Un «Successful» de un intento ANTERIOR no tapa un «updating» sin confirmar del ÚLTIMO intento.
+    const a1 = '✔  functions[admin:fnU(us-east1)] Successful update operation.\ni  functions: updating Node.js 22 (2nd Gen) function admin:fnU(us-east1)...\n';
+    const a2 = 'i  functions: updating Node.js 22 (2nd Gen) function admin:fnU(us-east1)...\n\n✔  Deploy complete!\n';
+    const enmascarado = compuerta(a2, { SOLO: 'functions', REGISTRO_ACUMULADO: archivo(a1 + a2) });
+    expect(enmascarado.status).toBe(1);
+    expect(enmascarado.stdout).toContain('Function sin confirmar: admin:fnU(us-east1)');
+    // Las candidatas (staging) salen en GITHUB_OUTPUT, solo con nombres válidos.
+    const ok = compuerta(real, STG);
+    expect(ok.salidas['candidatas']).toMatch(/^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$/);
+    expect(ok.salidas['completo']).toBe('true');
+    // M-D (revisión de #1137) NEGANDO: una confirmada con un id de forma inesperada, después del aviso, no se omite en silencio: es fatal.
+    const tras = real.split('\n').slice(real.split('\n').findIndex((l) => l.includes('unexpected state')));
+    const idMalo = /functions\[(?:[^:\]]*:)?([A-Za-z0-9_-]+)\(/.exec(tras.find((l) => /Successful update operation\./.test(l)) ?? '')?.[1] ?? '';
+    expect(idMalo).not.toBe('');
+    const raro = compuerta(real.split(`${idMalo}(`).join('fn.rara('), STG);
+    expect(raro.status, raro.stdout).toBe(1);
+    expect(raro.stdout).toContain('id con forma inesperada');
+    expect(raro.salidas['candidatas']).toBe('');
+    // Un id que empieza por «-» llegaría a gcloud como opción: tampoco es candidata, es fatal.
+    const guion = compuerta(real.split(`${idMalo}(`).join('--help('), STG);
+    expect(guion.status, guion.stdout).toBe(1);
+    expect(guion.salidas['candidatas']).toBe('');
+  });
+
   it('C21: un id de Function con metacaracteres de expresión regular nunca es reintentable', () => {
     const raro = INICIA('fn.*') + CUOTA('fnAlgo');
     expect(intento(raro, raro).reintentable).toBe('no');
@@ -249,10 +340,28 @@ describe('compuerta del registro de `firebase deploy`', () => {
     expect(r.salidas['functions_pendientes']).toBe('functions:admin:fnSiete');
   });
 
-  it('C6: «unexpected state» falla aunque todo lo demás esté', () => {
-    const r = compuerta(`${EXITOSO}⚠  functions: Updated function is not associated with a service. This deployment is in an unexpected state - please re-deploy your functions.\n`);
-    expect(r.status).toBe(1);
-    expect(r.stdout).toContain('unexpected state');
+  it('C6: «unexpected state» es FATAL por omisión (producción); solo staging (AVISO_SERVICIO_NO_FATAL=1) con la versión verificada y despliegue completo lo baja a ::warning::', () => {
+    const AVISO = '⚠  functions: Updated function is not associated with a service. This deployment is in an unexpected state - please re-deploy your functions.\n';
+    const STG = { AVISO_SERVICIO_NO_FATAL: '1', FIREBASE_TOOLS_VERSION: '15.28.1' };
+    // PRODUCCIÓN (sin la variable): fatal aunque todo lo demás esté completo.
+    const prod = compuerta(`${EXITOSO}${AVISO}`, { FIREBASE_TOOLS_VERSION: '15.28.1' });
+    expect(prod.status).toBe(1);
+    expect(prod.stdout).toContain('unexpected state');
+    // STAGING completo: warning.
+    const stg = compuerta(`${AVISO}${EXITOSO}`, STG);
+    expect(stg.status, stg.stdout).toBe(0);
+    expect(stg.stdout).toMatch(/::warning::firebase-tools avisó 1 vez\/veces «unexpected state»/);
+    // NEGANDO (seguridad 27/11): aviso sin NINGUNA confirmación posterior = nada que verificar = fatal.
+    const sinCand = compuerta(`${EXITOSO}${AVISO}`, STG);
+    expect(sinCand.status).toBe(1);
+    expect(sinCand.stdout).toContain('no hay Function confirmada');
+    // NEGANDO en staging: una Function CREADA, o el despliegue a medias, sigue siendo fatal.
+    const conCreate = compuerta(`${EXITOSO}i  functions: creating Node.js 22 (2nd Gen) function admin:fnNueva(us-east1)...\n✔  functions[admin:fnNueva(us-east1)] Successful create operation.\n${AVISO}`, STG);
+    expect(conCreate.status).toBe(1);
+    expect(conCreate.stdout).toContain('unexpected state');
+    const medias = compuerta(A_MEDIAS, STG);
+    expect(medias.status).toBe(1);
+    expect(medias.stdout).toContain('unexpected state');
   });
 
   it('C7: sin el release del catálogo falla y Hosting queda «parcial»', () => {
@@ -722,6 +831,96 @@ describe('el workflow ejecuta la compuerta en los tres despliegues', () => {
     expect(ok.status, ok.texto).toBe(0);
     expect(ok.salidas['rollback']).toBeUndefined();
     expect(ok.llamadas).toContain('firebase hosting:clone consola-ficticia:previa consola-ficticia:live');
+  });
+
+  it('W7: el aviso «unexpected state» solo baja a warning en STAGING (producción no define la variable) y staging verifica el invoker de las candidatas', () => {
+    const prod = job('desplegar-produccion');
+    const stg = job('desplegar-staging');
+    expect(prod).not.toContain('AVISO_SERVICIO_NO_FATAL');
+    expect(job('desplegar-dev')).not.toContain('AVISO_SERVICIO_NO_FATAL');
+    expect(stg).toContain("AVISO_SERVICIO_NO_FATAL: '1'");
+    expect(stg).toContain('scripts/verificar-invocadores-candidatas.sh');
+    expect(stg).toContain("if: steps.desplegar.outputs.candidatas != ''");
+    expect(prod).not.toContain('verificar-invocadores-candidatas');
+  });
+
+  it('W8: el script que verifica los invocadores lee la política (solo lectura), acepta cualquier miembro con run.invoker y FALLA si falta o no se puede leer', () => {
+    const bin = join(tmp, 'bin-invocadores');
+    spawnSync('mkdir', ['-p', bin]);
+    writeFileSync(join(bin, 'gcloud'), [
+      '#!/usr/bin/env bash',
+      'echo "$*" >> "$LLAMADAS_GCLOUD"',
+      'case "$1 $2 $3" in',
+      '  "run services get-iam-policy") f="$POLITICAS/$4" ;;',
+      '  "functions describe "*) f="$POLITICAS/describe-$3" ;;',
+      '  *) echo "solo lectura" >&2; exit 9 ;;',
+      'esac',
+      '[ -f "$f" ] || exit 1; cat "$f"', '',
+    ].join('\n'));
+    chmodSync(join(bin, 'gcloud'), 0o755);
+    const politicas = join(tmp, 'politicas'); spawnSync('mkdir', ['-p', politicas]);
+    writeFileSync(join(politicas, 'fnpublica'), JSON.stringify({ bindings: [{ role: 'roles/run.invoker', members: ['allUsers'] }] }));
+    writeFileSync(join(politicas, 'fnprogramada'), JSON.stringify({ bindings: [{ role: 'roles/run.invoker', members: ['serviceAccount:planificador@p.iam.gserviceaccount.com'] }] }));
+    writeFileSync(join(politicas, 'fnsinrol'), JSON.stringify({ bindings: [{ role: 'roles/otro', members: ['allUsers'] }] }));
+    writeFileSync(join(politicas, 'fnvacia'), JSON.stringify({ bindings: [{ role: 'roles/run.invoker', members: [] }] }));
+    writeFileSync(join(politicas, 'fnbasura'), 'esto no es json');
+    // I-A (revisión de #1137): una Function de EVENTOS no lleva invocador en su servicio (Eventarc lo tiene a nivel de proyecto).
+    const sinInvocador = JSON.stringify({ bindings: [] });
+    writeFileSync(join(politicas, 'fnevento'), sinInvocador);
+    writeFileSync(join(politicas, 'describe-fnEvento'), JSON.stringify({ eventTrigger: { eventType: 'google.cloud.firestore.document.v1.written' } }));
+    writeFileSync(join(politicas, 'fnhttpsininvocador'), sinInvocador);
+    writeFileSync(join(politicas, 'describe-fnHttpSinInvocador'), JSON.stringify({ serviceConfig: { uri: 'https://ejemplo.invalid' } }));
+    writeFileSync(join(politicas, 'fneventovacio'), sinInvocador);
+    writeFileSync(join(politicas, 'describe-fnEventoVacio'), JSON.stringify({ eventTrigger: { eventType: '' } }));
+    writeFileSync(join(politicas, 'fnsindescribir'), sinInvocador);
+    writeFileSync(join(politicas, 'fndescribebasura'), sinInvocador);
+    writeFileSync(join(politicas, 'describe-fnDescribeBasura'), 'esto no es json');
+    writeFileSync(join(politicas, 'fn-con-guion'), JSON.stringify({ bindings: [{ role: 'roles/run.invoker', members: ['allUsers'] }] }));
+    const llamadas = archivo('');
+    const corre = (candidatas: string, extra: Record<string, string> = {}) => {
+      const r = spawnSync('bash', [join(RAIZ, 'scripts', 'verificar-invocadores-candidatas.sh')], {
+        encoding: 'utf8',
+        env: entornoDelEmulador(undefined, { PATH: `${bin}:${process.env['PATH'] ?? ''}`, PROYECTO: 'proyecto-ficticio', CANDIDATAS: candidatas, POLITICAS: politicas, LLAMADAS_GCLOUD: llamadas, ...extra }),
+      });
+      return { status: r.status, salida: r.stdout + r.stderr };
+    };
+    const ok = corre('fnPublica,fnProgramada');
+    expect(ok.status, ok.salida).toBe(0);
+    expect(readFileSync(llamadas, 'utf8')).toContain('run services get-iam-policy fnpublica --region us-east1 --project proyecto-ficticio');
+    expect(readFileSync(llamadas, 'utf8')).not.toMatch(/add-iam|set-iam|remove-iam/);
+    // NEGANDO: sin el rol, con el rol vacío, ilegible o inexistente: falla y nombra la Function.
+    for (const f of ['fnSinRol', 'fnVacia', 'fnBasura', 'fnInexistente']) {
+      const r = corre(`fnPublica,${f}`);
+      expect(r.status, f).toBe(1);
+      expect(r.salida).toContain(f);
+      expect(r.salida).toContain('nube-visor.sh');
+    }
+    // De eventos y sin invocador en el servicio: pasa, y lo dice; la lectura del disparador es de solo lectura y solo se hace si falta el invocador.
+    const evento = corre('fnPublica,fnEvento');
+    expect(evento.status, evento.salida).toBe(0);
+    expect(evento.salida).toContain('fnEvento: es de eventos');
+    expect(readFileSync(llamadas, 'utf8')).toContain('functions describe fnEvento --gen2 --region us-east1 --project proyecto-ficticio');
+    expect(readFileSync(llamadas, 'utf8')).not.toContain('functions describe fnPublica');
+    expect(readFileSync(llamadas, 'utf8')).not.toMatch(/add-iam|set-iam|remove-iam|functions (deploy|delete|call)/);
+    // NEGANDO: sin invocador y sin disparador de eventos comprobado (HTTP, eventType vacío, sin poder describirla, respuesta ilegible) sigue fallando.
+    for (const f of ['fnHttpSinInvocador', 'fnEventoVacio', 'fnSinDescribir', 'fnDescribeBasura']) {
+      const r = corre(`fnPublica,fnEvento,${f}`);
+      expect(r.status, f).toBe(1);
+      // Sin poder describirla no se afirma «SIN invocador» (nadie debe concederlo a ciegas); en los demás casos sí.
+      expect(r.salida).toContain(f === 'fnSinDescribir' ? `${f}: su servicio no trae invocador y no se pudo leer su disparador` : `${f}: SIN invocador`);
+      expect(r.salida).toContain('NUNCA se le pone allUsers');
+    }
+    // Un id que empieza por «-» se rechaza antes de llegar a gcloud.
+    const antes = readFileSync(llamadas, 'utf8');
+    expect(corre('--help').status).toBe(1);
+    expect(readFileSync(llamadas, 'utf8')).toBe(antes);
+    // M-C: el servicio de una Function con «_» lleva «-».
+    expect(corre('fn_Con_Guion').status).toBe(0);
+    expect(readFileSync(llamadas, 'utf8')).toContain('run services get-iam-policy fn-con-guion ');
+    expect(corre('').status).toBe(0);
+    expect(corre('fnPublica,../x').status).toBe(1);
+    expect(corre('fnPublica', { PROYECTO: '' }).status).toBe(2);
+    expect(corre('fnPublica', { REGION: 'x;y' }).status).toBe(2);
   });
 
   it('W4: en producción el health check corre también tras un despliegue fallido, y el rollback tras él', () => {

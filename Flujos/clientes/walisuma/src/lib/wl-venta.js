@@ -521,7 +521,8 @@ function wlCuerpoModelo(c) {
   // Las respuestas anteriores del modelo van en el MISMO formato que se le pide (`{"texto": …}`): con su historial en texto plano, el modelo imitaba el texto plano
   // y respondía sin JSON en casi todos los turnos después del primero (20/11/2026: 17 de 20 respuestas salieron «tuvimos un inconveniente»).
   const contents = c.ficha.hist.map((h) => ({ role: h.r === 'u' ? 'user' : 'model', parts: [{ text: h.r === 'u' ? h.t : JSON.stringify({ texto: h.t }) }] }));
-  const texto = wlSinNumerosLargos(cbLinea(String(c.plan.textoCliente || '').replace(/<<<|>>>/g, ' '), 1500));
+  // Los saltos de línea de `textoCliente` solo existen en una RÁFAGA (un mensaje solo llega ya en una línea): cada texto se sanea por separado y se vuelve a unir con `\n` (tope total 1.500).
+  const texto = wlSinNumerosLargos(String(c.plan.textoCliente || '').replace(/<<<|>>>/g, ' ').split('\n').map((linea) => cbLinea(linea, 1500)).filter((linea) => linea !== '').join('\n').slice(0, 1500).trimEnd());
   contents.push({ role: 'user', parts: [{ text: '<<<' + texto + '>>>' }] });
   const temp = Number(c.base && c.base.temperatura);
   return {

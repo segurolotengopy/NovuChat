@@ -124,8 +124,20 @@ export const USO = '  node scripts/plataforma/resetear-telefono-prueba.mjs --pro
   + '[--aplicar --confirmo-produccion <tenant>]\n'
   + `  (con TELEFONOS_PRUEBA, GCP_PROJECT_ID_STAGING y GCP_PROJECT_ID_PROD en el entorno; cualquier tenant con flujo en su ficha, salvo ${TENANTS_RESERVADOS.join(', ')})`;
 
-export function analizarArgumentos(argv, env = process.env, opciones = {}) {
+export function analizarArgumentos(argvOriginal, env = process.env, opciones = {}) {
   const problemas = [];
+  // `--tel-env <NOMBRE>` y `--proyecto-env <NOMBRE>` (26/11/2026; los usa `scripts/resetear-telefono.sh --quien`): el teléfono y el proyecto
+  // salen de variables de entorno del proceso y NO quedan en la línea de comandos. Se traducen a `--tel` y `--proyecto` acá adentro.
+  const argv = [];
+  for (let i = 0; i < argvOriginal.length; i++) {
+    const a = argvOriginal[i];
+    if (a === '--tel-env' || a === '--proyecto-env') {
+      const nombre = String(argvOriginal[i + 1] ?? '');
+      if (!/^[A-Z][A-Z0-9_]{2,40}$/.test(nombre)) { problemas.push(`${a}: nombre de variable inválido`); i += 1; continue; }
+      argv.push(a === '--tel-env' ? '--tel' : '--proyecto', String(env[nombre] ?? '').trim());
+      i += 1;
+    } else argv.push(a);
+  }
   const valores = { __proto__: null };
   const banderas = [];
   for (let i = 0; i < argv.length; i++) {
@@ -159,7 +171,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   if (proyecto !== undefined && !proy.ok) problemas.push(proy.motivo);
 
   if (tenant === undefined) problemas.push('falta --tenant');
-  else if (!ID_TENANT.test(tenant) || TENANTS_RESERVADOS.includes(tenant)) problemas.push('--tenant: id de comercio inválido o reservado (demos y NovuChat no se resetean)');
+  else if (!ID_TENANT.test(tenant) || TENANTS_RESERVADOS.includes(tenant) || /^(novuchat.*|ensayo|demo(-.*)?)$/.test(tenant)) problemas.push('--tenant: id de comercio inválido o reservado (demos y NovuChat no se resetean)');
 
   // Lista cerrada de teléfonos: del entorno (el repositorio es público). Sin ella no se corre; --tel tiene que estar adentro.
   const crudo = env.TELEFONOS_PRUEBA;
