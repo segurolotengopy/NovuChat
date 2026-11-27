@@ -78,6 +78,27 @@ function esTextoDeParametro(t) {
   // 60 caracteres REALES (puntos de código), como el servidor (parametroDePlantillaValido): un emoji cuenta 1.
   return typeof t === 'string' && t.trim().length >= 1 && Array.from(t).length <= 60 && !/[\n\r\t]/.test(t) && !/ {4}/.test(t);
 }
+// BOTONES DE RESPUESTA RAPIDA (campaña saliente, PR-A): `plantilla.botones` = [{indice: 0|1, payload}], de 1 a 2, indice
+// unico y payload de 1 a 128 caracteres [A-Za-z0-9:_-]. Sin `botones` el mensaje es un Retomar (1 a 10 parametros, como siempre);
+// con `botones` es una campaña: 0 a 10 parametros. El componente `body` solo va si hay parametros.
+// Forma del cuerpo, segun la documentacion oficial de la Cloud API de WhatsApp (Meta for Developers): Cloud API > Guides >
+// Send messages > «Send message templates», seccion de plantillas con botones de respuesta rapida (quick-reply):
+//   components: [{ type: 'button', sub_type: 'quick_reply', index: '0', parameters: [{ type: 'payload', payload: '<texto>' }] }]
+// `index` va como TEXTO ('0' o '1'): es la posicion del boton en la plantilla. El rele (WM-30xx) no lleva botones: por ese
+// canal una plantilla con botones se rechaza con NV-PLANTILLA-FORMA, nunca se envia a medias.
+function botonesValidos(b) {
+  if (!Array.isArray(b) || b.length < 1 || b.length > 2) return false;
+  const vistos = new Set();
+  for (const x of b) {
+    if (x === null || typeof x !== 'object' || Array.isArray(x)) return false;
+    if (Object.keys(x).some((k) => k !== 'indice' && k !== 'payload')) return false;
+    if (x.indice !== 0 && x.indice !== 1) return false;
+    if (typeof x.payload !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(x.payload)) return false;
+    if (vistos.has(x.indice)) return false;
+    vistos.add(x.indice);
+  }
+  return true;
+}
 function planPlantilla(p, mensajeId, conversacionId, to, canal, claveRele) {
   const pl = p.plantilla;
   let sinEnvio = '';
@@ -89,16 +110,22 @@ function planPlantilla(p, mensajeId, conversacionId, to, canal, claveRele) {
   else if (pl === null || typeof pl !== 'object' || Array.isArray(pl)) sinEnvio = 'NV-PLANTILLA-FORMA';
   else if (typeof pl.nombre !== 'string' || !/^[a-z0-9_]{1,100}$/.test(pl.nombre)) sinEnvio = 'NV-PLANTILLA-FORMA';
   else if (typeof pl.idioma !== 'string' || !/^[a-z]{2,3}(_[A-Z]{2})?$/.test(pl.idioma)) sinEnvio = 'NV-PLANTILLA-FORMA';
-  else if (!Array.isArray(pl.parametros) || pl.parametros.length < 1 || pl.parametros.length > 10 || !pl.parametros.every(esTextoDeParametro)) sinEnvio = 'NV-PLANTILLA-FORMA';
+  else if (pl.botones !== undefined && (canal !== 'graph' || !botonesValidos(pl.botones))) sinEnvio = 'NV-PLANTILLA-FORMA';
+  else if (!Array.isArray(pl.parametros) || pl.parametros.length < (pl.botones !== undefined ? 0 : 1) || pl.parametros.length > 10 || !pl.parametros.every(esTextoDeParametro)) sinEnvio = 'NV-PLANTILLA-FORMA';
   else if (canal === 'rele' && !/^[A-Za-z0-9_.:-]{16,128}$/.test(claveRele)) sinEnvio = 'NV-CLAVE';
   else if (canal === 'rele' && !releListo) { sinEnvio = 'NV-RELE-CONFIG'; reintentable = true; }
   const base = { mensajeId, conversacionId, canal, claveRele, sinEnvio, reintentable, ruta: sinEnvio ? 'ninguna' : canal, tipo: 'plantilla' };
   if (sinEnvio) return { json: base };
+  const components = [];
+  if (pl.parametros.length > 0) components.push({ type: 'body', parameters: pl.parametros.map((t) => ({ type: 'text', text: t })) });
+  if (pl.botones !== undefined) {
+    for (const b of pl.botones) components.push({ type: 'button', sub_type: 'quick_reply', index: String(b.indice), parameters: [{ type: 'payload', payload: b.payload }] });
+  }
   return { json: {
     ...base,
     cuerpoEnvio: {
       messaging_product: 'whatsapp', to, type: 'template',
-      template: { name: pl.nombre, language: { code: pl.idioma }, components: [{ type: 'body', parameters: pl.parametros.map((t) => ({ type: 'text', text: t })) }] },
+      template: { name: pl.nombre, language: { code: pl.idioma }, components },
     },
   }};
 }

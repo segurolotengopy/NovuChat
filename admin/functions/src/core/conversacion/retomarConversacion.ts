@@ -32,7 +32,8 @@
  *     mismo margen de 60 s con el que `enviarComoPersona` la da por cerrada: en cada instante exactamente una de las dos
  *     vías (escribir o retomar) está disponible. Sin `ultimoEntranteEn` legible, `noExiste`: no se retoma lo que el
  *     cliente nunca inició; un `ultimoEntranteEn` del futuro lejano es un dato malo (`noDisponible`).
- *  5. Contacto bloqueado (`contactoBloqueado`) o `noContactar === true` (`noContactar`).
+ *  5. Contacto bloqueado (`contactoBloqueado`), `noContactar === true` (`noContactar`) o con una baja de la campaña
+ *     saliente, `tenants/{id}/bajas/{conversacionId}` (`conBaja`, M3: la plantilla promete «no le escribiremos más»).
  *  6. Un turno vigente de OTRA persona (`ocupada`).
  *  7. Un solo Retomar hasta que el cliente responda (D-R3): si `ultimaRetomadaEn` es posterior a `ultimoEntranteEn` y
  *     cae dentro de `diasEntreRetomadas` (7), `retomadaPendiente`. Un `ultimaRetomadaEn` ilegible falla cerrado.
@@ -179,9 +180,10 @@ export async function crearRetomada(p: Preparado): Promise<CreadoRetomar> {
   const refUsuario = db.doc(`topesDeEnvio/u_${uid}`);
   const refFicha = db.doc(`tenants/${tenantId}`);
   const refRuta = db.doc(`rutasWhatsApp/${canal.phoneNumberId}`);
+  const refBaja = db.doc(`tenants/${tenantId}/bajas/${conversacionId}`);
 
   return db.runTransaction<CreadoRetomar>(async (tx) => {
-    const [ficha, conv, previo, topes, ruta, tUsuario] = await tx.getAll(refFicha, ref, refMensaje, refTopes, refRuta, refUsuario);
+    const [ficha, conv, previo, topes, ruta, tUsuario, baja] = await tx.getAll(refFicha, ref, refMensaje, refTopes, refRuta, refUsuario, refBaja);
 
     // 2. Las dos banderas, DENTRO de la transacción (si se apagaron tras la lectura previa, no se escribe nada).
     if (!personaPuedeEscribirDeFicha(ficha?.data())) throw errorDeTurno('sinSalida');
@@ -211,6 +213,8 @@ export async function crearRetomada(p: Preparado): Promise<CreadoRetomar> {
     // 5. Bloqueo y «no contactar».
     if (estaBloqueada(conv.get('bloqueada'))) throw errorDeTurno('contactoBloqueado');
     if (conv.get('noContactar') === true) throw errorDeTurno('noContactar');
+    // M3: quien pidió la baja de la campaña no recibe Retomar (la plantilla promete «no le escribiremos más»). Antes de todo escrito.
+    if (baja && baja.exists) throw errorDeTurno('conBaja');
 
     // 6. Un turno vigente de OTRA persona.
     const { veredicto, turno } = turnoEfectivo(conv.get('turno'), { ultimoEntranteEn }, ahoraMs);

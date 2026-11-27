@@ -100,6 +100,31 @@ export const parametroDePlantillaValido = (v: unknown): v is string =>
 /** Cuántos parámetros lleva una plantilla, como máximo (Retomar usa 1). */
 export const PARAMETROS_MAXIMOS = 10;
 
+/**
+ * Los autores que pueden tener un mensaje `tipo: 'plantilla'` en la cadena de salida: la persona (Retomar) y la campaña
+ * saliente del chat (PR-A, 26/11/2026). Un texto o un adjunto siguen siendo solo de `persona`.
+ */
+export const AUTORES_DE_PLANTILLA = ['persona', 'campana'] as const;
+export type AutorDePlantilla = (typeof AUTORES_DE_PLANTILLA)[number];
+export const esAutorDePlantilla = (v: unknown): v is AutorDePlantilla =>
+  typeof v === 'string' && (AUTORES_DE_PLANTILLA as readonly string[]).includes(v);
+/** El payload de una respuesta rápida: 1 a 128 caracteres, sin espacios (Meta devuelve este texto al tocarla). */
+export const PAYLOAD_DE_BOTON = /^[A-Za-z0-9:_-]{1,128}$/;
+/** Cuántos botones de respuesta rápida lleva una plantilla de campaña, como máximo. */
+export const BOTONES_MAXIMOS = 2;
+export interface BotonDePlantilla { indice: 0 | 1; payload: string }
+/**
+ * ¿Una lista de botones bien formada? De 1 a 2, `indice` 0 o 1 sin repetir, `payload` que cumple `PAYLOAD_DE_BOTON`.
+ * El que valida un mensaje de campaña (reclamo) y el que arma el flujo repiten esta misma regla.
+ */
+export const botonesDePlantillaValidos = (v: unknown): v is BotonDePlantilla[] =>
+  Array.isArray(v) && v.length >= 1 && v.length <= BOTONES_MAXIMOS
+  && v.every((b) => typeof b === 'object' && b !== null && !Array.isArray(b)
+    && Object.keys(b).every((k) => k === 'indice' || k === 'payload')
+    && ((b as { indice?: unknown }).indice === 0 || (b as { indice?: unknown }).indice === 1)
+    && typeof (b as { payload?: unknown }).payload === 'string' && PAYLOAD_DE_BOTON.test((b as { payload: string }).payload))
+  && new Set(v.map((b) => (b as BotonDePlantilla).indice)).size === v.length;
+
 /** El id que Meta devuelve al aceptar un mensaje. */
 export const ID_META = /^[A-Za-z0-9_.=:+/-]{1,120}$/;
 
@@ -237,6 +262,15 @@ export function sumarMensajePersona(tx: Transaction, db: Firestore, tenantId: st
 export function sumarPlantillaPersona(tx: Transaction, db: Firestore, tenantId: string, ahoraMs: number, n: 1 | -1): void {
   const periodo = new Date(ahoraMs).toISOString().slice(0, 7);
   tx.set(db.doc(`tenants/${tenantId}/metricas/${periodo}`), { plantillasPersona: FieldValue.increment(n) }, { merge: true });
+}
+
+/**
+ * El conteo de las plantillas de CAMPAÑA, en `plantillasCampana` del mes: campo distinto de `plantillasPersona` (Retomar),
+ * porque Meta cobra una de utilidad de campaña y una de Retomar por separado y no deben mezclarse. Mismo criterio de conteo.
+ */
+export function sumarPlantillaCampana(tx: Transaction, db: Firestore, tenantId: string, ahoraMs: number, n: 1 | -1): void {
+  const periodo = new Date(ahoraMs).toISOString().slice(0, 7);
+  tx.set(db.doc(`tenants/${tenantId}/metricas/${periodo}`), { plantillasCampana: FieldValue.increment(n) }, { merge: true });
 }
 
 // ---------------------------------------------------------------------------
