@@ -13,7 +13,7 @@
  *
  * Puerto del emulador: 8231 por convención.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -148,6 +148,65 @@ describe('un «No» NUNCA se pierde: sin id de campaña válido igual crea la ba
   });
 });
 
+describe('I2: la respuesta se normaliza (trim y minúsculas) antes de validar', () => {
+  it.each(['No', ' no ', 'NO', '\tNo\n'])('«%s» vale como «no»: crea la baja', async (v) => {
+    const r = await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: v });
+    expect(r.codigo).toBe(200);
+    expect(await baja(A)).toMatchObject({ campanaId: CAMPANA, origen: 'boton_campana' });
+    expect((await conversacion(A))['campanaRespuesta']).toMatchObject({ respuesta: 'no' });
+  });
+  it.each(['Sí', 'si', ' SI ', 'sí'])('«%s» vale como «sí»: anota y no crea baja', async (v) => {
+    await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: v });
+    expect(await baja(A)).toBeNull();
+    expect((await conversacion(A))['campanaRespuesta']).toMatchObject({ respuesta: 'si' });
+  });
+  it('la función pura: normaliza y rechaza lo demás', () => {
+    expect(BAJAS.normalizarRespuestaDeCampana(' No ')).toBe('no');
+    expect(BAJAS.normalizarRespuestaDeCampana('nop')).toBeNull();
+    expect(BAJAS.normalizarRespuestaDeCampana(null)).toBeNull();
+    expect(BAJAS.respuestaDeCampanaValida('SÍ')).toBe(true);
+    expect(BAJAS.respuestaDeCampanaValida('nop')).toBe(false);
+  });
+});
+
+describe('I1: con el comercio NO activo, un «No» igual crea la baja (y la respuesta sigue siendo el 409)', () => {
+  const mensajes = async () => (await db.collection(`tenants/${A.id}/conversaciones/wa_${TEL}/mensajes`).get()).size;
+  afterEach(async () => { await db.doc(`tenants/${A.id}`).update({ estado: 'activo' }); });
+
+  it.each(['suspendido', 'baja'])('estado «%s»: «no» crea bajas/wa_tel, responde 409, sin mensaje ni conteo', async (estado) => {
+    await db.doc(`tenants/${A.id}`).update({ estado });
+    const r = await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' });
+    expect(r.codigo).toBe(409);
+    expect(await baja(A)).toEqual({ canal: 'whatsapp', origen: 'boton_campana', campanaId: CAMPANA, desde: expect.anything() });
+    expect(await mensajes()).toBe(0);
+    expect((await db.collection(`tenants/${A.id}/metricas`).get()).size).toBe(0);
+    const conv = await conversacion(A);
+    expect(Object.keys(conv).sort()).toEqual(['campanaRespuesta']);
+  });
+  it('«No» en mayúscula, sin id de campaña, también; y repetido no pisa `desde`', async () => {
+    await db.doc(`tenants/${A.id}`).update({ estado: 'suspendido' });
+    expect((await responder(A, { respuestaCampana: ' NO ' })).codigo).toBe(409);
+    const primera = (await baja(A))!;
+    expect(primera['campanaId']).toBeNull();
+    await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' });
+    expect(await baja(A)).toEqual(primera);
+  });
+  it('NIEGA: «sí» con el comercio suspendido no escribe nada', async () => {
+    await db.doc(`tenants/${A.id}`).update({ estado: 'suspendido' });
+    const r = await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'si' });
+    expect(r.codigo).toBe(409);
+    expect(await cuantasBajas(A)).toBe(0);
+    expect((await db.doc(`tenants/${A.id}/conversaciones/wa_${TEL}`).get()).exists).toBe(false);
+    expect(await mensajes()).toBe(0);
+  });
+  it('NIEGA: un «no» SALIENTE o sin el evento no crea baja con el comercio suspendido', async () => {
+    await db.doc(`tenants/${A.id}`).update({ estado: 'suspendido' });
+    await responder(A, { campanaEnvioId: CAMPANA, respuestaCampana: 'no' }, TEL, 'saliente');
+    await llamar(A, { telefono: TEL, direccion: 'entrante', tipo: 'text', texto: 'no', respuestaCampana: 'no' });
+    expect(await cuantasBajas(A)).toBe(0);
+  });
+});
+
 describe('NIEGA: lo mal formado que NO es un «No» no escribe ni baja ni respuesta (el mensaje se cuenta como uno cualquiera)', () => {
   it.each(IDS_MALOS)('un «sí» con %s no escribe nada', async (_n, id) => {
     const r = await responder(A, { ...id, respuestaCampana: 'si' });
@@ -158,7 +217,9 @@ describe('NIEGA: lo mal formado que NO es un «No» no escribe ni baja ni respue
 
   it.each([
     ['respuesta fuera de la lista', { campanaEnvioId: CAMPANA, respuestaCampana: 'quizas' }],
-    ['respuesta en mayúsculas', { campanaEnvioId: CAMPANA, respuestaCampana: 'NO' }],
+    ['«nop» no es un «no»', { campanaEnvioId: CAMPANA, respuestaCampana: 'nop' }],
+    ['«no gracias» escrito no es el botón', { campanaEnvioId: CAMPANA, respuestaCampana: 'no gracias' }],
+    ['solo espacios', { campanaEnvioId: CAMPANA, respuestaCampana: '   ' }],
     ['respuesta ausente', { campanaEnvioId: CAMPANA }],
     ['respuesta no texto', { campanaEnvioId: CAMPANA, respuestaCampana: true }],
   ])('%s', async (_n, extra) => {
