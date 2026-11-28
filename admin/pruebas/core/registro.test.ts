@@ -1235,22 +1235,26 @@ describe('documentos de config del core que solo escribe el servidor (12/11/2026
     campanaSaliente: 'admin/pruebas/reglas.test.ts',
   };
 
-  it('declara respuestaLibre con sus seis campos y campanaSaliente (PR-C) con sus siete cifras', () => {
+  it('declara respuestaLibre con sus seis campos y campanaSaliente (PR-C) con sus siete cifras y la lista `telefonosDePrueba`', () => {
     expect(nombres).toEqual(['respuestaLibre', 'campanaSaliente']);
     expect([...DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR.respuestaLibre.camposDelServidor]).toEqual(
       ['activo', 'acuse', 'textoSeguimiento', 'textoRechazo', 'textoHumor', 'textoQueja'],
     );
     expect([...DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR.campanaSaliente.camposDelServidor]).toEqual(
-      ['porTanda', 'porDia', 'porReclamo', 'ventanaDias', 'pausaErroresPct', 'pausaMinimoEnviados', 'pausaNoPct'],
+      ['porTanda', 'porDia', 'porReclamo', 'ventanaDias', 'pausaErroresPct', 'pausaMinimoEnviados', 'pausaNoPct', 'telefonosDePrueba'],
     );
     expect(Object.keys(PRUEBA_DE)).toEqual(nombres);
   });
   it('campanaSaliente: los campos que declara son exactamente los que lee `leerConfigCampana` (el registro y el servidor no se desfasan)', async () => {
-    const { leerConfigCampana } = await import('../../functions/src/core/conversacion/salidaCampana.ts');
+    const { leerConfigCampana, leerTelefonosDePrueba } = await import('../../functions/src/core/conversacion/salidaCampana.ts');
     const declarados = [...DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR.campanaSaliente.camposDelServidor];
-    const cifras = Object.fromEntries(declarados.map((k) => [k, 5]));
+    // La lista de prueba la lee `leerTelefonosDePrueba` (no forma parte de las cifras de `leerConfigCampana`): se declara y se comprueba aparte.
+    expect(declarados).toContain('telefonosDePrueba');
+    expect(leerTelefonosDePrueba({ telefonosDePrueba: ['59170000001'] })).toEqual(['59170000001']);
+    const cifrasDeclaradas = declarados.filter((k) => k !== 'telefonosDePrueba');
+    const cifras = Object.fromEntries(cifrasDeclaradas.map((k) => [k, 5]));
     expect(leerConfigCampana(cifras)).not.toBeNull();
-    for (const k of declarados) expect(leerConfigCampana({ ...cifras, [k]: undefined }), `sin ${k}`).toBeNull();
+    for (const k of cifrasDeclaradas) expect(leerConfigCampana({ ...cifras, [k]: undefined }), `sin ${k}`).toBeNull();
   });
   it('campanasSalientes y su subcolección destinatarios están entre las colecciones cerradas del core (match explícito `if false` y prueba negativa; ver arriba)', () => {
     expect(COLECCIONES_CERRADAS_DEL_CORE.tenant).toEqual(expect.arrayContaining(['campanasSalientes', 'campanasSalientes/destinatarios']));

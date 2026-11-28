@@ -538,9 +538,10 @@ export const DOCUMENTOS_DE_CONFIG_DEL_CORE_SOLO_SERVIDOR = {
    * `config/campanaSaliente` (PR-C, 27/11/2026): los topes de la campaña saliente del chat (por tanda, por día, por reclamo,
    * ventana, umbrales de pausa). Dependen de la calidad del número, no de lo que se vende: por eso viven en Core y no en el plan.
    * Lo escribe NovuChat con `scripts/plataforma/campana-saliente-config.mjs`; sin el documento, o ilegible, la campaña no sale.
+   * `telefonosDePrueba` (lista opcional, hasta 5) también la lee el servidor (`leerTelefonosDePrueba`) para la excepción de la prueba.
    */
   campanaSaliente: {
-    camposDelServidor: ['porTanda', 'porDia', 'porReclamo', 'ventanaDias', 'pausaErroresPct', 'pausaMinimoEnviados', 'pausaNoPct'],
+    camposDelServidor: ['porTanda', 'porDia', 'porReclamo', 'ventanaDias', 'pausaErroresPct', 'pausaMinimoEnviados', 'pausaNoPct', 'telefonosDePrueba'],
   },
 } as const;
 
