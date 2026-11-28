@@ -52,6 +52,14 @@ describe('pqrLineas: solo id, cantidad y detalle', () => {
     const muchas = Array.from({ length: 45 }, (_, i) => ({ id: `p${i}`, cantidad: 1 }));
     expect(M.pqrLineas(muchas)).toHaveLength(30);
   });
+  it('NEGADO (27/11/2026): una cantidad no entera NO se trunca: 1.5, 2.5, 3.9 e Infinity descartan la línea (nunca pasan a 1, 2 o 3); 2 y el texto «2» siguen valiendo', () => {
+    for (const cantidad of [1.5, 2.5, 3.9, 1.0000001, Infinity, -Infinity]) {
+      expect(M.pqrLineas([{ id: 'a', cantidad }]), String(cantidad)).toEqual([]);
+      expect(M.pqrLineas([{ id: 'a', cantidad: 2 }, { id: 'b', cantidad }]), 'junto a una válida: ' + String(cantidad)).toEqual([{ id: 'a', cantidad: 2, detalle: '' }]);
+    }
+    expect(M.pqrLineas([{ id: 'a', cantidad: 2 }])).toEqual([{ id: 'a', cantidad: 2, detalle: '' }]);
+    expect(M.pqrLineas([{ id: 'a', cantidad: '2' }])).toEqual([{ id: 'a', cantidad: 2, detalle: '' }]);
+  });
   it('negado: ids con barra, con «..», vacíos, de otro tipo o demasiado largos se descartan; cantidades inválidas también', () => {
     const malas = ['a/b', '../x', 'a..b', '', '-x', 'a b', 'x'.repeat(81), 5, null, { x: 1 }];
     for (const id of malas) expect(M.pqrLineas([{ id, cantidad: 1 }]), String(id)).toEqual([]);

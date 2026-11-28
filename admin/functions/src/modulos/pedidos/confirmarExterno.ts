@@ -10,6 +10,8 @@
  * CONTRATO NovuTienda v1 (fijo):
  *   POST {baseUrl}/api/novuchat/v1/pedidos/confirmar
  *   cuerpo EXACTO  {"pedidoId":…, "items":[{"productoId":…, "cantidad":…}], "confirmadoEn":…}
+ *   más `"nota"` OPCIONAL a nivel pedido (texto plano, 1 a 500 caracteres, sin control), SOLO si el comercio tiene
+ *   `config/pedidos.notaANovuTienda === true` (apagada por omisión: NovuTienda rechaza claves desconocidas con 400).
  *   X-Marca-Tiempo (ms) y X-Firma = HMAC-SHA256 hex de "{marca}.{cuerpo exacto enviado}" (ventana de 5 min)
  *   SIN Bearer: NovuTienda no lo usa (si llega, lo ignora). Esta función lo envía solo si el mapa del secreto lo
  *   trae (`bearer` opcional). Idempotente por `pedidoId`. `confirmadoEn` es ISO 8601 UTC con Z.
@@ -108,7 +110,34 @@ const milisegundosDe = (v: unknown): number | null =>
   typeof v === 'object' && v !== null && typeof (v as { toMillis?: unknown }).toMillis === 'function' ? (v as { toMillis(): number }).toMillis() : null;
 
 export interface ItemParaNovuTienda { productoId: string; cantidad: number }
-export interface CuerpoDeConfirmacion { pedidoId: string; items: ItemParaNovuTienda[]; confirmadoEn: string }
+export interface CuerpoDeConfirmacion { pedidoId: string; items: ItemParaNovuTienda[]; confirmadoEn: string; nota?: string }
+
+/** El contrato admite una `nota` de hasta 500 CARACTERES (puntos de código, no bytes). */
+export const MAX_NOTA_NOVUTIENDA = 500;
+
+/**
+ * La nota lista para enviar, o `null` (entonces NO se manda; la confirmación sigue). Contrato confirmado por NovuTienda
+ * (27/11/2026): de 1 a 500 PUNTOS DE CÓDIGO (`Array.from(nota).length`; un emoji cuenta 1), y rechaza con 400 (no recorta)
+ * cualquier control U+0000–001F, U+007F–009F, U+2028 y U+2029 (incluidos \n y \t). Aquí, defensa en profundidad: no sale
+ * si hay `\p{Cc}`, U+2028, U+2029, un sustituto suelto (`\p{Cs}`) o un `\p{Cf}` que NO sea el ZWJ (U+200D, que une los
+ * emojis compuestos; las marcas bidireccionales no salen), ni si es solo espacios o pasa de 500 puntos. No se modifica ni
+ * se recorta: sale tal cual. `notaLimpia` ya deja la nota así al guardarla.
+ */
+export function notaParaNovuTienda(v: unknown): string | null {
+  // Una nota «invisible» (vacía, solo espacios o solo ZWJ) no sale: el ZWJ no cuenta como contenido.
+  if (typeof v !== 'string' || v.replace(/\u200d/g, '').trim() === '') return null;
+  if (/[\p{Cc}\u2028\u2029\p{Cs}]|(?!\u200d)\p{Cf}/u.test(v)) return null; // `\p{Cs}` con `u` solo casa los sustitutos SUELTOS
+  const largo = Array.from(v).length;
+  return largo >= 1 && largo <= MAX_NOTA_NOVUTIENDA ? v : null;
+}
+
+/**
+ * ¿Este comercio envía la nota a NovuTienda? Dato `notaANovuTienda` de `config/pedidos`, APAGADO por omisión: solo el
+ * booleano `true` estricto lo enciende (`'true'`, `1`, ausente o cualquier otra forma = apagado). Nace apagado porque
+ * NovuTienda rechaza con 400 una clave desconocida: no se enciende hasta que avise que ya acepta `nota`.
+ */
+export const enviarNotaDe = (config: unknown): boolean =>
+  typeof config === 'object' && config !== null && (config as Record<string, unknown>)['notaANovuTienda'] === true;
 
 /**
  * El cuerpo EXACTO del contrato, armado desde el pedido guardado. Devuelve `null` si algo no cumple el
@@ -116,7 +145,7 @@ export interface CuerpoDeConfirmacion { pedidoId: string; items: ItemParaNovuTie
  * salen por línea: se copian a mano, jamás se esparce el ítem guardado.
  * `confirmadoEn` es ISO 8601 en UTC con Z (`toISOString()`), como fija el contrato de NovuTienda.
  */
-export function armarCuerpo(pedidoId: string, items: unknown, ahoraMs: number): CuerpoDeConfirmacion | null {
+export function armarCuerpo(pedidoId: string, items: unknown, ahoraMs: number, nota?: string | null): CuerpoDeConfirmacion | null {
   if (!idDePedidoParaNovuTienda(pedidoId)) return null;
   if (!Array.isArray(items) || items.length === 0) return null;
   const vistos = new Set<string>();
@@ -130,7 +159,9 @@ export function armarCuerpo(pedidoId: string, items: unknown, ahoraMs: number): 
     vistos.add(id);
     salida.push({ productoId: id, cantidad: cant });
   }
-  return { pedidoId, items: salida, confirmadoEn: new Date(ahoraMs).toISOString() };
+  // `nota` es opcional: sin nota válida la clave NO existe (ni vacía). Se vuelve a validar aquí por si quien llama no lo hizo.
+  const notaOk = notaParaNovuTienda(nota);
+  return { pedidoId, items: salida, confirmadoEn: new Date(ahoraMs).toISOString(), ...(notaOk !== null ? { nota: notaOk } : {}) };
 }
 
 /** `HMAC-SHA256(firmaSecreto, "{marca}." + cuerpo exacto)` en hexa. */
@@ -372,7 +403,9 @@ export async function atenderConfirmacion(p: CallableRequest, d: DependenciasDeC
       } else if (estado !== 'recibido') {
         throw rechazo('failed-precondition', MENSAJES.noElegible, 'estado_no_confirmable');
       }
-      const cuerpo = armarCuerpo(pedidoId, pedido['items'], ahora);
+      // La nota solo sale con la bandera del comercio en `true` y si pasa la validación; si no, el cuerpo es el de siempre.
+      const nota = enviarNotaDe(config.exists ? config.data() : undefined) ? notaParaNovuTienda(pedido['notaCliente']) : null;
+      const cuerpo = armarCuerpo(pedidoId, pedido['items'], ahora, nota);
       if (!cuerpo) throw rechazo('failed-precondition', MENSAJES.noElegible, 'pedido_fuera_de_contrato');
       const destino = destinoDeEsteComercio();
       // El instante que se ENVÍA es el que se guarda: se toma del propio cuerpo.

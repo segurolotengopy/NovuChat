@@ -27,7 +27,7 @@
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { enmascarar, registrar } from '../../core/turno/bitacora.js';
 import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
-import { idDeItemValido, lineaLimpia, sePuedeComprar, ubicacionDeEntrega } from './comprable.js';
+import { idDeItemValido, lineaLimpia, notaLimpia, sePuedeComprar, ubicacionDeEntrega } from './comprable.js';
 
 const db = () => getFirestore();
 
@@ -67,6 +67,8 @@ export interface PedidoWa {
   facturacion?: { nombre: string; documento: string };
   /** Solo en un pedido de catálogo externo (B5a): de dónde salieron las líneas. Ausente en el resto. */
   catalogo?: 'externo';
+  /** La nota que escribió el cliente, a nivel de pedido (hasta 500 caracteres, texto plano). Ausente si no hubo; nunca vacía. */
+  notaCliente?: string;
   estado: 'recibido';
 }
 
@@ -102,6 +104,9 @@ export interface ResultadoArmado {
   descartados: string[];
   motivo?: MotivoSinPedido;
 }
+
+/** La nota que el cliente escribió, a nivel de pedido (27/11/2026): texto plano, hasta este tope en caracteres. */
+export const MAX_NOTA_WA = 500;
 
 const centavos = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v * 100) : null;
@@ -150,6 +155,7 @@ export function armarPedidoWa(
   montoQr: unknown,
   externo?: ConfigCatalogoExterno | null,
   sinCobro = false,
+  nota?: unknown,
 ): ResultadoArmado {
   const crudas = Array.isArray(lineas) ? lineas.slice(0, MAX_LINEAS_WA) : [];
   const items: Array<Record<string, unknown>> = [];
@@ -234,6 +240,7 @@ export function armarPedidoWa(
   const factura = facturacionLimpia(facturacion);
   const montoQrCent = centavos(montoQr);
   const digitos = typeof telefono === 'string' ? telefono.replace(/[^0-9]/g, '') : '';
+  const notaCliente = notaLimpia(nota, MAX_NOTA_WA);
 
   return {
     pedido: {
@@ -255,6 +262,7 @@ export function armarPedidoWa(
       // Solo en `pedido_sin_cobro` (Argentina) no hay monto con qué comparar y no es una diferencia.
       totalDistinto: esExterno && sinCobro ? montoQrCent !== null && montoQrCent !== totalCent : montoQrCent === null || montoQrCent !== totalCent,
       ...(esExterno ? { catalogo: 'externo' as const } : {}),
+      ...(notaCliente ? { notaCliente } : {}),
       ...(factura ? { facturacion: factura } : {}),
       estado: 'recibido',
     },
@@ -284,6 +292,8 @@ export interface EntradaPedidoWa {
   referenciaAnterior?: unknown;
   /** El pedido `cat_…` del checkout web que este pedido de WhatsApp reemplaza (el cliente lo modificó en el chat). */
   reemplaza?: unknown;
+  /** La nota del cliente a nivel de pedido: dato no confiable, `armarPedidoWa` la sanea y la recorta. */
+  nota?: unknown;
 }
 
 const CAT_VALIDO = /^cat_[A-Za-z0-9_-]{1,56}$/;
@@ -376,7 +386,7 @@ export async function crearPedidoWa(e: EntradaPedidoWa): Promise<ResultadoEscrit
       leidos.forEach((d, i) => { docs[ids[i] as string] = d.exists ? (d.data() as Record<string, unknown>) : undefined; });
     }
     const { pedido, motivo } = armarPedidoWa(
-      e.lineas, e.entrega, e.facturacion, docs, ref, e.telefono, e.montoQr, externo, e.sinCobro === true,
+      e.lineas, e.entrega, e.facturacion, docs, ref, e.telefono, e.montoQr, externo, e.sinCobro === true, e.nota,
     );
     if (!pedido) return { resultado: 'sin_pedido', motivo: motivo as MotivoSinPedido };
     try {
