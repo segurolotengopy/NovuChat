@@ -27,7 +27,7 @@
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { enmascarar, registrar } from '../../core/turno/bitacora.js';
 import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
-import { idDeItemValido, lineaLimpia, sePuedeComprar, ubicacionDeEntrega } from './comprable.js';
+import { idDeItemValido, lineaLimpia, notaLimpia, sePuedeComprar, ubicacionDeEntrega } from './comprable.js';
 
 const db = () => getFirestore();
 
@@ -240,7 +240,7 @@ export function armarPedidoWa(
   const factura = facturacionLimpia(facturacion);
   const montoQrCent = centavos(montoQr);
   const digitos = typeof telefono === 'string' ? telefono.replace(/[^0-9]/g, '') : '';
-  const notaCliente = lineaLimpia(nota, MAX_NOTA_WA);
+  const notaCliente = notaLimpia(nota, MAX_NOTA_WA);
 
   return {
     pedido: {

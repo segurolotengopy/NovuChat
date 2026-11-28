@@ -76,11 +76,11 @@ describe('N1. `armarPedidoWa` y la nota del cliente (campo propio)', () => {
     expect(Array.from(emojis)).toHaveLength(500);
     expect(emojis).not.toMatch(/\p{Cs}/u); // jamás un par sustituto cortado
   });
-  it('queda saneada: sin enlaces, sin marcas, sin caracteres de control', () => {
+  it('queda saneada: sin enlaces ni controles; CONSERVA «&», «<» y «>» (nota entera)', () => {
     const n = armarExt('mire https://malo.example/x www.malo.example <b>hola</b>\u0007 &fin')?.notaCliente ?? '';
-    expect(n).not.toMatch(/http|www\.|[<>&]/);
+    expect(n).not.toMatch(/http|www\./);
     expect(n).not.toMatch(/\p{Cc}/u);
-    expect(n).toContain('hola');
+    expect(n).toBe('mire <b>hola</b> &fin');
     expect(armarExt('https://solo.enlace/aqui')).not.toHaveProperty('notaCliente'); // solo enlace = nada
   });
   it('el detalle de las líneas NO cambia: sigue recortado a 120 y no se mezcla con la nota', () => {
@@ -134,11 +134,14 @@ describe('N2. el cuerpo y la validación de la nota', () => {
     expect(M.notaParaNovuTienda('a'.repeat(499) + '😀')).toBe('a'.repeat(499) + '😀');
     expect(M.notaParaNovuTienda('😀'.repeat(501))).toBeNull();
   });
-  it('validación: control (\\p{Cc}), par sustituto cortado, solo espacios, vacío y tipos ajenos = null', () => {
-    for (const v of ['a\u0000b', 'a\u001fb', 'a\tb', 'a\nb', 'a\u007fb', 'a\u0085b', 'a\u2028b', 'a\u2029b', 'a\u009fb', '\ud83d', '\ude00', 'ab\ud83d', '😀'.slice(0, 1), '', ' ', '   ', undefined, null, 7, {}, ['a']]) {
+  it('validación: control (\\p{Cc}), U+2028/2029, marcas bidi, par sustituto cortado, solo espacios, vacío y tipos ajenos = null', () => {
+    for (const v of ['a\u0000b', 'a\u001fb', 'a\tb', 'a\nb', 'a\u007fb', 'a\u0085b', 'a\u2028b', 'a\u2029b', 'a\u009fb', 'a\u202eb', 'a\u200eb', 'a\u2066b', 'a\u2060b', '\ud83d', '\ude00', 'ab\ud83d', '😀'.slice(0, 1), '', ' ', '   ', undefined, null, 7, {}, ['a']]) {
       expect(M.notaParaNovuTienda(v), JSON.stringify(v)).toBeNull();
     }
     expect(M.notaParaNovuTienda('con tildes, ñ y 😀 va')).toBe('con tildes, ñ y 😀 va');
+    // El ZWJ (emoji compuesto), «&», «<» y «>» sí salen: NovuTienda solo rechaza controles, U+2028 y U+2029.
+    const familia = '👨\u200d👩\u200d👧';
+    expect(M.notaParaNovuTienda(`Juan & Maria <3 ${familia}`)).toBe(`Juan & Maria <3 ${familia}`);
   });
   it('la bandera: solo `true` estricto enciende', () => {
     expect(M.enviarNotaDe({ notaANovuTienda: true })).toBe(true);
@@ -236,6 +239,22 @@ describe('N3. la callable: la nota solo sale con la bandera encendida', () => {
     expect(nota).toBe('😀'.repeat(400));
     expect(firmaOk(h.llamadas[0]!)).toBe(true);
     expect((await db.doc(`tenants/${T}/pedidos/wa_BM1`).get()).get('notaCliente')).toBe('😀'.repeat(400)); // lo guardado no se recorta
+  });
+  it('«Juan & Maria <3», «<b>hola</b>» y un emoji con ZWJ salen al cuerpo tal cual guardados; los bidi no salen', async () => {
+    const familia = '👨\u200d👩\u200d👧';
+    for (const nota of ['Juan & Maria <3', '<b>hola</b>', '<script>alert(1)</script>', `hola ${familia}`]) {
+      await sembrar({ notaANovuTienda: true }, { notaCliente: nota });
+      h.llamadas = [];
+      await llamar();
+      expect(JSON.parse(h.llamadas[0]!.cuerpo).nota, nota).toBe(nota);
+      expect(firmaOk(h.llamadas[0]!)).toBe(true);
+    }
+    for (const nota of ['a\u202eb', 'a\u200fb', 'a\u2066b']) {
+      await sembrar({ notaANovuTienda: true }, { notaCliente: nota });
+      h.llamadas = [];
+      expect(await llamar()).toMatchObject({ estado: 'confirmado' });
+      expect(h.llamadas[0]!.cuerpo).toBe(DE_HOY); // un bidi guardado a mano no sale: sin clave, la confirmación sigue
+    }
   });
   it('nota de 500 caracteres: sale; la clave jamás lleva nada más que la nota', async () => {
     await sembrar({ notaANovuTienda: true }, { notaCliente: 'z'.repeat(500) });

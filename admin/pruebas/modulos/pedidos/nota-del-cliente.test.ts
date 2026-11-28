@@ -31,10 +31,13 @@ describe('notaDelCliente (función pura)', () => {
     expect(notaDelCliente('línea 1\nlínea 2')).toBe('línea 1\nlínea 2');
   });
 
-  it('500 caracteres entran enteros; más de 500 se recortan a 500', () => {
-    expect(notaDelCliente('a'.repeat(500))).toHaveLength(500);
-    expect(notaDelCliente('a'.repeat(501))).toHaveLength(MAX_NOTA_CLIENTE);
-    expect(notaDelCliente('b'.repeat(9000))).toHaveLength(500);
+  it('500 puntos de código entran enteros; más de 500 se recortan a 500 puntos', () => {
+    expect(Array.from(notaDelCliente('a'.repeat(500)))).toHaveLength(500);
+    expect(Array.from(notaDelCliente('a'.repeat(501)))).toHaveLength(MAX_NOTA_CLIENTE);
+    expect(Array.from(notaDelCliente('b'.repeat(9000)))).toHaveLength(500);
+    // Los emojis cuentan por punto de código, no por unidad UTF-16: 500 emojis (1000 unidades) entran enteros.
+    expect(notaDelCliente('😀'.repeat(500))).toBe('😀'.repeat(500));
+    expect(notaDelCliente('😀'.repeat(501))).toBe('😀'.repeat(500));
   });
 
   it('recorta espacios y saltos al inicio y al final', () => {
@@ -42,12 +45,18 @@ describe('notaDelCliente (función pura)', () => {
   });
 
   it('el corte a 500 no parte un par sustituto (emoji)', () => {
-    const texto = 'a'.repeat(499) + '😀' + 'b';
-    const r = notaDelCliente(texto);
-    expect(r).toBe('a'.repeat(499));
+    const r = notaDelCliente('a'.repeat(499) + '😀' + 'b');
+    expect(r).toBe('a'.repeat(499) + '😀');
     expect(/[\uD800-\uDBFF]$/.test(r)).toBe(false);
-    // Un emoji que sí cabe entero se conserva.
-    expect(notaDelCliente('a'.repeat(498) + '😀')).toHaveLength(500);
+  });
+
+  it('conserva «&», «<», «>» y el ZWJ (emoji compuesto) sin escapar ni convertir', () => {
+    expect(notaDelCliente('Juan & Maria <3')).toBe('Juan & Maria <3');
+    expect(notaDelCliente('a > b && c < d')).toBe('a > b && c < d');
+    const familia = '👨\u200d👩\u200d👧';
+    expect(notaDelCliente(`hola ${familia}`)).toBe(`hola ${familia}`);
+    expect(notaDelCliente(`${familia}\ufe0f`)).toBe(`${familia}\ufe0f`); // selector de variación
+    expect(notaDelCliente('&lt;b&gt;')).toBe('&lt;b&gt;'); // no des-escapa ni re-escapa
   });
 
   it('quita controles y marcas bidi', () => {
@@ -57,6 +66,7 @@ describe('notaDelCliente (función pura)', () => {
 
   it('HTML y enlaces quedan como texto inofensivo, sin elementos', () => {
     expect(notaDelCliente('<b>x</b>')).toBe('<b>x</b>');
+    expect(notaDelCliente('<b>hola</b>')).toBe('<b>hola</b>');
     expect(notaDelCliente('<script>alert(1)</script>')).toBe('<script>alert(1)</script>');
     expect(notaDelCliente('https://malo.example/x')).toBe('https://malo.example/x');
   });
@@ -92,6 +102,12 @@ describe('Pedidos.tsx — bloque de la nota del cliente', () => {
   it('el campo viejo `nota` no alimenta este bloque', () => {
     expect(bloque()).not.toMatch(/p\.nota\b/);
     expect(PEDIDOS).not.toMatch(/notaDelCliente\(p\.nota\)/);
+  });
+
+  it('la nota se pinta como hijo de React (texto), nunca como elemento ni HTML', () => {
+    expect(bloque()).toContain('<p className="pedido-nota-cliente-texto">{notaCliente}</p>');
+    expect(PEDIDOS).not.toMatch(/dangerouslySetInnerHTML|innerHTML|createElement\(|DOMParser|marked|markdown/i);
+    expect(PEDIDOS).not.toMatch(/notaCliente\s*[=.][^;\n]*\.replace\(/); // no se escapa a mano
   });
 
   it('texto plano: sin HTML crudo, sin enlaces ni markdown en el bloque', () => {
