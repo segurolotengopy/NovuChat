@@ -60,7 +60,7 @@ describe("Q'Taco no lleva la pieza de ráfagas: la bandera queda lista y la cond
 describe('Chat de NovuChat: «Registrar evento» y la espera de «Esperar ráfaga»', () => {
   const flujo = leerFlujo('clientes/novuchat/chat-novuchat.novuchat.json');
   const codigo = codigoDe(flujo, 'Registrar evento');
-  const FROM = '59170000011';
+  const FROM = '70000011'; // ficticio, 8 dígitos: pasa la clave válida del nodo sin parecerse a un teléfono real
   const entrada = { tipo: 'text', from: FROM, mensajeId: 'wamid.RAFAGA1', ahoraMs: Date.UTC(2026, 10, 27, 15, 0, 0), evento: { k: 'otro', t: 'hola', c: '', rubro: '', boton: '' } };
   const registrar = (config: J): J => {
     const salida = correr(codigo, [{}], {
