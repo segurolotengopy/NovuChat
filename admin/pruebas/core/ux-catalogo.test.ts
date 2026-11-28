@@ -16,7 +16,7 @@ import { atiendeCliente, idDeFlujo } from './migracion/comprobaciones';
 import { idsDeOpciones, problemasDeLimites, estadoUxNuevo, violacionesDeTurno, toqueDeEntrada, vigilarUx } from './ux/vigilante';
 import type { Mundo } from '../lib/n8n-de-mentira';
 import { esInteractivo, parrafosLargos, preguntaPorOpciones, problemasDeMensaje } from './ux/catalogo';
-import { ADAPTADORES, NO_SON_DE_VENTA, PUNTOS, SIN_ADAPTADOR, flujosDeVenta, medir, type Medicion } from './ux/estandar-venta';
+import { ADAPTADORES, NO_SON_DE_VENTA, PUNTOS, dosCategorias, SIN_ADAPTADOR, flujosDeVenta, medir, type Medicion } from './ux/estandar-venta';
 import { leerFuentes } from './fuente-vm';
 import { ARCHIVOS_DE_PIEZAS, DADOS_DE_BAJA, SIN_PIEZAS_COMUNES, VENCE_MAXIMO, piezasFaltantes, problemasDeVencimiento, type ExcepcionConVencimiento } from './ux/piezas-de-catalogo';
 
@@ -215,6 +215,49 @@ describe('I3: toda excepción vence el 31/01/2027 a más tardar, y vencida falla
     expect(problemasDeVencimiento({ a: e({ vence: 'pronto' }) })).toEqual([expect.stringContaining('no es una fecha')]);
     expect(problemasDeVencimiento({ a: e({ vence: '2027-02-01' }) })).toEqual([expect.stringContaining('después del tope')]);
     expect(problemasDeVencimiento({ a: e({ motivo: 'corto' }) })).toEqual([expect.stringContaining('porqué')]);
+  });
+});
+
+describe('3.2 NIEGA: la invariante se prueba a sí misma (viñetas enteras, con precio y de un producto vigente)', () => {
+  const p32 = PUNTOS.find((p) => p.id === '3.2')!;
+  const real = (): Medicion => medir(ADAPTADORES['casa-bermejo.json']!);
+  const conTexto = (m: Medicion, cambia: (t: string) => string): Medicion => {
+    const c = structuredClone(m);
+    c.conVinetas.mensajes = c.conVinetas.mensajes.map((e) => ({ ...e, cuerpo: cambia(e.cuerpo) }));
+    return c;
+  };
+  it('la medición real cumple 3.2 y el turno con pedido trae las 3 viñetas enteras, una por línea', () => {
+    const m = real();
+    expect(p32.evaluar(m)).toEqual([]);
+    expect(m.lineasEsperadas).toHaveLength(3);
+    for (const l of m.lineasEsperadas) expect(m.conVinetas.mensajes.map((e) => e.cuerpo).join('\n').split('\n')).toContain(l);
+  });
+  it('unir dos viñetas en una línea falla', () => {
+    const m = conTexto(real(), (t) => t.replace(/(•[^\n]*)\n(?=•)/, '$1 '));
+    expect(p32.evaluar(m).join('|')).toMatch(/más de una viñeta en una línea/);
+  });
+  it('quitar el precio falla', () => {
+    const m = conTexto(real(), (t) => t.replace(/ — Bs [\d.]+/g, ''));
+    expect(p32.evaluar(m).join('|')).toMatch(/viñeta sin precio/);
+  });
+  it('una viñeta con un producto inexistente falla; con otro precio, también', () => {
+    expect(p32.evaluar(conTexto(real(), (t) => t.replace('Billetera de cuero', 'Poncho de oro'))).join('|')).toMatch(/producto que no está en el catálogo vigente/);
+    expect(p32.evaluar(conTexto(real(), (t) => t.replace('— Bs 450', '— Bs 451'))).join('|')).toMatch(/otro precio/);
+  });
+  it('un adaptador con una sola categoría da el motivo distinto, sin dos categorías', () => {
+    const base = ADAPTADORES['casa-bermejo.json']!;
+    const una: typeof base = { ...base, catalogoVigente: () => base.catalogoVigente().map((p) => ({ ...p, categoria: 'Única' })) };
+    expect(p32.evaluar(medir(una))).toEqual(['3.2 sin dos categorías en el catálogo del mundo']);
+  });
+  it('si el flujo descarta el texto del modelo con pedido, 3.2 falla con su motivo propio (nunca verde por omisión)', () => {
+    const m = conTexto(real(), () => '¿Qué pieza te interesa?');
+    expect(p32.evaluar(m)).toEqual(['3.2 no se puede medir: el flujo no deja pasar texto del modelo con pedido']);
+  });
+  it('las dos categorías salen por regla fija: las dos con más productos; en empate, la primera por nombre', () => {
+    const c = (categoria: string) => ({ nombre: categoria + Math.random(), precio: 1, categoria });
+    expect(dosCategorias([c('B'), c('A'), c('C'), c('C')])).toEqual(['C', 'A']);
+    expect(dosCategorias([c('Z'), c('A'), c('M')])).toEqual(['A', 'M']);
+    expect(dosCategorias([c('A'), c('A')])).toBeNull();
   });
 });
 

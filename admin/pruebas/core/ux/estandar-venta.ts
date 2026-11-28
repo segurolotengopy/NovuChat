@@ -43,28 +43,53 @@ export const PATRON_ID = /^[a-z0-9:_-]{1,200}$/;
 export interface Turno { dijo: string; mensajes: Enviado[]; modeloLlamado: boolean; fallo: string | null }
 export interface Conversacion { turnos: Turno[] }
 
+/** Un producto vigente del catálogo del mundo de pruebas (activo y con precio), con su categoría. */
+export interface ProductoVigente { nombre: string; precio: number; categoria: string }
+
+type DiceModelo = J | ((ll: unknown) => J) | undefined;
+
 export interface Adaptador {
-  /** Abre un mundo del flujo de producción con el enlace del catálogo (o sin él) y un modelo simulado que contesta `texto` en cada turno. */
-  abrir(op: { enlace?: string; texto?: string; qrEnCurso?: boolean }): { decir(msg: J): ResultadoTurno };
+  /**
+   * Abre un mundo del flujo de producción con el enlace del catálogo (o sin él) y un modelo simulado que contesta `texto` en cada turno.
+   * Con `conPedido` el mundo se abre con un producto YA en el pedido (el cliente lo pidió en un turno previo): es el estado en que el texto del modelo sí pasa.
+   */
+  abrir(op: { enlace?: string; texto?: string; qrEnCurso?: boolean; conPedido?: boolean }): { decir(msg: J): ResultadoTurno };
   mTexto(t: string): J;
   mLista(id: string, titulo: string): J;
+  /** El catálogo vigente del mundo (de sus datos de prueba, no del orden de ninguna lista del flujo). */
+  catalogoVigente(): ProductoVigente[];
+  /** El nombre del producto que `abrir({ conPedido: true })` deja en el pedido. */
+  piezaEnPedido(): string;
 }
 
-const desdeMundo = (m: typeof bermejo | typeof walisuma, crear: (enlace: string | undefined, texto: string | undefined, qr: boolean) => Mundo): Adaptador => ({
+type DatosDeMundo = typeof bermejo | typeof walisuma;
+const PIEZA_EN_PEDIDO = { id: 'billetera-cuero', cantidad: 1 };
+
+const desdeMundo = (m: DatosDeMundo, crear: (enlace: string | undefined, dice: DiceModelo, qr: boolean) => Mundo): Adaptador => ({
   abrir: (op) => {
-    const mundo = crear(op.enlace, op.texto, op.qrEnCurso === true);
+    let dice: DiceModelo = op.texto === undefined ? undefined : m.modelo(op.texto);
+    if (op.conPedido) {
+      let n = 0;
+      dice = () => (++n === 1 ? m.modelo('Con gusto, lo anoto.', { lineas: [PIEZA_EN_PEDIDO] }) : m.modelo(op.texto ?? 'Listo.'));
+    }
+    const mundo = crear(op.enlace, dice, op.qrEnCurso === true);
+    if (op.conPedido) m.hablar(mundo, m.ANA, m.mTexto('quiero una billetera'), { toleraFallo: true });
     return { decir: (msg) => m.hablar(mundo, m.ANA, msg, { toleraFallo: true }) };
   },
   mTexto: m.mTexto,
   mLista: (id, titulo) => ({ type: 'interactive', interactive: { type: 'list_reply', list_reply: { id, title: titulo, description: '' } } }),
+  catalogoVigente: () => (m.CATALOGO as J[])
+    .filter((c) => c['activo'] === true && typeof c['precio'] === 'number')
+    .map((c) => ({ nombre: String(c['nombre']), precio: c['precio'] as number, categoria: String(c['area']).split('·')[0]!.trim() })),
+  piezaEnPedido: () => String((m.CATALOGO as J[]).find((c) => c['id'] === PIEZA_EN_PEDIDO.id)?.['nombre']),
 });
 
 /** Los adaptadores, por nombre de JSON. */
 export const ADAPTADORES: Record<string, Adaptador> = {
-  'casa-bermejo.json': desdeMundo(bermejo, (enlace, texto, qr) => bermejo.crear({ enlaceCatalogo: enlace ?? '', panel: qr ? bermejo.panelConQr(450) : undefined, modeloDice: texto === undefined ? undefined : bermejo.modelo(texto) })),
-  'walisuma.json': desdeMundo(walisuma, (enlace, texto, qr) => walisuma.crear({
+  'casa-bermejo.json': desdeMundo(bermejo, (enlace, dice, qr) => bermejo.crear({ enlaceCatalogo: enlace ?? '', panel: qr ? bermejo.panelConQr(450) : undefined, modeloDice: dice as never })),
+  'walisuma.json': desdeMundo(walisuma, (enlace, dice, qr) => walisuma.crear({
     panel: enlace || qr ? (qr ? walisuma.panelConQr : (_m: number, x: J) => walisuma.panelOk(x))(450, enlace ? { catalogoWeb: { activo: true, enlace } } : {}) : undefined,
-    modeloDice: texto === undefined ? undefined : walisuma.modelo(texto),
+    modeloDice: dice as never,
   })),
 };
 
@@ -91,7 +116,7 @@ function turnoDe(dijo: string, r: ResultadoTurno): Turno {
   return { dijo, mensajes: r.mensajes, modeloLlamado: r.ejecutados.has('Conversar con el modelo'), fallo: r.fallo ? r.fallo.mensaje : null };
 }
 /** Una conversación: abre el mundo y manda cada mensaje en orden (texto de cliente, o un toque de lista con `{ lista: id }`). */
-export function conversar(a: Adaptador, op: { enlace?: string; texto?: string; qrEnCurso?: boolean }, guion: Array<string | { lista: string }>): Conversacion {
+export function conversar(a: Adaptador, op: { enlace?: string; texto?: string; qrEnCurso?: boolean; conPedido?: boolean }, guion: Array<string | { lista: string }>): Conversacion {
   const c = a.abrir(op);
   return { turnos: guion.map((g) => (typeof g === 'string' ? turnoDe(g, c.decir(a.mTexto(g))) : turnoDe(`[toque ${g.lista}]`, c.decir(a.mLista(g.lista, 'x'))))) };
 }
@@ -99,7 +124,46 @@ export function conversar(a: Adaptador, op: { enlace?: string; texto?: string; q
 export const NIEGA_CATALOGO = 'No encuentro eso en nuestro catálogo.';
 export const PIDE_LISTADO = ['¿qué tienen?', 'qué venden', 'catálogo', 'carta', 'productos', 'todo', 'lista'] as const;
 const TEXTO_LARGO = 'Con gusto te ayudo. Tenemos muchas piezas. Todas son hechas a mano. Puedes pedir la que quieras. Dime cuál te interesa.';
-const TEXTO_CON_VINETAS = 'Te sirven estas opciones:\n• Bufanda de vicuña\n• Billetera de cuero\n• Llavero de llama';
+const ENCABEZADO_VINETAS = 'Te sirven estas opciones:';
+const formatoPrecio = (p: number): string => `Bs ${p}`;
+/** Las líneas «• nombre — Bs precio» que el modelo simulado escribe, salidas del catálogo vigente del adaptador (hasta 3). */
+export const lineasDeVinetas = (catalogo: ProductoVigente[]): string[] => catalogo.slice(0, 3).map((p) => `• ${p.nombre} — ${formatoPrecio(p.precio)}`);
+
+/** Las dos categorías de `variasCategorias` por regla fija: las dos con más productos; si empatan, la primera por nombre. Con menos de 2, null. */
+export function dosCategorias(catalogo: ProductoVigente[]): [string, string] | null {
+  const cuenta = new Map<string, number>();
+  for (const p of catalogo) cuenta.set(p.categoria, (cuenta.get(p.categoria) ?? 0) + 1);
+  const orden = [...cuenta.entries()].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'es'));
+  return orden.length < 2 ? null : [orden[0]![0], orden[1]![0]];
+}
+
+const normalizar = (s: string): string => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+/** El número de «Bs 7.795,50», «Bs 7795», «Bs. 35.5»; null si la línea no trae precio. */
+export function precioDeLinea(l: string): number | null {
+  const mt = /\bBs\.?\s*(\d[\d.,]*)/i.exec(l);
+  if (!mt) return null;
+  let n = mt[1]!.replace(/[.,]+$/, '');
+  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(n)) n = n.replace(/\./g, '').replace(',', '.');
+  else n = n.replace(',', '.');
+  const v = Number(n);
+  return Number.isFinite(v) ? v : null;
+}
+
+/** Los problemas de las viñetas de un texto: ninguna línea con más de un «•»; cada línea «•» con precio, de un producto vigente (nombre normalizado igual y precio igual). */
+export function problemasDeVinetas(texto: string, catalogo: ProductoVigente[]): string[] {
+  const out: string[] = [];
+  for (const linea of texto.split('\n')) {
+    if (!linea.includes('•')) continue;
+    if (linea.split('•').length - 1 > 1) { out.push(`más de una viñeta en una línea: «${linea.slice(0, 70)}»`); continue; }
+    const precio = precioDeLinea(linea);
+    if (precio === null) { out.push(`viñeta sin precio: «${linea.slice(0, 70)}»`); continue; }
+    const nombre = normalizar(linea.slice(linea.indexOf('•') + 1).split(/\s[—–-]\s|:|\(|\bBs\b/i)[0]!);
+    const prod = catalogo.find((p) => normalizar(p.nombre) === nombre);
+    if (!prod) out.push(`viñeta con un producto que no está en el catálogo vigente: «${linea.slice(0, 70)}»`);
+    else if (Math.abs(prod.precio - precio) > 0.005) out.push(`viñeta con otro precio que el del catálogo (${prod.precio}): «${linea.slice(0, 70)}»`);
+  }
+  return out;
+}
 
 /** Todo lo que el estándar mide de un flujo, corrido una sola vez. */
 export interface Medicion {
@@ -118,7 +182,13 @@ export interface Medicion {
   toquesViejos: Turno[];
   /** 3.1 y 3.2 */
   textoLargo: Turno;
+  /** 3.2: con un producto YA en el pedido (el modelo es quien escribe), un mensaje sobre esa pieza; el modelo escribe `lineasEsperadas` tras el encabezado. */
   conVinetas: Turno;
+  lineasEsperadas: string[];
+  /** 3.2: el catálogo vigente del mundo, las dos categorías elegidas por regla fija (null si hay menos de 2) y el turno que las pregunta a la vez. */
+  catalogo: ProductoVigente[];
+  categorias: [string, string] | null;
+  variasCategorias: Turno | null;
 }
 
 export function medir(a: Adaptador): Medicion {
@@ -135,8 +205,14 @@ export function medir(a: Adaptador): Medicion {
   const toqueVigente = fila ? conversar(a, { enlace: ENLACE }, ['¿qué tienen?', { lista: String(fila['id']) }]).turnos[1]! : null;
   const toquesViejos = ['pro:ya-no-existe', 'cat:ya-no-existe', 'mas:cats:99'].map((id) => conversar(a, { enlace: ENLACE }, [{ lista: id }]).turnos[0]!);
   const textoLargo = conversar(a, { enlace: ENLACE, texto: TEXTO_LARGO }, ['hola, quiero información de las piezas']).turnos[0]!;
-  const conVinetas = conversar(a, { enlace: ENLACE, texto: TEXTO_CON_VINETAS }, ['hola, quiero información de las piezas']).turnos[0]!;
-  return { listados, saludo, pideCatalogo, noEncuentra, conQr, categoria, listado, toqueVigente, toquesViejos, textoLargo, conVinetas };
+  const catalogo = a.catalogoVigente();
+  const lineasEsperadas = lineasDeVinetas(catalogo);
+  const categorias = dosCategorias(catalogo);
+  const variasCategorias = categorias
+    ? conversar(a, { enlace: ENLACE, texto: NIEGA_CATALOGO }, [`¿qué ${categorias[0].toLowerCase()} y qué ${categorias[1].toLowerCase()} tienen?`]).turnos[0]!
+    : null;
+  const conVinetas = conversar(a, { enlace: ENLACE, texto: [ENCABEZADO_VINETAS, ...lineasEsperadas].join('\n'), conPedido: true }, [`cuánto cuesta ${a.piezaEnPedido().toLowerCase()}`]).turnos[0]!;
+  return { listados, saludo, pideCatalogo, noEncuentra, conQr, categoria, listado, toqueVigente, toquesViejos, textoLargo, conVinetas, lineasEsperadas, catalogo, categorias, variasCategorias };
 }
 
 // ----------------------------------------------------------------------------- los puntos del estándar
@@ -205,8 +281,22 @@ export const PUNTOS: Punto[] = [
     return todos.flatMap((t) => t.mensajes.flatMap((e) => parrafosLargos(e.cuerpo).map((p) => `«${t.dijo}»: párrafo con más de 2 oraciones: «${p.slice(0, 50)}…»`)));
   } },
   { id: '3.2', titulo: 'el filtro de redacción conserva saltos de línea y viñetas', evaluar: (m) => {
-    const t = textoDe(m.conVinetas);
-    return ['• Bufanda de vicuña', '• Billetera de cuero', '• Llavero de llama'].filter((l) => !t.includes(l)).map((l) => `se perdió la línea «${l}» del texto del modelo`);
+    const out: string[] = [];
+    if (!m.categorias) out.push('3.2 sin dos categorías en el catálogo del mundo');
+    for (const t of [...m.listados, m.categoria, ...(m.variasCategorias ? [m.variasCategorias] : []), m.conVinetas]) {
+      out.push(...problemasDeVinetas(textoDe(t), m.catalogo).map((p) => `«${t.dijo}»: ${p}`));
+    }
+    const lineas = textoDe(m.conVinetas).split('\n').map((l) => l.trim());
+    if (!m.conVinetas.modeloLlamado || !lineas.includes(ENCABEZADO_VINETAS)) out.push('3.2 no se puede medir: el flujo no deja pasar texto del modelo con pedido');
+    else {
+      let desde = 0;
+      for (const l of m.lineasEsperadas) {
+        const i = lineas.indexOf(l, desde);
+        if (i < 0) out.push(`se perdió la línea «${l}» del texto del modelo (o no llegó entera, una por línea y en orden)`);
+        else desde = i + 1;
+      }
+    }
+    return out;
   } },
   { id: '3.4', titulo: 'límites de WhatsApp respetados por código (texto 4096, interactivo 1024, botón 20, fila 24/72, 10 filas)', evaluar: (m) =>
     [m.saludo, m.pideCatalogo, m.noEncuentra, m.conQr, m.categoria, m.listado, m.textoLargo, m.conVinetas, ...m.listados, ...m.toquesViejos, ...(m.toqueVigente ? [m.toqueVigente] : [])]
