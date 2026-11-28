@@ -542,4 +542,24 @@ describe('fijar-numero-publico.mjs --quitar: el caso bueno', () => {
     expect(despues['numeroPublico']).toBe(PUBLICO);
     expect(despues).not.toHaveProperty('numeroPublicoAuto');
   });
+
+  it('SIN DEPENDER DEL ORDEN: una ruta sin campo y sin marca ESCRIBE la marca y audita', async () => {
+    // Estado explícito, sin apoyarse en lo que dejó la prueba anterior.
+    await db.doc(`rutasWhatsApp/${LINEA_OTRO}`).update({
+      numeroPublico: FieldValue.delete(), numeroPublicoAuto: FieldValue.delete(),
+    });
+    const antes = await ruta(LINEA_OTRO);
+    expect(antes).not.toHaveProperty('numeroPublico');
+    expect(antes).not.toHaveProperty('numeroPublicoAuto');
+    const auditoriasAntes = (await auditorias(T_OTRO)).length;
+    const r = correr('--proyecto', PROYECTO, '--tenant', T_OTRO, '--quitar', '--operador', OPERADOR, '--aplicar');
+    expect(r.codigo).toBe(0);
+    expect(r.salida).not.toContain('Ya estaba así');
+    expect((await ruta(LINEA_OTRO))['numeroPublicoAuto']).toBe(false);
+    expect((await auditorias(T_OTRO)).length).toBe(auditoriasAntes + 1);
+    // Segunda vez: ahora sí ya estaba así.
+    expect(correr('--proyecto', PROYECTO, '--tenant', T_OTRO, '--quitar', '--operador', OPERADOR, '--aplicar').salida)
+      .toContain('Ya estaba así');
+    await db.doc(`rutasWhatsApp/${LINEA_OTRO}`).update({ numeroPublico: PUBLICO_OTRO, numeroPublicoAuto: FieldValue.delete() });
+  });
 });

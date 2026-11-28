@@ -5,7 +5,7 @@
  * verificado (`lineaVisible = {id, numero}`), sin pisar nunca uno fijado ni uno quitado a mano. Se prueba
  * negando: cada caso en que NO debe escribir, y luego los dos en que SÍ. Números ficticios.
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { numeroPublicoDesdeMeta, numeroPublicoValido } from '../functions/src/core/conversacion/numeroPublico.ts';
 
 const PROYECTO = 'demo-novuchat-pruebas';
@@ -20,7 +20,7 @@ const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
 const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
-const { configuracionFlujo } = await import('../functions/src/ingesta.ts');
+const { configuracionFlujo, fijarNumeroPublicoDesdeMeta, TOPE_NUMERO_PUBLICO_MS } = await import('../functions/src/ingesta.ts');
 
 const TA = 'numero-meta-a';
 const TB = 'numero-meta-b';
@@ -118,29 +118,26 @@ describe('configuracionFlujo: lo que NO escribe', () => {
   });
 
   it.each([
-    ['número local de 8 dígitos', '7000 0000'],
-    ['591 con 10 dígitos', '+591 700 0000'],
-    ['591 con 12 dígitos', '+591 7000 00000'],
-    ['con letras', 'no-es-un-numero'],
-    ['no es cadena', 59170000000],
-  ])('con %s, no escribe', async (_n, numero) => {
-    const n = LINEA(10 + _n.length);
+    [40, 'número local de 8 dígitos', '7000 0000'],
+    [41, '591 con 10 dígitos', '+591 700 0000'],
+    [42, '591 con 12 dígitos', '+591 7000 00000'],
+    [43, 'con letras', 'no-es-un-numero'],
+    [44, 'no es cadena', 59170000000],
+  ])('con indice %i, %s: no escribe', async (indice, _n, numero) => {
+    const n = LINEA(indice);
     await sembrarRuta(n, TA);
     const r = await pedir({ lineaVisible: { id: n, numero } }, n);
     expect(r.codigo).toBe(200);
     expect(await ruta(n)).not.toHaveProperty('numeroPublico');
   });
 
-  it('con la ruta de otro comercio, no escribe: el `tenantId` se relee dentro de la transacción', async () => {
-    // La ruta autenticada es de A; entre la lectura de la firma y la transacción pasa a B.
-    // Se prueba la parte observable: una ruta de B firmada con el alias de A no recibe el campo de A,
-    // y la de A no se toca cuando la cabecera es la de B.
+  it('con una firma de A contra la ruta de B por HTTP, 401 y B no recibe nada', async () => {
     const nB = LINEA(6);
     await sembrarRuta(nB, TB, { aliasSecreto: 'cliente20' });
     const r = await pedir({ lineaVisible: { id: nB, numero: FICTICIO } }, nB, TOKEN_A);
     expect(r.codigo).toBe(401);
     expect(await ruta(nB)).not.toHaveProperty('numeroPublico');
-    expect(await auditorias(TA)).toHaveLength(0);
+    expect((await auditorias(TB)).filter((x) => x['phoneNumberId'] === `…${nB.slice(-4)}`)).toHaveLength(0);
   });
 
   it('el cuerpo sin `lineaVisible` se comporta como siempre: no escribe', async () => {
@@ -175,7 +172,9 @@ describe('configuracionFlujo: lo que SÍ escribe', () => {
     const cuerpo = { lineaVisible: { id: n, numero: FICTICIO } };
     const rs = await Promise.all([pedir(cuerpo, n), pedir(cuerpo, n), pedir(cuerpo, n)]);
     for (const r of rs) expect(r.codigo).toBe(200);
-    expect((await ruta(n))['numeroPublico']).toBe(FICTICIO_DIGITOS);
+    // El turno no espera más del tope; la escritura sigue y no se cancela: se espera a que termine.
+    await vi.waitFor(async () => { expect((await ruta(n))['numeroPublico']).toBe(FICTICIO_DIGITOS); }, { timeout: 15_000, interval: 200 });
+    await new Promise((r) => setTimeout(r, 1500));
     const suyas = (await auditorias(TA)).filter((x) => x['phoneNumberId'] === `…${n.slice(-4)}`);
     expect(suyas).toHaveLength(1);
   });
@@ -189,15 +188,139 @@ describe('configuracionFlujo: lo que SÍ escribe', () => {
   });
 });
 
-describe('configuracionFlujo: la respuesta no cambia', () => {
-  it('es idéntica con y sin `lineaVisible`', async () => {
-    // La misma línea, para que la comparación sea de la respuesta entera (incluido `phoneNumberId`).
-    const n = LINEA(30);
+const rutaDe = (phoneNumberId: string, tenantId: string, extra: Record<string, unknown> = {}) =>
+  ({ phoneNumberId, tenantId, tieneNumeroPublico: false, numeroPublicoAutoApagado: false, ...extra });
+const transacciones = () => vi.spyOn(db, 'runTransaction');
+
+afterEach(() => { vi.restoreAllMocks(); });
+
+describe('fijarNumeroPublicoDesdeMeta directa: la guarda del comercio dentro de la transacción', () => {
+  it('ruta autenticada de A contra un documento de B: no escribe en B ni audita', async () => {
+    const n = LINEA(50);
+    await sembrarRuta(n, TB, { aliasSecreto: 'cliente20' });
+    await fijarNumeroPublicoDesdeMeta(rutaDe(n, TA), { id: n, numero: FICTICIO });
+    expect(await ruta(n)).not.toHaveProperty('numeroPublico');
+    expect((await auditorias(TA)).filter((x) => x['phoneNumberId'] === `…${n.slice(-4)}`)).toHaveLength(0);
+    expect((await auditorias(TB)).filter((x) => x['phoneNumberId'] === `…${n.slice(-4)}`)).toHaveLength(0);
+  });
+
+  it('cambio de dueño entre la autenticación y la transacción: no escribe', async () => {
+    const n = LINEA(51);
     await sembrarRuta(n, TA);
-    const a = await pedir({}, n);
-    const b = await pedir({ lineaVisible: { id: n, numero: FICTICIO } }, n);
-    expect((await ruta(n))['numeroPublico']).toBe(FICTICIO_DIGITOS);
-    expect(b.codigo).toBe(a.codigo);
-    expect(b.cuerpo).toEqual(a.cuerpo);
+    const autenticada = rutaDe(n, TA); // lo que vio la firma
+    await db.doc(`rutasWhatsApp/${n}`).update({ tenantId: TB }); // la línea cambia de dueño
+    await fijarNumeroPublicoDesdeMeta(autenticada, { id: n, numero: FICTICIO });
+    expect(await ruta(n)).not.toHaveProperty('numeroPublico');
+  });
+
+  it('el campo aparece entre la autenticación y la transacción: no lo pisa', async () => {
+    const n = LINEA(52);
+    await sembrarRuta(n, TA);
+    const autenticada = rutaDe(n, TA);
+    await db.doc(`rutasWhatsApp/${n}`).update({ numeroPublico: '59171111111' });
+    await fijarNumeroPublicoDesdeMeta(autenticada, { id: n, numero: FICTICIO });
+    expect((await ruta(n))['numeroPublico']).toBe('59171111111');
+  });
+
+  it('la marca aparece entre la autenticación y la transacción: no escribe', async () => {
+    const n = LINEA(53);
+    await sembrarRuta(n, TA);
+    const autenticada = rutaDe(n, TA);
+    await db.doc(`rutasWhatsApp/${n}`).update({ numeroPublicoAuto: false });
+    await fijarNumeroPublicoDesdeMeta(autenticada, { id: n, numero: FICTICIO });
+    expect(await ruta(n)).not.toHaveProperty('numeroPublico');
+  });
+});
+
+describe('el atajo: 0 transacciones cuando la ruta ya trae el campo o la marca', () => {
+  it('CONTROL: una línea sin campo ni marca abre exactamente UNA transacción', async () => {
+    const n = LINEA(60);
+    await sembrarRuta(n, TA);
+    const espia = transacciones();
+    await pedir({ lineaVisible: { id: n, numero: FICTICIO } }, n);
+    expect(espia).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [61, 'marca `numeroPublicoAuto: false`', { numeroPublicoAuto: false }],
+    [62, '`numeroPublico` que no es texto (número)', { numeroPublico: 5 }],
+    [63, '`numeroPublico` vacío', { numeroPublico: '' }],
+    [64, '`numeroPublico` nulo', { numeroPublico: null }],
+    [65, '`numeroPublico` fijado', { numeroPublico: '59171111111' }],
+  ])('línea %i con %s: 0 transacciones y la respuesta sale igual', async (indice, _n, extra) => {
+    const n = LINEA(indice);
+    await sembrarRuta(n, TA, extra);
+    const espia = transacciones();
+    const r = await pedir({ lineaVisible: { id: n, numero: FICTICIO } }, n);
+    expect(r.codigo).toBe(200);
+    expect(espia).not.toHaveBeenCalled();
+  });
+
+  it('un mensaje sin `lineaVisible` tampoco abre transacción', async () => {
+    const n = LINEA(66);
+    await sembrarRuta(n, TA);
+    const espia = transacciones();
+    await pedir({}, n);
+    expect(espia).not.toHaveBeenCalled();
+  });
+});
+
+describe('ráfagas: `lineaVisible` se ignora', () => {
+  it('con `rafaga` en el cuerpo no abre transacción ni escribe', async () => {
+    const n = LINEA(70);
+    await sembrarRuta(n, TA);
+    const espia = transacciones();
+    await pedir({ telefono: '59100000070', rafaga: { v: 1, idMeta: 'wamid.X' }, lineaVisible: { id: n, numero: FICTICIO } }, n);
+    expect(espia).not.toHaveBeenCalled();
+    expect(await ruta(n)).not.toHaveProperty('numeroPublico');
+  });
+});
+
+describe('tope de tiempo: una transacción lenta o fallida no cambia ni demora el turno', () => {
+  it('lenta (5 s): la respuesta sale en el tope y es la de siempre', async () => {
+    const n = LINEA(80), testigo = LINEA(81);
+    await sembrarRuta(n, TA);
+    await sembrarRuta(testigo, TA);
+    const normal = await pedir({}, testigo);
+    vi.spyOn(db, 'runTransaction').mockImplementation(() => new Promise((resolver) => setTimeout(() => resolver(undefined), 5000)) as never);
+    const t0 = Date.now();
+    const r = await pedir({ lineaVisible: { id: n, numero: FICTICIO } }, n);
+    const ms = Date.now() - t0;
+    expect(r.codigo).toBe(200);
+    expect(ms).toBeLessThan(TOPE_NUMERO_PUBLICO_MS + 1500);
+    const { phoneNumberId: _a, ...sinLinea } = r.cuerpo;
+    const { phoneNumberId: _b, ...sinLineaNormal } = normal.cuerpo;
+    expect(sinLinea).toEqual(sinLineaNormal);
+  }, 20_000);
+
+  it('fallida: la respuesta sale igual y no revienta', async () => {
+    const n = LINEA(82), testigo = LINEA(83);
+    await sembrarRuta(n, TA);
+    await sembrarRuta(testigo, TA);
+    const normal = await pedir({}, testigo);
+    vi.spyOn(db, 'runTransaction').mockRejectedValue(new Error('falla simulada'));
+    const r = await pedir({ lineaVisible: { id: n, numero: FICTICIO } }, n);
+    expect(r.codigo).toBe(200);
+    const { phoneNumberId: _a, ...sinLinea } = r.cuerpo;
+    const { phoneNumberId: _b, ...sinLineaNormal } = normal.cuerpo;
+    expect(sinLinea).toEqual(sinLineaNormal);
+    expect(await ruta(n)).not.toHaveProperty('numeroPublico');
+  });
+});
+
+describe('configuracionFlujo: la respuesta no cambia', () => {
+  it('es idéntica con y sin `lineaVisible`, con el reloj fijo', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.UTC(2026, 10, 27, 15, 0, 0));
+    try {
+      // La misma línea, para que la comparación sea de la respuesta entera (incluido `phoneNumberId`).
+      const n = LINEA(30);
+      await sembrarRuta(n, TA);
+      const a = await pedir({}, n);
+      const b = await pedir({ lineaVisible: { id: n, numero: FICTICIO } }, n);
+      expect((await ruta(n))['numeroPublico']).toBe(FICTICIO_DIGITOS);
+      expect(b.codigo).toBe(a.codigo);
+      expect(b.cuerpo).toEqual(a.cuerpo);
+    } finally { vi.useRealTimers(); }
   });
 });

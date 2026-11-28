@@ -1698,6 +1698,8 @@ function registrarAnomaliaDeSesion(
   });
 }
 
+export const TOPE_NUMERO_PUBLICO_MS = 1500;
+
 /**
  * Fija `rutasWhatsApp/<phoneNumberId>.numeroPublico` con el número que Meta informa para la línea
  * (`lineaVisible = {id, numero}` en el cuerpo). Solo si la ruta autenticada no lo tiene, el `id` coincide con
@@ -1705,12 +1707,14 @@ function registrarAnomaliaDeSesion(
  * y escribe solo si sigue sin campo, es del mismo comercio y no fue quitado a mano. Todo en try/catch: un
  * fallo se registra y el turno sigue igual.
  */
-async function fijarNumeroPublicoDesdeMeta(
-  ruta: { phoneNumberId: string; tenantId: string; tieneNumeroPublico: boolean },
+export async function fijarNumeroPublicoDesdeMeta(
+  ruta: { phoneNumberId: string; tenantId: string; tieneNumeroPublico: boolean; numeroPublicoAutoApagado: boolean },
   lineaVisible: unknown,
 ): Promise<void> {
   try {
-    if (ruta.tieneNumeroPublico) return;
+    // ATAJO: con el campo (cualquier valor) o con la marca de «quitado a mano», ni siquiera se abre la
+    // transacción. Sale del documento que la autenticación ya leyó: 0 lecturas y 0 escrituras por mensaje.
+    if (ruta.tieneNumeroPublico || ruta.numeroPublicoAutoApagado) return;
     if (typeof lineaVisible !== 'object' || lineaVisible === null) return;
     const { id, numero } = lineaVisible as Record<string, unknown>;
     if (typeof id !== 'string' || id !== ruta.phoneNumberId) return;
@@ -1719,7 +1723,7 @@ async function fijarNumeroPublicoDesdeMeta(
 
     const db = getFirestore();
     const refRuta = db.doc(`rutasWhatsApp/${ruta.phoneNumberId}`);
-    await db.runTransaction(async (tx) => {
+    const transaccion = db.runTransaction(async (tx) => {
       const actual = await tx.get(refRuta);
       if (!actual.exists) return;
       if (actual.get('tenantId') !== ruta.tenantId) return;
@@ -1736,6 +1740,16 @@ async function fijarNumeroPublicoDesdeMeta(
         despues: `…${publico.slice(-4)}`,
       });
     });
+    // Una falla tardía de la transacción no debe quedar sin atender (rechazo no manejado).
+    transaccion.catch((e: unknown) => {
+      logger.warn('configuracionFlujo: no se pudo fijar el numero publico', {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    });
+    // TOPE DE ESPERA: el turno no espera más de 1,5 s. Si vence, el turno sigue y la escritura no se cancela.
+    let reloj: ReturnType<typeof setTimeout> | undefined;
+    const tope = new Promise<void>((resolver) => { reloj = setTimeout(resolver, TOPE_NUMERO_PUBLICO_MS); });
+    try { await Promise.race([transaccion, tope]); } finally { clearTimeout(reloj); }
   } catch (e) {
     logger.warn('configuracionFlujo: no se pudo fijar el numero publico', {
       error: e instanceof Error ? e.message : String(e),
@@ -1816,12 +1830,13 @@ export const configuracionFlujo = onRequest(
     // NÚMERO PÚBLICO DESDE META (27/11/2026): la primera vez que llega un mensaje verificado a una línea
     // sin `numeroPublico`, se fija con el que Meta informa. Una sola vez por línea; nunca pisa uno fijado ni
     // uno quitado a mano (`numeroPublicoAuto: false`). Nunca cambia la respuesta del turno.
-    await fijarNumeroPublicoDesdeMeta(ruta, cuerpo['lineaVisible']);
+    // Con `rafaga` se ignora `lineaVisible`: esa rama es de solo lectura.
+    if (cuerpo['rafaga'] === undefined) await fijarNumeroPublicoDesdeMeta(ruta, cuerpo['lineaVisible']);
 
     // RÁFAGA DE MENSAJES (`core/conversacion/rafaga.ts`, `docs/arquitectura/rafagas.md`): el flujo pregunta
     // cuáles son los últimos entrantes de ESTE teléfono para decidir si responde o calla. Corta antes de
     // leer config o negocio. Lecturas por consulta, TODAS (`MAX_LECTURAS` = 12): la ruta (1) + la ficha (1) +
-    // mi documento (hasta 2 con un reintento de Meta) + hasta 5 anteriores + hasta 3 posteriores. Cero escrituras. Con `sesion` a la vez es un pedido mal formado.
+    // mi documento (hasta 2 con un reintento de Meta) + hasta 5 anteriores + hasta 3 posteriores. Cero escrituras (`lineaVisible` se ignora en esta rama). Con `sesion` a la vez es un pedido mal formado.
     if (cuerpo['rafaga'] !== undefined) {
       if (cuerpo['sesion'] !== undefined) { respuesta.status(400).json({ error: 'rafaga_con_sesion' }); return; }
       const vr = validarRafaga(cuerpo['rafaga'], telefono);
