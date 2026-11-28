@@ -596,12 +596,12 @@ describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES 
   });
 
   it.each([['demo-a'], ['clientes/demo-b/demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF; arma con `campos: {texto: \'userInput\'}` (y `consumidor: null`: sin cableado en #1117)', (ruta) => {
-    // Se quita la pieza antes (si el flujo ya la adoptó, como el Demo A): la prueba es del armado desde cero.
+    // Se quita la pieza antes: si el flujo ya la adoptó (el Demo A y el Demo B), la prueba es del armado desde cero.
     const f = injertarRafaga(quitarRafaga(real(ruta === 'demo-a' ? demoA : ruta)), { ancla: ANCLA_DEMO, campos: USER_INPUT, consumidor: null });
     expect(hallazgosDeLaRafaga(f, { consumidor: null })).toEqual([]);
-    // Sin consumidor declarado, la guardia lo dice; el Demo A ya tiene lectores de `textoDelTurno` (prompt del agente y «Retomar respuesta»), el Demo B todavía no.
+    // Sin consumidor declarado, la guardia lo dice... salvo en los flujos cuyo agente YA lee `textoDelTurno` (el Demo A, por el prompt del agente y «Retomar respuesta»; el Demo B desde el 25/11/2026).
     if (ruta === 'demo-a') expect(hallazgosDeLaRafaga(f)).toEqual([]);
-    else expect(hallazgosDeLaRafaga(f).join('|')).toMatch(/ningún nodo .* lee `textoDelTurno`/);
+    else expect(hallazgosDeLaRafaga(f, { consumidor: 'AI Agent NovuChat' })).toEqual([]);
   });
 
   it.each([['demo-a'], ['clientes/demo-b/demo-b-venta-cobro.json']])('%s: con `campos: {texto: \'texto\'}` NO arma (su normalizador emite `userInput`, no `texto`)', (ruta) => {
@@ -610,7 +610,7 @@ describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES 
   });
 
   it('el `phoneNumberId` de los normalizadores de los demos (un spread de la entrada) solo se acepta por la huella verificada: si el código cambia, deja de armar', () => {
-    const f = real('clientes/demo-b/demo-b-venta-cobro.json');
+    const f = quitarRafaga(real('clientes/demo-b/demo-b-venta-cobro.json'));
     expect(Object.keys(NORMALIZADORES_VERIFICADOS)).toContain(huellaDe(nodo(f, 'Normalizar entrada').parameters.jsCode));
     nodo(f, 'Normalizar entrada').parameters.jsCode += '\n// retocado';
     expect(() => injertarRafaga(f, { ancla: ANCLA_DEMO, campos: USER_INPUT, consumidor: null })).toThrow(/phoneNumberId \(«phoneNumberId»\) \[llega por un spread que no se puede resolver/);
