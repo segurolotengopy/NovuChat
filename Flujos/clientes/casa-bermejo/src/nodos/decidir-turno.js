@@ -166,6 +166,7 @@ if (cfEsToqueDeConfirmar(t.seleccionId)) return salir({ tipo: 'toque_viejo' });
 // 4d. El CATÁLOGO por código: una consulta de lista, categoría, enlace o «¿tienen X?» la contesta el código con el catálogo vivo, SIN modelo (el modelo no arma listas). Con una pregunta de la tienda en el mismo mensaje sigue el camino de siempre.
 // Un pedido CON una cláusula de lista («quiero la heladera y mándenme la lista de aires») sigue al modelo solo con el pedido y el código adjunta la lista en el MISMO mensaje (`plan.adjunto`).
 const intencion = !t.seleccionId && !pideTienda ? bmIntencionCatalogo(texto, vendibles, ficha) : null;
+if (intencion && intencion.vista === 'derivar_sin_pieza') return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });
 if (intencion && intencion.resto === '') return salir({ tipo: 'catalogo', vista: intencion.vista, cats: intencion.cats, faltan: intencion.faltan, continuar: intencion.continuar });
 if (intencion) textoDelTurno = intencion.resto;
 // 5. La conversación libre: una sola llamada al modelo.

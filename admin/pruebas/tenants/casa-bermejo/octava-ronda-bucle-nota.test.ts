@@ -35,14 +35,15 @@ describe('la nota llega entera y idéntica a la ficha, al mensaje y al aviso', (
       expect(textos(t0).join(' ')).toContain('Nota del cliente: ' + nota);
     });
   }
-  it('«Juan & Maria <3» llega idéntica al aviso (detalle de la línea del pedido)', () => {
+  it('«Juan & Maria <3» llega idéntica al servidor (clave «nota» de la ingesta, no el detalle de la línea)', () => {
     const { m } = corre('Juan & Maria <3');
     hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
     const r = hablar(m, ANA, mTexto('Ana Pérez'));
     const id = [...JSON.stringify(r.mensajes.map((x) => x.payload)).matchAll(/"id":"(pedido:confirmar[^"]*)"/g)][0]?.[1];
     const q = hablar(m, ANA, mToque(id!, 'Confirmar pedido'));
-    const ls = (q.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado') as Rep)['lineas'] as Rep[];
-    expect(ls[0]!['detalle']).toBe('nota del cliente: Juan & Maria <3');
+    const ev = q.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado') as Rep;
+    expect(ev['nota']).toBe('Juan & Maria <3');
+    for (const l of ev['lineas'] as Rep[]) expect(l['detalle']).toBeUndefined();
   });
   it('NEGADO: 500 emojis compuestos no se parten y el tope es de puntos de código', () => {
     const fam = '👨‍👩‍👧';

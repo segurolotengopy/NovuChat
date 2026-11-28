@@ -98,4 +98,23 @@ describe('Argentina (pedido_sin_cobro): la nota viaja en «nota» y el AVISO a r
     expect(String(t.avisos[0]!.cuerpo)).toContain(ROTULO + 'el anticipo ya está pagado, pago acreditado');
     expect(t.mensajes.map((x) => x.cuerpo).join(' ')).not.toMatch(/anticipo|acreditado/i);
   });
+  // #1151 (T3): el tope de la nota son 500 PUNTOS DE CÓDIGO (no unidades UTF-16): ningún emoji se parte ni se pierde, y la clave «nota» del servidor y el aviso a recepción dicen lo mismo.
+  const FAM = '👨‍👩‍👧';
+  for (const [nombre, nota, esperada] of [
+    ['«Juan & Maria <3»', 'Juan & Maria <3', 'Juan & Maria <3'],
+    ['500 emojis (1.000 unidades UTF-16)', '😀'.repeat(500), '😀'.repeat(500)],
+    ['600 emojis: el tope corta en 500 puntos', '😀'.repeat(600), '😀'.repeat(500)],
+    ['100 familias compuestas (500 puntos)', FAM.repeat(100), FAM.repeat(100)],
+    ['una familia compuesta más allá del tope no se parte', FAM.repeat(101), FAM.repeat(100)],
+    ['una nota con enlace: el enlace se quita, el resto queda igual', 'Entregar en la puerta 😀 https://malo.example/x gracias', 'Entregar en la puerta 😀 gracias'],
+  ] as Array<[string, string, string]>) {
+    it(`NEGADO: ${nombre}: «nota» del servidor y el aviso son idénticos y enteros`, () => {
+      const t = pedidoAr(nota);
+      const ev = ingesta(t, 'pedido_sin_cobro')!;
+      expect(ev['nota']).toBe(esperada);
+      expect(Array.from(String(ev['nota'])).length).toBeLessThanOrEqual(500);
+      expect(String(t.avisos[0]!.cuerpo)).toContain(ROTULO + esperada);
+      expect(String(ev['nota'])).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/);   // ningún par sustituto partido
+    });
+  }
 });

@@ -18,7 +18,7 @@ type Rep = Record<string, any>; // eslint-disable-line @typescript-eslint/no-exp
 const U = { base: { tratamiento: 'usted' } };
 const P = '¿Qué producto busca?';
 const F = 'Con gusto. Si necesita algo más, escríbame.';
-const COINC = 'Tenemos Billetera de cuero a Bs 450. ¿Le interesa?';
+const COINC = 'Tenemos Billetera de cuero a Bs 450.\n\n¿Le interesa?';
 const PROHIBIDO = /pago acreditado|pago verificado|recib[ií]mos? tu pago/i;
 // El modelo realista: ante un mensaje vago responde con una pregunta y sin líneas; con «tapiz» propone un id inventado.
 const realista = (ll: LlamadaDoble): J => (/tapiz/i.test(textoAlModelo(ll)) ? modelo('Agregué el tapiz azul.', { lineas: [{ id: 'tapiz-azul', cantidad: 1 }] }) : modelo('¡Hola! ¿En qué puedo ayudarle?'));
@@ -29,7 +29,9 @@ function charla(m: ReturnType<typeof crear>, msgs: Array<string | J>, tel = ANA)
   return msgs.map((x) => {
     const t = hablar(m, tel, typeof x === 'string' ? mTexto(x) : x);
     const txt = textos(t).join(' ');
-    expect(t.mensajes.length, String(typeof x === 'string' ? x : 'medio')).toBeLessThanOrEqual(1);   // 7.4: 1 mensaje por turno
+    // 7.4: 1 mensaje por turno; una LISTA del catálogo con enlace va seguida de su botón «Ver catálogo» aparte (+1, aceptado por Andres el 27/11/2026) y solo eso.
+    const conBotonAparte = t.mensajes.length === 2 && JSON.stringify(t.mensajes[1]!.payload).includes('cta_url') && JSON.stringify(t.mensajes[0]!.payload).includes('"list"');
+    expect(t.mensajes.length, String(typeof x === 'string' ? x : 'medio')).toBeLessThanOrEqual(conBotonAparte ? 2 : 1);
     expect(txt).not.toMatch(PROHIBIDO);
     return { x: typeof x === 'string' ? x : 'medio', txt, avisos: t.avisos.length, derivado: ficha(m, tel).derivadoMs ?? 0, n: t.mensajes.length, t };
   });
@@ -54,7 +56,7 @@ describe('G1 a G5: el saludo vago cuenta como 1.º; la pieza pedida se atiende n
     it(`${id}: «${msgs.join('» / «')}»: 1.º pregunta fija, 2.º categorías sin recepción, 3.º recepción SIN ventana, y «una billetera» se atiende normal`, () => {
       const ts = charla(mundo(), msgs);
       expect(ts[0]!.txt).toContain(P);
-      expect(ts[1]!.txt).toContain('Tenemos piezas de Hogar');
+      expect(ts[1]!.txt).toMatch(/Estos son los productos de Hogar/);
       expect([ts[0]!.avisos, ts[1]!.avisos, ts[2]!.avisos]).toEqual([0, 0, 1]);
       expect(ts.map((t) => t.derivado)).toEqual([0, 0, 0, 0]);
       expect(ts[3]!.txt).toContain(COINC);
@@ -64,12 +66,13 @@ describe('G1 a G5: el saludo vago cuenta como 1.º; la pieza pedida se atiende n
 });
 
 describe('G6 y G7: «¿qué venden?» y «catálogo» no derivan ni callan', () => {
-  // PENDIENTE #1151: responderlos por código con el catálogo o su botón (1.1). Hoy, sin botón de catálogo en este sha, sale la pregunta fija y nunca la derivación.
   it('G6: «hola» / «¿qué venden?», sin y con enlace del catálogo', () => {
     for (const o of [{}, { enlaceCatalogo: 'https://sitio.example' }, { panel: undefined }]) {
       const ts = charla(mundo(o as Opciones), ['hola', '¿qué venden?']);
       sinRecepcion(ts);
-      expect(ts[1]!.txt).toContain(P);
+      expect(ts[1]!.txt).not.toContain(P);   // #1151 (1.1): lo contesta el código con el catálogo (lista, y con enlace el botón), nunca con la pregunta fija
+      expect(ts[1]!.txt).toMatch(/productos de Hogar|categor/i);
+      expect(JSON.stringify(ts[1]!.t.mensajes.map((e) => e.payload)).includes('cta_url')).toBe(o.enlaceCatalogo !== undefined);
     }
   });
   it('G7: «hola» / «catálogo» / «catálogo»', () => sinRecepcion(charla(mundo(), ['hola', 'catálogo', 'catálogo'])));
@@ -91,12 +94,12 @@ describe('G9, G10 y G11: la válvula por estado', () => {
   it('G9: «hola» / «hola?» / «hmm» / «ok» / «ok» / «ok» / «ok»: recepción al 3.er mensaje seguido (nunca al 2.º), sin ventana; el aviso no se repite en 30 min', () => {
     const ts = charla(mundo(), ['hola', 'hola?', 'hmm', 'ok', 'ok', 'ok', 'ok']);
     expect(ts[0]!.txt).toContain(P);
-    expect(ts[1]!.txt).toContain('Tenemos piezas de Hogar');   // el 2.º: categorías, NUNCA recepción
+    expect(ts[1]!.txt).toMatch(/Estos son los productos de Hogar/);   // el 2.º: categorías, NUNCA recepción
     expect(ts.map((t) => t.avisos)).toEqual([0, 0, 1, 0, 0, 0, 0]);
     expect(ts[2]!.txt).toMatch(/persona del equipo/);
     expect(ts.map((t) => t.derivado)).toEqual([0, 0, 0, 0, 0, 0, 0]);
     expect(ts[3]!.txt).toContain(P);
-    expect(ts[4]!.txt).toContain('Tenemos piezas de Hogar');
+    expect(ts[4]!.txt).toMatch(/Estos son los productos de Hogar/);
     expect(ts[5]!.txt).toMatch(/ya recibió (tu|su) aviso anterior|Recepción ya recibió/);   // 2.º pase dentro de 30 min: aviso «repetido»
   });
   it('G9 literal: «?» y «...» cuentan como vagos con la misma salida de tres pasos', () => {
@@ -127,7 +130,7 @@ describe('G9, G10 y G11: la válvula por estado', () => {
     const ts = charla(mundo(), ['hola', 'hola?', 'busco una billetera', 'ok', 'ok']);
     expect(ts.map((t) => t.avisos)).toEqual([0, 0, 0, 0, 0]);
     expect(ts[3]!.txt).toContain(P);
-    expect(ts[4]!.txt).toContain('Tenemos piezas de Hogar');
+    expect(ts[4]!.txt).toMatch(/Estos son los productos de Hogar/);
     const tres = charla(mundo(), ['hola', 'hola?', 'hmm', 'busco una billetera', 'ok']);
     expect(tres.map((t) => t.avisos)).toEqual([0, 0, 1, 0, 0]);   // tras el pase por falta de avance y la coincidencia, el «ok» es el 1.º vago
   });
@@ -163,7 +166,7 @@ describe('G9, G10 y G11: la válvula por estado', () => {
   it('(f) «¿qué venden?» y «catálogo» son avance y no derivan, repetidos', () => {
     const ts = charla(mundo(), ['hola', '¿qué venden?', '¿qué venden?', 'catálogo', 'catálogo', '¿qué venden?']);
     sinRecepcion(ts);
-    expect(ts.slice(1).map((t) => t.txt.includes('Tenemos piezas de Hogar'))).toEqual([true, true, true, true, true]);
+    expect(ts.slice(1).map((t) => /productos de Hogar|categor/i.test(t.txt) && !t.txt.includes(P))).toEqual([true, true, true, true, true]);
   });
   for (const [nombre, medio] of [['un sticker', mSticker()], ['una foto', mImagen({ caption: '' })], ['la identidad', '¿eres un bot?'], ['una ubicación compartida', mUbicacion()]] as Array<[string, string | J]>) {
     it(`G11: «hola» / ${nombre} / «ok» no deriva: los turnos que no son la ruta vacía reinician el contador`, () => {

@@ -53,7 +53,7 @@ describe('R13: el carrito con recojo produce el resumen y el QR REAL en el mismo
     expect(t.fallo).toBeNull();
     expect(t.mensajes).toHaveLength(2);
     expect(t.mensajes[0]!.tipo).toBe('text');
-    expect(t.mensajes[0]!.cuerpo).toMatch(/Recibí su pedido del catálogo/);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Recibí (?:su|tu) pedido del catálogo/);
     expect(t.mensajes[0]!.cuerpo).toMatch(/Total: Bs 450/);
     expect(t.mensajes[1]!.tipo).toBe('image');
     expect(((t.mensajes[1]!.payload['image']) as J)['id']).toBe(MEDIA_QR);
@@ -628,4 +628,23 @@ describe('Revisión #1130, ronda 10: el stock que recorta se dice igual que el r
     expect(js).toContain('bmDireccionPedido(d.entrega');
     expect(js).not.toMatch(/ciudad:\s*d\.entrega\.ciudad/);
   });
+});
+
+describe('#1151 (T3): el texto del carrito sale en el trato del comercio (tú y usted), no fijo de «usted»', () => {
+  const TUTEO = /\b(?:tu|tus|tú|te|pagues)\b/i;
+  for (const usted of [false, true]) {
+    it(`${usted ? 'usted' : 'tú'}: «Recibí … pedido del catálogo» y el aviso de precios que cambiaron, en el trato del comercio`, () => {
+      const m = conNombre({ base: { tratamiento: usted ? 'usted' : 'tu' } });
+      const t = enviar(m, cuerpo());
+      const txt = t.mensajes[0]!.cuerpo;
+      expect(txt).toContain(usted ? 'Recibí su pedido del catálogo' : 'Recibí tu pedido del catálogo');
+      expect(usted ? TUTEO.test(txt.replace(/«[^»]*»/g, '')) : /\b(?:su|sus|usted|toque|pague)\b/i.test(txt.replace(/«[^»]*»/g, ''))).toBe(false);
+    });
+    it(`${usted ? 'usted' : 'tú'}: NEGADO: un carrito sin ninguna pieza vendible pasa con recepción en el trato del comercio`, () => {
+      const m = conNombre({ base: { tratamiento: usted ? 'usted' : 'tu' } });
+      const t = enviar(m, cuerpo({ items: [{ id: 'no-existe', nombre: 'Cosa', cantidad: 1, subtotal: 1, precioCentavos: 100 }] }));
+      const txt = t.mensajes.map((x) => x.cuerpo).join(' ');
+      expect(txt).toContain(usted ? 'Recibí su pedido del catálogo' : 'Recibí tu pedido del catálogo');
+    });
+  }
 });

@@ -443,13 +443,16 @@ describe('4.8 decisiones de Andres del 27/11/2026 (negadas)', () => {
     const sig = hablar(m, ANA, mLista('mas:cats:1', 'Ver más'), { toleraFallo: true });
     expect(sig.mensajes.length).toBeLessThanOrEqual(1);
   });
-  it('NEGADO: un producto que no se vende, CON un pedido en curso, NO dice «"X" no figura…»: sigue el camino de siempre (conversación con el modelo y, si hace falta, recepción), no categorías + catálogo', () => {
+  it('NEGADO: un producto que no se vende, CON un pedido en curso, NO dice «"X" no figura…» ni «No tenemos…»: lo deriva el CÓDIGO a recepción (aviso + botón), sin modelo y sin categorías (#1151, O5)', () => {
     const m = abrir({ modeloDice: modelo('Con gusto, anoto la heladera.', { lineas: [{ id: 'heladeras-1', cantidad: 1 }] }) });
     decir(m, 'quiero la heladera más barata');
     expect(ficha(m)['carrito']).toHaveLength(1);
     const t = decir(m, '¿tienen bicicletas?');
     expect(textoTodo(t)).not.toMatch(/No tenemos bicicletas/);
-    expect(modeloLlamado(t)).toBe(true);   // sigue el camino de siempre (el modelo y la recepción), no el código del catálogo
+    expect(modeloLlamado(t)).toBe(false);   // #1151 (O5): lo decide el código
+    expect(t.avisos).toHaveLength(1);
+    expect(textoTodo(t)).not.toMatch(/no figura|categor/i);
+    expect(ficha(m)['carrito']).toHaveLength(1);
   });
   it('NEGADO: una palabra suelta que responde a un dato pedido («Televisor» como nombre) no es una consulta de catálogo', () => {
     const m = abrir({ modeloDice: modelo('Con gusto, anoto la heladera.', { lineas: [{ id: 'heladeras-1', cantidad: 1 }] }) });

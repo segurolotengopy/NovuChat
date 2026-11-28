@@ -1696,7 +1696,7 @@ function bmPiezasConTopesDelFlujo(piezas, vendibles, car) {
   const distintos = quitaTotal ? piezas.distintos.filter((d) => d !== '_total') : piezas.distintos;
   return { lineas: final, noEntraron: noEntraron, distintos: distintos, recortes: recortes };
 }
-const BM_TEXTO_PRECIOS_CAMBIARON ='Algún precio de su pedido cambió respecto de la página: vale el total real del resumen.';
+const BM_TEXTO_PRECIOS_CAMBIARON = 'Algún precio de tu pedido cambió respecto de la página: vale el total real del resumen.';   // en tuteo; «Armar mensajes» lo pasa a «usted» (`bmSeguro`) cuando el comercio trata de usted
 function bmResolverCarrito(c) {
   const f = c.ficha;
   const car = cbEsObjeto(c.plan.carrito) ? c.plan.carrito : {};
@@ -1724,7 +1724,7 @@ function bmResolverCarrito(c) {
   r.desdeCatalogo = true;
   if (r.tipo === 'modelo') {
     // El texto lo arma el código: qué entró, qué no, y lo que falta o el botón «Confirmar pedido»; nunca el del modelo, que no corrió.
-    const partes = ['Recibí su pedido del catálogo.'];
+    const partes = ['Recibí tu pedido del catálogo.'];   // tuteo; con el trato «usted» del comercio `bmSeguro` lo convierte («Recibí su pedido…»): ya no va fijo de usted
     // Lo recortado por un tope SÍ entró (con menos unidades): se dice cuántas, igual que el resumen; solo lo que no entró nada se dice «No pude incluir».
     const recortadas = piezas.recortes || [];
     const sinNada = piezas.noEntraron.filter((n) => !recortadas.some((rc) => rc.nombre === n));
@@ -1902,6 +1902,7 @@ function bmResolverModelo(c) {
   const previo = bmSinAvancePrevio(f, Number(c.t && c.t.mensajeMs) || c.ahora);   // los contadores de la ficha, vencidos a los 30 min entre mensajes del cliente
   let fallos = 0;      // turnos seguidos con el MISMO fallo real («No pude agregar esa pieza…»): contador de la ficha
   let sinAvance = 0;   // turnos seguidos con la pregunta fija (ver la válvula más abajo)
+  let listaCats = false; // el 2.º mensaje vago seguido: «Armar mensajes» responde con la LISTA de categorías y el botón «Ver catálogo» (D-A)
   if (afirmaDeMas && fijada.texto === '' && !entro && lineas.length === 0) {
     // Pedido vacío y nada entró: primero lo que SÍ coincide con lo que pidió el cliente (un id inventado no tapa «Billetera de cuero»); si nada coincide, se dice que esa pieza no se pudo agregar y se pregunta cuál quiere (no se niega el catálogo).
     // Sin una propuesta inválida (el modelo solo usó un verbo distinto), el texto queda vacío y sigue la ruta de abajo (coincidencias o la pregunta fija, sin negar el catálogo; el botón «Ver catálogo» lo agrega «Armar mensajes», B2).
@@ -1943,7 +1944,8 @@ function bmResolverModelo(c) {
     if (trasDerivar) texto = bmTextoTrasDerivar(c);
     else if (procedimiento) texto = bmTextoProcedimiento(c);
     else if (coinc !== '') texto = coinc;
-    else texto = pideCatalogo || previo.sinAvance === 1 ? bmTextoCategorias(c) : bmPreguntaFija(c);
+    else if (pideCatalogo) texto = bmTextoCategorias(c);
+    else { texto = bmPreguntaFija(c); listaCats = previo.sinAvance === 1 && bmSinContador(f) === false; }
     sinPieza = coinc === '' && !trasDerivar && !procedimiento && !pideCatalogo;
     // LA VÁLVULA POR ESTADO (ver `bmSinAvancePrevio`): la pregunta fija y las categorías son el flujo haciendo su trabajo y NUNCA derivan por sí solas, pero un cliente que no avanza no queda en «¿Qué producto busca?» sin fin.
     // El saludo vago cuenta como 1.º: 1.º pregunta fija, 2.º categorías (nunca deriva), 3.º recepción (`sin_avance`, sin ventana de 2 h). Las coincidencias y el pedido del catálogo son avance (reinician); tras un comprobante cotejado el contador no corre.
@@ -1954,7 +1956,7 @@ function bmResolverModelo(c) {
   } else if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c, conBoton);
   // R54: al elegir el RETIRO en este turno, el mismo mensaje trae la dirección de la tienda (dato del comercio; sin dato, nada). Con «Confirmar pedido» la dirección va en el resumen de datos.
   if (texto !== '' && comp.entrega.modo !== undefined && bmEsRetiro(comp.entrega.modo) && !conBoton) texto = texto + bmTextoRetiroEn(c);
-  return Object.assign(base, { tipo: 'modelo', precioDistinto: sitioConPreciosDistintos, texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: (cambio || conBoton) && lineas.length ? vcResumen(lineas) : '', confirmable: conBoton, botonesEntrega: bmOfreceBotonesDeEntrega(lineas.length, entrega, c.mercado, c.modos, abierto), pide: texto !== '' ? pendientes : [], sinAvance: sinAvance, fallos: fallos });
+  return Object.assign(base, { tipo: 'modelo', precioDistinto: sitioConPreciosDistintos, texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: (cambio || conBoton) && lineas.length ? vcResumen(lineas) : '', confirmable: conBoton, botonesEntrega: bmOfreceBotonesDeEntrega(lineas.length, entrega, c.mercado, c.modos, abierto), pide: texto !== '' ? pendientes : [], sinAvance: sinAvance, fallos: fallos, listaCategorias: listaCats && sinPieza });
 }
 
 // -----------------------------------------------------------------------------
@@ -2069,10 +2071,10 @@ function bmIntencionCatalogo(texto, vendibles, ficha) {
     return { vista: 'categoria', cats: halladas.map(slug), faltan: faltan, continuar: seguir, resto: '' };
   }
   // Ninguna categoría: «¿tienen bicicletas?» (algo que no figura). Si coincide con una pieza concreta del catálogo, sigue como siempre (lo atiende el modelo con las coincidencias).
-  // Con un pedido en curso, una pieza que no existe sigue su camino de siempre (no se niega por código aquí).
   if (hayObjeto && BM_CAT_PIDE_ENLACE.test(n)) return { vista: 'enlace', cats: [], faltan: [], continuar: false, resto: '' };
   const hayPedido = !!(ficha && Array.isArray(ficha.carrito) && ficha.carrito.length > 0);
-  if (!hayPedido && pregunta && sig.length >= 1 && sig.length <= 3 && !sig.some((w) => BM_CAT_NO_PIEZA.has(w)) && !(bmPuntuarCoincidencias(sig.join(' '), vendibles) || []).length) return { vista: 'sin_pieza', cats: [], faltan: [citar(sig)], continuar: false, resto: '' };
+  // O5 (#1151): con un pedido en curso, una pieza que no existe la deriva el CÓDIGO (aviso + botón a recepción): ni «No tenemos…» del modelo ni una lista que distraiga del pedido.
+  if (pregunta && sig.length >= 1 && sig.length <= 3 && !sig.some((w) => BM_CAT_NO_PIEZA.has(w)) && !(bmPuntuarCoincidencias(sig.join(' '), vendibles) || []).length) return hayPedido ? { vista: 'derivar_sin_pieza', cats: [], faltan: [], continuar: false, resto: '' } : { vista: 'sin_pieza', cats: [], faltan: [citar(sig)], continuar: false, resto: '' };
   return null;
 }
 // El toque de «Agregar» una pieza de una lista (`pro:<id>`): la pieza entra al pedido POR CÓDIGO (una unidad), sin modelo. Una pieza que ya estaba no se duplica: se dice. El texto lo arma el código.

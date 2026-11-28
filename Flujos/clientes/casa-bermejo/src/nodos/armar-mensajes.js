@@ -278,6 +278,10 @@ if (puerta.ruta === 'sigue') {
       // RECOJO: la pregunta del nombre lleva el botón «Ver ubicación» de la TIENDA (Maps de NovuTienda), en el mismo mensaje (0 más). Sin mapa válido, texto como siempre.
       const cuerpoR = bmSeguro(cuerpoModelo.length > 1024 ? '…' + cuerpoModelo.slice(-1020).trimStart() : cuerpoModelo, usted);
       msgs = [cmMensaje('cliente', cmEnlace(cuerpoR, 'Ver ubicación', uTienda.mapa), cuerpoR, cuerpoR + '\n\n' + uTienda.mapa, { tipoReporte: 'interactive', conBoton: true })];
+    } else if (d.listaCategorias === true && mensajeCategorias(cuerpoModelo, 0) !== null) {
+      // D-A (Andres, 28/11/2026): el 2.º mensaje vago seguido responde con la LISTA de categorías (interactiva) y, con enlace válido, el botón «Ver catálogo» aparte (+1 ya aceptado). Nunca recepción en este paso.
+      nuevos.catalogoOfrecido = enlaceCat !== '' ? true : fichaAntes.catalogoOfrecido;
+      msgs = conBotonAparte(mensajeCategorias(cuerpoModelo, 0), 0);
     } else if (d.sinPieza === true && categoriasVivas().length > 0 && enlaceCat !== '') {
       // B2: sin pieza no se niega el catálogo: el mismo mensaje trae las categorías y, con enlace, el botón «Ver catálogo».
       // Con enlace del comercio: la pregunta fija + las categorías + el botón «Ver catálogo» (decisión del 28/11/2026). Sin enlace válido no se entra aquí (la pregunta fija sale sola, sin prometer el botón).
@@ -363,7 +367,7 @@ if (puerta.ruta === 'sigue') {
       tipoDePlan = 'derivar';
       msgs = [conRecepcion(conSaludo(BM_INTROS.monto_invalido + ' Escríbele a recepción con el botón.'))];
     } else {
-      const resumen = (d.desdeCatalogo === true ? 'Recibí su pedido del catálogo.\n\n' : '') + (d.cambioDePedido ? (d.cancelarCobro === true ? (usted || d.desdeCatalogo === true ? 'Actualicé su pedido. El QR anterior quedó anulado: no pague con él; el nuevo va abajo.\n\n' : 'Actualicé tu pedido. El QR anterior quedó anulado: no pagues con él; el nuevo va abajo.\n\n') : 'Actualicé tu pedido.\n\n') : '') + 'Este es el resumen de tu pedido:\n\n' + vcResumen(lineas) + (notaDe(d) !== '' ? '\n\n' + notaDe(d) : '')
+      const resumen = (d.desdeCatalogo === true ? 'Recibí tu pedido del catálogo.\n\n' : '') + (d.cambioDePedido ? (d.cancelarCobro === true ? (usted ? 'Actualicé su pedido. El QR anterior quedó anulado: no pague con él; el nuevo va abajo.\n\n' : 'Actualicé tu pedido. El QR anterior quedó anulado: no pagues con él; el nuevo va abajo.\n\n') : 'Actualicé tu pedido.\n\n') : '') + 'Este es el resumen de tu pedido:\n\n' + vcResumen(lineas) + (notaDe(d) !== '' ? '\n\n' + notaDe(d) : '')
         + '\n\nEntrega: ' + bmEntregaTexto(d.entrega) + '.' + (bmEsRetiro(bmEntregaDeFicha(d.entrega).modo) && uTienda.direccion !== '' ? ' Retira en: ' + (/[.!?]$/.test(uTienda.direccion) ? uTienda.direccion : uTienda.direccion + '.') : '') + ' El total no incluye el costo de entrega.\n\nAbajo va el QR para pagar.';
       const pie = bmSeguro('QR para pagar ' + vcMonto(d.total) + ' (pedido ' + d.pedidoId + '). Cuando pagues, envíame la foto del comprobante por este chat.', usted);
       const respaldo = 'No pude mostrarte el QR en este momento. Escríbeme de nuevo en unos minutos para intentarlo otra vez.';

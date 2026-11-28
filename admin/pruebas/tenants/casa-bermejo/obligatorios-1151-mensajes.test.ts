@@ -120,11 +120,6 @@ const textosFijos = (t: ResultadoTurno): string[] => t.mensajes.flatMap((e) => [
 const EXCEPCIONES: RegExp[] = [];
 
 describe('O3: todo texto fijo sale bien en los DOS tratamientos (prueba por propiedad)', () => {
-  // EXCEPCIÓN EXPLÍCITA Y NOMBRADA (PROPIO.md:149): el texto del carrito (`bmResolverCarrito`) va fijo de «usted» y NO es de esta zona; se reporta aparte.
-  const EXCEPCION_CARRITO = 'bmResolverCarrito';
-  it(`la excepción declarada existe y es solo ${EXCEPCION_CARRITO} (no se cuela otra)`, () => {
-    expect(fuente('Flujos/clientes/casa-bermejo/PROPIO.md')).toMatch(/Tratamiento mezclado:[^\n]*bmResolverCarrito/);
-  });
   for (const usted of [true, false]) {
     for (const esc of ESCENARIOS) {
       it(`${usted ? 'usted' : 'tú'}: ${esc.nombre}`, () => {
@@ -133,15 +128,13 @@ describe('O3: todo texto fijo sale bien en los DOS tratamientos (prueba por prop
         expect(todos.length, 'el escenario no emitió nada').toBeGreaterThan(0);
         const malos: string[] = [];
         for (const tx of todos) {
-          // El texto del carrito (excepción nombrada) y los textos del modelo simulado no se juzgan.
+          // Los textos del modelo simulado no se juzgan.
           if (/^Con gusto\.?$/.test(tx.trim()) || EXCEPCIONES.some((r) => r.test(tx))) continue;
           const re = usted ? TUTEO : DE_USTED;
           const m = re.exec(tx.replace(/«[^»]*»/g, (x) => (/ver más|ver catálogo|ver opciones/i.test(x) ? '' : x)));
           if (m) malos.push(`«${m[0]}» en: ${tx.replace(/\n/g, ' ⏎ ').slice(0, 160)}`);
         }
-        // Mientras exista la excepción del carrito, los escenarios que lo emiten (pedido) se juzgan sin él.
-        const reales = esc.nombre.startsWith('agregar') || esc.nombre.startsWith('un pedido') ? malos.filter((x) => !/pedido|agreg|carrito/i.test(x)) : malos;
-        expect(reales).toEqual([]);
+        expect(malos).toEqual([]);
       });
     }
   }
