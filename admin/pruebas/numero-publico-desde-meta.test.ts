@@ -74,7 +74,7 @@ describe('numeroPublicoDesdeMeta (pura)', () => {
     ['local de 8 dígitos (7)', '70000000'], ['local de 8 dígitos (6)', '+60000000'],
     ['591 con 10 dígitos', '5917000000'], ['591 con 12 dígitos', '591700000000'],
     ['con letras', 'abc'], ['vacío', ''], ['cero inicial', '070000000000'],
-    ['demasiado corto', '1234567'], ['demasiado largo', '1234567890123456'],
+    ['demasiado corto', '1234567'], ['demasiado largo', '1000000000000000'],
   ])('rechaza: %s', (_n, v) => { expect(numeroPublicoDesdeMeta(v)).toBe(''); });
   it('rechaza lo que no es cadena', () => {
     for (const v of [undefined, null, 5, {}, [FICTICIO]]) expect(numeroPublicoDesdeMeta(v)).toBe('');
@@ -84,10 +84,10 @@ describe('numeroPublicoDesdeMeta (pura)', () => {
 describe('configuracionFlujo: lo que NO escribe', () => {
   it('con `numeroPublico` ya fijado, no lo pisa', async () => {
     const n = LINEA(1);
-    await sembrarRuta(n, TA, { numeroPublico: '59171111111' });
+    await sembrarRuta(n, TA, { numeroPublico: '59170000001' });
     const r = await pedir({ lineaVisible: { id: n, numero: FICTICIO } }, n);
     expect(r.codigo).toBe(200);
-    expect((await ruta(n))['numeroPublico']).toBe('59171111111');
+    expect((await ruta(n))['numeroPublico']).toBe('59170000001');
     expect(await ruta(n)).not.toHaveProperty('actualizadoPor');
   });
 
@@ -217,9 +217,9 @@ describe('fijarNumeroPublicoDesdeMeta directa: la guarda del comercio dentro de 
     const n = LINEA(52);
     await sembrarRuta(n, TA);
     const autenticada = rutaDe(n, TA);
-    await db.doc(`rutasWhatsApp/${n}`).update({ numeroPublico: '59171111111' });
+    await db.doc(`rutasWhatsApp/${n}`).update({ numeroPublico: '59170000001' });
     await fijarNumeroPublicoDesdeMeta(autenticada, { id: n, numero: FICTICIO });
-    expect((await ruta(n))['numeroPublico']).toBe('59171111111');
+    expect((await ruta(n))['numeroPublico']).toBe('59170000001');
   });
 
   it('la marca aparece entre la autenticación y la transacción: no escribe', async () => {
@@ -246,7 +246,7 @@ describe('el atajo: 0 transacciones cuando la ruta ya trae el campo o la marca',
     [62, '`numeroPublico` que no es texto (número)', { numeroPublico: 5 }],
     [63, '`numeroPublico` vacío', { numeroPublico: '' }],
     [64, '`numeroPublico` nulo', { numeroPublico: null }],
-    [65, '`numeroPublico` fijado', { numeroPublico: '59171111111' }],
+    [65, '`numeroPublico` fijado', { numeroPublico: '59170000001' }],
   ])('línea %i con %s: 0 transacciones y la respuesta sale igual', async (indice, _n, extra) => {
     const n = LINEA(indice);
     await sembrarRuta(n, TA, extra);
