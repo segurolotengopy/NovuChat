@@ -63,7 +63,7 @@ function cwMensajeBotonCatalogo(enlace) {
 //   - mensaje de BOTONES DE RESPUESTA (WhatsApp no junta dos acciones): el enlace va como texto al final del cuerpo
 //     («Ver catálogo: <url>»), con el cuerpo acortado con remisión si hace falta para caber en 1024; los botones quedan intactos;
 //   - LISTA interactiva: NO se toca aquí y devuelve false: su botón va en un segundo mensaje (`cwMensajesConCatalogo`, +1 mensaje);
-//   - cualquier otro tipo (imagen, documento…): no se toca y devuelve false.
+//   - IMAGEN con leyenda: el enlace va al final de la leyenda; cualquier otro tipo (documento…): no se toca y devuelve false.
 // Devuelve si lo hizo.
 function cwConBotonCatalogo(m, enlace) {
   var url = cwUrlValida(enlace);
@@ -71,7 +71,7 @@ function cwConBotonCatalogo(m, enlace) {
   if (m.payload.type === 'text') {
     var cuerpo = cwAcortarConRemision(m.texto, 1000);
     m.payload = cmEnlace(cuerpo, 'Ver catálogo', url);
-    m.respaldo = cmRecorte(m.texto, 4000 - url.length - 2) + '\n\n' + url;
+    m.respaldo = cwAcortarConRemision(m.texto, 4000 - url.length - 2) + '\n\n' + url;
     m.texto = cuerpo;
     m.tipoReporte = 'interactive';
     m.conBoton = true;
@@ -81,10 +81,23 @@ function cwConBotonCatalogo(m, enlace) {
   if (it && it.type === 'button' && it.body && typeof it.body.text === 'string') {
     if (it.body.text.indexOf(url) < 0) {
       var pie = '\n\nVer catálogo: ' + url;
-      it.body.text = cwAcortarConRemision(it.body.text, 1024 - pie.length) + pie;
+      // La cuenta de «Hay N productos más» va sobre el texto COMPLETO (`m.texto`), no sobre el cuerpo que `cmBotones` ya recortó a 1024.
+      var completo = m.texto.length > it.body.text.length ? m.texto : it.body.text;
+      it.body.text = cwAcortarConRemision(completo, 1024 - pie.length) + pie;
     }
     m.texto = it.body.text;
-    m.respaldo = (String(m.respaldo || '').indexOf(url) < 0 ? cmRecorte(String(m.respaldo || m.texto), 4000 - url.length - 2) + '\n\n' + url : m.respaldo);
+    m.respaldo = (String(m.respaldo || '').indexOf(url) < 0 ? cwAcortarConRemision(String(m.respaldo || m.texto), 4000 - url.length - 2) + '\n\n' + url : m.respaldo);
+    m.conEnlaceEnTexto = true;
+    return true;
+  }
+  // Una imagen con leyenda: el enlace va al final de la leyenda (máx. 1024), con la remisión si hace falta.
+  var im = m.payload.type === 'image' ? m.payload.image : null;
+  if (im && typeof im.caption === 'string') {
+    if (im.caption.indexOf(url) < 0) {
+      var pieIm = '\n\nVer catálogo: ' + url;
+      im.caption = cwAcortarConRemision(im.caption, 1024 - pieIm.length) + pieIm;
+    }
+    m.texto = im.caption;
     m.conEnlaceEnTexto = true;
     return true;
   }
