@@ -12,6 +12,7 @@
  */
 import type { Flujo } from '../../lib/flujo';
 import { sinComentarios } from '../migracion/comprobaciones';
+import { leerFuentes } from '../fuente-vm';
 
 /** Una excepción declarada: su porqué y la fecha (AAAA-MM-DD) en que vence. */
 export interface ExcepcionConVencimiento { motivo: string; vence: string }
@@ -45,9 +46,26 @@ export const PIEZAS_COMUNES: ReadonlyArray<{ pieza: string; funciones: readonly 
 /** ¿`codigo` (ya sin comentarios) LLAMA a `nombre`? Las declaraciones `function nombre(` no son llamadas. */
 const llama = (codigo: string, nombre: string): boolean => new RegExp(`(?<!function\\s)\\b${nombre}\\s*\\(`).test(codigo);
 
-/** Las piezas comunes que el flujo NO llama desde ningún nodo de código. Vacío = las usa todas. */
+/** Los archivos de las piezas comunes: su propio código ya contiene las llamadas entre sí, así que NO cuenta como uso del flujo. */
+export const ARCHIVOS_DE_PIEZAS = [
+  'Flujos/src/modulos/productos/lista-de-catalogo.js',
+  'Flujos/src/modulos/productos/intencion-de-catalogo.js',
+  'Flujos/src/modulos/catalogo-web/boton-del-catalogo.js',
+];
+
+/** Quita de `codigo` (ya sin comentarios) el texto de cada pieza, para que solo queden las llamadas del propio flujo (I-A). */
+function sinTextoDePiezas(codigo: string): string {
+  let c = codigo;
+  for (const ruta of ARCHIVOS_DE_PIEZAS) {
+    const pieza = sinComentarios(leerFuentes([ruta])).trim();
+    if (pieza) c = c.split(pieza).join(' ');
+  }
+  return c;
+}
+
+/** Las piezas comunes que el flujo NO llama desde ningún nodo de código (el texto de las piezas incluidas no cuenta). Vacío = las usa todas. */
 export function piezasFaltantes(f: Flujo): string[] {
-  const codigo = sinComentarios(f.nodes.map((n) => String((n.parameters as { jsCode?: unknown } | undefined)?.jsCode ?? '')).join('\n'));
+  const codigo = sinTextoDePiezas(sinComentarios(f.nodes.map((n) => String((n.parameters as { jsCode?: unknown } | undefined)?.jsCode ?? '')).join('\n')));
   return PIEZAS_COMUNES.filter((p) => !p.funciones.some((fn) => llama(codigo, fn))).map((p) => p.pieza);
 }
 
