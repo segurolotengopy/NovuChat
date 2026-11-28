@@ -39,7 +39,7 @@ const usted = base.tratamiento === 'usted';
 const texto = (cuerpo, extra) => { const x = bmSeguro(cuerpo, usted); return cmMensaje('cliente', cmTexto(x), x, x, Object.assign({ tipoReporte: 'text' }, extra || {})); };
 // El botón de recepción: el contacto designado del comercio (o el número de recepción de la consola).
 const contacto = cnDigitos(/^REEMPLAZAR_/.test(String(base.contactoAviso || '')) ? '' : base.contactoAviso) || cnDigitos(cfg.numeroRecepcion);
-const conRecepcion = (cuerpo) => cmContactoConBoton({ numero: contacto, desde: from, cuerpo: bmSeguro(cuerpo, usted), botonTexto: 'Escribir', saludo: 'Hola, te escribo desde el chat de ' + negocio, textoDelRespaldo: usted ? 'Escríbale aquí:' : 'Escríbele aquí:' });
+const conRecepcion = (cuerpo) => cmContactoConBoton({ numero: contacto, desde: from, cuerpo: bmSeguro(cuerpo, usted), botonTexto: 'Escribir', saludo: (usted ? 'Hola, le escribo desde el chat de ' : 'Hola, te escribo desde el chat de ') + negocio, textoDelRespaldo: usted ? 'Escríbale aquí:' : 'Escríbele aquí:' });
 
 // -----------------------------------------------------------------------------
 // EL CATÁLOGO por código (B2, 27/11/2026; Estándar 1.1 a 2.5 y 3.4). El enlace sale del dato `enlaceCatalogo` del comercio (`c.enlace`, https validado): con un TEXTO va en el MISMO mensaje (botón «Ver catálogo» si el texto cabe en 1000; si no, el texto entero con la dirección al final);
@@ -61,10 +61,11 @@ const textoConEnlace = (cuerpo) => {
 // Una lista interactiva (cuerpo ≤1024, SIN enlace: WhatsApp no junta lista y botón) con el texto con viñetas como respaldo. El botón «Ver catálogo» va en un SEGUNDO mensaje (`conBotonAparte`).
 const listaSola = (cuerpo, boton, titulo, filas, respaldoExtra) => {
   const cuerpoL = bmSeguro(cuerpo, usted).slice(0, 1024).trimEnd();
-  return cmMensaje('cliente', cmLista(cuerpoL, boton, titulo, filas), cuerpoL, cuerpoL + (respaldoExtra ? '\n\n' + respaldoExtra : ''), { tipoReporte: 'interactive', conBoton: true });
+  const extraL = respaldoExtra ? (usted ? bmAUsted(respaldoExtra) : respaldoExtra) : '';   // el respaldo (pieza común, en tuteo) también sale en el tratamiento del comercio
+  return cmMensaje('cliente', cmLista(cuerpoL, boton, titulo, filas), cuerpoL, cuerpoL + (extraL ? '\n\n' + extraL : ''), { tipoReporte: 'interactive', conBoton: true });
 };
 // DECISIÓN DE ANDRES (27/11/2026, «Botón en otro mensaje»): cuando sale una LISTA interactiva del catálogo, después va un SEGUNDO mensaje con el botón «Ver catálogo» (cta_url, pieza común `cwMensajeBotonCatalogo`; lista primero, botón después: el nodo de envío recorre los ítems en orden).
-// COSTO ACEPTADO: +1 mensaje (0,0113 USD) cada vez que sale una lista con enlace. Sin enlace del comercio, nada se agrega. Punto A CONFIRMAR con Andres: el botón aparte sale solo con la PRIMERA página (la lista de categorías y la primera de una categoría); las páginas de «Ver más» (pag ≥ 1) no lo repiten, para no agregar mensajes de más.
+// COSTO ACEPTADO: +1 mensaje (0,0113 USD) cada vez que sale una lista con enlace. Sin enlace del comercio, nada se agrega. Decidido (Andres): el botón aparte sale solo con la PRIMERA página (la lista de categorías y la primera de una categoría); las páginas de «Ver más» (pag ≥ 1) no lo repiten, para no agregar mensajes de más.
 const conBotonAparte = (lista, pag) => {
   if (lista === null || enlaceCat === '' || pag > 0) return [lista];
   const b = cwMensajeBotonCatalogo(enlaceCat);
@@ -279,9 +280,9 @@ if (puerta.ruta === 'sigue') {
       msgs = [cmMensaje('cliente', cmEnlace(cuerpoR, 'Ver ubicación', uTienda.mapa), cuerpoR, cuerpoR + '\n\n' + uTienda.mapa, { tipoReporte: 'interactive', conBoton: true })];
     } else if (d.sinPieza === true && categoriasVivas().length > 0 && enlaceCat !== '') {
       // B2: sin pieza no se niega el catálogo: el mismo mensaje trae las categorías y, con enlace, el botón «Ver catálogo».
-      // Con enlace del comercio: la pregunta fija + las categorías + el botón «Ver catálogo» (decisión del 28/11/2026); sin enlace válido, la pregunta fija sola (sin botón, sin prometerlo).
+      // Con enlace del comercio: la pregunta fija + las categorías + el botón «Ver catálogo» (decisión del 28/11/2026). Sin enlace válido no se entra aquí (la pregunta fija sale sola, sin prometer el botón).
       nuevos.catalogoOfrecido = true;
-      msgs = [enlaceCat !== '' ? textoConEnlace(cuerpoModelo + '\n\n' + (usted ? 'Nuestras categorías:' : 'Nuestras categorías:') + '\n' + categoriasEnVinetas()) : (mensajeCategorias(cuerpoModelo, 0) || texto(cuerpoModelo))];
+      msgs = [textoConEnlace(cuerpoModelo + '\n\n' + 'Nuestras categorías:' + '\n' + categoriasEnVinetas())];
     } else msgs = [texto(cuerpoModelo)];
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
     nuevos.nota = notaFicha(d); ev.nota = fichaAntes.nota;
@@ -299,9 +300,9 @@ if (puerta.ruta === 'sigue') {
     // B2: el catálogo por CÓDIGO (0 llamadas al modelo). Nunca «no encuentro eso» ni un recorte en silencio; el enlace del comercio va en el mismo mensaje. El pedido en curso no se toca.
     const cats = categoriasVivas();
     const faltan = Array.isArray(d.faltan) ? d.faltan.map((x) => String(x).slice(0, 40)).filter((x) => x !== '') : [];
-    // DECISIÓN DE ANDRES (28/11/2026): lo que el cliente nombra y NO figura en el catálogo se dice «"X" no figura en nuestro catálogo» (con «; estas son las categorías que tenemos» cuando no hay otra cosa que mostrar), NUNCA «No tenemos X» ni «No encuentro eso» ni un equivalente. Con un pedido en curso no llega aquí: sigue el camino de siempre.
-    const noFigura = (conCategorias) => (faltan.length ? faltan.map((x) => '"' + x + '"').join(' y ') + (faltan.length > 1 ? ' no figuran' : ' no figura') + ' en nuestro catálogo' + (conCategorias ? '; estas son las categorías que tenemos.' : '.') : '');
-    const noTenemos = noFigura(false);
+    // DECISIÓN DE ANDRES (28/11/2026): lo que el cliente nombra y no está en el catálogo lo dice la PIEZA COMÚN (`icAvisoNoFigura`, `icTextoNoFigura`: tope de elementos, sin groserías, con tildes), NUNCA «No tenemos X» ni «No encuentro eso» ni un equivalente. Bermejo no escribe esa frase. Con un pedido en curso no llega aquí: sigue el camino de siempre.
+    const noFiguraCat = icTextoNoFigura(faltan);
+    const noTenemos = icAvisoNoFigura(faltan);
     const conIntro = (a, b) => (a !== '' ? a + '\n\n' : '') + b;
     const hist = (txt) => recordar(typeof c.plan.textoCliente === 'string' ? c.plan.textoCliente : '', txt);
     const slugsVigentes = (Array.isArray(d.cats) ? d.cats : []).filter((x) => cats.some((ct) => ct.id === 'cat:' + x));
@@ -311,8 +312,8 @@ if (puerta.ruta === 'sigue') {
       msgs = [botonOLista('')];
     } else if (vista === 'sin_pieza') {
       // La lista de categorías (interactiva) y, DESPUÉS, el botón «Ver catálogo» (+1 mensaje ya aceptado); sin enlace válido, solo la lista.
-      const lista0 = mensajeCategorias(conSaludo(noFigura(true) !== '' ? noFigura(true) : bmPreguntaFija(c)).trim(), 0);
-      msgs = lista0 === null ? [botonOLista(noFigura(true))] : conBotonAparte(lista0, 0);
+      const lista0 = mensajeCategorias(conSaludo(noFiguraCat !== '' ? noFiguraCat : bmPreguntaFija(c)).trim(), 0);
+      msgs = lista0 === null ? [botonOLista(noFiguraCat)] : conBotonAparte(lista0, 0);
     } else if (vista === 'toque_viejo') {
       msgs = [botonOLista('Esa opción ya no está disponible.')];
     } else if (vista === 'categorias') {
@@ -324,7 +325,7 @@ if (puerta.ruta === 'sigue') {
       if (r === null) msgs = [botonOLista('Esa opción ya no está disponible.')];
       else {
         // «Ver más» (páginas de 9): sin el botón aparte (solo la primera página lo lleva). La ficha anota cuántos van para que «los demás» siga donde quedó.
-        msgs = [listaSola('Estos son los productos de ' + catP.nombre + '. Elige uno para agregarlo a tu pedido.' + (r.hayMas ? ' Toca «Ver más» para seguir.' : ''), 'Ver opciones', catP.nombre, r.filas, respaldoDe(r))];
+        msgs = [listaSola(ctParrafos('Estos son los productos de ' + catP.nombre + '. Elige uno para agregarlo a tu pedido.' + (r.hayMas ? ' Toca «Ver más» para seguir.' : '')), 'Ver opciones', catP.nombre, r.filas, respaldoDe(r))];
         nuevos.lista = { cat: slugP, n: r.hayMas ? (r.pag + 1) * 9 : catP.n };
       }
     } else if (slugsVigentes.length === 1) {
@@ -339,7 +340,7 @@ if (puerta.ruta === 'sigue') {
         // Hasta 10 productos: lista interactiva con TODOS; más de 10: páginas de 9 + la fila «Ver más» (pieza común, el toque lo resuelve el código), hasta el final.
         const pag = cat.n > 10 && yaMostrados > 0 ? Math.floor(yaMostrados / 9) : 0;
         const r = icMensajeLista(c.vendibles, montoCat, { catId: 'cat:' + slug, pag: pag });
-        msgs = r === null ? [null] : conBotonAparte(listaSola(conSaludo(conIntro(noTenemos, 'Estos son los productos de ' + cat.nombre + '. Elige uno para agregarlo a tu pedido.' + (r.hayMas ? ' Son ' + cat.n + '; toca «Ver más» para seguir.' : ''))), 'Ver opciones', cat.nombre, r.filas, respaldoDe(r)), r.pag);
+        msgs = r === null ? [null] : conBotonAparte(listaSola(conSaludo(conIntro(noTenemos, ctParrafos('Estos son los productos de ' + cat.nombre + '. Elige uno para agregarlo a tu pedido.' + (r.hayMas ? ' Son ' + cat.n + '; toca «Ver más» para seguir.' : '')))), 'Ver opciones', cat.nombre, r.filas, respaldoDe(r)), r.pag);
         if (r !== null) nuevos.lista = { cat: slug, n: r.hayMas ? (r.pag + 1) * 9 : cat.n };
       }
     } else {
