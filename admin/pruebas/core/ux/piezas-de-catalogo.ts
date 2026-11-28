@@ -63,7 +63,6 @@ export const DADOS_DE_BAJA: Record<string, ExcepcionConVencimiento> = {
  * Este PR (B1) crea las piezas; ningún flujo las usa todavía: la migración es por comercio, un PR cada uno.
  */
 export const SIN_PIEZAS_COMUNES: Record<string, ExcepcionConVencimiento> = {
-  'casa-bermejo.json': { vence: VENCE_MAXIMO, motivo: 'Se conecta en el bloque B2 (PR de Casa Bermejo), que RETIRA esta excepción: hoy tiene su propia intención, su propio botón (`bmConBotonCatalogo`) y el modelo contesta los listados.' },
   'walisuma.json': { vence: VENCE_MAXIMO, motivo: 'NO se migra en este PR (B1 solo crea las piezas): conserva su intención y su botón propios (`wl-venta.js`); su adopción es de otro PR, con su revisión y su publicación.' },
   'demo-b-venta-cobro.json': { vence: VENCE_MAXIMO, motivo: 'NO se migra en este PR: es el demo de venta con su propia lógica de catálogo (`venta-minima`); su adopción es de otro PR del dueño del flujo.' },
   'venta-minima.qtaco.json': { vence: VENCE_MAXIMO, motivo: 'NO se migra en este PR: Q\'Taco conserva su intención y su catálogo propios (`venta-minima`); su adopción es de otro PR, con su revisión y sin tocar el flujo vivo desde aquí.' },

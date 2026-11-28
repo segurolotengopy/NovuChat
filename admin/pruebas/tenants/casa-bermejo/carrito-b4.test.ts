@@ -403,10 +403,20 @@ describe('R2: el saludo lleva el botón «Ver catálogo» con el catálogo de No
       expect(JSON.stringify(t.mensajes[0]!.payload), JSON.stringify(web)).not.toMatch(/cta_url|Ver catálogo/);
     }
   });
-  it('NEGADO (D7): el dato fijo `enlaceCatalogo` de «Config base» (el sitio) NO produce el botón aunque esté cargado', () => {
+  it('B2 (D7 DEROGADA, Andres 27/11/2026): el dato `enlaceCatalogo` de «Config base» SÍ produce el botón «Ver catálogo» en el saludo, con la dirección del dato (nunca una fija)', () => {
     const m = crear({ enlaceCatalogo: 'https://sitio.example/catalogo', modeloDice: modelo('Con gusto. ¿Qué pieza te interesa?') });
     const t = hablar(m, ANA, mTexto('Hola'));
-    expect(JSON.stringify(t.mensajes.map((x) => x.payload))).not.toMatch(/cta_url|Ver catálogo|sitio\.example/);
+    expect(t.mensajes).toHaveLength(1);
+    const p = JSON.stringify(t.mensajes[0]!.payload);
+    expect(p).toMatch(/cta_url/);
+    expect(p).toContain('https://sitio.example/catalogo');
+  });
+  it('NEGADO: un enlace del dato que no es https, o que es del sitio Wegic, no produce botón ni se promete', () => {
+    for (const e of ['http://sitio.example/catalogo', 'https://wegic.ai/catalogo', 'ftp://x.y', 'https://a b']) {
+      const m = crear({ enlaceCatalogo: e, modeloDice: modelo('Con gusto. ¿Qué pieza te interesa?') });
+      const t = hablar(m, ANA, mTexto('Hola'));
+      expect(JSON.stringify(t.mensajes.map((x) => x.payload)), e).not.toMatch(/cta_url|Ver catálogo|wegic/);
+    }
   });
   it('NEGADO: con un pedido en curso (ya hay piezas) no se ofrece el catálogo', () => {
     const m = crear({ panel: panelOk({ catalogoWeb: { activo: true, enlace: ENLACE } }), modeloDice: modelo('Con gusto.', { lineas: BILLETERA }) });
@@ -496,7 +506,7 @@ describe('R59: el asistente no afirma «precios actualizados» sin respaldo', ()
     for (const pide of ['Por favor verifica que el monto y los datos estén bien.', 'Verifica que el total y tu nombre estén bien.']) {
       const m = crear({ modeloDice: modelo(pide) });
       const t = hablar(m, ANA, mTexto('hola, quiero comprar'));
-      expect(cuerpos(t), pide).toMatch(/verifi/i);
+      // Con el pedido vacío la regla estricta (27/11) reemplaza un imperativo que no es pregunta por el texto del código; lo que se niega aquí es que el reemplazo sea la constancia «precios actualizados».
       expect(cuerpos(t), pide).not.toMatch(/catálogo en este momento/);
     }
   });
