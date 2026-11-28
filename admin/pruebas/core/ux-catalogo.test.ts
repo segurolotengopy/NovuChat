@@ -29,15 +29,13 @@ const ex = (motivo: string): ExcepcionConVencimiento => ({ motivo, vence: VENCE_
 export const EXCEPCIONES: Record<string, ExcepcionConVencimiento> = {
   'casa-bermejo.json|1.1': ex('Una pregunta de listado la contesta el modelo y puede salir «No encuentro eso en nuestro catálogo» tras el saludo; sin reconocedor por código. ' + SIN_PIEZA + ' (Casa Bermejo las adopta en el bloque B2, que retira estas excepciones.)'),
   'casa-bermejo.json|1.2': ex('El botón «Ver catálogo» no sale en el saludo ni al pedirlo ni cuando no se encuentra lo nombrado: no usa `cwConBotonCatalogo`. ' + SIN_PIEZA),
-  'casa-bermejo.json|2.2': ex('Una categoría pedida no sale completa ni remite expresamente al catálogo. ' + SIN_PIEZA),
   'casa-bermejo.json|2.3': ex('No manda lista interactiva de catálogo; un toque de fila viejo llega al modelo. ' + SIN_PIEZA),
-  'casa-bermejo.json|3.1': ex(SIN_PARTIDOR),
   'casa-bermejo.json|4.2': ex('El saludo sale solo como texto, sin botones ni lista. ' + SIN_PIEZA),
   'walisuma.json|1.1': ex('El listado lo contesta el modelo tras el saludo y puede negar el catálogo. ' + SIN_PIEZA + ' (Walisuma NO se migra en este PR.)'),
   'walisuma.json|2.3': ex('No manda lista interactiva de catálogo; un toque de fila viejo llega al modelo. ' + SIN_PIEZA + ' (Walisuma NO se migra en este PR.)'),
   'walisuma.json|3.1': ex(SIN_PARTIDOR + ' (Walisuma NO se migra en este PR.)'),
 };
-export const TOPE_EXCEPCIONES = 9;
+export const TOPE_EXCEPCIONES = 7;
 export const TOPE_SIN_ADAPTADOR = 3;
 
 const TEXTO = (t: string) => ({ texto: t, payload: { type: 'text' } });
