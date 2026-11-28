@@ -239,6 +239,30 @@ describe('campaña o envío que no corresponde: 0 mensajes', () => {
     await preparar();
     expect(delaCampana(await reclamar())).toHaveLength(3);
   });
+  for (const [nombre, categoria] of [['MARKETING', 'MARKETING'], ['desconocida', 'PROMO'], ['en minúsculas', 'utility'], ['ausente', undefined]] as const) {
+    it(`NIEGA (27/11/2026): con la plantilla de la ruta en categoría ${nombre} no sale nada; la campaña queda pausada con motivo propio, sin puntero, y no se tocó ningún destinatario`, async () => {
+      const { categoria: _c, ...sinCategoria } = PLANTILLA_RUTA;
+      await preparar({ ruta: { plantillas: { campana: categoria === undefined ? sinCategoria : { ...PLANTILLA_RUTA, categoria } } } });
+      expect(delaCampana(await reclamar())).toEqual([]);
+      expect(await campana()).toMatchObject({ estado: 'pausada', motivoPausa: 'plantillaNoUtility', materializados: 0 });
+      expect((await db.doc(`rutasWhatsApp/${NUM_A}`).get()).get('campanaSalienteEnCurso')).toBeUndefined();
+      expect(await dest(CONV(0))).toMatchObject({ estado: 'pendiente' });
+      expect(await todosLosMensajes()).toBe(0);
+      expect((await refContador().get()).exists).toBe(false);
+    });
+  }
+  it('la categoría que vale es la VIGENTE de la ruta, no la copia de la campaña: una campaña con copia MARKETING sale si la ruta es UTILITY, y una con copia UTILITY se pausa si la ruta pasó a MARKETING', async () => {
+    await preparar({ campana: { plantilla: { nombre: 'campana_chat', idioma: 'es', categoria: 'MARKETING' } } });
+    expect(delaCampana(await reclamar())).toHaveLength(3);
+    await preparar({ ruta: { plantillas: { campana: { ...PLANTILLA_RUTA, categoria: 'MARKETING' } } } });
+    expect(delaCampana(await reclamar())).toEqual([]);
+    expect(await campana()).toMatchObject({ estado: 'pausada', motivoPausa: 'plantillaNoUtility' });
+  });
+  it('si la plantilla falla por OTRA cosa además de la categoría, la campaña no sale pero no se pausa con ese motivo', async () => {
+    await preparar({ ruta: { plantillas: { campana: { ...PLANTILLA_RUTA, categoria: 'MARKETING', variables: 1 } } } });
+    expect(delaCampana(await reclamar())).toEqual([]);
+    expect((await campana())['motivoPausa']).toBeUndefined();
+  });
 });
 
 // ===========================================================================

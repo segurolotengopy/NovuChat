@@ -238,7 +238,7 @@ describe('el script de Plataforma', () => {
 describe('paridad: la plantilla de campaña que exige el servidor es la que registra el script', () => {
   const ok = { nombre: 'campana_chat', idioma: 'es', categoria: 'UTILITY', estado: 'APPROVED', variables: 0, cabecera: 'ninguna', botones: 2 };
   const casos: unknown[] = [
-    ok, { ...ok, categoria: 'MARKETING' }, { ...ok, categoria: 'AUTHENTICATION' }, { ...ok, categoria: 'utility' }, { ...ok, estado: 'PENDING' },
+    ok, { ...ok, categoria: 'MARKETING' }, { ...ok, categoria: undefined }, { ...ok, categoria: 'PROMO' }, { ...ok, categoria: 'AUTHENTICATION' }, { ...ok, categoria: 'utility' }, { ...ok, estado: 'PENDING' },
     { ...ok, estado: 'approved' }, { ...ok, variables: 1 }, { ...ok, variables: '0' }, { ...ok, variables: undefined }, { ...ok, cabecera: 'imagen' },
     { ...ok, cabecera: undefined }, { ...ok, botones: 1 }, { ...ok, botones: 3 }, { ...ok, botones: '2' }, { ...ok, nombre: 'Campana' },
     { ...ok, nombre: '' }, { ...ok, nombre: 'a'.repeat(101) }, { ...ok, nombre: 'a'.repeat(100) }, { ...ok, idioma: 'es_BO' }, { ...ok, idioma: 'es_bo' },

@@ -18,7 +18,8 @@
  *
  * USO `campana` (PR-C de la campaña saliente del chat, 26/11/2026): la plantilla de la campaña saliente, también por número,
  * en `rutasWhatsApp/{n}.plantillas.campana = { nombre, idioma, categoria, estado, variables, cabecera, botones, registradaEn }`.
- * Se registra SOLO si es UTILITY o MARKETING (Meta puede reclasificarla), APPROVED, `--variables 0`, `--cabecera ninguna` y
+ * Se registra SOLO si es exactamente UTILITY (Andres, 27/11/2026: «no procederá si es marketing»; una MARKETING, ausente o desconocida
+ * se rechaza), APPROVED, `--variables 0`, `--cabecera ninguna` y
  * `--botones 2` (dos respuestas rápidas). Aquí no hay modo «apagar»: un estado distinto de APPROVED no se registra; una campaña en
  * marcha se detiene con `campana-saliente.mjs pausar`. El nombre de la plantilla es DATO del número, nunca del código.
  *
@@ -102,7 +103,7 @@ export function problemasDeLaPlantilla(p, uso = 'retomar') {
   if (uso === 'campana') {
     // La campaña no tiene modo «apagar»: solo se registra lo que el servidor puede enviar.
     if (p.estado !== 'APPROVED') problemas.push('la plantilla de campaña se registra solo APPROVED (para detener una campaña use campana-saliente.mjs pausar)');
-    if (p.categoria !== 'UTILITY' && p.categoria !== 'MARKETING') problemas.push('la plantilla de campaña tiene que ser UTILITY o MARKETING');
+    if (p.categoria !== 'UTILITY') problemas.push('la plantilla de campaña tiene que ser UTILITY: con MARKETING la campaña no procede');
     if (p.variables !== 0) problemas.push('la plantilla de campaña no lleva variables: --variables 0');
     if (p.cabecera !== 'ninguna') problemas.push('la plantilla de campaña no lleva cabecera: --cabecera ninguna');
     if (p.botones !== 2) problemas.push('la plantilla de campaña lleva exactamente 2 botones de respuesta rápida: --botones 2');
@@ -123,7 +124,7 @@ export function plantillaCampanaValida(p) {
   return typeof p === 'object' && p !== null
     && typeof p.nombre === 'string' && PATRON_NOMBRE.test(p.nombre)
     && typeof p.idioma === 'string' && PATRON_IDIOMA.test(p.idioma)
-    && (p.categoria === 'UTILITY' || p.categoria === 'MARKETING') && p.estado === 'APPROVED'
+    && p.categoria === 'UTILITY' && p.estado === 'APPROVED'
     && p.variables === 0 && p.cabecera === 'ninguna' && p.botones === 2;
 }
 

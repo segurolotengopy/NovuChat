@@ -227,6 +227,20 @@ async function leerListaDePrueba(db, tenant) {
   return s.exists ? leerTelefonosDePrueba(s.data()) : [];
 }
 
+/**
+ * Por qué la plantilla de la ruta no sirve, o `null` si sirve. La categoría se lee del REGISTRO vigente de la ruta (Meta puede reclasificar
+ * una plantilla ya aprobada): con cualquier cosa que no sea exactamente UTILITY la campaña no procede (Andres, 27/11/2026).
+ */
+export function motivoDePlantillaDeCampana(ruta) {
+  const p = ruta.get('plantillas.campana');
+  if (plantillaCampanaValida(p)) return null;
+  if (p && typeof p === 'object' && p.categoria !== 'UTILITY') {
+    const cat = p.categoria === 'MARKETING' || p.categoria === 'AUTHENTICATION' ? p.categoria : 'ausente o desconocida';
+    return `la plantilla de campaña de la ruta no es UTILITY (categoría vigente: ${cat}): la campaña no procede con una plantilla que no sea UTILITY`;
+  }
+  return 'la ruta no tiene una plantilla de campaña válida';
+}
+
 /** `plantillas.campana` de la ruta, con el contrato exacto del registro. */
 function plantillaDeLaRuta(ruta) {
   const p = ruta.get('plantillas.campana');
@@ -317,7 +331,7 @@ async function crear(cfg, deps, log) {
   const c = await contexto(cfg, deps, log, { conConfig: true });
   if (c.codigo) return c.codigo;
   const plantilla = plantillaDeLaRuta(c.ruta);
-  if (plantilla === null) { log('\n  ✗ La ruta no tiene una plantilla de campaña válida (registrar-plantilla.mjs --uso campana). No se escribió nada.\n'); return 2; }
+  if (plantilla === null) { log(`\n  ✗ ${motivoDePlantillaDeCampana(c.ruta)} (registrar-plantilla.mjs --uso campana). No se escribió nada.\n`); return 2; }
   const ref = refCampana(db, cfg.tenant, cfg.campana);
   if ((await ref.get()).exists) { log('\n  ✗ Ya existe una campaña con ese id: use otro. No se escribió nada.\n'); return 2; }
   if (cfg.soloPrueba) {
@@ -375,7 +389,7 @@ export function motivoDeRechazoDeTanda({ camp, numero, ruta, cfg, config, pendie
   if (camp.get('tanda') !== null && camp.get('tanda') !== undefined) return { codigo: 2, motivo: 'la tanda anterior no se cerró (cerrar-tanda)' };
   if (yaHecha(camp.get('tandasHechas'), cfg.tanda)) return { codigo: 2, motivo: 'esa tanda ya se hizo: use otro id' };
   if (cfg.cupo > config.porTanda) return { codigo: 2, motivo: 'el cupo supera porTanda de la configuración' };
-  if (plantillaDeLaRuta(ruta) === null) return { codigo: 2, motivo: 'la ruta no tiene una plantilla de campaña válida' };
+  if (plantillaDeLaRuta(ruta) === null) return { codigo: 2, motivo: motivoDePlantillaDeCampana(ruta) };
   const otra = ruta.get('campanaSalienteEnCurso');
   if (otra !== undefined && otra !== null && otra !== cfg.campana) return { codigo: 2, motivo: 'otra campaña está en curso en este número' };
   if (destinatariosTotal !== camp.get('total')) return { codigo: 2, motivo: 'la campaña está incompleta (faltan destinatarios): no se autoriza' };
@@ -563,7 +577,7 @@ async function estado(cfg, deps, log) {
   const categoria = camp.get('plantilla.categoria');
   const entregas = n('aceptados') + n('inciertos');
   if (categoria === 'UTILITY') log(`  categoría UTILITY · costo estimado: ${entregas} × ${PLANTILLA_UTILIDAD_USD} USD = ${(entregas * PLANTILLA_UTILIDAD_USD).toFixed(4)} USD`);
-  else log(`  categoría ${categoria ?? 'desconocida'}: el costo por entrega es mayor que el de UTILITY; no se estima aquí (ver docs/base-comercial.md).`);
+  else log(`  categoría ${categoria === 'MARKETING' ? categoria : 'ausente o desconocida'}: NO procede (la campaña solo sale con una plantilla UTILITY); no se estima costo.`);
   log('');
   return 0;
 }

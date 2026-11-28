@@ -192,9 +192,21 @@ describe('leerCampanaEnCurso y cambiosDeCampana', () => {
 
 describe('plantillaDeCampanaValida (el contrato de la plantilla de campaña)', () => {
   const ok = { nombre: 'campana_chat', idioma: 'es', categoria: 'UTILITY', estado: 'APPROVED', variables: 0, cabecera: 'ninguna', botones: 2 };
-  it('acepta UTILITY y MARKETING', () => {
+  it('acepta SOLO UTILITY (27/11/2026: «no procederá si es marketing»)', () => {
     expect(M.plantillaDeCampanaValida(ok)).toBe(true);
-    expect(M.plantillaDeCampanaValida({ ...ok, categoria: 'MARKETING' })).toBe(true);
+  });
+  it.each([
+    ['MARKETING', { ...ok, categoria: 'MARKETING' }], ['categoría ausente', { ...ok, categoria: undefined }], ['categoría desconocida', { ...ok, categoria: 'PROMO' }],
+    ['categoría en minúsculas', { ...ok, categoria: 'utility' }], ['categoría nula', { ...ok, categoria: null }], ['categoría numérica', { ...ok, categoria: 5 }],
+  ])('NIEGA: %s', (_n, p) => {
+    expect(M.plantillaDeCampanaValida(p)).toBe(false);
+    expect(M.soloFallaLaCategoria(p)).toBe(true); // se pausa con motivo propio, no queda en silencio
+  });
+  it('soloFallaLaCategoria: false si es válida o si falla otra cosa además de la categoría (no se pausa, simplemente no sale)', () => {
+    expect(M.soloFallaLaCategoria(ok)).toBe(false);
+    expect(M.soloFallaLaCategoria({ ...ok, categoria: 'MARKETING', variables: 1 })).toBe(false);
+    expect(M.soloFallaLaCategoria({ ...ok, categoria: 'MARKETING', estado: 'PAUSED' })).toBe(false);
+    expect(M.soloFallaLaCategoria(null)).toBe(false);
   });
   it.each([
     ['PENDING', { ...ok, estado: 'PENDING' }], ['con variables', { ...ok, variables: 1 }], ['variables como texto', { ...ok, variables: '0' }],

@@ -303,7 +303,7 @@ describe('crear', () => {
     await crearReal(m, 'cmp-uno');
     const otra = await correr(crearArgs(m, 'cmp-uno', ['--aplicar']));
     expect(otra.codigo).toBe(2);
-    for (const plantilla of [null, { ...PLANTILLA, variables: 1 }, { ...PLANTILLA, botones: 3 }, { ...PLANTILLA, estado: 'PAUSED' }, { ...PLANTILLA, cabecera: 'imagen' }]) {
+    for (const plantilla of [null, { ...PLANTILLA, categoria: 'MARKETING' }, { ...PLANTILLA, categoria: 'PROMO' }, { ...PLANTILLA, variables: 1 }, { ...PLANTILLA, botones: 3 }, { ...PLANTILLA, estado: 'PAUSED' }, { ...PLANTILLA, cabecera: 'imagen' }]) {
       const mm = await montar({ plantilla });
       const r = await correr(crearArgs(mm, 'cmp-dos', ['--aplicar']));
       expect(r.codigo, JSON.stringify(plantilla)).toBe(2);
@@ -709,13 +709,32 @@ describe('estado', () => {
     for (const l of r.texto.split('\n')) expect(l).not.toMatch(/\d{7,}/);
     expect(await foto(m)).toBe(antes);
   });
-  it('con MARKETING no estima el costo y lo dice; sin métricas del mes la línea dice 0', async () => {
-    const m = await montar({ plantilla: { ...PLANTILLA, categoria: 'MARKETING' } });
+  it('una campaña vieja con categoría MARKETING no estima costo y dice que NO procede; sin métricas del mes la línea dice 0', async () => {
+    const m = await montar();
     await crearReal(m, 'cmp-uno');
+    await refC(m, 'cmp-uno').update({ 'plantilla.categoria': 'MARKETING' });
     const r = await correr(base(m, 'estado', ['--campana', 'cmp-uno']));
     expect(r.texto).toMatch(/plantillasCampana del mes \(\d{4}-\d{2}, UTC\): 0/);
-    expect(r.texto).toContain('MARKETING');
+    expect(r.texto).toContain('NO procede');
     expect(r.texto).not.toContain('USD =');
+  });
+  it('NEGATIVA (27/11/2026): con la categoría vigente de la ruta MARKETING, ausente o desconocida, `crear` y `autorizar-tanda` fallan con mensaje claro y no escriben; UTILITY pasa', async () => {
+    const m = await montar();
+    await crearReal(m, 'cmp-uno'); // con UTILITY
+    for (const categoria of ['MARKETING', 'PROMO', undefined]) {
+      // Meta la reclasificó DESPUÉS de aprobada: el script relee la categoría vigente de la ruta, no la copia de la campaña.
+      await db.doc(`rutasWhatsApp/${m.numero}`).update({ 'plantillas.campana.categoria': categoria === undefined ? FieldValue.delete() : categoria });
+      const antes = await foto(m);
+      const a = await correr(autorizarArgs(m, 'cmp-uno', 't1', ['--aplicar']));
+      expect(a.codigo, String(categoria)).toBe(2);
+      expect(a.texto).toContain('no es UTILITY');
+      const c = await correr(crearArgs(m, 'cmp-dos', ['--aplicar']));
+      expect(c.codigo, String(categoria)).toBe(2);
+      expect(c.texto).toContain('no es UTILITY');
+      expect(await foto(m)).toBe(antes);
+    }
+    await db.doc(`rutasWhatsApp/${m.numero}`).update({ 'plantillas.campana.categoria': 'UTILITY' });
+    expect((await correr(autorizarArgs(m, 'cmp-uno', 't1', ['--aplicar']))).codigo).toBe(0);
   });
   it('NEGATIVA: una campaña inexistente o de otra línea sale con 2', async () => {
     const m = await montar();

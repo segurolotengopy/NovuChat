@@ -213,14 +213,30 @@ export function debePausar(c: { aceptados: number; rechazados: number; inciertos
   return total >= cfg.pausaMinimoEnviados && (c.rechazados + inciertos) * 100 > cfg.pausaErroresPct * total;
 }
 
-/** Lo que el servidor exige de la plantilla de campaña registrada en la ruta (copia de `plantillaCampanaValida` del script; hay una prueba de paridad). */
-export function plantillaDeCampanaValida(p: unknown): p is { nombre: string; idioma: string; categoria: 'UTILITY' | 'MARKETING' } {
+/**
+ * Lo que el servidor exige de la plantilla de campaña registrada en la ruta (copia de `plantillaCampanaValida` del script; hay una prueba
+ * de paridad). SOLO `UTILITY` (Andres, 27/11/2026: «no procederá si es marketing»): una categoría ausente, desconocida o `MARKETING`
+ * no cumple (falla cerrada).
+ */
+export function plantillaDeCampanaValida(p: unknown): p is { nombre: string; idioma: string; categoria: 'UTILITY' } {
   if (typeof p !== 'object' || p === null) return false;
   const o = p as Record<string, unknown>;
   return typeof o['nombre'] === 'string' && NOMBRE_DE_PLANTILLA.test(o['nombre'])
     && typeof o['idioma'] === 'string' && IDIOMA_DE_PLANTILLA.test(o['idioma'])
-    && (o['categoria'] === 'UTILITY' || o['categoria'] === 'MARKETING') && o['estado'] === 'APPROVED'
+    && o['categoria'] === 'UTILITY' && o['estado'] === 'APPROVED'
     && o['variables'] === 0 && o['cabecera'] === 'ninguna' && o['botones'] === 2;
+}
+
+/** El valor de `motivoPausa` cuando la categoría VIGENTE de la plantilla de la ruta ya no es UTILITY (p. ej. Meta la reclasificó a MARKETING). */
+export const MOTIVO_PLANTILLA_NO_UTILITY = 'plantillaNoUtility';
+
+/**
+ * ¿La plantilla de la ruta cumple todo el contrato MENOS la categoría? Es el caso en que la campaña se pausa con motivo propio (la
+ * plantilla estaba bien y dejó de ser UTILITY, o nunca lo fue); si falla otra cosa, la campaña simplemente no sale, como siempre.
+ */
+export function soloFallaLaCategoria(p: unknown): boolean {
+  if (typeof p !== 'object' || p === null || plantillaDeCampanaValida(p)) return false;
+  return plantillaDeCampanaValida({ ...(p as Record<string, unknown>), categoria: 'UTILITY' });
 }
 
 /** Lo que la campaña sabe de sí misma, ya validado. `null` si algo no cuadra (la campaña no sale). */
@@ -276,7 +292,8 @@ export async function materializarCampana(
   if (typeof puntero !== 'string' || !CAMPANA_ID.test(puntero) || libres < 1) return [];
   const plantillas = rutaDoc?.['plantillas'];
   const plantilla = typeof plantillas === 'object' && plantillas !== null ? (plantillas as Record<string, unknown>)['campana'] : undefined;
-  if (!plantillaDeCampanaValida(plantilla)) return [];
+  const noEsUtility = soloFallaLaCategoria(plantilla);
+  if (!noEsUtility && !plantillaDeCampanaValida(plantilla)) return [];
   const { tenantId, phoneNumberId } = ruta;
   const canal = canalDeSalidaDe(rutaDoc);
   const dia = diaDeLaPaz(ahoraMs);
@@ -293,6 +310,14 @@ export async function materializarCampana(
     const pruebaCruda: unknown = campanaSnap?.get('prueba');
     if (pruebaCruda !== undefined && typeof pruebaCruda !== 'boolean') return [];
     const esPrueba = pruebaCruda === true;
+    // LA CATEGORÍA VIGENTE (la de la ruta, releída en cada reclamo; no la copia de la campaña): si ya no es UTILITY la campaña se pausa ENTERA
+    // con motivo propio y no sale nada (como los demás rechazos de la prueba); el puntero se quita en la misma transacción.
+    if (noEsUtility) {
+      tx.update(refC, { estado: 'pausada', motivoPausa: MOTIVO_PLANTILLA_NO_UTILITY });
+      if (rutaSnap?.get('campanaSalienteEnCurso') === puntero) tx.update(refRuta, { campanaSalienteEnCurso: FieldValue.delete() });
+      return [];
+    }
+    if (!plantillaDeCampanaValida(plantilla)) return [];
     const nDiaLeido: unknown = contadorSnap?.get('dia') === dia ? contadorSnap.get('nDia') : 0;
     if (!contador(nDiaLeido)) return [];
     const cupo = cupoDeLaVuelta({ libres, config, tanda: campana.tanda, nDia: nDiaLeido, enVuelo: campana.enVuelo });
