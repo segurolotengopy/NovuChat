@@ -285,12 +285,28 @@ function cmNormEnlace(e) {
 }
 
 function cmOraciones(t, estricto) {
+  return cmOracionesSep(t, estricto).map((o) => o.t);
+}
+// Igual que cmOraciones, pero cada oración lleva `sep`: lo que la separaba de la anterior en el ORIGEN
+// (' ' si solo había espacios; '\n' si había un salto; '\n\n' si había una línea en blanco o más). La primera lleva ''.
+function cmOracionesSep(t, estricto) {
   // `estricto` (maxOraciones): el salto de línea y un emoji cierran oración; «1.» no.
   const ABREV = estricto ? /(?:\b(?:Dr|Dra|Sr|Sra|Srta|Lic|Ing|Prof|Esp|Av|Edif|Of|No|Nro)|(?:^|\s)\d{1,2})\.$/i : /\b(Dr|Dra|Sr|Sra|Srta|Lic|Ing|Prof|Esp|Av|Edif|Of|No|Nro)\.$/i;
   const oraciones = [];
-  for (const x of String(t).split(estricto ? /(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic})\s+|\s*\n+\s*/u : /(?<=[.!?…])\s+/)) {
-    if (oraciones.length && ABREV.test(oraciones[oraciones.length - 1])) oraciones[oraciones.length - 1] += ' ' + x;
-    else oraciones.push(x);
+  const partes = String(t).split(estricto ? /((?<=[.!?…])\s+|(?<=\p{Extended_Pictographic})\s+|\s*\n+\s*)/u : /((?<=[.!?…])\s+)/);
+  // Una línea de lista empieza con viñeta («- », «• », «* », «– ») o con numeral («1. », «2) »). Cada oración lleva `lista`:
+  // true si cae dentro de una línea de lista (la línea manda; un espacio dentro de la línea hereda la marca de la anterior).
+  const VINETA = /^(?:[-•*–—▪◦·]|\d{1,2}[.)])(?:\s|$)/;
+  for (let i = 0; i < partes.length; i += 2) {
+    const x = partes[i];
+    const saltos = i ? (partes[i - 1].match(/\n/g) || []).length : 0;
+    const sep = !i ? '' : saltos >= 2 ? '\n\n' : saltos === 1 ? '\n' : ' ';
+    const previa = oraciones.length ? oraciones[oraciones.length - 1] : null;
+    // El salto de línea de una viñeta MANDA sobre el punto: «• Mate Bs 25.\n• Taza» no se pega («25.» no es un numeral de lista).
+    // Un numeral suelto («1.» y salto) y un trato («Dr.» y salto) siguen uniéndose a su texto.
+    const pegar = previa && ABREV.test(previa.t) && !(saltos && /\d{1,2}\.$/.test(previa.t) && !/^\s*\d{1,2}\.$/.test(previa.t));
+    if (pegar) previa.t += ' ' + x;
+    else oraciones.push({ t: x, sep, lista: saltos || !previa ? VINETA.test(x) : previa.lista });
   }
   return oraciones;
 }
@@ -363,7 +379,8 @@ function cmMotivo1(texto, opciones) {
     const nlc = cmJuntoLetras(cmLeet(cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , '))));
     if (CM_PROMETE_IMAGENES.test(n) || CM_PROMETE_IMAGENES.test(nj) || CM_PROMETE_IMAGENES.test(nl) || CM_PROMETE_IMAGENES.test(nlc)) return 'promete_imagenes';
   }
-  if (o.maxOraciones >= 1 && cmOraciones(s, true).filter((x) => /[\p{L}\p{N}]/u.test(x)).length > o.maxOraciones) return 'largo_en_oraciones';
+  // Una LISTA (líneas de viñeta o numeral) no cuenta para el tope: se cuenta la prosa. Estándar 3.2.
+  if (o.maxOraciones >= 1 && cmOracionesSep(s, true).filter((x) => !x.lista && /[\p{L}\p{N}]/u.test(x.t)).length > o.maxOraciones) return 'largo_en_oraciones';
   const optIn = cmReglasOptIn(s, o);
   if (optIn) return optIn;
   for (const re of (o.prohibidos || [])) if (re.test(n)) return 'prohibido';
@@ -404,22 +421,32 @@ function cmRedaccionValida(texto, opciones) {
 function cmPulirRedaccion(texto, opciones) {
   const o = opciones || {};
   // Tope de largo: el pulido parte por oraciones y un texto enorme lo volvía cuadrático. Una redacción válida mide ≤ 900.
-  const oraciones = cmOraciones(String(texto || '').slice(0, 5000).trim(), o.maxOraciones >= 1);
+  const oraciones = cmOracionesSep(String(texto || '').slice(0, 5000).trim(), o.maxOraciones >= 1);
   const SALUDO = /^[¡!]?\s*(hola|buen[oa]s?\s+(d[ií]as|tardes|noches)|qu[eé] tal)\b/i;
   const PRESENTA = /\b(soy|somos)\s+(la|el|una|un|tu)\s+(asistente|secretaria|recepcionista)\b|\bestoy aqu[ií] para\b|\best(oy|amos) para (ayudarte|servirte)\b/i;
-  while (oraciones.length > 1 && (SALUDO.test(oraciones[0]) || PRESENTA.test(oraciones[0]))) oraciones.shift();
-  if (oraciones.length) oraciones[0] = oraciones[0].replace(/^[¡!]?\s*(claro que s[ií]|claro|por supuesto|con gusto|perfecto|listo|dale|genial)\s*[!,.:]+\s*/i, '');
-  if (oraciones.length) oraciones[0] = oraciones[0].replace(/^[¡!]?\s*hola\s*[!.,]\s*/i, '');
-  // Tope de oraciones (opt-in): se conservan las primeras y, si la última era una pregunta, esa pregunta.
+  while (oraciones.length > 1 && (SALUDO.test(oraciones[0].t) || PRESENTA.test(oraciones[0].t))) oraciones.shift();
+  if (oraciones.length) oraciones[0].t = oraciones[0].t.replace(/^[¡!]?\s*(claro que s[ií]|claro|por supuesto|con gusto|perfecto|listo|dale|genial)\s*[!,.:]+\s*/i, '');
+  if (oraciones.length) oraciones[0].t = oraciones[0].t.replace(/^[¡!]?\s*hola\s*[!.,]\s*/i, '');
+  // Tope de oraciones (opt-in): se conservan las primeras y, si la última era una pregunta, esa pregunta. Una LISTA (líneas de
+  // viñeta) no cuenta ni se recorta nunca (Estándar 3.2 y 2.2): el tope es de la prosa que la rodea.
   const tope = Number(o.maxOraciones);
-  if (tope >= 1 && oraciones.length > tope) {
-    const ultima = oraciones[oraciones.length - 1];
-    const corte = oraciones.slice(0, tope);
-    if (/\?[^\p{L}\p{N}]*$/u.test(ultima) && !/\?[^\p{L}\p{N}]*$/u.test(corte[tope - 1])) corte[tope - 1] = ultima;
+  const prosa = oraciones.filter((x) => !x.lista);
+  if (tope >= 1 && prosa.length > tope) {
+    const ultima = prosa[prosa.length - 1];
+    const quedan = new Set(prosa.slice(0, tope));
+    if (/\?[^\p{L}\p{N}]*$/u.test(ultima.t) && !/\?[^\p{L}\p{N}]*$/u.test(prosa[tope - 1].t)) {
+      // La pregunta toma el separador del lugar que reemplaza (nunca se pega a la última viñeta: «• Pieza 2 ¿Cuál?»).
+      ultima.sep = prosa[tope - 1].sep;
+      quedan.delete(prosa[tope - 1]); quedan.add(ultima);
+    }
+    const corte = oraciones.filter((x) => x.lista || quedan.has(x));
+    const iu = corte.indexOf(ultima);
+    if (iu > 0 && corte[iu - 1].lista && !/\n/.test(ultima.sep)) ultima.sep = '\n';
     oraciones.length = 0;
     oraciones.push(...corte);
   }
-  let t = oraciones.join(' ').trim();
+  // Se une con el separador del ORIGEN: espacio dentro de una línea; salto o línea en blanco entre líneas o párrafos (viñetas, listas).
+  let t = oraciones.map((x, i) => (i ? x.sep : '') + x.t).join('').trim();
   const sinTilde = (w) => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const palabras = String(o.nombreNegocio || '').split(/[^A-Za-zÀ-ÿ]+/).filter((w) => w.length >= 4);
   for (const w of palabras) {
