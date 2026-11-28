@@ -340,7 +340,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
   const entrega = esQr && lineas && (objetoPlano(c['entrega']) || typeof c['entrega'] === 'string')
     ? c['entrega'] : undefined;
   const facturacion = esQr && lineas && objetoPlano(c['facturacion']) ? c['facturacion'] : undefined;
-  const nota = esQr && lineas && typeof c['nota'] === 'string' ? c['nota'] : undefined;
+  const nota = esQr && lineas && typeof c['nota'] === 'string' ? c['nota'].slice(0, 2000) : undefined;
   const reemplaza = evento === 'qr_enviado' && lineas && typeof c['reemplaza'] === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(c['reemplaza'])
     ? c['reemplaza'] : undefined;
 
