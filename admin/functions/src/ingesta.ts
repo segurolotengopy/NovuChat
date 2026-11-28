@@ -19,6 +19,7 @@ import { defineInt } from 'firebase-functions/params';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
 import { vozFija, tratamientoClave, tratamientoEfectivo, quienAtiende } from './core/prompt/prompt.js';
 import { registrar } from './core/turno/bitacora.js';
+import { numeroPublicoDesdeMeta } from './core/conversacion/numeroPublico.js';
 import { atenderSesion } from './core/turno/sesionFirestore.js';
 import { validarSesion } from './core/turno/sesion.js';
 import { validarRafaga, leerRafaga, tomarCupoDeRafaga } from './core/conversacion/rafaga.js';
@@ -212,6 +213,8 @@ interface Entrante {
   lineas?: unknown[];
   entrega?: unknown;
   facturacion?: unknown;
+  /** La nota del cliente a nivel de pedido: solo texto, y solo con `qr_enviado`/`pedido_sin_cobro` y líneas. Pedidos la sanea. */
+  nota?: string;
   /** Solo con `qr_enviado` y líneas: el pedido `cat_…` del checkout web que este QR reemplaza (Pedidos lo revalida). */
   reemplaza?: string;
   /**
@@ -337,6 +340,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
   const entrega = esQr && lineas && (objetoPlano(c['entrega']) || typeof c['entrega'] === 'string')
     ? c['entrega'] : undefined;
   const facturacion = esQr && lineas && objetoPlano(c['facturacion']) ? c['facturacion'] : undefined;
+  const nota = esQr && lineas && typeof c['nota'] === 'string' ? c['nota'] : undefined;
   const reemplaza = evento === 'qr_enviado' && lineas && typeof c['reemplaza'] === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(c['reemplaza'])
     ? c['reemplaza'] : undefined;
 
@@ -348,6 +352,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
            ...(lineas ? { lineas } : {}),
            ...(entrega !== undefined ? { entrega } : {}),
            ...(facturacion !== undefined ? { facturacion } : {}),
+           ...(nota !== undefined ? { nota } : {}),
            ...(reemplaza ? { reemplaza } : {}),
            ...(nombreContacto ? { nombreContacto } : {}),
            ...(evento ? { evento } : {}),
@@ -361,6 +366,9 @@ function normalizar(cuerpo: unknown): Entrante | null {
            ...(nueva ? { nueva } : {}),
            ...(monto !== null ? { monto } : {}) };
 }
+
+/** Solo para pruebas: la API pública del módulo no cambia (no se re-exporta desde `index.ts`). */
+export const normalizarParaPruebas = normalizar;
 
 /** Forma que exige un identificador de comercio. Se comprueba ANTES de armar
  *  ninguna ruta con él: `tenantId` viene de un documento, y un documento con un
@@ -1614,7 +1622,7 @@ export const ingesta = onRequest(
         referenciaAnterior: mensaje.evento === 'pedido_sin_cobro' ? undefined : veredicto.pedidos.refAnterior,
         telefono: mensaje.telefono, monto: mensaje.monto,
         lineas: mensaje.lineas, entrega: mensaje.entrega, facturacion: mensaje.facturacion,
-        reemplaza: mensaje.reemplaza,
+        reemplaza: mensaje.reemplaza, nota: mensaje.nota,
       });
     }
 
@@ -1697,6 +1705,66 @@ function registrarAnomaliaDeSesion(
   });
 }
 
+export const TOPE_NUMERO_PUBLICO_MS = 1500;
+
+/**
+ * Fija `rutasWhatsApp/<phoneNumberId>.numeroPublico` con el número que Meta informa para la línea
+ * (`lineaVisible = {id, numero}` en el cuerpo). Solo si la ruta autenticada no lo tiene, el `id` coincide con
+ * la cabecera firmada y el número cumple las reglas del script de fijado a mano. La transacción RELEE la ruta
+ * y escribe solo si sigue sin campo, es del mismo comercio y no fue quitado a mano. Todo en try/catch: un
+ * fallo se registra y el turno sigue igual.
+ */
+export async function fijarNumeroPublicoDesdeMeta(
+  ruta: { phoneNumberId: string; tenantId: string; tieneNumeroPublico: boolean; numeroPublicoAutoApagado: boolean },
+  lineaVisible: unknown,
+): Promise<void> {
+  try {
+    // ATAJO: con el campo (cualquier valor) o con la marca de «quitado a mano», ni siquiera se abre la
+    // transacción. Sale del documento que la autenticación ya leyó: 0 lecturas y 0 escrituras por mensaje.
+    if (ruta.tieneNumeroPublico || ruta.numeroPublicoAutoApagado) return;
+    if (typeof lineaVisible !== 'object' || lineaVisible === null) return;
+    const { id, numero } = lineaVisible as Record<string, unknown>;
+    if (typeof id !== 'string' || id !== ruta.phoneNumberId) return;
+    const publico = numeroPublicoDesdeMeta(numero);
+    if (publico === '') return;
+
+    const db = getFirestore();
+    const refRuta = db.doc(`rutasWhatsApp/${ruta.phoneNumberId}`);
+    const transaccion = db.runTransaction(async (tx) => {
+      const actual = await tx.get(refRuta);
+      if (!actual.exists) return;
+      if (actual.get('tenantId') !== ruta.tenantId) return;
+      if (actual.get('numeroPublico') !== undefined) return;
+      if (actual.get('numeroPublicoAuto') === false) return;
+      // `actualizadoPor` es el sello del ÚLTIMO que escribió la ruta: se sobrescribe a propósito (igual que
+      // en el script); el autor de cada cambio queda en `tenants/{t}/auditoria`, que es el historial.
+      tx.update(refRuta, {
+        numeroPublico: publico,
+        actualizadoPor: 'meta:ingesta',
+        actualizadoEn: Timestamp.now(),
+      });
+      tx.create(db.collection(`tenants/${ruta.tenantId}/auditoria`).doc(), {
+        accion: 'fijar_numero_publico_auto', uid: 'ingesta', origen: 'ingesta',
+        en: Timestamp.now(), phoneNumberId: `…${ruta.phoneNumberId.slice(-4)}`,
+        despues: `…${publico.slice(-4)}`,
+      });
+    }).catch((e: unknown) => {
+      // La falla se registra UNA vez, aquí; la promesa que se espera nunca rechaza (tampoco si vence el tope).
+      logger.warn('configuracionFlujo: no se pudo fijar el numero publico', {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    });
+    // TOPE DE ESPERA: el turno no espera más de 1,5 s. Si vence, el turno sigue y la escritura no se cancela.
+    let reloj: ReturnType<typeof setTimeout> | undefined;
+    const tope = new Promise<void>((resolver) => { reloj = setTimeout(resolver, TOPE_NUMERO_PUBLICO_MS); });
+    try { await Promise.race([transaccion, tope]); } finally { clearTimeout(reloj); }
+  } catch (e) {
+    logger.warn('configuracionFlujo: no se pudo fijar el numero publico', {
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
 export const configuracionFlujo = onRequest(
   {
     region: REGION,
@@ -1767,10 +1835,16 @@ export const configuracionFlujo = onRequest(
     const telefonoCrudo = typeof cuerpo['telefono'] === 'string' ? cuerpo['telefono'].trim() : '';
     const telefono = /^[0-9]{8,15}$/.test(telefonoCrudo) ? telefonoCrudo : null;
 
+    // NÚMERO PÚBLICO DESDE META (27/11/2026): la primera vez que llega un mensaje verificado a una línea
+    // sin `numeroPublico`, se fija con el que Meta informa. Una sola vez por línea; nunca pisa uno fijado ni
+    // uno quitado a mano (`numeroPublicoAuto: false`). Nunca cambia la respuesta del turno.
+    // Con `rafaga` se ignora `lineaVisible`: esa rama es de solo lectura.
+    if (cuerpo['rafaga'] === undefined) await fijarNumeroPublicoDesdeMeta(ruta, cuerpo['lineaVisible']);
+
     // RÁFAGA DE MENSAJES (`core/conversacion/rafaga.ts`, `docs/arquitectura/rafagas.md`): el flujo pregunta
     // cuáles son los últimos entrantes de ESTE teléfono para decidir si responde o calla. Corta antes de
     // leer config o negocio. Lecturas por consulta, TODAS (`MAX_LECTURAS` = 12): la ruta (1) + la ficha (1) +
-    // mi documento (hasta 2 con un reintento de Meta) + hasta 5 anteriores + hasta 3 posteriores. Cero escrituras. Con `sesion` a la vez es un pedido mal formado.
+    // mi documento (hasta 2 con un reintento de Meta) + hasta 5 anteriores + hasta 3 posteriores. Cero escrituras (`lineaVisible` se ignora en esta rama). Con `sesion` a la vez es un pedido mal formado.
     if (cuerpo['rafaga'] !== undefined) {
       if (cuerpo['sesion'] !== undefined) { respuesta.status(400).json({ error: 'rafaga_con_sesion' }); return; }
       const vr = validarRafaga(cuerpo['rafaga'], telefono);

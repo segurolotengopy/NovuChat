@@ -20,7 +20,8 @@ import { NORMALIZADORES_VERIFICADOS, huellaDe, injertarRafaga, quitarRafaga } fr
 import { cablearBellido, cablearWalisuma, descablearWalisuma } from './rafaga-cableado';
 import { ANA, PRODUCCION, crear, hablar, mAudio, mTexto, modelo, panelOk, valorMeta } from '../tenants/walisuma/mundo';
 
-const ANCLA_WALISUMA = { nodo: '¿Bajar medio?', salida: 1, destino: 'Decidir turno' };
+// El cableado real de Walisuma (`Flujos/clientes/walisuma/construir.mjs`, `OPCIONES_DE_LA_RAFAGA.ancla`). NO se importa de ahí: una prueba de core no puede depender de un cliente (`fronteras.test.ts`); la prueba propia de Walisuma (`tenants/walisuma/armado.test.ts`) fija que coincide.
+const ANCLA_WALISUMA = { nodo: 'Puerta del turno', salida: 0, destino: '¿Bajar medio?' };
 const frag = (idMeta: string, texto: string, ms: number, tipo = 'text') => ({ idMeta, tipo, texto, ms });
 const UNO = 'quiero 2 cajas';
 const DOS = 'de la grande, para mañana';

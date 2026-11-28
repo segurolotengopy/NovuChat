@@ -70,6 +70,7 @@ import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../../core/seguridad/firma.
 import { registrar, enmascarar } from '../../core/turno/bitacora.js';
 import { camposDeMensajeIndexado } from '../../core/conversacion/derivados.js';
 import { trozosDeTelefono } from '../../core/conversacion/normalizacion.js';
+import { numeroPublicoValido } from '../../core/conversacion/numeroPublico.js';
 // El umbral vive en `prompt.ts` y no acá: lo usan este módulo y
 // `configuracionFlujo`, y si viviera en uno de los dos el otro tendría que
 // importar a su propio importador. Un ciclo en ESM se resuelve en un orden
@@ -348,11 +349,8 @@ export function paletaValida(valor: unknown): string {
  * que valida el navegador (`enlaceAlChat`): dos vallas para un valor que
  * termina en un `href`.
  */
-const NUMERO_PUBLICO = /^[1-9][0-9]{7,14}$/;
-
-export function numeroPublicoValido(valor: unknown): string {
-  return typeof valor === 'string' && NUMERO_PUBLICO.test(valor) ? valor : '';
-}
+// La validación vive en core (`numeroPublicoValido`): la comparte la ingesta, que lo fija desde Meta.
+export { numeroPublicoValido };
 
 /**
  * El número público de la línea por la que entró la conversación de la ficha.

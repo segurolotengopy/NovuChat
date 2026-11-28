@@ -46,16 +46,22 @@
  * ruta (sin el campo la página no ofrece «Volver al chat»), con los mismos
  * negados que fijar. Es excluyente con `--numero`. Deja `actualizadoPor` = el
  * operador y una entrada de auditoría `quitar_numero_publico` con el valor
- * anterior y los últimos cuatro de la línea. Si ya no hay campo, dice «Ya estaba
- * así» y no escribe ni audita. No toca el alias, la WABA ni el webhook.
+ * anterior y los últimos cuatro de la línea, y deja `numeroPublicoAuto: false` para que la
+ * plataforma NO vuelva a fijarlo sola desde Meta (`configuracionFlujo`); fijar a mano borra esa marca.
+ * Si ya no hay campo y la marca ya está, dice «Ya estaba así» y no escribe ni audita. No toca el alias, la WABA ni el webhook.
  *
  * `--operador` es obligatorio (la misma validación que `asignar-numero.mjs`): es
  * quien queda como `actualizadoPor` de la ruta y como `uid` de la auditoría.
  *
- * Dos avisos operativos:
- *   - `asignarNumero` (la callable) REEMPLAZA el documento de la ruta y borraría
- *     este campo; `asignar-numero.mjs` escribe con merge y lo conserva. Con un
- *     número nuevo (`--reemplaza`) la ruta es otra: hay que volver a fijarlo.
+ * Tres avisos operativos:
+ *   - EL PRIMERO QUE ESCRIBE GANA, y no se compara con Meta: desde el 27/11/2026 la plataforma
+ *     también fija el número sola (`configuracionFlujo`, con `lineaVisible` del flujo) si la ruta no lo
+ *     tiene ni fue quitado a mano; este script, al fijar a mano, lo sobrescribe y borra la marca.
+ *   - `asignarNumero` (la callable) escribe con merge y CONSERVA `numeroPublico` y `numeroPublicoAuto`.
+ *     Lo que borra TODO es `liberarNumero` (borra el documento de la ruta): un número reasignado nace sin
+ *     nada del dueño anterior, así que pierde también la marca y, si no tiene número, la plataforma lo
+ *     vuelve a fijar sola con el primer mensaje.
+ *   - `--quitar` solo alcanza la línea de `waPhoneNumberId` del comercio.
  */
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : undefined; };
@@ -148,12 +154,18 @@ try {
       phoneNumberId,
       antes: typeof antes === 'string' ? antes : '',
       // Quitar: ya está si el campo no existe (aunque hubiera basura, se quita).
-      igual: QUITAR ? antes === undefined : antes === NUMERO,
+      // Quitar también exige la marca `numeroPublicoAuto: false`: sin ella la plataforma volvería a fijarlo sola.
+      // Fijar a mano exige que no quede la marca.
+      igual: QUITAR
+        ? antes === undefined && ruta.get('numeroPublicoAuto') === false
+        : antes === NUMERO && ruta.get('numeroPublicoAuto') === undefined,
     };
     if (!APLICAR || resumen.igual) return resumen;
 
     tx.update(refRuta, {
       numeroPublico: QUITAR ? FieldValue.delete() : NUMERO,
+      // Quitar a mano apaga el fijado automático desde Meta; fijar a mano borra esa marca.
+      numeroPublicoAuto: QUITAR ? false : FieldValue.delete(),
       actualizadoPor: OPERADOR,
       actualizadoEn: Timestamp.now(),
     });
@@ -179,7 +191,7 @@ console.log();
 console.log(`  Proyecto : ${NOMBRE_PROYECTO_ENV ? '(del entorno)' : PROYECTO}`);
 console.log(`  Comercio : ${TENANT}  ·  línea ${ult4(plan.phoneNumberId)}`);
 console.log(`  Operador : ${args.includes('--operador-env') ? '(del entorno)' : OPERADOR}`);
-console.log(`  Antes    : ${plan.antes === '' ? '(sin número público)' : verNum(plan.antes)}`);
+console.log(`  Antes    : ${plan.antes === '' ? '(sin número público)' : (QUITAR ? ult4(plan.antes) : verNum(plan.antes))}`);
 console.log(`  Después  : ${QUITAR ? '(sin número público)' : verNum(NUMERO)}`);
 console.log();
 
