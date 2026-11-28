@@ -27,7 +27,7 @@ const sale = (frase: string, lineas: unknown[] = []): string => textos(hablar(co
 const SEMILLA = 1127;
 function azar(semilla: number): () => number {
   let a = semilla >>> 0;
-  return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32; };
 }
 const elige = <T,>(r: () => number, xs: T[]): T => xs[Math.floor(r() * xs.length)]!;
 
