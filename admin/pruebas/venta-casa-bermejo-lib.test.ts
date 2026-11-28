@@ -20,7 +20,7 @@ const RUTAS = [
 const NOMBRES = [
   'CN_TENANT', 'bmFichaVigente', 'bmFichaBase', 'bmModos', 'bmCatalogo', 'bmRespuestaHttp', 'bmResolver', 'bmSeguro', 'bmTextoDerivacion', 'bmTextoComprobante', 'bmMezclarEntrega', 'bmEntregaCompleta', 'bmQuierePagar',
   'bmPideIdentidad', 'bmCorporativo', 'bmPideFactura', 'bmQuiereHablar', 'bmNorm', 'bmDerivar', 'bmIdPedido', 'bmCobro', 'BM_PROMPT_VOZ', 'BM_TEXTO_IDENTIDAD', 'bmCuerpoModelo',
-  'BM_TEXTO_MODELO_SIN_REDACCION', 'BM_TEXTO_SIN_PIEZA', 'bmEnlaceCatalogo', 'bmModoDeBoton', 'bmBotonesDeEntrega', 'bmOfreceBotonesDeEntrega', 'bmPideAlias', 'bmTextoDeEstado', 'cdTextoComprobanteConDiferencias', 'cdDiferenciaParaElTexto', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmDatosTienda', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmEntregaDeTurno', 'bmMontosDelSitioDifieren', 'BM_TEXTO_PRECIOS_DISTINTOS', 'vcTotalCentavos', 'bmEnmascararDocumento', 'bmEsConsulta', 'bmPideHorario', 'bmPreguntaDeTienda', 'bmTiendaTieneDato', 'bmRespuestaDeTienda', 'bmDatosResumen', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
+  'BM_TEXTO_MODELO_SIN_REDACCION', 'bmPreguntaFija', 'bmEnlaceCatalogo', 'bmModoDeBoton', 'bmBotonesDeEntrega', 'bmOfreceBotonesDeEntrega', 'bmPideAlias', 'bmTextoDeEstado', 'cdTextoComprobanteConDiferencias', 'cdDiferenciaParaElTexto', 'BM_TEXTO_CORTES', 'BM_INTROS', 'bmLimitarEmojis', 'bmMontosValidos', 'bmRedaccion', 'bmEntregaFalta', 'bmDatosTienda', 'bmParaMemoria', 'bmAUsted', 'bmCoincidencias', 'bmDireccionPedido', 'bmEsRetiro', 'bmEsEnvio', 'bmFormatearMontos', 'bmTextoDeCoincidencias', 'bmConPrecios', 'bmFijarPieza', 'bmEntregaDeTurno', 'bmMontosDelSitioDifieren', 'BM_TEXTO_PRECIOS_DISTINTOS', 'vcTotalCentavos', 'bmEnmascararDocumento', 'bmEsConsulta', 'bmPideHorario', 'bmPreguntaDeTienda', 'bmTiendaTieneDato', 'bmRespuestaDeTienda', 'bmDatosResumen', 'bmLineasDelSitio', 'bmAgregarPorOrden', 'bmPideDescuento', 'bmTextoDeEstado', 'BM_TEXTO_IDENTIDAD', 'BM_TEXTO_AUDIO_LARGO', 'BM_TEXTO_AUDIO_NO_ENTENDIDO', 'BM_TEXTO_ARCHIVO_PESADO', 'BM_TEXTO_ARCHIVO_NO_ABIERTO', 'BM_TEXTO_IMAGEN', 'BM_TEXTO_COMPROBANTE_ILEGIBLE',
   'BM_CLAVE_ALERTAS', 'BM_VENTANA_ALERTA_CATALOGO_MS', 'BM_ALERTAS_CATALOGO', 'bmAlertasDe', 'bmAlertaCatalogoLibre', 'bmAnotarAlerta', 'cePase', 'avLimpio',
   // UBICACIÓN DE LA TIENDA (25/11/2026)
   'bmMapaTienda', 'bmUbicacionTienda', 'bmPideUbicacion', 'bmTiendaDelCatalogo', 'bmTextoDeTienda',
@@ -810,7 +810,7 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       const r = turno('Tienen televisores?');
       expect(r.tipo).toBe('modelo');
       expect(r.sinPieza).toBe(true);
-      expect(r.texto).toBe(b('BM_TEXTO_SIN_PIEZA'));
+      expect(r.texto).toBe(b('bmPreguntaFija')({}));
       expect(r.texto).not.toMatch(/cuénteme un poco más|cuéntame un poco más/i);
     });
     it('«Quiero una lavadora de 15 kg» (sí hay): ofrece la pieza con su precio', () => {
@@ -819,7 +819,7 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       expect(r.texto).toMatch(/LAVADORA LG 15KG/);
     });
     it('la MISMA respuesta fija dos veces seguidas pasa con recepción (aviso + botón)', () => {
-      const r = turno('Tienen televisores?', [{ r: 'u', t: 'tienen televisores' }, { r: 'm', t: b('bmParaMemoria')(b('BM_TEXTO_SIN_PIEZA')) }]);
+      const r = turno('Tienen televisores?', [{ r: 'u', t: 'tienen televisores' }, { r: 'm', t: b('bmParaMemoria')(b('bmPreguntaFija')({})) }]);
       expect(r.tipo).toBe('derivar');
     });
     it('sin enlace del catálogo no se promete un botón: el texto no menciona ningún botón', () => {

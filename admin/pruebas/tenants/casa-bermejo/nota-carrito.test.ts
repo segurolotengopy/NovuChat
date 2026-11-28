@@ -164,9 +164,9 @@ describe('3. tras derivar, tampoco se ofrece sumar una pieza concreta', () => {
       expect(textos(t).join(' ')).toContain('Con gusto. Si necesitas algo más, escríbeme.');
     });
   }
-  it('control: sin haber derivado, la misma invitación SÍ sale', () => {
-    // Desde la quinta revisión (Estándar 5.9) una pregunta que nombra una pieza que el catálogo NO tiene («un televisor») no sale ni sin haber derivado; una pregunta legítima sí.
-    expect(textos(hablar(flujo('¿Le gustaría ver otra pieza?'), ANA, mTexto('Bien, gracias'))).join(' ')).toContain('ver otra pieza');
+  it('control: sin haber derivado, la misma invitación tampoco sale con el pedido vacío', () => {
+    // Desde la decisión del 28/11/2026 («Pregunta fija del código») el modelo no redacta preguntas con el pedido vacío: sale la pregunta fija del código.
+    expect(textos(hablar(flujo('¿Le gustaría ver otra pieza?'), ANA, mTexto('Bien, gracias'))).join(' ')).toContain('¿Qué producto buscas?');
     expect(textos(hablar(flujo('¿Le gustaría sumar un televisor?'), ANA, mTexto('Bien, gracias'))).join(' ')).not.toContain('televisor');
   });
   it('NEGADO: tras derivar, ni una frase que no ofrece nada («Con mucho gusto, quedo atento.») sale: responde el código', () => {
@@ -281,9 +281,10 @@ describe('6. segunda revisión del #1142 (27/11): se dice solo lo que el código
       expect(textos(t).join(' ')).not.toMatch(/Ya está en tu pedido|quedó en tu pedido|Agregué|añadí|quedó listo/);
     }
   });
-  it('I-1 control: una pregunta ENTERA («¿desea que agregue…?») sin afirmar nada sí pasa; una oferta afirmativa («puedo agregar…») ya no (regla estricta del 27/11)', () => {
+  it('I-1 control: una pregunta ENTERA («¿desea que agregue…?» ) con el pedido vacío tampoco sale (decisión del 28/11): sale la pregunta fija del código', () => {
     const t = hablar(dice('¿Desea que agregue la billetera cuando guste?', []), ANA, mTexto('hola, necesito información de las piezas'));
-    expect(textos(t).join(' ')).toMatch(/agregue la billetera/i);
+    expect(textos(t).join(' ')).not.toMatch(/agregue la billetera/i);
+    expect(textos(t).join(' ')).toMatch(/¿Qué producto buscas\?/);
   });
   it('I-2 NEGADO: «No pude agregar esa pieza» tres veces seguidas: la segunda vez pasa con recepción (aviso + botón), no repite la frase', () => {
     const m = dice('Agregué el licor de coca.', [{ id: 'licor-de-coca', cantidad: 1 }]);

@@ -277,8 +277,10 @@ if (puerta.ruta === 'sigue') {
       // RECOJO: la pregunta del nombre lleva el botón «Ver ubicación» de la TIENDA (Maps de NovuTienda), en el mismo mensaje (0 más). Sin mapa válido, texto como siempre.
       const cuerpoR = bmSeguro(cuerpoModelo.length > 1024 ? '…' + cuerpoModelo.slice(-1020).trimStart() : cuerpoModelo, usted);
       msgs = [cmMensaje('cliente', cmEnlace(cuerpoR, 'Ver ubicación', uTienda.mapa), cuerpoR, cuerpoR + '\n\n' + uTienda.mapa, { tipoReporte: 'interactive', conBoton: true })];
-    } else if (d.sinPieza === true && categoriasVivas().length > 0) {
+    } else if (d.sinPieza === true && categoriasVivas().length > 0 && enlaceCat !== '') {
       // B2: sin pieza no se niega el catálogo: el mismo mensaje trae las categorías y, con enlace, el botón «Ver catálogo».
+      // Con enlace del comercio: la pregunta fija + las categorías + el botón «Ver catálogo» (decisión del 28/11/2026); sin enlace válido, la pregunta fija sola (sin botón, sin prometerlo).
+      nuevos.catalogoOfrecido = true;
       msgs = [enlaceCat !== '' ? textoConEnlace(cuerpoModelo + '\n\n' + (usted ? 'Nuestras categorías:' : 'Nuestras categorías:') + '\n' + categoriasEnVinetas()) : (mensajeCategorias(cuerpoModelo, 0) || texto(cuerpoModelo))];
     } else msgs = [texto(cuerpoModelo)];
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
@@ -297,7 +299,9 @@ if (puerta.ruta === 'sigue') {
     // B2: el catálogo por CÓDIGO (0 llamadas al modelo). Nunca «no encuentro eso» ni un recorte en silencio; el enlace del comercio va en el mismo mensaje. El pedido en curso no se toca.
     const cats = categoriasVivas();
     const faltan = Array.isArray(d.faltan) ? d.faltan.map((x) => String(x).slice(0, 40)).filter((x) => x !== '') : [];
-    const noTenemos = faltan.length ? 'No tenemos ' + faltan.join(' ni ') + '.' : '';
+    // DECISIÓN DE ANDRES (28/11/2026): lo que el cliente nombra y NO figura en el catálogo se dice «"X" no figura en nuestro catálogo» (con «; estas son las categorías que tenemos» cuando no hay otra cosa que mostrar), NUNCA «No tenemos X» ni «No encuentro eso» ni un equivalente. Con un pedido en curso no llega aquí: sigue el camino de siempre.
+    const noFigura = (conCategorias) => (faltan.length ? faltan.map((x) => '"' + x + '"').join(' y ') + (faltan.length > 1 ? ' no figuran' : ' no figura') + ' en nuestro catálogo' + (conCategorias ? '; estas son las categorías que tenemos.' : '.') : '');
+    const noTenemos = noFigura(false);
     const conIntro = (a, b) => (a !== '' ? a + '\n\n' : '') + b;
     const hist = (txt) => recordar(typeof c.plan.textoCliente === 'string' ? c.plan.textoCliente : '', txt);
     const slugsVigentes = (Array.isArray(d.cats) ? d.cats : []).filter((x) => cats.some((ct) => ct.id === 'cat:' + x));
@@ -306,7 +310,9 @@ if (puerta.ruta === 'sigue') {
     if (vista === 'enlace') {
       msgs = [botonOLista('')];
     } else if (vista === 'sin_pieza') {
-      msgs = [botonOLista(noTenemos !== '' ? noTenemos : 'No tengo claro qué pieza busca.')];
+      // La lista de categorías (interactiva) y, DESPUÉS, el botón «Ver catálogo» (+1 mensaje ya aceptado); sin enlace válido, solo la lista.
+      const lista0 = mensajeCategorias(conSaludo(noFigura(true) !== '' ? noFigura(true) : bmPreguntaFija(c)).trim(), 0);
+      msgs = lista0 === null ? [botonOLista(noFigura(true))] : conBotonAparte(lista0, 0);
     } else if (vista === 'toque_viejo') {
       msgs = [botonOLista('Esa opción ya no está disponible.')];
     } else if (vista === 'categorias') {
@@ -346,7 +352,7 @@ if (puerta.ruta === 'sigue') {
       nuevos.lista = { cat: '', n: 0 };
     }
     if (nuevos.lista !== undefined) ev.lista = fichaAntes.lista;
-    if (msgs.length === 1 && msgs[0] === null) msgs = [texto(conSaludo(BM_TEXTO_SIN_PIEZA))];
+    if (msgs.length === 1 && msgs[0] === null) msgs = [texto(conSaludo(bmPreguntaFija(c)))];
     hist('(el sistema mostró el catálogo)');
     nuevos.catalogoOfrecido = enlaceCat !== '' ? true : fichaAntes.catalogoOfrecido;
   } else if (tipoDePlan === 'qr') {

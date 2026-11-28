@@ -724,35 +724,19 @@ function bmNiegaCatalogo(texto) { return BM_NIEGA_CATALOGO.test(bmNorm(texto)); 
 const BM_AFIRMA_PRECIOS = /\b(?:actualiz\w+|actualic\w+|(?!verific(?:a|que|quen)\b)verific\w+)\b[^.!?]{0,40}\b(?:precios?|catalogo|montos?|costos?)\b|\b(?:precios?|catalogo|montos?|costos?)\b[^.!?]{0,40}\b(?:actualiz\w+|verific\w+|vigentes|al dia|confirmad\w+)\b/;
 // R58 / I-4 «Solo escribe el código» (decisión de Andres, 27/11/2026; reemplaza la lista blanca de la cuarta ronda, que ninguna lista de frases podía cerrar).
 // PROPIEDAD: durante la ventana de 2 h tras pasar con recepción, sin cambio del pedido en el turno, NINGÚN texto redactado por el modelo sale (sea cortesía, oferta, afirmación o pregunta). Responde solo el código:
-// lo que ya contesta por código (horario, ubicación, catálogo, estado del pedido) y, para todo lo demás, `bmTextoTrasDerivar(c)` (en el trato del comercio). Nunca `BM_TEXTO_SIN_PIEZA` ni coincidencias del catálogo en esa ventana. No hay lista de frases: no hay nada que enumerar.
-// R58 / I-1 «Regla estricta» (Andres, 27/11/2026). PROPIEDAD: con el pedido VACÍO y sin cambios en el turno, el texto del modelo sale SOLO si (a) TODA la respuesta es interrogativa (cada oración empieza con «¿» y termina en «?»: «Agregado. ¿Algo más?» no sale),
-// o (b) informa coincidencias reales del catálogo vivo, verificado por código: cada oración que no es pregunta nombra al menos una pieza, todas las que nombra coinciden con lo que pidió el cliente
-// y, quitados los nombres, los precios y las palabras de enlace (tenemos, hay, cuesta, a, de…), no deja nada («Tenemos la billetera, ya es tuya» no sale). Cualquier otro caso lo responde el código: coincidencias, «Aún no tengo claro…» o, si el cliente preguntó cómo se compra o se paga, el texto fijo del procedimiento.
-// Esa decisión es un permiso por forma, no un descarte por verbos: lo no previsto cae al texto del código.
-function bmEsSoloPregunta(texto) {
-  const oraciones = String(texto || '').split(/(?<=[.!?\n])\s*/).map((x) => x.trim()).filter((x) => x !== '');
-  return oraciones.length > 0 && oraciones.every((o) => /^¿[^¿?]*\?$/.test(o));
-}
+// lo que ya contesta por código (horario, ubicación, catálogo, estado del pedido) y, para todo lo demás, `bmTextoTrasDerivar(c)` (en el trato del comercio). Nunca la pregunta fija (`bmPreguntaFija`) ni coincidencias del catálogo en esa ventana. No hay lista de frases: no hay nada que enumerar.
+// R58 / I-1 «Pregunta fija del código» (decisión de Andres, 28/11/2026; reemplaza la parte «pregunta entera» de la «Regla estricta» de la sexta ronda del #1142, que ninguna lista de palabras podía cerrar).
+// PROPIEDAD: con el pedido VACÍO y sin cambios en el turno, el MODELO NO REDACTA PREGUNTAS: ninguna oración interrogativa suya llega al cliente. Su texto sale SOLO si informa coincidencias reales del catálogo vivo, verificado por código:
+// ninguna oración es pregunta, cada oración nombra al menos una pieza, todas las que nombra coinciden con lo que pidió el cliente y, quitados los nombres, los precios y las palabras de enlace (tenemos, hay, cuesta, a, de…), no deja nada
+// («Tenemos la billetera, ya es tuya» no sale). Cualquier otro caso lo responde el código: coincidencias o la pregunta fija `bmPreguntaFija(c)` (en el trato del comercio) o, si el cliente preguntó cómo se compra o se paga, el texto fijo del procedimiento.
+// La barrera es estructural (la forma de la pregunta no decide nada): no hay lista de palabras ni de promesas que enumerar.
 const BM_ENLACE_EXISTENCIA = new Set(['tenemos', 'tengo', 'hay', 'contamos', 'manejamos', 'disponemos', 'trabajamos', 'si', 'claro', 'por', 'supuesto', 'con', 'de', 'del', 'al', 'a', 'la', 'el', 'lo', 'los', 'las', 'un', 'una', 'unos', 'unas', 'y', 'e', 'o', 'en', 'nuestro', 'nuestra', 'nuestros', 'nuestras', 'tambien', 'desde', 'bs', 'ars', 'bob', 'c', 'u', 'cada', 'uno', 'una', 'precio', 'cuesta', 'cuestan', 'vale', 'valen', 'esta', 'estan', 'tienda']);
-// Una PREGUNTA del modelo con el pedido vacío (Estándar 5.9, quinta revisión): no basta la forma «¿…?». Pasa por los MISMOS detectores que una afirmación (`bmAfirmaAgregado`, `bmDaPorHecho`, promesas y posesión) y toda pieza que nombra debe existir en el catálogo vivo.
-// Además cada palabra debe estar en el catálogo vivo o estar en el vocabulario de preguntas legítimas: lo que no se reconoce no sale y responde el código. Ante la duda, el texto del código.
-const BM_PREGUNTA_PROMETE = /\b(?:ya (?:es|son|esta|estan|tienes?|tengas?|tiene|tenga|va|van|cuentas?|cuenta|viste|sabias)|tuy[oa]s?|suy[oa]s?|te (?:lo |la |los |las )?(?:envio|mando|reservo|aparto|separo|guardo|dejo|regalo|doy|consigo|traigo|agregue|agrego|puse|anote)|(?:envio|mando|reservo|separo|aparto|regalo|llevo) (?:el|la|los|las|un|una)\b|hoy mismo|que tal si|en (?:tu|su) (?:pedido|carrito)|(?:tu|su) carrito|genial)\b/;
-const BM_PREGUNTA_PALABRAS = new Set(('que cual cuales cuanto cuantos cuantas como cuando donde quien para por le te la lo los las el un una unos unas de del al a en con su tu sus tus mi me y o e u otra otro otras otros mas algo alguna alguno alguien ninguna pieza piezas producto productos modelo modelos articulo articulos interesa interesan interesaria gustaria gusta gustan desea deseas quiere quieres prefiere prefieres busca buscas buscando necesita necesitas ayudo ayudar ayudarle ayudarte puedo puede puedes podria podrias es son particular especifico especifica en tipo color colores tamano tamanos cantidad unidades unidad pedido recibir retirar retira retiras recoger entrega envio retiro tienda ciudad nombre completo confirma confirmar indica indicas indique dime digame regalo regalar uso usar si no tambien ver mostrar mostrarle mostrarte conocer saber presupuesto rango precio nuestra nuestro nuestros nuestras hoy agregue agregar anadir sumar incluir guste gusten').split(' '));
-function bmPreguntaValida(o, lista) {
-  const n = bmNorm(o);
-  if (bmAfirmaAgregado(o, false) || bmDaPorHecho(o) || BM_PREGUNTA_PROMETE.test(n)) return false;
-  // Las palabras de los nombres del catálogo vivo valen como «pieza que existe» (solo las del catálogo de AHORA: «licor» no existe si el catálogo no lo trae).
-  const delCatalogo = new Set();
-  for (const v of lista) for (const w of bmNorm(v.nombre).split(' ')) if (w !== '') delCatalogo.add(w);
-  return n.split(' ').every((w) => w === '' || BM_PREGUNTA_PALABRAS.has(w) || delCatalogo.has(w));
-}
 function bmVacioPermite(texto, textoCliente, vendibles) {
   const oraciones = String(texto || '').split(/(?<=[.!?\n])\s*/).map((x) => x.trim()).filter((x) => x !== '');
   if (oraciones.length === 0) return false;
   const lista = Array.isArray(vendibles) ? vendibles : [];
   const coinciden = new Set(bmIdsCoincidencias(textoCliente, lista));
   return oraciones.every((o) => {
-    if (/^¿[^¿?]*\?$/.test(o)) return bmPreguntaValida(o, lista);
     const n = bmNorm(o);
     if (/[?¿]/.test(o)) return false;
     const nombradas = lista.filter((v) => (' ' + n + ' ').includes(' ' + bmNorm(v.nombre) + ' '));
@@ -761,6 +745,10 @@ function bmVacioPermite(texto, textoCliente, vendibles) {
     for (const v of nombradas) resto = resto.split(' ' + bmNorm(v.nombre) + ' ').join('  ');
     return resto.split(' ').every((w) => w === '' || /^\d+$/.test(w) || BM_ENLACE_EXISTENCIA.has(w));
   });
+}
+// La pregunta fija del código con el pedido vacío y nada que mostrar: en el trato del comercio. El botón «Ver catálogo» en este mensaje queda para B2 (hoy solo va en el saludo).
+function bmPreguntaFija(c) {
+  return c && c.base && c.base.tratamiento === 'usted' ? '¿Qué producto busca?' : '¿Qué producto buscas?';
 }
 // ¿El texto del modelo AFIRMA como HECHO que algo quedó en el pedido o en poder del cliente? Se usa cuando el pedido NO cambió en el turno (entonces ninguna afirmación así es cierta). Se decide por HECHO, no por una lista de verbos de «agregar»:
 // la lista de abajo es solo la RED SECUNDARIA (verbos en pasado y de estado); la decisión principal es que el código no agregó nada (bmResolverModelo: líneas propuestas que no entraron, y toda oración que da algo por agregado).
@@ -816,7 +804,7 @@ function bmTextoProcedimiento(c) {
   else if (hayEnvio) entrega = usted ? 'que la recibe por envío' : 'que la recibes por envío';
   else entrega = (usted ? 'cómo la recibe (' : 'cómo la recibes (') + modos.join(' o ') + ')';
   let pago;
-  if (c && c.mercado === 'AR') pago = usted ? 'el pago es por transferencia a un alias, y le indico cómo al confirmar' : 'el pago es por transferencia a un alias, y te indico cómo al confirmar';
+  if (c && c.mercado === 'AR') pago = usted ? 'al confirmar le indico cómo pagar' : 'al confirmar te indico cómo pagar';   // sin nombrar el alias: con el alias apagado el pago pasa con recepción y esa promesa no se cumpliría
   else if (c && c.cobro && c.cobro.modo === 'real') pago = usted ? 'el pago se hace con un QR que le envío en ese momento' : 'el pago se hace con un QR que te envío en ese momento';
   else pago = usted ? 'el pago lo coordina recepción y le doy el botón para escribirle' : 'el pago lo coordina recepción y te doy el botón para escribirle';
   return usted
@@ -1857,7 +1845,7 @@ function bmResolverModelo(c) {
   });
   // El texto REVISADO del modelo (el único que pasa por las reglas de I-1 e I-4: los textos fijos del código nunca se reemplazan).
   const textoModelo = bmRedaccion(j.texto, p.textoCliente, c.vendibles, c.enlace !== undefined && c.enlace !== '');
-  // I-1 «Regla estricta»: con el pedido vacío y sin cambios el texto del modelo sale solo si es una pregunta entera o informa coincidencias reales (`bmVacioPermite`); lo demás lo responde el código.
+  // I-1 «Regla estricta»: con el pedido vacío y sin cambios el texto del modelo sale solo si informa coincidencias reales (`bmVacioPermite`); ninguna pregunta suya sale (sale la pregunta fija del código); lo demás lo responde el código.
   const vacioSinCambio = lineas.length === 0 && antes.length === 0;
   const bloqueaVacio = vacioSinCambio && textoModelo !== '' && !bmVacioPermite(textoModelo, p.textoCliente, c.vendibles);
   // Estándar 6.1: una pregunta por un medio de pago que el comercio no tiene cargado («¿aceptan efectivo?», «¿se puede pagar con tarjeta?») no la contesta el modelo ni «Aún no tengo claro»: pasa con recepción (aviso + botón).
@@ -1900,11 +1888,11 @@ function bmResolverModelo(c) {
   let sinPieza = false;
   if (sinRedaccion && !lineas.length) {
     // Sin piezas y sin texto del modelo: NUNCA el «cuéntame más» genérico. Las piezas que coinciden con lo que pidió (con sus precios) o «no lo encuentro» (sin prometer un botón: el botón sale solo con piezas o con un «no tenemos» del modelo).
-    // I-4: en la ventana tras derivar, ni coincidencias ni «Aún no tengo claro…» (invitan a comprar): el texto fijo. I-1: si preguntó cómo se compra o se paga, el procedimiento fijo del código.
+    // I-4: en la ventana tras derivar, ni coincidencias ni la pregunta fija (invitan a comprar): el texto fijo. I-1: si preguntó cómo se compra o se paga, el procedimiento fijo del código.
     const coinc = trasDerivar || procedimiento ? '' : bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1);
     if (trasDerivar) texto = bmTextoTrasDerivar(c);
     else if (procedimiento) texto = bmTextoProcedimiento(c);
-    else texto = coinc !== '' ? coinc : BM_TEXTO_SIN_PIEZA;
+    else texto = coinc !== '' ? coinc : bmPreguntaFija(c);
     sinPieza = coinc === '' && !trasDerivar && !procedimiento;
     fijoSinPieza = !trasDerivar && !procedimiento;
   } else if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c, conBoton);
@@ -1991,7 +1979,8 @@ function bmIntencionCatalogo(texto, vendibles, ficha) {
   if (!sig.length && BM_CAT_CONTINUA.test(n) && ultima !== '' && cats.some((ct) => slug(ct) === ultima)) return { vista: 'categoria', cats: [ultima], faltan: [], continuar: true, resto: '' };
   const hayObjeto = palabras.some((w) => BM_CAT_OBJETO.has(w)) || /\b(?:que|q|ke) (?:tienen|tiene|venden|vende|ofrecen|manejan|hay)\b/.test(n);
   if (!sig.length) {
-    if (!hayObjeto) return null;
+    // Sin palabras de objeto propias, la pieza común decide si el mensaje pide VER lo que se vende (`icPideListado`: «¿qué cosas manejan?», «listado»; con sus guardas de cierre y pago).
+    if (!hayObjeto) return icPideListado(crudo) ? { vista: 'categorias', cats: [], faltan: [], continuar: false, resto: '' } : null;
     // «quiero todo», «dame todo» es un PEDIDO (comprar todo), no «mostrar el catálogo»: solo cuentan las palabras que piden ver (lista, catálogo, carta, link…).
     if (BM_CAT_ORDEN.test(n) && !BM_CAT_QUIERO_VER.test(n) && !/\b(?:lista|listas|listado|catalogos?|carta|link|enlace|pagina|sitio|web)\b/.test(n)) return null;
     return { vista: BM_CAT_PIDE_ENLACE.test(n) && !BM_CAT_PIDE_LISTA.test(n) ? 'enlace' : 'categorias', cats: [], faltan: [], continuar: false, resto: '' };
@@ -2025,6 +2014,7 @@ function bmIntencionCatalogo(texto, vendibles, ficha) {
   }
   // Ninguna categoría: «¿tienen bicicletas?» (algo que no figura). Si coincide con una pieza concreta del catálogo, sigue como siempre (lo atiende el modelo con las coincidencias).
   // Con un pedido en curso, una pieza que no existe sigue pasando con recepción como siempre (decisión previa, pendiente de revisar con Andres: la batería A14 pide categorías + enlace).
+  if (hayObjeto && BM_CAT_PIDE_ENLACE.test(n)) return { vista: 'enlace', cats: [], faltan: [], continuar: false, resto: '' };
   const hayPedido = !!(ficha && Array.isArray(ficha.carrito) && ficha.carrito.length > 0);
   if (!hayPedido && pregunta && sig.length >= 1 && sig.length <= 3 && !sig.some((w) => BM_CAT_NO_PIEZA.has(w)) && !(bmPuntuarCoincidencias(sig.join(' '), vendibles) || []).length) return { vista: 'sin_pieza', cats: [], faltan: [sig.join(' ')], continuar: false, resto: '' };
   return null;

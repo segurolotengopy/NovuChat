@@ -37,6 +37,8 @@ const viñetas = (t: ResultadoTurno): string[] => textoTodo(t).split('\n').filte
 const botonCatalogo = (t: ResultadoTurno): boolean => t.mensajes.some((e) => tipoDe(e) === 'cta_url' && String(((interactivo(e)['action'] as J)['parameters'] as J)['url']) === ENLACE_CATALOGO);
 const hayEnlace = (t: ResultadoTurno): boolean => t.mensajes.some((e) => JSON.stringify(e.payload).includes(ENLACE_CATALOGO));
 const vendibles = (items: J[]): J[] => items.filter((i) => Number.isInteger(i['precioCentavos']) && (i['precioCentavos'] as number) > 0 && i['disponible'] !== false);
+/** NUNCA «No tenemos X», «No encuentro eso» ni un equivalente en un mensaje del código (decisión de Andres, 28/11/2026). */
+const NO_TENEMOS = /no tenemos|no encuentro|no contamos|no disponemos|no manejamos|no vendemos|no hay /i;
 const NEGACION = /no encuentro|no tenemos cat[aá]logo|no contamos con cat|no tengo un cat|no puedo mostrar/i;
 
 /** C1, C5, C6, C7, C8 y C9 de un turno; devuelve los problemas (vacío = cumple). */
@@ -204,19 +206,22 @@ describe('4.2 variantes de forma: tildes, errores, singular y plural, registro',
 });
 
 describe('4.3 categoría inexistente', () => {
-  for (const [id, frase, dicho] of [['A14', '¿tienen bicicletas?', /No tenemos bicicletas/], ['A15', 'venden celulares?', /No tenemos celulares/]] as const) {
-    it(`${id} «${frase}»: «No tenemos…» seguido de las categorías que sí hay y el enlace; no deriva a recepción`, () => {
+  for (const [id, frase, dicho] of [['A14', '¿tienen bicicletas?', /"bicicletas" no figura en nuestro catálogo; estas son las categorías que tenemos/], ['A15', 'venden celulares?', /"celulares" no figura en nuestro catálogo; estas son las categorías que tenemos/]] as const) {
+    it(`${id} «${frase}»: «"X" no figura en nuestro catálogo; estas son las categorías que tenemos» + la lista de categorías y, después, el botón (decisión del 28/11); no deriva a recepción`, () => {
       const t = uno(frase);
       cumple(t, electro());
       expect(textoTodo(t)).toMatch(dicho);
-      for (const c of categorias7) expect(textoTodo(t)).toContain(c);
+      expect(t.mensajes.map(tipoDe)).toEqual(['list', 'cta_url']);
+      expect(textoTodo(t)).not.toMatch(NO_TENEMOS);
+      expect(filasDe(t).map((f) => f['title'])).toEqual(categorias7);
       expect(t.avisos).toHaveLength(0);
     });
   }
-  it('A16 «bicis y teles»: la lista de los televisores con «No tenemos bicis» en su cuerpo y el botón aparte', () => {
+  it('A16 «bicis y teles»: la lista de los televisores con «"bicis" no figura en nuestro catálogo» en su cuerpo y el botón aparte', () => {
     const t = uno('bicis y teles');
     cumple(t, electro());
-    expect(textoTodo(t)).toMatch(/No tenemos bicis/);
+    expect(textoTodo(t)).toMatch(/"bicis" no figura en nuestro catálogo/);
+    expect(textoTodo(t)).not.toMatch(NO_TENEMOS);
     primeraPagina(t, 23);
   });
   it('sin pieza con el modelo diciendo «No encuentro eso en nuestro catálogo» («quiero un televisor» en el catálogo de accesorios): nunca la negación; el botón y las categorías', () => {
@@ -438,7 +443,7 @@ describe('4.8 decisiones de Andres del 27/11/2026 (negadas)', () => {
     const sig = hablar(m, ANA, mLista('mas:cats:1', 'Ver más'), { toleraFallo: true });
     expect(sig.mensajes.length).toBeLessThanOrEqual(1);
   });
-  it('NEGADO: un producto que no se vende, CON un pedido en curso, NO dice «No tenemos X»: sigue el camino de siempre (conversación con el modelo y, si hace falta, recepción), no categorías + catálogo', () => {
+  it('NEGADO: un producto que no se vende, CON un pedido en curso, NO dice «"X" no figura…»: sigue el camino de siempre (conversación con el modelo y, si hace falta, recepción), no categorías + catálogo', () => {
     const m = abrir({ modeloDice: modelo('Con gusto, anoto la heladera.', { lineas: [{ id: 'heladeras-1', cantidad: 1 }] }) });
     decir(m, 'quiero la heladera más barata');
     expect(ficha(m)['carrito']).toHaveLength(1);
@@ -452,6 +457,29 @@ describe('4.8 decisiones de Andres del 27/11/2026 (negadas)', () => {
     hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'), { toleraFallo: true });
     const t = decir(m, 'Televisor');
     expect(tipoDe(t.mensajes[0] ?? { payload: {} })).not.toBe('list');
+  });
+});
+
+describe('4.9 «no figura en nuestro catálogo» (decisión de Andres del 28/11/2026), negada', () => {
+  it('NEGADO: ningún mensaje del código dice «no tenemos»/«no encuentro»: ni con piezas que no existen, ni con el modelo adverso, ni con sinónimos («pantallas»), ni en la pregunta fija; la pregunta fija lleva el botón con enlace y no sin él', () => {
+    const frases = ['¿tienen bicicletas?', 'venden celulares?', 'bicis y teles', 'quiero un televisor', 'necesito información de las piezas', 'pantallas', 'qué tienen', 'catalogo', 'televisor'];
+    for (const modeloDice of [modeloNiegaEncuentro, modeloNiega, modeloDeriva]) {
+      for (const frase of frases) {
+        for (const enlace of [ENLACE_CATALOGO, '']) {
+          const t = uno(frase, { modeloDice, enlace });
+          expect(textoTodo(t), `${frase} / ${enlace}`).not.toMatch(NO_TENEMOS);
+        }
+      }
+    }
+    const pf = uno('quiero un televisor', { items: [{ id: 'a', nombre: 'Accesorio', area: 'Accesorios', precio: 10, precioCentavos: 1000, moneda: 'BOB', activo: true, stock: 5, disponible: true }], modeloDice: modeloNiegaEncuentro });
+    expect(botonCatalogo(pf)).toBe(true);
+    const sinEnlace = uno('quiero un televisor', { items: [{ id: 'a', nombre: 'Accesorio', area: 'Accesorios', precio: 10, precioCentavos: 1000, moneda: 'BOB', activo: true, stock: 5, disponible: true }], modeloDice: modeloNiegaEncuentro, enlace: '' });
+    expect(JSON.stringify(sinEnlace.mensajes.map((e) => e.payload))).not.toMatch(/cta_url|Ver catálogo/);
+  });
+  it('«pantallas» (sinónimo de la pieza común) es la categoría Televisores: lista de productos, no «no figura»', () => {
+    const t = uno('pantallas');
+    expect(textoTodo(t)).not.toMatch(/no figura/);
+    expect(productosDe(t).length).toBeGreaterThan(0);
   });
 });
 

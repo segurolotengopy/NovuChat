@@ -1,6 +1,6 @@
 /**
  * QUINTA RONDA DEL #1142 (Casa Bermejo, 27/11/2026): dos REGLAS ESTRUCTURALES decididas por Andres (botón), sin listas de frases como barrera.
- *   I-4 «Solo escribe el código»: tras derivar (ventana de 2 h, sin cambio del pedido) el texto del modelo NO sale NUNCA; responde el código (lo que ya contesta) o el texto fijo en el trato del comercio. Nunca «Aún no tengo claro…».
+ *   I-4 «Solo escribe el código»: tras derivar (ventana de 2 h, sin cambio del pedido) el texto del modelo NO sale NUNCA; responde el código (lo que ya contesta) o el texto fijo en el trato del comercio. Nunca la pregunta fija del código.
  *   I-1 «Regla estricta»: con el pedido vacío y sin cambios, el texto del modelo sale SOLO si TODA la respuesta es una pregunta o informa coincidencias reales del catálogo; lo demás lo responde el código.
  *   Nota con palabras de pago (decisión de Andres, «Oculta al cliente, clara a la tienda»): al cliente nunca se le repite; a la tienda llega rotulada «Nota escrita por el cliente (no es un estado de pago)».
  * Se prueba NEGANDO: las frases de las revisiones 1, 2 y 3, y los falsos positivos que NO deben bloquearse.
@@ -26,14 +26,14 @@ const FIJO = 'Con gusto. Si necesitas algo más, escríbeme.';
 
 // Una conversación ya iniciada (el primer turno lo contesta el saludo del código): el SEGUNDO turno es el que se prueba, con el pedido vacío y la frase del modelo dada. El primer turno recibe una pregunta del modelo para no dejar un texto fijo repetido en el historial.
 const conv = (frase: string, lineas: unknown[] = [], opc: Partial<Opciones> = {}): ReturnType<typeof crear> => {
-  const m = crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: (ll: LlamadaDoble) => (/saludo-inicial/.test(textoAlModelo(ll)) ? modelo('¿Qué pieza le interesa?') : modelo(frase, { lineas: lineas as never })), ...opc });
-  hablar(m, ANA, mTexto('saludo-inicial hola'));
+  const m = crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: (ll: LlamadaDoble) => (/saludo-inicial/.test(textoAlModelo(ll)) ? modelo('Tenemos Billetera de cuero a Bs 450.') : modelo(frase, { lineas: lineas as never })), ...opc });
+  hablar(m, ANA, mTexto('saludo-inicial billetera'));
   return m;
 };
 const FIJO_USTED = 'Con gusto. Si necesita algo más, escríbame.';
 const PROC_TU = 'Dime qué pieza te interesa y, cuando la elijas, la sumo a tu pedido. Luego me indicas si la retiras o la recibes por envío y tocas «Confirmar pedido»; el pago se hace con un QR que te envío en ese momento.';
 const PROC_USTED = 'Dígame qué pieza le interesa y, cuando la elija, la sumo a su pedido. Luego me indica si la retira o la recibe por envío y toca «Confirmar pedido»; el pago se hace con un QR que le envío en ese momento.';
-const SIN_PIEZA = /Aún no tengo claro/;
+const SIN_PIEZA = /¿Qué producto buscas?\?/;
 
 describe('I-4 «Solo escribe el código»: tras derivar el texto del modelo no sale nunca', () => {
   const tras = (frase: string, opc: Partial<Opciones> = {}, derivarAntes = true): string => {
@@ -69,7 +69,7 @@ describe('I-4 «Solo escribe el código»: tras derivar el texto del modelo no s
     }
     for (const x of [...cortesia, ...oferta, ...afirma, ...pregunta]) expect(tras(x, { base: { tratamiento: 'usted' } })).toBe(FIJO_USTED);
   });
-  it('NEGADO: tras derivar, cuando falla la redacción sale el texto fijo, NUNCA «Aún no tengo claro…» ni coincidencias que invitan a comprar', () => {
+  it('NEGADO: tras derivar, cuando falla la redacción sale el texto fijo, NUNCA la pregunta fija del código ni coincidencias que invitan a comprar', () => {
     for (const rotas of ['Tenemos descuento del 20 % en billeteras.', 'Te dejo el enlace al catálogo web.']) {
       const t = tras(rotas);
       expect(t).toBe(FIJO);
@@ -86,8 +86,11 @@ describe('I-4 «Solo escribe el código»: tras derivar el texto del modelo no s
     hablar(m, ANA, mTexto('quiero hablar con una persona'));
     for (const x of ['¿tienen billeteras?', '¿y licuadoras?', '¿cuánto cuesta una lavadora?']) expect(textos(hablar(m, ANA, mTexto(x))).join(' ')).toBe(FIJO);
   });
-  it('control: sin haber derivado, el mismo texto del modelo SÍ sale (la regla solo rige en la ventana de 2 h)', () => {
-    expect(tras('¿Le interesa ver más modelos?', {}, false)).toContain('ver más modelos');
+  it('control: sin haber derivado, el modelo tampoco redacta preguntas con el pedido vacío: sale la pregunta fija, no el texto de la ventana de 2 h', () => {
+    const t = tras('¿Le interesa ver más modelos?', {}, false);
+    expect(t).not.toContain('ver más modelos');
+    expect(t).toContain('¿Qué producto buscas?');
+    expect(t).not.toContain(FIJO_USTED);
   });
 });
 
@@ -113,7 +116,7 @@ describe('I-1 «Regla estricta»: con el pedido vacío el texto del modelo sale 
         const m = conv(frase, lineas);
         const t = hablar(m, ANA, mTexto('necesito información de las piezas'));
         expect(ficha(m).carrito).toEqual([]);
-        expect(textos(t).join(' ')).toMatch(/Aún no tengo claro|No pude agregar esa pieza al pedido/);   // texto del código
+        expect(textos(t).join(' ')).toMatch(/¿Qué producto busca\?|¿Qué producto buscas\?|No pude agregar esa pieza al pedido/);   // texto del código
         expect(textos(t).join(' ').replace('No pude agregar esa pieza al pedido.', '')).not.toMatch(PROHIBIDO);   // sin el texto del código que niega haber agregado
       }
     });
@@ -130,15 +133,15 @@ describe('I-1 «Regla estricta»: con el pedido vacío el texto del modelo sale 
       expect(ficha(m).carrito).toEqual([]);
     }
   });
-  it('salen: una pregunta ENTERA, y la información de coincidencias reales («¿tienen billeteras?» muestra la pieza)', () => {
-    expect(textos(hablar(conv('¿Qué otra pieza le interesa?'), ANA, mTexto('quiero ver algo'))).join(' ')).toContain('¿Qué otra pieza le interesa?');
+  it('salen: la información de coincidencias reales («¿tienen billeteras?» muestra la pieza); ninguna pregunta del modelo (decisión del 28/11)', () => {
+    expect(textos(hablar(conv('¿Qué otra pieza le interesa?'), ANA, mTexto('quiero ver algo'))).join(' ')).toBe('¿Qué producto buscas?');
     expect(textos(hablar(conv('Tenemos Billetera de cuero a Bs 450. ¿Le interesa?'), ANA, mTexto('¿tienen billeteras?'))).join(' ')).toContain('Tenemos Billetera de cuero a Bs 450');
     // el modelo informa una pieza que NO coincide con lo que pidió: sale el texto del código con la que sí coincide
     const t = textos(hablar(conv('Tenemos Licuadora Oster a Bs 4.148.'), ANA, mTexto('¿tienen billeteras?'))).join(' ');
     expect(t).not.toContain('Licuadora');
     expect(t).toContain('Billetera de cuero');
   });
-  it('sin coincidencias ni pregunta: «Aún no tengo claro…» (código), sin afirmar nada', () => {
+  it('sin coincidencias ni pregunta: la pregunta fija del código (código), sin afirmar nada', () => {
     const t = textos(hablar(conv('Perfecto, gracias por tu mensaje.'), ANA, mTexto('necesito información de las piezas'))).join(' ');
     expect(t).toMatch(SIN_PIEZA);
   });
