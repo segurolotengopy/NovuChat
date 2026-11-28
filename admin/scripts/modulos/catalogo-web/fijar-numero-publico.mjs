@@ -53,14 +53,14 @@
  * `--operador` es obligatorio (la misma validación que `asignar-numero.mjs`): es
  * quien queda como `actualizadoPor` de la ruta y como `uid` de la auditoría.
  *
- * Cuatro avisos operativos:
+ * Tres avisos operativos:
  *   - EL PRIMERO QUE ESCRIBE GANA, y no se compara con Meta: desde el 27/11/2026 la plataforma
  *     también fija el número sola (`configuracionFlujo`, con `lineaVisible` del flujo) si la ruta no lo
  *     tiene ni fue quitado a mano; este script, al fijar a mano, lo sobrescribe y borra la marca.
- *   - `asignarNumero` (la callable) REEMPLAZA el documento de la ruta y borraría
- *     este campo; `asignar-numero.mjs` escribe con merge y lo conserva. Con un
- *     número nuevo (`--reemplaza`) la ruta es otra: hay que volver a fijarlo. Y borra también la marca
- *     `numeroPublicoAuto`: tras `asignarNumero` hay que repetir `--quitar` si debía seguir quitado.
+ *   - `asignarNumero` (la callable) escribe con merge y CONSERVA `numeroPublico` y `numeroPublicoAuto`.
+ *     Lo que borra TODO es `liberarNumero` (borra el documento de la ruta): un número reasignado nace sin
+ *     nada del dueño anterior, así que pierde también la marca y, si no tiene número, la plataforma lo
+ *     vuelve a fijar sola con el primer mensaje.
  *   - `--quitar` solo alcanza la línea de `waPhoneNumberId` del comercio.
  */
 const args = process.argv.slice(2);
@@ -191,7 +191,7 @@ console.log();
 console.log(`  Proyecto : ${NOMBRE_PROYECTO_ENV ? '(del entorno)' : PROYECTO}`);
 console.log(`  Comercio : ${TENANT}  ·  línea ${ult4(plan.phoneNumberId)}`);
 console.log(`  Operador : ${args.includes('--operador-env') ? '(del entorno)' : OPERADOR}`);
-console.log(`  Antes    : ${plan.antes === '' ? '(sin número público)' : verNum(plan.antes)}`);
+console.log(`  Antes    : ${plan.antes === '' ? '(sin número público)' : (QUITAR ? ult4(plan.antes) : verNum(plan.antes))}`);
 console.log(`  Después  : ${QUITAR ? '(sin número público)' : verNum(NUMERO)}`);
 console.log();
 

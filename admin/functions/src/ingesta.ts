@@ -1729,6 +1729,8 @@ export async function fijarNumeroPublicoDesdeMeta(
       if (actual.get('tenantId') !== ruta.tenantId) return;
       if (actual.get('numeroPublico') !== undefined) return;
       if (actual.get('numeroPublicoAuto') === false) return;
+      // `actualizadoPor` es el sello del ÚLTIMO que escribió la ruta: se sobrescribe a propósito (igual que
+      // en el script); el autor de cada cambio queda en `tenants/{t}/auditoria`, que es el historial.
       tx.update(refRuta, {
         numeroPublico: publico,
         actualizadoPor: 'meta:ingesta',
@@ -1739,9 +1741,8 @@ export async function fijarNumeroPublicoDesdeMeta(
         en: Timestamp.now(), phoneNumberId: `…${ruta.phoneNumberId.slice(-4)}`,
         despues: `…${publico.slice(-4)}`,
       });
-    });
-    // Una falla tardía de la transacción no debe quedar sin atender (rechazo no manejado).
-    transaccion.catch((e: unknown) => {
+    }).catch((e: unknown) => {
+      // La falla se registra UNA vez, aquí; la promesa que se espera nunca rechaza (tampoco si vence el tope).
       logger.warn('configuracionFlujo: no se pudo fijar el numero publico', {
         error: e instanceof Error ? e.message : String(e),
       });

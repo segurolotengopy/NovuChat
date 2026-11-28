@@ -462,7 +462,9 @@ describe('fijar-numero-publico.mjs --quitar: el caso bueno', () => {
     const auditoriasAntes = (await auditorias(T)).length;
     const r = correr(...quitar());
     expect(r.codigo).toBe(0);
-    expect(r.salida).toContain(PUBLICO);
+    // `--quitar` enmascara el número: solo las últimas cuatro cifras.
+    expect(r.salida).toContain(`…${PUBLICO.slice(-4)}`);
+    expect(r.salida).not.toContain(PUBLICO);
     expect(r.salida).toContain('(sin número público)');
     expect(r.salida).toContain('Seco');
     expect(await ruta(LINEA)).toEqual(antes);
