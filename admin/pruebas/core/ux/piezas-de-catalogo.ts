@@ -2,7 +2,7 @@
  * LAS PIEZAS COMUNES DEL CATÁLOGO Y SUS EXCEPCIONES CON VENCIMIENTO (Estándar v1.1, 27/11/2026; revisión del PR #1147: I2 e I3).
  *
  * Un flujo de venta con catálogo debe USAR las tres piezas comunes: la intención (`icIntencion` o `icPideListado`), la lista (`icMensajeLista`)
- * y el botón del catálogo (`cwConBotonCatalogo`). «Usar» es LLAMARLAS desde el código de un nodo (sin comentarios): una pieza solo incluida,
+ * el botón del catálogo (`cwConBotonCatalogo`) y el botón aparte de la lista (`cwMensajeBotonCatalogo`, I-B). «Usar» es LLAMARLAS desde el código de un nodo (sin comentarios): una pieza solo incluida,
  * o una llamada anulada, no cuenta. Un flujo que no las usa figura en `SIN_PIEZAS_COMUNES` con su porqué y su vencimiento; sin eso, la prueba falla.
  *
  * Toda excepción de la invariante (esta lista, `SIN_ADAPTADOR`, `DADOS_DE_BAJA` y las de cada punto) lleva `vence` a más tardar el 31/01/2027, como
@@ -45,6 +45,7 @@ export const PIEZAS_COMUNES: ReadonlyArray<{ pieza: string; funciones: readonly 
   { pieza: 'intención de catálogo', funciones: ['icIntencion', 'icPideListado'] },
   { pieza: 'lista de catálogo', funciones: ['icMensajeLista'] },
   { pieza: 'botón del catálogo', funciones: ['cwConBotonCatalogo', 'cwMensajesConCatalogo'] },
+  { pieza: 'botón aparte de la lista', funciones: ['cwMensajeBotonCatalogo'] },   // I-B (revisión del PR #1151): WhatsApp no junta lista y botón; el botón va en un segundo mensaje
 ];
 
 /** ¿`codigo` (ya sin comentarios) LLAMA a `nombre`? Las declaraciones `function nombre(` no son llamadas. */

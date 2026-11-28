@@ -11,6 +11,7 @@
 import type { J } from '../../lib/flujo';
 import type { Enviado, Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
 import * as bermejo from '../../tenants/casa-bermejo/mundo';
+import { electro } from '../../tenants/casa-bermejo/catalogo-electro';
 import * as walisuma from '../../tenants/walisuma/mundo';
 import { flujosDeProduccion } from '../../lib/flujos-de-cliente';
 import { leerFlujo } from '../../lib/flujo';
@@ -45,14 +46,17 @@ export interface Conversacion { turnos: Turno[] }
 
 export interface Adaptador {
   /** Abre un mundo del flujo de producción con el enlace del catálogo (o sin él) y un modelo simulado que contesta `texto` en cada turno. */
-  abrir(op: { enlace?: string; texto?: string; qrEnCurso?: boolean }): { decir(msg: J): ResultadoTurno };
+  abrir(op: OpAbrir): { decir(msg: J): ResultadoTurno };
   mTexto(t: string): J;
   mLista(id: string, titulo: string): J;
+  /** Una frase que pide una categoría de MÁS de 10 productos (el adaptador abre un catálogo con una así con `categoriaGrande`). Sin ella, el flujo no se mide en 3.1 con una categoría grande. */
+  fraseCategoriaGrande?: string;
 }
+export interface OpAbrir { enlace?: string; texto?: string; qrEnCurso?: boolean; categoriaGrande?: boolean }
 
-const desdeMundo = (m: typeof bermejo | typeof walisuma, crear: (enlace: string | undefined, texto: string | undefined, qr: boolean) => Mundo): Adaptador => ({
+const desdeMundo = (m: typeof bermejo | typeof walisuma, crear: (op: OpAbrir) => Mundo): Adaptador => ({
   abrir: (op) => {
-    const mundo = crear(op.enlace, op.texto, op.qrEnCurso === true);
+    const mundo = crear(op);
     return { decir: (msg) => m.hablar(mundo, m.ANA, msg, { toleraFallo: true }) };
   },
   mTexto: m.mTexto,
@@ -61,9 +65,14 @@ const desdeMundo = (m: typeof bermejo | typeof walisuma, crear: (enlace: string 
 
 /** Los adaptadores, por nombre de JSON. */
 export const ADAPTADORES: Record<string, Adaptador> = {
-  'casa-bermejo.json': desdeMundo(bermejo, (enlace, texto, qr) => bermejo.crear({ enlaceCatalogo: enlace ?? '', panel: qr ? bermejo.panelConQr(450) : undefined, modeloDice: texto === undefined ? undefined : bermejo.modelo(texto) })),
-  'walisuma.json': desdeMundo(walisuma, (enlace, texto, qr) => walisuma.crear({
-    panel: enlace || qr ? (qr ? walisuma.panelConQr : (_m: number, x: J) => walisuma.panelOk(x))(450, enlace ? { catalogoWeb: { activo: true, enlace } } : {}) : undefined,
+  'casa-bermejo.json': { ...desdeMundo(bermejo, ({ enlace, texto, qrEnCurso, categoriaGrande }) => bermejo.crear({
+    enlaceCatalogo: enlace ?? '',
+    panel: qrEnCurso ? bermejo.panelConQr(450) : undefined,
+    catalogo: categoriaGrande ? bermejo.catalogoOk({}, electro()) : undefined,   // 23 televisores: más de 10 en una categoría
+    modeloDice: texto === undefined ? undefined : bermejo.modelo(texto),
+  })), fraseCategoriaGrande: '¿qué televisores tienen y a qué precio?' },
+  'walisuma.json': desdeMundo(walisuma, ({ enlace, texto, qrEnCurso }) => walisuma.crear({
+    panel: enlace || qrEnCurso ? (qrEnCurso ? walisuma.panelConQr : (_m: number, x: J) => walisuma.panelOk(x))(450, enlace ? { catalogoWeb: { activo: true, enlace } } : {}) : undefined,
     modeloDice: texto === undefined ? undefined : walisuma.modelo(texto),
   })),
 };
@@ -91,7 +100,7 @@ function turnoDe(dijo: string, r: ResultadoTurno): Turno {
   return { dijo, mensajes: r.mensajes, modeloLlamado: r.ejecutados.has('Conversar con el modelo'), fallo: r.fallo ? r.fallo.mensaje : null };
 }
 /** Una conversación: abre el mundo y manda cada mensaje en orden (texto de cliente, o un toque de lista con `{ lista: id }`). */
-export function conversar(a: Adaptador, op: { enlace?: string; texto?: string; qrEnCurso?: boolean }, guion: Array<string | { lista: string }>): Conversacion {
+export function conversar(a: Adaptador, op: OpAbrir, guion: Array<string | { lista: string }>): Conversacion {
   const c = a.abrir(op);
   return { turnos: guion.map((g) => (typeof g === 'string' ? turnoDe(g, c.decir(a.mTexto(g))) : turnoDe(`[toque ${g.lista}]`, c.decir(a.mLista(g.lista, 'x'))))) };
 }
@@ -121,6 +130,9 @@ export interface Medicion {
   conVinetas: Turno;
   /** 3.2: una consulta de VARIAS categorías (las dos primeras de la lista del flujo): el texto con viñetas que arma el código. */
   variasCategorias: Turno | null;
+  /** 3.1 e I-B: una categoría de MÁS de 10 productos (primera página) y, si trae «Ver más», la página siguiente. Null si el adaptador no declara `fraseCategoriaGrande`. */
+  categoriaGrande: Turno | null;
+  verMas: Turno | null;
 }
 
 export function medir(a: Adaptador): Medicion {
@@ -140,7 +152,11 @@ export function medir(a: Adaptador): Medicion {
   const conVinetas = conversar(a, { enlace: ENLACE, texto: TEXTO_CON_VINETAS }, ['hola, quiero información de las piezas']).turnos[0]!;
   const titulos = listado.mensajes.filter(esLista).flatMap(filasDe).map((x) => String(x['title'])).filter((x) => /^[\p{L} ]{3,24}$/u.test(x));
   const variasCategorias = titulos.length >= 2 ? conversar(a, { enlace: ENLACE, texto: NIEGA_CATALOGO }, [`¿qué ${titulos[0]!.toLowerCase()} y ${titulos[1]!.toLowerCase()} tienen?`]).turnos[0]! : null;
-  return { listados, saludo, pideCatalogo, noEncuentra, conQr, categoria, listado, toqueVigente, toquesViejos, textoLargo, conVinetas, variasCategorias };
+  const grande = a.fraseCategoriaGrande ? conversar(a, { enlace: ENLACE, texto: NIEGA_CATALOGO, categoriaGrande: true }, [a.fraseCategoriaGrande]) : null;
+  const categoriaGrande = grande ? grande.turnos[0]! : null;
+  const idMas = categoriaGrande ? String(categoriaGrande.mensajes.filter(esLista).flatMap(filasDe).find((x) => String(x['id']).startsWith('mas:'))?.['id'] ?? '') : '';
+  const verMas = a.fraseCategoriaGrande && idMas ? conversar(a, { enlace: ENLACE, texto: NIEGA_CATALOGO, categoriaGrande: true }, [a.fraseCategoriaGrande, { lista: idMas }]).turnos[1]! : null;
+  return { listados, saludo, pideCatalogo, noEncuentra, conQr, categoria, listado, toqueVigente, toquesViejos, textoLargo, conVinetas, variasCategorias, categoriaGrande, verMas };
 }
 
 // ----------------------------------------------------------------------------- los puntos del estándar
@@ -148,6 +164,26 @@ export function medir(a: Adaptador): Medicion {
 const NEGACION = /no (lo )?encuentro|no (lo )?(tenemos|vendemos|manejamos)\b|no (hay|aparece|figura)\b/i;
 const llevaCatalogo = (t: Turno): boolean => t.mensajes.some((e) => esLista(e) || (esEnlace(e) && urlDeBoton(e) === ENLACE) || /^•/m.test(e.cuerpo));
 const conFallo = (t: Turno): string[] => (t.fallo ? [`el flujo falló: ${t.fallo.slice(0, 80)}`] : []);
+
+/**
+ * I-B (revisión del PR #1151): el botón aparte de la pieza común (`cwMensajeBotonCatalogo`). Con el enlace del comercio, la PRIMERA página de una lista del catálogo (categorías o categoría grande) va seguida,
+ * en el mensaje inmediato, de un `cta_url` con ese enlace; las páginas siguientes («Ver más») NO lo repiten. Si el flujo no manda listas, el punto 2.3 es el que lo dice.
+ */
+export function problemasDeBotonAparte(m: Medicion): string[] {
+  const out: string[] = [];
+  for (const t of [m.listado, ...(m.categoriaGrande ? [m.categoriaGrande] : [])]) {
+    t.mensajes.forEach((e, i) => {
+      if (!esLista(e)) return;
+      const sig = t.mensajes[i + 1];
+      if (!sig || !esEnlace(sig) || urlDeBoton(sig) !== ENLACE) out.push(`«${t.dijo}»: la lista no va seguida del botón «Ver catálogo» (cta_url con el enlace del comercio)`);
+    });
+  }
+  if (m.verMas) {
+    if (m.verMas.mensajes.some(esEnlace)) out.push(`«${m.verMas.dijo}»: «Ver más» repite el botón del catálogo`);
+    if (!m.verMas.mensajes.some(esLista)) out.push(`«${m.verMas.dijo}»: «Ver más» no trae la página siguiente`);
+  }
+  return out;
+}
 
 export interface Punto { id: string; titulo: string; evaluar(m: Medicion): string[] }
 
@@ -205,7 +241,7 @@ export const PUNTOS: Punto[] = [
     return out;
   } },
   { id: '3.1', titulo: 'párrafos separados de 2 oraciones como máximo', evaluar: (m) => {
-    const todos = [m.saludo, m.pideCatalogo, m.noEncuentra, m.categoria, m.listado, m.textoLargo, m.conVinetas, ...(m.variasCategorias ? [m.variasCategorias] : []), ...m.listados];
+    const todos = [m.saludo, m.pideCatalogo, m.noEncuentra, m.categoria, m.listado, m.textoLargo, m.conVinetas, ...(m.variasCategorias ? [m.variasCategorias] : []), ...(m.categoriaGrande ? [m.categoriaGrande] : []), ...(m.verMas ? [m.verMas] : []), ...m.listados];
     return todos.flatMap((t) => t.mensajes.flatMap((e) => parrafosLargos(e.cuerpo).map((p) => `«${t.dijo}»: párrafo con más de 2 oraciones: «${p.slice(0, 50)}…»`)));
   } },
   { id: '3.2', titulo: 'el filtro de redacción conserva saltos de línea y viñetas', evaluar: (m) => {
@@ -217,6 +253,7 @@ export const PUNTOS: Punto[] = [
     if (v.length < 2) return ['ni el texto del modelo ni la respuesta del código a varias categorías traen viñetas (una por línea)'];
     return v.filter((l) => (l.match(/•/g) ?? []).length !== 1 || !/\d/.test(l)).map((l) => `viñeta mal formada (dos productos en una línea o sin precio): «${l.slice(0, 60)}»`);
   } },
+  { id: 'I-B', titulo: 'con enlace, una lista va seguida de su botón «Ver catálogo» (cta_url) y «Ver más» no lo repite', evaluar: (m) => problemasDeBotonAparte(m) },
   { id: '3.4', titulo: 'límites de WhatsApp respetados por código (texto 4096, interactivo 1024, botón 20, fila 24/72, 10 filas)', evaluar: (m) =>
     [m.saludo, m.pideCatalogo, m.noEncuentra, m.conQr, m.categoria, m.listado, m.textoLargo, m.conVinetas, ...m.listados, ...m.toquesViejos, ...(m.toqueVigente ? [m.toqueVigente] : [])]
       .flatMap((t) => t.mensajes.flatMap((e) => problemasDeLimites(e.payload).map((p) => `«${t.dijo}»: ${p}`))) },
