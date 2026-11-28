@@ -10,7 +10,7 @@ type Msg = { tipo: string; payload: { interactive: { type: string; action: { sec
 type Ic = {
   icPideListado: (t: unknown) => boolean;
   icIntencion: (t: unknown, v: unknown[]) => { tipo: string; catIds: string[]; faltan: string[]; pedido: boolean };
-  icMensajeLista: (v: unknown[], m: (c: number) => string, o?: { catId?: string; pag?: number }) => Msg;
+  icMensajeLista: (v: unknown[], m: (c: number) => string, o?: { catId?: string; pag?: number; enlace?: string }) => Msg;
   icResolverToque: (id: unknown, v: unknown[], m: (c: number) => string) => { tipo: string; id?: string; mensaje?: NonNullable<Msg> };
 };
 const ic = cargarFuente<Ic>([
@@ -62,6 +62,13 @@ describe('icMensajeLista', () => {
     expect(m.respaldo.length).toBeLessThanOrEqual(4000);
     const completo = ic.icMensajeLista(catalogo(3, ['Cocina']), monto)!;
     expect(completo.respaldo).not.toMatch(/productos? más/);
+  });
+  it('C2: con enlace https al catálogo el respaldo remite («Míralos en el catálogo»); sin enlace o con uno inválido sigue pidiendo que escriba', () => {
+    const v = Array.from({ length: 200 }, (_, i) => ({ id: `p${i}`, nombre: 'Producto de nombre bastante largo número ' + i, area: 'Única', precioCentavos: 100000 + i }));
+    const con = ic.icMensajeLista(v, monto, { catId: 'cat:unica', enlace: 'https://catalogo.ejemplo.test/c/x' })!;
+    expect(con.respaldo).toMatch(/Hay \d+ productos más\. Míralos en el catálogo\./);
+    expect(con.respaldo).not.toMatch(/Dime cuál buscas/);
+    for (const e of [undefined, 'http://a.test/x', 'javascript:alert(1)', '']) expect(ic.icMensajeLista(v, monto, { catId: 'cat:unica', enlace: e })!.respaldo, String(e)).toMatch(/Dime cuál buscas/);
   });
   it('NIEGA: un toque obsoleto (categoría que ya no existe) o sin vendibles no inventa nada', () => {
     expect(ic.icMensajeLista(catalogo(5), monto, { catId: 'cat:fantasma' })).toBeNull();

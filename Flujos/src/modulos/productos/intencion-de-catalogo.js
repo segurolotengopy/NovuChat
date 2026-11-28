@@ -154,7 +154,7 @@ function icRespaldo(vendibles, catIds, monto, limite) {
 function icParrafos(texto) {
   return typeof ctParrafos === 'function' ? ctParrafos(texto) : String(texto);
 }
-// El mensaje de lista del catálogo. `opciones`: { catId, pag }. Sin `catId` y con varias categorías, la lista es de
+// El mensaje de lista del catálogo. `opciones`: { catId, pag, enlace }. Sin `catId` y con varias categorías, la lista es de
 // categorías; con una sola categoría, o con `catId`, es de productos. Devuelve null si no hay nada que mostrar (el
 // llamador no inventa un producto): { payload, texto, respaldo, tipo:'list', filas, hayMas, pag }.
 // `texto` es el cuerpo de la lista; `respaldo` el mismo contenido en texto con viñetas.
@@ -190,7 +190,9 @@ function icMensajeLista(vendibles, monto, opciones) {
   var respaldo = icRespaldo(vendibles, respaldoCats, monto, 3500);
   // Nunca se recorta en silencio (estándar 2.2): si no cupo todo en el texto, se dice cuántos faltan y se ofrece pedirlos por chat.
   var faltan = respaldo.total - respaldo.mostrados;
-  var remision = faltan > 0 ? '\n\n' + (faltan === 1 ? 'Hay 1 producto más.' : 'Hay ' + faltan + ' productos más.') + ' Dime cuál buscas y te lo muestro.' : '';
+  // Con enlace al catálogo web (`opciones.enlace`, https), el respaldo remite al catálogo en vez de pedir que escriba.
+  var conEnlace = typeof op.enlace === 'string' && /^https:\/\/[^\s]+$/.test(op.enlace.trim());
+  var remision = faltan > 0 ? '\n\n' + (faltan === 1 ? 'Hay 1 producto más.' : 'Hay ' + faltan + ' productos más.') + (conEnlace ? ' Míralos en el catálogo.' : ' Dime cuál buscas y te lo muestro.') : '';
   var hayMas = filas.length > 0 && filas[filas.length - 1].id.indexOf('mas:') === 0;
   return {
     tipo: 'list',
