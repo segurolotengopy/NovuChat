@@ -17,7 +17,7 @@ const itemAr = (o: Record<string, unknown> = {}) => ({ ...CATALOGO[1], moneda: '
 const catAr = (items: unknown[] = [itemAr()]) => catalogoOk({ mercado: 'AR', moneda: 'ARS' }, items as never);
 type Rep = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const evento = (t: { llamadas: { ingesta: Record<string, unknown>[] } }, e: string): Rep | undefined => t.llamadas.ingesta.find((x) => x['evento'] === e) as Rep | undefined;
-const confirmar = (m: ReturnType<typeof crear>, tel: string, pedido = 'quiero una billetera') => { hablar(m, tel, mTexto(pedido)); return hablar(m, tel, mTexto('quiero pagar')); };
+const confirmar = (m: ReturnType<typeof crear>, tel: string, pedido = 'quiero dos billeteras') => { hablar(m, tel, mTexto(pedido)); return hablar(m, tel, mTexto('quiero pagar')); };
 
 describe('Bolivia: `qr_enviado` lleva la línea completa', () => {
   it('forma cerrada, precio del catálogo y moneda BOB', () => {
@@ -39,7 +39,7 @@ describe('Bolivia: `qr_enviado` lleva la línea completa', () => {
   });
   it('ids repetidos con distinto detalle se fusionan: UNA línea por id, con la cantidad sumada', () => {
     const m = crear({ entregaPrevia: ENTREGA, modeloDice: pide([{ id: BIL, cantidad: 1, detalle: 'azul' }, { id: BUF, cantidad: 1 }, { id: BIL, cantidad: 2, detalle: 'negra' }], {}) });
-    const l = evento(confirmar(m, ANA, 'quiero una billetera y una bufanda'), 'qr_enviado')?.['lineas'] as Rep[];
+    const l = evento(confirmar(m, ANA, 'quiero dos billeteras y una bufanda'), 'qr_enviado')?.['lineas'] as Rep[];
     expect(l.map((x) => x['id'])).toEqual([BIL, BUF]);
     expect(l[0]).toMatchObject({ cantidad: 3, subtotalCentavos: 135000 });
     expect(l[0]?.['detalle']).toBe('1 azul · 2 negra');
@@ -48,7 +48,7 @@ describe('Bolivia: `qr_enviado` lleva la línea completa', () => {
   });
   it('la suma de las líneas coincide con el monto del QR', () => {
     const m = crear({ entregaPrevia: ENTREGA, modeloDice: pide([{ id: BIL, cantidad: 2 }, { id: BUF, cantidad: 1 }], {}) });
-    const rep = evento(confirmar(m, ANA, 'quiero una billetera y una bufanda'), 'qr_enviado') as Rep;
+    const rep = evento(confirmar(m, ANA, 'quiero dos billeteras y una bufanda'), 'qr_enviado') as Rep;
     expect((rep['lineas'] as Rep[]).reduce((a, x) => a + x['subtotalCentavos'], 0)).toBe(rep['monto'] * 100);
   });
 });

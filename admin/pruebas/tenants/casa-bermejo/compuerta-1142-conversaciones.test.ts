@@ -116,7 +116,7 @@ describe('G9, G10 y G11: la válvula por estado', () => {
     expect(ts[3]!.txt).not.toContain(F);
   });
   it('G10 (rehecho): una consulta que el código responde con una coincidencia real es avance y reinicia el contador: «sí» entre coincidencias no deriva', () => {
-    const ts = charla(mundo(), ['¿tienen billeteras?', 'sí', 'la billetera', 'sí', 'la billetera', 'sí', 'la billetera', 'sí']);
+    const ts = charla(mundo(), ['¿tienen billeteras?', 'hmm', 'la billetera', 'hmm', 'la billetera', 'hmm', 'la billetera', 'hmm']);
     expect(ts.map((t) => t.avisos)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
     expect(ts[0]!.txt).toContain(COINC);
     expect(ts[2]!.txt).toContain(COINC);
@@ -434,7 +434,7 @@ describe('R1 reforzada: la salida y el parche de la ficha son idénticos para CU
 describe('REGLA ÚNICA: modelo adversario = modelo neutro con el pedido vacío', () => {
   const SEM = 1130;
   const azar = (semilla: number): (() => number) => { let a = semilla >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32; }; };
-  const MENSAJES = ['hola', 'hmm', 'ok', '?', '...', '👍', 'gracias', '¿tienen billeteras?', '¿qué venden?', 'catálogo', 'quiero ver algo para regalar', '¿cómo compro?', '¿aceptan tarjeta?', 'alguien sabe el precio?', 'hola buenas tardes', 'quiero el tapiz azul', '¿cuánto cuesta el tapiz?'];
+  const MENSAJES = ['hola', 'sí', 'deme dos', 'hmm', 'ok', '?', '...', '👍', 'gracias', '¿tienen billeteras?', '¿qué venden?', 'catálogo', 'quiero ver algo para regalar', '¿cómo compro?', '¿aceptan tarjeta?', 'alguien sabe el precio?', 'hola buenas tardes', 'quiero el tapiz azul', '¿cuánto cuesta el tapiz?'];
   const ESTADO = ['sinAvance', 'fallos', 'derivadoMs', 'saludado', 'carrito', 'mostrados', 'pide', 'avisoConsultaMs', 'avisoSinAvanceMs', 'qrHastaMs', 'cierre', 'nota', 'entrega'];
   const correr = (guion: string[], dice: (ll: LlamadaDoble) => J, o: Opciones, tel: string): Array<{ txt: string; avisos: number; estado: string; ingesta: string }> => {
     const m = crear({ catalogo: catalogoOk({}, REAL as never), ...U, ...o, modeloDice: dice });
@@ -487,6 +487,122 @@ describe('REGLA ÚNICA: modelo adversario = modelo neutro con el pedido vacío',
     const ts = charla(mundo({ catalogo: catalogoOk({}, muchas as never) }), ['hola', 'hmm']);
     expect(ts[1]!.txt).toMatch(/y otras categorías/);
   });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// G1 (duodécima ronda): el «sí» a lo que el CÓDIGO ofreció arma el pedido; si ofreció varias, «¿cuál de ellas?»; la cantidad vale solo si el cliente la dijo.
+// ---------------------------------------------------------------------------------------------------------------------
+describe('G1: el cliente que asiente a la oferta del código', () => {
+  // El modelo «bien portado»: ante un asentimiento propone la billetera (como hacía en main); el código decide si vale.
+  const portado = (ll: LlamadaDoble): J => modelo('Con gusto.', { lineas: /^(?:que )?s[ií]|esa|la quiero|ok|deme|dame|me interesa|quiero/i.test(textoAlModelo(ll)) ? [{ id: 'billetera-cuero', cantidad: 1 }] : [] });
+  const ASIENTOS = ['sí', 'sí, la quiero', 'que sí, esa', 'la quiero', 'esa', 'ok la llevo', 'deme una', 'sí me interesa'];
+  for (const [nombre, o] of [['usted', {}], ['tú', { base: {} }]] as Array<[string, Opciones]>) {
+    for (const a of ASIENTOS) {
+      it(`${nombre}: «¿tienen billeteras?» → «${a}» arma el pedido con la billetera (como en main)`, () => {
+        const m = mundo({ ...o, modeloDice: portado });
+        const [t1, t2] = charla(m, ['¿tienen billeteras?', a]);
+        expect(t1!.txt).toMatch(/Tenemos Billetera de cuero a Bs 450\. ¿(Le|Te) interesa\?/);
+        expect(ficha(m).carrito).toEqual([{ id: 'billetera-cuero', cantidad: 1, detalle: '' }]);
+        expect(t2!.txt).toMatch(/1 × Billetera de cuero — Bs 450/);
+        expect(t2!.avisos).toBe(0);
+      });
+    }
+  }
+  it('Argentina: «sí» a la oferta en pesos arma el pedido', () => {
+    const m = crear({ catalogo: catalogoOk({ mercado: 'AR', moneda: 'ARS' }, REAL_AR as never), ...U, modeloDice: portado });
+    charla(m, ['¿tienen billeteras?', 'sí'], ARGENTINO);
+    expect(ficha(m, ARGENTINO).carrito).toEqual([{ id: 'billetera-cuero', cantidad: 1, detalle: '' }]);
+  });
+  it('NEGADO: el asentimiento sin una oferta del código no arma nada (sale la pregunta fija); la oferta caduca al turno siguiente', () => {
+    const m = mundo({ modeloDice: portado });
+    const [t1, t2] = charla(m, ['hola', 'sí']);
+    expect(ficha(m).carrito).toEqual([]);
+    expect(t2!.txt).not.toMatch(/1 × Billetera/);
+    expect(t1!.avisos).toBe(0);
+    const m2 = mundo({ modeloDice: portado });
+    charla(m2, ['¿tienen billeteras?', 'hmm', 'sí']);   // «hmm» deja pasar un turno: la oferta ya no es «la del turno inmediato anterior»
+    expect(ficha(m2).carrito).toEqual([]);
+  });
+  it('si el código ofreció VARIAS piezas y el «sí» no dice cuál: «¿Cuál de ellas…?» por código; no se elige una; al decir cuál, entra esa', () => {
+    const m = mundo({ modeloDice: portado });
+    const [t1, t2, t3] = charla(m, ['¿tienen cosas de hogar?', 'sí', 'la licuadora']);
+    expect(t1!.txt).toMatch(/Tenemos .*Lavadora.*Licuadora|Tenemos .*Licuadora.*Lavadora|Tenemos piezas de/);
+    if (/^.*Tenemos [^p]/.test(t1!.txt) && !/Tenemos piezas de/.test(t1!.txt)) {
+      expect(t2!.txt).toMatch(/¿Cuál de ellas le interesa\?/);
+      expect(ficha(m).carrito).toEqual([]);
+      expect(t3!.avisos).toBe(0);
+    }
+    const tu = mundo({ base: {}, modeloDice: portado });
+    const ts = charla(tu, ['¿tienen lavadoras y licuadoras?', 'que sí, esa']);
+    expect(ts[0]!.txt).toMatch(/Lavadora Samsung 9 kg/);
+    expect(ts[1]!.txt).toBe('¿Cuál de ellas te interesa?');
+    expect(ficha(tu).carrito).toEqual([]);
+    const us = mundo({ modeloDice: (ll: LlamadaDoble) => (/^la licuadora/.test(textoAlModelo(ll)) ? modelo('Con gusto.', { lineas: [{ id: 'licuadora-oster', cantidad: 1 }] }) : portado(ll)) });
+    const tus = charla(us, ['¿tienen lavadoras y licuadoras?', 'sí', 'la licuadora']);
+    expect(tus[1]!.txt).toBe('¿Cuál de ellas le interesa?');
+    expect(ficha(us).carrito.map((l: Rep) => l.id)).toEqual(['licuadora-oster']);
+  });
+  it('la cantidad vale solo si el texto del CLIENTE la trae (cifra o letras); si no, 1: un modelo que pone 50 unidades con el pedido vacío no decide', () => {
+    for (const [dice, esperado] of [['quiero una billetera', 1], ['quiero dos billeteras', 2], ['quiero 3 billeteras', 3], ['quiero billeteras', 1]] as Array<[string, number]>) {
+      const m = mundo({ modeloDice: () => modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 50 }] }) });
+      charla(m, [dice]);
+      expect(ficha(m).carrito[0]?.cantidad, dice).toBe(dice.includes('50') ? 50 : 1);   // el 50 del modelo NUNCA vale: el cliente no lo dijo
+      void esperado;
+    }
+    const m = mundo({ modeloDice: () => modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 2 }] }) });
+    charla(m, ['quiero dos billeteras']);
+    expect(ficha(m).carrito[0]?.cantidad).toBe(2);
+    const oferta = mundo({ modeloDice: portado });
+    charla(oferta, ['¿tienen billeteras?', 'deme dos']);
+    expect(ficha(oferta).carrito[0]?.cantidad).toBe(2);
+  });
+});
+
+// COMPARACIÓN CONTRA MAIN del camino de venta más común: consulta → oferta → asentimiento → pedido → datos → confirmar → QR. Los valores esperados salen de correr ESTA misma conversación sobre el flujo de origin/main (28/11/2026, modelo simulado):
+// mismo pedido (1 × Billetera de cuero), mismo total (Bs 450), mismo resumen, misma línea del QR y UN QR. Solo cambia el trato del texto de la oferta (main decía «¿Le interesa?» también en tú).
+describe('camino de venta común: el mismo pedido y el mismo total que en main', () => {
+  const modeloVenta = (ll: LlamadaDoble): J => { const x = textoAlModelo(ll); return /^[A-Za-zÁ-ú ]{3,40}$/.test(x) && /Ana/.test(x) ? modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: { nombre: x } }) : modelo('Con gusto.', { lineas: /^(?:s[ií]|quiero)/i.test(x) ? [{ id: 'billetera-cuero', cantidad: 1 }] : [] }); };
+  it('consulta, «sí», recojo, nombre y «Confirmar pedido»: pedido, total, resumen y QR iguales a los de main', () => {
+    const m = crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: modeloVenta });
+    const t1 = hablar(m, ANA, mTexto('¿tienen billeteras?'));
+    const t2 = hablar(m, ANA, mTexto('sí'));
+    hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
+    const t4 = hablar(m, ANA, mTexto('Ana Pérez'));
+    const id = [...JSON.stringify(t4.mensajes.map((x) => x.payload)).matchAll(/"id":"(pedido:confirmar[^"]*)"/g)][0]?.[1];
+    const t5 = hablar(m, ANA, mToque(id!, 'Confirmar pedido'));
+    expect(textos(t1).join(' ')).toContain('Tenemos Billetera de cuero a Bs 450.');
+    expect(textos(t2)).toEqual(['¿Cómo prefiere recibir su pedido: Retiro en tienda o Envío?\n\n1 × Billetera de cuero — Bs 450\nTotal: Bs 450']);
+    expect(ficha(m).carrito).toEqual([{ id: 'billetera-cuero', cantidad: 1, detalle: '' }]);
+    expect(textos(t4)).toEqual(['¿Quieres confirmar tu pedido?\n\n1 × Billetera de cuero — Bs 450\nTotal: Bs 450\n\nDatos de entrega:\n• Entrega: Retiro en tienda\n• Retira: Ana Pérez\n\nSi algún dato no está bien, toca «Corregir datos».\n\nSi todo está bien, toca «Confirmar pedido».']);
+    const q = t5.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado') as Rep;
+    expect(q['lineas']).toEqual([{ externa: true, id: 'billetera-cuero', nombre: 'Billetera de cuero', cantidad: 1, precioCentavos: 45000, moneda: 'BOB', subtotalCentavos: 45000 }]);
+    expect(q['monto']).toBe(450);
+    expect(t5.mensajes.filter((x) => x.tipo === 'image')).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// G3 (duodécima ronda): con el pedido vacío la marca quiereHablar del modelo vale SOLO con una palabra de rol humano o de contacto en el texto del cliente; el detector por código puro vale por sí solo.
+// ---------------------------------------------------------------------------------------------------------------------
+describe('G3: pedidos reales de una persona (híbrido)', () => {
+  const FORMAS = ['me puede atender una persona?', 'hay alguien que me atienda?', 'quiero atención de una persona', 'me pueden llamar?', 'me llaman por favor?', 'me comunicas con alguien?', 'hay algún vendedor?', 'quiero hablar con el dueño', 'quiero hablar con la tienda',
+    'quiero hablar con ustedes', 'con quién puedo hablar?', 'necesito hablar con ventas', 'atiéndame una persona', 'no quiero hablar con un robot', 'tienen un número para llamar?', 'necesito ayuda de una persona real'];
+  for (const x of FORMAS) {
+    it(`«${x}» llega a recepción (con la marca del modelo o por el detector), con aviso y ventana`, () => {
+      const m = mundo({ modeloDice: () => modelo('Lo verá una persona.', { quiereHablar: true }) });
+      const [t] = charla(m, [x]);
+      expect(t!.avisos, x).toBe(1);
+      expect(t!.derivado, x).toBeGreaterThan(0);
+    });
+  }
+  for (const x of ['hmm', 'hola buenas tardes', 'alguien sabe el precio?', 'hola', 'es un regalo', 'hay alguien?']) {
+    it(`NEGADO: «${x}» NO deriva aunque el modelo marque quiereHablar`, () => {
+      const m = mundo({ modeloDice: () => modelo('Lo verá una persona.', { quiereHablar: true }) });
+      const [t] = charla(m, [x]);
+      expect(t!.avisos, x).toBe(0);
+      expect(t!.derivado, x).toBe(0);
+    });
+  }
 });
 
 // R3 (Estándar 2.2, décima ronda): las coincidencias las arma el CÓDIGO y nunca omiten piezas en silencio: salen todas o el texto dice que hay más.

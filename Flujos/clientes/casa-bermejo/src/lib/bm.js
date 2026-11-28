@@ -147,7 +147,7 @@ function bmFilasDeLista(dato, region) {
 function bmFichaBase() {
   return {
     v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, fueraDePaisMs: 0, avisoPaisMs: 0,
-    carrito: [], nota: '', entrega: bmEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, avisoSinAvanceMs: 0, sinAvance: 0, fallos: 0, ultimoMensajeMs: 0, avisoNoCuadraMs: 0,
+    carrito: [], nota: '', entrega: bmEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, avisoSinAvanceMs: 0, sinAvance: 0, fallos: 0, ultimoMensajeMs: 0, ofrecidos: [], avisoNoCuadraMs: 0,
     aliasPedidoId: '', aliasEstado: '', aliasVenceMs: 0, aliasMontoCent: 0, aliasAr: '',
     catalogoOfrecido: false, pedidoCatalogo: '', derivadoMs: 0,
     pide: [],
@@ -204,6 +204,8 @@ function bmFichaVigente(e, ahoraMs) {
     hist: (Array.isArray(e.hist) ? e.hist : []).filter((x) => x && (x.r === 'u' || x.r === 'm') && typeof x.t === 'string' && x.t !== '').map((x) => ({ r: x.r, t: bmParaMemoria(x.t).slice(0, BM_LARGO_RECUERDO) })).slice(-BM_RECUERDOS),
     avisoConsultaMs: bmNumero(e.avisoConsultaMs),
     avisoSinAvanceMs: bmNumero(e.avisoSinAvanceMs),
+    // Las piezas que el CÓDIGO ofreció en el turno inmediato anterior (la oración de coincidencias): un «sí» del cliente las nombra.
+    ofrecidos: (Array.isArray(e.ofrecidos) ? e.ofrecidos : []).filter((x) => typeof x === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(x)).slice(0, 6),
     ultimoMensajeMs: bmNumero(e.ultimoMensajeMs),   // la HORA DEL MENSAJE del cliente (WhatsApp), con la que caduca el contador de «sin avance»
     sinAvance: bmNumero(e.sinAvance, 1000),
     fallos: bmNumero(e.fallos, 1000),

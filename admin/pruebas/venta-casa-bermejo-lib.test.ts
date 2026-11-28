@@ -96,7 +96,7 @@ describe('el catálogo de NovuTienda (B2) dentro de la venta', () => {
 
 describe('la decisión de la venta: el modelo conversa, el código calcula', () => {
   it('NEGADO: precio, total y descuento del modelo se ignoran; el carrito sale del catálogo', () => {
-    const c = ctx({ modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'p1', cantidad: 2, precio: 1, total: 1, descuento: 99 }] }) });
+    const c = ctx({ plan: { tipo: 'modelo', textoCliente: 'quiero dos pieza uno' }, modeloResp: gemini({ texto: 'Con gusto.', lineas: [{ id: 'p1', cantidad: 2, precio: 1, total: 1, descuento: 99 }] }) });
     const r = b('bmResolver')(c);
     expect(r.tipo).toBe('modelo');
     expect(r.lineas[0]).toMatchObject({ id: 'p1', cantidad: 2, precioCentavos: 12000 });
@@ -108,7 +108,7 @@ describe('la decisión de la venta: el modelo conversa, el código calcula', () 
   });
   it('NEGADO: más cantidad que el stock se recorta al stock', () => {
     const cat = b('bmCatalogo')(http([item({ stock: 2 })]), AHORA, base, 'BO');
-    const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, modeloResp: gemini({ texto: 'Listo.', lineas: [{ id: 'p1', cantidad: 5 }] }) }));
+    const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, plan: { tipo: 'modelo', textoCliente: 'quiero cinco pieza uno' }, modeloResp: gemini({ texto: 'Listo.', lineas: [{ id: 'p1', cantidad: 5 }] }) }));
     expect(r.lineas[0].cantidad).toBe(2);
   });
   it('NEGADO: sin catálogo legible el turno de conversación pasa con un vendedor (aviso y botón), no se improvisa', () => {
@@ -1111,7 +1111,7 @@ describe('R36: el mensaje pegado del sitio, formato viejo y nuevo; los montos de
 describe('R47: el precio del catálogo se usa tal cual y el total es cantidad × precio (dos unidades = dos veces el precio), en bolivianos y en pesos', () => {
   const total = (items: unknown[], mercado: string, lineas: { id: string; cantidad: number }[]) => {
     const c = b('bmCatalogo')(http(items, mercado === 'AR' ? { mercado: 'AR', moneda: 'ARS' } : {}), AHORA, base, mercado);
-    const r = b('bmResolver')(ctx({ mercado, catalogo: c, vendibles: c.vendibles, modos: ['recojo en tienda', 'envío'], ficha: { carrito: [], entrega: { modo: 'recojo en tienda', nombre: 'Ana' } }, plan: { tipo: 'modelo', textoCliente: 'quiero pagar ' + items.map((i) => String((i as { nombre: string }).nombre)).join(' ') }, modeloResp: gemini({ texto: 'Con gusto.', lineas }) }));
+    const r = b('bmResolver')(ctx({ mercado, catalogo: c, vendibles: c.vendibles, modos: ['recojo en tienda', 'envío'], ficha: { carrito: [], entrega: { modo: 'recojo en tienda', nombre: 'Ana' } }, plan: { tipo: 'modelo', textoCliente: 'quiero pagar dos ' + items.map((i) => String((i as { nombre: string }).nombre)).join(' ') }, modeloResp: gemini({ texto: 'Con gusto.', lineas }) }));
     return { r, c };
   };
   it('BOB: dos unidades de Bs 3.410 = Bs 6.820 (682000 centavos)', () => {

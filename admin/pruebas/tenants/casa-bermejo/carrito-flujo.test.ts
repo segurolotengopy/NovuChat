@@ -43,7 +43,7 @@ describe('lo que propone el modelo se valida contra el catálogo', () => {
     expect(car.find((l) => l.id === 'pieza-1')?.cantidad).toBe(50);
     const m2 = crear({ catalogo: catalogoOk({}, muchas.slice(0, 1).map((x) => ({ ...x, id: BIL, nombre: 'Billetera', precio: 450, precioCentavos: 45000 }))), modeloDice: pide([{ id: BIL, cantidad: 500 }]) });
     hablar(m2, ANA, mTexto('quiero billetera'));
-    expect(fichas(m2)[ANA].carrito[0].cantidad).toBe(50);
+    expect(fichas(m2)[ANA].carrito[0].cantidad).toBe(1);   // G1: con el pedido vacío una cantidad que el cliente no dijo vale 1 (el modelo que pone 500 unidades no decide)
   });
   it('NEGADO: el modelo no puede decir un total ni un importe inventado: el texto cae al fijo', () => {
     const m = crear({ modeloDice: modelo('Son Bs 1 en total, un precio especial.', { lineas: [{ id: BIL, cantidad: 1 }] }) });
@@ -86,7 +86,7 @@ describe('lo que dice el cliente y lo que se guarda', () => {
 
 describe('del pedido al QR', () => {
   const confirmar = (m: ReturnType<typeof crear>, tel = ANA) => {
-    hablar(m, tel, mTexto('quiero una billetera'));
+    hablar(m, tel, mTexto('quiero dos billeteras'));
     return hablar(m, tel, mTexto('quiero pagar'));
   };
   it('con el pedido y los datos de entrega, la confirmación emite el resumen y el QR del comercio por id de medio, con el monto del carrito', () => {

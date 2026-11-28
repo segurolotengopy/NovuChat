@@ -681,7 +681,18 @@ function bmCorporativo(n) {
 function bmPideFactura(n) {
   return /\b(factura|facturar|facturacion|nit|razon social)\b/.test(String(n || ''));
 }
+// G3 (duodécima ronda): una palabra de rol humano o de contacto. Con el pedido vacío la marca `quiereHablar` del modelo solo vale si el texto del cliente trae una (el detector por código puro, `bmQuiereHablar`, vale por sí solo). «alguien» solo cuenta junto a un verbo de contacto («¿alguien sabe el precio?» no es pedir una persona).
+function bmRolHumano(n) {
+  const t = String(n || '');
+  return /\b(?:persona|personas|humano|humana|asesor|asesora|vendedor|vendedora|dueno|duena|encargado|encargada|gerente|jefe|ventas|recepcion|llamar|llamarme|llamen|llamenme|llaman|llamada|atender|atienda|atiende|atienden|atencion|ayuda|hablar|comunicar|comunicas|comunicame|telefono)\b/.test(t)
+    || (/\balguien\b/.test(t) && /\b(?:atienda|atiende|atender|hable|hablar|llame|llamar|comunic\w*|responda|ayude|ayuda|pase|pasa\w*)\b/.test(t));
+}
+// «necesito ayuda de una persona real»: pedir ayuda de una persona NO es la pregunta de identidad; se decide antes que ella.
+function bmPideAyudaHumana(n) {
+  return /\bayuda (?:de|con|por parte de) (?:una |un )?(?:persona|humano|humana|asesor|asesora|alguien|vendedor|vendedora)\b/.test(String(n || ''));
+}
 function bmQuiereHablar(n) {
+  if (bmPideAyudaHumana(n)) return true;
   // El mensaje ENTERO «vendedor», «humano», «persona», «una persona», «quiero un vendedor»…: deriva por código, sin depender de que el modelo marque `quiereHablar`.
   if (/^(?:(?:quiero|necesito|busco|pasame con|comunicame con)\s+)?(?:un |una |el |la )?(?:vendedor|vendedora|humano|humana|persona|asesor|asesora)(?: real| humano| humana)?$/.test(String(n || '').trim())) return true;
   // Formas de pedir a una persona (sin tildes, el texto ya viene normalizado): «hablar con alguien», «pásame con una persona», «atención humana», «un asesor», «me atiende alguien», «quiero un humano».
@@ -1008,7 +1019,38 @@ function bmAgregarPorOrden(textoCliente, vendibles) {
   return [{ id: empate[0].v.id, cantidad: w ? palabras[w] : 1, detalle: '' }];
 }
 // Todas las piezas que el texto del cliente nombra, sin el tope de seis de las coincidencias que se muestran (para validar las líneas que propone el modelo).
-function bmIdsNombradas(texto, vendibles) { return (bmPuntuarCoincidencias(texto, vendibles, true) || []).map((x) => x.v.id); }
+// G2: «nombrada» se decide con el buscador tolerante COMÚN (`Flujos/src/modulos/productos/palabra-tolerante.js`: `ptNombra`, errata de una letra, plural, equivalencias fonéticas) cuando está incluido en el armado; sin él, solo el puntaje exacto de arriba.
+// PENDIENTE DE CABLEAR con el archivo real: incluirlo en `construir.mjs` (por referencia). Los sinónimos de pieza («cartera» por billetera) son dato del comercio: NO entran aquí.
+function bmIdsNombradas(texto, vendibles) {
+  const ids = new Set((bmPuntuarCoincidencias(texto, vendibles, true) || []).map((x) => x.v.id));
+  if (typeof ptNombra === 'function') for (const v of Array.isArray(vendibles) ? vendibles : []) if (ptNombra(texto, v.nombre)) ids.add(v.id);
+  return [...ids];
+}
+// G1: ¿el cliente ASIENTE a lo que el código acaba de ofrecer? («sí», «que sí, esa», «la quiero», «esa», «ok la llevo», «deme dos»). Mensaje corto, sin pregunta y sin nombrar otra pieza (eso lo decide quien llama).
+function bmAsiente(textoCliente) {
+  const crudo = String(textoCliente || '');
+  const n = bmNorm(crudo);
+  if (n === '' || /[?¿]/.test(crudo) || n.split(' ').length > 7) return false;
+  return /^(?:que )?si\b/.test(n) || /^(?:claro|dale|listo|vale|bueno|perfecto|de acuerdo|esa|ese|eso|esas|esos|me interesa)\b/.test(n)
+    || /\b(?:la|lo|las|los) (?:quiero|llevo|compro|pido|tomo|necesito)\b/.test(n) || /^(?:ok|okay|okey) (?:la|lo|las|los|dame|deme|quiero|llevo)\b/.test(n)
+    || /^(?:deme|dame|denme|ponme|pon) /.test(n) || /^quiero (?:una|uno|dos|tres|cuatro|cinco|\d+|esa|ese)\b/.test(n);
+}
+const BM_NUMEROS_LETRAS = { un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12 };
+// G1: las cantidades que el texto del CLIENTE trae (cifra o letras), sin las cifras que son parte del nombre de una pieza («9 kg», «65») ni una medida. Una cantidad que el modelo pone y el cliente no dijo vale 1.
+function bmCantidadesDelTexto(textoCliente, vendibles) {
+  const n = bmNorm(textoCliente);
+  const delNombre = new Set();
+  for (const v of Array.isArray(vendibles) ? vendibles : []) for (const w of bmNorm(v.nombre + ' ' + (v.area || '')).split(' ')) if (/^\d+$/.test(w)) delNombre.add(w);
+  const out = new Set();
+  const re = /\b(\d{1,2}|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)\b(?! ?(?:kg|kilos?|btu|litros?|lts|l|pulgadas|w|cm|ml|gb|mb)\b)/g;
+  let m;
+  while ((m = re.exec(n)) !== null) { const v = /^\d+$/.test(m[1]) ? Number(m[1]) : BM_NUMEROS_LETRAS[m[1]]; if (v >= 1 && !delNombre.has(m[1])) out.add(v); }
+  return out;
+}
+// G1: la pregunta fija por código cuando el código ofreció VARIAS piezas y el «sí» no dice cuál: no se elige una.
+function bmPreguntaCual(c) {
+  return c && c.base && c.base.tratamiento === 'usted' ? '¿Cuál de ellas le interesa?' : '¿Cuál de ellas te interesa?';
+}
 function bmIdsCoincidencias(texto, vendibles) { return (bmPuntuarCoincidencias(texto, vendibles) || []).map((x) => x.v.id); }
 function bmCoincidencias(texto, vendibles) {
   const lista = Array.isArray(vendibles) ? vendibles : [];
@@ -1018,10 +1060,15 @@ function bmCoincidencias(texto, vendibles) {
   return p.map((x) => x.v.id + '|' + x.v.nombre).join('; ');
 }
 // Si el modelo dice «solo disponemos de X» y el catálogo tiene VARIAS piezas que coinciden con lo que el cliente nombró, se lo está negando: el texto lo arma el código con esas piezas y sus precios.
-function bmTextoDeCoincidencias(texto, vendibles, minimo, usted) {
+// Las coincidencias que el código muestra: solo las de mayor puntaje (las que de verdad coinciden con lo que dijo): «de 18 BTU» ofrece las de 18, no la de 12.
+function bmSeleccionCoincidencias(texto, vendibles) {
   const todas = bmPuntuarCoincidencias(texto, vendibles) || [];
-  // Solo las de mayor puntaje (las que de verdad coinciden con lo que dijo): «de 18 BTU» ofrece las de 18, no la de 12.
-  const p = todas.filter((x) => x.p === (todas[0] ? todas[0].p : 0));
+  return { todas: todas, p: todas.filter((x) => x.p === (todas[0] ? todas[0].p : 0)) };
+}
+// G1: los ids de las piezas que el código OFRECE (hasta cuatro) para que el «sí» del cliente siguiente las nombre.
+function bmIdsOfrecidos(texto, vendibles) { return bmSeleccionCoincidencias(texto, vendibles).p.slice(0, 4).map((x) => x.v.id); }
+function bmTextoDeCoincidencias(texto, vendibles, minimo, usted) {
+  const { todas, p } = bmSeleccionCoincidencias(texto, vendibles);
   if (p.length < (minimo || 2)) return '';
   const moneda = (v) => (v.moneda === 'ARS' ? 'ARS' : 'BOB');
   // NUNCA una lista parcial sin decirlo (Estándar 2.2, décima ronda): si hay piezas que también coinciden y no se muestran (de menor puntaje o más de cuatro), el texto lo dice.
@@ -1723,8 +1770,23 @@ function bmResolverModelo(c) {
   // Un texto vacío del modelo NO es un error con el pedido vacío. Con un pedido en curso todo sigue como siempre.
   const vacioInicial = antes.length === 0;
   if (!vacioInicial && (typeof j0.texto !== 'string' || j0.texto.trim() === '')) return bmDerivar(c, 'modelo_caido');
-  const nombradasPorElCliente = new Set(vacioInicial ? bmIdsNombradas(p.textoCliente, c.vendibles) : []);
-  const j = !vacioInicial ? j0 : { texto: '', lineas: (Array.isArray(j0.lineas) ? j0.lineas : []).filter((l) => l && typeof l === 'object' && nombradasPorElCliente.has(l.id)), entrega: {}, facturacion: {}, quiereHablar: false };
+  // La línea del modelo vale si la pieza está NOMBRADA en el texto del cliente o si el CÓDIGO la ofreció en el turno inmediato anterior y el cliente asiente (G1). La cantidad vale solo si el texto del CLIENTE la trae; si no, 1.
+  let preguntaCual = false;
+  let j = j0;
+  if (vacioInicial) {
+    const nombradas = new Set(bmIdsNombradas(p.textoCliente, c.vendibles));
+    const ofrecidos = (Array.isArray(f.ofrecidos) ? f.ofrecidos : []).filter((id) => c.vendibles.some((v) => v.id === id));
+    const cantidades = bmCantidadesDelTexto(p.textoCliente, c.vendibles);
+    const cantidadValida = (n) => (Number.isFinite(n) && n > 1 && cantidades.has(Math.floor(n)) ? Math.floor(n) : 1);
+    const delModelo = (Array.isArray(j0.lineas) ? j0.lineas : []).filter((l) => l && typeof l === 'object');
+    let lineasValidas = delModelo.filter((l) => nombradas.has(l.id)).map((l) => Object.assign({}, l, { cantidad: cantidadValida(l.cantidad) }));
+    if (nombradas.size === 0 && ofrecidos.length > 0 && (bmAsiente(p.textoCliente) || delModelo.some((l) => ofrecidos.includes(l.id)))) {
+      if (ofrecidos.length === 1) lineasValidas = [{ id: ofrecidos[0], cantidad: cantidades.size === 1 ? [...cantidades][0] : 1 }];
+      else preguntaCual = true;
+    }
+    // G3: la marca del modelo vale SOLO si el texto del cliente trae una palabra de rol humano o de contacto (el detector por código puro vale por sí solo, en «Decidir turno»).
+    j = { texto: '', lineas: lineasValidas, entrega: {}, facturacion: {}, quiereHablar: j0.quiereHablar === true && bmRolHumano(bmNorm(p.textoCliente)) };
+  }
   // Una lista vacía del modelo SIN una orden clara de vaciar el pedido no borra el carrito (el modelo a veces devuelve [] por descuido): se conserva el de la ficha.
   // ¿El cliente pide VACIAR el pedido o quitar una pieza que tiene en el carrito? Sin una orden clara, un `[]` del modelo no borra nada. «cancelar» NO cuenta: en Bolivia es pagar. «ya no quiero la entrega…» cambia el modo, no las piezas.
   const tOrden = bmNorm(p.textoCliente);
@@ -1901,9 +1963,10 @@ function bmResolverModelo(c) {
     const pideCatalogo = !trasDerivar && !procedimiento && coinc === '' && bmPideCatalogo(p.textoCliente);
     if (trasDerivar) texto = bmTextoTrasDerivar(c);
     else if (procedimiento) texto = bmTextoProcedimiento(c);
+    else if (preguntaCual) texto = bmPreguntaCual(c);
     else if (coinc !== '') texto = coinc;
     else texto = pideCatalogo || previo.sinAvance === 1 ? bmTextoCategorias(c) : bmPreguntaFija(c);
-    sinPieza = coinc === '' && !trasDerivar && !procedimiento && !pideCatalogo;
+    sinPieza = coinc === '' && !trasDerivar && !procedimiento && !pideCatalogo && !preguntaCual;
     // LA VÁLVULA POR ESTADO (ver `bmSinAvancePrevio`): la pregunta fija y las categorías son el flujo haciendo su trabajo y NUNCA derivan por sí solas, pero un cliente que no avanza no queda en «¿Qué producto busca?» sin fin.
     // El saludo vago cuenta como 1.º: 1.º pregunta fija, 2.º categorías (nunca deriva), 3.º recepción (`sin_avance`, sin ventana de 2 h). Las coincidencias y el pedido del catálogo son avance (reinician); tras un comprobante cotejado el contador no corre.
     if (sinPieza && !bmSinContador(f, Number(c.t && c.t.mensajeMs) || c.ahora)) {
@@ -1913,7 +1976,7 @@ function bmResolverModelo(c) {
   } else if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c, conBoton);
   // R54: al elegir el RETIRO en este turno, el mismo mensaje trae la dirección de la tienda (dato del comercio; sin dato, nada). Con «Confirmar pedido» la dirección va en el resumen de datos.
   if (texto !== '' && comp.entrega.modo !== undefined && bmEsRetiro(comp.entrega.modo) && !conBoton) texto = texto + bmTextoRetiroEn(c);
-  return Object.assign(base, { tipo: 'modelo', precioDistinto: sitioConPreciosDistintos, texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: (cambio || conBoton) && lineas.length ? vcResumen(lineas) : '', confirmable: conBoton, botonesEntrega: bmOfreceBotonesDeEntrega(lineas.length, entrega, c.mercado, c.modos, abierto), pide: texto !== '' ? pendientes : [], sinAvance: sinAvance, fallos: fallos });
+  return Object.assign(base, { tipo: 'modelo', precioDistinto: sitioConPreciosDistintos, texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: (cambio || conBoton) && lineas.length ? vcResumen(lineas) : '', confirmable: conBoton, botonesEntrega: bmOfreceBotonesDeEntrega(lineas.length, entrega, c.mercado, c.modos, abierto), pide: texto !== '' ? pendientes : [], sinAvance: sinAvance, fallos: fallos, ofrecidos: lineas.length === 0 && /^Tenemos (?!piezas de)/.test(texto) ? bmIdsOfrecidos(p.textoCliente, c.vendibles) : [] });
 }
 
 // La decisión del turno. `c` viene de `bmContexto()` (+ `modeloResp` y `cancelo`, que completa cada nodo). Devuelve { tipo, ... } con `aviso` (o null) y, cuando cambia la ficha, `patch`.

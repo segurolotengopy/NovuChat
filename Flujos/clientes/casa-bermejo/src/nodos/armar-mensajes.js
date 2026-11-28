@@ -335,6 +335,7 @@ if (puerta.ruta === 'sigue' && d.aviso && d.aviso.clave === 'otro_pais' && salio
 if (puerta.ruta === 'sigue') {
   nuevos.sinAvance = (tipoDePlan === 'modelo' || tipoDePlan === 'cortes') && typeof d.sinAvance === 'number' ? d.sinAvance : 0;
   nuevos.fallos = tipoDePlan === 'modelo' && typeof d.fallos === 'number' ? d.fallos : 0;
+  nuevos.ofrecidos = tipoDePlan === 'modelo' && Array.isArray(d.ofrecidos) ? d.ofrecidos : [];   // lo que el código ofreció en ESTE turno: el «sí» del siguiente lo nombra
   nuevos.ultimoMensajeMs = Number(t.mensajeMs) > 0 ? Number(t.mensajeMs) : ahora;   // la hora del MENSAJE, no la de la ejecución: un reintento de n8n no reinicia el contador
 }
 // La ficha: se escribe siempre (también cuando no sale nada), una vez por turno, y solo la de ESTE teléfono.

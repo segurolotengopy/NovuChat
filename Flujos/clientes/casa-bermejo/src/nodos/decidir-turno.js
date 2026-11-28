@@ -139,6 +139,7 @@ if (typeof t.seleccionId === 'string' && t.seleccionId.indexOf('pedido:corregir'
 // Si la pregunta de la tienda viene con una de estas, la respuesta de la tienda va antepuesta en el mismo mensaje (`conTienda`); la identidad sin dato de tienda pasa con recepción (la tienda pregunta quedaría sin contestar).
 // La identidad («¿eres un bot?») se decide SIN el texto de la nota del pedido pegado: una nota que menciona la IA no vuelve el mensaje entero una pregunta de identidad.
 const nSinNota = bmNorm(bmSinNotaDelSitio(texto));
+if (bmPideAyudaHumana(n)) return salir(Object.assign({ tipo: 'derivar', motivo: 'quiere_hablar' }, conTienda));   // «necesito ayuda de una persona real» pide una persona; no es la pregunta de identidad
 if (bmPideIdentidad(nSinNota)) return pideTienda && pTienda.resto !== '' && Object.keys(conTienda).length === 0 ? salir({ tipo: 'derivar', motivo: motivoSinDato }) : salir(Object.assign({ tipo: 'identidad' }, conTienda));
 if (bmCorporativo(n)) return salir(Object.assign({ tipo: 'derivar', motivo: 'corporativo' }, conTienda));
 if (bmPideFactura(n)) return salir(Object.assign({ tipo: 'derivar', motivo: 'factura' }, conTienda));
