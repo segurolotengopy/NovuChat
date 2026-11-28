@@ -18,10 +18,10 @@ import { crearMundo } from '../lib/n8n-de-mentira';
 import { RAIZ_FLUJOS } from '../../scripts/ensamblar-flujo.mjs';
 import { NORMALIZADORES_VERIFICADOS, huellaDe, injertarRafaga, quitarRafaga } from '../../../Flujos/src/core/rafaga/rafaga.mjs';
 import { cablearBellido, cablearWalisuma, descablearWalisuma } from './rafaga-cableado';
-import { OPCIONES_DE_LA_RAFAGA } from '../../../Flujos/clientes/walisuma/construir.mjs';
 import { ANA, PRODUCCION, crear, hablar, mAudio, mTexto, modelo, panelOk, valorMeta } from '../tenants/walisuma/mundo';
 
-const ANCLA_WALISUMA = OPCIONES_DE_LA_RAFAGA.ancla; // el cableado real de Walisuma, importado de su `construir.mjs` (una sola fuente)
+// El cableado real de Walisuma (`Flujos/clientes/walisuma/construir.mjs`, `OPCIONES_DE_LA_RAFAGA.ancla`). NO se importa de ahí: una prueba de core no puede depender de un cliente (`fronteras.test.ts`); la prueba propia de Walisuma (`tenants/walisuma/armado.test.ts`) fija que coincide.
+const ANCLA_WALISUMA = { nodo: 'Puerta del turno', salida: 0, destino: '¿Bajar medio?' };
 const frag = (idMeta: string, texto: string, ms: number, tipo = 'text') => ({ idMeta, tipo, texto, ms });
 const UNO = 'quiero 2 cajas';
 const DOS = 'de la grande, para mañana';
