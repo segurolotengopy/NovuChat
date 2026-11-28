@@ -293,4 +293,6 @@ return [{ json: Object.assign({}, cfg, {
   modoPrueba: prueba !== null,
   telefonoDePrueba: prueba ? String(prueba.telefonoDePrueba || '') : '',
   enviarDeVerdad: prueba ? prueba.enviarDeVerdad === true : true,
+  // INTERRUPTOR DE LA RAFAGA: el servidor agrega `rafagaApagada: true` SOLO si el comercio la apago (200 y `true` exacto). Este flujo todavia no lleva la pieza de rafagas: la clave queda lista para cuando la adopte.
+  rafagaApagada: codigo === 200 && cuerpo.rafagaApagada === true ? true : undefined,
 }) }];
