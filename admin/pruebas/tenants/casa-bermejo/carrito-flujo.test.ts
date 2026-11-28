@@ -49,7 +49,7 @@ describe('lo que propone el modelo se valida contra el catálogo', () => {
     expect(textos(t)[0]).toMatch(/Cuéntame un poco más|¿Cómo prefiere recibir su pedido/);   // con una pieza en el pedido, el reemplazo sigue el estado del pedido
   });
   it('el modelo puede citar el precio de una pieza tal como figura en el catálogo', () => {
-    const m = crear({ modeloDice: modelo('La billetera de cuero cuesta Bs 450. ¿Cuántas te gustaría?') });
+    const m = crear({ modeloDice: modelo('La billetera de cuero cuesta Bs 450.') });
     expect(textos(hablar(m, ANA, mTexto('¿cuánto cuesta la billetera?'))).join(' ')).toMatch(/cuesta Bs 450/);
   });
 });
