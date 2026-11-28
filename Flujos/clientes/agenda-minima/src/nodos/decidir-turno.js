@@ -16,7 +16,11 @@ const ahora = Number(t.ahoraMs) || Date.now();
 const est = cnLeerEstado(t.from, ahora);
 const en = Object.assign({}, est, { ultimoMensajeMs: ahora, ultimoMensajeId: String(t.mensajeId || '') });
 
-let texto = String(t.texto || '');
+// RÁFAGA (25/11/2026): si «Agrupar ráfaga» juntó los textos seguidos de este teléfono, ESTE turno los contesta todos con `textoDelTurno` (solo un mensaje de texto; tope de 3.000 caracteres: los fragmentos ya
+// vienen recortados a 1.500 y una regex sobre un texto enorme es lo que más tardó alguna vez). Sin la pieza, o sin agrupar, queda el texto de siempre. Lo que se REPORTA y guarda (`textoReporte`) no cambia.
+const agrupado = cnPrimero('Agrupar ráfaga');
+const textoAgrupado = agrupado && t.tipo === 'text' && typeof agrupado.textoDelTurno === 'string' ? agrupado.textoDelTurno.slice(0, 3000) : '';
+let texto = textoAgrupado || String(t.texto || '');
 let tipoEf = t.tipo;
 const salir = (accion, extra) => [{ json: Object.assign({
   accion: accion, from: t.from, texto: texto, tipo: t.tipo, estadoPrevio: est, estado: en,
@@ -93,7 +97,7 @@ if (!boton) {
 // mensaje SALIENTE de la confirmación. Confirmar sin registrar está prohibido. Un toque de lista o de botón no es una baja; una foto con pie queda marcada sin confirmación (el lado seguro).
 const BJ_VOZ_MAX = 160;
 const bajaPorVoz = t.tipo === 'audio';
-if (!boton && !t.eleccion && (bajaPorVoz ? (texto.length <= BJ_VOZ_MAX && bjPideBaja(texto)) : (t.tipo === 'text' && bjPideBaja(t.texto)))) {
+if (!boton && !t.eleccion && (bajaPorVoz ? (texto.length <= BJ_VOZ_MAX && bjPideBaja(texto)) : (t.tipo === 'text' && (bjPideBaja(t.texto) || (textoAgrupado !== '' && textoAgrupado.split('\n').some((linea) => bjPideBaja(linea))))))) {
   // La SALUD va antes también en los pasos que la prioridad de arriba omite (esperando*, cancelando, moviendo): «mi hija tiene fiebre, no me escriban más» se deriva (aviso + botón). El entrante igual marca `no_contactar`
   // (un mensaje escrito); una nota de voz que cae acá no se registra, porque no llega a la ruta de baja.
   if (reClin && reClin.test(norm)) return salir('consulta_clinica');

@@ -15,7 +15,8 @@ const cargar = (a: string): { nodes: Nodo[] } => JSON.parse(readFileSync(join(RA
 
 /** [archivo, nodos, nodos que hablan con Meta]: la línea base de origin/main. El cambio NO agrega ni quita ninguno (los nodos suben +2 por el indicador de escritura en los flujos con agente). */
 const LINEA_BASE: Array<[string, number, number]> = [
-  ['../clientes/agenda-minima/agenda-minima.prueba.json', 73, 5], ['../clientes/agenda-minima/agenda-minima.v0.json', 73, 5],
+  // Bellido: 73 + 4 de la ráfaga (25/11/2026, +4 nodos autorizados por Andres: «Sí, +4 nodos por flujo») = 77. Los 4 son IF, Wait, HTTP al servidor de NovuChat y Code: ninguno envía a Meta (los emisores siguen en 5).
+  ['../clientes/agenda-minima/agenda-minima.prueba.json', 77, 5], ['../clientes/agenda-minima/agenda-minima.v0.json', 77, 5],
   ['captacion-minima/captacion-minima.novuchat.json', 52, 5], ['captacion-minima/captacion-minima.prueba.json', 52, 5],
   ['../clientes/novuchat/chat-novuchat.novuchat.json', 78, 5], ['../clientes/novuchat/chat-novuchat.prueba.json', 78, 5],
   ['../clientes/rroca-antonio/rroca-antonio.json', 70, 6], ['../clientes/rroca-antonio/rroca-antonio.prueba.json', 65, 6],
