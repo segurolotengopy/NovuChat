@@ -64,7 +64,9 @@ const pc = apParametrosConsulta(itemsTexto, nombre, c.from, mensaje0);
 // DECISIÓN DE ANDRES (27/11/2026): el aviso del PEDIDO lleva la nota del cliente, entera (≤500), rotulada «Nota escrita por el cliente (no es un estado de pago): …», sin enlaces, en el MISMO aviso (0 mensajes agregados). Sin nota, el aviso no cambia.
 // Va DESPUÉS de la limpieza del aviso (`avLimpio` cambiaría por «[texto omitido]» una nota que cite un pago): es texto literal del cliente, rotulado como tal.
 const notaAviso = esPedido ? bmNotaDelAviso(aviso.nota) : '';
-const itemsParam = notaAviso !== '' ? itemsTexto.slice(0, 400) + ' · ' + notaAviso : itemsTexto;
+// DECISIÓN DE ANDRES (27/11/2026, «Remitir a Pedidos»): la PLANTILLA pasa sus variables por la red común `avSinProhibidas` (que NO se toca ni se exceptúa): si esa red omitiría la nota por citar un pago, el aviso dice que hay una nota del cliente y que se lee entera en Pedidos de la Consola (0 mensajes agregados). Una nota normal va como hasta ahora; por texto libre va siempre entera.
+const notaPlantilla = notaAviso === '' ? '' : (avSinProhibidas(notaAviso) !== notaAviso ? 'El cliente dejó una nota; léela entera en Pedidos de la Consola.' : notaAviso);
+const itemsParam = notaPlantilla !== '' ? itemsTexto.slice(0, 400) + ' · ' + notaPlantilla : itemsTexto;
 const parametros10 = esPedido
   ? ['Pedido registrado · comprobante: ' + cotejoTexto, totalTexto, entregaTexto, nombre, '+' + c.from, '—', '—', itemsParam, '—', '—']
   : pc.p10;

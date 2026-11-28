@@ -119,6 +119,8 @@ export interface Medicion {
   /** 3.1 y 3.2 */
   textoLargo: Turno;
   conVinetas: Turno;
+  /** 3.2: una consulta de VARIAS categorías (las dos primeras de la lista del flujo): el texto con viñetas que arma el código. */
+  variasCategorias: Turno | null;
 }
 
 export function medir(a: Adaptador): Medicion {
@@ -136,7 +138,9 @@ export function medir(a: Adaptador): Medicion {
   const toquesViejos = ['pro:ya-no-existe', 'cat:ya-no-existe', 'mas:cats:99'].map((id) => conversar(a, { enlace: ENLACE }, [{ lista: id }]).turnos[0]!);
   const textoLargo = conversar(a, { enlace: ENLACE, texto: TEXTO_LARGO }, ['hola, quiero información de las piezas']).turnos[0]!;
   const conVinetas = conversar(a, { enlace: ENLACE, texto: TEXTO_CON_VINETAS }, ['hola, quiero información de las piezas']).turnos[0]!;
-  return { listados, saludo, pideCatalogo, noEncuentra, conQr, categoria, listado, toqueVigente, toquesViejos, textoLargo, conVinetas };
+  const titulos = listado.mensajes.filter(esLista).flatMap(filasDe).map((x) => String(x['title'])).filter((x) => /^[\p{L} ]{3,24}$/u.test(x));
+  const variasCategorias = titulos.length >= 2 ? conversar(a, { enlace: ENLACE, texto: NIEGA_CATALOGO }, [`¿qué ${titulos[0]!.toLowerCase()} y ${titulos[1]!.toLowerCase()} tienen?`]).turnos[0]! : null;
+  return { listados, saludo, pideCatalogo, noEncuentra, conQr, categoria, listado, toqueVigente, toquesViejos, textoLargo, conVinetas, variasCategorias };
 }
 
 // ----------------------------------------------------------------------------- los puntos del estándar
@@ -201,12 +205,17 @@ export const PUNTOS: Punto[] = [
     return out;
   } },
   { id: '3.1', titulo: 'párrafos separados de 2 oraciones como máximo', evaluar: (m) => {
-    const todos = [m.saludo, m.pideCatalogo, m.noEncuentra, m.categoria, m.listado, m.textoLargo, m.conVinetas, ...m.listados];
+    const todos = [m.saludo, m.pideCatalogo, m.noEncuentra, m.categoria, m.listado, m.textoLargo, m.conVinetas, ...(m.variasCategorias ? [m.variasCategorias] : []), ...m.listados];
     return todos.flatMap((t) => t.mensajes.flatMap((e) => parrafosLargos(e.cuerpo).map((p) => `«${t.dijo}»: párrafo con más de 2 oraciones: «${p.slice(0, 50)}…»`)));
   } },
   { id: '3.2', titulo: 'el filtro de redacción conserva saltos de línea y viñetas', evaluar: (m) => {
+    // Mide el MENSAJE QUE SALE: si el flujo deja pasar el texto del modelo, sus tres viñetas deben llegar enteras, una por línea; si lo responde el código (regla de «solo escribe el código»),
+    // la respuesta a una consulta de varias categorías debe traer viñetas de a UN producto por línea, con su precio.
     const t = textoDe(m.conVinetas);
-    return ['• Bufanda de vicuña', '• Billetera de cuero', '• Llavero de llama'].filter((l) => !t.includes(l)).map((l) => `se perdió la línea «${l}» del texto del modelo`);
+    if (/Bufanda de vicu/i.test(t)) return ['• Bufanda de vicuña', '• Billetera de cuero', '• Llavero de llama'].filter((l) => !t.includes(l)).map((l) => `se perdió la línea «${l}» del texto del modelo`);
+    const v = m.variasCategorias ? textoDe(m.variasCategorias).split('\n').filter((l) => l.startsWith('•')) : [];
+    if (v.length < 2) return ['ni el texto del modelo ni la respuesta del código a varias categorías traen viñetas (una por línea)'];
+    return v.filter((l) => (l.match(/•/g) ?? []).length !== 1 || !/\d/.test(l)).map((l) => `viñeta mal formada (dos productos en una línea o sin precio): «${l.slice(0, 60)}»`);
   } },
   { id: '3.4', titulo: 'límites de WhatsApp respetados por código (texto 4096, interactivo 1024, botón 20, fila 24/72, 10 filas)', evaluar: (m) =>
     [m.saludo, m.pideCatalogo, m.noEncuentra, m.conQr, m.categoria, m.listado, m.textoLargo, m.conVinetas, ...m.listados, ...m.toquesViejos, ...(m.toqueVigente ? [m.toqueVigente] : [])]

@@ -84,6 +84,15 @@ describe('Argentina (pedido_sin_cobro): la nota viaja en «nota» y el AVISO a r
     expect(t.avisos).toHaveLength(1);
     expect(String(t.avisos[0]!.cuerpo)).toContain(ROTULO + 'pagaré en efectivo al recibir');
   });
+  it('«Remitir a Pedidos»: fuera de la ventana (plantilla), una nota que cita un pago NO sale como «[texto omitido]»: el aviso dice que hay una nota y que se lee entera en Pedidos de la Consola; una nota normal va como hasta ahora', () => {
+    const t = pedidoAr('el anticipo ya está pagado, pago acreditado', false);
+    expect(t.avisos).toHaveLength(1);
+    const c = String(t.avisos[0]!.cuerpo);
+    expect(c).toContain('El cliente dejó una nota; léela entera en Pedidos de la Consola.');
+    expect(c).not.toMatch(/texto omitido|anticipo|acreditado/i);
+    expect(t.mensajes).toHaveLength(1);
+    expect(String(pedidoAr('pagaré en efectivo al recibir', false).avisos[0]!.cuerpo)).not.toContain('Pedidos de la Consola');
+  });
   it('una nota con palabras de pago llega a recepción entera y rotulada (no se convierte en «[texto omitido]»); el cliente no la ve', () => {
     const t = pedidoAr('el anticipo ya está pagado, pago acreditado');
     expect(String(t.avisos[0]!.cuerpo)).toContain(ROTULO + 'el anticipo ya está pagado, pago acreditado');
