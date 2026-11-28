@@ -705,41 +705,32 @@ const BM_PROMETE_ENLACE = /\b(enlace|enlaces|link|links|pagina web|sitio web|pag
 // R59 (25/11/2026): el asistente no AFIRMA «precios actualizados» (ni «verifiqué los precios»): el precio se lee del catálogo vivo en cada turno y el sistema no le da al modelo cómo saber qué se actualizó. Se prueba sobre el texto normalizado.
 // El imperativo («verifica que el monto…», «verifique el total») le pide algo al CLIENTE: no afirma que los precios estén verificados (falso positivo de la ronda 2).
 const BM_AFIRMA_PRECIOS = /\b(?:actualiz\w+|actualic\w+|(?!verific(?:a|que|quen)\b)verific\w+)\b[^.!?]{0,40}\b(?:precios?|catalogo|montos?|costos?)\b|\b(?:precios?|catalogo|montos?|costos?)\b[^.!?]{0,40}\b(?:actualiz\w+|verific\w+|vigentes|al dia|confirmad\w+)\b/;
-// R58 / I-4 (25/11/2026; rediseñada el 27/11 como LISTA BLANCA, tercera revisión del #1142): tras pasar con recepción (ventana de 2 h, sin cambio del pedido en el turno) el texto del modelo SALE solo si CADA oración es
-//  (a) cortesía o cierre, sin oferta ni mención de piezas, áreas o catálogo vivo (el texto, quitadas las fórmulas de cortesía de la lista cerrada, no deja nada), o una frase que solo informa que recepción o una persona del equipo se ocupa;
-//  (b) un pedido de DATO: una pregunta que pide un dato (número, referencia, nombre, ciudad…) sin oferta de venta.
-// Todo lo demás se reemplaza por el texto fijo: rechazo POR DEFECTO, no por coincidencia con una lista de ofertas (una lista de ofertas siempre llega tarde; el prompt no es una barrera).
-// Consecuencia ACEPTADA y declarada: tras derivar, una pregunta sobre una pieza del pedido recibe el texto fijo; es aceptable porque la conversación ya está derivada y la persona del equipo la contesta. Lo que el código ya responde solo (ubicación, horario, catálogo) sigue por código, antes del modelo.
-const BM_CORTESIA_RES = [
-  'que (?:tenga|tengas|pase|pases) (?:un |una )?(?:muy )?(?:buen|buena|bonito|bonita|lindo|linda|excelente|feliz)(?:o|a)? (?:dia|tarde|noche|semana)',
-  'con (?:mucho )?gusto', 'de nada', 'por nada', 'gracias', 'muchas gracias', 'mil gracias', 'hola', 'buenas', 'buen dia', 'buenos dias', 'buenas tardes', 'buenas noches', 'buena tarde', 'buena noche',
-  'por (?:su|tu) (?:paciencia|espera|mensaje|consulta|tiempo|comprension|atencion)', 'por escribir(?:nos)?', 'por contactar(?:nos)?', 'por comunicarse', 'por comunicarte',
-  'quedo (?:atent[oa]|a (?:su|tu) (?:orden|disposicion))', 'estoy (?:atent[oa]|a (?:su|tu) disposicion|por aqui|aqui)', 'estamos (?:atent[oa]s|a (?:su|tu) disposicion|por aqui|aqui)', 'a (?:su|tu) (?:orden|disposicion)', 'aqui (?:estoy|estamos)',
-  'un saludo', 'saludos', 'cordialmente', 'hasta (?:luego|pronto|la proxima)', 'nos vemos', 'cuidese', 'cuidate',
-  'si (?:necesita|necesitas|requiere|requieres|desea|deseas|quiere|quieres) algo mas', 'en que mas (?:puedo|podemos) (?:ayudar(?:le|te|lo)?)', 'cualquier (?:cosa|duda|consulta)', 'escribeme', 'escribame', 'escribenos', 'escribanos', 'no (?:dude|dudes) en escribir(?:me|nos)?', 'cuando (?:guste|quieras|quiera|necesite|necesites)', 'con confianza',
-  'ok', 'okey', 'vale', 'claro', 'entiendo', 'comprendo', 'entendido', 'perfecto', 'excelente', 'muy bien', 'bien', 'por supuesto', 'sin problema', 'no hay problema', 'no se preocupe', 'no te preocupes',
-].map((x) => new RegExp('(?<![a-z])(?:' + x + ')(?![a-z])', 'g'));
-// Oferta de venta o mención del catálogo: nunca sale tras derivar (ni siquiera dentro de una pregunta de dato).
-const BM_RE_VENTA = /\b(?:ofert\w*|promo\w*|disponib\w*|catalogo|novedad\w*|otr[oa]s?|piezas?|productos?|articulos?|modelos?|opciones|colecc\w*|llevar\w*|llevaria|tambien|interes\w*|regal\w*|mostr\w*|muestr\w*|ensen\w*|ofrec\w*|suger\w*|recomend\w*|vend\w*|compr\w*|elegir|elij\w*|pedido)\b/;
-const BM_RE_DATO = /\b(?:total|costo|costos|envio|precio|precios|monto|suma|numero|referencia|nombre|apellido|direccion|dato|datos|documento|cedula|ci|ciudad|telefono|celular|comprobante|nota|aclaracion|correo|email)\b/;
-const BM_RE_RECEPCION_SUJETO = /\b(?:recepcion|equipo|persona|personal|asesor\w*|vendedor\w*|encargad[oa]s?|tienda)\b/;
-const BM_RE_RECEPCION_VERBO = /\b(?:confirm\w+|respond\w+|atend\w+|contact\w+|escrib\w+|revis\w+|ver\w*|coordin\w+|inform\w+|avis\w+|comunic\w+|cotiz\w+|indic\w+|ayud\w+|gestion\w+|encarg\w+)\b/;
-function bmEsCortesia(o) {
-  let r = ' ' + o + ' ';
-  for (const re of BM_CORTESIA_RES) r = r.replace(re, ' ');
-  return r.replace(/(?<![a-z])(?:y|e|de|un|una|que|muy|mucho|le|te|me|su|tu|a|el|la|lo|se|es|por)(?![a-z])/g, ' ').trim() === '';
+// R58 / I-4 «Solo escribe el código» (decisión de Andres, 27/11/2026; reemplaza la lista blanca de la cuarta ronda, que ninguna lista de frases podía cerrar).
+// PROPIEDAD: durante la ventana de 2 h tras pasar con recepción, sin cambio del pedido en el turno, NINGÚN texto redactado por el modelo sale (sea cortesía, oferta, afirmación o pregunta). Responde solo el código:
+// lo que ya contesta por código (horario, ubicación, catálogo, estado del pedido) y, para todo lo demás, `bmTextoTrasDerivar(c)` (en el trato del comercio). Nunca `BM_TEXTO_SIN_PIEZA` ni coincidencias del catálogo en esa ventana. No hay lista de frases: no hay nada que enumerar.
+// R58 / I-1 «Regla estricta» (Andres, 27/11/2026). PROPIEDAD: con el pedido VACÍO y sin cambios en el turno, el texto del modelo sale SOLO si (a) TODA la respuesta es interrogativa (cada oración empieza con «¿» y termina en «?»: «Agregado. ¿Algo más?» no sale),
+// o (b) informa coincidencias reales del catálogo vivo, verificado por código: cada oración que no es pregunta nombra al menos una pieza, todas las que nombra coinciden con lo que pidió el cliente
+// y, quitados los nombres, los precios y las palabras de enlace (tenemos, hay, cuesta, a, de…), no deja nada («Tenemos la billetera, ya es tuya» no sale). Cualquier otro caso lo responde el código: coincidencias, «Aún no tengo claro…» o, si el cliente preguntó cómo se compra o se paga, el texto fijo del procedimiento.
+// Esa decisión es un permiso por forma, no un descarte por verbos: lo no previsto cae al texto del código.
+function bmEsSoloPregunta(texto) {
+  const oraciones = String(texto || '').split(/(?<=[.!?\n])\s*/).map((x) => x.trim()).filter((x) => x !== '');
+  return oraciones.length > 0 && oraciones.every((o) => /^¿[^¿?]*\?$/.test(o));
 }
-function bmTrasDerivarPermite(texto, vendibles) {
-  // texto llega CRUDO (con sus signos): la pregunta se reconoce por «?». Cada oración se normaliza por separado.
-  return String(texto || '').split(/(?<=[.!?\n])\s*/).every((crudo) => {
-    const o = bmNorm(crudo);
-    if (o === '') return true;
-    const nombraPieza = Array.isArray(vendibles) && vendibles.length > 0 && bmIdsCoincidencias(crudo, vendibles).length > 0;
-    if (nombraPieza) return false;
-    if (bmEsCortesia(o)) return true;
-    if (BM_RE_VENTA.test(o)) return false;
-    if (/[?]/.test(crudo) && BM_RE_DATO.test(o)) return true;
-    return BM_RE_RECEPCION_SUJETO.test(o) && BM_RE_RECEPCION_VERBO.test(o);
+const BM_ENLACE_EXISTENCIA = new Set(['tenemos', 'tengo', 'hay', 'contamos', 'manejamos', 'disponemos', 'trabajamos', 'si', 'claro', 'por', 'supuesto', 'con', 'de', 'del', 'al', 'a', 'la', 'el', 'lo', 'los', 'las', 'un', 'una', 'unos', 'unas', 'y', 'e', 'o', 'en', 'nuestro', 'nuestra', 'nuestros', 'nuestras', 'tambien', 'desde', 'bs', 'ars', 'bob', 'c', 'u', 'cada', 'uno', 'una', 'precio', 'cuesta', 'cuestan', 'vale', 'valen', 'esta', 'estan', 'tienda']);
+function bmVacioPermite(texto, textoCliente, vendibles) {
+  const oraciones = String(texto || '').split(/(?<=[.!?\n])\s*/).map((x) => x.trim()).filter((x) => x !== '');
+  if (oraciones.length === 0) return false;
+  const lista = Array.isArray(vendibles) ? vendibles : [];
+  const coinciden = new Set(bmIdsCoincidencias(textoCliente, lista));
+  return oraciones.every((o) => {
+    if (/^¿[^¿?]*\?$/.test(o)) return true;
+    const n = bmNorm(o);
+    if (/[?¿]/.test(o)) return false;
+    const nombradas = lista.filter((v) => (' ' + n + ' ').includes(' ' + bmNorm(v.nombre) + ' '));
+    if (nombradas.length === 0 || nombradas.some((v) => !coinciden.has(v.id))) return false;
+    let resto = ' ' + n + ' ';
+    for (const v of nombradas) resto = resto.split(' ' + bmNorm(v.nombre) + ' ').join('  ');
+    return resto.split(' ').every((w) => w === '' || /^\d+$/.test(w) || BM_ENLACE_EXISTENCIA.has(w));
   });
 }
 // ¿El texto del modelo AFIRMA como HECHO que algo quedó en el pedido o en poder del cliente? Se usa cuando el pedido NO cambió en el turno (entonces ninguna afirmación así es cierta). Se decide por HECHO, no por una lista de verbos de «agregar»:
@@ -778,7 +769,16 @@ function bmPreguntaProcedimiento(textoCliente) {
 }
 // Cuánto dura «recién pasó con recepción» para R58.
 const BM_VENTANA_TRAS_DERIVAR_MS = 2 * 60 * 60 * 1000;
-const BM_TEXTO_TRAS_DERIVAR = 'Con gusto. Si necesitas algo más, escríbeme.';
+// El texto fijo de la ventana tras derivar, en el trato del comercio (tú o usted).
+function bmTextoTrasDerivar(c) {
+  return c && c.base && c.base.tratamiento === 'usted' ? 'Con gusto. Si necesita algo más, escríbame.' : 'Con gusto. Si necesitas algo más, escríbeme.';
+}
+// El procedimiento de compra y de pago, texto FIJO del código (I-1): no afirma nada agregado, no pide «pagar» y no repite ninguna frase de acreditación.
+function bmTextoProcedimiento(c) {
+  return c && c.base && c.base.tratamiento === 'usted'
+    ? 'Dígame qué pieza le interesa y, cuando la elija, la sumo a su pedido. Luego me indica si la retira o la recibe por envío y toca «Confirmar pedido»; el pago se hace con un QR que le envío en ese momento.'
+    : 'Dime qué pieza te interesa y, cuando la elijas, la sumo a tu pedido. Luego me indicas si la retiras o la recibes por envío y tocas «Confirmar pedido»; el pago se hace con un QR que te envío en ese momento.';
+}
 // Un descuento, una rebaja o un «mejor precio»: el asistente no ofrece descuentos; lo decide el CÓDIGO (pasa con recepción), no la redacción del modelo.
 function bmPideDescuento(n) {
   return /\b(descuento|descuentos|rebaja|rebajas|regateo|regatear|mejor precio|precio especial|me lo deja en)\b/.test(String(n || ''));
@@ -1786,12 +1786,16 @@ function bmResolverModelo(c) {
     const fin = lineas.find((x) => x.id === l.id);
     return !fin || fin.cantidad < cant;
   });
-  const afirmaDeMas = typeof j.texto === 'string' && ((propuestaInvalida && /\b(?:agreg\w+|anad\w+|sume|sumamos|incluy\w+|anote|anotamos|puse|pusimos|inclui|separe\w*|reserv\w+|apart\w+|quedo en|esta en (?:tu|su) (?:pedido|carrito)|tienes? en (?:tu|su) (?:pedido|carrito))\b/.test(bmNorm(j.texto))) || (!entro && (bmAfirmaAgregado(j.texto, procedimiento) || (!procedimiento && bmMencionaPedidoSinHecho(j.texto, antes, c.vendibles)))) || (!cambio && (propuestaNoAgregada || bmDaPorHecho(j.texto))));
-  // El texto REVISADO del modelo (el único que pasa por la lista blanca de tras derivar: los textos fijos del código nunca se reemplazan).
+  // El texto REVISADO del modelo (el único que pasa por las reglas de I-1 e I-4: los textos fijos del código nunca se reemplazan).
   const textoModelo = bmRedaccion(j.texto, p.textoCliente, c.vendibles);
+  // I-1 «Regla estricta»: con el pedido vacío y sin cambios el texto del modelo sale solo si es una pregunta entera o informa coincidencias reales (`bmVacioPermite`); lo demás lo responde el código.
+  const vacioSinCambio = lineas.length === 0 && antes.length === 0;
+  const bloqueaVacio = vacioSinCambio && textoModelo !== '' && !bmVacioPermite(textoModelo, p.textoCliente, c.vendibles);
+  const afirmaDeMas = bloqueaVacio || typeof j.texto === 'string' && ((propuestaInvalida && /\b(?:agreg\w+|anad\w+|sume|sumamos|incluy\w+|anote|anotamos|puse|pusimos|inclui|separe\w*|reserv\w+|apart\w+|quedo en|esta en (?:tu|su) (?:pedido|carrito)|tienes? en (?:tu|su) (?:pedido|carrito))\b/.test(bmNorm(j.texto))) || (!entro && (bmAfirmaAgregado(j.texto, procedimiento) || (!procedimiento && bmMencionaPedidoSinHecho(j.texto, antes, c.vendibles)))) || (!cambio && (propuestaNoAgregada || bmDaPorHecho(j.texto))));
   let texto = (afirmaDeMas || enEntrega || ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? (fijada.texto !== '' && !ignoraQuiereHablar && comp.modoRechazado !== true && comp.contradice !== true && fijada.delSitio !== true && fijada.ordenada !== true ? fijada.texto : bmTextoDeEstado(lineas, entrega, cierre, c, conBoton)) : (fijada.texto !== '' ? fijada.texto : textoModelo);
   // Un texto FIJO del código en la ruta sin pieza: si es el mismo que ya se envió, es un bucle y la segunda vez pasa con recepción (aviso + botón).
   let fijoSinPieza = false;
+  const trasDerivar = f.derivadoMs > 0 && c.ahora - f.derivadoMs >= 0 && c.ahora - f.derivadoMs < BM_VENTANA_TRAS_DERIVAR_MS && !cambio;
   if (afirmaDeMas && fijada.texto === '' && !entro && lineas.length === 0) {
     // Pedido vacío y nada entró: primero lo que SÍ coincide con lo que pidió el cliente (un id inventado no tapa «Billetera de cuero»); si nada coincide, se dice que esa pieza no se pudo agregar y se pregunta cuál quiere (no se niega el catálogo).
     // Sin una propuesta inválida (el modelo solo usó un verbo distinto), el texto queda vacío y sigue la ruta de abajo (coincidencias o la pregunta fija, sin negar el catálogo; el botón «Ver catálogo» llega con el PR del catálogo, B2).
@@ -1809,18 +1813,22 @@ function bmResolverModelo(c) {
   if (sitioConPreciosDistintos) texto = BM_TEXTO_PRECIOS_DISTINTOS + ' ' + texto;
   // R59: el modelo afirmó «precios actualizados» (u otra constancia que el sistema no respalda): `bmRedaccion` descartó su texto; sale el fijo que sí se cumple (los precios se leen del catálogo en cada turno).
   if (texto === '' && typeof j.texto === 'string' && BM_AFIRMA_PRECIOS.test(bmNorm(j.texto))) texto = BM_TEXTO_PRECIOS_VIVOS;
-  // R58 / I-4: tras pasar con recepción (hasta 2 h antes) y sin cambio del pedido en el turno, el texto del modelo sale SOLO si pasa la lista blanca (bmTrasDerivarPermite); si no, la respuesta corta fija.
-  if (texto !== '' && f.derivadoMs > 0 && c.ahora - f.derivadoMs >= 0 && c.ahora - f.derivadoMs < BM_VENTANA_TRAS_DERIVAR_MS && !cambio && texto === textoModelo && !bmTrasDerivarPermite(texto, c.vendibles)) texto = BM_TEXTO_TRAS_DERIVAR;
+  // R58 / I-4 «Solo escribe el código»: en la ventana tras derivar y sin cambio del pedido el texto del modelo NO sale nunca; con el pedido vacío tampoco sale ninguna otra respuesta del catálogo (coincidencias, «No pude agregar…»): solo lo que el código ya contesta (`fijada.texto`) o el texto fijo.
+  // Con piezas en el pedido, el texto de estado del código (`bmTextoDeEstado`) sigue siendo del código y sale.
+  if (trasDerivar && texto !== '' && (texto === textoModelo || (lineas.length === 0 && texto !== fijada.texto))) { texto = bmTextoTrasDerivar(c); fijoSinPieza = false; }
   // El asistente PIDE lo que falta con palabras que el estado reconoce en el turno siguiente: si el modelo no mencionó el nombre (o la ciudad) que falta, el código lo agrega.
   if (texto !== '' && !enEntrega && pendientes.length > 0 && pendientes.some((k) => !bmPidioDato(texto, k))) texto = texto + '\n\n' + bmPreguntaDelPaso(entrega, c.mercado);
   const sinRedaccion = texto === '';
   let sinPieza = false;
   if (sinRedaccion && !lineas.length) {
     // Sin piezas y sin texto del modelo: NUNCA el «cuéntame más» genérico. Las piezas que coinciden con lo que pidió (con sus precios) o «no lo encuentro» (sin prometer un botón: el botón sale solo con piezas o con un «no tenemos» del modelo).
-    const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1);
-    texto = coinc !== '' ? coinc : BM_TEXTO_SIN_PIEZA;
-    sinPieza = coinc === '';
-    fijoSinPieza = true;
+    // I-4: en la ventana tras derivar, ni coincidencias ni «Aún no tengo claro…» (invitan a comprar): el texto fijo. I-1: si preguntó cómo se compra o se paga, el procedimiento fijo del código.
+    const coinc = trasDerivar || procedimiento ? '' : bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1);
+    if (trasDerivar) texto = bmTextoTrasDerivar(c);
+    else if (procedimiento) texto = bmTextoProcedimiento(c);
+    else texto = coinc !== '' ? coinc : BM_TEXTO_SIN_PIEZA;
+    sinPieza = coinc === '' && !trasDerivar && !procedimiento;
+    fijoSinPieza = !trasDerivar && !procedimiento;
   } else if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c, conBoton);
   // La misma respuesta fija dos veces seguidas es un bucle: la segunda pasa con recepción (aviso + botón), venga de la ruta sin redacción o de «No pude agregar esa pieza».
   if (fijoSinPieza) {

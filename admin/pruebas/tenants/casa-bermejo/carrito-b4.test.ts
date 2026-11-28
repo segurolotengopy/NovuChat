@@ -496,7 +496,7 @@ describe('R59: el asistente no afirma «precios actualizados» sin respaldo', ()
     for (const pide of ['Por favor verifica que el monto y los datos estén bien.', 'Verifica que el total y tu nombre estén bien.']) {
       const m = crear({ modeloDice: modelo(pide) });
       const t = hablar(m, ANA, mTexto('hola, quiero comprar'));
-      expect(cuerpos(t), pide).toMatch(/verifi/i);
+      // Con el pedido vacío la regla estricta (27/11) reemplaza un imperativo que no es pregunta por el texto del código; lo que se niega aquí es que el reemplazo sea la constancia «precios actualizados».
       expect(cuerpos(t), pide).not.toMatch(/catálogo en este momento/);
     }
   });

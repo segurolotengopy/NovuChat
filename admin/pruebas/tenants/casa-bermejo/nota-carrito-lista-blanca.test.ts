@@ -1,7 +1,7 @@
 /**
- * CUARTA RONDA DEL #1142 (Casa Bermejo, 27/11/2026): cambio de DISEÑO acordado con la revisora, no más frases.
- *   I-4: tras derivar (ventana de 2 h, sin cambio del pedido) el texto del modelo sale SOLO si cada oración es cortesía/cierre o un pedido de dato; todo lo demás, el texto fijo (LISTA BLANCA, rechazo por defecto).
- *   I-1: con el pedido sin cambios se decide por HECHO (líneas propuestas que no entraron; oraciones que dan algo por agregado o en poder del cliente); la lista de verbos es solo red secundaria.
+ * QUINTA RONDA DEL #1142 (Casa Bermejo, 27/11/2026): dos REGLAS ESTRUCTURALES decididas por Andres (botón), sin listas de frases como barrera.
+ *   I-4 «Solo escribe el código»: tras derivar (ventana de 2 h, sin cambio del pedido) el texto del modelo NO sale NUNCA; responde el código (lo que ya contesta) o el texto fijo en el trato del comercio. Nunca «Aún no tengo claro…».
+ *   I-1 «Regla estricta»: con el pedido vacío y sin cambios, el texto del modelo sale SOLO si TODA la respuesta es una pregunta o informa coincidencias reales del catálogo; lo demás lo responde el código.
  *   Nota con palabras de pago (decisión de Andres, «Oculta al cliente, clara a la tienda»): al cliente nunca se le repite; a la tienda llega rotulada «Nota escrita por el cliente (no es un estado de pago)».
  * Se prueba NEGANDO: las frases de las revisiones 1, 2 y 3, y los falsos positivos que NO deben bloquearse.
  */
@@ -24,90 +24,142 @@ const todo = (t: ReturnType<typeof hablar>): string => textos(t).join(' ') + ' '
 const dice = (texto: string, lineas: unknown[], opc: Partial<Opciones> = {}): ReturnType<typeof crear> => crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: modelo(texto, { lineas: lineas as never }), ...opc });
 const FIJO = 'Con gusto. Si necesitas algo más, escríbeme.';
 
-describe('I-4: tras derivar, LISTA BLANCA (cortesía o pedido de dato; el resto, el texto fijo)', () => {
-  const tras = (frase: string): string => {
-    const m = crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: (ll: LlamadaDoble) => (/persona/.test(textoAlModelo(ll)) ? modelo('Lo verá una persona del equipo.', { quiereHablar: true }) : modelo(frase)) });
-    hablar(m, ANA, mTexto('quiero hablar con una persona'));
+// Una conversación ya iniciada (el primer turno lo contesta el saludo del código): el SEGUNDO turno es el que se prueba, con el pedido vacío y la frase del modelo dada. El primer turno recibe una pregunta del modelo para no dejar un texto fijo repetido en el historial.
+const conv = (frase: string, lineas: unknown[] = [], opc: Partial<Opciones> = {}): ReturnType<typeof crear> => {
+  const m = crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: (ll: LlamadaDoble) => (/saludo-inicial/.test(textoAlModelo(ll)) ? modelo('¿Qué pieza le interesa?') : modelo(frase, { lineas: lineas as never })), ...opc });
+  hablar(m, ANA, mTexto('saludo-inicial hola'));
+  return m;
+};
+const FIJO_USTED = 'Con gusto. Si necesita algo más, escríbame.';
+const PROC_TU = 'Dime qué pieza te interesa y, cuando la elijas, la sumo a tu pedido. Luego me indicas si la retiras o la recibes por envío y tocas «Confirmar pedido»; el pago se hace con un QR que te envío en ese momento.';
+const PROC_USTED = 'Dígame qué pieza le interesa y, cuando la elija, la sumo a su pedido. Luego me indica si la retira o la recibe por envío y toca «Confirmar pedido»; el pago se hace con un QR que le envío en ese momento.';
+const SIN_PIEZA = /Aún no tengo claro/;
+
+describe('I-4 «Solo escribe el código»: tras derivar el texto del modelo no sale nunca', () => {
+  const tras = (frase: string, opc: Partial<Opciones> = {}, derivarAntes = true): string => {
+    const m = crear({ catalogo: catalogoOk({}, REAL as never), ...opc, modeloDice: (ll: LlamadaDoble) => (/persona/.test(textoAlModelo(ll)) ? modelo('Lo verá una persona del equipo.', { quiereHablar: true }) : modelo(frase)) });
+    if (derivarAntes) hablar(m, ANA, mTexto('quiero hablar con una persona'));
     return textos(hablar(m, ANA, mTexto('Bien, gracias'))).join(' ');
   };
-  const RECHAZADAS = [
+  const FRASES = [
+    // revisión 4
+    '¿Quiere saber el precio de la segunda unidad?', '¿Me confirma su nombre para la cotización de la cocina?', '¿Me pasa su ciudad para cotizarle el envío de una cocina?', '¿Desea su número de cliente frecuente para acumular puntos?',
     // revisión 3
     '¿Le interesa ver más modelos?', '¿Quiere que le arme otro pedido?', '¿Busca algo para regalar?', 'Le recomiendo visitar nuestro catálogo.', 'Hay novedades en la tienda, ¿le cuento?', 'Mientras tanto, puede elegir otra pieza.',
     // revisión 2
     '¿Le paso las licuadoras disponibles?', 'Si quiere, puedo enseñarle nuestras billeteras.', 'Tenemos ofertas en licuadoras.',
     // revisión 1
-    '¿Le interesaría llevar también una bufanda?', 'También tenemos billeteras, ¿te interesa?', '¿Te muestro otras piezas?',
-    // cortesía mezclada con oferta: una sola oración fuera de la lista basta
-    'Con gusto. ¿Algo más para tu hogar?',
+    '¿Le interesaría llevar también una bufanda?', 'También tenemos billeteras, ¿te interesa?', '¿Te muestro otras piezas?', '¡De nada! ¿Le gustaría sumar una bufanda?',
+    // lo que antes se permitía: tampoco sale (el texto del modelo no sale nunca)
+    'Con mucho gusto, quedo atento.', '¿Desea que agregue su número de referencia?', 'El costo de envío lo confirma recepción.', 'Gracias. Que tengas un buen día.', '¿Me confirma su nombre completo?', 'Lo verá una persona del equipo.',
   ];
-  for (const frase of RECHAZADAS) {
+  for (const frase of FRASES) {
     it(`NEGADO: «${frase}» no sale tras derivar: sale el texto fijo`, () => {
-      const t = tras(frase);
-      expect(t).toContain(FIJO);
-      expect(t).not.toMatch(/modelos|otro pedido|regalar|cat[aá]logo|novedades|otra pieza|licuadoras|billeteras|ofertas|bufanda|otras piezas|promociones|hogar/i);
+      expect(tras(frase)).toBe(FIJO);
     });
   }
-  for (const frase of ['Con mucho gusto, quedo atento.', '¿Desea que agregue su número de referencia?', 'El costo de envío lo confirma recepción.', 'Gracias. Que tengas un buen día.', '¿Me confirma su nombre completo?', 'Lo verá una persona del equipo.']) {
-    it(`falso positivo: «${frase}» SÍ sale tras derivar`, () => {
-      expect(tras(frase)).toContain(frase.replace(/^¿/, '').slice(0, 14));
-    });
-  }
-  it('control: sin haber derivado, la oferta SÍ sale (la lista blanca solo rige en la ventana de 2 h tras derivar)', () => {
-    expect(textos(hablar(dice('¿Le interesa ver más modelos?', []), ANA, mTexto('Bien, gracias'))).join(' ')).toContain('ver más modelos');
+  it('PROPIEDAD: cualquier combinación de oraciones de cortesía, oferta, afirmación y pregunta del modelo, tras derivar, no sale: sale el texto fijo (tú y usted)', () => {
+    const cortesia = ['Con gusto.', 'Gracias por escribir.', '¡Excelente día!'];
+    const oferta = ['Tenemos ofertas en licuadoras.', 'Le muestro otras piezas.', 'Hay una promoción en electro.'];
+    const afirma = ['Ya te lo guardé.', 'Quedó agregado el licor de coca.', 'El envío lo cotiza la tienda.'];
+    const pregunta = ['¿Le interesa algo más?', '¿Me confirma su nombre?', '¿Quiere ver el catálogo?'];
+    for (const a of cortesia) for (const b of oferta) for (const c of afirma) for (const d of pregunta) {
+      const texto = [a, b, c, d].join(' ');
+      expect(tras(texto)).toBe(FIJO);
+    }
+    for (const x of [...cortesia, ...oferta, ...afirma, ...pregunta]) expect(tras(x, { base: { tratamiento: 'usted' } })).toBe(FIJO_USTED);
+  });
+  it('NEGADO: tras derivar, cuando falla la redacción sale el texto fijo, NUNCA «Aún no tengo claro…» ni coincidencias que invitan a comprar', () => {
+    for (const rotas of ['Tenemos descuento del 20 % en billeteras.', 'Te dejo el enlace al catálogo web.']) {
+      const t = tras(rotas);
+      expect(t).toBe(FIJO);
+      expect(t).not.toMatch(SIN_PIEZA);
+    }
+    const m = crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: (ll: LlamadaDoble) => (/persona/.test(textoAlModelo(ll)) ? modelo('Lo verá una persona del equipo.', { quiereHablar: true }) : modelo('Tenemos descuento del 20 % en billeteras.')) });
+    hablar(m, ANA, mTexto('quiero hablar con una persona'));
+    const t = textos(hablar(m, ANA, mTexto('¿tienen billeteras?'))).join(' ');
+    expect(t).not.toMatch(SIN_PIEZA);
+    expect(t).toBe(FIJO);
+  });
+  it('NEGADO: el texto fijo repetido dos veces NO deriva de nuevo (no es un bucle de «sin pieza»)', () => {
+    const m = crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: (ll: LlamadaDoble) => (/persona/.test(textoAlModelo(ll)) ? modelo('Lo verá una persona del equipo.', { quiereHablar: true }) : modelo('Tenemos descuento del 20 % en billeteras.')) });
+    hablar(m, ANA, mTexto('quiero hablar con una persona'));
+    for (const x of ['¿tienen billeteras?', '¿y licuadoras?', '¿cuánto cuesta una lavadora?']) expect(textos(hablar(m, ANA, mTexto(x))).join(' ')).toBe(FIJO);
+  });
+  it('control: sin haber derivado, el mismo texto del modelo SÍ sale (la regla solo rige en la ventana de 2 h)', () => {
+    expect(tras('¿Le interesa ver más modelos?', {}, false)).toContain('ver más modelos');
   });
 });
 
-describe('I-1: con el pedido sin cambios se decide por HECHO', () => {
-  const HECHOS = [
+describe('I-1 «Regla estricta»: con el pedido vacío el texto del modelo sale solo si es una pregunta entera o informa coincidencias reales', () => {
+  const FRASES = [
+    // revisión 4
+    'He agregado el licor de coca.', 'Añadido el licor de coca.', 'Incluido el licor de coca.', 'Sumado el licor de coca.', 'Ya es tuyo el licor de coca.', 'Quedó cargado.', 'Ya quedó apuntado.', 'Considéralo hecho.', 'Te he puesto el licor de coca.', 'Tomé nota del licor de coca para tu pedido.', 'Asunto resuelto: el licor de coca.',
     // revisión 3
     'Hecho, te lo dejé en la lista.', 'Ya te lo guardé.', 'Ok, va el licor de coca.', 'Te lo incorporé.', 'Cuenta con el licor de coca.', 'Listo, licor de coca x1 a tu orden.',
     // revisión 2
     'El licor de coca va en tu pedido.', 'Lo tienes listo, ya va con tu compra.',
     // revisión 1
     'Ya está en tu pedido, quedó listo.', 'La lavadora quedó en tu pedido.', 'Agregué la lavadora.', 'Te separé el licor de coca.', 'Ya lo tienes en tu carrito.', 'Quedó reservado el licor para ti.',
+    // afirmación + pregunta: no es una pregunta entera
+    'Agregado. ¿Algo más?', 'Listo, la billetera es tuya. ¿Quieres algo más?',
+    // una forma de existencia con una afirmación que el catálogo no respalda
+    'Tenemos la Billetera de cuero, ya es tuya.', 'Tenemos la Billetera de cuero y te la agregué.',
   ];
-  const PROHIBIDO = /te lo dej|guard[eé]|incorpor|Cuenta con|a tu orden|va el licor|va en tu pedido|va con tu compra|Lo tienes listo|Ya est[aá] en tu pedido|quedó en tu pedido|Agregué|Te separé|en tu carrito|Quedó reservado/i;
-  for (const frase of HECHOS) {
-    it(`NEGADO: «${frase}» con el pedido vacío y sin cambios no sale (con líneas vacías y con una línea que no entró)`, () => {
+  const PROHIBIDO = /licor|agreg|a[nñ]adid|incluid|sumad|tuyo|tuya|cargado|apuntado|hecho|puesto|tom[eé] nota|resuelto|te lo dej|guard[eé]|incorpor|cuenta con|a tu orden|va en tu pedido|va con tu compra|listo|est[aá] en tu pedido|quedó en tu pedido|te separé|en tu carrito|reservado|algo más/i;
+  for (const frase of FRASES) {
+    it(`NEGADO: «${frase}» con el pedido vacío no sale (líneas vacías, con una línea que no entró y con id inventado)`, () => {
       for (const lineas of [[], [{ id: 'licor-de-coca', cantidad: 1 }], [{ id: 'lavadora-9kg-X', cantidad: 1 }]]) {
-        const m = dice(frase, lineas);
-        const t = hablar(m, ANA, mTexto('hola, ¿qué venden?'));
+        const m = conv(frase, lineas);
+        const t = hablar(m, ANA, mTexto('¿qué venden?'));
         expect(ficha(m).carrito).toEqual([]);
-        expect(textos(t).join(' ')).not.toMatch(PROHIBIDO);
+        expect(textos(t).join(' ')).toMatch(/Aún no tengo claro|No pude agregar esa pieza al pedido/);   // texto del código
+        expect(textos(t).join(' ').replace('No pude agregar esa pieza al pedido.', '')).not.toMatch(PROHIBIDO);   // sin el texto del código que niega haber agregado
       }
     });
   }
-  it('NEGADO: «¿tienen licor?» + «Ya te lo guardé.» se bloquea (con el pedido sin cambios, dar algo por hecho nunca sale)', () => {
-    const m = dice('Ya te lo guardé.', []);
-    const t = hablar(m, ANA, mTexto('¿tienen licor?'));
-    expect(textos(t).join(' ')).not.toMatch(/guard/i);
-    expect(ficha(m).carrito).toEqual([]);
+  it('PROPIEDAD: cualquier afirmación del modelo (verbo × pieza × cierre) con el pedido vacío no sale', () => {
+    const verbos = ['Agregué', 'Añadí', 'Incluí', 'Sumé', 'Puse', 'Dejé', 'Anoté', 'Cargué', 'Apunté', 'Reservé', 'Ya tienes', 'Va', 'Cuentas con', 'Quedó', 'Te regalo', 'Aseguré', 'Marqué'];
+    const piezas = ['el licor de coca', 'la lavadora', 'la billetera'];
+    const cierres = ['.', ', como pediste.', ' para ti.'];
+    for (const v of verbos) for (const pz of piezas) for (const c of cierres) {
+      const texto = `${v} ${pz}${c}`;
+      const m = conv(texto);
+      const t = textos(hablar(m, ANA, mTexto('¿qué venden?'))).join(' ');
+      expect(t).not.toContain(texto);
+      expect(ficha(m).carrito).toEqual([]);
+    }
   });
-  it('NEGADO: el modelo propone una pieza que el código no agregó y su texto NO afirma nada con verbo conocido: el texto no sale', () => {
-    const m = dice('Perfecto, la billetera está contigo.', [{ id: 'billetera-cuero-inventada', cantidad: 1 }]);
-    const t = hablar(m, ANA, mTexto('hola, ¿qué venden?'));
-    expect(textos(t).join(' ')).not.toMatch(/contigo/);
-    expect(ficha(m).carrito).toEqual([]);
+  it('salen: una pregunta ENTERA, y la información de coincidencias reales («¿tienen billeteras?» muestra la pieza)', () => {
+    expect(textos(hablar(conv('¿Qué otra pieza le interesa?'), ANA, mTexto('quiero ver algo'))).join(' ')).toContain('¿Qué otra pieza le interesa?');
+    expect(textos(hablar(conv('Tenemos Billetera de cuero a Bs 450. ¿Le interesa?'), ANA, mTexto('¿tienen billeteras?'))).join(' ')).toContain('Tenemos Billetera de cuero a Bs 450');
+    // el modelo informa una pieza que NO coincide con lo que pidió: sale el texto del código con la que sí coincide
+    const t = textos(hablar(conv('Tenemos Licuadora Oster a Bs 4.148.'), ANA, mTexto('¿tienen billeteras?'))).join(' ');
+    expect(t).not.toContain('Licuadora');
+    expect(t).toContain('Billetera de cuero');
   });
-  it('falso positivo: «¿tienen billeteras?» → «Tenemos Billetera de cuero a Bs 450» SALE (informar sobre una pieza no es afirmarla agregada)', () => {
-    const t = hablar(dice('Tenemos Billetera de cuero a Bs 450. ¿Le interesa?', []), ANA, mTexto('¿tienen billeteras?'));
-    expect(textos(t).join(' ')).toContain('Tenemos Billetera de cuero a Bs 450');
+  it('sin coincidencias ni pregunta: «Aún no tengo claro…» (código), sin afirmar nada', () => {
+    const t = textos(hablar(conv('Perfecto, gracias por tu mensaje.'), ANA, mTexto('¿qué venden?'))).join(' ');
+    expect(t).toMatch(SIN_PIEZA);
   });
-  for (const [pregunta, explicacion] of [
-    ['¿cómo hago un pedido?', 'Dígame qué pieza le interesa, yo la agrego a su pedido y luego elige el retiro o el envío.'],
-    ['¿cómo compro?', 'Elija la pieza, la sumo a su pedido, me da sus datos y al final toca «Confirmar pedido».'],
-    ['¿cómo pago?', 'Elija la pieza, la sumo a su pedido y al final toca «Confirmar pedido».'],
-  ] as [string, string][]) {
-    it(`falso positivo: «${pregunta}» conserva la explicación del procedimiento`, () => {
-      const t = hablar(dice(explicacion, []), ANA, mTexto(pregunta));
-      expect(textos(t).join(' ')).toContain(explicacion);
+  for (const [pregunta, proc, usted] of [['¿cómo hago un pedido?', PROC_TU, false], ['¿cómo compro?', PROC_TU, false], ['¿cómo pago?', PROC_TU, false], ['¿cómo pago?', PROC_USTED, true]] as [string, string, boolean][]) {
+    it(`falso positivo: «${pregunta}» (${usted ? 'usted' : 'tú'}) tiene respuesta: el texto fijo del procedimiento, sin afirmar nada agregado ni pedir «pagar»`, () => {
+      const t = textos(hablar(conv('Elija la pieza, la sumo a su pedido y al final toca «Confirmar pedido».', [], usted ? { base: { tratamiento: 'usted' } } : {}), ANA, mTexto(pregunta))).join(' ');
+      expect(t).toBe(proc);
+      expect(t).not.toMatch(/escrib\w+ «?pagar|pago acreditado|pago verificado|recibimos tu pago|agregu[eé]/i);
+      expect(t).not.toMatch(SIN_PIEZA);
     });
   }
   it('NEGADO: una consulta de procedimiento NO deja pasar el pasado («Ya te lo guardé»)', () => {
-    const t = hablar(dice('Ya te lo guardé.', []), ANA, mTexto('¿cómo compro?'));
+    const t = hablar(conv('Ya te lo guardé.'), ANA, mTexto('¿cómo compro?'));
     expect(textos(t).join(' ')).not.toMatch(/guard/i);
   });
-  it('falso positivo (N-2): con un QR abierto, «La billetera que está en su pedido tiene garantía de un mes.» SALE', () => {
+  it('NEGADO: el texto de procedimiento no se confunde con un bucle: pedirlo dos veces responde dos veces', () => {
+    const m = conv('Ya te lo guardé.');
+    expect(textos(hablar(m, ANA, mTexto('¿cómo compro?'))).join(' ')).toBe(PROC_TU);
+    expect(textos(hablar(m, ANA, mTexto('¿cómo pago?'))).join(' ')).toBe(PROC_TU);
+  });
+  it('falso positivo (N-2): con un QR abierto, «La billetera que está en su pedido tiene garantía de un mes.» SALE (el pedido tiene piezas)', () => {
     const frase = 'La billetera que está en su pedido tiene garantía de un mes.';
     const m = crear({ catalogo: catalogoOk({}, REAL as never), entregaPrevia: { modo: 'Retiro en tienda', nombre: 'Ana Pérez' }, modeloDice: (ll: LlamadaDoble) => (/garant/.test(textoAlModelo(ll)) ? modelo(frase, { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) : modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] })) });
     hablar(m, ANA, mTexto('quiero una billetera'));
