@@ -25,6 +25,12 @@ if (!r.ok) return cerrado('sin_estado');
 const f = chFichaVigente(r.ficha, t.ahoraMs);
 const eventos = f.cola.filter((e) => e.seq > f.hasta);
 if (!eventos.length) return [];
+// EL SILENCIO TRAS EL «NO» (E4): si TODA la ráfaga cae en silencio (solo cortesías y «no» repetidos mientras la marca del «No» vive, hasta 24 h), no se llama al modelo ni se responde nada (R01: «No» y enseguida «ok»).
+// «Armar mensajes» deja esos eventos como respondidos. Cualquier otra cosa es una intención clara: sigue la conversación normal.
+const ultimaSeq = eventos[eventos.length - 1].seq;
+if (cnSilencioPorCampana(f, t.ahoraMs, eventos.map((e) => (e && e.k === 'texto' ? e.c : null)))) {
+  return [{ json: { plan: { ruta: 'silencio', fijo: '', contexto: '', rubroElegido: '', temas: [], hechos: {}, aMedida: false }, eventos: eventos, hasta: ultimaSeq, llamarModelo: false, cuerpoModelo: null, modelo: cfg.modelo, precios: false, from: t.from, ficha: f, version: r.version } }];
+}
 let plan = chDecidir({ eventos: eventos, ficha: f, cfg: cfg, from: t.from });
 // LA BAJA POR NOTA DE VOZ (decisión de Andres, 16/11/2026): la puerta solo ve el texto ESCRITO (`t.texto`); un audio llega a la cola con su TRANSCRIPCIÓN (`k: 'audio'`, `c`, con el tope de 4.400 caracteres de «Registrar evento»).
 // Si el audio final de este turno pide la baja (`bjPideBaja`, pieza común del core), el turno es `baja`: UN texto fijo, sin modelo, botones ni aviso (0 mensajes agregados: reemplaza la respuesta del turno). El entrante de un audio

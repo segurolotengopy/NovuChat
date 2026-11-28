@@ -188,3 +188,13 @@ Contrato único: `adIds` opcional por campaña en `config/campanas.lista[]`; es 
 ### Contacto bloqueado (31/10/2026)
 
 Campañas **no envía mensajes ni arma públicos**: solo inyecta las campañas vigentes al contexto del turno (`alTurnoCampanas`) cuando entra un mensaje. Una conversación bloqueada (`bloqueada === true`, `conversaciones.md` §13) no llega a ese gancho con respuesta: la ingesta responde `bloqueadoPorContacto` y el asistente calla. No hay salida automática que filtrar en este módulo; 0 cambios de código, 0 mensajes.
+
+### Campaña saliente («retomar»): contrato del chat con la plantilla (PR-B, correcciones del #1140; para el PR-C)
+
+Lo que el PR-C (la plantilla y el envío de la campaña saliente) tiene que cumplir para que el chat reconozca las respuestas:
+
+- **Ids en MINÚSCULAS (M-B2).** El `payload` de los botones es `cs:si:<id>` y `cs:no:<id>` con `<id>` = `[a-z0-9-]{3,40}`, igual que `CAMPANA_ID` del servidor. Un id con mayúsculas no se reconoce y el «No» se perdería: el PR-C genera los ids en minúsculas.
+- **Los rótulos de los botones** son los de `datos.campanaSaliente` del tenant (`botonSi`, `botonNo`): si Meta devuelve la etiqueta en lugar del payload, el chat la reconoce solo si el entrante CITA la campaña (`context.id` igual al `idMeta` de la última campaña enviada).
+- **El `idMeta` se guarda al aceptar la plantilla** (`conversacion.campanaEnviada { idMeta, campanaId, en }`): sin él no hay cita, y sin cita solo el payload `cs:no` cuenta (E3: un «No» nunca se pierde); la etiqueta, el «sí» y el «no» escrito exigen cita (el «no» escrito también vale como primera respuesta dentro de las 24 h).
+- **Respuestas del chat:** `campanaSi` no afirma ningún aviso (sale antes de intentarlo); `campanaNo` solo sale con la baja confirmada por la ingesta (`baja` o `ya_baja`); sin respuesta de la ingesta sale `campanaNoSinConfirmar`. Tras el «No» la persona no recibe nada que el negocio inicie, y cuando escribe algo que no es una cortesía ni un «no» la conversación es normal.
+- **Mensajes:** «No» 1 cierre; cada mensaje que cae en silencio −1; «Sí» 1 más 1 aviso, como antes.

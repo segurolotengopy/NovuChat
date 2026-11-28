@@ -1042,4 +1042,59 @@ describe('campaña saliente (PR-A): `autor: campana` solo con plantilla, 0 pará
     expect((await confirmar({ mensajeId: CLAVE(2), conversacionId: CONV1, resultado: 'aceptado', idMeta: 'wamid.2' })).codigo).toBe(404);
     expect(await metricas()).toEqual({});
   });
+
+  describe('PR-B (E1): `campanaEnviada` en la conversación al aceptar la plantilla de campaña', () => {
+    const convDe = async (conv = CONV1) => (await db.doc(`tenants/${A}/conversaciones/${conv}`).get()).data() ?? {};
+    const aceptar = (n: number, idMeta: string, conv = CONV1) =>
+      confirmar({ mensajeId: CLAVE(n), conversacionId: conv, resultado: 'aceptado', idMeta });
+
+    it('aceptada: escribe { idMeta, campanaId (de los payload de los botones), en }', async () => {
+      await sembrarCampana(CLAVE(1), { estadoEnvio: 'enviando' });
+      expect((await aceptar(1, 'wamid.CAMP-1')).codigo).toBe(200);
+      expect((await convDe())['campanaEnviada']).toEqual({ idMeta: 'wamid.CAMP-1', campanaId: 'camp-prueba', en: expect.anything() });
+    });
+
+    it('NIEGA: rechazada o incierta no escriben `campanaEnviada` (no hay idMeta confiable)', async () => {
+      await sembrarCampana(CLAVE(1), { estadoEnvio: 'enviando' });
+      await sembrarCampana(CLAVE(2), { estadoEnvio: 'enviando' });
+      await confirmar({ mensajeId: CLAVE(1), conversacionId: CONV1, resultado: 'rechazado', codigo: '132001' });
+      await confirmar({ mensajeId: CLAVE(2), conversacionId: CONV1, resultado: 'incierto' });
+      expect((await convDe())['campanaEnviada']).toBeUndefined();
+    });
+
+    it('NIEGA: Retomar (autor persona) y un texto aceptados no escriben `campanaEnviada`', async () => {
+      await sembrarCampana(CLAVE(1), { autor: 'persona', plantilla: RETOMAR, estadoEnvio: 'enviando' });
+      await sembrar(CLAVE(2), { estadoEnvio: 'enviando' });
+      await aceptar(1, 'wamid.R1');
+      await aceptar(2, 'wamid.T1');
+      expect((await convDe())['campanaEnviada']).toBeUndefined();
+    });
+
+    it('NIEGA: si la conversación no existe, no la crea', async () => {
+      const SIN = 'wa_59100000077';
+      await sembrarCampana(CLAVE(1), { estadoEnvio: 'enviando' }, SIN);
+      expect((await aceptar(1, 'wamid.X', SIN)).codigo).toBe(200);
+      expect((await db.doc(`tenants/${A}/conversaciones/${SIN}`).get()).exists).toBe(false);
+    });
+
+    it('NIEGA: una campaña más NUEVA ya registrada no se pisa (confirmaciones fuera de orden); una más vieja sí se reemplaza', async () => {
+      const ahora = Date.now();
+      await sembrarCampana(CLAVE(1), { estadoEnvio: 'enviando', ts: Timestamp.fromMillis(ahora - 60_000) });
+      await sembrarCampana(CLAVE(2), { estadoEnvio: 'enviando', ts: Timestamp.fromMillis(ahora - 30_000) });
+      await aceptar(2, 'wamid.NUEVA');
+      await aceptar(1, 'wamid.VIEJA');
+      expect((await convDe())['campanaEnviada']).toMatchObject({ idMeta: 'wamid.NUEVA' });
+      await sembrarCampana(CLAVE(3), { estadoEnvio: 'enviando', ts: Timestamp.fromMillis(ahora - 5_000) });
+      await aceptar(3, 'wamid.MAS-NUEVA');
+      expect((await convDe())['campanaEnviada']).toMatchObject({ idMeta: 'wamid.MAS-NUEVA' });
+    });
+
+    it('la confirmación repetida (mismo idMeta) es inofensiva y no cambia la marca', async () => {
+      await sembrarCampana(CLAVE(1), { estadoEnvio: 'enviando' });
+      await aceptar(1, 'wamid.CAMP-1');
+      const antes = (await convDe())['campanaEnviada'];
+      expect((await aceptar(1, 'wamid.CAMP-1')).codigo).toBe(200);
+      expect((await convDe())['campanaEnviada']).toEqual(antes);
+    });
+  });
 });

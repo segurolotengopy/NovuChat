@@ -149,7 +149,16 @@ const deMeta = ((Array.isArray(carga.messages) ? carga.messages[0] : null) || {}
 const sesion = prueba && !(permitidos.length > 0 && permitidos.indexOf(cnDigitos(deMeta)) >= 0)
   ? { ok: false, version: 0, estado: null, vencido: false, corrupta: false }
   : ssSesionDeLaConfig(codigo, cuerpo);
+// --- LA CAMPAÑA SALIENTE (E1, híbrido): si «Traer configuración» mandó `campana: { contextoId }`, el servidor contesta `campanaSaliente { citada, primeraEnVentana, campanaId }` (nunca el idMeta). `citada`: el
+// `context.id` del entrante es el de la última campaña enviada a este teléfono; `primeraEnVentana`: se envió una campaña dentro de las 24 h y todavía no respondió. Sin respuesta del servidor (o con otro código que 200), ninguna de las dos.
+const csr = codigo === 200 && cuerpo.campanaSaliente && typeof cuerpo.campanaSaliente === 'object' && !Array.isArray(cuerpo.campanaSaliente) ? cuerpo.campanaSaliente : {};
+const campanaSaliente = {
+  citada: csr.citada === true,
+  primeraEnVentana: csr.primeraEnVentana === true,
+  campanaId: /^[a-z0-9-]{3,40}$/.test(String(csr.campanaId || '')) ? String(csr.campanaId) : '',
+};
 return [{ json: Object.assign({}, cfg, planilla, {
+  campanaSaliente: campanaSaliente,
   // El estado de la conversación que contestó `leer` (en la respuesta de configuración). Sin él, o con otro código que 200, `ok` es falso: genérico con botón (§6 del contrato).
   sesion: sesion,
   datos: datos,

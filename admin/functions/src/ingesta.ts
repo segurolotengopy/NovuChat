@@ -54,7 +54,9 @@ export { sigueVigente };
 // Términos de producto registrados (Andres, 24/10/2026): se leen una vez por turno, y solo si lo que
 // va al prompt contiene «prompt»; el sistema los cita entre « » y revalida lo ya aprobado.
 import { citarTerminos } from './central/asistente/terminos.js';
-import { aplicarRespuestaDeCampana, campanaIdValido, normalizarRespuestaDeCampana } from './core/conversacion/bajas.js';
+import {
+  aplicarRespuestaDeCampana, campanaIdValido, contextoIdValido, hechosDeCampana, normalizarRespuestaDeCampana, respuestaPorValida,
+} from './core/conversacion/bajas.js';
 import { aplicarEventoDeFactura, codigoDePedidoValido, ultimoPedidoParaElFlujo } from './core/turno/facturaPedido.js';
 
 /**
@@ -172,6 +174,9 @@ interface Entrante {
   /** Solo con `campana_respuesta`: la campaña (`^[a-z0-9-]{3,40}$`) y la respuesta (`si` | `no`). */
   campanaEnvioId?: string;
   respuestaCampana?: 'si' | 'no';
+  /** Solo con `campana_respuesta` (PR-B): cómo llegó (`payload` del botón, su `etiqueta` o `texto` escrito; sin él, `texto`) y el `context.id` de Meta. */
+  respuestaPor?: 'payload' | 'etiqueta' | 'texto';
+  contextoId?: string;
   /** Solo con `factura_dada` / `factura_sin`: el código del pedido (`<PREFIJO>-AAMMDD-NNN`). */
   codigoPedido?: string;
   /**
@@ -323,7 +328,10 @@ function normalizar(cuerpo: unknown): Entrante | null {
   // La respuesta válida basta: un «no» con id de campaña faltante o inválido igual crea la baja (`aplicarRespuestaDeCampana`).
   const respuestaNormal = evento === 'campana_respuesta' ? normalizarRespuestaDeCampana(c['respuestaCampana']) : null;
   const respuestaCampana = respuestaNormal !== null
-    ? { respuestaCampana: respuestaNormal, ...(campanaIdValido(c['campanaEnvioId']) ? { campanaEnvioId: c['campanaEnvioId'] } : {}) } : undefined;
+    ? { respuestaCampana: respuestaNormal,
+        ...(campanaIdValido(c['campanaEnvioId']) ? { campanaEnvioId: c['campanaEnvioId'] } : {}),
+        ...(respuestaPorValida(c['respuestaPor']) ? { respuestaPor: c['respuestaPor'] } : {}),
+        ...(contextoIdValido(c['contextoId']) ? { contextoId: c['contextoId'] } : {}) } : undefined;
 
   // SIN CONTEO (16/11/2026): solo el booleano exacto `true`, y solo en un saliente de imagen. Cualquier
   // otra combinación o valor se ignora y el mensaje se cuenta como siempre (ante la duda, se cuenta).
@@ -827,7 +835,9 @@ export const ingesta = onRequest(
         const refConv = db.doc(`tenants/${tenantId}/conversaciones/wa_${mensaje.telefono}`);
         try {
           const resultado = await db.runTransaction((tx) => aplicarRespuestaDeCampana(tx, refConv,
-            { campanaId: mensaje.campanaEnvioId, respuesta: 'no' }, Timestamp.now(), { soloBaja: true }));
+            { campanaId: mensaje.campanaEnvioId, respuesta: 'no', por: mensaje.respuestaPor, contextoId: mensaje.contextoId,
+              texto: mensaje.texto, idMetaEntrante: mensaje.idMeta },
+            Timestamp.now(), { soloBaja: true }));
           logger.info('ingesta: baja de campaña con el comercio suspendido', { tenantId, resultado });
         } catch {
           // Sin el teléfono ni el texto del error: solo el hecho.
@@ -1036,7 +1046,9 @@ export const ingesta = onRequest(
       // es la última lectura y la primera escritura de la transacción viene después (Firestore exige lecturas primero).
       if (mensaje.evento === 'campana_respuesta' && mensaje.direccion === 'entrante') {
         resultadoDeCampana = await aplicarRespuestaDeCampana(tx, refConversacion,
-          { campanaId: mensaje.campanaEnvioId, respuesta: mensaje.respuestaCampana }, Timestamp.fromMillis(ahoraMs));
+          { campanaId: mensaje.campanaEnvioId, respuesta: mensaje.respuestaCampana, por: mensaje.respuestaPor,
+            contextoId: mensaje.contextoId, texto: mensaje.texto, idMetaEntrante: mensaje.idMeta },
+          Timestamp.fromMillis(ahoraMs), { conversacion: conversacion.data() });
       }
       const previasDelMes = Number(metricasDoc?.get('conversaciones'));
       const avisoConsumo = metricasDoc
@@ -1647,6 +1659,10 @@ export const ingesta = onRequest(
       ...(veredicto.pausadaPorPersona ? { pausadoPorPersona: true } : {}),
       // Contacto bloqueado (31/10/2026): silencio total. Solo la clave se agrega, y solo con bloqueo.
       ...(veredicto.bloqueadoPorContacto ? { bloqueadoPorContacto: true } : {}),
+      // PR-B (E1): lo que la ingesta decidió de la respuesta a la campaña. Solo con `campana_respuesta` entrante; sin él, la respuesta
+      // es la de siempre. El flujo manda `campanaNo` («no le enviaremos más») solo si el resultado es `baja` o `ya_baja`.
+      ...(mensaje.evento === 'campana_respuesta' && mensaje.direccion === 'entrante'
+        ? { campanaSaliente: { resultado: (resultadoDeCampana as string | null) ?? 'no_aplica' } } : {}),
       // El prepago (bloque A-0): `cortado` si este mensaje no se atendió. El
       // flujo vivo ignora el cuerpo; el corte real entra por el 409 de
       // `configuracionFlujo`, que los tres flujos ya obedecen. SOLO con
@@ -2214,6 +2230,10 @@ export const configuracionFlujo = onRequest(
     // `codigo`, `factura` y `desdeMs`: sin razón social ni NIT. Sin él, la respuesta es la de siempre.
     const ultimoPedido = docConversacion ? ultimoPedidoParaElFlujo(docConversacion.get('ultimoPedido'), ahoraMs) : null;
 
+    const campanaPedida = cuerpo['campana'];
+    const campanaSaliente = typeof campanaPedida === 'object' && campanaPedida !== null && !Array.isArray(campanaPedida)
+      ? hechosDeCampana(docConversacion?.data(), (campanaPedida as Record<string, unknown>)['contextoId'], ahoraMs) : null;
+
     respuesta.status(200).json({
       ...sesionLeida,
       tenantId: comercio.tenantId,
@@ -2221,6 +2241,9 @@ export const configuracionFlujo = onRequest(
       estadoComercio: derivados.estadoComercio,
       phoneNumberId: derivados.phoneNumberId,
       ...(ultimoPedido ? { ultimoPedido } : {}),
+      // PR-B (E1): con `campana: { contextoId }` en el cuerpo, lo que el flujo necesita para decidir un «No»/«Sí» (cero lecturas nuevas:
+      // sale de la conversación que este turno ya leyó). NUNCA lleva el idMeta. Sin la clave, la respuesta es la de siempre.
+      ...(campanaSaliente ? { campanaSaliente } : {}),
       // Interruptor de ráfagas por comercio (solo Admin SDK). Solo se agrega cuando está apagado: la
       // respuesta de los demás comercios queda igual, byte a byte.
       ...(comercio.ficha['rafagaApagada'] === true ? { rafagaApagada: true } : {}),
