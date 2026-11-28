@@ -14,6 +14,7 @@
 #   - NUNCA imprime la tabla, un teléfono ni la fila: la salida dice solo si se agregó, se quitó o ya estaba, y cuántos teléfonos tiene la fila.
 #   - No habilita nada más: el flujo PUBLICADO responde a cualquier número; esta lista solo gobierna el reinicio de teléfonos de prueba y las ejecuciones de prueba.
 #   - Se niega si la fila del comercio está marcada «pendiente» (la lista blanca la ignora): se resuelve a mano antes.
+#   - Se niega (salida 2) para los demos, el ensayo y la cuenta de NovuChat (novuchat, ensayo, demo-venta, demo-agendamiento…): los demos no se reinician.
 # Variable opcional: CONFIG_LOCAL_MD (otra tabla; se usa en las pruebas).
 # =============================================================================
 set -euo pipefail
@@ -25,12 +26,14 @@ while [ $# -gt 0 ]; do
     --tel)    TEL="${2:?}"; shift 2 ;;
     --quitar) QUITAR=1; shift ;;
     --aplicar) APLICAR=1; shift ;;
-    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "✗ Opción desconocida: $1" >&2; exit 2 ;;
   esac
 done
 [[ "$TENANT" =~ ^[a-z0-9][a-z0-9-]{2,59}$ ]] || { echo "✗ --tenant: id de comercio (minúsculas, dígitos y guion)" >&2; exit 2; }
 [[ "$TEL" =~ ^[0-9]{8,15}$ ]] || { echo "✗ --tel: solo dígitos (8 a 15)" >&2; exit 2; }
+# Los demos, el ensayo y la cuenta de NovuChat no se reinician (misma forma que resetear-telefono.sh): habilitarles un teléfono no serviría de nada. Se corta antes de leer la tabla.
+[[ ! "$TENANT" =~ ^(novuchat.*|ensayo|demo(-.*)?)$ ]] || { echo "✗ --tenant: los demos y NovuChat no se reinician; no se les habilita un teléfono de prueba" >&2; exit 2; }
 RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
 [ -d "$RAIZ/Flujos/clientes/$TENANT" ] || [ -d "$RAIZ/admin/scripts/datos/$TENANT" ] || { echo "✗ --tenant: ese comercio no existe en el repositorio" >&2; exit 1; }
 TABLA="${CONFIG_LOCAL_MD:-$HOME/NovuChat/CONFIGURACION.local.md}"
