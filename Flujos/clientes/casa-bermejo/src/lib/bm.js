@@ -97,7 +97,7 @@ function bmEsRiesgo() {
 const BM_RECUERDOS = 15;          // mensajes de la charla que el modelo recuerda
 const BM_LARGO_RECUERDO = 200;    // caracteres por mensaje recordado
 const BM_VENTANA_CONSULTA_MS = 30 * 60 * 1000;
-// D-A «Categorías, luego recepción» (Andres, 28/11/2026): con el pedido vacío, tras el saludo, el 1.er mensaje vago recibe la pregunta fija, el 2.º seguido sin avance las categorías y el 3.º pasa con recepción (aviso + botón). El 2.º nunca deriva.
+// D-A «Categorías, luego recepción» (Andres, 28/11/2026): con el pedido vacío el 1.er mensaje vago (el saludo vago cuenta) recibe la pregunta fija, el 2.º seguido sin avance las categorías y el 3.º pasa con recepción (aviso + botón). El 2.º nunca deriva.
 const BM_TURNOS_SIN_AVANCE = 3;
 const BM_FALLOS_PARA_RECEPCION = 2;   // el mismo fallo real («No pude agregar esa pieza…») dos veces seguidas
 // El tope del aviso de un DEFECTO del catálogo (global, no por teléfono): a lo más una vez por causa cada 6 h. Vive en una clave HERMANA del mapa de fichas, porque `bmBarrer` barre el mapa.
@@ -147,7 +147,7 @@ function bmFilasDeLista(dato, region) {
 function bmFichaBase() {
   return {
     v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, fueraDePaisMs: 0, avisoPaisMs: 0,
-    carrito: [], nota: '', entrega: bmEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, avisoSinAvanceMs: 0, sinAvance: 0, fallos: 0, avisoNoCuadraMs: 0,
+    carrito: [], nota: '', entrega: bmEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, avisoSinAvanceMs: 0, sinAvance: 0, fallos: 0, ultimoMensajeMs: 0, avisoNoCuadraMs: 0,
     aliasPedidoId: '', aliasEstado: '', aliasVenceMs: 0, aliasMontoCent: 0, aliasAr: '',
     catalogoOfrecido: false, pedidoCatalogo: '', derivadoMs: 0,
     pide: [],
@@ -204,6 +204,7 @@ function bmFichaVigente(e, ahoraMs) {
     hist: (Array.isArray(e.hist) ? e.hist : []).filter((x) => x && (x.r === 'u' || x.r === 'm') && typeof x.t === 'string' && x.t !== '').map((x) => ({ r: x.r, t: bmParaMemoria(x.t).slice(0, BM_LARGO_RECUERDO) })).slice(-BM_RECUERDOS),
     avisoConsultaMs: bmNumero(e.avisoConsultaMs),
     avisoSinAvanceMs: bmNumero(e.avisoSinAvanceMs),
+    ultimoMensajeMs: bmNumero(e.ultimoMensajeMs),   // la HORA DEL MENSAJE del cliente (WhatsApp), con la que caduca el contador de «sin avance»
     sinAvance: bmNumero(e.sinAvance, 1000),
     fallos: bmNumero(e.fallos, 1000),
     avisoNoCuadraMs: bmNumero(e.avisoNoCuadraMs),

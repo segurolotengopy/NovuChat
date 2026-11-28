@@ -722,18 +722,41 @@ function bmVacioPermite(texto, textoCliente, vendibles) {
   const lista = Array.isArray(vendibles) ? vendibles : [];
   const coinciden = new Set(bmIdsCoincidencias(textoCliente, lista));
   return oraciones.every((o) => {
-    const n = bmNorm(o);
     if (/[?¿]/.test(o)) return false;
-    const nombradas = lista.filter((v) => (' ' + n + ' ').includes(' ' + bmNorm(v.nombre) + ' '));
+    // Una cifra es válida SOLO por su POSICIÓN: como el monto que sigue a «Bs», «ARS» o «$» y que es EL precio de una pieza nombrada (el que el código muestra). Una cifra suelta (una cantidad, un stock, un número que casualmente es un trozo del precio) no sale con el pedido vacío.
+    const n0 = bmNorm(o);
+    const nombradas = lista.filter((v) => (' ' + n0 + ' ').includes(' ' + bmNorm(v.nombre) + ' '));
     if (nombradas.length === 0 || nombradas.some((v) => !coinciden.has(v.id))) return false;
-    let resto = ' ' + n + ' ';
+    const precios = new Set(nombradas.map((v) => bmNorm(vcMonto(v.precioCentavos, v.moneda === 'ARS' ? 'ARS' : 'BOB')).replace(/^\D+/, '').replace(/\D/g, '')));
+    let montoMalo = false;
+    const sinMontos = o.replace(/(?:\bBs\.?|\bARS|\$)\s*(\d[\d.,]*\d|\d)/gi, (m, num) => {
+      const digitos = String(num).replace(/[.,]00$/, '').replace(/\D/g, '');
+      if (!precios.has(digitos)) montoMalo = true;
+      return ' ';
+    });
+    if (montoMalo) return false;
+    let resto = ' ' + bmNorm(sinMontos) + ' ';
     for (const v of nombradas) resto = resto.split(' ' + bmNorm(v.nombre) + ' ').join('  ');
-    // Un número solo vale si es parte del precio de una pieza nombrada (vcMonto, igual que en el texto del código): una cantidad («Tenemos 3 Billetera…») no está verificada contra el catálogo y no sale.
-    const delPrecio = new Set();
-    for (const v of nombradas) for (const w of bmNorm(vcMonto(v.precioCentavos, v.moneda === 'ARS' ? 'ARS' : 'BOB')).split(' ')) if (/^\d+$/.test(w)) delPrecio.add(w);
-    if (delPrecio.size > 0) delPrecio.add('00');   // los centavos «,00» del formato de monto
-    return resto.split(' ').every((w) => w === '' || (/^\d+$/.test(w) ? delPrecio.has(w) : BM_ENLACE_EXISTENCIA.has(w)));
+    return resto.split(' ').every((w) => w === '' || (!/\d/.test(w) && BM_ENLACE_EXISTENCIA.has(w)));
   });
+}
+// LA VÁLVULA DE «SIN AVANCE» (D-A/D-B de Andres, 28/11/2026; criterio de la novena ronda, confirmado por la dueña). Todo por ESTADO de la ficha (nunca por comparar textos):
+//  - el contador `sinAvance` cuenta los mensajes seguidos del cliente que no avanzan (el saludo vago ya es el 1.º): 1.º pregunta fija, 2.º categorías (nunca deriva), 3.º recepción con aviso y botón (`sin_avance`, sin ventana de 2 h);
+//  - caduca a los 30 minutos sin mensajes del cliente, medidos con la HORA DEL MENSAJE de WhatsApp (`mensajeMs`), no con la hora de la ejecución: un reintento de n8n del mismo mensaje no lo reinicia;
+//  - una consulta que el código respondió con una coincidencia real, o que pidió el catálogo, es avance y lo reinicia; cualquier otra ruta lo reinicia;
+//  - tras un comprobante cotejado (o con el pedido de Argentina anotado) el contador no corre: «gracias» repetido no deriva.
+const BM_CADUCA_SIN_AVANCE_MS = 30 * 60 * 1000;
+function bmSinAvancePrevio(f, mensajeMs) {
+  if (!f || !(f.ultimoMensajeMs > 0)) return { sinAvance: f && f.sinAvance > 0 ? f.sinAvance : 0, fallos: f && f.fallos > 0 ? f.fallos : 0 };
+  const vencido = mensajeMs - f.ultimoMensajeMs > BM_CADUCA_SIN_AVANCE_MS;
+  return { sinAvance: vencido ? 0 : f.sinAvance, fallos: vencido ? 0 : f.fallos };
+}
+function bmSinContador(f) {
+  return !!f && (f.comprobanteMs > 0 || f.aliasEstado === 'pedido' || f.aliasEstado === 'abierto' || f.aliasEstado === 'fin');
+}
+// ¿El cliente pide el catálogo («¿qué venden?», «catálogo»)? Es avance y nunca deriva; la lista con botón llega con el #1151.
+function bmPideCatalogo(textoCliente) {
+  return /\b(?:catalogo|que (?:venden|ofrecen|manejan|tienen|productos tienen|hay en la tienda))\b/.test(bmNorm(textoCliente));
 }
 // La pregunta fija del código con el pedido vacío y nada que mostrar: en el trato del comercio. El botón «Ver catálogo» en este mensaje queda para B2 (hoy solo va en el saludo).
 // El 2.º mensaje seguido sin avance (D-A): las categorías del catálogo vivo (la primera parte del área de cada pieza), en texto y con la misma pregunta; sin áreas, la pregunta fija. El botón y la lista del catálogo llegan con el #1151.
@@ -1843,6 +1866,7 @@ function bmResolverModelo(c) {
   let texto = (afirmaDeMas || enEntrega || ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? (fijada.texto !== '' && !ignoraQuiereHablar && comp.modoRechazado !== true && comp.contradice !== true && fijada.delSitio !== true && fijada.ordenada !== true ? fijada.texto : bmTextoDeEstado(lineas, entrega, cierre, c, conBoton)) : (fijada.texto !== '' ? fijada.texto : textoModelo);
   // Un texto FIJO del código en la ruta sin pieza: si es el mismo que ya se envió, es un bucle y la segunda vez pasa con recepción (aviso + botón).
   const trasDerivar = f.derivadoMs > 0 && c.ahora - f.derivadoMs >= 0 && c.ahora - f.derivadoMs < BM_VENTANA_TRAS_DERIVAR_MS && !cambio;
+  const previo = bmSinAvancePrevio(f, Number(c.t && c.t.mensajeMs) || c.ahora);   // los contadores de la ficha, vencidos a los 30 min entre mensajes del cliente
   let fallos = 0;      // turnos seguidos con el MISMO fallo real («No pude agregar esa pieza…»): contador de la ficha
   let sinAvance = 0;   // turnos seguidos con la pregunta fija (ver la válvula más abajo)
   if (afirmaDeMas && fijada.texto === '' && !entro && lineas.length === 0) {
@@ -1854,7 +1878,7 @@ function bmResolverModelo(c) {
       // FALLO REAL (no una pregunta ni un saludo): el mismo fallo en dos turnos seguidos pasa con recepción, decidido por el CONTADOR de la ficha (`fallos`), no por comparar textos.
       if (coincidencias === '') {
         // La insistencia REAL sobre algo que el flujo no resuelve sí es «quiere hablar»: pasa con recepción y abre la ventana de 2 h, como siempre.
-        if (f.fallos >= BM_FALLOS_PARA_RECEPCION - 1) return Object.assign(bmDerivar(c, 'quiere_hablar'), { lineas: lineas, entrega: entrega, cierre: cierre });
+        if (previo.fallos >= BM_FALLOS_PARA_RECEPCION - 1) return Object.assign(bmDerivar(c, 'quiere_hablar'), { lineas: lineas, entrega: entrega, cierre: cierre });
         fallos = 1;
       }
     } else texto = '';
@@ -1878,16 +1902,18 @@ function bmResolverModelo(c) {
     // Sin piezas y sin texto del modelo: NUNCA el «cuéntame más» genérico. Las piezas que coinciden con lo que pidió (con sus precios) o la pregunta fija del código.
     // I-4: en la ventana tras derivar, ni coincidencias ni la pregunta fija (invitan a comprar): el texto fijo. I-1: si preguntó cómo se compra o se paga, el procedimiento fijo del código.
     const coinc = trasDerivar || procedimiento ? '' : bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1, c.base && c.base.tratamiento === 'usted');
+    const pideCatalogo = !trasDerivar && !procedimiento && coinc === '' && bmPideCatalogo(p.textoCliente);
     if (trasDerivar) texto = bmTextoTrasDerivar(c);
     else if (procedimiento) texto = bmTextoProcedimiento(c);
-    else texto = coinc !== '' ? coinc : (f.saludado === true && f.sinAvance === 1 ? bmTextoCategorias(c) : bmPreguntaFija(c));
-    sinPieza = coinc === '' && !trasDerivar && !procedimiento;
-    // LA VÁLVULA POR ESTADO (octava ronda del #1142; decisiones D-A y D-B de Andres, 28/11/2026): la pregunta fija y las coincidencias son el flujo haciendo su trabajo y NUNCA derivan por sí solas, pero un cliente que no avanza no queda en «¿Qué producto busca?» sin fin.
-    // La ficha cuenta los turnos seguidos en que respondió la pregunta fija (después del saludo): al `BM_TURNOS_SIN_AVANCE`.º pasa con recepción (motivo propio `sin_avance`). Las coincidencias no cuentan ni reinician (el cliente ve piezas); todo lo demás reinicia el contador (`Armar mensajes`).
-    if (sinPieza) {
-      if (f.saludado === true && f.sinAvance >= BM_TURNOS_SIN_AVANCE - 1) return Object.assign(bmDerivar(c, 'sin_avance'), { lineas: lineas, entrega: entrega, cierre: cierre });
-      sinAvance = f.saludado === true ? f.sinAvance + 1 : 0;
-    } else if (coinc !== '') sinAvance = f.sinAvance;
+    else if (coinc !== '') texto = coinc;
+    else texto = pideCatalogo || previo.sinAvance === 1 ? bmTextoCategorias(c) : bmPreguntaFija(c);
+    sinPieza = coinc === '' && !trasDerivar && !procedimiento && !pideCatalogo;
+    // LA VÁLVULA POR ESTADO (ver `bmSinAvancePrevio`): la pregunta fija y las categorías son el flujo haciendo su trabajo y NUNCA derivan por sí solas, pero un cliente que no avanza no queda en «¿Qué producto busca?» sin fin.
+    // El saludo vago cuenta como 1.º: 1.º pregunta fija, 2.º categorías (nunca deriva), 3.º recepción (`sin_avance`, sin ventana de 2 h). Las coincidencias y el pedido del catálogo son avance (reinician); tras un comprobante cotejado el contador no corre.
+    if (sinPieza && !bmSinContador(f)) {
+      if (previo.sinAvance >= BM_TURNOS_SIN_AVANCE - 1) return Object.assign(bmDerivar(c, 'sin_avance'), { lineas: lineas, entrega: entrega, cierre: cierre });
+      sinAvance = previo.sinAvance + 1;
+    }
   } else if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c, conBoton);
   // R54: al elegir el RETIRO en este turno, el mismo mensaje trae la dirección de la tienda (dato del comercio; sin dato, nada). Con «Confirmar pedido» la dirección va en el resumen de datos.
   if (texto !== '' && comp.entrega.modo !== undefined && bmEsRetiro(comp.entrega.modo) && !conBoton) texto = texto + bmTextoRetiroEn(c);

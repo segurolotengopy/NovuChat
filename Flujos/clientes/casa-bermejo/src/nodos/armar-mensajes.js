@@ -332,7 +332,11 @@ if (puerta.ruta === 'sigue' && msgs.length === 1 && fichaAntes.saludado !== true
 // Un número de otro país: el aviso a la tienda sale UNA vez por teléfono; se anota solo si el aviso salió (en prueba sin envío de verdad cuenta como salido).
 if (puerta.ruta === 'sigue' && d.aviso && d.aviso.clave === 'otro_pais' && salio === true) { nuevos.avisoPaisMs = ahora; ev.avisoPaisMs = fichaAntes.avisoPaisMs; }
 // Los contadores por ESTADO (válvula de «sin avance»): los escribe la ruta de la conversación con el pedido vacío; cualquier otro turno los reinicia.
-if (puerta.ruta === 'sigue') { nuevos.sinAvance = tipoDePlan === 'modelo' && typeof d.sinAvance === 'number' ? d.sinAvance : 0; nuevos.fallos = tipoDePlan === 'modelo' && typeof d.fallos === 'number' ? d.fallos : 0; }
+if (puerta.ruta === 'sigue') {
+  nuevos.sinAvance = (tipoDePlan === 'modelo' || tipoDePlan === 'cortes') && typeof d.sinAvance === 'number' ? d.sinAvance : 0;
+  nuevos.fallos = tipoDePlan === 'modelo' && typeof d.fallos === 'number' ? d.fallos : 0;
+  nuevos.ultimoMensajeMs = Number(t.mensajeMs) > 0 ? Number(t.mensajeMs) : ahora;   // la hora del MENSAJE, no la de la ejecución: un reintento de n8n no reinicia el contador
+}
 // La ficha: se escribe siempre (también cuando no sale nada), una vez por turno, y solo la de ESTE teléfono.
 const fichas = cnMapaDeFichas(true);
 if (fichas.sd) {

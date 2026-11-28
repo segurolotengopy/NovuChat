@@ -101,7 +101,13 @@ if (esAudio) {
 }
 textoDelTurno = texto;
 const n = bmNorm(texto);
-if (n === '') return salir({ tipo: 'otro' });
+if (n === '') {
+  // «?», «...», «👍»: un mensaje de texto sin nada que leer cuenta como un mensaje VAGO, con la misma salida de tres pasos (el 3.º pasa con recepción, `sin_avance`); tras un comprobante cotejado el contador no corre.
+  if (t.categoria !== 'conversacion' || t.seleccionId || bmSinContador(ficha)) return salir({ tipo: 'otro' });
+  const previoV = bmSinAvancePrevio(ficha, Number(t.mensajeMs) || ahora);
+  if (previoV.sinAvance >= BM_TURNOS_SIN_AVANCE - 1) return salir({ tipo: 'derivar', motivo: 'sin_avance' });
+  return salir({ tipo: 'otro', sinAvance: previoV.sinAvance + 1 });
+}
 // 2b. Un pedido de BAJA («no me escribas más», «dame de baja», «stop»): UN texto fijo y nada más, decidido ANTES de cualquier otra intención y del modelo (con o sin QR abierto; el carrito y el pedido no se tocan). `bjPideBaja` es la pieza común del core.
 // Un mensaje ESCRITO se decide sobre `t.texto`, LA MISMA FUENTE que usa «Reportar mensaje (entrante)» para marcar `no_contactar`. Una NOTA DE VOZ (decisión de Andres, 16/11/2026) se decide sobre su TRANSCRIPCIÓN (`texto`, ya con el tope
 // de siempre): ahí `t.texto` va vacío y el entrante no marca nada, así que la ruta `baja` lleva `porVoz: true` y «Armar mensajes» pone `evento: 'no_contactar'` en el reporte del mensaje SALIENTE de la confirmación (el servidor lo registra igual que el del entrante):
