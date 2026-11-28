@@ -113,7 +113,7 @@ export function filasDeLaRespuesta(cuerpo, columnas) {
 
 /**
  * El lector real. Devuelve `leerFilasDelMiniCrm()`.
- * `deps` (se inyectan en las pruebas): `fetch`, `leerEnv(ruta)`, `aleatorio()`, `esperar(ms)`, `aviso(texto)`, `proceso` (con `once`, `off`, `exit`).
+ * `deps` (se inyectan en las pruebas): `fetch`, `leerEnv(ruta)`, `aleatorio()`, `esperar(ms)`, `aviso(texto)`, `proceso` (con `on`, `off`, `exit`).
  * `estado.limpiezaFallida` queda en true si el flujo temporal no se pudo borrar: la corrida debe terminar con 3.
  */
 export function crearLectorDeMiniCrmN8n({ envFile, nombreFlujo, crm }, deps = {}) {
@@ -196,9 +196,16 @@ export function crearLectorDeMiniCrmN8n({ envFile, nombreFlujo, crm }, deps = {}
     let limpieza = null;
     const limpiar = () => { limpieza ??= hacerLimpieza(); return limpieza; };
     leerFilasDelMiniCrm.limpiar = () => { interrumpido = true; return limpiar(); };
-    const alSenal = () => { interrumpido = true; void limpiar().finally(() => proceso.exit(130)); };
-    proceso.once('SIGINT', alSenal);
-    proceso.once('SIGTERM', alSenal);
+    // `on`, no `once`: una segunda Ctrl-C durante la limpieza NO mata el proceso (con el webhook vivo); se ignora y se avisa.
+    let senalAtendida = false;
+    const alSenal = () => {
+      if (senalAtendida) { aviso('Limpiando el flujo temporal de n8n, espere (la señal repetida se ignora).'); return; }
+      senalAtendida = true;
+      interrumpido = true;
+      void limpiar().finally(() => proceso.exit(130));
+    };
+    proceso.on('SIGINT', alSenal);
+    proceso.on('SIGTERM', alSenal);
     try {
       creacion = api('POST', '/workflows', flujo).then((c) => { if (c.ok && typeof c.j?.id === 'string') id = c.j.id; return c; }, (e) => { creacionIncierta = true; throw e; });
       const c = await creacion;
@@ -214,10 +221,12 @@ export function crearLectorDeMiniCrmN8n({ envFile, nombreFlujo, crm }, deps = {}
       try { cuerpo = JSON.parse(texto); } catch { throw falla('n8n-respuesta-no-json', 'el flujo temporal no devolvió JSON'); }
       return filasDeLaRespuesta(cuerpo, columnas);
     } finally {
-      proceso.off('SIGINT', alSenal);
-      proceso.off('SIGTERM', alSenal);
-      await limpiar();
-      limpieza = null;
+      // Los oyentes siguen puestos MIENTRAS se limpia: una señal repetida en ese lapso se ignora con aviso en vez de matar el proceso.
+      try { await limpiar(); } finally {
+        proceso.off('SIGINT', alSenal);
+        proceso.off('SIGTERM', alSenal);
+        limpieza = null;
+      }
     }
   }
   leerFilasDelMiniCrm.estado = estado;

@@ -66,8 +66,15 @@ function n8nDeMentira(o: Opciones = {}) {
 }
 
 const proceso = () => {
-  const manejadores: Record<string, () => void> = {};
-  return { manejadores, once: (e: string, f: () => void) => { manejadores[e] = f; }, off: (e: string) => { delete manejadores[e]; }, exit: vi.fn() };
+  // Guarda VARIOS oyentes por señal (como un `process` real con `on`); `emitir` los llama a todos.
+  const manejadores: Record<string, Array<() => void>> = {};
+  return {
+    manejadores,
+    on: (e: string, f: () => void) => { (manejadores[e] ??= []).push(f); },
+    off: (e: string, f: () => void) => { manejadores[e] = (manejadores[e] ?? []).filter((x) => x !== f); if (manejadores[e]!.length === 0) delete manejadores[e]; },
+    emitir: (e: string) => { for (const f of [...(manejadores[e] ?? [])]) f(); },
+    exit: vi.fn(),
+  };
 };
 function lector(o: Opciones = {}, extra: Record<string, unknown> = {}, nombre: string = NOMBRE) {
   const n8n = n8nDeMentira(o);
@@ -129,7 +136,7 @@ describe('lectura del miniCRM por n8n', () => {
   it('NEGATIVA: ante SIGINT durante la llamada se borra el flujo temporal y se sale con 130 (una sola vez)', async () => {
     const o: Opciones = {};
     const { leer, n8n, p } = lector(o);
-    o.alWebhook = () => { p.manejadores['SIGINT']?.(); };
+    o.alWebhook = () => { p.emitir('SIGINT'); };
     await leer().catch(() => null);
     await vi.waitFor(() => expect(p.exit).toHaveBeenCalledWith(130));
     expect(n8n.pedidos.filter((q) => q.metodo === 'DELETE')).toHaveLength(1);
@@ -236,8 +243,9 @@ describe('interrupción: el flujo temporal se borra ANTES de salir', () => {
       fetch, leerEnv: () => ({ N8N_BASE_URL: 'https://n8n.ejemplo.invalid', N8N_API_KEY: CLAVE_N8N }), aleatorio: (n: number) => 'a'.repeat(n * 2), esperar: async () => {}, aviso: (t: string) => avisos.push(t), proceso,
     });
     // El oyente de la corrida se instala ANTES que el del lector (como en `principal`): es el orden que dejaba salir antes de limpiar.
-    C.instalarInterrupcion(proceso, { estado: 'antes' }, leer, () => {});
-    return { leer, proceso, n8n, postG, delG, llamadas, avisos };
+    const escritos: string[] = [];
+    C.instalarInterrupcion(proceso, { estado: 'antes' }, leer, (t: string) => escritos.push(t));
+    return { leer, proceso, n8n, postG, delG, llamadas, avisos, escritos };
   }
   const borrados = (m: { n8n: { pedidos: Pedido[] } }) => m.n8n.pedidos.filter((q) => q.metodo === 'DELETE').length;
 
@@ -253,7 +261,28 @@ describe('interrupción: el flujo temporal se borra ANTES de salir', () => {
       await vi.waitFor(() => expect(m.proceso.exit).toHaveBeenCalledWith(130));
       await p;
       expect(m.llamadas.filter((l) => l.startsWith('DELETE'))).toHaveLength(1);
-      expect(m.proceso.listenerCount(senal)).toBe(0); // los dos oyentes de esa señal se quitaron
+      expect(m.proceso.listenerCount(senal)).toBe(1); // el del lector se quitó; el de la corrida (`instalarInterrupcion`) es del proceso y queda hasta que sale
+    });
+  }
+
+  for (const senal of ['SIGINT', 'SIGTERM']) {
+    it(`NEGATIVA: una SEGUNDA ${senal} durante la limpieza se ignora con aviso «espere»: no sale antes, no limpia dos veces y el webhook no queda vivo`, async () => {
+      const m = montaje({ retenerDelete: true });
+      const p = m.leer().catch(() => null);
+      await vi.waitFor(() => expect(m.llamadas.some((l) => l.startsWith('POST /webhook/'))).toBe(true));
+      m.proceso.emit(senal);
+      await vi.waitFor(() => expect(m.llamadas).toContain('DELETE /api/v1/workflows/tmp-ficticio'));
+      m.proceso.emit(senal); // la segunda Ctrl-C, con el borrado en vuelo
+      m.proceso.emit(senal);
+      expect(m.proceso.exit).not.toHaveBeenCalled();
+      expect(m.escritos.some((t) => /espere/i.test(t))).toBe(true);
+      expect(m.avisos.some((t) => /espere/i.test(t))).toBe(true);
+      expect(m.proceso.listenerCount(senal)).toBeGreaterThan(0); // los oyentes siguen puestos: nada deja morir al proceso
+      m.delG.abrir();
+      await vi.waitFor(() => expect(m.proceso.exit).toHaveBeenCalledWith(130));
+      await p;
+      for (const llamada of m.proceso.exit.mock.calls) expect(llamada).toEqual([130]); // los dos oyentes salen con 130, ya con el borrado hecho
+      expect(m.llamadas.filter((l) => l.startsWith('DELETE'))).toHaveLength(1);
     });
   }
 
