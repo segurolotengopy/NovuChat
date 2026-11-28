@@ -1343,7 +1343,8 @@ function bmTextoDeLinea(v, max) {
   if (/[\ud800-\udbff]$/.test(t)) t = t.slice(0, -1);
   return t.trim();
 }
-function bmLineasPedido(lineas, from, nota, notaConPago) {
+// La NOTA del cliente ya NO viaja aquí: va una vez por pedido en la clave `nota` del cuerpo de la ingesta (`bmNotaParaServidor`); el `detalle` de cada línea sigue en 120 caracteres y solo lleva la indicación de la pieza.
+function bmLineasPedido(lineas, from) {
   const mercado = ceMercadoDePrefijo(from);
   const moneda = mercado === 'AR' ? 'ARS' : (mercado === 'BO' ? 'BOB' : '');
   if (moneda === '' || !Array.isArray(lineas) || lineas.length === 0 || lineas.length > 30) return null;
@@ -1372,17 +1373,25 @@ function bmLineasPedido(lineas, from, nota, notaConPago) {
     let detalle = '';
     if (p.variantes.size === 1) detalle = Array.from(p.variantes.keys())[0];
     else detalle = bmTextoDeLinea(Array.from(p.variantes.entries()).map((e) => e[1] + ' ' + (e[0] || 'sin indicación')).join(' · '), 120);
-    // La nota del cliente (una por pedido) viaja rotulada en el `detalle` de cada línea; el contrato admite 120 caracteres.
-    // Una nota con palabras de pago viaja con el rótulo que la aclara («no es un estado de pago»): quien la lee en la tienda no la toma por un estado del sistema. El contrato del servidor admite 120 caracteres en total.
-    const rotulo = notaConPago === true ? 'Nota escrita por el cliente (no es un estado de pago): ' : 'nota del cliente: ';
-    const conNota = bmTextoDeLinea([detalle, typeof nota === 'string' && nota !== '' ? rotulo + nota : ''].filter((x) => x !== '').join(' · '), 120);
-    if (conNota !== '') o.detalle = conNota;
+    if (detalle !== '') o.detalle = detalle;
     o.subtotalCentavos = p.cantidad * p.precioCentavos;
     salida.push(o);
   }
   return salida;
 }
 // El id del pedido lleva un hash corto del teléfono (4 caracteres, no el número): dos teléfonos con su primer pedido en el mismo milisegundo no comparten id.
+// La NOTA hacia el servidor (contrato de Auxiliar 2): la clave `nota` (texto plano, SIN rótulo, hasta 500, una vez por pedido) va en el MISMO cuerpo plano de la ingesta que `lineas`, `entrega` y `facturacion`, solo con los eventos `qr_enviado` y `pedido_sin_cobro` y con líneas no vacías;
+// sin nota, la clave no viaja. La Consola pone el rótulo. ORDEN DE DESPLIEGUE: primero el servidor (que acepta `nota`), después publicar este flujo.
+function bmNotaParaServidor(nota, evento, lineas) {
+  if (evento !== 'qr_enviado' && evento !== 'pedido_sin_cobro') return '';
+  if (!Array.isArray(lineas) || lineas.length === 0) return '';
+  return bmLimpiarNota(nota, 500);
+}
+// El texto de la nota en el AVISO a recepción (decisión de Andres, 27/11/2026): entera (≤500), sin enlaces, rotulada para que nadie la tome por un estado de pago. Sin nota, ''.
+function bmNotaDelAviso(nota) {
+  const n = bmLimpiarNota(nota, 500);
+  return n === '' ? '' : 'Nota escrita por el cliente (no es un estado de pago): ' + n;
+}
 function bmIdPedido(ahoraMs, n, from) {
   let h = 0x811c9dc5;
   for (const ch of String(from || '')) { h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0; }
@@ -1396,7 +1405,7 @@ function bmResolverComprobante(c) {
   const lineas = bmConNombres(f.qrCarrito, c.vendibles);
   const total = lineas.length ? vcTotalCentavos(lineas) : (c.cobro.monto !== null ? Math.round(c.cobro.monto * 100) : null);
   const totalTexto = total !== null && total > 0 ? vcMonto(total) : '';
-  const pedido = (cotejo) => ({ tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: f.entrega, cotejo: cotejo, repetido: false });
+  const pedido = (cotejo) => ({ tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: f.entrega, cotejo: cotejo, repetido: false, nota: bmLimpiarNota(f.nota, 500) });
   // TODAS las diferencias (el destinatario primero, luego el monto y la fecha), no solo la primera: una lista cuando hay varias, un texto cuando hay una.
   const cuerpoCotejo = cnNodo('Cotejar en el servidor') ? cbCuerpoDe(cnPrimero('Cotejar en el servidor')).cuerpo : {};
   const d = { resultado: r.resultado, diferencia: cdDiferenciaParaElTexto(cuerpoCotejo, r, 'BOB'), totalTexto: totalTexto, aviso: null };
@@ -1770,7 +1779,7 @@ function bmResolverModelo(c) {
     // Argentina: el cobro por alias lo hace un servidor que aún no existe (B4b). Hasta entonces el pedido queda anotado y el pago lo coordina recepción (aviso + botón); nunca se emite un QR de Bolivia a un cliente de Argentina.
     if (c.mercado !== 'BO' || c.cobro.modo !== 'real') {
       // Sin QR de cobro real: el pedido queda anotado y lo coordina recepción (aviso + botón). El aviso lo manda «Armar avisos» con «sin comprobante aún».
-      return Object.assign(base, { tipo: 'pedido_sin_cobro', mercado: c.mercado === 'BO' ? 'BO' : 'AR', pedidoId: bmIdPedido(c.ahora, f.pedidos + 1, c.from), total: total, resumen: vcResumen(lineas), cierre: false, aviso: { tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: entrega, cotejo: 'sin comprobante aún', repetido: false }, patch: { carrito: [], nota: '', entrega: bmEntregaBase(), cierre: false, qrCarrito: [], mostrados: [], pedidoCatalogo: '' } });
+      return Object.assign(base, { tipo: 'pedido_sin_cobro', mercado: c.mercado === 'BO' ? 'BO' : 'AR', pedidoId: bmIdPedido(c.ahora, f.pedidos + 1, c.from), total: total, resumen: vcResumen(lineas), cierre: false, aviso: { tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: entrega, cotejo: 'sin comprobante aún', repetido: false, nota: bmLimpiarNota(nota, 500) }, patch: { carrito: [], nota: '', entrega: bmEntregaBase(), cierre: false, qrCarrito: [], mostrados: [], pedidoCatalogo: '' } });
     }
     if (abierto && !cambioConQr) return Object.assign(base, { tipo: 'qr_pendiente', total: total });
     return Object.assign(base, {

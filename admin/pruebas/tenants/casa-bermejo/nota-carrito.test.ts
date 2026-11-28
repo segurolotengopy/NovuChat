@@ -30,7 +30,7 @@ const evento = (t: ReturnType<typeof hablar>, e: string): Rep | undefined => t.l
 const todo = (t: ReturnType<typeof hablar>): string => textos(t).join(' ') + ' ' + JSON.stringify(t.mensajes.map((x) => x.payload));
 
 describe('1. la nota del mensaje pegado viaja como detalle de la pieza', () => {
-  it('SANO: «Nota: color negro» sale UNA vez debajo del resumen (no en cada pieza), queda en la ficha y llega rotulada en la línea de qr_enviado', () => {
+  it('SANO: «Nota: color negro» sale UNA vez debajo del resumen (no en cada pieza), queda en la ficha y viaja UNA vez en la clave `nota` de qr_enviado (sin rótulo, no en el detalle de las líneas)', () => {
     const m = mundo();
     const t0 = hablar(m, ANA, mTexto(pegado(STD, '19.458', '\nNota: color negro')));
     expect(textos(t0).join(' ')).toContain('2 × Lavadora Samsung 9 kg — Bs 15.310');
@@ -44,7 +44,10 @@ describe('1. la nota del mensaje pegado viaja como detalle de la pieza', () => {
     const q = hablar(m, ANA, mToque(ids(r).find((x) => x.startsWith('pedido:confirmar'))!, 'Confirmar pedido'));
     expect(hayQr(q)).toBe(true);
     const lineas = evento(q, 'qr_enviado')?.['lineas'] as Rep[];
-    expect(lineas.map((l) => l['detalle'])).toEqual(['nota del cliente: color negro', 'nota del cliente: color negro']);
+    // Contrato nuevo (27/11/2026): la nota va UNA vez en `nota` (texto plano, sin rótulo) y el detalle de las líneas ya no la lleva.
+    expect(evento(q, 'qr_enviado')?.['nota']).toBe('color negro');
+    expect(lineas.map((l) => l['detalle'])).toEqual([undefined, undefined]);
+    expect(JSON.stringify(lineas)).not.toMatch(/color negro|nota del cliente/);
     expect(lineas.map((l) => l['subtotalCentavos'])).toEqual([1531000, 414800]);
   });
   it('NEGADO: sin «Nota:» no hay detalle (el pedido sale como antes)', () => {

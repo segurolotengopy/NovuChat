@@ -4,21 +4,23 @@
  *
  * Criterios comunes C1 a C9 (la batería, §3), comprobados en cada caso:
  *   C1 enlace al catálogo (botón, línea con la dirección o cuerpo de la lista; el enlace del DATO `enlaceCatalogo`, nunca otro);   C2 completa o con remisión numérica exacta;   C3 una línea `• nombre — Bs precio` por producto;
- *   C4 lista interactiva cuando corresponde (≤10 filas, título ≤24);   C5 jamás «No encuentro eso» ni «no tenemos catálogo»;   C6 UN mensaje por turno;   C7 todo precio es de un producto vigente del catálogo vivo;
+ *   C4 lista interactiva cuando corresponde (≤10 filas, título ≤24);   C5 jamás «No encuentro eso» ni «no tenemos catálogo»;   C6 UN mensaje por turno, salvo una lista con enlace: lista PRIMERO y botón «Ver catálogo» DESPUÉS (+1, declarado);   C7 todo precio es de un producto vigente del catálogo vivo;
  *   C8 límites de WhatsApp (4096 / 1024 / 10 filas / 24 / 72 / ids `^[a-z0-9:_-]{1,200}$`);   C9 jamás Wegic ni otro dominio.
- * Hay cambios de DISEÑO frente a la batería, declarados en cada caso: una categoría de hasta 10 productos sale como lista interactiva (el enlace va en su cuerpo: WhatsApp no permite lista y botón a la vez); una de más de 10, como texto con viñetas
- * (completa o con remisión) y «los demás» sigue donde quedó; pedir «el catálogo» a secas da el botón «Ver catálogo» con las categorías en el cuerpo. El nombre de un producto llega al flujo recortado a 80 caracteres (contrato de NovuTienda).
+ * Hay cambios de DISEÑO frente a la batería, declarados en cada caso (decisiones de Andres del 27/11/2026): una categoría sale como lista interactiva (hasta 10 filas; con más, páginas de 9 + «Ver más», hasta el final) y, con enlace del comercio, un SEGUNDO mensaje con el botón «Ver catálogo»
+ * (WhatsApp no junta lista y botón: +1 mensaje, 0,0113 USD, solo con la primera página); varias categorías a la vez siguen como texto con viñetas completo (con el botón, o la dirección al final si pasa de 1000); «los demás» sigue donde quedó;
+ * pedir «el catálogo» a secas da el botón «Ver catálogo» con las categorías en el cuerpo. El nombre de un producto llega al flujo recortado a 80 caracteres (contrato de NovuTienda).
  */
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import type { ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { cargarFuente } from '../../core/fuente-vm';
 import { problemasDeLimites } from '../../core/ux/vigilante';
-import { ANA, catalogoOk, crear, hablar, modelo, mLista, mTexto, panelOk, type Opciones } from './mundo';
+import { ANA, catalogoOk, crear, hablar, modelo, mLista, mTexto, mToque, panelOk, type Opciones } from './mundo';
 import {
   ENLACE_CATALOGO, GRUPOS, GRUPOS_BORDE, GRUPOS_GRANDES, GRUPOS_TV_Y_VIDEO, electro, modeloCortaA3, modeloDeriva, modeloNiega, modeloNiegaEncuentro, modeloPrecioFalso, modeloResumidor, modeloSinEnlace, type Grupo,
 } from './catalogo-electro';
 
+interface Opc { enlace?: boolean; modelo?: boolean; sinAparte?: boolean }
 interface Op { items?: J[]; enlace?: string; modeloDice?: Opciones['modeloDice']; panel?: Opciones['panel'] }
 const abrir = (op: Op = {}) => crear({ catalogo: catalogoOk({}, op.items ?? electro()), enlaceCatalogo: op.enlace === undefined ? ENLACE_CATALOGO : op.enlace, modeloDice: op.modeloDice ?? modeloNiegaEncuentro, panel: op.panel });
 const decir = (m: ReturnType<typeof abrir>, frase: string): ResultadoTurno => hablar(m, ANA, mTexto(frase), { toleraFallo: true });
@@ -38,10 +40,13 @@ const vendibles = (items: J[]): J[] => items.filter((i) => Number.isInteger(i['p
 const NEGACION = /no encuentro|no tenemos cat[aá]logo|no contamos con cat|no tengo un cat|no puedo mostrar/i;
 
 /** C1, C5, C6, C7, C8 y C9 de un turno; devuelve los problemas (vacío = cumple). */
-function criterios(t: ResultadoTurno, items: J[], o: { enlace?: boolean; modelo?: boolean } = {}): string[] {
+function criterios(t: ResultadoTurno, items: J[], o: Opc = {}): string[] {
   const p: string[] = [];
   if (t.fallo) p.push(`el flujo falló: ${t.fallo.mensaje.slice(0, 100)}`);
-  if (t.mensajes.length !== 1) p.push(`C6: ${t.mensajes.length} mensajes`);
+  // C6: un mensaje; una LISTA con enlace del comercio va seguida del botón aparte (la primera página), y solo eso.
+  const conLista = t.mensajes.length > 0 && tipoDe(t.mensajes[0]!) === 'list';
+  const esperados = conLista && o.enlace !== false && o.sinAparte !== true ? ['list', 'cta_url'] : null;
+  if (esperados !== null ? t.mensajes.map(tipoDe).join() !== esperados.join() : t.mensajes.length !== 1) p.push(`C6: salieron ${t.mensajes.map(tipoDe).join(' + ')}`);
   if (NEGACION.test(textoTodo(t))) p.push('C5: niega el catálogo');
   if (o.modelo !== true && modeloLlamado(t)) p.push('la consulta llegó al modelo');
   const precios = new Set(vendibles(items).map((i) => (i['precioCentavos'] as number) / 100));
@@ -53,12 +58,22 @@ function criterios(t: ResultadoTurno, items: J[], o: { enlace?: boolean; modelo?
   const urls = JSON.stringify(t.mensajes.map((e) => e.payload)).match(/https?:\/\/[^\s"\\)]+/g) ?? [];
   if (urls.some((u) => /wegic/i.test(u))) p.push('C9: Wegic');
   if (o.enlace === false) { if (urls.length) p.push(`C1: sin enlace del comercio salió una dirección: ${urls[0]}`); } else {
-    if (!hayEnlace(t)) p.push('C1: falta el enlace al catálogo');
+    if (!hayEnlace(t) && o.sinAparte !== true) p.push('C1: falta el enlace al catálogo');   // las páginas de «Ver más» no repiten el botón (solo la primera)
     if (urls.some((u) => !u.startsWith(ENLACE_CATALOGO))) p.push('C9: otra dirección distinta del dato del comercio');
   }
   return p;
 }
-const cumple = (t: ResultadoTurno, items: J[], o: { enlace?: boolean; modelo?: boolean } = {}): void => { expect(criterios(t, items, o)).toEqual([]); };
+const cumple = (t: ResultadoTurno, items: J[], o: Opc = {}): void => { expect(criterios(t, items, o)).toEqual([]); };
+/** Los productos (filas `pro:`) de una lista, en orden. */
+const productosDe = (t: ResultadoTurno): string[] => filasDe(t).filter((f) => String(f['id']).startsWith('pro:')).map((f) => String(f['id']));
+const verMasDe = (t: ResultadoTurno): string => String(filasDe(t).find((f) => String(f['id']).startsWith('mas:'))?.['id'] ?? '');
+/** La primera página de una categoría de `total` productos: lista de 9 + «Ver más» (o de hasta 10 si caben) y el botón aparte. */
+const primeraPagina = (t: ResultadoTurno, total: number): void => {
+  expect(t.mensajes.map(tipoDe)).toEqual(['list', 'cta_url']);
+  expect(productosDe(t)).toHaveLength(total <= 10 ? total : 9);
+  expect(verMasDe(t) !== '').toBe(total > 10);
+  expect(botonCatalogo(t)).toBe(true);
+};
 /** C3: cada línea de producto es `• nombre — Bs precio` y no hay dos productos en una línea. */
 const formatoC3 = (t: ResultadoTurno): void => { for (const l of textoTodo(t).split('\n').filter((x) => x.startsWith('• ') && x.includes(' — Bs '))) expect(l).toMatch(/^• [^•]+ — Bs \d{1,3}(?:\.\d{3})*$/); };
 const completaOCon = (t: ResultadoTurno, total: number): void => {
@@ -70,47 +85,53 @@ const completaOCon = (t: ResultadoTurno, total: number): void => {
 const categorias7 = ['Televisores', 'Aires acondicionados', 'Heladeras', 'Freezers', 'Lavadoras', 'Microondas', 'Parlantes'];
 /** La lista de categorías: 7 filas con su cantidad. */
 const esListaDeCategorias = (t: ResultadoTurno): void => {
-  expect(t.mensajes.map(tipoDe)).toEqual(['list']);
+  expect(t.mensajes.map(tipoDe)).toEqual(['list', 'cta_url']);
   expect(filasDe(t).map((f) => f['title'])).toEqual(categorias7);
   expect(filasDe(t).map((f) => f['description'])[0]).toBe('23 productos');
   expect(filasDe(t).every((f) => /^cat:/.test(String(f['id'])))).toBe(true);
 };
 
 describe('4.1 las cinco frases literales de Andres', () => {
-  it('L1 «¿Qué productos tienen? Quiero ver el catálogo completo con precios»: lista interactiva de las 7 categorías con su cantidad y el enlace en el mismo mensaje', () => {
+  it('L1 «¿Qué productos tienen? Quiero ver el catálogo completo con precios»: lista interactiva de las 7 categorías con su cantidad y, DESPUÉS, el botón «Ver catálogo» en un segundo mensaje', () => {
     const t = uno('¿Qué productos tienen? Quiero ver el catálogo completo con precios');
     cumple(t, electro());
     esListaDeCategorias(t);
   });
-  it('L2 «¿Qué televisores tienen y a qué precio?»: los 23 en viñetas con su precio (C2, C3) y el enlace', () => {
+  it('L2 «¿Qué televisores tienen y a qué precio?»: con 23, lista de 9 + «Ver más» (con su precio en cada fila) y, DESPUÉS, el botón «Ver catálogo»; ya no texto con viñetas para una sola categoría', () => {
     const t = uno('¿Qué televisores tienen y a qué precio?');
     cumple(t, electro());
-    expect(viñetas(t)).toHaveLength(23);
-    formatoC3(t);
-    expect(textoTodo(t)).toMatch(/^\*Televisores\* \(23\)/m);
+    primeraPagina(t, 23);
+    expect(verMasDe(t)).toBe('mas:televisores:1');
+    expect(filasDe(t).filter((f) => String(f['id']).startsWith('pro:')).every((f) => /^Bs /.test(String(f['description'])))).toBe(true);
+    expect(viñetas(t)).toHaveLength(0);
+    expect(JSON.stringify(t.mensajes[0]!.payload)).not.toContain(ENLACE_CATALOGO);   // fuera el enlace escrito en el cuerpo de la lista
   });
-  it('L3 (tras L2) «¿Qué otros televisores tienen? Quiero ver todos»: con 60 televisores y un corte en L2, trae SOLO los que no se mostraron (ninguno repetido); con 23 que ya salieron todos, lo dice y remite', () => {
-    const op = { items: electro(GRUPOS_GRANDES) };
-    const m = abrir(op);
+  it('L3 (tras L2) «¿Qué otros televisores tienen? Quiero ver todos»: sigue con la página siguiente SIN repetir y SIN el botón de nuevo; con 23, tres páginas (9 + 9 + 5) y luego «Esos eran todos»', () => {
+    const m = abrir();
     const l2 = decir(m, '¿Qué televisores tienen y a qué precio?');
     const l3 = decir(m, '¿Qué otros televisores tienen? Quiero ver todos');
-    cumple(l2, op.items); cumple(l3, op.items);
-    const a = new Set(viñetas(l2)); const b = viñetas(l3);
-    expect(b.length).toBeGreaterThan(0);
-    expect(b.filter((x) => a.has(x))).toEqual([]);
-    expect(a.size + b.length).toBe(60);
-    const m2 = abrir();
-    decir(m2, '¿Qué televisores tienen y a qué precio?');
-    const ya = decir(m2, '¿Qué otros televisores tienen? Quiero ver todos');
+    const l3b = decir(m, '¿Qué otros televisores tienen? Quiero ver todos');
+    cumple(l2, electro()); cumple(l3, electro(), { sinAparte: true }); cumple(l3b, electro(), { sinAparte: true });
+    expect(l3.mensajes.map(tipoDe)).toEqual(['list']);
+    const todos = [...productosDe(l2), ...productosDe(l3), ...productosDe(l3b)];
+    expect(todos).toHaveLength(23);
+    expect(new Set(todos).size).toBe(23);
+    expect(verMasDe(l3b)).toBe('');
+    const ya = decir(m, '¿Qué otros televisores tienen? Quiero ver todos');
     cumple(ya, electro());
-    expect(viñetas(ya)).toHaveLength(0);
+    expect(productosDe(ya)).toHaveLength(0);
     expect(textoTodo(ya)).toMatch(/Esos eran todos/);
+    expect(botonCatalogo(ya)).toBe(true);
   });
-  it('L4 «¿Y qué aires acondicionados tienen? Todos, con precio»: los 12 en viñetas', () => {
-    const t = uno('¿Y qué aires acondicionados tienen? Todos, con precio');
+  it('L4 «¿Y qué aires acondicionados tienen? Todos, con precio»: con 12, lista de 9 + «Ver más» y el botón aparte', () => {
+    const m = abrir();
+    const t = decir(m, '¿Y qué aires acondicionados tienen? Todos, con precio');
     cumple(t, electro());
-    expect(viñetas(t)).toHaveLength(12);
-    formatoC3(t);
+    primeraPagina(t, 12);
+    const p2 = hablar(m, ANA, mLista(verMasDe(t), 'Ver más'), { toleraFallo: true });
+    cumple(p2, electro(), { sinAparte: true });
+    expect(productosDe(p2)).toHaveLength(3);
+    expect(new Set([...productosDe(t), ...productosDe(p2)]).size).toBe(12);
   });
   it('L5 «¿Qué heladeras, freezers, lavadoras, microondas y parlantes tienen? Todos con precio»: 5 bloques con su título, 32 líneas, un solo mensaje', () => {
     const t = uno('¿Qué heladeras, freezers, lavadoras, microondas y parlantes tienen? Todos con precio');
@@ -131,10 +152,10 @@ describe('4.2 variantes de forma: tildes, errores, singular y plural, registro',
     });
   }
   for (const [id, frase] of [['A3', 'tienen tele?'], ['A4', 'televisor'], ['A5', 'TELEVISORES PRECIOS'], ['A6', 'telebisores']] as const) {
-    it(`${id} «${frase}» = L2: los 23 televisores en viñetas (nunca «No encuentro»)`, () => {
+    it(`${id} «${frase}» = L2: la lista de los televisores, 9 + «Ver más» (nunca «No encuentro»)`, () => {
       const t = uno(frase);
       cumple(t, electro());
-      expect(viñetas(t)).toHaveLength(23);
+      primeraPagina(t, 23);
     });
   }
   it('A3 con el área «TV y video» («tele», «TV» y «televisor» son lo mismo)', () => {
@@ -142,13 +163,14 @@ describe('4.2 variantes de forma: tildes, errores, singular y plural, registro',
     for (const frase of ['tienen tele?', 'televisores', 'tv']) {
       const t = uno(frase, { items });
       cumple(t, items);
-      expect(viñetas(t), frase).toHaveLength(23);
+      expect(productosDe(t), frase).toHaveLength(9);
+      expect(verMasDe(t), frase).toBe('mas:tv-y-video:1');
     }
   });
-  it('A7 «aire acondisionado» (error de ortografía) = L4: los 12 aires', () => {
+  it('A7 «aire acondisionado» (error de ortografía) = L4: la lista de los 12 aires (9 + «Ver más»)', () => {
     const t = uno('aire acondisionado');
     cumple(t, electro());
-    expect(viñetas(t)).toHaveLength(12);
+    primeraPagina(t, 12);
   });
   it('A10 «catalogo» (una palabra): el botón «Ver catálogo» con las 7 categorías en el cuerpo, en un solo mensaje', () => {
     const t = uno('catalogo');
@@ -165,10 +187,10 @@ describe('4.2 variantes de forma: tildes, errores, singular y plural, registro',
     expect(botonCatalogo(t)).toBe(true);
   });
   for (const frase of ['heladera', 'heladeras', 'refri']) {
-    it(`A12 «${frase}» = la categoría Heladeras: lista interactiva con las 6, completa, y el enlace`, () => {
+    it(`A12 «${frase}» = la categoría Heladeras: lista interactiva con las 6, completa, y el botón aparte`, () => {
       const t = uno(frase);
       cumple(t, electro());
-      expect(t.mensajes.map(tipoDe)).toEqual(['list']);
+      expect(t.mensajes.map(tipoDe)).toEqual(['list', 'cta_url']);
       expect(filasDe(t)).toHaveLength(6);
       expect(filasDe(t).every((f) => /^pro:/.test(String(f['id'])) && /^Bs /.test(String(f['description'])))).toBe(true);
     });
@@ -191,11 +213,11 @@ describe('4.3 categoría inexistente', () => {
       expect(t.avisos).toHaveLength(0);
     });
   }
-  it('A16 «bicis y teles»: los televisores, «No tenemos bicis» y el enlace', () => {
+  it('A16 «bicis y teles»: la lista de los televisores con «No tenemos bicis» en su cuerpo y el botón aparte', () => {
     const t = uno('bicis y teles');
     cumple(t, electro());
     expect(textoTodo(t)).toMatch(/No tenemos bicis/);
-    expect(viñetas(t)).toHaveLength(23);
+    primeraPagina(t, 23);
   });
   it('sin pieza con el modelo diciendo «No encuentro eso en nuestro catálogo» («quiero un televisor» en el catálogo de accesorios): nunca la negación; el botón y las categorías', () => {
     const m = crear({ enlaceCatalogo: ENLACE_CATALOGO, modeloDice: modeloNiegaEncuentro });
@@ -207,21 +229,25 @@ describe('4.3 categoría inexistente', () => {
 });
 
 describe('4.4 tamaño: más de 10 productos y más de 4096 caracteres', () => {
-  it('A17 60 televisores de nombre largo (más de 4096 caracteres en texto plano): texto ≤4096, cortado por producto ENTERO, «Son 60…», el resto en el catálogo y N es el máximo que cabe', () => {
+  it('A17 60 televisores de nombre largo: páginas de 9 + «Ver más» recorridas por el toque hasta el final (7 páginas), sin repetir ninguno; solo la primera lleva el botón aparte; límites de WhatsApp en todas', () => {
     const items = electro(GRUPOS_GRANDES);
-    const t = uno('¿Qué televisores tienen y a qué precio?', { items });
+    const m = abrir({ items });
+    let t = decir(m, '¿Qué televisores tienen y a qué precio?');
     cumple(t, items);
-    const cuerpo = textoTodo(t);
-    expect(cuerpo.length).toBeLessThanOrEqual(4096);
-    const n = viñetas(t).length;
-    expect(n).toBeGreaterThan(30);
-    expect(n).toBeLessThan(60);
-    formatoC3(t);
-    expect(cuerpo).toMatch(/Son 60 productos/);
-    expect(cuerpo).toMatch(/(resto|demás|todos).{0,40}catálogo/i);
-    expect(cuerpo).toContain(`del 1 al ${n}`);
-    const bloque = cuerpo.split('\n\nSon 60')[0]!;
-    expect(bloque.length + 70).toBeGreaterThan(3000);   // la siguiente línea ya no cabía
+    primeraPagina(t, 60);
+    const vistos: string[] = [...productosDe(t)];
+    let paginas = 1;
+    while (verMasDe(t) !== '' && paginas < 20) {
+      t = hablar(m, ANA, mLista(verMasDe(t), 'Ver más'), { toleraFallo: true });
+      cumple(t, items, { sinAparte: true });
+      expect(t.mensajes.map(tipoDe)).toEqual(['list']);
+      expect(modeloLlamado(t)).toBe(false);
+      vistos.push(...productosDe(t));
+      paginas++;
+    }
+    expect(paginas).toBe(7);
+    expect(vistos).toHaveLength(60);
+    expect(new Set(vistos).size).toBe(60);
   });
   it('A18 más de 10 categorías: la lista tiene 10 filas (9 + «Ver más»), título ≤24, y el toque de «Ver más» trae las que faltan, sin repetir', () => {
     const grupos: Grupo[] = Array.from({ length: 12 }, (_, i) => ({ area: `Categoría número ${i + 1} de prueba larga`, cantidad: 2, base: `ARTICULO ${i + 1}`, precio: 100 }));
@@ -230,9 +256,10 @@ describe('4.4 tamaño: más de 10 productos y más de 4096 caracteres', () => {
     const t = decir(m, 'qué tienen');
     cumple(t, items);
     expect(filasDe(t)).toHaveLength(10);
+    expect(t.mensajes.map(tipoDe)).toEqual(['list', 'cta_url']);
     expect(String(filasDe(t)[9]!['id'])).toBe('mas:cats:1');
     const p2 = hablar(m, ANA, mLista('mas:cats:1', 'Ver más'), { toleraFallo: true });
-    cumple(p2, items);
+    cumple(p2, items, { sinAparte: true });
     expect(modeloLlamado(p2)).toBe(false);
     const a = filasDe(t).slice(0, 9).map((f) => String(f['id']));
     const b = filasDe(p2).map((f) => String(f['id']));
@@ -246,52 +273,60 @@ describe('4.4 tamaño: más de 10 productos y más de 4096 caracteres', () => {
     expect(filasDe(t)).toHaveLength(10);
     expect(filasDe(t).some((f) => String(f['id']).startsWith('mas:'))).toBe(false);
   });
-  it('A20 una lista que pasa de 1000 caracteres (14 aires): el enlace SALE igual, como línea al final', () => {
-    const items = electro(GRUPOS_BORDE);
-    const t = uno('¿qué aires acondicionados tienen?', { items });
-    cumple(t, items);
-    expect(viñetas(t)).toHaveLength(14);
+  it('A20 varias categorías con más de 1000 caracteres de viñetas (heladeras, freezers, lavadoras, microondas y parlantes): el texto sale ENTERO, un solo mensaje, y la dirección del catálogo SALE igual, como línea al final', () => {
+    const t = uno('¿Qué heladeras, freezers, lavadoras, microondas y parlantes tienen? Todos con precio');
+    cumple(t, electro());
+    expect(viñetas(t)).toHaveLength(32);
     expect(textoTodo(t).length).toBeGreaterThan(1000);
     expect(textoTodo(t).trimEnd().endsWith(ENLACE_CATALOGO)).toBe(true);
   });
 });
 
 describe('4.5 seguimiento', () => {
-  it('A21 L2 → «¿y otros?»: los siguientes sin repetir; y si ya salieron todos, «Esos eran todos» + el enlace', () => {
+  /** Sigue pidiendo «lo que falta» con `frase` hasta que diga «Esos eran todos»: devuelve los productos por página. */
+  const seguirHasta = (m: ReturnType<typeof abrir>, frase: string, items: J[], primera: ResultadoTurno): { paginas: string[][]; fin: ResultadoTurno } => {
+    const paginas = [productosDe(primera)];
+    for (let i = 0; i < 30; i++) {
+      const t = decir(m, frase);
+      cumple(t, items, { sinAparte: !/Esos eran todos/.test(textoTodo(t)) });
+      if (/Esos eran todos/.test(textoTodo(t))) return { paginas, fin: t };
+      paginas.push(productosDe(t));
+    }
+    throw new Error('nunca dijo «Esos eran todos»');
+  };
+  it('A21 L2 → «¿y otros?» (con 60 televisores): la página siguiente de cada vez, sin repetir ni el botón; al final, «Esos eran todos» + el botón', () => {
     const items = electro(GRUPOS_GRANDES);
     const m = abrir({ items });
     const l2 = decir(m, '¿Qué televisores tienen y a qué precio?');
-    const o = decir(m, '¿y otros?');
-    cumple(o, items);
-    expect(viñetas(o).filter((x) => viñetas(l2).includes(x))).toEqual([]);
-    expect(viñetas(l2).length + viñetas(o).length).toBe(60);
-    const fin = decir(m, '¿y otros?');
-    cumple(fin, items);
-    expect(textoTodo(fin)).toMatch(/Esos eran todos/);
+    const { paginas, fin } = seguirHasta(m, '¿y otros?', items, l2);
+    expect(paginas).toHaveLength(7);
+    expect(paginas.flat()).toHaveLength(60);
+    expect(new Set(paginas.flat()).size).toBe(60);
+    expect(botonCatalogo(fin)).toBe(true);
   });
-  it('A22 L4 → «los demás» con 50 aires: los restantes', () => {
+  it('A22 L4 → «los demás» con 50 aires: las páginas restantes, sin repetir', () => {
     const items = electro(GRUPOS.map((g) => (g.area === 'Aires acondicionados' ? { ...g, cantidad: 50 } : g)));
     const m = abrir({ items });
     const l4 = decir(m, '¿Y qué aires acondicionados tienen? Todos, con precio');
-    expect(viñetas(l4).length).toBeLessThan(50);
-    const demas = decir(m, 'los demás');
-    cumple(demas, items);
-    expect(viñetas(demas).filter((x) => viñetas(l4).includes(x))).toEqual([]);
-    expect(viñetas(l4).length + viñetas(demas).length).toBe(50);
+    expect(productosDe(l4)).toHaveLength(9);
+    const { paginas } = seguirHasta(m, 'los demás', items, l4);
+    expect(paginas.flat()).toHaveLength(50);
+    expect(new Set(paginas.flat()).size).toBe(50);
   });
   it('A23 L2 → «y aires?»: cambia de categoría (= L4)', () => {
     const m = abrir();
     decir(m, '¿Qué televisores tienen y a qué precio?');
     const t = decir(m, 'y aires?');
     cumple(t, electro());
-    expect(viñetas(t)).toHaveLength(12);
+    primeraPagina(t, 12);
   });
-  it('A24 L1 → toque de la fila «Televisores»: = L2, sin pasar por el modelo; un id inventado no hace nada raro', () => {
+  it('A24 L1 → toque de la fila «Televisores»: = L2 (9 + «Ver más» y el botón aparte), sin pasar por el modelo; un id inventado no hace nada raro', () => {
     const m = abrir();
     decir(m, '¿Qué productos tienen? Quiero ver el catálogo completo con precios');
     const t = hablar(m, ANA, mLista('cat:televisores', 'Televisores'), { toleraFallo: true });
     cumple(t, electro());
-    expect(viñetas(t)).toHaveLength(23);
+    primeraPagina(t, 23);
+    expect(modeloLlamado(t)).toBe(false);
     for (const id of ['cat:xyz', 'pro:xyz', 'mas:cats:99', 'mas:xyz:1', 'cat:']) {
       const v = hablar(m, ANA, mLista(id, 'x'), { toleraFallo: true });
       expect(criterios(v, electro()), `${id}: ${textoTodo(v).slice(0, 120)}`).toEqual([]);
@@ -313,7 +348,7 @@ describe('4.5 seguimiento', () => {
 
 describe('4.6 mezcla de catálogo y pedido', () => {
   const pedido = () => modelo('Con gusto, anoto la heladera.', { lineas: [{ id: 'heladeras-1', cantidad: 1 }] });
-  it('A25 «quiero la heladera más barata y mándenme la lista de aires»: anota la heladera (la más barata, precio del catálogo) Y muestra los 12 aires, en UN mensaje', () => {
+  it('A25 «quiero la heladera más barata y mándenme la lista de aires»: anota la heladera (la más barata, precio del catálogo) Y muestra los 12 aires en viñetas, en UN mensaje (texto: el botón va en el mismo mensaje)', () => {
     const m = abrir({ modeloDice: pedido() });
     const t = decir(m, 'quiero la heladera más barata y mándenme la lista de aires');
     cumple(t, electro(), { modelo: true });
@@ -321,13 +356,13 @@ describe('4.6 mezcla de catálogo y pedido', () => {
     formatoC3(t);
     expect(ficha(m)['carrito']).toEqual([{ id: 'heladeras-1', cantidad: 1, detalle: '' }]);
   });
-  it('A26 con un pedido en curso: «qué televisores tienen?» da la lista y el enlace, sin borrar el carrito ni meter el resumen del pedido en la lista', () => {
+  it('A26 con un pedido en curso: «qué televisores tienen?» da la lista (9 + «Ver más») y el botón aparte, sin borrar el carrito ni meter el resumen del pedido en la lista', () => {
     const m = abrir({ modeloDice: pedido() });
     decir(m, 'quiero la heladera más barata');
     expect(ficha(m)['carrito']).toHaveLength(1);
     const t = decir(m, 'qué televisores tienen?');
     cumple(t, electro());
-    expect(viñetas(t)).toHaveLength(23);
+    primeraPagina(t, 23);
     expect(textoTodo(t)).not.toMatch(/Total:/);
     expect(ficha(m)['carrito']).toEqual([{ id: 'heladeras-1', cantidad: 1, detalle: '' }]);
   });
@@ -343,12 +378,12 @@ describe('4.7 modelo adverso: el código lo corrige', () => {
   it('A27 el modelo resume sin lista: la lista sale igual (la arma el código)', () => {
     const t = uno('¿Qué televisores tienen y a qué precio?', { modeloDice: modeloResumidor });
     cumple(t, electro());
-    expect(viñetas(t)).toHaveLength(23);
+    primeraPagina(t, 23);
   });
-  it('A28 el modelo lista solo 3: salen los 12 (el texto del modelo no manda)', () => {
+  it('A28 el modelo lista solo 3: sale la lista completa de los 12 (el texto del modelo no manda)', () => {
     const t = uno('¿Y qué aires acondicionados tienen? Todos, con precio', { modeloDice: modeloCortaA3 });
     cumple(t, electro());
-    expect(viñetas(t)).toHaveLength(12);
+    primeraPagina(t, 12);
   });
   it('A29 el modelo niega el catálogo: se reemplaza; salen las categorías y el enlace', () => {
     const t = uno('¿Qué productos tienen? Quiero ver el catálogo completo con precios', { modeloDice: modeloNiega });
@@ -364,17 +399,19 @@ describe('4.7 modelo adverso: el código lo corrige', () => {
   it('A31 el modelo inventa un precio: ningún precio falso sale (C7)', () => {
     const t = uno('¿Qué televisores tienen y a qué precio?', { modeloDice: modeloPrecioFalso });
     cumple(t, electro());
+    primeraPagina(t, 23);
     expect(textoTodo(t)).not.toContain('Bs 999');
   });
   it('A32 el modelo lista completa pero sin enlace: el enlace lo agrega el código', () => {
     const t = uno('¿Qué televisores tienen y a qué precio?', { modeloDice: modeloSinEnlace });
     cumple(t, electro());
-    expect(hayEnlace(t)).toBe(true);
+    expect(botonCatalogo(t)).toBe(true);
   });
-  it('A33 sin enlace del comercio (dato vacío): la lista completa sale SIN botón ni enlace y sin prometerlo («solo se ofrece lo que se cumple»); un solo mensaje', () => {
+  it('A33 sin enlace del comercio (dato vacío): la lista sale SIN botón aparte ni enlace y sin prometerlo («solo se ofrece lo que se cumple», sin mensajes de más): un solo mensaje', () => {
     const t = uno('¿Qué televisores tienen y a qué precio?', { enlace: '' });
     cumple(t, electro(), { enlace: false });
-    expect(viñetas(t)).toHaveLength(23);
+    expect(t.mensajes.map(tipoDe)).toEqual(['list']);
+    expect(productosDe(t)).toHaveLength(9);
     expect(textoTodo(t)).not.toMatch(/enlace|bot[oó]n|p[aá]gina|ver el cat[aá]logo|mira el cat[aá]logo/i);
     const cats = uno('qué tienen', { enlace: '' });
     cumple(cats, electro(), { enlace: false });
@@ -386,6 +423,35 @@ describe('4.7 modelo adverso: el código lo corrige', () => {
       cumple(t, electro(), { enlace: false });
       expect(JSON.stringify(t.mensajes.map((e) => e.payload))).not.toMatch(/wegic|http:/i);
     }
+  });
+});
+
+describe('4.8 decisiones de Andres del 27/11/2026 (negadas)', () => {
+  it('«Botón en otro mensaje», COSTO ACEPTADO: una lista con enlace cuesta +1 mensaje (lista PRIMERO, botón DESPUÉS); un texto con enlace, 0 más; una lista sin enlace, 0 más; la página de «Ver más», 0 más', () => {
+    const m = abrir();
+    const lista = decir(m, '¿Qué productos tienen? Quiero ver el catálogo completo con precios');
+    expect(lista.mensajes.map(tipoDe)).toEqual(['list', 'cta_url']);
+    expect(JSON.stringify(lista.mensajes[0]!.payload)).not.toContain('http');
+    const texto = decir(m, 'catalogo');
+    expect(texto.mensajes).toHaveLength(1);
+    expect(uno('qué tienen', { enlace: '' }).mensajes.map(tipoDe)).toEqual(['list']);
+    const sig = hablar(m, ANA, mLista('mas:cats:1', 'Ver más'), { toleraFallo: true });
+    expect(sig.mensajes.length).toBeLessThanOrEqual(1);
+  });
+  it('NEGADO: un producto que no se vende, CON un pedido en curso, NO dice «No tenemos X»: sigue el camino de siempre (conversación con el modelo y, si hace falta, recepción), no categorías + catálogo', () => {
+    const m = abrir({ modeloDice: modelo('Con gusto, anoto la heladera.', { lineas: [{ id: 'heladeras-1', cantidad: 1 }] }) });
+    decir(m, 'quiero la heladera más barata');
+    expect(ficha(m)['carrito']).toHaveLength(1);
+    const t = decir(m, '¿tienen bicicletas?');
+    expect(textoTodo(t)).not.toMatch(/No tenemos bicicletas/);
+    expect(modeloLlamado(t)).toBe(true);   // sigue el camino de siempre (el modelo y la recepción), no el código del catálogo
+  });
+  it('NEGADO: una palabra suelta que responde a un dato pedido («Televisor» como nombre) no es una consulta de catálogo', () => {
+    const m = abrir({ modeloDice: modelo('Con gusto, anoto la heladera.', { lineas: [{ id: 'heladeras-1', cantidad: 1 }] }) });
+    decir(m, 'quiero la heladera más barata');
+    hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'), { toleraFallo: true });
+    const t = decir(m, 'Televisor');
+    expect(tipoDe(t.mensajes[0] ?? { payload: {} })).not.toBe('list');
   });
 });
 
@@ -423,7 +489,7 @@ describe('9. los límites de WhatsApp se cumplen en el código (con pruebas nega
     const items = electro([{ area: 'Mayúsculas', cantidad: 3, base: 'PIEZA', precio: 100 }]).map((i, n) => (n === 0 ? { ...i, id: 'ABC-001' } : i));
     const m = abrir({ items });
     const t = decir(m, 'mayusculas');
-    expect(criterios(t, items)).toEqual([]);
+    expect(criterios(t, items)).toEqual([]);   // lista + botón aparte
     expect(filasDe(t).map((f) => String(f['id']))).toContain('pro:abc-001');
     hablar(m, ANA, mLista('pro:abc-001', 'x'), { toleraFallo: true });
     expect(ficha(m)['carrito']).toEqual([{ id: 'ABC-001', cantidad: 1, detalle: '' }]);

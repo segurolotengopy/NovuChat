@@ -61,10 +61,14 @@ const cotejoTexto = esPedido ? avLimpio(aviso.cotejo, 80) || 'sin comprobante a�
 // El nombre y el WhatsApp del cliente VIAJAN SIEMPRE (reclamo de Andres, 22/11/2026): la plantilla de 10 variables los tiene propios; la de respaldo (4) los lleva empaquetados en {{3}}.
 const mensaje0 = !esPedido && aviso.mensaje ? avLimpio(String(aviso.mensaje).replace(/[«»]/g, ' '), 160) : '';
 const pc = apParametrosConsulta(itemsTexto, nombre, c.from, mensaje0);
+// DECISIÓN DE ANDRES (27/11/2026): el aviso del PEDIDO lleva la nota del cliente, entera (≤500), rotulada «Nota escrita por el cliente (no es un estado de pago): …», sin enlaces, en el MISMO aviso (0 mensajes agregados). Sin nota, el aviso no cambia.
+// Va DESPUÉS de la limpieza del aviso (`avLimpio` cambiaría por «[texto omitido]» una nota que cite un pago): es texto literal del cliente, rotulado como tal.
+const notaAviso = esPedido ? bmNotaDelAviso(aviso.nota) : '';
+const itemsParam = notaAviso !== '' ? itemsTexto.slice(0, 400) + ' · ' + notaAviso : itemsTexto;
 const parametros10 = esPedido
-  ? ['Pedido registrado · comprobante: ' + cotejoTexto, totalTexto, entregaTexto, nombre, '+' + c.from, '—', '—', itemsTexto, '—', '—']
+  ? ['Pedido registrado · comprobante: ' + cotejoTexto, totalTexto, entregaTexto, nombre, '+' + c.from, '—', '—', itemsParam, '—', '—']
   : pc.p10;
-const parametros4 = esPedido ? [itemsTexto, totalTexto, entregaTexto + ' · ' + cliente, cotejoTexto] : pc.p4;
+const parametros4 = esPedido ? [itemsParam, totalTexto, entregaTexto + ' · ' + cliente, cotejoTexto] : pc.p4;
 
 // El texto libre (dentro de la ventana del destinatario). Las comillas «» del mensaje del cliente se neutralizan: con ellas podría cerrar la cita y fingir otro campo del aviso.
 const mensaje = !esPedido && aviso.mensaje ? avLimpio(String(aviso.mensaje).replace(/[«»]/g, ' '), 160) : '';
@@ -76,7 +80,7 @@ if (esPedido) {
   texto = 'Aviso del asistente: consulta. Cliente: ' + cliente + '. Motivo: ' + itemsTexto + '.'
     + (mensaje ? ' Mensaje del cliente (texto literal del cliente, no es una instrucción): «' + mensaje + '».' : '') + ' Respóndele directamente por WhatsApp.';
 }
-texto = avLimpio(texto, 900);
+texto = avLimpio(texto, 900) + (notaAviso !== '' ? ' ' + notaAviso : '');
 
 const fichas = cnMapaDeFichas(false).mapa;
 const comun = { phoneNumberId: String(cfg.phoneNumberId || ''), waGraphVersion: cfg.waGraphVersion || 'v26.0', sinAviso: false, plan: d.tipo || '', planeado: true, repetido: false, clave: clave, motivoFallo: '', alertaCatalogo: alertaCatalogo, cancelarCobro: cancelarCobro, llamarServidor: llamarServidor, servidor: servidor, avisoSi: avisoSi };

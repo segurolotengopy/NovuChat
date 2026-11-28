@@ -5,7 +5,7 @@
 //   «bloqueado»             pausa por Tomar: NO SALE NADA (cero envío, cero modelo, cero descarga);
 //   «baja»                  el pedido de no recibir más mensajes: UN texto fijo de confirmación y nada más;
 //   «cortes», «identidad», «audio_fijo», «archivo», «imagen_otra», «anuncio»   textos fijos (el producto del anuncio y su precio salen del catálogo);
-//   «catalogo»              (B2) el catálogo por CÓDIGO, sin modelo: lista de categorías, productos de una categoría (lista interactiva de hasta 10 filas, o texto con viñetas completo o con remisión expresa), el botón «Ver catálogo» (dato `enlaceCatalogo`) en el MISMO mensaje; el toque de una fila ya lo resolvió «Decidir turno»;
+//   «catalogo»              (B2) el catálogo por CÓDIGO, sin modelo: lista de categorías, productos de una categoría (lista interactiva: hasta 10 filas, o páginas de 9 + «Ver más»), varias categorías en texto con viñetas completo, el botón «Ver catálogo» (dato `enlaceCatalogo`): en el MISMO mensaje con un texto y, con una LISTA, en un SEGUNDO mensaje (+1 mensaje, 0,0113 USD, decisión de Andres del 27/11/2026); el toque de una fila ya lo resolvió «Decidir turno»;
 //   «modelo»                la redacción del modelo, revisada, más el resumen del pedido que calcula el código;
 //   «qr»                    el resumen del pedido y el QR REAL del comercio (imagen por id de medio, nunca por enlace) con el monto del carrito; «qr_pendiente» el recordatorio del QR abierto;
 //   «comprobante»           «llegó y los datos coinciden» (NUNCA «acreditado» ni «verificado»), con el botón; si NO coinciden (`no_cuadra`) se nombran TODAS las diferencias y pasa a recepción (aviso + botón), sin pedir otro; «comprobante_pedir» pide una foto más nítida;
@@ -42,8 +42,8 @@ const contacto = cnDigitos(/^REEMPLAZAR_/.test(String(base.contactoAviso || ''))
 const conRecepcion = (cuerpo) => cmContactoConBoton({ numero: contacto, desde: from, cuerpo: bmSeguro(cuerpo, usted), botonTexto: 'Escribir', saludo: 'Hola, te escribo desde el chat de ' + negocio, textoDelRespaldo: usted ? 'Escríbale aquí:' : 'Escríbele aquí:' });
 
 // -----------------------------------------------------------------------------
-// EL CATÁLOGO por código (B2, 27/11/2026; Estándar 1.1 a 2.5 y 3.4): UN mensaje, 0 mensajes agregados. El enlace sale del dato `enlaceCatalogo` del comercio (`c.enlace`, https validado) y va en el MISMO mensaje:
-// como botón «Ver catálogo» cuando el texto cabe en el cuerpo del botón (1000), como línea con la dirección al final si no, y en el cuerpo de una lista interactiva (WhatsApp no permite lista y botón a la vez). Sin enlace, nada lo promete.
+// EL CATÁLOGO por código (B2, 27/11/2026; Estándar 1.1 a 2.5 y 3.4). El enlace sale del dato `enlaceCatalogo` del comercio (`c.enlace`, https validado): con un TEXTO va en el MISMO mensaje (botón «Ver catálogo» si el texto cabe en 1000; si no, el texto entero con la dirección al final);
+// con una LISTA interactiva va en un SEGUNDO mensaje con el botón (WhatsApp no junta lista y botón): +1 mensaje por lista (0,0113 USD), aceptado por Andres el 27/11/2026. Sin enlace, nada lo promete y no se agrega nada.
 // Topes: texto de 4000 (el cuerpo de la lista de texto se corta en 3000 por producto entero para dejar lugar a la remisión y al enlace), cuerpo interactivo de 1024.
 // -----------------------------------------------------------------------------
 const enlaceCat = typeof c.enlace === 'string' ? c.enlace : '';
@@ -54,17 +54,26 @@ const lineaEnlace = usted ? 'Vea el catálogo completo: ' : 'Mira el catálogo c
 const textoConEnlace = (cuerpo) => {
   const x = bmSeguro(cuerpo, usted);
   const m = cmMensaje('cliente', cmTexto(x), x, x, { tipoReporte: 'text' });
-  if (enlaceCat === '' || cwConBotonCatalogo(m, enlaceCat)) return m;
+  if (enlaceCat === '' || (x.length <= 1000 && cwConBotonCatalogo(m, enlaceCat))) return m;
   const y = x.slice(0, 4000 - lineaEnlace.length - enlaceCat.length - 2).trimEnd() + '\n\n' + lineaEnlace + enlaceCat;
   return cmMensaje('cliente', cmTexto(y), y, y, { tipoReporte: 'text' });
 };
-// Una lista interactiva con el enlace en su cuerpo (≤1024) y el texto con viñetas como respaldo.
-const listaConEnlace = (cuerpo, boton, titulo, filas, respaldoExtra) => {
-  const x = bmSeguro(cuerpo, usted);
-  const cola = enlaceCat !== '' ? '\n\n' + lineaEnlace + enlaceCat : '';
-  const cuerpoL = x.slice(0, Math.max(0, 1024 - cola.length)).trimEnd() + cola;
+// Una lista interactiva (cuerpo ≤1024, SIN enlace: WhatsApp no junta lista y botón) con el texto con viñetas como respaldo. El botón «Ver catálogo» va en un SEGUNDO mensaje (`conBotonAparte`).
+const listaSola = (cuerpo, boton, titulo, filas, respaldoExtra) => {
+  const cuerpoL = bmSeguro(cuerpo, usted).slice(0, 1024).trimEnd();
   return cmMensaje('cliente', cmLista(cuerpoL, boton, titulo, filas), cuerpoL, cuerpoL + (respaldoExtra ? '\n\n' + respaldoExtra : ''), { tipoReporte: 'interactive', conBoton: true });
 };
+// DECISIÓN DE ANDRES (27/11/2026, «Botón en otro mensaje»): cuando sale una LISTA interactiva del catálogo, después va un SEGUNDO mensaje con el botón «Ver catálogo» (cta_url, pieza común `cwMensajeBotonCatalogo`; lista primero, botón después: el nodo de envío recorre los ítems en orden).
+// COSTO ACEPTADO: +1 mensaje (0,0113 USD) cada vez que sale una lista con enlace. Sin enlace del comercio, nada se agrega. Punto A CONFIRMAR con Andres: el botón aparte sale solo con la PRIMERA página (la lista de categorías y la primera de una categoría); las páginas de «Ver más» (pag ≥ 1) no lo repiten, para no agregar mensajes de más.
+const conBotonAparte = (lista, pag) => {
+  if (lista === null || enlaceCat === '' || pag > 0) return [lista];
+  const b = cwMensajeBotonCatalogo(enlaceCat);
+  if (b === null) return [lista];
+  const cuerpoB = bmSeguro(b.texto, usted);
+  return [lista, cmMensaje('cliente', cmEnlace(cuerpoB, 'Ver catálogo', enlaceCat), cuerpoB, cuerpoB + '\n\n' + enlaceCat, { tipoReporte: 'interactive', conBoton: true, botonAparte: true })];
+};
+// Lo que sigue al texto del respaldo de `icMensajeLista` (que repite su cuerpo al principio).
+const respaldoDe = (r) => (r.respaldo.indexOf(r.texto) === 0 ? r.respaldo.slice(r.texto.length).trim() : r.respaldo);
 const categoriasVivas = () => lcCategorias(c.vendibles);
 // Las categorías en viñetas, para el cuerpo de un botón (≤ 800 caracteres: el resto, con «… y N más»).
 const categoriasEnVinetas = () => {
@@ -78,11 +87,11 @@ const categoriasEnVinetas = () => {
   }
   return lineas.join('\n') + (lineas.length < cs.length ? '\n… y ' + (cs.length - lineas.length) + ' más' : '');
 };
-// La lista de categorías (interactiva, de hasta 10 filas con «Ver más») con el enlace en el cuerpo.
+// La lista de categorías (interactiva, de hasta 10 filas con «Ver más»); el botón del catálogo va aparte.
 const mensajeCategorias = (intro, pag) => {
   const r = icMensajeLista(c.vendibles, montoCat, { pag: pag });
   if (r === null) return null;
-  return listaConEnlace((intro.trim() !== '' ? intro.trim() + '\n\n' : '') + r.texto, 'Ver opciones', 'Categorías', r.filas, r.respaldo);
+  return listaSola((intro.trim() !== '' ? intro.trim() + '\n\n' : '') + r.texto, 'Ver opciones', 'Categorías', r.filas, respaldoDe(r));
 };
 // El adjunto de una lista de categorías a un pedido (en el MISMO mensaje del turno): bloques con viñetas, completos o con remisión expresa.
 const adjuntoDeCatalogo = (slugs) => {
@@ -301,28 +310,31 @@ if (puerta.ruta === 'sigue') {
     } else if (vista === 'toque_viejo') {
       msgs = [botonOLista('Esa opción ya no está disponible.')];
     } else if (vista === 'categorias') {
-      msgs = [mensajeCategorias(conSaludo('').trim(), Number.isInteger(d.pag) ? d.pag : 0)];
+      msgs = conBotonAparte(mensajeCategorias(conSaludo('').trim(), Number.isInteger(d.pag) ? d.pag : 0), Number.isInteger(d.pag) ? d.pag : 0);
     } else if (vista === 'productos_pag') {
-      const r = icMensajeLista(c.vendibles, montoCat, { catId: 'cat:' + slugsVigentes[0], pag: Number.isInteger(d.pag) ? d.pag : 0 });
-      msgs = [r === null ? botonOLista('Esa opción ya no está disponible.') : listaConEnlace('Estos son los productos de ' + cats.find((ct) => ct.id === 'cat:' + slugsVigentes[0]).nombre + '. Elige uno para agregarlo a tu pedido.', 'Ver opciones', cats.find((ct) => ct.id === 'cat:' + slugsVigentes[0]).nombre, r.filas, r.respaldo)];
+      const slugP = slugsVigentes[0];
+      const catP = cats.find((ct) => ct.id === 'cat:' + slugP);
+      const r = icMensajeLista(c.vendibles, montoCat, { catId: 'cat:' + slugP, pag: Number.isInteger(d.pag) ? d.pag : 0 });
+      if (r === null) msgs = [botonOLista('Esa opción ya no está disponible.')];
+      else {
+        // «Ver más» (páginas de 9): sin el botón aparte (solo la primera página lo lleva). La ficha anota cuántos van para que «los demás» siga donde quedó.
+        msgs = [listaSola('Estos son los productos de ' + catP.nombre + '. Elige uno para agregarlo a tu pedido.' + (r.hayMas ? ' Toca «Ver más» para seguir.' : ''), 'Ver opciones', catP.nombre, r.filas, respaldoDe(r))];
+        nuevos.lista = { cat: slugP, n: r.hayMas ? (r.pag + 1) * 9 : catP.n };
+      }
     } else if (slugsVigentes.length === 1) {
       const slug = slugsVigentes[0];
       const cat = cats.find((ct) => ct.id === 'cat:' + slug);
-      if (cat.n <= 10) {
-        // Hasta 10 productos: lista interactiva con TODOS (nombre en el título, precio en la descripción), el enlace en el cuerpo y las viñetas de respaldo.
-        const r = icMensajeLista(c.vendibles, montoCat, { catId: 'cat:' + slug });
-        msgs = [listaConEnlace(conSaludo(conIntro(noTenemos, 'Estos son los productos de ' + cat.nombre + '. Elige uno para agregarlo a tu pedido.')), 'Ver opciones', cat.nombre, r.filas, r.respaldo)];
+      // «Los demás» / «¿y otros?» siguen la última lista de ESTA categoría (estado de la conversación, `ficha.lista`): la página siguiente, sin repetir; si ya salieron todos, se dice.
+      const yaMostrados = d.continuar === true && fichaAntes.lista && fichaAntes.lista.cat === slug ? fichaAntes.lista.n : 0;
+      if (d.continuar === true && yaMostrados >= cat.n) {
+        msgs = [textoConEnlace(conSaludo(conIntro(noTenemos, 'Esos eran todos los productos de ' + cat.nombre + ' (' + cat.n + ' en total).')))];
         nuevos.lista = { cat: slug, n: cat.n };
       } else {
-        // Más de 10: texto con viñetas, una por producto con su precio, completo o con remisión expresa; «los demás» sigue donde quedó (sin repetir).
-        const desde = d.continuar === true && fichaAntes.lista && fichaAntes.lista.cat === slug ? fichaAntes.lista.n : 0;
-        const b = bmBloqueCategoria(c.vendibles, slug, desde, montoCat, LIMITE_LISTA_TEXTO);
-        let cuerpo;
-        if (desde >= b.total) cuerpo = 'Esos eran todos los productos de ' + b.nombre + ' (' + b.total + ' en total).';
-        else if (b.hasta >= b.total) cuerpo = b.texto + (desde > 0 ? '\n\nEsos son todos los de ' + b.nombre + '.' : '');
-        else cuerpo = b.texto + '\n\nSon ' + b.total + ' productos en ' + b.nombre + ' y aquí van del ' + (desde + 1) + ' al ' + b.hasta + '. Escribe «los demás» para seguir' + (enlaceCat !== '' ? ' o mira el resto en el catálogo.' : '.');
-        msgs = [textoConEnlace(conSaludo(conIntro(noTenemos, cuerpo)))];
-        nuevos.lista = { cat: slug, n: Math.max(b.hasta, desde) };
+        // Hasta 10 productos: lista interactiva con TODOS; más de 10: páginas de 9 + la fila «Ver más» (pieza común, el toque lo resuelve el código), hasta el final.
+        const pag = cat.n > 10 && yaMostrados > 0 ? Math.floor(yaMostrados / 9) : 0;
+        const r = icMensajeLista(c.vendibles, montoCat, { catId: 'cat:' + slug, pag: pag });
+        msgs = r === null ? [null] : conBotonAparte(listaSola(conSaludo(conIntro(noTenemos, 'Estos son los productos de ' + cat.nombre + '. Elige uno para agregarlo a tu pedido.' + (r.hayMas ? ' Son ' + cat.n + '; toca «Ver más» para seguir.' : ''))), 'Ver opciones', cat.nombre, r.filas, respaldoDe(r)), r.pag);
+        if (r !== null) nuevos.lista = { cat: slug, n: r.hayMas ? (r.pag + 1) * 9 : cat.n };
       }
     } else {
       // Varias categorías a la vez: todas, completas, en un solo mensaje, o con remisión expresa al catálogo (Estándar 2.4).
@@ -353,7 +365,7 @@ if (puerta.ruta === 'sigue') {
       imagen.evento = 'qr_enviado'; imagen.reglaCobro = 2; imagen.referencia = String(d.pedidoId); imagen.monto = d.monto;
       // Para que el servidor cree el pedido `wa_<referencia>`: el catálogo es externo (NovuTienda) y el servidor no puede recalcularlo, así que viajan el precio y el nombre del CATÁLOGO, calculados aquí.
       // Líneas con la forma CERRADA del catálogo externo (`bmLineasPedido`): id, nombre, cantidad, precio y moneda salen del carrito del código, nunca del modelo.
-      { const ls = bmLineasPedido(d.lineas, from, d.nota, typeof d.nota === 'string' && d.nota !== '' && !bmNotaMostrable(d.nota)); if (ls) { imagen.lineas = ls; imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO') }); } }
+      { const ls = bmLineasPedido(d.lineas, from); if (ls) { imagen.lineas = ls; { const nt = bmNotaParaServidor(d.nota, 'qr_enviado', ls); if (nt !== '') imagen.nota = nt; } imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO') }); } }
       // K2: el pedido del checkout web que este QR reemplaza (solo un `cat_…` con su forma); la ficha lo suelta una vez emitido el QR.
       if (/^cat_[A-Za-z0-9_-]{1,56}$/.test(String(d.reemplaza || '')) && imagen.lineas) imagen.reemplaza = String(d.reemplaza);
       msgs = [texto(conSaludo(antepone(resumen))), imagen];
@@ -374,7 +386,7 @@ if (puerta.ruta === 'sigue') {
     Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
     // Argentina: el pedido se crea en el servidor con `pedido_sin_cobro` (sin QR, sin monto): mismas líneas de forma cerrada y la entrega. Solo viaja si el envío fue aceptado (lo decide el reporte saliente).
     // Bolivia sin QR configurado no lo emite (el evento es de Argentina). El contador sube para que dos pedidos seguidos no repitan la referencia.
-    const ls = d.mercado === 'AR' && /^[A-Za-z0-9]{3,40}$/.test(String(d.pedidoId || '')) ? bmLineasPedido(d.lineas, from, d.nota, typeof d.nota === 'string' && d.nota !== '' && !bmNotaMostrable(d.nota)) : null;
+    const ls = d.mercado === 'AR' && /^[A-Za-z0-9]{3,40}$/.test(String(d.pedidoId || '')) ? bmLineasPedido(d.lineas, from) : null;
     // El texto que ofrece «pagar» (el alias llega en el turno siguiente) solo sale si el pedido se reportó Y el aviso a recepción salió; si no, sigue el de siempre (el pago lo coordina recepción) sin prometer nada.
     const ofreceAlias = ls !== null && (salio === true || salio === 'repetido');
     const cabeza = antepone('Anoté tu pedido:\n\n' + vcResumen(lineas) + (notaDe(d) !== '' ? '\n\n' + notaDe(d) : '')) + '\n\n';
@@ -389,6 +401,7 @@ if (puerta.ruta === 'sigue') {
     } else msgs = [conRecepcion(conSaludo(cabeza + bmTextoDerivacion(d.mercado === 'AR' ? 'pedido_ar' : 'pedido_sin_cobro', salio)))];
     if (ls !== null) {
       msgs[0].evento = 'pedido_sin_cobro'; msgs[0].referencia = String(d.pedidoId); msgs[0].lineas = ls;
+      { const nt = bmNotaParaServidor(d.nota, 'pedido_sin_cobro', ls); if (nt !== '') msgs[0].nota = nt; }
       msgs[0].entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO') });
       nuevos.pedidos = fichaAntes.pedidos + 1; ev.pedidos = fichaAntes.pedidos;
       // «pagar» en el turno siguiente pide el alias de ESTE pedido (`wa_<referencia>`, el id que el servidor le da).
@@ -437,7 +450,7 @@ if (puerta.ruta === 'sigue') {
 
 // EL BOTÓN «VER CATÁLOGO» en el MISMO mensaje del turno (0 mensajes más), desde el dato `enlaceCatalogo` del comercio (la «D7» está derogada, 27/11/2026): en el SALUDO (4.2: el saludo trae opciones) y siempre que lo que el modelo escribió mencione el catálogo, un enlace
 // o una página (el código cumple lo que el texto dice), también con un pedido o un QR en curso. Un texto que no cabe en el cuerpo del botón lleva la dirección en una línea al final. Sin enlace del comercio, nada lo promete.
-if (puerta.ruta === 'sigue' && msgs.length === 1 && enlaceCat !== '' && msgs[0] && msgs[0].payload && msgs[0].payload.type === 'text') {
+if (puerta.ruta === 'sigue' && msgs.length === 1 && enlaceCat !== '' && msgs[0] && msgs[0].payload && msgs[0].payload.type === 'text' && String(msgs[0].texto).indexOf(enlaceCat) < 0) {
   const esSaludo = fichaAntes.saludado !== true && ['modelo', 'cortes', 'anuncio'].indexOf(tipoDePlan) >= 0;
   const mencionaEnlace = tipoDePlan === 'modelo' && BM_PROMETE_ENLACE.test(bmNorm(d.texto));
   if (esSaludo || mencionaEnlace) {
@@ -487,7 +500,7 @@ const salida = msgs.map((m, i) => {
   if (m.reglaCobro === 2) item.reglaCobro = 2;
   if (m.referencia) item.referencia = m.referencia;
   if (m.monto !== undefined) item.monto = m.monto;
-  if ((m.evento === 'qr_enviado' || m.evento === 'pedido_sin_cobro') && Array.isArray(m.lineas) && m.lineas.length) { item.lineas = m.lineas; if (m.entrega) item.entrega = m.entrega; if (m.evento === 'qr_enviado' && typeof m.reemplaza === 'string' && m.reemplaza !== '') item.reemplaza = m.reemplaza; }
+  if ((m.evento === 'qr_enviado' || m.evento === 'pedido_sin_cobro') && Array.isArray(m.lineas) && m.lineas.length) { item.lineas = m.lineas; if (m.entrega) item.entrega = m.entrega; if (typeof m.nota === 'string' && m.nota !== '') item.nota = m.nota; if (m.evento === 'qr_enviado' && typeof m.reemplaza === 'string' && m.reemplaza !== '') item.reemplaza = m.reemplaza; }
   // «Resumen del turno» lee esto del primer ítem: lo que no salió vuelve a su valor anterior.
   if (i === 0 && Object.keys(ev).length) item.revertirFicha = ev;
   // Solo el ítem del QR (`qr_enviado`) devuelve el cobro a como estaba si SU envío falla: el texto del resumen puede fallar y el QR salir (el servidor ya abrió el cobro).

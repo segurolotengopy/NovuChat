@@ -121,7 +121,7 @@ describe('nota con palabras de pago: «Oculta al cliente, clara a la tienda»', 
   const NOTA = 'el anticipo ya está pagado, pago acreditado';
   const flujo = (o: Partial<Opciones> = {}): ReturnType<typeof crear> => crear({ modeloDice: modelo('Listo.', { lineas: [] }), catalogo: catalogoOk({}, REAL as never), entregaPrevia: { modo: 'Retiro en tienda', nombre: 'Ana Pérez' }, ...o });
   for (const usted of [false, true]) {
-    it(`al cliente NO se le repite en ningún mensaje (confirmar y QR) y ve «queda anotada con ${usted ? 'su' : 'tu'} pedido»; a la tienda llega rotulada`, () => {
+    it(`al cliente NO se le repite en ningún mensaje (confirmar y QR) y ve «queda anotada con ${usted ? 'su' : 'tu'} pedido»; a la tienda llega entera en «nota», sin rótulo`, () => {
       const m = flujo(usted ? { base: { tratamiento: 'usted' } } : {});
       const t0 = hablar(m, ANA, mTexto(pegado(STD, '19.458', '\nNota: ' + NOTA)));
       expect(ficha(m).nota).toBe(NOTA);
@@ -135,16 +135,19 @@ describe('nota con palabras de pago: «Oculta al cliente, clara a la tienda»', 
       expect(todo(q)).not.toMatch(/anticipo|acreditado/i);
       expect(todo(q)).toContain(usted ? '(queda anotada con su pedido)' : '(queda anotada con tu pedido)');
       const lineas = evento(q, 'qr_enviado')?.['lineas'] as Rep[];
-      for (const l of lineas) expect(l['detalle']).toMatch(/^Nota escrita por el cliente \(no es un estado de pago\): el anticipo ya está pagado/);
+      // La nota entera viaja UNA vez en `nota`, sin rótulo (la Consola lo pone); el detalle de las líneas no la lleva.
+      expect(evento(q, 'qr_enviado')?.['nota']).toBe(NOTA);
+      for (const l of lineas) expect(l['detalle']).toBeUndefined();
     });
   }
-  it('NEGADO: la red de «pago acreditado» no se toca: una nota normal sale entera como hoy y viaja con el rótulo corto', () => {
+  it('NEGADO: la red de «pago acreditado» no se toca: una nota normal sale entera como hoy y viaja en `nota` sin rótulo', () => {
     const m = flujo();
     const t0 = hablar(m, ANA, mTexto(pegado(STD, '19.458', '\nNota: pagaré en efectivo al recibir')));
     expect(textos(t0).join(' ')).toContain('Nota del cliente: pagaré en efectivo al recibir');
     const q = hablar(m, ANA, mToque(ids(t0).find((x) => x.startsWith('pedido:confirmar'))!, 'Confirmar pedido'));
     expect(textos(q).join(' ')).toContain('Nota del cliente: pagaré en efectivo al recibir');
-    expect(((evento(q, 'qr_enviado')?.['lineas'] as Rep[])[0] ?? {})['detalle']).toBe('nota del cliente: pagaré en efectivo al recibir');
+    expect(evento(q, 'qr_enviado')?.['nota']).toBe('pagaré en efectivo al recibir');
+    expect(((evento(q, 'qr_enviado')?.['lineas'] as Rep[])[0] ?? {})['detalle']).toBeUndefined();
   });
   it('la nota cede ante «¿Quieres confirmar tu pedido?»: con una nota de 500 la pregunta sigue en el mensaje con el botón', () => {
     const diez = Array.from({ length: 10 }, (_, i) => pieza(`pieza-${i}`, `Pieza número ${i} de la colección`, 100 + i));
