@@ -51,6 +51,10 @@ describe.each(COMERCIOS)('rafagaApagada en «Config del negocio»: $nombre', ({ 
 });
 
 describe("Q'Taco no lleva la pieza de ráfagas: la bandera queda lista y la conducta de hoy no cambia", () => {
+  it.each(COMERCIOS.slice(0, 2))('$nombre: NINGÚN nodo lee `rafagaApagada` salvo «Config del negocio» (que solo la copia)', ({ archivo }) => {
+    const leen = leerFlujo(archivo).nodes.filter((n) => JSON.stringify(n).includes('rafagaApagada')).map((n) => n.name);
+    expect(leen).toEqual(['Config del negocio']);
+  });
   it.each(COMERCIOS.slice(0, 2))('$nombre no trae ningún nodo de ráfaga', ({ archivo }) => {
     const nombres = leerFlujo(archivo).nodes.map((n) => n.name);
     expect(nombres.filter((n) => /r[áa]faga/i.test(n))).toEqual([]);
@@ -83,6 +87,23 @@ describe('Chat de NovuChat: «Registrar evento» y la espera de «Esperar ráfag
     expect(r.esperarSeg).toBe(0.1);
   });
 
+  it('con `rafagaApagada: true` NINGÚN evento queda sin respuesta: dos mensajes que se cruzan quedan los dos en la cola de la ficha (con su número de secuencia) y la última ejecución los responde en UNA sola respuesta', () => {
+    const corrida = (config: J, ev: J, ahoraMs: number, estado: J | null, version: number, id: string): J => correr(codigo, [{}], {
+      'Interpretar entrada': { ...entrada, evento: ev, ahoraMs, mensajeId: id },
+      'Puerta del turno': { ruta: 'sigue' },
+      'Config del negocio': { sesion: { ok: true, version, estado }, ...config },
+    }, { $execution: { id: 'ejecucion-de-prueba' } })[0].json;
+    const t0 = Date.UTC(2026, 10, 27, 15, 0, 0);
+    const primero = corrida({ rafagaApagada: true }, { k: 'otro', t: 'quiero 2 cajas', c: '', rubro: '', boton: '' }, t0, null, 1, 'wamid.A');
+    expect(primero.registrado).toBe(true);
+    // El segundo mensaje llega 500 ms después, con el estado que dejó el primero (el servidor ya lo comprometió).
+    const segundo = corrida({ rafagaApagada: true }, { k: 'otro', t: 'de la grande', c: '', rubro: '', boton: '' }, t0 + 500, primero.ficha, 2, 'wamid.B');
+    expect(segundo.registrado).toBe(true);
+    expect(segundo.esperarSeg).toBe(0.1);
+    expect(segundo.seq).toBe(2);
+    expect(segundo.ficha.cola.map((e: J) => e.t)).toEqual(['quiero 2 cajas', 'de la grande']);
+    expect(segundo.ficha.cola.map((e: J) => e.seq)).toEqual([1, 2]);
+  });
   it('NEGADO: `false`, `\'true\'`, `1` y `null` no recortan la espera: solo el true exacto', () => {
     const normal = registrar({}).esperarSeg;
     for (const v of [false, 'true', 1, null, 0]) {
