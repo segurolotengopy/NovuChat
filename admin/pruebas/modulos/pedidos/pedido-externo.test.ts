@@ -22,7 +22,7 @@ const { getFirestore } = requerir('firebase-admin/firestore') as typeof import('
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: 'demo-novuchat-pruebas' });
 const db = getFirestore();
 
-const { armarPedidoWa, crearPedidoWa, configExternaDe, MAX_LINEAS_WA, MAX_UNIDADES_WA } =
+const { armarPedidoWa, crearPedidoWa, configExternaDe, MAX_LINEAS_WA, MAX_UNIDADES_WA, MAX_DETALLE_WA } =
   await import('../../../functions/src/modulos/pedidos/pedidoDelQr.ts');
 const { despuesDelTurnoPedidos } = await import('../../../functions/src/modulos/pedidos/alTurno.ts');
 
@@ -66,6 +66,26 @@ describe('sin dato de catálogo externo: idéntico al comportamiento actual', ()
       expect(configExternaDe(d)).toBeNull();
     }
     expect(configExternaDe({ catalogoExterno: { activo: true, monedas: ['ARS', 'USD', 'BOB'] } })).toEqual({ monedas: ['ARS', 'BOB'] });
+  });
+});
+
+describe('el detalle de una línea externa (27/11/2026: la nota del cliente llega entera, hasta 500)', () => {
+  const nota = (n: number) => `Nota escrita por el cliente (no es un estado de pago): ${'n'.repeat(n)}`.slice(0, n);
+  it('NEGADO: una nota de 500 caracteres entra ENTERA y una de 501 se recorta a 500', () => {
+    expect(MAX_DETALLE_WA).toBe(500);
+    const justa = nota(500); expect(justa.length).toBe(500);
+    expect(armar([ln({ detalle: justa })]).pedido?.items[0]?.['detalle']).toBe(justa);
+    const larga = armar([ln({ detalle: `${justa}x` })]).pedido?.items[0]?.['detalle'] as string;
+    expect(larga).toBe(justa);
+  });
+  it('NEGADO: el detalle corto de siempre no cambia, y una línea sin detalle no inventa uno', () => {
+    expect(armar([ln({ detalle: 'zincado' })]).pedido?.items[0]?.['detalle']).toBe('zincado');
+    expect(armar([ln()]).pedido?.items[0]).not.toHaveProperty('detalle');
+  });
+  it('NEGADO: una nota larga sigue saneada (sin enlaces ni marcas)', () => {
+    const d = armar([ln({ detalle: `${'a'.repeat(200)} https://malo.example/x <b>hola</b> ${'b'.repeat(200)}` })]).pedido?.items[0]?.['detalle'] as string;
+    expect(d.length).toBeGreaterThan(120);
+    expect(d).not.toMatch(/[<>]|https?:|malo\.example/);
   });
 });
 

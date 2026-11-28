@@ -131,7 +131,7 @@ obligue a abrir un modal para saber qué hacer.
 Listado de pedidos con **fecha y hora**, y por cada uno:
 
 - **Todos los ítems** y sus cantidades.
-- **El detalle de cada ítem tal como lo pidió el cliente** —«sin cebolla», «L»—.
+- **El detalle de cada ítem tal como lo pidió el cliente** —«sin cebolla», «L»—. (El servidor guarda hasta `MAX_DETALLE_WA` = 500 caracteres por línea, sin enlaces ni marcas; desde el 27/11/2026 la nota del carrito de Casa Bermejo llega entera. Hoy ninguna pantalla de la Consola pinta ese campo y la confirmación a NovuTienda lleva solo `productoId` y `cantidad`: ambas quedan por decidir.)
   Es lo que más se equivoca y lo que más caro sale equivocar.
 - **La modalidad de entrega**: si va a envío o se retira en el local, con la
   dirección cuando corresponde.

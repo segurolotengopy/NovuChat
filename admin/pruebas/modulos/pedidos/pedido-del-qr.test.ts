@@ -31,7 +31,7 @@ const db = getFirestore();
 const logger = requerir('firebase-functions/logger') as typeof import('firebase-functions/logger');
 
 const P = await import('../../../functions/src/modulos/pedidos/pedidoDelQr.ts');
-const { armarPedidoWa, crearPedidoWa, cerrarPedidoWa, idDePedidoWa, reemplazarPedidoCatalogo } = P;
+const { armarPedidoWa, crearPedidoWa, cerrarPedidoWa, idDePedidoWa, reemplazarPedidoCatalogo, MAX_DETALLE_WA } = P;
 
 const CAT = {
   taco: { nombre: 'Taco', precio: 10, moneda: 'BOB', activo: true },
@@ -75,11 +75,31 @@ describe('armarPedidoWa: el precio sale del catálogo, no del flujo', () => {
     expect(r.pedido?.items).toHaveLength(30);
     expect(r.pedido?.total).toBe(30);
   });
-  it('el detalle se recorta a 120, sin enlaces ni marcas', () => {
-    const r = armar([{ id: 'taco', cantidad: 1, detalle: `<b>${'a'.repeat(300)}</b> http://malo.example` }]);
+  it('el detalle se recorta a MAX_DETALLE_WA (500), sin enlaces ni marcas', () => {
+    const r = armar([{ id: 'taco', cantidad: 1, detalle: `<b>${'a'.repeat(900)}</b> http://malo.example` }]);
     const d = r.pedido?.items[0]?.['detalle'] as string;
-    expect(d.length).toBeLessThanOrEqual(120);
+    expect(d.length).toBeLessThanOrEqual(MAX_DETALLE_WA);
     expect(d).not.toMatch(/[<>]|http/);
+  });
+  it('NEGADO (27/11/2026): una nota de 500 caracteres llega ENTERA y una de 501 se recorta a 500', () => {
+    expect(MAX_DETALLE_WA).toBe(500);
+    const cabe = `Nota escrita por el cliente (no es un estado de pago): ${'n'.repeat(500 - 'Nota escrita por el cliente (no es un estado de pago): '.length)}`;
+    expect(cabe.length).toBe(500);
+    expect(armar([{ id: 'taco', cantidad: 1, detalle: cabe }]).pedido?.items[0]?.['detalle']).toBe(cabe);
+    const larga = armar([{ id: 'taco', cantidad: 1, detalle: `${cabe}x` }]).pedido?.items[0]?.['detalle'] as string;
+    expect(larga.length).toBe(500);
+    expect(larga).toBe(cabe);
+  });
+  it('NEGADO: el detalle CORTO de siempre (piezas de Walisuma, «sin cebolla») no cambia', () => {
+    for (const corto of ['sin cebolla', 'L', 'color: negro', 'x'.repeat(120)]) {
+      expect(armar([{ id: 'taco', cantidad: 1, detalle: corto }]).pedido?.items[0]?.['detalle']).toBe(corto);
+    }
+  });
+  it('NEGADO: una nota larga sigue saneada (sin enlaces ni marcas) aunque ahora quepa más', () => {
+    const r = armar([{ id: 'taco', cantidad: 1, detalle: `${'a'.repeat(200)} https://malo.example/x <script>x</script> ${'b'.repeat(200)}` }]);
+    const d = r.pedido?.items[0]?.['detalle'] as string;
+    expect(d.length).toBeGreaterThan(120);
+    expect(d).not.toMatch(/[<>]|https?:|malo\.example/);
   });
   it('monedas mezcladas: no hay pedido', () => {
     const r = armar([{ id: 'taco', cantidad: 1 }, { id: 'dolar', cantidad: 1 }]);

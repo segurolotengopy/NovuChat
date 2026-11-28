@@ -33,7 +33,9 @@ const db = () => getFirestore();
 
 export const MAX_LINEAS_WA = 30;
 export const MAX_UNIDADES_WA = 50;
-export const MAX_DETALLE_WA = 120;
+// Tope del `detalle` de una línea (catálogo propio y externo). 500 desde el 27/11/2026: la nota que escribe el cliente en el carrito de Casa Bermejo llega
+// ENTERA al pedido (decisión de Andres). Antes 120. Lo que cabe en la línea del cliente por WhatsApp lo acota cada flujo por su lado (p. ej. Walisuma, 120).
+export const MAX_DETALLE_WA = 500;
 const MAX_NOMBRE = 80;
 const MAX_DIRECCION = 200;
 const MAX_NOMBRE_FACTURA = 80;
