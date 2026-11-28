@@ -155,7 +155,7 @@ describe('(3) el turno que vacía el pedido en un paso de datos lo escribe el c�
       enviar(m, cuerpo());
       const t = hablar(m, ANA, mTexto(texto));
       expect(cuerpos(t)).not.toContain(MARCA);
-      expect(cuerpos(t)).toMatch(/vaci[eé] (su|tu) pedido/);
+      expect(cuerpos(t)).toMatch(/Quité .+ de (su|tu) pedido/);
       expect(sinQr(t)).toBe(true);
       expect(ficha(m).carrito).toEqual([]);
     });

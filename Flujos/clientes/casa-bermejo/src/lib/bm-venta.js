@@ -684,7 +684,8 @@ function bmPideFactura(n) {
 function bmQuiereHablar(n) {
   // El mensaje ENTERO «vendedor», «humano», «persona», «una persona», «quiero un vendedor»…: deriva por código, sin depender de que el modelo marque `quiereHablar`.
   if (/^(?:(?:quiero|necesito|busco|pasame con|comunicame con)\s+)?(?:un |una |el |la )?(?:vendedor|vendedora|humano|humana|persona|asesor|asesora)(?: real| humano| humana)?$/.test(String(n || '').trim())) return true;
-  return /\b(hablar con (una |un )?(persona|humano|asesor|asesora|encargado|encargada|vendedor|vendedora|alguien|recepcion)|asesor|asesora|encargad[oa]|recepcion|atencion al cliente|que me llamen|llamenme|llamarme)\b/.test(String(n || ''));
+  // Formas de pedir a una persona (sin tildes, el texto ya viene normalizado): «hablar con alguien», «pásame con una persona», «atención humana», «un asesor», «me atiende alguien», «quiero un humano».
+  return /\b(hablar con (una |un )?(persona|humano|asesor|asesora|encargado|encargada|vendedor|vendedora|alguien|recepcion)|asesor|asesora|encargad[oa]|recepcion|atencion al cliente|que me llamen|llamenme|llamarme|atencion (humana|personal|real)|(pasame|comunicame|ponme|conectame|derivame) con (alguien|una persona|un humano|una humana|un vendedor|una vendedora|el encargado|la encargada)|me (atiende|atienda|atienden|atiendan) (alguien|una persona|un humano|una humana)|alguien me (atienda|atiende|responda)|(un|una) (humano|humana)|hablar con un humano)\b/.test(String(n || ''));
 }
 // El enlace del catálogo web de ESTA conversación (R2, B4, 25/11/2026): el catálogo de NovuChat, que la consola manda como `catalogoWeb.enlace` con `catalogoCompleto: true` (activo, https, sin espacios, de largo acotado).
 // NUNCA el sitio de NovuTienda ni el dato `enlaceCatalogo` de «Config base» (D7, 24/11/2026: ese sitio no se ofrece, aunque alguien lo cargue). Sin enlace de la consola, '' y ningún texto ni botón lo promete («solo se ofrece lo que se cumple»).
@@ -740,6 +741,8 @@ function bmTextoCategorias(c) {
   for (const x of v) { const a = typeof x.area === 'string' ? x.area.split('·')[0].trim() : ''; if (a !== '' && a.length <= 40 && !cats.includes(a)) cats.push(a); }
   if (cats.length === 0) return bmPreguntaFija(c);
   const lista = cats.slice(0, 6);
+  // Más de seis categorías: remisión expresa («y otras categorías»), nunca un tope en silencio.
+  if (cats.length > 6) return 'Tenemos piezas de ' + lista.join(', ') + ' y otras categorías. ' + bmPreguntaFija(c);
   return 'Tenemos piezas de ' + (lista.length > 1 ? lista.slice(0, -1).join(', ') + ' y ' + lista[lista.length - 1] : lista[0]) + '. ' + bmPreguntaFija(c);
 }
 function bmPreguntaFija(c) {
@@ -946,7 +949,7 @@ function bmRedaccion(texto, textoCliente, vendibles) {
 // -----------------------------------------------------------------------------
 // Las piezas del catálogo que el cliente nombra: el sistema las busca en TODO el catálogo (palabras del texto contra las del nombre; las cifras cuentan) y se las muestra al modelo, para que ni niegue una pieza que sí existe
 // ni invente una que no. Sin coincidencia lo dice: «ninguna».
-function bmPuntuarCoincidencias(texto, vendibles) {
+function bmPuntuarCoincidencias(texto, vendibles, sinTope) {
   const FUERA = new Set(['quiero', 'tienen', 'tiene', 'tienes', 'cuanto', 'cuesta', 'precio', 'para', 'con', 'los', 'las', 'del', 'que', 'por', 'hola', 'buenas', 'buenos', 'dias', 'tardes', 'noches', 'favor', 'gracias', 'como', 'cual', 'cuales', 'hay', 'esta', 'este', 'esto', 'eso', 'ese', 'sus', 'mis', 'necesito', 'busco', 'sale', 'valor', 'costo', 'comprar', 'deseo', 'quisiera', 'puedo', 'ver', 'mas', 'muy', 'son', 'ser', 'pedir', 'venden', 'vende', 'info', 'informacion']);
   const norma = bmNorm(texto);
   // «9 kg» y «18 BTU» se leen también pegados («9kg», «18btu»), como están en los nombres del catálogo.
@@ -961,7 +964,7 @@ function bmPuntuarCoincidencias(texto, vendibles) {
     const m = [];
     for (const w of pal) { if (n.includes(' ' + w + ' ') || unidos.includes(' ' + w + ' ') || (w.length >= 5 && n.includes(' ' + w.replace(/s$/, '')))) { p += /\d/.test(w) ? 2 : 1; m.push(w); } }
     return { v: v, p: p, m: m.join(' ') };
-  }).filter((x) => x.p > 0).sort((a, b) => b.p - a.p).slice(0, 6);
+  }).filter((x) => x.p > 0).sort((a, b) => b.p - a.p).slice(0, sinTope === true ? 1000 : 6);
 }
 // La pieza que el cliente pidió, fijada por CÓDIGO: una línea NUEVA del pedido que propone el modelo solo entra si el cliente la nombró. Si lo que nombró es un TIPO que varias piezas comparten con las mismas palabras
 // («un aire», «de 18 BTU»), no se agrega ninguna y el texto lo arma el código con las opciones y sus precios (humo de Silvana, paso 5: «de 18 BTU» terminó en el de 12 BTU).
@@ -1004,6 +1007,8 @@ function bmAgregarPorOrden(textoCliente, vendibles) {
   const w = Object.keys(palabras).find((k) => new RegExp('\\b' + k + '\\b').test(n));
   return [{ id: empate[0].v.id, cantidad: w ? palabras[w] : 1, detalle: '' }];
 }
+// Todas las piezas que el texto del cliente nombra, sin el tope de seis de las coincidencias que se muestran (para validar las líneas que propone el modelo).
+function bmIdsNombradas(texto, vendibles) { return (bmPuntuarCoincidencias(texto, vendibles, true) || []).map((x) => x.v.id); }
 function bmIdsCoincidencias(texto, vendibles) { return (bmPuntuarCoincidencias(texto, vendibles) || []).map((x) => x.v.id); }
 function bmCoincidencias(texto, vendibles) {
   const lista = Array.isArray(vendibles) ? vendibles : [];
@@ -1711,9 +1716,15 @@ function bmResolverDato(c) {
 function bmResolverModelo(c) {
   const f = c.ficha;
   const p = c.plan;
-  const j = cnJsonDeGemini(c.modeloResp);
-  if (!j || typeof j.texto !== 'string' || j.texto.trim() === '') return bmDerivar(c, 'modelo_caido');
+  const j0 = cnJsonDeGemini(c.modeloResp);
+  if (!j0) return bmDerivar(c, 'modelo_caido');   // un error REAL de la llamada (sin respuesta, JSON inválido)
   const antes = vcLineas(f.carrito, c.vendibles).lineas;
+  // REGLA ÚNICA (la dueña, undécima ronda del #1142): con el pedido VACÍO ni el texto ni las MARCAS del modelo deciden nada. Se ignoran su texto, su `entrega`, su `quiereHablar` (el pedido real de una persona lo decide `bmQuiereHablar`, por código, en «Decidir turno») y toda línea cuya pieza el CÓDIGO no encuentra nombrada en el texto del cliente (sin «No pude agregar», sin contar insistencia, sin ventana).
+  // Un texto vacío del modelo NO es un error con el pedido vacío. Con un pedido en curso todo sigue como siempre.
+  const vacioInicial = antes.length === 0;
+  if (!vacioInicial && (typeof j0.texto !== 'string' || j0.texto.trim() === '')) return bmDerivar(c, 'modelo_caido');
+  const nombradasPorElCliente = new Set(vacioInicial ? bmIdsNombradas(p.textoCliente, c.vendibles) : []);
+  const j = !vacioInicial ? j0 : { texto: '', lineas: (Array.isArray(j0.lineas) ? j0.lineas : []).filter((l) => l && typeof l === 'object' && nombradasPorElCliente.has(l.id)), entrega: {}, facturacion: {}, quiereHablar: false };
   // Una lista vacía del modelo SIN una orden clara de vaciar el pedido no borra el carrito (el modelo a veces devuelve [] por descuido): se conserva el de la ficha.
   // ¿El cliente pide VACIAR el pedido o quitar una pieza que tiene en el carrito? Sin una orden clara, un `[]` del modelo no borra nada. «cancelar» NO cuenta: en Bolivia es pagar. «ya no quiero la entrega…» cambia el modo, no las piezas.
   const tOrden = bmNorm(p.textoCliente);
@@ -1760,10 +1771,8 @@ function bmResolverModelo(c) {
   // Lo demás (garantía, costo del envío, una pieza que no existe…) sí deriva aunque haya pedido en curso. Entonces el texto del turno lo arma `bmTextoDeEstado`, nunca la redacción del modelo («lo verá una persona del equipo»).
   const ignoraQuiereHablar = j.quiereHablar === true && (listo || (lineas.length > 0 && comp.reconocido === true));
   // Al derivar NO se pierden los datos ya capturados (el cliente no los repite): el pedido y la entrega se guardan igual (`guardaPedido`).
-  // Con el pedido VACÍO el pedido real de hablar con una persona lo decide el CÓDIGO (`bmQuiereHablar`, en «Decidir turno», antes del modelo): la marca `quiereHablar` del modelo ante un texto VAGO (menos de tres palabras: «hmm», «ok», «hola?») no deriva ni abre la ventana de 2 h.
-  // SEGUIMIENTO: un texto vago más largo («hola buenas tardes») aún puede derivar por la marca del modelo; el detector por código no cubre pedidos de una pieza que no existe.
-  const textoVago = lineas.length === 0 && antes.length === 0 && bmNorm(p.textoCliente).split(' ').filter((w) => w !== '').length < 3;
-  if (j.quiereHablar === true && !ignoraQuiereHablar && !textoVago) return Object.assign(bmDerivar(c, 'quiere_hablar'), { guardaPedido: true, lineas: lineas, entrega: entrega, nota: lineas.length === 0 ? '' : (typeof f.nota === 'string' ? f.nota : '') });
+  // Con el pedido VACÍO la marca `quiereHablar` del modelo ya viene ignorada (ver arriba): el pedido real de una persona lo decide `bmQuiereHablar`.
+  if (j.quiereHablar === true && !ignoraQuiereHablar) return Object.assign(bmDerivar(c, 'quiere_hablar'), { guardaPedido: true, lineas: lineas, entrega: entrega, nota: lineas.length === 0 ? '' : (typeof f.nota === 'string' ? f.nota : '') });
   const cambio = !vcMismoCarrito(antes, lineas);
   // Un número de otro país se atiende como Bolivia y se avisa UNA vez a la tienda (1 mensaje por caso): el aviso sale si aún no se le avisó de este teléfono.
   const avisoPais = c.t && c.t.fueraDePais === true && f.avisoPaisMs === 0 ? bmAvisoConsulta(c, 'otro_pais') : null;
@@ -1833,10 +1842,11 @@ function bmResolverModelo(c) {
     return !fin || fin.cantidad < cant;
   });
   // El texto REVISADO del modelo (el único que pasa por las reglas de I-1 e I-4: los textos fijos del código nunca se reemplazan).
-  const textoModelo = bmRedaccion(j.texto, p.textoCliente, c.vendibles);
-  // I-1: con el pedido vacío y sin cambios el texto del modelo NO sale nunca; lo responde el código (coincidencias, pregunta fija, categorías o procedimiento).
+  // Con el pedido VACÍO y sin cambios el TEXTO del modelo no se lee para decidir NADA (undécima ronda del #1142): ni lo redacta ni lo revisa ninguna regla que mire `j.texto` (R59, afirmaciones, promesas…). La salida y el parche de la ficha son los mismos para cualquier texto del modelo.
   const vacioSinCambio = lineas.length === 0 && antes.length === 0;
-  const bloqueaVacio = vacioSinCambio && textoModelo !== '';
+  const textoModelo = vacioSinCambio ? '' : bmRedaccion(j.texto, p.textoCliente, c.vendibles);
+  // I-1: con el pedido vacío y sin cambios el texto del modelo NO sale nunca; lo responde el código (coincidencias, pregunta fija, categorías o procedimiento).
+  const bloqueaVacio = vacioSinCambio;
   // Estándar 6.1: una pregunta por un medio de pago que el comercio no tiene cargado («¿aceptan efectivo?», «¿se puede pagar con tarjeta?») no la contesta el modelo ni «Aún no tengo claro»: pasa con recepción (aviso + botón).
   const medioPago = bmPreguntaMedioPago(p.textoCliente, c);
   const procedimiento = bmPreguntaProcedimiento(p.textoCliente) || medioPago === 'cargado';
@@ -1864,13 +1874,19 @@ function bmResolverModelo(c) {
     } else texto = '';
   } else if (afirmaDeMas && fijada.texto === '' && !entro && propuestaInvalida) texto = 'No pude agregar esa pieza al pedido.\n\n' + texto;
   // Revisión de la ronda 11: en el turno que VACÍA el pedido respondiendo a un paso de datos (nombre, ciudad…: «Ana Pérez, ya no quiero nada»), el texto es FIJO del código; con el pedido vacío `enEntrega` ya no vale y salía el texto del modelo.
-  if (ordenVaciar && antes.length > 0 && lineas.length === 0 && (pideAntes.length > 0 || bmEntregaCompleta(f.entrega, c.mercado))) texto = (c.base && c.base.tratamiento === 'usted') ? 'Listo, vacié su pedido. Dígame qué pieza le interesa.' : 'Listo, vacié tu pedido. Dime qué pieza te interesa.';
+  if (ordenVaciar && antes.length > 0 && lineas.length === 0) {
+    // El turno que VACÍA el pedido: texto fijo del código («Quité … de su pedido.») seguido de LA MISMA pregunta fija de siempre (`bmPreguntaFija`), en el trato del comercio, y el contador en cero.
+    const nombres = antes.map((l) => { const v = c.vendibles.find((x) => x.id === l.id); return v ? v.nombre : ''; }).filter((x) => x !== '');
+    const usted = !!(c.base && c.base.tratamiento === 'usted');
+    texto = (nombres.length ? 'Quité ' + nombres.join(', ') : 'Quité todo') + (usted ? ' de su pedido.' : ' de tu pedido.') + '\n\n' + bmPreguntaFija(c);
+    sinAvance = 0;
+  }
   // Negar una pieza que el catálogo sí tiene («solo disponemos de la de 9 kg» cuando hay de 9, 15 y 17 kg): el texto lo arma el código con las piezas que coinciden.
   if (texto !== '' && /\b(solo|unicamente)\s+(disponemos|tenemos|contamos|hay|ofrecemos)\b/.test(bmNorm(texto))) { const coinc = bmTextoDeCoincidencias(p.textoCliente, c.vendibles, 1, c.base && c.base.tratamiento === 'usted'); if (coinc !== '') texto = coinc; }
   // El mensaje pegado del sitio con montos DISTINTOS a los del catálogo vivo: se cobra siempre el vivo y se avisa en el mismo mensaje (el resumen trae el total real).
   if (sitioConPreciosDistintos) texto = BM_TEXTO_PRECIOS_DISTINTOS + ' ' + texto;
   // R59: el modelo afirmó «precios actualizados» (u otra constancia que el sistema no respalda): `bmRedaccion` descartó su texto; sale el fijo que sí se cumple (los precios se leen del catálogo en cada turno).
-  if (texto === '' && typeof j.texto === 'string' && BM_AFIRMA_PRECIOS.test(bmNorm(j.texto))) texto = BM_TEXTO_PRECIOS_VIVOS;
+  if (texto === '' && !vacioSinCambio && typeof j.texto === 'string' && BM_AFIRMA_PRECIOS.test(bmNorm(j.texto))) texto = BM_TEXTO_PRECIOS_VIVOS;
   // R58 / I-4 «Solo escribe el código»: en la ventana tras derivar y sin cambio del pedido el texto del modelo NO sale nunca; con el pedido vacío tampoco sale ninguna otra respuesta del catálogo (coincidencias, «No pude agregar…»): solo lo que el código ya contesta (`fijada.texto`) o el texto fijo.
   // Con piezas en el pedido, el texto de estado del código (`bmTextoDeEstado`) sigue siendo del código y sale.
   if (trasDerivar && texto !== '' && (texto === textoModelo || (lineas.length === 0 && texto !== fijada.texto))) { texto = bmTextoTrasDerivar(c); fallos = 0; }

@@ -18,7 +18,7 @@ describe('el error del modelo, la pieza sin precio y el volumen pasan con recepc
     ['300 piezas', {}, 'quiero 300 piezas'],
     ['pide factura', {}, 'necesito factura con mi NIT'],
     ['pide hablar con una persona', {}, 'quiero hablar con una persona'],
-    ['el modelo marca quiereHablar', { modeloDice: modelo('Lo ve una persona.', { quiereHablar: true }) }, 'quiero algo especial hecho a medida'],
+    ['el cliente pide una persona (detector por código)', { modeloDice: modelo('Hola.') }, 'necesito atención humana'],
   ];
   for (const [nombre, o, texto] of casos) {
     it(`${nombre}: exactamente UN mensaje, con el botón de recepción, y UN aviso al comercio`, () => {

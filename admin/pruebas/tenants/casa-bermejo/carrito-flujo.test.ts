@@ -33,13 +33,16 @@ describe('lo que propone el modelo se valida contra el catálogo', () => {
   });
   it('más de 30 líneas distintas y más de 50 unidades por producto se recortan', () => {
     const muchas = Array.from({ length: 40 }, (_, i) => ({ id: `pieza-${i + 1}`, nombre: `Pieza ${i + 1}`, area: 'Prueba', precio: 10 + i, precioCentavos: (10 + i) * 100, moneda: 'BOB', activo: true, stock: null, disponible: true }));
-    const m = crear({ catalogo: catalogoOk({}, muchas), modeloDice: pide([...muchas.map((x) => ({ id: x.id, cantidad: 1 })), { id: 'pieza-1', cantidad: 999 }]) });
-    hablar(m, ANA, mTexto('quiero muchas cosas'));
+    // Con el pedido vacío solo entra la pieza que el cliente nombró (undécima ronda): primero «pieza 1», y con el pedido en curso el modelo propone las 40 y 999 unidades.
+    let turnos = 0;
+    const m = crear({ catalogo: catalogoOk({}, muchas), modeloDice: () => { turnos++; return modelo('Con gusto.', { lineas: turnos === 1 ? [{ id: 'pieza-1', cantidad: 1 }] : [...muchas.map((x) => ({ id: x.id, cantidad: 1 })), { id: 'pieza-1', cantidad: 999 }] }); } });
+    hablar(m, ANA, mTexto('quiero pieza 1'));
+    hablar(m, ANA, mTexto('agrega todas, pieza 1 son 999'));
     const car = fichas(m)[ANA].carrito as { id: string; cantidad: number }[];
     expect(car.length).toBeLessThanOrEqual(30);
     expect(car.find((l) => l.id === 'pieza-1')?.cantidad).toBe(50);
     const m2 = crear({ catalogo: catalogoOk({}, muchas.slice(0, 1).map((x) => ({ ...x, id: BIL, nombre: 'Billetera', precio: 450, precioCentavos: 45000 }))), modeloDice: pide([{ id: BIL, cantidad: 500 }]) });
-    hablar(m2, ANA, mTexto('quiero muchísimas'));
+    hablar(m2, ANA, mTexto('quiero billetera'));
     expect(fichas(m2)[ANA].carrito[0].cantidad).toBe(50);
   });
   it('NEGADO: el modelo no puede decir un total ni un importe inventado: el texto cae al fijo', () => {

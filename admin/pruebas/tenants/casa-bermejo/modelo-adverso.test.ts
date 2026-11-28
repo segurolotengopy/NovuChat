@@ -195,9 +195,15 @@ describe('NEGADO: el cliente que sí pide una persona sigue derivando', () => {
     hablar(m, ANA, mTexto('recojo en tienda'));
     expect(hablar(m, ANA, mTexto('quiero hablar con una persona')).avisos.length).toBeGreaterThanOrEqual(1);
   });
-  it('sin pedido en curso, el quiereHablar del modelo (una pieza que no existe) sigue derivando', () => {
+  it('sin pedido en curso, la marca quiereHablar del modelo se IGNORA (undécima ronda): el pedido real de una persona lo decide el detector por código, con formas variadas', () => {
     const m = crear({ modeloDice: modelo('Lo verá una persona del equipo.', { lineas: [], quiereHablar: true }) });
-    expect(hablar(m, ANA, mTexto('quiero un televisor de 80 pulgadas')).avisos.length).toBeGreaterThanOrEqual(1);
+    expect(hablar(m, ANA, mTexto('quiero un televisor de 80 pulgadas')).avisos.length).toBe(0);
+    for (const x of ['quiero hablar con alguien', 'Pásame con una persona', 'atención humana', 'un asesor', '¿me atiende alguien?', 'QUIERO UN HUMANO']) {
+      expect(hablar(crear({ modeloDice: modelo('Hola.') }), ANA, mTexto(x)).avisos.length, x).toBeGreaterThanOrEqual(1);
+    }
+    for (const x of ['hola buenas tardes', 'alguien sabe el precio?', 'quiero una billetera']) {
+      expect(hablar(crear({ modeloDice: modelo('Hola.') }), ANA, mTexto(x)).avisos.length, x).toBe(0);
+    }
   });
   it('un nombre capturado NUNCA basta para ignorar un quiereHablar: deriva y GUARDA el nombre (no se repite)', () => {
     let n = 0;

@@ -88,7 +88,7 @@ describe('I1. vaciar el pedido en el RESUMEN con el modelo que vacía: texto fij
       hablar(m, ANA, mTexto('Ana Pérez'));
       const t = hablar(m, ANA, mTexto(texto));
       expect(cuerpos(t)).not.toContain(MARCA);
-      expect(cuerpos(t)).toMatch(/vaci[eé] (su|tu) pedido/);
+      expect(cuerpos(t)).toMatch(/Quité .+ de (su|tu) pedido/);
       expect(sinQr(t)).toBe(true);
       expect(ficha(m).carrito).toEqual([]);
     });
@@ -97,7 +97,7 @@ describe('I1. vaciar el pedido en el RESUMEN con el modelo que vacía: texto fij
       enviar(m, cuerpo({ total: 999 }));
       const t = hablar(m, ANA, mTexto(texto));
       expect(cuerpos(t)).not.toContain(MARCA);
-      expect(cuerpos(t)).toMatch(/vaci[eé] (su|tu) pedido/);
+      expect(cuerpos(t)).toMatch(/Quité .+ de (su|tu) pedido/);
       expect(sinQr(t)).toBe(true);
     });
   }
@@ -106,7 +106,7 @@ describe('I1. vaciar el pedido en el RESUMEN con el modelo que vacía: texto fij
     enviar(m, cuerpo());
     hablar(m, ANA, mTexto('Ana Pérez'));
     const t = hablar(m, ANA, mTexto('gracias'));
-    expect(cuerpos(t)).not.toMatch(/vaci[eé] (su|tu) pedido/);
+    expect(cuerpos(t)).not.toMatch(/Quité .+ de (su|tu) pedido/);
     expect(ficha(m).carrito.length).toBeGreaterThan(0);
   });
 });

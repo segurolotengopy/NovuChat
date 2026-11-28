@@ -149,7 +149,9 @@ describe('la decisión de la venta: el modelo conversa, el código calcula', () 
   });
   it('NEGADO: un modelo que no devuelve JSON, o pide hablar con una persona, pasa con un vendedor', () => {
     expect(b('bmResolver')(ctx({ modeloResp: { candidates: [] } }))).toMatchObject({ tipo: 'derivar', motivo: 'modelo_caido' });
-    expect(b('bmResolver')(ctx({ modeloResp: gemini({ texto: 'Lo verá una persona.', lineas: [], quiereHablar: true }) }))).toMatchObject({ tipo: 'derivar', motivo: 'quiere_hablar' });
+    // Con el pedido VACÍO la marca del modelo se ignora (undécima ronda): el pedido real de una persona lo decide `bmQuiereHablar`, por código, en «Decidir turno». Con un pedido en curso la marca sigue valiendo.
+    expect(b('bmResolver')(ctx({ modeloResp: gemini({ texto: 'Lo verá una persona.', lineas: [], quiereHablar: true }) }))).toMatchObject({ tipo: 'modelo' });
+    expect(b('bmResolver')(ctx({ ficha: { carrito: [{ id: 'p1', cantidad: 1, detalle: '' }] }, modeloResp: gemini({ texto: 'Lo verá una persona.', lineas: [{ id: 'p1', cantidad: 1 }], quiereHablar: true }) }))).toMatchObject({ tipo: 'derivar', motivo: 'quiere_hablar' });
   });
 });
 
@@ -1109,7 +1111,7 @@ describe('R36: el mensaje pegado del sitio, formato viejo y nuevo; los montos de
 describe('R47: el precio del catálogo se usa tal cual y el total es cantidad × precio (dos unidades = dos veces el precio), en bolivianos y en pesos', () => {
   const total = (items: unknown[], mercado: string, lineas: { id: string; cantidad: number }[]) => {
     const c = b('bmCatalogo')(http(items, mercado === 'AR' ? { mercado: 'AR', moneda: 'ARS' } : {}), AHORA, base, mercado);
-    const r = b('bmResolver')(ctx({ mercado, catalogo: c, vendibles: c.vendibles, modos: ['recojo en tienda', 'envío'], ficha: { carrito: [], entrega: { modo: 'recojo en tienda', nombre: 'Ana' } }, plan: { tipo: 'modelo', textoCliente: 'quiero pagar' }, modeloResp: gemini({ texto: 'Con gusto.', lineas }) }));
+    const r = b('bmResolver')(ctx({ mercado, catalogo: c, vendibles: c.vendibles, modos: ['recojo en tienda', 'envío'], ficha: { carrito: [], entrega: { modo: 'recojo en tienda', nombre: 'Ana' } }, plan: { tipo: 'modelo', textoCliente: 'quiero pagar ' + items.map((i) => String((i as { nombre: string }).nombre)).join(' ') }, modeloResp: gemini({ texto: 'Con gusto.', lineas }) }));
     return { r, c };
   };
   it('BOB: dos unidades de Bs 3.410 = Bs 6.820 (682000 centavos)', () => {
@@ -1123,7 +1125,7 @@ describe('R47: el precio del catálogo se usa tal cual y el total es cantidad ×
     expect(b('vcTotalCentavos')(r.lineas)).toBe(2 * 45000000);
   });
   it('NEGADO: nada se redondea ni se recalcula: un precio con centavos del catálogo se muestra tal cual (Bs 120,50 ×2 = Bs 241), sin ajustarlo a un entero', () => {
-    const { r } = total([item({ id: 'x', nombre: 'X', precio: 120.5, precioCentavos: 12050 })], 'BO', [{ id: 'x', cantidad: 2 }]);
+    const { r } = total([item({ id: 'x', nombre: 'EQUIS', precio: 120.5, precioCentavos: 12050 })], 'BO', [{ id: 'x', cantidad: 2 }]);
     expect(b('vcTotalCentavos')(r.lineas)).toBe(24100);
     expect(r.resumen).toContain('Total: Bs 241');
   });

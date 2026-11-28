@@ -66,8 +66,8 @@ describe('el carrito, la ficha y el QR no se comparten entre teléfonos', () => 
     const m = crear({ modeloDice: (ll) => modelo('Con gusto.', { lineas: [{ id: /ana/.test(ultimo(ll)) ? 'billetera-cuero' : 'bufanda-vicuna', cantidad: 1 }] }) });
     sembrarEntrega(m, ANA, { ...ENTREGA, nombre: 'Ana' });
     sembrarEntrega(m, BETO, { ...ENTREGA, nombre: 'Beto' });
-    hablar(m, ANA, mTexto('soy ana, una pieza'));
-    hablar(m, BETO, mTexto('soy beto, una pieza'));
+    hablar(m, ANA, mTexto('soy ana, una billetera'));
+    hablar(m, BETO, mTexto('soy beto, una bufanda'));
     const tAna = hablar(m, ANA, mTexto('ana quiere pagar'));
     expect(tAna.mensajes.some((x) => x.tipo === 'image')).toBe(true);
     const f = fichas(m);

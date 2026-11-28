@@ -365,7 +365,8 @@ describe('11. el cuerpo de «Confirmar pedido» cabe en 1.024 caracteres con un 
     const lineas = PIEZAS.slice(0, cuantas).map((p) => ({ id: p.id, cantidad: 1 }));
     let n = 0;
     const m = crear({ base: DATOS, catalogo: catalogoOk({}, items(cuantas) as never), modeloDice: (ll: LlamadaDoble) => { n++; return modelo('Anoté todo.', { lineas, entrega: n === 1 ? {} : { nombre: textoAlModelo(ll) } }); } });
-    hablar(m, ANA, mTexto('quiero todo'));
+    // El pedido entra por el mensaje pegado del sitio («N x Nombre (cód. id)»): con el pedido vacío el modelo ya no decide qué piezas entran (undécima ronda).
+    hablar(m, ANA, mTexto('Hola, quiero comprar estos productos:\n' + PIEZAS.slice(0, cuantas).map((p) => `1 x ${p.nombre} (cód. ${p.id}): Bs ${p.precio} c/u, subtotal Bs ${p.precio}`).join('\n') + '\nTotal referencial: Bs ' + PIEZAS.slice(0, cuantas).reduce((a, p) => a + p.precio, 0)));
     hablar(m, ANA, mToque('entrega:retiro', 'Recojo en tienda'));
     return hablar(m, ANA, mTexto(ultimo));
   };

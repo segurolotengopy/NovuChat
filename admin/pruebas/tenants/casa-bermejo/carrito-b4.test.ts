@@ -492,7 +492,8 @@ describe('R59: el asistente no afirma «precios actualizados» sin respaldo', ()
       const m = crear({ modeloDice: modelo(afirma) });
       const t = hablar(m, ANA, mTexto('¿Los precios que me pasó son reales?'));
       expect(cuerpos(t), afirma).not.toMatch(/actualiz|verificad/i);
-      expect(cuerpos(t), afirma).toMatch(/catálogo en este momento/);
+      expect(cuerpos(t), afirma).toMatch(/¿Qué producto busca/);   // con el pedido VACÍO el texto del modelo no se lee para decidir nada (undécima ronda): sale la pregunta fija, no «catálogo en este momento»
+      expect(cuerpos(t), afirma).not.toMatch(/catálogo en este momento/);
     }
   });
   it('NEGADO (falso positivo, ronda 2): pedirle al cliente que verifique el monto NO es afirmar que los precios están verificados: ese texto SÍ sale', () => {

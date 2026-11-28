@@ -197,10 +197,11 @@ describe('4. si el modelo dice que agregó una pieza que el código no agregó, 
 });
 
 describe('5. correcciones de la revisión independiente (27/11)', () => {
-  it('NEGADO: «Agregué el licor» con el pedido VACÍO sale «No pude agregar esa pieza… ¿cuál le interesa?» (nunca «No encuentro eso» ni el «cuéntame más» genérico)', () => {
+  it('NEGADO (undécima ronda): «Agregué el licor» con el pedido VACÍO: la línea que el código no encuentra nombrada se ignora entera (sin «No pude agregar»), sale la pregunta fija y nunca «No encuentro eso» ni el «cuéntame más» genérico', () => {
     const m = crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: modelo('Agregué el licor de coca.', { lineas: [{ id: 'licor-de-coca', cantidad: 1 }] }) });
     const t = hablar(m, ANA, mTexto('Quiero el licor de coca'));
-    expect(textos(t).join(' ')).toMatch(/No pude agregar esa pieza al pedido\.\n\n¿Cuál de nuestras piezas/);   // M-2: línea en blanco tras la frase
+    expect(textos(t).join(' ')).not.toMatch(/No pude agregar/);
+    expect(textos(t).join(' ')).toMatch(/¿Qué producto buscas\?/);
     expect(textos(t).join(' ')).not.toMatch(/No encuentro eso|Cuéntame un poco más|no tenemos catálogo/i);
   });
   it('NEGADO: con un pedido en curso, «Agregué el licor» antepone «No pude agregar esa pieza» y conserva el pedido, sin negar el catálogo', () => {
@@ -284,14 +285,15 @@ describe('6. segunda revisión del #1142 (27/11): se dice solo lo que el código
     expect(textos(t).join(' ')).not.toMatch(/agregue la billetera/i);
     expect(textos(t).join(' ')).toMatch(/¿Qué producto buscas\?/);
   });
-  it('I-2 NEGADO: «No pude agregar esa pieza» tres veces seguidas: la segunda vez pasa con recepción (aviso + botón), no repite la frase', () => {
+  it('I-2 NEGADO (undécima ronda): con el pedido vacío la línea inventada se ignora (nunca «No pude agregar»); la insistencia cuenta como vaga y el 3.º seguido pasa con recepción (aviso + botón)', () => {
     const m = dice('Agregué el licor de coca.', [{ id: 'licor-de-coca', cantidad: 1 }]);
     const t1 = hablar(m, ANA, mTexto('Quiero el licor de coca'));
-    expect(textos(t1).join(' ')).toMatch(/No pude agregar esa pieza/);
+    expect(textos(t1).join(' ')).not.toMatch(/No pude agregar esa pieza/);
     const t2 = hablar(m, ANA, mTexto('Quiero el licor de coca por favor'));
     expect(textos(t2).join(' ')).not.toMatch(/No pude agregar esa pieza/);
-    expect(t2.llamadas.ingesta.length + t2.mensajes.length).toBeGreaterThan(0);
-    expect(JSON.stringify(t2.mensajes.map((x) => x.payload))).toMatch(/recepci|persona|equipo/i);
+    const t3 = hablar(m, ANA, mTexto('Quiero el licor de coca ya'));
+    expect(JSON.stringify(t3.mensajes.map((x) => x.payload))).toMatch(/recepci|persona|equipo/i);
+    expect(t3.avisos.length).toBeGreaterThanOrEqual(1);
   });
   it('I-3 NEGADO: «¿tienen billeteras?» con un id inventado muestra la Billetera de cuero que sí existe (el texto fijo no la tapa)', () => {
     const t = hablar(dice('Agregué las billeteras.', [{ id: 'billeteras-inventadas', cantidad: 1 }]), ANA, mTexto('¿tienen billeteras?'));
