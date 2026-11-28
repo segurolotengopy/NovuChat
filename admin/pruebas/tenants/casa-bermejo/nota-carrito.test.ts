@@ -162,7 +162,9 @@ describe('3. tras derivar, tampoco se ofrece sumar una pieza concreta', () => {
     });
   }
   it('control: sin haber derivado, la misma invitación SÍ sale', () => {
-    expect(textos(hablar(flujo('¿Le gustaría sumar una bufanda?'), ANA, mTexto('Bien, gracias'))).join(' ')).toContain('sumar una bufanda');
+    // Desde la quinta revisión (Estándar 5.9) una pregunta que nombra una pieza que el catálogo NO tiene («un televisor») no sale ni sin haber derivado; una pregunta legítima sí.
+    expect(textos(hablar(flujo('¿Le gustaría ver otra pieza?'), ANA, mTexto('Bien, gracias'))).join(' ')).toContain('ver otra pieza');
+    expect(textos(hablar(flujo('¿Le gustaría sumar un televisor?'), ANA, mTexto('Bien, gracias'))).join(' ')).not.toContain('televisor');
   });
   it('NEGADO: tras derivar, ni una frase que no ofrece nada («Con mucho gusto, quedo atento.») sale: responde el código', () => {
     const m = crear({ modeloDice: (ll: LlamadaDoble) => (/persona/.test(textoAlModelo(ll)) ? modelo('Lo verá una persona del equipo.', { quiereHablar: true }) : modelo('Con mucho gusto, quedo atento.')) });
