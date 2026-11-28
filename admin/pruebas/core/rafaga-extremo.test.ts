@@ -151,7 +151,12 @@ describe('rafaga de punta a punta: Walisuma (flujo real + cableado mínimo, piez
 describe('rafaga de punta a punta: Bellido (agenda-minima.v0, flujo real + cableado mínimo, pieza injertada en memoria)', () => {
   /** Bellido con la pieza (fuente «Interpretar entrada», que es el nodo que emite `texto`) y su cableado (`Decidir turno` lee `textoDelTurno`), corrido por el motor genérico con dobles de red. */
   function mundoBellido(consulta: (cuerpo: J) => J, conCableado = true) {
-    const real = JSON.parse(readFileSync(join(RAIZ_FLUJOS, 'clientes/agenda-minima/agenda-minima.v0.json'), 'utf8')) as J;
+    const real = quitarRafaga(JSON.parse(readFileSync(join(RAIZ_FLUJOS, 'clientes/agenda-minima/agenda-minima.v0.json'), 'utf8'))) as J;
+    // Sin cableado: el «Decidir turno» de Bellido (que YA lee `textoDelTurno`) se vuelve ciego a «Agrupar ráfaga», como un flujo sin consumidor.
+    if (!conCableado) {
+      const decidir = real.nodes.find((n: J) => n.name === 'Decidir turno');
+      decidir.parameters.jsCode = decidir.parameters.jsCode.replace("cnPrimero('Agrupar ráfaga')", 'null');
+    }
     const original = conCableado ? cablearBellido(real) : real;
     const flujo = injertarRafaga(original, { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Bajar medio?' }, fuente: 'Interpretar entrada', campos: { texto: 'texto' }, consumidor: conCableado ? 'Decidir turno' : null }) as J;
     const dobles: Record<string, (ll: J) => J> = {};
@@ -201,7 +206,7 @@ describe('rafaga de punta a punta: Bellido (agenda-minima.v0, flujo real + cable
   });
 
   it('con «Normalizar entrada» (que no emite el mensaje) la pieza ni se arma', () => {
-    const original = cablearBellido(JSON.parse(readFileSync(join(RAIZ_FLUJOS, 'clientes/agenda-minima/agenda-minima.v0.json'), 'utf8')) as J);
+    const original = cablearBellido(quitarRafaga(JSON.parse(readFileSync(join(RAIZ_FLUJOS, 'clientes/agenda-minima/agenda-minima.v0.json'), 'utf8'))) as J);
     expect(() => injertarRafaga(original, { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Bajar medio?' }, fuente: 'Normalizar entrada', campos: { texto: 'texto' }, consumidor: 'Decidir turno' })).toThrow(/no emite/);
   });
 

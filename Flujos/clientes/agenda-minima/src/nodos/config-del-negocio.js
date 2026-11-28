@@ -234,6 +234,8 @@ return [{ json: Object.assign({}, cfg, {
   phoneNumberId: String(carga.phoneNumberId || ''),
   // El modo prueba. Solo lo trae `Carga de entrada` cuando corrio «Entrada de prueba».
   modoPrueba: prueba !== null,
+  // RÁFAGA (25/11/2026): el servidor agrega `rafagaApagada: true` a la configuración SOLO si el comercio apagó la pieza; «¿Esperar ráfaga?» lo lee de acá. Sin respuesta del panel, la ráfaga sigue encendida.
+  rafagaApagada: codigo === 200 && cuerpo.rafagaApagada === true,
   telefonoDePrueba: prueba ? String(prueba.telefonoDePrueba || '') : '',
   enviarDeVerdad: prueba ? prueba.enviarDeVerdad === true : true,
 }) }];
