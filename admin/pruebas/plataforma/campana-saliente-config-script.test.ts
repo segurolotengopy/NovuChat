@@ -82,6 +82,13 @@ describe('el script de Plataforma', () => {
     expect(mod.analizarArgumentos([...base, '--datos', 'novuchat', '--otra', 'x'], ENV_EMU).ok).toBe(false);
     expect(mod.analizarArgumentos(['--proyecto', 'cualquier-proyecto-real', '--tenant', 'comercio-x', '--datos', 'novuchat'], {}).ok).toBe(false);
   });
+  it('NIEGA: --confirmo-produccion sin --aplicar se rechaza (como en campana-saliente.mjs)', () => {
+    const sinAplicar = ['--proyecto', 'proyecto-ficticio-prod', '--tenant', 'comercio-x', '--datos', 'novuchat', '--confirmo-produccion', 'comercio-x'];
+    const r = mod.analizarArgumentos(sinAplicar, ENV_REAL);
+    expect(r.ok).toBe(false);
+    expect(r.problemas?.join(' | ')).toContain('solo acompaña a --aplicar');
+    expect(mod.analizarArgumentos([...sinAplicar, '--aplicar', '--respaldo', rutaRespaldo()], ENV_REAL).ok).toBe(true);
+  });
   it('NIEGA: contra producción, --aplicar exige --confirmo-produccion igual al comercio', () => {
     const prod = ['--proyecto', 'proyecto-ficticio-prod', '--tenant', 'comercio-x', '--datos', 'novuchat', '--aplicar', '--respaldo', rutaRespaldo()];
     expect(mod.analizarArgumentos(prod, ENV_REAL).ok).toBe(false);
@@ -160,11 +167,24 @@ describe('el script de Plataforma', () => {
   });
   describe('--telefonos-de-prueba: la lista que usa el servidor para la excepción de la prueba (números ficticios)', () => {
     const T = ['59170000001', '59170000002'];
-    const con = (valor: string, env: Record<string, string> = ENV_EMU) => mod.analizarArgumentos([...base, '--datos', 'novuchat', '--telefonos-de-prueba', valor], env);
+    // La lista solo se acepta para el comercio `novuchat` (L3): las pruebas de formato van contra él.
+    const baseNovuchat = ['--proyecto', PROY, '--tenant', 'novuchat'];
+    const con = (valor: string, env: Record<string, string> = ENV_EMU) => mod.analizarArgumentos([...baseNovuchat, '--datos', 'novuchat', '--telefonos-de-prueba', valor], env);
+    it('NIEGA (L3): con un comercio que no es `novuchat` la lista se rechaza con mensaje claro y sin imprimir un número; con `novuchat` se acepta', () => {
+      const otro = mod.analizarArgumentos([...base, '--datos', 'novuchat', '--telefonos-de-prueba', T.join(',')], ENV_EMU);
+      expect(otro.ok).toBe(false);
+      expect(otro.problemas?.join(' | ')).toContain('solo se acepta para el comercio novuchat');
+      expect(JSON.stringify(otro.problemas)).not.toMatch(/\d{7,}/);
+      const viaEntorno = mod.analizarArgumentos([...base, '--datos', 'novuchat', '--telefonos-de-prueba', 'entorno'], { ...ENV_EMU, TELEFONOS_DE_PRUEBA: T.join(',') });
+      expect(viaEntorno.ok).toBe(false);
+      expect(con(T.join(',')).ok).toBe(true);
+      // Sin la opción, cualquier comercio sigue igual que antes.
+      expect(mod.analizarArgumentos([...base, '--datos', 'novuchat'], ENV_EMU).ok).toBe(true);
+    });
     it('llega por argumento o, con «entorno», por TELEFONOS_DE_PRUEBA; sin la opción el valor del documento no se toca', () => {
       expect(con(T.join(',')).cfg).toMatchObject({ deseado: { ...deseado, telefonosDePrueba: T } });
       expect(con('entorno', { ...ENV_EMU, TELEFONOS_DE_PRUEBA: T.join(',') }).cfg).toMatchObject({ deseado: { ...deseado, telefonosDePrueba: T } });
-      expect(mod.analizarArgumentos([...base, '--datos', 'novuchat'], ENV_EMU).cfg?.['deseado']).not.toHaveProperty('telefonosDePrueba');
+      expect(mod.analizarArgumentos([...baseNovuchat, '--datos', 'novuchat'], ENV_EMU).cfg?.['deseado']).not.toHaveProperty('telefonosDePrueba');
     });
     it('NIEGA: vacía, «entorno» sin variable, número inválido, repetidos, más de 5; el mensaje nunca trae el número', () => {
       for (const [valor, env] of [['entorno', ENV_EMU], ['59170000001,+59170000002', ENV_EMU], ['59170000001,59170000001', ENV_EMU], ['12345', ENV_EMU],

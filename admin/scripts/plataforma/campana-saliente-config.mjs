@@ -21,6 +21,7 @@
  * opción, el valor que tenga el documento no se toca. Para dejarla vacía se borra el campo a mano o se restaura el respaldo; vacía o
  * ausente, ninguna prueba puede salir. ORDEN: este script va ANTES de `crear --solo-prueba`. El documento lo pueden LEER los
  * miembros del comercio (como todo `config/{documento}`): la lista no es un secreto de acceso, pero tampoco se publica; ninguno la escribe.
+ * Por eso `--telefonos-de-prueba` SOLO se acepta con `--tenant novuchat` (sus miembros son del equipo): con otro comercio se rechaza con 2.
  * El respaldo (fuera del repositorio, 0600) sí guarda el valor previo completo, para poder restaurarlo.
  *
  * QUÉ HACE (mismo patrón que `respuesta-libre.mjs`).
@@ -45,6 +46,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { comprobarProyecto, comprobarRespaldo, guardarRespaldo } from './aplicar-consola-oculta.mjs';
 import { entornoDeCredenciales, proyectoDesdeCredenciales } from './respuesta-libre.mjs';
+
+/** El único comercio que puede llevar `telefonosDePrueba` (el chat de NovuChat, con miembros del equipo). */
+export const TENANT_DE_PRUEBA = 'novuchat';
 
 let leerConfigCampana;
 try {
@@ -158,7 +162,8 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   else if (!ID_TENANT.test(tenant)) problemas.push('--tenant inválido (minúsculas, dígitos y guiones, de 3 a 60)');
 
   if (confirmo !== undefined) {
-    if (proy.ok && proy.entorno !== 'produccion') problemas.push('--confirmo-produccion solo se usa contra producción');
+    if (!aplicar) problemas.push('--confirmo-produccion solo acompaña a --aplicar');
+    else if (proy.ok && proy.entorno !== 'produccion') problemas.push('--confirmo-produccion solo se usa contra producción');
     else if (proy.ok && confirmo !== tenant) problemas.push('--confirmo-produccion no coincide con --tenant');
   } else if (proy.ok && proy.entorno === 'produccion' && aplicar) {
     problemas.push('contra producción, --aplicar exige --confirmo-produccion <tenant> (igual a --tenant)');
@@ -171,7 +176,10 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     if (c.ok) deseado = c.valor; else problemas.push(c.motivo);
   }
 
-  if (deseado !== null && valores['telefonos-de-prueba'] !== undefined) {
+  // La lista la puede LEER cualquier miembro del comercio (`config/{documento}`): solo el comercio de NovuChat, cuyos miembros son del equipo, la lleva.
+  if (valores['telefonos-de-prueba'] !== undefined && tenant !== TENANT_DE_PRUEBA) {
+    problemas.push(`--telefonos-de-prueba solo se acepta para el comercio ${TENANT_DE_PRUEBA}: la lista la puede leer cualquier miembro del comercio destino`);
+  } else if (deseado !== null && valores['telefonos-de-prueba'] !== undefined) {
     const t = leerTelefonosDeArgumento(valores['telefonos-de-prueba'], env);
     if (t.lista) deseado = { ...deseado, telefonosDePrueba: t.lista }; else problemas.push(t.motivo);
   }
