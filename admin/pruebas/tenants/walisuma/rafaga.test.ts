@@ -116,6 +116,35 @@ describe('PUNTA A PUNTA: lo que recibe el MODELO (la llamada a Gemini) en una r�
     expect(cuerpoModelo(ts[2]!)).toContain('hola\nquiero una billetera\nde cuero por favor');
     expect(ultimoTurnoDelModelo(vistos)).toContain('hola\nquiero una billetera\nde cuero por favor');
   });
+  it('NEGADO (tope de 1.500 caracteres): un grupo que lo supera conserva la ÚLTIMA línea ENTERA (lo más reciente) y descarta las anteriores, nunca un trozo, en «Decidir turno» y en lo que ve el modelo', () => {
+    const ultimo = `${'b'.repeat(900)} FINAL`;
+    const hilo = [txt(1, `INICIO ${'a'.repeat(900)}`, t0), txt(2, ultimo, t0 + 800)];
+    const { m, vistos } = conModelo(hilo);
+    const ts = correr(m, [{ n: 1, msg: mTexto(hilo[0]!.texto) }, { n: 2, msg: mTexto(hilo[1]!.texto) }]);
+    const t = textoDe(ts[1]!) as string;
+    expect(t).toBe(ultimo);
+    expect(t).not.toContain('INICIO');
+    expect(ultimoTurnoDelModelo(vistos)).toContain(ultimo);
+    expect(ultimoTurnoDelModelo(vistos)).not.toContain('INICIO');
+  });
+  it('NEGADO (tope de 1.500 con emojis): el corte nunca parte un emoji ni deja un sustituto suelto, y las líneas que entran quedan enteras', () => {
+    // Cada línea ocupa 801 unidades (400 emojis de 2 unidades + 1 letra): una sola cabe, dos no. Un `slice(-1500)` cortaría la primera por la mitad de un emoji.
+    const l1 = `${'😀'.repeat(400)}x`; const l2 = `${'😎'.repeat(400)}y`; const l3 = `${'🙂'.repeat(400)}z`;
+    const hilo = [txt(1, l1, t0), txt(2, l2, t0 + 600), txt(3, l3, t0 + 1200)];
+    const { m, vistos } = conModelo(hilo);
+    const ts = correr(m, [{ n: 1, msg: mTexto(l1) }, { n: 2, msg: mTexto(l2) }, { n: 3, msg: mTexto(l3) }]);
+    const t = textoDe(ts[2]!) as string;
+    expect(t.isWellFormed()).toBe(true);
+    expect(t).toBe(l3);
+    expect(t.length).toBeLessThanOrEqual(1500);
+    expect((ultimoTurnoDelModelo(vistos) as string).isWellFormed()).toBe(true);
+  });
+  it('tope de 1.500: varias líneas cortas que caben juntas se conservan TODAS y en orden (solo se descarta lo que no cabe)', () => {
+    const hilo = [txt(1, 'a'.repeat(700), t0), txt(2, 'b'.repeat(700), t0 + 600), txt(3, 'c'.repeat(700), t0 + 1200)];
+    const { m } = conModelo(hilo);
+    const ts = correr(m, [{ n: 1, msg: mTexto(hilo[0]!.texto) }, { n: 2, msg: mTexto(hilo[1]!.texto) }, { n: 3, msg: mTexto(hilo[2]!.texto) }]);
+    expect(textoDe(ts[2]!)).toBe(`${'b'.repeat(700)}\n${'c'.repeat(700)}`);
+  });
   it('con la consulta caída (falla abierto) el segundo responde SOLO con su texto: el modelo no recibe el primero', () => {
     const { m, vistos } = conModelo([]);
     m.dobles['Consultar ráfaga'] = cae;
