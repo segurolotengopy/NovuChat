@@ -7,9 +7,10 @@
  * G17 (catálogo caído o modelo caído abren la ventana) queda como excepción registrada, no resuelta en esta ronda.
  */
 import { describe, expect, it } from 'vitest';
+import * as C from '../../../../Flujos/clientes/casa-bermejo/construir.mjs';
 import type { J } from '../../lib/flujo';
 import type { LlamadaDoble } from '../../lib/n8n-de-mentira';
-import { ANA, ARGENTINO, COMPROBANTE, ENTREGA, catalogoOk, completarEnvio, crear, hablar, mAudio, mImagen, mSticker, mTexto, mToque, mUbicacion, modelo, panelConQr, textoAlModelo, textos, type Opciones } from './mundo';
+import { ANA, ARGENTINO, COMPROBANTE, ENTREGA, catalogoOk, completarEnvio, crear, hablar, mAudio, mImagen, mSticker, mTexto, mToque, mUbicacion, modelo, PRODUCCION, PRUEBA, panelConQr, textoAlModelo, textos, type Opciones } from './mundo';
 
 const pieza = (id: string, nombre: string, precio: number, extra: J = {}): J => ({ id, nombre, descripcion: nombre, area: 'Hogar · Electro', precio, moneda: 'BOB', activo: true, precioCentavos: precio * 100, stock: 100, disponible: true, ...extra });
 const REAL = [pieza('lavadora-9kg', 'Lavadora Samsung 9 kg', 7655), pieza('licuadora-oster', 'Licuadora Oster', 4148), pieza('billetera-cuero', 'Billetera de cuero', 450)];
@@ -578,6 +579,62 @@ describe('camino de venta común: el mismo pedido y el mismo total que en main',
     expect(q['lineas']).toEqual([{ externa: true, id: 'billetera-cuero', nombre: 'Billetera de cuero', cantidad: 1, precioCentavos: 45000, moneda: 'BOB', subtotalCentavos: 45000 }]);
     expect(q['monto']).toBe(450);
     expect(t5.mensajes.filter((x) => x.tipo === 'image')).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// G2 (duodécima ronda): «nombrada» con el buscador tolerante COMÚN (palabra-tolerante.js): erratas sí, falsos positivos no, la exacta manda, la ambigua pregunta.
+// ---------------------------------------------------------------------------------------------------------------------
+describe('G2: errata, plural y fonética nombran la pieza; falsos positivos no; exacta manda; ambigua pregunta', () => {
+  const EXTRA = [pieza('tela-estampada', 'Tela estampada', 90, { area: 'Hogar · Telas' }), pieza('planta-deco', 'Planta decorativa', 120, { area: 'Hogar · Plantas' }), pieza('televisor-65', 'Televisor Samsung 65', 5999, { area: 'Electro · Televisores' })];
+  const CAT = [...REAL, ...EXTRA];
+  const IDS: Array<[RegExp, string]> = [[/b?v?i+l+e?t?e?ra/i, 'billetera-cuero'], [/licuadora|liquadora/i, 'licuadora-oster'], [/lavadora|labadora/i, 'lavadora-9kg'], [/televisor|telebisor/i, 'televisor-65'], [/tela/i, 'tela-estampada'], [/planta/i, 'planta-deco']];
+  const modeloLee = (ll: LlamadaDoble): J => { const x = textoAlModelo(ll); const h = IDS.find(([re]) => re.test(x)); return modelo('Con gusto.', { lineas: h ? [{ id: h[1], cantidad: 1 }] : [] }); };
+  const carrito = (cliente: string, cat: J[] = CAT, o: Opciones = {}): string[] => { const m = mundo({ catalogo: catalogoOk({}, cat as never), modeloDice: modeloLee, ...o }); charla(m, [cliente]); return (ficha(m).carrito as Rep[]).map((l) => l.id); };
+  for (const [cliente, id] of [['quiero una biletera', 'billetera-cuero'], ['quiero una villetera', 'billetera-cuero'], ['quiero una billetra', 'billetera-cuero'], ['quiero una liquadora', 'licuadora-oster'], ['quiero una labadora', 'lavadora-9kg'], ['quiero un telebisor', 'televisor-65'], ['quiero dos biletera', 'billetera-cuero']] as Array<[string, string]>) {
+    it(`«${cliente}» arma el pedido con la pieza correcta`, () => {
+      expect(carrito(cliente)).toEqual([id]);
+    });
+  }
+  it('la errata también arma la OFERTA correcta cuando el cliente solo pregunta', () => {
+    const [, t] = charla(mundo({ catalogo: catalogoOk({}, CAT as never) }), ['hola', '¿tienen biletera?']);
+    expect(t!.txt).toMatch(/Tenemos Billetera de cuero a Bs 450\./);
+    expect(t!.txt).not.toMatch(/Lavadora|Licuadora/);
+  });
+  for (const [cliente, noId] of [['quiero una tele', 'tela-estampada'], ['quiero una tela', 'televisor-65'], ['quiero una plancha', 'planta-deco'], ['quiero una cartera', 'billetera-cuero'], ['quiero una lavadora', 'licuadora-oster']] as Array<[string, string]>) {
+    it(`NEGADO (falso positivo): «${cliente}» NO nombra «${noId}»`, () => {
+      const m = mundo({ catalogo: catalogoOk({}, CAT as never), modeloDice: () => modelo('Con gusto.', { lineas: [{ id: noId, cantidad: 1 }] }) });
+      charla(m, [cliente]);
+      expect((ficha(m).carrito as Rep[]).map((l) => l.id)).not.toContain(noId);
+    });
+  }
+  it('la coincidencia EXACTA manda sobre la tolerante: «billetera» exacta no arrastra a la «Biletera artesanal»', () => {
+    const cat = [...REAL, pieza('biletera-art', 'Biletera artesanal', 800)];
+    const m = mundo({ catalogo: catalogoOk({}, cat as never), modeloDice: (ll: LlamadaDoble) => modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }, { id: 'biletera-art', cantidad: 1 }] }) });
+    charla(m, ['quiero una billetera']);
+    expect((ficha(m).carrito as Rep[]).map((l) => l.id)).toEqual(['billetera-cuero']);
+  });
+  it('si el texto casa SOLO por tolerancia con más de una pieza: «¿Cuál de ellas…?» por código y no se elige una', () => {
+    const cat = [...REAL, pieza('billetera-tela', 'Billetera de tela', 200)];
+    const m = mundo({ catalogo: catalogoOk({}, cat as never), modeloDice: modeloLee });
+    const [t] = charla(m, ['quiero una biletera']);
+    expect(t!.txt).toContain('¿Cuál de ellas le interesa?');
+    expect(ficha(m).carrito).toEqual([]);
+    const tu = mundo({ base: {}, catalogo: catalogoOk({}, cat as never), modeloDice: modeloLee });
+    expect(charla(tu, ['quiero una biletera'])[0]!.txt).toContain('¿Cuál de ellas te interesa?');
+  });
+  it('con el pedido vacío un modelo ADVERSARIO sigue sin decidir (líneas de piezas que la errata no nombra)', () => {
+    const neutro = charla(mundo({ catalogo: catalogoOk({}, CAT as never) }), ['hola', 'quiero una cartera', 'hmm']);
+    const adversario = charla(mundo({ catalogo: catalogoOk({}, CAT as never), modeloDice: () => modelo('Agregué la billetera.', { lineas: [{ id: 'billetera-cuero', cantidad: 9 }], quiereHablar: true }) }), ['hola', 'quiero una cartera', 'hmm']);
+    expect(adversario.map((t) => t.txt)).toEqual(neutro.map((t) => t.txt));
+    expect(adversario.map((t) => t.avisos)).toEqual(neutro.map((t) => t.avisos));
+  });
+  it('GUARDIA: sin la pieza palabra-tolerante.js el armado FALLA (no hay respaldo silencioso); con ella, no', () => {
+    for (const base of [PRODUCCION, PRUEBA]) {
+      expect(C.guardias(base === PRODUCCION ? 'produccion' : 'prueba', base).filter((h: string) => /palabra-tolerante/.test(h))).toEqual([]);
+      const sin = JSON.parse(JSON.stringify(base).split('function ptNombra(').join('function ptNombraAusente('));
+      expect(C.guardias(base === PRODUCCION ? 'produccion' : 'prueba', sin).join(' | ')).toMatch(/palabra-tolerante\.js \(ptNombra, ptCasiIgual\): es obligatoria/);
+    }
   });
 });
 

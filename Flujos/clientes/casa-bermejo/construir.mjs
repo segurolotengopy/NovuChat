@@ -84,7 +84,7 @@ export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   // La base común de las ventas digitales (cobro, avisos, el motor de la conversación y el carrito: prefijos `cb`, `av`, `vd` y `vc`) y, al final, lo PROPIO de Casa Bermejo (`bm.js`: datos, textos y `CN_TENANT`; `bm-venta.js`: la decisión de la venta).
-  librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/diferencias.js', '../../src/modulos/pedidos/comprobante-diferencias.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/carrito.js', '../../experimental/venta-digital/src/catalogo-externo.js', '../../src/modulos/pedidos/confirmar-pedido.js', '../../src/modulos/pedidos/pedido-del-carrito.js', 'src/lib/bm.js', 'src/lib/bm-venta.js'],
+  librerias: ['../../experimental/venta-digital/src/cobro.js', '../../experimental/venta-digital/src/diferencias.js', '../../src/modulos/pedidos/comprobante-diferencias.js', '../../experimental/venta-digital/src/avisos.js', '../../experimental/venta-digital/src/conversacion.js', '../../experimental/venta-digital/src/carrito.js', '../../experimental/venta-digital/src/catalogo-externo.js', '../../src/modulos/pedidos/confirmar-pedido.js', '../../src/modulos/pedidos/pedido-del-carrito.js', '../../src/modulos/productos/palabra-tolerante.js', 'src/lib/bm.js', 'src/lib/bm-venta.js'],
   comun: ['../../experimental/venta-digital/src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../../src/core/sin-agente/mensajes.js'],
@@ -443,6 +443,11 @@ export function guardias(variante, flujo, opciones = {}) {
   if (nodos.length > tope) h.push(`tiene ${nodos.length} nodos y el tope es ${tope}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md)`);
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
+  // El buscador TOLERANTE común (`palabra-tolerante.js`: erratas, plural, fonética) es OBLIGATORIO en todo nodo que use `bm-venta.js`: un respaldo silencioso dejaría al flujo sin tolerancia sin que nadie lo vea.
+  for (const n of nodos) {
+    const codigo = typeof (n.parameters || {}).jsCode === 'string' ? n.parameters.jsCode : '';
+    if (codigo.includes('function bmNombradas') && !(codigo.includes('function ptNombra(') && codigo.includes('function ptCasiIgual('))) h.push(`«${n.name}» usa bm-venta.js pero no trae la pieza común palabra-tolerante.js (ptNombra, ptCasiIgual): es obligatoria`);
+  }
   h.push(...hallazgosDelIndicador(flujo || {}, { exigir: true }));
   // El guardado de la imagen SALIENTE del asistente: la rama común completa (vía media), debajo de todo y sin credencial ajena.
   h.push(...hallazgosDelGuardadoSaliente(flujo || {}, { exigir: true, vias: ['media'] }));

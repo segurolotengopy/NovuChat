@@ -973,7 +973,12 @@ function bmPuntuarCoincidencias(texto, vendibles, sinTope) {
     const unidos = n.replace(/(\d+) (kg|btu|litros|lts|l|pulgadas|w)\b/g, '$1$2');
     let p = 0;
     const m = [];
-    for (const w of pal) { if (n.includes(' ' + w + ' ') || unidos.includes(' ' + w + ' ') || (w.length >= 5 && n.includes(' ' + w.replace(/s$/, '')))) { p += /\d/.test(w) ? 2 : 1; m.push(w); } }
+    const palabrasCat = n.split(' ').filter((x) => x !== '');
+    for (const w of pal) {
+      if (n.includes(' ' + w + ' ') || unidos.includes(' ' + w + ' ') || (w.length >= 5 && n.includes(' ' + w.replace(/s$/, '')))) { p += /\d/.test(w) ? 2 : 1; m.push(w); }
+      // La errata o la fonética (palabra común tolerante) puntúa MENOS que la coincidencia exacta: la exacta manda.
+      else if (!/\d/.test(w) && palabrasCat.some((pc) => ptCasiIgual(w, pc))) { p += 0.5; m.push(w); }
+    }
     return { v: v, p: p, m: m.join(' ') };
   }).filter((x) => x.p > 0).sort((a, b) => b.p - a.p).slice(0, sinTope === true ? 1000 : 6);
 }
@@ -1019,12 +1024,15 @@ function bmAgregarPorOrden(textoCliente, vendibles) {
   return [{ id: empate[0].v.id, cantidad: w ? palabras[w] : 1, detalle: '' }];
 }
 // Todas las piezas que el texto del cliente nombra, sin el tope de seis de las coincidencias que se muestran (para validar las líneas que propone el modelo).
-// G2: «nombrada» se decide con el buscador tolerante COMÚN (`Flujos/src/modulos/productos/palabra-tolerante.js`: `ptNombra`, errata de una letra, plural, equivalencias fonéticas) cuando está incluido en el armado; sin él, solo el puntaje exacto de arriba.
-// PENDIENTE DE CABLEAR con el archivo real: incluirlo en `construir.mjs` (por referencia). Los sinónimos de pieza («cartera» por billetera) son dato del comercio: NO entran aquí.
-function bmIdsNombradas(texto, vendibles) {
-  const ids = new Set((bmPuntuarCoincidencias(texto, vendibles, true) || []).map((x) => x.v.id));
-  if (typeof ptNombra === 'function') for (const v of Array.isArray(vendibles) ? vendibles : []) if (ptNombra(texto, v.nombre)) ids.add(v.id);
-  return [...ids];
+// G2: «nombrada» se decide con el buscador tolerante COMÚN (`Flujos/src/modulos/productos/palabra-tolerante.js`, OBLIGATORIO en el armado: lo exige `construir.mjs --verificar`): erratas («biletera», «liquadora», «labadora»), plural y equivalencias fonéticas, sin sinónimos (son dato del comercio: «cartera» no casa con billetera).
+// La coincidencia EXACTA manda sobre la tolerante. Si el texto casa SOLO por tolerancia con MÁS DE UNA pieza distinta, no se elige una: `ambiguas` (el código pregunta «¿cuál de ellas?», regla de G1).
+function bmNombradas(texto, vendibles) {
+  const lista = Array.isArray(vendibles) ? vendibles : [];
+  const exactas = (bmPuntuarCoincidencias(texto, lista, true) || []).filter((x) => x.p >= 1).map((x) => x.v.id);
+  if (exactas.length > 0) return { ids: exactas, ambiguas: false, candidatas: [] };
+  const tolerantes = lista.filter((v) => ptNombra(texto, v.nombre)).map((v) => v.id);
+  if (tolerantes.length === 1) return { ids: tolerantes, ambiguas: false, candidatas: [] };
+  return { ids: [], ambiguas: tolerantes.length > 1, candidatas: tolerantes };
 }
 // G1: ¿el cliente ASIENTE a lo que el código acaba de ofrecer? («sí», «que sí, esa», «la quiero», «esa», «ok la llevo», «deme dos»). Mensaje corto, sin pregunta y sin nombrar otra pieza (eso lo decide quien llama).
 function bmAsiente(textoCliente) {
@@ -1772,15 +1780,18 @@ function bmResolverModelo(c) {
   if (!vacioInicial && (typeof j0.texto !== 'string' || j0.texto.trim() === '')) return bmDerivar(c, 'modelo_caido');
   // La línea del modelo vale si la pieza está NOMBRADA en el texto del cliente o si el CÓDIGO la ofreció en el turno inmediato anterior y el cliente asiente (G1). La cantidad vale solo si el texto del CLIENTE la trae; si no, 1.
   let preguntaCual = false;
+  let ofrecidasPorTolerancia = [];
   let j = j0;
   if (vacioInicial) {
-    const nombradas = new Set(bmIdsNombradas(p.textoCliente, c.vendibles));
+    const nom = bmNombradas(p.textoCliente, c.vendibles);
+    const nombradas = new Set(nom.ids);
     const ofrecidos = (Array.isArray(f.ofrecidos) ? f.ofrecidos : []).filter((id) => c.vendibles.some((v) => v.id === id));
     const cantidades = bmCantidadesDelTexto(p.textoCliente, c.vendibles);
     const cantidadValida = (n) => (Number.isFinite(n) && n > 1 && cantidades.has(Math.floor(n)) ? Math.floor(n) : 1);
     const delModelo = (Array.isArray(j0.lineas) ? j0.lineas : []).filter((l) => l && typeof l === 'object');
     let lineasValidas = delModelo.filter((l) => nombradas.has(l.id)).map((l) => Object.assign({}, l, { cantidad: cantidadValida(l.cantidad) }));
-    if (nombradas.size === 0 && ofrecidos.length > 0 && (bmAsiente(p.textoCliente) || delModelo.some((l) => ofrecidos.includes(l.id)))) {
+    if (nom.ambiguas && delModelo.some((l) => nom.candidatas.includes(l.id))) { preguntaCual = true; ofrecidasPorTolerancia = nom.candidatas.slice(0, 4); }
+    else if (nombradas.size === 0 && ofrecidos.length > 0 && (bmAsiente(p.textoCliente) || delModelo.some((l) => ofrecidos.includes(l.id)))) {
       if (ofrecidos.length === 1) lineasValidas = [{ id: ofrecidos[0], cantidad: cantidades.size === 1 ? [...cantidades][0] : 1 }];
       else preguntaCual = true;
     }
@@ -1976,7 +1987,7 @@ function bmResolverModelo(c) {
   } else if (sinRedaccion) texto = bmTextoDeEstado(lineas, entrega, cierre, c, conBoton);
   // R54: al elegir el RETIRO en este turno, el mismo mensaje trae la dirección de la tienda (dato del comercio; sin dato, nada). Con «Confirmar pedido» la dirección va en el resumen de datos.
   if (texto !== '' && comp.entrega.modo !== undefined && bmEsRetiro(comp.entrega.modo) && !conBoton) texto = texto + bmTextoRetiroEn(c);
-  return Object.assign(base, { tipo: 'modelo', precioDistinto: sitioConPreciosDistintos, texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: (cambio || conBoton) && lineas.length ? vcResumen(lineas) : '', confirmable: conBoton, botonesEntrega: bmOfreceBotonesDeEntrega(lineas.length, entrega, c.mercado, c.modos, abierto), pide: texto !== '' ? pendientes : [], sinAvance: sinAvance, fallos: fallos, ofrecidos: lineas.length === 0 && /^Tenemos (?!piezas de)/.test(texto) ? bmIdsOfrecidos(p.textoCliente, c.vendibles) : [] });
+  return Object.assign(base, { tipo: 'modelo', precioDistinto: sitioConPreciosDistintos, texto: texto, sinRedaccion: sinRedaccion, sinPieza: sinPieza, resumen: (cambio || conBoton) && lineas.length ? vcResumen(lineas) : '', confirmable: conBoton, botonesEntrega: bmOfreceBotonesDeEntrega(lineas.length, entrega, c.mercado, c.modos, abierto), pide: texto !== '' ? pendientes : [], sinAvance: sinAvance, fallos: fallos, ofrecidos: ofrecidasPorTolerancia.length ? ofrecidasPorTolerancia : (lineas.length === 0 && /^Tenemos (?!piezas de)/.test(texto) ? bmIdsOfrecidos(p.textoCliente, c.vendibles) : []) });
 }
 
 // La decisión del turno. `c` viene de `bmContexto()` (+ `modeloResp` y `cancelo`, que completa cada nodo). Devuelve { tipo, ... } con `aviso` (o null) y, cuando cambia la ficha, `patch`.
