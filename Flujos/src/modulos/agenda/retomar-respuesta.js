@@ -73,8 +73,15 @@ const notaCruce = caidas.length
 // El texto original del cliente vuelve a entrar en el turno del reintento:
 // `Olvidar turno fallido` borra de la memoria el turno que no se envio, y sin
 // esto la conversacion guardada perderia lo que el cliente pidio.
+// Si «Agrupar ráfaga» unió varios textos seguidos (25/11/2026), el turno que se rehace
+// es el AGRUPADO: sin `textoDelTurno` el reintento vería solo el último mensaje. En un
+// flujo sin la pieza el nodo no existe, `$()` lanza y queda el texto crudo de siempre.
 let userInput = '';
 try { userInput = String($('Normalizar entrada').first().json.userInput || ''); } catch (e) { userInput = ''; }
+try {
+  const agrupado = $('Agrupar ráfaga').first().json.textoDelTurno;
+  if (typeof agrupado === 'string' && agrupado) userInput = agrupado;
+} catch (e) { /* sin la pieza, o no agrupó: el texto crudo */ }
 
 // Sin ids fiables o con una doble reserva simultanea NO hay reintento: el
 // paciente recibe «recepcion te confirma el horario» y pasa a recepcion

@@ -184,6 +184,14 @@ node admin/scripts/plataforma/aplicar-catalogo-externo.mjs --proyecto <proyecto>
 # `--crear-documento`: el alta NO crea `config/pedidos`; con esta opción, y solo con --aplicar, el script lo crea con únicamente `catalogoExterno` (create(): falla si ya existe). `--revertir` lo borra solo si sigue idéntico a lo escrito.
 ```
 
+**Carrito y «Volver al chat» del catálogo web** (comercio con catálogo web o externo; dos envoltorios que no piden ni muestran el proyecto, el `phone_number_id`, la ruta ni el número: todo se lee dentro del proceso). Los dos son **secos por omisión**, escriben solo con `--aplicar --confirmo <comercio>` (el mismo comercio, escrito a mano), se deshacen con `--quitar`, y rechazan los demos, el ensayo y la cuenta de NovuChat:
+
+- `./scripts/fijar-carrito-comercio.sh --tenant <id> --entorno staging|produccion` — a dónde avisa NovuChat cuando llega un carrito (`rutasWhatsApp/<línea>.webhookCarrito`). Necesita la fila `REEMPLAZAR_RUTA_CARRITO_<COMERCIO>` de la tabla local y el `.env` del comercio. Sin este paso el carrito del catálogo no despierta al flujo.
+- `./scripts/fijar-numero-publico-comercio.sh --tenant <id> --entorno staging|produccion` — el número de «Volver al chat» (`numeroPublico` de la misma ruta). Necesita la fila `REEMPLAZAR_NUMERO_PUBLICO_<COMERCIO>` de la tabla local (solo dígitos con el prefijo del país, sin «+»); sin esa fila sale con código 3 y no escribe. Sin el número la página no ofrece «Volver al chat».
+
+Las filas de la tabla local se agregan con `./scripts/marcador-local.sh`; quien las carga es quien tiene el dato, y su valor nunca va a un chat ni a un archivo versionado. Salidas de los dos: 2 = uso o salvaguarda (nada escrito), 3 = falta un valor local o no se pudo leer.
+
+
 **Credencial de la entrada de prueba en n8n** (flujo de prueba de un comercio; la clave con la que se lanzan los mensajes simulados): `./scripts/crear-credencial-entrada-prueba.sh --nombre "Entrada de prueba <Comercio>" --archivo <ruta NUEVA dentro de una carpeta propia de modo 700> --env <.env de referencia>` en seco; con `--aplicar --confirmo "<mismo nombre>"` el script GENERA una clave aleatoria, la guarda en ese archivo (modo 600, nunca impresa) y crea la credencial una vez. El archivo se conserva: quien lanza la prueba lo lee y lo borra al terminar. Debe estar FUERA del repositorio (o en una ruta que git ignora). Si sale 3, verificar en n8n: si la credencial NO existe, borra el archivo o usa otra ruta antes de reintentar.
 
 **Credencial del catálogo de NovuTienda en n8n** (comercio con catálogo externo; el token llega en un archivo de modo 600 que entrega la sesión de NovuTienda, nunca por un chat): `./scripts/cargar-credencial-catalogo.sh --nombre "NovuTienda catálogo (<comercio>)" --archivo <ruta> --env <.env de referencia>` en seco; con `--aplicar --confirmo "<mismo nombre>"` la crea una vez y borra el archivo (`--conservar` lo deja; si falla, se conserva). La de ingesta se crea con `./scripts/rotar-ingesta.sh crear`. El token de WhatsApp (Graph) no se toca desde NovuChat.
@@ -405,6 +413,13 @@ Saludo y respuesta, dos celulares a la vez sin cruce, sticker y audio, «¿eres 
 robot?», el flujo principal de punta a punta, el aviso llegando a recepción,
 cuatro mensajes en tres segundos, y un cambio en la consola que el asistente
 responda. Anotar cuántos mensajes salió cada prueba.
+
+**Reinicio de un teléfono de prueba** (para repetir la aceptación desde cero; es el ÚNICO reinicio: limpia en una pasada la sesión y los cupos del servidor, el cobro pendiente, la atención de 24 h, la pausa «Tomar» y la ficha y la memoria del teléfono en n8n, y relee todo):
+
+- `./scripts/resetear-telefono.sh --tenant <id> --quien andres|silvana` — seco: dice qué limpiaría. Con `--aplicar --confirmo <id>` limpia, con respaldo.
+- `--quien` evita escribir el número: lo toma de la lista cerrada de la tabla local (filas `REEMPLAZAR_TELEFONOS_DE_PRUEBA` y `REEMPLAZAR_TELEFONOS_DE_PRUEBA_<COMERCIO>`, separados por comas) por su terminación, y exige que haya **exactamente uno**; si no hay ninguno o hay dos, no hace nada. Para otra persona se usa `--tel <dígitos>`, que también debe estar en esa lista. `--tel` y `--quien` son excluyentes.
+- Un teléfono que no está en la lista no se resetea; los demos, el ensayo y la cuenta de NovuChat se rechazan. El respaldo queda en una carpeta temporal fuera del repositorio: se borra al cerrar la prueba.
+
 
 ## 7 · Pase a producción (solo si cambió la consola)
 

@@ -237,14 +237,30 @@ fallida: responde solo.
   respuesta del servidor, solo con `true` exacto y respuesta 200: `core/config-del-negocio.js` (Demo A, `novuchat-onboarding` y la variante de `bellido-agendamiento`),
   `core/captacion/config-del-negocio.js` y `core/sin-agente/venta-digital/config-del-negocio.js` (Walisuma y Casa Bermejo, con su copia en `experimental/venta-digital`). Demo B
   (#1125, `core/venta/config-del-negocio.js`) y Bellido Agenda mínima (#1127, `agenda-minima/src/nodos/config-del-negocio.js`) lo propagan en sus ramas.
-  **PENDIENTE, fuera de #1135:** Q'Taco (`Flujos/clientes/venta-minima/src/nodos/config-del-negocio.js`) y el chat de NovuChat (`Flujos/clientes/novuchat/src/nodos/config-del-negocio.js`)
-  tienen su PROPIO «Config del negocio», que no emite `rafagaApagada`: en esos dos comercios el interruptor por comercio no llegaría al IF de la pieza. Se cierra en un
-  PR por definir, aparte de #1135; hasta entonces no son «todos». El chat de NovuChat tiene además un «Esperar ráfaga» propio (no es la pieza común); si debe obedecer
-  `rafagaApagada` queda por verificar en ese PR. El servidor lo entrega solo con `true` exacto, y la pieza NO verifica al armar que «Config del negocio» emita
-  `rafagaApagada` (límite conocido).
+  **Q'Taco y el chat de NovuChat (PR `flujos/rafaga-apagada-qtaco-chat`, sin publicar):** sus «Config del negocio» PROPIAS (`Flujos/clientes/venta-minima/src/nodos/config-del-negocio.js` y `Flujos/clientes/novuchat/src/nodos/config-del-negocio.js`)
+  ahora copian `rafagaApagada`, solo con `true` exacto y respuesta 200 (`admin/pruebas/core/rafaga-apagada-qtaco-chat.test.ts`, con mutación). **Q'Taco todavía no lleva la pieza de ráfagas** (ningún nodo de ráfaga en sus JSON): la clave queda lista para cuando la adopte; adoptarla
+  (+4 nodos) es otro PR con su autorización. **El chat de NovuChat** tiene su propio «Esperar ráfaga» (coalescencia de clics, no es la pieza común) y, por decisión de Andres del 27/11/2026, OBEDECE `rafagaApagada`: `Registrar evento` deja `esperarSeg` en el mínimo de 0,1 s
+  (el evento se registra igual y la última ejecución sigue respondiendo con todos los eventos; lo que se apaga es la espera). **Declarado y decidido por Andres (27/11/2026, «Sí, así está bien»):** con la clave apagada el chat solo quita la espera; los mensajes que llegan mientras el asistente todavía procesa el anterior siguen saliendo en UNA sola respuesta, como siempre funcionó el chat. Ningún evento queda sin respuesta (la prueba lo fija). El servidor lo entrega solo con `true` exacto, y la pieza NO verifica al armar que «Config del negocio» emita `rafagaApagada` (límite conocido).
 - **Por flujo, exige republicar:** `rafagaActiva` (verdadero si falta; `false` apaga) y `esperaRafagaSeg` (defecto 2, de 1 a 5) viven en «Config base»,
   un nodo del JSON del flujo. Cambiarlos es cambiar el flujo y publicarlo (`publicar-flujo.sh`). Es a propósito: la espera es una propiedad del flujo
   (cuánto tolera su conversación), no del comercio, y un valor en el JSON se revisa y se prueba con el flujo.
+
+## Apagar la ráfaga de un comercio
+
+Script de Plataforma `admin/scripts/plataforma/apagar-rafaga.mjs`: un comercio por corrida, simulacro por omisión («pondría…»).
+`--apagar` escribe `rafagaApagada: true`; `--encender` **borra** el campo (nunca lo pone en `false`). Es idempotente, no toca otros
+campos y deja auditoría `cambiar_rafaga` en `tenants/{id}/auditoria`. Usa la lista blanca de proyectos de sus hermanos
+(emulador `demo-*`, `GCP_PROJECT_ID_STAGING`, `GCP_PROJECT_ID_PROD`; un proyecto real con variables de emulador sobrantes se
+rechaza). Contra staging o producción, `--aplicar` exige `--confirmo-produccion <tenant>` igual a `--tenant`; contra el emulador
+esa opción se rechaza. Solo toca comercios `activo` o `suspendido`; si no existe o es otro estado, sale 1 sin escribir. Efecto: la siguiente respuesta de
+`configuracionFlujo` trae `rafagaApagada: true` y el nodo responde cada texto solo, sin republicar el flujo.
+
+```
+node scripts/plataforma/apagar-rafaga.mjs --proyecto <id> --tenant <id> --apagar [--aplicar] [--confirmo-produccion <tenant>]
+node scripts/plataforma/apagar-rafaga.mjs --proyecto <id> --tenant <id> --encender [--aplicar] [--confirmo-produccion <tenant>]
+```
+
+Prueba: `admin/pruebas/plataforma/apagar-rafaga.test.ts` (emulador).
 
 ## Pruebas
 
@@ -252,3 +268,15 @@ fallida: responde solo.
 `rafaga-propiedad.test.ts` (ninguna pérdida ni repetición con la vista propia de cada ejecución),
 `rafaga-injerto.test.ts` (el injerto sobre un flujo sintético, la condición evaluada y las guardias) y el caso 9 de
 `ensamblador.test.ts` (la clave del manifiesto). Los flujos reales las suman cuando la adopten.
+
+## Flujos que la adoptaron
+
+### Demo B (venta y cobro) — 25/11/2026, `rafaga-demo-b.test.ts`
+
+Ancla `¿Atención normal?` salida 0, destino `¿Es un comprobante?`, sin `fuente` (el item del ancla es el del normalizador y trae todos los campos). El flujo pasa de 93 a 97 nodos (+4 autorizado por Andres). El agente lee `{{ $json.textoDelTurno || $json.userInput }}`; `Config del negocio` propaga `rafagaApagada`.
+Desvíos y qué pasa con el texto anterior (cada uno lo fija una prueba):
+- Comercio no operativo, uso extendido en operador y uso extendido bloqueado cuelgan ANTES del ancla. Si el estado cambia justo entre dos textos de una ráfaga, el primero (que calló esperando al segundo) no se contesta: el segundo recibe el aviso fijo (un mensaje) o nada (bloqueado). Es la excepción declarada de «Requisitos de cada flujo», solo en el instante en que cambia el estado.
+- Imagen, documento, audio, botón y pedido no son `text`: no esperan, no consultan y separan la ráfaga. El texto anterior responde solo.
+- Un texto nunca es comprobante (solo lo es una imagen o un documento) y no hay palabras clave ni menú: ningún otro desvío entre el ancla y el agente.
+- El carrito del catálogo es otro disparador y no pasa por el ancla.
+Limitación: `Procesar respuesta` (común) mira solo el último texto para los detectores de ubicación, contacto y despedida.

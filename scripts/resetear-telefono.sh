@@ -1,10 +1,10 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # =============================================================================
 # resetear-telefono.sh — EL ÚNICO REINICIO de un teléfono de prueba en un comercio, SIN variables a mano.
 #
 #   ./scripts/resetear-telefono.sh --tenant <comercio> --tel <dígitos>            # seco: solo lee y dice qué limpiaría
-#   ./scripts/resetear-telefono.sh --tenant <comercio> --tel <dígitos> --aplicar  # limpia, con respaldo y relectura
-#   ./scripts/resetear-telefono.sh --tenant <comercio> --quien andres|silvana [--aplicar]   # el número sale de la lista cerrada local
+#   ./scripts/resetear-telefono.sh --tenant <comercio> --tel <dígitos> --aplicar --confirmo <comercio>  # limpia, con respaldo y relectura
+#   ./scripts/resetear-telefono.sh --tenant <comercio> --quien andres|silvana [--aplicar --confirmo <comercio>]   # el número sale de la lista cerrada local
 #
 # QUÉ HACE POR USTED (Andres, 20/11/2026: «debería ser UN solo reinicio, unificado»): arma el entorno que antes había que
 # preparar a mano y llama a `admin/scripts/plataforma/resetear-telefono-prueba.mjs`, que limpia en una pasada la sesión y los cupos del
@@ -20,22 +20,34 @@
 # Variables opcionales: CONFIG_LOCAL_MD (otra tabla), ENV_N8N (otro .env), CLOUDSDK_CONFIG.
 # RESETEAR_SOLO_LISTA=1 solo comprueba que el teléfono esté en la lista blanca (para las pruebas).
 # =============================================================================
+case "$-" in *p*) ;; *) exec /bin/bash -p -- "$0" "$@" ;; esac
+# H4 (revisión de #1141): el arranque no hereda comportamiento del entorno de quien llama: modo privilegiado (-p: ni BASH_ENV ni funciones importadas),
+# sin BASH_ENV/ENV, sin funciones, y un PATH de sistema fijo. Los ejecutables que hacen falta se resuelven ANTES por ruta absoluta.
+unset BASH_ENV ENV
+while IFS= read -r f; do builtin unset -f "$f"; done < <(compgen -A function)
+NODO="$(command -v node || true)"
+[[ "$NODO" == /* && -x "$NODO" ]] || { echo "✗ No encuentro node (ruta absoluta y ejecutable)" >&2; exit 2; }
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; export PATH
+hash -r
 set -euo pipefail
 set +x
 cd "$(dirname "$0")/.." || exit 1
 
-TENANT=""; TEL=""; QUIEN=""; APLICAR=0
+TENANT=""; TEL=""; QUIEN=""; APLICAR=0; CONFIRMO=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --tenant)  TENANT="${2:?}"; shift 2 ;;
     --tel)     TEL="${2:?}"; shift 2 ;;
     --quien)   QUIEN="${2:?}"; shift 2 ;;
     --aplicar) APLICAR=1; shift ;;
+    --confirmo) CONFIRMO="${2:?}"; shift 2 ;;
     -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "✗ Opción desconocida: $1" >&2; exit 2 ;;
   esac
 done
 [[ "$TENANT" =~ ^[a-z0-9][a-z0-9-]{2,59}$ ]] || { echo "✗ --tenant: id de comercio (minúsculas, dígitos y guion)" >&2; exit 2; }
+[[ -z "$CONFIRMO" || "$APLICAR" = 1 ]] || { echo "✗ --confirmo solo va con --aplicar" >&2; exit 2; }
+[[ "$APLICAR" = 0 || "$CONFIRMO" == "$TENANT" ]] || { echo "✗ --aplicar exige --confirmo <el mismo comercio>" >&2; exit 2; }
 [[ -z "$TEL" || -z "$QUIEN" ]] || { echo "✗ --tel y --quien son excluyentes" >&2; exit 2; }
 # Los demos, el ensayo y la cuenta de NovuChat no se resetean (lo repite el .mjs; acá se corta antes de leer nada).
 [[ ! "$TENANT" =~ ^(novuchat.*|ensayo|demo(-.*)?)$ ]] || { echo "✗ --tenant: los demos y NovuChat no se resetean" >&2; exit 2; }
@@ -87,11 +99,16 @@ export N8N_BASE_URL N8N_API_KEY
 # La lista cerrada de flujos que el reseteo puede reescribir: SOLO flujos de NovuChat (nombre que empieza por «NovuChat»). El .mjs elige UNO por el nombre del comercio
 # («(<comercio>)» o el nombre fijo de su tabla) y exige que esté en esta lista. Los ids no se imprimen.
 if [ -n "$N8N_BASE_URL" ]; then
-  N8N_WORKFLOWS_PERMITIDOS="$(curl -s --compressed --max-time 150 -H @- "${N8N_BASE_URL%/}/api/v1/workflows?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" | TENANT="$TENANT" python3 -c '
-import json, os, sys
-t = os.environ["TENANT"]
-try: d = json.load(sys.stdin).get("data", [])
-except Exception: d = []
+  # H2 (revisión de #1141): ni el host ni la clave van en la línea de comandos de ningún programa (ps, registros de procesos): la consulta la hace python con ambos por el ENTORNO de ese proceso.
+  N8N_WORKFLOWS_PERMITIDOS="$(N8N_BASE_URL="$N8N_BASE_URL" N8N_API_KEY="$N8N_API_KEY" python3 -I -c '
+import json, os, urllib.request
+try:
+    url = os.environ["N8N_BASE_URL"].rstrip("/") + "/api/v1/workflows?limit=250"
+    if not url.startswith(("https://", "http://")): raise ValueError
+    req = urllib.request.Request(url, headers={"X-N8N-API-KEY": os.environ["N8N_API_KEY"], "Accept": "application/json"})
+    d = json.load(urllib.request.urlopen(req, timeout=150)).get("data", [])
+except Exception:
+    d = []
 print(",".join(w["id"] for w in d if str(w.get("name", "")).startswith("NovuChat")))' || true)"
   export N8N_WORKFLOWS_PERMITIDOS
   echo "• flujos de NovuChat en la lista cerrada: $(printf '%s' "$N8N_WORKFLOWS_PERMITIDOS" | tr ',' '\n' | grep -c .)"
@@ -112,8 +129,9 @@ fi
 # La salida pasa por un filtro: ni el teléfono ni el proyecto pueden quedar escritos aunque una traza de error los nombre.
 # shellcheck source=lib/valores-del-comercio.sh
 source "scripts/lib/valores-del-comercio.sh"
+IFS=, read -r -a LISTA_TELS <<< "$TELEFONOS_PRUEBA"
 set +e
-( cd admin && node scripts/plataforma/resetear-telefono-prueba.mjs "${ARGS[@]}" 2>&1 ) | filtrar_valores "$TEL" "$GCP_PROJECT_ID_PROD" "$GCP_PROJECT_ID_STAGING"
+( cd admin && "$NODO" scripts/plataforma/resetear-telefono-prueba.mjs "${ARGS[@]}" 2>&1 ) | FILTRAR_VARS="N8N_BASE_URL N8N_API_KEY" filtrar_valores "$TEL" "$GCP_PROJECT_ID_PROD" "$GCP_PROJECT_ID_STAGING" "${LISTA_TELS[@]}"
 ESTADOS=("${PIPESTATUS[@]}")
 set -e
 exit "${ESTADOS[0]}"

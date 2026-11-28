@@ -596,18 +596,21 @@ describe('rafaga: la guardia contra el apagado silencioso sobre los JSON REALES 
   });
 
   it.each([['demo-a'], ['clientes/demo-b/demo-b-venta-cobro.json']])('%s: el item del ancla SÍ sale del normalizador por IF; arma con `campos: {texto: \'userInput\'}` (y `consumidor: null`: sin cableado en #1117)', (ruta) => {
-    const f = injertarRafaga(real(ruta === 'demo-a' ? demoA : ruta), { ancla: ANCLA_DEMO, campos: USER_INPUT, consumidor: null });
+    // Se quita la pieza antes: si el flujo ya la adoptó (el Demo A y el Demo B), la prueba es del armado desde cero.
+    const f = injertarRafaga(quitarRafaga(real(ruta === 'demo-a' ? demoA : ruta)), { ancla: ANCLA_DEMO, campos: USER_INPUT, consumidor: null });
     expect(hallazgosDeLaRafaga(f, { consumidor: null })).toEqual([]);
-    expect(hallazgosDeLaRafaga(f).join('|')).toMatch(/ningún nodo .* lee `textoDelTurno`/); // sin consumidor declarado, la guardia lo dice
+    // Sin consumidor declarado, la guardia lo dice... salvo en los flujos cuyo agente YA lee `textoDelTurno` (el Demo A, por el prompt del agente y «Retomar respuesta»; el Demo B desde el 25/11/2026).
+    if (ruta === 'demo-a') expect(hallazgosDeLaRafaga(f)).toEqual([]);
+    else expect(hallazgosDeLaRafaga(f, { consumidor: 'AI Agent NovuChat' })).toEqual([]);
   });
 
   it.each([['demo-a'], ['clientes/demo-b/demo-b-venta-cobro.json']])('%s: con `campos: {texto: \'texto\'}` NO arma (su normalizador emite `userInput`, no `texto`)', (ruta) => {
-    expect(() => injertarRafaga(real(ruta === 'demo-a' ? demoA : ruta), { ancla: ANCLA_DEMO, campos: TEXTO, consumidor: null })).toThrow(/«Normalizar entrada» no emite texto \(«texto»\)/);
-    expect(() => injertarRafaga(real(ruta === 'demo-a' ? demoA : ruta), { ancla: ANCLA_DEMO, consumidor: null })).toThrow(/falta `campos.texto`/);
+    expect(() => injertarRafaga(quitarRafaga(real(ruta === 'demo-a' ? demoA : ruta)), { ancla: ANCLA_DEMO, campos: TEXTO, consumidor: null })).toThrow(/«Normalizar entrada» no emite texto \(«texto»\)/);
+    expect(() => injertarRafaga(quitarRafaga(real(ruta === 'demo-a' ? demoA : ruta)), { ancla: ANCLA_DEMO, consumidor: null })).toThrow(/falta `campos.texto`/);
   });
 
   it('el `phoneNumberId` de los normalizadores de los demos (un spread de la entrada) solo se acepta por la huella verificada: si el código cambia, deja de armar', () => {
-    const f = real('clientes/demo-b/demo-b-venta-cobro.json');
+    const f = quitarRafaga(real('clientes/demo-b/demo-b-venta-cobro.json'));
     expect(Object.keys(NORMALIZADORES_VERIFICADOS)).toContain(huellaDe(nodo(f, 'Normalizar entrada').parameters.jsCode));
     nodo(f, 'Normalizar entrada').parameters.jsCode += '\n// retocado';
     expect(() => injertarRafaga(f, { ancla: ANCLA_DEMO, campos: USER_INPUT, consumidor: null })).toThrow(/phoneNumberId \(«phoneNumberId»\) \[llega por un spread que no se puede resolver/);
@@ -674,7 +677,9 @@ describe('rafaga: el CONSUMIDOR de `textoDelTurno` es obligatorio y se verifica'
       const f = quitarRafaga(JSON.parse(readFileSync(join(RAIZ_FLUJOS, ruta), 'utf8')));
       expect(() => injertarRafaga(f, { ancla, campos, fuente }), ruta).toThrow(/falta `consumidor`/);
       // y con un consumidor declarado pero que NO lee el texto agrupado (el flujo sin cablear) también
-      expect(() => injertarRafaga(f, { ancla, campos, fuente, consumidor: ancla.destino }), ruta).toThrow(/no lee `textoDelTurno`/);
+      // (Walisuma ya trae su cableado desde su PR: «Decidir turno» SÍ lee el texto agrupado, así que ahí el consumidor declarado es válido.)
+      if (ruta.includes('walisuma')) expect(() => injertarRafaga(f, { ancla, campos, fuente, consumidor: ancla.destino }), ruta).not.toThrow();
+      else expect(() => injertarRafaga(f, { ancla, campos, fuente, consumidor: ancla.destino }), ruta).toThrow(/no lee `textoDelTurno`/);
     }
   });
 });

@@ -35,6 +35,7 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hallazgosDelGuardado, injertarGuardado } from '../../src/core/sin-agente/guardado.mjs';
 import { hallazgosDelIndicador, injertarIndicador } from '../../src/core/indicador/indicador-escritura.mjs';
+import { hallazgosDeLaRafaga, injertarRafaga } from '../../src/core/rafaga/rafaga.mjs';
 import { reglaDeIdentidadDelCore } from './regla-identidad.mjs';
 import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../../src/core/sin-agente/expresiones.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, validarMapaCrm } from '../../experimental/comun-sin-agente/construir-crm.mjs';
@@ -48,6 +49,8 @@ const TENANT_CRM = 'bellido';
 /** Los 8 nodos de la rama del miniCRM (el modulo `crm` los genera). */
 const NODOS_DE_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
 const verificar = process.argv.includes('--verificar');
+/** Tope de nodos de Bellido. 73 (71 + 2 del indicador de escritura, 21/11/2026) + 4 de la ráfaga: autorizado por Andres el 25/11/2026 («Sí, +4 nodos por flujo»). */
+const TOPE_DE_NODOS = 77;
 
 const leer = (ruta) => readFileSync(join(AQUI, ruta), 'utf8');
 const LIB = leer('src/lib/agenda.js').trimEnd();
@@ -169,6 +172,13 @@ function armar(v) {
   injertarGuardado(flujo, { guardarUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio' });
   // El INDICADOR de escritura (los tres puntos; módulo común, nunca copiado): rama lateral ANTES del modelo, con la credencial del envío por Graph, sin Continue on Fail fuera de ese nodo. Excepción a la prohibición 5 autorizada por Andres el 21/11/2026.
   injertarIndicador(flujo, { ancla: { nodo: '¿Extraer?' } });
+  // La RÁFAGA (módulo común, nunca copiado; 25/11/2026): 2-3 textos seguidos del mismo teléfono se contestan UNA vez. El ancla va DESPUÉS de todos los desvíos que responden por otra rama (comercio no operativo, uso extendido) y de
+  // «Reportar mensaje (entrante)»; el item del ancla es la respuesta del reporte (HTTP en línea), así que el id, el teléfono, el número y el texto se leen de «Interpretar entrada» (`fuente`, el que emite el mensaje con `texto`), que corre una vez por mensaje.
+  // «Decidir turno» lee `textoDelTurno` de «Agrupar ráfaga». Mensajes por conversación: ninguno agregado; una ráfaga de n textos quita n-1.
+  injertarRafaga(flujo, { ancla: { nodo: '¿Atención normal?', salida: 0, destino: '¿Bajar medio?' }, fuente: 'Interpretar entrada', consumidor: 'Decidir turno', campos: { texto: 'texto' }, posicion: [2360, 380] });
+  const hallazgosRafaga = hallazgosDeLaRafaga(flujo, { exigir: true, fuente: 'Interpretar entrada', consumidor: 'Decidir turno', campos: { texto: 'texto' } });
+  if (hallazgosRafaga.length) throw new Error(`${v.archivo}: ráfaga: ${hallazgosRafaga.join('; ')}`);
+  if (flujo.nodes.length > TOPE_DE_NODOS) throw new Error(`${v.archivo}: tiene ${flujo.nodes.length} nodos y el tope es ${TOPE_DE_NODOS}`);
   // La misma guardia que la prueba de CI «guardado obligatorio»: nueve nodos, ningún Code que lea el binario, retención en «none» (contrato v2 del 30/10).
   const hallazgosGuardado = hallazgosDelGuardado(flujo, { exigir: true });
   if (hallazgosGuardado.length) throw new Error(`${v.archivo}: ${hallazgosGuardado.join('; ')}`);

@@ -1279,8 +1279,13 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
 describe('Los tres flujos corren el mismo código para esto', () => {
   it('Procesar respuesta, Comprobar reserva, Retomar respuesta y Procesar reintento son idénticos en los tres', () => {
     const [a, ...otros] = FLUJOS.map(leerFlujo);
-    for (const n of ['Procesar respuesta', 'Comprobar reserva', 'Retomar respuesta', 'Procesar reintento', 'Config del negocio']) {
+    for (const n of ['Procesar respuesta', 'Comprobar reserva', 'Procesar reintento', 'Config del negocio']) {
       for (const o of otros) expect(codigoDe(o, n), n).toBe(codigoDe(a!, n));
     }
+    // «Retomar respuesta» difiere A PROPÓSITO en el Demo A: la ráfaga (27/11/2026) hace que el reintento
+    // rehaga el turno AGRUPADO (`textoDelTurno`). Bellido (flujo viejo) no lleva la pieza. Se exige la
+    // diferencia declarada, no una divergencia cualquiera: sin ráfaga en el texto, el flujo sería otro.
+    expect(codigoDe(a!, 'Retomar respuesta')).toContain('textoDelTurno');
+    for (const o of otros) expect(codigoDe(o, 'Retomar respuesta')).not.toContain('textoDelTurno');
   });
 });

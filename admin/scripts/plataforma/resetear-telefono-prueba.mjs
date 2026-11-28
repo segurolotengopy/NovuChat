@@ -171,7 +171,7 @@ export function analizarArgumentos(argvOriginal, env = process.env, opciones = {
   if (proyecto !== undefined && !proy.ok) problemas.push(proy.motivo);
 
   if (tenant === undefined) problemas.push('falta --tenant');
-  else if (!ID_TENANT.test(tenant) || TENANTS_RESERVADOS.includes(tenant)) problemas.push('--tenant: id de comercio inválido o reservado (demos y NovuChat no se resetean)');
+  else if (!ID_TENANT.test(tenant) || TENANTS_RESERVADOS.includes(tenant) || /^(novuchat.*|ensayo|demo(-.*)?)$/.test(tenant)) problemas.push('--tenant: id de comercio inválido o reservado (demos y NovuChat no se resetean)');
 
   // Lista cerrada de teléfonos: del entorno (el repositorio es público). Sin ella no se corre; --tel tiene que estar adentro.
   const crudo = env.TELEFONOS_PRUEBA;

@@ -111,7 +111,7 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
       // Los 3 nodos Code de la rama común del GUARDADO de medios (11/11/2026) NO se inyectan por manifiesto: los arma `injertarGuardado` con su cabecera propia y
       // `guardado-obligatorio.test.ts` comprueba que incluyen guardado-preparar/reintento/resultado.js tal cual.
       // El Code de la rama del guardado de la imagen SALIENTE (16/11/2026) tampoco: lo arma `injertarGuardadoSaliente` con su propia cabecera.
-      const code = j.nodes.filter((n) => n.type === 'n8n-nodes-base.code' && !(NODOS_CODE_DEL_GUARDADO as string[]).includes(n.name) && !(NODOS_DEL_GUARDADO_SALIENTE as string[]).includes(n.name)).map((n) => n.name).sort();
+      const code = j.nodes.filter((n) => n.type === 'n8n-nodes-base.code' && !(NODOS_CODE_DEL_GUARDADO as string[]).includes(n.name) && !(NODOS_DEL_GUARDADO_SALIENTE as string[]).includes(n.name) && n.name !== 'Agrupar ráfaga').map((n) => n.name).sort();
       expect(Object.keys(m.codigo).sort(), f).toEqual(code);
       // Los medios: el MISMO archivo que usan los flujos de reservas, sea cual sea su carpeta.
       expect(m.codigo['Preparar transcripción'], f).toEqual(a.codigo['Preparar transcripción']);
@@ -472,7 +472,10 @@ describe('8. La línea de comandos', () => {
     cpSync(RAIZ_FLUJOS, join(raizFalsa, 'Flujos'), { recursive: true, filter: (src) => !src.endsWith('.local.json') });
     mkdirSync(join(raizFalsa, 'admin/scripts'), { recursive: true });
     cpSync(SCRIPT, join(raizFalsa, 'admin/scripts/ensamblar-flujo.mjs'));
-    const ruta = join(raizFalsa, 'Flujos/src/core/normalizar-entrada.js');
+    // La guardia de la ráfaga (si el flujo la lleva) analiza el normalizador con `acorn`, que vive en `admin/node_modules`: el repositorio falso lo enlaza.
+    symlinkSync(join(RAIZ_FLUJOS, '../admin/node_modules'), join(raizFalsa, 'admin/node_modules'));
+    // Un módulo que NO es el normalizador: la ráfaga (si el flujo la lleva) solo arma con la huella verificada del normalizador, y cambiarlo la hace negarse a armar.
+    const ruta = join(raizFalsa, 'Flujos/src/core/comercio-no-operativo.js');
     writeFileSync(ruta, readFileSync(ruta, 'utf8') + '// cambio\n');
     let codigo = 0; let salida = '';
     try {
@@ -481,7 +484,7 @@ describe('8. La línea de comandos', () => {
       codigo = (e as { status: number }).status; salida = (e as { stdout: string }).stdout;
     }
     expect(codigo).toBe(1);
-    expect(salida).toContain(`✗ ${DEMO_A}: difiere en codigo/Normalizar entrada`);
+    expect(salida).toContain(`✗ ${DEMO_A}: difiere en codigo/Comercio no operativo`);
     expect(salida).toContain('1 flujo(s) no coinciden con sus módulos.');
   });
 });
@@ -556,7 +559,8 @@ describe('10. Flujos en subcarpetas: el manifiesto lleva la ruta relativa a Fluj
   it('negando: un módulo alterado hace fallar el flujo de la subcarpeta, nombrando el punto', () => {
     const { dir, ruta } = conFlujoMudado();
     const m = leerManifiesto(ruta, dir) as { codigo: Record<string, string> };
-    const modulo = join(dir, 'src', Object.values(m.codigo).map((e) => (Array.isArray(e) ? e[e.length - 1] : (e as { archivo?: string }).archivo ?? e))[0] as string);
+    // Cualquier módulo menos el normalizador: alterar ese deja de ARMAR la ráfaga (la guardia lo verifica por huella) y lanza en vez de «difiere».
+    const modulo = join(dir, 'src', Object.entries(m.codigo).filter(([nombre]) => nombre !== 'Normalizar entrada').map(([, e]) => (Array.isArray(e) ? e[e.length - 1] : (e as { archivo?: string }).archivo ?? e))[0] as string);
     writeFileSync(modulo, readFileSync(modulo, 'utf8') + '\n// alterado\n');
     const r = verificarFlujo(ruta, dir);
     expect(r.estado).toBe('difiere');
