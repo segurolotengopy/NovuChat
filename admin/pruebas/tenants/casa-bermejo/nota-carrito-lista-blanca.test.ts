@@ -24,7 +24,7 @@ const todo = (t: ReturnType<typeof hablar>): string => textos(t).join(' ') + ' '
 const dice = (texto: string, lineas: unknown[], opc: Partial<Opciones> = {}): ReturnType<typeof crear> => crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: modelo(texto, { lineas: lineas as never }), ...opc });
 const FIJO = 'Con gusto. Si necesitas algo más, escríbeme.';
 
-// Una conversación ya iniciada (el primer turno lo contesta el saludo del código): el SEGUNDO turno es el que se prueba, con el pedido vacío y la frase del modelo dada. El primer turno recibe una pregunta del modelo para no dejar un texto fijo repetido en el historial.
+// Una conversación ya iniciada (el primer turno lo contesta el saludo del código): el SEGUNDO turno es el que se prueba, con el pedido vacío y la frase del modelo dada. El primer turno es una consulta con coincidencias reales (el código las muestra): la ficha ya queda saludada y sin avance.
 const conv = (frase: string, lineas: unknown[] = [], opc: Partial<Opciones> = {}): ReturnType<typeof crear> => {
   const m = crear({ catalogo: catalogoOk({}, REAL as never), modeloDice: (ll: LlamadaDoble) => (/saludo-inicial/.test(textoAlModelo(ll)) ? modelo('Tenemos Billetera de cuero a Bs 450.') : modelo(frase, { lineas: lineas as never })), ...opc });
   hablar(m, ANA, mTexto('saludo-inicial billetera'));

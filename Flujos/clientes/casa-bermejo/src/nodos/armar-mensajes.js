@@ -116,7 +116,7 @@ const notaDe = (d) => (typeof d.nota === 'string' && d.nota !== '' ? 'Nota del c
 const AVISO_NOTA = '… (completa en el resumen del pago)';
 // DECISIÓN DE ANDRES (27/11/2026, «Oculta al cliente, clara a la tienda»): una nota con palabras de pago («pago acreditado», «el anticipo ya está pagado») NO se repite al cliente en NINGÚN mensaje (ni en el de «Confirmar pedido» ni junto al QR): ve «queda anotada con su/tu pedido» en el trato del comercio;
 // a la tienda llega con el rótulo «Nota escrita por el cliente (no es un estado de pago): …» (`bmLineasPedido`). La red de «pago acreditado / verificado / recibimos tu pago» no se toca.
-const notaCabe = (nota, libre) => (nota === '' || libre < 1 ? '' : (nota.length <= libre ? nota : (libre >= AVISO_NOTA.length + 30 ? nota.slice(0, libre - AVISO_NOTA.length).trimEnd() + AVISO_NOTA : '')));
+const notaCabe = (nota, libre) => (nota === '' || libre < 1 ? '' : (Array.from(nota).length <= libre ? nota : (libre >= AVISO_NOTA.length + 30 ? bmRecortarPuntos(nota, libre - AVISO_NOTA.length).trimEnd() + AVISO_NOTA : '')));
 const notaFicha = (d) => (typeof d.nota === 'string' ? d.nota : fichaAntes.nota);
 // El resumen del pedido que cabe en `tope` caracteres: con un pedido grande se quitan líneas de piezas («… y N piezas más») y NUNCA el total ni lo que va detrás (los datos, «Corregir datos»).
 function ajustarResumen(resumen, tope) {
@@ -437,11 +437,11 @@ if (puerta.ruta === 'sigue') {
       : bmTextoDerivacion(d.motivo, salio);
     msgs = [conRecepcion(conSaludo(antepone(cuerpo)))];
     // R58: desde ahora y por un rato, el asistente no ofrece sumar otra pieza (`bmResolverModelo`).
-    nuevos.derivadoMs = ahora; ev.derivadoMs = fichaAntes.derivadoMs;
+    if (d.motivo !== 'sin_avance') { nuevos.derivadoMs = ahora; ev.derivadoMs = fichaAntes.derivadoMs; }   // D-B (Andres, 28/11/2026): el pase a recepción por falta de avance NO abre la ventana de 2 h: si después el cliente pide algo concreto, se atiende normal
     // La memoria también registra la derivación (lo que dijo el cliente, entero, y lo que se le respondió): sin esto, el turno siguiente decidiría con un estado viejo («el asistente pidió el nombre»).
     recordar(typeof c.plan.textoCompleto === 'string' && c.plan.textoCompleto !== '' ? c.plan.textoCompleto : c.plan.textoCliente, cuerpo + (uAntes !== '' ? ' (respuesta de la tienda enviada)' : ''));
     // `pide` PERSISTE al derivar (26/11/2026): el dato que se estaba pidiendo sigue pedido; la lista o el botón del mensaje anterior siguen valiendo y el turno siguiente vuelve a pedir el MISMO dato.
-    if (salio === true && d.aviso && d.aviso.tipo === 'consulta') { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
+    if (salio === true && d.aviso && d.aviso.tipo === 'consulta') { const campo = d.aviso.clave === 'sin_avance' ? 'avisoSinAvanceMs' : 'avisoConsultaMs'; nuevos[campo] = ahora; ev[campo] = fichaAntes[campo]; }
     // Un pedido cambiado cuyo cobro no se pudo cerrar: el pedido nuevo se conserva (el QR viejo sigue abierto y el cliente ya sabe que no pague con él).
     // Derivar por un `quiereHablar` del modelo NO borra lo que el cliente ya dio: se guardan las piezas y la entrega capturadas (3.ª revisión independiente, 24/11/2026).
     if (d.guardaPedido === true && Array.isArray(d.lineas) && d.entrega) { nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.nota = notaFicha(d); ev.nota = fichaAntes.nota; nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega; }
@@ -471,6 +471,12 @@ if (puerta.ruta === 'sigue' && msgs.length === 1 && enlaceCat !== '' && msgs[0] 
 
 // Un número de otro país: el aviso a la tienda sale UNA vez por teléfono; se anota solo si el aviso salió (en prueba sin envío de verdad cuenta como salido).
 if (puerta.ruta === 'sigue' && d.aviso && d.aviso.clave === 'otro_pais' && salio === true) { nuevos.avisoPaisMs = ahora; ev.avisoPaisMs = fichaAntes.avisoPaisMs; }
+// Los contadores por ESTADO (válvula de «sin avance»): los escribe la ruta de la conversación con el pedido vacío; cualquier otro turno los reinicia.
+if (puerta.ruta === 'sigue') {
+  nuevos.sinAvance = (tipoDePlan === 'modelo' || tipoDePlan === 'cortes') && typeof d.sinAvance === 'number' ? d.sinAvance : 0;
+  nuevos.fallos = tipoDePlan === 'modelo' && typeof d.fallos === 'number' ? d.fallos : 0;
+  nuevos.ultimoMensajeMs = Number(t.mensajeMs) > 0 ? Number(t.mensajeMs) : ahora;   // la hora del MENSAJE, no la de la ejecución: un reintento de n8n no reinicia el contador
+}
 // La ficha: se escribe siempre (también cuando no sale nada), una vez por turno, y solo la de ESTE teléfono.
 const fichas = cnMapaDeFichas(true);
 if (fichas.sd) {

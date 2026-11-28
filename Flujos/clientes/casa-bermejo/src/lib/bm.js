@@ -69,6 +69,15 @@ function bmSeguro(texto, usted) {
 }
 // ¿La nota del cliente puede MOSTRARSE tal cual en un mensaje del flujo? Una nota que cae en la red de NIEGA_IA o de palabras de cobro («el anticipo ya está pagado») no se borra ni se descarta (queda entera en la ficha y viaja con el pedido),
 // pero mostrarla dentro del mensaje haría que `bmSeguro` reemplazara el mensaje ENTERO por el saludo mínimo: ahí se muestra un aviso en su lugar.
+// Recorta un texto a `max` PUNTOS DE CÓDIGO (no unidades UTF-16) sin partir un par sustituto ni una secuencia de emoji (ZWJ, selectores, modificadores): el corte retrocede hasta un límite de carácter completo.
+function bmRecortarPuntos(t, max) {
+  const cp = Array.from(String(t === undefined || t === null ? '' : t));
+  if (cp.length <= max) return cp.join('');
+  let corte = max;
+  const sigue = (c) => c === '\u200D' || /[\u{FE00}-\u{FE0F}\u{1F3FB}-\u{1F3FF}\u{E0020}-\u{E007F}\u0300-\u036F\u20E3]/u.test(c);
+  while (corte > 0 && (sigue(cp[corte]) || cp[corte - 1] === '\u200D')) corte--;
+  return cp.slice(0, corte).join('').trim();
+}
 function bmNotaMostrable(nota) {
   const t = String(nota === undefined || nota === null ? '' : nota);
   return !BM_NIEGA_IA.test(bmNorm(t)) && !CB_PROHIBIDAS.test(cbCanon(t));
@@ -88,6 +97,9 @@ function bmEsRiesgo() {
 const BM_RECUERDOS = 15;          // mensajes de la charla que el modelo recuerda
 const BM_LARGO_RECUERDO = 200;    // caracteres por mensaje recordado
 const BM_VENTANA_CONSULTA_MS = 30 * 60 * 1000;
+// D-A «Categorías, luego recepción» (Andres, 28/11/2026): con el pedido vacío el 1.er mensaje vago (el saludo vago cuenta) recibe la pregunta fija, el 2.º seguido sin avance las categorías y el 3.º pasa con recepción (aviso + botón). El 2.º nunca deriva.
+const BM_TURNOS_SIN_AVANCE = 3;
+const BM_FALLOS_PARA_RECEPCION = 2;   // el mismo fallo real («No pude agregar esa pieza…») dos veces seguidas
 // El tope del aviso de un DEFECTO del catálogo (global, no por teléfono): a lo más una vez por causa cada 6 h. Vive en una clave HERMANA del mapa de fichas, porque `bmBarrer` barre el mapa.
 const BM_CLAVE_ALERTAS = 'casabermejoAlertas';
 const BM_VENTANA_ALERTA_CATALOGO_MS = 6 * 60 * 60 * 1000;
@@ -135,7 +147,7 @@ function bmFilasDeLista(dato, region) {
 function bmFichaBase() {
   return {
     v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, fueraDePaisMs: 0, avisoPaisMs: 0,
-    carrito: [], nota: '', entrega: bmEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, avisoNoCuadraMs: 0,
+    carrito: [], nota: '', entrega: bmEntregaBase(), cierre: false, pedidos: 0, qrHastaMs: 0, qrCarrito: [], comprobanteMs: 0, mostrados: [], hist: [], avisoConsultaMs: 0, avisoSinAvanceMs: 0, sinAvance: 0, fallos: 0, ultimoMensajeMs: 0, avisoNoCuadraMs: 0,
     aliasPedidoId: '', aliasEstado: '', aliasVenceMs: 0, aliasMontoCent: 0, aliasAr: '',
     catalogoOfrecido: false, pedidoCatalogo: '', derivadoMs: 0,
     pide: [], lista: { cat: '', n: 0 },
@@ -181,7 +193,7 @@ function bmFichaVigente(e, ahoraMs) {
     avisoPaisMs: bmNumero(e.avisoPaisMs),   // cuándo se avisó a la tienda de que este teléfono es de otro país (una vez); NO se usa `fueraDePaisMs`, que la entrada común usa para callar al número
     carrito: bmCarritoDeFicha(e.carrito),
     // La nota del cliente del mensaje pegado (UNA por pedido, hasta 500 caracteres; se vacía con el pedido).
-    nota: typeof e.nota === 'string' ? cbLinea(e.nota, 500) : '',
+    nota: typeof e.nota === 'string' ? bmRecortarPuntos(e.nota.normalize('NFC').replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, ' ').replace(/\s+/g, ' ').trim(), 500) : '',   // sin cbLinea (borra «<>&»): la nota se conserva tal cual la limpió bmLimpiarNota
     entrega: bmEntregaDeFicha(e.entrega),
     cierre: e.cierre === true,
     pedidos: bmNumero(e.pedidos, 100000),
@@ -191,6 +203,10 @@ function bmFichaVigente(e, ahoraMs) {
     mostrados: (Array.isArray(e.mostrados) ? e.mostrados : []).filter((x) => typeof x === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(x)).slice(-15),
     hist: (Array.isArray(e.hist) ? e.hist : []).filter((x) => x && (x.r === 'u' || x.r === 'm') && typeof x.t === 'string' && x.t !== '').map((x) => ({ r: x.r, t: bmParaMemoria(x.t).slice(0, BM_LARGO_RECUERDO) })).slice(-BM_RECUERDOS),
     avisoConsultaMs: bmNumero(e.avisoConsultaMs),
+    avisoSinAvanceMs: bmNumero(e.avisoSinAvanceMs),
+    ultimoMensajeMs: bmNumero(e.ultimoMensajeMs),   // la HORA DEL MENSAJE del cliente (WhatsApp), con la que caduca el contador de «sin avance»
+    sinAvance: bmNumero(e.sinAvance, 1000),
+    fallos: bmNumero(e.fallos, 1000),
     avisoNoCuadraMs: bmNumero(e.avisoNoCuadraMs),
     // Argentina, cobro por alias (B9): el pedido anotado (`wa_<referencia>`), en qué paso está ('' | 'pedido' | 'abierto' | 'fin'), cuándo vence el alias y el monto y el alias que el servidor dio. El alias es un dato del comercio, no un secreto.
     aliasPedidoId: typeof e.aliasPedidoId === 'string' && /^wa_[A-Za-z0-9_-]{1,60}$/.test(e.aliasPedidoId) ? e.aliasPedidoId : '',
@@ -305,6 +321,7 @@ const BM_INTROS = {
   ubicacion_sin_dato: 'Por ahora no tengo la dirección de la tienda para dártela: eso lo ve directamente una persona del equipo.',
   horario_sin_dato: 'Por ahora no tengo cargado el horario de la tienda: eso lo ve directamente una persona del equipo.',
   quiere_hablar: 'Con gusto: esto lo ve directamente una persona del equipo.',
+  sin_avance: 'No logré entender qué pieza buscas: eso lo ve directamente una persona del equipo.',
   corporativo: 'Los pedidos por volumen y los regalos corporativos los coordina directamente una persona del equipo.',
   factura: 'La factura la gestiona directamente recepción.',
   comprobante_sin_cobro: 'Recibí una imagen que parece un comprobante, pero no tengo un pedido con QR abierto a tu nombre.',
