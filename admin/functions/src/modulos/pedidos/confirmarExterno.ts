@@ -116,28 +116,17 @@ export interface CuerpoDeConfirmacion { pedidoId: string; items: ItemParaNovuTie
 export const MAX_NOTA_NOVUTIENDA = 500;
 
 /**
- * La nota lista para enviar, o `null` (entonces NO se manda; la confirmación sigue). Texto de 1 a 500 puntos de código,
- * sin caracteres de control (`\p{Cc}`), sin pares sustitutos cortados y no solo espacios.
- *
- * CÓMO CUENTA NOVUTIENDA EL TOPE DE 500: no está confirmado si en puntos de código o en unidades UTF-16 (`.length` de JS).
- * Antes de encender la bandera, NovuTienda debe confirmar por escrito cómo cuenta; hasta entonces se envía el mínimo común:
- * lo que sale cumple AMBAS lecturas (≤500 puntos y ≤500 unidades UTF-16). Si el texto pasa de 500 unidades, se recorta por
- * puntos de código completos (nunca parte un par sustituto) y sin espacios finales; si queda vacío, no se manda la clave.
- * Lo guardado en `notaCliente` no se toca: sigue siendo de hasta 500 puntos de código.
+ * La nota lista para enviar, o `null` (entonces NO se manda; la confirmación sigue). Contrato confirmado por NovuTienda
+ * (27/11/2026): de 1 a 500 PUNTOS DE CÓDIGO (`Array.from(nota).length`; un emoji cuenta 1), y rechaza con 400 (no recorta)
+ * cualquier control U+0000–001F, U+007F–009F, U+2028 y U+2029 (incluidos \n y \t). Aquí: sin esos caracteres (`\p{Cc}`,
+ * U+2028, U+2029), sin pares sustitutos cortados, no solo espacios y como mucho 500 puntos de código. No se modifica: sale
+ * tal cual. Los controles ya los convierte en espacios `lineaLimpia` al guardar; esto es defensa en profundidad.
  */
 export function notaParaNovuTienda(v: unknown): string | null {
   if (typeof v !== 'string' || v.trim() === '') return null;
-  if (/\p{Cc}/u.test(v) || /\p{Cs}/u.test(v)) return null; // `\p{Cs}` con `u` solo casa los sustitutos SUELTOS
-  const puntos = Array.from(v);
-  if (puntos.length < 1 || puntos.length > MAX_NOTA_NOVUTIENDA) return null;
-  if (v.length <= MAX_NOTA_NOVUTIENDA) return v;
-  let salida = '';
-  for (const p of puntos) {
-    if (salida.length + p.length > MAX_NOTA_NOVUTIENDA) break;
-    salida += p;
-  }
-  salida = salida.trimEnd();
-  return salida === '' ? null : salida;
+  if (/[\p{Cc}\u2028\u2029]/u.test(v) || /\p{Cs}/u.test(v)) return null; // `\p{Cs}` con `u` solo casa los sustitutos SUELTOS
+  const largo = Array.from(v).length;
+  return largo >= 1 && largo <= MAX_NOTA_NOVUTIENDA ? v : null;
 }
 
 /**

@@ -120,7 +120,7 @@ describe('N2. el cuerpo y la validación de la nota', () => {
     expect(M.firmaDeConfirmacion('secreto-de-prueba', 123, con)).not.toBe(M.firmaDeConfirmacion('secreto-de-prueba', 123, sin));
   });
   it('una nota inválida pasada a armarCuerpo tampoco sale (se vuelve a validar)', () => {
-    for (const nota of ['x'.repeat(501), 'a\u0000b', 'a\nb', '\ud83d', 'a\ud83db']) {
+    for (const nota of ['x'.repeat(501), 'a\u0000b', 'a\nb', 'a\tb', 'a\u007fb', 'a\u0085b', 'a\u2028b', 'a\u2029b', '\ud83d', 'a\ud83db']) {
       expect(JSON.stringify(M.armarCuerpo('wa_BM1', ITEMS, AHORA, nota))).toBe(DE_HOY);
     }
   });
@@ -129,22 +129,13 @@ describe('N2. el cuerpo y la validación de la nota', () => {
     expect(M.notaParaNovuTienda('a'.repeat(501))).toBeNull();
     expect(M.notaParaNovuTienda('😀'.repeat(501))).toBeNull();
   });
-  it('mínimo común: lo enviado cumple ≤500 puntos Y ≤500 unidades UTF-16; con emojis se recorta sin partir pares ni dejar vacío', () => {
-    for (const n of [251, 400, 500]) {
-      const r = M.notaParaNovuTienda('😀'.repeat(n));
-      expect(r, String(n)).toBe('😀'.repeat(250)); // 250 emojis = 500 unidades
-      expect(r!.length).toBeLessThanOrEqual(500);
-      expect(r).not.toMatch(/\p{Cs}/u);
-    }
-    expect(M.notaParaNovuTienda('😀'.repeat(250))).toBe('😀'.repeat(250)); // justo: entera
-    expect(M.notaParaNovuTienda('a'.repeat(498) + '😀😀')).toBe('a'.repeat(498) + '😀'); // 500 puntos, 502 unidades: el último emoji no cabe, sin par roto
-    expect(M.notaParaNovuTienda('a'.repeat(499) + '😀')).toBe('a'.repeat(499)); // el emoji (2 unidades) no cabe
-    expect(M.notaParaNovuTienda('a'.repeat(498) + ' 😀')).toBe('a'.repeat(498)); // sin espacio final
-    expect(M.notaParaNovuTienda('   ')).toBeNull();
-    for (const v of ['😀', 'a', '😀'.repeat(300)]) expect(M.notaParaNovuTienda(v) ?? 'x').not.toBe('');
+  it('conteo confirmado por NovuTienda: 500 PUNTOS de código entran enteros, aunque sean 1000 unidades UTF-16; nunca se recorta', () => {
+    for (const n of [251, 400, 500]) expect(M.notaParaNovuTienda('😀'.repeat(n)), String(n)).toBe('😀'.repeat(n));
+    expect(M.notaParaNovuTienda('a'.repeat(499) + '😀')).toBe('a'.repeat(499) + '😀');
+    expect(M.notaParaNovuTienda('😀'.repeat(501))).toBeNull();
   });
   it('validación: control (\\p{Cc}), par sustituto cortado, solo espacios, vacío y tipos ajenos = null', () => {
-    for (const v of ['a\u0000b', 'a\u001fb', 'a\tb', 'a\nb', 'a\u007fb', 'a\u0085b', '\ud83d', '\ude00', 'ab\ud83d', '😀'.slice(0, 1), '', ' ', '   ', undefined, null, 7, {}, ['a']]) {
+    for (const v of ['a\u0000b', 'a\u001fb', 'a\tb', 'a\nb', 'a\u007fb', 'a\u0085b', 'a\u2028b', 'a\u2029b', 'a\u009fb', '\ud83d', '\ude00', 'ab\ud83d', '😀'.slice(0, 1), '', ' ', '   ', undefined, null, 7, {}, ['a']]) {
       expect(M.notaParaNovuTienda(v), JSON.stringify(v)).toBeNull();
     }
     expect(M.notaParaNovuTienda('con tildes, ñ y 😀 va')).toBe('con tildes, ñ y 😀 va');
@@ -238,12 +229,11 @@ describe('N3. la callable: la nota solo sale con la bandera encendida', () => {
     expect(h.llamadas[0]!.cuerpo).toBe(DE_HOY.slice(0, -1) + ',"nota":"sin cebolla 😀"}');
     expect(firmaOk(h.llamadas[0]!)).toBe(true);
   });
-  it('nota de 400 emojis (guardada): sale recortada a ≤500 unidades UTF-16, sin par roto, y la firma cubre ese cuerpo', async () => {
+  it('nota de 400 emojis (guardada): sale ENTERA (400 puntos de código) y la firma cubre ese cuerpo', async () => {
     await sembrar({ notaANovuTienda: true }, { notaCliente: '😀'.repeat(400) });
     await llamar();
     const nota = JSON.parse(h.llamadas[0]!.cuerpo).nota as string;
-    expect(nota.length).toBeLessThanOrEqual(500);
-    expect(nota).toBe('😀'.repeat(250));
+    expect(nota).toBe('😀'.repeat(400));
     expect(firmaOk(h.llamadas[0]!)).toBe(true);
     expect((await db.doc(`tenants/${T}/pedidos/wa_BM1`).get()).get('notaCliente')).toBe('😀'.repeat(400)); // lo guardado no se recorta
   });
@@ -253,7 +243,7 @@ describe('N3. la callable: la nota solo sale con la bandera encendida', () => {
     expect(JSON.parse(h.llamadas[0]!.cuerpo)).toEqual({ ...JSON.parse(DE_HOY), nota: 'z'.repeat(500) });
   });
   it('nota inválida (501, control, par sustituto cortado, solo espacios): NO se envía y la confirmación sigue', async () => {
-    for (const nota of ['q'.repeat(501), 'a\u0000b', 'a\nb', '   ']) {
+    for (const nota of ['q'.repeat(501), 'a\u0000b', 'a\nb', 'a\tb', 'a\u2028b', 'a\u2029b', 'a\u0085b', 'a\u007fb', '   ']) {
       await sembrar({ notaANovuTienda: true }, { notaCliente: nota });
       h.llamadas = [];
       expect(await llamar(), JSON.stringify(nota)).toMatchObject({ estado: 'confirmado' });
