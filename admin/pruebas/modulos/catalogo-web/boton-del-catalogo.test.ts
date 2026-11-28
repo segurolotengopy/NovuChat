@@ -146,6 +146,66 @@ describe('cwConBotonCatalogo', () => {
     expect(cw.cwMensajeBotonCatalogo('http://a.test/x')).toBeNull();
     expect(cw.cwMensajeBotonCatalogo(URL_OK)!.payload.interactive!.type).toBe('cta_url');
   });
+  it('M-2 NIEGA: la leyenda de una imagen con 60 viñetas corta por líneas ENTERAS, remite con la cuenta exacta y lleva el enlace una sola vez', () => {
+    const caption = Array.from({ length: 60 }, (_, i) => `• Producto ${i} — Bs ${i}`).join('\n');
+    const img = { payload: { type: 'image', image: { link: 'https://a.test/x.jpg', caption } }, texto: 'x' };
+    expect(cw.cwConBotonCatalogo(img, URL_OK)).toBe(true);
+    const sale = img.payload.image.caption;
+    expect(sale.length).toBeLessThanOrEqual(1024);
+    const lineas = sale.split('\n').filter((l) => l.startsWith('•'));
+    expect(lineas.length).toBeGreaterThan(0);
+    expect(lineas.length).toBeLessThan(60);
+    for (const l of lineas) expect(l).toMatch(/^• Producto \d+ — Bs \d+$/);
+    lineas.forEach((l, i) => expect(l).toBe(`• Producto ${i} — Bs ${i}`));
+    expect(sale).toContain(`Hay ${60 - lineas.length} productos más; míralos en el catálogo.`);
+    expect(sale.split(URL_OK)).toHaveLength(2);
+    expect(sale.endsWith('Ver catálogo: ' + URL_OK)).toBe(true);
+  });
+  it('NIEGA: una leyenda de imagen que ya trae el enlace no lo repite ni se toca', () => {
+    const caption = 'Mira todo: ' + URL_OK;
+    const img = { payload: { type: 'image', image: { link: 'https://a.test/x.jpg', caption } }, texto: 'x' };
+    expect(cw.cwConBotonCatalogo(img, URL_OK)).toBe(true);
+    expect(img.payload.image.caption).toBe(caption);
+    expect(img.payload.image.caption.split(URL_OK)).toHaveLength(2);
+  });
+  it('NIEGA: el respaldo de un mensaje de botones de respuesta de más de 4000 caracteres mide ≤ 4000, corta por líneas enteras, dice cuántas faltan y termina en el enlace', () => {
+    const lineas = Array.from({ length: 150 }, (_, i) => `• Producto número ${i} de nombre mediano — Bs ${10 + i}`);
+    const respaldo = 'Tenemos:\n' + lineas.join('\n');
+    expect(respaldo.length).toBeGreaterThan(4000);
+    const botones = { type: 'interactive', interactive: { type: 'button', body: { text: 'Tenemos:' }, action: { buttons: [{ type: 'reply', reply: { id: 'si', title: 'Sí' } }] } } };
+    const m: { payload: unknown; texto: string; respaldo: string } = { payload: botones, texto: 'Tenemos:', respaldo };
+    expect(cw.cwConBotonCatalogo(m, URL_OK)).toBe(true);
+    expect(m.respaldo.length).toBeLessThanOrEqual(4000);
+    expect(m.respaldo.endsWith(URL_OK)).toBe(true);
+    const dicen = /Hay (\d+) productos más; míralos en el catálogo\./.exec(m.respaldo);
+    expect(dicen, 'debe decir cuántos faltan').not.toBeNull();
+    const mostradas = m.respaldo.split('\n').filter((l) => l.startsWith('•'));
+    expect(mostradas.length + Number(dicen![1])).toBe(150);
+    for (const l of mostradas) expect(l).toMatch(/^• Producto número \d+ de nombre mediano — Bs \d+$/);
+    expect(m.respaldo.split(URL_OK)).toHaveLength(2);
+  });
+  it('NIEGA: las viñetas «- », «* » y «– » también cuentan en «Hay N productos más»', () => {
+    for (const v of ['-', '*', '–']) {
+      const lineas = Array.from({ length: 40 }, (_, i) => `${v} Producto número ${i} de nombre mediano — Bs ${10 + i}`);
+      const m = msg('Tenemos:\n' + lineas.join('\n'));
+      expect(cw.cwConBotonCatalogo(m, URL_OK), v).toBe(true);
+      const dicen = /Hay (\d+) productos más; míralos en el catálogo\./.exec(m.texto);
+      expect(dicen, `con «${v}» debe decir cuántos faltan`).not.toBeNull();
+      const mostradas = m.texto.split('\n').filter((l) => l.startsWith(v + ' ')).length;
+      expect(mostradas + Number(dicen![1]), v).toBe(40);
+    }
+  });
+  it('NIEGA: cuando falta exactamente 1 producto el texto va en singular: «Hay 1 producto más; míralo en el catálogo.»', () => {
+    // 18 líneas que caben y una última, larguísima, que no cabe: falta exactamente 1.
+    const lineas = Array.from({ length: 18 }, (_, i) => `• Producto número ${i} de nombre mediano — Bs ${10 + i}`);
+    lineas.push('• Producto final con un nombre larguísimo ' + 'x'.repeat(150) + ' — Bs 99');
+    const m = msg('Tenemos:\n' + lineas.join('\n'));
+    expect(m.texto.length).toBeGreaterThan(1000);
+    expect(cw.cwConBotonCatalogo(m, URL_OK)).toBe(true);
+    expect(m.texto.split('\n').filter((l) => l.startsWith('•'))).toHaveLength(18);
+    expect(m.texto.endsWith('\n\nHay 1 producto más; míralo en el catálogo.')).toBe(true);
+    expect(m.texto).not.toMatch(/productos más/);
+  });
   it('NIEGA: el enlace no se repite si el cuerpo ya lo trae', () => {
     const botones = { type: 'interactive', interactive: { type: 'button', body: { text: 'Mira ' + URL_OK }, action: { buttons: [] } } };
     cw.cwConBotonCatalogo({ payload: botones, texto: 'x' }, URL_OK);
