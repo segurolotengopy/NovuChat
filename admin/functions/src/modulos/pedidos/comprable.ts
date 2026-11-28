@@ -60,6 +60,31 @@ export function lineaLimpia(v: unknown, max: number): string {
   return Array.from(limpio).slice(0, max).join('').trim();
 }
 
+const ZWJ = '\u200d';
+const VS16 = '\ufe0f';
+const esTono = (c: string | undefined): boolean => c !== undefined && c >= '\u{1F3FB}' && c <= '\u{1F3FF}';
+const esEmoji = (c: string | undefined): boolean => c !== undefined && /^\p{Extended_Pictographic}$/u.test(c);
+
+/**
+ * Conserva el ZWJ (U+200D) SOLO entre dos emojis: a su izquierda un `\p{Extended_Pictographic}` con un selector U+FE0F o
+ * un tono de piel U+1F3FB–1F3FF opcionales, y a su derecha otro `\p{Extended_Pictographic}`. En cualquier otro lugar se
+ * QUITA (no se vuelve espacio): un ZWJ entre letras no puede esconder un enlace («ht\u200dtps://») ni dejar una nota
+ * «invisible» de solo ZWJ.
+ */
+function zwjSoloEntreEmojis(t: string): string {
+  if (!t.includes(ZWJ)) return t;
+  const c = Array.from(t);
+  const salida: string[] = [];
+  for (let i = 0; i < c.length; i++) {
+    const x = c[i]!;
+    if (x !== ZWJ) { salida.push(x); continue; }
+    let k = salida.length - 1;
+    if (k >= 0 && (salida[k] === VS16 || esTono(salida[k]))) k--;
+    if (k >= 0 && esEmoji(salida[k]) && esEmoji(c[i + 1])) salida.push(x);
+  }
+  return salida.join('');
+}
+
 /** Lo que se mira de una nota antes de limpiarla (puntos de código): acota el trabajo sobre un cuerpo hostil. */
 const NOTA_TRABAJO_PREVIO = 2000;
 
@@ -67,10 +92,10 @@ const NOTA_TRABAJO_PREVIO = 2000;
  * LA NOTA DEL CLIENTE, ENTERA (decisión de Andres, 28/11/2026: «entera, una vez»). A diferencia de `lineaLimpia` (que
  * sirve al `detalle` y convierte «&», «<», «>» en espacio y borra todo `\p{Cf}`, partiendo los emojis compuestos), esta
  * limpieza CONSERVA lo que el cliente escribió y quita solo lo peligroso:
- *  - CONSERVA «&», «<», «>» y cualquier otro carácter imprimible, el ZWJ (U+200D, une los emojis compuestos) y los
+ *  - CONSERVA «&», «<», «>» y cualquier otro carácter imprimible, el ZWJ (U+200D, une los emojis compuestos) SOLO entre dos emojis (en otro lugar se quita) y los
  *    selectores de variación. El escape de «<» y «&» es de PRESENTACIÓN (React lo hace al pintar), no del almacenamiento.
  *  - Convierte en ESPACIO los controles (`\p{Cc}`, incluidos \n \r \t), U+2028 y U+2029, y colapsa los espacios.
- *  - QUITA los sustitutos sueltos (`\p{Cs}`), el uso privado (`\p{Co}`) y todo `\p{Cf}` salvo el ZWJ (las marcas
+ *  - QUITA los sustitutos sueltos (`\p{Cs}`), el uso privado (`\p{Co}`) y todo `\p{Cf}` salvo el ZWJ entre emojis (incluidas las etiquetas Unicode U+E0020–E007F) (las marcas
  *    bidireccionales U+200E/200F/202A–202E/2066–2069 y demás).
  *  - QUITA los enlaces con la misma regla que `lineaLimpia` (`quitarEnlaces`).
  *  - `trim` y recorte a `max` PUNTOS DE CÓDIGO sin partir pares sustitutos.
@@ -80,12 +105,20 @@ export function notaLimpia(v: unknown, max = 500): string {
   if (typeof v !== 'string') return '';
   // Tope previo por puntos de código; si el corte de UTF-16 partió un par, queda un sustituto suelto y se quita abajo.
   const previo = Array.from(v.slice(0, NOTA_TRABAJO_PREVIO * 2)).slice(0, NOTA_TRABAJO_PREVIO).join('');
-  const limpio = quitarEnlaces(previo
+  // El ZWJ se normaliza ANTES de buscar enlaces: así uno escondido («ht\u200dtps://…», «w\u200dww.…») se rompe y se quita.
+  const limpio = quitarEnlaces(zwjSoloEntreEmojis(previo
     .replace(/[\p{Cc}\u2028\u2029]/gu, ' ')
-    .replace(/[\p{Cs}\p{Co}]|(?!\u200d)\p{Cf}/gu, ''))
+    .replace(/[\p{Cs}\p{Co}]|(?!\u200d)\p{Cf}/gu, '')))
     .replace(/\s+/g, ' ')
     .trim();
-  return Array.from(limpio).slice(0, max).join('').trim();
+  const puntos = Array.from(limpio);
+  if (puntos.length <= max) return limpio;
+  // Corte a `max` puntos SIN partir una secuencia de emoji: si cae junto a un ZWJ, un selector de variación o un tono de
+  // piel, se retrocede hasta antes de la secuencia (👨‍👩‍👧‍👦 o 🏳️‍🌈 se quedan enteros o se van enteros).
+  let n = max;
+  while (n > 0 && (puntos[n] === ZWJ || puntos[n] === VS16 || esTono(puntos[n]) || puntos[n - 1] === ZWJ)) n--;
+  if (n === 0) n = max; // una cadena absurda de ZWJ sin cortes posibles: corte duro (el ZWJ colgante se quita abajo)
+  return puntos.slice(0, n).join('').replace(/\u200d+$/u, '').trim();
 }
 
 /** Decimales de la ubicación compartida (5 ≈ 1 m). */

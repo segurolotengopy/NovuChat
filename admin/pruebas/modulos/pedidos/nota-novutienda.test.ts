@@ -141,6 +141,7 @@ describe('N2. el cuerpo y la validación de la nota', () => {
     expect(M.notaParaNovuTienda('con tildes, ñ y 😀 va')).toBe('con tildes, ñ y 😀 va');
     // El ZWJ (emoji compuesto), «&», «<» y «>» sí salen: NovuTienda solo rechaza controles, U+2028 y U+2029.
     const familia = '👨\u200d👩\u200d👧';
+    for (const invisible of ['\u200d', '\u200d\u200d', ' \u200d ']) expect(M.notaParaNovuTienda(invisible)).toBeNull();
     expect(M.notaParaNovuTienda(`Juan & Maria <3 ${familia}`)).toBe(`Juan & Maria <3 ${familia}`);
   });
   it('la bandera: solo `true` estricto enciende', () => {
@@ -254,6 +255,21 @@ describe('N3. la callable: la nota solo sale con la bandera encendida', () => {
       h.llamadas = [];
       expect(await llamar()).toMatchObject({ estado: 'confirmado' });
       expect(h.llamadas[0]!.cuerpo).toBe(DE_HOY); // un bidi guardado a mano no sale: sin clave, la confirmación sigue
+    }
+  });
+  it('una nota con comillas y barra invertida llega idéntica al leer el JSON, con la firma válida', async () => {
+    const nota = 'dijo "hola" y escribió C:\\carpeta\\a \\n no es un salto';
+    await sembrar({ notaANovuTienda: true }, { notaCliente: nota });
+    await llamar();
+    expect(JSON.parse(h.llamadas[0]!.cuerpo).nota).toBe(nota);
+    expect(firmaOk(h.llamadas[0]!)).toBe(true);
+  });
+  it('una nota invisible (solo ZWJ) guardada a mano no sale; la confirmación sigue', async () => {
+    for (const nota of ['\u200d', '\u200d\u200d', ' \u200d ']) {
+      await sembrar({ notaANovuTienda: true }, { notaCliente: nota });
+      h.llamadas = [];
+      expect(await llamar()).toMatchObject({ estado: 'confirmado' });
+      expect(h.llamadas[0]!.cuerpo).toBe(DE_HOY);
     }
   });
   it('nota de 500 caracteres: sale; la clave jamás lleva nada más que la nota', async () => {

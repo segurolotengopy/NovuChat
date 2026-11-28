@@ -124,7 +124,8 @@ export const MAX_NOTA_NOVUTIENDA = 500;
  * se recorta: sale tal cual. `notaLimpia` ya deja la nota así al guardarla.
  */
 export function notaParaNovuTienda(v: unknown): string | null {
-  if (typeof v !== 'string' || v.trim() === '') return null;
+  // Una nota «invisible» (vacía, solo espacios o solo ZWJ) no sale: el ZWJ no cuenta como contenido.
+  if (typeof v !== 'string' || v.replace(/\u200d/g, '').trim() === '') return null;
   if (/[\p{Cc}\u2028\u2029\p{Cs}]|(?!\u200d)\p{Cf}/u.test(v)) return null; // `\p{Cs}` con `u` solo casa los sustitutos SUELTOS
   const largo = Array.from(v).length;
   return largo >= 1 && largo <= MAX_NOTA_NOVUTIENDA ? v : null;

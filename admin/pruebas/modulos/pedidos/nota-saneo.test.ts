@@ -97,3 +97,59 @@ describe('armarPedidoWa usa notaLimpia para `notaCliente`', () => {
     }
   });
 });
+
+describe('el ZWJ solo vive ENTRE dos emojis (no esconde enlaces ni deja notas invisibles)', () => {
+  const ZWJ = '\u200d';
+  const FAM4 = '👨\u200d👩\u200d👧\u200d👦';
+  const ARCOIRIS = '🏳\ufe0f\u200d🌈';
+  it('enlaces con ZWJ escondido se quitan igual', () => {
+    expect(notaLimpia(`mire ht${ZWJ}tps://malo.example/x gracias`)).toBe('mire gracias');
+    expect(notaLimpia(`mire w${ZWJ}ww.malo.example gracias`)).toBe('mire gracias');
+    expect(notaLimpia(`ht${ZWJ}tp://x.y`)).toBe('');
+    // Más estricta que lineaLimpia: esa deja «ht tps://x.y» (el ZWJ pasa a espacio y el enlace se rompe); la nota lo quita entero.
+    expect(notaLimpia(`ht${ZWJ}tps://x.y`)).toBe('');
+  });
+  it('ZWJ entre letras, pegado a un espacio, al inicio o al final: se quita', () => {
+    expect(notaLimpia(`a${ZWJ}b`)).toBe('ab');
+    expect(notaLimpia(`${ZWJ}hola${ZWJ}`)).toBe('hola');
+    expect(notaLimpia(`😀${ZWJ} a`)).toBe('😀 a');
+    expect(notaLimpia(`a ${ZWJ}😀`)).toBe('a 😀');
+    expect(notaLimpia(`1${ZWJ}2`)).toBe('12');
+  });
+  it('una nota solo de ZWJ (o ZWJ y espacios) es vacía = sin nota', () => {
+    for (const v of [ZWJ, ZWJ.repeat(50), ` ${ZWJ} ${ZWJ}\n`]) expect(notaLimpia(v)).toBe('');
+    expect(armar(ZWJ)).not.toHaveProperty('notaCliente');
+    expect(armar(ZWJ.repeat(600))).not.toHaveProperty('notaCliente');
+  });
+  it('ZWJ colgando tras el recorte a 500 no queda', () => {
+    for (const t of ['a'.repeat(499) + ZWJ + ZWJ, 'a'.repeat(500) + ZWJ + 'b', '😀'.repeat(499) + ZWJ + '😀']) {
+      const r = notaLimpia(t);
+      expect(r.endsWith(ZWJ), t.slice(-5)).toBe(false);
+      expect(Array.from(r).length).toBeLessThanOrEqual(500);
+    }
+    expect(notaLimpia('a'.repeat(499) + ZWJ + ZWJ)).toBe('a'.repeat(499));
+  });
+  it('los emojis compuestos siguen ENTEROS (familia de 4, bandera arcoíris, tonos) y entran por puntos', () => {
+    for (const e of [FAM4, ARCOIRIS, '👍🏽', `👩🏽${ZWJ}💻`, '👩\u200d❤\ufe0f\u200d👨']) expect(notaLimpia(`x ${e} y`), e).toBe(`x ${e} y`);
+  });
+  it('en el límite de 500 la secuencia no se parte: queda entera o se va entera', () => {
+    for (const e of [FAM4, ARCOIRIS]) {
+      const n = Array.from(e).length;
+      for (let relleno = 500 - n - 2; relleno <= 500; relleno++) {
+        const r = notaLimpia('a'.repeat(relleno) + e + 'b');
+        const puntos = Array.from(r);
+        expect(puntos.length, `${n}/${relleno}`).toBeLessThanOrEqual(500);
+        // o la secuencia completa está al final/medio, o no hay NINGUNA de sus piezas
+        const tiene = r.includes(e);
+        const piezas = Array.from(e).filter((c) => c !== ZWJ && c !== '\ufe0f' && r.includes(c)).length;
+        expect(tiene || piezas === 0, `${n}/${relleno}`).toBe(true);
+        expect(r.endsWith(ZWJ)).toBe(false);
+      }
+    }
+  });
+  it('etiquetas Unicode (U+E0020–E007F) se quitan: la bandera de Inglaterra queda como 🏴', () => {
+    const inglaterra = '🏴\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}';
+    expect(notaLimpia(inglaterra)).toBe('🏴');
+    expect(notaLimpia('a\u{E0041}b')).toBe('ab');
+  });
+});
