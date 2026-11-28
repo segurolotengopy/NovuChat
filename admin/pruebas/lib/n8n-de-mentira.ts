@@ -463,6 +463,9 @@ export function crearMundo(op: OpcionesMundo): Mundo {
       // `$binary` (los metadatos del binario del ítem actual): el arnés no simula binarios, así que va vacío (como un ítem sin archivo).
       $binary: {},
       Date: relojFijo(ahoraMs),
+      // `$now` mínimo (Luxon): `setZone`/`setLocale` devuelven el mismo objeto y `toFormat` el instante congelado en ISO. Alcanza para el texto del agente
+      // (fecha en el prompt); no calcula zonas ni formatos. Lo agregó la suite de ráfagas del Demo B para ejecutar el nodo `AI Agent`.
+      $now: (() => { const o: J = { setZone: () => o, setLocale: () => o, toFormat: () => new Date(ahoraMs).toISOString(), toMillis: () => ahoraMs, toISO: () => new Date(ahoraMs).toISOString() }; return o; })(),
       $getWorkflowStaticData: (tipo?: string) => (tipo === 'node' ? (sdNodos['__expresion__'] ??= {}) : sd),
       $workflow: { id: idDeFlujo, name: flujo.name, active: true },
       $execution: { id: idEjecucion, mode: 'production' },
