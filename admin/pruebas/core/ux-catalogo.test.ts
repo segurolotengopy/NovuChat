@@ -16,7 +16,7 @@ import { atiendeCliente, idDeFlujo } from './migracion/comprobaciones';
 import { idsDeOpciones, problemasDeLimites, estadoUxNuevo, violacionesDeTurno, toqueDeEntrada, vigilarUx } from './ux/vigilante';
 import type { Mundo } from '../lib/n8n-de-mentira';
 import { esInteractivo, parrafosLargos, preguntaPorOpciones, problemasDeMensaje } from './ux/catalogo';
-import { ADAPTADORES, NO_SON_DE_VENTA, PUNTOS, SIN_ADAPTADOR, flujosDeVenta, medir, type Medicion } from './ux/estandar-venta';
+import { ADAPTADORES, ENLACE, NO_SON_DE_VENTA, PUNTOS, SIN_ADAPTADOR, flujosDeVenta, medir, problemasDeBotonAparte, type Medicion, type Turno } from './ux/estandar-venta';
 import { leerFuentes } from './fuente-vm';
 import { ARCHIVOS_DE_PIEZAS, DADOS_DE_BAJA, SIN_PIEZAS_COMUNES, VENCE_MAXIMO, piezasFaltantes, problemasDeVencimiento, type ExcepcionConVencimiento } from './ux/piezas-de-catalogo';
 
@@ -73,6 +73,41 @@ describe('las piezas puras: párrafos y preguntas por opciones', () => {
     expect(parrafosLargos(m.respaldo)).toEqual([]);
   });
 });
+
+describe('I-B: el botón aparte de la lista (con enlace, la lista va seguida de un cta_url; «Ver más» no lo repite)', () => {
+  const LISTA_E = { cuerpo: 'Elige.', payload: { type: 'interactive', interactive: { type: 'list' } } };
+  const BOTON_E = { cuerpo: 'Mira todo el catálogo.', payload: { type: 'interactive', interactive: { type: 'cta_url', action: { parameters: { url: ENLACE } } } } };
+  const turno = (dijo: string, ...mensajes: unknown[]): Turno => ({ dijo, mensajes: mensajes as never, modeloLlamado: false, fallo: null });
+  const med = (parcial: Partial<Medicion>): Medicion => ({ listado: turno('¿qué tienen?', LISTA_E, BOTON_E), categoriaGrande: null, verMas: null, ...parcial }) as Medicion;
+  it('NIEGA: lista + cta_url y un «Ver más» solo con lista cumple', () => {
+    expect(problemasDeBotonAparte(med({ categoriaGrande: turno('tv', LISTA_E, BOTON_E), verMas: turno('mas', LISTA_E) }))).toEqual([]);
+  });
+  it('NIEGA: una lista sola (sin el botón aparte) es un problema, en el listado y en la categoría grande', () => {
+    expect(problemasDeBotonAparte(med({ listado: turno('¿qué tienen?', LISTA_E) }))).toHaveLength(1);
+    expect(problemasDeBotonAparte(med({ categoriaGrande: turno('tv', LISTA_E) }))).toHaveLength(1);
+  });
+  it('NIEGA: el botón con otra dirección, o antes de la lista, no cuenta como «seguida de su botón»', () => {
+    const otro = { ...BOTON_E, payload: { type: 'interactive', interactive: { type: 'cta_url', action: { parameters: { url: 'https://otro.test' } } } } };
+    expect(problemasDeBotonAparte(med({ listado: turno('¿qué tienen?', LISTA_E, otro) }))).toHaveLength(1);
+    expect(problemasDeBotonAparte(med({ listado: turno('¿qué tienen?', BOTON_E, LISTA_E) }))).toHaveLength(1);
+  });
+  it('NIEGA: «Ver más» que repite el botón, o que no trae la página siguiente, es un problema', () => {
+    expect(problemasDeBotonAparte(med({ verMas: turno('mas', LISTA_E, BOTON_E) }))).toHaveLength(1);
+    expect(problemasDeBotonAparte(med({ verMas: turno('mas', BOTON_E) }))).toHaveLength(2);
+  });
+  it('el punto I-B está en el estándar y 3.1 mide la categoría de más de 10 productos y su «Ver más»', () => {
+    expect(PUNTOS.some((p) => p.id === 'I-B')).toBe(true);
+    const largo = 'Estos son los productos de Televisores. Elige uno de la lista. Son 23; toca «Ver más» para seguir.';
+    const t = turno('tv', { cuerpo: largo, payload: { type: 'interactive', interactive: { type: 'list' } } });
+    const m = { ...medir_vacia(), categoriaGrande: t } as Medicion;
+    expect(PUNTOS.find((p) => p.id === '3.1')!.evaluar(m)).toHaveLength(1);
+  });
+});
+/** Una medición con turnos vacíos (solo para evaluar un punto con los turnos que la prueba arma). */
+function medir_vacia(): Medicion {
+  const v: Turno = { dijo: '', mensajes: [], modeloLlamado: false, fallo: null };
+  return { listados: [], saludo: v, pideCatalogo: v, noEncuentra: v, conQr: v, categoria: v, listado: v, toqueVigente: null, toquesViejos: [], textoLargo: v, conVinetas: v, variasCategorias: null, categoriaGrande: null, verMas: null };
+}
 
 const BOTONES = (...ids: string[]) => ({ type: 'interactive', interactive: { type: 'button', body: { text: 'x' }, action: { buttons: ids.map((id) => ({ type: 'reply', reply: { id, title: 'Opción' } })) } } });
 const msgA = (a: string, cuerpo: string, payload: Record<string, unknown>) => ({ a, cuerpo, payload });
@@ -166,26 +201,30 @@ describe('I2: las piezas comunes del catálogo las USA todo flujo de venta, o fi
   });
   // CONTRAPRUEBAS: con las piezas anuladas la invariante falla (antes pasaba en verde).
   const nodoCon = (codigo: string) => ({ nodes: [{ name: 'Armar mensajes', type: 'n8n-nodes-base.code', parameters: { jsCode: codigo } }], connections: {} }) as never;
-  const COMPLETO = 'const i = icIntencion(t, v); const m = icMensajeLista(v, monto); cwConBotonCatalogo(m, url);';
-  it('NIEGA: un flujo que llama a las tres piezas no tiene faltantes', () => {
+  const COMPLETO = 'const i = icIntencion(t, v); const m = icMensajeLista(v, monto); cwConBotonCatalogo(m, url); const b = cwMensajeBotonCatalogo(url);';
+  const LAS_CUATRO = ['intención de catálogo', 'lista de catálogo', 'botón del catálogo', 'botón aparte de la lista'];
+  it('NIEGA: un flujo que llama a las cuatro piezas no tiene faltantes', () => {
     expect(piezasFaltantes(nodoCon(COMPLETO))).toEqual([]);
-    expect(piezasFaltantes(nodoCon('icPideListado(t); icMensajeLista(v, m); cwConBotonCatalogo(x, u);'))).toEqual([]);
+    expect(piezasFaltantes(nodoCon('icPideListado(t); icMensajeLista(v, m); cwConBotonCatalogo(x, u); cwMensajeBotonCatalogo(u);'))).toEqual([]);
   });
   it('NIEGA: sin las piezas, o con una pieza solo declarada o solo en un comentario, falla y dice cuál falta', () => {
-    expect(piezasFaltantes(nodoCon('return [];'))).toEqual(['intención de catálogo', 'lista de catálogo', 'botón del catálogo']);
+    expect(piezasFaltantes(nodoCon('return [];'))).toEqual(LAS_CUATRO);
     expect(piezasFaltantes(nodoCon(COMPLETO.replace('cwConBotonCatalogo(m, url);', '')))).toEqual(['botón del catálogo']);
-    expect(piezasFaltantes(nodoCon('function icIntencion(a) { return a; } function icMensajeLista() {} function cwConBotonCatalogo() {}'))).toHaveLength(3);
-    expect(piezasFaltantes(nodoCon('// icIntencion(t) icMensajeLista(v) cwConBotonCatalogo(m)\n/* icIntencion(t) */ return [];'))).toHaveLength(3);
+    expect(piezasFaltantes(nodoCon('function icIntencion(a) { return a; } function icMensajeLista() {} function cwConBotonCatalogo() {} function cwMensajeBotonCatalogo() {}'))).toHaveLength(4);
+    expect(piezasFaltantes(nodoCon('// icIntencion(t) icMensajeLista(v) cwConBotonCatalogo(m) cwMensajeBotonCatalogo(m)\n/* icIntencion(t) */ return [];'))).toHaveLength(4);
+  });
+  it('NIEGA (I-B): un flujo que no llama al botón aparte (cwMensajeBotonCatalogo) lo tiene como faltante, aunque llame a las otras tres', () => {
+    expect(piezasFaltantes(nodoCon(COMPLETO.replace(' const b = cwMensajeBotonCatalogo(url);', '')))).toEqual(['botón aparte de la lista']);
   });
   it('NIEGA (I-A): un flujo que INCLUYE el texto de las piezas y no las llama sigue sin usarlas; si las llama, sí', () => {
     const piezas = leerFuentes(ARCHIVOS_DE_PIEZAS);
-    expect(piezasFaltantes(nodoCon(`${piezas}\nreturn [];`))).toEqual(['intención de catálogo', 'lista de catálogo', 'botón del catálogo']);
+    expect(piezasFaltantes(nodoCon(`${piezas}\nreturn [];`))).toEqual(LAS_CUATRO);
     expect(piezasFaltantes(nodoCon(`${piezas}\n${COMPLETO}`))).toEqual([]);
   });
   it('NIEGA: anular la pieza en un flujo real que figura sin excepción hace fallar la invariante (se simula quitando las llamadas)', () => {
     const real = leerFlujo(rutaDe(venta[0]!));
-    const anulado = JSON.parse(JSON.stringify(real).replace(/cwConBotonCatalogo|icMensajeLista|icIntencion|icPideListado/g, 'anulada')) as never;
-    expect(piezasFaltantes(anulado)).toHaveLength(3);
+    const anulado = JSON.parse(JSON.stringify(real).replace(/cwMensajeBotonCatalogo|cwConBotonCatalogo|icMensajeLista|icIntencion|icPideListado/g, 'anulada')) as never;
+    expect(piezasFaltantes(anulado)).toHaveLength(4);
   });
 });
 

@@ -65,8 +65,12 @@ const pc = apParametrosConsulta(itemsTexto, nombre, c.from, mensaje0);
 // Va DESPUÉS de la limpieza del aviso (`avLimpio` cambiaría por «[texto omitido]» una nota que cite un pago): es texto literal del cliente, rotulado como tal.
 const notaAviso = esPedido ? bmNotaDelAviso(aviso.nota) : '';
 // DECISIÓN DE ANDRES (27/11/2026, «Remitir a Pedidos»): la PLANTILLA pasa sus variables por la red común `avSinProhibidas` (que NO se toca ni se exceptúa): si esa red omitiría la nota por citar un pago, el aviso dice que hay una nota del cliente y que se lee entera en Pedidos de la Consola (0 mensajes agregados). Una nota normal va como hasta ahora; por texto libre va siempre entera.
-const notaPlantilla = notaAviso === '' ? '' : (avSinProhibidas(notaAviso) !== notaAviso ? 'El cliente dejó una nota; léela entera en Pedidos de la Consola.' : notaAviso);
-const itemsParam = notaPlantilla !== '' ? itemsTexto.slice(0, 400) + ' · ' + notaPlantilla : itemsTexto;
+// Estándar 1.5: la nota NUNCA se corta en silencio. Los ítems se cortan a 400 PUNTOS DE CÓDIGO (nunca un par sustituto ni un emoji partido); con el rótulo (~55) la nota larga no cabe en las 500 de la variable. Si el candidato, ya saneado por `avParametro` (la misma limpieza y el mismo tope de 500 que aplica `avPlantilla`), no conserva la nota ENTERA (o la red común la altera), la plantilla remite a Pedidos con la frase fija. Por texto libre la nota llega siempre entera.
+const FRASE_NOTA_PEDIDOS = 'El cliente dejó una nota; léela entera en Pedidos de la Consola.';
+const itemsCorte = Array.from(itemsTexto).slice(0, 400).join('');
+const notaCabe = notaAviso !== '' && avSinProhibidas(notaAviso) === notaAviso && avParametro(itemsCorte + ' · ' + notaAviso).includes(notaAviso);
+const notaPlantilla = notaAviso === '' ? '' : (notaCabe ? notaAviso : FRASE_NOTA_PEDIDOS);
+const itemsParam = notaPlantilla !== '' ? itemsCorte + ' · ' + notaPlantilla : itemsTexto;
 const parametros10 = esPedido
   ? ['Pedido registrado · comprobante: ' + cotejoTexto, totalTexto, entregaTexto, nombre, '+' + c.from, '—', '—', itemsParam, '—', '—']
   : pc.p10;
