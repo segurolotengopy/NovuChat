@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { cargarFuente } from '../../core/fuente-vm';
 
 type M = { payload: { type: string; interactive?: { type: string; action: { parameters: { url: string; display_text: string } } } }; texto: string; respaldo?: string; conBoton?: boolean; tipoReporte?: string };
-type Cw = { cwUrlValida: (v: unknown) => string; cwEnlaceCatalogo: (p: unknown) => string; cwConBotonCatalogo: (m: unknown, e: unknown) => boolean };
-const cw = cargarFuente<Cw>(['Flujos/src/core/sin-agente/mensajes.js', 'Flujos/src/modulos/catalogo-web/boton-del-catalogo.js'], ['cwUrlValida', 'cwEnlaceCatalogo', 'cwConBotonCatalogo']);
+type Cw = { cwUrlValida: (v: unknown) => string; cwEnlaceCatalogo: (p: unknown) => string; cwConBotonCatalogo: (m: unknown, e: unknown) => boolean; cwMensajesConCatalogo: (m: unknown, e: unknown) => unknown[]; cwMensajeBotonCatalogo: (e: unknown) => M | null };
+const cw = cargarFuente<Cw>(['Flujos/src/core/sin-agente/mensajes.js', 'Flujos/src/modulos/catalogo-web/boton-del-catalogo.js'], ['cwUrlValida', 'cwEnlaceCatalogo', 'cwConBotonCatalogo', 'cwMensajesConCatalogo', 'cwMensajeBotonCatalogo']);
 const URL_OK = 'https://catalogo.ejemplo.test/c/abc123';
 const panel = (w: unknown) => ({ ok: true, cuerpo: { catalogoWeb: w } });
 const msg = (texto = 'Mira el catálogo'): M => ({ payload: { type: 'text' }, texto });
@@ -69,7 +69,7 @@ describe('cwConBotonCatalogo', () => {
     expect(m.respaldo).toContain('• Producto número 39');
     expect(m.respaldo).toContain(URL_OK);
   });
-  it('I5: un mensaje que ya es interactivo (botones de respuesta o lista) lleva el enlace en el texto, con sus botones intactos', () => {
+  it('I5: un mensaje de botones de respuesta lleva el enlace en el texto (0 mensajes más), con sus botones intactos y cuerpo ≤ 1024', () => {
     const botones = { type: 'interactive', interactive: { type: 'button', body: { text: '¿Confirmas?' }, action: { buttons: [{ type: 'reply', reply: { id: 'si', title: 'Sí' } }] } } };
     const m: Record<string, unknown> = { payload: botones, texto: '¿Confirmas?', respaldo: '¿Confirmas?' };
     expect(cw.cwConBotonCatalogo(m, URL_OK)).toBe(true);
@@ -77,11 +77,38 @@ describe('cwConBotonCatalogo', () => {
     expect(botones.interactive.action.buttons).toHaveLength(1);
     expect(botones.interactive.body.text).toBe('¿Confirmas?\n\nVer catálogo: ' + URL_OK);
     expect(String(m['respaldo'])).toContain(URL_OK);
+    const largo = { type: 'interactive', interactive: { type: 'button', body: { text: 'Tenemos:\n' + Array.from({ length: 90 }, (_, i) => `• Producto ${i} — Bs ${i}`).join('\n') }, action: { buttons: [{ type: 'reply', reply: { id: 'si', title: 'Sí' } }] } } };
+    expect(cw.cwConBotonCatalogo({ payload: largo, texto: 'x' }, URL_OK)).toBe(true);
+    expect(largo.interactive.body.text.length).toBeLessThanOrEqual(1024);
+    expect(largo.interactive.body.text).toMatch(/Hay \d+ productos más; míralos en el catálogo\./);
+    expect(largo.interactive.body.text).toContain(URL_OK);
+  });
+  it('I5 (Andres, 27/11): con una LISTA el botón va en un SEGUNDO mensaje (+1); la lista queda intacta y cwConBotonCatalogo no la toca', () => {
     const lista = { type: 'interactive', interactive: { type: 'list', body: { text: 'x'.repeat(1024) }, action: { button: 'Ver', sections: [{ rows: [{ id: 'a', title: 'A' }] }] } } };
-    expect(cw.cwConBotonCatalogo({ payload: lista, texto: 'x' }, URL_OK)).toBe(true);
-    expect(lista.interactive.body.text.length).toBeLessThanOrEqual(1024);
-    expect(lista.interactive.body.text).toContain(URL_OK);
-    expect(lista.interactive.action.sections[0]!.rows).toHaveLength(1);
+    const m = { payload: lista, texto: 'x', respaldo: 'x' };
+    expect(cw.cwConBotonCatalogo(m, URL_OK)).toBe(false);
+    expect(lista.interactive.body.text).toBe('x'.repeat(1024));
+    const salida = cw.cwMensajesConCatalogo(m, URL_OK) as M[];
+    expect(salida).toHaveLength(2);
+    expect(salida[0]).toBe(m);
+    expect(lista.interactive.body.text).not.toContain(URL_OK);
+    expect(salida[1]!.payload.interactive!.type).toBe('cta_url');
+    expect(salida[1]!.payload.interactive!.action.parameters.url).toBe(URL_OK);
+    expect(salida[1]!.payload.interactive!.action.parameters.display_text).toBe('Ver catálogo');
+    expect(salida[1]!.conBoton).toBe(true);
+    expect(salida[1]!.respaldo).toContain(URL_OK);
+  });
+  it('cwMensajesConCatalogo: texto y botones de respuesta NO agregan mensajes; sin enlace válido nada cambia y no sale botón aparte', () => {
+    const t = msg();
+    const st = cw.cwMensajesConCatalogo(t, URL_OK) as M[];
+    expect(st).toHaveLength(1);
+    expect(st[0]!.payload.interactive!.type).toBe('cta_url');
+    const botones = { type: 'interactive', interactive: { type: 'button', body: { text: '¿Confirmas?' }, action: { buttons: [] } } };
+    expect(cw.cwMensajesConCatalogo({ payload: botones, texto: 'x' }, URL_OK)).toHaveLength(1);
+    const lista = { type: 'interactive', interactive: { type: 'list', body: { text: 'x' }, action: { sections: [] } } };
+    for (const e of ['', 'http://a.test/x', 'javascript:alert(1)', null]) expect(cw.cwMensajesConCatalogo({ payload: lista, texto: 'x' }, e), String(e)).toHaveLength(1);
+    expect(cw.cwMensajeBotonCatalogo('http://a.test/x')).toBeNull();
+    expect(cw.cwMensajeBotonCatalogo(URL_OK)!.payload.interactive!.type).toBe('cta_url');
   });
   it('NIEGA: el enlace no se repite si el cuerpo ya lo trae', () => {
     const botones = { type: 'interactive', interactive: { type: 'button', body: { text: 'Mira ' + URL_OK }, action: { buttons: [] } } };

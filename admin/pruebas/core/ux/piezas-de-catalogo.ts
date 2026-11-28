@@ -39,7 +39,7 @@ export function problemasDeVencimiento(excepciones: Record<string, ExcepcionConV
 export const PIEZAS_COMUNES: ReadonlyArray<{ pieza: string; funciones: readonly string[] }> = [
   { pieza: 'intención de catálogo', funciones: ['icIntencion', 'icPideListado'] },
   { pieza: 'lista de catálogo', funciones: ['icMensajeLista'] },
-  { pieza: 'botón del catálogo', funciones: ['cwConBotonCatalogo'] },
+  { pieza: 'botón del catálogo', funciones: ['cwConBotonCatalogo', 'cwMensajesConCatalogo'] },
 ];
 
 /** ¿`codigo` (ya sin comentarios) LLAMA a `nombre`? Las declaraciones `function nombre(` no son llamadas. */

@@ -11,11 +11,12 @@ type Ic = {
   icPideListado: (t: unknown) => boolean;
   icIntencion: (t: unknown, v: unknown[]) => { tipo: string; catIds: string[]; faltan: string[]; pedido: boolean };
   icMensajeLista: (v: unknown[], m: (c: number) => string, o?: { catId?: string; pag?: number }) => Msg;
+  icResolverToque: (id: unknown, v: unknown[], m: (c: number) => string) => { tipo: string; id?: string; mensaje?: NonNullable<Msg> };
 };
 const ic = cargarFuente<Ic>([
   'Flujos/src/core/sin-agente/mensajes.js', 'Flujos/src/core/texto/parrafos.js',
   'Flujos/src/modulos/productos/lista-de-catalogo.js', 'Flujos/src/modulos/productos/intencion-de-catalogo.js',
-], ['icPideListado', 'icIntencion', 'icMensajeLista']);
+], ['icPideListado', 'icIntencion', 'icMensajeLista', 'icResolverToque']);
 const monto = (c: number) => 'Bs ' + c / 100;
 const PATRON = /^[a-z0-9:_-]{1,200}$/;
 const AREAS = ['Televisores · LED', 'Audio', 'Cocina', 'Hogar', 'Jardín', 'Deportes', 'Juguetes', 'Libros', 'Ropa', 'Zapatos', 'Mascotas', 'Oficina'];
@@ -77,6 +78,57 @@ describe('icMensajeLista', () => {
 const ELECTRO: Array<[string, number]> = [['Televisores', 23], ['Aires acondicionados', 12], ['Heladeras', 6], ['Freezers', 4], ['Lavadoras', 8], ['Microondas', 5], ['Parlantes', 9]];
 const electro = ELECTRO.flatMap(([area, n]) => Array.from({ length: n }, (_, i) => ({ id: `${area.slice(0, 3)}${i}`, nombre: `${area} modelo ${i}`, area, precioCentavos: 10000 + i, moneda: 'BOB' })));
 const por = (t: string, v: unknown[] = electro) => ic.icIntencion(t, v);
+
+describe('paginación: categoría de más de 10 productos = lista de 9 + «Ver más», el toque lo resuelve el CÓDIGO', () => {
+  const ids = (m: NonNullable<Msg>) => m.filas.map((f) => f.id);
+  it('23 televisores: tres páginas (9 + Ver más, 9 + Ver más, 5); ninguna pasa de 10 filas; los 23 salen una sola vez; cada «Ver más» se resuelve por código', () => {
+    let t = ic.icResolverToque('cat:televisores', electro, monto);
+    const vistos: string[] = [];
+    let paginas = 0;
+    while (t.tipo === 'lista') {
+      paginas++;
+      const m = t.mensaje!;
+      expect(m.filas.length).toBeLessThanOrEqual(10);
+      expect(m.payload.interactive.type).toBe('list');
+      vistos.push(...ids(m).filter((i) => i.startsWith('pro:')));
+      const mas = ids(m).find((i) => i.startsWith('mas:'));
+      if (!mas) break;
+      expect(m.filas).toHaveLength(10);
+      expect(m.filas.filter((f) => f.id.startsWith('pro:'))).toHaveLength(9);
+      t = ic.icResolverToque(mas, electro, monto);
+    }
+    expect(paginas).toBe(3);
+    expect(vistos).toHaveLength(23);
+    expect(new Set(vistos).size).toBe(23);
+  });
+  it('una categoría de 12 aires: primera página con 9 + «Ver más»; la segunda, los 3 que faltan sin «Ver más»', () => {
+    const a = ic.icResolverToque('cat:aires-acondicionados', electro, monto).mensaje!;
+    expect(a.filas).toHaveLength(10);
+    expect(a.hayMas).toBe(true);
+    const b = ic.icResolverToque(ids(a)[9]!, electro, monto).mensaje!;
+    expect(b.filas).toHaveLength(3);
+    expect(b.hayMas).toBe(false);
+  });
+  it('NIEGA: un toque viejo (categoría o producto que ya no está, página fuera de rango, id inventado o malformado) da una respuesta clara y las categorías vigentes; nunca un producto inventado', () => {
+    const sin = electro.filter((p) => p.area !== 'Freezers');
+    for (const id of ['cat:freezers', 'pro:fre0', 'mas:televisores:99', 'mas:fantasma:1', 'cat:xyz', 'MAS:X', '', null, 42, 'x'.repeat(300)]) {
+      const t = ic.icResolverToque(id, sin, monto);
+      expect(t.tipo, String(id)).toBe('obsoleto');
+      expect(t.mensaje!.texto).toMatch(/ya no está vigente/);
+      expect(t.mensaje!.payload.interactive.type).toBe('list');
+      expect(t.mensaje!.filas.every((f) => !f.id.startsWith('pro:'))).toBe(true);
+    }
+    const vacio = ic.icResolverToque('cat:televisores', [], monto);
+    expect(vacio.tipo).toBe('obsoleto');
+    expect(vacio.mensaje!.texto).toMatch(/ya no está vigente/);
+  });
+  it('un toque de producto devuelve su id real (lo agrega el llamador); nunca pasa por el modelo', () => {
+    expect(ic.icResolverToque('pro:tel5', electro, monto)).toEqual({ tipo: 'producto', id: 'Tel5' });
+  });
+  it('un id inventado que cumple el patrón no abre nada: «cat:aires-acondicionados» sí, «cat:aires» no', () => {
+    expect(ic.icResolverToque('cat:aires', electro, monto).tipo).toBe('obsoleto');
+  });
+});
 
 describe('icPideListado: la carta y las variantes de la batería', () => {
   it('reconoce «carta», «q tienen», «qué cosas venden», «catalogo», «mándenme la lista», «precios de todo», «ver el catálogo antes de pagar» y «el link del catálogo»', () => {

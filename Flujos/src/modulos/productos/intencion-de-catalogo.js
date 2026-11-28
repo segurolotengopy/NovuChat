@@ -196,3 +196,34 @@ function icMensajeLista(vendibles, monto, opciones) {
     pag: pag,
   };
 }
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// EL TOQUE DE UNA FILA, resuelto por CÓDIGO (estándar 2.3): nunca va al modelo. `id` es el de la fila tocada (`cat:`, `pro:`, `mas:`).
+// Devuelve:
+//   { tipo: 'lista', mensaje }     `cat:` (productos de la categoría, página 0) o `mas:` (la página siguiente): el mensaje de lista;
+//   { tipo: 'producto', id }       `pro:`: el id REAL del producto (el llamador lo agrega o lo detalla con su lógica de pedido);
+//   { tipo: 'obsoleto', mensaje }  un toque viejo (producto o categoría que ya no está, página fuera de rango, id inventado): respuesta
+//                                  clara («Esa opción ya no está vigente») con la lista de categorías vigentes, o solo el texto si no hay catálogo.
+// El `mensaje` es de `icMensajeLista` ({ payload, texto, respaldo… }) o un texto simple { payload, texto, respaldo }.
+// ---------------------------------------------------------------------------------------------------------------------------
+function icResolverToque(id, vendibles, monto) {
+  var r = lcResolverId(id, vendibles);
+  if (r.tipo === 'pro') return { tipo: 'producto', id: r.id };
+  if (r.tipo === 'cat') {
+    var m = icMensajeLista(vendibles, monto, { catId: 'cat:' + r.cat });
+    if (m) return { tipo: 'lista', mensaje: m };
+  } else if (r.tipo === 'mas') {
+    var mm = icMensajeLista(vendibles, monto, r.cat === 'cats' ? { pag: r.pag } : { catId: 'cat:' + r.cat, pag: r.pag });
+    if (mm) return { tipo: 'lista', mensaje: mm };
+  }
+  var aviso = 'Esa opción ya no está vigente.';
+  var lista = icMensajeLista(vendibles, monto, {});
+  if (!lista) {
+    var solo = aviso + ' Escríbeme qué buscas y te ayudo.';
+    return { tipo: 'obsoleto', mensaje: { payload: cmTexto(solo), texto: solo, respaldo: solo } };
+  }
+  lista.texto = aviso + ' ' + lista.texto;
+  lista.respaldo = aviso + ' ' + lista.respaldo;
+  lista.payload.interactive.body.text = cmRecorte(lista.texto, 1024);
+  return { tipo: 'obsoleto', mensaje: lista };
+}

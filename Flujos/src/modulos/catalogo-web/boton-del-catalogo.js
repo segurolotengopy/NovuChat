@@ -41,12 +41,28 @@ function cwAcortarConRemision(texto, max) {
   var remision = fuera > 0 ? (fuera === 1 ? 'Hay 1 producto más; míralo en el catálogo.' : 'Hay ' + fuera + ' productos más; míralos en el catálogo.') : 'Hay más en el catálogo.';
   return quedan.join('\n').trimEnd() + '\n\n' + remision;
 }
-// Pone el catálogo en el mensaje `m` ({ payload, texto, respaldo }), SIEMPRE que haya un enlace https válido y sin agregar mensajes
+// El botón «Ver catálogo» como MENSAJE APARTE (cta_url), o null sin enlace https válido. Es el segundo mensaje de una LISTA interactiva
+// (WhatsApp no junta una lista con un botón de enlace): +1 mensaje, aceptado por Andres el 27/11/2026 (`cwMensajesConCatalogo`).
+function cwMensajeBotonCatalogo(enlace) {
+  var url = cwUrlValida(enlace);
+  if (!url) return null;
+  var cuerpo = 'Mira todo el catálogo con fotos y precios.';
+  return {
+    payload: cmEnlace(cuerpo, 'Ver catálogo', url),
+    texto: cuerpo,
+    respaldo: cuerpo + '\n\n' + url,
+    tipoReporte: 'interactive',
+    conBoton: true,
+    botonAparte: true,
+  };
+}
+// Pone el catálogo en el mensaje `m` ({ payload, texto, respaldo }), SIEMPRE que haya un enlace https válido y SIN agregar mensajes
 // (Andres, 27/11/2026: el botón sale siempre):
 //   - texto simple: botón «Ver catálogo» (cta_url); si el cuerpo pasa de 1000 caracteres se acorta por líneas con la remisión
 //     «Hay N productos más; míralos en el catálogo.» (el respaldo conserva el texto entero);
-//   - mensaje que ya es interactivo (botones de respuesta o lista; WhatsApp no junta dos acciones): el enlace va como texto al final
-//     del cuerpo («Ver catálogo: <url>»), con el cuerpo acortado si hace falta para caber en 1024; botones y filas quedan intactos;
+//   - mensaje de BOTONES DE RESPUESTA (WhatsApp no junta dos acciones): el enlace va como texto al final del cuerpo
+//     («Ver catálogo: <url>»), con el cuerpo acortado con remisión si hace falta para caber en 1024; los botones quedan intactos;
+//   - LISTA interactiva: NO se toca aquí y devuelve false: su botón va en un segundo mensaje (`cwMensajesConCatalogo`, +1 mensaje);
 //   - cualquier otro tipo (imagen, documento…): no se toca y devuelve false.
 // Devuelve si lo hizo.
 function cwConBotonCatalogo(m, enlace) {
@@ -62,7 +78,7 @@ function cwConBotonCatalogo(m, enlace) {
     return true;
   }
   var it = m.payload.type === 'interactive' ? m.payload.interactive : null;
-  if (it && (it.type === 'button' || it.type === 'list') && it.body && typeof it.body.text === 'string') {
+  if (it && it.type === 'button' && it.body && typeof it.body.text === 'string') {
     if (it.body.text.indexOf(url) < 0) {
       var pie = '\n\nVer catálogo: ' + url;
       it.body.text = cwAcortarConRemision(it.body.text, 1024 - pie.length) + pie;
@@ -73,4 +89,17 @@ function cwConBotonCatalogo(m, enlace) {
     return true;
   }
   return false;
+}
+// Los mensajes que salen con el catálogo: SIEMPRE el botón cuando hay enlace válido (estándar 1.2).
+//   texto o botones de respuesta: el MISMO mensaje (0 mensajes agregados), `[m]`;
+//   lista interactiva: `[m, botón aparte]` (+1 mensaje, decisión de Andres del 27/11/2026);
+//   sin enlace válido, o un tipo que no admite el enlace: `[m]` sin cambios.
+function cwMensajesConCatalogo(m, enlace) {
+  var it = m && m.payload && m.payload.type === 'interactive' ? m.payload.interactive : null;
+  if (it && it.type === 'list') {
+    var aparte = cwMensajeBotonCatalogo(enlace);
+    return aparte ? [m, aparte] : [m];
+  }
+  cwConBotonCatalogo(m, enlace);
+  return [m];
 }
