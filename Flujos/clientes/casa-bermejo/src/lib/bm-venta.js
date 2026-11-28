@@ -734,13 +734,25 @@ function bmEsSoloPregunta(texto) {
   return oraciones.length > 0 && oraciones.every((o) => /^¿[^¿?]*\?$/.test(o));
 }
 const BM_ENLACE_EXISTENCIA = new Set(['tenemos', 'tengo', 'hay', 'contamos', 'manejamos', 'disponemos', 'trabajamos', 'si', 'claro', 'por', 'supuesto', 'con', 'de', 'del', 'al', 'a', 'la', 'el', 'lo', 'los', 'las', 'un', 'una', 'unos', 'unas', 'y', 'e', 'o', 'en', 'nuestro', 'nuestra', 'nuestros', 'nuestras', 'tambien', 'desde', 'bs', 'ars', 'bob', 'c', 'u', 'cada', 'uno', 'una', 'precio', 'cuesta', 'cuestan', 'vale', 'valen', 'esta', 'estan', 'tienda']);
+// Una PREGUNTA del modelo con el pedido vacío (Estándar 5.9, quinta revisión): no basta la forma «¿…?». Pasa por los MISMOS detectores que una afirmación (`bmAfirmaAgregado`, `bmDaPorHecho`, promesas y posesión) y toda pieza que nombra debe existir en el catálogo vivo.
+// Además cada palabra debe estar en el catálogo vivo o estar en el vocabulario de preguntas legítimas: lo que no se reconoce no sale y responde el código. Ante la duda, el texto del código.
+const BM_PREGUNTA_PROMETE = /\b(?:ya (?:es|son|esta|estan|tienes?|tengas?|tiene|tenga|va|van|cuentas?|cuenta|viste|sabias)|tuy[oa]s?|suy[oa]s?|te (?:lo |la |los |las )?(?:envio|mando|reservo|aparto|separo|guardo|dejo|regalo|doy|consigo|traigo|agregue|agrego|puse|anote)|(?:envio|mando|reservo|separo|aparto|regalo|llevo) (?:el|la|los|las|un|una)\b|hoy mismo|que tal si|en (?:tu|su) (?:pedido|carrito)|(?:tu|su) carrito|genial)\b/;
+const BM_PREGUNTA_PALABRAS = new Set(('que cual cuales cuanto cuantos cuantas como cuando donde quien para por le te la lo los las el un una unos unas de del al a en con su tu sus tus mi me y o e u otra otro otras otros mas algo alguna alguno alguien ninguna pieza piezas producto productos modelo modelos articulo articulos interesa interesan interesaria gustaria gusta gustan desea deseas quiere quieres prefiere prefieres busca buscas buscando necesita necesitas ayudo ayudar ayudarle ayudarte puedo puede puedes podria podrias es son particular especifico especifica en tipo color colores tamano tamanos cantidad unidades unidad pedido recibir retirar retira retiras recoger entrega envio retiro tienda ciudad nombre completo confirma confirmar indica indicas indique dime digame regalo regalar uso usar si no tambien ver mostrar mostrarle mostrarte conocer saber presupuesto rango precio nuestra nuestro nuestros nuestras hoy agregue agregar anadir sumar incluir guste gusten').split(' '));
+function bmPreguntaValida(o, lista) {
+  const n = bmNorm(o);
+  if (bmAfirmaAgregado(o, false) || bmDaPorHecho(o) || BM_PREGUNTA_PROMETE.test(n)) return false;
+  // Las palabras de los nombres del catálogo vivo valen como «pieza que existe» (solo las del catálogo de AHORA: «licor» no existe si el catálogo no lo trae).
+  const delCatalogo = new Set();
+  for (const v of lista) for (const w of bmNorm(v.nombre).split(' ')) if (w !== '') delCatalogo.add(w);
+  return n.split(' ').every((w) => w === '' || BM_PREGUNTA_PALABRAS.has(w) || delCatalogo.has(w));
+}
 function bmVacioPermite(texto, textoCliente, vendibles) {
   const oraciones = String(texto || '').split(/(?<=[.!?\n])\s*/).map((x) => x.trim()).filter((x) => x !== '');
   if (oraciones.length === 0) return false;
   const lista = Array.isArray(vendibles) ? vendibles : [];
   const coinciden = new Set(bmIdsCoincidencias(textoCliente, lista));
   return oraciones.every((o) => {
-    if (/^¿[^¿?]*\?$/.test(o)) return true;
+    if (/^¿[^¿?]*\?$/.test(o)) return bmPreguntaValida(o, lista);
     const n = bmNorm(o);
     if (/[?¿]/.test(o)) return false;
     const nombradas = lista.filter((v) => (' ' + n + ' ').includes(' ' + bmNorm(v.nombre) + ' '));
@@ -755,8 +767,9 @@ function bmVacioPermite(texto, textoCliente, vendibles) {
 // Se mira el texto con sus tildes: «agregué» (hecho) no es «agregue» (pedido: «¿desea que agregue…?»). Con procedimiento (el cliente preguntó CÓMO se hace un pedido) las formas en presente de la explicación («la agrego a tu pedido») no cuentan.
 const BM_RE_HECHO_PASADO = /(?<!\p{L})(?:agregu[eé]|a[nñ]ad[ií]|sum[eé]|inclu[ií]|anot[eé]|separ[eé]|reserv[eé]|apart[eé]|puse|dej[eé]|guard[eé]|incorpor[eé]|cargu[eé]|registr[eé]|coloqu[eé]|adjunt[eé]|ingres[eé]|apunt[eé]|agregamos|a[nñ]adimos|sumamos|incluimos|anotamos|separamos|reservamos|pusimos|dejamos|guardamos|incorporamos|registramos|cargamos)(?!\p{L})/u;
 const BM_RE_HECHO_PRESENTE = /(?<!\p{L})(?:agrego|a[nñ]ado|sumo|incluyo|anoto|pongo|separo|reservo|dejo|guardo|incorporo)(?!\p{L})/u;
+// Solo se borra «que + verbo» (subjuntivo: «¿desea que agregue…?»); «que te agregué» (con pronombre) sí se mira: es una afirmación.
 function bmAfirmaAgregado(texto, procedimiento) {
-  const t = String(texto || '').toLowerCase().replace(/\bque (?:te |le |se |me |lo |la )?\w+/g, ' ');
+  const t = String(texto || '').toLowerCase().replace(/\bque (?!(?:te|le|se|me|lo|la|les|nos) )\w+/g, ' ');
   return BM_RE_HECHO_PASADO.test(t) || (procedimiento !== true && BM_RE_HECHO_PRESENTE.test(t));
 }
 // Una oración que da algo por HECHO o en poder del cliente, sin verbo de «agregar»: «va el licor de coca», «cuenta con el licor», «a tu orden», «Listo, …», «ya está en tu pedido», «ya lo tienes en tu carrito».
@@ -791,10 +804,34 @@ function bmTextoTrasDerivar(c) {
   return c && c.base && c.base.tratamiento === 'usted' ? 'Con gusto. Si necesita algo más, escríbame.' : 'Con gusto. Si necesitas algo más, escríbeme.';
 }
 // El procedimiento de compra y de pago, texto FIJO del código (I-1): no afirma nada agregado, no pide «pagar» y no repite ninguna frase de acreditación.
+// Se arma por lo que el comercio TIENE cargado (Estándar 6.1): el modo de cobro (QR real en Bolivia; transferencia a un alias en Argentina; sin cobro cargado, lo coordina recepción) y sus modos de entrega. Sin QR nunca se nombra el QR.
 function bmTextoProcedimiento(c) {
-  return c && c.base && c.base.tratamiento === 'usted'
-    ? 'Dígame qué pieza le interesa y, cuando la elija, la sumo a su pedido. Luego me indica si la retira o la recibe por envío y toca «Confirmar pedido»; el pago se hace con un QR que le envío en ese momento.'
-    : 'Dime qué pieza te interesa y, cuando la elijas, la sumo a tu pedido. Luego me indicas si la retiras o la recibes por envío y tocas «Confirmar pedido»; el pago se hace con un QR que te envío en ese momento.';
+  const usted = !!(c && c.base && c.base.tratamiento === 'usted');
+  const modos = c && Array.isArray(c.modos) ? c.modos : BM_MODOS_DEFECTO;
+  const hayRetiro = modos.some((m) => bmEsRetiro(m));
+  const hayEnvio = modos.some((m) => bmEsEnvio(m));
+  let entrega;
+  if (hayRetiro && hayEnvio) entrega = usted ? 'si la retira o la recibe por envío' : 'si la retiras o la recibes por envío';
+  else if (hayRetiro) entrega = usted ? 'que la retira en tienda' : 'que la retiras en tienda';
+  else if (hayEnvio) entrega = usted ? 'que la recibe por envío' : 'que la recibes por envío';
+  else entrega = (usted ? 'cómo la recibe (' : 'cómo la recibes (') + modos.join(' o ') + ')';
+  let pago;
+  if (c && c.mercado === 'AR') pago = usted ? 'el pago es por transferencia a un alias, y le indico cómo al confirmar' : 'el pago es por transferencia a un alias, y te indico cómo al confirmar';
+  else if (c && c.cobro && c.cobro.modo === 'real') pago = usted ? 'el pago se hace con un QR que le envío en ese momento' : 'el pago se hace con un QR que te envío en ese momento';
+  else pago = usted ? 'el pago lo coordina recepción y le doy el botón para escribirle' : 'el pago lo coordina recepción y te doy el botón para escribirle';
+  return usted
+    ? 'Dígame qué pieza le interesa y, cuando la elija, la sumo a su pedido. Luego me indica ' + entrega + ' y toca «Confirmar pedido»; ' + pago + '.'
+    : 'Dime qué pieza te interesa y, cuando la elijas, la sumo a tu pedido. Luego me indicas ' + entrega + ' y tocas «Confirmar pedido»; ' + pago + '.';
+}
+// Una pregunta por un MEDIO de pago («¿se puede pagar con tarjeta?», «¿aceptan efectivo?»). Solo se afirma el medio que el comercio tiene cargado (QR real en Bolivia; transferencia o alias en Argentina): cualquier otro pasa con recepción (aviso + botón).
+// Devuelve null si no es una pregunta de medio de pago, 'cargado' si todos los medios nombrados son el cargado, 'otro' si alguno no lo es.
+function bmPreguntaMedioPago(textoCliente, c) {
+  const n = bmNorm(textoCliente);
+  if (!/\b(?:pag\w+|aceptan|acepta|reciben|recibe|se puede|puedo|manejan)\b/.test(n)) return null;
+  const medios = n.match(/\b(?:tarjeta|tarjetas|efectivo|contra ?entrega|contraentrega|cheque|credito|debito|cuotas|paypal|tigo money|mercado ?pago|transferencia|transferencias|deposito|qr|alias)\b/g);
+  if (!medios) return null;
+  const cargado = c && c.mercado === 'AR' ? /^(?:transferencias?|alias)$/ : (c && c.cobro && c.cobro.modo === 'real' ? /^qr$/ : /^$/);
+  return medios.every((m) => cargado.test(m)) ? 'cargado' : 'otro';
 }
 // Un descuento, una rebaja o un «mejor precio»: el asistente no ofrece descuentos; lo decide el CÓDIGO (pasa con recepción), no la redacción del modelo.
 function bmPideDescuento(n) {
@@ -1811,7 +1848,6 @@ function bmResolverModelo(c) {
   const propuestaInvalida = Array.isArray(j.lineas) && j.lineas.some((l) => !l || typeof l !== 'object' || typeof l.id !== 'string' || !c.vendibles.some((v) => v.id === l.id));
   // I-1 por HECHO (tercera revisión del #1142): con el pedido SIN cambios en el turno, el texto del modelo no sale si (a) el modelo propuso líneas que el código no agregó, o (c) alguna oración da algo por agregado o en poder del cliente («te lo dejé», «va el X», «cuenta con», «Listo, …»).
   // Nombrar una pieza del catálogo vivo NO bloquea por sí solo («¿tienen billeteras?» → «Tenemos Billetera de cuero a Bs 450»). Las consultas de PROCEDIMIENTO («¿cómo hago un pedido?») conservan su explicación (solo se bloquea el pasado: «ya te lo guardé»).
-  const procedimiento = bmPreguntaProcedimiento(p.textoCliente);
   const propuestaNoAgregada = Array.isArray(j.lineas) && j.lineas.some((l) => {
     if (!l || typeof l !== 'object') return true;
     const cant = Number.isFinite(l.cantidad) ? l.cantidad : 1;
@@ -1824,6 +1860,11 @@ function bmResolverModelo(c) {
   // I-1 «Regla estricta»: con el pedido vacío y sin cambios el texto del modelo sale solo si es una pregunta entera o informa coincidencias reales (`bmVacioPermite`); lo demás lo responde el código.
   const vacioSinCambio = lineas.length === 0 && antes.length === 0;
   const bloqueaVacio = vacioSinCambio && textoModelo !== '' && !bmVacioPermite(textoModelo, p.textoCliente, c.vendibles);
+  // Estándar 6.1: una pregunta por un medio de pago que el comercio no tiene cargado («¿aceptan efectivo?», «¿se puede pagar con tarjeta?») no la contesta el modelo ni «Aún no tengo claro»: pasa con recepción (aviso + botón).
+  const medioPago = bmPreguntaMedioPago(p.textoCliente, c);
+  const procedimiento = bmPreguntaProcedimiento(p.textoCliente) || medioPago === 'cargado';
+  const pasaPorMedio = medioPago === 'otro' && !cambio && fijada.texto === '' && !enEntrega && !(f.derivadoMs > 0 && c.ahora - f.derivadoMs >= 0 && c.ahora - f.derivadoMs < BM_VENTANA_TRAS_DERIVAR_MS);
+  if (pasaPorMedio) return Object.assign(bmDerivar(c, 'quiere_hablar'), { lineas: lineas, entrega: entrega, cierre: cierre });
   const afirmaDeMas = bloqueaVacio || typeof j.texto === 'string' && ((propuestaInvalida && /\b(?:agreg\w+|anad\w+|sume|sumamos|incluy\w+|anote|anotamos|puse|pusimos|inclui|separe\w*|reserv\w+|apart\w+|quedo en|esta en (?:tu|su) (?:pedido|carrito)|tienes? en (?:tu|su) (?:pedido|carrito))\b/.test(bmNorm(j.texto))) || (!entro && (bmAfirmaAgregado(j.texto, procedimiento) || (!procedimiento && bmMencionaPedidoSinHecho(j.texto, antes, c.vendibles)))) || (!cambio && (propuestaNoAgregada || bmDaPorHecho(j.texto))));
   let texto = (afirmaDeMas || enEntrega || ignoraQuiereHablar || comp.modoRechazado === true || comp.contradice === true || fijada.delSitio === true || fijada.ordenada === true || (fijada.quitada === true && fijada.texto === '')) ? (fijada.texto !== '' && !ignoraQuiereHablar && comp.modoRechazado !== true && comp.contradice !== true && fijada.delSitio !== true && fijada.ordenada !== true ? fijada.texto : bmTextoDeEstado(lineas, entrega, cierre, c, conBoton)) : (fijada.texto !== '' ? fijada.texto : textoModelo);
   // Un texto FIJO del código en la ruta sin pieza: si es el mismo que ya se envió, es un bucle y la segunda vez pasa con recepción (aviso + botón).
