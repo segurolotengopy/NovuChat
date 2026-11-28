@@ -333,6 +333,10 @@ function mundo(op: Opciones = {}) {
       case 'Avisar falla del guardado': return [cada(() => [{ messaging_product: 'whatsapp', messages: [{ id: 'wamid.GUARDADO' }] }])];
       // El indicador de escritura (`Flujos/src/core/indicador/`, 21/11/2026): rama lateral sin efecto en el turno; Meta responde `{ success: true }`.
       case 'Indicador de escritura': return [cada(() => [{ success: true }])];
+      // La RÁFAGA (`Flujos/src/core/rafaga/`, 25/11/2026): este mundo no duerme el Wait y el servidor no devuelve ningún otro mensaje del hilo, así que cada turno responde SOLO (como antes
+      // de la pieza). La ráfaga con varios mensajes se prueba en `agenda-minima-rafaga.test.ts`.
+      case 'Esperar ráfaga': return [items];
+      case 'Consultar ráfaga': return [cada(() => [{ rafaga: { v: 1, fragmentos: [] } }])];
       default:
         throw new Error(`el n8n de mentira no sabe correr el nodo «${n.name}» (${n.type})`);
     }
@@ -3225,7 +3229,7 @@ describe('Agenda mínima: rama de medios del core', () => {
   const NODOS = ['Normalizar entrada', '¿Bajar medio?', 'Obtener URL del medio (general)', '¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?',
     'Transcribir audio', '¿Es un documento?', 'Describir documento', 'Describir imagen', ...Object.keys(MODULOS)];
   const ARISTAS: Array<[string, string]> = [
-    ['Interpretar entrada', 'Normalizar entrada'], ['¿Atención normal?', '¿Bajar medio?'], ['¿Bajar medio?', 'Obtener URL del medio (general)'],
+    ['Interpretar entrada', 'Normalizar entrada'], ['¿Atención normal?', '¿Esperar ráfaga?'], ['¿Esperar ráfaga?', '¿Bajar medio?'], ['Agrupar ráfaga', '¿Bajar medio?'], ['¿Bajar medio?', 'Obtener URL del medio (general)'],
     ['¿Bajar medio?', 'Decidir turno'], ['Obtener URL del medio (general)', '¿Tamaño aceptable?'], ['¿Tamaño aceptable?', 'Descargar medio'],
     ['¿Tamaño aceptable?', 'Medio no aceptado'], ['Descargar medio', '¿Es audio?'], ['¿Es audio?', 'Transcribir audio'], ['¿Es audio?', '¿Es un documento?'],
     ['¿Es un documento?', 'Describir documento'], ['¿Es un documento?', 'Describir imagen'], ['Transcribir audio', 'Preparar transcripción'],
