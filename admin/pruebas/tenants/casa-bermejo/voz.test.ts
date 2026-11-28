@@ -38,7 +38,7 @@ describe('batería de turnos: la voz se cumple en código', () => {
   });
   it('la salida legítima SÍ sale (la prueba tiene dientes): precio del catálogo y mensaje madre', () => {
     const t = hablar(crear({ modeloDice: modelo('La billetera de cuero cuesta Bs 450.') }), ANA, mTexto('¿cuánto cuesta la billetera?'));
-    expect(textos(t).join(' ')).toMatch(/cuesta Bs 450/);
+    expect(textos(t).join(' ')).toMatch(/Billetera de cuero a Bs 450/);   // R1: sale el texto del código, no el del modelo
     const t2 = hablar(crear({ modeloDice: modelo('¿Qué buscas hoy en nuestra tienda?') }), ANA, mTexto('hola'));
     expect(textos(t2).join(' ')).toMatch(/¿Qué producto buscas\?/);   // el modelo no redacta preguntas con el pedido vacío: la pregunta fija del código
     expect(textos(t2).join(' ')).not.toMatch(/Qué buscas hoy/);

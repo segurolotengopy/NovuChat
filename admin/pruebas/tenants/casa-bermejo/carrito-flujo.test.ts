@@ -50,7 +50,7 @@ describe('lo que propone el modelo se valida contra el catálogo', () => {
   });
   it('el modelo puede citar el precio de una pieza tal como figura en el catálogo', () => {
     const m = crear({ modeloDice: modelo('La billetera de cuero cuesta Bs 450.') });
-    expect(textos(hablar(m, ANA, mTexto('¿cuánto cuesta la billetera?'))).join(' ')).toMatch(/cuesta Bs 450/);
+    expect(textos(hablar(m, ANA, mTexto('¿cuánto cuesta la billetera?'))).join(' ')).toMatch(/Billetera de cuero a Bs 450/);   // R1: con el pedido vacío el precio lo dice el código del catálogo vivo
   });
 });
 

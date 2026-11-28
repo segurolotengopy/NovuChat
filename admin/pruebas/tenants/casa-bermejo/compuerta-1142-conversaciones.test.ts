@@ -147,19 +147,22 @@ describe('G9, G10 y G11: la válvula por estado', () => {
     m.avanzar(20);
     expect(charla(m, ['hmm'])[0]!.avisos).toBe(1);   // dentro de los 30 min sigue contando
   });
-  it('F2 (negada): la caducidad se mide con la HORA DEL MENSAJE, no con la de la ejecución: un reintento tardío del mismo mensaje no reinicia el contador', () => {
-    const m = mundo();
-    charla(m, ['hola', 'hola?']);
-    const sello = Math.floor(m.ahora() / 1000);
-    m.avanzar(120);   // n8n ejecuta el mensaje 2 h después, pero WhatsApp lo selló 1 minuto después del anterior
-    const t = hablar(m, ANA, { ...mTexto('hmm'), timestamp: String(sello - 60 * 119) });
-    expect(t.avisos.length).toBe(1);
-    const m2 = mundo();
-    charla(m2, ['hola', 'hola?']);
-    m2.avanzar(120);
-    const t2 = hablar(m2, ANA, { ...mTexto('hmm'), timestamp: String(Math.floor(m2.ahora() / 1000)) });   // el cliente escribió de verdad 2 h después
-    expect(t2.avisos.length).toBe(0);
-  });
+  // N5: la caducidad se mide con la HORA DEL MENSAJE en TODAS las rutas (también con «?», «...» y «👍»), no con la de la ejecución. El sello se arma a partir del último mensaje REGISTRADO en la ficha.
+  for (const vago of ['hmm', '?', '...', '👍']) {
+    it(`F2 (negada, «${vago}»): un reintento tardío con el sello 1 minuto después del anterior (ejecutado 2 h después) NO reinicia el contador; escrito de verdad 2 h después, sí`, () => {
+      const m = mundo();
+      charla(m, ['hola', 'hola?']);
+      const previo = ficha(m).ultimoMensajeMs as number;
+      m.avanzar(120);   // n8n ejecuta el mensaje 2 h después, pero WhatsApp lo selló 1 minuto después del anterior
+      const t = hablar(m, ANA, { ...mTexto(vago), timestamp: String(Math.floor(previo / 1000) + 60) });
+      expect(t.avisos.length).toBe(1);
+      const m2 = mundo();
+      charla(m2, ['hola', 'hola?']);
+      m2.avanzar(120);
+      const t2 = hablar(m2, ANA, { ...mTexto(vago), timestamp: String(Math.floor(m2.ahora() / 1000)) });   // el cliente escribió de verdad 2 h después
+      expect(t2.avisos.length).toBe(0);
+    });
+  }
   it('(f) «¿qué venden?» y «catálogo» son avance y no derivan, repetidos', () => {
     const ts = charla(mundo(), ['hola', '¿qué venden?', '¿qué venden?', 'catálogo', 'catálogo', '¿qué venden?']);
     sinRecepcion(ts);
@@ -173,6 +176,54 @@ describe('G9, G10 y G11: la válvula por estado', () => {
       expect(ts[2]!.txt).toContain(P);
     });
   }
+});
+
+describe('R2: el contador solo existe con el pedido VACÍO y FUERA de la ventana de 2 h; «?», «...» y «👍» reciben la pregunta fija', () => {
+  const vagos = ['?', '...', '👍'];
+  for (const v of vagos) {
+    it(`(h) «${v}» solo recibe la pregunta fija (es texto), no «solo puedo leer texto»; con el pedido vacío cuenta como vago y el 3.º pasa con recepción`, () => {
+      const ts = charla(mundo(), [v, v, v]);
+      expect(ts[0]!.txt).toContain(P);
+      expect(ts[0]!.txt).not.toMatch(/solo puedo leer texto/);
+      expect(ts[1]!.txt).toContain('Tenemos piezas de Hogar');
+      expect(ts.map((t) => t.avisos)).toEqual([0, 0, 1]);
+    });
+    it(`N4: con un pedido NO vacío «${v}» ×4 no deriva (el contador no existe), en usted, tú y Argentina`, () => {
+      const modeloPedido = (ll: LlamadaDoble): J => (/billetera/i.test(textoAlModelo(ll)) ? modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] }) : modelo('¡Hola!'));
+      for (const [o, tel] of [[{ ...U }, ANA], [{ base: {} }, ANA], [{ catalogo: catalogoOk({ mercado: 'AR', moneda: 'ARS' }, REAL_AR as never) }, ARGENTINO]] as Array<[Opciones, string]>) {
+        const m = mundo({ modeloDice: modeloPedido, ...o });
+        hablar(m, tel, mTexto('una billetera'));
+        const ts = charla(m, [v, v, v, v], tel);
+        for (const t of ts) { expect(t.avisos, v).toBe(0); expect(t.txt, v).not.toMatch(/persona del equipo/); }
+        expect(ficha(m, tel).carrito.length).toBe(1);
+      }
+    });
+    it(`N4: dentro de la ventana de 2 h tras «quiero hablar con una persona», «${v}» ×3 no da una segunda derivación ni un segundo aviso`, () => {
+      const ts = charla(mundo(), ['quiero hablar con una persona', v, v, v, v]);
+      expect(ts.map((t) => t.avisos)).toEqual([1, 0, 0, 0, 0]);
+      expect(ts.slice(1).map((t) => t.txt)).toEqual([F, F, F, F]);
+    });
+  }
+  it('(i) tras un comprobante cotejado el contador no corre durante 30 min; después, normal', () => {
+    const m = crear({ catalogo: catalogoOk({}, REAL as never), ...U, entregaPrevia: ENTREGA, modeloDice: (ll: LlamadaDoble) => (/gracias|ok|hmm/i.test(textoAlModelo(ll)) ? modelo('Con gusto.') : modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }] })), medio: { clasificacion: COMPROBANTE } });
+    hablar(m, ANA, mTexto('una billetera'));
+    hablar(m, ANA, mTexto('quiero pagar'));
+    m.dobles['Traer configuración'] = () => panelConQr(450);
+    hablar(m, ANA, mImagen({ caption: '' }));
+    expect(charla(m, ['gracias', 'gracias', 'gracias'])!.map((t) => t.avisos)).toEqual([0, 0, 0]);
+    m.avanzar(31);
+    const ts = charla(m, ['hmm', 'hmm', 'hmm']);
+    expect(ts.map((t) => t.avisos)).toEqual([0, 0, 1]);   // pasados 30 min el contador corre normal: recepción al 3.º
+  });
+  it('(k) con el pedido vacío la marca quiereHablar del modelo ante un texto vago («hmm») no deriva ni abre la ventana; el pedido real lo decide el código', () => {
+    const m = mundo({ modeloDice: () => modelo('Lo verá una persona.', { quiereHablar: true }) });
+    const ts = charla(m, ['hola', 'hmm', 'una billetera']);
+    expect(ts.map((t) => t.avisos)).toEqual([0, 0, 0]);
+    expect(ficha(m).derivadoMs ?? 0).toBe(0);
+    expect(ts[2]!.txt).toContain(COINC);
+    const real = charla(mundo({ modeloDice: () => modelo('Lo verá una persona.', { quiereHablar: true }) }), ['quiero hablar con una persona']);
+    expect(real[0]!.avisos).toBe(1);
+  });
 });
 
 describe('G11 (audio y ubicación de la tienda)', () => {
@@ -297,43 +348,81 @@ describe('G18 y G19: una cantidad o un stock que el catálogo no respalda no pas
       expect(t!.txt).not.toMatch(/Tenemos 3|Tenemos 10|quedan 2/);
     });
   }
-  it('G18 control: «Tenemos Billetera de cuero a Bs 450.» sí sale', () => {
-    expect(charla(mundo({ modeloDice: (ll: LlamadaDoble) => (/billeteras/.test(textoAlModelo(ll)) ? modelo('Tenemos Billetera de cuero a Bs 450.') : realista(ll)) }), ['hola', '¿tienen billeteras?'])[1]!.txt).toBe('Tenemos Billetera de cuero a Bs 450.');
-  });
-  it('G19 (AR): «Tenemos 2 Billetera de cuero a ARS 450.000.» no sale; el texto solo con el monto sí', () => {
-    const cat = () => catalogoOk({ mercado: 'AR', moneda: 'ARS' }, REAL_AR as never);
-    const con = (x: string | null) => charla(crear({ catalogo: cat(), ...U, modeloDice: (ll: LlamadaDoble) => (/billeteras/.test(textoAlModelo(ll)) && x !== null ? modelo(x) : realista(ll)) }), ['hola', '¿tienen billeteras?'], ARGENTINO)[1]!.txt;
-    const base = con(null);
-    const solo = base.replace(/\.\s*¿Le interesa\?$/, '.');
-    expect(base).toMatch(/Tenemos Billetera de cuero a ARS/);
-    expect(con(solo.replace('Tenemos ', 'Tenemos 2 '))).toBe(base);
-    expect(con(solo)).toBe(solo);
+  it('G18 control (R1): ni siquiera el texto exacto del modelo sale: sale el del código', () => {
+    const ts = charla(mundo({ modeloDice: (ll: LlamadaDoble) => (/billeteras/.test(textoAlModelo(ll)) ? modelo('Tenemos Billetera de cuero a Bs 450.') : realista(ll)) }), ['hola', '¿tienen billeteras?']);
+    expect(ts[1]!.txt).toBe(COINC);
   });
 });
 
-describe('F1: ninguna cantidad de existencias sale del modelo con el pedido vacío; una cifra solo vale como EL precio tras Bs, ARS o $', () => {
-  const casos = (cat: J[], moneda: string, from: string, pieza: string, busca: string, precio: string): void => {
-    const modelos = [
-      `Tenemos 4 ${pieza} a ${moneda} ${precio}.`, `Tenemos 148 ${pieza} a ${moneda} ${precio}.`, `Tenemos 7 ${pieza} a ${moneda} ${precio}.`, `Tenemos ${pieza} a ${moneda} ${precio} y hay 7.`,
-      `Tenemos 450 ${pieza} a ${moneda} ${precio}.`, `Tenemos ${pieza} a ${moneda} ${precio}, quedan 2.`, `Tenemos ${pieza} a ${moneda} ${precio.replace(/\.\d+$/, '')}.`, `Tenemos ${pieza} a ${moneda} 655.`, `Tenemos ${pieza} a ${moneda} 7.`,
-      `Tenemos ${pieza} a ${moneda} ${precio} (${precio.replace(/\D/g, '').slice(0, 1)} en stock).`,
-    ];
-    const buena = `Tenemos ${pieza} a ${moneda} ${precio}.`;
-    for (const frase of modelos.filter((x) => x !== buena)) {
-      const ts = charla(crear({ catalogo: catalogoOk(moneda === 'ARS' ? { mercado: 'AR', moneda: 'ARS' } : {}, cat as never), ...U, modeloDice: (ll: LlamadaDoble) => (/tienen/.test(textoAlModelo(ll)) ? modelo(frase) : realista(ll)) }), ['hola', busca], from);
-      expect(ts[1]!.txt, frase).not.toBe(frase);
-      expect(ts[1]!.txt, frase).toMatch(/¿Le interesa\?/);   // sale el texto fijo de la coincidencia
-    }
-    const ok = charla(crear({ catalogo: catalogoOk(moneda === 'ARS' ? { mercado: 'AR', moneda: 'ARS' } : {}, cat as never), ...U, modeloDice: (ll: LlamadaDoble) => (/tienen/.test(textoAlModelo(ll)) ? modelo(buena) : realista(ll)) }), ['hola', busca], from);
-    expect(ok[1]!.txt).toBe(buena);   // control: solo el nombre y el precio exacto sí salen
-  };
-  it('Bs: licuadora Bs 4.148 (cifras 4 y 148), lavadora Bs 7.655 (7), billetera Bs 450 (450)', () => {
-    casos(REAL, 'Bs', ANA, 'Licuadora Oster', '¿tienen licuadoras?', '4.148');
-    casos(REAL, 'Bs', ANA, 'Lavadora Samsung 9 kg', '¿tienen lavadoras?', '7.655');
-    casos(REAL, 'Bs', ANA, 'Billetera de cuero', '¿tienen billeteras?', '450');
-  });
-  it('ARS: billetera ARS 450.000 (450 y 000)', () => casos(REAL_AR, 'ARS', ARGENTINO, 'Billetera de cuero', '¿tienen billeteras?', '450.000'));
+// R1 (la dueña, décima ronda): con el pedido VACÍO ningún texto del modelo llega al cliente. PROPIEDAD con generador con semilla: para CUALQUIER texto del modelo la salida es exactamente la que da un modelo neutro
+// (la oración de coincidencias del código, la pregunta fija, las categorías o el procedimiento): ninguna subcadena del modelo que no venga del catálogo o de un texto fijo. Incluye N1 (precios cruzados), N2 (mismas cifras, otro valor) y N3 (cantidad con letras), en Bs y ARS.
+describe('R1: con el pedido vacío ningún texto del modelo llega al cliente (propiedad con semilla)', () => {
+  const SEMILLA_R1 = 1128;
+  const azarR1 = (semilla: number): (() => number) => { let a = semilla >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32; }; };
+  const una = <T,>(r: () => number, xs: T[]): T => xs[Math.floor(r() * xs.length)]!;
+  const salida = (cat: J[], moneda: 'BOB' | 'ARS', from: string, cliente: string, dice: string): string => charla(crear({ catalogo: catalogoOk(moneda === 'ARS' ? { mercado: 'AR', moneda: 'ARS' } : {}, cat as never), ...U, modeloDice: (ll: LlamadaDoble) => (textoAlModelo(ll) === cliente ? modelo(dice) : realista(ll)) }), ['hola', cliente], from)[1]!.txt;
+  const mundoDe = (m: 'BOB' | 'ARS') => (m === 'ARS' ? { cat: REAL_AR, from: ARGENTINO, p: ['450.000', '4.148.000', '7.655.000'], sim: 'ARS' } : { cat: REAL, from: ANA, p: ['450', '4.148', '7.655'], sim: 'Bs' });
+  for (const mon of ['BOB', 'ARS'] as const) {
+    it(`${mon}: N1 precios cruzados, N2 mismas cifras con otro valor, N3 cantidad con letras y 80 textos al azar no llegan al cliente`, () => {
+      const w = mundoDe(mon);
+      const cliente = '¿tienen lavadoras y licuadoras?';
+      const base = salida(w.cat, mon, w.from, cliente, 'Hola.');
+      expect(base).toMatch(/Lavadora Samsung 9 kg a /);
+      const [pl, pq, pb] = [w.p[2]!, w.p[1]!, w.p[0]!];
+      const fijas = [
+        `Tenemos Lavadora Samsung 9 kg a ${w.sim} ${pq} y Licuadora Oster a ${w.sim} ${pl}.`,                       // N1
+        `Tenemos Licuadora Oster a ${w.sim} 41,48.`, `Tenemos Licuadora Oster a ${w.sim} 414.8.`, `Tenemos Billetera de cuero a ${w.sim} 4,50.`,   // N2
+        `Tenemos Billetera de cuero a ${w.sim} ${pb} y hay una en la tienda.`, `Tenemos Billetera de cuero a ${w.sim} ${pb}, hay uno.`, `Hay una Billetera de cuero en la tienda.`,   // N3
+        `Tenemos Lavadora Samsung 9 kg a ${w.sim} ${pl} y Licuadora Oster a ${w.sim} ${pq}.`,                       // el texto "correcto" tampoco sale
+      ];
+      for (const f of fijas) expect(salida(w.cat, mon, w.from, cliente, f), f).toBe(base);
+      const r = azarR1(SEMILLA_R1);
+      const palabras = ['zorro', 'xilofon', 'cuatro', 'hay', 'quedan', 'unas', 'uno', 'oferta', 'garantia', 'envio', 'gratis', 'ultimas'];
+      const precios = [...w.p, '4', '148', '7', '450', '41,48', '4,50', '99'];
+      const piezas = ['Lavadora Samsung 9 kg', 'Licuadora Oster', 'Billetera de cuero', 'el licor de coca'];
+      for (let i = 0; i < 80; i++) {
+        const n = 2 + Math.floor(r() * 5);
+        const partes: string[] = [];
+        for (let k = 0; k < n; k++) partes.push(una(r, [una(r, palabras), una(r, piezas), `${w.sim} ${una(r, precios)}`, una(r, precios), `a ${w.sim} ${una(r, precios)}`]));
+        const frase = una(r, ['Tenemos', 'Hay', 'Le muestro', '']) + ' ' + partes.join(' ') + una(r, ['.', '?', '!', '']);
+        const t = salida(w.cat, mon, w.from, cliente, frase);
+        expect(t, `caso ${i}, semilla ${SEMILLA_R1}: «${frase}»`).toBe(base);
+        expect(t).not.toMatch(/zorro|xilofon|quedan|oferta|garantia|gratis|ultimas/);
+      }
+    });
+  }
 });
+
+// R3 (Estándar 2.2, décima ronda): las coincidencias las arma el CÓDIGO y nunca omiten piezas en silencio: salen todas o el texto dice que hay más.
+describe('R3: nunca una lista parcial sin decirlo', () => {
+  const LISTA = [
+    pieza('bufanda', 'Bufanda de vicuña', 7795, { area: 'Accesorios · Bufandas y chales' }), pieza('billetera-cuero', 'Billetera de cuero', 450, { area: 'Accesorios · Billeteras' }),
+    pieza('llavero-llama', 'Llavero de llama', 36, { area: 'Hogar y oficina · Llaveros' }), pieza('tapiz', 'Tapiz mujer río', 900, { area: 'Hogar y oficina · Tapices' }), pieza('taza', 'Taza de barro', 50, { area: 'Hogar y oficina · Tazas' }),
+    pieza('lampara', 'Lámpara de mesa', 300, { area: 'Hogar y oficina · Lámparas' }), pieza('florero', 'Florero de cerámica', 120, { area: 'Hogar y oficina · Floreros' }),
+  ];
+  const nombresEn = (t: string): string[] => LISTA.map((v) => v.nombre as string).filter((n) => t.includes(n));
+  it('«¿qué accesorios y qué hogar y oficina tienen?» (guion exacto): no omite en silencio los productos de Accesorios', () => {
+    const [, t] = charla(mundo({ catalogo: catalogoOk({}, LISTA as never) }), ['hola', '¿qué accesorios y qué hogar y oficina tienen?']);
+    const accesorios = ['Bufanda de vicuña', 'Billetera de cuero'];
+    expect(accesorios.every((n) => t!.txt.includes(n)) || /Hay más piezas relacionadas/.test(t!.txt)).toBe(true);
+    expect(t!.avisos).toBe(0);
+  });
+  it('PROPIEDAD (semilla 1128): para cualquier consulta, las piezas mostradas son todas las que coinciden o el texto dice que hay más', () => {
+    const r = azarR1b(1128);
+    const palabras = ['accesorios', 'hogar', 'oficina', 'bufanda', 'billetera', 'llavero', 'tapiz', 'taza', 'lampara', 'florero', 'cuero', 'mesa', 'barro', 'vicuña', 'cerámica'];
+    for (let i = 0; i < 60; i++) {
+      const k = 1 + Math.floor(r() * 3);
+      const q = '¿tienen ' + Array.from({ length: k }, () => palabras[Math.floor(r() * palabras.length)]).join(' y ') + '?';
+      const [, t] = charla(mundo({ catalogo: catalogoOk({}, LISTA as never) }), ['hola', q]);
+      if (!/Tenemos /.test(t!.txt)) continue;   // sin coincidencias salen la pregunta fija o las categorías
+      const sinTilde = (x: string): string => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const coinciden = LISTA.filter((v) => sinTilde(q).split(/[^a-z]+/).some((w) => w.length >= 4 && w !== 'tienen' && sinTilde((v.nombre as string) + ' ' + (v.area as string)).includes(w))).map((v) => v.nombre as string);
+      const mostradas = nombresEn(t!.txt);
+      expect(mostradas.length === coinciden.length || /Hay más piezas relacionadas/.test(t!.txt), `«${q}»: coinciden ${coinciden.length}, mostradas ${mostradas.length}`).toBe(true);
+    }
+  });
+});
+function azarR1b(semilla: number): () => number { let a = semilla >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32; }; }
 
 describe('G20, G24: el procedimiento no cuenta para la válvula; el trato no se mezcla', () => {
   it('G20: «¿cómo compro?» / «¿cómo pago?» / «¿cómo compro?» dan el procedimiento 3 veces, sin recepción', () => {
