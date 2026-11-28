@@ -160,6 +160,26 @@ describe('leerCampanaEnCurso y cambiosDeCampana', () => {
     const sano = { estado: 'enCurso', aceptados: 18, rechazados: 2, inciertos: 0 };
     expect(M.cambiosDeCampana(sano, { aceptados: 1, rechazados: 0, inciertos: 0 }, CFG)).toEqual({ aceptados: 19, rechazados: 2, inciertos: 0 });
   });
+  it('cambiosDeCampana con `baseDePausa` (tras reanudar): solo cuenta lo ocurrido DESPUÉS de la base; sin base, o con una base ilegible, cuenta lo acumulado', () => {
+    const viejo = { estado: 'enCurso', aceptados: 5, rechazados: 5, inciertos: 0 }; // 50 % de fallas: hoy pausaría en la primera confirmación
+    const sinBase = M.cambiosDeCampana(viejo, { aceptados: 1, rechazados: 0, inciertos: 0 }, CFG);
+    expect(sinBase).toMatchObject({ estado: 'pausada', motivoPausa: 'errores' });
+    const base = { aceptados: 5, rechazados: 5, inciertos: 0, no: 0 };
+    // Con base: 1 aceptado desde la base -> 1 desenlace, bajo el mínimo (10): no pausa.
+    expect(M.cambiosDeCampana({ ...viejo, baseDePausa: base }, { aceptados: 1, rechazados: 0, inciertos: 0 }, CFG)).toEqual({ aceptados: 6, rechazados: 5, inciertos: 0 });
+    // Con base y 10 desenlaces nuevos de los cuales 2 de 10 (20 %) fallan: SÍ pausa (mismo mínimo, mismo porcentaje).
+    const despues = { estado: 'enCurso', aceptados: 13, rechazados: 6, inciertos: 1, baseDePausa: base };
+    expect(M.cambiosDeCampana(despues, { aceptados: 1, rechazados: 0, inciertos: 0 }, CFG)).toMatchObject({ estado: 'pausada', motivoPausa: 'errores' });
+    // Con base y exactamente el 10 % desde la base: no pausa (borde).
+    const borde = { estado: 'enCurso', aceptados: 14, rechazados: 6, inciertos: 0, baseDePausa: base };
+    expect(M.cambiosDeCampana(borde, { aceptados: 0, rechazados: 0, inciertos: 0 }, CFG)).toEqual({ aceptados: 14, rechazados: 6, inciertos: 0 });
+    // Una base ilegible no relaja nada: se evalúa lo acumulado.
+    for (const mala of [null, 'x', [1], { aceptados: -1, rechazados: 0, inciertos: 0 }, { aceptados: 5, rechazados: 5 }, { aceptados: '5', rechazados: 5, inciertos: 0 }]) {
+      expect(M.cambiosDeCampana({ ...viejo, baseDePausa: mala }, { aceptados: 1, rechazados: 0, inciertos: 0 }, CFG), JSON.stringify(mala)).toMatchObject({ estado: 'pausada' });
+    }
+    // Un incierto anterior a la base que se resuelve después no resta: la diferencia negativa cuenta 0.
+    expect(M.contadoresDesdeLaBase({ aceptados: 6, rechazados: 5, inciertos: 0 }, { aceptados: 5, rechazados: 5, inciertos: 1, no: 0 })).toEqual({ aceptados: 1, rechazados: 0, inciertos: 0 });
+  });
   it('cambiosDeCampana: sin config legible cuenta pero no pausa; con contadores rotos no escribe nada; una pausada no se vuelve a pausar', () => {
     const d = { estado: 'enCurso', aceptados: 0, rechazados: 10, inciertos: 0 };
     expect(M.cambiosDeCampana(d, { aceptados: 0, rechazados: 1, inciertos: 0 }, null)).toEqual({ aceptados: 0, rechazados: 11, inciertos: 0 });

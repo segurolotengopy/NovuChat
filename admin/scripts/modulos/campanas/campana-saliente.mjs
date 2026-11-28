@@ -11,7 +11,8 @@
  *   pausar           --campana <id> [--aplicar …]
  *   reanudar         --campana <id> [--aplicar …]           una campaña PAUSADA (manual, por errores o por «No»): muestra por qué se pausó y las cifras,
  *                    la deja sin pausa y quita el puntero, y deja la auditoría. NO autoriza ninguna tanda: la siguiente sigue pidiendo `autorizar-tanda`
- *                    (si había una tanda abierta, antes `cerrar-tanda`). No reanuda una campaña terminada ni cancelada.
+ *                    (si había una tanda abierta, antes `cerrar-tanda`). No reanuda una campaña terminada ni cancelada. Guarda `baseDePausa` (los
+ *                    contadores del momento): las pausas por errores y por «No» se evalúan solo sobre lo ocurrido DESPUÉS. No registra quién reanudó.
  *   estado           --campana <id>                         conteos, «Sí» y «No» conciliados y `plantillasCampana`; solo lectura.
  *
  * QUÉ HACE Y QUÉ NO. Este script NO escribe mensajes. Escribe destinatarios en `tenants/{t}/campanasSalientes/{c}/destinatarios` y
@@ -272,6 +273,7 @@ const ROTULOS = {
   cerrada: 'excluidos: Ganado o Perdido', fechaIlegible: 'excluidos: fecha ilegible', prueba: 'excluidos: teléfono de prueba', baja: 'excluidos: con baja',
   bloqueada: 'excluidos: bloqueada', noContactar: 'excluidos: no contactar', riesgo: 'excluidos: con marca de riesgo', fueraDeVentana: 'excluidos: fuera de la ventana de días',
   sinConversacion: 'excluidos: sin conversación', otraLinea: 'excluidos: conversación de otra línea', reciente: 'excluidos: escribió en las últimas 24 h', destinatarios: 'DESTINATARIOS',
+  sinPhoneNumberId: 'AVISO: destinatarios con conversación SIN línea (cuentan como de esta)',
 };
 function imprimirConteos(log, conteos) { for (const [k, r] of Object.entries(ROTULOS)) log(`  ${r.padEnd(44)} ${conteos[k]}`); }
 
@@ -351,6 +353,19 @@ async function crear(cfg, deps, log) {
 const yaHecha = (hechas, id) => Array.isArray(hechas) && hechas.some((t) => t === id || t?.id === id);
 const enVuelo = (camp) => (camp.get('materializados') ?? 0) - (camp.get('aceptados') ?? 0) - (camp.get('rechazados') ?? 0) - (camp.get('inciertos') ?? 0);
 
+/**
+ * Los «enviados» (aceptados + inciertos) y los «No» que cuentan para la pausa por «No»: los acumulados o, si la campaña fue reanudada
+ * (`baseDePausa` legible), los ocurridos desde esa base. Una diferencia negativa cuenta 0. Una base ilegible = los acumulados (más estricto).
+ */
+export function desdeLaBaseDePausa(camp, no) {
+  const acumulado = { enviados: (camp.get('aceptados') ?? 0) + (camp.get('inciertos') ?? 0), no };
+  const b = camp.get('baseDePausa');
+  if (b === undefined || b === null) return acumulado;
+  const cont = (v) => Number.isInteger(v) && v >= 0;
+  if (typeof b !== 'object' || Array.isArray(b) || !cont(b.aceptados) || !cont(b.inciertos) || !cont(b.no)) return acumulado;
+  return { enviados: Math.max(0, acumulado.enviados - b.aceptados - b.inciertos), no: Math.max(0, no - b.no) };
+}
+
 /** Lo que se comprueba antes de autorizar una tanda: `{ codigo, motivo }` si no se puede, `null` si sí. Puro sobre los datos leídos. */
 export function motivoDeRechazoDeTanda({ camp, numero, ruta, cfg, config, pendientes, destinatariosTotal, no }) {
   if (!camp.exists) return { codigo: 2, motivo: 'la campaña no existe' };
@@ -366,8 +381,9 @@ export function motivoDeRechazoDeTanda({ camp, numero, ruta, cfg, config, pendie
   if (destinatariosTotal !== camp.get('total')) return { codigo: 2, motivo: 'la campaña está incompleta (faltan destinatarios): no se autoriza' };
   if (pendientes === 0) return { codigo: 2, motivo: 'no quedan destinatarios pendientes' };
   if ((camp.get('tandasHechas') ?? []).length > 0) { // desde la segunda tanda, la proporción de «No» de las anteriores decide
-    const enviados = (camp.get('aceptados') ?? 0) + (camp.get('inciertos') ?? 0);
-    if (superaNo({ no, enviados, pausaNoPct: config.pausaNoPct })) return { codigo: 4, motivo: 'la proporción de «No» supera el límite: no se autoriza la tanda siguiente (revise el mensaje con Andres)' };
+    // Tras una reanudación (`baseDePausa`) solo cuenta lo ocurrido DESPUÉS de ella, con el mismo porcentaje de la configuración.
+    const { enviados, no: noDesde } = desdeLaBaseDePausa(camp, no);
+    if (superaNo({ no: noDesde, enviados, pausaNoPct: config.pausaNoPct })) return { codigo: 4, motivo: 'la proporción de «No» supera el límite: no se autoriza la tanda siguiente (revise el mensaje con Andres)' };
   }
   return null;
 }
@@ -405,7 +421,8 @@ async function autorizarTanda(cfg, deps, log) {
   });
   if (hecho) { log(`\n  ✗ ${hecho.motivo}. No se escribió nada.\n`); return hecho.codigo; }
   deps.marcarEscritura?.('escrito');
-  log('\n  ✓ Tanda autorizada. El servidor la materializa de a pocos mensajes por reclamo; siga con `estado` y cierre con cerrar-tanda.\n');
+  log('\n  ✓ Tanda autorizada. El servidor la materializa de a pocos mensajes por reclamo; siga con `estado` y cierre con cerrar-tanda.');
+  log('  Tras una reanudación pueden salir hasta `porReclamo` mensajes antes de que el servidor evalúe de nuevo la pausa por errores.\n');
   return 0;
 }
 
@@ -494,6 +511,8 @@ async function reanudar(cfg, deps, log) {
   log(`\n  ${cfg.aplicar ? 'REANUDAR' : 'SECO (solo lecturas)'} · pausada por: ${camp.get('motivoPausa') ?? 'motivo no registrado'}${camp.get('prueba') ? ' · PRUEBA' : ''}`);
   log(`  materializados ${n('materializados')} · aceptados ${n('aceptados')} · rechazados ${n('rechazados')} · inciertos ${n('inciertos')} · en vuelo ${enVuelo(camp)} de ${n('total')} destinatarios`);
   log(`  tanda abierta: ${tanda ? `${tanda.usados} de ${tanda.cupo} (hay que cerrarla con cerrar-tanda antes de autorizar otra)` : 'ninguna'} · tandas hechas ${(camp.get('tandasHechas') ?? []).length}`);
+  // Las pausas (errores y «No») se evalúan solo desde esta reanudación: se guarda la base de los contadores.
+  const { no } = await conciliarRespuestas(db, cfg.tenant, cfg.campana);
   if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar para reanudar (no autoriza ninguna tanda).\n'); return 1; }
   deps.marcarEscritura?.('escribiendo');
   const r = await db.runTransaction(async (tx) => {
@@ -504,7 +523,9 @@ async function reanudar(cfg, deps, log) {
     const arrancada = (c2.get('materializados') ?? 0) > 0 || c2.get('tanda') != null || (c2.get('tandasHechas') ?? []).length > 0;
     tx.update(ref, {
       estado: arrancada ? 'enCurso' : 'creada', motivoPausa: FieldValue.delete(),
+      // `reanudaciones` registra cuándo y por qué motivo, NO quién: este script no conoce ningún identificador del operador (declarado, PR-C ronda 4).
       reanudaciones: [...(c2.get('reanudaciones') ?? []), { en: Timestamp.fromMillis(deps.ahoraMs()), motivoPausa: c2.get('motivoPausa') ?? null }],
+      baseDePausa: { aceptados: c2.get('aceptados') ?? 0, rechazados: c2.get('rechazados') ?? 0, inciertos: c2.get('inciertos') ?? 0, no },
     });
     // Sin puntero el servidor no materializa nada: reanudar nunca autoriza. Una pausa por errores lo deja puesto (solo cambia el estado), por eso se quita aquí.
     if (ruta.get('campanaSalienteEnCurso') === cfg.campana) tx.update(refRuta, { campanaSalienteEnCurso: FieldValue.delete() });
@@ -512,7 +533,8 @@ async function reanudar(cfg, deps, log) {
   });
   if (r) { log(`\n  ✗ ${r.motivo}. No se escribió nada.\n`); return r.codigo; }
   deps.marcarEscritura?.('escrito');
-  log('\n  ✓ Campaña reanudada (sin pausa, sin puntero, con auditoría). NO se autorizó ninguna tanda: la siguiente pide cerrar-tanda (si había una abierta) y autorizar-tanda.\n');
+  log('\n  ✓ Campaña reanudada (sin pausa, sin puntero, con auditoría y con la base de las pausas). NO se autorizó ninguna tanda: la siguiente pide cerrar-tanda (si había una abierta) y autorizar-tanda.');
+  log('  Ojo: tras autorizar-tanda pueden salir hasta `porReclamo` mensajes antes de que el servidor evalúe de nuevo la pausa por errores.\n');
   return 0;
 }
 
@@ -576,13 +598,14 @@ const corrida = { estado: 'antes' };
 export function instalarInterrupcion(proceso, estadoCorrida, lector, escribir = (t) => console.error(t)) {
   let atendida = false;
   const alSenal = () => {
-    if (atendida) return;
+    // Una segunda señal durante la limpieza se ignora y se avisa: con `once` el proceso moría con el webhook vivo.
+    if (atendida) { escribir('Limpiando, espere (la señal repetida se ignora).'); return; }
     atendida = true;
     escribir(mensajeDeInterrupcion(estadoCorrida.estado));
     Promise.resolve().then(() => lector?.limpiar?.()).catch(() => {}).finally(() => proceso.exit(130));
   };
-  proceso.once('SIGINT', alSenal);
-  proceso.once('SIGTERM', alSenal);
+  proceso.on('SIGINT', alSenal);
+  proceso.on('SIGTERM', alSenal);
 }
 
 function leerJsonBajo(ruta, base) {

@@ -124,6 +124,14 @@ describe('armarLista: la lista y sus exclusiones', () => {
     expect(r.conteos['otraLinea']).toBe(1);
     expect(aptos(r)).toEqual([TEL(2)]);
   });
+  it('VISIBILIDAD: una conversación SIN phoneNumberId sigue contando como de esta línea (recibe) y se cuenta aparte en `sinPhoneNumberId`; no cambia a quién se le escribe', () => {
+    const sinLinea = { ultimoEntranteEn: HACE(72) } as Conv;
+    const r = lista([fila(1), fila(2), fila(3)], { convs: [[1, sinLinea], [2, conv()], [3, conv({ phoneNumberId: 'otra-linea' })]] });
+    expect(aptos(r)).toEqual([TEL(1), TEL(2)]);
+    expect(r.conteos['sinPhoneNumberId']).toBe(1);
+    expect(r.conteos['otraLinea']).toBe(1);
+    expect(lista([fila(1)]).conteos['sinPhoneNumberId']).toBe(0);
+  });
   it('NEGATIVA: quien escribió hace menos de 24 h no recibe (motivo reciente); a las 24 h exactas sí', () => {
     const r = lista([fila(1), fila(2), fila(3)], { convs: [[1, conv({ ultimoEntranteEn: HACE(1) })], [2, conv({ ultimoEntranteEn: HACE(23.9) })], [3, conv({ ultimoEntranteEn: HACE(24) })]] });
     expect(r.conteos['reciente']).toBe(2);

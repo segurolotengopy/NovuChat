@@ -32,7 +32,7 @@
  *
  * Costo: 0 mensajes por conversación (la campaña es un envío aparte, cuenta en `plantillasCampana`).
  */
-import { FieldValue, Timestamp, type DocumentReference, type DocumentSnapshot, type Firestore, type Transaction } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, type DocumentReference, type DocumentSnapshot, type Firestore } from 'firebase-admin/firestore';
 import type { Ruta } from '../seguridad/firma.js';
 import { CAMPANA_ID } from './bajas.js';
 import {
@@ -284,7 +284,8 @@ export async function materializarCampana(
 
   return db.runTransaction(async (tx): Promise<MensajeDeCampanaMaterializado[]> => {
     const refC = refCampana(db, tenantId, puntero);
-    const [campanaSnap, configSnap, contadorSnap] = await tx.getAll(refC, refConfigCampana(db, tenantId), refContadorCampana(db, tenantId));
+    const refRuta = db.doc(`rutasWhatsApp/${phoneNumberId}`);
+    const [campanaSnap, configSnap, contadorSnap, rutaSnap] = await tx.getAll(refC, refConfigCampana(db, tenantId), refContadorCampana(db, tenantId), refRuta);
     const config = leerConfigCampana(configSnap?.data());
     const campana = leerCampanaEnCurso(puntero, campanaSnap?.data(), phoneNumberId);
     if (!config || !campana) return [];
@@ -303,6 +304,8 @@ export async function materializarCampana(
       const motivoDePrueba = motivoDePruebaRechazada(todos.docs.map((x) => x.id), leerTelefonosDePrueba(configSnap?.data()));
       if (motivoDePrueba !== null) {
         tx.update(refC, { estado: 'pausada', motivoPausa: motivoDePrueba });
+        // Sin puntero el campo de la ruta no queda apuntando a una campaña pausada (la transacción ya lee la ruta).
+        if (rutaSnap?.get('campanaSalienteEnCurso') === puntero) tx.update(refRuta, { campanaSalienteEnCurso: FieldValue.delete() });
         return [];
       }
     }
@@ -364,9 +367,27 @@ export async function materializarCampana(
 }
 
 /**
+ * Los contadores que cuentan para las pausas SOLO desde la última reanudación: `reanudar` guarda en la campaña `baseDePausa`
+ * (`aceptados`, `rechazados`, `inciertos`, `no` de ese momento) y la pausa por errores se evalúa sobre lo ocurrido DESPUÉS. Sin base
+ * (campaña que nunca se reanudó) o con una base ilegible, se evalúa sobre los contadores acumulados, como antes (lo más estricto).
+ * Una diferencia negativa (p. ej. un incierto anterior a la base que se resuelve después) cuenta 0: no resta puntos buenos ni malos.
+ */
+export function contadoresDesdeLaBase(nuevo: { aceptados: number; rechazados: number; inciertos: number }, base: unknown): { aceptados: number; rechazados: number; inciertos: number } {
+  if (typeof base !== 'object' || base === null || Array.isArray(base)) return nuevo;
+  const b = base as Record<string, unknown>;
+  if (!contador(b['aceptados']) || !contador(b['rechazados']) || !contador(b['inciertos'])) return nuevo;
+  return {
+    aceptados: Math.max(0, nuevo.aceptados - b['aceptados']),
+    rechazados: Math.max(0, nuevo.rechazados - b['rechazados']),
+    inciertos: Math.max(0, nuevo.inciertos - b['inciertos']),
+  };
+}
+
+/**
  * Los cambios de la campaña por una transición ya validada de uno de sus mensajes: los contadores nuevos (absolutos, leídos en la
  * misma transacción) y, si `config` es legible y la campaña está `enCurso`, la pausa por errores (`estado: 'pausada'`,
- * `motivoPausa: 'errores'`). `null` si los contadores de la campaña no son legibles (no se toca nada: falla cerrada hacia no contar).
+ * `motivoPausa: 'errores'`), evaluada desde `baseDePausa` si la campaña fue reanudada. `null` si los contadores de la campaña no son
+ * legibles (no se toca nada: falla cerrada hacia no contar).
  */
 export function cambiosDeCampana(d: Record<string, unknown> | undefined, c: Conteos, config: ConfigCampana | null): Record<string, unknown> | null {
   if (!d) return null;
@@ -375,15 +396,6 @@ export function cambiosDeCampana(d: Record<string, unknown> | undefined, c: Cont
   const nuevo = { aceptados: aceptados + c.aceptados, rechazados: rechazados + c.rechazados, inciertos: inciertos + c.inciertos };
   if (!contador(nuevo.inciertos)) return null;
   const cambios: Record<string, unknown> = { ...nuevo };
-  if (config && d['estado'] === 'enCurso' && debePausar(nuevo, config)) { cambios['estado'] = 'pausada'; cambios['motivoPausa'] = 'errores'; }
+  if (config && d['estado'] === 'enCurso' && debePausar(contadoresDesdeLaBase(nuevo, d['baseDePausa']), config)) { cambios['estado'] = 'pausada'; cambios['motivoPausa'] = 'errores'; }
   return cambios;
-}
-
-/** Suma los conteos de una transición a la campaña, dentro de la transacción que la confirma. */
-export function sumarConteosDeCampana(tx: Transaction, ref: DocumentReference, c: Conteos): void {
-  const cambios: Record<string, unknown> = {};
-  if (c.aceptados !== 0) cambios['aceptados'] = FieldValue.increment(c.aceptados);
-  if (c.rechazados !== 0) cambios['rechazados'] = FieldValue.increment(c.rechazados);
-  if (c.inciertos !== 0) cambios['inciertos'] = FieldValue.increment(c.inciertos);
-  if (Object.keys(cambios).length > 0) tx.update(ref, cambios);
 }

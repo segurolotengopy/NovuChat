@@ -311,6 +311,69 @@ describe('pausa por errores, en el servidor', () => {
 });
 
 // ===========================================================================
+describe('pausa por errores: incierto por tiempo vencido (L1) y reanudación con `baseDePausa` (PR-C ronda 4)', () => {
+  const vencido = (conv: string, clave: string) => db.doc(`tenants/${A}/conversaciones/${conv}/mensajes/${clave}`).update({ reclamadoEn: Timestamp.fromMillis(Date.now() - 5 * MIN) });
+  async function unoEnVuelo(contadores: { aceptados: number; rechazados: number }, config: Datos, base?: Datos) {
+    const resueltos = contadores.aceptados + contadores.rechazados;
+    await preparar({ config, campana: { materializados: resueltos + 1, ...contadores, ...(base ? { baseDePausa: base } : {}), tanda: { id: 't1', cupo: 45, usados: resueltos + 1, calidad: 'VERDE' } }, n: 4 });
+    const conv = CONV(0);
+    await db.doc(`tenants/${A}/conversaciones/${conv}/mensajes/${claveDe(conv)}`).set({
+      direccion: 'saliente', tipo: 'plantilla', texto: '', ts: Timestamp.now(), reclamadoEn: Timestamp.now(), autor: 'campana', estadoEnvio: 'enviando',
+      tenantId: A, phoneNumberId: NUM_A, campanaId: CAMPANA, tandaId: 't1', contado: false,
+      plantilla: { nombre: 'campana_chat', idioma: 'es', parametros: [], botones: [{ indice: 0, payload: `cs:si:${CAMPANA}` }, { indice: 1, payload: `cs:no:${CAMPANA}` }] },
+    });
+    await refDest(conv).update({ estado: 'enviado', mensajeId: claveDe(conv) });
+    return { conv, mensajeId: claveDe(conv) };
+  }
+
+  it('L1: un incierto por tiempo vencido SOBRE el umbral deja la campaña `pausada/errores` y el mismo reclamo no materializa; bajo el mínimo no pausa', async () => {
+    const a = await unoEnVuelo({ aceptados: 2, rechazados: 0 }, { ...CONFIG, pausaMinimoEnviados: 3 });
+    await vencido(a.conv, a.mensajeId);
+    const r = await reclamar();
+    expect(await campana()).toMatchObject({ estado: 'pausada', motivoPausa: 'errores', inciertos: 1 });
+    expect(delaCampana(r)).toEqual([]);
+    expect(await dest(CONV(1))).toMatchObject({ estado: 'pendiente' });
+    // NIEGA: con el mínimo en 4 el mismo incierto NO alcanza (3 desenlaces) y la campaña sigue.
+    const b = await unoEnVuelo({ aceptados: 2, rechazados: 0 }, { ...CONFIG, pausaMinimoEnviados: 4 });
+    await vencido(b.conv, b.mensajeId);
+    await reclamar();
+    expect(await campana()).toMatchObject({ estado: 'enCurso', inciertos: 1 });
+  });
+
+  it('L1 (varios): N inciertos por tiempo vencido en el mismo reclamo pausan al pasar el umbral', async () => {
+    const a = await unoEnVuelo({ aceptados: 3, rechazados: 0 }, { ...CONFIG, pausaMinimoEnviados: 4 });
+    const conv2 = CONV(1);
+    await db.doc(`tenants/${A}/conversaciones/${conv2}/mensajes/${claveDe(conv2)}`).set({
+      direccion: 'saliente', tipo: 'plantilla', texto: '', ts: Timestamp.now(), reclamadoEn: Timestamp.now(), autor: 'campana', estadoEnvio: 'enviando',
+      tenantId: A, phoneNumberId: NUM_A, campanaId: CAMPANA, tandaId: 't1', contado: false, plantilla: { nombre: 'campana_chat', idioma: 'es', parametros: [], botones: [] },
+    });
+    await refDest(conv2).update({ estado: 'enviado', mensajeId: claveDe(conv2) });
+    await refCampana().update({ materializados: 5, 'tanda.usados': 5 });
+    await vencido(a.conv, a.mensajeId); await vencido(conv2, claveDe(conv2));
+    await reclamar();
+    expect(await campana()).toMatchObject({ estado: 'pausada', motivoPausa: 'errores', inciertos: 2 });
+  });
+
+  it('REANUDAR: con `baseDePausa` los contadores viejos no vuelven a pausar en la primera confirmación; sin base (campaña no reanudada) sí', async () => {
+    const base = { aceptados: 5, rechazados: 5, inciertos: 0, no: 0 };
+    const conBase = await unoEnVuelo({ aceptados: 5, rechazados: 5 }, CONFIG, base);
+    expect((await resolver({ mensajeId: conBase.mensajeId, conversacionId: conBase.conv } as Entregado)).codigo).toBe(200);
+    expect(await campana()).toMatchObject({ estado: 'enCurso', aceptados: 6, rechazados: 5 });
+    const sinBase = await unoEnVuelo({ aceptados: 5, rechazados: 5 }, CONFIG);
+    expect((await resolver({ mensajeId: sinBase.mensajeId, conversacionId: sinBase.conv } as Entregado)).codigo).toBe(200);
+    expect(await campana()).toMatchObject({ estado: 'pausada', motivoPausa: 'errores' });
+  });
+
+  it('REANUDAR: con `baseDePausa`, lo NUEVO que vuelve a superar el umbral SÍ pausa (mismo mínimo y mismo porcentaje de la configuración)', async () => {
+    const base = { aceptados: 5, rechazados: 5, inciertos: 0, no: 0 };
+    // Desde la base: 8 aceptados y 1 rechazado (9 desenlaces, bajo el mínimo de 10); el décimo rechazado da 2 de 10 = 20 % > 10 %.
+    const a = await unoEnVuelo({ aceptados: 13, rechazados: 6 }, CONFIG, base);
+    expect((await resolver({ mensajeId: a.mensajeId, conversacionId: a.conv } as Entregado, 'rechazado')).codigo).toBe(200);
+    expect(await campana()).toMatchObject({ estado: 'pausada', motivoPausa: 'errores', rechazados: 7 });
+  });
+});
+
+// ===========================================================================
 describe('uno por contacto, por estructura', () => {
   it('cada contacto recibe UN mensaje: 4 reclamos seguidos (con confirmación) no repiten a nadie', async () => {
     await preparar({ n: 6 });
@@ -701,6 +764,8 @@ describe('la excepción de la prueba (PR-C, 27/11/2026): solo `prueba: true`, UN
     expect(await todosLosMensajes()).toBe(0);
     expect(await dest(CONV(0))).toMatchObject({ estado: 'pendiente' });
     expect((await refContador().get()).exists).toBe(false);
+    // La pausa de prueba quita el puntero de la ruta en la MISMA transacción (no queda apuntando a una campaña pausada).
+    expect((await db.doc(`rutasWhatsApp/${NUM_A}`).get()).get('campanaSalienteEnCurso')).toBeUndefined();
     expect(delaCampana(await reclamar())).toEqual([]); // ya pausada: no vuelve a salir ni a escribir
   };
 

@@ -59,7 +59,7 @@ import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada, type Ruta } from '../seguridad/firma.js';
 import { ID_COMERCIO } from './acceso.js';
 import { CAMPANA_ID } from './bajas.js';
-import { cuentaDeTransicion, materializarCampana, refCampana, sumarConteosDeCampana } from './salidaCampana.js';
+import { cambiosDeCampana, cuentaDeTransicion, leerConfigCampana, materializarCampana, refCampana, refConfigCampana } from './salidaCampana.js';
 import {
   CODIGO_CADUCADO, CODIGO_FUERA_DE_COLA, ENVIANDO_MAXIMO_MS, MAXIMO_POR_RECLAMO, PENDIENTE_MAXIMO_MS, IDIOMA_DE_PLANTILLA, NOMBRE_DE_PLANTILLA, PARAMETROS_MAXIMOS, canalDeSalidaDe, esAutorDePlantilla, type BotonDePlantilla, claveReleDe, liberarRetomada, parametroDePlantillaValido, refTopesDeRetomar,
   sumarMensajePersona, sumarPlantillaCampana, sumarPlantillaPersona, type CanalDeSalida,
@@ -176,6 +176,8 @@ export async function reclamarSalida(
       const idDeCampana: unknown = esCampana ? s.get('campanaId') : undefined;
       const campanaDelMensaje = estado === 'enviando' && typeof idDeCampana === 'string' && CAMPANA_ID.test(idDeCampana)
         ? await tx.get(refCampana(db, tenantId, idDeCampana)) : null;
+      // La cifra de la pausa por errores se lee ANTES de escribir: un incierto por tiempo vencido decide la pausa como `confirmarSalida`.
+      const configDeCampana = campanaDelMensaje !== null ? await tx.get(refConfigCampana(db, tenantId)) : null;
       // UN `pendiente` DE CAMPAÑA NO SALE NUNCA (PR-C): la campaña tiene su cola propia (`salidaCampana.ts`) y sus mensajes nacen
       // `enviando`. Uno escrito a mano en `pendiente` se cancela (`fueraDeCola`): así no ocupa la cola de las personas ni sale
       // sin pasar por los topes del servidor.
@@ -253,7 +255,10 @@ export async function reclamarSalida(
           tx.update(candidato.ref, { estadoEnvio: 'incierto', confirmadoEn: Timestamp.fromMillis(ahoraMs), contado: true });
           (tipoDelMensaje !== 'plantilla' ? sumarMensajePersona : esCampana ? sumarPlantillaCampana : sumarPlantillaPersona)(tx, db, tenantId, ahoraMs, 1);
           const cuenta = cuentaDeTransicion('enviando', 'incierto');
-          if (esCampana && campanaDelMensaje?.exists === true && cuenta) sumarConteosDeCampana(tx, campanaDelMensaje.ref, cuenta);
+          if (esCampana && campanaDelMensaje?.exists === true && cuenta) {
+            const delta = cambiosDeCampana(campanaDelMensaje.data(), cuenta, leerConfigCampana(configDeCampana?.data()));
+            if (delta) tx.update(campanaDelMensaje.ref, delta);
+          }
           return 'incierto';
         }
       }

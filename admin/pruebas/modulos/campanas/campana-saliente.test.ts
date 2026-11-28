@@ -225,6 +225,19 @@ describe('simular: solo conteos, sin escribir', () => {
     expect(r.texto).toMatch(/tandas\s+1 \(de hasta 45\)/);
     expect(await foto(m)).toBe(antes);
   });
+  it('VISIBILIDAD: simular y crear (seco) imprimen cuántos candidatos tienen la conversación SIN phoneNumberId; siguen entrando a la lista', async () => {
+    const m = await montar();
+    for (const n of [1, 2]) await db.doc(`tenants/${m.tenant}/conversaciones/wa_${TEL(n)}`).update({ phoneNumberId: FieldValue.delete() });
+    const aviso = (t: string) => Number(/SIN línea \(cuentan como de esta\)\s+(\d+)/.exec(t)?.[1]);
+    const sim = await correr(base(m, 'simular', ['--mapa-crm', MAPA, '--flujo-versionado', FLUJO]));
+    expect(sim.codigo, sim.texto).toBe(0);
+    expect(aviso(sim.texto)).toBe(2);
+    expect(Number(/DESTINATARIOS\s+(\d+)/.exec(sim.texto)?.[1])).toBe(5);
+    const crearSeco = await correr(crearArgs(m, 'cmp-sin-linea'));
+    expect(aviso(crearSeco.texto)).toBe(2);
+    const m2 = await montar();
+    expect(aviso((await correr(base(m2, 'simular', ['--mapa-crm', MAPA, '--flujo-versionado', FLUJO]))).texto)).toBe(0);
+  });
   it('NEGATIVA: sin config/campanaSaliente (o ilegible) no hay simulacro: sale con 2', async () => {
     for (const config of [null, { ...CONFIG, porReclamo: 0 }, { ...CONFIG, porTanda: '45' }]) {
       const m = await montar({ config });
@@ -492,6 +505,34 @@ describe('autorizar-tanda: una tanda por botón', () => {
     const ok = await correr(autorizarArgs(m, 'cmp-uno', 't2', ['--aplicar']));
     expect(ok.codigo, ok.texto).toBe(0);
   });
+  it('REANUDAR: tras reanudar (`baseDePausa`) la proporción de «No» cuenta solo lo ocurrido DESPUÉS; sin base cuenta lo acumulado', async () => {
+    const m = await montar();
+    await crearReal(m, 'cmp-uno');
+    const responder = async (n: number) => {
+      for (let i = 1; i <= 5; i++) await db.doc(`tenants/${m.tenant}/conversaciones/wa_${TEL(i)}`).update({ campanaRespuesta: i <= n ? { campanaId: 'cmp-uno', respuesta: 'no' } : FieldValue.delete() });
+    };
+    // Antes de la reanudación: 3 «No» de 8 enviados (37,5 %): pausada por «No» (el script lo rechaza con 4).
+    await refC(m, 'cmp-uno').update({ estado: 'pausada', motivoPausa: 'manual', tandasHechas: [{ id: 't1' }], materializados: 8, aceptados: 8 });
+    await responder(3);
+    expect((await correr(base(m, 'reanudar', ['--campana', 'cmp-uno', '--aplicar']))).codigo).toBe(0);
+    expect((await refC(m, 'cmp-uno').get()).get('baseDePausa')).toEqual({ aceptados: 8, rechazados: 0, inciertos: 0, no: 3 });
+    // Después: 4 enviados más (12) y 1 «No» nuevo (4 en total): desde la base 1 de 4 = 25 %, no supera; con lo acumulado sería 4 de 12 = 33 %.
+    await refC(m, 'cmp-uno').update({ materializados: 12, aceptados: 12 });
+    await responder(4);
+    const ok = await correr(autorizarArgs(m, 'cmp-uno', 't2', ['--aplicar']));
+    expect(ok.codigo, ok.texto).toBe(0);
+    // NIEGA: lo nuevo SÍ puede superar el límite: 2 «No» de 4 (50 %) desde la base.
+    await refC(m, 'cmp-uno').update({ tanda: null, estado: 'enCurso' });
+    await db.doc(`rutasWhatsApp/${m.numero}`).update({ campanaSalienteEnCurso: FieldValue.delete() });
+    await responder(5);
+    const antes = await foto(m);
+    const r = await correr(autorizarArgs(m, 'cmp-uno', 't3', ['--aplicar']));
+    expect(r.codigo, r.texto).toBe(4);
+    expect(await foto(m)).toBe(antes);
+    // Una base ilegible no relaja: se vuelve a lo acumulado (5 de 12 = 41 %).
+    await refC(m, 'cmp-uno').update({ baseDePausa: 'x' });
+    expect((await correr(autorizarArgs(m, 'cmp-uno', 't3', ['--aplicar']))).codigo).toBe(4);
+  });
   it('NEGATIVA: la proporción de «No» de OTRA campaña no cuenta', async () => {
     const m = await montar();
     await crearReal(m, 'cmp-uno');
@@ -591,6 +632,20 @@ describe('cerrar-tanda y pausar', () => {
     expect(c).not.toHaveProperty('motivoPausa');
     expect(c['reanudaciones']).toEqual([{ en: expect.anything(), motivoPausa: 'errores' }]);
     expect(await rutaDe(m)).not.toHaveProperty('campanaSalienteEnCurso');
+  });
+  it('reanudar guarda `baseDePausa` con los contadores del momento y avisa que pueden salir hasta `porReclamo` mensajes antes de la nueva evaluación; no registra quién reanudó', async () => {
+    const m = await montar();
+    await refC(m, 'cmp-uno').set({ estado: 'pausada', motivoPausa: 'errores', phoneNumberId: m.numero, total: 5, materializados: 4, aceptados: 1, rechazados: 2, inciertos: 1, tanda: null, tandasHechas: [{ id: 't1' }] });
+    await db.doc(`tenants/${m.tenant}/conversaciones/wa_${TEL(1)}`).update({ campanaRespuesta: { campanaId: 'cmp-uno', respuesta: 'no' } });
+    const seco = await correr(reanudarArgs(m));
+    expect(seco.codigo).toBe(1);
+    expect((await refC(m, 'cmp-uno').get()).data()).not.toHaveProperty('baseDePausa'); // el seco no escribe
+    const r = await correr(reanudarArgs(m, ['--aplicar']));
+    expect(r.codigo, r.texto).toBe(0);
+    const c = (await refC(m, 'cmp-uno').get()).data() as Record<string, unknown>;
+    expect(c['baseDePausa']).toEqual({ aceptados: 1, rechazados: 2, inciertos: 1, no: 1 });
+    expect(JSON.stringify(c['reanudaciones'])).not.toMatch(/operador|uid|email/i); // la auditoría es solo cuándo y por qué
+    expect(r.texto).toContain('porReclamo');
   });
   it('NEGATIVA: reanudar NO autoriza ninguna tanda: la tanda abierta queda igual, no hay puntero y autorizar-tanda sigue pidiendo cerrarla', async () => {
     const m = await enCurso();
@@ -734,6 +789,41 @@ describe('integración script -> servidor: el `ejecutar()` real de cada subcoman
     expect((await rutaDe(m))['campanaSalienteEnCurso']).toBeUndefined();
     expect(await reclamarCampana(m.numero)).toEqual([]);
     expect(await mensajes()).toBe(4);
+  });
+
+  it('REANUDAR (ronda 4): pausa por errores -> reanudar -> cerrar-tanda -> autorizar-tanda -> confirmar: con resultados buenos NO vuelve a pausar; si lo nuevo vuelve a superar el umbral, SÍ', async () => {
+    // Mínimo de 2 desenlaces y 10 % para que el ejemplo sea corto; la lógica y los porcentajes son los de la configuración.
+    for (const nuevoFalla of [false, true]) {
+      const m = await montar({ telefonos: [1, 2, 3, 4, 5, 6], config: { ...CONFIG, pausaMinimoEnviados: 2 }, ruta: { aliasSecreto: 'cliente08', flujo: 'agendamiento' } });
+      await db.doc(`tenants/${m.tenant}`).set({ nombre: 'Integración', estado: 'activo' });
+      expect((await correr(crearArgs(m, 'cmp-r4', ['--aplicar']), { deps: real, filas: filasDe([1, 2, 3, 4, 5, 6]) })).codigo).toBe(0);
+      expect((await correr(autorizarArgs(m, 'cmp-r4', 't1', ['--aplicar']), { deps: real })).codigo).toBe(0);
+      // Primera tanda: 1 aceptado y 2 rechazados -> el servidor pausa por errores.
+      const primero = await reclamarCampana(m.numero);
+      expect(primero).toHaveLength(3);
+      await aceptar(m.numero, primero[0]!);
+      for (const x of primero.slice(1)) {
+        const rr = await llamarFuncion('confirmarSalidaPersona', m.numero, { mensajeId: x.mensajeId, conversacionId: x.conversacionId, resultado: 'rechazado', codigo: '131026' });
+        expect(rr.codigo).toBe(200);
+      }
+      expect((await refC(m, 'cmp-r4').get()).data()).toMatchObject({ estado: 'pausada', motivoPausa: 'errores' });
+      // Reanudar, cerrar la tanda abierta y autorizar la siguiente (cada una con el ejecutar() real del script).
+      expect((await correr(base(m, 'reanudar', ['--campana', 'cmp-r4', '--aplicar']), { deps: real })).codigo).toBe(0);
+      expect((await refC(m, 'cmp-r4').get()).get('baseDePausa')).toMatchObject({ aceptados: 1, rechazados: 2, inciertos: 0 });
+      expect((await correr(base(m, 'cerrar-tanda', ['--campana', 'cmp-r4', '--tanda', 't1', '--aplicar']), { deps: real })).codigo).toBe(0);
+      expect((await correr(autorizarArgs(m, 'cmp-r4', 't2', ['--aplicar']), { deps: real })).codigo).toBe(0);
+      const segundo = await reclamarCampana(m.numero);
+      expect(segundo).toHaveLength(3);
+      if (!nuevoFalla) {
+        for (const x of segundo) await aceptar(m.numero, x);
+        expect((await refC(m, 'cmp-r4').get()).data(), 'con resultados buenos no vuelve a pausar').toMatchObject({ estado: 'enCurso', aceptados: 4, rechazados: 2 });
+      } else {
+        await aceptar(m.numero, segundo[0]!);
+        const rr = await llamarFuncion('confirmarSalidaPersona', m.numero, { mensajeId: segundo[1]!.mensajeId, conversacionId: segundo[1]!.conversacionId, resultado: 'rechazado', codigo: '131026' });
+        expect(rr.codigo).toBe(200);
+        expect((await refC(m, 'cmp-r4').get()).data(), 'lo nuevo supera el umbral: sí pausa').toMatchObject({ estado: 'pausada', motivoPausa: 'errores' });
+      }
+    }
   });
 
   it('NEGATIVA: pausar (ejecutar() real) detiene al servidor aunque la tanda siga abierta', async () => {

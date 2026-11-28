@@ -126,6 +126,8 @@ export function armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ah
   conteos.telefonos = 0;
   conteos.filasRepetidas = 0;
   conteos.destinatarios = 0;
+  // SOLO VISIBILIDAD (no excluye a nadie): destinatarios cuya conversación existe pero no trae `phoneNumberId`; el servidor y esta lista los cuentan como de la línea.
+  conteos.sinPhoneNumberId = 0;
   /** @type {Map<string, { valido: string|null, cerrada: boolean, ilegible: boolean, max: number|null }>} */
   const porTelefono = new Map();
   for (const f of filas ?? []) {
@@ -159,6 +161,7 @@ export function armarLista({ filas, conversaciones, bajas, telefonosDePrueba, ah
     else if (conv?.phoneNumberId !== undefined && conv.phoneNumberId !== numero) motivo = 'otraLinea';
     else if (!excepcionPrueba && ahoraMs - milisegundosDe(conv.ultimoEntranteEn) < HORAS_DE_VENTANA * HORA_MS) motivo = 'reciente';
     if (motivo !== null) { conteos[motivo] += 1; continue; }
+    if (conv !== null && conv.phoneNumberId === undefined) conteos.sinPhoneNumberId += 1;
     destinatarios.push({ telefono: t.valido, fechaMaxMs: t.max });
   }
   conteos.destinatarios = destinatarios.length;
