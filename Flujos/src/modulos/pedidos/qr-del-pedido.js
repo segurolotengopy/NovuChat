@@ -30,7 +30,9 @@ function pqrLineas(lineas) {
     if (!l || typeof l !== 'object') continue;
     const id = l.id;
     if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(id) || id.includes('..')) continue;
-    const c = typeof l.cantidad === 'number' ? Math.trunc(l.cantidad)
+    // SIN TRUNCAR (27/11/2026, revision del #1136): una cantidad no entera (1.5, 2.5) NO se convierte en 1 o 2: la linea se descarta como invalida,
+    // porque el pedido y el QR dirian menos de lo que el cliente pidio. Un texto de solo digitos sigue valiendo, como antes.
+    const c = typeof l.cantidad === 'number' ? (Number.isInteger(l.cantidad) ? l.cantidad : NaN)
       : (typeof l.cantidad === 'string' && /^\s*\d{1,3}\s*$/.test(l.cantidad) ? Number(l.cantidad) : NaN);
     if (!Number.isFinite(c) || c < 1) continue;
     const detalle = _pqrTexto(l.detalle, PQR_MAX_DETALLE);

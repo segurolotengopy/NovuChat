@@ -23,7 +23,9 @@ const item = $input.first().json;
 const cobroReal = String(cfg.cobroRealActivo || '') === 'si';
 const conEmojis = String(cfg.nivelEmojis || '') !== 'ninguno';
 const e = (s) => (conEmojis ? s + ' ' : '');
-const moneda = String(cfg.moneda || 'Bs').trim();
+// La moneda se escribe «Bs» si llega BOB, bs, «Bs.» o vacia (27/11/2026, revision del #1136): el importe del reenvio dice lo mismo que el QR original.
+const monedaCruda = String(cfg.moneda || '').trim();
+const moneda = (monedaCruda === '' || /^(?:bs\.?|bob)$/i.test(monedaCruda)) ? 'Bs' : monedaCruda;
 const monto = String(cfg.cobroMonto || '').trim();
 const importe = monto ? `${monto} ${moneda}`.trim() : '';
 
