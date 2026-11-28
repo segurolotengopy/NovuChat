@@ -283,11 +283,12 @@ export const PUNTOS: Punto[] = [
   { id: '3.2', titulo: 'el filtro de redacción conserva saltos de línea y viñetas', evaluar: (m) => {
     const out: string[] = [];
     if (!m.categorias) out.push('3.2 sin dos categorías en el catálogo del mundo');
-    for (const t of [...m.listados, m.categoria, ...(m.variasCategorias ? [m.variasCategorias] : []), m.conVinetas]) {
+    const todos = [m.saludo, m.pideCatalogo, m.noEncuentra, m.conQr, m.categoria, ...(m.variasCategorias ? [m.variasCategorias] : []), m.listado, m.textoLargo, m.conVinetas, ...m.listados, ...m.toquesViejos, ...(m.toqueVigente ? [m.toqueVigente] : [])];
+    for (const t of todos) {
       out.push(...problemasDeVinetas(textoDe(t), m.catalogo).map((p) => `«${t.dijo}»: ${p}`));
     }
     const lineas = textoDe(m.conVinetas).split('\n').map((l) => l.trim());
-    if (!m.conVinetas.modeloLlamado || !lineas.includes(ENCABEZADO_VINETAS)) out.push('3.2 no se puede medir: el flujo no deja pasar texto del modelo con pedido');
+    if (!m.conVinetas.modeloLlamado || (!lineas.includes(ENCABEZADO_VINETAS) && !lineas.some((l) => l.startsWith('•')))) out.push('3.2 no se puede medir: el flujo no deja pasar texto del modelo con pedido');
     else {
       let desde = 0;
       for (const l of m.lineasEsperadas) {
