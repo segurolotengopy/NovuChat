@@ -135,6 +135,10 @@ export interface Ruta {
   tenantId: string;
   flujo: string;
   estado: string;
+  /** La ruta ya trae el campo `numeroPublico`, con cualquier valor. Sale del mismo documento: sin lectura nueva. */
+  tieneNumeroPublico: boolean;
+  /** `numeroPublicoAuto === false`: el número fue quitado a mano y no se fija solo. Mismo documento. */
+  numeroPublicoAutoApagado: boolean;
 }
 
 /**
@@ -222,6 +226,8 @@ export async function rutaAutenticada(peticion: {
     tenantId: String(doc.get('tenantId') ?? ''),
     flujo: String(doc.get('flujo') ?? ''),
     estado: String(doc.get('estado') ?? ''),
+    tieneNumeroPublico: doc.get('numeroPublico') !== undefined,
+    numeroPublicoAutoApagado: doc.get('numeroPublicoAuto') === false,
   };
 }
 

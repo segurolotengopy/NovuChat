@@ -462,7 +462,9 @@ describe('fijar-numero-publico.mjs --quitar: el caso bueno', () => {
     const auditoriasAntes = (await auditorias(T)).length;
     const r = correr(...quitar());
     expect(r.codigo).toBe(0);
-    expect(r.salida).toContain(PUBLICO);
+    // `--quitar` enmascara el número: solo las últimas cuatro cifras.
+    expect(r.salida).toContain(`…${PUBLICO.slice(-4)}`);
+    expect(r.salida).not.toContain(PUBLICO);
     expect(r.salida).toContain('(sin número público)');
     expect(r.salida).toContain('Seco');
     expect(await ruta(LINEA)).toEqual(antes);
@@ -482,8 +484,10 @@ describe('fijar-numero-publico.mjs --quitar: el caso bueno', () => {
     expect(despues).not.toHaveProperty('numeroPublico');
     const cambiaron = Object.keys({ ...antes, ...despues })
       .filter((k) => JSON.stringify(antes[k]) !== JSON.stringify(despues[k])).sort();
-    expect(cambiaron).toEqual(['actualizadoEn', 'actualizadoPor', 'numeroPublico']);
+    expect(cambiaron).toEqual(['actualizadoEn', 'actualizadoPor', 'numeroPublico', 'numeroPublicoAuto']);
     expect(despues['actualizadoPor']).toBe(OPERADOR);
+    // La marca que impide que la plataforma lo vuelva a fijar sola desde Meta.
+    expect(despues['numeroPublicoAuto']).toBe(false);
     // No toca el alias, la WABA, el webhook, la titularidad ni el resto de la ruta.
     for (const k of ['tenantId', 'flujo', 'wabaId', 'aliasSecreto', 'titularidad', 'estado', 'webhookCarrito']) {
       expect(despues[k], k).toEqual(antes[k]);
@@ -531,5 +535,33 @@ describe('fijar-numero-publico.mjs --quitar: el caso bueno', () => {
       return { ...resto, negocio };
     };
     expect(sinWhatsapp(sin)).toEqual(sinWhatsapp(con));
+  });
+  it('fijar a mano después de quitar borra la marca `numeroPublicoAuto`', async () => {
+    await db.doc(`rutasWhatsApp/${LINEA}`).update({ numeroPublicoAuto: false });
+    const r = correr('--proyecto', PROYECTO, '--tenant', T, '--numero', PUBLICO, '--operador', OPERADOR, '--aplicar');
+    expect(r.codigo).toBe(0);
+    const despues = await ruta(LINEA);
+    expect(despues['numeroPublico']).toBe(PUBLICO);
+    expect(despues).not.toHaveProperty('numeroPublicoAuto');
+  });
+
+  it('SIN DEPENDER DEL ORDEN: una ruta sin campo y sin marca ESCRIBE la marca y audita', async () => {
+    // Estado explícito, sin apoyarse en lo que dejó la prueba anterior.
+    await db.doc(`rutasWhatsApp/${LINEA_OTRO}`).update({
+      numeroPublico: FieldValue.delete(), numeroPublicoAuto: FieldValue.delete(),
+    });
+    const antes = await ruta(LINEA_OTRO);
+    expect(antes).not.toHaveProperty('numeroPublico');
+    expect(antes).not.toHaveProperty('numeroPublicoAuto');
+    const auditoriasAntes = (await auditorias(T_OTRO)).length;
+    const r = correr('--proyecto', PROYECTO, '--tenant', T_OTRO, '--quitar', '--operador', OPERADOR, '--aplicar');
+    expect(r.codigo).toBe(0);
+    expect(r.salida).not.toContain('Ya estaba así');
+    expect((await ruta(LINEA_OTRO))['numeroPublicoAuto']).toBe(false);
+    expect((await auditorias(T_OTRO)).length).toBe(auditoriasAntes + 1);
+    // Segunda vez: ahora sí ya estaba así.
+    expect(correr('--proyecto', PROYECTO, '--tenant', T_OTRO, '--quitar', '--operador', OPERADOR, '--aplicar').salida)
+      .toContain('Ya estaba así');
+    await db.doc(`rutasWhatsApp/${LINEA_OTRO}`).update({ numeroPublico: PUBLICO_OTRO, numeroPublicoAuto: FieldValue.delete() });
   });
 });
