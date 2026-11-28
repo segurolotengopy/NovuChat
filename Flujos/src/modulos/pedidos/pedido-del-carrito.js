@@ -108,7 +108,7 @@ function pcQrSoloAlCompletar(x) {
 }
 
 // K1 (contrato de la carga, 24/11/2026): ¿la moneda y el mercado que dice la carga son los del país del TELÉFONO del cliente? `mercadoDelTelefono`: 'BO' | 'AR' (lo decide el flujo por el prefijo; otro país = '').
-// BO ⇒ moneda BOB (o ausente: los tenants de Firestore no la traen en K1) y mercado BO (o ausente); AR ⇒ ARS y AR. USD nunca coincide con un mercado externo. La carga nunca decide el mercado: solo se COMPRUEBA contra el teléfono.
+// BO ⇒ moneda BOB o Bs (o ausente: los tenants de Firestore no la traen en K1) y mercado BO (o ausente); AR ⇒ ARS y AR. USD nunca coincide con un mercado externo. La carga nunca decide el mercado: solo se COMPRUEBA contra el teléfono.
 // Si no coincide, el flujo no emite un QR de esa carga: pasa a `listo_para_confirmar`/derivar según su regla; jamás cobra en la moneda equivocada.
 function pcMercadoCoincide(carrito, mercadoDelTelefono, exigeExterno) {
   if (!vcObjeto(carrito)) return false;
@@ -120,6 +120,7 @@ function pcMercadoCoincide(carrito, mercadoDelTelefono, exigeExterno) {
   // Bolivia: BOB (o sin moneda, como los tenants de Firestore) y mercado BO (o ausente). Argentina solo existe con fuente externa: ARS, mercado AR y catalogo 'externo', los tres presentes.
   // `exigeExterno === true`: el flujo SOLO acepta cargas de la fuente externa: también en Bolivia la carga debe traer `catalogo: 'externo'`. Los flujos con catálogo propio del comercio no lo traen.
   if (exigeExterno === true && car.catalogo !== 'externo') return false;
-  if (m === 'BO') return (moneda === '' || moneda === 'BOB') && (mercado === '' || mercado === 'BO');
+  // «Bs» es como la carga escribe la moneda de Bolivia (`validar-carrito.js` la deja en «Bs»): vale igual que BOB (27/11/2026, revision del #1136, observacion 6).
+  if (m === 'BO') return (moneda === '' || moneda === 'BOB' || moneda === 'Bs') && (mercado === '' || mercado === 'BO');
   return moneda === 'ARS' && mercado === 'AR' && car.catalogo === 'externo';
 }
