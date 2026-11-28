@@ -6,6 +6,7 @@ import { db, funciones } from '../../core/lib/firebase';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { descargarCsv } from '../../central/lib/exportar';
 import { enlaceDelPedido } from './ubicacion';
+import { notaDelCliente, ROTULO_NOTA_CLIENTE } from './notaDelCliente';
 import { useSesion } from '../../core/lib/contexto';
 import { rolEn } from '../../core/lib/sesion';
 import { estaConfirmando, leerErrorDeConfirmar, puedeConfirmarse, type ResultadoDeError } from './confirmar';
@@ -55,6 +56,8 @@ interface Pedido {
   /** Opcional: cómo llegar, escrito por el cliente («a media cuadra del gas»). */
   referencia?: unknown;
   nota?: unknown;
+  /** Texto libre del cliente (≤500) que guarda el servidor; ausente si no escribió nada. Distinto de `nota`. */
+  notaCliente?: unknown;
   estado?: unknown;
   origen?: unknown;
   /** `'externo'`: las líneas vienen de NovuTienda (B5). */
@@ -188,6 +191,7 @@ export function Pedidos() {
               const items = Array.isArray(p.items) ? p.items as ItemPedido[] : [];
               const entrega = ENTREGA[String(p.entrega ?? '')] ?? null;
               const enlaceMaps = enlaceDelPedido(p);
+              const notaCliente = notaDelCliente(p.notaCliente);
               return (
                 <li key={p.id} className="tarjeta pedido">
                   <div className="pedido-cabecera">
@@ -241,6 +245,14 @@ export function Pedidos() {
 
                   {typeof p.nota === 'string' && p.nota !== '' && (
                     <p className="pedido-nota"><TextoSeguro valor={p.nota} maxLargo={300} /></p>
+                  )}
+                  {/* NOTA DEL CLIENTE (`notaCliente`, no el `nota` de arriba): texto plano, entero,
+                      con rótulo fijo. Sin nota no se pinta nada. */}
+                  {notaCliente !== '' && (
+                    <div className="pedido-nota-cliente" role="group" aria-label="Nota del cliente">
+                      <p className="pedido-nota-cliente-rotulo">{ROTULO_NOTA_CLIENTE}</p>
+                      <p className="pedido-nota-cliente-texto">{notaCliente}</p>
+                    </div>
                   )}
                   {p.catalogo === 'externo' && p.estado === 'confirmado' && <p className="pedido-entrega">Confirmado</p>}
                   {estaConfirmando(p) && <p className="pedido-entrega">Confirmando…</p>}
