@@ -1920,16 +1920,6 @@ function aCarrito() {
     ruta = 'nada';
     return;
   }
-  // MONEDA DEL CARRITO (27/11/2026, revision del #1136): este flujo cobra solo en Bs. Un carrito en otra moneda (USD, ARS, «otra») NO se atiende
-  // como Bs --se cobraria una cifra en una moneda que el cliente no eligio--: sale lo unico que se ofrece (aviso a recepcion + «Escribir al local»),
-  // con un texto fijo SIN cifras, ANTES de armar lineas y sin tocar el carrito, la entrega ni el pedido en curso. Bs, BOB y moneda ausente siguen igual.
-  const monedaDelCarrito = String(c.moneda === undefined || c.moneda === null ? '' : c.moneda).trim();
-  if (monedaDelCarrito !== '' && monedaDelCarrito !== 'Bs' && monedaDelCarrito !== 'BOB') {
-    errores.push('carrito_moneda_no_atendida');
-    derivar('carrito en otra moneda: no se cobra por aquí', false, { motivo: 'El carrito del catálogo viene en una moneda que este local no cobra por WhatsApp' }, false,
-      'Tu carrito viene en una moneda que no puedo cobrar por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo.');
-    return;
-  }
   // Un carrito nuevo reemplaza el pedido en curso; una reserva a medias sobrevive (`limpiarCarrito` no la toca). El nombre, la
   // dirección y la referencia ya dados se conservan (como en «Cambiar algo»): el carrito no trae el nombre del cliente y, sin
   // esto, un pedido para recoger llegaba a cocina sin nombre.

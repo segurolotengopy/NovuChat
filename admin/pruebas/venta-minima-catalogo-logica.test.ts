@@ -437,46 +437,6 @@ describe('el carrito que vuelve de la página', () => {
     });
   });
 
-  // El flujo cobra solo en Bs. Un carrito en otra moneda NO se atiende como Bs: pasa con el local (aviso + botón), sin cifras, sin QR y sin tocar el pedido.
-  describe('moneda del carrito: solo Bs, BOB o ausente', () => {
-    for (const moneda of ['USD', 'ARS', 'EUR', 'otra', 7]) {
-      it(`un carrito en ${JSON.stringify(moneda)} no se atiende como Bs: deriva con aviso y botón, sin cifras ni QR, y no guarda pedido`, () => {
-        const m = crear();
-        const t = carrito(m, { moneda, items: [{ id: 'nachos', nombre: 'Nachos Supremos', cantidad: 2, precio: 58, subtotal: 116 }], total: 116 });
-        expect(t.parada).toBeNull();
-        expect(t.plan!['ruta']).toBe('transferir:carrito en otra moneda: no se cobra por aquí');
-        expect(error(t)).toContain('carrito_moneda_no_atendida');
-        const ms = mensajes(t);
-        expect(ms).toHaveLength(1);
-        const cuerpo = String(ms[0]!['cuerpo']);
-        expect(cuerpo).toContain('Escribir al local');
-        expect(cuerpo).not.toMatch(/Bs|\d|USD|ARS|Total|QR/);
-        expect(t.plan!['aviso']).toMatchObject({ tipo: 'transferencia' });
-        expect(String((t.plan!['aviso'] as J)['datos']['motivo'])).not.toMatch(/\d|Bs|USD|ARS/);
-        expect(t.plan!['pedidoGuardar'] ?? null).toBeNull();
-        expect(t.plan!['cierre'] ?? null).toBeNull();
-        expect(estadoDe(m)['carrito'] ?? []).toEqual([]);
-      });
-    }
-    it('con un pedido en curso, un carrito en otra moneda no lo borra ni lo reemplaza', () => {
-      const m = crear();
-      carrito(m, { pedidoId: 'cat_primero_01' });
-      const antes = estadoDe(m)['carrito'];
-      expect(antes).toHaveLength(1);
-      const t = carrito(m, { pedidoId: 'cat_segundo_02', moneda: 'USD', items: [{ id: 'queso', nombre: 'Queso Fundido', cantidad: 1, precio: 9, subtotal: 9 }], total: 9 });
-      expect(t.plan!['ruta']).toMatch(/^transferir:/);
-      expect(estadoDe(m)['carrito']).toEqual(antes);
-    });
-    for (const moneda of ['Bs', 'BOB', undefined, '']) {
-      it(`un carrito en ${JSON.stringify(moneda)} sigue igual que hoy: resumen en Bs con «Confirmar pedido»`, () => {
-        const m = crear();
-        const t = carrito(m, { moneda });
-        expect(error(t)).toEqual([]);
-        expect(String(mensajes(t)[0]!['cuerpo'])).toContain('Total de la comida: 116 Bs.');
-        expect((mensajes(t)[0]!['botones'] as J[]).map((b) => b['title'])).toContain('Confirmar pedido');
-      });
-    }
-  });
 
   it('dos líneas del mismo producto se suman (con tope); más de 30 líneas distintas no caben', () => {
     const m = crear();
