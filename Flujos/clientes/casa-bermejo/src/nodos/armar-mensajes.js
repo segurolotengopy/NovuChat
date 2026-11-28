@@ -102,8 +102,12 @@ const pideHA = c.plan.tipo !== 'ubicacion_tienda' && c.plan.horario === true;
 const uAntes = (pideUA || pideHA) && bmTiendaTieneDato(uTienda, pideUA, pideHA) ? bmRespuestaDeTienda(uTienda, pideUA, pideHA, true) : '';
 const antepone = (cuerpo) => (uAntes !== '' ? uAntes + '\n\n' + cuerpo : cuerpo);
 // La NOTA del cliente (una por pedido, hasta 500 caracteres): va UNA sola vez, debajo del resumen y rotulada. Las piezas y el total tienen prioridad: la nota ocupa lo que sobra del cuerpo (1.024 en un mensaje con botones) y, si no cabe entera, termina en «…» (nunca oculta una pieza).
-const notaDe = (d) => (typeof d.nota === 'string' && d.nota !== '' ? 'Nota del cliente: ' + d.nota : '');
-const notaCabe = (nota, libre) => (nota === '' || libre < 1 ? '' : (nota.length <= libre ? nota : (libre >= 40 ? nota.slice(0, libre - 1).trimEnd() + '…' : '')));
+const notaDe = (d) => (typeof d.nota === 'string' && d.nota !== '' ? 'Nota del cliente: ' + (bmNotaMostrable(d.nota) ? d.nota : (usted ? '(queda anotada con su pedido)' : '(queda anotada con tu pedido)')) : '');
+// Decisión de Andres (27/11/2026, D-1): si la nota no cabe, se recorta y termina en el aviso literal; el resumen que acompaña al QR (4.096) la lleva ENTERA. Con menos espacio que el aviso más unas pocas letras, no se muestra (las piezas, el total y el botón van primero).
+const AVISO_NOTA = '… (completa en el resumen del pago)';
+// DECISIÓN DE ANDRES (27/11/2026, «Oculta al cliente, clara a la tienda»): una nota con palabras de pago («pago acreditado», «el anticipo ya está pagado») NO se repite al cliente en NINGÚN mensaje (ni en el de «Confirmar pedido» ni junto al QR): ve «queda anotada con su/tu pedido» en el trato del comercio;
+// a la tienda llega con el rótulo «Nota escrita por el cliente (no es un estado de pago): …» (`bmLineasPedido`). La red de «pago acreditado / verificado / recibimos tu pago» no se toca.
+const notaCabe = (nota, libre) => (nota === '' || libre < 1 ? '' : (nota.length <= libre ? nota : (libre >= AVISO_NOTA.length + 30 ? nota.slice(0, libre - AVISO_NOTA.length).trimEnd() + AVISO_NOTA : '')));
 const notaFicha = (d) => (typeof d.nota === 'string' ? d.nota : fichaAntes.nota);
 // El resumen del pedido que cabe en `tope` caracteres: con un pedido grande se quitan líneas de piezas («… y N piezas más») y NUNCA el total ni lo que va detrás (los datos, «Corregir datos»).
 function ajustarResumen(resumen, tope) {
@@ -219,19 +223,28 @@ if (puerta.ruta === 'sigue') {
       // La cabeza: saludo + respuesta de la tienda (si la hay) + texto del modelo. La respuesta de la tienda se CONSERVA: primero se acorta el resumen de piezas («… y N piezas más») para dejarle lugar;
       // solo si ni con el resumen mínimo (el total) cabe, se suelta la respuesta de la tienda y, al final, el saludo.
       const armarCabeza = (conTienda, conSaludoPrimero) => (conSaludoPrimero && !fichaAntes.saludado ? saludo + '\n\n' : '') + (conTienda && uAntes !== '' ? uAntes + '\n\n' : '');
-      const colaCon = (reserva) => {
-        const r = typeof d.resumen === 'string' && d.resumen !== '' ? ajustarResumen(d.resumen, Math.max(0, sitio - fijoCola.length - 2 - reserva)) : '';
-        const n = r !== '' ? notaCabe(notaDe(d), Math.max(0, sitio - fijoCola.length - reserva) - r.length - 6) : '';
+      // `extra` = lo que `bmSeguro` AGREGA al texto ya armado («asistente virtual» pasa a «asistente virtual con IA»): el espacio de la nota y de las piezas se calcula sobre el cuerpo YA armado (revisión 27/11, N-1), nunca sobre el texto antes de ese ajuste.
+      const reservaTexto = d.texto.length <= 80 ? d.texto.length + 2 : 0;
+      const colaCon = (reserva, extra) => {
+        const r = typeof d.resumen === 'string' && d.resumen !== '' ? ajustarResumen(d.resumen, Math.max(0, sitio - extra - fijoCola.length - 2 - reserva)) : '';
+        // La nota CEDE ante el texto corto del turno («¿Quieres confirmar tu pedido?»): se le reserva su lugar (hasta 80 caracteres) antes de repartir lo que sobra a la nota.
+        const n = r !== '' ? notaCabe(notaDe(d), Math.max(0, sitio - extra - fijoCola.length - reserva) - r.length - 6 - reservaTexto) : '';
         return (r !== '' ? r + '\n\n' : '') + (n !== '' ? n + '\n\n' : '') + fijoCola;
       };
-      let fijo = armarCabeza(true, true);
-      let cola = colaCon(fijo.length);
-      if (fijo.length + cola.length + 2 > sitio) { fijo = armarCabeza(false, true); cola = colaCon(fijo.length); }
-      if (fijo.length + cola.length + 2 > sitio) { fijo = armarCabeza(false, false); cola = colaCon(fijo.length); }
-      const sitioTexto = sitio - cola.length - 2 - fijo.length;
-      const textoModelo = dTexto.length > sitioTexto ? (sitioTexto > 1 ? dTexto.slice(0, sitioTexto - 1).trimEnd() + '…' : '') : dTexto;
-      const cabezaCorta = (fijo + textoModelo).trimEnd();
-      const cuerpoCf = bmSeguro(cfCuerpo((cabezaCorta !== '' ? cabezaCorta + '\n\n' : '') + cola, usted), usted);
+      const armarCrudo = (extra) => {
+        let fijo = armarCabeza(true, true);
+        let cola = colaCon(fijo.length, extra);
+        if (fijo.length + cola.length + 2 > sitio - extra) { fijo = armarCabeza(false, true); cola = colaCon(fijo.length, extra); }
+        if (fijo.length + cola.length + 2 > sitio - extra) { fijo = armarCabeza(false, false); cola = colaCon(fijo.length, extra); }
+        const sitioTexto = sitio - extra - cola.length - 2 - fijo.length;
+        const textoModelo = dTexto.length > sitioTexto ? (sitioTexto > 1 ? dTexto.slice(0, sitioTexto - 1).trimEnd() + '…' : '') : dTexto;
+        const cabezaCorta = (fijo + textoModelo).trimEnd();
+        return (cabezaCorta !== '' ? cabezaCorta + '\n\n' : '') + cola;
+      };
+      let extraSeguro = 0;
+      let crudoCf = armarCrudo(0);
+      for (let k = 0; k < 4 && bmSeguro(crudoCf, usted).length > sitio; k++) { extraSeguro += bmSeguro(crudoCf, usted).length - sitio; crudoCf = armarCrudo(extraSeguro); }
+      const cuerpoCf = bmSeguro(cfCuerpo(crudoCf, usted), usted);
       // El documento (CI) viaja en el mensaje al cliente, pero el texto que se REPORTA a la conversación del comercio lo lleva enmascarado.
       const docEntrega = bmEntregaDeFicha(d.entrega).documento;
       const reportado = bmEnmascararDocumento(cuerpoCf, docEntrega);
@@ -340,7 +353,7 @@ if (puerta.ruta === 'sigue') {
       imagen.evento = 'qr_enviado'; imagen.reglaCobro = 2; imagen.referencia = String(d.pedidoId); imagen.monto = d.monto;
       // Para que el servidor cree el pedido `wa_<referencia>`: el catálogo es externo (NovuTienda) y el servidor no puede recalcularlo, así que viajan el precio y el nombre del CATÁLOGO, calculados aquí.
       // Líneas con la forma CERRADA del catálogo externo (`bmLineasPedido`): id, nombre, cantidad, precio y moneda salen del carrito del código, nunca del modelo.
-      { const ls = bmLineasPedido(d.lineas, from, d.nota); if (ls) { imagen.lineas = ls; imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO') }); } }
+      { const ls = bmLineasPedido(d.lineas, from, d.nota, typeof d.nota === 'string' && d.nota !== '' && !bmNotaMostrable(d.nota)); if (ls) { imagen.lineas = ls; imagen.entrega = pqrEntrega({ entrega: d.entrega.modo, direccion: bmDireccionPedido(d.entrega, ceMercadoDePrefijo(from) || 'BO') }); } }
       // K2: el pedido del checkout web que este QR reemplaza (solo un `cat_…` con su forma); la ficha lo suelta una vez emitido el QR.
       if (/^cat_[A-Za-z0-9_-]{1,56}$/.test(String(d.reemplaza || '')) && imagen.lineas) imagen.reemplaza = String(d.reemplaza);
       msgs = [texto(conSaludo(antepone(resumen))), imagen];
@@ -361,7 +374,7 @@ if (puerta.ruta === 'sigue') {
     Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
     // Argentina: el pedido se crea en el servidor con `pedido_sin_cobro` (sin QR, sin monto): mismas líneas de forma cerrada y la entrega. Solo viaja si el envío fue aceptado (lo decide el reporte saliente).
     // Bolivia sin QR configurado no lo emite (el evento es de Argentina). El contador sube para que dos pedidos seguidos no repitan la referencia.
-    const ls = d.mercado === 'AR' && /^[A-Za-z0-9]{3,40}$/.test(String(d.pedidoId || '')) ? bmLineasPedido(d.lineas, from, d.nota) : null;
+    const ls = d.mercado === 'AR' && /^[A-Za-z0-9]{3,40}$/.test(String(d.pedidoId || '')) ? bmLineasPedido(d.lineas, from, d.nota, typeof d.nota === 'string' && d.nota !== '' && !bmNotaMostrable(d.nota)) : null;
     // El texto que ofrece «pagar» (el alias llega en el turno siguiente) solo sale si el pedido se reportó Y el aviso a recepción salió; si no, sigue el de siempre (el pago lo coordina recepción) sin prometer nada.
     const ofreceAlias = ls !== null && (salio === true || salio === 'repetido');
     const cabeza = antepone('Anoté tu pedido:\n\n' + vcResumen(lineas) + (notaDe(d) !== '' ? '\n\n' + notaDe(d) : '')) + '\n\n';

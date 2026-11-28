@@ -146,7 +146,9 @@ if (typeof t.seleccionId === 'string' && /^(?:dep|reg|prov):/.test(t.seleccionId
 // El toque de «Corregir datos» (`pedido:corregir`): el código borra los datos de entrega capturados (conserva el modo) y los vuelve a pedir, SIN modelo. Un id que empieza igual pero no es el exacto no hace nada (`toque_viejo`).
 if (typeof t.seleccionId === 'string' && t.seleccionId.indexOf('pedido:corregir') === 0) return salir({ tipo: t.seleccionId === BM_ID_CORREGIR ? 'corregir' : 'toque_viejo' });
 // Si la pregunta de la tienda viene con una de estas, la respuesta de la tienda va antepuesta en el mismo mensaje (`conTienda`); la identidad sin dato de tienda pasa con recepción (la tienda pregunta quedaría sin contestar).
-if (bmPideIdentidad(n)) return pideTienda && pTienda.resto !== '' && Object.keys(conTienda).length === 0 ? salir({ tipo: 'derivar', motivo: motivoSinDato }) : salir(Object.assign({ tipo: 'identidad' }, conTienda));
+// La identidad («¿eres un bot?») se decide SIN el texto de la nota del pedido pegado: una nota que menciona la IA no vuelve el mensaje entero una pregunta de identidad.
+const nSinNota = bmNorm(bmSinNotaDelSitio(texto));
+if (bmPideIdentidad(nSinNota)) return pideTienda && pTienda.resto !== '' && Object.keys(conTienda).length === 0 ? salir({ tipo: 'derivar', motivo: motivoSinDato }) : salir(Object.assign({ tipo: 'identidad' }, conTienda));
 if (bmCorporativo(n)) return salir(Object.assign({ tipo: 'derivar', motivo: 'corporativo' }, conTienda));
 if (bmPideFactura(n)) return salir(Object.assign({ tipo: 'derivar', motivo: 'factura' }, conTienda));
 if (bmQuiereHablar(n) || bmPideDescuento(n)) return salir(Object.assign({ tipo: 'derivar', motivo: 'quiere_hablar' }, conTienda));

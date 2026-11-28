@@ -67,6 +67,12 @@ function bmSeguro(texto, usted) {
   // Todo texto del flujo que se presenta como «asistente virtual» dice que es una IA (pieza común `identidad.js`, 0 mensajes).
   return ctConIA(t);
 }
+// ¿La nota del cliente puede MOSTRARSE tal cual en un mensaje del flujo? Una nota que cae en la red de NIEGA_IA o de palabras de cobro («el anticipo ya está pagado») no se borra ni se descarta (queda entera en la ficha y viaja con el pedido),
+// pero mostrarla dentro del mensaje haría que `bmSeguro` reemplazara el mensaje ENTERO por el saludo mínimo: ahí se muestra un aviso en su lugar.
+function bmNotaMostrable(nota) {
+  const t = String(nota === undefined || nota === null ? '' : nota);
+  return !BM_NIEGA_IA.test(bmNorm(t)) && !CB_PROHIBIDAS.test(cbCanon(t));
+}
 // Violencia o miedo: no es parte del servicio de este negocio. El gancho existe porque los nodos comunes lo piden; aquí no marca nada.
 function bmEsRiesgo() {
   return false;
