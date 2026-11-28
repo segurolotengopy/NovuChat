@@ -223,6 +223,37 @@ for (let i = 0; i < $input.all().length; i++) {
       : 'Disculpa, uno de los productos de tu pedido no está disponible por ahora, así que todavía no te envío el QR de pago. Dime qué prefieres cambiar y lo revisamos.';
   }
 
+  // --- CANDADO DE MONEDA: UN PEDIDO MIXTO NO SE COBRA (27/11/2026, revision del #1136) ----------------------------------------------------------
+  // Un catalogo puede tener precios en monedas distintas (cada item trae la suya). El modelo NO convierte ni suma monedas distintas (lo dice el prompt),
+  // pero el prompt no es una barrera: si el turno que va a COBRAR ([ENVIAR_QR] o [PEDIDO_CONFIRMADO]) cotiza dos o mas monedas en su texto, no sale
+  // el QR ni la confirmacion --el total seria una suma de monedas distintas-- y se pasa con una persona (politica del 21/09: aviso + boton), con un texto
+  // fijo SIN cifras. Es el hermano del candado de existencias: mismo camino de salida, mismo costo (0 mensajes al cliente: cambia un texto por otro;
+  // +1 aviso al negocio solo en este caso). «Cotiza» = una cifra pegada al nombre de la moneda («350 Bs», «USD 50»): nombrar monedas sin cifra
+  // («aceptamos bolivianos o dolares») no cuenta. Las cifras se acotan a 15 caracteres para que un texto enorme no cueste tiempo cuadratico.
+  const MONEDAS_COTIZADAS = [
+    ['BS', 'bs\\.?|bob|bolivianos?'], ['USD', 'usd|us\\$|\\$us|d[oó]lares?'], ['ARS', 'ars|pesos?'], ['EUR', 'eur|euros?|€'],
+    ['BRL', 'brl'], ['CLP', 'clp'], ['MXN', 'mxn'], ['GBP', 'gbp'], ['PYG', 'pyg'], ['UYU', 'uyu'], ['CHF', 'chf'],
+  ];
+  const monedasCotizadas = (t) => {
+    const hay = new Set();
+    for (const [codigo, palabras] of MONEDAS_COTIZADAS) {
+      const re = new RegExp('(?:\\d[\\d.,]{0,14}\\s{0,2}(?:' + palabras + ')(?![\\p{L}])|(?<![\\p{L}])(?:' + palabras + ')\\s{0,2}\\d)', 'iu');
+      if (re.test(t)) hay.add(codigo);
+    }
+    return hay;
+  };
+  if ((enviarQr || pedidoConfirmado) && !fallo && monedasCotizadas(texto).size >= 2) {
+    enviarQr = false;
+    pedidoConfirmado = false;
+    pideTransferir = true;
+    transferir = numeroDuenoLimpio !== '';
+    avisos.push('candado_moneda');
+    const quienAtiendeM = String(ent.nombreNegocio ?? '').trim() || 'el negocio';
+    texto = transferir
+      ? 'Disculpa, tu pedido tiene productos con precios en monedas distintas, así que todavía no te envío el QR de pago. Toca el botón y escríbele directo a ' + quienAtiendeM + ' para revisar tu pedido.'
+      : 'Disculpa, tu pedido tiene productos con precios en monedas distintas, así que todavía no te envío el QR de pago. Dime qué prefieres cambiar y lo revisamos.';
+  }
+
   // ¿EL TEXTO VA EN EL PIE DE LA IMAGEN, O APARTE? (23/09/2026)
   //
   // Hasta hoy un turno de cobro costaba DOS mensajes: el texto con el total y,
@@ -496,6 +527,7 @@ for (let i = 0; i < $input.all().length; i++) {
     cobroPendiente: ent.cobroPendiente,
     cobroQrUrl: ent.cobroQrUrl,
     moneda: ent.moneda,
+    monedaUnica: ent.monedaUnica,
   }});
 }
 

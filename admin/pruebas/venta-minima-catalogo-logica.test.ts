@@ -404,6 +404,80 @@ describe('el carrito que vuelve de la página', () => {
     expect(t.textos.join('\n')).toContain('No pude incluir «Tacos» y «Horchata»');
   });
 
+  // PR «moneda y cantidad» (27/11/2026, revisión del #1136): el límite se prueba NEGANDO. Una cantidad que no es un entero de 1 en adelante no se
+  // convierte en otra (1.5 NO pasa a 1): la línea no entra y se nombra en «No pude incluir».
+  describe('cantidad: solo enteros de 1 en adelante, sin redondear', () => {
+    const cantidadesInvalidas: [string, unknown][] = [
+      ['1.5', 1.5], ['2.5', 2.5], ['3.9', 3.9], ['«2» (texto)', '2'], ['0', 0], ['-1', -1], ['NaN', Number.NaN], ['null', null], ['Infinity', Number.POSITIVE_INFINITY],
+    ];
+    for (const [rotulo, cantidad] of cantidadesInvalidas) {
+      it(`la cantidad ${rotulo} no entra: ni como 1 ni como otra, y sale en «No pude incluir»`, () => {
+        const m = crear();
+        const t = carrito(m, { items: [
+          { id: 'queso', nombre: 'Queso Fundido', cantidad: 2, subtotal: 150 },
+          { id: 'nachos', nombre: 'Nachos Supremos', cantidad, subtotal: 58 },
+        ], total: 150 });
+        const e = estadoDe(m);
+        expect(e['carrito'].map((l: J) => l['id'])).toEqual(['queso']);
+        expect(e['carrito'][0]).toMatchObject({ id: 'queso', cantidad: 2 });
+        expect(t.textos.join('\n')).toContain('No pude incluir «Nachos Supremos»');
+        expect(t.textos.join('\n')).not.toContain('De «Nachos Supremos» tomé');
+      });
+    }
+    it('2 entra tal cual; 99 y 150 se acotan al máximo (50) y se avisa', () => {
+      const m = crear();
+      carrito(m, { items: [{ id: 'nachos', nombre: 'Nachos Supremos', cantidad: 2, subtotal: 116 }], total: 116 });
+      expect(estadoDe(m)['carrito']).toEqual([expect.objectContaining({ id: 'nachos', cantidad: 2 })]);
+      for (const cantidad of [99, 150]) {
+        const g = crear();
+        const t = carrito(g, { items: [{ id: 'nachos', nombre: 'Nachos Supremos', cantidad, subtotal: 1 }], total: 1 });
+        expect(estadoDe(g)['carrito']).toEqual([expect.objectContaining({ id: 'nachos', cantidad: 50 })]);
+        expect(t.textos.join('\n')).toContain('De «Nachos Supremos» tomé 50, que es el máximo por pedido.');
+      }
+    });
+  });
+
+  // El flujo cobra solo en Bs. Un carrito en otra moneda NO se atiende como Bs: pasa con el local (aviso + botón), sin cifras, sin QR y sin tocar el pedido.
+  describe('moneda del carrito: solo Bs, BOB o ausente', () => {
+    for (const moneda of ['USD', 'ARS', 'EUR', 'otra', 7]) {
+      it(`un carrito en ${JSON.stringify(moneda)} no se atiende como Bs: deriva con aviso y botón, sin cifras ni QR, y no guarda pedido`, () => {
+        const m = crear();
+        const t = carrito(m, { moneda, items: [{ id: 'nachos', nombre: 'Nachos Supremos', cantidad: 2, precio: 58, subtotal: 116 }], total: 116 });
+        expect(t.parada).toBeNull();
+        expect(t.plan!['ruta']).toBe('transferir:carrito en otra moneda: no se cobra por aquí');
+        expect(error(t)).toContain('carrito_moneda_no_atendida');
+        const ms = mensajes(t);
+        expect(ms).toHaveLength(1);
+        const cuerpo = String(ms[0]!['cuerpo']);
+        expect(cuerpo).toContain('Escribir al local');
+        expect(cuerpo).not.toMatch(/Bs|\d|USD|ARS|Total|QR/);
+        expect(t.plan!['aviso']).toMatchObject({ tipo: 'transferencia' });
+        expect(String((t.plan!['aviso'] as J)['datos']['motivo'])).not.toMatch(/\d|Bs|USD|ARS/);
+        expect(t.plan!['pedidoGuardar'] ?? null).toBeNull();
+        expect(t.plan!['cierre'] ?? null).toBeNull();
+        expect(estadoDe(m)['carrito'] ?? []).toEqual([]);
+      });
+    }
+    it('con un pedido en curso, un carrito en otra moneda no lo borra ni lo reemplaza', () => {
+      const m = crear();
+      carrito(m, { pedidoId: 'cat_primero_01' });
+      const antes = estadoDe(m)['carrito'];
+      expect(antes).toHaveLength(1);
+      const t = carrito(m, { pedidoId: 'cat_segundo_02', moneda: 'USD', items: [{ id: 'queso', nombre: 'Queso Fundido', cantidad: 1, precio: 9, subtotal: 9 }], total: 9 });
+      expect(t.plan!['ruta']).toMatch(/^transferir:/);
+      expect(estadoDe(m)['carrito']).toEqual(antes);
+    });
+    for (const moneda of ['Bs', 'BOB', undefined, '']) {
+      it(`un carrito en ${JSON.stringify(moneda)} sigue igual que hoy: resumen en Bs con «Confirmar pedido»`, () => {
+        const m = crear();
+        const t = carrito(m, { moneda });
+        expect(error(t)).toEqual([]);
+        expect(String(mensajes(t)[0]!['cuerpo'])).toContain('Total de la comida: 116 Bs.');
+        expect((mensajes(t)[0]!['botones'] as J[]).map((b) => b['title'])).toContain('Confirmar pedido');
+      });
+    }
+  });
+
   it('dos líneas del mismo producto se suman (con tope); más de 30 líneas distintas no caben', () => {
     const m = crear();
     carrito(m, { items: [

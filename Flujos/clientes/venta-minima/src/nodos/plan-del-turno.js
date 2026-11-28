@@ -1891,10 +1891,11 @@ function idDeCarrito(v) {
   return typeof v === 'string' ? v.replace(/[|\s]+/g, '-').slice(0, 60) : '';
 }
 
-// La cantidad de una linea: entero de 1 a `PD_MAX_CANTIDAD`; 0 si no es un numero utilizable.
+// La cantidad de una linea: entero de 1 a `PD_MAX_CANTIDAD`; 0 si no es un numero utilizable. SIN `Math.floor` (revision del #1136, 27/11): una
+// cantidad fraccionaria (1.5, 2.5, 3.9), un texto («2»), NaN, null o Infinity no es una cantidad valida y la linea no entra («No pude incluir»);
+// convertir 1.5 en 1 vendia algo distinto de lo que el cliente pidio. Lo que pasa del maximo se acota (`recortadas`, en `aCarrito`).
 function cantidadDeCarrito(v) {
-  const n = Math.floor(Number(v));
-  return Number.isFinite(n) && n >= 1 ? Math.min(n, PD_MAX_CANTIDAD) : 0;
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1 ? Math.min(v, PD_MAX_CANTIDAD) : 0;
 }
 
 // «Tu nota: …» (la del carrito del catalogo) va en el resumen, justo antes del total. Se aplica a todo resumen del turno, no solo al del
@@ -1917,6 +1918,16 @@ function aCarrito() {
     // Nada que contestar (ventana cerrada, otro comercio, pedidos apagados): sin mensajes, sin aviso y sin tocar el estado.
     errores.push(String(d.motivo));
     ruta = 'nada';
+    return;
+  }
+  // MONEDA DEL CARRITO (27/11/2026, revision del #1136): este flujo cobra solo en Bs. Un carrito en otra moneda (USD, ARS, «otra») NO se atiende
+  // como Bs --se cobraria una cifra en una moneda que el cliente no eligio--: sale lo unico que se ofrece (aviso a recepcion + «Escribir al local»),
+  // con un texto fijo SIN cifras, ANTES de armar lineas y sin tocar el carrito, la entrega ni el pedido en curso. Bs, BOB y moneda ausente siguen igual.
+  const monedaDelCarrito = String(c.moneda === undefined || c.moneda === null ? '' : c.moneda).trim();
+  if (monedaDelCarrito !== '' && monedaDelCarrito !== 'Bs' && monedaDelCarrito !== 'BOB') {
+    errores.push('carrito_moneda_no_atendida');
+    derivar('carrito en otra moneda: no se cobra por aquí', false, { motivo: 'El carrito del catálogo viene en una moneda que este local no cobra por WhatsApp' }, false,
+      'Tu carrito viene en una moneda que no puedo cobrar por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo.');
     return;
   }
   // Un carrito nuevo reemplaza el pedido en curso; una reserva a medias sobrevive (`limpiarCarrito` no la toca). El nombre, la
@@ -1952,7 +1963,7 @@ function aCarrito() {
     const item = id ? carta.find((i) => String(i.id) === id) : undefined;
     const cantidad = cantidadDeCarrito(x.cantidad);
     if (!item || !cantidad) { fuera.push(nombre); continue; }
-    if (Math.floor(Number(x.cantidad)) > PD_MAX_CANTIDAD) recortadas.push(item.nombre);
+    if (x.cantidad > PD_MAX_CANTIDAD) recortadas.push(item.nombre);
     const previa = lineas.find((l) => l.id === item.id);
     if (previa) previa.cantidad = Math.min(PD_MAX_CANTIDAD, previa.cantidad + cantidad);
     else if (lineas.length >= PD_MAX_LINEAS) fuera.push(nombre);
