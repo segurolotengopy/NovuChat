@@ -343,7 +343,7 @@ describe('cada flujo versionado que envía una imagen del asistente lleva la ram
     expect(total('clientes/walisuma/walisuma.json')).toBe(75); // +4 de la ráfaga de textos (autorizado por Andres el 25/11/2026)
     expect(total('clientes/casa-bermejo/casa-bermejo.json')).toBe(64);   // 63 + «Carrito del catálogo» (webhook, módulo catalogo-web; excepción de tope aprobada 24/11/2026): un disparador, no envía imágenes ni lleva rama de guardado
     expect(total('clientes/demo-a/demo-a-agendamiento.json')).toBe(86);   // 82 + 4 de la ráfaga (autorizados por Andres; sin publicar)
-    expect(total('clientes/demo-b/demo-b-venta-cobro.json')).toBe(93);
+    expect(total('clientes/demo-b/demo-b-venta-cobro.json')).toBe(97); // 93 + 4 de la ráfaga de textos (+4 autorizado por Andres el 25/11/2026)
   });
   it.each(SIN_RAMA)('%s NO la lleva (bloque 2b o imagen de encabezado: ver el plan)', (archivo) => {
     expect(copia(leer(archivo)).nodes.filter((n: any) => NODOS_DEL_GUARDADO_SALIENTE.includes(n.name))).toEqual([]);
