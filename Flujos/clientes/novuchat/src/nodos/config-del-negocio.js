@@ -162,4 +162,6 @@ return [{ json: Object.assign({}, cfg, planilla, {
   modoPrueba: prueba !== null,
   telefonoDePrueba: prueba && telefonoPermitido ? telefonoDePrueba : '',
   enviarDeVerdad: prueba ? prueba.enviarDeVerdad === true && telefonoPermitido : true,
+  // INTERRUPTOR DE LA RAFAGA: el servidor agrega `rafagaApagada: true` SOLO si el comercio la apago (200 y `true` exacto); «Registrar evento» deja la espera de «Esperar ráfaga» en el minimo.
+  rafagaApagada: codigo === 200 && cuerpo.rafagaApagada === true ? true : undefined,
 }) }];
