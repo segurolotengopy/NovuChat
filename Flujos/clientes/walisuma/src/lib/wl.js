@@ -123,9 +123,21 @@ const WL_MINUTOS_QR = 15;         // el plazo de la regla 2 del cobro: lo manda 
 function wlEntregaBase() {
   return { modo: '', ciudad: '', direccion: '', nombre: '', telefono: '', ubicacion: null };
 }
-// El texto de una RÁFAGA (varios textos unidos por salto de línea) saneado línea por línea (los mismos saneos de `cbLinea`) y vuelto a unir con `\n`. Tope total 1.500: si se pasa se conservan los ÚLTIMOS 1.500
-// caracteres (lo más reciente es lo que el cliente está pidiendo ahora; lo viejo ya se dijo). UNA sola fuente para «Decidir turno» y para el cuerpo del modelo.
-const wlTextoAgrupado = (bruto) => String(bruto || '').split('\n').map((linea) => cbLinea(linea, 1500)).filter((linea) => linea !== '').join('\n').slice(-1500).trim();
+// El texto de una RÁFAGA (varios textos unidos por salto de línea) saneado línea por línea (los mismos saneos de `cbLinea`) y vuelto a unir con `\n`. Tope total 1.500 UNIDADES: si se pasa se conservan los textos MÁS RECIENTES,
+// acumulando LÍNEAS ENTERAS desde el final mientras quepan (lo más reciente es lo que el cliente pide ahora). Nunca se corta una línea por la mitad: un corte por unidades partiría un emoji (un sustituto suelto llegaría al modelo)
+// y dejaría al principio un trozo del mensaje anterior. La última línea siempre entra (`cbLinea` ya la limitó a 1.500). UNA sola fuente para «Decidir turno» y para el cuerpo del modelo.
+const wlTextoAgrupado = (bruto) => {
+  const lineas = String(bruto || '').split('\n').map((linea) => cbLinea(linea, 1500)).filter((linea) => linea !== '');
+  const quedan = [];
+  let largo = 0;
+  for (let i = lineas.length - 1; i >= 0; i--) {
+    const costo = lineas[i].length + (quedan.length > 0 ? 1 : 0);
+    if (largo + costo > 1500) break;
+    quedan.unshift(lineas[i]);
+    largo += costo;
+  }
+  return quedan.join('\n');
+};
 // La ubicación del pin de WhatsApp (contrato de «Normalizar entrada»: {lat, lng} números): finita, en rango y nunca (0,0); si no, null. La misma regla que `_pqrUbicacion` del módulo de pedidos.
 function wlUbicacion(u) {
   if (!u || typeof u !== 'object' || Array.isArray(u)) return null;

@@ -18,9 +18,10 @@ import { crearMundo } from '../lib/n8n-de-mentira';
 import { RAIZ_FLUJOS } from '../../scripts/ensamblar-flujo.mjs';
 import { NORMALIZADORES_VERIFICADOS, huellaDe, injertarRafaga, quitarRafaga } from '../../../Flujos/src/core/rafaga/rafaga.mjs';
 import { cablearBellido, cablearWalisuma, descablearWalisuma } from './rafaga-cableado';
+import { OPCIONES_DE_LA_RAFAGA } from '../../../Flujos/clientes/walisuma/construir.mjs';
 import { ANA, PRODUCCION, crear, hablar, mAudio, mTexto, modelo, panelOk, valorMeta } from '../tenants/walisuma/mundo';
 
-const ANCLA_WALISUMA = { nodo: 'Puerta del turno', salida: 0, destino: '¿Bajar medio?' }; // el cableado real de Walisuma (`construir.mjs`, `RAFAGA`)
+const ANCLA_WALISUMA = OPCIONES_DE_LA_RAFAGA.ancla; // el cableado real de Walisuma, importado de su `construir.mjs` (una sola fuente)
 const frag = (idMeta: string, texto: string, ms: number, tipo = 'text') => ({ idMeta, tipo, texto, ms });
 const UNO = 'quiero 2 cajas';
 const DOS = 'de la grande, para mañana';
