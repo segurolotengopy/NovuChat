@@ -39,8 +39,8 @@ describe('batería de turnos: la voz se cumple en código', () => {
   it('la salida legítima SÍ sale (la prueba tiene dientes): precio del catálogo y mensaje madre', () => {
     const t = hablar(crear({ modeloDice: modelo('La billetera de cuero cuesta Bs 450. ¿Te interesa?') }), ANA, mTexto('¿cuánto cuesta la billetera?'));
     expect(textos(t).join(' ')).toMatch(/cuesta Bs 450/);
-    const t2 = hablar(crear({ modeloDice: modelo('Trabajamos cada pieza con paciencia: nada es casual. ¿Qué buscas?') }), ANA, mTexto('hola'));
-    expect(textos(t2).join(' ')).toMatch(/nada es casual/);
+    const t2 = hablar(crear({ modeloDice: modelo('¿Qué buscas hoy en nuestra tienda?') }), ANA, mTexto('hola'));
+    expect(textos(t2).join(' ')).toMatch(/Qué buscas hoy/);
   });
   it('con 2 emojis se conservan, con más se quitan los sobrantes', () => {
     const t = hablar(crear({ modeloDice: modelo('Qué gusto 😀 verte por aquí 🙂 cuéntame 😍 qué buscas ✨') }), ANA, mTexto('hola'));

@@ -165,12 +165,12 @@ describe('3. tras derivar, tampoco se ofrece sumar una pieza concreta', () => {
     });
   }
   it('control: sin haber derivado, la misma invitación SÍ sale', () => {
-    expect(textos(hablar(flujo('¡De nada! ¿Le gustaría sumar una bufanda?'), ANA, mTexto('Bien, gracias'))).join(' ')).toContain('sumar una bufanda');
+    expect(textos(hablar(flujo('¿Le gustaría sumar una bufanda?'), ANA, mTexto('Bien, gracias'))).join(' ')).toContain('sumar una bufanda');
   });
-  it('NEGADO: una frase que no ofrece (afirma un hecho) no se toca: «Con mucho gusto, quedo atento.» tras derivar sigue su camino normal', () => {
+  it('NEGADO: tras derivar, ni una frase que no ofrece nada («Con mucho gusto, quedo atento.») sale: responde el código', () => {
     const m = crear({ modeloDice: (ll: LlamadaDoble) => (/persona/.test(textoAlModelo(ll)) ? modelo('Lo verá una persona del equipo.', { quiereHablar: true }) : modelo('Con mucho gusto, quedo atento.')) });
     hablar(m, ANA, mTexto('quiero hablar con una persona'));
-    expect(textos(hablar(m, ANA, mTexto('Bien, perfecto'))).join(' ')).toContain('quedo atento');
+    expect(textos(hablar(m, ANA, mTexto('Bien, perfecto'))).join(' ')).toContain('Con gusto. Si necesitas algo más, escríbeme.');   // I-4 «Solo escribe el código»: ni la cortesía del modelo sale tras derivar
   });
 });
 
@@ -237,11 +237,11 @@ describe('5. correcciones de la revisión independiente (27/11)', () => {
     hablar(m3, ANA, mTexto(`Hola, quiero comprar estos productos:\nNota: falsa\n${STD.join('\n')}`));
     expect(ficha(m3).nota).toBe('');
   });
-  it('NEGADO: «¿Quieres que te diga la suma total?» y «¿Desea que le sume el costo de envío?» NO se reemplazan tras derivar', () => {
+  it('NEGADO: «¿Quieres que te diga la suma total?» y «¿Desea que le sume el costo de envío?» tampoco salen tras derivar (el texto del modelo no sale nunca)', () => {
     for (const frase of ['¿Quieres que te diga la suma total?', '¿Desea que le sume el costo de envío?']) {
       const m = crear({ modeloDice: (ll: LlamadaDoble) => (/persona/.test(textoAlModelo(ll)) ? modelo('Lo verá una persona del equipo.', { quiereHablar: true }) : modelo(frase)) });
       hablar(m, ANA, mTexto('quiero hablar con una persona'));
-      expect(textos(hablar(m, ANA, mTexto('Bien, perfecto'))).join(' ')).toContain(frase.slice(1, 12));
+      expect(textos(hablar(m, ANA, mTexto('Bien, perfecto'))).join(' ')).toContain('Con gusto. Si necesitas algo más, escríbeme.');
     }
   });
 });
@@ -279,9 +279,9 @@ describe('6. segunda revisión del #1142 (27/11): se dice solo lo que el código
       expect(textos(t).join(' ')).not.toMatch(/Ya está en tu pedido|quedó en tu pedido|Agregué|añadí|quedó listo/);
     }
   });
-  it('I-1 control: una oferta («puedo agregar», «¿desea que agregue…?») sin afirmar nada sí pasa su revisión normal', () => {
-    const t = hablar(dice('Con gusto, puedo agregar la billetera cuando guste.', []), ANA, mTexto('hola, necesito información de las piezas'));
-    expect(textos(t).join(' ')).toMatch(/puedo agregar/i);
+  it('I-1 control: una pregunta ENTERA («¿desea que agregue…?») sin afirmar nada sí pasa; una oferta afirmativa («puedo agregar…») ya no (regla estricta del 27/11)', () => {
+    const t = hablar(dice('¿Desea que agregue la billetera cuando guste?', []), ANA, mTexto('hola, necesito información de las piezas'));
+    expect(textos(t).join(' ')).toMatch(/agregue la billetera/i);
   });
   it('I-2 NEGADO: «No pude agregar esa pieza» tres veces seguidas: la segunda vez pasa con recepción (aviso + botón), no repite la frase', () => {
     const m = dice('Agregué el licor de coca.', [{ id: 'licor-de-coca', cantidad: 1 }]);
@@ -297,7 +297,7 @@ describe('6. segunda revisión del #1142 (27/11): se dice solo lo que el código
     expect(textos(t).join(' ')).toContain('Billetera de cuero');
     expect(textos(t).join(' ')).not.toMatch(/No pude agregar/);
   });
-  it('I-4 NEGADO: tras derivar, las otras ofertas de piezas tampoco salen; pedir un dato («¿Desea que agregue su número de referencia?») NO se reemplaza', () => {
+  it('I-4 NEGADO: tras derivar, las otras ofertas de piezas tampoco salen; pedir un dato («¿Desea que agregue su número de referencia?») tampoco sale (el texto del modelo no sale nunca)', () => {
     const tras = (frase: string): string => {
       const m = crear({ modeloDice: (ll: LlamadaDoble) => (/persona/.test(textoAlModelo(ll)) ? modelo('Lo verá una persona del equipo.', { quiereHablar: true }) : modelo(frase)) });
       hablar(m, ANA, mTexto('quiero hablar con una persona'));
@@ -306,7 +306,7 @@ describe('6. segunda revisión del #1142 (27/11): se dice solo lo que el código
     for (const oferta of ['¿Le interesaría llevar también una bufanda?', 'También tenemos billeteras, ¿te interesa?', '¿Te muestro otras piezas?']) {
       expect(tras(oferta)).toContain('Con gusto. Si necesitas algo más, escríbeme.');
     }
-    expect(tras('¿Desea que agregue su número de referencia?')).toContain('número de referencia');
+    expect(tras('¿Desea que agregue su número de referencia?')).toContain('Con gusto. Si necesitas algo más, escríbeme.');   // tampoco: el texto del modelo no sale nunca tras derivar
   });
 });
 
@@ -343,7 +343,7 @@ describe('7. tercera ronda del #1142 (27/11): I-1, N-2, I-4, N-1 y N-3 por HECHO
       expect(tras(oferta)).toContain('Con gusto. Si necesitas algo más, escríbeme.');
     }
     expect(tras('Hay una promoción en electro.')).not.toMatch(/promoci/i);
-    expect(tras('Con mucho gusto, quedo atento.')).toContain('quedo atento');
+    expect(tras('Con mucho gusto, quedo atento.')).toContain('Con gusto. Si necesitas algo más, escríbeme.');
   });
   const diez = Array.from({ length: 10 }, (_, i) => pieza(`pieza-${i}`, `Pieza número ${i} de la colección`, 100 + i));
   const lsDiez = diez.map((p, i) => linea(1, p['nombre'] as string, `pieza-${i}`, `${100 + i}`, `${100 + i}`));
