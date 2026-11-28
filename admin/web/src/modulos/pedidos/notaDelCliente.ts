@@ -12,10 +12,18 @@ export const MAX_NOTA_CLIENTE = 500;
 
 /**
  * Texto de `notaCliente` listo para mostrar: saneado (sin controles ni marcas
- * bidi, hasta 500) o `''` si no es texto o queda vacío. Devuelve TEXTO, nunca
- * HTML: quien lo pinta lo hace como hijo de React, sin enlaces ni markdown.
+ * bidi), recortado (`trim`, para que `pre-wrap` no muestre saltos al inicio o al
+ * final), hasta 500 sin partir un par sustituto (emoji); o `''` si no es texto o
+ * queda vacío. Devuelve TEXTO, nunca HTML: quien lo pinta lo hace como hijo de
+ * React, sin enlaces ni markdown.
  */
 export function notaDelCliente(valor: unknown): string {
-  const texto = sanearTexto(valor, MAX_NOTA_CLIENTE);
-  return texto.trim() === '' ? '' : texto;
+  // Se sanea sin tope y se corta aquí, para cuidar el par sustituto.
+  let texto = sanearTexto(valor, Number.MAX_SAFE_INTEGER).trim();
+  if (texto.length > MAX_NOTA_CLIENTE) {
+    const ultimo = texto.charCodeAt(MAX_NOTA_CLIENTE - 1);
+    // Si el carácter 500 es la mitad alta de un par, se descarta esa mitad.
+    texto = texto.slice(0, ultimo >= 0xd800 && ultimo <= 0xdbff ? MAX_NOTA_CLIENTE - 1 : MAX_NOTA_CLIENTE).trim();
+  }
+  return texto;
 }

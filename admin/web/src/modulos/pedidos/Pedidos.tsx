@@ -249,7 +249,7 @@ export function Pedidos() {
                   {/* NOTA DEL CLIENTE (`notaCliente`, no el `nota` de arriba): texto plano, entero,
                       con rótulo fijo. Sin nota no se pinta nada. */}
                   {notaCliente !== '' && (
-                    <div className="pedido-nota-cliente" role="group" aria-label="Nota del cliente">
+                    <div className="pedido-nota-cliente">
                       <p className="pedido-nota-cliente-rotulo">{ROTULO_NOTA_CLIENTE}</p>
                       <p className="pedido-nota-cliente-texto">{notaCliente}</p>
                     </div>

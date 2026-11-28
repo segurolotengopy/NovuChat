@@ -37,6 +37,19 @@ describe('notaDelCliente (función pura)', () => {
     expect(notaDelCliente('b'.repeat(9000))).toHaveLength(500);
   });
 
+  it('recorta espacios y saltos al inicio y al final', () => {
+    expect(notaDelCliente('\n\n  hola \n')).toBe('hola');
+  });
+
+  it('el corte a 500 no parte un par sustituto (emoji)', () => {
+    const texto = 'a'.repeat(499) + '😀' + 'b';
+    const r = notaDelCliente(texto);
+    expect(r).toBe('a'.repeat(499));
+    expect(/[\uD800-\uDBFF]$/.test(r)).toBe(false);
+    // Un emoji que sí cabe entero se conserva.
+    expect(notaDelCliente('a'.repeat(498) + '😀')).toHaveLength(500);
+  });
+
   it('quita controles y marcas bidi', () => {
     expect(notaDelCliente('ho\u0000l\u0007a')).toBe('hola');
     expect(notaDelCliente('‮abc‬⁦d⁩‎‏')).toBe('abcd');
@@ -70,6 +83,10 @@ describe('Pedidos.tsx — bloque de la nota del cliente', () => {
     const antes = PEDIDOS.slice(0, PEDIDOS.indexOf("{notaCliente !== '' && ("));
     expect(antes).not.toContain('ROTULO_NOTA_CLIENTE}');
     expect(antes).not.toContain('pedido-nota-cliente-texto');
+  });
+
+  it('el bloque no usa role ni aria-label (no repite la nota al lector de pantalla)', () => {
+    expect(bloque()).not.toMatch(/role=|aria-label/);
   });
 
   it('el campo viejo `nota` no alimenta este bloque', () => {
