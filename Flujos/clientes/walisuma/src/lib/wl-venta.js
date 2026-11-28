@@ -522,7 +522,7 @@ function wlCuerpoModelo(c) {
   // y respondía sin JSON en casi todos los turnos después del primero (20/11/2026: 17 de 20 respuestas salieron «tuvimos un inconveniente»).
   const contents = c.ficha.hist.map((h) => ({ role: h.r === 'u' ? 'user' : 'model', parts: [{ text: h.r === 'u' ? h.t : JSON.stringify({ texto: h.t }) }] }));
   // Los saltos de línea de `textoCliente` solo existen en una RÁFAGA (un mensaje solo llega ya en una línea): cada texto se sanea por separado y se vuelve a unir con `\n` (tope total 1.500).
-  const texto = wlSinNumerosLargos(String(c.plan.textoCliente || '').replace(/<<<|>>>/g, ' ').split('\n').map((linea) => cbLinea(linea, 1500)).filter((linea) => linea !== '').join('\n').slice(0, 1500).trimEnd());
+  const texto = wlSinNumerosLargos(wlTextoAgrupado(String(c.plan.textoCliente || '').replace(/<<<|>>>/g, ' ')));
   contents.push({ role: 'user', parts: [{ text: '<<<' + texto + '>>>' }] });
   const temp = Number(c.base && c.base.temperatura);
   return {

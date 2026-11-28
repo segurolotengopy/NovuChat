@@ -32,6 +32,9 @@ const nombres = (f: Flujo): string[] => (f.nodes as J[]).map((x) => String(x['na
 const corrida = (...args: string[]) => spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador({}) });
 
 describe('tamaño y composición', () => {
+  it('el ancla de la ráfaga es la que fija `rafaga-extremo.test.ts` (core la copia: no puede importar de un cliente)', () => {
+    expect(C.OPCIONES_DE_LA_RAFAGA.ancla).toEqual({ nodo: 'Puerta del turno', salida: 0, destino: '¿Bajar medio?' });
+  });
   it('como máximo 64 nodos (47 + los 9 del guardado de medios, excepción del 29/10/2026, + los 8 del miniCRM, D2 de Andres del 10/11/2026): producción 71 exactos con el indicador y el webhook del carrito del catálogo web, prueba 65 (antes 64 y 59), y +4 de la rama del guardado de la imagen saliente (16/11/2026): producción 68, prueba 63', () => {
     // +4 de la ráfaga (pieza común; tope autorizado por Andres el 25/11/2026, «Sí, +4 nodos por flujo»): producción 75, prueba 69.
     expect(PRODUCCION.nodes.length).toBe(75);
