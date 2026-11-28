@@ -129,6 +129,14 @@ describe('pcMercadoCoincide (K1): la moneda y el mercado de la carga se COMPRUEB
     expect(mercadoOk({ moneda: 'BOB', mercado: 'BO', catalogo: 'externo' }, 'BO')).toBe(true);
     expect(mercadoOk({ moneda: 'ARS', mercado: 'AR', catalogo: 'externo' }, 'AR')).toBe(true);
   });
+  it('«Bs» (como la carga escribe la moneda de Bolivia) coincide igual que BOB en Bolivia; negado: «Bs» no vale en Argentina, «bs», «BS» o «Bs.» no se adivinan y el mercado de otro país sigue fallando', () => {
+    expect(mercadoOk({ moneda: 'Bs' }, 'BO')).toBe(true);
+    expect(mercadoOk({ moneda: 'Bs', mercado: 'BO' }, 'BO')).toBe(true);
+    expect(mercadoOk({ moneda: 'Bs' }, 'AR')).toBe(false);
+    expect(mercadoOk({ moneda: 'Bs', mercado: 'AR' }, 'BO')).toBe(false);
+    expect(mercadoOk({ moneda: 'Bs', catalogo: 'externo', mercado: 'AR' }, 'AR')).toBe(false);
+    for (const m of ['bs', 'BS', 'Bs.', 'USD', 'ARS', ' Bs']) expect(mercadoOk({ moneda: m }, 'BO'), m).toBe(false);
+  });
   it('NEGADO: una carga de Argentina exige moneda ARS, mercado AR y catalogo externo, los tres; una carga vacía o solo con mercado no sirve', () => {
     expect(mercadoOk({}, 'AR')).toBe(false);
     expect(mercadoOk({ mercado: 'AR' }, 'AR')).toBe(false);

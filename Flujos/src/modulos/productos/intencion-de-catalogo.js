@@ -128,12 +128,17 @@ function icIntencion(texto, vendibles) {
   var t = icNormalizar(texto);
   if (!t || t.length > 160 || /\d/.test(t)) return vacio;
   t = t.replace(/\bantes de (pagar|comprar|confirmar|pedir)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  // «Pantallas de computadora» (o de celular, monitor…) NO es un televisor: ni se niega ni se muestran televisores.
+  t = t.replace(/\bpantallas? (de|del|para) (la |una |mi |el |un )?(compu\w*|computador\w*|pc|laptop\w*|notebook\w*|celular\w*|movil\w*|monitor\w*)/g, ' ').replace(/\s+/g, ' ').trim();
   if (IC_NO_ES_PEDIDO.test(t)) return vacio;
   var pedido = IC_PEDIDO.test(t);
   var cats = lcCategorias(vendibles);
   var segmentos = t.split(/\s+y\s+|\s+o\s+|\s+e\s+|,/).map(icPalabras).filter(function (p) { return p.length; });
   var ids = [];
   var faltan = [];
+  // Las palabras como las escribió el cliente (con sus tildes), para citarlas.
+  var originales = {};
+  String(texto).toLowerCase().split(/[^a-z0-9ñáéíóúü]+/).forEach(function (w) { if (w && (!originales[icNormalizar(w)] || /[áéíóúü]/.test(w))) originales[icNormalizar(w)] = w; });
   var nombradas = icCategoriasNombradas(icPalabras(t), cats);
   for (var i = 0; i < nombradas.length; i++) ids.push(nombradas[i].id);
   var servicio = IC_SERVICIO.test(t);
@@ -144,7 +149,7 @@ function icIntencion(texto, vendibles) {
     if (!icCategoriasNombradas(contenido, cats).length) {
       // Un trozo con contenido que no nombra nada real: solo es «lo que no tenemos» si el cliente pregunta si hay.
       // Con una categoría real en el mismo mensaje («bicis y teles») solo cuenta un trozo corto, de una o dos palabras.
-      if (!servicio && (preguntaPorHay || (ids.length && segmentos[s].length <= 2)) && contenido.length <= 2 && !IC_OBJETO_FUERTE.test(segmentos[s].join(' '))) faltan.push(contenido.join(' '));
+      if (!servicio && (preguntaPorHay || (ids.length && segmentos[s].length <= 2)) && contenido.length <= 2 && !IC_OBJETO_FUERTE.test(segmentos[s].join(' '))) faltan.push(contenido.map(function (w) { return originales[w] || w; }).join(' '));
     }
   }
   if (ids.length) return { tipo: 'categoria', catIds: ids, faltan: faltan, pedido: pedido };
@@ -163,11 +168,28 @@ function icParrafos(texto) {
 // El texto «"X" no figura en nuestro catálogo; estas son las categorías que tenemos.» (decisión de Andres, 28/11/2026). `faltan` es la lista de
 // `icIntencion`. Nunca «no tenemos X» ni «No encuentro eso».
 function icTextoNoFigura(faltan) {
-  var xs = (Array.isArray(faltan) ? faltan : []).map(function (x) { return String(x).trim().slice(0, 40); }).filter(function (x) { return x; });
-  if (!xs.length) return '';
+  var aviso = icAvisoNoFigura(faltan);
+  return aviso ? aviso.slice(0, -1) + '; estas son las categorías que tenemos.' : '';
+}
+// Palabras que NUNCA se citan de vuelta al cliente (una grosería no se repite): el aviso sale sin nombrar X («Eso no figura…»).
+var IC_GROSERIAS = /^(mierdas?|putas?|putos?|puta madre|carajo|cojudos?|cojudas?|huevon\w*|pendej\w*|idiotas?|estupid\w*|imbecil\w*|malditos?|malditas?|vergas?|culos?|cabron\w*|chingar\w*|joder|jodid\w*|conchatumadre|hijo ?de ?puta|maricon\w*|basura|asquerosos?)$/;
+// «"X" no figura en nuestro catálogo.» (sin la remisión a las categorías). Se defiende sola, venga de quien venga: toma como máximo 3 elementos, los limpia
+// (minúsculas, con sus tildes, sin marcas de formato ni símbolos), descarta enlaces, citas de más de 3 palabras o de 40 letras y groserías, y si no
+// queda nada que citar dice «Eso no figura en nuestro catálogo.»
+function icAvisoNoFigura(faltan) {
+  var crudos = (Array.isArray(faltan) ? faltan : []).slice(0, 3).filter(function (x) { return x !== undefined && x !== null && String(x).trim(); });
+  if (!crudos.length) return '';
+  var xs = [];
+  crudos.forEach(function (x) {
+    var t = String(x).toLowerCase().replace(/[^a-z0-9ñáéíóúü ]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!t || t.length > 40 || t.split(' ').length > 3 || /\b(https?|www)\b/.test(t)) return;
+    if (icNormalizar(t).split(' ').some(function (w) { return IC_GROSERIAS.test(w); }) || IC_GROSERIAS.test(icNormalizar(t))) return;
+    xs.push(t);
+  });
+  if (!xs.length) return 'Eso no figura en nuestro catálogo.';
   var cita = xs.map(function (x) { return '"' + x + '"'; });
   var nombrado = cita.length === 1 ? cita[0] : cita.slice(0, -1).join(', ') + ' y ' + cita[cita.length - 1];
-  return nombrado + (cita.length === 1 ? ' no figura' : ' no figuran') + ' en nuestro catálogo; estas son las categorías que tenemos.';
+  return nombrado + (cita.length === 1 ? ' no figura' : ' no figuran') + ' en nuestro catálogo.';
 }
 // El mensaje de lista del catálogo. `opciones`: { catId, pag, enlace, faltan }. Sin `catId` y con varias categorías, la lista es de
 // categorías; con una sola categoría, o con `catId`, es de productos. Con `opciones.faltan` (lo no encontrado, de `icIntencion`) el mensaje es
@@ -179,7 +201,9 @@ function icMensajeLista(vendibles, monto, opciones) {
   var cats = lcCategorias(vendibles);
   if (!cats.length) return null;
   var textoNoFigura = icTextoNoFigura(op.faltan);
-  var catId = textoNoFigura ? undefined : op.catId;
+  // Con una categoría real junto a lo que no figura («bicis y teles», Estándar 2.4) se muestran los productos de esa categoría MÁS el aviso.
+  var avisoConCat = textoNoFigura && op.catId ? icAvisoNoFigura(op.faltan) : '';
+  var catId = textoNoFigura && !avisoConCat ? undefined : op.catId;
   if (!catId && !textoNoFigura && cats.length === 1) catId = cats[0].id;
   var pag = Number.isInteger(op.pag) ? op.pag : 0;
   var filas;
@@ -193,7 +217,7 @@ function icMensajeLista(vendibles, monto, opciones) {
     if (!pr.filas.length) return null;
     filas = pr.filas;
     pag = pr.pag;
-    cuerpo = icParrafos('Estos son los productos de ' + r.nombre + '. Elige uno para ver su detalle.');
+    cuerpo = icParrafos((avisoConCat ? avisoConCat + '\n\n' : '') + 'Estos son los productos de ' + r.nombre + '. Elige uno para ver su detalle.');
     titulo = r.nombre;
     respaldoCats = ['cat:' + r.cat];
   } else {

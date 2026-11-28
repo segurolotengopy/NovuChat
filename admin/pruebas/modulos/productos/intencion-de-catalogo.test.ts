@@ -271,3 +271,52 @@ describe('B-1 (28/11): lo que no está en el catálogo «no figura»; jamás «n
     for (const t of ['¿tienen delivery?', '¿tienen garantía?', '¿tienen envío a Cochabamba?', '¿tienen stock?', 'hacen envíos?', 'tienen factura?', 'aceptan tarjeta?', 'tienen horario de atención?', 'tienen ubicación?', 'tienen local?', 'tienen sucursal en Sucre?', 'tienen entrega a domicilio?', 'tienen stock de bicicletas?']) expect(por(t), t).toMatchObject({ tipo: 'ninguna', faltan: [] });
   });
 });
+
+// Revisión r4 (28/11): `icTextoNoFigura` se defiende sola (I-1), «bicis y teles» muestra los televisores más el aviso (I-2), y los menores M-A/B/C.
+describe('r4: I-1, I-2 y menores', () => {
+  const PROHIBIDO = /no tenemos|no tengo|no hay |no encuentro|no manejamos|no vendemos|no contamos/i;
+  const EOSO = 'Eso no figura en nuestro catálogo; estas son las categorías que tenemos.';
+  it('I-1 NIEGA: un llamador que pasa directo una URL, una marca de formato o una cita larga no la ve citada', () => {
+    const url = ic.icTextoNoFigura(['https://mal.test/x']);
+    expect(url).not.toContain('mal.test');
+    expect(url).toBe(EOSO);
+    const marca = ic.icTextoNoFigura(['*negrita* _cursiva_ www.mal.test']);
+    expect(marca).not.toMatch(/[*_]|www|mal\.test/);
+    expect(ic.icTextoNoFigura(['x'.repeat(60)])).not.toContain('xxxx');
+    expect(ic.icTextoNoFigura(['una dos tres cuatro'])).toBe(EOSO);
+    expect(ic.icTextoNoFigura(['*bicis*'])).toBe('"bicis" no figura en nuestro catálogo; estas son las categorías que tenemos.');
+  });
+  it('I-1 NIEGA: como máximo 3 elementos', () => {
+    const t = ic.icTextoNoFigura(['a1', 'b2', 'c3', 'd4', 'e5']);
+    expect(t).toContain('"c3"');
+    expect(t).not.toMatch(/d4|e5/);
+  });
+  it('I-2: «bicis y teles» muestra los televisores MÁS el aviso de lo que no figura, no la lista de categorías', () => {
+    const r = por('bicis y teles');
+    const m = ic.icMensajeLista(electro, monto, { catId: r.catIds[0], faltan: r.faltan })!;
+    expect(m.texto).toContain('"bicis" no figura en nuestro catálogo.');
+    expect(m.texto).toContain('Estos son los productos de');
+    expect(m.texto).not.toMatch(PROHIBIDO);
+    expect(m.filas.some((f) => f.id.startsWith('cat:'))).toBe(false);
+    expect(ic.icMensajeLista(electro, monto, { faltan: ['bicis'] })!.filas.every((f) => f.id.startsWith('cat:'))).toBe(true);
+  });
+  it('M-A: «X» se cita con sus tildes', () => {
+    expect(por('¿tienen servicio técnico?').faltan).toEqual(['servicio técnico']);
+    expect(por('¿tienen página web?').faltan).toEqual(['página web']);
+  });
+  it('M-B NIEGA: «pantallas de computadora» no lleva a televisores ni se niega', () => {
+    for (const t of ['¿tienen pantallas de computadora?', 'pantallas para laptop', 'pantalla de celular']) {
+      const r = por(t);
+      expect(r.catIds, t).toEqual([]);
+      expect(r.tipo, t).toBe('ninguna');
+    }
+    expect(por('¿tienen pantallas?')).toMatchObject({ tipo: 'categoria', catIds: ['cat:televisores'] });
+  });
+  it('M-C NIEGA: una grosería no se cita; sale la frase sin nombrar X', () => {
+    const r = por('¿tienen mierda?');
+    expect(r.tipo).toBe('sin_categoria');
+    const m = ic.icMensajeLista(electro, monto, { faltan: r.faltan })!;
+    expect(m.texto).toBe(EOSO);
+    expect(JSON.stringify(m)).not.toMatch(/mierda/i);
+  });
+});
