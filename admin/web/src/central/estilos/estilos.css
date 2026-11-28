@@ -980,6 +980,16 @@ tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent
   border-left: 3px solid var(--color-borde-control); font-size: 15px;
 }
 
+/* Nota escrita por el cliente en «Pedidos»: texto plano, con sus saltos de línea,
+   sin desbordar. El rótulo va en negrita (no solo color). */
+.pedido-nota-cliente {
+  margin: var(--space-2) 0 0; padding-left: var(--space-2);
+  border-left: 3px solid var(--color-borde-control); font-size: 15px;
+}
+.pedido-nota-cliente p { margin: 0; }
+.pedido-nota-cliente-rotulo { font-weight: 700; }
+.pedido-nota-cliente-texto { white-space: pre-wrap; overflow-wrap: anywhere; }
+
 /* «Sin horario fijo» en el tablero: no es una alerta ni un «abierto». El
    horario es opcional, y pintar de rojo a quien no tiene uno lo castiga por
    una decisión válida. */
