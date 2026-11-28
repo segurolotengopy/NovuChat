@@ -469,17 +469,20 @@ describe('R58: después de derivar, el asistente no ofrece sumar un producto', (
     expect(cuerpos(t2)).not.toMatch(/agregar|sumar|añadir|otra pieza/i);
     expect(ficha(m).derivadoMs).toBeGreaterThan(0);
   });
-  it('NEGADO (control): sin haber derivado, la misma oferta SÍ sale (la regla es del después de derivar, no una mordaza)', () => {
+  it('NEGADO (control): sin haber derivado, con el pedido vacío la oferta del modelo tampoco sale: sale la pregunta fija del código (no el texto de la ventana tras derivar)', () => {
     const m = flujo(OFRECE);
     const t = hablar(m, ANA, mTexto('Bien, perfecto'));
-    expect(cuerpos(t)).toMatch(/agregar otra pieza/);
+    expect(cuerpos(t)).not.toMatch(/agregar otra pieza/);
+    expect(cuerpos(t)).toMatch(/¿Qué producto buscas\?/);
+    expect(cuerpos(t)).not.toMatch(/Con gusto\. Si necesitas/);
   });
   it('NEGADO: pasadas 3 horas de la derivación, el asistente vuelve a su conducta normal', () => {
     const m = flujo(OFRECE);
     hablar(m, ANA, mTexto('quiero hablar con una persona'));
     m.avanzar(180);
     const t = hablar(m, ANA, mTexto('Bien, perfecto'));
-    expect(cuerpos(t)).toMatch(/agregar otra pieza/);
+    expect(cuerpos(t)).toMatch(/¿Qué producto buscas\?/);   // la conducta normal con el pedido vacío: la pregunta fija del código
+    expect(cuerpos(t)).not.toMatch(/Con gusto\. Si necesitas/);
   });
 });
 

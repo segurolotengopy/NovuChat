@@ -292,7 +292,6 @@ const BM_TEXTO_IMAGEN = 'Recibí tu imagen, pero por aquí no puedo verla con de
 const BM_TEXTO_DOCUMENTO = 'Recibí tu archivo, pero por aquí no puedo leerlo con detalle.\n\nCuéntame por escrito qué pieza te interesa y con gusto te ayudo.';
 // Sin piezas y sin texto del modelo: NO se niega el catálogo («No encuentro eso en nuestro catálogo» era falso cuando el modelo solo usaba un verbo fuera de la lista; Estándar 1.1). Se pide la pieza.
 // El botón «Ver catálogo» de este mensaje llega con el PR del catálogo (B2): hoy el texto no lo promete.
-const BM_TEXTO_SIN_PIEZA = 'Aún no tengo claro qué pieza busca. Cuénteme cuál le interesa y se la muestro.';
 // R59: los precios se leen del catálogo en CADA turno; esto es lo único que se afirma de ellos.
 const BM_TEXTO_PRECIOS_VIVOS = 'Los precios que te indico son los que figuran en el catálogo en este momento.';
 const BM_TEXTO_MODELO_SIN_REDACCION = 'Cuéntame un poco más de lo que buscas y con gusto te ayudo a encontrar la pieza.';

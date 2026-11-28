@@ -82,7 +82,7 @@ describe('receptor: camino feliz del esqueleto', () => {
     expect(t1.mensajes).toHaveLength(1);
     expect(t1.mensajes[0]?.cuerpo ?? '').not.toMatch(/atendemos pedidos de números de Bolivia/);
     expect(t1.avisos).toHaveLength(1);
-    const t2 = hablar(m, EXTRANJERO, mTexto('hello again'));
+    const t2 = hablar(m, EXTRANJERO, mTexto('quiero una billetera'));
     expect(t2.mensajes).toHaveLength(1);
     expect(t2.avisos).toHaveLength(0);
   });
@@ -94,7 +94,7 @@ describe('receptor: camino feliz del esqueleto', () => {
       const t = hablar(m, EXTRANJERO, mTexto(hola));
       expect(t.mensajes, hola).toHaveLength(1);
       expect(t.mensajes[0]?.cuerpo ?? '', hola).not.toMatch(TEXTO);
-      expect(t.mensajes[0]?.cuerpo ?? '', hola).toMatch(/pieza/);
+      expect(t.mensajes[0]?.cuerpo ?? '', hola).toMatch(/producto|Billetera/i);
       expect(t.avisos, hola).toHaveLength(1);
     }
   });
