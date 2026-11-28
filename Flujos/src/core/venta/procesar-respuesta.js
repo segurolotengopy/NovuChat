@@ -228,16 +228,18 @@ for (let i = 0; i < $input.all().length; i++) {
   // pero el prompt no es una barrera: si el turno que va a COBRAR ([ENVIAR_QR] o [PEDIDO_CONFIRMADO]) cotiza dos o mas monedas en su texto, no sale
   // el QR ni la confirmacion --el total seria una suma de monedas distintas-- y se pasa con una persona (politica del 21/09: aviso + boton), con un texto
   // fijo SIN cifras. Es el hermano del candado de existencias: mismo camino de salida, mismo costo (0 mensajes al cliente: cambia un texto por otro;
-  // +1 aviso al negocio solo en este caso). «Cotiza» = una cifra pegada al nombre de la moneda («350 Bs», «USD 50»): nombrar monedas sin cifra
+  // +1 aviso al negocio solo en este caso). «Cotiza» = una cifra pegada al nombre de la moneda («350 Bs», «USD 50», «$20», «U$S 20», «USD: 20», «*USD* 20», «20 (USD)», «20 dls»; hasta 3 separadores `:*()` o espacios entre cifra y moneda): nombrar monedas sin cifra
   // («aceptamos bolivianos o dolares») no cuenta. Las cifras se acotan a 15 caracteres para que un texto enorme no cueste tiempo cuadratico.
   const MONEDAS_COTIZADAS = [
-    ['BS', 'bs\\.?|bob|bolivianos?'], ['USD', 'usd|us\\$|\\$us|d[oó]lares?'], ['ARS', 'ars|pesos?'], ['EUR', 'eur|euros?|€'],
+    ['BS', 'bs\\.?|\\$b|bob|bolivianos?'], ['USD', 'usd|us\\$|u\\$s|u\\$d|\\$us|\\$(?!b)|dls|us\\s?d[oó]lares?|d[oó]lares?'],
+    // «peso(s)» seguido de una cifra y una unidad de medida («peso 2 kg») es un peso fisico, no la moneda.
+    ['ARS', 'ars|\\$ars|pesos?(?!\\s{0,2}\\d[\\d.,]{0,14}\\s{0,2}(?:kgs?|grs?|g|lbs?|mg|ml|lts?|l|cm|mm|m)(?![\\p{L}]))'], ['EUR', 'eur|euros?|€'],
     ['BRL', 'brl'], ['CLP', 'clp'], ['MXN', 'mxn'], ['GBP', 'gbp'], ['PYG', 'pyg'], ['UYU', 'uyu'], ['CHF', 'chf'],
   ];
   const monedasCotizadas = (t) => {
     const hay = new Set();
     for (const [codigo, palabras] of MONEDAS_COTIZADAS) {
-      const re = new RegExp('(?:\\d[\\d.,]{0,14}\\s{0,2}(?:' + palabras + ')(?![\\p{L}])|(?<![\\p{L}])(?:' + palabras + ')\\s{0,2}\\d)', 'iu');
+      const re = new RegExp('(?:\\d[\\d.,]{0,14}[:*()\\s]{0,3}(?:' + palabras + ')(?![\\p{L}])|(?<![\\p{L}])(?:' + palabras + ')[:*()\\s]{0,3}\\d)', 'iu');
       if (re.test(t)) hay.add(codigo);
     }
     return hay;

@@ -1529,6 +1529,26 @@ describe('El catálogo real llega al prompt, sea cual sea el rubro', () => {
         expect(String(r['respuesta']), t).not.toMatch(/\d|\bBs\b|USD|dólar/i);
       }
     });
+    it('NEGADO (revisión de seguridad): el candado detecta las formas comunes de escribir el monto en otra moneda ($20, U$S 20, USD: 20, 20 (USD), *USD* 20, 20 dls, 20 US dólares, tres espacios)', () => {
+      for (const otra of ['polera $20', 'polera U$S 20', 'polera USD: 20', 'polera 20 (USD)', 'polera *USD* 20', 'polera 20 dls', 'polera 20 US dólares', 'polera 20   USD', 'polera 20 $us']) {
+        const t = `Pizza 50 Bs + ${otra}. Total 70. [ENVIAR_QR]`;
+        const r = turno(t);
+        expect(r['enviarQr'], t).toBe(false);
+        expect(r['transferir'], t).toBe(true);
+        expect(r['avisos'], t).toContain('candado_moneda');
+      }
+    });
+    it('NO se bloquea el cobro normal en Bs aunque nombre un peso físico o use «$b» (boliviano): «peso 2 kg», «$b 350», «Bs. 350»', () => {
+      for (const t of ['Mochila (peso 2 kg) 350 Bs. Total 350 Bs. [ENVIAR_QR]', 'Mochila peso 2 kg: $b 350. [ENVIAR_QR]', 'Mochila 350 Bs. Total Bs. 350 [ENVIAR_QR]', 'Jobs 300 Bs. [ENVIAR_QR]']) {
+        const r = turno(t);
+        expect(r['enviarQr'], t).toBe(true);
+        expect(r['avisos'], t).not.toContain('candado_moneda');
+      }
+    });
+    it('LÍMITE DECLARADO (decisión de Andres, 27/11/2026: «solo si el pedido mezcla»): con catálogo mixto, un turno de cobro que nombra UNA sola moneda sí sale; el candado no adivina monedas de turnos anteriores', () => {
+      const r = turno('Total: 70 Bs. [ENVIAR_QR]', { monedaUnica: '' });
+      expect(r['enviarQr']).toBe(true);
+    });
     it('NEGADO: [PEDIDO_CONFIRMADO] con dos monedas tampoco confirma el pedido', () => {
       const r = turno('Listo: 2 × 100 Bs y 1 × 20 USD. [PEDIDO_CONFIRMADO]');
       expect(r['pedidoConfirmado']).toBe(false);
