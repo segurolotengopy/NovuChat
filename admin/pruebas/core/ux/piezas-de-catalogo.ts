@@ -8,6 +8,10 @@
  * Toda excepción de la invariante (esta lista, `SIN_ADAPTADOR`, `DADOS_DE_BAJA` y las de cada punto) lleva `vence` a más tardar el 31/01/2027, como
  * `core/migracion/excepciones.ts`. Vencida, la prueba falla: o se cierra, o se renueva con una decisión de Andres.
  *
+ * LÍMITE (revisión r2, I-B): hoy ningún flujo de venta llama a las piezas (todos figuran en `SIN_PIEZAS_COMUNES`), así que los casos de conversación de
+ * `ux-catalogo` NO miden las piezas: anularlas no los pone en rojo; lo que falla son las pruebas unitarias de cada pieza y la comprobación I2 de este archivo.
+ * Cuando el PR #1151 (Casa Bermejo) conecte las piezas y retire su excepción, la invariante de conversación las medirá.
+ *
  * Aquí NO hay datos ni nombres de comercios más que las claves de las excepciones (el nombre del JSON, como en las demás listas).
  */
 import type { Flujo } from '../../lib/flujo';
