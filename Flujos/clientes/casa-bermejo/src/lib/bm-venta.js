@@ -1923,7 +1923,7 @@ const BM_CAT_QUEJA = /\b(?:roto|rota|rotos|falla\w*|fallo|garantia|reclamo|devol
 const BM_CAT_PREGUNTA = /\b(?:tienen|tiene|tienes|venden|vende|manejan|maneja|hay|ofrecen|ofrece|cuentan|disponen|existen)\b/;
 const BM_CAT_CONTINUA = /\b(?:otros|otras|otro|otra|demas|restantes|siguientes|resto|mas)\b/;
 // Cosas que se preguntan con «¿tienen…?» y no son una pieza (servicios, pagos, datos de la tienda): no son «una pieza que no tenemos».
-const BM_CAT_NO_PIEZA = new Set(['delivery', 'envio', 'envios', 'factura', 'facturas', 'descuento', 'descuentos', 'garantia', 'tarjeta', 'tarjetas', 'cuotas', 'credito', 'ofertas', 'oferta', 'promocion', 'promociones', 'stock', 'horario', 'horarios', 'ubicacion', 'direccion', 'sucursal', 'sucursales', 'whatsapp', 'telefono', 'numero', 'pago', 'pagos', 'qr', 'efectivo', 'transferencia', 'recojo', 'retiro', 'servicio', 'servicios', 'instagram', 'facebook', 'tiktok', 'mapa', 'wifi', 'estacionamiento', 'parqueo', 'baño', 'bano', 'atencion', 'cambios', 'devoluciones', 'reserva', 'apartado']);
+const BM_CAT_NO_PIEZA = new Set(['delivery', 'envio', 'envios', 'factura', 'facturas', 'descuento', 'descuentos', 'garantia', 'tarjeta', 'tarjetas', 'cuotas', 'credito', 'ofertas', 'oferta', 'promocion', 'promociones', 'stock', 'horario', 'horarios', 'ubicacion', 'direccion', 'sucursal', 'sucursales', 'whatsapp', 'telefono', 'numero', 'pago', 'pagos', 'qr', 'efectivo', 'transferencia', 'recojo', 'retiro', 'servicio', 'servicios', 'instagram', 'facebook', 'tiktok', 'mapa', 'wifi', 'estacionamiento', 'parqueo', 'baño', 'bano', 'atencion', 'cambios', 'devoluciones', 'reserva', 'apartado', 'menu', 'menus']);
 // Sinónimos usuales («tele», «refri»): cada uno se lee como la palabra de la categoría.
 const BM_CAT_SINONIMOS = { tele: 'televisor', teles: 'televisor', tv: 'televisor', tvs: 'televisor', television: 'televisor', televisiones: 'televisor', pantalla: 'televisor', pantallas: 'televisor', refri: 'heladera', refris: 'heladera', refrigerador: 'heladera', refrigeradora: 'heladera', refrigeradores: 'heladera', refrigeradoras: 'heladera', nevera: 'heladera', neveras: 'heladera', lavarropas: 'lavadora', lavarropa: 'lavadora', microonda: 'microondas', micro: 'microondas', micros: 'microondas', altavoz: 'parlante', altavoces: 'parlante', bocina: 'parlante', bocinas: 'parlante', bafle: 'parlante', bafles: 'parlante', congelador: 'freezer', congeladores: 'freezer', aire: 'aire', aires: 'aire', split: 'aire' };
 function bmCatCanon(w) { return Object.prototype.hasOwnProperty.call(BM_CAT_SINONIMOS, w) ? BM_CAT_SINONIMOS[w] : w; }
@@ -1963,8 +1963,13 @@ const BM_CAT_CLAUSULA_LISTA = /[\s,;]*(?:y\s+)?(?:m[aá]nd\w*|env[ií]\w*|p[aá]
 // `resto`: lo que queda del mensaje cuando una cláusula de lista vino CON un pedido (sigue al modelo; la lista se adjunta en el mismo mensaje).
 function bmIntencionCatalogo(texto, vendibles, ficha) {
   const crudo = String(texto === undefined || texto === null ? '' : texto);
-  const n = bmNorm(crudo);
+  // «Pantallas de/para la compu» (o el celular, el monitor…) NO es un televisor: ni se niega ni se muestran televisores (misma regla que `icIntencion`).
+  const n = bmNorm(crudo).replace(/\bpantallas? (?:de|del|para) (?:la |una |mi |el |un )?(?:compu\w*|computador\w*|pc|laptop\w*|notebook\w*|celular\w*|movil\w*|monitor\w*)/g, ' ').replace(/\s+/g, ' ').trim();
   if (n === '' || n.length > 160 || /\d/.test(n)) return null;
+  // Lo que no figura se CITA como lo escribió el cliente (con sus tildes: «cámaras»); el texto «no figura» lo arma la pieza común (`icAvisoNoFigura`), nunca Bermejo.
+  const originales = {};
+  crudo.toLowerCase().split(/[^\p{L}\p{N}]+/u).forEach((w) => { if (w !== '' && (originales[bmNorm(w)] === undefined || /[áéíóúü]/.test(w))) originales[bmNorm(w)] = w; });
+  const citar = (ws) => ws.map((w) => originales[w] || w).join(' ');
   if (/\b(?:no|ya vi|ya vio|ya tengo|comprobante|pago|pagar|pague|qr|transferencia|deposito|captura|recibo|factura|nit|confirmo|confirmar)\b/.test(n) || BM_CAT_QUEJA.test(n)) return null;
   const cats = lcCategorias(vendibles);
   if (!cats.length) return null;
@@ -2006,35 +2011,18 @@ function bmIntencionCatalogo(texto, vendibles, ficha) {
     if (tramos.length >= 2) {
       for (const tr of tramos) {
         const ws = tr.split(' ').filter((w) => !BM_CAT_RELLENO.has(w) && !BM_CAT_OBJETO.has(w));
-        if (ws.length >= 1 && ws.length <= 2 && catsDe(ws).length === 0 && !ws.some((w) => BM_CAT_NO_PIEZA.has(w)) && !(bmPuntuarCoincidencias(ws.join(' '), vendibles) || []).length) faltan.push(ws.join(' '));
+        if (ws.length >= 1 && ws.length <= 2 && catsDe(ws).length === 0 && !ws.some((w) => BM_CAT_NO_PIEZA.has(w)) && !(bmPuntuarCoincidencias(ws.join(' '), vendibles) || []).length) faltan.push(citar(ws));
       }
     }
     const seguir = ultima !== '' && halladas.some((ct) => slug(ct) === ultima) && BM_CAT_CONTINUA.test(n);
     return { vista: 'categoria', cats: halladas.map(slug), faltan: faltan, continuar: seguir, resto: '' };
   }
   // Ninguna categoría: «¿tienen bicicletas?» (algo que no figura). Si coincide con una pieza concreta del catálogo, sigue como siempre (lo atiende el modelo con las coincidencias).
-  // Con un pedido en curso, una pieza que no existe sigue pasando con recepción como siempre (decisión previa, pendiente de revisar con Andres: la batería A14 pide categorías + enlace).
+  // Con un pedido en curso, una pieza que no existe sigue su camino de siempre (no se niega por código aquí).
   if (hayObjeto && BM_CAT_PIDE_ENLACE.test(n)) return { vista: 'enlace', cats: [], faltan: [], continuar: false, resto: '' };
   const hayPedido = !!(ficha && Array.isArray(ficha.carrito) && ficha.carrito.length > 0);
-  if (!hayPedido && pregunta && sig.length >= 1 && sig.length <= 3 && !sig.some((w) => BM_CAT_NO_PIEZA.has(w)) && !(bmPuntuarCoincidencias(sig.join(' '), vendibles) || []).length) return { vista: 'sin_pieza', cats: [], faltan: [sig.join(' ')], continuar: false, resto: '' };
+  if (!hayPedido && pregunta && sig.length >= 1 && sig.length <= 3 && !sig.some((w) => BM_CAT_NO_PIEZA.has(w)) && !(bmPuntuarCoincidencias(sig.join(' '), vendibles) || []).length) return { vista: 'sin_pieza', cats: [], faltan: [citar(sig)], continuar: false, resto: '' };
   return null;
-}
-// El bloque de UNA categoría desde el producto `desde` (0 = el primero), una viñeta por producto, con líneas enteras y sin pasar de `limite` caracteres. { texto, hasta, total, nombre }.
-function bmBloqueCategoria(vendibles, slug, desde, monto, limite) {
-  const validos = lcValidos(vendibles).filter((v) => v.slug === slug);
-  const total = validos.length;
-  const nombre = total ? validos[0].cat : '';
-  const ini = Number.isInteger(desde) && desde > 0 ? Math.min(desde, total) : 0;
-  const encabezado = (a, b) => '*' + nombre + '* (' + (a === 0 && b === total ? total : (a + 1) + ' a ' + b + ' de ' + total) + ')';
-  let k = ini;
-  let texto = '';
-  while (k < total) {
-    const cand = encabezado(ini, k + 1) + '\n' + validos.slice(ini, k + 1).map((v) => lcLineaProducto(v, monto)).join('\n');
-    if (cand.length > limite) break;
-    texto = cand;
-    k++;
-  }
-  return { texto: texto, hasta: k, total: total, nombre: nombre };
 }
 // El toque de «Agregar» una pieza de una lista (`pro:<id>`): la pieza entra al pedido POR CÓDIGO (una unidad), sin modelo. Una pieza que ya estaba no se duplica: se dice. El texto lo arma el código.
 function bmResolverProducto(c) {

@@ -49,6 +49,8 @@ const BM_USTED = [
   [/\bmostrarte\b/g, 'mostrarle'], [/\bte puedo\b/g, 'le puedo'], [/\bte ayudo\b/g, 'le ayudo'], [/\bte indico\b/g, 'le indico'], [/\bte envío\b/g, 'le envío'], [/\bte interesa\b/g, 'le interesa'], [/\bte gustaría\b/g, 'le gustaría'],
   [/\bpuedes\b/g, 'puede'], [/\bbuscas\b/g, 'busca'], [/\bnecesitas\b/g, 'necesita'], [/\bprefieres\b/g, 'prefiere'], [/\bquieres\b/g, 'quiere'], [/\bquieras\b/g, 'quiera'], [/\bpagues\b/g, 'pague'], [/\bconfirmes\b/g, 'confirme'], [/\bcambiaste\b/g, 'cambió'],
   [/\bno hagas\b/g, 'no haga'], [/\bno transfieras\b/g, 'no transfiera'], [/\bno pagues\b/g, 'no pague'], [/\btransfieras\b/g, 'transfiera'],
+  // Los imperativos y pronombres de los textos de la pieza común y de las listas del catálogo («Elige uno…», «toca «Ver más»», «Mira todo el catálogo…», «Pídeme el resto…», «Míralos en el catálogo», «te lo muestro»).
+  [/\belige\b/g, 'elija'], [/\beliges\b/g, 'elija'], [/\btoca\b/g, 'toque'], [/\bmira\b/g, 'mire'], [/\bmíralos\b/g, 'mírelos'], [/\bmíralas\b/g, 'mírelas'], [/\bpídeme\b/g, 'pídame'], [/\bte lo muestro\b/g, 'se lo muestro'],
   [/\btus\b/g, 'sus'], [/\btu\b/g, 'su'],
 ];
 function bmAUsted(t) {

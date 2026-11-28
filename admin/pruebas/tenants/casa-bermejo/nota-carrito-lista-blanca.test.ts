@@ -32,7 +32,7 @@ const conv = (frase: string, lineas: unknown[] = [], opc: Partial<Opciones> = {}
 };
 const FIJO_USTED = 'Con gusto. Si necesita algo más, escríbame.';
 const PROC_TU = 'Dime qué pieza te interesa y, cuando la elijas, la sumo a tu pedido. Luego me indicas si la retiras o la recibes por envío y tocas «Confirmar pedido»; el pago se hace con un QR que te envío en ese momento.';
-const PROC_USTED = 'Dígame qué pieza le interesa y, cuando la elija, la sumo a su pedido. Luego me indica si la retira o la recibe por envío y toca «Confirmar pedido»; el pago se hace con un QR que le envío en ese momento.';
+const PROC_USTED = 'Dígame qué pieza le interesa y, cuando la elija, la sumo a su pedido. Luego me indica si la retira o la recibe por envío y toque «Confirmar pedido»; el pago se hace con un QR que le envío en ese momento.';
 const SIN_PIEZA = /¿Qué producto buscas?\?/;
 
 describe('I-4 «Solo escribe el código»: tras derivar el texto del modelo no sale nunca', () => {
