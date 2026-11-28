@@ -2961,6 +2961,9 @@ service cloud.firestore {
     // Documento: { tenantId, flujo, wabaId, estado, titularidad, asignadoEn,
     // asignadoPor } y, escritas por otras piezas, propiedades de la LÍNEA:
     // aliasSecreto, numeroPublico, webhookCarrito.
+    // `numeroPublico` lo escribe, además del script de fijado a mano, la Function `configuracionFlujo`
+    // (SDK Admin), UNA sola vez por línea, la primera vez que llega un mensaje verificado; nunca pisa uno
+    // fijado ni uno quitado a mano (`numeroPublicoAuto: false`).
     // =========================================================================
     // NOTA H2-3: la credencial de ingesta de un número (HMAC o token, `firma.ts`) ahora TAMBIÉN
     // autoriza `reclamarSalidaPersona` y `confirmarSalidaPersona`, y con ella el flujo lee el texto y

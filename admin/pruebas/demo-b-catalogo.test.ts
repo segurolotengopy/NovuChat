@@ -1486,6 +1486,85 @@ describe('El catálogo real llega al prompt, sea cual sea el rubro', () => {
     });
   });
 
+  describe('moneda única, candado de moneda y total del QR (27/11/2026, revisión del #1136)', () => {
+    const turno = (salida: string, extra: J = {}): J =>
+      ejecutar(codigoDe(f, 'Procesar respuesta'), [{ output: salida }],
+        { 'Normalizar entrada': [{ ...CONFIG, nombreNegocio: 'Un Negocio', ...extra }] }, { $getWorkflowStaticData: () => ({}) })[0] ?? {};
+    it('NEGADO: un [ENVIAR_QR] que cotiza dos monedas no manda el QR y pasa con recepción (aviso + botón), con texto fijo SIN cifras', () => {
+      for (const t of ['Ruana 50 USD + envío 7 Bs. Total 57. [ENVIAR_QR]', 'Total: 350 Bs (unos 50 USD). [ENVIAR_QR]', 'USD 50 y Bs. 350 [ENVIAR_QR]', 'Son 100 bolivianos y 20 dólares. [ENVIAR_QR]', '300 BOB más 10 euros. [ENVIAR_QR]', '5 € y 9 US$ [ENVIAR_QR]']) {
+        const r = turno(t);
+        expect(r['enviarQr'], t).toBe(false);
+        expect(r['pedidoConfirmado'], t).toBe(false);
+        expect(r['transferir'], t).toBe(true);
+        expect(r['textoEnElQr'], t).toBe(false);
+        expect(r['avisos'], t).toContain('candado_moneda');
+        expect(String(r['respuesta']), t).toMatch(/monedas distintas.*botón/s);
+        expect(String(r['respuesta']), t).not.toMatch(/\d|\bBs\b|USD|dólar/i);
+      }
+    });
+    it('NEGADO (revisión de seguridad): el candado detecta las formas comunes de escribir el monto en otra moneda ($20, U$S 20, USD: 20, 20 (USD), *USD* 20, 20 dls, 20 US dólares, tres espacios)', () => {
+      for (const otra of ['polera $20', 'polera U$S 20', 'polera USD: 20', 'polera 20 (USD)', 'polera *USD* 20', 'polera 20 dls', 'polera 20 US dólares', 'polera 20   USD', 'polera 20 $us']) {
+        const t = `Pizza 50 Bs + ${otra}. Total 70. [ENVIAR_QR]`;
+        const r = turno(t);
+        expect(r['enviarQr'], t).toBe(false);
+        expect(r['transferir'], t).toBe(true);
+        expect(r['avisos'], t).toContain('candado_moneda');
+      }
+    });
+    it('NEGADO: el texto fijo del candado no lleva cifras ni siquiera si el nombre del negocio las trae («Tienda 24/7»)', () => {
+      const r = turno('Pizza 50 Bs + sticker 1 dólar. [ENVIAR_QR]', { nombreNegocio: 'Tienda 24/7' });
+      expect(r['avisos']).toContain('candado_moneda');
+      expect(String(r['respuesta'])).not.toMatch(/\d/);
+    });
+    it('NEGADO (revisión de Rearquitectura): «dólar» en singular y las variantes cortas también cuentan ($1 dólar, 20 dolar, US dólar 20, 20 dlrs, R$ 20, 10 soles)', () => {
+      for (const otra of ['sticker 1 dólar', 'sticker 20 dolar', 'sticker US dólar 20', 'sticker 20 dlrs', 'sticker R$ 20', 'sticker 10 soles']) {
+        const t = `Pizza 50 Bs + ${otra}. Total 70. [ENVIAR_QR]`;
+        const r = turno(t);
+        expect(r['enviarQr'], t).toBe(false);
+        expect(r['avisos'], t).toContain('candado_moneda');
+      }
+    });
+    it('NO se bloquea el cobro normal en Bs aunque nombre un peso físico o use «$b» (boliviano): «peso 2 kg», «$b 350», «Bs. 350»', () => {
+      for (const t of ['Mochila (peso 2 kg) 350 Bs. Total 350 Bs. [ENVIAR_QR]', 'Mochila peso 2 kg: $b 350. [ENVIAR_QR]', 'Mochila 350 Bs. Total Bs. 350 [ENVIAR_QR]', 'Jobs 300 Bs. [ENVIAR_QR]']) {
+        const r = turno(t);
+        expect(r['enviarQr'], t).toBe(true);
+        expect(r['avisos'], t).not.toContain('candado_moneda');
+      }
+    });
+    it('LÍMITE DECLARADO (decisión de Andres, 27/11/2026: «solo si el pedido mezcla»): un turno de cobro que nombra UNA sola moneda sí sale aunque el catálogo mezcle monedas; el candado no adivina monedas de turnos anteriores', () => {
+      const r = turno('Total: 70 Bs. [ENVIAR_QR]');
+      expect(r['enviarQr']).toBe(true);
+    });
+    it('NEGADO: [PEDIDO_CONFIRMADO] con dos monedas tampoco confirma el pedido', () => {
+      const r = turno('Listo: 2 × 100 Bs y 1 × 20 USD. [PEDIDO_CONFIRMADO]');
+      expect(r['pedidoConfirmado']).toBe(false);
+      expect(r['transferir']).toBe(true);
+      expect(r['avisos']).toContain('candado_moneda');
+    });
+    it('sin número del dueño no hay botón: el QR igual no sale y el texto no promete nada', () => {
+      const r = turno('100 Bs y 20 USD [ENVIAR_QR]', { numeroDueno: '' });
+      expect(r['enviarQr']).toBe(false);
+      expect(r['transferir']).toBe(false);
+      expect(String(r['respuesta'])).not.toMatch(/botón/);
+    });
+    it('NO se bloquea lo que no es un pedido mixto: una sola moneda, monedas nombradas sin cifra, o un turno que no cobra', () => {
+      const uno = turno('Ruana 300 Bs + envío 7 Bs. Total 307 Bs. [ENVIAR_QR]');
+      expect(uno['enviarQr']).toBe(true); expect(uno['avisos']).not.toContain('candado_moneda');
+      const sinCifra = turno('Aceptamos pagos en bolivianos o en dólares. Total 307 Bs. [ENVIAR_QR]');
+      expect(sinCifra['enviarQr']).toBe(true); expect(sinCifra['avisos']).not.toContain('candado_moneda');
+      const sinCobrar = turno('Los precios son 300 Bs y 50 USD según el producto.');
+      expect(sinCobrar['avisos']).not.toContain('candado_moneda');
+      expect(sinCobrar['transferir']).toBe(false);
+    });
+    const reenvio = (moneda: string): string =>
+      String(ejecutar(codigoDe(f, 'Preparar reenvío del QR'), [{ from: '59170000001' }],
+        { 'Config del negocio': [{ moneda, cobroMonto: '597', rotuloDemo: 'r', captionQr: 'c', cobroRealActivo: 'si' }] })[0]?.['captionQr']);
+    it('el reenvío escribe «Bs» si llega BOB, bs, «Bs.» o vacío, y respeta otra moneda', () => {
+      for (const m of ['BOB', 'bob', 'bs', 'Bs.', 'Bs', '']) { expect(reenvio(m), m).toContain('por 597 Bs.'); expect(reenvio(m), m).not.toMatch(/BOB|bob/); }
+      expect(reenvio('USD')).toContain('por 597 USD.');
+    });
+  });
+
   describe('candado de existencias en «Procesar respuesta» (red secundaria, 24/11/2026)', () => {
     const AGOT = JSON.stringify(['Gaseosa (normal o zero)', 'Parlante bluetooth']);
     const conEstado = (salida: string, cfg: J): J =>

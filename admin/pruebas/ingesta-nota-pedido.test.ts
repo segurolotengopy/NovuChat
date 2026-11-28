@@ -94,12 +94,12 @@ describe('la nota por la ingesta', () => {
       expect(d.data()).not.toHaveProperty('notaCliente');
     }
   });
-  it('nota larga se recorta a 500; con enlaces, marcas y controles sale limpia', async () => {
+  it('nota larga se recorta a 500; con enlaces y controles sale limpia', async () => {
     await qr('nota-lg', { nota: 'x'.repeat(900) });
     expect(Array.from(String((await pedidoDe('nota-lg')).get('notaCliente')))).toHaveLength(500);
     await qr('nota-sa', { nota: 'hola https://malo.example/x <b>mundo</b>\u0007' });
     const n = String((await pedidoDe('nota-sa')).get('notaCliente'));
-    expect(n).not.toMatch(/http|[<>&]/); expect(n).not.toMatch(/\p{Cc}/u); expect(n).toContain('mundo');
+    expect(n).toBe('hola <b>mundo</b>'); // sin enlace ni control; «<» y «>» se conservan como texto literal
   });
   it('nota SIN líneas, o con un evento que no es qr_enviado/pedido_sin_cobro: se ignora y no se crea pedido', async () => {
     const antes = (await db.collection(`tenants/${T}/pedidos`).get()).size;
@@ -159,5 +159,21 @@ describe('`lineaLimpia`: los saltos de línea se vuelven espacios', () => {
   it('una nota de varias líneas se guarda en una sola línea', async () => {
     await qr('nota-ml', { nota: 'línea uno\nlínea dos\r\n\nlínea tres' });
     expect((await pedidoDe('nota-ml')).get('notaCliente')).toBe('línea uno línea dos línea tres');
+  });
+});
+
+describe('la nota entera por la ingesta (28/11/2026)', () => {
+  it('«Juan & Maria <3», HTML literal y ZWJ se guardan como texto, sin interpretarse', async () => {
+    const familia = '👨\u200d👩\u200d👧';
+    let i = 0;
+    for (const nota of ['Juan & Maria <3', '<script>alert(1)</script>', '<b>hola</b>', `hola ${familia}`]) {
+      const ref = `nota-e-${++i}`;
+      await qr(ref, { nota });
+      expect((await pedidoDe(ref)).get('notaCliente'), nota).toBe(nota);
+    }
+  });
+  it('una nota de 3000 puntos se corta antes y sale de 500 puntos como máximo', async () => {
+    await qr('nota-e-lg', { nota: '😀'.repeat(3000) });
+    expect(Array.from(String((await pedidoDe('nota-e-lg')).get('notaCliente')))).toHaveLength(500);
   });
 });

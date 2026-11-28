@@ -118,13 +118,15 @@ export const MAX_NOTA_NOVUTIENDA = 500;
 /**
  * La nota lista para enviar, o `null` (entonces NO se manda; la confirmación sigue). Contrato confirmado por NovuTienda
  * (27/11/2026): de 1 a 500 PUNTOS DE CÓDIGO (`Array.from(nota).length`; un emoji cuenta 1), y rechaza con 400 (no recorta)
- * cualquier control U+0000–001F, U+007F–009F, U+2028 y U+2029 (incluidos \n y \t). Aquí: sin esos caracteres (`\p{Cc}`,
- * U+2028, U+2029), sin pares sustitutos cortados, no solo espacios y como mucho 500 puntos de código. No se modifica: sale
- * tal cual. Los controles ya los convierte en espacios `lineaLimpia` al guardar; esto es defensa en profundidad.
+ * cualquier control U+0000–001F, U+007F–009F, U+2028 y U+2029 (incluidos \n y \t). Aquí, defensa en profundidad: no sale
+ * si hay `\p{Cc}`, U+2028, U+2029, un sustituto suelto (`\p{Cs}`) o un `\p{Cf}` que NO sea el ZWJ (U+200D, que une los
+ * emojis compuestos; las marcas bidireccionales no salen), ni si es solo espacios o pasa de 500 puntos. No se modifica ni
+ * se recorta: sale tal cual. `notaLimpia` ya deja la nota así al guardarla.
  */
 export function notaParaNovuTienda(v: unknown): string | null {
-  if (typeof v !== 'string' || v.trim() === '') return null;
-  if (/[\p{Cc}\u2028\u2029]/u.test(v) || /\p{Cs}/u.test(v)) return null; // `\p{Cs}` con `u` solo casa los sustitutos SUELTOS
+  // Una nota «invisible» (vacía, solo espacios o solo ZWJ) no sale: el ZWJ no cuenta como contenido.
+  if (typeof v !== 'string' || v.replace(/\u200d/g, '').trim() === '') return null;
+  if (/[\p{Cc}\u2028\u2029\p{Cs}]|(?!\u200d)\p{Cf}/u.test(v)) return null; // `\p{Cs}` con `u` solo casa los sustitutos SUELTOS
   const largo = Array.from(v).length;
   return largo >= 1 && largo <= MAX_NOTA_NOVUTIENDA ? v : null;
 }
