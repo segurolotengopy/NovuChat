@@ -879,3 +879,167 @@ describe('plantillas: confirmar y contar en `plantillasPersona` (C8), aparte de 
     expect(await metricas()).toEqual({ mensajesPersona: 1 });
   });
 });
+
+// ===========================================================================
+describe('campaña saliente (PR-A): `autor: campana` solo con plantilla, 0 parámetros y botones', () => {
+  const CON_PLANTILLAS = { 'x-novuchat-plantillas': '1' };
+  const BOTONES = [{ indice: 0, payload: 'cs:si:camp-prueba' }, { indice: 1, payload: 'cs:no:camp-prueba' }];
+  const PLANTILLA = { nombre: 'campana_prueba', idioma: 'es', parametros: [] as string[], botones: BOTONES };
+  const sembrarCampana = (clave: string, o: Datos = {}, conv = CONV1) => sembrar(clave, {
+    autor: 'campana', tipo: 'plantilla', texto: '', plantilla: PLANTILLA, huella: 'h', ...o,
+  }, A, conv);
+  const libres = (r: Respuesta) => entregados(r) as unknown as Array<Record<string, unknown>>;
+  const cerrarVentana = () => db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ ultimoEntranteEn: Timestamp.fromMillis(Date.now() - 30 * 3_600_000) });
+
+  it('se entrega con sus botones y 0 parámetros, con la ventana cerrada, y pasa a `enviando`', async () => {
+    await cerrarVentana();
+    await sembrarCampana(CLAVE(1));
+    const [m] = libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS));
+    expect(m).toMatchObject({ tipo: 'plantilla', texto: '', plantilla: { nombre: 'campana_prueba', idioma: 'es', parametros: [], botones: BOTONES } });
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('enviando');
+  });
+
+  it('NIEGA: campaña con tipo TEXTO no se entrega (autor campana solo con plantilla)', async () => {
+    await sembrar(CLAVE(1), { autor: 'campana', tipo: 'text', texto: 'hola' });
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
+  });
+
+  it('NIEGA: un autor ajeno (`otro`) no se entrega, ni siquiera como plantilla', async () => {
+    await sembrarCampana(CLAVE(1), { autor: 'otro' });
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
+  });
+
+  it('NIEGA: Retomar (autor persona) con 0 parámetros no sale, ni con botones', async () => {
+    await sembrarCampana(CLAVE(1), { autor: 'persona', plantilla: { nombre: 'campana_prueba', idioma: 'es', parametros: [] } });
+    await sembrarCampana(CLAVE(2), { autor: 'persona' }, CONV2);
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
+    expect((await msg(CLAVE(2), A, CONV2))['estadoEnvio']).toBe('pendiente');
+  });
+
+  it.each([
+    ['3 botones', { ...PLANTILLA, botones: [...BOTONES, { indice: 1, payload: 'cs:x:camp-prueba' }] }],
+    ['índice repetido', { ...PLANTILLA, botones: [BOTONES[0], { indice: 0, payload: 'cs:no:camp-prueba' }] }],
+    ['índice 2', { ...PLANTILLA, botones: [{ indice: 2, payload: 'cs:si:camp-prueba' }] }],
+    ['payload con espacio', { ...PLANTILLA, botones: [{ indice: 0, payload: 'cs si' }] }],
+    ['payload de 129', { ...PLANTILLA, botones: [{ indice: 0, payload: 'a'.repeat(129) }] }],
+    ['botones vacíos', { ...PLANTILLA, botones: [] }],
+    ['campo extra en un botón', { ...PLANTILLA, botones: [{ indice: 0, payload: 'cs:si:camp-prueba', url: 'x' }] }],
+    ['11 parámetros', { ...PLANTILLA, parametros: Array(11).fill('x') }],
+  ])('NIEGA: campaña con %s no sale', async (_n, plantilla) => {
+    await sembrarCampana(CLAVE(1), { plantilla });
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('pendiente');
+  });
+
+  it.each([
+    ['una baja del contacto', () => db.doc(`tenants/${A}/bajas/${CONV1}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: Timestamp.now() })],
+    ['`noContactar`', () => db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ noContactar: true })],
+    ['`bloqueada`', () => db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ bloqueada: true })],
+  ])('NIEGA: una campaña a un contacto con %s no se entrega, se cancela (caducado) y no hay timbre', async (_n, preparar) => {
+    const timbre = vi.fn(async () => true);
+    vi.stubGlobal('fetch', timbre);
+    await preparar();
+    await sembrarCampana(CLAVE(1));
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: false, contado: false });
+    expect(timbre).not.toHaveBeenCalled();
+    expect(await metricas()).toEqual({});
+  });
+
+  it('control: la misma campaña a un contacto sin baja ni marcas SÍ se entrega; y otra baja (otro teléfono) no la frena', async () => {
+    await db.doc(`tenants/${A}/bajas/${CONV2}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: Timestamp.now() });
+    await sembrarCampana(CLAVE(1));
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toHaveLength(1);
+  });
+
+  it.each([
+    ['\'true\' (texto)', 'noContactar', 'true'], ['1', 'noContactar', 1], ['null', 'noContactar', null], ['un mapa', 'bloqueada', { x: 1 }],
+    ['\'true\' (texto)', 'bloqueada', 'true'], ['1', 'bloqueada', 1],
+  ])('M1, NIEGA: la campaña cierra ante la duda: `%s` en `%s` frena (no solo `true`)', async (_n, campo, valor) => {
+    const timbre = vi.fn(async () => true);
+    vi.stubGlobal('fetch', timbre);
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ [campo]: valor });
+    await sembrarCampana(CLAVE(1));
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', contado: false });
+    expect(timbre).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['una marca de tiempo', () => Timestamp.now()], ['`true`', () => true], ['`null`', () => null],
+  ])('RIESGO, NIEGA: `riesgoEn` (%s) frena la campaña aunque `noContactar` esté ausente o en false', async (_n, valor) => {
+    const timbre = vi.fn(async () => true);
+    vi.stubGlobal('fetch', timbre);
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ noContactar: false, riesgoEn: valor() });
+    await sembrarCampana(CLAVE(1));
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', contado: false });
+    expect(timbre).not.toHaveBeenCalled();
+  });
+
+  it('RIESGO, control: `riesgoEn` solo frena a la campaña; un Retomar de persona con `riesgoEn` sigue como hoy', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ riesgoEn: Timestamp.now() });
+    await sembrarCampana(CLAVE(1), { autor: 'persona', plantilla: RETOMAR });
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toHaveLength(1);
+  });
+
+  it('M1, control: `false` en `noContactar` y `bloqueada` NO frena la campaña', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ noContactar: false, bloqueada: false });
+    await sembrarCampana(CLAVE(1));
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toHaveLength(1);
+  });
+
+  const BAJA = () => db.doc(`tenants/${A}/bajas/${CONV1}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: Timestamp.now() });
+  const RETOMAR = { nombre: 'retomar_consulta', idioma: 'es', parametros: ['Comercio'] };
+
+  it('M3, NIEGA: Retomar (plantilla de persona) a un contacto con baja NO se entrega, se cancela y no hay timbre', async () => {
+    const timbre = vi.fn(async () => true);
+    vi.stubGlobal('fetch', timbre);
+    await BAJA();
+    await sembrarCampana(CLAVE(1), { autor: 'persona', plantilla: RETOMAR });
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toEqual([]);
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', contado: false });
+    expect(timbre).not.toHaveBeenCalled();
+    expect(await metricas()).toEqual({});
+  });
+
+  it('M3, control: Retomar con `noContactar` (sin baja) sigue saliendo como hoy; la baja de OTRO teléfono no la frena', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ noContactar: true });
+    await db.doc(`tenants/${A}/bajas/${CONV2}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: 'camp-prueba', desde: Timestamp.now() });
+    await sembrarCampana(CLAVE(1), { autor: 'persona', plantilla: RETOMAR });
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toHaveLength(1);
+  });
+
+  it('M3: un TEXTO de persona dentro de la ventana, con baja, SÍ sale (solo se le responde si él escribe)', async () => {
+    await BAJA();
+    await sembrar(CLAVE(1), { autor: 'persona', tipo: 'text', texto: 'hola' });
+    expect(libres(await reclamar(NUM_A, TOKEN_A, {}, CON_PLANTILLAS))).toHaveLength(1);
+    expect((await msg(CLAVE(1)))['estadoEnvio']).toBe('enviando');
+  });
+
+  it('un rechazo de campaña NO libera a Retomar ni toca los topes; el conteo va en `plantillasCampana`', async () => {
+    const ultima = Timestamp.fromMillis(Date.now() - MIN);
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ ultimaRetomadaEn: ultima, ultimaRetomadaMensajeId: CLAVE(1) });
+    await db.doc(`topesDeEnvio/r_${A}`).set({ dia: '2026-11-26', mes: '2026-11', nDia: 3, nMes: 3 });
+    await sembrarCampana(CLAVE(1), { estadoEnvio: 'enviando', cupoRetomarDia: '2026-11-26', cupoRetomarMes: '2026-11' });
+    expect((await confirmar({ mensajeId: CLAVE(1), conversacionId: CONV1, resultado: 'rechazado', codigo: '132001' })).codigo).toBe(200);
+    const conv = (await db.doc(`tenants/${A}/conversaciones/${CONV1}`).get()).data()!;
+    expect(conv['ultimaRetomadaMensajeId']).toBe(CLAVE(1));
+    expect((await db.doc(`topesDeEnvio/r_${A}`).get()).data()).toMatchObject({ nDia: 3, nMes: 3 });
+    expect(await metricas()).toEqual({});
+    await sembrarCampana(CLAVE(2), { estadoEnvio: 'enviando' });
+    expect((await confirmar({ mensajeId: CLAVE(2), conversacionId: CONV1, resultado: 'aceptado', idMeta: 'wamid.C' })).codigo).toBe(200);
+    expect(await metricas()).toEqual({ plantillasCampana: 1 });
+  });
+
+  it('NIEGA: confirmar una campaña de tipo texto o de autor ajeno da 404', async () => {
+    await sembrar(CLAVE(1), { autor: 'campana', tipo: 'text', estadoEnvio: 'enviando' });
+    await sembrarCampana(CLAVE(2), { autor: 'otro', estadoEnvio: 'enviando' });
+    expect((await confirmar({ mensajeId: CLAVE(1), conversacionId: CONV1, resultado: 'aceptado', idMeta: 'wamid.1' })).codigo).toBe(404);
+    expect((await confirmar({ mensajeId: CLAVE(2), conversacionId: CONV1, resultado: 'aceptado', idMeta: 'wamid.2' })).codigo).toBe(404);
+    expect(await metricas()).toEqual({});
+  });
+});

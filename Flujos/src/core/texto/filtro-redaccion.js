@@ -294,12 +294,19 @@ function cmOracionesSep(t, estricto) {
   const ABREV = estricto ? /(?:\b(?:Dr|Dra|Sr|Sra|Srta|Lic|Ing|Prof|Esp|Av|Edif|Of|No|Nro)|(?:^|\s)\d{1,2})\.$/i : /\b(Dr|Dra|Sr|Sra|Srta|Lic|Ing|Prof|Esp|Av|Edif|Of|No|Nro)\.$/i;
   const oraciones = [];
   const partes = String(t).split(estricto ? /((?<=[.!?…])\s+|(?<=\p{Extended_Pictographic})\s+|\s*\n+\s*)/u : /((?<=[.!?…])\s+)/);
+  // Una línea de lista empieza con viñeta («- », «• », «* », «– ») o con numeral («1. », «2) »). Cada oración lleva `lista`:
+  // true si cae dentro de una línea de lista (la línea manda; un espacio dentro de la línea hereda la marca de la anterior).
+  const VINETA = /^(?:[-•*–—▪◦·]|\d{1,2}[.)])(?:\s|$)/;
   for (let i = 0; i < partes.length; i += 2) {
     const x = partes[i];
     const saltos = i ? (partes[i - 1].match(/\n/g) || []).length : 0;
     const sep = !i ? '' : saltos >= 2 ? '\n\n' : saltos === 1 ? '\n' : ' ';
-    if (oraciones.length && ABREV.test(oraciones[oraciones.length - 1].t)) oraciones[oraciones.length - 1].t += ' ' + x;
-    else oraciones.push({ t: x, sep });
+    const previa = oraciones.length ? oraciones[oraciones.length - 1] : null;
+    // El salto de línea de una viñeta MANDA sobre el punto: «• Mate Bs 25.\n• Taza» no se pega («25.» no es un numeral de lista).
+    // Un numeral suelto («1.» y salto) y un trato («Dr.» y salto) siguen uniéndose a su texto.
+    const pegar = previa && ABREV.test(previa.t) && !(saltos && /\d{1,2}\.$/.test(previa.t) && !/^\s*\d{1,2}\.$/.test(previa.t));
+    if (pegar) previa.t += ' ' + x;
+    else oraciones.push({ t: x, sep, lista: saltos || !previa ? VINETA.test(x) : previa.lista });
   }
   return oraciones;
 }
@@ -372,7 +379,8 @@ function cmMotivo1(texto, opciones) {
     const nlc = cmJuntoLetras(cmLeet(cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , '))));
     if (CM_PROMETE_IMAGENES.test(n) || CM_PROMETE_IMAGENES.test(nj) || CM_PROMETE_IMAGENES.test(nl) || CM_PROMETE_IMAGENES.test(nlc)) return 'promete_imagenes';
   }
-  if (o.maxOraciones >= 1 && cmOraciones(s, true).filter((x) => /[\p{L}\p{N}]/u.test(x)).length > o.maxOraciones) return 'largo_en_oraciones';
+  // Una LISTA (líneas de viñeta o numeral) no cuenta para el tope: se cuenta la prosa. Estándar 3.2.
+  if (o.maxOraciones >= 1 && cmOracionesSep(s, true).filter((x) => !x.lista && /[\p{L}\p{N}]/u.test(x.t)).length > o.maxOraciones) return 'largo_en_oraciones';
   const optIn = cmReglasOptIn(s, o);
   if (optIn) return optIn;
   for (const re of (o.prohibidos || [])) if (re.test(n)) return 'prohibido';
@@ -419,12 +427,15 @@ function cmPulirRedaccion(texto, opciones) {
   while (oraciones.length > 1 && (SALUDO.test(oraciones[0].t) || PRESENTA.test(oraciones[0].t))) oraciones.shift();
   if (oraciones.length) oraciones[0].t = oraciones[0].t.replace(/^[¡!]?\s*(claro que s[ií]|claro|por supuesto|con gusto|perfecto|listo|dale|genial)\s*[!,.:]+\s*/i, '');
   if (oraciones.length) oraciones[0].t = oraciones[0].t.replace(/^[¡!]?\s*hola\s*[!.,]\s*/i, '');
-  // Tope de oraciones (opt-in): se conservan las primeras y, si la última era una pregunta, esa pregunta.
+  // Tope de oraciones (opt-in): se conservan las primeras y, si la última era una pregunta, esa pregunta. Una LISTA (líneas de
+  // viñeta) no cuenta ni se recorta nunca (Estándar 3.2 y 2.2): el tope es de la prosa que la rodea.
   const tope = Number(o.maxOraciones);
-  if (tope >= 1 && oraciones.length > tope) {
-    const ultima = oraciones[oraciones.length - 1];
-    const corte = oraciones.slice(0, tope);
-    if (/\?[^\p{L}\p{N}]*$/u.test(ultima.t) && !/\?[^\p{L}\p{N}]*$/u.test(corte[tope - 1].t)) corte[tope - 1] = ultima;
+  const prosa = oraciones.filter((x) => !x.lista);
+  if (tope >= 1 && prosa.length > tope) {
+    const ultima = prosa[prosa.length - 1];
+    const quedan = new Set(prosa.slice(0, tope));
+    if (/\?[^\p{L}\p{N}]*$/u.test(ultima.t) && !/\?[^\p{L}\p{N}]*$/u.test(prosa[tope - 1].t)) { quedan.delete(prosa[tope - 1]); quedan.add(ultima); }
+    const corte = oraciones.filter((x) => x.lista || quedan.has(x));
     oraciones.length = 0;
     oraciones.push(...corte);
   }

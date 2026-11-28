@@ -472,7 +472,10 @@ describe('8. La línea de comandos', () => {
     cpSync(RAIZ_FLUJOS, join(raizFalsa, 'Flujos'), { recursive: true, filter: (src) => !src.endsWith('.local.json') });
     mkdirSync(join(raizFalsa, 'admin/scripts'), { recursive: true });
     cpSync(SCRIPT, join(raizFalsa, 'admin/scripts/ensamblar-flujo.mjs'));
-    const ruta = join(raizFalsa, 'Flujos/src/core/normalizar-entrada.js');
+    // La guardia de la ráfaga (si el flujo la lleva) analiza el normalizador con `acorn`, que vive en `admin/node_modules`: el repositorio falso lo enlaza.
+    symlinkSync(join(RAIZ_FLUJOS, '../admin/node_modules'), join(raizFalsa, 'admin/node_modules'));
+    // Un módulo que NO es el normalizador: la ráfaga (si el flujo la lleva) solo arma con la huella verificada del normalizador, y cambiarlo la hace negarse a armar.
+    const ruta = join(raizFalsa, 'Flujos/src/core/comercio-no-operativo.js');
     writeFileSync(ruta, readFileSync(ruta, 'utf8') + '// cambio\n');
     let codigo = 0; let salida = '';
     try {
@@ -481,7 +484,7 @@ describe('8. La línea de comandos', () => {
       codigo = (e as { status: number }).status; salida = (e as { stdout: string }).stdout;
     }
     expect(codigo).toBe(1);
-    expect(salida).toContain(`✗ ${DEMO_A}: difiere en codigo/Normalizar entrada`);
+    expect(salida).toContain(`✗ ${DEMO_A}: difiere en codigo/Comercio no operativo`);
     expect(salida).toContain('1 flujo(s) no coinciden con sus módulos.');
   });
 });

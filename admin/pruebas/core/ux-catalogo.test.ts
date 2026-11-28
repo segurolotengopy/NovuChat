@@ -16,20 +16,22 @@ import { atiendeCliente, idDeFlujo } from './migracion/comprobaciones';
 import { idsDeOpciones, problemasDeLimites, estadoUxNuevo, violacionesDeTurno, toqueDeEntrada, vigilarUx } from './ux/vigilante';
 import type { Mundo } from '../lib/n8n-de-mentira';
 import { esInteractivo, parrafosLargos, preguntaPorOpciones, problemasDeMensaje } from './ux/catalogo';
-import { ADAPTADORES, FLUJOS_DE_VENTA, NO_SON_DE_VENTA, PUNTOS, SIN_ADAPTADOR, medir, type Medicion } from './ux/estandar-venta';
+import { ADAPTADORES, NO_SON_DE_VENTA, PUNTOS, SIN_ADAPTADOR, flujosDeVenta, medir, type Medicion } from './ux/estandar-venta';
+import { DADOS_DE_BAJA, SIN_PIEZAS_COMUNES, VENCE_MAXIMO, piezasFaltantes, problemasDeVencimiento, type ExcepcionConVencimiento } from './ux/piezas-de-catalogo';
 
 const nombreDe = (ruta: string): string => idDeFlujo(ruta).split('/').pop()!;
 
 const SIN_PIEZA = 'No usa las piezas comunes del catálogo (`lista-de-catalogo.js`, `intencion-de-catalogo.js`, `boton-del-catalogo.js`); la adopción es de su dueño.';
 const SIN_PARTIDOR = 'No parte los párrafos del modelo con la pieza común (`ctParrafos`); su texto largo llega tal cual.';
-/** Excepciones declaradas: `<punto>|<flujo>` → porqué. SOLO BAJA. */
-export const EXCEPCIONES: Record<string, string> = {
-  'walisuma.json|1.1': 'El listado lo contesta el modelo tras el saludo y puede negar el catálogo. ' + SIN_PIEZA + ' (Walisuma tiene el PR #1129 abierto.)',
-  'walisuma.json|2.3': 'No manda lista interactiva de catálogo; un toque de fila viejo llega al modelo. ' + SIN_PIEZA + ' (Walisuma tiene el PR #1129 abierto.)',
-  'walisuma.json|3.1': SIN_PARTIDOR + ' (Walisuma tiene el PR #1129 abierto.)',
+const ex = (motivo: string): ExcepcionConVencimiento => ({ motivo, vence: VENCE_MAXIMO });
+/** Excepciones declaradas: `<punto>|<flujo>` → porqué y vencimiento (31/01/2027). SOLO BAJA. */
+export const EXCEPCIONES: Record<string, ExcepcionConVencimiento> = {
+  'walisuma.json|1.1': ex('El listado lo contesta el modelo tras el saludo y puede negar el catálogo. ' + SIN_PIEZA + ' (Walisuma NO se migra en este PR.)'),
+  'walisuma.json|2.3': ex('No manda lista interactiva de catálogo; un toque de fila viejo llega al modelo. ' + SIN_PIEZA + ' (Walisuma NO se migra en este PR.)'),
+  'walisuma.json|3.1': ex(SIN_PARTIDOR + ' (Walisuma NO se migra en este PR.)'),
 };
 export const TOPE_EXCEPCIONES = 3;
-export const TOPE_SIN_ADAPTADOR = 6;
+export const TOPE_SIN_ADAPTADOR = 3;
 
 const TEXTO = (t: string) => ({ texto: t, payload: { type: 'text' } });
 const LISTA = (t: string) => ({ texto: t, payload: { type: 'interactive', interactive: { type: 'list' } } });
@@ -122,21 +124,87 @@ describe('el vigilante común (sube las copias de tenants/<t>/vigilante-ux.ts): 
   });
 });
 
-describe('el registro de flujos de venta', () => {
+describe('el registro de flujos de venta (descubierto de `flujosDeProduccion`, no escrito a mano)', () => {
   const produccion = flujosDeProduccion();
   const nombres = new Set(produccion.map(nombreDe));
-  it('todo flujo de venta nombrado existe entre los de producción', () => {
-    expect(FLUJOS_DE_VENTA.filter((n) => !nombres.has(n))).toEqual([]);
+  const venta = flujosDeVenta();
+  it('I1: la lista de flujos de venta sale del registro: nunca vacía, sin los dados de baja ni los «no es de venta», y cada declaración nombra un flujo que existe', () => {
+    expect(venta.length).toBeGreaterThan(0);
+    for (const n of venta) expect(nombres.has(n), n).toBe(true);
+    for (const n of Object.keys(DADOS_DE_BAJA)) { expect(nombres.has(n), `${n} dado de baja debe existir (si ya se retiró, bórrelo)`).toBe(true); expect(venta, n).not.toContain(n); }
+    for (const n of Object.keys(NO_SON_DE_VENTA)) { expect(nombres.has(n), n).toBe(true); expect(venta, n).not.toContain(n); }
   });
-  it('NIEGA: un flujo de producción con cobro («Cotejar en el servidor») que no está en la lista de venta ni declarado como «no es de venta» es un hueco', () => {
+  it('I1 NIEGA: todo flujo de producción con cobro («Cotejar en el servidor») que atiende clientes es de venta, «no es de venta» o dado de baja: no hay hueco', () => {
     const huecos = produccion.filter((r) => leerFlujo(r).nodes.some((n) => n.name === 'Cotejar en el servidor') && atiendeCliente(leerFlujo(r)))
-      .map(nombreDe).filter((n) => !(FLUJOS_DE_VENTA as readonly string[]).includes(n) && !(n in NO_SON_DE_VENTA));
-    expect(huecos, 'declare el flujo en FLUJOS_DE_VENTA o en NO_SON_DE_VENTA').toEqual([]);
+      .map(nombreDe).filter((n) => !venta.includes(n) && !(n in NO_SON_DE_VENTA) && !(n in DADOS_DE_BAJA));
+    expect(huecos, 'declare el flujo en NO_SON_DE_VENTA o en DADOS_DE_BAJA (con su porqué)').toEqual([]);
+  });
+  it('I1: Q\'Taco y Demo B ENTRAN a la lista de venta (declarados sin adaptador, con su porqué), no quedan fuera por omisión', () => {
+    for (const n of ['venta-minima.qtaco.json', 'venta-minima.qtaco-3727.json', 'demo-b-venta-cobro.json']) { expect(venta, n).toContain(n); expect(n in SIN_ADAPTADOR, n).toBe(true); }
   });
   it('todo flujo de venta tiene su adaptador o su declaración en SIN_ADAPTADOR (con porqué), y ninguno está en los dos; la lista solo baja', () => {
-    for (const n of FLUJOS_DE_VENTA) expect(n in ADAPTADORES !== n in SIN_ADAPTADOR, n).toBe(true);
-    for (const [n, porque] of Object.entries(SIN_ADAPTADOR)) { expect(porque.length, n).toBeGreaterThan(30); expect(FLUJOS_DE_VENTA as readonly string[], n).toContain(n); }
+    for (const n of venta) expect(n in ADAPTADORES !== n in SIN_ADAPTADOR, n).toBe(true);
+    for (const n of Object.keys(SIN_ADAPTADOR)) expect(venta, `${n} está en SIN_ADAPTADOR pero no es un flujo de venta del registro`).toContain(n);
     expect(Object.keys(SIN_ADAPTADOR).length).toBeLessThanOrEqual(TOPE_SIN_ADAPTADOR);
+  });
+});
+
+describe('I2: las piezas comunes del catálogo las USA todo flujo de venta, o figura en una excepción con vencimiento', () => {
+  const venta = flujosDeVenta();
+  const rutaDe = (n: string): string => flujosDeProduccion().find((r) => nombreDe(r) === n)!;
+  for (const n of venta) {
+    it(`${n}: ${n in SIN_PIEZAS_COMUNES ? 'excepción declarada y sigue sin usarlas (si ya las usa, SOBRA)' : 'usa la intención, la lista y el botón comunes'}`, () => {
+      const faltan = piezasFaltantes(leerFlujo(rutaDe(n)));
+      if (n in SIN_PIEZAS_COMUNES) expect(faltan.length, `la excepción de ${n} SOBRA: ya usa las piezas comunes; bórrela`).toBeGreaterThan(0);
+      else expect(faltan, `${n} no usa las piezas comunes del catálogo: conéctelas o declare la excepción con su porqué y su vencimiento`).toEqual([]);
+    });
+  }
+  it('toda excepción de piezas nombra un flujo de venta del registro; la lista no crece', () => {
+    for (const n of Object.keys(SIN_PIEZAS_COMUNES)) expect(venta, n).toContain(n);
+    expect(Object.keys(SIN_PIEZAS_COMUNES).length).toBeLessThanOrEqual(5);
+  });
+  // CONTRAPRUEBAS: con las piezas anuladas la invariante falla (antes pasaba en verde).
+  const nodoCon = (codigo: string) => ({ nodes: [{ name: 'Armar mensajes', type: 'n8n-nodes-base.code', parameters: { jsCode: codigo } }], connections: {} }) as never;
+  const COMPLETO = 'const i = icIntencion(t, v); const m = icMensajeLista(v, monto); cwConBotonCatalogo(m, url);';
+  it('NIEGA: un flujo que llama a las tres piezas no tiene faltantes', () => {
+    expect(piezasFaltantes(nodoCon(COMPLETO))).toEqual([]);
+    expect(piezasFaltantes(nodoCon('icPideListado(t); icMensajeLista(v, m); cwConBotonCatalogo(x, u);'))).toEqual([]);
+  });
+  it('NIEGA: sin las piezas, o con una pieza solo declarada o solo en un comentario, falla y dice cuál falta', () => {
+    expect(piezasFaltantes(nodoCon('return [];'))).toEqual(['intención de catálogo', 'lista de catálogo', 'botón del catálogo']);
+    expect(piezasFaltantes(nodoCon(COMPLETO.replace('cwConBotonCatalogo(m, url);', '')))).toEqual(['botón del catálogo']);
+    expect(piezasFaltantes(nodoCon('function icIntencion(a) { return a; } function icMensajeLista() {} function cwConBotonCatalogo() {}'))).toHaveLength(3);
+    expect(piezasFaltantes(nodoCon('// icIntencion(t) icMensajeLista(v) cwConBotonCatalogo(m)\n/* icIntencion(t) */ return [];'))).toHaveLength(3);
+  });
+  it('NIEGA: anular la pieza en un flujo real que figura sin excepción hace fallar la invariante (se simula quitando las llamadas)', () => {
+    const real = leerFlujo(rutaDe(venta[0]!));
+    const anulado = JSON.parse(JSON.stringify(real).replace(/cwConBotonCatalogo|icMensajeLista|icIntencion|icPideListado/g, 'anulada')) as never;
+    expect(piezasFaltantes(anulado)).toHaveLength(3);
+  });
+});
+
+describe('I3: toda excepción vence el 31/01/2027 a más tardar, y vencida falla', () => {
+  const TODAS: Array<[string, Record<string, ExcepcionConVencimiento>]> = [
+    ['EXCEPCIONES por punto', EXCEPCIONES], ['SIN_ADAPTADOR', SIN_ADAPTADOR], ['SIN_PIEZAS_COMUNES', SIN_PIEZAS_COMUNES], ['DADOS_DE_BAJA', DADOS_DE_BAJA],
+  ];
+  for (const [nombre, mapa] of TODAS) {
+    it(`${nombre}: todas con porqué y vigentes hoy`, () => {
+      expect(Object.keys(mapa).length, nombre).toBeGreaterThan(0);
+      expect(problemasDeVencimiento(mapa)).toEqual([]);
+      for (const e of Object.values(mapa)) expect(e.vence <= VENCE_MAXIMO).toBe(true);
+    });
+  }
+  const e = (parcial: Partial<ExcepcionConVencimiento> = {}): ExcepcionConVencimiento => ({ motivo: 'Un motivo con sustancia suficiente para valer.', vence: VENCE_MAXIMO, ...parcial });
+  it('NIEGA: vencida falla (el día siguiente al 31/01/2027), el último día no', () => {
+    expect(problemasDeVencimiento({ a: e() }, new Date('2027-01-31T12:00:00Z'))).toEqual([]);
+    expect(problemasDeVencimiento({ a: e() }, new Date('2027-02-01T12:00:00Z'))).toEqual([expect.stringContaining('VENCIÓ')]);
+    expect(problemasDeVencimiento(EXCEPCIONES, new Date('2027-03-01T00:00:00Z')).length).toBe(Object.keys(EXCEPCIONES).length);
+  });
+  it('NIEGA: sin fecha, fecha inválida, más allá del tope o sin porqué fallan', () => {
+    expect(problemasDeVencimiento({ a: e({ vence: '' }) })).toEqual([expect.stringContaining('no es una fecha')]);
+    expect(problemasDeVencimiento({ a: e({ vence: 'pronto' }) })).toEqual([expect.stringContaining('no es una fecha')]);
+    expect(problemasDeVencimiento({ a: e({ vence: '2027-02-01' }) })).toEqual([expect.stringContaining('después del tope')]);
+    expect(problemasDeVencimiento({ a: e({ motivo: 'corto' }) })).toEqual([expect.stringContaining('porqué')]);
   });
 });
 
@@ -153,7 +221,7 @@ describe('el estándar del asistente de venta, con modelo simulado sobre el JSON
       it(`${punto.id} ${punto.titulo} — ${flujo}`, () => {
         const problemas = punto.evaluar(de(flujo));
         if (clave in EXCEPCIONES) {
-          expect(EXCEPCIONES[clave]!.length, `la excepción ${clave} necesita su porqué`).toBeGreaterThan(30);
+          expect(EXCEPCIONES[clave]!.motivo.length, `la excepción ${clave} necesita su porqué`).toBeGreaterThan(30);
           expect(problemas.length, `la excepción ${clave} SOBRA: el flujo ya cumple ${punto.id}; bórrela`).toBeGreaterThan(0);
         } else {
           expect(problemas, `${flujo} incumple ${punto.id}: arréglelo o declare la excepción con su porqué`).toEqual([]);

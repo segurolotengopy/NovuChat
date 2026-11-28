@@ -91,6 +91,58 @@ describe('1. esPendienteDeSeguimiento con la marca bloqueada', () => {
   });
 });
 
+describe('5. BAJA de la campaña saliente (M3): quien tiene `bajas/wa_tel` no recibe ningún seguimiento', () => {
+  const T_TEXTO = '591700041';
+  const T_PLANTILLA = '591700042';
+  const T_LIBRE = '591700043';
+  const T_ENTRE = '591700044';
+  const bitacoraSeg = async () =>
+    (await db.collection(`tenants/${A}/bitacora`).where('tipo', '==', 'seguimiento_enviado').get()).size;
+
+  beforeAll(async () => {
+    // Suites distintas comparten comercio: se asegura la ruta por si esta describe corre sola.
+    for (const t of [A, B]) {
+      for (const c of ['conversaciones', 'bitacora', 'bajas']) {
+        for (const d of (await db.collection(`tenants/${t}/${c}`).get()).docs) await d.ref.delete();
+      }
+      await db.doc(`tenants/${t}`).set({ nombre: 'Clínica', estado: 'activo', flujos: ['agendamiento'] });
+      await db.doc(`tenants/${t}/config/negocio`).set({ nombreNegocio: 'Clínica', moneda: 'BOB' });
+    }
+    await db.doc(`rutasWhatsApp/${NUM_A}`).set({ tenantId: A, flujo: 'agendamiento', aliasSecreto: 'cliente20', estado: 'activo' });
+    await db.doc(`rutasWhatsApp/${NUM_B}`).set({ tenantId: B, flujo: 'agendamiento', aliasSecreto: 'cliente20', estado: 'activo' });
+    await sembrar(A, T_TEXTO, 3);         // ventana de texto (2 a 4 h)
+    await sembrar(A, T_PLANTILLA, 30);     // ventana de plantilla (24 a 48 h)
+    await sembrar(A, T_LIBRE, 3);
+    await sembrar(A, T_ENTRE, 3);
+    for (const t of [T_TEXTO, T_PLANTILLA]) {
+      await db.doc(`tenants/${A}/bajas/wa_${t}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: null, desde: Timestamp.now() });
+    }
+  }, 120_000);
+
+  it('NIEGA: con baja no sale en la lista, ni en modo texto ni en modo plantilla; sin baja sí', async () => {
+    const l = await lista(NUM_A);
+    expect(l).not.toContain(T_TEXTO);
+    expect(l).not.toContain(T_PLANTILLA);
+    expect(l).toContain(T_LIBRE);
+  });
+
+  it('NIEGA: baja ENTRE el armado y el envío: no marca, no cuenta, no deja mandar', async () => {
+    expect(await lista(NUM_A)).toContain(T_ENTRE);
+    await db.doc(`tenants/${A}/bajas/wa_${T_ENTRE}`).set({ canal: 'whatsapp', origen: 'boton_campana', campanaId: null, desde: Timestamp.now() });
+    const antes = await bitacoraSeg();
+    const r = await llamar(seguimientoEnviado, NUM_A, { telefono: T_ENTRE, modo: 'texto' });
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo).toMatchObject({ marcado: false, motivo: 'conBaja' });
+    expect(await seg(A, T_ENTRE)).toBe(0);
+    expect(await bitacoraSeg()).toBe(antes);
+  });
+
+  it('la baja es del comercio: el mismo teléfono con baja en A sigue saliendo en B', async () => {
+    await sembrar(B, T_TEXTO, 3);
+    expect(await lista(NUM_B)).toContain(T_TEXTO);
+  });
+});
+
 describe('2 a 4. contra el emulador', () => {
   beforeAll(async () => {
     for (const t of [A, B]) {
