@@ -112,6 +112,13 @@ describe('cwConBotonCatalogo', () => {
     const mostradas = cuerpo.split('\n').filter((l) => l.startsWith('•')).length;
     expect(cuerpo).toContain(`Hay ${40 - mostradas} productos más; míralos en el catálogo.`);
   });
+  it('M-5 NIEGA: con botones de respuesta, un `texto` más largo pero que NO empieza igual que el cuerpo nunca lo reemplaza', () => {
+    const botones = { type: 'interactive', interactive: { type: 'button', body: { text: 'Elige una opción' }, action: { buttons: [{ type: 'reply', reply: { id: 'si', title: 'Sí' } }] } } };
+    const otro = 'Un texto distinto, más largo y que no tiene nada que ver con el cuerpo del mensaje de botones.';
+    expect(cw.cwConBotonCatalogo({ payload: botones, texto: otro, respaldo: otro }, URL_OK)).toBe(true);
+    expect(botones.interactive.body.text).toBe('Elige una opción\n\nVer catálogo: ' + URL_OK);
+    expect(botones.interactive.body.text).not.toContain('Un texto distinto');
+  });
   it('I5 (Andres, 27/11): con una LISTA el botón va en un SEGUNDO mensaje (+1); la lista queda intacta y cwConBotonCatalogo no la toca', () => {
     const lista = { type: 'interactive', interactive: { type: 'list', body: { text: 'x'.repeat(1024) }, action: { button: 'Ver', sections: [{ rows: [{ id: 'a', title: 'A' }] }] } } };
     const m = { payload: lista, texto: 'x', respaldo: 'x' };

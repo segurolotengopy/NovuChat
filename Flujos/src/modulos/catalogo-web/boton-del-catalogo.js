@@ -82,7 +82,9 @@ function cwConBotonCatalogo(m, enlace) {
     if (it.body.text.indexOf(url) < 0) {
       var pie = '\n\nVer catálogo: ' + url;
       // La cuenta de «Hay N productos más» va sobre el texto COMPLETO (`m.texto`), no sobre el cuerpo que `cmBotones` ya recortó a 1024.
-      var completo = m.texto.length > it.body.text.length ? m.texto : it.body.text;
+      // Solo se usa si EMPIEZA igual que el cuerpo (el cuerpo es su recorte, con «…» al final si se cortó): un texto distinto nunca reemplaza al cuerpo.
+      var base = it.body.text.replace(/…$/, '');
+      var completo = m.texto.length > it.body.text.length && m.texto.indexOf(base) === 0 ? m.texto : it.body.text;
       it.body.text = cwAcortarConRemision(completo, 1024 - pie.length) + pie;
     }
     m.texto = it.body.text;
