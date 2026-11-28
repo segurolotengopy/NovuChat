@@ -109,6 +109,7 @@ describe('Bolivia sin QR configurado: no emite `pedido_sin_cobro` (el evento es 
 describe('bmLineasPedido, la función pura', () => {
   const F = cargarFuente<{ bmLineasPedido: (l: unknown, from: string) => unknown[] | null }>([
     join(RAIZ_REPO, 'Flujos/experimental/venta-digital/src/catalogo-externo.js'),
+    join(RAIZ_REPO, 'Flujos/clientes/casa-bermejo/src/lib/bm.js'),
     join(RAIZ_REPO, 'Flujos/clientes/casa-bermejo/src/lib/bm-venta.js'),
   ], ['bmLineasPedido']);
   const L = (o: Record<string, unknown> = {}) => ({ id: 'p1', nombre: 'Pieza', cantidad: 1, precioCentavos: 10000, detalle: '', moneda: 'BOB', ...o });

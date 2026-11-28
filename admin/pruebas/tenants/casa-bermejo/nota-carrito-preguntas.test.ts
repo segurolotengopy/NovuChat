@@ -71,8 +71,16 @@ describe('I-1 preguntas del modelo con el pedido vacío (Estándar 5.9)', () => 
     }
   });
   it('la pregunta fija sale en el trato del comercio (tú y usted)', () => {
-    expect(textos(hablar(conv('¿Desea retirar en tienda?'), ANA, mTexto('¿qué venden?'))).join(' ')).toBe('¿Qué producto buscas?');
-    expect(textos(hablar(conv('¿Desea retirar en tienda?', [], { base: { tratamiento: 'usted' } }), ANA, mTexto('¿qué venden?'))).join(' ')).toBe('¿Qué producto busca?');
+    expect(textos(hablar(conv('¿Desea retirar en tienda?'), ANA, mTexto('hmm'))).join(' ')).toBe('¿Qué producto buscas?');
+    expect(textos(hablar(conv('¿Desea retirar en tienda?', [], { base: { tratamiento: 'usted' } }), ANA, mTexto('hmm'))).join(' ')).toBe('¿Qué producto busca?');
+  });
+  // PENDIENTE #1151 (Estándar 1.1): «¿qué venden?» debe contestarlo el código con el catálogo o su botón. Aquí, sin botón de catálogo en este sha, no se exige la pregunta fija como respuesta correcta:
+  // se exige solo lo que sí vale (no deriva, no calla, no sale texto del modelo con una pregunta).
+  it('«¿qué venden?» con el pedido vacío no deriva ni calla ni deja pasar la pregunta del modelo', () => {
+    const t = hablar(conv('¿Desea retirar en tienda?'), ANA, mTexto('¿qué venden?'));
+    expect(t.avisos).toHaveLength(0);
+    expect(textos(t).join(' ')).not.toContain('retirar en tienda');
+    expect(textos(t).join(' ')).not.toMatch(/Con gusto\. Si necesitas algo más/);
   });
   it('salen las coincidencias reales del catálogo', () => {
     expect(textos(hablar(conv('Tenemos Billetera de cuero a Bs 450. ¿Le interesa?'), ANA, mTexto('¿tienen billeteras?'))).join(' ')).toContain('Billetera de cuero');

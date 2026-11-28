@@ -144,7 +144,7 @@ describe('la decisión de la venta: el modelo conversa, el código calcula', () 
     for (const falso of ['Tu pago fue acreditado, gracias.', 'Recibimos tu pago.', 'Te aviso apenas llegue.', 'Serían 999 Bs en total.', 'Tu pedido está confirmado y pagado.', 'Te dejo un 10% de descuento.', 'El envío va gratis.', 'Sin costo de envío para ti.']) {
       const r = b('bmResolver')(ctx({ modeloResp: gemini({ texto: falso, lineas: [] }) }));
       // Ya no sale el «cuéntame más» genérico: sale el texto del código (las piezas que coinciden con su precio), nunca lo que inventó el modelo.
-      expect(r.texto).toBe(b('bmTextoDeCoincidencias')('quiero una pieza uno', ctx().vendibles, 1));
+      expect(r.texto).toBe(b('bmTextoDeCoincidencias')('quiero una pieza uno', ctx().vendibles, 1, false));
     }
   });
   it('NEGADO: un modelo que no devuelve JSON, o pide hablar con una persona, pasa con un vendedor', () => {
@@ -818,9 +818,12 @@ describe('las correcciones de la prueba interna (20/11/2026)', () => {
       expect(r.tipo).toBe('modelo');
       expect(r.texto).toMatch(/LAVADORA LG 15KG/);
     });
-    it('la MISMA respuesta fija dos veces seguidas pasa con recepción (aviso + botón)', () => {
-      const r = turno('Tienen televisores?', [{ r: 'u', t: 'tienen televisores' }, { r: 'm', t: b('bmParaMemoria')(b('bmPreguntaFija')({})) }]);
-      expect(r.tipo).toBe('derivar');
+    it('la válvula es por ESTADO (D-A): el 3.er turno seguido sin avance pasa con recepción (motivo propio), el 2.º muestra las categorías y nunca deriva', () => {
+      const f = (n: number) => ({ saludado: true, sinAvance: n, hist: [] });
+      const turnoCon = (n: number) => b('bmResolver')(ctx({ catalogo: catalogo(), base: { enlaceCatalogo: 'https://sitio.example' }, ficha: f(n), plan: { tipo: 'modelo', textoCliente: 'Tienen televisores?' }, modeloResp: gemini({ texto: 'Tenemos un descuento del 10% por tiempo limitado', lineas: [] }) }));
+      expect(turnoCon(0)).toMatchObject({ tipo: 'modelo', sinAvance: 1 });
+      expect(turnoCon(1)).toMatchObject({ tipo: 'modelo', sinAvance: 2 });
+      expect(turnoCon(2)).toMatchObject({ tipo: 'derivar', motivo: 'sin_avance' });
     });
     it('sin enlace del catálogo no se promete un botón: el texto no menciona ningún botón', () => {
       const r = turno('Tienen televisores?', [], {});

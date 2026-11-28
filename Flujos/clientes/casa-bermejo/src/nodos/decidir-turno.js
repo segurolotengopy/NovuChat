@@ -152,4 +152,6 @@ if (cfEsToqueDeConfirmar(t.seleccionId)) return salir({ tipo: 'toque_viejo' });
 if (pideTienda && !bmTiendaTieneDato(dTienda, pTienda.ubicacion, pTienda.horario)) return salir({ tipo: 'derivar', motivo: motivoSinDato });
 if (pideTienda) textoDelTurno = pTienda.resto;
 const contexto = { cfg: cfg, base: base, plan: { textoCliente: textoDelTurno }, ficha: ficha, vendibles: vendibles, modos: bmModos(base), ahora: ahora, mercado: (ceMercadoDePrefijo(from) || 'BO'), respCatalogo: tiendaResp };
-return salir(pideTienda ? { tipo: 'modelo', ubicacion: pTienda.ubicacion, horario: pTienda.horario, textoCompleto: texto } : { tipo: 'modelo' },{ llamarModelo: true, cuerpoModelo: bmCuerpoModelo(contexto) });
+// `textoNota`: el texto CRUDO del mensaje (la entrada común borra «<>&»): solo para leer la línea «Nota:» del mensaje pegado, que se limpia después con `bmLimpiarNota`. Nunca va al modelo.
+const textoNota = t.categoria === 'conversacion' && !t.seleccionId ? Array.from(String(t.texto || '')).slice(0, 3000).join('') : '';
+return salir(pideTienda ? { tipo: 'modelo', ubicacion: pTienda.ubicacion, horario: pTienda.horario, textoCompleto: texto, textoNota: textoNota } : { tipo: 'modelo', textoNota: textoNota },{ llamarModelo: true, cuerpoModelo: bmCuerpoModelo(contexto) });

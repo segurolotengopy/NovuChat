@@ -1,7 +1,7 @@
 /**
  * LA NOTA DEL CARRITO DE NOVUTIENDA Y TRES CORRECCIONES (Principal, 27/11/2026; reclamo de Andres: «tienes que integrarte con el carrito de NOVUTIENDA»).
  * El camino REAL del cliente de Casa Bermejo es el mensaje pegado de «COMPRAR» (wa.me con el texto del pedido), no el nodo «Carrito del catálogo».
- *   1. La línea «Nota: <texto>» después del «Total referencial» es el camino ESPERADO (Estándar 1.5), pero NovuTienda todavía NO la envía: estas pruebas fijan el formato previsto.
+ *   1. La línea «Nota: <texto>» después del «Total referencial» es el camino ESPERADO (Estándar 1.5), y NovuTienda la envía en su staging: estas pruebas fijan ese formato.
  *      La nota es UNA por pedido (campo `nota` de la ficha): llega ENTERA (hasta 500 caracteres, sin enlaces ni controles), se ve UNA sola vez debajo del resumen, rotulada «Nota del cliente», y viaja al servidor en el `detalle`
  *      de las líneas (rotulada y recortada a 120: el contrato del pedido). Es un DATO: no cambia precios ni cantidades. Sin «Nota:», no hay nota.
  *   2. Con un QR abierto, agregar una pieza emite el QR nuevo en el MISMO mensaje del resumen y ese mensaje advierte que el anterior quedó anulado y no debe pagarse (0 mensajes más).
@@ -65,7 +65,8 @@ describe('1. la nota del mensaje pegado viaja como detalle de la pieza', () => {
     const d = ficha(m).nota as string;
     expect(d.length).toBeLessThanOrEqual(500);
     expect(d.length).toBeGreaterThan(400);
-    expect(d).not.toMatch(/https?:|www\.|estafa\.example|<|>|\*|[\u0000-\u001f]/);
+    expect(d).not.toMatch(/https?:|www\.|estafa\.example|[\u0000-\u001f]/);
+    expect(d).toContain('<b>ahora</b> *negrita*');   // «<», «>» y `*` se conservan: el escape es de presentación, no de limpieza (octava ronda)
     expect(textos(t).join(' ')).toContain('Total: Bs 19.458');
   });
   it('NEGADO (I-5): la nota llega ENTERA: varias frases y «;» no se cortan en la primera frase ni a 120 caracteres', () => {
