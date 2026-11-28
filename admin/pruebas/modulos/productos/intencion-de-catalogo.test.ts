@@ -10,13 +10,14 @@ type Msg = { tipo: string; payload: { interactive: { type: string; action: { sec
 type Ic = {
   icPideListado: (t: unknown) => boolean;
   icIntencion: (t: unknown, v: unknown[]) => { tipo: string; catIds: string[]; faltan: string[]; pedido: boolean };
-  icMensajeLista: (v: unknown[], m: (c: number) => string, o?: { catId?: string; pag?: number; enlace?: string }) => Msg;
+  icMensajeLista: (v: unknown[], m: (c: number) => string, o?: { catId?: string; pag?: number; enlace?: string; faltan?: string[] }) => Msg;
+  icTextoNoFigura: (f: unknown) => string;
   icResolverToque: (id: unknown, v: unknown[], m: (c: number) => string) => { tipo: string; id?: string; mensaje?: NonNullable<Msg> };
 };
 const ic = cargarFuente<Ic>([
   'Flujos/src/core/sin-agente/mensajes.js', 'Flujos/src/core/texto/parrafos.js',
   'Flujos/src/modulos/productos/lista-de-catalogo.js', 'Flujos/src/modulos/productos/intencion-de-catalogo.js',
-], ['icPideListado', 'icIntencion', 'icMensajeLista', 'icResolverToque']);
+], ['icPideListado', 'icIntencion', 'icMensajeLista', 'icResolverToque', 'icTextoNoFigura']);
 const monto = (c: number) => 'Bs ' + c / 100;
 const PATRON = /^[a-z0-9:_-]{1,200}$/;
 const AREAS = ['Televisores · LED', 'Audio', 'Cocina', 'Hogar', 'Jardín', 'Deportes', 'Juguetes', 'Libros', 'Ropa', 'Zapatos', 'Mascotas', 'Oficina'];
@@ -216,5 +217,57 @@ describe('icIntencion: la categoría nombrada gana al listado genérico', () => 
     expect(por('tienen tele?', [])).toMatchObject({ tipo: 'sin_categoria' });
     expect(por('x'.repeat(500))).toMatchObject({ tipo: 'ninguna' });
     expect(ic.icIntencion(undefined, electro)).toMatchObject({ tipo: 'ninguna' });
+  });
+});
+
+// Decisión de Andres (28/11/2026), revisión r3 B-1: lo nombrado que NO está en el catálogo se dice «"X" no figura en nuestro catálogo; estas son las
+// categorías que tenemos», con la lista y el botón. NUNCA «no tenemos X» ni «No encuentro eso». Una lista negra de servicios no tiene fin: la garantía
+// no es la lista, es lo que se afirma.
+describe('B-1 (28/11): lo que no está en el catálogo «no figura»; jamás «no tenemos»', () => {
+  const PROHIBIDO = /no tenemos|no tengo|no hay |no encuentro|no manejamos|no vendemos|no contamos/i;
+  const VEINTE = [
+    '¿tienen pantallas?', '¿tienen servicio técnico?', '¿tienen descuentos?', '¿tienen promociones?', '¿tienen repuestos?',
+    '¿tienen otros colores?', '¿tienen tallas?', '¿tienen otros modelos?', '¿tienen instalación?', '¿venden por mayor?',
+    '¿tienen mayoreo?', '¿tienen ofertas?', '¿tienen marcas?', '¿tienen marca Samsung?', '¿tienen WhatsApp?',
+    '¿tienen Instagram?', '¿tienen página web?', '¿tienen estacionamiento?', '¿tienen atención los domingos?', '¿tienen envoltura para regalo?',
+  ];
+  it('las 20 frases de la revisión r3: nunca una negación de existencia (otra intención, o el texto «no figura…»)', () => {
+    expect(VEINTE).toHaveLength(20);
+    for (const t of VEINTE) {
+      const r = por(t);
+      if (r.tipo !== 'sin_categoria') continue;
+      const m = ic.icMensajeLista(electro, monto, { faltan: r.faltan, enlace: 'https://catalogo.ejemplo.test/c/abc' })!;
+      expect(m, t).not.toBeNull();
+      for (const x of [m.texto, m.respaldo, JSON.stringify(m.payload)]) {
+        expect(x, t).toContain('no figura en nuestro catálogo; estas son las categorías que tenemos.');
+        expect(x, t).not.toMatch(PROHIBIDO);
+      }
+      expect(m.payload.interactive.type, t).toBe('list');
+      expect(m.filas.every((f) => f.id.startsWith('cat:')), t).toBe(true);
+    }
+  });
+  it('«pantallas» es televisores: con 23 televisores en el catálogo jamás se niega', () => {
+    expect(electro.filter((p) => p.area === 'Televisores')).toHaveLength(23);
+    for (const t of ['¿tienen pantallas?', 'pantalla', 'qué pantallas tienen y a qué precio', 'tienen pantallas?']) expect(por(t), t).toMatchObject({ tipo: 'categoria', catIds: ['cat:televisores'] });
+  });
+  it('los sinónimos obvios llegan a su categoría real, sin nombres de comercio', () => {
+    const v = [{ id: 'c', nombre: 'Celular A', area: 'Celulares', precioCentavos: 100, moneda: 'BOB' }, { id: 'p', nombre: 'Lap', area: 'Computadoras', precioCentavos: 100, moneda: 'BOB' }, { id: 'l', nombre: 'Lav', area: 'Lavadoras', precioCentavos: 100, moneda: 'BOB' }];
+    expect(por('tienen moviles?', v).catIds).toEqual(['cat:celulares']);
+    expect(por('tienen laptops?', v).catIds).toEqual(['cat:computadoras']);
+    expect(por('tienen lavarropa?', v).catIds).toEqual(['cat:lavadoras']);
+  });
+  it('el contrato: `icMensajeLista` con `faltan` arma el texto correcto (también con una sola categoría y con varias cosas) y nunca el prohibido', () => {
+    const una = [{ id: 'a', nombre: 'LED 50', area: 'Televisores', precioCentavos: 100, moneda: 'BOB' }];
+    const m = ic.icMensajeLista(una, monto, { faltan: ['bicicletas'] })!;
+    expect(m.texto).toBe('"bicicletas" no figura en nuestro catálogo; estas son las categorías que tenemos.');
+    expect(m.filas.map((f) => f.id)).toEqual(['cat:televisores']);
+    expect(ic.icTextoNoFigura(['bicis', 'motos'])).toBe('"bicis" y "motos" no figuran en nuestro catálogo; estas son las categorías que tenemos.');
+    expect(ic.icTextoNoFigura([])).toBe('');
+    expect(ic.icMensajeLista(una, monto, { faltan: ['x'] })!.respaldo).not.toMatch(PROHIBIDO);
+    // Sin `faltan`, la lista de una sola categoría sigue siendo de productos.
+    expect(ic.icMensajeLista(una, monto)!.filas[0]!.id).toBe('pro:a');
+  });
+  it('los 13 casos de servicio de la v3 siguen sin negarse', () => {
+    for (const t of ['¿tienen delivery?', '¿tienen garantía?', '¿tienen envío a Cochabamba?', '¿tienen stock?', 'hacen envíos?', 'tienen factura?', 'aceptan tarjeta?', 'tienen horario de atención?', 'tienen ubicación?', 'tienen local?', 'tienen sucursal en Sucre?', 'tienen entrega a domicilio?', 'tienen stock de bicicletas?']) expect(por(t), t).toMatchObject({ tipo: 'ninguna', faltan: [] });
   });
 });
