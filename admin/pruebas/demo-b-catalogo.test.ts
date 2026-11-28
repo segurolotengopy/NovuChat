@@ -1420,13 +1420,7 @@ describe('El catálogo real llega al prompt, sea cual sea el rubro', () => {
   it('la moneda del panel llega al prompt: el catálogo en dólares no se dice en Bs', () => {
     const cfg = conWalisuma();
     expect(cfg['moneda']).toBe('USD');
-    // Desde el 27/11/2026 el prompt ya no fija UNA moneda para todo («moneda siempre en…» contradecía la moneda por ítem): cada precio va en la suya,
-    // sin convertir ni sumar monedas distintas. La moneda del catálogo en dólares llega en las líneas del catálogo y en `monedaUnica`.
-    const p = prompt(cfg);
-    expect(p).toContain('Cada precio va en SU PROPIA moneda, tal como figura en el catálogo: nunca conviertas un precio a otra moneda ni sumes monedas distintas.');
-    expect(p).not.toMatch(/moneda siempre en/);
-    expect(p).toMatch(/\d+ USD/);
-    expect(cfg['monedaUnica']).toBe('USD');
+    expect(prompt(cfg)).toContain('moneda siempre en "USD"');
     expect(String(cfg['catalogoPorArea'])).not.toMatch(/\bBs\b/);
     // Y un comercio en bolivianos sigue en bolivianos.
     expect(fusionar(panel({ catalogo: [{ nombre: 'Café', precio: 12, area: 'bebidas' }] }))['moneda']).toBe('Bs');
@@ -1493,30 +1487,9 @@ describe('El catálogo real llega al prompt, sea cual sea el rubro', () => {
   });
 
   describe('moneda única, candado de moneda y total del QR (27/11/2026, revisión del #1136)', () => {
-    const moneda = (catalogo: J[], extra: J = {}): unknown => fusionar(panel({ catalogo, ...extra }))['monedaUnica'];
-    it('`monedaUnica` es la moneda que comparten TODOS los ítems vendibles, y VACÍA si se mezclan', () => {
-      expect(moneda([{ nombre: 'A', precio: 1, area: 'a' }, { nombre: 'B', precio: 2, moneda: 'BOB', area: 'a' }, { nombre: 'C', precio: 3, moneda: 'Bs', area: 'a' }])).toBe('Bs');
-      expect(moneda([{ nombre: 'A', precio: 1, moneda: 'USD', area: 'a' }, { nombre: 'B', precio: 2, moneda: 'USD', area: 'a' }])).toBe('USD');
-      // NEGADO: BOB y USD juntos no tienen moneda única, ni la del negocio ni la del primero.
-      expect(moneda([{ nombre: 'A', precio: 1, moneda: 'BOB', area: 'a' }, { nombre: 'B', precio: 2, moneda: 'USD', area: 'a' }])).toBe('');
-      expect(moneda([{ nombre: 'A', precio: 1, moneda: 'USD', area: 'a' }, { nombre: 'B', precio: 2, moneda: 'EUR', area: 'a' }])).toBe('');
-      // Un ítem sin moneda toma la del negocio: con el negocio en USD y otro en BOB, se mezclan.
-      expect(moneda([{ nombre: 'A', precio: 1, area: 'a' }, { nombre: 'B', precio: 2, moneda: 'BOB', area: 'a' }], { operacion: { moneda: 'USD' } })).toBe('');
-    });
-    it('lo agotado y lo que no tiene precio NO cuentan para la mezcla; sin ítems vendibles rige la moneda del negocio', () => {
-      expect(moneda([{ nombre: 'A', precio: 1, moneda: 'BOB', area: 'a' }, { nombre: 'B', precio: 2, moneda: 'USD', area: 'a', agotado: true }])).toBe('Bs');
-      expect(moneda([{ nombre: 'A', precio: 1, moneda: 'BOB', area: 'a' }, { nombre: 'B', moneda: 'USD', area: 'a' }])).toBe('Bs');
-      expect(moneda([])).toBe('Bs');
-      expect(moneda([], { operacion: { moneda: 'USD' } })).toBe('USD');
-    });
-    it('con el panel caído (500) o suspendido (409) hay una moneda (la de `Config base`): nada que mezclar', () => {
-      expect(fusionar({ statusCode: 500, body: {} })['monedaUnica']).toBe('Bs');
-      expect(fusionar({ statusCode: 409, body: { mensajeCortesia: 'x' } })['monedaUnica']).toBe('Bs');
-    });
-
     const turno = (salida: string, extra: J = {}): J =>
       ejecutar(codigoDe(f, 'Procesar respuesta'), [{ output: salida }],
-        { 'Normalizar entrada': [{ ...CONFIG, nombreNegocio: 'Un Negocio', monedaUnica: 'Bs', ...extra }] }, { $getWorkflowStaticData: () => ({}) })[0] ?? {};
+        { 'Normalizar entrada': [{ ...CONFIG, nombreNegocio: 'Un Negocio', ...extra }] }, { $getWorkflowStaticData: () => ({}) })[0] ?? {};
     it('NEGADO: un [ENVIAR_QR] que cotiza dos monedas no manda el QR y pasa con recepción (aviso + botón), con texto fijo SIN cifras', () => {
       for (const t of ['Ruana 50 USD + envío 7 Bs. Total 57. [ENVIAR_QR]', 'Total: 350 Bs (unos 50 USD). [ENVIAR_QR]', 'USD 50 y Bs. 350 [ENVIAR_QR]', 'Son 100 bolivianos y 20 dólares. [ENVIAR_QR]', '300 BOB más 10 euros. [ENVIAR_QR]', '5 € y 9 US$ [ENVIAR_QR]']) {
         const r = turno(t);
@@ -1538,6 +1511,19 @@ describe('El catálogo real llega al prompt, sea cual sea el rubro', () => {
         expect(r['avisos'], t).toContain('candado_moneda');
       }
     });
+    it('NEGADO: el texto fijo del candado no lleva cifras ni siquiera si el nombre del negocio las trae («Tienda 24/7»)', () => {
+      const r = turno('Pizza 50 Bs + sticker 1 dólar. [ENVIAR_QR]', { nombreNegocio: 'Tienda 24/7' });
+      expect(r['avisos']).toContain('candado_moneda');
+      expect(String(r['respuesta'])).not.toMatch(/\d/);
+    });
+    it('NEGADO (revisión de Rearquitectura): «dólar» en singular y las variantes cortas también cuentan ($1 dólar, 20 dolar, US dólar 20, 20 dlrs, R$ 20, 10 soles)', () => {
+      for (const otra of ['sticker 1 dólar', 'sticker 20 dolar', 'sticker US dólar 20', 'sticker 20 dlrs', 'sticker R$ 20', 'sticker 10 soles']) {
+        const t = `Pizza 50 Bs + ${otra}. Total 70. [ENVIAR_QR]`;
+        const r = turno(t);
+        expect(r['enviarQr'], t).toBe(false);
+        expect(r['avisos'], t).toContain('candado_moneda');
+      }
+    });
     it('NO se bloquea el cobro normal en Bs aunque nombre un peso físico o use «$b» (boliviano): «peso 2 kg», «$b 350», «Bs. 350»', () => {
       for (const t of ['Mochila (peso 2 kg) 350 Bs. Total 350 Bs. [ENVIAR_QR]', 'Mochila peso 2 kg: $b 350. [ENVIAR_QR]', 'Mochila 350 Bs. Total Bs. 350 [ENVIAR_QR]', 'Jobs 300 Bs. [ENVIAR_QR]']) {
         const r = turno(t);
@@ -1545,8 +1531,8 @@ describe('El catálogo real llega al prompt, sea cual sea el rubro', () => {
         expect(r['avisos'], t).not.toContain('candado_moneda');
       }
     });
-    it('LÍMITE DECLARADO (decisión de Andres, 27/11/2026: «solo si el pedido mezcla»): con catálogo mixto, un turno de cobro que nombra UNA sola moneda sí sale; el candado no adivina monedas de turnos anteriores', () => {
-      const r = turno('Total: 70 Bs. [ENVIAR_QR]', { monedaUnica: '' });
+    it('LÍMITE DECLARADO (decisión de Andres, 27/11/2026: «solo si el pedido mezcla»): un turno de cobro que nombra UNA sola moneda sí sale aunque el catálogo mezcle monedas; el candado no adivina monedas de turnos anteriores', () => {
+      const r = turno('Total: 70 Bs. [ENVIAR_QR]');
       expect(r['enviarQr']).toBe(true);
     });
     it('NEGADO: [PEDIDO_CONFIRMADO] con dos monedas tampoco confirma el pedido', () => {
@@ -1569,25 +1555,6 @@ describe('El catálogo real llega al prompt, sea cual sea el rubro', () => {
       const sinCobrar = turno('Los precios son 300 Bs y 50 USD según el producto.');
       expect(sinCobrar['avisos']).not.toContain('candado_moneda');
       expect(sinCobrar['transferir']).toBe(false);
-    });
-    it('`Procesar respuesta` propaga `monedaUnica` a los nodos de salida', () => {
-      expect(turno('Hola', { monedaUnica: '' })['monedaUnica']).toBe('');
-      expect(turno('Hola', { monedaUnica: 'USD' })['monedaUnica']).toBe('USD');
-    });
-
-    const qr = (respuesta: string, unica: string): string =>
-      String(ejecutar(codigoDe(f, 'Preparar QR de cobro'), [{ respuesta, textoEnElQr: true, from: '59170000001' }],
-        { 'Config del negocio': [{ monedaUnica: unica, moneda: 'Bs', rotuloDemo: 'r', captionQr: 'c' }] })[0]?.['cobroTotal']);
-    it('el total del QR se lee en la moneda única: «Bs. 350», «350 BOB» y «350 bolivianos» valen; un monto en otra moneda NUNCA es el total', () => {
-      for (const t of ['Total Bs. 350', 'Total: 350 BOB', 'Son 350 bolivianos', 'Total 350 Bs.', 'Total bs 350']) expect(qr(t, 'Bs'), t).toBe('350');
-      expect(qr('Total 100 Bs; parlante 220 USD', 'Bs')).toBe('100');
-      expect(qr('Parlante 220 USD', 'Bs')).toBe('');
-      expect(qr('Total 220 USD, envío 7 Bs', 'USD')).toBe('220');
-      expect(qr('Total 350 Bs', 'USD')).toBe('');
-      expect(qr('Jobs 300', 'Bs')).toBe('');
-    });
-    it('NEGADO: con monedas mezcladas (`monedaUnica` vacía) no se toma NINGÚN total, ni en Bs ni en otra moneda', () => {
-      for (const t of ['Total 350 Bs', 'Total 350 BOB', 'Total USD 50', 'Total 350 Bs y 50 USD']) expect(qr(t, ''), t).toBe('');
     });
     const reenvio = (moneda: string): string =>
       String(ejecutar(codigoDe(f, 'Preparar reenvío del QR'), [{ from: '59170000001' }],

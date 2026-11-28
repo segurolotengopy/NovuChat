@@ -231,10 +231,10 @@ for (let i = 0; i < $input.all().length; i++) {
   // +1 aviso al negocio solo en este caso). «Cotiza» = una cifra pegada al nombre de la moneda («350 Bs», «USD 50», «$20», «U$S 20», «USD: 20», «*USD* 20», «20 (USD)», «20 dls»; hasta 3 separadores `:*()` o espacios entre cifra y moneda): nombrar monedas sin cifra
   // («aceptamos bolivianos o dolares») no cuenta. Las cifras se acotan a 15 caracteres para que un texto enorme no cueste tiempo cuadratico.
   const MONEDAS_COTIZADAS = [
-    ['BS', 'bs\\.?|\\$b|bob|bolivianos?'], ['USD', 'usd|us\\$|u\\$s|u\\$d|\\$us|\\$(?!b)|dls|us\\s?d[oó]lares?|d[oó]lares?'],
+    ['BS', 'bs\\.?|\\$b|bob|bolivianos?'], ['USD', 'usd|us\\$|u\\$s|u\\$d|\\$us|\\$(?!b)|dls|us\\s?d[oó]lar(?:es)?|d[oó]lar(?:es)?|dlrs?'],
     // «peso(s)» seguido de una cifra y una unidad de medida («peso 2 kg») es un peso fisico, no la moneda.
     ['ARS', 'ars|\\$ars|pesos?(?!\\s{0,2}\\d[\\d.,]{0,14}\\s{0,2}(?:kgs?|grs?|g|lbs?|mg|ml|lts?|l|cm|mm|m)(?![\\p{L}]))'], ['EUR', 'eur|euros?|€'],
-    ['BRL', 'brl'], ['CLP', 'clp'], ['MXN', 'mxn'], ['GBP', 'gbp'], ['PYG', 'pyg'], ['UYU', 'uyu'], ['CHF', 'chf'],
+    ['BRL', 'brl|r\\$'], ['PEN', 'pen|soles?'], ['CLP', 'clp'], ['MXN', 'mxn'], ['GBP', 'gbp'], ['PYG', 'pyg'], ['UYU', 'uyu'], ['CHF', 'chf'],
   ];
   const monedasCotizadas = (t) => {
     const hay = new Set();
@@ -250,7 +250,9 @@ for (let i = 0; i < $input.all().length; i++) {
     pideTransferir = true;
     transferir = numeroDuenoLimpio !== '';
     avisos.push('candado_moneda');
-    const quienAtiendeM = String(ent.nombreNegocio ?? '').trim() || 'el negocio';
+    // El texto fijo NO lleva cifras: un nombre con digitos («Tienda 24/7») se reemplaza por «el negocio».
+    const nombreM = String(ent.nombreNegocio ?? '').trim();
+    const quienAtiendeM = nombreM !== '' && !/\d/.test(nombreM) ? nombreM : 'el negocio';
     texto = transferir
       ? 'Disculpa, tu pedido tiene productos con precios en monedas distintas, así que todavía no te envío el QR de pago. Toca el botón y escríbele directo a ' + quienAtiendeM + ' para revisar tu pedido.'
       : 'Disculpa, tu pedido tiene productos con precios en monedas distintas, así que todavía no te envío el QR de pago. Dime qué prefieres cambiar y lo revisamos.';
@@ -529,7 +531,6 @@ for (let i = 0; i < $input.all().length; i++) {
     cobroPendiente: ent.cobroPendiente,
     cobroQrUrl: ent.cobroQrUrl,
     moneda: ent.moneda,
-    monedaUnica: ent.monedaUnica,
   }});
 }
 

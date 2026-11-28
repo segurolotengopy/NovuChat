@@ -87,17 +87,9 @@ return [{ json: {
   // comparar contra un número inventado.
   cobroTotal: (() => {
     const t = String(item.respuesta || '');
-    // LA MONEDA DEL TOTAL ES `monedaUnica` (27/11/2026, revision del #1136): la que comparten TODOS los items del catalogo, y VACIA si se mezclan.
-    // Con monedas mezcladas no hay «el total» en una moneda --el modelo puede escribir un precio en cada una--, asi que NO se toma ninguno: el
-    // total va vacio y el comprobante lo mira una persona. Un monto en otra moneda NUNCA es el total. Antes se leia `cfg.moneda` (la del negocio).
-    // Se aceptan «350 Bs», «Bs 350», «Bs. 350», «350 BOB», «350 bolivianos», «350,50 USD» y «USD 350.50»; la moneda no se pega a una palabra
-    // («Jobs 300» no es «Bs 300»).
-    const unica = String(cfg.monedaUnica ?? '').trim();
-    if (unica === '') return '';
-    const mon = /^(?:bs\.?|bob|bolivianos?)$/i.test(unica)
-      ? 'Bs\\.?|BOB|bolivianos?'
-      : unica.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp('(?:(?<![\\p{L}])(?:' + mon + ')\\s*([0-9][0-9.,]*)|([0-9][0-9.,]*)\\s*(?:' + mon + ')(?![\\p{L}]))', 'giu');
+    // Se aceptan «350 Bs», «Bs 350», «350,50 USD» y «USD 350.50».
+    const mon = String(cfg.moneda || 'Bs').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('(?:' + mon + '\\s*([0-9][0-9.,]*)|([0-9][0-9.,]*)\\s*' + mon + ')', 'gi');
     // «1.234,56» y «1,234.56» son el mismo número: manda el último separador,
     // y tres dígitos detrás son millares, no centavos. Es la misma cuenta que
     // `parsearMonto` de `cotejo.ts`, que es quien va a leer el comprobante: si

@@ -111,8 +111,6 @@ const conPresentacion = (cfg) => {
 // `cobroRealActivo` ausente se leeria como cadena vacia --o sea, simulado-- pero
 // dejarlo implicito es pedirle al proximo que lo deduzca.
 const COBRO_SIMULADO_DE_RESPALDO = {
-  // Sin catalogo no hay monedas que mezclar: la moneda comun es la de siempre (la de `Config base`), igual que antes de `monedaUnica`.
-  monedaUnica: util(base.moneda) || 'Bs',
   cobroRealActivo: '',
   cobroPendiente: '',
   cobroMonto: '',
@@ -319,13 +317,6 @@ for (const i of items) {
   if (!porArea.has(a)) porArea.set(a, []);
   porArea.get(a).push(`${i.nombre} ${i.precio} ${monedaDe(i.moneda)}`);
 }
-// LA MONEDA UNICA DEL CATALOGO (27/11/2026, revision del #1136): la moneda que COMPARTEN todos los items con precio y no agotados, o '' si se
-// mezclan (BOB y USD en el mismo catalogo). La leen los nodos que escriben una cifra (`Preparar QR de cobro`: el total del QR solo se toma
-// del texto del modelo si hay UNA moneda; `Procesar respuesta`: el candado de moneda). Sin items vendibles (catalogo vacio o grande, que llega
-// como resumen) rige la moneda del resumen si la trae, o la del negocio: no hay nada que mezclar.
-const monedasDelCatalogo = new Set(items.map((i) => monedaDe(i.moneda)));
-const monedaDelResumen = (r.catalogoResumen && typeof r.catalogoResumen === 'object' && r.catalogoResumen.moneda !== undefined) ? monedaDe(r.catalogoResumen.moneda) : moneda;
-const monedaUnica = monedasDelCatalogo.size === 0 ? monedaDelResumen : (monedasDelCatalogo.size === 1 ? Array.from(monedasDelCatalogo)[0] : '');
 const lineaAgotados = agotados.length
   ? 'SIN EXISTENCIAS por ahora (NO se ofrecen ni se cobran; si preguntan, dile que por ahora no hay y ofrece lo que sí hay): '
     + agotados.map((i) => String(i.nombre == null ? '' : i.nombre)).join(' · ')
@@ -455,7 +446,6 @@ const estadoComercio = util(r.estadoComercio) === 'activo' ? 'operativo'
 // un producto -- es la regla 12, no inventar, aplicada al catalogo entero.
 const delCatalogo = {
   moneda,
-  monedaUnica,
   catalogoPorArea,
   // Nombres de lo agotado (texto JSON): `Procesar respuesta` los usa como red secundaria para no mandar el QR de un pedido que nombra uno.
   disponiblesNombres: JSON.stringify(items.map((i) => String(i.nombre == null ? '' : i.nombre).slice(0, 80)).slice(0, 200)),
