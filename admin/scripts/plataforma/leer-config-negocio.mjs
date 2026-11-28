@@ -74,7 +74,7 @@ export function analizarArgumentos(argv, env = process.env) {
   else if (!CAMPOS_PERMITIDOS.includes(campo)) problemas.push(`--campo fuera de la lista cerrada (${CAMPOS_PERMITIDOS.join(', ')})`);
   if (esperado !== undefined) {
     if (campo !== 'enlaceCatalogo') problemas.push('--esperado solo vale con --campo enlaceCatalogo');
-    else if (!/^https:\/\/[^\s]{1,2000}$/.test(esperado)) problemas.push('--esperado tiene que ser una URL https:// sin espacios');
+    else if (!/^https:\/\/[^/\s][^\s]{0,1999}$/.test(esperado)) problemas.push('--esperado tiene que ser una URL https:// con host y sin espacios');
   }
   if (problemas.length) return { ok: false, problemas };
   return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, campo, esperado: esperado ?? null } };
@@ -91,9 +91,12 @@ export function comprobarEnlace(valor, esperado) {
   return r;
 }
 
-const mostrar = (v) => {
-  if (typeof v === 'string') return v;
-  try { return JSON.stringify(v).slice(0, 500); } catch { return '(no se puede mostrar)'; }
+/** Lo que se imprime: los controles (`\p{Cc}`, así una secuencia ANSI u OSC no se ejecuta en la terminal) y U+2028/2029 salen como «?». */
+export const mostrar = (v) => {
+  let t;
+  if (typeof v === 'string') t = v;
+  else { try { t = JSON.stringify(v).slice(0, 500); } catch { t = '(no se puede mostrar)'; } }
+  return String(t).replace(/[\p{Cc}\u2028\u2029]/gu, '?');
 };
 
 /** Corre la lectura ya validada. `deps`: `{ db, log }`. Devuelve el código de salida. SOLO `getAll` con máscara de UN campo. */

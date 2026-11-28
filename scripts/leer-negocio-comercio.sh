@@ -30,12 +30,15 @@ ayuda() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' 
 
 TENANT=""; ENTORNO=""; CAMPO=""; ESPERADO=""; CON_ESPERADO=0
 necesita() { [[ $# -ge 2 ]] || { echo "✗ $1 requiere un valor" >&2; exit 2; }; }
+# Una opción repetida se rechaza (la segunda no pisa a la primera en silencio).
+declare -A VISTAS=()
+una_vez() { [[ -z "${VISTAS[$1]:-}" ]] || { echo "✗ opción repetida: $1" >&2; exit 2; }; VISTAS[$1]=1; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --tenant)   necesita "$@"; TENANT="$2"; shift 2 ;;
-    --entorno)  necesita "$@"; ENTORNO="$2"; shift 2 ;;
-    --campo)    necesita "$@"; CAMPO="$2"; shift 2 ;;
-    --esperado) necesita "$@"; ESPERADO="$2"; CON_ESPERADO=1; shift 2 ;;
+    --tenant)   una_vez --tenant; necesita "$@"; TENANT="$2"; shift 2 ;;
+    --entorno)  una_vez --entorno; necesita "$@"; ENTORNO="$2"; shift 2 ;;
+    --campo)    una_vez --campo; necesita "$@"; CAMPO="$2"; shift 2 ;;
+    --esperado) una_vez --esperado; necesita "$@"; ESPERADO="$2"; CON_ESPERADO=1; shift 2 ;;
     -h|--help)  ayuda; exit 0 ;;
     *) echo "✗ Opción desconocida (este envoltorio solo lee; ver --help)" >&2; exit 2 ;;
   esac
@@ -48,7 +51,7 @@ case "$CAMPO" in
 esac
 if (( CON_ESPERADO )); then
   [[ "$CAMPO" == enlaceCatalogo ]] || { echo "✗ --esperado solo vale con --campo enlaceCatalogo" >&2; exit 2; }
-  [[ "$ESPERADO" =~ ^https://[^[:space:]]{1,2000}$ ]] || { echo "✗ --esperado: una URL https:// sin espacios" >&2; exit 2; }
+  [[ "$ESPERADO" =~ ^https://[^/[:space:]][^[:space:]]{0,1999}$ ]] || { echo "✗ --esperado: una URL https:// con host y sin espacios" >&2; exit 2; }
 fi
 [[ ! "$TENANT" =~ ^(novuchat.*|ensayo|demo(-.*)?)$ ]] || { echo "✗ --tenant: los demos y NovuChat no se leen con este envoltorio" >&2; exit 2; }
 

@@ -8,6 +8,8 @@
 #   ./scripts/fijar-nota-novutienda-comercio.sh --tenant <comercio> --entorno E --activar|--desactivar --aplicar --confirmo <comercio>
 #       Escribe SOLO `notaANovuTienda` (con auditoría). `--confirmo` repite el comercio, escrito a mano. Guarda el respaldo del valor previo
 #       (o de su ausencia) en una carpeta temporal 0700 FUERA del repositorio y dice dónde queda: BÓRRELO al cerrar (sirve para --revertir).
+#       En PRODUCCIÓN, `--activar --aplicar` exige además `--novutienda-acepta-nota`: se pasa SOLO tras el aviso escrito de NovuTienda de que
+#       ya acepta el campo `nota` y lo muestra como texto (antes rechaza con 400). Sin esa opción: salida 2 y nada escrito. Staging no la exige.
 #   ./scripts/fijar-nota-novutienda-comercio.sh --tenant <comercio> --entorno E --revertir <ruta del respaldo> [--aplicar --confirmo <comercio>]
 #       La vuelta atrás: restaura el valor previo (o elimina el campo si no existía), si nadie lo cambió después.
 #
@@ -33,17 +35,21 @@ cd "$(dirname "$ESTE")/.." || exit 1
 source "scripts/lib/valores-del-comercio.sh"
 ayuda() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$ESTE"; }
 
-TENANT=""; ENTORNO=""; APLICAR=0; CONFIRMO=""; ACTIVAR=0; DESACTIVAR=0; REVERTIR=0; RESPALDO_REVERTIR=""
+TENANT=""; ENTORNO=""; APLICAR=0; CONFIRMO=""; ACTIVAR=0; DESACTIVAR=0; REVERTIR=0; RESPALDO_REVERTIR=""; ACEPTA_NOTA=0
 necesita() { [[ $# -ge 2 ]] || { echo "✗ $1 requiere un valor" >&2; exit 2; }; }
+# Una opción repetida se rechaza (la segunda no pisa a la primera en silencio).
+declare -A VISTAS=()
+una_vez() { [[ -z "${VISTAS[$1]:-}" ]] || { echo "✗ opción repetida: $1" >&2; exit 2; }; VISTAS[$1]=1; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --tenant)     necesita "$@"; TENANT="$2"; shift 2 ;;
-    --entorno)    necesita "$@"; ENTORNO="$2"; shift 2 ;;
-    --activar)    ACTIVAR=1; shift ;;
-    --desactivar) DESACTIVAR=1; shift ;;
-    --revertir)   necesita "$@"; REVERTIR=1; RESPALDO_REVERTIR="$2"; shift 2 ;;
-    --aplicar)    APLICAR=1; shift ;;
-    --confirmo)   necesita "$@"; CONFIRMO="$2"; shift 2 ;;
+    --tenant)     una_vez --tenant; necesita "$@"; TENANT="$2"; shift 2 ;;
+    --entorno)    una_vez --entorno; necesita "$@"; ENTORNO="$2"; shift 2 ;;
+    --activar)    una_vez --activar; ACTIVAR=1; shift ;;
+    --desactivar) una_vez --desactivar; DESACTIVAR=1; shift ;;
+    --revertir)   una_vez --revertir; necesita "$@"; REVERTIR=1; RESPALDO_REVERTIR="$2"; shift 2 ;;
+    --aplicar)    una_vez --aplicar; APLICAR=1; shift ;;
+    --confirmo)   una_vez --confirmo; necesita "$@"; CONFIRMO="$2"; shift 2 ;;
+    --novutienda-acepta-nota) una_vez --novutienda-acepta-nota; ACEPTA_NOTA=1; shift ;;
     -h|--help)    ayuda; exit 0 ;;
     *) echo "✗ Opción desconocida (ver --help)" >&2; exit 2 ;;
   esac
@@ -53,6 +59,10 @@ done
 (( ACTIVAR + DESACTIVAR + REVERTIR == 1 )) || { echo "✗ use exactamente UNO de --activar, --desactivar o --revertir <respaldo> (son excluyentes)" >&2; exit 2; }
 if (( REVERTIR )); then
   [[ "$RESPALDO_REVERTIR" =~ ^/[A-Za-z0-9._/-]+$ && "$RESPALDO_REVERTIR" != *..* ]] || { echo "✗ --revertir: ruta absoluta del respaldo (sin «..»)" >&2; exit 2; }
+fi
+(( ! ACEPTA_NOTA || ACTIVAR )) || { echo "✗ --novutienda-acepta-nota solo va con --activar" >&2; exit 2; }
+if (( ACTIVAR && APLICAR )) && [[ "$ENTORNO" == produccion ]] && (( ! ACEPTA_NOTA )); then
+  echo "✗ En producción, --activar --aplicar exige --novutienda-acepta-nota (solo tras el aviso escrito de NovuTienda de que ya acepta «nota»). No se escribió nada." >&2; exit 2
 fi
 if (( APLICAR )); then
   [[ "$CONFIRMO" == "$TENANT" ]] || { echo "✗ --aplicar exige --confirmo <comercio> (el mismo, escrito a mano). No se escribió nada." >&2; exit 2; }
@@ -65,6 +75,7 @@ resolver_proyecto "$ENTORNO"
 # El script de nodo toma el id del proyecto de la lista blanca del ENTORNO de su proceso (`--entorno`), nunca de la línea de comandos.
 export GCP_PROJECT_ID_STAGING="$ID_STG" GCP_PROJECT_ID_PROD="$ID_PROD"
 
+DIR=""
 ARGS=(--entorno "$ENTORNO" --tenant "$TENANT")
 if (( ACTIVAR )); then ARGS+=(--activar); fi
 if (( DESACTIVAR )); then ARGS+=(--desactivar); fi
@@ -75,7 +86,6 @@ if (( APLICAR )); then
     # El respaldo guarda solo el valor previo del campo (o su ausencia): carpeta temporal 0700 FUERA del repositorio; lo borra el operador al cerrar.
     DIR="$(mktemp -d /tmp/nota-novutienda.XXXXXX)"; chmod 700 "$DIR"
     ARGS+=(--respaldo "$DIR/respaldo.json")
-    echo "• Respaldo del valor previo: $DIR/respaldo.json — para deshacer: --revertir con esa ruta; bórrelo al cerrar."
   fi
 fi
 
@@ -83,4 +93,12 @@ set +e
 ( cd admin && "$NODO" scripts/modulos/pedidos/fijar-nota-novutienda.mjs "${ARGS[@]}" 2>&1 ) | filtrar_valores "$ID_PROD" "$ID_STG"
 ESTADOS=("${PIPESTATUS[@]}")
 set -e
+if [[ -n "$DIR" ]]; then
+  if [[ -f "$DIR/respaldo.json" ]]; then
+    echo "• Respaldo del valor previo: $DIR/respaldo.json — para deshacer: --revertir con esa ruta; bórrelo al cerrar."
+  else
+    rmdir "$DIR" 2>/dev/null || true
+    echo "• No se guardó respaldo (no hubo nada que escribir, o se rechazó antes): no hay nada que deshacer." >&2
+  fi
+fi
 exit "${ESTADOS[0]}"
