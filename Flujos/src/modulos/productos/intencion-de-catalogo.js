@@ -23,6 +23,11 @@ var IC_PEDIDO = /\b(quier\w*|necesit\w*|dam\w*|me llevo|llevo|compro|comprar|ano
 // El objeto FUERTE: nombra sin ambigüedad lo que se vende. El DÉBIL («lista», «todo») solo vale solo o con un verbo de pedir.
 var IC_OBJETO_FUERTE = /\b(catalogos?|listados?|productos?|cartas?|que (cosas |mas |otras cosas )?(tienen|venden|ofrecen|manejan|hay)|q (cosas |mas )?(tienen|venden|ofrecen|manejan|hay)|k (tienen|venden))\b/;
 var IC_OBJETO_DEBIL = /\b(listas?|todo|todos)\b/;
+// Servicios y condiciones de venta: NO son una categoría del catálogo y el código nunca los niega («no tenemos delivery» sería un hecho falso). Ante la
+// duda no se niega: un mensaje que nombra uno de ellos nunca es `sin_categoria`.
+var IC_SERVICIO = /\b(envio\w*|envia\w*|enviar\w*|delivery|deliveri\w*|entrega\w*|despacho\w*|domicilio|garanti\w*|stock|existencias?|disponib\w*|factur\w*|tarjet\w*|credito|cuotas?|horari\w*|ubicacion\w*|ubicad\w*|direccion|local|locales|sucursal\w*|tienda fisica|abren|abierto|atienden|devoluci\w*|retiro)\b/;
+// «Fotos» o «fotografías»: piden ver el catálogo (el listado), no una categoría que negar.
+var IC_FOTOS = /\b(fotos?|fotografias?|imagenes)\b/;
 // ¿El cliente pide VER lo que se vende (listado, catálogo, carta, productos)? ESTRECHO a propósito: sin cifras (cantidades,
 // montos, números de pieza), sin negación, pago, comprobante ni «ya vi», sin frases de cierre («eso es todo», «estoy lista») y sin un pedido
 // de una pieza en el mismo mensaje: ahí el mensaje sigue su camino. El llamador decide la precedencia frente al enlace del catálogo web y
@@ -108,7 +113,7 @@ function icCategoriasNombradas(palabras, cats) {
 //   { tipo: 'categoria' | 'listado' | 'sin_categoria' | 'ninguna', catIds: ['cat:…'], faltan: ['bicis'], pedido: bool }
 //   categoria      nombra una o más categorías REALES (todas, en el orden del catálogo): se responden TODAS (estándar 2.4);
 //   listado        pide el catálogo en general (`icPideListado`): lista de categorías;
-//   sin_categoria  pregunta si hay algo («¿tienen bicicletas?») y NO es una categoría real: el código dice «no tenemos X» y ofrece las que sí hay;
+//   sin_categoria  pregunta si hay algo que PARECE un producto («¿tienen bicicletas?») y NO es una categoría real (nunca un servicio o condición: envío, garantía, stock…): el código dice «no tenemos X» y ofrece las que sí hay;
 //   faltan         lo nombrado que no existe, cuando va junto con una categoría real («bicis y teles»);
 //   pedido         el mensaje además pide una pieza («quiero la heladera más barata y …»): el pedido SIGUE su camino, nunca se pierde.
 // Sin cifras, negación, pago ni frases de cierre: 'ninguna'.
@@ -125,6 +130,7 @@ function icIntencion(texto, vendibles) {
   var faltan = [];
   var nombradas = icCategoriasNombradas(icPalabras(t), cats);
   for (var i = 0; i < nombradas.length; i++) ids.push(nombradas[i].id);
+  var servicio = IC_SERVICIO.test(t);
   var preguntaPorHay = /\b(tienen|tienes|tiene|venden|vendes|hay|manejan|ofrecen|consigo|conseguir)\b/.test(t);
   for (var s = 0; s < segmentos.length; s++) {
     var contenido = segmentos[s].filter(function (w) { return !IC_RELLENO.test(w) && w.length >= 3; });
@@ -132,11 +138,11 @@ function icIntencion(texto, vendibles) {
     if (!icCategoriasNombradas(contenido, cats).length) {
       // Un trozo con contenido que no nombra nada real: solo es «lo que no tenemos» si el cliente pregunta si hay.
       // Con una categoría real en el mismo mensaje («bicis y teles») solo cuenta un trozo corto, de una o dos palabras.
-      if ((preguntaPorHay || (ids.length && segmentos[s].length <= 2)) && contenido.length <= 2 && !IC_OBJETO_FUERTE.test(segmentos[s].join(' '))) faltan.push(contenido.join(' '));
+      if (!servicio && (preguntaPorHay || (ids.length && segmentos[s].length <= 2)) && contenido.length <= 2 && !IC_OBJETO_FUERTE.test(segmentos[s].join(' '))) faltan.push(contenido.join(' '));
     }
   }
   if (ids.length) return { tipo: 'categoria', catIds: ids, faltan: faltan, pedido: pedido };
-  if (icPideListado(texto)) return { tipo: 'listado', catIds: [], faltan: [], pedido: false };
+  if (IC_FOTOS.test(t) || icPideListado(texto)) return { tipo: 'listado', catIds: [], faltan: [], pedido: false };
   if (faltan.length && !pedido) return { tipo: 'sin_categoria', catIds: [], faltan: faltan, pedido: false };
   return vacio;
 }

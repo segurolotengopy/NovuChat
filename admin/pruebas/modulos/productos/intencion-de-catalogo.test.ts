@@ -179,6 +179,19 @@ describe('icIntencion: la categoría nombrada gana al listado genérico', () => 
     expect(cat('¿tienen bicicletas?')).toMatchObject({ tipo: 'sin_categoria', faltan: ['bicicletas'] });
     expect(cat('venden celulares?')).toMatchObject({ tipo: 'sin_categoria', faltan: ['celulares'] });
   });
+  it('B-1 NIEGA: un servicio o condición (delivery, garantía, envío, stock, factura, tarjeta, horario, ubicación, local, sucursal) NO es una categoría y nunca se niega', () => {
+    for (const t of ['¿tienen delivery?', '¿tienen garantía?', '¿tienen envío a Cochabamba?', '¿tienen stock?', 'hacen envíos?', 'tienen factura?', 'aceptan tarjeta?', 'tienen horario de atención?', 'tienen ubicación?', 'tienen local?', 'tienen sucursal en Sucre?', 'tienen entrega a domicilio?', 'tienen stock de bicicletas?']) {
+      expect(cat(t), t).toMatchObject({ tipo: 'ninguna', faltan: [] });
+    }
+  });
+  it('B-1: «fotos» y «fotografías» van al listado, no a una negación', () => {
+    for (const t of ['¿tienen fotos?', 'tienen fotografías?', 'me mandan fotos?']) expect(cat(t), t).toMatchObject({ tipo: 'listado', faltan: [] });
+    expect(cat('fotos de las heladeras')).toMatchObject({ tipo: 'categoria', catIds: ['cat:heladeras'] });
+  });
+  it('B-1: lo que parece un producto sigue siendo «sin_categoria» y una categoría real con servicio sigue ganando', () => {
+    expect(cat('¿tienen mochilas?')).toMatchObject({ tipo: 'sin_categoria', faltan: ['mochilas'] });
+    expect(cat('¿tienen televisores con garantía?')).toMatchObject({ tipo: 'categoria', catIds: ['cat:televisores'], faltan: [] });
+  });
   it('A16: «bicis y teles» da la categoría que existe y lo que falta', () => {
     expect(cat('bicis y teles')).toMatchObject({ tipo: 'categoria', catIds: ['cat:televisores'], faltan: ['bicis'] });
   });
