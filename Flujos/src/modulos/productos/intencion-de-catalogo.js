@@ -23,6 +23,11 @@ var IC_PEDIDO = /\b(quier\w*|necesit\w*|dam\w*|me llevo|llevo|compro|comprar|ano
 // El objeto FUERTE: nombra sin ambigüedad lo que se vende. El DÉBIL («lista», «todo») solo vale solo o con un verbo de pedir.
 var IC_OBJETO_FUERTE = /\b(catalogos?|listados?|productos?|cartas?|que (cosas |mas |otras cosas )?(tienen|venden|ofrecen|manejan|hay)|q (cosas |mas )?(tienen|venden|ofrecen|manejan|hay)|k (tienen|venden))\b/;
 var IC_OBJETO_DEBIL = /\b(listas?|todo|todos)\b/;
+// Servicios y condiciones de venta: NO son una categoría del catálogo y el código nunca los niega («no tenemos delivery» sería un hecho falso). Ante la
+// duda no se niega: un mensaje que nombra uno de ellos nunca es `sin_categoria`.
+var IC_SERVICIO = /\b(envio\w*|envia\w*|enviar\w*|delivery|deliveri\w*|entrega\w*|despacho\w*|domicilio|garanti\w*|stock|existencias?|disponib\w*|factur\w*|tarjet\w*|credito|cuotas?|horari\w*|ubicacion\w*|ubicad\w*|direccion|local|locales|sucursal\w*|tienda fisica|abren|abierto|atienden|devoluci\w*|retiro)\b/;
+// «Fotos» o «fotografías»: piden ver el catálogo (el listado), no una categoría que negar.
+var IC_FOTOS = /\b(fotos?|fotografias?|imagenes)\b/;
 // ¿El cliente pide VER lo que se vende (listado, catálogo, carta, productos)? ESTRECHO a propósito: sin cifras (cantidades,
 // montos, números de pieza), sin negación, pago, comprobante ni «ya vi», sin frases de cierre («eso es todo», «estoy lista») y sin un pedido
 // de una pieza en el mismo mensaje: ahí el mensaje sigue su camino. El llamador decide la precedencia frente al enlace del catálogo web y
@@ -58,6 +63,9 @@ var IC_SINONIMOS = {
   tele: ['televisor', 'tv'], teles: ['televisor', 'tv'], tv: ['televisor', 'tv'], tvs: ['televisor', 'tv'],
   refri: ['heladera', 'refrigerador'], refris: ['heladera', 'refrigerador'], refrigerador: ['heladera'], refrigeradores: ['heladera'], nevera: ['heladera'], frigobar: ['heladera'],
   bici: ['bicicleta'], bicis: ['bicicleta'], ac: ['aire'], lavarropas: ['lavadora'], celu: ['celular'], celus: ['celular'], compu: ['computadora'], compus: ['computadora'],
+  // «Pantalla» es un televisor para el cliente («¿tienen pantallas?» con 23 televisores en el catálogo jamás se niega).
+  pantalla: ['televisor', 'tv'], pantallas: ['televisor', 'tv'], lavarropa: ['lavadora'], refrigeradora: ['heladera'], refrigeradoras: ['heladera'],
+  movil: ['celular'], moviles: ['celular'], laptop: ['computadora'], laptops: ['computadora'], notebook: ['computadora'], notebooks: ['computadora'], ordenador: ['computadora'], ordenadores: ['computadora'],
 };
 var IC_RELLENO = /^(que|q|k|cual|cuales|cuanto|cuantos|como|tienen|tienes|tiene|venden|vendes|hay|manejan|ofrecen|quiero|quisiera|necesito|dame|damelo|dime|mandame|mandenme|manden|mande|enviame|envien|muestrame|muestren|pasame|pasen|ver|veo|a|ver|mira|mas|menos|otro|otros|otra|otras|demas|todo|todos|toda|todas|completo|completa|con|sin|de|del|la|el|los|las|un|una|unos|unas|por|favor|porfa|para|y|o|e|en|que|precio|precios|catalogo|lista|listado|producto|productos|barato|baratos|barata|baratas|economico|economicos|hola|buenas|buenos|dias|tardes|noches|me|mi|su|tu|se|lo|si|no|es|son|cosas|cosa|algo|tambien|ademas)$/;
 function icRaices(w) {
@@ -108,7 +116,10 @@ function icCategoriasNombradas(palabras, cats) {
 //   { tipo: 'categoria' | 'listado' | 'sin_categoria' | 'ninguna', catIds: ['cat:…'], faltan: ['bicis'], pedido: bool }
 //   categoria      nombra una o más categorías REALES (todas, en el orden del catálogo): se responden TODAS (estándar 2.4);
 //   listado        pide el catálogo en general (`icPideListado`): lista de categorías;
-//   sin_categoria  pregunta si hay algo («¿tienen bicicletas?») y NO es una categoría real: el código dice «no tenemos X» y ofrece las que sí hay;
+//   sin_categoria  pregunta por algo que NO figura entre las categorías del catálogo (decisión de Andres, 28/11/2026). Lo único que se afirma es que
+//                  «"X" no figura en nuestro catálogo; estas son las categorías que tenemos»: SIEMPRE cierto, aunque X sea un servicio, un
+//                  descuento o una marca. NUNCA «no tenemos X» ni «No encuentro eso». La frase la arma `icMensajeLista` con `opciones.faltan`
+//                  (cuerpo, lista de categorías y, con `opciones.enlace`, remisión al catálogo): el consumidor no la escribe;
 //   faltan         lo nombrado que no existe, cuando va junto con una categoría real («bicis y teles»);
 //   pedido         el mensaje además pide una pieza («quiero la heladera más barata y …»): el pedido SIGUE su camino, nunca se pierde.
 // Sin cifras, negación, pago ni frases de cierre: 'ninguna'.
@@ -125,6 +136,7 @@ function icIntencion(texto, vendibles) {
   var faltan = [];
   var nombradas = icCategoriasNombradas(icPalabras(t), cats);
   for (var i = 0; i < nombradas.length; i++) ids.push(nombradas[i].id);
+  var servicio = IC_SERVICIO.test(t);
   var preguntaPorHay = /\b(tienen|tienes|tiene|venden|vendes|hay|manejan|ofrecen|consigo|conseguir)\b/.test(t);
   for (var s = 0; s < segmentos.length; s++) {
     var contenido = segmentos[s].filter(function (w) { return !IC_RELLENO.test(w) && w.length >= 3; });
@@ -132,11 +144,11 @@ function icIntencion(texto, vendibles) {
     if (!icCategoriasNombradas(contenido, cats).length) {
       // Un trozo con contenido que no nombra nada real: solo es «lo que no tenemos» si el cliente pregunta si hay.
       // Con una categoría real en el mismo mensaje («bicis y teles») solo cuenta un trozo corto, de una o dos palabras.
-      if ((preguntaPorHay || (ids.length && segmentos[s].length <= 2)) && contenido.length <= 2 && !IC_OBJETO_FUERTE.test(segmentos[s].join(' '))) faltan.push(contenido.join(' '));
+      if (!servicio && (preguntaPorHay || (ids.length && segmentos[s].length <= 2)) && contenido.length <= 2 && !IC_OBJETO_FUERTE.test(segmentos[s].join(' '))) faltan.push(contenido.join(' '));
     }
   }
   if (ids.length) return { tipo: 'categoria', catIds: ids, faltan: faltan, pedido: pedido };
-  if (icPideListado(texto)) return { tipo: 'listado', catIds: [], faltan: [], pedido: false };
+  if (IC_FOTOS.test(t) || icPideListado(texto)) return { tipo: 'listado', catIds: [], faltan: [], pedido: false };
   if (faltan.length && !pedido) return { tipo: 'sin_categoria', catIds: [], faltan: faltan, pedido: false };
   return vacio;
 }
@@ -148,16 +160,27 @@ function icRespaldo(vendibles, catIds, monto, limite) {
 function icParrafos(texto) {
   return typeof ctParrafos === 'function' ? ctParrafos(texto) : String(texto);
 }
-// El mensaje de lista del catálogo. `opciones`: { catId, pag }. Sin `catId` y con varias categorías, la lista es de
-// categorías; con una sola categoría, o con `catId`, es de productos. Devuelve null si no hay nada que mostrar (el
+// El texto «"X" no figura en nuestro catálogo; estas son las categorías que tenemos.» (decisión de Andres, 28/11/2026). `faltan` es la lista de
+// `icIntencion`. Nunca «no tenemos X» ni «No encuentro eso».
+function icTextoNoFigura(faltan) {
+  var xs = (Array.isArray(faltan) ? faltan : []).map(function (x) { return String(x).trim().slice(0, 40); }).filter(function (x) { return x; });
+  if (!xs.length) return '';
+  var cita = xs.map(function (x) { return '"' + x + '"'; });
+  var nombrado = cita.length === 1 ? cita[0] : cita.slice(0, -1).join(', ') + ' y ' + cita[cita.length - 1];
+  return nombrado + (cita.length === 1 ? ' no figura' : ' no figuran') + ' en nuestro catálogo; estas son las categorías que tenemos.';
+}
+// El mensaje de lista del catálogo. `opciones`: { catId, pag, enlace, faltan }. Sin `catId` y con varias categorías, la lista es de
+// categorías; con una sola categoría, o con `catId`, es de productos. Con `opciones.faltan` (lo no encontrado, de `icIntencion`) el mensaje es
+// SIEMPRE el de «no figura en nuestro catálogo» más la lista de categorías (aunque haya una sola). Devuelve null si no hay nada que mostrar (el
 // llamador no inventa un producto): { payload, texto, respaldo, tipo:'list', filas, hayMas, pag }.
 // `texto` es el cuerpo de la lista; `respaldo` el mismo contenido en texto con viñetas.
 function icMensajeLista(vendibles, monto, opciones) {
   var op = opciones || {};
   var cats = lcCategorias(vendibles);
   if (!cats.length) return null;
-  var catId = op.catId;
-  if (!catId && cats.length === 1) catId = cats[0].id;
+  var textoNoFigura = icTextoNoFigura(op.faltan);
+  var catId = textoNoFigura ? undefined : op.catId;
+  if (!catId && !textoNoFigura && cats.length === 1) catId = cats[0].id;
   var pag = Number.isInteger(op.pag) ? op.pag : 0;
   var filas;
   var cuerpo;
@@ -177,14 +200,16 @@ function icMensajeLista(vendibles, monto, opciones) {
     var pc = lcFilasCategorias(cats, pag);
     filas = pc.filas;
     pag = pc.pag;
-    cuerpo = icParrafos('Tenemos productos en ' + cats.length + ' categorías. Elige una para ver qué hay.');
+    cuerpo = icParrafos(textoNoFigura || 'Tenemos productos en ' + cats.length + ' categorías. Elige una para ver qué hay.');
     titulo = 'Categorías';
     respaldoCats = cats.map(function (c) { return c.id; });
   }
   var respaldo = icRespaldo(vendibles, respaldoCats, monto, 3500);
   // Nunca se recorta en silencio (estándar 2.2): si no cupo todo en el texto, se dice cuántos faltan y se ofrece pedirlos por chat.
   var faltan = respaldo.total - respaldo.mostrados;
-  var remision = faltan > 0 ? '\n\n' + (faltan === 1 ? 'Hay 1 producto más.' : 'Hay ' + faltan + ' productos más.') + ' Dime cuál buscas y te lo muestro.' : '';
+  // Con enlace al catálogo web (`opciones.enlace`, https), el respaldo remite al catálogo en vez de pedir que escriba.
+  var conEnlace = typeof op.enlace === 'string' && /^https:\/\/[^\s]+$/.test(op.enlace.trim());
+  var remision = faltan > 0 ? '\n\n' + (faltan === 1 ? 'Hay 1 producto más.' : 'Hay ' + faltan + ' productos más.') + (conEnlace ? ' Míralos en el catálogo.' : ' Dime cuál buscas y te lo muestro.') : '';
   var hayMas = filas.length > 0 && filas[filas.length - 1].id.indexOf('mas:') === 0;
   return {
     tipo: 'list',

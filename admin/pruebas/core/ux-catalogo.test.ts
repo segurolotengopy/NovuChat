@@ -17,7 +17,8 @@ import { idsDeOpciones, problemasDeLimites, estadoUxNuevo, violacionesDeTurno, t
 import type { Mundo } from '../lib/n8n-de-mentira';
 import { esInteractivo, parrafosLargos, preguntaPorOpciones, problemasDeMensaje } from './ux/catalogo';
 import { ADAPTADORES, NO_SON_DE_VENTA, PUNTOS, SIN_ADAPTADOR, flujosDeVenta, medir, type Medicion } from './ux/estandar-venta';
-import { DADOS_DE_BAJA, SIN_PIEZAS_COMUNES, VENCE_MAXIMO, piezasFaltantes, problemasDeVencimiento, type ExcepcionConVencimiento } from './ux/piezas-de-catalogo';
+import { leerFuentes } from './fuente-vm';
+import { ARCHIVOS_DE_PIEZAS, DADOS_DE_BAJA, SIN_PIEZAS_COMUNES, VENCE_MAXIMO, piezasFaltantes, problemasDeVencimiento, type ExcepcionConVencimiento } from './ux/piezas-de-catalogo';
 
 const nombreDe = (ruta: string): string => idDeFlujo(ruta).split('/').pop()!;
 
@@ -175,6 +176,11 @@ describe('I2: las piezas comunes del catálogo las USA todo flujo de venta, o fi
     expect(piezasFaltantes(nodoCon(COMPLETO.replace('cwConBotonCatalogo(m, url);', '')))).toEqual(['botón del catálogo']);
     expect(piezasFaltantes(nodoCon('function icIntencion(a) { return a; } function icMensajeLista() {} function cwConBotonCatalogo() {}'))).toHaveLength(3);
     expect(piezasFaltantes(nodoCon('// icIntencion(t) icMensajeLista(v) cwConBotonCatalogo(m)\n/* icIntencion(t) */ return [];'))).toHaveLength(3);
+  });
+  it('NIEGA (I-A): un flujo que INCLUYE el texto de las piezas y no las llama sigue sin usarlas; si las llama, sí', () => {
+    const piezas = leerFuentes(ARCHIVOS_DE_PIEZAS);
+    expect(piezasFaltantes(nodoCon(`${piezas}\nreturn [];`))).toEqual(['intención de catálogo', 'lista de catálogo', 'botón del catálogo']);
+    expect(piezasFaltantes(nodoCon(`${piezas}\n${COMPLETO}`))).toEqual([]);
   });
   it('NIEGA: anular la pieza en un flujo real que figura sin excepción hace fallar la invariante (se simula quitando las llamadas)', () => {
     const real = leerFlujo(rutaDe(venta[0]!));

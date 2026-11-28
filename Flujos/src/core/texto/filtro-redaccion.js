@@ -434,8 +434,14 @@ function cmPulirRedaccion(texto, opciones) {
   if (tope >= 1 && prosa.length > tope) {
     const ultima = prosa[prosa.length - 1];
     const quedan = new Set(prosa.slice(0, tope));
-    if (/\?[^\p{L}\p{N}]*$/u.test(ultima.t) && !/\?[^\p{L}\p{N}]*$/u.test(prosa[tope - 1].t)) { quedan.delete(prosa[tope - 1]); quedan.add(ultima); }
+    if (/\?[^\p{L}\p{N}]*$/u.test(ultima.t) && !/\?[^\p{L}\p{N}]*$/u.test(prosa[tope - 1].t)) {
+      // La pregunta toma el separador del lugar que reemplaza (nunca se pega a la última viñeta: «• Pieza 2 ¿Cuál?»).
+      ultima.sep = prosa[tope - 1].sep;
+      quedan.delete(prosa[tope - 1]); quedan.add(ultima);
+    }
     const corte = oraciones.filter((x) => x.lista || quedan.has(x));
+    const iu = corte.indexOf(ultima);
+    if (iu > 0 && corte[iu - 1].lista && !/\n/.test(ultima.sep)) ultima.sep = '\n';
     oraciones.length = 0;
     oraciones.push(...corte);
   }

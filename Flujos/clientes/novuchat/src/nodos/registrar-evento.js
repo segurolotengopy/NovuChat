@@ -50,4 +50,4 @@ const ajuste = chAjustarBytes(f, 14900);
 const compromiso = ajuste.cupo ? ssCuerpoComprometer(t.from, $execution.id, 'reg' + pasada, version, f) : null;
 // Sin poder comprometer (estado demasiado grande o teléfono que el servidor no admite) el turno sale con el genérico y el botón.
 if (!compromiso) return sin({ falla: true });
-return [{ json: { registrado: true, comprometer: true, falla: false, seq: f.seq, esperarSeg: CH_ESPERA_SEG, from: t.from, ficha: f, compromiso: compromiso, numero: ssNumeroHeader(), pasada: pasada } }];
+return [{ json: { registrado: true, comprometer: true, falla: false, seq: f.seq, esperarSeg: cfg.rafagaApagada === true ? 0.1 : CH_ESPERA_SEG, from: t.from, ficha: f, compromiso: compromiso, numero: ssNumeroHeader(), pasada: pasada } }];
