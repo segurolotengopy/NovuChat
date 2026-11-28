@@ -104,6 +104,47 @@ describe('una lista NUNCA se recorta ni cuenta para maxOraciones (Estándar 3.2 
   });
 });
 
+describe('M-1: cada línea de viñeta se acota a maxOraciones, sin recortar la lista', () => {
+  it('una viñeta con tres oraciones se acota a maxOraciones y el motivo del original es largo_en_oraciones', () => {
+    const t = 'Tenemos:\n• Mate de calabaza. Viene con bombilla. Es artesanal.\n• Taza grande.';
+    expect(pulir(t, { maxOraciones: 2 })).toBe('Tenemos:\n• Mate de calabaza. Viene con bombilla.\n• Taza grande.');
+    expect(pulir(t, { maxOraciones: 1 })).toBe('Tenemos:\n• Mate de calabaza.\n• Taza grande.');
+    expect(F.cmMotivoDeRechazo(t, { maxOraciones: 2 })).toBe('largo_en_oraciones');
+  });
+  it('el precio de la cabeza no se corta: «Bs 25.» sigue unido a su frase', () => {
+    const t = 'Tenemos:\n• Mate Bs 25. Muy lindo. Resistente.\n• Taza Bs 30.';
+    expect(pulir(t, { maxOraciones: 1 })).toBe('Tenemos:\n• Mate Bs 25. Muy lindo.\n• Taza Bs 30.');
+    expect(pulir(t, { maxOraciones: 1 })).toMatch(/Bs 25\. Muy lindo\./);
+  });
+  it('lo pulido ya no se rechaza y cmRevisarRedaccion avisa que recortó', () => {
+    const t = 'Hay:\n• Uno. Dos. Tres. Cuatro.\n• Otro.';
+    const r = F.cmRevisarRedaccion(t, { maxOraciones: 3 });
+    expect(r).toEqual({ texto: 'Hay:\n• Uno. Dos. Tres.\n• Otro.', motivo: '', recorto: 'largo_en_oraciones' });
+  });
+  it('con remisión, el flujo la recibe una vez al final, solo si se recortó', () => {
+    const t = 'Hay:\n• Uno. Dos. Tres.\n• Otro.';
+    expect(pulir(t, { maxOraciones: 2, remision: 'Mira el resto en el catálogo.' })).toBe('Hay:\n• Uno. Dos.\n• Otro.\nMira el resto en el catálogo.');
+    expect(pulir('Hay:\n• Uno.\n• Otro.', { maxOraciones: 2, remision: 'Mira el resto en el catálogo.' })).toBe('Hay:\n• Uno.\n• Otro.');
+  });
+  it('NEGATIVO: cinco viñetas cortas siguen saliendo las cinco, con tope 1', () => {
+    const cinco = 'Tenemos:\n- A\n- B\n- C\n- D\n- E';
+    expect(pulir(cinco, { maxOraciones: 1 })).toBe(cinco);
+    expect(F.cmMotivoDeRechazo(cinco, { maxOraciones: 1 })).toBe('');
+    expect(F.cmRevisarRedaccion(cinco, { maxOraciones: 1 })).toEqual({ texto: cinco, motivo: '' });
+  });
+  it('NEGATIVO: «Bs 25.» y «Pack de 2.» no se pegan ni se cortan (una oración por viñeta con tope 1)', () => {
+    const t = 'Hay:\n• Mate Bs 25.\n• Pack de 2.\n• Set Bs 12.';
+    expect(pulir(t, { maxOraciones: 1 })).toBe(t);
+    expect(F.cmMotivoDeRechazo(t, { maxOraciones: 1, permitirMontos: true })).toBe('');
+  });
+  it('NEGATIVO: sin tope no se acorta nada, y el texto sin viñetas no cambia', () => {
+    const t = 'Hay:\n• Uno. Dos. Tres. Cuatro.';
+    expect(pulir(t)).toBe(t);
+    expect(pulir('Uno. Dos.', { maxOraciones: 3 })).toBe('Uno. Dos.');
+    expect(F.cmRevisarRedaccion('Uno. Dos.', { maxOraciones: 3 })).toEqual({ texto: 'Uno. Dos.', motivo: '' });
+  });
+});
+
 describe('una viñeta que termina en un número y punto no se pega a la siguiente (B2)', () => {
   it('«Bs 25.» y «Pack de 2.» siguen cada una en su línea', () => {
     const t = 'Hay:\n• Mate Bs 25.\n• Taza Bs 30.\n• Pack de 2.\n• Set de 12.';

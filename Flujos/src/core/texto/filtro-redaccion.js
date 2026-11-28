@@ -306,7 +306,8 @@ function cmOracionesSep(t, estricto) {
     // Un numeral suelto («1.» y salto) y un trato («Dr.» y salto) siguen uniéndose a su texto.
     const pegar = previa && ABREV.test(previa.t) && !(saltos && /\d{1,2}\.$/.test(previa.t) && !/^\s*\d{1,2}\.$/.test(previa.t));
     if (pegar) previa.t += ' ' + x;
-    else oraciones.push({ t: x, sep, lista: saltos || !previa ? VINETA.test(x) : previa.lista });
+    // `ord`: lugar de la oración dentro de SU línea (0 = la cabeza de la línea; el salto reinicia la cuenta).
+    else oraciones.push({ t: x, sep, lista: saltos || !previa ? VINETA.test(x) : previa.lista, ord: saltos || !previa ? 0 : previa.ord + 1 });
   }
   return oraciones;
 }
@@ -380,7 +381,11 @@ function cmMotivo1(texto, opciones) {
     if (CM_PROMETE_IMAGENES.test(n) || CM_PROMETE_IMAGENES.test(nj) || CM_PROMETE_IMAGENES.test(nl) || CM_PROMETE_IMAGENES.test(nlc)) return 'promete_imagenes';
   }
   // Una LISTA (líneas de viñeta o numeral) no cuenta para el tope: se cuenta la prosa. Estándar 3.2.
-  if (o.maxOraciones >= 1 && cmOracionesSep(s, true).filter((x) => !x.lista && /[\p{L}\p{N}]/u.test(x.t)).length > o.maxOraciones) return 'largo_en_oraciones';
+  // La LISTA (líneas de viñeta) no se recorta, pero cada línea de viñeta se acota al mismo tope (M-1): con más oraciones dentro de una línea, motivo.
+  if (o.maxOraciones >= 1) {
+    const conTexto = cmOracionesSep(s, true).filter((x) => /[\p{L}\p{N}]/u.test(x.t));
+    if (conTexto.filter((x) => !x.lista).length > o.maxOraciones || conTexto.some((x) => x.lista && x.ord >= o.maxOraciones)) return 'largo_en_oraciones';
+  }
   const optIn = cmReglasOptIn(s, o);
   if (optIn) return optIn;
   for (const re of (o.prohibidos || [])) if (re.test(n)) return 'prohibido';
@@ -445,8 +450,15 @@ function cmPulirRedaccion(texto, opciones) {
     oraciones.length = 0;
     oraciones.push(...corte);
   }
+  // M-1: la LISTA no se recorta, pero cada línea de viñeta se acota a `tope` oraciones (las primeras de la línea; la cabeza, con su nombre y su
+  // precio, nunca se corta). Si algo se acortó y el flujo pasó `remision`, esa frase va al final en su propia línea (el texto lo pone el flujo).
+  let acortada = false;
+  if (tope >= 1) {
+    for (let i = oraciones.length - 1; i >= 0; i--) if (oraciones[i].lista && oraciones[i].ord >= tope) { oraciones.splice(i, 1); acortada = true; }
+  }
   // Se une con el separador del ORIGEN: espacio dentro de una línea; salto o línea en blanco entre líneas o párrafos (viñetas, listas).
   let t = oraciones.map((x, i) => (i ? x.sep : '') + x.t).join('').trim();
+  if (acortada && typeof o.remision === 'string' && o.remision.trim()) t += '\n' + o.remision.trim();
   const sinTilde = (w) => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const palabras = String(o.nombreNegocio || '').split(/[^A-Za-zÀ-ÿ]+/).filter((w) => w.length >= 4);
   for (const w of palabras) {
@@ -458,5 +470,8 @@ function cmPulirRedaccion(texto, opciones) {
 // «Hola. Sí, soy yo»). Devuelve { texto, motivo }: si `motivo` no es '', se descarta y se usa el texto fijo del código.
 function cmRevisarRedaccion(texto, opciones) {
   const pulido = cmPulirRedaccion(texto, opciones);
-  return { texto: pulido, motivo: cmMotivoDeRechazo(pulido, opciones) };
+  const r = { texto: pulido, motivo: cmMotivoDeRechazo(pulido, opciones) };
+  // `recorto`: solo cuando el pulido acortó por el tope de oraciones (motivo del original: `largo_en_oraciones`); si no, la forma no cambia.
+  if (Number(opciones && opciones.maxOraciones) >= 1 && cmMotivoDeRechazo(texto, opciones) === 'largo_en_oraciones') r.recorto = 'largo_en_oraciones';
+  return r;
 }
