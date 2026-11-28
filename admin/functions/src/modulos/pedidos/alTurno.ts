@@ -32,6 +32,8 @@ export interface DatosDelTurnoPedidos {
   lineas: unknown;
   entrega: unknown;
   facturacion: unknown;
+  /** La nota del cliente a nivel de pedido (texto; `armarPedidoWa` la sanea). */
+  nota?: string | undefined;
 }
 
 export async function despuesDelTurnoPedidos(d: DatosDelTurnoPedidos): Promise<void> {
@@ -45,7 +47,7 @@ export async function despuesDelTurnoPedidos(d: DatosDelTurnoPedidos): Promise<v
       const r = await crearPedidoWa({
         tenantId: d.tenantId, ficha: d.ficha, referencia: d.referencia, telefono: d.telefono,
         montoQr: d.monto, sinCobro: d.evento === 'pedido_sin_cobro', lineas: d.lineas, entrega: d.entrega, facturacion: d.facturacion,
-        referenciaAnterior: d.referenciaAnterior, reemplaza: d.reemplaza,
+        referenciaAnterior: d.referenciaAnterior, reemplaza: d.reemplaza, nota: d.nota,
       });
       // Efecto `abierto` con un pedido que ya existía: el flujo reusó la referencia con otro carrito.
       // El pedido conserva lo viejo; se deja constancia, sin datos del pedido, para revisar a mano.

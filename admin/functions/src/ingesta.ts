@@ -212,6 +212,8 @@ interface Entrante {
   lineas?: unknown[];
   entrega?: unknown;
   facturacion?: unknown;
+  /** La nota del cliente a nivel de pedido: solo texto, y solo con `qr_enviado`/`pedido_sin_cobro` y líneas. Pedidos la sanea. */
+  nota?: string;
   /** Solo con `qr_enviado` y líneas: el pedido `cat_…` del checkout web que este QR reemplaza (Pedidos lo revalida). */
   reemplaza?: string;
   /**
@@ -337,6 +339,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
   const entrega = esQr && lineas && (objetoPlano(c['entrega']) || typeof c['entrega'] === 'string')
     ? c['entrega'] : undefined;
   const facturacion = esQr && lineas && objetoPlano(c['facturacion']) ? c['facturacion'] : undefined;
+  const nota = esQr && lineas && typeof c['nota'] === 'string' ? c['nota'] : undefined;
   const reemplaza = evento === 'qr_enviado' && lineas && typeof c['reemplaza'] === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(c['reemplaza'])
     ? c['reemplaza'] : undefined;
 
@@ -348,6 +351,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
            ...(lineas ? { lineas } : {}),
            ...(entrega !== undefined ? { entrega } : {}),
            ...(facturacion !== undefined ? { facturacion } : {}),
+           ...(nota !== undefined ? { nota } : {}),
            ...(reemplaza ? { reemplaza } : {}),
            ...(nombreContacto ? { nombreContacto } : {}),
            ...(evento ? { evento } : {}),
@@ -1614,7 +1618,7 @@ export const ingesta = onRequest(
         referenciaAnterior: mensaje.evento === 'pedido_sin_cobro' ? undefined : veredicto.pedidos.refAnterior,
         telefono: mensaje.telefono, monto: mensaje.monto,
         lineas: mensaje.lineas, entrega: mensaje.entrega, facturacion: mensaje.facturacion,
-        reemplaza: mensaje.reemplaza,
+        reemplaza: mensaje.reemplaza, nota: mensaje.nota,
       });
     }
 
