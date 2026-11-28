@@ -95,6 +95,24 @@ describe('una lista NUNCA se recorta ni cuenta para maxOraciones (Estándar 3.2 
     expect(pulir('Uno. Dos.\n- A\n- B\nTres. ¿Cuál?', { maxOraciones: 2 })).toBe('Uno.\n- A\n- B\n¿Cuál?');
     expect(pulir('Uno. Dos.\n- A\n- B\nTres. ¿Cuál?', { maxOraciones: 2 })).not.toMatch(/B ¿/);
   });
+  it('M2 NEGATIVO: una lista ANTES de la prosa tampoco consume el tope: la prosa de después se conserva', () => {
+    const t = 'Opciones:\n- A\n- B\n- C\nUno. Dos.';
+    expect(pulir(t, { maxOraciones: 3 })).toBe(t);
+    expect(F.cmMotivoDeRechazo(t, { maxOraciones: 3 })).toBe('');
+  });
+  it('M7 NEGATIVO: la pregunta que conserva el tope toma el salto del lugar que reemplaza, sin viñetas de por medio', () => {
+    expect(pulir('Uno.\nDos. Tres. ¿Cuál?', { maxOraciones: 2 })).toBe('Uno.\n¿Cuál?');
+    expect(pulir('Uno.\n\nDos. Tres. ¿Cuál?', { maxOraciones: 2 })).toBe('Uno.\n\n¿Cuál?');
+    expect(pulir('Uno.\nDos. Tres. ¿Cuál?', { maxOraciones: 2 })).not.toBe('Uno. ¿Cuál?');
+  });
+  it('M9 NEGATIVO: una viñeta de dos oraciones no cuenta para el tope: la segunda oración hereda la marca de lista', () => {
+    const t = 'Hay:\n- Mate. Bs 25.\n- Taza. Bs 30.\n- Set. Bs 40.';
+    expect(pulir(t, { maxOraciones: 2 })).toBe(t);
+    // Con cifras en pesos el motivo es otro («monto», regla ajena al tope); sin ellas, el tope no rechaza.
+    const sinMonto = 'Hay:\n- Mate. Muy útil.\n- Taza. Muy linda.\n- Set. Completo.';
+    expect(pulir(sinMonto, { maxOraciones: 2 })).toBe(sinMonto);
+    expect(F.cmMotivoDeRechazo(sinMonto, { maxOraciones: 2 })).toBe('');
+  });
   it('NEGATIVO: sin viñetas, las líneas siguen contando como oraciones', () => {
     expect(pulir('Uno\nDos\nTres\nCuatro', { maxOraciones: 3 })).toBe('Uno\nDos\nTres');
     expect(F.cmMotivoDeRechazo('Uno\nDos\nTres\nCuatro', { maxOraciones: 3 })).toBe('largo_en_oraciones');

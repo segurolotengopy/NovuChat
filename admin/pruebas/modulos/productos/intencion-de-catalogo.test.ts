@@ -220,6 +220,101 @@ describe('icIntencion: la categoría nombrada gana al listado genérico', () => 
   });
 });
 
+// Mutaciones de #1147 (28/11/2026): un término por cada IC_SERVICIO, «imágenes», sinónimos, pantallas de X, enlaces, groserías por palabra y tildes.
+describe('mutaciones de #1147: intención', () => {
+  const EOSO = 'Eso no figura en nuestro catálogo; estas son las categorías que tenemos.';
+  // Cada término de `IC_SERVICIO`: sin él, «¿tienen X?» sería `sin_categoria`; con él, nunca se niega.
+  const SERVICIOS = ['envio', 'envios', 'envia', 'enviar', 'delivery', 'deliveri', 'entrega', 'entregas', 'despacho', 'despachos', 'domicilio', 'garantia', 'garantias', 'stock',
+    'existencia', 'existencias', 'disponibilidad', 'facturacion', 'factura', 'facturas', 'tarjeta', 'tarjetas', 'credito', 'cuota', 'cuotas', 'horario', 'horarios', 'ubicacion',
+    'ubicaciones', 'ubicado', 'direccion', 'local', 'locales', 'sucursal', 'sucursales', 'tienda fisica', 'abren', 'abierto', 'atienden', 'devolucion', 'devoluciones', 'retiro'];
+  it('NIEGA: ningún término de servicio o condición de venta se niega («¿tienen X?» nunca es sin_categoria)', () => {
+    for (const s of SERVICIOS) expect(por(`¿tienen ${s}?`), s).toMatchObject({ tipo: 'ninguna', faltan: [] });
+    for (const t of ['¿tienen facturación?', '¿emiten facturas?', '¿tienen tarjeta?', '¿tienen devoluciones?', '¿tienen crédito?', '¿tienen cuotas?', '¿tienen retiro en tienda?', '¿tienen dirección?']) {
+      expect(por(t), t).toMatchObject({ tipo: 'ninguna', faltan: [] });
+    }
+  });
+  it('NIEGA: «imágenes» pide el catálogo (listado), igual que «fotos»', () => {
+    for (const t of ['¿tienen imágenes?', 'tienen imagenes?', 'me mandan imágenes?']) expect(por(t), t).toMatchObject({ tipo: 'listado', faltan: [] });
+  });
+  it('NIEGA: refrigeradora(s) llegan a heladeras; notebook(s) y ordenador(es) a computadoras', () => {
+    const v = [{ id: 'h', nombre: 'Heladera A', area: 'Heladeras', precioCentavos: 100, moneda: 'BOB' }, { id: 'c', nombre: 'Compu A', area: 'Computadoras', precioCentavos: 100, moneda: 'BOB' }];
+    for (const t of ['¿tienen refrigeradora?', '¿tienen refrigeradoras?']) expect(por(t, v), t).toMatchObject({ tipo: 'categoria', catIds: ['cat:heladeras'], faltan: [] });
+    for (const t of ['¿tienen notebook?', '¿tienen notebooks?', '¿tienen ordenador?', '¿tienen ordenadores?']) expect(por(t, v), t).toMatchObject({ tipo: 'categoria', catIds: ['cat:computadoras'], faltan: [] });
+  });
+  it('M-B NIEGA: «pantallas de monitor» y «de pc» (con sus artículos) tampoco llevan a televisores ni se niegan', () => {
+    for (const t of ['¿tienen pantallas de monitor?', '¿tienen pantallas de pc?', 'pantalla para pc', 'pantallas del monitor', 'pantallas de la pc', 'pantallas de un monitor']) {
+      const r = por(t);
+      expect(r.catIds, t).toEqual([]);
+      expect(r.tipo, t).toBe('ninguna');
+    }
+  });
+  it('I-1 NIEGA: un enlace sin «http» («www.x.bo») no se cita, aunque tenga pocas palabras', () => {
+    for (const x of ['www.x.bo', 'https://x.bo', 'http://x.bo']) {
+      const t = ic.icTextoNoFigura([x]);
+      expect(t, x).toBe(EOSO);
+      expect(t, x).not.toMatch(/www|https?|\.bo/);
+    }
+  });
+  it('M-C NIEGA: una grosería DENTRO de una frase («la mierda») o de una lista de groserías no se cita; sale «Eso no figura…»', () => {
+    for (const x of ['la mierda', 'carajo', 'pendejo', 'pendejos', 'huevón', 'cojudo', 'imbécil', 'cabrón', 'la puta madre', 'joder', 'vaya basura']) {
+      const t = ic.icTextoNoFigura([x]);
+      expect(t, x).toBe(EOSO);
+      expect(t, x).not.toContain(x);
+    }
+    expect(ic.icTextoNoFigura(['carajo', 'bicis'])).toBe('"bicis" no figura en nuestro catálogo; estas son las categorías que tenemos.');
+  });
+  it('M-A NIEGA: si el cliente escribió la palabra con y sin tilde, se cita la forma con tilde («técnico o tecnico»)', () => {
+    for (const t of ['¿tienen técnico o tecnico?', '¿tienen tecnico o técnico?']) {
+      const r = por(t);
+      expect(r.tipo, t).toBe('sin_categoria');
+      expect(r.faltan.length, t).toBeGreaterThan(0);
+      for (const f of r.faltan) expect(f, t).toBe('técnico');
+    }
+  });
+});
+
+// Mutaciones de #1147 (28/11/2026): «Ver más» de categorías, aviso del toque viejo en el cuerpo que se envía y remisión cuando falta 1 producto.
+describe('mutaciones de #1147: lista de categorías, toque viejo y remisión de 1 producto', () => {
+  it('NIEGA: con 12 categorías, «mas:cats:1» devuelve las categorías 10 a 12, sin repetir ninguna de la página 0', () => {
+    const v = catalogo(24);
+    const p0 = ic.icMensajeLista(v, monto)!;
+    const ids0 = p0.filas.map((f) => f.id);
+    expect(ids0.filter((i) => i.startsWith('cat:'))).toHaveLength(9);
+    expect(ids0[9]).toBe('mas:cats:1');
+    const t = ic.icResolverToque('mas:cats:1', v, monto);
+    expect(t.tipo).toBe('lista');
+    const p1 = t.mensaje!;
+    expect(p1.pag).toBe(1);
+    expect(p1.hayMas).toBe(false);
+    const ids1 = p1.filas.map((f) => f.id);
+    expect(ids1).toHaveLength(3);
+    expect(ids1.every((i) => i.startsWith('cat:'))).toBe(true);
+    for (const i of ids1) expect(ids0, i).not.toContain(i);
+    expect(new Set([...ids0.slice(0, 9), ...ids1]).size).toBe(12);
+  });
+  it('NIEGA: el aviso del toque viejo va en el cuerpo que SE ENVÍA (payload.interactive.body.text), no solo en `texto`, y mide ≤ 1024', () => {
+    const sin = electro.filter((p) => p.area !== 'Freezers');
+    const t = ic.icResolverToque('cat:freezers', sin, monto);
+    expect(t.tipo).toBe('obsoleto');
+    const cuerpo = (t.mensaje!.payload as unknown as { interactive: { body: { text: string } } }).interactive.body.text;
+    expect(cuerpo).toContain('ya no está vigente');
+    expect(cuerpo.length).toBeLessThanOrEqual(1024);
+    expect(cuerpo.startsWith('Esa opción ya no está vigente.')).toBe(true);
+  });
+  it('NIEGA: cuando falta exactamente 1 producto el respaldo dice «Hay 1 producto más.», y con enlace «Míralos en el catálogo.»', () => {
+    const de = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `p${i}`, nombre: 'Producto de nombre bastante largo número ' + i, area: 'Única', precioCentavos: 100000 + i }));
+    let n = 1;
+    let sin = ic.icMensajeLista(de(n), monto, { catId: 'cat:unica' })!;
+    while (n < 200 && !/productos? más/.test(sin.respaldo)) sin = ic.icMensajeLista(de(++n), monto, { catId: 'cat:unica' })!;
+    expect(n, 'el primer catálogo que no cabe en el respaldo').toBeLessThan(200);
+    expect(sin.respaldo).toMatch(/\n\nHay 1 producto más\. Dime cuál buscas y te lo muestro\.$/);
+    expect(sin.respaldo).not.toMatch(/productos más/);
+    const con = ic.icMensajeLista(de(n), monto, { catId: 'cat:unica', enlace: 'https://catalogo.ejemplo.test/c/x' })!;
+    expect(con.respaldo).toMatch(/\n\nHay 1 producto más\. Míralos en el catálogo\.$/);
+    expect(con.respaldo.length).toBeLessThanOrEqual(4000);
+  });
+});
+
 // Decisión de Andres (28/11/2026), revisión r3 B-1: lo nombrado que NO está en el catálogo se dice «"X" no figura en nuestro catálogo; estas son las
 // categorías que tenemos», con la lista y el botón. NUNCA «no tenemos X» ni «No encuentro eso». Una lista negra de servicios no tiene fin: la garantía
 // no es la lista, es lo que se afirma.
