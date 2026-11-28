@@ -89,6 +89,12 @@ describe('una lista NUNCA se recorta ni cuenta para maxOraciones (Estándar 3.2 
     expect(pulir(t, { maxOraciones: 2 })).toBe('Uno. Dos.\n- A\n- B');
     expect(F.cmMotivoDeRechazo(t, { maxOraciones: 2 })).toBe('largo_en_oraciones');
   });
+  it('I-C NEGATIVO: la pregunta que conserva el tope no se pega a la última viñeta; toma el separador del lugar que reemplaza', () => {
+    const t = 'Mira.\nUno más.\n- Pieza 1\n- Pieza 2\nOtra cosa. ¿Cuál?';
+    expect(pulir(t, { maxOraciones: 2 })).toBe('Mira.\n- Pieza 1\n- Pieza 2\n¿Cuál?');
+    expect(pulir('Uno. Dos.\n- A\n- B\nTres. ¿Cuál?', { maxOraciones: 2 })).toBe('Uno.\n- A\n- B\n¿Cuál?');
+    expect(pulir('Uno. Dos.\n- A\n- B\nTres. ¿Cuál?', { maxOraciones: 2 })).not.toMatch(/B ¿/);
+  });
   it('NEGATIVO: sin viñetas, las líneas siguen contando como oraciones', () => {
     expect(pulir('Uno\nDos\nTres\nCuatro', { maxOraciones: 3 })).toBe('Uno\nDos\nTres');
     expect(F.cmMotivoDeRechazo('Uno\nDos\nTres\nCuatro', { maxOraciones: 3 })).toBe('largo_en_oraciones');
