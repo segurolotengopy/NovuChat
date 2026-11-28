@@ -366,6 +366,9 @@ function normalizar(cuerpo: unknown): Entrante | null {
            ...(monto !== null ? { monto } : {}) };
 }
 
+/** Solo para pruebas: la API pública del módulo no cambia (no se re-exporta desde `index.ts`). */
+export const normalizarParaPruebas = normalizar;
+
 /** Forma que exige un identificador de comercio. Se comprueba ANTES de armar
  *  ninguna ruta con él: `tenantId` viene de un documento, y un documento con un
  *  valor raro no debe poder desviar una escritura a otra parte del árbol. */
